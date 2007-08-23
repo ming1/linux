@@ -32,6 +32,8 @@ obj-$(CONFIG_ATMEL)             += atmel.o
 obj-$(CONFIG_PCI_ATMEL)         += atmel_pci.o 
 obj-$(CONFIG_PCMCIA_ATMEL)      += atmel_cs.o
 
+obj-$(CONFIG_USB_ATMEL)	        += at76_usb.o
+
 obj-$(CONFIG_PRISM54)		+= prism54/
 
 obj-$(CONFIG_HOSTAP)		+= hostap/
