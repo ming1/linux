@@ -491,11 +491,11 @@ struct at76_priv {
 	struct sk_buff *rx_skb;	/* skbuff for receiving data */
 	void *bulk_out_buffer;	/* buffer for sending data */
 
-	struct urb *write_urb;	/* URB for sending data */
-	struct urb *read_urb;	/* URB for receiving data */
+	struct urb *tx_urb;	/* URB for sending data */
+	struct urb *rx_urb;	/* URB for receiving data */
 
-	unsigned int tx_bulk_pipe;	/* bulk out endpoint */
-	unsigned int rx_bulk_pipe;	/* bulk in endpoint */
+	unsigned int tx_pipe;	/* bulk out pipe */
+	unsigned int rx_pipe;	/* bulk in pipe */
 
 	struct mutex mtx;	/* locks this structure */
 
