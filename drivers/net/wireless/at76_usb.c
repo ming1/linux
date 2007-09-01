@@ -56,7 +56,7 @@ static struct fwentry firmwares[] = {
 	[BOARD_503_ACC] = {"atmel_at76c503-rfmd-acc.bin"},
 	[BOARD_505] = {"atmel_at76c505-rfmd.bin"},
 	[BOARD_505_2958] = {"atmel_at76c505-rfmd2958.bin"},
-	[BOARD_505A_2958] = {"atmel_at76c505a-rfmd2958.bin"},
+	[BOARD_505A] = {"atmel_at76c505a-rfmd2958.bin"},
 	[BOARD_505AMX] = {"atmel_at76c505amx-rfmd.bin"},
 };
 
@@ -171,11 +171,11 @@ static struct usb_device_id dev_table[] = {
 	 * at76c505a-rfmd2958
 	 */
 	/* Generic AT76C505A device */
-	{USB_DEVICE(VID_ATMEL, 0x7614), .driver_info = BOARD_505A_2958},
+	{USB_DEVICE(VID_ATMEL, 0x7614), .driver_info = BOARD_505A},
 	/* Generic AT76C505AS device */
-	{USB_DEVICE(VID_ATMEL, 0x7617), .driver_info = BOARD_505A_2958},
+	{USB_DEVICE(VID_ATMEL, 0x7617), .driver_info = BOARD_505A},
 	/* Siemens Gigaset USB WLAN Adapter 11 */
-	{USB_DEVICE(VID_GIGASET, 0x0701), .driver_info = BOARD_505A_2958},
+	{USB_DEVICE(VID_GIGASET, 0x0701), .driver_info = BOARD_505A},
 	/*
 	 * at76c505amx-rfmd
 	 */
@@ -240,6 +240,21 @@ struct dfu_status {
 	unsigned char state;
 	unsigned char string;
 } __attribute__((packed));
+
+static inline int at76_is_intersil(enum board_type board)
+{
+	return (board == BOARD_503_ISL3861 || board == BOARD_503_ISL3863);
+}
+
+static inline int at76_is_503rfmd(enum board_type board)
+{
+	return (board == BOARD_503 || board == BOARD_503_ACC);
+}
+
+static inline int at76_is_505a(enum board_type board)
+{
+	return (board == BOARD_505A || board == BOARD_505AMX);
+}
 
 /* Load a block of the first (internal) part of the firmware */
 static int at76_load_int_fw_block(struct usb_device *udev, int blockno,
@@ -618,45 +633,29 @@ static int at76_get_hw_config(struct at76_priv *priv)
 	if (!hwcfg)
 		return -ENOMEM;
 
-	switch (priv->board_type) {
-
-	case BOARD_503_ISL3861:
-	case BOARD_503_ISL3863:
+	if (at76_is_intersil(priv->board_type)) {
 		ret = at76_get_hw_cfg_intersil(priv->udev, hwcfg,
 					       sizeof(hwcfg->i));
 		if (ret < 0)
-			break;
+			goto exit;
 		memcpy(priv->mac_addr, hwcfg->i.mac_addr, ETH_ALEN);
 		priv->regulatory_domain = hwcfg->i.regulatory_domain;
-		break;
-
-	case BOARD_503:
-	case BOARD_503_ACC:
+	} else if (at76_is_503rfmd(priv->board_type)) {
 		ret = at76_get_hw_cfg(priv->udev, hwcfg, sizeof(hwcfg->r3));
 		if (ret < 0)
-			break;
+			goto exit;
 		memcpy(priv->mac_addr, hwcfg->r3.mac_addr, ETH_ALEN);
 		priv->regulatory_domain = hwcfg->r3.regulatory_domain;
-		break;
-
-	case BOARD_505:
-	case BOARD_505_2958:
-	case BOARD_505A_2958:
+	} else {
 		ret = at76_get_hw_cfg(priv->udev, hwcfg, sizeof(hwcfg->r5));
 		if (ret < 0)
-			break;
+			goto exit;
 		memcpy(priv->mac_addr, hwcfg->r5.mac_addr, ETH_ALEN);
 		priv->regulatory_domain = hwcfg->r5.regulatory_domain;
-		break;
-
-	default:
-		err("Bad board type set (%d).  Unable to get hardware config.",
-		    priv->board_type);
-		ret = -EINVAL;
 	}
 
+exit:
 	kfree(hwcfg);
-
 	if (ret < 0)
 		err("Get HW Config failed (%d)", ret);
 
@@ -2445,8 +2444,7 @@ static int at76_iw_handler_get_scan(struct net_device *netdev,
 		iwe->u.qual.level = (curr_bss->rssi * 100 / 42);
 		if (iwe->u.qual.level > 100)
 			iwe->u.qual.level = 100;
-		if ((priv->board_type == BOARD_503_ISL3861) ||
-		    (priv->board_type == BOARD_503_ISL3863))
+		if (at76_is_intersil(priv->board_type))
 			iwe->u.qual.qual = curr_bss->link_qual;
 		else {
 			iwe->u.qual.qual = 0;
@@ -3596,8 +3594,8 @@ static int at76_load_external_fw(struct usb_device *udev, struct fwentry *fwe)
 		blockno++;
 	} while (bsize > 0);
 
-	if (fwe->board_type == BOARD_505A_2958) {
-		at76_dbg(DBG_DEVSTART, "200 ms delay for board type 7");
+	if (at76_is_505a(fwe->board_type)) {
+		at76_dbg(DBG_DEVSTART, "200 ms delay for 505a");
 		schedule_timeout_interruptible(HZ / 5 + 1);
 	}
 
@@ -3612,7 +3610,7 @@ exit:
 static int at76_load_internal_fw(struct usb_device *udev, struct fwentry *fwe)
 {
 	int ret;
-	int need_remap = (fwe->board_type != BOARD_505A_2958);
+	int need_remap = !at76_is_505a(fwe->board_type);
 
 	ret = at76_usbdfu_download(udev, fwe->intfw, fwe->intfw_size,
 				   need_remap ? 0 : 2000);
@@ -4688,8 +4686,7 @@ static void at76_calc_level(struct at76_priv *priv, struct at76_rx_buffer *buf,
 static void at76_calc_qual(struct at76_priv *priv, struct at76_rx_buffer *buf,
 			   struct iw_quality *qual)
 {
-	if ((priv->board_type == BOARD_503_ISL3861) ||
-	    (priv->board_type == BOARD_503_ISL3863))
+	if (at76_is_intersil(priv->board_type))
 		qual->qual = buf->link_quality;
 	else {
 		unsigned long msec;
