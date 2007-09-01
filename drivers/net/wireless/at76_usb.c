@@ -2305,13 +2305,20 @@ static int at76_iw_handler_set_scan(struct net_device *netdev,
 
 	at76_dbg(DBG_IOCTL, "%s: SIOCSIWSCAN", netdev->name);
 
-	if (!netif_running(netdev))
-		return -ENETDOWN;
+	if (mutex_lock_interruptible(&priv->mtx))
+		return -EINTR;
+
+	if (!netif_running(netdev)) {
+		ret = -ENETDOWN;
+		goto exit;
+	}
 
 	/* jal: we don't allow "iwlist ethX scan" while we are
 	   in monitor mode */
-	if (priv->iw_mode == IW_MODE_MONITOR)
-		return -EBUSY;
+	if (priv->iw_mode == IW_MODE_MONITOR) {
+		ret = -EBUSY;
+		goto exit;
+	}
 
 	/* Discard old scan results */
 	if ((jiffies - priv->last_scan) > (20 * HZ))
@@ -2319,8 +2326,10 @@ static int at76_iw_handler_set_scan(struct net_device *netdev,
 	priv->last_scan = jiffies;
 
 	/* Initiate a scan command */
-	if (priv->scan_state == SCAN_IN_PROGRESS)
-		return -EBUSY;
+	if (priv->scan_state == SCAN_IN_PROGRESS) {
+		ret = -EBUSY;
+		goto exit;
+	}
 
 	priv->scan_state = SCAN_IN_PROGRESS;
 
@@ -2348,6 +2357,8 @@ static int at76_iw_handler_set_scan(struct net_device *netdev,
 	at76_set_mac_state(priv, MAC_SCANNING);
 	schedule_work(&priv->work_start_scan);
 
+exit:
+	mutex_unlock(&priv->mtx);
 	return ret;
 }
 
