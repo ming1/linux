@@ -86,7 +86,7 @@ enum board_type {
 #define CMD_GETOPMODE		0x33
 
 #define MIB_LOCAL		0x01
-#define MIB_MAC_ADD		0x02
+#define MIB_MAC_ADDR		0x02
 #define MIB_MAC			0x03
 #define MIB_MAC_MGMT		0x05
 #define MIB_MAC_WEP		0x06
