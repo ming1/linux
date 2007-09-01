@@ -430,8 +430,6 @@ struct rx_data_buf {
 };
 
 #define NR_RX_DATA_BUF		8
-/* how often do we try to submit a rx urb until giving up */
-#define NR_SUBMIT_RX_TRIES	8
 
 /* Data for one loaded firmware file */
 struct fwentry {
@@ -477,7 +475,6 @@ struct at76_priv {
 	struct delayed_work dwork_auth;
 	struct delayed_work dwork_assoc;
 
-	int nr_submit_rx_tries;	/* number of tries to submit an rx urb left */
 	struct tasklet_struct rx_tasklet;
 
 	/* the WEP stuff */
