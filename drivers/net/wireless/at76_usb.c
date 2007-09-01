@@ -2045,10 +2045,7 @@ static int at76_alloc_urbs(struct at76_priv *priv,
 			 __func__,
 			 i, endpoint->bEndpointAddress, endpoint->bmAttributes);
 
-		if ((endpoint->bEndpointAddress & 0x80) &&
-		    ((endpoint->bmAttributes & 3) == 0x02)) {
-			/* we found a bulk in endpoint */
-
+		if (usb_endpoint_is_bulk_in(endpoint)) {
 			priv->read_urb = usb_alloc_urb(0, GFP_KERNEL);
 			if (!priv->read_urb) {
 				err("No free urbs available");
@@ -2058,9 +2055,7 @@ static int at76_alloc_urbs(struct at76_priv *priv,
 			    usb_rcvbulkpipe(udev, endpoint->bEndpointAddress);
 		}
 
-		if (((endpoint->bEndpointAddress & 0x80) == 0x00) &&
-		    ((endpoint->bmAttributes & 3) == 0x02)) {
-			/* we found a bulk out endpoint */
+		if (usb_endpoint_is_bulk_out(endpoint)) {
 			priv->write_urb = usb_alloc_urb(0, GFP_KERNEL);
 			if (!priv->write_urb) {
 				err("no free urbs available");
