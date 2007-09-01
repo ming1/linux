@@ -3871,9 +3871,9 @@ static void at76_dwork_get_scan(struct work_struct *work)
 					 sizeof(mdomain.channel_list)),
 				 hex2str(mdomain.tx_powerlevel,
 					 sizeof(mdomain.tx_powerlevel)));
-		ret = at76_start_scan(priv, 0, 1);
+		ret = at76_start_scan(priv, 0, 0);
 		if (ret < 0)
-			err("%s: %s: start_scan (ANY) failed with %d",
+			err("%s: %s: start_scan (IR) failed with %d",
 			    priv->netdev->name, __func__, ret);
 		at76_dbg(DBG_MGMT_TIMER,
 			 "%s:%d: starting mgmt_timer for %d ticks",
@@ -3883,9 +3883,9 @@ static void at76_dwork_get_scan(struct work_struct *work)
 		break;
 
 	case 2:
-		ret = at76_start_scan(priv, 1, 1);
+		ret = at76_start_scan(priv, 0, 1);
 		if (ret < 0)
-			err("%s: %s: start_scan (SSID) failed with %d",
+			err("%s: %s: start_scan (ANY) failed with %d",
 			    priv->netdev->name, __func__, ret);
 		at76_dbg(DBG_MGMT_TIMER,
 			 "%s:%d: starting mgmt_timer for %d ticks",
@@ -4195,11 +4195,14 @@ static void at76_work_start_scan(struct work_struct *work)
 
 	/* only clear the bss list when a scan is actively initiated,
 	 * otherwise simply rely on at76_bss_list_timeout */
-	if (priv->scan_state == SCAN_IN_PROGRESS)
+	if (priv->scan_state == SCAN_IN_PROGRESS) {
 		at76_free_bss_list(priv);
+		priv->scan_runs = priv->international_roaming ? 1 : 2;
+	} else
+		priv->scan_runs = 3;
 
-	priv->scan_runs = 2;
-	ret = at76_start_scan(priv, 0, 1);
+	ret = at76_start_scan(priv, 1, 1);
+
 	if (ret < 0)
 		err("%s: %s: start_scan failed with %d",
 		    priv->netdev->name, __func__, ret);
