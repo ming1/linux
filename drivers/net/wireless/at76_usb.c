@@ -4274,6 +4274,7 @@ static void at76_rx_mgmt_assoc(struct at76_priv *priv,
 
 	BUG_ON(!priv->curr_bss);
 
+	cancel_delayed_work(&priv->dwork_assoc);
 	if (status == WLAN_STATUS_SUCCESS) {
 		struct bss_info *ptr = priv->curr_bss;
 		priv->assoc_id = assoc_id & 0x3fff;
@@ -4287,10 +4288,6 @@ static void at76_rx_mgmt_assoc(struct at76_priv *priv,
 		at76_set_mac_state(priv, MAC_JOINING);
 		schedule_work(&priv->work_join);
 	}
-	cancel_delayed_work(&priv->dwork_get_scan);
-	cancel_delayed_work(&priv->dwork_beacon);
-	cancel_delayed_work(&priv->dwork_auth);
-	cancel_delayed_work(&priv->dwork_assoc);
 }
 
 /* Process disassociation request from the AP */
@@ -4376,11 +4373,8 @@ static void at76_rx_mgmt_auth(struct at76_priv *priv,
 	    || compare_ether_addr(priv->netdev->dev_addr, mgmt->addr1))
 		return;
 
+	cancel_delayed_work(&priv->dwork_auth);
 	if (status != WLAN_STATUS_SUCCESS) {
-		cancel_delayed_work(&priv->dwork_get_scan);
-		cancel_delayed_work(&priv->dwork_beacon);
-		cancel_delayed_work(&priv->dwork_auth);
-		cancel_delayed_work(&priv->dwork_assoc);
 		/* try to join next bss */
 		at76_set_mac_state(priv, MAC_JOINING);
 		schedule_work(&priv->work_join);
