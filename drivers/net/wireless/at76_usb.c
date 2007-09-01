@@ -474,7 +474,7 @@ static inline void at76_iwevent_bss_disconnect(struct net_device *netdev)
 static char *hex2str(void *buf, int len)
 {
 	static atomic_t a = ATOMIC_INIT(0);
-	static char bufs[3 * HEX2STR_MAX_LEN + 1][HEX2STR_BUFFERS];
+	static char bufs[HEX2STR_BUFFERS][3 * HEX2STR_MAX_LEN + 1];
 	char *ret = bufs[atomic_inc_return(&a) & (HEX2STR_BUFFERS - 1)];
 	char *obuf = ret;
 	u8 *ibuf = buf;
@@ -503,7 +503,7 @@ static char *hex2str(void *buf, int len)
 static inline char *mac2str(u8 *mac)
 {
 	static atomic_t a = ATOMIC_INIT(0);
-	static char bufs[6 * 3][MAC2STR_BUFFERS];
+	static char bufs[MAC2STR_BUFFERS][6 * 3];
 	char *str;
 
 	str = bufs[atomic_inc_return(&a) & (MAC2STR_BUFFERS - 1)];
