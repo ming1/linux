@@ -55,9 +55,6 @@ enum board_type {
 /* scan mode (0 - active, 1 - passive) */
 #define AT76_SET_SCAN_MODE		(SIOCIWFIRSTPRIV + 8)
 #define AT76_GET_SCAN_MODE		(SIOCIWFIRSTPRIV + 9)
-/* international roaming (0 - disabled, 1 - enabled */
-#define AT76_SET_INTL_ROAMING		(SIOCIWFIRSTPRIV + 10)
-#define AT76_GET_INTL_ROAMING		(SIOCIWFIRSTPRIV + 11)
 
 #define CMD_STATUS_IDLE				0x00
 #define CMD_STATUS_COMPLETE			0x01
@@ -113,10 +110,6 @@ enum board_type {
 #define AT76_PM_OFF		1
 #define AT76_PM_ON		2
 #define AT76_PM_SMART		3
-
-/* international roaming state */
-#define IR_OFF			0
-#define IR_ON			1
 
 struct hwcfg_r505 {
 	u8 cr39_values[14];
@@ -535,7 +528,6 @@ struct at76_priv {
 	u32 pm_period;		/* power management period in microseconds */
 
 	struct reg_domain const *domain;	/* reg domain description */
-	int international_roaming;
 
 	/* iwspy support */
 	spinlock_t spy_spinlock;
