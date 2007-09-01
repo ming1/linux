@@ -3407,21 +3407,11 @@ static int at76_submit_rx_urb(struct at76_priv *priv)
 	}
 
 exit:
-	if (ret < 0) {
-		if (ret != -ENODEV) {
-			/* If we can't submit the URB, the adapter becomes
-			 * completely useless, so try again later */
-			if (--priv->nr_submit_rx_tries > 0)
-				schedule_work(&priv->work_submit_rx);
-			else
-				err("%s: giving up to submit rx urb after %d "
-				    "failures - please unload the driver "
-				    "and/or power cycle the device",
-				    priv->netdev->name, NR_SUBMIT_RX_TRIES);
-		}
-	} else
-		/* reset counter to initial value */
-		priv->nr_submit_rx_tries = NR_SUBMIT_RX_TRIES;
+	if (ret < 0 && ret != -ENODEV) {
+		printk(KERN_ERR "%s: cannot submit rx urb - please unload the "
+		       "driver and/or power cycle the device\n",
+		       priv->netdev->name);
+	}
 
 	return ret;
 }
@@ -3449,7 +3439,6 @@ static int at76_open(struct net_device *netdev)
 
 	priv->scan_state = SCAN_IDLE;
 	priv->last_scan = jiffies;
-	priv->nr_submit_rx_tries = NR_SUBMIT_RX_TRIES;	/* init counter */
 
 	ret = at76_submit_rx_urb(priv);
 	if (ret < 0) {
