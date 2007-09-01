@@ -1277,15 +1277,13 @@ static int at76_get_mib_mdomain(struct at76_priv *priv, struct mib_mdomain *val)
 
 	ret = at76_get_mib(priv->udev, MIB_MDOMAIN, mdomain,
 			   sizeof(struct mib_mdomain));
-	if (ret < 0) {
+	if (ret < 0)
 		err("%s: at76_get_mib failed: %d", priv->netdev->name, ret);
-		goto error;
-	}
+	else
+		memcpy(val, mdomain, sizeof(*val));
 
-	memcpy(val, mdomain, sizeof(*val));
-
-error:
 	kfree(mdomain);
+
 exit:
 	return ret;
 }
