@@ -1818,19 +1818,18 @@ static void at76_dump_bss_table(struct at76_priv *priv)
 
 	spin_lock_irqsave(&priv->bss_list_spinlock, flags);
 
-	pr_debug("%s BSS table (curr=%p):", priv->netdev->name, priv->curr_bss);
+	at76_dbg(DBG_BSS_TABLE, "%s BSS table (curr=%p):", priv->netdev->name,
+		 priv->curr_bss);
 
 	list_for_each(lptr, &priv->bss_list) {
 		ptr = list_entry(lptr, struct bss_info, list);
-		pr_debug("0x%p: bssid %s channel %d ssid %s (%s)"
-			 " capa 0x%04x rates %s rssi %d link %d noise %d",
-			 ptr, mac2str(ptr->bssid),
-			 ptr->channel,
-			 ptr->ssid,
-			 hex2str(ptr->ssid, ptr->ssid_len),
-			 ptr->capa,
-			 hex2str(ptr->rates, ptr->rates_len),
-			 ptr->rssi, ptr->link_qual, ptr->noise_level);
+		at76_dbg(DBG_BSS_TABLE,
+			 "0x%p: bssid %s channel %d ssid %s (%s)"
+			 " capa 0x%04x rates %s rssi %d link %d noise %d", ptr,
+			 mac2str(ptr->bssid), ptr->channel, ptr->ssid,
+			 hex2str(ptr->ssid, ptr->ssid_len), ptr->capa,
+			 hex2str(ptr->rates, ptr->rates_len), ptr->rssi,
+			 ptr->link_qual, ptr->noise_level);
 	}
 	spin_unlock_irqrestore(&priv->bss_list_spinlock, flags);
 }
