@@ -245,16 +245,10 @@ struct dfu_status {
 static int at76_load_int_fw_block(struct usb_device *udev, int blockno,
 				  void *block, int size)
 {
-	int ret;
-
-	at76_dbg(DBG_DFU, "%s(): block=%p, size=%d, blockno=%d", __func__,
-		 block, size, blockno);
-
-	ret = usb_control_msg(udev, usb_sndctrlpipe(udev, 0), DFU_DNLOAD,
-			      USB_TYPE_CLASS | USB_DIR_OUT |
-			      USB_RECIP_INTERFACE, blockno, 0, block, size,
-			      USB_CTRL_GET_TIMEOUT);
-	return ret;
+	return usb_control_msg(udev, usb_sndctrlpipe(udev, 0), DFU_DNLOAD,
+			       USB_TYPE_CLASS | USB_DIR_OUT |
+			       USB_RECIP_INTERFACE, blockno, 0, block, size,
+			       USB_CTRL_GET_TIMEOUT);
 }
 
 static int at76_dfu_get_status(struct usb_device *udev,
@@ -289,8 +283,8 @@ static inline u32 at76_get_timeout(struct dfu_status *s)
 
 /* Load internal firmware from the buffer.  If manifest_sync_timeout > 0, use
  * its value in msec in the MANIFEST_SYNC state.  */
-static int at76_usbdfu_download(struct usb_device *udev, u8 *dfu_buffer,
-				u32 dfu_len, int manifest_sync_timeout)
+static int at76_usbdfu_download(struct usb_device *udev, u8 *buf, u32 size,
+				int manifest_sync_timeout)
 {
 	u8 *block;
 	struct dfu_status dfu_stat_buf;
@@ -299,15 +293,13 @@ static int at76_usbdfu_download(struct usb_device *udev, u8 *dfu_buffer,
 	int is_done = 0;
 	u8 dfu_state = 0;
 	u32 dfu_timeout = 0;
-	int dfu_block_bytes = 0;
-	int dfu_bytes_left = dfu_len;
-	int dfu_buffer_offset = 0;
-	int dfu_block_cnt = 0;
+	int bsize = 0;
+	int blockno = 0;
 
-	at76_dbg(DBG_DFU, "%s( %p, %u, %d)", __func__, dfu_buffer,
-		 dfu_len, manifest_sync_timeout);
+	at76_dbg(DBG_DFU, "%s( %p, %u, %d)", __func__, buf, size,
+		 manifest_sync_timeout);
 
-	if (dfu_len == 0) {
+	if (!size) {
 		err("FW Buffer length invalid!");
 		return -EINVAL;
 	}
@@ -353,16 +345,18 @@ static int at76_usbdfu_download(struct usb_device *udev, u8 *dfu_buffer,
 		case STATE_DFU_IDLE:
 			at76_dbg(DBG_DFU, "DFU IDLE");
 
-			dfu_block_bytes = min(dfu_bytes_left, FW_BLOCK_SIZE);
-			dfu_bytes_left -= dfu_block_bytes;
-			memcpy(block, dfu_buffer + dfu_buffer_offset,
-			       dfu_block_bytes);
-			ret = at76_load_int_fw_block(udev, dfu_block_cnt, block,
-						     dfu_block_bytes);
-			dfu_buffer_offset += dfu_block_bytes;
-			dfu_block_cnt++;
+			bsize = min_t(int, size, FW_BLOCK_SIZE);
+			memcpy(block, buf, bsize);
+			at76_dbg(DBG_DFU, "int fw, size left = %5d, "
+				 "bsize = %4d, blockno = %2d", size, bsize,
+				 blockno);
+			ret =
+			    at76_load_int_fw_block(udev, blockno, block, bsize);
+			buf += bsize;
+			size -= bsize;
+			blockno++;
 
-			if (ret < 0)
+			if (ret != bsize)
 				err("dfu_download_block failed with %d", ret);
 			need_dfu_state = 1;
 			break;
