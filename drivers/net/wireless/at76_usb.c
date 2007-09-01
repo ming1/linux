@@ -5829,5 +5829,6 @@ MODULE_AUTHOR("Joerg Albert <joerg.albert@gmx.de>");
 MODULE_AUTHOR("Alex <alex@foogod.com>");
 MODULE_AUTHOR("Nick Jones");
 MODULE_AUTHOR("Balint Seeber <n0_5p4m_p13453@hotmail.com>");
+MODULE_AUTHOR("Pavel Roskin <proski@gnu.org>");
 MODULE_DESCRIPTION(DRIVER_DESC);
 MODULE_LICENSE("GPL");
