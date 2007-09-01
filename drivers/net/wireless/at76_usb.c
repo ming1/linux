@@ -5502,8 +5502,8 @@ static int at76_init_new_device(struct at76_priv *priv,
 	printk(KERN_INFO "%s: firmware version %d.%d.%d-%d\n", netdev->name,
 	       priv->fw_version.major, priv->fw_version.minor,
 	       priv->fw_version.patch, priv->fw_version.build);
-	printk(KERN_INFO "%s: regulatory domain %s (id %d)\n", netdev->name,
-	       priv->domain->name, priv->regulatory_domain);
+	printk(KERN_INFO "%s: regulatory domain 0x%02x: %s\n", netdev->name,
+	       priv->regulatory_domain, priv->domain->name);
 
 	/* we let this timer run the whole time this driver instance lives */
 	mod_timer(&priv->bss_list_timer, jiffies + BSS_LIST_TIMEOUT);
