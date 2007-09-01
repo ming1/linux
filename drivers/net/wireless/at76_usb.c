@@ -664,6 +664,7 @@ exit:
 
 static struct reg_domain const *at76_get_reg_domain(u16 code)
 {
+	int i;
 	static struct reg_domain const fd_tab[] = {
 		{0x10, "FCC (USA)", 0x7ff},	/* ch 1-11 */
 		{0x20, "IC (Canada)", 0x7ff},	/* ch 1-11 */
@@ -673,19 +674,15 @@ static struct reg_domain const *at76_get_reg_domain(u16 code)
 		{0x40, "MKK (Japan)", 0x2000},	/* ch 14 */
 		{0x41, "MKK1 (Japan)", 0x3fff},	/* ch 1-14 */
 		{0x50, "Israel", 0x3fc},	/* ch 3-9 */
+		{0x00, "<unknown>", 0xffffffff}	/* ch 1-32 */
 	};
-	static int const tab_len = ARRAY_SIZE(fd_tab);
 
-	/* use this if an unknown code comes in */
-	static struct reg_domain const unknown = { 0, "<unknown>", 0xffffffff };
-
-	int i;
-
-	for (i = 0; i < tab_len; i++)
+	/* Last entry is fallback for unknown domain code */
+	for (i = 0; i < ARRAY_SIZE(fd_tab) - 1; i++)
 		if (code == fd_tab[i].code)
 			break;
 
-	return (i >= tab_len) ? &unknown : &fd_tab[i];
+	return &fd_tab[i];
 }
 
 static inline int at76_get_mib(struct usb_device *udev, u16 mib, void *buf,
