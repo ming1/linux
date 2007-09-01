@@ -3816,7 +3816,6 @@ static void at76_dwork_get_scan(struct work_struct *work)
 {
 	int status;
 	int ret;
-	struct mib_mdomain mdomain;
 	struct at76_priv *priv = container_of(work, struct at76_priv,
 					      dwork_get_scan.work);
 
@@ -3861,16 +3860,6 @@ static void at76_dwork_get_scan(struct work_struct *work)
 
 	case 1:
 		WARN_ON(!priv->international_roaming);
-		ret = at76_get_mib_mdomain(priv, &mdomain);
-		if (ret < 0)
-			err("at76_get_mib_mdomain returned %d", ret);
-		else
-			at76_dbg(DBG_MIB, "%s: MIB MDOMAIN: channel_list %s "
-				 "tx_powerlevel %s", priv->netdev->name,
-				 hex2str(mdomain.channel_list,
-					 sizeof(mdomain.channel_list)),
-				 hex2str(mdomain.tx_powerlevel,
-					 sizeof(mdomain.tx_powerlevel)));
 		ret = at76_start_scan(priv, 0, 0);
 		if (ret < 0)
 			err("%s: %s: start_scan (IR) failed with %d",
