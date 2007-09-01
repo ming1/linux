@@ -1823,10 +1823,6 @@ static void at76_work_assoc_done(struct work_struct *work)
 
 			at76_set_associd(priv, priv->assoc_id);
 			at76_set_listen_interval(priv, (u16)pm_period_beacon);
-#ifdef DEBUG
-			at76_dump_mib_mac(priv);
-			at76_dump_mib_mac_mgmt(priv);
-#endif
 		}
 		schedule_delayed_work(&priv->dwork_beacon, BEACON_TIMEOUT);
 	}
@@ -3305,9 +3301,6 @@ static int at76_open(struct net_device *netdev)
 			at76_dbg(DBG_PROGRESS, "%s: set new MAC addr %s",
 				 netdev->name, mac2str(netdev->dev_addr));
 	}
-#ifdef DEBUG
-	at76_dump_mib_mac_addr(priv);
-#endif
 
 	priv->scan_state = SCAN_IDLE;
 	priv->last_scan = jiffies;
