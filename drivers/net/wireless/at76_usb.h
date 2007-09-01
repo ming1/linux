@@ -495,7 +495,7 @@ struct at76_priv {
 	int scan_min_time;	/* scan min channel time */
 	int scan_max_time;	/* scan max channel time */
 	int scan_mode;		/* SCAN_TYPE_ACTIVE, SCAN_TYPE_PASSIVE */
-	int scan_runs;		/* counts how many scans are started */
+	int scan_need_any;	/* if set, need to scan for any ESSID */
 
 	/* the list we got from scanning */
 	spinlock_t bss_list_spinlock;	/* protects bss_list operations */
