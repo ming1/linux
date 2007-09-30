@@ -78,9 +78,9 @@ enum board_type {
 #define CMD_SCAN		0x03
 #define CMD_JOIN		0x04
 #define CMD_START_IBSS		0x05
-#define CMD_RADIO		0x06
+#define CMD_RADIO_ON		0x06
+#define CMD_RADIO_OFF		0x07
 #define CMD_STARTUP		0x0B
-#define CMD_GETOPMODE		0x33
 
 #define MIB_LOCAL		0x01
 #define MIB_MAC_ADDR		0x02
