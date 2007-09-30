@@ -42,7 +42,7 @@
 
 /* Version information */
 #define DRIVER_NAME "at76_usb"
-#define DRIVER_VERSION	"0.16"
+#define DRIVER_VERSION	"0.17"
 #define DRIVER_DESC "Atmel at76x USB Wireless LAN Driver"
 
 /* at76_debug bits */
