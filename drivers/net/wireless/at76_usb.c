@@ -990,40 +990,6 @@ static int at76_add_mac_address(struct at76_priv *priv, void *addr)
 	return ret;
 }
 
-#if 0
-/* Implemented to get promisc. mode working, but does not help.
-   May still be useful for multicast eventually. */
-static int at76_set_group_address(struct at76_priv *priv, u8 *addr, int n)
-{
-	int ret = 0;
-
-	priv->mib_buf.type = MIB_MAC_ADDR;
-	priv->mib_buf.size = ETH_ALEN;
-	priv->mib_buf.index =
-	    offsetof(struct mib_mac_addr, group_addr) + n * ETH_ALEN;
-	memcpy(priv->mib_buf.data.addr, addr, ETH_ALEN);
-
-	ret = at76_set_mib(priv, &priv->mib_buf);
-	if (ret < 0)
-		printk(KERN_ERR "%s: cannot set group address: %d\n",
-		       priv->netdev->name, ret);
-
-	/* I do not know anything about the group_addr_status field... (oku) */
-	priv->mib_buf.type = MIB_MAC_ADDR;
-	priv->mib_buf.size = 1;
-	priv->mib_buf.index =
-	    offsetof(struct mib_mac_addr, group_addr_status) + n;
-	priv->mib_buf.data.byte = 1;
-
-	ret = at76_set_mib(priv, &priv->mib_buf);
-	if (ret < 0)
-		printk(KERN_ERR "%s: cannot set group address status: %d\n",
-		       priv->netdev->name, ret);
-
-	return ret;
-}
-#endif
-
 static void at76_dump_mib_mac_addr(struct at76_priv *priv)
 {
 	int i;
