@@ -398,8 +398,7 @@ struct bss_info {
 	struct list_head list;
 
 	u8 bssid[ETH_ALEN];	/* bssid */
-	u8 ssid[IW_ESSID_MAX_SIZE + 1];	/* ssid, +1 for trailing \0
-					   to make it printable */
+	u8 ssid[IW_ESSID_MAX_SIZE];	/* essid */
 	u8 ssid_len;		/* length of ssid above */
 	u8 channel;
 	u16 capa;		/* BSS capabilities */
