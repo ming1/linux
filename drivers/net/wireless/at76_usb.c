@@ -965,20 +965,6 @@ static int at76_set_autorate_fallback(struct at76_priv *priv, int onoff)
 	return ret;
 }
 
-/* Set network device type for the current mode */
-static void at76_set_monitor_mode(struct at76_priv *priv)
-{
-	if (priv->iw_mode == IW_MODE_MONITOR) {
-		at76_dbg(DBG_MONITOR_MODE, "%s: MONITOR MODE ON",
-			 priv->netdev->name);
-		priv->netdev->type = ARPHRD_IEEE80211_RADIOTAP;
-	} else {
-		at76_dbg(DBG_MONITOR_MODE, "%s: MONITOR MODE OFF",
-			 priv->netdev->name);
-		priv->netdev->type = ARPHRD_ETHER;
-	}
-}
-
 static int at76_add_mac_address(struct at76_priv *priv, void *addr)
 {
 	int ret = 0;
@@ -3976,8 +3962,6 @@ static int at76_startup_device(struct at76_priv *priv)
 	if (ret < 0)
 		return ret;
 
-	at76_set_monitor_mode(priv);
-
 	if (at76_debug & DBG_MIB) {
 		at76_dump_mib_mac(priv);
 		at76_dump_mib_mac_addr(priv);
@@ -3999,15 +3983,19 @@ static void at76_dwork_restart(struct work_struct *work)
 
 	mutex_lock(&priv->mtx);
 
-	at76_startup_device(priv);
 	netif_carrier_off(priv->netdev);	/* stop netdev watchdog */
 	netif_stop_queue(priv->netdev);	/* stop tx data packets */
 
+	at76_startup_device(priv);
+
 	if (priv->iw_mode != IW_MODE_MONITOR) {
+		priv->netdev->type = ARPHRD_ETHER;
 		at76_set_mac_state(priv, MAC_SCANNING);
 		schedule_work(&priv->work_start_scan);
-	} else
+	} else {
+		priv->netdev->type = ARPHRD_IEEE80211_RADIOTAP;
 		at76_start_monitor(priv);
+	}
 
 	mutex_unlock(&priv->mtx);
 }
