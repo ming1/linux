@@ -823,21 +823,24 @@ static int at76_set_mib(struct at76_priv *priv, struct set_mib_buffer *buf)
 }
 
 /* Return < 0 on error, == 0 if no command sent, == 1 if cmd sent */
-static int at76_set_radio(struct at76_priv *priv, int on_off)
+static int at76_set_radio(struct at76_priv *priv, int enable)
 {
 	int ret;
+	int cmd;
 
-	if (priv->radio_on == on_off)
+	if (priv->radio_on == enable)
 		return 0;
 
-	ret = at76_set_card_command(priv->udev, CMD_RADIO, NULL, 0);
+	cmd = enable ? CMD_RADIO_ON : CMD_RADIO_OFF;
+
+	ret = at76_set_card_command(priv->udev, cmd, NULL, 0);
 	if (ret < 0)
 		err("%s: at76_set_card_command(CMD_RADIO) failed: %d",
 		    priv->netdev->name, ret);
 	else
 		ret = 1;
 
-	priv->radio_on = on_off;
+	priv->radio_on = enable;
 	return ret;
 }
 
@@ -3950,7 +3953,7 @@ static int at76_startup_device(struct at76_priv *priv)
 	memset(priv->bssid, 0, ETH_ALEN);
 
 	if (at76_set_radio(priv, 1) == 1)
-		at76_wait_completion(priv, CMD_RADIO);
+		at76_wait_completion(priv, CMD_RADIO_ON);
 
 	ret = at76_set_preamble(priv, priv->preamble_type);
 	if (ret < 0)
