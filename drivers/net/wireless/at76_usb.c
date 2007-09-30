@@ -4284,14 +4284,13 @@ static void at76_rx_mgmt_beacon(struct at76_priv *priv,
 
 	if (!match) {
 		/* BSS not in the list - append it */
-		match = kmalloc(sizeof(struct bss_info), GFP_ATOMIC);
+		match = kzalloc(sizeof(struct bss_info), GFP_ATOMIC);
 		if (!match) {
 			at76_dbg(DBG_BSS_TABLE,
 				 "%s: cannot kmalloc new bss info (%zd byte)",
 				 priv->netdev->name, sizeof(struct bss_info));
 			goto exit;
 		}
-		memset(match, 0, sizeof(*match));
 		new_entry = 1;
 		list_add_tail(&match->list, &priv->bss_list);
 	}
@@ -5088,7 +5087,6 @@ static struct at76_priv *at76_alloc_new_device(struct usb_device *udev)
 	}
 
 	priv = netdev_priv(netdev);
-	memset(priv, 0, sizeof(*priv));
 
 	priv->udev = udev;
 	priv->netdev = netdev;
@@ -5223,7 +5221,6 @@ static int at76_init_new_device(struct at76_priv *priv,
 
 	priv->channel = DEF_CHANNEL;
 	priv->iw_mode = IW_MODE_INFRA;
-	memset(priv->essid, 0, IW_ESSID_MAX_SIZE);
 	priv->rts_threshold = DEF_RTS_THRESHOLD;
 	priv->frag_threshold = DEF_FRAG_THRESHOLD;
 	priv->short_retry_limit = DEF_SHORT_RETRY_LIMIT;
