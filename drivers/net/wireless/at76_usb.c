@@ -167,6 +167,8 @@ static struct usb_device_id dev_table[] = {
 	{USB_DEVICE(0x03eb, 0x4102), USB_DEVICE_DATA(BOARD_503)},
 	/* Dick Smith Electronics XH1153 802.11b USB adapter */
 	{USB_DEVICE(0x1371, 0x5743), USB_DEVICE_DATA(BOARD_503)},
+	/* CNet CNUSB611 */
+	{USB_DEVICE(0x1371, 0x0001), USB_DEVICE_DATA(BOARD_503)},
 	/* FiberLine FL-WL200U */
 	{USB_DEVICE(0x1371, 0x0002), USB_DEVICE_DATA(BOARD_503)},
 	/* BenQ AWL400 USB stick */
