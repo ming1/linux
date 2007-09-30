@@ -1527,7 +1527,7 @@ static int at76_tx_mgmt(struct at76_priv *priv, struct at76_tx_buffer *txbuf)
 		return 0;
 	}
 
-	txbuf->tx_rate = 0;
+	txbuf->tx_rate = TX_RATE_1MBIT;
 	txbuf->padding = at76_calc_padding(le16_to_cpu(txbuf->wlength));
 
 	if (priv->next_mgmt_bulk)
