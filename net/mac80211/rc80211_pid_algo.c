@@ -63,6 +63,7 @@
  * RC_PID_ARITH_SHIFT.
  */
 
+
 /* Adjust the rate while ensuring that we won't switch to a lower rate if it
  * exhibited a worse failed frames behaviour and we'll choose the highest rate
  * whose failed frames behaviour is not worse than the one of the original rate
@@ -77,7 +78,6 @@ static void rate_control_pid_adjust_rate(struct ieee80211_local *local,
 	int cur = sta->txrate_idx;
 
 	sdata = IEEE80211_DEV_TO_SUB_IF(sta->dev);
-
 	sband = local->hw.wiphy->bands[local->hw.conf.channel->band];
 	band = sband->band;
 	n_bitrates = sband->n_bitrates;
@@ -123,7 +123,7 @@ static void rate_control_pid_adjust_rate(struct ieee80211_local *local,
 #ifdef CONFIG_MAC80211_DEBUGFS
 	rate_control_pid_event_rate_change(
 		&((struct rc_pid_sta_info *)sta->rate_ctrl_priv)->events,
-		cur, sband->bitrates[cur].bitrate);
+		sta->txrate_idx, sband->bitrates[sta->txrate_idx].bitrate);
 #endif
 }
 
