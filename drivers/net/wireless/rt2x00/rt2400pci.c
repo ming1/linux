@@ -1037,11 +1037,11 @@ static void rt2400pci_write_tx_desc(struct rt2x00_dev *rt2x00dev,
  * TX data initialization
  */
 static void rt2400pci_kick_tx_queue(struct rt2x00_dev *rt2x00dev,
-				    unsigned int queue)
+				    const unsigned int queue)
 {
 	u32 reg;
 
-	if (queue == IEEE80211_TX_QUEUE_BEACON) {
+	if (queue == RT2X00_BCN_QUEUE_BEACON) {
 		rt2x00pci_register_read(rt2x00dev, CSR14, &reg);
 		if (!rt2x00_get_field32(reg, CSR14_BEACON_GEN)) {
 			rt2x00_set_field32(&reg, CSR14_BEACON_GEN, 1);
@@ -1056,7 +1056,7 @@ static void rt2400pci_kick_tx_queue(struct rt2x00_dev *rt2x00dev,
 	rt2x00_set_field32(&reg, TXCSR0_KICK_TX,
 			   (queue == IEEE80211_TX_QUEUE_DATA1));
 	rt2x00_set_field32(&reg, TXCSR0_KICK_ATIM,
-			   (queue == IEEE80211_TX_QUEUE_AFTER_BEACON));
+			   (queue == RT2X00_BCN_QUEUE_ATIM));
 	rt2x00pci_register_write(rt2x00dev, TXCSR0, reg);
 }
 
@@ -1161,7 +1161,7 @@ static irqreturn_t rt2400pci_interrupt(int irq, void *dev_instance)
 	 * 3 - Atim ring transmit done interrupt.
 	 */
 	if (rt2x00_get_field32(reg, CSR7_TXDONE_ATIMRING))
-		rt2400pci_txdone(rt2x00dev, IEEE80211_TX_QUEUE_AFTER_BEACON);
+		rt2400pci_txdone(rt2x00dev, RT2X00_BCN_QUEUE_ATIM);
 
 	/*
 	 * 4 - Priority ring transmit done interrupt.
@@ -1506,6 +1506,49 @@ static void rt2400pci_reset_tsf(struct ieee80211_hw *hw)
 	rt2x00pci_register_write(rt2x00dev, CSR17, 0);
 }
 
+static int rt2400pci_beacon_update(struct ieee80211_hw *hw, struct sk_buff *skb,
+				   struct ieee80211_tx_control *control)
+{
+	struct rt2x00_dev *rt2x00dev = hw->priv;
+	struct rt2x00_intf *intf = vif_to_intf(control->vif);
+	struct queue_entry_priv_pci_tx *priv_tx;
+	struct skb_frame_desc *skbdesc;
+
+	if (unlikely(!intf->beacon))
+		return -ENOBUFS;
+
+	priv_tx = intf->beacon->priv_data;
+
+	/*
+	 * Fill in skb descriptor
+	 */
+	skbdesc = get_skb_frame_desc(skb);
+	memset(skbdesc, 0, sizeof(*skbdesc));
+	skbdesc->data = skb->data;
+	skbdesc->data_len = skb->len;
+	skbdesc->desc = priv_tx->desc;
+	skbdesc->desc_len = intf->beacon->queue->desc_size;
+	skbdesc->entry = intf->beacon;
+
+	/*
+	 * mac80211 doesn't provide the control->queue variable
+	 * for beacons. Set our own queue identification so
+	 * it can be used during descriptor initialization.
+	 */
+	control->queue = RT2X00_BCN_QUEUE_BEACON;
+	rt2x00lib_write_tx_desc(rt2x00dev, skb, control);
+
+	/*
+	 * Enable beacon generation.
+	 * Write entire beacon with descriptor to register,
+	 * and kick the beacon generator.
+	 */
+	memcpy(priv_tx->data, skb->data, skb->len);
+	rt2x00dev->ops->lib->kick_tx_queue(rt2x00dev, control->queue);
+
+	return 0;
+}
+
 static int rt2400pci_tx_last_beacon(struct ieee80211_hw *hw)
 {
 	struct rt2x00_dev *rt2x00dev = hw->priv;
@@ -1531,7 +1574,7 @@ static const struct ieee80211_ops rt2400pci_mac80211_ops = {
 	.get_tx_stats		= rt2x00mac_get_tx_stats,
 	.get_tsf		= rt2400pci_get_tsf,
 	.reset_tsf		= rt2400pci_reset_tsf,
-	.beacon_update		= rt2x00pci_beacon_update,
+	.beacon_update		= rt2400pci_beacon_update,
 	.tx_last_beacon		= rt2400pci_tx_last_beacon,
 };
 
