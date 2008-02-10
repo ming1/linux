@@ -86,6 +86,14 @@
 		printk(KERN_DEBUG DRIVER_NAME ": " format "\n" , ## arg); \
 	} while (0)
 
+#define at76_dbg_dump(bits, buf, len, format, arg...)	\
+	do { \
+		if (at76_debug & (bits)) { \
+		printk(KERN_DEBUG DRIVER_NAME ": " format "\n" , ## arg); \
+		print_hex_dump_bytes("", DUMP_PREFIX_OFFSET, buf, len); \
+		}							\
+	} while (0)
+
 static int at76_debug = DBG_DEFAULTS;
 
 /* Protect against concurrent firmware loading and parsing */
