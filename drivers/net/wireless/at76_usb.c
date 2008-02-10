@@ -5026,7 +5026,7 @@ static void at76_rx_tasklet(unsigned long param)
 		return;
 	}
 
-	if (!priv->rx_skb || !netdev || !priv->rx_skb->data)
+	if (!priv->rx_skb || !priv->rx_skb->data)
 		return;
 
 	buf = (struct at76_rx_buffer *)priv->rx_skb->data;
@@ -5045,10 +5045,9 @@ static void at76_rx_tasklet(unsigned long param)
 	}
 
 	at76_dbg(DBG_RX_ATMEL_HDR,
-		 "%s: rx frame: rate %d rssi %d noise %d link %d %s",
+		 "%s: rx frame: rate %d rssi %d noise %d link %d",
 		 wiphy_name(priv->hw->wiphy), buf->rx_rate, buf->rssi,
-		 buf->noise_level, buf->link_quality,
-		 hex2str(i802_11_hdr, 48));
+		 buf->noise_level, buf->link_quality);
 
 	{
 		struct ieee80211_rx_status rx_status = {0};
@@ -5857,13 +5856,6 @@ static int at76_init_new_device(struct at76_priv *priv,
 	netdev->set_mac_address = at76_set_mac_address;
 	dev_alloc_name(netdev, "wlan%d");
 
-	printk(KERN_INFO "%s: USB %s, MAC %s, firmware %d.%d.%d-%d\n",
-	       netdev->name, interface->dev.bus_id, mac2str(priv->mac_addr),
-	       priv->fw_version.major, priv->fw_version.minor,
-	       priv->fw_version.patch, priv->fw_version.build);
-	printk(KERN_INFO "%s: regulatory domain 0x%02x: %s\n", netdev->name,
-	       priv->regulatory_domain, priv->domain->name);
-
 	/* we let this timer run the whole time this driver instance lives */
 	mod_timer(&priv->bss_list_timer, jiffies + BSS_LIST_TIMEOUT);
 
@@ -5882,6 +5874,15 @@ static int at76_init_new_device(struct at76_priv *priv,
 	}
 
 	priv->mac80211_registered = 1;
+
+	printk(KERN_INFO "%s: USB %s, MAC %s, firmware %d.%d.%d-%d\n",
+	       wiphy_name(priv->hw->wiphy),
+	       interface->dev.bus_id, mac2str(priv->mac_addr),
+	       priv->fw_version.major, priv->fw_version.minor,
+	       priv->fw_version.patch, priv->fw_version.build);
+	printk(KERN_INFO "%s: regulatory domain 0x%02x: %s\n",
+	       wiphy_name(priv->hw->wiphy),
+	       priv->regulatory_domain, priv->domain->name);
 
 exit:
 	return ret;
