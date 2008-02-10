@@ -444,6 +444,7 @@ struct at76_priv {
 	struct iw_statistics wstats;	/* wireless stats */
 
 	struct sk_buff *rx_skb;	/* skbuff for receiving data */
+	struct sk_buff *tx_skb;	/* skbuff for transmitting data */
 	void *bulk_out_buffer;	/* buffer for sending data */
 
 	struct urb *tx_urb;	/* URB for sending data */
@@ -466,6 +467,7 @@ struct at76_priv {
 	struct delayed_work dwork_beacon;
 	struct delayed_work dwork_auth;
 	struct delayed_work dwork_assoc;
+	struct delayed_work dwork_hw_scan;
 
 	struct tasklet_struct rx_tasklet;
 
@@ -555,6 +557,15 @@ struct at76_priv {
 	int beacons_received;
 	unsigned long beacons_last_qual;	/* time we restarted counting
 						   beacons */
+
+	struct ieee80211_hw *hw;
+	struct ieee80211_tx_status tx_status;
+	int use_mac80211;
+	int mac80211_registered;
+};
+
+struct at76_mac80211_priv {
+	struct at76_priv *at76_priv;
 };
 
 struct at76_rx_radiotap {
