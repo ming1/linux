@@ -560,7 +560,6 @@ struct at76_priv {
 
 	struct ieee80211_hw *hw;
 	struct ieee80211_tx_status tx_status;
-	int use_mac80211;
 	int mac80211_registered;
 };
 
