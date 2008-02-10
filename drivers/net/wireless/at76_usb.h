@@ -563,7 +563,7 @@ struct at76_priv {
 	int mac80211_registered;
 };
 
-struct at76_mac80211_priv {
+struct at76_netdev_priv {
 	struct at76_priv *at76_priv;
 };
 
