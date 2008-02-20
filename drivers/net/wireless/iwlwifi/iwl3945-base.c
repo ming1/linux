@@ -6185,8 +6185,6 @@ static void __iwl3945_down(struct iwl3945_priv *priv)
 					STATUS_RF_KILL_HW |
 			       test_bit(STATUS_RF_KILL_SW, &priv->status) <<
 					STATUS_RF_KILL_SW |
-			       test_bit(STATUS_GEO_CONFIGURED, &priv->status) <<
-					STATUS_GEO_CONFIGURED |
 			       test_bit(STATUS_IN_SUSPEND, &priv->status) <<
 					STATUS_IN_SUSPEND;
 		goto exit;
@@ -6198,8 +6196,6 @@ static void __iwl3945_down(struct iwl3945_priv *priv)
 				STATUS_RF_KILL_HW |
 			test_bit(STATUS_RF_KILL_SW, &priv->status) <<
 				STATUS_RF_KILL_SW |
-			test_bit(STATUS_GEO_CONFIGURED, &priv->status) <<
-				STATUS_GEO_CONFIGURED |
 			test_bit(STATUS_IN_SUSPEND, &priv->status) <<
 				STATUS_IN_SUSPEND |
 			test_bit(STATUS_FW_ERROR, &priv->status) <<
