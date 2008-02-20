@@ -129,7 +129,22 @@ static int ieee80211_ioctl_giwname(struct net_device *dev,
 				   struct iw_request_info *info,
 				   char *name, char *extra)
 {
-	strcpy(name, "IEEE 802.11");
+	struct ieee80211_local *local = wdev_priv(dev->ieee80211_ptr);
+
+	switch (local->hw.conf.phymode) {
+	case MODE_IEEE80211A:
+		strcpy(name, "IEEE 802.11a");
+		break;
+	case MODE_IEEE80211B:
+		strcpy(name, "IEEE 802.11b");
+		break;
+	case MODE_IEEE80211G:
+		strcpy(name, "IEEE 802.11g");
+		break;
+	default:
+		strcpy(name, "IEEE 802.11");
+		break;
+	}
 
 	return 0;
 }
@@ -141,7 +156,7 @@ static int ieee80211_ioctl_giwrange(struct net_device *dev,
 {
 	struct ieee80211_local *local = wdev_priv(dev->ieee80211_ptr);
 	struct iw_range *range = (struct iw_range *) extra;
-	enum ieee80211_band band;
+	struct ieee80211_hw_mode *mode = NULL;
 	int c = 0;
 
 	data->length = sizeof(struct iw_range);
@@ -176,27 +191,24 @@ static int ieee80211_ioctl_giwrange(struct net_device *dev,
 	range->enc_capa = IW_ENC_CAPA_WPA | IW_ENC_CAPA_WPA2 |
 			  IW_ENC_CAPA_CIPHER_TKIP | IW_ENC_CAPA_CIPHER_CCMP;
 
+	list_for_each_entry(mode, &local->modes_list, list) {
+		int i = 0;
 
-	for (band = 0; band < IEEE80211_NUM_BANDS; band ++) {
-		int i;
-		struct ieee80211_supported_band *sband;
-
-		sband = local->hw.wiphy->bands[band];
-
-		if (!sband)
+		if (!(local->enabled_modes & (1 << mode->mode)) ||
+		    (local->hw_modes & local->enabled_modes &
+		     (1 << MODE_IEEE80211G) && mode->mode == MODE_IEEE80211B))
 			continue;
 
-		for (i = 0; i < sband->n_channels && c < IW_MAX_FREQUENCIES; i++) {
-			struct ieee80211_channel *chan = &sband->channels[i];
+		while (i < mode->num_channels && c < IW_MAX_FREQUENCIES) {
+			struct ieee80211_channel *chan = &mode->channels[i];
 
-			if (!(chan->flags & IEEE80211_CHAN_DISABLED)) {
-				range->freq[c].i =
-					ieee80211_frequency_to_channel(
-						chan->center_freq);
-				range->freq[c].m = chan->center_freq;
-				range->freq[c].e = 6;
+			if (chan->flag & IEEE80211_CHAN_W_SCAN) {
+				range->freq[c].i = chan->chan;
+				range->freq[c].m = chan->freq * 100000;
+				range->freq[c].e = 1;
 				c++;
 			}
+			i++;
 		}
 	}
 	range->num_channels = c;
@@ -282,29 +294,22 @@ static int ieee80211_ioctl_giwmode(struct net_device *dev,
 	return 0;
 }
 
-int ieee80211_set_freq(struct ieee80211_local *local, int freqMHz)
+int ieee80211_set_channel(struct ieee80211_local *local, int channel, int freq)
 {
-	int set = 0;
+	struct ieee80211_hw_mode *mode;
+	int c, set = 0;
 	int ret = -EINVAL;
-	enum ieee80211_band band;
-	struct ieee80211_supported_band *sband;
-	int i;
 
-	for (band = 0; band < IEEE80211_NUM_BANDS; band ++) {
-		sband = local->hw.wiphy->bands[band];
-
-		if (!sband)
+	list_for_each_entry(mode, &local->modes_list, list) {
+		if (!(local->enabled_modes & (1 << mode->mode)))
 			continue;
-
-		for (i = 0; i < sband->n_channels; i++) {
-			struct ieee80211_channel *chan = &sband->channels[i];
-
-			if (chan->flags & IEEE80211_CHAN_DISABLED)
-				continue;
-
-			if (chan->center_freq == freqMHz) {
-				set = 1;
+		for (c = 0; c < mode->num_channels; c++) {
+			struct ieee80211_channel *chan = &mode->channels[c];
+			if (chan->flag & IEEE80211_CHAN_W_SCAN &&
+			    ((chan->chan == channel) || (chan->freq == freq))) {
 				local->oper_channel = chan;
+				local->oper_hw_mode = mode;
+				set = 1;
 				break;
 			}
 		}
@@ -342,14 +347,13 @@ static int ieee80211_ioctl_siwfreq(struct net_device *dev,
 					IEEE80211_STA_AUTO_CHANNEL_SEL;
 			return 0;
 		} else
-			return ieee80211_set_freq(local,
-				ieee80211_channel_to_frequency(freq->m));
+			return ieee80211_set_channel(local, freq->m, -1);
 	} else {
 		int i, div = 1000000;
 		for (i = 0; i < freq->e; i++)
 			div /= 10;
 		if (div > 0)
-			return ieee80211_set_freq(local, freq->m / div);
+			return ieee80211_set_channel(local, -1, freq->m / div);
 		else
 			return -EINVAL;
 	}
@@ -362,7 +366,10 @@ static int ieee80211_ioctl_giwfreq(struct net_device *dev,
 {
 	struct ieee80211_local *local = wdev_priv(dev->ieee80211_ptr);
 
-	freq->m = local->hw.conf.channel->center_freq;
+	/* TODO: in station mode (Managed/Ad-hoc) might need to poll low-level
+	 * driver for the current channel with firmware-based management */
+
+	freq->m = local->hw.conf.freq;
 	freq->e = 6;
 
 	return 0;
@@ -559,17 +566,15 @@ static int ieee80211_ioctl_siwrate(struct net_device *dev,
 				  struct iw_param *rate, char *extra)
 {
 	struct ieee80211_local *local = wdev_priv(dev->ieee80211_ptr);
-	int i, err = -EINVAL;
+	struct ieee80211_hw_mode *mode;
+	int i;
 	u32 target_rate = rate->value / 100000;
 	struct ieee80211_sub_if_data *sdata;
-	struct ieee80211_supported_band *sband;
 
 	sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 	if (!sdata->bss)
 		return -ENODEV;
-
-	sband = local->hw.wiphy->bands[local->hw.conf.channel->band];
-
+	mode = local->oper_hw_mode;
 	/* target_rate = -1, rate->fixed = 0 means auto only, so use all rates
 	 * target_rate = X, rate->fixed = 1 means only rate X
 	 * target_rate = X, rate->fixed = 0 means all rates <= X */
@@ -577,20 +582,18 @@ static int ieee80211_ioctl_siwrate(struct net_device *dev,
 	sdata->bss->force_unicast_rateidx = -1;
 	if (rate->value < 0)
 		return 0;
-
-	for (i=0; i< sband->n_bitrates; i++) {
-		struct ieee80211_rate *brate = &sband->bitrates[i];
-		int this_rate = brate->bitrate;
+	for (i=0; i < mode->num_rates; i++) {
+		struct ieee80211_rate *rates = &mode->rates[i];
+		int this_rate = rates->rate;
 
 		if (target_rate == this_rate) {
 			sdata->bss->max_ratectrl_rateidx = i;
 			if (rate->fixed)
 				sdata->bss->force_unicast_rateidx = i;
-			err = 0;
-			break;
+			return 0;
 		}
 	}
-	return err;
+	return -EINVAL;
 }
 
 static int ieee80211_ioctl_giwrate(struct net_device *dev,
@@ -600,24 +603,18 @@ static int ieee80211_ioctl_giwrate(struct net_device *dev,
 	struct ieee80211_local *local = wdev_priv(dev->ieee80211_ptr);
 	struct sta_info *sta;
 	struct ieee80211_sub_if_data *sdata;
-	struct ieee80211_supported_band *sband;
 
 	sdata = IEEE80211_DEV_TO_SUB_IF(dev);
-
 	if (sdata->vif.type == IEEE80211_IF_TYPE_STA)
 		sta = sta_info_get(local, sdata->u.sta.bssid);
 	else
 		return -EOPNOTSUPP;
 	if (!sta)
 		return -ENODEV;
-
-	sband = local->hw.wiphy->bands[local->hw.conf.channel->band];
-
-	if (sta->txrate_idx < sband->n_bitrates)
-		rate->value = sband->bitrates[sta->txrate_idx].bitrate;
+	if (sta->txrate < local->oper_hw_mode->num_rates)
+		rate->value = local->oper_hw_mode->rates[sta->txrate].rate * 100000;
 	else
 		rate->value = 0;
-	rate->value *= 100000;
 	sta_info_put(sta);
 	return 0;
 }
@@ -628,7 +625,7 @@ static int ieee80211_ioctl_siwtxpower(struct net_device *dev,
 {
 	struct ieee80211_local *local = wdev_priv(dev->ieee80211_ptr);
 	bool need_reconfig = 0;
-	int new_power_level;
+	u8 new_power_level;
 
 	if ((data->txpower.flags & IW_TXPOW_TYPE) != IW_TXPOW_DBM)
 		return -EINVAL;
@@ -638,15 +635,13 @@ static int ieee80211_ioctl_siwtxpower(struct net_device *dev,
 	if (data->txpower.fixed) {
 		new_power_level = data->txpower.value;
 	} else {
-		/*
-		 * Automatic power level. Use maximum power for the current
-		 * channel. Should be part of rate control.
-		 */
-		struct ieee80211_channel* chan = local->hw.conf.channel;
+		/* Automatic power level. Get the px power from the current
+		 * channel. */
+		struct ieee80211_channel* chan = local->oper_channel;
 		if (!chan)
 			return -EINVAL;
 
-		new_power_level = chan->max_power;
+		new_power_level = chan->power_level;
 	}
 
 	if (local->hw.conf.power_level != new_power_level) {
