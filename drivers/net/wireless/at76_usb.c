@@ -4937,7 +4937,7 @@ static void at76_rx_monitor_mode(struct at76_priv *priv)
 	skb->ip_summed = CHECKSUM_NONE;
 	skb_reset_mac_header(skb);
 	skb->pkt_type = PACKET_OTHERHOST;
-	skb->protocol = htons(ETH_P_802_2);
+	skb->protocol = htons(ETH_P_80211_RAW);
 
 	netdev->last_rx = jiffies;
 	netif_rx(skb);
