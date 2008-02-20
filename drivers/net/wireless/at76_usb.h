@@ -70,7 +70,7 @@ enum board_type {
 	BOARD_503_ACC = 4,
 	BOARD_505 = 5,
 	BOARD_505_2958 = 6,
-	BOARD_505A = 7,
+	BOARD_505A_2958 = 7,
 	BOARD_505AMX = 8
 };
 
