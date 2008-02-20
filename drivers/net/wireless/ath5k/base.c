@@ -1312,7 +1312,7 @@ ath5k_txbuf_setup(struct ath5k_softc *sc, struct ath5k_buf *bf,
 	if (ctl->flags & IEEE80211_TXCTL_NO_ACK)
 		flags |= AR5K_TXDESC_NOACK;
 
-	pktlen = skb->len;
+	pktlen = skb->len + FCS_LEN;
 
 	if (!(ctl->flags & IEEE80211_TXCTL_DO_NOT_ENCRYPT)) {
 		keyidx = ctl->key_idx;
@@ -2009,7 +2009,7 @@ ath5k_beacon_setup(struct ath5k_softc *sc, struct ath5k_buf *bf,
 	}
 
 	ds->ds_data = bf->skbaddr;
-	ret = ah->ah_setup_tx_desc(ah, ds, skb->len,
+	ret = ah->ah_setup_tx_desc(ah, ds, skb->len + FCS_LEN,
 			ieee80211_get_hdrlen_from_skb(skb),
 			AR5K_PKT_TYPE_BEACON, (sc->power_level * 2),
 			ctl->tx_rate->hw_value, 1, AR5K_TXKEYIX_INVALID,
