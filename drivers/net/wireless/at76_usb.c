@@ -2537,5 +2537,7 @@ MODULE_AUTHOR("Alex <alex@foogod.com>");
 MODULE_AUTHOR("Nick Jones");
 MODULE_AUTHOR("Balint Seeber <n0_5p4m_p13453@hotmail.com>");
 MODULE_AUTHOR("Pavel Roskin <proski@gnu.org>");
+MODULE_AUTHOR("Guido Guenther <agx@sigxcpu.org>");
+MODULE_AUTHOR("Kalle Valo <kalle.valo@iki.fi>");
 MODULE_DESCRIPTION(DRIVER_DESC);
 MODULE_LICENSE("GPL");
