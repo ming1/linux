@@ -262,14 +262,6 @@ MODULE_DEVICE_TABLE(usb, dev_table);
 /* Supported rates of this hardware, bit 7 marks basic rates */
 static const u8 hw_rates[] = { 0x82, 0x84, 0x0b, 0x16 };
 
-/* Frequency of each channel in MHz */
-static const long channel_frequency[] = {
-	2412, 2417, 2422, 2427, 2432, 2437, 2442,
-	2447, 2452, 2457, 2462, 2467, 2472, 2484
-};
-
-#define NUM_CHANNELS ARRAY_SIZE(channel_frequency)
-
 static const char *const preambles[] = { "long", "short", "auto" };
 
 /* Firmware download */
