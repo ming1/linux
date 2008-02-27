@@ -66,7 +66,6 @@
 #include <linux/device.h>
 #include <linux/moduleparam.h>
 #include <linux/firmware.h>
-#include <linux/jiffies.h>
 #include <net/ieee80211.h>
 #include "atmel.h"
 
@@ -517,7 +516,7 @@ struct atmel_private {
 		SITE_SURVEY_IN_PROGRESS,
 		SITE_SURVEY_COMPLETED
 	} site_survey_state;
-	unsigned long last_survey;
+	time_t last_survey;
 
 	int station_was_associated, station_is_associated;
 	int fast_scan;
@@ -2284,7 +2283,7 @@ static int atmel_set_scan(struct net_device *dev,
 		return -EAGAIN;
 
 	/* Timeout old surveys. */
-	if (time_after(jiffies, priv->last_survey + 20 * HZ))
+	if ((jiffies - priv->last_survey) > (20 * HZ))
 		priv->site_survey_state = SITE_SURVEY_IDLE;
 	priv->last_survey = jiffies;
 
