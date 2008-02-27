@@ -3700,9 +3700,9 @@ static void at76_dwork_get_scan(struct work_struct *work)
 		   further down the line and stop this cycle */
 	}
 	at76_dbg(DBG_PROGRESS,
-		 "%s %s: got cmd_status %d (state %s, need_any %d)",
+		 "%s %s: got cmd_status %d (state %s, scan_runs %d)",
 		 priv->netdev->name, __func__, status,
-		 mac_states[priv->mac_state], priv->scan_need_any);
+		 mac_states[priv->mac_state], priv->scan_runs);
 
 	if (status != CMD_STATUS_COMPLETE) {
 		if ((status != CMD_STATUS_IN_PROGRESS) &&
@@ -3723,8 +3723,9 @@ static void at76_dwork_get_scan(struct work_struct *work)
 
 	if (at76_debug & DBG_BSS_TABLE)
 		at76_dump_bss_table(priv);
+	switch (priv->scan_runs) {
 
-	if (priv->scan_need_any) {
+	case 2:
 		ret = at76_start_scan(priv, 0);
 		if (ret < 0)
 			err("%s: %s: start_scan (ANY) failed with %d",
@@ -3734,14 +3735,21 @@ static void at76_dwork_get_scan(struct work_struct *work)
 			 __func__, __LINE__, SCAN_POLL_INTERVAL);
 		schedule_delayed_work(&priv->dwork_get_scan,
 				      SCAN_POLL_INTERVAL);
-		priv->scan_need_any = 0;
-	} else {
+		break;
+
+	case 3:
 		priv->scan_state = SCAN_COMPLETED;
 		/* report the end of scan to user space */
 		at76_iwevent_scan_complete(priv->netdev);
 		at76_set_mac_state(priv, MAC_JOINING);
 		schedule_work(&priv->work_join);
+		break;
+
+	default:
+		err("unexpected priv->scan_runs %d", priv->scan_runs);
 	}
+
+	priv->scan_runs++;
 
 exit:
 	mutex_unlock(&priv->mtx);
@@ -4026,9 +4034,9 @@ static void at76_work_start_scan(struct work_struct *work)
 	 * otherwise simply rely on at76_bss_list_timeout */
 	if (priv->scan_state == SCAN_IN_PROGRESS) {
 		at76_free_bss_list(priv);
-		priv->scan_need_any = 1;
+		priv->scan_runs = 2;
 	} else
-		priv->scan_need_any = 0;
+		priv->scan_runs = 3;
 
 	ret = at76_start_scan(priv, 1);
 
