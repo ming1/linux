@@ -5224,7 +5224,8 @@ static void at76_mac80211_tx_callback(struct urb *urb)
 static int at76_mac80211_tx(struct ieee80211_hw *hw, struct sk_buff *skb,
 		  struct ieee80211_tx_control *control)
 {
-	struct at76_priv *priv = hw->priv;
+	struct at76_mac80211_priv *mac80211_priv = hw->priv;
+	struct at76_priv *priv = mac80211_priv->at76_priv;
 	struct at76_tx_buffer *tx_buffer = priv->bulk_out_buffer;
 	int padding, submit_len, ret;
 
@@ -5280,7 +5281,8 @@ static int at76_mac80211_tx(struct ieee80211_hw *hw, struct sk_buff *skb,
 
 static int at76_mac80211_start(struct ieee80211_hw *hw)
 {
-	struct at76_priv *priv = hw->priv;
+	struct at76_mac80211_priv *mac80211_priv = hw->priv;
+	struct at76_priv *priv = mac80211_priv->at76_priv;
 	int ret;
 
 	at76_dbg(DBG_MAC80211, "%s()", __func__);
@@ -5306,7 +5308,8 @@ error:
 
 static void at76_mac80211_stop(struct ieee80211_hw *hw)
 {
-	struct at76_priv *priv = hw->priv;
+	struct at76_mac80211_priv *mac80211_priv = hw->priv;
+	struct at76_priv *priv = mac80211_priv->at76_priv;
 
 	at76_dbg(DBG_MAC80211, "%s()", __func__);
 
@@ -5328,7 +5331,8 @@ static void at76_mac80211_stop(struct ieee80211_hw *hw)
 static int at76_add_interface(struct ieee80211_hw *hw,
 			     struct ieee80211_if_init_conf *conf)
 {
-	struct at76_priv *priv = hw->priv;
+	struct at76_mac80211_priv *m_priv = hw->priv;
+	struct at76_priv *priv = m_priv->at76_priv;
 	int ret = 0;
 
 	at76_dbg(DBG_MAC80211, "%s()", __func__);
@@ -5426,7 +5430,8 @@ exit:
 
 static int at76_hw_scan(struct ieee80211_hw *hw, u8 *ssid, size_t len)
 {
-	struct at76_priv *priv = hw->priv;
+	struct at76_mac80211_priv *m_priv = hw->priv;
+	struct at76_priv *priv = m_priv->at76_priv;
 	struct at76_req_scan scan;
 	int ret;
 
@@ -5470,7 +5475,8 @@ exit:
 
 static int at76_config(struct ieee80211_hw *hw, struct ieee80211_conf *conf)
 {
-	struct at76_priv *priv = hw->priv;
+	struct at76_mac80211_priv *m_priv = hw->priv;
+	struct at76_priv *priv = m_priv->at76_priv;
 
 	at76_dbg(DBG_MAC80211, "%s(): channel %d radio %d",
 		 __func__, conf->channel->hw_value, conf->radio_enabled);
@@ -5495,7 +5501,8 @@ static int at76_config_interface(struct ieee80211_hw *hw,
 				 struct ieee80211_vif *vif,
 				 struct ieee80211_if_conf *conf)
 {
-	struct at76_priv *priv = hw->priv;
+	struct at76_mac80211_priv *m_priv = hw->priv;
+	struct at76_priv *priv = m_priv->at76_priv;
 
 	at76_dbg(DBG_MAC80211, "%s(): ssid_len=%zd", __func__, conf->ssid_len);
 	at76_dbg_dump(DBG_MAC80211, conf->ssid, conf->ssid_len, "ssid:");
@@ -5522,7 +5529,8 @@ static void at76_configure_filter(struct ieee80211_hw *hw,
 				  unsigned int *total_flags, int mc_count,
 				  struct dev_addr_list *mc_list)
 {
-	struct at76_priv *priv = hw->priv;
+	struct at76_mac80211_priv *m_priv = hw->priv;
+	struct at76_priv *priv = m_priv->at76_priv;
 	int flags;
 
 	at76_dbg(DBG_MAC80211, "%s(): changed_flags=0x%08x "
@@ -5552,8 +5560,8 @@ static int at76_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 			const u8 *local_address, const u8 *address,
 			struct ieee80211_key_conf *key)
 {
-	struct at76_priv *priv = hw->priv;
-
+	struct at76_mac80211_priv *m_priv = hw->priv;
+	struct at76_priv *priv = m_priv->at76_priv;
 	int i;
 
 	at76_dbg(DBG_MAC80211, "%s(): cmd %d key->alg %d key->keyidx %d "
@@ -5613,31 +5621,19 @@ static const struct ieee80211_ops at76_ops = {
 /* Allocate network device and initialize private data */
 static struct at76_priv *at76_alloc_new_device(struct usb_device *udev)
 {
-	struct at76_netdev_priv *netdevice_priv;
+	struct at76_mac80211_priv *mac80211_priv;
 	struct net_device *netdev;
-	struct ieee80211_hw *hw;
 	struct at76_priv *priv;
 	int i;
 
-	hw = ieee80211_alloc_hw(sizeof(struct at76_priv), &at76_ops);
-	if (!hw) {
-		printk(KERN_ERR DRIVER_NAME ": could not register"
-		       " ieee80211_hw\n");
-		return NULL;
-	}
-
-	priv = hw->priv;
-	priv->hw = hw;
-
 	/* allocate memory for our device state and initialize it */
-	netdev = alloc_etherdev(sizeof(struct at76_netdev_priv));
+	netdev = alloc_etherdev(sizeof(struct at76_priv));
 	if (!netdev) {
 		dev_printk(KERN_ERR, &udev->dev, "out of memory\n");
 		return NULL;
 	}
 
-	netdevice_priv = netdev_priv(netdev);
-	netdevice_priv->at76_priv = NULL;
+	priv = netdev_priv(netdev);
 
 	priv->udev = udev;
 	priv->netdev = netdev;
@@ -5680,6 +5676,17 @@ static struct at76_priv *at76_alloc_new_device(struct usb_device *udev)
 
 	priv->pm_mode = AT76_PM_OFF;
 	priv->pm_period = 0;
+
+	priv->hw = ieee80211_alloc_hw(sizeof(struct at76_mac80211_priv),
+				      &at76_ops);
+	if (!priv->hw) {
+		printk(KERN_ERR DRIVER_NAME ": could not register"
+		       " ieee80211_hw\n");
+		return NULL;
+	}
+
+	mac80211_priv = priv->hw->priv;
+	mac80211_priv->at76_priv = priv;
 
 	/* unit us */
 	priv->hw->channel_change_time = 100000;
@@ -5857,6 +5864,14 @@ static int at76_init_new_device(struct at76_priv *priv,
 	netdev->set_mac_address = at76_set_mac_address;
 	dev_alloc_name(netdev, "wlan%d");
 
+	ret = register_netdev(priv->netdev);
+	if (ret) {
+		dev_printk(KERN_ERR, &interface->dev,
+			   "cannot register netdevice (status %d)!\n", ret);
+		goto exit;
+	}
+	priv->netdev_registered = 1;
+
 	printk(KERN_INFO "%s: USB %s, MAC %s, firmware %d.%d.%d-%d\n",
 	       netdev->name, interface->dev.bus_id, mac2str(priv->mac_addr),
 	       priv->fw_version.major, priv->fw_version.minor,
@@ -5902,6 +5917,9 @@ static void at76_delete_device(struct at76_priv *priv)
 	if (priv->mac80211_registered)
 		ieee80211_unregister_hw(priv->hw);
 
+	ieee80211_free_hw(priv->hw);
+	priv->hw = NULL;
+
 	/* assuming we used keventd, it must quiesce too */
 	flush_scheduled_work();
 
@@ -5938,10 +5956,8 @@ static void at76_delete_device(struct at76_priv *priv)
 		}
 	usb_put_dev(priv->udev);
 
-	at76_dbg(DBG_PROC_ENTRY, "%s: before freeing priv/ieee80211_hw",
-		 __func__);
-	free_netdev(priv->netdev);
-	ieee80211_free_hw(priv->hw);
+	at76_dbg(DBG_PROC_ENTRY, "%s: before freeing priv/netdev", __func__);
+	free_netdev(priv->netdev);	/* priv is in netdev */
 
 	at76_dbg(DBG_PROC_ENTRY, "%s: EXIT", __func__);
 }
