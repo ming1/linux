@@ -195,7 +195,7 @@ struct iwl3945_channel_info {
 
 	u8 group_index;	  /* 0-4, maps channel to group1/2/3/4/5 */
 	u8 band_index;	  /* 0-4, maps channel to band1/2/3/4/5 */
-	enum ieee80211_band band;
+	u8 phymode;	  /* MODE_IEEE80211{A,B,G} */
 
 	/* Radio/DSP gain settings for each "normal" data Tx rate.
 	 * These include, in addition to RF and DSP gain, a few fields for
@@ -699,14 +699,14 @@ struct iwl3945_priv {
 	struct list_head free_frames;
 	int frames_count;
 
-	enum ieee80211_band band;
+	u8 phymode;
 	int alloc_rxb_skb;
 	bool add_radiotap;
 
 	void (*rx_handlers[REPLY_MAX])(struct iwl3945_priv *priv,
 				       struct iwl3945_rx_mem_buffer *rxb);
 
-	struct ieee80211_supported_band bands[IEEE80211_NUM_BANDS];
+	const struct ieee80211_hw_mode *modes;
 
 #ifdef CONFIG_IWL3945_SPECTRUM_MEASUREMENT
 	/* spectrum measurement report caching */
@@ -937,12 +937,13 @@ static inline int is_channel_radar(const struct iwl3945_channel_info *ch_info)
 
 static inline u8 is_channel_a_band(const struct iwl3945_channel_info *ch_info)
 {
-	return ch_info->band == IEEE80211_BAND_5GHZ;
+	return ch_info->phymode == MODE_IEEE80211A;
 }
 
 static inline u8 is_channel_bg_band(const struct iwl3945_channel_info *ch_info)
 {
-	return ch_info->band == IEEE80211_BAND_2GHZ;
+	return ((ch_info->phymode == MODE_IEEE80211B) ||
+		(ch_info->phymode == MODE_IEEE80211G));
 }
 
 static inline int is_channel_passive(const struct iwl3945_channel_info *ch)
@@ -966,7 +967,7 @@ static inline int iwl3945_rate_index_from_plcp(int plcp)
 }
 
 extern const struct iwl3945_channel_info *iwl3945_get_channel_info(
-	const struct iwl3945_priv *priv, enum ieee80211_band band, u16 channel);
+	const struct iwl3945_priv *priv, int phymode, u16 channel);
 
 /* Requires full declaration of iwl3945_priv before including */
 #include "iwl-3945-io.h"
