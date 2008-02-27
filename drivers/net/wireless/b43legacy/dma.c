@@ -354,8 +354,7 @@ return 0;
 }
 
 
-static u16 b43legacy_dmacontroller_base(enum b43legacy_dmatype type,
-					int controller_idx)
+u16 b43legacy_dmacontroller_base(int dma64bit, int controller_idx)
 {
 	static const u16 map64[] = {
 		B43legacy_MMIO_DMA64_BASE0,
@@ -374,7 +373,7 @@ static u16 b43legacy_dmacontroller_base(enum b43legacy_dmatype type,
 		B43legacy_MMIO_DMA32_BASE5,
 	};
 
-	if (type == B43legacy_DMA_64BIT) {
+	if (dma64bit) {
 		B43legacy_WARN_ON(!(controller_idx >= 0 &&
 				  controller_idx < ARRAY_SIZE(map64)));
 		return map64[controller_idx];
@@ -481,9 +480,8 @@ static void free_ringmemory(struct b43legacy_dmaring *ring)
 }
 
 /* Reset the RX DMA channel */
-static int b43legacy_dmacontroller_rx_reset(struct b43legacy_wldev *dev,
-					    u16 mmio_base,
-					    enum b43legacy_dmatype type)
+int b43legacy_dmacontroller_rx_reset(struct b43legacy_wldev *dev,
+				     u16 mmio_base, int dma64)
 {
 	int i;
 	u32 value;
@@ -491,14 +489,13 @@ static int b43legacy_dmacontroller_rx_reset(struct b43legacy_wldev *dev,
 
 	might_sleep();
 
-	offset = (type == B43legacy_DMA_64BIT) ?
-		 B43legacy_DMA64_RXCTL : B43legacy_DMA32_RXCTL;
+	offset = dma64 ? B43legacy_DMA64_RXCTL : B43legacy_DMA32_RXCTL;
 	b43legacy_write32(dev, mmio_base + offset, 0);
 	for (i = 0; i < 10; i++) {
-		offset = (type == B43legacy_DMA_64BIT) ?
-			 B43legacy_DMA64_RXSTATUS : B43legacy_DMA32_RXSTATUS;
+		offset = dma64 ? B43legacy_DMA64_RXSTATUS :
+			 B43legacy_DMA32_RXSTATUS;
 		value = b43legacy_read32(dev, mmio_base + offset);
-		if (type == B43legacy_DMA_64BIT) {
+		if (dma64) {
 			value &= B43legacy_DMA64_RXSTAT;
 			if (value == B43legacy_DMA64_RXSTAT_DISABLED) {
 				i = -1;
@@ -522,9 +519,8 @@ static int b43legacy_dmacontroller_rx_reset(struct b43legacy_wldev *dev,
 }
 
 /* Reset the RX DMA channel */
-static int b43legacy_dmacontroller_tx_reset(struct b43legacy_wldev *dev,
-					    u16 mmio_base,
-					    enum b43legacy_dmatype type)
+int b43legacy_dmacontroller_tx_reset(struct b43legacy_wldev *dev,
+				     u16 mmio_base, int dma64)
 {
 	int i;
 	u32 value;
@@ -533,10 +529,10 @@ static int b43legacy_dmacontroller_tx_reset(struct b43legacy_wldev *dev,
 	might_sleep();
 
 	for (i = 0; i < 10; i++) {
-		offset = (type == B43legacy_DMA_64BIT) ?
-			 B43legacy_DMA64_TXSTATUS : B43legacy_DMA32_TXSTATUS;
+		offset = dma64 ? B43legacy_DMA64_TXSTATUS :
+			 B43legacy_DMA32_TXSTATUS;
 		value = b43legacy_read32(dev, mmio_base + offset);
-		if (type == B43legacy_DMA_64BIT) {
+		if (dma64) {
 			value &= B43legacy_DMA64_TXSTAT;
 			if (value == B43legacy_DMA64_TXSTAT_DISABLED ||
 			    value == B43legacy_DMA64_TXSTAT_IDLEWAIT ||
@@ -551,14 +547,13 @@ static int b43legacy_dmacontroller_tx_reset(struct b43legacy_wldev *dev,
 		}
 		msleep(1);
 	}
-	offset = (type == B43legacy_DMA_64BIT) ? B43legacy_DMA64_TXCTL :
-						 B43legacy_DMA32_TXCTL;
+	offset = dma64 ? B43legacy_DMA64_TXCTL : B43legacy_DMA32_TXCTL;
 	b43legacy_write32(dev, mmio_base + offset, 0);
 	for (i = 0; i < 10; i++) {
-		offset = (type == B43legacy_DMA_64BIT) ?
-			 B43legacy_DMA64_TXSTATUS : B43legacy_DMA32_TXSTATUS;
+		offset = dma64 ? B43legacy_DMA64_TXSTATUS :
+			 B43legacy_DMA32_TXSTATUS;
 		value = b43legacy_read32(dev, mmio_base + offset);
-		if (type == B43legacy_DMA_64BIT) {
+		if (dma64) {
 			value &= B43legacy_DMA64_TXSTAT;
 			if (value == B43legacy_DMA64_TXSTAT_DISABLED) {
 				i = -1;
@@ -583,32 +578,6 @@ static int b43legacy_dmacontroller_tx_reset(struct b43legacy_wldev *dev,
 	return 0;
 }
 
-/* Check if a DMA mapping address is invalid. */
-static bool b43legacy_dma_mapping_error(struct b43legacy_dmaring *ring,
-					dma_addr_t addr,
-					size_t buffersize)
-{
-	if (unlikely(dma_mapping_error(addr)))
-		return 1;
-
-	switch (ring->type) {
-	case B43legacy_DMA_30BIT:
-		if ((u64)addr + buffersize > (1ULL << 30))
-			return 1;
-		break;
-	case B43legacy_DMA_32BIT:
-		if ((u64)addr + buffersize > (1ULL << 32))
-			return 1;
-		break;
-	case B43legacy_DMA_64BIT:
-		/* Currently we can't have addresses beyond 64 bits in the kernel. */
-		break;
-	}
-
-	/* The address is OK. */
-	return 0;
-}
-
 static int setup_rx_descbuffer(struct b43legacy_dmaring *ring,
 			       struct b43legacy_dmadesc_generic *desc,
 			       struct b43legacy_dmadesc_meta *meta,
@@ -626,7 +595,7 @@ static int setup_rx_descbuffer(struct b43legacy_dmaring *ring,
 		return -ENOMEM;
 	dmaaddr = map_descbuffer(ring, skb->data,
 				 ring->rx_buffersize, 0);
-	if (b43legacy_dma_mapping_error(ring, dmaaddr, ring->rx_buffersize)) {
+	if (dma_mapping_error(dmaaddr)) {
 		/* ugh. try to realloc in zone_dma */
 		gfp_flags |= GFP_DMA;
 
@@ -639,7 +608,7 @@ static int setup_rx_descbuffer(struct b43legacy_dmaring *ring,
 					 ring->rx_buffersize, 0);
 	}
 
-	if (b43legacy_dma_mapping_error(ring, dmaaddr, ring->rx_buffersize)) {
+	if (dma_mapping_error(dmaaddr)) {
 		dev_kfree_skb_any(skb);
 		return -EIO;
 	}
@@ -705,7 +674,7 @@ static int dmacontroller_setup(struct b43legacy_dmaring *ring)
 	u32 trans = ssb_dma_translation(ring->dev->dev);
 
 	if (ring->tx) {
-		if (ring->type == B43legacy_DMA_64BIT) {
+		if (ring->dma64) {
 			u64 ringbase = (u64)(ring->dmabase);
 
 			addrext = ((ringbase >> 32) & SSB_DMA_TRANSLATION_MASK)
@@ -740,7 +709,7 @@ static int dmacontroller_setup(struct b43legacy_dmaring *ring)
 		err = alloc_initial_descbuffers(ring);
 		if (err)
 			goto out;
-		if (ring->type == B43legacy_DMA_64BIT) {
+		if (ring->dma64) {
 			u64 ringbase = (u64)(ring->dmabase);
 
 			addrext = ((ringbase >> 32) & SSB_DMA_TRANSLATION_MASK)
@@ -791,16 +760,16 @@ static void dmacontroller_cleanup(struct b43legacy_dmaring *ring)
 {
 	if (ring->tx) {
 		b43legacy_dmacontroller_tx_reset(ring->dev, ring->mmio_base,
-						 ring->type);
-		if (ring->type == B43legacy_DMA_64BIT) {
+						 ring->dma64);
+		if (ring->dma64) {
 			b43legacy_dma_write(ring, B43legacy_DMA64_TXRINGLO, 0);
 			b43legacy_dma_write(ring, B43legacy_DMA64_TXRINGHI, 0);
 		} else
 			b43legacy_dma_write(ring, B43legacy_DMA32_TXRING, 0);
 	} else {
 		b43legacy_dmacontroller_rx_reset(ring->dev, ring->mmio_base,
-						 ring->type);
-		if (ring->type == B43legacy_DMA_64BIT) {
+						 ring->dma64);
+		if (ring->dma64) {
 			b43legacy_dma_write(ring, B43legacy_DMA64_RXRINGLO, 0);
 			b43legacy_dma_write(ring, B43legacy_DMA64_RXRINGHI, 0);
 		} else
@@ -855,10 +824,11 @@ static u64 supported_dma_mask(struct b43legacy_wldev *dev)
 
 /* Main initialization function. */
 static
-struct b43legacy_dmaring *b43legacy_setup_dmaring(struct b43legacy_wldev *dev,
-						  int controller_index,
-						  int for_tx,
-						  enum b43legacy_dmatype type)
+struct b43legacy_dmaring *b43legacy_setup_dmaring(
+					struct b43legacy_wldev *dev,
+					int controller_index,
+					int for_tx,
+					int dma64)
 {
 	struct b43legacy_dmaring *ring;
 	int err;
@@ -868,7 +838,6 @@ struct b43legacy_dmaring *b43legacy_setup_dmaring(struct b43legacy_wldev *dev,
 	ring = kzalloc(sizeof(*ring), GFP_KERNEL);
 	if (!ring)
 		goto out;
-	ring->type = type;
 
 	nr_slots = B43legacy_RXRING_SLOTS;
 	if (for_tx)
@@ -886,12 +855,12 @@ struct b43legacy_dmaring *b43legacy_setup_dmaring(struct b43legacy_wldev *dev,
 			goto err_kfree_meta;
 
 		/* test for ability to dma to txhdr_cache */
-		dma_test = dma_map_single(dev->dev->dev, ring->txhdr_cache,
-					  sizeof(struct b43legacy_txhdr_fw3),
-					  DMA_TO_DEVICE);
+		dma_test = dma_map_single(dev->dev->dev,
+				ring->txhdr_cache,
+				sizeof(struct b43legacy_txhdr_fw3),
+				DMA_TO_DEVICE);
 
-		if (b43legacy_dma_mapping_error(ring, dma_test,
-					sizeof(struct b43legacy_txhdr_fw3))) {
+		if (dma_mapping_error(dma_test)) {
 			/* ugh realloc */
 			kfree(ring->txhdr_cache);
 			ring->txhdr_cache = kcalloc(nr_slots,
@@ -905,8 +874,7 @@ struct b43legacy_dmaring *b43legacy_setup_dmaring(struct b43legacy_wldev *dev,
 					sizeof(struct b43legacy_txhdr_fw3),
 					DMA_TO_DEVICE);
 
-			if (b43legacy_dma_mapping_error(ring, dma_test,
-					sizeof(struct b43legacy_txhdr_fw3)))
+			if (dma_mapping_error(dma_test))
 				goto err_kfree_txhdr_cache;
 		}
 
@@ -917,9 +885,11 @@ struct b43legacy_dmaring *b43legacy_setup_dmaring(struct b43legacy_wldev *dev,
 
 	ring->dev = dev;
 	ring->nr_slots = nr_slots;
-	ring->mmio_base = b43legacy_dmacontroller_base(type, controller_index);
+	ring->mmio_base = b43legacy_dmacontroller_base(dma64,
+						       controller_index);
 	ring->index = controller_index;
-	if (type == B43legacy_DMA_64BIT)
+	ring->dma64 = !!dma64;
+	if (dma64)
 		ring->ops = &dma64_ops;
 	else
 		ring->ops = &dma32_ops;
@@ -969,10 +939,10 @@ static void b43legacy_destroy_dmaring(struct b43legacy_dmaring *ring)
 	if (!ring)
 		return;
 
-	b43legacydbg(ring->dev->wl, "DMA-%u 0x%04X (%s) max used slots:"
-		     " %d/%d\n", (unsigned int)(ring->type), ring->mmio_base,
-		     (ring->tx) ? "TX" : "RX", ring->max_used_slots,
-		     ring->nr_slots);
+	b43legacydbg(ring->dev->wl, "DMA-%s 0x%04X (%s) max used slots:"
+		     " %d/%d\n", (ring->dma64) ? "64" : "32", ring->mmio_base,
+		     (ring->tx) ? "TX" : "RX",
+		     ring->max_used_slots, ring->nr_slots);
 	/* Device IRQs are disabled prior entering this function,
 	 * so no need to take care of concurrency with rx handler stuff.
 	 */
@@ -1018,22 +988,11 @@ int b43legacy_dma_init(struct b43legacy_wldev *dev)
 	struct b43legacy_dmaring *ring;
 	int err;
 	u64 dmamask;
-	enum b43legacy_dmatype type;
+	int dma64 = 0;
 
 	dmamask = supported_dma_mask(dev);
-	switch (dmamask) {
-	default:
-		B43legacy_WARN_ON(1);
-	case DMA_30BIT_MASK:
-		type = B43legacy_DMA_30BIT;
-		break;
-	case DMA_32BIT_MASK:
-		type = B43legacy_DMA_32BIT;
-		break;
-	case DMA_64BIT_MASK:
-		type = B43legacy_DMA_64BIT;
-		break;
-	}
+	if (dmamask == DMA_64BIT_MASK)
+		dma64 = 1;
 
 	err = ssb_dma_set_mask(dev->dev, dmamask);
 	if (err) {
@@ -1051,50 +1010,52 @@ int b43legacy_dma_init(struct b43legacy_wldev *dev)
 
 	err = -ENOMEM;
 	/* setup TX DMA channels. */
-	ring = b43legacy_setup_dmaring(dev, 0, 1, type);
+	ring = b43legacy_setup_dmaring(dev, 0, 1, dma64);
 	if (!ring)
 		goto out;
 	dma->tx_ring0 = ring;
 
-	ring = b43legacy_setup_dmaring(dev, 1, 1, type);
+	ring = b43legacy_setup_dmaring(dev, 1, 1, dma64);
 	if (!ring)
 		goto err_destroy_tx0;
 	dma->tx_ring1 = ring;
 
-	ring = b43legacy_setup_dmaring(dev, 2, 1, type);
+	ring = b43legacy_setup_dmaring(dev, 2, 1, dma64);
 	if (!ring)
 		goto err_destroy_tx1;
 	dma->tx_ring2 = ring;
 
-	ring = b43legacy_setup_dmaring(dev, 3, 1, type);
+	ring = b43legacy_setup_dmaring(dev, 3, 1, dma64);
 	if (!ring)
 		goto err_destroy_tx2;
 	dma->tx_ring3 = ring;
 
-	ring = b43legacy_setup_dmaring(dev, 4, 1, type);
+	ring = b43legacy_setup_dmaring(dev, 4, 1, dma64);
 	if (!ring)
 		goto err_destroy_tx3;
 	dma->tx_ring4 = ring;
 
-	ring = b43legacy_setup_dmaring(dev, 5, 1, type);
+	ring = b43legacy_setup_dmaring(dev, 5, 1, dma64);
 	if (!ring)
 		goto err_destroy_tx4;
 	dma->tx_ring5 = ring;
 
 	/* setup RX DMA channels. */
-	ring = b43legacy_setup_dmaring(dev, 0, 0, type);
+	ring = b43legacy_setup_dmaring(dev, 0, 0, dma64);
 	if (!ring)
 		goto err_destroy_tx5;
 	dma->rx_ring0 = ring;
 
 	if (dev->dev->id.revision < 5) {
-		ring = b43legacy_setup_dmaring(dev, 3, 0, type);
+		ring = b43legacy_setup_dmaring(dev, 3, 0, dma64);
 		if (!ring)
 			goto err_destroy_rx0;
 		dma->rx_ring3 = ring;
 	}
 
-	b43legacydbg(dev->wl, "%u-bit DMA initialized\n", (unsigned int)type);
+	b43legacydbg(dev->wl, "%d-bit DMA initialized\n",
+	       (dmamask == DMA_64BIT_MASK) ? 64 :
+	       (dmamask == DMA_32BIT_MASK) ? 32 : 30);
 	err = 0;
 out:
 	return err;
@@ -1233,13 +1194,9 @@ static int dma_tx_fragment(struct b43legacy_dmaring *ring,
 	}
 
 	meta_hdr->dmaaddr = map_descbuffer(ring, (unsigned char *)header,
-					   sizeof(struct b43legacy_txhdr_fw3), 1);
-	if (b43legacy_dma_mapping_error(ring, meta_hdr->dmaaddr,
-					sizeof(struct b43legacy_txhdr_fw3))) {
-		ring->current_slot = old_top_slot;
-		ring->used_slots = old_used_slots;
+				       sizeof(struct b43legacy_txhdr_fw3), 1);
+	if (dma_mapping_error(meta_hdr->dmaaddr))
 		return -EIO;
-	}
 	ops->fill_descriptor(ring, desc, meta_hdr->dmaaddr,
 			     sizeof(struct b43legacy_txhdr_fw3), 1, 0, 0);
 
@@ -1254,7 +1211,7 @@ static int dma_tx_fragment(struct b43legacy_dmaring *ring,
 
 	meta->dmaaddr = map_descbuffer(ring, skb->data, skb->len, 1);
 	/* create a bounce buffer in zone_dma on mapping failure. */
-	if (b43legacy_dma_mapping_error(ring, meta->dmaaddr, skb->len)) {
+	if (dma_mapping_error(meta->dmaaddr)) {
 		bounce_skb = __dev_alloc_skb(skb->len, GFP_ATOMIC | GFP_DMA);
 		if (!bounce_skb) {
 			ring->current_slot = old_top_slot;
@@ -1268,7 +1225,7 @@ static int dma_tx_fragment(struct b43legacy_dmaring *ring,
 		skb = bounce_skb;
 		meta->skb = skb;
 		meta->dmaaddr = map_descbuffer(ring, skb->data, skb->len, 1);
-		if (b43legacy_dma_mapping_error(ring, meta->dmaaddr, skb->len)) {
+		if (dma_mapping_error(meta->dmaaddr)) {
 			ring->current_slot = old_top_slot;
 			ring->used_slots = old_used_slots;
 			err = -EIO;
