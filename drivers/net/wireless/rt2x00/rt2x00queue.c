@@ -84,12 +84,8 @@ void rt2x00queue_index_inc(struct data_queue *queue, enum queue_index index)
 	if (queue->index[index] >= queue->limit)
 		queue->index[index] = 0;
 
-	if (index == Q_INDEX) {
-		queue->length++;
-	} else if (index == Q_INDEX_DONE) {
-		queue->length--;
-		queue->count ++;
-	}
+	queue->length--;
+	queue->count += (index == Q_INDEX_DONE);
 
 	spin_unlock(&queue->lock);
 }
