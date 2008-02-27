@@ -285,11 +285,6 @@ struct ssb_bus {
 	/* Contents of the SPROM. */
 	struct ssb_sprom sprom;
 
-#ifdef CONFIG_SSB_EMBEDDED
-	/* Lock for GPIO register access. */
-	spinlock_t gpio_lock;
-#endif /* EMBEDDED */
-
 	/* Internal-only stuff follows. Do not touch. */
 	struct list_head list;
 #ifdef CONFIG_SSB_DEBUG
