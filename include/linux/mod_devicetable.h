@@ -351,13 +351,7 @@ struct sdio_device_id {
 struct ssb_device_id {
 	__u16	vendor;
 	__u16	coreid;
-	/* Explicit padding to support a broken sanity check in file2alias.c.
-	 * The check compares the size of the structure in the kernel
-	 * object file to the size of the structure reported in userspace for
-	 * the system on which the kernel is compiled. The check breaks on
-	 * cross-compilation, and the padding is a workaround for this. */
-	__u8	revision
-		__attribute__((aligned(sizeof(__u32))));
+	__u8	revision;
 };
 #define SSB_DEVICE(_vendor, _coreid, _revision)  \
 	{ .vendor = _vendor, .coreid = _coreid, .revision = _revision, }
