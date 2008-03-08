@@ -1092,6 +1092,7 @@ static s32 ath5k_hw_rfregs_gain_adjust(struct ath5k_hw *ah)
 		go = &rfgain_opt_5111;
 		break;
 	case AR5K_RF5112:
+	case AR5K_RF5413: /* ??? */
 		go = &rfgain_opt_5112;
 		break;
 	default:
@@ -1556,6 +1557,7 @@ int ath5k_hw_set_rfgain_opt(struct ath5k_hw *ah)
 		ah->ah_gain.g_active = 1;
 		break;
 	case AR5K_RF5112:
+	case AR5K_RF5413: /* ??? */
 		ah->ah_gain.g_step_idx = rfgain_opt_5112.go_default;
 		ah->ah_gain.g_step =
 		    &rfgain_opt_5112.go_step[ah->ah_gain.g_step_idx];
