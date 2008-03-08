@@ -2928,9 +2928,7 @@ ath5k_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 
 	switch(key->alg) {
 	case ALG_WEP:
-	/* XXX: fix hardware encryption, its not working. For now
-	 * allow software encryption */
-		/* break; */
+		break;
 	case ALG_TKIP:
 	case ALG_CCMP:
 		return -EOPNOTSUPP;
