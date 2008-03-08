@@ -1208,12 +1208,8 @@ static int rt73usb_set_device_state(struct rt2x00_dev *rt2x00dev,
 		rt73usb_disable_radio(rt2x00dev);
 		break;
 	case STATE_RADIO_RX_ON:
-	case STATE_RADIO_RX_ON_LINK:
-		rt73usb_toggle_rx(rt2x00dev, STATE_RADIO_RX_ON);
-		break;
 	case STATE_RADIO_RX_OFF:
-	case STATE_RADIO_RX_OFF_LINK:
-		rt73usb_toggle_rx(rt2x00dev, STATE_RADIO_RX_OFF);
+		rt73usb_toggle_rx(rt2x00dev, state);
 		break;
 	case STATE_DEEP_SLEEP:
 	case STATE_SLEEP:
