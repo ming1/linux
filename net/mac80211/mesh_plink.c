@@ -88,19 +88,40 @@ static inline void mesh_plink_fsm_restart(struct sta_info *sta)
 	sta->llid = sta->plid = sta->reason = sta->plink_retries = 0;
 }
 
-static struct sta_info *mesh_plink_alloc(struct ieee80211_sub_if_data *sdata,
-					 u8 *hw_addr, u64 rates)
+/**
+ * mesh_plink_alloc - allocate a new mesh peer link
+ *
+ * @sdata: local mesh interface
+ * @hw_addr: hardware address (ETH_ALEN length)
+ * @rates: rates the mesh peer supports
+ *
+ * The initial state of the new plink is set to LISTEN
+ *
+ * Returns: NULL on error.
+ */
+struct sta_info *mesh_plink_alloc(struct ieee80211_sub_if_data *sdata,
+				  u8 *hw_addr, u64 rates, gfp_t gfp)
 {
 	struct ieee80211_local *local = sdata->local;
 	struct sta_info *sta;
 
+	if (compare_ether_addr(hw_addr, sdata->dev->dev_addr) == 0)
+		/* never add ourselves as neighbours */
+		return NULL;
+
+	if (is_multicast_ether_addr(hw_addr))
+		return NULL;
+
 	if (local->num_sta >= MESH_MAX_PLINKS)
 		return NULL;
 
-	sta = sta_info_alloc(sdata, hw_addr, GFP_ATOMIC);
+	sta = sta_info_alloc(sdata, hw_addr, gfp);
 	if (!sta)
 		return NULL;
 
+	sta->plink_state = LISTEN;
+	spin_lock_init(&sta->plink_lock);
+	init_timer(&sta->plink_timer);
 	sta->flags |= WLAN_STA_AUTHORIZED;
 	sta->supp_rates[local->hw.conf.channel->band] = rates;
 
@@ -228,7 +249,7 @@ void mesh_neighbour_update(u8 *hw_addr, u64 rates, struct net_device *dev,
 
 	sta = sta_info_get(local, hw_addr);
 	if (!sta) {
-		sta = mesh_plink_alloc(sdata, hw_addr, rates);
+		sta = mesh_plink_alloc(sdata, hw_addr, rates, GFP_ATOMIC);
 		if (!sta) {
 			rcu_read_unlock();
 			return;
@@ -497,7 +518,7 @@ void mesh_rx_plink_frame(struct net_device *dev, struct ieee80211_mgmt *mgmt,
 		}
 
 		rates = ieee80211_sta_get_rates(local, &elems, rx_status->band);
-		sta = mesh_plink_alloc(sdata, mgmt->sa, rates);
+		sta = mesh_plink_alloc(sdata, mgmt->sa, rates, GFP_ATOMIC);
 		if (!sta) {
 			mpl_dbg("Mesh plink error: plink table full\n");
 			rcu_read_unlock();
