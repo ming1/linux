@@ -222,11 +222,7 @@ static int tkip_encrypt_skb(struct ieee80211_tx_data *tx,
 		hdr = (struct ieee80211_hdr *)skb->data;
 
 		/* hwaccel - with preallocated room for IV */
-		ieee80211_tkip_add_iv(pos, key,
-				      (u8) (key->u.tkip.iv16 >> 8),
-				      (u8) (((key->u.tkip.iv16 >> 8) | 0x20) &
-					    0x7f),
-				      (u8) key->u.tkip.iv16);
+		ieee80211_tkip_add_iv(pos, key);
 
 		tx->control->key_idx = tx->key->conf.hw_key_idx;
 		return 0;
