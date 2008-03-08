@@ -1780,7 +1780,7 @@ prism54_set_raw(struct net_device *ndev, struct iw_request_info *info,
 void
 prism54_acl_init(struct islpci_acl *acl)
 {
-	mutex_init(&acl->lock);
+	sema_init(&acl->sem, 1);
 	INIT_LIST_HEAD(&acl->mac_list);
 	acl->size = 0;
 	acl->policy = MAC_POLICY_OPEN;
@@ -1792,10 +1792,10 @@ prism54_clear_mac(struct islpci_acl *acl)
 	struct list_head *ptr, *next;
 	struct mac_entry *entry;
 
-	mutex_lock(&acl->lock);
+	down(&acl->sem);
 
 	if (acl->size == 0) {
-		mutex_unlock(&acl->lock);
+		up(&acl->sem);
 		return;
 	}
 
@@ -1806,7 +1806,7 @@ prism54_clear_mac(struct islpci_acl *acl)
 		kfree(entry);
 	}
 	acl->size = 0;
-	mutex_unlock(&acl->lock);
+	up(&acl->sem);
 }
 
 void
@@ -1833,13 +1833,13 @@ prism54_add_mac(struct net_device *ndev, struct iw_request_info *info,
 
 	memcpy(entry->addr, addr->sa_data, ETH_ALEN);
 
-	if (mutex_lock_interruptible(&acl->lock)) {
+	if (down_interruptible(&acl->sem)) {
 		kfree(entry);
 		return -ERESTARTSYS;
 	}
 	list_add_tail(&entry->_list, &acl->mac_list);
 	acl->size++;
-	mutex_unlock(&acl->lock);
+	up(&acl->sem);
 
 	return 0;
 }
@@ -1856,18 +1856,18 @@ prism54_del_mac(struct net_device *ndev, struct iw_request_info *info,
 	if (addr->sa_family != ARPHRD_ETHER)
 		return -EOPNOTSUPP;
 
-	if (mutex_lock_interruptible(&acl->lock))
+	if (down_interruptible(&acl->sem))
 		return -ERESTARTSYS;
 	list_for_each_entry(entry, &acl->mac_list, _list) {
 		if (memcmp(entry->addr, addr->sa_data, ETH_ALEN) == 0) {
 			list_del(&entry->_list);
 			acl->size--;
 			kfree(entry);
-			mutex_unlock(&acl->lock);
+			up(&acl->sem);
 			return 0;
 		}
 	}
-	mutex_unlock(&acl->lock);
+	up(&acl->sem);
 	return -EINVAL;
 }
 
@@ -1882,7 +1882,7 @@ prism54_get_mac(struct net_device *ndev, struct iw_request_info *info,
 
 	dwrq->length = 0;
 
-	if (mutex_lock_interruptible(&acl->lock))
+	if (down_interruptible(&acl->sem))
 		return -ERESTARTSYS;
 
 	list_for_each_entry(entry, &acl->mac_list, _list) {
@@ -1891,7 +1891,7 @@ prism54_get_mac(struct net_device *ndev, struct iw_request_info *info,
 		dwrq->length++;
 		dst++;
 	}
-	mutex_unlock(&acl->lock);
+	up(&acl->sem);
 	return 0;
 }
 
@@ -1955,11 +1955,11 @@ prism54_mac_accept(struct islpci_acl *acl, char *mac)
 	struct mac_entry *entry;
 	int res = 0;
 
-	if (mutex_lock_interruptible(&acl->lock))
+	if (down_interruptible(&acl->sem))
 		return -ERESTARTSYS;
 
 	if (acl->policy == MAC_POLICY_OPEN) {
-		mutex_unlock(&acl->lock);
+		up(&acl->sem);
 		return 1;
 	}
 
@@ -1970,7 +1970,7 @@ prism54_mac_accept(struct islpci_acl *acl, char *mac)
 		}
 	}
 	res = (acl->policy == MAC_POLICY_ACCEPT) ? !res : res;
-	mutex_unlock(&acl->lock);
+	up(&acl->sem);
 
 	return res;
 }
