@@ -510,6 +510,8 @@ struct iwl_ht_info {
 };
 #endif				/*CONFIG_IWL4965_HT */
 
+#ifdef CONFIG_IWL4965_QOS
+
 union iwl4965_qos_capabity {
 	struct {
 		u8 edca_count:4;	/* bit 0-3 */
@@ -537,6 +539,7 @@ struct iwl4965_qos_info {
 	union iwl4965_qos_capabity qos_cap;
 	struct iwl4965_qosparam_cmd def_qos_parm;
 };
+#endif /*CONFIG_IWL4965_QOS */
 
 #define STA_PS_STATUS_WAKE             0
 #define STA_PS_STATUS_SLEEP            1
@@ -1170,7 +1173,9 @@ struct iwl4965_priv {
 	u16 assoc_capability;
 	u8 ps_mode;
 
+#ifdef CONFIG_IWL4965_QOS
 	struct iwl4965_qos_info qos_data;
+#endif /*CONFIG_IWL4965_QOS */
 
 	struct workqueue_struct *workqueue;
 
