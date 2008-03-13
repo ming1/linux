@@ -171,13 +171,8 @@ static inline void rt2x00rfkill_free(struct rt2x00_dev *rt2x00dev)
 {
 }
 
-static inline void rt2x00rfkill_suspend(struct rt2x00_dev *rt2x00dev)
-{
-}
-
-static inline void rt2x00rfkill_resume(struct rt2x00_dev *rt2x00dev)
-{
-}
+static inline void rt2x00rfkill_suspend(struct rt2x00_dev *rt2x00dev);
+static inline void rt2x00rfkill_resume(struct rt2x00_dev *rt2x00dev);
 #endif /* CONFIG_RT2X00_LIB_RFKILL */
 
 /*
