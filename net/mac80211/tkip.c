@@ -80,6 +80,18 @@ static inline u8 Lo8(u16 v)
 }
 
 
+static inline u16 Hi16(u32 v)
+{
+	return v >> 16;
+}
+
+
+static inline u16 Lo16(u32 v)
+{
+	return v & 0xffff;
+}
+
+
 static inline u16 RotR1(u16 v)
 {
 	return (v >> 1) | ((v & 0x0001) << 15);
@@ -104,8 +116,8 @@ static void tkip_mixing_phase1(const u8 *ta, const u8 *tk, u32 tsc_IV32,
 {
 	int i, j;
 
-	p1k[0] = tsc_IV32 & 0xffff;
-	p1k[1] = tsc_IV32 >> 16;
+	p1k[0] = Lo16(tsc_IV32);
+	p1k[1] = Hi16(tsc_IV32);
 	p1k[2] = Mk16(ta[1], ta[0]);
 	p1k[3] = Mk16(ta[3], ta[2]);
 	p1k[4] = Mk16(ta[5], ta[4]);
