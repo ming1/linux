@@ -1449,58 +1449,7 @@ static int iwl4965_set_tkip_dynamic_key_info(struct iwl_priv *priv,
 				   struct ieee80211_key_conf *keyconf,
 				   u8 sta_id)
 {
-	unsigned long flags;
-	__le16 key_flags = 0;
-	int i, ret = 0;
-
-	keyconf->flags |= IEEE80211_KEY_FLAG_TKIP_REQ_TX_P2_KEY;
-	keyconf->flags |= IEEE80211_KEY_FLAG_TKIP_REQ_RX_P1_KEY;
-	keyconf->flags |= IEEE80211_KEY_FLAG_GENERATE_IV;
-	keyconf->flags |= IEEE80211_KEY_FLAG_GENERATE_MMIC;
-	keyconf->hw_key_idx = sta_id;
-
-	key_flags |= (STA_KEY_FLG_TKIP | STA_KEY_FLG_MAP_KEY_MSK);
-	key_flags |= cpu_to_le16(keyconf->keyidx << STA_KEY_FLG_KEYID_POS);
-	key_flags &= ~STA_KEY_FLG_INVALID;
-
-	if (sta_id == priv->hw_setting.bcast_sta_id)
-		key_flags |= STA_KEY_MULTICAST_MSK;
-
-	spin_lock_irqsave(&priv->sta_lock, flags);
-
-	priv->stations[sta_id].keyinfo.alg = keyconf->alg;
-	priv->stations[sta_id].keyinfo.keylen = 16;
-
-	/* This copy is acutally not needed: we get the key with each TX */
-	memcpy(priv->stations[sta_id].keyinfo.key, keyconf->key, 16);
-
-	memcpy(priv->stations[sta_id].sta.key.key, keyconf->key, 16);
-
-	priv->stations[sta_id].sta.key.key_offset = (sta_id%8);/*FIXME!!!*/
-	priv->stations[sta_id].sta.key.key_flags = key_flags;
-	if (keyconf->flags & IEEE80211_KEY_FLAG_TKIP_PHASE1_VALID) {
-		priv->stations[sta_id].sta.key.tkip_rx_tsc_byte2 =
-				(u8) keyconf->tkip_iv32;
-		for (i = 0; i < 5; i++)
-			priv->stations[sta_id].sta.key.tkip_rx_ttak[i] =
-				cpu_to_le16(keyconf->tkip_p1k[i]);
-	} else {
-		priv->stations[sta_id].sta.key.tkip_rx_tsc_byte2 = 0xff;
-	}
-
-	priv->stations[sta_id].sta.sta.modify_mask = STA_MODIFY_KEY_MASK;
-	priv->stations[sta_id].sta.mode = STA_CONTROL_MODIFY_MSK;
-
-	/* Don't send an incomplete key: a key w/o valid TTAK */
-	if (keyconf->flags & IEEE80211_KEY_FLAG_TKIP_PHASE1_VALID) {
-		IWL_DEBUG_INFO("hwcrypto: modify ucode station key info\n");
-		ret = iwl4965_send_add_station(priv,
-				&priv->stations[sta_id].sta, CMD_ASYNC);
-	}
-
-	spin_unlock_irqrestore(&priv->sta_lock, flags);
-
-	return ret;
+	return -EOPNOTSUPP;
 }
 
 static int iwl4965_clear_sta_key_info(struct iwl_priv *priv, u8 sta_id)
@@ -2535,9 +2484,15 @@ static void iwl4965_build_tx_cmd_hwcrypto(struct iwl_priv *priv,
 		break;
 
 	case ALG_TKIP:
+#if 0
 		cmd->cmd.tx.sec_ctl = TX_CMD_SEC_TKIP;
-		memcpy(cmd->cmd.tx.key, ctl->tkip_key, keyinfo->keylen);
-		IWL_DEBUG_TX("tx_cmd with tkip hwcrypto\n");
+
+		if (last_frag)
+			memcpy(cmd->cmd.tx.tkip_mic.byte, skb_frag->tail - 8,
+			       8);
+		else
+			memset(cmd->cmd.tx.tkip_mic.byte, 0, 8);
+#endif
 		break;
 
 	case ALG_WEP:
