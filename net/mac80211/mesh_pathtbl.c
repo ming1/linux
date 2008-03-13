@@ -55,7 +55,10 @@ static DEFINE_RWLOCK(pathtbl_resize_lock);
  */
 void mesh_path_assign_nexthop(struct mesh_path *mpath, struct sta_info *sta)
 {
-	rcu_assign_pointer(mpath->next_hop, sta);
+	__sta_info_get(sta);
+	if (mpath->next_hop)
+		sta_info_put(mpath->next_hop);
+	mpath->next_hop = sta;
 }
 
 
@@ -233,7 +236,7 @@ void mesh_plink_broken(struct sta_info *sta)
 	struct mesh_path *mpath;
 	struct mpath_node *node;
 	struct hlist_node *p;
-	struct net_device *dev = sta->sdata->dev;
+	struct net_device *dev = sta->dev;
 	int i;
 
 	rcu_read_lock();
@@ -263,9 +266,9 @@ EXPORT_SYMBOL(mesh_plink_broken);
  *
  * RCU notes: this function is called when a mesh plink transitions from ESTAB
  * to any other state, since ESTAB state is the only one that allows path
- * creation. This will happen before the sta can be freed (because
- * sta_info_destroy() calls this) so any reader in a rcu read block will be
- * protected against the plink disappearing.
+ * creation. This will happen before the sta can be freed (since we hold
+ * a reference to it) so any reader in a rcu read block will be protected
+ * against the plink dissapearing.
  */
 void mesh_path_flush_by_nexthop(struct sta_info *sta)
 {
@@ -277,7 +280,7 @@ void mesh_path_flush_by_nexthop(struct sta_info *sta)
 	for_each_mesh_entry(mesh_paths, p, node, i) {
 		mpath = node->mpath;
 		if (mpath->next_hop == sta)
-			mesh_path_del(mpath->dst, mpath->dev, true);
+			mesh_path_del(mpath->dst, mpath->dev);
 	}
 }
 
@@ -291,7 +294,7 @@ void mesh_path_flush(struct net_device *dev)
 	for_each_mesh_entry(mesh_paths, p, node, i) {
 		mpath = node->mpath;
 		if (mpath->dev == dev)
-			mesh_path_del(mpath->dst, mpath->dev, false);
+			mesh_path_del(mpath->dst, mpath->dev);
 	}
 }
 
@@ -300,8 +303,8 @@ static void mesh_path_node_reclaim(struct rcu_head *rp)
 	struct mpath_node *node = container_of(rp, struct mpath_node, rcu);
 	struct ieee80211_sub_if_data *sdata =
 		IEEE80211_DEV_TO_SUB_IF(node->mpath->dev);
-
-	rcu_assign_pointer(node->mpath->next_hop, NULL);
+	if (node->mpath->next_hop)
+		sta_info_put(node->mpath->next_hop);
 	atomic_dec(&sdata->u.sta.mpaths);
 	kfree(node->mpath);
 	kfree(node);
@@ -316,10 +319,9 @@ static void mesh_path_node_reclaim(struct rcu_head *rp)
  * Returns: 0 if succesful
  *
  * State: if the path is being resolved, the deletion will be postponed until
- * the path resolution completes or times out, unless the force parameter
- * is given.
+ * the path resolution completes or times out.
  */
-int mesh_path_del(u8 *addr, struct net_device *dev, bool force)
+int mesh_path_del(u8 *addr, struct net_device *dev)
 {
 	struct mesh_path *mpath;
 	struct mpath_node *node;
@@ -338,7 +340,7 @@ int mesh_path_del(u8 *addr, struct net_device *dev, bool force)
 		if (mpath->dev == dev &&
 				memcmp(addr, mpath->dst, ETH_ALEN) == 0) {
 			spin_lock_bh(&mpath->state_lock);
-			if (!force && mpath->flags & MESH_PATH_RESOLVING) {
+			if (mpath->flags & MESH_PATH_RESOLVING) {
 				mpath->flags |= MESH_PATH_DELETE;
 			} else {
 				mpath->flags |= MESH_PATH_RESOLVING;
@@ -508,7 +510,7 @@ void mesh_path_expire(struct net_device *dev)
 			time_after(jiffies,
 			 mpath->exp_time + MESH_PATH_EXPIRE)) {
 			spin_unlock_bh(&mpath->state_lock);
-			mesh_path_del(mpath->dst, mpath->dev, false);
+			mesh_path_del(mpath->dst, mpath->dev);
 		} else
 			spin_unlock_bh(&mpath->state_lock);
 	}
