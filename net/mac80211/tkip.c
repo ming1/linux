@@ -68,18 +68,6 @@ static inline u16 Mk16(u8 x, u8 y)
 }
 
 
-static inline u8 Hi8(u16 v)
-{
-	return v >> 8;
-}
-
-
-static inline u8 Lo8(u16 v)
-{
-	return v & 0xff;
-}
-
-
 static inline u16 RotR1(u16 v)
 {
 	return (v >> 1) | ((v & 0x0001) << 15);
@@ -120,10 +108,24 @@ static void tkip_mixing_phase1(const u8 *ta, const u8 *tk, u32 tsc_IV32,
 	}
 }
 
+static u8 *set_ext_iv(u8 *pos, u16 iv16)
+{
+	*pos++ = iv16 >> 8;
+	*pos++ = ((iv16 >> 8) | 0x20) & 0x7f;
+	*pos++ = iv16 & 0xff;
+	return pos;
+}
+
+static u8 *set_tkip_iv(u8 *pos, u32 iv32)
+{
+	*((u32 *)pos) = cpu_to_le32(iv32);
+	return pos + 4;
+}
 
 static void tkip_mixing_phase2(const u16 *p1k, const u8 *tk, u16 tsc_IV16,
 			       u8 *rc4key)
 {
+	__le16 *leptr;
 	u16 ppk[6];
 	int i;
 
@@ -147,14 +149,13 @@ static void tkip_mixing_phase2(const u16 *p1k, const u8 *tk, u16 tsc_IV16,
 	ppk[4] +=  RotR1(ppk[3]);
 	ppk[5] +=  RotR1(ppk[4]);
 
-	rc4key[0] = Hi8(tsc_IV16);
-	rc4key[1] = (Hi8(tsc_IV16) | 0x20) & 0x7f;
-	rc4key[2] = Lo8(tsc_IV16);
-	rc4key[3] = Lo8((ppk[5] ^ Mk16(tk[1], tk[0])) >> 1);
+	leptr = (__le16 *)tk;
+	set_ext_iv(rc4key, tsc_IV16);
+	rc4key[3] = ((ppk[5] ^ le16_to_cpup(leptr)) >> 1) & 0xff;
 
 	for (i = 0; i < 6; i++) {
-		rc4key[4 + 2 * i] = Lo8(ppk[i]);
-		rc4key[5 + 2 * i] = Hi8(ppk[i]);
+		rc4key[4 + 2 * i] = (ppk[i]) & 0xff;
+		rc4key[5 + 2 * i] = (ppk[i]) >> 8;
 	}
 }
 
@@ -162,17 +163,11 @@ static void tkip_mixing_phase2(const u16 *p1k, const u8 *tk, u16 tsc_IV16,
 /* Add TKIP IV and Ext. IV at @pos. @iv0, @iv1, and @iv2 are the first octets
  * of the IV. Returns pointer to the octet following IVs (i.e., beginning of
  * the packet payload). */
-u8 * ieee80211_tkip_add_iv(u8 *pos, struct ieee80211_key *key,
-			   u8 iv0, u8 iv1, u8 iv2)
+u8 *ieee80211_tkip_add_iv(u8 *pos, struct ieee80211_key *key)
 {
-	*pos++ = iv0;
-	*pos++ = iv1;
-	*pos++ = iv2;
+	pos = set_ext_iv(pos, key->u.tkip.iv16);
 	*pos++ = (key->conf.keyidx << 6) | (1 << 5) /* Ext IV */;
-	*pos++ = key->u.tkip.iv32 & 0xff;
-	*pos++ = (key->u.tkip.iv32 >> 8) & 0xff;
-	*pos++ = (key->u.tkip.iv32 >> 16) & 0xff;
-	*pos++ = (key->u.tkip.iv32 >> 24) & 0xff;
+	pos = set_tkip_iv(pos, key->u.tkip.iv32);
 	return pos;
 }
 
@@ -204,7 +199,11 @@ void ieee80211_tkip_encrypt_data(struct crypto_blkcipher *tfm,
 	u8 rc4key[16];
 
 	ieee80211_tkip_gen_rc4key(key, ta, rc4key);
-	pos = ieee80211_tkip_add_iv(pos, key, rc4key[0], rc4key[1], rc4key[2]);
+	*pos++ = rc4key[0];
+	*pos++ = rc4key[1];
+	*pos++ = rc4key[2];
+	*pos++ = (key->conf.keyidx << 6) | (1 << 5) /* Ext IV */;
+	pos = set_tkip_iv(pos, key->u.tkip.iv32);
 	ieee80211_wep_encrypt_data(tfm, rc4key, 16, pos, payload_len);
 }
 
