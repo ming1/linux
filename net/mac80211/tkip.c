@@ -286,7 +286,8 @@ int ieee80211_tkip_decrypt_data(struct crypto_blkcipher *tfm,
 		return TKIP_DECRYPT_REPLAY;
 	}
 
-	if (only_iv) {
+	if (only_iv &&
+		!(key->conf.flags & IEEE80211_KEY_FLAG_TKIP_REQ_RX_P1_KEY)) {
 		res = TKIP_DECRYPT_OK;
 		key->u.tkip.rx_initialized[queue] = 1;
 		goto done;
@@ -298,6 +299,14 @@ int ieee80211_tkip_decrypt_data(struct crypto_blkcipher *tfm,
 		/* IV16 wrapped around - perform TKIP phase 1 */
 		tkip_mixing_phase1(ta, &key->conf.key[ALG_TKIP_TEMP_ENCR_KEY],
 				   iv32, key->u.tkip.p1k_rx[queue]);
+		if (key->conf.flags & IEEE80211_KEY_FLAG_TKIP_REQ_RX_P1_KEY) {
+			/* The driver needs a phase 1 key, provide it */
+			memcpy(&key->conf.tkip_p1k,
+				&key->u.tkip.p1k_rx[queue],
+				sizeof(key->conf.tkip_p1k));
+			key->conf.tkip_iv32 = iv32;
+			key->conf.flags |= IEEE80211_KEY_FLAG_TKIP_PHASE1_VALID;
+		}
 #ifdef CONFIG_TKIP_DEBUG
 		{
 			int i;
@@ -315,6 +324,12 @@ int ieee80211_tkip_decrypt_data(struct crypto_blkcipher *tfm,
 			printk("\n");
 		}
 #endif /* CONFIG_TKIP_DEBUG */
+	}
+
+	if (only_iv) {
+		res = TKIP_DECRYPT_OK;
+		key->u.tkip.rx_initialized[queue] = 1;
+		goto done;
 	}
 
 	tkip_mixing_phase2(key->u.tkip.p1k_rx[queue],
