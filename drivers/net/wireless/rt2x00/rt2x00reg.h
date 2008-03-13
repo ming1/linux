@@ -29,7 +29,7 @@
 /*
  * TX result flags.
  */
-enum tx_status {
+enum TX_STATUS {
 	TX_SUCCESS = 0,
 	TX_SUCCESS_RETRY = 1,
 	TX_FAIL_RETRY = 2,
