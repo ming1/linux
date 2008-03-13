@@ -273,13 +273,12 @@ enum ath5k_driver_mode {
 #define SHPREAMBLE_FLAG(_ix) \
 	(HAS_SHPREAMBLE(_ix) ? AR5K_SET_SHORT_PREAMBLE : 0)
 
-
 /****************\
   TX DEFINITIONS
 \****************/
 
 /*
- * TX Status
+ * Tx Descriptor
  */
 struct ath5k_tx_status {
 	u16	ts_seqnum;
@@ -427,7 +426,7 @@ enum ath5k_dmasize {
 \****************/
 
 /*
- * RX Status
+ * Rx Descriptor
  */
 struct ath5k_rx_status {
 	u16	rs_datalen;
@@ -456,6 +455,8 @@ struct ath5k_mib_stats {
 	u32	fcs_bad;
 	u32	beacons;
 };
+
+
 
 
 /**************************\
@@ -499,22 +500,20 @@ struct ath5k_beacon_state {
 #define TSF_TO_TU(_tsf) (u32)((_tsf) >> 10)
 
 
+
 /********************\
   COMMON DEFINITIONS
 \********************/
 
 /*
- * Atheros hardware descriptor
+ * Atheros descriptor
  */
 struct ath5k_desc {
-	u32	ds_link;	/* physical address of the next descriptor */
-	u32	ds_data;	/* physical address of data buffer (skb) */
-
-	union {
-		struct ath5k_hw_5210_tx_desc	ds_tx5210;
-		struct ath5k_hw_5212_tx_desc	ds_tx5212;
-		struct ath5k_hw_all_rx_desc	ds_rx;
-	} ud;
+	u32	ds_link;
+	u32	ds_data;
+	u32	ds_ctl0;
+	u32	ds_ctl1;
+	u32	ds_hw[4];
 
 	union {
 		struct ath5k_rx_status rx;
