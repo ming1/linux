@@ -328,18 +328,6 @@ ieee80211_crypto_tkip_decrypt(struct ieee80211_rx_data *rx)
 		return RX_DROP_UNUSABLE;
 	}
 
-	if (key->conf.flags & IEEE80211_KEY_FLAG_TKIP_PHASE1_VALID) {
-		u8 bcast[ETH_ALEN] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
-		u8 *sta_addr = rx->sta->addr;
-
-		if (is_multicast_ether_addr(hdr->addr1))
-			sta_addr = bcast;
-
-		rx->local->ops->set_key(local_to_hw(rx->local),
-			SET_KEY, rx->dev->dev_addr, sta_addr, &key->conf);
-		key->conf.flags &= ~IEEE80211_KEY_FLAG_TKIP_PHASE1_VALID;
-	}
-
 	/* Trim ICV */
 	skb_trim(skb, skb->len - TKIP_ICV_LEN);
 
