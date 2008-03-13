@@ -287,6 +287,7 @@ struct ieee80211_tx_control {
 	u8 iv_len;		/* length of the IV field in octets */
 	u8 queue;		/* hardware queue to use for this frame;
 				 * 0 = highest, hw->queues-1 = lowest */
+	u8 tkip_key[16];	/* generated phase2/phase1 key for hw TKIP */
 	int type;	/* internal */
 };
 
@@ -586,11 +587,15 @@ enum ieee80211_key_alg {
  * @IEEE80211_KEY_FLAG_GENERATE_MMIC: This flag should be set by
  *	the driver for a TKIP key if it requires Michael MIC
  *	generation in software.
+ * @IEEE80211_KEY_FLAG_TKIP_REQ_TX_P2_KEY: This flag should be set by
+ *	the driver for a TKIP key if it requires a phase2 TX key generation
+ *	in SW. The key will be attached to each packet.
  */
 enum ieee80211_key_flags {
 	IEEE80211_KEY_FLAG_WMM_STA	= 1<<0,
 	IEEE80211_KEY_FLAG_GENERATE_IV	= 1<<1,
 	IEEE80211_KEY_FLAG_GENERATE_MMIC= 1<<2,
+	IEEE80211_KEY_FLAG_TKIP_REQ_TX_P2_KEY = 1<<3,
 };
 
 /**
