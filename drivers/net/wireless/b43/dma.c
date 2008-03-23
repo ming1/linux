@@ -1346,6 +1346,7 @@ static void b43_fill_txstatus_report(struct b43_dmaring *ring,
 	}
 }
 
+/* Called with IRQs disabled. */
 void b43_dma_handle_txstatus(struct b43_wldev *dev,
 			     const struct b43_txstatus *status)
 {
@@ -1358,8 +1359,8 @@ void b43_dma_handle_txstatus(struct b43_wldev *dev,
 	ring = parse_cookie(dev, status->cookie, &slot);
 	if (unlikely(!ring))
 		return;
-	B43_WARN_ON(!irqs_disabled());
-	spin_lock(&ring->lock);
+
+	spin_lock(&ring->lock); /* IRQs are already disabled. */
 
 	B43_WARN_ON(!ring->tx);
 	ops = ring->ops;
