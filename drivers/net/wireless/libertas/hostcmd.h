@@ -195,8 +195,6 @@ struct cmd_ds_802_11_scan_rsp {
 };
 
 struct cmd_ds_802_11_get_log {
-	struct cmd_header hdr;
-
 	__le32 mcasttxframe;
 	__le32 failed;
 	__le32 retry;
@@ -703,6 +701,7 @@ struct cmd_ds_command {
 		struct cmd_ds_802_11_ad_hoc_start ads;
 		struct cmd_ds_802_11_reset reset;
 		struct cmd_ds_802_11_ad_hoc_result result;
+		struct cmd_ds_802_11_get_log glog;
 		struct cmd_ds_802_11_authenticate auth;
 		struct cmd_ds_802_11_get_stat gstat;
 		struct cmd_ds_802_3_get_stat gstat_8023;
