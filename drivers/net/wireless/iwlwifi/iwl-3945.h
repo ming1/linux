@@ -44,7 +44,6 @@ extern struct pci_device_id iwl3945_hw_card_ids[];
 #include "iwl-prph.h"
 #include "iwl-3945-hw.h"
 #include "iwl-3945-debug.h"
-#include "iwl-3945-led.h"
 
 /* Change firmware file name, using "-" and incrementing number,
  *   *only* when uCode interface or architecture changes so that it
@@ -778,14 +777,12 @@ struct iwl3945_priv {
 	struct iwl3945_init_alive_resp card_alive_init;
 	struct iwl3945_alive_resp card_alive;
 
-#ifdef CONFIG_IWL4965_LEDS
-	struct iwl3945_led led[IWL_LED_TRG_MAX];
-	unsigned long last_blink_time;
-	u8 last_blink_rate;
-	u8 allow_blinking;
-	unsigned int rxtxpackets;
+#ifdef LED
+	/* LED related variables */
+	struct iwl3945_activity_blink activity;
+	unsigned long led_packets;
+	int led_state;
 #endif
-
 
 	u16 active_rate;
 	u16 active_rate_basic;
