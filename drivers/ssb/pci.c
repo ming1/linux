@@ -572,19 +572,6 @@ static inline int ssb_pci_assert_buspower(struct ssb_bus *bus)
 }
 #endif /* DEBUG */
 
-static u8 ssb_pci_read8(struct ssb_device *dev, u16 offset)
-{
-	struct ssb_bus *bus = dev->bus;
-
-	if (unlikely(ssb_pci_assert_buspower(bus)))
-		return 0xFF;
-	if (unlikely(bus->mapped_device != dev)) {
-		if (unlikely(ssb_pci_switch_core(bus, dev)))
-			return 0xFF;
-	}
-	return ioread8(bus->mmio + offset);
-}
-
 static u16 ssb_pci_read16(struct ssb_device *dev, u16 offset)
 {
 	struct ssb_bus *bus = dev->bus;
@@ -609,19 +596,6 @@ static u32 ssb_pci_read32(struct ssb_device *dev, u16 offset)
 			return 0xFFFFFFFF;
 	}
 	return ioread32(bus->mmio + offset);
-}
-
-static void ssb_pci_write8(struct ssb_device *dev, u16 offset, u8 value)
-{
-	struct ssb_bus *bus = dev->bus;
-
-	if (unlikely(ssb_pci_assert_buspower(bus)))
-		return;
-	if (unlikely(bus->mapped_device != dev)) {
-		if (unlikely(ssb_pci_switch_core(bus, dev)))
-			return;
-	}
-	iowrite8(value, bus->mmio + offset);
 }
 
 static void ssb_pci_write16(struct ssb_device *dev, u16 offset, u16 value)
@@ -652,10 +626,8 @@ static void ssb_pci_write32(struct ssb_device *dev, u16 offset, u32 value)
 
 /* Not "static", as it's used in main.c */
 const struct ssb_bus_ops ssb_pci_ops = {
-	.read8		= ssb_pci_read8,
 	.read16		= ssb_pci_read16,
 	.read32		= ssb_pci_read32,
-	.write8		= ssb_pci_write8,
 	.write16	= ssb_pci_write16,
 	.write32	= ssb_pci_write32,
 };
