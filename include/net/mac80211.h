@@ -590,12 +590,20 @@ enum ieee80211_key_alg {
  * @IEEE80211_KEY_FLAG_TKIP_REQ_TX_P2_KEY: This flag should be set by
  *	the driver for a TKIP key if it requires a phase2 TX key generation
  *	in SW. The key will be attached to each packet.
+ * @IEEE80211_KEY_FLAG_TKIP_REQ_RX_P1_KEY: This flag should be set by the driver
+ *	for a TKIP key if it requires phase 1 key generation in software.
+ *	The phase 1 key will be sent in the same context as Rx.
+ * @IEEE80211_KEY_FLAG_TKIP_PHASE1_VALID: Set by mac80211, valid only when
+ *	IEEE80211_KEY_FLAG_TKIP_REQ_RX_P1_KEY was set. When set, the phase 1
+ *	fields (tkip_p1k and tkip_iv32) in ieee80211_key_conf are valid.
  */
 enum ieee80211_key_flags {
 	IEEE80211_KEY_FLAG_WMM_STA	= 1<<0,
 	IEEE80211_KEY_FLAG_GENERATE_IV	= 1<<1,
 	IEEE80211_KEY_FLAG_GENERATE_MMIC= 1<<2,
 	IEEE80211_KEY_FLAG_TKIP_REQ_TX_P2_KEY = 1<<3,
+	IEEE80211_KEY_FLAG_TKIP_REQ_RX_P1_KEY = 1<<4,
+	IEEE80211_KEY_FLAG_TKIP_PHASE1_VALID = 1<<5,
 };
 
 /**
@@ -619,6 +627,8 @@ struct ieee80211_key_conf {
 	u8 flags;
 	s8 keyidx;
 	u8 keylen;
+	u16 tkip_p1k[5];
+	u8 tkip_iv32;
 	u8 key[0];
 };
 
