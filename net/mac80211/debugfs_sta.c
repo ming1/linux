@@ -169,30 +169,27 @@ static ssize_t sta_agg_status_read(struct file *file, char __user *userbuf,
 	p += scnprintf(p, sizeof(buf)+buf-p, "\n RX  :");
 	for (i = 0; i < STA_TID_NUM; i++)
 		p += scnprintf(p, sizeof(buf)+buf-p, "%5d",
-			sta->ampdu_mlme.tid_state_rx[i]);
+	sta->ampdu_mlme.tid_rx[i].state);
 
 	p += scnprintf(p, sizeof(buf)+buf-p, "\n DTKN:");
 	for (i = 0; i < STA_TID_NUM; i++)
 		p += scnprintf(p, sizeof(buf)+buf-p, "%5d",
-			sta->ampdu_mlme.tid_state_rx[i]?
-			sta->ampdu_mlme.tid_rx[i]->dialog_token : 0);
+			sta->ampdu_mlme.tid_rx[i].dialog_token);
 
 	p += scnprintf(p, sizeof(buf)+buf-p, "\n TX  :");
 	for (i = 0; i < STA_TID_NUM; i++)
 		p += scnprintf(p, sizeof(buf)+buf-p, "%5d",
-			sta->ampdu_mlme.tid_state_tx[i]);
+			sta->ampdu_mlme.tid_tx[i].state);
 
 	p += scnprintf(p, sizeof(buf)+buf-p, "\n DTKN:");
 	for (i = 0; i < STA_TID_NUM; i++)
 		p += scnprintf(p, sizeof(buf)+buf-p, "%5d",
-			sta->ampdu_mlme.tid_state_tx[i]?
-			sta->ampdu_mlme.tid_tx[i]->dialog_token : 0);
+			sta->ampdu_mlme.tid_tx[i].dialog_token);
 
 	p += scnprintf(p, sizeof(buf)+buf-p, "\n SSN :");
 	for (i = 0; i < STA_TID_NUM; i++)
 		p += scnprintf(p, sizeof(buf)+buf-p, "%5d",
-			sta->ampdu_mlme.tid_state_tx[i]?
-			sta->ampdu_mlme.tid_tx[i]->ssn : 0);
+			sta->ampdu_mlme.tid_tx[i].ssn);
 
 	p += scnprintf(p, sizeof(buf)+buf-p, "\n");
 
@@ -233,12 +230,12 @@ static ssize_t sta_agg_status_write(struct file *file,
 			strcpy(state, "off ");
 			ieee80211_sta_stop_rx_ba_session(dev, da, tid_num, 0,
 					WLAN_REASON_QSTA_REQUIRE_SETUP);
-			sta->ampdu_mlme.tid_state_rx[tid_num] |=
+			sta->ampdu_mlme.tid_rx[tid_num].state |=
 					HT_AGG_STATE_DEBUGFS_CTL;
 			tid_static_rx[tid_num] = 0;
 		} else {
 			strcpy(state, "on ");
-			sta->ampdu_mlme.tid_state_rx[tid_num] &=
+			sta->ampdu_mlme.tid_rx[tid_num].state &=
 					~HT_AGG_STATE_DEBUGFS_CTL;
 			tid_static_rx[tid_num] = 1;
 		}
