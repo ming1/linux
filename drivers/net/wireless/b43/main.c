@@ -465,13 +465,11 @@ out:
 }
 
 /* Read HostFlags */
-u64 b43_hf_read(struct b43_wldev * dev)
+u32 b43_hf_read(struct b43_wldev * dev)
 {
-	u64 ret;
+	u32 ret;
 
 	ret = b43_shm_read16(dev, B43_SHM_SHARED, B43_SHM_SH_HOSTFHI);
-	ret <<= 16;
-	ret |= b43_shm_read16(dev, B43_SHM_SHARED, B43_SHM_SH_HOSTFMI);
 	ret <<= 16;
 	ret |= b43_shm_read16(dev, B43_SHM_SHARED, B43_SHM_SH_HOSTFLO);
 
@@ -479,16 +477,12 @@ u64 b43_hf_read(struct b43_wldev * dev)
 }
 
 /* Write HostFlags */
-void b43_hf_write(struct b43_wldev *dev, u64 value)
+void b43_hf_write(struct b43_wldev *dev, u32 value)
 {
-	u16 lo, mi, hi;
-
-	lo = (value & 0x00000000FFFFULL);
-	mi = (value & 0x0000FFFF0000ULL) >> 16;
-	hi = (value & 0xFFFF00000000ULL) >> 32;
-	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_HOSTFLO, lo);
-	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_HOSTFMI, mi);
-	b43_shm_write16(dev, B43_SHM_SHARED, B43_SHM_SH_HOSTFHI, hi);
+	b43_shm_write16(dev, B43_SHM_SHARED,
+			B43_SHM_SH_HOSTFLO, (value & 0x0000FFFF));
+	b43_shm_write16(dev, B43_SHM_SHARED,
+			B43_SHM_SH_HOSTFHI, ((value & 0xFFFF0000) >> 16));
 }
 
 void b43_tsf_read(struct b43_wldev *dev, u64 * tsf)
