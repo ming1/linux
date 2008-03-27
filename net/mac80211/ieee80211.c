@@ -1803,9 +1803,13 @@ static int __init ieee80211_init(void)
 
 	BUILD_BUG_ON(sizeof(struct ieee80211_tx_packet_data) > sizeof(skb->cb));
 
-	ret = rc80211_pid_init();
+	ret = rc80211_simple_init();
 	if (ret)
 		goto out;
+
+	ret = rc80211_pid_init();
+	if (ret)
+		goto out_cleanup_simple;
 
 	ret = ieee80211_wme_register();
 	if (ret) {
@@ -1820,12 +1824,15 @@ static int __init ieee80211_init(void)
 
  out_cleanup_pid:
 	rc80211_pid_exit();
+ out_cleanup_simple:
+	rc80211_simple_exit();
  out:
 	return ret;
 }
 
 static void __exit ieee80211_exit(void)
 {
+	rc80211_simple_exit();
 	rc80211_pid_exit();
 
 	if (mesh_allocated)
