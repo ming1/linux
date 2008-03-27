@@ -106,7 +106,7 @@ static int ioremap_change_attr(unsigned long vaddr, unsigned long size,
  * have to convert them into an offset in a page-aligned mapping, but the
  * caller shouldn't need to know that small detail.
  */
-static void __iomem *__ioremap(unsigned long phys_addr, unsigned long size,
+static void __iomem *__ioremap(resource_size_t phys_addr, unsigned long size,
 			       enum ioremap_mode mode)
 {
 	unsigned long pfn, offset, last_addr, vaddr;
@@ -133,8 +133,6 @@ static void __iomem *__ioremap(unsigned long phys_addr, unsigned long size,
 		    !PageReserved(pfn_to_page(pfn)))
 			return NULL;
 	}
-
-	WARN_ON_ONCE(page_is_ram(pfn));
 
 	switch (mode) {
 	case IOR_MODE_UNCACHED:
@@ -195,13 +193,13 @@ static void __iomem *__ioremap(unsigned long phys_addr, unsigned long size,
  *
  * Must be freed with iounmap.
  */
-void __iomem *ioremap_nocache(unsigned long phys_addr, unsigned long size)
+void __iomem *ioremap_nocache(resource_size_t phys_addr, unsigned long size)
 {
 	return __ioremap(phys_addr, size, IOR_MODE_UNCACHED);
 }
 EXPORT_SYMBOL(ioremap_nocache);
 
-void __iomem *ioremap_cache(unsigned long phys_addr, unsigned long size)
+void __iomem *ioremap_cache(resource_size_t phys_addr, unsigned long size)
 {
 	return __ioremap(phys_addr, size, IOR_MODE_CACHED);
 }
