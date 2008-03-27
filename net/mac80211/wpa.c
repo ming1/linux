@@ -228,9 +228,6 @@ static int tkip_encrypt_skb(struct ieee80211_tx_data *tx,
 					    0x7f),
 				      (u8) key->u.tkip.iv16);
 
-		if (key->conf.flags & IEEE80211_KEY_FLAG_TKIP_REQ_TX_P2_KEY)
-			ieee80211_tkip_gen_rc4key(key, hdr->addr2,
-						tx->control->tkip_key);
 		tx->control->key_idx = tx->key->conf.hw_key_idx;
 		return 0;
 	}
