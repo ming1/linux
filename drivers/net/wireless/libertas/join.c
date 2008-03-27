@@ -769,6 +769,9 @@ int lbs_ret_80211_associate(struct lbs_private *priv,
 	priv->curbssparams.ssid_len = bss->ssid_len;
 	memcpy(priv->curbssparams.bssid, bss->bssid, ETH_ALEN);
 
+	lbs_deb_assoc("ASSOC_RESP: currentpacketfilter is 0x%x\n",
+		priv->currentpacketfilter);
+
 	priv->SNR[TYPE_RXPD][TYPE_AVG] = 0;
 	priv->NF[TYPE_RXPD][TYPE_AVG] = 0;
 
