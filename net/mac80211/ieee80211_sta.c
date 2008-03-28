@@ -533,6 +533,10 @@ static void ieee80211_set_associated(struct net_device *dev,
 					   conf->channel->center_freq,
 					   ifsta->ssid, ifsta->ssid_len);
 		if (bss) {
+			/* set timing information */
+			sdata->bss_conf.beacon_int = bss->beacon_int;
+			sdata->bss_conf.timestamp = bss->timestamp;
+
 			changed |= ieee80211_handle_bss_capability(sdata, bss);
 			ieee80211_rx_bss_put(dev, bss);
 		}
@@ -2055,8 +2059,10 @@ static void ieee80211_rx_mgmt_assoc_resp(struct ieee80211_sub_if_data *sdata,
 	} else
 		rcu_read_unlock();
 
-	/* set AID, ieee80211_set_associated() will tell the driver */
+	/* set AID and assoc capability,
+	 * ieee80211_set_associated() will tell the driver */
 	bss_conf->aid = aid;
+	bss_conf->assoc_capability = capab_info;
 	ieee80211_set_associated(dev, ifsta, 1);
 
 	ieee80211_associated(dev, ifsta);
