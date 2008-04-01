@@ -1963,7 +1963,6 @@ static void ieee80211_rx_mgmt_assoc_resp(struct ieee80211_sub_if_data *sdata,
 		if (err) {
 			printk(KERN_DEBUG "%s: failed to insert STA entry for"
 			       " the AP (error %d)\n", dev->name, err);
-			sta_info_destroy(sta);
 			rcu_read_unlock();
 			return;
 		}
@@ -4198,10 +4197,8 @@ struct sta_info * ieee80211_ibss_add_sta(struct net_device *dev,
 
 	rate_control_rate_init(sta, local);
 
-	if (sta_info_insert(sta)) {
-		sta_info_destroy(sta);
+	if (sta_info_insert(sta))
 		return NULL;
-	}
 
 	return sta;
 }
