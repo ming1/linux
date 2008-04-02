@@ -672,7 +672,7 @@ static int ieee80211_add_station(struct wiphy *wiphy, struct net_device *dev,
 
 	err = sta_info_insert(sta);
 	if (err) {
-		/* STA has been freed */
+		sta_info_destroy(sta);
 		rcu_read_unlock();
 		return err;
 	}
