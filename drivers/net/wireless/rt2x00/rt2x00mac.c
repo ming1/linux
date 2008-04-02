@@ -396,17 +396,17 @@ int rt2x00mac_conf_tx(struct ieee80211_hw *hw, int queue_idx,
 	 * The passed variables are stored as real value ((2^n)-1).
 	 * Ralink registers require to know the bit number 'n'.
 	 */
-	if (params->cw_min > 0)
+	if (params->cw_min)
 		queue->cw_min = fls(params->cw_min);
 	else
 		queue->cw_min = 5; /* cw_min: 2^5 = 32. */
 
-	if (params->cw_max > 0)
+	if (params->cw_max)
 		queue->cw_max = fls(params->cw_max);
 	else
 		queue->cw_max = 10; /* cw_min: 2^10 = 1024. */
 
-	if (params->aifs >= 0)
+	if (params->aifs)
 		queue->aifs = params->aifs;
 	else
 		queue->aifs = 2;
