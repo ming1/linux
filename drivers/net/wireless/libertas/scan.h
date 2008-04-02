@@ -34,9 +34,14 @@ struct bss_descriptor {
 	u8 ssid_len;
 
 	u16 capability;
-	u32 rssi;
+
+	/* receive signal strength in dBm */
+	long rssi;
+
 	u32 channel;
+
 	u16 beaconperiod;
+
 	u32 atimwindow;
 
 	/* IW_MODE_AUTO, IW_MODE_ADHOC, IW_MODE_INFRA */
