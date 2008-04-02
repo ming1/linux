@@ -618,7 +618,6 @@ void b43_debugfs_remove_device(struct b43_wldev *dev)
 	kfree(e);
 }
 
-/* Called with IRQs disabled. */
 void b43_debugfs_log_txstat(struct b43_wldev *dev,
 			    const struct b43_txstatus *status)
 {
@@ -630,7 +629,8 @@ void b43_debugfs_log_txstat(struct b43_wldev *dev,
 	if (!e)
 		return;
 	log = &e->txstatlog;
-	spin_lock(&log->lock); /* IRQs are already disabled. */
+	B43_WARN_ON(!irqs_disabled());
+	spin_lock(&log->lock);
 	i = log->end + 1;
 	if (i == B43_NR_LOGGED_TXSTATUS)
 		i = 0;

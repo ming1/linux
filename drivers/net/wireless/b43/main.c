@@ -2049,6 +2049,7 @@ void b43_mac_enable(struct b43_wldev *dev)
 {
 	dev->mac_suspended--;
 	B43_WARN_ON(dev->mac_suspended < 0);
+	B43_WARN_ON(irqs_disabled());
 	if (dev->mac_suspended == 0) {
 		b43_write32(dev, B43_MMIO_MACCTL,
 			    b43_read32(dev, B43_MMIO_MACCTL)
@@ -2074,6 +2075,7 @@ void b43_mac_suspend(struct b43_wldev *dev)
 	u32 tmp;
 
 	might_sleep();
+	B43_WARN_ON(irqs_disabled());
 	B43_WARN_ON(dev->mac_suspended < 0);
 
 	if (dev->mac_suspended == 0) {
