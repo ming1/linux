@@ -2154,7 +2154,7 @@ static void b43_gpio_cleanup(struct b43_wldev *dev)
 }
 
 /* http://bcm-specs.sipsolutions.net/EnableMac */
-static void b43_mac_enable(struct b43_wldev *dev)
+void b43_mac_enable(struct b43_wldev *dev)
 {
 	dev->mac_suspended--;
 	B43_WARN_ON(dev->mac_suspended < 0);
@@ -2177,7 +2177,7 @@ static void b43_mac_enable(struct b43_wldev *dev)
 }
 
 /* http://bcm-specs.sipsolutions.net/SuspendMAC */
-static void b43_mac_suspend(struct b43_wldev *dev)
+void b43_mac_suspend(struct b43_wldev *dev)
 {
 	int i;
 	u32 tmp;
