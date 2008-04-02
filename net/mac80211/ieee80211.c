@@ -1375,7 +1375,9 @@ EXPORT_SYMBOL(ieee80211_tx_status);
 struct ieee80211_hw *ieee80211_alloc_hw(size_t priv_data_len,
 					const struct ieee80211_ops *ops)
 {
+	struct net_device *mdev;
 	struct ieee80211_local *local;
+	struct ieee80211_sub_if_data *sdata;
 	int priv_size;
 	struct wiphy *wiphy;
 
@@ -1421,7 +1423,21 @@ struct ieee80211_hw *ieee80211_alloc_hw(size_t priv_data_len,
 	BUG_ON(!ops->configure_filter);
 	local->ops = ops;
 
+	/* for now, mdev needs sub_if_data :/ */
+	mdev = alloc_netdev(sizeof(struct ieee80211_sub_if_data),
+			    "wmaster%d", ether_setup);
+	if (!mdev) {
+		wiphy_free(wiphy);
+		return NULL;
+	}
+
+	sdata = IEEE80211_DEV_TO_SUB_IF(mdev);
+	mdev->ieee80211_ptr = &sdata->wdev;
+	sdata->wdev.wiphy = wiphy;
+
 	local->hw.queues = 1; /* default */
+
+	local->mdev = mdev;
 
 	local->bridge_packets = 1;
 
@@ -1434,8 +1450,25 @@ struct ieee80211_hw *ieee80211_alloc_hw(size_t priv_data_len,
 	INIT_LIST_HEAD(&local->interfaces);
 
 	INIT_DELAYED_WORK(&local->scan_work, ieee80211_sta_scan_work);
+	ieee80211_rx_bss_list_init(mdev);
 
 	sta_info_init(local);
+
+	mdev->hard_start_xmit = ieee80211_master_start_xmit;
+	mdev->open = ieee80211_master_open;
+	mdev->stop = ieee80211_master_stop;
+	mdev->type = ARPHRD_IEEE80211;
+	mdev->header_ops = &ieee80211_header_ops;
+	mdev->set_multicast_list = ieee80211_master_set_multicast_list;
+
+	sdata->vif.type = IEEE80211_IF_TYPE_AP;
+	sdata->dev = mdev;
+	sdata->local = local;
+	sdata->u.ap.force_unicast_rateidx = -1;
+	sdata->u.ap.max_ratectrl_rateidx = -1;
+	ieee80211_if_sdata_init(sdata);
+	/* no RCU needed since we're still during init phase */
+	list_add_tail(&sdata->list, &local->interfaces);
 
 	tasklet_init(&local->tx_pending_tasklet, ieee80211_tx_pending,
 		     (unsigned long)local);
@@ -1459,8 +1492,6 @@ int ieee80211_register_hw(struct ieee80211_hw *hw)
 	const char *name;
 	int result;
 	enum ieee80211_band band;
-	struct net_device *mdev;
-	struct ieee80211_sub_if_data *sdata;
 
 	/*
 	 * generic code guarantees at least one band,
@@ -1483,37 +1514,6 @@ int ieee80211_register_hw(struct ieee80211_hw *hw)
 	result = wiphy_register(local->hw.wiphy);
 	if (result < 0)
 		return result;
-
-	/* for now, mdev needs sub_if_data :/ */
-	mdev = alloc_netdev(sizeof(struct ieee80211_sub_if_data),
-			    "wmaster%d", ether_setup);
-	if (!mdev)
-		goto fail_mdev_alloc;
-
-	sdata = IEEE80211_DEV_TO_SUB_IF(mdev);
-	mdev->ieee80211_ptr = &sdata->wdev;
-	sdata->wdev.wiphy = local->hw.wiphy;
-
-	local->mdev = mdev;
-
-	ieee80211_rx_bss_list_init(mdev);
-
-	mdev->hard_start_xmit = ieee80211_master_start_xmit;
-	mdev->open = ieee80211_master_open;
-	mdev->stop = ieee80211_master_stop;
-	mdev->type = ARPHRD_IEEE80211;
-	mdev->header_ops = &ieee80211_header_ops;
-	mdev->set_multicast_list = ieee80211_master_set_multicast_list;
-
-	sdata->vif.type = IEEE80211_IF_TYPE_AP;
-	sdata->dev = mdev;
-	sdata->local = local;
-	sdata->u.ap.force_unicast_rateidx = -1;
-	sdata->u.ap.max_ratectrl_rateidx = -1;
-	ieee80211_if_sdata_init(sdata);
-
-	/* no RCU needed since we're still during init phase */
-	list_add_tail(&sdata->list, &local->interfaces);
 
 	name = wiphy_dev(local->hw.wiphy)->driver->name;
 	local->hw.workqueue = create_singlethread_workqueue(name);
@@ -1606,9 +1606,6 @@ fail_sta_info:
 	debugfs_hw_del(local);
 	destroy_workqueue(local->hw.workqueue);
 fail_workqueue:
-	ieee80211_if_free(local->mdev);
-	local->mdev = NULL;
-fail_mdev_alloc:
 	wiphy_unregister(local->hw.wiphy);
 	return result;
 }
@@ -1669,8 +1666,6 @@ void ieee80211_unregister_hw(struct ieee80211_hw *hw)
 	wiphy_unregister(local->hw.wiphy);
 	ieee80211_wep_free(local);
 	ieee80211_led_exit(local);
-	ieee80211_if_free(local->mdev);
-	local->mdev = NULL;
 }
 EXPORT_SYMBOL(ieee80211_unregister_hw);
 
@@ -1678,6 +1673,7 @@ void ieee80211_free_hw(struct ieee80211_hw *hw)
 {
 	struct ieee80211_local *local = hw_to_local(hw);
 
+	ieee80211_if_free(local->mdev);
 	wiphy_free(local->hw.wiphy);
 }
 EXPORT_SYMBOL(ieee80211_free_hw);
