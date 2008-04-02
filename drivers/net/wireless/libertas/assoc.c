@@ -272,7 +272,9 @@ static int assoc_helper_wep_keys(struct lbs_private *priv,
 	else
 		priv->mac_control &= ~CMD_ACT_MAC_WEP_ENABLE;
 
-	lbs_set_mac_control(priv);
+	ret = lbs_set_mac_control(priv);
+	if (ret)
+		goto out;
 
 	mutex_lock(&priv->lock);
 
@@ -302,7 +304,9 @@ static int assoc_helper_secinfo(struct lbs_private *priv,
 	memcpy(&priv->secinfo, &assoc_req->secinfo,
 		sizeof(struct lbs_802_11_security));
 
-	lbs_set_mac_control(priv);
+	ret = lbs_set_mac_control(priv);
+	if (ret)
+		goto out;
 
 	/* If RSN is already enabled, don't try to enable it again, since
 	 * ENABLE_RSN resets internal state machines and will clobber the
