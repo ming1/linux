@@ -26,10 +26,18 @@
 #ifndef RT2X00LEDS_H
 #define RT2X00LEDS_H
 
+/*
+* Flags used by driver to indicate which
+ * which led types are supported.
+ */
+#define LED_SUPPORT_RADIO	0x000001
+#define LED_SUPPORT_ASSOC	0x000002
+#define LED_SUPPORT_ACTIVITY	0x000004
+#define LED_SUPPORT_QUALITY	0x000008
+
 enum led_type {
 	LED_TYPE_RADIO,
 	LED_TYPE_ASSOC,
-	LED_TYPE_ACTIVITY,
 	LED_TYPE_QUALITY,
 };
 
@@ -40,9 +48,14 @@ struct rt2x00_led {
 	struct led_classdev led_dev;
 
 	enum led_type type;
-	unsigned int flags;
-#define LED_INITIALIZED		( 1 << 0 )
-#define LED_REGISTERED		( 1 << 1 )
+	unsigned int registered;
+};
+
+struct rt2x00_trigger {
+	struct led_trigger trigger;
+
+	enum led_type type;
+	unsigned int registered;
 };
 
 #endif /* CONFIG_RT2X00_LIB_LEDS */
