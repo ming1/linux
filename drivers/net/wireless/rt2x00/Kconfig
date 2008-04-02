@@ -11,17 +11,18 @@ config RT2X00
 	  will also be created. That library (when the driver is built as
 	  a module) will be called "rt2x00lib.ko".
 
-if RT2X00
-
 config RT2X00_LIB
 	tristate
+	depends on RT2X00
 
 config RT2X00_LIB_PCI
 	tristate
+	depends on RT2X00
 	select RT2X00_LIB
 
 config RT2X00_LIB_USB
 	tristate
+	depends on RT2X00
 	select RT2X00_LIB
 
 config RT2X00_LIB_FIRMWARE
@@ -46,7 +47,7 @@ config RT2X00_LIB_LEDS
 
 config RT2400PCI
 	tristate "Ralink rt2400 pci/pcmcia support"
-	depends on PCI
+	depends on RT2X00 && PCI
 	select RT2X00_LIB_PCI
 	select EEPROM_93CX6
 	---help---
@@ -72,7 +73,7 @@ config RT2400PCI_LEDS
 
 config RT2500PCI
 	tristate "Ralink rt2500 pci/pcmcia support"
-	depends on PCI
+	depends on RT2X00 && PCI
 	select RT2X00_LIB_PCI
 	select EEPROM_93CX6
 	---help---
@@ -98,7 +99,7 @@ config RT2500PCI_LEDS
 
 config RT61PCI
 	tristate "Ralink rt61 pci/pcmcia support"
-	depends on PCI
+	depends on RT2X00 && PCI
 	select RT2X00_LIB_PCI
 	select RT2X00_LIB_FIRMWARE
 	select EEPROM_93CX6
@@ -125,7 +126,7 @@ config RT61PCI_LEDS
 
 config RT2500USB
 	tristate "Ralink rt2500 usb support"
-	depends on USB
+	depends on RT2X00 && USB
 	select RT2X00_LIB_USB
 	---help---
 	  This is an experimental driver for the Ralink rt2500 wireless chip.
@@ -141,7 +142,7 @@ config RT2500USB_LEDS
 
 config RT73USB
 	tristate "Ralink rt73 usb support"
-	depends on USB
+	depends on RT2X00 && USB
 	select RT2X00_LIB_USB
 	select RT2X00_LIB_FIRMWARE
 	---help---
@@ -170,4 +171,3 @@ config RT2X00_DEBUG
 	---help---
 	  Enable debugging output for all rt2x00 modules
 
-endif
