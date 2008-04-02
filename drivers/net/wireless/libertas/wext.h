@@ -15,6 +15,8 @@ struct lbs_ioctl_regrdwr {
 	u32 value;
 };
 
+#define LBS_MONITOR_OFF			0
+
 extern struct iw_handler_def lbs_handler_def;
 extern struct iw_handler_def mesh_handler_def;
 
