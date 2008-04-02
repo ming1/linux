@@ -1317,10 +1317,8 @@ int ath5k_hw_write_initvals(struct ath5k_hw *ah, u8 mode, bool change_channel)
 	/* For AR5211 */
 	} else if (ah->ah_version == AR5K_AR5211) {
 
-		/* AR5K_MODE_11B */
-		if (mode > 2) {
-			ATH5K_ERR(ah->ah_sc,
-				"unsupported channel mode: %d\n", mode);
+		if(mode > 2){ /* AR5K_MODE_11B */
+			ATH5K_ERR(ah->ah_sc,"unsupported channel mode: %d\n", mode);
 			return -EINVAL;
 		}
 
