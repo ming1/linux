@@ -146,6 +146,22 @@ static int lbs_ret_reg_access(struct lbs_private *priv,
 	return ret;
 }
 
+static int lbs_ret_802_11_stat(struct lbs_private *priv,
+				struct cmd_ds_command *resp)
+{
+	lbs_deb_enter(LBS_DEB_CMD);
+/*	currently priv->wlan802_11Stat is unused
+
+	struct cmd_ds_802_11_get_stat *p11Stat = &resp->params.gstat;
+
+	// TODO Convert it to Big endian befor copy
+	memcpy(&priv->wlan802_11Stat,
+	       p11Stat, sizeof(struct cmd_ds_802_11_get_stat));
+*/
+	lbs_deb_leave(LBS_DEB_CMD);
+	return 0;
+}
+
 static int lbs_ret_802_11_snmp_mib(struct lbs_private *priv,
 				    struct cmd_ds_command *resp)
 {
@@ -305,6 +321,7 @@ static int lbs_ret_802_11_bcn_ctrl(struct lbs_private * priv,
 }
 
 static inline int handle_cmd_response(struct lbs_private *priv,
+				      unsigned long dummy,
 				      struct cmd_header *cmd_response)
 {
 	struct cmd_ds_command *resp = (struct cmd_ds_command *) cmd_response;
@@ -329,12 +346,16 @@ static inline int handle_cmd_response(struct lbs_private *priv,
 
 	case CMD_RET(CMD_802_11_DISASSOCIATE):
 	case CMD_RET(CMD_802_11_DEAUTHENTICATE):
-		ret = lbs_ret_80211_disassociate(priv);
+		ret = lbs_ret_80211_disassociate(priv, resp);
 		break;
 
 	case CMD_RET(CMD_802_11_AD_HOC_START):
 	case CMD_RET(CMD_802_11_AD_HOC_JOIN):
 		ret = lbs_ret_80211_ad_hoc_start(priv, resp);
+		break;
+
+	case CMD_RET(CMD_802_11_GET_STAT):
+		ret = lbs_ret_802_11_stat(priv, resp);
 		break;
 
 	case CMD_RET(CMD_802_11_SNMP_MIB):
@@ -373,7 +394,7 @@ static inline int handle_cmd_response(struct lbs_private *priv,
 		break;
 
 	case CMD_RET(CMD_802_11_AD_HOC_STOP):
-		ret = lbs_ret_80211_ad_hoc_stop(priv);
+		ret = lbs_ret_80211_ad_hoc_stop(priv, resp);
 		break;
 
 	case CMD_RET(CMD_802_11_EEPROM_ACCESS):
@@ -381,7 +402,7 @@ static inline int handle_cmd_response(struct lbs_private *priv,
 		break;
 
 	case CMD_RET(CMD_802_11D_DOMAIN_INFO):
-		ret = lbs_ret_802_11d_domain_info(resp);
+		ret = lbs_ret_802_11d_domain_info(priv, resp);
 		break;
 
 	case CMD_RET(CMD_802_11_TPC_CFG):
@@ -584,7 +605,7 @@ int lbs_process_rx_command(struct lbs_private *priv)
 		ret = priv->cur_cmd->callback(priv, priv->cur_cmd->callback_arg,
 				resp);
 	} else
-		ret = handle_cmd_response(priv, resp);
+		ret = handle_cmd_response(priv, 0, resp);
 
 	spin_lock_irqsave(&priv->driver_lock, flags);
 
