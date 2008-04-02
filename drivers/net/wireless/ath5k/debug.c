@@ -65,7 +65,7 @@ static unsigned int ath5k_debug;
 module_param_named(debug, ath5k_debug, uint, 0);
 
 
-#ifdef CONFIG_ATH5K_DEBUG
+#if ATH5K_DEBUG
 
 #include <linux/seq_file.h>
 #include "reg.h"
@@ -340,7 +340,7 @@ static struct {
 	{ ATH5K_DEBUG_LED,	"led",		"LED mamagement" },
 	{ ATH5K_DEBUG_DUMP_RX,	"dumprx",	"print received skb content" },
 	{ ATH5K_DEBUG_DUMP_TX,	"dumptx",	"print transmit skb content" },
-	{ ATH5K_DEBUG_DUMPBANDS, "dumpbands",	"dump bands" },
+	{ ATH5K_DEBUG_DUMPMODES, "dumpmodes",	"dump modes" },
 	{ ATH5K_DEBUG_TRACE,	"trace",	"trace function calls" },
 	{ ATH5K_DEBUG_ANY,	"all",		"show all debug levels" },
 };
@@ -452,47 +452,30 @@ ath5k_debug_finish_device(struct ath5k_softc *sc)
 /* functions used in other places */
 
 void
-ath5k_debug_dump_bands(struct ath5k_softc *sc)
+ath5k_debug_dump_modes(struct ath5k_softc *sc, struct ieee80211_hw_mode *modes)
 {
-	unsigned int b, i;
+	unsigned int m, i;
 
-	if (likely(!(sc->debug.level & ATH5K_DEBUG_DUMPBANDS)))
+	if (likely(!(sc->debug.level & ATH5K_DEBUG_DUMPMODES)))
 		return;
 
-	BUG_ON(!sc->sbands);
-
-	for (b = 0; b < IEEE80211_NUM_BANDS; b++) {
-		struct ieee80211_supported_band *band = &sc->sbands[b];
-		char bname[5];
-		switch (band->band) {
-		case IEEE80211_BAND_2GHZ:
-			strcpy(bname, "2 GHz");
-			break;
-		case IEEE80211_BAND_5GHZ:
-			strcpy(bname, "5 GHz");
-			break;
-		default:
-			printk(KERN_DEBUG "Band not supported: %d\n",
-				band->band);
-			return;
-		}
-		printk(KERN_DEBUG "Band %s: channels %d, rates %d\n", bname,
-				band->n_channels, band->n_bitrates);
+	for (m = 0; m < NUM_DRIVER_MODES; m++) {
+		printk(KERN_DEBUG "Mode %u: channels %d, rates %d\n", m,
+				modes[m].num_channels, modes[m].num_rates);
 		printk(KERN_DEBUG " channels:\n");
-		for (i = 0; i < band->n_channels; i++)
+		for (i = 0; i < modes[m].num_channels; i++)
 			printk(KERN_DEBUG "  %3d %d %.4x %.4x\n",
-					ieee80211_frequency_to_channel(
-						band->channels[i].center_freq),
-					band->channels[i].center_freq,
-					band->channels[i].hw_value,
-					band->channels[i].flags);
+					modes[m].channels[i].chan,
+					modes[m].channels[i].freq,
+					modes[m].channels[i].val,
+					modes[m].channels[i].flag);
 		printk(KERN_DEBUG " rates:\n");
-		for (i = 0; i < band->n_bitrates; i++)
+		for (i = 0; i < modes[m].num_rates; i++)
 			printk(KERN_DEBUG "  %4d %.4x %.4x %.4x\n",
-					band->bitrates[i].bitrate,
-					band->bitrates[i].hw_value,
-					band->bitrates[i].flags,
-					band->bitrates[i].hw_value_short);
+					modes[m].rates[i].rate,
+					modes[m].rates[i].val,
+					modes[m].rates[i].flags,
+					modes[m].rates[i].val2);
 	}
 }
 
@@ -565,4 +548,4 @@ ath5k_debug_printtxbuf(struct ath5k_softc *sc,
 		!done ? ' ' : (ds->ds_txstat.ts_status == 0) ? '*' : '!');
 }
 
-#endif /* ifdef CONFIG_ATH5K_DEBUG */
+#endif /* if ATH5K_DEBUG */
