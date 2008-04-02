@@ -53,7 +53,6 @@ struct queue_entry *rt2x00queue_get_entry(struct data_queue *queue,
 					  enum queue_index index)
 {
 	struct queue_entry *entry;
-	unsigned long irqflags;
 
 	if (unlikely(index >= Q_INDEX_MAX)) {
 		ERROR(queue->rt2x00dev,
@@ -61,11 +60,11 @@ struct queue_entry *rt2x00queue_get_entry(struct data_queue *queue,
 		return NULL;
 	}
 
-	spin_lock_irqsave(&queue->lock, irqflags);
+	spin_lock(&queue->lock);
 
 	entry = &queue->entries[queue->index[index]];
 
-	spin_unlock_irqrestore(&queue->lock, irqflags);
+	spin_unlock(&queue->lock);
 
 	return entry;
 }
@@ -73,15 +72,13 @@ EXPORT_SYMBOL_GPL(rt2x00queue_get_entry);
 
 void rt2x00queue_index_inc(struct data_queue *queue, enum queue_index index)
 {
-	unsigned long irqflags;
-
 	if (unlikely(index >= Q_INDEX_MAX)) {
 		ERROR(queue->rt2x00dev,
 		      "Index change on invalid index type (%d)\n", index);
 		return;
 	}
 
-	spin_lock_irqsave(&queue->lock, irqflags);
+	spin_lock(&queue->lock);
 
 	queue->index[index]++;
 	if (queue->index[index] >= queue->limit)
@@ -94,21 +91,19 @@ void rt2x00queue_index_inc(struct data_queue *queue, enum queue_index index)
 		queue->count ++;
 	}
 
-	spin_unlock_irqrestore(&queue->lock, irqflags);
+	spin_unlock(&queue->lock);
 }
 EXPORT_SYMBOL_GPL(rt2x00queue_index_inc);
 
 static void rt2x00queue_reset(struct data_queue *queue)
 {
-	unsigned long irqflags;
-
-	spin_lock_irqsave(&queue->lock, irqflags);
+	spin_lock(&queue->lock);
 
 	queue->count = 0;
 	queue->length = 0;
 	memset(queue->index, 0, sizeof(queue->index));
 
-	spin_unlock_irqrestore(&queue->lock, irqflags);
+	spin_unlock(&queue->lock);
 }
 
 void rt2x00queue_init_rx(struct rt2x00_dev *rt2x00dev)
