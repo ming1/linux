@@ -113,6 +113,9 @@
 #define TFD_TX_CMD_SLOTS 256
 #define TFD_CMD_SLOTS 32
 
+#define TFD_MAX_PAYLOAD_SIZE (sizeof(struct iwl4965_cmd) - \
+			      sizeof(struct iwl4965_cmd_meta))
+
 /*
  * RX related structures and functions
  */
