@@ -109,7 +109,7 @@ static int rt2x00leds_register_led(struct rt2x00_dev *rt2x00dev,
 	return 0;
 }
 
-void rt2x00leds_register(struct rt2x00_dev *rt2x00dev)
+int rt2x00leds_register(struct rt2x00_dev *rt2x00dev)
 {
 	char *trigger;
 	char dev_name[16];
@@ -117,7 +117,7 @@ void rt2x00leds_register(struct rt2x00_dev *rt2x00dev)
 	int retval;
 
 	if (!rt2x00dev->ops->lib->led_brightness)
-		return;
+		return 0;
 
 	snprintf(dev_name, sizeof(dev_name), "%s-%s",
 		 rt2x00dev->ops->name, wiphy_name(rt2x00dev->hw->wiphy));
@@ -161,10 +161,11 @@ void rt2x00leds_register(struct rt2x00_dev *rt2x00dev)
 			goto exit_fail;
 	}
 
-	return;
+	return 0;
 
 exit_fail:
 	rt2x00leds_unregister(rt2x00dev);
+	return retval;
 }
 
 static void rt2x00leds_unregister_trigger(struct rt2x00_trigger *trigger)
