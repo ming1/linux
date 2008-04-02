@@ -12,6 +12,7 @@
 #include <linux/list.h>
 #include <linux/types.h>
 #include <linux/if_ether.h>
+#include <linux/kref.h>
 #include "ieee80211_key.h"
 
 /**
@@ -133,14 +134,8 @@ struct sta_ampdu_mlme {
 	u8 dialog_token_allocator;
 };
 
-
-/* see __sta_info_unlink */
-#define STA_INFO_PIN_STAT_NORMAL	0
-#define STA_INFO_PIN_STAT_PINNED	1
-#define STA_INFO_PIN_STAT_DESTROY	2
-
-
 struct sta_info {
+	struct kref kref;
 	struct list_head list;
 	struct sta_info *hnext; /* next entry in hash table list */
 
@@ -171,8 +166,8 @@ struct sta_info {
 	/* last rates used to send a frame to this STA */
 	int last_txrate_idx, last_nonerp_txrate_idx;
 
-	/* sub_if_data this sta belongs to */
-	struct ieee80211_sub_if_data *sdata;
+	struct net_device *dev; /* which net device is this station associated
+				 * to */
 
 	struct ieee80211_key *key;
 
@@ -203,12 +198,6 @@ struct sta_info {
 #endif /* CONFIG_MAC80211_DEBUG_COUNTERS */
 
 	u16 listen_interval;
-
-	/*
-	 * for use by the internal lifetime management,
-	 * see __sta_info_unlink
-	 */
-	u8 pin_status;
 
 	struct ieee80211_ht_info ht_info; /* 802.11n HT capabilities
 					     of this STA */
@@ -273,37 +262,25 @@ static inline enum plink_state sta_plink_state(struct sta_info *sta)
  */
 #define STA_INFO_CLEANUP_INTERVAL (10 * HZ)
 
-/*
- * Get a STA info, must have be under RCU read lock.
- */
-struct sta_info *sta_info_get(struct ieee80211_local *local, u8 *addr);
-/*
- * Get STA info by index, BROKEN!
- */
+static inline void __sta_info_get(struct sta_info *sta)
+{
+	kref_get(&sta->kref);
+}
+
+struct sta_info * sta_info_get(struct ieee80211_local *local, u8 *addr);
 struct sta_info *sta_info_get_by_idx(struct ieee80211_local *local, int idx,
 				      struct net_device *dev);
-/*
- * Add a new STA info, must be under RCU read lock
- * because otherwise the returned reference isn't
- * necessarily valid long enough.
- */
-struct sta_info *sta_info_add(struct ieee80211_sub_if_data *sdata,
-			      u8 *addr);
-/*
- * Unlink a STA info from the hash table/list.
- * This can NULL the STA pointer if somebody else
- * has already unlinked it.
- */
-void sta_info_unlink(struct sta_info **sta);
-
-void sta_info_destroy(struct sta_info *sta);
-void sta_info_set_tim_bit(struct sta_info *sta);
-void sta_info_clear_tim_bit(struct sta_info *sta);
-
+void sta_info_put(struct sta_info *sta);
+struct sta_info *sta_info_add(struct ieee80211_local *local,
+			      struct net_device *dev, u8 *addr, gfp_t gfp);
+void sta_info_remove(struct sta_info *sta);
+void sta_info_free(struct sta_info *sta);
 void sta_info_init(struct ieee80211_local *local);
 int sta_info_start(struct ieee80211_local *local);
 void sta_info_stop(struct ieee80211_local *local);
-void sta_info_flush(struct ieee80211_local *local,
-		    struct ieee80211_sub_if_data *sdata);
+void sta_info_flush(struct ieee80211_local *local, struct net_device *dev);
+
+void sta_info_set_tim_bit(struct sta_info *sta);
+void sta_info_clear_tim_bit(struct sta_info *sta);
 
 #endif /* STA_INFO_H */

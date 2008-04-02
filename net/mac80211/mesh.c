@@ -83,10 +83,11 @@ bool mesh_peer_accepts_plinks(struct ieee802_11_elems *ie,
 /**
  * mesh_accept_plinks_update: update accepting_plink in local mesh beacons
  *
- * @sdata: mesh interface in which mesh beacons are going to be updated
+ * @dev: mesh interface in which mesh beacons are going to be updated
  */
-void mesh_accept_plinks_update(struct ieee80211_sub_if_data *sdata)
+void mesh_accept_plinks_update(struct net_device *dev)
 {
+	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 	bool free_plinks;
 
 	/* In case mesh_plink_free_count > 0 and mesh_plinktbl_capacity == 0,
