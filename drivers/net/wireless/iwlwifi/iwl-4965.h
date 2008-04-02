@@ -967,7 +967,6 @@ struct iwl4965_priv {
 	struct ieee80211_hw *hw;
 	struct ieee80211_channel *ieee_channels;
 	struct ieee80211_rate *ieee_rates;
-	struct iwl_cfg *cfg;
 
 	/* temporary frame storage list */
 	struct list_head free_frames;
@@ -1127,6 +1126,7 @@ struct iwl4965_priv {
 	int is_open;
 
 	u8 mac80211_registered;
+	int is_abg;
 
 	u32 notif_missed_beacons;
 
