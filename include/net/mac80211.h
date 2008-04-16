@@ -276,8 +276,7 @@ struct ieee80211_tx_control {
  * @RX_FLAG_FAILED_PLCP_CRC: Set this flag if the PCLP check failed on
  *	the frame.
  * @RX_FLAG_TSFT: The timestamp passed in the RX status (@mactime field)
- *	is valid. This is useful in monitor mode and necessary for beacon frames
- *	to enable IBSS merging.
+ *	is valid.
  */
 enum mac80211_rx_flags {
 	RX_FLAG_MMIC_ERROR	= 1<<0,
