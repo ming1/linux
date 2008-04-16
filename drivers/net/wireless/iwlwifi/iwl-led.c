@@ -40,7 +40,6 @@
 #include <asm/unaligned.h>
 
 #include "iwl-4965.h"
-#include "iwl-io.h"
 #include "iwl-core.h"
 #include "iwl-helpers.h"
 
@@ -86,9 +85,9 @@ static int iwl_send_led_cmd(struct iwl_priv *priv,
 	};
 	u32 reg;
 
-	reg = iwl_read32(priv, CSR_LED_REG);
+	reg = iwl4965_read32(priv, CSR_LED_REG);
 	if (reg != (reg & CSR_LED_BSM_CTRL_MSK))
-		iwl_write32(priv, CSR_LED_REG, reg & CSR_LED_BSM_CTRL_MSK);
+		iwl4965_write32(priv, CSR_LED_REG, reg & CSR_LED_BSM_CTRL_MSK);
 
 	return iwl_send_cmd(priv, &cmd);
 }
@@ -127,7 +126,7 @@ static int iwl4965_led_pattern(struct iwl_priv *priv, int led_id,
 static int iwl4965_led_on_reg(struct iwl_priv *priv, int led_id)
 {
 	IWL_DEBUG_LED("led on %d\n", led_id);
-	iwl_write32(priv, CSR_LED_REG, CSR_LED_REG_TRUN_ON);
+	iwl4965_write32(priv, CSR_LED_REG, CSR_LED_REG_TRUN_ON);
 	return 0;
 }
 
@@ -151,7 +150,7 @@ int iwl4965_led_off(struct iwl_priv *priv, int led_id)
 static int iwl4965_led_off_reg(struct iwl_priv *priv, int led_id)
 {
 	IWL_DEBUG_LED("radio off\n");
-	iwl_write32(priv, CSR_LED_REG, CSR_LED_REG_TRUN_OFF);
+	iwl4965_write32(priv, CSR_LED_REG, CSR_LED_REG_TRUN_OFF);
 	return 0;
 }
 
