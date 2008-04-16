@@ -4047,14 +4047,15 @@ static void at76_rx_mgmt_assoc(struct at76_priv *priv,
 {
 	struct ieee80211_assoc_response *resp =
 	    (struct ieee80211_assoc_response *)buf->packet;
+	struct ieee80211_hdr_3addr *mgmt = &resp->header;
 	u16 assoc_id = le16_to_cpu(resp->aid);
 	u16 status = le16_to_cpu(resp->status);
-
-	at76_dbg(DBG_RX_MGMT, "%s: rx AssocResp bssid %s capa 0x%04x status "
-		 "0x%04x assoc_id 0x%04x rates %s", priv->netdev->name,
-		 mac2str(resp->header.addr3), le16_to_cpu(resp->capability),
-		 status, assoc_id, hex2str(resp->info_element->data,
-					   resp->info_element->len));
+	u16 capa = le16_to_cpu(resp->capability);
+	at76_dbg(DBG_RX_MGMT,
+		 "%s: rx AssocResp bssid %s capa 0x%04x status 0x%04x "
+		 "assoc_id 0x%04x rates %s", priv->netdev->name,
+		 mac2str(mgmt->addr3), capa, status, assoc_id,
+		 hex2str(resp->info_element->data, resp->info_element->len));
 
 	if (priv->mac_state != MAC_ASSOC) {
 		printk(KERN_INFO "%s: AssocResp in state %s ignored\n",
