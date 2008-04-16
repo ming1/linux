@@ -576,6 +576,8 @@ struct iwl4965_ibss_seq {
  * @max_rxq_log: Log-base-2 of max_rxq_size
  * @max_stations:
  * @bcast_sta_id:
+ * @shared_virt: Pointer to driver/uCode shared Tx Byte Counts and Rx status
+ * @shared_phys: Physical Pointer to Tx Byte Counts and Rx status
  */
 struct iwl4965_driver_hw_info {
 	u16 max_txq_num;
@@ -587,6 +589,8 @@ struct iwl4965_driver_hw_info {
 	u16 max_rxq_log;
 	u8  max_stations;
 	u8  bcast_sta_id;
+	void *shared_virt;
+	dma_addr_t shared_phys;
 };
 
 #define HT_SHORT_GI_20MHZ_ONLY          (1 << 0)
@@ -1143,13 +1147,8 @@ struct iwl_priv {
 	/* Last Rx'd beacon timestamp */
 	u64 timestamp;
 	u16 beacon_int;
-	struct ieee80211_vif *vif;
-
 	struct iwl4965_driver_hw_info hw_setting;
-	/* driver/uCode shared Tx Byte Counts and Rx status */
-	void *shared_virt;
-	/* Physical Pointer to Tx Byte Counts and Rx status */
-	dma_addr_t shared_phys;
+	struct ieee80211_vif *vif;
 
 	/* Current association information needed to configure the
 	 * hardware */
