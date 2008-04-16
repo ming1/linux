@@ -140,6 +140,9 @@ struct ath5k_hw *ath5k_hw_attach(struct ath5k_softc *sc, u8 mac_version)
 	 * HW information
 	 */
 
+	/* Get reg domain from eeprom */
+	ath5k_get_regdomain(ah);
+
 	ah->ah_op_mode = IEEE80211_IF_TYPE_STA;
 	ah->ah_radar.r_enabled = AR5K_TUNE_RADAR_ALERT;
 	ah->ah_turbo = false;
@@ -402,15 +405,15 @@ const struct ath5k_rate_table *ath5k_hw_get_rate_table(struct ath5k_hw *ah,
 
 	/* Get rate tables */
 	switch (mode) {
-	case AR5K_MODE_11A:
+	case MODE_IEEE80211A:
 		return &ath5k_rt_11a;
-	case AR5K_MODE_11A_TURBO:
+	case MODE_ATHEROS_TURBO:
 		return &ath5k_rt_turbo;
-	case AR5K_MODE_11B:
+	case MODE_IEEE80211B:
 		return &ath5k_rt_11b;
-	case AR5K_MODE_11G:
+	case MODE_IEEE80211G:
 		return &ath5k_rt_11g;
-	case AR5K_MODE_11G_TURBO:
+	case MODE_ATHEROS_TURBOG:
 		return &ath5k_rt_xr;
 	}
 
@@ -456,15 +459,15 @@ static inline int ath5k_hw_write_ofdm_timings(struct ath5k_hw *ah,
 		ds_coef_exp, ds_coef_man, clock;
 
 	if (!(ah->ah_version == AR5K_AR5212) ||
-		!(channel->hw_value & CHANNEL_OFDM))
+		!(channel->val & CHANNEL_OFDM))
 		BUG();
 
 	/* Seems there are two PLLs, one for baseband sampling and one
 	 * for tuning. Tuning basebands are 40 MHz or 80MHz when in
 	 * turbo. */
-	clock = channel->hw_value & CHANNEL_TURBO ? 80 : 40;
+	clock = channel->val & CHANNEL_TURBO ? 80 : 40;
 	coef_scaled = ((5 * (clock << 24)) / 2) /
-	channel->center_freq;
+	channel->freq;
 
 	for (coef_exp = 31; coef_exp > 0; coef_exp--)
 		if ((coef_scaled >> coef_exp) & 0x1)
@@ -491,7 +494,8 @@ static inline int ath5k_hw_write_ofdm_timings(struct ath5k_hw *ah,
  * ath5k_hw_write_rate_duration - set rate duration during hw resets
  *
  * @ah: the &struct ath5k_hw
- * @mode: one of enum ath5k_driver_mode
+ * @driver_mode: one of enum ieee80211_phymode or our one of our own
+ *     vendor modes
  *
  * Write the rate duration table for the current mode upon hw reset. This
  * is a helper for ath5k_hw_reset(). It seems all this is doing is setting
@@ -502,20 +506,19 @@ static inline int ath5k_hw_write_ofdm_timings(struct ath5k_hw *ah,
  *
  */
 static inline void ath5k_hw_write_rate_duration(struct ath5k_hw *ah,
-       unsigned int mode)
+       unsigned int driver_mode)
 {
 	struct ath5k_softc *sc = ah->ah_sc;
 	const struct ath5k_rate_table *rt;
-	struct ieee80211_rate srate = {};
 	unsigned int i;
 
 	/* Get rate table for the current operating mode */
-	rt = ath5k_hw_get_rate_table(ah, mode);
+	rt = ath5k_hw_get_rate_table(ah,
+		driver_mode);
 
 	/* Write rate duration table */
 	for (i = 0; i < rt->rate_count; i++) {
 		const struct ath5k_rate *rate, *control_rate;
-
 		u32 reg;
 		u16 tx_time;
 
@@ -525,8 +528,6 @@ static inline void ath5k_hw_write_rate_duration(struct ath5k_hw *ah,
 		/* Set ACK timeout */
 		reg = AR5K_RATE_DUR(rate->rate_code);
 
-		srate.bitrate = control_rate->rate_kbps/100;
-
 		/* An ACK frame consists of 10 bytes. If you add the FCS,
 		 * which ieee80211_generic_frame_duration() adds,
 		 * its 14 bytes. Note we use the control rate and not the
@@ -534,7 +535,7 @@ static inline void ath5k_hw_write_rate_duration(struct ath5k_hw *ah,
 		 * ieee80211_duration() for a brief description of
 		 * what rate we should choose to TX ACKs. */
 		tx_time = ieee80211_generic_frame_duration(sc->hw,
-			sc->vif, 10, &srate);
+			sc->vif, 10, control_rate->rate_kbps/100);
 
 		ath5k_hw_reg_write(ah, tx_time, reg);
 
@@ -568,7 +569,7 @@ int ath5k_hw_reset(struct ath5k_hw *ah, enum ieee80211_if_types op_mode,
 {
 	struct ath5k_eeprom_info *ee = &ah->ah_capabilities.cap_eeprom;
 	u32 data, s_seq, s_ant, s_led[3];
-	unsigned int i, mode, freq, ee_mode, ant[2];
+	unsigned int i, mode, freq, ee_mode, ant[2], driver_mode = -1;
 	int ret;
 
 	ATH5K_TRACE(ah->ah_sc);
@@ -603,7 +604,7 @@ int ath5k_hw_reset(struct ath5k_hw *ah, enum ieee80211_if_types op_mode,
 
 
 	/*Wakeup the device*/
-	ret = ath5k_hw_nic_wakeup(ah, channel->hw_value, false);
+	ret = ath5k_hw_nic_wakeup(ah, channel->val, false);
 	if (ret)
 		return ret;
 
@@ -625,32 +626,37 @@ int ath5k_hw_reset(struct ath5k_hw *ah, enum ieee80211_if_types op_mode,
 			return -EINVAL;
 		}
 
-		switch (channel->hw_value & CHANNEL_MODES) {
+		switch (channel->val & CHANNEL_MODES) {
 		case CHANNEL_A:
-			mode = AR5K_MODE_11A;
+			mode = AR5K_INI_VAL_11A;
 			freq = AR5K_INI_RFGAIN_5GHZ;
 			ee_mode = AR5K_EEPROM_MODE_11A;
+			driver_mode = MODE_IEEE80211A;
 			break;
 		case CHANNEL_G:
-			mode = AR5K_MODE_11G;
+			mode = AR5K_INI_VAL_11G;
 			freq = AR5K_INI_RFGAIN_2GHZ;
 			ee_mode = AR5K_EEPROM_MODE_11G;
+			driver_mode = MODE_IEEE80211G;
 			break;
 		case CHANNEL_B:
-			mode = AR5K_MODE_11B;
+			mode = AR5K_INI_VAL_11B;
 			freq = AR5K_INI_RFGAIN_2GHZ;
 			ee_mode = AR5K_EEPROM_MODE_11B;
+			driver_mode = MODE_IEEE80211B;
 			break;
 		case CHANNEL_T:
-			mode = AR5K_MODE_11A_TURBO;
+			mode = AR5K_INI_VAL_11A_TURBO;
 			freq = AR5K_INI_RFGAIN_5GHZ;
 			ee_mode = AR5K_EEPROM_MODE_11A;
+			driver_mode = MODE_ATHEROS_TURBO;
 			break;
 		/*Is this ok on 5211 too ?*/
 		case CHANNEL_TG:
-			mode = AR5K_MODE_11G_TURBO;
+			mode = AR5K_INI_VAL_11G_TURBO;
 			freq = AR5K_INI_RFGAIN_2GHZ;
 			ee_mode = AR5K_EEPROM_MODE_11G;
+			driver_mode = MODE_ATHEROS_TURBOG;
 			break;
 		case CHANNEL_XR:
 			if (ah->ah_version == AR5K_AR5211) {
@@ -658,13 +664,14 @@ int ath5k_hw_reset(struct ath5k_hw *ah, enum ieee80211_if_types op_mode,
 					"XR mode not available on 5211");
 				return -EINVAL;
 			}
-			mode = AR5K_MODE_XR;
+			mode = AR5K_INI_VAL_XR;
 			freq = AR5K_INI_RFGAIN_5GHZ;
 			ee_mode = AR5K_EEPROM_MODE_11A;
+			driver_mode = MODE_IEEE80211A;
 			break;
 		default:
 			ATH5K_ERR(ah->ah_sc,
-				"invalid channel: %d\n", channel->center_freq);
+				"invalid channel: %d\n", channel->freq);
 			return -EINVAL;
 		}
 
@@ -697,7 +704,7 @@ int ath5k_hw_reset(struct ath5k_hw *ah, enum ieee80211_if_types op_mode,
 		if (ah->ah_version > AR5K_AR5211){ /* found on 5213+ */
 			ath5k_hw_reg_write(ah, 0x0002a002, AR5K_PHY(11));
 
-			if (channel->hw_value == CHANNEL_G)
+			if (channel->val == CHANNEL_G)
 				ath5k_hw_reg_write(ah, 0x00f80d80, AR5K_PHY(83)); /* 0x00fc0ec0 */
 			else
 				ath5k_hw_reg_write(ah, 0x00000000, AR5K_PHY(83));
@@ -715,7 +722,7 @@ int ath5k_hw_reset(struct ath5k_hw *ah, enum ieee80211_if_types op_mode,
 				AR5K_SREV_RAD_5112A) {
 			ath5k_hw_reg_write(ah, AR5K_PHY_CCKTXCTL_WORLD,
 					AR5K_PHY_CCKTXCTL);
-			if (channel->hw_value & CHANNEL_5GHZ)
+			if (channel->val & CHANNEL_5GHZ)
 				data = 0xffb81020;
 			else
 				data = 0xffb80d20;
@@ -735,7 +742,7 @@ int ath5k_hw_reset(struct ath5k_hw *ah, enum ieee80211_if_types op_mode,
 		 * mac80211 are integrated */
 		if (ah->ah_version == AR5K_AR5212 &&
 			ah->ah_sc->vif != NULL)
-			ath5k_hw_write_rate_duration(ah, mode);
+			ath5k_hw_write_rate_duration(ah, driver_mode);
 
 		/*
 		 * Write RF registers
@@ -751,7 +758,7 @@ int ath5k_hw_reset(struct ath5k_hw *ah, enum ieee80211_if_types op_mode,
 
 		/* Write OFDM timings on 5212*/
 		if (ah->ah_version == AR5K_AR5212 &&
-			channel->hw_value & CHANNEL_OFDM) {
+			channel->val & CHANNEL_OFDM) {
 			ret = ath5k_hw_write_ofdm_timings(ah, channel);
 			if (ret)
 				return ret;
@@ -760,7 +767,7 @@ int ath5k_hw_reset(struct ath5k_hw *ah, enum ieee80211_if_types op_mode,
 		/*Enable/disable 802.11b mode on 5111
 		(enable 2111 frequency converter + CCK)*/
 		if (ah->ah_radio == AR5K_RF5111) {
-			if (mode == AR5K_MODE_11B)
+			if (driver_mode == MODE_IEEE80211B)
 				AR5K_REG_ENABLE_BITS(ah, AR5K_TXCFG,
 				    AR5K_TXCFG_B_MODE);
 			else
@@ -898,7 +905,7 @@ int ath5k_hw_reset(struct ath5k_hw *ah, enum ieee80211_if_types op_mode,
 	if (ah->ah_version != AR5K_AR5210) {
 		data = ath5k_hw_reg_read(ah, AR5K_PHY_RX_DELAY) &
 			AR5K_PHY_RX_DELAY_M;
-		data = (channel->hw_value & CHANNEL_CCK) ?
+		data = (channel->val & CHANNEL_CCK) ?
 			((data << 2) / 22) : (data / 10);
 
 		udelay(100 + data);
@@ -915,11 +922,11 @@ int ath5k_hw_reset(struct ath5k_hw *ah, enum ieee80211_if_types op_mode,
 	if (ath5k_hw_register_timeout(ah, AR5K_PHY_AGCCTL,
 			AR5K_PHY_AGCCTL_CAL, 0, false)) {
 		ATH5K_ERR(ah->ah_sc, "calibration timeout (%uMHz)\n",
-			channel->center_freq);
+			channel->freq);
 		return -EAGAIN;
 	}
 
-	ret = ath5k_hw_noise_floor_calibration(ah, channel->center_freq);
+	ret = ath5k_hw_noise_floor_calibration(ah, channel->freq);
 	if (ret)
 		return ret;
 
@@ -927,7 +934,7 @@ int ath5k_hw_reset(struct ath5k_hw *ah, enum ieee80211_if_types op_mode,
 
 	/* A and G modes can use QAM modulation which requires enabling
 	 * I and Q calibration. Don't bother in B mode. */
-	if (!(mode == AR5K_MODE_11B)) {
+	if (!(driver_mode == MODE_IEEE80211B)) {
 		ah->ah_calibration = true;
 		AR5K_REG_WRITE_BITS(ah, AR5K_PHY_IQ,
 				AR5K_PHY_IQ_CAL_NUM_LOG_MAX, 15);
@@ -1585,10 +1592,9 @@ static int ath5k_hw_eeprom_read(struct ath5k_hw *ah, u32 offset, u16 *data)
 /*
  * Write to eeprom - currently disabled, use at your own risk
  */
-#if 0
 static int ath5k_hw_eeprom_write(struct ath5k_hw *ah, u32 offset, u16 data)
 {
-
+#if 0
 	u32 status, timeout;
 
 	ATH5K_TRACE(ah->ah_sc);
@@ -1630,11 +1636,10 @@ static int ath5k_hw_eeprom_write(struct ath5k_hw *ah, u32 offset, u16 data)
 		}
 		udelay(15);
 	}
-
+#endif
 	ATH5K_ERR(ah->ah_sc, "EEPROM Write is disabled!");
 	return -EIO;
 }
-#endif
 
 /*
  * Translate binary channel representation in EEPROM to frequency
@@ -2040,6 +2045,50 @@ static int ath5k_eeprom_read_mac(struct ath5k_hw *ah, u8 *mac)
 }
 
 /*
+ * Read/Write regulatory domain
+ */
+static bool ath5k_eeprom_regulation_domain(struct ath5k_hw *ah, bool write,
+	enum ath5k_regdom *regdomain)
+{
+	u16 ee_regdomain;
+
+	/* Read current value */
+	if (write != true) {
+		ee_regdomain = ah->ah_capabilities.cap_eeprom.ee_regdomain;
+		*regdomain = ath5k_regdom_to_ieee(ee_regdomain);
+		return true;
+	}
+
+	ee_regdomain = ath5k_regdom_from_ieee(*regdomain);
+
+	/* Try to write a new value */
+	if (ah->ah_capabilities.cap_eeprom.ee_protect &
+			AR5K_EEPROM_PROTECT_WR_128_191)
+		return false;
+	if (ath5k_hw_eeprom_write(ah, AR5K_EEPROM_REG_DOMAIN, ee_regdomain)!=0)
+		return false;
+
+	ah->ah_capabilities.cap_eeprom.ee_regdomain = ee_regdomain;
+
+	return true;
+}
+
+/*
+ * Use the above to write a new regulatory domain
+ */
+int ath5k_hw_set_regdomain(struct ath5k_hw *ah, u16 regdomain)
+{
+	enum ath5k_regdom ieee_regdomain;
+
+	ieee_regdomain = ath5k_regdom_to_ieee(regdomain);
+
+	if (ath5k_eeprom_regulation_domain(ah, true, &ieee_regdomain) == true)
+		return 0;
+
+	return -EIO;
+}
+
+/*
  * Fill the capabilities struct
  */
 static int ath5k_hw_get_capabilities(struct ath5k_hw *ah)
@@ -2061,8 +2110,8 @@ static int ath5k_hw_get_capabilities(struct ath5k_hw *ah)
 		ah->ah_capabilities.cap_range.range_2ghz_max = 0;
 
 		/* Set supported modes */
-		__set_bit(AR5K_MODE_11A, ah->ah_capabilities.cap_mode);
-		__set_bit(AR5K_MODE_11A_TURBO, ah->ah_capabilities.cap_mode);
+		__set_bit(MODE_IEEE80211A, ah->ah_capabilities.cap_mode);
+		__set_bit(MODE_ATHEROS_TURBO, ah->ah_capabilities.cap_mode);
 	} else {
 		/*
 		 * XXX The tranceiver supports frequencies from 4920 to 6100GHz
@@ -2084,12 +2133,12 @@ static int ath5k_hw_get_capabilities(struct ath5k_hw *ah)
 			ah->ah_capabilities.cap_range.range_5ghz_max = 6100;
 
 			/* Set supported modes */
-			__set_bit(AR5K_MODE_11A,
+			__set_bit(MODE_IEEE80211A,
 					ah->ah_capabilities.cap_mode);
-			__set_bit(AR5K_MODE_11A_TURBO,
+			__set_bit(MODE_ATHEROS_TURBO,
 					ah->ah_capabilities.cap_mode);
 			if (ah->ah_version == AR5K_AR5212)
-				__set_bit(AR5K_MODE_11G_TURBO,
+				__set_bit(MODE_ATHEROS_TURBOG,
 						ah->ah_capabilities.cap_mode);
 		}
 
@@ -2101,11 +2150,11 @@ static int ath5k_hw_get_capabilities(struct ath5k_hw *ah)
 			ah->ah_capabilities.cap_range.range_2ghz_max = 2732;
 
 			if (AR5K_EEPROM_HDR_11B(ee_header))
-				__set_bit(AR5K_MODE_11B,
+				__set_bit(MODE_IEEE80211B,
 						ah->ah_capabilities.cap_mode);
 
 			if (AR5K_EEPROM_HDR_11G(ee_header))
-				__set_bit(AR5K_MODE_11G,
+				__set_bit(MODE_IEEE80211G,
 						ah->ah_capabilities.cap_mode);
 		}
 	}
@@ -4201,6 +4250,35 @@ void ath5k_hw_set_gpio_intr(struct ath5k_hw *ah, unsigned int gpio,
 }
 
 
+/*********************************\
+ Regulatory Domain/Channels Setup
+\*********************************/
+
+u16 ath5k_get_regdomain(struct ath5k_hw *ah)
+{
+	u16 regdomain;
+	enum ath5k_regdom ieee_regdomain;
+#ifdef COUNTRYCODE
+	u16 code;
+#endif
+
+	ath5k_eeprom_regulation_domain(ah, false, &ieee_regdomain);
+	ah->ah_capabilities.cap_regdomain.reg_hw = ieee_regdomain;
+
+#ifdef COUNTRYCODE
+	/*
+	 * Get the regulation domain by country code. This will ignore
+	 * the settings found in the EEPROM.
+	 */
+	code = ieee80211_name2countrycode(COUNTRYCODE);
+	ieee_regdomain = ieee80211_countrycode2regdomain(code);
+#endif
+
+	regdomain = ath5k_regdom_from_ieee(ieee_regdomain);
+	ah->ah_capabilities.cap_regdomain.reg_current = regdomain;
+
+	return regdomain;
+}
 
 
 /****************\
