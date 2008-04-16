@@ -551,7 +551,7 @@ struct at76_priv {
 	struct set_mib_buffer mib_buf;	/* global buffer for set_mib calls */
 
 	/* beacon counting */
-	int beacon_period;	/* period of mgmt beacons, Kus */
+	int beacon_period;	/* period of mgmt beacons */
 	int beacons_received;
 	unsigned long beacons_last_qual;	/* time we restarted counting
 						   beacons */
