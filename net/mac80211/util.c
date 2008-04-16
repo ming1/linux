@@ -25,7 +25,7 @@
 #include <net/rtnetlink.h>
 
 #include "ieee80211_i.h"
-#include "rate.h"
+#include "ieee80211_rate.h"
 #include "mesh.h"
 #include "wme.h"
 

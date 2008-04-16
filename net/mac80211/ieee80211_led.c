@@ -8,7 +8,7 @@
 
 /* just for IFNAMSIZ */
 #include <linux/if.h>
-#include "led.h"
+#include "ieee80211_led.h"
 
 void ieee80211_led_rx(struct ieee80211_local *local)
 {

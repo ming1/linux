@@ -10,7 +10,7 @@
 
 #include <linux/kobject.h>
 #include "ieee80211_i.h"
-#include "key.h"
+#include "ieee80211_key.h"
 #include "debugfs.h"
 #include "debugfs_key.h"
 
