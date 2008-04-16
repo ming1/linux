@@ -36,7 +36,6 @@
 
 #include "iwl-4965.h"
 #include "iwl-debug.h"
-#include "iwl-core.h"
 #include "iwl-io.h"
 
 
