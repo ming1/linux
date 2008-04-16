@@ -16,6 +16,7 @@
 #include "decl.h"
 #include "defs.h"
 #include "dev.h"
+#include "join.h"
 #include "wext.h"
 #include "assoc.h"
 #include "cmd.h"
