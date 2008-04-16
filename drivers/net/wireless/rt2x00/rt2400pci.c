@@ -1072,10 +1072,9 @@ static void rt2400pci_fill_rxdone(struct queue_entry *entry,
 
 	/*
 	 * Obtain the status about this packet.
-	 * The signal is the PLCP value, and needs to be stripped
-	 * of the preamble bit (0x08).
+	 * The signal is the PLCP value.
 	 */
-	rxdesc->signal = rt2x00_get_field32(word2, RXD_W2_SIGNAL) & ~0x08;
+	rxdesc->signal = rt2x00_get_field32(word2, RXD_W2_SIGNAL);
 	rxdesc->signal_plcp = 1;
 	rxdesc->rssi = rt2x00_get_field32(word2, RXD_W3_RSSI) -
 	    entry->queue->rt2x00dev->rssi_offset;
