@@ -107,6 +107,7 @@ struct tid_ampdu_rx {
 	struct timer_list session_timer;
 };
 
+#ifdef CONFIG_MAC80211_MESH
 enum plink_state {
 	LISTEN,
 	OPN_SNT,
@@ -116,6 +117,7 @@ enum plink_state {
 	HOLDING,
 	BLOCKED
 };
+#endif
 
 /**
  * struct sta_ampdu_mlme - STA aggregation information.
