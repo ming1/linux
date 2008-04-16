@@ -3,8 +3,11 @@ config IWLCORE
 	depends on PCI && MAC80211 && WLAN_80211 && EXPERIMENTAL
 
 config IWLWIFI_LEDS
-	bool
-	default n
+	bool "Enable LEDS features in iwlwifi driver"
+	depends on IWLCORE && MAC80211_LEDS && LEDS_CLASS
+	---help---
+	  This option enables LEDS for the iwlwifi drivers
+
 
 config IWLCORE_RFKILL
 	boolean "IWLWIFI RF kill support"
@@ -49,8 +52,7 @@ config IWL4965_HT
 
 config IWL4965_LEDS
 	bool "Enable LEDS features in iwl4965 driver"
-	depends on IWL4965 && MAC80211_LEDS && LEDS_CLASS
-	select IWLWIFI_LEDS
+	depends on IWL4965 && IWLWIFI_LEDS
 	---help---
 	  This option enables LEDS for the iwlwifi drivers
 
