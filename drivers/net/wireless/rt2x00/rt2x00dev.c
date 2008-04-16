@@ -1015,9 +1015,11 @@ int rt2x00lib_start(struct rt2x00_dev *rt2x00dev)
 	 * If this is the first interface which is added,
 	 * we should load the firmware now.
 	 */
-	retval = rt2x00lib_load_firmware(rt2x00dev);
-	if (retval)
-		return retval;
+	if (test_bit(DRIVER_REQUIRE_FIRMWARE, &rt2x00dev->flags)) {
+		retval = rt2x00lib_load_firmware(rt2x00dev);
+		if (retval)
+			return retval;
+	}
 
 	/*
 	 * Initialize the device.
