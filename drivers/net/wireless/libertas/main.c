@@ -19,7 +19,6 @@
 #include "dev.h"
 #include "wext.h"
 #include "debugfs.h"
-#include "scan.h"
 #include "assoc.h"
 #include "cmd.h"
 
