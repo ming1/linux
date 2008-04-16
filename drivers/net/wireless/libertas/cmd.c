@@ -1802,27 +1802,38 @@ void lbs_send_iwevcustom_event(struct lbs_private *priv, s8 *str)
 	lbs_deb_leave(LBS_DEB_WEXT);
 }
 
-static void lbs_send_confirmsleep(struct lbs_private *priv)
+static int sendconfirmsleep(struct lbs_private *priv, u8 *cmdptr, u16 size)
 {
 	unsigned long flags;
-	int ret;
+	int ret = 0;
 
 	lbs_deb_enter(LBS_DEB_HOST);
-	lbs_deb_hex(LBS_DEB_HOST, "sleep confirm", (u8 *) &confirm_sleep,
-		sizeof(confirm_sleep));
+	lbs_deb_hex(LBS_DEB_HOST, "sleep confirm command", cmdptr, size);
 
-	ret = priv->hw_host_to_card(priv, MVMS_CMD, (u8 *) &confirm_sleep,
-		sizeof(confirm_sleep));
+	ret = priv->hw_host_to_card(priv, MVMS_CMD, cmdptr, size);
+
+	spin_lock_irqsave(&priv->driver_lock, flags);
+	if (priv->intcounter || priv->currenttxskb)
+		lbs_deb_host("SEND_SLEEPC_CMD: intcounter %d, currenttxskb %p\n",
+		       priv->intcounter, priv->currenttxskb);
+	spin_unlock_irqrestore(&priv->driver_lock, flags);
 
 	if (ret) {
-		lbs_pr_alert("confirm_sleep failed\n");
+		lbs_pr_alert(
+		       "SEND_SLEEPC_CMD: Host to Card failed for Confirm Sleep\n");
 	} else {
 		spin_lock_irqsave(&priv->driver_lock, flags);
-		if (!priv->intcounter)
+		if (!priv->intcounter) {
 			priv->psstate = PS_STATE_SLEEP;
+		} else {
+			lbs_deb_host("SEND_SLEEPC_CMD: after sent, intcounter %d\n",
+			       priv->intcounter);
+		}
 		spin_unlock_irqrestore(&priv->driver_lock, flags);
 	}
-	lbs_deb_leave(LBS_DEB_HOST);
+
+	lbs_deb_leave_args(LBS_DEB_HOST, "ret %d", ret);
+	return ret;
 }
 
 void lbs_ps_sleep(struct lbs_private *priv, int wait_option)
@@ -1895,7 +1906,8 @@ void lbs_ps_confirm_sleep(struct lbs_private *priv)
 
 	if (allowed) {
 		lbs_deb_host("sending lbs_ps_confirm_sleep\n");
-		lbs_send_confirmsleep(priv);
+		sendconfirmsleep(priv, (u8 *) & priv->lbs_ps_confirm_sleep,
+				 sizeof(struct PS_CMD_ConfirmSleep));
 	} else {
 		lbs_deb_host("sleep confirm has been delayed\n");
 	}
