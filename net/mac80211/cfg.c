@@ -135,7 +135,6 @@ static int ieee80211_add_key(struct wiphy *wiphy, struct net_device *dev,
 	struct sta_info *sta = NULL;
 	enum ieee80211_key_alg alg;
 	struct ieee80211_key *key;
-	int err;
 
 	sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 
@@ -158,24 +157,17 @@ static int ieee80211_add_key(struct wiphy *wiphy, struct net_device *dev,
 	if (!key)
 		return -ENOMEM;
 
-	rcu_read_lock();
-
 	if (mac_addr) {
 		sta = sta_info_get(sdata->local, mac_addr);
 		if (!sta) {
 			ieee80211_key_free(key);
-			err = -ENOENT;
-			goto out_unlock;
+			return -ENOENT;
 		}
 	}
 
 	ieee80211_key_link(key, sdata, sta);
 
-	err = 0;
- out_unlock:
-	rcu_read_unlock();
-
-	return err;
+	return 0;
 }
 
 static int ieee80211_del_key(struct wiphy *wiphy, struct net_device *dev,
@@ -187,37 +179,28 @@ static int ieee80211_del_key(struct wiphy *wiphy, struct net_device *dev,
 
 	sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 
-	rcu_read_lock();
-
 	if (mac_addr) {
-		ret = -ENOENT;
-
 		sta = sta_info_get(sdata->local, mac_addr);
 		if (!sta)
-			goto out_unlock;
+			return -ENOENT;
 
+		ret = 0;
 		if (sta->key) {
 			ieee80211_key_free(sta->key);
 			WARN_ON(sta->key);
-			ret = 0;
-		}
+		} else
+			ret = -ENOENT;
 
-		goto out_unlock;
+		return ret;
 	}
 
-	if (!sdata->keys[key_idx]) {
-		ret = -ENOENT;
-		goto out_unlock;
-	}
+	if (!sdata->keys[key_idx])
+		return -ENOENT;
 
 	ieee80211_key_free(sdata->keys[key_idx]);
 	WARN_ON(sdata->keys[key_idx]);
 
-	ret = 0;
- out_unlock:
-	rcu_read_unlock();
-
-	return ret;
+	return 0;
 }
 
 static int ieee80211_get_key(struct wiphy *wiphy, struct net_device *dev,
@@ -233,8 +216,6 @@ static int ieee80211_get_key(struct wiphy *wiphy, struct net_device *dev,
 	u32 iv32;
 	u16 iv16;
 	int err = -ENOENT;
-
-	rcu_read_lock();
 
 	if (mac_addr) {
 		sta = sta_info_get(sdata->local, mac_addr);
@@ -299,7 +280,6 @@ static int ieee80211_get_key(struct wiphy *wiphy, struct net_device *dev,
 	err = 0;
 
  out:
-	rcu_read_unlock();
 	return err;
 }
 
@@ -309,12 +289,8 @@ static int ieee80211_config_default_key(struct wiphy *wiphy,
 {
 	struct ieee80211_sub_if_data *sdata;
 
-	rcu_read_lock();
-
 	sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 	ieee80211_set_default_key(sdata, key_idx);
-
-	rcu_read_unlock();
 
 	return 0;
 }
