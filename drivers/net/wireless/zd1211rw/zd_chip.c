@@ -986,7 +986,7 @@ static int print_fw_version(struct zd_chip *chip)
 	return 0;
 }
 
-static int set_mandatory_rates(struct zd_chip *chip, int gmode)
+static int set_mandatory_rates(struct zd_chip *chip, int mode)
 {
 	u32 rates;
 	ZD_ASSERT(mutex_is_locked(&chip->mutex));
@@ -994,12 +994,17 @@ static int set_mandatory_rates(struct zd_chip *chip, int gmode)
 	 * that the device is supporting. Until further notice we should try
 	 * to support 802.11g also for full speed USB.
 	 */
-	if (!gmode)
+	switch (mode) {
+	case MODE_IEEE80211B:
 		rates = CR_RATE_1M|CR_RATE_2M|CR_RATE_5_5M|CR_RATE_11M;
-	else
+		break;
+	case MODE_IEEE80211G:
 		rates = CR_RATE_1M|CR_RATE_2M|CR_RATE_5_5M|CR_RATE_11M|
 			CR_RATE_6M|CR_RATE_12M|CR_RATE_24M;
-
+		break;
+	default:
+		return -EINVAL;
+	}
 	return zd_iowrite32_locked(chip, rates, CR_MANDATORY_RATE_TBL);
 }
 
@@ -1103,7 +1108,7 @@ int zd_chip_init_hw(struct zd_chip *chip)
 	 * It might be discussed, whether we should suppport pure b mode for
 	 * full speed USB.
 	 */
-	r = set_mandatory_rates(chip, 1);
+	r = set_mandatory_rates(chip, MODE_IEEE80211G);
 	if (r)
 		goto out;
 	/* Disabling interrupts is certainly a smart thing here.

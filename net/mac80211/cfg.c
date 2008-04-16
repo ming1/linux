@@ -498,7 +498,7 @@ static void sta_apply_parameters(struct ieee80211_local *local,
 {
 	u32 rates;
 	int i, j;
-	struct ieee80211_supported_band *sband;
+	struct ieee80211_hw_mode *mode;
 
 	if (params->station_flags & STATION_FLAG_CHANGED) {
 		sta->flags &= ~WLAN_STA_AUTHORIZED;
@@ -525,16 +525,15 @@ static void sta_apply_parameters(struct ieee80211_local *local,
 
 	if (params->supported_rates) {
 		rates = 0;
-		sband = local->hw.wiphy->bands[local->oper_channel->band];
-
+		mode = local->oper_hw_mode;
 		for (i = 0; i < params->supported_rates_len; i++) {
 			int rate = (params->supported_rates[i] & 0x7f) * 5;
-			for (j = 0; j < sband->n_bitrates; j++) {
-				if (sband->bitrates[j].bitrate == rate)
+			for (j = 0; j < mode->num_rates; j++) {
+				if (mode->rates[j].rate == rate)
 					rates |= BIT(j);
 			}
 		}
-		sta->supp_rates[local->oper_channel->band] = rates;
+		sta->supp_rates = rates;
 	}
 }
 
