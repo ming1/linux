@@ -1739,10 +1739,8 @@ ath5k_check_ibss_tsf(struct ath5k_softc *sc, struct sk_buff *skb,
 
 		ATH5K_DBG_UNLIMIT(sc, ATH5K_DEBUG_BEACON,
 			"beacon %llx mactime %llx (diff %lld) tsf now %llx\n",
-			(unsigned long long)bc_tstamp,
-			(unsigned long long)rxs->mactime,
-			(unsigned long long)(rxs->mactime - bc_tstamp),
-			(unsigned long long)tsf);
+			bc_tstamp, rxs->mactime,
+			(rxs->mactime - bc_tstamp), tsf);
 
 		/*
 		 * Sometimes the HW will give us a wrong tstamp in the rx
@@ -1758,8 +1756,7 @@ ath5k_check_ibss_tsf(struct ath5k_softc *sc, struct sk_buff *skb,
 		if (bc_tstamp > rxs->mactime) {
 			ATH5K_DBG_UNLIMIT(sc, ATH5K_DEBUG_BEACON,
 				"fixing mactime from %llx to %llx\n",
-				(unsigned long long)rxs->mactime,
-				(unsigned long long)tsf);
+				rxs->mactime, tsf);
 			rxs->mactime = tsf;
 		}
 
