@@ -581,45 +581,45 @@ static int lbs_copy_multicast_address(struct lbs_private *priv,
 static void lbs_set_multicast_list(struct net_device *dev)
 {
 	struct lbs_private *priv = dev->priv;
-	int old_mac_control;
+	int oldpacketfilter;
 	DECLARE_MAC_BUF(mac);
 
 	lbs_deb_enter(LBS_DEB_NET);
 
-	old_mac_control = priv->mac_control;
+	oldpacketfilter = priv->currentpacketfilter;
 
 	if (dev->flags & IFF_PROMISC) {
 		lbs_deb_net("enable promiscuous mode\n");
-		priv->mac_control |=
+		priv->currentpacketfilter |=
 		    CMD_ACT_MAC_PROMISCUOUS_ENABLE;
-		priv->mac_control &=
+		priv->currentpacketfilter &=
 		    ~(CMD_ACT_MAC_ALL_MULTICAST_ENABLE |
 		      CMD_ACT_MAC_MULTICAST_ENABLE);
 	} else {
 		/* Multicast */
-		priv->mac_control &=
+		priv->currentpacketfilter &=
 		    ~CMD_ACT_MAC_PROMISCUOUS_ENABLE;
 
 		if (dev->flags & IFF_ALLMULTI || dev->mc_count >
 		    MRVDRV_MAX_MULTICAST_LIST_SIZE) {
 			lbs_deb_net( "enabling all multicast\n");
-			priv->mac_control |=
+			priv->currentpacketfilter |=
 			    CMD_ACT_MAC_ALL_MULTICAST_ENABLE;
-			priv->mac_control &=
+			priv->currentpacketfilter &=
 			    ~CMD_ACT_MAC_MULTICAST_ENABLE;
 		} else {
-			priv->mac_control &=
+			priv->currentpacketfilter &=
 			    ~CMD_ACT_MAC_ALL_MULTICAST_ENABLE;
 
 			if (!dev->mc_count) {
 				lbs_deb_net("no multicast addresses, "
 				       "disabling multicast\n");
-				priv->mac_control &=
+				priv->currentpacketfilter &=
 				    ~CMD_ACT_MAC_MULTICAST_ENABLE;
 			} else {
 				int i;
 
-				priv->mac_control |=
+				priv->currentpacketfilter |=
 				    CMD_ACT_MAC_MULTICAST_ENABLE;
 
 				priv->nr_of_multicastmacaddr =
@@ -642,8 +642,9 @@ static void lbs_set_multicast_list(struct net_device *dev)
 		}
 	}
 
-	if (priv->mac_control != old_mac_control)
-		lbs_set_mac_control(priv);
+	if (priv->currentpacketfilter != oldpacketfilter) {
+		lbs_set_mac_packet_filter(priv);
+	}
 
 	lbs_deb_leave(LBS_DEB_NET);
 }
@@ -944,7 +945,7 @@ static int lbs_setup_firmware(struct lbs_private *priv)
 		goto done;
 	}
 
-	lbs_set_mac_control(priv);
+	lbs_set_mac_packet_filter(priv);
 
 	ret = lbs_get_data_rate(priv);
 	if (ret < 0) {
@@ -1035,7 +1036,7 @@ static int lbs_init_adapter(struct lbs_private *priv)
 	priv->secinfo.auth_mode = IW_AUTH_ALG_OPEN_SYSTEM;
 	priv->mode = IW_MODE_INFRA;
 	priv->curbssparams.channel = DEFAULT_AD_HOC_CHANNEL;
-	priv->mac_control = CMD_ACT_MAC_RX_ON | CMD_ACT_MAC_TX_ON;
+	priv->currentpacketfilter = CMD_ACT_MAC_RX_ON | CMD_ACT_MAC_TX_ON;
 	priv->radioon = RADIO_ON;
 	priv->auto_rate = 1;
 	priv->capability = WLAN_CAPABILITY_SHORT_PREAMBLE;
