@@ -297,13 +297,12 @@ STA_OPS_WR(agg_status);
 void ieee80211_sta_debugfs_add(struct sta_info *sta)
 {
 	struct dentry *stations_dir = sta->local->debugfs.stations;
-	DECLARE_MAC_BUF(mbuf);
-	u8 *mac;
+	DECLARE_MAC_BUF(mac);
 
 	if (!stations_dir)
 		return;
 
-	mac = print_mac(mbuf, sta->addr);
+	print_mac(mac, sta->addr);
 
 	sta->debugfs.dir = debugfs_create_dir(mac, stations_dir);
 	if (!sta->debugfs.dir)
