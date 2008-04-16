@@ -861,7 +861,7 @@ void iwl4965_rf_kill_ct_config(struct iwl_priv *priv)
 	u32 temp_th;
 	u32 crit_temperature;
 	unsigned long flags;
-	int ret = 0;
+	int rc = 0;
 
 	spin_lock_irqsave(&priv->lock, flags);
 	iwl4965_write32(priv, CSR_UCODE_DRV_GP1_CLR,
@@ -882,9 +882,9 @@ void iwl4965_rf_kill_ct_config(struct iwl_priv *priv)
 
 	crit_temperature = ((temp_th * (R3-R1))/CT_LIMIT_CONST) + R2;
 	cmd.critical_temperature_R =  cpu_to_le32(crit_temperature);
-	ret = iwl_send_cmd_pdu(priv, REPLY_CT_KILL_CONFIG_CMD,
-			       sizeof(cmd), &cmd);
-	if (ret)
+	rc = iwl4965_send_cmd_pdu(priv,
+			      REPLY_CT_KILL_CONFIG_CMD, sizeof(cmd), &cmd);
+	if (rc)
 		IWL_ERROR("REPLY_CT_KILL_CONFIG_CMD failed\n");
 	else
 		IWL_DEBUG_INFO("REPLY_CT_KILL_CONFIG_CMD succeeded\n");
@@ -1157,7 +1157,7 @@ static int iwl4965_sens_auto_corr_ofdm(struct iwl_priv *priv,
 }
 
 static int iwl4965_sensitivity_callback(struct iwl_priv *priv,
-				    struct iwl_cmd *cmd, struct sk_buff *skb)
+				    struct iwl4965_cmd *cmd, struct sk_buff *skb)
 {
 	/* We didn't cache the SKB; let the caller free it */
 	return 1;
@@ -1166,15 +1166,15 @@ static int iwl4965_sensitivity_callback(struct iwl_priv *priv,
 /* Prepare a SENSITIVITY_CMD, send to uCode if values have changed */
 static int iwl4965_sensitivity_write(struct iwl_priv *priv, u8 flags)
 {
+	int rc = 0;
 	struct iwl4965_sensitivity_cmd cmd ;
 	struct iwl4965_sensitivity_data *data = NULL;
-	struct iwl_host_cmd cmd_out = {
+	struct iwl4965_host_cmd cmd_out = {
 		.id = SENSITIVITY_CMD,
 		.len = sizeof(struct iwl4965_sensitivity_cmd),
 		.meta.flags = flags,
 		.data = &cmd,
 	};
-	int ret;
 
 	data = &(priv->sensitivity_data);
 
@@ -1232,18 +1232,20 @@ static int iwl4965_sensitivity_write(struct iwl_priv *priv, u8 flags)
 	memcpy(&(priv->sensitivity_tbl[0]), &(cmd.table[0]),
 	       sizeof(u16)*HD_TABLE_SIZE);
 
-	ret = iwl_send_cmd(priv, &cmd_out);
-	if (ret)
-		IWL_ERROR("SENSITIVITY_CMD failed\n");
+	rc = iwl4965_send_cmd(priv, &cmd_out);
+	if (!rc) {
+		IWL_DEBUG_CALIB("SENSITIVITY_CMD succeeded\n");
+		return rc;
+	}
 
-	return ret;
+	return 0;
 }
 
 void iwl4965_init_sensitivity(struct iwl_priv *priv, u8 flags, u8 force)
 {
-	struct iwl4965_sensitivity_data *data = NULL;
+	int rc = 0;
 	int i;
-	int ret  = 0;
+	struct iwl4965_sensitivity_data *data = NULL;
 
 	IWL_DEBUG_CALIB("Start iwl4965_init_sensitivity\n");
 
@@ -1287,8 +1289,8 @@ void iwl4965_init_sensitivity(struct iwl_priv *priv, u8 flags, u8 force)
 		memset(&(priv->sensitivity_tbl[0]), 0,
 		    sizeof(u16)*HD_TABLE_SIZE);
 
-	ret |= iwl4965_sensitivity_write(priv, flags);
-	IWL_DEBUG_CALIB("<<return 0x%X\n", ret);
+	rc |= iwl4965_sensitivity_write(priv, flags);
+	IWL_DEBUG_CALIB("<<return 0x%X\n", rc);
 
 	return;
 }
@@ -1300,6 +1302,7 @@ void iwl4965_init_sensitivity(struct iwl_priv *priv, u8 flags, u8 force)
 void iwl4965_chain_noise_reset(struct iwl_priv *priv)
 {
 	struct iwl4965_chain_noise_data *data = NULL;
+	int rc = 0;
 
 	data = &(priv->chain_noise_data);
 	if ((data->state == IWL_CHAIN_NOISE_ALIVE) && iwl4965_is_associated(priv)) {
@@ -1310,7 +1313,7 @@ void iwl4965_chain_noise_reset(struct iwl_priv *priv)
 		cmd.diff_gain_a = 0;
 		cmd.diff_gain_b = 0;
 		cmd.diff_gain_c = 0;
-		iwl_send_cmd_pdu(priv, REPLY_PHY_CALIBRATION_CMD,
+		rc = iwl4965_send_cmd_pdu(priv, REPLY_PHY_CALIBRATION_CMD,
 				 sizeof(cmd), &cmd);
 		msleep(4);
 		data->state = IWL_CHAIN_NOISE_ACCUMULATE;
@@ -1329,7 +1332,7 @@ static void iwl4965_noise_calibration(struct iwl_priv *priv,
 				      struct iwl4965_notif_statistics *stat_resp)
 {
 	struct iwl4965_chain_noise_data *data = NULL;
-	int ret = 0;
+	int rc = 0;
 
 	u32 chain_noise_a;
 	u32 chain_noise_b;
@@ -1535,9 +1538,9 @@ static void iwl4965_noise_calibration(struct iwl_priv *priv,
 			cmd.diff_gain_a = data->delta_gain_code[0];
 			cmd.diff_gain_b = data->delta_gain_code[1];
 			cmd.diff_gain_c = data->delta_gain_code[2];
-			ret = iwl_send_cmd_pdu(priv, REPLY_PHY_CALIBRATION_CMD,
+			rc = iwl4965_send_cmd_pdu(priv, REPLY_PHY_CALIBRATION_CMD,
 					      sizeof(cmd), &cmd);
-			if (ret)
+			if (rc)
 				IWL_DEBUG_CALIB("fail sending cmd "
 					     "REPLY_PHY_CALIBRATION_CMD \n");
 
@@ -1561,6 +1564,7 @@ static void iwl4965_noise_calibration(struct iwl_priv *priv,
 static void iwl4965_sensitivity_calibration(struct iwl_priv *priv,
 					    struct iwl4965_notif_statistics *resp)
 {
+	int rc = 0;
 	u32 rx_enable_time;
 	u32 fa_cck;
 	u32 fa_ofdm;
@@ -1573,7 +1577,6 @@ static void iwl4965_sensitivity_calibration(struct iwl_priv *priv,
 	struct statistics_rx *statistics = &(resp->rx);
 	unsigned long flags;
 	struct statistics_general_data statis;
-	int ret;
 
 	data = &(priv->sensitivity_data);
 
@@ -1658,7 +1661,7 @@ static void iwl4965_sensitivity_calibration(struct iwl_priv *priv,
 
 	iwl4965_sens_auto_corr_ofdm(priv, norm_fa_ofdm, rx_enable_time);
 	iwl4965_sens_energy_cck(priv, norm_fa_cck, rx_enable_time, &statis);
-	ret = iwl4965_sensitivity_write(priv, CMD_ASYNC);
+	rc |= iwl4965_sensitivity_write(priv, CMD_ASYNC);
 
 	return;
 }
@@ -1786,7 +1789,7 @@ int iwl4965_alive_notify(struct iwl_priv *priv)
 	u32 a;
 	int i = 0;
 	unsigned long flags;
-	int ret;
+	int rc;
 
 	spin_lock_irqsave(&priv->lock, flags);
 
@@ -1799,10 +1802,10 @@ int iwl4965_alive_notify(struct iwl_priv *priv)
 		priv->chain_noise_data.delta_gain_code[i] =
 				CHAIN_NOISE_DELTA_GAIN_INIT_VAL;
 #endif /* CONFIG_IWL4965_SENSITIVITY*/
-	ret = iwl4965_grab_nic_access(priv);
-	if (ret) {
+	rc = iwl4965_grab_nic_access(priv);
+	if (rc) {
 		spin_unlock_irqrestore(&priv->lock, flags);
-		return ret;
+		return rc;
 	}
 
 	/* Clear 4965's internal Tx Scheduler data base */
@@ -1865,7 +1868,7 @@ int iwl4965_alive_notify(struct iwl_priv *priv)
 	iwl4965_release_nic_access(priv);
 	spin_unlock_irqrestore(&priv->lock, flags);
 
-	return ret;
+	return 0;
 }
 
 /**
@@ -2716,7 +2719,7 @@ static int iwl4965_fill_txpower_tbl(struct iwl_priv *priv, u8 band, u16 channel,
 int iwl4965_hw_reg_send_txpower(struct iwl_priv *priv)
 {
 	struct iwl4965_txpowertable_cmd cmd = { 0 };
-	int ret;
+	int rc = 0;
 	u8 band = 0;
 	u8 is_fat = 0;
 	u8 ctrl_chan_high = 0;
@@ -2740,16 +2743,14 @@ int iwl4965_hw_reg_send_txpower(struct iwl_priv *priv)
 	cmd.band = band;
 	cmd.channel = priv->active_rxon.channel;
 
-	ret = iwl4965_fill_txpower_tbl(priv, band,
+	rc = iwl4965_fill_txpower_tbl(priv, band,
 				le16_to_cpu(priv->active_rxon.channel),
 				is_fat, ctrl_chan_high, &cmd.tx_power);
-	if (ret)
-		goto out;
+	if (rc)
+		return rc;
 
-	ret = iwl_send_cmd_pdu(priv, REPLY_TX_PWR_TABLE_CMD, sizeof(cmd), &cmd);
-
-out:
-	return ret;
+	rc = iwl4965_send_cmd_pdu(priv, REPLY_TX_PWR_TABLE_CMD, sizeof(cmd), &cmd);
+	return rc;
 }
 
 int iwl4965_hw_channel_switch(struct iwl_priv *priv, u16 channel)
@@ -2789,7 +2790,7 @@ int iwl4965_hw_channel_switch(struct iwl_priv *priv, u16 channel)
 		return rc;
 	}
 
-	rc = iwl_send_cmd_pdu(priv, REPLY_CHANNEL_SWITCH, sizeof(cmd), &cmd);
+	rc = iwl4965_send_cmd_pdu(priv, REPLY_CHANNEL_SWITCH, sizeof(cmd), &cmd);
 	return rc;
 }
 
@@ -2797,7 +2798,7 @@ int iwl4965_hw_channel_switch(struct iwl_priv *priv, u16 channel)
 #define RTS_DFAULT_RETRY_LIMIT		60
 
 void iwl4965_hw_build_tx_cmd_rate(struct iwl_priv *priv,
-			      struct iwl_cmd *cmd,
+			      struct iwl4965_cmd *cmd,
 			      struct ieee80211_tx_control *ctrl,
 			      struct ieee80211_hdr *hdr, int sta_id,
 			      int is_hcca)
@@ -3862,7 +3863,7 @@ static inline void iwl4965_dbg_report_frame(struct iwl_priv *priv,
 
 #define IWL_DELAY_NEXT_SCAN_AFTER_ASSOC (HZ*6)
 
-/* Called for REPLY_RX (legacy ABG frames), or
+/* Called for REPLY_4965_RX (legacy ABG frames), or
  * REPLY_RX_MPDU_CMD (HT high-throughput N frames). */
 static void iwl4965_rx_reply_rx(struct iwl_priv *priv,
 				struct iwl4965_rx_mem_buffer *rxb)
@@ -3873,7 +3874,7 @@ static void iwl4965_rx_reply_rx(struct iwl_priv *priv,
 	/* Use phy data (Rx signal strength, etc.) contained within
 	 *   this rx packet for legacy frames,
 	 *   or phy data cached from REPLY_RX_PHY_CMD for HT frames. */
-	int include_phy = (pkt->hdr.cmd == REPLY_RX);
+	int include_phy = (pkt->hdr.cmd == REPLY_4965_RX);
 	struct iwl4965_rx_phy_res *rx_start = (include_phy) ?
 		(struct iwl4965_rx_phy_res *)&(pkt->u.raw[0]) :
 		(struct iwl4965_rx_phy_res *)&priv->last_phy_res[1];
@@ -4561,7 +4562,7 @@ void iwl4965_add_station(struct iwl_priv *priv, const u8 *addr, int is_ap)
 	/* Update the rate scaling for control frame Tx to AP */
 	link_cmd.sta_id = is_ap ? IWL_AP_ID : priv->hw_setting.bcast_sta_id;
 
-	iwl_send_cmd_pdu(priv, REPLY_TX_LINK_QUALITY_CMD, sizeof(link_cmd),
+	iwl4965_send_cmd_pdu(priv, REPLY_TX_LINK_QUALITY_CMD, sizeof(link_cmd),
 			 &link_cmd);
 }
 
@@ -4914,7 +4915,7 @@ int iwl4965_mac_ampdu_action(struct ieee80211_hw *hw,
 void iwl4965_hw_rx_handler_setup(struct iwl_priv *priv)
 {
 	/* Legacy Rx frames */
-	priv->rx_handlers[REPLY_RX] = iwl4965_rx_reply_rx;
+	priv->rx_handlers[REPLY_4965_RX] = iwl4965_rx_reply_rx;
 
 	/* High-throughput (HT) Rx frames */
 	priv->rx_handlers[REPLY_RX_PHY_CMD] = iwl4965_rx_reply_rx_phy;
@@ -4947,10 +4948,6 @@ void iwl4965_hw_cancel_deferred_work(struct iwl_priv *priv)
 	cancel_delayed_work(&priv->init_alive_start);
 }
 
-static struct iwl_hcmd_utils_ops iwl4965_hcmd_utils = {
-	.enqueue_hcmd = iwl4965_enqueue_hcmd,
-};
-
 static struct iwl_lib_ops iwl4965_lib = {
 	.init_drv = iwl4965_init_drv,
 	.eeprom_ops = {
@@ -4962,7 +4959,6 @@ static struct iwl_lib_ops iwl4965_lib = {
 
 static struct iwl_ops iwl4965_ops = {
 	.lib = &iwl4965_lib,
-	.utils = &iwl4965_hcmd_utils,
 };
 
 static struct iwl_cfg iwl4965_agn_cfg = {
