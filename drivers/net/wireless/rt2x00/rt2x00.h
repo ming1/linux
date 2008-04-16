@@ -710,13 +710,11 @@ unsigned long rfkill_state;
 
 	/*
 	 * Register pointers
-	 * csr.base: CSR base register address. (PCI)
-	 * csr.cache: CSR cache for usb_control_msg. (USB)
+	 * csr_addr: Base register address. (PCI)
+	 * csr_cache: CSR cache for usb_control_msg. (USB)
 	 */
-	union csr {
-		void __iomem *base;
-		void *cache;
-	} csr;
+	void __iomem *csr_addr;
+	void *csr_cache;
 
 	/*
 	 * Mutex to protect register accesses on USB devices.
