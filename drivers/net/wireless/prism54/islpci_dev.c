@@ -387,9 +387,7 @@ islpci_open(struct net_device *ndev)
 	}
 
 	netif_start_queue(ndev);
-
-	/* Turn off carrier unless we know we have associated */
-	netif_carrier_off(ndev);
+/*      netif_mark_up( ndev ); */
 
 	return 0;
 }
