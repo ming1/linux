@@ -33,9 +33,8 @@ static void ieee80211_if_sdata_deinit(struct ieee80211_sub_if_data *sdata)
 {
 	int i;
 
-	for (i = 0; i < IEEE80211_FRAGMENT_MAX; i++) {
+	for (i = 0; i < IEEE80211_FRAGMENT_MAX; i++)
 		__skb_queue_purge(&sdata->fragments[i].skb_list);
-	}
 }
 
 /* Must be called with rtnl lock held. */
@@ -175,9 +174,6 @@ void ieee80211_if_set_type(struct net_device *dev, int type)
 		sdata->u.mntr_flags = MONITOR_FLAG_CONTROL |
 				      MONITOR_FLAG_OTHER_BSS;
 		break;
-	default:
-		printk(KERN_WARNING "%s: %s: Unknown interface type 0x%x",
-		       dev->name, __FUNCTION__, type);
 	}
 	ieee80211_debugfs_change_if_type(sdata, oldtype);
 }
