@@ -2081,7 +2081,6 @@ link_changed(struct net_device *ndev, u32 bitrate)
 	islpci_private *priv = netdev_priv(ndev);
 
 	if (bitrate) {
-		netif_carrier_on(ndev);
 		if (priv->iw_mode == IW_MODE_INFRA) {
 			union iwreq_data uwrq;
 			prism54_get_wap(ndev, NULL, (struct sockaddr *) &uwrq,
@@ -2090,10 +2089,8 @@ link_changed(struct net_device *ndev, u32 bitrate)
 		} else
 			send_simple_event(netdev_priv(ndev),
 					  "Link established");
-	} else {
-		netif_carrier_off(ndev);
+	} else
 		send_simple_event(netdev_priv(ndev), "Link lost");
-	}
 }
 
 /* Beacon/ProbeResp payload header */
