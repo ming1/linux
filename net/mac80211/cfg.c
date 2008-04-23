@@ -123,7 +123,6 @@ static int ieee80211_add_key(struct wiphy *wiphy, struct net_device *dev,
 	struct sta_info *sta = NULL;
 	enum ieee80211_key_alg alg;
 	int ret;
-	struct ieee80211_key *key;
 
 	sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 
@@ -142,21 +141,16 @@ static int ieee80211_add_key(struct wiphy *wiphy, struct net_device *dev,
 		return -EINVAL;
 	}
 
-	key = ieee80211_key_alloc(alg, key_idx, params->key_len, params->key);
-	if (!key)
-		return -ENOMEM;
-
 	if (mac_addr) {
 		sta = sta_info_get(sdata->local, mac_addr);
-		if (!sta) {
-			ieee80211_key_free(key);
+		if (!sta)
 			return -ENOENT;
-		}
 	}
 
-	ieee80211_key_link(key, sdata, sta);
-
 	ret = 0;
+	if (!ieee80211_key_alloc(sdata, sta, alg, key_idx,
+				 params->key_len, params->key))
+		ret = -ENOMEM;
 
 	if (sta)
 		sta_info_put(sta);
@@ -170,7 +164,6 @@ static int ieee80211_del_key(struct wiphy *wiphy, struct net_device *dev,
 	struct ieee80211_sub_if_data *sdata;
 	struct sta_info *sta;
 	int ret;
-	struct ieee80211_key *key;
 
 	sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 
@@ -180,11 +173,9 @@ static int ieee80211_del_key(struct wiphy *wiphy, struct net_device *dev,
 			return -ENOENT;
 
 		ret = 0;
-		if (sta->key) {
-			key = sta->key;
-			ieee80211_key_free(key);
-			WARN_ON(sta->key);
-		} else
+		if (sta->key)
+			ieee80211_key_free(sta->key);
+		else
 			ret = -ENOENT;
 
 		sta_info_put(sta);
@@ -194,9 +185,7 @@ static int ieee80211_del_key(struct wiphy *wiphy, struct net_device *dev,
 	if (!sdata->keys[key_idx])
 		return -ENOENT;
 
-	key = sdata->keys[key_idx];
-	ieee80211_key_free(key);
-	WARN_ON(sdata->keys[key_idx]);
+	ieee80211_key_free(sdata->keys[key_idx]);
 
 	return 0;
 }
