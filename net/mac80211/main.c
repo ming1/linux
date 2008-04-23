@@ -1587,8 +1587,6 @@ struct ieee80211_hw *ieee80211_alloc_hw(size_t priv_data_len,
 
 	INIT_LIST_HEAD(&local->interfaces);
 
-	spin_lock_init(&local->key_lock);
-
 	INIT_DELAYED_WORK(&local->scan_work, ieee80211_sta_scan_work);
 
 	sta_info_init(local);
