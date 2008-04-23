@@ -1212,11 +1212,7 @@ struct iwl_priv {
 	/* debugging info */
 	u32 framecnt_to_us;
 	atomic_t restrict_refcnt;
-#ifdef CONFIG_IWLWIFI_DEBUGFS
-	/* debugfs */
-	struct iwl_debugfs *dbgfs;
-#endif /* CONFIG_IWLWIFI_DEBUGFS */
-#endif /* CONFIG_IWLWIFI_DEBUG */
+#endif
 
 	struct work_struct txpower_work;
 #ifdef CONFIG_IWL4965_SENSITIVITY
