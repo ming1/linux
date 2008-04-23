@@ -180,22 +180,13 @@ void sta_info_destroy(struct sta_info *sta)
 		mesh_plink_deactivate(sta);
 #endif
 
-	if (sta->key) {
-		/*
-		 * NOTE: This will call synchronize_rcu() internally to
-		 * make sure no key references can be in use. We rely on
-		 * that when we take this branch to make sure nobody can
-		 * reference this STA struct any longer!
-		 */
-		ieee80211_key_free(sta->key);
-		WARN_ON(sta->key);
-	} else {
-		/*
-		 * Make sure that nobody can reference this STA struct
-		 * any longer.
-		 */
-		synchronize_rcu();
-	}
+	/*
+	 * NOTE: This will call synchronize_rcu() internally to
+	 * make sure no key references can be in use. We rely on
+	 * that here for the mesh code!
+	 */
+	ieee80211_key_free(sta->key);
+	WARN_ON(sta->key);
 
 #ifdef CONFIG_MAC80211_MESH
 	if (ieee80211_vif_is_mesh(&sta->sdata->vif))
@@ -637,9 +628,11 @@ static void sta_info_debugfs_add_work(struct work_struct *work)
 		rate_control_add_sta_debugfs(sta);
 
 		sta = __sta_info_unpin(sta);
-		rtnl_lock();
-		sta_info_destroy(sta);
-		rtnl_unlock();
+
+		if (sta) {
+			synchronize_rcu();
+			sta_info_destroy(sta);
+		}
 	}
 }
 #endif
@@ -700,6 +693,8 @@ int sta_info_flush(struct ieee80211_local *local,
 		}
 	}
 	spin_unlock_irqrestore(&local->sta_lock, flags);
+
+	synchronize_rcu();
 
 	list_for_each_entry_safe(sta, tmp, &tmp_list, list)
 		sta_info_destroy(sta);
