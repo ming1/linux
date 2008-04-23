@@ -2593,7 +2593,7 @@ ieee80211_sta_rx_scan(struct net_device *dev, struct sk_buff *skb,
 	u16 fc;
 
 	if (skb->len < 2)
-		return RX_DROP_UNUSABLE;
+		return RX_DROP;
 
 	mgmt = (struct ieee80211_mgmt *) skb->data;
 	fc = le16_to_cpu(mgmt->frame_control);
@@ -2602,7 +2602,7 @@ ieee80211_sta_rx_scan(struct net_device *dev, struct sk_buff *skb,
 		return RX_CONTINUE;
 
 	if (skb->len < 24)
-		return RX_DROP_MONITOR;
+		return RX_DROP;
 
 	if ((fc & IEEE80211_FCTL_FTYPE) == IEEE80211_FTYPE_MGMT) {
 		if ((fc & IEEE80211_FCTL_STYPE) == IEEE80211_STYPE_PROBE_RESP) {
