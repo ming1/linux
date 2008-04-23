@@ -687,8 +687,6 @@ enum {
 
 #endif
 
-#define IWL_MAX_NUM_QUEUES IWL39_MAX_NUM_QUEUES
-
 struct iwl3945_priv {
 
 	/* ieee device used by generic ieee processing code */
