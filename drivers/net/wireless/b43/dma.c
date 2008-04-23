@@ -291,6 +291,52 @@ static inline int request_slot(struct b43_dmaring *ring)
 	return slot;
 }
 
+/* Mac80211-queue to b43-ring mapping */
+static struct b43_dmaring *priority_to_txring(struct b43_wldev *dev,
+					      int queue_priority)
+{
+	struct b43_dmaring *ring;
+
+/*FIXME: For now we always run on TX-ring-1 */
+	return dev->dma.tx_ring1;
+
+	/* 0 = highest priority */
+	switch (queue_priority) {
+	default:
+		B43_WARN_ON(1);
+		/* fallthrough */
+	case 0:
+		ring = dev->dma.tx_ring3;
+		break;
+	case 1:
+		ring = dev->dma.tx_ring2;
+		break;
+	case 2:
+		ring = dev->dma.tx_ring1;
+		break;
+	case 3:
+		ring = dev->dma.tx_ring0;
+		break;
+	}
+
+	return ring;
+}
+
+/* b43-ring to mac80211-queue mapping */
+static inline int txring_to_priority(struct b43_dmaring *ring)
+{
+	static const u8 idx_to_prio[] = { 3, 2, 1, 0, };
+	unsigned int index;
+
+/*FIXME: have only one queue, for now */
+	return 0;
+
+	index = ring->index;
+	if (B43_WARN_ON(index >= ARRAY_SIZE(idx_to_prio)))
+		index = 0;
+	return idx_to_prio[index];
+}
+
 static u16 b43_dmacontroller_base(enum b43_dmatype type, int controller_idx)
 {
 	static const u16 map64[] = {
@@ -1239,37 +1285,6 @@ static inline int should_inject_overflow(struct b43_dmaring *ring)
 	return 0;
 }
 
-/* Static mapping of mac80211's queues (priorities) to b43 DMA rings. */
-static struct b43_dmaring * select_ring_by_priority(struct b43_wldev *dev,
-						    u8 queue_prio)
-{
-	struct b43_dmaring *ring;
-
-	if (b43_modparam_qos) {
-		/* 0 = highest priority */
-		switch (queue_prio) {
-		default:
-			B43_WARN_ON(1);
-			/* fallthrough */
-		case 0:
-			ring = dev->dma.tx_ring3; /* AC_VO */
-			break;
-		case 1:
-			ring = dev->dma.tx_ring2; /* AC_VI */
-			break;
-		case 2:
-			ring = dev->dma.tx_ring1; /* AC_BE */
-			break;
-		case 3:
-			ring = dev->dma.tx_ring0; /* AC_BK */
-			break;
-		}
-	} else
-		ring = dev->dma.tx_ring1;
-
-	return ring;
-}
-
 int b43_dma_tx(struct b43_wldev *dev,
 	       struct sk_buff *skb, struct ieee80211_tx_control *ctl)
 {
@@ -1292,7 +1307,7 @@ int b43_dma_tx(struct b43_wldev *dev,
 		hdr->frame_control |= cpu_to_le16(IEEE80211_FCTL_MOREDATA);
 	} else {
 		/* Decide by priority where to put this frame. */
-		ring = select_ring_by_priority(dev, ctl->queue);
+		ring = priority_to_txring(dev, ctl->queue);
 	}
 
 	spin_lock_irqsave(&ring->lock, flags);
@@ -1306,11 +1321,6 @@ int b43_dma_tx(struct b43_wldev *dev,
 	 * but we got called nevertheless.
 	 * That would be a mac80211 bug. */
 	B43_WARN_ON(ring->stopped);
-
-	/* Assign the queue number to the ring (if not already done before)
-	 * so TX status handling can use it. The queue to ring mapping is
-	 * static, so we don't need to store it per frame. */
-	ring->queue_prio = ctl->queue;
 
 	err = dma_tx_fragment(ring, skb, ctl);
 	if (unlikely(err == -ENOKEY)) {
@@ -1328,7 +1338,7 @@ int b43_dma_tx(struct b43_wldev *dev,
 	if ((free_slots(ring) < SLOTS_PER_PACKET) ||
 	    should_inject_overflow(ring)) {
 		/* This TX ring is full. */
-		ieee80211_stop_queue(dev->wl->hw, ctl->queue);
+		ieee80211_stop_queue(dev->wl->hw, txring_to_priority(ring));
 		ring->stopped = 1;
 		if (b43_debug(dev, B43_DBG_DMAVERBOSE)) {
 			b43dbg(dev->wl, "Stopped TX ring %d\n", ring->index);
@@ -1408,7 +1418,7 @@ void b43_dma_handle_txstatus(struct b43_wldev *dev,
 	dev->stats.last_tx = jiffies;
 	if (ring->stopped) {
 		B43_WARN_ON(free_slots(ring) < SLOTS_PER_PACKET);
-		ieee80211_wake_queue(dev->wl->hw, ring->queue_prio);
+		ieee80211_wake_queue(dev->wl->hw, txring_to_priority(ring));
 		ring->stopped = 0;
 		if (b43_debug(dev, B43_DBG_DMAVERBOSE)) {
 			b43dbg(dev->wl, "Woke up TX ring %d\n", ring->index);
@@ -1429,7 +1439,7 @@ void b43_dma_get_tx_stats(struct b43_wldev *dev,
 
 	for (i = 0; i < nr_queues; i++) {
 		data = &(stats->data[i]);
-		ring = select_ring_by_priority(dev, i);
+		ring = priority_to_txring(dev, i);
 
 		spin_lock_irqsave(&ring->lock, flags);
 		data->len = ring->used_slots / SLOTS_PER_PACKET;
