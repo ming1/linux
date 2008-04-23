@@ -1445,10 +1445,11 @@ ieee80211_rx_h_mgmt(struct ieee80211_txrx_data *rx)
 	return RX_QUEUED;
 }
 
-static void ieee80211_invoke_rx_handlers(struct ieee80211_local *local,
-					 ieee80211_rx_handler *handlers,
-					 struct ieee80211_txrx_data *rx,
-					 struct sta_info *sta)
+static inline ieee80211_rx_result __ieee80211_invoke_rx_handlers(
+				struct ieee80211_local *local,
+				ieee80211_rx_handler *handlers,
+				struct ieee80211_txrx_data *rx,
+				struct sta_info *sta)
 {
 	ieee80211_rx_handler *handler;
 	ieee80211_rx_result res = RX_DROP_MONITOR;
@@ -1472,13 +1473,19 @@ static void ieee80211_invoke_rx_handlers(struct ieee80211_local *local,
 		break;
 	}
 
-	switch (res) {
-	case RX_DROP_MONITOR:
-	case RX_DROP_UNUSABLE:
-	case RX_CONTINUE:
+	if (res == RX_DROP_UNUSABLE || res == RX_DROP_MONITOR)
 		dev_kfree_skb(rx->skb);
-		break;
-	}
+	return res;
+}
+
+static inline void ieee80211_invoke_rx_handlers(struct ieee80211_local *local,
+						ieee80211_rx_handler *handlers,
+						struct ieee80211_txrx_data *rx,
+						struct sta_info *sta)
+{
+	if (__ieee80211_invoke_rx_handlers(local, handlers, rx, sta) ==
+	    RX_CONTINUE)
+		dev_kfree_skb(rx->skb);
 }
 
 static void ieee80211_rx_michael_mic_report(struct net_device *dev,
@@ -1707,6 +1714,16 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 	ieee80211_verify_ip_alignment(&rx);
 
 	skb = rx.skb;
+
+	if (sta && !(sta->flags & (WLAN_STA_WDS | WLAN_STA_ASSOC_AP)) &&
+	    !atomic_read(&local->iff_promiscs) &&
+	    !is_multicast_ether_addr(hdr->addr1)) {
+		rx.flags |= IEEE80211_TXRXD_RXRA_MATCH;
+		ieee80211_invoke_rx_handlers(local, local->rx_handlers, &rx,
+					     rx.sta);
+		sta_info_put(sta);
+		return;
+	}
 
 	list_for_each_entry_rcu(sdata, &local->interfaces, list) {
 		if (!netif_running(sdata->dev))
