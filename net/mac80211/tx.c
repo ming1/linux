@@ -1409,17 +1409,10 @@ int ieee80211_subif_start_xmit(struct sk_buff *skb,
 		goto fail;
 	}
 
-	/*
-	 * There's no need to try to look up the destination
-	 * if it is a multicast address (which can only happen
-	 * in AP mode)
-	 */
-	if (!is_multicast_ether_addr(hdr.addr1)) {
-		sta = sta_info_get(local, hdr.addr1);
-		if (sta) {
-			sta_flags = sta->flags;
-			sta_info_put(sta);
-		}
+	sta = sta_info_get(local, hdr.addr1);
+	if (sta) {
+		sta_flags = sta->flags;
+		sta_info_put(sta);
 	}
 
 	/* receiver is QoS enabled, use a QoS type frame */
@@ -1429,12 +1422,10 @@ int ieee80211_subif_start_xmit(struct sk_buff *skb,
 	}
 
 	/*
-	 * If port access control is enabled, drop unicast frames to
-	 * unauthorised stations unless they are EAPOL frames from the
-	 * local station.
+	 * If port access control is enabled, drop frames to unauthorised
+	 * stations unless they are EAPOL frames from the local station.
 	 */
 	if (unlikely(sdata->ieee802_1x_pac &&
-		     !is_multicast_ether_addr(hdr.addr1) &&
 		     !(sta_flags & WLAN_STA_AUTHORIZED) &&
 		     !(ethertype == ETH_P_PAE &&
 		       compare_ether_addr(dev->dev_addr,
