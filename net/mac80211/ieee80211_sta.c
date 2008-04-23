@@ -74,7 +74,7 @@
 static void ieee80211_send_probe_req(struct net_device *dev, u8 *dst,
 				     u8 *ssid, size_t ssid_len);
 static struct ieee80211_sta_bss *
-ieee80211_rx_bss_get(struct net_device *dev, u8 *bssid, int freq,
+ieee80211_rx_bss_get(struct net_device *dev, u8 *bssid, int channel,
 		     u8 *ssid, u8 ssid_len);
 static void ieee80211_rx_bss_put(struct net_device *dev,
 				 struct ieee80211_sta_bss *bss);
@@ -489,7 +489,7 @@ static void ieee80211_set_associated(struct net_device *dev,
 			return;
 
 		bss = ieee80211_rx_bss_get(dev, ifsta->bssid,
-					   local->hw.conf.channel->center_freq,
+					   local->hw.conf.channel,
 					   ifsta->ssid, ifsta->ssid_len);
 		if (bss) {
 			changed |= ieee80211_handle_bss_capability(sdata, bss);
@@ -614,6 +614,7 @@ static void ieee80211_send_assoc(struct net_device *dev,
 				 struct ieee80211_if_sta *ifsta)
 {
 	struct ieee80211_local *local = wdev_priv(dev->ieee80211_ptr);
+	struct ieee80211_hw_mode *mode;
 	struct sk_buff *skb;
 	struct ieee80211_mgmt *mgmt;
 	u8 *pos, *ies;
@@ -621,7 +622,6 @@ static void ieee80211_send_assoc(struct net_device *dev,
 	u16 capab;
 	struct ieee80211_sta_bss *bss;
 	int wmm = 0;
-	struct ieee80211_supported_band *sband;
 
 	skb = dev_alloc_skb(local->hw.extra_tx_headroom +
 			    sizeof(*mgmt) + 200 + ifsta->extra_ie_len +
@@ -633,19 +633,13 @@ static void ieee80211_send_assoc(struct net_device *dev,
 	}
 	skb_reserve(skb, local->hw.extra_tx_headroom);
 
-	sband = local->hw.wiphy->bands[local->hw.conf.channel->band];
-
+	mode = local->oper_hw_mode;
 	capab = ifsta->capab;
-
-	if (local->hw.conf.channel->band == IEEE80211_BAND_2GHZ) {
-		if (!(local->hw.flags & IEEE80211_HW_2GHZ_SHORT_SLOT_INCAPABLE))
-			capab |= WLAN_CAPABILITY_SHORT_SLOT_TIME;
-		if (!(local->hw.flags & IEEE80211_HW_2GHZ_SHORT_PREAMBLE_INCAPABLE))
-			capab |= WLAN_CAPABILITY_SHORT_PREAMBLE;
+	if (mode->mode == MODE_IEEE80211G) {
+		capab |= WLAN_CAPABILITY_SHORT_SLOT_TIME |
+			WLAN_CAPABILITY_SHORT_PREAMBLE;
 	}
-
-	bss = ieee80211_rx_bss_get(dev, ifsta->bssid,
-				   local->hw.conf.channel->center_freq,
+	bss = ieee80211_rx_bss_get(dev, ifsta->bssid, local->hw.conf.channel,
 				   ifsta->ssid, ifsta->ssid_len);
 	if (bss) {
 		if (bss->capability & WLAN_CAPABILITY_PRIVACY)
@@ -684,23 +678,23 @@ static void ieee80211_send_assoc(struct net_device *dev,
 	*pos++ = ifsta->ssid_len;
 	memcpy(pos, ifsta->ssid, ifsta->ssid_len);
 
-	len = sband->n_bitrates;
+	len = mode->num_rates;
 	if (len > 8)
 		len = 8;
 	pos = skb_put(skb, len + 2);
 	*pos++ = WLAN_EID_SUPP_RATES;
 	*pos++ = len;
 	for (i = 0; i < len; i++) {
-		int rate = sband->bitrates[i].bitrate;
+		int rate = mode->rates[i].rate;
 		*pos++ = (u8) (rate / 5);
 	}
 
-	if (sband->n_bitrates > len) {
-		pos = skb_put(skb, sband->n_bitrates - len + 2);
+	if (mode->num_rates > len) {
+		pos = skb_put(skb, mode->num_rates - len + 2);
 		*pos++ = WLAN_EID_EXT_SUPP_RATES;
-		*pos++ = sband->n_bitrates - len;
-		for (i = len; i < sband->n_bitrates; i++) {
-			int rate = sband->bitrates[i].bitrate;
+		*pos++ = mode->num_rates - len;
+		for (i = len; i < mode->num_rates; i++) {
+			int rate = mode->rates[i].rate;
 			*pos++ = (u8) (rate / 5);
 		}
 	}
@@ -723,18 +717,17 @@ static void ieee80211_send_assoc(struct net_device *dev,
 		*pos++ = 0;
 	}
 	/* wmm support is a must to HT */
-	if (wmm && sband->ht_info.ht_supported) {
-		__le16 tmp = cpu_to_le16(sband->ht_info.cap);
+	if (wmm && mode->ht_info.ht_supported) {
+		__le16 tmp = cpu_to_le16(mode->ht_info.cap);
 		pos = skb_put(skb, sizeof(struct ieee80211_ht_cap)+2);
 		*pos++ = WLAN_EID_HT_CAPABILITY;
 		*pos++ = sizeof(struct ieee80211_ht_cap);
 		memset(pos, 0, sizeof(struct ieee80211_ht_cap));
 		memcpy(pos, &tmp, sizeof(u16));
 		pos += sizeof(u16);
-		/* TODO: needs a define here for << 2 */
-		*pos++ = sband->ht_info.ampdu_factor |
-			 (sband->ht_info.ampdu_density << 2);
-		memcpy(pos, sband->ht_info.supp_mcs_set, 16);
+		*pos++ = (mode->ht_info.ampdu_factor |
+				(mode->ht_info.ampdu_density << 2));
+		memcpy(pos, mode->ht_info.supp_mcs_set, 16);
 	}
 
 	kfree(ifsta->assocreq_ies);
@@ -817,8 +810,7 @@ static int ieee80211_privacy_mismatch(struct net_device *dev,
 	if (!ifsta || (ifsta->flags & IEEE80211_STA_MIXED_CELL))
 		return 0;
 
-	bss = ieee80211_rx_bss_get(dev, ifsta->bssid,
-				   local->hw.conf.channel->center_freq,
+	bss = ieee80211_rx_bss_get(dev, ifsta->bssid, local->hw.conf.channel,
 				   ifsta->ssid, ifsta->ssid_len);
 	if (!bss)
 		return 0;
@@ -928,7 +920,7 @@ static void ieee80211_send_probe_req(struct net_device *dev, u8 *dst,
 				     u8 *ssid, size_t ssid_len)
 {
 	struct ieee80211_local *local = wdev_priv(dev->ieee80211_ptr);
-	struct ieee80211_supported_band *sband;
+	struct ieee80211_hw_mode *mode;
 	struct sk_buff *skb;
 	struct ieee80211_mgmt *mgmt;
 	u8 *pos, *supp_rates, *esupp_rates = NULL;
@@ -962,10 +954,11 @@ static void ieee80211_send_probe_req(struct net_device *dev, u8 *dst,
 	supp_rates = skb_put(skb, 2);
 	supp_rates[0] = WLAN_EID_SUPP_RATES;
 	supp_rates[1] = 0;
-	sband = local->hw.wiphy->bands[local->hw.conf.channel->band];
-
-	for (i = 0; i < sband->n_bitrates; i++) {
-		struct ieee80211_rate *rate = &sband->bitrates[i];
+	mode = local->oper_hw_mode;
+	for (i = 0; i < mode->num_rates; i++) {
+		struct ieee80211_rate *rate = &mode->rates[i];
+		if (!(rate->flags & IEEE80211_RATE_SUPPORTED))
+			continue;
 		if (esupp_rates) {
 			pos = skb_put(skb, 1);
 			esupp_rates[1]++;
@@ -978,7 +971,7 @@ static void ieee80211_send_probe_req(struct net_device *dev, u8 *dst,
 			pos = skb_put(skb, 1);
 			supp_rates[1]++;
 		}
-		*pos = rate->bitrate / 5;
+		*pos = rate->rate / 5;
 	}
 
 	ieee80211_sta_tx(dev, skb, 0);
@@ -1174,11 +1167,9 @@ static void ieee80211_sta_process_addba_request(struct net_device *dev,
 	}
 	/* determine default buffer size */
 	if (buf_size == 0) {
-		struct ieee80211_supported_band *sband;
-
-		sband = local->hw.wiphy->bands[conf->channel->band];
+		struct ieee80211_hw_mode *mode = conf->mode;
 		buf_size = IEEE80211_MIN_AMPDU_BUF;
-		buf_size = buf_size << sband->ht_info.ampdu_factor;
+		buf_size = buf_size << mode->ht_info.ampdu_factor;
 	}
 
 	tid_agg_rx = &sta->ampdu_mlme.tid_rx[tid];
@@ -1748,16 +1739,15 @@ static void ieee80211_rx_mgmt_assoc_resp(struct ieee80211_sub_if_data *sdata,
 {
 	struct ieee80211_local *local = sdata->local;
 	struct net_device *dev = sdata->dev;
-	struct ieee80211_supported_band *sband;
+	struct ieee80211_hw_mode *mode;
 	struct sta_info *sta;
-	u64 rates, basic_rates;
+	u32 rates;
 	u16 capab_info, status_code, aid;
 	struct ieee802_11_elems elems;
 	struct ieee80211_bss_conf *bss_conf = &sdata->bss_conf;
 	u8 *pos;
 	int i, j;
 	DECLARE_MAC_BUF(mac);
-	bool have_higher_than_11mbit = false;
 
 	/* AssocResp and ReassocResp have identical structure, so process both
 	 * of them in this function. */
@@ -1827,6 +1817,10 @@ static void ieee80211_rx_mgmt_assoc_resp(struct ieee80211_sub_if_data *sdata,
 	if (ifsta->assocresp_ies)
 		memcpy(ifsta->assocresp_ies, pos, ifsta->assocresp_ies_len);
 
+	/* set AID, ieee80211_set_associated() will tell the driver */
+	bss_conf->aid = aid;
+	ieee80211_set_associated(dev, ifsta, 1);
+
 	/* Add STA entry for the AP */
 	sta = sta_info_get(local, ifsta->bssid);
 	if (!sta) {
@@ -1838,7 +1832,7 @@ static void ieee80211_rx_mgmt_assoc_resp(struct ieee80211_sub_if_data *sdata,
 			return;
 		}
 		bss = ieee80211_rx_bss_get(dev, ifsta->bssid,
-					   local->hw.conf.channel->center_freq,
+					   local->hw.conf.channel,
 					   ifsta->ssid, ifsta->ssid_len);
 		if (bss) {
 			sta->last_rssi = bss->rssi;
@@ -1852,46 +1846,20 @@ static void ieee80211_rx_mgmt_assoc_resp(struct ieee80211_sub_if_data *sdata,
 	sta->flags |= WLAN_STA_AUTH | WLAN_STA_ASSOC | WLAN_STA_ASSOC_AP;
 
 	rates = 0;
-	basic_rates = 0;
-	sband = local->hw.wiphy->bands[local->hw.conf.channel->band];
-
+	mode = local->oper_hw_mode;
 	for (i = 0; i < elems.supp_rates_len; i++) {
 		int rate = (elems.supp_rates[i] & 0x7f) * 5;
-
-		if (rate > 110)
-			have_higher_than_11mbit = true;
-
-		for (j = 0; j < sband->n_bitrates; j++) {
-			if (sband->bitrates[j].bitrate == rate)
+		for (j = 0; j < mode->num_rates; j++)
+			if (mode->rates[j].rate == rate)
 				rates |= BIT(j);
-			if (elems.supp_rates[i] & 0x80)
-				basic_rates |= BIT(j);
-		}
 	}
-
 	for (i = 0; i < elems.ext_supp_rates_len; i++) {
 		int rate = (elems.ext_supp_rates[i] & 0x7f) * 5;
-
-		if (rate > 110)
-			have_higher_than_11mbit = true;
-
-		for (j = 0; j < sband->n_bitrates; j++) {
-			if (sband->bitrates[j].bitrate == rate)
+		for (j = 0; j < mode->num_rates; j++)
+			if (mode->rates[j].rate == rate)
 				rates |= BIT(j);
-			if (elems.ext_supp_rates[i] & 0x80)
-				basic_rates |= BIT(j);
-		}
 	}
-
-	sta->supp_rates[local->hw.conf.channel->band] = rates;
-	sdata->basic_rates = basic_rates;
-
-	/* cf. IEEE 802.11 9.2.12 */
-	if (local->hw.conf.channel->band == IEEE80211_BAND_2GHZ &&
-	    have_higher_than_11mbit)
-		sdata->flags |= IEEE80211_SDATA_OPERATING_GMODE;
-	else
-		sdata->flags &= ~IEEE80211_SDATA_OPERATING_GMODE;
+	sta->supp_rates = rates;
 
 	if (elems.ht_cap_elem && elems.ht_info_elem && elems.wmm_param &&
 	    local->ops->conf_ht) {
@@ -1914,9 +1882,6 @@ static void ieee80211_rx_mgmt_assoc_resp(struct ieee80211_sub_if_data *sdata,
 					 elems.wmm_param_len);
 	}
 
-	/* set AID, ieee80211_set_associated() will tell the driver */
-	bss_conf->aid = aid;
-	ieee80211_set_associated(dev, ifsta, 1);
 
 	sta_info_put(sta);
 
@@ -1957,7 +1922,7 @@ static void __ieee80211_rx_bss_hash_del(struct net_device *dev,
 
 
 static struct ieee80211_sta_bss *
-ieee80211_rx_bss_add(struct net_device *dev, u8 *bssid, int freq,
+ieee80211_rx_bss_add(struct net_device *dev, u8 *bssid, int channel,
 		     u8 *ssid, u8 ssid_len)
 {
 	struct ieee80211_local *local = wdev_priv(dev->ieee80211_ptr);
@@ -1969,7 +1934,7 @@ ieee80211_rx_bss_add(struct net_device *dev, u8 *bssid, int freq,
 	atomic_inc(&bss->users);
 	atomic_inc(&bss->users);
 	memcpy(bss->bssid, bssid, ETH_ALEN);
-	bss->freq = freq;
+	bss->channel = channel;
 	if (ssid && ssid_len <= IEEE80211_MAX_SSID_LEN) {
 		memcpy(bss->ssid, ssid, ssid_len);
 		bss->ssid_len = ssid_len;
@@ -1985,7 +1950,7 @@ ieee80211_rx_bss_add(struct net_device *dev, u8 *bssid, int freq,
 
 
 static struct ieee80211_sta_bss *
-ieee80211_rx_bss_get(struct net_device *dev, u8 *bssid, int freq,
+ieee80211_rx_bss_get(struct net_device *dev, u8 *bssid, int channel,
 		     u8 *ssid, u8 ssid_len)
 {
 	struct ieee80211_local *local = wdev_priv(dev->ieee80211_ptr);
@@ -1995,7 +1960,7 @@ ieee80211_rx_bss_get(struct net_device *dev, u8 *bssid, int freq,
 	bss = local->sta_bss_hash[STA_HASH(bssid)];
 	while (bss) {
 		if (!memcmp(bss->bssid, bssid, ETH_ALEN) &&
-		    bss->freq == freq &&
+		    bss->channel == channel &&
 		    bss->ssid_len == ssid_len &&
 		    (ssid_len == 0 || !memcmp(bss->ssid, ssid, ssid_len))) {
 			atomic_inc(&bss->users);
@@ -2060,7 +2025,7 @@ static void ieee80211_rx_bss_info(struct net_device *dev,
 	struct ieee80211_local *local = wdev_priv(dev->ieee80211_ptr);
 	struct ieee802_11_elems elems;
 	size_t baselen;
-	int freq, clen;
+	int channel, clen;
 	struct ieee80211_sta_bss *bss;
 	struct sta_info *sta;
 	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
@@ -2111,22 +2076,26 @@ static void ieee80211_rx_bss_info(struct net_device *dev,
 	if (sdata->vif.type == IEEE80211_IF_TYPE_IBSS && elems.supp_rates &&
 	    memcmp(mgmt->bssid, sdata->u.sta.bssid, ETH_ALEN) == 0 &&
 	    (sta = sta_info_get(local, mgmt->sa))) {
-		struct ieee80211_supported_band *sband;
-		struct ieee80211_rate *bitrates;
+		struct ieee80211_hw_mode *mode;
+		struct ieee80211_rate *rates;
 		size_t num_rates;
-		u64 supp_rates, prev_rates;
+		u32 supp_rates, prev_rates;
 		int i, j;
 
-		sband = local->hw.wiphy->bands[rx_status->band];
+		mode = local->sta_sw_scanning ?
+		       local->scan_hw_mode : local->oper_hw_mode;
 
-		if (!sband) {
-			WARN_ON(1);
-			sband = local->hw.wiphy->bands[
-					local->hw.conf.channel->band];
+		if (local->sta_hw_scanning) {
+			/* search for the correct mode matches the beacon */
+			list_for_each_entry(mode, &local->modes_list, list)
+				if (mode->mode == rx_status->phymode)
+					break;
+
+			if (mode == NULL)
+				mode = local->oper_hw_mode;
 		}
-
-		bitrates = sband->bitrates;
-		num_rates = sband->n_bitrates;
+		rates = mode->rates;
+		num_rates = mode->num_rates;
 
 		supp_rates = 0;
 		for (i = 0; i < elems.supp_rates_len +
@@ -2140,27 +2109,24 @@ static void ieee80211_rx_bss_info(struct net_device *dev,
 					[i - elems.supp_rates_len];
 			own_rate = 5 * (rate & 0x7f);
 			for (j = 0; j < num_rates; j++)
-				if (bitrates[j].bitrate == own_rate)
+				if (rates[j].rate == own_rate)
 					supp_rates |= BIT(j);
 		}
 
-		prev_rates = sta->supp_rates[rx_status->band];
-		sta->supp_rates[rx_status->band] &= supp_rates;
-		if (sta->supp_rates[rx_status->band] == 0) {
+		prev_rates = sta->supp_rates;
+		sta->supp_rates &= supp_rates;
+		if (sta->supp_rates == 0) {
 			/* No matching rates - this should not really happen.
 			 * Make sure that at least one rate is marked
 			 * supported to avoid issues with TX rate ctrl. */
-			sta->supp_rates[rx_status->band] =
-				sdata->u.sta.supp_rates_bits[rx_status->band];
+			sta->supp_rates = sdata->u.sta.supp_rates_bits;
 		}
-		if (sta->supp_rates[rx_status->band] != prev_rates) {
+		if (sta->supp_rates != prev_rates) {
 			printk(KERN_DEBUG "%s: updated supp_rates set for "
-			       "%s based on beacon info (0x%llx & 0x%llx -> "
-			       "0x%llx)\n",
-			       dev->name, print_mac(mac, sta->addr),
-			       (unsigned long long) prev_rates,
-			       (unsigned long long) supp_rates,
-			       (unsigned long long) sta->supp_rates[rx_status->band]);
+			       "%s based on beacon info (0x%x & 0x%x -> "
+			       "0x%x)\n",
+			       dev->name, print_mac(mac, sta->addr), prev_rates,
+			       supp_rates, sta->supp_rates);
 		}
 		sta_info_put(sta);
 	}
@@ -2169,14 +2135,14 @@ static void ieee80211_rx_bss_info(struct net_device *dev,
 		return;
 
 	if (elems.ds_params && elems.ds_params_len == 1)
-		freq = ieee80211_channel_to_frequency(elems.ds_params[0]);
+		channel = elems.ds_params[0];
 	else
-		freq = rx_status->freq;
+		channel = rx_status->channel;
 
-	bss = ieee80211_rx_bss_get(dev, mgmt->bssid, freq,
+	bss = ieee80211_rx_bss_get(dev, mgmt->bssid, channel,
 				   elems.ssid, elems.ssid_len);
 	if (!bss) {
-		bss = ieee80211_rx_bss_add(dev, mgmt->bssid, freq,
+		bss = ieee80211_rx_bss_add(dev, mgmt->bssid, channel,
 					   elems.ssid, elems.ssid_len);
 		if (!bss)
 			return;
@@ -2188,8 +2154,6 @@ static void ieee80211_rx_bss_info(struct net_device *dev,
 		spin_unlock_bh(&local->sta_bss_lock);
 #endif
 	}
-
-	bss->band = rx_status->band;
 
 	if (bss->probe_resp && beacon) {
 		/* Do not allow beacon to override data from Probe Response. */
@@ -2289,6 +2253,20 @@ static void ieee80211_rx_bss_info(struct net_device *dev,
 		bss->ht_ie_len = 0;
 	}
 
+	bss->hw_mode = rx_status->phymode;
+	bss->freq = rx_status->freq;
+	if (channel != rx_status->channel &&
+	    (bss->hw_mode == MODE_IEEE80211G ||
+	     bss->hw_mode == MODE_IEEE80211B) &&
+	    channel >= 1 && channel <= 14) {
+		static const int freq_list[] = {
+			2412, 2417, 2422, 2427, 2432, 2437, 2442,
+			2447, 2452, 2457, 2462, 2467, 2472, 2484
+		};
+		/* IEEE 802.11g/b mode can receive packets from neighboring
+		 * channels, so map the channel into frequency. */
+		bss->freq = freq_list[channel - 1];
+	}
 	bss->timestamp = timestamp;
 	bss->last_update = jiffies;
 	bss->rssi = rx_status->ssi;
@@ -2865,7 +2843,7 @@ static int ieee80211_sta_config_auth(struct net_device *dev,
 	}
 
 	spin_lock_bh(&local->sta_bss_lock);
-	freq = local->oper_channel->center_freq;
+	freq = local->oper_channel->freq;
 	list_for_each_entry(bss, &local->sta_bss_list, list) {
 		if (!(bss->capability & WLAN_CAPABILITY_ESS))
 			continue;
@@ -2896,7 +2874,7 @@ static int ieee80211_sta_config_auth(struct net_device *dev,
 	spin_unlock_bh(&local->sta_bss_lock);
 
 	if (selected) {
-		ieee80211_set_freq(local, selected->freq);
+		ieee80211_set_channel(local, -1, selected->freq);
 		if (!(ifsta->flags & IEEE80211_STA_SSID_SET))
 			ieee80211_sta_set_ssid(dev, selected->ssid,
 					       selected->ssid_len);
@@ -2929,12 +2907,10 @@ static int ieee80211_sta_join_ibss(struct net_device *dev,
 	struct sk_buff *skb;
 	struct ieee80211_mgmt *mgmt;
 	struct ieee80211_tx_control control;
+	struct ieee80211_hw_mode *mode;
 	struct rate_selection ratesel;
 	u8 *pos;
 	struct ieee80211_sub_if_data *sdata;
-	struct ieee80211_supported_band *sband;
-
-	sband = local->hw.wiphy->bands[local->hw.conf.channel->band];
 
 	/* Remove possible STA entries from other IBSS networks. */
 	sta_info_flush(local, NULL);
@@ -2954,11 +2930,12 @@ static int ieee80211_sta_join_ibss(struct net_device *dev,
 	sdata->drop_unencrypted = bss->capability &
 		WLAN_CAPABILITY_PRIVACY ? 1 : 0;
 
-	res = ieee80211_set_freq(local, bss->freq);
+	res = ieee80211_set_channel(local, -1, bss->freq);
 
-	if (local->oper_channel->flags & IEEE80211_CHAN_NO_IBSS) {
-		printk(KERN_DEBUG "%s: IBSS not allowed on frequency "
-		       "%d MHz\n", dev->name, local->oper_channel->center_freq);
+	if (!(local->oper_channel->flag & IEEE80211_CHAN_W_IBSS)) {
+		printk(KERN_DEBUG "%s: IBSS not allowed on channel %d "
+		       "(%d MHz)\n", dev->name, local->hw.conf.channel,
+		       local->hw.conf.freq);
 		return -1;
 	}
 
@@ -2995,12 +2972,10 @@ static int ieee80211_sta_join_ibss(struct net_device *dev,
 		*pos++ = rates;
 		memcpy(pos, bss->supp_rates, rates);
 
-		if (bss->band == IEEE80211_BAND_2GHZ) {
-			pos = skb_put(skb, 2 + 1);
-			*pos++ = WLAN_EID_DS_PARAMS;
-			*pos++ = 1;
-			*pos++ = ieee80211_frequency_to_channel(bss->freq);
-		}
+		pos = skb_put(skb, 2 + 1);
+		*pos++ = WLAN_EID_DS_PARAMS;
+		*pos++ = 1;
+		*pos++ = bss->channel;
 
 		pos = skb_put(skb, 2 + 2);
 		*pos++ = WLAN_EID_IBSS_PARAMS;
@@ -3018,18 +2993,19 @@ static int ieee80211_sta_join_ibss(struct net_device *dev,
 		}
 
 		memset(&control, 0, sizeof(control));
-		rate_control_get_rate(dev, sband, skb, &ratesel);
+		rate_control_get_rate(dev, local->oper_hw_mode, skb, &ratesel);
 		if (!ratesel.rate) {
 			printk(KERN_DEBUG "%s: Failed to determine TX rate "
 			       "for IBSS beacon\n", dev->name);
 			break;
 		}
 		control.vif = &sdata->vif;
-		control.tx_rate = ratesel.rate;
-		if (sdata->bss_conf.use_short_preamble &&
-		    ratesel.rate->flags & IEEE80211_RATE_SHORT_PREAMBLE)
-			control.flags |= IEEE80211_TXCTL_SHORT_PREAMBLE;
+		control.tx_rate =
+			(sdata->bss_conf.use_short_preamble &&
+			(ratesel.rate->flags & IEEE80211_RATE_PREAMBLE2)) ?
+			ratesel.rate->val2 : ratesel.rate->val;
 		control.antenna_sel_tx = local->hw.conf.antenna_sel_tx;
+		control.power_level = local->hw.conf.power_level;
 		control.flags |= IEEE80211_TXCTL_NO_ACK;
 		control.retry_limit = 1;
 
@@ -3054,14 +3030,14 @@ static int ieee80211_sta_join_ibss(struct net_device *dev,
 		}
 
 		rates = 0;
-		sband = local->hw.wiphy->bands[local->hw.conf.channel->band];
+		mode = local->oper_hw_mode;
 		for (i = 0; i < bss->supp_rates_len; i++) {
 			int bitrate = (bss->supp_rates[i] & 0x7f) * 5;
-			for (j = 0; j < sband->n_bitrates; j++)
-				if (sband->bitrates[j].bitrate == bitrate)
+			for (j = 0; j < mode->num_rates; j++)
+				if (mode->rates[j].rate == bitrate)
 					rates |= BIT(j);
 		}
-		ifsta->supp_rates_bits[local->hw.conf.channel->band] = rates;
+		ifsta->supp_rates_bits = rates;
 	} while (0);
 
 	if (skb) {
@@ -3085,7 +3061,7 @@ static int ieee80211_sta_create_ibss(struct net_device *dev,
 	struct ieee80211_local *local = wdev_priv(dev->ieee80211_ptr);
 	struct ieee80211_sta_bss *bss;
 	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
-	struct ieee80211_supported_band *sband;
+	struct ieee80211_hw_mode *mode;
 	u8 bssid[ETH_ALEN], *pos;
 	int i;
 	DECLARE_MAC_BUF(mac);
@@ -3107,28 +3083,28 @@ static int ieee80211_sta_create_ibss(struct net_device *dev,
 	printk(KERN_DEBUG "%s: Creating new IBSS network, BSSID %s\n",
 	       dev->name, print_mac(mac, bssid));
 
-	bss = ieee80211_rx_bss_add(dev, bssid,
-				   local->hw.conf.channel->center_freq,
+	bss = ieee80211_rx_bss_add(dev, bssid, local->hw.conf.channel,
 				   sdata->u.sta.ssid, sdata->u.sta.ssid_len);
 	if (!bss)
 		return -ENOMEM;
 
-	bss->band = local->hw.conf.channel->band;
-	sband = local->hw.wiphy->bands[bss->band];
+	mode = local->oper_hw_mode;
 
 	if (local->hw.conf.beacon_int == 0)
 		local->hw.conf.beacon_int = 100;
 	bss->beacon_int = local->hw.conf.beacon_int;
+	bss->hw_mode = local->hw.conf.phymode;
+	bss->freq = local->hw.conf.freq;
 	bss->last_update = jiffies;
 	bss->capability = WLAN_CAPABILITY_IBSS;
 	if (sdata->default_key) {
 		bss->capability |= WLAN_CAPABILITY_PRIVACY;
 	} else
 		sdata->drop_unencrypted = 0;
-	bss->supp_rates_len = sband->n_bitrates;
+	bss->supp_rates_len = mode->num_rates;
 	pos = bss->supp_rates;
-	for (i = 0; i < sband->n_bitrates; i++) {
-		int rate = sband->bitrates[i].bitrate;
+	for (i = 0; i < mode->num_rates; i++) {
+		int rate = mode->rates[i].rate;
 		*pos++ = (u8) (rate / 5);
 	}
 
@@ -3177,8 +3153,7 @@ static int ieee80211_sta_find_ibss(struct net_device *dev,
 	       "%s\n", print_mac(mac, bssid), print_mac(mac2, ifsta->bssid));
 #endif /* CONFIG_MAC80211_IBSS_DEBUG */
 	if (found && memcmp(ifsta->bssid, bssid, ETH_ALEN) != 0 &&
-	    (bss = ieee80211_rx_bss_get(dev, bssid,
-					local->hw.conf.channel->center_freq,
+	    (bss = ieee80211_rx_bss_get(dev, bssid, local->hw.conf.channel,
 					ifsta->ssid, ifsta->ssid_len))) {
 		printk(KERN_DEBUG "%s: Selected IBSS BSSID %s"
 		       " based on configured SSID\n",
@@ -3206,13 +3181,13 @@ static int ieee80211_sta_find_ibss(struct net_device *dev,
 		if (time_after(jiffies, ifsta->ibss_join_req +
 			       IEEE80211_IBSS_JOIN_TIMEOUT)) {
 			if ((ifsta->flags & IEEE80211_STA_CREATE_IBSS) &&
-			    (!(local->oper_channel->flags &
-					IEEE80211_CHAN_NO_IBSS)))
+			    local->oper_channel->flag & IEEE80211_CHAN_W_IBSS)
 				return ieee80211_sta_create_ibss(dev, ifsta);
 			if (ifsta->flags & IEEE80211_STA_CREATE_IBSS) {
-				printk(KERN_DEBUG "%s: IBSS not allowed on"
-				       " %d MHz\n", dev->name,
-				       local->hw.conf.channel->center_freq);
+				printk(KERN_DEBUG "%s: IBSS not allowed on the"
+				       " configured channel %d (%d MHz)\n",
+				       dev->name, local->hw.conf.channel,
+				       local->hw.conf.freq);
 			}
 
 			/* No IBSS found - decrease scan interval and continue
@@ -3231,7 +3206,7 @@ static int ieee80211_sta_find_ibss(struct net_device *dev,
 
 int ieee80211_sta_set_ssid(struct net_device *dev, char *ssid, size_t len)
 {
-	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+	struct ieee80211_sub_if_data *sdata;
 	struct ieee80211_if_sta *ifsta;
 	struct ieee80211_local *local = wdev_priv(dev->ieee80211_ptr);
 
@@ -3245,23 +3220,18 @@ int ieee80211_sta_set_ssid(struct net_device *dev, char *ssid, size_t len)
 		int i;
 
 		memset(&qparam, 0, sizeof(qparam));
-
+		/* TODO: are these ok defaults for all hw_modes? */
 		qparam.aifs = 2;
-
-		if (local->hw.conf.channel->band == IEEE80211_BAND_2GHZ &&
-		    !(sdata->flags & IEEE80211_SDATA_OPERATING_GMODE))
-			qparam.cw_min = 31;
-		else
-			qparam.cw_min = 15;
-
+		qparam.cw_min =
+			local->hw.conf.phymode == MODE_IEEE80211B ? 31 : 15;
 		qparam.cw_max = 1023;
 		qparam.burst_time = 0;
-
 		for (i = IEEE80211_TX_QUEUE_DATA0; i < NUM_TX_DATA_QUEUES; i++)
+		{
 			local->ops->conf_tx(local_to_hw(local),
 					   i + IEEE80211_TX_QUEUE_DATA0,
 					   &qparam);
-
+		}
 		/* IBSS uses different parameters for Beacon sending */
 		qparam.cw_min++;
 		qparam.cw_min *= 2;
@@ -3270,6 +3240,7 @@ int ieee80211_sta_set_ssid(struct net_device *dev, char *ssid, size_t len)
 				   IEEE80211_TX_QUEUE_BEACON, &qparam);
 	}
 
+	sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 	ifsta = &sdata->u.sta;
 
 	if (ifsta->ssid_len != len || memcmp(ifsta->ssid, ssid, len) != 0)
@@ -3428,7 +3399,7 @@ void ieee80211_sta_scan_work(struct work_struct *work)
 		container_of(work, struct ieee80211_local, scan_work.work);
 	struct net_device *dev = local->scan_dev;
 	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
-	struct ieee80211_supported_band *sband;
+	struct ieee80211_hw_mode *mode;
 	struct ieee80211_channel *chan;
 	int skip;
 	unsigned long next_delay = 0;
@@ -3438,47 +3409,44 @@ void ieee80211_sta_scan_work(struct work_struct *work)
 
 	switch (local->scan_state) {
 	case SCAN_SET_CHANNEL:
-		/* get current scan band */
-		if (local->scan_band < IEEE80211_NUM_BANDS)
-			sband = local->hw.wiphy->bands[local->scan_band];
-		else
-			sband = NULL;
-
-		/* if we started at an unsupported one, advance */
-		while (!sband && local->scan_band < IEEE80211_NUM_BANDS) {
-			local->scan_band++;
-			sband = local->hw.wiphy->bands[local->scan_band];
-			local->scan_channel_idx = 0;
-		}
-
-		if (!sband ||
-		    (local->scan_channel_idx >= sband->n_channels &&
-		     local->scan_band >= IEEE80211_NUM_BANDS)) {
+		mode = local->scan_hw_mode;
+		if (local->scan_hw_mode->list.next == &local->modes_list &&
+		    local->scan_channel_idx >= mode->num_channels) {
 			ieee80211_scan_completed(local_to_hw(local));
 			return;
 		}
-		skip = 0;
-		chan = &sband->channels[local->scan_channel_idx];
-
-		if (chan->flags & IEEE80211_CHAN_DISABLED ||
+		skip = !(local->enabled_modes & (1 << mode->mode));
+		chan = &mode->channels[local->scan_channel_idx];
+		if (!(chan->flag & IEEE80211_CHAN_W_SCAN) ||
 		    (sdata->vif.type == IEEE80211_IF_TYPE_IBSS &&
-		     chan->flags & IEEE80211_CHAN_NO_IBSS))
+		     !(chan->flag & IEEE80211_CHAN_W_IBSS)) ||
+		    (local->hw_modes & local->enabled_modes &
+		     (1 << MODE_IEEE80211G) && mode->mode == MODE_IEEE80211B))
 			skip = 1;
 
 		if (!skip) {
+#if 0
+			printk(KERN_DEBUG "%s: scan channel %d (%d MHz)\n",
+			       dev->name, chan->chan, chan->freq);
+#endif
+
 			local->scan_channel = chan;
 			if (ieee80211_hw_config(local)) {
-				printk(KERN_DEBUG "%s: failed to set freq to "
-				       "%d MHz for scan\n", dev->name,
-				       chan->center_freq);
+				printk(KERN_DEBUG "%s: failed to set channel "
+				       "%d (%d MHz) for scan\n", dev->name,
+				       chan->chan, chan->freq);
 				skip = 1;
 			}
 		}
 
 		local->scan_channel_idx++;
-		if (local->scan_channel_idx >= sband->n_channels) {
-			local->scan_band++;
-			local->scan_channel_idx = 0;
+		if (local->scan_channel_idx >= local->scan_hw_mode->num_channels) {
+			if (local->scan_hw_mode->list.next != &local->modes_list) {
+				local->scan_hw_mode = list_entry(local->scan_hw_mode->list.next,
+								 struct ieee80211_hw_mode,
+								 list);
+				local->scan_channel_idx = 0;
+			}
 		}
 
 		if (skip)
@@ -3489,14 +3457,13 @@ void ieee80211_sta_scan_work(struct work_struct *work)
 		local->scan_state = SCAN_SEND_PROBE;
 		break;
 	case SCAN_SEND_PROBE:
-		next_delay = IEEE80211_PASSIVE_CHANNEL_TIME;
+		if (local->scan_channel->flag & IEEE80211_CHAN_W_ACTIVE_SCAN) {
+			ieee80211_send_probe_req(dev, NULL, local->scan_ssid,
+						 local->scan_ssid_len);
+			next_delay = IEEE80211_CHANNEL_TIME;
+		} else
+			next_delay = IEEE80211_PASSIVE_CHANNEL_TIME;
 		local->scan_state = SCAN_SET_CHANNEL;
-
-		if (local->scan_channel->flags & IEEE80211_CHAN_PASSIVE_SCAN)
-			break;
-		ieee80211_send_probe_req(dev, NULL, local->scan_ssid,
-					 local->scan_ssid_len);
-		next_delay = IEEE80211_CHANNEL_TIME;
 		break;
 	}
 
@@ -3571,8 +3538,10 @@ static int ieee80211_sta_start_scan(struct net_device *dev,
 	} else
 		local->scan_ssid_len = 0;
 	local->scan_state = SCAN_SET_CHANNEL;
+	local->scan_hw_mode = list_entry(local->modes_list.next,
+					 struct ieee80211_hw_mode,
+					 list);
 	local->scan_channel_idx = 0;
-	local->scan_band = IEEE80211_BAND_2GHZ;
 	local->scan_dev = dev;
 
 	netif_tx_lock_bh(local->mdev);
@@ -3627,6 +3596,9 @@ ieee80211_sta_scan_result(struct net_device *dev,
 		       bss->last_update + IEEE80211_SCAN_RESULT_EXPIRE))
 		return current_ev;
 
+	if (!(local->enabled_modes & (1 << bss->hw_mode)))
+		return current_ev;
+
 	memset(&iwe, 0, sizeof(iwe));
 	iwe.cmd = SIOCGIWAP;
 	iwe.u.ap_addr.sa_family = ARPHRD_ETHER;
@@ -3654,15 +3626,12 @@ ieee80211_sta_scan_result(struct net_device *dev,
 
 	memset(&iwe, 0, sizeof(iwe));
 	iwe.cmd = SIOCGIWFREQ;
-	iwe.u.freq.m = bss->freq;
-	iwe.u.freq.e = 6;
+	iwe.u.freq.m = bss->channel;
+	iwe.u.freq.e = 0;
 	current_ev = iwe_stream_add_event(current_ev, end_buf, &iwe,
 					  IW_EV_FREQ_LEN);
-
-	memset(&iwe, 0, sizeof(iwe));
-	iwe.cmd = SIOCGIWFREQ;
-	iwe.u.freq.m = ieee80211_frequency_to_channel(bss->freq);
-	iwe.u.freq.e = 0;
+	iwe.u.freq.m = bss->freq * 100000;
+	iwe.u.freq.e = 1;
 	current_ev = iwe_stream_add_event(current_ev, end_buf, &iwe,
 					  IW_EV_FREQ_LEN);
 
@@ -3805,8 +3774,7 @@ struct sta_info * ieee80211_ibss_add_sta(struct net_device *dev,
 	if (!sta)
 		return NULL;
 
-	sta->supp_rates[local->hw.conf.channel->band] =
-		sdata->u.sta.supp_rates_bits[local->hw.conf.channel->band];
+	sta->supp_rates = sdata->u.sta.supp_rates_bits;
 
 	rate_control_rate_init(sta, local);
 
