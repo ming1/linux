@@ -76,7 +76,6 @@
 #define DBG_WE_EVENTS		0x08000000	/* dump wireless events */
 #define DBG_FW			0x10000000	/* firmware download */
 #define DBG_DFU			0x20000000	/* device firmware upgrade */
-#define DBG_CMD			0x40000000
 
 #define DBG_DEFAULTS		0
 
@@ -787,24 +786,6 @@ static inline int at76_get_cmd_status(struct usb_device *udev, u8 cmd)
 	return stat_buf[5];
 }
 
-#define MAKE_CMD_CASE(c) case (c): return #c
-
-static const char *at76_get_cmd_string(u8 cmd_status)
-{
-	switch (cmd_status) {
-		MAKE_CMD_CASE(CMD_SET_MIB);
-		MAKE_CMD_CASE(CMD_GET_MIB);
-		MAKE_CMD_CASE(CMD_SCAN);
-		MAKE_CMD_CASE(CMD_JOIN);
-		MAKE_CMD_CASE(CMD_START_IBSS);
-		MAKE_CMD_CASE(CMD_RADIO_ON);
-		MAKE_CMD_CASE(CMD_RADIO_OFF);
-		MAKE_CMD_CASE(CMD_STARTUP);
-	}
-
-	return "UNKNOWN";
-}
-
 static int at76_set_card_command(struct usb_device *udev, int cmd, void *buf,
 				 int buf_size)
 {
@@ -819,10 +800,6 @@ static int at76_set_card_command(struct usb_device *udev, int cmd, void *buf,
 	cmd_buf->reserved = 0;
 	cmd_buf->size = cpu_to_le16(buf_size);
 	memcpy(cmd_buf->data, buf, buf_size);
-
-	at76_dbg_dump(DBG_CMD, cmd_buf, sizeof(struct at76_command) + buf_size,
-		      "issuing command %s (0x%02x)",
-		      at76_get_cmd_string(cmd), cmd);
 
 	ret = usb_control_msg(udev, usb_sndctrlpipe(udev, 0), 0x0e,
 			      USB_TYPE_VENDOR | USB_DIR_OUT | USB_RECIP_DEVICE,
