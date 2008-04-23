@@ -39,7 +39,6 @@
 #include "../net/mac80211/ieee80211_rate.h"
 
 #include "iwl-4965.h"
-#include "iwl-core.h"
 #include "iwl-helpers.h"
 
 #define RS_NAME "iwl-4965-rs"
@@ -231,7 +230,7 @@ static s32 expected_tpt_mimo40MHzSGI[IWL_RATE_COUNT] = {
 };
 
 static int iwl4965_lq_sync_callback(struct iwl_priv *priv,
-				struct iwl_cmd *cmd, struct sk_buff *skb)
+				struct iwl4965_cmd *cmd, struct sk_buff *skb)
 {
 	/*We didn't cache the SKB; let the caller free it */
 	return 1;
@@ -248,7 +247,7 @@ static int rs_send_lq_cmd(struct iwl_priv *priv,
 #ifdef CONFIG_IWLWIFI_DEBUG
 	int i;
 #endif
-	struct iwl_host_cmd cmd = {
+	struct iwl4965_host_cmd cmd = {
 		.id = REPLY_TX_LINK_QUALITY_CMD,
 		.len = sizeof(struct iwl4965_link_quality_cmd),
 		.meta.flags = flags,
@@ -277,7 +276,7 @@ static int rs_send_lq_cmd(struct iwl_priv *priv,
 
 	if (iwl4965_is_associated(priv) && priv->assoc_station_added &&
 	    priv->lq_mngr.lq_ready)
-		return  iwl_send_cmd(priv, &cmd);
+		return  iwl4965_send_cmd(priv, &cmd);
 
 	return 0;
 }
