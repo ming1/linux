@@ -976,12 +976,12 @@ void iwl3945_rate_scale_init(struct ieee80211_hw *hw, s32 sta_id)
 		       iwl3945_rates[rs_sta->start_rate].plcp);
 }
 
-int iwl3945_rate_control_register(void)
+void iwl3945_rate_control_register(struct ieee80211_hw *hw)
 {
-	return ieee80211_rate_control_register(&rs_ops);
+	ieee80211_rate_control_register(&rs_ops);
 }
 
-void iwl3945_rate_control_unregister(void)
+void iwl3945_rate_control_unregister(struct ieee80211_hw *hw)
 {
 	ieee80211_rate_control_unregister(&rs_ops);
 }

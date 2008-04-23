@@ -2822,12 +2822,12 @@ void iwl4965_rate_scale_init(struct ieee80211_hw *hw, s32 sta_id)
 	priv->lq_mngr.lq_ready = 1;
 }
 
-int iwl4965_rate_control_register(void)
+void iwl4965_rate_control_register(struct ieee80211_hw *hw)
 {
-	return ieee80211_rate_control_register(&rs_ops);
+	ieee80211_rate_control_register(&rs_ops);
 }
 
-void iwl4965_rate_control_unregister(void)
+void iwl4965_rate_control_unregister(struct ieee80211_hw *hw)
 {
 	ieee80211_rate_control_unregister(&rs_ops);
 }
