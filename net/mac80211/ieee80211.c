@@ -268,7 +268,7 @@ static int ieee80211_open(struct net_device *dev)
 
 		res = sta_info_insert(sta);
 		if (res) {
-			/* STA has been freed */
+			sta_info_destroy(sta);
 			return res;
 		}
 		break;
