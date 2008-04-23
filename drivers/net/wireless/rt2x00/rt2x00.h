@@ -343,22 +343,20 @@ static inline int rt2x00_update_ant_rssi(struct link *link, int rssi)
 
 /*
  * Interface structure
- * Per interface configuration details, this structure
- * is allocated as the private data for ieee80211_vif.
+ * Configuration details about the current interface.
  */
-struct rt2x00_intf {
+struct interface {
 	/*
-	 * All fields within the rt2x00_intf structure
-	 * must be protected with a spinlock.
+	 * Interface identification. The value is assigned
+	 * to us by the 80211 stack, and is used to request
+	 * new beacons.
 	 */
-	spinlock_t lock;
+	struct ieee80211_vif *id;
 
 	/*
-	 * BSS configuration. Copied from the structure
-	 * passed to us through the bss_info_changed()
-	 * callback funtion.
+	 * Current working type (IEEE80211_IF_TYPE_*).
 	 */
-	struct ieee80211_bss_conf conf;
+	int type;
 
 	/*
 	 * MAC of the device.
@@ -369,25 +367,16 @@ struct rt2x00_intf {
 	 * BBSID of the AP to associate with.
 	 */
 	u8 bssid[ETH_ALEN];
-
-	/*
-	 * Entry in the beacon queue which belongs to
-	 * this interface. Each interface has its own
-	 * dedicated beacon entry.
-	 */
-	struct queue_entry *beacon;
-
-	/*
-	 * Actions that needed rescheduling.
-	 */
-	unsigned int delayed_flags;
-#define DELAYED_UPDATE_BEACON		0x00000001
-#define DELAYED_CONFIG_PREAMBLE		0x00000002
 };
 
-static inline struct rt2x00_intf* vif_to_intf(struct ieee80211_vif *vif)
+static inline int is_interface_present(struct interface *intf)
 {
-	return (struct rt2x00_intf *)vif->drv_priv;
+	return !!intf->id;
+}
+
+static inline int is_interface_type(struct interface *intf, int type)
+{
+	return intf->type == type;
 }
 
 /*
@@ -438,37 +427,6 @@ struct rt2x00lib_conf {
 	short pifs;
 	short difs;
 	short eifs;
-};
-
-/*
- * Configuration structure wrapper around the
- * rt2x00 interface configuration handler.
- */
-struct rt2x00intf_conf {
-	/*
-	 * Interface type
-	 */
-	enum ieee80211_if_types type;
-
-	/*
-	 * TSF sync value, this is dependant on the operation type.
-	 */
-	enum tsf_sync sync;
-
-	/*
-	 * The MAC and BSSID addressess are simple array of bytes,
-	 * these arrays are little endian, so when sending the addressess
-	 * to the drivers, copy the it into a endian-signed variable.
-	 *
-	 * Note that all devices (except rt2500usb) have 32 bits
-	 * register word sizes. This means that whatever variable we
-	 * pass _must_ be a multiple of 32 bits. Otherwise the device
-	 * might not accept what we are sending to it.
-	 * This will also make it easier for the driver to write
-	 * the data to the device.
-	 */
-	__le32 mac[2];
-	__le32 bssid[2];
 };
 
 /*
@@ -537,21 +495,16 @@ struct rt2x00lib_ops {
 	/*
 	 * Configuration handlers.
 	 */
-	void (*config_intf) (struct rt2x00_dev *rt2x00dev,
-			     struct rt2x00_intf *intf,
-			     struct rt2x00intf_conf *conf,
-			     const unsigned int flags);
-#define CONFIG_UPDATE_TYPE		( 1 << 1 )
-#define CONFIG_UPDATE_MAC		( 1 << 2 )
-#define CONFIG_UPDATE_BSSID		( 1 << 3 )
-
-	int (*config_preamble) (struct rt2x00_dev *rt2x00dev,
-				const int short_preamble,
-				const int ack_timeout,
-				const int ack_consume_time);
-	void (*config) (struct rt2x00_dev *rt2x00dev,
-			struct rt2x00lib_conf *libconf,
-			const unsigned int flags);
+	void (*config_mac_addr) (struct rt2x00_dev *rt2x00dev, __le32 *mac);
+	void (*config_bssid) (struct rt2x00_dev *rt2x00dev, __le32 *bssid);
+	void (*config_type) (struct rt2x00_dev *rt2x00dev, const int type,
+							   const int tsf_sync);
+	void (*config_preamble) (struct rt2x00_dev *rt2x00dev,
+				 const int short_preamble,
+				 const int ack_timeout,
+				 const int ack_consume_time);
+	void (*config) (struct rt2x00_dev *rt2x00dev, const unsigned int flags,
+			struct rt2x00lib_conf *libconf);
 #define CONFIG_UPDATE_PHYMODE		( 1 << 1 )
 #define CONFIG_UPDATE_CHANNEL		( 1 << 2 )
 #define CONFIG_UPDATE_TXPOWER		( 1 << 3 )
@@ -566,8 +519,6 @@ struct rt2x00lib_ops {
  */
 struct rt2x00_ops {
 	const char *name;
-	const unsigned int max_sta_intf;
-	const unsigned int max_ap_intf;
 	const unsigned int eeprom_size;
 	const unsigned int rf_size;
 	const struct data_queue_desc *rx;
@@ -599,7 +550,6 @@ enum rt2x00_flags {
 	/*
 	 * Driver features
 	 */
-	DRIVER_SUPPORT_MIXED_INTERFACES,
 	DRIVER_REQUIRE_FIRMWARE,
 	DRIVER_REQUIRE_FIRMWARE_CRC_ITU_T,
 	DRIVER_REQUIRE_FIRMWARE_CCITT,
@@ -616,6 +566,7 @@ enum rt2x00_flags {
 	CONFIG_EXTERNAL_LNA_BG,
 	CONFIG_DOUBLE_ANTENNA,
 	CONFIG_DISABLE_LINK_TUNING,
+	CONFIG_SHORT_PREAMBLE,
 };
 
 /*
@@ -722,14 +673,9 @@ unsigned long rfkill_state;
 	unsigned int packet_filter;
 
 	/*
-	 * Interface details:
-	 *  - Open ap interface count.
-	 *  - Open sta interface count.
-	 *  - Association count.
+	 * Interface configuration.
 	 */
-	unsigned int intf_ap_count;
-	unsigned int intf_sta_count;
-	unsigned int intf_associated;
+	struct interface interface;
 
 	/*
 	 * Link quality
@@ -795,8 +741,9 @@ unsigned long rfkill_state;
 	/*
 	 * Scheduled work.
 	 */
-	struct work_struct intf_work;
+	struct work_struct beacon_work;
 	struct work_struct filter_work;
+	struct work_struct config_work;
 
 	/*
 	 * Data queue arrays for RX, TX and Beacon.
