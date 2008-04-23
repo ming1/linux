@@ -10,6 +10,8 @@
 #include <asm/unaligned.h>
 #include "mesh.h"
 
+#define IEEE80211_FC(type, stype) cpu_to_le16(type | stype)
+
 #define TEST_FRAME_LEN	8192
 #define MAX_METRIC	0xffffffff
 #define ARITH_SHIFT	8
