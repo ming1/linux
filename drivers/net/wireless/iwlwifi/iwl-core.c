@@ -289,4 +289,3 @@ int iwl_send_statistics_request(struct iwl_priv *priv, u8 flags)
 	return iwl_send_cmd(priv, &cmd);
 }
 EXPORT_SYMBOL(iwl_send_statistics_request);
-
