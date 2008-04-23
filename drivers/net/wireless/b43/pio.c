@@ -338,28 +338,27 @@ static struct b43_pio_txqueue * select_queue_by_priority(struct b43_wldev *dev,
 	return q;
 }
 
-static u16 tx_write_2byte_queue(struct b43_pio_txqueue *q,
-				u16 ctl,
-				const void *_data,
-				unsigned int data_len)
+static inline void tx_write_2byte_queue(struct b43_pio_txqueue *q,
+					u16 *ctl,
+					const void *_data,
+					unsigned int data_len)
 {
-	struct b43_wldev *dev = q->dev;
 	const u8 *data = _data;
+	unsigned int i;
+	u16 value;
 
-	ctl |= B43_PIO_TXCTL_WRITELO | B43_PIO_TXCTL_WRITEHI;
-	b43_piotx_write16(q, B43_PIO_TXCTL, ctl);
-
-	ssb_block_write(dev->dev, data, (data_len & ~1),
-			q->mmio_base + B43_PIO_TXDATA,
-			sizeof(u16));
-	if (data_len & 1) {
-		/* Write the last byte. */
-		ctl &= ~B43_PIO_TXCTL_WRITEHI;
-		b43_piotx_write16(q, B43_PIO_TXCTL, ctl);
-		b43_piotx_write16(q, B43_PIO_TXDATA, data[data_len - 1]);
+	*ctl |= B43_PIO_TXCTL_WRITELO | B43_PIO_TXCTL_WRITEHI;
+	b43_piotx_write16(q, B43_PIO_TXCTL, *ctl);
+	for (i = 0; i < data_len; i += 2) {
+		value = data[i];
+		if (i + 1 < data_len) {
+			value |= (u16)(data[i + 1]) << 8;
+		} else {
+			*ctl &= ~B43_PIO_TXCTL_WRITEHI;
+			b43_piotx_write16(q, B43_PIO_TXCTL, *ctl);
+		}
+		b43_piotx_write16(q, B43_PIO_TXDATA, value);
 	}
-
-	return ctl;
 }
 
 static void pio_tx_frame_2byte_queue(struct b43_pio_txpacket *pack,
@@ -375,53 +374,51 @@ static void pio_tx_frame_2byte_queue(struct b43_pio_txpacket *pack,
 	ctl &= ~B43_PIO_TXCTL_EOF;
 
 	/* Transfer the header data. */
-	ctl = tx_write_2byte_queue(q, ctl, hdr, hdrlen);
+	tx_write_2byte_queue(q, &ctl, hdr, hdrlen);
 	/* Transfer the frame data. */
-	ctl = tx_write_2byte_queue(q, ctl, frame, frame_len);
+	tx_write_2byte_queue(q, &ctl, frame, frame_len);
 
 	ctl |= B43_PIO_TXCTL_EOF;
 	b43_piotx_write16(q, B43_PIO_TXCTL, ctl);
 }
 
-static u32 tx_write_4byte_queue(struct b43_pio_txqueue *q,
-				u32 ctl,
-				const void *_data,
-				unsigned int data_len)
+static inline void tx_write_4byte_queue(struct b43_pio_txqueue *q,
+					u32 *ctl,
+					const void *_data,
+					unsigned int data_len)
 {
-	struct b43_wldev *dev = q->dev;
 	const u8 *data = _data;
+	unsigned int i;
+	u32 value;
+	bool ctl_changed = 0;
 
-	ctl |= B43_PIO8_TXCTL_0_7 | B43_PIO8_TXCTL_8_15 |
-	       B43_PIO8_TXCTL_16_23 | B43_PIO8_TXCTL_24_31;
-	b43_piotx_write32(q, B43_PIO8_TXCTL, ctl);
-
-	ssb_block_write(dev->dev, data, (data_len & ~3),
-			q->mmio_base + B43_PIO8_TXDATA,
-			sizeof(u32));
-	if (data_len & 3) {
-		u32 value = 0;
-
-		/* Write the last few bytes. */
-		ctl &= ~(B43_PIO8_TXCTL_8_15 | B43_PIO8_TXCTL_16_23 |
-			 B43_PIO8_TXCTL_24_31);
-		data = &(data[data_len - 1]);
-		switch (data_len & 3) {
-		case 3:
-			ctl |= B43_PIO8_TXCTL_16_23;
-			value |= (u32)(*data) << 16;
-			data--;
-		case 2:
-			ctl |= B43_PIO8_TXCTL_8_15;
-			value |= (u32)(*data) << 8;
-			data--;
-		case 1:
-			value |= (u32)(*data);
+	*ctl |= B43_PIO8_TXCTL_0_7 | B43_PIO8_TXCTL_8_15 |
+		B43_PIO8_TXCTL_16_23 | B43_PIO8_TXCTL_24_31;
+	b43_piotx_write32(q, B43_PIO8_TXCTL, *ctl);
+	for (i = 0; i < data_len; i += 4) {
+		value = data[i];
+		if (i + 1 < data_len) {
+			value |= (u32)(data[i + 1]) << 8;
+		} else {
+			*ctl &= ~B43_PIO8_TXCTL_8_15;
+			ctl_changed = 1;
 		}
-		b43_piotx_write32(q, B43_PIO8_TXCTL, ctl);
+		if (i + 2 < data_len) {
+			value |= (u32)(data[i + 2]) << 16;
+		} else {
+			*ctl &= ~B43_PIO8_TXCTL_16_23;
+			ctl_changed = 1;
+		}
+		if (i + 3 < data_len) {
+			value |= (u32)(data[i + 3]) << 24;
+		} else {
+			*ctl &= ~B43_PIO8_TXCTL_24_31;
+			ctl_changed = 1;
+		}
+		if (ctl_changed)
+			b43_piotx_write32(q, B43_PIO8_TXCTL, *ctl);
 		b43_piotx_write32(q, B43_PIO8_TXDATA, value);
 	}
-
-	return ctl;
 }
 
 static void pio_tx_frame_4byte_queue(struct b43_pio_txpacket *pack,
@@ -437,9 +434,9 @@ static void pio_tx_frame_4byte_queue(struct b43_pio_txpacket *pack,
 	ctl &= ~B43_PIO8_TXCTL_EOF;
 
 	/* Transfer the header data. */
-	ctl = tx_write_4byte_queue(q, ctl, hdr, hdrlen);
+	tx_write_4byte_queue(q, &ctl, hdr, hdrlen);
 	/* Transfer the frame data. */
-	ctl = tx_write_4byte_queue(q, ctl, frame, frame_len);
+	tx_write_4byte_queue(q, &ctl, frame, frame_len);
 
 	ctl |= B43_PIO8_TXCTL_EOF;
 	b43_piotx_write32(q, B43_PIO_TXCTL, ctl);
@@ -630,7 +627,6 @@ void b43_pio_get_tx_stats(struct b43_wldev *dev,
 /* Returns whether we should fetch another frame. */
 static bool pio_rx_frame(struct b43_pio_rxqueue *q)
 {
-	struct b43_wldev *dev = q->dev;
 	struct b43_rxhdr_fw4 rxhdr;
 	u16 len;
 	u32 macstat;
@@ -676,13 +672,21 @@ data_ready:
 
 	/* Get the preamble (RX header) */
 	if (q->rev >= 8) {
-		ssb_block_read(dev->dev, &rxhdr, sizeof(rxhdr),
-			       q->mmio_base + B43_PIO8_RXDATA,
-			       sizeof(u32));
+		u32 *preamble = (u32 *)&rxhdr;
+		u32 value;
+
+		for (i = 0; i < sizeof(rxhdr); i += 4) {
+			value = b43_piorx_read32(q, B43_PIO8_RXDATA);
+			preamble[i / 4] = cpu_to_le32(value);
+		}
 	} else {
-		ssb_block_read(dev->dev, &rxhdr, sizeof(rxhdr),
-			       q->mmio_base + B43_PIO_RXDATA,
-			       sizeof(u16));
+		u16 *preamble = (u16 *)&rxhdr;
+		u16 value;
+
+		for (i = 0; i < sizeof(rxhdr); i += 2) {
+			value = b43_piorx_read16(q, B43_PIO_RXDATA);
+			preamble[i / 2] = cpu_to_le16(value);
+		}
 	}
 	/* Sanity checks. */
 	len = le16_to_cpu(rxhdr.frame_len);
@@ -716,37 +720,26 @@ data_ready:
 	skb_reserve(skb, 2);
 	skb_put(skb, len + padding);
 	if (q->rev >= 8) {
-		ssb_block_read(dev->dev, skb->data + padding, (len & ~3),
-			       q->mmio_base + B43_PIO8_RXDATA,
-			       sizeof(u32));
-		if (len & 3) {
-			u32 value;
-			char *data;
+		u32 value;
 
-			/* Read the last few bytes. */
+		for (i = padding; i < len + padding; i += 4) {
 			value = b43_piorx_read32(q, B43_PIO8_RXDATA);
-			data = &(skb->data[len + padding - 1]);
-			switch (len & 3) {
-			case 3:
-				*data = (value >> 16);
-				data--;
-			case 2:
-				*data = (value >> 8);
-				data--;
-			case 1:
-				*data = value;
-			}
+			skb->data[i] = value;
+			if ((i + 1) < (len + padding))
+				skb->data[i + 1] = value >> 8;
+			if ((i + 2) < (len + padding))
+				skb->data[i + 2] = value >> 16;
+			if ((i + 3) < (len + padding))
+				skb->data[i + 3] = value >> 24;
 		}
 	} else {
-		ssb_block_read(dev->dev, skb->data + padding, (len & ~1),
-			       q->mmio_base + B43_PIO_RXDATA,
-			       sizeof(u16));
-		if (len & 1) {
-			u16 value;
+		u16 value;
 
-			/* Read the last byte. */
+		for (i = padding; i < len + padding; i += 2) {
 			value = b43_piorx_read16(q, B43_PIO_RXDATA);
-			skb->data[len + padding - 1] = value;
+			skb->data[i] = value;
+			if ((i + 1) < (len + padding))
+				skb->data[i + 1] = value >> 8;
 		}
 	}
 
