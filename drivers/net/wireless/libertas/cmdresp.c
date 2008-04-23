@@ -12,7 +12,7 @@
 #include "decl.h"
 #include "defs.h"
 #include "dev.h"
-#include "assoc.h"
+#include "join.h"
 #include "wext.h"
 
 /**
