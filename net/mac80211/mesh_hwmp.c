@@ -264,10 +264,8 @@ static u32 hwmp_route_info_get(struct net_device *dev,
 
 	rcu_read_lock();
 	sta = sta_info_get(local, mgmt->sa);
-	if (!sta) {
-		rcu_read_unlock();
+	if (!sta)
 		return 0;
-	}
 
 	last_hop_metric = airtime_link_metric_get(local, sta);
 	/* Update and check originator routing info */
@@ -295,7 +293,6 @@ static u32 hwmp_route_info_get(struct net_device *dev,
 		break;
 	default:
 		sta_info_put(sta);
-		rcu_read_unlock();
 		return 0;
 	}
 	new_metric = orig_metric + last_hop_metric;
