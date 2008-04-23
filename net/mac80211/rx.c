@@ -20,7 +20,9 @@
 
 #include "ieee80211_i.h"
 #include "ieee80211_led.h"
+#ifdef CONFIG_MAC80211_MESH
 #include "mesh.h"
+#endif
 #include "wep.h"
 #include "wpa.h"
 #include "tkip.h"
@@ -437,13 +439,6 @@ ieee80211_rx_mesh_check(struct ieee80211_txrx_data *rx)
 	else
 		return RX_CONTINUE;
 }
-#undef msh_h_get
-#else
-static inline ieee80211_rx_result
-ieee80211_rx_mesh_check(struct ieee80211_txrx_data *rx)
-{
-	return RX_CONTINUE;
-}
 #endif
 
 
@@ -482,8 +477,10 @@ ieee80211_rx_h_check(struct ieee80211_txrx_data *rx)
 	 * responsible for filtering on both auth and assoc states.
 	 */
 
-	if (ieee80211_vif_is_mesh(&rx->sdata->vif))
+#ifdef CONFIG_MAC80211_MESH
+	if (rx->sdata->vif.type == IEEE80211_IF_TYPE_MESH_POINT)
 		return ieee80211_rx_mesh_check(rx);
+#endif
 
 	if (unlikely(((rx->fc & IEEE80211_FCTL_FTYPE) == IEEE80211_FTYPE_DATA ||
 		      ((rx->fc & IEEE80211_FCTL_FTYPE) == IEEE80211_FTYPE_CTL &&
@@ -1111,7 +1108,8 @@ ieee80211_data_to_8023(struct ieee80211_txrx_data *rx)
 
 	hdrlen = ieee80211_get_hdrlen(fc);
 
-	if (ieee80211_vif_is_mesh(&sdata->vif)) {
+#ifdef CONFIG_MAC80211_MESH
+	if (sdata->vif.type == IEEE80211_IF_TYPE_MESH_POINT) {
 		int meshhdrlen = ieee80211_get_mesh_hdrlen(
 				(struct ieee80211s_hdr *) (skb->data + hdrlen));
 		/* Copy on cb:
@@ -1125,6 +1123,7 @@ ieee80211_data_to_8023(struct ieee80211_txrx_data *rx)
 		memcpy(MESH_PREQ(skb), hdr->addr2, ETH_ALEN);
 		hdrlen += meshhdrlen;
 	}
+#endif
 
 	/* convert IEEE 802.11 header + possible LLC headers into Ethernet
 	 * header
@@ -1304,8 +1303,9 @@ ieee80211_deliver_skb(struct ieee80211_txrx_data *rx)
 		}
 	}
 
+#ifdef CONFIG_MAC80211_MESH
 	/* Mesh forwarding */
-	if (ieee80211_vif_is_mesh(&sdata->vif)) {
+	if (sdata->vif.type == IEEE80211_IF_TYPE_MESH_POINT) {
 		u8 *mesh_ttl = &((struct ieee80211s_hdr *)skb->cb)->ttl;
 		(*mesh_ttl)--;
 
@@ -1318,13 +1318,12 @@ ieee80211_deliver_skb(struct ieee80211_txrx_data *rx)
 				else
 					xmit_skb->pkt_type = PACKET_OTHERHOST;
 			} else
-				IEEE80211_IFSTA_MESH_CTR_INC(&sdata->u.sta,
-							     dropped_frames_ttl);
+				sdata->u.sta.mshstats.dropped_frames_ttl++;
+
 		} else if (skb->pkt_type != PACKET_OTHERHOST &&
 			compare_ether_addr(dev->dev_addr, skb->data) != 0) {
 			if (*mesh_ttl == 0) {
-				IEEE80211_IFSTA_MESH_CTR_INC(&sdata->u.sta,
-							     dropped_frames_ttl);
+				sdata->u.sta.mshstats.dropped_frames_ttl++;
 				dev_kfree_skb(skb);
 				skb = NULL;
 			} else {
@@ -1335,6 +1334,7 @@ ieee80211_deliver_skb(struct ieee80211_txrx_data *rx)
 			}
 		}
 	}
+#endif
 
 	if (skb) {
 		/* deliver to local stack */

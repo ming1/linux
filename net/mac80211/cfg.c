@@ -15,7 +15,9 @@
 #include "ieee80211_i.h"
 #include "cfg.h"
 #include "ieee80211_rate.h"
+#ifdef CONFIG_MAC80211_MESH
 #include "mesh.h"
+#endif
 
 #define DEFAULT_RATES 0
 
@@ -117,10 +119,14 @@ static int ieee80211_change_iface(struct wiphy *wiphy, int ifindex,
 	ieee80211_if_reinit(dev);
 	ieee80211_if_set_type(dev, itype);
 
-	if (ieee80211_vif_is_mesh(&sdata->vif) && params->mesh_id_len)
-		ieee80211_if_sta_set_mesh_id(&sdata->u.sta,
-					     params->mesh_id_len,
-					     params->mesh_id);
+#ifdef CONFIG_MAC80211_MESH
+	if (sdata->vif.type == IEEE80211_IF_TYPE_MESH_POINT &&
+	    params->mesh_id_len) {
+		sdata->u.sta.mesh_id_len = params->mesh_id_len;
+		memcpy(sdata->u.sta.mesh_id, params->mesh_id,
+		       params->mesh_id_len);
+	}
+#endif
 
 	if (sdata->vif.type != IEEE80211_IF_TYPE_MNTR || !flags)
 		return 0;
@@ -311,7 +317,9 @@ static int ieee80211_config_default_key(struct wiphy *wiphy,
 
 static void sta_set_sinfo(struct sta_info *sta, struct station_info *sinfo)
 {
+#ifdef CONFIG_MAC80211_MESH
 	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(sta->dev);
+#endif
 
 	sinfo->filled = STATION_INFO_INACTIVE_TIME |
 			STATION_INFO_RX_BYTES |
@@ -321,8 +329,8 @@ static void sta_set_sinfo(struct sta_info *sta, struct station_info *sinfo)
 	sinfo->rx_bytes = sta->rx_bytes;
 	sinfo->tx_bytes = sta->tx_bytes;
 
-	if (ieee80211_vif_is_mesh(&sdata->vif)) {
 #ifdef CONFIG_MAC80211_MESH
+	if (sdata->vif.type == IEEE80211_IF_TYPE_MESH_POINT) {
 		sinfo->filled |= STATION_INFO_LLID |
 				 STATION_INFO_PLID |
 				 STATION_INFO_PLINK_STATE;
@@ -330,8 +338,8 @@ static void sta_set_sinfo(struct sta_info *sta, struct station_info *sinfo)
 		sinfo->llid = le16_to_cpu(sta->llid);
 		sinfo->plid = le16_to_cpu(sta->plid);
 		sinfo->plink_state = sta->plink_state;
-#endif
 	}
+#endif
 }
 
 
@@ -572,7 +580,9 @@ static void sta_apply_parameters(struct ieee80211_local *local,
 	u32 rates;
 	int i, j;
 	struct ieee80211_supported_band *sband;
+#ifdef CONFIG_MAC80211_MESH
 	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(sta->dev);
+#endif
 
 	if (params->station_flags & STATION_FLAG_CHANGED) {
 		sta->flags &= ~WLAN_STA_AUTHORIZED;
@@ -611,7 +621,9 @@ static void sta_apply_parameters(struct ieee80211_local *local,
 		sta->supp_rates[local->oper_channel->band] = rates;
 	}
 
-	if (ieee80211_vif_is_mesh(&sdata->vif) && params->plink_action) {
+#ifdef CONFIG_MAC80211_MESH
+	if (sdata->vif.type == IEEE80211_IF_TYPE_MESH_POINT &&
+	    params->plink_action)
 		switch (params->plink_action) {
 		case PLINK_ACTION_OPEN:
 			mesh_plink_open(sta);
@@ -620,7 +632,7 @@ static void sta_apply_parameters(struct ieee80211_local *local,
 			mesh_plink_block(sta);
 			break;
 		}
-	}
+#endif
 }
 
 static int ieee80211_add_station(struct wiphy *wiphy, struct net_device *dev,
@@ -643,9 +655,11 @@ static int ieee80211_add_station(struct wiphy *wiphy, struct net_device *dev,
 	} else
 		sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 
-	if (ieee80211_vif_is_mesh(&sdata->vif))
+#ifdef CONFIG_MAC80211_MESH
+	if (sdata->vif.type == IEEE80211_IF_TYPE_MESH_POINT)
 		sta = mesh_plink_add(mac, DEFAULT_RATES, dev);
 	else
+#endif
 		sta = sta_info_add(local, dev, mac, GFP_KERNEL);
 
 	if (IS_ERR(sta))
