@@ -165,7 +165,7 @@ prism54_update_stats(struct work_struct *work)
 	struct obj_bss bss, *bss2;
 	union oid_res_t r;
 
-	mutex_lock(&priv->stats_lock);
+	down(&priv->stats_sem);
 
 /* Noise floor.
  * I'm not sure if the unit is dBm.
@@ -207,7 +207,7 @@ prism54_update_stats(struct work_struct *work)
 	mgt_get_request(priv, DOT11_OID_MPDUTXFAILED, 0, NULL, &r);
 	priv->local_iwstatistics.discard.retries = r.u;
 
-	mutex_unlock(&priv->stats_lock);
+	up(&priv->stats_sem);
 
 	return;
 }
@@ -218,12 +218,12 @@ prism54_get_wireless_stats(struct net_device *ndev)
 	islpci_private *priv = netdev_priv(ndev);
 
 	/* If the stats are being updated return old data */
-	if (mutex_trylock(&priv->stats_lock) == 0) {
+	if (down_trylock(&priv->stats_sem) == 0) {
 		memcpy(&priv->iwstatistics, &priv->local_iwstatistics,
 		       sizeof (struct iw_statistics));
 		/* They won't be marked updated for the next time */
 		priv->local_iwstatistics.qual.updated = 0;
-		mutex_unlock(&priv->stats_lock);
+		up(&priv->stats_sem);
 	} else
 		priv->iwstatistics.qual.updated = 0;
 
