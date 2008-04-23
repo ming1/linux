@@ -102,7 +102,7 @@ struct ieee80211_sta_bss {
 	u64 timestamp;
 	int beacon_int;
 
-	bool probe_resp;
+	int probe_resp;
 	unsigned long last_update;
 
 	/* during assocation, we save an ERP value from a probe response so
