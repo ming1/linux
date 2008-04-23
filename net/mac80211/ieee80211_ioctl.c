@@ -36,7 +36,6 @@ static int ieee80211_set_encryption(struct net_device *dev, u8 *sta_addr,
 	struct sta_info *sta;
 	struct ieee80211_key *key;
 	struct ieee80211_sub_if_data *sdata;
-	int err;
 
 	sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 
@@ -47,31 +46,23 @@ static int ieee80211_set_encryption(struct net_device *dev, u8 *sta_addr,
 	}
 
 	if (remove) {
-		rcu_read_lock();
-
-		err = 0;
-
 		if (is_broadcast_ether_addr(sta_addr)) {
 			key = sdata->keys[idx];
 		} else {
 			sta = sta_info_get(local, sta_addr);
-			if (!sta) {
-				err = -ENOENT;
-				goto out_unlock;
-			}
+			if (!sta)
+				return -ENOENT;
 			key = sta->key;
 		}
 
 		ieee80211_key_free(key);
+		return 0;
 	} else {
 		key = ieee80211_key_alloc(alg, idx, key_len, _key);
 		if (!key)
 			return -ENOMEM;
 
 		sta = NULL;
-		err = 0;
-
-		rcu_read_lock();
 
 		if (!is_broadcast_ether_addr(sta_addr)) {
 			set_tx_key = 0;
@@ -83,15 +74,13 @@ static int ieee80211_set_encryption(struct net_device *dev, u8 *sta_addr,
 			 */
 			if (idx != 0 && alg != ALG_WEP) {
 				ieee80211_key_free(key);
-				err = -EINVAL;
-				goto out_unlock;
+				return -EINVAL;
 			}
 
 			sta = sta_info_get(local, sta_addr);
 			if (!sta) {
 				ieee80211_key_free(key);
-				err = -ENOENT;
-				goto out_unlock;
+				return -ENOENT;
 			}
 		}
 
@@ -101,10 +90,7 @@ static int ieee80211_set_encryption(struct net_device *dev, u8 *sta_addr,
 			ieee80211_set_default_key(sdata, idx);
 	}
 
- out_unlock:
-	rcu_read_unlock();
-
-	return err;
+	return 0;
 }
 
 static int ieee80211_ioctl_siwgenie(struct net_device *dev,
