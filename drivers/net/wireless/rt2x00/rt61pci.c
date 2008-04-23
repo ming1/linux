@@ -262,7 +262,7 @@ static int rt61pci_rfkill_poll(struct rt2x00_dev *rt2x00dev)
 	u32 reg;
 
 	rt2x00pci_register_read(rt2x00dev, MAC_CSR13, &reg);
-	return rt2x00_get_field32(reg, MAC_CSR13_BIT5);
+	return rt2x00_get_field32(reg, MAC_CSR13_BIT5);;
 }
 #else
 #define rt61pci_rfkill_poll	NULL
@@ -990,49 +990,49 @@ static int rt61pci_load_firmware(struct rt2x00_dev *rt2x00dev, void *data,
 }
 
 static void rt61pci_init_rxentry(struct rt2x00_dev *rt2x00dev,
-				 struct queue_entry *entry)
+				 struct data_entry *entry)
 {
-	struct queue_entry_priv_pci_rx *priv_rx = entry->priv_data;
+	__le32 *rxd = entry->priv;
 	u32 word;
 
-	rt2x00_desc_read(priv_rx->desc, 5, &word);
-	rt2x00_set_field32(&word, RXD_W5_BUFFER_PHYSICAL_ADDRESS, priv_rx->dma);
-	rt2x00_desc_write(priv_rx->desc, 5, word);
+	rt2x00_desc_read(rxd, 5, &word);
+	rt2x00_set_field32(&word, RXD_W5_BUFFER_PHYSICAL_ADDRESS,
+			   entry->data_dma);
+	rt2x00_desc_write(rxd, 5, word);
 
-	rt2x00_desc_read(priv_rx->desc, 0, &word);
+	rt2x00_desc_read(rxd, 0, &word);
 	rt2x00_set_field32(&word, RXD_W0_OWNER_NIC, 1);
-	rt2x00_desc_write(priv_rx->desc, 0, word);
+	rt2x00_desc_write(rxd, 0, word);
 }
 
 static void rt61pci_init_txentry(struct rt2x00_dev *rt2x00dev,
-				 struct queue_entry *entry)
+				 struct data_entry *entry)
 {
-	struct queue_entry_priv_pci_tx *priv_tx = entry->priv_data;
+	__le32 *txd = entry->priv;
 	u32 word;
 
-	rt2x00_desc_read(priv_tx->desc, 1, &word);
+	rt2x00_desc_read(txd, 1, &word);
 	rt2x00_set_field32(&word, TXD_W1_BUFFER_COUNT, 1);
-	rt2x00_desc_write(priv_tx->desc, 1, word);
+	rt2x00_desc_write(txd, 1, word);
 
-	rt2x00_desc_read(priv_tx->desc, 5, &word);
-	rt2x00_set_field32(&word, TXD_W5_PID_TYPE, entry->queue->qid);
+	rt2x00_desc_read(txd, 5, &word);
+	rt2x00_set_field32(&word, TXD_W5_PID_TYPE, entry->ring->queue_idx);
 	rt2x00_set_field32(&word, TXD_W5_PID_SUBTYPE, entry->entry_idx);
-	rt2x00_desc_write(priv_tx->desc, 5, word);
+	rt2x00_desc_write(txd, 5, word);
 
-	rt2x00_desc_read(priv_tx->desc, 6, &word);
-	rt2x00_set_field32(&word, TXD_W6_BUFFER_PHYSICAL_ADDRESS, priv_tx->dma);
-	rt2x00_desc_write(priv_tx->desc, 6, word);
+	rt2x00_desc_read(txd, 6, &word);
+	rt2x00_set_field32(&word, TXD_W6_BUFFER_PHYSICAL_ADDRESS,
+			   entry->data_dma);
+	rt2x00_desc_write(txd, 6, word);
 
-	rt2x00_desc_read(priv_tx->desc, 0, &word);
+	rt2x00_desc_read(txd, 0, &word);
 	rt2x00_set_field32(&word, TXD_W0_VALID, 0);
 	rt2x00_set_field32(&word, TXD_W0_OWNER_NIC, 0);
-	rt2x00_desc_write(priv_tx->desc, 0, word);
+	rt2x00_desc_write(txd, 0, word);
 }
 
-static int rt61pci_init_queues(struct rt2x00_dev *rt2x00dev)
+static int rt61pci_init_rings(struct rt2x00_dev *rt2x00dev)
 {
-	struct queue_entry_priv_pci_rx *priv_rx;
-	struct queue_entry_priv_pci_tx *priv_tx;
 	u32 reg;
 
 	/*
@@ -1040,50 +1040,59 @@ static int rt61pci_init_queues(struct rt2x00_dev *rt2x00dev)
 	 */
 	rt2x00pci_register_read(rt2x00dev, TX_RING_CSR0, &reg);
 	rt2x00_set_field32(&reg, TX_RING_CSR0_AC0_RING_SIZE,
-			   rt2x00dev->tx[0].limit);
+			   rt2x00dev->tx[IEEE80211_TX_QUEUE_DATA0].stats.limit);
 	rt2x00_set_field32(&reg, TX_RING_CSR0_AC1_RING_SIZE,
-			   rt2x00dev->tx[1].limit);
+			   rt2x00dev->tx[IEEE80211_TX_QUEUE_DATA1].stats.limit);
 	rt2x00_set_field32(&reg, TX_RING_CSR0_AC2_RING_SIZE,
-			   rt2x00dev->tx[2].limit);
+			   rt2x00dev->tx[IEEE80211_TX_QUEUE_DATA2].stats.limit);
 	rt2x00_set_field32(&reg, TX_RING_CSR0_AC3_RING_SIZE,
-			   rt2x00dev->tx[3].limit);
+			   rt2x00dev->tx[IEEE80211_TX_QUEUE_DATA3].stats.limit);
 	rt2x00pci_register_write(rt2x00dev, TX_RING_CSR0, reg);
 
 	rt2x00pci_register_read(rt2x00dev, TX_RING_CSR1, &reg);
+	rt2x00_set_field32(&reg, TX_RING_CSR1_MGMT_RING_SIZE,
+			   rt2x00dev->tx[IEEE80211_TX_QUEUE_DATA4].stats.limit);
 	rt2x00_set_field32(&reg, TX_RING_CSR1_TXD_SIZE,
-			   rt2x00dev->tx[0].desc_size / 4);
+			   rt2x00dev->tx[IEEE80211_TX_QUEUE_DATA0].desc_size /
+			   4);
 	rt2x00pci_register_write(rt2x00dev, TX_RING_CSR1, reg);
 
-	priv_tx = rt2x00dev->tx[0].entries[0].priv_data;
 	rt2x00pci_register_read(rt2x00dev, AC0_BASE_CSR, &reg);
-	rt2x00_set_field32(&reg, AC0_BASE_CSR_RING_REGISTER, priv_tx->dma);
+	rt2x00_set_field32(&reg, AC0_BASE_CSR_RING_REGISTER,
+			   rt2x00dev->tx[IEEE80211_TX_QUEUE_DATA0].data_dma);
 	rt2x00pci_register_write(rt2x00dev, AC0_BASE_CSR, reg);
 
-	priv_tx = rt2x00dev->tx[1].entries[0].priv_data;
 	rt2x00pci_register_read(rt2x00dev, AC1_BASE_CSR, &reg);
-	rt2x00_set_field32(&reg, AC1_BASE_CSR_RING_REGISTER, priv_tx->dma);
+	rt2x00_set_field32(&reg, AC1_BASE_CSR_RING_REGISTER,
+			   rt2x00dev->tx[IEEE80211_TX_QUEUE_DATA1].data_dma);
 	rt2x00pci_register_write(rt2x00dev, AC1_BASE_CSR, reg);
 
-	priv_tx = rt2x00dev->tx[2].entries[0].priv_data;
 	rt2x00pci_register_read(rt2x00dev, AC2_BASE_CSR, &reg);
-	rt2x00_set_field32(&reg, AC2_BASE_CSR_RING_REGISTER, priv_tx->dma);
+	rt2x00_set_field32(&reg, AC2_BASE_CSR_RING_REGISTER,
+			   rt2x00dev->tx[IEEE80211_TX_QUEUE_DATA2].data_dma);
 	rt2x00pci_register_write(rt2x00dev, AC2_BASE_CSR, reg);
 
-	priv_tx = rt2x00dev->tx[3].entries[0].priv_data;
 	rt2x00pci_register_read(rt2x00dev, AC3_BASE_CSR, &reg);
-	rt2x00_set_field32(&reg, AC3_BASE_CSR_RING_REGISTER, priv_tx->dma);
+	rt2x00_set_field32(&reg, AC3_BASE_CSR_RING_REGISTER,
+			   rt2x00dev->tx[IEEE80211_TX_QUEUE_DATA3].data_dma);
 	rt2x00pci_register_write(rt2x00dev, AC3_BASE_CSR, reg);
 
+	rt2x00pci_register_read(rt2x00dev, MGMT_BASE_CSR, &reg);
+	rt2x00_set_field32(&reg, MGMT_BASE_CSR_RING_REGISTER,
+			   rt2x00dev->tx[IEEE80211_TX_QUEUE_DATA4].data_dma);
+	rt2x00pci_register_write(rt2x00dev, MGMT_BASE_CSR, reg);
+
 	rt2x00pci_register_read(rt2x00dev, RX_RING_CSR, &reg);
-	rt2x00_set_field32(&reg, RX_RING_CSR_RING_SIZE, rt2x00dev->rx->limit);
+	rt2x00_set_field32(&reg, RX_RING_CSR_RING_SIZE,
+			   rt2x00dev->rx->stats.limit);
 	rt2x00_set_field32(&reg, RX_RING_CSR_RXD_SIZE,
 			   rt2x00dev->rx->desc_size / 4);
 	rt2x00_set_field32(&reg, RX_RING_CSR_RXD_WRITEBACK_SIZE, 4);
 	rt2x00pci_register_write(rt2x00dev, RX_RING_CSR, reg);
 
-	priv_rx = rt2x00dev->rx->entries[0].priv_data;
 	rt2x00pci_register_read(rt2x00dev, RX_BASE_CSR, &reg);
-	rt2x00_set_field32(&reg, RX_BASE_CSR_RING_REGISTER, priv_rx->dma);
+	rt2x00_set_field32(&reg, RX_BASE_CSR_RING_REGISTER,
+			   rt2x00dev->rx->data_dma);
 	rt2x00pci_register_write(rt2x00dev, RX_BASE_CSR, reg);
 
 	rt2x00pci_register_read(rt2x00dev, TX_DMA_DST_CSR, &reg);
@@ -1099,7 +1108,7 @@ static int rt61pci_init_queues(struct rt2x00_dev *rt2x00dev)
 	rt2x00_set_field32(&reg, LOAD_TX_RING_CSR_LOAD_TXD_AC1, 1);
 	rt2x00_set_field32(&reg, LOAD_TX_RING_CSR_LOAD_TXD_AC2, 1);
 	rt2x00_set_field32(&reg, LOAD_TX_RING_CSR_LOAD_TXD_AC3, 1);
-	rt2x00_set_field32(&reg, LOAD_TX_RING_CSR_LOAD_TXD_MGMT, 0);
+	rt2x00_set_field32(&reg, LOAD_TX_RING_CSR_LOAD_TXD_MGMT, 1);
 	rt2x00pci_register_write(rt2x00dev, LOAD_TX_RING_CSR, reg);
 
 	rt2x00pci_register_read(rt2x00dev, RX_CNTL_CSR, &reg);
@@ -1366,7 +1375,7 @@ static int rt61pci_enable_radio(struct rt2x00_dev *rt2x00dev)
 	/*
 	 * Initialize all registers.
 	 */
-	if (rt61pci_init_queues(rt2x00dev) ||
+	if (rt61pci_init_rings(rt2x00dev) ||
 	    rt61pci_init_registers(rt2x00dev) ||
 	    rt61pci_init_bbp(rt2x00dev)) {
 		ERROR(rt2x00dev, "Register initialization failed.\n");
@@ -1499,10 +1508,10 @@ static int rt61pci_set_device_state(struct rt2x00_dev *rt2x00dev,
  */
 static void rt61pci_write_tx_desc(struct rt2x00_dev *rt2x00dev,
 				    struct sk_buff *skb,
-				    struct txentry_desc *txdesc,
+				    struct txdata_entry_desc *desc,
 				    struct ieee80211_tx_control *control)
 {
-	struct skb_frame_desc *skbdesc = get_skb_frame_desc(skb);
+	struct skb_desc *skbdesc = get_skb_desc(skb);
 	__le32 *txd = skbdesc->desc;
 	u32 word;
 
@@ -1510,19 +1519,19 @@ static void rt61pci_write_tx_desc(struct rt2x00_dev *rt2x00dev,
 	 * Start writing the descriptor words.
 	 */
 	rt2x00_desc_read(txd, 1, &word);
-	rt2x00_set_field32(&word, TXD_W1_HOST_Q_ID, txdesc->queue);
-	rt2x00_set_field32(&word, TXD_W1_AIFSN, txdesc->aifs);
-	rt2x00_set_field32(&word, TXD_W1_CWMIN, txdesc->cw_min);
-	rt2x00_set_field32(&word, TXD_W1_CWMAX, txdesc->cw_max);
+	rt2x00_set_field32(&word, TXD_W1_HOST_Q_ID, desc->queue);
+	rt2x00_set_field32(&word, TXD_W1_AIFSN, desc->aifs);
+	rt2x00_set_field32(&word, TXD_W1_CWMIN, desc->cw_min);
+	rt2x00_set_field32(&word, TXD_W1_CWMAX, desc->cw_max);
 	rt2x00_set_field32(&word, TXD_W1_IV_OFFSET, IEEE80211_HEADER);
 	rt2x00_set_field32(&word, TXD_W1_HW_SEQUENCE, 1);
 	rt2x00_desc_write(txd, 1, word);
 
 	rt2x00_desc_read(txd, 2, &word);
-	rt2x00_set_field32(&word, TXD_W2_PLCP_SIGNAL, txdesc->signal);
-	rt2x00_set_field32(&word, TXD_W2_PLCP_SERVICE, txdesc->service);
-	rt2x00_set_field32(&word, TXD_W2_PLCP_LENGTH_LOW, txdesc->length_low);
-	rt2x00_set_field32(&word, TXD_W2_PLCP_LENGTH_HIGH, txdesc->length_high);
+	rt2x00_set_field32(&word, TXD_W2_PLCP_SIGNAL, desc->signal);
+	rt2x00_set_field32(&word, TXD_W2_PLCP_SERVICE, desc->service);
+	rt2x00_set_field32(&word, TXD_W2_PLCP_LENGTH_LOW, desc->length_low);
+	rt2x00_set_field32(&word, TXD_W2_PLCP_LENGTH_HIGH, desc->length_high);
 	rt2x00_desc_write(txd, 2, word);
 
 	rt2x00_desc_read(txd, 5, &word);
@@ -1539,21 +1548,21 @@ static void rt61pci_write_tx_desc(struct rt2x00_dev *rt2x00dev,
 	rt2x00_set_field32(&word, TXD_W0_OWNER_NIC, 1);
 	rt2x00_set_field32(&word, TXD_W0_VALID, 1);
 	rt2x00_set_field32(&word, TXD_W0_MORE_FRAG,
-			   test_bit(ENTRY_TXD_MORE_FRAG, &txdesc->flags));
+			   test_bit(ENTRY_TXD_MORE_FRAG, &desc->flags));
 	rt2x00_set_field32(&word, TXD_W0_ACK,
-			   test_bit(ENTRY_TXD_ACK, &txdesc->flags));
+			   test_bit(ENTRY_TXD_ACK, &desc->flags));
 	rt2x00_set_field32(&word, TXD_W0_TIMESTAMP,
-			   test_bit(ENTRY_TXD_REQ_TIMESTAMP, &txdesc->flags));
+			   test_bit(ENTRY_TXD_REQ_TIMESTAMP, &desc->flags));
 	rt2x00_set_field32(&word, TXD_W0_OFDM,
-			   test_bit(ENTRY_TXD_OFDM_RATE, &txdesc->flags));
-	rt2x00_set_field32(&word, TXD_W0_IFS, txdesc->ifs);
+			   test_bit(ENTRY_TXD_OFDM_RATE, &desc->flags));
+	rt2x00_set_field32(&word, TXD_W0_IFS, desc->ifs);
 	rt2x00_set_field32(&word, TXD_W0_RETRY_MODE,
 			   !!(control->flags &
 			      IEEE80211_TXCTL_LONG_RETRY_LIMIT));
 	rt2x00_set_field32(&word, TXD_W0_TKIP_MIC, 0);
 	rt2x00_set_field32(&word, TXD_W0_DATABYTE_COUNT, skbdesc->data_len);
 	rt2x00_set_field32(&word, TXD_W0_BURST,
-			   test_bit(ENTRY_TXD_BURST, &txdesc->flags));
+			   test_bit(ENTRY_TXD_BURST, &desc->flags));
 	rt2x00_set_field32(&word, TXD_W0_CIPHER_ALG, CIPHER_NONE);
 	rt2x00_desc_write(txd, 0, word);
 }
@@ -1639,28 +1648,28 @@ static int rt61pci_agc_to_rssi(struct rt2x00_dev *rt2x00dev, int rxd_w1)
 	return rt2x00_get_field32(rxd_w1, RXD_W1_RSSI_AGC) * 2 - offset;
 }
 
-static void rt61pci_fill_rxdone(struct queue_entry *entry,
-			        struct rxdone_entry_desc *rxdesc)
+static void rt61pci_fill_rxdone(struct data_entry *entry,
+			        struct rxdata_entry_desc *desc)
 {
-	struct queue_entry_priv_pci_rx *priv_rx = entry->priv_data;
+	__le32 *rxd = entry->priv;
 	u32 word0;
 	u32 word1;
 
-	rt2x00_desc_read(priv_rx->desc, 0, &word0);
-	rt2x00_desc_read(priv_rx->desc, 1, &word1);
+	rt2x00_desc_read(rxd, 0, &word0);
+	rt2x00_desc_read(rxd, 1, &word1);
 
-	rxdesc->flags = 0;
+	desc->flags = 0;
 	if (rt2x00_get_field32(word0, RXD_W0_CRC_ERROR))
-		rxdesc->flags |= RX_FLAG_FAILED_FCS_CRC;
+		desc->flags |= RX_FLAG_FAILED_FCS_CRC;
 
 	/*
 	 * Obtain the status about this packet.
 	 */
-	rxdesc->signal = rt2x00_get_field32(word1, RXD_W1_SIGNAL);
-	rxdesc->rssi = rt61pci_agc_to_rssi(entry->queue->rt2x00dev, word1);
-	rxdesc->ofdm = rt2x00_get_field32(word0, RXD_W0_OFDM);
-	rxdesc->size = rt2x00_get_field32(word0, RXD_W0_DATABYTE_COUNT);
-	rxdesc->my_bss = !!rt2x00_get_field32(word0, RXD_W0_MY_BSS);
+	desc->signal = rt2x00_get_field32(word1, RXD_W1_SIGNAL);
+	desc->rssi = rt61pci_agc_to_rssi(entry->ring->rt2x00dev, word1);
+	desc->ofdm = rt2x00_get_field32(word0, RXD_W0_OFDM);
+	desc->size = rt2x00_get_field32(word0, RXD_W0_DATABYTE_COUNT);
+	desc->my_bss = !!rt2x00_get_field32(word0, RXD_W0_MY_BSS);
 }
 
 /*
@@ -1668,16 +1677,17 @@ static void rt61pci_fill_rxdone(struct queue_entry *entry,
  */
 static void rt61pci_txdone(struct rt2x00_dev *rt2x00dev)
 {
-	struct data_queue *queue;
-	struct queue_entry *entry;
-	struct queue_entry *entry_done;
-	struct queue_entry_priv_pci_tx *priv_tx;
-	struct txdone_entry_desc txdesc;
+	struct data_ring *ring;
+	struct data_entry *entry;
+	struct data_entry *entry_done;
+	__le32 *txd;
 	u32 word;
 	u32 reg;
 	u32 old_reg;
 	int type;
 	int index;
+	int tx_status;
+	int retry;
 
 	/*
 	 * During each loop we will compare the freshly read
@@ -1700,11 +1710,11 @@ static void rt61pci_txdone(struct rt2x00_dev *rt2x00dev)
 
 		/*
 		 * Skip this entry when it contains an invalid
-		 * queue identication number.
+		 * ring identication number.
 		 */
 		type = rt2x00_get_field32(reg, STA_CSR4_PID_TYPE);
-		queue = rt2x00queue_get_queue(rt2x00dev, type);
-		if (unlikely(!queue))
+		ring = rt2x00lib_get_ring(rt2x00dev, type);
+		if (unlikely(!ring))
 			continue;
 
 		/*
@@ -1712,40 +1722,36 @@ static void rt61pci_txdone(struct rt2x00_dev *rt2x00dev)
 		 * index number.
 		 */
 		index = rt2x00_get_field32(reg, STA_CSR4_PID_SUBTYPE);
-		if (unlikely(index >= queue->limit))
+		if (unlikely(index >= ring->stats.limit))
 			continue;
 
-		entry = &queue->entries[index];
-		priv_tx = entry->priv_data;
-		rt2x00_desc_read(priv_tx->desc, 0, &word);
+		entry = &ring->entry[index];
+		txd = entry->priv;
+		rt2x00_desc_read(txd, 0, &word);
 
 		if (rt2x00_get_field32(word, TXD_W0_OWNER_NIC) ||
 		    !rt2x00_get_field32(word, TXD_W0_VALID))
 			return;
 
-		entry_done = rt2x00queue_get_entry(queue, Q_INDEX_DONE);
+		entry_done = rt2x00_get_data_entry_done(ring);
 		while (entry != entry_done) {
-			/* Catch up.
-			 * Just report any entries we missed as failed.
-			 */
+			/* Catch up. Just report any entries we missed as
+			 * failed. */
 			WARNING(rt2x00dev,
-				"TX status report missed for entry %d\n",
-				entry_done->entry_idx);
-
-			txdesc.status = TX_FAIL_OTHER;
-			txdesc.retry = 0;
-
-			rt2x00pci_txdone(rt2x00dev, entry_done, &txdesc);
-			entry_done = rt2x00queue_get_entry(queue, Q_INDEX_DONE);
+				"TX status report missed for entry %p\n",
+				entry_done);
+			rt2x00pci_txdone(rt2x00dev, entry_done, TX_FAIL_OTHER,
+					 0);
+			entry_done = rt2x00_get_data_entry_done(ring);
 		}
 
 		/*
 		 * Obtain the status about this packet.
 		 */
-		txdesc.status = rt2x00_get_field32(reg, STA_CSR4_TX_RESULT);
-		txdesc.retry = rt2x00_get_field32(reg, STA_CSR4_RETRY_COUNT);
+		tx_status = rt2x00_get_field32(reg, STA_CSR4_TX_RESULT);
+		retry = rt2x00_get_field32(reg, STA_CSR4_RETRY_COUNT);
 
-		rt2x00pci_txdone(rt2x00dev, entry, &txdesc);
+		rt2x00pci_txdone(rt2x00dev, entry, tx_status, retry);
 	}
 }
 
@@ -2375,9 +2381,9 @@ static int rt61pci_beacon_update(struct ieee80211_hw *hw, struct sk_buff *skb,
 			  struct ieee80211_tx_control *control)
 {
 	struct rt2x00_dev *rt2x00dev = hw->priv;
-	struct skb_frame_desc *skbdesc;
-	struct data_queue *queue;
-	struct queue_entry *entry;
+	struct skb_desc *desc;
+	struct data_ring *ring;
+	struct data_entry *entry;
 
 	/*
 	 * Just in case the ieee80211 doesn't set this,
@@ -2385,34 +2391,34 @@ static int rt61pci_beacon_update(struct ieee80211_hw *hw, struct sk_buff *skb,
 	 * initialization.
 	 */
 	control->queue = IEEE80211_TX_QUEUE_BEACON;
-	queue = rt2x00queue_get_queue(rt2x00dev, control->queue);
-	entry = rt2x00queue_get_entry(queue, Q_INDEX);
+	ring = rt2x00lib_get_ring(rt2x00dev, control->queue);
+	entry = rt2x00_get_data_entry(ring);
 
 	/*
 	 * We need to append the descriptor in front of the
 	 * beacon frame.
 	 */
-	if (skb_headroom(skb) < queue->desc_size) {
-		if (pskb_expand_head(skb, queue->desc_size, 0, GFP_ATOMIC))
+	if (skb_headroom(skb) < TXD_DESC_SIZE) {
+		if (pskb_expand_head(skb, TXD_DESC_SIZE, 0, GFP_ATOMIC))
 			return -ENOMEM;
 	}
 
 	/*
 	 * Add the descriptor in front of the skb.
 	 */
-	skb_push(skb, queue->desc_size);
-	memset(skb->data, 0, queue->desc_size);
+	skb_push(skb, ring->desc_size);
+	memset(skb->data, 0, ring->desc_size);
 
 	/*
 	 * Fill in skb descriptor
 	 */
-	skbdesc = get_skb_frame_desc(skb);
-	memset(skbdesc, 0, sizeof(*skbdesc));
-	skbdesc->data = skb->data + queue->desc_size;
-	skbdesc->data_len = queue->data_size;
-	skbdesc->desc = skb->data;
-	skbdesc->desc_len = queue->desc_size;
-	skbdesc->entry = entry;
+	desc = get_skb_desc(skb);
+	desc->desc_len = ring->desc_size;
+	desc->data_len = skb->len - ring->desc_size;
+	desc->desc = skb->data;
+	desc->data = skb->data + ring->desc_size;
+	desc->ring = ring;
+	desc->entry = entry;
 
 	rt2x00lib_write_tx_desc(rt2x00dev, skb, control);
 
@@ -2471,34 +2477,12 @@ static const struct rt2x00lib_ops rt61pci_rt2x00_ops = {
 	.config			= rt61pci_config,
 };
 
-static const struct data_queue_desc rt61pci_queue_rx = {
-	.entry_num		= RX_ENTRIES,
-	.data_size		= DATA_FRAME_SIZE,
-	.desc_size		= RXD_DESC_SIZE,
-	.priv_size		= sizeof(struct queue_entry_priv_pci_rx),
-};
-
-static const struct data_queue_desc rt61pci_queue_tx = {
-	.entry_num		= TX_ENTRIES,
-	.data_size		= DATA_FRAME_SIZE,
-	.desc_size		= TXD_DESC_SIZE,
-	.priv_size		= sizeof(struct queue_entry_priv_pci_tx),
-};
-
-static const struct data_queue_desc rt61pci_queue_bcn = {
-	.entry_num		= BEACON_ENTRIES,
-	.data_size		= MGMT_FRAME_SIZE,
-	.desc_size		= TXINFO_SIZE,
-	.priv_size		= sizeof(struct queue_entry_priv_pci_tx),
-};
-
 static const struct rt2x00_ops rt61pci_ops = {
 	.name		= KBUILD_MODNAME,
+	.rxd_size	= RXD_DESC_SIZE,
+	.txd_size	= TXD_DESC_SIZE,
 	.eeprom_size	= EEPROM_SIZE,
 	.rf_size	= RF_SIZE,
-	.rx		= &rt61pci_queue_rx,
-	.tx		= &rt61pci_queue_tx,
-	.bcn		= &rt61pci_queue_bcn,
 	.lib		= &rt61pci_rt2x00_ops,
 	.hw		= &rt61pci_mac80211_ops,
 #ifdef CONFIG_RT2X00_LIB_DEBUGFS
