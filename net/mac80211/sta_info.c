@@ -129,18 +129,16 @@ struct sta_info *sta_info_get_by_idx(struct ieee80211_local *local, int idx,
 
 void sta_info_destroy(struct sta_info *sta)
 {
-	struct ieee80211_local *local;
+	struct ieee80211_local *local = sta->local;
 	struct sk_buff *skb;
 	int i;
 	DECLARE_MAC_BUF(mbuf);
 
-	ASSERT_RTNL();
-	might_sleep();
-
 	if (!sta)
 		return;
 
-	local = sta->local;
+	ASSERT_RTNL();
+	might_sleep();
 
 	rate_control_remove_sta_debugfs(sta);
 	ieee80211_sta_debugfs_remove(sta);
