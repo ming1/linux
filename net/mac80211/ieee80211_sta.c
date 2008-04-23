@@ -1828,9 +1828,9 @@ static void ieee80211_rx_mgmt_assoc_resp(struct ieee80211_sub_if_data *sdata,
 	if (!sta) {
 		struct ieee80211_sta_bss *bss;
 		sta = sta_info_add(local, dev, ifsta->bssid, GFP_KERNEL);
-		if (IS_ERR(sta)) {
+		if (!sta) {
 			printk(KERN_DEBUG "%s: failed to add STA entry for the"
-			       " AP (error %ld)\n", dev->name, PTR_ERR(sta));
+			       " AP\n", dev->name);
 			return;
 		}
 		bss = ieee80211_rx_bss_get(dev, ifsta->bssid,
@@ -3846,7 +3846,7 @@ struct sta_info * ieee80211_ibss_add_sta(struct net_device *dev,
 	       wiphy_name(local->hw.wiphy), print_mac(mac, addr), dev->name);
 
 	sta = sta_info_add(local, dev, addr, GFP_ATOMIC);
-	if (IS_ERR(sta))
+	if (!sta)
 		return NULL;
 
 	sta->flags |= WLAN_STA_AUTHORIZED;
