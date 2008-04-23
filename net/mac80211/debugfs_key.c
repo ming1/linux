@@ -195,7 +195,6 @@ void ieee80211_debugfs_key_add(struct ieee80211_key *key)
 		return;
 
 	sprintf(buf, "%d", keycount);
-	key->debugfs.cnt = keycount;
 	keycount++;
 	key->debugfs.dir = debugfs_create_dir(buf,
 					key->local->debugfs.keys);
@@ -259,7 +258,7 @@ void ieee80211_debugfs_key_add_default(struct ieee80211_sub_if_data *sdata)
 	if (!sdata->debugfsdir)
 		return;
 
-	sprintf(buf, "../keys/%d", sdata->default_key->debugfs.cnt);
+	sprintf(buf, "../keys/%d", sdata->default_key->conf.keyidx);
 	sdata->debugfs.default_key =
 		debugfs_create_symlink("default_key", sdata->debugfsdir, buf);
 }

@@ -125,7 +125,6 @@ struct ieee80211_key {
 		struct dentry *replays;
 		struct dentry *key;
 		struct dentry *ifindex;
-		int cnt;
 	} debugfs;
 #endif
 
