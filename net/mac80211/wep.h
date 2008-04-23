@@ -14,7 +14,7 @@
 #include <linux/skbuff.h>
 #include <linux/types.h>
 #include "ieee80211_i.h"
-#include "key.h"
+#include "ieee80211_key.h"
 
 int ieee80211_wep_init(struct ieee80211_local *local);
 void ieee80211_wep_free(struct ieee80211_local *local);

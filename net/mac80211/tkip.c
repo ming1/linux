@@ -12,7 +12,7 @@
 #include <linux/netdevice.h>
 
 #include <net/mac80211.h>
-#include "key.h"
+#include "ieee80211_key.h"
 #include "tkip.h"
 #include "wep.h"
 
