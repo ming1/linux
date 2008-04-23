@@ -1582,11 +1582,11 @@ static void rt61pci_write_tx_desc(struct rt2x00_dev *rt2x00dev,
  * TX data initialization
  */
 static void rt61pci_kick_tx_queue(struct rt2x00_dev *rt2x00dev,
-				  const unsigned int queue)
+				  unsigned int queue)
 {
 	u32 reg;
 
-	if (queue == RT2X00_BCN_QUEUE_BEACON) {
+	if (queue == IEEE80211_TX_QUEUE_BEACON) {
 		/*
 		 * For Wi-Fi faily generated beacons between participating
 		 * stations. Set TBTT phase adaptive adjustment step to 8us.
@@ -2429,11 +2429,11 @@ static int rt61pci_beacon_update(struct ieee80211_hw *hw, struct sk_buff *skb,
 	skbdesc->entry = intf->beacon;
 
 	/*
-	 * mac80211 doesn't provide the control->queue variable
-	 * for beacons. Set our own queue identification so
-	 * it can be used during descriptor initialization.
+	 * Just in case the ieee80211 doesn't set this,
+	 * but we need this queue set for the descriptor
+	 * initialization.
 	 */
-	control->queue = RT2X00_BCN_QUEUE_BEACON;
+	control->queue = IEEE80211_TX_QUEUE_BEACON;
 	rt2x00lib_write_tx_desc(rt2x00dev, skb, control);
 
 	/*
