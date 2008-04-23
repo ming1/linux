@@ -274,18 +274,6 @@ static int iwl4965_init_drv(struct iwl_priv *priv)
 	spin_lock_init(&priv->hcmd_lock);
 	spin_lock_init(&priv->lq_mngr.lock);
 
-	priv->shared_virt = pci_alloc_consistent(priv->pci_dev,
-					sizeof(struct iwl4965_shared),
-					&priv->shared_phys);
-
-	if (!priv->shared_virt) {
-		ret = -ENOMEM;
-		goto err;
-	}
-
-	memset(priv->shared_virt, 0, sizeof(struct iwl4965_shared));
-
-
 	for (i = 0; i < IWL_IBSS_MAC_HASH_SIZE; i++)
 		INIT_LIST_HEAD(&priv->ibss_mac_hash[i]);
 
@@ -558,15 +546,15 @@ static int iwl4965_nic_set_pwr_src(struct iwl_priv *priv, int pwr_max)
 
 static int iwl4965_rx_init(struct iwl_priv *priv, struct iwl4965_rx_queue *rxq)
 {
-	int ret;
+	int rc;
 	unsigned long flags;
 	unsigned int rb_size;
 
 	spin_lock_irqsave(&priv->lock, flags);
-	ret = iwl_grab_nic_access(priv);
-	if (ret) {
+	rc = iwl_grab_nic_access(priv);
+	if (rc) {
 		spin_unlock_irqrestore(&priv->lock, flags);
-		return ret;
+		return rc;
 	}
 
 	if (priv->cfg->mod_params->amsdu_size_8K)
@@ -586,15 +574,15 @@ static int iwl4965_rx_init(struct iwl_priv *priv, struct iwl4965_rx_queue *rxq)
 
 	/* Tell device where in DRAM to update its Rx status */
 	iwl_write_direct32(priv, FH_RSCSR_CHNL0_STTS_WPTR_REG,
-			   (priv->shared_phys +
-			    offsetof(struct iwl4965_shared, rb_closed)) >> 4);
+			   (priv->hw_setting.shared_phys +
+				offsetof(struct iwl4965_shared, val0)) >> 4);
 
 	/* Enable Rx DMA, enable host interrupt, Rx buffer size 4k, 256 RBDs */
 	iwl_write_direct32(priv, FH_MEM_RCSR_CHNL0_CONFIG_REG,
 			   FH_RCSR_RX_CONFIG_CHNL_EN_ENABLE_VAL |
 			   FH_RCSR_CHNL0_RX_CONFIG_IRQ_DEST_INT_HOST_VAL |
 			   rb_size |
-			     /* 0x10 << 4 | */
+			     /*0x10 << 4 | */
 			   (RX_QUEUE_SIZE_LOG <<
 			      FH_RCSR_RX_CONFIG_RBDCB_SIZE_BITSHIFT));
 
@@ -1978,7 +1966,7 @@ int iwl4965_alive_notify(struct iwl_priv *priv)
 
 	/* Tel 4965 where to find Tx byte count tables */
 	iwl_write_prph(priv, IWL49_SCD_DRAM_BASE_ADDR,
-		(priv->shared_phys +
+		(priv->hw_setting.shared_phys +
 		 offsetof(struct iwl4965_shared, queues_byte_cnt_tbls)) >> 10);
 
 	/* Disable chain mode for all queues */
@@ -2036,13 +2024,28 @@ int iwl4965_alive_notify(struct iwl_priv *priv)
  */
 int iwl4965_hw_set_hw_setting(struct iwl_priv *priv)
 {
+	int ret = 0;
 
 	if ((priv->cfg->mod_params->num_of_queues > IWL_MAX_NUM_QUEUES) ||
 	    (priv->cfg->mod_params->num_of_queues < IWL_MIN_NUM_QUEUES)) {
 		IWL_ERROR("invalid queues_num, should be between %d and %d\n",
 			  IWL_MIN_NUM_QUEUES, IWL_MAX_NUM_QUEUES);
-		return -EINVAL;
+		ret = -EINVAL;
+		goto out;
 	}
+
+	/* Allocate area for Tx byte count tables and Rx queue status */
+	priv->hw_setting.shared_virt =
+	    pci_alloc_consistent(priv->pci_dev,
+				 sizeof(struct iwl4965_shared),
+				 &priv->hw_setting.shared_phys);
+
+	if (!priv->hw_setting.shared_virt) {
+		ret = -ENOMEM;
+		goto out;
+	}
+
+	memset(priv->hw_setting.shared_virt, 0, sizeof(struct iwl4965_shared));
 
 	priv->hw_setting.max_txq_num = priv->cfg->mod_params->num_of_queues;
 	priv->hw_setting.tx_cmd_len = sizeof(struct iwl4965_tx_cmd);
@@ -2058,7 +2061,8 @@ int iwl4965_hw_set_hw_setting(struct iwl_priv *priv)
 
 	priv->hw_setting.tx_ant_num = 2;
 
-	return 0;
+out:
+	return ret;
 }
 
 /**
@@ -3010,8 +3014,9 @@ void iwl4965_hw_build_tx_cmd_rate(struct iwl_priv *priv,
 
 int iwl4965_hw_get_rx_read(struct iwl_priv *priv)
 {
-	struct iwl4965_shared *s = priv->shared_virt;
-	return le32_to_cpu(s->rb_closed) & 0xFFF;
+	struct iwl4965_shared *shared_data = priv->hw_setting.shared_virt;
+
+	return IWL_GET_BITS(*shared_data, rb_closed_stts_rb_num);
 }
 
 int iwl4965_hw_get_temperature(struct iwl_priv *priv)
@@ -3144,7 +3149,7 @@ static void iwl4965_txq_update_byte_cnt_tbl(struct iwl_priv *priv,
 {
 	int len;
 	int txq_id = txq->q.id;
-	struct iwl4965_shared *shared_data = priv->shared_virt;
+	struct iwl4965_shared *shared_data = priv->hw_setting.shared_virt;
 
 	len = byte_cnt + IWL_TX_CRC_SIZE + IWL_TX_DELIMITER_SIZE;
 
