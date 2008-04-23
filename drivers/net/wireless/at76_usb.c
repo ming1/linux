@@ -1592,10 +1592,11 @@ static int at76_tx_mgmt(struct at76_priv *priv, struct at76_tx_buffer *txbuf)
 		printk(KERN_ERR "%s: URB status %d, but mgmt is pending\n",
 		       priv->netdev->name, urb_status);
 
-	at76_dbg_dump(DBG_TX_MGMT, txbuf->packet, le16_to_cpu(txbuf->wlength),
-		      "%s: tx mgmt: wlen %d tx_rate %d pad %d",
-		      priv->netdev->name, le16_to_cpu(txbuf->wlength),
-		      txbuf->tx_rate, txbuf->padding);
+	at76_dbg(DBG_TX_MGMT,
+		 "%s: tx mgmt: wlen %d tx_rate %d pad %d %s",
+		 priv->netdev->name, le16_to_cpu(txbuf->wlength),
+		 txbuf->tx_rate, txbuf->padding,
+		 hex2str(txbuf->packet, le16_to_cpu(txbuf->wlength)));
 
 	/* txbuf was not consumed above -> send mgmt msg immediately */
 	memcpy(priv->bulk_out_buffer, txbuf,
@@ -1667,9 +1668,8 @@ static int at76_auth_req(struct at76_priv *priv, struct bss_info *bss,
 		 priv->netdev->name, mac2str(mgmt->addr3),
 		 le16_to_cpu(req->algorithm), le16_to_cpu(req->transaction));
 	if (seq_nr == 3)
-		at76_dbg_dump(DBG_TX_MGMT, req->info_element, 18,
-			      "%s: AuthReq challenge:",
-			      priv->netdev->name);
+		at76_dbg(DBG_TX_MGMT, "%s: AuthReq challenge: %s ...",
+			 priv->netdev->name, hex2str(req->info_element, 18));
 
 	/* either send immediately (if no data tx is pending
 	   or put it in pending list */
@@ -3208,13 +3208,15 @@ static int at76_tx(struct sk_buff *skb, struct net_device *netdev)
 	tx_buffer->padding = at76_calc_padding(wlen);
 	submit_len = wlen + AT76_TX_HDRLEN + tx_buffer->padding;
 
-	at76_dbg_dump(DBG_TX_DATA, i802_11_hdr, sizeof(*i802_11_hdr),
-		      "%s tx: wlen 0x%x pad 0x%x rate %d hdr",
-		      priv->netdev->name,
-		      le16_to_cpu(tx_buffer->wlength),
-		      tx_buffer->padding, tx_buffer->tx_rate);
-	at76_dbg_dump(DBG_TX_DATA_CONTENT, tx_buffer, submit_len,
-		      "%s tx: tx_buffer", priv->netdev->name);
+	at76_dbg(DBG_TX_DATA_CONTENT, "%s skb->data %s", priv->netdev->name,
+		 hex2str(skb->data, 32));
+	at76_dbg(DBG_TX_DATA, "%s tx: wlen 0x%x pad 0x%x rate %d hdr %s",
+		 priv->netdev->name,
+		 le16_to_cpu(tx_buffer->wlength),
+		 tx_buffer->padding, tx_buffer->tx_rate,
+		 hex2str(i802_11_hdr, sizeof(*i802_11_hdr)));
+	at76_dbg(DBG_TX_DATA_CONTENT, "%s payload %s", priv->netdev->name,
+		 hex2str(payload, 48));
 
 	/* send stuff */
 	netif_stop_queue(netdev);
