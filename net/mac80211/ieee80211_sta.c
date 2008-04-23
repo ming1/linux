@@ -24,7 +24,6 @@
 #include <linux/wireless.h>
 #include <linux/random.h>
 #include <linux/etherdevice.h>
-#include <linux/rtnetlink.h>
 #include <net/iw_handler.h>
 #include <asm/types.h>
 
@@ -867,8 +866,6 @@ static void ieee80211_associated(struct net_device *dev,
 
 	ifsta->state = IEEE80211_ASSOCIATED;
 
-	rcu_read_lock();
-
 	sta = sta_info_get(local, ifsta->bssid);
 	if (!sta) {
 		printk(KERN_DEBUG "%s: No STA entry for own AP %s\n",
@@ -884,7 +881,7 @@ static void ieee80211_associated(struct net_device *dev,
 				       "range\n",
 				       dev->name, print_mac(mac, ifsta->bssid));
 				disassoc = 1;
-				sta_info_unlink(&sta);
+				sta_info_free(sta);
 			} else
 				ieee80211_send_probe_req(dev, ifsta->bssid,
 							 local->scan_ssid,
@@ -900,17 +897,8 @@ static void ieee80211_associated(struct net_device *dev,
 							 ifsta->ssid_len);
 			}
 		}
+		sta_info_put(sta);
 	}
-
-	rcu_read_unlock();
-
-	if (disassoc && sta) {
-		synchronize_rcu();
-		rtnl_lock();
-		sta_info_destroy(sta);
-		rtnl_unlock();
-	}
-
 	if (disassoc) {
 		ifsta->state = IEEE80211_DISABLED;
 		ieee80211_set_associated(dev, ifsta, 0);
@@ -1136,13 +1124,9 @@ static void ieee80211_sta_process_addba_request(struct net_device *dev,
 	int ret = -EOPNOTSUPP;
 	DECLARE_MAC_BUF(mac);
 
-	rcu_read_lock();
-
 	sta = sta_info_get(local, mgmt->sa);
-	if (!sta) {
-		rcu_read_unlock();
+	if (!sta)
 		return;
-	}
 
 	/* extract session parameters from addba request frame */
 	dialog_token = mgmt->u.action.u.addba_req.dialog_token;
@@ -1234,9 +1218,9 @@ end:
 	spin_unlock_bh(&sta->ampdu_mlme.ampdu_rx);
 
 end_no_lock:
-	ieee80211_send_addba_resp(sta->sdata->dev, sta->addr, tid,
-				  dialog_token, status, 1, buf_size, timeout);
-	rcu_read_unlock();
+	ieee80211_send_addba_resp(sta->dev, sta->addr, tid, dialog_token,
+				status, 1, buf_size, timeout);
+	sta_info_put(sta);
 }
 
 static void ieee80211_sta_process_addba_resp(struct net_device *dev,
@@ -1250,13 +1234,9 @@ static void ieee80211_sta_process_addba_resp(struct net_device *dev,
 	u16 tid;
 	u8 *state;
 
-	rcu_read_lock();
-
 	sta = sta_info_get(local, mgmt->sa);
-	if (!sta) {
-		rcu_read_unlock();
+	if (!sta)
 		return;
-	}
 
 	capab = le16_to_cpu(mgmt->u.action.u.addba_resp.capab);
 	tid = (capab & IEEE80211_ADDBA_PARAM_TID_MASK) >> 2;
@@ -1271,7 +1251,7 @@ static void ieee80211_sta_process_addba_resp(struct net_device *dev,
 #ifdef CONFIG_MAC80211_HT_DEBUG
 		printk(KERN_DEBUG "wrong addBA response token, tid %d\n", tid);
 #endif /* CONFIG_MAC80211_HT_DEBUG */
-		rcu_read_unlock();
+		sta_info_put(sta);
 		return;
 	}
 
@@ -1285,7 +1265,7 @@ static void ieee80211_sta_process_addba_resp(struct net_device *dev,
 			spin_unlock_bh(&sta->ampdu_mlme.ampdu_tx);
 			printk(KERN_DEBUG "state not HT_ADDBA_REQUESTED_MSK:"
 				"%d\n", *state);
-			rcu_read_unlock();
+			sta_info_put(sta);
 			return;
 		}
 
@@ -1312,7 +1292,7 @@ static void ieee80211_sta_process_addba_resp(struct net_device *dev,
 		ieee80211_stop_tx_ba_session(hw, sta->addr, tid,
 					     WLAN_BACK_INITIATOR);
 	}
-	rcu_read_unlock();
+	sta_info_put(sta);
 }
 
 void ieee80211_send_delba(struct net_device *dev, const u8 *da, u16 tid,
@@ -1367,20 +1347,16 @@ void ieee80211_sta_stop_rx_ba_session(struct net_device *dev, u8 *ra, u16 tid,
 	struct sta_info *sta;
 	int ret, i;
 
-	rcu_read_lock();
-
 	sta = sta_info_get(local, ra);
-	if (!sta) {
-		rcu_read_unlock();
+	if (!sta)
 		return;
-	}
 
 	/* check if TID is in operational state */
 	spin_lock_bh(&sta->ampdu_mlme.ampdu_rx);
 	if (sta->ampdu_mlme.tid_rx[tid].state
 				!= HT_AGG_STATE_OPERATIONAL) {
 		spin_unlock_bh(&sta->ampdu_mlme.ampdu_rx);
-		rcu_read_unlock();
+		sta_info_put(sta);
 		return;
 	}
 	sta->ampdu_mlme.tid_rx[tid].state =
@@ -1419,7 +1395,7 @@ void ieee80211_sta_stop_rx_ba_session(struct net_device *dev, u8 *ra, u16 tid,
 	kfree(sta->ampdu_mlme.tid_rx[tid].reorder_buf);
 
 	sta->ampdu_mlme.tid_rx[tid].state = HT_AGG_STATE_IDLE;
-	rcu_read_unlock();
+	sta_info_put(sta);
 }
 
 
@@ -1432,13 +1408,9 @@ static void ieee80211_sta_process_delba(struct net_device *dev,
 	u16 initiator;
 	DECLARE_MAC_BUF(mac);
 
-	rcu_read_lock();
-
 	sta = sta_info_get(local, mgmt->sa);
-	if (!sta) {
-		rcu_read_unlock();
+	if (!sta)
 		return;
-	}
 
 	params = le16_to_cpu(mgmt->u.action.u.delba.params);
 	tid = (params & IEEE80211_DELBA_PARAM_TID_MASK) >> 12;
@@ -1463,7 +1435,7 @@ static void ieee80211_sta_process_delba(struct net_device *dev,
 		ieee80211_stop_tx_ba_session(&local->hw, sta->addr, tid,
 					     WLAN_BACK_RECIPIENT);
 	}
-	rcu_read_unlock();
+	sta_info_put(sta);
 }
 
 /*
@@ -1486,13 +1458,9 @@ void sta_addba_resp_timer_expired(unsigned long data)
 	struct sta_info *sta;
 	u8 *state;
 
-	rcu_read_lock();
-
 	sta = sta_info_get(local, temp_sta->addr);
-	if (!sta) {
-		rcu_read_unlock();
+	if (!sta)
 		return;
-	}
 
 	state = &sta->ampdu_mlme.tid_tx[tid].state;
 	/* check if the TID waits for addBA response */
@@ -1514,7 +1482,7 @@ void sta_addba_resp_timer_expired(unsigned long data)
 				     WLAN_BACK_INITIATOR);
 
 timer_expired_exit:
-	rcu_read_unlock();
+	sta_info_put(sta);
 }
 
 /*
@@ -1534,8 +1502,8 @@ void sta_rx_agg_session_timer_expired(unsigned long data)
 					 timer_to_tid[0]);
 
 	printk(KERN_DEBUG "rx session timer expired on tid %d\n", (u16)*ptid);
-	ieee80211_sta_stop_rx_ba_session(sta->sdata->dev, sta->addr,
-					 (u16)*ptid, WLAN_BACK_TIMER,
+	ieee80211_sta_stop_rx_ba_session(sta->dev, sta->addr, (u16)*ptid,
+					 WLAN_BACK_TIMER,
 					 WLAN_REASON_QSTA_TIMEOUT);
 }
 
@@ -1844,18 +1812,14 @@ static void ieee80211_rx_mgmt_assoc_resp(struct ieee80211_sub_if_data *sdata,
 	if (ifsta->assocresp_ies)
 		memcpy(ifsta->assocresp_ies, pos, ifsta->assocresp_ies_len);
 
-	rcu_read_lock();
-
 	/* Add STA entry for the AP */
 	sta = sta_info_get(local, ifsta->bssid);
 	if (!sta) {
 		struct ieee80211_sta_bss *bss;
-
-		sta = sta_info_add(sdata, ifsta->bssid);
+		sta = sta_info_add(local, dev, ifsta->bssid, GFP_KERNEL);
 		if (IS_ERR(sta)) {
 			printk(KERN_DEBUG "%s: failed to add STA entry for the"
 			       " AP (error %ld)\n", dev->name, PTR_ERR(sta));
-			rcu_read_unlock();
 			return;
 		}
 		bss = ieee80211_rx_bss_get(dev, ifsta->bssid,
@@ -1869,6 +1833,7 @@ static void ieee80211_rx_mgmt_assoc_resp(struct ieee80211_sub_if_data *sdata,
 		}
 	}
 
+	sta->dev = dev;
 	sta->flags |= WLAN_STA_AUTH | WLAN_STA_ASSOC | WLAN_STA_ASSOC_AP |
 		      WLAN_STA_AUTHORIZED;
 
@@ -1939,7 +1904,7 @@ static void ieee80211_rx_mgmt_assoc_resp(struct ieee80211_sub_if_data *sdata,
 	bss_conf->aid = aid;
 	ieee80211_set_associated(dev, ifsta, 1);
 
-	rcu_read_unlock();
+	sta_info_put(sta);
 
 	ieee80211_associated(dev, ifsta);
 }
@@ -2385,8 +2350,6 @@ static void ieee80211_rx_bss_info(struct net_device *dev,
 				      mesh_peer_accepts_plinks(&elems, dev));
 	}
 
-	rcu_read_lock();
-
 	if (sdata->vif.type == IEEE80211_IF_TYPE_IBSS && elems.supp_rates &&
 	    memcmp(mgmt->bssid, sdata->u.sta.bssid, ETH_ALEN) == 0 &&
 	    (sta = sta_info_get(local, mgmt->sa))) {
@@ -2412,9 +2375,8 @@ static void ieee80211_rx_bss_info(struct net_device *dev,
 			       (unsigned long long) supp_rates,
 			       (unsigned long long) sta->supp_rates[rx_status->band]);
 		}
+		sta_info_put(sta);
 	}
-
-	rcu_read_unlock();
 
 	if (elems.ds_params && elems.ds_params_len == 1)
 		freq = ieee80211_channel_to_frequency(elems.ds_params[0]);
@@ -2609,10 +2571,8 @@ static void ieee80211_rx_bss_info(struct net_device *dev,
 				       "local TSF - IBSS merge with BSSID %s\n",
 				       dev->name, print_mac(mac, mgmt->bssid));
 			ieee80211_sta_join_ibss(dev, &sdata->u.sta, bss);
-			rcu_read_lock();
 			ieee80211_ibss_add_sta(dev, NULL,
 					       mgmt->bssid, mgmt->sa);
-			rcu_read_unlock();
 		}
 	}
 
@@ -2959,20 +2919,17 @@ static int ieee80211_sta_active_ibss(struct net_device *dev)
 	struct ieee80211_local *local = wdev_priv(dev->ieee80211_ptr);
 	int active = 0;
 	struct sta_info *sta;
-	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 
-	rcu_read_lock();
-
-	list_for_each_entry_rcu(sta, &local->sta_list, list) {
-		if (sta->sdata == sdata &&
+	read_lock_bh(&local->sta_lock);
+	list_for_each_entry(sta, &local->sta_list, list) {
+		if (sta->dev == dev &&
 		    time_after(sta->last_rx + IEEE80211_IBSS_MERGE_INTERVAL,
 			       jiffies)) {
 			active++;
 			break;
 		}
 	}
-
-	rcu_read_unlock();
+	read_unlock_bh(&local->sta_lock);
 
 	return active;
 }
@@ -2984,25 +2941,22 @@ static void ieee80211_sta_expire(struct net_device *dev, unsigned long exp_time)
 	struct sta_info *sta, *tmp;
 	LIST_HEAD(tmp_list);
 	DECLARE_MAC_BUF(mac);
-	unsigned long flags;
 
-	spin_lock_irqsave(&local->sta_lock, flags);
+	write_lock_bh(&local->sta_lock);
 	list_for_each_entry_safe(sta, tmp, &local->sta_list, list)
 		if (time_after(jiffies, sta->last_rx + exp_time)) {
 			printk(KERN_DEBUG "%s: expiring inactive STA %s\n",
 			       dev->name, print_mac(mac, sta->addr));
-			sta_info_unlink(&sta);
-			if (sta)
-				list_add(&sta->list, &tmp_list);
+			__sta_info_get(sta);
+			sta_info_remove(sta);
+			list_add(&sta->list, &tmp_list);
 		}
-	spin_unlock_irqrestore(&local->sta_lock, flags);
+	write_unlock_bh(&local->sta_lock);
 
-	synchronize_rcu();
-
-	rtnl_lock();
-	list_for_each_entry_safe(sta, tmp, &tmp_list, list)
-		sta_info_destroy(sta);
-	rtnl_unlock();
+	list_for_each_entry_safe(sta, tmp, &tmp_list, list) {
+		sta_info_free(sta);
+		sta_info_put(sta);
+	}
 }
 
 
@@ -4049,7 +4003,6 @@ int ieee80211_sta_set_extra_ie(struct net_device *dev, char *ie, size_t len)
 }
 
 
-/* must be called under RCU read lock */
 struct sta_info * ieee80211_ibss_add_sta(struct net_device *dev,
 					 struct sk_buff *skb, u8 *bssid,
 					 u8 *addr)
@@ -4072,7 +4025,7 @@ struct sta_info * ieee80211_ibss_add_sta(struct net_device *dev,
 	printk(KERN_DEBUG "%s: Adding new IBSS station %s (dev=%s)\n",
 	       wiphy_name(local->hw.wiphy), print_mac(mac, addr), dev->name);
 
-	sta = sta_info_add(sdata, addr);
+	sta = sta_info_add(local, dev, addr, GFP_ATOMIC);
 	if (IS_ERR(sta))
 		return NULL;
 
@@ -4083,7 +4036,7 @@ struct sta_info * ieee80211_ibss_add_sta(struct net_device *dev,
 
 	rate_control_rate_init(sta, local);
 
-	return sta;
+	return sta; /* caller will call sta_info_put() */
 }
 
 

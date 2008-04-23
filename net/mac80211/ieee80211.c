@@ -387,18 +387,14 @@ static int ieee80211_stop(struct net_device *dev)
 
 	sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 
-	rcu_read_lock();
-
-	list_for_each_entry_rcu(sta, &local->sta_list, list) {
-		if (sta->sdata == sdata)
+	list_for_each_entry(sta, &local->sta_list, list) {
+		if (sta->dev == dev)
 			for (i = 0; i <  STA_TID_NUM; i++)
-				ieee80211_sta_stop_rx_ba_session(sdata->dev,
+				ieee80211_sta_stop_rx_ba_session(sta->dev,
 						sta->addr, i,
 						WLAN_BACK_RECIPIENT,
 						WLAN_REASON_QSTA_LEAVE_QBSS);
 	}
-
-	rcu_read_unlock();
 
 	netif_stop_queue(dev);
 
@@ -465,7 +461,7 @@ static int ieee80211_stop(struct net_device *dev)
 		netif_tx_unlock_bh(local->mdev);
 		break;
 	case IEEE80211_IF_TYPE_MESH_POINT:
-		sta_info_flush(local, sdata);
+		sta_info_flush(local, dev);
 		/* fall through */
 	case IEEE80211_IF_TYPE_STA:
 	case IEEE80211_IF_TYPE_IBSS:
@@ -538,12 +534,9 @@ int ieee80211_start_tx_ba_session(struct ieee80211_hw *hw, u8 *ra, u16 tid)
 				print_mac(mac, ra), tid);
 #endif /* CONFIG_MAC80211_HT_DEBUG */
 
-	rcu_read_lock();
-
 	sta = sta_info_get(local, ra);
 	if (!sta) {
 		printk(KERN_DEBUG "Could not find the station\n");
-		rcu_read_unlock();
 		return -ENOENT;
 	}
 
@@ -583,7 +576,7 @@ int ieee80211_start_tx_ba_session(struct ieee80211_hw *hw, u8 *ra, u16 tid)
 		spin_unlock_bh(&local->mdev->queue_lock);
 		goto start_ba_exit;
 	}
-	sdata = sta->sdata;
+	sdata = IEEE80211_DEV_TO_SUB_IF(sta->dev);
 
 	/* Ok, the Addba frame hasn't been sent yet, but if the driver calls the
 	 * call back right away, it must see that the flow has begun */
@@ -620,7 +613,7 @@ int ieee80211_start_tx_ba_session(struct ieee80211_hw *hw, u8 *ra, u16 tid)
 			sta->ampdu_mlme.dialog_token_allocator;
 	sta->ampdu_mlme.tid_tx[tid].ssn = start_seq_num;
 
-	ieee80211_send_addba_request(sta->sdata->dev, ra, tid,
+	ieee80211_send_addba_request(sta->dev, ra, tid,
 			 sta->ampdu_mlme.tid_tx[tid].dialog_token,
 			 sta->ampdu_mlme.tid_tx[tid].ssn,
 			 0x40, 5000);
@@ -633,7 +626,7 @@ int ieee80211_start_tx_ba_session(struct ieee80211_hw *hw, u8 *ra, u16 tid)
 
 start_ba_exit:
 	spin_unlock_bh(&sta->ampdu_mlme.ampdu_tx);
-	rcu_read_unlock();
+	sta_info_put(sta);
 	return ret;
 }
 EXPORT_SYMBOL(ieee80211_start_tx_ba_session);
@@ -656,12 +649,9 @@ int ieee80211_stop_tx_ba_session(struct ieee80211_hw *hw,
 				print_mac(mac, ra), tid);
 #endif /* CONFIG_MAC80211_HT_DEBUG */
 
-	rcu_read_lock();
 	sta = sta_info_get(local, ra);
-	if (!sta) {
-		rcu_read_unlock();
+	if (!sta)
 		return -ENOENT;
-	}
 
 	/* check if the TID is in aggregation */
 	state = &sta->ampdu_mlme.tid_tx[tid].state;
@@ -695,7 +685,7 @@ int ieee80211_stop_tx_ba_session(struct ieee80211_hw *hw,
 
 stop_BA_exit:
 	spin_unlock_bh(&sta->ampdu_mlme.ampdu_tx);
-	rcu_read_unlock();
+	sta_info_put(sta);
 	return ret;
 }
 EXPORT_SYMBOL(ieee80211_stop_tx_ba_session);
@@ -713,10 +703,8 @@ void ieee80211_start_tx_ba_cb(struct ieee80211_hw *hw, u8 *ra, u16 tid)
 		return;
 	}
 
-	rcu_read_lock();
 	sta = sta_info_get(local, ra);
 	if (!sta) {
-		rcu_read_unlock();
 		printk(KERN_DEBUG "Could not find station: %s\n",
 				print_mac(mac, ra));
 		return;
@@ -729,7 +717,7 @@ void ieee80211_start_tx_ba_cb(struct ieee80211_hw *hw, u8 *ra, u16 tid)
 		printk(KERN_DEBUG "addBA was not requested yet, state is %d\n",
 				*state);
 		spin_unlock_bh(&sta->ampdu_mlme.ampdu_tx);
-		rcu_read_unlock();
+		sta_info_put(sta);
 		return;
 	}
 
@@ -742,7 +730,7 @@ void ieee80211_start_tx_ba_cb(struct ieee80211_hw *hw, u8 *ra, u16 tid)
 		ieee80211_wake_queue(hw, sta->tid_to_tx_q[tid]);
 	}
 	spin_unlock_bh(&sta->ampdu_mlme.ampdu_tx);
-	rcu_read_unlock();
+	sta_info_put(sta);
 }
 EXPORT_SYMBOL(ieee80211_start_tx_ba_cb);
 
@@ -763,12 +751,10 @@ void ieee80211_stop_tx_ba_cb(struct ieee80211_hw *hw, u8 *ra, u8 tid)
 	printk(KERN_DEBUG "Stop a BA session requested on DA %s tid %d\n",
 				print_mac(mac, ra), tid);
 
-	rcu_read_lock();
 	sta = sta_info_get(local, ra);
 	if (!sta) {
 		printk(KERN_DEBUG "Could not find station: %s\n",
 				print_mac(mac, ra));
-		rcu_read_unlock();
 		return;
 	}
 	state = &sta->ampdu_mlme.tid_tx[tid].state;
@@ -776,13 +762,13 @@ void ieee80211_stop_tx_ba_cb(struct ieee80211_hw *hw, u8 *ra, u8 tid)
 	spin_lock_bh(&sta->ampdu_mlme.ampdu_tx);
 	if ((*state & HT_AGG_STATE_REQ_STOP_BA_MSK) == 0) {
 		printk(KERN_DEBUG "unexpected callback to A-MPDU stop\n");
+		sta_info_put(sta);
 		spin_unlock_bh(&sta->ampdu_mlme.ampdu_tx);
-		rcu_read_unlock();
 		return;
 	}
 
 	if (*state & HT_AGG_STATE_INITIATOR_MSK)
-		ieee80211_send_delba(sta->sdata->dev, ra, tid,
+		ieee80211_send_delba(sta->dev, ra, tid,
 			WLAN_BACK_INITIATOR, WLAN_REASON_QSTA_NOT_USE);
 
 	agg_queue = sta->tid_to_tx_q[tid];
@@ -803,7 +789,7 @@ void ieee80211_stop_tx_ba_cb(struct ieee80211_hw *hw, u8 *ra, u8 tid)
 	sta->ampdu_mlme.tid_tx[tid].addba_req_num = 0;
 	spin_unlock_bh(&sta->ampdu_mlme.ampdu_tx);
 
-	rcu_read_unlock();
+	sta_info_put(sta);
 }
 EXPORT_SYMBOL(ieee80211_stop_tx_ba_cb);
 
@@ -913,40 +899,31 @@ int ieee80211_if_update_wds(struct net_device *dev, u8 *remote_addr)
 	struct sta_info *sta;
 	DECLARE_MAC_BUF(mac);
 
-	might_sleep();
-
 	if (compare_ether_addr(remote_addr, sdata->u.wds.remote_addr) == 0)
 		return 0;
 
-	rcu_read_lock();
-
 	/* Create STA entry for the new peer */
-	sta = sta_info_add(sdata, remote_addr);
-	if (IS_ERR(sta)) {
-		rcu_read_unlock();
+	sta = sta_info_add(local, dev, remote_addr, GFP_KERNEL);
+	if (IS_ERR(sta))
 		return PTR_ERR(sta);
-	}
 
 	sta->flags |= WLAN_STA_AUTHORIZED;
 
+	sta_info_put(sta);
+
 	/* Remove STA entry for the old peer */
 	sta = sta_info_get(local, sdata->u.wds.remote_addr);
-	if (sta)
-		sta_info_unlink(&sta);
-	else
+	if (sta) {
+		sta_info_free(sta);
+		sta_info_put(sta);
+	} else {
 		printk(KERN_DEBUG "%s: could not find STA entry for WDS link "
 		       "peer %s\n",
 		       dev->name, print_mac(mac, sdata->u.wds.remote_addr));
+	}
 
 	/* Update WDS link data */
 	memcpy(&sdata->u.wds.remote_addr, remote_addr, ETH_ALEN);
-
-	rcu_read_unlock();
-
-	if (sta) {
-		synchronize_rcu();
-		sta_info_destroy(sta);
-	}
 
 	return 0;
 }
@@ -1365,8 +1342,6 @@ void ieee80211_tx_status(struct ieee80211_hw *hw, struct sk_buff *skb,
 		return;
 	}
 
-	rcu_read_lock();
-
 	if (status->excessive_retries) {
 		struct sta_info *sta;
 		sta = sta_info_get(local, hdr->addr1);
@@ -1380,9 +1355,10 @@ void ieee80211_tx_status(struct ieee80211_hw *hw, struct sk_buff *skb,
 				status->flags |= IEEE80211_TX_STATUS_TX_FILTERED;
 				ieee80211_handle_filtered_frame(local, sta,
 								skb, status);
-				rcu_read_unlock();
+				sta_info_put(sta);
 				return;
 			}
+			sta_info_put(sta);
 		}
 	}
 
@@ -1392,13 +1368,11 @@ void ieee80211_tx_status(struct ieee80211_hw *hw, struct sk_buff *skb,
 		if (sta) {
 			ieee80211_handle_filtered_frame(local, sta, skb,
 							status);
-			rcu_read_unlock();
+			sta_info_put(sta);
 			return;
 		}
 	} else
 		rate_control_tx_status(local->mdev, skb, status);
-
-	rcu_read_unlock();
 
 	ieee80211_led_tx(local, 0);
 

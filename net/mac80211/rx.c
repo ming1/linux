@@ -631,7 +631,7 @@ static void ap_sta_ps_start(struct net_device *dev, struct sta_info *sta)
 	struct ieee80211_sub_if_data *sdata;
 	DECLARE_MAC_BUF(mac);
 
-	sdata = sta->sdata;
+	sdata = IEEE80211_DEV_TO_SUB_IF(sta->dev);
 
 	if (sdata->bss)
 		atomic_inc(&sdata->bss->num_sta_ps);
@@ -652,7 +652,7 @@ static int ap_sta_ps_end(struct net_device *dev, struct sta_info *sta)
 	struct ieee80211_tx_packet_data *pkt_data;
 	DECLARE_MAC_BUF(mac);
 
-	sdata = sta->sdata;
+	sdata = IEEE80211_DEV_TO_SUB_IF(sta->dev);
 
 	if (sdata->bss)
 		atomic_dec(&sdata->bss->num_sta_ps);
@@ -1284,7 +1284,7 @@ ieee80211_deliver_skb(struct ieee80211_rx_data *rx)
 				       "multicast frame\n", dev->name);
 		} else {
 			dsta = sta_info_get(local, skb->data);
-			if (dsta && dsta->sdata->dev == dev) {
+			if (dsta && dsta->dev == dev) {
 				/*
 				 * The destination station is associated to
 				 * this AP (in this VLAN), so send the frame
@@ -1294,6 +1294,8 @@ ieee80211_deliver_skb(struct ieee80211_rx_data *rx)
 				xmit_skb = skb;
 				skb = NULL;
 			}
+			if (dsta)
+				sta_info_put(dsta);
 		}
 	}
 
@@ -1900,13 +1902,13 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 
 	rx.sta = sta_info_get(local, hdr->addr2);
 	if (rx.sta) {
-		rx.sdata = rx.sta->sdata;
-		rx.dev = rx.sta->sdata->dev;
+		rx.dev = rx.sta->dev;
+		rx.sdata = IEEE80211_DEV_TO_SUB_IF(rx.dev);
 	}
 
 	if ((status->flag & RX_FLAG_MMIC_ERROR)) {
 		ieee80211_rx_michael_mic_report(local->mdev, hdr, &rx);
-		return;
+		goto end;
 	}
 
 	if (unlikely(local->sta_sw_scanning || local->sta_hw_scanning))
@@ -1965,6 +1967,10 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 		ieee80211_invoke_rx_handlers(prev, &rx, skb);
 	} else
 		dev_kfree_skb(skb);
+
+ end:
+	if (rx.sta)
+		sta_info_put(rx.sta);
 }
 
 #define SEQ_MODULO 0x1000
@@ -2141,7 +2147,7 @@ static u8 ieee80211_rx_reorder_ampdu(struct ieee80211_local *local,
 	/* if this mpdu is fragmented - terminate rx aggregation session */
 	sc = le16_to_cpu(hdr->seq_ctrl);
 	if (sc & IEEE80211_SCTL_FRAG) {
-		ieee80211_sta_stop_rx_ba_session(sta->sdata->dev, sta->addr,
+		ieee80211_sta_stop_rx_ba_session(sta->dev, sta->addr,
 			tid, 0, WLAN_REASON_QSTA_REQUIRE_SETUP);
 		ret = 1;
 		goto end_reorder;
@@ -2151,7 +2157,9 @@ static u8 ieee80211_rx_reorder_ampdu(struct ieee80211_local *local,
 	mpdu_seq_num = (sc & IEEE80211_SCTL_SEQ) >> 4;
 	ret = ieee80211_sta_manage_reorder_buf(hw, tid_agg_rx, skb,
 						mpdu_seq_num, 0);
- end_reorder:
+end_reorder:
+	if (sta)
+		sta_info_put(sta);
 	return ret;
 }
 
