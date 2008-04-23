@@ -805,8 +805,9 @@ static void b43legacy_generate_noise_sample(struct b43legacy_wldev *dev)
 {
 	b43legacy_jssi_write(dev, 0x7F7F7F7F);
 	b43legacy_write32(dev, B43legacy_MMIO_MACCMD,
-			  b43legacy_read32(dev, B43legacy_MMIO_MACCMD)
-			  | B43legacy_MACCMD_BGNOISE);
+			  b43legacy_read32(dev,
+			  B43legacy_MMIO_MACCMD)
+			  | (1 << 4));
 	B43legacy_WARN_ON(dev->noisecalc.channel_at_start !=
 			    dev->phy.channel);
 }
@@ -895,18 +896,18 @@ static void handle_irq_tbtt_indication(struct b43legacy_wldev *dev)
 		if (1/*FIXME: the last PSpoll frame was sent successfully */)
 			b43legacy_power_saving_ctl_bits(dev, -1, -1);
 	}
+	dev->reg124_set_0x4 = 0;
 	if (b43legacy_is_mode(dev->wl, IEEE80211_IF_TYPE_IBSS))
-		dev->dfq_valid = 1;
+		dev->reg124_set_0x4 = 1;
 }
 
 static void handle_irq_atim_end(struct b43legacy_wldev *dev)
 {
-	if (dev->dfq_valid) {
-		b43legacy_write32(dev, B43legacy_MMIO_MACCMD,
-				  b43legacy_read32(dev, B43legacy_MMIO_MACCMD)
-				  | B43legacy_MACCMD_DFQ_VALID);
-		dev->dfq_valid = 0;
-	}
+	if (!dev->reg124_set_0x4) /*FIXME rename this variable*/
+		return;
+	b43legacy_write32(dev, B43legacy_MMIO_MACCMD,
+			  b43legacy_read32(dev, B43legacy_MMIO_MACCMD)
+			  | 0x4);
 }
 
 static void handle_irq_pmq(struct b43legacy_wldev *dev)
@@ -1106,7 +1107,7 @@ static int b43legacy_refresh_cached_beacon(struct b43legacy_wldev *dev,
 
 static void b43legacy_update_templates(struct b43legacy_wldev *dev)
 {
-	u32 cmd;
+	u32 status;
 
 	B43legacy_WARN_ON(!dev->cached_beacon);
 
@@ -1117,9 +1118,9 @@ static void b43legacy_update_templates(struct b43legacy_wldev *dev)
 	b43legacy_write_probe_resp_template(dev, 0x268, 0x4A,
 					    &b43legacy_b_ratetable[0]);
 
-	cmd = b43legacy_read32(dev, B43legacy_MMIO_MACCMD);
-	cmd |= B43legacy_MACCMD_BEACON0_VALID | B43legacy_MACCMD_BEACON1_VALID;
-	b43legacy_write32(dev, B43legacy_MMIO_MACCMD, cmd);
+	status = b43legacy_read32(dev, B43legacy_MMIO_MACCMD);
+	status |= 0x03;
+	b43legacy_write32(dev, B43legacy_MMIO_MACCMD, status);
 }
 
 static void b43legacy_refresh_templates(struct b43legacy_wldev *dev,
@@ -2929,7 +2930,7 @@ static void setup_struct_phy_for_init(struct b43legacy_wldev *dev,
 static void setup_struct_wldev_for_init(struct b43legacy_wldev *dev)
 {
 	/* Flags */
-	dev->dfq_valid = 0;
+	dev->reg124_set_0x4 = 0;
 
 	/* Stats */
 	memset(&dev->stats, 0, sizeof(dev->stats));
