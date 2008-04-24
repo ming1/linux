@@ -3246,7 +3246,7 @@ static void iwl4965_setup_rx_handlers(struct iwl_priv *priv)
 	priv->rx_handlers[REPLY_TX] = iwl4965_rx_reply_tx;
 
 	/* Set up hardware specific Rx handlers */
-	iwl4965_hw_rx_handler_setup(priv);
+	priv->cfg->ops->lib->rx_handler_setup(priv);
 }
 
 /**
