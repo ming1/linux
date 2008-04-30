@@ -890,7 +890,7 @@ int lbs_suspend(struct lbs_private *priv)
 }
 EXPORT_SYMBOL_GPL(lbs_suspend);
 
-int lbs_resume(struct lbs_private *priv)
+void lbs_resume(struct lbs_private *priv)
 {
 	lbs_deb_enter(LBS_DEB_FW);
 
@@ -906,7 +906,6 @@ int lbs_resume(struct lbs_private *priv)
 		netif_device_attach(priv->mesh_dev);
 
 	lbs_deb_leave(LBS_DEB_FW);
-	return 0;
 }
 EXPORT_SYMBOL_GPL(lbs_resume);
 
@@ -1156,7 +1155,7 @@ done:
 EXPORT_SYMBOL_GPL(lbs_add_card);
 
 
-int lbs_remove_card(struct lbs_private *priv)
+void lbs_remove_card(struct lbs_private *priv)
 {
 	struct net_device *dev = priv->dev;
 	union iwreq_data wrqu;
@@ -1191,7 +1190,6 @@ int lbs_remove_card(struct lbs_private *priv)
 	free_netdev(dev);
 
 	lbs_deb_leave(LBS_DEB_MAIN);
-	return 0;
 }
 EXPORT_SYMBOL_GPL(lbs_remove_card);
 
@@ -1262,10 +1260,9 @@ done:
 EXPORT_SYMBOL_GPL(lbs_start_card);
 
 
-int lbs_stop_card(struct lbs_private *priv)
+void lbs_stop_card(struct lbs_private *priv)
 {
 	struct net_device *dev = priv->dev;
-	int ret = -1;
 	struct cmd_ctrl_node *cmdnode;
 	unsigned long flags;
 
@@ -1290,8 +1287,7 @@ int lbs_stop_card(struct lbs_private *priv)
 
 	unregister_netdev(dev);
 
-	lbs_deb_leave_args(LBS_DEB_MAIN, "ret %d", ret);
-	return ret;
+	lbs_deb_leave(LBS_DEB_MAIN);
 }
 EXPORT_SYMBOL_GPL(lbs_stop_card);
 
