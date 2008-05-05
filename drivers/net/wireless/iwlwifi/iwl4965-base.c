@@ -2786,8 +2786,8 @@ static void iwl4965_rx_reply_tx(struct iwl_priv *priv,
 		     tx_resp->failure_frame);
 
 	IWL_DEBUG_TX_REPLY("Tx queue reclaim %d\n", index);
-	if (index != -1) {
 #ifdef CONFIG_IWL4965_HT
+	if (index != -1) {
 		int freed = iwl4965_tx_queue_reclaim(priv, txq_id, index);
 
 		if (tid != MAX_TID_COUNT)
@@ -2797,9 +2797,7 @@ static void iwl4965_rx_reply_tx(struct iwl_priv *priv,
 			ieee80211_wake_queue(priv->hw, txq_id);
 		if (tid != MAX_TID_COUNT)
 			iwl4965_check_empty_hw_queue(priv, sta_id, tid, txq_id);
-#endif
 	}
-#ifdef CONFIG_IWL4965_HT
 	}
 #endif /* CONFIG_IWL4965_HT */
 
@@ -5127,7 +5125,7 @@ static void iwl4965_post_associate(struct iwl_priv *priv)
 
 #ifdef CONFIG_IWL4965_HT
 	if (priv->current_ht_config.is_ht)
-		iwl4965_set_rxon_ht(priv, &priv->current_ht_config);
+		iwl_set_rxon_ht(priv, &priv->current_ht_config);
 #endif /* CONFIG_IWL4965_HT*/
 	iwl_set_rxon_chain(priv);
 	priv->staging_rxon.assoc_id = cpu_to_le16(priv->assoc_id);
