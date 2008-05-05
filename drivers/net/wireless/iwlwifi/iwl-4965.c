@@ -2935,7 +2935,7 @@ static void iwl4965_sta_modify_ps_wake(struct iwl_priv *priv, int sta_id)
 	priv->stations[sta_id].sta.mode = STA_CONTROL_MODIFY_MSK;
 	spin_unlock_irqrestore(&priv->sta_lock, flags);
 
-	iwl4965_send_add_station(priv, &priv->stations[sta_id].sta, CMD_ASYNC);
+	iwl_send_add_sta(priv, &priv->stations[sta_id].sta, CMD_ASYNC);
 }
 
 static void iwl4965_update_ps_mode(struct iwl_priv *priv, u16 ps_bit, u8 *addr)
@@ -3327,7 +3327,7 @@ static void iwl4965_sta_modify_enable_tid_tx(struct iwl_priv *priv,
 	priv->stations[sta_id].sta.mode = STA_CONTROL_MODIFY_MSK;
 	spin_unlock_irqrestore(&priv->sta_lock, flags);
 
-	iwl4965_send_add_station(priv, &priv->stations[sta_id].sta, CMD_ASYNC);
+	iwl_send_add_sta(priv, &priv->stations[sta_id].sta, CMD_ASYNC);
 }
 
 /**
@@ -3882,7 +3882,7 @@ static int iwl4965_rx_agg_start(struct iwl_priv *priv,
 	priv->stations[sta_id].sta.mode = STA_CONTROL_MODIFY_MSK;
 	spin_unlock_irqrestore(&priv->sta_lock, flags);
 
-	return iwl4965_send_add_station(priv, &priv->stations[sta_id].sta,
+	return iwl_send_add_sta(priv, &priv->stations[sta_id].sta,
 					CMD_ASYNC);
 }
 
@@ -3903,7 +3903,7 @@ static int iwl4965_rx_agg_stop(struct iwl_priv *priv,
 	priv->stations[sta_id].sta.mode = STA_CONTROL_MODIFY_MSK;
 	spin_unlock_irqrestore(&priv->sta_lock, flags);
 
-	return iwl4965_send_add_station(priv, &priv->stations[sta_id].sta,
+	return iwl_send_add_sta(priv, &priv->stations[sta_id].sta,
 					CMD_ASYNC);
 }
 
@@ -4068,9 +4068,26 @@ int iwl4965_mac_ampdu_action(struct ieee80211_hw *hw,
 	}
 	return 0;
 }
-
 #endif /* CONFIG_IWL4965_HT */
 
+
+static u16 iwl4965_build_addsta_hcmd(const struct iwl_addsta_cmd *cmd, u8 *data)
+{
+	struct iwl4965_addsta_cmd *addsta = (struct iwl4965_addsta_cmd *)data;
+	addsta->mode = cmd->mode;
+	memcpy(&addsta->sta, &cmd->sta, sizeof(struct sta_id_modify));
+	memcpy(&addsta->key, &cmd->key, sizeof(struct iwl4965_keyinfo));
+	addsta->station_flags = cmd->station_flags;
+	addsta->station_flags_msk = cmd->station_flags_msk;
+	addsta->tid_disable_tx = cmd->tid_disable_tx;
+	addsta->add_immediate_ba_tid = cmd->add_immediate_ba_tid;
+	addsta->remove_immediate_ba_tid = cmd->remove_immediate_ba_tid;
+	addsta->add_immediate_ba_ssn = cmd->add_immediate_ba_ssn;
+	addsta->reserved1 = __constant_cpu_to_le16(0);
+	addsta->reserved2 = __constant_cpu_to_le32(0);
+
+	return (u16)sizeof(struct iwl4965_addsta_cmd);
+}
 /* Set up 4965-specific Rx frame reply handlers */
 static void iwl4965_rx_handler_setup(struct iwl_priv *priv)
 {
@@ -4114,6 +4131,7 @@ static struct iwl_hcmd_ops iwl4965_hcmd = {
 
 static struct iwl_hcmd_utils_ops iwl4965_hcmd_utils = {
 	.enqueue_hcmd = iwl4965_enqueue_hcmd,
+	.build_addsta_hcmd = iwl4965_build_addsta_hcmd,
 #ifdef CONFIG_IWL4965_RUN_TIME_CALIB
 	.chain_noise_reset = iwl4965_chain_noise_reset,
 	.gain_computation = iwl4965_gain_computation,
