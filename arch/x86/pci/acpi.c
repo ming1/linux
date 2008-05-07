@@ -151,7 +151,7 @@ adjust_transparent_bridge_resources(struct pci_bus *bus)
 
 static void
 get_current_resources(struct acpi_device *device, int busnum,
-			struct pci_bus *bus)
+			int domain, struct pci_bus *bus)
 {
 	struct pci_root_info info;
 	size_t size;
@@ -168,10 +168,10 @@ get_current_resources(struct acpi_device *device, int busnum,
 	if (!info.res)
 		goto res_alloc_fail;
 
-	info.name = kmalloc(12, GFP_KERNEL);
+	info.name = kmalloc(16, GFP_KERNEL);
 	if (!info.name)
 		goto name_alloc_fail;
-	sprintf(info.name, "PCI Bus #%02x", busnum);
+	sprintf(info.name, "PCI Bus %04x:%02x", domain, busnum);
 
 	info.res_num = 0;
 	acpi_walk_resources(device->handle, METHOD_NAME__CRS, setup_resource,
@@ -191,7 +191,10 @@ struct pci_bus * __devinit pci_acpi_scan_root(struct acpi_device *device, int do
 {
 	struct pci_bus *bus;
 	struct pci_sysdata *sd;
+	int node;
+#ifdef CONFIG_ACPI_NUMA
 	int pxm;
+#endif
 
 	dmi_check_system(acpi_pciprobe_dmi_table);
 
@@ -200,6 +203,17 @@ struct pci_bus * __devinit pci_acpi_scan_root(struct acpi_device *device, int do
 		       "(dom %d, bus %d)\n", domain, busnum);
 		return NULL;
 	}
+
+	node = -1;
+#ifdef CONFIG_ACPI_NUMA
+	pxm = acpi_get_pxm(device->handle);
+	if (pxm >= 0)
+		node = pxm_to_node(pxm);
+	if (node != -1)
+		set_mp_bus_to_node(busnum, node);
+	else
+		node = get_mp_bus_to_node(busnum);
+#endif
 
 	/* Allocate per-root-bus (not per bus) arch-specific data.
 	 * TODO: leak; this memory is never freed.
@@ -212,13 +226,7 @@ struct pci_bus * __devinit pci_acpi_scan_root(struct acpi_device *device, int do
 	}
 
 	sd->domain = domain;
-	sd->node = -1;
-
-	pxm = acpi_get_pxm(device->handle);
-#ifdef CONFIG_ACPI_NUMA
-	if (pxm >= 0)
-		sd->node = pxm_to_node(pxm);
-#endif
+	sd->node = node;
 	/*
 	 * Maybe the desired pci bus has been already scanned. In such case
 	 * it is unnecessary to scan the pci bus with the given domain,busnum.
@@ -238,17 +246,16 @@ struct pci_bus * __devinit pci_acpi_scan_root(struct acpi_device *device, int do
 		kfree(sd);
 
 #ifdef CONFIG_ACPI_NUMA
-	if (bus != NULL) {
+	if (bus) {
 		if (pxm >= 0) {
-			printk("bus %d -> pxm %d -> node %d\n",
+			printk(KERN_DEBUG "bus %02x -> pxm %d -> node %d\n",
 				busnum, pxm, pxm_to_node(pxm));
 		}
 	}
 #endif
 
 	if (bus && (pci_probe & PCI_USE__CRS))
-		get_current_resources(device, busnum, bus);
-	
+		get_current_resources(device, busnum, domain, bus);
 	return bus;
 }
 
@@ -278,8 +285,7 @@ static int __init pci_acpi_init(void)
 		printk(KERN_INFO "PCI: Routing PCI interrupts for all devices because \"pci=routeirq\" specified\n");
 		for_each_pci_dev(dev)
 			acpi_pci_irq_enable(dev);
-	} else
-		printk(KERN_INFO "PCI: If a device doesn't work, try \"pci=routeirq\".  If it helps, post a report\n");
+	}
 
 #ifdef CONFIG_X86_IO_APIC
 	if (acpi_ioapic)

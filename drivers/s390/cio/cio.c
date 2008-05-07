@@ -24,6 +24,7 @@
 #include <asm/ipl.h>
 #include <asm/chpid.h>
 #include <asm/airq.h>
+#include <asm/cpu.h>
 #include "cio.h"
 #include "css.h"
 #include "chsc.h"
@@ -406,8 +407,7 @@ cio_modify (struct subchannel *sch)
 /*
  * Enable subchannel.
  */
-int cio_enable_subchannel(struct subchannel *sch, unsigned int isc,
-			  u32 intparm)
+int cio_enable_subchannel(struct subchannel *sch, u32 intparm)
 {
 	char dbf_txt[15];
 	int ccode;
@@ -425,7 +425,7 @@ int cio_enable_subchannel(struct subchannel *sch, unsigned int isc,
 
 	for (retry = 5, ret = 0; retry > 0; retry--) {
 		sch->schib.pmcw.ena = 1;
-		sch->schib.pmcw.isc = isc;
+		sch->schib.pmcw.isc = sch->isc;
 		sch->schib.pmcw.intparm = intparm;
 		ret = cio_modify(sch);
 		if (ret == -ENODEV)
@@ -599,6 +599,7 @@ cio_validate_subchannel (struct subchannel *sch, struct subchannel_id schid)
 	else
 		sch->opm = chp_get_sch_opm(sch);
 	sch->lpm = sch->schib.pmcw.pam & sch->opm;
+	sch->isc = 3;
 
 	CIO_DEBUG(KERN_INFO, 0,
 		  "Detected device %04x on subchannel 0.%x.%04X"
@@ -609,13 +610,11 @@ cio_validate_subchannel (struct subchannel *sch, struct subchannel_id schid)
 
 	/*
 	 * We now have to initially ...
-	 *  ... set "interruption subclass"
 	 *  ... enable "concurrent sense"
 	 *  ... enable "multipath mode" if more than one
 	 *	  CHPID is available. This is done regardless
 	 *	  whether multiple paths are available for us.
 	 */
-	sch->schib.pmcw.isc = 3;	/* could be smth. else */
 	sch->schib.pmcw.csense = 1;	/* concurrent sense */
 	sch->schib.pmcw.ena = 0;
 	if ((sch->lpm & (sch->lpm - 1)) != 0)
@@ -649,13 +648,10 @@ do_IRQ (struct pt_regs *regs)
 
 	old_regs = set_irq_regs(regs);
 	irq_enter();
-	asm volatile ("mc 0,0");
-	if (S390_lowcore.int_clock >= S390_lowcore.jiffy_timer)
-		/**
-		 * Make sure that the i/o interrupt did not "overtake"
-		 * the last HZ timer interrupt.
-		 */
-		account_ticks(S390_lowcore.int_clock);
+	s390_idle_check();
+	if (S390_lowcore.int_clock >= S390_lowcore.clock_comparator)
+		/* Serve timer interrupts first. */
+		clock_comparator_work();
 	/*
 	 * Get interrupt information from lowcore
 	 */
@@ -672,10 +668,14 @@ do_IRQ (struct pt_regs *regs)
 			continue;
 		}
 		sch = (struct subchannel *)(unsigned long)tpi_info->intparm;
-		if (sch)
-			spin_lock(sch->lock);
+		if (!sch) {
+			/* Clear pending interrupt condition. */
+			tsch(tpi_info->schid, irb);
+			continue;
+		}
+		spin_lock(sch->lock);
 		/* Store interrupt response block to lowcore. */
-		if (tsch (tpi_info->schid, irb) == 0 && sch) {
+		if (tsch(tpi_info->schid, irb) == 0) {
 			/* Keep subchannel information word up to date. */
 			memcpy (&sch->schib.scsw, &irb->scsw,
 				sizeof (irb->scsw));
@@ -683,8 +683,7 @@ do_IRQ (struct pt_regs *regs)
 			if (sch->driver && sch->driver->irq)
 				sch->driver->irq(sch);
 		}
-		if (sch)
-			spin_unlock(sch->lock);
+		spin_unlock(sch->lock);
 		/*
 		 * Are more interrupts pending?
 		 * If so, the tpi instruction will update the lowcore
@@ -710,8 +709,9 @@ void *cio_get_console_priv(void)
 /*
  * busy wait for the next interrupt on the console
  */
-void
-wait_cons_dev (void)
+void wait_cons_dev(void)
+	__releases(console_subchannel.lock)
+	__acquires(console_subchannel.lock)
 {
 	unsigned long cr6      __attribute__ ((aligned (8)));
 	unsigned long save_cr6 __attribute__ ((aligned (8)));
@@ -810,6 +810,7 @@ cio_probe_console(void)
 	 * enable console I/O-interrupt subclass 7
 	 */
 	ctl_set_bit(6, 24);
+	console_subchannel.isc = 7;
 	console_subchannel.schib.pmcw.isc = 7;
 	console_subchannel.schib.pmcw.intparm =
 		(u32)(addr_t)&console_subchannel;

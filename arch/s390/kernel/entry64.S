@@ -52,9 +52,9 @@ SP_SIZE      =	STACK_FRAME_OVERHEAD + __PT_SIZE
 STACK_SHIFT = PAGE_SHIFT + THREAD_ORDER
 STACK_SIZE  = 1 << STACK_SHIFT
 
-_TIF_WORK_SVC = (_TIF_SIGPENDING | _TIF_RESTORE_SIGMASK | _TIF_NEED_RESCHED | \
+_TIF_WORK_SVC = (_TIF_SIGPENDING | _TIF_NEED_RESCHED | \
 		 _TIF_MCCK_PENDING | _TIF_RESTART_SVC | _TIF_SINGLE_STEP )
-_TIF_WORK_INT = (_TIF_SIGPENDING | _TIF_RESTORE_SIGMASK | _TIF_NEED_RESCHED | \
+_TIF_WORK_INT = (_TIF_SIGPENDING | _TIF_NEED_RESCHED | \
 		 _TIF_MCCK_PENDING)
 
 #define BASED(name) name-system_call(%r13)
@@ -308,7 +308,7 @@ sysc_work:
 	jo	sysc_mcck_pending
 	tm	__TI_flags+7(%r9),_TIF_NEED_RESCHED
 	jo	sysc_reschedule
-	tm	__TI_flags+7(%r9),(_TIF_SIGPENDING | _TIF_RESTORE_SIGMASK)
+	tm	__TI_flags+7(%r9),_TIF_SIGPENDING
 	jnz	sysc_sigpending
 	tm	__TI_flags+7(%r9),_TIF_RESTART_SVC
 	jo	sysc_restart
@@ -332,7 +332,7 @@ sysc_mcck_pending:
 	jg	s390_handle_mcck	# TIF bit will be cleared by handler
 
 #
-# _TIF_SIGPENDING or _TIF_RESTORE_SIGMASK is set, call do_signal
+# _TIF_SIGPENDING is set, call do_signal
 #
 sysc_sigpending:
 	ni	__TI_flags+7(%r9),255-_TIF_SINGLE_STEP # clear TIF_SINGLE_STEP
@@ -475,6 +475,7 @@ pgm_check_handler:
 pgm_no_vtime:
 #endif
 	lg	%r9,__LC_THREAD_INFO	# load pointer to thread_info struct
+	mvc	SP_ARGS(8,%r15),__LC_LAST_BREAK
 	TRACE_IRQS_OFF
 	lgf	%r3,__LC_PGM_ILC	# load program interruption code
 	lghi	%r8,0x7f
@@ -647,7 +648,7 @@ io_work_loop:
 	jo	io_mcck_pending
 	tm	__TI_flags+7(%r9),_TIF_NEED_RESCHED
 	jo	io_reschedule
-	tm	__TI_flags+7(%r9),(_TIF_SIGPENDING | _TIF_RESTORE_SIGMASK)
+	tm	__TI_flags+7(%r9),_TIF_SIGPENDING
 	jnz	io_sigpending
 	j	io_restore
 io_work_done:
@@ -673,7 +674,7 @@ io_reschedule:
 	j	io_work_loop
 
 #
-# _TIF_SIGPENDING or _TIF_RESTORE_SIGMASK is set, call do_signal
+# _TIF_SIGPENDING or is set, call do_signal
 #
 io_sigpending:
 	TRACE_IRQS_ON
@@ -847,6 +848,7 @@ stack_overflow:
 	je	0f
 	la	%r1,__LC_SAVE_AREA+32
 0:	mvc	SP_R12(32,%r15),0(%r1)	# move %r12-%r15 to stack
+	mvc	SP_ARGS(8,%r15),__LC_LAST_BREAK
 	xc	__SF_BACKCHAIN(8,%r15),__SF_BACKCHAIN(%r15) # clear back chain
 	la	%r2,SP_PTREGS(%r15)	# load pt_regs
 	jg	kernel_stack_overflow

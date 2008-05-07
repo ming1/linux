@@ -1874,7 +1874,7 @@ static int pktgen_device_event(struct notifier_block *unused,
 {
 	struct net_device *dev = ptr;
 
-	if (dev->nd_net != &init_net)
+	if (dev_net(dev) != &init_net)
 		return NOTIFY_DONE;
 
 	/* It is OK that we do not hold the group lock right now,
@@ -3570,15 +3570,14 @@ static int pktgen_add_device(struct pktgen_thread *t, const char *ifname)
 	if (err)
 		goto out1;
 
-	pkt_dev->entry = proc_create(ifname, 0600,
-				     pg_proc_dir, &pktgen_if_fops);
+	pkt_dev->entry = proc_create_data(ifname, 0600, pg_proc_dir,
+					  &pktgen_if_fops, pkt_dev);
 	if (!pkt_dev->entry) {
 		printk(KERN_ERR "pktgen: cannot create %s/%s procfs entry.\n",
 		       PG_PROC_DIR, ifname);
 		err = -EINVAL;
 		goto out2;
 	}
-	pkt_dev->entry->data = pkt_dev;
 #ifdef CONFIG_XFRM
 	pkt_dev->ipsmode = XFRM_MODE_TRANSPORT;
 	pkt_dev->ipsproto = IPPROTO_ESP;
@@ -3628,7 +3627,8 @@ static int __init pktgen_create_thread(int cpu)
 	kthread_bind(p, cpu);
 	t->tsk = p;
 
-	pe = proc_create(t->tsk->comm, 0600, pg_proc_dir, &pktgen_thread_fops);
+	pe = proc_create_data(t->tsk->comm, 0600, pg_proc_dir,
+			      &pktgen_thread_fops, t);
 	if (!pe) {
 		printk(KERN_ERR "pktgen: cannot create %s/%s procfs entry.\n",
 		       PG_PROC_DIR, t->tsk->comm);
@@ -3637,8 +3637,6 @@ static int __init pktgen_create_thread(int cpu)
 		kfree(t);
 		return -EINVAL;
 	}
-
-	pe->data = t;
 
 	wake_up_process(p);
 
@@ -3715,8 +3713,6 @@ static int __init pg_init(void)
 		proc_net_remove(&init_net, PG_PROC_DIR);
 		return -EINVAL;
 	}
-
-	pe->data = NULL;
 
 	/* Register us to receive netdevice events */
 	register_netdevice_notifier(&pktgen_notifier_block);

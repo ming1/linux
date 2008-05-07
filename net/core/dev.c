@@ -162,7 +162,7 @@ struct net_dma {
 	struct dma_client client;
 	spinlock_t lock;
 	cpumask_t channel_mask;
-	struct dma_chan *channels[NR_CPUS];
+	struct dma_chan **channels;
 };
 
 static enum dma_state_client
@@ -216,7 +216,7 @@ static inline struct hlist_head *dev_index_hash(struct net *net, int ifindex)
 /* Device list insertion */
 static int list_netdevice(struct net_device *dev)
 {
-	struct net *net = dev->nd_net;
+	struct net *net = dev_net(dev);
 
 	ASSERT_RTNL();
 
@@ -852,8 +852,8 @@ int dev_alloc_name(struct net_device *dev, const char *name)
 	struct net *net;
 	int ret;
 
-	BUG_ON(!dev->nd_net);
-	net = dev->nd_net;
+	BUG_ON(!dev_net(dev));
+	net = dev_net(dev);
 	ret = __dev_alloc_name(net, name, buf);
 	if (ret >= 0)
 		strlcpy(dev->name, buf, IFNAMSIZ);
@@ -877,9 +877,9 @@ int dev_change_name(struct net_device *dev, char *newname)
 	struct net *net;
 
 	ASSERT_RTNL();
-	BUG_ON(!dev->nd_net);
+	BUG_ON(!dev_net(dev));
 
-	net = dev->nd_net;
+	net = dev_net(dev);
 	if (dev->flags & IFF_UP)
 		return -EBUSY;
 
@@ -1524,7 +1524,7 @@ static int dev_gso_segment(struct sk_buff *skb)
 	if (!segs)
 		return 0;
 
-	if (unlikely(IS_ERR(segs)))
+	if (IS_ERR(segs))
 		return PTR_ERR(segs);
 
 	skb->next = segs;
@@ -2444,7 +2444,7 @@ static struct netif_rx_stats *softnet_get_online(loff_t *pos)
 {
 	struct netif_rx_stats *rc = NULL;
 
-	while (*pos < NR_CPUS)
+	while (*pos < nr_cpu_ids)
 		if (cpu_online(*pos)) {
 			rc = &per_cpu(netdev_rx_stat, *pos);
 			break;
@@ -2615,7 +2615,7 @@ static int ptype_seq_show(struct seq_file *seq, void *v)
 
 	if (v == SEQ_START_TOKEN)
 		seq_puts(seq, "Type Device      Function\n");
-	else {
+	else if (pt->dev == NULL || dev_net(pt->dev) == seq_file_net(seq)) {
 		if (pt->type == htons(ETH_P_ALL))
 			seq_puts(seq, "ALL ");
 		else
@@ -2639,7 +2639,8 @@ static const struct seq_operations ptype_seq_ops = {
 
 static int ptype_seq_open(struct inode *inode, struct file *file)
 {
-	return seq_open(file, &ptype_seq_ops);
+	return seq_open_net(inode, file, &ptype_seq_ops,
+			sizeof(struct seq_net_private));
 }
 
 static const struct file_operations ptype_seq_fops = {
@@ -2647,7 +2648,7 @@ static const struct file_operations ptype_seq_fops = {
 	.open    = ptype_seq_open,
 	.read    = seq_read,
 	.llseek  = seq_lseek,
-	.release = seq_release,
+	.release = seq_release_net,
 };
 
 
@@ -3688,8 +3689,8 @@ int register_netdevice(struct net_device *dev)
 
 	/* When net_device's are persistent, this will be fatal. */
 	BUG_ON(dev->reg_state != NETREG_UNINITIALIZED);
-	BUG_ON(!dev->nd_net);
-	net = dev->nd_net;
+	BUG_ON(!dev_net(dev));
+	net = dev_net(dev);
 
 	spin_lock_init(&dev->queue_lock);
 	spin_lock_init(&dev->_xmit_lock);
@@ -3775,6 +3776,7 @@ int register_netdevice(struct net_device *dev)
 		}
 	}
 
+	netdev_initialize_kobject(dev);
 	ret = netdev_register_kobject(dev);
 	if (ret)
 		goto err_uninit;
@@ -3995,11 +3997,15 @@ struct net_device *alloc_netdev_mq(int sizeof_priv, const char *name,
 
 	BUG_ON(strlen(name) >= sizeof(dev->name));
 
-	/* ensure 32-byte alignment of both the device and private area */
-	alloc_size = (sizeof(*dev) + NETDEV_ALIGN_CONST +
-		     (sizeof(struct net_device_subqueue) * (queue_count - 1))) &
-		     ~NETDEV_ALIGN_CONST;
-	alloc_size += sizeof_priv + NETDEV_ALIGN_CONST;
+	alloc_size = sizeof(struct net_device) +
+		     sizeof(struct net_device_subqueue) * (queue_count - 1);
+	if (sizeof_priv) {
+		/* ensure 32-byte alignment of private area */
+		alloc_size = (alloc_size + NETDEV_ALIGN_CONST) & ~NETDEV_ALIGN_CONST;
+		alloc_size += sizeof_priv;
+	}
+	/* ensure 32-byte alignment of whole construct */
+	alloc_size += NETDEV_ALIGN_CONST;
 
 	p = kzalloc(alloc_size, GFP_KERNEL);
 	if (!p) {
@@ -4010,7 +4016,7 @@ struct net_device *alloc_netdev_mq(int sizeof_priv, const char *name,
 	dev = (struct net_device *)
 		(((long)p + NETDEV_ALIGN_CONST) & ~NETDEV_ALIGN_CONST);
 	dev->padded = (char *)dev - (char *)p;
-	dev->nd_net = &init_net;
+	dev_net_set(dev, &init_net);
 
 	if (sizeof_priv) {
 		dev->priv = ((char *)dev +
@@ -4021,6 +4027,7 @@ struct net_device *alloc_netdev_mq(int sizeof_priv, const char *name,
 	}
 
 	dev->egress_subqueue_count = queue_count;
+	dev->gso_max_size = GSO_MAX_SIZE;
 
 	dev->get_stats = internal_stats;
 	netpoll_netdev_init(dev);
@@ -4040,6 +4047,8 @@ EXPORT_SYMBOL(alloc_netdev_mq);
  */
 void free_netdev(struct net_device *dev)
 {
+	release_net(dev_net(dev));
+
 	/*  Compatibility with error handling in drivers */
 	if (dev->reg_state == NETREG_UNINITIALIZED) {
 		kfree((char *)dev - dev->padded);
@@ -4134,7 +4143,7 @@ int dev_change_net_namespace(struct net_device *dev, struct net *net, const char
 
 	/* Get out if there is nothing todo */
 	err = 0;
-	if (dev->nd_net == net)
+	if (net_eq(dev_net(dev), net))
 		goto out;
 
 	/* Pick the destination device name, and ensure
@@ -4185,7 +4194,7 @@ int dev_change_net_namespace(struct net_device *dev, struct net *net, const char
 	dev_addr_discard(dev);
 
 	/* Actually switch the network namespace */
-	dev->nd_net = net;
+	dev_net_set(dev, net);
 
 	/* Assign the new device name */
 	if (destname != dev->name)
@@ -4200,7 +4209,8 @@ int dev_change_net_namespace(struct net_device *dev, struct net *net, const char
 	}
 
 	/* Fixup kobjects */
-	err = device_rename(&dev->dev, dev->name);
+	netdev_unregister_kobject(dev);
+	err = netdev_register_kobject(dev);
 	WARN_ON(err);
 
 	/* Add the device back in the hashes */
@@ -4316,7 +4326,7 @@ netdev_dma_event(struct dma_client *client, struct dma_chan *chan,
 	spin_lock(&net_dma->lock);
 	switch (state) {
 	case DMA_RESOURCE_AVAILABLE:
-		for (i = 0; i < NR_CPUS; i++)
+		for (i = 0; i < nr_cpu_ids; i++)
 			if (net_dma->channels[i] == chan) {
 				found = 1;
 				break;
@@ -4331,7 +4341,7 @@ netdev_dma_event(struct dma_client *client, struct dma_chan *chan,
 		}
 		break;
 	case DMA_RESOURCE_REMOVED:
-		for (i = 0; i < NR_CPUS; i++)
+		for (i = 0; i < nr_cpu_ids; i++)
 			if (net_dma->channels[i] == chan) {
 				found = 1;
 				pos = i;
@@ -4358,6 +4368,13 @@ netdev_dma_event(struct dma_client *client, struct dma_chan *chan,
  */
 static int __init netdev_dma_register(void)
 {
+	net_dma.channels = kzalloc(nr_cpu_ids * sizeof(struct net_dma),
+								GFP_KERNEL);
+	if (unlikely(!net_dma.channels)) {
+		printk(KERN_NOTICE
+				"netdev_dma: no memory for net_dma.channels\n");
+		return -ENOMEM;
+	}
 	spin_lock_init(&net_dma.lock);
 	dma_cap_set(DMA_MEMCPY, net_dma.client.cap_mask);
 	dma_async_client_register(&net_dma.client);

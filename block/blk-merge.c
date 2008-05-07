@@ -55,7 +55,7 @@ void blk_recalc_rq_segments(struct request *rq)
 	if (!rq->bio)
 		return;
 
-	cluster = q->queue_flags & (1 << QUEUE_FLAG_CLUSTER);
+	cluster = test_bit(QUEUE_FLAG_CLUSTER, &q->queue_flags);
 	hw_seg_size = seg_size = 0;
 	phys_size = hw_size = nr_phys_segs = nr_hw_segs = 0;
 	rq_for_each_segment(bv, rq, iter) {
@@ -128,7 +128,7 @@ EXPORT_SYMBOL(blk_recount_segments);
 static int blk_phys_contig_segment(struct request_queue *q, struct bio *bio,
 				   struct bio *nxt)
 {
-	if (!(q->queue_flags & (1 << QUEUE_FLAG_CLUSTER)))
+	if (!test_bit(QUEUE_FLAG_CLUSTER, &q->queue_flags))
 		return 0;
 
 	if (!BIOVEC_PHYS_MERGEABLE(__BVEC_END(bio), __BVEC_START(nxt)))
@@ -175,7 +175,7 @@ int blk_rq_map_sg(struct request_queue *q, struct request *rq,
 	int nsegs, cluster;
 
 	nsegs = 0;
-	cluster = q->queue_flags & (1 << QUEUE_FLAG_CLUSTER);
+	cluster = test_bit(QUEUE_FLAG_CLUSTER, &q->queue_flags);
 
 	/*
 	 * for each bio in rq
@@ -219,6 +219,15 @@ new_segment:
 		}
 		bvprv = bvec;
 	} /* segments in rq */
+
+
+	if (unlikely(rq->cmd_flags & REQ_COPY_USER) &&
+	    (rq->data_len & q->dma_pad_mask)) {
+		unsigned int pad_len = (q->dma_pad_mask & ~rq->data_len) + 1;
+
+		sg->length += pad_len;
+		rq->extra_len += pad_len;
+	}
 
 	if (q->dma_drain_size && q->dma_drain_needed(rq)) {
 		if (rq->cmd_flags & REQ_RW)

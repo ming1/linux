@@ -35,8 +35,8 @@
 #include <linux/completion.h>
 #include <linux/hardirq.h>
 #include <linux/irqflags.h>
+#include <linux/semaphore.h>
 #include <asm/uaccess.h>
-#include <asm/semaphore.h>
 
 #include "i2c-core.h"
 
@@ -48,6 +48,17 @@ static DEFINE_IDR(i2c_adapter_idr);
 
 /* ------------------------------------------------------------------------- */
 
+static const struct i2c_device_id *i2c_match_id(const struct i2c_device_id *id,
+						const struct i2c_client *client)
+{
+	while (id->name[0]) {
+		if (strcmp(client->name, id->name) == 0)
+			return id;
+		id++;
+	}
+	return NULL;
+}
+
 static int i2c_device_match(struct device *dev, struct device_driver *drv)
 {
 	struct i2c_client	*client = to_i2c_client(dev);
@@ -58,6 +69,10 @@ static int i2c_device_match(struct device *dev, struct device_driver *drv)
 	 */
 	if (!is_newstyle_driver(driver))
 		return 0;
+
+	/* match on an id table if there is one */
+	if (driver->id_table)
+		return i2c_match_id(driver->id_table, client) != NULL;
 
 	/* new style drivers use the same kind of driver matching policy
 	 * as platform devices or SPI:  compare device and driver IDs.
@@ -73,11 +88,17 @@ static int i2c_device_uevent(struct device *dev, struct kobj_uevent_env *env)
 	struct i2c_client	*client = to_i2c_client(dev);
 
 	/* by definition, legacy drivers can't hotplug */
-	if (dev->driver || !client->driver_name)
+	if (dev->driver)
 		return 0;
 
-	if (add_uevent_var(env, "MODALIAS=%s", client->driver_name))
-		return -ENOMEM;
+	if (client->driver_name[0]) {
+		if (add_uevent_var(env, "MODALIAS=%s", client->driver_name))
+			return -ENOMEM;
+	} else {
+		if (add_uevent_var(env, "MODALIAS=%s%s",
+				   I2C_MODULE_PREFIX, client->name))
+			return -ENOMEM;
+	}
 	dev_dbg(dev, "uevent\n");
 	return 0;
 }
@@ -90,13 +111,19 @@ static int i2c_device_probe(struct device *dev)
 {
 	struct i2c_client	*client = to_i2c_client(dev);
 	struct i2c_driver	*driver = to_i2c_driver(dev->driver);
+	const struct i2c_device_id *id;
 	int status;
 
 	if (!driver->probe)
 		return -ENODEV;
 	client->driver = driver;
 	dev_dbg(dev, "probe\n");
-	status = driver->probe(client);
+
+	if (driver->id_table)
+		id = i2c_match_id(driver->id_table, client);
+	else
+		id = NULL;
+	status = driver->probe(client, id);
 	if (status)
 		client->driver = NULL;
 	return status;
@@ -179,9 +206,9 @@ static ssize_t show_client_name(struct device *dev, struct device_attribute *att
 static ssize_t show_modalias(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct i2c_client *client = to_i2c_client(dev);
-	return client->driver_name
+	return client->driver_name[0]
 		? sprintf(buf, "%s\n", client->driver_name)
-		: 0;
+		: sprintf(buf, "%s%s\n", I2C_MODULE_PREFIX, client->name);
 }
 
 static struct device_attribute i2c_dev_attrs[] = {
@@ -300,15 +327,21 @@ void i2c_unregister_device(struct i2c_client *client)
 EXPORT_SYMBOL_GPL(i2c_unregister_device);
 
 
-static int dummy_nop(struct i2c_client *client)
+static int dummy_probe(struct i2c_client *client,
+		       const struct i2c_device_id *id)
+{
+	return 0;
+}
+
+static int dummy_remove(struct i2c_client *client)
 {
 	return 0;
 }
 
 static struct i2c_driver dummy_driver = {
 	.driver.name	= "dummy",
-	.probe		= dummy_nop,
-	.remove		= dummy_nop,
+	.probe		= dummy_probe,
+	.remove		= dummy_remove,
 };
 
 /**
@@ -1506,7 +1539,7 @@ static s32 i2c_smbus_xfer_emulated(struct i2c_adapter * adapter, u16 addr,
 		read_write = I2C_SMBUS_READ;
 		if (data->block[0] > I2C_SMBUS_BLOCK_MAX) {
 			dev_err(&adapter->dev, "%s called with invalid "
-				"block proc call size (%d)\n", __FUNCTION__,
+				"block proc call size (%d)\n", __func__,
 				data->block[0]);
 			return -1;
 		}
