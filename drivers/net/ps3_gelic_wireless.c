@@ -87,7 +87,7 @@ static inline int wpa2_capable(void)
 
 static inline int precise_ie(void)
 {
-	return (0 <= ps3_compare_firmware_version(2, 2, 0));
+	return 0; /* FIXME */
 }
 /*
  * post_eurus_cmd helpers

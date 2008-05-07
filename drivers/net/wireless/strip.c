@@ -962,12 +962,12 @@ static char *time_delta(char buffer[], long time)
 /* get Nth element of the linked list */
 static struct strip *strip_get_idx(loff_t pos) 
 {
-	struct strip *str;
+	struct list_head *l;
 	int i = 0;
 
-	list_for_each_entry_rcu(str, &strip_list, list) {
+	list_for_each_rcu(l, &strip_list) {
 		if (pos == i)
-			return str;
+			return list_entry(l, struct strip, list);
 		++i;
 	}
 	return NULL;

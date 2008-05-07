@@ -83,7 +83,7 @@ struct ath5k_txq {
 #if CHAN_DEBUG
 #define ATH_CHAN_MAX	(26+26+26+200+200)
 #else
-#define ATH_CHAN_MAX	(14+14+14+252+20)
+#define ATH_CHAN_MAX	(14+14+14+252+20)	/* XXX what's the max? */
 #endif
 
 /* Software Carrier, keeps track of the driver state
@@ -92,26 +92,18 @@ struct ath5k_softc {
 	struct pci_dev		*pdev;		/* for dma mapping */
 	void __iomem		*iobase;	/* address of the device */
 	struct mutex		lock;		/* dev-level lock */
-	/* FIXME: how many does it really need? */
-	struct ieee80211_tx_queue_stats tx_stats[16];
+	struct ieee80211_tx_queue_stats tx_stats;
 	struct ieee80211_low_level_stats ll_stats;
 	struct ieee80211_hw	*hw;		/* IEEE 802.11 common */
-	struct ieee80211_supported_band sbands[IEEE80211_NUM_BANDS];
+	struct ieee80211_hw_mode modes[NUM_DRIVER_MODES];
 	struct ieee80211_channel channels[ATH_CHAN_MAX];
-	struct ieee80211_rate	rates[AR5K_MAX_RATES * IEEE80211_NUM_BANDS];
+	struct ieee80211_rate	rates[AR5K_MAX_RATES * NUM_DRIVER_MODES];
 	enum ieee80211_if_types	opmode;
 	struct ath5k_hw		*ah;		/* Atheros HW */
 
-	struct ieee80211_supported_band		*curband;
-
-	u8			a_rates;
-	u8			b_rates;
-	u8			g_rates;
-	u8			xr_rates;
-
-#ifdef CONFIG_ATH5K_DEBUG
+#if ATH5K_DEBUG
 	struct ath5k_dbg_info	debug;		/* debug info */
-#endif /* CONFIG_ATH5K_DEBUG */
+#endif
 
 	struct ath5k_buf	*bufptr;	/* allocated buffer ptr */
 	struct ath5k_desc	*desc;		/* TX/RX descriptors */
@@ -177,7 +169,6 @@ struct ath5k_softc {
 	unsigned int		nexttbtt;	/* next beacon time in TU */
 
 	struct timer_list	calib_tim;	/* calibration timer */
-	int 			power_level;	/* Requested tx power in dbm */
 };
 
 #define ath5k_hw_hasbssidmask(_ah) \

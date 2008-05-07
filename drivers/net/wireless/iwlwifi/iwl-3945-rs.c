@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- * Copyright(c) 2005 - 2008 Intel Corporation. All rights reserved.
+ * Copyright(c) 2005 - 2007 Intel Corporation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of version 2 of the GNU General Public License as
@@ -29,6 +29,7 @@
 #include <linux/skbuff.h>
 #include <linux/wireless.h>
 #include <net/mac80211.h>
+#include <net/ieee80211.h>
 
 #include <linux/netdevice.h>
 #include <linux/etherdevice.h>
@@ -36,7 +37,7 @@
 
 #include <linux/workqueue.h>
 
-#include "../net/mac80211/rate.h"
+#include "../net/mac80211/ieee80211_rate.h"
 
 #include "iwl-3945.h"
 
@@ -99,6 +100,14 @@ static struct iwl3945_tpt_entry iwl3945_tpt_table_a[] = {
 	{-89, IWL_RATE_6M_INDEX}
 };
 
+static struct iwl3945_tpt_entry iwl3945_tpt_table_b[] = {
+	{-86, IWL_RATE_11M_INDEX},
+	{-88, IWL_RATE_5M_INDEX},
+	{-90, IWL_RATE_2M_INDEX},
+	{-92, IWL_RATE_1M_INDEX}
+
+};
+
 static struct iwl3945_tpt_entry iwl3945_tpt_table_g[] = {
 	{-60, IWL_RATE_54M_INDEX},
 	{-64, IWL_RATE_48M_INDEX},
@@ -120,7 +129,7 @@ static struct iwl3945_tpt_entry iwl3945_tpt_table_g[] = {
 #define IWL_RATE_MIN_SUCCESS_TH       8
 #define IWL_RATE_DECREASE_TH       1920
 
-static u8 iwl3945_get_rate_index_by_rssi(s32 rssi, enum ieee80211_band band)
+static u8 iwl3945_get_rate_index_by_rssi(s32 rssi, u8 mode)
 {
 	u32 index = 0;
 	u32 table_size = 0;
@@ -129,19 +138,21 @@ static u8 iwl3945_get_rate_index_by_rssi(s32 rssi, enum ieee80211_band band)
 	if ((rssi < IWL_MIN_RSSI_VAL) || (rssi > IWL_MAX_RSSI_VAL))
 		rssi = IWL_MIN_RSSI_VAL;
 
-	switch (band) {
-	case IEEE80211_BAND_2GHZ:
+	switch (mode) {
+	case MODE_IEEE80211G:
 		tpt_table = iwl3945_tpt_table_g;
 		table_size = ARRAY_SIZE(iwl3945_tpt_table_g);
 		break;
 
-	case IEEE80211_BAND_5GHZ:
+	case MODE_IEEE80211A:
 		tpt_table = iwl3945_tpt_table_a;
 		table_size = ARRAY_SIZE(iwl3945_tpt_table_a);
 		break;
 
 	default:
-		BUG();
+	case MODE_IEEE80211B:
+		tpt_table = iwl3945_tpt_table_b;
+		table_size = ARRAY_SIZE(iwl3945_tpt_table_b);
 		break;
 	}
 
@@ -157,9 +168,9 @@ static void iwl3945_clear_window(struct iwl3945_rate_scale_data *window)
 {
 	window->data = 0;
 	window->success_counter = 0;
-	window->success_ratio = -1;
+	window->success_ratio = IWL_INVALID_VALUE;
 	window->counter = 0;
-	window->average_tpt = IWL_INV_TPT;
+	window->average_tpt = IWL_INVALID_VALUE;
 	window->stamp = 0;
 }
 
@@ -329,17 +340,17 @@ static void rs_rate_init(void *priv_rate, void *priv_sta,
 	 * after assoc.. */
 
 	for (i = IWL_RATE_COUNT - 1; i >= 0; i--) {
-		if (sta->supp_rates[local->hw.conf.channel->band] & (1 << i)) {
-			sta->txrate_idx = i;
+		if (sta->supp_rates & (1 << i)) {
+			sta->txrate = i;
 			break;
 		}
 	}
 
-	sta->last_txrate_idx = sta->txrate_idx;
+	sta->last_txrate = sta->txrate;
 
-	/* For 5 GHz band it start at IWL_FIRST_OFDM_RATE */
-	if (local->hw.conf.channel->band == IEEE80211_BAND_5GHZ)
-		sta->last_txrate_idx += IWL_FIRST_OFDM_RATE;
+	/* For MODE_IEEE80211A mode it start at IWL_FIRST_OFDM_RATE */
+        if (local->hw.conf.phymode == MODE_IEEE80211A)
+                sta->last_txrate += IWL_FIRST_OFDM_RATE;
 
 	IWL_DEBUG_RATE("leave\n");
 }
@@ -418,19 +429,17 @@ static int rs_adjust_next_rate(struct iwl3945_priv *priv, int rate)
 {
 	int next_rate = iwl3945_get_prev_ieee_rate(rate);
 
-	switch (priv->band) {
-	case IEEE80211_BAND_5GHZ:
+	switch (priv->phymode) {
+	case MODE_IEEE80211A:
 		if (rate == IWL_RATE_12M_INDEX)
 			next_rate = IWL_RATE_9M_INDEX;
 		else if (rate == IWL_RATE_6M_INDEX)
 			next_rate = IWL_RATE_6M_INDEX;
 		break;
-/* XXX cannot be invoked in current mac80211 so not a regression
 	case MODE_IEEE80211B:
 		if (rate == IWL_RATE_11M_INDEX_TABLE)
 			next_rate = IWL_RATE_5M_INDEX_TABLE;
 		break;
- */
 	default:
 		break;
 	}
@@ -456,25 +465,22 @@ static void rs_tx_status(void *priv_rate,
 	struct iwl3945_priv *priv = (struct iwl3945_priv *)priv_rate;
 	struct ieee80211_local *local = wdev_priv(dev->ieee80211_ptr);
 	struct iwl3945_rs_sta *rs_sta;
-	struct ieee80211_supported_band *sband;
 
 	IWL_DEBUG_RATE("enter\n");
 
-	sband = local->hw.wiphy->bands[local->hw.conf.channel->band];
-
-
 	retries = tx_resp->retry_count;
-	first_index = tx_resp->control.tx_rate->hw_value;
+
+	first_index = tx_resp->control.tx_rate;
 	if ((first_index < 0) || (first_index >= IWL_RATE_COUNT)) {
-		IWL_DEBUG_RATE("leave: Rate out of bounds: %d\n", first_index);
+		IWL_DEBUG_RATE("leave: Rate out of bounds: %0x for %d\n",
+			       tx_resp->control.tx_rate, first_index);
 		return;
 	}
 
-	rcu_read_lock();
-
 	sta = sta_info_get(local, hdr->addr1);
 	if (!sta || !sta->rate_ctrl_priv) {
-		rcu_read_unlock();
+		if (sta)
+			sta_info_put(sta);
 		IWL_DEBUG_RATE("leave: No STA priv data to update!\n");
 		return;
 	}
@@ -547,7 +553,7 @@ static void rs_tx_status(void *priv_rate,
 
 	spin_unlock_irqrestore(&rs_sta->lock, flags);
 
-	rcu_read_unlock();
+	sta_info_put(sta);
 
 	IWL_DEBUG_RATE("leave\n");
 
@@ -555,14 +561,14 @@ static void rs_tx_status(void *priv_rate,
 }
 
 static u16 iwl3945_get_adjacent_rate(struct iwl3945_rs_sta *rs_sta,
-				 u8 index, u16 rate_mask, enum ieee80211_band band)
+				 u8 index, u16 rate_mask, int phymode)
 {
 	u8 high = IWL_RATE_INVALID;
 	u8 low = IWL_RATE_INVALID;
 
 	/* 802.11A walks to the next literal adjacent rate in
 	 * the rate table */
-	if (unlikely(band == IEEE80211_BAND_5GHZ)) {
+	if (unlikely(phymode == MODE_IEEE80211A)) {
 		int i;
 		u32 mask;
 
@@ -633,8 +639,7 @@ static u16 iwl3945_get_adjacent_rate(struct iwl3945_rs_sta *rs_sta,
  *
  */
 static void rs_get_rate(void *priv_rate, struct net_device *dev,
-			struct ieee80211_supported_band *sband,
-			struct sk_buff *skb,
+			struct ieee80211_hw_mode *mode, struct sk_buff *skb,
 			struct rate_selection *sel)
 {
 	u8 low = IWL_RATE_INVALID;
@@ -643,9 +648,9 @@ static void rs_get_rate(void *priv_rate, struct net_device *dev,
 	int index;
 	struct iwl3945_rs_sta *rs_sta;
 	struct iwl3945_rate_scale_data *window = NULL;
-	int current_tpt = IWL_INV_TPT;
-	int low_tpt = IWL_INV_TPT;
-	int high_tpt = IWL_INV_TPT;
+	int current_tpt = IWL_INVALID_VALUE;
+	int low_tpt = IWL_INVALID_VALUE;
+	int high_tpt = IWL_INVALID_VALUE;
 	u32 fail_count;
 	s8 scale_action = 0;
 	unsigned long flags;
@@ -658,8 +663,6 @@ static void rs_get_rate(void *priv_rate, struct net_device *dev,
 
 	IWL_DEBUG_RATE("enter\n");
 
-	rcu_read_lock();
-
 	sta = sta_info_get(local, hdr->addr1);
 
 	/* Send management frames and broadcast/multicast data using lowest
@@ -669,15 +672,16 @@ static void rs_get_rate(void *priv_rate, struct net_device *dev,
 	    is_multicast_ether_addr(hdr->addr1) ||
 	    !sta || !sta->rate_ctrl_priv) {
 		IWL_DEBUG_RATE("leave: No STA priv data to update!\n");
-		sel->rate = rate_lowest(local, sband, sta);
-		rcu_read_unlock();
+		sel->rate = rate_lowest(local, local->oper_hw_mode, sta);
+		if (sta)
+			sta_info_put(sta);
 		return;
 	}
 
-	rate_mask = sta->supp_rates[sband->band];
-	index = min(sta->last_txrate_idx & 0xffff, IWL_RATE_COUNT - 1);
+	rate_mask = sta->supp_rates;
+	index = min(sta->last_txrate & 0xffff, IWL_RATE_COUNT - 1);
 
-	if (sband->band == IEEE80211_BAND_5GHZ)
+	if (priv->phymode == (u8) MODE_IEEE80211A)
 		rate_mask = rate_mask << IWL_FIRST_OFDM_RATE;
 
 	rs_sta = (void *)sta->rate_ctrl_priv;
@@ -709,7 +713,7 @@ static void rs_get_rate(void *priv_rate, struct net_device *dev,
 
 	if (((fail_count <= IWL_RATE_MIN_FAILURE_TH) &&
 	     (window->success_counter < IWL_RATE_MIN_SUCCESS_TH))) {
-		window->average_tpt = IWL_INV_TPT;
+		window->average_tpt = IWL_INVALID_VALUE;
 		spin_unlock_irqrestore(&rs_sta->lock, flags);
 
 		IWL_DEBUG_RATE("Invalid average_tpt on rate %d: "
@@ -728,7 +732,7 @@ static void rs_get_rate(void *priv_rate, struct net_device *dev,
 	current_tpt = window->average_tpt;
 
 	high_low = iwl3945_get_adjacent_rate(rs_sta, index, rate_mask,
-					     sband->band);
+					 local->hw.conf.phymode);
 	low = high_low & 0xff;
 	high = (high_low >> 8) & 0xff;
 
@@ -745,16 +749,19 @@ static void rs_get_rate(void *priv_rate, struct net_device *dev,
 	if ((window->success_ratio < IWL_RATE_DECREASE_TH) || !current_tpt) {
 		IWL_DEBUG_RATE("decrease rate because of low success_ratio\n");
 		scale_action = -1;
-	} else if ((low_tpt == IWL_INV_TPT) && (high_tpt == IWL_INV_TPT))
+	} else if ((low_tpt == IWL_INVALID_VALUE) &&
+		   (high_tpt == IWL_INVALID_VALUE))
 		scale_action = 1;
-	else if ((low_tpt != IWL_INV_TPT) && (high_tpt != IWL_INV_TPT) &&
-		 (low_tpt < current_tpt) && (high_tpt < current_tpt)) {
+	else if ((low_tpt != IWL_INVALID_VALUE) &&
+		   (high_tpt != IWL_INVALID_VALUE)
+		   && (low_tpt < current_tpt)
+		   && (high_tpt < current_tpt)) {
 		IWL_DEBUG_RATE("No action -- low [%d] & high [%d] < "
 			       "current_tpt [%d]\n",
 			       low_tpt, high_tpt, current_tpt);
 		scale_action = 0;
 	} else {
-		if (high_tpt != IWL_INV_TPT) {
+		if (high_tpt != IWL_INVALID_VALUE) {
 			if (high_tpt > current_tpt)
 				scale_action = 1;
 			else {
@@ -762,7 +769,7 @@ static void rs_get_rate(void *priv_rate, struct net_device *dev,
 				    ("decrease rate because of high tpt\n");
 				scale_action = -1;
 			}
-		} else if (low_tpt != IWL_INV_TPT) {
+		} else if (low_tpt != IWL_INVALID_VALUE) {
 			if (low_tpt > current_tpt) {
 				IWL_DEBUG_RATE
 				    ("decrease rate because of low tpt\n");
@@ -803,17 +810,17 @@ static void rs_get_rate(void *priv_rate, struct net_device *dev,
 
  out:
 
-	sta->last_txrate_idx = index;
-	if (sband->band == IEEE80211_BAND_5GHZ)
-		sta->txrate_idx = sta->last_txrate_idx - IWL_FIRST_OFDM_RATE;
+	sta->last_txrate = index;
+	if (priv->phymode == (u8) MODE_IEEE80211A)
+		sta->txrate = sta->last_txrate - IWL_FIRST_OFDM_RATE;
 	else
-		sta->txrate_idx = sta->last_txrate_idx;
+		sta->txrate = sta->last_txrate;
 
-	rcu_read_unlock();
+	sta_info_put(sta);
 
 	IWL_DEBUG_RATE("leave: %d\n", index);
 
-	sel->rate = &sband->bitrates[sta->txrate_idx];
+	sel->rate = &priv->ieee_rates[index];
 }
 
 static struct rate_control_ops rs_ops = {
@@ -841,15 +848,13 @@ int iwl3945_fill_rs_info(struct ieee80211_hw *hw, char *buf, u8 sta_id)
 	unsigned long now = jiffies;
 	u32 max_time = 0;
 
-	rcu_read_lock();
-
 	sta = sta_info_get(local, priv->stations[sta_id].sta.sta.addr);
 	if (!sta || !sta->rate_ctrl_priv) {
-		if (sta)
+		if (sta) {
+			sta_info_put(sta);
 			IWL_DEBUG_RATE("leave - no private rate data!\n");
-		else
+		} else
 			IWL_DEBUG_RATE("leave - no station!\n");
-		rcu_read_unlock();
 		return sprintf(buf, "station %d not found\n", sta_id);
 	}
 
@@ -890,7 +895,7 @@ int iwl3945_fill_rs_info(struct ieee80211_hw *hw, char *buf, u8 sta_id)
 		i = j;
 	}
 	spin_unlock_irqrestore(&rs_sta->lock, flags);
-	rcu_read_unlock();
+	sta_info_put(sta);
 
 	/* Display the average rate of all samples taken.
 	 *
@@ -927,12 +932,11 @@ void iwl3945_rate_scale_init(struct ieee80211_hw *hw, s32 sta_id)
 		return;
 	}
 
-	rcu_read_lock();
-
 	sta = sta_info_get(local, priv->stations[sta_id].sta.sta.addr);
 	if (!sta || !sta->rate_ctrl_priv) {
+		if (sta)
+			sta_info_put(sta);
 		IWL_DEBUG_RATE("leave - no private rate data!\n");
-		rcu_read_unlock();
 		return;
 	}
 
@@ -941,9 +945,8 @@ void iwl3945_rate_scale_init(struct ieee80211_hw *hw, s32 sta_id)
 	spin_lock_irqsave(&rs_sta->lock, flags);
 
 	rs_sta->tgg = 0;
-	switch (priv->band) {
-	case IEEE80211_BAND_2GHZ:
-		/* TODO: this always does G, not a regression */
+	switch (priv->phymode) {
+	case MODE_IEEE80211G:
 		if (priv->active_rxon.flags & RXON_FLG_TGG_PROTECT_MSK) {
 			rs_sta->tgg = 1;
 			rs_sta->expected_tpt = iwl3945_expected_tpt_g_prot;
@@ -951,15 +954,18 @@ void iwl3945_rate_scale_init(struct ieee80211_hw *hw, s32 sta_id)
 			rs_sta->expected_tpt = iwl3945_expected_tpt_g;
 		break;
 
-	case IEEE80211_BAND_5GHZ:
+	case MODE_IEEE80211A:
 		rs_sta->expected_tpt = iwl3945_expected_tpt_a;
 		break;
-	case IEEE80211_NUM_BANDS:
-		BUG();
+
+	default:
+		IWL_WARNING("Invalid phymode.  Defaulting to 802.11b\n");
+	case MODE_IEEE80211B:
+		rs_sta->expected_tpt = iwl3945_expected_tpt_b;
 		break;
 	}
 
-	rcu_read_unlock();
+	sta_info_put(sta);
 	spin_unlock_irqrestore(&rs_sta->lock, flags);
 
 	rssi = priv->last_rx_rssi;
@@ -968,19 +974,20 @@ void iwl3945_rate_scale_init(struct ieee80211_hw *hw, s32 sta_id)
 
 	IWL_DEBUG(IWL_DL_INFO | IWL_DL_RATE, "Network RSSI: %d\n", rssi);
 
-	rs_sta->start_rate = iwl3945_get_rate_index_by_rssi(rssi, priv->band);
+	rs_sta->start_rate =
+			iwl3945_get_rate_index_by_rssi(rssi, priv->phymode);
 
 	IWL_DEBUG_RATE("leave: rssi %d assign rate index: "
 		       "%d (plcp 0x%x)\n", rssi, rs_sta->start_rate,
 		       iwl3945_rates[rs_sta->start_rate].plcp);
 }
 
-int iwl3945_rate_control_register(void)
+void iwl3945_rate_control_register(struct ieee80211_hw *hw)
 {
-	return ieee80211_rate_control_register(&rs_ops);
+	ieee80211_rate_control_register(&rs_ops);
 }
 
-void iwl3945_rate_control_unregister(void)
+void iwl3945_rate_control_unregister(struct ieee80211_hw *hw)
 {
 	ieee80211_rate_control_unregister(&rs_ops);
 }

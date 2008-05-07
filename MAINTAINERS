@@ -740,15 +740,6 @@ W:	http://www.thekelleys.org.uk/atmel
 W:	http://atmelwlandriver.sourceforge.net/
 S:	Maintained
 
-ATMEL USB WIRELESS DRIVER
-P:	Pavel Roskin
-M:	proski@gnu.org
-L:	linux-wireless@vger.kernel.org
-L:	at76c503a-user@lists.berlios.de
-L:	at76c503a-develop@lists.berlios.de
-W:	http://at76c503a.berlios.de/
-S:	Maintained
-
 AUDIT SUBSYSTEM
 P:	David Woodhouse
 M:	dwmw2@infradead.org
@@ -848,6 +839,15 @@ M:	stefano.brivio@polimi.it
 L:	linux-wireless@vger.kernel.org
 W:	http://linuxwireless.org/en/users/Drivers/b43
 S:	Maintained
+
+BCM43XX WIRELESS DRIVER (SOFTMAC BASED VERSION)
+P:	Larry Finger
+M:	Larry.Finger@lwfinger.net
+P:	Stefano Brivio
+M:	stefano.brivio@polimi.it
+L:	linux-wireless@vger.kernel.org
+W:	http://bcm43xx.berlios.de/
+S:	Obsolete
 
 BEFS FILE SYSTEM
 P:	Sergey S. Kostyliov
@@ -2550,10 +2550,12 @@ W:	http://www.tazenda.demon.co.uk/phil/linux-hp
 S:	Maintained
 
 MAC80211
-P:	Johannes Berg
-M:	johannes@sipsolutions.net
 P:	Michael Wu
 M:	flamingice@sourmilk.net
+P:	Johannes Berg
+M:	johannes@sipsolutions.net
+P:	Jiri Benc
+M:	jbenc@suse.cz
 L:	linux-wireless@vger.kernel.org
 W:	http://linuxwireless.org/
 T:	git kernel.org:/pub/scm/linux/kernel/git/linville/wireless-2.6.git
@@ -3603,6 +3605,12 @@ P:	Mark M. Hoffman
 M:	mhoffman@lightlink.com
 L:	lm-sensors@lm-sensors.org
 S:	Maintained
+
+SOFTMAC LAYER (IEEE 802.11)
+P:	Daniel Drake
+M:	dsd@gentoo.org
+L:	linux-wireless@vger.kernel.org
+S:	Obsolete
 
 SOFTWARE RAID (Multiple Disks) SUPPORT
 P:	Ingo Molnar

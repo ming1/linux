@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- * Copyright(c) 2003 - 2008 Intel Corporation. All rights reserved.
+ * Copyright(c) 2003 - 2007 Intel Corporation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of version 2 of the GNU General Public License as
@@ -27,13 +27,12 @@
 #ifndef __iwl_4965_rs_h__
 #define __iwl_4965_rs_h__
 
-#include "iwl-dev.h"
+#include "iwl-4965.h"
 
 struct iwl4965_rate_info {
 	u8 plcp;	/* uCode API:  IWL_RATE_6M_PLCP, etc. */
 	u8 plcp_siso;	/* uCode API:  IWL_RATE_SISO_6M_PLCP, etc. */
-	u8 plcp_mimo2;	/* uCode API:  IWL_RATE_MIMO2_6M_PLCP, etc. */
-	u8 plcp_mimo3;  /* uCode API:  IWL_RATE_MIMO3_6M_PLCP, etc. */
+	u8 plcp_mimo;	/* uCode API:  IWL_RATE_MIMO_6M_PLCP, etc. */
 	u8 ieee;	/* MAC header:  IWL_RATE_6M_IEEE, etc. */
 	u8 prev_ieee;    /* previous rate in IEEE speeds */
 	u8 next_ieee;    /* next rate in IEEE speeds */
@@ -61,9 +60,9 @@ enum {
 	IWL_RATE_48M_INDEX,
 	IWL_RATE_54M_INDEX,
 	IWL_RATE_60M_INDEX,
-	IWL_RATE_COUNT, /*FIXME:RS:change to IWL_RATE_INDEX_COUNT,*/
+	IWL_RATE_COUNT,
 	IWL_RATE_INVM_INDEX = IWL_RATE_COUNT,
-	IWL_RATE_INVALID = IWL_RATE_COUNT,
+	IWL_RATE_INVALID = IWL_RATE_INVM_INDEX
 };
 
 enum {
@@ -98,13 +97,11 @@ enum {
 	IWL_RATE_36M_PLCP = 11,
 	IWL_RATE_48M_PLCP = 1,
 	IWL_RATE_54M_PLCP = 3,
-	IWL_RATE_60M_PLCP = 3,/*FIXME:RS:should be removed*/
+	IWL_RATE_60M_PLCP = 3,
 	IWL_RATE_1M_PLCP  = 10,
 	IWL_RATE_2M_PLCP  = 20,
 	IWL_RATE_5M_PLCP  = 55,
 	IWL_RATE_11M_PLCP = 110,
-	/*FIXME:RS:change to IWL_RATE_LEGACY_??M_PLCP */
-	/*FIXME:RS:add IWL_RATE_LEGACY_INVM_PLCP = 0,*/
 };
 
 /* 4965 uCode API values for OFDM high-throughput (HT) bit rates */
@@ -117,25 +114,16 @@ enum {
 	IWL_RATE_SISO_48M_PLCP = 5,
 	IWL_RATE_SISO_54M_PLCP = 6,
 	IWL_RATE_SISO_60M_PLCP = 7,
-	IWL_RATE_MIMO2_6M_PLCP  = 0x8,
-	IWL_RATE_MIMO2_12M_PLCP = 0x9,
-	IWL_RATE_MIMO2_18M_PLCP = 0xa,
-	IWL_RATE_MIMO2_24M_PLCP = 0xb,
-	IWL_RATE_MIMO2_36M_PLCP = 0xc,
-	IWL_RATE_MIMO2_48M_PLCP = 0xd,
-	IWL_RATE_MIMO2_54M_PLCP = 0xe,
-	IWL_RATE_MIMO2_60M_PLCP = 0xf,
-	IWL_RATE_MIMO3_6M_PLCP  = 0x10,
-	IWL_RATE_MIMO3_12M_PLCP = 0x11,
-	IWL_RATE_MIMO3_18M_PLCP = 0x12,
-	IWL_RATE_MIMO3_24M_PLCP = 0x13,
-	IWL_RATE_MIMO3_36M_PLCP = 0x14,
-	IWL_RATE_MIMO3_48M_PLCP = 0x15,
-	IWL_RATE_MIMO3_54M_PLCP = 0x16,
-	IWL_RATE_MIMO3_60M_PLCP = 0x17,
+	IWL_RATE_MIMO_6M_PLCP  = 0x8,
+	IWL_RATE_MIMO_12M_PLCP = 0x9,
+	IWL_RATE_MIMO_18M_PLCP = 0xa,
+	IWL_RATE_MIMO_24M_PLCP = 0xb,
+	IWL_RATE_MIMO_36M_PLCP = 0xc,
+	IWL_RATE_MIMO_48M_PLCP = 0xd,
+	IWL_RATE_MIMO_54M_PLCP = 0xe,
+	IWL_RATE_MIMO_60M_PLCP = 0xf,
 	IWL_RATE_SISO_INVM_PLCP,
-	IWL_RATE_MIMO2_INVM_PLCP = IWL_RATE_SISO_INVM_PLCP,
-	IWL_RATE_MIMO3_INVM_PLCP = IWL_RATE_SISO_INVM_PLCP,
+	IWL_RATE_MIMO_INVM_PLCP = IWL_RATE_SISO_INVM_PLCP,
 };
 
 /* MAC header values for bit rates */
@@ -208,11 +196,11 @@ enum {
 /* possible actions when in legacy mode */
 #define IWL_LEGACY_SWITCH_ANTENNA	0
 #define IWL_LEGACY_SWITCH_SISO		1
-#define IWL_LEGACY_SWITCH_MIMO2		2
+#define IWL_LEGACY_SWITCH_MIMO	        2
 
 /* possible actions when in siso mode */
 #define IWL_SISO_SWITCH_ANTENNA		0
-#define IWL_SISO_SWITCH_MIMO2		1
+#define IWL_SISO_SWITCH_MIMO		1
 #define IWL_SISO_SWITCH_GI		2
 
 /* possible actions when in mimo mode */
@@ -220,62 +208,35 @@ enum {
 #define IWL_MIMO_SWITCH_ANTENNA_B	1
 #define IWL_MIMO_SWITCH_GI		2
 
-/*FIXME:RS:separate MIMO2/3 transitions*/
-
-/*FIXME:RS:add posible acctions for MIMO3*/
-
 #define IWL_ACTION_LIMIT		3	/* # possible actions */
 
 #define LQ_SIZE		2	/* 2 mode tables:  "Active" and "Search" */
 
-/* load per tid defines for A-MPDU activation */
-#define IWL_AGG_TPT_THREHOLD	0
-#define IWL_AGG_LOAD_THRESHOLD	10
-#define IWL_AGG_ALL_TID		0xff
-#define TID_QUEUE_CELL_SPACING	50	/*mS */
-#define TID_QUEUE_MAX_SIZE	20
-#define TID_ROUND_VALUE		5	/* mS */
-#define TID_MAX_LOAD_COUNT	8
-
-#define TID_MAX_TIME_DIFF ((TID_QUEUE_MAX_SIZE - 1) * TID_QUEUE_CELL_SPACING)
-#define TIME_WRAP_AROUND(x, y) (((y) > (x)) ? (y) - (x) : (0-(x)) + (y))
-
 extern const struct iwl4965_rate_info iwl4965_rates[IWL_RATE_COUNT];
 
-enum iwl_table_type {
+enum iwl4965_table_type {
 	LQ_NONE,
 	LQ_G,		/* legacy types */
 	LQ_A,
 	LQ_SISO,	/* high-throughput types */
-	LQ_MIMO2,
-	LQ_MIMO3,
+	LQ_MIMO,
 	LQ_MAX,
 };
 
 #define is_legacy(tbl) (((tbl) == LQ_G) || ((tbl) == LQ_A))
-#define is_siso(tbl) ((tbl) == LQ_SISO)
-#define is_mimo2(tbl) ((tbl) == LQ_MIMO2)
-#define is_mimo3(tbl) ((tbl) == LQ_MIMO3)
-#define is_mimo(tbl) (is_mimo2(tbl) || is_mimo3(tbl))
+#define is_siso(tbl) (((tbl) == LQ_SISO))
+#define is_mimo(tbl) (((tbl) == LQ_MIMO))
 #define is_Ht(tbl) (is_siso(tbl) || is_mimo(tbl))
-#define is_a_band(tbl) ((tbl) == LQ_A)
-#define is_g_and(tbl) ((tbl) == LQ_G)
+#define is_a_band(tbl) (((tbl) == LQ_A))
+#define is_g_and(tbl) (((tbl) == LQ_G))
 
-#define	ANT_NONE	0x0
-#define	ANT_A		BIT(0)
-#define	ANT_B		BIT(1)
-#define	ANT_AB		(ANT_A | ANT_B)
-#define ANT_C		BIT(2)
-#define	ANT_AC		(ANT_A | ANT_C)
-#define ANT_BC		(ANT_B | ANT_C)
-#define ANT_ABC		(ANT_AB | ANT_C)
-
-static inline u8 num_of_ant(u8 mask)
-{
-	return  !!((mask) & ANT_A) +
-		!!((mask) & ANT_B) +
-		!!((mask) & ANT_C);
-}
+/* 4965 has 2 antennas/chains for Tx (but 3 for Rx) */
+enum iwl4965_antenna_type {
+	ANT_NONE,
+	ANT_MAIN,
+	ANT_AUX,
+	ANT_BOTH,
+};
 
 static inline u8 iwl4965_get_prev_ieee_rate(u8 rate_index)
 {
@@ -286,7 +247,7 @@ static inline u8 iwl4965_get_prev_ieee_rate(u8 rate_index)
 	return rate;
 }
 
-extern int iwl4965_hwrate_to_plcp_idx(u32 rate_n_flags);
+extern int iwl4965_rate_index_from_plcp(int plcp);
 
 /**
  * iwl4965_fill_rs_info - Fill an output text buffer with the rate representation
@@ -315,7 +276,7 @@ extern void iwl4965_rate_scale_init(struct ieee80211_hw *hw, s32 sta_id);
  * ieee80211_register_hw
  *
  */
-extern int iwl4965_rate_control_register(void);
+extern void iwl4965_rate_control_register(struct ieee80211_hw *hw);
 
 /**
  * iwl4965_rate_control_unregister - Unregister the rate control callbacks
@@ -323,6 +284,6 @@ extern int iwl4965_rate_control_register(void);
  * This should be called after calling ieee80211_unregister_hw, but before
  * the driver is unloaded.
  */
-extern void iwl4965_rate_control_unregister(void);
+extern void iwl4965_rate_control_unregister(struct ieee80211_hw *hw);
 
 #endif

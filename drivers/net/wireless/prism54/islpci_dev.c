@@ -387,9 +387,7 @@ islpci_open(struct net_device *ndev)
 	}
 
 	netif_start_queue(ndev);
-
-	/* Turn off carrier unless we know we have associated */
-	netif_carrier_off(ndev);
+/*      netif_mark_up( ndev ); */
 
 	return 0;
 }
@@ -866,7 +864,7 @@ islpci_setup(struct pci_dev *pdev)
 	mutex_init(&priv->mgmt_lock);
 	priv->mgmt_received = NULL;
 	init_waitqueue_head(&priv->mgmt_wqueue);
-	mutex_init(&priv->stats_lock);
+	sema_init(&priv->stats_sem, 1);
 	spin_lock_init(&priv->slock);
 
 	/* init state machine with off#1 state */

@@ -11,10 +11,10 @@
 
 #include <linux/types.h>
 #include <linux/crypto.h>
-#include "key.h"
+#include "ieee80211_key.h"
 
-u8 *ieee80211_tkip_add_iv(u8 *pos, struct ieee80211_key *key,
-			  u8 iv0, u8 iv1, u8 iv2);
+u8 * ieee80211_tkip_add_iv(u8 *pos, struct ieee80211_key *key,
+			   u8 iv0, u8 iv1, u8 iv2);
 void ieee80211_tkip_gen_phase1key(struct ieee80211_key *key, u8 *ta,
 				  u16 *phase1key);
 void ieee80211_tkip_gen_rc4key(struct ieee80211_key *key, u8 *ta,
@@ -31,7 +31,7 @@ enum {
 int ieee80211_tkip_decrypt_data(struct crypto_blkcipher *tfm,
 				struct ieee80211_key *key,
 				u8 *payload, size_t payload_len, u8 *ta,
-				u8 *ra, int only_iv, int queue,
+				int only_iv, int queue,
 				u32 *out_iv32, u16 *out_iv16);
 
 #endif /* TKIP_H */

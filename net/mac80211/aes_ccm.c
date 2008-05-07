@@ -13,7 +13,7 @@
 #include <linux/err.h>
 
 #include <net/mac80211.h>
-#include "key.h"
+#include "ieee80211_key.h"
 #include "aes_ccm.h"
 
 
@@ -134,7 +134,7 @@ int ieee80211_aes_ccm_decrypt(struct crypto_cipher *tfm, u8 *scratch,
 }
 
 
-struct crypto_cipher *ieee80211_aes_key_setup_encrypt(const u8 key[])
+struct crypto_cipher * ieee80211_aes_key_setup_encrypt(const u8 key[])
 {
 	struct crypto_cipher *tfm;
 
