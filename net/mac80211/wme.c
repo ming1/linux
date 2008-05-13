@@ -155,7 +155,8 @@ static int wme_qdiscop_enqueue(struct sk_buff *skb, struct Qdisc* qd)
 	unsigned short fc = le16_to_cpu(hdr->frame_control);
 	struct Qdisc *qdisc;
 	struct sta_info *sta;
-	int err, queue;
+	int err;
+	u16 queue;
 	u8 tid;
 
 	if (pkt_data->flags & IEEE80211_TXPD_REQUEUE) {
@@ -215,20 +216,15 @@ static int wme_qdiscop_enqueue(struct sk_buff *skb, struct Qdisc* qd)
 		rcu_read_unlock();
 	}
 
-	if (unlikely(queue < 0)) {
-			kfree_skb(skb);
-			err = NET_XMIT_DROP;
-	} else {
-		tid = skb->priority & QOS_CONTROL_TAG1D_MASK;
-		pkt_data->queue = (unsigned int) queue;
-		qdisc = q->queues[queue];
-		err = qdisc->enqueue(skb, qdisc);
-		if (err == NET_XMIT_SUCCESS) {
-			qd->q.qlen++;
-			qd->bstats.bytes += skb->len;
-			qd->bstats.packets++;
-			return NET_XMIT_SUCCESS;
-		}
+	tid = skb->priority & QOS_CONTROL_TAG1D_MASK;
+	pkt_data->queue = (unsigned int) queue;
+	qdisc = q->queues[queue];
+	err = qdisc->enqueue(skb, qdisc);
+	if (err == NET_XMIT_SUCCESS) {
+		qd->q.qlen++;
+		qd->bstats.bytes += skb->len;
+		qd->bstats.packets++;
+		return NET_XMIT_SUCCESS;
 	}
 	qd->qstats.drops++;
 	return err;
