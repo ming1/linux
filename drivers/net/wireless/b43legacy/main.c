@@ -2383,7 +2383,8 @@ out:
 	return NETDEV_TX_OK;
 }
 
-static int b43legacy_op_conf_tx(struct ieee80211_hw *hw, u16 queue,
+static int b43legacy_op_conf_tx(struct ieee80211_hw *hw,
+				int queue,
 				const struct ieee80211_tx_queue_params *params)
 {
 	return 0;
