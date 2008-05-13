@@ -36,22 +36,10 @@
 #include <linux/sched.h>
 
 
-static struct b43_lo_calib * b43_find_lo_calib(struct b43_txpower_lo_control *lo,
-					       const struct b43_bbatt *bbatt,
-					       const struct b43_rfatt *rfatt)
-{
-	struct b43_lo_calib *c;
+/* Define to 1 to always calibrate all possible LO control pairs.
+ * This is a workaround until we fix the partial LO calibration optimization. */
+#define B43_CALIB_ALL_LOCTLS	1
 
-	list_for_each_entry(c, &lo->calib_list, list) {
-		if (!b43_compare_bbatt(&c->bbatt, bbatt))
-			continue;
-		if (!b43_compare_rfatt(&c->rfatt, rfatt))
-			continue;
-		return c;
-	}
-
-	return NULL;
-}
 
 /* Write the LocalOscillator Control (adjust) value-pair. */
 static void b43_lo_write(struct b43_wldev *dev, struct b43_loctl *control)
@@ -74,6 +62,183 @@ static void b43_lo_write(struct b43_wldev *dev, struct b43_loctl *control)
 
 	reg = (phy->type == B43_PHYTYPE_B) ? 0x002F : B43_PHY_LO_CTL;
 	b43_phy_write(dev, reg, value);
+}
+
+static int assert_rfatt_and_bbatt(const struct b43_rfatt *rfatt,
+				  const struct b43_bbatt *bbatt,
+				  struct b43_wldev *dev)
+{
+	int err = 0;
+
+	/* Check the attenuation values against the LO control array sizes. */
+	if (unlikely(rfatt->att >= B43_NR_RF)) {
+		b43err(dev->wl, "rfatt(%u) >= size of LO array\n", rfatt->att);
+		err = -EINVAL;
+	}
+	if (unlikely(bbatt->att >= B43_NR_BB)) {
+		b43err(dev->wl, "bbatt(%u) >= size of LO array\n", bbatt->att);
+		err = -EINVAL;
+	}
+
+	return err;
+}
+
+#if !B43_CALIB_ALL_LOCTLS
+static
+struct b43_loctl *b43_get_lo_g_ctl_nopadmix(struct b43_wldev *dev,
+					    const struct b43_rfatt *rfatt,
+					    const struct b43_bbatt *bbatt)
+{
+	struct b43_phy *phy = &dev->phy;
+	struct b43_txpower_lo_control *lo = phy->lo_control;
+
+	if (assert_rfatt_and_bbatt(rfatt, bbatt, dev))
+		return &(lo->no_padmix[0][0]);	/* Just prevent a crash */
+	return &(lo->no_padmix[bbatt->att][rfatt->att]);
+}
+#endif /* !B43_CALIB_ALL_LOCTLS */
+
+struct b43_loctl *b43_get_lo_g_ctl(struct b43_wldev *dev,
+				   const struct b43_rfatt *rfatt,
+				   const struct b43_bbatt *bbatt)
+{
+	struct b43_phy *phy = &dev->phy;
+	struct b43_txpower_lo_control *lo = phy->lo_control;
+
+	if (assert_rfatt_and_bbatt(rfatt, bbatt, dev))
+		return &(lo->no_padmix[0][0]);	/* Just prevent a crash */
+	if (rfatt->with_padmix)
+		return &(lo->with_padmix[bbatt->att][rfatt->att]);
+	return &(lo->no_padmix[bbatt->att][rfatt->att]);
+}
+
+/* Call a function for every possible LO control value-pair. */
+static void b43_call_for_each_loctl(struct b43_wldev *dev,
+				    void (*func) (struct b43_wldev *,
+						  struct b43_loctl *))
+{
+	struct b43_phy *phy = &dev->phy;
+	struct b43_txpower_lo_control *ctl = phy->lo_control;
+	int i, j;
+
+	for (i = 0; i < B43_NR_BB; i++) {
+		for (j = 0; j < B43_NR_RF; j++)
+			func(dev, &(ctl->with_padmix[i][j]));
+	}
+	for (i = 0; i < B43_NR_BB; i++) {
+		for (j = 0; j < B43_NR_RF; j++)
+			func(dev, &(ctl->no_padmix[i][j]));
+	}
+}
+
+static u16 lo_b_r15_loop(struct b43_wldev *dev)
+{
+	int i;
+	u16 ret = 0;
+
+	for (i = 0; i < 10; i++) {
+		b43_phy_write(dev, 0x0015, 0xAFA0);
+		udelay(1);
+		b43_phy_write(dev, 0x0015, 0xEFA0);
+		udelay(10);
+		b43_phy_write(dev, 0x0015, 0xFFA0);
+		udelay(40);
+		ret += b43_phy_read(dev, 0x002C);
+	}
+
+	return ret;
+}
+
+void b43_lo_b_measure(struct b43_wldev *dev)
+{
+	struct b43_phy *phy = &dev->phy;
+	u16 regstack[12] = { 0 };
+	u16 mls;
+	u16 fval;
+	int i, j;
+
+	regstack[0] = b43_phy_read(dev, 0x0015);
+	regstack[1] = b43_radio_read16(dev, 0x0052) & 0xFFF0;
+
+	if (phy->radio_ver == 0x2053) {
+		regstack[2] = b43_phy_read(dev, 0x000A);
+		regstack[3] = b43_phy_read(dev, 0x002A);
+		regstack[4] = b43_phy_read(dev, 0x0035);
+		regstack[5] = b43_phy_read(dev, 0x0003);
+		regstack[6] = b43_phy_read(dev, 0x0001);
+		regstack[7] = b43_phy_read(dev, 0x0030);
+
+		regstack[8] = b43_radio_read16(dev, 0x0043);
+		regstack[9] = b43_radio_read16(dev, 0x007A);
+		regstack[10] = b43_read16(dev, 0x03EC);
+		regstack[11] = b43_radio_read16(dev, 0x0052) & 0x00F0;
+
+		b43_phy_write(dev, 0x0030, 0x00FF);
+		b43_write16(dev, 0x03EC, 0x3F3F);
+		b43_phy_write(dev, 0x0035, regstack[4] & 0xFF7F);
+		b43_radio_write16(dev, 0x007A, regstack[9] & 0xFFF0);
+	}
+	b43_phy_write(dev, 0x0015, 0xB000);
+	b43_phy_write(dev, 0x002B, 0x0004);
+
+	if (phy->radio_ver == 0x2053) {
+		b43_phy_write(dev, 0x002B, 0x0203);
+		b43_phy_write(dev, 0x002A, 0x08A3);
+	}
+
+	phy->minlowsig[0] = 0xFFFF;
+
+	for (i = 0; i < 4; i++) {
+		b43_radio_write16(dev, 0x0052, regstack[1] | i);
+		lo_b_r15_loop(dev);
+	}
+	for (i = 0; i < 10; i++) {
+		b43_radio_write16(dev, 0x0052, regstack[1] | i);
+		mls = lo_b_r15_loop(dev) / 10;
+		if (mls < phy->minlowsig[0]) {
+			phy->minlowsig[0] = mls;
+			phy->minlowsigpos[0] = i;
+		}
+	}
+	b43_radio_write16(dev, 0x0052, regstack[1] | phy->minlowsigpos[0]);
+
+	phy->minlowsig[1] = 0xFFFF;
+
+	for (i = -4; i < 5; i += 2) {
+		for (j = -4; j < 5; j += 2) {
+			if (j < 0)
+				fval = (0x0100 * i) + j + 0x0100;
+			else
+				fval = (0x0100 * i) + j;
+			b43_phy_write(dev, 0x002F, fval);
+			mls = lo_b_r15_loop(dev) / 10;
+			if (mls < phy->minlowsig[1]) {
+				phy->minlowsig[1] = mls;
+				phy->minlowsigpos[1] = fval;
+			}
+		}
+	}
+	phy->minlowsigpos[1] += 0x0101;
+
+	b43_phy_write(dev, 0x002F, phy->minlowsigpos[1]);
+	if (phy->radio_ver == 0x2053) {
+		b43_phy_write(dev, 0x000A, regstack[2]);
+		b43_phy_write(dev, 0x002A, regstack[3]);
+		b43_phy_write(dev, 0x0035, regstack[4]);
+		b43_phy_write(dev, 0x0003, regstack[5]);
+		b43_phy_write(dev, 0x0001, regstack[6]);
+		b43_phy_write(dev, 0x0030, regstack[7]);
+
+		b43_radio_write16(dev, 0x0043, regstack[8]);
+		b43_radio_write16(dev, 0x007A, regstack[9]);
+
+		b43_radio_write16(dev, 0x0052,
+				  (b43_radio_read16(dev, 0x0052) & 0x000F)
+				  | regstack[11]);
+
+		b43_write16(dev, 0x03EC, regstack[10]);
+	}
+	b43_phy_write(dev, 0x0015, regstack[0]);
 }
 
 static u16 lo_measure_feedthrough(struct b43_wldev *dev,
@@ -273,26 +438,48 @@ static void lo_measure_txctl_values(struct b43_wldev *dev)
 		b43_radio_write16(dev, 0x52, b43_radio_read16(dev, 0x52)
 				  & 0xFFF0);	/* TX bias == 0 */
 	}
-	lo->txctl_measured_time = jiffies;
 }
 
 static void lo_read_power_vector(struct b43_wldev *dev)
 {
 	struct b43_phy *phy = &dev->phy;
 	struct b43_txpower_lo_control *lo = phy->lo_control;
-	int i;
+	u16 i;
 	u64 tmp;
 	u64 power_vector = 0;
+	int rf_offset, bb_offset;
+	struct b43_loctl *loctl;
 
 	for (i = 0; i < 8; i += 2) {
 		tmp = b43_shm_read16(dev, B43_SHM_SHARED, 0x310 + i);
+		/* Clear the top byte. We get holes in the bitmap... */
+		tmp &= 0xFF;
 		power_vector |= (tmp << (i * 8));
 		/* Clear the vector on the device. */
 		b43_shm_write16(dev, B43_SHM_SHARED, 0x310 + i, 0);
 	}
+
 	if (power_vector)
 		lo->power_vector = power_vector;
-	lo->pwr_vec_read_time = jiffies;
+	power_vector = lo->power_vector;
+
+	for (i = 0; i < 64; i++) {
+		if (power_vector & ((u64) 1ULL << i)) {
+			/* Now figure out which b43_loctl corresponds
+			 * to this bit.
+			 */
+			rf_offset = i / lo->rfatt_list.len;
+			bb_offset = i % lo->rfatt_list.len;	//FIXME?
+			loctl =
+			    b43_get_lo_g_ctl(dev,
+					     &lo->rfatt_list.list[rf_offset],
+					     &lo->bbatt_list.list[bb_offset]);
+			/* And mark it as "used", as the device told us
+			 * through the bitmap it is using it.
+			 */
+			loctl->used = 1;
+		}
+	}
 }
 
 /* 802.11/LO/GPHY/MeasuringGains */
@@ -422,6 +609,8 @@ static void lo_measure_setup(struct b43_wldev *dev,
 		b43_phy_write(dev, B43_PHY_CCK(0x16), 0x410);
 		b43_phy_write(dev, B43_PHY_CCK(0x17), 0x820);
 	}
+	if (!lo->rebuild && b43_has_hardware_pctl(phy))
+		lo_read_power_vector(dev);
 	if (phy->rev >= 2) {
 		sav->phy_analogover = b43_phy_read(dev, B43_PHY_ANALOGOVER);
 		sav->phy_analogoverval =
@@ -502,12 +691,8 @@ static void lo_measure_setup(struct b43_wldev *dev,
 	b43_radio_read16(dev, 0x51);	/* dummy read */
 	if (phy->type == B43_PHYTYPE_G)
 		b43_phy_write(dev, B43_PHY_CCK(0x2F), 0);
-
-	/* Re-measure the txctl values, if needed. */
-	if (time_before(lo->txctl_measured_time,
-			jiffies - B43_LO_TXCTL_EXPIRE))
+	if (lo->rebuild)
 		lo_measure_txctl_values(dev);
-
 	if (phy->type == B43_PHYTYPE_G && phy->rev >= 3) {
 		b43_phy_write(dev, B43_PHY_LO_MASK, 0xC078);
 	} else {
@@ -522,6 +707,7 @@ static void lo_measure_restore(struct b43_wldev *dev,
 			       struct lo_g_saved_values *sav)
 {
 	struct b43_phy *phy = &dev->phy;
+	struct b43_txpower_lo_control *lo = phy->lo_control;
 	u16 tmp;
 
 	if (phy->rev >= 2) {
@@ -535,6 +721,14 @@ static void lo_measure_restore(struct b43_wldev *dev,
 	} else {
 		tmp = (phy->pga_gain | 0xEFA0);
 		b43_phy_write(dev, B43_PHY_PGACTL, tmp);
+	}
+	if (b43_has_hardware_pctl(phy)) {
+		b43_gphy_dc_lt_init(dev);
+	} else {
+		if (lo->rebuild)
+			b43_lo_g_adjust_to(dev, 3, 2, 0);
+		else
+			b43_lo_g_adjust(dev);
 	}
 	if (phy->type == B43_PHYTYPE_G) {
 		if (phy->rev >= 3)
@@ -599,6 +793,7 @@ static int lo_probe_possible_loctls(struct b43_wldev *dev,
 				    struct b43_lo_g_statemachine *d)
 {
 	struct b43_phy *phy = &dev->phy;
+	struct b43_txpower_lo_control *lo = phy->lo_control;
 	struct b43_loctl test_loctl;
 	struct b43_loctl orig_loctl;
 	struct b43_loctl prev_loctl = {
@@ -657,7 +852,7 @@ static int lo_probe_possible_loctls(struct b43_wldev *dev,
 				found_lower = 1;
 				d->lowest_feedth = feedth;
 				if ((d->nr_measured < 2) &&
-				    !has_loopback_gain(phy))
+				    (!has_loopback_gain(phy) || lo->rebuild))
 					break;
 			}
 		}
@@ -679,6 +874,7 @@ static void lo_probe_loctls_statemachine(struct b43_wldev *dev,
 					 int *max_rx_gain)
 {
 	struct b43_phy *phy = &dev->phy;
+	struct b43_txpower_lo_control *lo = phy->lo_control;
 	struct b43_lo_g_statemachine d;
 	u16 feedth;
 	int found_lower;
@@ -687,18 +883,18 @@ static void lo_probe_loctls_statemachine(struct b43_wldev *dev,
 
 	d.nr_measured = 0;
 	d.state_val_multiplier = 1;
-	if (has_loopback_gain(phy))
+	if (has_loopback_gain(phy) && !lo->rebuild)
 		d.state_val_multiplier = 3;
 
 	memcpy(&d.min_loctl, loctl, sizeof(struct b43_loctl));
-	if (has_loopback_gain(phy))
+	if (has_loopback_gain(phy) && lo->rebuild)
 		max_repeat = 4;
 	do {
 		b43_lo_write(dev, &d.min_loctl);
 		feedth = lo_measure_feedthrough(dev, phy->lna_gain,
 						phy->pga_gain,
 						phy->trsw_rx_gain);
-		if (feedth < 0x258) {
+		if (!lo->rebuild && feedth < 0x258) {
 			if (feedth >= 0x12C)
 				*max_rx_gain += 6;
 			else
@@ -748,188 +944,278 @@ static void lo_probe_loctls_statemachine(struct b43_wldev *dev,
 	} while (++repeat_cnt < max_repeat);
 }
 
-static
-struct b43_lo_calib * b43_calibrate_lo_setting(struct b43_wldev *dev,
-					       const struct b43_bbatt *bbatt,
-					       const struct b43_rfatt *rfatt)
+#if B43_CALIB_ALL_LOCTLS
+static const struct b43_rfatt b43_full_rfatt_list_items[] = {
+	{ .att = 0, .with_padmix = 0, },
+	{ .att = 1, .with_padmix = 0, },
+	{ .att = 2, .with_padmix = 0, },
+	{ .att = 3, .with_padmix = 0, },
+	{ .att = 4, .with_padmix = 0, },
+	{ .att = 5, .with_padmix = 0, },
+	{ .att = 6, .with_padmix = 0, },
+	{ .att = 7, .with_padmix = 0, },
+	{ .att = 8, .with_padmix = 0, },
+	{ .att = 9, .with_padmix = 0, },
+	{ .att = 10, .with_padmix = 0, },
+	{ .att = 11, .with_padmix = 0, },
+	{ .att = 12, .with_padmix = 0, },
+	{ .att = 13, .with_padmix = 0, },
+	{ .att = 14, .with_padmix = 0, },
+	{ .att = 15, .with_padmix = 0, },
+	{ .att = 0, .with_padmix = 1, },
+	{ .att = 1, .with_padmix = 1, },
+	{ .att = 2, .with_padmix = 1, },
+	{ .att = 3, .with_padmix = 1, },
+	{ .att = 4, .with_padmix = 1, },
+	{ .att = 5, .with_padmix = 1, },
+	{ .att = 6, .with_padmix = 1, },
+	{ .att = 7, .with_padmix = 1, },
+	{ .att = 8, .with_padmix = 1, },
+	{ .att = 9, .with_padmix = 1, },
+	{ .att = 10, .with_padmix = 1, },
+	{ .att = 11, .with_padmix = 1, },
+	{ .att = 12, .with_padmix = 1, },
+	{ .att = 13, .with_padmix = 1, },
+	{ .att = 14, .with_padmix = 1, },
+	{ .att = 15, .with_padmix = 1, },
+};
+static const struct b43_rfatt_list b43_full_rfatt_list = {
+	.list		= b43_full_rfatt_list_items,
+	.len		= ARRAY_SIZE(b43_full_rfatt_list_items),
+};
+
+static const struct b43_bbatt b43_full_bbatt_list_items[] = {
+	{ .att = 0, },
+	{ .att = 1, },
+	{ .att = 2, },
+	{ .att = 3, },
+	{ .att = 4, },
+	{ .att = 5, },
+	{ .att = 6, },
+	{ .att = 7, },
+	{ .att = 8, },
+	{ .att = 9, },
+	{ .att = 10, },
+	{ .att = 11, },
+};
+static const struct b43_bbatt_list b43_full_bbatt_list = {
+	.list		= b43_full_bbatt_list_items,
+	.len		= ARRAY_SIZE(b43_full_bbatt_list_items),
+};
+#endif /* B43_CALIB_ALL_LOCTLS */
+
+static void lo_measure(struct b43_wldev *dev)
 {
 	struct b43_phy *phy = &dev->phy;
+	struct b43_txpower_lo_control *lo = phy->lo_control;
 	struct b43_loctl loctl = {
 		.i = 0,
 		.q = 0,
 	};
+	struct b43_loctl *ploctl;
 	int max_rx_gain;
-	struct b43_lo_calib *cal;
-	struct lo_g_saved_values uninitialized_var(saved_regs);
+	int rfidx, bbidx;
+	const struct b43_bbatt_list *bbatt_list;
+	const struct b43_rfatt_list *rfatt_list;
+
 	/* Values from the "TXCTL Register and Value Table" */
 	u16 txctl_reg;
 	u16 txctl_value;
 	u16 pad_mix_gain;
 
-	saved_regs.old_channel = phy->channel;
-	b43_mac_suspend(dev);
-	lo_measure_setup(dev, &saved_regs);
+	bbatt_list = &lo->bbatt_list;
+	rfatt_list = &lo->rfatt_list;
+#if B43_CALIB_ALL_LOCTLS
+	bbatt_list = &b43_full_bbatt_list;
+	rfatt_list = &b43_full_rfatt_list;
+#endif
 
 	txctl_reg = lo_txctl_register_table(dev, &txctl_value, &pad_mix_gain);
 
-	b43_radio_write16(dev, 0x43,
-			  (b43_radio_read16(dev, 0x43) & 0xFFF0)
-			  | rfatt->att);
-	b43_radio_write16(dev, txctl_reg,
-			  (b43_radio_read16(dev, txctl_reg) & ~txctl_value)
-			  | (rfatt->with_padmix) ? txctl_value : 0);
+	for (rfidx = 0; rfidx < rfatt_list->len; rfidx++) {
 
-	max_rx_gain = rfatt->att * 2;
-	max_rx_gain += bbatt->att / 2;
-	if (rfatt->with_padmix)
-		max_rx_gain -= pad_mix_gain;
-	if (has_loopback_gain(phy))
-		max_rx_gain += phy->max_lb_gain;
-	lo_measure_gain_values(dev, max_rx_gain,
-			       has_loopback_gain(phy));
+		b43_radio_write16(dev, 0x43, (b43_radio_read16(dev, 0x43)
+					      & 0xFFF0) |
+				  rfatt_list->list[rfidx].att);
+		b43_radio_write16(dev, txctl_reg,
+				  (b43_radio_read16(dev, txctl_reg)
+				   & ~txctl_value)
+				  | (rfatt_list->list[rfidx].with_padmix ?
+				     txctl_value : 0));
 
-	b43_phy_set_baseband_attenuation(dev, bbatt->att);
-	lo_probe_loctls_statemachine(dev, &loctl, &max_rx_gain);
+		for (bbidx = 0; bbidx < bbatt_list->len; bbidx++) {
+			if (lo->rebuild) {
+#if B43_CALIB_ALL_LOCTLS
+				ploctl = b43_get_lo_g_ctl(dev,
+							  &rfatt_list->list[rfidx],
+							  &bbatt_list->list[bbidx]);
+#else
+				ploctl = b43_get_lo_g_ctl_nopadmix(dev,
+								   &rfatt_list->
+								   list[rfidx],
+								   &bbatt_list->
+								   list[bbidx]);
+#endif
+			} else {
+				ploctl = b43_get_lo_g_ctl(dev,
+							  &rfatt_list->list[rfidx],
+							  &bbatt_list->list[bbidx]);
+				if (!ploctl->used)
+					continue;
+			}
+			memcpy(&loctl, ploctl, sizeof(loctl));
+			loctl.i = 0;
+			loctl.q = 0;
 
-	lo_measure_restore(dev, &saved_regs);
-	b43_mac_enable(dev);
+			max_rx_gain = rfatt_list->list[rfidx].att * 2;
+			max_rx_gain += bbatt_list->list[bbidx].att / 2;
+			if (rfatt_list->list[rfidx].with_padmix)
+				max_rx_gain -= pad_mix_gain;
+			if (has_loopback_gain(phy))
+				max_rx_gain += phy->max_lb_gain;
+			lo_measure_gain_values(dev, max_rx_gain,
+					       has_loopback_gain(phy));
 
-	if (b43_debug(dev, B43_DBG_LO)) {
-		b43dbg(dev->wl, "LO: Calibrated for BB(%u), RF(%u,%u) "
-		       "=> I=%d Q=%d\n",
-		       bbatt->att, rfatt->att, rfatt->with_padmix,
-		       loctl.i, loctl.q);
+			b43_phy_set_baseband_attenuation(dev,
+							 bbatt_list->list[bbidx].att);
+			lo_probe_loctls_statemachine(dev, &loctl, &max_rx_gain);
+			if (phy->type == B43_PHYTYPE_B) {
+				loctl.i++;
+				loctl.q++;
+			}
+			b43_loctl_set_calibrated(&loctl, 1);
+			memcpy(ploctl, &loctl, sizeof(loctl));
+		}
 	}
-
-	cal = kmalloc(sizeof(*cal), GFP_KERNEL);
-	if (!cal) {
-		b43warn(dev->wl, "LO calib: out of memory\n");
-		return NULL;
-	}
-	memcpy(&cal->bbatt, bbatt, sizeof(*bbatt));
-	memcpy(&cal->rfatt, rfatt, sizeof(*rfatt));
-	memcpy(&cal->ctl, &loctl, sizeof(loctl));
-	cal->calib_time = jiffies;
-	INIT_LIST_HEAD(&cal->list);
-
-	return cal;
 }
 
-/* Get a calibrated LO setting for the given attenuation values.
- * Might return a NULL pointer under OOM! */
-static
-struct b43_lo_calib * b43_get_calib_lo_settings(struct b43_wldev *dev,
-						const struct b43_bbatt *bbatt,
-						const struct b43_rfatt *rfatt)
+#if B43_DEBUG
+static void do_validate_loctl(struct b43_wldev *dev, struct b43_loctl *control)
 {
-	struct b43_txpower_lo_control *lo = dev->phy.lo_control;
-	struct b43_lo_calib *c;
+	const int is_initializing = (b43_status(dev) == B43_STAT_UNINIT);
+	int i = control->i;
+	int q = control->q;
 
-	c = b43_find_lo_calib(lo, bbatt, rfatt);
-	if (c)
-		return c;
-	/* Not in the list of calibrated LO settings.
-	 * Calibrate it now. */
-	c = b43_calibrate_lo_setting(dev, bbatt, rfatt);
-	if (!c)
-		return NULL;
-	list_add(&c->list, &lo->calib_list);
+	if (b43_loctl_is_calibrated(control)) {
+		if ((abs(i) > 16) || (abs(q) > 16))
+			goto error;
+	} else {
+		if (control->used)
+			goto error;
+		if (dev->phy.lo_control->rebuild) {
+			control->i = 0;
+			control->q = 0;
+			if ((i != B43_LOCTL_POISON) ||
+			    (q != B43_LOCTL_POISON))
+				goto error;
+		}
+	}
+	if (is_initializing && control->used)
+		goto error;
 
-	return c;
+	return;
+error:
+	b43err(dev->wl, "LO control pair validation failed "
+	       "(I: %d, Q: %d, used %u, calib: %u, initing: %d)\n",
+	       i, q, control->used,
+	       b43_loctl_is_calibrated(control),
+	       is_initializing);
 }
 
-void b43_gphy_dc_lt_init(struct b43_wldev *dev, bool update_all)
+static void validate_all_loctls(struct b43_wldev *dev)
+{
+	b43_call_for_each_loctl(dev, do_validate_loctl);
+}
+
+static void do_reset_calib(struct b43_wldev *dev, struct b43_loctl *control)
+{
+	if (dev->phy.lo_control->rebuild ||
+	    control->used) {
+		b43_loctl_set_calibrated(control, 0);
+		control->i = B43_LOCTL_POISON;
+		control->q = B43_LOCTL_POISON;
+	}
+}
+
+static void reset_all_loctl_calibration_states(struct b43_wldev *dev)
+{
+	b43_call_for_each_loctl(dev, do_reset_calib);
+}
+
+#else /* B43_DEBUG */
+static inline void validate_all_loctls(struct b43_wldev *dev) { }
+static inline void reset_all_loctl_calibration_states(struct b43_wldev *dev) { }
+#endif /* B43_DEBUG */
+
+void b43_lo_g_measure(struct b43_wldev *dev)
 {
 	struct b43_phy *phy = &dev->phy;
-	struct b43_txpower_lo_control *lo = phy->lo_control;
-	int i;
-	int rf_offset, bb_offset;
-	const struct b43_rfatt *rfatt;
-	const struct b43_bbatt *bbatt;
-	u64 power_vector;
-	bool table_changed = 0;
+	struct lo_g_saved_values uninitialized_var(sav);
 
-	BUILD_BUG_ON(B43_DC_LT_SIZE != 32);
-	B43_WARN_ON(lo->rfatt_list.len * lo->bbatt_list.len > 64);
+	B43_WARN_ON((phy->type != B43_PHYTYPE_B) &&
+		    (phy->type != B43_PHYTYPE_G));
 
-	power_vector = lo->power_vector;
-	if (!update_all && !power_vector)
-		return; /* Nothing to do. */
+	sav.old_channel = phy->channel;
+	lo_measure_setup(dev, &sav);
+	reset_all_loctl_calibration_states(dev);
+	lo_measure(dev);
+	lo_measure_restore(dev, &sav);
 
-	/* Suspend the MAC now to avoid continuous suspend/enable
-	 * cycles in the loop. */
-	b43_mac_suspend(dev);
+	validate_all_loctls(dev);
 
-	for (i = 0; i < B43_DC_LT_SIZE * 2; i++) {
-		struct b43_lo_calib *cal;
-		int idx;
-		u16 val;
-
-		if (!update_all && !(power_vector & (((u64)1ULL) << i)))
-			continue;
-		/* Update the table entry for this power_vector bit.
-		 * The table rows are RFatt entries and columns are BBatt. */
-		bb_offset = i / lo->rfatt_list.len;
-		rf_offset = i % lo->rfatt_list.len;
-		bbatt = &(lo->bbatt_list.list[bb_offset]);
-		rfatt = &(lo->rfatt_list.list[rf_offset]);
-
-		cal = b43_calibrate_lo_setting(dev, bbatt, rfatt);
-		if (!cal) {
-			b43warn(dev->wl, "LO: Could not "
-				"calibrate DC table entry\n");
-			continue;
-		}
-		/*FIXME: Is Q really in the low nibble? */
-		val = (u8)(cal->ctl.q);
-		val |= ((u8)(cal->ctl.i)) << 4;
-		kfree(cal);
-
-		/* Get the index into the hardware DC LT. */
-		idx = i / 2;
-		/* Change the table in memory. */
-		if (i % 2) {
-			/* Change the high byte. */
-			lo->dc_lt[idx] = (lo->dc_lt[idx] & 0x00FF)
-					 | ((val & 0x00FF) << 8);
-		} else {
-			/* Change the low byte. */
-			lo->dc_lt[idx] = (lo->dc_lt[idx] & 0xFF00)
-					 | (val & 0x00FF);
-		}
-		table_changed = 1;
-	}
-	if (table_changed) {
-		/* The table changed in memory. Update the hardware table. */
-		for (i = 0; i < B43_DC_LT_SIZE; i++)
-			b43_phy_write(dev, 0x3A0 + i, lo->dc_lt[i]);
-	}
-	b43_mac_enable(dev);
+	phy->lo_control->lo_measured = 1;
+	phy->lo_control->rebuild = 0;
 }
 
-/* Fixup the RF attenuation value for the case where we are
- * using the PAD mixer. */
-static inline void b43_lo_fixup_rfatt(struct b43_rfatt *rf)
+#if B43_DEBUG
+static void validate_loctl_calibration(struct b43_wldev *dev,
+				       struct b43_loctl *loctl,
+				       struct b43_rfatt *rfatt,
+				       struct b43_bbatt *bbatt)
 {
-	if (!rf->with_padmix)
+	if (b43_loctl_is_calibrated(loctl))
 		return;
-	if ((rf->att != 1) && (rf->att != 2) && (rf->att != 3))
-		rf->att = 4;
+	if (!dev->phy.lo_control->lo_measured) {
+		/* On init we set the attenuation values before we
+		 * calibrated the LO. I guess that's OK. */
+		return;
+	}
+	b43err(dev->wl, "Adjusting Local Oscillator to an uncalibrated "
+	       "control pair: rfatt=%u,%spadmix bbatt=%u\n",
+	       rfatt->att,
+	       (rfatt->with_padmix) ? "" : "no-",
+	       bbatt->att);
+}
+#else
+static inline void validate_loctl_calibration(struct b43_wldev *dev,
+					      struct b43_loctl *loctl,
+					      struct b43_rfatt *rfatt,
+					      struct b43_bbatt *bbatt)
+{
+}
+#endif
+
+static inline void fixup_rfatt_for_txcontrol(struct b43_rfatt *rf,
+					     u8 tx_control)
+{
+	if (tx_control & B43_TXCTL_TXMIX) {
+		if (rf->att < 5)
+			rf->att = 4;
+	}
 }
 
 void b43_lo_g_adjust(struct b43_wldev *dev)
 {
 	struct b43_phy *phy = &dev->phy;
-	struct b43_lo_calib *cal;
 	struct b43_rfatt rf;
+	struct b43_loctl *loctl;
 
 	memcpy(&rf, &phy->rfatt, sizeof(rf));
-	b43_lo_fixup_rfatt(&rf);
+	fixup_rfatt_for_txcontrol(&rf, phy->tx_control);
 
-	cal = b43_get_calib_lo_settings(dev, &phy->bbatt, &rf);
-	if (!cal)
-		return;
-	b43_lo_write(dev, &cal->ctl);
+	loctl = b43_get_lo_g_ctl(dev, &rf, &phy->bbatt);
+	validate_loctl_calibration(dev, loctl, &rf, &phy->bbatt);
+	b43_lo_write(dev, loctl);
 }
 
 void b43_lo_g_adjust_to(struct b43_wldev *dev,
@@ -937,102 +1223,39 @@ void b43_lo_g_adjust_to(struct b43_wldev *dev,
 {
 	struct b43_rfatt rf;
 	struct b43_bbatt bb;
-	struct b43_lo_calib *cal;
+	struct b43_loctl *loctl;
 
 	memset(&rf, 0, sizeof(rf));
 	memset(&bb, 0, sizeof(bb));
 	rf.att = rfatt;
 	bb.att = bbatt;
-	b43_lo_fixup_rfatt(&rf);
-	cal = b43_get_calib_lo_settings(dev, &bb, &rf);
-	if (!cal)
-		return;
-	b43_lo_write(dev, &cal->ctl);
+	fixup_rfatt_for_txcontrol(&rf, tx_control);
+	loctl = b43_get_lo_g_ctl(dev, &rf, &bb);
+	validate_loctl_calibration(dev, loctl, &rf, &bb);
+	b43_lo_write(dev, loctl);
 }
 
-/* Periodic LO maintanance work */
-void b43_lo_g_maintanance_work(struct b43_wldev *dev)
+static void do_mark_unused(struct b43_wldev *dev, struct b43_loctl *control)
+{
+	control->used = 0;
+}
+
+void b43_lo_g_ctl_mark_all_unused(struct b43_wldev *dev)
 {
 	struct b43_phy *phy = &dev->phy;
 	struct b43_txpower_lo_control *lo = phy->lo_control;
-	unsigned long now;
-	unsigned long expire;
-	struct b43_lo_calib *cal, *tmp;
-	bool current_item_expired = 0;
-	bool hwpctl;
 
-	if (!lo)
-		return;
-	now = jiffies;
-	hwpctl = b43_has_hardware_pctl(phy);
-
-	if (hwpctl) {
-		/* Read the power vector and update it, if needed. */
-		expire = now - B43_LO_PWRVEC_EXPIRE;
-		if (time_before(lo->pwr_vec_read_time, expire)) {
-			lo_read_power_vector(dev);
-			b43_gphy_dc_lt_init(dev, 0);
-		}
-		//FIXME Recalc the whole DC table from time to time?
-	}
-
-	if (hwpctl)
-		return;
-	/* Search for expired LO settings. Remove them.
-	 * Recalibrate the current setting, if expired. */
-	expire = now - B43_LO_CALIB_EXPIRE;
-	list_for_each_entry_safe(cal, tmp, &lo->calib_list, list) {
-		if (!time_before(cal->calib_time, expire))
-			continue;
-		/* This item expired. */
-		if (b43_compare_bbatt(&cal->bbatt, &phy->bbatt) &&
-		    b43_compare_rfatt(&cal->rfatt, &phy->rfatt)) {
-			B43_WARN_ON(current_item_expired);
-			current_item_expired = 1;
-		}
-		if (b43_debug(dev, B43_DBG_LO)) {
-			b43dbg(dev->wl, "LO: Item BB(%u), RF(%u,%u), "
-			       "I=%d, Q=%d expired\n",
-			       cal->bbatt.att, cal->rfatt.att,
-			       cal->rfatt.with_padmix,
-			       cal->ctl.i, cal->ctl.q);
-		}
-		list_del(&cal->list);
-		kfree(cal);
-	}
-	if (current_item_expired || unlikely(list_empty(&lo->calib_list))) {
-		/* Recalibrate currently used LO setting. */
-		if (b43_debug(dev, B43_DBG_LO))
-			b43dbg(dev->wl, "LO: Recalibrating current LO setting\n");
-		cal = b43_calibrate_lo_setting(dev, &phy->bbatt, &phy->rfatt);
-		if (cal) {
-			list_add(&cal->list, &lo->calib_list);
-			b43_lo_write(dev, &cal->ctl);
-		} else
-			b43warn(dev->wl, "Failed to recalibrate current LO setting\n");
-	}
+	b43_call_for_each_loctl(dev, do_mark_unused);
+	lo->rebuild = 1;
 }
 
-void b43_lo_g_cleanup(struct b43_wldev *dev)
-{
-	struct b43_txpower_lo_control *lo = dev->phy.lo_control;
-	struct b43_lo_calib *cal, *tmp;
-
-	if (!lo)
-		return;
-	list_for_each_entry_safe(cal, tmp, &lo->calib_list, list) {
-		list_del(&cal->list);
-		kfree(cal);
-	}
-}
-
-/* LO Initialization */
-void b43_lo_g_init(struct b43_wldev *dev)
+void b43_lo_g_ctl_mark_cur_used(struct b43_wldev *dev)
 {
 	struct b43_phy *phy = &dev->phy;
+	struct b43_rfatt rf;
 
-	if (b43_has_hardware_pctl(phy)) {
-		lo_read_power_vector(dev);
-		b43_gphy_dc_lt_init(dev, 1);
-	}
+	memcpy(&rf, &phy->rfatt, sizeof(rf));
+	fixup_rfatt_for_txcontrol(&rf, phy->tx_control);
+
+	b43_get_lo_g_ctl(dev, &rf, &phy->bbatt)->used = 1;
 }
