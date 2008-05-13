@@ -694,71 +694,62 @@ static int iwl4965_txq_ctx_reset(struct iwl_priv *priv)
  error_kw:
 	return rc;
 }
-static int iwl4965_apm_init(struct iwl_priv *priv)
-{
-	unsigned long flags;
-	int ret = 0;
-
-	spin_lock_irqsave(&priv->lock, flags);
-	iwl_set_bit(priv, CSR_GIO_CHICKEN_BITS,
-			  CSR_GIO_CHICKEN_BITS_REG_BIT_DIS_L0S_EXIT_TIMER);
-
-	/* set "initialization complete" bit to move adapter
-	 * D0U* --> D0A* state */
-	iwl_set_bit(priv, CSR_GP_CNTRL, CSR_GP_CNTRL_REG_FLAG_INIT_DONE);
-
-	/* wait for clock stabilization */
-	ret = iwl_poll_bit(priv, CSR_GP_CNTRL,
-			   CSR_GP_CNTRL_REG_FLAG_MAC_CLOCK_READY,
-			   CSR_GP_CNTRL_REG_FLAG_MAC_CLOCK_READY, 25000);
-	if (ret < 0) {
-		IWL_DEBUG_INFO("Failed to init the card\n");
-		goto out;
-	}
-
-	ret = iwl_grab_nic_access(priv);
-	if (ret)
-		goto out;
-
-	/* enable DMA */
-	iwl_write_prph(priv, APMG_CLK_CTRL_REG,
-			APMG_CLK_VAL_DMA_CLK_RQT | APMG_CLK_VAL_BSM_CLK_RQT);
-
-	udelay(20);
-
-	iwl_set_bits_prph(priv, APMG_PCIDEV_STT_REG,
-			  APMG_PCIDEV_STT_VAL_L1_ACT_DIS);
-
-	iwl_release_nic_access(priv);
-out:
-	spin_unlock_irqrestore(&priv->lock, flags);
-	return ret;
-}
 
 int iwl4965_hw_nic_init(struct iwl_priv *priv)
 {
+	int rc;
 	unsigned long flags;
 	struct iwl4965_rx_queue *rxq = &priv->rxq;
 	u8 rev_id;
 	u8 val_link;
+	u16 sku_cap;
 	u32 val;
-	int ret;
 
 	/* nic_init */
-	priv->cfg->ops->lib->apm_ops.init(priv);
-
 	spin_lock_irqsave(&priv->lock, flags);
+
+	iwl_set_bit(priv, CSR_GIO_CHICKEN_BITS,
+		    CSR_GIO_CHICKEN_BITS_REG_BIT_DIS_L0S_EXIT_TIMER);
+
+	iwl_set_bit(priv, CSR_GP_CNTRL, CSR_GP_CNTRL_REG_FLAG_INIT_DONE);
+	rc = iwl_poll_bit(priv, CSR_GP_CNTRL,
+			  CSR_GP_CNTRL_REG_FLAG_MAC_CLOCK_READY,
+			  CSR_GP_CNTRL_REG_FLAG_MAC_CLOCK_READY, 25000);
+	if (rc < 0) {
+		spin_unlock_irqrestore(&priv->lock, flags);
+		IWL_DEBUG_INFO("Failed to init the card\n");
+		return rc;
+	}
+
+	rc = iwl_grab_nic_access(priv);
+	if (rc) {
+		spin_unlock_irqrestore(&priv->lock, flags);
+		return rc;
+	}
+
+	iwl_read_prph(priv, APMG_CLK_CTRL_REG);
+
+	iwl_write_prph(priv, APMG_CLK_CTRL_REG,
+			APMG_CLK_VAL_DMA_CLK_RQT | APMG_CLK_VAL_BSM_CLK_RQT);
+	iwl_read_prph(priv, APMG_CLK_CTRL_REG);
+
+	udelay(20);
+
+	iwl_set_bits_prph(priv, APMG_PCIDEV_STT_REG,
+				APMG_PCIDEV_STT_VAL_L1_ACT_DIS);
+
+	iwl_release_nic_access(priv);
 	iwl_write32(priv, CSR_INT_COALESCING, 512 / 32);
 	spin_unlock_irqrestore(&priv->lock, flags);
 
 	/* Determine HW type */
-	ret = pci_read_config_byte(priv->pci_dev, PCI_REVISION_ID, &rev_id);
-	if (ret)
-		return ret;
+	rc = pci_read_config_byte(priv->pci_dev, PCI_REVISION_ID, &rev_id);
+	if (rc)
+		return rc;
 
 	IWL_DEBUG_INFO("HW Revision ID = 0x%X\n", rev_id);
 
-	ret = priv->cfg->ops->lib->apm_ops.set_pwr_src(priv, IWL_PWR_SRC_VMAIN);
+	rc = priv->cfg->ops->lib->apm_ops.set_pwr_src(priv, IWL_PWR_SRC_VMAIN);
 
 	spin_lock_irqsave(&priv->lock, flags);
 
@@ -791,11 +782,11 @@ int iwl4965_hw_nic_init(struct iwl_priv *priv)
 		    CSR49_HW_IF_CONFIG_REG_BIT_RADIO_SI |
 		    CSR49_HW_IF_CONFIG_REG_BIT_MAC_SI);
 
-	ret = iwl_grab_nic_access(priv);
-	if (ret < 0) {
+	rc = iwl_grab_nic_access(priv);
+	if (rc < 0) {
 		spin_unlock_irqrestore(&priv->lock, flags);
 		IWL_DEBUG_INFO("Failed to init the card\n");
-		return ret;
+		return rc;
 	}
 
 	iwl_read_prph(priv, APMG_PS_CTRL_REG);
@@ -812,8 +803,8 @@ int iwl4965_hw_nic_init(struct iwl_priv *priv)
 
 	/* Allocate the RX queue, or reset if it is already allocated */
 	if (!rxq->bd) {
-		ret = iwl4965_rx_queue_alloc(priv);
-		if (ret) {
+		rc = iwl4965_rx_queue_alloc(priv);
+		if (rc) {
 			IWL_ERROR("Unable to initialize Rx queue\n");
 			return -ENOMEM;
 		}
@@ -836,9 +827,16 @@ int iwl4965_hw_nic_init(struct iwl_priv *priv)
 	spin_unlock_irqrestore(&priv->lock, flags);
 
 	/* Allocate and init all Tx and Command queues */
-	ret = iwl4965_txq_ctx_reset(priv);
-	if (ret)
-		return ret;
+	rc = iwl4965_txq_ctx_reset(priv);
+	if (rc)
+		return rc;
+
+	sku_cap = iwl_eeprom_query16(priv, EEPROM_SKU_CAP);
+	if (sku_cap & EEPROM_SKU_CAP_SW_RF_KILL_ENABLE)
+		IWL_DEBUG_RF_KILL("SW RF KILL supported in EEPROM.\n");
+
+	if (sku_cap & EEPROM_SKU_CAP_HW_RF_KILL_ENABLE)
+		IWL_DEBUG_RF_KILL("HW RF KILL supported in EEPROM.\n");
 
 	set_bit(STATUS_INIT, &priv->status);
 
@@ -4346,7 +4344,6 @@ static struct iwl_lib_ops iwl4965_lib = {
 	.alive_notify = iwl4965_alive_notify,
 	.load_ucode = iwl4965_load_bsm,
 	.apm_ops = {
-		.init = iwl4965_apm_init,
 		.set_pwr_src = iwl4965_set_pwr_src,
 	},
 	.eeprom_ops = {
