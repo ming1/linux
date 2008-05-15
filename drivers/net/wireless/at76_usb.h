@@ -441,7 +441,6 @@ struct at76_priv {
 	int beacon_period;	/* period of mgmt beacons, Kus */
 
 	struct ieee80211_hw *hw;
-	struct ieee80211_tx_status tx_status;
 	int mac80211_registered;
 };
 
