@@ -1692,13 +1692,14 @@ exit:
 static void at76_mac80211_tx_callback(struct urb *urb)
 {
 	struct at76_priv *priv = urb->context;
+	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(priv->tx_skb);
 
 	at76_dbg(DBG_MAC80211, "%s()", __func__);
 
 	switch (urb->status) {
 	case 0:
 		/* success */
-		priv->tx_status.flags |= IEEE80211_TX_STATUS_ACK;
+		info->flags |= IEEE80211_TX_STAT_ACK;
 		break;
 	case -ENOENT:
 	case -ECONNRESET:
@@ -1711,23 +1712,20 @@ static void at76_mac80211_tx_callback(struct urb *urb)
 		break;
 	}
 
-	priv->tx_status.excessive_retries = 0;
-	priv->tx_status.retry_count = 0;
-	priv->tx_status.ack_signal = 0;
+	memset(&info->status, 0, sizeof(info->status));
 
-	ieee80211_tx_status_irqsafe(priv->hw, priv->tx_skb, &priv->tx_status);
+	ieee80211_tx_status_irqsafe(priv->hw, priv->tx_skb);
 
-	memset(&priv->tx_status, 0, sizeof(priv->tx_status));
 	priv->tx_skb = NULL;
 
 	ieee80211_wake_queues(priv->hw);
 }
 
-static int at76_mac80211_tx(struct ieee80211_hw *hw, struct sk_buff *skb,
-			    struct ieee80211_tx_control *control)
+static int at76_mac80211_tx(struct ieee80211_hw *hw, struct sk_buff *skb)
 {
 	struct at76_priv *priv = hw->priv;
 	struct at76_tx_buffer *tx_buffer = priv->bulk_out_buffer;
+	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	int padding, submit_len, ret;
 
 	at76_dbg(DBG_MAC80211, "%s()", __func__);
@@ -1745,7 +1743,6 @@ static int at76_mac80211_tx(struct ieee80211_hw *hw, struct sk_buff *skb,
 	WARN_ON(priv->tx_skb != NULL);
 
 	priv->tx_skb = skb;
-	memcpy(&priv->tx_status.control, control, sizeof(*control));
 	padding = at76_calc_padding(skb->len);
 	submit_len = AT76_TX_HDRLEN + skb->len + padding;
 
@@ -1753,7 +1750,7 @@ static int at76_mac80211_tx(struct ieee80211_hw *hw, struct sk_buff *skb,
 	memset(tx_buffer, 0, sizeof(*tx_buffer));
 	tx_buffer->padding = padding;
 	tx_buffer->wlength = cpu_to_le16(skb->len);
-	tx_buffer->tx_rate = ieee80211_get_tx_rate(hw, control)->hw_value;
+	tx_buffer->tx_rate = ieee80211_get_tx_rate(hw, info)->hw_value;
 	memset(tx_buffer->reserved, 0, sizeof(tx_buffer->reserved));
 	memcpy(tx_buffer->packet, skb->data, skb->len);
 
