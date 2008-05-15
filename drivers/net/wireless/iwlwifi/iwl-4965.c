@@ -345,8 +345,8 @@ int iwl4965_hwrate_to_plcp_idx(u32 rate_n_flags)
 
 	/* 4965 legacy rate format, search for match in table */
 	} else {
-		for (idx = 0; idx < ARRAY_SIZE(iwl4965_rates); idx++)
-			if (iwl4965_rates[idx].plcp == (rate_n_flags & 0xFF))
+		for (idx = 0; idx < ARRAY_SIZE(iwl_rates); idx++)
+			if (iwl_rates[idx].plcp == (rate_n_flags & 0xFF))
 				return idx;
 	}
 
@@ -1951,7 +1951,7 @@ void iwl4965_hw_build_tx_cmd_rate(struct iwl_priv *priv,
 	u16 rate_flags = 0;
 	int rate_idx = min(ctrl->tx_rate->hw_value & 0xffff, IWL_RATE_COUNT - 1);
 
-	rate_plcp = iwl4965_rates[rate_idx].plcp;
+	rate_plcp = iwl_rates[rate_idx].plcp;
 
 	rts_retry_limit = (is_hcca) ?
 	    RTS_HCCA_RETRY_LIMIT : RTS_DFAULT_RETRY_LIMIT;
@@ -2852,7 +2852,7 @@ static void iwl4965_dbg_report_frame(struct iwl_priv *priv,
 		if (unlikely(rate_idx == -1))
 			bitrate = 0;
 		else
-			bitrate = iwl4965_rates[rate_idx].ieee / 2;
+			bitrate = iwl_rates[rate_idx].ieee / 2;
 
 		/* print frame summary.
 		 * MAC addresses show just the last byte (for brevity),
@@ -3477,7 +3477,7 @@ void iwl4965_add_station(struct iwl_priv *priv, const u8 *addr, int is_ap)
 		rate_flags |= RATE_MCS_ANT_B_MSK; /*FIXME:RS*/
 
 		link_cmd.rs_table[i].rate_n_flags =
-			iwl4965_hw_set_rate_n_flags(iwl4965_rates[r].plcp, rate_flags);
+			iwl4965_hw_set_rate_n_flags(iwl_rates[r].plcp, rate_flags);
 		r = iwl4965_get_prev_ieee_rate(r);
 	}
 
