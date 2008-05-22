@@ -27,6 +27,41 @@
 /* current driver version */
 #define DRIVER_VERSION	"0.16"
 
+/* USB vendor IDs */
+#define VID_3COM		0x0506
+#define VID_ACTIONTEC		0x1668
+#define VID_ADDTRON		0x05dd
+#define VID_ASKEY		0x069a
+#define VID_ATMEL		0x03eb
+#define VID_BELKIN		0x0d5c
+#define VID_BELKIN_2		0x050d
+#define VID_BENQ		0x04a5
+#define VID_BLITZ		0x07b8
+#define VID_CNET		0x1371
+#define VID_COMPAQ		0x049f
+#define VID_GLOBAL_SUN		0x0d8e
+#define VID_COREGA		0x07aa
+#define VID_DICK_SMITH		0x1371
+#define VID_DLINK		0x2001
+#define VID_GIGABYTE		0x1044
+#define VID_GIGASET		0x1690
+#define VID_HP			0x03f0
+#define VID_INTEL		0x8086
+#define VID_IO_DATA		0x04bb
+#define VID_LINKSYS		0x077b
+#define VID_LINKSYS_1915	0x1915
+#define VID_LINKSYS_OLD		0x066b
+#define VID_MSI			0x0db0
+#define VID_ZCOM		0x0cde
+#define VID_NETGEAR		0x0864
+#define VID_SAMSUNG		0x055d
+#define VID_SIEMENS		0x0681
+#define VID_SMC			0x083a
+#define VID_SMC_OLD		0x0d5c
+#define VID_PLANEX		0x2019
+#define VID_TEKRAM		0x0b3b
+#define VID_XTERASYS		0x12fd
+
 /* Board types */
 enum board_type {
 	BOARD_503_ISL3861 = 1,
