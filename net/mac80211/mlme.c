@@ -3440,11 +3440,8 @@ static int ieee80211_sta_config_auth(struct net_device *dev,
 		if (!(bss->capability & WLAN_CAPABILITY_ESS))
 			continue;
 
-		if ((ifsta->flags & (IEEE80211_STA_AUTO_SSID_SEL |
-			IEEE80211_STA_AUTO_BSSID_SEL |
-			IEEE80211_STA_AUTO_CHANNEL_SEL)) &&
-		    (!!(bss->capability & WLAN_CAPABILITY_PRIVACY) ^
-		     !!sdata->default_key))
+		if (!!(bss->capability & WLAN_CAPABILITY_PRIVACY) ^
+		    !!sdata->default_key)
 			continue;
 
 		if (!(ifsta->flags & IEEE80211_STA_AUTO_CHANNEL_SEL) &&
