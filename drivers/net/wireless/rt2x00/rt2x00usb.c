@@ -129,7 +129,7 @@ static void rt2x00usb_interrupt_txdone(struct urb *urb)
 {
 	struct queue_entry *entry = (struct queue_entry *)urb->context;
 	struct rt2x00_dev *rt2x00dev = entry->queue->rt2x00dev;
-	struct queue_entry_priv_usb *entry_priv = entry->priv_data;
+	struct queue_entry_priv_usb_tx *priv_tx = entry->priv_data;
 	struct txdone_entry_desc txdesc;
 	__le32 *txd = (__le32 *)entry->skb->data;
 	u32 word;
@@ -159,7 +159,7 @@ static void rt2x00usb_interrupt_txdone(struct urb *urb)
 	else
 		__set_bit(TXDONE_FAILURE, &txdesc.flags);
 	txdesc.retry = 0;
-	txdesc.control = &entry_priv->control;
+	txdesc.control = &priv_tx->control;
 
 	rt2x00lib_txdone(entry, &txdesc);
 
@@ -175,7 +175,7 @@ static void rt2x00usb_interrupt_txdone(struct urb *urb)
 	 * is reenabled when the txdone handler has finished.
 	 */
 	if (!rt2x00queue_full(entry->queue))
-		ieee80211_wake_queue(rt2x00dev->hw, entry_priv->control.queue);
+		ieee80211_wake_queue(rt2x00dev->hw, priv_tx->control.queue);
 }
 
 int rt2x00usb_write_tx_data(struct rt2x00_dev *rt2x00dev,
@@ -184,7 +184,7 @@ int rt2x00usb_write_tx_data(struct rt2x00_dev *rt2x00dev,
 {
 	struct usb_device *usb_dev = rt2x00dev_usb_dev(rt2x00dev);
 	struct queue_entry *entry = rt2x00queue_get_entry(queue, Q_INDEX);
-	struct queue_entry_priv_usb *entry_priv = entry->priv_data;
+	struct queue_entry_priv_usb_tx *priv_tx = entry->priv_data;
 	struct skb_frame_desc *skbdesc;
 	struct txentry_desc txdesc;
 	u32 length;
@@ -224,7 +224,7 @@ int rt2x00usb_write_tx_data(struct rt2x00_dev *rt2x00dev,
 	skbdesc->desc_len = queue->desc_size;
 	skbdesc->entry = entry;
 
-	memcpy(&entry_priv->control, control, sizeof(entry_priv->control));
+	memcpy(&priv_tx->control, control, sizeof(priv_tx->control));
 	rt2x00queue_write_tx_descriptor(entry, &txdesc);
 
 	/*
@@ -238,9 +238,9 @@ int rt2x00usb_write_tx_data(struct rt2x00_dev *rt2x00dev,
 	 * Initialize URB and send the frame to the device.
 	 */
 	__set_bit(ENTRY_OWNER_DEVICE_DATA, &entry->flags);
-	usb_fill_bulk_urb(entry_priv->urb, usb_dev, usb_sndbulkpipe(usb_dev, 1),
+	usb_fill_bulk_urb(priv_tx->urb, usb_dev, usb_sndbulkpipe(usb_dev, 1),
 			  skb->data, length, rt2x00usb_interrupt_txdone, entry);
-	usb_submit_urb(entry_priv->urb, GFP_ATOMIC);
+	usb_submit_urb(priv_tx->urb, GFP_ATOMIC);
 
 	rt2x00queue_index_inc(queue, Q_INDEX);
 
@@ -380,8 +380,10 @@ skip_entry:
  */
 void rt2x00usb_disable_radio(struct rt2x00_dev *rt2x00dev)
 {
-	struct queue_entry_priv_usb *entry_priv;
-	struct queue_entry_priv_usb_bcn *bcn_priv;
+	struct queue_entry_priv_usb_rx *priv_rx;
+	struct queue_entry_priv_usb_tx *priv_tx;
+	struct queue_entry_priv_usb_bcn *priv_bcn;
+	struct data_queue *queue;
 	unsigned int i;
 
 	rt2x00usb_vendor_request_sw(rt2x00dev, USB_RX_CONTROL, 0, 0,
@@ -391,17 +393,31 @@ void rt2x00usb_disable_radio(struct rt2x00_dev *rt2x00dev)
 	 * Cancel all queues.
 	 */
 	for (i = 0; i < rt2x00dev->rx->limit; i++) {
-		entry_priv = rt2x00dev->rx->entries[i].priv_data;
-		usb_kill_urb(entry_priv->urb);
+		priv_rx = rt2x00dev->rx->entries[i].priv_data;
+		usb_kill_urb(priv_rx->urb);
 	}
 
-	/*
-	 * Kill guardian urb.
-	 */
+	tx_queue_for_each(rt2x00dev, queue) {
+		for (i = 0; i < queue->limit; i++) {
+			priv_tx = queue->entries[i].priv_data;
+			usb_kill_urb(priv_tx->urb);
+		}
+	}
+
 	for (i = 0; i < rt2x00dev->bcn->limit; i++) {
-		bcn_priv = rt2x00dev->bcn->entries[i].priv_data;
-		if (bcn_priv->guardian_urb)
-			usb_kill_urb(bcn_priv->guardian_urb);
+		priv_bcn = rt2x00dev->bcn->entries[i].priv_data;
+		usb_kill_urb(priv_bcn->urb);
+
+		if (priv_bcn->guardian_urb)
+			usb_kill_urb(priv_bcn->guardian_urb);
+	}
+
+	if (!test_bit(DRIVER_REQUIRE_ATIM_QUEUE, &rt2x00dev->flags))
+		return;
+
+	for (i = 0; i < rt2x00dev->bcn[1].limit; i++) {
+		priv_tx = rt2x00dev->bcn[1].entries[i].priv_data;
+		usb_kill_urb(priv_tx->urb);
 	}
 }
 EXPORT_SYMBOL_GPL(rt2x00usb_disable_radio);
@@ -413,15 +429,15 @@ void rt2x00usb_init_rxentry(struct rt2x00_dev *rt2x00dev,
 			    struct queue_entry *entry)
 {
 	struct usb_device *usb_dev = rt2x00dev_usb_dev(rt2x00dev);
-	struct queue_entry_priv_usb *entry_priv = entry->priv_data;
+	struct queue_entry_priv_usb_rx *priv_rx = entry->priv_data;
 
-	usb_fill_bulk_urb(entry_priv->urb, usb_dev,
+	usb_fill_bulk_urb(priv_rx->urb, usb_dev,
 			  usb_rcvbulkpipe(usb_dev, 1),
 			  entry->skb->data, entry->skb->len,
 			  rt2x00usb_interrupt_rxdone, entry);
 
 	__set_bit(ENTRY_OWNER_DEVICE_DATA, &entry->flags);
-	usb_submit_urb(entry_priv->urb, GFP_ATOMIC);
+	usb_submit_urb(priv_rx->urb, GFP_ATOMIC);
 }
 EXPORT_SYMBOL_GPL(rt2x00usb_init_rxentry);
 
@@ -435,31 +451,38 @@ EXPORT_SYMBOL_GPL(rt2x00usb_init_txentry);
 static int rt2x00usb_alloc_urb(struct rt2x00_dev *rt2x00dev,
 			       struct data_queue *queue)
 {
-	struct queue_entry_priv_usb *entry_priv;
-	struct queue_entry_priv_usb_bcn *bcn_priv;
+	struct queue_entry_priv_usb_rx *priv_rx;
+	struct queue_entry_priv_usb_tx *priv_tx;
+	struct queue_entry_priv_usb_bcn *priv_bcn;
+	struct urb *urb;
+	unsigned int guardian =
+	    test_bit(DRIVER_REQUIRE_BEACON_GUARD, &rt2x00dev->flags);
 	unsigned int i;
 
-	for (i = 0; i < queue->limit; i++) {
-		entry_priv = queue->entries[i].priv_data;
-		entry_priv->urb = usb_alloc_urb(0, GFP_KERNEL);
-		if (!entry_priv->urb)
-			return -ENOMEM;
-	}
-
 	/*
-	 * If this is not the beacon queue or
-	 * no guardian byte was required for the beacon,
-	 * then we are done.
+	 * Allocate the URB's
 	 */
-	if (rt2x00dev->bcn != queue ||
-	    !test_bit(DRIVER_REQUIRE_BEACON_GUARD, &rt2x00dev->flags))
-		return 0;
-
 	for (i = 0; i < queue->limit; i++) {
-		bcn_priv = queue->entries[i].priv_data;
-		bcn_priv->guardian_urb = usb_alloc_urb(0, GFP_KERNEL);
-		if (!bcn_priv->guardian_urb)
+		urb = usb_alloc_urb(0, GFP_KERNEL);
+		if (!urb)
 			return -ENOMEM;
+
+		if (queue->qid == QID_RX) {
+			priv_rx = queue->entries[i].priv_data;
+			priv_rx->urb = urb;
+		} else if (queue->qid == QID_MGMT && guardian) {
+			priv_bcn = queue->entries[i].priv_data;
+			priv_bcn->urb = urb;
+
+			urb = usb_alloc_urb(0, GFP_KERNEL);
+			if (!urb)
+				return -ENOMEM;
+
+			priv_bcn->guardian_urb = urb;
+		} else {
+			priv_tx = queue->entries[i].priv_data;
+			priv_tx->urb = urb;
+		}
 	}
 
 	return 0;
@@ -468,34 +491,37 @@ static int rt2x00usb_alloc_urb(struct rt2x00_dev *rt2x00dev,
 static void rt2x00usb_free_urb(struct rt2x00_dev *rt2x00dev,
 			       struct data_queue *queue)
 {
-	struct queue_entry_priv_usb *entry_priv;
-	struct queue_entry_priv_usb_bcn *bcn_priv;
+	struct queue_entry_priv_usb_rx *priv_rx;
+	struct queue_entry_priv_usb_tx *priv_tx;
+	struct queue_entry_priv_usb_bcn *priv_bcn;
+	struct urb *urb;
+	unsigned int guardian =
+	    test_bit(DRIVER_REQUIRE_BEACON_GUARD, &rt2x00dev->flags);
 	unsigned int i;
 
 	if (!queue->entries)
 		return;
 
 	for (i = 0; i < queue->limit; i++) {
-		entry_priv = queue->entries[i].priv_data;
-		usb_kill_urb(entry_priv->urb);
-		usb_free_urb(entry_priv->urb);
+		if (queue->qid == QID_RX) {
+			priv_rx = queue->entries[i].priv_data;
+			urb = priv_rx->urb;
+		} else if (queue->qid == QID_MGMT && guardian) {
+			priv_bcn = queue->entries[i].priv_data;
+
+			usb_kill_urb(priv_bcn->guardian_urb);
+			usb_free_urb(priv_bcn->guardian_urb);
+
+			urb = priv_bcn->urb;
+		} else {
+			priv_tx = queue->entries[i].priv_data;
+			urb = priv_tx->urb;
+		}
+
+		usb_kill_urb(urb);
+		usb_free_urb(urb);
 		if (queue->entries[i].skb)
 			kfree_skb(queue->entries[i].skb);
-	}
-
-	/*
-	 * If this is not the beacon queue or
-	 * no guardian byte was required for the beacon,
-	 * then we are done.
-	 */
-	if (rt2x00dev->bcn != queue ||
-	    !test_bit(DRIVER_REQUIRE_BEACON_GUARD, &rt2x00dev->flags))
-		return;
-
-	for (i = 0; i < queue->limit; i++) {
-		bcn_priv = queue->entries[i].priv_data;
-		usb_kill_urb(bcn_priv->guardian_urb);
-		usb_free_urb(bcn_priv->guardian_urb);
 	}
 }
 
