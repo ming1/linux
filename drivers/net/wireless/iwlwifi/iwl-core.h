@@ -146,7 +146,6 @@ struct iwl_cfg {
 	const char *name;
 	const char *fw_name;
 	unsigned int sku;
-	int eeprom_size;
 	const struct iwl_ops *ops;
 	const struct iwl_mod_params *mod_params;
 };
