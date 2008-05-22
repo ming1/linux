@@ -578,10 +578,7 @@ static int at76_get_op_mode(struct usb_device *udev)
 			      USB_CTRL_GET_TIMEOUT);
 	if (ret < 0)
 		return ret;
-	else if (ret < 1)
-		return -EIO;
-	else
-		return op_mode;
+	return op_mode;
 }
 
 /* Load a block of the second ("external") part of the firmware */
@@ -698,15 +695,10 @@ static struct reg_domain const *at76_get_reg_domain(u16 code)
 static inline int at76_get_mib(struct usb_device *udev, u16 mib, void *buf,
 			       int buf_size)
 {
-	int ret;
-
-	ret = usb_control_msg(udev, usb_rcvctrlpipe(udev, 0), 0x33,
-			      USB_TYPE_VENDOR | USB_DIR_IN |
-			      USB_RECIP_INTERFACE, mib << 8, 0, buf, buf_size,
-			      USB_CTRL_GET_TIMEOUT);
-	if (ret >= 0 && ret != buf_size)
-		return -EIO;
-	return ret;
+	return usb_control_msg(udev, usb_rcvctrlpipe(udev, 0), 0x33,
+			       USB_TYPE_VENDOR | USB_DIR_IN |
+			       USB_RECIP_INTERFACE, mib << 8, 0, buf, buf_size,
+			       USB_CTRL_GET_TIMEOUT);
 }
 
 /* Return positive number for status, negative for an error */
