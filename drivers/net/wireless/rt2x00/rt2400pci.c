@@ -1001,7 +1001,8 @@ static int rt2400pci_set_device_state(struct rt2x00_dev *rt2x00dev,
  */
 static void rt2400pci_write_tx_desc(struct rt2x00_dev *rt2x00dev,
 				    struct sk_buff *skb,
-				    struct txentry_desc *txdesc)
+				    struct txentry_desc *txdesc,
+				    struct ieee80211_tx_control *control)
 {
 	struct skb_frame_desc *skbdesc = get_skb_frame_desc(skb);
 	__le32 *txd = skbdesc->desc;
@@ -1045,7 +1046,8 @@ static void rt2400pci_write_tx_desc(struct rt2x00_dev *rt2x00dev,
 			   test_bit(ENTRY_TXD_RTS_FRAME, &txdesc->flags));
 	rt2x00_set_field32(&word, TXD_W0_IFS, txdesc->ifs);
 	rt2x00_set_field32(&word, TXD_W0_RETRY_MODE,
-+			   test_bit(ENTRY_TXD_RETRY_MODE, &txdesc->flags));
+			   !!(control->flags &
+			      IEEE80211_TXCTL_LONG_RETRY_LIMIT));
 	rt2x00_desc_write(txd, 0, word);
 }
 

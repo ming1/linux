@@ -1033,7 +1033,8 @@ static int rt2500usb_set_device_state(struct rt2x00_dev *rt2x00dev,
  */
 static void rt2500usb_write_tx_desc(struct rt2x00_dev *rt2x00dev,
 				    struct sk_buff *skb,
-				    struct txentry_desc *txdesc)
+				    struct txentry_desc *txdesc,
+				    struct ieee80211_tx_control *control)
 {
 	struct skb_frame_desc *skbdesc = get_skb_frame_desc(skb);
 	__le32 *txd = skbdesc->desc;
@@ -1057,7 +1058,7 @@ static void rt2500usb_write_tx_desc(struct rt2x00_dev *rt2x00dev,
 	rt2x00_desc_write(txd, 2, word);
 
 	rt2x00_desc_read(txd, 0, &word);
-	rt2x00_set_field32(&word, TXD_W0_RETRY_LIMIT, txdesc->retry_limit);
+	rt2x00_set_field32(&word, TXD_W0_RETRY_LIMIT, control->retry_limit);
 	rt2x00_set_field32(&word, TXD_W0_MORE_FRAG,
 			   test_bit(ENTRY_TXD_MORE_FRAG, &txdesc->flags));
 	rt2x00_set_field32(&word, TXD_W0_ACK,
@@ -1067,7 +1068,7 @@ static void rt2500usb_write_tx_desc(struct rt2x00_dev *rt2x00dev,
 	rt2x00_set_field32(&word, TXD_W0_OFDM,
 			   test_bit(ENTRY_TXD_OFDM_RATE, &txdesc->flags));
 	rt2x00_set_field32(&word, TXD_W0_NEW_SEQ,
-			   test_bit(ENTRY_TXD_FIRST_FRAGMENT, &txdesc->flags));
+			   !!(control->flags & IEEE80211_TXCTL_FIRST_FRAGMENT));
 	rt2x00_set_field32(&word, TXD_W0_IFS, txdesc->ifs);
 	rt2x00_set_field32(&word, TXD_W0_DATABYTE_COUNT, skbdesc->data_len);
 	rt2x00_set_field32(&word, TXD_W0_CIPHER, CIPHER_NONE);
