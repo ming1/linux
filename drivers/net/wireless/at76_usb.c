@@ -542,13 +542,9 @@ static inline int at76_is_hidden_ssid(u8 *ssid, int length)
 {
 	static const u8 zeros[32];
 
-	if (length == 0)
-		return 1;
-
-	if (length == 1 && ssid[0] == ' ')
-		return 1;
-
-	return (memcmp(ssid, zeros, length) == 0);
+	return (length == 0) ||
+	    (length == 1 && *ssid == ' ') ||
+	    (length > 0 && !memcmp(ssid, zeros, length));
 }
 
 static inline void at76_free_bss_list(struct at76_priv *priv)
