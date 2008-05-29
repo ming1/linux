@@ -54,11 +54,6 @@
 #define RF_SIZE				0x0014
 
 /*
- * Number of TX queues.
- */
-#define NUM_TX_QUEUES			4
-
-/*
  * USB registers.
  */
 
