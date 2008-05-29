@@ -336,16 +336,13 @@ enum mac80211_rx_flags {
  * The low-level driver should provide this information (the subset
  * supported by hardware) to the 802.11 code with each received
  * frame.
- *
  * @mactime: value in microseconds of the 64-bit Time Synchronization Function
  * 	(TSF) timer when the first data symbol (MPDU) arrived at the hardware.
  * @band: the active band when this frame was received
  * @freq: frequency the radio was tuned to when receiving this frame, in MHz
- * @signal: signal strength when receiving this frame, either in dBm, in dB or
- *	unspecified depending on the hardware capabilities flags
- *	@IEEE80211_HW_SIGNAL_*
- * @noise: noise when receiving this frame, in dBm.
- * @qual: overall signal quality indication, in percent (0-100).
+ * @ssi: signal strength when receiving this frame
+ * @signal: used as 'qual' in statistics reporting
+ * @noise: PHY noise when receiving this frame
  * @antenna: antenna used
  * @rate_idx: index of data rate into band's supported rates
  * @flag: %RX_FLAG_*
@@ -354,9 +351,9 @@ struct ieee80211_rx_status {
 	u64 mactime;
 	enum ieee80211_band band;
 	int freq;
+	int ssi;
 	int signal;
 	int noise;
-	int qual;
 	int antenna;
 	int rate_idx;
 	int flag;
@@ -395,8 +392,7 @@ enum ieee80211_tx_status_flags {
  * 	relevant only if IEEE80211_TX_STATUS_AMPDU was set.
  * @ampdu_ack_map: block ack bit map for the aggregation.
  * 	relevant only if IEEE80211_TX_STATUS_AMPDU was set.
- * @ack_signal: signal strength of the ACK frame either in dBm, dB or unspec
- *	depending on hardware capabilites flags @IEEE80211_HW_SIGNAL_*
+ * @ack_signal: signal strength of the ACK frame
  */
 struct ieee80211_tx_status {
 	struct ieee80211_tx_control control;
@@ -707,25 +703,6 @@ enum ieee80211_tkip_key_type {
  * @IEEE80211_HW_2GHZ_SHORT_PREAMBLE_INCAPABLE:
  *	Hardware is not capable of receiving frames with short preamble on
  *	the 2.4 GHz band.
- *
- * @IEEE80211_HW_SIGNAL_UNSPEC:
- *	Hardware can provide signal values but we don't know its units. We
- *	expect values between 0 and @max_signal.
- *	If possible please provide dB or dBm instead.
- *
- * @IEEE80211_HW_SIGNAL_DB:
- *	Hardware gives signal values in dB, decibel difference from an
- *	arbitrary, fixed reference. We expect values between 0 and @max_signal.
- *	If possible please provide dBm instead.
- *
- * @IEEE80211_HW_SIGNAL_DBM:
- *	Hardware gives signal values in dBm, decibel difference from
- *	one milliwatt. This is the preferred method since it is standardized
- *	between different devices. @max_signal does not need to be set.
- *
- * @IEEE80211_HW_NOISE_DBM:
- *	Hardware can provide noise (radio interference) values in units dBm,
- *      decibel difference from one milliwatt.
  */
 enum ieee80211_hw_flags {
 	IEEE80211_HW_HOST_GEN_BEACON_TEMPLATE		= 1<<0,
@@ -733,10 +710,6 @@ enum ieee80211_hw_flags {
 	IEEE80211_HW_HOST_BROADCAST_PS_BUFFERING	= 1<<2,
 	IEEE80211_HW_2GHZ_SHORT_SLOT_INCAPABLE		= 1<<3,
 	IEEE80211_HW_2GHZ_SHORT_PREAMBLE_INCAPABLE	= 1<<4,
-	IEEE80211_HW_SIGNAL_UNSPEC			= 1<<5,
-	IEEE80211_HW_SIGNAL_DB				= 1<<6,
-	IEEE80211_HW_SIGNAL_DBM				= 1<<7,
-	IEEE80211_HW_NOISE_DBM				= 1<<8,
 };
 
 /**
@@ -767,8 +740,12 @@ enum ieee80211_hw_flags {
  *
  * @channel_change_time: time (in microseconds) it takes to change channels.
  *
- * @max_signal: Maximum value for signal (rssi) in RX information, used
- *     only when @IEEE80211_HW_SIGNAL_UNSPEC or @IEEE80211_HW_SIGNAL_DB
+ * @max_rssi: Maximum value for ssi in RX information, use
+ *	negative numbers for dBm and 0 to indicate no support.
+ *
+ * @max_signal: like @max_rssi, but for the signal value.
+ *
+ * @max_noise: like @max_rssi, but for the noise value.
  *
  * @queues: number of available hardware transmit queues for
  *	data packets. WMM/QoS requires at least four, these
@@ -798,7 +775,9 @@ struct ieee80211_hw {
 	int channel_change_time;
 	int vif_data_size;
 	u16 queues, ampdu_queues;
+	s8 max_rssi;
 	s8 max_signal;
+	s8 max_noise;
 };
 
 /**
