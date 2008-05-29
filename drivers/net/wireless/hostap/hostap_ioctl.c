@@ -84,7 +84,7 @@ static int prism2_get_datarates(struct net_device *dev, u8 *rates)
 	if (len < 2)
 		return 0;
 
-	val = le16_to_cpu(*(__le16 *) buf); /* string length */
+	val = get_le16((__le16 *)buf); /* string length */
 
 	if (len - 2 < val || val > 10)
 		return 0;
@@ -812,7 +812,7 @@ static int prism2_ioctl_giwnickn(struct net_device *dev,
 
 	len = local->func->get_rid(dev, HFA384X_RID_CNFOWNNAME,
 				   &name, MAX_NAME_LEN + 2, 0);
-	val = le16_to_cpu(*(__le16 *) name);
+	val = get_le16((__le16 *)name);
 	if (len > MAX_NAME_LEN + 2 || len < 0 || val > MAX_NAME_LEN)
 		return -EOPNOTSUPP;
 
@@ -963,7 +963,7 @@ static int prism2_ioctl_giwessid(struct net_device *dev,
 		memset(ssid, 0, sizeof(ssid));
 		len = local->func->get_rid(dev, HFA384X_RID_CURRENTSSID,
 					   &ssid, MAX_SSID_LEN + 2, 0);
-		val = le16_to_cpu(*(__le16 *) ssid);
+		val = get_le16((__le16 *)ssid);
 		if (len > MAX_SSID_LEN + 2 || len < 0 || val > MAX_SSID_LEN) {
 			return -EOPNOTSUPP;
 		}

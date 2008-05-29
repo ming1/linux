@@ -368,7 +368,7 @@ static int if_usb_reset_device(struct if_usb_card *cardp)
 
 	lbs_deb_enter(LBS_DEB_USB);
 
-	*(__le32 *)cardp->ep_out_buf = cpu_to_le32(CMD_TYPE_REQUEST);
+	put_le32(CMD_TYPE_REQUEST, (__le32 *)cardp->ep_out_buf);
 
 	cmd->command = cpu_to_le16(CMD_802_11_RESET);
 	cmd->size = cpu_to_le16(sizeof(struct cmd_ds_802_11_reset) + S_DS_GEN);
@@ -727,10 +727,10 @@ static int if_usb_host_to_card(struct lbs_private *priv, uint8_t type,
 	lbs_deb_usbd(&cardp->udev->dev,"size after = %d\n", nb);
 
 	if (type == MVMS_CMD) {
-		*(__le32 *)cardp->ep_out_buf = cpu_to_le32(CMD_TYPE_REQUEST);
+		put_le32(CMD_TYPE_REQUEST, (__le32 *)cardp->ep_out_buf);
 		priv->dnld_sent = DNLD_CMD_SENT;
 	} else {
-		*(__le32 *)cardp->ep_out_buf = cpu_to_le32(CMD_TYPE_DATA);
+		put_le32(CMD_TYPE_DATA, (__le32 *)cardp->ep_out_buf);
 		priv->dnld_sent = DNLD_DATA_SENT;
 	}
 

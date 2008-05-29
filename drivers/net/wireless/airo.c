@@ -1639,7 +1639,7 @@ static void emmh32_setseed(emmh32_context *context, u8 *pkey, int keylen,
 		crypto_cipher_encrypt_one(tfm, plain, plain);
 		cipher = plain;
 		for (j = 0; (j < 16) && (i < ARRAY_SIZE(context->coeff)); ) {
-			context->coeff[i++] = ntohl(*(__be32 *)&cipher[j]);
+			context->coeff[i++] = get_be32((__be32 *)&cipher[j]);
 			j += 4;
 		}
 	}
@@ -1677,7 +1677,7 @@ static void emmh32_update(emmh32_context *context, u8 *pOctets, int len)
 
 	/* deal with full 32-bit words */
 	while (len >= 4) {
-		MIC_ACCUM(ntohl(*(__be32 *)pOctets));
+		MIC_ACCUM(get_be32((__be32 *)pOctets));
 		context->position += 4;
 		pOctets += 4;
 		len -= 4;
@@ -4088,7 +4088,7 @@ static int PC4500_readrid(struct airo_info *ai, u16 rid, void *pBuf, int len, in
 		// read the rid length field
 		bap_read(ai, pBuf, 2, BAP1);
 		// length for remaining part of rid
-		len = min(len, (int)le16_to_cpu(*(__le16*)pBuf)) - 2;
+		len = min(len, (int)get_le16((__le16 *)pBuf)) - 2;
 
 		if ( len <= 2 ) {
 			airo_print_err(ai->dev->name,
@@ -4114,7 +4114,7 @@ static int PC4500_writerid(struct airo_info *ai, u16 rid,
 	u16 status;
 	int rc = SUCCESS;
 
-	*(__le16*)pBuf = cpu_to_le16((u16)len);
+	put_le16((u16)len, (__le16 *)pBuf);
 
 	if (lock) {
 		if (down_interruptible(&ai->sem))
@@ -4294,7 +4294,7 @@ static int transmit_802_11_packet(struct airo_info *ai, int len, char *pPacket)
 	u16 txFid = len;
 	len >>= 16;
 
-	fc = *(__le16*)pPacket;
+	fc = *(__le16 *)pPacket;
 	hdrlen = header_len(fc);
 
 	if (len < hdrlen) {
