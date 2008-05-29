@@ -3407,10 +3407,11 @@ static int at76_submit_rx_urb(struct at76_priv *priv)
 	}
 
 exit:
-	if (ret < 0 && ret != -ENODEV)
+	if (ret < 0 && ret != -ENODEV) {
 		printk(KERN_ERR "%s: cannot submit rx urb - please unload the "
 		       "driver and/or power cycle the device\n",
 		       priv->netdev->name);
+	}
 
 	return ret;
 }
