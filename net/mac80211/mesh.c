@@ -349,7 +349,7 @@ struct mesh_table *mesh_table_grow(struct mesh_table *tbl)
 {
 	struct mesh_table *newtbl;
 	struct hlist_head *oldhash;
-	struct hlist_node *p, *q;
+	struct hlist_node *p;
 	int err = 0;
 	int i;
 
@@ -373,24 +373,13 @@ struct mesh_table *mesh_table_grow(struct mesh_table *tbl)
 	oldhash = tbl->hash_buckets;
 	for (i = 0; i <= tbl->hash_mask; i++)
 		hlist_for_each(p, &oldhash[i])
-			if (tbl->copy_node(p, newtbl) < 0)
-				goto errcopy;
+			tbl->copy_node(p, newtbl);
 
 endgrow:
 	if (err)
 		return NULL;
 	else
 		return newtbl;
-
-errcopy:
-	for (i = 0; i <= newtbl->hash_mask; i++) {
-		hlist_for_each_safe(p, q, &newtbl->hash_buckets[i])
-			tbl->free_node(p, 0);
-	}
-	kfree(newtbl->hash_buckets);
-	kfree(newtbl->hashwlock);
-	kfree(newtbl);
-	return NULL;
 }
 
 /**
