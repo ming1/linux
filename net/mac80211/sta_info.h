@@ -245,6 +245,10 @@ struct sta_info {
 	unsigned int wme_tx_queue[NUM_RX_DATA_QUEUES];
 #endif
 
+	/* Debug counters, no locking doesn't matter */
+	int channel_use;
+	int channel_use_raw;
+
 	/*
 	 * Aggregation information, locked with lock.
 	 */
