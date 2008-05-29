@@ -1966,6 +1966,122 @@ exit:
 	mutex_unlock(&priv->mtx);
 }
 
+static void at76_delete_device(struct at76_priv *priv)
+{
+	int i;
+
+	at76_dbg(DBG_PROC_ENTRY, "%s: ENTER", __func__);
+
+	/* The device is gone, don't bother turning it off */
+	priv->device_unplugged = 1;
+
+	tasklet_kill(&priv->rx_tasklet);
+
+	if (priv->netdev_registered)
+		unregister_netdev(priv->netdev);
+
+	/* assuming we used keventd, it must quiesce too */
+	flush_scheduled_work();
+
+	kfree(priv->bulk_out_buffer);
+
+	if (priv->write_urb) {
+		usb_kill_urb(priv->write_urb);
+		usb_free_urb(priv->write_urb);
+	}
+	if (priv->read_urb) {
+		usb_kill_urb(priv->read_urb);
+		usb_free_urb(priv->read_urb);
+	}
+
+	at76_dbg(DBG_PROC_ENTRY, "%s: unlinked urbs", __func__);
+
+	if (priv->rx_skb)
+		kfree_skb(priv->rx_skb);
+
+	at76_free_bss_list(priv);
+	del_timer_sync(&priv->bss_list_timer);
+	cancel_delayed_work(&priv->dwork_get_scan);
+	cancel_delayed_work(&priv->dwork_beacon);
+	cancel_delayed_work(&priv->dwork_auth);
+	cancel_delayed_work(&priv->dwork_assoc);
+
+	if (priv->mac_state == MAC_CONNECTED)
+		at76_iwevent_bss_disconnect(priv->netdev);
+
+	for (i = 0; i < NR_RX_DATA_BUF; i++)
+		if (priv->rx_data[i].skb) {
+			dev_kfree_skb(priv->rx_data[i].skb);
+			priv->rx_data[i].skb = NULL;
+		}
+	usb_put_dev(priv->udev);
+
+	at76_dbg(DBG_PROC_ENTRY, "%s: before freeing priv/netdev", __func__);
+	free_netdev(priv->netdev);	/* priv is in netdev */
+
+	at76_dbg(DBG_PROC_ENTRY, "%s: EXIT", __func__);
+}
+
+static int at76_alloc_urbs(struct at76_priv *priv,
+			   struct usb_interface *interface)
+{
+	struct usb_endpoint_descriptor *endpoint, *ep_in, *ep_out;
+	int i;
+	int buffer_size;
+	struct usb_host_interface *iface_desc;
+
+	at76_dbg(DBG_PROC_ENTRY, "%s: ENTER", __func__);
+
+	at76_dbg(DBG_URB, "%s: NumEndpoints %d ", __func__,
+		 interface->altsetting[0].desc.bNumEndpoints);
+
+	ep_in = NULL;
+	ep_out = NULL;
+	iface_desc = interface->cur_altsetting;
+	for (i = 0; i < iface_desc->desc.bNumEndpoints; i++) {
+		endpoint = &iface_desc->endpoint[i].desc;
+
+		at76_dbg(DBG_URB, "%s: %d. endpoint: addr 0x%x attr 0x%x",
+			 __func__, i, endpoint->bEndpointAddress,
+			 endpoint->bmAttributes);
+
+		if (!ep_in && usb_endpoint_is_bulk_in(endpoint))
+			ep_in = endpoint;
+
+		if (!ep_out && usb_endpoint_is_bulk_out(endpoint))
+			ep_out = endpoint;
+	}
+
+	if (!ep_in || !ep_out) {
+		printk(KERN_ERR DRIVER_NAME ": bulk endpoints missing\n");
+		return -ENXIO;
+	}
+
+	priv->rx_bulk_pipe =
+	    usb_rcvbulkpipe(priv->udev, ep_in->bEndpointAddress);
+	priv->tx_bulk_pipe =
+	    usb_sndbulkpipe(priv->udev, ep_out->bEndpointAddress);
+
+	priv->read_urb = usb_alloc_urb(0, GFP_KERNEL);
+	priv->write_urb = usb_alloc_urb(0, GFP_KERNEL);
+	if (!priv->read_urb || !priv->write_urb) {
+		printk(KERN_ERR DRIVER_NAME ": cannot allocate URB\n");
+		return -ENOMEM;
+	}
+
+	buffer_size = sizeof(struct at76_tx_buffer) + MAX_PADDING_SIZE;
+	priv->bulk_out_buffer = kmalloc(buffer_size, GFP_KERNEL);
+	if (!priv->bulk_out_buffer) {
+		printk(KERN_ERR DRIVER_NAME
+		       ": cannot allocate output buffer\n");
+		return -ENOMEM;
+	}
+
+	at76_dbg(DBG_PROC_ENTRY, "%s: EXIT", __func__);
+
+	return 0;
+}
+
 /* We only store the new mac address in netdev struct,
    it gets set when the netdev is opened. */
 static int at76_set_mac_address(struct net_device *netdev, void *addr)
@@ -3603,6 +3719,91 @@ static struct ethtool_ops at76_ethtool_ops = {
 	.get_drvinfo = at76_ethtool_get_drvinfo,
 	.get_link = at76_ethtool_get_link,
 };
+
+/* Register network device and initialize the hardware */
+static int at76_init_new_device(struct at76_priv *priv,
+				struct usb_interface *interface)
+{
+	struct net_device *netdev = priv->netdev;
+	int ret;
+
+	/* set up the endpoint information */
+	/* check out the endpoints */
+
+	at76_dbg(DBG_DEVSTART, "USB interface: %d endpoints",
+		 interface->cur_altsetting->desc.bNumEndpoints);
+
+	ret = at76_alloc_urbs(priv, interface);
+	if (ret < 0)
+		goto exit;
+
+	/* MAC address */
+	ret = at76_get_hw_config(priv);
+	if (ret < 0) {
+		err("could not get MAC address");
+		goto exit;
+	}
+
+	priv->domain = at76_get_reg_domain(priv->regulatory_domain);
+	/* init. netdev->dev_addr */
+	memcpy(netdev->dev_addr, priv->mac_addr, ETH_ALEN);
+
+	/* initializing */
+	priv->international_roaming = IR_OFF;
+	priv->channel = DEF_CHANNEL;
+	priv->iw_mode = IW_MODE_INFRA;
+	memset(priv->essid, 0, IW_ESSID_MAX_SIZE);
+	priv->rts_threshold = DEF_RTS_THRESHOLD;
+	priv->frag_threshold = DEF_FRAG_THRESHOLD;
+	priv->short_retry_limit = DEF_SHORT_RETRY_LIMIT;
+	priv->txrate = TX_RATE_AUTO;
+	priv->preamble_type = PREAMBLE_TYPE_LONG;
+	priv->beacon_period = 100;
+	priv->beacons_last_qual = jiffies_to_msecs(jiffies);
+	priv->auth_mode = WLAN_AUTH_OPEN;
+	priv->scan_min_time = DEF_SCAN_MIN_TIME;
+	priv->scan_max_time = DEF_SCAN_MAX_TIME;
+	priv->scan_mode = SCAN_TYPE_ACTIVE;
+
+	netdev->flags &= ~IFF_MULTICAST;	/* not yet or never */
+	netdev->open = at76_open;
+	netdev->stop = at76_stop;
+	netdev->get_stats = at76_get_stats;
+	netdev->ethtool_ops = &at76_ethtool_ops;
+
+	/* Add pointers to enable iwspy support. */
+	priv->wireless_data.spy_data = &priv->spy_data;
+	netdev->wireless_data = &priv->wireless_data;
+
+	netdev->hard_start_xmit = at76_tx;
+	netdev->tx_timeout = at76_tx_timeout;
+	netdev->watchdog_timeo = 2 * HZ;
+	netdev->wireless_handlers = &at76_handler_def;
+	netdev->set_multicast_list = at76_set_multicast;
+	netdev->set_mac_address = at76_set_mac_address;
+
+	ret = register_netdev(priv->netdev);
+	if (ret) {
+		err("unable to register netdevice %s (status %d)!",
+		    priv->netdev->name, ret);
+		goto exit;
+	}
+	priv->netdev_registered = 1;
+
+	printk(KERN_INFO "%s: MAC address %s\n", netdev->name,
+	       mac2str(priv->mac_addr));
+	printk(KERN_INFO "%s: firmware version %d.%d.%d-%d\n", netdev->name,
+	       priv->fw_version.major, priv->fw_version.minor,
+	       priv->fw_version.patch, priv->fw_version.build);
+	printk(KERN_INFO "%s: regulatory domain %s (id %d)\n", netdev->name,
+	       priv->domain->name, priv->regulatory_domain);
+
+	/* we let this timer run the whole time this driver instance lives */
+	mod_timer(&priv->bss_list_timer, jiffies + BSS_LIST_TIMEOUT);
+
+exit:
+	return ret;
+}
 
 /* Download external firmware */
 static int at76_load_external_fw(struct usb_device *udev, struct fwentry *fwe)
@@ -5315,6 +5516,68 @@ exit:
 	at76_submit_read_urb(priv);
 }
 
+/* Allocate network device and initialize private data */
+static struct at76_priv *at76_alloc_new_device(struct usb_device *udev)
+{
+	struct net_device *netdev;
+	struct at76_priv *priv;
+	int i;
+
+	/* allocate memory for our device state and initialize it */
+	netdev = alloc_etherdev(sizeof(struct at76_priv));
+	if (!netdev) {
+		err("out of memory");
+		return NULL;
+	}
+
+	priv = netdev_priv(netdev);
+	memset(priv, 0, sizeof(*priv));
+
+	priv->udev = udev;
+	priv->netdev = netdev;
+
+	mutex_init(&priv->mtx);
+	INIT_WORK(&priv->work_assoc_done, at76_work_assoc_done);
+	INIT_WORK(&priv->work_join, at76_work_join);
+	INIT_WORK(&priv->work_new_bss, at76_work_new_bss);
+	INIT_WORK(&priv->work_start_scan, at76_work_start_scan);
+	INIT_WORK(&priv->work_set_promisc, at76_work_set_promisc);
+	INIT_WORK(&priv->work_submit_rx, at76_work_submit_rx);
+	INIT_DELAYED_WORK(&priv->dwork_restart, at76_dwork_restart);
+	INIT_DELAYED_WORK(&priv->dwork_get_scan, at76_dwork_get_scan);
+	INIT_DELAYED_WORK(&priv->dwork_beacon, at76_dwork_beacon);
+	INIT_DELAYED_WORK(&priv->dwork_auth, at76_dwork_auth);
+	INIT_DELAYED_WORK(&priv->dwork_assoc, at76_dwork_assoc);
+
+	spin_lock_init(&priv->mgmt_spinlock);
+	priv->next_mgmt_bulk = NULL;
+	priv->mac_state = MAC_INIT;
+
+	/* initialize empty BSS list */
+	priv->curr_bss = NULL;
+	INIT_LIST_HEAD(&priv->bss_list);
+	spin_lock_init(&priv->bss_list_spinlock);
+
+	init_timer(&priv->bss_list_timer);
+	priv->bss_list_timer.data = (unsigned long)priv;
+	priv->bss_list_timer.function = at76_bss_list_timeout;
+
+	spin_lock_init(&priv->spy_spinlock);
+
+	/* mark all rx data entries as unused */
+	for (i = 0; i < NR_RX_DATA_BUF; i++)
+		priv->rx_data[i].skb = NULL;
+
+	priv->rx_tasklet.func = at76_rx_tasklet;
+	priv->rx_tasklet.data = 0;
+	tasklet_disable(&priv->rx_tasklet);
+
+	priv->pm_mode = AT76_PM_OFF;
+	priv->pm_period = 0;
+
+	return priv;
+}
+
 /* Load firmware into kernel memory and parse it */
 static struct fwentry *at76_load_firmware(struct usb_device *udev,
 					  enum board_type board_type)
@@ -5383,269 +5646,6 @@ exit:
 		return fwe;
 	else
 		return NULL;
-}
-
-/* Allocate network device and initialize private data */
-static struct at76_priv *at76_alloc_new_device(struct usb_device *udev)
-{
-	struct net_device *netdev;
-	struct at76_priv *priv;
-	int i;
-
-	/* allocate memory for our device state and initialize it */
-	netdev = alloc_etherdev(sizeof(struct at76_priv));
-	if (!netdev) {
-		err("out of memory");
-		return NULL;
-	}
-
-	priv = netdev_priv(netdev);
-	memset(priv, 0, sizeof(*priv));
-
-	priv->udev = udev;
-	priv->netdev = netdev;
-
-	mutex_init(&priv->mtx);
-	INIT_WORK(&priv->work_assoc_done, at76_work_assoc_done);
-	INIT_WORK(&priv->work_join, at76_work_join);
-	INIT_WORK(&priv->work_new_bss, at76_work_new_bss);
-	INIT_WORK(&priv->work_start_scan, at76_work_start_scan);
-	INIT_WORK(&priv->work_set_promisc, at76_work_set_promisc);
-	INIT_WORK(&priv->work_submit_rx, at76_work_submit_rx);
-	INIT_DELAYED_WORK(&priv->dwork_restart, at76_dwork_restart);
-	INIT_DELAYED_WORK(&priv->dwork_get_scan, at76_dwork_get_scan);
-	INIT_DELAYED_WORK(&priv->dwork_beacon, at76_dwork_beacon);
-	INIT_DELAYED_WORK(&priv->dwork_auth, at76_dwork_auth);
-	INIT_DELAYED_WORK(&priv->dwork_assoc, at76_dwork_assoc);
-
-	spin_lock_init(&priv->mgmt_spinlock);
-	priv->next_mgmt_bulk = NULL;
-	priv->mac_state = MAC_INIT;
-
-	/* initialize empty BSS list */
-	priv->curr_bss = NULL;
-	INIT_LIST_HEAD(&priv->bss_list);
-	spin_lock_init(&priv->bss_list_spinlock);
-
-	init_timer(&priv->bss_list_timer);
-	priv->bss_list_timer.data = (unsigned long)priv;
-	priv->bss_list_timer.function = at76_bss_list_timeout;
-
-	spin_lock_init(&priv->spy_spinlock);
-
-	/* mark all rx data entries as unused */
-	for (i = 0; i < NR_RX_DATA_BUF; i++)
-		priv->rx_data[i].skb = NULL;
-
-	priv->rx_tasklet.func = at76_rx_tasklet;
-	priv->rx_tasklet.data = 0;
-	tasklet_disable(&priv->rx_tasklet);
-
-	priv->pm_mode = AT76_PM_OFF;
-	priv->pm_period = 0;
-
-	return priv;
-}
-
-static int at76_alloc_urbs(struct at76_priv *priv,
-			   struct usb_interface *interface)
-{
-	struct usb_endpoint_descriptor *endpoint, *ep_in, *ep_out;
-	int i;
-	int buffer_size;
-	struct usb_host_interface *iface_desc;
-
-	at76_dbg(DBG_PROC_ENTRY, "%s: ENTER", __func__);
-
-	at76_dbg(DBG_URB, "%s: NumEndpoints %d ", __func__,
-		 interface->altsetting[0].desc.bNumEndpoints);
-
-	ep_in = NULL;
-	ep_out = NULL;
-	iface_desc = interface->cur_altsetting;
-	for (i = 0; i < iface_desc->desc.bNumEndpoints; i++) {
-		endpoint = &iface_desc->endpoint[i].desc;
-
-		at76_dbg(DBG_URB, "%s: %d. endpoint: addr 0x%x attr 0x%x",
-			 __func__, i, endpoint->bEndpointAddress,
-			 endpoint->bmAttributes);
-
-		if (!ep_in && usb_endpoint_is_bulk_in(endpoint))
-			ep_in = endpoint;
-
-		if (!ep_out && usb_endpoint_is_bulk_out(endpoint))
-			ep_out = endpoint;
-	}
-
-	if (!ep_in || !ep_out) {
-		printk(KERN_ERR DRIVER_NAME ": bulk endpoints missing\n");
-		return -ENXIO;
-	}
-
-	priv->rx_bulk_pipe =
-	    usb_rcvbulkpipe(priv->udev, ep_in->bEndpointAddress);
-	priv->tx_bulk_pipe =
-	    usb_sndbulkpipe(priv->udev, ep_out->bEndpointAddress);
-
-	priv->read_urb = usb_alloc_urb(0, GFP_KERNEL);
-	priv->write_urb = usb_alloc_urb(0, GFP_KERNEL);
-	if (!priv->read_urb || !priv->write_urb) {
-		printk(KERN_ERR DRIVER_NAME ": cannot allocate URB\n");
-		return -ENOMEM;
-	}
-
-	buffer_size = sizeof(struct at76_tx_buffer) + MAX_PADDING_SIZE;
-	priv->bulk_out_buffer = kmalloc(buffer_size, GFP_KERNEL);
-	if (!priv->bulk_out_buffer) {
-		printk(KERN_ERR DRIVER_NAME
-		       ": cannot allocate output buffer\n");
-		return -ENOMEM;
-	}
-
-	at76_dbg(DBG_PROC_ENTRY, "%s: EXIT", __func__);
-
-	return 0;
-}
-
-/* Register network device and initialize the hardware */
-static int at76_init_new_device(struct at76_priv *priv,
-				struct usb_interface *interface)
-{
-	struct net_device *netdev = priv->netdev;
-	int ret;
-
-	/* set up the endpoint information */
-	/* check out the endpoints */
-
-	at76_dbg(DBG_DEVSTART, "USB interface: %d endpoints",
-		 interface->cur_altsetting->desc.bNumEndpoints);
-
-	ret = at76_alloc_urbs(priv, interface);
-	if (ret < 0)
-		goto exit;
-
-	/* MAC address */
-	ret = at76_get_hw_config(priv);
-	if (ret < 0) {
-		err("could not get MAC address");
-		goto exit;
-	}
-
-	priv->domain = at76_get_reg_domain(priv->regulatory_domain);
-	/* init. netdev->dev_addr */
-	memcpy(netdev->dev_addr, priv->mac_addr, ETH_ALEN);
-
-	/* initializing */
-	priv->international_roaming = IR_OFF;
-	priv->channel = DEF_CHANNEL;
-	priv->iw_mode = IW_MODE_INFRA;
-	memset(priv->essid, 0, IW_ESSID_MAX_SIZE);
-	priv->rts_threshold = DEF_RTS_THRESHOLD;
-	priv->frag_threshold = DEF_FRAG_THRESHOLD;
-	priv->short_retry_limit = DEF_SHORT_RETRY_LIMIT;
-	priv->txrate = TX_RATE_AUTO;
-	priv->preamble_type = PREAMBLE_TYPE_LONG;
-	priv->beacon_period = 100;
-	priv->beacons_last_qual = jiffies_to_msecs(jiffies);
-	priv->auth_mode = WLAN_AUTH_OPEN;
-	priv->scan_min_time = DEF_SCAN_MIN_TIME;
-	priv->scan_max_time = DEF_SCAN_MAX_TIME;
-	priv->scan_mode = SCAN_TYPE_ACTIVE;
-
-	netdev->flags &= ~IFF_MULTICAST;	/* not yet or never */
-	netdev->open = at76_open;
-	netdev->stop = at76_stop;
-	netdev->get_stats = at76_get_stats;
-	netdev->ethtool_ops = &at76_ethtool_ops;
-
-	/* Add pointers to enable iwspy support. */
-	priv->wireless_data.spy_data = &priv->spy_data;
-	netdev->wireless_data = &priv->wireless_data;
-
-	netdev->hard_start_xmit = at76_tx;
-	netdev->tx_timeout = at76_tx_timeout;
-	netdev->watchdog_timeo = 2 * HZ;
-	netdev->wireless_handlers = &at76_handler_def;
-	netdev->set_multicast_list = at76_set_multicast;
-	netdev->set_mac_address = at76_set_mac_address;
-
-	ret = register_netdev(priv->netdev);
-	if (ret) {
-		err("unable to register netdevice %s (status %d)!",
-		    priv->netdev->name, ret);
-		goto exit;
-	}
-	priv->netdev_registered = 1;
-
-	printk(KERN_INFO "%s: MAC address %s\n", netdev->name,
-	       mac2str(priv->mac_addr));
-	printk(KERN_INFO "%s: firmware version %d.%d.%d-%d\n", netdev->name,
-	       priv->fw_version.major, priv->fw_version.minor,
-	       priv->fw_version.patch, priv->fw_version.build);
-	printk(KERN_INFO "%s: regulatory domain %s (id %d)\n", netdev->name,
-	       priv->domain->name, priv->regulatory_domain);
-
-	/* we let this timer run the whole time this driver instance lives */
-	mod_timer(&priv->bss_list_timer, jiffies + BSS_LIST_TIMEOUT);
-
-exit:
-	return ret;
-}
-
-static void at76_delete_device(struct at76_priv *priv)
-{
-	int i;
-
-	at76_dbg(DBG_PROC_ENTRY, "%s: ENTER", __func__);
-
-	/* The device is gone, don't bother turning it off */
-	priv->device_unplugged = 1;
-
-	tasklet_kill(&priv->rx_tasklet);
-
-	if (priv->netdev_registered)
-		unregister_netdev(priv->netdev);
-
-	/* assuming we used keventd, it must quiesce too */
-	flush_scheduled_work();
-
-	kfree(priv->bulk_out_buffer);
-
-	if (priv->write_urb) {
-		usb_kill_urb(priv->write_urb);
-		usb_free_urb(priv->write_urb);
-	}
-	if (priv->read_urb) {
-		usb_kill_urb(priv->read_urb);
-		usb_free_urb(priv->read_urb);
-	}
-
-	at76_dbg(DBG_PROC_ENTRY, "%s: unlinked urbs", __func__);
-
-	if (priv->rx_skb)
-		kfree_skb(priv->rx_skb);
-
-	at76_free_bss_list(priv);
-	del_timer_sync(&priv->bss_list_timer);
-	cancel_delayed_work(&priv->dwork_get_scan);
-	cancel_delayed_work(&priv->dwork_beacon);
-	cancel_delayed_work(&priv->dwork_auth);
-	cancel_delayed_work(&priv->dwork_assoc);
-
-	if (priv->mac_state == MAC_CONNECTED)
-		at76_iwevent_bss_disconnect(priv->netdev);
-
-	for (i = 0; i < NR_RX_DATA_BUF; i++)
-		if (priv->rx_data[i].skb) {
-			dev_kfree_skb(priv->rx_data[i].skb);
-			priv->rx_data[i].skb = NULL;
-		}
-	usb_put_dev(priv->udev);
-
-	at76_dbg(DBG_PROC_ENTRY, "%s: before freeing priv/netdev", __func__);
-	free_netdev(priv->netdev);	/* priv is in netdev */
-
-	at76_dbg(DBG_PROC_ENTRY, "%s: EXIT", __func__);
 }
 
 static int at76_probe(struct usb_interface *interface,
