@@ -169,11 +169,10 @@ static int upload_code(struct usb_device *udev,
 	if (flags & REBOOT) {
 		u8 ret;
 
-		/* Use "DMA-aware" buffer. */
 		r = usb_control_msg(udev, usb_rcvctrlpipe(udev, 0),
 			USB_REQ_FIRMWARE_CONFIRM,
 			USB_DIR_IN | USB_TYPE_VENDOR,
-			0, 0, p, sizeof(ret), 5000 /* ms */);
+			0, 0, &ret, sizeof(ret), 5000 /* ms */);
 		if (r != sizeof(ret)) {
 			dev_err(&udev->dev,
 				"control request firmeware confirmation failed."
@@ -182,7 +181,6 @@ static int upload_code(struct usb_device *udev,
 				r = -ENODEV;
 			goto error;
 		}
-		ret = p[0];
 		if (ret & 0x80) {
 			dev_err(&udev->dev,
 				"Internal error while downloading."
@@ -314,31 +312,22 @@ int zd_usb_read_fw(struct zd_usb *usb, zd_addr_t addr, u8 *data, u16 len)
 {
 	int r;
 	struct usb_device *udev = zd_usb_to_usbdev(usb);
-	u8 *buf;
 
-	/* Use "DMA-aware" buffer. */
-	buf = kmalloc(len, GFP_KERNEL);
-	if (!buf)
-		return -ENOMEM;
 	r = usb_control_msg(udev, usb_rcvctrlpipe(udev, 0),
 		USB_REQ_FIRMWARE_READ_DATA, USB_DIR_IN | 0x40, addr, 0,
-		buf, len, 5000);
+		data, len, 5000);
 	if (r < 0) {
 		dev_err(&udev->dev,
 			"read over firmware interface failed: %d\n", r);
-		goto exit;
+		return r;
 	} else if (r != len) {
 		dev_err(&udev->dev,
 			"incomplete read over firmware interface: %d/%d\n",
 			r, len);
-		r = -EIO;
-		goto exit;
+		return -EIO;
 	}
-	r = 0;
-	memcpy(data, buf, len);
-exit:
-	kfree(buf);
-	return r;
+
+	return 0;
 }
 
 #define urb_dev(urb) (&(urb)->dev->dev)
