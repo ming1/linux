@@ -577,8 +577,6 @@ struct at76_rx_radiotap {
 	s8 rt_noise;
 };
 
-#define AT76_SUPPORTED_FILTERS FIF_PROMISC_IN_BSS
-
 #define AT76_RX_RADIOTAP_PRESENT		  \
 	((1 << IEEE80211_RADIOTAP_TSFT)		| \
 	(1 << IEEE80211_RADIOTAP_FLAGS)		| \
