@@ -206,7 +206,7 @@ int mesh_path_add(u8 *dst, struct net_device *dev)
 		newtbl = mesh_table_grow(mesh_paths);
 		if (!newtbl) {
 			write_unlock(&pathtbl_resize_lock);
-			return 0;
+			return -ENOMEM;
 		}
 		rcu_assign_pointer(mesh_paths, newtbl);
 		write_unlock(&pathtbl_resize_lock);
