@@ -1787,8 +1787,6 @@ ath5k_tasklet_rx(unsigned long data)
 
 	spin_lock(&sc->rxbuflock);
 	do {
-		rxs.flag = 0;
-
 		if (unlikely(list_empty(&sc->rxbuf))) {
 			ATH5K_WARN(sc, "empty rx buf pool\n");
 			break;
