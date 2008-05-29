@@ -1948,11 +1948,11 @@ static u64 rt73usb_get_tsf(struct ieee80211_hw *hw)
 #define rt73usb_get_tsf	NULL
 #endif
 
-static int rt73usb_beacon_update(struct ieee80211_hw *hw, struct sk_buff *skb)
+static int rt73usb_beacon_update(struct ieee80211_hw *hw, struct sk_buff *skb,
+				 struct ieee80211_tx_control *control)
 {
 	struct rt2x00_dev *rt2x00dev = hw->priv;
-	struct ieee80211_tx_info *tx_info = IEEE80211_SKB_CB(skb);
-	struct rt2x00_intf *intf = vif_to_intf(tx_info->control.vif);
+	struct rt2x00_intf *intf = vif_to_intf(control->vif);
 	struct skb_frame_desc *skbdesc;
 	struct txentry_desc txdesc;
 	unsigned int beacon_base;
@@ -1967,7 +1967,7 @@ static int rt73usb_beacon_update(struct ieee80211_hw *hw, struct sk_buff *skb)
 	 * for our information.
 	 */
 	intf->beacon->skb = skb;
-	rt2x00queue_create_tx_descriptor(intf->beacon, &txdesc);
+	rt2x00queue_create_tx_descriptor(intf->beacon, &txdesc, control);
 
 	/*
 	 * Add the descriptor in front of the skb.
