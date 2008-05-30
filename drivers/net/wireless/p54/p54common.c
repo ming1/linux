@@ -392,20 +392,16 @@ static void p54_rx_frame_sent(struct ieee80211_hw *dev, struct sk_buff *skb)
 	u32 last_addr = priv->rx_start;
 
 	while (entry != (struct sk_buff *)&priv->tx_queue) {
-		struct ieee80211_tx_info *info = IEEE80211_SKB_CB(entry);
-		range = (void *)info->driver_data;
+		range = (struct memrecord *)&entry->cb;
 		if (range->start_addr == addr) {
+			struct ieee80211_tx_info *info = IEEE80211_SKB_CB(entry);
 			struct p54_control_hdr *entry_hdr;
 			struct p54_tx_control_allocdata *entry_data;
 			int pad = 0;
 
-			if (entry->next != (struct sk_buff *)&priv->tx_queue) {
-				struct ieee80211_tx_info *ni;
-
-				ni = IEEE80211_SKB_CB(entry->next);
-				freed = ((void *)ni->driver_data)->start_addr
-						- last_addr;
-			} else
+			if (entry->next != (struct sk_buff *)&priv->tx_queue)
+				freed = ((struct memrecord *)&entry->next->cb)->start_addr - last_addr;
+			else
 				freed = priv->rx_end - last_addr;
 
 			last_addr = range->end_addr;
