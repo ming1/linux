@@ -567,11 +567,11 @@ static int lbs_process_bss(struct bss_descriptor *bss,
 	pos += 8;
 
 	/* beacon interval is 2 bytes long */
-	bss->beaconperiod = get_le16((__le16 *)pos);
+	bss->beaconperiod = le16_to_cpup((void *) pos);
 	pos += 2;
 
 	/* capability information is 2 bytes long */
-	bss->capability = get_le16((__le16 *)pos);
+	bss->capability = le16_to_cpup((void *) pos);
 	lbs_deb_scan("process_bss: capabilities 0x%04x\n", bss->capability);
 	pos += 2;
 

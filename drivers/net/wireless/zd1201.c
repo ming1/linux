@@ -224,13 +224,13 @@ static void zd1201_usbrx(struct urb *urb)
 	if (type == ZD1201_PACKET_INQUIRE) {
 		int i = 0;
 		unsigned short infotype, framelen, copylen;
-		framelen = get_le16((__le16 *)&data[4]);
-		infotype = get_le16((__le16 *)&data[6]);
+		framelen = le16_to_cpu(*(__le16*)&data[4]);
+		infotype = le16_to_cpu(*(__le16*)&data[6]);
 
 		if (infotype == ZD1201_INF_LINKSTATUS) {
 			short linkstatus;
 
-			linkstatus = get_le16((__le16 *)&data[8]);
+			linkstatus = le16_to_cpu(*(__le16*)&data[8]);
 			switch(linkstatus) {
 				case 1:
 					netif_carrier_on(zd->dev);
@@ -250,7 +250,7 @@ static void zd1201_usbrx(struct urb *urb)
 			goto resubmit;
 		}
 		if (infotype == ZD1201_INF_ASSOCSTATUS) {
-			short status = get_le16((__le16 *)(data + 8));
+			short status = le16_to_cpu(*(__le16*)(data+8));
 			int event;
 			union iwreq_data wrqu;
 
@@ -288,7 +288,7 @@ static void zd1201_usbrx(struct urb *urb)
 		/* Other infotypes are handled outside this handler */
 		zd->rxlen = 0;
 		while (i < urb->actual_length) {
-			copylen = get_le16((__le16 *)&data[i + 2]);
+			copylen = le16_to_cpu(*(__le16*)&data[i+2]);
 			/* Sanity check, sometimes we get junk */
 			if (copylen+zd->rxlen > sizeof(zd->rxdata))
 				break;
@@ -311,8 +311,8 @@ static void zd1201_usbrx(struct urb *urb)
 		len = ntohs(*(__be16 *)&data[datalen-2]);
 		if (len>datalen)
 			len=datalen;
-		fc = get_le16((__le16 *)&data[datalen - 16]);
-		seq = get_le16((__le16 *)&data[datalen - 24]);
+		fc = le16_to_cpu(*(__le16 *)&data[datalen-16]);
+		seq = le16_to_cpu(*(__le16 *)&data[datalen-24]);
 
 		if (zd->monitor) {
 			if (datalen < 24)
@@ -427,9 +427,9 @@ static int zd1201_getconfig(struct zd1201 *zd, int rid, void *riddata,
 	if (!zd->rxlen)
 		return -EIO;
 
-	code = get_le16((__le16 *)&zd->rxdata[4]);
-	rid_fid = get_le16((__le16 *)&zd->rxdata[6]);
-	length = get_le16((__le16 *)&zd->rxdata[8]);
+	code = le16_to_cpu(*(__le16*)(&zd->rxdata[4]));
+	rid_fid = le16_to_cpu(*(__le16*)(&zd->rxdata[6]));
+	length = le16_to_cpu(*(__le16*)(&zd->rxdata[8]));
 	if (length > zd->rxlen)
 		length = zd->rxlen-6;
 
@@ -538,8 +538,8 @@ static int zd1201_setconfig(struct zd1201 *zd, int rid, void *buf, int len, int 
 		request[3] = 0;
 		if (request[1] == 0) {
 			/* add header */
-			put_le16((len - 2 + 1) / 2, (__le16 *)&request[4]);
-			put_le16(rid, (__le16 *)&request[6]);
+			*(__le16*)&request[4] = cpu_to_le16((len-2+1)/2);
+			*(__le16*)&request[6] = cpu_to_le16(rid);
 			memcpy(request+8, buf, reqlen-4);
 			buf += reqlen-4;
 		} else {
@@ -578,7 +578,7 @@ static int zd1201_setconfig(struct zd1201 *zd, int rid, void *buf, int len, int 
 	
 	if (wait) {
 		wait_event_interruptible(zd->rxdataq, zd->rxdatas);
-		if (!zd->rxlen || get_le16((__le16 *)&zd->rxdata[6]) != rid) {
+		if (!zd->rxlen || le16_to_cpu(*(__le16*)&zd->rxdata[6]) != rid) {
 			dev_dbg(&zd->usb->dev, "wrong or no RID received\n");
 		}
 	}
@@ -716,7 +716,7 @@ static int zd1201_join(struct zd1201 *zd, char *essid, int essidlen)
 	if (err)
 		return err;
 
-	put_le16(essidlen, (__le16 *)buf);
+	*(__le16 *)buf = cpu_to_le16(essidlen);
 	memcpy(buf+2, essid, essidlen);
 	if (!zd->ap) {	/* Normal station */
 		err = zd1201_setconfig(zd, ZD1201_RID_CNFDESIREDSSID, buf,
@@ -998,7 +998,7 @@ static int zd1201_set_mode(struct net_device *dev,
 		return err;
 	if (zd->monitor && !monitor) {
 			zd1201_disable(zd);
-			put_le16(zd->essidlen, (__le16 *)buffer);
+			*(__le16 *)buffer = cpu_to_le16(zd->essidlen);
 			memcpy(buffer+2, zd->essid, zd->essidlen);
 			err = zd1201_setconfig(zd, ZD1201_RID_CNFDESIREDSSID,
 			    buffer, IW_ESSID_MAX_SIZE+2, 1);
@@ -1145,7 +1145,7 @@ static int zd1201_get_scan(struct net_device *dev,
 	if (!zd->rxlen)
 		return -EIO;
 
-	if (get_le16((__le16 *)&zd->rxdata[2]) != ZD1201_INQ_SCANRESULTS)
+	if (le16_to_cpu(*(__le16*)&zd->rxdata[2]) != ZD1201_INQ_SCANRESULTS)
 		return -EIO;
 
 	for(i=8; i<zd->rxlen; i+=62) {
@@ -1793,7 +1793,7 @@ static int zd1201_probe(struct usb_interface *interface,
 		goto err_net;
 
 	/* Set wildcard essid to match zd->essid */
-	put_le16(0, (__le16 *)buf);
+	*(__le16 *)buf = cpu_to_le16(0);
 	err = zd1201_setconfig(zd, ZD1201_RID_CNFDESIREDSSID, buf,
 	    IW_ESSID_MAX_SIZE+2, 1);
 	if (err)
