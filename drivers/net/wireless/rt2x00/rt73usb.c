@@ -1090,6 +1090,22 @@ static int rt73usb_init_registers(struct rt2x00_dev *rt2x00dev)
 	return 0;
 }
 
+static int rt73usb_wait_bbp_ready(struct rt2x00_dev *rt2x00dev)
+{
+	unsigned int i;
+	u8 value;
+
+	for (i = 0; i < REGISTER_BUSY_COUNT; i++) {
+		rt73usb_bbp_read(rt2x00dev, 0, &value);
+		if ((value != 0xff) && (value != 0x00))
+			return 0;
+		udelay(REGISTER_BUSY_DELAY);
+	}
+
+	ERROR(rt2x00dev, "BBP register access failed, aborting.\n");
+	return -EACCES;
+}
+
 static int rt73usb_init_bbp(struct rt2x00_dev *rt2x00dev)
 {
 	unsigned int i;
@@ -1097,18 +1113,9 @@ static int rt73usb_init_bbp(struct rt2x00_dev *rt2x00dev)
 	u8 reg_id;
 	u8 value;
 
-	for (i = 0; i < REGISTER_BUSY_COUNT; i++) {
-		rt73usb_bbp_read(rt2x00dev, 0, &value);
-		if ((value != 0xff) && (value != 0x00))
-			goto continue_csr_init;
-		NOTICE(rt2x00dev, "Waiting for BBP register.\n");
-		udelay(REGISTER_BUSY_DELAY);
-	}
+	if (unlikely(rt73usb_wait_bbp_ready(rt2x00dev)))
+		return -EACCES;
 
-	ERROR(rt2x00dev, "BBP register access failed, aborting.\n");
-	return -EACCES;
-
-continue_csr_init:
 	rt73usb_bbp_write(rt2x00dev, 3, 0x80);
 	rt73usb_bbp_write(rt2x00dev, 15, 0x30);
 	rt73usb_bbp_write(rt2x00dev, 21, 0xc8);
@@ -1158,7 +1165,8 @@ static void rt73usb_toggle_rx(struct rt2x00_dev *rt2x00dev,
 
 	rt73usb_register_read(rt2x00dev, TXRX_CSR0, &reg);
 	rt2x00_set_field32(&reg, TXRX_CSR0_DISABLE_RX,
-			   state == STATE_RADIO_RX_OFF);
+			   (state == STATE_RADIO_RX_OFF) ||
+			   (state == STATE_RADIO_RX_OFF_LINK));
 	rt73usb_register_write(rt2x00dev, TXRX_CSR0, reg);
 }
 
@@ -1167,11 +1175,9 @@ static int rt73usb_enable_radio(struct rt2x00_dev *rt2x00dev)
 	/*
 	 * Initialize all registers.
 	 */
-	if (rt73usb_init_registers(rt2x00dev) ||
-	    rt73usb_init_bbp(rt2x00dev)) {
-		ERROR(rt2x00dev, "Register initialization failed.\n");
+	if (unlikely(rt73usb_init_registers(rt2x00dev) ||
+		     rt73usb_init_bbp(rt2x00dev)))
 		return -EIO;
-	}
 
 	return 0;
 }
@@ -1193,7 +1199,6 @@ static int rt73usb_set_state(struct rt2x00_dev *rt2x00dev, enum dev_state state)
 	u32 reg;
 	unsigned int i;
 	char put_to_sleep;
-	char current_state;
 
 	put_to_sleep = (state != STATE_AWAKE);
 
@@ -1209,15 +1214,11 @@ static int rt73usb_set_state(struct rt2x00_dev *rt2x00dev, enum dev_state state)
 	 */
 	for (i = 0; i < REGISTER_BUSY_COUNT; i++) {
 		rt73usb_register_read(rt2x00dev, MAC_CSR12, &reg);
-		current_state =
-		    rt2x00_get_field32(reg, MAC_CSR12_BBP_CURRENT_STATE);
-		if (current_state == !put_to_sleep)
+		state = rt2x00_get_field32(reg, MAC_CSR12_BBP_CURRENT_STATE);
+		if (state == !put_to_sleep)
 			return 0;
 		msleep(10);
 	}
-
-	NOTICE(rt2x00dev, "Device failed to enter state %d, "
-	       "current device state %d.\n", !put_to_sleep, current_state);
 
 	return -EBUSY;
 }
@@ -1236,11 +1237,13 @@ static int rt73usb_set_device_state(struct rt2x00_dev *rt2x00dev,
 		break;
 	case STATE_RADIO_RX_ON:
 	case STATE_RADIO_RX_ON_LINK:
-		rt73usb_toggle_rx(rt2x00dev, STATE_RADIO_RX_ON);
-		break;
 	case STATE_RADIO_RX_OFF:
 	case STATE_RADIO_RX_OFF_LINK:
-		rt73usb_toggle_rx(rt2x00dev, STATE_RADIO_RX_OFF);
+		rt73usb_toggle_rx(rt2x00dev, state);
+		break;
+	case STATE_RADIO_IRQ_ON:
+	case STATE_RADIO_IRQ_OFF:
+		/* No support, but no error either */
 		break;
 	case STATE_DEEP_SLEEP:
 	case STATE_SLEEP:
@@ -1252,6 +1255,10 @@ static int rt73usb_set_device_state(struct rt2x00_dev *rt2x00dev,
 		retval = -ENOTSUPP;
 		break;
 	}
+
+	if (unlikely(retval))
+		ERROR(rt2x00dev, "Device failed to enter state %d (%d).\n",
+		      state, retval);
 
 	return retval;
 }
