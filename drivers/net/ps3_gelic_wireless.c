@@ -1389,7 +1389,6 @@ static int gelic_wl_get_mode(struct net_device *netdev,
 	return 0;
 }
 
-#ifdef CONFIG_GELIC_WIRELESS_OLD_PSK_INTERFACE
 /* SIOCIWFIRSTPRIV */
 static int hex2bin(u8 *str, u8 *bin, unsigned int len)
 {
@@ -1494,7 +1493,6 @@ static int gelic_wl_priv_get_psk(struct net_device *net_dev,
 	pr_debug("%s:-> %d\n", __func__, data->data.length);
 	return 0;
 }
-#endif
 
 /* SIOCGIWNICKN */
 static int gelic_wl_get_nick(struct net_device *net_dev,
@@ -2405,7 +2403,6 @@ static const iw_handler gelic_wl_wext_handler[] =
 	IW_IOCTL(SIOCGIWNICKN)		= gelic_wl_get_nick,
 };
 
-#ifdef CONFIG_GELIC_WIRELESS_OLD_PSK_INTERFACE
 static struct iw_priv_args gelic_wl_private_args[] =
 {
 	{
@@ -2427,18 +2424,15 @@ static const iw_handler gelic_wl_private_handler[] =
 	gelic_wl_priv_set_psk,
 	gelic_wl_priv_get_psk,
 };
-#endif
 
 static const struct iw_handler_def gelic_wl_wext_handler_def = {
 	.num_standard		= ARRAY_SIZE(gelic_wl_wext_handler),
 	.standard		= gelic_wl_wext_handler,
 	.get_wireless_stats	= gelic_wl_get_wireless_stats,
-#ifdef CONFIG_GELIC_WIRELESS_OLD_PSK_INTERFACE
 	.num_private		= ARRAY_SIZE(gelic_wl_private_handler),
 	.num_private_args	= ARRAY_SIZE(gelic_wl_private_args),
 	.private		= gelic_wl_private_handler,
 	.private_args		= gelic_wl_private_args,
-#endif
 };
 
 static struct net_device *gelic_wl_alloc(struct gelic_card *card)
