@@ -4951,8 +4951,7 @@ static int iwl4965_mac_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 		if (cmd == SET_KEY)
 			is_default_wep_key = !priv->key_mapping_key;
 		else
-			is_default_wep_key =
-					(key->hw_key_idx == HW_KEY_DEFAULT);
+			is_default_wep_key = priv->default_wep_key;
 	}
 
 	switch (cmd) {
