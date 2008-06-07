@@ -328,11 +328,6 @@ static inline int rt2x00_get_link_ant_rssi(struct link *link)
 	return DEFAULT_RSSI;
 }
 
-static inline void rt2x00_reset_link_ant_rssi(struct link *link)
-{
-	link->ant.rssi_ant = 0;
-}
-
 static inline int rt2x00_get_link_ant_rssi_history(struct link *link,
 						   enum antenna ant)
 {
