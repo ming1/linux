@@ -1162,6 +1162,7 @@ static s32 rs_get_best_rate(struct iwl_priv *priv,
 
 			/* Higher rate not available, use the original */
 			} else {
+				new_rate = rate;
 				break;
 			}
 		}
