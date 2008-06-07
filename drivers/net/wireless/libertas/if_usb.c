@@ -151,7 +151,7 @@ static void if_usb_fw_timeo(unsigned long priv)
 }
 
 #ifdef CONFIG_OLPC
-static void if_usb_reset_olpc_card(struct lbs_private *priv)
+static int if_usb_reset_olpc_card(struct lbs_private *priv)
 {
 	printk(KERN_CRIT "Resetting OLPC wireless via EC...\n");
 	olpc_ec_cmd(0x25, NULL, 0, NULL, 0);
