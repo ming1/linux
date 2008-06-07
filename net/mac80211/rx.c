@@ -1091,7 +1091,7 @@ ieee80211_data_to_8023(struct ieee80211_rx_data *rx)
 	u16 fc, hdrlen, ethertype;
 	u8 *payload;
 	u8 dst[ETH_ALEN];
-	u8 src[ETH_ALEN] __aligned(2);
+	u8 src[ETH_ALEN];
 	struct sk_buff *skb = rx->skb;
 	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 	DECLARE_MAC_BUF(mac);
@@ -1234,7 +1234,7 @@ ieee80211_data_to_8023(struct ieee80211_rx_data *rx)
  */
 static bool ieee80211_frame_allowed(struct ieee80211_rx_data *rx)
 {
-	static const u8 pae_group_addr[ETH_ALEN] __aligned(2)
+	static const u8 pae_group_addr[ETH_ALEN]
 		= { 0x01, 0x80, 0xC2, 0x00, 0x00, 0x03 };
 	struct ethhdr *ehdr = (struct ethhdr *) rx->skb->data;
 
