@@ -1167,7 +1167,7 @@ static int orinoco_process_scan_results(struct net_device *dev,
 	case FIRMWARE_TYPE_INTERSIL:
 		offset = 4;
 		if (priv->has_hostscan) {
-			atom_len = get_le16((__le16 *)buf);
+			atom_len = le16_to_cpup((__le16 *)buf);
 			/* Sanity check for atom_len */
 			if (atom_len < sizeof(struct prism2_scan_apinfo)) {
 				printk(KERN_ERR "%s: Invalid atom_len in scan "

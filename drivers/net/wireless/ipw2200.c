@@ -10442,17 +10442,20 @@ static void ipw_handle_promiscuous_tx(struct ipw_priv *priv,
 		rt_hdr->it_present = 0; /* after all, it's just an idea */
 		rt_hdr->it_present |=  cpu_to_le32(1 << IEEE80211_RADIOTAP_CHANNEL);
 
-		put_le16(ieee80211chan2mhz(priv->channel),
-			 (__le16 *)skb_put(dst, sizeof(__le16)));
+		*(__le16*)skb_put(dst, sizeof(u16)) = cpu_to_le16(
+			ieee80211chan2mhz(priv->channel));
 		if (priv->channel > 14) 	/* 802.11a */
-			put_le16(IEEE80211_CHAN_OFDM | IEEE80211_CHAN_5GHZ,
-				 (__le16 *)skb_put(dst, sizeof(__le16)));
+			*(__le16*)skb_put(dst, sizeof(u16)) =
+				cpu_to_le16(IEEE80211_CHAN_OFDM |
+					     IEEE80211_CHAN_5GHZ);
 		else if (priv->ieee->mode == IEEE_B) /* 802.11b */
-			put_le16(IEEE80211_CHAN_CCK | IEEE80211_CHAN_2GHZ,
-				 (__le16 *)skb_put(dst, sizeof(__le16)));
+			*(__le16*)skb_put(dst, sizeof(u16)) =
+				cpu_to_le16(IEEE80211_CHAN_CCK |
+					     IEEE80211_CHAN_2GHZ);
 		else 		/* 802.11g */
-			put_le16(IEEE80211_CHAN_OFDM | IEEE80211_CHAN_2GHZ,
-				 (__le16 *)skb_put(dst, sizeof(__le16)));
+			*(__le16*)skb_put(dst, sizeof(u16)) =
+				cpu_to_le16(IEEE80211_CHAN_OFDM |
+				 IEEE80211_CHAN_2GHZ);
 
 		rt_hdr->it_len = cpu_to_le16(dst->len);
 

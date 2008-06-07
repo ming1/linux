@@ -1291,7 +1291,7 @@ static void adm8211_set_bssid(struct ieee80211_hw *dev, const u8 *bssid)
 	struct adm8211_priv *priv = dev->priv;
 	u32 reg;
 
-	ADM8211_CSR_WRITE(BSSID0, get_le32((__le32 *)bssid));
+	ADM8211_CSR_WRITE(BSSID0, le32_to_cpu(*(__le32 *)bssid));
 	reg = ADM8211_CSR_READ(ABDA1);
 	reg &= 0x0000ffff;
 	reg |= (bssid[4] << 16) | (bssid[5] << 24);
@@ -1423,8 +1423,8 @@ static int adm8211_add_interface(struct ieee80211_hw *dev,
 
 	ADM8211_IDLE();
 
-	ADM8211_CSR_WRITE(PAR0, get_le32((__le32 *)conf->mac_addr));
-	ADM8211_CSR_WRITE(PAR1, get_le16((__le16 *)(conf->mac_addr + 4)));
+	ADM8211_CSR_WRITE(PAR0, le32_to_cpu(*(__le32 *)conf->mac_addr));
+	ADM8211_CSR_WRITE(PAR1, le16_to_cpu(*(__le16 *)(conf->mac_addr + 4)));
 
 	adm8211_update_mode(dev);
 
@@ -1877,8 +1877,9 @@ static int __devinit adm8211_probe(struct pci_dev *pdev,
 		goto err_iounmap;
 	}
 
-	put_le32(ADM8211_CSR_READ(PAR0), (__le32 *)perm_addr);
-	put_le16(ADM8211_CSR_READ(PAR1) & 0xFFFF, (__le16 *)&perm_addr[4]);
+	*(__le32 *)perm_addr = cpu_to_le32(ADM8211_CSR_READ(PAR0));
+	*(__le16 *)&perm_addr[4] =
+		cpu_to_le16(ADM8211_CSR_READ(PAR1) & 0xFFFF);
 
 	if (!is_valid_ether_addr(perm_addr)) {
 		printk(KERN_WARNING "%s (adm8211): Invalid hwaddr in EEPROM!\n",

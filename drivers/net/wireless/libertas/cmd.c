@@ -576,7 +576,9 @@ static int lbs_cmd_802_11_snmp_mib(struct lbs_private *priv,
 				pSNMPMIB->querytype = cpu_to_le16(CMD_ACT_SET);
 				pSNMPMIB->bufsize = cpu_to_le16(sizeof(u16));
 				ulTemp = *((u32 *)pdata_buf);
-				put_le16(ulTemp, (__le16 *)pSNMPMIB->value);
+				*(__le16 *)(pSNMPMIB->value) =
+				    cpu_to_le16((u16) ulTemp);
+
 			}
 			break;
 		}
@@ -606,7 +608,7 @@ static int lbs_cmd_802_11_snmp_mib(struct lbs_private *priv,
 	       "SNMP_CMD: action 0x%x, oid 0x%x, oidsize 0x%x, value 0x%x\n",
 	       le16_to_cpu(pSNMPMIB->querytype), le16_to_cpu(pSNMPMIB->oid),
 	       le16_to_cpu(pSNMPMIB->bufsize),
-	       get_le16((__le16 *)pSNMPMIB->value));
+	       le16_to_cpu(*(__le16 *) pSNMPMIB->value));
 
 	lbs_deb_leave(LBS_DEB_CMD);
 	return 0;
