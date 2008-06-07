@@ -1124,12 +1124,11 @@ static void rt2500usb_kick_tx_queue(struct rt2x00_dev *rt2x00dev,
 static void rt2500usb_fill_rxdone(struct queue_entry *entry,
 				  struct rxdone_entry_desc *rxdesc)
 {
-	struct queue_entry_priv_usb *entry_priv = entry->priv_data;
+	struct queue_entry_priv_usb_rx *priv_rx = entry->priv_data;
 	struct skb_frame_desc *skbdesc = get_skb_frame_desc(entry->skb);
 	__le32 *rxd =
 	    (__le32 *)(entry->skb->data +
-		       (entry_priv->urb->actual_length -
-			entry->queue->desc_size));
+		       (priv_rx->urb->actual_length - entry->queue->desc_size));
 	u32 word0;
 	u32 word1;
 
@@ -1185,7 +1184,7 @@ static void rt2500usb_fill_rxdone(struct queue_entry *entry,
 static void rt2500usb_beacondone(struct urb *urb)
 {
 	struct queue_entry *entry = (struct queue_entry *)urb->context;
-	struct queue_entry_priv_usb_bcn *bcn_priv = entry->priv_data;
+	struct queue_entry_priv_usb_bcn *priv_bcn = entry->priv_data;
 
 	if (!test_bit(DEVICE_ENABLED_RADIO, &entry->queue->rt2x00dev->flags))
 		return;
@@ -1196,9 +1195,9 @@ static void rt2500usb_beacondone(struct urb *urb)
 	 * Otherwise we should free the sk_buffer, the device
 	 * should be doing the rest of the work now.
 	 */
-	if (bcn_priv->guardian_urb == urb) {
-		usb_submit_urb(bcn_priv->urb, GFP_ATOMIC);
-	} else if (bcn_priv->urb == urb) {
+	if (priv_bcn->guardian_urb == urb) {
+		usb_submit_urb(priv_bcn->urb, GFP_ATOMIC);
+	} else if (priv_bcn->urb == urb) {
 		dev_kfree_skb(entry->skb);
 		entry->skb = NULL;
 	}
@@ -1673,7 +1672,7 @@ static int rt2500usb_beacon_update(struct ieee80211_hw *hw,
 	struct rt2x00_dev *rt2x00dev = hw->priv;
 	struct usb_device *usb_dev = rt2x00dev_usb_dev(rt2x00dev);
 	struct rt2x00_intf *intf = vif_to_intf(control->vif);
-	struct queue_entry_priv_usb_bcn *bcn_priv;
+	struct queue_entry_priv_usb_bcn *priv_bcn;
 	struct skb_frame_desc *skbdesc;
 	struct txentry_desc txdesc;
 	int pipe = usb_sndbulkpipe(usb_dev, 1);
@@ -1683,7 +1682,7 @@ static int rt2500usb_beacon_update(struct ieee80211_hw *hw,
 	if (unlikely(!intf->beacon))
 		return -ENOBUFS;
 
-	bcn_priv = intf->beacon->priv_data;
+	priv_bcn = intf->beacon->priv_data;
 
 	/*
 	 * Copy all TX descriptor information into txdesc,
@@ -1730,7 +1729,7 @@ static int rt2500usb_beacon_update(struct ieee80211_hw *hw,
 	 */
 	length = rt2500usb_get_tx_data_len(rt2x00dev, skb);
 
-	usb_fill_bulk_urb(bcn_priv->urb, usb_dev, pipe,
+	usb_fill_bulk_urb(priv_bcn->urb, usb_dev, pipe,
 			  skb->data, length, rt2500usb_beacondone,
 			  intf->beacon);
 
@@ -1739,15 +1738,15 @@ static int rt2500usb_beacon_update(struct ieee80211_hw *hw,
 	 * We only need a single byte, so lets recycle
 	 * the 'flags' field we are not using for beacons.
 	 */
-	bcn_priv->guardian_data = 0;
-	usb_fill_bulk_urb(bcn_priv->guardian_urb, usb_dev, pipe,
-			  &bcn_priv->guardian_data, 1, rt2500usb_beacondone,
+	priv_bcn->guardian_data = 0;
+	usb_fill_bulk_urb(priv_bcn->guardian_urb, usb_dev, pipe,
+			  &priv_bcn->guardian_data, 1, rt2500usb_beacondone,
 			  intf->beacon);
 
 	/*
 	 * Send out the guardian byte.
 	 */
-	usb_submit_urb(bcn_priv->guardian_urb, GFP_ATOMIC);
+	usb_submit_urb(priv_bcn->guardian_urb, GFP_ATOMIC);
 
 	/*
 	 * Enable beacon generation.
@@ -1798,14 +1797,14 @@ static const struct data_queue_desc rt2500usb_queue_rx = {
 	.entry_num		= RX_ENTRIES,
 	.data_size		= DATA_FRAME_SIZE,
 	.desc_size		= RXD_DESC_SIZE,
-	.priv_size		= sizeof(struct queue_entry_priv_usb),
+	.priv_size		= sizeof(struct queue_entry_priv_usb_rx),
 };
 
 static const struct data_queue_desc rt2500usb_queue_tx = {
 	.entry_num		= TX_ENTRIES,
 	.data_size		= DATA_FRAME_SIZE,
 	.desc_size		= TXD_DESC_SIZE,
-	.priv_size		= sizeof(struct queue_entry_priv_usb),
+	.priv_size		= sizeof(struct queue_entry_priv_usb_tx),
 };
 
 static const struct data_queue_desc rt2500usb_queue_bcn = {
@@ -1819,7 +1818,7 @@ static const struct data_queue_desc rt2500usb_queue_atim = {
 	.entry_num		= ATIM_ENTRIES,
 	.data_size		= DATA_FRAME_SIZE,
 	.desc_size		= TXD_DESC_SIZE,
-	.priv_size		= sizeof(struct queue_entry_priv_usb),
+	.priv_size		= sizeof(struct queue_entry_priv_usb_tx),
 };
 
 static const struct rt2x00_ops rt2500usb_ops = {
