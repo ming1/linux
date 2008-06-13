@@ -645,7 +645,7 @@ int ieee80211_ht_agg_queue_add(struct ieee80211_local *local,
 #ifdef CONFIG_MAC80211_HT_DEBUG
 			if (net_ratelimit())
 				printk(KERN_DEBUG "allocated aggregation queue"
-					" %d tid %d addr %s pool=0x%lX\n",
+					" %d tid %d addr %s pool=0x%lX",
 					i, tid, print_mac(mac, sta->addr),
 					q->qdisc_pool[0]);
 #endif /* CONFIG_MAC80211_HT_DEBUG */
