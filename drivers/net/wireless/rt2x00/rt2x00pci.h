@@ -95,15 +95,31 @@ int rt2x00pci_write_tx_data(struct rt2x00_dev *rt2x00dev,
 			    struct ieee80211_tx_control *control);
 
 /**
- * struct queue_entry_priv_pci: Per entry PCI specific information
+ * struct queue_entry_priv_pci_rx: Per RX entry PCI specific information
+ *
+ * @desc: Pointer to device descriptor.
+ * @desc_dma: DMA pointer to @desc.
+ * @data: Pointer to device's entry memory.
+ * @data_dma: DMA pointer to &data.
+ */
+struct queue_entry_priv_pci_rx {
+	__le32 *desc;
+	dma_addr_t desc_dma;
+
+	void *data;
+	dma_addr_t data_dma;
+};
+
+/**
+ * struct queue_entry_priv_pci_tx: Per TX entry PCI specific information
  *
  * @desc: Pointer to device descriptor
- * @desc_dma: DMA pointer to &desc.
+ * @desc_dma: DMA pointer to @desc.
  * @data: Pointer to device's entry memory.
  * @data_dma: DMA pointer to &data.
  * @control: mac80211 control structure used to transmit data.
  */
-struct queue_entry_priv_pci {
+struct queue_entry_priv_pci_tx {
 	__le32 *desc;
 	dma_addr_t desc_dma;
 
