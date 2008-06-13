@@ -1707,8 +1707,7 @@ int ieee80211_register_hw(struct ieee80211_hw *hw)
 
 	debugfs_hw_add(local);
 
-	if (local->hw.conf.beacon_int < 10)
-		local->hw.conf.beacon_int = 100;
+	local->hw.conf.beacon_int = 1000;
 
 	local->wstats_flags |= local->hw.flags & (IEEE80211_HW_SIGNAL_UNSPEC |
 						  IEEE80211_HW_SIGNAL_DB |
