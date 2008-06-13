@@ -847,22 +847,6 @@ static int rt2500usb_init_registers(struct rt2x00_dev *rt2x00dev)
 	return 0;
 }
 
-static int rt2500usb_wait_bbp_ready(struct rt2x00_dev *rt2x00dev)
-{
-	unsigned int i;
-	u8 value;
-
-	for (i = 0; i < REGISTER_BUSY_COUNT; i++) {
-		rt2500usb_bbp_read(rt2x00dev, 0, &value);
-		if ((value != 0xff) && (value != 0x00))
-			return 0;
-		udelay(REGISTER_BUSY_DELAY);
-	}
-
-	ERROR(rt2x00dev, "BBP register access failed, aborting.\n");
-	return -EACCES;
-}
-
 static int rt2500usb_init_bbp(struct rt2x00_dev *rt2x00dev)
 {
 	unsigned int i;
@@ -870,9 +854,18 @@ static int rt2500usb_init_bbp(struct rt2x00_dev *rt2x00dev)
 	u8 value;
 	u8 reg_id;
 
-	if (unlikely(rt2500usb_wait_bbp_ready(rt2x00dev)))
-		return -EACCES;
+	for (i = 0; i < REGISTER_BUSY_COUNT; i++) {
+		rt2500usb_bbp_read(rt2x00dev, 0, &value);
+		if ((value != 0xff) && (value != 0x00))
+			goto continue_csr_init;
+		NOTICE(rt2x00dev, "Waiting for BBP register.\n");
+		udelay(REGISTER_BUSY_DELAY);
+	}
 
+	ERROR(rt2x00dev, "BBP register access failed, aborting.\n");
+	return -EACCES;
+
+continue_csr_init:
 	rt2500usb_bbp_write(rt2x00dev, 3, 0x02);
 	rt2500usb_bbp_write(rt2x00dev, 4, 0x19);
 	rt2500usb_bbp_write(rt2x00dev, 14, 0x1c);
@@ -928,8 +921,7 @@ static void rt2500usb_toggle_rx(struct rt2x00_dev *rt2x00dev,
 
 	rt2500usb_register_read(rt2x00dev, TXRX_CSR2, &reg);
 	rt2x00_set_field16(&reg, TXRX_CSR2_DISABLE_RX,
-			   (state == STATE_RADIO_RX_OFF) ||
-			   (state == STATE_RADIO_RX_OFF_LINK));
+			   state == STATE_RADIO_RX_OFF);
 	rt2500usb_register_write(rt2x00dev, TXRX_CSR2, reg);
 }
 
@@ -938,9 +930,11 @@ static int rt2500usb_enable_radio(struct rt2x00_dev *rt2x00dev)
 	/*
 	 * Initialize all registers.
 	 */
-	if (unlikely(rt2500usb_init_registers(rt2x00dev) ||
-		     rt2500usb_init_bbp(rt2x00dev)))
+	if (rt2500usb_init_registers(rt2x00dev) ||
+	    rt2500usb_init_bbp(rt2x00dev)) {
+		ERROR(rt2x00dev, "Register initialization failed.\n");
 		return -EIO;
+	}
 
 	return 0;
 }
@@ -993,6 +987,10 @@ static int rt2500usb_set_state(struct rt2x00_dev *rt2x00dev,
 		msleep(30);
 	}
 
+	NOTICE(rt2x00dev, "Device failed to enter state %d, "
+	       "current device state: bbp %d and rf %d.\n",
+	       state, bbp_state, rf_state);
+
 	return -EBUSY;
 }
 
@@ -1010,13 +1008,11 @@ static int rt2500usb_set_device_state(struct rt2x00_dev *rt2x00dev,
 		break;
 	case STATE_RADIO_RX_ON:
 	case STATE_RADIO_RX_ON_LINK:
+		rt2500usb_toggle_rx(rt2x00dev, STATE_RADIO_RX_ON);
+		break;
 	case STATE_RADIO_RX_OFF:
 	case STATE_RADIO_RX_OFF_LINK:
-		rt2500usb_toggle_rx(rt2x00dev, state);
-		break;
-	case STATE_RADIO_IRQ_ON:
-	case STATE_RADIO_IRQ_OFF:
-		/* No support, but no error either */
+		rt2500usb_toggle_rx(rt2x00dev, STATE_RADIO_RX_OFF);
 		break;
 	case STATE_DEEP_SLEEP:
 	case STATE_SLEEP:
@@ -1028,10 +1024,6 @@ static int rt2500usb_set_device_state(struct rt2x00_dev *rt2x00dev,
 		retval = -ENOTSUPP;
 		break;
 	}
-
-	if (unlikely(retval))
-		ERROR(rt2x00dev, "Device failed to enter state %d (%d).\n",
-		      state, retval);
 
 	return retval;
 }
