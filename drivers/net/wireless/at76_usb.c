@@ -36,55 +36,12 @@
 #include <net/ieee80211_radiotap.h>
 #include <linux/firmware.h>
 #include <linux/leds.h>
-#include <net/ieee80211.h>
 
 #include "at76_usb.h"
 
 /* Version information */
 #define DRIVER_NAME "at76_usb"
-#define DRIVER_VERSION	"0.16"
 #define DRIVER_DESC "Atmel at76x USB Wireless LAN Driver"
-
-/* at76_debug bits */
-#define DBG_PROGRESS		0x00000001	/* authentication/accociation */
-#define DBG_BSS_TABLE		0x00000002	/* show BSS table after scans */
-#define DBG_IOCTL		0x00000004	/* ioctl calls / settings */
-#define DBG_MAC_STATE		0x00000008	/* MAC state transitions */
-#define DBG_TX_DATA		0x00000010	/* tx header */
-#define DBG_TX_DATA_CONTENT	0x00000020	/* tx content */
-#define DBG_TX_MGMT		0x00000040	/* tx management */
-#define DBG_RX_DATA		0x00000080	/* rx data header */
-#define DBG_RX_DATA_CONTENT	0x00000100	/* rx data content */
-#define DBG_RX_MGMT		0x00000200	/* rx mgmt frame headers */
-#define DBG_RX_BEACON		0x00000400	/* rx beacon */
-#define DBG_RX_CTRL		0x00000800	/* rx control */
-#define DBG_RX_MGMT_CONTENT	0x00001000	/* rx mgmt content */
-#define DBG_RX_FRAGS		0x00002000	/* rx data fragment handling */
-#define DBG_DEVSTART		0x00004000	/* fw download, device start */
-#define DBG_URB			0x00008000	/* rx urb status, ... */
-#define DBG_RX_ATMEL_HDR	0x00010000	/* Atmel-specific Rx headers */
-#define DBG_PROC_ENTRY		0x00020000	/* procedure entries/exits */
-#define DBG_PM			0x00040000	/* power management settings */
-#define DBG_BSS_MATCH		0x00080000	/* BSS match failures */
-#define DBG_PARAMS		0x00100000	/* show configured parameters */
-#define DBG_WAIT_COMPLETE	0x00200000	/* command completion */
-#define DBG_RX_FRAGS_SKB	0x00400000	/* skb header of Rx fragments */
-#define DBG_BSS_TABLE_RM	0x00800000	/* purging bss table entries */
-#define DBG_MONITOR_MODE	0x01000000	/* monitor mode */
-#define DBG_MIB			0x02000000	/* dump all MIBs on startup */
-#define DBG_MGMT_TIMER		0x04000000	/* dump mgmt_timer ops */
-#define DBG_WE_EVENTS		0x08000000	/* dump wireless events */
-#define DBG_FW			0x10000000	/* firmware download */
-#define DBG_DFU			0x20000000	/* device firmware upgrade */
-
-#define DBG_DEFAULTS		0
-
-/* Use our own dbg macro */
-#define at76_dbg(bits, format, arg...) \
-	do { \
-		if (at76_debug & (bits)) \
-		printk(KERN_DEBUG DRIVER_NAME ": " format "\n" , ## arg); \
-	} while (0)
 
 static int at76_debug = DBG_DEFAULTS;
 
@@ -242,8 +199,6 @@ static const long channel_frequency[] = {
 	2447, 2452, 2457, 2462, 2467, 2472, 2484
 };
 
-#define NUM_CHANNELS ARRAY_SIZE(channel_frequency)
-
 static const char *const preambles[] = { "long", "short", "auto" };
 
 static const char *const mac_states[] = {
@@ -255,6 +210,8 @@ static const char *const mac_states[] = {
 	[MAC_CONNECTED] = "CONNECTED",
 	[MAC_OWN_IBSS] = "OWN_IBSS"
 };
+
+#define NUM_CHANNELS ARRAY_SIZE(channel_frequency)
 
 /* Firmware download */
 /* DFU states */
