@@ -1689,30 +1689,6 @@ static void b43_set_beacon_int(struct b43_wldev *dev, u16 beacon_int)
 	b43dbg(dev->wl, "Set beacon interval to %u\n", beacon_int);
 }
 
-static void b43_handle_firmware_panic(struct b43_wldev *dev)
-{
-	u16 reason;
-
-	/* Read the register that contains the reason code for the panic. */
-	reason = b43_shm_read16(dev, B43_SHM_SCRATCH, B43_FWPANIC_REASON_REG);
-	b43err(dev->wl, "Whoopsy, firmware panic! Reason: %u\n", reason);
-
-	switch (reason) {
-	default:
-		b43dbg(dev->wl, "The panic reason is unknown.\n");
-		/* fallthrough */
-	case B43_FWPANIC_DIE:
-		/* Do not restart the controller or firmware.
-		 * The device is nonfunctional from now on.
-		 * Restarting would result in this panic to trigger again,
-		 * so we avoid that recursion. */
-		break;
-	case B43_FWPANIC_RESTART:
-		b43_controller_restart(dev, "Microcode panic");
-		break;
-	}
-}
-
 static void handle_irq_ucode_debug(struct b43_wldev *dev)
 {
 	unsigned int i, cnt;
@@ -1723,12 +1699,15 @@ static void handle_irq_ucode_debug(struct b43_wldev *dev)
 	if (!dev->fw.opensource)
 		return;
 
-	/* Read the register that contains the reason code for this IRQ. */
-	reason = b43_shm_read16(dev, B43_SHM_SCRATCH, B43_DEBUGIRQ_REASON_REG);
-
+	/* Microcode register 63 contains the debug-IRQ reason. */
+	reason = b43_shm_read16(dev, B43_SHM_SCRATCH, 63);
 	switch (reason) {
 	case B43_DEBUGIRQ_PANIC:
-		b43_handle_firmware_panic(dev);
+		/* The reason for the panic is in register 3. */
+		reason = b43_shm_read16(dev, B43_SHM_SCRATCH, 3);
+		b43err(dev->wl, "Whoopsy, the microcode panic'ed! Reason: %u\n",
+		       reason);
+		b43_controller_restart(dev, "Microcode panic");
 		break;
 	case B43_DEBUGIRQ_DUMP_SHM:
 		if (!B43_DEBUG)
@@ -1769,9 +1748,7 @@ static void handle_irq_ucode_debug(struct b43_wldev *dev)
 		       reason);
 	}
 out:
-	/* Acknowledge the debug-IRQ, so the firmware can continue. */
-	b43_shm_write16(dev, B43_SHM_SCRATCH,
-			B43_DEBUGIRQ_REASON_REG, B43_DEBUGIRQ_ACK);
+	b43_shm_write16(dev, B43_SHM_SCRATCH, 63, B43_DEBUGIRQ_ACK);
 }
 
 /* Interrupt handler bottom-half */
