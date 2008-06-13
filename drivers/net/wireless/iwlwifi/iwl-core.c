@@ -174,8 +174,9 @@ int iwl_hw_nic_init(struct iwl_priv *priv)
 	int ret;
 
 	/* nic_init */
-	spin_lock_irqsave(&priv->lock, flags);
 	priv->cfg->ops->lib->apm_ops.init(priv);
+
+	spin_lock_irqsave(&priv->lock, flags);
 	iwl_write32(priv, CSR_INT_COALESCING, 512 / 32);
 	spin_unlock_irqrestore(&priv->lock, flags);
 
