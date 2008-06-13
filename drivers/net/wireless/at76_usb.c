@@ -5294,7 +5294,6 @@ static int at76_init_new_device(struct at76_priv *priv,
 	netdev->wireless_handlers = &at76_handler_def;
 	netdev->set_multicast_list = at76_set_multicast;
 	netdev->set_mac_address = at76_set_mac_address;
-	dev_alloc_name(netdev, "wlan%d");
 
 	ret = register_netdev(priv->netdev);
 	if (ret) {
