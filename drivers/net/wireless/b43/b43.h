@@ -733,6 +733,7 @@ struct b43_wl {
 	/* The beacon we are currently using (AP or IBSS mode).
 	 * This beacon stuff is protected by the irq_lock. */
 	struct sk_buff *current_beacon;
+	struct ieee80211_tx_control beacon_txctl;
 	bool beacon0_uploaded;
 	bool beacon1_uploaded;
 	bool beacon_templates_virgin; /* Never wrote the templates? */

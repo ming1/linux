@@ -149,7 +149,8 @@ static int wme_qdiscop_enqueue(struct sk_buff *skb, struct Qdisc* qd)
 	struct ieee80211_local *local = wdev_priv(qd->dev->ieee80211_ptr);
 	struct ieee80211_hw *hw = &local->hw;
 	struct ieee80211_sched_data *q = qdisc_priv(qd);
-	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
+	struct ieee80211_tx_packet_data *pkt_data =
+		(struct ieee80211_tx_packet_data *) skb->cb;
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *) skb->data;
 	unsigned short fc = le16_to_cpu(hdr->frame_control);
 	struct Qdisc *qdisc;
@@ -157,8 +158,8 @@ static int wme_qdiscop_enqueue(struct sk_buff *skb, struct Qdisc* qd)
 	int err, queue;
 	u8 tid;
 
-	if (info->flags & IEEE80211_TX_CTL_REQUEUE) {
-		queue = info->queue;
+	if (pkt_data->flags & IEEE80211_TXPD_REQUEUE) {
+		queue = pkt_data->queue;
 		rcu_read_lock();
 		sta = sta_info_get(local, hdr->addr1);
 		tid = skb->priority & QOS_CONTROL_TAG1D_MASK;
@@ -167,9 +168,9 @@ static int wme_qdiscop_enqueue(struct sk_buff *skb, struct Qdisc* qd)
 			if ((ampdu_queue < QD_NUM(hw)) &&
 			    test_bit(ampdu_queue, q->qdisc_pool)) {
 				queue = ampdu_queue;
-				info->flags |= IEEE80211_TX_CTL_AMPDU;
+				pkt_data->flags |= IEEE80211_TXPD_AMPDU;
 			} else {
-				info->flags &= ~IEEE80211_TX_CTL_AMPDU;
+				pkt_data->flags &= ~IEEE80211_TXPD_AMPDU;
 			}
 		}
 		rcu_read_unlock();
@@ -205,9 +206,9 @@ static int wme_qdiscop_enqueue(struct sk_buff *skb, struct Qdisc* qd)
 			if ((ampdu_queue < QD_NUM(hw)) &&
 			    test_bit(ampdu_queue, q->qdisc_pool)) {
 				queue = ampdu_queue;
-				info->flags |= IEEE80211_TX_CTL_AMPDU;
+				pkt_data->flags |= IEEE80211_TXPD_AMPDU;
 			} else {
-				info->flags &= ~IEEE80211_TX_CTL_AMPDU;
+				pkt_data->flags &= ~IEEE80211_TXPD_AMPDU;
 			}
 		}
 
@@ -219,7 +220,7 @@ static int wme_qdiscop_enqueue(struct sk_buff *skb, struct Qdisc* qd)
 			err = NET_XMIT_DROP;
 	} else {
 		tid = skb->priority & QOS_CONTROL_TAG1D_MASK;
-		info->queue = (unsigned int) queue;
+		pkt_data->queue = (unsigned int) queue;
 		qdisc = q->queues[queue];
 		err = qdisc->enqueue(skb, qdisc);
 		if (err == NET_XMIT_SUCCESS) {
@@ -240,12 +241,13 @@ static int wme_qdiscop_enqueue(struct sk_buff *skb, struct Qdisc* qd)
 static int wme_qdiscop_requeue(struct sk_buff *skb, struct Qdisc* qd)
 {
 	struct ieee80211_sched_data *q = qdisc_priv(qd);
-	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
+	struct ieee80211_tx_packet_data *pkt_data =
+		(struct ieee80211_tx_packet_data *) skb->cb;
 	struct Qdisc *qdisc;
 	int err;
 
 	/* we recorded which queue to use earlier! */
-	qdisc = q->queues[info->queue];
+	qdisc = q->queues[pkt_data->queue];
 
 	if ((err = qdisc->ops->requeue(skb, qdisc)) == 0) {
 		qd->q.qlen++;
