@@ -565,9 +565,13 @@ void rt2x00lib_rxdone(struct queue_entry *entry,
 
 	/*
 	 * The data behind the ieee80211 header must be
-	 * aligned on a 4 byte boundary.
+	 * aligned on a 4 byte boundary. We already reserved
+	 * 2 bytes for header_size % 4 == 2 optimization.
+	 * To determine the number of bytes which the data
+	 * should be moved to the left, we must add these
+	 * 2 bytes to the header_size.
 	 */
-	align = ((unsigned long)(entry->skb->data + header_size)) & 3;
+	align = (header_size + 2) % 4;
 
 	if (align) {
 		skb_push(entry->skb, align);
