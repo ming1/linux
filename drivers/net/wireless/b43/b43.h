@@ -649,6 +649,7 @@ struct b43_pio {
 
 /* Context information for a noise calculation (Link Quality). */
 struct b43_noise_calculation {
+	u8 channel_at_start;
 	bool calculation_running;
 	u8 nr_samples;
 	s8 samples[8][4];
