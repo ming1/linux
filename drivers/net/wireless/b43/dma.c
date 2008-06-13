@@ -795,49 +795,24 @@ struct b43_dmaring *b43_setup_dmaring(struct b43_wldev *dev,
 {
 	struct b43_dmaring *ring;
 	int err;
+	int nr_slots;
 	dma_addr_t dma_test;
 
 	ring = kzalloc(sizeof(*ring), GFP_KERNEL);
 	if (!ring)
 		goto out;
+	ring->type = type;
 
-	ring->nr_slots = B43_RXRING_SLOTS;
+	nr_slots = B43_RXRING_SLOTS;
 	if (for_tx)
-		ring->nr_slots = B43_TXRING_SLOTS;
+		nr_slots = B43_TXRING_SLOTS;
 
-	ring->meta = kcalloc(ring->nr_slots, sizeof(struct b43_dmadesc_meta),
+	ring->meta = kcalloc(nr_slots, sizeof(struct b43_dmadesc_meta),
 			     GFP_KERNEL);
 	if (!ring->meta)
 		goto err_kfree_ring;
-
-	ring->type = type;
-	ring->dev = dev;
-	ring->mmio_base = b43_dmacontroller_base(type, controller_index);
-	ring->index = controller_index;
-	if (type == B43_DMA_64BIT)
-		ring->ops = &dma64_ops;
-	else
-		ring->ops = &dma32_ops;
 	if (for_tx) {
-		ring->tx = 1;
-		ring->current_slot = -1;
-	} else {
-		if (ring->index == 0) {
-			ring->rx_buffersize = B43_DMA0_RX_BUFFERSIZE;
-			ring->frameoffset = B43_DMA0_RX_FRAMEOFFSET;
-		} else if (ring->index == 3) {
-			ring->rx_buffersize = B43_DMA3_RX_BUFFERSIZE;
-			ring->frameoffset = B43_DMA3_RX_FRAMEOFFSET;
-		} else
-			B43_WARN_ON(1);
-	}
-	spin_lock_init(&ring->lock);
-#ifdef CONFIG_B43_DEBUG
-	ring->last_injected_overflow = jiffies;
-#endif
-
-	if (for_tx) {
-		ring->txhdr_cache = kcalloc(ring->nr_slots,
+		ring->txhdr_cache = kcalloc(nr_slots,
 					    b43_txhdr_size(dev),
 					    GFP_KERNEL);
 		if (!ring->txhdr_cache)
@@ -853,7 +828,7 @@ struct b43_dmaring *b43_setup_dmaring(struct b43_wldev *dev,
 					  b43_txhdr_size(dev), 1)) {
 			/* ugh realloc */
 			kfree(ring->txhdr_cache);
-			ring->txhdr_cache = kcalloc(ring->nr_slots,
+			ring->txhdr_cache = kcalloc(nr_slots,
 						    b43_txhdr_size(dev),
 						    GFP_KERNEL | GFP_DMA);
 			if (!ring->txhdr_cache)
@@ -877,6 +852,32 @@ struct b43_dmaring *b43_setup_dmaring(struct b43_wldev *dev,
 				 dma_test, b43_txhdr_size(dev),
 				 DMA_TO_DEVICE);
 	}
+
+	ring->dev = dev;
+	ring->nr_slots = nr_slots;
+	ring->mmio_base = b43_dmacontroller_base(type, controller_index);
+	ring->index = controller_index;
+	if (type == B43_DMA_64BIT)
+		ring->ops = &dma64_ops;
+	else
+		ring->ops = &dma32_ops;
+	if (for_tx) {
+		ring->tx = 1;
+		ring->current_slot = -1;
+	} else {
+		if (ring->index == 0) {
+			ring->rx_buffersize = B43_DMA0_RX_BUFFERSIZE;
+			ring->frameoffset = B43_DMA0_RX_FRAMEOFFSET;
+		} else if (ring->index == 3) {
+			ring->rx_buffersize = B43_DMA3_RX_BUFFERSIZE;
+			ring->frameoffset = B43_DMA3_RX_FRAMEOFFSET;
+		} else
+			B43_WARN_ON(1);
+	}
+	spin_lock_init(&ring->lock);
+#ifdef CONFIG_B43_DEBUG
+	ring->last_injected_overflow = jiffies;
+#endif
 
 	err = alloc_ringmemory(ring);
 	if (err)
