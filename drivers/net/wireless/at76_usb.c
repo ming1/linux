@@ -4708,6 +4708,24 @@ static void at76_rx_mgmt(struct at76_priv *priv, struct at76_rx_buffer *buf)
 	return;
 }
 
+static void at76_dbg_dumpbuf(const char *tag, const u8 *buf, int size)
+{
+	int i;
+
+	if (!at76_debug)
+		return;
+
+	for (i = 0; i < size; i++) {
+		if ((i % 8) == 0) {
+			if (i)
+				pr_debug("\n");
+			pr_debug(DRIVER_NAME ": %s: ", tag);
+		}
+		pr_debug("%02x ", buf[i]);
+	}
+	pr_debug("\n");
+}
+
 /* Convert the 802.11 header into an ethernet-style header, make skb
  * ready for consumption by netif_rx() */
 static void at76_ieee80211_to_eth(struct sk_buff *skb, int iw_mode)
@@ -4987,11 +5005,12 @@ static void at76_rx_data(struct at76_priv *priv)
 	struct ieee80211_hdr_3addr *i802_11_hdr;
 	int length = le16_to_cpu(buf->wlength);
 
-	at76_dbg(DBG_RX_DATA, "%s received data packet: %s", netdev->name,
-		 hex2str(skb->data, AT76_RX_HDRLEN));
+	at76_dbg(DBG_RX_DATA, "%s received data packet:", netdev->name);
+	if (at76_debug & DBG_RX_DATA)
+		at76_dbg_dumpbuf(" rxhdr", skb->data, AT76_RX_HDRLEN);
 
-	at76_dbg(DBG_RX_DATA_CONTENT, "rx packet: %s",
-		 hex2str(skb->data + AT76_RX_HDRLEN, length));
+	if (at76_debug & DBG_RX_DATA_CONTENT)
+		at76_dbg_dumpbuf("packet", skb->data + AT76_RX_HDRLEN, length);
 
 	skb = at76_check_for_rx_frags(priv);
 	if (!skb)
