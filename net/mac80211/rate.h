@@ -19,15 +19,14 @@
 #include "ieee80211_i.h"
 #include "sta_info.h"
 
-/**
- * struct rate_selection - rate selection for rate control algos
- * @rate: selected transmission rate index
- * @nonerp: Non-ERP rate to use instead if ERP cannot be used
- * @probe: rate for probing (or -1)
- *
- */
+/* TODO: kdoc */
 struct rate_selection {
-	s8 rate_idx, nonerp_idx, probe_idx;
+	/* Selected transmission rate */
+	struct ieee80211_rate *rate;
+	/* Non-ERP rate to use if mac80211 decides it cannot use an ERP rate */
+	struct ieee80211_rate *nonerp;
+	/* probe with this rate, or NULL for no probing */
+	struct ieee80211_rate *probe;
 };
 
 struct rate_control_ops {
@@ -139,7 +138,7 @@ static inline int rate_supported(struct sta_info *sta,
 	return (sta == NULL || sta->supp_rates[band] & BIT(index));
 }
 
-static inline s8
+static inline int
 rate_lowest_index(struct ieee80211_local *local,
 		  struct ieee80211_supported_band *sband,
 		  struct sta_info *sta)
@@ -154,6 +153,14 @@ rate_lowest_index(struct ieee80211_local *local,
 	WARN_ON(1);
 
 	return 0;
+}
+
+static inline struct ieee80211_rate *
+rate_lowest(struct ieee80211_local *local,
+	    struct ieee80211_supported_band *sband,
+	    struct sta_info *sta)
+{
+	return &sband->bitrates[rate_lowest_index(local, sband, sta)];
 }
 
 

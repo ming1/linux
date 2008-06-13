@@ -91,12 +91,11 @@ static u16 ieee80211_duration(struct ieee80211_tx_data *tx, int group_addr,
 			      int next_frag_len)
 {
 	int rate, mrate, erp, dur, i;
-	struct ieee80211_rate *txrate;
+	struct ieee80211_rate *txrate = tx->rate;
 	struct ieee80211_local *local = tx->local;
 	struct ieee80211_supported_band *sband;
 
-	sband = local->hw.wiphy->bands[tx->channel->band];
-	txrate = &sband->bitrates[tx->rate_idx];
+	sband = local->hw.wiphy->bands[local->hw.conf.channel->band];
 
 	erp = 0;
 	if (tx->sdata->flags & IEEE80211_SDATA_OPERATING_GMODE)
@@ -611,40 +610,40 @@ ieee80211_tx_h_rate_ctrl(struct ieee80211_tx_data *tx)
 	struct rate_selection rsel;
 	struct ieee80211_supported_band *sband;
 
-	sband = tx->local->hw.wiphy->bands[tx->channel->band];
+	sband = tx->local->hw.wiphy->bands[tx->local->hw.conf.channel->band];
 
-	if (likely(tx->rate_idx < 0)) {
+	if (likely(!tx->rate)) {
 		rate_control_get_rate(tx->dev, sband, tx->skb, &rsel);
-		tx->rate_idx = rsel.rate_idx;
-		if (unlikely(rsel.probe_idx >= 0)) {
+		tx->rate = rsel.rate;
+		if (unlikely(rsel.probe)) {
 			tx->control->flags |=
 				IEEE80211_TXCTL_RATE_CTRL_PROBE;
 			tx->flags |= IEEE80211_TX_PROBE_LAST_FRAG;
-			tx->control->alt_retry_rate_idx = tx->rate_idx;
-			tx->rate_idx = rsel.probe_idx;
+			tx->control->alt_retry_rate = tx->rate;
+			tx->rate = rsel.probe;
 		} else
-			tx->control->alt_retry_rate_idx = -1;
+			tx->control->alt_retry_rate = NULL;
 
-		if (unlikely(tx->rate_idx < 0))
+		if (!tx->rate)
 			return TX_DROP;
 	} else
-		tx->control->alt_retry_rate_idx = -1;
+		tx->control->alt_retry_rate = NULL;
 
 	if (tx->sdata->bss_conf.use_cts_prot &&
-	    (tx->flags & IEEE80211_TX_FRAGMENTED) && (rsel.nonerp_idx >= 0)) {
-		tx->last_frag_rate_idx = tx->rate_idx;
-		if (rsel.probe_idx >= 0)
+	    (tx->flags & IEEE80211_TX_FRAGMENTED) && rsel.nonerp) {
+		tx->last_frag_rate = tx->rate;
+		if (rsel.probe)
 			tx->flags &= ~IEEE80211_TX_PROBE_LAST_FRAG;
 		else
 			tx->flags |= IEEE80211_TX_PROBE_LAST_FRAG;
-		tx->rate_idx = rsel.nonerp_idx;
-		tx->control->tx_rate_idx = rsel.nonerp_idx;
+		tx->rate = rsel.nonerp;
+		tx->control->tx_rate = rsel.nonerp;
 		tx->control->flags &= ~IEEE80211_TXCTL_RATE_CTRL_PROBE;
 	} else {
-		tx->last_frag_rate_idx = tx->rate_idx;
-		tx->control->tx_rate_idx = tx->rate_idx;
+		tx->last_frag_rate = tx->rate;
+		tx->control->tx_rate = tx->rate;
 	}
-	tx->control->tx_rate_idx = tx->rate_idx;
+	tx->control->tx_rate = tx->rate;
 
 	return TX_CONTINUE;
 }
@@ -656,9 +655,6 @@ ieee80211_tx_h_misc(struct ieee80211_tx_data *tx)
 	u16 fc = le16_to_cpu(hdr->frame_control);
 	u16 dur;
 	struct ieee80211_tx_control *control = tx->control;
-	struct ieee80211_supported_band *sband;
-
-	sband = tx->local->hw.wiphy->bands[tx->channel->band];
 
 	if (!control->retry_limit) {
 		if (!is_multicast_ether_addr(hdr->addr1)) {
@@ -685,14 +681,14 @@ ieee80211_tx_h_misc(struct ieee80211_tx_data *tx)
 		 * frames.
 		 * TODO: The last fragment could still use multiple retry
 		 * rates. */
-		control->alt_retry_rate_idx = -1;
+		control->alt_retry_rate = NULL;
 	}
 
 	/* Use CTS protection for unicast frames sent using extended rates if
 	 * there are associated non-ERP stations and RTS/CTS is not configured
 	 * for the frame. */
 	if ((tx->sdata->flags & IEEE80211_SDATA_OPERATING_GMODE) &&
-	    (sband->bitrates[tx->rate_idx].flags & IEEE80211_RATE_ERP_G) &&
+	    (tx->rate->flags & IEEE80211_RATE_ERP_G) &&
 	    (tx->flags & IEEE80211_TX_UNICAST) &&
 	    tx->sdata->bss_conf.use_cts_prot &&
 	    !(control->flags & IEEE80211_TXCTL_USE_RTS_CTS))
@@ -702,7 +698,7 @@ ieee80211_tx_h_misc(struct ieee80211_tx_data *tx)
 	 * short preambles at the selected rate and short preambles are
 	 * available on the network at the current point in time. */
 	if (((fc & IEEE80211_FCTL_FTYPE) == IEEE80211_FTYPE_DATA) &&
-	    (sband->bitrates[tx->rate_idx].flags & IEEE80211_RATE_SHORT_PREAMBLE) &&
+	    (tx->rate->flags & IEEE80211_RATE_SHORT_PREAMBLE) &&
 	    tx->sdata->bss_conf.use_short_preamble &&
 	    (!tx->sta || test_sta_flags(tx->sta, WLAN_STA_SHORT_PREAMBLE))) {
 		tx->control->flags |= IEEE80211_TXCTL_SHORT_PREAMBLE;
@@ -719,32 +715,32 @@ ieee80211_tx_h_misc(struct ieee80211_tx_data *tx)
 	if ((control->flags & IEEE80211_TXCTL_USE_RTS_CTS) ||
 	    (control->flags & IEEE80211_TXCTL_USE_CTS_PROTECT)) {
 		struct ieee80211_supported_band *sband;
-		struct ieee80211_rate *rate;
-		s8 baserate = -1;
+		struct ieee80211_rate *rate, *baserate;
 		int idx;
 
-		sband = tx->local->hw.wiphy->bands[tx->channel->band];
+		sband = tx->local->hw.wiphy->bands[
+				tx->local->hw.conf.channel->band];
 
 		/* Do not use multiple retry rates when using RTS/CTS */
-		control->alt_retry_rate_idx = -1;
+		control->alt_retry_rate = NULL;
 
 		/* Use min(data rate, max base rate) as CTS/RTS rate */
-		rate = &sband->bitrates[tx->rate_idx];
+		rate = tx->rate;
+		baserate = NULL;
 
 		for (idx = 0; idx < sband->n_bitrates; idx++) {
 			if (sband->bitrates[idx].bitrate > rate->bitrate)
 				continue;
 			if (tx->sdata->basic_rates & BIT(idx) &&
-			    (baserate < 0 ||
-			     (sband->bitrates[baserate].bitrate
-			      < sband->bitrates[idx].bitrate)))
-				baserate = idx;
+			    (!baserate ||
+			     (baserate->bitrate < sband->bitrates[idx].bitrate)))
+				baserate = &sband->bitrates[idx];
 		}
 
-		if (baserate >= 0)
-			control->rts_cts_rate_idx = baserate;
+		if (baserate)
+			control->rts_cts_rate = baserate;
 		else
-			control->rts_cts_rate_idx = 0;
+			control->rts_cts_rate = &sband->bitrates[0];
 	}
 
 	if (tx->sta) {
@@ -772,11 +768,7 @@ ieee80211_tx_h_load_stats(struct ieee80211_tx_data *tx)
 	struct sk_buff *skb = tx->skb;
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *) skb->data;
 	u32 load = 0, hdrtime;
-	struct ieee80211_rate *rate;
-	struct ieee80211_supported_band *sband;
-
-	sband = tx->local->hw.wiphy->bands[tx->channel->band];
-	rate = &sband->bitrates[tx->rate_idx];
+	struct ieee80211_rate *rate = tx->rate;
 
 	/* TODO: this could be part of tx_status handling, so that the number
 	 * of retries would be known; TX rate should in that case be stored
@@ -811,7 +803,7 @@ ieee80211_tx_h_load_stats(struct ieee80211_tx_data *tx)
 		for (i = 0; i < tx->num_extra_frag; i++) {
 			load += 2 * hdrtime;
 			load += tx->extra_frag[i]->len *
-				rate->bitrate;
+				tx->rate->bitrate;
 		}
 	}
 
@@ -867,7 +859,7 @@ __ieee80211_parse_tx_radiotap(struct ieee80211_tx_data *tx,
 	int ret = ieee80211_radiotap_iterator_init(&iterator, rthdr, skb->len);
 	struct ieee80211_tx_control *control = tx->control;
 
-	sband = tx->local->hw.wiphy->bands[tx->channel->band];
+	sband = tx->local->hw.wiphy->bands[tx->local->hw.conf.channel->band];
 
 	control->flags |= IEEE80211_TXCTL_DO_NOT_ENCRYPT;
 	tx->flags |= IEEE80211_TX_INJECTED;
@@ -907,7 +899,7 @@ __ieee80211_parse_tx_radiotap(struct ieee80211_tx_data *tx,
 				r = &sband->bitrates[i];
 
 				if (r->bitrate == target_rate) {
-					tx->rate_idx = i;
+					tx->rate = r;
 					break;
 				}
 			}
@@ -1105,7 +1097,7 @@ static int __ieee80211_tx(struct ieee80211_local *local, struct sk_buff *skb,
 			if (__ieee80211_queue_stopped(local, control->queue))
 				return IEEE80211_TX_FRAG_AGAIN;
 			if (i == tx->num_extra_frag) {
-				control->tx_rate_idx = tx->last_frag_rate_idx;
+				control->tx_rate = tx->last_frag_rate;
 
 				if (tx->flags & IEEE80211_TX_PROBE_LAST_FRAG)
 					control->flags |=
@@ -1163,7 +1155,6 @@ static int ieee80211_tx(struct net_device *dev, struct sk_buff *skb,
 
 	sta = tx.sta;
 	tx.channel = local->hw.conf.channel;
-	control->band = tx.channel->band;
 
 	for (handler = ieee80211_tx_handlers; *handler != NULL;
 	     handler++) {
@@ -1196,7 +1187,7 @@ static int ieee80211_tx(struct net_device *dev, struct sk_buff *skb,
 				next_len = tx.extra_frag[i + 1]->len;
 			} else {
 				next_len = 0;
-				tx.rate_idx = tx.last_frag_rate_idx;
+				tx.rate = tx.last_frag_rate;
 			}
 			dur = ieee80211_duration(&tx, 0, next_len);
 			hdr->duration_id = cpu_to_le16(dur);
@@ -1233,7 +1224,7 @@ retry:
 		store->skb = skb;
 		store->extra_frag = tx.extra_frag;
 		store->num_extra_frag = tx.num_extra_frag;
-		store->last_frag_rate_idx = tx.last_frag_rate_idx;
+		store->last_frag_rate = tx.last_frag_rate;
 		store->last_frag_rate_ctrl_probe =
 			!!(tx.flags & IEEE80211_TX_PROBE_LAST_FRAG);
 	}
@@ -1694,7 +1685,7 @@ void ieee80211_tx_pending(unsigned long data)
 		tx.control = &store->control;
 		tx.extra_frag = store->extra_frag;
 		tx.num_extra_frag = store->num_extra_frag;
-		tx.last_frag_rate_idx = store->last_frag_rate_idx;
+		tx.last_frag_rate = store->last_frag_rate;
 		tx.flags = 0;
 		if (store->last_frag_rate_ctrl_probe)
 			tx.flags |= IEEE80211_TX_PROBE_LAST_FRAG;
@@ -1798,10 +1789,9 @@ struct sk_buff *ieee80211_beacon_get(struct ieee80211_hw *hw,
 	struct ieee80211_mgmt *mgmt;
 	int *num_beacons;
 	bool err = true;
-	enum ieee80211_band band = local->hw.conf.channel->band;
 	u8 *pos;
 
-	sband = local->hw.wiphy->bands[band];
+	sband = local->hw.wiphy->bands[local->hw.conf.channel->band];
 
 	rcu_read_lock();
 
@@ -1895,9 +1885,8 @@ struct sk_buff *ieee80211_beacon_get(struct ieee80211_hw *hw,
 	}
 
 	if (control) {
-		control->band = band;
 		rate_control_get_rate(local->mdev, sband, skb, &rsel);
-		if (unlikely(rsel.rate_idx < 0)) {
+		if (!rsel.rate) {
 			if (net_ratelimit()) {
 				printk(KERN_DEBUG "%s: ieee80211_beacon_get: "
 				       "no rate found\n",
@@ -1909,9 +1898,9 @@ struct sk_buff *ieee80211_beacon_get(struct ieee80211_hw *hw,
 		}
 
 		control->vif = vif;
-		control->tx_rate_idx = rsel.rate_idx;
+		control->tx_rate = rsel.rate;
 		if (sdata->bss_conf.use_short_preamble &&
-		    sband->bitrates[rsel.rate_idx].flags & IEEE80211_RATE_SHORT_PREAMBLE)
+		    rsel.rate->flags & IEEE80211_RATE_SHORT_PREAMBLE)
 			control->flags |= IEEE80211_TXCTL_SHORT_PREAMBLE;
 		control->antenna_sel_tx = local->hw.conf.antenna_sel_tx;
 		control->flags |= IEEE80211_TXCTL_NO_ACK;
@@ -2017,7 +2006,6 @@ ieee80211_get_buffered_bc(struct ieee80211_hw *hw,
 	sta = tx.sta;
 	tx.flags |= IEEE80211_TX_PS_BUFFERED;
 	tx.channel = local->hw.conf.channel;
-	control->band = tx.channel->band;
 
 	for (handler = ieee80211_tx_handlers; *handler != NULL; handler++) {
 		res = (*handler)(&tx);
