@@ -4561,13 +4561,22 @@ static ssize_t proc_read( struct file *file,
 			  size_t len,
 			  loff_t *offset )
 {
-	struct proc_data *priv = file->private_data;
+	loff_t pos = *offset;
+	struct proc_data *priv = (struct proc_data*)file->private_data;
 
 	if (!priv->rbuffer)
 		return -EINVAL;
 
-	return simple_read_from_buffer(buffer, len, offset, priv->rbuffer,
-					priv->readlen);
+	if (pos < 0)
+		return -EINVAL;
+	if (pos >= priv->readlen)
+		return 0;
+	if (len > priv->readlen - pos)
+		len = priv->readlen - pos;
+	if (copy_to_user(buffer, priv->rbuffer + pos, len))
+		return -EFAULT;
+	*offset = pos + len;
+	return len;
 }
 
 /*
