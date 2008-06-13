@@ -3204,7 +3204,10 @@ static u16 iwl4965_build_addsta_hcmd(const struct iwl_addsta_cmd *cmd, u8 *data)
 
 static inline u32 iwl4965_get_scd_ssn(struct iwl4965_tx_resp *tx_resp)
 {
-	return le32_to_cpup(&tx_resp->u.status + tx_resp->frame_count) & MAX_SN;
+	__le32 *scd_ssn = (__le32 *)((u32 *)&tx_resp->status +
+				tx_resp->frame_count);
+	return le32_to_cpu(*scd_ssn) & MAX_SN;
+
 }
 
 /**
@@ -3212,14 +3215,15 @@ static inline u32 iwl4965_get_scd_ssn(struct iwl4965_tx_resp *tx_resp)
  */
 static int iwl4965_tx_status_reply_tx(struct iwl_priv *priv,
 				      struct iwl_ht_agg *agg,
-				      struct iwl4965_tx_resp *tx_resp,
-				      int txq_id, u16 start_idx)
+				      struct iwl4965_tx_resp_agg *tx_resp,
+				      u16 start_idx)
 {
 	u16 status;
-	struct agg_tx_status *frame_status = tx_resp->u.agg_status;
+	struct agg_tx_status *frame_status = &tx_resp->status;
 	struct ieee80211_tx_info *info = NULL;
 	struct ieee80211_hdr *hdr = NULL;
-	int i, sh, idx;
+	int i, sh;
+	int txq_id, idx;
 	u16 seq;
 
 	if (agg->wait_for_ba)
@@ -3234,7 +3238,9 @@ static int iwl4965_tx_status_reply_tx(struct iwl_priv *priv,
 	if (agg->frame_count == 1) {
 		/* Only one frame was attempted; no block-ack will arrive */
 		status = le16_to_cpu(frame_status[0].status);
-		idx = start_idx;
+		seq  = le16_to_cpu(frame_status[0].sequence);
+		idx = SEQ_TO_INDEX(seq);
+		txq_id = SEQ_TO_QUEUE(seq);
 
 		/* FIXME: code repetition */
 		IWL_DEBUG_TX_REPLY("FrameCnt = %d, StartIdx=%d idx=%d\n",
@@ -3335,7 +3341,7 @@ static void iwl4965_rx_reply_tx(struct iwl_priv *priv,
 	struct iwl_tx_queue *txq = &priv->txq[txq_id];
 	struct ieee80211_tx_info *info;
 	struct iwl4965_tx_resp *tx_resp = (void *)&pkt->u.raw[0];
-	u32  status = le32_to_cpu(tx_resp->u.status);
+	u32  status = le32_to_cpu(tx_resp->status);
 	int tid = MAX_TID_COUNT, sta_id = IWL_INVALID_STATION;
 	u16 fc;
 	struct ieee80211_hdr *hdr;
@@ -3374,7 +3380,8 @@ static void iwl4965_rx_reply_tx(struct iwl_priv *priv,
 
 		agg = &priv->stations[sta_id].tid[tid].agg;
 
-		iwl4965_tx_status_reply_tx(priv, agg, tx_resp, txq_id, index);
+		iwl4965_tx_status_reply_tx(priv, agg,
+				(struct iwl4965_tx_resp_agg *)tx_resp, index);
 
 		if ((tx_resp->frame_count == 1) && !iwl_is_tx_success(status)) {
 			/* TODO: send BAR */
