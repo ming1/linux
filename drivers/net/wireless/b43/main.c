@@ -1430,17 +1430,11 @@ static void b43_write_beacon_template(struct b43_wldev *dev,
 		i += ie_len + 2;
 	}
 	if (!tim_found) {
-		/*
-		 * If ucode wants to modify TIM do it behind the beacon, this
-		 * will happen, for example, when doing mesh networking.
-		 */
-		b43_shm_write16(dev, B43_SHM_SHARED,
-				B43_SHM_SH_TIMBPOS,
-				len + sizeof(struct b43_plcp_hdr6));
-		b43_shm_write16(dev, B43_SHM_SHARED,
-				B43_SHM_SH_DTIMPER, 0);
-	}
-	b43dbg(dev->wl, "Updated beacon template at 0x%x\n", ram_offset);
+		b43warn(dev->wl, "Did not find a valid TIM IE in "
+			"the beacon template packet. AP or IBSS operation "
+			"may be broken.\n");
+	} else
+		b43dbg(dev->wl, "Updated beacon template\n");
 }
 
 static void b43_write_probe_resp_plcp(struct b43_wldev *dev,
@@ -1579,8 +1573,7 @@ static void handle_irq_beacon(struct b43_wldev *dev)
 	struct b43_wl *wl = dev->wl;
 	u32 cmd, beacon0_valid, beacon1_valid;
 
-	if (!b43_is_mode(wl, IEEE80211_IF_TYPE_AP) &&
-	    !b43_is_mode(wl, IEEE80211_IF_TYPE_MESH_POINT))
+	if (!b43_is_mode(wl, IEEE80211_IF_TYPE_AP))
 		return;
 
 	/* This is the bottom half of the asynchronous beacon update. */
@@ -2525,8 +2518,7 @@ static void b43_adjust_opmode(struct b43_wldev *dev)
 	ctl &= ~B43_MACCTL_BEACPROMISC;
 	ctl |= B43_MACCTL_INFRA;
 
-	if (b43_is_mode(wl, IEEE80211_IF_TYPE_AP) ||
-	    b43_is_mode(wl, IEEE80211_IF_TYPE_MESH_POINT))
+	if (b43_is_mode(wl, IEEE80211_IF_TYPE_AP))
 		ctl |= B43_MACCTL_AP;
 	else if (b43_is_mode(wl, IEEE80211_IF_TYPE_IBSS))
 		ctl &= ~B43_MACCTL_INFRA;
@@ -3393,9 +3385,8 @@ static int b43_op_config(struct ieee80211_hw *hw, struct ieee80211_conf *conf)
 	antenna = b43_antenna_from_ieee80211(dev, conf->antenna_sel_rx);
 	b43_set_rx_antenna(dev, antenna);
 
-	/* Update templates for AP/mesh mode. */
-	if (b43_is_mode(wl, IEEE80211_IF_TYPE_AP) ||
-	    b43_is_mode(wl, IEEE80211_IF_TYPE_MESH_POINT))
+	/* Update templates for AP mode. */
+	if (b43_is_mode(wl, IEEE80211_IF_TYPE_AP))
 		b43_set_beacon_int(dev, conf->beacon_int);
 
 	if (!!conf->radio_enabled != phy->radio_on) {
@@ -3583,9 +3574,8 @@ static int b43_op_config_interface(struct ieee80211_hw *hw,
 	else
 		memset(wl->bssid, 0, ETH_ALEN);
 	if (b43_status(dev) >= B43_STAT_INITIALIZED) {
-		if (b43_is_mode(wl, IEEE80211_IF_TYPE_AP) ||
-		    b43_is_mode(wl, IEEE80211_IF_TYPE_MESH_POINT)) {
-			B43_WARN_ON(conf->type != wl->if_type);
+		if (b43_is_mode(wl, IEEE80211_IF_TYPE_AP)) {
+			B43_WARN_ON(conf->type != IEEE80211_IF_TYPE_AP);
 			b43_set_ssid(dev, conf->ssid, conf->ssid_len);
 			if (conf->beacon)
 				b43_update_templates(wl, conf->beacon);
@@ -4125,7 +4115,6 @@ static int b43_op_add_interface(struct ieee80211_hw *hw,
 	/* TODO: allow WDS/AP devices to coexist */
 
 	if (conf->type != IEEE80211_IF_TYPE_AP &&
-	    conf->type != IEEE80211_IF_TYPE_MESH_POINT &&
 	    conf->type != IEEE80211_IF_TYPE_STA &&
 	    conf->type != IEEE80211_IF_TYPE_WDS &&
 	    conf->type != IEEE80211_IF_TYPE_IBSS)
