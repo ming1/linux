@@ -1073,29 +1073,17 @@ unsigned int iwl4965_fill_beacon_frame(struct iwl_priv *priv,
 	return priv->ibss_beacon->len;
 }
 
-static u8 iwl4965_rate_get_lowest_plcp(struct iwl_priv *priv)
+static u8 iwl4965_rate_get_lowest_plcp(int rate_mask)
 {
-	int i;
-	int rate_mask;
+	u8 i;
 
-	/* Set rate mask*/
-	if (priv->staging_rxon.flags & RXON_FLG_BAND_24G_MSK)
-		rate_mask = priv->active_rate_basic & 0xF;
-	else
-		rate_mask = priv->active_rate_basic & 0xFF0;
-
-	/* Find lowest valid rate */
 	for (i = IWL_RATE_1M_INDEX; i != IWL_RATE_INVALID;
-					i = iwl4965_rates[i].next_ieee) {
+	     i = iwl4965_rates[i].next_ieee) {
 		if (rate_mask & (1 << i))
 			return iwl4965_rates[i].plcp;
 	}
 
-	/* No valid rate was found. Assign the lowest one */
-	if (priv->staging_rxon.flags & RXON_FLG_BAND_24G_MSK)
-		return IWL_RATE_1M_PLCP;
-	else
-		return IWL_RATE_6M_PLCP;
+	return IWL_RATE_INVALID;
 }
 
 static int iwl4965_send_beacon_cmd(struct iwl_priv *priv)
@@ -1113,7 +1101,16 @@ static int iwl4965_send_beacon_cmd(struct iwl_priv *priv)
 		return -ENOMEM;
 	}
 
-	rate = iwl4965_rate_get_lowest_plcp(priv);
+	if (!(priv->staging_rxon.flags & RXON_FLG_BAND_24G_MSK)) {
+		rate = iwl4965_rate_get_lowest_plcp(priv->active_rate_basic &
+						0xFF0);
+		if (rate == IWL_INVALID_RATE)
+			rate = IWL_RATE_6M_PLCP;
+	} else {
+		rate = iwl4965_rate_get_lowest_plcp(priv->active_rate_basic & 0xF);
+		if (rate == IWL_INVALID_RATE)
+			rate = IWL_RATE_1M_PLCP;
+	}
 
 	frame_size = iwl4965_hw_get_beacon_cmd(priv, frame, rate);
 
