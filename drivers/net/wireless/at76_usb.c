@@ -1645,7 +1645,7 @@ static struct fwentry *at76_load_firmware(struct usb_device *udev,
 			   fwe->fwname);
 		dev_printk(KERN_ERR, &udev->dev,
 			   "you may need to download the firmware from "
-			   "http://developer.berlios.de/projects/at76c503a/\n");
+			   "http://developer.berlios.de/projects/at76c503a/");
 		goto exit;
 	}
 
@@ -1885,7 +1885,7 @@ static int at76_join(struct at76_priv *priv)
 				    sizeof(struct at76_req_join));
 
 	if (ret < 0) {
-		printk(KERN_ERR "%s: at76_set_card_command failed: %d\n",
+		printk(KERN_ERR "%s: CMD_JOIN failed: %d",
 		       wiphy_name(priv->hw->wiphy), ret);
 		return 0;
 	}
@@ -1893,7 +1893,7 @@ static int at76_join(struct at76_priv *priv)
 	ret = at76_wait_completion(priv, CMD_JOIN);
 	at76_dbg(DBG_MAC80211, "%s: CMD_JOIN returned: 0x%02x", __func__, ret);
 	if (ret != CMD_STATUS_COMPLETE) {
-		printk(KERN_ERR "%s: at76_wait_completion failed: %d\n",
+		printk(KERN_ERR "%s: CMD_JOIN failed: %d",
 		       wiphy_name(priv->hw->wiphy), ret);
 		return 0;
 	}
