@@ -105,8 +105,11 @@ static int classify80211(struct sk_buff *skb, struct Qdisc *qd)
 {
 	struct ieee80211_local *local = wdev_priv(qd->dev->ieee80211_ptr);
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *) skb->data;
+	unsigned short fc = le16_to_cpu(hdr->frame_control);
+	int qos;
 
-	if (!ieee80211_is_data(hdr->frame_control)) {
+	/* see if frame is data or non data frame */
+	if (unlikely((fc & IEEE80211_FCTL_FTYPE) != IEEE80211_FTYPE_DATA)) {
 		/* management frames go on AC_VO queue, but are sent
 		* without QoS control fields */
 		return 0;
@@ -116,7 +119,10 @@ static int classify80211(struct sk_buff *skb, struct Qdisc *qd)
 		/* use AC from radiotap */
 	}
 
-	if (!ieee80211_is_data_qos(hdr->frame_control)) {
+	/* is this a QoS frame? */
+	qos = fc & IEEE80211_STYPE_QOS_DATA;
+
+	if (!qos) {
 		skb->priority = 0; /* required for correct WPA/11i MIC */
 		return ieee802_1d_to_ac[skb->priority];
 	}
@@ -145,6 +151,7 @@ static int wme_qdiscop_enqueue(struct sk_buff *skb, struct Qdisc* qd)
 	struct ieee80211_sched_data *q = qdisc_priv(qd);
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *) skb->data;
+	unsigned short fc = le16_to_cpu(hdr->frame_control);
 	struct Qdisc *qdisc;
 	struct sta_info *sta;
 	int err, queue;
@@ -178,15 +185,16 @@ static int wme_qdiscop_enqueue(struct sk_buff *skb, struct Qdisc* qd)
 
 	/* now we know the 1d priority, fill in the QoS header if there is one
 	 */
-	if (ieee80211_is_data_qos(hdr->frame_control)) {
-		u8 *p = ieee80211_get_qos_ctl(hdr);
+	if (WLAN_FC_IS_QOS_DATA(fc)) {
+		u8 *p = skb->data + ieee80211_get_hdrlen(fc) - 2;
 		u8 ack_policy = 0;
 		tid = skb->priority & QOS_CONTROL_TAG1D_MASK;
 		if (local->wifi_wme_noack_test)
 			ack_policy |= QOS_CONTROL_ACK_POLICY_NOACK <<
 					QOS_CONTROL_ACK_POLICY_SHIFT;
 		/* qos header is 2 bytes, second reserved */
-		*p++ = ack_policy | tid;
+		*p = ack_policy | tid;
+		p++;
 		*p = 0;
 
 		rcu_read_lock();
