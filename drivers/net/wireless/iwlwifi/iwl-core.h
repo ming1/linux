@@ -209,8 +209,6 @@ void iwl_rx_allocate(struct iwl_priv *priv);
 void iwl_rx_missed_beacon_notif(struct iwl_priv *priv,
 			       struct iwl_rx_mem_buffer *rxb);
 
-/* TX helpers */
-
 /*****************************************************
 * TX
 ******************************************************/
@@ -222,7 +220,6 @@ void iwl_hw_txq_ctx_free(struct iwl_priv *priv);
 int iwl_hw_txq_attach_buf_to_tfd(struct iwl_priv *priv, void *tfd,
 					dma_addr_t addr, u16 len);
 int iwl_txq_update_write_ptr(struct iwl_priv *priv, struct iwl_tx_queue *txq);
-
 /*****************************************************
  *   S e n d i n g     H o s t     C o m m a n d s   *
  *****************************************************/
