@@ -553,7 +553,7 @@ struct rt2x00lib_ops {
 	int (*get_tx_data_len) (struct rt2x00_dev *rt2x00dev,
 				struct sk_buff *skb);
 	void (*kick_tx_queue) (struct rt2x00_dev *rt2x00dev,
-			       const enum data_queue_qid queue);
+			       const unsigned int queue);
 
 	/*
 	 * RX control handlers
@@ -932,12 +932,13 @@ static inline u16 get_duration_res(const unsigned int size, const u8 rate)
 }
 
 /**
- * rt2x00queue_get_queue - Convert queue index to queue pointer
+ * rt2x00queue_get_queue - Convert mac80211 queue index to rt2x00 queue
  * @rt2x00dev: Pointer to &struct rt2x00_dev.
- * @queue: rt2x00 queue index (see &enum data_queue_qid).
+ * @queue: mac80211/rt2x00 queue index
+ *	(see &enum ieee80211_tx_queue and &enum rt2x00_bcn_queue).
  */
 struct data_queue *rt2x00queue_get_queue(struct rt2x00_dev *rt2x00dev,
-					 const enum data_queue_qid queue);
+					 const unsigned int queue);
 
 /**
  * rt2x00queue_get_entry - Get queue entry where the given index points to.
