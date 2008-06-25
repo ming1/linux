@@ -176,24 +176,20 @@ void rate_control_get_rate(struct net_device *dev,
 	rcu_read_lock();
 	sta = sta_info_get(local, hdr->addr1);
 
-	sel->rate_idx = -1;
-	sel->nonerp_idx = -1;
-	sel->probe_idx = -1;
+	memset(sel, 0, sizeof(struct rate_selection));
 
 	ref->ops->get_rate(ref->priv, dev, sband, skb, sel);
 
-	BUG_ON(sel->rate_idx < 0);
-
 	/* Select a non-ERP backup rate. */
-	if (sel->nonerp_idx < 0) {
+	if (!sel->nonerp) {
 		for (i = 0; i < sband->n_bitrates; i++) {
 			struct ieee80211_rate *rate = &sband->bitrates[i];
-			if (sband->bitrates[sel->rate_idx].bitrate < rate->bitrate)
+			if (sel->rate->bitrate < rate->bitrate)
 				break;
 
 			if (rate_supported(sta, sband->band, i) &&
 			    !(rate->flags & IEEE80211_RATE_ERP_G))
-				sel->nonerp_idx = i;
+				sel->nonerp = rate;
 		}
 	}
 

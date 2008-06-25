@@ -1323,8 +1323,7 @@ ath5k_txbuf_setup(struct ath5k_softc *sc, struct ath5k_buf *bf,
 
 	ret = ah->ah_setup_tx_desc(ah, ds, pktlen,
 		ieee80211_get_hdrlen_from_skb(skb), AR5K_PKT_TYPE_NORMAL,
-		(sc->power_level * 2),
-		ieee80211_get_tx_rate(sc->hw, ctl)->hw_value,
+		(sc->power_level * 2), ctl->tx_rate->hw_value,
 		ctl->retry_limit, keyidx, 0, flags, 0, 0);
 	if (ret)
 		goto err_unmap;
@@ -2047,8 +2046,7 @@ ath5k_beacon_setup(struct ath5k_softc *sc, struct ath5k_buf *bf,
 	ret = ah->ah_setup_tx_desc(ah, ds, skb->len,
 			ieee80211_get_hdrlen_from_skb(skb),
 			AR5K_PKT_TYPE_BEACON, (sc->power_level * 2),
-			ieee80211_get_tx_rate(sc->hw, ctl)->hw_value,
-			1, AR5K_TXKEYIX_INVALID,
+			ctl->tx_rate->hw_value, 1, AR5K_TXKEYIX_INVALID,
 			antenna, flags, 0, 0);
 	if (ret)
 		goto err_unmap;
@@ -2656,7 +2654,7 @@ ath5k_tx(struct ieee80211_hw *hw, struct sk_buff *skb,
 		memmove(skb->data, skb->data+pad, hdrlen);
 	}
 
-	sc->led_txrate = ieee80211_get_tx_rate(hw, ctl)->hw_value;
+	sc->led_txrate = ctl->tx_rate->hw_value;
 
 	spin_lock_irqsave(&sc->txbuflock, flags);
 	if (list_empty(&sc->txbuf)) {
