@@ -138,8 +138,11 @@ static void rt2500usb_bbp_write(struct rt2x00_dev *rt2x00dev,
 	 * Wait until the BBP becomes ready.
 	 */
 	reg = rt2500usb_bbp_check(rt2x00dev);
-	if (rt2x00_get_field16(reg, PHY_CSR8_BUSY))
-		goto exit_fail;
+	if (rt2x00_get_field16(reg, PHY_CSR8_BUSY)) {
+		ERROR(rt2x00dev, "PHY_CSR8 register busy. Write failed.\n");
+		mutex_unlock(&rt2x00dev->usb_cache_mutex);
+		return;
+	}
 
 	/*
 	 * Write the data into the BBP.
@@ -152,13 +155,6 @@ static void rt2500usb_bbp_write(struct rt2x00_dev *rt2x00dev,
 	rt2500usb_register_write_lock(rt2x00dev, PHY_CSR7, reg);
 
 	mutex_unlock(&rt2x00dev->usb_cache_mutex);
-
-	return;
-
-exit_fail:
-	mutex_unlock(&rt2x00dev->usb_cache_mutex);
-
-	ERROR(rt2x00dev, "PHY_CSR8 register busy. Write failed.\n");
 }
 
 static void rt2500usb_bbp_read(struct rt2x00_dev *rt2x00dev,
@@ -172,8 +168,10 @@ static void rt2500usb_bbp_read(struct rt2x00_dev *rt2x00dev,
 	 * Wait until the BBP becomes ready.
 	 */
 	reg = rt2500usb_bbp_check(rt2x00dev);
-	if (rt2x00_get_field16(reg, PHY_CSR8_BUSY))
-		goto exit_fail;
+	if (rt2x00_get_field16(reg, PHY_CSR8_BUSY)) {
+		ERROR(rt2x00dev, "PHY_CSR8 register busy. Read failed.\n");
+		return;
+	}
 
 	/*
 	 * Write the request into the BBP.
@@ -188,21 +186,17 @@ static void rt2500usb_bbp_read(struct rt2x00_dev *rt2x00dev,
 	 * Wait until the BBP becomes ready.
 	 */
 	reg = rt2500usb_bbp_check(rt2x00dev);
-	if (rt2x00_get_field16(reg, PHY_CSR8_BUSY))
-		goto exit_fail;
+	if (rt2x00_get_field16(reg, PHY_CSR8_BUSY)) {
+		ERROR(rt2x00dev, "PHY_CSR8 register busy. Read failed.\n");
+		*value = 0xff;
+		mutex_unlock(&rt2x00dev->usb_cache_mutex);
+		return;
+	}
 
 	rt2500usb_register_read_lock(rt2x00dev, PHY_CSR7, &reg);
 	*value = rt2x00_get_field16(reg, PHY_CSR7_DATA);
 
 	mutex_unlock(&rt2x00dev->usb_cache_mutex);
-
-	return;
-
-exit_fail:
-	mutex_unlock(&rt2x00dev->usb_cache_mutex);
-
-	ERROR(rt2x00dev, "PHY_CSR8 register busy. Read failed.\n");
-	*value = 0xff;
 }
 
 static void rt2500usb_rf_write(struct rt2x00_dev *rt2x00dev,
