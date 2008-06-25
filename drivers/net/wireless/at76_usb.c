@@ -1599,7 +1599,7 @@ static void at76_rx_tasklet(unsigned long param)
 	at76_dbg_dump(DBG_RX_DATA, priv->rx_skb->data,
 		      priv->rx_skb->len, "RX: len=%d", priv->rx_skb->len);
 
-	rx_status.signal = buf->rssi;
+	rx_status.ssi = buf->rssi;
 	rx_status.flag |= RX_FLAG_DECRYPTED;
 	rx_status.flag |= RX_FLAG_IV_STRIPPED;
 
@@ -2273,8 +2273,7 @@ static int at76_init_new_device(struct at76_priv *priv,
 
 	/* mac80211 initialisation */
 	priv->hw->wiphy->bands[IEEE80211_BAND_2GHZ] = &at76_supported_band;
-	priv->hw->flags = IEEE80211_HW_RX_INCLUDES_FCS |
-			  IEEE80211_HW_SIGNAL_UNSPEC;
+	priv->hw->flags = IEEE80211_HW_RX_INCLUDES_FCS;
 
 	SET_IEEE80211_DEV(priv->hw, &interface->dev);
 	SET_IEEE80211_PERM_ADDR(priv->hw, priv->mac_addr);
