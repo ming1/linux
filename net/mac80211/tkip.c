@@ -71,12 +71,10 @@ static u16 tkipS(u16 val)
  * TSC = TKIP sequence counter (48 bits, only 32 msb bits used)
  * P1K: 80 bits
  */
-static void tkip_mixing_phase1(struct ieee80211_key *key, const u8 *ta,
-			       struct tkip_ctx *ctx, u32 tsc_IV32)
+static void tkip_mixing_phase1(const u8 *ta, const u8 *tk, u32 tsc_IV32,
+			       u16 *p1k)
 {
 	int i, j;
-	const u8 *tk = &key->conf.key[ALG_TKIP_TEMP_ENCR_KEY];
-	u16 *p1k = ctx->p1k;
 
 	p1k[0] = tsc_IV32 & 0xFFFF;
 	p1k[1] = tsc_IV32 >> 16;
@@ -92,7 +90,6 @@ static void tkip_mixing_phase1(struct ieee80211_key *key, const u8 *ta,
 		p1k[3] += tkipS(p1k[2] ^ get_unaligned_le16(tk + 12 + j));
 		p1k[4] += tkipS(p1k[3] ^ get_unaligned_le16(tk + 0 + j)) + i;
 	}
-	ctx->initialized = 1;
 }
 
 static void tkip_mixing_phase2(const u16 *p1k, const u8 *tk, u16 tsc_IV16,
@@ -149,8 +146,12 @@ static void ieee80211_tkip_gen_rc4key(struct ieee80211_key *key, u8 *ta,
 			       u8 *rc4key)
 {
 	/* Calculate per-packet key */
-	if (key->u.tkip.tx.iv16 == 0 || !key->u.tkip.tx.initialized)
-		tkip_mixing_phase1(key, ta, &key->u.tkip.tx, key->u.tkip.tx.iv32);
+	if (key->u.tkip.tx.iv16 == 0 || !key->u.tkip.tx.initialized) {
+		/* IV16 wrapped around - perform TKIP phase 1 */
+		tkip_mixing_phase1(ta, &key->conf.key[ALG_TKIP_TEMP_ENCR_KEY],
+				   key->u.tkip.tx.iv32, key->u.tkip.tx.p1k);
+		key->u.tkip.tx.initialized = 1;
+	}
 
 	tkip_mixing_phase2(key->u.tkip.tx.p1k,
 			   &key->conf.key[ALG_TKIP_TEMP_ENCR_KEY],
@@ -189,8 +190,12 @@ void ieee80211_get_tkip_key(struct ieee80211_key_conf *keyconf,
 	/* Update the p1k only when the iv16 in the packet wraps around, this
 	 * might occur after the wrap around of iv16 in the key in case of
 	 * fragmented packets. */
-	if (iv16 == 0 || !key->u.tkip.tx.initialized)
-		tkip_mixing_phase1(key, ta, &key->u.tkip.tx, iv32);
+	if (iv16 == 0 || !key->u.tkip.tx.initialized) {
+		/* IV16 wrapped around - perform TKIP phase 1 */
+		tkip_mixing_phase1(ta, &key->conf.key[ALG_TKIP_TEMP_ENCR_KEY],
+			iv32, key->u.tkip.tx.p1k);
+		key->u.tkip.tx.initialized = 1;
+	}
 
 	if (type == IEEE80211_TKIP_P1_KEY) {
 		memcpy(outkey, key->u.tkip.tx.p1k, sizeof(u16) * 5);
@@ -281,8 +286,10 @@ int ieee80211_tkip_decrypt_data(struct crypto_blkcipher *tfm,
 
 	if (!key->u.tkip.rx[queue].initialized ||
 	    key->u.tkip.rx[queue].iv32 != iv32) {
+		key->u.tkip.rx[queue].initialized = 1;
 		/* IV16 wrapped around - perform TKIP phase 1 */
-		tkip_mixing_phase1(key, ta, &key->u.tkip.rx[queue], iv32);
+		tkip_mixing_phase1(ta, &key->conf.key[ALG_TKIP_TEMP_ENCR_KEY],
+				   iv32, key->u.tkip.rx[queue].p1k);
 #ifdef CONFIG_TKIP_DEBUG
 		{
 			int i;
