@@ -1168,21 +1168,15 @@ EXPORT_SYMBOL(ssb_dma_translation);
 int ssb_dma_set_mask(struct ssb_device *ssb_dev, u64 mask)
 {
 	struct device *dma_dev = ssb_dev->dma_dev;
-	int err = 0;
 
 #ifdef CONFIG_SSB_PCIHOST
-	if (ssb_dev->bus->bustype == SSB_BUSTYPE_PCI) {
-		err = pci_set_dma_mask(ssb_dev->bus->host_pci, mask);
-		if (err)
-			return err;
-		err = pci_set_consistent_dma_mask(ssb_dev->bus->host_pci, mask);
-		return err;
-	}
+	if (ssb_dev->bus->bustype == SSB_BUSTYPE_PCI)
+		return dma_set_mask(dma_dev, mask);
 #endif
 	dma_dev->coherent_dma_mask = mask;
 	dma_dev->dma_mask = &dma_dev->coherent_dma_mask;
 
-	return err;
+	return 0;
 }
 EXPORT_SYMBOL(ssb_dma_set_mask);
 
