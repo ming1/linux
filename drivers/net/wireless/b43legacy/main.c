@@ -2377,10 +2377,8 @@ static int b43legacy_op_tx(struct ieee80211_hw *hw,
 	} else
 		err = b43legacy_dma_tx(dev, skb);
 out:
-	if (unlikely(err)) {
-		/* Drop the packet. */
-		dev_kfree_skb_any(skb);
-	}
+	if (unlikely(err))
+		return NETDEV_TX_BUSY;
 	return NETDEV_TX_OK;
 }
 
