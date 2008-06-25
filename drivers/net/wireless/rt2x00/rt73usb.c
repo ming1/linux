@@ -1350,10 +1350,8 @@ static void rt73usb_kick_tx_queue(struct rt2x00_dev *rt2x00dev,
 {
 	u32 reg;
 
-	if (queue != QID_BEACON) {
-		rt2x00usb_kick_tx_queue(rt2x00dev, queue);
+	if (queue != QID_BEACON)
 		return;
-	}
 
 	/*
 	 * For Wi-Fi faily generated beacons between participating stations.
