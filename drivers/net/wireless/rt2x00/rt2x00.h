@@ -788,6 +788,7 @@ struct rt2x00_dev {
 	/*
 	 * Scheduled work.
 	 */
+	struct workqueue_struct *workqueue;
 	struct work_struct intf_work;
 	struct work_struct filter_work;
 
