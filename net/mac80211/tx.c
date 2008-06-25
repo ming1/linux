@@ -213,6 +213,18 @@ static u16 ieee80211_duration(struct ieee80211_tx_data *tx, int group_addr,
 	return dur;
 }
 
+static inline int __ieee80211_queue_stopped(const struct ieee80211_local *local,
+					    int queue)
+{
+	return test_bit(IEEE80211_LINK_STATE_XOFF, &local->state[queue]);
+}
+
+static inline int __ieee80211_queue_pending(const struct ieee80211_local *local,
+					    int queue)
+{
+	return test_bit(IEEE80211_LINK_STATE_PENDING, &local->state[queue]);
+}
+
 static int inline is_ieee80211_device(struct net_device *dev,
 				      struct net_device *master)
 {
@@ -668,8 +680,7 @@ ieee80211_tx_h_fragment(struct ieee80211_tx_data *tx)
 	 * etc.
 	 */
 	if (WARN_ON(tx->flags & IEEE80211_TX_CTL_AMPDU ||
-		    skb_get_queue_mapping(tx->skb) >=
-			ieee80211_num_regular_queues(&tx->local->hw)))
+		    IEEE80211_SKB_CB(tx->skb)->queue >= tx->local->hw.queues))
 		return TX_DROP;
 
 	first = tx->skb;
@@ -1087,9 +1098,11 @@ static int __ieee80211_tx(struct ieee80211_local *local, struct sk_buff *skb,
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	int ret, i;
 
-	if (netif_subqueue_stopped(local->mdev, skb))
+	if (!ieee80211_qdisc_installed(local->mdev) &&
+	    __ieee80211_queue_stopped(local, 0)) {
+		netif_stop_queue(local->mdev);
 		return IEEE80211_TX_AGAIN;
-
+	}
 	if (skb) {
 		ieee80211_dump_frame(wiphy_name(local->hw.wiphy),
 				     "TX to low-level driver", skb);
@@ -1108,8 +1121,7 @@ static int __ieee80211_tx(struct ieee80211_local *local, struct sk_buff *skb,
 					 IEEE80211_TX_CTL_USE_CTS_PROTECT |
 					 IEEE80211_TX_CTL_CLEAR_PS_FILT |
 					 IEEE80211_TX_CTL_FIRST_FRAGMENT);
-			if (netif_subqueue_stopped(local->mdev,
-						   tx->extra_frag[i]))
+			if (__ieee80211_queue_stopped(local, info->queue))
 				return IEEE80211_TX_FRAG_AGAIN;
 			if (i == tx->num_extra_frag) {
 				info->tx_rate_idx = tx->last_frag_rate_idx;
@@ -1148,11 +1160,9 @@ static int ieee80211_tx(struct net_device *dev, struct sk_buff *skb)
 	ieee80211_tx_result res = TX_DROP, res_prepare;
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	int ret, i;
-	u16 queue;
+	int queue = info->queue;
 
-	queue = skb_get_queue_mapping(skb);
-
-	WARN_ON(test_bit(queue, local->queues_pending));
+	WARN_ON(__ieee80211_queue_pending(local, queue));
 
 	if (unlikely(skb->len < 10)) {
 		dev_kfree_skb(skb);
@@ -1223,28 +1233,28 @@ retry:
 		 * queues, there's no reason for a driver to reject
 		 * a frame there, warn and drop it.
 		 */
-		if (WARN_ON(queue >= ieee80211_num_regular_queues(&local->hw)))
+		if (WARN_ON(queue >= local->hw.queues))
 			goto drop;
 
 		store = &local->pending_packet[queue];
 
 		if (ret == IEEE80211_TX_FRAG_AGAIN)
 			skb = NULL;
-		set_bit(queue, local->queues_pending);
+		set_bit(IEEE80211_LINK_STATE_PENDING,
+			&local->state[queue]);
 		smp_mb();
-		/*
-		 * When the driver gets out of buffers during sending of
-		 * fragments and calls ieee80211_stop_queue, the netif
-		 * subqueue is stopped. There is, however, a small window
-		 * in which the PENDING bit is not yet set. If a buffer
+		/* When the driver gets out of buffers during sending of
+		 * fragments and calls ieee80211_stop_queue, there is
+		 * a small window between IEEE80211_LINK_STATE_XOFF and
+		 * IEEE80211_LINK_STATE_PENDING flags are set. If a buffer
 		 * gets available in that window (i.e. driver calls
 		 * ieee80211_wake_queue), we would end up with ieee80211_tx
-		 * called with the PENDING bit still set. Prevent this by
+		 * called with IEEE80211_LINK_STATE_PENDING. Prevent this by
 		 * continuing transmitting here when that situation is
-		 * possible to have happened.
-		 */
-		if (!__netif_subqueue_stopped(local->mdev, queue)) {
-			clear_bit(queue, local->queues_pending);
+		 * possible to have happened. */
+		if (!__ieee80211_queue_stopped(local, queue)) {
+			clear_bit(IEEE80211_LINK_STATE_PENDING,
+				  &local->state[queue]);
 			goto retry;
 		}
 		store->skb = skb;
@@ -1499,8 +1509,7 @@ int ieee80211_subif_start_xmit(struct sk_buff *skb,
 	}
 
 	/* receiver and we are QoS enabled, use a QoS type frame */
-	if (sta_flags & WLAN_STA_WME &&
-	    ieee80211_num_regular_queues(&local->hw) >= 4) {
+	if (sta_flags & WLAN_STA_WME && local->hw.queues >= 4) {
 		fc |= IEEE80211_STYPE_QOS_DATA;
 		hdrlen += 2;
 	}
@@ -1652,51 +1661,41 @@ int ieee80211_subif_start_xmit(struct sk_buff *skb,
 	return ret;
 }
 
+/* helper functions for pending packets for when queues are stopped */
 
-/*
- * ieee80211_clear_tx_pending may not be called in a context where
- * it is possible that it packets could come in again.
- */
 void ieee80211_clear_tx_pending(struct ieee80211_local *local)
 {
 	int i, j;
 	struct ieee80211_tx_stored_packet *store;
 
-	for (i = 0; i < ieee80211_num_regular_queues(&local->hw); i++) {
-		if (!test_bit(i, local->queues_pending))
+	for (i = 0; i < local->hw.queues; i++) {
+		if (!__ieee80211_queue_pending(local, i))
 			continue;
 		store = &local->pending_packet[i];
 		kfree_skb(store->skb);
 		for (j = 0; j < store->num_extra_frag; j++)
 			kfree_skb(store->extra_frag[j]);
 		kfree(store->extra_frag);
-		clear_bit(i, local->queues_pending);
+		clear_bit(IEEE80211_LINK_STATE_PENDING, &local->state[i]);
 	}
 }
 
-/*
- * Transmit all pending packets. Called from tasklet, locks master device
- * TX lock so that no new packets can come in.
- */
 void ieee80211_tx_pending(unsigned long data)
 {
 	struct ieee80211_local *local = (struct ieee80211_local *)data;
 	struct net_device *dev = local->mdev;
 	struct ieee80211_tx_stored_packet *store;
 	struct ieee80211_tx_data tx;
-	int i, ret;
+	int i, ret, reschedule = 0;
 
 	netif_tx_lock_bh(dev);
-	for (i = 0; i < ieee80211_num_regular_queues(&local->hw); i++) {
-		/* Check that this queue is ok */
-		if (__netif_subqueue_stopped(local->mdev, i))
+	for (i = 0; i < local->hw.queues; i++) {
+		if (__ieee80211_queue_stopped(local, i))
 			continue;
-
-		if (!test_bit(i, local->queues_pending)) {
-			ieee80211_wake_queue(&local->hw, i);
+		if (!__ieee80211_queue_pending(local, i)) {
+			reschedule = 1;
 			continue;
 		}
-
 		store = &local->pending_packet[i];
 		tx.extra_frag = store->extra_frag;
 		tx.num_extra_frag = store->num_extra_frag;
@@ -1709,11 +1708,19 @@ void ieee80211_tx_pending(unsigned long data)
 			if (ret == IEEE80211_TX_FRAG_AGAIN)
 				store->skb = NULL;
 		} else {
-			clear_bit(i, local->queues_pending);
-			ieee80211_wake_queue(&local->hw, i);
+			clear_bit(IEEE80211_LINK_STATE_PENDING,
+				  &local->state[i]);
+			reschedule = 1;
 		}
 	}
 	netif_tx_unlock_bh(dev);
+	if (reschedule) {
+		if (!ieee80211_qdisc_installed(dev)) {
+			if (!__ieee80211_queue_stopped(local, 0))
+				netif_wake_queue(dev);
+		} else
+			netif_schedule(dev);
+	}
 }
 
 /* functions for drivers to get certain frames */
