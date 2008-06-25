@@ -52,7 +52,6 @@ struct iwl_debugfs {
 		struct dentry *file_stations;
 		struct dentry *file_rx_statistics;
 		struct dentry *file_tx_statistics;
-		struct dentry *file_log_event;
 	} dbgfs_data_files;
 	struct dir_rf_files {
 #ifdef CONFIG_IWLWIFI_RUN_TIME_CALIB
