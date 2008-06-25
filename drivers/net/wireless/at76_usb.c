@@ -185,10 +185,6 @@ static struct usb_device_id dev_table[] = {
 	{USB_DEVICE(0x2019, 0x3220), USB_DEVICE_DATA(BOARD_503)},
 	/* Internal WLAN adapter in h5[4,5]xx series iPAQs */
 	{USB_DEVICE(0x049f, 0x0032), USB_DEVICE_DATA(BOARD_503)},
-	/* Corega Wireless LAN USB-11 mini */
-	{USB_DEVICE(0x07aa, 0x0011), USB_DEVICE_DATA(BOARD_503)},
-	/* Corega Wireless LAN USB-11 mini2 */
-	{USB_DEVICE(0x07aa, 0x0018), USB_DEVICE_DATA(BOARD_503)},
 	/*
 	 * at76c503-rfmd-acc
 	 */
