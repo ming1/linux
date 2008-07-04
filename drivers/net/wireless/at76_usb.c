@@ -1897,8 +1897,6 @@ static void at76_dwork_hw_scan(struct work_struct *work)
 					      dwork_hw_scan.work);
 	int ret;
 
-	mutex_lock(&priv->mtx);
-
 	ret = at76_get_cmd_status(priv->udev, CMD_SCAN);
 	at76_dbg(DBG_MAC80211, "%s: CMD_SCAN status 0x%02x", __func__, ret);
 
@@ -1915,10 +1913,10 @@ static void at76_dwork_hw_scan(struct work_struct *work)
 	if (is_valid_ether_addr(priv->bssid))
 		at76_join(priv);
 
-	ieee80211_wake_queues(priv->hw);
+// CHECKME:	ieee80211_wake_queues(priv->hw);
 
 exit:
-	mutex_unlock(&priv->mtx);
+	return;
 }
 
 static int at76_hw_scan(struct ieee80211_hw *hw, u8 *ssid, size_t len)
