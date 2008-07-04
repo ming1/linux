@@ -1607,6 +1607,7 @@ static void at76_rx_tasklet(unsigned long param)
 		      priv->rx_skb->len, "RX: len=%d", (int)(priv->rx_skb->len - AT76_RX_HDRLEN));
 
 	rx_status.signal = buf->rssi;
+	rx_status.rate_idx = buf->rx_rate;	/* FIXME: is rate_idx still present in structure? */
 	rx_status.flag |= RX_FLAG_DECRYPTED;
 	rx_status.flag |= RX_FLAG_IV_STRIPPED;
 
@@ -1707,7 +1708,7 @@ static void at76_mac80211_tx_callback(struct urb *urb)
 	switch (urb->status) {
 	case 0:
 		/* success */
-		info->flags |= IEEE80211_TX_STAT_ACK;
+		info->flags |= IEEE80211_TX_STAT_ACK;	/* FIXME: is the frame really ACKed when tx_callback is called ? */
 		break;
 	case -ENOENT:
 	case -ECONNRESET:
@@ -1919,12 +1920,12 @@ static void at76_dwork_hw_scan(struct work_struct *work)
 	ieee80211_scan_completed(priv->hw);
 
 	if (is_valid_ether_addr(priv->bssid)) {
-		ieee80211_start_queues(priv->hw);
+		ieee80211_wake_queues(priv->hw);
 		at76_join(priv);
 	} else
 		ieee80211_stop_queues(priv->hw);
 
-	ieee80211_start_queues(priv->hw);
+	ieee80211_wake_queues(priv->hw);
 
 // CHECKME:	ieee80211_wake_queues(priv->hw);
 
@@ -1989,7 +1990,7 @@ static int at76_config(struct ieee80211_hw *hw, struct ieee80211_conf *conf)
 
 	if (is_valid_ether_addr(priv->bssid)) {
 		at76_join(priv);
-		ieee80211_start_queues(priv->hw);
+		ieee80211_wake_queues(priv->hw);
 	} else {
 		ieee80211_stop_queues(priv->hw);
 		at76_start_monitor(priv);
@@ -2016,9 +2017,12 @@ static int at76_config_interface(struct ieee80211_hw *hw,
 	memcpy(priv->essid, conf->ssid, conf->ssid_len);
 	priv->essid_size = conf->ssid_len;
 
-	if (is_valid_ether_addr(priv->bssid))
+	if (is_valid_ether_addr(priv->bssid)) {
 		/* mac80211 is joining a bss */
+		ieee80211_wake_queues(priv->hw);
 		at76_join(priv);
+	} else
+		ieee80211_stop_queues(priv->hw);
 
 	mutex_unlock(&priv->mtx);
 
