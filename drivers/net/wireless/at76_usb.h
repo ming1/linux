@@ -65,6 +65,7 @@ enum board_type {
 #define MIB_MAC			0x03
 #define MIB_MAC_MGMT		0x05
 #define MIB_MAC_WEP		0x06
+#define MIB_MAC_ENCRYPTION	0x06
 #define MIB_PHY			0x07
 #define MIB_FW_VERSION		0x08
 #define MIB_MDOMAIN		0x09
@@ -88,6 +89,26 @@ enum board_type {
 #define AT76_PM_OFF		1
 #define AT76_PM_ON		2
 #define AT76_PM_SMART		3
+
+/* cipher values for encryption keys */
+#define CIPHER_NONE		0	/* this value is only guessed */
+#define CIPHER_WEP64		1
+#define CIPHER_TKIP		2
+#define CIPHER_CCMP		3
+#define CIPHER_CCX		4	/* for consistency sake only */
+#define CIPHER_WEP128		5
+
+/* bit flags key types for encryption keys */
+#define KEY_PAIRWISE		2
+#define KEY_TX			4
+
+#define CIPHER_KEYS		(4)
+#define CIPHER_KEY_LEN		(40)
+
+struct key_config {
+	u8 cipher;
+	u8 keylen;
+};
 
 struct hwcfg_r505 {
 	u8 cr39_values[14];
@@ -131,6 +152,8 @@ union at76_hwcfg {
 #define WEP_SMALL_KEY_LEN	(40 / 8)
 #define WEP_LARGE_KEY_LEN	(104 / 8)
 #define WEP_KEYS		(4)
+
+
 
 struct at76_card_config {
 	u8 exclude_unencrypted;
@@ -180,7 +203,10 @@ struct at76_tx_buffer {
 	__le16 wlength;
 	u8 tx_rate;
 	u8 padding;
-	u8 reserved[4];
+	u8 key_id;
+	u8 cipher_type;
+	u8 cipher_length;
+	u8 reserved;
 	u8 packet[IEEE80211_MAX_FRAG_THRESHOLD];
 } __attribute__((packed));
 
@@ -228,6 +254,7 @@ struct set_mib_buffer {
 		u8 byte;
 		__le16 word;
 		u8 addr[ETH_ALEN];
+		u8 data[256];	/* we need more space for mib_mac_encryption */
 	} data;
 } __attribute__((packed));
 
@@ -303,6 +330,20 @@ struct mib_mac_wep {
 	__le32 wep_excluded_count;
 	u8 wep_default_keyvalue[WEP_KEYS][WEP_LARGE_KEY_LEN];
 	u8 encryption_level;	/* 1 for 40bit, 2 for 104bit encryption */
+} __attribute__((packed));
+
+struct mib_mac_encryption {
+	u8 cipher_default_keyvalue[CIPHER_KEYS][CIPHER_KEY_LEN];
+	u8 tkip_bssid[6];
+	u8 privacy_invoked;
+	u8 cipher_default_key_id;
+	u8 cipher_default_group_key_id;
+	u8 exclude_unencrypted;
+	u8 wep_encryption_type;
+	u8 ckip_key_permutation;	/* bool */
+	__le32 wep_icv_error_count;
+	__le32 wep_excluded_count;
+	u8 key_rsc[CIPHER_KEYS][8];
 } __attribute__((packed));
 
 struct mib_phy {
@@ -442,6 +483,10 @@ struct at76_priv {
 
 	struct ieee80211_hw *hw;
 	int mac80211_registered;
+
+	struct key_config keys[4];	/* installed key types */
+	u8 default_pairwise_key;
+	u8 default_group_key;
 };
 
 #define AT76_SUPPORTED_FILTERS FIF_PROMISC_IN_BSS
