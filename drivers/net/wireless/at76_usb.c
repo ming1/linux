@@ -1594,15 +1594,16 @@ static void at76_rx_tasklet(unsigned long param)
 		 wiphy_name(priv->hw->wiphy), buf->rx_rate, buf->rssi,
 		 buf->noise_level, buf->link_quality);
 
-	skb_pull(priv->rx_skb, AT76_RX_HDRLEN);
-	skb_trim(priv->rx_skb, le16_to_cpu(buf->wlength));
-	at76_dbg_dump(DBG_RX_DATA, priv->rx_skb->data,
-		      priv->rx_skb->len, "RX: len=%d", priv->rx_skb->len);
+
+	skb_trim(priv->rx_skb, le16_to_cpu(buf->wlength) + AT76_RX_HDRLEN);
+	at76_dbg_dump(DBG_RX_DATA, &priv->rx_skb->data[AT76_RX_HDRLEN],
+		      priv->rx_skb->len, "RX: len=%d", priv->rx_skb->len - AT76_RX_HDRLEN);
 
 	rx_status.signal = buf->rssi;
 	rx_status.flag |= RX_FLAG_DECRYPTED;
 	rx_status.flag |= RX_FLAG_IV_STRIPPED;
 
+	skb_pull(priv->rx_skb, AT76_RX_HDRLEN);
 	at76_dbg(DBG_MAC80211, "calling ieee80211_rx_irqsafe(): %d/%d",
 		 priv->rx_skb->len, priv->rx_skb->data_len);
 	ieee80211_rx_irqsafe(priv->hw, priv->rx_skb, &rx_status);
