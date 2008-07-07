@@ -1325,10 +1325,11 @@ int b43legacy_dma_tx(struct b43legacy_wldev *dev,
 		     struct sk_buff *skb)
 {
 	struct b43legacy_dmaring *ring;
+	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	int err = 0;
 	unsigned long flags;
 
-	ring = priority_to_txring(dev, skb_get_queue_mapping(skb));
+	ring = priority_to_txring(dev, info->queue);
 	spin_lock_irqsave(&ring->lock, flags);
 	B43legacy_WARN_ON(!ring->tx);
 	if (unlikely(free_slots(ring) < SLOTS_PER_PACKET)) {
