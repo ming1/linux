@@ -273,27 +273,26 @@ int iwl_hw_nic_init(struct iwl_priv *priv)
 EXPORT_SYMBOL(iwl_hw_nic_init);
 
 /**
- * iwl_clear_stations_table - Clear the driver's station table
+ * iwlcore_clear_stations_table - Clear the driver's station table
  *
  * NOTE:  This does not clear or otherwise alter the device's station table.
  */
-void iwl_clear_stations_table(struct iwl_priv *priv)
+void iwlcore_clear_stations_table(struct iwl_priv *priv)
 {
 	unsigned long flags;
 
 	spin_lock_irqsave(&priv->sta_lock, flags);
 
+	priv->num_stations = 0;
 	if (iwl_is_alive(priv) &&
-	   !test_bit(STATUS_EXIT_PENDING, &priv->status) &&
-	   iwl_send_cmd_pdu_async(priv, REPLY_REMOVE_ALL_STA, 0, NULL, NULL))
+	    iwl_send_cmd_pdu_async(priv, REPLY_REMOVE_ALL_STA, 0, NULL, NULL))
 		IWL_ERROR("Couldn't clear the station table\n");
 
-	priv->num_stations = 0;
 	memset(priv->stations, 0, sizeof(priv->stations));
 
 	spin_unlock_irqrestore(&priv->sta_lock, flags);
 }
-EXPORT_SYMBOL(iwl_clear_stations_table);
+EXPORT_SYMBOL(iwlcore_clear_stations_table);
 
 void iwl_reset_qos(struct iwl_priv *priv)
 {
@@ -865,7 +864,7 @@ int iwl_init_drv(struct iwl_priv *priv)
 	mutex_init(&priv->mutex);
 
 	/* Clear the driver's (not device's) station table */
-	iwl_clear_stations_table(priv);
+	iwlcore_clear_stations_table(priv);
 
 	priv->data_retry_limit = -1;
 	priv->ieee_channels = NULL;
