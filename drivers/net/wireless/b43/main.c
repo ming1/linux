@@ -1939,8 +1939,7 @@ static void b43_print_fw_helptext(struct b43_wl *wl, bool error)
 
 static int do_request_fw(struct b43_wldev *dev,
 			 const char *name,
-			 struct b43_firmware_file *fw,
-			 bool silent)
+			 struct b43_firmware_file *fw)
 {
 	char path[sizeof(modparam_fwpostfix) + 32];
 	const struct firmware *blob;
@@ -1964,15 +1963,9 @@ static int do_request_fw(struct b43_wldev *dev,
 		 "b43%s/%s.fw",
 		 modparam_fwpostfix, name);
 	err = request_firmware(&blob, path, dev->dev->dev);
-	if (err == -ENOENT) {
-		if (!silent) {
-			b43err(dev->wl, "Firmware file \"%s\" not found\n",
-			       path);
-		}
-		return err;
-	} else if (err) {
-		b43err(dev->wl, "Firmware file \"%s\" request failed (err=%d)\n",
-		       path, err);
+	if (err) {
+		b43err(dev->wl, "Firmware file \"%s\" not found "
+		       "or load failed.\n", path);
 		return err;
 	}
 	if (blob->size < sizeof(struct b43_fw_header))
@@ -2023,7 +2016,7 @@ static int b43_request_firmware(struct b43_wldev *dev)
 		filename = "ucode13";
 	else
 		goto err_no_ucode;
-	err = do_request_fw(dev, filename, &fw->ucode, 0);
+	err = do_request_fw(dev, filename, &fw->ucode);
 	if (err)
 		goto err_load;
 
@@ -2034,13 +2027,8 @@ static int b43_request_firmware(struct b43_wldev *dev)
 		filename = NULL;
 	else
 		goto err_no_pcm;
-	fw->pcm_request_failed = 0;
-	err = do_request_fw(dev, filename, &fw->pcm, 1);
-	if (err == -ENOENT) {
-		/* We did not find a PCM file? Not fatal, but
-		 * core rev <= 10 must do without hwcrypto then. */
-		fw->pcm_request_failed = 1;
-	} else if (err)
+	err = do_request_fw(dev, filename, &fw->pcm);
+	if (err)
 		goto err_load;
 
 	/* Get initvals */
@@ -2071,7 +2059,7 @@ static int b43_request_firmware(struct b43_wldev *dev)
 	default:
 		goto err_no_initvals;
 	}
-	err = do_request_fw(dev, filename, &fw->initvals, 0);
+	err = do_request_fw(dev, filename, &fw->initvals);
 	if (err)
 		goto err_load;
 
@@ -2105,7 +2093,7 @@ static int b43_request_firmware(struct b43_wldev *dev)
 	default:
 		goto err_no_initvals;
 	}
-	err = do_request_fw(dev, filename, &fw->initvals_band, 0);
+	err = do_request_fw(dev, filename, &fw->initvals_band);
 	if (err)
 		goto err_load;
 
@@ -2229,20 +2217,14 @@ static int b43_upload_microcode(struct b43_wldev *dev)
 	if (dev->fw.opensource) {
 		/* Patchlevel info is encoded in the "time" field. */
 		dev->fw.patch = fwtime;
-		b43info(dev->wl, "Loading OpenSource firmware version %u.%u%s\n",
-			dev->fw.rev, dev->fw.patch,
-			dev->fw.pcm_request_failed ? " (Hardware crypto not supported)" : "");
+		b43info(dev->wl, "Loading OpenSource firmware version %u.%u\n",
+			dev->fw.rev, dev->fw.patch);
 	} else {
 		b43info(dev->wl, "Loading firmware version %u.%u "
 			"(20%.2i-%.2i-%.2i %.2i:%.2i:%.2i)\n",
 			fwrev, fwpatch,
 			(fwdate >> 12) & 0xF, (fwdate >> 8) & 0xF, fwdate & 0xFF,
 			(fwtime >> 11) & 0x1F, (fwtime >> 5) & 0x3F, fwtime & 0x1F);
-		if (dev->fw.pcm_request_failed) {
-			b43warn(dev->wl, "No \"pcm5.fw\" firmware file found. "
-				"Hardware accelerated cryptography is disabled.\n");
-			b43_print_fw_helptext(dev->wl, 0);
-		}
 	}
 
 	if (b43_is_old_txhdr_format(dev)) {
@@ -3410,13 +3392,6 @@ static int b43_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 	err = -ENODEV;
 	if (!dev || b43_status(dev) < B43_STAT_INITIALIZED)
 		goto out_unlock;
-
-	if (dev->fw.pcm_request_failed) {
-		/* We don't have firmware for the crypto engine.
-		 * Must use software-crypto. */
-		err = -EOPNOTSUPP;
-		goto out_unlock;
-	}
 
 	err = -EINVAL;
 	switch (key->alg) {
