@@ -80,6 +80,7 @@ void rt2x00queue_create_tx_descriptor(struct queue_entry *entry,
 	unsigned int data_length;
 	unsigned int duration;
 	unsigned int residual;
+	u16 frame_control;
 
 	memset(txdesc, 0, sizeof(*txdesc));
 
@@ -95,6 +96,11 @@ void rt2x00queue_create_tx_descriptor(struct queue_entry *entry,
 	data_length = entry->skb->len + 4;
 
 	/*
+	 * Read required fields from ieee80211 header.
+	 */
+	frame_control = le16_to_cpu(hdr->frame_control);
+
+	/*
 	 * Check whether this frame is to be acked.
 	 */
 	if (!(tx_info->flags & IEEE80211_TX_CTL_NO_ACK))
@@ -103,10 +109,9 @@ void rt2x00queue_create_tx_descriptor(struct queue_entry *entry,
 	/*
 	 * Check if this is a RTS/CTS frame
 	 */
-	if (ieee80211_is_rts(hdr->frame_control) ||
-	    ieee80211_is_cts(hdr->frame_control)) {
+	if (is_rts_frame(frame_control) || is_cts_frame(frame_control)) {
 		__set_bit(ENTRY_TXD_BURST, &txdesc->flags);
-		if (ieee80211_is_rts(hdr->frame_control))
+		if (is_rts_frame(frame_control))
 			__set_bit(ENTRY_TXD_RTS_FRAME, &txdesc->flags);
 		else
 			__set_bit(ENTRY_TXD_CTS_FRAME, &txdesc->flags);
@@ -134,8 +139,7 @@ void rt2x00queue_create_tx_descriptor(struct queue_entry *entry,
 	 * Beacons and probe responses require the tsf timestamp
 	 * to be inserted into the frame.
 	 */
-	if (ieee80211_is_beacon(hdr->frame_control) ||
-	    ieee80211_is_probe_resp(hdr->frame_control))
+	if (txdesc->queue == QID_BEACON || is_probe_resp(frame_control))
 		__set_bit(ENTRY_TXD_REQ_TIMESTAMP, &txdesc->flags);
 
 	/*
