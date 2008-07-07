@@ -39,7 +39,7 @@ MODULE_LICENSE("GPL");
 static LIST_HEAD(rfkill_list);	/* list of registered rf switches */
 static DEFINE_MUTEX(rfkill_mutex);
 
-static unsigned int rfkill_default_state = RFKILL_STATE_UNBLOCKED;
+static unsigned int rfkill_default_state = RFKILL_STATE_ON;
 module_param_named(default_state, rfkill_default_state, uint, 0444);
 MODULE_PARM_DESC(default_state,
 		 "Default initial state for all radio types, 0 = radio off");
@@ -98,7 +98,7 @@ static void rfkill_led_trigger(struct rfkill *rfkill,
 
 	if (!led->name)
 		return;
-	if (state != RFKILL_STATE_UNBLOCKED)
+	if (state == RFKILL_STATE_OFF)
 		led_trigger_event(led, LED_OFF);
 	else
 		led_trigger_event(led, LED_FULL);
@@ -128,28 +128,6 @@ static void update_rfkill_state(struct rfkill *rfkill)
 	}
 }
 
-/**
- * rfkill_toggle_radio - wrapper for toggle_radio hook
- * calls toggle_radio taking into account a lot of "small"
- * details.
- * @rfkill: the rfkill struct to use
- * @force: calls toggle_radio even if cache says it is not needed,
- *	and also makes sure notifications of the state will be
- *	sent even if it didn't change
- * @state: the new state to call toggle_radio() with
- *
- * This wrappen protects and enforces the API for toggle_radio
- * calls.  Note that @force cannot override a (possibly cached)
- * state of RFKILL_STATE_HARD_BLOCKED.  Any device making use of
- * RFKILL_STATE_HARD_BLOCKED implements either get_state() or
- * rfkill_force_state(), so the cache either is bypassed or valid.
- *
- * Note that we do call toggle_radio for RFKILL_STATE_SOFT_BLOCKED
- * even if the radio is in RFKILL_STATE_HARD_BLOCKED state, so as to
- * give the driver a hint that it should double-BLOCK the transmitter.
- *
- * Caller must have aquired rfkill_mutex.
- */
 static int rfkill_toggle_radio(struct rfkill *rfkill,
 				enum rfkill_state state,
 				int force)
@@ -163,28 +141,9 @@ static int rfkill_toggle_radio(struct rfkill *rfkill,
 	    !rfkill->get_state(rfkill->data, &newstate))
 		rfkill->state = newstate;
 
-	switch (state) {
-	case RFKILL_STATE_HARD_BLOCKED:
-		/* typically happens when refreshing hardware state,
-		 * such as on resume */
-		state = RFKILL_STATE_SOFT_BLOCKED;
-		break;
-	case RFKILL_STATE_UNBLOCKED:
-		/* force can't override this, only rfkill_force_state() can */
-		if (rfkill->state == RFKILL_STATE_HARD_BLOCKED)
-			return -EPERM;
-		break;
-	case RFKILL_STATE_SOFT_BLOCKED:
-		/* nothing to do, we want to give drivers the hint to double
-		 * BLOCK even a transmitter that is already in state
-		 * RFKILL_STATE_HARD_BLOCKED */
-		break;
-	}
-
 	if (force || state != rfkill->state) {
 		retval = rfkill->toggle_radio(rfkill->data, state);
-		/* never allow a HARD->SOFT downgrade! */
-		if (!retval && rfkill->state != RFKILL_STATE_HARD_BLOCKED)
+		if (!retval)
 			rfkill->state = state;
 	}
 
@@ -225,7 +184,7 @@ EXPORT_SYMBOL(rfkill_switch_all);
 /**
  * rfkill_epo - emergency power off all transmitters
  *
- * This kicks all rfkill devices to RFKILL_STATE_SOFT_BLOCKED, ignoring
+ * This kicks all rfkill devices to RFKILL_STATE_OFF, ignoring
  * everything in its path but rfkill_mutex.
  */
 void rfkill_epo(void)
@@ -234,7 +193,7 @@ void rfkill_epo(void)
 
 	mutex_lock(&rfkill_mutex);
 	list_for_each_entry(rfkill, &rfkill_list, node) {
-		rfkill_toggle_radio(rfkill, RFKILL_STATE_SOFT_BLOCKED, 1);
+		rfkill_toggle_radio(rfkill, RFKILL_STATE_OFF, 1);
 	}
 	mutex_unlock(&rfkill_mutex);
 }
@@ -256,9 +215,8 @@ int rfkill_force_state(struct rfkill *rfkill, enum rfkill_state state)
 {
 	enum rfkill_state oldstate;
 
-	if (state != RFKILL_STATE_SOFT_BLOCKED &&
-	    state != RFKILL_STATE_UNBLOCKED &&
-	    state != RFKILL_STATE_HARD_BLOCKED)
+	if (state != RFKILL_STATE_OFF &&
+	    state != RFKILL_STATE_ON)
 		return -EINVAL;
 
 	mutex_lock(&rfkill->mutex);
@@ -332,14 +290,11 @@ static ssize_t rfkill_state_store(struct device *dev,
 	if (!capable(CAP_NET_ADMIN))
 		return -EPERM;
 
-	/* RFKILL_STATE_HARD_BLOCKED is illegal here... */
-	if (state != RFKILL_STATE_UNBLOCKED &&
-	    state != RFKILL_STATE_SOFT_BLOCKED)
-		return -EINVAL;
-
 	if (mutex_lock_interruptible(&rfkill->mutex))
 		return -ERESTARTSYS;
-	error = rfkill_toggle_radio(rfkill, state, 0);
+	error = rfkill_toggle_radio(rfkill,
+			state ? RFKILL_STATE_ON : RFKILL_STATE_OFF,
+			0);
 	mutex_unlock(&rfkill->mutex);
 
 	return error ? error : count;
@@ -418,8 +373,7 @@ static int rfkill_suspend(struct device *dev, pm_message_t state)
 			update_rfkill_state(rfkill);
 
 			mutex_lock(&rfkill->mutex);
-			rfkill->toggle_radio(rfkill->data,
-						RFKILL_STATE_SOFT_BLOCKED);
+			rfkill->toggle_radio(rfkill->data, RFKILL_STATE_OFF);
 			mutex_unlock(&rfkill->mutex);
 		}
 
@@ -516,7 +470,7 @@ static void rfkill_remove_switch(struct rfkill *rfkill)
 {
 	mutex_lock(&rfkill_mutex);
 	list_del_init(&rfkill->node);
-	rfkill_toggle_radio(rfkill, RFKILL_STATE_SOFT_BLOCKED, 1);
+	rfkill_toggle_radio(rfkill, RFKILL_STATE_OFF, 1);
 	mutex_unlock(&rfkill_mutex);
 }
 
@@ -656,9 +610,8 @@ static int __init rfkill_init(void)
 	int error;
 	int i;
 
-	/* RFKILL_STATE_HARD_BLOCKED is illegal here... */
-	if (rfkill_default_state != RFKILL_STATE_SOFT_BLOCKED &&
-	    rfkill_default_state != RFKILL_STATE_UNBLOCKED)
+	if (rfkill_default_state != RFKILL_STATE_OFF &&
+	    rfkill_default_state != RFKILL_STATE_ON)
 		return -EINVAL;
 
 	for (i = 0; i < ARRAY_SIZE(rfkill_states); i++)
