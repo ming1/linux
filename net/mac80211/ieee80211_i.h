@@ -82,7 +82,7 @@ struct ieee80211_sta_bss {
 	u16 capability; /* host byte order */
 	enum ieee80211_band band;
 	int freq;
-	int signal, noise, qual;
+	int rssi, signal, noise;
 	u8 *wpa_ie;
 	size_t wpa_ie_len;
 	u8 *rsn_ie;
