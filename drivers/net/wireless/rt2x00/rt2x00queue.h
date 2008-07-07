@@ -86,9 +86,12 @@ enum data_queue_qid {
 static inline enum data_queue_qid mac80211_queue_to_qid(unsigned int queue)
 {
 	/* Regular TX queues are mapped directly */
-	if (queue < 4)
+	if (queue < NUM_TX_DATA_QUEUES)
 		return queue;
-	WARN_ON(1);
+	else if (queue == IEEE80211_TX_QUEUE_BEACON)
+		return QID_BEACON;
+	else if (queue == IEEE80211_TX_QUEUE_AFTER_BEACON)
+		return QID_ATIM;
 	return QID_OTHER;
 }
 
