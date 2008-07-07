@@ -180,9 +180,6 @@ static ssize_t rfkill_type_show(struct device *dev,
 	case RFKILL_TYPE_WIMAX:
 		type = "wimax";
 		break;
-	case RFKILL_TYPE_WWAN:
-		type = "wwan";
-		break;
 	default:
 		BUG();
 	}
