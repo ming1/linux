@@ -75,25 +75,24 @@ static void update_rfkill_state(struct rfkill *rfkill)
 }
 
 static int rfkill_toggle_radio(struct rfkill *rfkill,
-				enum rfkill_state state,
-				int force)
+				enum rfkill_state state)
 {
 	int retval = 0;
 	enum rfkill_state oldstate, newstate;
 
 	oldstate = rfkill->state;
 
-	if (rfkill->get_state && !force &&
+	if (rfkill->get_state &&
 	    !rfkill->get_state(rfkill->data, &newstate))
 		rfkill->state = newstate;
 
-	if (force || state != rfkill->state) {
+	if (state != rfkill->state) {
 		retval = rfkill->toggle_radio(rfkill->data, state);
 		if (!retval)
 			rfkill->state = state;
 	}
 
-	if (force || rfkill->state != oldstate)
+	if (rfkill->state != oldstate)
 		rfkill_led_trigger(rfkill, rfkill->state);
 
 	return retval;
@@ -108,6 +107,7 @@ static int rfkill_toggle_radio(struct rfkill *rfkill,
  * a specific switch is claimed by userspace in which case it is
  * left alone.
  */
+
 void rfkill_switch_all(enum rfkill_type type, enum rfkill_state state)
 {
 	struct rfkill *rfkill;
@@ -118,7 +118,7 @@ void rfkill_switch_all(enum rfkill_type type, enum rfkill_state state)
 
 	list_for_each_entry(rfkill, &rfkill_list, node) {
 		if ((!rfkill->user_claim) && (rfkill->type == type))
-			rfkill_toggle_radio(rfkill, state, 0);
+			rfkill_toggle_radio(rfkill, state);
 	}
 
 	mutex_unlock(&rfkill_mutex);
@@ -214,8 +214,7 @@ static ssize_t rfkill_state_store(struct device *dev,
 	if (mutex_lock_interruptible(&rfkill->mutex))
 		return -ERESTARTSYS;
 	error = rfkill_toggle_radio(rfkill,
-			state ? RFKILL_STATE_ON : RFKILL_STATE_OFF,
-			0);
+			state ? RFKILL_STATE_ON : RFKILL_STATE_OFF);
 	mutex_unlock(&rfkill->mutex);
 
 	return error ? error : count;
@@ -256,8 +255,7 @@ static ssize_t rfkill_claim_store(struct device *dev,
 	if (rfkill->user_claim != claim) {
 		if (!claim)
 			rfkill_toggle_radio(rfkill,
-					    rfkill_states[rfkill->type],
-					    0);
+					    rfkill_states[rfkill->type]);
 		rfkill->user_claim = claim;
 	}
 
@@ -290,11 +288,12 @@ static int rfkill_suspend(struct device *dev, pm_message_t state)
 
 	if (dev->power.power_state.event != state.event) {
 		if (state.event & PM_EVENT_SLEEP) {
-			/* Stop transmitter, keep state, no notifies */
-			update_rfkill_state(rfkill);
-
 			mutex_lock(&rfkill->mutex);
-			rfkill->toggle_radio(rfkill->data, RFKILL_STATE_OFF);
+
+			if (rfkill->state == RFKILL_STATE_ON)
+				rfkill->toggle_radio(rfkill->data,
+						     RFKILL_STATE_OFF);
+
 			mutex_unlock(&rfkill->mutex);
 		}
 
@@ -311,8 +310,8 @@ static int rfkill_resume(struct device *dev)
 	if (dev->power.power_state.event != PM_EVENT_ON) {
 		mutex_lock(&rfkill->mutex);
 
-		/* restore radio state AND notify everybody */
-		rfkill_toggle_radio(rfkill, rfkill->state, 1);
+		if (rfkill->state == RFKILL_STATE_ON)
+			rfkill->toggle_radio(rfkill->data, RFKILL_STATE_ON);
 
 		mutex_unlock(&rfkill->mutex);
 	}
@@ -339,7 +338,7 @@ static int rfkill_add_switch(struct rfkill *rfkill)
 
 	mutex_lock(&rfkill_mutex);
 
-	error = rfkill_toggle_radio(rfkill, rfkill_states[rfkill->type], 0);
+	error = rfkill_toggle_radio(rfkill, rfkill_states[rfkill->type]);
 	if (!error)
 		list_add_tail(&rfkill->node, &rfkill_list);
 
@@ -352,7 +351,7 @@ static void rfkill_remove_switch(struct rfkill *rfkill)
 {
 	mutex_lock(&rfkill_mutex);
 	list_del_init(&rfkill->node);
-	rfkill_toggle_radio(rfkill, RFKILL_STATE_OFF, 1);
+	rfkill_toggle_radio(rfkill, RFKILL_STATE_OFF);
 	mutex_unlock(&rfkill_mutex);
 }
 
