@@ -599,7 +599,7 @@ static inline int at76_get_hw_cfg(struct usb_device *udev,
 {
 	return usb_control_msg(udev, usb_rcvctrlpipe(udev, 0), 0x33,
 			       USB_TYPE_VENDOR | USB_DIR_IN |
-			       USB_RECIP_INTERFACE, 0x0a02, 0,
+			       USB_RECIP_INTERFACE, ((0x0a << 8) | 0x02), 0,
 			       buf, buf_size, USB_CTRL_GET_TIMEOUT);
 }
 
@@ -609,7 +609,7 @@ static inline int at76_get_hw_cfg_intersil(struct usb_device *udev,
 {
 	return usb_control_msg(udev, usb_rcvctrlpipe(udev, 0), 0x33,
 			       USB_TYPE_VENDOR | USB_DIR_IN |
-			       USB_RECIP_INTERFACE, 0x0902, 0,
+			       USB_RECIP_INTERFACE, ((0x09 << 8) | 0x02), 0,
 			       buf, buf_size, USB_CTRL_GET_TIMEOUT);
 }
 
