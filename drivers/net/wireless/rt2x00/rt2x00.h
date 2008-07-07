@@ -546,7 +546,8 @@ struct rt2x00lib_ops {
 	void (*write_tx_desc) (struct rt2x00_dev *rt2x00dev,
 			       struct sk_buff *skb,
 			       struct txentry_desc *txdesc);
-	int (*write_tx_data) (struct queue_entry *entry);
+	int (*write_tx_data) (struct rt2x00_dev *rt2x00dev,
+			      struct data_queue *queue, struct sk_buff *skb);
 	int (*get_tx_data_len) (struct rt2x00_dev *rt2x00dev,
 				struct sk_buff *skb);
 	void (*kick_tx_queue) (struct rt2x00_dev *rt2x00dev,
