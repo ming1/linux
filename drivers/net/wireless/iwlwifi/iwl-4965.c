@@ -489,8 +489,10 @@ static int iwl4965_disable_tx_fifo(struct iwl_priv *priv)
 
 static int iwl4965_apm_init(struct iwl_priv *priv)
 {
+	unsigned long flags;
 	int ret = 0;
 
+	spin_lock_irqsave(&priv->lock, flags);
 	iwl_set_bit(priv, CSR_GIO_CHICKEN_BITS,
 			  CSR_GIO_CHICKEN_BITS_REG_BIT_DIS_L0S_EXIT_TIMER);
 
@@ -522,6 +524,7 @@ static int iwl4965_apm_init(struct iwl_priv *priv)
 
 	iwl_release_nic_access(priv);
 out:
+	spin_unlock_irqrestore(&priv->lock, flags);
 	return ret;
 }
 
