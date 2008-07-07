@@ -8270,7 +8270,7 @@ static int iwl3945_pci_resume(struct pci_dev *pdev)
 #endif /* CONFIG_PM */
 
 /*************** RFKILL FUNCTIONS **********/
-#ifdef CONFIG_IWLWIFI_RFKILL
+#ifdef CONFIG_IWL3945_RFKILL
 /* software rf-kill from user */
 static int iwl3945_rfkill_soft_rf_kill(void *data, enum rfkill_state state)
 {
@@ -8331,43 +8331,14 @@ int iwl3945_rfkill_init(struct iwl3945_priv *priv)
 	priv->rfkill_mngr.rfkill->dev.class->suspend = NULL;
 	priv->rfkill_mngr.rfkill->dev.class->resume = NULL;
 
-	priv->rfkill_mngr.input_dev = input_allocate_device();
-	if (!priv->rfkill_mngr.input_dev) {
-		IWL_ERROR("Unable to allocate rfkill input device.\n");
-		ret = -ENOMEM;
-		goto freed_rfkill;
-	}
-
-	priv->rfkill_mngr.input_dev->name = priv->cfg->name;
-	priv->rfkill_mngr.input_dev->phys = wiphy_name(priv->hw->wiphy);
-	priv->rfkill_mngr.input_dev->id.bustype = BUS_HOST;
-	priv->rfkill_mngr.input_dev->id.vendor = priv->pci_dev->vendor;
-	priv->rfkill_mngr.input_dev->dev.parent = device;
-	priv->rfkill_mngr.input_dev->evbit[0] = BIT(EV_KEY);
-	set_bit(KEY_WLAN, priv->rfkill_mngr.input_dev->keybit);
-
 	ret = rfkill_register(priv->rfkill_mngr.rfkill);
 	if (ret) {
 		IWL_ERROR("Unable to register rfkill: %d\n", ret);
-		goto free_input_dev;
-	}
-
-	ret = input_register_device(priv->rfkill_mngr.input_dev);
-	if (ret) {
-		IWL_ERROR("Unable to register rfkill input device: %d\n", ret);
-		goto unregister_rfkill;
+		goto freed_rfkill;
 	}
 
 	IWL_DEBUG_RF_KILL("RFKILL initialization complete.\n");
 	return ret;
-
-unregister_rfkill:
-	rfkill_unregister(priv->rfkill_mngr.rfkill);
-	priv->rfkill_mngr.rfkill = NULL;
-
-free_input_dev:
-	input_free_device(priv->rfkill_mngr.input_dev);
-	priv->rfkill_mngr.input_dev = NULL;
 
 freed_rfkill:
 	if (priv->rfkill_mngr.rfkill != NULL)
@@ -8381,14 +8352,9 @@ error:
 
 void iwl3945_rfkill_unregister(struct iwl3945_priv *priv)
 {
-
-	if (priv->rfkill_mngr.input_dev)
-		input_unregister_device(priv->rfkill_mngr.input_dev);
-
 	if (priv->rfkill_mngr.rfkill)
 		rfkill_unregister(priv->rfkill_mngr.rfkill);
 
-	priv->rfkill_mngr.input_dev = NULL;
 	priv->rfkill_mngr.rfkill = NULL;
 }
 
