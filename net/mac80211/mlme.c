@@ -87,7 +87,6 @@ static int ieee80211_sta_start_scan(struct net_device *dev,
 				    u8 *ssid, size_t ssid_len);
 static int ieee80211_sta_config_auth(struct net_device *dev,
 				     struct ieee80211_if_sta *ifsta);
-static void sta_rx_agg_session_timer_expired(unsigned long data);
 
 
 void ieee802_11_parse_elems(u8 *start, size_t len,
@@ -1652,7 +1651,7 @@ timer_expired_exit:
  * resetting it after each frame that arrives from the originator.
  * if this timer expires ieee80211_sta_stop_rx_ba_session will be executed.
  */
-static void sta_rx_agg_session_timer_expired(unsigned long data)
+void sta_rx_agg_session_timer_expired(unsigned long data)
 {
 	/* not an elegant detour, but there is no choice as the timer passes
 	 * only one argument, and various sta_info are needed here, so init
