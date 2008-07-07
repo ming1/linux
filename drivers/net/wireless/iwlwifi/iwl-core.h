@@ -372,11 +372,7 @@ extern void iwl_rf_kill_ct_config(struct iwl_priv *priv);
 extern int iwl_send_statistics_request(struct iwl_priv *priv, u8 flags);
 extern int iwl_verify_ucode(struct iwl_priv *priv);
 extern int iwl_send_lq_cmd(struct iwl_priv *priv,
-		struct iwl_link_quality_cmd *lq, u8 flags);
-extern void iwl_rx_reply_rx(struct iwl_priv *priv,
-		struct iwl_rx_mem_buffer *rxb);
-extern void iwl_rx_reply_rx_phy(struct iwl_priv *priv,
-				    struct iwl_rx_mem_buffer *rxb);
+		    struct iwl_link_quality_cmd *lq, u8 flags);
 
 static inline int iwl_send_rxon_assoc(struct iwl_priv *priv)
 {
