@@ -54,19 +54,16 @@ static int iwl_rfkill_soft_rf_kill(void *data, enum rfkill_state state)
 	mutex_lock(&priv->mutex);
 
 	switch (state) {
-	case RFKILL_STATE_UNBLOCKED:
+	case RFKILL_STATE_ON:
 		iwl_radio_kill_sw_enable_radio(priv);
 		/* if HW rf-kill is set dont allow ON state */
 		if (iwl_is_rfkill(priv))
 			err = -EBUSY;
 		break;
-	case RFKILL_STATE_SOFT_BLOCKED:
+	case RFKILL_STATE_OFF:
 		iwl_radio_kill_sw_disable_radio(priv);
 		if (!iwl_is_rfkill(priv))
 			err = -EBUSY;
-		break;
-	default:
-		IWL_WARNING("we recieved unexpected RFKILL state %d\n", state);
 		break;
 	}
 	mutex_unlock(&priv->mutex);
