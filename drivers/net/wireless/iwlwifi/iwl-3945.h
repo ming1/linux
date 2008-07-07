@@ -690,8 +690,13 @@ enum {
 
 #endif
 
-#ifdef CONFIG_IWL3945_RFKILL
+#ifdef CONFIG_IWLWIFI_RFKILL
 struct iwl3945_priv;
+
+struct iwl3945_rfkill_mngr {
+	struct rfkill *rfkill;
+	struct input_dev *input_dev;
+};
 
 void iwl3945_rfkill_set_hw_state(struct iwl3945_priv *priv);
 void iwl3945_rfkill_unregister(struct iwl3945_priv *priv);
@@ -795,8 +800,8 @@ struct iwl3945_priv {
 	struct iwl3945_init_alive_resp card_alive_init;
 	struct iwl3945_alive_resp card_alive;
 
-#ifdef CONFIG_IWL3945_RFKILL
-	struct rfkill *rfkill;
+#ifdef CONFIG_IWLWIFI_RFKILL
+	struct iwl3945_rfkill_mngr rfkill_mngr;
 #endif
 
 #ifdef CONFIG_IWL3945_LEDS
