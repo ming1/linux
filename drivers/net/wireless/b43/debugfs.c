@@ -267,8 +267,6 @@ static int mmio16read__write_file(struct b43_wldev *dev,
 		return -EINVAL;
 	if (addr > B43_MAX_MMIO_ACCESS)
 		return -EADDRNOTAVAIL;
-	if ((addr % 2) != 0)
-		return -EINVAL;
 
 	dev->dfsentry->mmio16read_next = addr;
 
@@ -278,26 +276,17 @@ static int mmio16read__write_file(struct b43_wldev *dev,
 static int mmio16write__write_file(struct b43_wldev *dev,
 				   const char *buf, size_t count)
 {
-	unsigned int addr, mask, set;
+	unsigned int addr, val;
 	int res;
-	u16 val;
 
-	res = sscanf(buf, "0x%X 0x%X 0x%X", &addr, &mask, &set);
-	if (res != 3)
+	res = sscanf(buf, "0x%X = 0x%X", &addr, &val);
+	if (res != 2)
 		return -EINVAL;
 	if (addr > B43_MAX_MMIO_ACCESS)
 		return -EADDRNOTAVAIL;
-	if ((mask > 0xFFFF) || (set > 0xFFFF))
+	if (val > 0xFFFF)
 		return -E2BIG;
-	if ((addr % 2) != 0)
-		return -EINVAL;
 
-	if (mask == 0)
-		val = 0;
-	else
-		val = b43_read16(dev, addr);
-	val &= mask;
-	val |= set;
 	b43_write16(dev, addr, val);
 
 	return 0;
@@ -331,8 +320,6 @@ static int mmio32read__write_file(struct b43_wldev *dev,
 		return -EINVAL;
 	if (addr > B43_MAX_MMIO_ACCESS)
 		return -EADDRNOTAVAIL;
-	if ((addr % 4) != 0)
-		return -EINVAL;
 
 	dev->dfsentry->mmio32read_next = addr;
 
@@ -342,26 +329,17 @@ static int mmio32read__write_file(struct b43_wldev *dev,
 static int mmio32write__write_file(struct b43_wldev *dev,
 				   const char *buf, size_t count)
 {
-	unsigned int addr, mask, set;
+	unsigned int addr, val;
 	int res;
-	u32 val;
 
-	res = sscanf(buf, "0x%X 0x%X 0x%X", &addr, &mask, &set);
-	if (res != 3)
+	res = sscanf(buf, "0x%X = 0x%X", &addr, &val);
+	if (res != 2)
 		return -EINVAL;
 	if (addr > B43_MAX_MMIO_ACCESS)
 		return -EADDRNOTAVAIL;
-	if ((mask > 0xFFFFFFFF) || (set > 0xFFFFFFFF))
+	if (val > 0xFFFFFFFF)
 		return -E2BIG;
-	if ((addr % 4) != 0)
-		return -EINVAL;
 
-	if (mask == 0)
-		val = 0;
-	else
-		val = b43_read32(dev, addr);
-	val &= mask;
-	val |= set;
 	b43_write32(dev, addr, val);
 
 	return 0;
