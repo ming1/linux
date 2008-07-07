@@ -899,16 +899,10 @@ static inline u16 get_duration_res(const unsigned int size, const u8 rate)
 }
 
 /**
- * rt2x00queue_alloc_skb - allocate a skb.
+ * rt2x00queue_alloc_rxskb - allocate a skb for RX purposes.
  * @queue: The queue for which the skb will be applicable.
  */
-struct sk_buff *rt2x00queue_alloc_skb(struct data_queue *queue);
-
-/**
- * rt2x00queue_free_skb - free a skb
- * @skb: The skb to free.
- */
-void rt2x00queue_free_skb(struct sk_buff *skb);
+struct sk_buff *rt2x00queue_alloc_rxskb(struct data_queue *queue);
 
 /**
  * rt2x00queue_create_tx_descriptor - Create TX descriptor from mac80211 input
