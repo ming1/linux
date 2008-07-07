@@ -595,12 +595,7 @@ enum ieee80211_key_flags {
  * @flags: key flags, see &enum ieee80211_key_flags.
  * @keyidx: the key index (0-3)
  * @keylen: key material length
- * @key: key material. For ALG_TKIP the key is encoded as a 256-bit (32 byte)
- * 	data block:
- * 	- Temporal Encryption Key (128 bits)
- * 	- Temporal Authenticator Tx MIC Key (64 bits)
- * 	- Temporal Authenticator Rx MIC Key (64 bits)
- *
+ * @key: key material
  */
 struct ieee80211_key_conf {
 	enum ieee80211_key_alg alg;
