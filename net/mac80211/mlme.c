@@ -346,7 +346,7 @@ static void ieee80211_sta_wmm_params(struct net_device *dev,
 		params.cw_max = ecw2cw((pos[1] & 0xf0) >> 4);
 		params.cw_min = ecw2cw(pos[1] & 0x0f);
 		params.txop = pos[2] | (pos[3] << 8);
-#ifdef CONFIG_MAC80211_VERBOSE_DEBUG
+#ifdef CONFIG_MAC80211_DEBUG
 		printk(KERN_DEBUG "%s: WMM queue=%d aci=%d acm=%d aifs=%d "
 		       "cWmin=%d cWmax=%d txop=%d\n",
 		       dev->name, queue, aci, acm, params.aifs, params.cw_min,
@@ -371,7 +371,6 @@ static u32 ieee80211_handle_protect_preamb(struct ieee80211_sub_if_data *sdata,
 	u32 changed = 0;
 
 	if (use_protection != bss_conf->use_cts_prot) {
-#ifdef CONFIG_MAC80211_VERBOSE_DEBUG
 		if (net_ratelimit()) {
 			printk(KERN_DEBUG "%s: CTS protection %s (BSSID="
 			       "%s)\n",
@@ -379,13 +378,11 @@ static u32 ieee80211_handle_protect_preamb(struct ieee80211_sub_if_data *sdata,
 			       use_protection ? "enabled" : "disabled",
 			       print_mac(mac, ifsta->bssid));
 		}
-#endif
 		bss_conf->use_cts_prot = use_protection;
 		changed |= BSS_CHANGED_ERP_CTS_PROT;
 	}
 
 	if (use_short_preamble != bss_conf->use_short_preamble) {
-#ifdef CONFIG_MAC80211_VERBOSE_DEBUG
 		if (net_ratelimit()) {
 			printk(KERN_DEBUG "%s: switched to %s barker preamble"
 			       " (BSSID=%s)\n",
@@ -393,7 +390,6 @@ static u32 ieee80211_handle_protect_preamb(struct ieee80211_sub_if_data *sdata,
 			       use_short_preamble ? "short" : "long",
 			       print_mac(mac, ifsta->bssid));
 		}
-#endif
 		bss_conf->use_short_preamble = use_short_preamble;
 		changed |= BSS_CHANGED_ERP_PREAMBLE;
 	}
@@ -1179,10 +1175,14 @@ static void ieee80211_auth_challenge(struct net_device *dev,
 	u8 *pos;
 	struct ieee802_11_elems elems;
 
+	printk(KERN_DEBUG "%s: replying to auth challenge\n", dev->name);
 	pos = mgmt->u.auth.variable;
 	ieee802_11_parse_elems(pos, len - (pos - (u8 *) mgmt), &elems);
-	if (!elems.challenge)
+	if (!elems.challenge) {
+		printk(KERN_DEBUG "%s: no challenge IE in shared key auth "
+		       "frame\n", dev->name);
 		return;
+	}
 	ieee80211_send_auth(dev, ifsta, 3, elems.challenge - 2,
 			    elems.challenge_len + 2, 1);
 }
@@ -1364,11 +1364,9 @@ static void ieee80211_sta_process_addba_request(struct net_device *dev,
 	sta->ampdu_mlme.tid_rx[tid] =
 			kmalloc(sizeof(struct tid_ampdu_rx), GFP_ATOMIC);
 	if (!sta->ampdu_mlme.tid_rx[tid]) {
-#ifdef CONFIG_MAC80211_HT_DEBUG
 		if (net_ratelimit())
 			printk(KERN_ERR "allocate rx mlme to tid %d failed\n",
 					tid);
-#endif
 		goto end;
 	}
 	/* rx timer */
@@ -1384,11 +1382,9 @@ static void ieee80211_sta_process_addba_request(struct net_device *dev,
 	tid_agg_rx->reorder_buf =
 		kmalloc(buf_size * sizeof(struct sk_buff *), GFP_ATOMIC);
 	if (!tid_agg_rx->reorder_buf) {
-#ifdef CONFIG_MAC80211_HT_DEBUG
 		if (net_ratelimit())
 			printk(KERN_ERR "can not allocate reordering buffer "
 			       "to tid %d\n", tid);
-#endif
 		kfree(sta->ampdu_mlme.tid_rx[tid]);
 		goto end;
 	}
@@ -1455,6 +1451,8 @@ static void ieee80211_sta_process_addba_resp(struct net_device *dev,
 
 	if (!(*state & HT_ADDBA_REQUESTED_MSK)) {
 		spin_unlock_bh(&sta->lock);
+		printk(KERN_DEBUG "state not HT_ADDBA_REQUESTED_MSK:"
+			"%d\n", *state);
 		goto addba_resp_exit;
 	}
 
@@ -1473,14 +1471,22 @@ static void ieee80211_sta_process_addba_resp(struct net_device *dev,
 #endif /* CONFIG_MAC80211_HT_DEBUG */
 	if (le16_to_cpu(mgmt->u.action.u.addba_resp.status)
 			== WLAN_STATUS_SUCCESS) {
+		if (*state & HT_ADDBA_RECEIVED_MSK)
+			printk(KERN_DEBUG "double addBA response\n");
+
 		*state |= HT_ADDBA_RECEIVED_MSK;
 		sta->ampdu_mlme.addba_req_num[tid] = 0;
 
-		if (*state == HT_AGG_STATE_OPERATIONAL)
+		if (*state == HT_AGG_STATE_OPERATIONAL) {
+			printk(KERN_DEBUG "Aggregation on for tid %d \n", tid);
 			ieee80211_wake_queue(hw, sta->tid_to_tx_q[tid]);
+		}
 
 		spin_unlock_bh(&sta->lock);
+		printk(KERN_DEBUG "recipient accepted agg: tid %d \n", tid);
 	} else {
+		printk(KERN_DEBUG "recipient rejected agg: tid %d \n", tid);
+
 		sta->ampdu_mlme.addba_req_num[tid]++;
 		/* this will allow the state check in stop_BA_session */
 		*state = HT_AGG_STATE_OPERATIONAL;
@@ -1579,7 +1585,7 @@ void ieee80211_sta_stop_rx_ba_session(struct net_device *dev, u8 *ra, u16 tid,
 					ra, tid, NULL);
 	if (ret)
 		printk(KERN_DEBUG "HW problem - can not stop rx "
-				"aggregation for tid %d\n", tid);
+				"aggergation for tid %d\n", tid);
 
 	/* shutdown timer has not expired */
 	if (initiator != WLAN_BACK_TIMER)
@@ -1685,16 +1691,12 @@ void sta_addba_resp_timer_expired(unsigned long data)
 	if (!(*state & HT_ADDBA_REQUESTED_MSK)) {
 		spin_unlock_bh(&sta->lock);
 		*state = HT_AGG_STATE_IDLE;
-#ifdef CONFIG_MAC80211_HT_DEBUG
 		printk(KERN_DEBUG "timer expired on tid %d but we are not "
 				"expecting addBA response there", tid);
-#endif
 		goto timer_expired_exit;
 	}
 
-#ifdef CONFIG_MAC80211_HT_DEBUG
 	printk(KERN_DEBUG "addBA response timer expired on tid %d\n", tid);
-#endif
 
 	/* go through the state check in stop_BA_session */
 	*state = HT_AGG_STATE_OPERATIONAL;
@@ -1722,9 +1724,7 @@ static void sta_rx_agg_session_timer_expired(unsigned long data)
 	struct sta_info *sta = container_of(timer_to_id, struct sta_info,
 					 timer_to_tid[0]);
 
-#ifdef CONFIG_MAC80211_HT_DEBUG
 	printk(KERN_DEBUG "rx session timer expired on tid %d\n", (u16)*ptid);
-#endif
 	ieee80211_sta_stop_rx_ba_session(sta->sdata->dev, sta->addr,
 					 (u16)*ptid, WLAN_BACK_TIMER,
 					 WLAN_REASON_QSTA_TIMEOUT);
@@ -1819,23 +1819,46 @@ static void ieee80211_rx_mgmt_auth(struct net_device *dev,
 	DECLARE_MAC_BUF(mac);
 
 	if (ifsta->state != IEEE80211_AUTHENTICATE &&
-	    sdata->vif.type != IEEE80211_IF_TYPE_IBSS)
+	    sdata->vif.type != IEEE80211_IF_TYPE_IBSS) {
+		printk(KERN_DEBUG "%s: authentication frame received from "
+		       "%s, but not in authenticate state - ignored\n",
+		       dev->name, print_mac(mac, mgmt->sa));
 		return;
+	}
 
-	if (len < 24 + 6)
+	if (len < 24 + 6) {
+		printk(KERN_DEBUG "%s: too short (%zd) authentication frame "
+		       "received from %s - ignored\n",
+		       dev->name, len, print_mac(mac, mgmt->sa));
 		return;
+	}
 
 	if (sdata->vif.type != IEEE80211_IF_TYPE_IBSS &&
-	    memcmp(ifsta->bssid, mgmt->sa, ETH_ALEN) != 0)
+	    memcmp(ifsta->bssid, mgmt->sa, ETH_ALEN) != 0) {
+		printk(KERN_DEBUG "%s: authentication frame received from "
+		       "unknown AP (SA=%s BSSID=%s) - "
+		       "ignored\n", dev->name, print_mac(mac, mgmt->sa),
+		       print_mac(mac, mgmt->bssid));
 		return;
+	}
 
 	if (sdata->vif.type != IEEE80211_IF_TYPE_IBSS &&
-	    memcmp(ifsta->bssid, mgmt->bssid, ETH_ALEN) != 0)
+	    memcmp(ifsta->bssid, mgmt->bssid, ETH_ALEN) != 0) {
+		printk(KERN_DEBUG "%s: authentication frame received from "
+		       "unknown BSSID (SA=%s BSSID=%s) - "
+		       "ignored\n", dev->name, print_mac(mac, mgmt->sa),
+		       print_mac(mac, mgmt->bssid));
 		return;
+	}
 
 	auth_alg = le16_to_cpu(mgmt->u.auth.auth_alg);
 	auth_transaction = le16_to_cpu(mgmt->u.auth.auth_transaction);
 	status_code = le16_to_cpu(mgmt->u.auth.status_code);
+
+	printk(KERN_DEBUG "%s: RX authentication from %s (alg=%d "
+	       "transaction=%d status=%d)\n",
+	       dev->name, print_mac(mac, mgmt->sa), auth_alg,
+	       auth_transaction, status_code);
 
 	if (sdata->vif.type == IEEE80211_IF_TYPE_IBSS) {
 		/*
@@ -1844,16 +1867,26 @@ static void ieee80211_rx_mgmt_auth(struct net_device *dev,
 		 * However, try to reply to authentication attempts if someone
 		 * has actually implemented this.
 		 */
-		if (auth_alg != WLAN_AUTH_OPEN || auth_transaction != 1)
+		if (auth_alg != WLAN_AUTH_OPEN || auth_transaction != 1) {
+			printk(KERN_DEBUG "%s: unexpected IBSS authentication "
+			       "frame (alg=%d transaction=%d)\n",
+			       dev->name, auth_alg, auth_transaction);
 			return;
+		}
 		ieee80211_send_auth(dev, ifsta, 2, NULL, 0, 0);
 	}
 
 	if (auth_alg != ifsta->auth_alg ||
-	    auth_transaction != ifsta->auth_transaction)
+	    auth_transaction != ifsta->auth_transaction) {
+		printk(KERN_DEBUG "%s: unexpected authentication frame "
+		       "(alg=%d transaction=%d)\n",
+		       dev->name, auth_alg, auth_transaction);
 		return;
+	}
 
 	if (status_code != WLAN_STATUS_SUCCESS) {
+		printk(KERN_DEBUG "%s: AP denied authentication (auth_alg=%d "
+		       "code=%d)\n", dev->name, ifsta->auth_alg, status_code);
 		if (status_code == WLAN_STATUS_NOT_SUPPORTED_AUTH_ALG) {
 			u8 algs[3];
 			const int num_algs = ARRAY_SIZE(algs);
@@ -1882,6 +1915,9 @@ static void ieee80211_rx_mgmt_auth(struct net_device *dev,
 				    !ieee80211_sta_wep_configured(dev))
 					continue;
 				ifsta->auth_alg = algs[pos];
+				printk(KERN_DEBUG "%s: set auth_alg=%d for "
+				       "next try\n",
+				       dev->name, ifsta->auth_alg);
 				break;
 			}
 		}
@@ -1911,13 +1947,26 @@ static void ieee80211_rx_mgmt_deauth(struct net_device *dev,
 	u16 reason_code;
 	DECLARE_MAC_BUF(mac);
 
-	if (len < 24 + 2)
+	if (len < 24 + 2) {
+		printk(KERN_DEBUG "%s: too short (%zd) deauthentication frame "
+		       "received from %s - ignored\n",
+		       dev->name, len, print_mac(mac, mgmt->sa));
 		return;
+	}
 
-	if (memcmp(ifsta->bssid, mgmt->sa, ETH_ALEN))
+	if (memcmp(ifsta->bssid, mgmt->sa, ETH_ALEN) != 0) {
+		printk(KERN_DEBUG "%s: deauthentication frame received from "
+		       "unknown AP (SA=%s BSSID=%s) - "
+		       "ignored\n", dev->name, print_mac(mac, mgmt->sa),
+		       print_mac(mac, mgmt->bssid));
 		return;
+	}
 
 	reason_code = le16_to_cpu(mgmt->u.deauth.reason_code);
+
+	printk(KERN_DEBUG "%s: RX deauthentication from %s"
+	       " (reason=%d)\n",
+	       dev->name, print_mac(mac, mgmt->sa), reason_code);
 
 	if (ifsta->flags & IEEE80211_STA_AUTHENTICATED)
 		printk(KERN_DEBUG "%s: deauthenticated\n", dev->name);
@@ -1943,13 +1992,26 @@ static void ieee80211_rx_mgmt_disassoc(struct net_device *dev,
 	u16 reason_code;
 	DECLARE_MAC_BUF(mac);
 
-	if (len < 24 + 2)
+	if (len < 24 + 2) {
+		printk(KERN_DEBUG "%s: too short (%zd) disassociation frame "
+		       "received from %s - ignored\n",
+		       dev->name, len, print_mac(mac, mgmt->sa));
 		return;
+	}
 
-	if (memcmp(ifsta->bssid, mgmt->sa, ETH_ALEN))
+	if (memcmp(ifsta->bssid, mgmt->sa, ETH_ALEN) != 0) {
+		printk(KERN_DEBUG "%s: disassociation frame received from "
+		       "unknown AP (SA=%s BSSID=%s) - "
+		       "ignored\n", dev->name, print_mac(mac, mgmt->sa),
+		       print_mac(mac, mgmt->bssid));
 		return;
+	}
 
 	reason_code = le16_to_cpu(mgmt->u.disassoc.reason_code);
+
+	printk(KERN_DEBUG "%s: RX disassociation from %s"
+	       " (reason=%d)\n",
+	       dev->name, print_mac(mac, mgmt->sa), reason_code);
 
 	if (ifsta->flags & IEEE80211_STA_ASSOCIATED)
 		printk(KERN_DEBUG "%s: disassociated\n", dev->name);
@@ -1986,14 +2048,27 @@ static void ieee80211_rx_mgmt_assoc_resp(struct ieee80211_sub_if_data *sdata,
 	/* AssocResp and ReassocResp have identical structure, so process both
 	 * of them in this function. */
 
-	if (ifsta->state != IEEE80211_ASSOCIATE)
+	if (ifsta->state != IEEE80211_ASSOCIATE) {
+		printk(KERN_DEBUG "%s: association frame received from "
+		       "%s, but not in associate state - ignored\n",
+		       dev->name, print_mac(mac, mgmt->sa));
 		return;
+	}
 
-	if (len < 24 + 6)
+	if (len < 24 + 6) {
+		printk(KERN_DEBUG "%s: too short (%zd) association frame "
+		       "received from %s - ignored\n",
+		       dev->name, len, print_mac(mac, mgmt->sa));
 		return;
+	}
 
-	if (memcmp(ifsta->bssid, mgmt->sa, ETH_ALEN) != 0)
+	if (memcmp(ifsta->bssid, mgmt->sa, ETH_ALEN) != 0) {
+		printk(KERN_DEBUG "%s: association frame received from "
+		       "unknown AP (SA=%s BSSID=%s) - "
+		       "ignored\n", dev->name, print_mac(mac, mgmt->sa),
+		       print_mac(mac, mgmt->bssid));
 		return;
+	}
 
 	capab_info = le16_to_cpu(mgmt->u.assoc_resp.capab_info);
 	status_code = le16_to_cpu(mgmt->u.assoc_resp.status_code);
@@ -2588,6 +2663,12 @@ static void ieee80211_rx_bss_info(struct net_device *dev,
 	if (!beacon && memcmp(mgmt->da, dev->dev_addr, ETH_ALEN))
 		return; /* ignore ProbeResp to foreign address */
 
+#if 0
+	printk(KERN_DEBUG "%s: RX %s from %s to %s\n",
+	       dev->name, beacon ? "Beacon" : "Probe Response",
+	       print_mac(mac, mgmt->sa), print_mac(mac2, mgmt->da));
+#endif
+
 	beacon_timestamp = le64_to_cpu(mgmt->u.beacon.timestamp);
 
 	if (ieee80211_vif_is_mesh(&sdata->vif) && elems->mesh_id &&
@@ -2616,6 +2697,15 @@ static void ieee80211_rx_bss_info(struct net_device *dev,
 			 * supported to avoid issues with TX rate ctrl. */
 			sta->supp_rates[rx_status->band] =
 				sdata->u.sta.supp_rates_bits[rx_status->band];
+		}
+		if (sta->supp_rates[rx_status->band] != prev_rates) {
+			printk(KERN_DEBUG "%s: updated supp_rates set for "
+			       "%s based on beacon info (0x%llx & 0x%llx -> "
+			       "0x%llx)\n",
+			       dev->name, print_mac(mac, sta->addr),
+			       (unsigned long long) prev_rates,
+			       (unsigned long long) supp_rates,
+			       (unsigned long long) sta->supp_rates[rx_status->band]);
 		}
 	}
 
@@ -2872,10 +2962,11 @@ static void ieee80211_rx_bss_info(struct net_device *dev,
 #endif /* CONFIG_MAC80211_IBSS_DEBUG */
 		if (beacon_timestamp > rx_timestamp) {
 #ifndef CONFIG_MAC80211_IBSS_DEBUG
-			printk(KERN_DEBUG "%s: beacon TSF higher than "
-			       "local TSF - IBSS merge with BSSID %s\n",
-			       dev->name, print_mac(mac, mgmt->bssid));
+			if (net_ratelimit())
 #endif
+				printk(KERN_DEBUG "%s: beacon TSF higher than "
+				       "local TSF - IBSS merge with BSSID %s\n",
+				       dev->name, print_mac(mac, mgmt->bssid));
 			ieee80211_sta_join_ibss(dev, &sdata->u.sta, bss);
 			ieee80211_ibss_add_sta(dev, NULL,
 					       mgmt->bssid, mgmt->sa,
@@ -3015,11 +3106,11 @@ static void ieee80211_rx_mgmt_probe_req(struct net_device *dev,
 	pos = mgmt->u.probe_req.variable;
 	if (pos[0] != WLAN_EID_SSID ||
 	    pos + 2 + pos[1] > end) {
-#ifdef CONFIG_MAC80211_IBSS_DEBUG
-		printk(KERN_DEBUG "%s: Invalid SSID IE in ProbeReq "
-		       "from %s\n",
-		       dev->name, print_mac(mac, mgmt->sa));
-#endif
+		if (net_ratelimit()) {
+			printk(KERN_DEBUG "%s: Invalid SSID IE in ProbeReq "
+			       "from %s\n",
+			       dev->name, print_mac(mac, mgmt->sa));
+		}
 		return;
 	}
 	if (pos[1] != 0 &&
@@ -3088,6 +3179,11 @@ static void ieee80211_rx_mgmt_action(struct net_device *dev,
 				break;
 			ieee80211_sta_process_delba(dev, mgmt, len);
 			break;
+		default:
+			if (net_ratelimit())
+			   printk(KERN_DEBUG "%s: Rx unknown A-MPDU action\n",
+					dev->name);
+			break;
 		}
 		break;
 	case PLINK_CATEGORY:
@@ -3097,6 +3193,11 @@ static void ieee80211_rx_mgmt_action(struct net_device *dev,
 	case MESH_PATH_SEL_CATEGORY:
 		if (ieee80211_vif_is_mesh(&sdata->vif))
 			mesh_rx_path_sel_frame(dev, mgmt, len);
+		break;
+	default:
+		if (net_ratelimit())
+			printk(KERN_DEBUG "%s: Rx unknown action frame - "
+			"category=%d\n", dev->name, mgmt->u.action.category);
 		break;
 	}
 }
@@ -3133,6 +3234,11 @@ void ieee80211_sta_rx_mgmt(struct net_device *dev, struct sk_buff *skb,
 		skb_queue_tail(&ifsta->skb_queue, skb);
 		queue_work(local->hw.workqueue, &ifsta->work);
 		return;
+	default:
+		printk(KERN_DEBUG "%s: received unknown management frame - "
+		       "stype=%d\n", dev->name,
+		       (fc & IEEE80211_FCTL_STYPE) >> 4);
+		break;
 	}
 
  fail:
@@ -3261,10 +3367,8 @@ static void ieee80211_sta_expire(struct net_device *dev, unsigned long exp_time)
 	spin_lock_irqsave(&local->sta_lock, flags);
 	list_for_each_entry_safe(sta, tmp, &local->sta_list, list)
 		if (time_after(jiffies, sta->last_rx + exp_time)) {
-#ifdef CONFIG_MAC80211_IBSS_DEBUG
 			printk(KERN_DEBUG "%s: expiring inactive STA %s\n",
 			       dev->name, print_mac(mac, sta->addr));
-#endif
 			__sta_info_unlink(&sta);
 			if (sta)
 				list_add(&sta->list, &tmp_list);
@@ -3347,10 +3451,13 @@ void ieee80211_sta_work(struct work_struct *work)
 	if (local->sta_sw_scanning || local->sta_hw_scanning)
 		return;
 
-	if (WARN_ON(sdata->vif.type != IEEE80211_IF_TYPE_STA &&
-		    sdata->vif.type != IEEE80211_IF_TYPE_IBSS &&
-		    sdata->vif.type != IEEE80211_IF_TYPE_MESH_POINT))
+	if (sdata->vif.type != IEEE80211_IF_TYPE_STA &&
+	    sdata->vif.type != IEEE80211_IF_TYPE_IBSS &&
+	    sdata->vif.type != IEEE80211_IF_TYPE_MESH_POINT) {
+		printk(KERN_DEBUG "%s: ieee80211_sta_work: non-STA interface "
+		       "(type=%d)\n", dev->name, sdata->vif.type);
 		return;
+	}
 	ifsta = &sdata->u.sta;
 
 	while ((skb = skb_dequeue(&ifsta->skb_queue)))
@@ -3404,7 +3511,8 @@ void ieee80211_sta_work(struct work_struct *work)
 		break;
 #endif
 	default:
-		WARN_ON(1);
+		printk(KERN_DEBUG "ieee80211_sta_work: Unknown state %d\n",
+		       ifsta->state);
 		break;
 	}
 
@@ -3439,6 +3547,8 @@ static void ieee80211_sta_reset_auth(struct net_device *dev,
 		ifsta->auth_alg = WLAN_AUTH_LEAP;
 	else
 		ifsta->auth_alg = WLAN_AUTH_OPEN;
+	printk(KERN_DEBUG "%s: Initial auth_alg=%d\n", dev->name,
+	       ifsta->auth_alg);
 	ifsta->auth_transaction = -1;
 	ifsta->flags &= ~IEEE80211_STA_ASSOCIATED;
 	ifsta->auth_tries = ifsta->assoc_tries = 0;
@@ -4364,10 +4474,8 @@ struct sta_info *ieee80211_ibss_add_sta(struct net_device *dev,
 	if (!ieee80211_bssid_match(bssid, sdata->u.sta.bssid))
 		return NULL;
 
-#ifdef CONFIG_MAC80211_VERBOSE_DEBUG
 	printk(KERN_DEBUG "%s: Adding new IBSS station %s (dev=%s)\n",
 	       wiphy_name(local->hw.wiphy), print_mac(mac, addr), dev->name);
-#endif
 
 	sta = sta_info_alloc(sdata, addr, GFP_ATOMIC);
 	if (!sta)
@@ -4394,7 +4502,7 @@ int ieee80211_sta_deauthenticate(struct net_device *dev, u16 reason)
 	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 	struct ieee80211_if_sta *ifsta = &sdata->u.sta;
 
-	printk(KERN_DEBUG "%s: deauthenticating by local choice (reason=%d)\n",
+	printk(KERN_DEBUG "%s: deauthenticate(reason=%d)\n",
 	       dev->name, reason);
 
 	if (sdata->vif.type != IEEE80211_IF_TYPE_STA &&
@@ -4412,7 +4520,7 @@ int ieee80211_sta_disassociate(struct net_device *dev, u16 reason)
 	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 	struct ieee80211_if_sta *ifsta = &sdata->u.sta;
 
-	printk(KERN_DEBUG "%s: disassociating by local choice (reason=%d)\n",
+	printk(KERN_DEBUG "%s: disassociate(reason=%d)\n",
 	       dev->name, reason);
 
 	if (sdata->vif.type != IEEE80211_IF_TYPE_STA)
