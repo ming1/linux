@@ -1030,12 +1030,11 @@ static void rt61pci_init_rxentry(struct rt2x00_dev *rt2x00dev,
 				 struct queue_entry *entry)
 {
 	struct queue_entry_priv_pci *entry_priv = entry->priv_data;
-	struct skb_frame_desc *skbdesc = get_skb_frame_desc(entry->skb);
 	u32 word;
 
 	rt2x00_desc_read(entry_priv->desc, 5, &word);
 	rt2x00_set_field32(&word, RXD_W5_BUFFER_PHYSICAL_ADDRESS,
-			   skbdesc->skb_dma);
+			   entry_priv->data_dma);
 	rt2x00_desc_write(entry_priv->desc, 5, word);
 
 	rt2x00_desc_read(entry_priv->desc, 0, &word);
@@ -1523,6 +1522,7 @@ static void rt61pci_write_tx_desc(struct rt2x00_dev *rt2x00dev,
 				    struct txentry_desc *txdesc)
 {
 	struct skb_frame_desc *skbdesc = get_skb_frame_desc(skb);
+	struct queue_entry_priv_pci *entry_priv = skbdesc->entry->priv_data;
 	__le32 *txd = skbdesc->desc;
 	u32 word;
 
@@ -1557,7 +1557,7 @@ static void rt61pci_write_tx_desc(struct rt2x00_dev *rt2x00dev,
 
 	rt2x00_desc_read(txd, 6, &word);
 	rt2x00_set_field32(&word, TXD_W6_BUFFER_PHYSICAL_ADDRESS,
-			   skbdesc->skb_dma);
+			   entry_priv->data_dma);
 	rt2x00_desc_write(txd, 6, word);
 
 	if (skbdesc->desc_len > TXINFO_SIZE) {
@@ -2302,10 +2302,9 @@ static int rt61pci_probe_hw(struct rt2x00_dev *rt2x00dev)
 	rt61pci_probe_hw_mode(rt2x00dev);
 
 	/*
-	 * This device requires firmware and DMA mapped skbs.
+	 * This device requires firmware.
 	 */
 	__set_bit(DRIVER_REQUIRE_FIRMWARE, &rt2x00dev->flags);
-	__set_bit(DRIVER_REQUIRE_DMA, &rt2x00dev->flags);
 
 	/*
 	 * Set the rssi offset.
