@@ -335,16 +335,16 @@ static u8 at76_dfu_get_state(struct usb_device *udev, u8 *state)
 	return ret;
 }
 
-/* Convert timeout from the DFU status to jiffies */
-static inline unsigned long at76_get_timeout(struct dfu_status *s)
+static inline u32 at76_get_timeout(struct dfu_status *s)
 {
-	return msecs_to_jiffies((s->poll_timeout[2] << 16)
-				| (s->poll_timeout[1] << 8)
-				| (s->poll_timeout[0]));
+	u32 ret = (s->poll_timeout[2] << 16) | (s->poll_timeout[1] << 8) |
+	    (s->poll_timeout[0]);
+
+	return ret;
 }
 
 /* Load internal firmware from the buffer.  If manifest_sync_timeout > 0, use
- * its value in jiffies in the MANIFEST_SYNC state.  */
+ * its value in msec in the MANIFEST_SYNC state.  */
 static int at76_usbdfu_download(struct usb_device *udev, u8 *buf, u32 size,
 				int manifest_sync_timeout)
 {
@@ -400,7 +400,8 @@ static int at76_usbdfu_download(struct usb_device *udev, u8 *buf, u32 size,
 			need_dfu_state = 1;
 
 			at76_dbg(DBG_DFU, "DFU: Resetting device");
-			schedule_timeout_interruptible(dfu_timeout);
+			schedule_timeout_interruptible(msecs_to_jiffies
+						       (dfu_timeout));
 			break;
 
 		case STATE_DFU_DOWNLOAD_IDLE:
@@ -444,7 +445,8 @@ static int at76_usbdfu_download(struct usb_device *udev, u8 *buf, u32 size,
 				dfu_timeout = manifest_sync_timeout;
 
 			at76_dbg(DBG_DFU, "DFU: Waiting for manifest phase");
-			schedule_timeout_interruptible(dfu_timeout);
+			schedule_timeout_interruptible(msecs_to_jiffies
+						       (dfu_timeout));
 			break;
 
 		case STATE_DFU_MANIFEST:
@@ -575,7 +577,7 @@ static void at76_ledtrig_tx_timerfunc(unsigned long data)
 	if (tx_lastactivity != tx_activity) {
 		tx_lastactivity = tx_activity;
 		led_trigger_event(ledtrig_tx, LED_FULL);
-		mod_timer(&ledtrig_tx_timer, jiffies + HZ / 4);
+		mod_timer(&ledtrig_tx_timer, jiffies + msecs_to_jiffies(250));
 	} else
 		led_trigger_event(ledtrig_tx, LED_OFF);
 }
@@ -584,7 +586,7 @@ static void at76_ledtrig_tx_activity(void)
 {
 	tx_activity++;
 	if (!timer_pending(&ledtrig_tx_timer))
-		mod_timer(&ledtrig_tx_timer, jiffies + HZ / 4);
+		mod_timer(&ledtrig_tx_timer, jiffies + msecs_to_jiffies(250));
 }
 
 /* Check if the given ssid is hidden */
@@ -3445,7 +3447,7 @@ static int at76_load_internal_fw(struct usb_device *udev, struct fwentry *fwe)
 	int need_remap = !at76_is_505a(fwe->board_type);
 
 	ret = at76_usbdfu_download(udev, fwe->intfw, fwe->intfw_size,
-				   need_remap ? 0 : 2 * HZ);
+				   need_remap ? 0 : 2000);
 
 	if (ret < 0) {
 		printk(KERN_ERR DRIVER_NAME
@@ -4469,17 +4471,17 @@ static void at76_calc_qual(struct at76_priv *priv, struct at76_rx_buffer *buf,
 	if (at76_is_intersil(priv->board_type))
 		qual->qual = buf->link_quality;
 	else {
-		unsigned long elapsed;
+		unsigned long msec;
 
 		/* Update qual at most once a second */
-		elapsed = jiffies - priv->beacons_last_qual;
-		if (elapsed < 1 * HZ)
+		msec = jiffies_to_msecs(jiffies) - priv->beacons_last_qual;
+		if (msec < 1000)
 			return;
 
 		qual->qual = qual->level * priv->beacons_received *
-		    msecs_to_jiffies(priv->beacon_period) / elapsed;
+		    priv->beacon_period / msec;
 
-		priv->beacons_last_qual = jiffies;
+		priv->beacons_last_qual = jiffies_to_msecs(jiffies);
 		priv->beacons_received = 0;
 	}
 	qual->qual = (qual->qual > 100) ? 100 : qual->qual;
@@ -5268,7 +5270,7 @@ static int at76_init_new_device(struct at76_priv *priv,
 	priv->txrate = TX_RATE_AUTO;
 	priv->preamble_type = PREAMBLE_TYPE_LONG;
 	priv->beacon_period = 100;
-	priv->beacons_last_qual = jiffies;
+	priv->beacons_last_qual = jiffies_to_msecs(jiffies);
 	priv->auth_mode = WLAN_AUTH_OPEN;
 	priv->scan_min_time = DEF_SCAN_MIN_TIME;
 	priv->scan_max_time = DEF_SCAN_MAX_TIME;
