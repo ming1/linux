@@ -777,10 +777,8 @@ static int hostap_cs_suspend(struct pcmcia_device *link)
 	int dev_open = 0;
 	struct hostap_interface *iface = NULL;
 
-	if (!dev)
-		return -ENODEV;
-
-	iface = netdev_priv(dev);
+	if (dev)
+		iface = netdev_priv(dev);
 
 	PDEBUG(DEBUG_EXTRA, "%s: CS_EVENT_PM_SUSPEND\n", dev_info);
 	if (iface && iface->local)
@@ -800,10 +798,8 @@ static int hostap_cs_resume(struct pcmcia_device *link)
 	int dev_open = 0;
 	struct hostap_interface *iface = NULL;
 
-	if (!dev)
-		return -ENODEV;
-
-	iface = netdev_priv(dev);
+	if (dev)
+		iface = netdev_priv(dev);
 
 	PDEBUG(DEBUG_EXTRA, "%s: CS_EVENT_PM_RESUME\n", dev_info);
 
