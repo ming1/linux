@@ -874,7 +874,6 @@ int iwl_init_drv(struct iwl_priv *priv)
 
 	/* Choose which receivers/antennas to use */
 	iwl_set_rxon_chain(priv);
-	iwl_init_scan_params(priv);
 
 	if (priv->cfg->mod_params->enable_qos)
 		priv->qos_data.qos_enable = 1;
