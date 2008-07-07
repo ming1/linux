@@ -376,6 +376,8 @@ static int zd_calc_tx_length_us(u8 *service, u8 zd_rate, u16 tx_length)
 static void cs_set_control(struct zd_mac *mac, struct zd_ctrlset *cs,
 	                   struct ieee80211_hdr *header, u32 flags)
 {
+	u16 fctl = le16_to_cpu(header->frame_control);
+
 	/*
 	 * CONTROL TODO:
 	 * - if backoff needed, enable bit 0
@@ -393,7 +395,8 @@ static void cs_set_control(struct zd_mac *mac, struct zd_ctrlset *cs,
 		cs->control |= ZD_CS_MULTICAST;
 
 	/* PS-POLL */
-	if (ieee80211_is_pspoll(header->frame_control))
+	if ((fctl & (IEEE80211_FCTL_FTYPE|IEEE80211_FCTL_STYPE)) ==
+	    (IEEE80211_FTYPE_CTL|IEEE80211_STYPE_PSPOLL))
 		cs->control |= ZD_CS_PS_POLL_FRAME;
 
 	if (flags & IEEE80211_TX_CTL_USE_RTS_CTS)
@@ -547,11 +550,13 @@ static int zd_op_tx(struct ieee80211_hw *hw, struct sk_buff *skb)
 static int filter_ack(struct ieee80211_hw *hw, struct ieee80211_hdr *rx_hdr,
 		      struct ieee80211_rx_status *stats)
 {
+	u16 fc = le16_to_cpu(rx_hdr->frame_control);
 	struct sk_buff *skb;
 	struct sk_buff_head *q;
 	unsigned long flags;
 
-	if (!ieee80211_is_ack(rx_hdr->frame_control))
+	if ((fc & (IEEE80211_FCTL_FTYPE | IEEE80211_FCTL_STYPE)) !=
+	    (IEEE80211_FTYPE_CTL | IEEE80211_STYPE_ACK))
 		return 0;
 
 	q = &zd_hw_mac(hw)->ack_wait_queue;
@@ -579,8 +584,8 @@ int zd_mac_rx(struct ieee80211_hw *hw, const u8 *buffer, unsigned int length)
 	const struct rx_status *status;
 	struct sk_buff *skb;
 	int bad_frame = 0;
-	__le16 fc;
-	int need_padding;
+	u16 fc;
+	bool is_qos, is_4addr, need_padding;
 	int i;
 	u8 rate;
 
@@ -639,8 +644,13 @@ int zd_mac_rx(struct ieee80211_hw *hw, const u8 *buffer, unsigned int length)
 			&& !mac->pass_ctrl)
 		return 0;
 
-	fc = *(__le16 *)buffer;
-	need_padding = ieee80211_is_data_qos(fc) ^ ieee80211_has_a4(fc);
+	fc = le16_to_cpu(*((__le16 *) buffer));
+
+	is_qos = ((fc & IEEE80211_FCTL_FTYPE) == IEEE80211_FTYPE_DATA) &&
+		 (fc & IEEE80211_STYPE_QOS_DATA);
+	is_4addr = (fc & (IEEE80211_FCTL_TODS | IEEE80211_FCTL_FROMDS)) ==
+		   (IEEE80211_FCTL_TODS | IEEE80211_FCTL_FROMDS);
+	need_padding = is_qos ^ is_4addr;
 
 	skb = dev_alloc_skb(length + (need_padding ? 2 : 0));
 	if (skb == NULL)
