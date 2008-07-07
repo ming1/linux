@@ -11,7 +11,6 @@
 #include <linux/slab.h>
 #include <linux/skbuff.h>
 #include <linux/compiler.h>
-#include <asm/unaligned.h>
 #include <net/mac80211.h>
 
 #include "ieee80211_i.h"
@@ -20,13 +19,38 @@
 #include "aes_ccm.h"
 #include "wpa.h"
 
+static int ieee80211_get_hdr_info(const struct sk_buff *skb, u8 **sa, u8 **da,
+				  u8 *qos_tid, u8 **data, size_t *data_len)
+{
+	struct ieee80211_hdr *hdr;
+	size_t hdrlen;
+	__le16 fc;
+
+	hdr = (struct ieee80211_hdr *)skb->data;
+	fc = hdr->frame_control;
+
+	hdrlen = ieee80211_hdrlen(fc);
+
+	*sa = ieee80211_get_SA(hdr);
+	*da = ieee80211_get_DA(hdr);
+
+	*data = skb->data + hdrlen;
+	*data_len = skb->len - hdrlen;
+
+	if (ieee80211_is_data_qos(fc))
+		*qos_tid = (*ieee80211_get_qos_ctl(hdr) & 0x0f) | 0x80;
+	else
+		*qos_tid = 0;
+
+	return skb->len < hdrlen ? -1 : 0;
+}
+
+
 ieee80211_tx_result
 ieee80211_tx_h_michael_mic_add(struct ieee80211_tx_data *tx)
 {
-	u8 *data, *key, *mic, key_offset;
+	u8 *data, *sa, *da, *key, *mic, qos_tid, key_offset;
 	size_t data_len;
-	unsigned int hdrlen;
-	struct ieee80211_hdr *hdr;
 	u16 fc;
 	struct sk_buff *skb = tx->skb;
 	int authenticator;
@@ -39,13 +63,8 @@ ieee80211_tx_h_michael_mic_add(struct ieee80211_tx_data *tx)
 	    !WLAN_FC_DATA_PRESENT(fc))
 		return TX_CONTINUE;
 
-	hdr = (struct ieee80211_hdr *)skb->data;
-	hdrlen = ieee80211_hdrlen(hdr->frame_control);
-	if (skb->len < hdrlen)
+	if (ieee80211_get_hdr_info(skb, &sa, &da, &qos_tid, &data, &data_len))
 		return TX_DROP;
-
-	data = skb->data + hdrlen;
-	data_len = skb->len - hdrlen;
 
 	if ((tx->key->flags & KEY_FLAG_UPLOADED_TO_HARDWARE) &&
 	    !(tx->flags & IEEE80211_TX_FRAGMENTED) &&
@@ -76,7 +95,7 @@ ieee80211_tx_h_michael_mic_add(struct ieee80211_tx_data *tx)
 		NL80211_TKIP_DATA_OFFSET_RX_MIC_KEY;
 	key = &tx->key->conf.key[key_offset];
 	mic = skb_put(skb, MICHAEL_MIC_LEN);
-	michael_mic(key, hdr, data, data_len, mic);
+	michael_mic(key, da, sa, qos_tid & 0x0f, data, data_len, mic);
 
 	return TX_CONTINUE;
 }
@@ -85,10 +104,8 @@ ieee80211_tx_h_michael_mic_add(struct ieee80211_tx_data *tx)
 ieee80211_rx_result
 ieee80211_rx_h_michael_mic_verify(struct ieee80211_rx_data *rx)
 {
-	u8 *data, *key = NULL, key_offset;
+	u8 *data, *sa, *da, *key = NULL, qos_tid, key_offset;
 	size_t data_len;
-	unsigned int hdrlen;
-	struct ieee80211_hdr *hdr;
 	u16 fc;
 	u8 mic[MICHAEL_MIC_LEN];
 	struct sk_buff *skb = rx->skb;
@@ -107,13 +124,11 @@ ieee80211_rx_h_michael_mic_verify(struct ieee80211_rx_data *rx)
 	    !(rx->fc & IEEE80211_FCTL_PROTECTED) || !WLAN_FC_DATA_PRESENT(fc))
 		return RX_CONTINUE;
 
-	hdr = (struct ieee80211_hdr *)skb->data;
-	hdrlen = ieee80211_hdrlen(hdr->frame_control);
-	if (skb->len < hdrlen + MICHAEL_MIC_LEN)
+	if (ieee80211_get_hdr_info(skb, &sa, &da, &qos_tid, &data, &data_len)
+	    || data_len < MICHAEL_MIC_LEN)
 		return RX_DROP_UNUSABLE;
 
-	data = skb->data + hdrlen;
-	data_len = skb->len - hdrlen - MICHAEL_MIC_LEN;
+	data_len -= MICHAEL_MIC_LEN;
 
 #if 0
 	authenticator = fc & IEEE80211_FCTL_TODS; /* FIX */
@@ -126,7 +141,7 @@ ieee80211_rx_h_michael_mic_verify(struct ieee80211_rx_data *rx)
 		NL80211_TKIP_DATA_OFFSET_RX_MIC_KEY :
 		NL80211_TKIP_DATA_OFFSET_TX_MIC_KEY;
 	key = &rx->key->conf.key[key_offset];
-	michael_mic(key, hdr, data, data_len, mic);
+	michael_mic(key, da, sa, qos_tid & 0x0f, data, data_len, mic);
 	if (memcmp(mic, data + data_len, MICHAEL_MIC_LEN) != 0 || wpa_test) {
 		if (!(rx->flags & IEEE80211_RX_RA_MATCH))
 			return RX_DROP_UNUSABLE;
@@ -281,61 +296,67 @@ ieee80211_crypto_tkip_decrypt(struct ieee80211_rx_data *rx)
 static void ccmp_special_blocks(struct sk_buff *skb, u8 *pn, u8 *b_0, u8 *aad,
 				int encrypted)
 {
-	unsigned int hdrlen;
-	__le16 msk_fc;
-	u8 qos_tid, *data;
+	u16 fc;
+	int a4_included, qos_included;
+	u8 qos_tid, *fc_pos, *data, *sa, *da;
+	int len_a;
 	size_t data_len;
-	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
+	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *) skb->data;
 
-	hdrlen = ieee80211_hdrlen(hdr->frame_control);
-	data = skb->data + hdrlen;
+	fc_pos = (u8 *) &hdr->frame_control;
+	fc = fc_pos[0] ^ (fc_pos[1] << 8);
+	a4_included = (fc & (IEEE80211_FCTL_TODS | IEEE80211_FCTL_FROMDS)) ==
+		(IEEE80211_FCTL_TODS | IEEE80211_FCTL_FROMDS);
 
-	data_len = skb->len - hdrlen - CCMP_HDR_LEN;
-	if (encrypted)
-		data_len -= CCMP_MIC_LEN;
-
-	if (ieee80211_is_data_qos(hdr->frame_control))
-		qos_tid = *ieee80211_get_qos_ctl(hdr) & 0x0f;
-	else
-		qos_tid = 0;
-
+	ieee80211_get_hdr_info(skb, &sa, &da, &qos_tid, &data, &data_len);
+	data_len -= CCMP_HDR_LEN + (encrypted ? CCMP_MIC_LEN : 0);
+	if (qos_tid & 0x80) {
+		qos_included = 1;
+		qos_tid &= 0x0f;
+	} else
+		qos_included = 0;
 	/* First block, b_0 */
 
 	b_0[0] = 0x59; /* flags: Adata: 1, M: 011, L: 001 */
 	/* Nonce: QoS Priority | A2 | PN */
 	b_0[1] = qos_tid;
-	memcpy(&b_0[2], hdr->addr2, ETH_ALEN);
+	memcpy(&b_0[2], hdr->addr2, 6);
 	memcpy(&b_0[8], pn, CCMP_PN_LEN);
 	/* l(m) */
-	put_unaligned_be16((u16)data_len, b_0 + 14);
+	b_0[14] = (data_len >> 8) & 0xff;
+	b_0[15] = data_len & 0xff;
 
-	/*
-	 * AAD (extra authenticate-only data) / masked 802.11 header
-	 * FC | A1 | A2 | A3 | SC | [A4] | [QC]
-	 */
-	put_unaligned_be16(hdrlen - 2, aad);
 
-	/*
-	 * Mask FC: zero subtype b4 b5 b6
-	 * Retry, PwrMgt, MoreData; set Protected
-	 */
-	msk_fc = hdr->frame_control;
-	msk_fc &= ~cpu_to_le16(0x0070 | IEEE80211_FCTL_RETRY |
-			       IEEE80211_FCTL_PM | IEEE80211_FCTL_MOREDATA);
-	msk_fc |= cpu_to_le16(IEEE80211_FCTL_PROTECTED);
-	put_unaligned(msk_fc, (__le16 *)(aad + 2));
+	/* AAD (extra authenticate-only data) / masked 802.11 header
+	 * FC | A1 | A2 | A3 | SC | [A4] | [QC] */
+
+	len_a = a4_included ? 28 : 22;
+	if (qos_included)
+		len_a += 2;
+
+	aad[0] = 0; /* (len_a >> 8) & 0xff; */
+	aad[1] = len_a & 0xff;
+	/* Mask FC: zero subtype b4 b5 b6 */
+	aad[2] = fc_pos[0] & ~(BIT(4) | BIT(5) | BIT(6));
+	/* Retry, PwrMgt, MoreData; set Protected */
+	aad[3] = (fc_pos[1] & ~(BIT(3) | BIT(4) | BIT(5))) | BIT(6);
 	memcpy(&aad[4], &hdr->addr1, 18);
 
 	/* Mask Seq#, leave Frag# */
-	aad[22] = *((u8 *)&hdr->seq_ctrl) & 0x0f;
+	aad[22] = *((u8 *) &hdr->seq_ctrl) & 0x0f;
 	aad[23] = 0;
-	if (ieee80211_has_a4(hdr->frame_control)) {
-		memcpy(&aad[24], hdr->addr4, ETH_ALEN);
-		aad[30] = qos_tid;
+	if (a4_included) {
+		memcpy(&aad[24], hdr->addr4, 6);
+		aad[30] = 0;
 		aad[31] = 0;
-	} else {
+	} else
 		memset(&aad[24], 0, 8);
-		aad[24] = qos_tid;
+	if (qos_included) {
+		u8 *dpos = &aad[a4_included ? 30 : 24];
+
+		/* Mask QoS Control field */
+		dpos[0] = qos_tid;
+		dpos[1] = 0;
 	}
 }
 
