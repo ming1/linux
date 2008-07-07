@@ -690,7 +690,7 @@ enum {
 
 #endif
 
-#ifdef CONFIG_IWL3945_RFKILL
+#ifdef CONFIG_IWLWIFI_RFKILL
 struct iwl3945_priv;
 
 struct iwl3945_rfkill_mngr {
@@ -800,7 +800,7 @@ struct iwl3945_priv {
 	struct iwl3945_init_alive_resp card_alive_init;
 	struct iwl3945_alive_resp card_alive;
 
-#ifdef CONFIG_IWL3945_RFKILL
+#ifdef CONFIG_IWLWIFI_RFKILL
 	struct iwl3945_rfkill_mngr rfkill_mngr;
 #endif
 
