@@ -1079,10 +1079,8 @@ static int wext_permission_check(unsigned int cmd)
 }
 
 /* entry point from dev ioctl */
-static int wext_ioctl_dispatch(struct net *net, struct ifreq *ifr,
-			       unsigned int cmd,
-			       wext_ioctl_func standard,
-			       wext_ioctl_func private)
+int wext_handle_ioctl(struct net *net, struct ifreq *ifr, unsigned int cmd,
+		      void __user *arg)
 {
 	int ret = wext_permission_check(cmd);
 
@@ -1091,24 +1089,12 @@ static int wext_ioctl_dispatch(struct net *net, struct ifreq *ifr,
 
 	dev_load(net, ifr->ifr_name);
 	rtnl_lock();
-	ret = wireless_process_ioctl(net, ifr, cmd, standard, private);
+	ret = wireless_process_ioctl(net, ifr, cmd,
+				     ioctl_standard_call,
+				     ioctl_private_call);
 	rtnl_unlock();
-
-	return ret;
-}
-
-int wext_handle_ioctl(struct net *net, struct ifreq *ifr, unsigned int cmd,
-		      void __user *arg)
-{
-	int ret = wext_ioctl_dispatch(net, ifr, cmd,
-				      ioctl_standard_call,
-				      ioctl_private_call);
-
-	if (ret >= 0 &&
-	    IW_IS_GET(cmd) &&
-	    copy_to_user(arg, ifr, sizeof(struct iwreq)))
+	if (IW_IS_GET(cmd) && copy_to_user(arg, ifr, sizeof(struct iwreq)))
 		return -EFAULT;
-
 	return ret;
 }
 
