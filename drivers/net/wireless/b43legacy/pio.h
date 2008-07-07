@@ -41,6 +41,7 @@ struct b43legacy_xmitstatus;
 struct b43legacy_pio_txpacket {
 	struct b43legacy_pioqueue *queue;
 	struct sk_buff *skb;
+	struct ieee80211_tx_status txstat;
 	struct list_head list;
 };
 
@@ -103,7 +104,8 @@ int b43legacy_pio_init(struct b43legacy_wldev *dev);
 void b43legacy_pio_free(struct b43legacy_wldev *dev);
 
 int b43legacy_pio_tx(struct b43legacy_wldev *dev,
-		   struct sk_buff *skb);
+		   struct sk_buff *skb,
+		   struct ieee80211_tx_control *ctl);
 void b43legacy_pio_handle_txstatus(struct b43legacy_wldev *dev,
 				 const struct b43legacy_txstatus *status);
 void b43legacy_pio_get_tx_stats(struct b43legacy_wldev *dev,
