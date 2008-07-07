@@ -281,11 +281,11 @@ static u8 rs_tl_add_packet(struct iwl4965_lq_sta *lq_data,
 	u32 time_diff;
 	s32 index;
 	struct iwl4965_traffic_load *tl = NULL;
-	__le16 fc = hdr->frame_control;
+	u16 fc = le16_to_cpu(hdr->frame_control);
 	u8 tid;
 
-	if (ieee80211_is_data_qos(fc)) {
-		u8 *qc = ieee80211_get_qos_ctl(hdr);
+	if (ieee80211_is_qos_data(fc)) {
+		u8 *qc = ieee80211_get_qos_ctrl(hdr, ieee80211_get_hdrlen(fc));
 		tid = qc[0] & 0xf;
 	} else
 		return MAX_TID_COUNT;
@@ -794,7 +794,7 @@ static void rs_tx_status(void *priv_rate, struct net_device *dev,
 	struct iwl4965_scale_tbl_info tbl_type;
 	struct iwl4965_scale_tbl_info *curr_tbl, *search_tbl;
 	u8 active_index = 0;
-	__le16 fc = hdr->frame_control;
+	u16 fc = le16_to_cpu(hdr->frame_control);
 	s32 tpt = 0;
 
 	IWL_DEBUG_RATE_LIMIT("get frame ack response, update rate scale window\n");
@@ -1651,8 +1651,7 @@ static void rs_rate_scale_perform(struct iwl_priv *priv,
 	int high_tpt = IWL_INVALID_VALUE;
 	u32 fail_count;
 	s8 scale_action = 0;
-	__le16 fc;
-	u16 rate_mask;
+	u16 fc, rate_mask;
 	u8 update_lq = 0;
 	struct iwl4965_lq_sta *lq_sta;
 	struct iwl4965_scale_tbl_info *tbl, *tbl1;
@@ -1667,7 +1666,7 @@ static void rs_rate_scale_perform(struct iwl_priv *priv,
 
 	IWL_DEBUG_RATE("rate scale calculate new rate for skb\n");
 
-	fc = hdr->frame_control;
+	fc = le16_to_cpu(hdr->frame_control);
 	if (!ieee80211_is_data(fc) || is_multicast_ether_addr(hdr->addr1)) {
 		/* Send management frames and broadcast/multicast data using
 		 * lowest rate. */
@@ -2101,7 +2100,7 @@ static void rs_get_rate(void *priv_rate, struct net_device *dev,
 	struct ieee80211_conf *conf = &local->hw.conf;
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
 	struct sta_info *sta;
-	__le16 fc;
+	u16 fc;
 	struct iwl_priv *priv = (struct iwl_priv *)priv_rate;
 	struct iwl4965_lq_sta *lq_sta;
 
@@ -2113,7 +2112,7 @@ static void rs_get_rate(void *priv_rate, struct net_device *dev,
 
 	/* Send management frames and broadcast/multicast data using lowest
 	 * rate. */
-	fc = hdr->frame_control;
+	fc = le16_to_cpu(hdr->frame_control);
 	if (!ieee80211_is_data(fc) || is_multicast_ether_addr(hdr->addr1) ||
 	    !sta || !sta->rate_ctrl_priv) {
 		sel->rate_idx = rate_lowest_index(local, sband, sta);
