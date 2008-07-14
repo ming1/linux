@@ -305,10 +305,10 @@ struct ieee80211_if_sta {
 	u8 bssid[ETH_ALEN], prev_bssid[ETH_ALEN];
 	u8 ssid[IEEE80211_MAX_SSID_LEN];
 	enum {
-		IEEE80211_DISABLED, IEEE80211_AUTHENTICATE,
-		IEEE80211_ASSOCIATE, IEEE80211_ASSOCIATED,
-		IEEE80211_IBSS_SEARCH, IEEE80211_IBSS_JOINED,
-		IEEE80211_MESH_UP
+		IEEE80211_DISABLED, IEEE80211_DIRECT_PROBE,
+		IEEE80211_AUTHENTICATE, IEEE80211_ASSOCIATE,
+		IEEE80211_ASSOCIATED, IEEE80211_IBSS_SEARCH,
+		IEEE80211_IBSS_JOINED, IEEE80211_MESH_UP
 	} state;
 	size_t ssid_len;
 	u8 scan_ssid[IEEE80211_MAX_SSID_LEN];
@@ -352,16 +352,17 @@ struct ieee80211_if_sta {
 
 	struct sk_buff_head skb_queue;
 
-	int auth_tries, assoc_tries;
+	int direct_probe_tries, auth_tries, assoc_tries;
 
 	unsigned long request;
 
 	unsigned long last_probe;
 
 	unsigned int flags;
-#define IEEE80211_STA_REQ_SCAN 0
-#define IEEE80211_STA_REQ_AUTH 1
-#define IEEE80211_STA_REQ_RUN  2
+#define IEEE80211_STA_REQ_SCAN		0
+#define IEEE80211_STA_REQ_DIRECT_PROBE	1
+#define IEEE80211_STA_REQ_AUTH		2
+#define IEEE80211_STA_REQ_RUN		3
 
 #define IEEE80211_AUTH_ALG_OPEN BIT(0)
 #define IEEE80211_AUTH_ALG_SHARED_KEY BIT(1)
