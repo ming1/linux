@@ -495,9 +495,7 @@ static int iwlcore_init_geos(struct iwl_priv *priv)
 	sband->bitrates = &rates[IWL_FIRST_OFDM_RATE];
 	sband->n_bitrates = IWL_RATE_COUNT - IWL_FIRST_OFDM_RATE;
 
-	if (priv->cfg->sku & IWL_SKU_N)
-		iwlcore_init_ht_hw_capab(priv, &sband->ht_info,
-					 IEEE80211_BAND_5GHZ);
+	iwlcore_init_ht_hw_capab(priv, &sband->ht_info, IEEE80211_BAND_5GHZ);
 
 	sband = &priv->bands[IEEE80211_BAND_2GHZ];
 	sband->channels = channels;
@@ -505,9 +503,7 @@ static int iwlcore_init_geos(struct iwl_priv *priv)
 	sband->bitrates = rates;
 	sband->n_bitrates = IWL_RATE_COUNT;
 
-	if (priv->cfg->sku & IWL_SKU_N)
-		iwlcore_init_ht_hw_capab(priv, &sband->ht_info,
-					 IEEE80211_BAND_2GHZ);
+	iwlcore_init_ht_hw_capab(priv, &sband->ht_info, IEEE80211_BAND_2GHZ);
 
 	priv->ieee_channels = channels;
 	priv->ieee_rates = rates;
@@ -823,9 +819,8 @@ int iwl_setup_mac(struct iwl_priv *priv)
 		    IEEE80211_HW_NOISE_DBM;
 	/* Default value; 4 EDCA QOS priorities */
 	hw->queues = 4;
-	/* queues to support 11n aggregation */
-	if (priv->cfg->sku & IWL_SKU_N)
-		hw->ampdu_queues = 12;
+	/* Enhanced value; more queues, to support 11n aggregation */
+	hw->ampdu_queues = 12;
 
 	hw->conf.beacon_int = 100;
 
@@ -857,9 +852,6 @@ int iwl_set_hw_params(struct iwl_priv *priv)
 	else
 		priv->hw_params.rx_buf_size = IWL_RX_BUF_SIZE_4K;
 	priv->hw_params.max_pkt_size = priv->hw_params.rx_buf_size - 256;
-
-	if (priv->cfg->mod_params->disable_11n)
-		priv->cfg->sku &= ~IWL_SKU_N;
 
 	/* Device-specific setup */
 	return priv->cfg->ops->lib->set_hw_params(priv);
