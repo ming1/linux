@@ -967,6 +967,7 @@ static const struct header_ops ieee80211_header_ops = {
 	.cache_update	= eth_header_cache_update,
 };
 
+/* Must not be called for mdev */
 void ieee80211_if_setup(struct net_device *dev)
 {
 	ether_setup(dev);
@@ -976,7 +977,7 @@ void ieee80211_if_setup(struct net_device *dev)
 	dev->change_mtu = ieee80211_change_mtu;
 	dev->open = ieee80211_open;
 	dev->stop = ieee80211_stop;
-	dev->destructor = free_netdev;
+	dev->destructor = ieee80211_if_free;
 }
 
 /* everything else */
@@ -1771,6 +1772,7 @@ int ieee80211_register_hw(struct ieee80211_hw *hw)
 		printk(KERN_WARNING "%s: Failed to add default virtual iface\n",
 		       wiphy_name(local->hw.wiphy));
 
+	local->reg_state = IEEE80211_DEV_REGISTERED;
 	rtnl_unlock();
 
 	ieee80211_led_init(local);
@@ -1800,11 +1802,16 @@ EXPORT_SYMBOL(ieee80211_register_hw);
 void ieee80211_unregister_hw(struct ieee80211_hw *hw)
 {
 	struct ieee80211_local *local = hw_to_local(hw);
+	struct ieee80211_sub_if_data *sdata, *tmp;
 
 	tasklet_kill(&local->tx_pending_tasklet);
 	tasklet_kill(&local->tasklet);
 
 	rtnl_lock();
+
+	BUG_ON(local->reg_state != IEEE80211_DEV_REGISTERED);
+
+	local->reg_state = IEEE80211_DEV_UNREGISTERED;
 
 	/*
 	 * At this point, interface list manipulations are fine
@@ -1812,8 +1819,13 @@ void ieee80211_unregister_hw(struct ieee80211_hw *hw)
 	 * more and the tasklet is killed.
 	 */
 
-	/* First, we remove all virtual interfaces. */
-	ieee80211_remove_interfaces(local);
+	/*
+	 * First, we remove all virtual interfaces.
+	 */
+	list_for_each_entry_safe(sdata, tmp, &local->interfaces, list) {
+		list_del(&sdata->list);
+		__ieee80211_if_del(local, sdata);
+	}
 
 	/* then, finally, remove the master interface */
 	unregister_netdevice(local->mdev);
