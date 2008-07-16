@@ -590,12 +590,8 @@ static void iwl3945_add_radiotap(struct iwl3945_priv *priv,
 
 	if (rate == -1)
 		iwl3945_rt->rt_rate = 0;
-	else {
-		if (stats->band == IEEE80211_BAND_5GHZ)
-			rate += IWL_FIRST_OFDM_RATE;
-
+	else
 		iwl3945_rt->rt_rate = iwl3945_rates[rate].ieee;
-	}
 
 	/* antenna number */
 	antenna = phy_flags_hw & RX_RES_PHY_FLAGS_ANTENNA_MSK;
