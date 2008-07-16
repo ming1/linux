@@ -263,15 +263,19 @@ static int iwl5000_hw_set_hw_params(struct iwl_priv *priv)
 		priv->hw_params.tx_chains_num = 1;
 		priv->hw_params.rx_chains_num = 2;
 		/* FIXME: move to ANT_A, ANT_B, ANT_C enum */
-		priv->hw_params.valid_tx_ant = ANT_A;
-		priv->hw_params.valid_rx_ant = ANT_AB;
+		priv->hw_params.valid_tx_ant = IWL_ANTENNA_MAIN;
+		priv->hw_params.valid_rx_ant = (IWL_ANTENNA_MAIN |
+						IWL_ANTENNA_AUX);
 		break;
 	case CSR_HW_REV_TYPE_5300:
 	case CSR_HW_REV_TYPE_5350:
 		priv->hw_params.tx_chains_num = 3;
 		priv->hw_params.rx_chains_num = 3;
-		priv->hw_params.valid_tx_ant = ANT_ABC;
-		priv->hw_params.valid_rx_ant = ANT_ABC;
+		/* FIXME: move to ANT_A, ANT_B, ANT_C enum */
+		priv->hw_params.valid_tx_ant = (IWL_ANTENNA_MAIN |
+						IWL_ANTENNA_AUX | 0x04);
+		priv->hw_params.valid_rx_ant = (IWL_ANTENNA_MAIN |
+						IWL_ANTENNA_AUX | 0x04);
 		break;
 	}
 
