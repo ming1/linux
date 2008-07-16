@@ -276,18 +276,13 @@ static void iwl_rx_scan_complete_notif(struct iwl_priv *priv,
 	cancel_delayed_work(&priv->scan_check);
 
 	IWL_DEBUG_INFO("Scan pass on %sGHz took %dms\n",
-		       (priv->scan_bands & BIT(IEEE80211_BAND_2GHZ)) ?
-						"2.4" : "5.2",
+		       (priv->scan_bands == 2) ? "2.4" : "5.2",
 		       jiffies_to_msecs(elapsed_jiffies
 					(priv->scan_pass_start, jiffies)));
 
-	/* Remove this scanned band from the list of pending
-	 * bands to scan, band G precedes A in order of scanning
-	 * as seen in iwl_bg_request_scan */
-	if (priv->scan_bands & BIT(IEEE80211_BAND_2GHZ))
-		priv->scan_bands &= ~BIT(IEEE80211_BAND_2GHZ);
-	else if (priv->scan_bands &  BIT(IEEE80211_BAND_5GHZ))
-		priv->scan_bands &= ~BIT(IEEE80211_BAND_5GHZ);
+	/* Remove this scanned band from the list
+	 * of pending bands to scan */
+	priv->scan_bands--;
 
 	/* If a request to abort was given, or the scan did not succeed
 	 * then we reset the scan state machine and terminate,
@@ -297,7 +292,7 @@ static void iwl_rx_scan_complete_notif(struct iwl_priv *priv,
 		clear_bit(STATUS_SCAN_ABORTING, &priv->status);
 	} else {
 		/* If there are more bands on this scan pass reschedule */
-		if (priv->scan_bands)
+		if (priv->scan_bands > 0)
 			goto reschedule;
 	}
 
@@ -394,7 +389,7 @@ static int iwl_get_channels_for_scan(struct iwl_priv *priv,
 
 		ch_info = iwl_get_channel_info(priv, band, scan_ch->channel);
 		if (!is_channel_valid(ch_info)) {
-			IWL_DEBUG_SCAN("Channel %d is INVALID for this band.\n",
+			IWL_DEBUG_SCAN("Channel %d is INVALID for this SKU.\n",
 				       scan_ch->channel);
 			continue;
 		}
@@ -470,10 +465,7 @@ int iwl_scan_initiate(struct iwl_priv *priv)
 	}
 
 	IWL_DEBUG_INFO("Starting scan...\n");
-	if (priv->cfg->sku & IWL_SKU_G)
-		priv->scan_bands |= BIT(IEEE80211_BAND_2GHZ);
-	if (priv->cfg->sku & IWL_SKU_A)
-		priv->scan_bands |= BIT(IEEE80211_BAND_5GHZ);
+	priv->scan_bands = 2;
 	set_bit(STATUS_SCANNING, &priv->status);
 	priv->scan_start = jiffies;
 	priv->scan_pass_start = priv->scan_start;
@@ -811,7 +803,8 @@ static void iwl_bg_request_scan(struct work_struct *data)
 	scan->tx_cmd.stop_time.life_time = TX_CMD_LIFE_TIME_INFINITE;
 
 
-	if (priv->scan_bands & BIT(IEEE80211_BAND_2GHZ)) {
+	switch (priv->scan_bands) {
+	case 2:
 		band = IEEE80211_BAND_2GHZ;
 		scan->flags = RXON_FLG_BAND_24G_MSK | RXON_FLG_AUTO_DETECT_MSK;
 		tx_ant = iwl_scan_tx_ant(priv, band);
@@ -825,7 +818,9 @@ static void iwl_bg_request_scan(struct work_struct *data)
 							tx_ant |
 							RATE_MCS_CCK_MSK);
 		scan->good_CRC_th = 0;
-	} else if (priv->scan_bands & BIT(IEEE80211_BAND_5GHZ)) {
+		break;
+
+	case 1:
 		band = IEEE80211_BAND_5GHZ;
 		tx_ant = iwl_scan_tx_ant(priv, band);
 		scan->tx_cmd.rate_n_flags =
@@ -838,7 +833,9 @@ static void iwl_bg_request_scan(struct work_struct *data)
 		 * MIMO is not used here, but value is required */
 		if ((priv->hw_rev & CSR_HW_REV_TYPE_MSK) == CSR_HW_REV_TYPE_4965)
 			rx_chain = 0x6;
-	} else {
+
+		break;
+	default:
 		IWL_WARNING("Invalid scan band count\n");
 		goto done;
 	}
