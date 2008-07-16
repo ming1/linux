@@ -22,6 +22,11 @@
 #ifndef _AT76_USB_H
 #define _AT76_USB_H
 
+#include <net/ieee80211.h>
+
+/* current driver version */
+#define DRIVER_VERSION	"0.16"
+
 /* Board types */
 enum board_type {
 	BOARD_503_ISL3861 = 1,
@@ -615,5 +620,46 @@ struct at76_rx_radiotap {
 
 /* the max padding size for tx in bytes (see calc_padding) */
 #define MAX_PADDING_SIZE	53
+
+/* at76_debug bits */
+#define DBG_PROGRESS		0x00000001	/* authentication/accociation */
+#define DBG_BSS_TABLE		0x00000002	/* show BSS table after scans */
+#define DBG_IOCTL		0x00000004	/* ioctl calls / settings */
+#define DBG_MAC_STATE		0x00000008	/* MAC state transitions */
+#define DBG_TX_DATA		0x00000010	/* tx header */
+#define DBG_TX_DATA_CONTENT	0x00000020	/* tx content */
+#define DBG_TX_MGMT		0x00000040	/* tx management */
+#define DBG_RX_DATA		0x00000080	/* rx data header */
+#define DBG_RX_DATA_CONTENT	0x00000100	/* rx data content */
+#define DBG_RX_MGMT		0x00000200	/* rx mgmt frame headers */
+#define DBG_RX_BEACON		0x00000400	/* rx beacon */
+#define DBG_RX_CTRL		0x00000800	/* rx control */
+#define DBG_RX_MGMT_CONTENT	0x00001000	/* rx mgmt content */
+#define DBG_RX_FRAGS		0x00002000	/* rx data fragment handling */
+#define DBG_DEVSTART		0x00004000	/* fw download, device start */
+#define DBG_URB			0x00008000	/* rx urb status, ... */
+#define DBG_RX_ATMEL_HDR	0x00010000	/* Atmel-specific Rx headers */
+#define DBG_PROC_ENTRY		0x00020000	/* procedure entries/exits */
+#define DBG_PM			0x00040000	/* power management settings */
+#define DBG_BSS_MATCH		0x00080000	/* BSS match failures */
+#define DBG_PARAMS		0x00100000	/* show configured parameters */
+#define DBG_WAIT_COMPLETE	0x00200000	/* command completion */
+#define DBG_RX_FRAGS_SKB	0x00400000	/* skb header of Rx fragments */
+#define DBG_BSS_TABLE_RM	0x00800000	/* purging bss table entries */
+#define DBG_MONITOR_MODE	0x01000000	/* monitor mode */
+#define DBG_MIB			0x02000000	/* dump all MIBs on startup */
+#define DBG_MGMT_TIMER		0x04000000	/* dump mgmt_timer ops */
+#define DBG_WE_EVENTS		0x08000000	/* dump wireless events */
+#define DBG_FW			0x10000000	/* firmware download */
+#define DBG_DFU			0x20000000	/* device firmware upgrade */
+
+#define DBG_DEFAULTS		0
+
+/* Use our own dbg macro */
+#define at76_dbg(bits, format, arg...) \
+	do { \
+		if (at76_debug & (bits)) \
+		printk(KERN_DEBUG DRIVER_NAME ": " format "\n" , ## arg); \
+	} while (0)
 
 #endif				/* _AT76_USB_H */
