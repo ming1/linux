@@ -7,7 +7,6 @@
 #include <linux/spinlock.h>
 #include <linux/pci.h>
 #include <linux/mod_devicetable.h>
-#include <linux/dma-mapping.h>
 
 #include <linux/ssb/ssb_regs.h>
 
