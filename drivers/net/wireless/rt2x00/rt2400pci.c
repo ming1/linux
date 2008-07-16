@@ -1484,11 +1484,11 @@ static u64 rt2400pci_get_tsf(struct ieee80211_hw *hw)
 	return tsf;
 }
 
-static int rt2400pci_beacon_update(struct ieee80211_hw *hw, struct sk_buff *skb)
+static int rt2400pci_beacon_update(struct ieee80211_hw *hw, struct sk_buff *skb,
+				   struct ieee80211_tx_control *control)
 {
 	struct rt2x00_dev *rt2x00dev = hw->priv;
-	struct ieee80211_tx_info *tx_info = IEEE80211_SKB_CB(skb);
-	struct rt2x00_intf *intf = vif_to_intf(tx_info->control.vif);
+	struct rt2x00_intf *intf = vif_to_intf(control->vif);
 	struct queue_entry_priv_pci *entry_priv;
 	struct skb_frame_desc *skbdesc;
 	struct txentry_desc txdesc;
@@ -1504,7 +1504,7 @@ static int rt2400pci_beacon_update(struct ieee80211_hw *hw, struct sk_buff *skb)
 	 * for our information.
 	 */
 	intf->beacon->skb = skb;
-	rt2x00queue_create_tx_descriptor(intf->beacon, &txdesc);
+	rt2x00queue_create_tx_descriptor(intf->beacon, &txdesc, control);
 
 	/*
 	 * Fill in skb descriptor

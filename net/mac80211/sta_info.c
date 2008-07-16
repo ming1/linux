@@ -511,20 +511,20 @@ static inline int sta_info_buffer_expired(struct ieee80211_local *local,
 					  struct sta_info *sta,
 					  struct sk_buff *skb)
 {
-	struct ieee80211_tx_info *info;
+	struct ieee80211_tx_packet_data *pkt_data;
 	int timeout;
 
 	if (!skb)
 		return 0;
 
-	info = IEEE80211_SKB_CB(skb);
+	pkt_data = (struct ieee80211_tx_packet_data *) skb->cb;
 
 	/* Timeout: (2 * listen_interval * beacon_int * 1024 / 1000000) sec */
 	timeout = (sta->listen_interval * local->hw.conf.beacon_int * 32 /
 		   15625) * HZ;
 	if (timeout < STA_TX_BUFFER_EXPIRE)
 		timeout = STA_TX_BUFFER_EXPIRE;
-	return time_after(jiffies, info->control.jiffies + timeout);
+	return time_after(jiffies, pkt_data->jiffies + timeout);
 }
 
 

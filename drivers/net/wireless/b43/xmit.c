@@ -185,14 +185,14 @@ int b43_generate_txhdr(struct b43_wldev *dev,
 		       u8 *_txhdr,
 		       const unsigned char *fragment_data,
 		       unsigned int fragment_len,
-		       const struct ieee80211_tx_info *info,
+		       const struct ieee80211_tx_control *txctl,
 		       u16 cookie)
 {
 	struct b43_txhdr *txhdr = (struct b43_txhdr *)_txhdr;
 	const struct b43_phy *phy = &dev->phy;
 	const struct ieee80211_hdr *wlhdr =
 	    (const struct ieee80211_hdr *)fragment_data;
-	int use_encryption = (!(info->flags & IEEE80211_TX_CTL_DO_NOT_ENCRYPT));
+	int use_encryption = (!(txctl->flags & IEEE80211_TXCTL_DO_NOT_ENCRYPT));
 	u16 fctl = le16_to_cpu(wlhdr->frame_control);
 	struct ieee80211_rate *fbrate;
 	u8 rate, rate_fb;
@@ -205,10 +205,10 @@ int b43_generate_txhdr(struct b43_wldev *dev,
 
 	memset(txhdr, 0, sizeof(*txhdr));
 
-	txrate = ieee80211_get_tx_rate(dev->wl->hw, info);
+	txrate = ieee80211_get_tx_rate(dev->wl->hw, txctl);
 	rate = txrate ? txrate->hw_value : B43_CCK_RATE_1MB;
 	rate_ofdm = b43_is_ofdm_rate(rate);
-	fbrate = ieee80211_get_alt_retry_rate(dev->wl->hw, info) ? : txrate;
+	fbrate = ieee80211_get_alt_retry_rate(dev->wl->hw, txctl) ? : txrate;
 	rate_fb = fbrate->hw_value;
 	rate_fb_ofdm = b43_is_ofdm_rate(rate_fb);
 
@@ -228,13 +228,15 @@ int b43_generate_txhdr(struct b43_wldev *dev,
 		 * use the original dur_id field. */
 		txhdr->dur_fb = wlhdr->duration_id;
 	} else {
-		txhdr->dur_fb = ieee80211_generic_frame_duration(
-			dev->wl->hw, info->control.vif, fragment_len, fbrate);
+		txhdr->dur_fb = ieee80211_generic_frame_duration(dev->wl->hw,
+								 txctl->vif,
+								 fragment_len,
+								 fbrate);
 	}
 
 	plcp_fragment_len = fragment_len + FCS_LEN;
 	if (use_encryption) {
-		u8 key_idx = info->control.hw_key->hw_key_idx;
+		u8 key_idx = txctl->hw_key->hw_key_idx;
 		struct b43_key *key;
 		int wlhdr_len;
 		size_t iv_len;
@@ -252,7 +254,7 @@ int b43_generate_txhdr(struct b43_wldev *dev,
 		}
 
 		/* Hardware appends ICV. */
-		plcp_fragment_len += info->control.icv_len;
+		plcp_fragment_len += txctl->icv_len;
 
 		key_idx = b43_kidx_to_fw(dev, key_idx);
 		mac_ctl |= (key_idx << B43_TXH_MAC_KEYIDX_SHIFT) &
@@ -260,7 +262,7 @@ int b43_generate_txhdr(struct b43_wldev *dev,
 		mac_ctl |= (key->algorithm << B43_TXH_MAC_KEYALG_SHIFT) &
 			   B43_TXH_MAC_KEYALG;
 		wlhdr_len = ieee80211_get_hdrlen(fctl);
-		iv_len = min((size_t) info->control.iv_len,
+		iv_len = min((size_t) txctl->iv_len,
 			     ARRAY_SIZE(txhdr->iv));
 		memcpy(txhdr->iv, ((u8 *) wlhdr) + wlhdr_len, iv_len);
 	}
@@ -291,10 +293,10 @@ int b43_generate_txhdr(struct b43_wldev *dev,
 		phy_ctl |= B43_TXH_PHY_ENC_OFDM;
 	else
 		phy_ctl |= B43_TXH_PHY_ENC_CCK;
-	if (info->flags & IEEE80211_TX_CTL_SHORT_PREAMBLE)
+	if (txctl->flags & IEEE80211_TXCTL_SHORT_PREAMBLE)
 		phy_ctl |= B43_TXH_PHY_SHORTPRMBL;
 
-	switch (b43_ieee80211_antenna_sanitize(dev, info->antenna_sel_tx)) {
+	switch (b43_ieee80211_antenna_sanitize(dev, txctl->antenna_sel_tx)) {
 	case 0: /* Default */
 		phy_ctl |= B43_TXH_PHY_ANT01AUTO;
 		break;
@@ -315,21 +317,21 @@ int b43_generate_txhdr(struct b43_wldev *dev,
 	}
 
 	/* MAC control */
-	if (!(info->flags & IEEE80211_TX_CTL_NO_ACK))
+	if (!(txctl->flags & IEEE80211_TXCTL_NO_ACK))
 		mac_ctl |= B43_TXH_MAC_ACK;
 	if (!(((fctl & IEEE80211_FCTL_FTYPE) == IEEE80211_FTYPE_CTL) &&
 	      ((fctl & IEEE80211_FCTL_STYPE) == IEEE80211_STYPE_PSPOLL)))
 		mac_ctl |= B43_TXH_MAC_HWSEQ;
-	if (info->flags & IEEE80211_TX_CTL_FIRST_FRAGMENT)
+	if (txctl->flags & IEEE80211_TXCTL_FIRST_FRAGMENT)
 		mac_ctl |= B43_TXH_MAC_STMSDU;
 	if (phy->type == B43_PHYTYPE_A)
 		mac_ctl |= B43_TXH_MAC_5GHZ;
-	if (info->flags & IEEE80211_TX_CTL_LONG_RETRY_LIMIT)
+	if (txctl->flags & IEEE80211_TXCTL_LONG_RETRY_LIMIT)
 		mac_ctl |= B43_TXH_MAC_LONGFRAME;
 
 	/* Generate the RTS or CTS-to-self frame */
-	if ((info->flags & IEEE80211_TX_CTL_USE_RTS_CTS) ||
-	    (info->flags & IEEE80211_TX_CTL_USE_CTS_PROTECT)) {
+	if ((txctl->flags & IEEE80211_TXCTL_USE_RTS_CTS) ||
+	    (txctl->flags & IEEE80211_TXCTL_USE_CTS_PROTECT)) {
 		unsigned int len;
 		struct ieee80211_hdr *hdr;
 		int rts_rate, rts_rate_fb;
@@ -337,14 +339,14 @@ int b43_generate_txhdr(struct b43_wldev *dev,
 		struct b43_plcp_hdr6 *plcp;
 		struct ieee80211_rate *rts_cts_rate;
 
-		rts_cts_rate = ieee80211_get_rts_cts_rate(dev->wl->hw, info);
+		rts_cts_rate = ieee80211_get_rts_cts_rate(dev->wl->hw, txctl);
 
 		rts_rate = rts_cts_rate ? rts_cts_rate->hw_value : B43_CCK_RATE_1MB;
 		rts_rate_ofdm = b43_is_ofdm_rate(rts_rate);
 		rts_rate_fb = b43_calc_fallback_rate(rts_rate);
 		rts_rate_fb_ofdm = b43_is_ofdm_rate(rts_rate_fb);
 
-		if (info->flags & IEEE80211_TX_CTL_USE_CTS_PROTECT) {
+		if (txctl->flags & IEEE80211_TXCTL_USE_CTS_PROTECT) {
 			struct ieee80211_cts *cts;
 
 			if (b43_is_old_txhdr_format(dev)) {
@@ -354,9 +356,9 @@ int b43_generate_txhdr(struct b43_wldev *dev,
 				cts = (struct ieee80211_cts *)
 					(txhdr->new_format.rts_frame);
 			}
-			ieee80211_ctstoself_get(dev->wl->hw, info->control.vif,
+			ieee80211_ctstoself_get(dev->wl->hw, txctl->vif,
 						fragment_data, fragment_len,
-						info, cts);
+						txctl, cts);
 			mac_ctl |= B43_TXH_MAC_SENDCTS;
 			len = sizeof(struct ieee80211_cts);
 		} else {
@@ -369,9 +371,9 @@ int b43_generate_txhdr(struct b43_wldev *dev,
 				rts = (struct ieee80211_rts *)
 					(txhdr->new_format.rts_frame);
 			}
-			ieee80211_rts_get(dev->wl->hw, info->control.vif,
+			ieee80211_rts_get(dev->wl->hw, txctl->vif,
 					  fragment_data, fragment_len,
-					  info, rts);
+					  txctl, rts);
 			mac_ctl |= B43_TXH_MAC_SENDRTS;
 			len = sizeof(struct ieee80211_rts);
 		}
@@ -685,27 +687,27 @@ void b43_handle_txstatus(struct b43_wldev *dev,
 /* Fill out the mac80211 TXstatus report based on the b43-specific
  * txstatus report data. This returns a boolean whether the frame was
  * successfully transmitted. */
-bool b43_fill_txstatus_report(struct ieee80211_tx_info *report,
+bool b43_fill_txstatus_report(struct ieee80211_tx_status *report,
 			      const struct b43_txstatus *status)
 {
 	bool frame_success = 1;
 
 	if (status->acked) {
 		/* The frame was ACKed. */
-		report->flags |= IEEE80211_TX_STAT_ACK;
+		report->flags |= IEEE80211_TX_STATUS_ACK;
 	} else {
 		/* The frame was not ACKed... */
-		if (!(report->flags & IEEE80211_TX_CTL_NO_ACK)) {
+		if (!(report->control.flags & IEEE80211_TXCTL_NO_ACK)) {
 			/* ...but we expected an ACK. */
 			frame_success = 0;
-			report->status.excessive_retries = 1;
+			report->excessive_retries = 1;
 		}
 	}
 	if (status->frame_count == 0) {
 		/* The frame was not transmitted at all. */
-		report->status.retry_count = 0;
+		report->retry_count = 0;
 	} else
-		report->status.retry_count = status->frame_count - 1;
+		report->retry_count = status->frame_count - 1;
 
 	return frame_success;
 }

@@ -195,6 +195,7 @@ struct b43legacy_dmadesc_meta {
 	dma_addr_t dmaaddr;
 	/* ieee80211 TX status. Only used once per 802.11 frag. */
 	bool is_last_fragment;
+	struct ieee80211_tx_status txstat;
 };
 
 struct b43legacy_dmaring;
@@ -296,7 +297,8 @@ void b43legacy_dma_get_tx_stats(struct b43legacy_wldev *dev,
 				struct ieee80211_tx_queue_stats *stats);
 
 int b43legacy_dma_tx(struct b43legacy_wldev *dev,
-		     struct sk_buff *skb);
+		     struct sk_buff *skb,
+		     struct ieee80211_tx_control *ctl);
 void b43legacy_dma_handle_txstatus(struct b43legacy_wldev *dev,
 				   const struct b43legacy_txstatus *status);
 
