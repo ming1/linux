@@ -1063,6 +1063,7 @@ static void iwl_pass_packet_to_mac80211(struct iwl_priv *priv,
 		return;
 	}
 
+	stats->flag = 0;
 	hdr = (struct ieee80211_hdr *)rxb->skb->data;
 
 	/*  in case of HW accelerated crypto and bad decryption, drop */
@@ -1196,7 +1197,6 @@ void iwl_rx_reply_rx(struct iwl_priv *priv,
 
 	rx_status.antenna = 0;
 	rx_status.flag = 0;
-	rx_status.flag |= RX_FLAG_TSFT;
 
 	if ((unlikely(rx_start->cfg_phy_cnt > 20))) {
 		IWL_DEBUG_DROP("dsp size out of range [0,20]: %d/n",
