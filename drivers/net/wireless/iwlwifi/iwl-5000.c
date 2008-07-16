@@ -1016,13 +1016,9 @@ static int iwl5000_txq_agg_enable(struct iwl_priv *priv, int txq_id,
 	int ret;
 	u16 ra_tid;
 
-	if ((IWL50_FIRST_AMPDU_QUEUE > txq_id) ||
-	    (IWL50_FIRST_AMPDU_QUEUE + IWL50_NUM_AMPDU_QUEUES <= txq_id)) {
-		IWL_WARNING("queue number out of range: %d, must be %d to %d\n",
-			txq_id, IWL50_FIRST_AMPDU_QUEUE,
-			IWL50_FIRST_AMPDU_QUEUE + IWL50_NUM_AMPDU_QUEUES - 1);
-		return -EINVAL;
-	}
+	if (IWL50_FIRST_AMPDU_QUEUE > txq_id)
+		IWL_WARNING("queue number too small: %d, must be > %d\n",
+			txq_id, IWL50_FIRST_AMPDU_QUEUE);
 
 	ra_tid = BUILD_RAxTID(sta_id, tid);
 
@@ -1081,11 +1077,9 @@ static int iwl5000_txq_agg_disable(struct iwl_priv *priv, u16 txq_id,
 {
 	int ret;
 
-	if ((IWL50_FIRST_AMPDU_QUEUE > txq_id) ||
-	    (IWL50_FIRST_AMPDU_QUEUE + IWL50_NUM_AMPDU_QUEUES <= txq_id)) {
-		IWL_WARNING("queue number out of range: %d, must be %d to %d\n",
-			txq_id, IWL50_FIRST_AMPDU_QUEUE,
-			IWL50_FIRST_AMPDU_QUEUE + IWL50_NUM_AMPDU_QUEUES - 1);
+	if (IWL50_FIRST_AMPDU_QUEUE > txq_id) {
+		IWL_WARNING("queue number too small: %d, must be > %d\n",
+				txq_id, IWL50_FIRST_AMPDU_QUEUE);
 		return -EINVAL;
 	}
 
@@ -1507,7 +1501,6 @@ static struct iwl_ops iwl5000_ops = {
 
 static struct iwl_mod_params iwl50_mod_params = {
 	.num_of_queues = IWL50_NUM_QUEUES,
-	.num_of_ampdu_queues = IWL50_NUM_AMPDU_QUEUES,
 	.enable_qos = 1,
 	.amsdu_size_8K = 1,
 	.restart_fw = 1,
