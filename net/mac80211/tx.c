@@ -1954,7 +1954,7 @@ ieee80211_get_buffered_bc(struct ieee80211_hw *hw,
 			  struct ieee80211_vif *vif)
 {
 	struct ieee80211_local *local = hw_to_local(hw);
-	struct sk_buff *skb = NULL;
+	struct sk_buff *skb;
 	struct sta_info *sta;
 	ieee80211_tx_handler *handler;
 	struct ieee80211_tx_data tx;
@@ -1967,7 +1967,7 @@ ieee80211_get_buffered_bc(struct ieee80211_hw *hw,
 
 	sdata = vif_to_sdata(vif);
 	bdev = sdata->dev;
-	bss = &sdata->u.ap;
+
 
 	if (!bss)
 		return NULL;
@@ -1975,16 +1975,19 @@ ieee80211_get_buffered_bc(struct ieee80211_hw *hw,
 	rcu_read_lock();
 	beacon = rcu_dereference(bss->beacon);
 
-	if (sdata->vif.type != IEEE80211_IF_TYPE_AP || !beacon || !beacon->head)
-		goto out;
+	if (sdata->vif.type != IEEE80211_IF_TYPE_AP || !beacon ||
+	    !beacon->head) {
+		rcu_read_unlock();
+		return NULL;
+	}
 
 	if (bss->dtim_count != 0)
-		goto out; /* send buffered bc/mc only after DTIM beacon */
+		return NULL; /* send buffered bc/mc only after DTIM beacon */
 
 	while (1) {
 		skb = skb_dequeue(&bss->ps_bc_buf);
 		if (!skb)
-			goto out;
+			return NULL;
 		local->total_ps_buffered--;
 
 		if (!skb_queue_empty(&bss->ps_bc_buf) && skb->len >= 2) {
@@ -2027,7 +2030,6 @@ ieee80211_get_buffered_bc(struct ieee80211_hw *hw,
 		skb = NULL;
 	}
 
-out:
 	rcu_read_unlock();
 
 	return skb;
