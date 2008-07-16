@@ -1529,7 +1529,6 @@ static int at76_tx_mgmt(struct at76_priv *priv, struct at76_tx_buffer *txbuf)
 
 	txbuf->tx_rate = TX_RATE_1MBIT;
 	txbuf->padding = at76_calc_padding(le16_to_cpu(txbuf->wlength));
-	memset(txbuf->reserved, 0, sizeof(txbuf->reserved));
 
 	if (priv->next_mgmt_bulk)
 		printk(KERN_ERR "%s: URB status %d, but mgmt is pending\n",
@@ -3145,7 +3144,7 @@ static int at76_tx(struct sk_buff *skb, struct net_device *netdev)
 	   seems to choose the highest rate set with CMD_STARTUP in
 	   basic_rate_set replacing this value */
 
-	memset(tx_buffer->reserved, 0, sizeof(tx_buffer->reserved));
+	memset(tx_buffer->reserved, 0, 4);
 
 	tx_buffer->padding = at76_calc_padding(wlen);
 	submit_len = wlen + AT76_TX_HDRLEN + tx_buffer->padding;
