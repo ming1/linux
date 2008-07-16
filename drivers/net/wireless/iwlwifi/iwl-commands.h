@@ -281,7 +281,16 @@ struct iwl_cmd_header {
 #define RATE_MCS_ANT_C_MSK    0x10000
 #define RATE_MCS_ANT_ABC_MSK  0x1C000
 
-#define RATE_MCS_ANT_INIT_IND   1
+
+/**
+ * struct iwl4965_tx_power - txpower format used in REPLY_SCAN_CMD
+ *
+ * Scan uses only one transmitter, so only one analog/dsp gain pair is needed.
+ */
+struct iwl4965_tx_power {
+	u8 tx_gain;		/* gain for analog radio */
+	u8 dsp_atten;		/* gain for DSP */
+} __attribute__ ((packed));
 
 #define POWER_TABLE_NUM_ENTRIES			33
 #define POWER_TABLE_NUM_HT_OFDM_ENTRIES		32
@@ -2119,8 +2128,7 @@ struct iwl_scan_channel {
 	 */
 	u8 type;
 	u8 channel;	/* band is selected by iwl4965_scan_cmd "flags" field */
-	u8 tx_gain;		/* gain for analog radio */
-	u8 dsp_atten;		/* gain for DSP */
+	struct iwl4965_tx_power tpc;
 	__le16 active_dwell;	/* in 1024-uSec TU (time units), typ 5-50 */
 	__le16 passive_dwell;	/* in 1024-uSec TU (time units), typ 20-500 */
 } __attribute__ ((packed));
