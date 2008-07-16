@@ -83,10 +83,9 @@ enum data_queue_qid {
  * enum skb_frame_desc_flags: Flags for &struct skb_frame_desc
  *
  */
-enum skb_frame_desc_flags {
-	SKBDESC_DMA_MAPPED_RX = (1 << 0),
-	SKBDESC_DMA_MAPPED_TX = (1 << 1),
-};
+//enum skb_frame_desc_flags {
+//	TEMPORARILY EMPTY
+//};
 
 /**
  * struct skb_frame_desc: Descriptor information for the skb buffer
@@ -95,20 +94,19 @@ enum skb_frame_desc_flags {
  * this structure should not exceed the size of that array (40 bytes).
  *
  * @flags: Frame flags, see &enum skb_frame_desc_flags.
- * @desc_len: Length of the frame descriptor.
+ * @data: Pointer to data part of frame (Start of ieee80211 header).
  * @desc: Pointer to descriptor part of the frame.
  *	Note that this pointer could point to something outside
  *	of the scope of the skb->data pointer.
- * @skb_dma: (PCI-only) the DMA address associated with the sk buffer.
+ * @data_len: Length of the frame data.
+ * @desc_len: Length of the frame descriptor.
  * @entry: The entry to which this sk buffer belongs.
  */
 struct skb_frame_desc {
 	unsigned int flags;
 
-	unsigned int desc_len;
 	void *desc;
-
-	dma_addr_t skb_dma;
+	unsigned int desc_len;
 
 	struct queue_entry *entry;
 };
