@@ -147,7 +147,6 @@ union at76_hwcfg {
 
 #define WEP_SMALL_KEY_LEN	(40 / 8)
 #define WEP_LARGE_KEY_LEN	(104 / 8)
-#define WEP_KEYS		(4)
 
 struct at76_card_config {
 	u8 exclude_unencrypted;
@@ -162,7 +161,7 @@ struct at76_card_config {
 	u8 privacy_invoked;
 	u8 wep_default_key_id;	/* 0..3 */
 	u8 current_ssid[32];
-	u8 wep_default_key_value[4][WEP_LARGE_KEY_LEN];
+	u8 wep_default_key_value[4][WEP_KEY_LEN];
 	u8 ssid_len;
 	u8 short_preamble;
 	__le16 beacon_period;
@@ -187,7 +186,7 @@ struct at76_rx_buffer {
 	u8 link_quality;
 	u8 noise_level;
 	__le32 rx_time;
-	u8 packet[IEEE80211_MAX_FRAG_THRESHOLD];
+	u8 packet[IEEE80211_FRAME_LEN + IEEE80211_FCS_LEN];
 } __attribute__((packed));
 
 /* Length of Atmel-specific Tx header before 802.11 frame */
@@ -198,7 +197,7 @@ struct at76_tx_buffer {
 	u8 tx_rate;
 	u8 padding;
 	u8 reserved[4];
-	u8 packet[IEEE80211_MAX_FRAG_THRESHOLD];
+	u8 packet[IEEE80211_FRAME_LEN + IEEE80211_FCS_LEN];
 } __attribute__((packed));
 
 /* defines for scan_type below */
@@ -318,7 +317,7 @@ struct mib_mac_wep {
 	u8 exclude_unencrypted;
 	__le32 wep_icv_error_count;
 	__le32 wep_excluded_count;
-	u8 wep_default_keyvalue[WEP_KEYS][WEP_LARGE_KEY_LEN];
+	u8 wep_default_keyvalue[WEP_KEYS][WEP_KEY_LEN];
 	u8 encryption_level;	/* 1 for 40bit, 2 for 104bit encryption */
 } __attribute__((packed));
 
@@ -472,8 +471,9 @@ struct at76_priv {
 	/* the WEP stuff */
 	int wep_enabled;	/* 1 if WEP is enabled */
 	int wep_key_id;		/* key id to be used */
-	u8 wep_keys[WEP_KEYS][WEP_LARGE_KEY_LEN];	/* WEP keys */
-	u8 wep_keys_len[WEP_KEYS];	/* length of WEP keys */
+	u8 wep_keys[WEP_KEYS][WEP_KEY_LEN];	/* the four WEP keys,
+						   5 or 13 bytes are used */
+	u8 wep_keys_len[WEP_KEYS];	/* the length of the above keys */
 
 	int channel;
 	int iw_mode;
@@ -611,70 +611,9 @@ struct at76_rx_radiotap {
 #define DEF_SCAN_MIN_TIME	10
 #define DEF_SCAN_MAX_TIME	120
 
+#define MAX_RTS_THRESHOLD	(MAX_FRAG_THRESHOLD + 1)
+
 /* the max padding size for tx in bytes (see calc_padding) */
 #define MAX_PADDING_SIZE	53
-
-#define MIN_FRAG_THRESHOLD 256
-
-struct ieee80211_info_element {
-	u8 id;
-	u8 len;
-	u8 data[0];
-} __attribute__((packed));
-
-struct ieee80211_hdr_3addr {
-	__le16 frame_ctl;
-	__le16 duration_id;
-	u8 addr1[ETH_ALEN];
-	u8 addr2[ETH_ALEN];
-	u8 addr3[ETH_ALEN];
-	__le16 seq_ctl;
-	u8 payload[0];
-} __attribute__((packed));
-
-struct ieee80211_auth {
-	struct ieee80211_hdr_3addr header;
-	__le16 algorithm;
-	__le16 transaction;
-	__le16 status;
-	/* challenge */
-	struct ieee80211_info_element info_element[0];
-} __attribute__((packed));
-
-struct ieee80211_assoc_request {
-	struct ieee80211_hdr_3addr header;
-	__le16 capability;
-	__le16 listen_interval;
-	/* SSID, supported rates, RSN */
-	struct ieee80211_info_element info_element[0];
-} __attribute__((packed));
-
-struct ieee80211_assoc_response {
-	struct ieee80211_hdr_3addr header;
-	__le16 capability;
-	__le16 status;
-	__le16 aid;
-	/* supported rates */
-	struct ieee80211_info_element info_element[0];
-} __attribute__((packed));
-
-struct ieee80211_disassoc {
-	struct ieee80211_hdr_3addr header;
-	__le16 reason;
-} __attribute__((packed));
-
-struct ieee80211_probe_response {
-	struct ieee80211_hdr_3addr header;
-	u32 time_stamp[2];
-	__le16 beacon_interval;
-	__le16 capability;
-	/* SSID, supported rates, FH params, DS params,
-	 * CF params, IBSS params, TIM (if beacon), RSN */
-	struct ieee80211_info_element info_element[0];
-} __attribute__((packed));
-
-#define ieee80211_beacon ieee80211_probe_response
-
-#define IEEE80211_3ADDR_LEN sizeof(struct ieee80211_hdr_3addr)
 
 #endif				/* _AT76_USB_H */
