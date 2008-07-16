@@ -274,19 +274,15 @@ ieee80211_crypto_tkip_decrypt(struct ieee80211_rx_data *rx)
 }
 
 
-static void ccmp_special_blocks(struct sk_buff *skb, u8 *pn, u8 *scratch,
+static void ccmp_special_blocks(struct sk_buff *skb, u8 *pn, u8 *b_0, u8 *aad,
 				int encrypted)
 {
 	__le16 mask_fc;
 	int a4_included;
 	u8 qos_tid;
-	u8 *b_0, *aad;
 	u16 data_len, len_a;
 	unsigned int hdrlen;
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
-
-	b_0 = scratch + 3 * AES_BLOCK_LEN;
-	aad = scratch + 4 * AES_BLOCK_LEN;
 
 	/*
 	 * Mask FC: zero subtype b4 b5 b6
@@ -371,7 +367,7 @@ static int ccmp_encrypt_skb(struct ieee80211_tx_data *tx, struct sk_buff *skb)
 	struct ieee80211_key *key = tx->key;
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	int hdrlen, len, tail;
-	u8 *pos, *pn;
+	u8 *pos, *pn, *b_0, *aad, *scratch;
 	int i;
 
 	info->control.icv_len = CCMP_MIC_LEN;
@@ -384,6 +380,10 @@ static int ccmp_encrypt_skb(struct ieee80211_tx_data *tx, struct sk_buff *skb)
 		info->control.hw_key = &tx->key->conf;
 		return 0;
 	}
+
+	scratch = key->u.ccmp.tx_crypto_buf;
+	b_0 = scratch + 3 * AES_BLOCK_LEN;
+	aad = scratch + 4 * AES_BLOCK_LEN;
 
 	hdrlen = ieee80211_hdrlen(hdr->frame_control);
 	len = skb->len - hdrlen;
@@ -420,8 +420,8 @@ static int ccmp_encrypt_skb(struct ieee80211_tx_data *tx, struct sk_buff *skb)
 	}
 
 	pos += CCMP_HDR_LEN;
-	ccmp_special_blocks(skb, pn, key->u.ccmp.tx_crypto_buf, 0);
-	ieee80211_aes_ccm_encrypt(key->u.ccmp.tfm, key->u.ccmp.tx_crypto_buf, pos, len,
+	ccmp_special_blocks(skb, pn, b_0, aad, 0);
+	ieee80211_aes_ccm_encrypt(key->u.ccmp.tfm, scratch, b_0, aad, pos, len,
 				  pos, skb_put(skb, CCMP_MIC_LEN));
 
 	return 0;
@@ -483,10 +483,16 @@ ieee80211_crypto_ccmp_decrypt(struct ieee80211_rx_data *rx)
 
 	if (!(rx->status->flag & RX_FLAG_DECRYPTED)) {
 		/* hardware didn't decrypt/verify MIC */
-		ccmp_special_blocks(skb, pn, key->u.ccmp.rx_crypto_buf, 1);
+		u8 *scratch, *b_0, *aad;
+
+		scratch = key->u.ccmp.rx_crypto_buf;
+		b_0 = scratch + 3 * AES_BLOCK_LEN;
+		aad = scratch + 4 * AES_BLOCK_LEN;
+
+		ccmp_special_blocks(skb, pn, b_0, aad, 1);
 
 		if (ieee80211_aes_ccm_decrypt(
-			    key->u.ccmp.tfm, key->u.ccmp.rx_crypto_buf,
+			    key->u.ccmp.tfm, scratch, b_0, aad,
 			    skb->data + hdrlen + CCMP_HDR_LEN, data_len,
 			    skb->data + skb->len - CCMP_MIC_LEN,
 			    skb->data + hdrlen + CCMP_HDR_LEN)) {
