@@ -2103,9 +2103,7 @@ static void __iwl4965_down(struct iwl_priv *priv)
 			       test_bit(STATUS_GEO_CONFIGURED, &priv->status) <<
 					STATUS_GEO_CONFIGURED |
 			       test_bit(STATUS_IN_SUSPEND, &priv->status) <<
-					STATUS_IN_SUSPEND |
-			       test_bit(STATUS_EXIT_PENDING, &priv->status) <<
-					STATUS_EXIT_PENDING;
+					STATUS_IN_SUSPEND;
 		goto exit;
 	}
 
@@ -2120,9 +2118,7 @@ static void __iwl4965_down(struct iwl_priv *priv)
 			test_bit(STATUS_IN_SUSPEND, &priv->status) <<
 				STATUS_IN_SUSPEND |
 			test_bit(STATUS_FW_ERROR, &priv->status) <<
-				STATUS_FW_ERROR |
-		       test_bit(STATUS_EXIT_PENDING, &priv->status) <<
-				STATUS_EXIT_PENDING;
+				STATUS_FW_ERROR;
 
 	spin_lock_irqsave(&priv->lock, flags);
 	iwl_clear_bit(priv, CSR_GP_CNTRL,
