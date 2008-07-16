@@ -45,37 +45,38 @@ const unsigned char bridge_tunnel_header[] __aligned(2) =
 u8 *ieee80211_get_bssid(struct ieee80211_hdr *hdr, size_t len,
 			enum ieee80211_if_types type)
 {
-	__le16 fc = hdr->frame_control;
+	u16 fc;
 
 	 /* drop ACK/CTS frames and incorrect hdr len (ctrl) */
 	if (len < 16)
 		return NULL;
 
-	if (ieee80211_is_data(fc)) {
+	fc = le16_to_cpu(hdr->frame_control);
+
+	switch (fc & IEEE80211_FCTL_FTYPE) {
+	case IEEE80211_FTYPE_DATA:
 		if (len < 24) /* drop incorrect hdr len (data) */
 			return NULL;
-
-		if (ieee80211_has_a4(fc))
-			return NULL;
-		if (ieee80211_has_tods(fc))
+		switch (fc & (IEEE80211_FCTL_TODS | IEEE80211_FCTL_FROMDS)) {
+		case IEEE80211_FCTL_TODS:
 			return hdr->addr1;
-		if (ieee80211_has_fromds(fc))
+		case (IEEE80211_FCTL_TODS | IEEE80211_FCTL_FROMDS):
+			return NULL;
+		case IEEE80211_FCTL_FROMDS:
 			return hdr->addr2;
-
-		return hdr->addr3;
-	}
-
-	if (ieee80211_is_mgmt(fc)) {
+		case 0:
+			return hdr->addr3;
+		}
+		break;
+	case IEEE80211_FTYPE_MGMT:
 		if (len < 24) /* drop incorrect hdr len (mgmt) */
 			return NULL;
 		return hdr->addr3;
-	}
-
-	if (ieee80211_is_ctl(fc)) {
-		if(ieee80211_is_pspoll(fc))
+	case IEEE80211_FTYPE_CTL:
+		if ((fc & IEEE80211_FCTL_STYPE) == IEEE80211_STYPE_PSPOLL)
 			return hdr->addr1;
-
-		if (ieee80211_is_back_req(fc)) {
+		else if ((fc & IEEE80211_FCTL_STYPE) ==
+						IEEE80211_STYPE_BACK_REQ) {
 			switch (type) {
 			case IEEE80211_IF_TYPE_STA:
 				return hdr->addr2;
@@ -83,9 +84,11 @@ u8 *ieee80211_get_bssid(struct ieee80211_hdr *hdr, size_t len,
 			case IEEE80211_IF_TYPE_VLAN:
 				return hdr->addr1;
 			default:
-				break; /* fall through to the return */
+				return NULL;
 			}
 		}
+		else
+			return NULL;
 	}
 
 	return NULL;
