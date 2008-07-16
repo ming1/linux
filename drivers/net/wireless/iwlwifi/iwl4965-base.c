@@ -2907,10 +2907,6 @@ static void iwl_alive_start(struct iwl_priv *priv)
 
 	iwlcore_low_level_notify(priv, IWLCORE_START_EVT);
 	ieee80211_notify_mac(priv->hw, IEEE80211_NOTIFY_RE_ASSOC);
-
-	if (test_and_clear_bit(STATUS_MODE_PENDING, &priv->status))
-		iwl4965_set_mode(priv, priv->iw_mode);
-
 	return;
 
  restart:
@@ -3200,20 +3196,16 @@ static void iwl4965_bg_set_monitor(struct work_struct *work)
 {
 	struct iwl_priv *priv = container_of(work,
 				struct iwl_priv, set_monitor);
-	int ret;
 
 	IWL_DEBUG(IWL_DL_STATE, "setting monitor mode\n");
 
 	mutex_lock(&priv->mutex);
 
-	ret = iwl4965_set_mode(priv, IEEE80211_IF_TYPE_MNTR);
-
-	if (ret) {
-		if (ret == -EAGAIN)
-			IWL_DEBUG(IWL_DL_STATE, "leave - not ready\n");
-		else
-			IWL_ERROR("iwl4965_set_mode() failed ret = %d\n", ret);
-	}
+	if (!iwl_is_ready(priv))
+		IWL_DEBUG(IWL_DL_STATE, "leave - not ready\n");
+	else
+		if (iwl4965_set_mode(priv, IEEE80211_IF_TYPE_MNTR) != 0)
+			IWL_ERROR("iwl4965_set_mode() failed\n");
 
 	mutex_unlock(&priv->mutex);
 }
@@ -3585,9 +3577,10 @@ static void iwl4965_post_associate(struct iwl_priv *priv)
 
 	case IEEE80211_IF_TYPE_IBSS:
 
-		/* assume default assoc id */
-		priv->assoc_id = 1;
+		/* clear out the station table */
+		iwlcore_clear_stations_table(priv);
 
+		iwl_rxon_add_station(priv, iwl_bcast_addr, 0);
 		iwl_rxon_add_station(priv, priv->bssid, 0);
 		iwl4965_rate_scale_init(priv->hw, IWL_STA_ID);
 		iwl4965_send_beacon_cmd(priv);
@@ -3835,9 +3828,8 @@ static int iwl4965_mac_add_interface(struct ieee80211_hw *hw,
 		memcpy(priv->mac_addr, conf->mac_addr, ETH_ALEN);
 	}
 
-	if (iwl4965_set_mode(priv, conf->type) == -EAGAIN)
-		/* we are not ready, will run again when ready */
-		set_bit(STATUS_MODE_PENDING, &priv->status);
+	if (iwl_is_ready(priv))
+		iwl4965_set_mode(priv, conf->type);
 
 	mutex_unlock(&priv->mutex);
 
@@ -4618,7 +4610,7 @@ static int iwl4965_mac_beacon_update(struct ieee80211_hw *hw, struct sk_buff *sk
 
 	iwl_reset_qos(priv);
 
-	iwl4965_post_associate(priv);
+	queue_work(priv->workqueue, &priv->post_associate.work);
 
 	mutex_unlock(&priv->mutex);
 
