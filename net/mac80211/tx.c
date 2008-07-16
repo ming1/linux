@@ -52,8 +52,9 @@ static inline void ieee80211_include_sequence(struct ieee80211_sub_if_data *sdat
 static void ieee80211_dump_frame(const char *ifname, const char *title,
 				 const struct sk_buff *skb)
 {
-	const struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
-	unsigned int hdrlen;
+	const struct ieee80211_hdr *hdr = (struct ieee80211_hdr *) skb->data;
+	u16 fc;
+	int hdrlen;
 	DECLARE_MAC_BUF(mac);
 
 	printk(KERN_DEBUG "%s: %s (len=%d)", ifname, title, skb->len);
@@ -62,12 +63,13 @@ static void ieee80211_dump_frame(const char *ifname, const char *title,
 		return;
 	}
 
-	hdrlen = ieee80211_hdrlen(hdr->frame_control);
+	fc = le16_to_cpu(hdr->frame_control);
+	hdrlen = ieee80211_get_hdrlen(fc);
 	if (hdrlen > skb->len)
 		hdrlen = skb->len;
 	if (hdrlen >= 4)
 		printk(" FC=0x%04x DUR=0x%04x",
-		    le16_to_cpu(hdr->frame_control), le16_to_cpu(hdr->duration_id));
+		       fc, le16_to_cpu(hdr->duration_id));
 	if (hdrlen >= 10)
 		printk(" A1=%s", print_mac(mac, hdr->addr1));
 	if (hdrlen >= 16)
@@ -279,7 +281,7 @@ ieee80211_tx_h_sequence(struct ieee80211_tx_data *tx)
 {
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)tx->skb->data;
 
-	if (ieee80211_hdrlen(hdr->frame_control) >= 24)
+	if (ieee80211_get_hdrlen(le16_to_cpu(hdr->frame_control)) >= 24)
 		ieee80211_include_sequence(tx->sdata, hdr);
 
 	return TX_CONTINUE;
@@ -540,7 +542,8 @@ ieee80211_tx_h_rate_ctrl(struct ieee80211_tx_data *tx)
 static ieee80211_tx_result
 ieee80211_tx_h_misc(struct ieee80211_tx_data *tx)
 {
-	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)tx->skb->data;
+	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *) tx->skb->data;
+	u16 fc = le16_to_cpu(hdr->frame_control);
 	u16 dur;
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(tx->skb);
 	struct ieee80211_supported_band *sband;
@@ -592,7 +595,7 @@ ieee80211_tx_h_misc(struct ieee80211_tx_data *tx)
 	/* Transmit data frames using short preambles if the driver supports
 	 * short preambles at the selected rate and short preambles are
 	 * available on the network at the current point in time. */
-	if (ieee80211_is_data(hdr->frame_control) &&
+	if (((fc & IEEE80211_FCTL_FTYPE) == IEEE80211_FTYPE_DATA) &&
 	    (sband->bitrates[tx->rate_idx].flags & IEEE80211_RATE_SHORT_PREAMBLE) &&
 	    tx->sdata->bss_conf.use_short_preamble &&
 	    (!tx->sta || test_sta_flags(tx->sta, WLAN_STA_SHORT_PREAMBLE))) {
@@ -644,7 +647,7 @@ ieee80211_tx_h_misc(struct ieee80211_tx_data *tx)
 static ieee80211_tx_result
 ieee80211_tx_h_fragment(struct ieee80211_tx_data *tx)
 {
-	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)tx->skb->data;
+	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *) tx->skb->data;
 	size_t hdrlen, per_fragm, num_fragm, payload_len, left;
 	struct sk_buff **frags, *first, *frag;
 	int i;
@@ -667,7 +670,7 @@ ieee80211_tx_h_fragment(struct ieee80211_tx_data *tx)
 
 	first = tx->skb;
 
-	hdrlen = ieee80211_hdrlen(hdr->frame_control);
+	hdrlen = ieee80211_get_hdrlen(tx->fc);
 	payload_len = first->len - hdrlen;
 	per_fragm = frag_threshold - hdrlen - FCS_LEN;
 	num_fragm = DIV_ROUND_UP(payload_len, per_fragm);
@@ -1399,8 +1402,7 @@ int ieee80211_subif_start_xmit(struct sk_buff *skb,
 	struct ieee80211_tx_info *info;
 	struct ieee80211_sub_if_data *sdata;
 	int ret = 1, head_need;
-	u16 ethertype, hdrlen,  meshhdrlen = 0;
-	__le16 fc;
+	u16 ethertype, hdrlen,  meshhdrlen = 0, fc;
 	struct ieee80211_hdr hdr;
 	struct ieee80211s_hdr mesh_hdr;
 	const u8 *encaps_data;
@@ -1423,12 +1425,12 @@ int ieee80211_subif_start_xmit(struct sk_buff *skb,
 	/* convert Ethernet header to proper 802.11 header (based on
 	 * operation mode) */
 	ethertype = (skb->data[12] << 8) | skb->data[13];
-	fc = cpu_to_le16(IEEE80211_FTYPE_DATA | IEEE80211_STYPE_DATA);
+	fc = IEEE80211_FTYPE_DATA | IEEE80211_STYPE_DATA;
 
 	switch (sdata->vif.type) {
 	case IEEE80211_IF_TYPE_AP:
 	case IEEE80211_IF_TYPE_VLAN:
-		fc |= cpu_to_le16(IEEE80211_FCTL_FROMDS);
+		fc |= IEEE80211_FCTL_FROMDS;
 		/* DA BSSID SA */
 		memcpy(hdr.addr1, skb->data, ETH_ALEN);
 		memcpy(hdr.addr2, dev->dev_addr, ETH_ALEN);
@@ -1436,7 +1438,7 @@ int ieee80211_subif_start_xmit(struct sk_buff *skb,
 		hdrlen = 24;
 		break;
 	case IEEE80211_IF_TYPE_WDS:
-		fc |= cpu_to_le16(IEEE80211_FCTL_FROMDS | IEEE80211_FCTL_TODS);
+		fc |= IEEE80211_FCTL_FROMDS | IEEE80211_FCTL_TODS;
 		/* RA TA DA SA */
 		memcpy(hdr.addr1, sdata->u.wds.remote_addr, ETH_ALEN);
 		memcpy(hdr.addr2, dev->dev_addr, ETH_ALEN);
@@ -1446,7 +1448,7 @@ int ieee80211_subif_start_xmit(struct sk_buff *skb,
 		break;
 #ifdef CONFIG_MAC80211_MESH
 	case IEEE80211_IF_TYPE_MESH_POINT:
-		fc |= cpu_to_le16(IEEE80211_FCTL_FROMDS | IEEE80211_FCTL_TODS);
+		fc |= IEEE80211_FCTL_FROMDS | IEEE80211_FCTL_TODS;
 		/* RA TA DA SA */
 		if (is_multicast_ether_addr(skb->data))
 			memcpy(hdr.addr1, skb->data, ETH_ALEN);
@@ -1476,7 +1478,7 @@ int ieee80211_subif_start_xmit(struct sk_buff *skb,
 		break;
 #endif
 	case IEEE80211_IF_TYPE_STA:
-		fc |= cpu_to_le16(IEEE80211_FCTL_TODS);
+		fc |= IEEE80211_FCTL_TODS;
 		/* BSSID SA DA */
 		memcpy(hdr.addr1, sdata->u.sta.bssid, ETH_ALEN);
 		memcpy(hdr.addr2, skb->data + ETH_ALEN, ETH_ALEN);
@@ -1511,7 +1513,7 @@ int ieee80211_subif_start_xmit(struct sk_buff *skb,
 	/* receiver and we are QoS enabled, use a QoS type frame */
 	if (sta_flags & WLAN_STA_WME &&
 	    ieee80211_num_regular_queues(&local->hw) >= 4) {
-		fc |= cpu_to_le16(IEEE80211_STYPE_QOS_DATA);
+		fc |= IEEE80211_STYPE_QOS_DATA;
 		hdrlen += 2;
 	}
 
@@ -1539,7 +1541,7 @@ int ieee80211_subif_start_xmit(struct sk_buff *skb,
 		goto fail;
 	}
 
-	hdr.frame_control = fc;
+	hdr.frame_control = cpu_to_le16(fc);
 	hdr.duration_id = 0;
 	hdr.seq_ctrl = 0;
 
@@ -1608,7 +1610,7 @@ int ieee80211_subif_start_xmit(struct sk_buff *skb,
 		h_pos += meshhdrlen;
 	}
 
-	if (ieee80211_is_data_qos(fc)) {
+	if (fc & IEEE80211_STYPE_QOS_DATA) {
 		__le16 *qos_control;
 
 		qos_control = (__le16*) skb_push(skb, 2);
@@ -1866,8 +1868,8 @@ struct sk_buff *ieee80211_beacon_get(struct ieee80211_hw *hw,
 		mgmt = (struct ieee80211_mgmt *)
 			skb_put(skb, 24 + sizeof(mgmt->u.beacon));
 		memset(mgmt, 0, 24 + sizeof(mgmt->u.beacon));
-		mgmt->frame_control =
-		    cpu_to_le16(IEEE80211_FTYPE_MGMT | IEEE80211_STYPE_BEACON);
+		mgmt->frame_control = IEEE80211_FC(IEEE80211_FTYPE_MGMT,
+						   IEEE80211_STYPE_BEACON);
 		memset(mgmt->da, 0xff, ETH_ALEN);
 		memcpy(mgmt->sa, sdata->dev->dev_addr, ETH_ALEN);
 		/* BSSID is left zeroed, wildcard value */
@@ -1935,9 +1937,10 @@ void ieee80211_rts_get(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 		       struct ieee80211_rts *rts)
 {
 	const struct ieee80211_hdr *hdr = frame;
+	u16 fctl;
 
-	rts->frame_control =
-	    cpu_to_le16(IEEE80211_FTYPE_CTL | IEEE80211_STYPE_RTS);
+	fctl = IEEE80211_FTYPE_CTL | IEEE80211_STYPE_RTS;
+	rts->frame_control = cpu_to_le16(fctl);
 	rts->duration = ieee80211_rts_duration(hw, vif, frame_len,
 					       frame_txctl);
 	memcpy(rts->ra, hdr->addr1, sizeof(rts->ra));
@@ -1951,9 +1954,10 @@ void ieee80211_ctstoself_get(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 			     struct ieee80211_cts *cts)
 {
 	const struct ieee80211_hdr *hdr = frame;
+	u16 fctl;
 
-	cts->frame_control =
-	    cpu_to_le16(IEEE80211_FTYPE_CTL | IEEE80211_STYPE_CTS);
+	fctl = IEEE80211_FTYPE_CTL | IEEE80211_STYPE_CTS;
+	cts->frame_control = cpu_to_le16(fctl);
 	cts->duration = ieee80211_ctstoself_duration(hw, vif,
 						     frame_len, frame_txctl);
 	memcpy(cts->ra, hdr->addr1, sizeof(cts->ra));
