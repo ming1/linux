@@ -146,7 +146,6 @@ enum rxdone_entry_desc_flags {
  *
  * Summary of information that has been read from the RX frame descriptor.
  *
- * @timestamp: RX Timestamp
  * @signal: Signal of the received frame.
  * @rssi: RSSI of the received frame.
  * @size: Data size of the received frame.
@@ -155,7 +154,6 @@ enum rxdone_entry_desc_flags {
 
  */
 struct rxdone_entry_desc {
-	u64 timestamp;
 	int signal;
 	int rssi;
 	int size;
