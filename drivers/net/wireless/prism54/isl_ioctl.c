@@ -571,9 +571,8 @@ prism54_set_scan(struct net_device *dev, struct iw_request_info *info,
  */
 
 static char *
-prism54_translate_bss(struct net_device *ndev, struct iw_request_info *info,
-		      char *current_ev, char *end_buf, struct obj_bss *bss,
-		      char noise)
+prism54_translate_bss(struct net_device *ndev, char *current_ev,
+		      char *end_buf, struct obj_bss *bss, char noise)
 {
 	struct iw_event iwe;	/* Temporary buffer */
 	short cap;
@@ -585,8 +584,8 @@ prism54_translate_bss(struct net_device *ndev, struct iw_request_info *info,
 	memcpy(iwe.u.ap_addr.sa_data, bss->address, 6);
 	iwe.u.ap_addr.sa_family = ARPHRD_ETHER;
 	iwe.cmd = SIOCGIWAP;
-	current_ev = iwe_stream_add_event(info, current_ev, end_buf,
-					  &iwe, IW_EV_ADDR_LEN);
+	current_ev =
+	    iwe_stream_add_event(current_ev, end_buf, &iwe, IW_EV_ADDR_LEN);
 
 	/* The following entries will be displayed in the same order we give them */
 
@@ -594,7 +593,7 @@ prism54_translate_bss(struct net_device *ndev, struct iw_request_info *info,
 	iwe.u.data.length = bss->ssid.length;
 	iwe.u.data.flags = 1;
 	iwe.cmd = SIOCGIWESSID;
-	current_ev = iwe_stream_add_point(info, current_ev, end_buf,
+	current_ev = iwe_stream_add_point(current_ev, end_buf,
 					  &iwe, bss->ssid.octets);
 
 	/* Capabilities */
@@ -611,8 +610,9 @@ prism54_translate_bss(struct net_device *ndev, struct iw_request_info *info,
 		iwe.u.mode = IW_MODE_ADHOC;
 	iwe.cmd = SIOCGIWMODE;
 	if (iwe.u.mode)
-		current_ev = iwe_stream_add_event(info, current_ev, end_buf,
-						  &iwe, IW_EV_UINT_LEN);
+		current_ev =
+		    iwe_stream_add_event(current_ev, end_buf, &iwe,
+					 IW_EV_UINT_LEN);
 
 	/* Encryption capability */
 	if (cap & CAP_CRYPT)
@@ -621,15 +621,14 @@ prism54_translate_bss(struct net_device *ndev, struct iw_request_info *info,
 		iwe.u.data.flags = IW_ENCODE_DISABLED;
 	iwe.u.data.length = 0;
 	iwe.cmd = SIOCGIWENCODE;
-	current_ev = iwe_stream_add_point(info, current_ev, end_buf,
-					  &iwe, NULL);
+	current_ev = iwe_stream_add_point(current_ev, end_buf, &iwe, NULL);
 
 	/* Add frequency. (short) bss->channel is the frequency in MHz */
 	iwe.u.freq.m = bss->channel;
 	iwe.u.freq.e = 6;
 	iwe.cmd = SIOCGIWFREQ;
-	current_ev = iwe_stream_add_event(info, current_ev, end_buf,
-					  &iwe, IW_EV_FREQ_LEN);
+	current_ev =
+	    iwe_stream_add_event(current_ev, end_buf, &iwe, IW_EV_FREQ_LEN);
 
 	/* Add quality statistics */
 	iwe.u.qual.level = bss->rssi;
@@ -637,20 +636,20 @@ prism54_translate_bss(struct net_device *ndev, struct iw_request_info *info,
 	/* do a simple SNR for quality */
 	iwe.u.qual.qual = bss->rssi - noise;
 	iwe.cmd = IWEVQUAL;
-	current_ev = iwe_stream_add_event(info, current_ev, end_buf,
-					  &iwe, IW_EV_QUAL_LEN);
+	current_ev =
+	    iwe_stream_add_event(current_ev, end_buf, &iwe, IW_EV_QUAL_LEN);
 
 	/* Add WPA/RSN Information Element, if any */
 	wpa_ie_len = prism54_wpa_bss_ie_get(priv, bss->address, wpa_ie);
 	if (wpa_ie_len > 0) {
 		iwe.cmd = IWEVGENIE;
 		iwe.u.data.length = min(wpa_ie_len, (size_t)MAX_WPA_IE_LEN);
-		current_ev = iwe_stream_add_point(info, current_ev, end_buf,
-						  &iwe, wpa_ie);
+		current_ev = iwe_stream_add_point(current_ev, end_buf,
+				&iwe, wpa_ie);
 	}
 	/* Do the bitrates */
 	{
-		char *current_val = current_ev + iwe_stream_lcp_len(info);
+		char *	current_val = current_ev + IW_EV_LCP_LEN;
 		int i;
 		int mask;
 
@@ -663,14 +662,14 @@ prism54_translate_bss(struct net_device *ndev, struct iw_request_info *info,
 		for(i = 0; i < sizeof(scan_rate_list); i++) {
 			if(bss->rates & mask) {
 				iwe.u.bitrate.value = (scan_rate_list[i] * 500000);
-				current_val = iwe_stream_add_value(
-					info, current_ev, current_val,
-					end_buf, &iwe, IW_EV_PARAM_LEN);
+				current_val = iwe_stream_add_value(current_ev, current_val,
+								   end_buf, &iwe,
+								   IW_EV_PARAM_LEN);
 			}
 			mask <<= 1;
 		}
 		/* Check if we added any event */
-		if ((current_val - current_ev) > iwe_stream_lcp_len(info))
+		if ((current_val - current_ev) > IW_EV_LCP_LEN)
 			current_ev = current_val;
 	}
 
@@ -711,7 +710,7 @@ prism54_get_scan(struct net_device *ndev, struct iw_request_info *info,
 
 	/* ok now, scan the list and translate its info */
 	for (i = 0; i < (int) bsslist->nr; i++) {
-		current_ev = prism54_translate_bss(ndev, info, current_ev,
+		current_ev = prism54_translate_bss(ndev, current_ev,
 						   extra + dwrq->length,
 						   &(bsslist->bsslist[i]),
 						   noise);
@@ -2705,7 +2704,6 @@ prism2_ioctl_scan_req(struct net_device *ndev,
                      struct prism2_hostapd_param *param)
 {
 	islpci_private *priv = netdev_priv(ndev);
-	struct iw_request_info info;
 	int i, rvalue;
 	struct obj_bsslist *bsslist;
 	u32 noise = 0;
@@ -2729,12 +2727,9 @@ prism2_ioctl_scan_req(struct net_device *ndev,
 	rvalue |= mgt_get_request(priv, DOT11_OID_BSSLIST, 0, NULL, &r);
 	bsslist = r.ptr;
 
-	info.cmd = PRISM54_HOSTAPD;
-	info.flags = 0;
-
 	/* ok now, scan the list and translate its info */
 	for (i = 0; i < min(IW_MAX_AP, (int) bsslist->nr); i++)
-		current_ev = prism54_translate_bss(ndev, &info, current_ev,
+		current_ev = prism54_translate_bss(ndev, current_ev,
 						   extra + IW_SCAN_MAX_DATA,
 						   &(bsslist->bsslist[i]),
 						   noise);
