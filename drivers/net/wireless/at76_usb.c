@@ -3322,12 +3322,14 @@ static void at76_ethtool_get_drvinfo(struct net_device *netdev,
 {
 	struct at76_priv *priv = netdev_priv(netdev);
 
-	strncpy(info->driver, DRIVER_NAME, sizeof(info->driver));
+	strncpy(info->driver, DRIVER_NAME, sizeof(info->driver) - 1);
+
 	strncpy(info->version, DRIVER_VERSION, sizeof(info->version));
+	info->version[sizeof(info->version) - 1] = '\0';
 
 	usb_make_path(priv->udev, info->bus_info, sizeof(info->bus_info));
 
-	snprintf(info->fw_version, sizeof(info->fw_version), "%d.%d.%d-%d",
+	snprintf(info->fw_version, sizeof(info->fw_version) - 1, "%d.%d.%d-%d",
 		 priv->fw_version.major, priv->fw_version.minor,
 		 priv->fw_version.patch, priv->fw_version.build);
 }
