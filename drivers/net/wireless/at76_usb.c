@@ -1910,13 +1910,8 @@ static void at76_dwork_hw_scan(struct work_struct *work)
 
 	ieee80211_scan_completed(priv->hw);
 
-	if (is_valid_ether_addr(priv->bssid)) {
-		ieee80211_start_queues(priv->hw);
+	if (is_valid_ether_addr(priv->bssid))
 		at76_join(priv);
-	} else
-		ieee80211_stop_queues(priv->hw);
-
-	ieee80211_start_queues(priv->hw);
 
 // CHECKME:	ieee80211_wake_queues(priv->hw);
 
@@ -1979,13 +1974,10 @@ static int at76_config(struct ieee80211_hw *hw, struct ieee80211_conf *conf)
 
 	priv->channel = conf->channel->hw_value;
 
-	if (is_valid_ether_addr(priv->bssid)) {
+	if (is_valid_ether_addr(priv->bssid))
 		at76_join(priv);
-		ieee80211_start_queues(priv->hw);
-	} else {
-		ieee80211_stop_queues(priv->hw);
+	else
 		at76_start_monitor(priv);
-	};
 
 	mutex_unlock(&priv->mtx);
 
