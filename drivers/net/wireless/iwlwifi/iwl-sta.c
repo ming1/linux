@@ -156,6 +156,8 @@ int iwl_send_add_sta(struct iwl_priv *priv,
 }
 EXPORT_SYMBOL(iwl_send_add_sta);
 
+#ifdef CONFIG_IWL4965_HT
+
 static void iwl_set_ht_add_station(struct iwl_priv *priv, u8 index,
 				   struct ieee80211_ht_info *sta_ht_inf)
 {
@@ -200,6 +202,12 @@ static void iwl_set_ht_add_station(struct iwl_priv *priv, u8 index,
  done:
 	return;
 }
+#else
+static inline void iwl_set_ht_add_station(struct iwl_priv *priv, u8 index,
+					struct ieee80211_ht_info *sta_ht_info)
+{
+}
+#endif
 
 /**
  * iwl_add_station_flags - Add station to tables in driver and device
@@ -834,6 +842,7 @@ int iwl_rxon_add_station(struct iwl_priv *priv, const u8 *addr, int is_ap)
 	u8 sta_id;
 
 	/* Add station to device's station table */
+#ifdef CONFIG_IWL4965_HT
 	struct ieee80211_conf *conf = &priv->hw->conf;
 	struct ieee80211_ht_info *cur_ht_config = &conf->ht_conf;
 
@@ -843,6 +852,7 @@ int iwl_rxon_add_station(struct iwl_priv *priv, const u8 *addr, int is_ap)
 		sta_id = iwl_add_station_flags(priv, addr, is_ap,
 						   0, cur_ht_config);
 	else
+#endif /* CONFIG_IWL4965_HT */
 		sta_id = iwl_add_station_flags(priv, addr, is_ap,
 						   0, NULL);
 
