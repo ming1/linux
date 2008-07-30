@@ -11,7 +11,6 @@ enum b43_dyndbg {		/* Dynamic debugging features */
 	B43_DBG_PWORK_FAST,
 	B43_DBG_PWORK_STOP,
 	B43_DBG_LO,
-	B43_DBG_FIRMWARE,
 	__B43_NR_DYNDBG,
 };
 
