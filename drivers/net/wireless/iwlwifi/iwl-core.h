@@ -86,7 +86,6 @@ struct iwl_hcmd_ops {
 	int (*rxon_assoc)(struct iwl_priv *priv);
 };
 struct iwl_hcmd_utils_ops {
-	u16 (*get_hcmd_size)(u8 cmd_id, u16 len);
 	int (*enqueue_hcmd)(struct iwl_priv *priv, struct iwl_host_cmd *cmd);
 	u16 (*build_addsta_hcmd)(const struct iwl_addsta_cmd *cmd, u8 *data);
 #ifdef CONFIG_IWLWIFI_RUN_TIME_CALIB
@@ -303,5 +302,6 @@ static inline int iwl_send_rxon_assoc(struct iwl_priv *priv)
 {
 	return priv->cfg->ops->hcmd->rxon_assoc(priv);
 }
+
 
 #endif /* __iwl_core_h__ */
