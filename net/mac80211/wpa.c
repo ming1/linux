@@ -24,22 +24,46 @@ static int ieee80211_get_hdr_info(const struct sk_buff *skb, u8 **sa, u8 **da,
 {
 	struct ieee80211_hdr *hdr;
 	size_t hdrlen;
-	__le16 fc;
+	u16 fc;
+	int a4_included;
+	u8 *pos;
 
-	hdr = (struct ieee80211_hdr *)skb->data;
-	fc = hdr->frame_control;
+	hdr = (struct ieee80211_hdr *) skb->data;
+	fc = le16_to_cpu(hdr->frame_control);
 
-	hdrlen = ieee80211_hdrlen(fc);
+	hdrlen = 24;
+	if ((fc & (IEEE80211_FCTL_FROMDS | IEEE80211_FCTL_TODS)) ==
+	    (IEEE80211_FCTL_FROMDS | IEEE80211_FCTL_TODS)) {
+		hdrlen += ETH_ALEN;
+		*sa = hdr->addr4;
+		*da = hdr->addr3;
+	} else if (fc & IEEE80211_FCTL_FROMDS) {
+		*sa = hdr->addr3;
+		*da = hdr->addr1;
+	} else if (fc & IEEE80211_FCTL_TODS) {
+		*sa = hdr->addr2;
+		*da = hdr->addr3;
+	} else {
+		*sa = hdr->addr2;
+		*da = hdr->addr1;
+	}
 
-	*sa = ieee80211_get_SA(hdr);
-	*da = ieee80211_get_DA(hdr);
+	if (fc & 0x80)
+		hdrlen += 2;
 
 	*data = skb->data + hdrlen;
 	*data_len = skb->len - hdrlen;
 
-	if (ieee80211_is_data_qos(fc))
-		*qos_tid = (*ieee80211_get_qos_ctl(hdr) & 0x0f) | 0x80;
-	else
+	a4_included = (fc & (IEEE80211_FCTL_TODS | IEEE80211_FCTL_FROMDS)) ==
+		(IEEE80211_FCTL_TODS | IEEE80211_FCTL_FROMDS);
+	if ((fc & IEEE80211_FCTL_FTYPE) == IEEE80211_FTYPE_DATA &&
+	    fc & IEEE80211_STYPE_QOS_DATA) {
+		pos = (u8 *) &hdr->addr4;
+		if (a4_included)
+			pos += 6;
+		*qos_tid = pos[0] & 0x0f;
+		*qos_tid |= 0x80; /* qos_included flag */
+	} else
 		*qos_tid = 0;
 
 	return skb->len < hdrlen ? -1 : 0;
@@ -162,8 +186,8 @@ static int tkip_encrypt_skb(struct ieee80211_tx_data *tx, struct sk_buff *skb)
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *) skb->data;
 	struct ieee80211_key *key = tx->key;
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
-	unsigned int hdrlen;
-	int len, tail;
+	int hdrlen, len, tail;
+	u16 fc;
 	u8 *pos;
 
 	info->control.icv_len = TKIP_ICV_LEN;
@@ -176,7 +200,8 @@ static int tkip_encrypt_skb(struct ieee80211_tx_data *tx, struct sk_buff *skb)
 		return 0;
 	}
 
-	hdrlen = ieee80211_hdrlen(hdr->frame_control);
+	fc = le16_to_cpu(hdr->frame_control);
+	hdrlen = ieee80211_get_hdrlen(fc);
 	len = skb->len - hdrlen;
 
 	if (tx->key->flags & KEY_FLAG_UPLOADED_TO_HARDWARE)
@@ -247,12 +272,14 @@ ieee80211_rx_result
 ieee80211_crypto_tkip_decrypt(struct ieee80211_rx_data *rx)
 {
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *) rx->skb->data;
+	u16 fc;
 	int hdrlen, res, hwaccel = 0, wpa_test = 0;
 	struct ieee80211_key *key = rx->key;
 	struct sk_buff *skb = rx->skb;
 	DECLARE_MAC_BUF(mac);
 
-	hdrlen = ieee80211_hdrlen(hdr->frame_control);
+	fc = le16_to_cpu(hdr->frame_control);
+	hdrlen = ieee80211_get_hdrlen(fc);
 
 	if ((rx->fc & IEEE80211_FCTL_FTYPE) != IEEE80211_FTYPE_DATA)
 		return RX_CONTINUE;
@@ -400,6 +427,7 @@ static int ccmp_encrypt_skb(struct ieee80211_tx_data *tx, struct sk_buff *skb)
 	struct ieee80211_key *key = tx->key;
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	int hdrlen, len, tail;
+	u16 fc;
 	u8 *pos, *pn, *b_0, *aad, *scratch;
 	int i;
 
@@ -418,7 +446,8 @@ static int ccmp_encrypt_skb(struct ieee80211_tx_data *tx, struct sk_buff *skb)
 	b_0 = scratch + 3 * AES_BLOCK_LEN;
 	aad = scratch + 4 * AES_BLOCK_LEN;
 
-	hdrlen = ieee80211_hdrlen(hdr->frame_control);
+	fc = le16_to_cpu(hdr->frame_control);
+	hdrlen = ieee80211_get_hdrlen(fc);
 	len = skb->len - hdrlen;
 
 	if (key->flags & KEY_FLAG_UPLOADED_TO_HARDWARE)
@@ -487,6 +516,7 @@ ieee80211_rx_result
 ieee80211_crypto_ccmp_decrypt(struct ieee80211_rx_data *rx)
 {
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *) rx->skb->data;
+	u16 fc;
 	int hdrlen;
 	struct ieee80211_key *key = rx->key;
 	struct sk_buff *skb = rx->skb;
@@ -494,7 +524,8 @@ ieee80211_crypto_ccmp_decrypt(struct ieee80211_rx_data *rx)
 	int data_len;
 	DECLARE_MAC_BUF(mac);
 
-	hdrlen = ieee80211_hdrlen(hdr->frame_control);
+	fc = le16_to_cpu(hdr->frame_control);
+	hdrlen = ieee80211_get_hdrlen(fc);
 
 	if ((rx->fc & IEEE80211_FCTL_FTYPE) != IEEE80211_FTYPE_DATA)
 		return RX_CONTINUE;
