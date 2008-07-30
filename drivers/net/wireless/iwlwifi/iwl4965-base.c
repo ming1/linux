@@ -575,14 +575,25 @@ static void iwl4965_ht_conf(struct iwl_priv *priv,
 /*
  * QoS  support
 */
-static void iwl_activate_qos(struct iwl_priv *priv, u8 force)
+static int iwl4965_send_qos_params_command(struct iwl_priv *priv,
+				       struct iwl4965_qosparam_cmd *qos)
 {
+
+	return iwl_send_cmd_pdu(priv, REPLY_QOS_PARAM,
+				sizeof(struct iwl4965_qosparam_cmd), qos);
+}
+
+static void iwl4965_activate_qos(struct iwl_priv *priv, u8 force)
+{
+	unsigned long flags;
+
 	if (test_bit(STATUS_EXIT_PENDING, &priv->status))
 		return;
 
 	if (!priv->qos_data.qos_enable)
 		return;
 
+	spin_lock_irqsave(&priv->lock, flags);
 	priv->qos_data.def_qos_parm.qos_flags = 0;
 
 	if (priv->qos_data.qos_cap.q_AP.queue_request &&
@@ -596,14 +607,15 @@ static void iwl_activate_qos(struct iwl_priv *priv, u8 force)
 	if (priv->current_ht_config.is_ht)
 		priv->qos_data.def_qos_parm.qos_flags |= QOS_PARAM_FLG_TGN_MSK;
 
+	spin_unlock_irqrestore(&priv->lock, flags);
+
 	if (force || iwl_is_associated(priv)) {
 		IWL_DEBUG_QOS("send QoS cmd with Qos active=%d FLAGS=0x%X\n",
 				priv->qos_data.qos_active,
 				priv->qos_data.def_qos_parm.qos_flags);
 
-		iwl_send_cmd_pdu_async(priv, REPLY_QOS_PARAM,
-				       sizeof(struct iwl_qosparam_cmd),
-				       &priv->qos_data.def_qos_parm, NULL);
+		iwl4965_send_qos_params_command(priv,
+				&(priv->qos_data.def_qos_parm));
 	}
 }
 
@@ -2412,7 +2424,6 @@ static void iwl4965_post_associate(struct iwl_priv *priv)
 	struct ieee80211_conf *conf = NULL;
 	int ret = 0;
 	DECLARE_MAC_BUF(mac);
-	unsigned long flags;
 
 	if (priv->iw_mode == IEEE80211_IF_TYPE_AP) {
 		IWL_ERROR("%s Should not be called in AP mode\n", __FUNCTION__);
@@ -2502,9 +2513,7 @@ static void iwl4965_post_associate(struct iwl_priv *priv)
 	if (priv->iw_mode == IEEE80211_IF_TYPE_IBSS)
 		priv->assoc_station_added = 1;
 
-	spin_lock_irqsave(&priv->lock, flags);
-	iwl_activate_qos(priv, 0);
-	spin_unlock_irqrestore(&priv->lock, flags);
+	iwl4965_activate_qos(priv, 0);
 
 	iwl_power_update_mode(priv, 0);
 	/* we have just associated, don't start scan too early */
@@ -2836,7 +2845,6 @@ out:
 static void iwl4965_config_ap(struct iwl_priv *priv)
 {
 	int ret = 0;
-	unsigned long flags;
 
 	if (test_bit(STATUS_EXIT_PENDING, &priv->status))
 		return;
@@ -2884,9 +2892,7 @@ static void iwl4965_config_ap(struct iwl_priv *priv)
 		/* restore RXON assoc */
 		priv->staging_rxon.filter_flags |= RXON_FILTER_ASSOC_MSK;
 		iwl4965_commit_rxon(priv);
-		spin_lock_irqsave(&priv->lock, flags);
-		iwl_activate_qos(priv, 1);
-		spin_unlock_irqrestore(&priv->lock, flags);
+		iwl4965_activate_qos(priv, 1);
 		iwl_rxon_add_station(priv, iwl_bcast_addr, 0);
 	}
 	iwl4965_send_beacon_cmd(priv);
@@ -3334,12 +3340,15 @@ static int iwl4965_mac_conf_tx(struct ieee80211_hw *hw, u16 queue,
 	priv->qos_data.def_qos_parm.ac[q].reserved1 = 0;
 	priv->qos_data.qos_active = 1;
 
-	if (priv->iw_mode == IEEE80211_IF_TYPE_AP)
-		iwl_activate_qos(priv, 1);
-	else if (priv->assoc_id && iwl_is_associated(priv))
-		iwl_activate_qos(priv, 0);
-
 	spin_unlock_irqrestore(&priv->lock, flags);
+
+	mutex_lock(&priv->mutex);
+	if (priv->iw_mode == IEEE80211_IF_TYPE_AP)
+		iwl4965_activate_qos(priv, 1);
+	else if (priv->assoc_id && iwl_is_associated(priv))
+		iwl4965_activate_qos(priv, 0);
+
+	mutex_unlock(&priv->mutex);
 
 	IWL_DEBUG_MAC80211("leave\n");
 	return 0;
