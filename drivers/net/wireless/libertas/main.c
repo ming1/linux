@@ -1167,8 +1167,8 @@ void lbs_remove_card(struct lbs_private *priv)
 
 	dev = priv->dev;
 
-	cancel_delayed_work_sync(&priv->scan_work);
-	cancel_delayed_work_sync(&priv->assoc_work);
+	cancel_delayed_work(&priv->scan_work);
+	cancel_delayed_work(&priv->assoc_work);
 	destroy_workqueue(priv->work_thread);
 
 	if (priv->psmode == LBS802_11POWERMODEMAX_PSP) {
@@ -1268,9 +1268,6 @@ void lbs_stop_card(struct lbs_private *priv)
 
 	lbs_deb_enter(LBS_DEB_MAIN);
 
-	if (!priv)
-		goto out;
-
 	netif_stop_queue(priv->dev);
 	netif_carrier_off(priv->dev);
 
@@ -1280,7 +1277,6 @@ void lbs_stop_card(struct lbs_private *priv)
 		device_remove_file(&dev->dev, &dev_attr_lbs_mesh);
 
 	/* Flush pending command nodes */
-	del_timer_sync(&priv->command_timer);
 	spin_lock_irqsave(&priv->driver_lock, flags);
 	list_for_each_entry(cmdnode, &priv->cmdpendingq, list) {
 		cmdnode->result = -ENOENT;
@@ -1291,7 +1287,6 @@ void lbs_stop_card(struct lbs_private *priv)
 
 	unregister_netdev(dev);
 
-out:
 	lbs_deb_leave(LBS_DEB_MAIN);
 }
 EXPORT_SYMBOL_GPL(lbs_stop_card);
