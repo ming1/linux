@@ -662,10 +662,10 @@ static int iwl5000_alive_notify(struct iwl_priv *priv)
 	}
 
 	iwl_write_prph(priv, IWL50_SCD_INTERRUPT_MASK,
-			IWL_MASK(0, priv->hw_params.max_txq_num));
+				 (1 << priv->hw_params.max_txq_num) - 1);
 
-	/* Activate all Tx DMA/FIFO channels */
-	priv->cfg->ops->lib->txq_set_sched(priv, IWL_MASK(0, 7));
+	iwl_write_prph(priv, IWL50_SCD_TXFACT,
+				 SCD_TXFACT_REG_TXFIFO_MASK(0, 7));
 
 	iwl5000_set_wr_ptrs(priv, IWL_CMD_QUEUE_NUM, 0);
 	/* map qos queues to fifos one-to-one */
@@ -839,13 +839,25 @@ static u16 iwl5000_build_addsta_hcmd(const struct iwl_addsta_cmd *cmd, u8 *data)
 }
 
 
-/*
- * Activate/Deactivat Tx DMA/FIFO channels according tx fifos mask
- * must be called under priv->lock and mac access
- */
-static void iwl5000_txq_set_sched(struct iwl_priv *priv, u32 mask)
+static int iwl5000_disable_tx_fifo(struct iwl_priv *priv)
 {
-	iwl_write_prph(priv, IWL50_SCD_TXFACT, mask);
+	unsigned long flags;
+	int ret;
+
+	spin_lock_irqsave(&priv->lock, flags);
+
+	ret = iwl_grab_nic_access(priv);
+	if (unlikely(ret)) {
+		IWL_ERROR("Tx fifo reset failed");
+		spin_unlock_irqrestore(&priv->lock, flags);
+		return ret;
+	}
+
+	iwl_write_prph(priv, IWL50_SCD_TXFACT, 0);
+	iwl_release_nic_access(priv);
+	spin_unlock_irqrestore(&priv->lock, flags);
+
+	return 0;
 }
 
 /* Currently 5000 is the supperset of everything */
@@ -882,7 +894,7 @@ static struct iwl_lib_ops iwl5000_lib = {
 	.free_shared_mem = iwl5000_free_shared_mem,
 	.shared_mem_rx_idx = iwl5000_shared_mem_rx_idx,
 	.txq_update_byte_cnt_tbl = iwl5000_txq_update_byte_cnt_tbl,
-	.txq_set_sched = iwl5000_txq_set_sched,
+	.disable_tx_fifo = iwl5000_disable_tx_fifo,
 	.rx_handler_setup = iwl5000_rx_handler_setup,
 	.is_valid_rtc_data_addr = iwl5000_hw_valid_rtc_data_addr,
 	.load_ucode = iwl5000_load_ucode,
