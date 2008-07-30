@@ -523,17 +523,14 @@ static int fill_ctrlset(struct zd_mac *mac,
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *) skb->data;
 	unsigned int frag_len = skb->len + FCS_LEN;
 	unsigned int packet_length;
-	struct ieee80211_rate *txrate;
 	struct zd_ctrlset *cs = (struct zd_ctrlset *)
 		skb_push(skb, sizeof(struct zd_ctrlset));
 
 	ZD_ASSERT(frag_len <= 0xffff);
 
-	txrate = ieee80211_get_tx_rate(mac->hw, control);
-
-	cs->modulation = txrate->hw_value;
+	cs->modulation = control->tx_rate->hw_value;
 	if (control->flags & IEEE80211_TXCTL_SHORT_PREAMBLE)
-		cs->modulation = txrate->hw_value_short;
+		cs->modulation = control->tx_rate->hw_value_short;
 
 	cs->tx_length = cpu_to_le16(frag_len);
 
