@@ -62,9 +62,14 @@
 #ifndef __iwl_calib_h__
 #define __iwl_calib_h__
 
-#include "iwl-dev.h"
+#include <linux/kernel.h>
+#include <linux/module.h>
+#include <linux/version.h>
+
+#include <net/mac80211.h>
+#include "iwl-eeprom.h"
 #include "iwl-core.h"
-#include "iwl-commands.h"
+#include "iwl-dev.h"
 
 void iwl_chain_noise_calibration(struct iwl_priv *priv,
 				struct iwl4965_notif_statistics *stat_resp);
