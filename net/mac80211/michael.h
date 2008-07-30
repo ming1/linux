@@ -14,10 +14,6 @@
 
 #define MICHAEL_MIC_LEN 8
 
-struct michael_mic_ctx {
-	u32 l, r;
-};
-
 void michael_mic(u8 *key, u8 *da, u8 *sa, u8 priority,
 		 u8 *data, size_t data_len, u8 *mic);
 
