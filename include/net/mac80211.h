@@ -42,7 +42,7 @@
  * tasklet function.
  *
  * NOTE: If the driver opts to use the _irqsafe() functions, it may not also
- *	 use the non-IRQ-safe functions!
+ *	 use the non-irqsafe functions!
  */
 
 /**
@@ -85,7 +85,7 @@ enum ieee80211_notification_types {
  * struct ieee80211_ht_bss_info - describing BSS's HT characteristics
  *
  * This structure describes most essential parameters needed
- * to describe 802.11n HT characteristics in a BSS.
+ * to describe 802.11n HT characteristics in a BSS
  *
  * @primary_channel: channel number of primery channel
  * @bss_cap: 802.11n's general BSS capabilities (e.g. channel width)
@@ -201,9 +201,9 @@ struct ieee80211_bss_conf {
 };
 
 /**
- * enum mac80211_tx_control_flags - flags to describe transmission information/status
+ * enum mac80211_tx_flags - flags to transmission information/status
  *
- * These flags are used with the @flags member of &ieee80211_tx_info.
+ * These flags are used with the @flags member of &ieee80211_tx_info
  *
  * @IEEE80211_TX_CTL_REQ_TX_STATUS: request TX status callback for this frame.
  * @IEEE80211_TX_CTL_DO_NOT_ENCRYPT: send this frame without encryption;
@@ -212,12 +212,11 @@ struct ieee80211_bss_conf {
  * @IEEE80211_TX_CTL_USE_CTS_PROTECT: use CTS protection for the frame (e.g.,
  *	for combined 802.11g / 802.11b networks)
  * @IEEE80211_TX_CTL_NO_ACK: tell the low level not to wait for an ack
- * @IEEE80211_TX_CTL_RATE_CTRL_PROBE: TBD
+ * @IEEE80211_TX_CTL_RATE_CTRL_PROBE
  * @IEEE80211_TX_CTL_CLEAR_PS_FILT: clear powersave filter for destination
  *	station
- * @IEEE80211_TX_CTL_REQUEUE: TBD
+ * @IEEE80211_TX_CTL_REQUEUE:
  * @IEEE80211_TX_CTL_FIRST_FRAGMENT: this is a first fragment of the frame
- * @IEEE80211_TX_CTL_SHORT_PREAMBLE: TBD
  * @IEEE80211_TX_CTL_LONG_RETRY_LIMIT: this frame should be send using the
  *	through set_retry_limit configured long retry value
  * @IEEE80211_TX_CTL_EAPOL_FRAME: internal to mac80211
@@ -231,7 +230,6 @@ struct ieee80211_bss_conf {
  * @IEEE80211_TX_CTL_40_MHZ_WIDTH: send this frame using 40 Mhz channel width
  * @IEEE80211_TX_CTL_DUP_DATA: duplicate data frame on both 20 Mhz channels
  * @IEEE80211_TX_CTL_SHORT_GI: send this frame using short guard interval
- * @IEEE80211_TX_CTL_INJECTED: TBD
  * @IEEE80211_TX_STAT_TX_FILTERED: The frame was not transmitted
  *	because the destination STA was in powersave mode.
  * @IEEE80211_TX_STAT_ACK: Frame was acknowledged
@@ -282,12 +280,6 @@ enum mac80211_tx_control_flags {
  *  (3) TX status information - driver tells mac80211 what happened
  *
  * @flags: transmit info flags, defined above
- * @band: TBD
- * @tx_rate_idx: TBD
- * @antenna_sel_tx: TBD
- * @control: union for control data
- * @status: union for status data
- * @driver_data: array of driver_data pointers
  * @retry_count: number of retries
  * @excessive_retries: set to 1 if the frame was retried many times
  *	but not acknowledged
@@ -570,8 +562,8 @@ enum ieee80211_key_alg {
 
 /**
  * enum ieee80211_key_len - key length
- * @LEN_WEP40: WEP 5-byte long key
- * @LEN_WEP104: WEP 13-byte long key
+ * @WEP40: WEP 5 byte long key
+ * @WEP104: WEP 13 byte long key
  */
 enum ieee80211_key_len {
 	LEN_WEP40 = 5,
@@ -648,7 +640,7 @@ enum set_key_cmd {
  * enum sta_notify_cmd - sta notify command
  *
  * Used with the sta_notify() callback in &struct ieee80211_ops, this
- * indicates addition and removal of a station to station table.
+ * indicates addition and removal of a station to station table
  *
  * @STA_NOTIFY_ADD: a station was added to the station table
  * @STA_NOTIFY_REMOVE: a station being removed from the station table
@@ -1348,7 +1340,7 @@ void ieee80211_unregister_hw(struct ieee80211_hw *hw);
  *
  * This function frees everything that was allocated, including the
  * private data for the driver. You must call ieee80211_unregister_hw()
- * before calling this function.
+ * before calling this function
  *
  * @hw: the hardware to free
  */
@@ -1419,7 +1411,7 @@ void ieee80211_tx_status(struct ieee80211_hw *hw,
 			 struct sk_buff *skb);
 
 /**
- * ieee80211_tx_status_irqsafe - IRQ-safe transmit status callback
+ * ieee80211_tx_status_irqsafe - irq-safe transmit status callback
  *
  * Like ieee80211_tx_status() but can be called in IRQ context
  * (internally defers to a tasklet.)
@@ -1597,8 +1589,6 @@ unsigned int ieee80211_hdrlen(__le16 fc);
  * @keyconf: the parameter passed with the set key
  * @skb: the skb for which the key is needed
  * @rc4key: a buffer to which the key will be written
- * @type: TBD
- * @key: TBD
  */
 void ieee80211_get_tkip_key(struct ieee80211_key_conf *keyconf,
 				struct sk_buff *skb,
@@ -1649,7 +1639,7 @@ void ieee80211_wake_queues(struct ieee80211_hw *hw);
 void ieee80211_scan_completed(struct ieee80211_hw *hw);
 
 /**
- * ieee80211_iterate_active_interfaces - iterate active interfaces
+ * ieee80211_iterate_active_interfaces- iterate active interfaces
  *
  * This function iterates over the interfaces associated with a given
  * hardware that are currently active and calls the callback for them.
@@ -1716,7 +1706,7 @@ void ieee80211_start_tx_ba_cb(struct ieee80211_hw *hw, u8 *ra, u16 tid);
  *
  * This function must be called by low level driver once it has
  * finished with preparations for the BA session.
- * This version of the function is IRQ-safe.
+ * This version of the function is irq safe.
  */
 void ieee80211_start_tx_ba_cb_irqsafe(struct ieee80211_hw *hw, const u8 *ra,
 				      u16 tid);
@@ -1756,7 +1746,7 @@ void ieee80211_stop_tx_ba_cb(struct ieee80211_hw *hw, u8 *ra, u8 tid);
  *
  * This function must be called by low level driver once it has
  * finished with preparations for the BA session tear down.
- * This version of the function is IRQ-safe.
+ * This version of the function is irq safe.
  */
 void ieee80211_stop_tx_ba_cb_irqsafe(struct ieee80211_hw *hw, const u8 *ra,
 				     u16 tid);
@@ -1764,7 +1754,7 @@ void ieee80211_stop_tx_ba_cb_irqsafe(struct ieee80211_hw *hw, const u8 *ra,
 /**
  * ieee80211_notify_mac - low level driver notification
  * @hw: pointer as obtained from ieee80211_alloc_hw().
- * @notif_type: enum ieee80211_notification_types
+ * @notification_types: enum ieee80211_notification_types
  *
  * This function must be called by low level driver to inform mac80211 of
  * low level driver status change or force mac80211 to re-assoc for low
