@@ -1524,20 +1524,15 @@ static struct iw_statistics *gelic_wl_get_wireless_stats(
 	struct gelic_eurus_cmd *cmd;
 	struct iw_statistics *is;
 	struct gelic_eurus_rssi_info *rssi;
-	void *buf;
 
 	pr_debug("%s: <-\n", __func__);
-
-	buf = (void *)__get_free_page(GFP_KERNEL);
-	if (!buf)
-		return NULL;
 
 	is = &wl->iwstat;
 	memset(is, 0, sizeof(*is));
 	cmd = gelic_eurus_sync_cmd(wl, GELIC_EURUS_CMD_GET_RSSI_CFG,
-				   buf, sizeof(*rssi));
+				   wl->buf, sizeof(*rssi));
 	if (cmd && !cmd->status && !cmd->cmd_status) {
-		rssi = buf;
+		rssi = wl->buf;
 		is->qual.level = be16_to_cpu(rssi->rssi);
 		is->qual.updated = IW_QUAL_LEVEL_UPDATED |
 			IW_QUAL_QUAL_INVALID | IW_QUAL_NOISE_INVALID;
@@ -1546,7 +1541,6 @@ static struct iw_statistics *gelic_wl_get_wireless_stats(
 		is->qual.updated = IW_QUAL_ALL_INVALID;
 
 	kfree(cmd);
-	free_page((unsigned long)buf);
 	pr_debug("%s: ->\n", __func__);
 	return is;
 }
@@ -1613,17 +1607,10 @@ static void gelic_wl_scan_complete_event(struct gelic_wl_info *wl)
 	union iwreq_data data;
 	unsigned long this_time = jiffies;
 	unsigned int data_len, i, found, r;
-	void *buf;
 	DECLARE_MAC_BUF(mac);
 
 	pr_debug("%s:start\n", __func__);
 	mutex_lock(&wl->scan_lock);
-
-	buf = (void *)__get_free_page(GFP_KERNEL);
-	if (!buf) {
-		pr_info("%s: scan buffer alloc failed\n", __func__);
-		goto out;
-	}
 
 	if (wl->scan_stat != GELIC_WL_SCAN_STAT_SCANNING) {
 		/*
@@ -1635,7 +1622,7 @@ static void gelic_wl_scan_complete_event(struct gelic_wl_info *wl)
 	}
 
 	cmd = gelic_eurus_sync_cmd(wl, GELIC_EURUS_CMD_GET_SCAN,
-				   buf, PAGE_SIZE);
+				   wl->buf, PAGE_SIZE);
 	if (!cmd || cmd->status || cmd->cmd_status) {
 		wl->scan_stat = GELIC_WL_SCAN_STAT_INIT;
 		pr_info("%s:cmd failed\n", __func__);
@@ -1662,7 +1649,7 @@ static void gelic_wl_scan_complete_event(struct gelic_wl_info *wl)
 	}
 
 	/* put them in the newtork_list */
-	for (i = 0, scan_info_size = 0, scan_info = buf;
+	for (i = 0, scan_info_size = 0, scan_info = wl->buf;
 	     scan_info_size < data_len;
 	     i++, scan_info_size += be16_to_cpu(scan_info->size),
 	     scan_info = (void *)scan_info + be16_to_cpu(scan_info->size)) {
@@ -1739,7 +1726,6 @@ static void gelic_wl_scan_complete_event(struct gelic_wl_info *wl)
 	wireless_send_event(port_to_netdev(wl_port(wl)), SIOCGIWSCAN, &data,
 			    NULL);
 out:
-	free_page((unsigned long)buf);
 	complete(&wl->scan_done);
 	mutex_unlock(&wl->scan_lock);
 	pr_debug("%s:end\n", __func__);
@@ -1862,10 +1848,7 @@ static int gelic_wl_do_wep_setup(struct gelic_wl_info *wl)
 
 	pr_debug("%s: <-\n", __func__);
 	/* we can assume no one should uses the buffer */
-	wep = (struct gelic_eurus_wep_cfg *)__get_free_page(GFP_KERNEL);
-	if (!wep)
-		return -ENOMEM;
-
+	wep = wl->buf;
 	memset(wep, 0, sizeof(*wep));
 
 	if (wl->group_cipher_method == GELIC_WL_CIPHER_WEP) {
@@ -1915,7 +1898,6 @@ static int gelic_wl_do_wep_setup(struct gelic_wl_info *wl)
 
 	kfree(cmd);
 out:
-	free_page((unsigned long)wep);
 	pr_debug("%s: ->\n", __func__);
 	return ret;
 }
@@ -1959,10 +1941,7 @@ static int gelic_wl_do_wpa_setup(struct gelic_wl_info *wl)
 
 	pr_debug("%s: <-\n", __func__);
 	/* we can assume no one should uses the buffer */
-	wpa = (struct gelic_eurus_wpa_cfg *)__get_free_page(GFP_KERNEL);
-	if (!wpa)
-		return -ENOMEM;
-
+	wpa = wl->buf;
 	memset(wpa, 0, sizeof(*wpa));
 
 	if (!test_bit(GELIC_WL_STAT_WPA_PSK_SET, &wl->stat))
@@ -2021,7 +2000,6 @@ static int gelic_wl_do_wpa_setup(struct gelic_wl_info *wl)
 	else if (cmd->status || cmd->cmd_status)
 		ret = -ENXIO;
 	kfree(cmd);
-	free_page((unsigned long)wpa);
 	pr_debug("%s: --> %d\n", __func__, ret);
 	return ret;
 }
@@ -2040,10 +2018,7 @@ static int gelic_wl_associate_bss(struct gelic_wl_info *wl,
 	pr_debug("%s: <-\n", __func__);
 
 	/* do common config */
-	common = (struct gelic_eurus_common_cfg *)__get_free_page(GFP_KERNEL);
-	if (!common)
-		return -ENOMEM;
-
+	common = wl->buf;
 	memset(common, 0, sizeof(*common));
 	common->bss_type = cpu_to_be16(GELIC_EURUS_BSS_INFRA);
 	common->op_mode = cpu_to_be16(GELIC_EURUS_OPMODE_11BG);
@@ -2129,7 +2104,6 @@ static int gelic_wl_associate_bss(struct gelic_wl_info *wl,
 		pr_info("%s: connected\n", __func__);
 	}
 out:
-	free_page((unsigned long)common);
 	pr_debug("%s: ->\n", __func__);
 	return ret;
 }
