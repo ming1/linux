@@ -428,6 +428,8 @@ void ieee80211_iterate_active_interfaces(
 		case IEEE80211_IF_TYPE_MESH_POINT:
 			break;
 		}
+		if (sdata->dev == local->mdev)
+			continue;
 		if (netif_running(sdata->dev))
 			iterator(data, sdata->dev->dev_addr,
 				 &sdata->vif);
@@ -461,6 +463,8 @@ void ieee80211_iterate_active_interfaces_atomic(
 		case IEEE80211_IF_TYPE_MESH_POINT:
 			break;
 		}
+		if (sdata->dev == local->mdev)
+			continue;
 		if (netif_running(sdata->dev))
 			iterator(data, sdata->dev->dev_addr,
 				 &sdata->vif);
