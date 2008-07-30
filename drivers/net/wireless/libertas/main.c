@@ -702,7 +702,7 @@ static int lbs_thread(void *data)
 
 		if (shouldsleep) {
 			lbs_deb_thread("sleeping, connect_status %d, "
-				"psmode %d, psstate %d\n",
+				"ps_mode %d, ps_state %d\n",
 				priv->connect_status,
 				priv->psmode, priv->psstate);
 			spin_unlock_irq(&priv->driver_lock);
@@ -1533,11 +1533,10 @@ static void lbs_remove_rtap(struct lbs_private *priv)
 {
 	lbs_deb_enter(LBS_DEB_MAIN);
 	if (priv->rtap_net_dev == NULL)
-		goto out;
+		return;
 	unregister_netdev(priv->rtap_net_dev);
 	free_netdev(priv->rtap_net_dev);
 	priv->rtap_net_dev = NULL;
-out:
 	lbs_deb_leave(LBS_DEB_MAIN);
 }
 
