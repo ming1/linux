@@ -110,13 +110,7 @@ static int ieee80211_master_open(struct net_device *dev)
 			break;
 		}
 	}
-
-	if (res)
-		return res;
-
-	netif_start_queue(local->mdev);
-
-	return 0;
+	return res;
 }
 
 static int ieee80211_master_stop(struct net_device *dev)
