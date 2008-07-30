@@ -3445,6 +3445,7 @@ static int at76_open(struct net_device *netdev)
 		goto error;
 	}
 
+	tasklet_enable(&priv->rx_tasklet);
 	schedule_delayed_work(&priv->dwork_restart, 0);
 
 	at76_dbg(DBG_PROC_ENTRY, "%s(): end", __func__);
@@ -3462,6 +3463,7 @@ static int at76_stop(struct net_device *netdev)
 	if (mutex_lock_interruptible(&priv->mtx))
 		return -EINTR;
 
+	tasklet_disable(&priv->rx_tasklet);
 	at76_quiesce(priv);
 
 	if (!priv->device_unplugged) {
@@ -5373,6 +5375,7 @@ static struct at76_priv *at76_alloc_new_device(struct usb_device *udev)
 
 	priv->rx_tasklet.func = at76_rx_tasklet;
 	priv->rx_tasklet.data = 0;
+	tasklet_disable(&priv->rx_tasklet);
 
 	priv->pm_mode = AT76_PM_OFF;
 	priv->pm_period = 0;
@@ -5531,6 +5534,8 @@ static void at76_delete_device(struct at76_priv *priv)
 
 	/* The device is gone, don't bother turning it off */
 	priv->device_unplugged = 1;
+
+	tasklet_kill(&priv->rx_tasklet);
 
 	if (priv->netdev_registered)
 		unregister_netdev(priv->netdev);
