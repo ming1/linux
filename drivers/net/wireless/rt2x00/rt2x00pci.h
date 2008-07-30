@@ -87,14 +87,11 @@ rt2x00pci_register_multiwrite(struct rt2x00_dev *rt2x00dev,
 	memcpy_toio(rt2x00dev->csr.base + offset, value, length);
 }
 
-/**
- * rt2x00pci_write_tx_data - Initialize data for TX operation
- * @entry: The entry where the frame is located
- *
- * This function will initialize the DMA and skb descriptor
- * to prepare the entry for the actual TX operation.
+/*
+ * TX data handlers.
  */
-int rt2x00pci_write_tx_data(struct queue_entry *entry);
+int rt2x00pci_write_tx_data(struct rt2x00_dev *rt2x00dev,
+			    struct data_queue *queue, struct sk_buff *skb);
 
 /**
  * struct queue_entry_priv_pci: Per entry PCI specific information
