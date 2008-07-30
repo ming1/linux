@@ -16,28 +16,31 @@
 #include "key.h"
 #include "aes_ccm.h"
 
-static void aes_ccm_prepare(struct crypto_cipher *tfm, u8 *scratch, u8 *a)
+
+static void ieee80211_aes_encrypt(struct crypto_cipher *tfm,
+				  const u8 pt[16], u8 ct[16])
+{
+	crypto_cipher_encrypt_one(tfm, ct, pt);
+}
+
+
+static inline void aes_ccm_prepare(struct crypto_cipher *tfm, u8 *b_0, u8 *aad,
+				   u8 *b, u8 *s_0, u8 *a)
 {
 	int i;
-	u8 *b_0, *aad, *b, *s_0;
 
-	b_0 = scratch + 3 * AES_BLOCK_LEN;
-	aad = scratch + 4 * AES_BLOCK_LEN;
-	b = scratch;
-	s_0 = scratch + AES_BLOCK_LEN;
-
-	crypto_cipher_encrypt_one(tfm, b, b_0);
+	ieee80211_aes_encrypt(tfm, b_0, b);
 
 	/* Extra Authenticate-only data (always two AES blocks) */
 	for (i = 0; i < AES_BLOCK_LEN; i++)
 		aad[i] ^= b[i];
-	crypto_cipher_encrypt_one(tfm, b, aad);
+	ieee80211_aes_encrypt(tfm, aad, b);
 
 	aad += AES_BLOCK_LEN;
 
 	for (i = 0; i < AES_BLOCK_LEN; i++)
 		aad[i] ^= b[i];
-	crypto_cipher_encrypt_one(tfm, a, aad);
+	ieee80211_aes_encrypt(tfm, aad, a);
 
 	/* Mask out bits from auth-only-b_0 */
 	b_0[0] &= 0x07;
@@ -45,7 +48,7 @@ static void aes_ccm_prepare(struct crypto_cipher *tfm, u8 *scratch, u8 *a)
 	/* S_0 is used to encrypt T (= MIC) */
 	b_0[14] = 0;
 	b_0[15] = 0;
-	crypto_cipher_encrypt_one(tfm, s_0, b_0);
+	ieee80211_aes_encrypt(tfm, b_0, s_0);
 }
 
 
@@ -64,7 +67,7 @@ void ieee80211_aes_ccm_encrypt(struct crypto_cipher *tfm, u8 *scratch,
 
 	num_blocks = DIV_ROUND_UP(data_len, AES_BLOCK_LEN);
 	last_len = data_len % AES_BLOCK_LEN;
-	aes_ccm_prepare(tfm, scratch, b);
+	aes_ccm_prepare(tfm, b_0, aad, b, s_0, b);
 
 	/* Process payload blocks */
 	pos = data;
@@ -76,11 +79,11 @@ void ieee80211_aes_ccm_encrypt(struct crypto_cipher *tfm, u8 *scratch,
 		/* Authentication followed by encryption */
 		for (i = 0; i < blen; i++)
 			b[i] ^= pos[i];
-		crypto_cipher_encrypt_one(tfm, b, b);
+		ieee80211_aes_encrypt(tfm, b, b);
 
 		b_0[14] = (j >> 8) & 0xff;
 		b_0[15] = j & 0xff;
-		crypto_cipher_encrypt_one(tfm, e, b_0);
+		ieee80211_aes_encrypt(tfm, b_0, e);
 		for (i = 0; i < blen; i++)
 			*cpos++ = *pos++ ^ e[i];
 	}
@@ -104,7 +107,7 @@ int ieee80211_aes_ccm_decrypt(struct crypto_cipher *tfm, u8 *scratch,
 
 	num_blocks = DIV_ROUND_UP(data_len, AES_BLOCK_LEN);
 	last_len = data_len % AES_BLOCK_LEN;
-	aes_ccm_prepare(tfm, scratch, a);
+	aes_ccm_prepare(tfm, b_0, aad, b, s_0, a);
 
 	/* Process payload blocks */
 	cpos = cdata;
@@ -116,12 +119,13 @@ int ieee80211_aes_ccm_decrypt(struct crypto_cipher *tfm, u8 *scratch,
 		/* Decryption followed by authentication */
 		b_0[14] = (j >> 8) & 0xff;
 		b_0[15] = j & 0xff;
-		crypto_cipher_encrypt_one(tfm, b, b_0);
+		ieee80211_aes_encrypt(tfm, b_0, b);
 		for (i = 0; i < blen; i++) {
 			*pos = *cpos++ ^ b[i];
 			a[i] ^= *pos++;
 		}
-		crypto_cipher_encrypt_one(tfm, a, a);
+
+		ieee80211_aes_encrypt(tfm, a, a);
 	}
 
 	for (i = 0; i < CCMP_MIC_LEN; i++) {
