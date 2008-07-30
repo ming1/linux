@@ -70,6 +70,16 @@ DEBUGFS_READONLY_FILE(rate_ctrl_alg, 100, "%s",
 
 /* statistics stuff */
 
+static inline int rtnl_lock_local(struct ieee80211_local *local)
+{
+	rtnl_lock();
+	if (unlikely(local->reg_state != IEEE80211_DEV_REGISTERED)) {
+		rtnl_unlock();
+		return -ENODEV;
+	}
+	return 0;
+}
+
 #define DEBUGFS_STATS_FILE(name, buflen, fmt, value...)			\
 	DEBUGFS_READONLY_FILE(stats_ ##name, buflen, fmt, ##value)
 
@@ -86,7 +96,10 @@ static ssize_t format_devstat_counter(struct ieee80211_local *local,
 	if (!local->ops->get_stats)
 		return -EOPNOTSUPP;
 
-	rtnl_lock();
+	res = rtnl_lock_local(local);
+	if (res)
+		return res;
+
 	res = local->ops->get_stats(local_to_hw(local), &stats);
 	rtnl_unlock();
 	if (!res)
