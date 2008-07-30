@@ -84,17 +84,20 @@ static u8 *ieee80211_wep_add_iv(struct ieee80211_local *local,
 				struct sk_buff *skb,
 				struct ieee80211_key *key)
 {
-	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
-	unsigned int hdrlen;
+	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *) skb->data;
+	u16 fc;
+	int hdrlen;
 	u8 *newhdr;
 
-	hdr->frame_control |= cpu_to_le16(IEEE80211_FCTL_PROTECTED);
+	fc = le16_to_cpu(hdr->frame_control);
+	fc |= IEEE80211_FCTL_PROTECTED;
+	hdr->frame_control = cpu_to_le16(fc);
 
 	if (WARN_ON(skb_tailroom(skb) < WEP_ICV_LEN ||
 		    skb_headroom(skb) < WEP_IV_LEN))
 		return NULL;
 
-	hdrlen = ieee80211_hdrlen(hdr->frame_control);
+	hdrlen = ieee80211_get_hdrlen(fc);
 	newhdr = skb_push(skb, WEP_IV_LEN);
 	memmove(newhdr, newhdr + WEP_IV_LEN, hdrlen);
 	ieee80211_wep_get_iv(local, key, newhdr + hdrlen);
@@ -106,10 +109,12 @@ static void ieee80211_wep_remove_iv(struct ieee80211_local *local,
 				    struct sk_buff *skb,
 				    struct ieee80211_key *key)
 {
-	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
-	unsigned int hdrlen;
+	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *) skb->data;
+	u16 fc;
+	int hdrlen;
 
-	hdrlen = ieee80211_hdrlen(hdr->frame_control);
+	fc = le16_to_cpu(hdr->frame_control);
+	hdrlen = ieee80211_get_hdrlen(fc);
 	memmove(skb->data + WEP_IV_LEN, skb->data, hdrlen);
 	skb_pull(skb, WEP_IV_LEN);
 }
@@ -219,15 +224,17 @@ int ieee80211_wep_decrypt(struct ieee80211_local *local, struct sk_buff *skb,
 	u32 klen;
 	u8 *rc4key;
 	u8 keyidx;
-	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
-	unsigned int hdrlen;
+	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *) skb->data;
+	u16 fc;
+	int hdrlen;
 	size_t len;
 	int ret = 0;
 
-	if (!ieee80211_has_protected(hdr->frame_control))
+	fc = le16_to_cpu(hdr->frame_control);
+	if (!(fc & IEEE80211_FCTL_PROTECTED))
 		return -1;
 
-	hdrlen = ieee80211_hdrlen(hdr->frame_control);
+	hdrlen = ieee80211_get_hdrlen(fc);
 
 	if (skb->len < 8 + hdrlen)
 		return -1;
@@ -274,15 +281,17 @@ int ieee80211_wep_decrypt(struct ieee80211_local *local, struct sk_buff *skb,
 
 u8 * ieee80211_wep_is_weak_iv(struct sk_buff *skb, struct ieee80211_key *key)
 {
-	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
-	unsigned int hdrlen;
+	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *) skb->data;
+	u16 fc;
+	int hdrlen;
 	u8 *ivpos;
 	u32 iv;
 
-	if (!ieee80211_has_protected(hdr->frame_control))
+	fc = le16_to_cpu(hdr->frame_control);
+	if (!(fc & IEEE80211_FCTL_PROTECTED))
 		return NULL;
 
-	hdrlen = ieee80211_hdrlen(hdr->frame_control);
+	hdrlen = ieee80211_get_hdrlen(fc);
 	ivpos = skb->data + hdrlen;
 	iv = (ivpos[0] << 16) | (ivpos[1] << 8) | ivpos[2];
 
