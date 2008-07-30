@@ -1720,7 +1720,7 @@ static void at76_mac80211_tx_callback(struct urb *urb)
 	memset(&priv->tx_status, 0, sizeof(priv->tx_status));
 	priv->tx_skb = NULL;
 
-	ieee80211_wake_queues(priv->hw);
+	ieee80211_start_queues(priv->hw);
 }
 
 static int at76_mac80211_tx(struct ieee80211_hw *hw, struct sk_buff *skb,
@@ -1918,7 +1918,7 @@ static void at76_dwork_hw_scan(struct work_struct *work)
 	if (is_valid_ether_addr(priv->bssid))
 		at76_join(priv);
 
-	ieee80211_wake_queues(priv->hw);
+	ieee80211_start_queues(priv->hw);
 
 exit:
 	mutex_unlock(&priv->mtx);
