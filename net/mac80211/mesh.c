@@ -315,13 +315,6 @@ struct mesh_table *mesh_table_alloc(int size_order)
 	return newtbl;
 }
 
-static void __mesh_table_free(struct mesh_table *tbl)
-{
-	kfree(tbl->hash_buckets);
-	kfree(tbl->hashwlock);
-	kfree(tbl);
-}
-
 void mesh_table_free(struct mesh_table *tbl, bool free_leafs)
 {
 	struct hlist_head *mesh_hash;
@@ -337,7 +330,9 @@ void mesh_table_free(struct mesh_table *tbl, bool free_leafs)
 		}
 		spin_unlock(&tbl->hashwlock[i]);
 	}
-	__mesh_table_free(tbl);
+	kfree(tbl->hash_buckets);
+	kfree(tbl->hashwlock);
+	kfree(tbl);
 }
 
 static void ieee80211_mesh_path_timer(unsigned long data)
@@ -383,7 +378,9 @@ errcopy:
 		hlist_for_each_safe(p, q, &newtbl->hash_buckets[i])
 			tbl->free_node(p, 0);
 	}
-	__mesh_table_free(tbl);
+	kfree(newtbl->hash_buckets);
+	kfree(newtbl->hashwlock);
+	kfree(newtbl);
 endgrow:
 	return NULL;
 }
