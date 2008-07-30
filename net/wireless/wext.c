@@ -832,10 +832,11 @@ out:
  * user space and kernel space.
  */
 static int ioctl_standard_call(struct net_device *	dev,
-			       struct iwreq		*iwr,
+			       struct ifreq *		ifr,
 			       unsigned int		cmd,
 			       iw_handler		handler)
 {
+	struct iwreq *				iwr = (struct iwreq *) ifr;
 	const struct iw_ioctl_description *	descr;
 	struct iw_request_info			info;
 	int					ret = -EINVAL;
@@ -983,9 +984,10 @@ out:
 	return err;
 }
 
-static int ioctl_private_call(struct net_device *dev, struct iwreq *iwr,
+static int ioctl_private_call(struct net_device *dev, struct ifreq *ifr,
 			      unsigned int cmd, iw_handler handler)
 {
+	struct iwreq *iwr = (struct iwreq *) ifr;
 	int extra_size = 0, ret = -EINVAL;
 	const struct iw_priv_args *descr;
 	struct iw_request_info info;
@@ -1013,7 +1015,7 @@ static int ioctl_private_call(struct net_device *dev, struct iwreq *iwr,
 }
 
 /* ---------------------------------------------------------------- */
-typedef int (*wext_ioctl_func)(struct net_device *, struct iwreq *,
+typedef int (*wext_ioctl_func)(struct net_device *, struct ifreq *,
 			       unsigned int, iw_handler);
 
 /*
@@ -1025,7 +1027,6 @@ static int wireless_process_ioctl(struct net *net, struct ifreq *ifr,
 				  wext_ioctl_func standard,
 				  wext_ioctl_func private)
 {
-	struct iwreq *iwr = (struct iwreq *) ifr;
 	struct net_device *dev;
 	iw_handler	handler;
 
@@ -1040,11 +1041,11 @@ static int wireless_process_ioctl(struct net *net, struct ifreq *ifr,
 	 * Note that 'cmd' is already filtered in dev_ioctl() with
 	 * (cmd >= SIOCIWFIRST && cmd <= SIOCIWLAST) */
 	if (cmd == SIOCGIWSTATS)
-		return standard(dev, iwr, cmd,
+		return standard(dev, ifr, cmd,
 				&iw_handler_get_iwstats);
 
 	if (cmd == SIOCGIWPRIV && dev->wireless_handlers)
-		return standard(dev, iwr, cmd,
+		return standard(dev, ifr, cmd,
 				&iw_handler_get_private);
 
 	/* Basic check */
@@ -1056,9 +1057,9 @@ static int wireless_process_ioctl(struct net *net, struct ifreq *ifr,
 	if (handler) {
 		/* Standard and private are not the same */
 		if (cmd < SIOCIWFIRSTPRIV)
-			return standard(dev, iwr, cmd, handler);
+			return standard(dev, ifr, cmd, handler);
 		else
-			return private(dev, iwr, cmd, handler);
+			return private(dev, ifr, cmd, handler);
 	}
 	/* Old driver API : call driver ioctl handler */
 	if (dev->do_ioctl)
