@@ -307,8 +307,6 @@ struct iwl_cmd_meta {
 
 } __attribute__ ((packed));
 
-#define IWL_CMD_MAX_PAYLOAD 640
-
 /**
  * struct iwl_cmd
  *
@@ -334,7 +332,7 @@ struct iwl_cmd {
 		struct iwl4965_tx_beacon_cmd tx_beacon;
 		struct iwl4965_rxon_assoc_cmd rxon_assoc;
 		u8 *indirect;
-		u8 payload[IWL_CMD_MAX_PAYLOAD];
+		u8 payload[360];
 	} __attribute__ ((packed)) cmd;
 } __attribute__ ((packed));
 
