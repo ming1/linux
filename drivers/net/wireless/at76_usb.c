@@ -1832,7 +1832,7 @@ static int at76_mac80211_tx(struct ieee80211_hw *hw, struct sk_buff *skb)
 	tx_buffer->padding = padding;
 	tx_buffer->wlength = cpu_to_le16(skb->len);
 	tx_buffer->tx_rate = ieee80211_get_tx_rate(hw, info)->hw_value;
-	if (FIRMWARE_IS_WPA(priv->fw_version) && info->control.hw_key) {
+	if (FIRMWARE_IS_WPA(priv->fw_version) && !(info->flags & IEEE80211_TX_CTL_DO_NOT_ENCRYPT)) {
 		tx_buffer->key_id = (info->control.hw_key->keyidx);
 		tx_buffer->cipher_type = priv->keys[info->control.hw_key->keyidx].cipher;
 		tx_buffer->cipher_length = priv->keys[info->control.hw_key->keyidx].keylen;
