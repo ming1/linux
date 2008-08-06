@@ -47,13 +47,11 @@ struct rtl8187_rx_hdr {
 struct rtl8187b_rx_hdr {
 	__le32 flags;
 	__le64 mac_time;
-	u8 sq;
-	u8 rssi;
+	u8 noise;
+	u8 signal;
 	u8 agc;
-	u8 flags2;
-	__le16 snr_long2end;
-	s8 pwdb_g12;
-	u8 fot;
+	u8 reserved;
+	__le32 unused;
 } __attribute__((packed));
 
 /* {rtl8187,rtl8187b}_tx_info is in skb */
