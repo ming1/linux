@@ -590,10 +590,8 @@ static void rfkill_led_trigger_register(struct rfkill *rfkill)
 static void rfkill_led_trigger_unregister(struct rfkill *rfkill)
 {
 #ifdef CONFIG_RFKILL_LEDS
-	if (rfkill->led_trigger.name) {
+	if (rfkill->led_trigger.name)
 		led_trigger_unregister(&rfkill->led_trigger);
-		rfkill->led_trigger.name = NULL;
-	}
 #endif
 }
 
@@ -629,8 +627,8 @@ int rfkill_register(struct rfkill *rfkill)
 
 	error = device_add(dev);
 	if (error) {
-		rfkill_remove_switch(rfkill);
 		rfkill_led_trigger_unregister(rfkill);
+		rfkill_remove_switch(rfkill);
 		return error;
 	}
 
