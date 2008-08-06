@@ -1753,7 +1753,7 @@ static int at76_mac80211_tx(struct ieee80211_hw *hw, struct sk_buff *skb,
 	memset(tx_buffer, 0, sizeof(*tx_buffer));
 	tx_buffer->padding = padding;
 	tx_buffer->wlength = cpu_to_le16(skb->len);
-	tx_buffer->tx_rate = ieee80211_get_tx_rate(hw, control)->hw_value;
+	tx_buffer->tx_rate = control->tx_rate->hw_value;
 	memset(tx_buffer->reserved, 0, sizeof(tx_buffer->reserved));
 	memcpy(tx_buffer->packet, skb->data, skb->len);
 
