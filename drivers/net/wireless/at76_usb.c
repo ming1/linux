@@ -106,8 +106,6 @@
 
 static int at76_debug = DBG_DEFAULTS;
 
-#define FIRMWARE_IS_WPA(ver) ((ver.major == 1) && (ver.minor == 103))
-
 /* Protect against concurrent firmware loading and parsing */
 static struct mutex fw_mutex;
 
@@ -306,11 +304,6 @@ static inline int at76_is_intersil(enum board_type board)
 static inline int at76_is_503rfmd(enum board_type board)
 {
 	return (board == BOARD_503 || board == BOARD_503_ACC);
-}
-
-static inline int at76_is_505(enum board_type board)
-{
-	return (board == BOARD_505 || BOARD_505_2958);
 }
 
 static inline int at76_is_505a(enum board_type board)
@@ -1604,7 +1597,7 @@ static void at76_rx_tasklet(unsigned long param)
 
 	skb_trim(priv->rx_skb, le16_to_cpu(buf->wlength) + AT76_RX_HDRLEN);
 	at76_dbg_dump(DBG_RX_DATA, &priv->rx_skb->data[AT76_RX_HDRLEN],
-		      priv->rx_skb->len, "RX: len=%d", (int)(priv->rx_skb->len - AT76_RX_HDRLEN));
+		      priv->rx_skb->len, "RX: len=%d", priv->rx_skb->len - AT76_RX_HDRLEN);
 
 	rx_status.signal = buf->rssi;
 	rx_status.flag |= RX_FLAG_DECRYPTED;
@@ -2284,14 +2277,8 @@ static int at76_init_new_device(struct at76_priv *priv,
 
 	/* mac80211 initialisation */
 	priv->hw->wiphy->bands[IEEE80211_BAND_2GHZ] = &at76_supported_band;
-
-	if (FIRMWARE_IS_WPA(priv->fw_version) &&
-		(at76_is_503rfmd(priv->board_type) ||
-		 at76_is_505(priv->board_type)))
-		priv->hw->flags = IEEE80211_HW_SIGNAL_UNSPEC;
-	else
-		priv->hw->flags = IEEE80211_HW_RX_INCLUDES_FCS |
-				  IEEE80211_HW_SIGNAL_UNSPEC;
+	priv->hw->flags = IEEE80211_HW_RX_INCLUDES_FCS |
+			  IEEE80211_HW_SIGNAL_UNSPEC;
 
 	SET_IEEE80211_DEV(priv->hw, &interface->dev);
 	SET_IEEE80211_PERM_ADDR(priv->hw, priv->mac_addr);
