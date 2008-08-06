@@ -355,6 +355,17 @@ struct reg_domain {
 	u32 channel_map;	/* if bit N is set, channel (N+1) is allowed */
 };
 
+/* a rx data buffer to collect rx fragments */
+struct rx_data_buf {
+	u8 sender[ETH_ALEN];	/* sender address */
+	u16 seqnr;		/* sequence number */
+	u16 fragnr;		/* last fragment received */
+	unsigned long last_rx;	/* jiffies of last rx */
+	struct sk_buff *skb;	/* == NULL if entry is free */
+};
+
+#define NR_RX_DATA_BUF		8
+
 /* Data for one loaded firmware file */
 struct fwentry {
 	const char *const fwname;
@@ -460,5 +471,7 @@ struct at76_priv {
 
 /* the max padding size for tx in bytes (see calc_padding) */
 #define MAX_PADDING_SIZE	53
+
+#define MIN_FRAG_THRESHOLD 256
 
 #endif				/* _AT76_USB_H */
