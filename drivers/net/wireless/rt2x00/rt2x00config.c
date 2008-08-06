@@ -254,8 +254,6 @@ config:
 			libconf.ant.rx = default_ant->rx;
 		else if (active_ant->rx == ANTENNA_SW_DIVERSITY)
 			libconf.ant.rx = ANTENNA_B;
-		else
-			libconf.ant.rx = active_ant->rx;
 
 		if (conf->antenna_sel_tx)
 			libconf.ant.tx = conf->antenna_sel_tx;
@@ -263,8 +261,6 @@ config:
 			libconf.ant.tx = default_ant->tx;
 		else if (active_ant->tx == ANTENNA_SW_DIVERSITY)
 			libconf.ant.tx = ANTENNA_B;
-		else
-			libconf.ant.tx = active_ant->tx;
 	}
 
 	if (flags & CONFIG_UPDATE_SLOT_TIME) {
