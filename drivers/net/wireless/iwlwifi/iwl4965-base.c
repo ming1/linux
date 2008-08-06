@@ -3800,53 +3800,76 @@ static ssize_t store_power_level(struct device *d,
 				 const char *buf, size_t count)
 {
 	struct iwl_priv *priv = dev_get_drvdata(d);
-	int ret;
+	int rc;
 	int mode;
 
 	mode = simple_strtoul(buf, NULL, 0);
 	mutex_lock(&priv->mutex);
 
 	if (!iwl_is_ready(priv)) {
-		ret = -EAGAIN;
+		rc = -EAGAIN;
 		goto out;
 	}
 
-	ret = iwl_power_set_user_mode(priv, mode);
-	if (ret) {
+	rc = iwl_power_set_user_mode(priv, mode);
+	if (rc) {
 		IWL_DEBUG_MAC80211("failed setting power mode.\n");
 		goto out;
 	}
-	ret = count;
+	rc = count;
 
  out:
 	mutex_unlock(&priv->mutex);
-	return ret;
+	return rc;
 }
+
+#define MAX_WX_STRING 80
+
+/* Values are in microsecond */
+static const s32 timeout_duration[] = {
+	350000,
+	250000,
+	75000,
+	37000,
+	25000,
+};
+static const s32 period_duration[] = {
+	400000,
+	700000,
+	1000000,
+	1000000,
+	1000000
+};
 
 static ssize_t show_power_level(struct device *d,
 				struct device_attribute *attr, char *buf)
 {
 	struct iwl_priv *priv = dev_get_drvdata(d);
-	int mode = priv->power_data.user_power_setting;
-	int system = priv->power_data.system_power_setting;
 	int level = priv->power_data.power_mode;
 	char *p = buf;
 
-	switch (system) {
-	case IWL_POWER_SYS_AUTO:
-		p += sprintf(p, "SYSTEM:auto");
+	p += sprintf(p, "%d ", level);
+	switch (level) {
+	case IWL_POWER_MODE_CAM:
+	case IWL_POWER_AC:
+		p += sprintf(p, "(AC)");
 		break;
-	case IWL_POWER_SYS_AC:
-		p += sprintf(p, "SYSTEM:ac");
+	case IWL_POWER_BATTERY:
+		p += sprintf(p, "(BATTERY)");
 		break;
-	case IWL_POWER_SYS_BATTERY:
-		p += sprintf(p, "SYSTEM:battery");
-		break;
+	default:
+		p += sprintf(p,
+			     "(Timeout %dms, Period %dms)",
+			     timeout_duration[level - 1] / 1000,
+			     period_duration[level - 1] / 1000);
 	}
-
-	p += sprintf(p, "\tMODE:%s", (mode < IWL_POWER_AUTO)?"fixed":"auto");
-	p += sprintf(p, "\tINDEX:%d", level);
-	p += sprintf(p, "\n");
+/*
+	if (!(priv->power_mode & IWL_POWER_ENABLED))
+		p += sprintf(p, " OFF\n");
+	else
+		p += sprintf(p, " \n");
+*/
+	p += sprintf(p, " \n");
 	return (p - buf + 1);
 }
 
