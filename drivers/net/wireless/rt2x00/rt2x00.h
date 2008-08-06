@@ -108,10 +108,7 @@
 #define SHORT_PIFS		( SIFS + SHORT_SLOT_TIME )
 #define DIFS			( PIFS + SLOT_TIME )
 #define SHORT_DIFS		( SHORT_PIFS + SHORT_SLOT_TIME )
-#define EIFS			( SIFS + DIFS + \
-				  (8 * (IEEE80211_HEADER + ACK_SIZE)) )
-#define SHORT_EIFS		( SIFS + SHORT_DIFS + \
-				  (8 * (IEEE80211_HEADER + ACK_SIZE)) )
+#define EIFS			( SIFS + (8 * (IEEE80211_HEADER + ACK_SIZE)) )
 
 /*
  * Chipset identification
