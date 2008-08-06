@@ -3065,6 +3065,8 @@ ath5k_beacon_update(struct ieee80211_hw *hw, struct sk_buff *skb)
 
 	ath5k_debug_dump_skb(sc, skb, "BC  ", 1);
 
+	mutex_lock(&sc->lock);
+
 	if (sc->opmode != IEEE80211_IF_TYPE_IBSS) {
 		ret = -EIO;
 		goto end;
@@ -3081,6 +3083,7 @@ ath5k_beacon_update(struct ieee80211_hw *hw, struct sk_buff *skb)
 	}
 
 end:
+	mutex_unlock(&sc->lock);
 	return ret;
 }
 
