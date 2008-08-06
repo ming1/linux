@@ -4503,7 +4503,7 @@ static int __init iwl4965_init(void)
 	printk(KERN_INFO DRV_NAME ": " DRV_DESCRIPTION ", " DRV_VERSION "\n");
 	printk(KERN_INFO DRV_NAME ": " DRV_COPYRIGHT "\n");
 
-	ret = iwlagn_rate_control_register();
+	ret = iwl4965_rate_control_register();
 	if (ret) {
 		IWL_ERROR("Unable to register rate control algorithm: %d\n", ret);
 		return ret;
@@ -4518,14 +4518,14 @@ static int __init iwl4965_init(void)
 	return ret;
 
 error_register:
-	iwlagn_rate_control_unregister();
+	iwl4965_rate_control_unregister();
 	return ret;
 }
 
 static void __exit iwl4965_exit(void)
 {
 	pci_unregister_driver(&iwl_driver);
-	iwlagn_rate_control_unregister();
+	iwl4965_rate_control_unregister();
 }
 
 module_exit(iwl4965_exit);
