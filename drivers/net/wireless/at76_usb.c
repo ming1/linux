@@ -1069,45 +1069,6 @@ exit:
 	kfree(m);
 }
 
-static void at76_dump_mib_mac_encryption(struct at76_priv *priv)
-{
-	int i;
-	int ret;
-	/*int key_len;*/
-	struct mib_mac_encryption *m = kmalloc(sizeof(struct mib_mac_encryption), GFP_KERNEL);
-
-	if (!m)
-		return;
-
-	ret = at76_get_mib(priv->udev, MIB_MAC_ENCRYPTION, m,
-			   sizeof(struct mib_mac_encryption));
-	if (ret < 0) {
-		printk(KERN_ERR "%s: at76_get_mib (MAC_ENCRYPTION) failed: %d\n",
-		       wiphy_name(priv->hw->wiphy), ret);
-		goto exit;
-	}
-
-	at76_dbg(DBG_MIB, "%s: MIB MAC_ENCRYPTION: tkip_bssid %s priv_invoked %u "
-		 "ciph_key_id %u grp_key_id %u excl_unencr %u "
-		 "ckip_key_perm %u wep_icv_err %u wep_excluded %u",
-		 wiphy_name(priv->hw->wiphy), mac2str(m->tkip_bssid),
-		 m->privacy_invoked, m->cipher_default_key_id,
-		 m->cipher_default_group_key_id, m->exclude_unencrypted,
-		 m->ckip_key_permutation,
-		 le32_to_cpu(m->wep_icv_error_count),
-		 le32_to_cpu(m->wep_excluded_count));
-
-	/*key_len = (m->encryption_level == 1) ?
-	    WEP_SMALL_KEY_LEN : WEP_LARGE_KEY_LEN;*/
-
-	for (i = 0; i < CIPHER_KEYS; i++)
-		at76_dbg(DBG_MIB, "%s: MIB MAC_ENCRYPTION: key %d: %s",
-			 wiphy_name(priv->hw->wiphy), i,
-			 hex2str(m->cipher_default_keyvalue[i], CIPHER_KEY_LEN));
-exit:
-	kfree(m);
-}
-
 static void at76_dump_mib_mac_mgmt(struct at76_priv *priv)
 {
 	int ret;
@@ -1640,6 +1601,7 @@ static void at76_rx_tasklet(unsigned long param)
 		 wiphy_name(priv->hw->wiphy), buf->rx_rate, buf->rssi,
 		 buf->noise_level, buf->link_quality);
 
+
 	skb_trim(priv->rx_skb, le16_to_cpu(buf->wlength) + AT76_RX_HDRLEN);
 	at76_dbg_dump(DBG_RX_DATA, &priv->rx_skb->data[AT76_RX_HDRLEN],
 		      priv->rx_skb->len, "RX: len=%d", (int)(priv->rx_skb->len - AT76_RX_HDRLEN));
@@ -1798,18 +1760,7 @@ static int at76_mac80211_tx(struct ieee80211_hw *hw, struct sk_buff *skb)
 	tx_buffer->padding = padding;
 	tx_buffer->wlength = cpu_to_le16(skb->len);
 	tx_buffer->tx_rate = ieee80211_get_tx_rate(hw, info)->hw_value;
-	if (FIRMWARE_IS_WPA(priv->fw_version) && !(control->flags & IEEE80211_TXCTL_DO_NOT_ENCRYPT)) {
-		tx_buffer->key_id = (control->key_idx);
-		tx_buffer->cipher_type = priv->keys[control->key_idx].cipher;
-		tx_buffer->cipher_length = priv->keys[control->key_idx].keylen;
-		tx_buffer->reserved = 0;
-	} else {
-		tx_buffer->key_id = 0;
-		tx_buffer->cipher_type = 0;
-		tx_buffer->cipher_length = 0;
-		tx_buffer->reserved = 0;
-	};
-	/* memset(tx_buffer->reserved, 0, sizeof(tx_buffer->reserved)); */
+	memset(tx_buffer->reserved, 0, sizeof(tx_buffer->reserved));
 	memcpy(tx_buffer->packet, skb->data, skb->len);
 
 	at76_dbg(DBG_TX_DATA, "%s tx: wlen 0x%x pad 0x%x rate %d hdr",
@@ -1872,8 +1823,7 @@ static void at76_mac80211_stop(struct ieee80211_hw *hw)
 	if (!priv->device_unplugged) {
 		/* We are called by "ifconfig ethX down", not because the
 		 * device is not available anymore. */
-		if (at76_set_radio(priv, 0) == 1)
-			at76_wait_completion(priv, CMD_RADIO_ON);
+		at76_set_radio(priv, 0);
 
 		/* We unlink rx_urb because at76_open() re-submits it.
 		 * If unplugged, at76_delete_device() takes care of it. */
@@ -2111,7 +2061,7 @@ static void at76_configure_filter(struct ieee80211_hw *hw,
 	queue_work(hw->workqueue, &priv->work_set_promisc);
 }
 
-static int at76_set_key_oldfw(struct ieee80211_hw *hw, enum set_key_cmd cmd,
+static int at76_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 			const u8 *local_address, const u8 *address,
 			struct ieee80211_key_conf *key)
 {
@@ -2157,151 +2107,6 @@ static int at76_set_key_oldfw(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 	mutex_unlock(&priv->mtx);
 
 	return 0;
-}
-
-static int at76_set_key_newfw(struct ieee80211_hw *hw, enum set_key_cmd cmd,
-			const u8 *local_address, const u8 *address,
-			struct ieee80211_key_conf *key)
-{
-	struct at76_priv *priv = hw->priv;
-	int ret = -EOPNOTSUPP;
-
-	at76_dbg(DBG_MAC80211, "%s(): cmd %d key->alg %d key->keyidx %d "
-		 "key->keylen %d",
-		 __func__, cmd, key->alg, key->keyidx, key->keylen);
-
-	mutex_lock(&priv->mtx);
-
-	priv->mib_buf.type = MIB_MAC_ENCRYPTION;
-
-	if (cmd == DISABLE_KEY) {
-		priv->mib_buf.size = CIPHER_KEY_LEN;
-		priv->mib_buf.index = offsetof(struct mib_mac_encryption,
-				cipher_default_keyvalue[key->keyidx]);
-		memset(priv->mib_buf.data.data, 0, CIPHER_KEY_LEN);
-		if (at76_set_mib(priv, &priv->mib_buf) != CMD_STATUS_COMPLETE)
-			ret = -EOPNOTSUPP; /* -EIO would be probably better */
-		else {
-			ret = 0;
-			priv->keys[key->keyidx].cipher = CIPHER_NONE;
-			priv->keys[key->keyidx].keylen = 0;
-		};
-		if (priv->default_group_key == key->keyidx)
-			priv->default_group_key = 0xff;
-
-		if (priv->default_pairwise_key == key->keyidx)
-			priv->default_pairwise_key = 0xff;
-		/* If default pairwise key is removed, fall back to
-		 * group key? */
-		goto exit;
-	};
-
-	if (cmd == SET_KEY) {
-		/* store key into MIB */
-		priv->mib_buf.size = CIPHER_KEY_LEN;
-		priv->mib_buf.index = offsetof(struct mib_mac_encryption,
-				cipher_default_keyvalue[key->keyidx]);
-		memset(priv->mib_buf.data.data, 0, CIPHER_KEY_LEN);
-		memcpy(priv->mib_buf.data.data, key->key, key->keylen);
-
-		switch (key->alg) {
-			case ALG_WEP:
-				if (key->keylen == 5) {
-					priv->keys[key->keyidx].cipher =
-						CIPHER_WEP64;
-					priv->keys[key->keyidx].keylen = 8;
-				} else if (key->keylen == 13) {
-					priv->keys[key->keyidx].cipher =
-						CIPHER_WEP128;
-					/* Firmware needs this */
-					priv->keys[key->keyidx].keylen = 8;
-				} else {
-					ret = -EOPNOTSUPP;
-					goto exit;
-				};
-				break;
-			default:
-				ret = -EOPNOTSUPP;
-				goto exit;
-
-		};
-
-		priv->mib_buf.data.data[38] = priv->keys[key->keyidx].cipher;
-		priv->mib_buf.data.data[39] = 1; /* Taken from atmelwlandriver,
-						    not documented */
-
-		if (is_valid_ether_addr(address))
-			/* Pairwise key */
-			priv->mib_buf.data.data[39] |= (KEY_PAIRWISE | KEY_TX);
-		else if (is_broadcast_ether_addr(address))
-			/* Group key */
-			priv->mib_buf.data.data[39] |= (KEY_TX);
-		else	/* Key used only for transmission ??? */
-			priv->mib_buf.data.data[39] |= (KEY_TX);
-
-		if (at76_set_mib(priv, &priv->mib_buf) !=
-				CMD_STATUS_COMPLETE) {
-			ret = -EOPNOTSUPP; /* -EIO would be probably better */
-			goto exit;
-		};
-		key->hw_key_idx = key->keyidx;
-
-		/* Set up default keys */
-		if (is_broadcast_ether_addr(address))
-			priv->default_group_key = key->keyidx;
-		if (is_valid_ether_addr(address))
-			priv->default_pairwise_key = key->keyidx;
-
-		/* Set up encryption MIBs */
-
-		/* first block of settings */
-		priv->mib_buf.size = 3;
-		priv->mib_buf.index = offsetof(struct mib_mac_encryption,
-				privacy_invoked);
-		priv->mib_buf.data.data[0] = 1;	/* privacy_invoked */
-		priv->mib_buf.data.data[1] = priv->default_pairwise_key;
-		priv->mib_buf.data.data[2] = priv->default_group_key;
-
-		if ((ret = at76_set_mib(priv, &priv->mib_buf)) !=
-				CMD_STATUS_COMPLETE)
-			goto exit;
-
-		/* second block of settings */
-		priv->mib_buf.size = 3;
-		priv->mib_buf.index = offsetof(struct mib_mac_encryption,
-				exclude_unencrypted);
-		priv->mib_buf.data.data[0] = 1;	/* exclude_unencrypted */
-		priv->mib_buf.data.data[1] = 0;	/* wep_encryption_type */
-		priv->mib_buf.data.data[2] = 0;	/* ckip_key_permutation */
-
-		if ((ret = at76_set_mib(priv, &priv->mib_buf)) !=
-				CMD_STATUS_COMPLETE)
-			goto exit;
-		ret = 0;
-	};
-exit:
-	at76_dump_mib_mac_encryption(priv);
-	mutex_unlock(&priv->mtx);
-	return ret;
-}
-
-static int at76_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
-			const u8 *local_address, const u8 *address,
-			struct ieee80211_key_conf *key)
-{
-	struct at76_priv *priv = hw->priv;
-
-	// int i;
-
-	at76_dbg(DBG_MAC80211, "%s(): cmd %d key->alg %d key->keyidx %d "
-		 "key->keylen %d",
-		 __func__, cmd, key->alg, key->keyidx, key->keylen);
-
-	if (FIRMWARE_IS_WPA(priv->fw_version))
-		return at76_set_key_newfw(hw, cmd, local_address, address, key);
-	else
-		return at76_set_key_oldfw(hw, cmd, local_address, address, key);
-
 }
 
 static const struct ieee80211_ops at76_ops = {
@@ -2480,8 +2285,6 @@ static int at76_init_new_device(struct at76_priv *priv,
 	priv->scan_min_time = DEF_SCAN_MIN_TIME;
 	priv->scan_max_time = DEF_SCAN_MAX_TIME;
 	priv->scan_mode = SCAN_TYPE_ACTIVE;
-	priv->default_pairwise_key = 0xff;
-	priv->default_group_key = 0xff;
 
 	/* mac80211 initialisation */
 	priv->hw->wiphy->bands[IEEE80211_BAND_2GHZ] = &at76_supported_band;
@@ -2514,15 +2317,6 @@ static int at76_init_new_device(struct at76_priv *priv,
 	printk(KERN_INFO "%s: regulatory domain 0x%02x: %s\n",
 	       wiphy_name(priv->hw->wiphy),
 	       priv->regulatory_domain, priv->domain->name);
-	printk(KERN_INFO "%s: WPA support: ", wiphy_name(priv->hw->wiphy));
-	if (!FIRMWARE_IS_WPA(priv->fw_version))
-		printk("none\n");
-	else {
-		if (!at76_is_505a(priv->board_type))
-			printk("TKIP\n");
-		else
-			printk("TKIP, AES/CCMP\n");
-	};
 
 exit:
 	return ret;
