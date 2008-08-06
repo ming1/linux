@@ -1600,7 +1600,7 @@ static void at76_tx_callback(struct urb *urb)
 static int at76_tx_mgmt(struct at76_priv *priv, struct at76_tx_buffer *txbuf)
 {
 	unsigned long flags;
-	int ret;
+	int ret = 0;
 	int urb_status;
 	void *oldbuf = NULL;
 
@@ -1611,9 +1611,9 @@ static int at76_tx_mgmt(struct at76_priv *priv, struct at76_tx_buffer *txbuf)
 
 	urb_status = priv->tx_urb->status;
 	if (urb_status == -EINPROGRESS) {
-		/* cannot transmit now, put in the queue */
-		oldbuf = priv->next_mgmt_bulk;
+		oldbuf = priv->next_mgmt_bulk;	/* to kfree below */
 		priv->next_mgmt_bulk = txbuf;
+		txbuf = NULL;
 	}
 	spin_unlock_irqrestore(&priv->mgmt_spinlock, flags);
 
@@ -1621,11 +1621,14 @@ static int at76_tx_mgmt(struct at76_priv *priv, struct at76_tx_buffer *txbuf)
 		/* a data/mgmt tx is already pending in the URB -
 		   if this is no error in some situations we must
 		   implement a queue or silently modify the old msg */
-		err("%s: %s removed pending mgmt buffer %s", priv->netdev->name,
-		    __func__, hex2str(oldbuf, 64));
-		kfree(oldbuf);
-		return 0;
+		err("%s: %s removed pending mgmt buffer %s",
+		    priv->netdev->name, __func__,
+		    hex2str(priv->next_mgmt_bulk, 64));
+		kfree(priv->next_mgmt_bulk);
 	}
+
+	if (!txbuf)
+		return ret;
 
 	txbuf->tx_rate = 0;
 	txbuf->padding = at76_calc_padding(le16_to_cpu(txbuf->wlength));
