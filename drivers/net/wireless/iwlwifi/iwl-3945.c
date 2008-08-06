@@ -710,7 +710,10 @@ static void iwl3945_rx_reply_rx(struct iwl3945_priv *priv,
 		return;
 	}
 
-
+	if (priv->iw_mode == IEEE80211_IF_TYPE_MNTR) {
+		iwl3945_pass_packet_to_mac80211(priv, rxb, &rx_status);
+		return;
+	}
 
 	/* Convert 3945's rssi indicator to dBm */
 	rx_status.signal = rx_stats->rssi - IWL_RSSI_OFFSET;
@@ -770,11 +773,6 @@ static void iwl3945_rx_reply_rx(struct iwl3945_priv *priv,
 		priv->last_tsf = le64_to_cpu(rx_end->timestamp);
 		priv->last_rx_rssi = rx_status.signal;
 		priv->last_rx_noise = rx_status.noise;
-	}
-
-	if (priv->iw_mode == IEEE80211_IF_TYPE_MNTR) {
-		iwl3945_pass_packet_to_mac80211(priv, rxb, &rx_status);
-		return;
 	}
 
 	switch (le16_to_cpu(header->frame_control) & IEEE80211_FCTL_FTYPE) {
