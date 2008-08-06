@@ -439,14 +439,14 @@ ieee80211_tx_h_select_key(struct ieee80211_tx_data *tx)
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(tx->skb);
 	u16 fc = tx->fc;
 
-	if (unlikely(tx->skb->do_not_encrypt))
+	if (unlikely(info->flags & IEEE80211_TX_CTL_DO_NOT_ENCRYPT))
 		tx->key = NULL;
 	else if (tx->sta && (key = rcu_dereference(tx->sta->key)))
 		tx->key = key;
 	else if ((key = rcu_dereference(tx->sdata->default_key)))
 		tx->key = key;
 	else if (tx->sdata->drop_unencrypted &&
-		 (tx->skb->protocol != cpu_to_be16(ETH_P_PAE)) &&
+		 !(info->flags & IEEE80211_TX_CTL_EAPOL_FRAME) &&
 		 !(info->flags & IEEE80211_TX_CTL_INJECTED)) {
 		I802_DEBUG_INC(tx->local->tx_handlers_drop_unencrypted);
 		return TX_DROP;
@@ -476,7 +476,7 @@ ieee80211_tx_h_select_key(struct ieee80211_tx_data *tx)
 	}
 
 	if (!tx->key || !(tx->key->flags & KEY_FLAG_UPLOADED_TO_HARDWARE))
-		tx->skb->do_not_encrypt = 1;
+		info->flags |= IEEE80211_TX_CTL_DO_NOT_ENCRYPT;
 
 	return TX_CONTINUE;
 }
@@ -732,7 +732,6 @@ ieee80211_tx_h_fragment(struct ieee80211_tx_data *tx)
 		memcpy(skb_put(frag, copylen), pos, copylen);
 		memcpy(frag->cb, first->cb, sizeof(frag->cb));
 		skb_copy_queue_mapping(frag, first);
-		frag->do_not_encrypt = first->do_not_encrypt;
 
 		pos += copylen;
 		left -= copylen;
@@ -853,7 +852,7 @@ __ieee80211_parse_tx_radiotap(struct ieee80211_tx_data *tx,
 
 	sband = tx->local->hw.wiphy->bands[tx->channel->band];
 
-	skb->do_not_encrypt = 1;
+	info->flags |= IEEE80211_TX_CTL_DO_NOT_ENCRYPT;
 	info->flags |= IEEE80211_TX_CTL_INJECTED;
 	tx->flags &= ~IEEE80211_TX_FRAGMENTED;
 
@@ -926,7 +925,8 @@ __ieee80211_parse_tx_radiotap(struct ieee80211_tx_data *tx,
 				skb_trim(skb, skb->len - FCS_LEN);
 			}
 			if (*iterator.this_arg & IEEE80211_RADIOTAP_F_WEP)
-				tx->skb->do_not_encrypt = 0;
+				info->flags &=
+					~IEEE80211_TX_CTL_DO_NOT_ENCRYPT;
 			if (*iterator.this_arg & IEEE80211_RADIOTAP_F_FRAG)
 				tx->flags |= IEEE80211_TX_FRAGMENTED;
 			break;
@@ -1042,9 +1042,10 @@ static int ieee80211_tx_prepare(struct ieee80211_tx_data *tx,
 				struct sk_buff *skb,
 				struct net_device *mdev)
 {
+	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	struct net_device *dev;
 
-	dev = dev_get_by_index(&init_net, skb->iif);
+	dev = dev_get_by_index(&init_net, info->control.ifindex);
 	if (unlikely(dev && !is_ieee80211_device(dev, mdev))) {
 		dev_put(dev);
 		dev = NULL;
@@ -1305,8 +1306,8 @@ int ieee80211_master_start_xmit(struct sk_buff *skb,
 	bool may_encrypt;
 	int ret;
 
-	if (skb->iif)
-		odev = dev_get_by_index(&init_net, skb->iif);
+	if (info->control.ifindex)
+		odev = dev_get_by_index(&init_net, info->control.ifindex);
 	if (unlikely(odev && !is_ieee80211_device(odev, dev))) {
 		dev_put(odev);
 		odev = NULL;
@@ -1320,13 +1321,9 @@ int ieee80211_master_start_xmit(struct sk_buff *skb,
 		return 0;
 	}
 
-	memset(info, 0, sizeof(*info));
-
-	info->flags |= IEEE80211_TX_CTL_REQ_TX_STATUS;
-
 	osdata = IEEE80211_DEV_TO_SUB_IF(odev);
 
-	may_encrypt = !skb->do_not_encrypt;
+	may_encrypt = !(info->flags & IEEE80211_TX_CTL_DO_NOT_ENCRYPT);
 
 	headroom = osdata->local->tx_headroom;
 	if (may_encrypt)
@@ -1351,6 +1348,7 @@ int ieee80211_monitor_start_xmit(struct sk_buff *skb,
 				 struct net_device *dev)
 {
 	struct ieee80211_local *local = wdev_priv(dev->ieee80211_ptr);
+	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	struct ieee80211_radiotap_header *prthdr =
 		(struct ieee80211_radiotap_header *)skb->data;
 	u16 len_rthdr;
@@ -1373,11 +1371,11 @@ int ieee80211_monitor_start_xmit(struct sk_buff *skb,
 	skb->dev = local->mdev;
 
 	/* needed because we set skb device to master */
-	skb->iif = dev->ifindex;
+	info->control.ifindex = dev->ifindex;
 
-	/* sometimes we do encrypt injected frames, will be fixed
-	 * up in radiotap parser if not wanted */
-	skb->do_not_encrypt = 0;
+	info->flags |= IEEE80211_TX_CTL_DO_NOT_ENCRYPT;
+	/* Interfaces should always request a status report */
+	info->flags |= IEEE80211_TX_CTL_REQ_TX_STATUS;
 
 	/*
 	 * fix up the pointers accounting for the radiotap
@@ -1421,6 +1419,7 @@ int ieee80211_subif_start_xmit(struct sk_buff *skb,
 			       struct net_device *dev)
 {
 	struct ieee80211_local *local = wdev_priv(dev->ieee80211_ptr);
+	struct ieee80211_tx_info *info;
 	struct ieee80211_sub_if_data *sdata;
 	int ret = 1, head_need;
 	u16 ethertype, hdrlen,  meshhdrlen = 0;
@@ -1646,7 +1645,14 @@ int ieee80211_subif_start_xmit(struct sk_buff *skb,
 	nh_pos += hdrlen;
 	h_pos += hdrlen;
 
-	skb->iif = dev->ifindex;
+	info = IEEE80211_SKB_CB(skb);
+	memset(info, 0, sizeof(*info));
+	info->control.ifindex = dev->ifindex;
+	if (ethertype == ETH_P_PAE)
+		info->flags |= IEEE80211_TX_CTL_EAPOL_FRAME;
+
+	/* Interfaces should always request a status report */
+	info->flags |= IEEE80211_TX_CTL_REQ_TX_STATUS;
 
 	skb->dev = local->mdev;
 	dev->stats.tx_packets++;
@@ -1916,8 +1922,6 @@ struct sk_buff *ieee80211_beacon_get(struct ieee80211_hw *hw,
 
 	info = IEEE80211_SKB_CB(skb);
 
-	skb->do_not_encrypt = 1;
-
 	info->band = band;
 	rate_control_get_rate(local->mdev, sband, skb, &rsel);
 
@@ -1936,6 +1940,7 @@ struct sk_buff *ieee80211_beacon_get(struct ieee80211_hw *hw,
 	info->tx_rate_idx = rsel.rate_idx;
 
 	info->flags |= IEEE80211_TX_CTL_NO_ACK;
+	info->flags |= IEEE80211_TX_CTL_DO_NOT_ENCRYPT;
 	info->flags |= IEEE80211_TX_CTL_CLEAR_PS_FILT;
 	info->flags |= IEEE80211_TX_CTL_ASSIGN_SEQ;
 	if (sdata->bss_conf.use_short_preamble &&

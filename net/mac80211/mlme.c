@@ -606,6 +606,7 @@ void ieee80211_sta_tx(struct net_device *dev, struct sk_buff *skb,
 		      int encrypt)
 {
 	struct ieee80211_sub_if_data *sdata;
+	struct ieee80211_tx_info *info;
 
 	sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 	skb->dev = sdata->local->mdev;
@@ -613,8 +614,11 @@ void ieee80211_sta_tx(struct net_device *dev, struct sk_buff *skb,
 	skb_set_network_header(skb, 0);
 	skb_set_transport_header(skb, 0);
 
-	skb->iif = sdata->dev->ifindex;
-	skb->do_not_encrypt = !encrypt;
+	info = IEEE80211_SKB_CB(skb);
+	memset(info, 0, sizeof(struct ieee80211_tx_info));
+	info->control.ifindex = sdata->dev->ifindex;
+	if (!encrypt)
+		info->flags |= IEEE80211_TX_CTL_DO_NOT_ENCRYPT;
 
 	dev_queue_xmit(skb);
 }

@@ -316,10 +316,7 @@ struct sk_buff {
 #ifdef CONFIG_IPV6_NDISC_NODETYPE
 	__u8			ndisc_nodetype:2;
 #endif
-#if defined(CONFIG_MAC80211) || defined(CONFIG_MAC80211_MODULE)
-	__u8			do_not_encrypt:1;
-#endif
-	/* 0/13/14 bit hole */
+	/* 14 bit hole */
 
 #ifdef CONFIG_NET_DMA
 	dma_cookie_t		dma_cookie;
