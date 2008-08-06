@@ -500,7 +500,7 @@ failed_hw:
 	device_unregister(data->dev);
 failed_drvdata:
 	ieee80211_free_hw(hw);
-	hwsim_radios[i] = NULL;
+	hwsim_radios[i] = 0;
 failed:
 	mac80211_hwsim_free();
 	return err;
