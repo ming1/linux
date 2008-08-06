@@ -589,8 +589,7 @@ static void rfkill_led_trigger_register(struct rfkill *rfkill)
 #ifdef CONFIG_RFKILL_LEDS
 	int error;
 
-	if (!rfkill->led_trigger.name)
-		rfkill->led_trigger.name = rfkill->dev.bus_id;
+	rfkill->led_trigger.name = rfkill->dev.bus_id;
 	error = led_trigger_register(&rfkill->led_trigger);
 	if (error)
 		rfkill->led_trigger.name = NULL;
