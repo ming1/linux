@@ -492,12 +492,9 @@ void rt2x00queue_init_rx(struct rt2x00_dev *rt2x00dev)
 	if (!rt2x00dev->ops->lib->init_rxentry)
 		return;
 
-	for (i = 0; i < queue->limit; i++) {
-		queue->entries[i].flags = 0;
-
+	for (i = 0; i < queue->limit; i++)
 		rt2x00dev->ops->lib->init_rxentry(rt2x00dev,
 						  &queue->entries[i]);
-	}
 }
 
 void rt2x00queue_init_tx(struct rt2x00_dev *rt2x00dev)
@@ -511,12 +508,9 @@ void rt2x00queue_init_tx(struct rt2x00_dev *rt2x00dev)
 		if (!rt2x00dev->ops->lib->init_txentry)
 			continue;
 
-		for (i = 0; i < queue->limit; i++) {
-			queue->entries[i].flags = 0;
-
+		for (i = 0; i < queue->limit; i++)
 			rt2x00dev->ops->lib->init_txentry(rt2x00dev,
 							  &queue->entries[i]);
-		}
 	}
 }
 
