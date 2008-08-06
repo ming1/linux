@@ -273,7 +273,8 @@ EXPORT_SYMBOL(iwl_eeprom_init);
 
 void iwl_eeprom_free(struct iwl_priv *priv)
 {
-	kfree(priv->eeprom);
+	if(priv->eeprom)
+		kfree(priv->eeprom);
 	priv->eeprom = NULL;
 }
 EXPORT_SYMBOL(iwl_eeprom_free);
