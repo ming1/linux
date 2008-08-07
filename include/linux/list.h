@@ -229,7 +229,7 @@ static inline void __list_splice(const struct list_head *list,
 }
 
 /**
- * list_splice - join two lists, this is designed for stacks
+ * list_splice - join two lists
  * @list: the new list to add.
  * @head: the place to add it in the first list.
  */
@@ -255,49 +255,6 @@ static inline void list_splice_init(struct list_head *list,
 		INIT_LIST_HEAD(list);
 	}
 }
-
-static inline void __list_splice_tail(const struct list_head *list,
-				 struct list_head *head)
-{
-	struct list_head *first = list->next;
-	struct list_head *last = list->prev;
-	struct list_head *current_tail = head->prev;
-
-	current_tail->next = first;
-	last->next = head;
-	head->prev = last;
-	first->prev = current_tail;
-}
-
-/**
- * list_splice_tail - join two lists, each list being a queue
- * @list: the new list to add.
- * @head: the place to add it in the first list.
- */
-static inline void list_splice_tail(const struct list_head *list,
-				struct list_head *head)
-{
-	if (!list_empty(list))
-		__list_splice_tail(list, head);
-}
-
-/**
- * list_splice_tail_init - join two lists, each list being a queue, and
- * 	reinitialise the emptied list.
- * @list: the new list to add.
- * @head: the place to add it in the first list.
- *
- * The list at @list is reinitialised
- */
-static inline void list_splice_tail_init(struct list_head *list,
-				    struct list_head *head)
-{
-	if (!list_empty(list)) {
-		__list_splice_tail(list, head);
-		INIT_LIST_HEAD(list);
-	}
-}
-
 
 /**
  * list_entry - get the struct for this entry
