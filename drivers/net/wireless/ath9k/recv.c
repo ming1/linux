@@ -725,7 +725,7 @@ int ath_rx_input(struct ath_softc *sc,
 		 struct ath_recv_status *rx_status,
 		 enum ATH_RX_TYPE *status)
 {
-	if (is_ampdu && sc->sc_rxaggr) {
+	if (is_ampdu && (sc->sc_flags & SC_OP_RXAGGR)) {
 		*status = ATH_RX_CONSUMED;
 		return ath_ampdu_input(sc, an, skb, rx_status);
 	} else {
@@ -1133,7 +1133,7 @@ int ath_rx_aggr_start(struct ath_softc *sc,
 	rxtid = &an->an_aggr.rx.tid[tid];
 
 	spin_lock_bh(&rxtid->tidlock);
-	if (sc->sc_rxaggr) {
+	if (sc->sc_flags & SC_OP_RXAGGR) {
 		/* Allow aggregation reception
 		 * Adjust rx BA window size. Peer might indicate a
 		 * zero buffer size for a _dont_care_ condition.
@@ -1233,7 +1233,7 @@ void ath_rx_aggr_teardown(struct ath_softc *sc,
 
 void ath_rx_node_init(struct ath_softc *sc, struct ath_node *an)
 {
-	if (sc->sc_rxaggr) {
+	if (sc->sc_flags & SC_OP_RXAGGR) {
 		struct ath_arx_tid *rxtid;
 		int tidno;
 
@@ -1265,7 +1265,7 @@ void ath_rx_node_init(struct ath_softc *sc, struct ath_node *an)
 
 void ath_rx_node_cleanup(struct ath_softc *sc, struct ath_node *an)
 {
-	if (sc->sc_rxaggr) {
+	if (sc->sc_flags & SC_OP_RXAGGR) {
 		struct ath_arx_tid *rxtid;
 		int tidno, i;
 
