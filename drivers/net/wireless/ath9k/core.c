@@ -353,7 +353,7 @@ int ath_set_channel(struct ath_softc *sc, struct ath9k_channel *hchan)
 			fastcc = false;
 
 		spin_lock_bh(&sc->sc_resetlock);
-		if (!ath9k_hw_reset(ah, sc->sc_opmode, hchan,
+		if (!ath9k_hw_reset(ah, hchan,
 					ht_macmode, sc->sc_tx_chainmask,
 					sc->sc_rx_chainmask,
 					sc->sc_ht_extprotspacing,
@@ -531,7 +531,8 @@ int ath_vap_listen(struct ath_softc *sc, int if_id)
 	rfilt = ath_calcrxfilter(sc);
 	ath9k_hw_setrxfilter(ah, rfilt);
 
-	if (sc->sc_opmode == ATH9K_M_STA || sc->sc_opmode == ATH9K_M_IBSS) {
+	if (sc->sc_ah->ah_opmode == ATH9K_M_STA ||
+	    sc->sc_ah->ah_opmode == ATH9K_M_IBSS) {
 		memcpy(sc->sc_curbssid, ath_bcast_mac, ETH_ALEN);
 		ath9k_hw_write_associd(ah, sc->sc_curbssid, sc->sc_curaid);
 	} else
@@ -601,7 +602,7 @@ int ath_vap_attach(struct ath_softc *sc,
 	sc->sc_vaps[if_id] = avp;
 	sc->sc_nvaps++;
 	/* Set the device opmode */
-	sc->sc_opmode = opmode;
+	sc->sc_ah->ah_opmode = opmode;
 
 	/* default VAP configuration */
 	avp->av_config.av_fixed_rateset = IEEE80211_FIXED_RATE_NONE;
@@ -675,7 +676,8 @@ int ath_open(struct ath_softc *sc, struct ath9k_channel *initial_chan)
 	int error = 0;
 	enum ath9k_ht_macmode ht_macmode = ath_cwm_macmode(sc);
 
-	DPRINTF(sc, ATH_DBG_CONFIG, "%s: mode %d\n", __func__, sc->sc_opmode);
+	DPRINTF(sc, ATH_DBG_CONFIG, "%s: mode %d\n",
+		__func__, sc->sc_ah->ah_opmode);
 
 	/*
 	 * Stop anything previously setup.  This is safe
@@ -700,7 +702,7 @@ int ath_open(struct ath_softc *sc, struct ath9k_channel *initial_chan)
 	sc->sc_curchan = *initial_chan;
 
 	spin_lock_bh(&sc->sc_resetlock);
-	if (!ath9k_hw_reset(ah, sc->sc_opmode, &sc->sc_curchan, ht_macmode,
+	if (!ath9k_hw_reset(ah, &sc->sc_curchan, ht_macmode,
 			   sc->sc_tx_chainmask, sc->sc_rx_chainmask,
 			   sc->sc_ht_extprotspacing, false, &status)) {
 		DPRINTF(sc, ATH_DBG_FATAL,
@@ -753,7 +755,8 @@ int ath_open(struct ath_softc *sc, struct ath9k_channel *initial_chan)
 	 * Note we only do this (at the moment) for station mode.
 	 */
 	if (ath9k_hw_phycounters(ah) &&
-	    ((sc->sc_opmode == ATH9K_M_STA) || (sc->sc_opmode == ATH9K_M_IBSS)))
+	    ((sc->sc_ah->ah_opmode == ATH9K_M_STA) ||
+	     (sc->sc_ah->ah_opmode == ATH9K_M_IBSS)))
 		sc->sc_imask |= ATH9K_INT_MIB;
 #endif
 	/*
@@ -763,7 +766,7 @@ int ath_open(struct ath_softc *sc, struct ath9k_channel *initial_chan)
 	 * enable the TIM interrupt when operating as station.
 	 */
 	if ((ah->ah_caps.hw_caps & ATH9K_HW_CAP_ENHANCEDPM) &&
-	    (sc->sc_opmode == ATH9K_M_STA) &&
+	    (sc->sc_ah->ah_opmode == ATH9K_M_STA) &&
 	    !sc->sc_config.swBeaconProcess)
 		sc->sc_imask |= ATH9K_INT_TIM;
 	/*
@@ -794,7 +797,7 @@ int ath_reset(struct ath_softc *sc, bool retry_tx)
 
 	/* Reset chip */
 	spin_lock_bh(&sc->sc_resetlock);
-	if (!ath9k_hw_reset(ah, sc->sc_opmode, &sc->sc_curchan,
+	if (!ath9k_hw_reset(ah, &sc->sc_curchan,
 			   ht_macmode,
 			   sc->sc_tx_chainmask, sc->sc_rx_chainmask,
 			   sc->sc_ht_extprotspacing, false, &status)) {
@@ -1101,7 +1104,7 @@ int ath_init(u16 devid, struct ath_softc *sc)
 		goto bad;
 
 	/* default to STA mode */
-	sc->sc_opmode = ATH9K_M_MONITOR;
+	sc->sc_ah->ah_opmode = ATH9K_M_MONITOR;
 
 	/* Setup rate tables */
 
