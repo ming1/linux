@@ -234,11 +234,6 @@ static struct ath_buf *ath_beacon_generate(struct ath_softc *sc, int if_id)
 	bf->bf_mpdu = skb;
 	if (skb == NULL)
 		return NULL;
-	bf->bf_buf_addr = bf->bf_dmacontext =
-		pci_map_single(sc->pdev, skb->data,
-			       skb_end_pointer(skb) - skb->head,
-			       PCI_DMA_TODEVICE);
-
 	info = IEEE80211_SKB_CB(skb);
 	if (info->flags & IEEE80211_TX_CTL_ASSIGN_SEQ) {
 		/*
@@ -250,6 +245,10 @@ static struct ath_buf *ath_beacon_generate(struct ath_softc *sc, int if_id)
 		hdr->seq_ctrl &= cpu_to_le16(IEEE80211_SCTL_FRAG);
 		hdr->seq_ctrl |= cpu_to_le16(sc->seq_no);
 	}
+	bf->bf_buf_addr = bf->bf_dmacontext =
+		pci_map_single(sc->pdev, skb->data,
+			       skb_end_pointer(skb) - skb->head,
+			       PCI_DMA_TODEVICE);
 
 	/* TODO: convert to use ieee80211_get_buffered_bc() */
 	/* XXX: spin_lock_bh should not be used here, but sparse bitches
