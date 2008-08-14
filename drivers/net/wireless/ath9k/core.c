@@ -1023,7 +1023,6 @@ int ath_init(u16 devid, struct ath_softc *sc)
 	int status;
 	int error = 0, i;
 	int csz = 0;
-	u32 rd;
 
 	/* XXX: hardware will not be ready until ath_open() being called */
 	sc->sc_flags |= SC_OP_INVALID;
@@ -1089,8 +1088,6 @@ int ath_init(u16 devid, struct ath_softc *sc)
 	 * is resposible for filtering this list based on settings
 	 * like the phy mode.
 	 */
-	rd = ah->ah_currentRD;
-
 	error = ath_setup_channels(sc);
 	if (error)
 		goto bad;
@@ -1167,7 +1164,7 @@ int ath_init(u16 devid, struct ath_softc *sc)
 
 	sc->sc_rc = ath_rate_attach(ah);
 	if (sc->sc_rc == NULL) {
-		error = EIO;
+		error = -EIO;
 		goto bad2;
 	}
 
