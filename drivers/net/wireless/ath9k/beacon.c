@@ -85,8 +85,7 @@ static void ath_beacon_setup(struct ath_softc *sc,
 
 	flags = ATH9K_TXDESC_NOACK;
 
-	if (sc->sc_opmode == ATH9K_M_IBSS &&
-	    (ah->ah_caps.hw_caps & ATH9K_HW_CAP_VEOL)) {
+	if (sc->sc_opmode == ATH9K_M_IBSS && ah->ah_caps.halVEOLSupport) {
 		ds->ds_link = bf->bf_daddr; /* self-linked */
 		flags |= ATH9K_TXDESC_VEOL;
 		/* Let hardware handle antenna switching. */
@@ -376,7 +375,7 @@ int ath_beacon_alloc(struct ath_softc *sc, int if_id)
 		list_del(&avp->av_bcbuf->list);
 
 		if (sc->sc_opmode == ATH9K_M_HOSTAP ||
-		    !(sc->sc_ah->ah_caps.hw_caps & ATH9K_HW_CAP_VEOL)) {
+			!sc->sc_ah->ah_caps.halVEOLSupport) {
 			int slot;
 			/*
 			 * Assign the vap to a beacon xmit slot. As
@@ -940,7 +939,7 @@ void ath_beacon_config(struct ath_softc *sc, int if_id)
 			 * deal with things.
 			 */
 			intval |= ATH9K_BEACON_ENA;
-			if (!(ah->ah_caps.hw_caps & ATH9K_HW_CAP_VEOL))
+			if (!ah->ah_caps.halVEOLSupport)
 				sc->sc_imask |= ATH9K_INT_SWBA;
 			ath_beaconq_config(sc);
 		} else if (sc->sc_opmode == ATH9K_M_HOSTAP) {
@@ -959,8 +958,7 @@ void ath_beacon_config(struct ath_softc *sc, int if_id)
 		 * When using a self-linked beacon descriptor in
 		 * ibss mode load it once here.
 		 */
-		if (sc->sc_opmode == ATH9K_M_IBSS &&
-		    (ah->ah_caps.hw_caps & ATH9K_HW_CAP_VEOL))
+		if (sc->sc_opmode == ATH9K_M_IBSS && ah->ah_caps.halVEOLSupport)
 			ath_beacon_start_adhoc(sc, 0);
 	}
 #undef TSF_TO_TU
