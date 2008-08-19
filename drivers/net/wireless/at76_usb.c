@@ -463,7 +463,7 @@ static inline void at76_iwevent_bss_disconnect(struct net_device *netdev)
 	union iwreq_data wrqu;
 	wrqu.data.length = 0;
 	wrqu.data.flags = 0;
-	memset(wrqu.ap_addr.sa_data, 0, ETH_ALEN);
+	memset(wrqu.ap_addr.sa_data, '\0', ETH_ALEN);
 	wrqu.ap_addr.sa_family = ARPHRD_ETHER;
 	wireless_send_event(netdev, SIOCGIWAP, &wrqu, NULL);
 	at76_dbg(DBG_WE_EVENTS, "%s: %s: SIOCGIWAP sent", netdev->name,
