@@ -36,7 +36,7 @@
 #include <net/ieee80211_radiotap.h>
 #include <linux/firmware.h>
 #include <linux/leds.h>
-#include <net/mac80211.h>
+#include <net/ieee80211.h>
 
 #include "at76_usb.h"
 
@@ -1713,12 +1713,12 @@ static int at76_assoc_req(struct at76_priv *priv, struct bss_info *bss)
 
 	/* write TLV data elements */
 
-	ie->id = WLAN_EID_SSID;
+	ie->id = MFIE_TYPE_SSID;
 	ie->len = bss->ssid_len;
 	memcpy(ie->data, bss->ssid, bss->ssid_len);
 	next_ie(&ie);
 
-	ie->id = WLAN_EID_SUPP_RATES;
+	ie->id = MFIE_TYPE_RATES;
 	ie->len = sizeof(hw_rates);
 	memcpy(ie->data, hw_rates, sizeof(hw_rates));
 	next_ie(&ie);		/* ie points behind the supp_rates field */
@@ -2076,10 +2076,10 @@ static int at76_iw_handler_get_range(struct net_device *netdev,
 	range->num_bitrates = 4;
 
 	range->min_rts = 0;
-	range->max_rts = IEEE80211_MAX_RTS_THRESHOLD;
+	range->max_rts = MAX_RTS_THRESHOLD;
 
 	range->min_frag = MIN_FRAG_THRESHOLD;
-	range->max_frag = IEEE80211_MAX_FRAG_THRESHOLD;
+	range->max_frag = MAX_FRAG_THRESHOLD;
 
 	range->pmp_flags = IW_POWER_PERIOD;
 	range->pmt_flags = IW_POWER_ON;
@@ -2558,9 +2558,9 @@ static int at76_iw_handler_set_rts(struct net_device *netdev,
 		 netdev->name, rts->value, (rts->disabled) ? "true" : "false");
 
 	if (rts->disabled)
-		rthr = IEEE80211_MAX_RTS_THRESHOLD;
+		rthr = MAX_RTS_THRESHOLD;
 
-	if ((rthr < 0) || (rthr > IEEE80211_MAX_RTS_THRESHOLD))
+	if ((rthr < 0) || (rthr > MAX_RTS_THRESHOLD))
 		ret = -EINVAL;
 	else
 		priv->rts_threshold = rthr;
@@ -2575,7 +2575,7 @@ static int at76_iw_handler_get_rts(struct net_device *netdev,
 	struct at76_priv *priv = netdev_priv(netdev);
 
 	rts->value = priv->rts_threshold;
-	rts->disabled = (rts->value >= IEEE80211_MAX_RTS_THRESHOLD);
+	rts->disabled = (rts->value >= MAX_RTS_THRESHOLD);
 	rts->fixed = 1;
 
 	at76_dbg(DBG_IOCTL, "%s: SIOCGIWRTS - value %d disabled %s",
@@ -2597,10 +2597,9 @@ static int at76_iw_handler_set_frag(struct net_device *netdev,
 		 (frag->disabled) ? "true" : "false");
 
 	if (frag->disabled)
-		fthr = IEEE80211_MAX_FRAG_THRESHOLD;
+		fthr = MAX_FRAG_THRESHOLD;
 
-	if ((fthr < MIN_FRAG_THRESHOLD)
-	    || (fthr > IEEE80211_MAX_FRAG_THRESHOLD))
+	if ((fthr < MIN_FRAG_THRESHOLD) || (fthr > MAX_FRAG_THRESHOLD))
 		ret = -EINVAL;
 	else
 		priv->frag_threshold = fthr & ~0x1;	/* get an even value */
@@ -2615,7 +2614,7 @@ static int at76_iw_handler_get_frag(struct net_device *netdev,
 	struct at76_priv *priv = netdev_priv(netdev);
 
 	frag->value = priv->frag_threshold;
-	frag->disabled = (frag->value >= IEEE80211_MAX_FRAG_THRESHOLD);
+	frag->disabled = (frag->value >= MAX_FRAG_THRESHOLD);
 	frag->fixed = 1;
 
 	at76_dbg(DBG_IOCTL, "%s: SIOCGIWFRAG - value %d, disabled %s",
@@ -2706,7 +2705,7 @@ static int at76_iw_handler_set_encode(struct net_device *netdev,
 		if (len > WEP_LARGE_KEY_LEN)
 			len = WEP_LARGE_KEY_LEN;
 
-		memset(priv->wep_keys[index], 0, sizeof(priv->wep_keys[index]));
+		memset(priv->wep_keys[index], 0, WEP_KEY_LEN);
 		memcpy(priv->wep_keys[index], extra, len);
 		priv->wep_keys_len[index] = (len <= WEP_SMALL_KEY_LEN) ?
 		    WEP_SMALL_KEY_LEN : WEP_LARGE_KEY_LEN;
@@ -3941,8 +3940,7 @@ static int at76_startup_device(struct at76_priv *priv)
 	ccfg->ssid_len = priv->essid_size;
 
 	ccfg->wep_default_key_id = priv->wep_key_id;
-	memcpy(ccfg->wep_default_key_value, priv->wep_keys,
-	       sizeof(priv->wep_keys));
+	memcpy(ccfg->wep_default_key_value, priv->wep_keys, 4 * WEP_KEY_LEN);
 
 	ccfg->short_preamble = priv->preamble_type;
 	ccfg->beacon_period = cpu_to_le16(priv->beacon_period);
@@ -4371,7 +4369,7 @@ static void at76_rx_mgmt_beacon(struct at76_priv *priv,
 	 * usually arrive in consecutively, but there have been some
 	 * reports of some of the useful information fields arriving in a
 	 * different order).
-	 * It does not support any more IE types although WLAN_EID_TIM may
+	 * It does not support any more IE types although MFIE_TYPE_TIM may
 	 * be supported (on my AP at least).
 	 * The bdata->data array is about 1500 bytes long but only ~36 of those
 	 * bytes are useful, hence the have_ssid etc optimizations. */
@@ -4382,7 +4380,7 @@ static void at76_rx_mgmt_beacon(struct at76_priv *priv,
 
 		switch (ie->id) {
 
-		case WLAN_EID_SSID:
+		case MFIE_TYPE_SSID:
 			if (have_ssid)
 				break;
 
@@ -4405,7 +4403,7 @@ static void at76_rx_mgmt_beacon(struct at76_priv *priv,
 			have_ssid = 1;
 			break;
 
-		case WLAN_EID_SUPP_RATES:
+		case MFIE_TYPE_RATES:
 			if (have_rates)
 				break;
 
@@ -4418,7 +4416,7 @@ static void at76_rx_mgmt_beacon(struct at76_priv *priv,
 				 hex2str(ie->data, ie->len));
 			break;
 
-		case WLAN_EID_DS_PARAMS:
+		case MFIE_TYPE_DS_SET:
 			if (have_channel)
 				break;
 
@@ -4428,6 +4426,9 @@ static void at76_rx_mgmt_beacon(struct at76_priv *priv,
 				 priv->netdev->name, match->channel);
 			break;
 
+		case MFIE_TYPE_CF_SET:
+		case MFIE_TYPE_TIM:
+		case MFIE_TYPE_IBSS_SET:
 		default:
 			at76_dbg(DBG_RX_BEACON, "%s: beacon IE id %d len %d %s",
 				 priv->netdev->name, ie->id, ie->len,
@@ -4647,7 +4648,7 @@ static struct sk_buff *at76_check_for_rx_frags(struct at76_priv *priv)
 
 	/* Length including the IEEE802.11 header, but without the trailing
 	 * FCS and without the Atmel Rx header */
-	int length = le16_to_cpu(buf->wlength) - FCS_LEN;
+	int length = le16_to_cpu(buf->wlength) - IEEE80211_FCS_LEN;
 
 	/* where does the data payload start in skb->data ? */
 	u8 *data = i802_11_hdr->payload;
@@ -4900,7 +4901,7 @@ static void at76_rx_monitor_mode(struct at76_priv *priv)
 	struct sk_buff *skb = priv->rx_skb;
 	struct net_device_stats *stats = &priv->stats;
 
-	if (length < FCS_LEN) {
+	if (length < IEEE80211_FCS_LEN) {
 		/* buffer contains no data */
 		at76_dbg(DBG_MONITOR_MODE,
 			 "%s: MONITOR MODE: rx skb without data",
