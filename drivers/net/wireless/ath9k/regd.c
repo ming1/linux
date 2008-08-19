@@ -131,45 +131,46 @@ static bool ath9k_regd_is_ccode_valid(struct ath_hal *ah,
 	return false;
 }
 
-static void
+static u32
 ath9k_regd_get_wmodes_nreg(struct ath_hal *ah,
 			   struct country_code_to_enum_rd *country,
-			   struct regDomain *rd5GHz,
-			   unsigned long *modes_allowed)
+			   struct regDomain *rd5GHz)
 {
-	bitmap_copy(modes_allowed, ah->ah_caps.wireless_modes, ATH9K_MODE_MAX);
+	u32 modesAvail;
 
-	if (test_bit(ATH9K_MODE_11G, ah->ah_caps.wireless_modes) &&
-	    (!country->allow11g))
-		clear_bit(ATH9K_MODE_11G, modes_allowed);
+	modesAvail = ah->ah_caps.wireless_modes;
 
-	if (test_bit(ATH9K_MODE_11A, ah->ah_caps.wireless_modes) &&
+	if ((modesAvail & ATH9K_MODE_SEL_11G) && (!country->allow11g))
+		modesAvail &= ~ATH9K_MODE_SEL_11G;
+	if ((modesAvail & ATH9K_MODE_SEL_11A) &&
 	    (ath9k_regd_is_chan_bm_zero(rd5GHz->chan11a)))
-		clear_bit(ATH9K_MODE_11A, modes_allowed);
+		modesAvail &= ~ATH9K_MODE_SEL_11A;
 
-	if (test_bit(ATH9K_MODE_11NG_HT20, ah->ah_caps.wireless_modes)
+	if ((modesAvail & ATH9K_MODE_SEL_11NG_HT20)
 	    && (!country->allow11ng20))
-		clear_bit(ATH9K_MODE_11NG_HT20, modes_allowed);
+		modesAvail &= ~ATH9K_MODE_SEL_11NG_HT20;
 
-	if (test_bit(ATH9K_MODE_11NA_HT20, ah->ah_caps.wireless_modes)
+	if ((modesAvail & ATH9K_MODE_SEL_11NA_HT20)
 	    && (!country->allow11na20))
-		clear_bit(ATH9K_MODE_11NA_HT20, modes_allowed);
+		modesAvail &= ~ATH9K_MODE_SEL_11NA_HT20;
 
-	if (test_bit(ATH9K_MODE_11NG_HT40PLUS, ah->ah_caps.wireless_modes) &&
+	if ((modesAvail & ATH9K_MODE_SEL_11NG_HT40PLUS) &&
 	    (!country->allow11ng40))
-		clear_bit(ATH9K_MODE_11NG_HT40PLUS, modes_allowed);
+		modesAvail &= ~ATH9K_MODE_SEL_11NG_HT40PLUS;
 
-	if (test_bit(ATH9K_MODE_11NG_HT40MINUS, ah->ah_caps.wireless_modes) &&
+	if ((modesAvail & ATH9K_MODE_SEL_11NG_HT40MINUS) &&
 	    (!country->allow11ng40))
-		clear_bit(ATH9K_MODE_11NG_HT40MINUS, modes_allowed);
+		modesAvail &= ~ATH9K_MODE_SEL_11NG_HT40MINUS;
 
-	if (test_bit(ATH9K_MODE_11NA_HT40PLUS, ah->ah_caps.wireless_modes) &&
+	if ((modesAvail & ATH9K_MODE_SEL_11NA_HT40PLUS) &&
 	    (!country->allow11na40))
-		clear_bit(ATH9K_MODE_11NA_HT40PLUS, modes_allowed);
+		modesAvail &= ~ATH9K_MODE_SEL_11NA_HT40PLUS;
 
-	if (test_bit(ATH9K_MODE_11NA_HT40MINUS, ah->ah_caps.wireless_modes) &&
+	if ((modesAvail & ATH9K_MODE_SEL_11NA_HT40MINUS) &&
 	    (!country->allow11na40))
-		clear_bit(ATH9K_MODE_11NA_HT40MINUS, modes_allowed);
+		modesAvail &= ~ATH9K_MODE_SEL_11NA_HT40MINUS;
+
+	return modesAvail;
 }
 
 bool ath9k_regd_is_public_safety_sku(struct ath_hal *ah)
@@ -544,10 +545,10 @@ ath9k_regd_add_channel(struct ath_hal *ah,
 		}
 	}
 
-	if ((cm->mode == ATH9K_MODE_11A) ||
-	    (cm->mode == ATH9K_MODE_11NA_HT20) ||
-	    (cm->mode == ATH9K_MODE_11NA_HT40PLUS) ||
-	    (cm->mode == ATH9K_MODE_11NA_HT40MINUS)) {
+	if (cm->mode & (ATH9K_MODE_SEL_11A |
+			ATH9K_MODE_SEL_11NA_HT20 |
+			ATH9K_MODE_SEL_11NA_HT40PLUS |
+			ATH9K_MODE_SEL_11NA_HT40MINUS)) {
 		if (rd->flags & (ADHOC_NO_11A | DISALLOW_ADHOC_11A))
 			privFlags |= CHANNEL_DISALLOW_ADHOC;
 	}
@@ -617,9 +618,10 @@ ath9k_regd_init_channels(struct ath_hal *ah,
 			 u32 maxchans,
 			 u32 *nchans, u8 *regclassids,
 			 u32 maxregids, u32 *nregids, u16 cc,
-			 bool enableOutdoor,
+			 u32 modeSelect, bool enableOutdoor,
 			 bool enableExtendedChannels)
 {
+	u32 modesAvail;
 	u16 maxChan = 7000;
 	struct country_code_to_enum_rd *country = NULL;
 	struct regDomain rd5GHz, rd2GHz;
@@ -629,13 +631,11 @@ ath9k_regd_init_channels(struct ath_hal *ah,
 	u8 ctl;
 	int regdmn;
 	u16 chanSep;
-	unsigned long *modes_avail;
-	DECLARE_BITMAP(modes_allowed, ATH9K_MODE_MAX);
 
-	DPRINTF(ah->ah_sc, ATH_DBG_REGULATORY, "%s: cc %u %s %s\n",
-		 __func__, cc,
-		 enableOutdoor ? "Enable outdoor" : "",
-		 enableExtendedChannels ? "Enable ecm" : "");
+	DPRINTF(ah->ah_sc, ATH_DBG_REGULATORY, "%s: cc %u mode 0x%x%s%s\n",
+		 __func__, cc, modeSelect,
+		 enableOutdoor ? " Enable outdoor" : " ",
+		 enableExtendedChannels ? " Enable ecm" : "");
 
 	if (!ath9k_regd_is_ccode_valid(ah, cc)) {
 		DPRINTF(ah->ah_sc, ATH_DBG_REGULATORY,
@@ -726,11 +726,9 @@ ath9k_regd_init_channels(struct ath_hal *ah,
 	}
 
 	if (country == NULL) {
-		modes_avail = ah->ah_caps.wireless_modes;
+		modesAvail = ah->ah_caps.wireless_modes;
 	} else {
-		ath9k_regd_get_wmodes_nreg(ah, country, &rd5GHz, modes_allowed);
-		modes_avail = modes_allowed;
-
+		modesAvail = ath9k_regd_get_wmodes_nreg(ah, country, &rd5GHz);
 		if (!enableOutdoor)
 			maxChan = country->outdoorChanStart;
 	}
@@ -747,10 +745,17 @@ ath9k_regd_init_channels(struct ath_hal *ah,
 		struct RegDmnFreqBand *fband = NULL, *freqs;
 		int8_t low_adj = 0, hi_adj = 0;
 
-		if (!test_bit(cm->mode, modes_avail)) {
+		if ((cm->mode & modeSelect) == 0) {
 			DPRINTF(ah->ah_sc, ATH_DBG_REGULATORY,
-				"%s: !avail mode %d flags 0x%x\n",
+				"%s: skip mode 0x%x flags 0x%x\n",
 				__func__, cm->mode, cm->flags);
+			continue;
+		}
+		if ((cm->mode & modesAvail) == 0) {
+			DPRINTF(ah->ah_sc, ATH_DBG_REGULATORY,
+				"%s: !avail mode 0x%x (0x%x) flags 0x%x\n",
+				__func__, modesAvail, cm->mode,
+				cm->flags);
 			continue;
 		}
 		if (!ath9k_get_channel_edges(ah, cm->flags, &c_lo, &c_hi)) {
@@ -762,25 +767,25 @@ ath9k_regd_init_channels(struct ath_hal *ah,
 		}
 
 		switch (cm->mode) {
-		case ATH9K_MODE_11A:
-		case ATH9K_MODE_11NA_HT20:
-		case ATH9K_MODE_11NA_HT40PLUS:
-		case ATH9K_MODE_11NA_HT40MINUS:
+		case ATH9K_MODE_SEL_11A:
+		case ATH9K_MODE_SEL_11NA_HT20:
+		case ATH9K_MODE_SEL_11NA_HT40PLUS:
+		case ATH9K_MODE_SEL_11NA_HT40MINUS:
 			rd = &rd5GHz;
 			channelBM = rd->chan11a;
 			freqs = &regDmn5GhzFreq[0];
 			ctl = rd->conformanceTestLimit;
 			break;
-		case ATH9K_MODE_11B:
+		case ATH9K_MODE_SEL_11B:
 			rd = &rd2GHz;
 			channelBM = rd->chan11b;
 			freqs = &regDmn2GhzFreq[0];
 			ctl = rd->conformanceTestLimit | CTL_11B;
 			break;
-		case ATH9K_MODE_11G:
-		case ATH9K_MODE_11NG_HT20:
-		case ATH9K_MODE_11NG_HT40PLUS:
-		case ATH9K_MODE_11NG_HT40MINUS:
+		case ATH9K_MODE_SEL_11G:
+		case ATH9K_MODE_SEL_11NG_HT20:
+		case ATH9K_MODE_SEL_11NG_HT40PLUS:
+		case ATH9K_MODE_SEL_11NG_HT40MINUS:
 			rd = &rd2GHz;
 			channelBM = rd->chan11g;
 			freqs = &regDmn2Ghz11gFreq[0];
@@ -796,13 +801,13 @@ ath9k_regd_init_channels(struct ath_hal *ah,
 		if (ath9k_regd_is_chan_bm_zero(channelBM))
 			continue;
 
-		if ((cm->mode == ATH9K_MODE_11NA_HT40PLUS) ||
-		    (cm->mode == ATH9K_MODE_11NG_HT40PLUS)) {
+		if ((cm->mode == ATH9K_MODE_SEL_11NA_HT40PLUS) ||
+		    (cm->mode == ATH9K_MODE_SEL_11NG_HT40PLUS)) {
 			hi_adj = -20;
 		}
 
-		if ((cm->mode == ATH9K_MODE_11NA_HT40MINUS) ||
-		    (cm->mode == ATH9K_MODE_11NG_HT40MINUS)) {
+		if ((cm->mode == ATH9K_MODE_SEL_11NA_HT40MINUS) ||
+		    (cm->mode == ATH9K_MODE_SEL_11NG_HT40MINUS)) {
 			low_adj = 20;
 		}
 
