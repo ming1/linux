@@ -245,11 +245,7 @@ struct set_mib_buffer {
 	u8 size;
 	u8 index;
 	u8 reserved;
-	union {
-		u8 byte;
-		__le16 word;
-		u8 addr[ETH_ALEN];
-	} data;
+	u8 data[72];
 } __attribute__((packed));
 
 struct mib_local {
