@@ -31,6 +31,7 @@
 ******************************************************************************/
 
 #include "ipw2200.h"
+#include <linux/version.h>
 
 
 #ifndef KBUILD_EXTMOD
