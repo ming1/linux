@@ -5101,11 +5101,9 @@ static struct fwentry *at76_load_firmware(struct usb_device *udev,
 
 	fwe->loaded = 1;
 
-	dev_printk(KERN_DEBUG, &udev->dev,
-		   "using firmware %s (version %d.%d.%d-%d)\n",
-		   fwe->fwname, fwh->major, fwh->minor, fwh->patch, fwh->build);
-
-	at76_dbg(DBG_DEVSTART, "board %u, int %d:%d, ext %d:%d", board_type,
+	at76_dbg(DBG_DEVSTART, "firmware board %u version %u.%u.%u-%u "
+		 "(int %d:%d, ext %d:%d)", board_type,
+		 fwh->major, fwh->minor, fwh->patch, fwh->build,
 		 le32_to_cpu(fwh->int_fw_offset), le32_to_cpu(fwh->int_fw_len),
 		 le32_to_cpu(fwh->ext_fw_offset), le32_to_cpu(fwh->ext_fw_len));
 	at76_dbg(DBG_DEVSTART, "firmware id %s", str);
@@ -5258,8 +5256,8 @@ static int at76_init_new_device(struct at76_priv *priv,
 	/* MAC address */
 	ret = at76_get_hw_config(priv);
 	if (ret < 0) {
-		dev_printk(KERN_ERR, &interface->dev,
-			   "cannot get MAC address\n");
+		printk(KERN_ERR "%s: cannot get MAC address\n",
+		       priv->netdev->name);
 		goto exit;
 	}
 
@@ -5301,14 +5299,15 @@ static int at76_init_new_device(struct at76_priv *priv,
 
 	ret = register_netdev(priv->netdev);
 	if (ret) {
-		dev_printk(KERN_ERR, &interface->dev,
-			   "cannot register netdevice (status %d)!\n", ret);
+		printk(KERN_ERR "cannot register netdevice %s (status %d)!\n",
+		       priv->netdev->name, ret);
 		goto exit;
 	}
 	priv->netdev_registered = 1;
 
-	printk(KERN_INFO "%s: USB %s, MAC %s, firmware %d.%d.%d-%d\n",
-	       netdev->name, interface->dev.bus_id, mac2str(priv->mac_addr),
+	printk(KERN_INFO "%s: MAC address %s\n", netdev->name,
+	       mac2str(priv->mac_addr));
+	printk(KERN_INFO "%s: firmware version %d.%d.%d-%d\n", netdev->name,
 	       priv->fw_version.major, priv->fw_version.minor,
 	       priv->fw_version.patch, priv->fw_version.build);
 	printk(KERN_INFO "%s: regulatory domain 0x%02x: %s\n", netdev->name,
@@ -5413,8 +5412,7 @@ static int at76_probe(struct usb_interface *interface,
 	if (op_mode != OPMODE_NORMAL_NIC_WITH_FLASH
 	    && op_mode != OPMODE_NORMAL_NIC_WITHOUT_FLASH) {
 		/* download internal firmware part */
-		dev_printk(KERN_DEBUG, &interface->dev,
-			   "downloading internal firmware\n");
+		at76_dbg(DBG_DEVSTART, "downloading internal firmware");
 		ret = at76_load_internal_fw(udev, fwe);
 		if (ret < 0) {
 			dev_printk(KERN_ERR, &interface->dev,
@@ -5444,8 +5442,7 @@ static int at76_probe(struct usb_interface *interface,
 		need_ext_fw = 1;
 
 	if (need_ext_fw) {
-		dev_printk(KERN_DEBUG, &interface->dev,
-			   "downloading external firmware\n");
+		at76_dbg(DBG_DEVSTART, "downloading external firmware");
 
 		ret = at76_load_external_fw(udev, fwe);
 		if (ret)
