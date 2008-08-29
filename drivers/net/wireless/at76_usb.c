@@ -2547,6 +2547,8 @@ static int at76_init_new_device(struct at76_priv *priv,
 		priv->hw->flags = IEEE80211_HW_RX_INCLUDES_FCS |
 				  IEEE80211_HW_SIGNAL_UNSPEC;
 
+	priv->hw->wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION);
+
 	SET_IEEE80211_DEV(priv->hw, &interface->dev);
 	SET_IEEE80211_PERM_ADDR(priv->hw, priv->mac_addr);
 
