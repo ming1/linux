@@ -1154,7 +1154,7 @@ static int rs_switch_to_mimo2(struct iwl_priv *priv,
 		return -1;
 
 	if (((sta->ht_info.cap & IEEE80211_HT_CAP_SM_PS) >> 2)
-						== IWL_MIMO_PS_STATIC)
+						== WLAN_HT_CAP_SM_PS_STATIC)
 		return -1;
 
 	/* Need both Tx chains/antennas to support MIMO */
