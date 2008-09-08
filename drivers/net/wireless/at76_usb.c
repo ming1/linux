@@ -5454,6 +5454,19 @@ static int at76_probe(struct usb_interface *interface,
 			       ": error %d getting firmware version\n", ret);
 			goto error;
 		}
+
+		/* Major and minor version must match */
+		if (fwv.major != fwe->fw_version.major
+		    || fwv.minor != fwe->fw_version.minor) {
+			printk(KERN_ERR DRIVER_NAME
+			       ": wrong firmware version, loaded %d.%d.%d-%d, "
+			       "read back %d.%d.%d-%d\n",
+			       fwe->fw_version.major, fwe->fw_version.minor,
+			       fwe->fw_version.patch, fwe->fw_version.build,
+			       fwv.major, fwv.minor, fwv.patch, fwv.build);
+			ret = -EBUSY;
+			goto error;
+		}
 	}
 
 	priv = at76_alloc_new_device(udev);
