@@ -814,6 +814,15 @@ W:	http://www.thekelleys.org.uk/atmel
 W:	http://atmelwlandriver.sourceforge.net/
 S:	Maintained
 
+ATMEL USB WIRELESS DRIVER
+P:	Pavel Roskin
+M:	proski@gnu.org
+L:	linux-wireless@vger.kernel.org
+L:	at76c503a-user@lists.berlios.de
+L:	at76c503a-develop@lists.berlios.de
+W:	http://at76c503a.berlios.de/
+S:	Maintained
+
 AUDIT SUBSYSTEM
 P:	Al Viro
 M:	viro@zeniv.linux.org.uk
