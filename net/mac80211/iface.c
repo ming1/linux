@@ -56,7 +56,7 @@ static void ieee80211_teardown_sdata(struct net_device *dev)
 	case IEEE80211_IF_TYPE_MESH_POINT:
 		/* Allow compiler to elide mesh_rmc_free call. */
 		if (ieee80211_vif_is_mesh(&sdata->vif))
-			mesh_rmc_free(sdata);
+			mesh_rmc_free(dev);
 		/* fall through */
 	case IEEE80211_IF_TYPE_STA:
 	case IEEE80211_IF_TYPE_IBSS:
@@ -241,13 +241,15 @@ int ieee80211_if_add(struct ieee80211_local *local, const char *name,
 	return ret;
 }
 
-void ieee80211_if_remove(struct ieee80211_sub_if_data *sdata)
+void ieee80211_if_remove(struct net_device *dev)
 {
+	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+
 	ASSERT_RTNL();
 
 	list_del_rcu(&sdata->list);
 	synchronize_rcu();
-	unregister_netdevice(sdata->dev);
+	unregister_netdevice(dev);
 }
 
 /*
