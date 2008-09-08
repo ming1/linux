@@ -399,7 +399,7 @@ static void iwlcore_init_ht_hw_capab(const struct iwl_priv *priv,
 
 	ht_info->cap |= (u16)IEEE80211_HT_CAP_GRN_FLD;
 	ht_info->cap |= (u16)IEEE80211_HT_CAP_SGI_20;
-	ht_info->cap |= (u16)(IEEE80211_HT_CAP_SM_PS &
+	ht_info->cap |= (u16)(IEEE80211_HT_CAP_MIMO_PS &
 			     (IWL_MIMO_PS_NONE << 2));
 
 	max_bit_rate = MAX_BIT_RATE_20_MHZ;
