@@ -301,11 +301,9 @@ static void p54p_check_rx_ring(struct ieee80211_hw *dev, u32 *index,
 		len = le16_to_cpu(desc->len);
 		skb = rx_buf[i];
 
-		if (!skb) {
-			i++;
-			i %= ring_limit;
+		if (!skb)
 			continue;
-		}
+
 		skb_put(skb, len);
 
 		if (p54_rx(dev, skb)) {
