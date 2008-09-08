@@ -783,7 +783,7 @@ static void ieee80211_send_assoc(struct net_device *dev,
 		}
 	}
 
-	if (rates_len > count) {
+	if (count == 8) {
 		pos = skb_put(skb, rates_len - count + 2);
 		*pos++ = WLAN_EID_EXT_SUPP_RATES;
 		*pos++ = rates_len - count;
