@@ -360,9 +360,8 @@ static void ath_rx_flush_tid(struct ath_softc *sc,
 	struct ath_arx_tid *rxtid, int drop)
 {
 	struct ath_rxbuf *rxbuf;
-	unsigned long flag;
 
-	spin_lock_irqsave(&rxtid->tidlock, flag);
+	spin_lock_bh(&rxtid->tidlock);
 	while (rxtid->baw_head != rxtid->baw_tail) {
 		rxbuf = rxtid->rxbuf + rxtid->baw_head;
 		if (!rxbuf->rx_wbuf) {
@@ -383,7 +382,7 @@ static void ath_rx_flush_tid(struct ath_softc *sc,
 		INCR(rxtid->baw_head, ATH_TID_MAX_BUFS);
 		INCR(rxtid->seq_next, IEEE80211_SEQ_MAX);
 	}
-	spin_unlock_irqrestore(&rxtid->tidlock, flag);
+	spin_unlock_bh(&rxtid->tidlock);
 }
 
 static struct sk_buff *ath_rxbuf_alloc(struct ath_softc *sc,
