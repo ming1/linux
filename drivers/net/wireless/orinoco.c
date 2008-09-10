@@ -2100,9 +2100,8 @@ static int __orinoco_hw_setup_wep(struct orinoco_private *priv)
 	int err = 0;
 	int master_wep_flag;
 	int auth_flag;
-	int enc_flag;
 
-	if (priv->encode_alg == IW_ENCODE_ALG_WEP)
+	if (priv->wep_on)
 		__orinoco_hw_setup_wepkeys(priv);
 
 	if (priv->wep_restrict)
@@ -2110,14 +2109,9 @@ static int __orinoco_hw_setup_wep(struct orinoco_private *priv)
 	else
 		auth_flag = HERMES_AUTH_OPEN;
 
-	if (priv->encode_alg == IW_ENCODE_ALG_WEP)
-		enc_flag = 1;
-	else
-		enc_flag = 0;
-
 	switch (priv->firmware_type) {
 	case FIRMWARE_TYPE_AGERE: /* Agere style WEP */
-		if (priv->encode_alg == IW_ENCODE_ALG_WEP) {
+		if (priv->wep_on) {
 			/* Enable the shared-key authentication. */
 			err = hermes_write_wordrec(hw, USER_BAP,
 						   HERMES_RID_CNFAUTHENTICATION_AGERE,
@@ -2125,14 +2119,14 @@ static int __orinoco_hw_setup_wep(struct orinoco_private *priv)
 		}
 		err = hermes_write_wordrec(hw, USER_BAP,
 					   HERMES_RID_CNFWEPENABLED_AGERE,
-					   enc_flag);
+					   priv->wep_on);
 		if (err)
 			return err;
 		break;
 
 	case FIRMWARE_TYPE_INTERSIL: /* Intersil style WEP */
 	case FIRMWARE_TYPE_SYMBOL: /* Symbol style WEP */
-		if (priv->encode_alg == IW_ENCODE_ALG_WEP) {
+		if (priv->wep_on) {
 			if (priv->wep_restrict ||
 			    (priv->firmware_type == FIRMWARE_TYPE_SYMBOL))
 				master_wep_flag = HERMES_WEP_PRIVACY_INVOKED |
@@ -3018,7 +3012,7 @@ static int orinoco_init(struct net_device *dev)
 	priv->channel = 0; /* use firmware default */
 
 	priv->promiscuous = 0;
-	priv->encode_alg = IW_ENCODE_ALG_NONE;
+	priv->wep_on = 0;
 	priv->tx_key = 0;
 
 	/* Make the hardware available, as long as it hasn't been
@@ -3507,7 +3501,7 @@ static int orinoco_ioctl_setiwencode(struct net_device *dev,
 	struct orinoco_private *priv = netdev_priv(dev);
 	int index = (erq->flags & IW_ENCODE_INDEX) - 1;
 	int setindex = priv->tx_key;
-	int encode_alg = priv->encode_alg;
+	int enable = priv->wep_on;
 	int restricted = priv->wep_restrict;
 	u16 xlen = 0;
 	int err = -EINPROGRESS;		/* Call commit handler */
@@ -3541,9 +3535,9 @@ static int orinoco_ioctl_setiwencode(struct net_device *dev,
 			xlen = 0;
 
 		/* Switch on WEP if off */
-		if ((encode_alg != IW_ENCODE_ALG_WEP) && (xlen > 0)) {
+		if ((!enable) && (xlen > 0)) {
 			setindex = index;
-			encode_alg = IW_ENCODE_ALG_WEP;
+			enable = 1;
 		}
 	} else {
 		/* Important note : if the user do "iwconfig eth0 enc off",
@@ -3565,7 +3559,7 @@ static int orinoco_ioctl_setiwencode(struct net_device *dev,
 	}
 
 	if (erq->flags & IW_ENCODE_DISABLED)
-		encode_alg = IW_ENCODE_ALG_NONE;
+		enable = 0;
 	if (erq->flags & IW_ENCODE_OPEN)
 		restricted = 0;
 	if (erq->flags & IW_ENCODE_RESTRICTED)
@@ -3580,15 +3574,14 @@ static int orinoco_ioctl_setiwencode(struct net_device *dev,
 	priv->tx_key = setindex;
 
 	/* Try fast key change if connected and only keys are changed */
-	if ((priv->encode_alg == encode_alg) &&
-	    (priv->wep_restrict == restricted) &&
+	if (priv->wep_on && enable && (priv->wep_restrict == restricted) &&
 	    netif_carrier_ok(dev)) {
 		err = __orinoco_hw_setup_wepkeys(priv);
 		/* No need to commit if successful */
 		goto out;
 	}
 
-	priv->encode_alg = encode_alg;
+	priv->wep_on = enable;
 	priv->wep_restrict = restricted;
 
  out:
@@ -3617,7 +3610,7 @@ static int orinoco_ioctl_getiwencode(struct net_device *dev,
 		index = priv->tx_key;
 
 	erq->flags = 0;
-	if (!priv->encode_alg)
+	if (! priv->wep_on)
 		erq->flags |= IW_ENCODE_DISABLED;
 	erq->flags |= index + 1;
 
