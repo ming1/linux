@@ -185,8 +185,7 @@ struct p54_rx_hdr {
 	u8 rssi;
 	u8 quality;
 	u16 unknown2;
-	__le32 tsf32;
-	__le32 unalloc0;
+	__le64 timestamp;
 	u8 align[0];
 } __attribute__ ((packed));
 
