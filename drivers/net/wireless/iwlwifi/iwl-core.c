@@ -592,11 +592,12 @@ static void iwlcore_free_geos(struct iwl_priv *priv)
 	clear_bit(STATUS_GEO_CONFIGURED, &priv->status);
 }
 
-static bool is_single_rx_stream(struct iwl_priv *priv)
+static u8 is_single_rx_stream(struct iwl_priv *priv)
 {
 	return !priv->current_ht_config.is_ht ||
 	       ((priv->current_ht_config.supp_mcs_set[1] == 0) &&
-		(priv->current_ht_config.supp_mcs_set[2] == 0));
+		(priv->current_ht_config.supp_mcs_set[2] == 0)) ||
+	       priv->ps_mode == IWL_MIMO_PS_STATIC;
 }
 
 static u8 iwl_is_channel_extension(struct iwl_priv *priv,
@@ -703,39 +704,33 @@ EXPORT_SYMBOL(iwl_set_rxon_ht);
  * MIMO (dual stream) requires at least 2, but works better with 3.
  * This does not determine *which* chains to use, just how many.
  */
-static int iwl_get_active_rx_chain_count(struct iwl_priv *priv)
+static int iwlcore_get_rx_chain_counter(struct iwl_priv *priv,
+					u8 *idle_state, u8 *rx_state)
 {
-	bool is_single = is_single_rx_stream(priv);
-	bool is_cam = !test_bit(STATUS_POWER_PMI, &priv->status);
+	u8 is_single = is_single_rx_stream(priv);
+	u8 is_cam = test_bit(STATUS_POWER_PMI, &priv->status) ? 0 : 1;
 
 	/* # of Rx chains to use when expecting MIMO. */
 	if (is_single || (!is_cam && (priv->ps_mode == IWL_MIMO_PS_STATIC)))
-		return 2;
+		*rx_state = 2;
 	else
-		return 3;
-}
+		*rx_state = 3;
 
-static int iwl_get_idle_rx_chain_count(struct iwl_priv *priv, int active_cnt)
-{
-	int idle_cnt;
-	bool is_cam = !test_bit(STATUS_POWER_PMI, &priv->status);
 	/* # Rx chains when idling and maybe trying to save power */
 	switch (priv->ps_mode) {
 	case IWL_MIMO_PS_STATIC:
 	case IWL_MIMO_PS_DYNAMIC:
-		idle_cnt = (is_cam) ? 2 : 1;
+		*idle_state = (is_cam) ? 2 : 1;
 		break;
 	case IWL_MIMO_PS_NONE:
-		idle_cnt = (is_cam) ? active_cnt : 1;
+		*idle_state = (is_cam) ? *rx_state : 1;
 		break;
-	case IWL_MIMO_PS_INVALID:
 	default:
-		IWL_ERROR("invalide mimo ps mode %d\n", priv->ps_mode);
-		WARN_ON(1);
-		idle_cnt = -1;
+		*idle_state = 1;
 		break;
 	}
-	return idle_cnt;
+
+	return 0;
 }
 
 /**
@@ -746,44 +741,34 @@ static int iwl_get_idle_rx_chain_count(struct iwl_priv *priv, int active_cnt)
  */
 void iwl_set_rxon_chain(struct iwl_priv *priv)
 {
-	bool is_single = is_single_rx_stream(priv);
-	bool is_cam = !test_bit(STATUS_POWER_PMI, &priv->status);
-	u8 idle_rx_cnt, active_rx_cnt;
-	u16 rx_chain;
+	u8 is_single = is_single_rx_stream(priv);
+	u8 idle_state, rx_state;
+
+	priv->staging_rxon.rx_chain = 0;
+	rx_state = idle_state = 3;
 
 	/* Tell uCode which antennas are actually connected.
 	 * Before first association, we assume all antennas are connected.
 	 * Just after first association, iwl_chain_noise_calibration()
 	 *    checks which antennas actually *are* connected. */
-	rx_chain = priv->hw_params.valid_rx_ant << RXON_RX_CHAIN_VALID_POS;
+	priv->staging_rxon.rx_chain |=
+		    cpu_to_le16(priv->hw_params.valid_rx_ant <<
+						 RXON_RX_CHAIN_VALID_POS);
 
 	/* How many receivers should we use? */
-	active_rx_cnt = iwl_get_active_rx_chain_count(priv);
-	idle_rx_cnt = iwl_get_idle_rx_chain_count(priv, active_rx_cnt);
+	iwlcore_get_rx_chain_counter(priv, &idle_state, &rx_state);
+	priv->staging_rxon.rx_chain |=
+		cpu_to_le16(rx_state << RXON_RX_CHAIN_MIMO_CNT_POS);
+	priv->staging_rxon.rx_chain |=
+		cpu_to_le16(idle_state << RXON_RX_CHAIN_CNT_POS);
 
-	/* correct rx chain count accoridng hw settings */
-	if (priv->hw_params.rx_chains_num < active_rx_cnt)
-		active_rx_cnt = priv->hw_params.rx_chains_num;
-
-	if (priv->hw_params.rx_chains_num < idle_rx_cnt)
-		idle_rx_cnt = priv->hw_params.rx_chains_num;
-
-	rx_chain |= active_rx_cnt << RXON_RX_CHAIN_MIMO_CNT_POS;
-	rx_chain |= idle_rx_cnt  << RXON_RX_CHAIN_CNT_POS;
-
-	priv->staging_rxon.rx_chain = cpu_to_le16(rx_chain);
-
-	if (!is_single && (active_rx_cnt >= 2) && is_cam)
+	if (!is_single && (rx_state >= 2) &&
+	    !test_bit(STATUS_POWER_PMI, &priv->status))
 		priv->staging_rxon.rx_chain |= RXON_RX_CHAIN_MIMO_FORCE_MSK;
 	else
 		priv->staging_rxon.rx_chain &= ~RXON_RX_CHAIN_MIMO_FORCE_MSK;
 
-	IWL_DEBUG_ASSOC("rx_chain=0x%Xi active=%d idle=%d\n",
-			priv->staging_rxon.rx_chain,
-			active_rx_cnt, idle_rx_cnt);
-
-	WARN_ON(active_rx_cnt == 0 || idle_rx_cnt == 0 ||
-		active_rx_cnt < idle_rx_cnt);
+	IWL_DEBUG_ASSOC("rx chain %X\n", priv->staging_rxon.rx_chain);
 }
 EXPORT_SYMBOL(iwl_set_rxon_chain);
 
