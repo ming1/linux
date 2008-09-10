@@ -496,10 +496,8 @@ struct ieee80211_sub_if_data {
 		struct {
 			struct dentry *mode;
 		} monitor;
-	} debugfs;
-	struct {
 		struct dentry *default_key;
-	} common_debugfs;
+	} debugfs;
 
 #ifdef CONFIG_MAC80211_MESH
 	struct dentry *mesh_stats_dir;
