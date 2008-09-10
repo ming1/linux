@@ -1928,7 +1928,7 @@ static int at76_add_interface(struct ieee80211_hw *hw,
 	mutex_lock(&priv->mtx);
 
 	switch (conf->type) {
-	case IEEE80211_IF_TYPE_STA:
+	case NL80211_IFTYPE_STATION:
 		priv->iw_mode = IW_MODE_INFRA;
 		break;
 	default:
