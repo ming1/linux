@@ -279,8 +279,7 @@ static int orinoco_bss_data_allocate(struct orinoco_private *priv)
 		return 0;
 
 	priv->bss_data =
-	    kzalloc(ORINOCO_MAX_BSS_COUNT * sizeof(struct bss_element),
-		    GFP_KERNEL);
+	    kzalloc(ORINOCO_MAX_BSS_COUNT * sizeof(bss_element), GFP_KERNEL);
 	if (!priv->bss_data) {
 		printk(KERN_WARNING "Out of memory allocating beacons");
 		return -ENOMEM;
@@ -1414,8 +1413,8 @@ static void orinoco_send_wevents(struct work_struct *work)
 static inline void orinoco_clear_scan_results(struct orinoco_private *priv,
 					      unsigned long scan_age)
 {
-	struct bss_element *bss;
-	struct bss_element *tmp_bss;
+	bss_element *bss;
+	bss_element *tmp_bss;
 
 	/* Blow away current list of scan results */
 	list_for_each_entry_safe(bss, tmp_bss, &priv->bss_list, list) {
@@ -1490,7 +1489,7 @@ static int orinoco_process_scan_results(struct net_device *dev,
 	/* Read the entries one by one */
 	for (; offset + atom_len <= len; offset += atom_len) {
 		int found = 0;
-		struct bss_element *bss = NULL;
+		bss_element *bss = NULL;
 
 		/* Get next atom */
 		atom = (union hermes_scan_info *) (buf + offset);
@@ -1512,7 +1511,7 @@ static int orinoco_process_scan_results(struct net_device *dev,
 		/* Grab a bss off the free list */
 		if (!found && !list_empty(&priv->bss_free_list)) {
 			bss = list_entry(priv->bss_free_list.next,
-					 struct bss_element, list);
+					 bss_element, list);
 			list_del(priv->bss_free_list.next);
 
 			list_add_tail(&bss->list, &priv->bss_list);
@@ -4552,7 +4551,7 @@ static int orinoco_ioctl_getscan(struct net_device *dev,
 				 char *extra)
 {
 	struct orinoco_private *priv = netdev_priv(dev);
-	struct bss_element *bss;
+	bss_element *bss;
 	int err = 0;
 	unsigned long flags;
 	char *current_ev = extra;
