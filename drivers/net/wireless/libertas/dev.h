@@ -253,9 +253,7 @@ struct lbs_private {
 	u32 connect_status;
 	u32 mesh_connect_status;
 	u16 regioncode;
-	s16 txpower_cur;
-	s16 txpower_min;
-	s16 txpower_max;
+	u16 txpowerlevel;
 
 	/** POWER MANAGEMENT AND PnP SUPPORT */
 	u8 surpriseremoved;
