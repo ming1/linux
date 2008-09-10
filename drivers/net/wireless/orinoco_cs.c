@@ -109,8 +109,7 @@ orinoco_cs_probe(struct pcmcia_device *link)
 	struct orinoco_private *priv;
 	struct orinoco_pccard *card;
 
-	dev = alloc_orinocodev(sizeof(*card), &handle_to_dev(link),
-			       orinoco_cs_hard_reset, NULL);
+	dev = alloc_orinocodev(sizeof(*card), orinoco_cs_hard_reset);
 	if (! dev)
 		return -ENOMEM;
 	priv = netdev_priv(dev);
