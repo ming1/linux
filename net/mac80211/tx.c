@@ -1330,7 +1330,7 @@ int ieee80211_master_start_xmit(struct sk_buff *skb,
 				if (mesh_nexthop_lookup(skb, osdata))
 					return  0;
 			if (memcmp(odev->dev_addr, hdr->addr4, ETH_ALEN) != 0)
-				IEEE80211_IFSTA_MESH_CTR_INC(&osdata->u.sta,
+				IEEE80211_IFSTA_MESH_CTR_INC(&osdata->u.mesh,
 							     fwded_frames);
 		}
 	}
@@ -1483,9 +1483,9 @@ int ieee80211_subif_start_xmit(struct sk_buff *skb,
 		memcpy(hdr.addr2, dev->dev_addr, ETH_ALEN);
 		memcpy(hdr.addr3, skb->data, ETH_ALEN);
 		memcpy(hdr.addr4, skb->data + ETH_ALEN, ETH_ALEN);
-		if (!sdata->u.sta.mshcfg.dot11MeshTTL) {
+		if (!sdata->u.mesh.mshcfg.dot11MeshTTL) {
 			/* Do not send frames with mesh_ttl == 0 */
-			sdata->u.sta.mshstats.dropped_frames_ttl++;
+			sdata->u.mesh.mshstats.dropped_frames_ttl++;
 			ret = 0;
 			goto fail;
 		}
@@ -1910,7 +1910,7 @@ struct sk_buff *ieee80211_beacon_get(struct ieee80211_hw *hw,
 
 		mesh_mgmt_ies_add(skb, sdata);
 
-		num_beacons = &sdata->u.sta.num_beacons;
+		num_beacons = &sdata->u.mesh.num_beacons;
 	} else {
 		WARN_ON(1);
 		goto out;
