@@ -339,9 +339,9 @@ struct ieee80211_regdomain {
 #define MBM_TO_DBM(gain) (gain / 100)
 
 #define REG_RULE(start, end, bw, gain, eirp, reg_flags) { \
-	.freq_range.start_freq_khz = (start) * 100, \
-	.freq_range.end_freq_khz = (end) * 100, \
-	.freq_range.max_bandwidth_khz = (bw) * 100, \
+	.freq_range.start_freq_khz = (start) * 1000, \
+	.freq_range.end_freq_khz = (end) * 1000, \
+	.freq_range.max_bandwidth_khz = (bw) * 1000, \
 	.power_rule.max_antenna_gain = (gain) * 100, \
 	.power_rule.max_eirp = (eirp) * 100, \
 	.flags = reg_flags, \
