@@ -1534,14 +1534,15 @@ static void ieee80211_rx_bss_info(struct ieee80211_sub_if_data *sdata,
 				ieee80211_mandatory_rates(local, band);
 
 #ifdef CONFIG_MAC80211_IBSS_DEBUG
-			if (sta->supp_rates[band] != prev_rates)
+			if (sta->sta.supp_rates[band] != prev_rates)
 				printk(KERN_DEBUG "%s: updated supp_rates set "
 				    "for %s based on beacon info (0x%llx | "
 				    "0x%llx -> 0x%llx)\n",
-				    sdata->dev->name, print_mac(mac, sta->addr),
+				    sdata->dev->name,
+				    print_mac(mac, sta->sta.addr),
 				    (unsigned long long) prev_rates,
 				    (unsigned long long) supp_rates,
-				    (unsigned long long) sta->supp_rates[band]);
+				    (unsigned long long) sta->sta.supp_rates[band]);
 #endif
 		} else {
 			ieee80211_ibss_add_sta(sdata, NULL, mgmt->bssid,
