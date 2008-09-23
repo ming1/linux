@@ -155,6 +155,7 @@ static void rt2x00queue_create_tx_descriptor(struct queue_entry *entry,
 {
 	struct rt2x00_dev *rt2x00dev = entry->queue->rt2x00dev;
 	struct ieee80211_tx_info *tx_info = IEEE80211_SKB_CB(entry->skb);
+	struct rt2x00_intf *intf = vif_to_intf(tx_info->control.vif);
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)entry->skb->data;
 	struct ieee80211_rate *rate =
 	    ieee80211_get_tx_rate(rt2x00dev->hw, tx_info);
@@ -277,22 +278,16 @@ static void rt2x00queue_create_tx_descriptor(struct queue_entry *entry,
 	 * sequence counter given by mac80211.
 	 */
 	if (tx_info->flags & IEEE80211_TX_CTL_ASSIGN_SEQ) {
-		if (likely(tx_info->control.vif)) {
-			struct rt2x00_intf *intf;
+		spin_lock_irqsave(&intf->seqlock, irqflags);
 
-			intf = vif_to_intf(tx_info->control.vif);
+		if (test_bit(ENTRY_TXD_FIRST_FRAGMENT, &txdesc->flags))
+			intf->seqno += 0x10;
+		hdr->seq_ctrl &= cpu_to_le16(IEEE80211_SCTL_FRAG);
+		hdr->seq_ctrl |= cpu_to_le16(intf->seqno);
 
-			spin_lock_irqsave(&intf->seqlock, irqflags);
+		spin_unlock_irqrestore(&intf->seqlock, irqflags);
 
-			if (test_bit(ENTRY_TXD_FIRST_FRAGMENT, &txdesc->flags))
-				intf->seqno += 0x10;
-			hdr->seq_ctrl &= cpu_to_le16(IEEE80211_SCTL_FRAG);
-			hdr->seq_ctrl |= cpu_to_le16(intf->seqno);
-
-			spin_unlock_irqrestore(&intf->seqlock, irqflags);
-
-			__set_bit(ENTRY_TXD_GENERATE_SEQ, &txdesc->flags);
-		}
+		__set_bit(ENTRY_TXD_GENERATE_SEQ, &txdesc->flags);
 	}
 
 	/*
