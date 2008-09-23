@@ -134,16 +134,6 @@
 #define PAIRWISE_KEY_TABLE_BASE		0x1200
 #define PAIRWISE_TA_TABLE_BASE		0x1a00
 
-#define SHARED_KEY_ENTRY(__idx) \
-	( SHARED_KEY_TABLE_BASE + \
-		((__idx) * sizeof(struct hw_key_entry)) )
-#define PAIRWISE_KEY_ENTRY(__idx) \
-	( PAIRWISE_KEY_TABLE_BASE + \
-		((__idx) * sizeof(struct hw_key_entry)) )
-#define PAIRWISE_TA_ENTRY(__idx) \
-	( PAIRWISE_TA_TABLE_BASE + \
-		((__idx) * sizeof(struct hw_pairwise_ta_entry)) )
-
 struct hw_key_entry {
 	u8 key[16];
 	u8 tx_mic[8];
@@ -152,8 +142,7 @@ struct hw_key_entry {
 
 struct hw_pairwise_ta_entry {
 	u8 address[6];
-	u8 cipher;
-	u8 reserved;
+	u8 reserved[2];
 } __attribute__ ((packed));
 
 /*
@@ -673,10 +662,6 @@ struct hw_pairwise_ta_entry {
  * SEC_CSR4: Pairwise key table lookup control.
  */
 #define SEC_CSR4			0x30b0
-#define SEC_CSR4_ENABLE_BSS0		FIELD32(0x00000001)
-#define SEC_CSR4_ENABLE_BSS1		FIELD32(0x00000002)
-#define SEC_CSR4_ENABLE_BSS2		FIELD32(0x00000004)
-#define SEC_CSR4_ENABLE_BSS3		FIELD32(0x00000008)
 
 /*
  * SEC_CSR5: shared key table security mode register.
@@ -1443,10 +1428,8 @@ struct hw_pairwise_ta_entry {
 
 /*
  * Word4
- * ICV: Received ICV of originally encrypted.
- * NOTE: This is a guess, the official definition is "reserved"
  */
-#define RXD_W4_ICV			FIELD32(0xffffffff)
+#define RXD_W4_RESERVED			FIELD32(0xffffffff)
 
 /*
  * the above 20-byte is called RXINFO and will be DMAed to MAC RX block
