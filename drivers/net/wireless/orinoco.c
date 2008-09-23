@@ -1424,37 +1424,33 @@ static void orinoco_join_ap(struct work_struct *work)
 }
 
 /* Send new BSSID to userspace */
-static void orinoco_send_bssid_wevent(struct orinoco_private *priv)
-{
-	struct net_device *dev = priv->ndev;
-	struct hermes *hw = &priv->hw;
-	union iwreq_data wrqu;
-	int err;
-
-	err = hermes_read_ltv(hw, IRQ_BAP, HERMES_RID_CURRENTBSSID,
-			      ETH_ALEN, NULL, wrqu.ap_addr.sa_data);
-	if (err != 0)
-		return;
-
-	wrqu.ap_addr.sa_family = ARPHRD_ETHER;
-
-	/* Send event to user space */
-	wireless_send_event(dev, SIOCGIWAP, &wrqu, NULL);
-}
-
 static void orinoco_send_wevents(struct work_struct *work)
 {
 	struct orinoco_private *priv =
 		container_of(work, struct orinoco_private, wevent_work);
+	struct net_device *dev = priv->ndev;
+	struct hermes *hw = &priv->hw;
+	union iwreq_data wrqu;
+	int err;
 	unsigned long flags;
 
 	if (orinoco_lock(priv, &flags) != 0)
 		return;
 
-	orinoco_send_bssid_wevent(priv);
+	err = hermes_read_ltv(hw, IRQ_BAP, HERMES_RID_CURRENTBSSID,
+			      ETH_ALEN, NULL, wrqu.ap_addr.sa_data);
+	if (err != 0)
+		goto out;
 
+	wrqu.ap_addr.sa_family = ARPHRD_ETHER;
+
+	/* Send event to user space */
+	wireless_send_event(dev, SIOCGIWAP, &wrqu, NULL);
+
+ out:
 	orinoco_unlock(priv, &flags);
 }
+
 
 static inline void orinoco_clear_scan_results(struct orinoco_private *priv,
 					      unsigned long scan_age)
