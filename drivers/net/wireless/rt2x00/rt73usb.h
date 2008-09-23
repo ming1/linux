@@ -1050,10 +1050,17 @@ struct hw_pairwise_ta_entry {
 #define MAX_TXPOWER	31
 #define DEFAULT_TXPOWER	24
 
-#define TXPOWER_FROM_DEV(__txpower) \
-	(((u8)(__txpower)) > MAX_TXPOWER) ? DEFAULT_TXPOWER : (__txpower)
+#define TXPOWER_FROM_DEV(__txpower)		\
+({						\
+	((__txpower) > MAX_TXPOWER) ?		\
+		DEFAULT_TXPOWER : (__txpower);	\
+})
 
-#define TXPOWER_TO_DEV(__txpower) \
-	clamp_t(char, __txpower, MIN_TXPOWER, MAX_TXPOWER)
+#define TXPOWER_TO_DEV(__txpower)			\
+({							\
+	((__txpower) <= MIN_TXPOWER) ? MIN_TXPOWER :	\
+	(((__txpower) >= MAX_TXPOWER) ? MAX_TXPOWER :	\
+	(__txpower));					\
+})
 
 #endif /* RT73USB_H */
