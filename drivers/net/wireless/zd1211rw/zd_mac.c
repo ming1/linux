@@ -716,15 +716,15 @@ static int zd_op_add_interface(struct ieee80211_hw *hw,
 {
 	struct zd_mac *mac = zd_hw_mac(hw);
 
-	/* using NL80211_IFTYPE_UNSPECIFIED to indicate no mode selected */
-	if (mac->type != NL80211_IFTYPE_UNSPECIFIED)
+	/* using IEEE80211_IF_TYPE_INVALID to indicate no mode selected */
+	if (mac->type != IEEE80211_IF_TYPE_INVALID)
 		return -EOPNOTSUPP;
 
 	switch (conf->type) {
-	case NL80211_IFTYPE_MONITOR:
-	case NL80211_IFTYPE_MESH_POINT:
-	case NL80211_IFTYPE_STATION:
-	case NL80211_IFTYPE_ADHOC:
+	case IEEE80211_IF_TYPE_MNTR:
+	case IEEE80211_IF_TYPE_MESH_POINT:
+	case IEEE80211_IF_TYPE_STA:
+	case IEEE80211_IF_TYPE_IBSS:
 		mac->type = conf->type;
 		break;
 	default:
@@ -738,7 +738,7 @@ static void zd_op_remove_interface(struct ieee80211_hw *hw,
 				    struct ieee80211_if_init_conf *conf)
 {
 	struct zd_mac *mac = zd_hw_mac(hw);
-	mac->type = NL80211_IFTYPE_UNSPECIFIED;
+	mac->type = IEEE80211_IF_TYPE_INVALID;
 	zd_set_beacon_interval(&mac->chip, 0);
 	zd_write_mac_addr(&mac->chip, NULL);
 }
@@ -757,8 +757,8 @@ static int zd_op_config_interface(struct ieee80211_hw *hw,
 	int associated;
 	int r;
 
-	if (mac->type == NL80211_IFTYPE_MESH_POINT ||
-	    mac->type == NL80211_IFTYPE_ADHOC) {
+	if (mac->type == IEEE80211_IF_TYPE_MESH_POINT ||
+	    mac->type == IEEE80211_IF_TYPE_IBSS) {
 		associated = true;
 		if (conf->changed & IEEE80211_IFCC_BEACON) {
 			struct sk_buff *beacon = ieee80211_beacon_get(hw, vif);
@@ -955,7 +955,7 @@ struct ieee80211_hw *zd_mac_alloc_hw(struct usb_interface *intf)
 	spin_lock_init(&mac->lock);
 	mac->hw = hw;
 
-	mac->type = NL80211_IFTYPE_UNSPECIFIED;
+	mac->type = IEEE80211_IF_TYPE_INVALID;
 
 	memcpy(mac->channels, zd_channels, sizeof(zd_channels));
 	memcpy(mac->rates, zd_rates, sizeof(zd_rates));
