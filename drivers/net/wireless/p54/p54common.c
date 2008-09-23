@@ -66,7 +66,8 @@ static struct ieee80211_supported_band band_2GHz = {
 	.n_bitrates = ARRAY_SIZE(p54_rates),
 };
 
-int p54_parse_firmware(struct ieee80211_hw *dev, const struct firmware *fw)
+
+void p54_parse_firmware(struct ieee80211_hw *dev, const struct firmware *fw)
 {
 	struct p54_common *priv = dev->priv;
 	struct bootrec_exp_if *exp_if;
@@ -78,7 +79,7 @@ int p54_parse_firmware(struct ieee80211_hw *dev, const struct firmware *fw)
 	int i;
 
 	if (priv->rx_start)
-		return 0;
+		return;
 
 	while (data < end_data && *data)
 		data++;
@@ -116,22 +117,11 @@ int p54_parse_firmware(struct ieee80211_hw *dev, const struct firmware *fw)
 			if (strnlen((unsigned char*)bootrec->data, 24) < 24)
 				fw_version = (unsigned char*)bootrec->data;
 			break;
-		case BR_CODE_DESCR: {
-			struct bootrec_desc *desc =
-				(struct bootrec_desc *)bootrec->data;
-			priv->rx_start = le32_to_cpu(desc->rx_start);
+		case BR_CODE_DESCR:
+			priv->rx_start = le32_to_cpu(((__le32 *)bootrec->data)[1]);
 			/* FIXME add sanity checking */
-			priv->rx_end = le32_to_cpu(desc->rx_end) - 0x3500;
-			priv->headroom = desc->headroom;
-			priv->tailroom = desc->tailroom;
-			if (bootrec->len == 11)
-				priv->rx_mtu = (size_t) le16_to_cpu(
-					(__le16)bootrec->data[10]);
-			else
-				priv->rx_mtu = (size_t)
-					0x620 - priv->tx_hdr_len;
+			priv->rx_end = le32_to_cpu(((__le32 *)bootrec->data)[2]) - 0x3500;
 			break;
-			}
 		case BR_CODE_EXPOSED_IF:
 			exp_if = (struct bootrec_exp_if *) bootrec->data;
 			for (i = 0; i < (len * sizeof(*exp_if) / 4); i++)
@@ -162,8 +152,6 @@ int p54_parse_firmware(struct ieee80211_hw *dev, const struct firmware *fw)
 		priv->tx_stats[7].limit = 1;
 		dev->queues = 4;
 	}
-
-	return 0;
 }
 EXPORT_SYMBOL_GPL(p54_parse_firmware);
 
@@ -440,7 +428,7 @@ static void p54_rx_frame_sent(struct ieee80211_hw *dev, struct sk_buff *skb)
 	struct p54_control_hdr *hdr = (struct p54_control_hdr *) skb->data;
 	struct p54_frame_sent_hdr *payload = (struct p54_frame_sent_hdr *) hdr->data;
 	struct sk_buff *entry = (struct sk_buff *) priv->tx_queue.next;
-	u32 addr = le32_to_cpu(hdr->req_id) - priv->headroom;
+	u32 addr = le32_to_cpu(hdr->req_id) - 0x70;
 	struct memrecord *range = NULL;
 	u32 freed = 0;
 	u32 last_addr = priv->rx_start;
@@ -562,7 +550,7 @@ static void p54_assign_address(struct ieee80211_hw *dev, struct sk_buff *skb,
 	u32 target_addr = priv->rx_start;
 	unsigned long flags;
 	unsigned int left;
-	len = (len + priv->headroom + priv->tailroom + 3) & ~0x3;
+	len = (len + 0x170 + 3) & ~0x3; /* 0x70 headroom, 0x100 tailroom */
 
 	spin_lock_irqsave(&priv->tx_queue.lock, flags);
 	left = skb_queue_len(&priv->tx_queue);
@@ -597,14 +585,13 @@ static void p54_assign_address(struct ieee80211_hw *dev, struct sk_buff *skb,
 		range->start_addr = target_addr;
 		range->end_addr = target_addr + len;
 		__skb_queue_after(&priv->tx_queue, target_skb, skb);
-		if (largest_hole < priv->rx_mtu + priv->headroom +
-				   priv->tailroom +
+		if (largest_hole < IEEE80211_MAX_RTS_THRESHOLD + 0x170 +
 				   sizeof(struct p54_control_hdr))
 			ieee80211_stop_queues(dev);
 	}
 	spin_unlock_irqrestore(&priv->tx_queue.lock, flags);
 
-	data->req_id = cpu_to_le32(target_addr + priv->headroom);
+	data->req_id = cpu_to_le32(target_addr + 0x70);
 }
 
 static int p54_tx(struct ieee80211_hw *dev, struct sk_buff *skb)
@@ -717,7 +704,7 @@ static int p54_set_filter(struct ieee80211_hw *dev, u16 filter_type,
 	filter->antenna = antenna;
 	filter->magic3 = cpu_to_le32(magic3);
 	filter->rx_addr = cpu_to_le32(priv->rx_end);
-	filter->max_rx = cpu_to_le16(priv->rx_mtu);
+	filter->max_rx = cpu_to_le16(0x0620);	/* FIXME: for usb ver 1.. maybe */
 	filter->rxhw = priv->rxhw;
 	filter->magic8 = cpu_to_le16(magic8);
 	filter->magic9 = cpu_to_le16(magic9);
@@ -1097,6 +1084,7 @@ struct ieee80211_hw *p54_init_common(size_t priv_data_len)
 	priv->tx_stats[3].limit = 1;
 	priv->tx_stats[4].limit = 5;
 	dev->queues = 1;
+
 	dev->extra_tx_headroom = sizeof(struct p54_control_hdr) + 4 +
 				 sizeof(struct p54_tx_control_allocdata);
 
