@@ -1787,7 +1787,7 @@ static void ath_pci_remove(struct pci_dev *pdev)
 		ath9k_hw_set_interrupts(sc->sc_ah, 0);
 		/* clear the ISR */
 		ath9k_hw_getisr(sc->sc_ah, &status);
-		sc->sc_invalid = 1;
+		sc->sc_flags |= SC_OP_INVALID;
 		free_irq(pdev->irq, sc);
 	}
 	ath_detach(sc);
