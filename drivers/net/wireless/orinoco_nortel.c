@@ -182,8 +182,7 @@ static int orinoco_nortel_init_one(struct pci_dev *pdev,
 	}
 
 	/* Allocate network device */
-	dev = alloc_orinocodev(sizeof(*card), &pdev->dev,
-			       orinoco_nortel_cor_reset, NULL);
+	dev = alloc_orinocodev(sizeof(*card), orinoco_nortel_cor_reset);
 	if (!dev) {
 		printk(KERN_ERR PFX "Cannot allocate network device\n");
 		err = -ENOMEM;
