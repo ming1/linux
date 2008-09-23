@@ -27,16 +27,6 @@
 #define RT2X00REG_H
 
 /*
- * RX crypto status
- */
-enum rx_crypto {
-	RX_CRYPTO_SUCCESS = 0,
-	RX_CRYPTO_FAIL_ICV = 1,
-	RX_CRYPTO_FAIL_MIC = 2,
-	RX_CRYPTO_FAIL_KEY = 3,
-};
-
-/*
  * Antenna values
  */
 enum antenna {
@@ -114,14 +104,7 @@ enum cipher {
  */
 	CIPHER_CKIP64 = 5,
 	CIPHER_CKIP128 = 6,
-	CIPHER_TKIP_NO_MIC = 7, /* Don't send to device */
-
-/*
- * Max cipher type.
- * Note that CIPHER_NONE isn't counted, and CKIP64 and CKIP128
- * are excluded due to limitations in mac80211.
- */
-	CIPHER_MAX = 4,
+	CIPHER_TKIP_NO_MIC = 7,
 };
 
 /*
