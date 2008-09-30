@@ -66,16 +66,13 @@ static int ieee80211_add_iface(struct wiphy *wiphy, char *name,
 static int ieee80211_del_iface(struct wiphy *wiphy, int ifindex)
 {
 	struct net_device *dev;
-	struct ieee80211_sub_if_data *sdata;
 
 	/* we're under RTNL */
 	dev = __dev_get_by_index(&init_net, ifindex);
 	if (!dev)
 		return -ENODEV;
 
-	sdata = IEEE80211_DEV_TO_SUB_IF(dev);
-
-	ieee80211_if_remove(sdata);
+	ieee80211_if_remove(dev);
 
 	return 0;
 }
@@ -845,13 +842,13 @@ static int ieee80211_add_mpath(struct wiphy *wiphy, struct net_device *dev,
 		return -ENOENT;
 	}
 
-	err = mesh_path_add(dst, sdata);
+	err = mesh_path_add(dst, dev);
 	if (err) {
 		rcu_read_unlock();
 		return err;
 	}
 
-	mpath = mesh_path_lookup(dst, sdata);
+	mpath = mesh_path_lookup(dst, dev);
 	if (!mpath) {
 		rcu_read_unlock();
 		return -ENXIO;
@@ -865,12 +862,10 @@ static int ieee80211_add_mpath(struct wiphy *wiphy, struct net_device *dev,
 static int ieee80211_del_mpath(struct wiphy *wiphy, struct net_device *dev,
 				 u8 *dst)
 {
-	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
-
 	if (dst)
-		return mesh_path_del(dst, sdata);
+		return mesh_path_del(dst, dev);
 
-	mesh_path_flush(sdata);
+	mesh_path_flush(dev);
 	return 0;
 }
 
@@ -902,7 +897,7 @@ static int ieee80211_change_mpath(struct wiphy *wiphy,
 		return -ENOENT;
 	}
 
-	mpath = mesh_path_lookup(dst, sdata);
+	mpath = mesh_path_lookup(dst, dev);
 	if (!mpath) {
 		rcu_read_unlock();
 		return -ENOENT;
@@ -970,7 +965,7 @@ static int ieee80211_get_mpath(struct wiphy *wiphy, struct net_device *dev,
 		return -ENOTSUPP;
 
 	rcu_read_lock();
-	mpath = mesh_path_lookup(dst, sdata);
+	mpath = mesh_path_lookup(dst, dev);
 	if (!mpath) {
 		rcu_read_unlock();
 		return -ENOENT;
@@ -998,7 +993,7 @@ static int ieee80211_dump_mpath(struct wiphy *wiphy, struct net_device *dev,
 		return -ENOTSUPP;
 
 	rcu_read_lock();
-	mpath = mesh_path_lookup_by_idx(idx, sdata);
+	mpath = mesh_path_lookup_by_idx(idx, dev);
 	if (!mpath) {
 		rcu_read_unlock();
 		return -ENOENT;
