@@ -624,7 +624,7 @@ void b43legacy_handle_hwtxstatus(struct b43legacy_wldev *dev,
 	tmp = hw->count;
 	status.frame_count = (tmp >> 4);
 	status.rts_count = (tmp & 0x0F);
-	tmp = hw->flags << 1;
+	tmp = hw->flags;
 	status.supp_reason = ((tmp & 0x1C) >> 2);
 	status.pm_indicated = !!(tmp & 0x80);
 	status.intermediate = !!(tmp & 0x40);
