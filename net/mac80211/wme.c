@@ -47,6 +47,8 @@ static unsigned int classify_1d(struct sk_buff *skb)
 		return 0;
 	}
 
+	if (dscp & 0x1c)
+		return 0;
 	return dscp >> 5;
 }
 
