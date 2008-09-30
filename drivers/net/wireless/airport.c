@@ -180,8 +180,7 @@ airport_attach(struct macio_dev *mdev, const struct of_device_id *match)
 	}
 
 	/* Allocate space for private device-specific data */
-	dev = alloc_orinocodev(sizeof(*card), &mdev->ofdev.dev,
-			       airport_hard_reset, NULL);
+	dev = alloc_orinocodev(sizeof(*card), airport_hard_reset);
 	if (! dev) {
 		printk(KERN_ERR PFX "Cannot allocate network device\n");
 		return -ENODEV;
