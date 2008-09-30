@@ -463,6 +463,11 @@ void iwl_init_scan_params(struct iwl_priv *priv)
 
 int iwl_scan_initiate(struct iwl_priv *priv)
 {
+	if (priv->iw_mode == NL80211_IFTYPE_AP) {
+		IWL_ERROR("APs don't scan.\n");
+		return 0;
+	}
+
 	if (!iwl_is_ready_rf(priv)) {
 		IWL_DEBUG_SCAN("Aborting scan due to not ready.\n");
 		return -EIO;
@@ -474,7 +479,8 @@ int iwl_scan_initiate(struct iwl_priv *priv)
 	}
 
 	if (test_bit(STATUS_SCAN_ABORTING, &priv->status)) {
-		IWL_DEBUG_SCAN("Scan request while abort pending\n");
+		IWL_DEBUG_SCAN("Scan request while abort pending.  "
+			       "Queuing.\n");
 		return -EAGAIN;
 	}
 
