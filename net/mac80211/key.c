@@ -123,7 +123,7 @@ static const u8 *get_mac_for_key(struct ieee80211_key *key)
 		addr = zero_addr;
 
 	if (key->sta)
-		addr = key->sta->sta.addr;
+		addr = key->sta->addr;
 
 	return addr;
 }
