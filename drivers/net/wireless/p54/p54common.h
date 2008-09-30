@@ -18,8 +18,7 @@
 struct bootrec {
 	__le32 code;
 	__le32 len;
-	u32 data[10];
-	__le16 rx_mtu;
+	u32 data[0];
 } __attribute__((packed));
 
 struct bootrec_exp_if {
