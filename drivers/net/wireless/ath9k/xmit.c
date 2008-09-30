@@ -315,11 +315,11 @@ static int ath_tx_prepare(struct ath_softc *sc,
 		txctl->keyix = tx_info->control.hw_key->hw_key_idx;
 		txctl->frmlen += tx_info->control.icv_len;
 
-		if (tx_info->control.hw_key->alg == ALG_WEP)
+		if (sc->sc_keytype == ATH9K_CIPHER_WEP)
 			txctl->keytype = ATH9K_KEY_TYPE_WEP;
-		else if (tx_info->control.hw_key->alg == ALG_TKIP)
+		else if (sc->sc_keytype == ATH9K_CIPHER_TKIP)
 			txctl->keytype = ATH9K_KEY_TYPE_TKIP;
-		else if (tx_info->control.hw_key->alg == ALG_CCMP)
+		else if (sc->sc_keytype == ATH9K_CIPHER_AES_CCM)
 			txctl->keytype = ATH9K_KEY_TYPE_AES;
 	}
 
