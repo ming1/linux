@@ -445,6 +445,48 @@ static int iwl5000_send_Xtal_calib(struct iwl_priv *priv)
 				sizeof(cal_cmd), &cal_cmd);
 }
 
+static int iwl5000_send_calib_results(struct iwl_priv *priv)
+{
+	int ret = 0;
+
+	struct iwl_host_cmd hcmd = {
+		.id = REPLY_PHY_CALIBRATION_CMD,
+		.meta.flags = CMD_SIZE_HUGE,
+	};
+
+	if (priv->calib_results.lo_res) {
+		hcmd.len = priv->calib_results.lo_res_len;
+		hcmd.data = priv->calib_results.lo_res;
+		ret = iwl_send_cmd_sync(priv, &hcmd);
+
+		if (ret)
+			goto err;
+	}
+
+	if (priv->calib_results.tx_iq_res) {
+		hcmd.len = priv->calib_results.tx_iq_res_len;
+		hcmd.data = priv->calib_results.tx_iq_res;
+		ret = iwl_send_cmd_sync(priv, &hcmd);
+
+		if (ret)
+			goto err;
+	}
+
+	if (priv->calib_results.tx_iq_perd_res) {
+		hcmd.len = priv->calib_results.tx_iq_perd_res_len;
+		hcmd.data = priv->calib_results.tx_iq_perd_res;
+		ret = iwl_send_cmd_sync(priv, &hcmd);
+
+		if (ret)
+			goto err;
+	}
+
+	return 0;
+err:
+	IWL_ERROR("Error %d\n", ret);
+	return ret;
+}
+
 static int iwl5000_send_calib_cfg(struct iwl_priv *priv)
 {
 	struct iwl5000_calib_cfg_cmd calib_cfg_cmd;
@@ -469,30 +511,33 @@ static void iwl5000_rx_calib_result(struct iwl_priv *priv,
 	struct iwl_rx_packet *pkt = (void *)rxb->skb->data;
 	struct iwl5000_calib_hdr *hdr = (struct iwl5000_calib_hdr *)pkt->u.raw;
 	int len = le32_to_cpu(pkt->len) & FH_RSCSR_FRAME_SIZE_MSK;
-	int index;
+
+	iwl_free_calib_results(priv);
 
 	/* reduce the size of the length field itself */
 	len -= 4;
 
-	/* Define the order in which the results will be sent to the runtime
-	 * uCode. iwl_send_calib_results sends them in a row according to their
-	 * index. We sort them here */
 	switch (hdr->op_code) {
 	case IWL5000_PHY_CALIBRATE_LO_CMD:
-		index = IWL5000_CALIB_LO;
+		priv->calib_results.lo_res = kzalloc(len, GFP_ATOMIC);
+		priv->calib_results.lo_res_len = len;
+		memcpy(priv->calib_results.lo_res, pkt->u.raw, len);
 		break;
 	case IWL5000_PHY_CALIBRATE_TX_IQ_CMD:
-		index = IWL5000_CALIB_TX_IQ;
+		priv->calib_results.tx_iq_res = kzalloc(len, GFP_ATOMIC);
+		priv->calib_results.tx_iq_res_len = len;
+		memcpy(priv->calib_results.tx_iq_res, pkt->u.raw, len);
 		break;
 	case IWL5000_PHY_CALIBRATE_TX_IQ_PERD_CMD:
-		index = IWL5000_CALIB_TX_IQ_PERD;
+		priv->calib_results.tx_iq_perd_res = kzalloc(len, GFP_ATOMIC);
+		priv->calib_results.tx_iq_perd_res_len = len;
+		memcpy(priv->calib_results.tx_iq_perd_res, pkt->u.raw, len);
 		break;
 	default:
 		IWL_ERROR("Unknown calibration notification %d\n",
 			  hdr->op_code);
 		return;
 	}
-	iwl_calib_set(&priv->calib_results[index], pkt->u.raw, len);
 }
 
 static void iwl5000_rx_calib_complete(struct iwl_priv *priv,
@@ -787,7 +832,7 @@ static int iwl5000_alive_notify(struct iwl_priv *priv)
 	iwl5000_send_Xtal_calib(priv);
 
 	if (priv->ucode_type == UCODE_RT)
-		iwl_send_calib_results(priv);
+		iwl5000_send_calib_results(priv);
 
 	return 0;
 }
