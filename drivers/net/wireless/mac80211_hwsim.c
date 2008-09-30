@@ -14,8 +14,6 @@
  * - RX filtering based on filter configuration (data->rx_filter)
  */
 
-#include <linux/list.h>
-#include <linux/spinlock.h>
 #include <net/mac80211.h>
 #include <net/ieee80211_radiotap.h>
 #include <linux/if_arp.h>
@@ -80,6 +78,8 @@ static inline void hwsim_clear_sta_magic(struct ieee80211_sta *sta)
 
 static struct class *hwsim_class;
 
+static struct ieee80211_hw **hwsim_radios;
+static int hwsim_radio_count;
 static struct net_device *hwsim_mon; /* global monitor netdev */
 
 
@@ -115,12 +115,7 @@ static const struct ieee80211_rate hwsim_rates[] = {
 	{ .bitrate = 540 }
 };
 
-static spinlock_t hwsim_radio_lock;
-static struct list_head hwsim_radios;
-
 struct mac80211_hwsim_data {
-	struct list_head list;
-	struct ieee80211_hw *hw;
 	struct device *dev;
 	struct ieee80211_supported_band band;
 	struct ieee80211_channel channels[ARRAY_SIZE(hwsim_channels)];
@@ -196,11 +191,11 @@ static void mac80211_hwsim_monitor_rx(struct ieee80211_hw *hw,
 }
 
 
-static bool mac80211_hwsim_tx_frame(struct ieee80211_hw *hw,
-				    struct sk_buff *skb)
+static int mac80211_hwsim_tx_frame(struct ieee80211_hw *hw,
+				   struct sk_buff *skb)
 {
-	struct mac80211_hwsim_data *data = hw->priv, *data2;
-	bool ack = false;
+	struct mac80211_hwsim_data *data = hw->priv;
+	int i, ack = 0;
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *) skb->data;
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	struct ieee80211_rx_status rx_status;
@@ -213,13 +208,13 @@ static bool mac80211_hwsim_tx_frame(struct ieee80211_hw *hw,
 	/* TODO: simulate signal strength (and optional packet drop) */
 
 	/* Copy skb to all enabled radios that are on the current frequency */
-	spin_lock(&hwsim_radio_lock);
-	list_for_each_entry(data2, &hwsim_radios, list) {
+	for (i = 0; i < hwsim_radio_count; i++) {
+		struct mac80211_hwsim_data *data2;
 		struct sk_buff *nskb;
 
-		if (data == data2)
+		if (hwsim_radios[i] == NULL || hwsim_radios[i] == hw)
 			continue;
-
+		data2 = hwsim_radios[i]->priv;
 		if (!data2->started || !data2->radio_enabled ||
 		    data->channel->center_freq != data2->channel->center_freq)
 			continue;
@@ -228,12 +223,11 @@ static bool mac80211_hwsim_tx_frame(struct ieee80211_hw *hw,
 		if (nskb == NULL)
 			continue;
 
-		if (memcmp(hdr->addr1, data2->hw->wiphy->perm_addr,
+		if (memcmp(hdr->addr1, hwsim_radios[i]->wiphy->perm_addr,
 			   ETH_ALEN) == 0)
-			ack = true;
-		ieee80211_rx_irqsafe(data2->hw, nskb, &rx_status);
+			ack = 1;
+		ieee80211_rx_irqsafe(hwsim_radios[i], nskb, &rx_status);
 	}
-	spin_unlock(&hwsim_radio_lock);
 
 	return ack;
 }
@@ -242,7 +236,7 @@ static bool mac80211_hwsim_tx_frame(struct ieee80211_hw *hw,
 static int mac80211_hwsim_tx(struct ieee80211_hw *hw, struct sk_buff *skb)
 {
 	struct mac80211_hwsim_data *data = hw->priv;
-	bool ack;
+	int ack;
 	struct ieee80211_tx_info *txi;
 
 	mac80211_hwsim_monitor_rx(hw, skb);
@@ -463,21 +457,18 @@ static const struct ieee80211_ops mac80211_hwsim_ops =
 
 static void mac80211_hwsim_free(void)
 {
-	struct list_head tmplist, *i, *tmp;
-	struct mac80211_hwsim_data *data;
+	int i;
 
-	INIT_LIST_HEAD(&tmplist);
-
-	spin_lock_bh(&hwsim_radio_lock);
-	list_for_each_safe(i, tmp, &hwsim_radios)
-		list_move(i, &tmplist);
-	spin_unlock_bh(&hwsim_radio_lock);
-
-	list_for_each_entry(data, &tmplist, list) {
-		ieee80211_unregister_hw(data->hw);
-		device_unregister(data->dev);
-		ieee80211_free_hw(data->hw);
+	for (i = 0; i < hwsim_radio_count; i++) {
+		if (hwsim_radios[i]) {
+			struct mac80211_hwsim_data *data;
+			data = hwsim_radios[i]->priv;
+			ieee80211_unregister_hw(hwsim_radios[i]);
+			device_unregister(data->dev);
+			ieee80211_free_hw(hwsim_radios[i]);
+		}
 	}
+	kfree(hwsim_radios);
 	class_destroy(hwsim_class);
 }
 
@@ -507,32 +498,37 @@ static int __init init_mac80211_hwsim(void)
 	struct ieee80211_hw *hw;
 	DECLARE_MAC_BUF(mac);
 
-	if (radios < 1 || radios > 100)
+	if (radios < 1 || radios > 65535)
 		return -EINVAL;
 
-	spin_lock_init(&hwsim_radio_lock);
-	INIT_LIST_HEAD(&hwsim_radios);
+	hwsim_radio_count = radios;
+	hwsim_radios = kcalloc(hwsim_radio_count,
+			       sizeof(struct ieee80211_hw *), GFP_KERNEL);
+	if (hwsim_radios == NULL)
+		return -ENOMEM;
 
 	hwsim_class = class_create(THIS_MODULE, "mac80211_hwsim");
-	if (IS_ERR(hwsim_class))
+	if (IS_ERR(hwsim_class)) {
+		kfree(hwsim_radios);
 		return PTR_ERR(hwsim_class);
+	}
 
 	memset(addr, 0, ETH_ALEN);
 	addr[0] = 0x02;
 
-	for (i = 0; i < radios; i++) {
+	for (i = 0; i < hwsim_radio_count; i++) {
 		printk(KERN_DEBUG "mac80211_hwsim: Initializing radio %d\n",
 		       i);
 		hw = ieee80211_alloc_hw(sizeof(*data), &mac80211_hwsim_ops);
-		if (!hw) {
+		if (hw == NULL) {
 			printk(KERN_DEBUG "mac80211_hwsim: ieee80211_alloc_hw "
 			       "failed\n");
 			err = -ENOMEM;
 			goto failed;
 		}
-		data = hw->priv;
-		data->hw = hw;
+		hwsim_radios[i] = hw;
 
+		data = hw->priv;
 		data->dev = device_create_drvdata(hwsim_class, NULL, 0, hw,
 						"hwsim%d", i);
 		if (IS_ERR(data->dev)) {
@@ -594,8 +590,6 @@ static int __init init_mac80211_hwsim(void)
 
 		setup_timer(&data->beacon_timer, mac80211_hwsim_beacon,
 			    (unsigned long) hw);
-
-		list_add_tail(&data->list, &hwsim_radios);
 	}
 
 	hwsim_mon = alloc_netdev(0, "hwsim%d", hwsim_mon_setup);
@@ -627,6 +621,7 @@ failed_hw:
 	device_unregister(data->dev);
 failed_drvdata:
 	ieee80211_free_hw(hw);
+	hwsim_radios[i] = NULL;
 failed:
 	mac80211_hwsim_free();
 	return err;
@@ -635,7 +630,8 @@ failed:
 
 static void __exit exit_mac80211_hwsim(void)
 {
-	printk(KERN_DEBUG "mac80211_hwsim: unregister radios\n");
+	printk(KERN_DEBUG "mac80211_hwsim: unregister %d radios\n",
+	       hwsim_radio_count);
 
 	unregister_netdev(hwsim_mon);
 	mac80211_hwsim_free();
