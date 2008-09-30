@@ -361,9 +361,7 @@ struct ieee80211_if_sta {
 
 	struct sk_buff_head skb_queue;
 
-	int assoc_scan_tries; /* number of scans done pre-association */
-	int auth_tries; /* retries for auth req */
-	int assoc_tries; /* retries for assoc req */
+	int auth_tries, assoc_tries;
 
 	unsigned long request;
 
