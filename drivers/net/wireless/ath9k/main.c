@@ -211,10 +211,12 @@ static int ath_key_config(struct ath_softc *sc,
 
 static void ath_key_delete(struct ath_softc *sc, struct ieee80211_key_conf *key)
 {
+#define ATH_MAX_NUM_KEYS 4
 	int freeslot;
 
-	freeslot = (key->keyidx >= 4) ? 1 : 0;
+	freeslot = (key->keyidx >= ATH_MAX_NUM_KEYS) ? 1 : 0;
 	ath_key_reset(sc, key->keyidx, freeslot);
+#undef ATH_MAX_NUM_KEYS
 }
 
 static void setup_ht_cap(struct ieee80211_ht_info *ht_info)
@@ -617,8 +619,7 @@ static int ath9k_config_interface(struct ieee80211_hw *hw,
 	}
 
 	if ((conf->changed & IEEE80211_IFCC_BEACON) &&
-	    ((vif->type == IEEE80211_IF_TYPE_IBSS) ||
-	     (vif->type == IEEE80211_IF_TYPE_AP))) {
+	    (vif->type == IEEE80211_IF_TYPE_IBSS)) {
 		/*
 		 * Allocate and setup the beacon frame.
 		 *
@@ -634,6 +635,18 @@ static int ath9k_config_interface(struct ieee80211_hw *hw,
 			return error;
 
 		ath_beacon_sync(sc, 0);
+	}
+
+	if ((conf->changed & IEEE80211_IFCC_BEACON) &&
+	    (vif->type == IEEE80211_IF_TYPE_AP)) {
+		ath9k_hw_stoptxdma(sc->sc_ah, sc->sc_bhalq);
+
+		error = ath_beacon_alloc(sc, 0);
+		if (error != 0)
+			return error;
+
+		ath_beacon_config(sc, 0);
+		sc->sc_flags |= SC_OP_BEACONS;
 	}
 
 	/* Check for WLAN_CAPABILITY_PRIVACY ? */
