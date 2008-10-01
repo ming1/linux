@@ -1064,6 +1064,7 @@ int lbs_mesh_config(struct lbs_private *priv, uint16_t action, uint16_t chan)
 {
 	struct cmd_ds_mesh_config cmd;
 	struct mrvl_meshie *ie;
+	DECLARE_SSID_BUF(ssid);
 
 	memset(&cmd, 0, sizeof(cmd));
 	cmd.channel = cpu_to_le16(chan);
@@ -1094,7 +1095,7 @@ int lbs_mesh_config(struct lbs_private *priv, uint16_t action, uint16_t chan)
 	}
 	lbs_deb_cmd("mesh config action %d type %x channel %d SSID %s\n",
 		    action, priv->mesh_tlv, chan,
-		    escape_ssid(priv->mesh_ssid, priv->mesh_ssid_len));
+		    print_ssid(ssid, priv->mesh_ssid, priv->mesh_ssid_len));
 
 	return __lbs_mesh_config_send(priv, &cmd, action, priv->mesh_tlv);
 }
