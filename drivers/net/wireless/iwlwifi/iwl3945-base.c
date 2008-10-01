@@ -6063,6 +6063,7 @@ static void iwl3945_bg_request_scan(struct work_struct *data)
 	struct ieee80211_conf *conf = NULL;
 	u8 n_probes = 2;
 	enum ieee80211_band band;
+	DECLARE_SSID_BUF(ssid);
 
 	conf = ieee80211_get_hw_conf(priv->hw);
 
@@ -6163,7 +6164,8 @@ static void iwl3945_bg_request_scan(struct work_struct *data)
 	if (priv->one_direct_scan) {
 		IWL_DEBUG_SCAN
 		    ("Kicking off one direct scan for '%s'\n",
-		     escape_ssid(priv->direct_ssid, priv->direct_ssid_len));
+		     print_ssid(ssid, priv->direct_ssid,
+				priv->direct_ssid_len));
 		scan->direct_scan[0].id = WLAN_EID_SSID;
 		scan->direct_scan[0].len = priv->direct_ssid_len;
 		memcpy(scan->direct_scan[0].ssid,
@@ -6172,7 +6174,7 @@ static void iwl3945_bg_request_scan(struct work_struct *data)
 	} else if (!iwl3945_is_associated(priv) && priv->essid_len) {
 		IWL_DEBUG_SCAN
 		  ("Kicking off one direct scan for '%s' when not associated\n",
-		   escape_ssid(priv->essid, priv->essid_len));
+		   print_ssid(ssid, priv->essid, priv->essid_len));
 		scan->direct_scan[0].id = WLAN_EID_SSID;
 		scan->direct_scan[0].len = priv->essid_len;
 		memcpy(scan->direct_scan[0].ssid, priv->essid, priv->essid_len);
@@ -6972,6 +6974,7 @@ static int iwl3945_mac_hw_scan(struct ieee80211_hw *hw, u8 *ssid, size_t len)
 	int rc = 0;
 	unsigned long flags;
 	struct iwl3945_priv *priv = hw->priv;
+	DECLARE_SSID_BUF(ssid_buf);
 
 	IWL_DEBUG_MAC80211("enter\n");
 
@@ -7005,7 +7008,7 @@ static int iwl3945_mac_hw_scan(struct ieee80211_hw *hw, u8 *ssid, size_t len)
 	}
 	if (len) {
 		IWL_DEBUG_SCAN("direct scan for %s [%d]\n ",
-			       escape_ssid(ssid, len), (int)len);
+			       print_ssid(ssid_buf, ssid, len), (int)len);
 
 		priv->one_direct_scan = 1;
 		priv->direct_ssid_len = (u8)
