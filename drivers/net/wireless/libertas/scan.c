@@ -363,6 +363,7 @@ int lbs_scan_networks(struct lbs_private *priv, int full_scan)
 	struct bss_descriptor *iter;
 	int i = 0;
 	DECLARE_MAC_BUF(mac);
+	DECLARE_SSID_BUF(ssid);
 #endif
 
 	lbs_deb_enter_args(LBS_DEB_SCAN, "full_scan %d", full_scan);
@@ -456,7 +457,7 @@ int lbs_scan_networks(struct lbs_private *priv, int full_scan)
 	list_for_each_entry(iter, &priv->network_list, list)
 		lbs_deb_scan("%02d: BSSID %s, RSSI %d, SSID '%s'\n",
 			     i++, print_mac(mac, iter->bssid), iter->rssi,
-			     escape_ssid(iter->ssid, iter->ssid_len));
+			     print_ssid(ssid, iter->ssid, iter->ssid_len));
 	mutex_unlock(&priv->lock);
 #endif
 
@@ -516,6 +517,7 @@ static int lbs_process_bss(struct bss_descriptor *bss,
 	struct ieeetypes_cfparamset *pCF;
 	struct ieeetypes_ibssparamset *pibss;
 	DECLARE_MAC_BUF(mac);
+	DECLARE_SSID_BUF(ssid);
 	struct ieeetypes_countryinfoset *pcountryinfo;
 	uint8_t *pos, *end, *p;
 	uint8_t n_ex_rates = 0, got_basic_rates = 0, n_basic_rates = 0;
@@ -604,7 +606,7 @@ static int lbs_process_bss(struct bss_descriptor *bss,
 			bss->ssid_len = min_t(int, 32, elem->len);
 			memcpy(bss->ssid, elem->data, bss->ssid_len);
 			lbs_deb_scan("got SSID IE: '%s', len %u\n",
-			             escape_ssid(bss->ssid, bss->ssid_len),
+			             print_ssid(ssid, bss->ssid, bss->ssid_len),
 			             bss->ssid_len);
 			break;
 
@@ -744,10 +746,11 @@ done:
 int lbs_send_specific_ssid_scan(struct lbs_private *priv, uint8_t *ssid,
 				uint8_t ssid_len)
 {
+	DECLARE_SSID_BUF(ssid_buf);
 	int ret = 0;
 
 	lbs_deb_enter_args(LBS_DEB_SCAN, "SSID '%s'\n",
-			   escape_ssid(ssid, ssid_len));
+			   print_ssid(ssid_buf, ssid, ssid_len));
 
 	if (!ssid_len)
 		goto out;
@@ -942,6 +945,7 @@ out:
 int lbs_set_scan(struct net_device *dev, struct iw_request_info *info,
 		 union iwreq_data *wrqu, char *extra)
 {
+	DECLARE_SSID_BUF(ssid);
 	struct lbs_private *priv = dev->priv;
 	int ret = 0;
 
@@ -971,7 +975,7 @@ int lbs_set_scan(struct net_device *dev, struct iw_request_info *info,
 		priv->scan_ssid_len = req->essid_len;
 		memcpy(priv->scan_ssid, req->essid, priv->scan_ssid_len);
 		lbs_deb_wext("set_scan, essid '%s'\n",
-			escape_ssid(priv->scan_ssid, priv->scan_ssid_len));
+			print_ssid(ssid, priv->scan_ssid, priv->scan_ssid_len));
 	} else {
 		priv->scan_ssid_len = 0;
 	}
