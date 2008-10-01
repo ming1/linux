@@ -34,6 +34,7 @@
 #include <linux/module.h>
 #include <linux/jiffies.h>
 
+#include <net/lib80211.h>
 #include <net/ieee80211.h>
 #include <linux/wireless.h>
 
@@ -259,6 +260,7 @@ int ieee80211_wx_get_scan(struct ieee80211_device *ieee,
 	char *stop = ev + wrqu->data.length;
 	int i = 0;
 	DECLARE_MAC_BUF(mac);
+	DECLARE_SSID_BUF(ssid);
 
 	IEEE80211_DEBUG_WX("Getting scan\n");
 
@@ -278,7 +280,7 @@ int ieee80211_wx_get_scan(struct ieee80211_device *ieee,
 		else
 			IEEE80211_DEBUG_SCAN("Not showing network '%s ("
 					     "%s)' due to age (%dms).\n",
-					     escape_ssid(network->ssid,
+					     print_ssid(ssid, network->ssid,
 							 network->ssid_len),
 					     print_mac(mac, network->bssid),
 					     jiffies_to_msecs(jiffies -
@@ -403,7 +405,7 @@ int ieee80211_wx_set_encode(struct ieee80211_device *ieee,
 			memset(sec.keys[key] + erq->length, 0,
 			       len - erq->length);
 		IEEE80211_DEBUG_WX("Setting key %d to '%s' (%d:%d bytes)\n",
-				   key, escape_ssid(sec.keys[key], len),
+				   key, print_ssid(ssid, sec.keys[key], len),
 				   erq->length, len);
 		sec.key_sizes[key] = len;
 		if (*crypt)
