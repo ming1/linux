@@ -1330,7 +1330,7 @@ int ieee80211_master_start_xmit(struct sk_buff *skb,
 				if (mesh_nexthop_lookup(skb, osdata))
 					return  0;
 			if (memcmp(odev->dev_addr, hdr->addr4, ETH_ALEN) != 0)
-				IEEE80211_IFSTA_MESH_CTR_INC(&osdata->u.mesh,
+				IEEE80211_IFSTA_MESH_CTR_INC(&osdata->u.sta,
 							     fwded_frames);
 		}
 	}
@@ -1483,9 +1483,9 @@ int ieee80211_subif_start_xmit(struct sk_buff *skb,
 		memcpy(hdr.addr2, dev->dev_addr, ETH_ALEN);
 		memcpy(hdr.addr3, skb->data, ETH_ALEN);
 		memcpy(hdr.addr4, skb->data + ETH_ALEN, ETH_ALEN);
-		if (!sdata->u.mesh.mshcfg.dot11MeshTTL) {
+		if (!sdata->u.sta.mshcfg.dot11MeshTTL) {
 			/* Do not send frames with mesh_ttl == 0 */
-			sdata->u.mesh.mshstats.dropped_frames_ttl++;
+			sdata->u.sta.mshstats.dropped_frames_ttl++;
 			ret = 0;
 			goto fail;
 		}
@@ -1815,8 +1815,10 @@ struct sk_buff *ieee80211_beacon_get(struct ieee80211_hw *hw,
 	struct rate_selection rsel;
 	struct beacon_data *beacon;
 	struct ieee80211_supported_band *sband;
+	struct ieee80211_mgmt *mgmt;
 	int *num_beacons;
 	enum ieee80211_band band = local->hw.conf.channel->band;
+	u8 *pos;
 
 	sband = local->hw.wiphy->bands[band];
 
@@ -1883,11 +1885,7 @@ struct sk_buff *ieee80211_beacon_get(struct ieee80211_hw *hw,
 						 IEEE80211_STYPE_BEACON);
 
 		num_beacons = &ifsta->num_beacons;
-#ifdef CONFIG_MAC80211_MESH
 	} else if (ieee80211_vif_is_mesh(&sdata->vif)) {
-		struct ieee80211_mgmt *mgmt;
-		u8 *pos;
-
 		/* headroom, head length, tail length and maximum TIM length */
 		skb = dev_alloc_skb(local->tx_headroom + 400);
 		if (!skb)
@@ -1912,8 +1910,7 @@ struct sk_buff *ieee80211_beacon_get(struct ieee80211_hw *hw,
 
 		mesh_mgmt_ies_add(skb, sdata);
 
-		num_beacons = &sdata->u.mesh.num_beacons;
-#endif
+		num_beacons = &sdata->u.sta.num_beacons;
 	} else {
 		WARN_ON(1);
 		goto out;
