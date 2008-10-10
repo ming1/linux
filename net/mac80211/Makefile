@@ -7,7 +7,6 @@ mac80211-y := \
 	sta_info.o \
 	wep.o \
 	wpa.o \
-	scan.o \
 	mlme.o \
 	iface.o \
 	rate.o \
