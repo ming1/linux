@@ -81,11 +81,7 @@ static int p54p_upload_firmware(struct ieee80211_hw *dev)
 		return err;
 	}
 
-	err = p54_parse_firmware(dev, fw_entry);
-	if (err) {
-		release_firmware(fw_entry);
-		return err;
-	}
+	p54_parse_firmware(dev, fw_entry);
 
 	data = (__le32 *) fw_entry->data;
 	remains = fw_entry->size;
@@ -262,17 +258,17 @@ static void p54p_refill_rx_ring(struct ieee80211_hw *dev,
 		if (!desc->host_addr) {
 			struct sk_buff *skb;
 			dma_addr_t mapping;
-			skb = dev_alloc_skb(priv->common.rx_mtu + 32);
+			skb = dev_alloc_skb(MAX_RX_SIZE);
 			if (!skb)
 				break;
 
 			mapping = pci_map_single(priv->pdev,
 						 skb_tail_pointer(skb),
-						 priv->common.rx_mtu + 32,
+						 MAX_RX_SIZE,
 						 PCI_DMA_FROMDEVICE);
 			desc->host_addr = cpu_to_le32(mapping);
 			desc->device_addr = 0;	// FIXME: necessary?
-			desc->len = cpu_to_le16(priv->common.rx_mtu + 32);
+			desc->len = cpu_to_le16(MAX_RX_SIZE);
 			desc->flags = 0;
 			rx_buf[i] = skb;
 		}
@@ -315,13 +311,12 @@ static void p54p_check_rx_ring(struct ieee80211_hw *dev, u32 *index,
 		if (p54_rx(dev, skb)) {
 			pci_unmap_single(priv->pdev,
 					 le32_to_cpu(desc->host_addr),
-					 priv->common.rx_mtu + 32,
-					 PCI_DMA_FROMDEVICE);
+					 MAX_RX_SIZE, PCI_DMA_FROMDEVICE);
 			rx_buf[i] = NULL;
 			desc->host_addr = 0;
 		} else {
 			skb_trim(skb, 0);
-			desc->len = cpu_to_le16(priv->common.rx_mtu + 32);
+			desc->len = cpu_to_le16(MAX_RX_SIZE);
 		}
 
 		i++;
@@ -539,8 +534,7 @@ static void p54p_stop(struct ieee80211_hw *dev)
 		if (desc->host_addr)
 			pci_unmap_single(priv->pdev,
 					 le32_to_cpu(desc->host_addr),
-					 priv->common.rx_mtu + 32,
-					 PCI_DMA_FROMDEVICE);
+					 MAX_RX_SIZE, PCI_DMA_FROMDEVICE);
 		kfree_skb(priv->rx_buf_data[i]);
 		priv->rx_buf_data[i] = NULL;
 	}
@@ -550,8 +544,7 @@ static void p54p_stop(struct ieee80211_hw *dev)
 		if (desc->host_addr)
 			pci_unmap_single(priv->pdev,
 					 le32_to_cpu(desc->host_addr),
-					 priv->common.rx_mtu + 32,
-					 PCI_DMA_FROMDEVICE);
+					 MAX_RX_SIZE, PCI_DMA_FROMDEVICE);
 		kfree_skb(priv->rx_buf_mgmt[i]);
 		priv->rx_buf_mgmt[i] = NULL;
 	}
