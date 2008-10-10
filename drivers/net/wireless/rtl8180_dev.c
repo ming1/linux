@@ -615,7 +615,7 @@ static int rtl8180_start(struct ieee80211_hw *dev)
 	reg |= RTL818X_CMD_TX_ENABLE;
 	rtl818x_iowrite8(priv, &priv->map->CMD, reg);
 
-	priv->mode = NL80211_IFTYPE_MONITOR;
+	priv->mode = IEEE80211_IF_TYPE_MNTR;
 	return 0;
 
  err_free_rings:
@@ -633,7 +633,7 @@ static void rtl8180_stop(struct ieee80211_hw *dev)
 	u8 reg;
 	int i;
 
-	priv->mode = NL80211_IFTYPE_UNSPECIFIED;
+	priv->mode = IEEE80211_IF_TYPE_INVALID;
 
 	rtl818x_iowrite16(priv, &priv->map->INT_MASK, 0);
 
@@ -661,11 +661,11 @@ static int rtl8180_add_interface(struct ieee80211_hw *dev,
 {
 	struct rtl8180_priv *priv = dev->priv;
 
-	if (priv->mode != NL80211_IFTYPE_MONITOR)
+	if (priv->mode != IEEE80211_IF_TYPE_MNTR)
 		return -EOPNOTSUPP;
 
 	switch (conf->type) {
-	case NL80211_IFTYPE_STATION:
+	case IEEE80211_IF_TYPE_STA:
 		priv->mode = conf->type;
 		break;
 	default:
@@ -688,7 +688,7 @@ static void rtl8180_remove_interface(struct ieee80211_hw *dev,
 				     struct ieee80211_if_init_conf *conf)
 {
 	struct rtl8180_priv *priv = dev->priv;
-	priv->mode = NL80211_IFTYPE_MONITOR;
+	priv->mode = IEEE80211_IF_TYPE_MNTR;
 	priv->vif = NULL;
 }
 

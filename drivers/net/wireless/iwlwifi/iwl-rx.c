@@ -1026,10 +1026,10 @@ static int iwl_is_network_packet(struct iwl_priv *priv,
 	/* Filter incoming packets to determine if they are targeted toward
 	 * this network, discarding packets coming from ourselves */
 	switch (priv->iw_mode) {
-	case NL80211_IFTYPE_ADHOC: /* Header: Dest. | Source    | BSSID */
+	case IEEE80211_IF_TYPE_IBSS: /* Header: Dest. | Source    | BSSID */
 		/* packets to our IBSS update information */
 		return !compare_ether_addr(header->addr3, priv->bssid);
-	case NL80211_IFTYPE_STATION: /* Header: Dest. | AP{BSSID} | Source */
+	case IEEE80211_IF_TYPE_STA: /* Header: Dest. | AP{BSSID} | Source */
 		/* packets to our IBSS update information */
 		return !compare_ether_addr(header->addr2, priv->bssid);
 	default:
@@ -1169,7 +1169,7 @@ void iwl_rx_reply_rx(struct iwl_priv *priv,
 		rx_status.flag |= RX_FLAG_SHORTPRE;
 
 	/* Take shortcut when only in monitor mode */
-	if (priv->iw_mode == NL80211_IFTYPE_MONITOR) {
+	if (priv->iw_mode == IEEE80211_IF_TYPE_MNTR) {
 		iwl_pass_packet_to_mac80211(priv, include_phy,
 						 rxb, &rx_status);
 		return;
@@ -1186,7 +1186,7 @@ void iwl_rx_reply_rx(struct iwl_priv *priv,
 	switch (fc & IEEE80211_FCTL_FTYPE) {
 	case IEEE80211_FTYPE_MGMT:
 	case IEEE80211_FTYPE_DATA:
-		if (priv->iw_mode == NL80211_IFTYPE_AP)
+		if (priv->iw_mode == IEEE80211_IF_TYPE_AP)
 			iwl_update_ps_mode(priv, fc  & IEEE80211_FCTL_PM,
 						header->addr2);
 		/* fall through */
