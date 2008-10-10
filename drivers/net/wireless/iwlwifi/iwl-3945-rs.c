@@ -827,13 +827,12 @@ void iwl3945_rate_scale_init(struct ieee80211_hw *hw, s32 sta_id)
 	rcu_read_lock();
 
 	sta = ieee80211_find_sta(hw, priv->stations[sta_id].sta.sta.addr);
-	psta = (void *) sta->drv_priv;
-	if (!sta || !psta) {
-		IWL_DEBUG_RATE("leave - no private rate data!\n");
+	if (!sta) {
 		rcu_read_unlock();
 		return;
 	}
 
+	psta = (void *) sta->drv_priv;
 	rs_sta = psta->rs_sta;
 
 	spin_lock_irqsave(&rs_sta->lock, flags);
@@ -857,7 +856,6 @@ void iwl3945_rate_scale_init(struct ieee80211_hw *hw, s32 sta_id)
 		break;
 	}
 
-	rcu_read_unlock();
 	spin_unlock_irqrestore(&rs_sta->lock, flags);
 
 	rssi = priv->last_rx_rssi;
@@ -871,6 +869,7 @@ void iwl3945_rate_scale_init(struct ieee80211_hw *hw, s32 sta_id)
 	IWL_DEBUG_RATE("leave: rssi %d assign rate index: "
 		       "%d (plcp 0x%x)\n", rssi, rs_sta->start_rate,
 		       iwl3945_rates[rs_sta->start_rate].plcp);
+	rcu_read_unlock();
 }
 
 int iwl3945_rate_control_register(void)
