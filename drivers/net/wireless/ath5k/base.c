@@ -1764,10 +1764,12 @@ accept:
 		rxs.rate_idx = ath5k_hw_to_driver_rix(sc, rs.rs_rate);
 		rxs.flag |= ath5k_rx_decrypted(sc, ds, skb, &rs);
 
-		if (rxs.rate_idx >= 0 && rs.rs_rate ==
-		    sc->curband->bitrates[rxs.rate_idx].hw_value_short)
+#if 0		/* add rxs.flag SHORTPRE once it is in mac80211 */
+		if (rs.rs_rate >= ATH5K_RATE_CODE_2M &&
+		    rs.rs_rate <= ATH5K_RATE_CODE_11M &&
+		    rs.rs_rate & AR5K_SET_SHORT_PREAMBLE)
 			rxs.flag |= RX_FLAG_SHORTPRE;
-
+#endif
 		ath5k_debug_dump_skb(sc, skb, "RX  ", 0);
 
 		/* check beacons in IBSS mode */
