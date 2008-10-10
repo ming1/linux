@@ -223,11 +223,9 @@ struct wiphy {
  * the netdev.)
  *
  * @wiphy: pointer to hardware description
- * @iftype: interface type
  */
 struct wireless_dev {
 	struct wiphy *wiphy;
-	enum nl80211_iftype iftype;
 
 	/* private to the generic wireless code */
 	struct list_head list;
