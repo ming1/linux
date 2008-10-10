@@ -391,6 +391,8 @@ static int b43_aphy_op_allocate(struct b43_wldev *dev)
 		return -ENOMEM;
 	dev->phy.a = aphy;
 
+	//TODO init struct b43_phy_a
+
 	err = b43_aphy_init_tssi2dbm_table(dev);
 	if (err)
 		goto err_free_aphy;
@@ -404,45 +406,28 @@ err_free_aphy:
 	return err;
 }
 
-static void b43_aphy_op_prepare_structs(struct b43_wldev *dev)
-{
-	struct b43_phy *phy = &dev->phy;
-	struct b43_phy_a *aphy = phy->a;
-	const void *tssi2dbm;
-	int tgt_idle_tssi;
-
-	/* tssi2dbm table is constant, so it is initialized at alloc time.
-	 * Save a copy of the pointer. */
-	tssi2dbm = aphy->tssi2dbm;
-	tgt_idle_tssi = aphy->tgt_idle_tssi;
-
-	/* Zero out the whole PHY structure. */
-	memset(aphy, 0, sizeof(*aphy));
-
-	aphy->tssi2dbm = tssi2dbm;
-	aphy->tgt_idle_tssi = tgt_idle_tssi;
-
-	//TODO init struct b43_phy_a
-
-}
-
-static void b43_aphy_op_free(struct b43_wldev *dev)
-{
-	struct b43_phy *phy = &dev->phy;
-	struct b43_phy_a *aphy = phy->a;
-
-	kfree(aphy->tssi2dbm);
-	aphy->tssi2dbm = NULL;
-
-	kfree(aphy);
-	dev->phy.a = NULL;
-}
-
 static int b43_aphy_op_init(struct b43_wldev *dev)
 {
+	struct b43_phy_a *aphy = dev->phy.a;
+
 	b43_phy_inita(dev);
+	aphy->initialised = 1;
 
 	return 0;
+}
+
+static void b43_aphy_op_exit(struct b43_wldev *dev)
+{
+	struct b43_phy_a *aphy = dev->phy.a;
+
+	if (aphy->initialised) {
+		//TODO
+		aphy->initialised = 0;
+	}
+	//TODO
+	kfree(aphy->tssi2dbm);
+	kfree(aphy);
+	dev->phy.a = NULL;
 }
 
 static inline u16 adjust_phyreg(struct b43_wldev *dev, u16 offset)
@@ -623,9 +608,8 @@ static void b43_aphy_op_pwork_60sec(struct b43_wldev *dev)
 
 const struct b43_phy_operations b43_phyops_a = {
 	.allocate		= b43_aphy_op_allocate,
-	.free			= b43_aphy_op_free,
-	.prepare_structs	= b43_aphy_op_prepare_structs,
 	.init			= b43_aphy_op_init,
+	.exit			= b43_aphy_op_exit,
 	.phy_read		= b43_aphy_op_read,
 	.phy_write		= b43_aphy_op_write,
 	.radio_read		= b43_aphy_op_radio_read,
