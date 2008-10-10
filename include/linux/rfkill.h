@@ -116,7 +116,6 @@ int rfkill_register(struct rfkill *rfkill);
 void rfkill_unregister(struct rfkill *rfkill);
 
 int rfkill_force_state(struct rfkill *rfkill, enum rfkill_state state);
-int rfkill_set_default(enum rfkill_type type, enum rfkill_state state);
 
 /**
  * rfkill_state_complement - return complementar state
