@@ -35,6 +35,8 @@
 
 #include <linux/workqueue.h>
 
+#include "../net/mac80211/rate.h"
+
 #include "iwl-dev.h"
 #include "iwl-sta.h"
 #include "iwl-core.h"
@@ -167,9 +169,9 @@ struct iwl_lq_sta {
 };
 
 static void rs_rate_scale_perform(struct iwl_priv *priv,
+				   struct net_device *dev,
 				   struct ieee80211_hdr *hdr,
-				   struct ieee80211_sta *sta,
-				   struct iwl_lq_sta *lq_sta);
+				   struct sta_info *sta);
 static void rs_fill_link_cmd(const struct iwl_priv *priv,
 			     struct iwl_lq_sta *lq_sta, u32 rate_n_flags);
 
@@ -355,20 +357,20 @@ static u32 rs_tl_get_load(struct iwl_lq_sta *lq_data, u8 tid)
 
 static void rs_tl_turn_on_agg_for_tid(struct iwl_priv *priv,
 				      struct iwl_lq_sta *lq_data, u8 tid,
-				      struct ieee80211_sta *sta)
+				      struct sta_info *sta)
 {
 	DECLARE_MAC_BUF(mac);
 
 	if (rs_tl_get_load(lq_data, tid) > IWL_AGG_LOAD_THRESHOLD) {
 		IWL_DEBUG_HT("Starting Tx agg: STA: %s tid: %d\n",
-				print_mac(mac, sta->addr), tid);
-		ieee80211_start_tx_ba_session(priv->hw, sta->addr, tid);
+				print_mac(mac, sta->sta.addr), tid);
+		ieee80211_start_tx_ba_session(priv->hw, sta->sta.addr, tid);
 	}
 }
 
 static void rs_tl_turn_on_agg(struct iwl_priv *priv, u8 tid,
 			      struct iwl_lq_sta *lq_data,
-			      struct ieee80211_sta *sta)
+			      struct sta_info *sta)
 {
 	if ((tid < TID_MAX_LOAD_COUNT))
 		rs_tl_turn_on_agg_for_tid(priv, lq_data, tid, sta);
@@ -768,8 +770,7 @@ out:
 /*
  * mac80211 sends us Tx status
  */
-static void rs_tx_status(void *priv_r, struct ieee80211_supported_band *sband,
-			 struct ieee80211_sta *sta, void *priv_sta,
+static void rs_tx_status(void *priv_rate, struct net_device *dev,
 			 struct sk_buff *skb)
 {
 	int status;
@@ -777,9 +778,11 @@ static void rs_tx_status(void *priv_r, struct ieee80211_supported_band *sband,
 	int rs_index, index = 0;
 	struct iwl_lq_sta *lq_sta;
 	struct iwl_link_quality_cmd *table;
+	struct sta_info *sta;
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
-	struct iwl_priv *priv = (struct iwl_priv *)priv_r;
-	struct ieee80211_hw *hw = priv->hw;
+	struct iwl_priv *priv = (struct iwl_priv *)priv_rate;
+	struct ieee80211_local *local = wdev_priv(dev->ieee80211_ptr);
+	struct ieee80211_hw *hw = local_to_hw(local);
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	struct iwl_rate_scale_data *window = NULL;
 	struct iwl_rate_scale_data *search_win = NULL;
@@ -805,7 +808,15 @@ static void rs_tx_status(void *priv_r, struct ieee80211_supported_band *sband,
 	if (retries > 15)
 		retries = 15;
 
-	lq_sta = (struct iwl_lq_sta *)priv_sta;
+	rcu_read_lock();
+
+	sta = sta_info_get(local, hdr->addr1);
+
+	if (!sta || !sta->rate_ctrl_priv)
+		goto out;
+
+
+	lq_sta = (struct iwl_lq_sta *)sta->rate_ctrl_priv;
 
 	if ((priv->iw_mode == NL80211_IFTYPE_ADHOC) &&
 	    !lq_sta->ibss_sta_added)
@@ -951,8 +962,9 @@ static void rs_tx_status(void *priv_r, struct ieee80211_supported_band *sband,
 	}
 
 	/* See if there's a better rate or modulation mode to try. */
-	rs_rate_scale_perform(priv, hdr, sta, lq_sta);
+	rs_rate_scale_perform(priv, dev, hdr, sta);
 out:
+	rcu_read_unlock();
 	return;
 }
 
@@ -1128,7 +1140,7 @@ static s32 rs_get_best_rate(struct iwl_priv *priv,
 static int rs_switch_to_mimo2(struct iwl_priv *priv,
 			     struct iwl_lq_sta *lq_sta,
 			     struct ieee80211_conf *conf,
-			     struct ieee80211_sta *sta,
+			     struct sta_info *sta,
 			     struct iwl_scale_tbl_info *tbl, int index)
 {
 	u16 rate_mask;
@@ -1136,10 +1148,10 @@ static int rs_switch_to_mimo2(struct iwl_priv *priv,
 	s8 is_green = lq_sta->is_green;
 
 	if (!(conf->flags & IEEE80211_CONF_SUPPORT_HT_MODE) ||
-	    !sta->ht_info.ht_supported)
+	    !sta->sta.ht_info.ht_supported)
 		return -1;
 
-	if (((sta->ht_info.cap & IEEE80211_HT_CAP_SM_PS) >> 2)
+	if (((sta->sta.ht_info.cap & IEEE80211_HT_CAP_SM_PS) >> 2)
 						== WLAN_HT_CAP_SM_PS_STATIC)
 		return -1;
 
@@ -1196,7 +1208,7 @@ static int rs_switch_to_mimo2(struct iwl_priv *priv,
 static int rs_switch_to_siso(struct iwl_priv *priv,
 			     struct iwl_lq_sta *lq_sta,
 			     struct ieee80211_conf *conf,
-			     struct ieee80211_sta *sta,
+			     struct sta_info *sta,
 			     struct iwl_scale_tbl_info *tbl, int index)
 {
 	u16 rate_mask;
@@ -1204,7 +1216,7 @@ static int rs_switch_to_siso(struct iwl_priv *priv,
 	s32 rate;
 
 	if (!(conf->flags & IEEE80211_CONF_SUPPORT_HT_MODE) ||
-	    !sta->ht_info.ht_supported)
+	    !sta->sta.ht_info.ht_supported)
 		return -1;
 
 	IWL_DEBUG_RATE("LQ: try to switch to SISO\n");
@@ -1256,7 +1268,7 @@ static int rs_switch_to_siso(struct iwl_priv *priv,
 static int rs_move_legacy_other(struct iwl_priv *priv,
 				struct iwl_lq_sta *lq_sta,
 				struct ieee80211_conf *conf,
-				struct ieee80211_sta *sta,
+				struct sta_info *sta,
 				int index)
 {
 	struct iwl_scale_tbl_info *tbl = &(lq_sta->lq_info[lq_sta->active_tbl]);
@@ -1364,7 +1376,7 @@ out:
 static int rs_move_siso_to_other(struct iwl_priv *priv,
 				 struct iwl_lq_sta *lq_sta,
 				 struct ieee80211_conf *conf,
-				 struct ieee80211_sta *sta, int index)
+				 struct sta_info *sta, int index)
 {
 	u8 is_green = lq_sta->is_green;
 	struct iwl_scale_tbl_info *tbl = &(lq_sta->lq_info[lq_sta->active_tbl]);
@@ -1475,7 +1487,7 @@ static int rs_move_siso_to_other(struct iwl_priv *priv,
 static int rs_move_mimo_to_other(struct iwl_priv *priv,
 				 struct iwl_lq_sta *lq_sta,
 				 struct ieee80211_conf *conf,
-				 struct ieee80211_sta *sta, int index)
+				 struct sta_info *sta, int index)
 {
 	s8 is_green = lq_sta->is_green;
 	struct iwl_scale_tbl_info *tbl = &(lq_sta->lq_info[lq_sta->active_tbl]);
@@ -1668,11 +1680,12 @@ static void rs_stay_in_table(struct iwl_lq_sta *lq_sta)
  * Do rate scaling and search for new modulation mode.
  */
 static void rs_rate_scale_perform(struct iwl_priv *priv,
+				  struct net_device *dev,
 				  struct ieee80211_hdr *hdr,
-				  struct ieee80211_sta *sta,
-				  struct iwl_lq_sta *lq_sta)
+				  struct sta_info *sta)
 {
-	struct ieee80211_hw *hw = priv->hw;
+	struct ieee80211_local *local = wdev_priv(dev->ieee80211_ptr);
+	struct ieee80211_hw *hw = local_to_hw(local);
 	struct ieee80211_conf *conf = &hw->conf;
 	int low = IWL_RATE_INVALID;
 	int high = IWL_RATE_INVALID;
@@ -1687,6 +1700,7 @@ static void rs_rate_scale_perform(struct iwl_priv *priv,
 	__le16 fc;
 	u16 rate_mask;
 	u8 update_lq = 0;
+	struct iwl_lq_sta *lq_sta;
 	struct iwl_scale_tbl_info *tbl, *tbl1;
 	u16 rate_scale_index_msk = 0;
 	u32 rate;
@@ -1707,10 +1721,11 @@ static void rs_rate_scale_perform(struct iwl_priv *priv,
 		return;
 	}
 
-	if (!sta || !lq_sta)
+	if (!sta || !sta->rate_ctrl_priv)
 		return;
 
-	lq_sta->supp_rates = sta->supp_rates[lq_sta->band];
+	lq_sta = (struct iwl_lq_sta *)sta->rate_ctrl_priv;
+	lq_sta->supp_rates = sta->sta.supp_rates[lq_sta->band];
 
 	tid = rs_tl_add_packet(lq_sta, hdr);
 
@@ -2049,9 +2064,9 @@ out:
 
 static void rs_initialize_lq(struct iwl_priv *priv,
 			     struct ieee80211_conf *conf,
-			     struct ieee80211_sta *sta,
-			     struct iwl_lq_sta *lq_sta)
+			     struct sta_info *sta)
 {
+	struct iwl_lq_sta *lq_sta;
 	struct iwl_scale_tbl_info *tbl;
 	int rate_idx;
 	int i;
@@ -2060,9 +2075,10 @@ static void rs_initialize_lq(struct iwl_priv *priv,
 	u8 active_tbl = 0;
 	u8 valid_tx_ant;
 
-	if (!sta || !lq_sta)
+	if (!sta || !sta->rate_ctrl_priv)
 		goto out;
 
+	lq_sta = (struct iwl_lq_sta *)sta->rate_ctrl_priv;
 	i = lq_sta->last_txrate_idx;
 
 	if ((lq_sta->lq.sta_id == 0xff) &&
@@ -2103,30 +2119,37 @@ static void rs_initialize_lq(struct iwl_priv *priv,
 	return;
 }
 
-static void rs_get_rate(void *priv_r, struct ieee80211_supported_band *sband,
-			struct ieee80211_sta *sta, void *priv_sta,
-			struct sk_buff *skb, struct rate_selection *sel)
+static void rs_get_rate(void *priv_rate, struct net_device *dev,
+			struct ieee80211_supported_band *sband,
+			struct sk_buff *skb,
+			struct rate_selection *sel)
 {
 
 	int i;
-	struct iwl_priv *priv = (struct iwl_priv *)priv_r;
-	struct ieee80211_conf *conf = &priv->hw->conf;
+	struct ieee80211_local *local = wdev_priv(dev->ieee80211_ptr);
+	struct ieee80211_conf *conf = &local->hw.conf;
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
+	struct sta_info *sta;
 	__le16 fc;
+	struct iwl_priv *priv = (struct iwl_priv *)priv_rate;
 	struct iwl_lq_sta *lq_sta;
 
 	IWL_DEBUG_RATE_LIMIT("rate scale calculate new rate for skb\n");
+
+	rcu_read_lock();
+
+	sta = sta_info_get(local, hdr->addr1);
 
 	/* Send management frames and broadcast/multicast data using lowest
 	 * rate. */
 	fc = hdr->frame_control;
 	if (!ieee80211_is_data(fc) || is_multicast_ether_addr(hdr->addr1) ||
-	    !sta || !priv_sta) {
-		sel->rate_idx = rate_lowest_index(sband, sta);
-		return;
+	    !sta || !sta->rate_ctrl_priv) {
+		sel->rate_idx = rate_lowest_index(local, sband, sta);
+		goto out;
 	}
 
-	lq_sta = (struct iwl_lq_sta *)priv_sta;
+	lq_sta = (struct iwl_lq_sta *)sta->rate_ctrl_priv;
 	i = lq_sta->last_txrate_idx;
 
 	if ((priv->iw_mode == NL80211_IFTYPE_ADHOC) &&
@@ -2144,22 +2167,23 @@ static void rs_get_rate(void *priv_r, struct ieee80211_supported_band *sband,
 			lq_sta->lq.sta_id = sta_id;
 			lq_sta->lq.rs_table[0].rate_n_flags = 0;
 			lq_sta->ibss_sta_added = 1;
-			rs_initialize_lq(priv, conf, sta, lq_sta);
+			rs_initialize_lq(priv, conf, sta);
 		}
 	}
 
 	if ((i < 0) || (i > IWL_RATE_COUNT)) {
-		sel->rate_idx = rate_lowest_index(sband, sta);
-		return;
+		sel->rate_idx = rate_lowest_index(local, sband, sta);
+		goto out;
 	}
 
 	if (sband->band == IEEE80211_BAND_5GHZ)
 		i -= IWL_FIRST_OFDM_RATE;
 	sel->rate_idx = i;
+out:
+	rcu_read_unlock();
 }
 
-static void *rs_alloc_sta(void *priv_rate, struct ieee80211_sta *sta,
-			  gfp_t gfp)
+static void *rs_alloc_sta(void *priv_rate, gfp_t gfp)
 {
 	struct iwl_lq_sta *lq_sta;
 	struct iwl_priv *priv;
@@ -2182,16 +2206,20 @@ static void *rs_alloc_sta(void *priv_rate, struct ieee80211_sta *sta,
 	return lq_sta;
 }
 
-static void rs_rate_init(void *priv_r, struct ieee80211_supported_band *sband,
-			 struct ieee80211_sta *sta, void *priv_sta)
+static void rs_rate_init(void *priv_rate, void *priv_sta,
+			 struct ieee80211_local *local,
+			 struct sta_info *sta)
 {
 	int i, j;
-	struct iwl_priv *priv = (struct iwl_priv *)priv_r;
-	struct ieee80211_conf *conf = &priv->hw->conf;
+	struct ieee80211_conf *conf = &local->hw.conf;
+	struct ieee80211_supported_band *sband;
+	struct iwl_priv *priv = (struct iwl_priv *)priv_rate;
 	struct iwl_lq_sta *lq_sta = priv_sta;
 
+	sband = local->hw.wiphy->bands[local->hw.conf.channel->band];
+
 	lq_sta->flush_timer = 0;
-	lq_sta->supp_rates = sta->supp_rates[sband->band];
+	lq_sta->supp_rates = sta->sta.supp_rates[sband->band];
 	for (j = 0; j < LQ_SIZE; j++)
 		for (i = 0; i < IWL_RATE_COUNT; i++)
 			rs_rate_scale_clear_window(&lq_sta->lq_info[j].win[i]);
@@ -2204,17 +2232,17 @@ static void rs_rate_init(void *priv_r, struct ieee80211_supported_band *sband,
 
 	lq_sta->ibss_sta_added = 0;
 	if (priv->iw_mode == NL80211_IFTYPE_AP) {
-		u8 sta_id = iwl_find_station(priv, sta->addr);
+		u8 sta_id = iwl_find_station(priv, sta->sta.addr);
 		DECLARE_MAC_BUF(mac);
 
 		/* for IBSS the call are from tasklet */
 		IWL_DEBUG_RATE("LQ: ADD station %s\n",
-			     print_mac(mac, sta->addr));
+			     print_mac(mac, sta->sta.addr));
 
 		if (sta_id == IWL_INVALID_STATION) {
 			IWL_DEBUG_RATE("LQ: ADD station %s\n",
-				       print_mac(mac, sta->addr));
-			sta_id = iwl_add_station_flags(priv, sta->addr,
+				       print_mac(mac, sta->sta.addr));
+			sta_id = iwl_add_station_flags(priv, sta->sta.addr,
 							0, CMD_ASYNC, NULL);
 		}
 		if ((sta_id != IWL_INVALID_STATION)) {
@@ -2228,11 +2256,11 @@ static void rs_rate_init(void *priv_r, struct ieee80211_supported_band *sband,
 	/* Find highest tx rate supported by hardware and destination station */
 	lq_sta->last_txrate_idx = 3;
 	for (i = 0; i < sband->n_bitrates; i++)
-		if (sta->supp_rates[sband->band] & BIT(i))
+		if (sta->sta.supp_rates[sband->band] & BIT(i))
 			lq_sta->last_txrate_idx = i;
 
 	/* For MODE_IEEE80211A, skip over cck rates in global rate table */
-	if (sband->band == IEEE80211_BAND_5GHZ)
+	if (local->hw.conf.channel->band == IEEE80211_BAND_5GHZ)
 		lq_sta->last_txrate_idx += IWL_FIRST_OFDM_RATE;
 
 	lq_sta->is_dup = 0;
@@ -2273,7 +2301,7 @@ static void rs_rate_init(void *priv_r, struct ieee80211_supported_band *sband,
 	lq_sta->tx_agg_tid_en = IWL_AGG_ALL_TID;
 	lq_sta->drv = priv;
 
-	rs_initialize_lq(priv, conf, sta, lq_sta);
+	rs_initialize_lq(priv, conf, sta);
 }
 
 static void rs_fill_link_cmd(const struct iwl_priv *priv,
@@ -2395,9 +2423,9 @@ static void rs_fill_link_cmd(const struct iwl_priv *priv,
 	lq_cmd->agg_params.agg_time_limit = cpu_to_le16(4000);
 }
 
-static void *rs_alloc(struct ieee80211_hw *hw, struct dentry *debugfsdir)
+static void *rs_alloc(struct ieee80211_local *local)
 {
-	return hw->priv;
+	return local->hw.priv;
 }
 /* rate scale requires free function to be implemented */
 static void rs_free(void *priv_rate)
@@ -2418,12 +2446,12 @@ static void rs_clear(void *priv_rate)
 #endif /* CONFIG_IWLWIFI_DEBUG */
 }
 
-static void rs_free_sta(void *priv_r, struct ieee80211_sta *sta,
-			void *priv_sta)
+static void rs_free_sta(void *priv_rate, void *priv_sta)
 {
 	struct iwl_lq_sta *lq_sta = priv_sta;
-	struct iwl_priv *priv = priv_r;
+	struct iwl_priv *priv;
 
+	priv = (struct iwl_priv *)priv_rate;
 	IWL_DEBUG_RATE("enter\n");
 	kfree(lq_sta);
 	IWL_DEBUG_RATE("leave\n");
