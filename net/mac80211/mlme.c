@@ -973,8 +973,8 @@ static void ieee80211_associated(struct ieee80211_sub_if_data *sdata,
 				disassoc = 1;
 			} else
 				ieee80211_send_probe_req(sdata, ifsta->bssid,
-							 ifsta->ssid,
-							 ifsta->ssid_len);
+							 local->scan_ssid,
+							 local->scan_ssid_len);
 			ifsta->flags ^= IEEE80211_STA_PROBEREQ_POLL;
 		} else {
 			ifsta->flags &= ~IEEE80211_STA_PROBEREQ_POLL;
