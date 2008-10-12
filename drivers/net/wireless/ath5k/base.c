@@ -237,8 +237,7 @@ static int ath5k_get_tx_stats(struct ieee80211_hw *hw,
 		struct ieee80211_tx_queue_stats *stats);
 static u64 ath5k_get_tsf(struct ieee80211_hw *hw);
 static void ath5k_reset_tsf(struct ieee80211_hw *hw);
-static int ath5k_beacon_update(struct ieee80211_hw *hw,
-		struct sk_buff *skb);
+static int ath5k_beacon_update(struct ath5k_softc *sc, struct sk_buff *skb);
 static void ath5k_bss_info_changed(struct ieee80211_hw *hw,
 		struct ieee80211_vif *vif,
 		struct ieee80211_bss_conf *bss_conf,
@@ -2142,8 +2141,6 @@ ath5k_beacon_update_timers(struct ath5k_softc *sc, u64 bc_tsf)
  *
  * In IBSS mode we use a self-linked tx descriptor if possible. We enable SWBA
  * interrupts to detect TSF updates only.
- *
- * AP mode is missing.
  */
 static void
 ath5k_beacon_config(struct ath5k_softc *sc)
@@ -2156,7 +2153,8 @@ ath5k_beacon_config(struct ath5k_softc *sc)
 
 	if (sc->opmode == NL80211_IFTYPE_STATION) {
 		sc->imask |= AR5K_INT_BMISS;
-	} else if (sc->opmode == NL80211_IFTYPE_ADHOC) {
+	} else if (sc->opmode == NL80211_IFTYPE_ADHOC ||
+			sc->opmode == NL80211_IFTYPE_AP) {
 		/*
 		 * In IBSS mode we use a self-linked tx descriptor and let the
 		 * hardware send the beacons automatically. We have to load it
@@ -2168,13 +2166,15 @@ ath5k_beacon_config(struct ath5k_softc *sc)
 
 		sc->imask |= AR5K_INT_SWBA;
 
-		if (ath5k_hw_hasveol(ah)) {
-			spin_lock(&sc->block);
-			ath5k_beacon_send(sc);
-			spin_unlock(&sc->block);
-		}
+		if (sc->opmode == NL80211_IFTYPE_ADHOC) {
+			if (ath5k_hw_hasveol(ah)) {
+				spin_lock(&sc->block);
+				ath5k_beacon_send(sc);
+				spin_unlock(&sc->block);
+			}
+		} else
+			ath5k_beacon_update_timers(sc, -1);
 	}
-	/* TODO else AP */
 
 	ath5k_hw_set_imr(ah, sc->imask);
 }
@@ -2745,6 +2745,7 @@ static int ath5k_add_interface(struct ieee80211_hw *hw,
 	sc->vif = conf->vif;
 
 	switch (conf->type) {
+	case NL80211_IFTYPE_AP:
 	case NL80211_IFTYPE_STATION:
 	case NL80211_IFTYPE_ADHOC:
 	case NL80211_IFTYPE_MONITOR:
@@ -2808,7 +2809,7 @@ ath5k_config_interface(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 		ret = -EIO;
 		goto unlock;
 	}
-	if (conf->bssid) {
+	if (conf->changed & IEEE80211_IFCC_BSSID && conf->bssid) {
 		/* Cache for later use during resets */
 		memcpy(ah->ah_bssid, conf->bssid, ETH_ALEN);
 		/* XXX: assoc id is set to 0 for now, mac80211 doesn't have
@@ -2816,18 +2817,16 @@ ath5k_config_interface(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 		ath5k_hw_set_associd(ah, ah->ah_bssid, 0);
 		mmiowb();
 	}
-
 	if (conf->changed & IEEE80211_IFCC_BEACON &&
-	    vif->type == NL80211_IFTYPE_ADHOC) {
+			(vif->type == NL80211_IFTYPE_ADHOC ||
+			 vif->type == NL80211_IFTYPE_AP)) {
 		struct sk_buff *beacon = ieee80211_beacon_get(hw, vif);
 		if (!beacon) {
 			ret = -ENOMEM;
 			goto unlock;
 		}
-		/* call old handler for now */
-		ath5k_beacon_update(hw, beacon);
+		ath5k_beacon_update(sc, beacon);
 	}
-
 	mutex_unlock(&sc->lock);
 
 	return ath5k_reset_wake(sc);
@@ -3059,18 +3058,12 @@ ath5k_reset_tsf(struct ieee80211_hw *hw)
 }
 
 static int
-ath5k_beacon_update(struct ieee80211_hw *hw, struct sk_buff *skb)
+ath5k_beacon_update(struct ath5k_softc *sc, struct sk_buff *skb)
 {
-	struct ath5k_softc *sc = hw->priv;
 	unsigned long flags;
 	int ret;
 
 	ath5k_debug_dump_skb(sc, skb, "BC  ", 1);
-
-	if (sc->opmode != NL80211_IFTYPE_ADHOC) {
-		ret = -EIO;
-		goto end;
-	}
 
 	spin_lock_irqsave(&sc->block, flags);
 	ath5k_txbuf_free(sc, sc->bbuf);
@@ -3084,7 +3077,6 @@ ath5k_beacon_update(struct ieee80211_hw *hw, struct sk_buff *skb)
 		mmiowb();
 	}
 
-end:
 	return ret;
 }
 static void
