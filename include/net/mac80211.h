@@ -3,7 +3,7 @@
  *
  * Copyright 2002-2005, Devicescape Software, Inc.
  * Copyright 2006-2007	Jiri Benc <jbenc@suse.cz>
- * Copyright 2007	Johannes Berg <johannes@sipsolutions.net>
+ * Copyright 2007-2008	Johannes Berg <johannes@sipsolutions.net>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -164,6 +164,19 @@ enum ieee80211_bss_change {
 };
 
 /**
+ * struct ieee80211_bss_ht_conf - BSS's changing HT configuration
+ * @secondary_channel_offset: secondary channel offset, uses
+ *	%IEEE80211_HT_PARAM_CHA_SEC_ values
+ * @width_40_ok: indicates that 40 MHz bandwidth may be used for TX
+ * @operation_mode: HT operation mode (like in &struct ieee80211_ht_info)
+ */
+struct ieee80211_bss_ht_conf {
+	u8 secondary_channel_offset;
+	bool width_40_ok;
+	u16 operation_mode;
+};
+
+/**
  * struct ieee80211_bss_conf - holds the BSS's changing parameters
  *
  * This structure keeps information about a BSS (and an association
@@ -182,9 +195,7 @@ enum ieee80211_bss_change {
  * @timestamp: beacon timestamp
  * @beacon_int: beacon interval
  * @assoc_capability: capabilities taken from assoc resp
- * @assoc_ht: association in HT mode
- * @ht_cap: ht capabilities
- * @ht_bss_conf: ht extended capabilities
+ * @ht: BSS's HT configuration
  * @basic_rates: bitmap of basic rates, each bit stands for an
  *	index into the rate table configured by the driver in
  *	the current band.
@@ -202,10 +213,7 @@ struct ieee80211_bss_conf {
 	u16 assoc_capability;
 	u64 timestamp;
 	u64 basic_rates;
-	/* ht related data */
-	bool assoc_ht;
-	struct ieee80211_sta_ht_cap *ht_cap;
-	struct ieee80211_ht_bss_info *ht_bss_conf;
+	struct ieee80211_bss_ht_conf ht;
 };
 
 /**
@@ -439,13 +447,11 @@ struct ieee80211_rx_status {
  * Flags to define PHY configuration options
  *
  * @IEEE80211_CONF_RADIOTAP: add radiotap header at receive time (if supported)
- * @IEEE80211_CONF_SUPPORT_HT_MODE: use 802.11n HT capabilities (if supported)
  * @IEEE80211_CONF_PS: Enable 802.11 power save mode
  */
 enum ieee80211_conf_flags {
 	IEEE80211_CONF_RADIOTAP		= (1<<0),
-	IEEE80211_CONF_SUPPORT_HT_MODE	= (1<<1),
-	IEEE80211_CONF_PS		= (1<<2),
+	IEEE80211_CONF_PS		= (1<<1),
 };
 
 /* XXX: remove all this once drivers stop trying to use it */
@@ -454,6 +460,10 @@ static inline int __deprecated __IEEE80211_CONF_SHORT_SLOT_TIME(void)
 	return 0;
 }
 #define IEEE80211_CONF_SHORT_SLOT_TIME (__IEEE80211_CONF_SHORT_SLOT_TIME())
+
+struct ieee80211_ht_conf {
+	bool enabled;
+};
 
 /**
  * enum ieee80211_conf_changed - denotes which configuration changed
@@ -466,6 +476,7 @@ static inline int __deprecated __IEEE80211_CONF_SHORT_SLOT_TIME(void)
  * @IEEE80211_CONF_CHANGE_POWER: the TX power changed
  * @IEEE80211_CONF_CHANGE_CHANNEL: the channel changed
  * @IEEE80211_CONF_CHANGE_RETRY_LIMITS: retry limits changed
+ * @IEEE80211_CONF_CHANGE_HT: HT configuration changed
  */
 enum ieee80211_conf_changed {
 	IEEE80211_CONF_CHANGE_RADIO_ENABLED	= BIT(0),
@@ -476,6 +487,7 @@ enum ieee80211_conf_changed {
 	IEEE80211_CONF_CHANGE_POWER		= BIT(5),
 	IEEE80211_CONF_CHANGE_CHANNEL		= BIT(6),
 	IEEE80211_CONF_CHANGE_RETRY_LIMITS	= BIT(7),
+	IEEE80211_CONF_CHANGE_HT		= BIT(8),
 };
 
 /**
@@ -488,9 +500,8 @@ enum ieee80211_conf_changed {
  * @listen_interval: listen interval in units of beacon interval
  * @flags: configuration flags defined above
  * @power_level: requested transmit power (in dBm)
- * @ht_cap: describes current self configuration of 802.11n HT capabilities
- * @ht_bss_conf: describes current BSS configuration of 802.11n HT parameters
  * @channel: the channel to tune to
+ * @ht: the HT configuration for the device
  * @long_frame_max_tx_count: Maximum number of transmissions for a "long" frame
  *    (a frame not RTS protected), called "dot11LongRetryLimit" in 802.11,
  *    but actually means the number of transmissions not the number of retries
@@ -509,9 +520,7 @@ struct ieee80211_conf {
 	u8 long_frame_max_tx_count, short_frame_max_tx_count;
 
 	struct ieee80211_channel *channel;
-
-	struct ieee80211_sta_ht_cap ht_cap;
-	struct ieee80211_ht_bss_info ht_bss_conf;
+	struct ieee80211_ht_conf ht;
 };
 
 /**
@@ -707,7 +716,7 @@ enum set_key_cmd {
  * @addr: MAC address
  * @aid: AID we assigned to the station if we're an AP
  * @supp_rates: Bitmap of supported rates (per band)
- * @ht_cap: HT capabilities of this STA
+ * @ht_cap: HT capabilities of this STA; restricted to our own TX capabilities
  * @drv_priv: data area for driver use, will always be aligned to
  *	sizeof(void *), size is determined in hw information.
  */
