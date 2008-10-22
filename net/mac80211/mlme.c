@@ -1195,7 +1195,7 @@ static void ieee80211_rx_mgmt_assoc_resp(struct ieee80211_sub_if_data *sdata,
 	u32 changed = 0;
 	int i, j;
 	DECLARE_MAC_BUF(mac);
-	bool have_higher_than_11mbit = false;
+	bool have_higher_than_11mbit = false, newsta = false;
 	u16 ap_ht_cap_flags;
 
 	/* AssocResp and ReassocResp have identical structure, so process both
@@ -1259,7 +1259,8 @@ static void ieee80211_rx_mgmt_assoc_resp(struct ieee80211_sub_if_data *sdata,
 	sta = sta_info_get(local, ifsta->bssid);
 	if (!sta) {
 		struct ieee80211_bss *bss;
-		int err;
+
+		newsta = true;
 
 		sta = sta_info_alloc(sdata, ifsta->bssid, GFP_ATOMIC);
 		if (!sta) {
@@ -1278,13 +1279,6 @@ static void ieee80211_rx_mgmt_assoc_resp(struct ieee80211_sub_if_data *sdata,
 			ieee80211_rx_bss_put(local, bss);
 		}
 
-		err = sta_info_insert(sta);
-		if (err) {
-			printk(KERN_DEBUG "%s: failed to insert STA entry for"
-			       " the AP (error %d)\n", sdata->dev->name, err);
-			rcu_read_unlock();
-			return;
-		}
 		/* update new sta with its last rx activity */
 		sta->last_rx = jiffies;
 	}
@@ -1352,13 +1346,24 @@ static void ieee80211_rx_mgmt_assoc_resp(struct ieee80211_sub_if_data *sdata,
 
 	rate_control_rate_init(sta);
 
-	if (elems.wmm_param) {
+	if (elems.wmm_param)
 		set_sta_flags(sta, WLAN_STA_WME);
-		rcu_read_unlock();
+
+	if (newsta) {
+		int err = sta_info_insert(sta);
+		if (err) {
+			printk(KERN_DEBUG "%s: failed to insert STA entry for"
+			       " the AP (error %d)\n", sdata->dev->name, err);
+			rcu_read_unlock();
+			return;
+		}
+	}
+
+	rcu_read_unlock();
+
+	if (elems.wmm_param)
 		ieee80211_sta_wmm_params(local, ifsta, elems.wmm_param,
 					 elems.wmm_param_len);
-	} else
-		rcu_read_unlock();
 
 	if (elems.ht_info_elem && elems.wmm_param &&
 	    (ifsta->flags & IEEE80211_STA_WMM_ENABLED))
