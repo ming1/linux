@@ -1221,9 +1221,8 @@ ieee80211_deliver_skb(struct ieee80211_rx_data *rx)
 	skb = rx->skb;
 	xmit_skb = NULL;
 
-	if ((sdata->vif.type == IEEE80211_IF_TYPE_AP ||
-	     sdata->vif.type == IEEE80211_IF_TYPE_VLAN) &&
-	    !(sdata->flags & IEEE80211_SDATA_DONT_BRIDGE_PACKETS) &&
+	if (local->bridge_packets && (sdata->vif.type == IEEE80211_IF_TYPE_AP ||
+				      sdata->vif.type == IEEE80211_IF_TYPE_VLAN) &&
 	    (rx->flags & IEEE80211_RX_RA_MATCH)) {
 		if (is_multicast_ether_addr(ehdr->h_dest)) {
 			/*
