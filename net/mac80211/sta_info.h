@@ -218,7 +218,6 @@ struct sta_ampdu_mlme {
  * @plink_timeout: TBD
  * @plink_timer: TBD
  * @debugfs: debug filesystem info
- * @sta: station information we share with the driver
  */
 struct sta_info {
 	/* General information, mostly static */
@@ -233,7 +232,8 @@ struct sta_info {
 	spinlock_t flaglock;
 	struct ieee80211_ht_info ht_info;
 	u64 supp_rates[IEEE80211_NUM_BANDS];
-
+	u8 addr[ETH_ALEN];
+	u16 aid;
 	u16 listen_interval;
 
 	/*
@@ -327,9 +327,6 @@ struct sta_info {
 		struct dentry *agg_status;
 	} debugfs;
 #endif
-
-	/* keep last! */
-	struct ieee80211_sta sta;
 };
 
 static inline enum plink_state sta_plink_state(struct sta_info *sta)
