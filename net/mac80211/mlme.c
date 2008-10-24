@@ -352,17 +352,6 @@ int ieee80211_ht_addt_info_ie_to_ht_bss_info(
 	return 0;
 }
 
-static void ieee80211_sta_send_apinfo(struct ieee80211_sub_if_data *sdata,
-					struct ieee80211_if_sta *ifsta)
-{
-	union iwreq_data wrqu;
-	memset(&wrqu, 0, sizeof(wrqu));
-	if (ifsta->flags & IEEE80211_STA_ASSOCIATED)
-		memcpy(wrqu.ap_addr.sa_data, sdata->u.sta.bssid, ETH_ALEN);
-	wrqu.ap_addr.sa_family = ARPHRD_ETHER;
-	wireless_send_event(sdata->dev, SIOCGIWAP, &wrqu, NULL);
-}
-
 static void ieee80211_sta_send_associnfo(struct ieee80211_sub_if_data *sdata,
 					 struct ieee80211_if_sta *ifsta)
 {
@@ -415,53 +404,68 @@ static void ieee80211_sta_send_associnfo(struct ieee80211_sub_if_data *sdata,
 
 
 static void ieee80211_set_associated(struct ieee80211_sub_if_data *sdata,
-				     struct ieee80211_if_sta *ifsta)
+				     struct ieee80211_if_sta *ifsta,
+				     bool assoc)
 {
 	struct ieee80211_local *local = sdata->local;
 	struct ieee80211_conf *conf = &local_to_hw(local)->conf;
+	union iwreq_data wrqu;
 	u32 changed = BSS_CHANGED_ASSOC;
 
-	struct ieee80211_sta_bss *bss;
+	if (assoc) {
+		struct ieee80211_sta_bss *bss;
 
-	ifsta->flags |= IEEE80211_STA_ASSOCIATED;
+		ifsta->flags |= IEEE80211_STA_ASSOCIATED;
 
-	if (sdata->vif.type != IEEE80211_IF_TYPE_STA)
-		return;
+		if (sdata->vif.type != IEEE80211_IF_TYPE_STA)
+			return;
 
-	bss = ieee80211_rx_bss_get(local, ifsta->bssid,
-				   conf->channel->center_freq,
-				   ifsta->ssid, ifsta->ssid_len);
-	if (bss) {
-		/* set timing information */
-		sdata->bss_conf.beacon_int = bss->beacon_int;
-		sdata->bss_conf.timestamp = bss->timestamp;
-		sdata->bss_conf.dtim_period = bss->dtim_period;
+		bss = ieee80211_rx_bss_get(local, ifsta->bssid,
+					   conf->channel->center_freq,
+					   ifsta->ssid, ifsta->ssid_len);
+		if (bss) {
+			/* set timing information */
+			sdata->bss_conf.beacon_int = bss->beacon_int;
+			sdata->bss_conf.timestamp = bss->timestamp;
+			sdata->bss_conf.dtim_period = bss->dtim_period;
 
-		changed |= ieee80211_handle_bss_capability(sdata, bss);
+			changed |= ieee80211_handle_bss_capability(sdata, bss);
 
-		ieee80211_rx_bss_put(local, bss);
+			ieee80211_rx_bss_put(local, bss);
+		}
+
+		if (conf->flags & IEEE80211_CONF_SUPPORT_HT_MODE) {
+			changed |= BSS_CHANGED_HT;
+			sdata->bss_conf.assoc_ht = 1;
+			sdata->bss_conf.ht_conf = &conf->ht_conf;
+			sdata->bss_conf.ht_bss_conf = &conf->ht_bss_conf;
+		}
+
+		ifsta->flags |= IEEE80211_STA_PREV_BSSID_SET;
+		memcpy(ifsta->prev_bssid, sdata->u.sta.bssid, ETH_ALEN);
+		memcpy(wrqu.ap_addr.sa_data, sdata->u.sta.bssid, ETH_ALEN);
+		ieee80211_sta_send_associnfo(sdata, ifsta);
+	} else {
+		ifsta->flags &= ~IEEE80211_STA_ASSOCIATED;
+		changed |= ieee80211_reset_erp_info(sdata);
+
+		sdata->bss_conf.assoc_ht = 0;
+		sdata->bss_conf.ht_conf = NULL;
+		sdata->bss_conf.ht_bss_conf = NULL;
+
+		memset(wrqu.ap_addr.sa_data, 0, ETH_ALEN);
 	}
-
-	if (conf->flags & IEEE80211_CONF_SUPPORT_HT_MODE) {
-		changed |= BSS_CHANGED_HT;
-		sdata->bss_conf.assoc_ht = 1;
-		sdata->bss_conf.ht_conf = &conf->ht_conf;
-		sdata->bss_conf.ht_bss_conf = &conf->ht_bss_conf;
-	}
-
-	ifsta->flags |= IEEE80211_STA_PREV_BSSID_SET;
-	memcpy(ifsta->prev_bssid, sdata->u.sta.bssid, ETH_ALEN);
-	ieee80211_sta_send_associnfo(sdata, ifsta);
-
 	ifsta->last_probe = jiffies;
-	ieee80211_led_assoc(local, 1);
+	ieee80211_led_assoc(local, assoc);
 
-	sdata->bss_conf.assoc = 1;
+	sdata->bss_conf.assoc = assoc;
 	ieee80211_bss_info_change_notify(sdata, changed);
 
-	netif_carrier_on(sdata->dev);
+	if (assoc)
+		netif_carrier_on(sdata->dev);
 
-	ieee80211_sta_send_apinfo(sdata, ifsta);
+	wrqu.ap_addr.sa_family = ARPHRD_ETHER;
+	wireless_send_event(sdata->dev, SIOCGIWAP, &wrqu, NULL);
 }
 
 void ieee80211_sta_tx(struct ieee80211_sub_if_data *sdata, struct sk_buff *skb,
@@ -863,7 +867,6 @@ static void ieee80211_set_disassoc(struct ieee80211_sub_if_data *sdata,
 {
 	struct ieee80211_local *local = sdata->local;
 	struct sta_info *sta;
-	u32 changed = BSS_CHANGED_ASSOC;
 
 	rcu_read_lock();
 
@@ -891,20 +894,7 @@ static void ieee80211_set_disassoc(struct ieee80211_sub_if_data *sdata,
 			ieee80211_send_disassoc(sdata, ifsta, reason);
 	}
 
-	ifsta->flags &= ~IEEE80211_STA_ASSOCIATED;
-	changed |= ieee80211_reset_erp_info(sdata);
-
-	if (sdata->bss_conf.assoc_ht)
-		changed |= BSS_CHANGED_HT;
-
-	sdata->bss_conf.assoc_ht = 0;
-	sdata->bss_conf.ht_conf = NULL;
-	sdata->bss_conf.ht_bss_conf = NULL;
-
-	ieee80211_led_assoc(local, 0);
-	sdata->bss_conf.assoc = 0;
-
-	ieee80211_sta_send_apinfo(sdata, ifsta);
+	ieee80211_set_associated(sdata, ifsta, 0);
 
 	if (self_disconnected)
 		ifsta->state = IEEE80211_STA_MLME_DISABLED;
@@ -2122,7 +2112,7 @@ static void ieee80211_rx_mgmt_assoc_resp(struct ieee80211_sub_if_data *sdata,
 	 * ieee80211_set_associated() will tell the driver */
 	bss_conf->aid = aid;
 	bss_conf->assoc_capability = capab_info;
-	ieee80211_set_associated(sdata, ifsta);
+	ieee80211_set_associated(sdata, ifsta, 1);
 
 	ieee80211_associated(sdata, ifsta);
 }
