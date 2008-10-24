@@ -690,11 +690,9 @@ static void ieee80211_sta_send_associnfo(struct ieee80211_sub_if_data *sdata,
 		}
 	}
 
-	if (len <= IW_CUSTOM_MAX) {
-		memset(&wrqu, 0, sizeof(wrqu));
-		wrqu.data.length = len;
-		wireless_send_event(sdata->dev, IWEVCUSTOM, &wrqu, buf);
-	}
+	memset(&wrqu, 0, sizeof(wrqu));
+	wrqu.data.length = len;
+	wireless_send_event(sdata->dev, IWEVCUSTOM, &wrqu, buf);
 
 	kfree(buf);
 }
