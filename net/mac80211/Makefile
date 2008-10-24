@@ -8,7 +8,6 @@ mac80211-y := \
 	wep.o \
 	wpa.o \
 	scan.o \
-	ht.o \
 	mlme.o \
 	iface.o \
 	rate.o \
