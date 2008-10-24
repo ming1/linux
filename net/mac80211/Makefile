@@ -17,7 +17,6 @@ mac80211-y := \
 	aes_ccm.o \
 	cfg.o \
 	rx.o \
-	spectmgmt.o \
 	tx.o \
 	key.o \
 	util.o \
