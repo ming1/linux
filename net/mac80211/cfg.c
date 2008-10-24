@@ -693,7 +693,7 @@ static int ieee80211_add_station(struct wiphy *wiphy, struct net_device *dev,
 
 	sta_apply_parameters(local, sta, params);
 
-	rate_control_rate_init(sta);
+	rate_control_rate_init(sta, local);
 
 	rcu_read_lock();
 

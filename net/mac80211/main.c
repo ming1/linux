@@ -542,7 +542,6 @@ void ieee80211_tx_status(struct ieee80211_hw *hw, struct sk_buff *skb)
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	u16 frag, type;
 	__le16 fc;
-	struct ieee80211_supported_band *sband;
 	struct ieee80211_tx_status_rtap_hdr *rthdr;
 	struct ieee80211_sub_if_data *sdata;
 	struct net_device *prev_dev = NULL;
@@ -589,8 +588,7 @@ void ieee80211_tx_status(struct ieee80211_hw *hw, struct sk_buff *skb)
 			sta->tx_retry_count += info->status.retry_count;
 		}
 
-		sband = local->hw.wiphy->bands[info->band];
-		rate_control_tx_status(local, sband, sta, skb);
+		rate_control_tx_status(local->mdev, skb);
 	}
 
 	rcu_read_unlock();

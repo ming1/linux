@@ -724,8 +724,6 @@ struct ieee80211_local {
 
 #ifdef CONFIG_MAC80211_DEBUGFS
 	struct local_debugfsdentries {
-		struct dentry *rcdir;
-		struct dentry *rcname;
 		struct dentry *frequency;
 		struct dentry *antenna_sel_tx;
 		struct dentry *antenna_sel_rx;
