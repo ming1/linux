@@ -426,12 +426,10 @@ EXPORT_SYMBOL_GPL(p54_parse_eeprom);
 
 static int p54_rx_data(struct ieee80211_hw *dev, struct sk_buff *skb)
 {
-	struct p54_common *priv = dev->priv;
 	struct p54_rx_hdr *hdr = (struct p54_rx_hdr *) skb->data;
 	struct ieee80211_rx_status rx_status = {0};
 	u16 freq = le16_to_cpu(hdr->freq);
 	size_t header_len = sizeof(*hdr);
-	u32 tsf32;
 
 	rx_status.signal = hdr->rssi;
 	/* XX correct? */
@@ -440,13 +438,7 @@ static int p54_rx_data(struct ieee80211_hw *dev, struct sk_buff *skb)
 	rx_status.freq = freq;
 	rx_status.band = IEEE80211_BAND_2GHZ;
 	rx_status.antenna = hdr->antenna;
-
-	tsf32 = le32_to_cpu(hdr->tsf32);
-	if (tsf32 < priv->tsf_low32)
-		priv->tsf_high32++;
-	rx_status.mactime = ((u64)priv->tsf_high32) << 32 | tsf32;
-	priv->tsf_low32 = tsf32;
-
+	rx_status.mactime = le64_to_cpu(hdr->timestamp);
 	rx_status.flag |= RX_FLAG_TSFT;
 
 	if (hdr->magic & cpu_to_le16(0x4000))
@@ -1045,7 +1037,6 @@ static void p54_stop(struct ieee80211_hw *dev)
 	while ((skb = skb_dequeue(&priv->tx_queue)))
 		kfree_skb(skb);
 	priv->stop(dev);
-	priv->tsf_high32 = priv->tsf_low32 = 0;
 	priv->mode = IEEE80211_IF_TYPE_INVALID;
 }
 
