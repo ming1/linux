@@ -481,12 +481,8 @@ static int netdev_notify(struct notifier_block *nb,
 
 	sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 
-	dir = sdata->debugfsdir;
-
-	if (!dir)
-		return 0;
-
 	sprintf(buf, "netdev:%s", dev->name);
+	dir = sdata->debugfsdir;
 	if (!debugfs_rename(dir->d_parent, dir, dir->d_parent, buf))
 		printk(KERN_ERR "mac80211: debugfs: failed to rename debugfs "
 		       "dir to %s\n", buf);
