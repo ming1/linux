@@ -433,7 +433,7 @@ struct fw_info {
 const static struct fw_info orinoco_fw[] = {
 	{ "", "agere_sta_fw.bin", "agere_ap_fw.bin", 0x00390000, 1000 },
 	{ "", "prism_sta_fw.bin", "prism_ap_fw.bin", 0, 1024 },
-	{ "symbol_sp24t_prim_fw", "symbol_sp24t_sec_fw", "", 0x00003100, 512 }
+	{ "symbol_sp24t_prim_fw", "symbol_sp24t_sec_fw", "", 0x00003100, 0x100 }
 };
 
 /* Structure used to access fields in FW
@@ -458,7 +458,7 @@ orinoco_dl_firmware(struct orinoco_private *priv,
 		    int ap)
 {
 	/* Plug Data Area (PDA) */
-	__le16 *pda;
+	__le16 pda[512] = { 0 };
 
 	hermes_t *hw = &priv->hw;
 	const struct firmware *fw_entry;
@@ -467,11 +467,7 @@ orinoco_dl_firmware(struct orinoco_private *priv,
 	const unsigned char *end;
 	const char *firmware;
 	struct net_device *dev = priv->ndev;
-	int err = 0;
-
-	pda = kzalloc(fw->pda_size, GFP_KERNEL);
-	if (!pda)
-		return -ENOMEM;
+	int err;
 
 	if (ap)
 		firmware = fw->ap_fw;
@@ -482,17 +478,17 @@ orinoco_dl_firmware(struct orinoco_private *priv,
 	       dev->name, firmware);
 
 	/* Read current plug data */
-	err = hermes_read_pda(hw, pda, fw->pda_addr, fw->pda_size, 0);
+	err = hermes_read_pda(hw, pda, fw->pda_addr,
+			      min_t(u16, fw->pda_size, sizeof(pda)), 0);
 	printk(KERN_DEBUG "%s: Read PDA returned %d\n", dev->name, err);
 	if (err)
-		goto free;
+		return err;
 
 	err = request_firmware(&fw_entry, firmware, priv->dev);
 	if (err) {
 		printk(KERN_ERR "%s: Cannot find firmware %s\n",
 		       dev->name, firmware);
-		err = -ENOENT;
-		goto free;
+		return -ENOENT;
 	}
 
 	hdr = (const struct orinoco_fw_header *) fw_entry->data;
@@ -536,9 +532,6 @@ orinoco_dl_firmware(struct orinoco_private *priv,
 
 abort:
 	release_firmware(fw_entry);
-
-free:
-	kfree(pda);
 	return err;
 }
 
@@ -556,12 +549,12 @@ symbol_dl_image(struct orinoco_private *priv, const struct fw_info *fw,
 		int secondary)
 {
 	hermes_t *hw = &priv->hw;
-	int ret = 0;
+	int ret;
 	const unsigned char *ptr;
 	const unsigned char *first_block;
 
 	/* Plug Data Area (PDA) */
-	__le16 *pda = NULL;
+	__le16 pda[256];
 
 	/* Binary block begins after the 0x1A marker */
 	ptr = image;
@@ -570,33 +563,28 @@ symbol_dl_image(struct orinoco_private *priv, const struct fw_info *fw,
 
 	/* Read the PDA from EEPROM */
 	if (secondary) {
-		pda = kzalloc(fw->pda_size, GFP_KERNEL);
-		if (!pda)
-			return -ENOMEM;
-
-		ret = hermes_read_pda(hw, pda, fw->pda_addr, fw->pda_size, 1);
+		ret = hermes_read_pda(hw, pda, fw->pda_addr, sizeof(pda), 1);
 		if (ret)
-			goto free;
+			return ret;
 	}
 
 	/* Stop the firmware, so that it can be safely rewritten */
 	if (priv->stop_fw) {
 		ret = priv->stop_fw(priv, 1);
 		if (ret)
-			goto free;
+			return ret;
 	}
 
 	/* Program the adapter with new firmware */
 	ret = hermes_program(hw, first_block, end);
 	if (ret)
-		goto free;
+		return ret;
 
 	/* Write the PDA to the adapter */
 	if (secondary) {
 		size_t len = hermes_blocks_length(first_block);
 		ptr = first_block + len;
 		ret = hermes_apply_pda(hw, ptr, pda);
-		kfree(pda);
 		if (ret)
 			return ret;
 	}
@@ -620,10 +608,6 @@ symbol_dl_image(struct orinoco_private *priv, const struct fw_info *fw,
 		return -ENODEV;
 
 	return 0;
-
-free:
-	kfree(pda);
-	return ret;
 }
 
 
