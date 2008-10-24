@@ -185,8 +185,7 @@ int cfg80211_dev_rename(struct cfg80211_registered_device *rdev,
 	if (result)
 		goto out_unlock;
 
-	if (rdev->wiphy.debugfsdir &&
-	    !debugfs_rename(rdev->wiphy.debugfsdir->d_parent,
+	if (!debugfs_rename(rdev->wiphy.debugfsdir->d_parent,
 			    rdev->wiphy.debugfsdir,
 			    rdev->wiphy.debugfsdir->d_parent,
 			    newname))
@@ -319,8 +318,6 @@ int wiphy_register(struct wiphy *wiphy)
 	drv->wiphy.debugfsdir =
 		debugfs_create_dir(wiphy_name(&drv->wiphy),
 				   ieee80211_debugfs_dir);
-	if (IS_ERR(drv->wiphy.debugfsdir))
-		drv->wiphy.debugfsdir = NULL;
 
 	res = 0;
 out_unlock:
