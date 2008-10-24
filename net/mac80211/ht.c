@@ -133,9 +133,9 @@ u32 ieee80211_enable_ht(struct ieee80211_sub_if_data *sdata,
 	ht.operation_mode = le16_to_cpu(hti->operation_mode);
 
 	/* if bss configuration changed store the new one */
-	if (memcmp(&sdata->vif.bss_conf.ht, &ht, sizeof(ht))) {
+	if (memcmp(&sdata->bss_conf.ht, &ht, sizeof(ht))) {
 		changed |= BSS_CHANGED_HT;
-		sdata->vif.bss_conf.ht = ht;
+		sdata->bss_conf.ht = ht;
 	}
 
 	return changed;
