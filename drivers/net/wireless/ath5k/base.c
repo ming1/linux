@@ -1433,8 +1433,7 @@ ath5k_beaconq_config(struct ath5k_softc *sc)
 	ret = ath5k_hw_get_tx_queueprops(ah, sc->bhalq, &qi);
 	if (ret)
 		return ret;
-	if (sc->opmode == IEEE80211_IF_TYPE_AP ||
-		sc->opmode == IEEE80211_IF_TYPE_MESH_POINT) {
+	if (sc->opmode == IEEE80211_IF_TYPE_AP) {
 		/*
 		 * Always burst out beacon and CAB traffic
 		 * (aifs = cwmin = cwmax = 0)
@@ -2941,7 +2940,6 @@ static void ath5k_configure_filter(struct ieee80211_hw *hw,
 	if (sc->opmode != IEEE80211_IF_TYPE_STA)
 		rfilt |= AR5K_RX_FILTER_PROBEREQ;
 	if (sc->opmode != IEEE80211_IF_TYPE_AP &&
-		sc->opmode != IEEE80211_IF_TYPE_MESH_POINT &&
 		test_bit(ATH_STAT_PROMISC, sc->status))
 		rfilt |= AR5K_RX_FILTER_PROM;
 	if (sc->opmode == IEEE80211_IF_TYPE_STA ||
