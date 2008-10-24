@@ -93,8 +93,7 @@ int p54_parse_firmware(struct ieee80211_hw *dev, const struct firmware *fw)
 		u32 code = le32_to_cpu(bootrec->code);
 		switch (code) {
 		case BR_CODE_COMPONENT_ID:
-			priv->fw_interface = be32_to_cpup(bootrec->data);
-			switch (priv->fw_interface) {
+			switch (be32_to_cpu(*(__be32 *)bootrec->data)) {
 			case FW_FMAC:
 				printk(KERN_INFO "p54: FreeMAC firmware\n");
 				break;
@@ -105,7 +104,7 @@ int p54_parse_firmware(struct ieee80211_hw *dev, const struct firmware *fw)
 				printk(KERN_INFO "p54: LM86 firmware\n");
 				break;
 			case FW_LM87:
-				printk(KERN_INFO "p54: LM87 firmware\n");
+				printk(KERN_INFO "p54: LM87 firmware - not supported yet!\n");
 				break;
 			default:
 				printk(KERN_INFO "p54: unknown firmware\n");
