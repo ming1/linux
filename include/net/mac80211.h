@@ -468,7 +468,6 @@ struct ieee80211_ht_conf {
  * @IEEE80211_CONF_CHANGE_POWER: the TX power changed
  * @IEEE80211_CONF_CHANGE_CHANNEL: the channel changed
  * @IEEE80211_CONF_CHANGE_HT: HT configuration changed
- * @IEEE80211_CONF_CHANGE_RETRY_LIMITS: retry limits changed
  */
 enum ieee80211_conf_changed {
 	IEEE80211_CONF_CHANGE_RADIO_ENABLED	= BIT(0),
@@ -479,7 +478,6 @@ enum ieee80211_conf_changed {
 	IEEE80211_CONF_CHANGE_POWER		= BIT(5),
 	IEEE80211_CONF_CHANGE_CHANNEL		= BIT(6),
 	IEEE80211_CONF_CHANGE_HT		= BIT(7),
-	IEEE80211_CONF_CHANGE_RETRY_LIMITS	= BIT(8),
 };
 
 /**
@@ -494,12 +492,6 @@ enum ieee80211_conf_changed {
  * @power_level: requested transmit power (in dBm)
  * @channel: the channel to tune to
  * @ht: the HT configuration for the device
- * @long_frame_max_tx_count: Maximum number of transmissions for a "long" frame
- *    (a frame not RTS protected), called "dot11LongRetryLimit" in 802.11,
- *    but actually means the number of transmissions not the number of retries
- * @short_frame_max_tx_count: Maximum number of transmissions for a "short"
- *    frame, called "dot11ShortRetryLimit" in 802.11, but actually means the
- *    number of transmissions not the number of retries
  */
 struct ieee80211_conf {
 	int beacon_int;
@@ -508,8 +500,6 @@ struct ieee80211_conf {
 
 	u16 listen_interval;
 	bool radio_enabled;
-
-	u8 long_frame_max_tx_count, short_frame_max_tx_count;
 
 	struct ieee80211_channel *channel;
 	struct ieee80211_ht_conf ht;
@@ -1196,6 +1186,8 @@ enum ieee80211_ampdu_mlme_action {
  *	the device does fragmentation by itself; if this method is assigned then
  *	the stack will not do fragmentation.
  *
+ * @set_retry_limit: Configuration of retry limits (if device needs it)
+ *
  * @sta_notify: Notifies low level driver about addition or removal
  *	of assocaited station or AP.
  *
@@ -1265,6 +1257,8 @@ struct ieee80211_ops {
 			     u32 *iv32, u16 *iv16);
 	int (*set_rts_threshold)(struct ieee80211_hw *hw, u32 value);
 	int (*set_frag_threshold)(struct ieee80211_hw *hw, u32 value);
+	int (*set_retry_limit)(struct ieee80211_hw *hw,
+			       u32 short_retry, u32 long_retr);
 	void (*sta_notify)(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 			enum sta_notify_cmd, struct ieee80211_sta *sta);
 	int (*conf_tx)(struct ieee80211_hw *hw, u16 queue,
