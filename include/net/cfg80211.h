@@ -363,13 +363,11 @@ struct wiphy;
  * wireless extensions but this is subject to reevaluation as soon as this
  * code is used more widely and we have a first user without wext.
  *
- * @add_virtual_intf: create a new virtual interface with the given name,
- *	must set the struct wireless_dev's iftype.
+ * @add_virtual_intf: create a new virtual interface with the given name
  *
  * @del_virtual_intf: remove the virtual interface determined by ifindex.
  *
- * @change_virtual_intf: change type/configuration of virtual interface,
- *	keep the struct wireless_dev's iftype updated.
+ * @change_virtual_intf: change type of virtual interface
  *
  * @add_key: add a key with the given parameters. @mac_addr will be %NULL
  *	when adding a group key.
