@@ -167,6 +167,7 @@ struct sta_ampdu_mlme {
  * @lock: used for locking all fields that require locking, see comments
  *	in the header file.
  * @flaglock: spinlock for flags accesses
+ * @ht_info: HT capabilities of this STA
  * @addr: MAC address of this STA
  * @aid: STA's unique AID (1..2007, 0 = not assigned yet),
  *	only used in AP (and IBSS?) mode
@@ -225,6 +226,7 @@ struct sta_info {
 	void *rate_ctrl_priv;
 	spinlock_t lock;
 	spinlock_t flaglock;
+	struct ieee80211_ht_info ht_info;
 
 	u16 listen_interval;
 
