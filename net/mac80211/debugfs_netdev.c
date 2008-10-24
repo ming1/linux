@@ -345,26 +345,26 @@ static void add_files(struct ieee80211_sub_if_data *sdata)
 		return;
 
 	switch (sdata->vif.type) {
-	case NL80211_IFTYPE_MESH_POINT:
+	case IEEE80211_IF_TYPE_MESH_POINT:
 #ifdef CONFIG_MAC80211_MESH
 		add_mesh_stats(sdata);
 		add_mesh_config(sdata);
 #endif
 		break;
-	case NL80211_IFTYPE_STATION:
-	case NL80211_IFTYPE_ADHOC:
+	case IEEE80211_IF_TYPE_STA:
+	case IEEE80211_IF_TYPE_IBSS:
 		add_sta_files(sdata);
 		break;
-	case NL80211_IFTYPE_AP:
+	case IEEE80211_IF_TYPE_AP:
 		add_ap_files(sdata);
 		break;
-	case NL80211_IFTYPE_WDS:
+	case IEEE80211_IF_TYPE_WDS:
 		add_wds_files(sdata);
 		break;
-	case NL80211_IFTYPE_MONITOR:
+	case IEEE80211_IF_TYPE_MNTR:
 		add_monitor_files(sdata);
 		break;
-	case NL80211_IFTYPE_AP_VLAN:
+	case IEEE80211_IF_TYPE_VLAN:
 		add_vlan_files(sdata);
 		break;
 	default:
@@ -482,26 +482,26 @@ static void del_files(struct ieee80211_sub_if_data *sdata)
 		return;
 
 	switch (sdata->vif.type) {
-	case NL80211_IFTYPE_MESH_POINT:
+	case IEEE80211_IF_TYPE_MESH_POINT:
 #ifdef CONFIG_MAC80211_MESH
 		del_mesh_stats(sdata);
 		del_mesh_config(sdata);
 #endif
 		break;
-	case NL80211_IFTYPE_STATION:
-	case NL80211_IFTYPE_ADHOC:
+	case IEEE80211_IF_TYPE_STA:
+	case IEEE80211_IF_TYPE_IBSS:
 		del_sta_files(sdata);
 		break;
-	case NL80211_IFTYPE_AP:
+	case IEEE80211_IF_TYPE_AP:
 		del_ap_files(sdata);
 		break;
-	case NL80211_IFTYPE_WDS:
+	case IEEE80211_IF_TYPE_WDS:
 		del_wds_files(sdata);
 		break;
-	case NL80211_IFTYPE_MONITOR:
+	case IEEE80211_IF_TYPE_MNTR:
 		del_monitor_files(sdata);
 		break;
-	case NL80211_IFTYPE_AP_VLAN:
+	case IEEE80211_IF_TYPE_VLAN:
 		del_vlan_files(sdata);
 		break;
 	default:
