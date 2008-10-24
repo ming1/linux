@@ -30,7 +30,6 @@
 #include "phy_g.h"
 #include "phy_a.h"
 #include "phy_n.h"
-#include "phy_lp.h"
 #include "b43.h"
 #include "main.h"
 
@@ -55,9 +54,7 @@ int b43_phy_operations_setup(struct b43_wldev *dev)
 #endif
 		break;
 	case B43_PHYTYPE_LP:
-#ifdef CONFIG_B43_PHY_LP
-		phy->ops = &b43_phyops_lp;
-#endif
+		/* FIXME: Not yet */
 		break;
 	}
 	if (B43_WARN_ON(!phy->ops))
