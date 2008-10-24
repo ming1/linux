@@ -1,4 +1,5 @@
 /*
+ * IEEE 802.11 driver (80211.o) - QoS datatypes
  * Copyright 2004, Instant802 Networks, Inc.
  * Copyright 2005, Devicescape Software, Inc.
  *
