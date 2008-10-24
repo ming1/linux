@@ -1033,9 +1033,9 @@ int lbs_mesh_access(struct lbs_private *priv, uint16_t cmd_action,
 	return ret;
 }
 
-static int __lbs_mesh_config_send(struct lbs_private *priv,
-				  struct cmd_ds_mesh_config *cmd,
-				  uint16_t action, uint16_t type)
+int lbs_mesh_config_send(struct lbs_private *priv,
+			 struct cmd_ds_mesh_config *cmd,
+			 uint16_t action, uint16_t type)
 {
 	int ret;
 
@@ -1051,19 +1051,6 @@ static int __lbs_mesh_config_send(struct lbs_private *priv,
 	ret = lbs_cmd_with_response(priv, CMD_MESH_CONFIG, cmd);
 
 	lbs_deb_leave(LBS_DEB_CMD);
-	return ret;
-}
-
-int lbs_mesh_config_send(struct lbs_private *priv,
-			 struct cmd_ds_mesh_config *cmd,
-			 uint16_t action, uint16_t type)
-{
-	int ret;
-
-	if (!(priv->fwcapinfo & FW_CAPINFO_PERSISTENT_CONFIG))
-		return -EOPNOTSUPP;
-
-	ret = __lbs_mesh_config_send(priv, cmd, action, type);
 	return ret;
 }
 
@@ -1108,7 +1095,7 @@ int lbs_mesh_config(struct lbs_private *priv, uint16_t action, uint16_t chan)
 		    action, priv->mesh_tlv, chan,
 		    escape_essid(priv->mesh_ssid, priv->mesh_ssid_len));
 
-	return __lbs_mesh_config_send(priv, &cmd, action, priv->mesh_tlv);
+	return lbs_mesh_config_send(priv, &cmd, action, priv->mesh_tlv);
 }
 
 static int lbs_cmd_bcn_ctrl(struct lbs_private * priv,
