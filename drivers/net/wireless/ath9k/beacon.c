@@ -129,7 +129,7 @@ static void ath_beacon_setup(struct ath_softc *sc,
 			    ds                    /* first descriptor */
 		);
 
-	memset(series, 0, sizeof(struct ath9k_11n_rate_series) * 4);
+	memzero(series, sizeof(struct ath9k_11n_rate_series) * 4);
 	series[0].Tries = 1;
 	series[0].Rate = rate;
 	series[0].ChSel = sc->sc_tx_chainmask;
@@ -282,7 +282,7 @@ int ath_beaconq_setup(struct ath_hal *ah)
 {
 	struct ath9k_tx_queue_info qi;
 
-	memset(&qi, 0, sizeof(qi));
+	memzero(&qi, sizeof(qi));
 	qi.tqi_aifs = 1;
 	qi.tqi_cwmin = 0;
 	qi.tqi_cwmax = 0;
@@ -662,7 +662,7 @@ void ath_beacon_config(struct ath_softc *sc, int if_id)
 	else
 		av_opmode = sc->sc_ah->ah_opmode;
 
-	memset(&conf, 0, sizeof(struct ath_beacon_config));
+	memzero(&conf, sizeof(struct ath_beacon_config));
 
 	conf.beacon_interval = sc->hw->conf.beacon_int ?
 		sc->hw->conf.beacon_int : ATH_DEFAULT_BINTVAL;
@@ -738,7 +738,7 @@ void ath_beacon_config(struct ath_softc *sc, int if_id)
 			}
 		} while (nexttbtt < tsftu);
 #undef FUDGE
-		memset(&bs, 0, sizeof(bs));
+		memzero(&bs, sizeof(bs));
 		bs.bs_intval = intval;
 		bs.bs_nexttbtt = nexttbtt;
 		bs.bs_dtimperiod = dtimperiod*intval;
