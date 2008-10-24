@@ -681,7 +681,19 @@ static void iwl3945_rx_reply_rx(struct iwl3945_priv *priv,
 		priv->last_rx_noise = rx_status.noise;
 	}
 
-	iwl3945_pass_packet_to_mac80211(priv, rxb, &rx_status);
+	if (priv->iw_mode == IEEE80211_IF_TYPE_MNTR) {
+		iwl3945_pass_packet_to_mac80211(priv, rxb, &rx_status);
+		return;
+	}
+
+	switch (le16_to_cpu(header->frame_control) & IEEE80211_FCTL_FTYPE) {
+	case IEEE80211_FTYPE_MGMT:
+	case IEEE80211_FTYPE_DATA:
+		/* fall through */
+	default:
+		iwl3945_pass_packet_to_mac80211(priv, rxb, &rx_status);
+		break;
+	}
 }
 
 int iwl3945_hw_txq_attach_buf_to_tfd(struct iwl3945_priv *priv, void *ptr,
