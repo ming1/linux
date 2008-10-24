@@ -197,7 +197,7 @@ struct sta_ampdu_mlme {
  * @tx_packets: number of RX/TX MSDUs
  * @tx_bytes: TBD
  * @tx_fragments: number of transmitted MPDUs
- * @last_txrate_idx: Index of the last used transmit rate
+ * @txrate_idx: TBD
  * @tid_seq: TBD
  * @wme_tx_queue: TBD
  * @ampdu_mlme: TBD
