@@ -16,6 +16,7 @@
 
  /* Implementation of beacon processing. */
 
+#include <asm/unaligned.h>
 #include "core.h"
 
 /*
@@ -304,7 +305,6 @@ int ath_beacon_alloc(struct ath_softc *sc, int if_id)
 	struct ieee80211_hdr *hdr;
 	struct ath_buf *bf;
 	struct sk_buff *skb;
-	__le64 tstamp;
 
 	avp = sc->sc_vaps[if_id];
 	ASSERT(avp);
@@ -369,9 +369,6 @@ int ath_beacon_alloc(struct ath_softc *sc, int if_id)
 			__func__);
 		return -ENOMEM;
 	}
-
-	tstamp = ((struct ieee80211_mgmt *)skb->data)->u.beacon.timestamp;
-	sc->bc_tstamp = le64_to_cpu(tstamp);
 
 	/*
 	 * Calculate a TSF adjustment factor required for
@@ -672,8 +669,8 @@ void ath_beacon_config(struct ath_softc *sc, int if_id)
 	conf.bmiss_timeout = ATH_DEFAULT_BMISS_LIMIT * conf.beacon_interval;
 
 	/* extract tstamp from last beacon and convert to TU */
-	nexttbtt = TSF_TO_TU(sc->bc_tstamp >> 32, sc->bc_tstamp);
-
+	nexttbtt = TSF_TO_TU(get_unaligned_le32(conf.u.last_tstamp + 4),
+			     get_unaligned_le32(conf.u.last_tstamp));
 	/* XXX conditionalize multi-bss support? */
 	if (sc->sc_ah->ah_opmode == ATH9K_M_HOSTAP) {
 		/*
