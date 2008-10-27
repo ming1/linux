@@ -197,34 +197,31 @@ int ieee80211_if_config(struct ieee80211_sub_if_data *sdata, u32 changed)
 					    &sdata->vif, &conf);
 }
 
-int ieee80211_hw_config(struct ieee80211_local *local, u32 changed)
+int ieee80211_hw_config(struct ieee80211_local *local)
 {
 	struct ieee80211_channel *chan;
 	int ret = 0;
-	int power;
 
 	if (local->sw_scanning)
 		chan = local->scan_channel;
 	else
 		chan = local->oper_channel;
 
-	if (chan != local->hw.conf.channel) {
-		local->hw.conf.channel = chan;
-		changed |= IEEE80211_CONF_CHANGE_CHANNEL;
-	}
-
+	local->hw.conf.channel = chan;
 
 	if (!local->hw.conf.power_level)
-		power = chan->max_power;
+		local->hw.conf.power_level = chan->max_power;
 	else
-		power = min(chan->max_power, local->hw.conf.power_level);
-	if (local->hw.conf.power_level != power) {
-		changed |= IEEE80211_CONF_CHANGE_POWER;
-		local->hw.conf.power_level = power;
-	}
+		local->hw.conf.power_level = min(chan->max_power,
+					       local->hw.conf.power_level);
 
-	if (changed && local->open_count) {
-		ret = local->ops->config(local_to_hw(local), changed);
+#ifdef CONFIG_MAC80211_VERBOSE_DEBUG
+	printk(KERN_DEBUG "%s: HW CONFIG: freq=%d\n",
+	       wiphy_name(local->hw.wiphy), chan->center_freq);
+#endif
+
+	if (local->open_count) {
+		ret = local->ops->config(local_to_hw(local), &local->hw.conf);
 		/*
 		 * HW reconfiguration should never fail, the driver has told
 		 * us what it can support so it should live up to that promise.
@@ -675,7 +672,7 @@ struct ieee80211_hw *ieee80211_alloc_hw(size_t priv_data_len,
 	local->fragmentation_threshold = IEEE80211_MAX_FRAG_THRESHOLD;
 	local->short_retry_limit = 7;
 	local->long_retry_limit = 4;
-	local->hw.conf.radio_enabled = true;
+	local->hw.conf.radio_enabled = 1;
 
 	INIT_LIST_HEAD(&local->interfaces);
 
