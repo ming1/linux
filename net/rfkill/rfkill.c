@@ -431,9 +431,8 @@ static ssize_t rfkill_state_store(struct device *dev,
 	    state != RFKILL_STATE_SOFT_BLOCKED)
 		return -EINVAL;
 
-	error = mutex_lock_killable(&rfkill->mutex);
-	if (error)
-		return error;
+	if (mutex_lock_interruptible(&rfkill->mutex))
+		return -ERESTARTSYS;
 	error = rfkill_toggle_radio(rfkill, state, 0);
 	mutex_unlock(&rfkill->mutex);
 
@@ -473,7 +472,7 @@ static ssize_t rfkill_claim_store(struct device *dev,
 	 * Take the global lock to make sure the kernel is not in
 	 * the middle of rfkill_switch_all
 	 */
-	error = mutex_lock_killable(&rfkill_global_mutex);
+	error = mutex_lock_interruptible(&rfkill_global_mutex);
 	if (error)
 		return error;
 
