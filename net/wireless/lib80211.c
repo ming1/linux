@@ -6,7 +6,6 @@
  */
 
 #include <linux/module.h>
-#include <linux/ctype.h>
 #include <linux/ieee80211.h>
 
 #include <net/lib80211.h>
@@ -21,31 +20,19 @@ MODULE_LICENSE("GPL");
 
 const char *escape_ssid(const char *ssid, u8 ssid_len)
 {
-	static char escaped[IEEE80211_MAX_SSID_LEN * 4 + 1];
+	static char escaped[IEEE80211_MAX_SSID_LEN * 2 + 1];
 	const char *s = ssid;
 	char *d = escaped;
 
 	ssid_len = min_t(u8, ssid_len, IEEE80211_MAX_SSID_LEN);
 	while (ssid_len--) {
-		if (isprint(*s)) {
-			*d++ = *s++;
-			continue;
-		}
-
-		*d++ = '\\';
-		if (*s == '\0')
-			*d++ = '0';
-		else if (*s == '\n')
-			*d++ = 'n';
-		else if (*s == '\r')
-			*d++ = 'r';
-		else if (*s == '\t')
-			*d++ = 't';
-		else if (*s == '\\')
+		if (*s == '\0') {
 			*d++ = '\\';
-		else
-			d += snprintf(d, 3, "%03o", *s);
-		s++;
+			*d++ = '0';
+			s++;
+		} else {
+			*d++ = *s++;
+		}
 	}
 	*d = '\0';
 	return escaped;
