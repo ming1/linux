@@ -66,6 +66,11 @@
 #define IWL_SCAN_PROBE_MASK(n) 	cpu_to_le32((BIT(n) | (BIT(n) - BIT(1))))
 
 
+static int scan_tx_ant[3] = {
+	RATE_MCS_ANT_A_MSK, RATE_MCS_ANT_B_MSK, RATE_MCS_ANT_C_MSK
+};
+
+
 /**
  * iwl_scan_cancel - Cancel any currently executing HW scan
  *
