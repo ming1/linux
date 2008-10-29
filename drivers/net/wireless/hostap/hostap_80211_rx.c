@@ -1,5 +1,5 @@
 #include <linux/etherdevice.h>
-#include <net/ieee80211_crypt.h>
+#include <net/lib80211.h>
 
 #include "hostap_80211.h"
 #include "hostap.h"
@@ -652,7 +652,7 @@ static int hostap_is_eapol_frame(local_info_t *local, struct sk_buff *skb)
 /* Called only as a tasklet (software IRQ) */
 static int
 hostap_rx_frame_decrypt(local_info_t *local, struct sk_buff *skb,
-			struct ieee80211_crypt_data *crypt)
+			struct lib80211_crypt_data *crypt)
 {
 	struct ieee80211_hdr_4addr *hdr;
 	int res, hdrlen;
@@ -696,7 +696,7 @@ hostap_rx_frame_decrypt(local_info_t *local, struct sk_buff *skb,
 /* Called only as a tasklet (software IRQ) */
 static int
 hostap_rx_frame_decrypt_msdu(local_info_t *local, struct sk_buff *skb,
-			     int keyidx, struct ieee80211_crypt_data *crypt)
+			     int keyidx, struct lib80211_crypt_data *crypt)
 {
 	struct ieee80211_hdr_4addr *hdr;
 	int res, hdrlen;
@@ -743,7 +743,7 @@ void hostap_80211_rx(struct net_device *dev, struct sk_buff *skb,
 	int from_assoc_ap = 0;
 	u8 dst[ETH_ALEN];
 	u8 src[ETH_ALEN];
-	struct ieee80211_crypt_data *crypt = NULL;
+	struct lib80211_crypt_data *crypt = NULL;
 	void *sta = NULL;
 	int keyidx = 0;
 
@@ -795,7 +795,7 @@ void hostap_80211_rx(struct net_device *dev, struct sk_buff *skb,
 		int idx = 0;
 		if (skb->len >= hdrlen + 3)
 			idx = skb->data[hdrlen + 3] >> 6;
-		crypt = local->crypt[idx];
+		crypt = local->crypt_info.crypt[idx];
 		sta = NULL;
 
 		/* Use station specific key to override default keys if the
