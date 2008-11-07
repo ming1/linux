@@ -506,6 +506,7 @@ struct iwl_sensitivity_ranges {
 /**
  * struct iwl_hw_params
  * @max_txq_num: Max # Tx queues supported
+ * @scd_bc_tbls_size: size of scheduler byte count tables
  * @tx/rx_chains_num: Number of TX/RX chains
  * @valid_tx/rx_ant: usable antennas
  * @max_rxq_size: Max # Rx frames in Rx queue (must be power-of-2)
@@ -523,6 +524,7 @@ struct iwl_sensitivity_ranges {
  */
 struct iwl_hw_params {
 	u16 max_txq_num;
+	u16 scd_bc_tbls_size;
 	u8  tx_chains_num;
 	u8  rx_chains_num;
 	u8  valid_tx_ant;
@@ -604,13 +606,9 @@ static inline u8 get_cmd_index(struct iwl_queue *q, u32 index, int is_huge)
 struct iwl_priv;
 
 
-/* Structures, enum, and defines specific to the 4965 */
-
-#define IWL_KW_SIZE 0x1000	/*4k */
-
-struct iwl_kw {
-	dma_addr_t dma_addr;
-	void *v_addr;
+struct iwl_dma_ptr {
+	dma_addr_t dma;
+	void *addr;
 	size_t size;
 };
 
@@ -906,7 +904,9 @@ struct iwl_priv {
 	struct iwl_rx_queue rxq;
 	struct iwl_tx_queue txq[IWL_MAX_NUM_QUEUES];
 	unsigned long txq_ctx_active_msk;
-	struct iwl_kw kw;	/* keep warm address */
+	struct iwl_dma_ptr  kw;	/* keep warm address */
+	struct iwl_dma_ptr  scd_bc_tbls;
+
 	u32 scd_base_addr;	/* scheduler sram base address */
 
 	unsigned long status;
@@ -966,10 +966,7 @@ struct iwl_priv {
 	struct ieee80211_vif *vif;
 
 	struct iwl_hw_params hw_params;
-	/* driver/uCode shared Tx Byte Counts */
-	void *shared_virt;
-	/* Physical Pointer to Tx Byte Counts */
-	dma_addr_t shared_phys;
+
 
 	/* Current association information needed to configure the
 	 * hardware */
