@@ -65,9 +65,15 @@ static char *ieee80211_translate_scan(struct ieee80211_device *ieee,
 	/* Add the ESSID */
 	iwe.cmd = SIOCGIWESSID;
 	iwe.u.data.flags = 1;
-	iwe.u.data.length = min(network->ssid_len, (u8) 32);
-	start = iwe_stream_add_point(info, start, stop,
-				     &iwe, network->ssid);
+	if (network->flags & NETWORK_EMPTY_ESSID) {
+		iwe.u.data.length = sizeof("<hidden>");
+		start = iwe_stream_add_point(info, start, stop,
+					     &iwe, "<hidden>");
+	} else {
+		iwe.u.data.length = min(network->ssid_len, (u8) 32);
+		start = iwe_stream_add_point(info, start, stop,
+					     &iwe, network->ssid);
+	}
 
 	/* Add the protocol name */
 	iwe.cmd = SIOCGIWNAME;
