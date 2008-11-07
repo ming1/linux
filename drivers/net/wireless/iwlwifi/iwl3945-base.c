@@ -5611,6 +5611,10 @@ static void iwl3945_init_alive_start(struct iwl3945_priv *priv)
 }
 
 
+/* temporary */
+static int iwl3945_mac_beacon_update(struct ieee80211_hw *hw,
+				     struct sk_buff *skb);
+
 /**
  * iwl3945_alive_start - called after REPLY_ALIVE notification received
  *                   from protocol/runtime uCode (initialization uCode's
@@ -5713,6 +5717,14 @@ static void iwl3945_alive_start(struct iwl3945_priv *priv)
 
 	if (priv->error_recovering)
 		iwl3945_error_recovery(priv);
+
+	/* reassociate for ADHOC mode */
+	if (priv->vif && (priv->iw_mode == NL80211_IFTYPE_ADHOC)) {
+		struct sk_buff *beacon = ieee80211_beacon_get(priv->hw,
+								priv->vif);
+		if (beacon)
+			iwl3945_mac_beacon_update(priv->hw, beacon);
+	}
 
 	return;
 
@@ -6724,9 +6736,6 @@ static void iwl3945_config_ap(struct iwl3945_priv *priv)
 	 * clear sta table, add BCAST sta... */
 }
 
-/* temporary */
-static int iwl3945_mac_beacon_update(struct ieee80211_hw *hw, struct sk_buff *skb);
-
 static int iwl3945_mac_config_interface(struct ieee80211_hw *hw,
 					struct ieee80211_vif *vif,
 				    struct ieee80211_if_conf *conf)
@@ -6749,7 +6758,9 @@ static int iwl3945_mac_config_interface(struct ieee80211_hw *hw,
 		struct sk_buff *beacon = ieee80211_beacon_get(hw, vif);
 		if (!beacon)
 			return -ENOMEM;
+		mutex_lock(&priv->mutex);
 		rc = iwl3945_mac_beacon_update(hw, beacon);
+		mutex_unlock(&priv->mutex);
 		if (rc)
 			return rc;
 	}
@@ -7206,18 +7217,15 @@ static int iwl3945_mac_beacon_update(struct ieee80211_hw *hw, struct sk_buff *sk
 	struct iwl3945_priv *priv = hw->priv;
 	unsigned long flags;
 
-	mutex_lock(&priv->mutex);
 	IWL_DEBUG_MAC80211("enter\n");
 
 	if (!iwl3945_is_ready_rf(priv)) {
 		IWL_DEBUG_MAC80211("leave - RF not ready\n");
-		mutex_unlock(&priv->mutex);
 		return -EIO;
 	}
 
 	if (priv->iw_mode != NL80211_IFTYPE_ADHOC) {
 		IWL_DEBUG_MAC80211("leave - not IBSS\n");
-		mutex_unlock(&priv->mutex);
 		return -EIO;
 	}
 
@@ -7237,7 +7245,6 @@ static int iwl3945_mac_beacon_update(struct ieee80211_hw *hw, struct sk_buff *sk
 
 	iwl3945_post_associate(priv);
 
-	mutex_unlock(&priv->mutex);
 
 	return 0;
 }
