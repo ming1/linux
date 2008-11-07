@@ -218,8 +218,7 @@ int iwl_rx_queue_restock(struct iwl_priv *priv)
 
 	/* If we've added more space for the firmware to place data, tell it.
 	 * Increment device's write pointer in multiples of 8. */
-	if ((write != (rxq->write & ~0x7))
-	    || (abs(rxq->write - rxq->read) > 7)) {
+	if (write != (rxq->write & ~0x7)) {
 		spin_lock_irqsave(&rxq->lock, flags);
 		rxq->need_update = 1;
 		spin_unlock_irqrestore(&rxq->lock, flags);
@@ -268,6 +267,10 @@ void iwl_rx_allocate(struct iwl_priv *priv)
 		/* Get physical address of RB/SKB */
 		rxb->dma_addr = pci_map_single(priv->pci_dev, rxb->skb->data,
 			   priv->hw_params.rx_buf_size, PCI_DMA_FROMDEVICE);
+
+		/* RBD must be 256 bytes aligned and no more than 36 bits */
+		BUG_ON(rxb->dma_addr & (~DMA_BIT_MASK(36) & 0xff));
+
 		list_add_tail(&rxb->list, &rxq->rx_free);
 		rxq->free_count++;
 	}
@@ -431,6 +434,7 @@ int iwl_rx_init(struct iwl_priv *priv, struct iwl_rx_queue *rxq)
 			   FH_RCSR_RX_CONFIG_CHNL_EN_ENABLE_VAL |
 			   FH_RCSR_CHNL0_RX_IGNORE_RXF_EMPTY |
 			   FH_RCSR_CHNL0_RX_CONFIG_IRQ_DEST_INT_HOST_VAL |
+			   FH_RCSR_CHNL0_RX_CONFIG_SINGLE_FRAME |
 			   rb_size|
 			   (rb_timeout << FH_RCSR_RX_CONFIG_REG_IRQ_RBTH_POS)|
 			   (rfdnlog << FH_RCSR_RX_CONFIG_RBDCB_SIZE_POS));
