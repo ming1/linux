@@ -659,7 +659,8 @@ ath5k_pci_resume(struct pci_dev *pdev)
 {
 	struct ieee80211_hw *hw = pci_get_drvdata(pdev);
 	struct ath5k_softc *sc = hw->priv;
-	int err;
+	struct ath5k_hw *ah = sc->ah;
+	int i, err;
 
 	pci_restore_state(pdev);
 
@@ -705,6 +706,7 @@ ath5k_attach(struct pci_dev *pdev, struct ieee80211_hw *hw)
 	struct ath5k_softc *sc = hw->priv;
 	struct ath5k_hw *ah = sc->ah;
 	u8 mac[ETH_ALEN];
+	unsigned int i;
 	int ret;
 
 	ATH5K_DBG(sc, ATH5K_DEBUG_ANY, "devid 0x%x\n", pdev->device);
