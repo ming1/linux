@@ -162,7 +162,7 @@ static int ath_key_config(struct ath_softc *sc,
 	if (!sc->sc_vaps[0])
 		return -EIO;
 
-	vif = sc->sc_vaps[0];
+	vif = sc->sc_vaps[0]->av_if_data;
 	opmode = vif->type;
 
 	/*
@@ -313,12 +313,11 @@ static void ath9k_ht_conf(struct ath_softc *sc,
 }
 
 static void ath9k_bss_assoc_info(struct ath_softc *sc,
-				 struct ieee80211_vif *vif,
 				 struct ieee80211_bss_conf *bss_conf)
 {
 	struct ieee80211_hw *hw = sc->hw;
 	struct ieee80211_channel *curchan = hw->conf.channel;
-	struct ath_vap *avp = (void *)vif->drv_priv;
+	struct ath_vap *avp;
 	int pos;
 	DECLARE_MAC_BUF(mac);
 
@@ -326,6 +325,13 @@ static void ath9k_bss_assoc_info(struct ath_softc *sc,
 		DPRINTF(sc, ATH_DBG_CONFIG, "%s: Bss Info ASSOC %d\n",
 			__func__,
 			bss_conf->aid);
+
+		avp = sc->sc_vaps[0];
+		if (avp == NULL) {
+			DPRINTF(sc, ATH_DBG_FATAL, "%s: Invalid interface\n",
+				__func__);
+			return;
+		}
 
 		/* New association, store aid */
 		if (avp->av_opmode == ATH9K_M_STA) {
@@ -901,7 +907,6 @@ static int ath_attach(u16 devid,
 
 	hw->queues = 4;
 	hw->sta_data_size = sizeof(struct ath_node);
-	hw->vif_data_size = sizeof(struct ath_vap);
 
 	/* Register rate control */
 	hw->rate_control_algorithm = "ath9k_rate_control";
@@ -1087,8 +1092,7 @@ static int ath9k_add_interface(struct ieee80211_hw *hw,
 			       struct ieee80211_if_init_conf *conf)
 {
 	struct ath_softc *sc = hw->priv;
-	struct ath_vap *avp = (void *)conf->vif->drv_priv;
-	int ic_opmode = 0;
+	int error, ic_opmode = 0;
 
 	/* Support only vap for now */
 
@@ -1116,22 +1120,13 @@ static int ath9k_add_interface(struct ieee80211_hw *hw,
 		__func__,
 		ic_opmode);
 
-	/* Set the VAP opmode */
-	avp->av_opmode = ic_opmode;
-	avp->av_bslot = -1;
-
-	if (ic_opmode == ATH9K_M_HOSTAP)
-		ath9k_hw_set_tsfadjust(sc->sc_ah, 1);
-
-	sc->sc_vaps[0] = conf->vif;
-	sc->sc_nvaps++;
-
-	/* Set the device opmode */
-	sc->sc_ah->ah_opmode = ic_opmode;
-
-	/* default VAP configuration */
-	avp->av_config.av_fixed_rateset = IEEE80211_FIXED_RATE_NONE;
-	avp->av_config.av_fixed_retryset = 0x03030303;
+	error = ath_vap_attach(sc, 0, conf->vif, ic_opmode);
+	if (error) {
+		DPRINTF(sc, ATH_DBG_FATAL,
+			"%s: Unable to attach vap, error: %d\n",
+			__func__, error);
+		return error;
+	}
 
 	if (conf->type == NL80211_IFTYPE_AP) {
 		/* TODO: is this a suitable place to start ANI for AP mode? */
@@ -1147,15 +1142,26 @@ static void ath9k_remove_interface(struct ieee80211_hw *hw,
 				   struct ieee80211_if_init_conf *conf)
 {
 	struct ath_softc *sc = hw->priv;
-	struct ath_vap *avp = (void *)conf->vif->drv_priv;
+	struct ath_vap *avp;
+	int error;
 
 	DPRINTF(sc, ATH_DBG_CONFIG, "%s: Detach VAP\n", __func__);
+
+	avp = sc->sc_vaps[0];
+	if (avp == NULL) {
+		DPRINTF(sc, ATH_DBG_FATAL, "%s: Invalid interface\n",
+			__func__);
+		return;
+	}
 
 #ifdef CONFIG_SLOW_ANT_DIV
 	ath_slow_ant_div_stop(&sc->sc_antdiv);
 #endif
 	/* Stop ANI */
 	del_timer_sync(&sc->sc_ani.timer);
+
+	/* Update ratectrl */
+	ath_rate_newstate(sc, avp);
 
 	/* Reclaim beacon resources */
 	if (sc->sc_ah->ah_opmode == ATH9K_M_HOSTAP ||
@@ -1164,10 +1170,16 @@ static void ath9k_remove_interface(struct ieee80211_hw *hw,
 		ath_beacon_return(sc, avp);
 	}
 
+	/* Set interrupt mask */
+	sc->sc_imask &= ~(ATH9K_INT_SWBA | ATH9K_INT_BMISS);
+	ath9k_hw_set_interrupts(sc->sc_ah, sc->sc_imask & ~ATH9K_INT_GLOBAL);
 	sc->sc_flags &= ~SC_OP_BEACONS;
 
-	sc->sc_vaps[0] = NULL;
-	sc->sc_nvaps--;
+	error = ath_vap_detach(sc, 0);
+	if (error)
+		DPRINTF(sc, ATH_DBG_FATAL,
+			"%s: Unable to detach vap, error: %d\n",
+			__func__, error);
 }
 
 static int ath9k_config(struct ieee80211_hw *hw, u32 changed)
@@ -1215,10 +1227,17 @@ static int ath9k_config_interface(struct ieee80211_hw *hw,
 {
 	struct ath_softc *sc = hw->priv;
 	struct ath_hal *ah = sc->sc_ah;
-	struct ath_vap *avp = (void *)vif->drv_priv;
+	struct ath_vap *avp;
 	u32 rfilt = 0;
 	int error, i;
 	DECLARE_MAC_BUF(mac);
+
+	avp = sc->sc_vaps[0];
+	if (avp == NULL) {
+		DPRINTF(sc, ATH_DBG_FATAL, "%s: Invalid interface\n",
+			__func__);
+		return -EINVAL;
+	}
 
 	/* TODO: Need to decide which hw opmode to use for multi-interface
 	 * cases */
@@ -1300,7 +1319,7 @@ static int ath9k_config_interface(struct ieee80211_hw *hw,
 	}
 
 	/* Check for WLAN_CAPABILITY_PRIVACY ? */
-	if ((avp->av_opmode != ATH9K_M_STA)) {
+	if ((avp->av_opmode != NL80211_IFTYPE_STATION)) {
 		for (i = 0; i < IEEE80211_WEP_NKID; i++)
 			if (ath9k_hw_keyisvalid(sc->sc_ah, (u16)i))
 				ath9k_hw_keysetmac(sc->sc_ah,
@@ -1349,6 +1368,9 @@ static void ath9k_configure_filter(struct ieee80211_hw *hw,
 		__func__, sc->rx_filter);
 }
 
+/* Only a single interface is currently supported,
+   so pass 0 as the interface id to ath_node_attach */
+
 static void ath9k_sta_notify(struct ieee80211_hw *hw,
 			     struct ieee80211_vif *vif,
 			     enum sta_notify_cmd cmd,
@@ -1358,7 +1380,7 @@ static void ath9k_sta_notify(struct ieee80211_hw *hw,
 
 	switch (cmd) {
 	case STA_NOTIFY_ADD:
-		ath_node_attach(sc, sta);
+		ath_node_attach(sc, sta, 0);
 		break;
 	case STA_NOTIFY_REMOVE:
 		ath_node_detach(sc, sta);
@@ -1476,7 +1498,7 @@ static void ath9k_bss_info_changed(struct ieee80211_hw *hw,
 		DPRINTF(sc, ATH_DBG_CONFIG, "%s: BSS Changed ASSOC %d\n",
 			__func__,
 			bss_conf->assoc);
-		ath9k_bss_assoc_info(sc, vif, bss_conf);
+		ath9k_bss_assoc_info(sc, bss_conf);
 	}
 }
 
