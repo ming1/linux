@@ -230,13 +230,7 @@ static int ath_tx_prepare(struct ath_softc *sc,
 
 	txctl->if_id = 0;
 	txctl->frmlen = skb->len + FCS_LEN - (hdrlen & 3);
-
-	/* Always try at highest power possible unless the the device
-	 * was configured by the user to use another power. */
-	if (likely(sc->sc_config.txpowlimit == ATH_TXPOWER_MAX))
-		txctl->txpower = ATH_TXPOWER_MAX;
-	else
-		txctl->txpower = sc->sc_config.txpowlimit;
+	txctl->txpower = MAX_RATE_POWER; /* FIXME */
 
 	/* Fill Key related fields */
 
