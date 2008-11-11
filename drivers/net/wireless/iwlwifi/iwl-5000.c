@@ -723,7 +723,7 @@ static int iwl5000_alive_notify(struct iwl_priv *priv)
 
 	iwl_write_prph(priv, IWL50_SCD_DRAM_BASE_ADDR,
 		(priv->shared_phys +
-		 offsetof(struct iwl5000_shared, queues_bc_tbls)) >> 10);
+		 offsetof(struct iwl5000_shared, queues_byte_cnt_tbls)) >> 10);
 	iwl_write_prph(priv, IWL50_SCD_QUEUECHAIN_SEL,
 		IWL50_SCD_QUEUECHAIN_SEL_ALL(
 			priv->hw_params.max_txq_num));
@@ -891,17 +891,15 @@ static void iwl5000_txq_update_byte_cnt_tbl(struct iwl_priv *priv,
 					    u16 byte_cnt)
 {
 	struct iwl5000_shared *shared_data = priv->shared_virt;
-	int write_ptr = txq->q.write_ptr;
 	int txq_id = txq->q.id;
 	u8 sec_ctl = 0;
-	u8 sta_id = 0;
-	u16 len = byte_cnt + IWL_TX_CRC_SIZE + IWL_TX_DELIMITER_SIZE;
-	__le16 bc_ent;
+	u8 sta = 0;
+	int len;
 
-	WARN_ON(len > 0xFFF || write_ptr >= TFD_QUEUE_SIZE_MAX);
+	len = byte_cnt + IWL_TX_CRC_SIZE + IWL_TX_DELIMITER_SIZE;
 
 	if (txq_id != IWL_CMD_QUEUE_NUM) {
-		sta_id = txq->cmd[txq->q.write_ptr]->cmd.tx.sta_id;
+		sta = txq->cmd[txq->q.write_ptr]->cmd.tx.sta_id;
 		sec_ctl = txq->cmd[txq->q.write_ptr]->cmd.tx.sec_ctl;
 
 		switch (sec_ctl & TX_CMD_SEC_MSK) {
@@ -917,36 +915,40 @@ static void iwl5000_txq_update_byte_cnt_tbl(struct iwl_priv *priv,
 		}
 	}
 
-	bc_ent = cpu_to_le16((len & 0xFFF) | (sta_id << 12));
+	IWL_SET_BITS16(shared_data->queues_byte_cnt_tbls[txq_id].
+		       tfd_offset[txq->q.write_ptr], byte_cnt, len);
 
-	shared_data->queues_bc_tbls[txq_id].tfd_offset[write_ptr] = bc_ent;
+	IWL_SET_BITS16(shared_data->queues_byte_cnt_tbls[txq_id].
+		       tfd_offset[txq->q.write_ptr], sta_id, sta);
 
-	if (txq->q.write_ptr < TFD_QUEUE_SIZE_BC_DUP)
-		shared_data->queues_bc_tbls[txq_id].
-			tfd_offset[TFD_QUEUE_SIZE_MAX + write_ptr] = bc_ent;
+	if (txq->q.write_ptr < IWL50_MAX_WIN_SIZE) {
+		IWL_SET_BITS16(shared_data->queues_byte_cnt_tbls[txq_id].
+			tfd_offset[IWL50_QUEUE_SIZE + txq->q.write_ptr],
+			byte_cnt, len);
+		IWL_SET_BITS16(shared_data->queues_byte_cnt_tbls[txq_id].
+			tfd_offset[IWL50_QUEUE_SIZE + txq->q.write_ptr],
+			sta_id, sta);
+	}
 }
 
 static void iwl5000_txq_inval_byte_cnt_tbl(struct iwl_priv *priv,
 					   struct iwl_tx_queue *txq)
 {
-	struct iwl5000_shared *shared_data = priv->shared_virt;
 	int txq_id = txq->q.id;
-	int read_ptr = txq->q.read_ptr;
-	u8 sta_id = 0;
-	__le16 bc_ent;
-
-	WARN_ON(read_ptr >= TFD_QUEUE_SIZE_MAX);
+	struct iwl5000_shared *shared_data = priv->shared_virt;
+	u8 sta = 0;
 
 	if (txq_id != IWL_CMD_QUEUE_NUM)
-		sta_id = txq->cmd[read_ptr]->cmd.tx.sta_id;
+		sta = txq->cmd[txq->q.read_ptr]->cmd.tx.sta_id;
 
-	bc_ent =  cpu_to_le16(1 | (sta_id << 12));
-	shared_data->queues_bc_tbls[txq_id].
-			tfd_offset[read_ptr] = bc_ent;
+	shared_data->queues_byte_cnt_tbls[txq_id].tfd_offset[txq->q.read_ptr].
+					val = cpu_to_le16(1 | (sta << 12));
 
-	if (txq->q.write_ptr < TFD_QUEUE_SIZE_BC_DUP)
-		shared_data->queues_bc_tbls[txq_id].
-			tfd_offset[TFD_QUEUE_SIZE_MAX + read_ptr] =  bc_ent;
+	if (txq->q.write_ptr < IWL50_MAX_WIN_SIZE) {
+		shared_data->queues_byte_cnt_tbls[txq_id].
+			tfd_offset[IWL50_QUEUE_SIZE + txq->q.read_ptr].
+				val = cpu_to_le16(1 | (sta << 12));
+	}
 }
 
 static int iwl5000_tx_queue_set_q2ratid(struct iwl_priv *priv, u16 ra_tid,
