@@ -2953,8 +2953,7 @@ static void ath5k_configure_filter(struct ieee80211_hw *hw,
 		test_bit(ATH_STAT_PROMISC, sc->status))
 		rfilt |= AR5K_RX_FILTER_PROM;
 	if (sc->opmode == NL80211_IFTYPE_STATION ||
-		sc->opmode == NL80211_IFTYPE_ADHOC ||
-		sc->opmode == NL80211_IFTYPE_AP) {
+		sc->opmode == NL80211_IFTYPE_ADHOC) {
 		rfilt |= AR5K_RX_FILTER_BEACON;
 	}
 	if (sc->opmode == NL80211_IFTYPE_MESH_POINT)
