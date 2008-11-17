@@ -2596,14 +2596,14 @@ void ieee80211_notify_mac(struct ieee80211_hw *hw,
 
 	switch (notif_type) {
 	case IEEE80211_NOTIFY_RE_ASSOC:
-		rtnl_lock();
-		list_for_each_entry(sdata, &local->interfaces, list) {
+		rcu_read_lock();
+		list_for_each_entry_rcu(sdata, &local->interfaces, list) {
 			if (sdata->vif.type != NL80211_IFTYPE_STATION)
 				continue;
 
 			ieee80211_sta_req_auth(sdata, &sdata->u.sta);
 		}
-		rtnl_unlock();
+		rcu_read_unlock();
 		break;
 	}
 }
