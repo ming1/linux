@@ -46,6 +46,7 @@ static int b43_plcp_get_bitrate_idx_cck(struct b43_plcp_hdr6 *plcp)
 	case 0x6E:
 		return 3;
 	}
+	B43_WARN_ON(1);
 	return -1;
 }
 
@@ -72,6 +73,7 @@ static u8 b43_plcp_get_bitrate_idx_ofdm(struct b43_plcp_hdr6 *plcp, bool aphy)
 	case 0xC:
 		return base + 7;
 	}
+	B43_WARN_ON(1);
 	return -1;
 }
 
@@ -606,8 +608,6 @@ void b43_rx(struct b43_wldev *dev, struct sk_buff *skb, const void *_rxhdr)
 						phytype == B43_PHYTYPE_A);
 	else
 		status.rate_idx = b43_plcp_get_bitrate_idx_cck(plcp);
-	if (unlikely(status.rate_idx == -1))
-		goto drop;
 	status.antenna = !!(phystat0 & B43_RX_PHYST0_ANT);
 
 	/*
