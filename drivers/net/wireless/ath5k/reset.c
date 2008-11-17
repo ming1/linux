@@ -842,7 +842,9 @@ int ath5k_hw_reset(struct ath5k_hw *ah, enum nl80211_iftype op_mode,
 	 *
 	 * XXX: Find an interval that's OK for all cards...
 	 */
-	ath5k_hw_noise_floor_calibration(ah, channel->center_freq);
+	ret = ath5k_hw_noise_floor_calibration(ah, channel->center_freq);
+	if (ret)
+		return ret;
 
 	/*
 	 * Reset queues and start beacon timers at the end of the reset routine
