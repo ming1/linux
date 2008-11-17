@@ -1167,6 +1167,12 @@ static int ieee80211_parse_info_param(struct ieee80211_info_element
 
 		switch (info_element->id) {
 		case MFIE_TYPE_SSID:
+			if (is_empty_ssid(info_element->data,
+					  info_element->len)) {
+				network->flags |= NETWORK_EMPTY_ESSID;
+				break;
+			}
+
 			network->ssid_len = min(info_element->len,
 						(u8) IW_ESSID_MAX_SIZE);
 			memcpy(network->ssid, info_element->data,
@@ -1176,8 +1182,7 @@ static int ieee80211_parse_info_param(struct ieee80211_info_element
 				       IW_ESSID_MAX_SIZE - network->ssid_len);
 
 			IEEE80211_DEBUG_MGMT("MFIE_TYPE_SSID: '%s' len=%d.\n",
-					     escape_ssid(network->ssid),
-					     network->ssid_len);
+					     network->ssid, network->ssid_len);
 			break;
 
 		case MFIE_TYPE_RATES:
@@ -1407,6 +1412,9 @@ static int ieee80211_handle_assoc_resp(struct ieee80211_device *ieee, struct iee
 			network->mode |= IEEE_B;
 	}
 
+	if (is_empty_ssid(network->ssid, network->ssid_len))
+		network->flags |= NETWORK_EMPTY_ESSID;
+
 	memcpy(&network->stats, stats, sizeof(network->stats));
 
 	if (ieee->handle_assoc_response != NULL)
@@ -1477,6 +1485,9 @@ static int ieee80211_network_init(struct ieee80211_device *ieee, struct ieee8021
 				     print_mac(mac, network->bssid));
 		return 1;
 	}
+
+	if (is_empty_ssid(network->ssid, network->ssid_len))
+		network->flags |= NETWORK_EMPTY_ESSID;
 
 	memcpy(&network->stats, stats, sizeof(network->stats));
 
