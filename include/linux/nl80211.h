@@ -243,9 +243,6 @@ enum nl80211_commands {
  *	(u8, 0 or 1)
  * @NL80211_ATTR_BSS_SHORT_SLOT_TIME: whether short slot time enabled
  *	(u8, 0 or 1)
- * @NL80211_ATTR_BSS_BASIC_RATES: basic rates, array of basic
- *	rates in format defined by IEEE 802.11 7.3.2.2 but without the length
- *	restriction (at most %NL80211_MAX_SUPP_RATES).
  *
  * @NL80211_ATTR_HT_CAPABILITY: HT Capability information element (from
  *	association request when used with NL80211_CMD_NEW_STATION)
@@ -310,8 +307,6 @@ enum nl80211_attrs {
 
 	NL80211_ATTR_MESH_PARAMS,
 
-	NL80211_ATTR_BSS_BASIC_RATES,
-
 	/* add attributes here, update the policy in nl80211.c */
 
 	__NL80211_ATTR_AFTER_LAST,
@@ -323,7 +318,6 @@ enum nl80211_attrs {
  * here
  */
 #define NL80211_ATTR_HT_CAPABILITY NL80211_ATTR_HT_CAPABILITY
-#define NL80211_ATTR_BSS_BASIC_RATES NL80211_ATTR_BSS_BASIC_RATES
 
 #define NL80211_MAX_SUPP_RATES			32
 #define NL80211_MAX_SUPP_REG_RULES		32
