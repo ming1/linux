@@ -1867,7 +1867,9 @@ static void ath_tx_status(void *priv, struct ieee80211_supported_band *sband,
 	/* XXX: UGLY HACK!! */
 	tx_info_priv = (struct ath_tx_info_priv *)tx_info->control.vif;
 
-	an = (struct ath_node *)sta->drv_priv;
+	spin_lock_bh(&sc->node_lock);
+	an = ath_node_find(sc, hdr->addr1);
+	spin_unlock_bh(&sc->node_lock);
 
 	if (tx_info_priv == NULL)
 		return;
@@ -1983,7 +1985,16 @@ static void ath_get_rate(void *priv, struct ieee80211_sta *sta, void *priv_sta,
 			qc = ieee80211_get_qos_ctl(hdr);
 			tid = qc[0] & 0xf;
 
-			an = (struct ath_node *)sta->drv_priv;
+			spin_lock_bh(&sc->node_lock);
+			an = ath_node_find(sc, hdr->addr1);
+			spin_unlock_bh(&sc->node_lock);
+
+			if (!an) {
+				DPRINTF(sc, ATH_DBG_AGGR,
+					"%s: Node not found to "
+					"init/chk TX aggr\n", __func__);
+				return;
+			}
 
 			chk = ath_tx_aggr_check(sc, an, tid);
 			if (chk == AGGR_REQUIRED) {
