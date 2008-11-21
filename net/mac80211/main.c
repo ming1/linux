@@ -41,8 +41,6 @@
  */
 struct ieee80211_tx_status_rtap_hdr {
 	struct ieee80211_radiotap_header hdr;
-	u8 rate;
-	u8 padding_for_rate;
 	__le16 tx_flags;
 	u8 data_retries;
 } __attribute__ ((packed));
@@ -467,28 +465,13 @@ void ieee80211_tx_status(struct ieee80211_hw *hw, struct sk_buff *skb)
 	struct ieee80211_sub_if_data *sdata;
 	struct net_device *prev_dev = NULL;
 	struct sta_info *sta;
-	int retry_count = -1, i;
-
-	for (i = 0; i < IEEE80211_TX_MAX_RATES; i++) {
-		/* the HW cannot have attempted that rate */
-		if (i >= hw->max_rates) {
-			info->status.rates[i].idx = -1;
-			info->status.rates[i].count = 0;
-		}
-
-		retry_count += info->status.rates[i].count;
-	}
-	if (retry_count < 0)
-		retry_count = 0;
 
 	rcu_read_lock();
-
-	sband = local->hw.wiphy->bands[info->band];
 
 	sta = sta_info_get(local, hdr->addr1);
 
 	if (sta) {
-		if (!(info->flags & IEEE80211_TX_STAT_ACK) &&
+		if (info->status.excessive_retries &&
 		    test_sta_flags(sta, WLAN_STA_PS)) {
 			/*
 			 * The STA is in power save mode, so assume
@@ -519,11 +502,12 @@ void ieee80211_tx_status(struct ieee80211_hw *hw, struct sk_buff *skb)
 			rcu_read_unlock();
 			return;
 		} else {
-			if (!(info->flags & IEEE80211_TX_STAT_ACK))
+			if (info->status.excessive_retries)
 				sta->tx_retry_failed++;
-			sta->tx_retry_count += retry_count;
+			sta->tx_retry_count += info->status.retry_count;
 		}
 
+		sband = local->hw.wiphy->bands[info->band];
 		rate_control_tx_status(local, sband, sta, skb);
 	}
 
@@ -544,9 +528,9 @@ void ieee80211_tx_status(struct ieee80211_hw *hw, struct sk_buff *skb)
 			local->dot11TransmittedFrameCount++;
 			if (is_multicast_ether_addr(hdr->addr1))
 				local->dot11MulticastTransmittedFrameCount++;
-			if (retry_count > 0)
+			if (info->status.retry_count > 0)
 				local->dot11RetryCount++;
-			if (retry_count > 1)
+			if (info->status.retry_count > 1)
 				local->dot11MultipleRetryCount++;
 		}
 
@@ -590,30 +574,19 @@ void ieee80211_tx_status(struct ieee80211_hw *hw, struct sk_buff *skb)
 	rthdr->hdr.it_len = cpu_to_le16(sizeof(*rthdr));
 	rthdr->hdr.it_present =
 		cpu_to_le32((1 << IEEE80211_RADIOTAP_TX_FLAGS) |
-			    (1 << IEEE80211_RADIOTAP_DATA_RETRIES) |
-			    (1 << IEEE80211_RADIOTAP_RATE));
+			    (1 << IEEE80211_RADIOTAP_DATA_RETRIES));
 
 	if (!(info->flags & IEEE80211_TX_STAT_ACK) &&
 	    !is_multicast_ether_addr(hdr->addr1))
 		rthdr->tx_flags |= cpu_to_le16(IEEE80211_RADIOTAP_F_TX_FAIL);
 
-	/*
-	 * XXX: Once radiotap gets the bitmap reset thing the vendor
-	 *	extensions proposal contains, we can actually report
-	 *	the whole set of tries we did.
-	 */
-	if ((info->status.rates[0].flags & IEEE80211_TX_RC_USE_RTS_CTS) ||
-	    (info->status.rates[0].flags & IEEE80211_TX_RC_USE_CTS_PROTECT))
+	if ((info->flags & IEEE80211_TX_CTL_USE_RTS_CTS) &&
+	    (info->flags & IEEE80211_TX_CTL_USE_CTS_PROTECT))
 		rthdr->tx_flags |= cpu_to_le16(IEEE80211_RADIOTAP_F_TX_CTS);
-	else if (info->status.rates[0].flags & IEEE80211_TX_RC_USE_RTS_CTS)
+	else if (info->flags & IEEE80211_TX_CTL_USE_RTS_CTS)
 		rthdr->tx_flags |= cpu_to_le16(IEEE80211_RADIOTAP_F_TX_RTS);
-	if (info->status.rates[0].idx >= 0 &&
-	    !(info->status.rates[0].flags & IEEE80211_TX_RC_MCS))
-		rthdr->rate = sband->bitrates[
-				info->status.rates[0].idx].bitrate / 5;
 
-	/* for now report the total retry_count */
-	rthdr->data_retries = retry_count;
+	rthdr->data_retries = info->status.retry_count;
 
 	/* XXX: is this sufficient for BPF? */
 	skb_set_mac_header(skb, 0);
@@ -698,9 +671,8 @@ struct ieee80211_hw *ieee80211_alloc_hw(size_t priv_data_len,
 	BUG_ON(!ops->configure_filter);
 	local->ops = ops;
 
-	/* set up some defaults */
-	local->hw.queues = 1;
-	local->hw.max_rates = 1;
+	local->hw.queues = 1; /* default */
+
 	local->rts_threshold = IEEE80211_MAX_RTS_THRESHOLD;
 	local->fragmentation_threshold = IEEE80211_MAX_FRAG_THRESHOLD;
 	local->hw.conf.long_frame_max_tx_count = 4;
