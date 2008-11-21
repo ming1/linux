@@ -92,16 +92,6 @@
 	DEBUG_PRINTK(__dev, KERN_DEBUG, "EEPROM recovery", __msg, ##__args)
 
 /*
- * Duration calculations
- * The rate variable passed is: 100kbs.
- * To convert from bytes to bits we multiply size with 8,
- * then the size is multiplied with 10 to make the
- * real rate -> rate argument correction.
- */
-#define GET_DURATION(__size, __rate)	(((__size) * 8 * 10) / (__rate))
-#define GET_DURATION_RES(__size, __rate)(((__size) * 8 * 10) % (__rate))
-
-/*
  * Standard timing and size defines.
  * These values should follow the ieee80211 specifications.
  */
@@ -119,9 +109,9 @@
 #define DIFS			( PIFS + SLOT_TIME )
 #define SHORT_DIFS		( SHORT_PIFS + SHORT_SLOT_TIME )
 #define EIFS			( SIFS + DIFS + \
-				  GET_DURATION(IEEE80211_HEADER + ACK_SIZE, 10) )
+				  (8 * (IEEE80211_HEADER + ACK_SIZE)) )
 #define SHORT_EIFS		( SIFS + SHORT_DIFS + \
-				  GET_DURATION(IEEE80211_HEADER + ACK_SIZE, 10) )
+				  (8 * (IEEE80211_HEADER + ACK_SIZE)) )
 
 /*
  * Chipset identification
@@ -928,6 +918,23 @@ static inline u16 rt2x00_check_rev(const struct rt2x00_chip *chipset,
 {
 	return (((chipset->rev & 0xffff0) == rev) &&
 		!!(chipset->rev & 0x0000f));
+}
+
+/*
+ * Duration calculations
+ * The rate variable passed is: 100kbs.
+ * To convert from bytes to bits we multiply size with 8,
+ * then the size is multiplied with 10 to make the
+ * real rate -> rate argument correction.
+ */
+static inline u16 get_duration(const unsigned int size, const u8 rate)
+{
+	return ((size * 8 * 10) / rate);
+}
+
+static inline u16 get_duration_res(const unsigned int size, const u8 rate)
+{
+	return ((size * 8 * 10) % rate);
 }
 
 /**
