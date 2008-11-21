@@ -10,7 +10,6 @@
 #include <linux/netdevice.h>
 #include <linux/debugfs.h>
 #include <linux/list.h>
-#include <linux/ieee80211.h>
 #include <net/cfg80211.h>
 
 /**
@@ -134,23 +133,23 @@ struct ieee80211_rate {
 };
 
 /**
- * struct ieee80211_sta_ht_cap - STA's HT capabilities
+ * struct ieee80211_ht_info - describing STA's HT capabilities
  *
  * This structure describes most essential parameters needed
  * to describe 802.11n HT capabilities for an STA.
  *
- * @ht_supported: is HT supported by the STA
+ * @ht_supported: is HT supported by STA, 0: no, 1: yes
  * @cap: HT capabilities map as described in 802.11n spec
  * @ampdu_factor: Maximum A-MPDU length factor
  * @ampdu_density: Minimum A-MPDU spacing
- * @mcs: Supported MCS rates
+ * @supp_mcs_set: Supported MCS set as described in 802.11n spec
  */
-struct ieee80211_sta_ht_cap {
+struct ieee80211_ht_info {
 	u16 cap; /* use IEEE80211_HT_CAP_ */
-	bool ht_supported;
+	u8 ht_supported;
 	u8 ampdu_factor;
 	u8 ampdu_density;
-	struct ieee80211_mcs_info mcs;
+	u8 supp_mcs_set[16];
 };
 
 /**
@@ -174,7 +173,7 @@ struct ieee80211_supported_band {
 	enum ieee80211_band band;
 	int n_channels;
 	int n_bitrates;
-	struct ieee80211_sta_ht_cap ht_cap;
+	struct ieee80211_ht_info ht_info;
 };
 
 /**
