@@ -307,7 +307,7 @@ int hostap_mgmt_start_xmit(struct sk_buff *skb, struct net_device *dev)
 
 /* Called only from software IRQ */
 static struct sk_buff * hostap_tx_encrypt(struct sk_buff *skb,
-					  struct lib80211_crypt_data *crypt)
+					  struct ieee80211_crypt_data *crypt)
 {
 	struct hostap_interface *iface;
 	local_info_t *local;
@@ -408,7 +408,7 @@ int hostap_master_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	if (local->host_encrypt) {
 		/* Set crypt to default algorithm and key; will be replaced in
 		 * AP code if STA has own alg/key */
-		tx.crypt = local->crypt_info.crypt[local->crypt_info.tx_keyidx];
+		tx.crypt = local->crypt[local->tx_keyidx];
 		tx.host_encrypt = 1;
 	} else {
 		tx.crypt = NULL;
@@ -490,9 +490,7 @@ int hostap_master_start_xmit(struct sk_buff *skb, struct net_device *dev)
 
 	if (tx.crypt && (!tx.crypt->ops || !tx.crypt->ops->encrypt_mpdu))
 		tx.crypt = NULL;
-	else if ((tx.crypt ||
-		 local->crypt_info.crypt[local->crypt_info.tx_keyidx]) &&
-		 !no_encrypt) {
+	else if ((tx.crypt || local->crypt[local->tx_keyidx]) && !no_encrypt) {
 		/* Add ISWEP flag both for firmware and host based encryption
 		 */
 		fc |= IEEE80211_FCTL_PROTECTED;
