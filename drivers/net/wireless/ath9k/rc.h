@@ -188,7 +188,6 @@ struct ath_tx_info_priv {
 	struct ath_tx_status tx;
 	int n_frames;
 	int n_bad_frames;
-	bool update_rc;
 };
 
 #define ATH_TX_INFO_PRIV(tx_info) \
