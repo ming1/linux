@@ -523,8 +523,10 @@ struct rt2x00lib_ops {
 	/*
 	 * queue initialization handlers
 	 */
-	bool (*get_entry_state) (struct queue_entry *entry);
-	void (*clear_entry) (struct queue_entry *entry);
+	void (*init_rxentry) (struct rt2x00_dev *rt2x00dev,
+			      struct queue_entry *entry);
+	void (*init_txentry) (struct rt2x00_dev *rt2x00dev,
+			      struct queue_entry *entry);
 
 	/*
 	 * Radio control handlers.
