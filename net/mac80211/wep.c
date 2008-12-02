@@ -17,7 +17,6 @@
 #include <linux/err.h>
 #include <linux/mm.h>
 #include <linux/scatterlist.h>
-#include <asm/unaligned.h>
 
 #include <net/mac80211.h>
 #include "ieee80211_i.h"
@@ -126,10 +125,10 @@ void ieee80211_wep_encrypt_data(struct crypto_blkcipher *tfm, u8 *rc4key,
 {
 	struct blkcipher_desc desc = { .tfm = tfm };
 	struct scatterlist sg;
-	__le32 icv;
+	__le32 *icv;
 
-	icv = cpu_to_le32(~crc32_le(~0, data, data_len));
-	put_unaligned(icv, (__le32 *)(data + data_len));
+	icv = (__le32 *)(data + data_len);
+	*icv = cpu_to_le32(~crc32_le(~0, data, data_len));
 
 	crypto_blkcipher_setkey(tfm, rc4key, klen);
 	sg_init_one(&sg, data, data_len + WEP_ICV_LEN);
