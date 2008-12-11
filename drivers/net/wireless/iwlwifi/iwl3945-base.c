@@ -4421,7 +4421,7 @@ static irqreturn_t iwl3945_isr(int irq, void *data)
 
 	if ((inta == 0xFFFFFFFF) || ((inta & 0xFFFFFFF0) == 0xa5a5a5a0)) {
 		/* Hardware disappeared */
-		IWL_WARNING("HARDWARE GONE?? INTA == 0x%08x\n", inta);
+		IWL_WARNING("HARDWARE GONE?? INTA == 0x%080x\n", inta);
 		goto unplugged;
 	}
 
