@@ -2988,8 +2988,8 @@ ath5k_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 
 	switch (key->alg) {
 	case ALG_WEP:
-	case ALG_TKIP:
 		break;
+	case ALG_TKIP:
 	case ALG_CCMP:
 		return -EOPNOTSUPP;
 	default:
@@ -3008,8 +3008,7 @@ ath5k_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 		}
 		__set_bit(key->keyidx, sc->keymap);
 		key->hw_key_idx = key->keyidx;
-		key->flags |= (IEEE80211_KEY_FLAG_GENERATE_IV |
-			       IEEE80211_KEY_FLAG_GENERATE_MMIC);
+		key->flags |= IEEE80211_KEY_FLAG_GENERATE_IV;
 		break;
 	case DISABLE_KEY:
 		ath5k_hw_reset_key(sc->ah, key->keyidx);
