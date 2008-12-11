@@ -808,10 +808,6 @@ static void ieee80211_authenticate(struct ieee80211_sub_if_data *sdata,
 	mod_timer(&ifsta->timer, jiffies + IEEE80211_AUTH_TIMEOUT);
 }
 
-/*
- * The disassoc 'reason' argument can be either our own reason
- * if self disconnected or a reason code from the AP.
- */
 static void ieee80211_set_disassoc(struct ieee80211_sub_if_data *sdata,
 				   struct ieee80211_if_sta *ifsta, bool deauth,
 				   bool self_disconnected, u16 reason)
@@ -858,7 +854,7 @@ static void ieee80211_set_disassoc(struct ieee80211_sub_if_data *sdata,
 
 	ieee80211_sta_send_apinfo(sdata, ifsta);
 
-	if (self_disconnected || reason == WLAN_REASON_DISASSOC_STA_HAS_LEFT)
+	if (self_disconnected)
 		ifsta->state = IEEE80211_STA_MLME_DISABLED;
 
 	sta_info_unlink(&sta);
@@ -1179,7 +1175,7 @@ static void ieee80211_rx_mgmt_disassoc(struct ieee80211_sub_if_data *sdata,
 				      IEEE80211_RETRY_AUTH_INTERVAL);
 	}
 
-	ieee80211_set_disassoc(sdata, ifsta, false, false, reason_code);
+	ieee80211_set_disassoc(sdata, ifsta, false, false, 0);
 }
 
 
