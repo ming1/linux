@@ -1525,24 +1525,16 @@ static int p54_start(struct ieee80211_hw *dev)
 
 	mutex_lock(&priv->conf_mutex);
 	err = priv->open(dev);
-	if (err)
-		goto out;
+	if (!err)
+		priv->mode = NL80211_IFTYPE_MONITOR;
 	P54_SET_QUEUE(priv->qos_params[0], 0x0002, 0x0003, 0x0007, 47);
 	P54_SET_QUEUE(priv->qos_params[1], 0x0002, 0x0007, 0x000f, 94);
 	P54_SET_QUEUE(priv->qos_params[2], 0x0003, 0x000f, 0x03ff, 0);
 	P54_SET_QUEUE(priv->qos_params[3], 0x0007, 0x000f, 0x03ff, 0);
 	err = p54_set_edcf(dev);
-	if (err)
-		goto out;
-	err = p54_init_stats(dev);
-	if (err)
-		goto out;
-	err = p54_setup_mac(dev, P54_FILTER_TYPE_NONE, NULL);
-	if (err)
-		goto out;
-	priv->mode = NL80211_IFTYPE_MONITOR;
+	if (!err)
+		err = p54_init_stats(dev);
 
-out:
 	mutex_unlock(&priv->conf_mutex);
 	return err;
 }
