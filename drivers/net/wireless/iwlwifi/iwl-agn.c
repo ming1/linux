@@ -1384,11 +1384,9 @@ void iwl_rx_handle(struct iwl_priv *priv)
 
 		rxq->queue[i] = NULL;
 
-		dma_sync_single_range_for_cpu(
-				&priv->pci_dev->dev, rxb->real_dma_addr,
-				rxb->aligned_dma_addr - rxb->real_dma_addr,
-				priv->hw_params.rx_buf_size,
-				PCI_DMA_FROMDEVICE);
+		pci_dma_sync_single_for_cpu(priv->pci_dev, rxb->aligned_dma_addr,
+					    priv->hw_params.rx_buf_size,
+					    PCI_DMA_FROMDEVICE);
 		pkt = (struct iwl_rx_packet *)rxb->skb->data;
 
 		/* Reclaim a command buffer only if this packet is a response
