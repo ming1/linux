@@ -38,21 +38,6 @@ static struct pci_device_id ath_pci_id_table[] __devinitdata = {
 
 static void ath_detach(struct ath_softc *sc);
 
-void DPRINTF(struct ath_softc *sc, int dbg_mask, const char *fmt, ...)
-{
-	if (!sc)
-		return;
-
-	if (sc->sc_debug & dbg_mask) {
-		va_list args;
-
-		va_start(args, fmt);
-		printk(KERN_DEBUG "ath9k: ");
-		vprintk(fmt, args);
-		va_end(args);
-	}
-}
-
 /* return bus cachesize in 4B word units */
 
 static void bus_read_cachesize(struct ath_softc *sc, int *csz)
@@ -190,8 +175,8 @@ static void ath_setup_rates(struct ath_softc *sc, enum ieee80211_band band)
 		rate[i].bitrate = rate_table->info[i].ratekbps / 100;
 		rate[i].hw_value = rate_table->info[i].ratecode;
 		sband->n_bitrates++;
-		DPRINTF(sc, ATH_DBG_CONFIG, "Rate: %2dMbps, ratecode: %2d\n",
-			rate[i].bitrate / 10, rate[i].hw_value);
+		DPRINTF(sc, ATH_DBG_CONFIG, "%s: Rate: %2dMbps, ratecode: %2d\n",
+			__func__, rate[i].bitrate / 10,	rate[i].hw_value);
 	}
 }
 
@@ -213,9 +198,9 @@ static int ath_setup_channels(struct ath_softc *sc)
 				      &nregclass, CTRY_DEFAULT, false, 1)) {
 		u32 rd = ah->ah_currentRD;
 		DPRINTF(sc, ATH_DBG_FATAL,
-			"Unable to collect channel list; "
+			"%s: unable to collect channel list; "
 			"regdomain likely %u country code %u\n",
-			rd, CTRY_DEFAULT);
+			__func__, rd, CTRY_DEFAULT);
 		return -EINVAL;
 	}
 
@@ -238,9 +223,9 @@ static int ath_setup_channels(struct ath_softc *sc)
 
 			band_2ghz->n_channels = ++a;
 
-			DPRINTF(sc, ATH_DBG_CONFIG, "2MHz channel: %d, "
+			DPRINTF(sc, ATH_DBG_CONFIG, "%s: 2MHz channel: %d, "
 				"channelFlags: 0x%x\n",
-				c->channel, c->channelFlags);
+				__func__, c->channel, c->channelFlags);
 		} else if (IS_CHAN_5GHZ(c)) {
 			chan_5ghz[b].band = IEEE80211_BAND_5GHZ;
 			chan_5ghz[b].center_freq = c->channel;
@@ -253,9 +238,9 @@ static int ath_setup_channels(struct ath_softc *sc)
 
 			band_5ghz->n_channels = ++b;
 
-			DPRINTF(sc, ATH_DBG_CONFIG, "5MHz channel: %d, "
+			DPRINTF(sc, ATH_DBG_CONFIG, "%s: 5MHz channel: %d, "
 				"channelFlags: 0x%x\n",
-				c->channel, c->channelFlags);
+				__func__, c->channel, c->channelFlags);
 		}
 	}
 
@@ -289,9 +274,9 @@ static int ath_set_channel(struct ath_softc *sc, struct ath9k_channel *hchan)
 		 * hardware at the new frequency, and then re-enable
 		 * the relevant bits of the h/w.
 		 */
-		ath9k_hw_set_interrupts(ah, 0);
-		ath_draintxq(sc, false);
-		stopped = ath_stoprecv(sc);
+		ath9k_hw_set_interrupts(ah, 0);	/* disable interrupts */
+		ath_draintxq(sc, false);	/* clear pending tx frames */
+		stopped = ath_stoprecv(sc);	/* turn off frame recv */
 
 		/* XXX: do not flush receive queue here. We don't want
 		 * to flush data frames already in queue because of
@@ -301,7 +286,8 @@ static int ath_set_channel(struct ath_softc *sc, struct ath9k_channel *hchan)
 			fastcc = false;
 
 		DPRINTF(sc, ATH_DBG_CONFIG,
-			"(%u MHz) -> (%u MHz), cflags:%x, chanwidth: %d\n",
+			"%s: (%u MHz) -> (%u MHz), cflags:%x, chanwidth: %d\n",
+			__func__,
 			sc->sc_ah->ah_curchan->channel,
 			hchan->channel, hchan->channelFlags, sc->tx_chan_width);
 
@@ -310,8 +296,8 @@ static int ath_set_channel(struct ath_softc *sc, struct ath9k_channel *hchan)
 				    sc->sc_tx_chainmask, sc->sc_rx_chainmask,
 				    sc->sc_ht_extprotspacing, fastcc, &status)) {
 			DPRINTF(sc, ATH_DBG_FATAL,
-				"Unable to reset channel %u (%uMhz) "
-				"flags 0x%x hal status %u\n",
+				"%s: unable to reset channel %u (%uMhz) "
+				"flags 0x%x hal status %u\n", __func__,
 				ath9k_hw_mhz2ieee(ah, hchan->channel,
 						  hchan->channelFlags),
 				hchan->channel, hchan->channelFlags, status);
@@ -325,7 +311,7 @@ static int ath_set_channel(struct ath_softc *sc, struct ath9k_channel *hchan)
 
 		if (ath_startrecv(sc) != 0) {
 			DPRINTF(sc, ATH_DBG_FATAL,
-				"Unable to restart recv logic\n");
+				"%s: unable to restart recv logic\n", __func__);
 			return -EIO;
 		}
 
@@ -366,7 +352,8 @@ static void ath_ani_calibrate(unsigned long data)
 	/* Long calibration runs independently of short calibration. */
 	if ((timestamp - sc->sc_ani.sc_longcal_timer) >= ATH_LONG_CALINTERVAL) {
 		longcal = true;
-		DPRINTF(sc, ATH_DBG_ANI, "longcal @%lu\n", jiffies);
+		DPRINTF(sc, ATH_DBG_ANI, "%s: longcal @%lu\n",
+			__func__, jiffies);
 		sc->sc_ani.sc_longcal_timer = timestamp;
 	}
 
@@ -375,7 +362,8 @@ static void ath_ani_calibrate(unsigned long data)
 		if ((timestamp - sc->sc_ani.sc_shortcal_timer) >=
 		    ATH_SHORT_CALINTERVAL) {
 			shortcal = true;
-			DPRINTF(sc, ATH_DBG_ANI, "shortcal @%lu\n", jiffies);
+			DPRINTF(sc, ATH_DBG_ANI, "%s: shortcal @%lu\n",
+			       __func__, jiffies);
 			sc->sc_ani.sc_shortcal_timer = timestamp;
 			sc->sc_ani.sc_resetcal_timer = timestamp;
 		}
@@ -416,13 +404,15 @@ static void ath_ani_calibrate(unsigned long data)
 							       ah->ah_curchan);
 
 				DPRINTF(sc, ATH_DBG_ANI,
-					"calibrate chan %u/%x nf: %d\n",
+					"%s: calibrate chan %u/%x nf: %d\n",
+					 __func__,
 					ah->ah_curchan->channel,
 					ah->ah_curchan->channelFlags,
 					sc->sc_ani.sc_noise_floor);
 			} else {
 				DPRINTF(sc, ATH_DBG_ANY,
-					"calibrate chan %u/%x failed\n",
+					"%s: calibrate chan %u/%x failed\n",
+					 __func__,
 					ah->ah_curchan->channel,
 					ah->ah_curchan->channelFlags);
 			}
@@ -459,8 +449,8 @@ static void ath_update_chainmask(struct ath_softc *sc, int is_ht)
 		sc->sc_rx_chainmask = 1;
 	}
 
-	DPRINTF(sc, ATH_DBG_CONFIG, "tx chmask: %d, rx chmask: %d\n",
-		sc->sc_tx_chainmask, sc->sc_rx_chainmask);
+	DPRINTF(sc, ATH_DBG_CONFIG, "%s: tx chmask: %d, rx chmask: %d\n",
+		__func__, sc->sc_tx_chainmask, sc->sc_rx_chainmask);
 }
 
 static void ath_node_attach(struct ath_softc *sc, struct ieee80211_sta *sta)
@@ -722,7 +712,7 @@ static int ath_setkey_tkip(struct ath_softc *sc,
 	if (!ath_keyset(sc, key->keyidx, hk, NULL)) {
 		/* Txmic entry failed. No need to proceed further */
 		DPRINTF(sc, ATH_DBG_KEYCACHE,
-			"Setting TX MIC Key Failed\n");
+			"%s Setting TX MIC Key Failed\n", __func__);
 		return 0;
 	}
 
@@ -846,7 +836,8 @@ static void ath9k_ht_conf(struct ath_softc *sc,
 		ath9k_hw_set11nmac2040(sc->sc_ah, sc->tx_chan_width);
 
 		DPRINTF(sc, ATH_DBG_CONFIG,
-			"BSS Changed HT, chanwidth: %d\n", sc->tx_chan_width);
+			"%s: BSS Changed HT, chanwidth: %d\n",
+			__func__, sc->tx_chan_width);
 	}
 }
 
@@ -873,7 +864,9 @@ static void ath9k_bss_assoc_info(struct ath_softc *sc,
 	DECLARE_MAC_BUF(mac);
 
 	if (bss_conf->assoc) {
-		DPRINTF(sc, ATH_DBG_CONFIG, "Bss Info ASSOC %d\n", bss_conf->aid);
+		DPRINTF(sc, ATH_DBG_CONFIG, "%s: Bss Info ASSOC %d\n",
+			__func__,
+			bss_conf->aid);
 
 		/* New association, store aid */
 		if (avp->av_opmode == ATH9K_M_STA) {
@@ -896,13 +889,18 @@ static void ath9k_bss_assoc_info(struct ath_softc *sc,
 		ath_update_chainmask(sc, hw->conf.ht.enabled);
 
 		DPRINTF(sc, ATH_DBG_CONFIG,
-			"bssid %s aid 0x%x\n",
+			"%s: bssid %s aid 0x%x\n",
+			__func__,
 			print_mac(mac, sc->sc_curbssid), sc->sc_curaid);
+
+		DPRINTF(sc, ATH_DBG_CONFIG, "%s: Set channel: %d MHz\n",
+			__func__,
+			curchan->center_freq);
 
 		pos = ath_get_channel(sc, curchan);
 		if (pos == -1) {
 			DPRINTF(sc, ATH_DBG_FATAL,
-				"Invalid channel: %d\n", curchan->center_freq);
+				"%s: Invalid channel\n", __func__);
 			return;
 		}
 
@@ -923,15 +921,14 @@ static void ath9k_bss_assoc_info(struct ath_softc *sc,
 
 		/* set h/w channel */
 		if (ath_set_channel(sc, &sc->sc_ah->ah_channels[pos]) < 0)
-			DPRINTF(sc, ATH_DBG_FATAL, "Unable to set channel: %d\n",
-				curchan->center_freq);
-
+			DPRINTF(sc, ATH_DBG_FATAL,
+				"%s: Unable to set channel\n", __func__);
 		/* Start ANI */
 		mod_timer(&sc->sc_ani.timer,
 			jiffies + msecs_to_jiffies(ATH_ANI_POLLINTERVAL));
 
 	} else {
-		DPRINTF(sc, ATH_DBG_CONFIG, "Bss Info DISSOC\n");
+		DPRINTF(sc, ATH_DBG_CONFIG, "%s: Bss Info DISSOC\n", __func__);
 		sc->sc_curaid = 0;
 	}
 }
@@ -1070,8 +1067,8 @@ static void ath_radio_enable(struct ath_softc *sc)
 			    sc->sc_ht_extprotspacing,
 			    false, &status)) {
 		DPRINTF(sc, ATH_DBG_FATAL,
-			"Unable to reset channel %u (%uMhz) "
-			"flags 0x%x hal status %u\n",
+			"%s: unable to reset channel %u (%uMhz) "
+			"flags 0x%x hal status %u\n", __func__,
 			ath9k_hw_mhz2ieee(ah,
 					  ah->ah_curchan->channel,
 					  ah->ah_curchan->channelFlags),
@@ -1083,7 +1080,7 @@ static void ath_radio_enable(struct ath_softc *sc)
 	ath_update_txpow(sc);
 	if (ath_startrecv(sc) != 0) {
 		DPRINTF(sc, ATH_DBG_FATAL,
-			"Unable to restart recv logic\n");
+			"%s: unable to restart recv logic\n", __func__);
 		return;
 	}
 
@@ -1128,8 +1125,8 @@ static void ath_radio_disable(struct ath_softc *sc)
 			    sc->sc_ht_extprotspacing,
 			    false, &status)) {
 		DPRINTF(sc, ATH_DBG_FATAL,
-			"Unable to reset channel %u (%uMhz) "
-			"flags 0x%x hal status %u\n",
+			"%s: unable to reset channel %u (%uMhz) "
+			"flags 0x%x hal status %u\n", __func__,
 			ath9k_hw_mhz2ieee(ah,
 				ah->ah_curchan->channel,
 				ah->ah_curchan->channelFlags),
@@ -1209,7 +1206,7 @@ static int ath_sw_toggle_radio(void *data, enum rfkill_state state)
 			sc->sc_flags &= ~SC_OP_RFKILL_SW_BLOCKED;
 			if (sc->sc_flags & SC_OP_RFKILL_HW_BLOCKED) {
 				DPRINTF(sc, ATH_DBG_FATAL, "Can't turn on the"
-					"radio as it is disabled by h/w\n");
+					"radio as it is disabled by h/w \n");
 				return -EPERM;
 			}
 			ath_radio_enable(sc);
@@ -1289,7 +1286,7 @@ static void ath_detach(struct ath_softc *sc)
 	struct ieee80211_hw *hw = sc->hw;
 	int i = 0;
 
-	DPRINTF(sc, ATH_DBG_CONFIG, "Detach ATH hw\n");
+	DPRINTF(sc, ATH_DBG_CONFIG, "%s: Detach ATH hw\n", __func__);
 
 #if defined(CONFIG_RFKILL) || defined(CONFIG_RFKILL_MODULE)
 	ath_deinit_rfkill(sc);
@@ -1344,7 +1341,8 @@ static int ath_init(u16 devid, struct ath_softc *sc)
 	ah = ath9k_hw_attach(devid, sc, sc->mem, &status);
 	if (ah == NULL) {
 		DPRINTF(sc, ATH_DBG_FATAL,
-			"Unable to attach hardware; HAL status %u\n", status);
+			"%s: unable to attach hardware; HAL status %u\n",
+			__func__, status);
 		error = -ENXIO;
 		goto bad;
 	}
@@ -1354,8 +1352,8 @@ static int ath_init(u16 devid, struct ath_softc *sc)
 	sc->sc_keymax = ah->ah_caps.keycache_size;
 	if (sc->sc_keymax > ATH_KEYMAX) {
 		DPRINTF(sc, ATH_DBG_KEYCACHE,
-			"Warning, using only %u entries in %u key cache\n",
-			ATH_KEYMAX, sc->sc_keymax);
+			"%s: Warning, using only %u entries in %u key cache\n",
+			__func__, ATH_KEYMAX, sc->sc_keymax);
 		sc->sc_keymax = ATH_KEYMAX;
 	}
 
@@ -1402,14 +1400,14 @@ static int ath_init(u16 devid, struct ath_softc *sc)
 	sc->sc_bhalq = ath_beaconq_setup(ah);
 	if (sc->sc_bhalq == -1) {
 		DPRINTF(sc, ATH_DBG_FATAL,
-			"Unable to setup a beacon xmit queue\n");
+			"%s: unable to setup a beacon xmit queue\n", __func__);
 		error = -EIO;
 		goto bad2;
 	}
 	sc->sc_cabq = ath_txq_setup(sc, ATH9K_TX_QUEUE_CAB, 0);
 	if (sc->sc_cabq == NULL) {
 		DPRINTF(sc, ATH_DBG_FATAL,
-			"Unable to setup CAB xmit queue\n");
+			"%s: unable to setup CAB xmit queue\n", __func__);
 		error = -EIO;
 		goto bad2;
 	}
@@ -1424,26 +1422,30 @@ static int ath_init(u16 devid, struct ath_softc *sc)
 	/* NB: ensure BK queue is the lowest priority h/w queue */
 	if (!ath_tx_setup(sc, ATH9K_WME_AC_BK)) {
 		DPRINTF(sc, ATH_DBG_FATAL,
-			"Unable to setup xmit queue for BK traffic\n");
+			"%s: unable to setup xmit queue for BK traffic\n",
+			__func__);
 		error = -EIO;
 		goto bad2;
 	}
 
 	if (!ath_tx_setup(sc, ATH9K_WME_AC_BE)) {
 		DPRINTF(sc, ATH_DBG_FATAL,
-			"Unable to setup xmit queue for BE traffic\n");
+			"%s: unable to setup xmit queue for BE traffic\n",
+			__func__);
 		error = -EIO;
 		goto bad2;
 	}
 	if (!ath_tx_setup(sc, ATH9K_WME_AC_VI)) {
 		DPRINTF(sc, ATH_DBG_FATAL,
-			"Unable to setup xmit queue for VI traffic\n");
+			"%s: unable to setup xmit queue for VI traffic\n",
+			__func__);
 		error = -EIO;
 		goto bad2;
 	}
 	if (!ath_tx_setup(sc, ATH9K_WME_AC_VO)) {
 		DPRINTF(sc, ATH_DBG_FATAL,
-			"Unable to setup xmit queue for VO traffic\n");
+			"%s: unable to setup xmit queue for VO traffic\n",
+			__func__);
 		error = -EIO;
 		goto bad2;
 	}
@@ -1555,7 +1557,7 @@ static int ath_attach(u16 devid, struct ath_softc *sc)
 	struct ieee80211_hw *hw = sc->hw;
 	int error = 0;
 
-	DPRINTF(sc, ATH_DBG_CONFIG, "Attach ATH hw\n");
+	DPRINTF(sc, ATH_DBG_CONFIG, "%s: Attach ATH hw\n", __func__);
 
 	error = ath_init(devid, sc);
 	if (error != 0)
@@ -1586,7 +1588,8 @@ static int ath_attach(u16 devid, struct ath_softc *sc)
 	error = ath_rate_control_register();
 	if (error != 0) {
 		DPRINTF(sc, ATH_DBG_FATAL,
-			"Unable to register rate control algorithm: %d\n", error);
+			"%s: Unable to register rate control "
+			"algorithm:%d\n", __func__, error);
 		ath_rate_control_unregister();
 		goto bad;
 	}
@@ -1654,13 +1657,15 @@ int ath_reset(struct ath_softc *sc, bool retry_tx)
 			    sc->sc_tx_chainmask, sc->sc_rx_chainmask,
 			    sc->sc_ht_extprotspacing, false, &status)) {
 		DPRINTF(sc, ATH_DBG_FATAL,
-			"Unable to reset hardware; hal status %u\n", status);
+			"%s: unable to reset hardware; hal status %u\n",
+			__func__, status);
 		error = -EIO;
 	}
 	spin_unlock_bh(&sc->sc_resetlock);
 
 	if (ath_startrecv(sc) != 0)
-		DPRINTF(sc, ATH_DBG_FATAL, "Unable to start recv logic\n");
+		DPRINTF(sc, ATH_DBG_FATAL,
+			"%s: unable to start recv logic\n", __func__);
 
 	/*
 	 * We may be doing a reset in response to a request
@@ -1708,12 +1713,13 @@ int ath_descdma_setup(struct ath_softc *sc, struct ath_descdma *dd,
 	struct ath_buf *bf;
 	int i, bsize, error;
 
-	DPRINTF(sc, ATH_DBG_CONFIG, "%s DMA: %u buffers %u desc/buf\n",
-		name, nbuf, ndesc);
+	DPRINTF(sc, ATH_DBG_CONFIG, "%s: %s DMA: %u buffers %u desc/buf\n",
+		__func__, name, nbuf, ndesc);
 
 	/* ath_desc must be a multiple of DWORDs */
 	if ((sizeof(struct ath_desc) % 4) != 0) {
-		DPRINTF(sc, ATH_DBG_FATAL, "ath_desc not DWORD aligned\n");
+		DPRINTF(sc, ATH_DBG_FATAL, "%s: ath_desc not DWORD aligned\n",
+			__func__);
 		ASSERT((sizeof(struct ath_desc) % 4) == 0);
 		error = -ENOMEM;
 		goto fail;
@@ -1749,8 +1755,8 @@ int ath_descdma_setup(struct ath_softc *sc, struct ath_descdma *dd,
 		goto fail;
 	}
 	ds = dd->dd_desc;
-	DPRINTF(sc, ATH_DBG_CONFIG, "%s DMA map: %p (%u) -> %llx (%u)\n",
-		dd->dd_name, ds, (u32) dd->dd_desc_len,
+	DPRINTF(sc, ATH_DBG_CONFIG, "%s: %s DMA map: %p (%u) -> %llx (%u)\n",
+		__func__, dd->dd_name, ds, (u32) dd->dd_desc_len,
 		ito64(dd->dd_desc_paddr), /*XXX*/(u32) dd->dd_desc_len);
 
 	/* allocate buffers */
@@ -1872,14 +1878,14 @@ static int ath9k_start(struct ieee80211_hw *hw)
 	struct ath9k_channel *init_channel;
 	int error = 0, pos, status;
 
-	DPRINTF(sc, ATH_DBG_CONFIG, "Starting driver with "
-		"initial channel: %d MHz\n", curchan->center_freq);
+	DPRINTF(sc, ATH_DBG_CONFIG, "%s: Starting driver with "
+		"initial channel: %d MHz\n", __func__, curchan->center_freq);
 
 	/* setup initial channel */
 
 	pos = ath_get_channel(sc, curchan);
 	if (pos == -1) {
-		DPRINTF(sc, ATH_DBG_FATAL, "Invalid channel: %d\n", curchan->center_freq);
+		DPRINTF(sc, ATH_DBG_FATAL, "%s: Invalid channel\n", __func__);
 		error = -EINVAL;
 		goto error;
 	}
@@ -1905,8 +1911,8 @@ static int ath9k_start(struct ieee80211_hw *hw)
 			    sc->sc_tx_chainmask, sc->sc_rx_chainmask,
 			    sc->sc_ht_extprotspacing, false, &status)) {
 		DPRINTF(sc, ATH_DBG_FATAL,
-			"Unable to reset hardware; hal status %u "
-			"(freq %u flags 0x%x)\n", status,
+			"%s: unable to reset hardware; hal status %u "
+			"(freq %u flags 0x%x)\n", __func__, status,
 			init_channel->channel, init_channel->channelFlags);
 		error = -EIO;
 		spin_unlock_bh(&sc->sc_resetlock);
@@ -1929,7 +1935,7 @@ static int ath9k_start(struct ieee80211_hw *hw)
 	 */
 	if (ath_startrecv(sc) != 0) {
 		DPRINTF(sc, ATH_DBG_FATAL,
-			"Unable to start recv logic\n");
+			"%s: unable to start recv logic\n", __func__);
 		error = -EIO;
 		goto error;
 	}
@@ -2021,10 +2027,12 @@ static int ath9k_tx(struct ieee80211_hw *hw,
 	if (!txctl.txq)
 		goto exit;
 
-	DPRINTF(sc, ATH_DBG_XMIT, "transmitting packet, skb: %p\n", skb);
+	DPRINTF(sc, ATH_DBG_XMIT, "%s: transmitting packet, skb: %p\n",
+		__func__,
+		skb);
 
 	if (ath_tx_start(sc, skb, &txctl) != 0) {
-		DPRINTF(sc, ATH_DBG_XMIT, "TX failed\n");
+		DPRINTF(sc, ATH_DBG_XMIT, "%s: TX failed\n", __func__);
 		goto exit;
 	}
 
@@ -2039,11 +2047,11 @@ static void ath9k_stop(struct ieee80211_hw *hw)
 	struct ath_softc *sc = hw->priv;
 
 	if (sc->sc_flags & SC_OP_INVALID) {
-		DPRINTF(sc, ATH_DBG_ANY, "Device not present\n");
+		DPRINTF(sc, ATH_DBG_ANY, "%s: Device not present\n", __func__);
 		return;
 	}
 
-	DPRINTF(sc, ATH_DBG_CONFIG, "Cleaning up\n");
+	DPRINTF(sc, ATH_DBG_CONFIG, "%s: Cleaning up\n", __func__);
 
 	ieee80211_stop_queues(sc->hw);
 
@@ -2068,7 +2076,7 @@ static void ath9k_stop(struct ieee80211_hw *hw)
 
 	sc->sc_flags |= SC_OP_INVALID;
 
-	DPRINTF(sc, ATH_DBG_CONFIG, "Driver halt\n");
+	DPRINTF(sc, ATH_DBG_CONFIG, "%s: Driver halt\n", __func__);
 }
 
 static int ath9k_add_interface(struct ieee80211_hw *hw,
@@ -2095,11 +2103,14 @@ static int ath9k_add_interface(struct ieee80211_hw *hw,
 		break;
 	default:
 		DPRINTF(sc, ATH_DBG_FATAL,
-			"Interface type %d not yet supported\n", conf->type);
+			"%s: Interface type %d not yet supported\n",
+			__func__, conf->type);
 		return -EOPNOTSUPP;
 	}
 
-	DPRINTF(sc, ATH_DBG_CONFIG, "Attach a VAP of type: %d\n", ic_opmode);
+	DPRINTF(sc, ATH_DBG_CONFIG, "%s: Attach a VAP of type: %d\n",
+		__func__,
+		ic_opmode);
 
 	/* Set the VAP opmode */
 	avp->av_opmode = ic_opmode;
@@ -2130,7 +2141,7 @@ static void ath9k_remove_interface(struct ieee80211_hw *hw,
 	struct ath_softc *sc = hw->priv;
 	struct ath_vap *avp = (void *)conf->vif->drv_priv;
 
-	DPRINTF(sc, ATH_DBG_CONFIG, "Detach Interface\n");
+	DPRINTF(sc, ATH_DBG_CONFIG, "%s: Detach VAP\n", __func__);
 
 #ifdef CONFIG_SLOW_ANT_DIV
 	ath_slow_ant_div_stop(&sc->sc_antdiv);
@@ -2160,13 +2171,12 @@ static int ath9k_config(struct ieee80211_hw *hw, u32 changed)
 		struct ieee80211_channel *curchan = hw->conf.channel;
 		int pos;
 
-		DPRINTF(sc, ATH_DBG_CONFIG, "Set channel: %d MHz\n",
-			curchan->center_freq);
+		DPRINTF(sc, ATH_DBG_CONFIG, "%s: Set channel: %d MHz\n",
+			__func__, curchan->center_freq);
 
 		pos = ath_get_channel(sc, curchan);
 		if (pos == -1) {
-			DPRINTF(sc, ATH_DBG_FATAL, "Invalid channel: %d\n",
-				curchan->center_freq);
+			DPRINTF(sc, ATH_DBG_FATAL, "%s: Invalid channel\n", __func__);
 			return -EINVAL;
 		}
 
@@ -2187,7 +2197,8 @@ static int ath9k_config(struct ieee80211_hw *hw, u32 changed)
 		}
 
 		if (ath_set_channel(sc, &sc->sc_ah->ah_channels[pos]) < 0) {
-			DPRINTF(sc, ATH_DBG_FATAL, "Unable to set channel\n");
+			DPRINTF(sc, ATH_DBG_FATAL,
+				"%s: Unable to set channel\n", __func__);
 			return -EINVAL;
 		}
 	}
@@ -2238,9 +2249,9 @@ static int ath9k_config_interface(struct ieee80211_hw *hw,
 			sc->sc_config.ath_aggr_prot = 0;
 
 			DPRINTF(sc, ATH_DBG_CONFIG,
-				"RX filter 0x%x bssid %s aid 0x%x\n",
-				rfilt, print_mac(mac, sc->sc_curbssid),
-				sc->sc_curaid);
+				"%s: RX filter 0x%x bssid %s aid 0x%x\n",
+				__func__, rfilt,
+				print_mac(mac, sc->sc_curbssid), sc->sc_curaid);
 
 			/* need to reconfigure the beacon */
 			sc->sc_flags &= ~SC_OP_BEACONS ;
@@ -2317,7 +2328,8 @@ static void ath9k_configure_filter(struct ieee80211_hw *hw,
 			ath9k_hw_write_associd(sc->sc_ah, ath_bcast_mac, 0);
 	}
 
-	DPRINTF(sc, ATH_DBG_CONFIG, "Set HW RX filter: 0x%x\n", sc->rx_filter);
+	DPRINTF(sc, ATH_DBG_CONFIG, "%s: Set HW RX filter: 0x%x\n",
+		__func__, sc->rx_filter);
 }
 
 static void ath9k_sta_notify(struct ieee80211_hw *hw,
@@ -2357,14 +2369,20 @@ static int ath9k_conf_tx(struct ieee80211_hw *hw,
 	qnum = ath_get_hal_qnum(queue, sc);
 
 	DPRINTF(sc, ATH_DBG_CONFIG,
-		"Configure tx [queue/halq] [%d/%d],  "
+		"%s: Configure tx [queue/halq] [%d/%d],  "
 		"aifs: %d, cw_min: %d, cw_max: %d, txop: %d\n",
-		queue, qnum, params->aifs, params->cw_min,
-		params->cw_max, params->txop);
+		__func__,
+		queue,
+		qnum,
+		params->aifs,
+		params->cw_min,
+		params->cw_max,
+		params->txop);
 
 	ret = ath_txq_update(sc, qnum, &qi);
 	if (ret)
-		DPRINTF(sc, ATH_DBG_FATAL, "TXQ Update failed\n");
+		DPRINTF(sc, ATH_DBG_FATAL,
+			"%s: TXQ Update failed\n", __func__);
 
 	return ret;
 }
@@ -2378,7 +2396,7 @@ static int ath9k_set_key(struct ieee80211_hw *hw,
 	struct ath_softc *sc = hw->priv;
 	int ret = 0;
 
-	DPRINTF(sc, ATH_DBG_KEYCACHE, "Set HW Key\n");
+	DPRINTF(sc, ATH_DBG_KEYCACHE, " %s: Set HW Key\n", __func__);
 
 	switch (cmd) {
 	case SET_KEY:
@@ -2411,7 +2429,8 @@ static void ath9k_bss_info_changed(struct ieee80211_hw *hw,
 	struct ath_softc *sc = hw->priv;
 
 	if (changed & BSS_CHANGED_ERP_PREAMBLE) {
-		DPRINTF(sc, ATH_DBG_CONFIG, "BSS Changed PREAMBLE %d\n",
+		DPRINTF(sc, ATH_DBG_CONFIG, "%s: BSS Changed PREAMBLE %d\n",
+			__func__,
 			bss_conf->use_short_preamble);
 		if (bss_conf->use_short_preamble)
 			sc->sc_flags |= SC_OP_PREAMBLE_SHORT;
@@ -2420,7 +2439,8 @@ static void ath9k_bss_info_changed(struct ieee80211_hw *hw,
 	}
 
 	if (changed & BSS_CHANGED_ERP_CTS_PROT) {
-		DPRINTF(sc, ATH_DBG_CONFIG, "BSS Changed CTS PROT %d\n",
+		DPRINTF(sc, ATH_DBG_CONFIG, "%s: BSS Changed CTS PROT %d\n",
+			__func__,
 			bss_conf->use_cts_prot);
 		if (bss_conf->use_cts_prot &&
 		    hw->conf.channel->band != IEEE80211_BAND_5GHZ)
@@ -2433,7 +2453,8 @@ static void ath9k_bss_info_changed(struct ieee80211_hw *hw,
 		ath9k_ht_conf(sc, bss_conf);
 
 	if (changed & BSS_CHANGED_ASSOC) {
-		DPRINTF(sc, ATH_DBG_CONFIG, "BSS Changed ASSOC %d\n",
+		DPRINTF(sc, ATH_DBG_CONFIG, "%s: BSS Changed ASSOC %d\n",
+			__func__,
 			bss_conf->assoc);
 		ath9k_bss_assoc_info(sc, vif, bss_conf);
 	}
@@ -2477,7 +2498,8 @@ static int ath9k_ampdu_action(struct ieee80211_hw *hw,
 		ret = ath_tx_aggr_start(sc, sta, tid, ssn);
 		if (ret < 0)
 			DPRINTF(sc, ATH_DBG_FATAL,
-				"Unable to start TX aggregation\n");
+				"%s: Unable to start TX aggregation\n",
+				__func__);
 		else
 			ieee80211_start_tx_ba_cb_irqsafe(hw, sta->addr, tid);
 		break;
@@ -2485,7 +2507,8 @@ static int ath9k_ampdu_action(struct ieee80211_hw *hw,
 		ret = ath_tx_aggr_stop(sc, sta, tid);
 		if (ret < 0)
 			DPRINTF(sc, ATH_DBG_FATAL,
-				"Unable to stop TX aggregation\n");
+				"%s: Unable to stop TX aggregation\n",
+				__func__);
 
 		ieee80211_stop_tx_ba_cb_irqsafe(hw, sta->addr, tid);
 		break;
@@ -2493,7 +2516,8 @@ static int ath9k_ampdu_action(struct ieee80211_hw *hw,
 		ath_tx_aggr_resume(sc, sta, tid);
 		break;
 	default:
-		DPRINTF(sc, ATH_DBG_FATAL, "Unknown AMPDU action\n");
+		DPRINTF(sc, ATH_DBG_FATAL,
+			"%s: Unknown AMPDU action\n", __func__);
 	}
 
 	return ret;
@@ -2549,6 +2573,7 @@ static struct {
 /*
  * Return the MAC/BB name. "????" is returned if the MAC/BB is unknown.
  */
+
 static const char *
 ath_mac_bb_name(u32 mac_bb_version)
 {
@@ -2566,6 +2591,7 @@ ath_mac_bb_name(u32 mac_bb_version)
 /*
  * Return the RF name. "????" is returned if the RF is unknown.
  */
+
 static const char *
 ath_rf_name(u16 rf_version)
 {
@@ -2604,7 +2630,7 @@ static int ath_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 
 	if (ret) {
 		printk(KERN_ERR "ath9k: 32-bit DMA consistent "
-			"DMA enable failed\n");
+			"DMA enable faled\n");
 		goto bad;
 	}
 
@@ -2814,6 +2840,6 @@ module_init(init_ath_pci);
 static void __exit exit_ath_pci(void)
 {
 	pci_unregister_driver(&ath_pci_driver);
-	printk(KERN_INFO "%s: Driver unloaded\n", dev_info);
+	printk(KERN_INFO "%s: driver unloaded\n", dev_info);
 }
 module_exit(exit_ath_pci);
