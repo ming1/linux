@@ -456,7 +456,7 @@ static int ath_rx_indicate(struct ath_softc *sc,
 	if (nskb != NULL) {
 		bf->bf_mpdu = nskb;
 		bf->bf_buf_addr = pci_map_single(sc->pdev, nskb->data,
-					 sc->sc_rxbufsize,
+					 skb_end_pointer(nskb) - nskb->head,
 					 PCI_DMA_FROMDEVICE);
 		bf->bf_dmacontext = bf->bf_buf_addr;
 		ATH_RX_CONTEXT(nskb)->ctx_rxbuf = bf;
@@ -542,7 +542,7 @@ int ath_rx_init(struct ath_softc *sc, int nbufs)
 
 			bf->bf_mpdu = skb;
 			bf->bf_buf_addr = pci_map_single(sc->pdev, skb->data,
-					 sc->sc_rxbufsize,
+					 skb_end_pointer(skb) - skb->head,
 					 PCI_DMA_FROMDEVICE);
 			bf->bf_dmacontext = bf->bf_buf_addr;
 			ATH_RX_CONTEXT(skb)->ctx_rxbuf = bf;
@@ -1007,7 +1007,7 @@ int ath_rx_tasklet(struct ath_softc *sc, int flush)
 
 		pci_dma_sync_single_for_cpu(sc->pdev,
 					    bf->bf_buf_addr,
-					    sc->sc_rxbufsize,
+					    skb_tailroom(skb),
 					    PCI_DMA_FROMDEVICE);
 		pci_unmap_single(sc->pdev,
 				 bf->bf_buf_addr,
