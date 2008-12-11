@@ -108,7 +108,6 @@ struct rfkill {
 
 	struct device dev;
 	struct list_head node;
-	enum rfkill_state state_for_resume;
 };
 #define to_rfkill(d)	container_of(d, struct rfkill, dev)
 
