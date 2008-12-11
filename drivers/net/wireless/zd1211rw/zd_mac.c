@@ -615,7 +615,7 @@ static int filter_ack(struct ieee80211_hw *hw, struct ieee80211_hdr *rx_hdr,
 		struct ieee80211_hdr *tx_hdr;
 
 		tx_hdr = (struct ieee80211_hdr *)skb->data;
-		if (likely(!memcmp(tx_hdr->addr2, rx_hdr->addr1, ETH_ALEN)))
+		if (likely(!compare_ether_addr(tx_hdr->addr2, rx_hdr->addr1)))
 		{
 			__skb_unlink(skb, q);
 			tx_status(hw, skb, stats->signal, 1);
