@@ -531,8 +531,6 @@ static int p54_rx_data(struct ieee80211_hw *dev, struct sk_buff *skb)
 	rx_status.noise = priv->noise;
 	/* XX correct? */
 	rx_status.qual = (100 * hdr->rssi) / 127;
-	if (hdr->rate & 0x10)
-		rx_status.flag |= RX_FLAG_SHORTPRE;
 	rx_status.rate_idx = (dev->conf.channel->band == IEEE80211_BAND_2GHZ ?
 			hdr->rate : (hdr->rate - 4)) & 0xf;
 	rx_status.freq = freq;
@@ -579,7 +577,7 @@ void p54_free_skb(struct ieee80211_hw *dev, struct sk_buff *skb)
 	unsigned long flags;
 	u32 freed = 0, last_addr = priv->rx_start;
 
-	if (unlikely(!skb || !dev || !skb_queue_len(&priv->tx_queue)))
+	if (!skb || !dev)
 		return;
 
 	spin_lock_irqsave(&priv->tx_queue.lock, flags);
@@ -1202,10 +1200,7 @@ static int p54_tx(struct ieee80211_hw *dev, struct sk_buff *skb)
 	txhdr->key_type = 0;
 	txhdr->key_len = 0;
 	txhdr->hw_queue = queue;
-	if (current_queue)
-		txhdr->backlog = current_queue->len;
-	else
-		txhdr->backlog = 0;
+	txhdr->backlog = 32;
 	memset(txhdr->durations, 0, sizeof(txhdr->durations));
 	txhdr->tx_antenna = (info->antenna_sel_tx == 0) ?
 		2 : info->antenna_sel_tx - 1;
@@ -1554,6 +1549,7 @@ static void p54_stop(struct ieee80211_hw *dev)
 	while ((skb = skb_dequeue(&priv->tx_queue)))
 		kfree_skb(skb);
 
+	kfree(priv->cached_beacon);
 	priv->cached_beacon = NULL;
 	priv->stop(dev);
 	priv->tsf_high32 = priv->tsf_low32 = 0;
