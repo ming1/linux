@@ -643,7 +643,6 @@ static void iwl_bg_request_scan(struct work_struct *data)
 	u8 n_probes = 2;
 	u8 rx_chain = priv->hw_params.valid_rx_ant;
 	u8 rate;
-	DECLARE_SSID_BUF(ssid);
 
 	conf = ieee80211_get_hw_conf(priv->hw);
 
@@ -736,8 +735,8 @@ static void iwl_bg_request_scan(struct work_struct *data)
 	/* We should add the ability for user to lock to PASSIVE ONLY */
 	if (priv->one_direct_scan) {
 		IWL_DEBUG_SCAN("Start direct scan for '%s'\n",
-				print_ssid(ssid, priv->direct_ssid,
-					   priv->direct_ssid_len));
+				escape_ssid(priv->direct_ssid,
+					    priv->direct_ssid_len));
 		scan->direct_scan[0].id = WLAN_EID_SSID;
 		scan->direct_scan[0].len = priv->direct_ssid_len;
 		memcpy(scan->direct_scan[0].ssid,
@@ -745,7 +744,7 @@ static void iwl_bg_request_scan(struct work_struct *data)
 		n_probes++;
 	} else if (!iwl_is_associated(priv) && priv->essid_len) {
 		IWL_DEBUG_SCAN("Start direct scan for '%s' (not associated)\n",
-				print_ssid(ssid, priv->essid, priv->essid_len));
+				escape_ssid(priv->essid, priv->essid_len));
 		scan->direct_scan[0].id = WLAN_EID_SSID;
 		scan->direct_scan[0].len = priv->essid_len;
 		memcpy(scan->direct_scan[0].ssid, priv->essid, priv->essid_len);
