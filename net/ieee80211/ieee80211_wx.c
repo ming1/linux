@@ -308,7 +308,7 @@ int ieee80211_wx_set_encode(struct ieee80211_device *ieee,
 		.flags = 0
 	};
 	int i, key, key_provided, len;
-	struct lib80211_crypt_data **crypt;
+	struct ieee80211_crypt_data **crypt;
 	int host_crypto = ieee->host_encrypt || ieee->host_decrypt || ieee->host_build_iv;
 	DECLARE_SSID_BUF(ssid);
 
@@ -322,30 +322,30 @@ int ieee80211_wx_set_encode(struct ieee80211_device *ieee,
 		key_provided = 1;
 	} else {
 		key_provided = 0;
-		key = ieee->crypt_info.tx_keyidx;
+		key = ieee->tx_keyidx;
 	}
 
 	IEEE80211_DEBUG_WX("Key: %d [%s]\n", key, key_provided ?
 			   "provided" : "default");
 
-	crypt = &ieee->crypt_info.crypt[key];
+	crypt = &ieee->crypt[key];
 
 	if (erq->flags & IW_ENCODE_DISABLED) {
 		if (key_provided && *crypt) {
 			IEEE80211_DEBUG_WX("Disabling encryption on key %d.\n",
 					   key);
-			lib80211_crypt_delayed_deinit(&ieee->crypt_info, crypt);
+			ieee80211_crypt_delayed_deinit(ieee, crypt);
 		} else
 			IEEE80211_DEBUG_WX("Disabling encryption.\n");
 
 		/* Check all the keys to see if any are still configured,
 		 * and if no key index was provided, de-init them all */
 		for (i = 0; i < WEP_KEYS; i++) {
-			if (ieee->crypt_info.crypt[i] != NULL) {
+			if (ieee->crypt[i] != NULL) {
 				if (key_provided)
 					break;
-				lib80211_crypt_delayed_deinit(&ieee->crypt_info,
-							       &ieee->crypt_info.crypt[i]);
+				ieee80211_crypt_delayed_deinit(ieee,
+							       &ieee->crypt[i]);
 			}
 		}
 
@@ -367,21 +367,21 @@ int ieee80211_wx_set_encode(struct ieee80211_device *ieee,
 	    strcmp((*crypt)->ops->name, "WEP") != 0) {
 		/* changing to use WEP; deinit previously used algorithm
 		 * on this key */
-		lib80211_crypt_delayed_deinit(&ieee->crypt_info, crypt);
+		ieee80211_crypt_delayed_deinit(ieee, crypt);
 	}
 
 	if (*crypt == NULL && host_crypto) {
-		struct lib80211_crypt_data *new_crypt;
+		struct ieee80211_crypt_data *new_crypt;
 
 		/* take WEP into use */
-		new_crypt = kzalloc(sizeof(struct lib80211_crypt_data),
+		new_crypt = kzalloc(sizeof(struct ieee80211_crypt_data),
 				    GFP_KERNEL);
 		if (new_crypt == NULL)
 			return -ENOMEM;
-		new_crypt->ops = lib80211_get_crypto_ops("WEP");
+		new_crypt->ops = ieee80211_get_crypto_ops("WEP");
 		if (!new_crypt->ops) {
-			request_module("lib80211_crypt_wep");
-			new_crypt->ops = lib80211_get_crypto_ops("WEP");
+			request_module("ieee80211_crypt_wep");
+			new_crypt->ops = ieee80211_get_crypto_ops("WEP");
 		}
 
 		if (new_crypt->ops && try_module_get(new_crypt->ops->owner))
@@ -392,7 +392,7 @@ int ieee80211_wx_set_encode(struct ieee80211_device *ieee,
 			new_crypt = NULL;
 
 			printk(KERN_WARNING "%s: could not initialize WEP: "
-			       "load module lib80211_crypt_wep\n", dev->name);
+			       "load module ieee80211_crypt_wep\n", dev->name);
 			return -EOPNOTSUPP;
 		}
 		*crypt = new_crypt;
@@ -441,7 +441,7 @@ int ieee80211_wx_set_encode(struct ieee80211_device *ieee,
 		if (key_provided) {
 			IEEE80211_DEBUG_WX("Setting key %d to default Tx "
 					   "key.\n", key);
-			ieee->crypt_info.tx_keyidx = key;
+			ieee->tx_keyidx = key;
 			sec.active_key = key;
 			sec.flags |= SEC_ACTIVE_KEY;
 		}
@@ -486,7 +486,7 @@ int ieee80211_wx_get_encode(struct ieee80211_device *ieee,
 {
 	struct iw_point *erq = &(wrqu->encoding);
 	int len, key;
-	struct lib80211_crypt_data *crypt;
+	struct ieee80211_crypt_data *crypt;
 	struct ieee80211_security *sec = &ieee->sec;
 
 	IEEE80211_DEBUG_WX("GET_ENCODE\n");
@@ -497,9 +497,9 @@ int ieee80211_wx_get_encode(struct ieee80211_device *ieee,
 			return -EINVAL;
 		key--;
 	} else
-		key = ieee->crypt_info.tx_keyidx;
+		key = ieee->tx_keyidx;
 
-	crypt = ieee->crypt_info.crypt[key];
+	crypt = ieee->crypt[key];
 	erq->flags = key + 1;
 
 	if (!sec->enabled) {
@@ -532,8 +532,8 @@ int ieee80211_wx_set_encodeext(struct ieee80211_device *ieee,
 	int i, idx, ret = 0;
 	int group_key = 0;
 	const char *alg, *module;
-	struct lib80211_crypto_ops *ops;
-	struct lib80211_crypt_data **crypt;
+	struct ieee80211_crypto_ops *ops;
+	struct ieee80211_crypt_data **crypt;
 
 	struct ieee80211_security sec = {
 		.flags = 0,
@@ -545,17 +545,17 @@ int ieee80211_wx_set_encodeext(struct ieee80211_device *ieee,
 			return -EINVAL;
 		idx--;
 	} else
-		idx = ieee->crypt_info.tx_keyidx;
+		idx = ieee->tx_keyidx;
 
 	if (ext->ext_flags & IW_ENCODE_EXT_GROUP_KEY) {
-		crypt = &ieee->crypt_info.crypt[idx];
+		crypt = &ieee->crypt[idx];
 		group_key = 1;
 	} else {
 		/* some Cisco APs use idx>0 for unicast in dynamic WEP */
 		if (idx != 0 && ext->alg != IW_ENCODE_ALG_WEP)
 			return -EINVAL;
 		if (ieee->iw_mode == IW_MODE_INFRA)
-			crypt = &ieee->crypt_info.crypt[idx];
+			crypt = &ieee->crypt[idx];
 		else
 			return -EINVAL;
 	}
@@ -564,10 +564,10 @@ int ieee80211_wx_set_encodeext(struct ieee80211_device *ieee,
 	if ((encoding->flags & IW_ENCODE_DISABLED) ||
 	    ext->alg == IW_ENCODE_ALG_NONE) {
 		if (*crypt)
-			lib80211_crypt_delayed_deinit(&ieee->crypt_info, crypt);
+			ieee80211_crypt_delayed_deinit(ieee, crypt);
 
 		for (i = 0; i < WEP_KEYS; i++)
-			if (ieee->crypt_info.crypt[i] != NULL)
+			if (ieee->crypt[i] != NULL)
 				break;
 
 		if (i == WEP_KEYS) {
@@ -590,15 +590,15 @@ int ieee80211_wx_set_encodeext(struct ieee80211_device *ieee,
 	switch (ext->alg) {
 	case IW_ENCODE_ALG_WEP:
 		alg = "WEP";
-		module = "lib80211_crypt_wep";
+		module = "ieee80211_crypt_wep";
 		break;
 	case IW_ENCODE_ALG_TKIP:
 		alg = "TKIP";
-		module = "lib80211_crypt_tkip";
+		module = "ieee80211_crypt_tkip";
 		break;
 	case IW_ENCODE_ALG_CCMP:
 		alg = "CCMP";
-		module = "lib80211_crypt_ccmp";
+		module = "ieee80211_crypt_ccmp";
 		break;
 	default:
 		IEEE80211_DEBUG_WX("%s: unknown crypto alg %d\n",
@@ -607,10 +607,10 @@ int ieee80211_wx_set_encodeext(struct ieee80211_device *ieee,
 		goto done;
 	}
 
-	ops = lib80211_get_crypto_ops(alg);
+	ops = ieee80211_get_crypto_ops(alg);
 	if (ops == NULL) {
 		request_module(module);
-		ops = lib80211_get_crypto_ops(alg);
+		ops = ieee80211_get_crypto_ops(alg);
 	}
 	if (ops == NULL) {
 		IEEE80211_DEBUG_WX("%s: unknown crypto alg %d\n",
@@ -620,9 +620,9 @@ int ieee80211_wx_set_encodeext(struct ieee80211_device *ieee,
 	}
 
 	if (*crypt == NULL || (*crypt)->ops != ops) {
-		struct lib80211_crypt_data *new_crypt;
+		struct ieee80211_crypt_data *new_crypt;
 
-		lib80211_crypt_delayed_deinit(&ieee->crypt_info, crypt);
+		ieee80211_crypt_delayed_deinit(ieee, crypt);
 
 		new_crypt = kzalloc(sizeof(*new_crypt), GFP_KERNEL);
 		if (new_crypt == NULL) {
@@ -650,7 +650,7 @@ int ieee80211_wx_set_encodeext(struct ieee80211_device *ieee,
 
       skip_host_crypt:
 	if (ext->ext_flags & IW_ENCODE_EXT_SET_TX_KEY) {
-		ieee->crypt_info.tx_keyidx = idx;
+		ieee->tx_keyidx = idx;
 		sec.active_key = idx;
 		sec.flags |= SEC_ACTIVE_KEY;
 	}
@@ -716,7 +716,7 @@ int ieee80211_wx_get_encodeext(struct ieee80211_device *ieee,
 			return -EINVAL;
 		idx--;
 	} else
-		idx = ieee->crypt_info.tx_keyidx;
+		idx = ieee->tx_keyidx;
 
 	if (!(ext->ext_flags & IW_ENCODE_EXT_GROUP_KEY) &&
 	    ext->alg != IW_ENCODE_ALG_WEP)
