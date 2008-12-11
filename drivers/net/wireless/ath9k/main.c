@@ -330,15 +330,25 @@ static void ath9k_ht_conf(struct ath_softc *sc,
 {
 	struct ath_ht_info *ht_info = &sc->sc_ht_info;
 
-	if (sc->hw->conf.ht.enabled) {
-		ht_info->ext_chan_offset = bss_conf->ht.secondary_channel_offset;
+	if (bss_conf->assoc_ht) {
+		ht_info->ext_chan_offset =
+			bss_conf->ht_bss_conf->bss_cap &
+				IEEE80211_HT_PARAM_CHA_SEC_OFFSET;
 
-		if (bss_conf->ht.width_40_ok)
+		if (!(bss_conf->ht_cap->cap &
+			IEEE80211_HT_CAP_40MHZ_INTOLERANT) &&
+			    (bss_conf->ht_bss_conf->bss_cap &
+				IEEE80211_HT_PARAM_CHAN_WIDTH_ANY))
 			ht_info->tx_chan_width = ATH9K_HT_MACMODE_2040;
 		else
 			ht_info->tx_chan_width = ATH9K_HT_MACMODE_20;
 
 		ath9k_hw_set11nmac2040(sc->sc_ah, ht_info->tx_chan_width);
+		ht_info->maxampdu = 1 << (IEEE80211_HTCAP_MAXRXAMPDU_FACTOR +
+					bss_conf->ht_cap->ampdu_factor);
+		ht_info->mpdudensity =
+			parse_mpdudensity(bss_conf->ht_cap->ampdu_density);
+
 	}
 }
 
@@ -381,7 +391,7 @@ static void ath9k_bss_assoc_info(struct ath_softc *sc,
 		sc->sc_halstats.ns_avgtxrate = ATH_RATE_DUMMY_MARKER;
 
 		/* Update chainmask */
-		ath_update_chainmask(sc, hw->conf.ht.enabled);
+		ath_update_chainmask(sc, bss_conf->assoc_ht);
 
 		DPRINTF(sc, ATH_DBG_CONFIG,
 			"%s: bssid %s aid 0x%x\n",
@@ -399,7 +409,7 @@ static void ath9k_bss_assoc_info(struct ath_softc *sc,
 			return;
 		}
 
-		if (hw->conf.ht.enabled)
+		if (hw->conf.ht_cap.ht_supported)
 			sc->sc_ah->ah_channels[pos].chanmode =
 				ath_get_extchanmode(sc, curchan);
 		else
@@ -522,6 +532,7 @@ int _ath_rx_indicate(struct ath_softc *sc,
 
 	if (an) {
 		ath_rx_input(sc, an,
+			     hw->conf.ht_cap.ht_supported,
 			     skb, status, &st);
 	}
 	if (!an || (st != ATH_RX_CONSUMED))
@@ -1231,9 +1242,6 @@ static int ath9k_config(struct ieee80211_hw *hw, u32 changed)
 		__func__,
 		curchan->center_freq);
 
-	/* Update chainmask */
-	ath_update_chainmask(sc, conf->ht.enabled);
-
 	pos = ath_get_channel(sc, curchan);
 	if (pos == -1) {
 		DPRINTF(sc, ATH_DBG_FATAL, "%s: Invalid channel\n", __func__);
@@ -1244,7 +1252,7 @@ static int ath9k_config(struct ieee80211_hw *hw, u32 changed)
 		(curchan->band == IEEE80211_BAND_2GHZ) ?
 		CHANNEL_G : CHANNEL_A;
 
-	if (sc->sc_curaid && hw->conf.ht.enabled)
+	if (sc->sc_curaid && hw->conf.ht_cap.ht_supported)
 		sc->sc_ah->ah_channels[pos].chanmode =
 			ath_get_extchanmode(sc, curchan);
 
@@ -1429,14 +1437,6 @@ static void ath9k_sta_notify(struct ieee80211_hw *hw,
 		} else {
 			ath_node_get(sc, sta->addr);
 		}
-
-		/* XXX: Is this right? Can the capabilities change? */
-		an = ath_node_find(sc, sta->addr);
-		an->maxampdu = 1 << (IEEE80211_HTCAP_MAXRXAMPDU_FACTOR +
-					sta->ht_cap.ampdu_factor);
-		an->mpdudensity =
-			parse_mpdudensity(sta->ht_cap.ampdu_density);
-
 		spin_unlock_irqrestore(&sc->node_lock, flags);
 		break;
 	case STA_NOTIFY_REMOVE:
@@ -1555,8 +1555,9 @@ static void ath9k_bss_info_changed(struct ieee80211_hw *hw,
 	}
 
 	if (changed & BSS_CHANGED_HT) {
-		DPRINTF(sc, ATH_DBG_CONFIG, "%s: BSS Changed HT\n",
-			__func__);
+		DPRINTF(sc, ATH_DBG_CONFIG, "%s: BSS Changed HT %d\n",
+			__func__,
+			bss_conf->assoc_ht);
 		ath9k_ht_conf(sc, bss_conf);
 	}
 
