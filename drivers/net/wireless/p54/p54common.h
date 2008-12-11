@@ -302,7 +302,7 @@ enum p54_frame_sent_status {
 	P54_TX_OK = 0,
 	P54_TX_FAILED,
 	P54_TX_PSM,
-	P54_TX_PSM_CANCELLED = 4
+	P54_TX_PSM_CANCELLED
 };
 
 struct p54_frame_sent {
