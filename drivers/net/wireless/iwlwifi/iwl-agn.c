@@ -1111,16 +1111,6 @@ static void iwl_setup_rx_handlers(struct iwl_priv *priv)
 	priv->cfg->ops->lib->rx_handler_setup(priv);
 }
 
-/*
- * this should be called while priv->lock is locked
-*/
-static void __iwl_rx_replenish(struct iwl_priv *priv)
-{
-	iwl_rx_allocate(priv);
-	iwl_rx_queue_restock(priv);
-}
-
-
 /**
  * iwl_rx_handle - Main entry function for receiving responses from uCode
  *
@@ -1229,7 +1219,7 @@ void iwl_rx_handle(struct iwl_priv *priv)
 			count++;
 			if (count >= 8) {
 				priv->rxq.read = i;
-				__iwl_rx_replenish(priv);
+				iwl_rx_queue_restock(priv);
 				count = 0;
 			}
 		}
