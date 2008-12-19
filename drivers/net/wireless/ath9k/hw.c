@@ -382,9 +382,8 @@ static const char *ath9k_hw_devname(u16 devid)
 {
 	switch (devid) {
 	case AR5416_DEVID_PCI:
-		return "Atheros 5416";
 	case AR5416_DEVID_PCIE:
-		return "Atheros 5418";
+		return "Atheros 5416";
 	case AR9160_DEVID_PCI:
 		return "Atheros 9160";
 	case AR9280_DEVID_PCI:
