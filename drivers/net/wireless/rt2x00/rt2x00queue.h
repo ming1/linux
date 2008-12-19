@@ -109,7 +109,8 @@ enum skb_frame_desc_flags {
  * @desc: Pointer to descriptor part of the frame.
  *	Note that this pointer could point to something outside
  *	of the scope of the skb->data pointer.
- * @iv: IV/EIV data used during encryption/decryption.
+ * @iv: IV data used during encryption/decryption.
+ * @eiv: EIV data used during encryption/decryption.
  * @skb_dma: (PCI-only) the DMA address associated with the sk buffer.
  * @entry: The entry to which this sk buffer belongs.
  */
@@ -122,7 +123,8 @@ struct skb_frame_desc {
 
 	void *desc;
 
-	__le32 iv[2];
+	__le32 iv;
+	__le32 eiv;
 
 	dma_addr_t skb_dma;
 
@@ -166,7 +168,8 @@ enum rxdone_entry_desc_flags {
  * @dev_flags: Ralink receive flags (See &enum rxdone_entry_desc_flags).
  * @cipher: Cipher type used during decryption.
  * @cipher_status: Decryption status.
- * @iv: IV/EIV data used during decryption.
+ * @iv: IV data used during decryption.
+ * @eiv: EIV data used during decryption.
  * @icv: ICV data used during decryption.
  */
 struct rxdone_entry_desc {
@@ -179,7 +182,8 @@ struct rxdone_entry_desc {
 	u8 cipher;
 	u8 cipher_status;
 
-	__le32 iv[2];
+	__le32 iv;
+	__le32 eiv;
 	__le32 icv;
 };
 
