@@ -1326,7 +1326,6 @@ static int ath_init(u16 devid, struct ath_softc *sc)
 		printk(KERN_ERR "Unable to create debugfs files\n");
 
 	spin_lock_init(&sc->sc_resetlock);
-	mutex_init(&sc->mutex);
 	tasklet_init(&sc->intr_tq, ath9k_tasklet, (unsigned long)sc);
 	tasklet_init(&sc->bcon_tasklet, ath9k_beacon_tasklet,
 		     (unsigned long)sc);
@@ -2136,7 +2135,6 @@ static int ath9k_config(struct ieee80211_hw *hw, u32 changed)
 	struct ath_softc *sc = hw->priv;
 	struct ieee80211_conf *conf = &hw->conf;
 
-	mutex_lock(&sc->mutex);
 	if (changed & (IEEE80211_CONF_CHANGE_CHANNEL |
 		       IEEE80211_CONF_CHANGE_HT)) {
 		struct ieee80211_channel *curchan = hw->conf.channel;
@@ -2149,7 +2147,6 @@ static int ath9k_config(struct ieee80211_hw *hw, u32 changed)
 		if (pos == -1) {
 			DPRINTF(sc, ATH_DBG_FATAL, "Invalid channel: %d\n",
 				curchan->center_freq);
-			mutex_unlock(&sc->mutex);
 			return -EINVAL;
 		}
 
@@ -2170,7 +2167,6 @@ static int ath9k_config(struct ieee80211_hw *hw, u32 changed)
 
 		if (ath_set_channel(sc, &sc->sc_ah->ah_channels[pos]) < 0) {
 			DPRINTF(sc, ATH_DBG_FATAL, "Unable to set channel\n");
-			mutex_unlock(&sc->mutex);
 			return -EINVAL;
 		}
 
@@ -2180,7 +2176,6 @@ static int ath9k_config(struct ieee80211_hw *hw, u32 changed)
 	if (changed & IEEE80211_CONF_CHANGE_POWER)
 		sc->sc_config.txpowlimit = 2 * conf->power_level;
 
-	mutex_unlock(&sc->mutex);
 	return 0;
 }
 
