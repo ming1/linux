@@ -1141,7 +1141,7 @@ static int iwl3945_commit_rxon(struct iwl3945_priv *priv)
 
 static int iwl3945_send_bt_config(struct iwl3945_priv *priv)
 {
-	struct iwl3945_bt_cmd bt_cmd = {
+	struct iwl_bt_cmd bt_cmd = {
 		.flags = 3,
 		.lead_time = 0xAA,
 		.max_kill = 1,
@@ -1150,7 +1150,7 @@ static int iwl3945_send_bt_config(struct iwl3945_priv *priv)
 	};
 
 	return iwl3945_send_cmd_pdu(priv, REPLY_BT_CONFIG,
-				sizeof(struct iwl3945_bt_cmd), &bt_cmd);
+					sizeof(bt_cmd), &bt_cmd);
 }
 
 static int iwl3945_send_scan_abort(struct iwl3945_priv *priv)
@@ -1345,7 +1345,8 @@ static int iwl3945_clear_sta_key_info(struct iwl3945_priv *priv, u8 sta_id)
 
 	spin_lock_irqsave(&priv->sta_lock, flags);
 	memset(&priv->stations[sta_id].keyinfo, 0, sizeof(struct iwl3945_hw_key));
-	memset(&priv->stations[sta_id].sta.key, 0, sizeof(struct iwl3945_keyinfo));
+	memset(&priv->stations[sta_id].sta.key, 0,
+		sizeof(struct iwl4965_keyinfo));
 	priv->stations[sta_id].sta.key.key_flags = STA_KEY_FLG_NO_ENC;
 	priv->stations[sta_id].sta.sta.modify_mask = STA_MODIFY_KEY_MASK;
 	priv->stations[sta_id].sta.mode = STA_CONTROL_MODIFY_MSK;
@@ -1674,11 +1675,11 @@ static u16 iwl3945_fill_probe_req(struct iwl3945_priv *priv,
  * QoS  support
 */
 static int iwl3945_send_qos_params_command(struct iwl3945_priv *priv,
-				       struct iwl3945_qosparam_cmd *qos)
+				       struct iwl_qosparam_cmd *qos)
 {
 
 	return iwl3945_send_cmd_pdu(priv, REPLY_QOS_PARAM,
-				sizeof(struct iwl3945_qosparam_cmd), qos);
+				sizeof(struct iwl_qosparam_cmd), qos);
 }
 
 static void iwl3945_reset_qos(struct iwl3945_priv *priv)
@@ -2587,7 +2588,7 @@ static int iwl3945_tx_skb(struct iwl3945_priv *priv, struct sk_buff *skb)
 	 * We'll tell device about this padding later.
 	 */
 	len = priv->hw_setting.tx_cmd_len +
-		sizeof(struct iwl3945_cmd_header) + hdr_len;
+			sizeof(struct iwl_cmd_header) + hdr_len;
 
 	len_org = len;
 	len = (len + 3) & ~3;
@@ -3116,8 +3117,8 @@ static void iwl3945_rx_reply_scan(struct iwl3945_priv *priv,
 {
 #ifdef CONFIG_IWL3945_DEBUG
 	struct iwl3945_rx_packet *pkt = (void *)rxb->skb->data;
-	struct iwl3945_scanreq_notification *notif =
-	    (struct iwl3945_scanreq_notification *)pkt->u.raw;
+	struct iwl_scanreq_notification *notif =
+	    (struct iwl_scanreq_notification *)pkt->u.raw;
 
 	IWL_DEBUG_RX("Scan request status = 0x%x\n", notif->status);
 #endif
@@ -3128,8 +3129,8 @@ static void iwl3945_rx_scan_start_notif(struct iwl3945_priv *priv,
 				    struct iwl3945_rx_mem_buffer *rxb)
 {
 	struct iwl3945_rx_packet *pkt = (void *)rxb->skb->data;
-	struct iwl3945_scanstart_notification *notif =
-	    (struct iwl3945_scanstart_notification *)pkt->u.raw;
+	struct iwl_scanstart_notification *notif =
+	    (struct iwl_scanstart_notification *)pkt->u.raw;
 	priv->scan_start_tsf = le32_to_cpu(notif->tsf_low);
 	IWL_DEBUG_SCAN("Scan start: "
 		       "%d [802.11%s] "
@@ -3145,8 +3146,8 @@ static void iwl3945_rx_scan_results_notif(struct iwl3945_priv *priv,
 				      struct iwl3945_rx_mem_buffer *rxb)
 {
 	struct iwl3945_rx_packet *pkt = (void *)rxb->skb->data;
-	struct iwl3945_scanresults_notification *notif =
-	    (struct iwl3945_scanresults_notification *)pkt->u.raw;
+	struct iwl_scanresults_notification *notif =
+	    (struct iwl_scanresults_notification *)pkt->u.raw;
 
 	IWL_DEBUG_SCAN("Scan ch.res: "
 		       "%d [802.11%s] "
@@ -3170,7 +3171,7 @@ static void iwl3945_rx_scan_complete_notif(struct iwl3945_priv *priv,
 				       struct iwl3945_rx_mem_buffer *rxb)
 {
 	struct iwl3945_rx_packet *pkt = (void *)rxb->skb->data;
-	struct iwl3945_scancomplete_notification *scan_notif = (void *)pkt->u.raw;
+	struct iwl_scancomplete_notification *scan_notif = (void *)pkt->u.raw;
 
 	IWL_DEBUG_SCAN("Scan complete: %d channels (TSF 0x%08X:%08X) - %d\n",
 		       scan_notif->scanned_channels,
