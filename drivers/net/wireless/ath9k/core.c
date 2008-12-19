@@ -705,7 +705,7 @@ void ath_stop(struct ath_softc *sc)
 	} else
 		sc->sc_rxlink = NULL;
 
-#if defined(CONFIG_RFKILL) || defined(CONFIG_RFKILL_MODULE)
+#ifdef CONFIG_RFKILL
 	if (sc->sc_ah->ah_caps.hw_caps & ATH9K_HW_CAP_RFSILENT)
 		cancel_delayed_work_sync(&sc->rf_kill.rfkill_poll);
 #endif
