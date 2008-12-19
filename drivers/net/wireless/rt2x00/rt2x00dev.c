@@ -1051,8 +1051,6 @@ int rt2x00lib_probe_dev(struct rt2x00_dev *rt2x00dev)
 {
 	int retval = -ENOMEM;
 
-	mutex_init(&rt2x00dev->csr_mutex);
-
 	/*
 	 * Make room for rt2x00_intf inside the per-interface
 	 * structure ieee80211_vif.
