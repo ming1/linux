@@ -492,6 +492,7 @@ void ath9k_beacon_tasklet(unsigned long data)
 					DPRINTF(sc, ATH_DBG_BEACON,
 						"beacon is officially "
 						"stuck\n");
+					ath9k_hw_dmaRegDump(ah);
 				}
 			} else {
 				DPRINTF(sc, ATH_DBG_BEACON,
