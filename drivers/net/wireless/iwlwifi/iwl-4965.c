@@ -426,6 +426,7 @@ static void iwl4965_nic_config(struct iwl_priv *priv)
 
 static int iwl4965_apm_stop_master(struct iwl_priv *priv)
 {
+	int ret = 0;
 	unsigned long flags;
 
 	spin_lock_irqsave(&priv->lock, flags);
@@ -433,13 +434,16 @@ static int iwl4965_apm_stop_master(struct iwl_priv *priv)
 	/* set stop master bit */
 	iwl_set_bit(priv, CSR_RESET, CSR_RESET_REG_FLAG_STOP_MASTER);
 
-	iwl_poll_direct_bit(priv, CSR_RESET,
+	ret = iwl_poll_direct_bit(priv, CSR_RESET,
 			CSR_RESET_REG_FLAG_MASTER_DISABLED, 100);
+	if (ret < 0)
+		goto out;
 
+out:
 	spin_unlock_irqrestore(&priv->lock, flags);
 	IWL_DEBUG_INFO("stop master\n");
 
-	return 0;
+	return ret;
 }
 
 static void iwl4965_apm_stop(struct iwl_priv *priv)
