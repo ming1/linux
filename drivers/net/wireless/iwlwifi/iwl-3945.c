@@ -2508,7 +2508,7 @@ void iwl3945_hw_cancel_deferred_work(struct iwl3945_priv *priv)
 	cancel_delayed_work(&priv->thermal_periodic);
 }
 
-static struct iwl_3945_cfg iwl3945_bg_cfg = {
+static struct iwl_cfg iwl3945_bg_cfg = {
 	.name = "3945BG",
 	.fw_name_pre = IWL3945_FW_PRE,
 	.ucode_api_max = IWL3945_UCODE_API_MAX,
@@ -2516,7 +2516,7 @@ static struct iwl_3945_cfg iwl3945_bg_cfg = {
 	.sku = IWL_SKU_G,
 };
 
-static struct iwl_3945_cfg iwl3945_abg_cfg = {
+static struct iwl_cfg iwl3945_abg_cfg = {
 	.name = "3945ABG",
 	.fw_name_pre = IWL3945_FW_PRE,
 	.ucode_api_max = IWL3945_UCODE_API_MAX,
