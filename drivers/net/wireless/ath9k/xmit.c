@@ -125,13 +125,13 @@ static int ath_tx_findindex(const struct ath9k_rate_table *rt, int rate)
 
 /* Check if it's okay to send out aggregates */
 
-static int ath_aggr_query(struct ath_softc *sc, struct ath_node *an, u8 tidno)
+static int ath_aggr_query(struct ath_softc *sc,
+	struct ath_node *an, u8 tidno)
 {
 	struct ath_atx_tid *tid;
 	tid = ATH_AN_2_TID(an, tidno);
 
-	if (tid->state & AGGR_ADDBA_COMPLETE ||
-	    tid->state & AGGR_ADDBA_PROGRESS)
+	if (tid->addba_exchangecomplete || tid->addba_exchangeinprogress)
 		return 1;
 	else
 		return 0;
@@ -886,7 +886,7 @@ static void ath_tx_complete_aggr_rifs(struct ath_softc *sc,
 			/* transmit completion */
 		} else {
 
-			if (!(tid->state & AGGR_CLEANUP) &&
+			if (!tid->cleanup_inprogress &&
 			    ds->ds_txstat.ts_flags != ATH9K_TX_SW_ABORTED) {
 				if (bf->bf_retries < ATH_MAX_SW_RETRIES) {
 					ath_tx_set_retry(sc, bf);
@@ -1014,16 +1014,16 @@ static void ath_tx_complete_aggr_rifs(struct ath_softc *sc,
 		bf = bf_next;
 	}
 
-	if (tid->state & AGGR_CLEANUP) {
+	if (tid->cleanup_inprogress) {
 		/* check to see if we're done with cleaning the h/w queue */
 		spin_lock_bh(&txq->axq_lock);
 
 		if (tid->baw_head == tid->baw_tail) {
-			tid->state &= ~AGGR_ADDBA_COMPLETE;
+			tid->addba_exchangecomplete = 0;
 			tid->addba_exchangeattempts = 0;
 			spin_unlock_bh(&txq->axq_lock);
 
-			tid->state &= ~AGGR_CLEANUP;
+			tid->cleanup_inprogress = false;
 
 			/* send buffered frames as singles */
 			ath_tx_flush_tid(sc, tid);
@@ -2336,8 +2336,17 @@ enum ATH_AGGR_CHECK ath_tx_aggr_check(struct ath_softc *sc,
 	/* ADDBA exchange must be completed before sending aggregates */
 	txtid = ATH_AN_2_TID(an, tidno);
 
-	if (!(txtid->state & AGGR_ADDBA_COMPLETE)) {
-		if (!(txtid->state & AGGR_ADDBA_PROGRESS) &&
+	if (txtid->addba_exchangecomplete)
+		return AGGR_EXCHANGE_DONE;
+
+	if (txtid->cleanup_inprogress)
+		return AGGR_CLEANUP_PROGRESS;
+
+	if (txtid->addba_exchangeinprogress)
+		return AGGR_EXCHANGE_PROGRESS;
+
+	if (!txtid->addba_exchangecomplete) {
+		if (!txtid->addba_exchangeinprogress &&
 		    (txtid->addba_exchangeattempts < ADDBA_EXCHANGE_ATTEMPTS)) {
 			txtid->addba_exchangeattempts++;
 			return AGGR_REQUIRED;
@@ -2359,7 +2368,7 @@ int ath_tx_aggr_start(struct ath_softc *sc, struct ieee80211_sta *sta,
 
 	if (sc->sc_flags & SC_OP_TXAGGR) {
 		txtid = ATH_AN_2_TID(an, tid);
-		txtid->state |= AGGR_ADDBA_PROGRESS;
+		txtid->addba_exchangeinprogress = 1;
 		ath_tx_pause_tid(sc, txtid);
 	}
 
@@ -2393,10 +2402,10 @@ void ath_tx_aggr_teardown(struct ath_softc *sc, struct ath_node *an, u8 tid)
 
 	DPRINTF(sc, ATH_DBG_AGGR, "%s: teardown TX aggregation\n", __func__);
 
-	if (txtid->state & AGGR_CLEANUP) /* cleanup is in progress */
+	if (txtid->cleanup_inprogress) /* cleanup is in progress */
 		return;
 
-	if (!(txtid->state & AGGR_ADDBA_COMPLETE)) {
+	if (!txtid->addba_exchangecomplete) {
 		txtid->addba_exchangeattempts = 0;
 		return;
 	}
@@ -2426,9 +2435,9 @@ void ath_tx_aggr_teardown(struct ath_softc *sc, struct ath_node *an, u8 tid)
 
 	if (txtid->baw_head != txtid->baw_tail) {
 		spin_unlock_bh(&txq->axq_lock);
-		txtid->state |= AGGR_CLEANUP;
+		txtid->cleanup_inprogress = true;
 	} else {
-		txtid->state &= ~AGGR_ADDBA_COMPLETE;
+		txtid->addba_exchangecomplete = 0;
 		txtid->addba_exchangeattempts = 0;
 		spin_unlock_bh(&txq->axq_lock);
 		ath_tx_flush_tid(sc, txtid);
@@ -2519,16 +2528,16 @@ void ath_tx_node_init(struct ath_softc *sc, struct ath_node *an)
 		tid->baw_head  = tid->baw_tail = 0;
 		tid->sched     = false;
 		tid->paused = false;
-		tid->state &= ~AGGR_CLEANUP;
+		tid->cleanup_inprogress = false;
 		INIT_LIST_HEAD(&tid->buf_q);
 
 		acno = TID_TO_WME_AC(tidno);
 		tid->ac = &an->an_aggr.tx.ac[acno];
 
 		/* ADDBA state */
-		tid->state &= ~AGGR_ADDBA_COMPLETE;
-		tid->state &= ~AGGR_ADDBA_PROGRESS;
-		tid->addba_exchangeattempts = 0;
+		tid->addba_exchangecomplete     = 0;
+		tid->addba_exchangeinprogress   = 0;
+		tid->addba_exchangeattempts     = 0;
 	}
 
 	/*
@@ -2588,9 +2597,9 @@ void ath_tx_node_cleanup(struct ath_softc *sc, struct ath_node *an)
 					list_del(&tid->list);
 					tid->sched = false;
 					ath_tid_drain(sc, txq, tid);
-					tid->state &= ~AGGR_ADDBA_COMPLETE;
+					tid->addba_exchangecomplete = 0;
 					tid->addba_exchangeattempts = 0;
-					tid->state &= ~AGGR_CLEANUP;
+					tid->cleanup_inprogress = false;
 				}
 			}
 
