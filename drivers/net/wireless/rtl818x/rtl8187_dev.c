@@ -7,11 +7,6 @@
  * Based on the r8187 driver, which is:
  * Copyright 2005 Andrea Merello <andreamrl@tiscali.it>, et al.
  *
- * The driver was extended to the RTL8187B in 2008 by:
- * 	Herton Ronaldo Krzesinski <herton@mandriva.com.br>
- *	Hin-Tak Leung <htl10@users.sourceforge.net>
- *	Larry Finger <Larry.Finger@lwfinger.net>
- *
  * Magic delays and register offsets below are taken from the original
  * r8187 driver sources.  Thanks to Realtek for their support!
  *
@@ -32,9 +27,6 @@
 
 MODULE_AUTHOR("Michael Wu <flamingice@sourmilk.net>");
 MODULE_AUTHOR("Andrea Merello <andreamrl@tiscali.it>");
-MODULE_AUTHOR("Herton Ronaldo Krzesinski <herton@mandriva.com.br>");
-MODULE_AUTHOR("Hin-Tak Leung <htl10@users.sourceforge.net>");
-MODULE_AUTHOR("Larry Finger <Larry.Finger@lwfinger.net>");
 MODULE_DESCRIPTION("RTL8187/RTL8187B USB wireless driver");
 MODULE_LICENSE("GPL");
 
