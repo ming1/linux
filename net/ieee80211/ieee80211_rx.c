@@ -1178,7 +1178,7 @@ static int ieee80211_parse_info_param(struct ieee80211_info_element
 
 			IEEE80211_DEBUG_MGMT("MFIE_TYPE_SSID: '%s' len=%d.\n",
 					     print_ssid(ssid, network->ssid,
-							network->ssid_len),
+							network->ssid_len);
 					     network->ssid_len);
 			break;
 
