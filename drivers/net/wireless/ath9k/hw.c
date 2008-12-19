@@ -37,7 +37,7 @@ static bool ath9k_hw_set_reset_reg(struct ath_hal *ah, u32 type);
 static void ath9k_hw_set_regs(struct ath_hal *ah, struct ath9k_channel *chan,
 			      enum ath9k_ht_macmode macmode);
 static u32 ath9k_hw_ini_fixup(struct ath_hal *ah,
-			      struct ar5416_eeprom_def *pEepData,
+			      struct ar5416_eeprom *pEepData,
 			      u32 reg, u32 value);
 static void ath9k_hw_9280_spur_mitigate(struct ath_hal *ah, struct ath9k_channel *chan);
 static void ath9k_hw_spur_mitigate(struct ath_hal *ah, struct ath9k_channel *chan);
@@ -392,8 +392,6 @@ static const char *ath9k_hw_devname(u16 devid)
 	case AR9280_DEVID_PCI:
 	case AR9280_DEVID_PCIE:
 		return "Atheros 9280";
-	case AR9285_DEVID_PCIE:
-		return "Atheros 9285";
 	}
 
 	return NULL;
@@ -685,7 +683,7 @@ static struct ath_hal *ath9k_hw_do_attach(u16 devid, struct ath_softc *sc,
 	if ((ah->ah_macVersion != AR_SREV_VERSION_5416_PCI) &&
 	    (ah->ah_macVersion != AR_SREV_VERSION_5416_PCIE) &&
 	    (ah->ah_macVersion != AR_SREV_VERSION_9160) &&
-	    (!AR_SREV_9100(ah)) && (!AR_SREV_9280(ah)) && (!AR_SREV_9285(ah))) {
+	    (!AR_SREV_9100(ah)) && (!AR_SREV_9280(ah))) {
 		DPRINTF(ah->ah_sc, ATH_DBG_RESET,
 			"Mac Chip Rev 0x%02x.%x is not supported by "
 			"this driver\n", ah->ah_macVersion, ah->ah_macRev);
@@ -736,38 +734,7 @@ static struct ath_hal *ath9k_hw_do_attach(u16 devid, struct ath_softc *sc,
 		"This Mac Chip Rev 0x%02x.%x is \n",
 		ah->ah_macVersion, ah->ah_macRev);
 
-	if (AR_SREV_9285_12_OR_LATER(ah)) {
-		INIT_INI_ARRAY(&ahp->ah_iniModes, ar9285Modes_9285_1_2,
-			       ARRAY_SIZE(ar9285Modes_9285_1_2), 6);
-		INIT_INI_ARRAY(&ahp->ah_iniCommon, ar9285Common_9285_1_2,
-			       ARRAY_SIZE(ar9285Common_9285_1_2), 2);
-
-		if (ah->ah_config.pcie_clock_req) {
-			INIT_INI_ARRAY(&ahp->ah_iniPcieSerdes,
-			ar9285PciePhy_clkreq_off_L1_9285_1_2,
-			ARRAY_SIZE(ar9285PciePhy_clkreq_off_L1_9285_1_2), 2);
-		} else {
-			INIT_INI_ARRAY(&ahp->ah_iniPcieSerdes,
-			ar9285PciePhy_clkreq_always_on_L1_9285_1_2,
-			ARRAY_SIZE(ar9285PciePhy_clkreq_always_on_L1_9285_1_2),
-				  2);
-		}
-	} else if (AR_SREV_9285_10_OR_LATER(ah)) {
-		INIT_INI_ARRAY(&ahp->ah_iniModes, ar9285Modes_9285,
-			       ARRAY_SIZE(ar9285Modes_9285), 6);
-		INIT_INI_ARRAY(&ahp->ah_iniCommon, ar9285Common_9285,
-			       ARRAY_SIZE(ar9285Common_9285), 2);
-
-		if (ah->ah_config.pcie_clock_req) {
-			INIT_INI_ARRAY(&ahp->ah_iniPcieSerdes,
-			ar9285PciePhy_clkreq_off_L1_9285,
-			ARRAY_SIZE(ar9285PciePhy_clkreq_off_L1_9285), 2);
-		} else {
-			INIT_INI_ARRAY(&ahp->ah_iniPcieSerdes,
-			ar9285PciePhy_clkreq_always_on_L1_9285,
-			ARRAY_SIZE(ar9285PciePhy_clkreq_always_on_L1_9285), 2);
-		}
-	} else if (AR_SREV_9280_20_OR_LATER(ah)) {
+	if (AR_SREV_9280_20_OR_LATER(ah)) {
 		INIT_INI_ARRAY(&ahp->ah_iniModes, ar9280Modes_9280_2,
 			       ARRAY_SIZE(ar9280Modes_9280_2), 6);
 		INIT_INI_ARRAY(&ahp->ah_iniCommon, ar9280Common_9280_2,
@@ -877,11 +844,11 @@ static struct ath_hal *ath9k_hw_do_attach(u16 devid, struct ath_softc *sc,
 		goto bad;
 
 	/* rxgain table */
-	if (AR_SREV_9280_20(ah))
+	if (AR_SREV_9280_20_OR_LATER(ah))
 		ath9k_hw_init_rxgain_ini(ah);
 
 	/* txgain table */
-	if (AR_SREV_9280_20(ah))
+	if (AR_SREV_9280_20_OR_LATER(ah))
 		ath9k_hw_init_txgain_ini(ah);
 
 	if (ah->ah_devid == AR9280_DEVID_PCI) {
@@ -892,8 +859,7 @@ static struct ath_hal *ath9k_hw_do_attach(u16 devid, struct ath_softc *sc,
 				u32 val = INI_RA(&ahp->ah_iniModes, i, j);
 
 				INI_RA(&ahp->ah_iniModes, i, j) =
-					ath9k_hw_ini_fixup(ah,
-							   &ahp->ah_eeprom.def,
+					ath9k_hw_ini_fixup(ah, &ahp->ah_eeprom,
 							   reg, val);
 			}
 		}
@@ -1051,6 +1017,8 @@ static void ath9k_hw_init_chain_masks(struct ath_hal *ah)
 		}
 	case 0x1:
 	case 0x2:
+		if (!AR_SREV_9280(ah))
+			break;
 	case 0x7:
 		REG_WRITE(ah, AR_PHY_RX_CHAINMASK, rx_chainmask);
 		REG_WRITE(ah, AR_PHY_CAL_CHAINMASK, rx_chainmask);
@@ -1195,10 +1163,12 @@ struct ath_hal *ath9k_hw_attach(u16 devid, struct ath_softc *sc,
 	case AR9160_DEVID_PCI:
 	case AR9280_DEVID_PCI:
 	case AR9280_DEVID_PCIE:
-	case AR9285_DEVID_PCIE:
 		ah = ath9k_hw_do_attach(devid, sc, mem, error);
 		break;
 	default:
+		DPRINTF(ah->ah_sc, ATH_DBG_ANY,
+			"devid=0x%x not supported.\n", devid);
+		ah = NULL;
 		*error = -ENXIO;
 		break;
 	}
@@ -1220,8 +1190,8 @@ static void ath9k_hw_override_ini(struct ath_hal *ah,
 	REG_WRITE(ah, 0x9800 + (651 << 2), 0x11);
 }
 
-static u32 ath9k_hw_def_ini_fixup(struct ath_hal *ah,
-			      struct ar5416_eeprom_def *pEepData,
+static u32 ath9k_hw_ini_fixup(struct ath_hal *ah,
+			      struct ar5416_eeprom *pEepData,
 			      u32 reg, u32 value)
 {
 	struct base_eep_header *pBase = &(pEepData->baseEepHeader);
@@ -1252,18 +1222,6 @@ static u32 ath9k_hw_def_ini_fixup(struct ath_hal *ah,
 	}
 
 	return value;
-}
-
-static u32 ath9k_hw_ini_fixup(struct ath_hal *ah,
-			      struct ar5416_eeprom_def *pEepData,
-			      u32 reg, u32 value)
-{
-	struct ath_hal_5416 *ahp = AH5416(ah);
-
-	if (ahp->ah_eep_map == EEP_MAP_4KBITS)
-		return value;
-	else
-		return ath9k_hw_def_ini_fixup(ah, pEepData, reg, value);
 }
 
 static int ath9k_hw_process_ini(struct ath_hal *ah,
@@ -1343,10 +1301,10 @@ static int ath9k_hw_process_ini(struct ath_hal *ah,
 		DO_DELAY(regWrites);
 	}
 
-	if (AR_SREV_9280(ah))
+	if (AR_SREV_9280_20_OR_LATER(ah))
 		REG_WRITE_ARRAY(&ahp->ah_iniModesRxGain, modesIndex, regWrites);
 
-	if (AR_SREV_9280(ah))
+	if (AR_SREV_9280_20_OR_LATER(ah))
 		REG_WRITE_ARRAY(&ahp->ah_iniModesTxGain, modesIndex, regWrites);
 
 	for (i = 0; i < ahp->ah_iniCommon.ia_rows; i++) {
@@ -1619,15 +1577,10 @@ static void ath9k_hw_set_regs(struct ath_hal *ah, struct ath9k_channel *chan,
 			      enum ath9k_ht_macmode macmode)
 {
 	u32 phymode;
-	u32 enableDacFifo = 0;
 	struct ath_hal_5416 *ahp = AH5416(ah);
 
-	if (AR_SREV_9285_10_OR_LATER(ah))
-		enableDacFifo = (REG_READ(ah, AR_PHY_TURBO) &
-					 AR_PHY_FC_ENABLE_DAC_FIFO);
-
 	phymode = AR_PHY_FC_HT_EN | AR_PHY_FC_SHORT_GI_40
-		| AR_PHY_FC_SINGLE_HT_LTF1 | AR_PHY_FC_WALSH | enableDacFifo;
+		| AR_PHY_FC_SINGLE_HT_LTF1 | AR_PHY_FC_WALSH;
 
 	if (IS_CHAN_HT40(chan)) {
 		phymode |= AR_PHY_FC_DYN2040_EN;
@@ -2810,14 +2763,11 @@ void ath9k_hw_configpcipowersave(struct ath_hal *ah, int restore)
 	if (ah->ah_config.pcie_waen) {
 		REG_WRITE(ah, AR_WA, ah->ah_config.pcie_waen);
 	} else {
-		if (AR_SREV_9285(ah))
-			REG_WRITE(ah, AR_WA, AR9285_WA_DEFAULT);
-		else if (AR_SREV_9280(ah))
-			REG_WRITE(ah, AR_WA, AR9280_WA_DEFAULT);
+		if (AR_SREV_9280(ah))
+			REG_WRITE(ah, AR_WA, 0x0040073f);
 		else
-			REG_WRITE(ah, AR_WA, AR_WA_DEFAULT);
+			REG_WRITE(ah, AR_WA, 0x0000073f);
 	}
-
 }
 
 /**********************/
@@ -3368,7 +3318,7 @@ bool ath9k_hw_fill_cap_info(struct ath_hal *ah)
 	else
 		pCap->hw_caps |= ATH9K_HW_CAP_AUTOSLEEP;
 
-	if (AR_SREV_9280(ah) || AR_SREV_9285(ah))
+	if (AR_SREV_9280(ah))
 		pCap->hw_caps &= ~ATH9K_HW_CAP_4KB_SPLITTRANS;
 	else
 		pCap->hw_caps |= ATH9K_HW_CAP_4KB_SPLITTRANS;
