@@ -310,7 +310,6 @@ static void ath_tx_complete_buf(struct ath_softc *sc,
 {
 	struct sk_buff *skb = bf->bf_mpdu;
 	struct ath_xmit_status tx_status;
-	unsigned long flags;
 
 	/*
 	 * Set retry information.
@@ -341,9 +340,9 @@ static void ath_tx_complete_buf(struct ath_softc *sc,
 	/*
 	 * Return the list of ath_buf of this mpdu to free queue
 	 */
-	spin_lock_irqsave(&sc->sc_txbuflock, flags);
+	spin_lock_bh(&sc->sc_txbuflock);
 	list_splice_tail_init(bf_q, &sc->sc_txbuf);
-	spin_unlock_irqrestore(&sc->sc_txbuflock, flags);
+	spin_unlock_bh(&sc->sc_txbuflock);
 }
 
 /*
