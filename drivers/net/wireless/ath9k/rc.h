@@ -20,19 +20,73 @@
 #define RC_H
 
 #include "ath9k.h"
+/*
+ * Interface definitions for transmit rate control modules for the
+ * Atheros driver.
+ *
+ * A rate control module is responsible for choosing the transmit rate
+ * for each data frame.  Management+control frames are always sent at
+ * a fixed rate.
+ *
+ * Only one module may be present at a time; the driver references
+ * rate control interfaces by symbol name.  If multiple modules are
+ * to be supported we'll need to switch to a registration-based scheme
+ * as is currently done, for example, for authentication modules.
+ *
+ * An instance of the rate control module is attached to each device
+ * at attach time and detached when the device is destroyed.  The module
+ * may associate data with each device and each node (station).  Both
+ * sets of storage are opaque except for the size of the per-node storage
+ * which must be provided when the module is attached.
+ *
+ * The rate control module is notified for each state transition and
+ * station association/reassociation.  Otherwise it is queried for a
+ * rate for each outgoing frame and provided status from each transmitted
+ * frame.  Any ancillary processing is the responsibility of the module
+ * (e.g. if periodic processing is required then the module should setup
+ * it's own timer).
+ *
+ * In addition to the transmit rate for each frame the module must also
+ * indicate the number of attempts to make at the specified rate.  If this
+ * number is != ATH_TXMAXTRY then an additional callback is made to setup
+ * additional transmit state.  The rate control code is assumed to write
+ * this additional data directly to the transmit descriptor.
+ */
 
 struct ath_softc;
 
-#define ATH_RATE_MAX     30
-#define RATE_TABLE_SIZE  64
-#define MAX_TX_RATE_PHY  48
+#define TRUE 1
+#define FALSE 0
 
-#define INVALID    0x0
-#define VALID      0x1
-#define VALID_20   0x2
-#define VALID_40   0x4
-#define VALID_2040 (VALID_20|VALID_40)
-#define VALID_ALL  (VALID_2040|VALID)
+#define ATH_RATE_MAX	30
+
+#define WLAN_PHY_HT_20_SS       WLAN_RC_PHY_HT_20_SS
+#define WLAN_PHY_HT_20_DS       WLAN_RC_PHY_HT_20_DS
+#define WLAN_PHY_HT_20_DS_HGI   WLAN_RC_PHY_HT_20_DS_HGI
+#define WLAN_PHY_HT_40_SS       WLAN_RC_PHY_HT_40_SS
+#define WLAN_PHY_HT_40_SS_HGI   WLAN_RC_PHY_HT_40_SS_HGI
+#define WLAN_PHY_HT_40_DS       WLAN_RC_PHY_HT_40_DS
+#define WLAN_PHY_HT_40_DS_HGI   WLAN_RC_PHY_HT_40_DS_HGI
+
+#define WLAN_PHY_OFDM	PHY_OFDM
+#define WLAN_PHY_CCK	PHY_CCK
+
+#define TRUE_20		0x2
+#define TRUE_40		0x4
+#define TRUE_2040	(TRUE_20|TRUE_40)
+#define TRUE_ALL	(TRUE_2040|TRUE)
+
+enum {
+	WLAN_RC_PHY_HT_20_SS = 4,
+	WLAN_RC_PHY_HT_20_DS,
+	WLAN_RC_PHY_HT_40_SS,
+	WLAN_RC_PHY_HT_40_DS,
+	WLAN_RC_PHY_HT_20_SS_HGI,
+	WLAN_RC_PHY_HT_20_DS_HGI,
+	WLAN_RC_PHY_HT_40_SS_HGI,
+	WLAN_RC_PHY_HT_40_DS_HGI,
+	WLAN_RC_PHY_MAX
+};
 
 #define WLAN_RC_PHY_DS(_phy)   ((_phy == WLAN_RC_PHY_HT_20_DS)		\
 				|| (_phy == WLAN_RC_PHY_HT_40_DS)	\
@@ -49,21 +103,25 @@ struct ath_softc;
 
 #define WLAN_RC_PHY_HT(_phy)    (_phy >= WLAN_RC_PHY_HT_20_SS)
 
+/* Returns the capflag mode */
 #define WLAN_RC_CAP_MODE(capflag) (((capflag & WLAN_RC_HT_FLAG) ?	\
-		(capflag & WLAN_RC_40_FLAG) ? VALID_40 : VALID_20 : VALID))
+		(capflag & WLAN_RC_40_FLAG) ? TRUE_40 : TRUE_20 : TRUE))
 
 /* Return TRUE if flag supports HT20 && client supports HT20 or
  * return TRUE if flag supports HT40 && client supports HT40.
  * This is used becos some rates overlap between HT20/HT40.
  */
-#define WLAN_RC_PHY_HT_VALID(flag, capflag)			\
-	(((flag & VALID_20) && !(capflag & WLAN_RC_40_FLAG)) || \
-	 ((flag & VALID_40) && (capflag & WLAN_RC_40_FLAG)))
+
+#define WLAN_RC_PHY_HT_VALID(flag, capflag) (((flag & TRUE_20) && !(capflag \
+				& WLAN_RC_40_FLAG)) || ((flag & TRUE_40) && \
+				  (capflag & WLAN_RC_40_FLAG)))
 
 #define WLAN_RC_DS_FLAG         (0x01)
 #define WLAN_RC_40_FLAG         (0x02)
 #define WLAN_RC_SGI_FLAG        (0x04)
 #define WLAN_RC_HT_FLAG         (0x08)
+
+#define RATE_TABLE_SIZE		64
 
 /**
  * struct ath_rate_table - Rate Control table
@@ -81,7 +139,7 @@ struct ath_softc;
  * @max_4ms_framelen: maximum frame length(bytes) for tx duration
  * @probe_interval: interval for rate control to probe for other rates
  * @rssi_reduce_interval: interval for rate control to reduce rssi
- * @initial_ratemax: initial ratemax value
+ * @initial_ratemax: initial ratemax value used in ath_rc_sib_update()
  */
 struct ath_rate_table {
 	int rate_cnt;
@@ -111,6 +169,15 @@ struct ath_rate_table {
 	u8 initial_ratemax;
 };
 
+#define ATH_RC_PROBE_ALLOWED            0x00000001
+#define ATH_RC_MINRATE_LASTRATE         0x00000002
+
+/*
+ * State structures for new rate adaptation code
+ */
+#define	MAX_TX_RATE_TBL	        64
+#define MAX_TX_RATE_PHY         48
+
 struct ath_tx_ratectrl_state {
 	int8_t rssi_thres;	/* required rssi for this rate (dB) */
 	u8 per;			/* recent estimate of packet error rate (%) */
@@ -122,7 +189,7 @@ struct ath_rateset {
 };
 
 /**
- * struct ath_rate_priv - Rate Control priv data
+ * struct ath_rate_node - Rate Control priv data
  * @state: RC state
  * @rssi_last: last ACK rssi
  * @rssi_last_lookup: last ACK rssi used for lookup
@@ -147,7 +214,9 @@ struct ath_rateset {
  * @neg_rates: Negotatied rates
  * @neg_ht_rates: Negotiated HT rates
  */
-struct ath_rate_priv {
+
+/* per-node state */
+struct ath_rate_node {
 	int8_t rssi_last;
 	int8_t rssi_last_lookup;
 	int8_t rssi_last_prev;
@@ -159,11 +228,11 @@ struct ath_rate_priv {
 	u8 probe_rate;
 	u8 hw_maxretry_pktcnt;
 	u8 max_valid_rate;
-	u8 valid_rate_index[RATE_TABLE_SIZE];
+	u8 valid_rate_index[MAX_TX_RATE_TBL];
 	u8 ht_cap;
 	u8 single_stream;
 	u8 valid_phy_ratecnt[WLAN_RC_PHY_MAX];
-	u8 valid_phy_rateidx[WLAN_RC_PHY_MAX][RATE_TABLE_SIZE];
+	u8 valid_phy_rateidx[WLAN_RC_PHY_MAX][MAX_TX_RATE_TBL];
 	u8 rc_phy_mode;
 	u8 rate_max_phy;
 	u32 rssi_time;
@@ -173,7 +242,7 @@ struct ath_rate_priv {
 	u32 probe_interval;
 	u32 prev_data_rix;
 	u32 tx_triglevel_max;
-	struct ath_tx_ratectrl_state state[RATE_TABLE_SIZE];
+	struct ath_tx_ratectrl_state state[MAX_TX_RATE_TBL];
 	struct ath_rateset neg_rates;
 	struct ath_rateset neg_ht_rates;
 	struct ath_rate_softc *asc;
@@ -184,9 +253,6 @@ struct ath_tx_info_priv {
 	int n_frames;
 	int n_bad_frames;
 };
-
-#define ATH_TX_INFO_PRIV(tx_info) \
-	((struct ath_tx_info_priv *)((tx_info)->rate_driver_data[0]))
 
 void ath_rate_attach(struct ath_softc *sc);
 u8 ath_rate_findrateix(struct ath_softc *sc, u8 dot11_rate);
