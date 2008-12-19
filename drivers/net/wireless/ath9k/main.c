@@ -1300,7 +1300,6 @@ static void ath_detach(struct ath_softc *sc)
 			ath_tx_cleanupq(sc, &sc->sc_txq[i]);
 
 	ath9k_hw_detach(sc->sc_ah);
-	ath9k_exit_debug(sc);
 }
 
 static int ath_init(u16 devid, struct ath_softc *sc)
@@ -1313,8 +1312,7 @@ static int ath_init(u16 devid, struct ath_softc *sc)
 	/* XXX: hardware will not be ready until ath_open() being called */
 	sc->sc_flags |= SC_OP_INVALID;
 
-	if (ath9k_init_debug(sc) < 0)
-		printk(KERN_ERR "Unable to create debugfs files\n");
+	ath9k_init_debug(sc);
 
 	spin_lock_init(&sc->sc_resetlock);
 	tasklet_init(&sc->intr_tq, ath9k_tasklet, (unsigned long)sc);
