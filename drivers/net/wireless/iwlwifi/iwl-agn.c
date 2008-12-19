@@ -2202,6 +2202,8 @@ static void __iwl_down(struct iwl_priv *priv)
 		priv->cfg->ops->lib->apm_ops.stop(priv);
 	else
 		priv->cfg->ops->lib->apm_ops.reset(priv);
+	priv->cfg->ops->lib->free_shared_mem(priv);
+
  exit:
 	memset(&priv->card_alive, 0, sizeof(struct iwl_alive_resp));
 
@@ -2253,6 +2255,12 @@ static int __iwl_up(struct iwl_priv *priv)
 	}
 
 	iwl_write32(priv, CSR_INT, 0xFFFFFFFF);
+
+	ret = priv->cfg->ops->lib->alloc_shared_mem(priv);
+	if (ret) {
+		IWL_ERROR("Unable to allocate shared memory\n");
+		return ret;
+	}
 
 	ret = iwl_hw_nic_init(priv);
 	if (ret) {
