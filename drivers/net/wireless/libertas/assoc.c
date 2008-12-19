@@ -154,18 +154,17 @@ static int lbs_adhoc_join(struct lbs_private *priv,
 	struct bss_descriptor *bss = &assoc_req->bss;
 	u8 preamble = RADIO_PREAMBLE_LONG;
 	DECLARE_MAC_BUF(mac);
-	DECLARE_SSID_BUF(ssid);
 	u16 ratesize = 0;
 	int ret = 0;
 
 	lbs_deb_enter(LBS_DEB_ASSOC);
 
 	lbs_deb_join("current SSID '%s', ssid length %u\n",
-		print_ssid(ssid, priv->curbssparams.ssid,
+		escape_ssid(priv->curbssparams.ssid,
 		priv->curbssparams.ssid_len),
 		priv->curbssparams.ssid_len);
 	lbs_deb_join("requested ssid '%s', ssid length %u\n",
-		print_ssid(ssid, bss->ssid, bss->ssid_len),
+		escape_ssid(bss->ssid, bss->ssid_len),
 		bss->ssid_len);
 
 	/* check if the requested SSID is already joined */
@@ -310,7 +309,6 @@ static int lbs_adhoc_start(struct lbs_private *priv,
 	size_t ratesize = 0;
 	u16 tmpcap = 0;
 	int ret = 0;
-	DECLARE_SSID_BUF(ssid);
 
 	lbs_deb_enter(LBS_DEB_ASSOC);
 
@@ -330,7 +328,7 @@ static int lbs_adhoc_start(struct lbs_private *priv,
 	memcpy(cmd.ssid, assoc_req->ssid, assoc_req->ssid_len);
 
 	lbs_deb_join("ADHOC_START: SSID '%s', ssid length %u\n",
-		print_ssid(ssid, assoc_req->ssid, assoc_req->ssid_len),
+		escape_ssid(assoc_req->ssid, assoc_req->ssid_len),
 		assoc_req->ssid_len);
 
 	cmd.bsstype = CMD_BSS_TYPE_IBSS;
@@ -698,7 +696,6 @@ static int assoc_helper_essid(struct lbs_private *priv,
 	int ret = 0;
 	struct bss_descriptor * bss;
 	int channel = -1;
-	DECLARE_SSID_BUF(ssid);
 
 	lbs_deb_enter(LBS_DEB_ASSOC);
 
@@ -710,7 +707,7 @@ static int assoc_helper_essid(struct lbs_private *priv,
 		channel = assoc_req->channel;
 
 	lbs_deb_assoc("SSID '%s' requested\n",
-	              print_ssid(ssid, assoc_req->ssid, assoc_req->ssid_len));
+	              escape_ssid(assoc_req->ssid, assoc_req->ssid_len));
 	if (assoc_req->mode == IW_MODE_INFRA) {
 		lbs_send_specific_ssid_scan(priv, assoc_req->ssid,
 			assoc_req->ssid_len);
@@ -1214,7 +1211,6 @@ void lbs_association_worker(struct work_struct *work)
 	int ret = 0;
 	int find_any_ssid = 0;
 	DECLARE_MAC_BUF(mac);
-	DECLARE_SSID_BUF(ssid);
 
 	lbs_deb_enter(LBS_DEB_ASSOC);
 
@@ -1238,7 +1234,7 @@ void lbs_association_worker(struct work_struct *work)
 		"    secinfo:  %s%s%s\n"
 		"    auth_mode: %d\n",
 		assoc_req->flags,
-		print_ssid(ssid, assoc_req->ssid, assoc_req->ssid_len),
+		escape_ssid(assoc_req->ssid, assoc_req->ssid_len),
 		assoc_req->channel, assoc_req->band, assoc_req->mode,
 		print_mac(mac, assoc_req->bssid),
 		assoc_req->secinfo.WPAenabled ? " WPA" : "",
@@ -1777,7 +1773,6 @@ static int lbs_adhoc_post(struct lbs_private *priv, struct cmd_header *resp)
 	union iwreq_data wrqu;
 	struct bss_descriptor *bss;
 	DECLARE_MAC_BUF(mac);
-	DECLARE_SSID_BUF(ssid);
 
 	lbs_deb_enter(LBS_DEB_JOIN);
 
@@ -1827,7 +1822,7 @@ static int lbs_adhoc_post(struct lbs_private *priv, struct cmd_header *resp)
 	wireless_send_event(priv->dev, SIOCGIWAP, &wrqu, NULL);
 
 	lbs_deb_join("ADHOC_RESP: Joined/started '%s', BSSID %s, channel %d\n",
-		     print_ssid(ssid, bss->ssid, bss->ssid_len),
+		     escape_ssid(bss->ssid, bss->ssid_len),
 		     print_mac(mac, priv->curbssparams.bssid),
 		     priv->curbssparams.channel);
 

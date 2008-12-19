@@ -1145,7 +1145,6 @@ static int ieee80211_parse_info_param(struct ieee80211_info_element
 				      *info_element, u16 length,
 				      struct ieee80211_network *network)
 {
-	DECLARE_SSID_BUF(ssid);
 	u8 i;
 #ifdef CONFIG_IEEE80211_DEBUG
 	char rates_str[64];
@@ -1177,8 +1176,7 @@ static int ieee80211_parse_info_param(struct ieee80211_info_element
 				       IW_ESSID_MAX_SIZE - network->ssid_len);
 
 			IEEE80211_DEBUG_MGMT("MFIE_TYPE_SSID: '%s' len=%d.\n",
-					     print_ssid(ssid, network->ssid,
-							network->ssid_len);
+					     escape_ssid(network->ssid),
 					     network->ssid_len);
 			break;
 
@@ -1425,7 +1423,6 @@ static int ieee80211_network_init(struct ieee80211_device *ieee, struct ieee8021
 					 struct ieee80211_rx_stats *stats)
 {
 	DECLARE_MAC_BUF(mac);
-	DECLARE_SSID_BUF(ssid);
 
 	network->qos_data.active = 0;
 	network->qos_data.supported = 0;
@@ -1475,7 +1472,7 @@ static int ieee80211_network_init(struct ieee80211_device *ieee, struct ieee8021
 	if (network->mode == 0) {
 		IEEE80211_DEBUG_SCAN("Filtered out '%s (%s)' "
 				     "network.\n",
-				     print_ssid(ssid, network->ssid,
+				     escape_ssid(network->ssid,
 						 network->ssid_len),
 				     print_mac(mac, network->bssid));
 		return 1;
@@ -1591,11 +1588,10 @@ static void ieee80211_process_probe_response(struct ieee80211_device
 #endif
 	unsigned long flags;
 	DECLARE_MAC_BUF(mac);
-	DECLARE_SSID_BUF(ssid);
 
 	IEEE80211_DEBUG_SCAN("'%s' (%s"
 		     "): %c%c%c%c %c%c%c%c-%c%c%c%c %c%c%c%c\n",
-		     print_ssid(ssid, info_element->data, info_element->len),
+		     escape_ssid(info_element->data, info_element->len),
 		     print_mac(mac, beacon->header.addr3),
 		     (beacon->capability & cpu_to_le16(1 << 0xf)) ? '1' : '0',
 		     (beacon->capability & cpu_to_le16(1 << 0xe)) ? '1' : '0',
@@ -1616,7 +1612,7 @@ static void ieee80211_process_probe_response(struct ieee80211_device
 
 	if (ieee80211_network_init(ieee, beacon, &network, stats)) {
 		IEEE80211_DEBUG_SCAN("Dropped '%s' (%s) via %s.\n",
-				     print_ssid(ssid, info_element->data,
+				     escape_ssid(info_element->data,
 						 info_element->len),
 				     print_mac(mac, beacon->header.addr3),
 				     is_beacon(beacon->header.frame_ctl) ?
@@ -1654,7 +1650,7 @@ static void ieee80211_process_probe_response(struct ieee80211_device
 			target = oldest;
 			IEEE80211_DEBUG_SCAN("Expired '%s' (%s) from "
 					     "network list.\n",
-					     print_ssid(ssid, target->ssid,
+					     escape_ssid(target->ssid,
 							 target->ssid_len),
 					     print_mac(mac, target->bssid));
 			ieee80211_network_reset(target);
@@ -1667,7 +1663,7 @@ static void ieee80211_process_probe_response(struct ieee80211_device
 
 #ifdef CONFIG_IEEE80211_DEBUG
 		IEEE80211_DEBUG_SCAN("Adding '%s' (%s) via %s.\n",
-				     print_ssid(ssid, network.ssid,
+				     escape_ssid(network.ssid,
 						 network.ssid_len),
 				     print_mac(mac, network.bssid),
 				     is_beacon(beacon->header.frame_ctl) ?
@@ -1678,7 +1674,7 @@ static void ieee80211_process_probe_response(struct ieee80211_device
 		list_add_tail(&target->list, &ieee->network_list);
 	} else {
 		IEEE80211_DEBUG_SCAN("Updating '%s' (%s) via %s.\n",
-				     print_ssid(ssid, target->ssid,
+				     escape_ssid(target->ssid,
 						 target->ssid_len),
 				     print_mac(mac, target->bssid),
 				     is_beacon(beacon->header.frame_ctl) ?
