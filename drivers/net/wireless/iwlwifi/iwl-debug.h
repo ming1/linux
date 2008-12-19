@@ -96,25 +96,28 @@ static inline void iwl_dbgfs_unregister(struct iwl_priv *priv)
 #endif				/* CONFIG_IWLWIFI_DEBUGFS */
 
 /*
- * To use the debug system:
+ * To use the debug system;
  *
  * If you are defining a new debug classification, simply add it to the #define
- * list here in the form of
+ * list here in the form of:
  *
  * #define IWL_DL_xxxx VALUE
  *
- * where xxxx should be the name of the classification (for example, WEP).
+ * shifting value to the left one bit from the previous entry.  xxxx should be
+ * the name of the classification (for example, WEP)
  *
  * You then need to either add a IWL_xxxx_DEBUG() macro definition for your
  * classification, or use IWL_DEBUG(IWL_DL_xxxx, ...) whenever you want
  * to send output to that classification.
  *
- * The active debug levels can be accessed via files
+ * To add your debug level to the list of levels seen when you perform
  *
- * 	/sys/module/iwlagn/parameters/debug{50}
- * 	/sys/class/net/wlan0/device/debug_level
+ * % cat /sys/class/net/wlanX/device/debug_level
  *
- * when CONFIG_IWLWIFI_DEBUG=y.
+ * you simply need to add your entry to the iwl_debug_levels array.
+ *
+ * If you do not see debug_level in  /sys/class/net/wlanX/device/debug_level
+ * then you do not have CONFIG_IWLWIFI_DEBUG defined in your kernel config file
  */
 
 #define IWL_DL_INFO		(1 << 0)
