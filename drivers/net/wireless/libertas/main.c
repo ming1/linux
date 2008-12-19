@@ -263,7 +263,7 @@ static ssize_t lbs_anycast_set(struct device *dev,
 static ssize_t lbs_prb_rsp_limit_get(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
-	struct lbs_private *priv = netdev_priv(to_net_dev(dev));
+	struct lbs_private *priv = to_net_dev(dev)->priv;
 	struct cmd_ds_mesh_access mesh_access;
 	int ret;
 	u32 retry_limit;
@@ -286,7 +286,7 @@ static ssize_t lbs_prb_rsp_limit_get(struct device *dev,
 static ssize_t lbs_prb_rsp_limit_set(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t count)
 {
-	struct lbs_private *priv = netdev_priv(to_net_dev(dev));
+	struct lbs_private *priv = to_net_dev(dev)->priv;
 	struct cmd_ds_mesh_access mesh_access;
 	int ret;
 	unsigned long retry_limit;
