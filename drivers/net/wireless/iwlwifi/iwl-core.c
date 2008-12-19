@@ -926,13 +926,13 @@ int iwl_set_tx_power(struct iwl_priv *priv, s8 tx_power, bool force)
 {
 	int ret = 0;
 	if (tx_power < IWL_TX_POWER_TARGET_POWER_MIN) {
-		IWL_WARNING("Requested user TXPOWER %d below limit.\n",
+		IWL_WARN(priv, "Requested user TXPOWER %d below limit.\n",
 			    priv->tx_power_user_lmt);
 		return -EINVAL;
 	}
 
 	if (tx_power > IWL_TX_POWER_TARGET_POWER_MAX) {
-		IWL_WARNING("Requested user TXPOWER %d above limit.\n",
+		IWL_WARN(priv, "Requested user TXPOWER %d above limit.\n",
 			    priv->tx_power_user_lmt);
 		return -EINVAL;
 	}
@@ -1195,7 +1195,7 @@ void iwl_dump_nic_error_log(struct iwl_priv *priv)
 
 	ret = iwl_grab_nic_access(priv);
 	if (ret) {
-		IWL_WARNING("Can not read from adapter at this time.\n");
+		IWL_WARN(priv, "Can not read from adapter at this time.\n");
 		return;
 	}
 
@@ -1299,7 +1299,7 @@ void iwl_dump_nic_event_log(struct iwl_priv *priv)
 
 	ret = iwl_grab_nic_access(priv);
 	if (ret) {
-		IWL_WARNING("Can not read from adapter at this time.\n");
+		IWL_WARN(priv, "Can not read from adapter at this time.\n");
 		return;
 	}
 
