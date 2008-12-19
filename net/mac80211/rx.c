@@ -670,6 +670,7 @@ static int ap_sta_ps_end(struct sta_info *sta)
 	struct ieee80211_local *local = sdata->local;
 	struct sk_buff *skb;
 	int sent = 0;
+	struct ieee80211_tx_info *info;
 	DECLARE_MAC_BUF(mac);
 
 	atomic_dec(&sdata->bss->num_sta_ps);
@@ -686,11 +687,13 @@ static int ap_sta_ps_end(struct sta_info *sta)
 
 	/* Send all buffered frames to the station */
 	while ((skb = skb_dequeue(&sta->tx_filtered)) != NULL) {
+		info = IEEE80211_SKB_CB(skb);
 		sent++;
-		skb->requeue = 1;
+		info->flags |= IEEE80211_TX_CTL_REQUEUE;
 		dev_queue_xmit(skb);
 	}
 	while ((skb = skb_dequeue(&sta->ps_tx_buf)) != NULL) {
+		info = IEEE80211_SKB_CB(skb);
 		local->total_ps_buffered--;
 		sent++;
 #ifdef CONFIG_MAC80211_VERBOSE_PS_DEBUG
@@ -698,7 +701,7 @@ static int ap_sta_ps_end(struct sta_info *sta)
 		       "since STA not sleeping anymore\n", sdata->dev->name,
 		       print_mac(mac, sta->sta.addr), sta->sta.aid);
 #endif /* CONFIG_MAC80211_VERBOSE_PS_DEBUG */
-		skb->requeue = 1;
+		info->flags |= IEEE80211_TX_CTL_REQUEUE;
 		dev_queue_xmit(skb);
 	}
 

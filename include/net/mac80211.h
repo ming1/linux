@@ -250,6 +250,7 @@ struct ieee80211_bss_conf {
  * @IEEE80211_TX_CTL_RATE_CTRL_PROBE: internal to mac80211, can be
  *	set by rate control algorithms to indicate probe rate, will
  *	be cleared for fragmented frames (except on the last fragment)
+ * @IEEE80211_TX_CTL_REQUEUE: REMOVE THIS
  */
 enum mac80211_tx_control_flags {
 	IEEE80211_TX_CTL_REQ_TX_STATUS		= BIT(0),
@@ -265,6 +266,9 @@ enum mac80211_tx_control_flags {
 	IEEE80211_TX_STAT_AMPDU			= BIT(10),
 	IEEE80211_TX_STAT_AMPDU_NO_BACK		= BIT(11),
 	IEEE80211_TX_CTL_RATE_CTRL_PROBE	= BIT(12),
+
+	/* XXX: remove this */
+	IEEE80211_TX_CTL_REQUEUE		= BIT(13),
 };
 
 enum mac80211_rate_control_flags {
@@ -851,9 +855,6 @@ enum ieee80211_tkip_key_type {
  * @IEEE80211_HW_SPECTRUM_MGMT:
  * 	Hardware supports spectrum management defined in 802.11h
  * 	Measurement, Channel Switch, Quieting, TPC
- *
- * @IEEE80211_HW_AMPDU_AGGREGATION:
- *	Hardware supports 11n A-MPDU aggregation.
  */
 enum ieee80211_hw_flags {
 	IEEE80211_HW_RX_INCLUDES_FCS			= 1<<1,
@@ -865,7 +866,6 @@ enum ieee80211_hw_flags {
 	IEEE80211_HW_SIGNAL_DBM				= 1<<7,
 	IEEE80211_HW_NOISE_DBM				= 1<<8,
 	IEEE80211_HW_SPECTRUM_MGMT			= 1<<9,
-	IEEE80211_HW_AMPDU_AGGREGATION			= 1<<10,
 };
 
 /**

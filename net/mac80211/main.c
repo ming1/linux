@@ -386,6 +386,8 @@ static void ieee80211_handle_filtered_frame(struct ieee80211_local *local,
 					    struct sta_info *sta,
 					    struct sk_buff *skb)
 {
+	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
+
 	sta->tx_filtered_count++;
 
 	/*
@@ -432,9 +434,10 @@ static void ieee80211_handle_filtered_frame(struct ieee80211_local *local,
 		return;
 	}
 
-	if (!test_sta_flags(sta, WLAN_STA_PS) && !skb->requeue) {
+	if (!test_sta_flags(sta, WLAN_STA_PS) &&
+	    !(info->flags & IEEE80211_TX_CTL_REQUEUE)) {
 		/* Software retry the packet once */
-		skb->requeue = 1;
+		info->flags |= IEEE80211_TX_CTL_REQUEUE;
 		ieee80211_remove_tx_extra(local, sta->key, skb);
 		dev_queue_xmit(skb);
 		return;
