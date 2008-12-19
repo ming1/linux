@@ -2,8 +2,6 @@
 
 #include <linux/types.h>
 #include <linux/etherdevice.h>
-#include <linux/ieee80211.h>
-#include <linux/if_arp.h>
 #include <net/lib80211.h>
 
 #include "assoc.h"
@@ -344,12 +342,12 @@ static int lbs_adhoc_start(struct lbs_private *priv,
 	WARN_ON(!assoc_req->channel);
 
 	/* set Physical parameter set */
-	cmd.phyparamset.dsparamset.elementid = WLAN_EID_DS_PARAMS;
+	cmd.phyparamset.dsparamset.elementid = MFIE_TYPE_DS_SET;
 	cmd.phyparamset.dsparamset.len = 1;
 	cmd.phyparamset.dsparamset.currentchan = assoc_req->channel;
 
 	/* set IBSS parameter set */
-	cmd.ssparamset.ibssparamset.elementid = WLAN_EID_IBSS_PARAMS;
+	cmd.ssparamset.ibssparamset.elementid = MFIE_TYPE_IBSS_SET;
 	cmd.ssparamset.ibssparamset.len = 2;
 	cmd.ssparamset.ibssparamset.atimwindow = 0;
 
@@ -433,8 +431,8 @@ static inline int match_bss_no_security(struct lbs_802_11_security *secinfo,
 {
 	if (!secinfo->wep_enabled  && !secinfo->WPAenabled
 	    && !secinfo->WPA2enabled
-	    && match_bss->wpa_ie[0] != WLAN_EID_GENERIC
-	    && match_bss->rsn_ie[0] != WLAN_EID_RSN
+	    && match_bss->wpa_ie[0] != MFIE_TYPE_GENERIC
+	    && match_bss->rsn_ie[0] != MFIE_TYPE_RSN
 	    && !(match_bss->capability & WLAN_CAPABILITY_PRIVACY))
 		return 1;
 	else
@@ -456,7 +454,7 @@ static inline int match_bss_wpa(struct lbs_802_11_security *secinfo,
 				struct bss_descriptor *match_bss)
 {
 	if (!secinfo->wep_enabled && secinfo->WPAenabled
-	    && (match_bss->wpa_ie[0] == WLAN_EID_GENERIC)
+	    && (match_bss->wpa_ie[0] == MFIE_TYPE_GENERIC)
 	    /* privacy bit may NOT be set in some APs like LinkSys WRT54G
 	    && (match_bss->capability & WLAN_CAPABILITY_PRIVACY) */
 	   )
@@ -469,7 +467,7 @@ static inline int match_bss_wpa2(struct lbs_802_11_security *secinfo,
 				 struct bss_descriptor *match_bss)
 {
 	if (!secinfo->wep_enabled && secinfo->WPA2enabled &&
-	    (match_bss->rsn_ie[0] == WLAN_EID_RSN)
+	    (match_bss->rsn_ie[0] == MFIE_TYPE_RSN)
 	    /* privacy bit may NOT be set in some APs like LinkSys WRT54G
 	    (match_bss->capability & WLAN_CAPABILITY_PRIVACY) */
 	   )
@@ -483,8 +481,8 @@ static inline int match_bss_dynamic_wep(struct lbs_802_11_security *secinfo,
 {
 	if (!secinfo->wep_enabled && !secinfo->WPAenabled
 	    && !secinfo->WPA2enabled
-	    && (match_bss->wpa_ie[0] != WLAN_EID_GENERIC)
-	    && (match_bss->rsn_ie[0] != WLAN_EID_RSN)
+	    && (match_bss->wpa_ie[0] != MFIE_TYPE_GENERIC)
+	    && (match_bss->rsn_ie[0] != MFIE_TYPE_RSN)
 	    && (match_bss->capability & WLAN_CAPABILITY_PRIVACY))
 		return 1;
 	else
