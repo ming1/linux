@@ -348,7 +348,7 @@ static void ath_ani_calibrate(unsigned long data)
 	* don't calibrate when we're scanning.
 	* we are most likely not on our home channel.
 	*/
-	if (sc->rx.rxfilter & FIF_BCN_PRBRESP_PROMISC)
+	if (sc->rx_filter & FIF_BCN_PRBRESP_PROMISC)
 		return;
 
 	/* Long calibration runs independently of short calibration. */
@@ -487,9 +487,9 @@ static void ath9k_tasklet(unsigned long data)
 
 		if (status &
 		    (ATH9K_INT_RX | ATH9K_INT_RXEOL | ATH9K_INT_RXORN)) {
-			spin_lock_bh(&sc->rx.rxflushlock);
+			spin_lock_bh(&sc->sc_rxflushlock);
 			ath_rx_tasklet(sc, 0);
-			spin_unlock_bh(&sc->rx.rxflushlock);
+			spin_unlock_bh(&sc->sc_rxflushlock);
 		}
 		/* XXX: optimize this */
 		if (status & ATH9K_INT_TX)
@@ -1307,7 +1307,7 @@ static void ath_detach(struct ath_softc *sc)
 	/* cleanup tx queues */
 	for (i = 0; i < ATH9K_NUM_TX_QUEUES; i++)
 		if (ATH_TXQ_SETUP(sc, i))
-			ath_tx_cleanupq(sc, &sc->tx.txq[i]);
+			ath_tx_cleanupq(sc, &sc->sc_txq[i]);
 
 	ath9k_hw_detach(sc->sc_ah);
 	ath9k_exit_debug(sc);
@@ -1398,15 +1398,15 @@ static int ath_init(u16 devid, struct ath_softc *sc)
 	 * priority.  Note that the hal handles reseting
 	 * these queues at the needed time.
 	 */
-	sc->beacon.beaconq = ath_beaconq_setup(ah);
-	if (sc->beacon.beaconq == -1) {
+	sc->sc_bhalq = ath_beaconq_setup(ah);
+	if (sc->sc_bhalq == -1) {
 		DPRINTF(sc, ATH_DBG_FATAL,
 			"Unable to setup a beacon xmit queue\n");
 		error = -EIO;
 		goto bad2;
 	}
-	sc->beacon.cabq = ath_txq_setup(sc, ATH9K_TX_QUEUE_CAB, 0);
-	if (sc->beacon.cabq == NULL) {
+	sc->sc_cabq = ath_txq_setup(sc, ATH9K_TX_QUEUE_CAB, 0);
+	if (sc->sc_cabq == NULL) {
 		DPRINTF(sc, ATH_DBG_FATAL,
 			"Unable to setup CAB xmit queue\n");
 		error = -EIO;
@@ -1416,8 +1416,8 @@ static int ath_init(u16 devid, struct ath_softc *sc)
 	sc->sc_config.cabqReadytime = ATH_CABQ_READY_TIME;
 	ath_cabq_update(sc);
 
-	for (i = 0; i < ARRAY_SIZE(sc->tx.hwq_map); i++)
-		sc->tx.hwq_map[i] = -1;
+	for (i = 0; i < ARRAY_SIZE(sc->sc_haltype2q); i++)
+		sc->sc_haltype2q[i] = -1;
 
 	/* Setup data queues */
 	/* NB: ensure BK queue is the lowest priority h/w queue */
@@ -1497,7 +1497,7 @@ static int ath_init(u16 devid, struct ath_softc *sc)
 	sc->sc_rx_chainmask = ah->ah_caps.rx_chainmask;
 
 	ath9k_hw_setcapability(ah, ATH9K_CAP_DIVERSITY, 1, true, NULL);
-	sc->rx.defant = ath9k_hw_getdefantenna(ah);
+	sc->sc_defant = ath9k_hw_getdefantenna(ah);
 
 	ath9k_hw_getmac(ah, sc->sc_myaddr);
 	if (ah->ah_caps.hw_caps & ATH9K_HW_CAP_BSSIDMASK) {
@@ -1506,11 +1506,11 @@ static int ath_init(u16 devid, struct ath_softc *sc)
 		ath9k_hw_setbssidmask(ah, sc->sc_bssidmask);
 	}
 
-	sc->beacon.slottime = ATH9K_SLOT_TIME_9;	/* default to short slot time */
+	sc->sc_slottime = ATH9K_SLOT_TIME_9;	/* default to short slot time */
 
 	/* initialize beacon slots */
-	for (i = 0; i < ARRAY_SIZE(sc->beacon.bslot); i++)
-		sc->beacon.bslot[i] = ATH_IF_ID_ANY;
+	for (i = 0; i < ARRAY_SIZE(sc->sc_bslot); i++)
+		sc->sc_bslot[i] = ATH_IF_ID_ANY;
 
 	/* save MISC configurations */
 	sc->sc_config.swBeaconProcess = 1;
@@ -1536,7 +1536,7 @@ bad2:
 	/* cleanup tx queues */
 	for (i = 0; i < ATH9K_NUM_TX_QUEUES; i++)
 		if (ATH_TXQ_SETUP(sc, i))
-			ath_tx_cleanupq(sc, &sc->tx.txq[i]);
+			ath_tx_cleanupq(sc, &sc->sc_txq[i]);
 bad:
 	if (ah)
 		ath9k_hw_detach(ah);
@@ -1674,9 +1674,9 @@ int ath_reset(struct ath_softc *sc, bool retry_tx)
 		int i;
 		for (i = 0; i < ATH9K_NUM_TX_QUEUES; i++) {
 			if (ATH_TXQ_SETUP(sc, i)) {
-				spin_lock_bh(&sc->tx.txq[i].axq_lock);
-				ath_txq_schedule(sc, &sc->tx.txq[i]);
-				spin_unlock_bh(&sc->tx.txq[i].axq_lock);
+				spin_lock_bh(&sc->sc_txq[i].axq_lock);
+				ath_txq_schedule(sc, &sc->sc_txq[i]);
+				spin_unlock_bh(&sc->sc_txq[i].axq_lock);
 			}
 		}
 	}
@@ -1811,19 +1811,19 @@ int ath_get_hal_qnum(u16 queue, struct ath_softc *sc)
 
 	switch (queue) {
 	case 0:
-		qnum = sc->tx.hwq_map[ATH9K_WME_AC_VO];
+		qnum = sc->sc_haltype2q[ATH9K_WME_AC_VO];
 		break;
 	case 1:
-		qnum = sc->tx.hwq_map[ATH9K_WME_AC_VI];
+		qnum = sc->sc_haltype2q[ATH9K_WME_AC_VI];
 		break;
 	case 2:
-		qnum = sc->tx.hwq_map[ATH9K_WME_AC_BE];
+		qnum = sc->sc_haltype2q[ATH9K_WME_AC_BE];
 		break;
 	case 3:
-		qnum = sc->tx.hwq_map[ATH9K_WME_AC_BK];
+		qnum = sc->sc_haltype2q[ATH9K_WME_AC_BK];
 		break;
 	default:
-		qnum = sc->tx.hwq_map[ATH9K_WME_AC_BE];
+		qnum = sc->sc_haltype2q[ATH9K_WME_AC_BE];
 		break;
 	}
 
@@ -1994,9 +1994,9 @@ static int ath9k_tx(struct ieee80211_hw *hw,
 	if (info->flags & IEEE80211_TX_CTL_ASSIGN_SEQ) {
 		struct ieee80211_hdr *hdr = (struct ieee80211_hdr *) skb->data;
 		if (info->flags & IEEE80211_TX_CTL_FIRST_FRAGMENT)
-			sc->tx.seq_no += 0x10;
+			sc->seq_no += 0x10;
 		hdr->seq_ctrl &= cpu_to_le16(IEEE80211_SCTL_FRAG);
-		hdr->seq_ctrl |= cpu_to_le16(sc->tx.seq_no);
+		hdr->seq_ctrl |= cpu_to_le16(sc->seq_no);
 	}
 
 	/* Add the padding after the header if this is not already done */
@@ -2050,7 +2050,7 @@ static void ath9k_stop(struct ieee80211_hw *hw)
 		ath_stoprecv(sc);
 		ath9k_hw_phy_disable(sc->sc_ah);
 	} else
-		sc->rx.rxlink = NULL;
+		sc->sc_rxlink = NULL;
 
 #if defined(CONFIG_RFKILL) || defined(CONFIG_RFKILL_MODULE)
 	if (sc->sc_ah->ah_caps.hw_caps & ATH9K_HW_CAP_RFSILENT)
@@ -2132,7 +2132,7 @@ static void ath9k_remove_interface(struct ieee80211_hw *hw,
 	/* Reclaim beacon resources */
 	if (sc->sc_ah->ah_opmode == NL80211_IFTYPE_AP ||
 	    sc->sc_ah->ah_opmode == NL80211_IFTYPE_ADHOC) {
-		ath9k_hw_stoptxdma(sc->sc_ah, sc->beacon.beaconq);
+		ath9k_hw_stoptxdma(sc->sc_ah, sc->sc_bhalq);
 		ath_beacon_return(sc, avp);
 	}
 
@@ -2253,7 +2253,7 @@ static int ath9k_config_interface(struct ieee80211_hw *hw,
 		 * causes reconfiguration; we may be called
 		 * with beacon transmission active.
 		 */
-		ath9k_hw_stoptxdma(sc->sc_ah, sc->beacon.beaconq);
+		ath9k_hw_stoptxdma(sc->sc_ah, sc->sc_bhalq);
 
 		error = ath_beacon_alloc(sc, 0);
 		if (error != 0)
@@ -2299,7 +2299,7 @@ static void ath9k_configure_filter(struct ieee80211_hw *hw,
 	changed_flags &= SUPPORTED_FILTERS;
 	*total_flags &= SUPPORTED_FILTERS;
 
-	sc->rx.rxfilter = *total_flags;
+	sc->rx_filter = *total_flags;
 	rfilt = ath_calcrxfilter(sc);
 	ath9k_hw_setrxfilter(sc->sc_ah, rfilt);
 
@@ -2308,7 +2308,7 @@ static void ath9k_configure_filter(struct ieee80211_hw *hw,
 			ath9k_hw_write_associd(sc->sc_ah, ath_bcast_mac, 0);
 	}
 
-	DPRINTF(sc, ATH_DBG_CONFIG, "Set HW RX filter: 0x%x\n", sc->rx.rxfilter);
+	DPRINTF(sc, ATH_DBG_CONFIG, "Set HW RX filter: 0x%x\n", sc->rx_filter);
 }
 
 static void ath9k_sta_notify(struct ieee80211_hw *hw,
