@@ -134,7 +134,7 @@ enum {
 	REPLY_TX_POWER_DBM_CMD = 0x98,
 	MEASURE_ABORT_NOTIFICATION = 0x99,	/* not used */
 
-	/* Bluetooth device coexistence config command */
+	/* Bluetooth device coexistance config command */
 	REPLY_BT_CONFIG = 0x9b,
 
 	/* Statistics */
@@ -185,7 +185,7 @@ struct iwl_cmd_header {
 	u8 cmd;		/* Command ID:  REPLY_RXON, etc. */
 	u8 flags;	/* 0:5 reserved, 6 abort, 7 internal */
 	/*
-	 * The driver sets up the sequence number to values of its choosing.
+	 * The driver sets up the sequence number to values of its chosing.
 	 * uCode does not use this value, but passes it back to the driver
 	 * when sending the response to each driver-originated command, so
 	 * the driver can match the response to the command.  Since the values
@@ -347,7 +347,7 @@ struct iwl4965_tx_power_db {
 } __attribute__ ((packed));
 
 /**
- * Command REPLY_TX_POWER_DBM_CMD = 0x98
+ * Commad REPLY_TX_POWER_DBM_CMD = 0x98
  * struct iwl5000_tx_power_dbm_cmd
  */
 #define IWL50_TX_POWER_AUTO 0x7f
@@ -383,7 +383,7 @@ struct iwl5000_tx_power_dbm_cmd {
  * calculating txpower settings:
  *
  * 1)  Power supply voltage indication.  The voltage sensor outputs higher
- *     values for lower voltage, and vice verse.
+ *     values for lower voltage, and vice versa.
  *
  * 2)  Temperature measurement parameters, for each of two channel widths
  *     (20 MHz and 40 MHz) supported by the radios.  Temperature sensing
@@ -622,7 +622,7 @@ struct iwl4965_rxon_cmd {
 	u8 ofdm_ht_dual_stream_basic_rates;
 } __attribute__ ((packed));
 
-/* 5000 HW just extend this command */
+/* 5000 HW just extend this cmmand */
 struct iwl_rxon_cmd {
 	u8 node_addr[6];
 	__le16 reserved1;
@@ -1113,7 +1113,7 @@ struct iwl4965_rx_non_cfg_phy {
 #define IWL50_OFDM_RSSI_C_BIT_POS 0
 
 struct iwl5000_non_cfg_phy {
-	__le32 non_cfg_phy[IWL50_RX_RES_PHY_CNT];  /* up to 8 phy entries */
+	__le32 non_cfg_phy[IWL50_RX_RES_PHY_CNT];  /* upto 8 phy entries */
 } __attribute__ ((packed));
 
 
@@ -1169,7 +1169,7 @@ struct iwl4965_rx_mpdu_res_start {
 
 /* REPLY_TX Tx flags field */
 
-/* 1: Use RTS/CTS protocol or CTS-to-self if spec allows it
+/* 1: Use RTS/CTS protocol or CTS-to-self if spec alows it
  * before this frame. if CTS-to-self required check
  * RXON_FLG_SELF_CTS_EN status. */
 #define TX_CMD_FLG_RTS_CTS_MSK __constant_cpu_to_le32(1 << 0)
@@ -1529,7 +1529,7 @@ struct iwl4965_tx_resp {
 
 /*
  * definitions for initial rate index field
- * bits [3:0] initial rate index
+ * bits [3:0] inital rate index
  * bits [6:4] rate table color, used for the initial rate
  * bit-7 invalid rate indication
  *   i.e. rate was not chosen from rate table
@@ -1768,7 +1768,7 @@ struct iwl_link_qual_agg_params {
  * match the modulation characteristics of the history set.
  *
  * When using block-ack (aggregation), all frames are transmitted at the same
- * rate, since there is no per-attempt acknowledgment from the destination
+ * rate, since there is no per-attempt acknowledgement from the destination
  * station.  The Tx response struct iwl_tx_resp indicates the Tx rate in
  * rate_n_flags field.  After receiving a block-ack, the driver can update
  * history for the entire block all at once.
@@ -1907,7 +1907,7 @@ struct iwl_link_quality_cmd {
  *
  * 3945 and 4965 support hardware handshake with Bluetooth device on
  * same platform.  Bluetooth device alerts wireless device when it will Tx;
- * wireless device can delay or kill its own Tx to accommodate.
+ * wireless device can delay or kill its own Tx to accomodate.
  */
 struct iwl4965_bt_cmd {
 	u8 flags;
@@ -2069,7 +2069,7 @@ struct iwl4965_spectrum_notification {
  *              '11' Illegal set
  *
  * NOTE: if sleep_interval[SLEEP_INTRVL_TABLE_SIZE-1] > DTIM period then
- * ucode assume sleep over DTIM is allowed and we don't need to wake up
+ * ucode assume sleep over DTIM is allowed and we don't need to wakeup
  * for every DTIM.
  */
 #define IWL_POWER_VEC_SIZE 5
@@ -3017,11 +3017,11 @@ struct iwl_wimax_coex_event_entry {
 
 /* COEX flag masks */
 
-/* Station table is valid */
+/* Staion table is valid */
 #define COEX_FLAGS_STA_TABLE_VALID_MSK      (0x1)
-/* UnMask wake up src at unassociated sleep */
+/* UnMask wakeup src at unassociated sleep */
 #define COEX_FLAGS_UNASSOC_WA_UNMASK_MSK    (0x4)
-/* UnMask wake up src at associated sleep */
+/* UnMask wakeup src at associated sleep */
 #define COEX_FLAGS_ASSOC_WA_UNMASK_MSK      (0x8)
 /* Enable CoEx feature. */
 #define COEX_FLAGS_COEX_ENABLE_MSK          (0x80)
