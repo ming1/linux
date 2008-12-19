@@ -25,10 +25,10 @@ static void ath9k_hw_set_txq_interrupts(struct ath_hal *ah,
 	struct ath_hal_5416 *ahp = AH5416(ah);
 
 	DPRINTF(ah->ah_sc, ATH_DBG_INTERRUPT,
-		"tx ok 0x%x err 0x%x desc 0x%x eol 0x%x urn 0x%x\n",
-		ahp->ah_txOkInterruptMask, ahp->ah_txErrInterruptMask,
-		ahp->ah_txDescInterruptMask, ahp->ah_txEolInterruptMask,
-		ahp->ah_txUrnInterruptMask);
+		"%s: tx ok 0x%x err 0x%x desc 0x%x eol 0x%x urn 0x%x\n",
+		__func__, ahp->ah_txOkInterruptMask,
+		ahp->ah_txErrInterruptMask, ahp->ah_txDescInterruptMask,
+		ahp->ah_txEolInterruptMask, ahp->ah_txUrnInterruptMask);
 
 	REG_WRITE(ah, AR_IMR_S0,
 		  SM(ahp->ah_txOkInterruptMask, AR_IMR_S0_QCU_TXOK)
@@ -126,7 +126,7 @@ bool ath9k_hw_puttxbuf(struct ath_hal *ah, u32 q, u32 txdp)
 
 bool ath9k_hw_txstart(struct ath_hal *ah, u32 q)
 {
-	DPRINTF(ah->ah_sc, ATH_DBG_QUEUE, "queue %u\n", q);
+	DPRINTF(ah->ah_sc, ATH_DBG_QUEUE, "%s: queue %u\n", __func__, q);
 
 	REG_WRITE(ah, AR_Q_TXE, 1 << q);
 
@@ -207,8 +207,9 @@ bool ath9k_hw_stoptxdma(struct ath_hal *ah, u32 q)
 				break;
 
 			DPRINTF(ah->ah_sc, ATH_DBG_QUEUE,
-				"TSF have moved while trying to set "
-				"quiet time TSF: 0x%08x\n", tsfLow);
+				"%s: TSF have moved while trying to set "
+				"quiet time TSF: 0x%08x\n",
+				__func__, tsfLow);
 		}
 
 		REG_SET_BIT(ah, AR_DIAG_SW, AR_DIAG_FORCE_CH_IDLE_HIGH);
@@ -221,8 +222,9 @@ bool ath9k_hw_stoptxdma(struct ath_hal *ah, u32 q)
 		while (ath9k_hw_numtxpending(ah, q)) {
 			if ((--wait) == 0) {
 				DPRINTF(ah->ah_sc, ATH_DBG_XMIT,
-					"Failed to stop Tx DMA in 100 "
-					"msec after killing last frame\n");
+					"%s: Failed to stop Tx DMA in 100 "
+					"msec after killing last frame\n",
+					__func__);
 				break;
 			}
 			udelay(100);
@@ -521,17 +523,19 @@ bool ath9k_hw_set_txq_props(struct ath_hal *ah, int q,
 	struct ath9k_tx_queue_info *qi;
 
 	if (q >= pCap->total_queues) {
-		DPRINTF(ah->ah_sc, ATH_DBG_QUEUE, "invalid queue num %u\n", q);
+		DPRINTF(ah->ah_sc, ATH_DBG_QUEUE, "%s: invalid queue num %u\n",
+			 __func__, q);
 		return false;
 	}
 
 	qi = &ahp->ah_txq[q];
 	if (qi->tqi_type == ATH9K_TX_QUEUE_INACTIVE) {
-		DPRINTF(ah->ah_sc, ATH_DBG_QUEUE, "inactive queue\n");
+		DPRINTF(ah->ah_sc, ATH_DBG_QUEUE, "%s: inactive queue\n",
+			 __func__);
 		return false;
 	}
 
-	DPRINTF(ah->ah_sc, ATH_DBG_QUEUE, "queue %p\n", qi);
+	DPRINTF(ah->ah_sc, ATH_DBG_QUEUE, "%s: queue %p\n", __func__, qi);
 
 	qi->tqi_ver = qinfo->tqi_ver;
 	qi->tqi_subtype = qinfo->tqi_subtype;
@@ -589,13 +593,15 @@ bool ath9k_hw_get_txq_props(struct ath_hal *ah, int q,
 	struct ath9k_tx_queue_info *qi;
 
 	if (q >= pCap->total_queues) {
-		DPRINTF(ah->ah_sc, ATH_DBG_QUEUE, "invalid queue num %u\n", q);
+		DPRINTF(ah->ah_sc, ATH_DBG_QUEUE, "%s: invalid queue num %u\n",
+			 __func__, q);
 		return false;
 	}
 
 	qi = &ahp->ah_txq[q];
 	if (qi->tqi_type == ATH9K_TX_QUEUE_INACTIVE) {
-		DPRINTF(ah->ah_sc, ATH_DBG_QUEUE, "inactive queue\n");
+		DPRINTF(ah->ah_sc, ATH_DBG_QUEUE, "%s: inactive queue\n",
+			 __func__);
 		return false;
 	}
 
@@ -645,21 +651,22 @@ int ath9k_hw_setuptxqueue(struct ath_hal *ah, enum ath9k_tx_queue type,
 				break;
 		if (q == pCap->total_queues) {
 			DPRINTF(ah->ah_sc, ATH_DBG_QUEUE,
-				"no available tx queue\n");
+				"%s: no available tx queue\n", __func__);
 			return -1;
 		}
 		break;
 	default:
-		DPRINTF(ah->ah_sc, ATH_DBG_QUEUE, "bad tx queue type %u\n", type);
+		DPRINTF(ah->ah_sc, ATH_DBG_QUEUE, "%s: bad tx queue type %u\n",
+			__func__, type);
 		return -1;
 	}
 
-	DPRINTF(ah->ah_sc, ATH_DBG_QUEUE, "queue %u\n", q);
+	DPRINTF(ah->ah_sc, ATH_DBG_QUEUE, "%s: queue %u\n", __func__, q);
 
 	qi = &ahp->ah_txq[q];
 	if (qi->tqi_type != ATH9K_TX_QUEUE_INACTIVE) {
 		DPRINTF(ah->ah_sc, ATH_DBG_QUEUE,
-			"tx queue %u already active\n", q);
+			"%s: tx queue %u already active\n", __func__, q);
 		return -1;
 	}
 	memset(qi, 0, sizeof(struct ath9k_tx_queue_info));
@@ -690,16 +697,19 @@ bool ath9k_hw_releasetxqueue(struct ath_hal *ah, u32 q)
 	struct ath9k_tx_queue_info *qi;
 
 	if (q >= pCap->total_queues) {
-		DPRINTF(ah->ah_sc, ATH_DBG_QUEUE, "invalid queue num %u\n", q);
+		DPRINTF(ah->ah_sc, ATH_DBG_QUEUE, "%s: invalid queue num %u\n",
+			 __func__, q);
 		return false;
 	}
 	qi = &ahp->ah_txq[q];
 	if (qi->tqi_type == ATH9K_TX_QUEUE_INACTIVE) {
-		DPRINTF(ah->ah_sc, ATH_DBG_QUEUE, "inactive queue %u\n", q);
+		DPRINTF(ah->ah_sc, ATH_DBG_QUEUE, "%s: inactive queue %u\n",
+			 __func__, q);
 		return false;
 	}
 
-	DPRINTF(ah->ah_sc, ATH_DBG_QUEUE, "release queue %u\n", q);
+	DPRINTF(ah->ah_sc, ATH_DBG_QUEUE, "%s: release queue %u\n",
+		__func__, q);
 
 	qi->tqi_type = ATH9K_TX_QUEUE_INACTIVE;
 	ahp->ah_txOkInterruptMask &= ~(1 << q);
@@ -721,17 +731,19 @@ bool ath9k_hw_resettxqueue(struct ath_hal *ah, u32 q)
 	u32 cwMin, chanCwMin, value;
 
 	if (q >= pCap->total_queues) {
-		DPRINTF(ah->ah_sc, ATH_DBG_QUEUE, "invalid queue num %u\n", q);
+		DPRINTF(ah->ah_sc, ATH_DBG_QUEUE, "%s: invalid queue num %u\n",
+			 __func__, q);
 		return false;
 	}
 
 	qi = &ahp->ah_txq[q];
 	if (qi->tqi_type == ATH9K_TX_QUEUE_INACTIVE) {
-		DPRINTF(ah->ah_sc, ATH_DBG_QUEUE, "inactive queue %u\n", q);
+		DPRINTF(ah->ah_sc, ATH_DBG_QUEUE, "%s: inactive queue %u\n",
+			 __func__, q);
 		return true;
 	}
 
-	DPRINTF(ah->ah_sc, ATH_DBG_QUEUE, "reset queue %u\n", q);
+	DPRINTF(ah->ah_sc, ATH_DBG_QUEUE, "%s: reset queue %u\n", __func__, q);
 
 	if (qi->tqi_cwmin == ATH9K_TXQ_USEDEFAULT) {
 		if (chan && IS_CHAN_B(chan))
@@ -964,7 +976,8 @@ bool ath9k_hw_setrxabort(struct ath_hal *ah, bool set)
 
 			reg = REG_READ(ah, AR_OBS_BUS_1);
 			DPRINTF(ah->ah_sc, ATH_DBG_FATAL,
-				"rx failed to go idle in 10 ms RXSM=0x%x\n", reg);
+				"%s: rx failed to go idle in 10 ms RXSM=0x%x\n",
+				__func__, reg);
 
 			return false;
 		}
@@ -1009,8 +1022,9 @@ bool ath9k_hw_stopdmarecv(struct ath_hal *ah)
 
 	if (!ath9k_hw_wait(ah, AR_CR, AR_CR_RXE, 0)) {
 		DPRINTF(ah->ah_sc, ATH_DBG_QUEUE,
-			"dma failed to stop in 10ms\n"
+			"%s: dma failed to stop in 10ms\n"
 			"AR_CR=0x%08x\nAR_DIAG_SW=0x%08x\n",
+			__func__,
 			REG_READ(ah, AR_CR), REG_READ(ah, AR_DIAG_SW));
 		return false;
 	} else {
