@@ -123,6 +123,7 @@ ieee80211_add_rx_radiotap_header(struct ieee80211_local *local,
 	/* radiotap header, set always present flags */
 	rthdr->it_present =
 		cpu_to_le32((1 << IEEE80211_RADIOTAP_FLAGS) |
+			    (1 << IEEE80211_RADIOTAP_RATE) |
 			    (1 << IEEE80211_RADIOTAP_CHANNEL) |
 			    (1 << IEEE80211_RADIOTAP_ANTENNA) |
 			    (1 << IEEE80211_RADIOTAP_RX_FLAGS));
@@ -157,10 +158,8 @@ ieee80211_add_rx_radiotap_header(struct ieee80211_local *local,
 		 * - short-GI (status->flag & RX_FLAG_SHORT_GI)
 		 */
 		*pos = 0;
-	} else {
-		rthdr->it_present |= (1 << IEEE80211_RADIOTAP_RATE);
+	} else
 		*pos = rate->bitrate / 5;
-	}
 	pos++;
 
 	/* IEEE80211_RADIOTAP_CHANNEL */
