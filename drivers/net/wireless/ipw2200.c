@@ -87,7 +87,7 @@ static int channel = 0;
 static int mode = 0;
 
 static u32 ipw_debug_level;
-static int associate;
+static int associate = 1;
 static int auto_create = 1;
 static int led = 0;
 static int disable = 0;
@@ -11944,7 +11944,7 @@ module_param(disable, int, 0444);
 MODULE_PARM_DESC(disable, "manually disable the radio (default 0 [radio on])");
 
 module_param(associate, int, 0444);
-MODULE_PARM_DESC(associate, "auto associate when scanning (default off)");
+MODULE_PARM_DESC(associate, "auto associate when scanning (default on)");
 
 module_param(auto_create, int, 0444);
 MODULE_PARM_DESC(auto_create, "auto create adhoc network (default on)");
