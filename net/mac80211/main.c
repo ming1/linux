@@ -341,8 +341,7 @@ static void ieee80211_tasklet_handler(unsigned long data)
 			dev_kfree_skb(skb);
 			break ;
 		default:
-			WARN(1, "mac80211: Packet is of unknown type %d\n",
-			     skb->pkt_type);
+			WARN_ON(1);
 			dev_kfree_skb(skb);
 			break;
 		}
