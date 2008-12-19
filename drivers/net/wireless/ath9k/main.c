@@ -458,13 +458,12 @@ void ath_tx_complete(struct ath_softc *sc, struct sk_buff *skb,
 	DPRINTF(sc, ATH_DBG_XMIT,
 		"%s: TX complete: skb: %p\n", __func__, skb);
 
-	ieee80211_tx_info_clear_status(tx_info);
 	if (tx_info->flags & IEEE80211_TX_CTL_NO_ACK ||
 		tx_info->flags & IEEE80211_TX_STAT_TX_FILTERED) {
-		/* free driver's private data area of tx_info, XXX: HACK! */
-		if (tx_info->control.vif != NULL)
-			kfree(tx_info->control.vif);
-			tx_info->control.vif = NULL;
+		/* free driver's private data area of tx_info */
+		if (tx_info->driver_data[0] != NULL)
+			kfree(tx_info->driver_data[0]);
+			tx_info->driver_data[0] = NULL;
 	}
 
 	if (tx_status->flags & ATH_TX_BAR) {
@@ -472,12 +471,17 @@ void ath_tx_complete(struct ath_softc *sc, struct sk_buff *skb,
 		tx_status->flags &= ~ATH_TX_BAR;
 	}
 
-	if (!(tx_status->flags & (ATH_TX_ERROR | ATH_TX_XRETRY))) {
+	if (tx_status->flags & (ATH_TX_ERROR | ATH_TX_XRETRY)) {
+		if (!(tx_info->flags & IEEE80211_TX_CTL_NO_ACK)) {
+			/* Frame was not ACKed, but an ACK was expected */
+			tx_info->status.excessive_retries = 1;
+		}
+	} else {
 		/* Frame was ACKed */
 		tx_info->flags |= IEEE80211_TX_STAT_ACK;
 	}
 
-	tx_info->status.rates[0].count = tx_status->retries + 1;
+	tx_info->status.retry_count = tx_status->retries;
 
 	ieee80211_tx_status(hw, skb);
 	if (an)

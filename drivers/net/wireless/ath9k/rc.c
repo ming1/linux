@@ -1864,21 +1864,24 @@ static void ath_tx_status(void *priv, struct ieee80211_supported_band *sband,
 
 	hdr = (struct ieee80211_hdr *)skb->data;
 	fc = hdr->frame_control;
-	/* XXX: UGLY HACK!! */
-	tx_info_priv = (struct ath_tx_info_priv *)tx_info->control.vif;
+	tx_info_priv = (struct ath_tx_info_priv *)tx_info->driver_data[0];
 
 	spin_lock_bh(&sc->node_lock);
 	an = ath_node_find(sc, hdr->addr1);
 	spin_unlock_bh(&sc->node_lock);
 
-	if (tx_info_priv == NULL)
+	if (!an || !priv_sta || !ieee80211_is_data(fc)) {
+		if (tx_info->driver_data[0] != NULL) {
+			kfree(tx_info->driver_data[0]);
+			tx_info->driver_data[0] = NULL;
+		}
 		return;
-
-	if (an && priv_sta && ieee80211_is_data(fc))
+	}
+	if (tx_info->driver_data[0] != NULL) {
 		ath_rate_tx_complete(sc, an, priv_sta, tx_info_priv);
-
-	kfree(tx_info_priv);
-	tx_info->control.vif = NULL;
+		kfree(tx_info->driver_data[0]);
+		tx_info->driver_data[0] = NULL;
+	}
 }
 
 static void ath_tx_aggr_resp(struct ath_softc *sc,
@@ -1924,11 +1927,10 @@ static void ath_tx_aggr_resp(struct ath_softc *sc,
 	}
 }
 
-static void ath_get_rate(void *priv, struct ieee80211_sta *sta, void *priv_sta,
-			 struct ieee80211_tx_rate_control *txrc)
+static void ath_get_rate(void *priv, struct ieee80211_supported_band *sband,
+			 struct ieee80211_sta *sta, void *priv_sta,
+			 struct sk_buff *skb, struct rate_selection *sel)
 {
-	struct ieee80211_supported_band *sband = txrc->sband;
-	struct sk_buff *skb = txrc->skb;
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
 	struct ath_softc *sc = priv;
 	struct ieee80211_hw *hw = sc->hw;
@@ -1944,17 +1946,17 @@ static void ath_get_rate(void *priv, struct ieee80211_sta *sta, void *priv_sta,
 
 	DPRINTF(sc, ATH_DBG_RATE, "%s\n", __func__);
 
-	/* allocate driver private area of tx_info, XXX: UGLY HACK! */
-	tx_info->control.vif = kzalloc(sizeof(*tx_info_priv), GFP_ATOMIC);
-	tx_info_priv = (struct ath_tx_info_priv *)tx_info->control.vif;
-	ASSERT(tx_info_priv != NULL);
+	/* allocate driver private area of tx_info */
+	tx_info->driver_data[0] = kzalloc(sizeof(*tx_info_priv), GFP_ATOMIC);
+	ASSERT(tx_info->driver_data[0] != NULL);
+	tx_info_priv = (struct ath_tx_info_priv *)tx_info->driver_data[0];
 
 	lowest_idx = rate_lowest_index(sband, sta);
 	tx_info_priv->min_rate = (sband->bitrates[lowest_idx].bitrate * 2) / 10;
 	/* lowest rate for management and multicast/broadcast frames */
 	if (!ieee80211_is_data(fc) ||
 	    is_multicast_ether_addr(hdr->addr1) || !sta) {
-		tx_info->control.rates[0].idx = lowest_idx;
+		sel->rate_idx = lowest_idx;
 		return;
 	}
 
@@ -1965,10 +1967,8 @@ static void ath_get_rate(void *priv, struct ieee80211_sta *sta, void *priv_sta,
 			  tx_info_priv->rcs,
 			  &is_probe,
 			  false);
-#if 0
 	if (is_probe)
 		sel->probe_idx = ath_rc_priv->tx_ratectrl.probe_rate;
-#endif
 
 	/* Ratecontrol sometimes returns invalid rate index */
 	if (tx_info_priv->rcs[0].rix != 0xff)
@@ -1976,7 +1976,7 @@ static void ath_get_rate(void *priv, struct ieee80211_sta *sta, void *priv_sta,
 	else
 		tx_info_priv->rcs[0].rix = ath_rc_priv->prev_data_rix;
 
-	tx_info->control.rates[0].idx = tx_info_priv->rcs[0].rix;
+	sel->rate_idx = tx_info_priv->rcs[0].rix;
 
 	/* Check if aggregation has to be enabled for this tid */
 

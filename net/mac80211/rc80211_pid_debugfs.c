@@ -43,7 +43,6 @@ void rate_control_pid_event_tx_status(struct rc_pid_event_buffer *buf,
 {
 	union rc_pid_event_data evd;
 
-	evd.flags = stat->flags;
 	memcpy(&evd.tx_status, stat, sizeof(struct ieee80211_tx_info));
 	rate_control_pid_event(buf, RC_PID_EVENT_TYPE_TX_STATUS, &evd);
 }
@@ -168,8 +167,8 @@ static ssize_t rate_control_pid_events_read(struct file *file, char __user *buf,
 	switch (ev->type) {
 	case RC_PID_EVENT_TYPE_TX_STATUS:
 		p += snprintf(pb + p, length - p, "tx_status %u %u",
-			      !(ev->data.flags & IEEE80211_TX_STAT_ACK),
-			      ev->data.tx_status.status.rates[0].idx);
+			      ev->data.tx_status.status.excessive_retries,
+			      ev->data.tx_status.status.retry_count);
 		break;
 	case RC_PID_EVENT_TYPE_RATE_CHANGE:
 		p += snprintf(pb + p, length - p, "rate_change %d %d",
