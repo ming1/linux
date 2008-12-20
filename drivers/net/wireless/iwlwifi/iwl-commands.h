@@ -294,7 +294,7 @@ struct iwl3945_power_per_rate {
  *        0x3)  54 Mbps
  *
  * Legacy CCK rate format for bits 7:0 (bit 8 must be "0", bit 9 "1"):
- *  3-0:   10)  1 Mbps
+ *  6-0:   10)  1 Mbps
  *         20)  2 Mbps
  *         55)  5.5 Mbps
  *        110)  11 Mbps
