@@ -3030,7 +3030,8 @@ static void iwl_mac_update_tkip_key(struct ieee80211_hw *hw,
 }
 
 static int iwl_mac_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
-			   const u8 *local_addr, const u8 *addr,
+			   struct ieee80211_vif *vif,
+			   struct ieee80211_sta *sta,
 			   struct ieee80211_key_conf *key)
 {
 	struct iwl_priv *priv = hw->priv;
@@ -3038,6 +3039,9 @@ static int iwl_mac_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 	int ret = 0;
 	u8 sta_id = IWL_INVALID_STATION;
 	u8 is_default_wep_key = 0;
+	static const u8 bcast_addr[ETH_ALEN] =
+		{ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, };
+	static const u8 *addr;
 
 	IWL_DEBUG_MAC80211("enter\n");
 
@@ -3046,9 +3050,7 @@ static int iwl_mac_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 		return -EOPNOTSUPP;
 	}
 
-	if (is_zero_ether_addr(addr))
-		/* only support pairwise keys */
-		return -EOPNOTSUPP;
+	addr = sta ? sta->addr : bcast_addr;
 
 	sta_id = iwl_find_station(priv, addr);
 	if (sta_id == IWL_INVALID_STATION) {
