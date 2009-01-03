@@ -1,6 +1,7 @@
 /**
   * This file contains functions for 802.11D.
   */
+#include <asm/unaligned.h>
 #include <linux/ctype.h>
 #include <linux/kernel.h>
 #include <linux/wireless.h>
@@ -515,7 +516,7 @@ int lbs_cmd_802_11d_domain_info(struct lbs_private *priv,
 		cmd->size =
 		    cpu_to_le16(sizeof(pdomaininfo->action) + S_DS_GEN);
 		lbs_deb_hex(LBS_DEB_11D, "802_11D_DOMAIN_INFO", (u8 *) cmd,
-			le16_to_cpu(cmd->size));
+			get_unaligned_le16(&cmd->size));
 		goto done;
 	}
 
@@ -532,15 +533,16 @@ int lbs_cmd_802_11d_domain_info(struct lbs_private *priv,
 		       nr_subband * sizeof(struct ieeetypes_subbandset));
 
 		cmd->size = cpu_to_le16(sizeof(pdomaininfo->action) +
-					     le16_to_cpu(domain->header.len) +
-					     sizeof(struct mrvlietypesheader) +
-					     S_DS_GEN);
+				     get_unaligned_le16(&domain->header.len) +
+				     sizeof(struct mrvlietypesheader) +
+				     S_DS_GEN);
 	} else {
 		cmd->size =
 		    cpu_to_le16(sizeof(pdomaininfo->action) + S_DS_GEN);
 	}
 
-	lbs_deb_hex(LBS_DEB_11D, "802_11D_DOMAIN_INFO", (u8 *) cmd, le16_to_cpu(cmd->size));
+	lbs_deb_hex(LBS_DEB_11D, "802_11D_DOMAIN_INFO", (u8 *) cmd,
+		    get_unaligned_le16(&cmd->size));
 
 done:
 	lbs_deb_enter(LBS_DEB_11D);
@@ -557,16 +559,17 @@ int lbs_ret_802_11d_domain_info(struct cmd_ds_command *resp)
 {
 	struct cmd_ds_802_11d_domain_info *domaininfo = &resp->params.domaininforesp;
 	struct mrvlietypes_domainparamset *domain = &domaininfo->domain;
-	u16 action = le16_to_cpu(domaininfo->action);
+	u16 action = get_unaligned_le16(&domaininfo->action);
 	s16 ret = 0;
 	u8 nr_subband = 0;
 
 	lbs_deb_enter(LBS_DEB_11D);
 
 	lbs_deb_hex(LBS_DEB_11D, "domain info resp", (u8 *) resp,
-		(int)le16_to_cpu(resp->size));
+		(int)get_unaligned_le16(&resp->size));
 
-	nr_subband = (le16_to_cpu(domain->header.len) - COUNTRY_CODE_LEN) /
+	nr_subband = (get_unaligned_le16(&domain->header.len) -
+				COUNTRY_CODE_LEN) /
 		      sizeof(struct ieeetypes_subbandset);
 
 	lbs_deb_11d("domain info resp: nr_subband %d\n", nr_subband);

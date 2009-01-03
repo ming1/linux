@@ -1,3 +1,4 @@
+#include <asm/unaligned.h>
 #include <linux/netdevice.h>
 #include <linux/ethtool.h>
 #include <linux/delay.h>
@@ -90,14 +91,16 @@ static void lbs_ethtool_get_stats(struct net_device *dev,
 		return;
 	}
 
-	priv->mstats.fwd_drop_rbt = le32_to_cpu(mesh_access.data[0]);
-	priv->mstats.fwd_drop_ttl = le32_to_cpu(mesh_access.data[1]);
-	priv->mstats.fwd_drop_noroute = le32_to_cpu(mesh_access.data[2]);
-	priv->mstats.fwd_drop_nobuf = le32_to_cpu(mesh_access.data[3]);
-	priv->mstats.fwd_unicast_cnt = le32_to_cpu(mesh_access.data[4]);
-	priv->mstats.fwd_bcast_cnt = le32_to_cpu(mesh_access.data[5]);
-	priv->mstats.drop_blind = le32_to_cpu(mesh_access.data[6]);
-	priv->mstats.tx_failed_cnt = le32_to_cpu(mesh_access.data[7]);
+	priv->mstats.fwd_drop_rbt = get_unaligned_le32(&mesh_access.data[0]);
+	priv->mstats.fwd_drop_ttl = get_unaligned_le32(&mesh_access.data[1]);
+	priv->mstats.fwd_drop_noroute =
+		get_unaligned_le32(&mesh_access.data[2]);
+	priv->mstats.fwd_drop_nobuf = get_unaligned_le32(&mesh_access.data[3]);
+	priv->mstats.fwd_unicast_cnt =
+		get_unaligned_le32(&mesh_access.data[4]);
+	priv->mstats.fwd_bcast_cnt = get_unaligned_le32(&mesh_access.data[5]);
+	priv->mstats.drop_blind = get_unaligned_le32(&mesh_access.data[6]);
+	priv->mstats.tx_failed_cnt = get_unaligned_le32(&mesh_access.data[7]);
 
 	data[0] = priv->mstats.fwd_drop_rbt;
 	data[1] = priv->mstats.fwd_drop_ttl;

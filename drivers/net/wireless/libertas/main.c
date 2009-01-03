@@ -4,6 +4,7 @@
   * thread etc..
   */
 
+#include <asm/unaligned.h>
 #include <linux/moduleparam.h>
 #include <linux/delay.h>
 #include <linux/etherdevice.h>
@@ -232,7 +233,8 @@ static ssize_t lbs_anycast_get(struct device *dev,
 	if (ret)
 		return ret;
 
-	return snprintf(buf, 12, "0x%X\n", le32_to_cpu(mesh_access.data[0]));
+	return snprintf(buf, 12, "0x%X\n",
+			get_unaligned_le32(&mesh_access.data[0]));
 }
 
 /**
@@ -844,7 +846,8 @@ static int lbs_thread(void *data)
 			if (++priv->nr_retries > 3) {
 				lbs_pr_info("Excessive timeouts submitting "
 					"command 0x%04x\n",
-					le16_to_cpu(cmdnode->cmdbuf->command));
+					get_unaligned_le16(&cmdnode->cmdbuf->
+							   command));
 				lbs_complete_command(priv, cmdnode, -ETIMEDOUT);
 				priv->nr_retries = 0;
 				if (priv->reset_card)
@@ -854,7 +857,8 @@ static int lbs_thread(void *data)
 				priv->dnld_sent = DNLD_RES_RECEIVED;
 				lbs_pr_info("requeueing command 0x%04x due "
 					"to timeout (#%d)\n",
-					le16_to_cpu(cmdnode->cmdbuf->command),
+					get_unaligned_le16(&cmdnode->cmdbuf->
+							   command),
 					priv->nr_retries);
 
 				/* Stick it back at the _top_ of the pending queue
@@ -1057,7 +1061,7 @@ static void command_timer_fn(unsigned long data)
 		goto out;
 
 	lbs_pr_info("command 0x%04x timed out\n",
-		le16_to_cpu(priv->cur_cmd->cmdbuf->command));
+		get_unaligned_le16(&priv->cur_cmd->cmdbuf->command));
 
 	priv->cmd_timed_out = 1;
 	wake_up_interruptible(&priv->waitq);

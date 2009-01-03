@@ -1,5 +1,6 @@
 /* Copyright (C) 2006, Red Hat, Inc. */
 
+#include <asm/unaligned.h>
 #include <linux/types.h>
 #include <linux/etherdevice.h>
 #include <linux/ieee80211.h>
@@ -264,7 +265,7 @@ static int lbs_adhoc_join(struct lbs_private *priv,
 	cmd.bss.ssparamset.ibssparamset.atimwindow = cpu_to_le16(bss->atimwindow);
 
 	if (assoc_req->secinfo.wep_enabled) {
-		u16 tmp = le16_to_cpu(cmd.bss.capability);
+		u16 tmp = get_unaligned_le16(&cmd.bss.capability);
 		tmp |= WLAN_CAPABILITY_PRIVACY;
 		cmd.bss.capability = cpu_to_le16(tmp);
 	}
@@ -1707,7 +1708,7 @@ int lbs_ret_80211_associate(struct lbs_private *priv,
 	 *                                    association response from the AP)
 	 */
 
-	status_code = le16_to_cpu(passocrsp->statuscode);
+	status_code = get_unaligned_le16(&passocrsp->statuscode);
 	switch (status_code) {
 	case 0x00:
 		break;
@@ -1739,7 +1740,7 @@ int lbs_ret_80211_associate(struct lbs_private *priv,
 	}
 
 	lbs_deb_hex(LBS_DEB_ASSOC, "ASSOC_RESP", (void *)&resp->params,
-		le16_to_cpu(resp->size) - S_DS_GEN);
+		get_unaligned_le16(&resp->size) - S_DS_GEN);
 
 	/* Send a Media Connected event, according to the Spec */
 	priv->connect_status = LBS_CONNECTED;
@@ -1773,8 +1774,8 @@ done:
 static int lbs_adhoc_post(struct lbs_private *priv, struct cmd_header *resp)
 {
 	int ret = 0;
-	u16 command = le16_to_cpu(resp->command);
-	u16 result = le16_to_cpu(resp->result);
+	u16 command = get_unaligned_le16(&resp->command);
+	u16 result = get_unaligned_le16(&resp->result);
 	struct cmd_ds_802_11_ad_hoc_result *adhoc_resp;
 	union iwreq_data wrqu;
 	struct bss_descriptor *bss;
