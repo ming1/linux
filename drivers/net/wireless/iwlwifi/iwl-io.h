@@ -87,18 +87,17 @@ static inline u32 __iwl_read32(char *f, u32 l, struct iwl_priv *priv, u32 ofs)
 #define iwl_read32(p, o) _iwl_read32(p, o)
 #endif
 
-#define IWL_POLL_INTERVAL 10	/* microseconds */
 static inline int _iwl_poll_bit(struct iwl_priv *priv, u32 addr,
 				u32 bits, u32 mask, int timeout)
 {
-	int t = 0;
+	int i = 0;
 
 	do {
 		if ((_iwl_read32(priv, addr) & mask) == (bits & mask))
-			return t;
-		udelay(IWL_POLL_INTERVAL);
-		t += IWL_POLL_INTERVAL;
-	} while (t < timeout);
+			return i;
+		udelay(10);
+		i += 10;
+	} while (i < timeout);
 
 	return -ETIMEDOUT;
 }
