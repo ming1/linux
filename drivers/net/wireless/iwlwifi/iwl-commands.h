@@ -213,11 +213,10 @@ struct iwl_cmd_header {
 } __attribute__ ((packed));
 
 /**
- * iwlagn rate_n_flags bit fields
+ * 4965 rate_n_flags bit fields
  *
- * rate_n_flags format is used in following iwlagn commands:
+ * rate_n_flags format is used in following 4965 commands:
  *  REPLY_RX (response only)
- *  REPLY_RX_MPDU (response only)
  *  REPLY_TX (both command and response)
  *  REPLY_TX_LINK_QUALITY_CMD
  *
@@ -231,9 +230,8 @@ struct iwl_cmd_header {
  *        6)  54 Mbps
  *        7)  60 Mbps
  *
- *  4-3:  0)  Single stream (SISO)
+ *    3:  0)  Single stream (SISO)
  *        1)  Dual stream (MIMO)
- *        2)  Triple stream (MIMO)
  *
  *    5:  Value of 0x20 in bits 7:0 indicates 6 Mbps FAT duplicate data
  *
@@ -254,8 +252,8 @@ struct iwl_cmd_header {
  *        110)  11 Mbps
  */
 #define RATE_MCS_CODE_MSK 0x7
-#define RATE_MCS_SPATIAL_POS 3
-#define RATE_MCS_SPATIAL_MSK 0x18
+#define RATE_MCS_MIMO_POS 3
+#define RATE_MCS_MIMO_MSK 0x8
 #define RATE_MCS_HT_DUP_POS 5
 #define RATE_MCS_HT_DUP_MSK 0x20
 
