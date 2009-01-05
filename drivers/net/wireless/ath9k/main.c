@@ -413,7 +413,7 @@ void ath_get_beaconconfig(struct ath_softc *sc,
 }
 
 void ath_tx_complete(struct ath_softc *sc, struct sk_buff *skb,
-		     struct ath_xmit_status *tx_status)
+		     struct ath_xmit_status *tx_status, struct ath_node *an)
 {
 	struct ieee80211_hw *hw = sc->hw;
 	struct ieee80211_tx_info *tx_info = IEEE80211_SKB_CB(skb);
@@ -907,7 +907,6 @@ static int ath_attach(u16 devid,
 	}
 
 	hw->queues = 4;
-	hw->sta_data_size = sizeof(struct ath_node);
 
 	/* Register rate control */
 	hw->rate_control_algorithm = "ath9k_rate_control";
@@ -1018,12 +1017,9 @@ static int ath9k_start(struct ieee80211_hw *hw)
 static int ath9k_tx(struct ieee80211_hw *hw,
 		    struct sk_buff *skb)
 {
-	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	struct ath_softc *sc = hw->priv;
-	struct ath_tx_control txctl;
 	int hdrlen, padsize;
-
-	memset(&txctl, 0, sizeof(struct ath_tx_control));
+	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 
 	/*
 	 * As a temporary workaround, assign seq# here; this will likely need
@@ -1048,24 +1044,17 @@ static int ath9k_tx(struct ieee80211_hw *hw,
 		memmove(skb->data, skb->data + padsize, hdrlen);
 	}
 
-	/* Check if a tx queue is available */
-
-	txctl.txq = ath_test_get_txq(sc, skb);
-	if (!txctl.txq)
-		goto exit;
-
 	DPRINTF(sc, ATH_DBG_XMIT, "%s: transmitting packet, skb: %p\n",
 		__func__,
 		skb);
 
-	if (ath_tx_start(sc, skb, &txctl) != 0) {
+	if (ath_tx_start(sc, skb) != 0) {
 		DPRINTF(sc, ATH_DBG_XMIT, "%s: TX failed\n", __func__);
-		goto exit;
+		dev_kfree_skb_any(skb);
+		/* FIXME: Check for proper return value from ATH_DEV */
+		return 0;
 	}
 
-	return 0;
-exit:
-	dev_kfree_skb_any(skb);
 	return 0;
 }
 
