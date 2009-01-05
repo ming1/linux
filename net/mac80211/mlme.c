@@ -1134,8 +1134,7 @@ static void ieee80211_rx_mgmt_deauth(struct ieee80211_sub_if_data *sdata,
 	reason_code = le16_to_cpu(mgmt->u.deauth.reason_code);
 
 	if (ifsta->flags & IEEE80211_STA_AUTHENTICATED)
-		printk(KERN_DEBUG "%s: deauthenticated (Reason: %u)\n",
-				sdata->dev->name, reason_code);
+		printk(KERN_DEBUG "%s: deauthenticated\n", sdata->dev->name);
 
 	if (ifsta->state == IEEE80211_STA_MLME_AUTHENTICATE ||
 	    ifsta->state == IEEE80211_STA_MLME_ASSOCIATE ||
@@ -1167,8 +1166,7 @@ static void ieee80211_rx_mgmt_disassoc(struct ieee80211_sub_if_data *sdata,
 	reason_code = le16_to_cpu(mgmt->u.disassoc.reason_code);
 
 	if (ifsta->flags & IEEE80211_STA_ASSOCIATED)
-		printk(KERN_DEBUG "%s: disassociated (Reason: %u)\n",
-				sdata->dev->name, reason_code);
+		printk(KERN_DEBUG "%s: disassociated\n", sdata->dev->name);
 
 	if (ifsta->state == IEEE80211_STA_MLME_ASSOCIATED) {
 		ifsta->state = IEEE80211_STA_MLME_ASSOCIATE;
