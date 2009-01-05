@@ -738,6 +738,7 @@ static void ath_detach(struct ath_softc *sc)
 	ieee80211_unregister_hw(hw);
 
 	ath_rate_control_unregister();
+	ath_rate_detach(sc->sc_rc);
 
 	ath_rx_cleanup(sc);
 	ath_tx_cleanup(sc);
