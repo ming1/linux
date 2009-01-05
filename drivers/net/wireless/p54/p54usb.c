@@ -28,8 +28,6 @@ MODULE_AUTHOR("Michael Wu <flamingice@sourmilk.net>");
 MODULE_DESCRIPTION("Prism54 USB wireless driver");
 MODULE_LICENSE("GPL");
 MODULE_ALIAS("prism54usb");
-MODULE_FIRMWARE("isl3886usb");
-MODULE_FIRMWARE("isl3887usb");
 
 static struct usb_device_id p54u_table[] __devinitdata = {
 	/* Version 1 devices (pci chip + net2280) */
@@ -417,13 +415,10 @@ static int p54u_upload_firmware_3887(struct ieee80211_hw *dev)
 		goto err_reset;
 	}
 
-	err = request_firmware(&fw_entry, "isl3887usb", &priv->udev->dev);
+	err = request_firmware(&fw_entry, "isl3887usb_bare", &priv->udev->dev);
 	if (err) {
-		printk(KERN_ERR "p54usb: cannot find firmware (isl3887usb)\n");
-		err = request_firmware(&fw_entry, "isl3887usb_bare",
-			&priv->udev->dev);
-		if (err)
-			goto err_req_fw_failed;
+		printk(KERN_ERR "p54usb: cannot find firmware (isl3887usb_bare)!\n");
+		goto err_req_fw_failed;
 	}
 
 	err = p54_parse_firmware(dev, fw_entry);
@@ -558,15 +553,11 @@ static int p54u_upload_firmware_net2280(struct ieee80211_hw *dev)
 		return -ENOMEM;
 	}
 
-	err = request_firmware(&fw_entry, "isl3886usb", &priv->udev->dev);
+	err = request_firmware(&fw_entry, "isl3890usb", &priv->udev->dev);
 	if (err) {
-		printk(KERN_ERR "p54usb: cannot find firmware (isl3886usb)\n");
-		err = request_firmware(&fw_entry, "isl3890usb",
-			&priv->udev->dev);
-		if (err) {
-			kfree(buf);
-			return err;
-			}
+		printk(KERN_ERR "p54usb: cannot find firmware (isl3890usb)!\n");
+		kfree(buf);
+		return err;
 	}
 
 	err = p54_parse_firmware(dev, fw_entry);
