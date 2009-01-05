@@ -711,7 +711,14 @@ int __regulatory_hint(struct wiphy *wiphy, enum reg_set_by set_by,
 
 	kfree(last_request);
 	last_request = request;
-	return call_crda(alpha2);
+	r = call_crda(alpha2);
+
+#ifndef CONFIG_WIRELESS_OLD_REGULATORY
+	if (r)
+		printk(KERN_ERR "cfg80211: Failed calling CRDA\n");
+#endif
+
+	return r;
 }
 
 void regulatory_hint(struct wiphy *wiphy, const char *alpha2)
