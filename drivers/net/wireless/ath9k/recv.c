@@ -41,19 +41,19 @@ static void ath_rx_buf_link(struct ath_softc *sc, struct ath_buf *bf)
 	ASSERT(skb != NULL);
 	ds->ds_vdata = skb->data;
 
-	/* setup rx descriptors. The rx.bufsize here tells the harware
+	/* setup rx descriptors. The sc_rxbufsize here tells the harware
 	 * how much data it can DMA to us and that we are prepared
 	 * to process */
 	ath9k_hw_setuprxdesc(ah, ds,
-			     sc->rx.bufsize,
+			     sc->sc_rxbufsize,
 			     0);
 
-	if (sc->rx.rxlink == NULL)
+	if (sc->sc_rxlink == NULL)
 		ath9k_hw_putrxbuf(ah, bf->bf_daddr);
 	else
-		*sc->rx.rxlink = bf->bf_daddr;
+		*sc->sc_rxlink = bf->bf_daddr;
 
-	sc->rx.rxlink = &ds->ds_link;
+	sc->sc_rxlink = &ds->ds_link;
 	ath9k_hw_rxena(ah);
 }
 
@@ -61,8 +61,8 @@ static void ath_setdefantenna(struct ath_softc *sc, u32 antenna)
 {
 	/* XXX block beacon interrupts */
 	ath9k_hw_setantenna(sc->sc_ah, antenna);
-	sc->rx.defant = antenna;
-	sc->rx.rxotherant = 0;
+	sc->sc_defant = antenna;
+	sc->sc_rxotherant = 0;
 }
 
 /*
@@ -271,20 +271,20 @@ int ath_rx_init(struct ath_softc *sc, int nbufs)
 	int error = 0;
 
 	do {
-		spin_lock_init(&sc->rx.rxflushlock);
+		spin_lock_init(&sc->sc_rxflushlock);
 		sc->sc_flags &= ~SC_OP_RXFLUSH;
-		spin_lock_init(&sc->rx.rxbuflock);
+		spin_lock_init(&sc->sc_rxbuflock);
 
-		sc->rx.bufsize = roundup(IEEE80211_MAX_MPDU_LEN,
+		sc->sc_rxbufsize = roundup(IEEE80211_MAX_MPDU_LEN,
 					   min(sc->sc_cachelsz,
 					       (u16)64));
 
 		DPRINTF(sc, ATH_DBG_CONFIG, "cachelsz %u rxbufsize %u\n",
-			sc->sc_cachelsz, sc->rx.bufsize);
+			sc->sc_cachelsz, sc->sc_rxbufsize);
 
 		/* Initialize rx descriptors */
 
-		error = ath_descdma_setup(sc, &sc->rx.rxdma, &sc->rx.rxbuf,
+		error = ath_descdma_setup(sc, &sc->sc_rxdma, &sc->sc_rxbuf,
 					  "rx", nbufs, 1);
 		if (error != 0) {
 			DPRINTF(sc, ATH_DBG_FATAL,
@@ -292,8 +292,8 @@ int ath_rx_init(struct ath_softc *sc, int nbufs)
 			break;
 		}
 
-		list_for_each_entry(bf, &sc->rx.rxbuf, list) {
-			skb = ath_rxbuf_alloc(sc, sc->rx.bufsize);
+		list_for_each_entry(bf, &sc->sc_rxbuf, list) {
+			skb = ath_rxbuf_alloc(sc, sc->sc_rxbufsize);
 			if (skb == NULL) {
 				error = -ENOMEM;
 				break;
@@ -301,7 +301,7 @@ int ath_rx_init(struct ath_softc *sc, int nbufs)
 
 			bf->bf_mpdu = skb;
 			bf->bf_buf_addr = pci_map_single(sc->pdev, skb->data,
-							 sc->rx.bufsize,
+							 sc->sc_rxbufsize,
 							 PCI_DMA_FROMDEVICE);
 			if (unlikely(pci_dma_mapping_error(sc->pdev,
 				  bf->bf_buf_addr))) {
@@ -314,7 +314,7 @@ int ath_rx_init(struct ath_softc *sc, int nbufs)
 			}
 			bf->bf_dmacontext = bf->bf_buf_addr;
 		}
-		sc->rx.rxlink = NULL;
+		sc->sc_rxlink = NULL;
 
 	} while (0);
 
@@ -329,14 +329,14 @@ void ath_rx_cleanup(struct ath_softc *sc)
 	struct sk_buff *skb;
 	struct ath_buf *bf;
 
-	list_for_each_entry(bf, &sc->rx.rxbuf, list) {
+	list_for_each_entry(bf, &sc->sc_rxbuf, list) {
 		skb = bf->bf_mpdu;
 		if (skb)
 			dev_kfree_skb(skb);
 	}
 
-	if (sc->rx.rxdma.dd_desc_len != 0)
-		ath_descdma_cleanup(sc, &sc->rx.rxdma, &sc->rx.rxbuf);
+	if (sc->sc_rxdma.dd_desc_len != 0)
+		ath_descdma_cleanup(sc, &sc->sc_rxdma, &sc->sc_rxbuf);
 }
 
 /*
@@ -374,7 +374,7 @@ u32 ath_calcrxfilter(struct ath_softc *sc)
 
 	/* Can't set HOSTAP into promiscous mode */
 	if (((sc->sc_ah->ah_opmode != NL80211_IFTYPE_AP) &&
-	     (sc->rx.rxfilter & FIF_PROMISC_IN_BSS)) ||
+	     (sc->rx_filter & FIF_PROMISC_IN_BSS)) ||
 	    (sc->sc_ah->ah_opmode == NL80211_IFTYPE_MONITOR)) {
 		rfilt |= ATH9K_RX_FILTER_PROM;
 		/* ??? To prevent from sending ACK */
@@ -400,25 +400,25 @@ int ath_startrecv(struct ath_softc *sc)
 	struct ath_hal *ah = sc->sc_ah;
 	struct ath_buf *bf, *tbf;
 
-	spin_lock_bh(&sc->rx.rxbuflock);
-	if (list_empty(&sc->rx.rxbuf))
+	spin_lock_bh(&sc->sc_rxbuflock);
+	if (list_empty(&sc->sc_rxbuf))
 		goto start_recv;
 
-	sc->rx.rxlink = NULL;
-	list_for_each_entry_safe(bf, tbf, &sc->rx.rxbuf, list) {
+	sc->sc_rxlink = NULL;
+	list_for_each_entry_safe(bf, tbf, &sc->sc_rxbuf, list) {
 		ath_rx_buf_link(sc, bf);
 	}
 
 	/* We could have deleted elements so the list may be empty now */
-	if (list_empty(&sc->rx.rxbuf))
+	if (list_empty(&sc->sc_rxbuf))
 		goto start_recv;
 
-	bf = list_first_entry(&sc->rx.rxbuf, struct ath_buf, list);
+	bf = list_first_entry(&sc->sc_rxbuf, struct ath_buf, list);
 	ath9k_hw_putrxbuf(ah, bf->bf_daddr);
 	ath9k_hw_rxena(ah);
 
 start_recv:
-	spin_unlock_bh(&sc->rx.rxbuflock);
+	spin_unlock_bh(&sc->sc_rxbuflock);
 	ath_opmode_init(sc);
 	ath9k_hw_startpcureceive(ah);
 
@@ -434,25 +434,25 @@ bool ath_stoprecv(struct ath_softc *sc)
 	ath9k_hw_setrxfilter(ah, 0);
 	stopped = ath9k_hw_stopdmarecv(ah);
 	mdelay(3); /* 3ms is long enough for 1 frame */
-	sc->rx.rxlink = NULL;
+	sc->sc_rxlink = NULL;
 
 	return stopped;
 }
 
 void ath_flushrecv(struct ath_softc *sc)
 {
-	spin_lock_bh(&sc->rx.rxflushlock);
+	spin_lock_bh(&sc->sc_rxflushlock);
 	sc->sc_flags |= SC_OP_RXFLUSH;
 	ath_rx_tasklet(sc, 1);
 	sc->sc_flags &= ~SC_OP_RXFLUSH;
-	spin_unlock_bh(&sc->rx.rxflushlock);
+	spin_unlock_bh(&sc->sc_rxflushlock);
 }
 
 int ath_rx_tasklet(struct ath_softc *sc, int flush)
 {
 #define PA2DESC(_sc, _pa)                                               \
-	((struct ath_desc *)((caddr_t)(_sc)->rx.rxdma.dd_desc +		\
-			     ((_pa) - (_sc)->rx.rxdma.dd_desc_paddr)))
+	((struct ath_desc *)((caddr_t)(_sc)->sc_rxdma.dd_desc +		\
+			     ((_pa) - (_sc)->sc_rxdma.dd_desc_paddr)))
 
 	struct ath_buf *bf;
 	struct ath_desc *ds;
@@ -464,19 +464,19 @@ int ath_rx_tasklet(struct ath_softc *sc, int flush)
 	bool decrypt_error = false;
 	u8 keyix;
 
-	spin_lock_bh(&sc->rx.rxbuflock);
+	spin_lock_bh(&sc->sc_rxbuflock);
 
 	do {
 		/* If handling rx interrupt and flush is in progress => exit */
 		if ((sc->sc_flags & SC_OP_RXFLUSH) && (flush == 0))
 			break;
 
-		if (list_empty(&sc->rx.rxbuf)) {
-			sc->rx.rxlink = NULL;
+		if (list_empty(&sc->sc_rxbuf)) {
+			sc->sc_rxlink = NULL;
 			break;
 		}
 
-		bf = list_first_entry(&sc->rx.rxbuf, struct ath_buf, list);
+		bf = list_first_entry(&sc->sc_rxbuf, struct ath_buf, list);
 		ds = bf->bf_desc;
 
 		/*
@@ -498,8 +498,8 @@ int ath_rx_tasklet(struct ath_softc *sc, int flush)
 			struct ath_buf *tbf;
 			struct ath_desc *tds;
 
-			if (list_is_last(&bf->list, &sc->rx.rxbuf)) {
-				sc->rx.rxlink = NULL;
+			if (list_is_last(&bf->list, &sc->sc_rxbuf)) {
+				sc->sc_rxlink = NULL;
 				break;
 			}
 
@@ -539,7 +539,7 @@ int ath_rx_tasklet(struct ath_softc *sc, int flush)
 			goto requeue;
 
 		/* The status portion of the descriptor could get corrupted. */
-		if (sc->rx.bufsize < ds->ds_rxstat.rs_datalen)
+		if (sc->sc_rxbufsize < ds->ds_rxstat.rs_datalen)
 			goto requeue;
 
 		if (!ath_rx_prepare(skb, ds, &rx_status, &decrypt_error, sc))
@@ -547,21 +547,21 @@ int ath_rx_tasklet(struct ath_softc *sc, int flush)
 
 		/* Ensure we always have an skb to requeue once we are done
 		 * processing the current buffer's skb */
-		requeue_skb = ath_rxbuf_alloc(sc, sc->rx.bufsize);
+		requeue_skb = ath_rxbuf_alloc(sc, sc->sc_rxbufsize);
 
 		/* If there is no memory we ignore the current RX'd frame,
 		 * tell hardware it can give us a new frame using the old
-		 * skb and put it at the tail of the sc->rx.rxbuf list for
+		 * skb and put it at the tail of the sc->sc_rxbuf list for
 		 * processing. */
 		if (!requeue_skb)
 			goto requeue;
 
 		/* Sync and unmap the frame */
 		pci_dma_sync_single_for_cpu(sc->pdev, bf->bf_buf_addr,
-					    sc->rx.bufsize,
+					    sc->sc_rxbufsize,
 					    PCI_DMA_FROMDEVICE);
 		pci_unmap_single(sc->pdev, bf->bf_buf_addr,
-				 sc->rx.bufsize,
+				 sc->sc_rxbufsize,
 				 PCI_DMA_FROMDEVICE);
 
 		skb_put(skb, ds->ds_rxstat.rs_datalen);
@@ -595,7 +595,7 @@ int ath_rx_tasklet(struct ath_softc *sc, int flush)
 		/* We will now give hardware our shiny new allocated skb */
 		bf->bf_mpdu = requeue_skb;
 		bf->bf_buf_addr = pci_map_single(sc->pdev, requeue_skb->data,
-					 sc->rx.bufsize,
+					 sc->sc_rxbufsize,
 					 PCI_DMA_FROMDEVICE);
 		if (unlikely(pci_dma_mapping_error(sc->pdev,
 			  bf->bf_buf_addr))) {
@@ -611,18 +611,18 @@ int ath_rx_tasklet(struct ath_softc *sc, int flush)
 		 * change the default rx antenna if rx diversity chooses the
 		 * other antenna 3 times in a row.
 		 */
-		if (sc->rx.defant != ds->ds_rxstat.rs_antenna) {
-			if (++sc->rx.rxotherant >= 3)
+		if (sc->sc_defant != ds->ds_rxstat.rs_antenna) {
+			if (++sc->sc_rxotherant >= 3)
 				ath_setdefantenna(sc, ds->ds_rxstat.rs_antenna);
 		} else {
-			sc->rx.rxotherant = 0;
+			sc->sc_rxotherant = 0;
 		}
 requeue:
-		list_move_tail(&bf->list, &sc->rx.rxbuf);
+		list_move_tail(&bf->list, &sc->sc_rxbuf);
 		ath_rx_buf_link(sc, bf);
 	} while (1);
 
-	spin_unlock_bh(&sc->rx.rxbuflock);
+	spin_unlock_bh(&sc->sc_rxbuflock);
 
 	return 0;
 #undef PA2DESC
