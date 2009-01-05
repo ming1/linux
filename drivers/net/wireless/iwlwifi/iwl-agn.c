@@ -2249,6 +2249,7 @@ static void iwl_bg_set_monitor(struct work_struct *work)
 	}
 
 	mutex_unlock(&priv->mutex);
+	ieee80211_notify_mac(priv->hw, IEEE80211_NOTIFY_RE_ASSOC);
 }
 
 static void iwl_bg_run_time_calib_work(struct work_struct *work)
