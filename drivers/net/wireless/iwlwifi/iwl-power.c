@@ -39,6 +39,7 @@
 #include "iwl-commands.h"
 #include "iwl-debug.h"
 #include "iwl-power.h"
+#include "iwl-helpers.h"
 
 /*
  * Setting power level allow the card to go to sleep when not busy
