@@ -19,10 +19,11 @@ MODULE_DESCRIPTION(DRV_DESCRIPTION);
 MODULE_AUTHOR("John W. Linville <linville@tuxdriver.com>");
 MODULE_LICENSE("GPL");
 
-const char *print_ssid(char *buf, const char *ssid, u8 ssid_len)
+const char *escape_ssid(const char *ssid, u8 ssid_len)
 {
+	static char escaped[IEEE80211_MAX_SSID_LEN * 4 + 1];
 	const char *s = ssid;
-	char *d = buf;
+	char *d = escaped;
 
 	ssid_len = min_t(u8, ssid_len, IEEE80211_MAX_SSID_LEN);
 	while (ssid_len--) {
@@ -47,9 +48,9 @@ const char *print_ssid(char *buf, const char *ssid, u8 ssid_len)
 		s++;
 	}
 	*d = '\0';
-	return buf;
+	return escaped;
 }
-EXPORT_SYMBOL(print_ssid);
+EXPORT_SYMBOL(escape_ssid);
 
 static int __init ieee80211_init(void)
 {
