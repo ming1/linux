@@ -760,8 +760,7 @@ static void ath_tx_complete_aggr_rifs(struct ath_softc *sc,
 				 * when perform internal reset in this routine.
 				 * Only enable reset in STA mode for now.
 				 */
-				if (sc->sc_ah->ah_opmode ==
-					    NL80211_IFTYPE_STATION)
+				if (sc->sc_ah->ah_opmode == ATH9K_M_STA)
 					needreset = 1;
 			}
 		} else {
