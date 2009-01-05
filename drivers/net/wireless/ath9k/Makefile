@@ -11,6 +11,4 @@ ath9k-y +=	hw.o \
 		xmit.o \
 		rc.o
 
-ath9k-$(CONFIG_ATH9K_DEBUG) += debug.o
-
 obj-$(CONFIG_ATH9K) += ath9k.o
