@@ -47,6 +47,7 @@ MODULE_DEVICE_TABLE(pci, p54p_table);
 static int p54p_upload_firmware(struct ieee80211_hw *dev)
 {
 	struct p54p_priv *priv = dev->priv;
+	const struct firmware *fw_entry = NULL;
 	__le32 reg;
 	int err;
 	__le32 *data;
@@ -72,15 +73,23 @@ static int p54p_upload_firmware(struct ieee80211_hw *dev)
 	P54P_WRITE(ctrl_stat, reg);
 	wmb();
 
-	/* wait for the firmware to reset properly */
-	mdelay(10);
+	err = request_firmware(&fw_entry, "isl3886pci", &priv->pdev->dev);
+	if (err) {
+		printk(KERN_ERR "%s (p54pci): cannot find firmware "
+		       "(isl3886pci)\n", pci_name(priv->pdev));
+		err = request_firmware(&fw_entry, "isl3886", &priv->pdev->dev);
+		if (err)
+			return err;
+	}
 
-	err = p54_parse_firmware(dev, priv->firmware);
-	if (err)
+	err = p54_parse_firmware(dev, fw_entry);
+	if (err) {
+		release_firmware(fw_entry);
 		return err;
+	}
 
-	data = (__le32 *) priv->firmware->data;
-	remains = priv->firmware->size;
+	data = (__le32 *) fw_entry->data;
+	remains = fw_entry->size;
 	device_addr = ISL38XX_DEV_FIRMWARE_ADDR;
 	while (remains) {
 		u32 i = 0;
@@ -97,6 +106,8 @@ static int p54p_upload_firmware(struct ieee80211_hw *dev)
 		remains -= left;
 		P54P_READ(int_enable);
 	}
+
+	release_firmware(fw_entry);
 
 	reg = P54P_READ(ctrl_stat);
 	reg &= cpu_to_le32(~ISL38XX_CTRL_STAT_CLKRUN);
@@ -490,14 +501,15 @@ static int __devinit p54p_probe(struct pci_dev *pdev,
 	if (mem_len < sizeof(struct p54p_csr)) {
 		printk(KERN_ERR "%s (p54pci): Too short PCI resources\n",
 		       pci_name(pdev));
-		goto err_disable_dev;
+		pci_disable_device(pdev);
+		return err;
 	}
 
 	err = pci_request_regions(pdev, "p54pci");
 	if (err) {
 		printk(KERN_ERR "%s (p54pci): Cannot obtain PCI resources\n",
 		       pci_name(pdev));
-		goto err_disable_dev;
+		return err;
 	}
 
 	if (pci_set_dma_mask(pdev, DMA_32BIT_MASK) ||
@@ -550,17 +562,6 @@ static int __devinit p54p_probe(struct pci_dev *pdev,
 	spin_lock_init(&priv->lock);
 	tasklet_init(&priv->rx_tasklet, p54p_rx_tasklet, (unsigned long)dev);
 
-	err = request_firmware(&priv->firmware, "isl3886pci",
-			       &priv->pdev->dev);
-	if (err) {
-		printk(KERN_ERR "%s (p54pci): cannot find firmware "
-			"(isl3886pci)\n", pci_name(priv->pdev));
-		err = request_firmware(&priv->firmware, "isl3886",
-				       &priv->pdev->dev);
-		if (err)
-			goto err_free_common;
-	}
-
 	err = p54p_open(dev);
 	if (err)
 		goto err_free_common;
@@ -579,7 +580,6 @@ static int __devinit p54p_probe(struct pci_dev *pdev,
 	return 0;
 
  err_free_common:
-	release_firmware(priv->firmware);
 	p54_free_common(dev);
 	pci_free_consistent(pdev, sizeof(*priv->ring_control),
 			    priv->ring_control, priv->ring_control_dma);
@@ -593,7 +593,6 @@ static int __devinit p54p_probe(struct pci_dev *pdev,
 
  err_free_reg:
 	pci_release_regions(pdev);
- err_disable_dev:
 	pci_disable_device(pdev);
 	return err;
 }
@@ -608,7 +607,6 @@ static void __devexit p54p_remove(struct pci_dev *pdev)
 
 	ieee80211_unregister_hw(dev);
 	priv = dev->priv;
-	release_firmware(priv->firmware);
 	pci_free_consistent(pdev, sizeof(*priv->ring_control),
 			    priv->ring_control, priv->ring_control_dma);
 	p54_free_common(dev);
