@@ -1413,8 +1413,7 @@ static void ath_tx_status(void *priv, struct ieee80211_supported_band *sband,
 	an = (struct ath_node *)sta->drv_priv;
 	final_ts_idx = tx_info_priv->tx.ts_rateindex;
 
-	if (!an || !priv_sta || !ieee80211_is_data(fc) ||
-	    !tx_info_priv->update_rc)
+	if (!an || !priv_sta || !ieee80211_is_data(fc))
 		goto exit;
 
 	if (tx_info_priv->tx.ts_status & ATH9K_TXERR_FILT)
