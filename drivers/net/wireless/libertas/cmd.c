@@ -160,8 +160,7 @@ out:
 	return ret;
 }
 
-int lbs_host_sleep_cfg(struct lbs_private *priv, uint32_t criteria,
-		struct wol_config *p_wol_config)
+int lbs_host_sleep_cfg(struct lbs_private *priv, uint32_t criteria)
 {
 	struct cmd_ds_host_sleep cmd_config;
 	int ret;
@@ -171,21 +170,10 @@ int lbs_host_sleep_cfg(struct lbs_private *priv, uint32_t criteria,
 	cmd_config.gpio = priv->wol_gpio;
 	cmd_config.gap = priv->wol_gap;
 
-	if (p_wol_config != NULL)
-		memcpy((uint8_t *)&cmd_config.wol_conf, (uint8_t *)p_wol_config,
-				sizeof(struct wol_config));
-	else
-		cmd_config.wol_conf.action = CMD_ACT_ACTION_NONE;
-
 	ret = lbs_cmd_with_response(priv, CMD_802_11_HOST_SLEEP_CFG, &cmd_config);
 	if (!ret) {
-		if (criteria) {
-			lbs_deb_cmd("Set WOL criteria to %x\n", criteria);
-			priv->wol_criteria = criteria;
-		} else
-			memcpy((uint8_t *) p_wol_config,
-					(uint8_t *)&cmd_config.wol_conf,
-					sizeof(struct wol_config));
+		lbs_deb_cmd("Set WOL criteria to %x\n", criteria);
+		priv->wol_criteria = criteria;
 	} else {
 		lbs_pr_info("HOST_SLEEP_CFG failed %d\n", ret);
 	}
