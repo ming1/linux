@@ -1595,7 +1595,7 @@ static u16 iwl3945_supported_rate_to_ie(u8 *ie, u16 supported_rate,
  */
 static u16 iwl3945_fill_probe_req(struct iwl3945_priv *priv,
 			      struct ieee80211_mgmt *frame,
-			      int left)
+			      int left, int is_direct)
 {
 	int len = 0;
 	u8 *pos = NULL;
@@ -1624,6 +1624,20 @@ static u16 iwl3945_fill_probe_req(struct iwl3945_priv *priv,
 	pos = &(frame->u.probe_req.variable[0]);
 	*pos++ = WLAN_EID_SSID;
 	*pos++ = 0;
+
+	/* fill in our direct SSID IE... */
+	if (is_direct) {
+		/* ...next IE... */
+		left -= 2 + priv->essid_len;
+		if (left < 0)
+			return 0;
+		/* ... fill it in... */
+		*pos++ = WLAN_EID_SSID;
+		*pos++ = priv->essid_len;
+		memcpy(pos, priv->essid, priv->essid_len);
+		pos += priv->essid_len;
+		len += 2 + priv->essid_len;
+	}
 
 	/* fill in supported rate */
 	/* ...next IE... */
@@ -6172,7 +6186,7 @@ static void iwl3945_bg_request_scan(struct work_struct *data)
 	 * that based on the direct_mask added to each channel entry */
 	scan->tx_cmd.len = cpu_to_le16(
 		iwl3945_fill_probe_req(priv, (struct ieee80211_mgmt *)scan->data,
-			IWL_MAX_SCAN_SIZE - sizeof(*scan)));
+			IWL_MAX_SCAN_SIZE - sizeof(*scan), 0));
 	scan->tx_cmd.tx_flags = TX_CMD_FLG_SEQ_CTL_MSK;
 	scan->tx_cmd.sta_id = priv->hw_setting.bcast_sta_id;
 	scan->tx_cmd.stop_time.life_time = TX_CMD_LIFE_TIME_INFINITE;
