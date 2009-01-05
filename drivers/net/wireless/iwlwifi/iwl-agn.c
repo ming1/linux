@@ -372,7 +372,7 @@ static void iwl_free_frame(struct iwl_priv *priv, struct iwl_frame *frame)
 
 static unsigned int iwl_fill_beacon_frame(struct iwl_priv *priv,
 					  struct ieee80211_hdr *hdr,
-					  int left)
+					  const u8 *dest, int left)
 {
 	if (!iwl_is_associated(priv) || !priv->ibss_beacon ||
 	    ((priv->iw_mode != NL80211_IFTYPE_ADHOC) &&
@@ -425,6 +425,7 @@ static unsigned int iwl_hw_get_beacon_cmd(struct iwl_priv *priv,
 	tx_beacon_cmd->tx.stop_time.life_time = TX_CMD_LIFE_TIME_INFINITE;
 
 	frame_size = iwl_fill_beacon_frame(priv, tx_beacon_cmd->frame,
+				iwl_bcast_addr,
 				sizeof(frame->u) - sizeof(*tx_beacon_cmd));
 
 	BUG_ON(frame_size > MAX_MPDU_SIZE);
