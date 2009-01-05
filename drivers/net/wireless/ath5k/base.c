@@ -546,8 +546,8 @@ ath5k_pci_probe(struct pci_dev *pdev,
 
 	/* set up multi-rate retry capabilities */
 	if (sc->ah->ah_version == AR5K_AR5212) {
-		hw->max_rates = 4;
-		hw->max_rate_tries = 11;
+		hw->max_altrates = 3;
+		hw->max_altrate_tries = 11;
 	}
 
 	/* Finish private driver data initialization */
@@ -1186,7 +1186,7 @@ ath5k_txbuf_setup(struct ath5k_softc *sc, struct ath5k_buf *bf)
 		ieee80211_get_hdrlen_from_skb(skb), AR5K_PKT_TYPE_NORMAL,
 		(sc->power_level * 2),
 		ieee80211_get_tx_rate(sc->hw, info)->hw_value,
-		info->control.rates[0].count, keyidx, 0, flags, 0, 0);
+		info->control.retry_limit, keyidx, 0, flags, 0, 0);
 	if (ret)
 		goto err_unmap;
 
@@ -1198,7 +1198,7 @@ ath5k_txbuf_setup(struct ath5k_softc *sc, struct ath5k_buf *bf)
 			break;
 
 		mrr_rate[i] = rate->hw_value;
-		mrr_tries[i] = info->control.rates[i + 1].count;
+		mrr_tries[i] = info->control.retries[i].limit;
 	}
 
 	ah->ah_setup_mrr_tx_desc(ah, ds,
@@ -1854,26 +1854,30 @@ ath5k_tx_processq(struct ath5k_softc *sc, struct ath5k_txq *txq)
 		pci_unmap_single(sc->pdev, bf->skbaddr, skb->len,
 				PCI_DMA_TODEVICE);
 
-		ieee80211_tx_info_clear_status(info);
+		memset(&info->status, 0, sizeof(info->status));
+		info->tx_rate_idx = ath5k_hw_to_driver_rix(sc,
+				ts.ts_rate[ts.ts_final_idx]);
+		info->status.retry_count = ts.ts_longretry;
+
 		for (i = 0; i < 4; i++) {
-			struct ieee80211_tx_rate *r =
-				&info->status.rates[i];
+			struct ieee80211_tx_altrate *r =
+				&info->status.retries[i];
 
 			if (ts.ts_rate[i]) {
-				r->idx = ath5k_hw_to_driver_rix(sc, ts.ts_rate[i]);
-				r->count = ts.ts_retry[i];
+				r->rate_idx = ath5k_hw_to_driver_rix(sc, ts.ts_rate[i]);
+				r->limit = ts.ts_retry[i];
 			} else {
-				r->idx = -1;
-				r->count = 0;
+				r->rate_idx = -1;
+				r->limit = 0;
 			}
 		}
 
-		/* count the successful attempt as well */
-		info->status.rates[ts.ts_final_idx].count++;
-
+		info->status.excessive_retries = 0;
 		if (unlikely(ts.ts_status)) {
 			sc->ll_stats.dot11ACKFailureCount++;
-			if (ts.ts_status & AR5K_TXERR_FILT)
+			if (ts.ts_status & AR5K_TXERR_XRETRY)
+				info->status.excessive_retries = 1;
+			else if (ts.ts_status & AR5K_TXERR_FILT)
 				info->flags |= IEEE80211_TX_STAT_TX_FILTERED;
 		} else {
 			info->flags |= IEEE80211_TX_STAT_ACK;
