@@ -2792,6 +2792,46 @@ static void prism2_check_sta_fw_version(local_info_t *local)
 }
 
 
+static void prism2_crypt_deinit_entries(local_info_t *local, int force)
+{
+	struct list_head *ptr, *n;
+	struct lib80211_crypt_data *entry;
+
+	for (ptr = local->crypt_info.crypt_deinit_list.next, n = ptr->next;
+	     ptr != &local->crypt_info.crypt_deinit_list;
+	     ptr = n, n = ptr->next) {
+		entry = list_entry(ptr, struct lib80211_crypt_data, list);
+
+		if (atomic_read(&entry->refcnt) != 0 && !force)
+			continue;
+
+		list_del(ptr);
+
+		if (entry->ops)
+			entry->ops->deinit(entry->priv);
+		kfree(entry);
+	}
+}
+
+
+static void prism2_crypt_deinit_handler(unsigned long data)
+{
+	local_info_t *local = (local_info_t *) data;
+	unsigned long flags;
+
+	spin_lock_irqsave(&local->lock, flags);
+	prism2_crypt_deinit_entries(local, 0);
+	if (!list_empty(&local->crypt_info.crypt_deinit_list)) {
+		printk(KERN_DEBUG "%s: entries remaining in delayed crypt "
+		       "deletion list\n", local->dev->name);
+		local->crypt_info.crypt_deinit_timer.expires = jiffies + HZ;
+		add_timer(&local->crypt_info.crypt_deinit_timer);
+	}
+	spin_unlock_irqrestore(&local->lock, flags);
+
+}
+
+
 static void hostap_passive_scan(unsigned long data)
 {
 	local_info_t *local = (local_info_t *) data;
@@ -3216,7 +3256,12 @@ while (0)
 	INIT_LIST_HEAD(&local->cmd_queue);
 	init_waitqueue_head(&local->hostscan_wq);
 
-	lib80211_crypt_info_init(&local->crypt_info, dev->name, &local->lock);
+	local->crypt_info.name = dev->name;
+	local->crypt_info.lock = &local->lock;
+	INIT_LIST_HEAD(&local->crypt_info.crypt_deinit_list);
+	init_timer(&local->crypt_info.crypt_deinit_timer);
+	local->crypt_info.crypt_deinit_timer.data = (unsigned long) local;
+	local->crypt_info.crypt_deinit_timer.function = prism2_crypt_deinit_handler;
 
 	init_timer(&local->passive_scan_timer);
 	local->passive_scan_timer.data = (unsigned long) local;
@@ -3317,7 +3362,9 @@ static void prism2_free_local_data(struct net_device *dev)
 
 	flush_scheduled_work();
 
-	lib80211_crypt_info_free(&local->crypt_info);
+	if (timer_pending(&local->crypt_info.crypt_deinit_timer))
+		del_timer(&local->crypt_info.crypt_deinit_timer);
+	prism2_crypt_deinit_entries(local, 1);
 
 	if (timer_pending(&local->passive_scan_timer))
 		del_timer(&local->passive_scan_timer);
@@ -3333,6 +3380,16 @@ static void prism2_free_local_data(struct net_device *dev)
 
 	if (local->dev_enabled)
 		prism2_callback(local, PRISM2_CALLBACK_DISABLE);
+
+	for (i = 0; i < WEP_KEYS; i++) {
+		struct lib80211_crypt_data *crypt = local->crypt_info.crypt[i];
+		if (crypt) {
+			if (crypt->ops)
+				crypt->ops->deinit(crypt->priv);
+			kfree(crypt);
+			local->crypt_info.crypt[i] = NULL;
+		}
+	}
 
 	if (local->ap != NULL)
 		hostap_free_data(local->ap);

@@ -116,6 +116,32 @@ static int prism2_get_name(struct net_device *dev,
 }
 
 
+static void prism2_crypt_delayed_deinit(local_info_t *local,
+					struct lib80211_crypt_data **crypt)
+{
+	struct lib80211_crypt_data *tmp;
+	unsigned long flags;
+
+	tmp = *crypt;
+	*crypt = NULL;
+
+	if (tmp == NULL)
+		return;
+
+	/* must not run ops->deinit() while there may be pending encrypt or
+	 * decrypt operations. Use a list of delayed deinits to avoid needing
+	 * locking. */
+
+	spin_lock_irqsave(&local->lock, flags);
+	list_add(&tmp->list, &local->crypt_info.crypt_deinit_list);
+	if (!timer_pending(&local->crypt_info.crypt_deinit_timer)) {
+		local->crypt_info.crypt_deinit_timer.expires = jiffies + HZ;
+		add_timer(&local->crypt_info.crypt_deinit_timer);
+	}
+	spin_unlock_irqrestore(&local->lock, flags);
+}
+
+
 static int prism2_ioctl_siwencode(struct net_device *dev,
 				  struct iw_request_info *info,
 				  struct iw_point *erq, char *keybuf)
@@ -140,14 +166,14 @@ static int prism2_ioctl_siwencode(struct net_device *dev,
 
 	if (erq->flags & IW_ENCODE_DISABLED) {
 		if (*crypt)
-			lib80211_crypt_delayed_deinit(&local->crypt_info, crypt);
+			prism2_crypt_delayed_deinit(local, crypt);
 		goto done;
 	}
 
 	if (*crypt != NULL && (*crypt)->ops != NULL &&
 	    strcmp((*crypt)->ops->name, "WEP") != 0) {
 		/* changing to use WEP; deinit previously used algorithm */
-		lib80211_crypt_delayed_deinit(&local->crypt_info, crypt);
+		prism2_crypt_delayed_deinit(local, crypt);
 	}
 
 	if (*crypt == NULL) {
@@ -163,7 +189,7 @@ static int prism2_ioctl_siwencode(struct net_device *dev,
 			request_module("lib80211_crypt_wep");
 			new_crypt->ops = lib80211_get_crypto_ops("WEP");
 		}
-		if (new_crypt->ops && try_module_get(new_crypt->ops->owner))
+		if (new_crypt->ops)
 			new_crypt->priv = new_crypt->ops->init(i);
 		if (!new_crypt->ops || !new_crypt->priv) {
 			kfree(new_crypt);
@@ -3245,7 +3271,7 @@ static int prism2_ioctl_siwencodeext(struct net_device *dev,
 	if ((erq->flags & IW_ENCODE_DISABLED) ||
 	    ext->alg == IW_ENCODE_ALG_NONE) {
 		if (*crypt)
-			lib80211_crypt_delayed_deinit(&local->crypt_info, crypt);
+			prism2_crypt_delayed_deinit(local, crypt);
 		goto done;
 	}
 
@@ -3293,7 +3319,7 @@ static int prism2_ioctl_siwencodeext(struct net_device *dev,
 	if (*crypt == NULL || (*crypt)->ops != ops) {
 		struct lib80211_crypt_data *new_crypt;
 
-		lib80211_crypt_delayed_deinit(&local->crypt_info, crypt);
+		prism2_crypt_delayed_deinit(local, crypt);
 
 		new_crypt = kzalloc(sizeof(struct lib80211_crypt_data),
 				GFP_KERNEL);
@@ -3302,8 +3328,7 @@ static int prism2_ioctl_siwencodeext(struct net_device *dev,
 			goto done;
 		}
 		new_crypt->ops = ops;
-		if (new_crypt->ops && try_module_get(new_crypt->ops->owner))
-			new_crypt->priv = new_crypt->ops->init(i);
+		new_crypt->priv = new_crypt->ops->init(i);
 		if (new_crypt->priv == NULL) {
 			kfree(new_crypt);
 			ret = -EINVAL;
@@ -3480,7 +3505,7 @@ static int prism2_ioctl_set_encryption(local_info_t *local,
 
 	if (strcmp(param->u.crypt.alg, "none") == 0) {
 		if (crypt)
-			lib80211_crypt_delayed_deinit(&local->crypt_info, crypt);
+			prism2_crypt_delayed_deinit(local, crypt);
 		goto done;
 	}
 
@@ -3510,7 +3535,7 @@ static int prism2_ioctl_set_encryption(local_info_t *local,
 	if (*crypt == NULL || (*crypt)->ops != ops) {
 		struct lib80211_crypt_data *new_crypt;
 
-		lib80211_crypt_delayed_deinit(&local->crypt_info, crypt);
+		prism2_crypt_delayed_deinit(local, crypt);
 
 		new_crypt = kzalloc(sizeof(struct lib80211_crypt_data),
 				GFP_KERNEL);
