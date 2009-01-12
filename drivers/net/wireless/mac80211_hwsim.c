@@ -524,10 +524,6 @@ static void mac80211_hwsim_sta_notify(struct ieee80211_hw *hw,
 	case STA_NOTIFY_REMOVE:
 		hwsim_clear_sta_magic(sta);
 		break;
-	case STA_NOTIFY_SLEEP:
-	case STA_NOTIFY_AWAKE:
-		/* TODO: make good use of these flags */
-		break;
 	}
 }
 
