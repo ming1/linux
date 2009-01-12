@@ -716,7 +716,7 @@ static int iwl4965_alive_notify(struct iwl_priv *priv)
 	/* Tel 4965 where to find Tx byte count tables */
 	iwl_write_prph(priv, IWL49_SCD_DRAM_BASE_ADDR,
 		(priv->shared_phys +
-		 offsetof(struct iwl4965_shared, queues_bc_tbls)) >> 10);
+		 offsetof(struct iwl4965_shared, queues_byte_cnt_tbls)) >> 10);
 
 	/* Disable chain mode for all queues */
 	iwl_write_prph(priv, IWL49_SCD_QUEUECHAIN_SEL, 0);
@@ -1668,22 +1668,21 @@ static void iwl4965_txq_update_byte_cnt_tbl(struct iwl_priv *priv,
 					    struct iwl_tx_queue *txq,
 					    u16 byte_cnt)
 {
-	struct iwl4965_shared *shared_data = priv->shared_virt;
+	int len;
 	int txq_id = txq->q.id;
-	int write_ptr = txq->q.write_ptr;
-	int len = byte_cnt + IWL_TX_CRC_SIZE + IWL_TX_DELIMITER_SIZE;
-	__le16 bc_ent;
+	struct iwl4965_shared *shared_data = priv->shared_virt;
 
-	WARN_ON(len > 0xFFF || write_ptr >= TFD_QUEUE_SIZE_MAX);
+	len = byte_cnt + IWL_TX_CRC_SIZE + IWL_TX_DELIMITER_SIZE;
 
-	bc_ent = cpu_to_le16(len & 0xFFF);
 	/* Set up byte count within first 256 entries */
-	shared_data->queues_bc_tbls[txq_id].tfd_offset[write_ptr] = bc_ent;
+	IWL_SET_BITS16(shared_data->queues_byte_cnt_tbls[txq_id].
+		       tfd_offset[txq->q.write_ptr], byte_cnt, len);
 
 	/* If within first 64 entries, duplicate at end */
-	if (write_ptr < TFD_QUEUE_SIZE_BC_DUP)
-		shared_data->queues_bc_tbls[txq_id].
-			tfd_offset[TFD_QUEUE_SIZE_MAX + write_ptr] = bc_ent;
+	if (txq->q.write_ptr < IWL49_MAX_WIN_SIZE)
+		IWL_SET_BITS16(shared_data->queues_byte_cnt_tbls[txq_id].
+			tfd_offset[IWL49_QUEUE_SIZE + txq->q.write_ptr],
+			byte_cnt, len);
 }
 
 /**
