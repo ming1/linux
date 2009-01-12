@@ -30,11 +30,10 @@
 #include <linux/ip.h>
 #include <linux/tcp.h>
 #include <linux/wireless.h>
-#include <linux/ieee80211.h>
-#include <linux/if_arp.h>
 #include <linux/ctype.h>
 #include <linux/string.h>
 #include <net/iw_handler.h>
+#include <net/ieee80211.h>
 
 #include <linux/dma-mapping.h>
 #include <net/checksum.h>
@@ -450,9 +449,9 @@ static size_t gelic_wl_synthesize_ie(u8 *buf,
 
 	/* element id */
 	if (rsn)
-		*buf++ = WLAN_EID_RSN;
+		*buf++ = MFIE_TYPE_RSN;
 	else
-		*buf++ = WLAN_EID_GENERIC;
+		*buf++ = MFIE_TYPE_GENERIC;
 
 	/* length filed; set later */
 	buf++;
@@ -540,7 +539,7 @@ static void gelic_wl_parse_ie(u8 *data, size_t len,
 			break;
 
 		switch (item_id) {
-		case WLAN_EID_GENERIC:
+		case MFIE_TYPE_GENERIC:
 			if ((OUI_LEN + 1 <= item_len) &&
 			    !memcmp(pos, wpa_oui, OUI_LEN) &&
 			    pos[OUI_LEN] == 0x01) {
@@ -548,7 +547,7 @@ static void gelic_wl_parse_ie(u8 *data, size_t len,
 				ie_info->wpa.len = item_len + 2;
 			}
 			break;
-		case WLAN_EID_RSN:
+		case MFIE_TYPE_RSN:
 			ie_info->rsn.data = pos - 2;
 			/* length includes the header */
 			ie_info->rsn.len = item_len + 2;
@@ -582,7 +581,7 @@ static char *gelic_wl_translate_scan(struct net_device *netdev,
 	char *tmp;
 	u8 rate;
 	unsigned int i, j, len;
-	u8 buf[64]; /* arbitrary size large enough */
+	u8 buf[MAX_WPA_IE_LEN];
 
 	pr_debug("%s: <-\n", __func__);
 
@@ -1742,14 +1741,14 @@ static void gelic_wl_scan_complete_event(struct gelic_wl_info *wl)
 		target->essid_len = strnlen(scan_info->essid,
 					    sizeof(scan_info->essid));
 		target->rate_len = 0;
-		for (r = 0; r < 12; r++)
+		for (r = 0; r < MAX_RATES_LENGTH; r++)
 			if (scan_info->rate[r])
 				target->rate_len++;
 		if (8 < target->rate_len)
 			pr_info("%s: AP returns %d rates\n", __func__,
 				target->rate_len);
 		target->rate_ext_len = 0;
-		for (r = 0; r < 16; r++)
+		for (r = 0; r < MAX_RATES_EX_LENGTH; r++)
 			if (scan_info->ext_rate[r])
 				target->rate_ext_len++;
 		list_move_tail(&target->list, &wl->network_list);
