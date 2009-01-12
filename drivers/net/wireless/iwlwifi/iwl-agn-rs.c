@@ -281,9 +281,10 @@ static u8 rs_tl_add_packet(struct iwl_lq_sta *lq_data,
 	u32 time_diff;
 	s32 index;
 	struct iwl_traffic_load *tl = NULL;
+	__le16 fc = hdr->frame_control;
 	u8 tid;
 
-	if (ieee80211_is_data_qos(hdr->frame_control)) {
+	if (ieee80211_is_data_qos(fc)) {
 		u8 *qc = ieee80211_get_qos_ctl(hdr);
 		tid = qc[0] & 0xf;
 	} else
@@ -774,7 +775,7 @@ static void rs_tx_status(void *priv_r, struct ieee80211_supported_band *sband,
 	int status;
 	u8 retries;
 	int rs_index, index = 0;
-	struct iwl_lq_sta *lq_sta = priv_sta;
+	struct iwl_lq_sta *lq_sta;
 	struct iwl_link_quality_cmd *table;
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
 	struct iwl_priv *priv = (struct iwl_priv *)priv_r;
@@ -786,12 +787,12 @@ static void rs_tx_status(void *priv_r, struct ieee80211_supported_band *sband,
 	struct iwl_scale_tbl_info tbl_type;
 	struct iwl_scale_tbl_info *curr_tbl, *search_tbl;
 	u8 active_index = 0;
+	__le16 fc = hdr->frame_control;
 	s32 tpt = 0;
 
 	IWL_DEBUG_RATE_LIMIT("get frame ack response, update rate scale window\n");
 
-	if (!ieee80211_is_data(hdr->frame_control) ||
-	    is_multicast_ether_addr(hdr->addr1))
+	if (!ieee80211_is_data(fc) || is_multicast_ether_addr(hdr->addr1))
 		return;
 
 	/* This packet was aggregated but doesn't carry rate scale info */
@@ -803,6 +804,8 @@ static void rs_tx_status(void *priv_r, struct ieee80211_supported_band *sband,
 
 	if (retries > 15)
 		retries = 15;
+
+	lq_sta = (struct iwl_lq_sta *)priv_sta;
 
 	if ((priv->iw_mode == NL80211_IFTYPE_ADHOC) &&
 	    !lq_sta->ibss_sta_added)
@@ -1674,6 +1677,7 @@ static void rs_rate_scale_perform(struct iwl_priv *priv,
 	int high_tpt = IWL_INVALID_VALUE;
 	u32 fail_count;
 	s8 scale_action = 0;
+	__le16 fc;
 	u16 rate_mask;
 	u8 update_lq = 0;
 	struct iwl_scale_tbl_info *tbl, *tbl1;
@@ -1688,12 +1692,13 @@ static void rs_rate_scale_perform(struct iwl_priv *priv,
 
 	IWL_DEBUG_RATE("rate scale calculate new rate for skb\n");
 
-	/* Send management frames and broadcast/multicast data using
-	 * lowest rate. */
-	/* TODO: this could probably be improved.. */
-	if (!ieee80211_is_data(hdr->frame_control) ||
-	    is_multicast_ether_addr(hdr->addr1))
+	fc = hdr->frame_control;
+	if (!ieee80211_is_data(fc) || is_multicast_ether_addr(hdr->addr1)) {
+		/* Send management frames and broadcast/multicast data using
+		 * lowest rate. */
+		/* TODO: this could probably be improved.. */
 		return;
+	}
 
 	if (!sta || !lq_sta)
 		return;
@@ -2092,26 +2097,29 @@ static void rs_get_rate(void *priv_r, struct ieee80211_sta *sta, void *priv_sta,
 			struct ieee80211_tx_rate_control *txrc)
 {
 
+	int i;
 	struct sk_buff *skb = txrc->skb;
 	struct ieee80211_supported_band *sband = txrc->sband;
 	struct iwl_priv *priv = (struct iwl_priv *)priv_r;
 	struct ieee80211_conf *conf = &priv->hw->conf;
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
-	struct iwl_lq_sta *lq_sta = priv_sta;
-	int rate_idx;
+	__le16 fc;
+	struct iwl_lq_sta *lq_sta;
 
 	IWL_DEBUG_RATE_LIMIT("rate scale calculate new rate for skb\n");
 
 	/* Send management frames and broadcast/multicast data using lowest
 	 * rate. */
-	if (!ieee80211_is_data(hdr->frame_control) ||
-	    is_multicast_ether_addr(hdr->addr1) || !sta || !lq_sta) {
+	fc = hdr->frame_control;
+	if (!ieee80211_is_data(fc) || is_multicast_ether_addr(hdr->addr1) ||
+	    !sta || !priv_sta) {
 		info->control.rates[0].idx = rate_lowest_index(sband, sta);
 		return;
 	}
 
-	rate_idx  = lq_sta->last_txrate_idx;
+	lq_sta = (struct iwl_lq_sta *)priv_sta;
+	i = lq_sta->last_txrate_idx;
 
 	if ((priv->iw_mode == NL80211_IFTYPE_ADHOC) &&
 	    !lq_sta->ibss_sta_added) {
@@ -2132,12 +2140,14 @@ static void rs_get_rate(void *priv_r, struct ieee80211_sta *sta, void *priv_sta,
 		}
 	}
 
-	if (rate_idx < 0 || rate_idx > IWL_RATE_COUNT)
-		rate_idx = rate_lowest_index(sband, sta);
-	else if (sband->band == IEEE80211_BAND_5GHZ)
-		rate_idx -= IWL_FIRST_OFDM_RATE;
+	if ((i < 0) || (i > IWL_RATE_COUNT)) {
+		info->control.rates[0].idx = rate_lowest_index(sband, sta);
+		return;
+	}
 
-	info->control.rates[0].idx = rate_idx;
+	if (sband->band == IEEE80211_BAND_5GHZ)
+		i -= IWL_FIRST_OFDM_RATE;
+	info->control.rates[0].idx = i;
 }
 
 static void *rs_alloc_sta(void *priv_rate, struct ieee80211_sta *sta,
