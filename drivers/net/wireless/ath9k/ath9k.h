@@ -401,6 +401,22 @@ enum ath9k_int {
 	ATH9K_INT_NOCARD = 0xffffffff
 };
 
+struct ath9k_rate_table {
+	int rateCount;
+	u8 rateCodeToIndex[256];
+	struct {
+		u8 valid;
+		u8 phy;
+		u32 rateKbps;
+		u8 rateCode;
+		u8 shortPreamble;
+		u8 dot11Rate;
+		u8 controlRate;
+		u16 lpAckDuration;
+		u16 spAckDuration;
+	} info[32];
+};
+
 #define ATH9K_RATESERIES_RTS_CTS  0x0001
 #define ATH9K_RATESERIES_2040     0x0002
 #define ATH9K_RATESERIES_HALFGI   0x0004
@@ -812,8 +828,6 @@ struct chan_centers {
 	u16 ext_center;
 };
 
-struct ath_rate_table;
-
 /* Helpers */
 
 enum wireless_mode ath9k_hw_chan2wmode(struct ath_hal *ah,
@@ -824,7 +838,7 @@ bool ath9k_get_channel_edges(struct ath_hal *ah,
 			     u16 flags, u16 *low,
 			     u16 *high);
 u16 ath9k_hw_computetxtime(struct ath_hal *ah,
-			   struct ath_rate_table *rates,
+			   const struct ath9k_rate_table *rates,
 			   u32 frameLen, u16 rateix,
 			   bool shortPreamble);
 u32 ath9k_hw_mhz2ieee(struct ath_hal *ah, u32 freq, u32 flags);
@@ -869,6 +883,12 @@ void ath9k_hw_configpcipowersave(struct ath_hal *ah, int restore);
 void ath9k_hw_beaconinit(struct ath_hal *ah, u32 next_beacon, u32 beacon_period);
 void ath9k_hw_set_sta_beacon_timers(struct ath_hal *ah,
 				    const struct ath9k_beacon_state *bs);
+
+/* Rate table */
+
+const struct ath9k_rate_table *ath9k_hw_getratetable(struct ath_hal *ah,
+						     u32 mode);
+
 /* HW Capabilities */
 
 bool ath9k_hw_fill_cap_info(struct ath_hal *ah);
