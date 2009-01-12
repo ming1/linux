@@ -209,8 +209,10 @@ int iwl_eeprom_init(struct iwl_priv *priv)
 {
 	u16 *e;
 	u32 gp = iwl_read32(priv, CSR_EEPROM_GP);
+	u32 r;
 	int sz = priv->cfg->eeprom_size;
 	int ret;
+	int i;
 	u16 addr;
 
 	/* allocate eeprom */
@@ -238,19 +240,22 @@ int iwl_eeprom_init(struct iwl_priv *priv)
 
 	/* eeprom is an array of 16bit values */
 	for (addr = 0; addr < sz; addr += sizeof(u16)) {
-		u32 r;
+		_iwl_write32(priv, CSR_EEPROM_REG, addr << 1);
+		_iwl_clear_bit(priv, CSR_EEPROM_REG, CSR_EEPROM_REG_BIT_CMD);
 
-		_iwl_write32(priv, CSR_EEPROM_REG,
-			     CSR_EEPROM_REG_MSK_ADDR & (addr << 1));
+		for (i = 0; i < IWL_EEPROM_ACCESS_TIMEOUT;
+					i += IWL_EEPROM_ACCESS_DELAY) {
+			r = _iwl_read_direct32(priv, CSR_EEPROM_REG);
+			if (r & CSR_EEPROM_REG_READ_VALID_MSK)
+				break;
+			udelay(IWL_EEPROM_ACCESS_DELAY);
+		}
 
-		ret = iwl_poll_direct_bit(priv, CSR_EEPROM_REG,
-					  CSR_EEPROM_REG_READ_VALID_MSK,
-					  IWL_EEPROM_ACCESS_TIMEOUT);
-		if (ret < 0) {
+		if (!(r & CSR_EEPROM_REG_READ_VALID_MSK)) {
 			IWL_ERROR("Time out reading EEPROM[%d]\n", addr);
+			ret = -ETIMEDOUT;
 			goto done;
 		}
-		r = _iwl_read_direct32(priv, CSR_EEPROM_REG);
 		e[addr / 2] = le16_to_cpu((__force __le16)(r >> 16));
 	}
 	ret = 0;
