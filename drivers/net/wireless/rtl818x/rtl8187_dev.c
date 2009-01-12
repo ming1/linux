@@ -294,16 +294,15 @@ static void rtl8187_rx_cb(struct urb *urb)
 	int rate, signal;
 	u32 flags;
 	u32 quality;
-	unsigned long f;
 
-	spin_lock_irqsave(&priv->rx_queue.lock, f);
+	spin_lock(&priv->rx_queue.lock);
 	if (skb->next)
 		__skb_unlink(skb, &priv->rx_queue);
 	else {
-		spin_unlock_irqrestore(&priv->rx_queue.lock, f);
+		spin_unlock(&priv->rx_queue.lock);
 		return;
 	}
-	spin_unlock_irqrestore(&priv->rx_queue.lock, f);
+	spin_unlock(&priv->rx_queue.lock);
 	skb_put(skb, urb->actual_length);
 
 	if (unlikely(urb->status)) {
@@ -943,6 +942,7 @@ static int rtl8187_start(struct ieee80211_hw *dev)
 static void rtl8187_stop(struct ieee80211_hw *dev)
 {
 	struct rtl8187_priv *priv = dev->priv;
+	struct rtl8187_rx_info *info;
 	struct sk_buff *skb;
 	u32 reg;
 
@@ -961,6 +961,10 @@ static void rtl8187_stop(struct ieee80211_hw *dev)
 	rtl818x_iowrite8(priv, &priv->map->CONFIG4, reg | RTL818X_CONFIG4_VCOOFF);
 	rtl818x_iowrite8(priv, &priv->map->EEPROM_CMD, RTL818X_EEPROM_CMD_NORMAL);
 
+	while ((skb = skb_dequeue(&priv->rx_queue))) {
+		info = (struct rtl8187_rx_info *)skb->cb;
+		kfree_skb(skb);
+	}
 	while ((skb = skb_dequeue(&priv->b_tx_status.queue)))
 		dev_kfree_skb_any(skb);
 
