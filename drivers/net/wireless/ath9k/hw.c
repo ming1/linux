@@ -641,7 +641,10 @@ static struct ath_hal *ath9k_hw_do_attach(u16 devid, struct ath_softc *sc,
 	struct ath_hal_5416 *ahp;
 	struct ath_hal *ah;
 	int ecode;
-	u32 i, j;
+#ifndef CONFIG_SLOW_ANT_DIV
+	u32 i;
+	u32 j;
+#endif
 
 	ahp = ath9k_hw_newstate(devid, sc, mem, status);
 	if (ahp == NULL)
@@ -851,6 +854,7 @@ static struct ath_hal *ath9k_hw_do_attach(u16 devid, struct ath_softc *sc,
 	if (AR_SREV_9280_20_OR_LATER(ah))
 		ath9k_hw_init_txgain_ini(ah);
 
+#ifndef CONFIG_SLOW_ANT_DIV
 	if (ah->ah_devid == AR9280_DEVID_PCI) {
 		for (i = 0; i < ahp->ah_iniModes.ia_rows; i++) {
 			u32 reg = INI_RA(&ahp->ah_iniModes, i, 0);
@@ -864,7 +868,7 @@ static struct ath_hal *ath9k_hw_do_attach(u16 devid, struct ath_softc *sc,
 			}
 		}
 	}
-
+#endif
 	if (!ath9k_hw_fill_cap_info(ah)) {
 		DPRINTF(ah->ah_sc, ATH_DBG_RESET,
 			"failed ath9k_hw_fill_cap_info\n");
@@ -1290,6 +1294,11 @@ static int ath9k_hw_process_ini(struct ath_hal *ah,
 	for (i = 0; i < ahp->ah_iniModes.ia_rows; i++) {
 		u32 reg = INI_RA(&ahp->ah_iniModes, i, 0);
 		u32 val = INI_RA(&ahp->ah_iniModes, i, modesIndex);
+
+#ifdef CONFIG_SLOW_ANT_DIV
+		if (ah->ah_devid == AR9280_DEVID_PCI)
+			val = ath9k_hw_ini_fixup(ah, &ahp->ah_eeprom, reg, val);
+#endif
 
 		REG_WRITE(ah, reg, val);
 
