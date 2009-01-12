@@ -482,6 +482,11 @@ struct iwl_alive_resp {
 } __attribute__ ((packed));
 
 
+union tsf {
+	u8 byte[8];
+	__le16 word[4];
+	__le32 dw[2];
+};
 
 /*
  * REPLY_ERROR = 0x2 (response only, not a command)
@@ -492,7 +497,7 @@ struct iwl_error_resp {
 	u8 reserved1;
 	__le16 bad_cmd_seq_num;
 	__le32 error_info;
-	__le64 timestamp;
+	union tsf timestamp;
 } __attribute__ ((packed));
 
 /******************************************************************************
@@ -679,8 +684,8 @@ struct iwl4965_rxon_assoc_cmd {
 /*
  * REPLY_RXON_TIMING = 0x14 (command, has simple generic response)
  */
-struct iwl_rxon_time_cmd {
-	__le64 timestamp;
+struct iwl4965_rxon_time_cmd {
+	union tsf timestamp;
 	__le16 beacon_interval;
 	__le16 atim_window;
 	__le32 beacon_init_val;
