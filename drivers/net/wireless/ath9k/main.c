@@ -2134,8 +2134,9 @@ static int ath9k_config(struct ieee80211_hw *hw, u32 changed)
 			(curchan->band == IEEE80211_BAND_2GHZ) ?
 			CHANNEL_G : CHANNEL_A;
 
-		if (conf_is_ht(conf)) {
-			if (conf_is_ht40(conf))
+		if (conf->ht.enabled) {
+			if (conf->ht.channel_type == NL80211_CHAN_HT40PLUS ||
+			    conf->ht.channel_type == NL80211_CHAN_HT40MINUS)
 				sc->tx_chan_width = ATH9K_HT_MACMODE_2040;
 
 			sc->sc_ah->ah_channels[pos].chanmode =
@@ -2149,7 +2150,7 @@ static int ath9k_config(struct ieee80211_hw *hw, u32 changed)
 			return -EINVAL;
 		}
 
-		ath_update_chainmask(sc, conf_is_ht(conf));
+		ath_update_chainmask(sc, conf->ht.enabled);
 	}
 
 	if (changed & IEEE80211_CONF_CHANGE_POWER)
