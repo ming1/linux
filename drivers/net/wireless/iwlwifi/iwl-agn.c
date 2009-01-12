@@ -1498,7 +1498,7 @@ static void iwl_irq_tasklet(struct iwl_priv *priv)
 			hw_rf_kill = 1;
 
 		IWL_DEBUG(IWL_DL_RF_KILL, "RF_KILL bit toggled to %s.\n",
-				hw_rf_kill ? "disable radio" : "enable radio");
+				hw_rf_kill ? "disable radio":"enable radio");
 
 		/* driver only loads ucode once setting the interface up.
 		 * the driver as well won't allow loading if RFKILL is set
@@ -3670,8 +3670,7 @@ static ssize_t show_power_level(struct device *d,
 		break;
 	}
 
-	p += sprintf(p, "\tMODE:%s", (mode < IWL_POWER_AUTO) ?
-			"fixed" : "auto");
+	p += sprintf(p, "\tMODE:%s", (mode < IWL_POWER_AUTO)?"fixed":"auto");
 	p += sprintf(p, "\tINDEX:%d", level);
 	p += sprintf(p, "\n");
 	return p - buf + 1;
