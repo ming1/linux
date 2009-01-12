@@ -830,46 +830,25 @@ static int ieee80211_ioctl_siwpower(struct net_device *dev,
 				    struct iw_param *wrq,
 				    char *extra)
 {
-	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 	struct ieee80211_local *local = wdev_priv(dev->ieee80211_ptr);
 	struct ieee80211_conf *conf = &local->hw.conf;
-	int ret = 0;
-	bool ps;
-
-	if (sdata->vif.type != NL80211_IFTYPE_STATION)
-		return -EINVAL;
 
 	if (wrq->disabled) {
-		ps = false;
-		goto set;
+		conf->flags &= ~IEEE80211_CONF_PS;
+		return ieee80211_hw_config(local, IEEE80211_CONF_CHANGE_PS);
 	}
 
 	switch (wrq->flags & IW_POWER_MODE) {
 	case IW_POWER_ON:       /* If not specified */
 	case IW_POWER_MODE:     /* If set all mask */
 	case IW_POWER_ALL_R:    /* If explicitely state all */
-		ps = true;
+		conf->flags |= IEEE80211_CONF_PS;
 		break;
 	default:                /* Otherwise we don't support it */
 		return -EINVAL;
 	}
 
-	if (ps == local->powersave)
-		return ret;
-
-set:
-	local->powersave = ps;
-
-	if (sdata->u.sta.flags & IEEE80211_STA_ASSOCIATED) {
-		if (local->powersave)
-			conf->flags |= IEEE80211_CONF_PS;
-		else
-			conf->flags &= ~IEEE80211_CONF_PS;
-
-		ret = ieee80211_hw_config(local, IEEE80211_CONF_CHANGE_PS);
-	}
-
-	return ret;
+	return ieee80211_hw_config(local, IEEE80211_CONF_CHANGE_PS);
 }
 
 static int ieee80211_ioctl_giwpower(struct net_device *dev,
@@ -878,8 +857,9 @@ static int ieee80211_ioctl_giwpower(struct net_device *dev,
 				    char *extra)
 {
 	struct ieee80211_local *local = wdev_priv(dev->ieee80211_ptr);
+	struct ieee80211_conf *conf = &local->hw.conf;
 
-	wrqu->power.disabled = !local->powersave;
+	wrqu->power.disabled = !(conf->flags & IEEE80211_CONF_PS);
 
 	return 0;
 }
