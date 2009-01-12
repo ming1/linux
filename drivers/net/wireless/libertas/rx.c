@@ -1,7 +1,6 @@
 /**
   * This file contains the handling of RX in wlan driver.
   */
-#include <asm/unaligned.h>
 #include <linux/etherdevice.h>
 #include <linux/types.h>
 
