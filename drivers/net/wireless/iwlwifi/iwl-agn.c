@@ -2946,6 +2946,7 @@ static int iwl4965_mac_config_interface(struct ieee80211_hw *hw,
 {
 	struct iwl_priv *priv = hw->priv;
 	DECLARE_MAC_BUF(mac);
+	unsigned long flags;
 	int rc;
 
 	if (conf == NULL)
@@ -3040,6 +3041,15 @@ static int iwl4965_mac_config_interface(struct ieee80211_hw *hw,
 	}
 
  done:
+	spin_lock_irqsave(&priv->lock, flags);
+	if (!conf->ssid_len)
+		memset(priv->essid, 0, IW_ESSID_MAX_SIZE);
+	else
+		memcpy(priv->essid, conf->ssid, conf->ssid_len);
+
+	priv->essid_len = conf->ssid_len;
+	spin_unlock_irqrestore(&priv->lock, flags);
+
 	IWL_DEBUG_MAC80211("leave\n");
 	mutex_unlock(&priv->mutex);
 
@@ -3082,6 +3092,8 @@ static void iwl4965_mac_remove_interface(struct ieee80211_hw *hw,
 	if (priv->vif == conf->vif) {
 		priv->vif = NULL;
 		memset(priv->bssid, 0, ETH_ALEN);
+		memset(priv->essid, 0, IW_ESSID_MAX_SIZE);
+		priv->essid_len = 0;
 	}
 	mutex_unlock(&priv->mutex);
 
