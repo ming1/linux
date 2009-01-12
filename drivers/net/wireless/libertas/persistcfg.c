@@ -1,4 +1,3 @@
-#include <asm/unaligned.h>
 #include <linux/moduleparam.h>
 #include <linux/delay.h>
 #include <linux/etherdevice.h>
@@ -49,7 +48,7 @@ static ssize_t bootflag_get(struct device *dev,
 	if (ret)
 		return ret;
 
-	return snprintf(buf, 12, "%d\n", get_unaligned_le32(&defs.bootflag));
+	return snprintf(buf, 12, "%d\n", le32_to_cpu(defs.bootflag));
 }
 
 /**
@@ -144,7 +143,7 @@ static ssize_t channel_get(struct device *dev,
 	if (ret)
 		return ret;
 
-	return snprintf(buf, 12, "%d\n", get_unaligned_le16(&defs.channel));
+	return snprintf(buf, 12, "%d\n", le16_to_cpu(defs.channel));
 }
 
 /**
