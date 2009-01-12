@@ -1667,7 +1667,7 @@ ath5k_tasklet_rx(unsigned long data)
 	struct ath5k_desc *ds;
 	int ret;
 	int hdrlen;
-	int padsize;
+	int pad;
 
 	spin_lock(&sc->rxbuflock);
 	if (list_empty(&sc->rxbuf)) {
@@ -1752,19 +1752,16 @@ accept:
 
 		skb_put(skb, rs.rs_datalen);
 
-		/* The MAC header is padded to have 32-bit boundary if the
-		 * packet payload is non-zero. The general calculation for
-		 * padsize would take into account odd header lengths:
-		 * padsize = (4 - hdrlen % 4) % 4; However, since only
-		 * even-length headers are used, padding can only be 0 or 2
-		 * bytes and we can optimize this a bit. In addition, we must
-		 * not try to remove padding from short control frames that do
-		 * not have payload. */
+		/*
+		 * the hardware adds a padding to 4 byte boundaries between
+		 * the header and the payload data if the header length is
+		 * not multiples of 4 - remove it
+		 */
 		hdrlen = ieee80211_get_hdrlen_from_skb(skb);
-		padsize = hdrlen & 3;
-		if (padsize && hdrlen >= 24) {
-			memmove(skb->data + padsize, skb->data, hdrlen);
-			skb_pull(skb, padsize);
+		if (hdrlen & 3) {
+			pad = hdrlen % 4;
+			memmove(skb->data + pad, skb->data, hdrlen);
+			skb_pull(skb, pad);
 		}
 
 		/*
@@ -2625,7 +2622,7 @@ ath5k_tx(struct ieee80211_hw *hw, struct sk_buff *skb)
 	struct ath5k_buf *bf;
 	unsigned long flags;
 	int hdrlen;
-	int padsize;
+	int pad;
 
 	ath5k_debug_dump_skb(sc, skb, "TX  ", 1);
 
@@ -2637,16 +2634,15 @@ ath5k_tx(struct ieee80211_hw *hw, struct sk_buff *skb)
 	 * if this is not the case we add the padding after the header
 	 */
 	hdrlen = ieee80211_get_hdrlen_from_skb(skb);
-	padsize = hdrlen & 3;
-	if (padsize && hdrlen >= 24) {
-
-		if (skb_headroom(skb) < padsize) {
+	if (hdrlen & 3) {
+		pad = hdrlen % 4;
+		if (skb_headroom(skb) < pad) {
 			ATH5K_ERR(sc, "tx hdrlen not %%4: %d not enough"
-				  " headroom to pad %d\n", hdrlen, padsize);
+				" headroom to pad %d\n", hdrlen, pad);
 			return -1;
 		}
-		skb_push(skb, padsize);
-		memmove(skb->data, skb->data+padsize, hdrlen);
+		skb_push(skb, pad);
+		memmove(skb->data, skb->data+pad, hdrlen);
 	}
 
 	spin_lock_irqsave(&sc->txbuflock, flags);
