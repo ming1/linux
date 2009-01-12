@@ -277,24 +277,27 @@ static void ath9k_hw_per_calibration(struct ath_hal *ah,
 	}
 }
 
-/* Assumes you are talking about the currently configured channel */
 static bool ath9k_hw_iscal_supported(struct ath_hal *ah,
+				     struct ath9k_channel *chan,
 				     enum hal_cal_types calType)
 {
 	struct ath_hal_5416 *ahp = AH5416(ah);
-	struct ieee80211_conf *conf = &ah->ah_sc->hw->conf;
+	bool retval = false;
 
 	switch (calType & ahp->ah_suppCals) {
-	case IQ_MISMATCH_CAL: /* Both 2 GHz and 5 GHz support OFDM */
-		return true;
+	case IQ_MISMATCH_CAL:
+		if (!IS_CHAN_B(chan))
+			retval = true;
+		break;
 	case ADC_GAIN_CAL:
 	case ADC_DC_CAL:
-		if (conf->channel->band == IEEE80211_BAND_5GHZ &&
-		  conf_is_ht20(conf))
-			return true;
+		if (!IS_CHAN_B(chan)
+		    && !(IS_CHAN_2GHZ(chan) && IS_CHAN_HT20(chan)))
+			retval = true;
 		break;
 	}
-	return false;
+
+	return retval;
 }
 
 static void ath9k_hw_iqcal_collect(struct ath_hal *ah)
@@ -562,40 +565,50 @@ static void ath9k_hw_adc_dccal_calibrate(struct ath_hal *ah, u8 numChains)
 		  AR_PHY_NEW_ADC_DC_OFFSET_CORR_ENABLE);
 }
 
-/* This is done for the currently configured channel */
-bool ath9k_hw_reset_calvalid(struct ath_hal *ah)
+void ath9k_hw_reset_calvalid(struct ath_hal *ah, struct ath9k_channel *chan,
+			     bool *isCalDone)
 {
 	struct ath_hal_5416 *ahp = AH5416(ah);
-	struct ieee80211_conf *conf = &ah->ah_sc->hw->conf;
+	struct ath9k_channel *ichan =
+		ath9k_regd_check_channel(ah, chan);
 	struct hal_cal_list *currCal = ahp->ah_cal_list_curr;
 
-	if (!ah->ah_curchan)
-		return true;
+	*isCalDone = true;
 
 	if (!AR_SREV_9100(ah) && !AR_SREV_9160_10_OR_LATER(ah))
-		return true;
+		return;
 
 	if (currCal == NULL)
-		return true;
+		return;
+
+	if (ichan == NULL) {
+		DPRINTF(ah->ah_sc, ATH_DBG_CALIBRATE,
+			"invalid channel %u/0x%x; no mapping\n",
+			chan->channel, chan->channelFlags);
+		return;
+	}
+
 
 	if (currCal->calState != CAL_DONE) {
 		DPRINTF(ah->ah_sc, ATH_DBG_CALIBRATE,
 			"Calibration state incorrect, %d\n",
 			currCal->calState);
-		return true;
+		return;
 	}
 
-	if (!ath9k_hw_iscal_supported(ah, currCal->calData->calType))
-		return true;
+
+	if (!ath9k_hw_iscal_supported(ah, chan, currCal->calData->calType))
+		return;
 
 	DPRINTF(ah->ah_sc, ATH_DBG_CALIBRATE,
-		"Resetting Cal %d state for channel %u\n",
-		currCal->calData->calType, conf->channel->center_freq);
+		"Resetting Cal %d state for channel %u/0x%x\n",
+		currCal->calData->calType, chan->channel,
+		chan->channelFlags);
 
-	ah->ah_curchan->CalValid &= ~currCal->calData->calType;
+	ichan->CalValid &= ~currCal->calData->calType;
 	currCal->calState = CAL_WAITING;
 
-	return false;
+	*isCalDone = false;
 }
 
 void ath9k_hw_start_nfcal(struct ath_hal *ah)
@@ -920,19 +933,19 @@ bool ath9k_hw_init_cal(struct ath_hal *ah,
 	ahp->ah_cal_list = ahp->ah_cal_list_last = ahp->ah_cal_list_curr = NULL;
 
 	if (AR_SREV_9100(ah) || AR_SREV_9160_10_OR_LATER(ah)) {
-		if (ath9k_hw_iscal_supported(ah, ADC_GAIN_CAL)) {
+		if (ath9k_hw_iscal_supported(ah, chan, ADC_GAIN_CAL)) {
 			INIT_CAL(&ahp->ah_adcGainCalData);
 			INSERT_CAL(ahp, &ahp->ah_adcGainCalData);
 			DPRINTF(ah->ah_sc, ATH_DBG_CALIBRATE,
 				"enabling ADC Gain Calibration.\n");
 		}
-		if (ath9k_hw_iscal_supported(ah, ADC_DC_CAL)) {
+		if (ath9k_hw_iscal_supported(ah, chan, ADC_DC_CAL)) {
 			INIT_CAL(&ahp->ah_adcDcCalData);
 			INSERT_CAL(ahp, &ahp->ah_adcDcCalData);
 			DPRINTF(ah->ah_sc, ATH_DBG_CALIBRATE,
 				"enabling ADC DC Calibration.\n");
 		}
-		if (ath9k_hw_iscal_supported(ah, IQ_MISMATCH_CAL)) {
+		if (ath9k_hw_iscal_supported(ah, chan, IQ_MISMATCH_CAL)) {
 			INIT_CAL(&ahp->ah_iqCalData);
 			INSERT_CAL(ahp, &ahp->ah_iqCalData);
 			DPRINTF(ah->ah_sc, ATH_DBG_CALIBRATE,
