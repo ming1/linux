@@ -63,7 +63,7 @@ static inline void rt73usb_register_read(struct rt2x00_dev *rt2x00dev,
 	__le32 reg;
 	rt2x00usb_vendor_request_buff(rt2x00dev, USB_MULTI_READ,
 				      USB_VENDOR_REQUEST_IN, offset,
-				      &reg, sizeof(reg), REGISTER_TIMEOUT);
+				      &reg, sizeof(u32), REGISTER_TIMEOUT);
 	*value = le32_to_cpu(reg);
 }
 
@@ -73,7 +73,7 @@ static inline void rt73usb_register_read_lock(struct rt2x00_dev *rt2x00dev,
 	__le32 reg;
 	rt2x00usb_vendor_req_buff_lock(rt2x00dev, USB_MULTI_READ,
 				       USB_VENDOR_REQUEST_IN, offset,
-				       &reg, sizeof(reg), REGISTER_TIMEOUT);
+				       &reg, sizeof(u32), REGISTER_TIMEOUT);
 	*value = le32_to_cpu(reg);
 }
 
@@ -93,7 +93,7 @@ static inline void rt73usb_register_write(struct rt2x00_dev *rt2x00dev,
 	__le32 reg = cpu_to_le32(value);
 	rt2x00usb_vendor_request_buff(rt2x00dev, USB_MULTI_WRITE,
 				      USB_VENDOR_REQUEST_OUT, offset,
-				      &reg, sizeof(reg), REGISTER_TIMEOUT);
+				      &reg, sizeof(u32), REGISTER_TIMEOUT);
 }
 
 static inline void rt73usb_register_write_lock(struct rt2x00_dev *rt2x00dev,
@@ -102,7 +102,7 @@ static inline void rt73usb_register_write_lock(struct rt2x00_dev *rt2x00dev,
 	__le32 reg = cpu_to_le32(value);
 	rt2x00usb_vendor_req_buff_lock(rt2x00dev, USB_MULTI_WRITE,
 				       USB_VENDOR_REQUEST_OUT, offset,
-				       &reg, sizeof(reg), REGISTER_TIMEOUT);
+				      &reg, sizeof(u32), REGISTER_TIMEOUT);
 }
 
 static inline void rt73usb_register_multiwrite(struct rt2x00_dev *rt2x00dev,
@@ -115,31 +115,20 @@ static inline void rt73usb_register_multiwrite(struct rt2x00_dev *rt2x00dev,
 				      REGISTER_TIMEOUT32(length));
 }
 
-static int rt73usb_regbusy_read(struct rt2x00_dev *rt2x00dev,
-				const unsigned int offset,
-				struct rt2x00_field32 field,
-				u32 *reg)
+static u32 rt73usb_bbp_check(struct rt2x00_dev *rt2x00dev)
 {
+	u32 reg;
 	unsigned int i;
 
 	for (i = 0; i < REGISTER_BUSY_COUNT; i++) {
-		rt73usb_register_read_lock(rt2x00dev, offset, reg);
-		if (!rt2x00_get_field32(*reg, field))
-			return 1;
+		rt73usb_register_read_lock(rt2x00dev, PHY_CSR3, &reg);
+		if (!rt2x00_get_field32(reg, PHY_CSR3_BUSY))
+			break;
 		udelay(REGISTER_BUSY_DELAY);
 	}
 
-	ERROR(rt2x00dev, "Indirect register access failed: "
-	      "offset=0x%.08x, value=0x%.08x\n", offset, *reg);
-	*reg = ~0;
-
-	return 0;
+	return reg;
 }
-
-#define WAIT_FOR_BBP(__dev, __reg) \
-	rt73usb_regbusy_read((__dev), PHY_CSR3, PHY_CSR3_BUSY, (__reg))
-#define WAIT_FOR_RF(__dev, __reg) \
-	rt73usb_regbusy_read((__dev), PHY_CSR4, PHY_CSR4_BUSY, (__reg))
 
 static void rt73usb_bbp_write(struct rt2x00_dev *rt2x00dev,
 			      const unsigned int word, const u8 value)
@@ -149,20 +138,30 @@ static void rt73usb_bbp_write(struct rt2x00_dev *rt2x00dev,
 	mutex_lock(&rt2x00dev->csr_mutex);
 
 	/*
-	 * Wait until the BBP becomes available, afterwards we
-	 * can safely write the new data into the register.
+	 * Wait until the BBP becomes ready.
 	 */
-	if (WAIT_FOR_BBP(rt2x00dev, &reg)) {
-		reg = 0;
-		rt2x00_set_field32(&reg, PHY_CSR3_VALUE, value);
-		rt2x00_set_field32(&reg, PHY_CSR3_REGNUM, word);
-		rt2x00_set_field32(&reg, PHY_CSR3_BUSY, 1);
-		rt2x00_set_field32(&reg, PHY_CSR3_READ_CONTROL, 0);
+	reg = rt73usb_bbp_check(rt2x00dev);
+	if (rt2x00_get_field32(reg, PHY_CSR3_BUSY))
+		goto exit_fail;
 
-		rt73usb_register_write_lock(rt2x00dev, PHY_CSR3, reg);
-	}
+	/*
+	 * Write the data into the BBP.
+	 */
+	reg = 0;
+	rt2x00_set_field32(&reg, PHY_CSR3_VALUE, value);
+	rt2x00_set_field32(&reg, PHY_CSR3_REGNUM, word);
+	rt2x00_set_field32(&reg, PHY_CSR3_BUSY, 1);
+	rt2x00_set_field32(&reg, PHY_CSR3_READ_CONTROL, 0);
 
+	rt73usb_register_write_lock(rt2x00dev, PHY_CSR3, reg);
 	mutex_unlock(&rt2x00dev->csr_mutex);
+
+	return;
+
+exit_fail:
+	mutex_unlock(&rt2x00dev->csr_mutex);
+
+	ERROR(rt2x00dev, "PHY_CSR3 register busy. Write failed.\n");
 }
 
 static void rt73usb_bbp_read(struct rt2x00_dev *rt2x00dev,
@@ -173,59 +172,79 @@ static void rt73usb_bbp_read(struct rt2x00_dev *rt2x00dev,
 	mutex_lock(&rt2x00dev->csr_mutex);
 
 	/*
-	 * Wait until the BBP becomes available, afterwards we
-	 * can safely write the read request into the register.
-	 * After the data has been written, we wait until hardware
-	 * returns the correct value, if at any time the register
-	 * doesn't become available in time, reg will be 0xffffffff
-	 * which means we return 0xff to the caller.
+	 * Wait until the BBP becomes ready.
 	 */
-	if (WAIT_FOR_BBP(rt2x00dev, &reg)) {
-		reg = 0;
-		rt2x00_set_field32(&reg, PHY_CSR3_REGNUM, word);
-		rt2x00_set_field32(&reg, PHY_CSR3_BUSY, 1);
-		rt2x00_set_field32(&reg, PHY_CSR3_READ_CONTROL, 1);
+	reg = rt73usb_bbp_check(rt2x00dev);
+	if (rt2x00_get_field32(reg, PHY_CSR3_BUSY))
+		goto exit_fail;
 
-		rt73usb_register_write_lock(rt2x00dev, PHY_CSR3, reg);
+	/*
+	 * Write the request into the BBP.
+	 */
+	reg = 0;
+	rt2x00_set_field32(&reg, PHY_CSR3_REGNUM, word);
+	rt2x00_set_field32(&reg, PHY_CSR3_BUSY, 1);
+	rt2x00_set_field32(&reg, PHY_CSR3_READ_CONTROL, 1);
 
-		WAIT_FOR_BBP(rt2x00dev, &reg);
-	}
+	rt73usb_register_write_lock(rt2x00dev, PHY_CSR3, reg);
+
+	/*
+	 * Wait until the BBP becomes ready.
+	 */
+	reg = rt73usb_bbp_check(rt2x00dev);
+	if (rt2x00_get_field32(reg, PHY_CSR3_BUSY))
+		goto exit_fail;
 
 	*value = rt2x00_get_field32(reg, PHY_CSR3_VALUE);
-
 	mutex_unlock(&rt2x00dev->csr_mutex);
+
+	return;
+
+exit_fail:
+	mutex_unlock(&rt2x00dev->csr_mutex);
+
+	ERROR(rt2x00dev, "PHY_CSR3 register busy. Read failed.\n");
+	*value = 0xff;
 }
 
 static void rt73usb_rf_write(struct rt2x00_dev *rt2x00dev,
 			     const unsigned int word, const u32 value)
 {
 	u32 reg;
+	unsigned int i;
 
 	if (!word)
 		return;
 
 	mutex_lock(&rt2x00dev->csr_mutex);
 
-	/*
-	 * Wait until the RF becomes available, afterwards we
-	 * can safely write the new data into the register.
-	 */
-	if (WAIT_FOR_RF(rt2x00dev, &reg)) {
-		reg = 0;
-		rt2x00_set_field32(&reg, PHY_CSR4_VALUE, value);
-		/*
-		 * RF5225 and RF2527 contain 21 bits per RF register value,
-		 * all others contain 20 bits.
-		 */
-		rt2x00_set_field32(&reg, PHY_CSR4_NUMBER_OF_BITS,
-				   20 + (rt2x00_rf(&rt2x00dev->chip, RF5225) ||
-					 rt2x00_rf(&rt2x00dev->chip, RF2527)));
-		rt2x00_set_field32(&reg, PHY_CSR4_IF_SELECT, 0);
-		rt2x00_set_field32(&reg, PHY_CSR4_BUSY, 1);
-
-		rt73usb_register_write_lock(rt2x00dev, PHY_CSR4, reg);
-		rt2x00_rf_write(rt2x00dev, word, value);
+	for (i = 0; i < REGISTER_BUSY_COUNT; i++) {
+		rt73usb_register_read_lock(rt2x00dev, PHY_CSR4, &reg);
+		if (!rt2x00_get_field32(reg, PHY_CSR4_BUSY))
+			goto rf_write;
+		udelay(REGISTER_BUSY_DELAY);
 	}
+
+	mutex_unlock(&rt2x00dev->csr_mutex);
+	ERROR(rt2x00dev, "PHY_CSR4 register busy. Write failed.\n");
+	return;
+
+rf_write:
+	reg = 0;
+	rt2x00_set_field32(&reg, PHY_CSR4_VALUE, value);
+
+	/*
+	 * RF5225 and RF2527 contain 21 bits per RF register value,
+	 * all others contain 20 bits.
+	 */
+	rt2x00_set_field32(&reg, PHY_CSR4_NUMBER_OF_BITS,
+			   20 + (rt2x00_rf(&rt2x00dev->chip, RF5225) ||
+				 rt2x00_rf(&rt2x00dev->chip, RF2527)));
+	rt2x00_set_field32(&reg, PHY_CSR4_IF_SELECT, 0);
+	rt2x00_set_field32(&reg, PHY_CSR4_BUSY, 1);
+
+	rt73usb_register_write_lock(rt2x00dev, PHY_CSR4, reg);
+	rt2x00_rf_write(rt2x00dev, word, value);
 
 	mutex_unlock(&rt2x00dev->csr_mutex);
 }
