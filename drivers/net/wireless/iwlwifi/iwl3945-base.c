@@ -1404,7 +1404,7 @@ static void iwl3945_free_frame(struct iwl3945_priv *priv, struct iwl3945_frame *
 
 unsigned int iwl3945_fill_beacon_frame(struct iwl3945_priv *priv,
 				struct ieee80211_hdr *hdr,
-				int left)
+				const u8 *dest, int left)
 {
 
 	if (!iwl3945_is_associated(priv) || !priv->ibss_beacon ||
