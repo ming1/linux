@@ -4,10 +4,10 @@
   * IOCTL handlers as well as command preperation and response routines
   *  for sending scan commands to the firmware.
   */
+#include <asm/unaligned.h>
 #include <linux/types.h>
 #include <linux/etherdevice.h>
 #include <linux/if_arp.h>
-#include <asm/unaligned.h>
 #include <net/lib80211.h>
 
 #include "host.h"
@@ -331,7 +331,7 @@ static int lbs_do_scan(struct lbs_private *priv, uint8_t bsstype,
 		    tlv - scan_cmd->tlvbuffer);
 
 	ret = __lbs_cmd(priv, CMD_802_11_SCAN, &scan_cmd->hdr,
-			le16_to_cpu(scan_cmd->hdr.size),
+			get_unaligned_le16(&scan_cmd->hdr.size),
 			lbs_ret_80211_scan, 0);
 
 out:
@@ -641,7 +641,8 @@ static int lbs_process_bss(struct bss_descriptor *bss,
 
 		case WLAN_EID_IBSS_PARAMS:
 			pibss = (struct ieeetypes_ibssparamset *) pos;
-			bss->atimwindow = le16_to_cpu(pibss->atimwindow);
+			bss->atimwindow =
+				get_unaligned_le16(&pibss->atimwindow);
 			memmove(&bss->ssparamset.ibssparamset, pibss,
 				sizeof(struct ieeetypes_ibssparamset));
 			lbs_deb_scan("got IBSS IE\n");
@@ -1132,10 +1133,10 @@ static int lbs_ret_80211_scan(struct lbs_private *priv, unsigned long dummy,
 		goto done;
 	}
 
-	bytesleft = le16_to_cpu(scanresp->bssdescriptsize);
+	bytesleft = get_unaligned_le16(&scanresp->bssdescriptsize);
 	lbs_deb_scan("SCAN_RESP: bssdescriptsize %d\n", bytesleft);
 
-	scanrespsize = le16_to_cpu(resp->size);
+	scanrespsize = get_unaligned_le16(&resp->size);
 	lbs_deb_scan("SCAN_RESP: scan results %d\n", scanresp->nr_sets);
 
 	bssinfo = scanresp->bssdesc_and_tlvbuffer;

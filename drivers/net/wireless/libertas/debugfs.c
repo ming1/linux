@@ -1,3 +1,4 @@
+#include <asm/unaligned.h>
 #include <linux/module.h>
 #include <linux/dcache.h>
 #include <linux/debugfs.h>
@@ -195,7 +196,7 @@ static void *lbs_tlv_find(uint16_t tlv_type, const uint8_t *tlv, uint16_t size)
 			return NULL;
 		if (tlv_h->type == cpu_to_le16(tlv_type))
 			return tlv_h;
-		length = le16_to_cpu(tlv_h->len) + sizeof(*tlv_h);
+		length = get_unaligned_le16(&tlv_h->len) + sizeof(*tlv_h);
 		pos += length;
 		tlv += length;
 	}
@@ -238,7 +239,7 @@ static ssize_t lbs_threshold_read(uint16_t tlv_type, uint16_t event_mask,
 	if (got) {
 		value = got->value;
 		freq  = got->freq;
-		events = le16_to_cpu(subscribed->events);
+		events = get_unaligned_le16(&subscribed->events);
 
 		pos += snprintf(buf, len, "%d %d %d\n", value, freq,
 				!!(events & event_mask));
@@ -296,7 +297,7 @@ static ssize_t lbs_threshold_write(uint16_t tlv_type, uint16_t event_mask,
 	if (ret)
 		goto out_events;
 
-	curr_mask = le16_to_cpu(events->events);
+	curr_mask = get_unaligned_le16(&events->events);
 
 	if (new_mask)
 		new_mask = curr_mask | event_mask;

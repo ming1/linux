@@ -1,6 +1,7 @@
 /**
   * This file contains ioctl functions
   */
+#include <asm/unaligned.h>
 #include <linux/ctype.h>
 #include <linux/delay.h>
 #include <linux/if.h>
@@ -836,7 +837,7 @@ static struct iw_statistics *lbs_get_wireless_stats(struct net_device *dev)
 	log.hdr.size = cpu_to_le16(sizeof(log));
 	lbs_cmd_with_response(priv, CMD_802_11_GET_LOG, &log);
 
-	tx_retries = le32_to_cpu(log.retry);
+	tx_retries = get_unaligned_le32(&log.retry);
 
 	if (tx_retries > 75)
 		tx_qual = (90 - tx_retries) * POOR / 15;
@@ -852,9 +853,9 @@ static struct iw_statistics *lbs_get_wireless_stats(struct net_device *dev)
 		    (PERFECT - VERY_GOOD) / 50 + VERY_GOOD;
 	quality = min(quality, tx_qual);
 
-	priv->wstats.discard.code = le32_to_cpu(log.wepundecryptable);
+	priv->wstats.discard.code = get_unaligned_le32(&log.wepundecryptable);
 	priv->wstats.discard.retries = tx_retries;
-	priv->wstats.discard.misc = le32_to_cpu(log.ackfailure);
+	priv->wstats.discard.misc = get_unaligned_le32(&log.ackfailure);
 
 	/* Calculate quality */
 	priv->wstats.qual.qual = min_t(u8, quality, 100);

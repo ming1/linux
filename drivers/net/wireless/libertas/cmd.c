@@ -3,6 +3,7 @@
   * It prepares command and sends it to firmware when it is ready.
   */
 
+#include <asm/unaligned.h>
 #include <net/iw_handler.h>
 #include <net/lib80211.h>
 #include <linux/kfifo.h>
@@ -34,7 +35,8 @@ int lbs_cmd_copyback(struct lbs_private *priv, unsigned long extra,
 	struct cmd_header *buf = (void *)extra;
 	uint16_t copy_len;
 
-	copy_len = min(le16_to_cpu(buf->size), le16_to_cpu(resp->size));
+	copy_len = min(get_unaligned_le16(&buf->size),
+			get_unaligned_le16(&resp->size));
 	memcpy(buf, resp, copy_len);
 	return 0;
 }
@@ -98,11 +100,11 @@ int lbs_update_hw_spec(struct lbs_private *priv)
 	if (ret)
 		goto out;
 
-	priv->fwcapinfo = le32_to_cpu(cmd.fwcapinfo);
+	priv->fwcapinfo = get_unaligned_le32(&cmd.fwcapinfo);
 
 	/* The firmware release is in an interesting format: the patch
 	 * level is in the most significant nibble ... so fix that: */
-	priv->fwrelease = le32_to_cpu(cmd.fwrelease);
+	priv->fwrelease = get_unaligned_le32(&cmd.fwrelease);
 	priv->fwrelease = (priv->fwrelease << 8) |
 		(priv->fwrelease >> 24 & 0xff);
 
@@ -124,7 +126,7 @@ int lbs_update_hw_spec(struct lbs_private *priv)
 	 * only ever be 8-bit, even though the field size is 16-bit.  Some firmware
 	 * returns non-zero high 8 bits here.
 	 */
-	priv->regioncode = le16_to_cpu(cmd.regioncode) & 0xFF;
+	priv->regioncode = get_unaligned_le16(&cmd.regioncode) & 0xFF;
 
 	for (i = 0; i < MRVDRV_MAX_REGION_CODE; i++) {
 		/* use the region code to search for the index */
@@ -253,7 +255,7 @@ int lbs_cmd_802_11_inactivity_timeout(struct lbs_private *priv,
 	ret = lbs_cmd_with_response(priv, CMD_802_11_INACTIVITY_TIMEOUT, &cmd);
 
 	if (!ret)
-		*timeout = le16_to_cpu(cmd.timeout);
+		*timeout = get_unaligned_le16(&cmd.timeout);
 
 	lbs_deb_leave_args(LBS_DEB_CMD, "ret %d", ret);
 	return 0;
@@ -285,16 +287,17 @@ int lbs_cmd_802_11_sleep_params(struct lbs_private *priv, uint16_t cmd_action,
 	if (!ret) {
 		lbs_deb_cmd("error 0x%x, offset 0x%x, stabletime 0x%x, "
 			    "calcontrol 0x%x extsleepclk 0x%x\n",
-			    le16_to_cpu(cmd.error), le16_to_cpu(cmd.offset),
-			    le16_to_cpu(cmd.stabletime), cmd.calcontrol,
-			    cmd.externalsleepclk);
+			    get_unaligned_le16(&cmd.error),
+			    get_unaligned_le16(&cmd.offset),
+			    get_unaligned_le16(&cmd.stabletime),
+			    cmd.calcontrol, cmd.externalsleepclk);
 
-		sp->sp_error = le16_to_cpu(cmd.error);
-		sp->sp_offset = le16_to_cpu(cmd.offset);
-		sp->sp_stabletime = le16_to_cpu(cmd.stabletime);
+		sp->sp_error = get_unaligned_le16(&cmd.error);
+		sp->sp_offset = get_unaligned_le16(&cmd.offset);
+		sp->sp_stabletime = get_unaligned_le16(&cmd.stabletime);
 		sp->sp_calcontrol = cmd.calcontrol;
 		sp->sp_extsleepclk = cmd.externalsleepclk;
-		sp->sp_reserved = le16_to_cpu(cmd.reserved);
+		sp->sp_reserved = get_unaligned_le16(&cmd.reserved);
 	}
 
 	lbs_deb_leave_args(LBS_DEB_CMD, "ret %d", ret);
@@ -385,7 +388,7 @@ int lbs_cmd_802_11_enable_rsn(struct lbs_private *priv, uint16_t cmd_action,
 
 	ret = lbs_cmd_with_response(priv, CMD_802_11_ENABLE_RSN, &cmd);
 	if (!ret && cmd_action == CMD_ACT_GET)
-		*enable = le16_to_cpu(cmd.enable);
+		*enable = get_unaligned_le16(&cmd.enable);
 
 	lbs_deb_leave_args(LBS_DEB_CMD, "ret %d", ret);
 	return ret;
@@ -455,10 +458,14 @@ int lbs_cmd_802_11_key_material(struct lbs_private *priv, uint16_t cmd_action,
 		while (buf_ptr < resp_end) {
 			struct MrvlIEtype_keyParamSet *keyparam = buf_ptr;
 			struct enc_key *key;
-			uint16_t param_set_len = le16_to_cpu(keyparam->length);
-			uint16_t key_len = le16_to_cpu(keyparam->keylen);
-			uint16_t key_flags = le16_to_cpu(keyparam->keyinfo);
-			uint16_t key_type = le16_to_cpu(keyparam->keytypeid);
+			uint16_t param_set_len =
+				get_unaligned_le16(&keyparam->length);
+			uint16_t key_len =
+				get_unaligned_le16(&keyparam->keylen);
+			uint16_t key_flags =
+				get_unaligned_le16(&keyparam->keyinfo);
+			uint16_t key_type =
+				get_unaligned_le16(&keyparam->keytypeid);
 			void *end;
 
 			end = (void *)keyparam + sizeof(keyparam->type)
@@ -533,7 +540,8 @@ int lbs_set_snmp_mib(struct lbs_private *priv, u32 oid, u16 val)
 	}
 
 	lbs_deb_cmd("SNMP_CMD: (set) oid 0x%x, oid size 0x%x, value 0x%x\n",
-		    le16_to_cpu(cmd.oid), le16_to_cpu(cmd.bufsize), val);
+		    get_unaligned_le16(&cmd.oid),
+		    get_unaligned_le16(&cmd.bufsize), val);
 
 	ret = lbs_cmd_with_response(priv, CMD_802_11_SNMP_MIB, &cmd);
 
@@ -567,7 +575,7 @@ int lbs_get_snmp_mib(struct lbs_private *priv, u32 oid, u16 *out_val)
 	if (ret)
 		goto out;
 
-	switch (le16_to_cpu(cmd.bufsize)) {
+	switch (get_unaligned_le16(&cmd.bufsize)) {
 	case sizeof(u8):
 		if (oid == SNMP_MIB_OID_BSS_TYPE) {
 			if (cmd.value[0] == 2)
@@ -582,7 +590,7 @@ int lbs_get_snmp_mib(struct lbs_private *priv, u32 oid, u16 *out_val)
 		break;
 	default:
 		lbs_deb_cmd("SNMP_CMD: (get) unhandled OID 0x%x size %d\n",
-		            oid, le16_to_cpu(cmd.bufsize));
+				oid, get_unaligned_le16(&cmd.bufsize));
 		break;
 	}
 
@@ -615,7 +623,7 @@ int lbs_get_tx_power(struct lbs_private *priv, s16 *curlevel, s16 *minlevel,
 
 	ret = lbs_cmd_with_response(priv, CMD_802_11_RF_TX_POWER, &cmd);
 	if (ret == 0) {
-		*curlevel = le16_to_cpu(cmd.curlevel);
+		*curlevel = get_unaligned_le16(&cmd.curlevel);
 		if (minlevel)
 			*minlevel = cmd.minlevel;
 		if (maxlevel)
@@ -719,8 +727,8 @@ int lbs_cmd_802_11_rate_adapt_rateset(struct lbs_private *priv,
 	cmd.bitmap = lbs_rate_to_fw_bitmap(priv->cur_rate, priv->enablehwauto);
 	ret = lbs_cmd_with_response(priv, CMD_802_11_RATE_ADAPT_RATESET, &cmd);
 	if (!ret && cmd_action == CMD_ACT_GET) {
-		priv->ratebitmap = le16_to_cpu(cmd.bitmap);
-		priv->enablehwauto = le16_to_cpu(cmd.enablehwauto);
+		priv->ratebitmap = get_unaligned_le16(&cmd.bitmap);
+		priv->enablehwauto = get_unaligned_le16(&cmd.enablehwauto);
 	}
 
 	lbs_deb_leave_args(LBS_DEB_CMD, "ret %d", ret);
@@ -800,7 +808,7 @@ int lbs_get_channel(struct lbs_private *priv)
 	if (ret)
 		goto out;
 
-	ret = le16_to_cpu(cmd.channel);
+	ret = get_unaligned_le16(&cmd.channel);
 	lbs_deb_cmd("current radio channel is %d\n", ret);
 
 out:
@@ -851,7 +859,7 @@ int lbs_set_channel(struct lbs_private *priv, u8 channel)
 	if (ret)
 		goto out;
 
-	priv->curbssparams.channel = (uint8_t) le16_to_cpu(cmd.channel);
+	priv->curbssparams.channel = (uint8_t)get_unaligned_le16(&cmd.channel);
 	lbs_deb_cmd("channel switch from %d to %d\n", old_channel,
 		priv->curbssparams.channel);
 
@@ -890,7 +898,7 @@ static int lbs_cmd_reg_access(struct cmd_ds_command *cmdptr,
 
 	offval = (struct lbs_offset_value *)pdata_buf;
 
-	switch (le16_to_cpu(cmdptr->command)) {
+	switch (get_unaligned_le16(&cmdptr->command)) {
 	case CMD_MAC_REG_ACCESS:
 		{
 			struct cmd_ds_mac_reg_access *macreg;
@@ -1151,7 +1159,8 @@ static void lbs_queue_cmd(struct lbs_private *priv,
 	cmdnode->result = 0;
 
 	/* Exit_PS command needs to be queued in the header always. */
-	if (le16_to_cpu(cmdnode->cmdbuf->command) == CMD_802_11_PS_MODE) {
+	if (get_unaligned_le16(&cmdnode->cmdbuf->command) ==
+		    CMD_802_11_PS_MODE) {
 		struct cmd_ds_802_11_ps_mode *psm = (void *) &cmdnode->cmdbuf[1];
 
 		if (psm->action == cpu_to_le16(CMD_SUBCMD_EXIT_PS)) {
@@ -1170,7 +1179,7 @@ static void lbs_queue_cmd(struct lbs_private *priv,
 	spin_unlock_irqrestore(&priv->driver_lock, flags);
 
 	lbs_deb_host("QUEUE_CMD: inserted command 0x%04x into cmdpendingq\n",
-		     le16_to_cpu(cmdnode->cmdbuf->command));
+		     get_unaligned_le16(&cmdnode->cmdbuf->command));
 
 done:
 	lbs_deb_leave(LBS_DEB_HOST);
@@ -1195,8 +1204,8 @@ static void lbs_submit_command(struct lbs_private *priv,
 	priv->cur_cmd_retcode = 0;
 	spin_unlock_irqrestore(&priv->driver_lock, flags);
 
-	cmdsize = le16_to_cpu(cmd->size);
-	command = le16_to_cpu(cmd->command);
+	cmdsize = get_unaligned_le16(&cmd->size);
+	command = get_unaligned_le16(&cmd->command);
 
 	/* These commands take longer */
 	if (command == CMD_802_11_SCAN || command == CMD_802_11_ASSOCIATE ||
@@ -1204,7 +1213,7 @@ static void lbs_submit_command(struct lbs_private *priv,
 		timeo = 5 * HZ;
 
 	lbs_deb_cmd("DNLD_CMD: command 0x%04x, seq %d, size %d\n",
-		     command, le16_to_cpu(cmd->seqnum), cmdsize);
+		     command, get_unaligned_le16(&cmd->seqnum), cmdsize);
 	lbs_deb_hex(LBS_DEB_CMD, "DNLD_CMD", (void *) cmdnode->cmdbuf, cmdsize);
 
 	ret = priv->hw_host_to_card(priv, MVMS_CMD, (u8 *) cmd, cmdsize);
@@ -1462,7 +1471,7 @@ int lbs_prepare_and_send_command(struct lbs_private *priv,
 
 #define ACTION_NUMLED_TLVTYPE_LEN_FIELDS_LEN 8
 			cmdptr->size =
-			    cpu_to_le16(le16_to_cpu(gpio->header.len)
+			    cpu_to_le16(get_unaligned_le16(&gpio->header.len)
 				+ S_DS_GEN
 				+ ACTION_NUMLED_TLVTYPE_LEN_FIELDS_LEN);
 			gpio->header.len = gpio->header.len;
@@ -1687,19 +1696,21 @@ int lbs_execute_next_command(struct lbs_private *priv)
 	if (cmdnode) {
 		cmd = cmdnode->cmdbuf;
 
-		if (is_command_allowed_in_ps(le16_to_cpu(cmd->command))) {
+		if (is_command_allowed_in_ps(
+				get_unaligned_le16(&cmd->command))) {
 			if ((priv->psstate == PS_STATE_SLEEP) ||
 			    (priv->psstate == PS_STATE_PRE_SLEEP)) {
 				lbs_deb_host(
 				       "EXEC_NEXT_CMD: cannot send cmd 0x%04x in psstate %d\n",
-				       le16_to_cpu(cmd->command),
+				       get_unaligned_le16(&cmd->command),
 				       priv->psstate);
 				ret = -1;
 				goto done;
 			}
 			lbs_deb_host("EXEC_NEXT_CMD: OK to send command "
-				     "0x%04x in psstate %d\n",
-				     le16_to_cpu(cmd->command), priv->psstate);
+					"0x%04x in psstate %d\n",
+					get_unaligned_le16(&cmd->command),
+					priv->psstate);
 		} else if (priv->psstate != PS_STATE_FULL_POWER) {
 			/*
 			 * 1. Non-PS command:
@@ -1769,7 +1780,7 @@ int lbs_execute_next_command(struct lbs_private *priv)
 		}
 		list_del(&cmdnode->list);
 		lbs_deb_host("EXEC_NEXT_CMD: sending command 0x%04x\n",
-			    le16_to_cpu(cmd->command));
+			    get_unaligned_le16(&cmd->command));
 		lbs_submit_command(priv, cmdnode);
 	} else {
 		/*

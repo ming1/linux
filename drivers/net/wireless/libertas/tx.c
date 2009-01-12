@@ -1,6 +1,7 @@
 /**
   * This file contains the handling of TX in wlan driver.
   */
+#include <asm/unaligned.h>
 #include <linux/netdevice.h>
 #include <linux/etherdevice.h>
 
@@ -137,9 +138,11 @@ int lbs_hard_start_xmit(struct sk_buff *skb, struct net_device *dev)
 
 	lbs_deb_hex(LBS_DEB_TX, "txpd", (u8 *) &txpd, sizeof(struct txpd));
 
-	lbs_deb_hex(LBS_DEB_TX, "Tx Data", (u8 *) p802x_hdr, le16_to_cpu(txpd->tx_packet_length));
+	lbs_deb_hex(LBS_DEB_TX, "Tx Data", (u8 *) p802x_hdr,
+		    get_unaligned_le16(&txpd->tx_packet_length));
 
-	memcpy(&txpd[1], p802x_hdr, le16_to_cpu(txpd->tx_packet_length));
+	memcpy(&txpd[1], p802x_hdr,
+	       get_unaligned_le16(&txpd->tx_packet_length));
 
 	spin_lock_irqsave(&priv->driver_lock, flags);
 	priv->tx_pending_len = pkt_len + sizeof(struct txpd);
