@@ -1125,6 +1125,10 @@ ieee80211_data_to_8023(struct ieee80211_rx_data *rx)
 	u8 src[ETH_ALEN] __aligned(2);
 	struct sk_buff *skb = rx->skb;
 	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+	DECLARE_MAC_BUF(mac);
+	DECLARE_MAC_BUF(mac2);
+	DECLARE_MAC_BUF(mac3);
+	DECLARE_MAC_BUF(mac4);
 
 	if (unlikely(!ieee80211_is_data_present(hdr->frame_control)))
 		return -1;
