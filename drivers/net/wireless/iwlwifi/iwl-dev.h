@@ -691,20 +691,6 @@ struct statistics_general_data {
 	u32 beacon_energy_c;
 };
 
-
-/*
- * enum iwl_calib
- * defines the order in which results of initial calibrations
- * should be sent to the runtime uCode
- */
-enum iwl_calib {
-	IWL_CALIB_XTAL,
-	IWL_CALIB_LO,
-	IWL_CALIB_TX_IQ,
-	IWL_CALIB_TX_IQ_PERD,
-	IWL_CALIB_MAX
-};
-
 /* Opaque calibration results */
 struct iwl_calib_result {
 	void *buf;
@@ -771,6 +757,7 @@ enum {
 
 
 #define IWL_MAX_NUM_QUEUES	20 /* FIXME: do dynamic allocation */
+#define IWL_CALIB_MAX  4
 
 struct iwl_priv {
 
