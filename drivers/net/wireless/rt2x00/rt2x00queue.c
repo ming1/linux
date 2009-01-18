@@ -186,10 +186,11 @@ static void rt2x00queue_create_tx_descriptor_seq(struct queue_entry *entry,
 
 static void rt2x00queue_create_tx_descriptor_plcp(struct queue_entry *entry,
 						  struct txentry_desc *txdesc,
-						  struct ieee80211_rate *rate)
+						  const struct rt2x00_rate *hwrate)
 {
 	struct rt2x00_dev *rt2x00dev = entry->queue->rt2x00dev;
-	const struct rt2x00_rate *hwrate = rt2x00_get_rate(rate->hw_value);
+	struct ieee80211_tx_info *tx_info = IEEE80211_SKB_CB(entry->skb);
+	struct ieee80211_tx_rate *txrate = &tx_info->control.rates[0];
 	unsigned int data_length;
 	unsigned int duration;
 	unsigned int residual;
@@ -232,7 +233,7 @@ static void rt2x00queue_create_tx_descriptor_plcp(struct queue_entry *entry,
 		 * When preamble is enabled we should set the
 		 * preamble bit for the signal.
 		 */
-		if (rate->flags & IEEE80211_TX_RC_USE_SHORT_PREAMBLE)
+		if (txrate->flags & IEEE80211_TX_RC_USE_SHORT_PREAMBLE)
 			txdesc->signal |= 0x08;
 	}
 }
@@ -326,7 +327,7 @@ static void rt2x00queue_create_tx_descriptor(struct queue_entry *entry,
 	 */
 	rt2x00crypto_create_tx_descriptor(entry, txdesc);
 	rt2x00queue_create_tx_descriptor_seq(entry, txdesc);
-	rt2x00queue_create_tx_descriptor_plcp(entry, txdesc, rate);
+	rt2x00queue_create_tx_descriptor_plcp(entry, txdesc, hwrate);
 }
 
 static void rt2x00queue_write_tx_descriptor(struct queue_entry *entry,
