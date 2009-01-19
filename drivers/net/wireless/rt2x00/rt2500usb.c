@@ -698,8 +698,7 @@ static void rt2500usb_link_stats(struct rt2x00_dev *rt2x00dev,
 	qual->false_cca = rt2x00_get_field16(reg, STA_CSR3_FALSE_CCA_ERROR);
 }
 
-static void rt2500usb_reset_tuner(struct rt2x00_dev *rt2x00dev,
-				  struct link_qual *qual)
+static void rt2500usb_reset_tuner(struct rt2x00_dev *rt2x00dev)
 {
 	u16 eeprom;
 	u16 value;
@@ -720,7 +719,7 @@ static void rt2500usb_reset_tuner(struct rt2x00_dev *rt2x00dev,
 	value = rt2x00_get_field16(eeprom, EEPROM_BBPTUNE_VGCUPPER);
 	rt2500usb_bbp_write(rt2x00dev, 17, value);
 
-	qual->vgc_level = value;
+	rt2x00dev->link.vgc_level = value;
 }
 
 /*
