@@ -1295,7 +1295,7 @@ static int p54_set_tim(struct ieee80211_hw *dev, struct ieee80211_sta *sta,
 	struct p54_tim *tim;
 
 	skb = p54_alloc_skb(dev, P54_HDR_FLAG_CONTROL_OPSET, sizeof(*tim),
-			    P54_CONTROL_TYPE_TIM, GFP_ATOMIC);
+			    P54_CONTROL_TYPE_TIM, GFP_KERNEL);
 	if (!skb)
 		return -ENOMEM;
 
