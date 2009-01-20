@@ -2718,7 +2718,7 @@ bool ath9k_hw_setpower(struct ath_hal *ah,
 	int status = true, setChip = true;
 
 	DPRINTF(ah->ah_sc, ATH_DBG_POWER_MGMT, "%s -> %s (%s)\n",
-		modes[ahp->ah_powerMode], modes[mode],
+		modes[ah->ah_power_mode], modes[mode],
 		setChip ? "set chip " : "");
 
 	switch (mode) {
@@ -2737,7 +2737,7 @@ bool ath9k_hw_setpower(struct ath_hal *ah,
 			"Unknown power mode %u\n", mode);
 		return false;
 	}
-	ahp->ah_powerMode = mode;
+	ah->ah_power_mode = mode;
 
 	return status;
 }
