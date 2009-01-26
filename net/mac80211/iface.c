@@ -591,18 +591,21 @@ static void ieee80211_set_multicast_list(struct net_device *dev)
 	dev_mc_sync(local->mdev, dev);
 }
 
+static const struct net_device_ops ieee80211_netdev_ops = {
+	.ndo_open		= ieee80211_open,
+	.ndo_stop		= ieee80211_stop,
+	.ndo_start_xmit		= ieee80211_subif_start_xmit,
+	.ndo_set_multicast_list = ieee80211_set_multicast_list,
+	.ndo_change_mtu 	= ieee80211_change_mtu,
+	.ndo_set_mac_address 	= eth_mac_addr,
+};
+
 static void ieee80211_if_setup(struct net_device *dev)
 {
 	ether_setup(dev);
-	dev->hard_start_xmit = ieee80211_subif_start_xmit;
+	dev->netdev_ops = &ieee80211_netdev_ops;
 	dev->wireless_handlers = &ieee80211_iw_handler_def;
-	dev->set_multicast_list = ieee80211_set_multicast_list;
-	dev->change_mtu = ieee80211_change_mtu;
-	dev->open = ieee80211_open;
-	dev->stop = ieee80211_stop;
 	dev->destructor = free_netdev;
-	/* we will validate the address ourselves in ->open */
-	dev->validate_addr = NULL;
 }
 /*
  * Called when the netdev is removed or, by the code below, before
