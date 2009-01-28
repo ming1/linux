@@ -695,7 +695,7 @@ enum PROT_MODE {
 
 struct ath_softc {
 	struct ieee80211_hw *hw;
-	struct device *dev;
+	struct pci_dev *pdev;
 	struct tasklet_struct intr_tq;
 	struct tasklet_struct bcon_tasklet;
 	struct ath_hal *sc_ah;
