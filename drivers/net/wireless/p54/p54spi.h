@@ -25,6 +25,7 @@
 #include <linux/mutex.h>
 #include <linux/list.h>
 #include <net/mac80211.h>
+#include <mach/board.h>
 
 #include "p54.h"
 
@@ -107,6 +108,7 @@ struct p54s_priv {
 	struct p54_common common;
 	struct ieee80211_hw *hw;
 	struct spi_device *spi;
+	const struct omap_wlan_cx3110x_config *config;
 
 	struct work_struct work;
 
