@@ -285,10 +285,7 @@ static void rtl8225_rf_set_tx_power(struct ieee80211_hw *dev, int channel)
 	ofdm_power = priv->channels[channel - 1].hw_value >> 4;
 
 	cck_power = min(cck_power, (u8)11);
-	if (ofdm_power > (u8)15)
-		ofdm_power = 25;
-	else
-		ofdm_power += 10;
+	ofdm_power = min(ofdm_power, (u8)35);
 
 	rtl818x_iowrite8(priv, &priv->map->TX_GAIN_CCK,
 			 rtl8225_tx_gain_cck_ofdm[cck_power / 6] >> 1);
@@ -539,10 +536,7 @@ static void rtl8225z2_rf_set_tx_power(struct ieee80211_hw *dev, int channel)
 	cck_power += priv->txpwr_base & 0xF;
 	cck_power = min(cck_power, (u8)35);
 
-	if (ofdm_power > (u8)15)
-		ofdm_power = 25;
-	else
-		ofdm_power += 10;
+	ofdm_power = min(ofdm_power, (u8)15);
 	ofdm_power += priv->txpwr_base >> 4;
 	ofdm_power = min(ofdm_power, (u8)35);
 
