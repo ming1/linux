@@ -40,8 +40,6 @@
 
 #include "iwl-commands.h"
 #include "iwl-3945.h"
-#include "iwl-core.h"
-#include "iwl-dev.h"
 
 
 static const struct {
@@ -93,7 +91,7 @@ static int iwl_send_led_cmd(struct iwl_priv *priv,
 		.meta.u.callback = iwl3945_led_cmd_callback,
 	};
 
-	return iwl_send_cmd(priv, &cmd);
+	return iwl3945_send_cmd(priv, &cmd);
 }
 
 
