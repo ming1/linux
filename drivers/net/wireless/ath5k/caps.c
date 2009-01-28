@@ -85,8 +85,7 @@ int ath5k_hw_set_capabilities(struct ath5k_hw *ah)
 		/* Enable  802.11b if a 2GHz capable radio (2111/5112) is
 		 * connected */
 		if (AR5K_EEPROM_HDR_11B(ee_header) ||
-		    (AR5K_EEPROM_HDR_11G(ee_header) &&
-		     ah->ah_version != AR5K_AR5211)) {
+				AR5K_EEPROM_HDR_11G(ee_header)) {
 			/* 2312 */
 			ah->ah_capabilities.cap_range.range_2ghz_min = 2412;
 			ah->ah_capabilities.cap_range.range_2ghz_max = 2732;
@@ -95,8 +94,7 @@ int ath5k_hw_set_capabilities(struct ath5k_hw *ah)
 				__set_bit(AR5K_MODE_11B,
 						ah->ah_capabilities.cap_mode);
 
-			if (AR5K_EEPROM_HDR_11G(ee_header) &&
-			    ah->ah_version != AR5K_AR5211)
+			if (AR5K_EEPROM_HDR_11G(ee_header))
 				__set_bit(AR5K_MODE_11G,
 						ah->ah_capabilities.cap_mode);
 		}
