@@ -643,7 +643,7 @@ enum ieee80211_if_conf_change {
  */
 struct ieee80211_if_conf {
 	u32 changed;
-	const u8 *bssid;
+	u8 *bssid;
 };
 
 /**
