@@ -62,8 +62,7 @@ static int iwl_rfkill_soft_rf_kill(void *data, enum rfkill_state state)
 		iwl_radio_kill_sw_disable_radio(priv);
 		break;
 	default:
-		IWL_WARN(priv, "we received unexpected RFKILL state %d\n",
-			state);
+		IWL_WARNING("we received unexpected RFKILL state %d\n", state);
 		break;
 	}
 out_unlock:
