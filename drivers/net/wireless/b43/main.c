@@ -3476,8 +3476,8 @@ out_unlock_mutex:
 }
 
 static int b43_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
-			  struct ieee80211_vif *vif, struct ieee80211_sta *sta,
-			  struct ieee80211_key_conf *key)
+			   const u8 *local_addr, const u8 *addr,
+			   struct ieee80211_key_conf *key)
 {
 	struct b43_wl *wl = hw_to_b43_wl(hw);
 	struct b43_wldev *dev;
@@ -3542,14 +3542,9 @@ static int b43_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 		}
 
 		if (key->flags & IEEE80211_KEY_FLAG_PAIRWISE) {
-			if (WARN_ON(!sta)) {
-				err = -EOPNOTSUPP;
-				goto out_unlock;
-			}
 			/* Pairwise key with an assigned MAC address. */
 			err = b43_key_write(dev, -1, algorithm,
-					    key->key, key->keylen,
-					    sta->addr, key);
+					    key->key, key->keylen, addr, key);
 		} else {
 			/* Group key */
 			err = b43_key_write(dev, index, algorithm,
@@ -3582,7 +3577,7 @@ out_unlock:
 		b43dbg(wl, "%s hardware based encryption for keyidx: %d, "
 		       "mac: %pM\n",
 		       cmd == SET_KEY ? "Using" : "Disabling", key->keyidx,
-		       sta ? sta->addr : "<group key>");
+		       addr);
 		b43_dump_keymemory(dev);
 	}
 	write_unlock(&wl->tx_lock);
