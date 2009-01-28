@@ -1599,8 +1599,7 @@ static int ieee80211_sta_join_ibss(struct ieee80211_sub_if_data *sdata,
 
 	ifsta->probe_resp = skb;
 
-	ieee80211_if_config(sdata, IEEE80211_IFCC_BEACON |
-				   IEEE80211_IFCC_BEACON_ENABLED);
+	ieee80211_if_config(sdata, IEEE80211_IFCC_BEACON);
 
 
 	rates = 0;
