@@ -75,7 +75,8 @@ extern struct pci_device_id iwl3945_hw_card_ids[];
 #define IWL_NOISE_MEAS_NOT_AVAILABLE (-127)
 
 /* Module parameters accessible from iwl-*.c */
-extern struct iwl_mod_params iwl3945_mod_params;
+extern int iwl3945_param_hwcrypto;
+extern int iwl3945_param_queues_num;
 
 struct iwl3945_sta_priv {
 	struct iwl3945_rs_sta *rs_sta;
