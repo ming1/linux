@@ -1,22 +1,21 @@
 config IWLWIFI
-	bool "Intel Wireless Wifi"
-	depends on PCI && MAC80211 && WLAN_80211 && EXPERIMENTAL
-	default y
+	tristate
 
 config IWLCORE
 	tristate "Intel Wireless Wifi Core"
-	depends on IWLWIFI
+	depends on PCI && MAC80211 && WLAN_80211 && EXPERIMENTAL
 	select LIB80211
+	select IWLWIFI
 	select MAC80211_LEDS if IWLWIFI_LEDS
 	select LEDS_CLASS if IWLWIFI_LEDS
 	select RFKILL if IWLWIFI_RFKILL
 
 config IWLWIFI_LEDS
-	bool "Enable LED support in iwlagn driver"
-	depends on IWLCORE
+	bool
+	default n
 
 config IWLWIFI_RFKILL
-	bool "Enable RF kill support in iwlagn driver"
+	boolean "Iwlwifi RF kill support"
 	depends on IWLCORE
 
 config IWLWIFI_DEBUG
@@ -52,7 +51,7 @@ config IWLWIFI_DEBUGFS
 
 config IWLAGN
 	tristate "Intel Wireless WiFi Next Gen AGN"
-	depends on IWLWIFI
+	depends on PCI && MAC80211 && WLAN_80211 && EXPERIMENTAL
 	select FW_LOADER
 	select IWLCORE
 	---help---
@@ -105,9 +104,10 @@ config IWL5000
 
 config IWL3945
 	tristate "Intel PRO/Wireless 3945ABG/BG Network Connection"
-	depends on IWLWIFI
+	depends on PCI && MAC80211 && WLAN_80211 && EXPERIMENTAL
 	select FW_LOADER
 	select LIB80211
+	select IWLWIFI
 	select MAC80211_LEDS if IWL3945_LEDS
 	select LEDS_CLASS if IWL3945_LEDS
 	select RFKILL if IWL3945_RFKILL
