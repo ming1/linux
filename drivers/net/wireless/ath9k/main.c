@@ -1949,6 +1949,8 @@ static int ath9k_start(struct ieee80211_hw *hw)
 	DPRINTF(sc, ATH_DBG_CONFIG, "Starting driver with "
 		"initial channel: %d MHz\n", curchan->center_freq);
 
+	mutex_lock(&sc->mutex);
+
 	/* setup initial channel */
 
 	pos = curchan->hw_value;
@@ -1974,7 +1976,7 @@ static int ath9k_start(struct ieee80211_hw *hw)
 			"(freq %u MHz)\n", r,
 			curchan->center_freq);
 		spin_unlock_bh(&sc->sc_resetlock);
-		return r;
+		goto mutex_unlock;
 	}
 	spin_unlock_bh(&sc->sc_resetlock);
 
@@ -1994,7 +1996,8 @@ static int ath9k_start(struct ieee80211_hw *hw)
 	if (ath_startrecv(sc) != 0) {
 		DPRINTF(sc, ATH_DBG_FATAL,
 			"Unable to start recv logic\n");
-		return -EIO;
+		r = -EIO;
+		goto mutex_unlock;
 	}
 
 	/* Setup our intr mask. */
@@ -2021,6 +2024,10 @@ static int ath9k_start(struct ieee80211_hw *hw)
 #if defined(CONFIG_RFKILL) || defined(CONFIG_RFKILL_MODULE)
 	r = ath_start_rfkill_poll(sc);
 #endif
+
+mutex_unlock:
+	mutex_unlock(&sc->mutex);
+
 	return r;
 }
 
@@ -2085,7 +2092,7 @@ static void ath9k_stop(struct ieee80211_hw *hw)
 		return;
 	}
 
-	DPRINTF(sc, ATH_DBG_CONFIG, "Cleaning up\n");
+	mutex_lock(&sc->mutex);
 
 	ieee80211_stop_queues(sc->hw);
 
@@ -2110,6 +2117,8 @@ static void ath9k_stop(struct ieee80211_hw *hw)
 
 	sc->sc_flags |= SC_OP_INVALID;
 
+	mutex_unlock(&sc->mutex);
+
 	DPRINTF(sc, ATH_DBG_CONFIG, "Driver halt\n");
 }
 
@@ -2124,6 +2133,8 @@ static int ath9k_add_interface(struct ieee80211_hw *hw,
 
 	if (sc->sc_nvaps)
 		return -ENOBUFS;
+
+	mutex_lock(&sc->mutex);
 
 	switch (conf->type) {
 	case NL80211_IFTYPE_STATION:
@@ -2184,6 +2195,8 @@ static int ath9k_add_interface(struct ieee80211_hw *hw,
 			  jiffies + msecs_to_jiffies(ATH_ANI_POLLINTERVAL));
 	}
 
+	mutex_unlock(&sc->mutex);
+
 	return 0;
 }
 
@@ -2194,6 +2207,8 @@ static void ath9k_remove_interface(struct ieee80211_hw *hw,
 	struct ath_vap *avp = (void *)conf->vif->drv_priv;
 
 	DPRINTF(sc, ATH_DBG_CONFIG, "Detach Interface\n");
+
+	mutex_lock(&sc->mutex);
 
 	/* Stop ANI */
 	del_timer_sync(&sc->sc_ani.timer);
@@ -2209,6 +2224,8 @@ static void ath9k_remove_interface(struct ieee80211_hw *hw,
 
 	sc->sc_vaps[0] = NULL;
 	sc->sc_nvaps--;
+
+	mutex_unlock(&sc->mutex);
 }
 
 static int ath9k_config(struct ieee80211_hw *hw, u32 changed)
@@ -2217,6 +2234,7 @@ static int ath9k_config(struct ieee80211_hw *hw, u32 changed)
 	struct ieee80211_conf *conf = &hw->conf;
 
 	mutex_lock(&sc->mutex);
+
 	if (changed & IEEE80211_CONF_CHANGE_PS) {
 		if (conf->flags & IEEE80211_CONF_PS) {
 			if ((sc->sc_imask & ATH9K_INT_TIM_TIMER) == 0) {
@@ -2261,6 +2279,7 @@ static int ath9k_config(struct ieee80211_hw *hw, u32 changed)
 		sc->sc_config.txpowlimit = 2 * conf->power_level;
 
 	mutex_unlock(&sc->mutex);
+
 	return 0;
 }
 
@@ -2403,8 +2422,7 @@ static void ath9k_sta_notify(struct ieee80211_hw *hw,
 	}
 }
 
-static int ath9k_conf_tx(struct ieee80211_hw *hw,
-			 u16 queue,
+static int ath9k_conf_tx(struct ieee80211_hw *hw, u16 queue,
 			 const struct ieee80211_tx_queue_params *params)
 {
 	struct ath_softc *sc = hw->priv;
@@ -2413,6 +2431,8 @@ static int ath9k_conf_tx(struct ieee80211_hw *hw,
 
 	if (queue >= WME_NUM_AC)
 		return 0;
+
+	mutex_lock(&sc->mutex);
 
 	qi.tqi_aifs = params->aifs;
 	qi.tqi_cwmin = params->cw_min;
@@ -2430,6 +2450,8 @@ static int ath9k_conf_tx(struct ieee80211_hw *hw,
 	if (ret)
 		DPRINTF(sc, ATH_DBG_FATAL, "TXQ Update failed\n");
 
+	mutex_unlock(&sc->mutex);
+
 	return ret;
 }
 
@@ -2442,6 +2464,7 @@ static int ath9k_set_key(struct ieee80211_hw *hw,
 	struct ath_softc *sc = hw->priv;
 	int ret = 0;
 
+	mutex_lock(&sc->mutex);
 	ath9k_ps_wakeup(sc);
 	DPRINTF(sc, ATH_DBG_KEYCACHE, "Set HW Key\n");
 
@@ -2467,6 +2490,8 @@ static int ath9k_set_key(struct ieee80211_hw *hw,
 	}
 
 	ath9k_ps_restore(sc);
+	mutex_unlock(&sc->mutex);
+
 	return ret;
 }
 
@@ -2476,6 +2501,8 @@ static void ath9k_bss_info_changed(struct ieee80211_hw *hw,
 				   u32 changed)
 {
 	struct ath_softc *sc = hw->priv;
+
+	mutex_lock(&sc->mutex);
 
 	if (changed & BSS_CHANGED_ERP_PREAMBLE) {
 		DPRINTF(sc, ATH_DBG_CONFIG, "BSS Changed PREAMBLE %d\n",
@@ -2501,15 +2528,18 @@ static void ath9k_bss_info_changed(struct ieee80211_hw *hw,
 			bss_conf->assoc);
 		ath9k_bss_assoc_info(sc, vif, bss_conf);
 	}
+
+	mutex_unlock(&sc->mutex);
 }
 
 static u64 ath9k_get_tsf(struct ieee80211_hw *hw)
 {
 	u64 tsf;
 	struct ath_softc *sc = hw->priv;
-	struct ath_hal *ah = sc->sc_ah;
 
-	tsf = ath9k_hw_gettsf64(ah);
+	mutex_lock(&sc->mutex);
+	tsf = ath9k_hw_gettsf64(sc->sc_ah);
+	mutex_unlock(&sc->mutex);
 
 	return tsf;
 }
@@ -2517,23 +2547,25 @@ static u64 ath9k_get_tsf(struct ieee80211_hw *hw)
 static void ath9k_set_tsf(struct ieee80211_hw *hw, u64 tsf)
 {
 	struct ath_softc *sc = hw->priv;
-	struct ath_hal *ah = sc->sc_ah;
 
-	ath9k_hw_settsf64(ah, tsf);
+	mutex_lock(&sc->mutex);
+	ath9k_hw_settsf64(sc->sc_ah, tsf);
+	mutex_unlock(&sc->mutex);
 }
 
 static void ath9k_reset_tsf(struct ieee80211_hw *hw)
 {
 	struct ath_softc *sc = hw->priv;
-	struct ath_hal *ah = sc->sc_ah;
 
-	ath9k_hw_reset_tsf(ah);
+	mutex_lock(&sc->mutex);
+	ath9k_hw_reset_tsf(sc->sc_ah);
+	mutex_unlock(&sc->mutex);
 }
 
 static int ath9k_ampdu_action(struct ieee80211_hw *hw,
-		       enum ieee80211_ampdu_mlme_action action,
-		       struct ieee80211_sta *sta,
-		       u16 tid, u16 *ssn)
+			      enum ieee80211_ampdu_mlme_action action,
+			      struct ieee80211_sta *sta,
+			      u16 tid, u16 *ssn)
 {
 	struct ath_softc *sc = hw->priv;
 	int ret = 0;
