@@ -3075,6 +3075,13 @@ static void prism2_set_lockdep_class(struct net_device *dev)
 	netdev_for_each_tx_queue(dev, prism2_set_lockdep_class_one, NULL);
 }
 
+static const struct net_device_ops hostap_netdev_ops = {
+	.ndo_start_xmit 	= hostap_master_start_xmit,
+	.ndo_change_mtu		= eth_change_mtu,
+	.ndo_set_mac_address 	= eth_mac_addr,
+	.ndo_validate_addr	= eth_validate_addr,
+};
+
 static struct net_device *
 prism2_init_local_data(struct prism2_helper_functions *funcs, int card_idx,
 		       struct device *sdev)
@@ -3228,9 +3235,9 @@ while (0)
 
 	hostap_setup_dev(dev, local, HOSTAP_INTERFACE_MASTER);
 
-	dev->hard_start_xmit = hostap_master_start_xmit;
 	dev->type = ARPHRD_IEEE80211;
 	dev->header_ops = &hostap_80211_ops;
+	dev->netdev_ops = &hostap_netdev_ops;
 
 	rtnl_lock();
 	ret = dev_alloc_name(dev, "wifi%d");
