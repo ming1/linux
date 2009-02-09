@@ -19,6 +19,8 @@
 #include "reg.h"
 #include "phy.h"
 
+static const int16_t NOISE_FLOOR[] = { -96, -93, -98, -96, -93, -96 };
+
 /* We can tune this as we go by monitoring really low values */
 #define ATH9K_NF_TOO_LOW	-60
 
@@ -738,9 +740,10 @@ s16 ath9k_hw_getchan_noise(struct ath_hal *ah, struct ath9k_channel *chan)
 			chan->channel, chan->channelFlags);
 		return ATH_DEFAULT_NOISE_FLOOR;
 	}
-	if (ichan->rawNoiseFloor == 0)
-		nf = -96;
-	else
+	if (ichan->rawNoiseFloor == 0) {
+		enum wireless_mode mode = ath9k_hw_chan2wmode(ah, chan);
+		nf = NOISE_FLOOR[mode];
+	} else
 		nf = ichan->rawNoiseFloor;
 
 	if (!ath9k_hw_nf_in_range(ah, nf))
