@@ -131,12 +131,6 @@ u64 ieee80211_sta_get_rates(struct ieee80211_local *local,
 
 /* frame sending functions */
 
-static void add_extra_ies(struct sk_buff *skb, u8 *ies, size_t ies_len)
-{
-	if (ies)
-		memcpy(skb_put(skb, ies_len), ies, ies_len);
-}
-
 /* also used by scanning code */
 void ieee80211_send_probe_req(struct ieee80211_sub_if_data *sdata, u8 *dst,
 			      u8 *ssid, size_t ssid_len)
@@ -148,8 +142,7 @@ void ieee80211_send_probe_req(struct ieee80211_sub_if_data *sdata, u8 *dst,
 	u8 *pos, *supp_rates, *esupp_rates = NULL;
 	int i;
 
-	skb = dev_alloc_skb(local->hw.extra_tx_headroom + sizeof(*mgmt) + 200 +
-			    sdata->u.sta.ie_probereq_len);
+	skb = dev_alloc_skb(local->hw.extra_tx_headroom + sizeof(*mgmt) + 200);
 	if (!skb) {
 		printk(KERN_DEBUG "%s: failed to allocate buffer for probe "
 		       "request\n", sdata->dev->name);
@@ -196,9 +189,6 @@ void ieee80211_send_probe_req(struct ieee80211_sub_if_data *sdata, u8 *dst,
 		*pos = rate->bitrate / 5;
 	}
 
-	add_extra_ies(skb, sdata->u.sta.ie_probereq,
-		      sdata->u.sta.ie_probereq_len);
-
 	ieee80211_tx_skb(sdata, skb, 0);
 }
 
@@ -212,8 +202,7 @@ static void ieee80211_send_auth(struct ieee80211_sub_if_data *sdata,
 	struct ieee80211_mgmt *mgmt;
 
 	skb = dev_alloc_skb(local->hw.extra_tx_headroom +
-			    sizeof(*mgmt) + 6 + extra_len +
-			    sdata->u.sta.ie_auth_len);
+			    sizeof(*mgmt) + 6 + extra_len);
 	if (!skb) {
 		printk(KERN_DEBUG "%s: failed to allocate buffer for auth "
 		       "frame\n", sdata->dev->name);
@@ -236,7 +225,6 @@ static void ieee80211_send_auth(struct ieee80211_sub_if_data *sdata,
 	mgmt->u.auth.status_code = cpu_to_le16(0);
 	if (extra)
 		memcpy(skb_put(skb, extra_len), extra, extra_len);
-	add_extra_ies(skb, sdata->u.sta.ie_auth, sdata->u.sta.ie_auth_len);
 
 	ieee80211_tx_skb(sdata, skb, encrypt);
 }
@@ -247,26 +235,17 @@ static void ieee80211_send_assoc(struct ieee80211_sub_if_data *sdata,
 	struct ieee80211_local *local = sdata->local;
 	struct sk_buff *skb;
 	struct ieee80211_mgmt *mgmt;
-	u8 *pos, *ies, *ht_ie, *e_ies;
+	u8 *pos, *ies, *ht_ie;
 	int i, len, count, rates_len, supp_rates_len;
 	u16 capab;
 	struct ieee80211_bss *bss;
 	int wmm = 0;
 	struct ieee80211_supported_band *sband;
 	u64 rates = 0;
-	size_t e_ies_len;
-
-	if (ifsta->flags & IEEE80211_STA_PREV_BSSID_SET) {
-		e_ies = sdata->u.sta.ie_reassocreq;
-		e_ies_len = sdata->u.sta.ie_reassocreq_len;
-	} else {
-		e_ies = sdata->u.sta.ie_assocreq;
-		e_ies_len = sdata->u.sta.ie_assocreq_len;
-	}
 
 	skb = dev_alloc_skb(local->hw.extra_tx_headroom +
 			    sizeof(*mgmt) + 200 + ifsta->extra_ie_len +
-			    ifsta->ssid_len + e_ies_len);
+			    ifsta->ssid_len);
 	if (!skb) {
 		printk(KERN_DEBUG "%s: failed to allocate buffer for assoc "
 		       "frame\n", sdata->dev->name);
@@ -457,8 +436,6 @@ static void ieee80211_send_assoc(struct ieee80211_sub_if_data *sdata,
 		memcpy(pos, &sband->ht_cap.mcs, sizeof(sband->ht_cap.mcs));
 	}
 
-	add_extra_ies(skb, e_ies, e_ies_len);
-
 	kfree(ifsta->assocreq_ies);
 	ifsta->assocreq_ies_len = (skb->data + skb->len) - ies;
 	ifsta->assocreq_ies = kmalloc(ifsta->assocreq_ies_len, GFP_KERNEL);
@@ -476,19 +453,8 @@ static void ieee80211_send_deauth_disassoc(struct ieee80211_sub_if_data *sdata,
 	struct ieee80211_if_sta *ifsta = &sdata->u.sta;
 	struct sk_buff *skb;
 	struct ieee80211_mgmt *mgmt;
-	u8 *ies;
-	size_t ies_len;
 
-	if (stype == IEEE80211_STYPE_DEAUTH) {
-		ies = sdata->u.sta.ie_deauth;
-		ies_len = sdata->u.sta.ie_deauth_len;
-	} else {
-		ies = sdata->u.sta.ie_disassoc;
-		ies_len = sdata->u.sta.ie_disassoc_len;
-	}
-
-	skb = dev_alloc_skb(local->hw.extra_tx_headroom + sizeof(*mgmt) +
-			    ies_len);
+	skb = dev_alloc_skb(local->hw.extra_tx_headroom + sizeof(*mgmt));
 	if (!skb) {
 		printk(KERN_DEBUG "%s: failed to allocate buffer for "
 		       "deauth/disassoc frame\n", sdata->dev->name);
@@ -505,8 +471,6 @@ static void ieee80211_send_deauth_disassoc(struct ieee80211_sub_if_data *sdata,
 	skb_put(skb, 2);
 	/* u.deauth.reason_code == u.disassoc.reason_code */
 	mgmt->u.deauth.reason_code = cpu_to_le16(reason);
-
-	add_extra_ies(skb, ies, ies_len);
 
 	ieee80211_tx_skb(sdata, skb, ifsta->flags & IEEE80211_STA_MFP_ENABLED);
 }
@@ -1509,8 +1473,7 @@ static int ieee80211_sta_join_ibss(struct ieee80211_sub_if_data *sdata,
 	struct ieee80211_supported_band *sband;
 	union iwreq_data wrqu;
 
-	skb = dev_alloc_skb(local->hw.extra_tx_headroom + 400 +
-			    sdata->u.sta.ie_proberesp_len);
+	skb = dev_alloc_skb(local->hw.extra_tx_headroom + 400);
 	if (!skb) {
 		printk(KERN_DEBUG "%s: failed to allocate buffer for probe "
 		       "response\n", sdata->dev->name);
@@ -1592,9 +1555,6 @@ static int ieee80211_sta_join_ibss(struct ieee80211_sub_if_data *sdata,
 		*pos++ = rates;
 		memcpy(pos, &bss->supp_rates[8], rates);
 	}
-
-	add_extra_ies(skb, sdata->u.sta.ie_proberesp,
-		      sdata->u.sta.ie_proberesp_len);
 
 	ifsta->probe_resp = skb;
 
