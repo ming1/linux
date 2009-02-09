@@ -48,10 +48,9 @@
 
 #define DRV_NAME	"iwl3945"
 
-#include "iwl-fh.h"
-#include "iwl-3945-fh.h"
 #include "iwl-commands.h"
 #include "iwl-3945.h"
+#include "iwl-3945-fh.h"
 #include "iwl-helpers.h"
 #include "iwl-core.h"
 #include "iwl-dev.h"
@@ -181,13 +180,13 @@ static int iwl3945_tx_queue_alloc(struct iwl_priv *priv,
 
 	/* Circular buffer of transmit frame descriptors (TFDs),
 	 * shared with device */
-	txq->tfds = pci_alloc_consistent(dev,
-			sizeof(txq->tfds[0]) * TFD_QUEUE_SIZE_MAX,
+	txq->bd = pci_alloc_consistent(dev,
+			sizeof(txq->bd[0]) * TFD_QUEUE_SIZE_MAX,
 			&txq->q.dma_addr);
 
-	if (!txq->tfds) {
+	if (!txq->bd) {
 		IWL_ERR(priv, "pci_alloc_consistent(%zd) failed\n",
-			  sizeof(txq->tfds[0]) * TFD_QUEUE_SIZE_MAX);
+			  sizeof(txq->bd[0]) * TFD_QUEUE_SIZE_MAX);
 		goto error;
 	}
 	txq->q.id = id;
@@ -279,8 +278,8 @@ void iwl3945_tx_queue_free(struct iwl_priv *priv, struct iwl3945_tx_queue *txq)
 
 	/* De-alloc circular buffer of TFDs */
 	if (txq->q.n_bd)
-		pci_free_consistent(dev, sizeof(struct iwl3945_tfd) *
-				    txq->q.n_bd, txq->tfds, txq->q.dma_addr);
+		pci_free_consistent(dev, sizeof(struct iwl3945_tfd_frame) *
+				    txq->q.n_bd, txq->bd, txq->q.dma_addr);
 
 	/* De-alloc array of per-TFD driver data */
 	kfree(txq->txb);
@@ -446,12 +445,14 @@ static int iwl3945_enqueue_hcmd(struct iwl_priv *priv, struct iwl_host_cmd *cmd)
 {
 	struct iwl3945_tx_queue *txq = &priv->txq39[IWL_CMD_QUEUE_NUM];
 	struct iwl_queue *q = &txq->q;
-	struct iwl3945_tfd *tfd;
+	struct iwl3945_tfd_frame *tfd;
+	u32 *control_flags;
 	struct iwl_cmd *out_cmd;
 	u32 idx;
 	u16 fix_size = (u16)(cmd->len + sizeof(out_cmd->hdr));
 	dma_addr_t phys_addr;
 	int pad;
+	u16 count;
 	int ret;
 	unsigned long flags;
 
@@ -474,8 +475,10 @@ static int iwl3945_enqueue_hcmd(struct iwl_priv *priv, struct iwl_host_cmd *cmd)
 
 	spin_lock_irqsave(&priv->hcmd_lock, flags);
 
-	tfd = &txq->tfds[q->write_ptr];
+	tfd = &txq->bd[q->write_ptr];
 	memset(tfd, 0, sizeof(*tfd));
+
+	control_flags = (u32 *) tfd;
 
 	idx = get_cmd_index(q, q->write_ptr, cmd->meta.flags & CMD_SIZE_HUGE);
 	out_cmd = &txq->cmd[idx];
@@ -498,7 +501,8 @@ static int iwl3945_enqueue_hcmd(struct iwl_priv *priv, struct iwl_host_cmd *cmd)
 	iwl3945_hw_txq_attach_buf_to_tfd(priv, tfd, phys_addr, fix_size);
 
 	pad = U32_PAD(cmd->len);
-	tfd->control_flags |= cpu_to_le32(TFD_CTL_PAD_SET(pad));
+	count = TFD_CTL_COUNT_GET(*control_flags);
+	*control_flags = TFD_CTL_COUNT_SET(count) | TFD_CTL_PAD_SET(pad);
 
 	IWL_DEBUG_HC("Sending command %s (#%x), seq: 0x%04X, "
 		     "%d bytes at %d[%d]:%d\n",
@@ -2227,7 +2231,8 @@ static int iwl3945_tx_skb(struct iwl_priv *priv, struct sk_buff *skb)
 {
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
-	struct iwl3945_tfd *tfd;
+	struct iwl3945_tfd_frame *tfd;
+	u32 *control_flags;
 	int txq_id = skb_get_queue_mapping(skb);
 	struct iwl3945_tx_queue *txq = NULL;
 	struct iwl_queue *q = NULL;
@@ -2312,12 +2317,13 @@ static int iwl3945_tx_skb(struct iwl_priv *priv, struct sk_buff *skb)
 	spin_lock_irqsave(&priv->lock, flags);
 
 	/* Set up first empty TFD within this queue's circular TFD buffer */
-	tfd = &txq->tfds[q->write_ptr];
+	tfd = &txq->bd[q->write_ptr];
 	memset(tfd, 0, sizeof(*tfd));
+	control_flags = (u32 *) tfd;
 	idx = get_cmd_index(q, q->write_ptr, 0);
 
 	/* Set up driver data for this TFD */
-	memset(&(txq->txb[q->write_ptr]), 0, sizeof(struct iwl_tx_info));
+	memset(&(txq->txb[q->write_ptr]), 0, sizeof(struct iwl3945_tx_info));
 	txq->txb[q->write_ptr].skb[0] = skb;
 
 	/* Init first empty entry in queue's array of Tx/cmd buffers */
@@ -2381,12 +2387,12 @@ static int iwl3945_tx_skb(struct iwl_priv *priv, struct sk_buff *skb)
 
 	if (!len)
 		/* If there is no payload, then we use only one Tx buffer */
-		tfd->control_flags = cpu_to_le32(TFD_CTL_COUNT_SET(1));
+		*control_flags = TFD_CTL_COUNT_SET(1);
 	else
 		/* Else use 2 buffers.
 		 * Tell 3945 about any padding after MAC header */
-		tfd->control_flags = cpu_to_le32(TFD_CTL_COUNT_SET(2) |
-			TFD_CTL_PAD_SET(U32_PAD(len)));
+		*control_flags = TFD_CTL_COUNT_SET(2) |
+			TFD_CTL_PAD_SET(U32_PAD(len));
 
 	/* Total # bytes to be transmitted */
 	len = (u16)skb->len;
