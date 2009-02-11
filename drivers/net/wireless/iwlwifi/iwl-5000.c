@@ -219,19 +219,18 @@ static void iwl5000_nic_config(struct iwl_priv *priv)
 {
 	unsigned long flags;
 	u16 radio_cfg;
-	u16 lctl;
+	u16 link;
 
 	spin_lock_irqsave(&priv->lock, flags);
 
-	lctl = iwl_pcie_link_ctl(priv);
+	pci_read_config_word(priv->pci_dev, PCI_CFG_LINK_CTRL, &link);
 
-	/* HW bug W/A */
-	/* L1-ASPM is enabled by BIOS */
-	if ((lctl & PCI_CFG_LINK_CTRL_VAL_L1_EN) == PCI_CFG_LINK_CTRL_VAL_L1_EN)
-		/* L1-APSM enabled: disable L0S  */
+	/* L1 is enabled by BIOS */
+	if ((link & PCI_CFG_LINK_CTRL_VAL_L1_EN) == PCI_CFG_LINK_CTRL_VAL_L1_EN)
+		/* disable L0S disabled L1A enabled */
 		iwl_set_bit(priv, CSR_GIO_REG, CSR_GIO_REG_VAL_L0S_ENABLED);
 	else
-		/* L1-ASPM disabled: enable L0S */
+		/* L0S enabled L1A disabled */
 		iwl_clear_bit(priv, CSR_GIO_REG, CSR_GIO_REG_VAL_L0S_ENABLED);
 
 	radio_cfg = iwl_eeprom_query16(priv, EEPROM_RADIO_CONFIG);
