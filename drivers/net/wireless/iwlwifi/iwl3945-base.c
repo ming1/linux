@@ -94,6 +94,12 @@ struct iwl_mod_params iwl3945_mod_params = {
 	/* the rest are 0 by default */
 };
 
+static const struct ieee80211_supported_band *iwl3945_get_band(
+		struct iwl_priv *priv, enum ieee80211_band band)
+{
+	return priv->hw->wiphy->bands[band];
+}
+
 /*************** DMA-QUEUE-GENERAL-FUNCTIONS  *****
  * DMA services
  *
@@ -2456,7 +2462,7 @@ static void iwl3945_set_rate(struct iwl_priv *priv)
 	struct ieee80211_rate *rate;
 	int i;
 
-	sband = iwl_get_hw_mode(priv, priv->band);
+	sband = iwl3945_get_band(priv, priv->band);
 	if (!sband) {
 		IWL_ERR(priv, "Failed to set rate: unable to get hw mode\n");
 		return;
@@ -4531,7 +4537,7 @@ static int iwl3945_get_channels_for_scan(struct iwl_priv *priv,
 	u16 active_dwell = 0;
 	int added, i;
 
-	sband = iwl_get_hw_mode(priv, band);
+	sband = iwl3945_get_band(priv, band);
 	if (!sband)
 		return 0;
 
