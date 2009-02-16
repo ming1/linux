@@ -468,7 +468,7 @@ static int orinoco_xmit(struct sk_buff *skb, struct net_device *dev)
 			len = MICHAEL_MIC_LEN;
 		}
 
-		orinoco_mic(priv->tx_tfm_mic,
+		michael_mic(priv->tx_tfm_mic,
 			    priv->tkip_key[priv->tx_key].tx_mic,
 			    eh->h_dest, eh->h_source, 0 /* priority */,
 			    skb->data + ETH_HLEN, skb->len - ETH_HLEN, mic);
@@ -927,7 +927,7 @@ static void orinoco_rx(struct net_device *dev,
 		skb_trim(skb, skb->len - MICHAEL_MIC_LEN);
 		length -= MICHAEL_MIC_LEN;
 
-		orinoco_mic(priv->rx_tfm_mic,
+		michael_mic(priv->rx_tfm_mic,
 			    priv->tkip_key[key_id].rx_mic,
 			    desc->addr1,
 			    src,
