@@ -407,8 +407,9 @@ int ieee80211_stop_tx_ba_session(struct ieee80211_hw *hw,
 		ret = local->ops->ampdu_action(hw, IEEE80211_AMPDU_TX_STOP,
 					       &sta->sta, tid, NULL);
 
-	/* HW shall not deny going back to legacy */
-	if (WARN_ON(ret)) {
+	/* case HW denied going back to legacy */
+	if (ret) {
+		WARN_ON(ret != -EBUSY);
 		*state = HT_AGG_STATE_OPERATIONAL;
 		if (hw->ampdu_queues)
 			ieee80211_wake_queue(hw, sta->tid_to_tx_q[tid]);
