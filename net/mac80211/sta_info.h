@@ -100,7 +100,6 @@ struct tid_ampdu_rx {
 	u16 buf_size;
 	u16 timeout;
 	u8 dialog_token;
-	bool shutdown;
 };
 
 /**
