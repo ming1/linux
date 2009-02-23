@@ -426,7 +426,6 @@ struct ar5416Stats {
 #define AR5416_EEP_MINOR_VER_16      0x10
 #define AR5416_EEP_MINOR_VER_17      0x11
 #define AR5416_EEP_MINOR_VER_19      0x13
-#define AR5416_EEP_MINOR_VER_20      0x14
 
 #define AR5416_NUM_5G_CAL_PIERS         8
 #define AR5416_NUM_2G_CAL_PIERS         4
@@ -489,7 +488,6 @@ enum eeprom_param {
 	EEP_RX_MASK,
 	EEP_RXGAIN_TYPE,
 	EEP_TXGAIN_TYPE,
-	EEP_DAC_HPWR_5G,
 };
 
 enum ar5416_rates {
@@ -528,13 +526,9 @@ struct base_eep_header {
 	u8 pwdclkind;
 	u8 futureBase_1[2];
 	u8 rxGainType;
-	u8 dacHiPwrMode_5G;
-	u8 futureBase_2;
-	u8 dacLpMode;
+	u8 futureBase_2[3];
 	u8 txGainType;
-	u8 rcChainMask;
-	u8 desiredScaleCCK;
-	u8 futureBase_3[23];
+	u8 futureBase_3[25];
 } __packed;
 
 struct base_eep_header_4k {
@@ -601,7 +595,7 @@ struct modal_eep_header {
 	    force_xpaon:1,
 	    local_bias:1,
 	    femBandSelectUsed:1, xlnabufin:1, xlnaisel:2, xlnabufmode:1;
-	u8 miscBits;
+	u8 futureModalar9280;
 	u16 xpaBiasLvlFreq[3];
 	u8 futureModal[6];
 
