@@ -564,9 +564,11 @@ enum {
 enum queue_stop_reason {
 	IEEE80211_QUEUE_STOP_REASON_DRIVER,
 	IEEE80211_QUEUE_STOP_REASON_PS,
-	IEEE80211_QUEUE_STOP_REASON_CSA,
-	IEEE80211_QUEUE_STOP_REASON_AGGREGATION,
+	IEEE80211_QUEUE_STOP_REASON_CSA
 };
+
+/* maximum number of hardware queues we support. */
+#define QD_MAX_QUEUES (IEEE80211_MAX_AMPDU_QUEUES + IEEE80211_MAX_QUEUES)
 
 struct ieee80211_master_priv {
 	struct ieee80211_local *local;
@@ -580,15 +582,9 @@ struct ieee80211_local {
 
 	const struct ieee80211_ops *ops;
 
-	/* AC queue corresponding to each AMPDU queue */
-	s8 ampdu_ac_queue[IEEE80211_MAX_AMPDU_QUEUES];
-	unsigned int amdpu_ac_stop_refcnt[IEEE80211_MAX_AMPDU_QUEUES];
-
-	unsigned long queue_stop_reasons[IEEE80211_MAX_QUEUES +
-					 IEEE80211_MAX_AMPDU_QUEUES];
-	/* also used to protect ampdu_ac_queue and amdpu_ac_stop_refcnt */
+	unsigned long queue_pool[BITS_TO_LONGS(QD_MAX_QUEUES)];
+	unsigned long queue_stop_reasons[IEEE80211_MAX_QUEUES];
 	spinlock_t queue_stop_reason_lock;
-
 	struct net_device *mdev; /* wmaster# - "master" 802.11 device */
 	int open_count;
 	int monitors, cooked_mntrs;
@@ -1046,10 +1042,6 @@ void ieee80211_wake_queues_by_reason(struct ieee80211_hw *hw,
 				     enum queue_stop_reason reason);
 void ieee80211_stop_queues_by_reason(struct ieee80211_hw *hw,
 				     enum queue_stop_reason reason);
-void ieee80211_wake_queue_by_reason(struct ieee80211_hw *hw, int queue,
-				    enum queue_stop_reason reason);
-void ieee80211_stop_queue_by_reason(struct ieee80211_hw *hw, int queue,
-				    enum queue_stop_reason reason);
 
 #ifdef CONFIG_MAC80211_NOINLINE
 #define debug_noinline noinline
