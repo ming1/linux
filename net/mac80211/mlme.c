@@ -611,7 +611,7 @@ static void ieee80211_sta_wmm_params(struct ieee80211_local *local,
 	}
 }
 
-static bool ieee80211_check_tim(struct ieee802_11_elems *elems, u16 aid)
+static bool check_tim(struct ieee802_11_elems *elems, u16 aid, bool *is_mc)
 {
 	u8 mask;
 	u8 index, indexn1, indexn2;
@@ -620,6 +620,9 @@ static bool ieee80211_check_tim(struct ieee802_11_elems *elems, u16 aid)
 	aid &= 0x3fff;
 	index = aid / 8;
 	mask  = 1 << (aid & 7);
+
+	if (tim->bitmap_ctrl & 0x01)
+		*is_mc = true;
 
 	indexn1 = tim->bitmap_ctrl & 0xfe;
 	indexn2 = elems->tim_len + indexn1 - 4;
@@ -1837,7 +1840,7 @@ static void ieee80211_rx_mgmt_beacon(struct ieee80211_sub_if_data *sdata,
 	struct ieee802_11_elems elems;
 	struct ieee80211_local *local = sdata->local;
 	u32 changed = 0;
-	bool erp_valid, directed_tim;
+	bool erp_valid, directed_tim, is_mc = false;
 	u8 erp_value = 0;
 
 	/* Process beacon from the current BSS */
@@ -1865,9 +1868,9 @@ static void ieee80211_rx_mgmt_beacon(struct ieee80211_sub_if_data *sdata,
 
 	if (local->hw.flags & IEEE80211_HW_PS_NULLFUNC_STACK &&
 	    local->hw.conf.flags & IEEE80211_CONF_PS) {
-		directed_tim = ieee80211_check_tim(&elems, ifsta->aid);
+		directed_tim = check_tim(&elems, ifsta->aid, &is_mc);
 
-		if (directed_tim) {
+		if (directed_tim || is_mc) {
 			local->hw.conf.flags &= ~IEEE80211_CONF_PS;
 			ieee80211_hw_config(local, IEEE80211_CONF_CHANGE_PS);
 			ieee80211_send_nullfunc(local, sdata, 0);
