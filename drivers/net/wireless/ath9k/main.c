@@ -1558,7 +1558,6 @@ bad2:
 bad:
 	if (ah)
 		ath9k_hw_detach(ah);
-	ath9k_exit_debug(sc);
 
 	return error;
 }
@@ -1566,7 +1565,7 @@ bad:
 int ath_attach(u16 devid, struct ath_softc *sc)
 {
 	struct ieee80211_hw *hw = sc->hw;
-	int error = 0, i;
+	int error = 0;
 
 	DPRINTF(sc, ATH_DBG_CONFIG, "Attach ATH hw\n");
 
@@ -1618,11 +1617,11 @@ int ath_attach(u16 devid, struct ath_softc *sc)
 	/* initialize tx/rx engine */
 	error = ath_tx_init(sc, ATH_TXBUF);
 	if (error != 0)
-		goto error_attach;
+		goto detach;
 
 	error = ath_rx_init(sc, ATH_RXBUF);
 	if (error != 0)
-		goto error_attach;
+		goto detach;
 
 #if defined(CONFIG_RFKILL) || defined(CONFIG_RFKILL_MODULE)
 	/* Initialze h/w Rfkill */
@@ -1630,9 +1629,8 @@ int ath_attach(u16 devid, struct ath_softc *sc)
 		INIT_DELAYED_WORK(&sc->rf_kill.rfkill_poll, ath_rfkill_poll);
 
 	/* Initialize s/w rfkill */
-	error = ath_init_sw_rfkill(sc);
-	if (error)
-		goto error_attach;
+	if (ath_init_sw_rfkill(sc))
+		goto detach;
 #endif
 
 	if (ath9k_is_world_regd(sc->sc_ah)) {
@@ -1666,16 +1664,8 @@ int ath_attach(u16 devid, struct ath_softc *sc)
 
 
 	return 0;
-
-error_attach:
-	/* cleanup tx queues */
-	for (i = 0; i < ATH9K_NUM_TX_QUEUES; i++)
-		if (ATH_TXQ_SETUP(sc, i))
-			ath_tx_cleanupq(sc, &sc->tx.txq[i]);
-
-	ath9k_hw_detach(sc->sc_ah);
-	ath9k_exit_debug(sc);
-
+detach:
+	ath_detach(sc);
 	return error;
 }
 
