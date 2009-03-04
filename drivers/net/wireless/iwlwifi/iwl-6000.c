@@ -74,7 +74,6 @@ struct iwl_cfg iwl6000_2ag_cfg = {
 	.mod_params = &iwl50_mod_params,
 	.valid_tx_ant = ANT_BC,
 	.valid_rx_ant = ANT_BC,
-	.need_pll_cfg = false,
 };
 
 struct iwl_cfg iwl6000_2agn_cfg = {
@@ -90,7 +89,6 @@ struct iwl_cfg iwl6000_2agn_cfg = {
 	.mod_params = &iwl50_mod_params,
 	.valid_tx_ant = ANT_BC,
 	.valid_rx_ant = ANT_BC,
-	.need_pll_cfg = false,
 };
 
 struct iwl_cfg iwl6050_2agn_cfg = {
@@ -106,7 +104,6 @@ struct iwl_cfg iwl6050_2agn_cfg = {
 	.mod_params = &iwl50_mod_params,
 	.valid_tx_ant = ANT_BC,
 	.valid_rx_ant = ANT_BC,
-	.need_pll_cfg = false,
 };
 
 struct iwl_cfg iwl6000_3agn_cfg = {
@@ -122,7 +119,6 @@ struct iwl_cfg iwl6000_3agn_cfg = {
 	.mod_params = &iwl50_mod_params,
 	.valid_tx_ant = ANT_ABC,
 	.valid_rx_ant = ANT_ABC,
-	.need_pll_cfg = false,
 };
 
 struct iwl_cfg iwl6050_3agn_cfg = {
@@ -138,7 +134,6 @@ struct iwl_cfg iwl6050_3agn_cfg = {
 	.mod_params = &iwl50_mod_params,
 	.valid_tx_ant = ANT_ABC,
 	.valid_rx_ant = ANT_ABC,
-	.need_pll_cfg = false,
 };
 
 MODULE_FIRMWARE(IWL6000_MODULE_FIRMWARE(IWL6000_UCODE_API_MAX));
