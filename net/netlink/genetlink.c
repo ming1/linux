@@ -446,8 +446,14 @@ static int genl_rcv_msg(struct sk_buff *skb, struct nlmsghdr *nlh)
 			return -EOPNOTSUPP;
 
 		genl_unlock();
-		err = netlink_dump_start(genl_sock, skb, nlh,
-					 ops->dumpit, ops->done);
+		err = 0;
+		if (family->pre_dumpit)
+			err = family->pre_dumpit();
+		if (!err)
+			err = netlink_dump_start(genl_sock, skb, nlh,
+						 ops->dumpit, ops->done);
+		if (family->post_dumpit)
+			family->post_dumpit();
 		genl_lock();
 		return err;
 	}
@@ -469,7 +475,14 @@ static int genl_rcv_msg(struct sk_buff *skb, struct nlmsghdr *nlh)
 	info.userhdr = nlmsg_data(nlh) + GENL_HDRLEN;
 	info.attrs = family->attrbuf;
 
-	return ops->doit(skb, &info);
+	err = 0;
+	if (family->pre_doit)
+		err = family->pre_doit(skb, &info);
+	if (!err)
+		err = ops->doit(skb, &info);
+	if (family->post_doit)
+		family->post_doit();
+	return err;
 }
 
 static void genl_rcv(struct sk_buff *skb)
