@@ -375,15 +375,14 @@ u32 ath_calcrxfilter(struct ath_softc *sc)
 	if (sc->rx.rxfilter & FIF_CONTROL)
 		rfilt |= ATH9K_RX_FILTER_CONTROL;
 
-	if ((sc->sc_ah->opmode == NL80211_IFTYPE_STATION) &&
-	    !(sc->rx.rxfilter & FIF_BCN_PRBRESP_PROMISC))
-		rfilt |= ATH9K_RX_FILTER_MYBEACON;
-	else
+	if (sc->sc_ah->opmode == NL80211_IFTYPE_STATION ||
+	    sc->sc_ah->opmode == NL80211_IFTYPE_ADHOC)
 		rfilt |= ATH9K_RX_FILTER_BEACON;
 
-	/* If in HOSTAP mode, want to enable reception of PSPOLL frames */
+	/* If in HOSTAP mode, want to enable reception of PSPOLL frames
+	   & beacon frames */
 	if (sc->sc_ah->opmode == NL80211_IFTYPE_AP)
-		rfilt |= ATH9K_RX_FILTER_PSPOLL;
+		rfilt |= (ATH9K_RX_FILTER_BEACON | ATH9K_RX_FILTER_PSPOLL);
 
 	return rfilt;
 
