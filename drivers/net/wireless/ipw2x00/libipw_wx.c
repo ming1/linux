@@ -35,9 +35,8 @@
 #include <linux/jiffies.h>
 
 #include <net/lib80211.h>
+#include <net/ieee80211.h>
 #include <linux/wireless.h>
-
-#include "ieee80211.h"
 
 static const char *ieee80211_modes[] = {
 	"?", "a", "b", "ab", "g", "ag", "bg", "abg"
