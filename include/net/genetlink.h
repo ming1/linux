@@ -21,6 +21,31 @@ struct genl_multicast_group
 };
 
 /**
+ * struct genl_family - generic netlink family
+ * @id: protocol family idenfitier
+ * @hdrsize: length of user specific header in bytes
+ * @name: name of family
+ * @version: protocol version
+ * @maxattr: maximum number of attributes supported
+ * @attrbuf: buffer to store parsed attributes
+ * @ops_list: list of all assigned operations
+ * @family_list: family list
+ * @mcast_groups: multicast groups list
+ */
+struct genl_family
+{
+	unsigned int		id;
+	unsigned int		hdrsize;
+	char			name[GENL_NAMSIZ];
+	unsigned int		version;
+	unsigned int		maxattr;
+	struct nlattr **	attrbuf;	/* private */
+	struct list_head	ops_list;	/* private */
+	struct list_head	family_list;	/* private */
+	struct list_head	mcast_groups;	/* private */
+};
+
+/**
  * struct genl_info - receiving information
  * @snd_seq: sending sequence number
  * @snd_pid: netlink pid of sender
@@ -37,40 +62,6 @@ struct genl_info
 	struct genlmsghdr *	genlhdr;
 	void *			userhdr;
 	struct nlattr **	attrs;
-};
-
-/**
- * struct genl_family - generic netlink family
- * @id: protocol family idenfitier
- * @hdrsize: length of user specific header in bytes
- * @name: name of family
- * @version: protocol version
- * @maxattr: maximum number of attributes supported
- * @pre_doit: called before any doit op
- * @post_doit: called after any doit op
- * @pre_dumpit: called before any dumpit op
- * @post_dumpit: called after any dumpit op
- * @attrbuf: buffer to store parsed attributes
- * @ops_list: list of all assigned operations
- * @family_list: family list
- * @mcast_groups: multicast groups list
- */
-struct genl_family
-{
-	unsigned int		id;
-	unsigned int		hdrsize;
-	char			name[GENL_NAMSIZ];
-	unsigned int		version;
-	unsigned int		maxattr;
-	int			(*pre_doit)(struct sk_buff *skb,
-					    struct genl_info *info);
-	void			(*post_doit)(void);
-	int			(*pre_dumpit)(void);
-	void			(*post_dumpit)(void);
-	struct nlattr **	attrbuf;	/* private */
-	struct list_head	ops_list;	/* private */
-	struct list_head	family_list;	/* private */
-	struct list_head	mcast_groups;	/* private */
 };
 
 /**
