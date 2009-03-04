@@ -940,7 +940,11 @@ int iwl_set_pwr_src(struct iwl_priv *priv, enum iwl_pwr_src src)
 		goto err;
 
 	if (src == IWL_PWR_SRC_VAUX) {
-		if (pci_pme_capable(priv->pci_dev, PCI_D3cold))
+		u32 val;
+		ret = pci_read_config_dword(priv->pci_dev, PCI_CFG_POWER_SOURCE,
+					    &val);
+
+		if (val & PCI_CFG_PMC_PME_FROM_D3COLD_SUPPORT)
 			iwl_set_bits_mask_prph(priv, APMG_PS_CTRL_REG,
 					       APMG_PS_CTRL_VAL_PWR_SRC_VAUX,
 					       ~APMG_PS_CTRL_MSK_PWR_SRC);
