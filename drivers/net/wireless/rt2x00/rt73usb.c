@@ -273,6 +273,7 @@ static int rt73usb_config_shared_key(struct rt2x00_dev *rt2x00dev,
 {
 	struct hw_key_entry key_entry;
 	struct rt2x00_field32 field;
+	int timeout;
 	u32 mask;
 	u32 reg;
 
@@ -308,8 +309,12 @@ static int rt73usb_config_shared_key(struct rt2x00_dev *rt2x00dev,
 		       sizeof(key_entry.rx_mic));
 
 		reg = SHARED_KEY_ENTRY(key->hw_key_idx);
-		rt2x00usb_register_multiwrite(rt2x00dev, reg,
-					      &key_entry, sizeof(key_entry));
+		timeout = REGISTER_TIMEOUT32(sizeof(key_entry));
+		rt2x00usb_vendor_request_large_buff(rt2x00dev, USB_MULTI_WRITE,
+						    USB_VENDOR_REQUEST_OUT, reg,
+						    &key_entry,
+						    sizeof(key_entry),
+						    timeout);
 
 		/*
 		 * The cipher types are stored over 2 registers.
@@ -370,6 +375,7 @@ static int rt73usb_config_pairwise_key(struct rt2x00_dev *rt2x00dev,
 {
 	struct hw_pairwise_ta_entry addr_entry;
 	struct hw_key_entry key_entry;
+	int timeout;
 	u32 mask;
 	u32 reg;
 
@@ -404,8 +410,12 @@ static int rt73usb_config_pairwise_key(struct rt2x00_dev *rt2x00dev,
 		       sizeof(key_entry.rx_mic));
 
 		reg = PAIRWISE_KEY_ENTRY(key->hw_key_idx);
-		rt2x00usb_register_multiwrite(rt2x00dev, reg,
-					      &key_entry, sizeof(key_entry));
+		timeout = REGISTER_TIMEOUT32(sizeof(key_entry));
+		rt2x00usb_vendor_request_large_buff(rt2x00dev, USB_MULTI_WRITE,
+						    USB_VENDOR_REQUEST_OUT, reg,
+						    &key_entry,
+						    sizeof(key_entry),
+						    timeout);
 
 		/*
 		 * Send the address and cipher type to the hardware register.
@@ -1102,8 +1112,11 @@ static int rt73usb_load_firmware(struct rt2x00_dev *rt2x00dev,
 	/*
 	 * Write firmware to device.
 	 */
-	rt2x00usb_register_multiwrite(rt2x00dev, FIRMWARE_IMAGE_BASE,
-				      (void *)data, len);
+	rt2x00usb_vendor_request_large_buff(rt2x00dev, USB_MULTI_WRITE,
+					    USB_VENDOR_REQUEST_OUT,
+					    FIRMWARE_IMAGE_BASE,
+					    data, len,
+					    REGISTER_TIMEOUT32(len));
 
 	/*
 	 * Send firmware request to device to load firmware,
@@ -1541,8 +1554,10 @@ static void rt73usb_write_beacon(struct queue_entry *entry)
 	 * Write entire beacon with descriptor to register.
 	 */
 	beacon_base = HW_BEACON_OFFSET(entry->entry_idx);
-	rt2x00usb_register_multiwrite(rt2x00dev, beacon_base,
-				      entry->skb->data, entry->skb->len);
+	rt2x00usb_vendor_request_large_buff(rt2x00dev, USB_MULTI_WRITE,
+					    USB_VENDOR_REQUEST_OUT, beacon_base,
+					    entry->skb->data, entry->skb->len,
+					    REGISTER_TIMEOUT32(entry->skb->len));
 
 	/*
 	 * Clean up the beacon skb.
