@@ -579,6 +579,7 @@ struct ath_softc {
 	void __iomem *mem;
 	int irq;
 	spinlock_t sc_resetlock;
+	spinlock_t sc_serial_rw;
 	struct mutex mutex;
 
 	u8 curbssid[ETH_ALEN];
