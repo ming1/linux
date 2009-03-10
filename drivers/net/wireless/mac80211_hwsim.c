@@ -878,12 +878,6 @@ static int __init init_mac80211_hwsim(void)
 			goto failed_hw;
 		}
 
-		/*
-		 * We have no EEPROM but we know ACME Inc. only sells
-		 * these in Finland.
-		 */
-		regulatory_hint(hw->wiphy, "FI");
-
 		printk(KERN_DEBUG "%s: hwaddr %pM registered\n",
 		       wiphy_name(hw->wiphy),
 		       hw->wiphy->perm_addr);
