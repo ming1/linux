@@ -570,6 +570,9 @@ struct ath_hw {
 void ath9k_iowrite32(struct ath_hw *ah, u32 reg_offset, u32 val);
 unsigned int ath9k_ioread32(struct ath_hw *ah, u32 reg_offset);
 
+/* Lets us tweak the device per CPU changes */
+void ath9k_hw_config_for_cpus(struct ath_hw *ah);
+
 /* Attach, Detach, Reset */
 const char *ath9k_hw_probe(u16 vendorid, u16 devid);
 void ath9k_hw_detach(struct ath_hw *ah);

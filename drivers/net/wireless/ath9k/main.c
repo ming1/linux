@@ -2787,6 +2787,35 @@ struct ieee80211_ops ath9k_ops = {
 	.sw_scan_complete   = ath9k_sw_scan_complete,
 };
 
+int ath9k_cpu_callback(struct notifier_block *nfb,
+		       unsigned long action, void *hcpu)
+{
+	struct ath_softc *sc = container_of(nfb, struct ath_softc, cpu_notifer);
+	int old_serial_mode;
+
+	old_serial_mode = sc->sc_ah->config.serialize_regmode;
+
+	switch (action) {
+	case CPU_ONLINE:
+	case CPU_ONLINE_FROZEN:
+		ath9k_hw_config_for_cpus(sc->sc_ah);
+		break;
+	case CPU_DEAD:
+	case CPU_DEAD_FROZEN:
+		ath9k_hw_config_for_cpus(sc->sc_ah);
+		break;
+	}
+
+	if (unlikely(old_serial_mode != sc->sc_ah->config.serialize_regmode)) {
+		DPRINTF(sc, ATH_DBG_RESET,
+			"serialize_regmode has changed due to CPU "
+			"count to %d\n",
+			sc->sc_ah->config.serialize_regmode);
+	}
+
+	return NOTIFY_OK;
+}
+
 static struct {
 	u32 version;
 	const char * name;
