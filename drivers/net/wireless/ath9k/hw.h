@@ -42,8 +42,8 @@
 #define AR5416_MAGIC		0x19641014
 
 /* Register read/write primitives */
-#define REG_WRITE(_ah, _reg, _val) ath9k_iowrite32(_ah, _reg, _val)
-#define REG_READ(_ah, _reg) ath9k_ioread32(_ah, _reg)
+#define REG_WRITE(_ah, _reg, _val) iowrite32(_val, _ah->ah_sc->mem + _reg)
+#define REG_READ(_ah, _reg) ioread32(_ah->ah_sc->mem + _reg)
 
 #define SM(_v, _f)  (((_v) << _f##_S) & _f)
 #define MS(_v, _f)  (((_v) & _f) >> _f##_S)
@@ -565,10 +565,6 @@ struct ath_hw {
 	struct ar5416IniArray iniModesRxGain;
 	struct ar5416IniArray iniModesTxGain;
 };
-
-/* Read and write */
-void ath9k_iowrite32(struct ath_hw *ah, u32 reg_offset, u32 val);
-unsigned int ath9k_ioread32(struct ath_hw *ah, u32 reg_offset);
 
 /* Attach, Detach, Reset */
 const char *ath9k_hw_probe(u16 vendorid, u16 devid);
