@@ -1255,6 +1255,8 @@ static int ignore_request(struct wiphy *wiphy,
 		return 0;
 
 	switch (pending_request->initiator) {
+	case REGDOM_SET_BY_INIT:
+		return -EINVAL;
 	case REGDOM_SET_BY_CORE:
 		return -EINVAL;
 	case REGDOM_SET_BY_COUNTRY_IE:
