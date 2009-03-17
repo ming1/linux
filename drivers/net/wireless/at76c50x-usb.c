@@ -580,25 +580,18 @@ static int at76_remap(struct usb_device *udev)
 static int at76_get_op_mode(struct usb_device *udev)
 {
 	int ret;
-	u8 saved;
-	u8 *op_mode;
+	u8 op_mode;
 
-	op_mode = kmalloc(1, GFP_NOIO);
-	if (!op_mode)
-		return -ENOMEM;
 	ret = usb_control_msg(udev, usb_rcvctrlpipe(udev, 0), 0x33,
 			      USB_TYPE_VENDOR | USB_DIR_IN |
-			      USB_RECIP_INTERFACE, 0x01, 0, op_mode, 1,
+			      USB_RECIP_INTERFACE, 0x01, 0, &op_mode, 1,
 			      USB_CTRL_GET_TIMEOUT);
-	saved = *op_mode;
-	kfree(op_mode);
-
 	if (ret < 0)
 		return ret;
 	else if (ret < 1)
 		return -EIO;
 	else
-		return saved;
+		return op_mode;
 }
 
 /* Load a block of the second ("external") part of the firmware */
@@ -711,25 +704,21 @@ static inline int at76_get_mib(struct usb_device *udev, u16 mib, void *buf,
 /* Return positive number for status, negative for an error */
 static inline int at76_get_cmd_status(struct usb_device *udev, u8 cmd)
 {
-	u8 *stat_buf;
+	u8 stat_buf[40];
 	int ret;
 
-	stat_buf = kmalloc(40, GFP_NOIO);
-	if (!stat_buf)
-		return -ENOMEM;
-
 	ret = usb_control_msg(udev, usb_rcvctrlpipe(udev, 0), 0x22,
-			USB_TYPE_VENDOR | USB_DIR_IN |
-			USB_RECIP_INTERFACE, cmd, 0, stat_buf,
-			40, USB_CTRL_GET_TIMEOUT);
-	if (ret >= 0)
-		ret = stat_buf[5];
-	kfree(stat_buf);
+			      USB_TYPE_VENDOR | USB_DIR_IN |
+			      USB_RECIP_INTERFACE, cmd, 0, stat_buf,
+			      sizeof(stat_buf), USB_CTRL_GET_TIMEOUT);
+	if (ret < 0)
+		return ret;
 
-	return ret;
+	return stat_buf[5];
 }
 
 #define MAKE_CMD_CASE(c) case (c): return #c
+
 static const char *at76_get_cmd_string(u8 cmd_status)
 {
 	switch (cmd_status) {
@@ -746,7 +735,7 @@ static const char *at76_get_cmd_string(u8 cmd_status)
 	return "UNKNOWN";
 }
 
-static int at76_set_card_command(struct usb_device *udev, u8 cmd, void *buf,
+static int at76_set_card_command(struct usb_device *udev, int cmd, void *buf,
 				 int buf_size)
 {
 	int ret;
