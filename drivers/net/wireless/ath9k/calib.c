@@ -893,8 +893,7 @@ bool ath9k_hw_init_cal(struct ath_hw *ah,
 			  AR_PHY_AGC_CONTROL_CAL);
 
 		if (!ath9k_hw_wait(ah, AR_PHY_AGC_CONTROL,
-				   AR_PHY_AGC_CONTROL_CAL, 0,
-				   AH_WAIT_TIMEOUT)) {
+				   AR_PHY_AGC_CONTROL_CAL, 0)) {
 			DPRINTF(ah->ah_sc, ATH_DBG_CALIBRATE,
 				"offset calibration failed to complete in 1ms; "
 				"noisy environment?\n");
@@ -911,8 +910,7 @@ bool ath9k_hw_init_cal(struct ath_hw *ah,
 		  REG_READ(ah, AR_PHY_AGC_CONTROL) |
 		  AR_PHY_AGC_CONTROL_CAL);
 
-	if (!ath9k_hw_wait(ah, AR_PHY_AGC_CONTROL, AR_PHY_AGC_CONTROL_CAL,
-			   0, AH_WAIT_TIMEOUT)) {
+	if (!ath9k_hw_wait(ah, AR_PHY_AGC_CONTROL, AR_PHY_AGC_CONTROL_CAL, 0)) {
 		DPRINTF(ah->ah_sc, ATH_DBG_CALIBRATE,
 			"offset calibration failed to complete in 1ms; "
 			"noisy environment?\n");
