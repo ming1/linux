@@ -2537,16 +2537,7 @@ static int __init ath9k_init(void)
 		goto err_rate_unregister;
 	}
 
-	error = ath_ahb_init();
-	if (error < 0) {
-		error = -ENODEV;
-		goto err_pci_exit;
-	}
-
 	return 0;
-
- err_pci_exit:
-	ath_pci_exit();
 
  err_rate_unregister:
 	ath_rate_control_unregister();
@@ -2557,7 +2548,6 @@ module_init(ath9k_init);
 
 static void __exit ath9k_exit(void)
 {
-	ath_ahb_exit();
 	ath_pci_exit();
 	ath_rate_control_unregister();
 	printk(KERN_INFO "%s: Driver unloaded\n", dev_info);
