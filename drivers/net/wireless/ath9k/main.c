@@ -1084,6 +1084,12 @@ fail:
 	ath_deinit_leds(sc);
 }
 
+#if defined(CONFIG_RFKILL) || defined(CONFIG_RFKILL_MODULE)
+
+/*******************/
+/*	Rfkill	   */
+/*******************/
+
 void ath_radio_enable(struct ath_softc *sc)
 {
 	struct ath_hw *ah = sc->sc_ah;
@@ -1159,12 +1165,6 @@ void ath_radio_disable(struct ath_softc *sc)
 	ath9k_hw_setpower(ah, ATH9K_PM_FULL_SLEEP);
 	ath9k_ps_restore(sc);
 }
-
-#if defined(CONFIG_RFKILL) || defined(CONFIG_RFKILL_MODULE)
-
-/*******************/
-/*	Rfkill	   */
-/*******************/
 
 static bool ath_is_rfkill_set(struct ath_softc *sc)
 {
