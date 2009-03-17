@@ -646,12 +646,10 @@ struct ieee80211_if_init_conf {
  * @IEEE80211_IFCC_BSSID: The BSSID changed.
  * @IEEE80211_IFCC_BEACON: The beacon for this interface changed
  *	(currently AP and MESH only), use ieee80211_beacon_get().
- * @IEEE80211_IFCC_BEACON_ENABLED: The enable_beacon value changed.
  */
 enum ieee80211_if_conf_change {
-	IEEE80211_IFCC_BSSID		= BIT(0),
-	IEEE80211_IFCC_BEACON		= BIT(1),
-	IEEE80211_IFCC_BEACON_ENABLED	= BIT(2),
+	IEEE80211_IFCC_BSSID	= BIT(0),
+	IEEE80211_IFCC_BEACON	= BIT(1),
 };
 
 /**
@@ -659,8 +657,6 @@ enum ieee80211_if_conf_change {
  *
  * @changed: parameters that have changed, see &enum ieee80211_if_conf_change.
  * @bssid: BSSID of the network we are associated to/creating.
- * @enable_beacon: Indicates whether beacons can be sent.
- *	This is valid only for AP/IBSS/MESH modes.
  *
  * This structure is passed to the config_interface() callback of
  * &struct ieee80211_hw.
@@ -668,7 +664,6 @@ enum ieee80211_if_conf_change {
 struct ieee80211_if_conf {
 	u32 changed;
 	const u8 *bssid;
-	bool enable_beacon;
 };
 
 /**
