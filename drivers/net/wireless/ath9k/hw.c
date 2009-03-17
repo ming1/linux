@@ -660,8 +660,15 @@ static struct ath_hw *ath9k_hw_do_attach(u16 devid, struct ath_softc *sc,
 		goto bad;
 	}
 
+	/*
+	 * All PCI devices should be put here.
+	 * XXX: remove ah->is_pciexpress and use pdev->is_pcie, then
+	 * we can just check for !pdev->is_pcie here, but
+	 * consideration must be taken for handling AHB as well.
+	 */
 	if (ah->config.serialize_regmode == SER_REG_MODE_AUTO) {
-		if (ah->hw_version.macVersion == AR_SREV_VERSION_5416_PCI) {
+		if (ah->hw_version.macVersion == AR_SREV_VERSION_5416_PCI ||
+		    (AR_SREV_9280(ah) && !ah->is_pciexpress)) {
 			ah->config.serialize_regmode =
 				SER_REG_MODE_ON;
 		} else {
