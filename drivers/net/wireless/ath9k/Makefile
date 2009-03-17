@@ -9,7 +9,6 @@ ath9k-y +=	hw.o \
 		main.o \
 		recv.o \
 		xmit.o \
-		virtual.o \
 		rc.o
 
 ath9k-$(CONFIG_PCI) += pci.o
