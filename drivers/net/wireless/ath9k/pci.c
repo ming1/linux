@@ -181,6 +181,9 @@ static int ath_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		goto bad3;
 	}
 
+	sc->cpu_notifer.notifier_call = ath9k_cpu_callback;
+	register_hotcpu_notifier(&sc->cpu_notifer);
+
 	/* setup interrupt service routine */
 
 	if (request_irq(pdev->irq, ath_isr, IRQF_SHARED, "ath", sc)) {
@@ -223,6 +226,7 @@ static void ath_pci_remove(struct pci_dev *pdev)
 	struct ath_wiphy *aphy = hw->priv;
 	struct ath_softc *sc = aphy->sc;
 
+	unregister_hotcpu_notifier(&sc->cpu_notifer);
 	ath_cleanup(sc);
 }
 
