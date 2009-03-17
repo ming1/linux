@@ -266,7 +266,7 @@ static void ccmp_special_blocks(struct sk_buff *skb, u8 *pn, u8 *scratch,
 				int encrypted)
 {
 	__le16 mask_fc;
-	int a4_included, mgmt;
+	int a4_included;
 	u8 qos_tid;
 	u8 *b_0, *aad;
 	u16 data_len, len_a;
@@ -277,15 +277,12 @@ static void ccmp_special_blocks(struct sk_buff *skb, u8 *pn, u8 *scratch,
 	aad = scratch + 4 * AES_BLOCK_LEN;
 
 	/*
-	 * Mask FC: zero subtype b4 b5 b6 (if not mgmt)
+	 * Mask FC: zero subtype b4 b5 b6
 	 * Retry, PwrMgt, MoreData; set Protected
 	 */
-	mgmt = ieee80211_is_mgmt(hdr->frame_control);
 	mask_fc = hdr->frame_control;
-	mask_fc &= ~cpu_to_le16(IEEE80211_FCTL_RETRY |
+	mask_fc &= ~cpu_to_le16(0x0070 | IEEE80211_FCTL_RETRY |
 				IEEE80211_FCTL_PM | IEEE80211_FCTL_MOREDATA);
-	if (!mgmt)
-		mask_fc &= ~cpu_to_le16(0x0070);
 	mask_fc |= cpu_to_le16(IEEE80211_FCTL_PROTECTED);
 
 	hdrlen = ieee80211_hdrlen(hdr->frame_control);
@@ -303,10 +300,8 @@ static void ccmp_special_blocks(struct sk_buff *skb, u8 *pn, u8 *scratch,
 
 	/* First block, b_0 */
 	b_0[0] = 0x59; /* flags: Adata: 1, M: 011, L: 001 */
-	/* Nonce: Nonce Flags | A2 | PN
-	 * Nonce Flags: Priority (b0..b3) | Management (b4) | Reserved (b5..b7)
-	 */
-	b_0[1] = qos_tid | (mgmt << 4);
+	/* Nonce: QoS Priority | A2 | PN */
+	b_0[1] = qos_tid;
 	memcpy(&b_0[2], hdr->addr2, ETH_ALEN);
 	memcpy(&b_0[8], pn, CCMP_PN_LEN);
 	/* l(m) */
@@ -451,8 +446,7 @@ ieee80211_crypto_ccmp_decrypt(struct ieee80211_rx_data *rx)
 
 	hdrlen = ieee80211_hdrlen(hdr->frame_control);
 
-	if (!ieee80211_is_data(hdr->frame_control) &&
-	    !ieee80211_is_robust_mgmt_frame(hdr))
+	if (!ieee80211_is_data(hdr->frame_control))
 		return RX_CONTINUE;
 
 	data_len = skb->len - hdrlen - CCMP_HDR_LEN - CCMP_MIC_LEN;
