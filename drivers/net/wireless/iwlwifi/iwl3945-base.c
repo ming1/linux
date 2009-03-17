@@ -7722,12 +7722,7 @@ static void __devexit iwl3945_pci_remove(struct pci_dev *pdev)
 
 	set_bit(STATUS_EXIT_PENDING, &priv->status);
 
-	if (priv->mac80211_registered) {
-		ieee80211_unregister_hw(priv->hw);
-		priv->mac80211_registered = 0;
-	} else {
-		iwl3945_down(priv);
-	}
+	iwl3945_down(priv);
 
 	/* make sure we flush any pending irq or
 	 * tasklet for the driver
@@ -7749,6 +7744,9 @@ static void __devexit iwl3945_pci_remove(struct pci_dev *pdev)
 
 	iwl3945_unset_hw_params(priv);
 	iwl3945_clear_stations_table(priv);
+
+	if (priv->mac80211_registered)
+		ieee80211_unregister_hw(priv->hw);
 
 	/*netif_stop_queue(dev); */
 	flush_workqueue(priv->workqueue);
