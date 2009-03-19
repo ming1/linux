@@ -40,21 +40,21 @@ enum ieee80211_band {
  *	on this channel.
  * @IEEE80211_CHAN_NO_IBSS: IBSS is not allowed on this channel.
  * @IEEE80211_CHAN_RADAR: Radar detection is required on this channel.
- * @IEEE80211_CHAN_NO_FAT_ABOVE: extension channel above this channel
+ * @IEEE80211_CHAN_NO_HT40PLUS: extension channel above this channel
  * 	is not permitted.
- * @IEEE80211_CHAN_NO_FAT_BELOW: extension channel below this channel
+ * @IEEE80211_CHAN_NO_HT40MINUS: extension channel below this channel
  * 	is not permitted.
  * @IEEE80211_CHAN_NO_HT40: indicates no HT40 is allowed at all,
- * 	when this is set %IEEE80211_CHAN_NO_FAT_ABOVE and
- * 	%IEEE80211_CHAN_NO_FAT_BELOW will also be set.
+ * 	when this is set %IEEE80211_CHAN_NO_HT40PLUS and
+ * 	%IEEE80211_CHAN_NO_HT40MINUS will also be set.
  */
 enum ieee80211_channel_flags {
 	IEEE80211_CHAN_DISABLED		= 1<<0,
 	IEEE80211_CHAN_PASSIVE_SCAN	= 1<<1,
 	IEEE80211_CHAN_NO_IBSS		= 1<<2,
 	IEEE80211_CHAN_RADAR		= 1<<3,
-	IEEE80211_CHAN_NO_FAT_ABOVE	= 1<<4,
-	IEEE80211_CHAN_NO_FAT_BELOW	= 1<<5,
+	IEEE80211_CHAN_NO_HT40PLUS	= 1<<4,
+	IEEE80211_CHAN_NO_HT40MINUS	= 1<<5,
 	IEEE80211_CHAN_NO_HT40		= 1<<6,
 };
 

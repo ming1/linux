@@ -1178,8 +1178,8 @@ static void reg_process_ht_flags_channel(struct wiphy *wiphy,
 
 	if (channel->flags &
 	    (IEEE80211_CHAN_DISABLED | IEEE80211_CHAN_NO_HT40)) {
-		channel->flags |= IEEE80211_CHAN_NO_FAT_ABOVE |
-				  IEEE80211_CHAN_NO_FAT_BELOW;
+		channel->flags |= IEEE80211_CHAN_NO_HT40PLUS |
+				  IEEE80211_CHAN_NO_HT40MINUS;
 		return;
 	}
 
@@ -1202,15 +1202,15 @@ static void reg_process_ht_flags_channel(struct wiphy *wiphy,
 	 */
 	if (!channel_before || (channel_before->flags &
 	    (IEEE80211_CHAN_DISABLED | IEEE80211_CHAN_NO_HT40)))
-		channel->flags |= IEEE80211_CHAN_NO_FAT_BELOW;
+		channel->flags |= IEEE80211_CHAN_NO_HT40MINUS;
 	else
-		channel->flags &= ~IEEE80211_CHAN_NO_FAT_BELOW;
+		channel->flags &= ~IEEE80211_CHAN_NO_HT40MINUS;
 
 	if (!channel_after || (channel_after->flags &
 	    (IEEE80211_CHAN_DISABLED | IEEE80211_CHAN_NO_HT40)))
-		channel->flags |= IEEE80211_CHAN_NO_FAT_ABOVE;
+		channel->flags |= IEEE80211_CHAN_NO_HT40PLUS;
 	else
-		channel->flags &= ~IEEE80211_CHAN_NO_FAT_ABOVE;
+		channel->flags &= ~IEEE80211_CHAN_NO_HT40PLUS;
 }
 
 static void reg_process_ht_flags_band(struct wiphy *wiphy,
@@ -1292,8 +1292,8 @@ static void handle_channel_custom(struct wiphy *wiphy,
 
 	if (freq_range->max_bandwidth_khz < MHZ_TO_KHZ(40))
 		bw_flags = IEEE80211_CHAN_NO_HT40 |
-			   IEEE80211_CHAN_NO_FAT_BELOW |
-			   IEEE80211_CHAN_NO_FAT_ABOVE;
+			   IEEE80211_CHAN_NO_HT40MINUS |
+			   IEEE80211_CHAN_NO_HT40PLUS;
 
 	chan->flags |= map_regdom_flags(reg_rule->flags) | bw_flags;
 	chan->max_antenna_gain = (int) MBI_TO_DBI(power_rule->max_antenna_gain);
