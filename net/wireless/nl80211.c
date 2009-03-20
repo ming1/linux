@@ -435,24 +435,6 @@ static int nl80211_set_wiphy(struct sk_buff *skb, struct genl_info *info)
 		if (!chan || chan->flags & IEEE80211_CHAN_DISABLED)
 			goto bad_res;
 
-		if (channel_type == NL80211_CHAN_HT40MINUS ||
-		    channel_type == NL80211_CHAN_HT40PLUS)
-			if (chan->flags & IEEE80211_CHAN_NO_HT40)
-				goto bad_res;
-
-		if (channel_type == NL80211_CHAN_HT40MINUS &&
-		    (chan->flags & IEEE80211_CHAN_NO_HT40MINUS))
-			goto bad_res;
-		else if (channel_type == NL80211_CHAN_HT40PLUS &&
-			 (chan->flags & IEEE80211_CHAN_NO_HT40PLUS))
-			goto bad_res;
-
-		/*
-		 * At this point we know if that if HT40 was requested
-		 * we are allowed to use it and the extension channel
-		 * exists.
-		 */
-
 		if (channel_type == NL80211_CHAN_HT40MINUS)
 			sec_freq = freq - 20;
 		else if (channel_type == NL80211_CHAN_HT40PLUS)
