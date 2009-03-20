@@ -119,18 +119,13 @@ u32 ieee80211_enable_ht(struct ieee80211_sub_if_data *sdata,
 
 		if (!(ap_ht_cap_flags & IEEE80211_HT_CAP_40MHZ_INTOLERANT) &&
 		    (sband->ht_cap.cap & IEEE80211_HT_CAP_SUP_WIDTH_20_40) &&
-		    (hti->ht_param & IEEE80211_HT_PARAM_CHAN_WIDTH_ANY) &&
-		    !(local->hw.conf.channel->flags & IEEE80211_CHAN_NO_HT40)) {
+		    (hti->ht_param & IEEE80211_HT_PARAM_CHAN_WIDTH_ANY)) {
 			switch(hti->ht_param & IEEE80211_HT_PARAM_CHA_SEC_OFFSET) {
 			case IEEE80211_HT_PARAM_CHA_SEC_ABOVE:
-				if (!(local->hw.conf.channel->flags &
-				    IEEE80211_CHAN_NO_HT40PLUS))
-					channel_type = NL80211_CHAN_HT40PLUS;
+				channel_type = NL80211_CHAN_HT40PLUS;
 				break;
 			case IEEE80211_HT_PARAM_CHA_SEC_BELOW:
-				if (!(local->hw.conf.channel->flags &
-				    IEEE80211_CHAN_NO_HT40MINUS))
-					channel_type = NL80211_CHAN_HT40MINUS;
+				channel_type = NL80211_CHAN_HT40MINUS;
 				break;
 			}
 		}
