@@ -729,15 +729,6 @@ enum nl80211_band_attr {
  * @NL80211_FREQUENCY_ATTR_MAX_TX_POWER: Maximum transmission power in mBm
  *	(100 * dBm).
  * @NL80211_FREQUENCY_ATTR_MAX_BANDWIDTH: max bandwidth allowed, given in MHz
- * @NL80211_FREQUENCY_ATTR_NOHT40: HT40 operation is not permitted on
- * 	this channel, this is would indicate the regulatory domain did
- * 	not allow for HT40 operation.
- * @NL80211_FREQUENCY_ATTR_NO_HT40MINUS: HT40- operation is not permitted on
- * 	this channel. This could be due to regulatory domain restrictions or
- * 	when the channel is on a band edge, towards the beginning.
- * @NL80211_FREQUENCY_ATTR_NO_HT40PLUS: HT40+ operation is not permitted on
- * 	this channel. This could be due to regulatory domain restrictions or
- * 	when the channel is on a band edge, towards the end.
  */
 enum nl80211_frequency_attr {
 	__NL80211_FREQUENCY_ATTR_INVALID,
@@ -748,9 +739,6 @@ enum nl80211_frequency_attr {
 	NL80211_FREQUENCY_ATTR_RADAR,
 	NL80211_FREQUENCY_ATTR_MAX_TX_POWER,
 	NL80211_FREQUENCY_ATTR_MAX_BANDWIDTH,
-	NL80211_FREQUENCY_ATTR_NO_HT40,
-	NL80211_FREQUENCY_ATTR_NO_HT40MINUS,
-	NL80211_FREQUENCY_ATTR_NO_HT40PLUS,
 
 	/* keep last */
 	__NL80211_FREQUENCY_ATTR_AFTER_LAST,
@@ -759,9 +747,6 @@ enum nl80211_frequency_attr {
 
 #define NL80211_FREQUENCY_ATTR_MAX_TX_POWER NL80211_FREQUENCY_ATTR_MAX_TX_POWER
 #define NL80211_FREQUENCY_ATTR_MAX_BANDWIDTH NL80211_FREQUENCY_ATTR_MAX_BANDWIDTH
-#define NL80211_FREQUENCY_ATTR_NO_HT40 NL80211_FREQUENCY_ATTR_NO_HT40
-#define NL80211_FREQUENCY_ATTR_NO_HT40MINUS NL80211_FREQUENCY_ATTR_NO_HT40MINUS
-#define NL80211_FREQUENCY_ATTR_NO_HT40PLUS NL80211_FREQUENCY_ATTR_NO_HT40PLUS
 
 /**
  * enum nl80211_bitrate_attr - bitrate attributes
