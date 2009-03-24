@@ -936,7 +936,7 @@ static bool ignore_reg_update(struct wiphy *wiphy, enum reg_set_by setby)
 	if (!last_request)
 		return true;
 	if (setby == REGDOM_SET_BY_CORE &&
-		  wiphy->custom_regulatory)
+		  wiphy->fw_handles_regulatory)
 		return true;
 	return false;
 }
