@@ -196,8 +196,10 @@ static void ath9k_reg_apply_beaconing_flags(
 				continue;
 
 			if (initiator == NL80211_REGDOM_SET_BY_COUNTRY_IE) {
-				r = freq_reg_info(wiphy, ch->center_freq,
-					&bandwidth, &reg_rule);
+				r = freq_reg_info(wiphy,
+						  ch->center_freq,
+						  bandwidth,
+						  &reg_rule);
 				if (r)
 					continue;
 				/*
@@ -261,7 +263,7 @@ static void ath9k_reg_apply_active_scan_flags(
 	 */
 
 	ch = &sband->channels[11]; /* CH 12 */
-	r = freq_reg_info(wiphy, ch->center_freq, &bandwidth, &reg_rule);
+	r = freq_reg_info(wiphy, ch->center_freq, bandwidth, &reg_rule);
 	if (!r) {
 		if (!(reg_rule->flags & NL80211_RRF_PASSIVE_SCAN))
 			if (ch->flags & IEEE80211_CHAN_PASSIVE_SCAN)
@@ -269,7 +271,7 @@ static void ath9k_reg_apply_active_scan_flags(
 	}
 
 	ch = &sband->channels[12]; /* CH 13 */
-	r = freq_reg_info(wiphy, ch->center_freq, &bandwidth, &reg_rule);
+	r = freq_reg_info(wiphy, ch->center_freq, bandwidth, &reg_rule);
 	if (!r) {
 		if (!(reg_rule->flags & NL80211_RRF_PASSIVE_SCAN))
 			if (ch->flags & IEEE80211_CHAN_PASSIVE_SCAN)
