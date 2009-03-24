@@ -314,13 +314,9 @@ static void rt2x00queue_create_tx_descriptor(struct queue_entry *entry,
 	} else
 		txdesc->ifs = IFS_SIFS;
 
-	/*
-	 * Determine rate modulation.
-	 */
 	hwrate = rt2x00_get_rate(rate->hw_value);
-	txdesc->rate_mode = RATE_MODE_CCK;
 	if (hwrate->flags & DEV_RATE_OFDM)
-		txdesc->rate_mode = RATE_MODE_OFDM;
+		__set_bit(ENTRY_TXD_OFDM_RATE, &txdesc->flags);
 
 	/*
 	 * Apply TX descriptor handling by components
