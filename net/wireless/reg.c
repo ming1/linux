@@ -1117,7 +1117,7 @@ static int ignore_request(struct wiphy *wiphy, enum reg_set_by set_by,
 	return -EINVAL;
 }
 
-/* Caller must hold &cfg80211_mutex */
+/* Caller must hold &cfg80211_drv_mutex */
 int __regulatory_hint(struct wiphy *wiphy, enum reg_set_by set_by,
 			const char *alpha2,
 			u32 country_ie_checksum,
@@ -1189,13 +1189,13 @@ void regulatory_hint(struct wiphy *wiphy, const char *alpha2)
 	int r;
 	BUG_ON(!alpha2);
 
-	mutex_lock(&cfg80211_mutex);
+	mutex_lock(&cfg80211_drv_mutex);
 	r = __regulatory_hint(wiphy, REGDOM_SET_BY_DRIVER,
 		alpha2, 0, ENVIRON_ANY);
 	/* This is required so that the orig_* parameters are saved */
 	if (r == -EALREADY && wiphy->strict_regulatory)
 		wiphy_update_regulatory(wiphy, REGDOM_SET_BY_DRIVER);
-	mutex_unlock(&cfg80211_mutex);
+	mutex_unlock(&cfg80211_drv_mutex);
 }
 EXPORT_SYMBOL(regulatory_hint);
 
@@ -1226,7 +1226,7 @@ void regulatory_hint_11d(struct wiphy *wiphy,
 	if (!last_request)
 		return;
 
-	mutex_lock(&cfg80211_mutex);
+	mutex_lock(&cfg80211_drv_mutex);
 
 	/* IE len must be evenly divisible by 2 */
 	if (country_ie_len & 0x01)
@@ -1308,7 +1308,7 @@ void regulatory_hint_11d(struct wiphy *wiphy,
 		country_ie_regdomain->alpha2, checksum, env);
 
 out:
-	mutex_unlock(&cfg80211_mutex);
+	mutex_unlock(&cfg80211_drv_mutex);
 }
 EXPORT_SYMBOL(regulatory_hint_11d);
 
@@ -1563,7 +1563,7 @@ static int __set_regdom(const struct ieee80211_regdomain *rd)
 
 /* Use this call to set the current regulatory domain. Conflicts with
  * multiple drivers can be ironed out later. Caller must've already
- * kmalloc'd the rd structure. Caller must hold cfg80211_mutex */
+ * kmalloc'd the rd structure. Caller must hold cfg80211_drv_mutex */
 int set_regdom(const struct ieee80211_regdomain *rd)
 {
 	int r;
@@ -1587,7 +1587,7 @@ int set_regdom(const struct ieee80211_regdomain *rd)
 	return r;
 }
 
-/* Caller must hold cfg80211_mutex */
+/* Caller must hold cfg80211_drv_mutex */
 void reg_device_remove(struct wiphy *wiphy)
 {
 	kfree(wiphy->regd);
@@ -1634,7 +1634,7 @@ int regulatory_init(void)
 
 void regulatory_exit(void)
 {
-	mutex_lock(&cfg80211_mutex);
+	mutex_lock(&cfg80211_drv_mutex);
 
 	reset_regdomains();
 
@@ -1645,5 +1645,5 @@ void regulatory_exit(void)
 
 	platform_device_unregister(reg_pdev);
 
-	mutex_unlock(&cfg80211_mutex);
+	mutex_unlock(&cfg80211_drv_mutex);
 }
