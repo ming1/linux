@@ -671,8 +671,8 @@ static inline void ath_ahb_exit(void) {};
 static inline void ath9k_ps_wakeup(struct ath_softc *sc)
 {
 	if (atomic_inc_return(&sc->ps_usecount) == 1)
-		if (sc->sc_ah->power_mode !=  ATH9K_PM_AWAKE) {
-			sc->sc_ah->restore_mode = sc->sc_ah->power_mode;
+		if (sc->sc_ah->ah_power_mode !=  ATH9K_PM_AWAKE) {
+			sc->sc_ah->ah_restore_mode = sc->sc_ah->ah_power_mode;
 			ath9k_hw_setpower(sc->sc_ah, ATH9K_PM_AWAKE);
 		}
 }
@@ -682,7 +682,7 @@ static inline void ath9k_ps_restore(struct ath_softc *sc)
 	if (atomic_dec_and_test(&sc->ps_usecount))
 		if (sc->hw->conf.flags & IEEE80211_CONF_PS)
 			ath9k_hw_setpower(sc->sc_ah,
-					  sc->sc_ah->restore_mode);
+					  sc->sc_ah->ah_restore_mode);
 }
 
 /*
@@ -695,7 +695,7 @@ static inline void ath9k_ps_restore(struct ath_softc *sc)
 
 static inline void ath9k_iowrite32(struct ath_hw *ah, u32 reg_offset, u32 val)
 {
-	if (ah->config.serialize_regmode == SER_REG_MODE_ON) {
+	if (ah->ah_config.serialize_regmode == SER_REG_MODE_ON) {
 		unsigned long flags;
 		spin_lock_irqsave(&ah->ah_sc->sc_serial_rw, flags);
 		iowrite32(val, ah->ah_sc->mem + reg_offset);
@@ -707,7 +707,7 @@ static inline void ath9k_iowrite32(struct ath_hw *ah, u32 reg_offset, u32 val)
 static inline unsigned int ath9k_ioread32(struct ath_hw *ah, u32 reg_offset)
 {
 	u32 val;
-	if (ah->config.serialize_regmode == SER_REG_MODE_ON) {
+	if (ah->ah_config.serialize_regmode == SER_REG_MODE_ON) {
 		unsigned long flags;
 		spin_lock_irqsave(&ah->ah_sc->sc_serial_rw, flags);
 		val = ioread32(ah->ah_sc->mem + reg_offset);
