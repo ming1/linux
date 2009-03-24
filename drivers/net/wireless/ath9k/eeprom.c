@@ -2085,13 +2085,14 @@ static bool ath9k_hw_eeprom_set_def_board_values(struct ath_hal *ah,
 	struct ar5416_eeprom_def *eep = &ahp->ah_eeprom.def;
 	int i, regChainOffset;
 	u8 txRxAttenLocal;
+	u16 ant_config;
 
 	pModal = &(eep->modalHeader[IS_CHAN_2GHZ(chan)]);
 
 	txRxAttenLocal = IS_CHAN_2GHZ(chan) ? 23 : 44;
 
-	REG_WRITE(ah, AR_PHY_SWITCH_COM,
-		  ath9k_hw_get_eeprom_antenna_cfg(ah, chan));
+	ath9k_hw_get_eeprom_antenna_cfg(ah, chan, 0, &ant_config);
+	REG_WRITE(ah, AR_PHY_SWITCH_COM, ant_config);
 
 	for (i = 0; i < AR5416_MAX_CHAINS; i++) {
 		if (AR_SREV_9280(ah)) {
@@ -2329,6 +2330,7 @@ static bool ath9k_hw_eeprom_set_4k_board_values(struct ath_hal *ah,
 	struct ar5416_eeprom_4k *eep = &ahp->ah_eeprom.map4k;
 	int regChainOffset;
 	u8 txRxAttenLocal;
+	u16 ant_config = 0;
 	u8 ob[5], db1[5], db2[5];
 	u8 ant_div_control1, ant_div_control2;
 	u32 regVal;
@@ -2338,8 +2340,8 @@ static bool ath9k_hw_eeprom_set_4k_board_values(struct ath_hal *ah,
 
 	txRxAttenLocal = 23;
 
-	REG_WRITE(ah, AR_PHY_SWITCH_COM,
-		  ath9k_hw_get_eeprom_antenna_cfg(ah, chan));
+	ath9k_hw_get_eeprom_antenna_cfg(ah, chan, 0, &ant_config);
+	REG_WRITE(ah, AR_PHY_SWITCH_COM, ant_config);
 
 	regChainOffset = 0;
 	REG_WRITE(ah, AR_PHY_SWITCH_CHAIN_0 + regChainOffset,
@@ -2522,39 +2524,70 @@ bool ath9k_hw_eeprom_set_board_values(struct ath_hal *ah,
 	return ath9k_eeprom_set_board_values[ahp->ah_eep_map](ah, chan);
 }
 
-static u16 ath9k_hw_get_def_eeprom_antenna_cfg(struct ath_hal *ah,
-					       struct ath9k_channel *chan)
+static int ath9k_hw_get_def_eeprom_antenna_cfg(struct ath_hal *ah,
+				    struct ath9k_channel *chan,
+				    u8 index, u16 *config)
 {
 	struct ath_hal_5416 *ahp = AH5416(ah);
 	struct ar5416_eeprom_def *eep = &ahp->ah_eeprom.def;
 	struct modal_eep_header *pModal =
 		&(eep->modalHeader[IS_CHAN_2GHZ(chan)]);
+	struct base_eep_header *pBase = &eep->baseEepHeader;
 
-	return pModal->antCtrlCommon & 0xFFFF;
+	switch (index) {
+	case 0:
+		*config = pModal->antCtrlCommon & 0xFFFF;
+		return 0;
+	case 1:
+		if (pBase->version >= 0x0E0D) {
+			if (pModal->useAnt1) {
+				*config =
+				((pModal->antCtrlCommon & 0xFFFF0000) >> 16);
+				return 0;
+			}
+		}
+		break;
+	default:
+		break;
+	}
+
+	return -EINVAL;
 }
 
-static u16 ath9k_hw_get_4k_eeprom_antenna_cfg(struct ath_hal *ah,
-					      struct ath9k_channel *chan)
+static int ath9k_hw_get_4k_eeprom_antenna_cfg(struct ath_hal *ah,
+				    struct ath9k_channel *chan,
+				    u8 index, u16 *config)
 {
 	struct ath_hal_5416 *ahp = AH5416(ah);
 	struct ar5416_eeprom_4k *eep = &ahp->ah_eeprom.map4k;
 	struct modal_eep_4k_header *pModal = &eep->modalHeader;
 
-	return pModal->antCtrlCommon & 0xFFFF;
+	switch (index) {
+	case 0:
+		*config = pModal->antCtrlCommon & 0xFFFF;
+		return 0;
+	default:
+		break;
+	}
+
+	return -EINVAL;
 }
 
-static u16 (*ath9k_get_eeprom_antenna_cfg[])(struct ath_hal *,
-					     struct ath9k_channel *) = {
+static int (*ath9k_get_eeprom_antenna_cfg[])(struct ath_hal *,
+					     struct ath9k_channel *,
+					     u8, u16 *) = {
 	ath9k_hw_get_def_eeprom_antenna_cfg,
 	ath9k_hw_get_4k_eeprom_antenna_cfg
 };
 
-u16 ath9k_hw_get_eeprom_antenna_cfg(struct ath_hal *ah,
-				    struct ath9k_channel *chan)
+int ath9k_hw_get_eeprom_antenna_cfg(struct ath_hal *ah,
+				    struct ath9k_channel *chan,
+				    u8 index, u16 *config)
 {
 	struct ath_hal_5416 *ahp = AH5416(ah);
 
-	return ath9k_get_eeprom_antenna_cfg[ahp->ah_eep_map](ah, chan);
+	return ath9k_get_eeprom_antenna_cfg[ahp->ah_eep_map](ah, chan,
+							     index, config);
 }
 
 static u8 ath9k_hw_get_4k_num_ant_config(struct ath_hal *ah,
