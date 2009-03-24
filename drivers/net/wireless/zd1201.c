@@ -919,9 +919,10 @@ static int zd1201_set_freq(struct net_device *dev,
 	if (freq->e == 0)
 		channel = freq->m;
 	else {
-		channel = ieee80211_freq_to_dsss_chan(freq->m);
-		if (channel < 0)
-			channel = 0;
+		if (freq->m >= 2482)
+			channel = 14;
+		if (freq->m >= 2407)
+			channel = (freq->m-2407)/5;
 	}
 
 	err = zd1201_setconfig16(zd, ZD1201_RID_CNFOWNCHANNEL, channel);
