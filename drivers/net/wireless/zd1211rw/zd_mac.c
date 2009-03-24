@@ -575,17 +575,13 @@ static int zd_op_tx(struct ieee80211_hw *hw, struct sk_buff *skb)
 
 	r = fill_ctrlset(mac, skb);
 	if (r)
-		goto fail;
+		return r;
 
 	info->rate_driver_data[0] = hw;
 
 	r = zd_usb_tx(&mac->chip.usb, skb);
 	if (r)
-		goto fail;
-	return 0;
-
-fail:
-	dev_kfree_skb(skb);
+		return r;
 	return 0;
 }
 
