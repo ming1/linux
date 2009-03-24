@@ -204,6 +204,9 @@ static void rt2500usb_rf_write(struct rt2x00_dev *rt2x00dev,
 {
 	u16 reg;
 
+	if (!word)
+		return;
+
 	mutex_lock(&rt2x00dev->csr_mutex);
 
 	/*
