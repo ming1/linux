@@ -522,9 +522,9 @@ static void iwl_ht_conf(struct iwl_priv *priv,
 	 */
 
 	iwl_conf->extension_chan_offset = IEEE80211_HT_PARAM_CHA_SEC_NONE;
-	if (conf_is_ht40_minus(&priv->hw->conf))
+	if (priv->hw->conf.ht.channel_type == NL80211_CHAN_HT40MINUS)
 		iwl_conf->extension_chan_offset = IEEE80211_HT_PARAM_CHA_SEC_BELOW;
-	else if (conf_is_ht40_plus(&priv->hw->conf))
+	else if(priv->hw->conf.ht.channel_type == NL80211_CHAN_HT40PLUS)
 		iwl_conf->extension_chan_offset = IEEE80211_HT_PARAM_CHA_SEC_ABOVE;
 
 	/* If no above or below channel supplied disable FAT channel */
@@ -2550,7 +2550,7 @@ static int iwl_mac_config(struct ieee80211_hw *hw, u32 changed)
 	mutex_lock(&priv->mutex);
 	IWL_DEBUG_MAC80211("enter to channel %d\n", conf->channel->hw_value);
 
-	priv->current_ht_config.is_ht = conf_is_ht(conf);
+	priv->current_ht_config.is_ht = conf->ht.enabled;
 
 	if (conf->radio_enabled && iwl_radio_kill_sw_enable_radio(priv)) {
 		IWL_DEBUG_MAC80211("leave - RF-KILL - waiting for uCode\n");
