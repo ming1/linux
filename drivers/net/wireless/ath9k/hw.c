@@ -428,7 +428,7 @@ static struct ath_hal_5416 *ath9k_hw_newstate(u16 devid,
 	ah->ah_sc = sc;
 	ah->ah_sh = mem;
 	ah->hw_version.magic = AR5416_MAGIC;
-	ah->regulatory.country_code = CTRY_DEFAULT;
+	ah->ah_countryCode = CTRY_DEFAULT;
 	ah->hw_version.devid = devid;
 	ah->hw_version.subvendorid = 0;
 
@@ -438,8 +438,8 @@ static struct ath_hal_5416 *ath9k_hw_newstate(u16 devid,
 	if (!AR_SREV_9100(ah))
 		ah->ah_flags = AH_USE_EEPROM;
 
-	ah->regulatory.power_limit = MAX_RATE_POWER;
-	ah->regulatory.tp_scale = ATH9K_TP_SCALE_MAX;
+	ah->ah_powerLimit = MAX_RATE_POWER;
+	ah->ah_tpScale = ATH9K_TP_SCALE_MAX;
 	ahp->ah_atimWindow = 0;
 	ahp->ah_diversityControl = ah->ah_config.diversity_control;
 	ahp->ah_antennaSwitchSwap =
@@ -1357,7 +1357,7 @@ static int ath9k_hw_process_ini(struct ath_hal *ah,
 				      channel->max_antenna_gain * 2,
 				      channel->max_power * 2,
 				      min((u32) MAX_RATE_POWER,
-					  (u32) ah->regulatory.power_limit));
+					  (u32) ah->ah_powerLimit));
 	if (status != 0) {
 		DPRINTF(ah->ah_sc, ATH_DBG_POWER_MGMT,
 			"error init'ing transmit power\n");
@@ -1688,7 +1688,7 @@ static bool ath9k_hw_channel_change(struct ath_hal *ah,
 				 channel->max_antenna_gain * 2,
 				 channel->max_power * 2,
 				 min((u32) MAX_RATE_POWER,
-				     (u32) ah->regulatory.power_limit)) != 0) {
+				     (u32) ah->ah_powerLimit)) != 0) {
 		DPRINTF(ah->ah_sc, ATH_DBG_EEPROM,
 			"error init'ing transmit power\n");
 		return false;
@@ -3156,22 +3156,21 @@ bool ath9k_hw_fill_cap_info(struct ath_hal *ah)
 
 	eeval = ath9k_hw_get_eeprom(ah, EEP_REG_0);
 
-	ah->regulatory.current_rd = eeval;
+	ah->ah_currentRD = eeval;
 
 	eeval = ath9k_hw_get_eeprom(ah, EEP_REG_1);
-	ah->regulatory.current_rd_ext = eeval;
+	ah->ah_currentRDExt = eeval;
 
 	capField = ath9k_hw_get_eeprom(ah, EEP_OP_CAP);
 
 	if (ah->ah_opmode != NL80211_IFTYPE_AP &&
 	    ah->hw_version.subvendorid == AR_SUBVENDOR_ID_NEW_A) {
-		if (ah->regulatory.current_rd == 0x64 ||
-		    ah->regulatory.current_rd == 0x65)
-			ah->regulatory.current_rd += 5;
-		else if (ah->regulatory.current_rd == 0x41)
-			ah->regulatory.current_rd = 0x43;
+		if (ah->ah_currentRD == 0x64 || ah->ah_currentRD == 0x65)
+			ah->ah_currentRD += 5;
+		else if (ah->ah_currentRD == 0x41)
+			ah->ah_currentRD = 0x43;
 		DPRINTF(ah->ah_sc, ATH_DBG_REGULATORY,
-			"regdomain mapped to 0x%x\n", ah->regulatory.current_rd);
+			"regdomain mapped to 0x%x\n", ah->ah_currentRD);
 	}
 
 	eeval = ath9k_hw_get_eeprom(ah, EEP_OP_MODE);
@@ -3313,7 +3312,7 @@ bool ath9k_hw_fill_cap_info(struct ath_hal *ah)
 	else
 		pCap->hw_caps |= ATH9K_HW_CAP_4KB_SPLITTRANS;
 
-	if (ah->regulatory.current_rd_ext & (1 << REG_EXT_JAPAN_MIDBAND)) {
+	if (ah->ah_currentRDExt & (1 << REG_EXT_JAPAN_MIDBAND)) {
 		pCap->reg_cap =
 			AR_EEPROM_EEREGCAP_EN_KK_NEW_11A |
 			AR_EEPROM_EEREGCAP_EN_KK_U1_EVEN |
@@ -3413,13 +3412,13 @@ bool ath9k_hw_getcapability(struct ath_hal *ah, enum ath9k_capability_type type,
 		case 0:
 			return 0;
 		case 1:
-			*result = ah->regulatory.power_limit;
+			*result = ah->ah_powerLimit;
 			return 0;
 		case 2:
-			*result = ah->regulatory.max_power_level;
+			*result = ah->ah_maxPowerLevel;
 			return 0;
 		case 3:
-			*result = ah->regulatory.tp_scale;
+			*result = ah->ah_tpScale;
 			return 0;
 		}
 		return false;
@@ -3676,14 +3675,14 @@ bool ath9k_hw_set_txpowerlimit(struct ath_hal *ah, u32 limit)
 	struct ath9k_channel *chan = ah->ah_curchan;
 	struct ieee80211_channel *channel = chan->chan;
 
-	ah->regulatory.power_limit = min(limit, (u32) MAX_RATE_POWER);
+	ah->ah_powerLimit = min(limit, (u32) MAX_RATE_POWER);
 
 	if (ath9k_hw_set_txpower(ah, chan,
 				 ath9k_regd_get_ctl(ah, chan),
 				 channel->max_antenna_gain * 2,
 				 channel->max_power * 2,
 				 min((u32) MAX_RATE_POWER,
-				     (u32) ah->regulatory.power_limit)) != 0)
+				     (u32) ah->ah_powerLimit)) != 0)
 		return false;
 
 	return true;
