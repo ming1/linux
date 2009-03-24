@@ -87,7 +87,7 @@ struct wiphy *wiphy_idx_to_wiphy(int wiphy_idx)
 }
 
 /* requires cfg80211_mutex to be held! */
-struct cfg80211_registered_device *
+static struct cfg80211_registered_device *
 __cfg80211_drv_from_info(struct genl_info *info)
 {
 	int ifindex;
@@ -176,14 +176,13 @@ void cfg80211_put_dev(struct cfg80211_registered_device *drv)
 	mutex_unlock(&drv->mtx);
 }
 
-/* requires cfg80211_mutex to be held */
 int cfg80211_dev_rename(struct cfg80211_registered_device *rdev,
 			char *newname)
 {
 	struct cfg80211_registered_device *drv;
 	int wiphy_idx, taken = -1, result, digits;
 
-	assert_cfg80211_lock();
+	mutex_lock(&cfg80211_mutex);
 
 	/* prohibit calling the thing phy%d when %d is not its number */
 	sscanf(newname, PHY_NAME "%d%n", &wiphy_idx, &taken);
@@ -196,23 +195,30 @@ int cfg80211_dev_rename(struct cfg80211_registered_device *rdev,
 		 * deny the name if it is phy<idx> where <idx> is printed
 		 * without leading zeroes. taken == strlen(newname) here
 		 */
+		result = -EINVAL;
 		if (taken == strlen(PHY_NAME) + digits)
-			return -EINVAL;
+			goto out_unlock;
 	}
 
 
 	/* Ignore nop renames */
+	result = 0;
 	if (strcmp(newname, dev_name(&rdev->wiphy.dev)) == 0)
-		return 0;
+		goto out_unlock;
 
 	/* Ensure another device does not already have this name. */
-	list_for_each_entry(drv, &cfg80211_drv_list, list)
+	list_for_each_entry(drv, &cfg80211_drv_list, list) {
+		result = -EINVAL;
 		if (strcmp(newname, dev_name(&drv->wiphy.dev)) == 0)
-			return -EINVAL;
+			goto out_unlock;
+	}
 
+	/* this will only check for collisions in sysfs
+	 * which is not even always compiled in.
+	 */
 	result = device_rename(&rdev->wiphy.dev, newname);
 	if (result)
-		return result;
+		goto out_unlock;
 
 	if (rdev->wiphy.debugfsdir &&
 	    !debugfs_rename(rdev->wiphy.debugfsdir->d_parent,
@@ -222,9 +228,13 @@ int cfg80211_dev_rename(struct cfg80211_registered_device *rdev,
 		printk(KERN_ERR "cfg80211: failed to rename debugfs dir to %s!\n",
 		       newname);
 
-	nl80211_notify_dev_rename(rdev);
+	result = 0;
+out_unlock:
+	mutex_unlock(&cfg80211_mutex);
+	if (result == 0)
+		nl80211_notify_dev_rename(rdev);
 
-	return 0;
+	return result;
 }
 
 /* exported functions */

@@ -366,26 +366,16 @@ static int nl80211_set_wiphy(struct sk_buff *skb, struct genl_info *info)
 	int result = 0, rem_txq_params = 0;
 	struct nlattr *nl_txq_params;
 
-	rtnl_lock();
+	rdev = cfg80211_get_dev_from_info(info);
+	if (IS_ERR(rdev))
+		return PTR_ERR(rdev);
 
-	mutex_lock(&cfg80211_mutex);
-
-	rdev = __cfg80211_drv_from_info(info);
-	if (IS_ERR(rdev)) {
-		result = PTR_ERR(rdev);
-		goto unlock;
-	}
-
-	mutex_lock(&rdev->mtx);
-
-	if (info->attrs[NL80211_ATTR_WIPHY_NAME])
+	if (info->attrs[NL80211_ATTR_WIPHY_NAME]) {
 		result = cfg80211_dev_rename(
 			rdev, nla_data(info->attrs[NL80211_ATTR_WIPHY_NAME]));
-
-	mutex_unlock(&cfg80211_mutex);
-
-	if (result)
-		goto bad_res;
+		if (result)
+			goto bad_res;
+	}
 
 	if (info->attrs[NL80211_ATTR_WIPHY_TXQ_PARAMS]) {
 		struct ieee80211_txq_params txq_params;
@@ -481,9 +471,7 @@ static int nl80211_set_wiphy(struct sk_buff *skb, struct genl_info *info)
 
 
  bad_res:
-	mutex_unlock(&rdev->mtx);
- unlock:
-	rtnl_unlock();
+	cfg80211_put_dev(rdev);
 	return result;
 }
 
