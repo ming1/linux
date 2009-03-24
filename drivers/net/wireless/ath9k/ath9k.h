@@ -563,11 +563,6 @@ struct ath_softc {
 	struct ath_wiphy **sec_wiphy; /* secondary wiphys (virtual radios); may
 				       * have NULL entries */
 	int num_sec_wiphy; /* number of sec_wiphy pointers in the array */
-	int chan_idx;
-	int chan_is_ht;
-	struct ath_wiphy *next_wiphy;
-	struct work_struct chan_work;
-
 	struct tasklet_struct intr_tq;
 	struct tasklet_struct bcon_tasklet;
 	struct ath_hw *sc_ah;
@@ -632,8 +627,6 @@ struct ath_wiphy {
 		ATH_WIPHY_PAUSING,
 		ATH_WIPHY_PAUSED,
 	} state;
-	int chan_idx;
-	int chan_is_ht;
 };
 
 int ath_reset(struct ath_softc *sc, bool retry_tx);
@@ -660,11 +653,6 @@ void ath_detach(struct ath_softc *sc);
 const char *ath_mac_bb_name(u32 mac_bb_version);
 const char *ath_rf_name(u16 rf_version);
 void ath_set_hw_capab(struct ath_softc *sc, struct ieee80211_hw *hw);
-void ath9k_update_ichannel(struct ath_softc *sc, struct ieee80211_hw *hw,
-			   struct ath9k_channel *ichan);
-void ath_update_chainmask(struct ath_softc *sc, int is_ht);
-int ath_set_channel(struct ath_softc *sc, struct ieee80211_hw *hw,
-		    struct ath9k_channel *hchan);
 
 #ifdef CONFIG_PCI
 int ath_pci_init(void);
@@ -706,8 +694,6 @@ int ath9k_wiphy_del(struct ath_wiphy *aphy);
 void ath9k_tx_status(struct ieee80211_hw *hw, struct sk_buff *skb);
 int ath9k_wiphy_pause(struct ath_wiphy *aphy);
 int ath9k_wiphy_unpause(struct ath_wiphy *aphy);
-int ath9k_wiphy_select(struct ath_wiphy *aphy);
-void ath9k_wiphy_chan_work(struct work_struct *work);
 
 /*
  * Read and write, they both share the same lock. We do this to serialize
