@@ -905,7 +905,8 @@ static void ath9k_bss_assoc_info(struct ath_softc *sc,
 		/* New association, store aid */
 		if (avp->av_opmode == NL80211_IFTYPE_STATION) {
 			sc->curaid = bss_conf->aid;
-			ath9k_hw_write_associd(sc);
+			ath9k_hw_write_associd(sc->sc_ah, sc->curbssid,
+					       sc->curaid);
 		}
 
 		/* Configure the beacon */
@@ -1514,10 +1515,11 @@ static int ath_init(u16 devid, struct ath_softc *sc)
 	ath9k_hw_setcapability(ah, ATH9K_CAP_DIVERSITY, 1, true, NULL);
 	sc->rx.defant = ath9k_hw_getdefantenna(ah);
 
+	ath9k_hw_getmac(ah, sc->macaddr);
 	if (ah->ah_caps.hw_caps & ATH9K_HW_CAP_BSSIDMASK) {
-		memcpy(sc->bssidmask, ath_bcast_mac, ETH_ALEN);
+		ath9k_hw_getbssidmask(ah, sc->bssidmask);
 		ATH_SET_VIF_BSSID_MASK(sc->bssidmask);
-		ath9k_hw_setbssidmask(sc);
+		ath9k_hw_setbssidmask(ah, sc->bssidmask);
 	}
 
 	sc->beacon.slottime = ATH9K_SLOT_TIME_9;	/* default to short slot time */
@@ -1577,7 +1579,7 @@ int ath_attach(u16 devid, struct ath_softc *sc)
 
 	/* get mac address from hardware and set in mac80211 */
 
-	SET_IEEE80211_PERM_ADDR(hw, sc->sc_ah->macaddr);
+	SET_IEEE80211_PERM_ADDR(hw, sc->macaddr);
 
 	hw->flags = IEEE80211_HW_RX_INCLUDES_FCS |
 		IEEE80211_HW_HOST_BROADCAST_PS_BUFFERING |
@@ -2294,9 +2296,7 @@ static int ath9k_config_interface(struct ieee80211_hw *hw,
 	    ah->ah_opmode != NL80211_IFTYPE_AP) {
 		ah->ah_opmode = NL80211_IFTYPE_STATION;
 		ath9k_hw_setopmode(ah);
-		memcpy(sc->curbssid, sc->sc_ah->macaddr, ETH_ALEN);
-		sc->curaid = 0;
-		ath9k_hw_write_associd(sc);
+		ath9k_hw_write_associd(ah, sc->macaddr, 0);
 		/* Request full reset to get hw opmode changed properly */
 		sc->sc_flags |= SC_OP_FULL_RESET;
 	}
@@ -2309,7 +2309,8 @@ static int ath9k_config_interface(struct ieee80211_hw *hw,
 			/* Set BSSID */
 			memcpy(sc->curbssid, conf->bssid, ETH_ALEN);
 			sc->curaid = 0;
-			ath9k_hw_write_associd(sc);
+			ath9k_hw_write_associd(sc->sc_ah, sc->curbssid,
+					       sc->curaid);
 
 			/* Set aggregation protection mode parameters */
 			sc->config.ath_aggr_prot = 0;
@@ -2392,11 +2393,8 @@ static void ath9k_configure_filter(struct ieee80211_hw *hw,
 	ath9k_hw_setrxfilter(sc->sc_ah, rfilt);
 
 	if (changed_flags & FIF_BCN_PRBRESP_PROMISC) {
-		if (*total_flags & FIF_BCN_PRBRESP_PROMISC) {
-			memcpy(sc->curbssid, ath_bcast_mac, ETH_ALEN);
-			sc->curaid = 0;
-			ath9k_hw_write_associd(sc);
-		}
+		if (*total_flags & FIF_BCN_PRBRESP_PROMISC)
+			ath9k_hw_write_associd(sc->sc_ah, ath_bcast_mac, 0);
 	}
 
 	DPRINTF(sc, ATH_DBG_CONFIG, "Set HW RX filter: 0x%x\n", sc->rx.rxfilter);

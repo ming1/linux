@@ -581,6 +581,7 @@ struct ath_softc {
 	struct mutex mutex;
 
 	u8 curbssid[ETH_ALEN];
+	u8 macaddr[ETH_ALEN];
 	u8 bssidmask[ETH_ALEN];
 	u32 intrstatus;
 	u32 sc_flags; /* SC_OP_* */
