@@ -5479,8 +5479,7 @@ static void iwl3945_bg_rf_kill(struct work_struct *work)
 		IWL_DEBUG(IWL_DL_INFO | IWL_DL_RF_KILL,
 			  "HW and/or SW RF Kill no longer active, restarting "
 			  "device\n");
-		if (!test_bit(STATUS_EXIT_PENDING, &priv->status) &&
-		     test_bit(STATUS_ALIVE, &priv->status))
+		if (!test_bit(STATUS_EXIT_PENDING, &priv->status))
 			queue_work(priv->workqueue, &priv->restart);
 	} else {
 
@@ -5495,25 +5494,6 @@ static void iwl3945_bg_rf_kill(struct work_struct *work)
 
 	mutex_unlock(&priv->mutex);
 	iwl3945_rfkill_set_hw_state(priv);
-}
-
-static void iwl3945_rfkill_poll(struct work_struct *data)
-{
-	struct iwl_priv *priv =
-	    container_of(data, struct iwl_priv, rfkill_poll.work);
-	unsigned long status = priv->status;
-
-	if (iwl_read32(priv, CSR_GP_CNTRL) & CSR_GP_CNTRL_REG_FLAG_HW_RF_KILL_SW)
-		clear_bit(STATUS_RF_KILL_HW, &priv->status);
-	else
-		set_bit(STATUS_RF_KILL_HW, &priv->status);
-
-	if (test_bit(STATUS_RF_KILL_HW, &status) != test_bit(STATUS_RF_KILL_HW, &priv->status))
-		queue_work(priv->workqueue, &priv->rf_kill);
-
-	queue_delayed_work(priv->workqueue, &priv->rfkill_poll,
-			   round_jiffies_relative(2 * HZ));
-
 }
 
 #define IWL_SCAN_CHECK_WATCHDOG (7 * HZ)
@@ -5918,6 +5898,20 @@ static int iwl3945_mac_start(struct ieee80211_hw *hw)
 
 	IWL_DEBUG_MAC80211("enter\n");
 
+	if (pci_enable_device(priv->pci_dev)) {
+		IWL_ERR(priv, "Fail to pci_enable_device\n");
+		return -ENODEV;
+	}
+	pci_restore_state(priv->pci_dev);
+	pci_enable_msi(priv->pci_dev);
+
+	ret = request_irq(priv->pci_dev->irq, iwl3945_isr, IRQF_SHARED,
+			  DRV_NAME, priv);
+	if (ret) {
+		IWL_ERR(priv, "Error allocating IRQ %d\n", priv->pci_dev->irq);
+		goto out_disable_msi;
+	}
+
 	/* we should be verifying the device is ready to be opened */
 	mutex_lock(&priv->mutex);
 
@@ -5963,15 +5957,15 @@ static int iwl3945_mac_start(struct ieee80211_hw *hw)
 		}
 	}
 
-	/* ucode is running and will send rfkill notifications,
-	 * no need to poll the killswitch state anymore */
-	cancel_delayed_work(&priv->rfkill_poll);
-
 	priv->is_open = 1;
 	IWL_DEBUG_MAC80211("leave\n");
 	return 0;
 
 out_release_irq:
+	free_irq(priv->pci_dev->irq, priv);
+out_disable_msi:
+	pci_disable_msi(priv->pci_dev);
+	pci_disable_device(priv->pci_dev);
 	priv->is_open = 0;
 	IWL_DEBUG_MAC80211("leave - failed\n");
 	return ret;
@@ -6002,10 +5996,10 @@ static void iwl3945_mac_stop(struct ieee80211_hw *hw)
 	iwl3945_down(priv);
 
 	flush_workqueue(priv->workqueue);
-
-	/* start polling the killswitch state again */
-	queue_delayed_work(priv->workqueue, &priv->rfkill_poll,
-			   round_jiffies_relative(2 * HZ));
+	free_irq(priv->pci_dev->irq, priv);
+	pci_disable_msi(priv->pci_dev);
+	pci_save_state(priv->pci_dev);
+	pci_disable_device(priv->pci_dev);
 
 	IWL_DEBUG_MAC80211("leave\n");
 }
@@ -7213,7 +7207,6 @@ static void iwl3945_setup_deferred_work(struct iwl_priv *priv)
 	INIT_DELAYED_WORK(&priv->init_alive_start, iwl3945_bg_init_alive_start);
 	INIT_DELAYED_WORK(&priv->alive_start, iwl3945_bg_alive_start);
 	INIT_DELAYED_WORK(&priv->scan_check, iwl3945_bg_scan_check);
-	INIT_DELAYED_WORK(&priv->rfkill_poll, iwl3945_rfkill_poll);
 
 	iwl3945_hw_setup_deferred_work(priv);
 
@@ -7504,27 +7497,24 @@ static int iwl3945_pci_probe(struct pci_dev *pdev, const struct pci_device_id *e
 	iwl3945_disable_interrupts(priv);
 	spin_unlock_irqrestore(&priv->lock, flags);
 
-	pci_enable_msi(priv->pci_dev);
-
-	err = request_irq(priv->pci_dev->irq, iwl3945_isr, IRQF_SHARED,
-			  DRV_NAME, priv);
-	if (err) {
-		IWL_ERR(priv, "Error allocating IRQ %d\n", priv->pci_dev->irq);
-		goto out_disable_msi;
-	}
-
 	err = sysfs_create_group(&pdev->dev.kobj, &iwl3945_attribute_group);
 	if (err) {
 		IWL_ERR(priv, "failed to create sysfs device attributes\n");
-		goto out_release_irq;
+		goto out_free_geos;
 	}
 
 	iwl3945_set_rxon_channel(priv, IEEE80211_BAND_2GHZ, 6);
 	iwl3945_setup_deferred_work(priv);
 	iwl3945_setup_rx_handlers(priv);
 
+	/***********************
+	 * 9. Conclude
+	 * ********************/
+	pci_save_state(pdev);
+	pci_disable_device(pdev);
+
 	/*********************************
-	 * 9. Setup and Register mac80211
+	 * 10. Setup and Register mac80211
 	 * *******************************/
 
 	err = ieee80211_register_hw(priv->hw);
@@ -7541,20 +7531,12 @@ static int iwl3945_pci_probe(struct pci_dev *pdev, const struct pci_device_id *e
 		IWL_ERR(priv, "Unable to initialize RFKILL system. "
 				  "Ignoring error: %d\n", err);
 
-	/* Start monitoring the killswitch */
-	queue_delayed_work(priv->workqueue, &priv->rfkill_poll,
-			   2 * HZ);
-
 	return 0;
 
  out_remove_sysfs:
 	destroy_workqueue(priv->workqueue);
 	priv->workqueue = NULL;
 	sysfs_remove_group(&pdev->dev.kobj, &iwl3945_attribute_group);
- out_release_irq:
-	free_irq(priv->pci_dev->irq, priv);
- out_disable_msi:
-	pci_disable_msi(priv->pci_dev);
  out_free_geos:
 	iwl3945_free_geos(priv);
  out_iounmap:
@@ -7601,8 +7583,6 @@ static void __devexit iwl3945_pci_remove(struct pci_dev *pdev)
 	sysfs_remove_group(&pdev->dev.kobj, &iwl3945_attribute_group);
 
 	iwl3945_rfkill_unregister(priv);
-	cancel_delayed_work(&priv->rfkill_poll);
-
 	iwl3945_dealloc_ucode_pci(priv);
 
 	if (priv->rxq.bd)
@@ -7620,9 +7600,6 @@ static void __devexit iwl3945_pci_remove(struct pci_dev *pdev)
 	 * until now... */
 	destroy_workqueue(priv->workqueue);
 	priv->workqueue = NULL;
-
-	free_irq(pdev->irq, priv);
-	pci_disable_msi(pdev);
 
 	pci_iounmap(pdev, priv->hw_base);
 	pci_release_regions(pdev);
@@ -7650,8 +7627,19 @@ static int iwl3945_pci_suspend(struct pci_dev *pdev, pm_message_t state)
 		priv->is_open = 1;
 	}
 
-	pci_save_state(pdev);
-	pci_disable_device(pdev);
+	/* pci driver assumes state will be saved in this function.
+	 * pci state is saved and device disabled when interface is
+	 * stopped, so at this time pci device will always be disabled -
+	 * whether interface was started or not. saving pci state now will
+	 * cause saved state be that of a disabled device, which will cause
+	 * problems during resume in that we will end up with a disabled device.
+	 *
+	 * indicate that the current saved state (from when interface was
+	 * stopped) is valid. if interface was never up at time of suspend
+	 * then the saved state will still be valid as it was saved during
+	 * .probe. */
+	pdev->state_saved = true;
+
 	pci_set_power_state(pdev, PCI_D3hot);
 
 	return 0;
@@ -7662,8 +7650,6 @@ static int iwl3945_pci_resume(struct pci_dev *pdev)
 	struct iwl_priv *priv = pci_get_drvdata(pdev);
 
 	pci_set_power_state(pdev, PCI_D0);
-	pci_enable_device(pdev);
-	pci_restore_state(pdev);
 
 	if (priv->is_open)
 		iwl3945_mac_start(priv->hw);
