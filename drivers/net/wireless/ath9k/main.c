@@ -2374,7 +2374,6 @@ static int ath9k_config_interface(struct ieee80211_hw *hw,
 		case NL80211_IFTYPE_ADHOC:
 			/* Set BSSID */
 			memcpy(sc->curbssid, conf->bssid, ETH_ALEN);
-			memcpy(avp->bssid, conf->bssid, ETH_ALEN);
 			sc->curaid = 0;
 			ath9k_hw_write_associd(sc);
 

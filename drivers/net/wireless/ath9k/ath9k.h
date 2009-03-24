@@ -292,7 +292,6 @@ struct ath_atx_ac {
 struct ath_tx_control {
 	struct ath_txq *txq;
 	int if_id;
-	enum ath9k_internal_frame_type frame_type;
 };
 
 struct ath_xmit_status {
@@ -393,7 +392,6 @@ struct ath_vif {
 	enum nl80211_iftype av_opmode;
 	struct ath_buf *av_bcbuf;
 	struct ath_tx_control av_btxctl;
-	u8 bssid[ETH_ALEN]; /* current BSSID from config_interface */
 };
 
 /*******************/
@@ -622,11 +620,6 @@ struct ath_softc {
 struct ath_wiphy {
 	struct ath_softc *sc; /* shared for all virtual wiphys */
 	struct ieee80211_hw *hw;
-	enum ath_wiphy_state {
-		ATH_WIPHY_ACTIVE,
-		ATH_WIPHY_PAUSING,
-		ATH_WIPHY_PAUSED,
-	} state;
 };
 
 int ath_reset(struct ath_softc *sc, bool retry_tx);
@@ -691,9 +684,6 @@ static inline void ath9k_ps_restore(struct ath_softc *sc)
 void ath9k_set_bssid_mask(struct ieee80211_hw *hw);
 int ath9k_wiphy_add(struct ath_softc *sc);
 int ath9k_wiphy_del(struct ath_wiphy *aphy);
-void ath9k_tx_status(struct ieee80211_hw *hw, struct sk_buff *skb);
-int ath9k_wiphy_pause(struct ath_wiphy *aphy);
-int ath9k_wiphy_unpause(struct ath_wiphy *aphy);
 
 /*
  * Read and write, they both share the same lock. We do this to serialize
