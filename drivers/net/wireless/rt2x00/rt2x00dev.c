@@ -83,10 +83,9 @@ void rt2x00lib_disable_radio(struct rt2x00_dev *rt2x00dev)
 		return;
 
 	/*
-	 * Stop the TX queues in mac80211.
+	 * Stop the TX queues.
 	 */
 	ieee80211_stop_queues(rt2x00dev->hw);
-	rt2x00queue_stop_queues(rt2x00dev);
 
 	/*
 	 * Disable RX.
@@ -158,7 +157,7 @@ static void rt2x00lib_intf_scheduled_iter(void *data, u8 *mac,
 		return;
 
 	if (delayed_flags & DELAYED_UPDATE_BEACON)
-		rt2x00queue_update_beacon(rt2x00dev, vif, true);
+		rt2x00queue_update_beacon(rt2x00dev, vif);
 
 	if (delayed_flags & DELAYED_CONFIG_ERP)
 		rt2x00lib_config_erp(rt2x00dev, intf, &conf);
