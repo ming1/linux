@@ -1497,9 +1497,6 @@ static void at76_work_set_promisc(struct work_struct *work)
 					      work_set_promisc);
 	int ret = 0;
 
-	if (priv->device_unplugged)
-		return;
-
 	mutex_lock(&priv->mtx);
 
 	priv->mib_buf.type = MIB_LOCAL;
@@ -2293,7 +2290,6 @@ static void at76_delete_device(struct at76_priv *priv)
 	tasklet_kill(&priv->rx_tasklet);
 
 	if (priv->mac80211_registered) {
-		cancel_delayed_work(&priv->dwork_hw_scan);
 		flush_workqueue(priv->hw->workqueue);
 		ieee80211_unregister_hw(priv->hw);
 	}
@@ -2310,8 +2306,6 @@ static void at76_delete_device(struct at76_priv *priv)
 	at76_dbg(DBG_PROC_ENTRY, "%s: unlinked urbs", __func__);
 
 	kfree(priv->bulk_out_buffer);
-
-	del_timer_sync(&ledtrig_tx_timer);
 
 	if (priv->rx_skb)
 		kfree_skb(priv->rx_skb);
