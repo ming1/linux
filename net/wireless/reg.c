@@ -1617,7 +1617,7 @@ void reg_device_remove(struct wiphy *wiphy)
 
 int regulatory_init(void)
 {
-	int err = 0;
+	int err;
 
 	reg_pdev = platform_device_register_simple("regulatory", 0, NULL, 0);
 	if (IS_ERR(reg_pdev))
@@ -1638,24 +1638,12 @@ int regulatory_init(void)
 	cfg80211_regdomain = cfg80211_world_regdom;
 
 	err = regulatory_hint_core("00");
-#endif
 	if (err) {
-		if (err == -ENOMEM)
-			return err;
-		/*
-		 * N.B. kobject_uevent_env() can fail mainly for when we're out
-		 * memory which is handled and propagated appropriately above
-		 * but it can also fail during a netlink_broadcast() or during
-		 * early boot for call_usermodehelper(). For now treat these
-		 * errors as non-fatal.
-		 */
-		printk(KERN_ERR "cfg80211: kobject_uevent_env() was unable "
-			"to call CRDA during init");
-#ifdef CONFIG_CFG80211_REG_DEBUG
-		/* We want to find out exactly why when debugging */
-		WARN_ON(err);
-#endif
+		printk(KERN_ERR "cfg80211: calling CRDA failed - "
+		       "unable to update world regulatory domain, "
+		       "using static definition\n");
 	}
+#endif
 
 	return 0;
 }
