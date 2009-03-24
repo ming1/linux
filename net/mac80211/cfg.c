@@ -540,6 +540,9 @@ static int ieee80211_add_beacon(struct wiphy *wiphy, struct net_device *dev,
 
 	sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 
+	if (sdata->vif.type != NL80211_IFTYPE_AP)
+		return -EINVAL;
+
 	old = sdata->u.ap.beacon;
 
 	if (old)
@@ -556,6 +559,9 @@ static int ieee80211_set_beacon(struct wiphy *wiphy, struct net_device *dev,
 
 	sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 
+	if (sdata->vif.type != NL80211_IFTYPE_AP)
+		return -EINVAL;
+
 	old = sdata->u.ap.beacon;
 
 	if (!old)
@@ -570,6 +576,9 @@ static int ieee80211_del_beacon(struct wiphy *wiphy, struct net_device *dev)
 	struct beacon_data *old;
 
 	sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+
+	if (sdata->vif.type != NL80211_IFTYPE_AP)
+		return -EINVAL;
 
 	old = sdata->u.ap.beacon;
 
@@ -849,6 +858,9 @@ static int ieee80211_add_mpath(struct wiphy *wiphy, struct net_device *dev,
 
 	sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 
+	if (sdata->vif.type != NL80211_IFTYPE_MESH_POINT)
+		return -ENOTSUPP;
+
 	rcu_read_lock();
 	sta = sta_info_get(local, next_hop);
 	if (!sta) {
@@ -895,6 +907,9 @@ static int ieee80211_change_mpath(struct wiphy *wiphy,
 	struct sta_info *sta;
 
 	sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+
+	if (sdata->vif.type != NL80211_IFTYPE_MESH_POINT)
+		return -ENOTSUPP;
 
 	rcu_read_lock();
 
@@ -964,6 +979,9 @@ static int ieee80211_get_mpath(struct wiphy *wiphy, struct net_device *dev,
 
 	sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 
+	if (sdata->vif.type != NL80211_IFTYPE_MESH_POINT)
+		return -ENOTSUPP;
+
 	rcu_read_lock();
 	mpath = mesh_path_lookup(dst, sdata);
 	if (!mpath) {
@@ -985,6 +1003,9 @@ static int ieee80211_dump_mpath(struct wiphy *wiphy, struct net_device *dev,
 
 	sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 
+	if (sdata->vif.type != NL80211_IFTYPE_MESH_POINT)
+		return -ENOTSUPP;
+
 	rcu_read_lock();
 	mpath = mesh_path_lookup_by_idx(idx, sdata);
 	if (!mpath) {
@@ -1004,6 +1025,8 @@ static int ieee80211_get_mesh_params(struct wiphy *wiphy,
 	struct ieee80211_sub_if_data *sdata;
 	sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 
+	if (sdata->vif.type != NL80211_IFTYPE_MESH_POINT)
+		return -ENOTSUPP;
 	memcpy(conf, &(sdata->u.mesh.mshcfg), sizeof(struct mesh_config));
 	return 0;
 }
@@ -1020,6 +1043,9 @@ static int ieee80211_set_mesh_params(struct wiphy *wiphy,
 	struct mesh_config *conf;
 	struct ieee80211_sub_if_data *sdata;
 	sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+
+	if (sdata->vif.type != NL80211_IFTYPE_MESH_POINT)
+		return -ENOTSUPP;
 
 	/* Set the config options which we are interested in setting */
 	conf = &(sdata->u.mesh.mshcfg);
@@ -1067,6 +1093,9 @@ static int ieee80211_change_bss(struct wiphy *wiphy,
 	u32 changed = 0;
 
 	sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+
+	if (sdata->vif.type != NL80211_IFTYPE_AP)
+		return -EINVAL;
 
 	if (params->use_cts_prot >= 0) {
 		sdata->vif.bss_conf.use_cts_prot = params->use_cts_prot;
@@ -1180,6 +1209,9 @@ static int ieee80211_auth(struct wiphy *wiphy, struct net_device *dev,
 
 	sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 
+	if (sdata->vif.type != NL80211_IFTYPE_STATION)
+		return -EOPNOTSUPP;
+
 	switch (req->auth_type) {
 	case NL80211_AUTHTYPE_OPEN_SYSTEM:
 		sdata->u.mgd.auth_algs = IEEE80211_AUTH_ALG_OPEN;
@@ -1236,6 +1268,9 @@ static int ieee80211_assoc(struct wiphy *wiphy, struct net_device *dev,
 
 	sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 
+	if (sdata->vif.type != NL80211_IFTYPE_STATION)
+		return -EOPNOTSUPP;
+
 	if (memcmp(sdata->u.mgd.bssid, req->peer_addr, ETH_ALEN) != 0 ||
 	    !(sdata->u.mgd.flags & IEEE80211_STA_AUTHENTICATED))
 		return -ENOLINK; /* not authenticated */
@@ -1270,6 +1305,8 @@ static int ieee80211_deauth(struct wiphy *wiphy, struct net_device *dev,
 	struct ieee80211_sub_if_data *sdata;
 
 	sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+	if (sdata->vif.type != NL80211_IFTYPE_STATION)
+		return -EOPNOTSUPP;
 
 	/* TODO: req->ie */
 	return ieee80211_sta_deauthenticate(sdata, req->reason_code);
@@ -1281,6 +1318,9 @@ static int ieee80211_disassoc(struct wiphy *wiphy, struct net_device *dev,
 	struct ieee80211_sub_if_data *sdata;
 
 	sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+
+	if (sdata->vif.type != NL80211_IFTYPE_STATION)
+		return -EOPNOTSUPP;
 
 	/* TODO: req->ie */
 	return ieee80211_sta_disassociate(sdata, req->reason_code);
