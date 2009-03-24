@@ -1138,10 +1138,8 @@ int iwl_sta_rx_agg_stop(struct iwl_priv *priv, const u8 *addr, int tid)
 	int sta_id;
 
 	sta_id = iwl_find_station(priv, addr);
-	if (sta_id == IWL_INVALID_STATION) {
-		IWL_ERR(priv, "Invalid station for AGG tid %d\n", tid);
+	if (sta_id == IWL_INVALID_STATION)
 		return -ENXIO;
-	}
 
 	spin_lock_irqsave(&priv->sta_lock, flags);
 	priv->stations[sta_id].sta.station_flags_msk = 0;
