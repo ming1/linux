@@ -455,7 +455,7 @@ struct ath_beacon {
 
 void ath9k_beacon_tasklet(unsigned long data);
 void ath_beacon_config(struct ath_softc *sc, int if_id);
-int ath_beaconq_setup(struct ath_hw *ah);
+int ath_beaconq_setup(struct ath_hal *ah);
 int ath_beacon_alloc(struct ath_softc *sc, int if_id);
 void ath_beacon_return(struct ath_softc *sc, struct ath_vif *avp);
 void ath_beacon_sync(struct ath_softc *sc, int if_id);
@@ -565,7 +565,7 @@ struct ath_rfkill {
 struct ath_bus_ops {
 	void		(*read_cachesize)(struct ath_softc *sc, int *csz);
 	void		(*cleanup)(struct ath_softc *sc);
-	bool		(*eeprom_read)(struct ath_hw *ah, u32 off, u16 *data);
+	bool		(*eeprom_read)(struct ath_hal *ah, u32 off, u16 *data);
 };
 
 struct ath_softc {
@@ -573,7 +573,7 @@ struct ath_softc {
 	struct device *dev;
 	struct tasklet_struct intr_tq;
 	struct tasklet_struct bcon_tasklet;
-	struct ath_hw *sc_ah;
+	struct ath_hal *sc_ah;
 	void __iomem *mem;
 	int irq;
 	spinlock_t sc_resetlock;
@@ -693,7 +693,7 @@ static inline void ath9k_ps_restore(struct ath_softc *sc)
  * from happening.
  */
 
-static inline void ath9k_iowrite32(struct ath_hw *ah, u32 reg_offset, u32 val)
+static inline void ath9k_iowrite32(struct ath_hal *ah, u32 reg_offset, u32 val)
 {
 	if (ah->ah_config.serialize_regmode == SER_REG_MODE_ON) {
 		unsigned long flags;
@@ -704,7 +704,7 @@ static inline void ath9k_iowrite32(struct ath_hw *ah, u32 reg_offset, u32 val)
 		iowrite32(val, ah->ah_sc->mem + reg_offset);
 }
 
-static inline unsigned int ath9k_ioread32(struct ath_hw *ah, u32 reg_offset)
+static inline unsigned int ath9k_ioread32(struct ath_hal *ah, u32 reg_offset)
 {
 	u32 val;
 	if (ah->ah_config.serialize_regmode == SER_REG_MODE_ON) {
