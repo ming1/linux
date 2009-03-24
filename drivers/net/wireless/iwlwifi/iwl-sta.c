@@ -490,7 +490,7 @@ void iwl_clear_stations_table(struct iwl_priv *priv)
 }
 EXPORT_SYMBOL(iwl_clear_stations_table);
 
-int iwl_get_free_ucode_key_index(struct iwl_priv *priv)
+static int iwl_get_free_ucode_key_index(struct iwl_priv *priv)
 {
 	int i;
 
@@ -500,7 +500,6 @@ int iwl_get_free_ucode_key_index(struct iwl_priv *priv)
 
 	return WEP_INVALID_OFFSET;
 }
-EXPORT_SYMBOL(iwl_get_free_ucode_key_index);
 
 int iwl_send_static_wepkey_cmd(struct iwl_priv *priv, u8 send_if_empty)
 {
