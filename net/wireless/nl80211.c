@@ -2039,11 +2039,6 @@ static int nl80211_get_mesh_params(struct sk_buff *skb,
 	if (err)
 		goto out_rtnl;
 
-	if (!drv->ops->get_mesh_params) {
-		err = -EOPNOTSUPP;
-		goto out;
-	}
-
 	/* Get the mesh params */
 	err = drv->ops->get_mesh_params(&drv->wiphy, dev, &cur_params);
 	if (err)
@@ -2156,11 +2151,6 @@ static int nl80211_set_mesh_params(struct sk_buff *skb, struct genl_info *info)
 	if (err)
 		goto out_rtnl;
 
-	if (!drv->ops->set_mesh_params) {
-		err = -EOPNOTSUPP;
-		goto out;
-	}
-
 	/* This makes sure that there aren't more than 32 mesh config
 	 * parameters (otherwise our bitfield scheme would not work.) */
 	BUILD_BUG_ON(NL80211_MESHCONF_ATTR_MAX > 32);
@@ -2203,7 +2193,6 @@ static int nl80211_set_mesh_params(struct sk_buff *skb, struct genl_info *info)
 	/* Apply changes */
 	err = drv->ops->set_mesh_params(&drv->wiphy, dev, &cfg, mask);
 
- out:
 	/* cleanup */
 	cfg80211_put_dev(drv);
 	dev_put(dev);
