@@ -142,8 +142,6 @@ ieee80211_add_rx_radiotap_header(struct ieee80211_local *local,
 	/* IEEE80211_RADIOTAP_FLAGS */
 	if (local->hw.flags & IEEE80211_HW_RX_INCLUDES_FCS)
 		*pos |= IEEE80211_RADIOTAP_F_FCS;
-	if (status->flag & (RX_FLAG_FAILED_FCS_CRC | RX_FLAG_FAILED_PLCP_CRC))
-		*pos |= IEEE80211_RADIOTAP_F_BADFCS;
 	if (status->flag & RX_FLAG_SHORTPRE)
 		*pos |= IEEE80211_RADIOTAP_F_SHORTPRE;
 	pos++;
@@ -206,8 +204,9 @@ ieee80211_add_rx_radiotap_header(struct ieee80211_local *local,
 	/* ensure 2 byte alignment for the 2 byte field as required */
 	if ((pos - (unsigned char *)rthdr) & 1)
 		pos++;
-	if (status->flag & RX_FLAG_FAILED_PLCP_CRC)
-		*(__le16 *)pos |= cpu_to_le16(IEEE80211_RADIOTAP_F_RX_BADPLCP);
+	/* FIXME: when radiotap gets a 'bad PLCP' flag use it here */
+	if (status->flag & (RX_FLAG_FAILED_FCS_CRC | RX_FLAG_FAILED_PLCP_CRC))
+		*(__le16 *)pos |= cpu_to_le16(IEEE80211_RADIOTAP_F_RX_BADFCS);
 	pos += 2;
 }
 
