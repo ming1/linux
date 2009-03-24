@@ -1060,19 +1060,8 @@ void ieee80211_handle_pwr_constr(struct ieee80211_sub_if_data *sdata,
 				 u8 pwr_constr_elem_len);
 
 /* Suspend/resume */
-#ifdef CONFIG_PM
 int __ieee80211_suspend(struct ieee80211_hw *hw);
 int __ieee80211_resume(struct ieee80211_hw *hw);
-#else
-static inline int __ieee80211_suspend(struct ieee80211_hw *hw)
-{
-	return 0;
-}
-static inline int __ieee80211_resume(struct ieee80211_hw *hw)
-{
-	return 0;
-}
-#endif
 
 /* utility functions/constants */
 extern void *mac80211_wiphy_privid; /* for wiphy privid */
