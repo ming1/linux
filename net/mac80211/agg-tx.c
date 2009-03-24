@@ -123,34 +123,6 @@ void ieee80211_send_bar(struct ieee80211_sub_if_data *sdata, u8 *ra, u16 tid, u1
 	ieee80211_tx_skb(sdata, skb, 0);
 }
 
-static int __ieee80211_stop_tx_ba_session(struct ieee80211_local *local,
-					  struct sta_info *sta, u16 tid,
-					  enum ieee80211_back_parties initiator)
-{
-	int ret;
-	u8 *state;
-
-	state = &sta->ampdu_mlme.tid_state_tx[tid];
-
-	if (local->hw.ampdu_queues)
-		ieee80211_stop_queue(&local->hw, sta->tid_to_tx_q[tid]);
-
-	*state = HT_AGG_STATE_REQ_STOP_BA_MSK |
-		(initiator << HT_AGG_STATE_INITIATOR_SHIFT);
-
-	ret = local->ops->ampdu_action(&local->hw, IEEE80211_AMPDU_TX_STOP,
-				       &sta->sta, tid, NULL);
-
-	/* HW shall not deny going back to legacy */
-	if (WARN_ON(ret)) {
-		*state = HT_AGG_STATE_OPERATIONAL;
-		if (local->hw.ampdu_queues)
-			ieee80211_wake_queue(&local->hw, sta->tid_to_tx_q[tid]);
-	}
-
-	return ret;
-}
-
 /*
  * After sending add Block Ack request we activated a timer until
  * add Block Ack response will arrive from the recipient.
@@ -163,13 +135,23 @@ static void sta_addba_resp_timer_expired(unsigned long data)
 	 * flow in sta_info_create gives the TID as data, while the timer_to_id
 	 * array gives the sta through container_of */
 	u16 tid = *(u8 *)data;
-	struct sta_info *sta = container_of((void *)data,
+	struct sta_info *temp_sta = container_of((void *)data,
 		struct sta_info, timer_to_tid[tid]);
-	struct ieee80211_local *local = sta->local;
+
+	struct ieee80211_local *local = temp_sta->local;
+	struct ieee80211_hw *hw = &local->hw;
+	struct sta_info *sta;
 	u8 *state;
 
-	state = &sta->ampdu_mlme.tid_state_tx[tid];
+	rcu_read_lock();
 
+	sta = sta_info_get(local, temp_sta->sta.addr);
+	if (!sta) {
+		rcu_read_unlock();
+		return;
+	}
+
+	state = &sta->ampdu_mlme.tid_state_tx[tid];
 	/* check if the TID waits for addBA response */
 	spin_lock_bh(&sta->lock);
 	if (!(*state & HT_ADDBA_REQUESTED_MSK)) {
@@ -179,15 +161,21 @@ static void sta_addba_resp_timer_expired(unsigned long data)
 		printk(KERN_DEBUG "timer expired on tid %d but we are not "
 				"expecting addBA response there", tid);
 #endif
-		return;
+		goto timer_expired_exit;
 	}
 
 #ifdef CONFIG_MAC80211_HT_DEBUG
 	printk(KERN_DEBUG "addBA response timer expired on tid %d\n", tid);
 #endif
 
-	__ieee80211_stop_tx_ba_session(local, sta, tid, WLAN_BACK_INITIATOR);
+	/* go through the state check in stop_BA_session */
+	*state = HT_AGG_STATE_OPERATIONAL;
 	spin_unlock_bh(&sta->lock);
+	ieee80211_stop_tx_ba_session(hw, temp_sta->sta.addr, tid,
+				     WLAN_BACK_INITIATOR);
+
+timer_expired_exit:
+	rcu_read_unlock();
 }
 
 int ieee80211_start_tx_ba_session(struct ieee80211_hw *hw, u8 *ra, u16 tid)
@@ -198,9 +186,6 @@ int ieee80211_start_tx_ba_session(struct ieee80211_hw *hw, u8 *ra, u16 tid)
 	u16 start_seq_num;
 	u8 *state;
 	int ret = 0;
-
-	if (WARN_ON(!local->ops->ampdu_action))
-		return -EINVAL;
 
 	if ((tid >= STA_TID_NUM) || !(hw->flags & IEEE80211_HW_AMPDU_AGGREGATION))
 		return -EINVAL;
@@ -295,8 +280,9 @@ int ieee80211_start_tx_ba_session(struct ieee80211_hw *hw, u8 *ra, u16 tid)
 	/* This is slightly racy because the queue isn't stopped */
 	start_seq_num = sta->tid_seq[tid];
 
-	ret = local->ops->ampdu_action(hw, IEEE80211_AMPDU_TX_START,
-				       &sta->sta, tid, &start_seq_num);
+	if (local->ops->ampdu_action)
+		ret = local->ops->ampdu_action(hw, IEEE80211_AMPDU_TX_START,
+					       &sta->sta, tid, &start_seq_num);
 
 	if (ret) {
 		/* No need to requeue the packets in the agg queue, since we
@@ -437,9 +423,6 @@ int ieee80211_stop_tx_ba_session(struct ieee80211_hw *hw,
 	u8 *state;
 	int ret = 0;
 
-	if (WARN_ON(!local->ops->ampdu_action))
-		return -EINVAL;
-
 	if (tid >= STA_TID_NUM)
 		return -EINVAL;
 
@@ -456,7 +439,7 @@ int ieee80211_stop_tx_ba_session(struct ieee80211_hw *hw,
 
 	if (*state != HT_AGG_STATE_OPERATIONAL) {
 		ret = -ENOENT;
-		goto unlock;
+		goto stop_BA_exit;
 	}
 
 #ifdef CONFIG_MAC80211_HT_DEBUG
@@ -464,13 +447,27 @@ int ieee80211_stop_tx_ba_session(struct ieee80211_hw *hw,
 	       ra, tid);
 #endif /* CONFIG_MAC80211_HT_DEBUG */
 
-	ret = __ieee80211_stop_tx_ba_session(local, sta, tid, initiator);
+	if (hw->ampdu_queues)
+		ieee80211_stop_queue(hw, sta->tid_to_tx_q[tid]);
 
- unlock:
+	*state = HT_AGG_STATE_REQ_STOP_BA_MSK |
+		(initiator << HT_AGG_STATE_INITIATOR_SHIFT);
+
+	if (local->ops->ampdu_action)
+		ret = local->ops->ampdu_action(hw, IEEE80211_AMPDU_TX_STOP,
+					       &sta->sta, tid, NULL);
+
+	/* HW shall not deny going back to legacy */
+	if (WARN_ON(ret)) {
+		*state = HT_AGG_STATE_OPERATIONAL;
+		if (hw->ampdu_queues)
+			ieee80211_wake_queue(hw, sta->tid_to_tx_q[tid]);
+		goto stop_BA_exit;
+	}
+
+stop_BA_exit:
 	spin_unlock_bh(&sta->lock);
-
 	rcu_read_unlock();
-
 	return ret;
 }
 EXPORT_SYMBOL(ieee80211_stop_tx_ba_session);
@@ -626,8 +623,10 @@ void ieee80211_process_addba_resp(struct ieee80211_local *local,
 		spin_unlock_bh(&sta->lock);
 	} else {
 		sta->ampdu_mlme.addba_req_num[tid]++;
-		__ieee80211_stop_tx_ba_session(local, sta, tid,
-					       WLAN_BACK_INITIATOR);
+		/* this will allow the state check in stop_BA_session */
+		*state = HT_AGG_STATE_OPERATIONAL;
 		spin_unlock_bh(&sta->lock);
+		ieee80211_stop_tx_ba_session(hw, sta->sta.addr, tid,
+					     WLAN_BACK_INITIATOR);
 	}
 }
