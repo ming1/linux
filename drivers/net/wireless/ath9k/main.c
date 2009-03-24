@@ -1515,8 +1515,11 @@ static int ath_init(u16 devid, struct ath_softc *sc)
 	ath9k_hw_setcapability(ah, ATH9K_CAP_DIVERSITY, 1, true, NULL);
 	sc->rx.defant = ath9k_hw_getdefantenna(ah);
 
-	if (ah->caps.hw_caps & ATH9K_HW_CAP_BSSIDMASK)
+	if (ah->caps.hw_caps & ATH9K_HW_CAP_BSSIDMASK) {
 		memcpy(sc->bssidmask, ath_bcast_mac, ETH_ALEN);
+		ATH_SET_VIF_BSSID_MASK(sc->bssidmask);
+		ath9k_hw_setbssidmask(sc);
+	}
 
 	sc->beacon.slottime = ATH9K_SLOT_TIME_9;	/* default to short slot time */
 
@@ -2126,12 +2129,6 @@ static int ath9k_add_interface(struct ieee80211_hw *hw,
 
 	mutex_lock(&sc->mutex);
 
-	if (!(sc->sc_ah->caps.hw_caps & ATH9K_HW_CAP_BSSIDMASK) &&
-	    sc->nvifs > 0) {
-		ret = -ENOBUFS;
-		goto out;
-	}
-
 	switch (conf->type) {
 	case NL80211_IFTYPE_STATION:
 		ic_opmode = NL80211_IFTYPE_STATION;
@@ -2164,10 +2161,6 @@ static int ath9k_add_interface(struct ieee80211_hw *hw,
 	avp->av_bslot = -1;
 
 	sc->nvifs++;
-
-	if (sc->sc_ah->caps.hw_caps & ATH9K_HW_CAP_BSSIDMASK)
-		ath9k_set_bssid_mask(hw);
-
 	if (sc->nvifs > 1)
 		goto out; /* skip global settings for secondary vif */
 
