@@ -109,8 +109,7 @@ static int iwl5000_apm_init(struct iwl_priv *priv)
 	iwl_set_bit(priv, CSR_HW_IF_CONFIG_REG,
 		    CSR_HW_IF_CONFIG_REG_BIT_HAP_WAKE_L1A);
 
-	if (priv->cfg->need_pll_cfg)
-		iwl_set_bit(priv, CSR_ANA_PLL_CFG, CSR50_ANA_PLL_CFG_VAL);
+	iwl_set_bit(priv, CSR_ANA_PLL_CFG, CSR50_ANA_PLL_CFG_VAL);
 
 	/* set "initialization complete" bit to move adapter
 	 * D0U* --> D0A* state */
@@ -178,8 +177,7 @@ static int iwl5000_apm_reset(struct iwl_priv *priv)
 
 	/* FIXME: put here L1A -L0S w/a */
 
-	if (priv->cfg->need_pll_cfg)
-		iwl_set_bit(priv, CSR_ANA_PLL_CFG, CSR50_ANA_PLL_CFG_VAL);
+	iwl_set_bit(priv, CSR_ANA_PLL_CFG, CSR50_ANA_PLL_CFG_VAL);
 
 	/* set "initialization complete" bit to move adapter
 	 * D0U* --> D0A* state */
@@ -1550,7 +1548,6 @@ struct iwl_cfg iwl5300_agn_cfg = {
 	.mod_params = &iwl50_mod_params,
 	.valid_tx_ant = ANT_ABC,
 	.valid_rx_ant = ANT_ABC,
-	.need_pll_cfg = true,
 };
 
 struct iwl_cfg iwl5100_bg_cfg = {
@@ -1566,7 +1563,6 @@ struct iwl_cfg iwl5100_bg_cfg = {
 	.mod_params = &iwl50_mod_params,
 	.valid_tx_ant = ANT_B,
 	.valid_rx_ant = ANT_AB,
-	.need_pll_cfg = true,
 };
 
 struct iwl_cfg iwl5100_abg_cfg = {
@@ -1582,7 +1578,6 @@ struct iwl_cfg iwl5100_abg_cfg = {
 	.mod_params = &iwl50_mod_params,
 	.valid_tx_ant = ANT_B,
 	.valid_rx_ant = ANT_AB,
-	.need_pll_cfg = true,
 };
 
 struct iwl_cfg iwl5100_agn_cfg = {
@@ -1598,7 +1593,6 @@ struct iwl_cfg iwl5100_agn_cfg = {
 	.mod_params = &iwl50_mod_params,
 	.valid_tx_ant = ANT_B,
 	.valid_rx_ant = ANT_AB,
-	.need_pll_cfg = true,
 };
 
 struct iwl_cfg iwl5350_agn_cfg = {
@@ -1614,7 +1608,6 @@ struct iwl_cfg iwl5350_agn_cfg = {
 	.mod_params = &iwl50_mod_params,
 	.valid_tx_ant = ANT_ABC,
 	.valid_rx_ant = ANT_ABC,
-	.need_pll_cfg = true,
 };
 
 struct iwl_cfg iwl5150_agn_cfg = {
@@ -1630,7 +1623,6 @@ struct iwl_cfg iwl5150_agn_cfg = {
 	.mod_params = &iwl50_mod_params,
 	.valid_tx_ant = ANT_A,
 	.valid_rx_ant = ANT_AB,
-	.need_pll_cfg = true,
 };
 
 MODULE_FIRMWARE(IWL5000_MODULE_FIRMWARE(IWL5000_UCODE_API_MAX));
