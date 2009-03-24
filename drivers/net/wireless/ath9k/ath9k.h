@@ -678,8 +678,7 @@ static inline void ath9k_ps_wakeup(struct ath_softc *sc)
 static inline void ath9k_ps_restore(struct ath_softc *sc)
 {
 	if (atomic_dec_and_test(&sc->ps_usecount))
-		if ((sc->hw->conf.flags & IEEE80211_CONF_PS) &&
-		    !(sc->sc_flags & SC_OP_WAIT_FOR_BEACON))
+		if (sc->hw->conf.flags & IEEE80211_CONF_PS)
 			ath9k_hw_setpower(sc->sc_ah,
 					  sc->sc_ah->restore_mode);
 }
