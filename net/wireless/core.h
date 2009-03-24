@@ -8,8 +8,6 @@
 #include <linux/mutex.h>
 #include <linux/list.h>
 #include <linux/netdevice.h>
-#include <linux/kref.h>
-#include <linux/rbtree.h>
 #include <net/genetlink.h>
 #include <net/wireless.h>
 #include <net/cfg80211.h>
@@ -43,13 +41,6 @@ struct cfg80211_registered_device {
 	struct mutex devlist_mtx;
 	struct list_head netdev_list;
 
-	/* BSSes/scanning */
-	spinlock_t bss_lock;
-	struct list_head bss_list;
-	struct rb_root bss_tree;
-	u32 bss_generation;
-	struct cfg80211_scan_request *scan_req; /* protected by RTNL */
-
 	/* must be last because of the way we do wiphy_priv(),
 	 * and it should at least be aligned to NETDEV_ALIGN */
 	struct wiphy wiphy __attribute__((__aligned__(NETDEV_ALIGN)));
@@ -64,15 +55,6 @@ struct cfg80211_registered_device *wiphy_to_dev(struct wiphy *wiphy)
 
 extern struct mutex cfg80211_drv_mutex;
 extern struct list_head cfg80211_drv_list;
-
-struct cfg80211_internal_bss {
-	struct list_head list;
-	struct rb_node rbn;
-	unsigned long ts;
-	struct kref ref;
-	/* must be last because of priv member */
-	struct cfg80211_bss pub;
-};
 
 /*
  * This function returns a pointer to the driver
@@ -111,7 +93,5 @@ extern int cfg80211_dev_rename(struct cfg80211_registered_device *drv,
 
 void ieee80211_set_bitrate_flags(struct wiphy *wiphy);
 void wiphy_update_regulatory(struct wiphy *wiphy, enum reg_set_by setby);
-
-void cfg80211_bss_expire(struct cfg80211_registered_device *dev);
 
 #endif /* __NET_WIRELESS_CORE_H */
