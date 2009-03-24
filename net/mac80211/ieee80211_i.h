@@ -72,36 +72,43 @@ struct ieee80211_fragment_entry {
 
 
 struct ieee80211_bss {
-	/* Yes, this is a hack */
-	struct cfg80211_bss cbss;
-
-	/* don't want to look up all the time */
+	struct list_head list;
+	struct ieee80211_bss *hnext;
 	size_t ssid_len;
+
+	atomic_t users;
+
+	u8 bssid[ETH_ALEN];
 	u8 ssid[IEEE80211_MAX_SSID_LEN];
-
 	u8 dtim_period;
-
+	u16 capability; /* host byte order */
+	enum ieee80211_band band;
+	int freq;
+	int signal, noise, qual;
+	u8 *ies; /* all information elements from the last Beacon or Probe
+		  * Response frames; note Beacon frame is not allowed to
+		  * override values from Probe Response */
+	size_t ies_len;
 	bool wmm_used;
-
-	unsigned long last_probe_resp;
-
 #ifdef CONFIG_MAC80211_MESH
 	u8 *mesh_id;
 	size_t mesh_id_len;
 	u8 *mesh_cfg;
 #endif
-
 #define IEEE80211_MAX_SUPP_RATES 32
 	u8 supp_rates[IEEE80211_MAX_SUPP_RATES];
 	size_t supp_rates_len;
+	u64 timestamp;
+	int beacon_int;
 
-	/*
-	 * During assocation, we save an ERP value from a probe response so
+	unsigned long last_probe_resp;
+	unsigned long last_update;
+
+	/* during assocation, we save an ERP value from a probe response so
 	 * that we can feed ERP info to the driver when handling the
 	 * association completes. these fields probably won't be up-to-date
-	 * otherwise, you probably don't want to use them.
-	 */
-	bool has_erp_value;
+	 * otherwise, you probably don't want to use them. */
+	int has_erp_value;
 	u8 erp_value;
 };
 
@@ -661,6 +668,9 @@ struct ieee80211_local {
 	struct ieee80211_sub_if_data *scan_sdata;
 	enum nl80211_channel_type oper_channel_type;
 	struct ieee80211_channel *oper_channel, *csa_channel;
+	struct list_head bss_list;
+	struct ieee80211_bss *bss_hash[STA_HASH_SIZE];
+	spinlock_t bss_lock;
 
 	/* SNMP counters */
 	/* dot11CountersTable */
@@ -926,6 +936,8 @@ ieee80211_rx_result
 ieee80211_scan_rx(struct ieee80211_sub_if_data *sdata,
 		  struct sk_buff *skb,
 		  struct ieee80211_rx_status *rx_status);
+void ieee80211_rx_bss_list_init(struct ieee80211_local *local);
+void ieee80211_rx_bss_list_deinit(struct ieee80211_local *local);
 int ieee80211_sta_set_extra_ie(struct ieee80211_sub_if_data *sdata,
 			       char *ie, size_t len);
 
