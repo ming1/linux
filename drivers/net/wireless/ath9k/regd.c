@@ -154,12 +154,6 @@ const struct ieee80211_regdomain *ath9k_world_regdomain(struct ath_hal *ah)
 	}
 }
 
-/* Frequency is one where radar detection is required */
-static bool ath9k_is_radar_freq(u16 center_freq)
-{
-	return (center_freq >= 5260 && center_freq <= 5700);
-}
-
 /* Enable adhoc on 5 GHz if allowed by 11d */
 static void ath9k_reg_apply_5ghz_adhoc_flags(struct wiphy *wiphy,
 					     enum reg_set_by setby)
@@ -253,7 +247,9 @@ void ath9k_reg_apply_radar_flags(struct wiphy *wiphy)
 
 	for (i = 0; i < sband->n_channels; i++) {
 		ch = &sband->channels[i];
-		if (!ath9k_is_radar_freq(ch->center_freq))
+		if (ch->center_freq < 5260)
+			continue;
+		if (ch->center_freq > 5700)
 			continue;
 		/* We always enable radar detection/DFS on this
 		 * frequency range. Additionally we also apply on
