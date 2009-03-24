@@ -801,10 +801,7 @@ static void rs_tx_status(void *priv_r, struct ieee80211_supported_band *sband,
 	    !(info->flags & IEEE80211_TX_STAT_AMPDU))
 		return;
 
-	if (info->flags & IEEE80211_TX_STAT_AMPDU)
-		retries = 0;
-	else
-		retries = info->status.rates[0].count - 1;
+	retries = info->status.rates[0].count - 1;
 
 	if (retries > 15)
 		retries = 15;
@@ -1900,7 +1897,7 @@ static void rs_rate_scale_perform(struct iwl_priv *priv,
 		if (high != IWL_RATE_INVALID && sr >= IWL_RATE_INCREASE_TH)
 			scale_action = 1;
 		else if (low != IWL_RATE_INVALID)
-			scale_action = 0;
+			scale_action = -1;
 	}
 
 	/* Both adjacent throughputs are measured, but neither one has better
@@ -1921,7 +1918,9 @@ static void rs_rate_scale_perform(struct iwl_priv *priv,
 					sr >= IWL_RATE_INCREASE_TH) {
 				scale_action = 1;
 			} else {
-				scale_action = 0;
+				IWL_DEBUG_RATE(priv,
+				    "decrease rate because of high tpt\n");
+				scale_action = -1;
 			}
 
 		/* Lower adjacent rate's throughput is measured */
