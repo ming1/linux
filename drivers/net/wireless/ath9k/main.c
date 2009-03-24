@@ -260,8 +260,6 @@ static int ath_set_channel(struct ath_softc *sc, struct ath9k_channel *hchan)
 	struct ath_hal *ah = sc->sc_ah;
 	bool fastcc = true, stopped;
 	struct ieee80211_hw *hw = sc->hw;
-	struct ieee80211_channel *channel = hw->conf.channel;
-	int r;
 
 	if (sc->sc_flags & SC_OP_INVALID)
 		return -EIO;
@@ -270,6 +268,7 @@ static int ath_set_channel(struct ath_softc *sc, struct ath9k_channel *hchan)
 	    hchan->channelFlags != sc->sc_ah->ah_curchan->channelFlags ||
 	    (sc->sc_flags & SC_OP_CHAINMASK_UPDATE) ||
 	    (sc->sc_flags & SC_OP_FULL_RESET)) {
+		int status;
 		/*
 		 * This is only performed if the channel settings have
 		 * actually changed.
@@ -291,20 +290,22 @@ static int ath_set_channel(struct ath_softc *sc, struct ath9k_channel *hchan)
 			fastcc = false;
 
 		DPRINTF(sc, ATH_DBG_CONFIG,
-			"(%u MHz) -> (%u MHz), chanwidth: %d\n",
+			"(%u MHz) -> (%u MHz), cflags:%x, chanwidth: %d\n",
 			sc->sc_ah->ah_curchan->channel,
-			channel->center_freq, sc->tx_chan_width);
+			hchan->channel, hchan->channelFlags, sc->tx_chan_width);
 
 		spin_lock_bh(&sc->sc_resetlock);
-
-		r = ath9k_hw_reset(ah, hchan, fastcc);
-		if (r) {
+		if (!ath9k_hw_reset(ah, hchan, sc->tx_chan_width,
+				    sc->sc_tx_chainmask, sc->sc_rx_chainmask,
+				    sc->sc_ht_extprotspacing, fastcc, &status)) {
 			DPRINTF(sc, ATH_DBG_FATAL,
-				"Unable to reset channel (%u Mhz) "
-				"reset status %u\n",
-				channel->center_freq, r);
+				"Unable to reset channel %u (%uMhz) "
+				"flags 0x%x hal status %u\n",
+				ath9k_hw_mhz2ieee(ah, hchan->channel,
+						  hchan->channelFlags),
+				hchan->channel, hchan->channelFlags, status);
 			spin_unlock_bh(&sc->sc_resetlock);
-			return r;
+			return -EIO;
 		}
 		spin_unlock_bh(&sc->sc_resetlock);
 
@@ -1068,18 +1069,23 @@ fail:
 static void ath_radio_enable(struct ath_softc *sc)
 {
 	struct ath_hal *ah = sc->sc_ah;
-	struct ieee80211_channel *channel = sc->hw->conf.channel;
-	int r;
+	int status;
 
 	spin_lock_bh(&sc->sc_resetlock);
-
-	r = ath9k_hw_reset(ah, ah->ah_curchan, false);
-
-	if (r) {
+	if (!ath9k_hw_reset(ah, ah->ah_curchan,
+			    sc->tx_chan_width,
+			    sc->sc_tx_chainmask,
+			    sc->sc_rx_chainmask,
+			    sc->sc_ht_extprotspacing,
+			    false, &status)) {
 		DPRINTF(sc, ATH_DBG_FATAL,
-			"Unable to reset channel %u (%uMhz) ",
-			"reset status %u\n",
-			channel->center_freq, r);
+			"Unable to reset channel %u (%uMhz) "
+			"flags 0x%x hal status %u\n",
+			ath9k_hw_mhz2ieee(ah,
+					  ah->ah_curchan->channel,
+					  ah->ah_curchan->channelFlags),
+			ah->ah_curchan->channel,
+			ah->ah_curchan->channelFlags, status);
 	}
 	spin_unlock_bh(&sc->sc_resetlock);
 
@@ -1107,8 +1113,8 @@ static void ath_radio_enable(struct ath_softc *sc)
 static void ath_radio_disable(struct ath_softc *sc)
 {
 	struct ath_hal *ah = sc->sc_ah;
-	struct ieee80211_channel *channel = sc->hw->conf.channel;
-	int r;
+	int status;
+
 
 	ieee80211_stop_queues(sc->hw);
 
@@ -1124,12 +1130,20 @@ static void ath_radio_disable(struct ath_softc *sc)
 	ath_flushrecv(sc);		/* flush recv queue */
 
 	spin_lock_bh(&sc->sc_resetlock);
-	r = ath9k_hw_reset(ah, ah->ah_curchan, false);
-	if (r) {
+	if (!ath9k_hw_reset(ah, ah->ah_curchan,
+			    sc->tx_chan_width,
+			    sc->sc_tx_chainmask,
+			    sc->sc_rx_chainmask,
+			    sc->sc_ht_extprotspacing,
+			    false, &status)) {
 		DPRINTF(sc, ATH_DBG_FATAL,
 			"Unable to reset channel %u (%uMhz) "
-			"reset status %u\n",
-			channel->center_freq, r);
+			"flags 0x%x hal status %u\n",
+			ath9k_hw_mhz2ieee(ah,
+				ah->ah_curchan->channel,
+				ah->ah_curchan->channelFlags),
+			ah->ah_curchan->channel,
+			ah->ah_curchan->channelFlags, status);
 	}
 	spin_unlock_bh(&sc->sc_resetlock);
 
@@ -1619,7 +1633,8 @@ int ath_reset(struct ath_softc *sc, bool retry_tx)
 {
 	struct ath_hal *ah = sc->sc_ah;
 	struct ieee80211_hw *hw = sc->hw;
-	int r;
+	int status;
+	int error = 0;
 
 	ath9k_hw_set_interrupts(ah, 0);
 	ath_draintxq(sc, retry_tx);
@@ -1627,10 +1642,14 @@ int ath_reset(struct ath_softc *sc, bool retry_tx)
 	ath_flushrecv(sc);
 
 	spin_lock_bh(&sc->sc_resetlock);
-	r = ath9k_hw_reset(ah, sc->sc_ah->ah_curchan, false);
-	if (r)
+	if (!ath9k_hw_reset(ah, sc->sc_ah->ah_curchan,
+			    sc->tx_chan_width,
+			    sc->sc_tx_chainmask, sc->sc_rx_chainmask,
+			    sc->sc_ht_extprotspacing, false, &status)) {
 		DPRINTF(sc, ATH_DBG_FATAL,
-			"Unable to reset hardware; reset status %u\n", r);
+			"Unable to reset hardware; hal status %u\n", status);
+		error = -EIO;
+	}
 	spin_unlock_bh(&sc->sc_resetlock);
 
 	if (ath_startrecv(sc) != 0)
@@ -1661,7 +1680,7 @@ int ath_reset(struct ath_softc *sc, bool retry_tx)
 		}
 	}
 
-	return r;
+	return error;
 }
 
 /*
@@ -1844,7 +1863,7 @@ static int ath9k_start(struct ieee80211_hw *hw)
 	struct ath_softc *sc = hw->priv;
 	struct ieee80211_channel *curchan = hw->conf.channel;
 	struct ath9k_channel *init_channel;
-	int r, pos;
+	int error = 0, pos, status;
 
 	DPRINTF(sc, ATH_DBG_CONFIG, "Starting driver with "
 		"initial channel: %d MHz\n", curchan->center_freq);
@@ -1854,7 +1873,8 @@ static int ath9k_start(struct ieee80211_hw *hw)
 	pos = ath_get_channel(sc, curchan);
 	if (pos == -1) {
 		DPRINTF(sc, ATH_DBG_FATAL, "Invalid channel: %d\n", curchan->center_freq);
-		return -EINVAL;
+		error = -EINVAL;
+		goto error;
 	}
 
 	sc->tx_chan_width = ATH9K_HT_MACMODE_20;
@@ -1873,14 +1893,17 @@ static int ath9k_start(struct ieee80211_hw *hw)
 	 * and then setup of the interrupt mask.
 	 */
 	spin_lock_bh(&sc->sc_resetlock);
-	r = ath9k_hw_reset(sc->sc_ah, init_channel, false);
-	if (r) {
+	if (!ath9k_hw_reset(sc->sc_ah, init_channel,
+			    sc->tx_chan_width,
+			    sc->sc_tx_chainmask, sc->sc_rx_chainmask,
+			    sc->sc_ht_extprotspacing, false, &status)) {
 		DPRINTF(sc, ATH_DBG_FATAL,
-			"Unable to reset hardware; reset status %u "
-			"(freq %u MHz)\n", r,
-			curchan->center_freq);
+			"Unable to reset hardware; hal status %u "
+			"(freq %u flags 0x%x)\n", status,
+			init_channel->channel, init_channel->channelFlags);
+		error = -EIO;
 		spin_unlock_bh(&sc->sc_resetlock);
-		return r;
+		goto error;
 	}
 	spin_unlock_bh(&sc->sc_resetlock);
 
@@ -1900,7 +1923,8 @@ static int ath9k_start(struct ieee80211_hw *hw)
 	if (ath_startrecv(sc) != 0) {
 		DPRINTF(sc, ATH_DBG_FATAL,
 			"Unable to start recv logic\n");
-		return -EIO;
+		error = -EIO;
+		goto error;
 	}
 
 	/* Setup our intr mask. */
@@ -1944,9 +1968,11 @@ static int ath9k_start(struct ieee80211_hw *hw)
 	ieee80211_wake_queues(sc->hw);
 
 #if defined(CONFIG_RFKILL) || defined(CONFIG_RFKILL_MODULE)
-	r = ath_start_rfkill_poll(sc);
+	error = ath_start_rfkill_poll(sc);
 #endif
-	return r;
+
+error:
+	return error;
 }
 
 static int ath9k_tx(struct ieee80211_hw *hw,

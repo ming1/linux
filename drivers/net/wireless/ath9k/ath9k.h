@@ -843,8 +843,11 @@ void ath9k_hw_rfdetach(struct ath_hal *ah);
 
 /* HW Reset */
 
-int ath9k_hw_reset(struct ath_hal *ah, struct ath9k_channel *chan,
-		    bool bChannelChange);
+bool ath9k_hw_reset(struct ath_hal *ah, struct ath9k_channel *chan,
+		    enum ath9k_ht_macmode macmode,
+		    u8 txchainmask, u8 rxchainmask,
+		    enum ath9k_ht_extprotspacing extprotspacing,
+		    bool bChannelChange, int *status);
 
 /* Key Cache Management */
 
