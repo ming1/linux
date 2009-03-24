@@ -42,9 +42,6 @@ cfg80211_drv_by_wiphy_idx(int wiphy_idx)
 {
 	struct cfg80211_registered_device *result = NULL, *drv;
 
-	if (!wiphy_idx_valid(wiphy_idx))
-		return NULL;
-
 	list_for_each_entry(drv, &cfg80211_drv_list, list) {
 		if (drv->wiphy_idx == wiphy_idx) {
 			result = drv;
@@ -228,7 +225,7 @@ struct wiphy *wiphy_new(struct cfg80211_ops *ops, int sizeof_priv)
 
 	drv->wiphy_idx = wiphy_counter++;
 
-	if (unlikely(!wiphy_idx_valid(drv->wiphy_idx))) {
+	if (unlikely(drv->wiphy_idx < 0)) {
 		wiphy_counter--;
 		mutex_unlock(&cfg80211_drv_mutex);
 		/* ugh, wrapped! */
