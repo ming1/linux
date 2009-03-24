@@ -1342,6 +1342,7 @@ static int ignore_request(struct wiphy *wiphy, enum reg_set_by set_by,
 static int __regulatory_hint(struct wiphy *wiphy,
 			     struct regulatory_request *pending_request)
 {
+	struct regulatory_request *request;
 	bool intersect = false;
 	int r = 0;
 
@@ -1354,10 +1355,8 @@ static int __regulatory_hint(struct wiphy *wiphy,
 	if (r == REG_INTERSECT) {
 		if (pending_request->initiator == REGDOM_SET_BY_DRIVER) {
 			r = reg_copy_regd(&wiphy->regd, cfg80211_regdomain);
-			if (r) {
-				kfree(pending_request);
+			if (r)
 				return r;
-			}
 		}
 		intersect = true;
 	} else if (r) {
@@ -1369,24 +1368,30 @@ static int __regulatory_hint(struct wiphy *wiphy,
 		if (r == -EALREADY &&
 		    pending_request->initiator == REGDOM_SET_BY_DRIVER) {
 			r = reg_copy_regd(&wiphy->regd, cfg80211_regdomain);
-			if (r) {
-				kfree(pending_request);
+			if (r)
 				return r;
-			}
 			r = -EALREADY;
 			goto new_request;
 		}
-		kfree(pending_request);
 		return r;
 	}
 
 new_request:
+	request = kzalloc(sizeof(struct regulatory_request),
+			  GFP_KERNEL);
+	if (!request)
+		return -ENOMEM;
+
+	request->alpha2[0] = pending_request->alpha2[0];
+	request->alpha2[1] = pending_request->alpha2[1];
+	request->initiator = pending_request->initiator;
+	request->wiphy_idx = pending_request->wiphy_idx;
+	request->intersect = intersect;
+	request->country_ie_checksum = pending_request->country_ie_checksum;
+	request->country_ie_env = pending_request->country_ie_env;
+
 	kfree(last_request);
-
-	last_request = pending_request;
-	last_request->intersect = intersect;
-
-	pending_request = NULL;
+	last_request = request;
 
 	/* When r == REG_INTERSECT we do need to call CRDA */
 	if (r < 0)
@@ -1402,11 +1407,11 @@ new_request:
 	 *
 	 * to intersect with the static rd
 	 */
-	return call_crda(last_request->alpha2);
+	return call_crda(request->alpha2);
 }
 
 /* This currently only processes user and driver regulatory hints */
-static void reg_process_hint(struct regulatory_request *reg_request)
+static int reg_process_hint(struct regulatory_request *reg_request)
 {
 	int r = 0;
 	struct wiphy *wiphy = NULL;
@@ -1420,7 +1425,7 @@ static void reg_process_hint(struct regulatory_request *reg_request)
 
 	if (reg_request->initiator == REGDOM_SET_BY_DRIVER &&
 	    !wiphy) {
-		kfree(reg_request);
+		r = -ENODEV;
 		goto out;
 	}
 
@@ -1430,12 +1435,18 @@ static void reg_process_hint(struct regulatory_request *reg_request)
 		wiphy_update_regulatory(wiphy, reg_request->initiator);
 out:
 	mutex_unlock(&cfg80211_mutex);
+
+	if (r == -EALREADY)
+		r = 0;
+
+	return r;
 }
 
 /* Processes regulatory hints, this is all the REGDOM_SET_BY_* */
 static void reg_process_pending_hints(void)
 	{
 	struct regulatory_request *reg_request;
+	int r;
 
 	spin_lock(&reg_requests_lock);
 	while (!list_empty(&reg_requests_list)) {
@@ -1443,9 +1454,20 @@ static void reg_process_pending_hints(void)
 					       struct regulatory_request,
 					       list);
 		list_del_init(&reg_request->list);
-
 		spin_unlock(&reg_requests_lock);
-		reg_process_hint(reg_request);
+
+		r = reg_process_hint(reg_request);
+#ifdef CONFIG_CFG80211_REG_DEBUG
+		if (r && (reg_request->initiator == REGDOM_SET_BY_DRIVER ||
+		    reg_request->initiator == REGDOM_SET_BY_COUNTRY_IE))
+			printk(KERN_ERR "cfg80211: wiphy_idx %d sent a "
+				"regulatory hint for %c%c but now has "
+				"gone fishing, ignoring request\n",
+				reg_request->wiphy_idx,
+				reg_request->alpha2[0],
+				reg_request->alpha2[1]);
+#endif
+		kfree(reg_request);
 		spin_lock(&reg_requests_lock);
 	}
 	spin_unlock(&reg_requests_lock);
