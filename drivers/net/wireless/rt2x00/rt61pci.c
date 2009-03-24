@@ -1176,40 +1176,33 @@ static char *rt61pci_get_firmware_name(struct rt2x00_dev *rt2x00dev)
 	return fw_name;
 }
 
-static int rt61pci_check_firmware(struct rt2x00_dev *rt2x00dev,
-				  const u8 *data, const size_t len)
+static u16 rt61pci_get_firmware_crc(const void *data, const size_t len)
 {
-	u16 fw_crc;
 	u16 crc;
 
 	/*
-	 * Only support 8kb firmware files.
-	 */
-	if (len != 8192)
-		return FW_BAD_LENGTH;
-
-	/*
+	 * Use the crc itu-t algorithm.
 	 * The last 2 bytes in the firmware array are the crc checksum itself,
 	 * this means that we should never pass those 2 bytes to the crc
 	 * algorithm.
-	 */
-	fw_crc = (data[len - 2] << 8 | data[len - 1]);
-
-	/*
-	 * Use the crc itu-t algorithm.
 	 */
 	crc = crc_itu_t(0, data, len - 2);
 	crc = crc_itu_t_byte(crc, 0);
 	crc = crc_itu_t_byte(crc, 0);
 
-	return (fw_crc == crc) ? FW_OK : FW_BAD_CRC;
+	return crc;
 }
 
-static int rt61pci_load_firmware(struct rt2x00_dev *rt2x00dev,
-				 const u8 *data, const size_t len)
+static int rt61pci_load_firmware(struct rt2x00_dev *rt2x00dev, const void *data,
+				 const size_t len)
 {
 	int i;
 	u32 reg;
+
+	if (len != 8192) {
+		ERROR(rt2x00dev, "Invalid firmware file length (len=%zu)\n", len);
+		return -ENOENT;
+	}
 
 	/*
 	 * Wait for stable hardware.
@@ -2757,7 +2750,7 @@ static const struct rt2x00lib_ops rt61pci_rt2x00_ops = {
 	.irq_handler		= rt61pci_interrupt,
 	.probe_hw		= rt61pci_probe_hw,
 	.get_firmware_name	= rt61pci_get_firmware_name,
-	.check_firmware		= rt61pci_check_firmware,
+	.get_firmware_crc	= rt61pci_get_firmware_crc,
 	.load_firmware		= rt61pci_load_firmware,
 	.initialize		= rt2x00pci_initialize,
 	.uninitialize		= rt2x00pci_uninitialize,
