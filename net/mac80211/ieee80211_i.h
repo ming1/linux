@@ -51,6 +51,10 @@ struct ieee80211_local;
  * increased memory use (about 2 kB of RAM per entry). */
 #define IEEE80211_FRAGMENT_MAX 4
 
+/* cfg80211 only supports 32 rates */
+#define MAC80211_PREQ_IE_LEN	( 2 + 32 /* SSID */\
+				+ 4 + 32 /* (ext) supp rates */)
+
 /*
  * Time after which we ignore scan results and no longer report/use
  * them in any way.
@@ -671,6 +675,8 @@ struct ieee80211_local {
 	struct cfg80211_scan_request int_scan_req;
 	struct cfg80211_scan_request *scan_req;
 	struct ieee80211_channel *scan_channel;
+	const u8 *orig_ies;
+	int orig_ies_len;
 	int scan_channel_idx;
 
 	enum { SCAN_SET_CHANNEL, SCAN_SEND_PROBE } scan_state;
@@ -1093,9 +1099,11 @@ void ieee80211_send_auth(struct ieee80211_sub_if_data *sdata,
 			 u16 transaction, u16 auth_alg,
 			 u8 *extra, size_t extra_len,
 			 const u8 *bssid, int encrypt);
+int ieee80211_build_preq_ies(struct ieee80211_local *local, u8 *buffer,
+			     const u8 *ie, size_t ie_len);
 void ieee80211_send_probe_req(struct ieee80211_sub_if_data *sdata, u8 *dst,
-			      u8 *ssid, size_t ssid_len,
-			      u8 *ie, size_t ie_len);
+			      const u8 *ssid, size_t ssid_len,
+			      const u8 *ie, size_t ie_len);
 
 void ieee80211_sta_def_wmm_params(struct ieee80211_sub_if_data *sdata,
 				  const size_t supp_rates_len,
