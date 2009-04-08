@@ -433,6 +433,7 @@ int ath9k_regd_init(struct ath_hw *ah)
 			regdmn = country->regDmnEnum;
 	}
 
+	ah->regulatory.current_rd_inuse = regdmn;
 	ah->regulatory.regpair = ath9k_get_regpair(regdmn);
 
 	if (!ah->regulatory.regpair) {
