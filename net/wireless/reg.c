@@ -1601,10 +1601,6 @@ static bool reg_same_country_ie_hint(struct wiphy *wiphy,
 
 	assert_cfg80211_lock();
 
-	if (unlikely(last_request->initiator !=
-	    NL80211_REGDOM_SET_BY_COUNTRY_IE))
-		return false;
-
 	request_wiphy = wiphy_idx_to_wiphy(last_request->wiphy_idx);
 
 	if (!request_wiphy)
@@ -1667,9 +1663,7 @@ void regulatory_hint_11d(struct wiphy *wiphy,
 	 * we optimize an early check to exit out early if we don't have to
 	 * do anything
 	 */
-	if (likely(last_request->initiator ==
-	    NL80211_REGDOM_SET_BY_COUNTRY_IE &&
-	    wiphy_idx_valid(last_request->wiphy_idx))) {
+	if (likely(wiphy_idx_valid(last_request->wiphy_idx))) {
 		struct cfg80211_registered_device *drv_last_ie;
 
 		drv_last_ie =
