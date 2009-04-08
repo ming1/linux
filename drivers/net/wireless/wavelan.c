@@ -4281,7 +4281,8 @@ int __init init_module(void)
 
 
 	/* Loop on all possible base addresses. */
-	for (i = 0; i < ARRAY_SIZE(io) && io[i] != 0; i++) {
+	i = -1;
+	while ((io[++i] != 0) && (i < ARRAY_SIZE(io))) {
 		struct net_device *dev = alloc_etherdev(sizeof(net_local));
 		if (!dev)
 			break;
