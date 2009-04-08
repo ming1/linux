@@ -291,7 +291,7 @@ static bool alpha2_equal(const char *alpha2_x, const char *alpha2_y)
 	return false;
 }
 
-static bool regdom_changes(const char *alpha2)
+static bool regdom_changed(const char *alpha2)
 {
 	assert_cfg80211_lock();
 
@@ -1135,7 +1135,8 @@ static int ignore_request(struct wiphy *wiphy, enum reg_set_by set_by,
 				 * intersect them, but that seems unlikely
 				 * to be correct. Reject second one for now.
 				 */
-				if (regdom_changes(alpha2))
+				if (!alpha2_equal(alpha2,
+						  cfg80211_regdomain->alpha2))
 					return -EOPNOTSUPP;
 				return -EALREADY;
 			}
@@ -1143,7 +1144,8 @@ static int ignore_request(struct wiphy *wiphy, enum reg_set_by set_by,
 			 * Two consecutive Country IE hints on the same wiphy.
 			 * This should be picked up early by the driver/stack
 			 */
-			if (WARN_ON(regdom_changes(alpha2)))
+			if (WARN_ON(!alpha2_equal(cfg80211_regdomain->alpha2,
+				  alpha2)))
 				return 0;
 			return -EALREADY;
 		}
@@ -1152,7 +1154,7 @@ static int ignore_request(struct wiphy *wiphy, enum reg_set_by set_by,
 		if (last_request->initiator == REGDOM_SET_BY_CORE) {
 			if (is_old_static_regdom(cfg80211_regdomain))
 				return 0;
-			if (regdom_changes(alpha2))
+			if (!alpha2_equal(cfg80211_regdomain->alpha2, alpha2))
 				return 0;
 			return -EALREADY;
 		}
@@ -1163,7 +1165,7 @@ static int ignore_request(struct wiphy *wiphy, enum reg_set_by set_by,
 		 * loaded card also agrees on the regulatory domain.
 		 */
 		if (last_request->initiator == REGDOM_SET_BY_DRIVER &&
-		    !regdom_changes(alpha2))
+		    alpha2_equal(cfg80211_regdomain->alpha2, alpha2))
 			return -EALREADY;
 
 		return REG_INTERSECT;
@@ -1184,12 +1186,13 @@ static int ignore_request(struct wiphy *wiphy, enum reg_set_by set_by,
 		if (last_request->initiator == REGDOM_SET_BY_CORE ||
 		    last_request->initiator == REGDOM_SET_BY_DRIVER ||
 		    last_request->initiator == REGDOM_SET_BY_USER) {
-			if (regdom_changes(last_request->alpha2))
+			if (!alpha2_equal(last_request->alpha2,
+			    cfg80211_regdomain->alpha2))
 				return -EAGAIN;
 		}
 
 		if (!is_old_static_regdom(cfg80211_regdomain) &&
-		    !regdom_changes(alpha2))
+		    alpha2_equal(cfg80211_regdomain->alpha2, alpha2))
 			return -EALREADY;
 
 		return 0;
@@ -1718,7 +1721,7 @@ static int __set_regdom(const struct ieee80211_regdomain *rd)
 		 * checking if the alpha2 changes if CRDA was already called
 		 */
 		if (!is_old_static_regdom(cfg80211_regdomain) &&
-		    !regdom_changes(rd->alpha2))
+		    !regdom_changed(rd->alpha2))
 			return -EINVAL;
 	}
 
