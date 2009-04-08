@@ -1726,8 +1726,9 @@ int ath_descdma_setup(struct ath_softc *sc, struct ath_descdma *dd,
 	}
 
 	/* allocate descriptors */
-	dd->dd_desc = dma_alloc_coherent(sc->dev, dd->dd_desc_len,
-					 &dd->dd_desc_paddr, GFP_ATOMIC);
+	dd->dd_desc = pci_alloc_consistent(to_pci_dev(sc->dev),
+			      dd->dd_desc_len,
+			      &dd->dd_desc_paddr);
 	if (dd->dd_desc == NULL) {
 		error = -ENOMEM;
 		goto fail;
@@ -1773,8 +1774,8 @@ int ath_descdma_setup(struct ath_softc *sc, struct ath_descdma *dd,
 	}
 	return 0;
 fail2:
-	dma_free_coherent(sc->dev, dd->dd_desc_len, dd->dd_desc,
-			  dd->dd_desc_paddr);
+	pci_free_consistent(to_pci_dev(sc->dev),
+		dd->dd_desc_len, dd->dd_desc, dd->dd_desc_paddr);
 fail:
 	memset(dd, 0, sizeof(*dd));
 	return error;
@@ -1787,8 +1788,8 @@ void ath_descdma_cleanup(struct ath_softc *sc,
 			 struct ath_descdma *dd,
 			 struct list_head *head)
 {
-	dma_free_coherent(sc->dev, dd->dd_desc_len, dd->dd_desc,
-			  dd->dd_desc_paddr);
+	pci_free_consistent(to_pci_dev(sc->dev),
+		dd->dd_desc_len, dd->dd_desc, dd->dd_desc_paddr);
 
 	INIT_LIST_HEAD(head);
 	kfree(dd->dd_bufptr);
