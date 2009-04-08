@@ -630,7 +630,7 @@ static int ieee80211_ioctl_siwencode(struct net_device *dev,
 	struct ieee80211_sub_if_data *sdata;
 	int idx, i, alg = ALG_WEP;
 	u8 bcaddr[ETH_ALEN] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
-	int remove = 0, ret;
+	int remove = 0;
 
 	sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 
@@ -656,20 +656,11 @@ static int ieee80211_ioctl_siwencode(struct net_device *dev,
 		return 0;
 	}
 
-	ret = ieee80211_set_encryption(
+	return ieee80211_set_encryption(
 		sdata, bcaddr,
 		idx, alg, remove,
 		!sdata->default_key,
 		keybuf, erq->length);
-
-	if (!ret) {
-		if (remove)
-			sdata->u.mgd.flags &= ~IEEE80211_STA_TKIP_WEP_USED;
-		else
-			sdata->u.mgd.flags |= IEEE80211_STA_TKIP_WEP_USED;
-	}
-
-	return ret;
 }
 
 
