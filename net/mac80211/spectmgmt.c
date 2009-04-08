@@ -102,9 +102,8 @@ void ieee80211_chswitch_work(struct work_struct *work)
 		goto exit;
 
 	sdata->local->oper_channel = sdata->local->csa_channel;
-	/* XXX: shouldn't really modify cfg80211-owned data! */
 	if (!ieee80211_hw_config(sdata->local, IEEE80211_CONF_CHANGE_CHANNEL))
-		bss->cbss.channel = sdata->local->oper_channel;
+		bss->freq = sdata->local->oper_channel->center_freq;
 
 	ieee80211_rx_bss_put(sdata->local, bss);
 exit:
@@ -159,9 +158,7 @@ void ieee80211_process_chanswitch(struct ieee80211_sub_if_data *sdata,
 						IEEE80211_QUEUE_STOP_REASON_CSA);
 		ifsta->flags |= IEEE80211_STA_CSA_RECEIVED;
 		mod_timer(&ifsta->chswitch_timer,
-			  jiffies +
-			  msecs_to_jiffies(sw_elem->count *
-					   bss->cbss.beacon_interval));
+			  jiffies + msecs_to_jiffies(sw_elem->count * bss->beacon_int));
 	}
 }
 
