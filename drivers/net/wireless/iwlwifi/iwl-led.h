@@ -30,7 +30,7 @@
 
 struct iwl_priv;
 
-#ifdef CONFIG_IWLWIFI_LEDS
+#if defined(CONFIG_IWLWIFI_LEDS) || defined(CONFIG_IWL3945_LEDS)
 #include <linux/leds.h>
 
 #define IWL_LED_SOLID 11
