@@ -66,7 +66,6 @@ int cfg80211_wext_siwmode(struct net_device *dev, struct iw_request_info *info,
 	struct cfg80211_registered_device *rdev;
 	struct vif_params vifparams;
 	enum nl80211_iftype type;
-	int ret;
 
 	if (!wdev)
 		return -EOPNOTSUPP;
@@ -97,16 +96,10 @@ int cfg80211_wext_siwmode(struct net_device *dev, struct iw_request_info *info,
 		return -EINVAL;
 	}
 
-	if (type == wdev->iftype)
-		return 0;
-
 	memset(&vifparams, 0, sizeof(vifparams));
 
-	ret = rdev->ops->change_virtual_intf(wdev->wiphy, dev->ifindex, type,
-					     NULL, &vifparams);
-	WARN_ON(!ret && wdev->iftype != type);
-
-	return ret;
+	return rdev->ops->change_virtual_intf(wdev->wiphy, dev->ifindex, type,
+					      NULL, &vifparams);
 }
 EXPORT_SYMBOL(cfg80211_wext_siwmode);
 
