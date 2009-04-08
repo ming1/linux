@@ -763,10 +763,8 @@ int iwl_tx_skb(struct iwl_priv *priv, struct sk_buff *skb)
 		hdr->seq_ctrl |= cpu_to_le16(seq_number);
 		seq_number += 0x10;
 		/* aggregation is on for this <sta,tid> */
-		if (info->flags & IEEE80211_TX_CTL_AMPDU) {
+		if (info->flags & IEEE80211_TX_CTL_AMPDU)
 			txq_id = priv->stations[sta_id].tid[tid].agg.txq_id;
-			swq_id = iwl_virtual_agg_queue_num(swq_id, txq_id);
-		}
 		priv->stations[sta_id].tid[tid].tfds_in_queue++;
 	}
 
@@ -897,7 +895,7 @@ int iwl_tx_skb(struct iwl_priv *priv, struct sk_buff *skb)
 			iwl_txq_update_write_ptr(priv, txq);
 			spin_unlock_irqrestore(&priv->lock, flags);
 		} else {
-			iwl_stop_queue(priv, txq->swq_id);
+			ieee80211_stop_queue(priv->hw, txq->swq_id);
 		}
 	}
 
@@ -1435,7 +1433,7 @@ void iwl_rx_reply_compressed_ba(struct iwl_priv *priv,
 		if ((iwl_queue_space(&txq->q) > txq->q.low_mark) &&
 		    priv->mac80211_registered &&
 		    (agg->state != IWL_EMPTYING_HW_QUEUE_DELBA))
-			iwl_wake_queue(priv, txq->swq_id);
+			ieee80211_wake_queue(priv->hw, txq->swq_id);
 
 		iwl_txq_check_empty(priv, sta_id, tid, scd_flow);
 	}

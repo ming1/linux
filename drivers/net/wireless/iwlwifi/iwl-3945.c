@@ -293,7 +293,7 @@ static void iwl3945_tx_queue_reclaim(struct iwl_priv *priv,
 	if (iwl_queue_space(q) > q->low_mark && (txq_id >= 0) &&
 			(txq_id != IWL_CMD_QUEUE_NUM) &&
 			priv->mac80211_registered)
-		iwl_wake_queue(priv, txq_id);
+		ieee80211_wake_queue(priv->hw, txq_id);
 }
 
 /**
