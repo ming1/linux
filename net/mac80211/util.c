@@ -468,7 +468,7 @@ void ieee80211_iterate_active_interfaces(
 	struct ieee80211_local *local = hw_to_local(hw);
 	struct ieee80211_sub_if_data *sdata;
 
-	mutex_lock(&local->iflist_mtx);
+	rtnl_lock();
 
 	list_for_each_entry(sdata, &local->interfaces, list) {
 		switch (sdata->vif.type) {
@@ -489,7 +489,7 @@ void ieee80211_iterate_active_interfaces(
 				 &sdata->vif);
 	}
 
-	mutex_unlock(&local->iflist_mtx);
+	rtnl_unlock();
 }
 EXPORT_SYMBOL_GPL(ieee80211_iterate_active_interfaces);
 
