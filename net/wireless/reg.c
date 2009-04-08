@@ -1329,18 +1329,26 @@ static int ignore_request(struct wiphy *wiphy, enum reg_set_by set_by,
  * __regulatory_hint - hint to the wireless core a regulatory domain
  * @wiphy: if the hint comes from country information from an AP, this
  *	is required to be set to the wiphy that received the information
- * @pending_request: the regulatory request currently being processed
+ * @alpha2: the ISO/IEC 3166 alpha2 being claimed the regulatory domain
+ *	should be in.
+ * @country_ie_checksum: checksum of processed country IE, set this to 0
+ * 	if the hint did not come from a country IE
+ * @country_ie_env: the environment the IE told us we are in, %ENVIRON_*
  *
  * The Wireless subsystem can use this function to hint to the wireless core
- * what it believes should be the current regulatory domain.
+ * what it believes should be the current regulatory domain by giving it an
+ * ISO/IEC 3166 alpha2 country code it knows its regulatory domain should be
+ * in.
  *
  * Returns zero if all went fine, %-EALREADY if a regulatory domain had
  * already been set or other standard error codes.
  *
  * Caller must hold &cfg80211_mutex
  */
-static int __regulatory_hint(struct wiphy *wiphy,
-			     struct regulatory_request *pending_request)
+static int __regulatory_hint(struct wiphy *wiphy, enum reg_set_by set_by,
+			const char *alpha2,
+			u32 country_ie_checksum,
+			enum environment_cap env)
 {
 	struct regulatory_request *request;
 	bool intersect = false;
@@ -1348,12 +1356,10 @@ static int __regulatory_hint(struct wiphy *wiphy,
 
 	assert_cfg80211_lock();
 
-	r = ignore_request(wiphy,
-			  pending_request->initiator,
-			  pending_request->alpha2);
+	r = ignore_request(wiphy, set_by, alpha2);
 
 	if (r == REG_INTERSECT) {
-		if (pending_request->initiator == REGDOM_SET_BY_DRIVER) {
+		if (set_by == REGDOM_SET_BY_DRIVER) {
 			r = reg_copy_regd(&wiphy->regd, cfg80211_regdomain);
 			if (r)
 				return r;
@@ -1365,8 +1371,7 @@ static int __regulatory_hint(struct wiphy *wiphy,
 		 * driver has already been set just copy it to the
 		 * wiphy
 		 */
-		if (r == -EALREADY &&
-		    pending_request->initiator == REGDOM_SET_BY_DRIVER) {
+		if (r == -EALREADY && set_by == REGDOM_SET_BY_DRIVER) {
 			r = reg_copy_regd(&wiphy->regd, cfg80211_regdomain);
 			if (r)
 				return r;
@@ -1382,13 +1387,13 @@ new_request:
 	if (!request)
 		return -ENOMEM;
 
-	request->alpha2[0] = pending_request->alpha2[0];
-	request->alpha2[1] = pending_request->alpha2[1];
-	request->initiator = pending_request->initiator;
-	request->wiphy_idx = pending_request->wiphy_idx;
+	request->alpha2[0] = alpha2[0];
+	request->alpha2[1] = alpha2[1];
+	request->initiator = set_by;
+	request->wiphy_idx = get_wiphy_idx(wiphy);
 	request->intersect = intersect;
-	request->country_ie_checksum = pending_request->country_ie_checksum;
-	request->country_ie_env = pending_request->country_ie_env;
+	request->country_ie_checksum = country_ie_checksum;
+	request->country_ie_env = env;
 
 	kfree(last_request);
 	last_request = request;
@@ -1407,7 +1412,7 @@ new_request:
 	 *
 	 * to intersect with the static rd
 	 */
-	return call_crda(request->alpha2);
+	return call_crda(alpha2);
 }
 
 /* This currently only processes user and driver regulatory hints */
@@ -1429,7 +1434,11 @@ static int reg_process_hint(struct regulatory_request *reg_request)
 		goto out;
 	}
 
-	r = __regulatory_hint(wiphy, reg_request);
+	r = __regulatory_hint(wiphy,
+			      reg_request->initiator,
+			      reg_request->alpha2,
+			      reg_request->country_ie_checksum,
+			      reg_request->country_ie_env);
 	/* This is required so that the orig_* parameters are saved */
 	if (r == -EALREADY && wiphy && wiphy->strict_regulatory)
 		wiphy_update_regulatory(wiphy, reg_request->initiator);
