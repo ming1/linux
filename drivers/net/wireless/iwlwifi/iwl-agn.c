@@ -909,6 +909,7 @@ void iwl_rx_handle(struct iwl_priv *priv)
 			IWL_DEBUG_RX(priv, "r = %d, i = %d, %s, 0x%02x\n", r,
 				i, get_cmd_string(pkt->hdr.cmd), pkt->hdr.cmd);
 			priv->rx_handlers[pkt->hdr.cmd] (priv, rxb);
+			priv->isr_stats.rx_handlers[pkt->hdr.cmd]++;
 		} else {
 			/* No handling needed */
 			IWL_DEBUG_RX(priv,
@@ -1030,6 +1031,7 @@ static void iwl_irq_tasklet(struct iwl_priv *priv)
 		/* Tell the device to stop sending interrupts */
 		iwl_disable_interrupts(priv);
 
+		priv->isr_stats.hw++;
 		iwl_irq_handle_error(priv);
 
 		handled |= CSR_INT_BIT_HW_ERR;
@@ -1042,13 +1044,17 @@ static void iwl_irq_tasklet(struct iwl_priv *priv)
 #ifdef CONFIG_IWLWIFI_DEBUG
 	if (priv->debug_level & (IWL_DL_ISR)) {
 		/* NIC fires this, but we don't use it, redundant with WAKEUP */
-		if (inta & CSR_INT_BIT_SCD)
+		if (inta & CSR_INT_BIT_SCD) {
 			IWL_DEBUG_ISR(priv, "Scheduler finished to transmit "
 				      "the frame/frames.\n");
+			priv->isr_stats.sch++;
+		}
 
 		/* Alive notification via Rx interrupt will do the real work */
-		if (inta & CSR_INT_BIT_ALIVE)
+		if (inta & CSR_INT_BIT_ALIVE) {
 			IWL_DEBUG_ISR(priv, "Alive interrupt\n");
+			priv->isr_stats.alive++;
+		}
 	}
 #endif
 	/* Safely ignore these bits for debug checks below */
@@ -1063,6 +1069,8 @@ static void iwl_irq_tasklet(struct iwl_priv *priv)
 
 		IWL_DEBUG_RF_KILL(priv, "RF_KILL bit toggled to %s.\n",
 				hw_rf_kill ? "disable radio" : "enable radio");
+
+		priv->isr_stats.rfkill++;
 
 		/* driver only loads ucode once setting the interface up.
 		 * the driver allows loading the ucode even if the radio
@@ -1083,6 +1091,7 @@ static void iwl_irq_tasklet(struct iwl_priv *priv)
 	/* Chip got too hot and stopped itself */
 	if (inta & CSR_INT_BIT_CT_KILL) {
 		IWL_ERR(priv, "Microcode CT kill error detected.\n");
+		priv->isr_stats.ctkill++;
 		handled |= CSR_INT_BIT_CT_KILL;
 	}
 
@@ -1090,6 +1099,8 @@ static void iwl_irq_tasklet(struct iwl_priv *priv)
 	if (inta & CSR_INT_BIT_SW_ERR) {
 		IWL_ERR(priv, "Microcode SW error detected. "
 			" Restarting 0x%X.\n", inta);
+		priv->isr_stats.sw++;
+		priv->isr_stats.sw_err = inta;
 		iwl_irq_handle_error(priv);
 		handled |= CSR_INT_BIT_SW_ERR;
 	}
@@ -1105,6 +1116,8 @@ static void iwl_irq_tasklet(struct iwl_priv *priv)
 		iwl_txq_update_write_ptr(priv, &priv->txq[4]);
 		iwl_txq_update_write_ptr(priv, &priv->txq[5]);
 
+		priv->isr_stats.wakeup++;
+
 		handled |= CSR_INT_BIT_WAKEUP;
 	}
 
@@ -1113,19 +1126,23 @@ static void iwl_irq_tasklet(struct iwl_priv *priv)
 	 * notifications from uCode come through here*/
 	if (inta & (CSR_INT_BIT_FH_RX | CSR_INT_BIT_SW_RX)) {
 		iwl_rx_handle(priv);
+		priv->isr_stats.rx++;
 		handled |= (CSR_INT_BIT_FH_RX | CSR_INT_BIT_SW_RX);
 	}
 
 	if (inta & CSR_INT_BIT_FH_TX) {
 		IWL_DEBUG_ISR(priv, "Tx interrupt\n");
+		priv->isr_stats.tx++;
 		handled |= CSR_INT_BIT_FH_TX;
 		/* FH finished to write, send event */
 		priv->ucode_write_complete = 1;
 		wake_up_interruptible(&priv->wait_command_queue);
 	}
 
-	if (inta & ~handled)
+	if (inta & ~handled) {
 		IWL_ERR(priv, "Unhandled INTA bits 0x%08x\n", inta & ~handled);
+		priv->isr_stats.unhandled++;
+	}
 
 	if (inta & ~CSR_INI_SET_MASK) {
 		IWL_WARN(priv, "Disabled INTA bits 0x%08x were pending\n",
@@ -1149,6 +1166,7 @@ static void iwl_irq_tasklet(struct iwl_priv *priv)
 #endif
 	spin_unlock_irqrestore(&priv->lock, flags);
 }
+
 
 /******************************************************************************
  *
@@ -1978,6 +1996,8 @@ static int iwl_mac_start(struct ieee80211_hw *hw)
 
 out:
 	priv->is_open = 1;
+	/* default to MONITOR mode */
+	priv->iw_mode = NL80211_IFTYPE_MONITOR;
 	IWL_DEBUG_MAC80211(priv, "leave\n");
 	return 0;
 }
