@@ -3769,12 +3769,9 @@ static int iwl_pci_suspend(struct pci_dev *pdev, pm_message_t state)
 static int iwl_pci_resume(struct pci_dev *pdev)
 {
 	struct iwl_priv *priv = pci_get_drvdata(pdev);
-	int ret;
 
 	pci_set_power_state(pdev, PCI_D0);
-	ret = pci_enable_device(pdev);
-	if (ret)
-		return ret;
+	pci_enable_device(pdev);
 	pci_restore_state(pdev);
 	iwl_enable_interrupts(priv);
 
