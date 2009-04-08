@@ -28,45 +28,41 @@ MODULE_PARM_DESC(btcoex_enable, "Enable Bluetooth coexistence support");
 #define ATH9K_CLOCK_RATE_5GHZ_OFDM	40
 #define ATH9K_CLOCK_RATE_2GHZ_OFDM	44
 
-static bool ath9k_hw_set_reset_reg(struct ath_hw *ah, u32 type);
-static void ath9k_hw_set_regs(struct ath_hw *ah, struct ath9k_channel *chan,
+static bool ath9k_hw_set_reset_reg(struct ath_hal *ah, u32 type);
+static void ath9k_hw_set_regs(struct ath_hal *ah, struct ath9k_channel *chan,
 			      enum ath9k_ht_macmode macmode);
-static u32 ath9k_hw_ini_fixup(struct ath_hw *ah,
+static u32 ath9k_hw_ini_fixup(struct ath_hal *ah,
 			      struct ar5416_eeprom_def *pEepData,
 			      u32 reg, u32 value);
-static void ath9k_hw_9280_spur_mitigate(struct ath_hw *ah, struct ath9k_channel *chan);
-static void ath9k_hw_spur_mitigate(struct ath_hw *ah, struct ath9k_channel *chan);
+static void ath9k_hw_9280_spur_mitigate(struct ath_hal *ah, struct ath9k_channel *chan);
+static void ath9k_hw_spur_mitigate(struct ath_hal *ah, struct ath9k_channel *chan);
 
 /********************/
 /* Helper Functions */
 /********************/
 
-static u32 ath9k_hw_mac_usec(struct ath_hw *ah, u32 clks)
+static u32 ath9k_hw_mac_usec(struct ath_hal *ah, u32 clks)
 {
 	struct ieee80211_conf *conf = &ah->ah_sc->hw->conf;
-
 	if (!ah->ah_curchan) /* should really check for CCK instead */
 		return clks / ATH9K_CLOCK_RATE_CCK;
 	if (conf->channel->band == IEEE80211_BAND_2GHZ)
 		return clks / ATH9K_CLOCK_RATE_2GHZ_OFDM;
-
 	return clks / ATH9K_CLOCK_RATE_5GHZ_OFDM;
 }
 
-static u32 ath9k_hw_mac_to_usec(struct ath_hw *ah, u32 clks)
+static u32 ath9k_hw_mac_to_usec(struct ath_hal *ah, u32 clks)
 {
 	struct ieee80211_conf *conf = &ah->ah_sc->hw->conf;
-
 	if (conf_is_ht40(conf))
 		return ath9k_hw_mac_usec(ah, clks) / 2;
 	else
 		return ath9k_hw_mac_usec(ah, clks);
 }
 
-static u32 ath9k_hw_mac_clks(struct ath_hw *ah, u32 usecs)
+static u32 ath9k_hw_mac_clks(struct ath_hal *ah, u32 usecs)
 {
 	struct ieee80211_conf *conf = &ah->ah_sc->hw->conf;
-
 	if (!ah->ah_curchan) /* should really check for CCK instead */
 		return usecs *ATH9K_CLOCK_RATE_CCK;
 	if (conf->channel->band == IEEE80211_BAND_2GHZ)
@@ -74,17 +70,16 @@ static u32 ath9k_hw_mac_clks(struct ath_hw *ah, u32 usecs)
 	return usecs *ATH9K_CLOCK_RATE_5GHZ_OFDM;
 }
 
-static u32 ath9k_hw_mac_to_clks(struct ath_hw *ah, u32 usecs)
+static u32 ath9k_hw_mac_to_clks(struct ath_hal *ah, u32 usecs)
 {
 	struct ieee80211_conf *conf = &ah->ah_sc->hw->conf;
-
 	if (conf_is_ht40(conf))
 		return ath9k_hw_mac_clks(ah, usecs) * 2;
 	else
 		return ath9k_hw_mac_clks(ah, usecs);
 }
 
-bool ath9k_hw_wait(struct ath_hw *ah, u32 reg, u32 mask, u32 val)
+bool ath9k_hw_wait(struct ath_hal *ah, u32 reg, u32 mask, u32 val)
 {
 	int i;
 
@@ -114,7 +109,7 @@ u32 ath9k_hw_reverse_bits(u32 val, u32 n)
 	return retval;
 }
 
-bool ath9k_get_channel_edges(struct ath_hw *ah,
+bool ath9k_get_channel_edges(struct ath_hal *ah,
 			     u16 flags, u16 *low,
 			     u16 *high)
 {
@@ -133,7 +128,7 @@ bool ath9k_get_channel_edges(struct ath_hw *ah,
 	return false;
 }
 
-u16 ath9k_hw_computetxtime(struct ath_hw *ah,
+u16 ath9k_hw_computetxtime(struct ath_hal *ah,
 			   struct ath_rate_table *rates,
 			   u32 frameLen, u16 rateix,
 			   bool shortPreamble)
@@ -189,11 +184,12 @@ u16 ath9k_hw_computetxtime(struct ath_hw *ah,
 	return txTime;
 }
 
-void ath9k_hw_get_channel_centers(struct ath_hw *ah,
+void ath9k_hw_get_channel_centers(struct ath_hal *ah,
 				  struct ath9k_channel *chan,
 				  struct chan_centers *centers)
 {
 	int8_t extoff;
+	struct ath_hal_5416 *ahp = AH5416(ah);
 
 	if (!IS_CHAN_HT40(chan)) {
 		centers->ctl_center = centers->ext_center =
@@ -216,15 +212,16 @@ void ath9k_hw_get_channel_centers(struct ath_hw *ah,
 		centers->synth_center - (extoff * HT40_CHANNEL_CENTER_SHIFT);
 	centers->ext_center =
 		centers->synth_center + (extoff *
-			 ((ah->ah_extprotspacing == ATH9K_HT_EXTPROTSPACING_20) ?
+			 ((ahp->ah_extprotspacing == ATH9K_HT_EXTPROTSPACING_20) ?
 			  HT40_CHANNEL_CENTER_SHIFT : 15));
+
 }
 
 /******************/
 /* Chip Revisions */
 /******************/
 
-static void ath9k_hw_read_revisions(struct ath_hw *ah)
+static void ath9k_hw_read_revisions(struct ath_hal *ah)
 {
 	u32 val;
 
@@ -247,7 +244,7 @@ static void ath9k_hw_read_revisions(struct ath_hw *ah)
 	}
 }
 
-static int ath9k_hw_get_radiorev(struct ath_hw *ah)
+static int ath9k_hw_get_radiorev(struct ath_hal *ah)
 {
 	u32 val;
 	int i;
@@ -266,7 +263,7 @@ static int ath9k_hw_get_radiorev(struct ath_hw *ah)
 /* HW Attach, Detach, Init Routines */
 /************************************/
 
-static void ath9k_hw_disablepcie(struct ath_hw *ah)
+static void ath9k_hw_disablepcie(struct ath_hal *ah)
 {
 	if (AR_SREV_9100(ah))
 		return;
@@ -284,7 +281,7 @@ static void ath9k_hw_disablepcie(struct ath_hw *ah)
 	REG_WRITE(ah, AR_PCIE_SERDES2, 0x00000000);
 }
 
-static bool ath9k_hw_chip_test(struct ath_hw *ah)
+static bool ath9k_hw_chip_test(struct ath_hal *ah)
 {
 	u32 regAddr[2] = { AR_STA_ID0, AR_PHY_BASE + (8 << 2) };
 	u32 regHold[2];
@@ -326,7 +323,6 @@ static bool ath9k_hw_chip_test(struct ath_hw *ah)
 		REG_WRITE(ah, regAddr[i], regHold[i]);
 	}
 	udelay(100);
-
 	return true;
 }
 
@@ -351,7 +347,7 @@ static const char *ath9k_hw_devname(u16 devid)
 	return NULL;
 }
 
-static void ath9k_hw_set_defaults(struct ath_hw *ah)
+static void ath9k_hw_set_defaults(struct ath_hal *ah)
 {
 	int i;
 
@@ -410,20 +406,25 @@ static void ath9k_hw_set_defaults(struct ath_hw *ah)
 		ah->ah_config.serialize_regmode = SER_REG_MODE_AUTO;
 }
 
-static struct ath_hw *ath9k_hw_newstate(u16 devid, struct ath_softc *sc,
-					int *status)
+static struct ath_hal_5416 *ath9k_hw_newstate(u16 devid,
+					      struct ath_softc *sc,
+					      void __iomem *mem,
+					      int *status)
 {
-	struct ath_hw *ah;
+	struct ath_hal_5416 *ahp;
+	struct ath_hal *ah;
 
-	ah = kzalloc(sizeof(struct ath_hw), GFP_KERNEL);
-	if (ah == NULL) {
+	ahp = kzalloc(sizeof(struct ath_hal_5416), GFP_KERNEL);
+	if (ahp == NULL) {
 		DPRINTF(sc, ATH_DBG_FATAL,
 			"Cannot allocate memory for state block\n");
 		*status = -ENOMEM;
 		return NULL;
 	}
 
+	ah = &ahp->ah;
 	ah->ah_sc = sc;
+	ah->ah_sh = mem;
 	ah->hw_version.magic = AR5416_MAGIC;
 	ah->regulatory.country_code = CTRY_DEFAULT;
 	ah->hw_version.devid = devid;
@@ -437,24 +438,24 @@ static struct ath_hw *ath9k_hw_newstate(u16 devid, struct ath_softc *sc,
 
 	ah->regulatory.power_limit = MAX_RATE_POWER;
 	ah->regulatory.tp_scale = ATH9K_TP_SCALE_MAX;
-	ah->ah_atimWindow = 0;
-	ah->ah_diversityControl = ah->ah_config.diversity_control;
-	ah->ah_antennaSwitchSwap =
+	ahp->ah_atimWindow = 0;
+	ahp->ah_diversityControl = ah->ah_config.diversity_control;
+	ahp->ah_antennaSwitchSwap =
 		ah->ah_config.antenna_switch_swap;
-	ah->ah_staId1Defaults = AR_STA_ID1_CRPT_MIC_ENABLE;
-	ah->ah_beaconInterval = 100;
-	ah->ah_enable32kHzClock = DONT_USE_32KHZ;
-	ah->ah_slottime = (u32) -1;
-	ah->ah_acktimeout = (u32) -1;
-	ah->ah_ctstimeout = (u32) -1;
-	ah->ah_globaltxtimeout = (u32) -1;
+	ahp->ah_staId1Defaults = AR_STA_ID1_CRPT_MIC_ENABLE;
+	ahp->ah_beaconInterval = 100;
+	ahp->ah_enable32kHzClock = DONT_USE_32KHZ;
+	ahp->ah_slottime = (u32) -1;
+	ahp->ah_acktimeout = (u32) -1;
+	ahp->ah_ctstimeout = (u32) -1;
+	ahp->ah_globaltxtimeout = (u32) -1;
 
-	ah->ah_gBeaconRate = 0;
+	ahp->ah_gBeaconRate = 0;
 
-	return ah;
+	return ahp;
 }
 
-static int ath9k_hw_rfattach(struct ath_hw *ah)
+static int ath9k_hw_rfattach(struct ath_hal *ah)
 {
 	bool rfStatus = false;
 	int ecode = 0;
@@ -469,7 +470,7 @@ static int ath9k_hw_rfattach(struct ath_hw *ah)
 	return 0;
 }
 
-static int ath9k_hw_rf_claim(struct ath_hw *ah)
+static int ath9k_hw_rf_claim(struct ath_hal *ah)
 {
 	u32 val;
 
@@ -498,7 +499,7 @@ static int ath9k_hw_rf_claim(struct ath_hw *ah)
 	return 0;
 }
 
-static int ath9k_hw_init_macaddr(struct ath_hw *ah)
+static int ath9k_hw_init_macaddr(struct ath_hal *ah)
 {
 	u32 sum;
 	int i;
@@ -521,55 +522,55 @@ static int ath9k_hw_init_macaddr(struct ath_hw *ah)
 	return 0;
 }
 
-static void ath9k_hw_init_rxgain_ini(struct ath_hw *ah)
+static void ath9k_hw_init_rxgain_ini(struct ath_hal *ah)
 {
 	u32 rxgain_type;
+	struct ath_hal_5416 *ahp = AH5416(ah);
 
 	if (ath9k_hw_get_eeprom(ah, EEP_MINOR_REV) >= AR5416_EEP_MINOR_VER_17) {
 		rxgain_type = ath9k_hw_get_eeprom(ah, EEP_RXGAIN_TYPE);
 
 		if (rxgain_type == AR5416_EEP_RXGAIN_13DB_BACKOFF)
-			INIT_INI_ARRAY(&ah->ah_iniModesRxGain,
+			INIT_INI_ARRAY(&ahp->ah_iniModesRxGain,
 			ar9280Modes_backoff_13db_rxgain_9280_2,
 			ARRAY_SIZE(ar9280Modes_backoff_13db_rxgain_9280_2), 6);
 		else if (rxgain_type == AR5416_EEP_RXGAIN_23DB_BACKOFF)
-			INIT_INI_ARRAY(&ah->ah_iniModesRxGain,
+			INIT_INI_ARRAY(&ahp->ah_iniModesRxGain,
 			ar9280Modes_backoff_23db_rxgain_9280_2,
 			ARRAY_SIZE(ar9280Modes_backoff_23db_rxgain_9280_2), 6);
 		else
-			INIT_INI_ARRAY(&ah->ah_iniModesRxGain,
+			INIT_INI_ARRAY(&ahp->ah_iniModesRxGain,
 			ar9280Modes_original_rxgain_9280_2,
 			ARRAY_SIZE(ar9280Modes_original_rxgain_9280_2), 6);
-	} else {
-		INIT_INI_ARRAY(&ah->ah_iniModesRxGain,
+	} else
+		INIT_INI_ARRAY(&ahp->ah_iniModesRxGain,
 			ar9280Modes_original_rxgain_9280_2,
 			ARRAY_SIZE(ar9280Modes_original_rxgain_9280_2), 6);
-	}
 }
 
-static void ath9k_hw_init_txgain_ini(struct ath_hw *ah)
+static void ath9k_hw_init_txgain_ini(struct ath_hal *ah)
 {
 	u32 txgain_type;
+	struct ath_hal_5416 *ahp = AH5416(ah);
 
 	if (ath9k_hw_get_eeprom(ah, EEP_MINOR_REV) >= AR5416_EEP_MINOR_VER_19) {
 		txgain_type = ath9k_hw_get_eeprom(ah, EEP_TXGAIN_TYPE);
 
 		if (txgain_type == AR5416_EEP_TXGAIN_HIGH_POWER)
-			INIT_INI_ARRAY(&ah->ah_iniModesTxGain,
+			INIT_INI_ARRAY(&ahp->ah_iniModesTxGain,
 			ar9280Modes_high_power_tx_gain_9280_2,
 			ARRAY_SIZE(ar9280Modes_high_power_tx_gain_9280_2), 6);
 		else
-			INIT_INI_ARRAY(&ah->ah_iniModesTxGain,
+			INIT_INI_ARRAY(&ahp->ah_iniModesTxGain,
 			ar9280Modes_original_tx_gain_9280_2,
 			ARRAY_SIZE(ar9280Modes_original_tx_gain_9280_2), 6);
-	} else {
-		INIT_INI_ARRAY(&ah->ah_iniModesTxGain,
+	} else
+		INIT_INI_ARRAY(&ahp->ah_iniModesTxGain,
 		ar9280Modes_original_tx_gain_9280_2,
 		ARRAY_SIZE(ar9280Modes_original_tx_gain_9280_2), 6);
-	}
 }
 
-static int ath9k_hw_post_attach(struct ath_hw *ah)
+static int ath9k_hw_post_attach(struct ath_hal *ah)
 {
 	int ecode;
 
@@ -598,30 +599,33 @@ static int ath9k_hw_post_attach(struct ath_hw *ah)
 	return 0;
 }
 
-static struct ath_hw *ath9k_hw_do_attach(u16 devid, struct ath_softc *sc,
-					 int *status)
+static struct ath_hal *ath9k_hw_do_attach(u16 devid, struct ath_softc *sc,
+					  void __iomem *mem, int *status)
 {
-	struct ath_hw *ah;
+	struct ath_hal_5416 *ahp;
+	struct ath_hal *ah;
 	int ecode;
 	u32 i, j;
 
-	ah = ath9k_hw_newstate(devid, sc, status);
-	if (ah == NULL)
+	ahp = ath9k_hw_newstate(devid, sc, mem, status);
+	if (ahp == NULL)
 		return NULL;
+
+	ah = &ahp->ah;
 
 	ath9k_hw_set_defaults(ah);
 
 	if (ah->ah_config.intr_mitigation != 0)
-		ah->ah_intrMitigation = true;
+		ahp->ah_intrMitigation = true;
 
 	if (!ath9k_hw_set_reset_reg(ah, ATH9K_RESET_POWER_ON)) {
-		DPRINTF(sc, ATH_DBG_RESET, "Couldn't reset chip\n");
+		DPRINTF(ah->ah_sc, ATH_DBG_RESET, "Couldn't reset chip\n");
 		ecode = -EIO;
 		goto bad;
 	}
 
 	if (!ath9k_hw_setpower(ah, ATH9K_PM_AWAKE)) {
-		DPRINTF(sc, ATH_DBG_RESET, "Couldn't wakeup chip\n");
+		DPRINTF(ah->ah_sc, ATH_DBG_RESET, "Couldn't wakeup chip\n");
 		ecode = -EIO;
 		goto bad;
 	}
@@ -637,14 +641,15 @@ static struct ath_hw *ath9k_hw_do_attach(u16 devid, struct ath_softc *sc,
 		}
 	}
 
-	DPRINTF(sc, ATH_DBG_RESET, "serialize_regmode is %d\n",
+	DPRINTF(ah->ah_sc, ATH_DBG_RESET,
+		"serialize_regmode is %d\n",
 		ah->ah_config.serialize_regmode);
 
 	if ((ah->hw_version.macVersion != AR_SREV_VERSION_5416_PCI) &&
 	    (ah->hw_version.macVersion != AR_SREV_VERSION_5416_PCIE) &&
 	    (ah->hw_version.macVersion != AR_SREV_VERSION_9160) &&
 	    (!AR_SREV_9100(ah)) && (!AR_SREV_9280(ah)) && (!AR_SREV_9285(ah))) {
-		DPRINTF(sc, ATH_DBG_RESET,
+		DPRINTF(ah->ah_sc, ATH_DBG_RESET,
 			"Mac Chip Rev 0x%02x.%x is not supported by "
 			"this driver\n", ah->hw_version.macVersion,
 			ah->hw_version.macRev);
@@ -653,176 +658,176 @@ static struct ath_hw *ath9k_hw_do_attach(u16 devid, struct ath_softc *sc,
 	}
 
 	if (AR_SREV_9100(ah)) {
-		ah->ah_iqCalData.calData = &iq_cal_multi_sample;
-		ah->ah_suppCals = IQ_MISMATCH_CAL;
+		ahp->ah_iqCalData.calData = &iq_cal_multi_sample;
+		ahp->ah_suppCals = IQ_MISMATCH_CAL;
 		ah->ah_isPciExpress = false;
 	}
 	ah->hw_version.phyRev = REG_READ(ah, AR_PHY_CHIP_ID);
 
 	if (AR_SREV_9160_10_OR_LATER(ah)) {
 		if (AR_SREV_9280_10_OR_LATER(ah)) {
-			ah->ah_iqCalData.calData = &iq_cal_single_sample;
-			ah->ah_adcGainCalData.calData =
+			ahp->ah_iqCalData.calData = &iq_cal_single_sample;
+			ahp->ah_adcGainCalData.calData =
 				&adc_gain_cal_single_sample;
-			ah->ah_adcDcCalData.calData =
+			ahp->ah_adcDcCalData.calData =
 				&adc_dc_cal_single_sample;
-			ah->ah_adcDcCalInitData.calData =
+			ahp->ah_adcDcCalInitData.calData =
 				&adc_init_dc_cal;
 		} else {
-			ah->ah_iqCalData.calData = &iq_cal_multi_sample;
-			ah->ah_adcGainCalData.calData =
+			ahp->ah_iqCalData.calData = &iq_cal_multi_sample;
+			ahp->ah_adcGainCalData.calData =
 				&adc_gain_cal_multi_sample;
-			ah->ah_adcDcCalData.calData =
+			ahp->ah_adcDcCalData.calData =
 				&adc_dc_cal_multi_sample;
-			ah->ah_adcDcCalInitData.calData =
+			ahp->ah_adcDcCalInitData.calData =
 				&adc_init_dc_cal;
 		}
-		ah->ah_suppCals = ADC_GAIN_CAL | ADC_DC_CAL | IQ_MISMATCH_CAL;
+		ahp->ah_suppCals = ADC_GAIN_CAL | ADC_DC_CAL | IQ_MISMATCH_CAL;
 	}
 
 	if (AR_SREV_9160(ah)) {
 		ah->ah_config.enable_ani = 1;
-		ah->ah_ani_function = (ATH9K_ANI_SPUR_IMMUNITY_LEVEL |
+		ahp->ah_ani_function = (ATH9K_ANI_SPUR_IMMUNITY_LEVEL |
 					ATH9K_ANI_FIRSTEP_LEVEL);
 	} else {
-		ah->ah_ani_function = ATH9K_ANI_ALL;
+		ahp->ah_ani_function = ATH9K_ANI_ALL;
 		if (AR_SREV_9280_10_OR_LATER(ah)) {
-			ah->ah_ani_function &=	~ATH9K_ANI_NOISE_IMMUNITY_LEVEL;
+			ahp->ah_ani_function &=	~ATH9K_ANI_NOISE_IMMUNITY_LEVEL;
 		}
 	}
 
-	DPRINTF(sc, ATH_DBG_RESET,
+	DPRINTF(ah->ah_sc, ATH_DBG_RESET,
 		"This Mac Chip Rev 0x%02x.%x is \n",
 		ah->hw_version.macVersion, ah->hw_version.macRev);
 
 	if (AR_SREV_9285_12_OR_LATER(ah)) {
-		INIT_INI_ARRAY(&ah->ah_iniModes, ar9285Modes_9285_1_2,
+		INIT_INI_ARRAY(&ahp->ah_iniModes, ar9285Modes_9285_1_2,
 			       ARRAY_SIZE(ar9285Modes_9285_1_2), 6);
-		INIT_INI_ARRAY(&ah->ah_iniCommon, ar9285Common_9285_1_2,
+		INIT_INI_ARRAY(&ahp->ah_iniCommon, ar9285Common_9285_1_2,
 			       ARRAY_SIZE(ar9285Common_9285_1_2), 2);
 
 		if (ah->ah_config.pcie_clock_req) {
-			INIT_INI_ARRAY(&ah->ah_iniPcieSerdes,
+			INIT_INI_ARRAY(&ahp->ah_iniPcieSerdes,
 			ar9285PciePhy_clkreq_off_L1_9285_1_2,
 			ARRAY_SIZE(ar9285PciePhy_clkreq_off_L1_9285_1_2), 2);
 		} else {
-			INIT_INI_ARRAY(&ah->ah_iniPcieSerdes,
+			INIT_INI_ARRAY(&ahp->ah_iniPcieSerdes,
 			ar9285PciePhy_clkreq_always_on_L1_9285_1_2,
 			ARRAY_SIZE(ar9285PciePhy_clkreq_always_on_L1_9285_1_2),
 				  2);
 		}
 	} else if (AR_SREV_9285_10_OR_LATER(ah)) {
-		INIT_INI_ARRAY(&ah->ah_iniModes, ar9285Modes_9285,
+		INIT_INI_ARRAY(&ahp->ah_iniModes, ar9285Modes_9285,
 			       ARRAY_SIZE(ar9285Modes_9285), 6);
-		INIT_INI_ARRAY(&ah->ah_iniCommon, ar9285Common_9285,
+		INIT_INI_ARRAY(&ahp->ah_iniCommon, ar9285Common_9285,
 			       ARRAY_SIZE(ar9285Common_9285), 2);
 
 		if (ah->ah_config.pcie_clock_req) {
-			INIT_INI_ARRAY(&ah->ah_iniPcieSerdes,
+			INIT_INI_ARRAY(&ahp->ah_iniPcieSerdes,
 			ar9285PciePhy_clkreq_off_L1_9285,
 			ARRAY_SIZE(ar9285PciePhy_clkreq_off_L1_9285), 2);
 		} else {
-			INIT_INI_ARRAY(&ah->ah_iniPcieSerdes,
+			INIT_INI_ARRAY(&ahp->ah_iniPcieSerdes,
 			ar9285PciePhy_clkreq_always_on_L1_9285,
 			ARRAY_SIZE(ar9285PciePhy_clkreq_always_on_L1_9285), 2);
 		}
 	} else if (AR_SREV_9280_20_OR_LATER(ah)) {
-		INIT_INI_ARRAY(&ah->ah_iniModes, ar9280Modes_9280_2,
+		INIT_INI_ARRAY(&ahp->ah_iniModes, ar9280Modes_9280_2,
 			       ARRAY_SIZE(ar9280Modes_9280_2), 6);
-		INIT_INI_ARRAY(&ah->ah_iniCommon, ar9280Common_9280_2,
+		INIT_INI_ARRAY(&ahp->ah_iniCommon, ar9280Common_9280_2,
 			       ARRAY_SIZE(ar9280Common_9280_2), 2);
 
 		if (ah->ah_config.pcie_clock_req) {
-			INIT_INI_ARRAY(&ah->ah_iniPcieSerdes,
+			INIT_INI_ARRAY(&ahp->ah_iniPcieSerdes,
 			       ar9280PciePhy_clkreq_off_L1_9280,
 			       ARRAY_SIZE(ar9280PciePhy_clkreq_off_L1_9280),2);
 		} else {
-			INIT_INI_ARRAY(&ah->ah_iniPcieSerdes,
+			INIT_INI_ARRAY(&ahp->ah_iniPcieSerdes,
 			       ar9280PciePhy_clkreq_always_on_L1_9280,
 			       ARRAY_SIZE(ar9280PciePhy_clkreq_always_on_L1_9280), 2);
 		}
-		INIT_INI_ARRAY(&ah->ah_iniModesAdditional,
+		INIT_INI_ARRAY(&ahp->ah_iniModesAdditional,
 			       ar9280Modes_fast_clock_9280_2,
 			       ARRAY_SIZE(ar9280Modes_fast_clock_9280_2), 3);
 	} else if (AR_SREV_9280_10_OR_LATER(ah)) {
-		INIT_INI_ARRAY(&ah->ah_iniModes, ar9280Modes_9280,
+		INIT_INI_ARRAY(&ahp->ah_iniModes, ar9280Modes_9280,
 			       ARRAY_SIZE(ar9280Modes_9280), 6);
-		INIT_INI_ARRAY(&ah->ah_iniCommon, ar9280Common_9280,
+		INIT_INI_ARRAY(&ahp->ah_iniCommon, ar9280Common_9280,
 			       ARRAY_SIZE(ar9280Common_9280), 2);
 	} else if (AR_SREV_9160_10_OR_LATER(ah)) {
-		INIT_INI_ARRAY(&ah->ah_iniModes, ar5416Modes_9160,
+		INIT_INI_ARRAY(&ahp->ah_iniModes, ar5416Modes_9160,
 			       ARRAY_SIZE(ar5416Modes_9160), 6);
-		INIT_INI_ARRAY(&ah->ah_iniCommon, ar5416Common_9160,
+		INIT_INI_ARRAY(&ahp->ah_iniCommon, ar5416Common_9160,
 			       ARRAY_SIZE(ar5416Common_9160), 2);
-		INIT_INI_ARRAY(&ah->ah_iniBank0, ar5416Bank0_9160,
+		INIT_INI_ARRAY(&ahp->ah_iniBank0, ar5416Bank0_9160,
 			       ARRAY_SIZE(ar5416Bank0_9160), 2);
-		INIT_INI_ARRAY(&ah->ah_iniBB_RfGain, ar5416BB_RfGain_9160,
+		INIT_INI_ARRAY(&ahp->ah_iniBB_RfGain, ar5416BB_RfGain_9160,
 			       ARRAY_SIZE(ar5416BB_RfGain_9160), 3);
-		INIT_INI_ARRAY(&ah->ah_iniBank1, ar5416Bank1_9160,
+		INIT_INI_ARRAY(&ahp->ah_iniBank1, ar5416Bank1_9160,
 			       ARRAY_SIZE(ar5416Bank1_9160), 2);
-		INIT_INI_ARRAY(&ah->ah_iniBank2, ar5416Bank2_9160,
+		INIT_INI_ARRAY(&ahp->ah_iniBank2, ar5416Bank2_9160,
 			       ARRAY_SIZE(ar5416Bank2_9160), 2);
-		INIT_INI_ARRAY(&ah->ah_iniBank3, ar5416Bank3_9160,
+		INIT_INI_ARRAY(&ahp->ah_iniBank3, ar5416Bank3_9160,
 			       ARRAY_SIZE(ar5416Bank3_9160), 3);
-		INIT_INI_ARRAY(&ah->ah_iniBank6, ar5416Bank6_9160,
+		INIT_INI_ARRAY(&ahp->ah_iniBank6, ar5416Bank6_9160,
 			       ARRAY_SIZE(ar5416Bank6_9160), 3);
-		INIT_INI_ARRAY(&ah->ah_iniBank6TPC, ar5416Bank6TPC_9160,
+		INIT_INI_ARRAY(&ahp->ah_iniBank6TPC, ar5416Bank6TPC_9160,
 			       ARRAY_SIZE(ar5416Bank6TPC_9160), 3);
-		INIT_INI_ARRAY(&ah->ah_iniBank7, ar5416Bank7_9160,
+		INIT_INI_ARRAY(&ahp->ah_iniBank7, ar5416Bank7_9160,
 			       ARRAY_SIZE(ar5416Bank7_9160), 2);
 		if (AR_SREV_9160_11(ah)) {
-			INIT_INI_ARRAY(&ah->ah_iniAddac,
+			INIT_INI_ARRAY(&ahp->ah_iniAddac,
 				       ar5416Addac_91601_1,
 				       ARRAY_SIZE(ar5416Addac_91601_1), 2);
 		} else {
-			INIT_INI_ARRAY(&ah->ah_iniAddac, ar5416Addac_9160,
+			INIT_INI_ARRAY(&ahp->ah_iniAddac, ar5416Addac_9160,
 				       ARRAY_SIZE(ar5416Addac_9160), 2);
 		}
 	} else if (AR_SREV_9100_OR_LATER(ah)) {
-		INIT_INI_ARRAY(&ah->ah_iniModes, ar5416Modes_9100,
+		INIT_INI_ARRAY(&ahp->ah_iniModes, ar5416Modes_9100,
 			       ARRAY_SIZE(ar5416Modes_9100), 6);
-		INIT_INI_ARRAY(&ah->ah_iniCommon, ar5416Common_9100,
+		INIT_INI_ARRAY(&ahp->ah_iniCommon, ar5416Common_9100,
 			       ARRAY_SIZE(ar5416Common_9100), 2);
-		INIT_INI_ARRAY(&ah->ah_iniBank0, ar5416Bank0_9100,
+		INIT_INI_ARRAY(&ahp->ah_iniBank0, ar5416Bank0_9100,
 			       ARRAY_SIZE(ar5416Bank0_9100), 2);
-		INIT_INI_ARRAY(&ah->ah_iniBB_RfGain, ar5416BB_RfGain_9100,
+		INIT_INI_ARRAY(&ahp->ah_iniBB_RfGain, ar5416BB_RfGain_9100,
 			       ARRAY_SIZE(ar5416BB_RfGain_9100), 3);
-		INIT_INI_ARRAY(&ah->ah_iniBank1, ar5416Bank1_9100,
+		INIT_INI_ARRAY(&ahp->ah_iniBank1, ar5416Bank1_9100,
 			       ARRAY_SIZE(ar5416Bank1_9100), 2);
-		INIT_INI_ARRAY(&ah->ah_iniBank2, ar5416Bank2_9100,
+		INIT_INI_ARRAY(&ahp->ah_iniBank2, ar5416Bank2_9100,
 			       ARRAY_SIZE(ar5416Bank2_9100), 2);
-		INIT_INI_ARRAY(&ah->ah_iniBank3, ar5416Bank3_9100,
+		INIT_INI_ARRAY(&ahp->ah_iniBank3, ar5416Bank3_9100,
 			       ARRAY_SIZE(ar5416Bank3_9100), 3);
-		INIT_INI_ARRAY(&ah->ah_iniBank6, ar5416Bank6_9100,
+		INIT_INI_ARRAY(&ahp->ah_iniBank6, ar5416Bank6_9100,
 			       ARRAY_SIZE(ar5416Bank6_9100), 3);
-		INIT_INI_ARRAY(&ah->ah_iniBank6TPC, ar5416Bank6TPC_9100,
+		INIT_INI_ARRAY(&ahp->ah_iniBank6TPC, ar5416Bank6TPC_9100,
 			       ARRAY_SIZE(ar5416Bank6TPC_9100), 3);
-		INIT_INI_ARRAY(&ah->ah_iniBank7, ar5416Bank7_9100,
+		INIT_INI_ARRAY(&ahp->ah_iniBank7, ar5416Bank7_9100,
 			       ARRAY_SIZE(ar5416Bank7_9100), 2);
-		INIT_INI_ARRAY(&ah->ah_iniAddac, ar5416Addac_9100,
+		INIT_INI_ARRAY(&ahp->ah_iniAddac, ar5416Addac_9100,
 			       ARRAY_SIZE(ar5416Addac_9100), 2);
 	} else {
-		INIT_INI_ARRAY(&ah->ah_iniModes, ar5416Modes,
+		INIT_INI_ARRAY(&ahp->ah_iniModes, ar5416Modes,
 			       ARRAY_SIZE(ar5416Modes), 6);
-		INIT_INI_ARRAY(&ah->ah_iniCommon, ar5416Common,
+		INIT_INI_ARRAY(&ahp->ah_iniCommon, ar5416Common,
 			       ARRAY_SIZE(ar5416Common), 2);
-		INIT_INI_ARRAY(&ah->ah_iniBank0, ar5416Bank0,
+		INIT_INI_ARRAY(&ahp->ah_iniBank0, ar5416Bank0,
 			       ARRAY_SIZE(ar5416Bank0), 2);
-		INIT_INI_ARRAY(&ah->ah_iniBB_RfGain, ar5416BB_RfGain,
+		INIT_INI_ARRAY(&ahp->ah_iniBB_RfGain, ar5416BB_RfGain,
 			       ARRAY_SIZE(ar5416BB_RfGain), 3);
-		INIT_INI_ARRAY(&ah->ah_iniBank1, ar5416Bank1,
+		INIT_INI_ARRAY(&ahp->ah_iniBank1, ar5416Bank1,
 			       ARRAY_SIZE(ar5416Bank1), 2);
-		INIT_INI_ARRAY(&ah->ah_iniBank2, ar5416Bank2,
+		INIT_INI_ARRAY(&ahp->ah_iniBank2, ar5416Bank2,
 			       ARRAY_SIZE(ar5416Bank2), 2);
-		INIT_INI_ARRAY(&ah->ah_iniBank3, ar5416Bank3,
+		INIT_INI_ARRAY(&ahp->ah_iniBank3, ar5416Bank3,
 			       ARRAY_SIZE(ar5416Bank3), 3);
-		INIT_INI_ARRAY(&ah->ah_iniBank6, ar5416Bank6,
+		INIT_INI_ARRAY(&ahp->ah_iniBank6, ar5416Bank6,
 			       ARRAY_SIZE(ar5416Bank6), 3);
-		INIT_INI_ARRAY(&ah->ah_iniBank6TPC, ar5416Bank6TPC,
+		INIT_INI_ARRAY(&ahp->ah_iniBank6TPC, ar5416Bank6TPC,
 			       ARRAY_SIZE(ar5416Bank6TPC), 3);
-		INIT_INI_ARRAY(&ah->ah_iniBank7, ar5416Bank7,
+		INIT_INI_ARRAY(&ahp->ah_iniBank7, ar5416Bank7,
 			       ARRAY_SIZE(ar5416Bank7), 2);
-		INIT_INI_ARRAY(&ah->ah_iniAddac, ar5416Addac,
+		INIT_INI_ARRAY(&ahp->ah_iniAddac, ar5416Addac,
 			       ARRAY_SIZE(ar5416Addac), 2);
 	}
 
@@ -844,22 +849,22 @@ static struct ath_hw *ath9k_hw_do_attach(u16 devid, struct ath_softc *sc,
 		ath9k_hw_init_txgain_ini(ah);
 
 	if (ah->hw_version.devid == AR9280_DEVID_PCI) {
-		for (i = 0; i < ah->ah_iniModes.ia_rows; i++) {
-			u32 reg = INI_RA(&ah->ah_iniModes, i, 0);
+		for (i = 0; i < ahp->ah_iniModes.ia_rows; i++) {
+			u32 reg = INI_RA(&ahp->ah_iniModes, i, 0);
 
-			for (j = 1; j < ah->ah_iniModes.ia_columns; j++) {
-				u32 val = INI_RA(&ah->ah_iniModes, i, j);
+			for (j = 1; j < ahp->ah_iniModes.ia_columns; j++) {
+				u32 val = INI_RA(&ahp->ah_iniModes, i, j);
 
-				INI_RA(&ah->ah_iniModes, i, j) =
+				INI_RA(&ahp->ah_iniModes, i, j) =
 					ath9k_hw_ini_fixup(ah,
-							   &ah->ah_eeprom.def,
+							   &ahp->ah_eeprom.def,
 							   reg, val);
 			}
 		}
 	}
 
 	if (!ath9k_hw_fill_cap_info(ah)) {
-		DPRINTF(sc, ATH_DBG_RESET,
+		DPRINTF(ah->ah_sc, ATH_DBG_RESET,
 			"failed ath9k_hw_fill_cap_info\n");
 		ecode = -EINVAL;
 		goto bad;
@@ -867,7 +872,7 @@ static struct ath_hw *ath9k_hw_do_attach(u16 devid, struct ath_softc *sc,
 
 	ecode = ath9k_hw_init_macaddr(ah);
 	if (ecode != 0) {
-		DPRINTF(sc, ATH_DBG_RESET,
+		DPRINTF(ah->ah_sc, ATH_DBG_RESET,
 			"failed initializing mac address\n");
 		goto bad;
 	}
@@ -881,15 +886,15 @@ static struct ath_hw *ath9k_hw_do_attach(u16 devid, struct ath_softc *sc,
 
 	return ah;
 bad:
-	if (ah)
-		ath9k_hw_detach(ah);
+	if (ahp)
+		ath9k_hw_detach((struct ath_hal *) ahp);
 	if (status)
 		*status = ecode;
 
 	return NULL;
 }
 
-static void ath9k_hw_init_bb(struct ath_hw *ah,
+static void ath9k_hw_init_bb(struct ath_hal *ah,
 			     struct ath9k_channel *chan)
 {
 	u32 synthDelay;
@@ -905,7 +910,7 @@ static void ath9k_hw_init_bb(struct ath_hw *ah,
 	udelay(synthDelay + BASE_ACTIVATE_DELAY);
 }
 
-static void ath9k_hw_init_qos(struct ath_hw *ah)
+static void ath9k_hw_init_qos(struct ath_hal *ah)
 {
 	REG_WRITE(ah, AR_MIC_QOS_CONTROL, 0x100aa);
 	REG_WRITE(ah, AR_MIC_QOS_SELECT, 0x3210);
@@ -922,7 +927,7 @@ static void ath9k_hw_init_qos(struct ath_hw *ah)
 	REG_WRITE(ah, AR_TXOP_12_15, 0xFFFFFFFF);
 }
 
-static void ath9k_hw_init_pll(struct ath_hw *ah,
+static void ath9k_hw_init_pll(struct ath_hal *ah,
 			      struct ath9k_channel *chan)
 {
 	u32 pll;
@@ -990,12 +995,13 @@ static void ath9k_hw_init_pll(struct ath_hw *ah,
 	REG_WRITE(ah, AR_RTC_SLEEP_CLK, AR_RTC_FORCE_DERIVED_CLK);
 }
 
-static void ath9k_hw_init_chain_masks(struct ath_hw *ah)
+static void ath9k_hw_init_chain_masks(struct ath_hal *ah)
 {
+	struct ath_hal_5416 *ahp = AH5416(ah);
 	int rx_chainmask, tx_chainmask;
 
-	rx_chainmask = ah->ah_rxchainmask;
-	tx_chainmask = ah->ah_txchainmask;
+	rx_chainmask = ahp->ah_rxchainmask;
+	tx_chainmask = ahp->ah_txchainmask;
 
 	switch (rx_chainmask) {
 	case 0x5:
@@ -1027,26 +1033,28 @@ static void ath9k_hw_init_chain_masks(struct ath_hw *ah)
 			  REG_READ(ah, AR_PHY_ANALOG_SWAP) | 0x00000001);
 }
 
-static void ath9k_hw_init_interrupt_masks(struct ath_hw *ah,
+static void ath9k_hw_init_interrupt_masks(struct ath_hal *ah,
 					  enum nl80211_iftype opmode)
 {
-	ah->ah_maskReg = AR_IMR_TXERR |
+	struct ath_hal_5416 *ahp = AH5416(ah);
+
+	ahp->ah_maskReg = AR_IMR_TXERR |
 		AR_IMR_TXURN |
 		AR_IMR_RXERR |
 		AR_IMR_RXORN |
 		AR_IMR_BCNMISC;
 
-	if (ah->ah_intrMitigation)
-		ah->ah_maskReg |= AR_IMR_RXINTM | AR_IMR_RXMINTR;
+	if (ahp->ah_intrMitigation)
+		ahp->ah_maskReg |= AR_IMR_RXINTM | AR_IMR_RXMINTR;
 	else
-		ah->ah_maskReg |= AR_IMR_RXOK;
+		ahp->ah_maskReg |= AR_IMR_RXOK;
 
-	ah->ah_maskReg |= AR_IMR_TXOK;
+	ahp->ah_maskReg |= AR_IMR_TXOK;
 
 	if (opmode == NL80211_IFTYPE_AP)
-		ah->ah_maskReg |= AR_IMR_MIB;
+		ahp->ah_maskReg |= AR_IMR_MIB;
 
-	REG_WRITE(ah, AR_IMR, ah->ah_maskReg);
+	REG_WRITE(ah, AR_IMR, ahp->ah_maskReg);
 	REG_WRITE(ah, AR_IMR_S2, REG_READ(ah, AR_IMR_S2) | AR_IMR_S2_GTT);
 
 	if (!AR_SREV_9100(ah)) {
@@ -1056,64 +1064,72 @@ static void ath9k_hw_init_interrupt_masks(struct ath_hw *ah,
 	}
 }
 
-static bool ath9k_hw_set_ack_timeout(struct ath_hw *ah, u32 us)
+static bool ath9k_hw_set_ack_timeout(struct ath_hal *ah, u32 us)
 {
+	struct ath_hal_5416 *ahp = AH5416(ah);
+
 	if (us > ath9k_hw_mac_to_usec(ah, MS(0xffffffff, AR_TIME_OUT_ACK))) {
 		DPRINTF(ah->ah_sc, ATH_DBG_RESET, "bad ack timeout %u\n", us);
-		ah->ah_acktimeout = (u32) -1;
+		ahp->ah_acktimeout = (u32) -1;
 		return false;
 	} else {
 		REG_RMW_FIELD(ah, AR_TIME_OUT,
 			      AR_TIME_OUT_ACK, ath9k_hw_mac_to_clks(ah, us));
-		ah->ah_acktimeout = us;
+		ahp->ah_acktimeout = us;
 		return true;
 	}
 }
 
-static bool ath9k_hw_set_cts_timeout(struct ath_hw *ah, u32 us)
+static bool ath9k_hw_set_cts_timeout(struct ath_hal *ah, u32 us)
 {
+	struct ath_hal_5416 *ahp = AH5416(ah);
+
 	if (us > ath9k_hw_mac_to_usec(ah, MS(0xffffffff, AR_TIME_OUT_CTS))) {
 		DPRINTF(ah->ah_sc, ATH_DBG_RESET, "bad cts timeout %u\n", us);
-		ah->ah_ctstimeout = (u32) -1;
+		ahp->ah_ctstimeout = (u32) -1;
 		return false;
 	} else {
 		REG_RMW_FIELD(ah, AR_TIME_OUT,
 			      AR_TIME_OUT_CTS, ath9k_hw_mac_to_clks(ah, us));
-		ah->ah_ctstimeout = us;
+		ahp->ah_ctstimeout = us;
 		return true;
 	}
 }
 
-static bool ath9k_hw_set_global_txtimeout(struct ath_hw *ah, u32 tu)
+static bool ath9k_hw_set_global_txtimeout(struct ath_hal *ah, u32 tu)
 {
+	struct ath_hal_5416 *ahp = AH5416(ah);
+
 	if (tu > 0xFFFF) {
 		DPRINTF(ah->ah_sc, ATH_DBG_XMIT,
 			"bad global tx timeout %u\n", tu);
-		ah->ah_globaltxtimeout = (u32) -1;
+		ahp->ah_globaltxtimeout = (u32) -1;
 		return false;
 	} else {
 		REG_RMW_FIELD(ah, AR_GTXTO, AR_GTXTO_TIMEOUT_LIMIT, tu);
-		ah->ah_globaltxtimeout = tu;
+		ahp->ah_globaltxtimeout = tu;
 		return true;
 	}
 }
 
-static void ath9k_hw_init_user_settings(struct ath_hw *ah)
+static void ath9k_hw_init_user_settings(struct ath_hal *ah)
 {
-	DPRINTF(ah->ah_sc, ATH_DBG_RESET, "ah->ah_miscMode 0x%x\n",
-		ah->ah_miscMode);
+	struct ath_hal_5416 *ahp = AH5416(ah);
 
-	if (ah->ah_miscMode != 0)
+	DPRINTF(ah->ah_sc, ATH_DBG_RESET, "ahp->ah_miscMode 0x%x\n",
+		ahp->ah_miscMode);
+
+	if (ahp->ah_miscMode != 0)
 		REG_WRITE(ah, AR_PCU_MISC,
-			  REG_READ(ah, AR_PCU_MISC) | ah->ah_miscMode);
-	if (ah->ah_slottime != (u32) -1)
-		ath9k_hw_setslottime(ah, ah->ah_slottime);
-	if (ah->ah_acktimeout != (u32) -1)
-		ath9k_hw_set_ack_timeout(ah, ah->ah_acktimeout);
-	if (ah->ah_ctstimeout != (u32) -1)
-		ath9k_hw_set_cts_timeout(ah, ah->ah_ctstimeout);
-	if (ah->ah_globaltxtimeout != (u32) -1)
-		ath9k_hw_set_global_txtimeout(ah, ah->ah_globaltxtimeout);
+			  REG_READ(ah, AR_PCU_MISC) | ahp->ah_miscMode);
+	if (ahp->ah_slottime != (u32) -1)
+		ath9k_hw_setslottime(ah, ahp->ah_slottime);
+	if (ahp->ah_acktimeout != (u32) -1)
+		ath9k_hw_set_ack_timeout(ah, ahp->ah_acktimeout);
+	if (ahp->ah_ctstimeout != (u32) -1)
+		ath9k_hw_set_cts_timeout(ah, ahp->ah_ctstimeout);
+	if (ahp->ah_globaltxtimeout != (u32) -1)
+		ath9k_hw_set_global_txtimeout(ah, ahp->ah_globaltxtimeout);
 }
 
 const char *ath9k_hw_probe(u16 vendorid, u16 devid)
@@ -1122,7 +1138,7 @@ const char *ath9k_hw_probe(u16 vendorid, u16 devid)
 		ath9k_hw_devname(devid) : NULL;
 }
 
-void ath9k_hw_detach(struct ath_hw *ah)
+void ath9k_hw_detach(struct ath_hal *ah)
 {
 	if (!AR_SREV_9100(ah))
 		ath9k_hw_ani_detach(ah);
@@ -1132,9 +1148,10 @@ void ath9k_hw_detach(struct ath_hw *ah)
 	kfree(ah);
 }
 
-struct ath_hw *ath9k_hw_attach(u16 devid, struct ath_softc *sc, int *error)
+struct ath_hal *ath9k_hw_attach(u16 devid, struct ath_softc *sc,
+				void __iomem *mem, int *error)
 {
-	struct ath_hw *ah = NULL;
+	struct ath_hal *ah = NULL;
 
 	switch (devid) {
 	case AR5416_DEVID_PCI:
@@ -1144,7 +1161,7 @@ struct ath_hw *ath9k_hw_attach(u16 devid, struct ath_softc *sc, int *error)
 	case AR9280_DEVID_PCI:
 	case AR9280_DEVID_PCIE:
 	case AR9285_DEVID_PCIE:
-		ah = ath9k_hw_do_attach(devid, sc, error);
+		ah = ath9k_hw_do_attach(devid, sc, mem, error);
 		break;
 	default:
 		*error = -ENXIO;
@@ -1158,7 +1175,7 @@ struct ath_hw *ath9k_hw_attach(u16 devid, struct ath_softc *sc, int *error)
 /* INI */
 /*******/
 
-static void ath9k_hw_override_ini(struct ath_hw *ah,
+static void ath9k_hw_override_ini(struct ath_hal *ah,
 				  struct ath9k_channel *chan)
 {
 	/*
@@ -1176,7 +1193,7 @@ static void ath9k_hw_override_ini(struct ath_hw *ah,
 	REG_WRITE(ah, 0x9800 + (651 << 2), 0x11);
 }
 
-static u32 ath9k_hw_def_ini_fixup(struct ath_hw *ah,
+static u32 ath9k_hw_def_ini_fixup(struct ath_hal *ah,
 			      struct ar5416_eeprom_def *pEepData,
 			      u32 reg, u32 value)
 {
@@ -1210,21 +1227,24 @@ static u32 ath9k_hw_def_ini_fixup(struct ath_hw *ah,
 	return value;
 }
 
-static u32 ath9k_hw_ini_fixup(struct ath_hw *ah,
+static u32 ath9k_hw_ini_fixup(struct ath_hal *ah,
 			      struct ar5416_eeprom_def *pEepData,
 			      u32 reg, u32 value)
 {
-	if (ah->ah_eep_map == EEP_MAP_4KBITS)
+	struct ath_hal_5416 *ahp = AH5416(ah);
+
+	if (ahp->ah_eep_map == EEP_MAP_4KBITS)
 		return value;
 	else
 		return ath9k_hw_def_ini_fixup(ah, pEepData, reg, value);
 }
 
-static int ath9k_hw_process_ini(struct ath_hw *ah,
+static int ath9k_hw_process_ini(struct ath_hal *ah,
 				struct ath9k_channel *chan,
 				enum ath9k_ht_macmode macmode)
 {
 	int i, regWrites = 0;
+	struct ath_hal_5416 *ahp = AH5416(ah);
 	struct ieee80211_channel *channel = chan->chan;
 	u32 modesIndex, freqIndex;
 	int status;
@@ -1257,33 +1277,35 @@ static int ath9k_hw_process_ini(struct ath_hw *ah,
 	}
 
 	REG_WRITE(ah, AR_PHY(0), 0x00000007);
+
 	REG_WRITE(ah, AR_PHY_ADC_SERIAL_CTL, AR_PHY_SEL_EXTERNAL_RADIO);
+
 	ath9k_hw_set_addac(ah, chan);
 
 	if (AR_SREV_5416_V22_OR_LATER(ah)) {
-		REG_WRITE_ARRAY(&ah->ah_iniAddac, 1, regWrites);
+		REG_WRITE_ARRAY(&ahp->ah_iniAddac, 1, regWrites);
 	} else {
 		struct ar5416IniArray temp;
 		u32 addacSize =
-			sizeof(u32) * ah->ah_iniAddac.ia_rows *
-			ah->ah_iniAddac.ia_columns;
+			sizeof(u32) * ahp->ah_iniAddac.ia_rows *
+			ahp->ah_iniAddac.ia_columns;
 
-		memcpy(ah->ah_addac5416_21,
-		       ah->ah_iniAddac.ia_array, addacSize);
+		memcpy(ahp->ah_addac5416_21,
+		       ahp->ah_iniAddac.ia_array, addacSize);
 
-		(ah->ah_addac5416_21)[31 * ah->ah_iniAddac.ia_columns + 1] = 0;
+		(ahp->ah_addac5416_21)[31 * ahp->ah_iniAddac.ia_columns + 1] = 0;
 
-		temp.ia_array = ah->ah_addac5416_21;
-		temp.ia_columns = ah->ah_iniAddac.ia_columns;
-		temp.ia_rows = ah->ah_iniAddac.ia_rows;
+		temp.ia_array = ahp->ah_addac5416_21;
+		temp.ia_columns = ahp->ah_iniAddac.ia_columns;
+		temp.ia_rows = ahp->ah_iniAddac.ia_rows;
 		REG_WRITE_ARRAY(&temp, 1, regWrites);
 	}
 
 	REG_WRITE(ah, AR_PHY_ADC_SERIAL_CTL, AR_PHY_SEL_INTERNAL_ADDAC);
 
-	for (i = 0; i < ah->ah_iniModes.ia_rows; i++) {
-		u32 reg = INI_RA(&ah->ah_iniModes, i, 0);
-		u32 val = INI_RA(&ah->ah_iniModes, i, modesIndex);
+	for (i = 0; i < ahp->ah_iniModes.ia_rows; i++) {
+		u32 reg = INI_RA(&ahp->ah_iniModes, i, 0);
+		u32 val = INI_RA(&ahp->ah_iniModes, i, modesIndex);
 
 		REG_WRITE(ah, reg, val);
 
@@ -1296,14 +1318,14 @@ static int ath9k_hw_process_ini(struct ath_hw *ah,
 	}
 
 	if (AR_SREV_9280(ah))
-		REG_WRITE_ARRAY(&ah->ah_iniModesRxGain, modesIndex, regWrites);
+		REG_WRITE_ARRAY(&ahp->ah_iniModesRxGain, modesIndex, regWrites);
 
 	if (AR_SREV_9280(ah))
-		REG_WRITE_ARRAY(&ah->ah_iniModesTxGain, modesIndex, regWrites);
+		REG_WRITE_ARRAY(&ahp->ah_iniModesTxGain, modesIndex, regWrites);
 
-	for (i = 0; i < ah->ah_iniCommon.ia_rows; i++) {
-		u32 reg = INI_RA(&ah->ah_iniCommon, i, 0);
-		u32 val = INI_RA(&ah->ah_iniCommon, i, 1);
+	for (i = 0; i < ahp->ah_iniCommon.ia_rows; i++) {
+		u32 reg = INI_RA(&ahp->ah_iniCommon, i, 0);
+		u32 val = INI_RA(&ahp->ah_iniCommon, i, 1);
 
 		REG_WRITE(ah, reg, val);
 
@@ -1318,7 +1340,7 @@ static int ath9k_hw_process_ini(struct ath_hw *ah,
 	ath9k_hw_write_regs(ah, modesIndex, freqIndex, regWrites);
 
 	if (AR_SREV_9280_20(ah) && IS_CHAN_A_5MHZ_SPACED(chan)) {
-		REG_WRITE_ARRAY(&ah->ah_iniModesAdditional, modesIndex,
+		REG_WRITE_ARRAY(&ahp->ah_iniModesAdditional, modesIndex,
 				regWrites);
 	}
 
@@ -1351,7 +1373,7 @@ static int ath9k_hw_process_ini(struct ath_hw *ah,
 /* Reset and Channel Switching Routines */
 /****************************************/
 
-static void ath9k_hw_set_rfmode(struct ath_hw *ah, struct ath9k_channel *chan)
+static void ath9k_hw_set_rfmode(struct ath_hal *ah, struct ath9k_channel *chan)
 {
 	u32 rfMode = 0;
 
@@ -1371,12 +1393,12 @@ static void ath9k_hw_set_rfmode(struct ath_hw *ah, struct ath9k_channel *chan)
 	REG_WRITE(ah, AR_PHY_MODE, rfMode);
 }
 
-static void ath9k_hw_mark_phy_inactive(struct ath_hw *ah)
+static void ath9k_hw_mark_phy_inactive(struct ath_hal *ah)
 {
 	REG_WRITE(ah, AR_PHY_ACTIVE, AR_PHY_ACTIVE_DIS);
 }
 
-static inline void ath9k_hw_set_dma(struct ath_hw *ah)
+static inline void ath9k_hw_set_dma(struct ath_hal *ah)
 {
 	u32 regval;
 
@@ -1402,7 +1424,7 @@ static inline void ath9k_hw_set_dma(struct ath_hw *ah)
 	}
 }
 
-static void ath9k_hw_set_operating_mode(struct ath_hw *ah, int opmode)
+static void ath9k_hw_set_operating_mode(struct ath_hal *ah, int opmode)
 {
 	u32 val;
 
@@ -1426,7 +1448,7 @@ static void ath9k_hw_set_operating_mode(struct ath_hw *ah, int opmode)
 	}
 }
 
-static inline void ath9k_hw_get_delta_slope_vals(struct ath_hw *ah,
+static inline void ath9k_hw_get_delta_slope_vals(struct ath_hal *ah,
 						 u32 coef_scaled,
 						 u32 *coef_mantissa,
 						 u32 *coef_exponent)
@@ -1445,7 +1467,7 @@ static inline void ath9k_hw_get_delta_slope_vals(struct ath_hw *ah,
 	*coef_exponent = coef_exp - 16;
 }
 
-static void ath9k_hw_set_delta_slope(struct ath_hw *ah,
+static void ath9k_hw_set_delta_slope(struct ath_hal *ah,
 				     struct ath9k_channel *chan)
 {
 	u32 coef_scaled, ds_coef_exp, ds_coef_man;
@@ -1479,7 +1501,7 @@ static void ath9k_hw_set_delta_slope(struct ath_hw *ah,
 		      AR_PHY_HALFGI_DSC_EXP, ds_coef_exp);
 }
 
-static bool ath9k_hw_set_reset(struct ath_hw *ah, int type)
+static bool ath9k_hw_set_reset(struct ath_hal *ah, int type)
 {
 	u32 rst_flags;
 	u32 tmpReg;
@@ -1527,7 +1549,7 @@ static bool ath9k_hw_set_reset(struct ath_hw *ah, int type)
 	return true;
 }
 
-static bool ath9k_hw_set_reset_power_on(struct ath_hw *ah)
+static bool ath9k_hw_set_reset_power_on(struct ath_hal *ah)
 {
 	REG_WRITE(ah, AR_RTC_FORCE_WAKE, AR_RTC_FORCE_WAKE_EN |
 		  AR_RTC_FORCE_WAKE_ON_INT);
@@ -1548,7 +1570,7 @@ static bool ath9k_hw_set_reset_power_on(struct ath_hw *ah)
 	return ath9k_hw_set_reset(ah, ATH9K_RESET_WARM);
 }
 
-static bool ath9k_hw_set_reset_reg(struct ath_hw *ah, u32 type)
+static bool ath9k_hw_set_reset_reg(struct ath_hal *ah, u32 type)
 {
 	REG_WRITE(ah, AR_RTC_FORCE_WAKE,
 		  AR_RTC_FORCE_WAKE_EN | AR_RTC_FORCE_WAKE_ON_INT);
@@ -1566,11 +1588,12 @@ static bool ath9k_hw_set_reset_reg(struct ath_hw *ah, u32 type)
 	}
 }
 
-static void ath9k_hw_set_regs(struct ath_hw *ah, struct ath9k_channel *chan,
+static void ath9k_hw_set_regs(struct ath_hal *ah, struct ath9k_channel *chan,
 			      enum ath9k_ht_macmode macmode)
 {
 	u32 phymode;
 	u32 enableDacFifo = 0;
+	struct ath_hal_5416 *ahp = AH5416(ah);
 
 	if (AR_SREV_9285_10_OR_LATER(ah))
 		enableDacFifo = (REG_READ(ah, AR_PHY_TURBO) &
@@ -1586,7 +1609,7 @@ static void ath9k_hw_set_regs(struct ath_hw *ah, struct ath9k_channel *chan,
 		    (chan->chanmode == CHANNEL_G_HT40PLUS))
 			phymode |= AR_PHY_FC_DYN2040_PRI_CH;
 
-		if (ah->ah_extprotspacing == ATH9K_HT_EXTPROTSPACING_25)
+		if (ahp->ah_extprotspacing == ATH9K_HT_EXTPROTSPACING_25)
 			phymode |= AR_PHY_FC_DYN2040_EXT_CH;
 	}
 	REG_WRITE(ah, AR_PHY_TURBO, phymode);
@@ -1597,23 +1620,27 @@ static void ath9k_hw_set_regs(struct ath_hw *ah, struct ath9k_channel *chan,
 	REG_WRITE(ah, AR_CST, 0xF << AR_CST_TIMEOUT_LIMIT_S);
 }
 
-static bool ath9k_hw_chip_reset(struct ath_hw *ah,
+static bool ath9k_hw_chip_reset(struct ath_hal *ah,
 				struct ath9k_channel *chan)
 {
+	struct ath_hal_5416 *ahp = AH5416(ah);
+
 	if (!ath9k_hw_set_reset_reg(ah, ATH9K_RESET_WARM))
 		return false;
 
 	if (!ath9k_hw_setpower(ah, ATH9K_PM_AWAKE))
 		return false;
 
-	ah->ah_chipFullSleep = false;
+	ahp->ah_chipFullSleep = false;
+
 	ath9k_hw_init_pll(ah, chan);
+
 	ath9k_hw_set_rfmode(ah, chan);
 
 	return true;
 }
 
-static bool ath9k_hw_channel_change(struct ath_hw *ah,
+static bool ath9k_hw_channel_change(struct ath_hal *ah,
 				    struct ath9k_channel *chan,
 				    enum ath9k_ht_macmode macmode)
 {
@@ -1687,7 +1714,7 @@ static bool ath9k_hw_channel_change(struct ath_hw *ah,
 	return true;
 }
 
-static void ath9k_hw_9280_spur_mitigate(struct ath_hw *ah, struct ath9k_channel *chan)
+static void ath9k_hw_9280_spur_mitigate(struct ath_hal *ah, struct ath9k_channel *chan)
 {
 	int bb_spur = AR_NO_SPUR;
 	int freq;
@@ -1937,7 +1964,7 @@ static void ath9k_hw_9280_spur_mitigate(struct ath_hw *ah, struct ath9k_channel 
 	REG_WRITE(ah, AR_PHY_MASK2_P_61_45, tmp_mask);
 }
 
-static void ath9k_hw_spur_mitigate(struct ath_hw *ah, struct ath9k_channel *chan)
+static void ath9k_hw_spur_mitigate(struct ath_hal *ah, struct ath9k_channel *chan)
 {
 	int bb_spur = AR_NO_SPUR;
 	int bin, cur_bin;
@@ -2138,26 +2165,27 @@ static void ath9k_hw_spur_mitigate(struct ath_hw *ah, struct ath9k_channel *chan
 	REG_WRITE(ah, AR_PHY_MASK2_P_61_45, tmp_mask);
 }
 
-int ath9k_hw_reset(struct ath_hw *ah, struct ath9k_channel *chan,
+int ath9k_hw_reset(struct ath_hal *ah, struct ath9k_channel *chan,
 		    bool bChannelChange)
 {
 	u32 saveLedState;
 	struct ath_softc *sc = ah->ah_sc;
+	struct ath_hal_5416 *ahp = AH5416(ah);
 	struct ath9k_channel *curchan = ah->ah_curchan;
 	u32 saveDefAntenna;
 	u32 macStaId1;
 	int i, rx_chainmask, r;
 
-	ah->ah_extprotspacing = sc->ht_extprotspacing;
-	ah->ah_txchainmask = sc->tx_chainmask;
-	ah->ah_rxchainmask = sc->rx_chainmask;
+	ahp->ah_extprotspacing = sc->ht_extprotspacing;
+	ahp->ah_txchainmask = sc->tx_chainmask;
+	ahp->ah_rxchainmask = sc->rx_chainmask;
 
 	if (AR_SREV_9285(ah)) {
-		ah->ah_txchainmask &= 0x1;
-		ah->ah_rxchainmask &= 0x1;
+		ahp->ah_txchainmask &= 0x1;
+		ahp->ah_rxchainmask &= 0x1;
 	} else if (AR_SREV_9280(ah)) {
-		ah->ah_txchainmask &= 0x3;
-		ah->ah_rxchainmask &= 0x3;
+		ahp->ah_txchainmask &= 0x3;
+		ahp->ah_rxchainmask &= 0x3;
 	}
 
 	if (!ath9k_hw_setpower(ah, ATH9K_PM_AWAKE))
@@ -2167,7 +2195,7 @@ int ath9k_hw_reset(struct ath_hw *ah, struct ath9k_channel *chan,
 		ath9k_hw_getnf(ah, curchan);
 
 	if (bChannelChange &&
-	    (ah->ah_chipFullSleep != true) &&
+	    (ahp->ah_chipFullSleep != true) &&
 	    (ah->ah_curchan != NULL) &&
 	    (chan->channel != ah->ah_curchan->channel) &&
 	    ((chan->channelFlags & CHANNEL_ALL) ==
@@ -2245,7 +2273,7 @@ int ath9k_hw_reset(struct ath_hw *ah, struct ath9k_channel *chan,
 		  | AR_STA_ID1_RTS_USE_DEF
 		  | (ah->ah_config.
 		     ack_6mb ? AR_STA_ID1_ACKCTS_6MB : 0)
-		  | ah->ah_staId1Defaults);
+		  | ahp->ah_staId1Defaults);
 	ath9k_hw_set_operating_mode(ah, ah->ah_opmode);
 
 	REG_WRITE(ah, AR_BSSMSKL, get_unaligned_le32(sc->bssidmask));
@@ -2272,7 +2300,7 @@ int ath9k_hw_reset(struct ath_hw *ah, struct ath9k_channel *chan,
 	for (i = 0; i < AR_NUM_DCU; i++)
 		REG_WRITE(ah, AR_DQCUMASK(i), 1 << i);
 
-	ah->ah_intrTxqs = 0;
+	ahp->ah_intrTxqs = 0;
 	for (i = 0; i < ah->ah_caps.total_queues; i++)
 		ath9k_hw_resettxqueue(ah, i);
 
@@ -2292,7 +2320,7 @@ int ath9k_hw_reset(struct ath_hw *ah, struct ath9k_channel *chan,
 
 	REG_WRITE(ah, AR_OBS, 8);
 
-	if (ah->ah_intrMitigation) {
+	if (ahp->ah_intrMitigation) {
 
 		REG_RMW_FIELD(ah, AR_RIMT, AR_RIMT_LAST, 500);
 		REG_RMW_FIELD(ah, AR_RIMT, AR_RIMT_FIRST, 2000);
@@ -2303,7 +2331,7 @@ int ath9k_hw_reset(struct ath_hw *ah, struct ath9k_channel *chan,
 	if (!ath9k_hw_init_cal(ah, chan))
 		return -EIO;;
 
-	rx_chainmask = ah->ah_rxchainmask;
+	rx_chainmask = ahp->ah_rxchainmask;
 	if ((rx_chainmask == 0x5) || (rx_chainmask == 0x3)) {
 		REG_WRITE(ah, AR_PHY_RX_CHAINMASK, rx_chainmask);
 		REG_WRITE(ah, AR_PHY_CAL_CHAINMASK, rx_chainmask);
@@ -2337,7 +2365,7 @@ int ath9k_hw_reset(struct ath_hw *ah, struct ath9k_channel *chan,
 /* Key Cache Management */
 /************************/
 
-bool ath9k_hw_keyreset(struct ath_hw *ah, u16 entry)
+bool ath9k_hw_keyreset(struct ath_hal *ah, u16 entry)
 {
 	u32 keyType;
 
@@ -2374,7 +2402,7 @@ bool ath9k_hw_keyreset(struct ath_hw *ah, u16 entry)
 	return true;
 }
 
-bool ath9k_hw_keysetmac(struct ath_hw *ah, u16 entry, const u8 *mac)
+bool ath9k_hw_keysetmac(struct ath_hal *ah, u16 entry, const u8 *mac)
 {
 	u32 macHi, macLo;
 
@@ -2402,7 +2430,7 @@ bool ath9k_hw_keysetmac(struct ath_hw *ah, u16 entry, const u8 *mac)
 	return true;
 }
 
-bool ath9k_hw_set_keycache_entry(struct ath_hw *ah, u16 entry,
+bool ath9k_hw_set_keycache_entry(struct ath_hal *ah, u16 entry,
 				 const struct ath9k_keyval *k,
 				 const u8 *mac, int xorKey)
 {
@@ -2412,6 +2440,7 @@ bool ath9k_hw_set_keycache_entry(struct ath_hw *ah, u16 entry,
 	u32 xorMask = xorKey ?
 		(ATH9K_KEY_XOR << 24 | ATH9K_KEY_XOR << 16 | ATH9K_KEY_XOR << 8
 		 | ATH9K_KEY_XOR) : 0;
+	struct ath_hal_5416 *ahp = AH5416(ah);
 
 	if (entry >= pCap->keycache_size) {
 		DPRINTF(ah->ah_sc, ATH_DBG_KEYCACHE,
@@ -2482,7 +2511,7 @@ bool ath9k_hw_set_keycache_entry(struct ath_hw *ah, u16 entry,
 		REG_WRITE(ah, AR_KEYTABLE_TYPE(entry), keyType);
 		(void) ath9k_hw_keysetmac(ah, entry, mac);
 
-		if (ah->ah_miscMode & AR_PCU_MIC_NEW_LOC_ENA) {
+		if (ahp->ah_miscMode & AR_PCU_MIC_NEW_LOC_ENA) {
 			u32 mic0, mic1, mic2, mic3, mic4;
 
 			mic0 = get_unaligned_le32(k->kv_mic + 0);
@@ -2532,7 +2561,7 @@ bool ath9k_hw_set_keycache_entry(struct ath_hw *ah, u16 entry,
 	return true;
 }
 
-bool ath9k_hw_keyisvalid(struct ath_hw *ah, u16 entry)
+bool ath9k_hw_keyisvalid(struct ath_hal *ah, u16 entry)
 {
 	if (entry < ah->ah_caps.keycache_size) {
 		u32 val = REG_READ(ah, AR_KEYTABLE_MAC1(entry));
@@ -2546,7 +2575,7 @@ bool ath9k_hw_keyisvalid(struct ath_hw *ah, u16 entry)
 /* Power Management (Chipset) */
 /******************************/
 
-static void ath9k_set_power_sleep(struct ath_hw *ah, int setChip)
+static void ath9k_set_power_sleep(struct ath_hal *ah, int setChip)
 {
 	REG_SET_BIT(ah, AR_STA_ID1, AR_STA_ID1_PWR_SAV);
 	if (setChip) {
@@ -2560,7 +2589,7 @@ static void ath9k_set_power_sleep(struct ath_hw *ah, int setChip)
 	}
 }
 
-static void ath9k_set_power_network_sleep(struct ath_hw *ah, int setChip)
+static void ath9k_set_power_network_sleep(struct ath_hal *ah, int setChip)
 {
 	REG_SET_BIT(ah, AR_STA_ID1, AR_STA_ID1_PWR_SAV);
 	if (setChip) {
@@ -2576,7 +2605,8 @@ static void ath9k_set_power_network_sleep(struct ath_hw *ah, int setChip)
 	}
 }
 
-static bool ath9k_hw_set_power_awake(struct ath_hw *ah, int setChip)
+static bool ath9k_hw_set_power_awake(struct ath_hal *ah,
+				     int setChip)
 {
 	u32 val;
 	int i;
@@ -2617,15 +2647,17 @@ static bool ath9k_hw_set_power_awake(struct ath_hw *ah, int setChip)
 	return true;
 }
 
-bool ath9k_hw_setpower(struct ath_hw *ah, enum ath9k_power_mode mode)
+bool ath9k_hw_setpower(struct ath_hal *ah,
+		       enum ath9k_power_mode mode)
 {
-	int status = true, setChip = true;
+	struct ath_hal_5416 *ahp = AH5416(ah);
 	static const char *modes[] = {
 		"AWAKE",
 		"FULL-SLEEP",
 		"NETWORK SLEEP",
 		"UNDEFINED"
 	};
+	int status = true, setChip = true;
 
 	DPRINTF(ah->ah_sc, ATH_DBG_POWER_MGMT, "%s -> %s (%s)\n",
 		modes[ah->ah_power_mode], modes[mode],
@@ -2637,7 +2669,7 @@ bool ath9k_hw_setpower(struct ath_hw *ah, enum ath9k_power_mode mode)
 		break;
 	case ATH9K_PM_FULL_SLEEP:
 		ath9k_set_power_sleep(ah, setChip);
-		ah->ah_chipFullSleep = true;
+		ahp->ah_chipFullSleep = true;
 		break;
 	case ATH9K_PM_NETWORK_SLEEP:
 		ath9k_set_power_network_sleep(ah, setChip);
@@ -2652,8 +2684,9 @@ bool ath9k_hw_setpower(struct ath_hw *ah, enum ath9k_power_mode mode)
 	return status;
 }
 
-void ath9k_hw_configpcipowersave(struct ath_hw *ah, int restore)
+void ath9k_hw_configpcipowersave(struct ath_hal *ah, int restore)
 {
+	struct ath_hal_5416 *ahp = AH5416(ah);
 	u8 i;
 
 	if (ah->ah_isPciExpress != true)
@@ -2666,9 +2699,9 @@ void ath9k_hw_configpcipowersave(struct ath_hw *ah, int restore)
 		return;
 
 	if (AR_SREV_9280_20_OR_LATER(ah)) {
-		for (i = 0; i < ah->ah_iniPcieSerdes.ia_rows; i++) {
-			REG_WRITE(ah, INI_RA(&ah->ah_iniPcieSerdes, i, 0),
-				  INI_RA(&ah->ah_iniPcieSerdes, i, 1));
+		for (i = 0; i < ahp->ah_iniPcieSerdes.ia_rows; i++) {
+			REG_WRITE(ah, INI_RA(&ahp->ah_iniPcieSerdes, i, 0),
+				  INI_RA(&ahp->ah_iniPcieSerdes, i, 1));
 		}
 		udelay(1000);
 	} else if (AR_SREV_9280(ah) &&
@@ -2717,13 +2750,14 @@ void ath9k_hw_configpcipowersave(struct ath_hw *ah, int restore)
 		else
 			REG_WRITE(ah, AR_WA, AR_WA_DEFAULT);
 	}
+
 }
 
 /**********************/
 /* Interrupt Handling */
 /**********************/
 
-bool ath9k_hw_intrpend(struct ath_hw *ah)
+bool ath9k_hw_intrpend(struct ath_hal *ah)
 {
 	u32 host_isr;
 
@@ -2742,13 +2776,14 @@ bool ath9k_hw_intrpend(struct ath_hw *ah)
 	return false;
 }
 
-bool ath9k_hw_getisr(struct ath_hw *ah, enum ath9k_int *masked)
+bool ath9k_hw_getisr(struct ath_hal *ah, enum ath9k_int *masked)
 {
 	u32 isr = 0;
 	u32 mask2 = 0;
 	struct ath9k_hw_capabilities *pCap = &ah->ah_caps;
 	u32 sync_cause = 0;
 	bool fatal_int = false;
+	struct ath_hal_5416 *ahp = AH5416(ah);
 
 	if (!AR_SREV_9100(ah)) {
 		if (REG_READ(ah, AR_INTR_ASYNC_CAUSE) & AR_INTR_MAC_IRQ) {
@@ -2796,7 +2831,7 @@ bool ath9k_hw_getisr(struct ath_hw *ah, enum ath9k_int *masked)
 
 		*masked = isr & ATH9K_INT_COMMON;
 
-		if (ah->ah_intrMitigation) {
+		if (ahp->ah_intrMitigation) {
 			if (isr & (AR_ISR_RXMINTR | AR_ISR_RXINTM))
 				*masked |= ATH9K_INT_RX;
 		}
@@ -2811,12 +2846,12 @@ bool ath9k_hw_getisr(struct ath_hw *ah, enum ath9k_int *masked)
 			*masked |= ATH9K_INT_TX;
 
 			s0_s = REG_READ(ah, AR_ISR_S0_S);
-			ah->ah_intrTxqs |= MS(s0_s, AR_ISR_S0_QCU_TXOK);
-			ah->ah_intrTxqs |= MS(s0_s, AR_ISR_S0_QCU_TXDESC);
+			ahp->ah_intrTxqs |= MS(s0_s, AR_ISR_S0_QCU_TXOK);
+			ahp->ah_intrTxqs |= MS(s0_s, AR_ISR_S0_QCU_TXDESC);
 
 			s1_s = REG_READ(ah, AR_ISR_S1_S);
-			ah->ah_intrTxqs |= MS(s1_s, AR_ISR_S1_QCU_TXERR);
-			ah->ah_intrTxqs |= MS(s1_s, AR_ISR_S1_QCU_TXEOL);
+			ahp->ah_intrTxqs |= MS(s1_s, AR_ISR_S1_QCU_TXERR);
+			ahp->ah_intrTxqs |= MS(s1_s, AR_ISR_S1_QCU_TXEOL);
 		}
 
 		if (isr & AR_ISR_RXORN) {
@@ -2873,14 +2908,15 @@ bool ath9k_hw_getisr(struct ath_hw *ah, enum ath9k_int *masked)
 	return true;
 }
 
-enum ath9k_int ath9k_hw_intrget(struct ath_hw *ah)
+enum ath9k_int ath9k_hw_intrget(struct ath_hal *ah)
 {
-	return ah->ah_maskReg;
+	return AH5416(ah)->ah_maskReg;
 }
 
-enum ath9k_int ath9k_hw_set_interrupts(struct ath_hw *ah, enum ath9k_int ints)
+enum ath9k_int ath9k_hw_set_interrupts(struct ath_hal *ah, enum ath9k_int ints)
 {
-	u32 omask = ah->ah_maskReg;
+	struct ath_hal_5416 *ahp = AH5416(ah);
+	u32 omask = ahp->ah_maskReg;
 	u32 mask, mask2;
 	struct ath9k_hw_capabilities *pCap = &ah->ah_caps;
 
@@ -2903,18 +2939,18 @@ enum ath9k_int ath9k_hw_set_interrupts(struct ath_hw *ah, enum ath9k_int ints)
 	mask2 = 0;
 
 	if (ints & ATH9K_INT_TX) {
-		if (ah->ah_txOkInterruptMask)
+		if (ahp->ah_txOkInterruptMask)
 			mask |= AR_IMR_TXOK;
-		if (ah->ah_txDescInterruptMask)
+		if (ahp->ah_txDescInterruptMask)
 			mask |= AR_IMR_TXDESC;
-		if (ah->ah_txErrInterruptMask)
+		if (ahp->ah_txErrInterruptMask)
 			mask |= AR_IMR_TXERR;
-		if (ah->ah_txEolInterruptMask)
+		if (ahp->ah_txEolInterruptMask)
 			mask |= AR_IMR_TXEOL;
 	}
 	if (ints & ATH9K_INT_RX) {
 		mask |= AR_IMR_RXERR;
-		if (ah->ah_intrMitigation)
+		if (ahp->ah_intrMitigation)
 			mask |= AR_IMR_RXMINTR | AR_IMR_RXINTM;
 		else
 			mask |= AR_IMR_RXOK | AR_IMR_RXDESC;
@@ -2952,7 +2988,7 @@ enum ath9k_int ath9k_hw_set_interrupts(struct ath_hw *ah, enum ath9k_int ints)
 					   AR_IMR_S2_TSFOOR |
 					   AR_IMR_S2_GTT | AR_IMR_S2_CST);
 	REG_WRITE(ah, AR_IMR_S2, mask | mask2);
-	ah->ah_maskReg = ints;
+	ahp->ah_maskReg = ints;
 
 	if (!(pCap->hw_caps & ATH9K_HW_CAP_AUTOSLEEP)) {
 		if (ints & ATH9K_INT_TIM_TIMER)
@@ -2986,11 +3022,12 @@ enum ath9k_int ath9k_hw_set_interrupts(struct ath_hw *ah, enum ath9k_int ints)
 /* Beacon Handling */
 /*******************/
 
-void ath9k_hw_beaconinit(struct ath_hw *ah, u32 next_beacon, u32 beacon_period)
+void ath9k_hw_beaconinit(struct ath_hal *ah, u32 next_beacon, u32 beacon_period)
 {
+	struct ath_hal_5416 *ahp = AH5416(ah);
 	int flags = 0;
 
-	ah->ah_beaconInterval = beacon_period;
+	ahp->ah_beaconInterval = beacon_period;
 
 	switch (ah->ah_opmode) {
 	case NL80211_IFTYPE_STATION:
@@ -3005,7 +3042,7 @@ void ath9k_hw_beaconinit(struct ath_hw *ah, u32 next_beacon, u32 beacon_period)
 			    AR_TXCFG_ADHOC_BEACON_ATIM_TX_POLICY);
 		REG_WRITE(ah, AR_NEXT_NDP_TIMER,
 			  TU_TO_USEC(next_beacon +
-				     (ah->ah_atimWindow ? ah->
+				     (ahp->ah_atimWindow ? ahp->
 				      ah_atimWindow : 1)));
 		flags |= AR_NDP_TIMER_EN;
 	case NL80211_IFTYPE_AP:
@@ -3043,7 +3080,7 @@ void ath9k_hw_beaconinit(struct ath_hw *ah, u32 next_beacon, u32 beacon_period)
 	REG_SET_BIT(ah, AR_TIMER_MODE, flags);
 }
 
-void ath9k_hw_set_sta_beacon_timers(struct ath_hw *ah,
+void ath9k_hw_set_sta_beacon_timers(struct ath_hal *ah,
 				    const struct ath9k_beacon_state *bs)
 {
 	u32 nextTbtt, beaconintval, dtimperiod, beacontimeout;
@@ -3107,8 +3144,9 @@ void ath9k_hw_set_sta_beacon_timers(struct ath_hw *ah,
 /* HW Capabilities */
 /*******************/
 
-bool ath9k_hw_fill_cap_info(struct ath_hw *ah)
+bool ath9k_hw_fill_cap_info(struct ath_hal *ah)
 {
+	struct ath_hal_5416 *ahp = AH5416(ah);
 	struct ath9k_hw_capabilities *pCap = &ah->ah_caps;
 	u16 capField = 0, eeval;
 
@@ -3177,7 +3215,7 @@ bool ath9k_hw_fill_cap_info(struct ath_hw *ah)
 	}
 
 	if (!(AR_SREV_9280(ah) && (ah->hw_version.macRev == 0)))
-		ah->ah_miscMode |= AR_PCU_MIC_NEW_LOC_ENA;
+		ahp->ah_miscMode |= AR_PCU_MIC_NEW_LOC_ENA;
 
 	pCap->low_2ghz_chan = 2312;
 	pCap->high_2ghz_chan = 2732;
@@ -3299,9 +3337,10 @@ bool ath9k_hw_fill_cap_info(struct ath_hw *ah)
 	return true;
 }
 
-bool ath9k_hw_getcapability(struct ath_hw *ah, enum ath9k_capability_type type,
+bool ath9k_hw_getcapability(struct ath_hal *ah, enum ath9k_capability_type type,
 			    u32 capability, u32 *result)
 {
+	struct ath_hal_5416 *ahp = AH5416(ah);
 	const struct ath9k_hw_capabilities *pCap = &ah->ah_caps;
 
 	switch (type) {
@@ -3322,17 +3361,17 @@ bool ath9k_hw_getcapability(struct ath_hw *ah, enum ath9k_capability_type type,
 		case 0:
 			return true;
 		case 1:
-			return (ah->ah_staId1Defaults &
+			return (ahp->ah_staId1Defaults &
 				AR_STA_ID1_CRPT_MIC_ENABLE) ? true :
 			false;
 		}
 	case ATH9K_CAP_TKIP_SPLIT:
-		return (ah->ah_miscMode & AR_PCU_MIC_NEW_LOC_ENA) ?
+		return (ahp->ah_miscMode & AR_PCU_MIC_NEW_LOC_ENA) ?
 			false : true;
 	case ATH9K_CAP_WME_TKIPMIC:
 		return 0;
 	case ATH9K_CAP_PHYCOUNTERS:
-		return ah->ah_hasHwPhyCounters ? 0 : -ENXIO;
+		return ahp->ah_hasHwPhyCounters ? 0 : -ENXIO;
 	case ATH9K_CAP_DIVERSITY:
 		return (REG_READ(ah, AR_PHY_CCK_DETECT) &
 			AR_PHY_CCK_DETECT_BB_ENABLE_ANT_FAST_DIV) ?
@@ -3347,14 +3386,14 @@ bool ath9k_hw_getcapability(struct ath_hw *ah, enum ath9k_capability_type type,
 			if (REG_READ(ah, AR_STA_ID1) & AR_STA_ID1_ADHOC) {
 				return false;
 			} else {
-				return (ah->ah_staId1Defaults &
+				return (ahp->ah_staId1Defaults &
 					AR_STA_ID1_MCAST_KSRCH) ? true :
 					false;
 			}
 		}
 		return false;
 	case ATH9K_CAP_TSF_ADJUST:
-		return (ah->ah_miscMode & AR_PCU_TX_ADD_TSF) ?
+		return (ahp->ah_miscMode & AR_PCU_TX_ADD_TSF) ?
 			true : false;
 	case ATH9K_CAP_RFSILENT:
 		if (capability == 3)
@@ -3385,18 +3424,19 @@ bool ath9k_hw_getcapability(struct ath_hw *ah, enum ath9k_capability_type type,
 	}
 }
 
-bool ath9k_hw_setcapability(struct ath_hw *ah, enum ath9k_capability_type type,
+bool ath9k_hw_setcapability(struct ath_hal *ah, enum ath9k_capability_type type,
 			    u32 capability, u32 setting, int *status)
 {
+	struct ath_hal_5416 *ahp = AH5416(ah);
 	u32 v;
 
 	switch (type) {
 	case ATH9K_CAP_TKIP_MIC:
 		if (setting)
-			ah->ah_staId1Defaults |=
+			ahp->ah_staId1Defaults |=
 				AR_STA_ID1_CRPT_MIC_ENABLE;
 		else
-			ah->ah_staId1Defaults &=
+			ahp->ah_staId1Defaults &=
 				~AR_STA_ID1_CRPT_MIC_ENABLE;
 		return true;
 	case ATH9K_CAP_DIVERSITY:
@@ -3409,15 +3449,15 @@ bool ath9k_hw_setcapability(struct ath_hw *ah, enum ath9k_capability_type type,
 		return true;
 	case ATH9K_CAP_MCAST_KEYSRCH:
 		if (setting)
-			ah->ah_staId1Defaults |= AR_STA_ID1_MCAST_KSRCH;
+			ahp->ah_staId1Defaults |= AR_STA_ID1_MCAST_KSRCH;
 		else
-			ah->ah_staId1Defaults &= ~AR_STA_ID1_MCAST_KSRCH;
+			ahp->ah_staId1Defaults &= ~AR_STA_ID1_MCAST_KSRCH;
 		return true;
 	case ATH9K_CAP_TSF_ADJUST:
 		if (setting)
-			ah->ah_miscMode |= AR_PCU_TX_ADD_TSF;
+			ahp->ah_miscMode |= AR_PCU_TX_ADD_TSF;
 		else
-			ah->ah_miscMode &= ~AR_PCU_TX_ADD_TSF;
+			ahp->ah_miscMode &= ~AR_PCU_TX_ADD_TSF;
 		return true;
 	default:
 		return false;
@@ -3428,7 +3468,7 @@ bool ath9k_hw_setcapability(struct ath_hw *ah, enum ath9k_capability_type type,
 /* GPIO / RFKILL / Antennae */
 /****************************/
 
-static void ath9k_hw_gpio_cfg_output_mux(struct ath_hw *ah,
+static void ath9k_hw_gpio_cfg_output_mux(struct ath_hal *ah,
 					 u32 gpio, u32 type)
 {
 	int addr;
@@ -3456,7 +3496,7 @@ static void ath9k_hw_gpio_cfg_output_mux(struct ath_hw *ah,
 	}
 }
 
-void ath9k_hw_cfg_gpio_input(struct ath_hw *ah, u32 gpio)
+void ath9k_hw_cfg_gpio_input(struct ath_hal *ah, u32 gpio)
 {
 	u32 gpio_shift;
 
@@ -3470,7 +3510,7 @@ void ath9k_hw_cfg_gpio_input(struct ath_hw *ah, u32 gpio)
 		(AR_GPIO_OE_OUT_DRV << gpio_shift));
 }
 
-u32 ath9k_hw_gpio_get(struct ath_hw *ah, u32 gpio)
+u32 ath9k_hw_gpio_get(struct ath_hal *ah, u32 gpio)
 {
 #define MS_REG_READ(x, y) \
 	(MS(REG_READ(ah, AR_GPIO_IN_OUT), x##_GPIO_IN_VAL) & (AR_GPIO_BIT(y)))
@@ -3486,7 +3526,7 @@ u32 ath9k_hw_gpio_get(struct ath_hw *ah, u32 gpio)
 		return MS_REG_READ(AR, gpio) != 0;
 }
 
-void ath9k_hw_cfg_output(struct ath_hw *ah, u32 gpio,
+void ath9k_hw_cfg_output(struct ath_hal *ah, u32 gpio,
 			 u32 ah_signal_type)
 {
 	u32 gpio_shift;
@@ -3501,14 +3541,14 @@ void ath9k_hw_cfg_output(struct ath_hw *ah, u32 gpio,
 		(AR_GPIO_OE_OUT_DRV << gpio_shift));
 }
 
-void ath9k_hw_set_gpio(struct ath_hw *ah, u32 gpio, u32 val)
+void ath9k_hw_set_gpio(struct ath_hal *ah, u32 gpio, u32 val)
 {
 	REG_RMW(ah, AR_GPIO_IN_OUT, ((val & 1) << gpio),
 		AR_GPIO_BIT(gpio));
 }
 
 #if defined(CONFIG_RFKILL) || defined(CONFIG_RFKILL_MODULE)
-void ath9k_enable_rfkill(struct ath_hw *ah)
+void ath9k_enable_rfkill(struct ath_hal *ah)
 {
 	REG_SET_BIT(ah, AR_GPIO_INPUT_EN_VAL,
 		    AR_GPIO_INPUT_EN_VAL_RFSILENT_BB);
@@ -3521,23 +3561,24 @@ void ath9k_enable_rfkill(struct ath_hw *ah)
 }
 #endif
 
-u32 ath9k_hw_getdefantenna(struct ath_hw *ah)
+u32 ath9k_hw_getdefantenna(struct ath_hal *ah)
 {
 	return REG_READ(ah, AR_DEF_ANTENNA) & 0x7;
 }
 
-void ath9k_hw_setantenna(struct ath_hw *ah, u32 antenna)
+void ath9k_hw_setantenna(struct ath_hal *ah, u32 antenna)
 {
 	REG_WRITE(ah, AR_DEF_ANTENNA, (antenna & 0x7));
 }
 
-bool ath9k_hw_setantennaswitch(struct ath_hw *ah,
+bool ath9k_hw_setantennaswitch(struct ath_hal *ah,
 			       enum ath9k_ant_setting settings,
 			       struct ath9k_channel *chan,
 			       u8 *tx_chainmask,
 			       u8 *rx_chainmask,
 			       u8 *antenna_cfgd)
 {
+	struct ath_hal_5416 *ahp = AH5416(ah);
 	static u8 tx_chainmask_cfg, rx_chainmask_cfg;
 
 	if (AR_SREV_9280(ah)) {
@@ -3570,7 +3611,7 @@ bool ath9k_hw_setantennaswitch(struct ath_hw *ah,
 			break;
 		}
 	} else {
-		ah->ah_diversityControl = settings;
+		ahp->ah_diversityControl = settings;
 	}
 
 	return true;
@@ -3580,7 +3621,7 @@ bool ath9k_hw_setantennaswitch(struct ath_hw *ah,
 /* General Operation */
 /*********************/
 
-u32 ath9k_hw_getrxfilter(struct ath_hw *ah)
+u32 ath9k_hw_getrxfilter(struct ath_hal *ah)
 {
 	u32 bits = REG_READ(ah, AR_RX_FILTER);
 	u32 phybits = REG_READ(ah, AR_PHY_ERR);
@@ -3593,7 +3634,7 @@ u32 ath9k_hw_getrxfilter(struct ath_hw *ah)
 	return bits;
 }
 
-void ath9k_hw_setrxfilter(struct ath_hw *ah, u32 bits)
+void ath9k_hw_setrxfilter(struct ath_hal *ah, u32 bits)
 {
 	u32 phybits;
 
@@ -3613,12 +3654,12 @@ void ath9k_hw_setrxfilter(struct ath_hw *ah, u32 bits)
 			  REG_READ(ah, AR_RXCFG) & ~AR_RXCFG_ZLFDMA);
 }
 
-bool ath9k_hw_phy_disable(struct ath_hw *ah)
+bool ath9k_hw_phy_disable(struct ath_hal *ah)
 {
 	return ath9k_hw_set_reset_reg(ah, ATH9K_RESET_WARM);
 }
 
-bool ath9k_hw_disable(struct ath_hw *ah)
+bool ath9k_hw_disable(struct ath_hal *ah)
 {
 	if (!ath9k_hw_setpower(ah, ATH9K_PM_AWAKE))
 		return false;
@@ -3626,7 +3667,7 @@ bool ath9k_hw_disable(struct ath_hw *ah)
 	return ath9k_hw_set_reset_reg(ah, ATH9K_RESET_COLD);
 }
 
-bool ath9k_hw_set_txpowerlimit(struct ath_hw *ah, u32 limit)
+bool ath9k_hw_set_txpowerlimit(struct ath_hal *ah, u32 limit)
 {
 	struct ath9k_channel *chan = ah->ah_curchan;
 	struct ieee80211_channel *channel = chan->chan;
@@ -3644,17 +3685,17 @@ bool ath9k_hw_set_txpowerlimit(struct ath_hw *ah, u32 limit)
 	return true;
 }
 
-void ath9k_hw_setmac(struct ath_hw *ah, const u8 *mac)
+void ath9k_hw_setmac(struct ath_hal *ah, const u8 *mac)
 {
 	memcpy(ah->macaddr, mac, ETH_ALEN);
 }
 
-void ath9k_hw_setopmode(struct ath_hw *ah)
+void ath9k_hw_setopmode(struct ath_hal *ah)
 {
 	ath9k_hw_set_operating_mode(ah, ah->ah_opmode);
 }
 
-void ath9k_hw_setmcastfilter(struct ath_hw *ah, u32 filter0, u32 filter1)
+void ath9k_hw_setmcastfilter(struct ath_hal *ah, u32 filter0, u32 filter1)
 {
 	REG_WRITE(ah, AR_MCAST_FIL0, filter0);
 	REG_WRITE(ah, AR_MCAST_FIL1, filter1);
@@ -3673,7 +3714,7 @@ void ath9k_hw_write_associd(struct ath_softc *sc)
 		  ((sc->curaid & 0x3fff) << AR_BSS_ID1_AID_S));
 }
 
-u64 ath9k_hw_gettsf64(struct ath_hw *ah)
+u64 ath9k_hw_gettsf64(struct ath_hal *ah)
 {
 	u64 tsf;
 
@@ -3683,14 +3724,14 @@ u64 ath9k_hw_gettsf64(struct ath_hw *ah)
 	return tsf;
 }
 
-void ath9k_hw_settsf64(struct ath_hw *ah, u64 tsf64)
+void ath9k_hw_settsf64(struct ath_hal *ah, u64 tsf64)
 {
 	REG_WRITE(ah, AR_TSF_L32, 0x00000000);
 	REG_WRITE(ah, AR_TSF_U32, (tsf64 >> 32) & 0xffffffff);
 	REG_WRITE(ah, AR_TSF_L32, tsf64 & 0xffffffff);
 }
 
-void ath9k_hw_reset_tsf(struct ath_hw *ah)
+void ath9k_hw_reset_tsf(struct ath_hal *ah)
 {
 	int count;
 
@@ -3707,30 +3748,34 @@ void ath9k_hw_reset_tsf(struct ath_hw *ah)
 	REG_WRITE(ah, AR_RESET_TSF, AR_RESET_TSF_ONCE);
 }
 
-bool ath9k_hw_set_tsfadjust(struct ath_hw *ah, u32 setting)
+bool ath9k_hw_set_tsfadjust(struct ath_hal *ah, u32 setting)
 {
+	struct ath_hal_5416 *ahp = AH5416(ah);
+
 	if (setting)
-		ah->ah_miscMode |= AR_PCU_TX_ADD_TSF;
+		ahp->ah_miscMode |= AR_PCU_TX_ADD_TSF;
 	else
-		ah->ah_miscMode &= ~AR_PCU_TX_ADD_TSF;
+		ahp->ah_miscMode &= ~AR_PCU_TX_ADD_TSF;
 
 	return true;
 }
 
-bool ath9k_hw_setslottime(struct ath_hw *ah, u32 us)
+bool ath9k_hw_setslottime(struct ath_hal *ah, u32 us)
 {
+	struct ath_hal_5416 *ahp = AH5416(ah);
+
 	if (us < ATH9K_SLOT_TIME_9 || us > ath9k_hw_mac_to_usec(ah, 0xffff)) {
 		DPRINTF(ah->ah_sc, ATH_DBG_RESET, "bad slot time %u\n", us);
-		ah->ah_slottime = (u32) -1;
+		ahp->ah_slottime = (u32) -1;
 		return false;
 	} else {
 		REG_WRITE(ah, AR_D_GBL_IFS_SLOT, ath9k_hw_mac_to_clks(ah, us));
-		ah->ah_slottime = us;
+		ahp->ah_slottime = us;
 		return true;
 	}
 }
 
-void ath9k_hw_set11nmac2040(struct ath_hw *ah, enum ath9k_ht_macmode mode)
+void ath9k_hw_set11nmac2040(struct ath_hal *ah, enum ath9k_ht_macmode mode)
 {
 	u32 macmode;
 
@@ -3747,7 +3792,7 @@ void ath9k_hw_set11nmac2040(struct ath_hw *ah, enum ath9k_ht_macmode mode)
 /*  Bluetooth Coexistence  */
 /***************************/
 
-void ath9k_hw_btcoex_enable(struct ath_hw *ah)
+void ath9k_hw_btcoex_enable(struct ath_hal *ah)
 {
 	/* connect bt_active to baseband */
 	REG_CLR_BIT(ah, AR_GPIO_INPUT_EN_VAL,
