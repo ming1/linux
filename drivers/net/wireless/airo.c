@@ -1233,9 +1233,6 @@ struct airo_info {
 #define	PCI_SHARED_LEN		2*MPI_MAX_FIDS*PKTSIZE+RIDSIZE
 	char			proc_name[IFNAMSIZ];
 
-	int			wep_capable;
-	int			max_wep_idx;
-
 	/* WPA-related stuff */
 	unsigned int bssListFirst;
 	unsigned int bssListNext;
@@ -2839,9 +2836,6 @@ static struct net_device *_init_airo_card( unsigned short irq, int port,
 		rc = -EIO;
 		goto err_out_wifi;
 	}
-	/* WEP capability discovery */
-	ai->wep_capable = (cap_rid.softCap & cpu_to_le16(0x02)) ? 1 : 0;
-	ai->max_wep_idx = (cap_rid.softCap & cpu_to_le16(0x80)) ? 3 : 0;
 
 	airo_print_info(dev->name, "Firmware version %x.%x.%02x",
 	                ((le16_to_cpu(cap_rid.softVer) >> 8) & 0xF),
@@ -6271,9 +6265,11 @@ static int airo_get_mode(struct net_device *dev,
 	return 0;
 }
 
-static inline int valid_index(struct airo_info *ai, int index)
+static inline int valid_index(CapabilityRid *p, int index)
 {
-	return (index >= 0) && (index <= ai->max_wep_idx);
+	if (index < 0)
+		return 0;
+	return index < (p->softCap & cpu_to_le16(0x80) ? 4 : 1);
 }
 
 /*------------------------------------------------------------------*/
@@ -6286,12 +6282,16 @@ static int airo_set_encode(struct net_device *dev,
 			   char *extra)
 {
 	struct airo_info *local = dev->ml_priv;
+	CapabilityRid cap_rid;		/* Card capability info */
 	int perm = ( dwrq->flags & IW_ENCODE_TEMP ? 0 : 1 );
 	__le16 currentAuthType = local->config.authType;
 
-	if (!local->wep_capable)
+	/* Is WEP supported ? */
+	readCapabilityRid(local, &cap_rid, 1);
+	/* Older firmware doesn't support this...
+	if(!(cap_rid.softCap & cpu_to_le16(2))) {
 		return -EOPNOTSUPP;
-
+	} */
 	readConfigRid(local, 1);
 
 	/* Basic checking: do we have a key to set ?
@@ -6304,16 +6304,13 @@ static int airo_set_encode(struct net_device *dev,
 		wep_key_t key;
 		int index = (dwrq->flags & IW_ENCODE_INDEX) - 1;
 		int current_index = get_wep_key(local, 0xffff);
-
 		/* Check the size of the key */
 		if (dwrq->length > MAX_KEY_SIZE) {
 			return -EINVAL;
 		}
-
 		/* Check the index (none -> use current) */
-		if (!valid_index(local, index))
+		if (!valid_index(&cap_rid, index))
 			index = current_index;
-
 		/* Set the length */
 		if (dwrq->length > MIN_KEY_SIZE)
 			key.len = MAX_KEY_SIZE;
@@ -6342,13 +6339,12 @@ static int airo_set_encode(struct net_device *dev,
 	} else {
 		/* Do we want to just set the transmit key index ? */
 		int index = (dwrq->flags & IW_ENCODE_INDEX) - 1;
-		if (valid_index(local, index))
+		if (valid_index(&cap_rid, index)) {
 			set_wep_key(local, index, NULL, 0, perm, 1);
-		else {
+		} else
 			/* Don't complain if only change the mode */
 			if (!(dwrq->flags & IW_ENCODE_MODE))
 				return -EINVAL;
-		}
 	}
 	/* Read the flags */
 	if(dwrq->flags & IW_ENCODE_DISABLED)
@@ -6374,12 +6370,14 @@ static int airo_get_encode(struct net_device *dev,
 {
 	struct airo_info *local = dev->ml_priv;
 	int index = (dwrq->flags & IW_ENCODE_INDEX) - 1;
+	CapabilityRid cap_rid;		/* Card capability info */
 
-	if (!local->wep_capable)
+	/* Is it supported ? */
+	readCapabilityRid(local, &cap_rid, 1);
+	if(!(cap_rid.softCap & cpu_to_le16(2))) {
 		return -EOPNOTSUPP;
-
+	}
 	readConfigRid(local, 1);
-
 	/* Check encryption mode */
 	switch(local->config.authType)	{
 		case AUTH_ENCRYPT:
@@ -6398,7 +6396,7 @@ static int airo_get_encode(struct net_device *dev,
 	memset(extra, 0, 16);
 
 	/* Which key do we want ? -1 -> tx index */
-	if (!valid_index(local, index))
+	if (!valid_index(&cap_rid, index))
 		index = get_wep_key(local, 0xffff);
 	dwrq->flags |= index + 1;
 	/* Copy the key to the user buffer */
@@ -6421,20 +6419,24 @@ static int airo_set_encodeext(struct net_device *dev,
 	struct airo_info *local = dev->ml_priv;
 	struct iw_point *encoding = &wrqu->encoding;
 	struct iw_encode_ext *ext = (struct iw_encode_ext *)extra;
+	CapabilityRid cap_rid;		/* Card capability info */
 	int perm = ( encoding->flags & IW_ENCODE_TEMP ? 0 : 1 );
 	__le16 currentAuthType = local->config.authType;
 	int idx, key_len, alg = ext->alg, set_key = 1;
 	wep_key_t key;
 
-	if (!local->wep_capable)
+	/* Is WEP supported ? */
+	readCapabilityRid(local, &cap_rid, 1);
+	/* Older firmware doesn't support this...
+	if(!(cap_rid.softCap & cpu_to_le16(2))) {
 		return -EOPNOTSUPP;
-
+	} */
 	readConfigRid(local, 1);
 
 	/* Determine and validate the key index */
 	idx = encoding->flags & IW_ENCODE_INDEX;
 	if (idx) {
-		if (!valid_index(local, idx - 1))
+		if (!valid_index(&cap_rid, idx - 1))
 			return -EINVAL;
 		idx--;
 	} else
@@ -6503,11 +6505,14 @@ static int airo_get_encodeext(struct net_device *dev,
 	struct airo_info *local = dev->ml_priv;
 	struct iw_point *encoding = &wrqu->encoding;
 	struct iw_encode_ext *ext = (struct iw_encode_ext *)extra;
+	CapabilityRid cap_rid;		/* Card capability info */
 	int idx, max_key_len;
 
-	if (!local->wep_capable)
+	/* Is it supported ? */
+	readCapabilityRid(local, &cap_rid, 1);
+	if(!(cap_rid.softCap & cpu_to_le16(2))) {
 		return -EOPNOTSUPP;
-
+	}
 	readConfigRid(local, 1);
 
 	max_key_len = encoding->length - sizeof(*ext);
@@ -6516,7 +6521,7 @@ static int airo_get_encodeext(struct net_device *dev,
 
 	idx = encoding->flags & IW_ENCODE_INDEX;
 	if (idx) {
-		if (!valid_index(local, idx - 1))
+		if (!valid_index(&cap_rid, idx - 1))
 			return -EINVAL;
 		idx--;
 	} else
