@@ -4,7 +4,7 @@
  * both native PCI and PCMCIA-to-PCI bridges.
  *
  * Copyright (C) 2005, Pavel Roskin.
- * See main.c for license.
+ * See orinoco.c for license.
  */
 
 #ifndef _ORINOCO_PCI_H

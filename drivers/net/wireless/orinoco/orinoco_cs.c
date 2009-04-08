@@ -7,7 +7,7 @@
  * Linksys, D-Link and Farallon Skyline. It should also work on Symbol
  * cards such as the 3Com AirConnect and Ericsson WLAN.
  *
- * Copyright notice & release notes in file main.c
+ * Copyright notice & release notes in file orinoco.c
  */
 
 #define DRIVER_NAME "orinoco_cs"
