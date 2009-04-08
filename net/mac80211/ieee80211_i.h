@@ -149,6 +149,11 @@ struct ieee80211_tx_data {
 
 	struct ieee80211_channel *channel;
 
+	/* Extra fragments (in addition to the first fragment
+	 * in skb) */
+	struct sk_buff **extra_frag;
+	int num_extra_frag;
+
 	u16 ethertype;
 	unsigned int flags;
 };
@@ -186,6 +191,8 @@ struct ieee80211_rx_data {
 
 struct ieee80211_tx_stored_packet {
 	struct sk_buff *skb;
+	struct sk_buff **extra_frag;
+	int num_extra_frag;
 };
 
 struct beacon_data {
