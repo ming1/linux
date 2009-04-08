@@ -39,7 +39,6 @@ static struct pci_device_id ath_pci_id_table[] __devinitdata = {
 };
 
 static void ath_detach(struct ath_softc *sc);
-static void ath_cleanup(struct ath_softc *sc);
 
 /* return bus cachesize in 4B word units */
 
@@ -1268,7 +1267,13 @@ static int ath_start_rfkill_poll(struct ath_softc *sc)
 			rfkill_free(sc->rf_kill.rfkill);
 
 			/* Deinitialize the device */
-			ath_cleanup(sc);
+			ath_detach(sc);
+			if (to_pci_dev(sc->dev)->irq)
+				free_irq(to_pci_dev(sc->dev)->irq, sc);
+			pci_iounmap(to_pci_dev(sc->dev), sc->mem);
+			pci_release_region(to_pci_dev(sc->dev), 0);
+			pci_disable_device(to_pci_dev(sc->dev));
+			ieee80211_free_hw(sc->hw);
 			return -EIO;
 		} else {
 			sc->sc_flags |= SC_OP_RFKILL_REGISTERED;
@@ -1278,14 +1283,6 @@ static int ath_start_rfkill_poll(struct ath_softc *sc)
 	return 0;
 }
 #endif /* CONFIG_RFKILL */
-
-static void ath_cleanup(struct ath_softc *sc)
-{
-	ath_detach(sc);
-	free_irq(sc->irq, sc);
-	ath_bus_cleanup(sc);
-	ieee80211_free_hw(sc->hw);
-}
 
 static void ath_detach(struct ath_softc *sc)
 {
@@ -2548,18 +2545,8 @@ ath_rf_name(u16 rf_version)
 	return "????";
 }
 
-static void ath_pci_cleanup(struct ath_softc *sc)
-{
-	struct pci_dev *pdev = to_pci_dev(sc->dev);
-
-	pci_iounmap(pdev, sc->mem);
-	pci_release_region(pdev, 0);
-	pci_disable_device(pdev);
-}
-
 static struct ath_bus_ops ath_pci_bus_ops = {
 	.read_cachesize = ath_pci_read_cachesize,
-	.cleanup = ath_pci_cleanup,
 };
 
 static int ath_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
@@ -2666,8 +2653,6 @@ static int ath_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		goto bad4;
 	}
 
-	sc->irq = pdev->irq;
-
 	ah = sc->sc_ah;
 	printk(KERN_INFO
 	       "%s: Atheros AR%s MAC/BB Rev:%x "
@@ -2698,7 +2683,13 @@ static void ath_pci_remove(struct pci_dev *pdev)
 	struct ieee80211_hw *hw = pci_get_drvdata(pdev);
 	struct ath_softc *sc = hw->priv;
 
-	ath_cleanup(sc);
+	ath_detach(sc);
+	if (pdev->irq)
+		free_irq(pdev->irq, sc);
+	pci_iounmap(pdev, sc->mem);
+	pci_release_region(pdev, 0);
+	pci_disable_device(pdev);
+	ieee80211_free_hw(hw);
 }
 
 #ifdef CONFIG_PM
