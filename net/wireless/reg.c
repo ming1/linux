@@ -1262,12 +1262,10 @@ void regulatory_hint_11d(struct wiphy *wiphy,
 	u32 checksum = 0;
 	enum environment_cap env = ENVIRON_ANY;
 
-	mutex_lock(&cfg80211_mutex);
-
-	if (unlikely(!last_request)) {
-		mutex_unlock(&cfg80211_mutex);
+	if (!last_request)
 		return;
-	}
+
+	mutex_lock(&cfg80211_mutex);
 
 	/* IE len must be evenly divisible by 2 */
 	if (country_ie_len & 0x01)
