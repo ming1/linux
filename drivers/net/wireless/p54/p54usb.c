@@ -430,16 +430,14 @@ static const char p54u_firmware_upload_3887[] = "<\r";
 static int p54u_device_reset_3887(struct ieee80211_hw *dev)
 {
 	struct p54u_priv *priv = dev->priv;
-	int ret, lock = (priv->intf->condition != USB_INTERFACE_BINDING);
+	int ret, lock;
 	u8 buf[4];
 
-	if (lock) {
-		ret = usb_lock_device_for_reset(priv->udev, priv->intf);
-		if (ret < 0) {
-			dev_err(&priv->udev->dev, "(p54usb) unable to lock "
-				" device for reset: %d\n", ret);
-			return ret;
-		}
+	ret = lock = usb_lock_device_for_reset(priv->udev, priv->intf);
+	if (ret < 0) {
+		dev_err(&priv->udev->dev, "(p54usb) unable to lock device for "
+			"reset: %d\n", ret);
+		return ret;
 	}
 
 	ret = usb_reset_device(priv->udev);
