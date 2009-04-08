@@ -435,11 +435,10 @@ static ssize_t rt2x00debug_read_##__name(struct file *file,	\
 	if (index >= debug->__name.word_count)			\
 		return -EINVAL;					\
 								\
-	index += (debug->__name.word_base /			\
-		  debug->__name.word_size);			\
-								\
 	if (debug->__name.flags & RT2X00DEBUGFS_OFFSET)		\
 		index *= debug->__name.word_size;		\
+								\
+	index += debug->__name.word_base;			\
 								\
 	debug->__name.read(intf->rt2x00dev, index, &value);	\
 								\
@@ -477,11 +476,10 @@ static ssize_t rt2x00debug_write_##__name(struct file *file,	\
 	size = strlen(line);					\
 	value = simple_strtoul(line, NULL, 0);			\
 								\
-	index += (debug->__name.word_base /			\
-		  debug->__name.word_size);			\
-								\
 	if (debug->__name.flags & RT2X00DEBUGFS_OFFSET)		\
 		index *= debug->__name.word_size;		\
+								\
+	index += debug->__name.word_base;			\
 								\
 	debug->__name.write(intf->rt2x00dev, index, value);	\
 								\
