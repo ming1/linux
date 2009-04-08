@@ -939,12 +939,6 @@ static void zd_op_bss_info_changed(struct ieee80211_hw *hw,
 	}
 }
 
-static u64 zd_op_get_tsf(struct ieee80211_hw *hw)
-{
-	struct zd_mac *mac = zd_hw_mac(hw);
-	return zd_chip_get_tsf(&mac->chip);
-}
-
 static const struct ieee80211_ops zd_ops = {
 	.tx			= zd_op_tx,
 	.start			= zd_op_start,
@@ -955,7 +949,6 @@ static const struct ieee80211_ops zd_ops = {
 	.config_interface	= zd_op_config_interface,
 	.configure_filter	= zd_op_configure_filter,
 	.bss_info_changed	= zd_op_bss_info_changed,
-	.get_tsf		= zd_op_get_tsf,
 };
 
 struct ieee80211_hw *zd_mac_alloc_hw(struct usb_interface *intf)
