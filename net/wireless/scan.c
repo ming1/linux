@@ -56,8 +56,6 @@ static void bss_release(struct kref *ref)
 	struct cfg80211_internal_bss *bss;
 
 	bss = container_of(ref, struct cfg80211_internal_bss, ref);
-	if (bss->pub.free_priv)
-		bss->pub.free_priv(&bss->pub);
 	kfree(bss);
 }
 
