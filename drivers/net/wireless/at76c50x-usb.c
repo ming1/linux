@@ -1848,9 +1848,6 @@ static void at76_dwork_hw_scan(struct work_struct *work)
 					      dwork_hw_scan.work);
 	int ret;
 
-	if (priv->device_unplugged)
-		return;
-
 	mutex_lock(&priv->mtx);
 
 	ret = at76_get_cmd_status(priv->udev, CMD_SCAN);
@@ -1884,9 +1881,6 @@ static int at76_hw_scan(struct ieee80211_hw *hw,
 	int ret, len = 0;
 
 	at76_dbg(DBG_MAC80211, "%s():", __func__);
-
-	if (priv->device_unplugged)
-		return 0;
 
 	mutex_lock(&priv->mtx);
 
@@ -1991,10 +1985,6 @@ static void at76_configure_filter(struct ieee80211_hw *hw,
 	flags = changed_flags & AT76_SUPPORTED_FILTERS;
 	*total_flags = AT76_SUPPORTED_FILTERS;
 
-	/* Bail out after updating flags to prevent a WARN_ON in mac80211. */
-	if (priv->device_unplugged)
-		return;
-
 	/* FIXME: access to priv->promisc should be protected with
 	 * priv->mtx, but it's impossible because this function needs to be
 	 * atomic */
@@ -2095,7 +2085,8 @@ static struct at76_priv *at76_alloc_new_device(struct usb_device *udev)
 	INIT_WORK(&priv->work_submit_rx, at76_work_submit_rx);
 	INIT_DELAYED_WORK(&priv->dwork_hw_scan, at76_dwork_hw_scan);
 
-	tasklet_init(&priv->rx_tasklet, at76_rx_tasklet, 0);
+	priv->rx_tasklet.func = at76_rx_tasklet;
+	priv->rx_tasklet.data = 0;
 
 	priv->pm_mode = AT76_PM_OFF;
 	priv->pm_period = 0;
@@ -2234,7 +2225,6 @@ static int at76_init_new_device(struct at76_priv *priv,
 	priv->scan_min_time = DEF_SCAN_MIN_TIME;
 	priv->scan_max_time = DEF_SCAN_MAX_TIME;
 	priv->scan_mode = SCAN_TYPE_ACTIVE;
-	priv->device_unplugged = 0;
 
 	/* mac80211 initialisation */
 	priv->hw->wiphy->max_scan_ssids = 1;
@@ -2276,12 +2266,13 @@ static void at76_delete_device(struct at76_priv *priv)
 	/* The device is gone, don't bother turning it off */
 	priv->device_unplugged = 1;
 
-	tasklet_kill(&priv->rx_tasklet);
-
-	if (priv->mac80211_registered) {
-		flush_workqueue(priv->hw->workqueue);
+	if (priv->mac80211_registered)
 		ieee80211_unregister_hw(priv->hw);
-	}
+
+	/* assuming we used keventd, it must quiesce too */
+	flush_scheduled_work();
+
+	kfree(priv->bulk_out_buffer);
 
 	if (priv->tx_urb) {
 		usb_kill_urb(priv->tx_urb);
@@ -2293,8 +2284,6 @@ static void at76_delete_device(struct at76_priv *priv)
 	}
 
 	at76_dbg(DBG_PROC_ENTRY, "%s: unlinked urbs", __func__);
-
-	kfree(priv->bulk_out_buffer);
 
 	if (priv->rx_skb)
 		kfree_skb(priv->rx_skb);
