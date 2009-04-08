@@ -2277,7 +2277,11 @@ int ath9k_hw_reset(struct ath_hw *ah, struct ath9k_channel *chan,
 	else
 		ath9k_hw_spur_mitigate(ah, chan);
 
-	ah->eep_ops->set_board_values(ah, chan);
+	if (!ah->eep_ops->set_board_values(ah, chan)) {
+		DPRINTF(ah->ah_sc, ATH_DBG_EEPROM,
+			"error setting board options\n");
+		return -EIO;
+	}
 
 	ath9k_hw_decrease_chain_power(ah, chan);
 
