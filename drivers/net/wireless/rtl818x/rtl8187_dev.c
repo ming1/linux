@@ -986,21 +986,19 @@ static int rtl8187_add_interface(struct ieee80211_hw *dev,
 {
 	struct rtl8187_priv *priv = dev->priv;
 	int i;
-	int ret = -EOPNOTSUPP;
 
-	mutex_lock(&priv->conf_mutex);
 	if (priv->mode != NL80211_IFTYPE_MONITOR)
-		goto exit;
+		return -EOPNOTSUPP;
 
 	switch (conf->type) {
 	case NL80211_IFTYPE_STATION:
 		priv->mode = conf->type;
 		break;
 	default:
-		goto exit;
+		return -EOPNOTSUPP;
 	}
 
-	ret = 0;
+	mutex_lock(&priv->conf_mutex);
 	priv->vif = conf->vif;
 
 	rtl818x_iowrite8(priv, &priv->map->EEPROM_CMD, RTL818X_EEPROM_CMD_CONFIG);
@@ -1009,9 +1007,8 @@ static int rtl8187_add_interface(struct ieee80211_hw *dev,
 				 ((u8 *)conf->mac_addr)[i]);
 	rtl818x_iowrite8(priv, &priv->map->EEPROM_CMD, RTL818X_EEPROM_CMD_NORMAL);
 
-exit:
 	mutex_unlock(&priv->conf_mutex);
-	return ret;
+	return 0;
 }
 
 static void rtl8187_remove_interface(struct ieee80211_hw *dev,
