@@ -475,8 +475,7 @@ static u32 rate_n_flags_from_tbl(struct iwl_scale_tbl_info *tbl,
 
 	} else if (is_Ht(tbl->lq_type)) {
 		if (index > IWL_LAST_OFDM_RATE) {
-			printk(KERN_ERR RS_NAME": Invalid HT rate index %d\n",
-			       index);
+			IWL_ERROR("invalid HT rate index %d\n", index);
 			index = IWL_LAST_OFDM_RATE;
 		}
 		rate_n_flags = RATE_MCS_HT_MSK;
@@ -488,8 +487,7 @@ static u32 rate_n_flags_from_tbl(struct iwl_scale_tbl_info *tbl,
 		else
 			rate_n_flags |=	iwl_rates[index].plcp_mimo3;
 	} else {
-		printk(KERN_ERR RS_NAME": Invalid tbl->lq_type %d\n",
-		       tbl->lq_type);
+		IWL_ERROR("Invalid tbl->lq_type %d\n", tbl->lq_type);
 	}
 
 	rate_n_flags |= ((tbl->ant_type << RATE_MCS_ANT_POS) &
@@ -509,8 +507,7 @@ static u32 rate_n_flags_from_tbl(struct iwl_scale_tbl_info *tbl,
 			rate_n_flags |= RATE_MCS_GF_MSK;
 			if (is_siso(tbl->lq_type) && tbl->is_SGI) {
 				rate_n_flags &= ~RATE_MCS_SGI_MSK;
-				printk(KERN_ERR RS_NAME
-				       ": GF was set with SGI:SISO\n");
+				IWL_ERROR("GF was set with SGI:SISO\n");
 			}
 		}
 	}
