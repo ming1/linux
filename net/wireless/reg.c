@@ -41,7 +41,6 @@
 #include <net/cfg80211.h>
 #include "core.h"
 #include "reg.h"
-#include "nl80211.h"
 
 /* Receipt of information from last regulatory request */
 static struct regulatory_request *last_request;
@@ -1404,16 +1403,8 @@ new_request:
 	pending_request = NULL;
 
 	/* When r == REG_INTERSECT we do need to call CRDA */
-	if (r < 0) {
-		/*
-		 * Since CRDA will not be called in this case as we already
-		 * have applied the requested regulatory domain before we just
-		 * inform userspace we have processed the request
-		 */
-		if (r == -EALREADY)
-			nl80211_send_reg_change_event(last_request);
+	if (r < 0)
 		return r;
-	}
 
 	/*
 	 * Note: When CONFIG_WIRELESS_OLD_REGULATORY is enabled
@@ -2092,8 +2083,6 @@ int set_regdom(const struct ieee80211_regdomain *rd)
 	update_all_wiphy_regulatory(last_request->initiator);
 
 	print_regdomain(cfg80211_regdomain);
-
-	nl80211_send_reg_change_event(last_request);
 
 	return r;
 }
