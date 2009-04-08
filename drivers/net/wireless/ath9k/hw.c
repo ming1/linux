@@ -229,17 +229,16 @@ static void ath9k_hw_read_revisions(struct ath_hal *ah)
 
 	if (val == 0xFF) {
 		val = REG_READ(ah, AR_SREV);
-		ah->hw_version.macVersion =
-			(val & AR_SREV_VERSION2) >> AR_SREV_TYPE2_S;
-		ah->hw_version.macRev = MS(val, AR_SREV_REVISION2);
+		ah->ah_macVersion = (val & AR_SREV_VERSION2) >> AR_SREV_TYPE2_S;
+		ah->ah_macRev = MS(val, AR_SREV_REVISION2);
 		ah->ah_isPciExpress = (val & AR_SREV_TYPE2_HOST_MODE) ? 0 : 1;
 	} else {
 		if (!AR_SREV_9100(ah))
-			ah->hw_version.macVersion = MS(val, AR_SREV_VERSION);
+			ah->ah_macVersion = MS(val, AR_SREV_VERSION);
 
-		ah->hw_version.macRev = val & AR_SREV_REVISION;
+		ah->ah_macRev = val & AR_SREV_REVISION;
 
-		if (ah->hw_version.macVersion == AR_SREV_VERSION_5416_PCIE)
+		if (ah->ah_macVersion == AR_SREV_VERSION_5416_PCIE)
 			ah->ah_isPciExpress = true;
 	}
 }
@@ -427,14 +426,14 @@ static struct ath_hal_5416 *ath9k_hw_newstate(u16 devid,
 	ah = &ahp->ah;
 	ah->ah_sc = sc;
 	ah->ah_sh = mem;
-	ah->hw_version.magic = AR5416_MAGIC;
+	ah->ah_magic = AR5416_MAGIC;
 	ah->ah_countryCode = CTRY_DEFAULT;
-	ah->hw_version.devid = devid;
-	ah->hw_version.subvendorid = 0;
+	ah->ah_devid = devid;
+	ah->ah_subvendorid = 0;
 
 	ah->ah_flags = 0;
 	if ((devid == AR5416_AR9100_DEVID))
-		ah->hw_version.macVersion = AR_SREV_VERSION_9100;
+		ah->ah_macVersion = AR_SREV_VERSION_9100;
 	if (!AR_SREV_9100(ah))
 		ah->ah_flags = AH_USE_EEPROM;
 
@@ -493,11 +492,11 @@ static int ath9k_hw_rf_claim(struct ath_hal *ah)
 		DPRINTF(ah->ah_sc, ATH_DBG_CHANNEL,
 			"5G Radio Chip Rev 0x%02X is not "
 			"supported by this driver\n",
-			ah->hw_version.analog5GhzRev);
+			ah->ah_analog5GhzRev);
 		return -EOPNOTSUPP;
 	}
 
-	ah->hw_version.analog5GhzRev = val;
+	ah->ah_analog5GhzRev = val;
 
 	return 0;
 }
@@ -635,7 +634,7 @@ static struct ath_hal *ath9k_hw_do_attach(u16 devid, struct ath_softc *sc,
 	}
 
 	if (ah->ah_config.serialize_regmode == SER_REG_MODE_AUTO) {
-		if (ah->hw_version.macVersion == AR_SREV_VERSION_5416_PCI ||
+		if (ah->ah_macVersion == AR_SREV_VERSION_5416_PCI ||
 		    (AR_SREV_9280(ah) && !ah->ah_isPciExpress)) {
 			ah->ah_config.serialize_regmode =
 				SER_REG_MODE_ON;
@@ -649,14 +648,13 @@ static struct ath_hal *ath9k_hw_do_attach(u16 devid, struct ath_softc *sc,
 		"serialize_regmode is %d\n",
 		ah->ah_config.serialize_regmode);
 
-	if ((ah->hw_version.macVersion != AR_SREV_VERSION_5416_PCI) &&
-	    (ah->hw_version.macVersion != AR_SREV_VERSION_5416_PCIE) &&
-	    (ah->hw_version.macVersion != AR_SREV_VERSION_9160) &&
+	if ((ah->ah_macVersion != AR_SREV_VERSION_5416_PCI) &&
+	    (ah->ah_macVersion != AR_SREV_VERSION_5416_PCIE) &&
+	    (ah->ah_macVersion != AR_SREV_VERSION_9160) &&
 	    (!AR_SREV_9100(ah)) && (!AR_SREV_9280(ah)) && (!AR_SREV_9285(ah))) {
 		DPRINTF(ah->ah_sc, ATH_DBG_RESET,
 			"Mac Chip Rev 0x%02x.%x is not supported by "
-			"this driver\n", ah->hw_version.macVersion,
-			ah->hw_version.macRev);
+			"this driver\n", ah->ah_macVersion, ah->ah_macRev);
 		ecode = -EOPNOTSUPP;
 		goto bad;
 	}
@@ -666,7 +664,7 @@ static struct ath_hal *ath9k_hw_do_attach(u16 devid, struct ath_softc *sc,
 		ahp->ah_suppCals = IQ_MISMATCH_CAL;
 		ah->ah_isPciExpress = false;
 	}
-	ah->hw_version.phyRev = REG_READ(ah, AR_PHY_CHIP_ID);
+	ah->ah_phyRev = REG_READ(ah, AR_PHY_CHIP_ID);
 
 	if (AR_SREV_9160_10_OR_LATER(ah)) {
 		if (AR_SREV_9280_10_OR_LATER(ah)) {
@@ -702,7 +700,7 @@ static struct ath_hal *ath9k_hw_do_attach(u16 devid, struct ath_softc *sc,
 
 	DPRINTF(ah->ah_sc, ATH_DBG_RESET,
 		"This Mac Chip Rev 0x%02x.%x is \n",
-		ah->hw_version.macVersion, ah->hw_version.macRev);
+		ah->ah_macVersion, ah->ah_macRev);
 
 	if (AR_SREV_9285_12_OR_LATER(ah)) {
 		INIT_INI_ARRAY(&ahp->ah_iniModes, ar9285Modes_9285_1_2,
@@ -852,7 +850,7 @@ static struct ath_hal *ath9k_hw_do_attach(u16 devid, struct ath_softc *sc,
 	if (AR_SREV_9280_20(ah))
 		ath9k_hw_init_txgain_ini(ah);
 
-	if (ah->hw_version.devid == AR9280_DEVID_PCI) {
+	if (ah->ah_devid == AR9280_DEVID_PCI) {
 		for (i = 0; i < ahp->ah_iniModes.ia_rows; i++) {
 			u32 reg = INI_RA(&ahp->ah_iniModes, i, 0);
 
@@ -1012,7 +1010,7 @@ static void ath9k_hw_init_chain_masks(struct ath_hal *ah)
 		REG_SET_BIT(ah, AR_PHY_ANALOG_SWAP,
 			    AR_PHY_SWAP_ALT_CHAIN);
 	case 0x3:
-		if (((ah)->hw_version.macVersion <= AR_SREV_VERSION_9160)) {
+		if (((ah)->ah_macVersion <= AR_SREV_VERSION_9160)) {
 			REG_WRITE(ah, AR_PHY_RX_CHAINMASK, 0x7);
 			REG_WRITE(ah, AR_PHY_CAL_CHAINMASK, 0x7);
 			break;
@@ -1203,7 +1201,7 @@ static u32 ath9k_hw_def_ini_fixup(struct ath_hal *ah,
 {
 	struct base_eep_header *pBase = &(pEepData->baseEepHeader);
 
-	switch (ah->hw_version.devid) {
+	switch (ah->ah_devid) {
 	case AR9280_DEVID_PCI:
 		if (reg == 0x7894) {
 			DPRINTF(ah->ah_sc, ATH_DBG_ANY,
@@ -2460,7 +2458,7 @@ bool ath9k_hw_set_keycache_entry(struct ath_hal *ah, u16 entry,
 		if (!(pCap->hw_caps & ATH9K_HW_CAP_CIPHER_AESCCM)) {
 			DPRINTF(ah->ah_sc, ATH_DBG_KEYCACHE,
 				"AES-CCM not supported by mac rev 0x%x\n",
-				ah->hw_version.macRev);
+				ah->ah_macRev);
 			return false;
 		}
 		keyType = AR_KEYTABLE_TYPE_CCM;
@@ -2709,7 +2707,7 @@ void ath9k_hw_configpcipowersave(struct ath_hal *ah, int restore)
 		}
 		udelay(1000);
 	} else if (AR_SREV_9280(ah) &&
-		   (ah->hw_version.macRev == AR_SREV_REVISION_9280_10)) {
+		   (ah->ah_macRev == AR_SREV_REVISION_9280_10)) {
 		REG_WRITE(ah, AR_PCIE_SERDES, 0x9248fd00);
 		REG_WRITE(ah, AR_PCIE_SERDES, 0x24924924);
 
@@ -3164,7 +3162,7 @@ bool ath9k_hw_fill_cap_info(struct ath_hal *ah)
 	capField = ath9k_hw_get_eeprom(ah, EEP_OP_CAP);
 
 	if (ah->ah_opmode != NL80211_IFTYPE_AP &&
-	    ah->hw_version.subvendorid == AR_SUBVENDOR_ID_NEW_A) {
+	    ah->ah_subvendorid == AR_SUBVENDOR_ID_NEW_A) {
 		if (ah->ah_currentRD == 0x64 || ah->ah_currentRD == 0x65)
 			ah->ah_currentRD += 5;
 		else if (ah->ah_currentRD == 0x41)
@@ -3217,7 +3215,7 @@ bool ath9k_hw_fill_cap_info(struct ath_hal *ah)
 			(ath9k_hw_gpio_get(ah, 0)) ? 0x5 : 0x7;
 	}
 
-	if (!(AR_SREV_9280(ah) && (ah->hw_version.macRev == 0)))
+	if (!(AR_SREV_9280(ah) && (ah->ah_macRev == 0)))
 		ahp->ah_miscMode |= AR_PCU_MIC_NEW_LOC_ENA;
 
 	pCap->low_2ghz_chan = 2312;
@@ -3298,11 +3296,11 @@ bool ath9k_hw_fill_cap_info(struct ath_hal *ah)
 	}
 #endif
 
-	if ((ah->hw_version.macVersion == AR_SREV_VERSION_5416_PCI) ||
-	    (ah->hw_version.macVersion == AR_SREV_VERSION_5416_PCIE) ||
-	    (ah->hw_version.macVersion == AR_SREV_VERSION_9160) ||
-	    (ah->hw_version.macVersion == AR_SREV_VERSION_9100) ||
-	    (ah->hw_version.macVersion == AR_SREV_VERSION_9280))
+	if ((ah->ah_macVersion == AR_SREV_VERSION_5416_PCI) ||
+	    (ah->ah_macVersion == AR_SREV_VERSION_5416_PCIE) ||
+	    (ah->ah_macVersion == AR_SREV_VERSION_9160) ||
+	    (ah->ah_macVersion == AR_SREV_VERSION_9100) ||
+	    (ah->ah_macVersion == AR_SREV_VERSION_9280))
 		pCap->hw_caps &= ~ATH9K_HW_CAP_AUTOSLEEP;
 	else
 		pCap->hw_caps |= ATH9K_HW_CAP_AUTOSLEEP;
