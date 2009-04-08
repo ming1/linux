@@ -37,7 +37,7 @@ struct cfg80211_registered_device {
 	enum environment_cap env;
 
 	/* wiphy index, internal only */
-	int wiphy_idx;
+	int idx;
 
 	/* associate netdev list */
 	struct mutex devlist_mtx;
