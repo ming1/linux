@@ -214,16 +214,10 @@ int ieee80211_hw_config(struct ieee80211_local *local, u32 changed)
 		changed |= IEEE80211_CONF_CHANGE_CHANNEL;
 	}
 
-	if (local->sw_scanning)
+	if (!local->user_power_level)
 		power = chan->max_power;
 	else
-		power = local->power_constr_level ?
-			(chan->max_power - local->power_constr_level) :
-			chan->max_power;
-
-	if (local->user_power_level)
-		power = min(power, local->user_power_level);
-
+		power = min(chan->max_power, local->user_power_level);
 	if (local->hw.conf.power_level != power) {
 		changed |= IEEE80211_CONF_CHANGE_POWER;
 		local->hw.conf.power_level = power;
