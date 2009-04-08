@@ -2637,6 +2637,7 @@ static struct genl_ops nl80211_ops[] = {
 		.doit = nl80211_get_station,
 		.dumpit = nl80211_dump_station,
 		.policy = nl80211_policy,
+		.flags = GENL_ADMIN_PERM,
 	},
 	{
 		.cmd = NL80211_CMD_SET_STATION,
