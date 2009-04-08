@@ -14,7 +14,10 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#include "ath9k.h"
+#include "core.h"
+#include "hw.h"
+#include "reg.h"
+#include "phy.h"
 
 static void ath9k_hw_set_txq_interrupts(struct ath_hal *ah,
 					struct ath9k_tx_queue_info *qi)

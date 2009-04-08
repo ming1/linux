@@ -14,7 +14,9 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#include "ath9k.h"
+#include "core.h"
+#include "reg.h"
+#include "hw.h"
 
 static unsigned int ath9k_debug = DBG_DEFAULT;
 module_param_named(debug, ath9k_debug, uint, 0);
