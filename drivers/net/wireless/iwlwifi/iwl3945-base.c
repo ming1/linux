@@ -5053,7 +5053,7 @@ static int iwl3945_pci_probe(struct pci_dev *pdev, const struct pci_device_id *e
 			"invalid queues_num, should be between %d and %d\n",
 			IWL_MIN_NUM_QUEUES, IWL39_MAX_NUM_QUEUES);
 		err = -EINVAL;
-		goto out_ieee80211_free_hw;
+		goto out;
 	}
 
 	/*
@@ -5161,7 +5161,7 @@ static int iwl3945_pci_probe(struct pci_dev *pdev, const struct pci_device_id *e
 	/* Device-specific setup */
 	if (iwl3945_hw_set_hw_params(priv)) {
 		IWL_ERR(priv, "failed to set hw settings\n");
-		goto out_eeprom_free;
+		goto out_iounmap;
 	}
 
 	/***********************
@@ -5171,7 +5171,7 @@ static int iwl3945_pci_probe(struct pci_dev *pdev, const struct pci_device_id *e
 	err = iwl3945_init_drv(priv);
 	if (err) {
 		IWL_ERR(priv, "initializing driver failed\n");
-		goto out_unset_hw_params;
+		goto out_free_geos;
 	}
 
 	IWL_INFO(priv, "Detected Intel Wireless WiFi Link %s\n",
@@ -5249,12 +5249,8 @@ static int iwl3945_pci_probe(struct pci_dev *pdev, const struct pci_device_id *e
 	free_irq(priv->pci_dev->irq, priv);
  out_disable_msi:
 	pci_disable_msi(priv->pci_dev);
+ out_free_geos:
 	iwlcore_free_geos(priv);
-	iwl_free_channel_map(priv);
- out_unset_hw_params:
-	iwl3945_unset_hw_params(priv);
- out_eeprom_free:
-	iwl_eeprom_free(priv);
  out_iounmap:
 	pci_iounmap(pdev, priv->hw_base);
  out_pci_release_regions:
