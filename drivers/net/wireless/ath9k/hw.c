@@ -84,13 +84,11 @@ static u32 ath9k_hw_mac_to_clks(struct ath_hw *ah, u32 usecs)
 		return ath9k_hw_mac_clks(ah, usecs);
 }
 
-bool ath9k_hw_wait(struct ath_hw *ah, u32 reg, u32 mask, u32 val, u32 timeout)
+bool ath9k_hw_wait(struct ath_hw *ah, u32 reg, u32 mask, u32 val)
 {
 	int i;
 
-	BUG_ON(timeout < AH_TIME_QUANTUM);
-
-	for (i = 0; i < (timeout / AH_TIME_QUANTUM); i++) {
+	for (i = 0; i < (AH_TIMEOUT / AH_TIME_QUANTUM); i++) {
 		if ((REG_READ(ah, reg) & mask) == val)
 			return true;
 
@@ -98,8 +96,8 @@ bool ath9k_hw_wait(struct ath_hw *ah, u32 reg, u32 mask, u32 val, u32 timeout)
 	}
 
 	DPRINTF(ah->ah_sc, ATH_DBG_REG_IO,
-		"timeout (%d us) on reg 0x%x: 0x%08x & 0x%08x != 0x%08x\n",
-		timeout, reg, REG_READ(ah, reg), mask, val);
+		"timeout on reg 0x%x: 0x%08x & 0x%08x != 0x%08x\n",
+		reg, REG_READ(ah, reg), mask, val);
 
 	return false;
 }
@@ -1538,7 +1536,7 @@ static bool ath9k_hw_set_reset(struct ath_hw *ah, int type)
 	udelay(50);
 
 	REG_WRITE(ah, AR_RTC_RC, 0);
-	if (!ath9k_hw_wait(ah, AR_RTC_RC, AR_RTC_RC_M, 0, AH_WAIT_TIMEOUT)) {
+	if (!ath9k_hw_wait(ah, AR_RTC_RC, AR_RTC_RC_M, 0)) {
 		DPRINTF(ah->ah_sc, ATH_DBG_RESET,
 			"RTC stuck in MAC reset\n");
 		return false;
@@ -1567,8 +1565,7 @@ static bool ath9k_hw_set_reset_power_on(struct ath_hw *ah)
 	if (!ath9k_hw_wait(ah,
 			   AR_RTC_STATUS,
 			   AR_RTC_STATUS_M,
-			   AR_RTC_STATUS_ON,
-			   AH_WAIT_TIMEOUT)) {
+			   AR_RTC_STATUS_ON)) {
 		DPRINTF(ah->ah_sc, ATH_DBG_RESET, "RTC not waking up\n");
 		return false;
 	}
@@ -1663,7 +1660,7 @@ static bool ath9k_hw_channel_change(struct ath_hw *ah,
 
 	REG_WRITE(ah, AR_PHY_RFBUS_REQ, AR_PHY_RFBUS_REQ_EN);
 	if (!ath9k_hw_wait(ah, AR_PHY_RFBUS_GRANT, AR_PHY_RFBUS_GRANT_EN,
-			   AR_PHY_RFBUS_GRANT_EN, AH_WAIT_TIMEOUT)) {
+			   AR_PHY_RFBUS_GRANT_EN)) {
 		DPRINTF(ah->ah_sc, ATH_DBG_REG_IO,
 			"Could not kill baseband RX\n");
 		return false;
