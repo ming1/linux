@@ -178,7 +178,12 @@ static const struct ethtool_ops orinoco_ethtool_ops;
 /* Data tables                                                      */
 /********************************************************************/
 
-#define NUM_CHANNELS 14
+/* The frequency of each channel in MHz */
+static const long channel_frequency[] = {
+	2412, 2417, 2422, 2427, 2432, 2437, 2442,
+	2447, 2452, 2457, 2462, 2467, 2472, 2484
+};
+#define NUM_CHANNELS ARRAY_SIZE(channel_frequency)
 
 /* This tables gives the actual meanings of the bitrate IDs returned
  * by the firmware. */
@@ -3748,13 +3753,13 @@ static int orinoco_hw_get_essid(struct orinoco_private *priv, int *active,
 	return err;       
 }
 
-static int orinoco_hw_get_freq(struct orinoco_private *priv)
+static long orinoco_hw_get_freq(struct orinoco_private *priv)
 {
 	
 	hermes_t *hw = &priv->hw;
 	int err = 0;
 	u16 channel;
-	int freq = 0;
+	long freq = 0;
 	unsigned long flags;
 
 	if (orinoco_lock(priv, &flags) != 0)
@@ -3777,7 +3782,7 @@ static int orinoco_hw_get_freq(struct orinoco_private *priv)
 		goto out;
 
 	}
-	freq = ieee80211_dsss_chan_to_freq(channel);
+	freq = channel_frequency[channel-1] * 100000;
 
  out:
 	orinoco_unlock(priv, &flags);
@@ -4004,8 +4009,7 @@ static int orinoco_ioctl_getiwrange(struct net_device *dev,
 	for (i = 0; i < NUM_CHANNELS; i++) {
 		if (priv->channel_mask & (1 << i)) {
 			range->freq[k].i = i + 1;
-			range->freq[k].m = (ieee80211_dsss_chan_to_freq(i + 1) *
-					    100000);
+			range->freq[k].m = channel_frequency[i] * 100000;
 			range->freq[k].e = 1;
 			k++;
 		}
@@ -4353,15 +4357,16 @@ static int orinoco_ioctl_setfreq(struct net_device *dev,
 		/* Setting by channel number */
 		chan = frq->m;
 	} else {
-		/* Setting by frequency */
-		int denom = 1;
+		/* Setting by frequency - search the table */
+		int mult = 1;
 		int i;
 
-		/* Calculate denominator to rescale to MHz */
 		for (i = 0; i < (6 - frq->e); i++)
-			denom *= 10;
+			mult *= 10;
 
-		chan = ieee80211_freq_to_dsss_chan(frq->m / denom);
+		for (i = 0; i < NUM_CHANNELS; i++)
+			if (frq->m == (channel_frequency[i] * mult))
+				chan = i+1;
 	}
 
 	if ( (chan < 1) || (chan > NUM_CHANNELS) ||
@@ -4398,7 +4403,7 @@ static int orinoco_ioctl_getfreq(struct net_device *dev,
 		return tmp;
 	}
 
-	frq->m = tmp * 100000;
+	frq->m = tmp;
 	frq->e = 1;
 
 	return 0;
@@ -5615,7 +5620,7 @@ static inline char *orinoco_translate_scan(struct net_device *dev,
 		current_ev = iwe_stream_add_event(info, current_ev, end_buf,
 						  &iwe, IW_EV_FREQ_LEN);
 
-		iwe.u.freq.m = ieee80211_dsss_chan_to_freq(channel) * 100000;
+		iwe.u.freq.m = channel_frequency[channel-1] * 100000;
 		iwe.u.freq.e = 1;
 		current_ev = iwe_stream_add_event(info, current_ev, end_buf,
 						  &iwe, IW_EV_FREQ_LEN);
@@ -5766,7 +5771,7 @@ static inline char *orinoco_translate_ext_scan(struct net_device *dev,
 		current_ev = iwe_stream_add_event(info, current_ev, end_buf,
 						  &iwe, IW_EV_FREQ_LEN);
 
-		iwe.u.freq.m = ieee80211_dsss_chan_to_freq(channel) * 100000;
+		iwe.u.freq.m = channel_frequency[channel-1] * 100000;
 		iwe.u.freq.e = 1;
 		current_ev = iwe_stream_add_event(info, current_ev, end_buf,
 						  &iwe, IW_EV_FREQ_LEN);
