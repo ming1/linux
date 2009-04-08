@@ -90,8 +90,6 @@ struct cfg80211_internal_bss {
 	struct rb_node rbn;
 	unsigned long ts;
 	struct kref ref;
-	bool hold;
-
 	/* must be last because of priv member */
 	struct cfg80211_bss pub;
 };
