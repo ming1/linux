@@ -406,7 +406,7 @@ static void iwlcore_init_hw_rates(struct iwl_priv *priv,
 /**
  * iwlcore_init_geos - Initialize mac80211's geo/channel info based from eeprom
  */
-int iwlcore_init_geos(struct iwl_priv *priv)
+static int iwlcore_init_geos(struct iwl_priv *priv)
 {
 	struct iwl_channel_info *ch;
 	struct ieee80211_supported_band *sband;
@@ -457,6 +457,8 @@ int iwlcore_init_geos(struct iwl_priv *priv)
 
 	priv->ieee_channels = channels;
 	priv->ieee_rates = rates;
+
+	iwlcore_init_hw_rates(priv, rates);
 
 	for (i = 0;  i < priv->channel_count; i++) {
 		ch = &priv->channel_info[i];
@@ -524,18 +526,16 @@ int iwlcore_init_geos(struct iwl_priv *priv)
 
 	return 0;
 }
-EXPORT_SYMBOL(iwlcore_init_geos);
 
 /*
  * iwlcore_free_geos - undo allocations in iwlcore_init_geos
  */
-void iwlcore_free_geos(struct iwl_priv *priv)
+static void iwlcore_free_geos(struct iwl_priv *priv)
 {
 	kfree(priv->ieee_channels);
 	kfree(priv->ieee_rates);
 	clear_bit(STATUS_GEO_CONFIGURED, &priv->status);
 }
-EXPORT_SYMBOL(iwlcore_free_geos);
 
 static bool is_single_rx_stream(struct iwl_priv *priv)
 {
@@ -936,7 +936,6 @@ int iwl_init_drv(struct iwl_priv *priv)
 		IWL_ERR(priv, "initializing geos failed: %d\n", ret);
 		goto err_free_channel_map;
 	}
-	iwlcore_init_hw_rates(priv, priv->ieee_rates);
 
 	return 0;
 
