@@ -660,7 +660,6 @@ static void ieee80211_teardown_sdata(struct net_device *dev)
 		kfree(sdata->u.mgd.ie_reassocreq);
 		kfree(sdata->u.mgd.ie_deauth);
 		kfree(sdata->u.mgd.ie_disassoc);
-		kfree(sdata->u.mgd.sme_auth_ie);
 		break;
 	case NL80211_IFTYPE_WDS:
 	case NL80211_IFTYPE_AP_VLAN:
