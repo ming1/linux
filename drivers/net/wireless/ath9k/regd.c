@@ -158,6 +158,8 @@ const struct ieee80211_regdomain *ath9k_world_regdomain(struct ath_hal *ah)
 static void ath9k_reg_apply_5ghz_adhoc_flags(struct wiphy *wiphy,
 					     enum reg_set_by setby)
 {
+	struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(wiphy);
+	struct ath_softc *sc = hw->priv;
 	struct ieee80211_supported_band *sband;
 	const struct ieee80211_reg_rule *reg_rule;
 	struct ieee80211_channel *ch;
@@ -167,7 +169,8 @@ static void ath9k_reg_apply_5ghz_adhoc_flags(struct wiphy *wiphy,
 
 	if (setby != REGDOM_SET_BY_COUNTRY_IE)
 		return;
-	if (!wiphy->bands[IEEE80211_BAND_5GHZ])
+	if (!test_bit(ATH9K_MODE_11A,
+	    sc->sc_ah->ah_caps.wireless_modes))
 		return;
 
 	sband = wiphy->bands[IEEE80211_BAND_5GHZ];
