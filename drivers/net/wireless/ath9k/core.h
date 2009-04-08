@@ -18,7 +18,7 @@
 #define CORE_H
 
 #include <linux/etherdevice.h>
-#include <linux/device.h>
+#include <linux/pci.h>
 #include <net/mac80211.h>
 #include <linux/leds.h>
 #include <linux/rfkill.h>
@@ -767,23 +767,6 @@ static inline void ath_bus_cleanup(struct ath_softc *sc)
 {
 	sc->bus_ops->cleanup(sc);
 }
-
-extern struct ieee80211_ops ath9k_ops;
-
-irqreturn_t ath_isr(int irq, void *dev);
-void ath_cleanup(struct ath_softc *sc);
-int ath_attach(u16 devid, struct ath_softc *sc);
-void ath_detach(struct ath_softc *sc);
-const char *ath_mac_bb_name(u32 mac_bb_version);
-const char *ath_rf_name(u16 rf_version);
-
-#ifdef CONFIG_PCI
-int ath_pci_init(void);
-void ath_pci_exit(void);
-#else
-static inline int ath_pci_init(void) { return 0; };
-static inline void ath_pci_exit(void) {};
-#endif
 
 /*
  * Read and write, they both share the same lock. We do this to serialize
