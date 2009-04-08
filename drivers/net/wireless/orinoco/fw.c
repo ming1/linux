@@ -70,19 +70,6 @@ static const char *validate_fw(const struct orinoco_fw_header *hdr, size_t len)
 	return NULL;
 }
 
-#if defined(CONFIG_HERMES_CACHE_FW_ON_INIT) || defined(CONFIG_PM_SLEEP)
-static inline const struct firmware *
-orinoco_cached_fw_get(struct orinoco_private *priv, bool primary)
-{
-	if (primary)
-		return priv->cached_pri_fw;
-	else
-		return priv->cached_fw;
-}
-#else
-#define orinoco_cached_fw_get(priv, primary) (NULL)
-#endif
-
 /* Download either STA or AP firmware into the card. */
 static int
 orinoco_dl_firmware(struct orinoco_private *priv,
@@ -120,7 +107,7 @@ orinoco_dl_firmware(struct orinoco_private *priv,
 	if (err)
 		goto free;
 
-	if (!orinoco_cached_fw_get(priv, false)) {
+	if (!priv->cached_fw) {
 		err = request_firmware(&fw_entry, firmware, priv->dev);
 
 		if (err) {
@@ -130,7 +117,7 @@ orinoco_dl_firmware(struct orinoco_private *priv,
 			goto free;
 		}
 	} else
-		fw_entry = orinoco_cached_fw_get(priv, false);
+		fw_entry = priv->cached_fw;
 
 	hdr = (const struct orinoco_fw_header *) fw_entry->data;
 
@@ -183,7 +170,7 @@ orinoco_dl_firmware(struct orinoco_private *priv,
 
 abort:
 	/* If we requested the firmware, release it. */
-	if (!orinoco_cached_fw_get(priv, false))
+	if (!priv->cached_fw)
 		release_firmware(fw_entry);
 
 free:
@@ -286,20 +273,20 @@ symbol_dl_firmware(struct orinoco_private *priv,
 	int ret;
 	const struct firmware *fw_entry;
 
-	if (!orinoco_cached_fw_get(priv, true)) {
+	if (!priv->cached_pri_fw) {
 		if (request_firmware(&fw_entry, fw->pri_fw, priv->dev) != 0) {
 			printk(KERN_ERR "%s: Cannot find firmware: %s\n",
 			       dev->name, fw->pri_fw);
 			return -ENOENT;
 		}
 	} else
-		fw_entry = orinoco_cached_fw_get(priv, true);
+		fw_entry = priv->cached_pri_fw;
 
 	/* Load primary firmware */
 	ret = symbol_dl_image(priv, fw, fw_entry->data,
 			      fw_entry->data + fw_entry->size, 0);
 
-	if (!orinoco_cached_fw_get(priv, true))
+	if (!priv->cached_pri_fw)
 		release_firmware(fw_entry);
 	if (ret) {
 		printk(KERN_ERR "%s: Primary firmware download failed\n",
@@ -307,19 +294,19 @@ symbol_dl_firmware(struct orinoco_private *priv,
 		return ret;
 	}
 
-	if (!orinoco_cached_fw_get(priv, false)) {
+	if (!priv->cached_fw) {
 		if (request_firmware(&fw_entry, fw->sta_fw, priv->dev) != 0) {
 			printk(KERN_ERR "%s: Cannot find firmware: %s\n",
 			       dev->name, fw->sta_fw);
 			return -ENOENT;
 		}
 	} else
-		fw_entry = orinoco_cached_fw_get(priv, false);
+		fw_entry = priv->cached_fw;
 
 	/* Load secondary firmware */
 	ret = symbol_dl_image(priv, fw, fw_entry->data,
 			      fw_entry->data + fw_entry->size, 1);
-	if (!orinoco_cached_fw_get(priv, false))
+	if (!priv->cached_fw)
 		release_firmware(fw_entry);
 	if (ret) {
 		printk(KERN_ERR "%s: Secondary firmware download failed\n",
@@ -353,9 +340,9 @@ int orinoco_download(struct orinoco_private *priv)
 	return err;
 }
 
-#if defined(CONFIG_HERMES_CACHE_FW_ON_INIT) || defined(CONFIG_PM_SLEEP)
 void orinoco_cache_fw(struct orinoco_private *priv, int ap)
 {
+#if defined(CONFIG_HERMES_CACHE_FW_ON_INIT) || defined(CONFIG_PM_SLEEP)
 	const struct firmware *fw_entry = NULL;
 	const char *pri_fw;
 	const char *fw;
@@ -375,10 +362,12 @@ void orinoco_cache_fw(struct orinoco_private *priv, int ap)
 		if (request_firmware(&fw_entry, fw, priv->dev) == 0)
 			priv->cached_fw = fw_entry;
 	}
+#endif
 }
 
 void orinoco_uncache_fw(struct orinoco_private *priv)
 {
+#if defined(CONFIG_HERMES_CACHE_FW_ON_INIT) || defined(CONFIG_PM_SLEEP)
 	if (priv->cached_pri_fw)
 		release_firmware(priv->cached_pri_fw);
 	if (priv->cached_fw)
@@ -386,5 +375,5 @@ void orinoco_uncache_fw(struct orinoco_private *priv)
 
 	priv->cached_pri_fw = NULL;
 	priv->cached_fw = NULL;
-}
 #endif
+}
