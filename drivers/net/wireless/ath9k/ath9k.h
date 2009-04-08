@@ -628,7 +628,6 @@ struct ath_wiphy {
 	struct ath_softc *sc; /* shared for all virtual wiphys */
 	struct ieee80211_hw *hw;
 	enum ath_wiphy_state {
-		ATH_WIPHY_INACTIVE,
 		ATH_WIPHY_ACTIVE,
 		ATH_WIPHY_PAUSING,
 		ATH_WIPHY_PAUSED,
@@ -709,7 +708,6 @@ int ath9k_wiphy_pause(struct ath_wiphy *aphy);
 int ath9k_wiphy_unpause(struct ath_wiphy *aphy);
 int ath9k_wiphy_select(struct ath_wiphy *aphy);
 void ath9k_wiphy_chan_work(struct work_struct *work);
-bool ath9k_wiphy_started(struct ath_softc *sc);
 
 /*
  * Read and write, they both share the same lock. We do this to serialize
