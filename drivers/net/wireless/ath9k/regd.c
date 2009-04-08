@@ -341,6 +341,7 @@ int ath9k_reg_notifier(struct wiphy *wiphy, struct regulatory_request *request)
 
 	switch (request->initiator) {
 	case REGDOM_SET_BY_DRIVER:
+	case REGDOM_SET_BY_INIT:
 	case REGDOM_SET_BY_CORE:
 	case REGDOM_SET_BY_USER:
 		break;
