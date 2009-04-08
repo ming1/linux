@@ -1616,7 +1616,7 @@ static void ieee80211_process_probe_response(struct ieee80211_device
 			break;
 
 		if ((oldest == NULL) ||
-		    time_before(target->last_scanned, oldest->last_scanned))
+		    (target->last_scanned < oldest->last_scanned))
 			oldest = target;
 	}
 
