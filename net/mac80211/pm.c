@@ -10,7 +10,6 @@ int __ieee80211_suspend(struct ieee80211_hw *hw)
 	struct ieee80211_sub_if_data *sdata;
 	struct ieee80211_if_init_conf conf;
 	struct sta_info *sta;
-	unsigned long flags;
 
 	ieee80211_stop_queues_by_reason(hw,
 			IEEE80211_QUEUE_STOP_REASON_SUSPEND);
@@ -22,9 +21,9 @@ int __ieee80211_suspend(struct ieee80211_hw *hw)
 		ieee80211_disable_keys(sdata);
 
 	/* remove STAs */
-	if (local->ops->sta_notify) {
-		spin_lock_irqsave(&local->sta_lock, flags);
-		list_for_each_entry(sta, &local->sta_list, list) {
+	list_for_each_entry(sta, &local->sta_list, list) {
+
+		if (local->ops->sta_notify) {
 			if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN)
 				sdata = container_of(sdata->bss,
 					     struct ieee80211_sub_if_data,
@@ -33,11 +32,11 @@ int __ieee80211_suspend(struct ieee80211_hw *hw)
 			local->ops->sta_notify(hw, &sdata->vif,
 				STA_NOTIFY_REMOVE, &sta->sta);
 		}
-		spin_unlock_irqrestore(&local->sta_lock, flags);
 	}
 
 	/* remove all interfaces */
 	list_for_each_entry(sdata, &local->interfaces, list) {
+
 		if (sdata->vif.type != NL80211_IFTYPE_AP_VLAN &&
 		    sdata->vif.type != NL80211_IFTYPE_MONITOR &&
 		    netif_running(sdata->dev)) {
@@ -65,7 +64,6 @@ int __ieee80211_resume(struct ieee80211_hw *hw)
 	struct ieee80211_sub_if_data *sdata;
 	struct ieee80211_if_init_conf conf;
 	struct sta_info *sta;
-	unsigned long flags;
 	int res;
 
 	/* restart hardware */
@@ -77,6 +75,7 @@ int __ieee80211_resume(struct ieee80211_hw *hw)
 
 	/* add interfaces */
 	list_for_each_entry(sdata, &local->interfaces, list) {
+
 		if (sdata->vif.type != NL80211_IFTYPE_AP_VLAN &&
 		    sdata->vif.type != NL80211_IFTYPE_MONITOR &&
 		    netif_running(sdata->dev)) {
@@ -88,9 +87,9 @@ int __ieee80211_resume(struct ieee80211_hw *hw)
 	}
 
 	/* add STAs back */
-	if (local->ops->sta_notify) {
-		spin_lock_irqsave(&local->sta_lock, flags);
-		list_for_each_entry(sta, &local->sta_list, list) {
+	list_for_each_entry(sta, &local->sta_list, list) {
+
+		if (local->ops->sta_notify) {
 			if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN)
 				sdata = container_of(sdata->bss,
 					     struct ieee80211_sub_if_data,
@@ -99,7 +98,6 @@ int __ieee80211_resume(struct ieee80211_hw *hw)
 			local->ops->sta_notify(hw, &sdata->vif,
 				STA_NOTIFY_ADD, &sta->sta);
 		}
-		spin_unlock_irqrestore(&local->sta_lock, flags);
 	}
 
 	/* add back keys */
