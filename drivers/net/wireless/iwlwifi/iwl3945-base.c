@@ -5468,7 +5468,10 @@ static void __iwl3945_down(struct iwl_priv *priv)
 
 	udelay(5);
 
-	priv->cfg->ops->lib->apm_ops.reset(priv);
+	iwl3945_hw_nic_stop_master(priv);
+	iwl_set_bit(priv, CSR_RESET, CSR_RESET_REG_FLAG_SW_RESET);
+	iwl3945_hw_nic_reset(priv);
+
  exit:
 	memset(&priv->card_alive, 0, sizeof(struct iwl_alive_resp));
 
@@ -7538,7 +7541,7 @@ static int iwl3945_pci_probe(struct pci_dev *pdev, const struct pci_device_id *e
 	err = iwl_poll_direct_bit(priv, CSR_GP_CNTRL,
 				CSR_GP_CNTRL_REG_FLAG_MAC_CLOCK_READY, 25000);
 	if (err < 0) {
-		IWL_DEBUG_INFO("Failed to init the APMG\n");
+		IWL_DEBUG_INFO("Failed to init the card\n");
 		goto out_iounmap;
 	}
 
