@@ -2130,7 +2130,7 @@ static void p54_bss_info_changed(struct ieee80211_hw *dev,
 }
 
 static int p54_set_key(struct ieee80211_hw *dev, enum set_key_cmd cmd,
-		       struct ieee80211_vif *vif, struct ieee80211_sta *sta,
+		       const u8 *local_address, const u8 *address,
 		       struct ieee80211_key_conf *key)
 {
 	struct p54_common *priv = dev->priv;
@@ -2194,8 +2194,8 @@ static int p54_set_key(struct ieee80211_hw *dev, enum set_key_cmd cmd,
 	rxkey->entry = key->keyidx;
 	rxkey->key_id = key->keyidx;
 	rxkey->key_type = algo;
-	if (sta)
-		memcpy(rxkey->mac, sta->addr, ETH_ALEN);
+	if (address)
+		memcpy(rxkey->mac, address, ETH_ALEN);
 	else
 		memset(rxkey->mac, ~0, ETH_ALEN);
 	if (key->alg != ALG_TKIP) {
