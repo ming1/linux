@@ -3093,6 +3093,11 @@ static ssize_t store_power_level(struct device *d,
 
 	mutex_lock(&priv->mutex);
 
+	if (!iwl_is_ready(priv)) {
+		ret = -EAGAIN;
+		goto out;
+	}
+
 	ret = strict_strtoul(buf, 10, &mode);
 	if (ret)
 		goto out;
