@@ -100,8 +100,6 @@ struct rtl8187_priv {
 	struct usb_device *udev;
 	u32 rx_conf;
 	struct usb_anchor anchored;
-	struct delayed_work work;
-	struct ieee80211_hw *dev;
 	u16 txpwr_base;
 	u8 asic_rev;
 	u8 is_rtl8187b;
@@ -119,7 +117,7 @@ struct rtl8187_priv {
 	struct {
 		__le64 buf;
 		struct sk_buff_head queue;
-	} b_tx_status; /* This queue is used by both -b and non-b devices */
+	} b_tx_status;
 };
 
 void rtl8187_write_phy(struct ieee80211_hw *dev, u8 addr, u32 data);
