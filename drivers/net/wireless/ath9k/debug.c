@@ -19,8 +19,6 @@
 static unsigned int ath9k_debug = DBG_DEFAULT;
 module_param_named(debug, ath9k_debug, uint, 0);
 
-static struct dentry *ath9k_debugfs_root;
-
 void DPRINTF(struct ath_softc *sc, int dbg_mask, const char *fmt, ...)
 {
 	if (!sc)
@@ -493,8 +491,12 @@ int ath9k_init_debug(struct ath_softc *sc)
 {
 	sc->debug.debug_mask = ath9k_debug;
 
+	sc->debug.debugfs_root = debugfs_create_dir(KBUILD_MODNAME, NULL);
+	if (!sc->debug.debugfs_root)
+		goto err;
+
 	sc->debug.debugfs_phy = debugfs_create_dir(wiphy_name(sc->hw->wiphy),
-						      ath9k_debugfs_root);
+						      sc->debug.debugfs_root);
 	if (!sc->debug.debugfs_phy)
 		goto err;
 
@@ -536,19 +538,5 @@ void ath9k_exit_debug(struct ath_softc *sc)
 	debugfs_remove(sc->debug.debugfs_interrupt);
 	debugfs_remove(sc->debug.debugfs_dma);
 	debugfs_remove(sc->debug.debugfs_phy);
-}
-
-int ath9k_debug_create_root(void)
-{
-	ath9k_debugfs_root = debugfs_create_dir(KBUILD_MODNAME, NULL);
-	if (!ath9k_debugfs_root)
-		return -ENOENT;
-
-	return 0;
-}
-
-void ath9k_debug_remove_root(void)
-{
-	debugfs_remove(ath9k_debugfs_root);
-	ath9k_debugfs_root = NULL;
+	debugfs_remove(sc->debug.debugfs_root);
 }
