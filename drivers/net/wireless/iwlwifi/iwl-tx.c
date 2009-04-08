@@ -174,7 +174,7 @@ EXPORT_SYMBOL(iwl_tx_queue_free);
  * Free all buffers.
  * 0-fill, but do not free "txq" descriptor structure.
  */
-void iwl_cmd_queue_free(struct iwl_priv *priv)
+static void iwl_cmd_queue_free(struct iwl_priv *priv)
 {
 	struct iwl_tx_queue *txq = &priv->txq[IWL_CMD_QUEUE_NUM];
 	struct iwl_queue *q = &txq->q;
@@ -193,14 +193,12 @@ void iwl_cmd_queue_free(struct iwl_priv *priv)
 
 	/* De-alloc circular buffer of TFDs */
 	if (txq->q.n_bd)
-		pci_free_consistent(dev, priv->hw_params.tfd_size *
+		pci_free_consistent(dev, sizeof(struct iwl_tfd) *
 				    txq->q.n_bd, txq->tfds, txq->q.dma_addr);
 
 	/* 0-fill queue descriptor structure */
 	memset(txq, 0, sizeof(*txq));
 }
-EXPORT_SYMBOL(iwl_cmd_queue_free);
-
 /*************** DMA-QUEUE-GENERAL-FUNCTIONS  *****
  * DMA services
  *
