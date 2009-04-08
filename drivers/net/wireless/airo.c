@@ -496,41 +496,39 @@ typedef struct {
  * so all rid access should use the read/writeXXXRid routines.
  */
 
+/* This is redundant for x86 archs, but it seems necessary for ARM */
+#pragma pack(1)
+
 /* This structure came from an email sent to me from an engineer at
    aironet for inclusion into this driver */
-typedef struct WepKeyRid WepKeyRid;
-struct WepKeyRid {
+typedef struct {
 	__le16 len;
 	__le16 kindex;
 	u8 mac[ETH_ALEN];
 	__le16 klen;
 	u8 key[16];
-} __attribute__ ((packed));
+} WepKeyRid;
 
 /* These structures are from the Aironet's PC4500 Developers Manual */
-typedef struct Ssid Ssid;
-struct Ssid {
+typedef struct {
 	__le16 len;
 	u8 ssid[32];
-} __attribute__ ((packed));
+} Ssid;
 
-typedef struct SsidRid SsidRid;
-struct SsidRid {
+typedef struct {
 	__le16 len;
 	Ssid ssids[3];
-} __attribute__ ((packed));
+} SsidRid;
 
-typedef struct ModulationRid ModulationRid;
-struct ModulationRid {
+typedef struct {
         __le16 len;
         __le16 modulation;
 #define MOD_DEFAULT cpu_to_le16(0)
 #define MOD_CCK cpu_to_le16(1)
 #define MOD_MOK cpu_to_le16(2)
-} __attribute__ ((packed));
+} ModulationRid;
 
-typedef struct ConfigRid ConfigRid;
-struct ConfigRid {
+typedef struct {
 	__le16 len; /* sizeof(ConfigRid) */
 	__le16 opmode; /* operating mode */
 #define MODE_STA_IBSS cpu_to_le16(0)
@@ -651,10 +649,9 @@ struct ConfigRid {
 #define MAGIC_STAY_IN_CAM (1<<10)
 	u8 magicControl;
 	__le16 autoWake;
-} __attribute__ ((packed));
+} ConfigRid;
 
-typedef struct StatusRid StatusRid;
-struct StatusRid {
+typedef struct {
 	__le16 len;
 	u8 mac[ETH_ALEN];
 	__le16 mode;
@@ -710,23 +707,21 @@ struct StatusRid {
 #define STAT_LEAPFAILED 91
 #define STAT_LEAPTIMEDOUT 92
 #define STAT_LEAPCOMPLETE 93
-} __attribute__ ((packed));
+} StatusRid;
 
-typedef struct StatsRid StatsRid;
-struct StatsRid {
+typedef struct {
 	__le16 len;
 	__le16 spacer;
 	__le32 vals[100];
-} __attribute__ ((packed));
+} StatsRid;
 
-typedef struct APListRid APListRid;
-struct APListRid {
+
+typedef struct {
 	__le16 len;
 	u8 ap[4][ETH_ALEN];
-} __attribute__ ((packed));
+} APListRid;
 
-typedef struct CapabilityRid CapabilityRid;
-struct CapabilityRid {
+typedef struct {
 	__le16 len;
 	char oui[3];
 	char zero;
@@ -753,18 +748,17 @@ struct CapabilityRid {
 	__le16 bootBlockVer;
 	__le16 requiredHard;
 	__le16 extSoftCap;
-} __attribute__ ((packed));
+} CapabilityRid;
+
 
 /* Only present on firmware >= 5.30.17 */
-typedef struct BSSListRidExtra BSSListRidExtra;
-struct BSSListRidExtra {
+typedef struct {
   __le16 unknown[4];
   u8 fixed[12]; /* WLAN management frame */
   u8 iep[624];
-} __attribute__ ((packed));
+} BSSListRidExtra;
 
-typedef struct BSSListRid BSSListRid;
-struct BSSListRid {
+typedef struct {
   __le16 len;
   __le16 index; /* First is 0 and 0xffff means end of list */
 #define RADIO_FH 1 /* Frequency hopping radio type */
@@ -795,37 +789,33 @@ struct BSSListRid {
 
   /* Only present on firmware >= 5.30.17 */
   BSSListRidExtra extra;
-} __attribute__ ((packed));
+} BSSListRid;
 
 typedef struct {
   BSSListRid bss;
   struct list_head list;
 } BSSListElement;
 
-typedef struct tdsRssiEntry tdsRssiEntry;
-struct tdsRssiEntry {
+typedef struct {
   u8 rssipct;
   u8 rssidBm;
-} __attribute__ ((packed));
+} tdsRssiEntry;
 
-typedef struct tdsRssiRid tdsRssiRid;
-struct tdsRssiRid {
+typedef struct {
   u16 len;
   tdsRssiEntry x[256];
-} __attribute__ ((packed));
+} tdsRssiRid;
 
-typedef struct MICRid MICRid;
-struct MICRid {
-	__le16 len;
-	__le16 state;
-	__le16 multicastValid;
+typedef struct {
+	u16 len;
+	u16 state;
+	u16 multicastValid;
 	u8  multicast[16];
-	__le16 unicastValid;
+	u16 unicastValid;
 	u8  unicast[16];
-} __attribute__ ((packed));
+} MICRid;
 
-typedef struct MICBuffer MICBuffer;
-struct MICBuffer {
+typedef struct {
 	__be16 typelen;
 
 	union {
@@ -840,12 +830,14 @@ struct MICBuffer {
 	} u;
 	__be32 mic;
 	__be32 seq;
-} __attribute__ ((packed));
+} MICBuffer;
 
 typedef struct {
 	u8 da[ETH_ALEN];
 	u8 sa[ETH_ALEN];
 } etherHead;
+
+#pragma pack()
 
 #define TXCTL_TXOK (1<<1) /* report if tx is ok */
 #define TXCTL_TXEX (1<<2) /* report if tx fails */
