@@ -1084,10 +1084,9 @@ static int ieee80211_tx_prepare(struct ieee80211_local *local,
 }
 
 static int __ieee80211_tx(struct ieee80211_local *local,
-			  struct sk_buff **skbp,
-			  struct sta_info *sta)
+			  struct ieee80211_tx_data *tx)
 {
-	struct sk_buff *skb = *skbp, *next;
+	struct sk_buff *skb = tx->skb, *next;
 	struct ieee80211_tx_info *info;
 	int ret;
 	bool fragm = false;
@@ -1112,23 +1111,23 @@ static int __ieee80211_tx(struct ieee80211_local *local,
 		 * We will later move this down into the only driver that
 		 * needs it, iwlwifi.
 		 */
-		if (sta && local->hw.ampdu_queues &&
+		if (tx->sta && local->hw.ampdu_queues &&
 		    info->flags & IEEE80211_TX_CTL_AMPDU) {
 			unsigned long flags;
 			u8 *qc = ieee80211_get_qos_ctl((void *) skb->data);
 			int tid = *qc & IEEE80211_QOS_CTL_TID_MASK;
 
-			spin_lock_irqsave(&sta->lock, flags);
+			spin_lock_irqsave(&tx->sta->lock, flags);
 			skb_set_queue_mapping(skb, local->hw.queues +
-						   sta->tid_to_tx_q[tid]);
-			spin_unlock_irqrestore(&sta->lock, flags);
+						   tx->sta->tid_to_tx_q[tid]);
+			spin_unlock_irqrestore(&tx->sta->lock, flags);
 		}
 
 		next = skb->next;
 		ret = local->ops->tx(local_to_hw(local), skb);
 		if (ret != NETDEV_TX_OK)
 			return IEEE80211_TX_AGAIN;
-		*skbp = skb = next;
+		tx->skb = skb = next;
 		ieee80211_led_tx(local, 1);
 		fragm = true;
 	}
@@ -1224,7 +1223,7 @@ static int ieee80211_tx(struct net_device *dev, struct sk_buff *skb)
 
 	retries = 0;
  retry:
-	ret = __ieee80211_tx(local, &tx.skb, tx.sta);
+	ret = __ieee80211_tx(local, &tx);
 	switch (ret) {
 	case IEEE80211_TX_OK:
 		break;
@@ -1832,6 +1831,7 @@ void ieee80211_tx_pending(unsigned long data)
 	struct net_device *dev = local->mdev;
 	struct ieee80211_hdr *hdr;
 	unsigned long flags;
+	struct ieee80211_tx_data tx;
 	int i, ret;
 	bool next;
 
@@ -1862,15 +1862,14 @@ void ieee80211_tx_pending(unsigned long data)
 		netif_start_subqueue(local->mdev, i);
 
 		while (!skb_queue_empty(&local->pending[i])) {
-			struct sk_buff *skb = skb_dequeue(&local->pending[i]);
-			struct sta_info *sta;
+			tx.flags = 0;
+			tx.skb = skb_dequeue(&local->pending[i]);
+			hdr = (struct ieee80211_hdr *)tx.skb->data;
+			tx.sta = sta_info_get(local, hdr->addr1);
 
-			hdr = (struct ieee80211_hdr *)skb->data;
-			sta = sta_info_get(local, hdr->addr1);
-
-			ret = __ieee80211_tx(local, &skb, sta);
+			ret = __ieee80211_tx(local, &tx);
 			if (ret != IEEE80211_TX_OK) {
-				skb_queue_head(&local->pending[i], skb);
+				skb_queue_head(&local->pending[i], tx.skb);
 				break;
 			}
 		}
