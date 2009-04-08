@@ -1774,7 +1774,6 @@ int ath_descdma_setup(struct ath_softc *sc, struct ath_descdma *dd,
 	DPRINTF(sc, ATH_DBG_CONFIG, "%s DMA: %u buffers %u desc/buf\n",
 		name, nbuf, ndesc);
 
-	INIT_LIST_HEAD(head);
 	/* ath_desc must be a multiple of DWORDs */
 	if ((sizeof(struct ath_desc) % 4) != 0) {
 		DPRINTF(sc, ATH_DBG_FATAL, "ath_desc not DWORD aligned\n");
@@ -1825,6 +1824,7 @@ int ath_descdma_setup(struct ath_softc *sc, struct ath_descdma *dd,
 	}
 	dd->dd_bufptr = bf;
 
+	INIT_LIST_HEAD(head);
 	for (i = 0; i < nbuf; i++, bf++, ds += ndesc) {
 		bf->bf_desc = ds;
 		bf->bf_daddr = DS2PHYS(dd, ds);
