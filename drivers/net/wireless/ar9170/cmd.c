@@ -127,3 +127,4 @@ int ar9170_echo_test(struct ar9170 *ar, u32 v)
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(ar9170_echo_test);
