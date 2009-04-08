@@ -222,6 +222,7 @@ struct txdone_entry_desc {
  *
  * @ENTRY_TXD_RTS_FRAME: This frame is a RTS frame.
  * @ENTRY_TXD_CTS_FRAME: This frame is a CTS-to-self frame.
+ * @ENTRY_TXD_OFDM_RATE: This frame is send out with an OFDM rate.
  * @ENTRY_TXD_GENERATE_SEQ: This frame requires sequence counter.
  * @ENTRY_TXD_FIRST_FRAGMENT: This is the first frame.
  * @ENTRY_TXD_MORE_FRAG: This frame is followed by another fragment.
@@ -237,6 +238,7 @@ struct txdone_entry_desc {
 enum txentry_desc_flags {
 	ENTRY_TXD_RTS_FRAME,
 	ENTRY_TXD_CTS_FRAME,
+	ENTRY_TXD_OFDM_RATE,
 	ENTRY_TXD_GENERATE_SEQ,
 	ENTRY_TXD_FIRST_FRAGMENT,
 	ENTRY_TXD_MORE_FRAG,
@@ -261,7 +263,6 @@ enum txentry_desc_flags {
  * @length_low: PLCP length low word.
  * @signal: PLCP signal.
  * @service: PLCP service.
- * @rate_mode: Rate mode (See @enum rate_modulation).
  * @retry_limit: Max number of retries.
  * @aifs: AIFS value.
  * @ifs: IFS value.
@@ -280,8 +281,6 @@ struct txentry_desc {
 	u16 length_low;
 	u16 signal;
 	u16 service;
-
-	u16 rate_mode;
 
 	short retry_limit;
 	short aifs;
