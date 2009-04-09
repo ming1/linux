@@ -50,8 +50,7 @@ static struct workqueue_struct *khelper_wq;
 char modprobe_path[KMOD_PATH_LEN] = "/sbin/modprobe";
 
 /**
- * __request_module - try to load a kernel module
- * @wait: wait (or not) for the operation to complete
+ * request_module - try to load a kernel module
  * @fmt: printf style format string for the name of the module
  * @...: arguments as specified in the format string
  *
@@ -64,7 +63,7 @@ char modprobe_path[KMOD_PATH_LEN] = "/sbin/modprobe";
  * If module auto-loading support is disabled then this function
  * becomes a no-operation.
  */
-int __request_module(bool wait, const char *fmt, ...)
+int request_module(const char *fmt, ...)
 {
 	va_list args;
 	char module_name[MODULE_NAME_LEN];
@@ -109,12 +108,11 @@ int __request_module(bool wait, const char *fmt, ...)
 		return -ENOMEM;
 	}
 
-	ret = call_usermodehelper(modprobe_path, argv, envp,
-			wait ? UMH_WAIT_PROC : UMH_WAIT_EXEC);
+	ret = call_usermodehelper(modprobe_path, argv, envp, 1);
 	atomic_dec(&kmod_concurrent);
 	return ret;
 }
-EXPORT_SYMBOL(__request_module);
+EXPORT_SYMBOL(request_module);
 #endif /* CONFIG_MODULES */
 
 struct subprocess_info {
