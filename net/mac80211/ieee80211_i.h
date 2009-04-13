@@ -53,8 +53,7 @@ struct ieee80211_local;
 
 /* cfg80211 only supports 32 rates */
 #define MAC80211_PREQ_IE_LEN	( 2 + 32 /* SSID */\
-				+ 4 + 32 /* (ext) supp rates */\
-				+ sizeof(struct ieee80211_ht_cap))
+				+ 4 + 32 /* (ext) supp rates */)
 
 /*
  * Time after which we ignore scan results and no longer report/use
