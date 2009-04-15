@@ -48,11 +48,8 @@ static char *lbs_fw_name = NULL;
 module_param_named(fw_name, lbs_fw_name, charp, 0644);
 
 static const struct sdio_device_id if_sdio_ids[] = {
-	{ SDIO_DEVICE(SDIO_VENDOR_ID_MARVELL,
-			SDIO_DEVICE_ID_MARVELL_LIBERTAS) },
-	{ SDIO_DEVICE(SDIO_VENDOR_ID_MARVELL,
-			SDIO_DEVICE_ID_MARVELL_8688WLAN) },
-	{ /* end: all zeroes */				},
+	{ SDIO_DEVICE(SDIO_VENDOR_ID_MARVELL, SDIO_DEVICE_ID_MARVELL_LIBERTAS) },
+	{ /* end: all zeroes */						},
 };
 
 MODULE_DEVICE_TABLE(sdio, if_sdio_ids);
@@ -75,12 +72,6 @@ static struct if_sdio_model if_sdio_models[] = {
 		.model = 0x0B,
 		.helper = "sd8686_helper.bin",
 		.firmware = "sd8686.bin",
-	},
-	{
-		/* 8688 */
-		.model = 0x10,
-		.helper = "sd8688_helper.bin",
-		.firmware = "sd8688.bin",
 	},
 };
 
@@ -497,7 +488,7 @@ static int if_sdio_prog_helper(struct if_sdio_card *card)
 	ret = 0;
 
 release:
-	sdio_set_block_size(card->func, IF_SDIO_BLOCK_SIZE);
+	sdio_set_block_size(card->func, 0);
 	sdio_release_host(card->func);
 	kfree(chunk_buffer);
 release_fw:
@@ -633,7 +624,7 @@ static int if_sdio_prog_real(struct if_sdio_card *card)
 	ret = 0;
 
 release:
-	sdio_set_block_size(card->func, IF_SDIO_BLOCK_SIZE);
+	sdio_set_block_size(card->func, 0);
 	sdio_release_host(card->func);
 	kfree(chunk_buffer);
 release_fw:
