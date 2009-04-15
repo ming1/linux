@@ -732,13 +732,17 @@ struct ieee80211_hw *ieee80211_alloc_hw(size_t priv_data_len,
 	if (!ops->hw_scan) {
 		/* For hw_scan, driver needs to set these up. */
 		wiphy->max_scan_ssids = 4;
-
-		/* we support a maximum of 32 rates in cfg80211 */
-		wiphy->max_scan_ie_len = IEEE80211_MAX_DATA_LEN
-					 - 2 - 32 /* SSID */
-					 - 4 - 32 /* (ext) supp rates */;
-
+		wiphy->max_scan_ie_len = IEEE80211_MAX_DATA_LEN;
 	}
+	/*
+	 * If the driver supports any scan IEs, then assume the
+	 * limit includes the IEs mac80211 will add, otherwise
+	 * leave it at zero and let the driver sort it out; we
+	 * still pass our IEs to the driver but userspace will
+	 * not be allowed to in that case.
+	 */
+	if (wiphy->max_scan_ie_len)
+		wiphy->max_scan_ie_len -= MAC80211_PREQ_IE_LEN;
 
 	/* Yes, putting cfg80211_bss into ieee80211_bss is a hack */
 	wiphy->bss_priv_size = sizeof(struct ieee80211_bss) -
