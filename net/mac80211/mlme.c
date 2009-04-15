@@ -1032,13 +1032,9 @@ void ieee80211_beacon_loss_work(struct work_struct *work)
 			     u.mgd.beacon_loss_work);
 	struct ieee80211_if_managed *ifmgd = &sdata->u.mgd;
 
-#ifdef CONFIG_MAC80211_VERBOSE_DEBUG
-	if (net_ratelimit()) {
-		printk(KERN_DEBUG "%s: driver reports beacon loss from AP %pM "
-		       "- sending probe request\n", sdata->dev->name,
-		       sdata->u.mgd.bssid);
-	}
-#endif
+	printk(KERN_DEBUG "%s: driver reports beacon loss from AP %pM "
+	       "- sending probe request\n", sdata->dev->name,
+	       sdata->u.mgd.bssid);
 
 	ifmgd->flags |= IEEE80211_STA_PROBEREQ_POLL;
 	ieee80211_send_probe_req(sdata, ifmgd->bssid, ifmgd->ssid,
@@ -1098,13 +1094,9 @@ static void ieee80211_associated(struct ieee80211_sub_if_data *sdata)
 	      (local->hw.conf.flags & IEEE80211_CONF_PS)) &&
 	    time_after(jiffies,
 		       ifmgd->last_beacon + IEEE80211_MONITORING_INTERVAL)) {
-#ifdef CONFIG_MAC80211_VERBOSE_DEBUG
-		if (net_ratelimit()) {
-			printk(KERN_DEBUG "%s: beacon loss from AP %pM "
-			       "- sending probe request\n",
-			       sdata->dev->name, ifmgd->bssid);
-		}
-#endif
+		printk(KERN_DEBUG "%s: beacon loss from AP %pM "
+		       "- sending probe request\n",
+		       sdata->dev->name, ifmgd->bssid);
 		ifmgd->flags |= IEEE80211_STA_PROBEREQ_POLL;
 		ieee80211_send_probe_req(sdata, ifmgd->bssid, ifmgd->ssid,
 					 ifmgd->ssid_len, NULL, 0);
