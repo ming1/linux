@@ -2760,9 +2760,6 @@ static int nl80211_authenticate(struct sk_buff *skb, struct genl_info *info)
 	if (!info->attrs[NL80211_ATTR_MAC])
 		return -EINVAL;
 
-	if (!info->attrs[NL80211_ATTR_AUTH_TYPE])
-		return -EINVAL;
-
 	rtnl_lock();
 
 	err = get_drv_dev_by_info_ifindex(info->attrs, &drv, &dev);
@@ -2809,10 +2806,13 @@ static int nl80211_authenticate(struct sk_buff *skb, struct genl_info *info)
 		req.ie_len = nla_len(info->attrs[NL80211_ATTR_IE]);
 	}
 
-	req.auth_type = nla_get_u32(info->attrs[NL80211_ATTR_AUTH_TYPE]);
-	if (!nl80211_valid_auth_type(req.auth_type)) {
-		err = -EINVAL;
-		goto out;
+	if (info->attrs[NL80211_ATTR_AUTH_TYPE]) {
+		req.auth_type =
+			nla_get_u32(info->attrs[NL80211_ATTR_AUTH_TYPE]);
+		if (!nl80211_valid_auth_type(req.auth_type)) {
+			err = -EINVAL;
+			goto out;
+		}
 	}
 
 	err = drv->ops->auth(&drv->wiphy, dev, &req);
