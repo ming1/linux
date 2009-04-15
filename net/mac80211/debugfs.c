@@ -51,12 +51,6 @@ static const struct file_operations name## _ops = {			\
 
 DEBUGFS_READONLY_FILE(frequency, 20, "%d",
 		      local->hw.conf.channel->center_freq);
-DEBUGFS_READONLY_FILE(ht40plusallowed, 20, "%d",
-		      !(local->hw.conf.channel->flags &
-		      IEEE80211_CHAN_NO_HT40PLUS));
-DEBUGFS_READONLY_FILE(ht40minusallowed, 20, "%d",
-		      !(local->hw.conf.channel->flags &
-		      IEEE80211_CHAN_NO_HT40MINUS));
 DEBUGFS_READONLY_FILE(rts_threshold, 20, "%d",
 		      local->rts_threshold);
 DEBUGFS_READONLY_FILE(fragmentation_threshold, 20, "%d",
@@ -275,8 +269,6 @@ void debugfs_hw_add(struct ieee80211_local *local)
 	local->debugfs.keys = debugfs_create_dir("keys", phyd);
 
 	DEBUGFS_ADD(frequency);
-	DEBUGFS_ADD(ht40plusallowed);
-	DEBUGFS_ADD(ht40minusallowed);
 	DEBUGFS_ADD(rts_threshold);
 	DEBUGFS_ADD(fragmentation_threshold);
 	DEBUGFS_ADD(short_retry_limit);
@@ -332,8 +324,6 @@ void debugfs_hw_add(struct ieee80211_local *local)
 void debugfs_hw_del(struct ieee80211_local *local)
 {
 	DEBUGFS_DEL(frequency);
-	DEBUGFS_DEL(ht40plusallowed);
-	DEBUGFS_DEL(ht40minusallowed);
 	DEBUGFS_DEL(rts_threshold);
 	DEBUGFS_DEL(fragmentation_threshold);
 	DEBUGFS_DEL(short_retry_limit);
