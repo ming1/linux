@@ -1191,7 +1191,7 @@ static int rndis_scan(struct wiphy *wiphy, struct net_device *dev,
 
 	priv->scan_request = request;
 
-	tmp = cpu_to_le32(1);
+	tmp = ccpu2(1);
 	ret = rndis_set_oid(usbdev, OID_802_11_BSSID_LIST_SCAN, &tmp,
 							sizeof(tmp));
 	if (ret == 0) {
