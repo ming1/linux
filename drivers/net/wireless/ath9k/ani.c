@@ -569,7 +569,8 @@ void ath9k_hw_ani_monitor(struct ath_hw *ah,
 				DPRINTF(ah->ah_sc, ATH_DBG_ANI,
 					"phyCnt1 0x%x, resetting "
 					"counter value to 0x%x\n",
-					phyCnt1, aniState->ofdmPhyErrBase);
+					phyCnt1,
+					aniState->ofdmPhyErrBase);
 				REG_WRITE(ah, AR_PHY_ERR_1,
 					  aniState->ofdmPhyErrBase);
 				REG_WRITE(ah, AR_PHY_ERR_MASK_1,
@@ -579,7 +580,8 @@ void ath9k_hw_ani_monitor(struct ath_hw *ah,
 				DPRINTF(ah->ah_sc, ATH_DBG_ANI,
 					"phyCnt2 0x%x, resetting "
 					"counter value to 0x%x\n",
-					phyCnt2, aniState->cckPhyErrBase);
+					phyCnt2,
+					aniState->cckPhyErrBase);
 				REG_WRITE(ah, AR_PHY_ERR_2,
 					  aniState->cckPhyErrBase);
 				REG_WRITE(ah, AR_PHY_ERR_MASK_2,
@@ -665,7 +667,7 @@ u32 ath9k_hw_GetMibCycleCountsPct(struct ath_hw *ah,
 	u32 cc = REG_READ(ah, AR_CCCNT);
 
 	if (cycles == 0 || cycles > cc) {
-		DPRINTF(ah->ah_sc, ATH_DBG_ANI,
+		DPRINTF(ah->ah_sc, ATH_DBG_CHANNEL,
 			"cycle counter wrap. ExtBusy = 0\n");
 		good = 0;
 	} else {
