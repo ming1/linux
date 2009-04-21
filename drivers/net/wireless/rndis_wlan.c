@@ -2388,6 +2388,7 @@ static int rndis_wext_bind(struct usbnet *usbdev, struct usb_interface *intf)
 	priv->workqueue = create_singlethread_workqueue("rndis_wlan");
 	INIT_WORK(&priv->work, rndis_wext_worker);
 	INIT_DELAYED_WORK(&priv->stats_work, rndis_update_wireless_stats);
+	INIT_DELAYED_WORK(&priv->scan_work, rndis_get_scan_results);
 
 	/* try bind rndis_host */
 	retval = generic_rndis_bind(usbdev, intf, FLAG_RNDIS_PHYM_WIRELESS);
@@ -2461,13 +2462,12 @@ static int rndis_wext_bind(struct usbnet *usbdev, struct usb_interface *intf)
 
 	queue_delayed_work(priv->workqueue, &priv->stats_work,
 		round_jiffies_relative(STATS_UPDATE_JIFFIES));
-	INIT_DELAYED_WORK(&priv->scan_work, rndis_get_scan_results);
-	INIT_WORK(&priv->work, rndis_wext_worker);
 
 	return 0;
 
 fail:
 	cancel_delayed_work_sync(&priv->stats_work);
+	cancel_delayed_work_sync(&priv->scan_work);
 	cancel_work_sync(&priv->work);
 	flush_workqueue(priv->workqueue);
 	destroy_workqueue(priv->workqueue);
