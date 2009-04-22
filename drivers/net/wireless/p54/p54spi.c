@@ -457,10 +457,9 @@ static int p54spi_wq_tx(struct p54s_priv *priv)
 	struct ieee80211_tx_info *info;
 	struct p54_tx_info *minfo;
 	struct p54s_tx_info *dinfo;
-	unsigned long flags;
 	int ret = 0;
 
-	spin_lock_irqsave(&priv->tx_lock, flags);
+	spin_lock_bh(&priv->tx_lock);
 
 	while (!list_empty(&priv->tx_pending)) {
 		entry = list_entry(priv->tx_pending.next,
@@ -468,7 +467,7 @@ static int p54spi_wq_tx(struct p54s_priv *priv)
 
 		list_del_init(&entry->tx_list);
 
-		spin_unlock_irqrestore(&priv->tx_lock, flags);
+		spin_unlock_bh(&priv->tx_lock);
 
 		dinfo = container_of((void *) entry, struct p54s_tx_info,
 				     tx_list);
@@ -480,14 +479,16 @@ static int p54spi_wq_tx(struct p54s_priv *priv)
 
 		ret = p54spi_tx_frame(priv, skb);
 
+		spin_lock_bh(&priv->tx_lock);
+
 		if (ret < 0) {
 			p54_free_skb(priv->hw, skb);
-			return ret;
+			goto out;
 		}
-
-		spin_lock_irqsave(&priv->tx_lock, flags);
 	}
-	spin_unlock_irqrestore(&priv->tx_lock, flags);
+
+out:
+	spin_unlock_bh(&priv->tx_lock);
 	return ret;
 }
 
@@ -497,13 +498,12 @@ static void p54spi_op_tx(struct ieee80211_hw *dev, struct sk_buff *skb)
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	struct p54_tx_info *mi = (struct p54_tx_info *) info->rate_driver_data;
 	struct p54s_tx_info *di = (struct p54s_tx_info *) mi->data;
-	unsigned long flags;
 
 	BUILD_BUG_ON(sizeof(*di) > sizeof((mi->data)));
 
-	spin_lock_irqsave(&priv->tx_lock, flags);
+	spin_lock_bh(&priv->tx_lock);
 	list_add_tail(&di->tx_list, &priv->tx_pending);
-	spin_unlock_irqrestore(&priv->tx_lock, flags);
+	spin_unlock_bh(&priv->tx_lock);
 
 	queue_work(priv->hw->workqueue, &priv->work);
 }
@@ -604,7 +604,6 @@ out:
 static void p54spi_op_stop(struct ieee80211_hw *dev)
 {
 	struct p54s_priv *priv = dev->priv;
-	unsigned long flags;
 
 	if (mutex_lock_interruptible(&priv->mutex)) {
 		/* FIXME: how to handle this error? */
@@ -616,9 +615,9 @@ static void p54spi_op_stop(struct ieee80211_hw *dev)
 	cancel_work_sync(&priv->work);
 
 	p54spi_power_off(priv);
-	spin_lock_irqsave(&priv->tx_lock, flags);
+	spin_lock_bh(&priv->tx_lock);
 	INIT_LIST_HEAD(&priv->tx_pending);
-	spin_unlock_irqrestore(&priv->tx_lock, flags);
+	spin_unlock_bh(&priv->tx_lock);
 
 	priv->fw_state = FW_STATE_OFF;
 	mutex_unlock(&priv->mutex);
