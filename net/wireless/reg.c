@@ -2095,12 +2095,11 @@ int set_regdom(const struct ieee80211_regdomain *rd)
 /* Caller must hold cfg80211_mutex */
 void reg_device_remove(struct wiphy *wiphy)
 {
-	struct wiphy *request_wiphy = NULL;
+	struct wiphy *request_wiphy;
 
 	assert_cfg80211_lock();
 
-	if (last_request)
-		request_wiphy = wiphy_idx_to_wiphy(last_request->wiphy_idx);
+	request_wiphy = wiphy_idx_to_wiphy(last_request->wiphy_idx);
 
 	kfree(wiphy->regd);
 	if (!last_request || !request_wiphy)
