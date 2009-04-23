@@ -814,11 +814,11 @@ void iwl_bg_scan_completed(struct work_struct *work)
 
 	IWL_DEBUG_SCAN(priv, "SCAN complete scan\n");
 
-	if (test_bit(STATUS_EXIT_PENDING, &priv->status))
-		return;
-
 	priv->scan_request = NULL;
 	ieee80211_scan_completed(priv->hw, false);
+
+	if (test_bit(STATUS_EXIT_PENDING, &priv->status))
+		return;
 
 	/* Since setting the TXPOWER may have been deferred while
 	 * performing the scan, fire one off */
