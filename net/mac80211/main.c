@@ -1034,8 +1034,6 @@ int ieee80211_register_hw(struct ieee80211_hw *hw)
  fail_pm_qos:
 	ieee80211_led_exit(local);
 	ieee80211_remove_interfaces(local);
- fail_wep:
-	rate_control_deinitialize(local);
  fail_rate:
 	unregister_netdevice(local->mdev);
 	local->mdev = NULL;
