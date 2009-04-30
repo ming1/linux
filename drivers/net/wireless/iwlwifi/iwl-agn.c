@@ -246,8 +246,7 @@ int iwl_commit_rxon(struct iwl_priv *priv)
 void iwl_update_chain_flags(struct iwl_priv *priv)
 {
 
-	if (priv->cfg->ops->hcmd->set_rxon_chain)
-		priv->cfg->ops->hcmd->set_rxon_chain(priv);
+	iwl_set_rxon_chain(priv);
 	iwlcore_commit_rxon(priv);
 }
 
@@ -591,10 +590,7 @@ static void iwl_setup_rxon_timing(struct iwl_priv *priv)
 static int iwl_set_mode(struct iwl_priv *priv, int mode)
 {
 	iwl_connection_init_rx_config(priv, mode);
-
-	if (priv->cfg->ops->hcmd->set_rxon_chain)
-		priv->cfg->ops->hcmd->set_rxon_chain(priv);
-
+	iwl_set_rxon_chain(priv);
 	memcpy(priv->staging_rxon.node_addr, priv->mac_addr, ETH_ALEN);
 
 	priv->cfg->ops->smgmt->clear_station_table(priv);
@@ -1498,10 +1494,7 @@ static void iwl_alive_start(struct iwl_priv *priv)
 	} else {
 		/* Initialize our rx_config data */
 		iwl_connection_init_rx_config(priv, priv->iw_mode);
-
-		if (priv->cfg->ops->hcmd->set_rxon_chain)
-			priv->cfg->ops->hcmd->set_rxon_chain(priv);
-
+		iwl_set_rxon_chain(priv);
 		memcpy(priv->staging_rxon.node_addr, priv->mac_addr, ETH_ALEN);
 	}
 
@@ -1880,9 +1873,7 @@ void iwl_post_associate(struct iwl_priv *priv)
 
 	iwl_set_rxon_ht(priv, &priv->current_ht_config);
 
-	if (priv->cfg->ops->hcmd->set_rxon_chain)
-		priv->cfg->ops->hcmd->set_rxon_chain(priv);
-
+	iwl_set_rxon_chain(priv);
 	priv->staging_rxon.assoc_id = cpu_to_le16(priv->assoc_id);
 
 	IWL_DEBUG_ASSOC(priv, "assoc id %d beacon interval %d\n",
@@ -2186,8 +2177,7 @@ static int iwl_mac_config(struct ieee80211_hw *hw, u32 changed)
 	}
 
 	/* call to ensure that 4965 rx_chain is set properly in monitor mode */
-	if (priv->cfg->ops->hcmd->set_rxon_chain)
-		priv->cfg->ops->hcmd->set_rxon_chain(priv);
+	iwl_set_rxon_chain(priv);
 
 	if (changed & IEEE80211_CONF_CHANGE_RADIO_ENABLED) {
 		if (conf->radio_enabled &&
@@ -2250,8 +2240,7 @@ static void iwl_config_ap(struct iwl_priv *priv)
 			IWL_WARN(priv, "REPLY_RXON_TIMING failed - "
 					"Attempting to continue.\n");
 
-		if (priv->cfg->ops->hcmd->set_rxon_chain)
-			priv->cfg->ops->hcmd->set_rxon_chain(priv);
+		iwl_set_rxon_chain(priv);
 
 		/* FIXME: what should be the assoc_id for AP? */
 		priv->staging_rxon.assoc_id = cpu_to_le16(priv->assoc_id);
