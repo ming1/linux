@@ -48,8 +48,6 @@
 #include "eeprom.h"
 #include "hw.h"
 
-#include "../ath/regd.h"
-
 #define PAYLOAD_MAX	(AR9170_MAX_CMD_LEN/4 - 1)
 
 enum ar9170_bw {
@@ -153,7 +151,6 @@ struct ar9170 {
 
 	/* EEPROM */
 	struct ar9170_eeprom eeprom;
-	struct ath_regulatory regulatory;
 
 	/* global tx status for unregistered Stations. */
 	struct sk_buff_head global_tx_status;
