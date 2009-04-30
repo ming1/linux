@@ -1416,9 +1416,8 @@ static int ath_init(u16 devid, struct ath_softc *sc)
 	for (i = 0; i < sc->keymax; i++)
 		ath9k_hw_keyreset(ah, (u16) i);
 
-	error = ath_regd_init(&sc->sc_ah->regulatory, sc->hw->wiphy,
-			      ath9k_reg_notifier);
-	if (error)
+	if (ath_regd_init(&sc->sc_ah->regulatory, sc->hw->wiphy,
+			  ath9k_reg_notifier))
 		goto bad;
 
 	/* default to MONITOR mode */
