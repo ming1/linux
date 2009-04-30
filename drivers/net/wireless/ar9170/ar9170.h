@@ -48,7 +48,7 @@
 #include "eeprom.h"
 #include "hw.h"
 
-#include "../regd.h"
+#include "../ath/regd.h"
 
 #define PAYLOAD_MAX	(AR9170_MAX_CMD_LEN/4 - 1)
 
