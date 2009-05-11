@@ -1487,35 +1487,28 @@ ath5k_get_linear_pcdac_min(const u8 *stepL, const u8 *stepR,
 {
 	s8 tmp;
 	s16 min_pwrL, min_pwrR;
-	s16 pwr_i;
+	s16 pwr_i = pwrL[0];
 
-	if (pwrL[0] == pwrL[1])
-		min_pwrL = pwrL[0];
-	else {
-		pwr_i = pwrL[0];
-		do {
-			pwr_i--;
-			tmp = (s8) ath5k_get_interpolated_value(pwr_i,
-							pwrL[0], pwrL[1],
-							stepL[0], stepL[1]);
-		} while (tmp > 1);
+	do {
+		pwr_i--;
+		tmp = (s8) ath5k_get_interpolated_value(pwr_i,
+						pwrL[0], pwrL[1],
+						stepL[0], stepL[1]);
 
-		min_pwrL = pwr_i;
-	}
+	} while (tmp > 1);
 
-	if (pwrR[0] == pwrR[1])
-		min_pwrR = pwrR[0];
-	else {
-		pwr_i = pwrR[0];
-		do {
-			pwr_i--;
-			tmp = (s8) ath5k_get_interpolated_value(pwr_i,
-							pwrR[0], pwrR[1],
-							stepR[0], stepR[1]);
-		} while (tmp > 1);
+	min_pwrL = pwr_i;
 
-		min_pwrR = pwr_i;
-	}
+	pwr_i = pwrR[0];
+	do {
+		pwr_i--;
+		tmp = (s8) ath5k_get_interpolated_value(pwr_i,
+						pwrR[0], pwrR[1],
+						stepR[0], stepR[1]);
+
+	} while (tmp > 1);
+
+	min_pwrR = pwr_i;
 
 	/* Keep the right boundary so that it works for both curves */
 	return max(min_pwrL, min_pwrR);
