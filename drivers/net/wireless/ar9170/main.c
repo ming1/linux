@@ -742,9 +742,8 @@ static void ar9170_op_stop(struct ieee80211_hw *hw)
 	if (IS_STARTED(ar))
 		ar->state = AR9170_IDLE;
 
-	flush_workqueue(ar->hw->workqueue);
-
 	mutex_lock(&ar->mutex);
+
 	cancel_delayed_work_sync(&ar->tx_status_janitor);
 	cancel_work_sync(&ar->filter_config_work);
 	cancel_work_sync(&ar->beacon_work);
@@ -1124,10 +1123,10 @@ static void ar9170_set_filters(struct work_struct *work)
 					 filter_config_work);
 	int err;
 
-	if (unlikely(!IS_STARTED(ar)))
-		return ;
-
 	mutex_lock(&ar->mutex);
+	if (unlikely(!IS_STARTED(ar)))
+		goto unlock;
+
 	if (ar->filter_changed & AR9170_FILTER_CHANGED_PROMISC) {
 		err = ar9170_set_operating_mode(ar);
 		if (err)
