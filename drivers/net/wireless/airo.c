@@ -6501,10 +6501,7 @@ static int airo_get_encode(struct net_device *dev,
 
 	/* Copy the key to the user buffer */
 	dwrq->length = get_wep_key(local, index, &buf[0], sizeof(buf));
-	if (dwrq->length != -1)
-		memcpy(extra, buf, dwrq->length);
-	else
-		dwrq->length = 0;
+	memcpy(extra, buf, dwrq->length);
 
 	return 0;
 }
@@ -6662,10 +6659,7 @@ static int airo_get_encodeext(struct net_device *dev,
 	
 	/* Copy the key to the user buffer */
 	ext->key_len = get_wep_key(local, idx, &buf[0], sizeof(buf));
-	if (ext->key_len != -1)
-		memcpy(extra, buf, ext->key_len);
-	else
-		ext->key_len = 0;
+	memcpy(extra, buf, ext->key_len);
 
 	return 0;
 }
