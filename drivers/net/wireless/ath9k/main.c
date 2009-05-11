@@ -1406,7 +1406,7 @@ static int ath_init(u16 devid, struct ath_softc *sc)
 	for (i = 0; i < sc->keymax; i++)
 		ath9k_hw_keyreset(ah, (u16) i);
 
-	if (ath9k_regd_init(&sc->sc_ah->regulatory))
+	if (ath9k_regd_init(sc->sc_ah))
 		goto bad;
 
 	/* default to MONITOR mode */
@@ -1614,15 +1614,12 @@ int ath_attach(u16 devid, struct ath_softc *sc)
 	struct ieee80211_hw *hw = sc->hw;
 	const struct ieee80211_regdomain *regd;
 	int error = 0, i;
-	struct ath9k_regulatory *reg;
 
 	DPRINTF(sc, ATH_DBG_CONFIG, "Attach ATH hw\n");
 
 	error = ath_init(devid, sc);
 	if (error != 0)
 		return error;
-
-	reg = &sc->sc_ah->regulatory;
 
 	/* get mac address from hardware and set in mac80211 */
 
@@ -1656,10 +1653,10 @@ int ath_attach(u16 devid, struct ath_softc *sc)
 		goto error_attach;
 #endif
 
-	if (ath9k_is_world_regd(reg)) {
+	if (ath9k_is_world_regd(sc->sc_ah)) {
 		/* Anything applied here (prior to wiphy registration) gets
 		 * saved on the wiphy orig_* parameters */
-		regd = ath9k_world_regdomain(reg);
+		regd = ath9k_world_regdomain(sc->sc_ah);
 		hw->wiphy->custom_regulatory = true;
 		hw->wiphy->strict_regulatory = false;
 	} else {
@@ -1670,9 +1667,7 @@ int ath_attach(u16 devid, struct ath_softc *sc)
 	}
 	wiphy_apply_custom_regulatory(hw->wiphy, regd);
 	ath9k_reg_apply_radar_flags(hw->wiphy);
-	ath9k_reg_apply_world_flags(hw->wiphy,
-				    NL80211_REGDOM_SET_BY_DRIVER,
-				    reg);
+	ath9k_reg_apply_world_flags(hw->wiphy, NL80211_REGDOM_SET_BY_DRIVER);
 
 	INIT_WORK(&sc->chan_work, ath9k_wiphy_chan_work);
 	INIT_DELAYED_WORK(&sc->wiphy_work, ath9k_wiphy_work);
@@ -1680,8 +1675,9 @@ int ath_attach(u16 devid, struct ath_softc *sc)
 
 	error = ieee80211_register_hw(hw);
 
-	if (!ath9k_is_world_regd(reg)) {
-		error = regulatory_hint(hw->wiphy, reg->alpha2);
+	if (!ath9k_is_world_regd(sc->sc_ah)) {
+		error = regulatory_hint(hw->wiphy,
+			sc->sc_ah->regulatory.alpha2);
 		if (error)
 			goto error_attach;
 	}
