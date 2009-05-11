@@ -4498,8 +4498,8 @@ S:	Maintained
 F:	drivers/ata/sata_promise.*
 
 PS3 NETWORK SUPPORT
-P:	Geoff Levand
-M:	geoffrey.levand@am.sony.com
+P:	Masakazu Mokuno
+M:	mokuno@sm.sony.co.jp
 L:	netdev@vger.kernel.org
 L:	cbe-oss-dev@ozlabs.org
 S:	Supported
