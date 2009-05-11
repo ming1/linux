@@ -2467,7 +2467,6 @@ static int rndis_wext_bind(struct usbnet *usbdev, struct usb_interface *intf)
 
 fail:
 	cancel_delayed_work_sync(&priv->stats_work);
-	cancel_delayed_work_sync(&priv->scan_work);
 	cancel_work_sync(&priv->work);
 	flush_workqueue(priv->workqueue);
 	destroy_workqueue(priv->workqueue);
