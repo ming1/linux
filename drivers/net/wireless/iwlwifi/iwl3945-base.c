@@ -1463,6 +1463,7 @@ static void iwl3945_rx_queue_free(struct iwl_priv *priv, struct iwl_rx_queue *rx
 	rxq->bd = NULL;
 	rxq->rb_stts  = NULL;
 }
+EXPORT_SYMBOL(iwl3945_rx_queue_free);
 
 
 /* Convert linear signal-to-noise ratio into dB */
