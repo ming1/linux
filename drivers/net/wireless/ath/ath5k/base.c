@@ -218,7 +218,7 @@ static struct pci_driver ath5k_pci_driver = {
  * Prototypes - MAC 802.11 stack related functions
  */
 static int ath5k_tx(struct ieee80211_hw *hw, struct sk_buff *skb);
-static int ath5k_reset(struct ath5k_softc *sc, struct ieee80211_channel *chan);
+static int ath5k_reset(struct ath5k_softc *sc, bool stop, bool change_channel);
 static int ath5k_reset_wake(struct ath5k_softc *sc);
 static int ath5k_start(struct ieee80211_hw *hw);
 static void ath5k_stop(struct ieee80211_hw *hw);
@@ -1076,13 +1076,16 @@ ath5k_chan_set(struct ath5k_softc *sc, struct ieee80211_channel *chan)
 	if (chan->center_freq != sc->curchan->center_freq ||
 		chan->hw_value != sc->curchan->hw_value) {
 
+		sc->curchan = chan;
+		sc->curband = &sc->sbands[chan->band];
+
 		/*
 		 * To switch channels clear any pending DMA operations;
 		 * wait long enough for the RX fifo to drain, reset the
 		 * hardware at the new frequency, and then re-enable
 		 * the relevant bits of the h/w.
 		 */
-		return ath5k_reset(sc, chan);
+		return ath5k_reset(sc, true, true);
 	}
 
 	return 0;
@@ -2347,7 +2350,7 @@ ath5k_init(struct ath5k_softc *sc)
 	sc->imask = AR5K_INT_RXOK | AR5K_INT_RXERR | AR5K_INT_RXEOL |
 		AR5K_INT_RXORN | AR5K_INT_TXDESC | AR5K_INT_TXEOL |
 		AR5K_INT_FATAL | AR5K_INT_GLOBAL;
-	ret = ath5k_reset(sc, NULL);
+	ret = ath5k_reset(sc, false, false);
 	if (ret)
 		goto done;
 
@@ -2632,25 +2635,18 @@ drop_packet:
 	return NETDEV_TX_OK;
 }
 
-/*
- * Reset the hardware.  If chan is not NULL, then also pause rx/tx
- * and change to the given channel.
- */
 static int
-ath5k_reset(struct ath5k_softc *sc, struct ieee80211_channel *chan)
+ath5k_reset(struct ath5k_softc *sc, bool stop, bool change_channel)
 {
 	struct ath5k_hw *ah = sc->ah;
 	int ret;
 
 	ATH5K_DBG(sc, ATH5K_DEBUG_RESET, "resetting\n");
 
-	if (chan) {
+	if (stop) {
 		ath5k_hw_set_imr(ah, 0);
 		ath5k_txq_cleanup(sc);
 		ath5k_rx_stop(sc);
-
-		sc->curchan = chan;
-		sc->curband = &sc->sbands[chan->band];
 	}
 	ret = ath5k_hw_reset(ah, sc->opmode, sc->curchan, true);
 	if (ret) {
@@ -2688,7 +2684,7 @@ ath5k_reset_wake(struct ath5k_softc *sc)
 {
 	int ret;
 
-	ret = ath5k_reset(sc, sc->curchan);
+	ret = ath5k_reset(sc, true, true);
 	if (!ret)
 		ieee80211_wake_queues(sc->hw);
 
