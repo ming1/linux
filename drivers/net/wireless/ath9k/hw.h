@@ -25,10 +25,9 @@
 #include "ani.h"
 #include "eeprom.h"
 #include "calib.h"
+#include "regd.h"
 #include "reg.h"
 #include "phy.h"
-
-#include "../ath/regd.h"
 
 #define ATHEROS_VENDOR_ID	0x168c
 #define AR5416_DEVID_PCI	0x0023
@@ -405,7 +404,7 @@ struct ath_hw {
 	struct ath9k_hw_version hw_version;
 	struct ath9k_ops_config config;
 	struct ath9k_hw_capabilities caps;
-	struct ath_regulatory regulatory;
+	struct ath9k_regulatory regulatory;
 	struct ath9k_channel channels[38];
 	struct ath9k_channel *curchan;
 
