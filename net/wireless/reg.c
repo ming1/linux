@@ -1436,7 +1436,7 @@ new_request:
 	return call_crda(last_request->alpha2);
 }
 
-/* This processes *all* regulatory hints */
+/* This currently only processes user and driver regulatory hints */
 static void reg_process_hint(struct regulatory_request *reg_request)
 {
 	int r = 0;
