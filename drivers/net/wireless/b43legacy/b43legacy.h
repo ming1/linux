@@ -259,6 +259,7 @@
 
 #define B43legacy_IRQ_ALL		0xFFFFFFFF
 #define B43legacy_IRQ_MASKTEMPLATE	(B43legacy_IRQ_MAC_SUSPENDED |	\
+					 B43legacy_IRQ_BEACON |		\
 					 B43legacy_IRQ_TBTT_INDI |	\
 					 B43legacy_IRQ_ATIM_END |	\
 					 B43legacy_IRQ_PMQ |		\
@@ -616,7 +617,6 @@ struct b43legacy_wl {
 	struct sk_buff *current_beacon;
 	bool beacon0_uploaded;
 	bool beacon1_uploaded;
-	bool beacon_templates_virgin; /* Never wrote the templates? */
 	struct work_struct beacon_update_trigger;
 };
 
