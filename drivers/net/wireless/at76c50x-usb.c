@@ -1965,18 +1965,13 @@ static int at76_config(struct ieee80211_hw *hw, u32 changed)
 	return 0;
 }
 
-static void at76_bss_info_changed(struct ieee80211_hw *hw,
-				  struct ieee80211_vif *vif,
-				  struct ieee80211_bss_conf *conf,
-				  u32 changed)
+static int at76_config_interface(struct ieee80211_hw *hw,
+				 struct ieee80211_vif *vif,
+				 struct ieee80211_if_conf *conf)
 {
 	struct at76_priv *priv = hw->priv;
 
 	at76_dbg(DBG_MAC80211, "%s():", __func__);
-
-	if (!(changed & BSS_CHANGED_BSSID))
-		return;
-
 	at76_dbg_dump(DBG_MAC80211, conf->bssid, ETH_ALEN, "bssid:");
 
 	mutex_lock(&priv->mtx);
@@ -1988,6 +1983,8 @@ static void at76_bss_info_changed(struct ieee80211_hw *hw,
 		at76_join(priv);
 
 	mutex_unlock(&priv->mtx);
+
+	return 0;
 }
 
 /* must be atomic */
@@ -2079,7 +2076,7 @@ static const struct ieee80211_ops at76_ops = {
 	.add_interface = at76_add_interface,
 	.remove_interface = at76_remove_interface,
 	.config = at76_config,
-	.bss_info_changed = at76_bss_info_changed,
+	.config_interface = at76_config_interface,
 	.configure_filter = at76_configure_filter,
 	.start = at76_mac80211_start,
 	.stop = at76_mac80211_stop,
