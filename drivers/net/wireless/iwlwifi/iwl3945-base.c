@@ -4404,10 +4404,6 @@ static int iwl3945_pci_probe(struct pci_dev *pdev, const struct pci_device_id *e
 	if (err)
 		goto  out_remove_sysfs;
 
-	err = iwl_dbgfs_register(priv, DRV_NAME);
-	if (err)
-		IWL_ERR(priv, "failed to create debugfs files. Ignoring error: %d\n", err);
-
 	err = iwl_rfkill_init(priv);
 	if (err)
 		IWL_ERR(priv, "Unable to initialize RFKILL system. "
@@ -4457,8 +4453,6 @@ static void __devexit iwl3945_pci_remove(struct pci_dev *pdev)
 		return;
 
 	IWL_DEBUG_INFO(priv, "*** UNLOAD DRIVER ***\n");
-
-	iwl_dbgfs_unregister(priv);
 
 	set_bit(STATUS_EXIT_PENDING, &priv->status);
 
