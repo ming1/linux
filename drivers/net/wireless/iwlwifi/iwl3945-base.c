@@ -588,7 +588,7 @@ static int iwl3945_set_mode(struct iwl_priv *priv, int mode)
 
 	iwl_connection_init_rx_config(priv, mode);
 
-	priv->cfg->ops->smgmt->clear_station_table(priv);
+	iwl3945_clear_stations_table(priv);
 
 	/* don't commit rxon if rf-kill is on*/
 	if (!iwl_is_ready_rf(priv))
@@ -734,7 +734,7 @@ static int iwl3945_get_sta_id(struct iwl_priv *priv, struct ieee80211_hdr *hdr)
 
 	/* If we are an AP, then find the station, or use BCAST */
 	case NL80211_IFTYPE_AP:
-		sta_id = priv->cfg->ops->smgmt->find_station(priv, hdr->addr1);
+		sta_id = iwl3945_hw_find_station(priv, hdr->addr1);
 		if (sta_id != IWL_INVALID_STATION)
 			return sta_id;
 		return priv->hw_params.bcast_sta_id;
@@ -743,12 +743,11 @@ static int iwl3945_get_sta_id(struct iwl_priv *priv, struct ieee80211_hdr *hdr)
 	 * or create a new station table entry */
 	case NL80211_IFTYPE_ADHOC: {
 		/* Create new station table entry */
-		sta_id = priv->cfg->ops->smgmt->find_station(priv, hdr->addr1);
+		sta_id = iwl3945_hw_find_station(priv, hdr->addr1);
 		if (sta_id != IWL_INVALID_STATION)
 			return sta_id;
 
-		sta_id = priv->cfg->ops->smgmt->add_station(priv,
-				hdr->addr1, 0, CMD_ASYNC);
+		sta_id = iwl3945_add_station(priv, hdr->addr1, 0, CMD_ASYNC);
 
 		if (sta_id != IWL_INVALID_STATION)
 			return sta_id;
@@ -1942,7 +1941,7 @@ static void iwl3945_error_recovery(struct iwl_priv *priv)
 	priv->staging_rxon.filter_flags &= ~RXON_FILTER_ASSOC_MSK;
 	iwlcore_commit_rxon(priv);
 
-	priv->cfg->ops->smgmt->add_station(priv, priv->bssid, 1, 0);
+	iwl3945_add_station(priv, priv->bssid, 1, 0);
 
 	spin_lock_irqsave(&priv->lock, flags);
 	priv->assoc_id = le16_to_cpu(priv->staging_rxon.assoc_id);
@@ -2737,7 +2736,7 @@ static void iwl3945_alive_start(struct iwl_priv *priv)
 		goto restart;
 	}
 
-	priv->cfg->ops->smgmt->clear_station_table(priv);
+	iwl3945_clear_stations_table(priv);
 
 	rc = iwl_grab_nic_access(priv);
 	if (rc) {
@@ -2842,7 +2841,7 @@ static void __iwl3945_down(struct iwl_priv *priv)
 		set_bit(STATUS_EXIT_PENDING, &priv->status);
 
 	iwl3945_led_unregister(priv);
-	priv->cfg->ops->smgmt->clear_station_table(priv);
+	iwl3945_clear_stations_table(priv);
 
 	/* Unblock any waiting calls */
 	wake_up_interruptible_all(&priv->wait_command_queue);
@@ -2999,7 +2998,7 @@ static int __iwl3945_up(struct iwl_priv *priv)
 
 	for (i = 0; i < MAX_HW_RESTARTS; i++) {
 
-		priv->cfg->ops->smgmt->clear_station_table(priv);
+		iwl3945_clear_stations_table(priv);
 
 		/* load bootstrap state machine,
 		 * load bootstrap program into processor's memory,
@@ -3391,7 +3390,7 @@ void iwl3945_post_associate(struct iwl_priv *priv)
 	case NL80211_IFTYPE_ADHOC:
 
 		priv->assoc_id = 1;
-		priv->cfg->ops->smgmt->add_station(priv, priv->bssid, 0, 0);
+		iwl3945_add_station(priv, priv->bssid, 0, 0);
 		iwl3945_sync_sta(priv, IWL_STA_ID,
 				 (priv->band == IEEE80211_BAND_5GHZ) ?
 				 IWL_RATE_6M_PLCP : IWL_RATE_1M_PLCP,
@@ -3719,7 +3718,7 @@ static void iwl3945_config_ap(struct iwl_priv *priv)
 		/* restore RXON assoc */
 		priv->staging_rxon.filter_flags |= RXON_FILTER_ASSOC_MSK;
 		iwlcore_commit_rxon(priv);
-		priv->cfg->ops->smgmt->add_station(priv, iwl_bcast_addr, 0, 0);
+		iwl3945_add_station(priv, iwl_bcast_addr, 0, 0);
 	}
 	iwl3945_send_beacon_cmd(priv);
 
@@ -3811,7 +3810,7 @@ static int iwl3945_mac_config_interface(struct ieee80211_hw *hw,
 		else {
 			rc = iwlcore_commit_rxon(priv);
 			if ((priv->iw_mode == NL80211_IFTYPE_STATION) && rc)
-				priv->cfg->ops->smgmt->add_station(priv,
+				iwl3945_add_station(priv,
 					priv->active_rxon.bssid_addr, 1, 0);
 		}
 
@@ -3873,7 +3872,7 @@ static int iwl3945_mac_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 	static_key = !iwl_is_associated(priv);
 
 	if (!static_key) {
-		sta_id = priv->cfg->ops->smgmt->find_station(priv, addr);
+		sta_id = iwl3945_hw_find_station(priv, addr);
 		if (sta_id == IWL_INVALID_STATION) {
 			IWL_DEBUG_MAC80211(priv, "leave - %pM not in station map.\n",
 					    addr);
@@ -4556,7 +4555,7 @@ static int iwl3945_init_drv(struct iwl_priv *priv)
 	mutex_init(&priv->mutex);
 
 	/* Clear the driver's (not device's) station table */
-	priv->cfg->ops->smgmt->clear_station_table(priv);
+	iwl3945_clear_stations_table(priv);
 
 	priv->data_retry_limit = -1;
 	priv->ieee_channels = NULL;
@@ -4919,7 +4918,7 @@ static void __devexit iwl3945_pci_remove(struct pci_dev *pdev)
 	iwl3945_hw_txq_ctx_free(priv);
 
 	iwl3945_unset_hw_params(priv);
-	priv->cfg->ops->smgmt->clear_station_table(priv);
+	iwl3945_clear_stations_table(priv);
 
 	/*netif_stop_queue(dev); */
 	flush_workqueue(priv->workqueue);
