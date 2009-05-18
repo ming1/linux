@@ -106,8 +106,9 @@ static struct iwl_power_vec_entry range_2[IWL_POWER_MAX] = {
 /* set card power command */
 static int iwl_set_power(struct iwl_priv *priv, void *cmd)
 {
-	return iwl_send_cmd_pdu(priv, POWER_TABLE_CMD,
-				sizeof(struct iwl_powertable_cmd), cmd);
+	return iwl_send_cmd_pdu_async(priv, POWER_TABLE_CMD,
+				      sizeof(struct iwl_powertable_cmd),
+				      cmd, NULL);
 }
 /* decide the right power level according to association status
  * and battery status
