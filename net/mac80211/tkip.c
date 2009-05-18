@@ -13,7 +13,6 @@
 #include <asm/unaligned.h>
 
 #include <net/mac80211.h>
-#include "driver-ops.h"
 #include "key.h"
 #include "tkip.h"
 #include "wep.h"
@@ -308,8 +307,9 @@ int ieee80211_tkip_decrypt_data(struct crypto_blkcipher *tfm,
 			if (is_multicast_ether_addr(ra))
 				sta_addr = bcast;
 
-			drv_update_tkip_key(key->local, &key->conf, sta_addr,
-					    iv32, key->u.tkip.rx[queue].p1k);
+			key->local->ops->update_tkip_key(
+				local_to_hw(key->local), &key->conf,
+				sta_addr, iv32, key->u.tkip.rx[queue].p1k);
 		}
 	}
 
