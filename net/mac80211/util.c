@@ -708,62 +708,26 @@ void ieee80211_set_wmm_default(struct ieee80211_sub_if_data *sdata)
 {
 	struct ieee80211_local *local = sdata->local;
 	struct ieee80211_tx_queue_params qparam;
-	int queue;
-	bool use_11b;
-	int aCWmin, aCWmax;
+	int i;
 
 	if (!local->ops->conf_tx)
 		return;
 
 	memset(&qparam, 0, sizeof(qparam));
 
-	use_11b = (local->hw.conf.channel->band == IEEE80211_BAND_2GHZ) &&
-		 !(sdata->flags & IEEE80211_SDATA_OPERATING_GMODE);
+	qparam.aifs = 2;
 
-	for (queue = 0; queue < local_to_hw(local)->queues; queue++) {
-		/* Set defaults according to 802.11-2007 Table 7-37 */
-		aCWmax = 1023;
-		if (use_11b)
-			aCWmin = 31;
-		else
-			aCWmin = 15;
+	if (local->hw.conf.channel->band == IEEE80211_BAND_2GHZ &&
+	    !(sdata->flags & IEEE80211_SDATA_OPERATING_GMODE))
+		qparam.cw_min = 31;
+	else
+		qparam.cw_min = 15;
 
-		switch (queue) {
-		case 3: /* AC_BK */
-			qparam.cw_max = aCWmin;
-			qparam.cw_min = aCWmax;
-			qparam.txop = 0;
-			qparam.aifs = 7;
-			break;
-		default: /* never happens but let's not leave undefined */
-		case 2: /* AC_BE */
-			qparam.cw_max = aCWmin;
-			qparam.cw_min = aCWmax;
-			qparam.txop = 0;
-			qparam.aifs = 3;
-			break;
-		case 1: /* AC_VI */
-			qparam.cw_max = aCWmin;
-			qparam.cw_min = (aCWmin + 1) / 2 - 1;
-			if (use_11b)
-				qparam.txop = 6016/32;
-			else
-				qparam.txop = 3008/32;
-			qparam.aifs = 2;
-			break;
-		case 0: /* AC_VO */
-			qparam.cw_max = (aCWmin + 1) / 2 - 1;
-			qparam.cw_min = (aCWmin + 1) / 4 - 1;
-			if (use_11b)
-				qparam.txop = 3264/32;
-			else
-				qparam.txop = 1504/32;
-			qparam.aifs = 2;
-			break;
-		}
+	qparam.cw_max = 1023;
+	qparam.txop = 0;
 
-		drv_conf_tx(local, queue, &qparam);
-	}
+	for (i = 0; i < local_to_hw(local)->queues; i++)
+		drv_conf_tx(local, i, &qparam);
 }
 
 void ieee80211_sta_def_wmm_params(struct ieee80211_sub_if_data *sdata,
