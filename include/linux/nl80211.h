@@ -25,8 +25,6 @@
  *
  */
 
-#include <linux/types.h>
-
 /**
  * DOC: Station handling
  *
@@ -382,7 +380,7 @@ enum nl80211_commands {
  *
  * @NL80211_ATTR_STA_AID: Association ID for the station (u16)
  * @NL80211_ATTR_STA_FLAGS: flags, nested element with NLA_FLAG attributes of
- *	&enum nl80211_sta_flags (deprecated, use %NL80211_ATTR_STA_FLAGS2)
+ *	&enum nl80211_sta_flags.
  * @NL80211_ATTR_STA_LISTEN_INTERVAL: listen interval as defined by
  *	IEEE 802.11 7.3.1.6 (u16).
  * @NL80211_ATTR_STA_SUPPORTED_RATES: supported rates, array of supported
@@ -501,9 +499,6 @@ enum nl80211_commands {
  *	this attribute can be used
  *	with %NL80211_CMD_ASSOCIATE request
  *
- * @NL80211_ATTR_STA_FLAGS2: Attribute containing a
- *	&struct nl80211_sta_flag_update.
- *
  * @NL80211_ATTR_MAX: highest attribute number currently defined
  * @__NL80211_ATTR_AFTER_LAST: internal use
  */
@@ -608,8 +603,6 @@ enum nl80211_attrs {
 
 	NL80211_ATTR_USE_MFP,
 
-	NL80211_ATTR_STA_FLAGS2,
-
 	/* add attributes here, update the policy in nl80211.c */
 
 	__NL80211_ATTR_AFTER_LAST,
@@ -697,18 +690,6 @@ enum nl80211_sta_flags {
 	__NL80211_STA_FLAG_AFTER_LAST,
 	NL80211_STA_FLAG_MAX = __NL80211_STA_FLAG_AFTER_LAST - 1
 };
-
-/**
- * struct nl80211_sta_flag_update - station flags mask/set
- * @mask: mask of station flags to set
- * @set: which values to set them to
- *
- * Both mask and set contain bits as per &enum nl80211_sta_flags.
- */
-struct nl80211_sta_flag_update {
-	__u32 mask;
-	__u32 set;
-} __attribute__((packed));
 
 /**
  * enum nl80211_rate_info - bitrate information
