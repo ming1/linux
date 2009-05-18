@@ -1150,7 +1150,6 @@ struct wireless_dev {
 	struct {
 		struct cfg80211_ibss_params ibss;
 		u8 bssid[ETH_ALEN];
-		s8 default_key, default_mgmt_key;
 	} wext;
 #endif
 };
@@ -1401,15 +1400,6 @@ int cfg80211_wext_siwretry(struct net_device *dev,
 int cfg80211_wext_giwretry(struct net_device *dev,
 			   struct iw_request_info *info,
 			   struct iw_param *retry, char *extra);
-int cfg80211_wext_siwencodeext(struct net_device *dev,
-			       struct iw_request_info *info,
-			       struct iw_point *erq, char *extra);
-int cfg80211_wext_siwencode(struct net_device *dev,
-			    struct iw_request_info *info,
-			    struct iw_point *erq, char *keybuf);
-int cfg80211_wext_giwencode(struct net_device *dev,
-			    struct iw_request_info *info,
-			    struct iw_point *erq, char *keybuf);
 
 /*
  * callbacks for asynchronous cfg80211 methods, notification
