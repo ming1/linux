@@ -538,7 +538,6 @@ static int nl80211_set_wiphy(struct sk_buff *skb, struct genl_info *info)
 
 
 static int nl80211_send_iface(struct sk_buff *msg, u32 pid, u32 seq, int flags,
-			      struct cfg80211_registered_device *rdev,
 			      struct net_device *dev)
 {
 	void *hdr;
@@ -548,7 +547,6 @@ static int nl80211_send_iface(struct sk_buff *msg, u32 pid, u32 seq, int flags,
 		return -1;
 
 	NLA_PUT_U32(msg, NL80211_ATTR_IFINDEX, dev->ifindex);
-	NLA_PUT_U32(msg, NL80211_ATTR_WIPHY, rdev->wiphy_idx);
 	NLA_PUT_STRING(msg, NL80211_ATTR_IFNAME, dev->name);
 	NLA_PUT_U32(msg, NL80211_ATTR_IFTYPE, dev->ieee80211_ptr->iftype);
 	return genlmsg_end(msg, hdr);
@@ -583,7 +581,7 @@ static int nl80211_dump_interface(struct sk_buff *skb, struct netlink_callback *
 			}
 			if (nl80211_send_iface(skb, NETLINK_CB(cb->skb).pid,
 					       cb->nlh->nlmsg_seq, NLM_F_MULTI,
-					       dev, wdev->netdev) < 0) {
+					       wdev->netdev) < 0) {
 				mutex_unlock(&dev->devlist_mtx);
 				goto out;
 			}
@@ -617,8 +615,7 @@ static int nl80211_get_interface(struct sk_buff *skb, struct genl_info *info)
 	if (!msg)
 		goto out_err;
 
-	if (nl80211_send_iface(msg, info->snd_pid, info->snd_seq, 0,
-			       dev, netdev) < 0)
+	if (nl80211_send_iface(msg, info->snd_pid, info->snd_seq, 0, netdev) < 0)
 		goto out_free;
 
 	dev_put(netdev);
