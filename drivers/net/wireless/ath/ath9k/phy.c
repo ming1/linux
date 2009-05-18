@@ -96,8 +96,9 @@ ath9k_hw_set_channel(struct ath_hw *ah, struct ath9k_channel *chan)
 	return true;
 }
 
-void ath9k_hw_ar9280_set_channel(struct ath_hw *ah,
-				 struct ath9k_channel *chan)
+bool
+ath9k_hw_ar9280_set_channel(struct ath_hw *ah,
+			    struct ath9k_channel *chan)
 {
 	u16 bMode, fracMode, aModeRefSel = 0;
 	u32 freq, ndiv, channelSel = 0, channelFrac = 0, reg32 = 0;
@@ -168,6 +169,8 @@ void ath9k_hw_ar9280_set_channel(struct ath_hw *ah,
 
 	ah->curchan = chan;
 	ah->curchan_rad_index = -1;
+
+	return true;
 }
 
 static void
