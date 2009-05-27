@@ -1687,6 +1687,12 @@ static int nl80211_set_station(struct sk_buff *skb, struct genl_info *info)
 	if (err)
 		goto out_rtnl;
 
+	if (dev->ieee80211_ptr->iftype != NL80211_IFTYPE_AP &&
+	    dev->ieee80211_ptr->iftype != NL80211_IFTYPE_AP_VLAN) {
+		err = -EINVAL;
+		goto out;
+	}
+
 	err = get_vlan(info->attrs[NL80211_ATTR_STA_VLAN], drv, &params.vlan);
 	if (err)
 		goto out;
@@ -1804,6 +1810,12 @@ static int nl80211_del_station(struct sk_buff *skb, struct genl_info *info)
 	err = get_drv_dev_by_info_ifindex(info->attrs, &drv, &dev);
 	if (err)
 		goto out_rtnl;
+
+	if (dev->ieee80211_ptr->iftype != NL80211_IFTYPE_AP &&
+	    dev->ieee80211_ptr->iftype != NL80211_IFTYPE_AP_VLAN) {
+		err = -EINVAL;
+		goto out;
+	}
 
 	if (dev->ieee80211_ptr->iftype != NL80211_IFTYPE_AP &&
 	    dev->ieee80211_ptr->iftype != NL80211_IFTYPE_AP_VLAN) {
