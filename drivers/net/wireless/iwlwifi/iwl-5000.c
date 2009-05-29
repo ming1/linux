@@ -1537,7 +1537,6 @@ struct iwl_lib_ops iwl5000_lib = {
 		.query_addr = iwl5000_eeprom_query_addr,
 	},
 	.post_associate = iwl_post_associate,
-	.config_ap = iwl_config_ap,
 };
 
 struct iwl_ops iwl5000_ops = {
