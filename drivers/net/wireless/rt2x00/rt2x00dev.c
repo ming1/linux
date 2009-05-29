@@ -260,8 +260,7 @@ void rt2x00lib_txdone(struct queue_entry *entry,
 	 * Update TX statistics.
 	 */
 	rt2x00dev->link.qual.tx_success +=
-	    test_bit(TXDONE_SUCCESS, &txdesc->flags) ||
-	    test_bit(TXDONE_UNKNOWN, &txdesc->flags);
+	    test_bit(TXDONE_SUCCESS, &txdesc->flags);
 	rt2x00dev->link.qual.tx_failed +=
 	    test_bit(TXDONE_FAILURE, &txdesc->flags);
 
@@ -279,16 +278,14 @@ void rt2x00lib_txdone(struct queue_entry *entry,
 	tx_info->status.rates[1].idx = -1; /* terminate */
 
 	if (!(tx_info->flags & IEEE80211_TX_CTL_NO_ACK)) {
-		if (test_bit(TXDONE_SUCCESS, &txdesc->flags) ||
-				test_bit(TXDONE_UNKNOWN, &txdesc->flags))
+		if (test_bit(TXDONE_SUCCESS, &txdesc->flags))
 			tx_info->flags |= IEEE80211_TX_STAT_ACK;
 		else if (test_bit(TXDONE_FAILURE, &txdesc->flags))
 			rt2x00dev->low_level_stats.dot11ACKFailureCount++;
 	}
 
 	if (rate_flags & IEEE80211_TX_RC_USE_RTS_CTS) {
-		if (test_bit(TXDONE_SUCCESS, &txdesc->flags) ||
-				test_bit(TXDONE_UNKNOWN, &txdesc->flags))
+		if (test_bit(TXDONE_SUCCESS, &txdesc->flags))
 			rt2x00dev->low_level_stats.dot11RTSSuccessCount++;
 		else if (test_bit(TXDONE_FAILURE, &txdesc->flags))
 			rt2x00dev->low_level_stats.dot11RTSFailureCount++;
