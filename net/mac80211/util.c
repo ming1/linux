@@ -588,10 +588,8 @@ u32 ieee802_11_parse_elems_crc(u8 *start, size_t len,
 			elems->cf_params_len = elen;
 			break;
 		case WLAN_EID_TIM:
-			if (elen >= sizeof(struct ieee80211_tim_ie)) {
-				elems->tim = (void *)pos;
-				elems->tim_len = elen;
-			}
+			elems->tim = pos;
+			elems->tim_len = elen;
 			break;
 		case WLAN_EID_IBSS_PARAMS:
 			elems->ibss_params = pos;
