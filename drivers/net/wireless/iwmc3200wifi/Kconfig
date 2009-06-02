@@ -3,7 +3,6 @@ config IWM
 	depends on MMC && WLAN_80211 && EXPERIMENTAL
 	select LIB80211
 	select FW_LOADER
-	select RFKILL
 
 config IWM_DEBUG
 	bool "Enable full debugging output in iwmc3200wifi"
