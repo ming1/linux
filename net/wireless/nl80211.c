@@ -1817,12 +1817,6 @@ static int nl80211_del_station(struct sk_buff *skb, struct genl_info *info)
 		goto out;
 	}
 
-	if (dev->ieee80211_ptr->iftype != NL80211_IFTYPE_AP &&
-	    dev->ieee80211_ptr->iftype != NL80211_IFTYPE_AP_VLAN) {
-		err = -EINVAL;
-		goto out;
-	}
-
 	if (!drv->ops->del_station) {
 		err = -EOPNOTSUPP;
 		goto out;
