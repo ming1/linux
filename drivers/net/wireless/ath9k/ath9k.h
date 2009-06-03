@@ -70,6 +70,7 @@ struct ath_config {
 	u32 ath_aggr_prot;
 	u16 txpowlimit;
 	u8 cabqReadytime;
+	u8 swBeaconProcess;
 };
 
 /*************************/
