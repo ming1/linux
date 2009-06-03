@@ -293,12 +293,10 @@ restart:
 	queue_work(priv->workqueue, &priv->restart);
 }
 
-static bool is_fat_channel(__le32 rxon_flags)
+static int is_fat_channel(__le32 rxon_flags)
 {
-	int chan_mod = le32_to_cpu(rxon_flags & RXON_FLG_CHANNEL_MODE_MSK)
-				    >> RXON_FLG_CHANNEL_MODE_POS;
-	return ((chan_mod == CHANNEL_MODE_PURE_40) ||
-		  (chan_mod == CHANNEL_MODE_MIXED));
+	return (rxon_flags & RXON_FLG_CHANNEL_MODE_PURE_40_MSK) ||
+		(rxon_flags & RXON_FLG_CHANNEL_MODE_MIXED_MSK);
 }
 
 /*
@@ -1492,7 +1490,7 @@ static int iwl4965_send_tx_power(struct iwl_priv *priv)
 	struct iwl4965_txpowertable_cmd cmd = { 0 };
 	int ret;
 	u8 band = 0;
-	bool is_fat = false;
+	u8 is_fat = 0;
 	u8 ctrl_chan_high = 0;
 
 	if (test_bit(STATUS_SCANNING, &priv->status)) {
@@ -1570,7 +1568,7 @@ static int iwl4965_hw_channel_switch(struct iwl_priv *priv, u16 channel)
 {
 	int rc;
 	u8 band = 0;
-	bool is_fat = false;
+	u8 is_fat = 0;
 	u8 ctrl_chan_high = 0;
 	struct iwl4965_channel_switch_cmd cmd = { 0 };
 	const struct iwl_channel_info *ch_info;
