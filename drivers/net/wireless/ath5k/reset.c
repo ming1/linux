@@ -26,7 +26,7 @@
 \*****************************/
 
 #include <linux/pci.h> 		/* To determine if a card is pci-e */
-#include <linux/log2.h>
+#include <linux/bitops.h>	/* For get_bitmask_order */
 #include "ath5k.h"
 #include "reg.h"
 #include "base.h"
@@ -69,10 +69,10 @@ static inline int ath5k_hw_write_ofdm_timings(struct ath5k_hw *ah,
 
 	/* Get exponent
 	 * ALGO: coef_exp = 14 - highest set bit position */
-	coef_exp = ilog2(coef_scaled);
+	coef_exp = get_bitmask_order(coef_scaled);
 
 	/* Doesn't make sense if it's zero*/
-	if (!coef_scaled || !coef_exp)
+	if (!coef_exp)
 		return -EINVAL;
 
 	/* Note: we've shifted coef_scaled by 24 */
