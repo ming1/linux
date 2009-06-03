@@ -382,7 +382,6 @@ struct iwl_rx_queue {
 	u32 read;
 	u32 write;
 	u32 free_count;
-	u32 write_actual;
 	struct list_head rx_free;
 	struct list_head rx_used;
 	int need_update;
