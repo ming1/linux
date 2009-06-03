@@ -238,12 +238,13 @@ static void ath9k_hw_reset_calibration(struct ath_hw *ah,
 	ah->cal_samples = 0;
 }
 
-static bool ath9k_hw_per_calibration(struct ath_hw *ah,
+static void ath9k_hw_per_calibration(struct ath_hw *ah,
 				     struct ath9k_channel *ichan,
 				     u8 rxchainmask,
-				     struct hal_cal_list *currCal)
+				     struct hal_cal_list *currCal,
+				     bool *isCalDone)
 {
-	bool iscaldone = false;
+	*isCalDone = false;
 
 	if (currCal->calState == CAL_RUNNING) {
 		if (!(REG_READ(ah, AR_PHY_TIMING_CTRL4(0)) &
@@ -262,7 +263,7 @@ static bool ath9k_hw_per_calibration(struct ath_hw *ah,
 				currCal->calData->calPostProc(ah, numChains);
 				ichan->CalValid |= currCal->calData->calType;
 				currCal->calState = CAL_DONE;
-				iscaldone = true;
+				*isCalDone = true;
 			} else {
 				ath9k_hw_setup_calibration(ah, currCal);
 			}
@@ -270,8 +271,6 @@ static bool ath9k_hw_per_calibration(struct ath_hw *ah,
 	} else if (!(ichan->CalValid & currCal->calData->calType)) {
 		ath9k_hw_reset_calibration(ah, currCal);
 	}
-
-	return iscaldone;
 }
 
 /* Assumes you are talking about the currently configured channel */
@@ -842,21 +841,23 @@ static inline void ath9k_hw_9285_pa_cal(struct ath_hw *ah)
 }
 
 bool ath9k_hw_calibrate(struct ath_hw *ah, struct ath9k_channel *chan,
-			u8 rxchainmask, bool longcal)
+			u8 rxchainmask, bool longcal,
+			bool *isCalDone)
 {
-	bool iscaldone = true;
 	struct hal_cal_list *currCal = ah->cal_list_curr;
+
+	*isCalDone = true;
 
 	if (currCal &&
 	    (currCal->calState == CAL_RUNNING ||
 	     currCal->calState == CAL_WAITING)) {
-		iscaldone = ath9k_hw_per_calibration(ah, chan,
-						     rxchainmask, currCal);
-		if (iscaldone) {
+		ath9k_hw_per_calibration(ah, chan, rxchainmask, currCal,
+					 isCalDone);
+		if (*isCalDone) {
 			ah->cal_list_curr = currCal = currCal->calNext;
 
 			if (currCal->calState == CAL_WAITING) {
-				iscaldone = false;
+				*isCalDone = false;
 				ath9k_hw_reset_calibration(ah, currCal);
 			}
 		}
@@ -876,7 +877,7 @@ bool ath9k_hw_calibrate(struct ath_hw *ah, struct ath9k_channel *chan,
 			chan->channelFlags &= ~CHANNEL_CW_INT;
 	}
 
-	return iscaldone;
+	return true;
 }
 
 static bool ar9285_clc(struct ath_hw *ah, struct ath9k_channel *chan)
