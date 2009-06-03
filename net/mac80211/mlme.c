@@ -915,6 +915,8 @@ static void ieee80211_direct_probe(struct ieee80211_sub_if_data *sdata)
 
 	ifmgd->state = IEEE80211_STA_MLME_DIRECT_PROBE;
 
+	set_bit(IEEE80211_STA_REQ_DIRECT_PROBE, &ifmgd->request);
+
 	/* Direct probe is sent to broadcast address as some APs
 	 * will not answer to direct packet in unassociated state.
 	 */
@@ -1736,7 +1738,8 @@ static void ieee80211_rx_mgmt_probe_resp(struct ieee80211_sub_if_data *sdata,
 	ieee80211_rx_bss_info(sdata, mgmt, len, rx_status, &elems, false);
 
 	/* direct probe may be part of the association flow */
-	if (ifmgd->state == IEEE80211_STA_MLME_DIRECT_PROBE) {
+	if (test_and_clear_bit(IEEE80211_STA_REQ_DIRECT_PROBE,
+			       &ifmgd->request)) {
 		printk(KERN_DEBUG "%s direct probe responded\n",
 		       sdata->dev->name);
 		ieee80211_authenticate(sdata);
