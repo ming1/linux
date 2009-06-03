@@ -13,19 +13,8 @@
 
 /* TxPD descriptor */
 struct txpd {
-	/* union to cope up with later FW revisions */
-	union {
-		/* Current Tx packet status */
-		__le32 tx_status;
-		struct {
-			/* BSS type: client, AP, etc. */
-			u8 bss_type;
-			/* BSS number */
-			u8 bss_num;
-			/* Reserved */
-			__le16 reserved;
-		} bss;
-	} u;
+	/* Current Tx packet status */
+	__le32 tx_status;
 	/* Tx control */
 	__le32 tx_control;
 	__le32 tx_packet_location;
@@ -47,17 +36,8 @@ struct txpd {
 
 /* RxPD Descriptor */
 struct rxpd {
-	/* union to cope up with later FW revisions */
-	union {
-		/* Current Rx packet status */
-		__le16 status;
-		struct {
-			/* BSS type: client, AP, etc. */
-			u8 bss_type;
-			/* BSS number */
-			u8 bss_num;
-		} bss;
-	} u;
+	/* Current Rx packet status */
+	__le16 status;
 
 	/* SNR */
 	u8 snr;
