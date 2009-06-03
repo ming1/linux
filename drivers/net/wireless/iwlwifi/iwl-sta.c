@@ -75,7 +75,7 @@ int iwl_get_ra_sta_id(struct iwl_priv *priv, struct ieee80211_hdr *hdr)
 		return IWL_AP_ID;
 	} else {
 		u8 *da = ieee80211_get_DA(hdr);
-		return priv->cfg->ops->smgmt->find_station(priv, da);
+		return iwl_find_station(priv, da);
 	}
 }
 EXPORT_SYMBOL(iwl_get_ra_sta_id);
@@ -300,7 +300,7 @@ EXPORT_SYMBOL(iwl_add_station_flags);
 static void iwl_sta_ucode_deactivate(struct iwl_priv *priv, const char *addr)
 {
 	unsigned long flags;
-	u8 sta_id = priv->cfg->ops->smgmt->find_station(priv, addr);
+	u8 sta_id = iwl_find_station(priv, addr);
 
 	BUG_ON(sta_id == IWL_INVALID_STATION);
 
@@ -767,7 +767,7 @@ void iwl_update_tkip_key(struct iwl_priv *priv,
 	unsigned long flags;
 	int i;
 
-	sta_id = priv->cfg->ops->smgmt->find_station(priv, addr);
+	sta_id = iwl_find_station(priv, addr);
 	if (sta_id == IWL_INVALID_STATION) {
 		IWL_DEBUG_MAC80211(priv, "leave - %pM not in station map.\n",
 				   addr);
@@ -1020,7 +1020,7 @@ int iwl_rxon_add_station(struct iwl_priv *priv, const u8 *addr, int is_ap)
 		rcu_read_unlock();
 	}
 
-	sta_id = priv->cfg->ops->smgmt->add_station_ht(priv, addr, is_ap,
+	sta_id = iwl_add_station_flags(priv, addr, is_ap,
 				       0, cur_ht_config);
 
 	/* Set up default rate scaling table in device's station table */
@@ -1054,7 +1054,7 @@ int iwl_get_sta_id(struct iwl_priv *priv, struct ieee80211_hdr *hdr)
 
 	/* If we are an AP, then find the station, or use BCAST */
 	case NL80211_IFTYPE_AP:
-		sta_id = priv->cfg->ops->smgmt->find_station(priv, hdr->addr1);
+		sta_id = iwl_find_station(priv, hdr->addr1);
 		if (sta_id != IWL_INVALID_STATION)
 			return sta_id;
 		return priv->hw_params.bcast_sta_id;
@@ -1062,12 +1062,12 @@ int iwl_get_sta_id(struct iwl_priv *priv, struct ieee80211_hdr *hdr)
 	/* If this frame is going out to an IBSS network, find the station,
 	 * or create a new station table entry */
 	case NL80211_IFTYPE_ADHOC:
-		sta_id = priv->cfg->ops->smgmt->find_station(priv, hdr->addr1);
+		sta_id = iwl_find_station(priv, hdr->addr1);
 		if (sta_id != IWL_INVALID_STATION)
 			return sta_id;
 
 		/* Create new station table entry */
-		sta_id = priv->cfg->ops->smgmt->add_station_ht(priv, hdr->addr1,
+		sta_id = iwl_add_station_flags(priv, hdr->addr1,
 						   0, CMD_ASYNC, NULL);
 
 		if (sta_id != IWL_INVALID_STATION)
@@ -1116,7 +1116,7 @@ int iwl_sta_rx_agg_start(struct iwl_priv *priv,
 	unsigned long flags;
 	int sta_id;
 
-	sta_id = priv->cfg->ops->smgmt->find_station(priv, addr);
+	sta_id = iwl_find_station(priv, addr);
 	if (sta_id == IWL_INVALID_STATION)
 		return -ENXIO;
 
@@ -1138,7 +1138,7 @@ int iwl_sta_rx_agg_stop(struct iwl_priv *priv, const u8 *addr, int tid)
 	unsigned long flags;
 	int sta_id;
 
-	sta_id = priv->cfg->ops->smgmt->find_station(priv, addr);
+	sta_id = iwl_find_station(priv, addr);
 	if (sta_id == IWL_INVALID_STATION) {
 		IWL_ERR(priv, "Invalid station for AGG tid %d\n", tid);
 		return -ENXIO;
@@ -1173,7 +1173,7 @@ static void iwl_sta_modify_ps_wake(struct iwl_priv *priv, int sta_id)
 void iwl_update_ps_mode(struct iwl_priv *priv, u16 ps_bit, u8 *addr)
 {
 	/* FIXME: need locking over ps_status ??? */
-	u8 sta_id = priv->cfg->ops->smgmt->find_station(priv, addr);
+	u8 sta_id = iwl_find_station(priv, addr);
 
 	if (sta_id != IWL_INVALID_STATION) {
 		u8 sta_awake = priv->stations[sta_id].
