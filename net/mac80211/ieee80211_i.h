@@ -748,8 +748,6 @@ struct ieee80211_local {
 	int user_power_level; /* in dBm */
 	int power_constr_level; /* in dBm */
 
-	struct work_struct restart_work;
-
 #ifdef CONFIG_MAC80211_DEBUGFS
 	struct local_debugfsdentries {
 		struct dentry *rcdir;
@@ -1038,22 +1036,15 @@ void ieee80211_handle_pwr_constr(struct ieee80211_sub_if_data *sdata,
 				 u16 capab_info, u8 *pwr_constr_elem,
 				 u8 pwr_constr_elem_len);
 
-/* Suspend/resume and hw reconfiguration */
-int ieee80211_reconfig(struct ieee80211_local *local);
-
+/* Suspend/resume */
 #ifdef CONFIG_PM
 int __ieee80211_suspend(struct ieee80211_hw *hw);
-
-static inline int __ieee80211_resume(struct ieee80211_hw *hw)
-{
-	return ieee80211_reconfig(hw_to_local(hw));
-}
+int __ieee80211_resume(struct ieee80211_hw *hw);
 #else
 static inline int __ieee80211_suspend(struct ieee80211_hw *hw)
 {
 	return 0;
 }
-
 static inline int __ieee80211_resume(struct ieee80211_hw *hw)
 {
 	return 0;
