@@ -370,7 +370,8 @@ static void ar9170_tx_status_janitor(struct work_struct *work)
 				   msecs_to_jiffies(100));
 }
 
-void ar9170_handle_command_response(struct ar9170 *ar, void *buf, u32 len)
+static void ar9170_handle_command_response(struct ar9170 *ar,
+					   void *buf, u32 len)
 {
 	struct ar9170_cmd_response *cmd = (void *) buf;
 
