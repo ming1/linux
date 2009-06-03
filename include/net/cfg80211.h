@@ -781,11 +781,10 @@ enum wiphy_params_flags {
  * @get_key: get information about the key with the given parameters.
  *	@mac_addr will be %NULL when requesting information for a group
  *	key. All pointers given to the @callback function need not be valid
- *	after it returns. This function should return an error if it is
- *	not possible to retrieve the key, -ENOENT if it doesn't exist.
+ *	after it returns.
  *
  * @del_key: remove a key given the @mac_addr (%NULL for a group key)
- *	and @key_index, return -ENOENT if the key doesn't exist.
+ *	and @key_index
  *
  * @set_default_key: set the default key on an interface
  *
