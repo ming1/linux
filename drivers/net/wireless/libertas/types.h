@@ -8,7 +8,7 @@
 #include <asm/byteorder.h>
 #include <linux/wireless.h>
 
-struct ieee_ie_cf_param_set {
+struct ieeetypes_cfparamset {
 	u8 elementid;
 	u8 len;
 	u8 cfpcnt;
@@ -18,18 +18,18 @@ struct ieee_ie_cf_param_set {
 } __attribute__ ((packed));
 
 
-struct ieee_ie_ibss_param_set {
+struct ieeetypes_ibssparamset {
 	u8 elementid;
 	u8 len;
 	__le16 atimwindow;
 } __attribute__ ((packed));
 
-union ieee_ss_param_set {
-	struct ieee_ie_cf_param_set cf;
-	struct ieee_ie_ibss_param_set ibss;
+union IEEEtypes_ssparamset {
+	struct ieeetypes_cfparamset cfparamset;
+	struct ieeetypes_ibssparamset ibssparamset;
 } __attribute__ ((packed));
 
-struct ieee_ie_fh_param_set {
+struct ieeetypes_fhparamset {
 	u8 elementid;
 	u8 len;
 	__le16 dwelltime;
@@ -38,18 +38,18 @@ struct ieee_ie_fh_param_set {
 	u8 hopindex;
 } __attribute__ ((packed));
 
-struct ieee_ie_ds_param_set {
+struct ieeetypes_dsparamset {
 	u8 elementid;
 	u8 len;
-	u8 channel;
+	u8 currentchan;
 } __attribute__ ((packed));
 
-union ieee_phy_param_set {
-	struct ieee_ie_fh_param_set fh;
-	struct ieee_ie_ds_param_set ds;
+union ieeetypes_phyparamset {
+	struct ieeetypes_fhparamset fhparamset;
+	struct ieeetypes_dsparamset dsparamset;
 } __attribute__ ((packed));
 
-struct ieee_assoc_response {
+struct ieeetypes_assocrsp {
 	__le16 capability;
 	__le16 statuscode;
 	__le16 aid;
@@ -149,17 +149,42 @@ struct mrvlietypes_chanlistparamset {
 	struct chanscanparamset chanscanparam[1];
 } __attribute__ ((packed));
 
-struct mrvlietypes_cfparamset {
-	struct mrvlietypesheader header;
+struct cfparamset {
 	u8 cfpcnt;
 	u8 cfpperiod;
 	__le16 cfpmaxduration;
 	__le16 cfpdurationremaining;
 } __attribute__ ((packed));
 
-struct mrvlietypes_dsparamset {
+struct ibssparamset {
+	__le16 atimwindow;
+} __attribute__ ((packed));
+
+struct mrvlietypes_ssparamset {
 	struct mrvlietypesheader header;
-	u8 channel;
+	union {
+		struct cfparamset cfparamset[1];
+		struct ibssparamset ibssparamset[1];
+	} cf_ibss;
+} __attribute__ ((packed));
+
+struct fhparamset {
+	__le16 dwelltime;
+	u8 hopset;
+	u8 hoppattern;
+	u8 hopindex;
+} __attribute__ ((packed));
+
+struct dsparamset {
+	u8 currentchan;
+} __attribute__ ((packed));
+
+struct mrvlietypes_phyparamset {
+	struct mrvlietypesheader header;
+	union {
+		struct fhparamset fhparamset[1];
+		struct dsparamset dsparamset[1];
+	} fh_ds;
 } __attribute__ ((packed));
 
 struct mrvlietypes_rsnparamset {
