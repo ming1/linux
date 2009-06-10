@@ -12,6 +12,7 @@
 #include <linux/nl80211.h>
 #include <linux/if_arp.h>
 #include <net/iw_handler.h>
+#include <net/wireless.h>
 #include <net/cfg80211.h>
 #include "core.h"
 
