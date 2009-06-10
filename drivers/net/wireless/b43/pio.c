@@ -313,7 +313,7 @@ static struct b43_pio_txqueue *select_queue_by_priority(struct b43_wldev *dev,
 {
 	struct b43_pio_txqueue *q;
 
-	if (dev->qos_enabled) {
+	if (b43_modparam_qos) {
 		/* 0 = highest priority */
 		switch (queue_prio) {
 		default:
