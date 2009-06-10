@@ -2474,6 +2474,12 @@ int iwl_mac_config(struct ieee80211_hw *hw, u32 changed)
 
 	mutex_lock(&priv->mutex);
 
+	if (!iwl_is_ready(priv)) {
+		IWL_DEBUG_MAC80211(priv, "leave - not ready\n");
+		ret = -EIO;
+		goto out;
+	}
+
 	IWL_DEBUG_MAC80211(priv, "enter to channel %d changed 0x%X\n",
 					conf->channel->hw_value, changed);
 
@@ -2565,11 +2571,6 @@ int iwl_mac_config(struct ieee80211_hw *hw, u32 changed)
 
 	if (!conf->radio_enabled) {
 		IWL_DEBUG_MAC80211(priv, "leave - radio disabled\n");
-		goto out;
-	}
-
-	if (!iwl_is_ready(priv)) {
-		IWL_DEBUG_MAC80211(priv, "leave - not ready\n");
 		goto out;
 	}
 
