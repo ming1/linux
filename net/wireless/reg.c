@@ -2129,12 +2129,7 @@ static int __set_regdom(const struct ieee80211_regdomain *rd)
 		 * driver wanted to the wiphy to deal with conflicts
 		 */
 
-		/*
-		 * Userspace could have sent two replies with only
-		 * one kernel request.
-		 */
-		if (request_wiphy->regd)
-			return -EALREADY;
+		BUG_ON(request_wiphy->regd);
 
 		r = reg_copy_regd(&request_wiphy->regd, rd);
 		if (r)
