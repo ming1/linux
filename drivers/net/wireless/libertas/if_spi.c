@@ -19,6 +19,7 @@
 
 #include <linux/moduleparam.h>
 #include <linux/firmware.h>
+#include <linux/gpio.h>
 #include <linux/jiffies.h>
 #include <linux/kthread.h>
 #include <linux/list.h>
@@ -49,6 +50,13 @@ struct if_spi_card {
 	/* The card ID and card revision, as reported by the hardware. */
 	u16				card_id;
 	u8				card_rev;
+
+	/* Pin number for our GPIO chip-select. */
+	/* TODO: Once the generic SPI layer has some additional features, we
+	 * should take this out and use the normal chip select here.
+	 * We need support for chip select delays, and not dropping chipselect
+	 * after each word. */
+	int				gpio_cs;
 
 	/* The last time that we initiated an SPU operation */
 	unsigned long			prev_xfer_time;
@@ -122,10 +130,12 @@ static void spu_transaction_init(struct if_spi_card *card)
 		 * If not, we have to busy-wait to be on the safe side. */
 		ndelay(400);
 	}
+	gpio_set_value(card->gpio_cs, 0); /* assert CS */
 }
 
 static void spu_transaction_finish(struct if_spi_card *card)
 {
+	gpio_set_value(card->gpio_cs, 1); /* drop CS */
 	card->prev_xfer_time = jiffies;
 }
 
@@ -135,13 +145,6 @@ static int spu_write(struct if_spi_card *card, u16 reg, const u8 *buf, int len)
 {
 	int err = 0;
 	u16 reg_out = cpu_to_le16(reg | IF_SPI_WRITE_OPERATION_MASK);
-	struct spi_message m;
-	struct spi_transfer reg_trans;
-	struct spi_transfer data_trans;
-
-	spi_message_init(&m);
-	memset(&reg_trans, 0, sizeof(reg_trans));
-	memset(&data_trans, 0, sizeof(data_trans));
 
 	/* You must give an even number of bytes to the SPU, even if it
 	 * doesn't care about the last one.  */
@@ -150,16 +153,13 @@ static int spu_write(struct if_spi_card *card, u16 reg, const u8 *buf, int len)
 	spu_transaction_init(card);
 
 	/* write SPU register index */
-	reg_trans.tx_buf = &reg_out;
-	reg_trans.len = sizeof(reg_out);
+	err = spi_write(card->spi, (u8 *)&reg_out, sizeof(u16));
+	if (err)
+		goto out;
 
-	data_trans.tx_buf = buf;
-	data_trans.len = len;
+	err = spi_write(card->spi, buf, len);
 
-	spi_message_add_tail(&reg_trans, &m);
-	spi_message_add_tail(&data_trans, &m);
-
-	err = spi_sync(card->spi, &m);
+out:
 	spu_transaction_finish(card);
 	return err;
 }
@@ -186,13 +186,10 @@ static inline int spu_reg_is_port_reg(u16 reg)
 
 static int spu_read(struct if_spi_card *card, u16 reg, u8 *buf, int len)
 {
-	unsigned int delay;
+	unsigned int i, delay;
 	int err = 0;
+	u16 zero = 0;
 	u16 reg_out = cpu_to_le16(reg | IF_SPI_READ_OPERATION_MASK);
-	struct spi_message m;
-	struct spi_transfer reg_trans;
-	struct spi_transfer dummy_trans;
-	struct spi_transfer data_trans;
 
 	/* You must take an even number of bytes from the SPU, even if you
 	 * don't care about the last one.  */
@@ -200,34 +197,29 @@ static int spu_read(struct if_spi_card *card, u16 reg, u8 *buf, int len)
 
 	spu_transaction_init(card);
 
-	spi_message_init(&m);
-	memset(&reg_trans, 0, sizeof(reg_trans));
-	memset(&dummy_trans, 0, sizeof(dummy_trans));
-	memset(&data_trans, 0, sizeof(data_trans));
-
 	/* write SPU register index */
-	reg_trans.tx_buf = &reg_out;
-	reg_trans.len = sizeof(reg_out);
-	spi_message_add_tail(&reg_trans, &m);
+	err = spi_write(card->spi, (u8 *)&reg_out, sizeof(u16));
+	if (err)
+		goto out;
 
 	delay = spu_reg_is_port_reg(reg) ? card->spu_port_delay :
 						card->spu_reg_delay;
 	if (card->use_dummy_writes) {
 		/* Clock in dummy cycles while the SPU fills the FIFO */
-		dummy_trans.len = delay / 8;
-		spi_message_add_tail(&dummy_trans, &m);
+		for (i = 0; i < delay / 16; ++i) {
+			err = spi_write(card->spi, (u8 *)&zero, sizeof(u16));
+			if (err)
+				return err;
+		}
 	} else {
 		/* Busy-wait while the SPU fills the FIFO */
-		reg_trans.delay_usecs =
-			DIV_ROUND_UP((100 + (delay * 10)), 1000);
+		ndelay(100 + (delay * 10));
 	}
 
 	/* read in data */
-	data_trans.rx_buf = buf;
-	data_trans.len = len;
-	spi_message_add_tail(&data_trans, &m);
+	err = spi_read(card->spi, buf, len);
 
-	err = spi_sync(card->spi, &m);
+out:
 	spu_transaction_finish(card);
 	return err;
 }
@@ -1057,6 +1049,7 @@ static int __devinit if_spi_probe(struct spi_device *spi)
 	spi_set_drvdata(spi, card);
 	card->pdata = pdata;
 	card->spi = spi;
+	card->gpio_cs = pdata->gpio_cs;
 	card->prev_xfer_time = jiffies;
 
 	sema_init(&card->spi_ready, 0);
@@ -1065,18 +1058,26 @@ static int __devinit if_spi_probe(struct spi_device *spi)
 	INIT_LIST_HEAD(&card->data_packet_list);
 	spin_lock_init(&card->buffer_lock);
 
+	/* set up GPIO CS line. TODO: use  regular CS line */
+	err = gpio_request(card->gpio_cs, "if_spi_gpio_chip_select");
+	if (err)
+		goto free_card;
+	err = gpio_direction_output(card->gpio_cs, 1);
+	if (err)
+		goto free_gpio;
+
 	/* Initialize the SPI Interface Unit */
 	err = spu_init(card, pdata->use_dummy_writes);
 	if (err)
-		goto free_card;
+		goto free_gpio;
 	err = spu_get_chip_revision(card, &card->card_id, &card->card_rev);
 	if (err)
-		goto free_card;
+		goto free_gpio;
 
 	/* Firmware load */
 	err = spu_read_u32(card, IF_SPI_SCRATCH_4_REG, &scratch);
 	if (err)
-		goto free_card;
+		goto free_gpio;
 	if (scratch == SUCCESSFUL_FW_DOWNLOAD_MAGIC)
 		lbs_deb_spi("Firmware is already loaded for "
 			    "Marvell WLAN 802.11 adapter\n");
@@ -1084,7 +1085,7 @@ static int __devinit if_spi_probe(struct spi_device *spi)
 		err = if_spi_calculate_fw_names(card->card_id,
 				card->helper_fw_name, card->main_fw_name);
 		if (err)
-			goto free_card;
+			goto free_gpio;
 
 		lbs_deb_spi("Initializing FW for Marvell WLAN 802.11 adapter "
 				"(chip_id = 0x%04x, chip_rev = 0x%02x) "
@@ -1095,23 +1096,23 @@ static int __devinit if_spi_probe(struct spi_device *spi)
 				spi->max_speed_hz);
 		err = if_spi_prog_helper_firmware(card);
 		if (err)
-			goto free_card;
+			goto free_gpio;
 		err = if_spi_prog_main_firmware(card);
 		if (err)
-			goto free_card;
+			goto free_gpio;
 		lbs_deb_spi("loaded FW for Marvell WLAN 802.11 adapter\n");
 	}
 
 	err = spu_set_interrupt_mode(card, 0, 1);
 	if (err)
-		goto free_card;
+		goto free_gpio;
 
 	/* Register our card with libertas.
 	 * This will call alloc_etherdev */
 	priv = lbs_add_card(card, &spi->dev);
 	if (!priv) {
 		err = -ENOMEM;
-		goto free_card;
+		goto free_gpio;
 	}
 	card->priv = priv;
 	priv->card = card;
@@ -1156,6 +1157,8 @@ terminate_thread:
 	if_spi_terminate_spi_thread(card);
 remove_card:
 	lbs_remove_card(priv); /* will call free_netdev */
+free_gpio:
+	gpio_free(card->gpio_cs);
 free_card:
 	free_if_spi_card(card);
 out:
@@ -1176,6 +1179,7 @@ static int __devexit libertas_spi_remove(struct spi_device *spi)
 	free_irq(spi->irq, card);
 	if_spi_terminate_spi_thread(card);
 	lbs_remove_card(priv); /* will call free_netdev */
+	gpio_free(card->gpio_cs);
 	if (card->pdata->teardown)
 		card->pdata->teardown(spi);
 	free_if_spi_card(card);
