@@ -1147,10 +1147,8 @@ struct wireless_dev {
 
 #ifdef CONFIG_WIRELESS_EXT
 	/* wext data */
-	struct {
-		struct cfg80211_ibss_params ibss;
-		u8 bssid[ETH_ALEN];
-	} wext;
+	struct cfg80211_ibss_params wext;
+	u8 wext_bssid[ETH_ALEN];
 #endif
 };
 
