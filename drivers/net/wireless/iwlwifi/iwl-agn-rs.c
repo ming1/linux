@@ -1207,7 +1207,8 @@ static int rs_switch_to_mimo2(struct iwl_priv *priv,
 	tbl->action = 0;
 	rate_mask = lq_sta->active_mimo2_rate;
 
-	if (iwl_is_fat_tx_allowed(priv, &sta->ht_cap))
+	if (priv->current_ht_config.supported_chan_width
+					== IWL_CHANNEL_WIDTH_40MHZ)
 		tbl->is_fat = 1;
 	else
 		tbl->is_fat = 0;
@@ -1272,7 +1273,8 @@ static int rs_switch_to_mimo3(struct iwl_priv *priv,
 	tbl->action = 0;
 	rate_mask = lq_sta->active_mimo3_rate;
 
-	if (iwl_is_fat_tx_allowed(priv, &sta->ht_cap))
+	if (priv->current_ht_config.supported_chan_width
+					== IWL_CHANNEL_WIDTH_40MHZ)
 		tbl->is_fat = 1;
 	else
 		tbl->is_fat = 0;
@@ -1330,7 +1332,8 @@ static int rs_switch_to_siso(struct iwl_priv *priv,
 	tbl->action = 0;
 	rate_mask = lq_sta->active_siso_rate;
 
-	if (iwl_is_fat_tx_allowed(priv, &sta->ht_cap))
+	if (priv->current_ht_config.supported_chan_width
+	    == IWL_CHANNEL_WIDTH_40MHZ)
 		tbl->is_fat = 1;
 	else
 		tbl->is_fat = 0;
