@@ -694,8 +694,8 @@ struct b43legacy_wldev {
 	/* Reason code of the last interrupt. */
 	u32 irq_reason;
 	u32 dma_reason[6];
-	/* The currently active generic-interrupt mask. */
-	u32 irq_mask;
+	/* saved irq enable/disable state bitfield. */
+	u32 irq_savedstate;
 	/* Link Quality calculation context. */
 	struct b43legacy_noise_calculation noisecalc;
 	/* if > 0 MAC is suspended. if == 0 MAC is enabled. */
