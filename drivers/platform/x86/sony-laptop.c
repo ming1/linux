@@ -1098,6 +1098,7 @@ static int sony_nc_setup_wifi_rfkill(struct acpi_device *device)
 	sony_wifi_rfkill->name = "sony-wifi";
 	sony_wifi_rfkill->toggle_radio = sony_nc_rfkill_set;
 	sony_wifi_rfkill->get_state = sony_nc_rfkill_get;
+	sony_wifi_rfkill->user_claim_unsupported = 1;
 	sony_wifi_rfkill->data = (void *)SONY_WIFI;
 	err = rfkill_register(sony_wifi_rfkill);
 	if (err)
@@ -1122,6 +1123,7 @@ static int sony_nc_setup_bluetooth_rfkill(struct acpi_device *device)
 	sony_bluetooth_rfkill->name = "sony-bluetooth";
 	sony_bluetooth_rfkill->toggle_radio = sony_nc_rfkill_set;
 	sony_bluetooth_rfkill->get_state = sony_nc_rfkill_get;
+	sony_bluetooth_rfkill->user_claim_unsupported = 1;
 	sony_bluetooth_rfkill->data = (void *)SONY_BLUETOOTH;
 	err = rfkill_register(sony_bluetooth_rfkill);
 	if (err)
@@ -1145,6 +1147,7 @@ static int sony_nc_setup_wwan_rfkill(struct acpi_device *device)
 	sony_wwan_rfkill->name = "sony-wwan";
 	sony_wwan_rfkill->toggle_radio = sony_nc_rfkill_set;
 	sony_wwan_rfkill->get_state = sony_nc_rfkill_get;
+	sony_wwan_rfkill->user_claim_unsupported = 1;
 	sony_wwan_rfkill->data = (void *)SONY_WWAN;
 	err = rfkill_register(sony_wwan_rfkill);
 	if (err)
@@ -1168,6 +1171,7 @@ static int sony_nc_setup_wimax_rfkill(struct acpi_device *device)
 	sony_wimax_rfkill->name = "sony-wimax";
 	sony_wimax_rfkill->toggle_radio = sony_nc_rfkill_set;
 	sony_wimax_rfkill->get_state = sony_nc_rfkill_get;
+	sony_wimax_rfkill->user_claim_unsupported = 1;
 	sony_wimax_rfkill->data = (void *)SONY_WIMAX;
 	err = rfkill_register(sony_wimax_rfkill);
 	if (err)
