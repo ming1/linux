@@ -57,7 +57,6 @@ struct rfkill {
 
 	bool			registered;
 	bool			suspended;
-	bool			persistent;
 
 	const struct rfkill_ops	*ops;
 	void			*data;
@@ -117,8 +116,10 @@ MODULE_PARM_DESC(default_state,
 		 "Default initial state for all radio types, 0 = radio off");
 
 static struct {
-	bool cur, sav;
+	bool cur, def;
 } rfkill_global_states[NUM_RFKILL_TYPES];
+
+static unsigned long rfkill_states_default_locked;
 
 static bool rfkill_epo_lock_active;
 
@@ -391,7 +392,7 @@ void rfkill_epo(void)
 		rfkill_set_block(rfkill, true);
 
 	for (i = 0; i < NUM_RFKILL_TYPES; i++) {
-		rfkill_global_states[i].sav = rfkill_global_states[i].cur;
+		rfkill_global_states[i].def = rfkill_global_states[i].cur;
 		rfkill_global_states[i].cur = true;
 	}
 
@@ -416,7 +417,7 @@ void rfkill_restore_states(void)
 
 	rfkill_epo_lock_active = false;
 	for (i = 0; i < NUM_RFKILL_TYPES; i++)
-		__rfkill_switch_all(i, rfkill_global_states[i].sav);
+		__rfkill_switch_all(i, rfkill_global_states[i].def);
 	mutex_unlock(&rfkill_global_mutex);
 }
 
@@ -463,6 +464,29 @@ bool rfkill_get_global_sw_state(const enum rfkill_type type)
 }
 #endif
 
+void rfkill_set_global_sw_state(const enum rfkill_type type, bool blocked)
+{
+	BUG_ON(type == RFKILL_TYPE_ALL);
+
+	mutex_lock(&rfkill_global_mutex);
+
+	/* don't allow unblock when epo */
+	if (rfkill_epo_lock_active && !blocked)
+		goto out;
+
+	/* too late */
+	if (rfkill_states_default_locked & BIT(type))
+		goto out;
+
+	rfkill_states_default_locked |= BIT(type);
+
+	rfkill_global_states[type].cur = blocked;
+	rfkill_global_states[type].def = blocked;
+ out:
+	mutex_unlock(&rfkill_global_mutex);
+}
+EXPORT_SYMBOL(rfkill_set_global_sw_state);
+
 
 bool rfkill_set_hw_state(struct rfkill *rfkill, bool blocked)
 {
@@ -508,14 +532,13 @@ bool rfkill_set_sw_state(struct rfkill *rfkill, bool blocked)
 	blocked = blocked || hwblock;
 	spin_unlock_irqrestore(&rfkill->lock, flags);
 
-	if (!rfkill->registered) {
-		rfkill->persistent = true;
-	} else {
-		if (prev != blocked && !hwblock)
-			schedule_work(&rfkill->uevent_work);
+	if (!rfkill->registered)
+		return blocked;
 
-		rfkill_led_trigger_event(rfkill);
-	}
+	if (prev != blocked && !hwblock)
+		schedule_work(&rfkill->uevent_work);
+
+	rfkill_led_trigger_event(rfkill);
 
 	return blocked;
 }
@@ -540,14 +563,13 @@ void rfkill_set_states(struct rfkill *rfkill, bool sw, bool hw)
 
 	spin_unlock_irqrestore(&rfkill->lock, flags);
 
-	if (!rfkill->registered) {
-		rfkill->persistent = true;
-	} else {
-		if (swprev != sw || hwprev != hw)
-			schedule_work(&rfkill->uevent_work);
+	if (!rfkill->registered)
+		return;
 
-		rfkill_led_trigger_event(rfkill);
-	}
+	if (swprev != sw || hwprev != hw)
+		schedule_work(&rfkill->uevent_work);
+
+	rfkill_led_trigger_event(rfkill);
 }
 EXPORT_SYMBOL(rfkill_set_states);
 
@@ -866,6 +888,15 @@ int __must_check rfkill_register(struct rfkill *rfkill)
 	dev_set_name(dev, "rfkill%lu", rfkill_no);
 	rfkill_no++;
 
+	if (!(rfkill_states_default_locked & BIT(rfkill->type))) {
+		/* first of its kind */
+		BUILD_BUG_ON(NUM_RFKILL_TYPES >
+			sizeof(rfkill_states_default_locked) * 8);
+		rfkill_states_default_locked |= BIT(rfkill->type);
+		rfkill_global_states[rfkill->type].cur =
+			rfkill_global_states[rfkill->type].def;
+	}
+
 	list_add_tail(&rfkill->node, &rfkill_list);
 
 	error = device_add(dev);
@@ -885,17 +916,7 @@ int __must_check rfkill_register(struct rfkill *rfkill)
 	if (rfkill->ops->poll)
 		schedule_delayed_work(&rfkill->poll_work,
 			round_jiffies_relative(POLL_INTERVAL));
-
-	if (!rfkill->persistent || rfkill_epo_lock_active) {
-		schedule_work(&rfkill->sync_work);
-	} else {
-#ifdef CONFIG_RFKILL_INPUT
-		bool soft_blocked = !!(rfkill->state & RFKILL_BLOCK_SW);
-
-		if (!atomic_read(&rfkill_input_disabled))
-			__rfkill_switch_all(rfkill->type, soft_blocked);
-#endif
-	}
+	schedule_work(&rfkill->sync_work);
 
 	rfkill_send_events(rfkill, RFKILL_OP_ADD);
 
@@ -1172,7 +1193,7 @@ static int __init rfkill_init(void)
 	int i;
 
 	for (i = 0; i < NUM_RFKILL_TYPES; i++)
-		rfkill_global_states[i].cur = !rfkill_default_state;
+		rfkill_global_states[i].def = !rfkill_default_state;
 
 	error = class_register(&rfkill_class);
 	if (error)
