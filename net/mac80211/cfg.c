@@ -629,38 +629,34 @@ static void sta_apply_parameters(struct ieee80211_local *local,
 	int i, j;
 	struct ieee80211_supported_band *sband;
 	struct ieee80211_sub_if_data *sdata = sta->sdata;
-	u32 mask, set;
 
 	sband = local->hw.wiphy->bands[local->oper_channel->band];
 
-	spin_lock_bh(&sta->lock);
-	mask = params->sta_flags_mask;
-	set = params->sta_flags_set;
+	/*
+	 * FIXME: updating the flags is racy when this function is
+	 *	  called from ieee80211_change_station(), this will
+	 *	  be resolved in a future patch.
+	 */
 
-	if (mask & BIT(NL80211_STA_FLAG_AUTHORIZED)) {
+	if (params->station_flags & STATION_FLAG_CHANGED) {
+		spin_lock_bh(&sta->lock);
 		sta->flags &= ~WLAN_STA_AUTHORIZED;
-		if (set & BIT(NL80211_STA_FLAG_AUTHORIZED))
+		if (params->station_flags & STATION_FLAG_AUTHORIZED)
 			sta->flags |= WLAN_STA_AUTHORIZED;
-	}
 
-	if (mask & BIT(NL80211_STA_FLAG_SHORT_PREAMBLE)) {
 		sta->flags &= ~WLAN_STA_SHORT_PREAMBLE;
-		if (set & BIT(NL80211_STA_FLAG_SHORT_PREAMBLE))
+		if (params->station_flags & STATION_FLAG_SHORT_PREAMBLE)
 			sta->flags |= WLAN_STA_SHORT_PREAMBLE;
-	}
 
-	if (mask & BIT(NL80211_STA_FLAG_WME)) {
 		sta->flags &= ~WLAN_STA_WME;
-		if (set & BIT(NL80211_STA_FLAG_WME))
+		if (params->station_flags & STATION_FLAG_WME)
 			sta->flags |= WLAN_STA_WME;
-	}
 
-	if (mask & BIT(NL80211_STA_FLAG_MFP)) {
 		sta->flags &= ~WLAN_STA_MFP;
-		if (set & BIT(NL80211_STA_FLAG_MFP))
+		if (params->station_flags & STATION_FLAG_MFP)
 			sta->flags |= WLAN_STA_MFP;
+		spin_unlock_bh(&sta->lock);
 	}
-	spin_unlock_bh(&sta->lock);
 
 	/*
 	 * FIXME: updating the following information is racy when this
