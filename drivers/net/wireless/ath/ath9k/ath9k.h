@@ -604,7 +604,6 @@ struct ath_softc {
 	struct ath9k_debug debug;
 #endif
 	struct ath_bus_ops *bus_ops;
-	struct ath_beacon_config cur_beacon_conf;
 };
 
 struct ath_wiphy {
