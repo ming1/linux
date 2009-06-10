@@ -2769,8 +2769,18 @@ static int iwl_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		goto out_free_eeprom;
 	/* At this point both hw and priv are initialized. */
 
+	/**********************************
+	 * 7. Initialize module parameters
+	 **********************************/
+
+	/* Disable radio (SW RF KILL) via parameter when loading driver */
+	if (priv->cfg->mod_params->disable) {
+		set_bit(STATUS_RF_KILL_SW, &priv->status);
+		IWL_DEBUG_INFO(priv, "Radio disabled.\n");
+	}
+
 	/********************
-	 * 7. Setup services
+	 * 8. Setup services
 	 ********************/
 	spin_lock_irqsave(&priv->lock, flags);
 	iwl_disable_interrupts(priv);
@@ -2794,7 +2804,7 @@ static int iwl_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	iwl_setup_rx_handlers(priv);
 
 	/**********************************
-	 * 8. Setup and register mac80211
+	 * 9. Setup and register mac80211
 	 **********************************/
 
 	/* enable interrupts if needed: hw bug w/a */
