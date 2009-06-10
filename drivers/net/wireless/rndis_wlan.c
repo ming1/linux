@@ -196,18 +196,6 @@ enum ndis_80211_priv_filter {
 	ndis_80211_priv_8021x_wep
 };
 
-enum ndis_80211_addkey_bits {
-	ndis_80211_addkey_8021x_auth = cpu_to_le32(1 << 28),
-	ndis_80211_addkey_set_init_recv_seq = cpu_to_le32(1 << 29),
-	ndis_80211_addkey_pairwise_key = cpu_to_le32(1 << 30),
-	ndis_80211_addkey_transmit_key = cpu_to_le32(1 << 31),
-};
-
-enum ndis_80211_addwep_bits {
-	ndis_80211_addwep_perclient_key = cpu_to_le32(1 << 30),
-	ndis_80211_addwep_transmit_key = cpu_to_le32(1 << 31),
-};
-
 struct ndis_80211_ssid {
 	__le32 length;
 	u8 essid[NDIS_802_11_LENGTH_SSID];
@@ -1010,7 +998,7 @@ static int add_wep_key(struct usbnet *usbdev, char *key, int key_len, int index)
 	memcpy(&ndis_key.material, key, key_len);
 
 	if (index == priv->encr_tx_key_index) {
-		ndis_key.index |= ndis_80211_addwep_transmit_key;
+		ndis_key.index |= cpu_to_le32(1 << 31);
 		ret = set_encr_mode(usbdev, IW_AUTH_CIPHER_WEP104,
 						IW_AUTH_CIPHER_NONE);
 		if (ret)
@@ -1056,8 +1044,7 @@ static int remove_key(struct usbnet *usbdev, int index, u8 bssid[ETH_ALEN])
 		if (bssid) {
 			/* pairwise key */
 			if (memcmp(bssid, ffff_bssid, ETH_ALEN) != 0)
-				remove_key.index |=
-					ndis_80211_addkey_pairwise_key;
+				remove_key.index |= cpu_to_le32(1 << 30);
 			memcpy(remove_key.bssid, bssid,
 					sizeof(remove_key.bssid));
 		} else
@@ -1639,7 +1626,7 @@ static int rndis_iw_set_encode_ext(struct net_device *dev,
 
 	if (ext->ext_flags & IW_ENCODE_EXT_RX_SEQ_VALID) {
 		memcpy(ndis_key.rsc, ext->rx_seq, 6);
-		ndis_key.index |= ndis_80211_addkey_set_init_recv_seq;
+		ndis_key.index |= cpu_to_le32(1 << 29);
 	}
 
 	addr = ext->addr.sa_data;
@@ -1651,12 +1638,12 @@ static int rndis_iw_set_encode_ext(struct net_device *dev,
 			get_bssid(usbdev, ndis_key.bssid);
 	} else {
 		/* pairwise key */
-		ndis_key.index |= ndis_80211_addkey_pairwise_key;
+		ndis_key.index |= cpu_to_le32(1 << 30);
 		memcpy(ndis_key.bssid, addr, ETH_ALEN);
 	}
 
 	if (ext->ext_flags & IW_ENCODE_EXT_SET_TX_KEY)
-		ndis_key.index |= ndis_80211_addkey_transmit_key;
+		ndis_key.index |= cpu_to_le32(1 << 31);
 
 	if (ext->alg == IW_ENCODE_ALG_TKIP && ext->key_len == 32) {
 		/* wpa_supplicant gives us the Michael MIC RX/TX keys in
