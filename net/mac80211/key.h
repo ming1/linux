@@ -144,8 +144,7 @@ struct ieee80211_key {
 struct ieee80211_key *ieee80211_key_alloc(enum ieee80211_key_alg alg,
 					  int idx,
 					  size_t key_len,
-					  const u8 *key_data,
-					  size_t seq_len, const u8 *seq);
+					  const u8 *key_data);
 /*
  * Insert a key into data structures (sdata, sta if necessary)
  * to make it used, free old key.
