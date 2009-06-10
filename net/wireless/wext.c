@@ -649,28 +649,14 @@ static int wireless_seq_show(struct seq_file *seq, void *v)
 	return 0;
 }
 
-static void *wireless_dev_seq_start(struct seq_file *seq, loff_t *pos)
-	__acquires(dev_base_lock)
-{
-	rtnl_lock();
-	return dev_seq_start(seq, pos);
-}
-
-static void wireless_dev_seq_stop(struct seq_file *seq, void *v)
-	__releases(dev_base_lock)
-{
-	dev_seq_stop(seq, v);
-	rtnl_unlock();
-}
-
 static const struct seq_operations wireless_seq_ops = {
-	.start = wireless_dev_seq_start,
+	.start = dev_seq_start,
 	.next  = dev_seq_next,
-	.stop  = wireless_dev_seq_stop,
+	.stop  = dev_seq_stop,
 	.show  = wireless_seq_show,
 };
 
-static int seq_open_wireless(struct inode *inode, struct file *file)
+static int wireless_seq_open(struct inode *inode, struct file *file)
 {
 	return seq_open_net(inode, file, &wireless_seq_ops,
 			    sizeof(struct seq_net_private));
@@ -678,7 +664,7 @@ static int seq_open_wireless(struct inode *inode, struct file *file)
 
 static const struct file_operations wireless_seq_fops = {
 	.owner	 = THIS_MODULE,
-	.open    = seq_open_wireless,
+	.open    = wireless_seq_open,
 	.read    = seq_read,
 	.llseek  = seq_lseek,
 	.release = seq_release_net,
