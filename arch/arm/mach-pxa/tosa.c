@@ -31,6 +31,7 @@
 #include <linux/input.h>
 #include <linux/gpio.h>
 #include <linux/pda_power.h>
+#include <linux/rfkill.h>
 #include <linux/spi/spi.h>
 
 #include <asm/setup.h>

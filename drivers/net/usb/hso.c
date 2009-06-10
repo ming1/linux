@@ -2481,10 +2481,10 @@ static int add_net_device(struct hso_device *hso_dev)
 	return 0;
 }
 
-static int hso_rfkill_set_block(void *data, bool blocked)
+static int hso_radio_toggle(void *data, enum rfkill_state state)
 {
 	struct hso_device *hso_dev = data;
-	int enabled = !blocked;
+	int enabled = (state == RFKILL_STATE_UNBLOCKED);
 	int rv;
 
 	mutex_lock(&hso_dev->mutex);
@@ -2498,10 +2498,6 @@ static int hso_rfkill_set_block(void *data, bool blocked)
 	return rv;
 }
 
-static const struct rfkill_ops hso_rfkill_ops = {
-	.set_block = hso_rfkill_set_block,
-};
-
 /* Creates and sets up everything for rfkill */
 static void hso_create_rfkill(struct hso_device *hso_dev,
 			     struct usb_interface *interface)
@@ -2510,25 +2506,29 @@ static void hso_create_rfkill(struct hso_device *hso_dev,
 	struct device *dev = &hso_net->net->dev;
 	char *rfkn;
 
-	rfkn = kzalloc(20, GFP_KERNEL);
-	if (!rfkn)
-		dev_err(dev, "%s - Out of memory\n", __func__);
-
-	snprintf(rfkn, 20, "hso-%d",
-		 interface->altsetting->desc.bInterfaceNumber);
-
-	hso_net->rfkill = rfkill_alloc(rfkn,
-				       &interface_to_usbdev(interface)->dev,
-				       RFKILL_TYPE_WWAN,
-				       &hso_rfkill_ops, hso_dev);
+	hso_net->rfkill = rfkill_allocate(&interface_to_usbdev(interface)->dev,
+				 RFKILL_TYPE_WWAN);
 	if (!hso_net->rfkill) {
 		dev_err(dev, "%s - Out of memory\n", __func__);
-		kfree(rfkn);
 		return;
 	}
+	rfkn = kzalloc(20, GFP_KERNEL);
+	if (!rfkn) {
+		rfkill_free(hso_net->rfkill);
+		hso_net->rfkill = NULL;
+		dev_err(dev, "%s - Out of memory\n", __func__);
+		return;
+	}
+	snprintf(rfkn, 20, "hso-%d",
+		 interface->altsetting->desc.bInterfaceNumber);
+	hso_net->rfkill->name = rfkn;
+	hso_net->rfkill->state = RFKILL_STATE_UNBLOCKED;
+	hso_net->rfkill->data = hso_dev;
+	hso_net->rfkill->toggle_radio = hso_radio_toggle;
 	if (rfkill_register(hso_net->rfkill) < 0) {
-		rfkill_destroy(hso_net->rfkill);
 		kfree(rfkn);
+		hso_net->rfkill->name = NULL;
+		rfkill_free(hso_net->rfkill);
 		hso_net->rfkill = NULL;
 		dev_err(dev, "%s - Failed to register rfkill\n", __func__);
 		return;
@@ -3165,10 +3165,8 @@ static void hso_free_interface(struct usb_interface *interface)
 			hso_stop_net_device(network_table[i]);
 			cancel_work_sync(&network_table[i]->async_put_intf);
 			cancel_work_sync(&network_table[i]->async_get_intf);
-			if (rfk) {
+			if (rfk)
 				rfkill_unregister(rfk);
-				rfkill_destroy(rfk);
-			}
 			hso_free_net_device(network_table[i]);
 		}
 	}
