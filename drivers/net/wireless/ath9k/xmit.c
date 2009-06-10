@@ -380,7 +380,8 @@ static void ath_tx_complete_aggr(struct ath_softc *sc, struct ath_txq *txq,
 			ath_tx_complete_buf(sc, bf, &bf_head, !txfail, sendbar);
 		} else {
 			/* retry the un-acked ones */
-			if (bf->bf_next == NULL && bf_last->bf_stale) {
+			if (bf->bf_next == NULL &&
+			    bf_last->bf_status & ATH_BUFSTATUS_STALE) {
 				struct ath_buf *tbf;
 
 				tbf = ath_clone_txbuf(sc, bf_last);
@@ -1003,7 +1004,7 @@ void ath_draintxq(struct ath_softc *sc, struct ath_txq *txq, bool retry_tx)
 
 		bf = list_first_entry(&txq->axq_q, struct ath_buf, list);
 
-		if (bf->bf_stale) {
+		if (bf->bf_status & ATH_BUFSTATUS_STALE) {
 			list_del(&bf->list);
 			spin_unlock_bh(&txq->axq_lock);
 
@@ -1940,7 +1941,7 @@ static void ath_tx_processq(struct ath_softc *sc, struct ath_txq *txq)
 		 * it with the STALE flag.
 		 */
 		bf_held = NULL;
-		if (bf->bf_stale) {
+		if (bf->bf_status & ATH_BUFSTATUS_STALE) {
 			bf_held = bf;
 			if (list_is_last(&bf_held->list, &txq->axq_q)) {
 				txq->axq_link = NULL;
@@ -1981,7 +1982,7 @@ static void ath_tx_processq(struct ath_softc *sc, struct ath_txq *txq)
 		 * however leave the last descriptor back as the holding
 		 * descriptor for hw.
 		 */
-		lastbf->bf_stale = true;
+		lastbf->bf_status |= ATH_BUFSTATUS_STALE;
 		INIT_LIST_HEAD(&bf_head);
 		if (!list_is_singular(&lastbf->list))
 			list_cut_position(&bf_head,
