@@ -20,36 +20,35 @@
 struct cmd_ds_command;
 
 /** Data structure for Country IE*/
-struct ieee_subbandset {
+struct ieeetypes_subbandset {
 	u8 firstchan;
 	u8 nrchan;
 	u8 maxtxpwr;
 } __attribute__ ((packed));
 
-struct ieee_ie_country_info_set {
-	struct ieee_ie_header header;
-
+struct ieeetypes_countryinfoset {
+	u8 element_id;
+	u8 len;
 	u8 countrycode[COUNTRY_CODE_LEN];
-	struct ieee_subbandset subband[1];
+	struct ieeetypes_subbandset subband[1];
 };
 
-struct ieee_ie_country_info_full_set {
-	struct ieee_ie_header header;
-
+struct ieeetypes_countryinfofullset {
+	u8 element_id;
+	u8 len;
 	u8 countrycode[COUNTRY_CODE_LEN];
-	struct ieee_subbandset subband[MRVDRV_MAX_SUBBAND_802_11D];
+	struct ieeetypes_subbandset subband[MRVDRV_MAX_SUBBAND_802_11D];
 } __attribute__ ((packed));
 
-struct mrvl_ie_domain_param_set {
-	struct mrvl_ie_header header;
-
+struct mrvlietypes_domainparamset {
+	struct mrvlietypesheader header;
 	u8 countrycode[COUNTRY_CODE_LEN];
-	struct ieee_subbandset subband[1];
+	struct ieeetypes_subbandset subband[1];
 } __attribute__ ((packed));
 
 struct cmd_ds_802_11d_domain_info {
 	__le16 action;
-	struct mrvl_ie_domain_param_set domain;
+	struct mrvlietypes_domainparamset domain;
 } __attribute__ ((packed));
 
 /** domain regulatory information */
@@ -58,7 +57,7 @@ struct lbs_802_11d_domain_reg {
 	u8 countrycode[COUNTRY_CODE_LEN];
 	/** No. of subband*/
 	u8 nr_subband;
-	struct ieee_subbandset subband[MRVDRV_MAX_SUBBAND_802_11D];
+	struct ieeetypes_subbandset subband[MRVDRV_MAX_SUBBAND_802_11D];
 };
 
 struct chan_power_11d {
