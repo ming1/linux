@@ -105,7 +105,6 @@ enum rfkill_user_states {
 #include <linux/mutex.h>
 #include <linux/device.h>
 #include <linux/leds.h>
-#include <linux/err.h>
 
 /* this is opaque */
 struct rfkill;
