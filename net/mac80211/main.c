@@ -154,17 +154,15 @@ static void ieee80211_master_set_multicast_list(struct net_device *dev)
 
 int ieee80211_hw_config(struct ieee80211_local *local, u32 changed)
 {
-	struct ieee80211_channel *chan, *scan_chan;
+	struct ieee80211_channel *chan;
 	int ret = 0;
 	int power;
 	enum nl80211_channel_type channel_type;
 
 	might_sleep();
 
-	scan_chan = local->scan_channel;
-
-	if (scan_chan) {
-		chan = scan_chan;
+	if (local->sw_scanning) {
+		chan = local->scan_channel;
 		channel_type = NL80211_CHAN_NO_HT;
 	} else {
 		chan = local->oper_channel;
@@ -178,7 +176,7 @@ int ieee80211_hw_config(struct ieee80211_local *local, u32 changed)
 		changed |= IEEE80211_CONF_CHANGE_CHANNEL;
 	}
 
-	if (scan_chan)
+	if (local->sw_scanning)
 		power = chan->max_power;
 	else
 		power = local->power_constr_level ?
@@ -861,8 +859,8 @@ int ieee80211_register_hw(struct ieee80211_hw *hw)
 		if (!local->oper_channel) {
 			/* init channel we're on */
 			local->hw.conf.channel =
-			local->oper_channel = &sband->channels[0];
-			local->hw.conf.channel_type = NL80211_CHAN_NO_HT;
+			local->oper_channel =
+			local->scan_channel = &sband->channels[0];
 		}
 		channels += sband->n_channels;
 
