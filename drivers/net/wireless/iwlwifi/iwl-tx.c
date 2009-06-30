@@ -102,8 +102,13 @@ int iwl_txq_update_write_ptr(struct iwl_priv *priv, struct iwl_tx_queue *txq)
 			return ret;
 		}
 
+		/* restore this queue's parameters in nic hardware. */
+		ret = iwl_grab_nic_access(priv);
+		if (ret)
+			return ret;
 		iwl_write_direct32(priv, HBUS_TARG_WRPTR,
 				     txq->q.write_ptr | (txq_id << 8));
+		iwl_release_nic_access(priv);
 
 	/* else not in power-save mode, uCode will never sleep when we're
 	 * trying to tx (during RFKILL, we're not trying to tx). */
@@ -424,6 +429,11 @@ int iwl_txq_ctx_reset(struct iwl_priv *priv)
 		goto error_kw;
 	}
 	spin_lock_irqsave(&priv->lock, flags);
+	ret = iwl_grab_nic_access(priv);
+	if (unlikely(ret)) {
+		spin_unlock_irqrestore(&priv->lock, flags);
+		goto error_reset;
+	}
 
 	/* Turn off all Tx DMA fifos */
 	priv->cfg->ops->lib->txq_set_sched(priv, 0);
@@ -431,6 +441,7 @@ int iwl_txq_ctx_reset(struct iwl_priv *priv)
 	/* Tell NIC where to find the "keep warm" buffer */
 	iwl_write_direct32(priv, FH_KW_MEM_ADDR_REG, priv->kw.dma >> 4);
 
+	iwl_release_nic_access(priv);
 	spin_unlock_irqrestore(&priv->lock, flags);
 
 	/* Alloc and init all Tx queues, including the command queue (#4) */
@@ -449,6 +460,7 @@ int iwl_txq_ctx_reset(struct iwl_priv *priv)
 
  error:
 	iwl_hw_txq_ctx_free(priv);
+ error_reset:
 	iwl_free_dma_ptr(priv, &priv->kw);
  error_kw:
 	iwl_free_dma_ptr(priv, &priv->scd_bc_tbls);
@@ -466,6 +478,10 @@ void iwl_txq_ctx_stop(struct iwl_priv *priv)
 
 	/* Turn off all Tx DMA fifos */
 	spin_lock_irqsave(&priv->lock, flags);
+	if (iwl_grab_nic_access(priv)) {
+		spin_unlock_irqrestore(&priv->lock, flags);
+		return;
+	}
 
 	priv->cfg->ops->lib->txq_set_sched(priv, 0);
 
@@ -476,6 +492,7 @@ void iwl_txq_ctx_stop(struct iwl_priv *priv)
 				    FH_TSSR_TX_STATUS_REG_MSK_CHNL_IDLE(ch),
 				    1000);
 	}
+	iwl_release_nic_access(priv);
 	spin_unlock_irqrestore(&priv->lock, flags);
 
 	/* Deallocate memory for all Tx queues */
