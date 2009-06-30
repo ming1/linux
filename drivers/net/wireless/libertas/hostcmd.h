@@ -250,9 +250,7 @@ struct cmd_ds_gspi_bus_config {
 } __attribute__ ((packed));
 
 struct cmd_ds_802_11_authenticate {
-	struct cmd_header hdr;
-
-	u8 bssid[ETH_ALEN];
+	u8 macaddr[ETH_ALEN];
 	u8 authtype;
 	u8 reserved[10];
 } __attribute__ ((packed));
@@ -772,6 +770,7 @@ struct cmd_ds_command {
 	union {
 		struct cmd_ds_802_11_ps_mode psmode;
 		struct cmd_ds_802_11_associate associate;
+		struct cmd_ds_802_11_authenticate auth;
 		struct cmd_ds_802_11_get_stat gstat;
 		struct cmd_ds_802_3_get_stat gstat_8023;
 		struct cmd_ds_802_11_rf_antenna rant;
