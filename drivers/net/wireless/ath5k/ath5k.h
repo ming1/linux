@@ -27,7 +27,7 @@
 #include <linux/types.h>
 #include <net/mac80211.h>
 
-#include "../regd.h"
+#include "../ath/regd.h"
 
 /* RX/TX descriptor hw structs
  * TODO: Driver part should only see sw structs */
