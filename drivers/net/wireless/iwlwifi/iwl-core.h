@@ -176,6 +176,7 @@ struct iwl_ops {
 };
 
 struct iwl_mod_params {
+	int disable;		/* def: 0 = enable radio */
 	int sw_crypto;		/* def: 0 = using hardware encryption */
 	u32 debug;		/* def: 0 = minimal debug log messages */
 	int disable_hw_scan;	/* def: 0 = use h/w scan */
