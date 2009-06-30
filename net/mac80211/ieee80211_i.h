@@ -783,7 +783,6 @@ struct ieee80211_local {
 		struct dentry *total_ps_buffered;
 		struct dentry *wep_iv;
 		struct dentry *tsf;
-		struct dentry *queues;
 		struct dentry *reset;
 		struct dentry *noack;
 		struct dentry *statistics;
