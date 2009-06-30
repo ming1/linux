@@ -102,7 +102,7 @@ static void ar9170_usb_tx_urb_complete_free(struct urb *urb)
 	struct ar9170_usb *aru = (struct ar9170_usb *)
 	      usb_get_intfdata(usb_ifnum_to_if(urb->dev, 0));
 
-	if (unlikely(!aru)) {
+	if (!aru) {
 		dev_kfree_skb_irq(skb);
 		return ;
 	}
@@ -135,8 +135,8 @@ static void ar9170_usb_irq_completed(struct urb *urb)
 		goto resubmit;
 	}
 
-	ar9170_handle_command_response(&aru->common, urb->transfer_buffer,
-				       urb->actual_length);
+	print_hex_dump_bytes("ar9170 irq: ", DUMP_PREFIX_OFFSET,
+			     urb->transfer_buffer, urb->actual_length);
 
 resubmit:
 	usb_anchor_urb(urb, &aru->rx_submitted);
@@ -186,15 +186,16 @@ resubmit:
 
 	usb_anchor_urb(urb, &aru->rx_submitted);
 	err = usb_submit_urb(urb, GFP_ATOMIC);
-	if (unlikely(err)) {
+	if (err) {
 		usb_unanchor_urb(urb);
-		goto free;
+		dev_kfree_skb_irq(skb);
 	}
 
 	return ;
 
 free:
 	dev_kfree_skb_irq(skb);
+	return;
 }
 
 static int ar9170_usb_prep_rx_urb(struct ar9170_usb *aru,
@@ -345,7 +346,7 @@ static int ar9170_usb_exec_cmd(struct ar9170 *ar, enum ar9170_cmd cmd,
 
 	usb_anchor_urb(urb, &aru->tx_submitted);
 	err = usb_submit_urb(urb, GFP_ATOMIC);
-	if (unlikely(err)) {
+	if (err) {
 		usb_unanchor_urb(urb);
 		usb_free_urb(urb);
 		goto err_unbuf;
@@ -426,7 +427,7 @@ static void ar9170_usb_callback_cmd(struct ar9170 *ar, u32 len , void *buffer)
 	unsigned long flags;
 	u32 in, out;
 
-	if (unlikely(!buffer))
+	if (!buffer)
 		return ;
 
 	in = le32_to_cpup((__le32 *)buffer);
@@ -727,7 +728,7 @@ static int ar9170_usb_probe(struct usb_interface *intf,
 
 #ifdef CONFIG_PM
 	udev->reset_resume = 1;
-#endif /* CONFIG_PM */
+#endif
 	err = ar9170_usb_reset(aru);
 	if (err)
 		goto err_freehw;
@@ -811,6 +812,11 @@ static int ar9170_resume(struct usb_interface *intf)
 
 	usb_unpoison_anchored_urbs(&aru->rx_submitted);
 	usb_unpoison_anchored_urbs(&aru->tx_submitted);
+
+	/*
+	 * FIXME: firmware upload will fail on resume.
+	 * but this is better than a hang!
+	 */
 
 	err = ar9170_usb_init_device(aru);
 	if (err)
