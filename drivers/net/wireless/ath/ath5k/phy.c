@@ -2158,6 +2158,8 @@ done:
  * Get the max edge power for this channel if
  * we have such data from EEPROM's Conformance Test
  * Limits (CTL), and limit max power if needed.
+ *
+ * FIXME: Only works for world regulatory domains
  */
 static void
 ath5k_get_max_ctl_power(struct ath5k_hw *ah,
@@ -2173,23 +2175,26 @@ ath5k_get_max_ctl_power(struct ath5k_hw *ah,
 	u8 ctl_idx = 0xFF;
 	u32 target = channel->center_freq;
 
-	ctl_mode = ath_regd_get_band_ctl(&ah->ah_regulatory, channel->band);
-
+	/* Find out a CTL for our mode that's not mapped
+	 * on a specific reg domain.
+	 *
+	 * TODO: Map our current reg domain to one of the 3 available
+	 * reg domain ids so that we can support more CTLs. */
 	switch (channel->hw_value & CHANNEL_MODES) {
 	case CHANNEL_A:
-		ctl_mode |= AR5K_CTL_11A;
+		ctl_mode = AR5K_CTL_11A | AR5K_CTL_NO_REGDOMAIN;
 		break;
 	case CHANNEL_G:
-		ctl_mode |= AR5K_CTL_11G;
+		ctl_mode = AR5K_CTL_11G | AR5K_CTL_NO_REGDOMAIN;
 		break;
 	case CHANNEL_B:
-		ctl_mode |= AR5K_CTL_11B;
+		ctl_mode = AR5K_CTL_11B | AR5K_CTL_NO_REGDOMAIN;
 		break;
 	case CHANNEL_T:
-		ctl_mode |= AR5K_CTL_TURBO;
+		ctl_mode = AR5K_CTL_TURBO | AR5K_CTL_NO_REGDOMAIN;
 		break;
 	case CHANNEL_TG:
-		ctl_mode |= AR5K_CTL_TURBOG;
+		ctl_mode = AR5K_CTL_TURBOG | AR5K_CTL_NO_REGDOMAIN;
 		break;
 	case CHANNEL_XR:
 		/* Fall through */
