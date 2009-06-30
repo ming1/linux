@@ -728,10 +728,14 @@ static int rfkill_resume(struct device *dev)
 	struct rfkill *rfkill = to_rfkill(dev);
 	bool cur;
 
-	cur = !!(rfkill->state & RFKILL_BLOCK_SW);
+	mutex_lock(&rfkill_global_mutex);
+	cur = rfkill_global_states[rfkill->type].cur;
 	rfkill_set_block(rfkill, cur);
+	mutex_unlock(&rfkill_global_mutex);
 
 	rfkill->suspended = false;
+
+	schedule_work(&rfkill->uevent_work);
 
 	rfkill_resume_polling(rfkill);
 
