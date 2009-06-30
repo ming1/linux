@@ -296,7 +296,7 @@ int ath_set_channel(struct ath_softc *sc, struct ieee80211_hw *hw,
 			"reset status %d\n",
 			channel->center_freq, r);
 		spin_unlock_bh(&sc->sc_resetlock);
-		goto ps_restore;
+		return r;
 	}
 	spin_unlock_bh(&sc->sc_resetlock);
 
@@ -305,17 +305,14 @@ int ath_set_channel(struct ath_softc *sc, struct ieee80211_hw *hw,
 	if (ath_startrecv(sc) != 0) {
 		DPRINTF(sc, ATH_DBG_FATAL,
 			"Unable to restart recv logic\n");
-		r = -EIO;
-		goto ps_restore;
+		return -EIO;
 	}
 
 	ath_cache_conf_rate(sc, &hw->conf);
 	ath_update_txpow(sc);
 	ath9k_hw_set_interrupts(ah, sc->imask);
-
- ps_restore:
 	ath9k_ps_restore(sc);
-	return r;
+	return 0;
 }
 
 /*
