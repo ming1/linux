@@ -207,7 +207,7 @@ static int generate_domain_info_11d(struct parsed_region_chan_11d
 	lbs_deb_11d("nr_subband=%x\n", domaininfo->nr_subband);
 	lbs_deb_hex(LBS_DEB_11D, "domaininfo", (char *)domaininfo,
 		COUNTRY_CODE_LEN + 1 +
-		sizeof(struct ieee_subbandset) * nr_subband);
+		sizeof(struct ieeetypes_subbandset) * nr_subband);
 	return 0;
 }
 
@@ -302,9 +302,11 @@ done:
  *  @param parsed_region_chan   pointer to parsed_region_chan_11d
  *  @return 	                0
 */
-static int parse_domain_info_11d(struct ieee_ie_country_info_full_set *countryinfo,
+static int parse_domain_info_11d(struct ieeetypes_countryinfofullset*
+				 countryinfo,
 				 u8 band,
-				 struct parsed_region_chan_11d *parsed_region_chan)
+				 struct parsed_region_chan_11d *
+				 parsed_region_chan)
 {
 	u8 nr_subband, nrchan;
 	u8 lastchan, firstchan;
@@ -329,7 +331,7 @@ static int parse_domain_info_11d(struct ieee_ie_country_info_full_set *countryin
 	lbs_deb_hex(LBS_DEB_11D, "countryinfo", (u8 *) countryinfo, 30);
 
 	if ((*(countryinfo->countrycode)) == 0
-	    || (countryinfo->header.len <= COUNTRY_CODE_LEN)) {
+	    || (countryinfo->len <= COUNTRY_CODE_LEN)) {
 		/* No region Info or Wrong region info: treat as No 11D info */
 		goto done;
 	}
@@ -347,8 +349,8 @@ static int parse_domain_info_11d(struct ieee_ie_country_info_full_set *countryin
 	memcpy(parsed_region_chan->countrycode, countryinfo->countrycode,
 	       COUNTRY_CODE_LEN);
 
-	nr_subband = (countryinfo->header.len - COUNTRY_CODE_LEN) /
-	    sizeof(struct ieee_subbandset);
+	nr_subband = (countryinfo->len - COUNTRY_CODE_LEN) /
+	    sizeof(struct ieeetypes_subbandset);
 
 	for (j = 0, lastchan = 0; j < nr_subband; j++) {
 
@@ -500,7 +502,7 @@ int lbs_cmd_802_11d_domain_info(struct lbs_private *priv,
 {
 	struct cmd_ds_802_11d_domain_info *pdomaininfo =
 	    &cmd->params.domaininfo;
-	struct mrvl_ie_domain_param_set *domain = &pdomaininfo->domain;
+	struct mrvlietypes_domainparamset *domain = &pdomaininfo->domain;
 	u8 nr_subband = priv->domainreg.nr_subband;
 
 	lbs_deb_enter(LBS_DEB_11D);
@@ -522,16 +524,16 @@ int lbs_cmd_802_11d_domain_info(struct lbs_private *priv,
 	       sizeof(domain->countrycode));
 
 	domain->header.len =
-	    cpu_to_le16(nr_subband * sizeof(struct ieee_subbandset) +
+	    cpu_to_le16(nr_subband * sizeof(struct ieeetypes_subbandset) +
 			     sizeof(domain->countrycode));
 
 	if (nr_subband) {
 		memcpy(domain->subband, priv->domainreg.subband,
-		       nr_subband * sizeof(struct ieee_subbandset));
+		       nr_subband * sizeof(struct ieeetypes_subbandset));
 
 		cmd->size = cpu_to_le16(sizeof(pdomaininfo->action) +
 					     le16_to_cpu(domain->header.len) +
-					     sizeof(struct mrvl_ie_header) +
+					     sizeof(struct mrvlietypesheader) +
 					     S_DS_GEN);
 	} else {
 		cmd->size =
@@ -554,7 +556,7 @@ done:
 int lbs_ret_802_11d_domain_info(struct cmd_ds_command *resp)
 {
 	struct cmd_ds_802_11d_domain_info *domaininfo = &resp->params.domaininforesp;
-	struct mrvl_ie_domain_param_set *domain = &domaininfo->domain;
+	struct mrvlietypes_domainparamset *domain = &domaininfo->domain;
 	u16 action = le16_to_cpu(domaininfo->action);
 	s16 ret = 0;
 	u8 nr_subband = 0;
@@ -565,7 +567,7 @@ int lbs_ret_802_11d_domain_info(struct cmd_ds_command *resp)
 		(int)le16_to_cpu(resp->size));
 
 	nr_subband = (le16_to_cpu(domain->header.len) - COUNTRY_CODE_LEN) /
-		      sizeof(struct ieee_subbandset);
+		      sizeof(struct ieeetypes_subbandset);
 
 	lbs_deb_11d("domain info resp: nr_subband %d\n", nr_subband);
 
