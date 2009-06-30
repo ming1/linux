@@ -171,6 +171,14 @@ enum ieee80211_bss_change {
 };
 
 /**
+ * struct ieee80211_bss_ht_conf - BSS's changing HT configuration
+ * @operation_mode: HT operation mode (like in &struct ieee80211_ht_info)
+ */
+struct ieee80211_bss_ht_conf {
+	u16 operation_mode;
+};
+
+/**
  * struct ieee80211_bss_conf - holds the BSS's changing parameters
  *
  * This structure keeps information about a BSS (and an association
@@ -195,8 +203,6 @@ enum ieee80211_bss_change {
  *	the current band.
  * @bssid: The BSSID for this BSS
  * @enable_beacon: whether beaconing should be enabled or not
- * @ht_operation_mode: HT operation mode (like in &struct ieee80211_ht_info).
- *	This field is only valid when the channel type is one of the HT types.
  */
 struct ieee80211_bss_conf {
 	const u8 *bssid;
@@ -213,7 +219,7 @@ struct ieee80211_bss_conf {
 	u16 assoc_capability;
 	u64 timestamp;
 	u32 basic_rates;
-	u16 ht_operation_mode;
+	struct ieee80211_bss_ht_conf ht;
 };
 
 /**
