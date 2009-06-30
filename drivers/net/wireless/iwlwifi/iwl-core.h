@@ -348,6 +348,14 @@ int iwl_txq_check_empty(struct iwl_priv *priv, int sta_id, u8 tid, int txq_id);
  ****************************************************/
 int iwl_set_tx_power(struct iwl_priv *priv, s8 tx_power, bool force);
 
+/*****************************************************
+ * RF -Kill - here and not in iwl-rfkill.h to be available when
+ * RF-kill subsystem is not compiled.
+ ****************************************************/
+void iwl_bg_rf_kill(struct work_struct *work);
+void iwl_radio_kill_sw_disable_radio(struct iwl_priv *priv);
+int iwl_radio_kill_sw_enable_radio(struct iwl_priv *priv);
+
 /*******************************************************************************
  * Rate
  ******************************************************************************/
@@ -490,6 +498,7 @@ void iwlcore_free_geos(struct iwl_priv *priv);
 #define STATUS_HCMD_SYNC_ACTIVE	1	/* sync host command in progress */
 #define STATUS_INT_ENABLED	2
 #define STATUS_RF_KILL_HW	3
+#define STATUS_RF_KILL_SW	4
 #define STATUS_INIT		5
 #define STATUS_ALIVE		6
 #define STATUS_READY		7
@@ -524,6 +533,11 @@ static inline int iwl_is_init(struct iwl_priv *priv)
 	return test_bit(STATUS_INIT, &priv->status);
 }
 
+static inline int iwl_is_rfkill_sw(struct iwl_priv *priv)
+{
+	return test_bit(STATUS_RF_KILL_SW, &priv->status);
+}
+
 static inline int iwl_is_rfkill_hw(struct iwl_priv *priv)
 {
 	return test_bit(STATUS_RF_KILL_HW, &priv->status);
@@ -531,7 +545,7 @@ static inline int iwl_is_rfkill_hw(struct iwl_priv *priv)
 
 static inline int iwl_is_rfkill(struct iwl_priv *priv)
 {
-	return iwl_is_rfkill_hw(priv);
+	return iwl_is_rfkill_hw(priv) || iwl_is_rfkill_sw(priv);
 }
 
 static inline int iwl_is_ready_rf(struct iwl_priv *priv)
