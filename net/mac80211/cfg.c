@@ -1268,18 +1268,22 @@ static int ieee80211_assoc(struct wiphy *wiphy, struct net_device *dev,
 static int ieee80211_deauth(struct wiphy *wiphy, struct net_device *dev,
 			    struct cfg80211_deauth_request *req)
 {
-	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+	struct ieee80211_sub_if_data *sdata;
 
-	/* TODO: req->ie, req->peer_addr */
+	sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+
+	/* TODO: req->ie */
 	return ieee80211_sta_deauthenticate(sdata, req->reason_code);
 }
 
 static int ieee80211_disassoc(struct wiphy *wiphy, struct net_device *dev,
 			      struct cfg80211_disassoc_request *req)
 {
-	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+	struct ieee80211_sub_if_data *sdata;
 
-	/* TODO: req->ie, req->peer_addr */
+	sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+
+	/* TODO: req->ie */
 	return ieee80211_sta_disassociate(sdata, req->reason_code);
 }
 
