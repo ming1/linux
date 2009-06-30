@@ -1487,7 +1487,6 @@ struct iwl_lib_ops iwl5000_lib = {
 		.query_addr = iwl5000_eeprom_query_addr,
 	},
 	.post_associate = iwl_post_associate,
-	.isr = iwl_isr_ict,
 	.config_ap = iwl_config_ap,
 	.temp_ops = {
 		.temperature = iwl5000_temperature,
@@ -1537,7 +1536,6 @@ static struct iwl_lib_ops iwl5150_lib = {
 		.query_addr = iwl5000_eeprom_query_addr,
 	},
 	.post_associate = iwl_post_associate,
-	.isr = iwl_isr_ict,
 	.config_ap = iwl_config_ap,
 	.temp_ops = {
 		.temperature = iwl5150_temperature,
