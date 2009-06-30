@@ -35,24 +35,20 @@ static void tosa_bt_off(struct tosa_bt_data *data)
 	gpio_set_value(data->gpio_reset, 0);
 }
 
-static int tosa_bt_set_block(void *data, bool blocked)
+static int tosa_bt_toggle_radio(void *data, enum rfkill_state state)
 {
-	pr_info("BT_RADIO going: %s\n", blocked ? "off" : "on");
+	pr_info("BT_RADIO going: %s\n",
+			state == RFKILL_STATE_UNBLOCKED ? "on" : "off");
 
-	if (!blocked) {
+	if (state == RFKILL_STATE_UNBLOCKED) {
 		pr_info("TOSA_BT: going ON\n");
 		tosa_bt_on(data);
 	} else {
 		pr_info("TOSA_BT: going OFF\n");
 		tosa_bt_off(data);
 	}
-
 	return 0;
 }
-
-static const struct rfkill_ops tosa_bt_rfkill_ops = {
-	.set_block = tosa_bt_set_block,
-};
 
 static int tosa_bt_probe(struct platform_device *dev)
 {
@@ -74,14 +70,18 @@ static int tosa_bt_probe(struct platform_device *dev)
 	if (rc)
 		goto err_pwr_dir;
 
-	rfk = rfkill_alloc("tosa-bt", &dev->dev, RFKILL_TYPE_BLUETOOTH,
-			   &tosa_bt_rfkill_ops, data);
+	rfk = rfkill_allocate(&dev->dev, RFKILL_TYPE_BLUETOOTH);
 	if (!rfk) {
 		rc = -ENOMEM;
 		goto err_rfk_alloc;
 	}
 
-	rfkill_set_led_trigger_name(rfk, "tosa-bt");
+	rfk->name = "tosa-bt";
+	rfk->toggle_radio = tosa_bt_toggle_radio;
+	rfk->data = data;
+#ifdef CONFIG_RFKILL_LEDS
+	rfk->led_trigger.name = "tosa-bt";
+#endif
 
 	rc = rfkill_register(rfk);
 	if (rc)
@@ -92,7 +92,9 @@ static int tosa_bt_probe(struct platform_device *dev)
 	return 0;
 
 err_rfkill:
-	rfkill_destroy(rfk);
+	if (rfk)
+		rfkill_free(rfk);
+	rfk = NULL;
 err_rfk_alloc:
 	tosa_bt_off(data);
 err_pwr_dir:
@@ -111,10 +113,8 @@ static int __devexit tosa_bt_remove(struct platform_device *dev)
 
 	platform_set_drvdata(dev, NULL);
 
-	if (rfk) {
+	if (rfk)
 		rfkill_unregister(rfk);
-		rfkill_destroy(rfk);
-	}
 	rfk = NULL;
 
 	tosa_bt_off(data);

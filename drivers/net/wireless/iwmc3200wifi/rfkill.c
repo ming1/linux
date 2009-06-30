@@ -25,41 +25,46 @@
 
 #include "iwm.h"
 
-static int iwm_rfkill_set_block(void *data, bool blocked)
+static int iwm_rfkill_soft_toggle(void *data, enum rfkill_state state)
 {
 	struct iwm_priv *iwm = data;
 
-	if (!blocked) {
+	switch (state) {
+	case RFKILL_STATE_UNBLOCKED:
 		if (test_bit(IWM_RADIO_RFKILL_HW, &iwm->radio))
 			return -EBUSY;
 
 		if (test_and_clear_bit(IWM_RADIO_RFKILL_SW, &iwm->radio) &&
 		    (iwm_to_ndev(iwm)->flags & IFF_UP))
-			return iwm_up(iwm);
-	} else {
+			iwm_up(iwm);
+
+		break;
+	case RFKILL_STATE_SOFT_BLOCKED:
 		if (!test_and_set_bit(IWM_RADIO_RFKILL_SW, &iwm->radio))
-			return iwm_down(iwm);
+			iwm_down(iwm);
+
+		break;
+	default:
+		break;
 	}
 
 	return 0;
 }
 
-static const struct rfkill_ops iwm_rfkill_ops = {
-	.set_block = iwm_rfkill_set_block,
-};
-
 int iwm_rfkill_init(struct iwm_priv *iwm)
 {
 	int ret;
 
-	iwm->rfkill = rfkill_alloc(KBUILD_MODNAME,
-				   iwm_to_dev(iwm),
-				   RFKILL_TYPE_WLAN,
-				   &iwm_rfkill_ops, iwm);
+	iwm->rfkill = rfkill_allocate(iwm_to_dev(iwm), RFKILL_TYPE_WLAN);
 	if (!iwm->rfkill) {
 		IWM_ERR(iwm, "Unable to allocate rfkill device\n");
 		return -ENOMEM;
 	}
+
+	iwm->rfkill->name = KBUILD_MODNAME;
+	iwm->rfkill->data = iwm;
+	iwm->rfkill->state = RFKILL_STATE_UNBLOCKED;
+	iwm->rfkill->toggle_radio = iwm_rfkill_soft_toggle;
 
 	ret = rfkill_register(iwm->rfkill);
 	if (ret) {
@@ -69,15 +74,15 @@ int iwm_rfkill_init(struct iwm_priv *iwm)
 
 	return 0;
  fail:
-	rfkill_destroy(iwm->rfkill);
+	rfkill_free(iwm->rfkill);
 	return ret;
 }
 
 void iwm_rfkill_exit(struct iwm_priv *iwm)
 {
-	if (iwm->rfkill) {
+	if (iwm->rfkill)
 		rfkill_unregister(iwm->rfkill);
-		rfkill_destroy(iwm->rfkill);
-	}
+
+	rfkill_free(iwm->rfkill);
 	iwm->rfkill = NULL;
 }

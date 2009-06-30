@@ -2592,7 +2592,7 @@ static bool b43_gphy_op_supports_hwpctl(struct b43_wldev *dev)
 }
 
 static void b43_gphy_op_software_rfkill(struct b43_wldev *dev,
-					bool blocked)
+					enum rfkill_state state)
 {
 	struct b43_phy *phy = &dev->phy;
 	struct b43_phy_g *gphy = phy->g;
@@ -2600,7 +2600,7 @@ static void b43_gphy_op_software_rfkill(struct b43_wldev *dev,
 
 	might_sleep();
 
-	if (!blocked) {
+	if (state == RFKILL_STATE_UNBLOCKED) {
 		/* Turn radio ON */
 		if (phy->radio_on)
 			return;

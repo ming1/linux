@@ -36,36 +36,41 @@
 #include "iwl-core.h"
 
 /* software rf-kill from user */
-static int iwl_rfkill_soft_rf_kill(void *data, bool blocked)
+static int iwl_rfkill_soft_rf_kill(void *data, enum rfkill_state state)
 {
 	struct iwl_priv *priv = data;
+	int err = 0;
 
 	if (!priv->rfkill)
-		return -EINVAL;
+		return 0;
 
 	if (test_bit(STATUS_EXIT_PENDING, &priv->status))
 		return 0;
 
-	IWL_DEBUG_RF_KILL(priv, "received soft RFKILL: block=%d\n", blocked);
-
+	IWL_DEBUG_RF_KILL(priv, "we received soft RFKILL set to state %d\n", state);
 	mutex_lock(&priv->mutex);
 
-	if (iwl_is_rfkill_hw(priv))
-		goto out_unlock;
-
-	if (!blocked)
+	switch (state) {
+	case RFKILL_STATE_UNBLOCKED:
+		if (iwl_is_rfkill_hw(priv)) {
+			err = -EBUSY;
+			goto out_unlock;
+		}
 		iwl_radio_kill_sw_enable_radio(priv);
-	else
+		break;
+	case RFKILL_STATE_SOFT_BLOCKED:
 		iwl_radio_kill_sw_disable_radio(priv);
-
+		break;
+	default:
+		IWL_WARN(priv, "we received unexpected RFKILL state %d\n",
+			state);
+		break;
+	}
 out_unlock:
 	mutex_unlock(&priv->mutex);
-	return 0;
-}
 
-static const struct rfkill_ops iwl_rfkill_ops = {
-	.set_block = iwl_rfkill_soft_rf_kill,
-};
+	return err;
+}
 
 int iwl_rfkill_init(struct iwl_priv *priv)
 {
@@ -75,15 +80,20 @@ int iwl_rfkill_init(struct iwl_priv *priv)
 	BUG_ON(device == NULL);
 
 	IWL_DEBUG_RF_KILL(priv, "Initializing RFKILL.\n");
-	priv->rfkill = rfkill_alloc(priv->cfg->name,
-				    device,
-				    RFKILL_TYPE_WLAN,
-				    &iwl_rfkill_ops, priv);
+	priv->rfkill = rfkill_allocate(device, RFKILL_TYPE_WLAN);
 	if (!priv->rfkill) {
 		IWL_ERR(priv, "Unable to allocate RFKILL device.\n");
 		ret = -ENOMEM;
 		goto error;
 	}
+
+	priv->rfkill->name = priv->cfg->name;
+	priv->rfkill->data = priv;
+	priv->rfkill->state = RFKILL_STATE_UNBLOCKED;
+	priv->rfkill->toggle_radio = iwl_rfkill_soft_rf_kill;
+
+	priv->rfkill->dev.class->suspend = NULL;
+	priv->rfkill->dev.class->resume = NULL;
 
 	ret = rfkill_register(priv->rfkill);
 	if (ret) {
@@ -92,10 +102,11 @@ int iwl_rfkill_init(struct iwl_priv *priv)
 	}
 
 	IWL_DEBUG_RF_KILL(priv, "RFKILL initialization complete.\n");
-	return 0;
+	return ret;
 
 free_rfkill:
-	rfkill_destroy(priv->rfkill);
+	if (priv->rfkill != NULL)
+		rfkill_free(priv->rfkill);
 	priv->rfkill = NULL;
 
 error:
@@ -107,10 +118,8 @@ EXPORT_SYMBOL(iwl_rfkill_init);
 void iwl_rfkill_unregister(struct iwl_priv *priv)
 {
 
-	if (priv->rfkill) {
+	if (priv->rfkill)
 		rfkill_unregister(priv->rfkill);
-		rfkill_destroy(priv->rfkill);
-	}
 
 	priv->rfkill = NULL;
 }
@@ -122,10 +131,14 @@ void iwl_rfkill_set_hw_state(struct iwl_priv *priv)
 	if (!priv->rfkill)
 		return;
 
-	if (rfkill_set_hw_state(priv->rfkill,
-				!!iwl_is_rfkill_hw(priv)))
-		iwl_radio_kill_sw_disable_radio(priv);
+	if (iwl_is_rfkill_hw(priv)) {
+		rfkill_force_state(priv->rfkill, RFKILL_STATE_HARD_BLOCKED);
+		return;
+	}
+
+	if (!iwl_is_rfkill_sw(priv))
+		rfkill_force_state(priv->rfkill, RFKILL_STATE_UNBLOCKED);
 	else
-		iwl_radio_kill_sw_enable_radio(priv);
+		rfkill_force_state(priv->rfkill, RFKILL_STATE_SOFT_BLOCKED);
 }
 EXPORT_SYMBOL(iwl_rfkill_set_hw_state);
