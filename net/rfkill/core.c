@@ -270,9 +270,6 @@ static void rfkill_set_block(struct rfkill *rfkill, bool blocked)
 	unsigned long flags;
 	int err;
 
-	if (unlikely(rfkill->dev.power.power_state.event & PM_EVENT_SLEEP))
-		return;
-
 	/*
 	 * Some platforms (...!) generate input events which affect the
 	 * _hard_ kill state -- whenever something tries to change the
@@ -294,6 +291,9 @@ static void rfkill_set_block(struct rfkill *rfkill, bool blocked)
 
 	rfkill->state |= RFKILL_BLOCK_SW_SETCALL;
 	spin_unlock_irqrestore(&rfkill->lock, flags);
+
+	if (unlikely(rfkill->dev.power.power_state.event & PM_EVENT_SLEEP))
+		return;
 
 	err = rfkill->ops->set_block(rfkill->data, blocked);
 
