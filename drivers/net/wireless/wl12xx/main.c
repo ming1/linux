@@ -618,8 +618,7 @@ static void wl12xx_op_configure_filter(struct ieee80211_hw *hw,
 }
 
 /* HW encryption */
-static int wl12xx_set_key_type(struct wl12xx *wl,
-			       struct wl12xx_cmd_set_keys *key,
+static int wl12xx_set_key_type(struct wl12xx *wl, struct acx_set_key *key,
 			       enum set_key_cmd cmd,
 			       struct ieee80211_key_conf *mac80211_key,
 			       const u8 *addr)
@@ -662,7 +661,7 @@ static int wl12xx_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 			     struct ieee80211_key_conf *key)
 {
 	struct wl12xx *wl = hw->priv;
-	struct wl12xx_cmd_set_keys *wl_cmd;
+	struct acx_set_key wl_key;
 	const u8 *addr;
 	int ret;
 
@@ -671,11 +670,7 @@ static int wl12xx_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 
 	wl12xx_debug(DEBUG_MAC80211, "mac80211 set key");
 
-	wl_cmd = kzalloc(sizeof(*wl_cmd), GFP_KERNEL);
-	if (!wl_cmd) {
-		ret = -ENOMEM;
-		goto out;
-	}
+	memset(&wl_key, 0, sizeof(wl_key));
 
 	addr = sta ? sta->addr : bcast_addr;
 
@@ -685,69 +680,59 @@ static int wl12xx_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 		     key->alg, key->keyidx, key->keylen, key->flags);
 	wl12xx_dump(DEBUG_CRYPT, "KEY: ", key->key, key->keylen);
 
-	if (is_zero_ether_addr(addr)) {
-		/* We dont support TX only encryption */
-		ret = -EOPNOTSUPP;
-		goto out;
-	}
-
 	mutex_lock(&wl->mutex);
 
 	switch (cmd) {
 	case SET_KEY:
-		wl_cmd->key_action = KEY_ADD_OR_REPLACE;
+		wl_key.key_action = KEY_ADD_OR_REPLACE;
 		break;
 	case DISABLE_KEY:
-		wl_cmd->key_action = KEY_REMOVE;
+		wl_key.key_action = KEY_REMOVE;
 		break;
 	default:
 		wl12xx_error("Unsupported key cmd 0x%x", cmd);
 		break;
 	}
 
-	ret = wl12xx_set_key_type(wl, wl_cmd, cmd, key, addr);
+	ret = wl12xx_set_key_type(wl, &wl_key, cmd, key, addr);
 	if (ret < 0) {
 		wl12xx_error("Set KEY type failed");
-		goto out_unlock;
+		goto out;
 	}
 
-	if (wl_cmd->key_type != KEY_WEP_DEFAULT)
-		memcpy(wl_cmd->addr, addr, ETH_ALEN);
+	if (wl_key.key_type != KEY_WEP_DEFAULT)
+		memcpy(wl_key.addr, addr, ETH_ALEN);
 
-	if ((wl_cmd->key_type == KEY_TKIP_MIC_GROUP) ||
-	    (wl_cmd->key_type == KEY_TKIP_MIC_PAIRWISE)) {
+	if ((wl_key.key_type == KEY_TKIP_MIC_GROUP) ||
+	    (wl_key.key_type == KEY_TKIP_MIC_PAIRWISE)) {
 		/*
 		 * We get the key in the following form:
 		 * TKIP (16 bytes) - TX MIC (8 bytes) - RX MIC (8 bytes)
 		 * but the target is expecting:
 		 * TKIP - RX MIC - TX MIC
 		 */
-		memcpy(wl_cmd->key, key->key, 16);
-		memcpy(wl_cmd->key + 16, key->key + 24, 8);
-		memcpy(wl_cmd->key + 24, key->key + 16, 8);
+		memcpy(wl_key.key, key->key, 16);
+		memcpy(wl_key.key + 16, key->key + 24, 8);
+		memcpy(wl_key.key + 24, key->key + 16, 8);
 
 	} else {
-		memcpy(wl_cmd->key, key->key, key->keylen);
+		memcpy(wl_key.key, key->key, key->keylen);
 	}
-	wl_cmd->key_size = key->keylen;
+	wl_key.key_size = key->keylen;
 
-	wl_cmd->id = key->keyidx;
-	wl_cmd->ssid_profile = 0;
+	wl_key.id = key->keyidx;
+	wl_key.ssid_profile = 0;
 
-	wl12xx_dump(DEBUG_CRYPT, "TARGET KEY: ", wl_cmd, sizeof(*wl_cmd));
+	wl12xx_dump(DEBUG_CRYPT, "TARGET KEY: ", &wl_key, sizeof(wl_key));
 
-	ret = wl12xx_cmd_send(wl, CMD_SET_KEYS, wl_cmd, sizeof(*wl_cmd));
-	if (ret < 0) {
-		wl12xx_warning("could not set keys");
-		goto out_unlock;
+	if (wl12xx_cmd_send(wl, CMD_SET_KEYS, &wl_key, sizeof(wl_key)) < 0) {
+		wl12xx_error("Set KEY failed");
+		ret = -EOPNOTSUPP;
+		goto out;
 	}
-
-out_unlock:
-	mutex_unlock(&wl->mutex);
 
 out:
-	kfree(wl_cmd);
-
+	mutex_unlock(&wl->mutex);
 	return ret;
 }
 
@@ -827,10 +812,11 @@ static int wl12xx_hw_scan(struct wl12xx *wl, u8 *ssid, size_t len,
 			  u8 active_scan, u8 high_prio, u8 num_channels,
 			  u8 probe_requests)
 {
-	struct wl12xx_cmd_trigger_scan_to *trigger = NULL;
-	struct cmd_scan *params = NULL;
 	int i, ret;
+	u32 split_scan = 0;
 	u16 scan_options = 0;
+	struct cmd_scan *params;
+	struct wl12xx_command *cmd_answer;
 
 	if (wl->scanning)
 		return -EINVAL;
@@ -884,16 +870,10 @@ static int wl12xx_hw_scan(struct wl12xx *wl, u8 *ssid, size_t len,
 		goto out;
 	}
 
-	trigger = kzalloc(sizeof(*trigger), GFP_KERNEL);
-	if (!trigger)
-		goto out;
-
-	trigger->timeout = 0;
-
-	ret = wl12xx_cmd_send(wl, CMD_TRIGGER_SCAN_TO, trigger,
-			      sizeof(*trigger));
+	ret = wl12xx_cmd_send(wl, CMD_TRIGGER_SCAN_TO, &split_scan,
+			      sizeof(u32));
 	if (ret < 0) {
-		wl12xx_error("trigger scan to failed for hw scan");
+		wl12xx_error("Split SCAN failed");
 		goto out;
 	}
 
@@ -907,9 +887,10 @@ static int wl12xx_hw_scan(struct wl12xx *wl, u8 *ssid, size_t len,
 
 	wl12xx_spi_mem_read(wl, wl->cmd_box_addr, params, sizeof(*params));
 
-	if (params->header.status != CMD_STATUS_SUCCESS) {
+	cmd_answer = (struct wl12xx_command *) params;
+	if (cmd_answer->status != CMD_STATUS_SUCCESS) {
 		wl12xx_error("TEST command answer error: %d",
-			     params->header.status);
+			     cmd_answer->status);
 		wl->scanning = false;
 		ret = -EIO;
 		goto out;
@@ -961,7 +942,7 @@ static void wl12xx_op_bss_info_changed(struct ieee80211_hw *hw,
 				       struct ieee80211_bss_conf *bss_conf,
 				       u32 changed)
 {
-	enum wl12xx_cmd_ps_mode mode;
+	enum acx_ps_mode mode;
 	struct wl12xx *wl = hw->priv;
 	struct sk_buff *beacon;
 	int ret;
