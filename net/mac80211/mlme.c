@@ -23,7 +23,6 @@
 #include <asm/unaligned.h>
 
 #include "ieee80211_i.h"
-#include "driver-ops.h"
 #include "rate.h"
 #include "led.h"
 
@@ -684,10 +683,11 @@ static void ieee80211_sta_wmm_params(struct ieee80211_local *local,
 		       local->mdev->name, queue, aci, acm, params.aifs, params.cw_min,
 		       params.cw_max, params.txop);
 #endif
-		if (drv_conf_tx(local, queue, &params) && local->ops->conf_tx)
+		if (local->ops->conf_tx &&
+		    local->ops->conf_tx(local_to_hw(local), queue, &params)) {
 			printk(KERN_DEBUG "%s: failed to set TX queue "
-			       "parameters for queue %d\n", local->mdev->name,
-			       queue);
+			       "parameters for queue %d\n", local->mdev->name, queue);
+		}
 	}
 }
 
@@ -1982,8 +1982,10 @@ static void ieee80211_sta_reset_auth(struct ieee80211_sub_if_data *sdata)
 	struct ieee80211_if_managed *ifmgd = &sdata->u.mgd;
 	struct ieee80211_local *local = sdata->local;
 
-	/* Reset own TSF to allow time synchronization work. */
-	drv_reset_tsf(local);
+	if (local->ops->reset_tsf) {
+		/* Reset own TSF to allow time synchronization work. */
+		local->ops->reset_tsf(local_to_hw(local));
+	}
 
 	ifmgd->wmm_last_param_set = -1; /* allow any WMM update */
 

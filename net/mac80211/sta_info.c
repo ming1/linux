@@ -19,7 +19,6 @@
 
 #include <net/mac80211.h>
 #include "ieee80211_i.h"
-#include "driver-ops.h"
 #include "rate.h"
 #include "sta_info.h"
 #include "debugfs_sta.h"
@@ -347,7 +346,8 @@ int sta_info_insert(struct sta_info *sta)
 					     struct ieee80211_sub_if_data,
 					     u.ap);
 
-		drv_sta_notify(local, &sdata->vif, STA_NOTIFY_ADD, &sta->sta);
+		local->ops->sta_notify(local_to_hw(local), &sdata->vif,
+				       STA_NOTIFY_ADD, &sta->sta);
 	}
 
 #ifdef CONFIG_MAC80211_VERBOSE_DEBUG
@@ -405,7 +405,8 @@ static void __sta_info_set_tim_bit(struct ieee80211_if_ap *bss,
 
 	if (sta->local->ops->set_tim) {
 		sta->local->tim_in_locked_section = true;
-		drv_set_tim(sta->local, &sta->sta, true);
+		sta->local->ops->set_tim(local_to_hw(sta->local),
+					 &sta->sta, true);
 		sta->local->tim_in_locked_section = false;
 	}
 }
@@ -430,7 +431,8 @@ static void __sta_info_clear_tim_bit(struct ieee80211_if_ap *bss,
 
 	if (sta->local->ops->set_tim) {
 		sta->local->tim_in_locked_section = true;
-		drv_set_tim(sta->local, &sta->sta, false);
+		sta->local->ops->set_tim(local_to_hw(sta->local),
+					 &sta->sta, false);
 		sta->local->tim_in_locked_section = false;
 	}
 }
@@ -480,8 +482,8 @@ static void __sta_info_unlink(struct sta_info **sta)
 					     struct ieee80211_sub_if_data,
 					     u.ap);
 
-		drv_sta_notify(local, &sdata->vif, STA_NOTIFY_REMOVE,
-			       &(*sta)->sta);
+		local->ops->sta_notify(local_to_hw(local), &sdata->vif,
+				       STA_NOTIFY_REMOVE, &(*sta)->sta);
 	}
 
 	if (ieee80211_vif_is_mesh(&sdata->vif)) {

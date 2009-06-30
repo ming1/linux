@@ -16,7 +16,6 @@
 #include <linux/ieee80211.h>
 #include <net/mac80211.h>
 #include "ieee80211_i.h"
-#include "driver-ops.h"
 #include "wme.h"
 
 /**
@@ -135,8 +134,8 @@ static int ___ieee80211_stop_tx_ba_session(struct sta_info *sta, u16 tid,
 	*state = HT_AGG_STATE_REQ_STOP_BA_MSK |
 		(initiator << HT_AGG_STATE_INITIATOR_SHIFT);
 
-	ret = drv_ampdu_action(local, IEEE80211_AMPDU_TX_STOP,
-			       &sta->sta, tid, NULL);
+	ret = local->ops->ampdu_action(&local->hw, IEEE80211_AMPDU_TX_STOP,
+				       &sta->sta, tid, NULL);
 
 	/* HW shall not deny going back to legacy */
 	if (WARN_ON(ret)) {
@@ -307,8 +306,8 @@ int ieee80211_start_tx_ba_session(struct ieee80211_hw *hw, u8 *ra, u16 tid)
 
 	start_seq_num = sta->tid_seq[tid];
 
-	ret = drv_ampdu_action(local, IEEE80211_AMPDU_TX_START,
-			       &sta->sta, tid, &start_seq_num);
+	ret = local->ops->ampdu_action(hw, IEEE80211_AMPDU_TX_START,
+				       &sta->sta, tid, &start_seq_num);
 
 	if (ret) {
 #ifdef CONFIG_MAC80211_HT_DEBUG
@@ -419,8 +418,8 @@ static void ieee80211_agg_tx_operational(struct ieee80211_local *local,
 	ieee80211_agg_splice_finish(local, sta, tid);
 	spin_unlock(&local->ampdu_lock);
 
-	drv_ampdu_action(local, IEEE80211_AMPDU_TX_OPERATIONAL,
-			 &sta->sta, tid, NULL);
+	local->ops->ampdu_action(&local->hw, IEEE80211_AMPDU_TX_OPERATIONAL,
+				 &sta->sta, tid, NULL);
 }
 
 void ieee80211_start_tx_ba_cb(struct ieee80211_hw *hw, u8 *ra, u16 tid)
