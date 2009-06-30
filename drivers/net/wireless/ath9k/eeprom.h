@@ -17,8 +17,6 @@
 #ifndef EEPROM_H
 #define EEPROM_H
 
-#include <net/wireless.h>
-
 #define AH_USE_EEPROM   0x1
 
 #ifdef __BIG_ENDIAN
