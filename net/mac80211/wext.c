@@ -675,7 +675,7 @@ static int ieee80211_ioctl_siwencode(struct net_device *dev,
 		!sdata->default_key,
 		keybuf, erq->length);
 
-	if (!ret && sdata->vif.type == NL80211_IFTYPE_STATION) {
+	if (!ret) {
 		if (remove)
 			sdata->u.mgd.flags &= ~IEEE80211_STA_TKIP_WEP_USED;
 		else
