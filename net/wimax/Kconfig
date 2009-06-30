@@ -4,7 +4,6 @@
 
 menuconfig WIMAX
 	tristate "WiMAX Wireless Broadband support"
-	depends on RFKILL || !RFKILL
 	help
 
 	  Select to configure support for devices that provide
