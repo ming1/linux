@@ -651,8 +651,7 @@ void ieee80211_recalc_ps(struct ieee80211_local *local, s32 latency)
 	}
 
 	if (count == 1 && found->u.mgd.powersave &&
-	    (found->u.mgd.flags & IEEE80211_STA_ASSOCIATED) &&
-	    !(found->u.mgd.flags & IEEE80211_STA_PROBEREQ_POLL)) {
+	    (found->u.mgd.flags & IEEE80211_STA_ASSOCIATED)) {
 		s32 beaconint_us;
 
 		if (latency < 0)
@@ -1321,11 +1320,6 @@ void ieee80211_beacon_loss_work(struct work_struct *work)
 #endif
 
 	ifmgd->flags |= IEEE80211_STA_PROBEREQ_POLL;
-
-	mutex_lock(&sdata->local->iflist_mtx);
-	ieee80211_recalc_ps(sdata->local, -1);
-	mutex_unlock(&sdata->local->iflist_mtx);
-
 	ieee80211_send_probe_req(sdata, ifmgd->bssid, ifmgd->ssid,
 				 ifmgd->ssid_len, NULL, 0);
 
@@ -1346,7 +1340,6 @@ static void ieee80211_associated(struct ieee80211_sub_if_data *sdata)
 	struct ieee80211_if_managed *ifmgd = &sdata->u.mgd;
 	struct ieee80211_local *local = sdata->local;
 	struct sta_info *sta;
-	unsigned long last_rx;
 	bool disassoc = false;
 
 	/* TODO: start monitoring current AP signal quality and number of
@@ -1363,21 +1356,17 @@ static void ieee80211_associated(struct ieee80211_sub_if_data *sdata)
 		printk(KERN_DEBUG "%s: No STA entry for own AP %pM\n",
 		       sdata->dev->name, ifmgd->bssid);
 		disassoc = true;
-		rcu_read_unlock();
-		goto out;
+		goto unlock;
 	}
 
-	last_rx = sta->last_rx;
-	rcu_read_unlock();
-
 	if ((ifmgd->flags & IEEE80211_STA_PROBEREQ_POLL) &&
-	    time_after(jiffies, last_rx + IEEE80211_PROBE_WAIT)) {
+	    time_after(jiffies, sta->last_rx + IEEE80211_PROBE_WAIT)) {
 		printk(KERN_DEBUG "%s: no probe response from AP %pM "
 		       "- disassociating\n",
 		       sdata->dev->name, ifmgd->bssid);
 		disassoc = true;
 		ifmgd->flags &= ~IEEE80211_STA_PROBEREQ_POLL;
-		goto out;
+		goto unlock;
 	}
 
 	/*
@@ -1396,29 +1385,26 @@ static void ieee80211_associated(struct ieee80211_sub_if_data *sdata)
 		}
 #endif
 		ifmgd->flags |= IEEE80211_STA_PROBEREQ_POLL;
-		mutex_lock(&local->iflist_mtx);
-		ieee80211_recalc_ps(local, -1);
-		mutex_unlock(&local->iflist_mtx);
 		ieee80211_send_probe_req(sdata, ifmgd->bssid, ifmgd->ssid,
 					 ifmgd->ssid_len, NULL, 0);
 		mod_timer(&ifmgd->timer, jiffies + IEEE80211_PROBE_WAIT);
-		goto out;
+		goto unlock;
 	}
 
-	if (time_after(jiffies, last_rx + IEEE80211_PROBE_IDLE_TIME)) {
+	if (time_after(jiffies, sta->last_rx + IEEE80211_PROBE_IDLE_TIME)) {
 		ifmgd->flags |= IEEE80211_STA_PROBEREQ_POLL;
-		mutex_lock(&local->iflist_mtx);
-		ieee80211_recalc_ps(local, -1);
-		mutex_unlock(&local->iflist_mtx);
 		ieee80211_send_probe_req(sdata, ifmgd->bssid, ifmgd->ssid,
 					 ifmgd->ssid_len, NULL, 0);
 	}
 
- out:
 	if (!disassoc)
 		mod_timer(&ifmgd->timer,
 			  jiffies + IEEE80211_MONITORING_INTERVAL);
-	else
+
+ unlock:
+	rcu_read_unlock();
+
+	if (disassoc)
 		ieee80211_set_disassoc(sdata, true, true,
 					WLAN_REASON_PREV_AUTH_NOT_VALID);
 }
@@ -1901,12 +1887,8 @@ static void ieee80211_rx_mgmt_probe_resp(struct ieee80211_sub_if_data *sdata,
 		ieee80211_authenticate(sdata);
 	}
 
-	if (ifmgd->flags & IEEE80211_STA_PROBEREQ_POLL) {
+	if (ifmgd->flags & IEEE80211_STA_PROBEREQ_POLL)
 		ifmgd->flags &= ~IEEE80211_STA_PROBEREQ_POLL;
-		mutex_lock(&sdata->local->iflist_mtx);
-		ieee80211_recalc_ps(sdata->local, -1);
-		mutex_unlock(&sdata->local->iflist_mtx);
-	}
 }
 
 /*
@@ -1964,9 +1946,6 @@ static void ieee80211_rx_mgmt_beacon(struct ieee80211_sub_if_data *sdata,
 		}
 #endif
 		ifmgd->flags &= ~IEEE80211_STA_PROBEREQ_POLL;
-		mutex_lock(&local->iflist_mtx);
-		ieee80211_recalc_ps(local, -1);
-		mutex_unlock(&local->iflist_mtx);
 	}
 
 	ncrc = crc32_be(0, (void *)&mgmt->u.beacon.beacon_int, 4);
