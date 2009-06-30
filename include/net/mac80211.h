@@ -526,7 +526,7 @@ enum ieee80211_conf_flags {
 /**
  * enum ieee80211_conf_changed - denotes which configuration changed
  *
- * @_IEEE80211_CONF_CHANGE_RADIO_ENABLED: DEPRECATED
+ * @IEEE80211_CONF_CHANGE_RADIO_ENABLED: the value of radio_enabled changed
  * @IEEE80211_CONF_CHANGE_LISTEN_INTERVAL: the listen interval changed
  * @IEEE80211_CONF_CHANGE_RADIOTAP: the radiotap flag changed
  * @IEEE80211_CONF_CHANGE_PS: the PS flag or dynamic PS timeout changed
@@ -536,7 +536,7 @@ enum ieee80211_conf_flags {
  * @IEEE80211_CONF_CHANGE_IDLE: Idle flag changed
  */
 enum ieee80211_conf_changed {
-	_IEEE80211_CONF_CHANGE_RADIO_ENABLED	= BIT(0),
+	IEEE80211_CONF_CHANGE_RADIO_ENABLED	= BIT(0),
 	IEEE80211_CONF_CHANGE_LISTEN_INTERVAL	= BIT(2),
 	IEEE80211_CONF_CHANGE_RADIOTAP		= BIT(3),
 	IEEE80211_CONF_CHANGE_PS		= BIT(4),
@@ -545,14 +545,6 @@ enum ieee80211_conf_changed {
 	IEEE80211_CONF_CHANGE_RETRY_LIMITS	= BIT(7),
 	IEEE80211_CONF_CHANGE_IDLE		= BIT(8),
 };
-
-static inline __deprecated enum ieee80211_conf_changed
-__IEEE80211_CONF_CHANGE_RADIO_ENABLED(void)
-{
-	return _IEEE80211_CONF_CHANGE_RADIO_ENABLED;
-}
-#define IEEE80211_CONF_CHANGE_RADIO_ENABLED \
-	__IEEE80211_CONF_CHANGE_RADIO_ENABLED()
 
 /**
  * struct ieee80211_conf - configuration of the device
@@ -593,7 +585,7 @@ struct ieee80211_conf {
 	int max_sleep_period;
 
 	u16 listen_interval;
-	bool __deprecated radio_enabled;
+	bool radio_enabled;
 
 	u8 long_frame_max_tx_count, short_frame_max_tx_count;
 
@@ -1404,10 +1396,6 @@ enum ieee80211_ampdu_mlme_action {
  * 	is the first frame we expect to perform the action on. Notice
  * 	that TX/RX_STOP can pass NULL for this parameter.
  *	Returns a negative error code on failure.
- *
- * @rfkill_poll: Poll rfkill hardware state. If you need this, you also
- *	need to set wiphy->rfkill_poll to %true before registration,
- *	and need to call wiphy_rfkill_set_hw_state() in the callback.
  */
 struct ieee80211_ops {
 	int (*tx)(struct ieee80211_hw *hw, struct sk_buff *skb);
@@ -1456,8 +1444,6 @@ struct ieee80211_ops {
 	int (*ampdu_action)(struct ieee80211_hw *hw,
 			    enum ieee80211_ampdu_mlme_action action,
 			    struct ieee80211_sta *sta, u16 tid, u16 *ssn);
-
-	void (*rfkill_poll)(struct ieee80211_hw *hw);
 };
 
 /**

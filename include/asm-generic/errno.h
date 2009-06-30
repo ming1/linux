@@ -106,6 +106,4 @@
 #define	EOWNERDEAD	130	/* Owner died */
 #define	ENOTRECOVERABLE	131	/* State not recoverable */
 
-#define ERFKILL		132	/* Operation not possible due to RF-kill */
-
 #endif
