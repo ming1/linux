@@ -422,6 +422,7 @@ static int __init hp_wmi_bios_setup(struct platform_device *device)
 					   RFKILL_TYPE_WLAN,
 					   &hp_wmi_rfkill_ops,
 					   (void *) 0);
+		rfkill_set_sw_state(wifi_rfkill, hp_wmi_wifi_state());
 		err = rfkill_register(wifi_rfkill);
 		if (err)
 			goto register_wifi_error;
@@ -432,6 +433,8 @@ static int __init hp_wmi_bios_setup(struct platform_device *device)
 						RFKILL_TYPE_BLUETOOTH,
 						&hp_wmi_rfkill_ops,
 						(void *) 1);
+		rfkill_set_sw_state(bluetooth_rfkill,
+				    hp_wmi_bluetooth_state());
 		err = rfkill_register(bluetooth_rfkill);
 		if (err)
 			goto register_bluetooth_error;
@@ -442,6 +445,7 @@ static int __init hp_wmi_bios_setup(struct platform_device *device)
 					   RFKILL_TYPE_WWAN,
 					   &hp_wmi_rfkill_ops,
 					   (void *) 2);
+		rfkill_set_sw_state(wwan_rfkill, hp_wmi_wwan_state());
 		err = rfkill_register(wwan_rfkill);
 		if (err)
 			goto register_wwan_err;
