@@ -21,7 +21,6 @@
 #include <linux/wireless.h>
 #include <linux/rtnetlink.h>
 #include <linux/bitmap.h>
-#include <linux/pm_qos_params.h>
 #include <net/net_namespace.h>
 #include <net/cfg80211.h>
 
@@ -1039,38 +1038,25 @@ int ieee80211_register_hw(struct ieee80211_hw *hw)
 		}
 	}
 
-	local->network_latency_notifier.notifier_call =
-		ieee80211_max_network_latency;
-	result = pm_qos_add_notifier(PM_QOS_NETWORK_LATENCY,
-				     &local->network_latency_notifier);
-
-	if (result) {
-		rtnl_lock();
-		goto fail_pm_qos;
-	}
-
 	return 0;
 
- fail_pm_qos:
-	ieee80211_led_exit(local);
-	ieee80211_remove_interfaces(local);
- fail_rate:
+fail_rate:
 	unregister_netdevice(local->mdev);
 	local->mdev = NULL;
- fail_dev:
+fail_dev:
 	rtnl_unlock();
 	ieee80211_wep_free(local);
- fail_wep:
+fail_wep:
 	sta_info_stop(local);
- fail_sta_info:
+fail_sta_info:
 	debugfs_hw_del(local);
 	destroy_workqueue(local->hw.workqueue);
- fail_workqueue:
+fail_workqueue:
 	if (local->mdev)
 		free_netdev(local->mdev);
- fail_mdev_alloc:
+fail_mdev_alloc:
 	wiphy_unregister(local->hw.wiphy);
- fail_wiphy_register:
+fail_wiphy_register:
 	kfree(local->int_scan_req.channels);
 	return result;
 }
@@ -1082,9 +1068,6 @@ void ieee80211_unregister_hw(struct ieee80211_hw *hw)
 
 	tasklet_kill(&local->tx_pending_tasklet);
 	tasklet_kill(&local->tasklet);
-
-	pm_qos_remove_notifier(PM_QOS_NETWORK_LATENCY,
-			       &local->network_latency_notifier);
 
 	rtnl_lock();
 
