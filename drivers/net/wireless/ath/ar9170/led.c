@@ -101,12 +101,9 @@ static void ar9170_led_brightness_set(struct led_classdev *led,
 	struct ar9170_led *arl = container_of(led, struct ar9170_led, l);
 	struct ar9170 *ar = arl->ar;
 
-	if (arl->last_state != !!brightness) {
-		arl->toggled++;
-		arl->last_state = !!brightness;
-	}
+	arl->toggled++;
 
-	if (likely(IS_ACCEPTING_CMD(ar) && arl->toggled))
+	if (likely(IS_ACCEPTING_CMD(ar) && brightness))
 		queue_delayed_work(ar->hw->workqueue, &ar->led_work, HZ/10);
 }
 
