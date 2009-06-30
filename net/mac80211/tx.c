@@ -908,8 +908,9 @@ ieee80211_tx_h_stats(struct ieee80211_tx_data *tx)
  * deal with packet injection down monitor interface
  * with Radiotap Header -- only called for monitor mode interface
  */
-static bool __ieee80211_parse_tx_radiotap(struct ieee80211_tx_data *tx,
-					  struct sk_buff *skb)
+static ieee80211_tx_result
+__ieee80211_parse_tx_radiotap(struct ieee80211_tx_data *tx,
+			      struct sk_buff *skb)
 {
 	/*
 	 * this is the moment to interpret and discard the radiotap header that
@@ -960,7 +961,7 @@ static bool __ieee80211_parse_tx_radiotap(struct ieee80211_tx_data *tx,
 				 * on transmission
 				 */
 				if (skb->len < (iterator.max_length + FCS_LEN))
-					return false;
+					return TX_DROP;
 
 				skb_trim(skb, skb->len - FCS_LEN);
 			}
@@ -982,7 +983,7 @@ static bool __ieee80211_parse_tx_radiotap(struct ieee80211_tx_data *tx,
 	}
 
 	if (ret != -ENOENT) /* ie, if we didn't simply run out of fields */
-		return false;
+		return TX_DROP;
 
 	/*
 	 * remove the radiotap header
@@ -991,7 +992,7 @@ static bool __ieee80211_parse_tx_radiotap(struct ieee80211_tx_data *tx,
 	 */
 	skb_pull(skb, iterator.max_length);
 
-	return true;
+	return TX_CONTINUE;
 }
 
 /*
@@ -1025,7 +1026,7 @@ __ieee80211_tx_prepare(struct ieee80211_tx_data *tx,
 	/* process and remove the injection radiotap header */
 	sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 	if (unlikely(info->flags & IEEE80211_TX_CTL_INJECTED)) {
-		if (!__ieee80211_parse_tx_radiotap(tx, skb))
+		if (__ieee80211_parse_tx_radiotap(tx, skb) == TX_DROP)
 			return TX_DROP;
 
 		/*
