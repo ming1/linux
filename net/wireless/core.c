@@ -17,7 +17,6 @@
 #include "nl80211.h"
 #include "core.h"
 #include "sysfs.h"
-#include "debugfs.h"
 
 /* name for sysfs, %d is appended */
 #define PHY_NAME "phy"
@@ -376,8 +375,6 @@ int wiphy_register(struct wiphy *wiphy)
 		nl80211_send_reg_change_event(&request);
 	}
 
-	cfg80211_debugfs_drv_add(drv);
-
 	res = 0;
 out_unlock:
 	mutex_unlock(&cfg80211_mutex);
@@ -407,8 +404,6 @@ void wiphy_unregister(struct wiphy *wiphy)
 	mutex_lock(&drv->mtx);
 	/* unlock again before freeing */
 	mutex_unlock(&drv->mtx);
-
-	cfg80211_debugfs_drv_del(drv);
 
 	/* If this device got a regulatory hint tell core its
 	 * free to listen now to a new shiny device regulatory hint */
