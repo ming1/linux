@@ -539,14 +539,11 @@ static void ath_rx_ps_beacon(struct ath_softc *sc, struct sk_buff *skb)
 	if (ath_beacon_dtim_pending_cab(skb)) {
 		/*
 		 * Remain awake waiting for buffered broadcast/multicast
-		 * frames. If the last broadcast/multicast frame is not
-		 * received properly, the next beacon frame will work as
-		 * a backup trigger for returning into NETWORK SLEEP state,
-		 * so we are waiting for it as well.
+		 * frames.
 		 */
 		DPRINTF(sc, ATH_DBG_PS, "Received DTIM beacon indicating "
 			"buffered broadcast/multicast frame(s)\n");
-		sc->sc_flags |= SC_OP_WAIT_FOR_CAB | SC_OP_WAIT_FOR_BEACON;
+		sc->sc_flags |= SC_OP_WAIT_FOR_CAB;
 		return;
 	}
 
