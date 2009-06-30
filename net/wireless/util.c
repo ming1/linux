@@ -1,10 +1,10 @@
 /*
  * Wireless utility functions
  *
- * Copyright 2007-2009	Johannes Berg <johannes@sipsolutions.net>
+ * Copyright 2007	Johannes Berg <johannes@sipsolutions.net>
  */
-#include <linux/bitops.h>
-#include <net/cfg80211.h>
+#include <net/wireless.h>
+#include <asm/bitops.h>
 #include "core.h"
 
 struct ieee80211_rate *
