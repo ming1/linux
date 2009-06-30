@@ -340,7 +340,7 @@ struct bss_descriptor {
 	u32 rssi;
 	u32 channel;
 	u16 beaconperiod;
-	__le16 atimwindow;
+	u32 atimwindow;
 
 	/* IW_MODE_AUTO, IW_MODE_ADHOC, IW_MODE_INFRA */
 	u8 mode;
@@ -350,8 +350,8 @@ struct bss_descriptor {
 
 	unsigned long last_scanned;
 
-	union ieee_phy_param_set phy;
-	union ieee_ss_param_set ss;
+	union ieeetypes_phyparamset phyparamset;
+	union IEEEtypes_ssparamset ssparamset;
 
 	struct ieeetypes_countryinfofullset countryinfo;
 
