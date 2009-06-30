@@ -407,18 +407,6 @@ set_timer:
 	mod_timer(&sc->ani.timer, jiffies + msecs_to_jiffies(cal_interval));
 }
 
-static void ath_start_ani(struct ath_softc *sc)
-{
-	unsigned long timestamp = jiffies_to_msecs(jiffies);
-
-	sc->ani.longcal_timer = timestamp;
-	sc->ani.shortcal_timer = timestamp;
-	sc->ani.checkani_timer = timestamp;
-
-	mod_timer(&sc->ani.timer,
-		  jiffies + msecs_to_jiffies(ATH_ANI_POLLINTERVAL));
-}
-
 /*
  * Update tx/rx chainmask. For legacy association,
  * hard code chainmask to 1x1, for 11n association, use
@@ -923,7 +911,9 @@ static void ath9k_bss_assoc_info(struct ath_softc *sc,
 		sc->nodestats.ns_avgtxrssi = ATH_RSSI_DUMMY_MARKER;
 		sc->nodestats.ns_avgtxrate = ATH_RATE_DUMMY_MARKER;
 
-		ath_start_ani(sc);
+		/* Start ANI */
+		mod_timer(&sc->ani.timer,
+			  jiffies + msecs_to_jiffies(ATH_ANI_POLLINTERVAL));
 	} else {
 		DPRINTF(sc, ATH_DBG_CONFIG, "Bss Info DISASSOC\n");
 		sc->curaid = 0;
@@ -2249,8 +2239,12 @@ static int ath9k_add_interface(struct ieee80211_hw *hw,
 
 	ath9k_hw_set_interrupts(sc->sc_ah, sc->imask);
 
-	if (conf->type == NL80211_IFTYPE_AP)
-		ath_start_ani(sc);
+	if (conf->type == NL80211_IFTYPE_AP) {
+		/* TODO: is this a suitable place to start ANI for AP mode? */
+		/* Start ANI */
+		mod_timer(&sc->ani.timer,
+			  jiffies + msecs_to_jiffies(ATH_ANI_POLLINTERVAL));
+	}
 
 out:
 	mutex_unlock(&sc->mutex);
