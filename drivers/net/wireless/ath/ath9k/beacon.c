@@ -559,7 +559,6 @@ static void ath_beacon_config_sta(struct ath_softc *sc,
 	int cfpperiod, cfpcount;
 	u32 nexttbtt = 0, intval, tsftu;
 	u64 tsf;
-	int num_beacons, offset, dtim_dec_count, cfp_dec_count;
 
 	memset(&bs, 0, sizeof(bs));
 	intval = conf->beacon_interval & ATH9K_BEACON_PERIOD;
@@ -587,27 +586,14 @@ static void ath_beacon_config_sta(struct ath_softc *sc,
 	 */
 	tsf = ath9k_hw_gettsf64(sc->sc_ah);
 	tsftu = TSF_TO_TU(tsf>>32, tsf) + FUDGE;
-
-	num_beacons = tsftu / intval + 1;
-	offset = tsftu % intval;
-	nexttbtt = tsftu - offset;
-	if (offset)
+	do {
 		nexttbtt += intval;
-
-	/* DTIM Beacon every dtimperiod Beacon */
-	dtim_dec_count = num_beacons % dtimperiod;
-	/* CFP every cfpperiod DTIM Beacon */
-	cfp_dec_count = (num_beacons / dtimperiod) % cfpperiod;
-	if (dtim_dec_count)
-		cfp_dec_count++;
-
-	dtimcount -= dtim_dec_count;
-	if (dtimcount < 0)
-		dtimcount += dtimperiod;
-
-	cfpcount -= cfp_dec_count;
-	if (cfpcount < 0)
-		cfpcount += cfpperiod;
+		if (--dtimcount < 0) {
+			dtimcount = dtimperiod - 1;
+			if (--cfpcount < 0)
+				cfpcount = cfpperiod - 1;
+		}
+	} while (nexttbtt < tsftu);
 
 	bs.bs_intval = intval;
 	bs.bs_nexttbtt = nexttbtt;
