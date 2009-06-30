@@ -802,11 +802,6 @@ struct rt2x00_dev {
 	u8 calibration[2];
 
 	/*
-	 * Beacon interval.
-	 */
-	u16 beacon_int;
-
-	/*
 	 * Low level statistics which will have
 	 * to be kept up to date while device is running.
 	 */
