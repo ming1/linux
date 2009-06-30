@@ -21,6 +21,7 @@
 #include <linux/device.h>
 #include <net/mac80211.h>
 #include <linux/leds.h>
+#include <linux/rfkill.h>
 
 #include "hw.h"
 #include "rc.h"
@@ -463,6 +464,12 @@ struct ath_led {
 	bool registered;
 };
 
+struct ath_rfkill {
+	struct rfkill *rfkill;
+	struct rfkill_ops ops;
+	char rfkill_name[32];
+};
+
 /********************/
 /* Main driver core */
 /********************/
@@ -502,6 +509,7 @@ struct ath_led {
 #define SC_OP_PROTECT_ENABLE    BIT(6)
 #define SC_OP_RXFLUSH           BIT(7)
 #define SC_OP_LED_ASSOCIATED    BIT(8)
+#define SC_OP_RFKILL_REGISTERED BIT(9)
 #define SC_OP_WAIT_FOR_BEACON   BIT(12)
 #define SC_OP_LED_ON            BIT(13)
 #define SC_OP_SCANNING          BIT(14)
@@ -587,6 +595,7 @@ struct ath_softc {
 
 	int beacon_interval;
 
+	struct ath_rfkill rf_kill;
 	struct ath_ani ani;
 	struct ath9k_node_stats nodestats;
 #ifdef CONFIG_ATH9K_DEBUG
