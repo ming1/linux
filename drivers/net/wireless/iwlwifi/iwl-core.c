@@ -1500,7 +1500,7 @@ void iwl_enable_interrupts(struct iwl_priv *priv)
 {
 	IWL_DEBUG_ISR(priv, "Enabling interrupts\n");
 	set_bit(STATUS_INT_ENABLED, &priv->status);
-	iwl_write32(priv, CSR_INT_MASK, priv->inta_mask);
+	iwl_write32(priv, CSR_INT_MASK, CSR_INI_SET_MASK);
 }
 EXPORT_SYMBOL(iwl_enable_interrupts);
 
@@ -1554,8 +1554,6 @@ int iwl_alloc_isr_ict(struct iwl_priv *priv)
 	memset(priv->ict_tbl_vir,0, (sizeof(u32) * ICT_COUNT) + PAGE_SIZE);
 	priv->ict_index = 0;
 
-	/* add periodic RX interrupt */
-	priv->inta_mask |= CSR_INT_BIT_RX_PERIODIC;
 	return 0;
 }
 EXPORT_SYMBOL(iwl_alloc_isr_ict);
@@ -1588,7 +1586,7 @@ int iwl_reset_ict(struct iwl_priv *priv)
 	iwl_write32(priv, CSR_DRAM_INT_TBL_REG, val);
 	priv->use_ict = true;
 	priv->ict_index = 0;
-	iwl_write32(priv, CSR_INT, priv->inta_mask);
+	iwl_write32(priv, CSR_INT, CSR_INI_SET_MASK);
 	iwl_enable_interrupts(priv);
 	spin_unlock_irqrestore(&priv->lock, flags);
 
@@ -1670,7 +1668,7 @@ irqreturn_t iwl_isr_ict(int irq, void *data)
 	IWL_DEBUG_ISR(priv, "ISR inta 0x%08x, enabled 0x%08x ict 0x%08x\n",
 			inta, inta_mask, val);
 
-	inta &= priv->inta_mask;
+	inta &= CSR_INI_SET_MASK;
 	priv->inta |= inta;
 
 	/* iwl_irq_tasklet() will service interrupts and re-enable them */
