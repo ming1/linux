@@ -380,8 +380,7 @@ static void rtl8187_rx_cb(struct urb *urb)
 	rx_status.flag |= RX_FLAG_TSFT;
 	if (flags & RTL818X_RX_DESC_FLAG_CRC32_ERR)
 		rx_status.flag |= RX_FLAG_FAILED_FCS_CRC;
-	memcpy(IEEE80211_SKB_RXCB(skb), &rx_status, sizeof(rx_status));
-	ieee80211_rx_irqsafe(dev, skb);
+	ieee80211_rx_irqsafe(dev, skb, &rx_status);
 
 	skb = dev_alloc_skb(RTL8187_MAX_RX);
 	if (unlikely(!skb)) {
