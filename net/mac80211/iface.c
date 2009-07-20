@@ -190,6 +190,10 @@ static int ieee80211_open(struct net_device *dev)
 			       ETH_ALEN);
 	}
 
+	if (compare_ether_addr(null_addr, local->mdev->dev_addr) == 0)
+		memcpy(local->mdev->dev_addr, local->hw.wiphy->perm_addr,
+		       ETH_ALEN);
+
 	/*
 	 * Validate the MAC address for this device.
 	 */
@@ -225,9 +229,9 @@ static int ieee80211_open(struct net_device *dev)
 		if (sdata->u.mntr_flags & MONITOR_FLAG_OTHER_BSS)
 			local->fif_other_bss++;
 
-		spin_lock_bh(&local->filter_lock);
+		netif_addr_lock_bh(local->mdev);
 		ieee80211_configure_filter(local);
-		spin_unlock_bh(&local->filter_lock);
+		netif_addr_unlock_bh(local->mdev);
 		break;
 	case NL80211_IFTYPE_STATION:
 		sdata->u.mgd.flags &= ~IEEE80211_STA_PREV_BSSID_SET;
@@ -242,9 +246,9 @@ static int ieee80211_open(struct net_device *dev)
 
 		if (ieee80211_vif_is_mesh(&sdata->vif)) {
 			local->fif_other_bss++;
-			spin_lock_bh(&local->filter_lock);
+			netif_addr_lock_bh(local->mdev);
 			ieee80211_configure_filter(local);
-			spin_unlock_bh(&local->filter_lock);
+			netif_addr_unlock_bh(local->mdev);
 
 			ieee80211_start_mesh(sdata);
 		}
@@ -278,6 +282,10 @@ static int ieee80211_open(struct net_device *dev)
 	}
 
 	if (local->open_count == 0) {
+		res = dev_open(local->mdev);
+		WARN_ON(res);
+		if (res)
+			goto err_del_interface;
 		tasklet_enable(&local->tx_pending_tasklet);
 		tasklet_enable(&local->tasklet);
 	}
@@ -400,14 +408,7 @@ static int ieee80211_stop(struct net_device *dev)
 	if (sdata->flags & IEEE80211_SDATA_PROMISC)
 		atomic_dec(&local->iff_promiscs);
 
-	netif_addr_lock_bh(dev);
-	spin_lock_bh(&local->filter_lock);
-	__dev_addr_unsync(&local->mc_list, &local->mc_count,
-			  &dev->mc_list, &dev->mc_count);
-	ieee80211_configure_filter(local);
-	spin_unlock_bh(&local->filter_lock);
-	netif_addr_unlock_bh(dev);
-
+	dev_mc_unsync(local->mdev, dev);
 	del_timer_sync(&local->dynamic_ps_timer);
 	cancel_work_sync(&local->dynamic_ps_enable_work);
 
@@ -456,9 +457,9 @@ static int ieee80211_stop(struct net_device *dev)
 		if (sdata->u.mntr_flags & MONITOR_FLAG_OTHER_BSS)
 			local->fif_other_bss--;
 
-		spin_lock_bh(&local->filter_lock);
+		netif_addr_lock_bh(local->mdev);
 		ieee80211_configure_filter(local);
-		spin_unlock_bh(&local->filter_lock);
+		netif_addr_unlock_bh(local->mdev);
 		break;
 	case NL80211_IFTYPE_STATION:
 		memset(sdata->u.mgd.bssid, 0, ETH_ALEN);
@@ -506,9 +507,9 @@ static int ieee80211_stop(struct net_device *dev)
 			local->fif_other_bss--;
 			atomic_dec(&local->iff_allmultis);
 
-			spin_lock_bh(&local->filter_lock);
+			netif_addr_lock_bh(local->mdev);
 			ieee80211_configure_filter(local);
-			spin_unlock_bh(&local->filter_lock);
+			netif_addr_unlock_bh(local->mdev);
 
 			ieee80211_stop_mesh(sdata);
 		}
@@ -554,6 +555,9 @@ static int ieee80211_stop(struct net_device *dev)
 	ieee80211_recalc_ps(local, -1);
 
 	if (local->open_count == 0) {
+		if (netif_running(local->mdev))
+			dev_close(local->mdev);
+
 		drv_stop(local);
 
 		ieee80211_led_radio(local, false);
@@ -600,11 +604,8 @@ static void ieee80211_set_multicast_list(struct net_device *dev)
 			atomic_dec(&local->iff_promiscs);
 		sdata->flags ^= IEEE80211_SDATA_PROMISC;
 	}
-	spin_lock_bh(&local->filter_lock);
-	__dev_addr_sync(&local->mc_list, &local->mc_count,
-			&dev->mc_list, &dev->mc_count);
-	ieee80211_configure_filter(local);
-	spin_unlock_bh(&local->filter_lock);
+
+	dev_mc_sync(local->mdev, dev);
 }
 
 /*

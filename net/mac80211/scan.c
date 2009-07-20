@@ -307,13 +307,16 @@ void ieee80211_scan_completed(struct ieee80211_hw *hw, bool aborted)
 	if (was_hw_scan)
 		goto done;
 
-	spin_lock_bh(&local->filter_lock);
+	netif_tx_lock_bh(local->mdev);
+	netif_addr_lock(local->mdev);
 	local->filter_flags &= ~FIF_BCN_PRBRESP_PROMISC;
 	drv_configure_filter(local, FIF_BCN_PRBRESP_PROMISC,
 			     &local->filter_flags,
-			     local->mc_count,
-			     local->mc_list);
-	spin_unlock_bh(&local->filter_lock);
+			     local->mdev->mc_count,
+			     local->mdev->mc_list);
+
+	netif_addr_unlock(local->mdev);
+	netif_tx_unlock_bh(local->mdev);
 
 	drv_sw_scan_complete(local);
 
@@ -392,13 +395,13 @@ static int ieee80211_start_sw_scan(struct ieee80211_local *local)
 	local->scan_state = SCAN_SET_CHANNEL;
 	local->scan_channel_idx = 0;
 
-	spin_lock_bh(&local->filter_lock);
+	netif_addr_lock_bh(local->mdev);
 	local->filter_flags |= FIF_BCN_PRBRESP_PROMISC;
 	drv_configure_filter(local, FIF_BCN_PRBRESP_PROMISC,
 			     &local->filter_flags,
-			     local->mc_count,
-			     local->mc_list);
-	spin_unlock_bh(&local->filter_lock);
+			     local->mdev->mc_count,
+			     local->mdev->mc_list);
+	netif_addr_unlock_bh(local->mdev);
 
 	/* TODO: start scan as soon as all nullfunc frames are ACKed */
 	queue_delayed_work(local->hw.workqueue, &local->scan_work,
