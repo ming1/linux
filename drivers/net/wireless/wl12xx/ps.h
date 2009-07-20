@@ -1,7 +1,11 @@
+#ifndef __WL12XX_PS_H__
+#define __WL12XX_PS_H__
+
 /*
  * This file is part of wl12xx
  *
- * Copyright (C) 2009 Nokia Corporation
+ * Copyright (c) 1998-2007 Texas Instruments Incorporated
+ * Copyright (C) 2008 Nokia Corporation
  *
  * Contact: Kalle Valo <kalle.valo@nokia.com>
  *
@@ -21,10 +25,12 @@
  *
  */
 
-#ifndef __WL12XX_NETLINK_H__
-#define __WL12XX_NETLINK_H__
+#include "wl12xx.h"
+#include "acx.h"
 
-int wl12xx_nl_register(void);
-void wl12xx_nl_unregister(void);
+int wl12xx_ps_set_mode(struct wl12xx *wl, enum wl12xx_cmd_ps_mode mode);
+void wl12xx_ps_elp_sleep(struct wl12xx *wl);
+int wl12xx_ps_elp_wakeup(struct wl12xx *wl);
 
-#endif /* __WL12XX_NETLINK_H__ */
+
+#endif /* __WL12XX_PS_H__ */
