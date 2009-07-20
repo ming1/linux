@@ -678,8 +678,7 @@ int ssb_pcmcia_get_invariants(struct ssb_bus *bus,
 			sprom->board_rev = tuple.TupleData[1];
 			break;
 		case SSB_PCMCIA_CIS_PA:
-			GOTO_ERROR_ON((tuple.TupleDataLen != 9) &&
-				      (tuple.TupleDataLen != 10),
+			GOTO_ERROR_ON(tuple.TupleDataLen != 9,
 				      "pa tpl size");
 			sprom->pa0b0 = tuple.TupleData[1] |
 				 ((u16)tuple.TupleData[2] << 8);
@@ -719,8 +718,7 @@ int ssb_pcmcia_get_invariants(struct ssb_bus *bus,
 			sprom->antenna_gain.ghz5.a3 = tuple.TupleData[1];
 			break;
 		case SSB_PCMCIA_CIS_BFLAGS:
-			GOTO_ERROR_ON((tuple.TupleDataLen != 3) &&
-				      (tuple.TupleDataLen != 5),
+			GOTO_ERROR_ON(tuple.TupleDataLen != 3,
 				      "bfl tpl size");
 			sprom->boardflags_lo = tuple.TupleData[1] |
 					 ((u16)tuple.TupleData[2] << 8);
