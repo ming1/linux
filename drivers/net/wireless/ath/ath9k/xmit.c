@@ -347,14 +347,7 @@ static void ath_tx_complete_aggr(struct ath_softc *sc, struct ath_txq *txq,
 		}
 
 		if (bf_next == NULL) {
-			/*
-			 * Make sure the last desc is reclaimed if it
-			 * not a holding desc.
-			 */
-			if (!bf_last->bf_stale)
-				list_move_tail(&bf->list, &bf_head);
-			else
-				INIT_LIST_HEAD(&bf_head);
+			INIT_LIST_HEAD(&bf_head);
 		} else {
 			ASSERT(!list_empty(bf_q));
 			list_move_tail(&bf->list, &bf_head);
