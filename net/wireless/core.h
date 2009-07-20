@@ -181,8 +181,7 @@ int cfg80211_connect(struct cfg80211_registered_device *rdev,
 		     struct net_device *dev,
 		     struct cfg80211_connect_params *connect);
 int cfg80211_disconnect(struct cfg80211_registered_device *rdev,
-			struct net_device *dev, u16 reason,
-			bool wextev);
+			struct net_device *dev, u16 reason);
 
 void cfg80211_conn_work(struct work_struct *work);
 
