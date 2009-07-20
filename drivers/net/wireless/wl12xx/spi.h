@@ -65,8 +65,9 @@
 
 #define WSPI_INIT_CMD_LEN           8
 
+#define TNETWIF_READ_OFFSET_BYTES  8
 #define HW_ACCESS_WSPI_FIXED_BUSY_LEN \
-		((WL12XX_BUSY_WORD_LEN - 4) / sizeof(u32))
+		((TNETWIF_READ_OFFSET_BYTES - 4) / sizeof(u32))
 #define HW_ACCESS_WSPI_INIT_CMD_MASK  0
 
 
