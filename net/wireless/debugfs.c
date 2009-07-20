@@ -104,15 +104,15 @@ static const struct file_operations ht40allow_map_ops = {
 };
 
 #define DEBUGFS_ADD(name)						\
-	rdev->debugfs.name = debugfs_create_file(#name, S_IRUGO, phyd,	\
-						  &rdev->wiphy, &name## _ops);
+	drv->debugfs.name = debugfs_create_file(#name, S_IRUGO, phyd,	\
+						  &drv->wiphy, &name## _ops);
 #define DEBUGFS_DEL(name)						\
-	debugfs_remove(rdev->debugfs.name);				\
-	rdev->debugfs.name = NULL;
+	debugfs_remove(drv->debugfs.name);				\
+	drv->debugfs.name = NULL;
 
-void cfg80211_debugfs_rdev_add(struct cfg80211_registered_device *rdev)
+void cfg80211_debugfs_drv_add(struct cfg80211_registered_device *drv)
 {
-	struct dentry *phyd = rdev->wiphy.debugfsdir;
+	struct dentry *phyd = drv->wiphy.debugfsdir;
 
 	DEBUGFS_ADD(rts_threshold);
 	DEBUGFS_ADD(fragmentation_threshold);
@@ -121,7 +121,7 @@ void cfg80211_debugfs_rdev_add(struct cfg80211_registered_device *rdev)
 	DEBUGFS_ADD(ht40allow_map);
 }
 
-void cfg80211_debugfs_rdev_del(struct cfg80211_registered_device *rdev)
+void cfg80211_debugfs_drv_del(struct cfg80211_registered_device *drv)
 {
 	DEBUGFS_DEL(rts_threshold);
 	DEBUGFS_DEL(fragmentation_threshold);
