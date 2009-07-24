@@ -386,8 +386,7 @@ static void ieee80211_send_assoc(struct ieee80211_sub_if_data *sdata,
 
 
 static void ieee80211_send_deauth_disassoc(struct ieee80211_sub_if_data *sdata,
-					   const u8 *bssid, u16 stype, u16 reason,
-					   void *cookie)
+					   const u8 *bssid, u16 stype, u16 reason)
 {
 	struct ieee80211_local *local = sdata->local;
 	struct ieee80211_if_managed *ifmgd = &sdata->u.mgd;
@@ -413,9 +412,9 @@ static void ieee80211_send_deauth_disassoc(struct ieee80211_sub_if_data *sdata,
 	mgmt->u.deauth.reason_code = cpu_to_le16(reason);
 
 	if (stype == IEEE80211_STYPE_DEAUTH)
-		cfg80211_send_deauth(sdata->dev, (u8 *)mgmt, skb->len, cookie);
+		cfg80211_send_deauth(sdata->dev, (u8 *) mgmt, skb->len);
 	else
-		cfg80211_send_disassoc(sdata->dev, (u8 *)mgmt, skb->len, cookie);
+		cfg80211_send_disassoc(sdata->dev, (u8 *) mgmt, skb->len);
 	ieee80211_tx_skb(sdata, skb, ifmgd->flags & IEEE80211_STA_MFP_ENABLED);
 }
 
@@ -1838,12 +1837,10 @@ static void ieee80211_sta_rx_queued_mgmt(struct ieee80211_sub_if_data *sdata,
 			/* no action */
 			break;
 		case RX_MGMT_CFG80211_DEAUTH:
-			cfg80211_send_deauth(sdata->dev, (u8 *)mgmt, skb->len,
-					     NULL);
+			cfg80211_send_deauth(sdata->dev, (u8 *)mgmt, skb->len);
 			break;
 		case RX_MGMT_CFG80211_DISASSOC:
-			cfg80211_send_disassoc(sdata->dev, (u8 *)mgmt, skb->len,
-					       NULL);
+			cfg80211_send_disassoc(sdata->dev, (u8 *)mgmt, skb->len);
 			break;
 		default:
 			WARN(1, "unexpected: %d", rma);
@@ -2276,8 +2273,7 @@ int ieee80211_mgd_assoc(struct ieee80211_sub_if_data *sdata,
 }
 
 int ieee80211_mgd_deauth(struct ieee80211_sub_if_data *sdata,
-			 struct cfg80211_deauth_request *req,
-			 void *cookie)
+			 struct cfg80211_deauth_request *req)
 {
 	struct ieee80211_if_managed *ifmgd = &sdata->u.mgd;
 	struct ieee80211_mgd_work *wk;
@@ -2309,15 +2305,13 @@ int ieee80211_mgd_deauth(struct ieee80211_sub_if_data *sdata,
 	mutex_unlock(&ifmgd->mtx);
 
 	ieee80211_send_deauth_disassoc(sdata, bssid,
-			IEEE80211_STYPE_DEAUTH, req->reason_code,
-			cookie);
+			IEEE80211_STYPE_DEAUTH, req->reason_code);
 
 	return 0;
 }
 
 int ieee80211_mgd_disassoc(struct ieee80211_sub_if_data *sdata,
-			   struct cfg80211_disassoc_request *req,
-			   void *cookie)
+			   struct cfg80211_disassoc_request *req)
 {
 	struct ieee80211_if_managed *ifmgd = &sdata->u.mgd;
 
@@ -2337,7 +2331,6 @@ int ieee80211_mgd_disassoc(struct ieee80211_sub_if_data *sdata,
 	mutex_unlock(&ifmgd->mtx);
 
 	ieee80211_send_deauth_disassoc(sdata, req->bss->bssid,
-			IEEE80211_STYPE_DISASSOC, req->reason_code,
-			cookie);
+			IEEE80211_STYPE_DISASSOC, req->reason_code);
 	return 0;
 }

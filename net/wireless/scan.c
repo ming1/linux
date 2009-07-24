@@ -17,20 +17,12 @@
 
 #define IEEE80211_SCAN_RESULT_EXPIRE	(10 * HZ)
 
-void __cfg80211_scan_done(struct work_struct *wk)
+void cfg80211_scan_done(struct cfg80211_scan_request *request, bool aborted)
 {
-	struct cfg80211_registered_device *rdev;
-	struct cfg80211_scan_request *request;
 	struct net_device *dev;
 #ifdef CONFIG_WIRELESS_EXT
 	union iwreq_data wrqu;
 #endif
-
-	rdev = container_of(wk, struct cfg80211_registered_device,
-			    scan_done_wk);
-
-	mutex_lock(&rdev->mtx);
-	request = rdev->scan_req;
 
 	dev = dev_get_by_index(&init_net, request->ifidx);
 	if (!dev)
@@ -43,7 +35,7 @@ void __cfg80211_scan_done(struct work_struct *wk)
 	 */
 	cfg80211_sme_scan_done(dev);
 
-	if (request->aborted)
+	if (aborted)
 		nl80211_send_scan_aborted(wiphy_to_dev(request->wiphy), dev);
 	else
 		nl80211_send_scan_done(wiphy_to_dev(request->wiphy), dev);
@@ -51,7 +43,7 @@ void __cfg80211_scan_done(struct work_struct *wk)
 	wiphy_to_dev(request->wiphy)->scan_req = NULL;
 
 #ifdef CONFIG_WIRELESS_EXT
-	if (!request->aborted) {
+	if (!aborted) {
 		memset(&wrqu, 0, sizeof(wrqu));
 
 		wireless_send_event(dev, SIOCGIWSCAN, &wrqu, NULL);
@@ -61,23 +53,7 @@ void __cfg80211_scan_done(struct work_struct *wk)
 	dev_put(dev);
 
  out:
-	cfg80211_unlock_rdev(rdev);
 	kfree(request);
-}
-
-void cfg80211_scan_done(struct cfg80211_scan_request *request, bool aborted)
-{
-	struct net_device *dev = dev_get_by_index(&init_net, request->ifidx);
-	if (WARN_ON(!dev)) {
-		kfree(request);
-		return;
-	}
-
-	WARN_ON(request != wiphy_to_dev(request->wiphy)->scan_req);
-
-	request->aborted = aborted;
-	schedule_work(&wiphy_to_dev(request->wiphy)->scan_done_wk);
-	dev_put(dev);
 }
 EXPORT_SYMBOL(cfg80211_scan_done);
 

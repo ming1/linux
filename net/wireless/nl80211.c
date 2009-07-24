@@ -4029,8 +4029,6 @@ static int nl80211_add_scan_req(struct sk_buff *msg,
 	struct nlattr *nest;
 	int i;
 
-	ASSERT_RDEV_LOCK(rdev);
-
 	if (WARN_ON(!req))
 		return 0;
 
@@ -4393,12 +4391,12 @@ void nl80211_send_roamed(struct cfg80211_registered_device *rdev,
 
 void nl80211_send_disconnected(struct cfg80211_registered_device *rdev,
 			       struct net_device *netdev, u16 reason,
-			       const u8 *ie, size_t ie_len, bool from_ap)
+			       u8 *ie, size_t ie_len, bool from_ap, gfp_t gfp)
 {
 	struct sk_buff *msg;
 	void *hdr;
 
-	msg = nlmsg_new(NLMSG_GOODSIZE, GFP_KERNEL);
+	msg = nlmsg_new(NLMSG_GOODSIZE, gfp);
 	if (!msg)
 		return;
 
@@ -4422,7 +4420,7 @@ void nl80211_send_disconnected(struct cfg80211_registered_device *rdev,
 		return;
 	}
 
-	genlmsg_multicast(msg, 0, nl80211_mlme_mcgrp.id, GFP_KERNEL);
+	genlmsg_multicast(msg, 0, nl80211_mlme_mcgrp.id, gfp);
 	return;
 
  nla_put_failure:
