@@ -653,6 +653,49 @@ static ssize_t iwl_dbgfs_thermal_throttling_read(struct file *file,
 	return ret;
 }
 
+static ssize_t iwl_dbgfs_disable_fat_mode_write(struct file *file,
+					 const char __user *user_buf,
+					 size_t count, loff_t *ppos)
+{
+	struct iwl_priv *priv = file->private_data;
+	char buf[8];
+	int buf_size;
+	int fat_mode;
+
+	memset(buf, 0, sizeof(buf));
+	buf_size = min(count, sizeof(buf) -  1);
+	if (copy_from_user(buf, user_buf, buf_size))
+		return -EFAULT;
+	if (sscanf(buf, "%d", &fat_mode) != 1)
+		return -EFAULT;
+	if (!iwl_is_associated(priv))
+		priv->disable_fat = fat_mode ? true : false;
+	else {
+		IWL_ERR(priv, "Sta associated with AP - "
+			"Change fat mode is not allowed\n");
+		return -EINVAL;
+	}
+
+	return count;
+}
+
+static ssize_t iwl_dbgfs_disable_fat_mode_read(struct file *file,
+					 char __user *user_buf,
+					 size_t count, loff_t *ppos)
+{
+	struct iwl_priv *priv = (struct iwl_priv *)file->private_data;
+	char buf[100];
+	int pos = 0;
+	const size_t bufsz = sizeof(buf);
+	ssize_t ret;
+
+	pos += scnprintf(buf + pos, bufsz - pos,
+			"11n 40Mhz Mode: %s\n",
+			priv->disable_fat ? "Disabled" : "Enabled");
+	ret = simple_read_from_buffer(user_buf, count, ppos, buf, pos);
+	return ret;
+}
+
 DEBUGFS_READ_WRITE_FILE_OPS(sram);
 DEBUGFS_WRITE_FILE_OPS(log_event);
 DEBUGFS_READ_FILE_OPS(nvm);
@@ -667,6 +710,7 @@ DEBUGFS_READ_FILE_OPS(qos);
 DEBUGFS_READ_FILE_OPS(led);
 #endif
 DEBUGFS_READ_FILE_OPS(thermal_throttling);
+DEBUGFS_READ_WRITE_FILE_OPS(disable_fat_mode);
 
 /*
  * Create the debugfs files and directories
@@ -708,6 +752,7 @@ int iwl_dbgfs_register(struct iwl_priv *priv, const char *name)
 	DEBUGFS_ADD_FILE(led, data);
 #endif
 	DEBUGFS_ADD_FILE(thermal_throttling, data);
+	DEBUGFS_ADD_FILE(disable_fat_mode, data);
 	DEBUGFS_ADD_BOOL(disable_sensitivity, rf, &priv->disable_sens_cal);
 	DEBUGFS_ADD_BOOL(disable_chain_noise, rf,
 			 &priv->disable_chain_noise_cal);
@@ -747,6 +792,7 @@ void iwl_dbgfs_unregister(struct iwl_priv *priv)
 	DEBUGFS_REMOVE(priv->dbgfs->dbgfs_data_files.file_led);
 #endif
 	DEBUGFS_REMOVE(priv->dbgfs->dbgfs_data_files.file_thermal_throttling);
+	DEBUGFS_REMOVE(priv->dbgfs->dbgfs_data_files.file_disable_fat_mode);
 	DEBUGFS_REMOVE(priv->dbgfs->dir_data);
 	DEBUGFS_REMOVE(priv->dbgfs->dbgfs_rf_files.file_disable_sensitivity);
 	DEBUGFS_REMOVE(priv->dbgfs->dbgfs_rf_files.file_disable_chain_noise);
