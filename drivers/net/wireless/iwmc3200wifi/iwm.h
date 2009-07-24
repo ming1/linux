@@ -162,11 +162,13 @@ struct iwm_umac_key_hdr {
 
 struct iwm_key {
 	struct iwm_umac_key_hdr hdr;
-	u32 cipher;
-	u8 key[WLAN_MAX_KEY_LEN];
-	u8 seq[IW_ENCODE_SEQ_MAX_SIZE];
-	int key_len;
-	int seq_len;
+	u8 in_use;
+	u8 alg;
+	u32 flags;
+	u8 tx_seq[IW_ENCODE_SEQ_MAX_SIZE];
+	u8 rx_seq[IW_ENCODE_SEQ_MAX_SIZE];
+	u8 key_len;
+	u8 key[32];
 };
 
 #define IWM_RX_ID_HASH  0xff
@@ -274,7 +276,7 @@ struct iwm_priv {
 	struct iwm_tx_queue txq[IWM_TX_QUEUES];
 
 	struct iwm_key keys[IWM_NUM_KEYS];
-	s8 default_key;
+	struct iwm_key *default_key;
 
 	DECLARE_BITMAP(wifi_ntfy, WIFI_IF_NTFY_MAX);
 	wait_queue_head_t wifi_ntfy_queue;
