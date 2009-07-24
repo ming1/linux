@@ -831,7 +831,7 @@
 #define RXD_W3_EIV			FIELD32(0xffffffff)
 
 /*
- * Macros for converting txpower from EEPROM to mac80211 value
+ * Macro's for converting txpower from EEPROM to mac80211 value
  * and from mac80211 value to register value.
  */
 #define MIN_TXPOWER	0
