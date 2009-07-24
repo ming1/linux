@@ -406,8 +406,7 @@ static bool mac80211_hwsim_tx_frame(struct ieee80211_hw *hw,
 	rx_status.freq = data->channel->center_freq;
 	rx_status.band = data->channel->band;
 	rx_status.rate_idx = info->control.rates[0].idx;
-	/* TODO: simulate real signal strength (and optional packet loss) */
-	rx_status.signal = -50;
+	/* TODO: simulate signal strength (and optional packet drop) */
 
 	if (data->ps != PS_DISABLED)
 		hdr->frame_control |= cpu_to_le16(IEEE80211_FCTL_PM);
@@ -1025,8 +1024,7 @@ static int __init init_mac80211_hwsim(void)
 			BIT(NL80211_IFTYPE_AP) |
 			BIT(NL80211_IFTYPE_MESH_POINT);
 
-		hw->flags = IEEE80211_HW_MFP_CAPABLE |
-			    IEEE80211_HW_SIGNAL_DBM;
+		hw->flags = IEEE80211_HW_MFP_CAPABLE;
 
 		/* ask mac80211 to reserve space for magic */
 		hw->vif_data_size = sizeof(struct hwsim_vif_priv);
