@@ -28,6 +28,8 @@ void cfg80211_scan_done(struct cfg80211_scan_request *request, bool aborted)
 	if (!dev)
 		goto out;
 
+	WARN_ON(request != wiphy_to_dev(request->wiphy)->scan_req);
+
 	/*
 	 * This must be before sending the other events!
 	 * Otherwise, wpa_supplicant gets completely confused with
@@ -634,7 +636,7 @@ int cfg80211_wext_siwscan(struct net_device *dev,
 	} else
 		nl80211_send_scan_start(rdev, dev);
  out:
-	cfg80211_unlock_rdev(rdev);
+	cfg80211_put_dev(rdev);
 	return err;
 }
 EXPORT_SYMBOL_GPL(cfg80211_wext_siwscan);
@@ -943,7 +945,7 @@ int cfg80211_wext_giwscan(struct net_device *dev,
 	}
 
  out:
-	cfg80211_unlock_rdev(rdev);
+	cfg80211_put_dev(rdev);
 	return res;
 }
 EXPORT_SYMBOL_GPL(cfg80211_wext_giwscan);
