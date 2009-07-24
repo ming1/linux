@@ -3747,7 +3747,7 @@ static int nl80211_disconnect(struct sk_buff *skb, struct genl_info *info)
 		goto out;
 	}
 
-	err = cfg80211_disconnect(drv, dev, reason, true);
+	err = cfg80211_disconnect(drv, dev, reason);
 
 out:
 	cfg80211_put_dev(drv);
