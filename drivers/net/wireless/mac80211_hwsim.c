@@ -789,7 +789,7 @@ static const struct ieee80211_ops mac80211_hwsim_ops =
 static void mac80211_hwsim_free(void)
 {
 	struct list_head tmplist, *i, *tmp;
-	struct mac80211_hwsim_data *data, *tmpdata;
+	struct mac80211_hwsim_data *data;
 
 	INIT_LIST_HEAD(&tmplist);
 
@@ -798,7 +798,7 @@ static void mac80211_hwsim_free(void)
 		list_move(i, &tmplist);
 	spin_unlock_bh(&hwsim_radio_lock);
 
-	list_for_each_entry_safe(data, tmpdata, &tmplist, list) {
+	list_for_each_entry(data, &tmplist, list) {
 		debugfs_remove(data->debugfs_group);
 		debugfs_remove(data->debugfs_ps);
 		debugfs_remove(data->debugfs);
