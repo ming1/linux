@@ -973,7 +973,6 @@ int ieee80211_reconfig(struct ieee80211_local *local)
 	struct ieee80211_sub_if_data *sdata;
 	struct ieee80211_if_init_conf conf;
 	struct sta_info *sta;
-	unsigned long flags;
 	int res;
 	bool from_suspend = local->suspended;
 
@@ -1004,7 +1003,7 @@ int ieee80211_reconfig(struct ieee80211_local *local)
 
 	/* add STAs back */
 	if (local->ops->sta_notify) {
-		spin_lock_irqsave(&local->sta_lock, flags);
+		spin_lock_bh(&local->sta_lock);
 		list_for_each_entry(sta, &local->sta_list, list) {
 			sdata = sta->sdata;
 			if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN)
@@ -1015,7 +1014,7 @@ int ieee80211_reconfig(struct ieee80211_local *local)
 			drv_sta_notify(local, &sdata->vif, STA_NOTIFY_ADD,
 				       &sta->sta);
 		}
-		spin_unlock_irqrestore(&local->sta_lock, flags);
+		spin_unlock_bh(&local->sta_lock);
 	}
 
 	/* Clear Suspend state so that ADDBA requests can be processed */
@@ -1105,10 +1104,10 @@ int ieee80211_reconfig(struct ieee80211_local *local)
 
 	add_timer(&local->sta_cleanup);
 
-	spin_lock_irqsave(&local->sta_lock, flags);
+	spin_lock_bh(&local->sta_lock);
 	list_for_each_entry(sta, &local->sta_list, list)
 		mesh_plink_restart(sta);
-	spin_unlock_irqrestore(&local->sta_lock, flags);
+	spin_unlock_bh(&local->sta_lock);
 #else
 	WARN_ON(1);
 #endif
