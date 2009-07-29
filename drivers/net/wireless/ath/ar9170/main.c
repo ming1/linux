@@ -595,12 +595,10 @@ static void ar9170_tx_janitor(struct work_struct *work)
 
 	ar9170_tx_fake_ampdu_status(ar);
 
-	if (!resched)
-		return;
-
-	ieee80211_queue_delayed_work(ar->hw,
-				     &ar->tx_janitor,
-				     msecs_to_jiffies(AR9170_JANITOR_DELAY));
+	if (resched)
+		queue_delayed_work(ar->hw->workqueue,
+				   &ar->tx_janitor,
+				   msecs_to_jiffies(AR9170_JANITOR_DELAY));
 }
 
 void ar9170_handle_command_response(struct ar9170 *ar, void *buf, u32 len)
@@ -650,7 +648,7 @@ void ar9170_handle_command_response(struct ar9170 *ar, void *buf, u32 len)
 		 * pre-TBTT event
 		 */
 		if (ar->vif && ar->vif->type == NL80211_IFTYPE_AP)
-			ieee80211_queue_work(ar->hw, &ar->beacon_work);
+			queue_work(ar->hw->workqueue, &ar->beacon_work);
 		break;
 
 	case 0xc2:
@@ -1827,12 +1825,10 @@ static void ar9170_tx(struct ar9170 *ar)
 		}
 	}
 
-	if (!schedule_garbagecollector)
-		return;
-
-	ieee80211_queue_delayed_work(ar->hw,
-				     &ar->tx_janitor,
-				     msecs_to_jiffies(AR9170_JANITOR_DELAY));
+	if (schedule_garbagecollector)
+		queue_delayed_work(ar->hw->workqueue,
+				   &ar->tx_janitor,
+				   msecs_to_jiffies(AR9170_JANITOR_DELAY));
 }
 
 static bool ar9170_tx_ampdu_queue(struct ar9170 *ar, struct sk_buff *skb)
@@ -2161,7 +2157,7 @@ static void ar9170_op_configure_filter(struct ieee80211_hw *hw,
 	}
 
 	if (likely(IS_STARTED(ar)))
-		ieee80211_queue_work(ar->hw, &ar->filter_config_work);
+		queue_work(ar->hw->workqueue, &ar->filter_config_work);
 }
 
 static void ar9170_op_bss_info_changed(struct ieee80211_hw *hw,
@@ -2419,7 +2415,7 @@ static void ar9170_sta_notify(struct ieee80211_hw *hw,
 	}
 
 	if (IS_STARTED(ar) && ar->filter_changed)
-		ieee80211_queue_work(ar->hw, &ar->filter_config_work);
+		queue_work(ar->hw->workqueue, &ar->filter_config_work);
 }
 
 static int ar9170_get_stats(struct ieee80211_hw *hw,
