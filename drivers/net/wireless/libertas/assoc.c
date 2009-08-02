@@ -44,8 +44,8 @@ static int get_common_rates(struct lbs_private *priv,
 	u16 *rates_size)
 {
 	u8 *card_rates = lbs_bg_rates;
-	int ret = 0, i, j;
-	u8 tmp[(ARRAY_SIZE(lbs_bg_rates) - 1) * (*rates_size - 1)];
+	int i, j;
+	u8 tmp[MAX_RATES * ARRAY_SIZE(lbs_bg_rates)];
 	size_t tmp_size = 0;
 
 	/* For each rate in card_rates that exists in rate1, copy to tmp */
@@ -62,20 +62,23 @@ static int get_common_rates(struct lbs_private *priv,
 	lbs_deb_hex(LBS_DEB_JOIN, "common rates", tmp, tmp_size);
 	lbs_deb_join("TX data rate 0x%02x\n", priv->cur_rate);
 
+	memset(rates, 0, *rates_size);
+	*rates_size = min_t(u16, tmp_size, *rates_size);
+	memcpy(rates, tmp, *rates_size);
+
 	if (!priv->enablehwauto) {
 		for (i = 0; i < tmp_size; i++) {
 			if (tmp[i] == priv->cur_rate)
-				goto done;
+				break;
 		}
-		lbs_pr_alert("Previously set fixed data rate %#x isn't "
-		       "compatible with the network.\n", priv->cur_rate);
-		ret = -1;
+		if (i == tmp_size) {
+			lbs_pr_alert("Previously set fixed data rate %#x isn't "
+					"compatible with the network.\n",
+					priv->cur_rate);
+			return -1;
+		}
 	}
-done:
-	memset(rates, 0, *rates_size);
-	*rates_size = min_t(int, tmp_size, *rates_size);
-	memcpy(rates, tmp, *rates_size);
-	return ret;
+	return 0;
 }
 
 
@@ -317,8 +320,8 @@ static int lbs_associate(struct lbs_private *priv,
 
 	rates = (struct mrvl_ie_rates_param_set *) pos;
 	rates->header.type = cpu_to_le16(TLV_TYPE_RATES);
-	memcpy(&rates->rates, &bss->rates, MAX_RATES);
 	tmplen = min_t(u16, ARRAY_SIZE(rates->rates), MAX_RATES);
+	memcpy(&rates->rates, &bss->rates, tmplen);
 	if (get_common_rates(priv, rates->rates, &tmplen)) {
 		ret = -1;
 		goto done;
