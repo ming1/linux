@@ -1049,12 +1049,13 @@ ieee80211_tx_prepare(struct ieee80211_sub_if_data *sdata,
 
 	if (tx->sta && ieee80211_is_data_qos(hdr->frame_control) &&
 	    (local->hw.flags & IEEE80211_HW_AMPDU_AGGREGATION)) {
+		unsigned long flags;
 		struct tid_ampdu_tx *tid_tx;
 
 		qc = ieee80211_get_qos_ctl(hdr);
 		tid = *qc & IEEE80211_QOS_CTL_TID_MASK;
 
-		spin_lock_bh(&tx->sta->lock);
+		spin_lock_irqsave(&tx->sta->lock, flags);
 		/*
 		 * XXX: This spinlock could be fairly expensive, but see the
 		 *	comment in agg-tx.c:ieee80211_agg_tx_operational().
@@ -1079,7 +1080,7 @@ ieee80211_tx_prepare(struct ieee80211_sub_if_data *sdata,
 			info->flags |= IEEE80211_TX_INTFL_NEED_TXPROCESSING;
 			__skb_queue_tail(&tid_tx->pending, skb);
 		}
-		spin_unlock_bh(&tx->sta->lock);
+		spin_unlock_irqrestore(&tx->sta->lock, flags);
 
 		if (unlikely(queued))
 			return TX_QUEUED;
@@ -2023,9 +2024,11 @@ struct sk_buff *ieee80211_beacon_get(struct ieee80211_hw *hw,
 			if (local->tim_in_locked_section) {
 				ieee80211_beacon_add_tim(ap, skb, beacon);
 			} else {
-				spin_lock_bh(&local->sta_lock);
+				unsigned long flags;
+
+				spin_lock_irqsave(&local->sta_lock, flags);
 				ieee80211_beacon_add_tim(ap, skb, beacon);
-				spin_unlock_bh(&local->sta_lock);
+				spin_unlock_irqrestore(&local->sta_lock, flags);
 			}
 
 			if (beacon->tail)

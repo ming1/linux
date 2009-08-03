@@ -322,6 +322,7 @@ int sta_info_insert(struct sta_info *sta)
 {
 	struct ieee80211_local *local = sta->local;
 	struct ieee80211_sub_if_data *sdata = sta->sdata;
+	unsigned long flags;
 	int err = 0;
 
 	/*
@@ -340,10 +341,10 @@ int sta_info_insert(struct sta_info *sta)
 		goto out_free;
 	}
 
-	spin_lock_bh(&local->sta_lock);
+	spin_lock_irqsave(&local->sta_lock, flags);
 	/* check if STA exists already */
 	if (sta_info_get(local, sta->sta.addr)) {
-		spin_unlock_bh(&local->sta_lock);
+		spin_unlock_irqrestore(&local->sta_lock, flags);
 		err = -EEXIST;
 		goto out_free;
 	}
@@ -366,7 +367,7 @@ int sta_info_insert(struct sta_info *sta)
 	       wiphy_name(local->hw.wiphy), sta->sta.addr);
 #endif /* CONFIG_MAC80211_VERBOSE_DEBUG */
 
-	spin_unlock_bh(&local->sta_lock);
+	spin_unlock_irqrestore(&local->sta_lock, flags);
 
 #ifdef CONFIG_MAC80211_DEBUGFS
 	/*
@@ -423,11 +424,13 @@ static void __sta_info_set_tim_bit(struct ieee80211_if_ap *bss,
 
 void sta_info_set_tim_bit(struct sta_info *sta)
 {
+	unsigned long flags;
+
 	BUG_ON(!sta->sdata->bss);
 
-	spin_lock_bh(&sta->local->sta_lock);
+	spin_lock_irqsave(&sta->local->sta_lock, flags);
 	__sta_info_set_tim_bit(sta->sdata->bss, sta);
-	spin_unlock_bh(&sta->local->sta_lock);
+	spin_unlock_irqrestore(&sta->local->sta_lock, flags);
 }
 
 static void __sta_info_clear_tim_bit(struct ieee80211_if_ap *bss,
@@ -446,11 +449,13 @@ static void __sta_info_clear_tim_bit(struct ieee80211_if_ap *bss,
 
 void sta_info_clear_tim_bit(struct sta_info *sta)
 {
+	unsigned long flags;
+
 	BUG_ON(!sta->sdata->bss);
 
-	spin_lock_bh(&sta->local->sta_lock);
+	spin_lock_irqsave(&sta->local->sta_lock, flags);
 	__sta_info_clear_tim_bit(sta->sdata->bss, sta);
-	spin_unlock_bh(&sta->local->sta_lock);
+	spin_unlock_irqrestore(&sta->local->sta_lock, flags);
 }
 
 static void __sta_info_unlink(struct sta_info **sta)
@@ -541,10 +546,11 @@ static void __sta_info_unlink(struct sta_info **sta)
 void sta_info_unlink(struct sta_info **sta)
 {
 	struct ieee80211_local *local = (*sta)->local;
+	unsigned long flags;
 
-	spin_lock_bh(&local->sta_lock);
+	spin_lock_irqsave(&local->sta_lock, flags);
 	__sta_info_unlink(sta);
-	spin_unlock_bh(&local->sta_lock);
+	spin_unlock_irqrestore(&local->sta_lock, flags);
 }
 
 static int sta_info_buffer_expired(struct sta_info *sta,
@@ -571,6 +577,7 @@ static int sta_info_buffer_expired(struct sta_info *sta,
 static void sta_info_cleanup_expire_buffered(struct ieee80211_local *local,
 					     struct sta_info *sta)
 {
+	unsigned long flags;
 	struct sk_buff *skb;
 	struct ieee80211_sub_if_data *sdata;
 
@@ -578,13 +585,13 @@ static void sta_info_cleanup_expire_buffered(struct ieee80211_local *local,
 		return;
 
 	for (;;) {
-		spin_lock_bh(&sta->ps_tx_buf.lock);
+		spin_lock_irqsave(&sta->ps_tx_buf.lock, flags);
 		skb = skb_peek(&sta->ps_tx_buf);
 		if (sta_info_buffer_expired(sta, skb))
 			skb = __skb_dequeue(&sta->ps_tx_buf);
 		else
 			skb = NULL;
-		spin_unlock_bh(&sta->ps_tx_buf.lock);
+		spin_unlock_irqrestore(&sta->ps_tx_buf.lock, flags);
 
 		if (!skb)
 			break;
@@ -639,14 +646,15 @@ static void __sta_info_pin(struct sta_info *sta)
 static struct sta_info *__sta_info_unpin(struct sta_info *sta)
 {
 	struct sta_info *ret = NULL;
+	unsigned long flags;
 
-	spin_lock_bh(&sta->local->sta_lock);
+	spin_lock_irqsave(&sta->local->sta_lock, flags);
 	WARN_ON(sta->pin_status != STA_INFO_PIN_STAT_DESTROY &&
 		sta->pin_status != STA_INFO_PIN_STAT_PINNED);
 	if (sta->pin_status == STA_INFO_PIN_STAT_DESTROY)
 		ret = sta;
 	sta->pin_status = STA_INFO_PIN_STAT_NORMAL;
-	spin_unlock_bh(&sta->local->sta_lock);
+	spin_unlock_irqrestore(&sta->local->sta_lock, flags);
 
 	return ret;
 }
@@ -656,13 +664,14 @@ static void sta_info_debugfs_add_work(struct work_struct *work)
 	struct ieee80211_local *local =
 		container_of(work, struct ieee80211_local, sta_debugfs_add);
 	struct sta_info *sta, *tmp;
+	unsigned long flags;
 
 	/* We need to keep the RTNL across the whole pinned status. */
 	rtnl_lock();
 	while (1) {
 		sta = NULL;
 
-		spin_lock_bh(&local->sta_lock);
+		spin_lock_irqsave(&local->sta_lock, flags);
 		list_for_each_entry(tmp, &local->sta_list, list) {
 			/*
 			 * debugfs.add_has_run will be set by
@@ -675,7 +684,7 @@ static void sta_info_debugfs_add_work(struct work_struct *work)
 				break;
 			}
 		}
-		spin_unlock_bh(&local->sta_lock);
+		spin_unlock_irqrestore(&local->sta_lock, flags);
 
 		if (!sta)
 			break;
@@ -741,10 +750,11 @@ int sta_info_flush(struct ieee80211_local *local,
 	struct sta_info *sta, *tmp;
 	LIST_HEAD(tmp_list);
 	int ret = 0;
+	unsigned long flags;
 
 	might_sleep();
 
-	spin_lock_bh(&local->sta_lock);
+	spin_lock_irqsave(&local->sta_lock, flags);
 	list_for_each_entry_safe(sta, tmp, &local->sta_list, list) {
 		if (!sdata || sdata == sta->sdata) {
 			__sta_info_unlink(&sta);
@@ -754,7 +764,7 @@ int sta_info_flush(struct ieee80211_local *local,
 			}
 		}
 	}
-	spin_unlock_bh(&local->sta_lock);
+	spin_unlock_irqrestore(&local->sta_lock, flags);
 
 	list_for_each_entry_safe(sta, tmp, &tmp_list, list)
 		sta_info_destroy(sta);
@@ -768,8 +778,9 @@ void ieee80211_sta_expire(struct ieee80211_sub_if_data *sdata,
 	struct ieee80211_local *local = sdata->local;
 	struct sta_info *sta, *tmp;
 	LIST_HEAD(tmp_list);
+	unsigned long flags;
 
-	spin_lock_bh(&local->sta_lock);
+	spin_lock_irqsave(&local->sta_lock, flags);
 	list_for_each_entry_safe(sta, tmp, &local->sta_list, list)
 		if (time_after(jiffies, sta->last_rx + exp_time)) {
 #ifdef CONFIG_MAC80211_IBSS_DEBUG
@@ -780,7 +791,7 @@ void ieee80211_sta_expire(struct ieee80211_sub_if_data *sdata,
 			if (sta)
 				list_add(&sta->list, &tmp_list);
 		}
-	spin_unlock_bh(&local->sta_lock);
+	spin_unlock_irqrestore(&local->sta_lock, flags);
 
 	list_for_each_entry_safe(sta, tmp, &tmp_list, list)
 		sta_info_destroy(sta);
