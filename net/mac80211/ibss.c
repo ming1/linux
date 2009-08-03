@@ -742,7 +742,7 @@ static void ieee80211_ibss_work(struct work_struct *work)
 	if (!netif_running(sdata->dev))
 		return;
 
-	if (local->scanning)
+	if (local->sw_scanning || local->hw_scanning)
 		return;
 
 	if (WARN_ON(sdata->vif.type != NL80211_IFTYPE_ADHOC))
