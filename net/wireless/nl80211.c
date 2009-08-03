@@ -3094,15 +3094,11 @@ static int nl80211_trigger_scan(struct sk_buff *skb, struct genl_info *info)
 
 static int nl80211_send_bss(struct sk_buff *msg, u32 pid, u32 seq, int flags,
 			    struct cfg80211_registered_device *rdev,
-			    struct wireless_dev *wdev,
-			    struct cfg80211_internal_bss *intbss)
+			    struct net_device *dev,
+			    struct cfg80211_bss *res)
 {
-	struct cfg80211_bss *res = &intbss->pub;
 	void *hdr;
 	struct nlattr *bss;
-	int i;
-
-	ASSERT_WDEV_LOCK(wdev);
 
 	hdr = nl80211hdr_put(msg, pid, seq, flags,
 			     NL80211_CMD_NEW_SCAN_RESULTS);
@@ -3111,7 +3107,7 @@ static int nl80211_send_bss(struct sk_buff *msg, u32 pid, u32 seq, int flags,
 
 	NLA_PUT_U32(msg, NL80211_ATTR_SCAN_GENERATION,
 		    rdev->bss_generation);
-	NLA_PUT_U32(msg, NL80211_ATTR_IFINDEX, wdev->netdev->ifindex);
+	NLA_PUT_U32(msg, NL80211_ATTR_IFINDEX, dev->ifindex);
 
 	bss = nla_nest_start(msg, NL80211_ATTR_BSS);
 	if (!bss)
@@ -3140,28 +3136,6 @@ static int nl80211_send_bss(struct sk_buff *msg, u32 pid, u32 seq, int flags,
 		break;
 	}
 
-	switch (wdev->iftype) {
-	case NL80211_IFTYPE_STATION:
-		if (intbss == wdev->current_bss)
-			NLA_PUT_U32(msg, NL80211_BSS_STATUS,
-				    NL80211_BSS_STATUS_ASSOCIATED);
-		else for (i = 0; i < MAX_AUTH_BSSES; i++) {
-			if (intbss != wdev->auth_bsses[i])
-				continue;
-			NLA_PUT_U32(msg, NL80211_BSS_STATUS,
-				    NL80211_BSS_STATUS_AUTHENTICATED);
-			break;
-		}
-		break;
-	case NL80211_IFTYPE_ADHOC:
-		if (intbss == wdev->current_bss)
-			NLA_PUT_U32(msg, NL80211_BSS_STATUS,
-				    NL80211_BSS_STATUS_IBSS_JOINED);
-		break;
-	default:
-		break;
-	}
-
 	nla_nest_end(msg, bss);
 
 	return genlmsg_end(msg, hdr);
@@ -3174,10 +3148,9 @@ static int nl80211_send_bss(struct sk_buff *msg, u32 pid, u32 seq, int flags,
 static int nl80211_dump_scan(struct sk_buff *skb,
 			     struct netlink_callback *cb)
 {
-	struct cfg80211_registered_device *rdev;
-	struct net_device *dev;
+	struct cfg80211_registered_device *dev;
+	struct net_device *netdev;
 	struct cfg80211_internal_bss *scan;
-	struct wireless_dev *wdev;
 	int ifidx = cb->args[0];
 	int start = cb->args[1], idx = 0;
 	int err;
@@ -3198,43 +3171,39 @@ static int nl80211_dump_scan(struct sk_buff *skb,
 		cb->args[0] = ifidx;
 	}
 
-	dev = dev_get_by_index(&init_net, ifidx);
-	if (!dev)
+	netdev = dev_get_by_index(&init_net, ifidx);
+	if (!netdev)
 		return -ENODEV;
 
-	rdev = cfg80211_get_dev_from_ifindex(ifidx);
-	if (IS_ERR(rdev)) {
-		err = PTR_ERR(rdev);
+	dev = cfg80211_get_dev_from_ifindex(ifidx);
+	if (IS_ERR(dev)) {
+		err = PTR_ERR(dev);
 		goto out_put_netdev;
 	}
 
-	wdev = dev->ieee80211_ptr;
+	spin_lock_bh(&dev->bss_lock);
+	cfg80211_bss_expire(dev);
 
-	wdev_lock(wdev);
-	spin_lock_bh(&rdev->bss_lock);
-	cfg80211_bss_expire(rdev);
-
-	list_for_each_entry(scan, &rdev->bss_list, list) {
+	list_for_each_entry(scan, &dev->bss_list, list) {
 		if (++idx <= start)
 			continue;
 		if (nl80211_send_bss(skb,
 				NETLINK_CB(cb->skb).pid,
 				cb->nlh->nlmsg_seq, NLM_F_MULTI,
-				rdev, wdev, scan) < 0) {
+				dev, netdev, &scan->pub) < 0) {
 			idx--;
 			goto out;
 		}
 	}
 
  out:
-	spin_unlock_bh(&rdev->bss_lock);
-	wdev_unlock(wdev);
+	spin_unlock_bh(&dev->bss_lock);
 
 	cb->args[1] = idx;
 	err = skb->len;
-	cfg80211_unlock_rdev(rdev);
+	cfg80211_unlock_rdev(dev);
  out_put_netdev:
-	dev_put(dev);
+	dev_put(netdev);
 
 	return err;
 }
