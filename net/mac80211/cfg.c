@@ -1293,7 +1293,7 @@ static void ieee80211_rfkill_poll(struct wiphy *wiphy)
 }
 
 #ifdef CONFIG_NL80211_TESTMODE
-static int ieee80211_testmode_cmd(struct wiphy *wiphy, void *data, int len)
+int ieee80211_testmode_cmd(struct wiphy *wiphy, void *data, int len)
 {
 	struct ieee80211_local *local = wiphy_priv(wiphy);
 
