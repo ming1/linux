@@ -164,12 +164,12 @@ static const struct p54spi_spi_reg p54spi_registers_array[] =
 	{ SPI_ADRS_DMA_WRITE_BASE,	32, "DMA_RD_BASE " }
 };
 
-static int p54spi_wait_bit(struct p54s_priv *priv, u16 reg, u32 bits)
+static int p54spi_wait_bit(struct p54s_priv *priv, u16 reg, __le32 bits)
 {
 	int i;
 
 	for (i = 0; i < 2000; i++) {
-		u32 buffer = p54spi_read32(priv, reg);
+		__le32 buffer = p54spi_read32(priv, reg);
 		if ((buffer & bits) == bits)
 			return 1;
 	}
@@ -179,7 +179,8 @@ static int p54spi_wait_bit(struct p54s_priv *priv, u16 reg, u32 bits)
 static int p54spi_spi_write_dma(struct p54s_priv *priv, __le32 base,
 				const void *buf, size_t len)
 {
-	if (!p54spi_wait_bit(priv, SPI_ADRS_DMA_WRITE_CTRL, HOST_ALLOWED)) {
+	if (!p54spi_wait_bit(priv, SPI_ADRS_DMA_WRITE_CTRL,
+			     cpu_to_le32(HOST_ALLOWED))) {
 		dev_err(&priv->spi->dev, "spi_write_dma not allowed "
 			"to DMA write.\n");
 		return -EAGAIN;
@@ -332,7 +333,7 @@ static int p54spi_wakeup(struct p54s_priv *priv)
 
 	/* And wait for the READY interrupt */
 	if (!p54spi_wait_bit(priv, SPI_ADRS_HOST_INTERRUPTS,
-			     SPI_HOST_INT_READY)) {
+			     cpu_to_le32(SPI_HOST_INT_READY))) {
 		dev_err(&priv->spi->dev, "INT_READY timeout\n");
 		return -EBUSY;
 	}
@@ -443,7 +444,7 @@ static int p54spi_tx_frame(struct p54s_priv *priv, struct sk_buff *skb)
 		goto out;
 
 	if (!p54spi_wait_bit(priv, SPI_ADRS_HOST_INTERRUPTS,
-			     SPI_HOST_INT_WR_READY)) {
+			     cpu_to_le32(SPI_HOST_INT_WR_READY))) {
 		dev_err(&priv->spi->dev, "WR_READY timeout\n");
 		ret = -EAGAIN;
 		goto out;
