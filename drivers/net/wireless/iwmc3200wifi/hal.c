@@ -105,9 +105,9 @@
 #include "umac.h"
 #include "debug.h"
 
-static int iwm_nonwifi_cmd_init(struct iwm_priv *iwm,
-				struct iwm_nonwifi_cmd *cmd,
-				struct iwm_udma_nonwifi_cmd *udma_cmd)
+static void iwm_nonwifi_cmd_init(struct iwm_priv *iwm,
+				 struct iwm_nonwifi_cmd *cmd,
+				 struct iwm_udma_nonwifi_cmd *udma_cmd)
 {
 	INIT_LIST_HEAD(&cmd->pending);
 
@@ -118,7 +118,7 @@ static int iwm_nonwifi_cmd_init(struct iwm_priv *iwm,
 	cmd->seq_num = iwm->nonwifi_seq_num;
 	udma_cmd->seq_num = cpu_to_le16(cmd->seq_num);
 
-	iwm->nonwifi_seq_num++;
+	cmd->seq_num = iwm->nonwifi_seq_num++;
 	iwm->nonwifi_seq_num %= UMAC_NONWIFI_SEQ_NUM_MAX;
 
 	if (udma_cmd->resp)
@@ -130,8 +130,6 @@ static int iwm_nonwifi_cmd_init(struct iwm_priv *iwm,
 	cmd->buf.len = 0;
 
 	memcpy(&cmd->udma_cmd, udma_cmd, sizeof(*udma_cmd));
-
-	return cmd->seq_num;
 }
 
 u16 iwm_alloc_wifi_cmd_seq(struct iwm_priv *iwm)
@@ -371,7 +369,7 @@ int iwm_hal_send_target_cmd(struct iwm_priv *iwm,
 			    const void *payload)
 {
 	struct iwm_nonwifi_cmd *cmd;
-	int ret, seq_num;
+	int ret;
 
 	cmd = kzalloc(sizeof(struct iwm_nonwifi_cmd), GFP_KERNEL);
 	if (!cmd) {
@@ -379,7 +377,7 @@ int iwm_hal_send_target_cmd(struct iwm_priv *iwm,
 		return -ENOMEM;
 	}
 
-	seq_num = iwm_nonwifi_cmd_init(iwm, cmd, udma_cmd);
+	iwm_nonwifi_cmd_init(iwm, cmd, udma_cmd);
 
 	if (cmd->udma_cmd.opcode == UMAC_HDI_OUT_OPCODE_WRITE ||
 	    cmd->udma_cmd.opcode == UMAC_HDI_OUT_OPCODE_WRITE_PERSISTENT) {
@@ -395,7 +393,7 @@ int iwm_hal_send_target_cmd(struct iwm_priv *iwm,
 	if (ret < 0)
 		return ret;
 
-	return seq_num;
+	return cmd->seq_num;
 }
 
 static void iwm_build_lmac_hdr(struct iwm_priv *iwm, struct iwm_lmac_hdr *hdr,
