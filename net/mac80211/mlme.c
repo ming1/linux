@@ -760,7 +760,7 @@ void ieee80211_dynamic_ps_timer(unsigned long data)
 {
 	struct ieee80211_local *local = (void *) data;
 
-	if (local->quiescing || local->suspended)
+	if (local->quiescing)
 		return;
 
 	queue_work(local->hw.workqueue, &local->dynamic_ps_enable_work);
