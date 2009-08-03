@@ -2089,7 +2089,7 @@ int iwl_send_statistics_request(struct iwl_priv *priv, u8 flags)
 	u32 stat_flags = 0;
 	struct iwl_host_cmd cmd = {
 		.id = REPLY_STATISTICS_CMD,
-		.flags = flags,
+		.meta.flags = flags,
 		.len = sizeof(stat_flags),
 		.data = (u8 *) &stat_flags,
 	};
@@ -2282,7 +2282,7 @@ int iwl_send_card_state(struct iwl_priv *priv, u32 flags, u8 meta_flag)
 		.id = REPLY_CARD_STATE_CMD,
 		.len = sizeof(u32),
 		.data = &flags,
-		.flags = meta_flag,
+		.meta.flags = meta_flag,
 	};
 
 	return iwl_send_cmd(priv, &cmd);
