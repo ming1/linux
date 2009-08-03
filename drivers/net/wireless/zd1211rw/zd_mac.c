@@ -711,8 +711,7 @@ int zd_mac_rx(struct ieee80211_hw *hw, const u8 *buffer, unsigned int length)
 
 	memcpy(skb_put(skb, length), buffer, length);
 
-	memcpy(IEEE80211_SKB_RXCB(skb), &stats, sizeof(stats));
-	ieee80211_rx_irqsafe(hw, skb);
+	ieee80211_rx_irqsafe(hw, skb, &stats);
 	return 0;
 }
 
