@@ -3182,7 +3182,7 @@ bool ath9k_hw_getisr(struct ath_hw *ah, enum ath9k_int *masked)
 		}
 
 		if (isr & AR_ISR_RXORN) {
-			DPRINTF(ah->ah_sc, ATH_DBG_INTERRUPT,
+			DPRINTF(ah->ah_sc, ATH_DBG_ANY,
 				"receive FIFO overrun interrupt\n");
 		}
 
@@ -3218,14 +3218,14 @@ bool ath9k_hw_getisr(struct ath_hw *ah, enum ath9k_int *masked)
 			*masked |= ATH9K_INT_FATAL;
 		}
 		if (sync_cause & AR_INTR_SYNC_RADM_CPL_TIMEOUT) {
-			DPRINTF(ah->ah_sc, ATH_DBG_INTERRUPT,
+			DPRINTF(ah->ah_sc, ATH_DBG_ANY,
 				"AR_INTR_SYNC_RADM_CPL_TIMEOUT\n");
 			REG_WRITE(ah, AR_RC, AR_RC_HOSTIF);
 			REG_WRITE(ah, AR_RC, 0);
 			*masked |= ATH9K_INT_FATAL;
 		}
 		if (sync_cause & AR_INTR_SYNC_LOCAL_TIMEOUT) {
-			DPRINTF(ah->ah_sc, ATH_DBG_INTERRUPT,
+			DPRINTF(ah->ah_sc, ATH_DBG_ANY,
 				"AR_INTR_SYNC_LOCAL_TIMEOUT\n");
 		}
 
