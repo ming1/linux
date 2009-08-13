@@ -139,5 +139,5 @@ void iwl_tt_exit(struct iwl_priv *priv);
 void iwl_power_initialize(struct iwl_priv *priv);
 
 extern bool no_sleep_autoadjust;
-extern bool iwl_support_ps;
+
 #endif  /* __iwl_power_setting_h__ */
