@@ -35,6 +35,7 @@ static void ath9k_hw_analog_shift_rmw(struct ath_hw *ah,
 
 static inline u16 ath9k_hw_fbin2freq(u8 fbin, bool is2GHz)
 {
+
 	if (fbin == AR5416_BCHAN_UNUSED)
 		return fbin;
 
@@ -94,7 +95,7 @@ static inline bool ath9k_hw_nvram_read(struct ath_hw *ah, u32 off, u16 *data)
 	return sc->bus_ops->eeprom_read(ah, off, data);
 }
 
-static inline void ath9k_hw_fill_vpd_table(u8 pwrMin, u8 pwrMax, u8 *pPwrList,
+static inline bool ath9k_hw_fill_vpd_table(u8 pwrMin, u8 pwrMax, u8 *pPwrList,
 					   u8 *pVpdList, u16 numIntercepts,
 					   u8 *pRetVpdList)
 {
@@ -119,6 +120,8 @@ static inline void ath9k_hw_fill_vpd_table(u8 pwrMin, u8 pwrMax, u8 *pPwrList,
 		pRetVpdList[i] = (u8) k;
 		currPwr += 2;
 	}
+
+	return true;
 }
 
 static void ath9k_hw_get_legacy_target_powers(struct ath_hw *ah,
