@@ -1,3 +1,4 @@
+
 /******************************************************************************
  *
  * Copyright(c) 2007 - 2009 Intel Corporation. All rights reserved.
@@ -49,6 +50,13 @@
  * also use pre-defined power levels.
  */
 
+/*
+ * For now, disable power save function
+ */
+bool iwl_support_ps;
+module_param(iwl_support_ps, bool, S_IRUGO);
+MODULE_PARM_DESC(iwl_support_ps,
+		 "power save support (deprecated) (default disabled)");
 /*
  * For now, keep using power level 1 instead of automatically
  * adjusting ...
