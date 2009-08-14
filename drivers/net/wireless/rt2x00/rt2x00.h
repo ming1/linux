@@ -836,15 +836,13 @@ struct rt2x00_dev {
 static inline void rt2x00_rf_read(struct rt2x00_dev *rt2x00dev,
 				  const unsigned int word, u32 *data)
 {
-	BUG_ON(word < 1 || word > rt2x00dev->ops->rf_size / sizeof(u32));
-	*data = rt2x00dev->rf[word - 1];
+	*data = rt2x00dev->rf[word];
 }
 
 static inline void rt2x00_rf_write(struct rt2x00_dev *rt2x00dev,
 				   const unsigned int word, u32 data)
 {
-	BUG_ON(word < 1 || word > rt2x00dev->ops->rf_size / sizeof(u32));
-	rt2x00dev->rf[word - 1] = data;
+	rt2x00dev->rf[word] = data;
 }
 
 /*
