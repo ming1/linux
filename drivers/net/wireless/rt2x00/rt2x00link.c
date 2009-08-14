@@ -46,15 +46,7 @@
 #define DEFAULT_PERCENTAGE	50
 
 /*
- * Small helper macro for percentage calculation
- * This is a very simple macro with the only catch that it will
- * produce a default value in case no total value was provided.
- */
-#define PERCENTAGE(__value, __total) \
-	( (__total) ? (((__value) * 100) / (__total)) : (DEFAULT_PERCENTAGE) )
-
-/*
- * Helper struct and macro to work with moving/walking averages.
+ * Small helper macro to work with moving/walking averages.
  * When adding a value to the average value the following calculation
  * is needed:
  *
@@ -68,28 +60,18 @@
  * for a few minutes but when the device is moved away from the AP
  * the average will not decrease fast enough to compensate.
  * The walking average compensates this and will move towards
- * the new values correctly allowing a effective link tuning,
- * the speed of the average moving towards other values depends
- * on the value for the number of samples. The higher the number
- * of samples, the slower the average will move.
- * We use two variables to keep track of the average value to
- * compensate for the rounding errors. This can be a significant
- * error (>5dBm) if the factor is too low.
+ * the new values correctly allowing a effective link tuning.
  */
-#define AVG_SAMPLES	8
-#define AVG_FACTOR	1000
-#define MOVING_AVERAGE(__avg, __val) \
-({ \
-	struct avg_val __new; \
-	__new.avg_weight = \
-	    (__avg).avg_weight  ? \
-		((((__avg).avg_weight * ((AVG_SAMPLES) - 1)) + \
-		  ((__val) * (AVG_FACTOR))) / \
-		 (AVG_SAMPLES) ) : \
-		((__val) * (AVG_FACTOR)); \
-	__new.avg = __new.avg_weight / (AVG_FACTOR); \
-	__new; \
-})
+#define MOVING_AVERAGE(__avg, __val, __samples) \
+	( (((__avg) * ((__samples) - 1)) + (__val)) / (__samples) )
+
+/*
+ * Small helper macro for percentage calculation
+ * This is a very simple macro with the only catch that it will
+ * produce a default value in case no total value was provided.
+ */
+#define PERCENTAGE(__value, __total) \
+	( (__total) ? (((__value) * 100) / (__total)) : (DEFAULT_PERCENTAGE) )
 
 /*
  * For calculating the Signal quality we have determined
@@ -116,8 +98,8 @@ static int rt2x00link_antenna_get_link_rssi(struct rt2x00_dev *rt2x00dev)
 {
 	struct link_ant *ant = &rt2x00dev->link.ant;
 
-	if (ant->rssi_ant.avg && rt2x00dev->link.qual.rx_success)
-		return ant->rssi_ant.avg;
+	if (ant->rssi_ant && rt2x00dev->link.qual.rx_success)
+		return ant->rssi_ant;
 	return DEFAULT_RSSI;
 }
 
@@ -139,8 +121,7 @@ static void rt2x00link_antenna_update_rssi_history(struct rt2x00_dev *rt2x00dev,
 
 static void rt2x00link_antenna_reset(struct rt2x00_dev *rt2x00dev)
 {
-	rt2x00dev->link.ant.rssi_ant.avg = 0;
-	rt2x00dev->link.ant.rssi_ant.avg_weight = 0;
+	rt2x00dev->link.ant.rssi_ant = 0;
 }
 
 static void rt2x00lib_antenna_diversity_sample(struct rt2x00_dev *rt2x00dev)
@@ -277,6 +258,8 @@ void rt2x00link_update_stats(struct rt2x00_dev *rt2x00dev,
 	struct link_qual *qual = &rt2x00dev->link.qual;
 	struct link_ant *ant = &rt2x00dev->link.ant;
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
+	int avg_rssi = rxdesc->rssi;
+	int ant_rssi = rxdesc->rssi;
 
 	/*
 	 * Frame was received successfully since non-succesfull
@@ -296,12 +279,16 @@ void rt2x00link_update_stats(struct rt2x00_dev *rt2x00dev,
 	/*
 	 * Update global RSSI
 	 */
-	link->avg_rssi = MOVING_AVERAGE(link->avg_rssi, rxdesc->rssi);
+	if (link->avg_rssi)
+		avg_rssi = MOVING_AVERAGE(link->avg_rssi, rxdesc->rssi, 8);
+	link->avg_rssi = avg_rssi;
 
 	/*
 	 * Update antenna RSSI
 	 */
-	ant->rssi_ant = MOVING_AVERAGE(ant->rssi_ant, rxdesc->rssi);
+	if (ant->rssi_ant)
+		ant_rssi = MOVING_AVERAGE(ant->rssi_ant, rxdesc->rssi, 8);
+	ant->rssi_ant = ant_rssi;
 }
 
 static void rt2x00link_precalculate_signal(struct rt2x00_dev *rt2x00dev)
@@ -434,10 +421,10 @@ static void rt2x00link_tuner(struct work_struct *work)
 	 * collect the RSSI data we could use this. Otherwise we
 	 * must fallback to the default RSSI value.
 	 */
-	if (!link->avg_rssi.avg || !qual->rx_success)
+	if (!link->avg_rssi || !qual->rx_success)
 		qual->rssi = DEFAULT_RSSI;
 	else
-		qual->rssi = link->avg_rssi.avg;
+		qual->rssi = link->avg_rssi;
 
 	/*
 	 * Only perform the link tuning when Link tuning
@@ -455,7 +442,7 @@ static void rt2x00link_tuner(struct work_struct *work)
 	/*
 	 * Send a signal to the led to update the led signal strength.
 	 */
-	rt2x00leds_led_quality(rt2x00dev, qual->rssi);
+	rt2x00leds_led_quality(rt2x00dev, link->avg_rssi);
 
 	/*
 	 * Evaluate antenna setup, make this the last step when
