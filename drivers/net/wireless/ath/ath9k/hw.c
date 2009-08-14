@@ -898,22 +898,26 @@ static void ath9k_hw_init_11a_eeprom_fix(struct ath_hw *ah)
 
 int ath9k_hw_init(struct ath_hw *ah)
 {
-	int r = 0;
+	int r;
 
-	if (!ath9k_hw_devid_supported(ah->hw_version.devid))
-		return -EOPNOTSUPP;
+	if (!ath9k_hw_devid_supported(ah->hw_version.devid)) {
+		r = -EOPNOTSUPP;
+		goto bad;
+	}
 
 	ath9k_hw_init_defaults(ah);
 	ath9k_hw_init_config(ah);
 
 	if (!ath9k_hw_set_reset_reg(ah, ATH9K_RESET_POWER_ON)) {
 		DPRINTF(ah->ah_sc, ATH_DBG_FATAL, "Couldn't reset chip\n");
-		return -EIO;
+		r = -EIO;
+		goto bad;
 	}
 
 	if (!ath9k_hw_setpower(ah, ATH9K_PM_AWAKE)) {
 		DPRINTF(ah->ah_sc, ATH_DBG_FATAL, "Couldn't wakeup chip\n");
-		return -EIO;
+		r = -EIO;
+		goto bad;
 	}
 
 	if (ah->config.serialize_regmode == SER_REG_MODE_AUTO) {
@@ -935,7 +939,8 @@ int ath9k_hw_init(struct ath_hw *ah)
 			"Mac Chip Rev 0x%02x.%x is not supported by "
 			"this driver\n", ah->hw_version.macVersion,
 			ah->hw_version.macRev);
-		return -EOPNOTSUPP;
+		r = -EOPNOTSUPP;
+		goto bad;
 	}
 
 	if (AR_SREV_9100(ah)) {
@@ -960,7 +965,7 @@ int ath9k_hw_init(struct ath_hw *ah)
 
 	r = ath9k_hw_post_init(ah);
 	if (r)
-		return r;
+		goto bad;
 
 	ath9k_hw_init_mode_gain_regs(ah);
 	ath9k_hw_fill_cap_info(ah);
@@ -970,7 +975,7 @@ int ath9k_hw_init(struct ath_hw *ah)
 	if (r) {
 		DPRINTF(ah->ah_sc, ATH_DBG_FATAL,
 			"Failed to initialize MAC address\n");
-		return r;
+		goto bad;
 	}
 
 	if (AR_SREV_9285(ah))
@@ -981,6 +986,9 @@ int ath9k_hw_init(struct ath_hw *ah)
 	ath9k_init_nfcal_hist_buffer(ah);
 
 	return 0;
+bad:
+	ath9k_hw_detach(ah);
+	return r;
 }
 
 static void ath9k_hw_init_bb(struct ath_hw *ah,
