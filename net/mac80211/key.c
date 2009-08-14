@@ -211,11 +211,9 @@ static void __ieee80211_set_default_key(struct ieee80211_sub_if_data *sdata,
 
 void ieee80211_set_default_key(struct ieee80211_sub_if_data *sdata, int idx)
 {
-	unsigned long flags;
-
-	spin_lock_irqsave(&sdata->local->key_lock, flags);
+	spin_lock_bh(&sdata->local->key_lock);
 	__ieee80211_set_default_key(sdata, idx);
-	spin_unlock_irqrestore(&sdata->local->key_lock, flags);
+	spin_unlock_bh(&sdata->local->key_lock);
 }
 
 static void
@@ -236,11 +234,9 @@ __ieee80211_set_default_mgmt_key(struct ieee80211_sub_if_data *sdata, int idx)
 void ieee80211_set_default_mgmt_key(struct ieee80211_sub_if_data *sdata,
 				    int idx)
 {
-	unsigned long flags;
-
-	spin_lock_irqsave(&sdata->local->key_lock, flags);
+	spin_lock_bh(&sdata->local->key_lock);
 	__ieee80211_set_default_mgmt_key(sdata, idx);
-	spin_unlock_irqrestore(&sdata->local->key_lock, flags);
+	spin_unlock_bh(&sdata->local->key_lock);
 }
 
 
@@ -386,7 +382,6 @@ void ieee80211_key_link(struct ieee80211_key *key,
 			struct sta_info *sta)
 {
 	struct ieee80211_key *old_key;
-	unsigned long flags;
 	int idx;
 
 	BUG_ON(!sdata);
@@ -430,7 +425,7 @@ void ieee80211_key_link(struct ieee80211_key *key,
 		}
 	}
 
-	spin_lock_irqsave(&sdata->local->key_lock, flags);
+	spin_lock_bh(&sdata->local->key_lock);
 
 	if (sta)
 		old_key = sta->key;
@@ -446,7 +441,7 @@ void ieee80211_key_link(struct ieee80211_key *key,
 	if (netif_running(sdata->dev))
 		add_todo(key, KEY_FLAG_TODO_HWACCEL_ADD);
 
-	spin_unlock_irqrestore(&sdata->local->key_lock, flags);
+	spin_unlock_bh(&sdata->local->key_lock);
 }
 
 static void __ieee80211_key_free(struct ieee80211_key *key)
@@ -463,8 +458,6 @@ static void __ieee80211_key_free(struct ieee80211_key *key)
 
 void ieee80211_key_free(struct ieee80211_key *key)
 {
-	unsigned long flags;
-
 	if (!key)
 		return;
 
@@ -477,9 +470,9 @@ void ieee80211_key_free(struct ieee80211_key *key)
 		return;
 	}
 
-	spin_lock_irqsave(&key->sdata->local->key_lock, flags);
+	spin_lock_bh(&key->sdata->local->key_lock);
 	__ieee80211_key_free(key);
-	spin_unlock_irqrestore(&key->sdata->local->key_lock, flags);
+	spin_unlock_bh(&key->sdata->local->key_lock);
 }
 
 /*
@@ -493,14 +486,13 @@ static void ieee80211_todo_for_each_key(struct ieee80211_sub_if_data *sdata,
 					u32 todo_flags)
 {
 	struct ieee80211_key *key;
-	unsigned long flags;
 
 	might_sleep();
 
-	spin_lock_irqsave(&sdata->local->key_lock, flags);
+	spin_lock_bh(&sdata->local->key_lock);
 	list_for_each_entry(key, &sdata->key_list, list)
 		add_todo(key, todo_flags);
-	spin_unlock_irqrestore(&sdata->local->key_lock, flags);
+	spin_unlock_bh(&sdata->local->key_lock);
 
 	ieee80211_key_todo();
 }
@@ -608,17 +600,16 @@ void ieee80211_key_todo(void)
 void ieee80211_free_keys(struct ieee80211_sub_if_data *sdata)
 {
 	struct ieee80211_key *key, *tmp;
-	unsigned long flags;
 
 	ieee80211_key_lock();
 
 	ieee80211_debugfs_key_remove_default(sdata);
 	ieee80211_debugfs_key_remove_mgmt_default(sdata);
 
-	spin_lock_irqsave(&sdata->local->key_lock, flags);
+	spin_lock_bh(&sdata->local->key_lock);
 	list_for_each_entry_safe(key, tmp, &sdata->key_list, list)
 		__ieee80211_key_free(key);
-	spin_unlock_irqrestore(&sdata->local->key_lock, flags);
+	spin_unlock_bh(&sdata->local->key_lock);
 
 	__ieee80211_key_todo();
 

@@ -341,30 +341,25 @@ static inline enum plink_state sta_plink_state(struct sta_info *sta)
 
 static inline void set_sta_flags(struct sta_info *sta, const u32 flags)
 {
-	unsigned long irqfl;
-
-	spin_lock_irqsave(&sta->flaglock, irqfl);
+	spin_lock_bh(&sta->flaglock);
 	sta->flags |= flags;
-	spin_unlock_irqrestore(&sta->flaglock, irqfl);
+	spin_unlock_bh(&sta->flaglock);
 }
 
 static inline void clear_sta_flags(struct sta_info *sta, const u32 flags)
 {
-	unsigned long irqfl;
-
-	spin_lock_irqsave(&sta->flaglock, irqfl);
+	spin_lock_bh(&sta->flaglock);
 	sta->flags &= ~flags;
-	spin_unlock_irqrestore(&sta->flaglock, irqfl);
+	spin_unlock_bh(&sta->flaglock);
 }
 
 static inline u32 test_sta_flags(struct sta_info *sta, const u32 flags)
 {
 	u32 ret;
-	unsigned long irqfl;
 
-	spin_lock_irqsave(&sta->flaglock, irqfl);
+	spin_lock_bh(&sta->flaglock);
 	ret = sta->flags & flags;
-	spin_unlock_irqrestore(&sta->flaglock, irqfl);
+	spin_unlock_bh(&sta->flaglock);
 
 	return ret;
 }
@@ -373,12 +368,11 @@ static inline u32 test_and_clear_sta_flags(struct sta_info *sta,
 					   const u32 flags)
 {
 	u32 ret;
-	unsigned long irqfl;
 
-	spin_lock_irqsave(&sta->flaglock, irqfl);
+	spin_lock_bh(&sta->flaglock);
 	ret = sta->flags & flags;
 	sta->flags &= ~flags;
-	spin_unlock_irqrestore(&sta->flaglock, irqfl);
+	spin_unlock_bh(&sta->flaglock);
 
 	return ret;
 }
@@ -386,11 +380,10 @@ static inline u32 test_and_clear_sta_flags(struct sta_info *sta,
 static inline u32 get_sta_flags(struct sta_info *sta)
 {
 	u32 ret;
-	unsigned long irqfl;
 
-	spin_lock_irqsave(&sta->flaglock, irqfl);
+	spin_lock_bh(&sta->flaglock);
 	ret = sta->flags;
-	spin_unlock_irqrestore(&sta->flaglock, irqfl);
+	spin_unlock_bh(&sta->flaglock);
 
 	return ret;
 }
