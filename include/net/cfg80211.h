@@ -1721,68 +1721,70 @@ void cfg80211_unlink_bss(struct wiphy *wiphy, struct cfg80211_bss *bss);
  * @dev: network device
  * @buf: authentication frame (header + body)
  * @len: length of the frame data
+ * @gfp: allocation flags
  *
  * This function is called whenever an authentication has been processed in
  * station mode. The driver is required to call either this function or
  * cfg80211_send_auth_timeout() to indicate the result of cfg80211_ops::auth()
- * call. This function may sleep.
+ * call.
  */
-void cfg80211_send_rx_auth(struct net_device *dev, const u8 *buf, size_t len);
+void cfg80211_send_rx_auth(struct net_device *dev, const u8 *buf, size_t len, gfp_t gfp);
 
 /**
  * cfg80211_send_auth_timeout - notification of timed out authentication
  * @dev: network device
  * @addr: The MAC address of the device with which the authentication timed out
- *
- * This function may sleep.
+ * @gfp: allocation flags
  */
-void cfg80211_send_auth_timeout(struct net_device *dev, const u8 *addr);
+void cfg80211_send_auth_timeout(struct net_device *dev, const u8 *addr, gfp_t gfp);
 
 /**
  * cfg80211_send_rx_assoc - notification of processed association
  * @dev: network device
  * @buf: (re)association response frame (header + body)
  * @len: length of the frame data
+ * @gfp: allocation flags
  *
  * This function is called whenever a (re)association response has been
  * processed in station mode. The driver is required to call either this
  * function or cfg80211_send_assoc_timeout() to indicate the result of
- * cfg80211_ops::assoc() call. This function may sleep.
+ * cfg80211_ops::assoc() call.
  */
-void cfg80211_send_rx_assoc(struct net_device *dev, const u8 *buf, size_t len);
+void cfg80211_send_rx_assoc(struct net_device *dev, const u8 *buf, size_t len, gfp_t gfp);
 
 /**
  * cfg80211_send_assoc_timeout - notification of timed out association
  * @dev: network device
  * @addr: The MAC address of the device with which the association timed out
- *
- * This function may sleep.
+ * @gfp: allocation flags
  */
-void cfg80211_send_assoc_timeout(struct net_device *dev, const u8 *addr);
+void cfg80211_send_assoc_timeout(struct net_device *dev, const u8 *addr, gfp_t gfp);
 
 /**
  * cfg80211_send_deauth - notification of processed deauthentication
  * @dev: network device
  * @buf: deauthentication frame (header + body)
  * @len: length of the frame data
+ * @gfp: allocation flags
  *
  * This function is called whenever deauthentication has been processed in
  * station mode. This includes both received deauthentication frames and
- * locally generated ones. This function may sleep.
+ * locally generated ones.
  */
-void cfg80211_send_deauth(struct net_device *dev, const u8 *buf, size_t len);
+void cfg80211_send_deauth(struct net_device *dev, const u8 *buf, size_t len, gfp_t gfp);
 
 /**
  * cfg80211_send_disassoc - notification of processed disassociation
  * @dev: network device
  * @buf: disassociation response frame (header + body)
  * @len: length of the frame data
+ * @gfp: allocation flags
  *
  * This function is called whenever disassociation has been processed in
  * station mode. This includes both received disassociation frames and locally
- * generated ones. This function may sleep.
+ * generated ones.
  */
-void cfg80211_send_disassoc(struct net_device *dev, const u8 *buf, size_t len);
+void cfg80211_send_disassoc(struct net_device *dev, const u8 *buf, size_t len, gfp_t gfp);
 
 /**
  * cfg80211_michael_mic_failure - notification of Michael MIC failure (TKIP)
