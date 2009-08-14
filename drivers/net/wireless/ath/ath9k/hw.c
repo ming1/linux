@@ -437,9 +437,20 @@ static void ath9k_hw_set_defaults(struct ath_hw *ah)
 		ah->config.serialize_regmode = SER_REG_MODE_AUTO;
 }
 
-static void ath9k_hw_newstate(u16 devid,
-			      struct ath_hw *ah)
+static struct ath_hw *ath9k_hw_newstate(u16 devid, struct ath_softc *sc,
+					int *status)
 {
+	struct ath_hw *ah;
+
+	ah = kzalloc(sizeof(struct ath_hw), GFP_KERNEL);
+	if (ah == NULL) {
+		DPRINTF(sc, ATH_DBG_FATAL,
+			"Cannot allocate memory for state block\n");
+		*status = -ENOMEM;
+		return NULL;
+	}
+
+	ah->ah_sc = sc;
 	ah->hw_version.magic = AR5416_MAGIC;
 	ah->regulatory.country_code = CTRY_DEFAULT;
 	ah->hw_version.devid = devid;
@@ -468,6 +479,8 @@ static void ath9k_hw_newstate(u16 devid,
 	ah->gbeacon_rate = 0;
 
 	ah->power_mode = ATH9K_PM_UNDEFINED;
+
+	return ah;
 }
 
 static int ath9k_hw_rfattach(struct ath_hw *ah)
@@ -610,25 +623,28 @@ static int ath9k_hw_post_attach(struct ath_hw *ah)
 	return 0;
 }
 
-static int ath9k_hw_do_attach(struct ath_hw *ah,
-			      u16 devid,
-			      struct ath_softc *sc)
+static struct ath_hw *ath9k_hw_do_attach(u16 devid, struct ath_softc *sc,
+					 int *status)
 {
-	int r;
+	struct ath_hw *ah;
+	int ecode;
 	u32 i, j;
 
-	ath9k_hw_newstate(devid, ah);
+	ah = ath9k_hw_newstate(devid, sc, status);
+	if (ah == NULL)
+		return NULL;
+
 	ath9k_hw_set_defaults(ah);
 
 	if (!ath9k_hw_set_reset_reg(ah, ATH9K_RESET_POWER_ON)) {
 		DPRINTF(sc, ATH_DBG_FATAL, "Couldn't reset chip\n");
-		r = -EIO;
+		ecode = -EIO;
 		goto bad;
 	}
 
 	if (!ath9k_hw_setpower(ah, ATH9K_PM_AWAKE)) {
 		DPRINTF(sc, ATH_DBG_FATAL, "Couldn't wakeup chip\n");
-		r = -EIO;
+		ecode = -EIO;
 		goto bad;
 	}
 
@@ -660,7 +676,7 @@ static int ath9k_hw_do_attach(struct ath_hw *ah,
 			"Mac Chip Rev 0x%02x.%x is not supported by "
 			"this driver\n", ah->hw_version.macVersion,
 			ah->hw_version.macRev);
-		r = -EOPNOTSUPP;
+		ecode = -EOPNOTSUPP;
 		goto bad;
 	}
 
@@ -862,8 +878,8 @@ static int ath9k_hw_do_attach(struct ath_hw *ah,
 	else
 		ath9k_hw_disablepcie(ah);
 
-	r = ath9k_hw_post_attach(ah);
-	if (r)
+	ecode = ath9k_hw_post_attach(ah);
+	if (ecode != 0)
 		goto bad;
 
 	if (AR_SREV_9287_11(ah))
@@ -923,8 +939,8 @@ static int ath9k_hw_do_attach(struct ath_hw *ah,
 		}
 	}
 
-	r = ath9k_hw_init_macaddr(ah);
-	if (r) {
+	ecode = ath9k_hw_init_macaddr(ah);
+	if (ecode != 0) {
 		DPRINTF(sc, ATH_DBG_FATAL,
 			"Failed to initialize MAC address\n");
 		goto bad;
@@ -937,10 +953,14 @@ static int ath9k_hw_do_attach(struct ath_hw *ah,
 
 	ath9k_init_nfcal_hist_buffer(ah);
 
-	return 0;
+	return ah;
 bad:
-	ath9k_hw_detach(ah);
-	return r;
+	if (ah)
+		ath9k_hw_detach(ah);
+	if (status)
+		*status = ecode;
+
+	return NULL;
 }
 
 static void ath9k_hw_init_bb(struct ath_hw *ah,
@@ -1186,8 +1206,10 @@ void ath9k_hw_detach(struct ath_hw *ah)
 	kfree(ah);
 }
 
-int ath9k_hw_attach(struct ath_hw *ah, u16 devid, struct ath_softc *sc)
+struct ath_hw *ath9k_hw_attach(u16 devid, struct ath_softc *sc, int *error)
 {
+	struct ath_hw *ah = NULL;
+
 	switch (devid) {
 	case AR5416_DEVID_PCI:
 	case AR5416_DEVID_PCIE:
@@ -1198,11 +1220,14 @@ int ath9k_hw_attach(struct ath_hw *ah, u16 devid, struct ath_softc *sc)
 	case AR9285_DEVID_PCIE:
 	case AR5416_DEVID_AR9287_PCI:
 	case AR5416_DEVID_AR9287_PCIE:
-		return ath9k_hw_do_attach(ah, devid, sc);
+		ah = ath9k_hw_do_attach(devid, sc, error);
+		break;
 	default:
+		*error = -EOPNOTSUPP;
 		break;
 	}
-	return -EOPNOTSUPP;
+
+	return ah;
 }
 
 /*******/
