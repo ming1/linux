@@ -704,7 +704,7 @@ static ssize_t iwl_dbgfs_thermal_throttling_read(struct file *file,
 				size_t count, loff_t *ppos)
 {
 	struct iwl_priv *priv = (struct iwl_priv *)file->private_data;
-	struct iwl_tt_mgmt *tt = &priv->thermal_throttle;
+	struct iwl_tt_mgmt *tt = &priv->power_data.tt;
 	struct iwl_tt_restriction *restriction;
 	char buf[100];
 	int pos = 0;
@@ -713,11 +713,12 @@ static ssize_t iwl_dbgfs_thermal_throttling_read(struct file *file,
 
 	pos += scnprintf(buf + pos, bufsz - pos,
 			"Thermal Throttling Mode: %s\n",
-			tt->advanced_tt ? "Advance" : "Legacy");
+			(priv->power_data.adv_tt)
+			? "Advance" : "Legacy");
 	pos += scnprintf(buf + pos, bufsz - pos,
 			"Thermal Throttling State: %d\n",
 			tt->state);
-	if (tt->advanced_tt) {
+	if (priv->power_data.adv_tt) {
 		restriction = tt->restriction + tt->state;
 		pos += scnprintf(buf + pos, bufsz - pos,
 				"Tx mode: %d\n",
