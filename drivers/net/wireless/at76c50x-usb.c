@@ -2298,8 +2298,10 @@ static void at76_delete_device(struct at76_priv *priv)
 
 	tasklet_kill(&priv->rx_tasklet);
 
-	if (priv->mac80211_registered)
+	if (priv->mac80211_registered) {
+		flush_workqueue(priv->hw->workqueue);
 		ieee80211_unregister_hw(priv->hw);
+	}
 
 	if (priv->tx_urb) {
 		usb_kill_urb(priv->tx_urb);
