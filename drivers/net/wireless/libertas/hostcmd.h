@@ -56,8 +56,8 @@ struct rxpd {
 			u8 bss_type;
 			/* BSS number */
 			u8 bss_num;
-		} __attribute__ ((packed)) bss;
-	} __attribute__ ((packed)) u;
+		} bss;
+	} u;
 
 	/* SNR */
 	u8 snr;
