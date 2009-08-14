@@ -265,7 +265,7 @@ void ieee80211_scan_completed(struct ieee80211_hw *hw, bool aborted)
 
 	mutex_lock(&local->scan_mtx);
 
-	if (WARN_ON(!local->scanning)) {
+	if (WARN_ON(!local->hw_scanning && !local->sw_scanning)) {
 		mutex_unlock(&local->scan_mtx);
 		return;
 	}
@@ -275,15 +275,16 @@ void ieee80211_scan_completed(struct ieee80211_hw *hw, bool aborted)
 		return;
 	}
 
-	if (test_bit(SCAN_HW_SCANNING, &local->scanning))
+	if (local->hw_scanning)
 		ieee80211_restore_scan_ies(local);
 
 	if (local->scan_req != &local->int_scan_req)
 		cfg80211_scan_done(local->scan_req, aborted);
 	local->scan_req = NULL;
 
-	was_hw_scan = test_bit(SCAN_HW_SCANNING, &local->scanning);
-	local->scanning = 0;
+	was_hw_scan = local->hw_scanning;
+	local->hw_scanning = false;
+	local->sw_scanning = false;
 	local->scan_channel = NULL;
 
 	/* we only have to protect scan_req and hw/sw scan */
@@ -433,9 +434,9 @@ static int __ieee80211_start_scan(struct ieee80211_sub_if_data *sdata,
 	}
 
 	if (local->ops->hw_scan)
-		__set_bit(SCAN_HW_SCANNING, &local->scanning);
+		local->hw_scanning = true;
 	else
-		__set_bit(SCAN_SW_SCANNING, &local->scanning);
+		local->sw_scanning = true;
 	/*
 	 * Kicking off the scan need not be protected,
 	 * only the scan variable stuff, since now
@@ -458,9 +459,11 @@ static int __ieee80211_start_scan(struct ieee80211_sub_if_data *sdata,
 	mutex_lock(&local->scan_mtx);
 
 	if (rc) {
-		if (local->ops->hw_scan)
+		if (local->ops->hw_scan) {
+			local->hw_scanning = false;
 			ieee80211_restore_scan_ies(local);
-		local->scanning = 0;
+		} else
+			local->sw_scanning = false;
 
 		ieee80211_recalc_idle(local);
 
@@ -569,7 +572,7 @@ void ieee80211_scan_work(struct work_struct *work)
 		return;
 	}
 
-	if (local->scan_req && !local->scanning) {
+	if (local->scan_req && !(local->sw_scanning || local->hw_scanning)) {
 		struct cfg80211_scan_request *req = local->scan_req;
 		int rc;
 
@@ -660,7 +663,7 @@ void ieee80211_scan_cancel(struct ieee80211_local *local)
 	 * queued -- mostly at suspend under RTNL.
 	 */
 	mutex_lock(&local->scan_mtx);
-	swscan = test_bit(SCAN_SW_SCANNING, &local->scanning);
+	swscan = local->sw_scanning;
 	mutex_unlock(&local->scan_mtx);
 
 	if (swscan)
