@@ -26,7 +26,7 @@
 #define __WL12XX_ACX_H__
 
 #include "wl12xx.h"
-#include "wl1251_cmd.h"
+#include "cmd.h"
 
 /* Target's information element */
 struct acx_header {
