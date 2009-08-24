@@ -35,8 +35,7 @@ static const u8 bssid_off[ETH_ALEN]  __attribute__ ((aligned (2))) =
  *
  *  @param priv     A pointer to struct lbs_private structure
  *  @param rates       the buffer which keeps input and output
- *  @param rates_size  the size of rates buffer; new size of buffer on return,
- *                     which will be less than or equal to original rates_size
+ *  @param rates_size  the size of rate1 buffer; new size of buffer on return
  *
  *  @return            0 on success, or -1 on error
  */
@@ -44,41 +43,46 @@ static int get_common_rates(struct lbs_private *priv,
 	u8 *rates,
 	u16 *rates_size)
 {
+	u8 *card_rates = lbs_bg_rates;
 	int i, j;
-	u8 intersection[MAX_RATES];
-	u16 intersection_size;
-	u16 num_rates = 0;
+	u8 *tmp;
+	size_t tmp_size = 0;
 
-	intersection_size = min_t(u16, *rates_size, ARRAY_SIZE(intersection));
+	tmp = kzalloc(MAX_RATES * ARRAY_SIZE(lbs_bg_rates), GFP_KERNEL);
+	if (!tmp)
+		return -1;
 
-	/* Allow each rate from 'rates' that is supported by the hardware */
-	for (i = 0; i < ARRAY_SIZE(lbs_bg_rates) && lbs_bg_rates[i]; i++) {
-		for (j = 0; j < intersection_size && rates[j]; j++) {
-			if (rates[j] == lbs_bg_rates[i])
-				intersection[num_rates++] = rates[j];
+	/* For each rate in card_rates that exists in rate1, copy to tmp */
+	for (i = 0; i < ARRAY_SIZE(lbs_bg_rates) && card_rates[i]; i++) {
+		for (j = 0; j < *rates_size && rates[j]; j++) {
+			if (rates[j] == card_rates[i])
+				tmp[tmp_size++] = card_rates[i];
 		}
 	}
 
 	lbs_deb_hex(LBS_DEB_JOIN, "AP rates    ", rates, *rates_size);
-	lbs_deb_hex(LBS_DEB_JOIN, "card rates  ", lbs_bg_rates,
+	lbs_deb_hex(LBS_DEB_JOIN, "card rates  ", card_rates,
 			ARRAY_SIZE(lbs_bg_rates));
-	lbs_deb_hex(LBS_DEB_JOIN, "common rates", intersection, num_rates);
+	lbs_deb_hex(LBS_DEB_JOIN, "common rates", tmp, tmp_size);
 	lbs_deb_join("TX data rate 0x%02x\n", priv->cur_rate);
 
-	if (!priv->enablehwauto) {
-		for (i = 0; i < num_rates; i++) {
-			if (intersection[i] == priv->cur_rate)
-				goto done;
-		}
-		lbs_pr_alert("Previously set fixed data rate %#x isn't "
-		       "compatible with the network.\n", priv->cur_rate);
-		return -1;
-	}
-
-done:
 	memset(rates, 0, *rates_size);
-	*rates_size = num_rates;
-	memcpy(rates, intersection, num_rates);
+	*rates_size = min_t(u16, tmp_size, *rates_size);
+	memcpy(rates, tmp, *rates_size);
+
+	if (!priv->enablehwauto) {
+		for (i = 0; i < tmp_size; i++) {
+			if (tmp[i] == priv->cur_rate)
+				break;
+		}
+		if (i == tmp_size) {
+			lbs_pr_alert("Previously set fixed data rate %#x isn't "
+					"compatible with the network.\n",
+					priv->cur_rate);
+			return -1;
+		}
+	}
+	kfree(tmp);
 	return 0;
 }
 
@@ -321,7 +325,7 @@ static int lbs_associate(struct lbs_private *priv,
 
 	rates = (struct mrvl_ie_rates_param_set *) pos;
 	rates->header.type = cpu_to_le16(TLV_TYPE_RATES);
-	tmplen = min_t(u16, ARRAY_SIZE(bss->rates), MAX_RATES);
+	tmplen = min_t(u16, ARRAY_SIZE(rates->rates), MAX_RATES);
 	memcpy(&rates->rates, &bss->rates, tmplen);
 	if (get_common_rates(priv, rates->rates, &tmplen)) {
 		ret = -1;
@@ -596,7 +600,7 @@ static int lbs_adhoc_join(struct lbs_private *priv,
 
 	/* Copy Data rates from the rates recorded in scan response */
 	memset(cmd.bss.rates, 0, sizeof(cmd.bss.rates));
-	ratesize = min_t(u16, ARRAY_SIZE(cmd.bss.rates), ARRAY_SIZE (bss->rates));
+	ratesize = min_t(u16, ARRAY_SIZE(cmd.bss.rates), MAX_RATES);
 	memcpy(cmd.bss.rates, bss->rates, ratesize);
 	if (get_common_rates(priv, cmd.bss.rates, &ratesize)) {
 		lbs_deb_join("ADHOC_JOIN: get_common_rates returned error.\n");
