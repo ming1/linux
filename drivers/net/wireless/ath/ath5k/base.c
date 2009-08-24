@@ -718,9 +718,9 @@ static int ath5k_reg_notifier(struct wiphy *wiphy, struct regulatory_request *re
 {
 	struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(wiphy);
 	struct ath5k_softc *sc = hw->priv;
-	struct ath_regulatory *regulatory = &sc->common.regulatory;
+	struct ath_regulatory *reg = &sc->ah->ah_regulatory;
 
-	return ath_reg_notifier_apply(wiphy, request, regulatory);
+	return ath_reg_notifier_apply(wiphy, request, reg);
 }
 
 static int
@@ -728,7 +728,6 @@ ath5k_attach(struct pci_dev *pdev, struct ieee80211_hw *hw)
 {
 	struct ath5k_softc *sc = hw->priv;
 	struct ath5k_hw *ah = sc->ah;
-	struct ath_regulatory *regulatory = &sc->common.regulatory;
 	u8 mac[ETH_ALEN] = {};
 	int ret;
 
@@ -818,8 +817,9 @@ ath5k_attach(struct pci_dev *pdev, struct ieee80211_hw *hw)
 	memset(sc->bssidmask, 0xff, ETH_ALEN);
 	ath5k_hw_set_bssid_mask(sc->ah, sc->bssidmask);
 
-	regulatory->current_rd = ah->ah_capabilities.cap_eeprom.ee_regdomain;
-	ret = ath_regd_init(regulatory, hw->wiphy, ath5k_reg_notifier);
+	ah->ah_regulatory.current_rd =
+		ah->ah_capabilities.cap_eeprom.ee_regdomain;
+	ret = ath_regd_init(&ah->ah_regulatory, hw->wiphy, ath5k_reg_notifier);
 	if (ret) {
 		ATH5K_ERR(sc, "can't initialize regulatory system\n");
 		goto err_queues;
@@ -831,8 +831,8 @@ ath5k_attach(struct pci_dev *pdev, struct ieee80211_hw *hw)
 		goto err_queues;
 	}
 
-	if (!ath_is_world_regd(regulatory))
-		regulatory_hint(hw->wiphy, regulatory->alpha2);
+	if (!ath_is_world_regd(&sc->ah->ah_regulatory))
+		regulatory_hint(hw->wiphy, sc->ah->ah_regulatory.alpha2);
 
 	ath5k_init_leds(sc);
 
