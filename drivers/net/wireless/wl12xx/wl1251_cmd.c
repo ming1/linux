@@ -252,7 +252,7 @@ out:
 }
 
 int wl1251_cmd_join(struct wl1251 *wl, u8 bss_type, u16 beacon_interval,
-		    u8 dtim_interval)
+		    u8 dtim_interval, bool wait)
 {
 	unsigned long timeout;
 	struct cmd_join *join;
@@ -273,9 +273,10 @@ int wl1251_cmd_join(struct wl1251 *wl, u8 bss_type, u16 beacon_interval,
 	if (ret < 0)
 		goto out;
 
-	wl1251_debug(DEBUG_CMD, "cmd join%s %d %d",
+	wl1251_debug(DEBUG_CMD, "cmd join%s %d %d%s",
 		     bss_type == BSS_TYPE_IBSS ? " ibss" : "",
-		     beacon_interval, dtim_interval);
+		     beacon_interval, dtim_interval,
+		     wait ? " wait" : "");
 
 	/* Reverse order BSSID */
 	bssid = (u8 *) &join->bssid_lsb;
@@ -306,7 +307,8 @@ int wl1251_cmd_join(struct wl1251 *wl, u8 bss_type, u16 beacon_interval,
 	 * ugly hack: we should wait for JOIN_EVENT_COMPLETE_ID but to
 	 * simplify locking we just sleep instead, for now
 	 */
-	msleep(10);
+	if (wait)
+		msleep(10);
 
 out:
 	kfree(join);
