@@ -385,7 +385,6 @@ void __cfg80211_connect_result(struct net_device *dev, const u8 *bssid,
 		wdev->conn = NULL;
 		kfree(wdev->connect_keys);
 		wdev->connect_keys = NULL;
-		wdev->ssid_len = 0;
 		return;
 	}
 
@@ -567,7 +566,6 @@ void __cfg80211_disconnected(struct net_device *dev, const u8 *ie,
 
 	wdev->current_bss = NULL;
 	wdev->sme_state = CFG80211_SME_IDLE;
-	wdev->ssid_len = 0;
 
 	if (wdev->conn) {
 		kfree(wdev->conn->ie);
@@ -723,7 +721,6 @@ int __cfg80211_connect(struct cfg80211_registered_device *rdev,
 			wdev->conn = NULL;
 			wdev->sme_state = CFG80211_SME_IDLE;
 			wdev->connect_keys = NULL;
-			wdev->ssid_len = 0;
 		}
 
 		return err;
@@ -788,7 +785,6 @@ int __cfg80211_disconnect(struct cfg80211_registered_device *rdev,
 			wdev->sme_state = CFG80211_SME_IDLE;
 			kfree(wdev->conn);
 			wdev->conn = NULL;
-			wdev->ssid_len = 0;
 			return 0;
 		}
 
