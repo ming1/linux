@@ -1520,7 +1520,8 @@ bad2:
 		if (ATH_TXQ_SETUP(sc, i))
 			ath_tx_cleanupq(sc, &sc->tx.txq[i]);
 bad:
-	ath9k_hw_detach(ah);
+	if (ah)
+		ath9k_hw_detach(ah);
 	sc->sc_ah = NULL;
 bad_no_ah:
 	ath9k_exit_debug(sc);
