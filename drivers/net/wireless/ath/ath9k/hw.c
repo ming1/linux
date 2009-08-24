@@ -665,10 +665,8 @@ static struct ath_hw *ath9k_hw_do_attach(u16 devid, struct ath_softc *sc,
 	if ((ah->hw_version.macVersion != AR_SREV_VERSION_5416_PCI) &&
 	    (ah->hw_version.macVersion != AR_SREV_VERSION_5416_PCIE) &&
 	    (ah->hw_version.macVersion != AR_SREV_VERSION_9160) &&
-	    (ah->hw_version.macVersion != AR_SREV_VERSION_9100) &&
-	    (ah->hw_version.macVersion != AR_SREV_VERSION_9280) &&
-	    (ah->hw_version.macVersion != AR_SREV_VERSION_9285) &&
-	    (ah->hw_version.macVersion != AR_SREV_VERSION_9287)) {
+	    (!AR_SREV_9100(ah)) && (!AR_SREV_9280(ah)) &&
+	    (!AR_SREV_9285(ah)) && (!AR_SREV_9287(ah))) {
 		DPRINTF(sc, ATH_DBG_FATAL,
 			"Mac Chip Rev 0x%02x.%x is not supported by "
 			"this driver\n", ah->hw_version.macVersion,
