@@ -870,9 +870,6 @@ static int rtl8187b_init_hw(struct ieee80211_hw *dev)
 	priv->aifsn[3] = 3; /* AIFSN[AC_BE] */
 	rtl818x_iowrite8(priv, &priv->map->ACM_CONTROL, 0);
 
-	/* ENEDCA flag must always be set, transmit issues? */
-	rtl818x_iowrite8(priv, &priv->map->MSR, RTL818X_MSR_ENEDCA);
-
 	return 0;
 }
 
@@ -1177,16 +1174,13 @@ static void rtl8187_bss_info_changed(struct ieee80211_hw *dev,
 			rtl818x_iowrite8(priv, &priv->map->BSSID[i],
 					 info->bssid[i]);
 
-		if (priv->is_rtl8187b)
-			reg = RTL818X_MSR_ENEDCA;
-		else
-			reg = 0;
-
 		if (is_valid_ether_addr(info->bssid)) {
-			reg |= RTL818X_MSR_INFRA;
+			reg = RTL818X_MSR_INFRA;
+			if (priv->is_rtl8187b)
+				reg |= RTL818X_MSR_ENEDCA;
 			rtl818x_iowrite8(priv, &priv->map->MSR, reg);
 		} else {
-			reg |= RTL818X_MSR_NO_LINK;
+			reg = RTL818X_MSR_NO_LINK;
 			rtl818x_iowrite8(priv, &priv->map->MSR, reg);
 		}
 
