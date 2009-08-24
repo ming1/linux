@@ -437,14 +437,16 @@ static void ath9k_hw_set_defaults(struct ath_hw *ah)
 		ah->config.serialize_regmode = SER_REG_MODE_AUTO;
 }
 
-static void ath9k_hw_newstate(struct ath_hw *ah)
+static void ath9k_hw_newstate(u16 devid,
+			      struct ath_hw *ah)
 {
 	ah->hw_version.magic = AR5416_MAGIC;
 	ah->regulatory.country_code = CTRY_DEFAULT;
+	ah->hw_version.devid = devid;
 	ah->hw_version.subvendorid = 0;
 
 	ah->ah_flags = 0;
-	if (ah->hw_version.devid == AR5416_AR9100_DEVID)
+	if ((devid == AR5416_AR9100_DEVID))
 		ah->hw_version.macVersion = AR_SREV_VERSION_9100;
 	if (!AR_SREV_9100(ah))
 		ah->ah_flags = AH_USE_EEPROM;
@@ -609,12 +611,13 @@ static int ath9k_hw_post_attach(struct ath_hw *ah)
 }
 
 static int ath9k_hw_do_attach(struct ath_hw *ah,
+			      u16 devid,
 			      struct ath_softc *sc)
 {
 	int r;
 	u32 i, j;
 
-	ath9k_hw_newstate(ah);
+	ath9k_hw_newstate(devid, ah);
 	ath9k_hw_set_defaults(ah);
 
 	if (!ath9k_hw_set_reset_reg(ah, ATH9K_RESET_POWER_ON)) {
@@ -1183,9 +1186,9 @@ void ath9k_hw_detach(struct ath_hw *ah)
 	kfree(ah);
 }
 
-int ath9k_hw_attach(struct ath_hw *ah, struct ath_softc *sc)
+int ath9k_hw_attach(struct ath_hw *ah, u16 devid, struct ath_softc *sc)
 {
-	switch (ah->hw_version.devid) {
+	switch (devid) {
 	case AR5416_DEVID_PCI:
 	case AR5416_DEVID_PCIE:
 	case AR5416_AR9100_DEVID:
@@ -1195,7 +1198,7 @@ int ath9k_hw_attach(struct ath_hw *ah, struct ath_softc *sc)
 	case AR9285_DEVID_PCIE:
 	case AR5416_DEVID_AR9287_PCI:
 	case AR5416_DEVID_AR9287_PCIE:
-		return ath9k_hw_do_attach(ah, sc);
+		return ath9k_hw_do_attach(ah, devid, sc);
 	default:
 		break;
 	}
