@@ -95,13 +95,9 @@ static const struct file_operations sub## _ ##name## _ops = {		\
 
 static void wl12xx_debugfs_update_stats(struct wl12xx *wl)
 {
-	int ret;
-
 	mutex_lock(&wl->mutex);
 
-	ret = wl12xx_ps_elp_wakeup(wl);
-	if (ret < 0)
-		goto out;
+	wl12xx_ps_elp_wakeup(wl);
 
 	if (wl->state == WL12XX_STATE_ON &&
 	    time_after(jiffies, wl->stats.fw_stats_update +
@@ -112,7 +108,6 @@ static void wl12xx_debugfs_update_stats(struct wl12xx *wl)
 
 	wl12xx_ps_elp_sleep(wl);
 
-out:
 	mutex_unlock(&wl->mutex);
 }
 
