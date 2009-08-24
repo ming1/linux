@@ -1652,7 +1652,6 @@ struct iwl_cfg iwl5300_agn_cfg = {
 	.valid_tx_ant = ANT_ABC,
 	.valid_rx_ant = ANT_ABC,
 	.need_pll_cfg = true,
-	.ht_greenfield_support = true,
 };
 
 struct iwl_cfg iwl5100_bg_cfg = {
@@ -1669,7 +1668,6 @@ struct iwl_cfg iwl5100_bg_cfg = {
 	.valid_tx_ant = ANT_B,
 	.valid_rx_ant = ANT_AB,
 	.need_pll_cfg = true,
-	.ht_greenfield_support = true,
 };
 
 struct iwl_cfg iwl5100_abg_cfg = {
@@ -1686,7 +1684,6 @@ struct iwl_cfg iwl5100_abg_cfg = {
 	.valid_tx_ant = ANT_B,
 	.valid_rx_ant = ANT_AB,
 	.need_pll_cfg = true,
-	.ht_greenfield_support = true,
 };
 
 struct iwl_cfg iwl5100_agn_cfg = {
@@ -1703,7 +1700,6 @@ struct iwl_cfg iwl5100_agn_cfg = {
 	.valid_tx_ant = ANT_B,
 	.valid_rx_ant = ANT_AB,
 	.need_pll_cfg = true,
-	.ht_greenfield_support = true,
 };
 
 struct iwl_cfg iwl5350_agn_cfg = {
@@ -1720,7 +1716,6 @@ struct iwl_cfg iwl5350_agn_cfg = {
 	.valid_tx_ant = ANT_ABC,
 	.valid_rx_ant = ANT_ABC,
 	.need_pll_cfg = true,
-	.ht_greenfield_support = true,
 };
 
 struct iwl_cfg iwl5150_agn_cfg = {
@@ -1737,7 +1732,6 @@ struct iwl_cfg iwl5150_agn_cfg = {
 	.valid_tx_ant = ANT_A,
 	.valid_rx_ant = ANT_AB,
 	.need_pll_cfg = true,
-	.ht_greenfield_support = true,
 };
 
 MODULE_FIRMWARE(IWL5000_MODULE_FIRMWARE(IWL5000_UCODE_API_MAX));
