@@ -144,9 +144,9 @@ void ieee80211_wep_encrypt_data(struct crypto_blkcipher *tfm, u8 *rc4key,
  *
  * WEP frame payload: IV + TX key idx, RC4(data), ICV = RC4(CRC32(data))
  */
-int ieee80211_wep_encrypt(struct ieee80211_local *local,
-			  struct sk_buff *skb,
-			  const u8 *key, int keylen, int keyidx)
+static int ieee80211_wep_encrypt(struct ieee80211_local *local,
+				 struct sk_buff *skb,
+				 const u8 *key, int keylen, int keyidx)
 {
 	u8 *iv;
 	size_t len;
