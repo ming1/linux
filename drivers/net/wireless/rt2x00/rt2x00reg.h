@@ -176,8 +176,8 @@ struct rt2x00_field32 {
 #define is_valid_mask(x)	is_power_of_two(1LU + (x) + low_bit_mask(x))
 
 /*
- * Macros to find first set bit in a variable.
- * These macros behave the same as the __ffs() functions but
+ * Macro's to find first set bit in a variable.
+ * These macro's behaves the same as the __ffs() function with
  * the most important difference that this is done during
  * compile-time rather then run-time.
  */
