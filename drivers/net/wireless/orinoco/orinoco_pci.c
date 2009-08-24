@@ -116,6 +116,7 @@ static int orinoco_pci_init_one(struct pci_dev *pdev,
 	int err;
 	struct orinoco_private *priv;
 	struct orinoco_pci_card *card;
+	struct net_device *dev;
 	void __iomem *hermes_io;
 
 	err = pci_enable_device(pdev);
@@ -146,12 +147,14 @@ static int orinoco_pci_init_one(struct pci_dev *pdev,
 		goto fail_alloc;
 	}
 
+	dev = priv->ndev;
 	card = priv->card;
+	SET_NETDEV_DEV(dev, &pdev->dev);
 
 	hermes_struct_init(&priv->hw, hermes_io, HERMES_32BIT_REGSPACING);
 
 	err = request_irq(pdev->irq, orinoco_interrupt, IRQF_SHARED,
-			  DRIVER_NAME, priv);
+			  dev->name, priv);
 	if (err) {
 		printk(KERN_ERR PFX "Cannot allocate IRQ %d\n", pdev->irq);
 		err = -EBUSY;
@@ -170,13 +173,15 @@ static int orinoco_pci_init_one(struct pci_dev *pdev,
 		goto fail;
 	}
 
-	err = orinoco_if_add(priv, 0, 0);
+	err = register_netdev(dev);
 	if (err) {
-		printk(KERN_ERR PFX "orinoco_if_add() failed\n");
+		printk(KERN_ERR PFX "Cannot register network device\n");
 		goto fail;
 	}
 
 	pci_set_drvdata(pdev, priv);
+	printk(KERN_DEBUG "%s: " DRIVER_NAME " at %s\n", dev->name,
+	       pci_name(pdev));
 
 	return 0;
 
@@ -202,8 +207,9 @@ static int orinoco_pci_init_one(struct pci_dev *pdev,
 static void __devexit orinoco_pci_remove_one(struct pci_dev *pdev)
 {
 	struct orinoco_private *priv = pci_get_drvdata(pdev);
+	struct net_device *dev = priv->ndev;
 
-	orinoco_if_del(priv);
+	unregister_netdev(dev);
 	free_irq(pdev->irq, priv);
 	pci_set_drvdata(pdev, NULL);
 	free_orinocodev(priv);
