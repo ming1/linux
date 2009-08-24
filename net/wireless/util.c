@@ -274,11 +274,11 @@ static int ieee80211_get_mesh_hdrlen(struct ieee80211s_hdr *meshhdr)
 	switch (ae) {
 	case 0:
 		return 6;
-	case MESH_FLAGS_AE_A4:
+	case 1:
 		return 12;
-	case MESH_FLAGS_AE_A5_A6:
+	case 2:
 		return 18;
-	case (MESH_FLAGS_AE_A4 | MESH_FLAGS_AE_A5_A6):
+	case 3:
 		return 24;
 	default:
 		return 6;
@@ -333,18 +333,10 @@ int ieee80211_data_to_8023(struct sk_buff *skb, u8 *addr,
 		}
 		break;
 	case cpu_to_le16(IEEE80211_FCTL_FROMDS):
-		if ((iftype != NL80211_IFTYPE_STATION &&
-		    iftype != NL80211_IFTYPE_MESH_POINT) ||
+		if (iftype != NL80211_IFTYPE_STATION ||
 		    (is_multicast_ether_addr(dst) &&
 		     !compare_ether_addr(src, addr)))
 			return -1;
-		if (iftype == NL80211_IFTYPE_MESH_POINT) {
-			struct ieee80211s_hdr *meshdr =
-				(struct ieee80211s_hdr *) (skb->data + hdrlen);
-			hdrlen += ieee80211_get_mesh_hdrlen(meshdr);
-			if (meshdr->flags & MESH_FLAGS_AE_A4)
-				memcpy(src, meshdr->eaddr1, ETH_ALEN);
-		}
 		break;
 	case cpu_to_le16(0):
 		if (iftype != NL80211_IFTYPE_ADHOC)
