@@ -2513,8 +2513,7 @@ static int rndis_wlan_stop(struct usbnet *usbdev)
 
 static const struct driver_info	bcm4320b_info = {
 	.description =	"Wireless RNDIS device, BCM4320b based",
-	.flags =	FLAG_WLAN | FLAG_FRAMING_RN | FLAG_NO_SETINT |
-				FLAG_AVOID_UNLINK_URBS,
+	.flags =	FLAG_WLAN | FLAG_FRAMING_RN | FLAG_NO_SETINT,
 	.bind =		rndis_wlan_bind,
 	.unbind =	rndis_wlan_unbind,
 	.status =	rndis_status,
@@ -2528,8 +2527,7 @@ static const struct driver_info	bcm4320b_info = {
 
 static const struct driver_info	bcm4320a_info = {
 	.description =	"Wireless RNDIS device, BCM4320a based",
-	.flags =	FLAG_WLAN | FLAG_FRAMING_RN | FLAG_NO_SETINT |
-				FLAG_AVOID_UNLINK_URBS,
+	.flags =	FLAG_WLAN | FLAG_FRAMING_RN | FLAG_NO_SETINT,
 	.bind =		rndis_wlan_bind,
 	.unbind =	rndis_wlan_unbind,
 	.status =	rndis_status,
@@ -2543,8 +2541,7 @@ static const struct driver_info	bcm4320a_info = {
 
 static const struct driver_info rndis_wlan_info = {
 	.description =	"Wireless RNDIS device",
-	.flags =	FLAG_WLAN | FLAG_FRAMING_RN | FLAG_NO_SETINT |
-				FLAG_AVOID_UNLINK_URBS,
+	.flags =	FLAG_WLAN | FLAG_FRAMING_RN | FLAG_NO_SETINT,
 	.bind =		rndis_wlan_bind,
 	.unbind =	rndis_wlan_unbind,
 	.status =	rndis_status,
