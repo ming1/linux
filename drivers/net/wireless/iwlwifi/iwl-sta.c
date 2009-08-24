@@ -1054,8 +1054,7 @@ int iwl_get_sta_id(struct iwl_priv *priv, struct ieee80211_hdr *hdr)
 	__le16 fc = hdr->frame_control;
 
 	/* If this frame is broadcast or management, use broadcast station id */
-	if (!ieee80211_is_data(fc) || is_multicast_ether_addr(hdr->addr1) ||
-	    iwl_is_monitor_mode(priv)) /* Injected frames need broadcast too */
+	if (!ieee80211_is_data(fc) ||  is_multicast_ether_addr(hdr->addr1))
 		return priv->hw_params.bcast_sta_id;
 
 	switch (priv->iw_mode) {
