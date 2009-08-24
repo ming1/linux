@@ -2000,12 +2000,9 @@ ath5k_tx_processq(struct ath5k_softc *sc, struct ath5k_txq *txq)
 static void
 ath5k_tasklet_tx(unsigned long data)
 {
-	int i;
 	struct ath5k_softc *sc = (void *)data;
 
-	for (i=0; i < AR5K_NUM_TX_QUEUES; i++)
-		if (sc->txqs[i].setup && (sc->ah->ah_txq_isr & BIT(i)))
-			ath5k_tx_processq(sc, &sc->txqs[i]);
+	ath5k_tx_processq(sc, sc->txq);
 }
 
 
