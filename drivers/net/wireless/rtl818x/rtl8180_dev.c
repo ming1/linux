@@ -143,8 +143,7 @@ static void rtl8180_handle_rx(struct ieee80211_hw *dev)
 			if (flags & RTL818X_RX_DESC_FLAG_CRC32_ERR)
 				rx_status.flag |= RX_FLAG_FAILED_FCS_CRC;
 
-			memcpy(IEEE80211_SKB_RXCB(skb), &rx_status, sizeof(rx_status));
-			ieee80211_rx_irqsafe(dev, skb);
+			ieee80211_rx_irqsafe(dev, skb, &rx_status);
 
 			skb = new_skb;
 			priv->rx_buf[priv->rx_idx] = skb;
