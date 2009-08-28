@@ -71,8 +71,10 @@
 
 
 /* Raw target IO, address is not translated */
-void wl1251_spi_write(struct wl1251 *wl, int addr, void *buf, size_t len);
-void wl1251_spi_read(struct wl1251 *wl, int addr, void *buf, size_t len);
+void wl1251_spi_write(struct wl1251 *wl, int addr, void *buf,
+		      size_t len, bool fixed);
+void wl1251_spi_read(struct wl1251 *wl, int addr, void *buf,
+		     size_t len, bool fixed);
 
 /* Memory target IO, address is tranlated to partition 0 */
 void wl1251_spi_mem_read(struct wl1251 *wl, int addr, void *buf, size_t len);
@@ -81,8 +83,10 @@ u32 wl1251_mem_read32(struct wl1251 *wl, int addr);
 void wl1251_mem_write32(struct wl1251 *wl, int addr, u32 val);
 
 /* Registers IO */
-void wl1251_spi_reg_read(struct wl1251 *wl, int addr, void *buf, size_t len);
-void wl1251_spi_reg_write(struct wl1251 *wl, int addr, void *buf, size_t len);
+void wl1251_spi_reg_read(struct wl1251 *wl, int addr, void *buf, size_t len,
+			 bool fixed);
+void wl1251_spi_reg_write(struct wl1251 *wl, int addr, void *buf, size_t len,
+			  bool fixed);
 u32 wl1251_reg_read32(struct wl1251 *wl, int addr);
 void wl1251_reg_write32(struct wl1251 *wl, int addr, u32 val);
 
@@ -95,7 +99,8 @@ int wl1251_set_partition(struct wl1251 *wl,
 
 static inline u32 wl1251_read32(struct wl1251 *wl, int addr)
 {
-	wl1251_spi_read(wl, addr, &wl->buffer_32, sizeof(wl->buffer_32));
+	wl1251_spi_read(wl, addr, &wl->buffer_32,
+			sizeof(wl->buffer_32), false);
 
 	return wl->buffer_32;
 }
@@ -103,7 +108,8 @@ static inline u32 wl1251_read32(struct wl1251 *wl, int addr)
 static inline void wl1251_write32(struct wl1251 *wl, int addr, u32 val)
 {
 	wl->buffer_32 = val;
-	wl1251_spi_write(wl, addr, &wl->buffer_32, sizeof(wl->buffer_32));
+	wl1251_spi_write(wl, addr, &wl->buffer_32,
+			 sizeof(wl->buffer_32), false);
 }
 
 #endif /* __WL1251_SPI_H__ */
