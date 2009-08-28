@@ -67,8 +67,6 @@ static DECLARE_WORK(todo_work, key_todo);
  *
  * @key: key to add to do item for
  * @flag: todo flag(s)
- *
- * Must be called with IRQs or softirqs disabled.
  */
 static void add_todo(struct ieee80211_key *key, u32 flag)
 {
@@ -142,9 +140,9 @@ static void ieee80211_key_enable_hw_accel(struct ieee80211_key *key)
 	ret = drv_set_key(key->local, SET_KEY, &sdata->vif, sta, &key->conf);
 
 	if (!ret) {
-		spin_lock_bh(&todo_lock);
+		spin_lock(&todo_lock);
 		key->flags |= KEY_FLAG_UPLOADED_TO_HARDWARE;
-		spin_unlock_bh(&todo_lock);
+		spin_unlock(&todo_lock);
 	}
 
 	if (ret && ret != -ENOSPC && ret != -EOPNOTSUPP)
@@ -166,12 +164,12 @@ static void ieee80211_key_disable_hw_accel(struct ieee80211_key *key)
 	if (!key || !key->local->ops->set_key)
 		return;
 
-	spin_lock_bh(&todo_lock);
+	spin_lock(&todo_lock);
 	if (!(key->flags & KEY_FLAG_UPLOADED_TO_HARDWARE)) {
-		spin_unlock_bh(&todo_lock);
+		spin_unlock(&todo_lock);
 		return;
 	}
-	spin_unlock_bh(&todo_lock);
+	spin_unlock(&todo_lock);
 
 	sta = get_sta_for_key(key);
 	sdata = key->sdata;
@@ -190,9 +188,9 @@ static void ieee80211_key_disable_hw_accel(struct ieee80211_key *key)
 		       wiphy_name(key->local->hw.wiphy),
 		       key->conf.keyidx, sta ? sta->addr : bcast_addr, ret);
 
-	spin_lock_bh(&todo_lock);
+	spin_lock(&todo_lock);
 	key->flags &= ~KEY_FLAG_UPLOADED_TO_HARDWARE;
-	spin_unlock_bh(&todo_lock);
+	spin_unlock(&todo_lock);
 }
 
 static void __ieee80211_set_default_key(struct ieee80211_sub_if_data *sdata,
@@ -439,14 +437,14 @@ void ieee80211_key_link(struct ieee80211_key *key,
 
 	__ieee80211_key_replace(sdata, sta, old_key, key);
 
+	spin_unlock_irqrestore(&sdata->local->key_lock, flags);
+
 	/* free old key later */
 	add_todo(old_key, KEY_FLAG_TODO_DELETE);
 
 	add_todo(key, KEY_FLAG_TODO_ADD_DEBUGFS);
 	if (netif_running(sdata->dev))
 		add_todo(key, KEY_FLAG_TODO_HWACCEL_ADD);
-
-	spin_unlock_irqrestore(&sdata->local->key_lock, flags);
 }
 
 static void __ieee80211_key_free(struct ieee80211_key *key)
@@ -549,7 +547,7 @@ static void __ieee80211_key_todo(void)
 	 */
 	synchronize_rcu();
 
-	spin_lock_bh(&todo_lock);
+	spin_lock(&todo_lock);
 	while (!list_empty(&todo_list)) {
 		key = list_first_entry(&todo_list, struct ieee80211_key, todo);
 		list_del_init(&key->todo);
@@ -560,7 +558,7 @@ static void __ieee80211_key_todo(void)
 					  KEY_FLAG_TODO_HWACCEL_REMOVE |
 					  KEY_FLAG_TODO_DELETE);
 		key->flags &= ~todoflags;
-		spin_unlock_bh(&todo_lock);
+		spin_unlock(&todo_lock);
 
 		work_done = false;
 
@@ -593,9 +591,9 @@ static void __ieee80211_key_todo(void)
 
 		WARN_ON(!work_done);
 
-		spin_lock_bh(&todo_lock);
+		spin_lock(&todo_lock);
 	}
-	spin_unlock_bh(&todo_lock);
+	spin_unlock(&todo_lock);
 }
 
 void ieee80211_key_todo(void)
