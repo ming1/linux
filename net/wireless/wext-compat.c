@@ -267,26 +267,39 @@ EXPORT_SYMBOL_GPL(cfg80211_wext_giwrange);
  * @wiphy: the wiphy
  * @freq: the wext freq encoding
  *
- * Returns a frequency, or a negative error code, or 0 for auto.
+ * Returns a channel, %NULL for auto, or an ERR_PTR for errors!
  */
-int cfg80211_wext_freq(struct wiphy *wiphy, struct iw_freq *freq)
+struct ieee80211_channel *cfg80211_wext_freq(struct wiphy *wiphy,
+					     struct iw_freq *freq)
 {
+	struct ieee80211_channel *chan;
+	int f;
+
 	/*
-	 * Parse frequency - return 0 for auto and
+	 * Parse frequency - return NULL for auto and
 	 * -EINVAL for impossible things.
 	 */
 	if (freq->e == 0) {
 		if (freq->m < 0)
-			return 0;
-		return ieee80211_channel_to_frequency(freq->m);
+			return NULL;
+		f = ieee80211_channel_to_frequency(freq->m);
 	} else {
 		int i, div = 1000000;
 		for (i = 0; i < freq->e; i++)
 			div /= 10;
 		if (div <= 0)
-			return -EINVAL;
-		return freq->m / div;
+			return ERR_PTR(-EINVAL);
+		f = freq->m / div;
 	}
+
+	/*
+	 * Look up channel struct and return -EINVAL when
+	 * it cannot be found.
+	 */
+	chan = ieee80211_get_channel(wiphy, f);
+	if (!chan)
+		return ERR_PTR(-EINVAL);
+	return chan;
 }
 
 int cfg80211_wext_siwrts(struct net_device *dev,
@@ -748,29 +761,33 @@ EXPORT_SYMBOL_GPL(cfg80211_wext_giwencode);
 
 int cfg80211_wext_siwfreq(struct net_device *dev,
 			  struct iw_request_info *info,
-			  struct iw_freq *wextfreq, char *extra)
+			  struct iw_freq *freq, char *extra)
 {
 	struct wireless_dev *wdev = dev->ieee80211_ptr;
 	struct cfg80211_registered_device *rdev = wiphy_to_dev(wdev->wiphy);
-	int freq, err;
+	struct ieee80211_channel *chan;
+	int err;
 
 	switch (wdev->iftype) {
 	case NL80211_IFTYPE_STATION:
-		return cfg80211_mgd_wext_siwfreq(dev, info, wextfreq, extra);
+		return cfg80211_mgd_wext_siwfreq(dev, info, freq, extra);
 	case NL80211_IFTYPE_ADHOC:
-		return cfg80211_ibss_wext_siwfreq(dev, info, wextfreq, extra);
+		return cfg80211_ibss_wext_siwfreq(dev, info, freq, extra);
 	default:
-		freq = cfg80211_wext_freq(wdev->wiphy, wextfreq);
-		if (freq < 0)
-			return freq;
-		if (freq == 0)
+		chan = cfg80211_wext_freq(wdev->wiphy, freq);
+		if (!chan)
 			return -EINVAL;
-		mutex_lock(&rdev->devlist_mtx);
-		err = rdev_set_freq(rdev, freq, NL80211_CHAN_NO_HT);
-		mutex_unlock(&rdev->devlist_mtx);
-		return err;
+		if (IS_ERR(chan))
+			return PTR_ERR(chan);
+		err = rdev->ops->set_channel(wdev->wiphy, chan,
+					     NL80211_CHAN_NO_HT);
+		if (err)
+			return err;
+		rdev->channel = chan;
+		return 0;
 	}
 }
+EXPORT_SYMBOL_GPL(cfg80211_wext_siwfreq);
 
 int cfg80211_wext_giwfreq(struct net_device *dev,
 			  struct iw_request_info *info,
