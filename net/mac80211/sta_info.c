@@ -349,7 +349,6 @@ int sta_info_insert(struct sta_info *sta)
 		goto out_free;
 	}
 	list_add(&sta->list, &local->sta_list);
-	local->sta_generation++;
 	local->num_sta++;
 	sta_info_hash_add(local, sta);
 
@@ -486,7 +485,6 @@ static void __sta_info_unlink(struct sta_info **sta)
 	}
 
 	local->num_sta--;
-	local->sta_generation++;
 
 	if (local->ops->sta_notify) {
 		if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN)
