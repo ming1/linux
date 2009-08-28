@@ -18,7 +18,7 @@
 
 #define IEEE80211_SCAN_RESULT_EXPIRE	(15 * HZ)
 
-void ___cfg80211_scan_done(struct cfg80211_registered_device *rdev, bool leak)
+void ___cfg80211_scan_done(struct cfg80211_registered_device *rdev)
 {
 	struct cfg80211_scan_request *request;
 	struct net_device *dev;
@@ -26,12 +26,7 @@ void ___cfg80211_scan_done(struct cfg80211_registered_device *rdev, bool leak)
 	union iwreq_data wrqu;
 #endif
 
-	ASSERT_RDEV_LOCK(rdev);
-
 	request = rdev->scan_req;
-
-	if (!request)
-		return;
 
 	dev = request->dev;
 
@@ -58,17 +53,7 @@ void ___cfg80211_scan_done(struct cfg80211_registered_device *rdev, bool leak)
 	dev_put(dev);
 
 	rdev->scan_req = NULL;
-
-	/*
-	 * OK. If this is invoked with "leak" then we can't
-	 * free this ... but we've cleaned it up anyway. The
-	 * driver failed to call the scan_done callback, so
-	 * all bets are off, it might still be trying to use
-	 * the scan request or not ... if it accesses the dev
-	 * in there (it shouldn't anyway) then it may crash.
-	 */
-	if (!leak)
-		kfree(request);
+	kfree(request);
 }
 
 void __cfg80211_scan_done(struct work_struct *wk)
@@ -79,7 +64,7 @@ void __cfg80211_scan_done(struct work_struct *wk)
 			    scan_done_wk);
 
 	cfg80211_lock_rdev(rdev);
-	___cfg80211_scan_done(rdev, false);
+	___cfg80211_scan_done(rdev);
 	cfg80211_unlock_rdev(rdev);
 }
 
