@@ -503,8 +503,7 @@ int lbtf_rx(struct lbtf_private *priv, struct sk_buff *skb)
 		skb_reserve(skb, 2);
 	}
 
-	memcpy(IEEE80211_SKB_RXCB(skb), &stats, sizeof(stats));
-	ieee80211_rx_irqsafe(priv->hw, skb);
+	ieee80211_rx_irqsafe(priv->hw, skb, &stats);
 	return 0;
 }
 EXPORT_SYMBOL_GPL(lbtf_rx);

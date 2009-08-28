@@ -670,8 +670,7 @@ void b43_rx(struct b43_wldev *dev, struct sk_buff *skb, const void *_rxhdr)
 		goto drop;
 	}
 
-	memcpy(IEEE80211_SKB_RXCB(skb), &status, sizeof(status));
-	ieee80211_rx_irqsafe(dev->wl->hw, skb);
+	ieee80211_rx_irqsafe(dev->wl->hw, skb, &status);
 
 	return;
 drop:
