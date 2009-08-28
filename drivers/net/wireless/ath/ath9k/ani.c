@@ -236,35 +236,36 @@ static void ath9k_ani_restart(struct ath_hw *ah)
 		return;
 
 	aniState = ah->curani;
+
 	aniState->listenTime = 0;
-
-	if (aniState->ofdmTrigHigh > AR_PHY_COUNTMAX) {
-		aniState->ofdmPhyErrBase = 0;
+	if (ah->has_hw_phycounters) {
+		if (aniState->ofdmTrigHigh > AR_PHY_COUNTMAX) {
+			aniState->ofdmPhyErrBase = 0;
+			DPRINTF(ah->ah_sc, ATH_DBG_ANI,
+				"OFDM Trigger is too high for hw counters\n");
+		} else {
+			aniState->ofdmPhyErrBase =
+				AR_PHY_COUNTMAX - aniState->ofdmTrigHigh;
+		}
+		if (aniState->cckTrigHigh > AR_PHY_COUNTMAX) {
+			aniState->cckPhyErrBase = 0;
+			DPRINTF(ah->ah_sc, ATH_DBG_ANI,
+				"CCK Trigger is too high for hw counters\n");
+		} else {
+			aniState->cckPhyErrBase =
+				AR_PHY_COUNTMAX - aniState->cckTrigHigh;
+		}
 		DPRINTF(ah->ah_sc, ATH_DBG_ANI,
-			"OFDM Trigger is too high for hw counters\n");
-	} else {
-		aniState->ofdmPhyErrBase =
-			AR_PHY_COUNTMAX - aniState->ofdmTrigHigh;
-	}
-	if (aniState->cckTrigHigh > AR_PHY_COUNTMAX) {
-		aniState->cckPhyErrBase = 0;
-		DPRINTF(ah->ah_sc, ATH_DBG_ANI,
-			"CCK Trigger is too high for hw counters\n");
-	} else {
-		aniState->cckPhyErrBase =
-			AR_PHY_COUNTMAX - aniState->cckTrigHigh;
-	}
-	DPRINTF(ah->ah_sc, ATH_DBG_ANI,
-		"Writing ofdmbase=%u   cckbase=%u\n",
-		aniState->ofdmPhyErrBase,
-		aniState->cckPhyErrBase);
-	REG_WRITE(ah, AR_PHY_ERR_1, aniState->ofdmPhyErrBase);
-	REG_WRITE(ah, AR_PHY_ERR_2, aniState->cckPhyErrBase);
-	REG_WRITE(ah, AR_PHY_ERR_MASK_1, AR_PHY_ERR_OFDM_TIMING);
-	REG_WRITE(ah, AR_PHY_ERR_MASK_2, AR_PHY_ERR_CCK_TIMING);
+			"Writing ofdmbase=%u   cckbase=%u\n",
+			aniState->ofdmPhyErrBase,
+			aniState->cckPhyErrBase);
+		REG_WRITE(ah, AR_PHY_ERR_1, aniState->ofdmPhyErrBase);
+		REG_WRITE(ah, AR_PHY_ERR_2, aniState->cckPhyErrBase);
+		REG_WRITE(ah, AR_PHY_ERR_MASK_1, AR_PHY_ERR_OFDM_TIMING);
+		REG_WRITE(ah, AR_PHY_ERR_MASK_2, AR_PHY_ERR_CCK_TIMING);
 
-	ath9k_hw_update_mibstats(ah, &ah->ah_mibStats);
-
+		ath9k_hw_update_mibstats(ah, &ah->ah_mibStats);
+	}
 	aniState->ofdmPhyErrCount = 0;
 	aniState->cckPhyErrCount = 0;
 }
@@ -529,12 +530,18 @@ void ath9k_ani_reset(struct ath_hw *ah)
 	if (aniState->firstepLevel != 0)
 		ath9k_hw_ani_control(ah, ATH9K_ANI_FIRSTEP_LEVEL,
 				     aniState->firstepLevel);
+	if (ah->has_hw_phycounters) {
+		ath9k_hw_setrxfilter(ah, ath9k_hw_getrxfilter(ah) &
+				     ~ATH9K_RX_FILTER_PHYERR);
+		ath9k_ani_restart(ah);
+		REG_WRITE(ah, AR_PHY_ERR_MASK_1, AR_PHY_ERR_OFDM_TIMING);
+		REG_WRITE(ah, AR_PHY_ERR_MASK_2, AR_PHY_ERR_CCK_TIMING);
 
-	ath9k_hw_setrxfilter(ah, ath9k_hw_getrxfilter(ah) &
-			     ~ATH9K_RX_FILTER_PHYERR);
-	ath9k_ani_restart(ah);
-	REG_WRITE(ah, AR_PHY_ERR_MASK_1, AR_PHY_ERR_OFDM_TIMING);
-	REG_WRITE(ah, AR_PHY_ERR_MASK_2, AR_PHY_ERR_CCK_TIMING);
+	} else {
+		ath9k_ani_restart(ah);
+		ath9k_hw_setrxfilter(ah, ath9k_hw_getrxfilter(ah) |
+				     ATH9K_RX_FILTER_PHYERR);
+	}
 }
 
 void ath9k_hw_ani_monitor(struct ath_hw *ah,
@@ -543,8 +550,6 @@ void ath9k_hw_ani_monitor(struct ath_hw *ah,
 {
 	struct ar5416AniState *aniState;
 	int32_t listenTime;
-	u32 phyCnt1, phyCnt2;
-	u32 ofdmPhyErrCnt, cckPhyErrCnt;
 
 	if (!DO_ANI(ah))
 		return;
@@ -561,45 +566,50 @@ void ath9k_hw_ani_monitor(struct ath_hw *ah,
 
 	aniState->listenTime += listenTime;
 
-	ath9k_hw_update_mibstats(ah, &ah->ah_mibStats);
+	if (ah->has_hw_phycounters) {
+		u32 phyCnt1, phyCnt2;
+		u32 ofdmPhyErrCnt, cckPhyErrCnt;
 
-	phyCnt1 = REG_READ(ah, AR_PHY_ERR_1);
-	phyCnt2 = REG_READ(ah, AR_PHY_ERR_2);
+		ath9k_hw_update_mibstats(ah, &ah->ah_mibStats);
 
-	if (phyCnt1 < aniState->ofdmPhyErrBase ||
-	    phyCnt2 < aniState->cckPhyErrBase) {
-		if (phyCnt1 < aniState->ofdmPhyErrBase) {
-			DPRINTF(ah->ah_sc, ATH_DBG_ANI,
-				"phyCnt1 0x%x, resetting "
-				"counter value to 0x%x\n",
-				phyCnt1, aniState->ofdmPhyErrBase);
-			REG_WRITE(ah, AR_PHY_ERR_1,
-				  aniState->ofdmPhyErrBase);
-			REG_WRITE(ah, AR_PHY_ERR_MASK_1,
-				  AR_PHY_ERR_OFDM_TIMING);
+		phyCnt1 = REG_READ(ah, AR_PHY_ERR_1);
+		phyCnt2 = REG_READ(ah, AR_PHY_ERR_2);
+
+		if (phyCnt1 < aniState->ofdmPhyErrBase ||
+		    phyCnt2 < aniState->cckPhyErrBase) {
+			if (phyCnt1 < aniState->ofdmPhyErrBase) {
+				DPRINTF(ah->ah_sc, ATH_DBG_ANI,
+					"phyCnt1 0x%x, resetting "
+					"counter value to 0x%x\n",
+					phyCnt1, aniState->ofdmPhyErrBase);
+				REG_WRITE(ah, AR_PHY_ERR_1,
+					  aniState->ofdmPhyErrBase);
+				REG_WRITE(ah, AR_PHY_ERR_MASK_1,
+					  AR_PHY_ERR_OFDM_TIMING);
+			}
+			if (phyCnt2 < aniState->cckPhyErrBase) {
+				DPRINTF(ah->ah_sc, ATH_DBG_ANI,
+					"phyCnt2 0x%x, resetting "
+					"counter value to 0x%x\n",
+					phyCnt2, aniState->cckPhyErrBase);
+				REG_WRITE(ah, AR_PHY_ERR_2,
+					  aniState->cckPhyErrBase);
+				REG_WRITE(ah, AR_PHY_ERR_MASK_2,
+					  AR_PHY_ERR_CCK_TIMING);
+			}
+			return;
 		}
-		if (phyCnt2 < aniState->cckPhyErrBase) {
-			DPRINTF(ah->ah_sc, ATH_DBG_ANI,
-				"phyCnt2 0x%x, resetting "
-				"counter value to 0x%x\n",
-				phyCnt2, aniState->cckPhyErrBase);
-			REG_WRITE(ah, AR_PHY_ERR_2,
-				  aniState->cckPhyErrBase);
-			REG_WRITE(ah, AR_PHY_ERR_MASK_2,
-				  AR_PHY_ERR_CCK_TIMING);
-		}
-		return;
+
+		ofdmPhyErrCnt = phyCnt1 - aniState->ofdmPhyErrBase;
+		ah->stats.ast_ani_ofdmerrs +=
+			ofdmPhyErrCnt - aniState->ofdmPhyErrCount;
+		aniState->ofdmPhyErrCount = ofdmPhyErrCnt;
+
+		cckPhyErrCnt = phyCnt2 - aniState->cckPhyErrBase;
+		ah->stats.ast_ani_cckerrs +=
+			cckPhyErrCnt - aniState->cckPhyErrCount;
+		aniState->cckPhyErrCount = cckPhyErrCnt;
 	}
-
-	ofdmPhyErrCnt = phyCnt1 - aniState->ofdmPhyErrBase;
-	ah->stats.ast_ani_ofdmerrs +=
-		ofdmPhyErrCnt - aniState->ofdmPhyErrCount;
-	aniState->ofdmPhyErrCount = ofdmPhyErrCnt;
-
-	cckPhyErrCnt = phyCnt2 - aniState->cckPhyErrBase;
-	ah->stats.ast_ani_cckerrs +=
-		cckPhyErrCnt - aniState->cckPhyErrCount;
-	aniState->cckPhyErrCount = cckPhyErrCnt;
 
 	if (aniState->listenTime > 5 * ah->aniperiod) {
 		if (aniState->ofdmPhyErrCount <= aniState->listenTime *
@@ -620,6 +630,11 @@ void ath9k_hw_ani_monitor(struct ath_hw *ah,
 			ath9k_ani_restart(ah);
 		}
 	}
+}
+
+bool ath9k_hw_phycounters(struct ath_hw *ah)
+{
+	return ah->has_hw_phycounters ? true : false;
 }
 
 void ath9k_enable_mib_counters(struct ath_hw *ah)
@@ -766,7 +781,9 @@ void ath9k_hw_ani_init(struct ath_hw *ah)
 {
 	int i;
 
-	DPRINTF(ah->ah_sc, ATH_DBG_ANI, "Initialize ANI\n");
+	DPRINTF(ah->ah_sc, ATH_DBG_ANI, "Attach ANI\n");
+
+	ah->has_hw_phycounters = 1;
 
 	memset(ah->ani, 0, sizeof(ah->ani));
 	for (i = 0; i < ARRAY_SIZE(ah->ani); i++) {
@@ -782,22 +799,24 @@ void ath9k_hw_ani_init(struct ath_hw *ah)
 			ATH9K_ANI_CCK_WEAK_SIG_THR;
 		ah->ani[i].spurImmunityLevel = ATH9K_ANI_SPUR_IMMUNE_LVL;
 		ah->ani[i].firstepLevel = ATH9K_ANI_FIRSTEP_LVL;
-		ah->ani[i].ofdmPhyErrBase =
-			AR_PHY_COUNTMAX - ATH9K_ANI_OFDM_TRIG_HIGH;
-		ah->ani[i].cckPhyErrBase =
-			AR_PHY_COUNTMAX - ATH9K_ANI_CCK_TRIG_HIGH;
+		if (ah->has_hw_phycounters) {
+			ah->ani[i].ofdmPhyErrBase =
+				AR_PHY_COUNTMAX - ATH9K_ANI_OFDM_TRIG_HIGH;
+			ah->ani[i].cckPhyErrBase =
+				AR_PHY_COUNTMAX - ATH9K_ANI_CCK_TRIG_HIGH;
+		}
 	}
+	if (ah->has_hw_phycounters) {
+		DPRINTF(ah->ah_sc, ATH_DBG_ANI,
+			"Setting OfdmErrBase = 0x%08x\n",
+			ah->ani[0].ofdmPhyErrBase);
+		DPRINTF(ah->ah_sc, ATH_DBG_ANI, "Setting cckErrBase = 0x%08x\n",
+			ah->ani[0].cckPhyErrBase);
 
-	DPRINTF(ah->ah_sc, ATH_DBG_ANI,
-		"Setting OfdmErrBase = 0x%08x\n",
-		ah->ani[0].ofdmPhyErrBase);
-	DPRINTF(ah->ah_sc, ATH_DBG_ANI, "Setting cckErrBase = 0x%08x\n",
-		ah->ani[0].cckPhyErrBase);
-
-	REG_WRITE(ah, AR_PHY_ERR_1, ah->ani[0].ofdmPhyErrBase);
-	REG_WRITE(ah, AR_PHY_ERR_2, ah->ani[0].cckPhyErrBase);
-	ath9k_enable_mib_counters(ah);
-
+		REG_WRITE(ah, AR_PHY_ERR_1, ah->ani[0].ofdmPhyErrBase);
+		REG_WRITE(ah, AR_PHY_ERR_2, ah->ani[0].cckPhyErrBase);
+		ath9k_enable_mib_counters(ah);
+	}
 	ah->aniperiod = ATH9K_ANI_PERIOD;
 	if (ah->config.enable_ani)
 		ah->proc_phyerr |= HAL_PROCESS_ANI;
@@ -807,7 +826,9 @@ void ath9k_hw_ani_disable(struct ath_hw *ah)
 {
 	DPRINTF(ah->ah_sc, ATH_DBG_ANI, "Disabling ANI\n");
 
-	ath9k_hw_disable_mib_counters(ah);
-	REG_WRITE(ah, AR_PHY_ERR_1, 0);
-	REG_WRITE(ah, AR_PHY_ERR_2, 0);
+	if (ah->has_hw_phycounters) {
+		ath9k_hw_disable_mib_counters(ah);
+		REG_WRITE(ah, AR_PHY_ERR_1, 0);
+		REG_WRITE(ah, AR_PHY_ERR_2, 0);
+	}
 }
