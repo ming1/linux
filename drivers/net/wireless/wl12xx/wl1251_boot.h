@@ -24,7 +24,7 @@
 #ifndef __BOOT_H__
 #define __BOOT_H__
 
-#include "wl1251.h"
+#include "wl12xx.h"
 
 int wl12xx_boot_soft_reset(struct wl12xx *wl);
 int wl12xx_boot_init_seq(struct wl12xx *wl);
