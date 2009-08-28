@@ -85,7 +85,11 @@ static int wl12xx_ps_set_elp(struct wl12xx *wl, bool enable)
 	if (enable) {
 		wl12xx_debug(DEBUG_PSM, "sleep auth psm/elp");
 
-		ret = wl12xx_acx_sleep_auth(wl, WL12XX_PSM_ELP);
+		/*
+		 * FIXME: we should PSM_ELP, but because of firmware wakeup
+		 * problems let's use only PSM_PS
+		 */
+		ret = wl12xx_acx_sleep_auth(wl, WL12XX_PSM_PS);
 		if (ret < 0)
 			return ret;
 
