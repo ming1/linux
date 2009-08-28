@@ -82,7 +82,6 @@ static int iwm_wext_siwap(struct net_device *dev, struct iw_request_info *info,
 			  struct sockaddr *ap_addr, char *extra)
 {
 	struct iwm_priv *iwm = ndev_to_iwm(dev);
-	int ret;
 
 	if (iwm->conf.mode == UMAC_MODE_IBSS)
 		return cfg80211_ibss_wext_siwap(dev, info, ap_addr, extra);
@@ -105,26 +104,10 @@ static int iwm_wext_siwap(struct net_device *dev, struct iw_request_info *info,
 	}
 
 	if (iwm->umac_profile_active) {
-		int i;
-
 		if (!memcmp(&iwm->umac_profile->bssid[0], iwm->bssid, ETH_ALEN))
 			return 0;
 
-		/*
-		 * If we're clearing the BSSID, and we're associated,
-		 * we have to clear the keys as they're no longer valid.
-		 */
-		if (is_zero_ether_addr(ap_addr->sa_data)) {
-			for (i = 0; i < IWM_NUM_KEYS; i++)
-				iwm->keys[i].in_use = 0;
-
-		}
-
-		ret = iwm_invalidate_mlme_profile(iwm);
-		if (ret < 0) {
-			IWM_ERR(iwm, "Couldn't invalidate profile\n");
-			return ret;
-		}
+		iwm_invalidate_mlme_profile(iwm);
 	}
 
 	if (iwm->umac_profile->ssid.ssid_len)
