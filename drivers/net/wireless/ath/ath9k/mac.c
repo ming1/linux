@@ -40,15 +40,20 @@ u32 ath9k_hw_gettxbuf(struct ath_hw *ah, u32 q)
 	return REG_READ(ah, AR_QTXDP(q));
 }
 
-void ath9k_hw_puttxbuf(struct ath_hw *ah, u32 q, u32 txdp)
+bool ath9k_hw_puttxbuf(struct ath_hw *ah, u32 q, u32 txdp)
 {
 	REG_WRITE(ah, AR_QTXDP(q), txdp);
+
+	return true;
 }
 
-void ath9k_hw_txstart(struct ath_hw *ah, u32 q)
+bool ath9k_hw_txstart(struct ath_hw *ah, u32 q)
 {
 	DPRINTF(ah->ah_sc, ATH_DBG_QUEUE, "Enable TXE on queue: %u\n", q);
+
 	REG_WRITE(ah, AR_Q_TXE, 1 << q);
+
+	return true;
 }
 
 u32 ath9k_hw_numtxpending(struct ath_hw *ah, u32 q)
@@ -173,7 +178,7 @@ bool ath9k_hw_stoptxdma(struct ath_hw *ah, u32 q)
 #undef ATH9K_TIME_QUANTUM
 }
 
-void ath9k_hw_filltxdesc(struct ath_hw *ah, struct ath_desc *ds,
+bool ath9k_hw_filltxdesc(struct ath_hw *ah, struct ath_desc *ds,
 			 u32 segLen, bool firstSeg,
 			 bool lastSeg, const struct ath_desc *ds0)
 {
@@ -197,6 +202,8 @@ void ath9k_hw_filltxdesc(struct ath_hw *ah, struct ath_desc *ds,
 	ads->ds_txstatus4 = ads->ds_txstatus5 = 0;
 	ads->ds_txstatus6 = ads->ds_txstatus7 = 0;
 	ads->ds_txstatus8 = ads->ds_txstatus9 = 0;
+
+	return true;
 }
 
 void ath9k_hw_cleartxdesc(struct ath_hw *ah, struct ath_desc *ds)
@@ -881,7 +888,7 @@ int ath9k_hw_rxprocdesc(struct ath_hw *ah, struct ath_desc *ds,
 	return 0;
 }
 
-void ath9k_hw_setuprxdesc(struct ath_hw *ah, struct ath_desc *ds,
+bool ath9k_hw_setuprxdesc(struct ath_hw *ah, struct ath_desc *ds,
 			  u32 size, u32 flags)
 {
 	struct ar5416_desc *ads = AR5416DESC(ds);
@@ -894,6 +901,8 @@ void ath9k_hw_setuprxdesc(struct ath_hw *ah, struct ath_desc *ds,
 	ads->ds_rxstatus8 &= ~AR_RxDone;
 	if (!(pCap->hw_caps & ATH9K_HW_CAP_AUTOSLEEP))
 		memset(&(ads->u), 0, sizeof(ads->u));
+
+	return true;
 }
 
 bool ath9k_hw_setrxabort(struct ath_hw *ah, bool set)
