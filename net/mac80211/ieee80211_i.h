@@ -24,6 +24,7 @@
 #include <linux/spinlock.h>
 #include <linux/etherdevice.h>
 #include <net/cfg80211.h>
+#include <net/iw_handler.h>
 #include <net/mac80211.h>
 #include "key.h"
 #include "sta_info.h"
@@ -949,6 +950,9 @@ void ieee80211_bss_info_change_notify(struct ieee80211_sub_if_data *sdata,
 				      u32 changed);
 void ieee80211_configure_filter(struct ieee80211_local *local);
 u32 ieee80211_reset_erp_info(struct ieee80211_sub_if_data *sdata);
+
+/* wireless extensions */
+extern const struct iw_handler_def ieee80211_iw_handler_def;
 
 /* STA code */
 void ieee80211_sta_setup_sdata(struct ieee80211_sub_if_data *sdata);
