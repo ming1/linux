@@ -1613,39 +1613,38 @@ struct mwl8k_cmd_mac_multicast_adr {
 
 #define MWL8K_ENABLE_RX_MULTICAST 0x000F
 
-static struct mwl8k_cmd_pkt *
-__mwl8k_cmd_mac_multicast_adr(struct ieee80211_hw *hw,
-			      int mc_count, struct dev_addr_list *mclist)
+static int mwl8k_cmd_mac_multicast_adr(struct ieee80211_hw *hw,
+					int mc_count,
+					struct dev_addr_list *mclist)
 {
-	struct mwl8k_priv *priv = hw->priv;
 	struct mwl8k_cmd_mac_multicast_adr *cmd;
-	int size;
-	int i;
+	int index = 0;
+	int rc;
+	int size = sizeof(*cmd) + mc_count * ETH_ALEN;
 
-	if (mc_count > priv->num_mcaddrs)
-		mc_count = priv->num_mcaddrs;
-
-	size = sizeof(*cmd) + mc_count * ETH_ALEN;
-
-	cmd = kzalloc(size, GFP_ATOMIC);
+	cmd = kzalloc(size, GFP_KERNEL);
 	if (cmd == NULL)
-		return NULL;
+		return -ENOMEM;
 
 	cmd->header.code = cpu_to_le16(MWL8K_CMD_MAC_MULTICAST_ADR);
 	cmd->header.length = cpu_to_le16(size);
 	cmd->action = cpu_to_le16(MWL8K_ENABLE_RX_MULTICAST);
 	cmd->numaddr = cpu_to_le16(mc_count);
 
-	for (i = 0; i < mc_count && mclist; i++) {
+	while (index < mc_count && mclist) {
 		if (mclist->da_addrlen != ETH_ALEN) {
-			kfree(cmd);
-			return NULL;
+			rc = -EINVAL;
+			goto mwl8k_cmd_mac_multicast_adr_exit;
 		}
-		memcpy(cmd->addr[i], mclist->da_addr, ETH_ALEN);
+		memcpy(cmd->addr[index++], mclist->da_addr, ETH_ALEN);
 		mclist = mclist->next;
 	}
 
-	return &cmd->header;
+	rc = mwl8k_post_cmd(hw, &cmd->header);
+
+mwl8k_cmd_mac_multicast_adr_exit:
+	kfree(cmd);
+	return rc;
 }
 
 /*
@@ -3092,21 +3091,12 @@ static void mwl8k_bss_info_changed(struct ieee80211_hw *hw,
 		printk(KERN_ERR "%s() timed out\n", __func__);
 }
 
-static u64 mwl8k_prepare_multicast(struct ieee80211_hw *hw,
-				   int mc_count, struct dev_addr_list *mclist)
-{
-	struct mwl8k_cmd_pkt *cmd;
-
-	cmd = __mwl8k_cmd_mac_multicast_adr(hw, mc_count, mclist);
-
-	return (unsigned long)cmd;
-}
-
 struct mwl8k_configure_filter_worker {
 	struct mwl8k_work_struct header;
 	unsigned int changed_flags;
-	unsigned int total_flags;
-	struct mwl8k_cmd_pkt *multicast_adr_cmd;
+	unsigned int *total_flags;
+	int mc_count;
+	struct dev_addr_list *mclist;
 };
 
 #define MWL8K_SUPPORTED_IF_FLAGS	FIF_BCN_PRBRESP_PROMISC
@@ -3115,12 +3105,18 @@ static int mwl8k_configure_filter_wt(struct work_struct *wt)
 {
 	struct mwl8k_configure_filter_worker *worker =
 		(struct mwl8k_configure_filter_worker *)wt;
+
 	struct ieee80211_hw *hw = worker->header.hw;
+	unsigned int changed_flags = worker->changed_flags;
+	unsigned int *total_flags = worker->total_flags;
+	int mc_count = worker->mc_count;
+	struct dev_addr_list *mclist = worker->mclist;
+
 	struct mwl8k_priv *priv = hw->priv;
 	int rc = 0;
 
-	if (worker->changed_flags & FIF_BCN_PRBRESP_PROMISC) {
-		if (worker->total_flags & FIF_BCN_PRBRESP_PROMISC)
+	if (changed_flags & FIF_BCN_PRBRESP_PROMISC) {
+		if (*total_flags & FIF_BCN_PRBRESP_PROMISC)
 			rc = mwl8k_cmd_set_pre_scan(hw);
 		else {
 			u8 *bssid;
@@ -3133,11 +3129,44 @@ static int mwl8k_configure_filter_wt(struct work_struct *wt)
 		}
 	}
 
-	if (!rc && worker->multicast_adr_cmd != NULL)
-		rc = mwl8k_post_cmd(hw, worker->multicast_adr_cmd);
-	kfree(worker->multicast_adr_cmd);
+	if (rc)
+		goto mwl8k_configure_filter_exit;
+	if (mc_count) {
+		if (mc_count > priv->num_mcaddrs)
+			mc_count = priv->num_mcaddrs;
 
+		rc = mwl8k_cmd_mac_multicast_adr(hw, mc_count, mclist);
+		if (rc)
+			printk(KERN_ERR
+			"%s()Error setting multicast addresses\n",
+			__func__);
+	}
+
+mwl8k_configure_filter_exit:
 	return rc;
+}
+
+static u64 mwl8k_prepare_multicast(struct ieee80211_hw *hw,
+				   int mc_count, struct dev_addr_list *mclist)
+{
+	struct mwl8k_configure_filter_worker *worker;
+
+	worker = kzalloc(sizeof(*worker), GFP_ATOMIC);
+
+	if (!worker)
+		return 0;
+
+	/*
+	 * XXX: This is _HORRIBLY_ broken!!
+	 *
+	 *	No locking, the mclist pointer might be invalid as soon as this
+	 *	function returns, something in the list might be invalidated
+	 *	once we get to the worker, etc...
+	 */
+	worker->mc_count = mc_count;
+	worker->mclist = mclist;
+
+	return (u64)worker;
 }
 
 static void mwl8k_configure_filter(struct ieee80211_hw *hw,
@@ -3145,8 +3174,9 @@ static void mwl8k_configure_filter(struct ieee80211_hw *hw,
 				   unsigned int *total_flags,
 				   u64 multicast)
 {
+
+	struct mwl8k_configure_filter_worker *worker = (void *)multicast;
 	struct mwl8k_priv *priv = hw->priv;
-	struct mwl8k_configure_filter_worker *worker;
 
 	/* Clear unsupported feature flags */
 	*total_flags &= MWL8K_SUPPORTED_IF_FLAGS;
@@ -3154,13 +3184,12 @@ static void mwl8k_configure_filter(struct ieee80211_hw *hw,
 	if (!(changed_flags & MWL8K_SUPPORTED_IF_FLAGS))
 		return;
 
-	worker = kzalloc(sizeof(*worker), GFP_ATOMIC);
 	if (worker == NULL)
 		return;
 
+	worker->header.options = MWL8K_WQ_QUEUE_ONLY | MWL8K_WQ_TX_WAIT_EMPTY;
 	worker->changed_flags = changed_flags;
-	worker->total_flags = *total_flags;
-	worker->multicast_adr_cmd = (void *)(unsigned long)multicast;
+	worker->total_flags = total_flags;
 
 	mwl8k_queue_work(hw, &worker->header, priv->config_wq,
 			 mwl8k_configure_filter_wt);
