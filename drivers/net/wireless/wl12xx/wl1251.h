@@ -291,7 +291,7 @@ struct wl1251 {
 	struct ieee80211_hw *hw;
 	bool mac80211_registered;
 
-	void *if_priv;
+	struct spi_device *spi;
 	const struct wl1251_if_operations *if_ops;
 
 	void (*set_power)(bool enable);
