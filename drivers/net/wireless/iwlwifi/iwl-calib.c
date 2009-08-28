@@ -86,7 +86,7 @@ int iwl_send_calib_results(struct iwl_priv *priv)
 
 	struct iwl_host_cmd hcmd = {
 		.id = REPLY_PHY_CALIBRATION_CMD,
-		.flags = CMD_SIZE_HUGE,
+		.meta.flags = CMD_SIZE_HUGE,
 	};
 
 	for (i = 0; i < IWL_CALIB_MAX; i++) {
@@ -419,7 +419,7 @@ static int iwl_sensitivity_write(struct iwl_priv *priv)
 	struct iwl_host_cmd cmd_out = {
 		.id = SENSITIVITY_CMD,
 		.len = sizeof(struct iwl_sensitivity_cmd),
-		.flags = CMD_ASYNC,
+		.meta.flags = CMD_ASYNC,
 		.data = &cmd,
 	};
 
