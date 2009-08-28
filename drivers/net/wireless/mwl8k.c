@@ -186,10 +186,9 @@ struct mwl8k_priv {
 	struct ieee80211_channel channels[14];
 	struct ieee80211_rate rates[12];
 
-	bool radio_on;
-
 	/* RF preamble: Short, Long or Auto */
 	u8	radio_preamble;
+	u8	radio_state;
 
 	/* WMM MODE 1 for enabled; 0 for disabled */
 	bool wmm_mode;
@@ -279,6 +278,9 @@ static const struct ieee80211_rate mwl8k_rates[] = {
 };
 
 /* Radio settings */
+#define MWL8K_RADIO_FORCE		0x2
+#define MWL8K_RADIO_ENABLE		0x1
+#define MWL8K_RADIO_DISABLE		0x0
 #define MWL8K_RADIO_AUTO_PREAMBLE	0x0005
 #define MWL8K_RADIO_SHORT_PREAMBLE	0x0003
 #define MWL8K_RADIO_LONG_PREAMBLE	0x0001
@@ -1193,7 +1195,7 @@ static int mwl8k_tx_wait_empty(struct ieee80211_hw *hw, u32 delay_ms)
 	count = mwl8k_txq_busy(priv);
 	if (count) {
 		priv->tx_wait = &cmd_wait;
-		if (priv->radio_on)
+		if (priv->radio_state)
 			mwl8k_tx_start(priv);
 	}
 	spin_unlock_bh(&priv->tx_lock);
@@ -1316,7 +1318,7 @@ static void mwl8k_txq_reclaim(struct ieee80211_hw *hw, int index, int force)
 
 		ieee80211_tx_status_irqsafe(hw, skb);
 
-		wake = !priv->inconfig && priv->radio_on;
+		wake = !priv->inconfig && priv->radio_state;
 	}
 
 	if (wake)
@@ -1724,15 +1726,17 @@ struct mwl8k_cmd_802_11_radio_control {
 	__le16 radio_on;
 } __attribute__((packed));
 
-static int
-mwl8k_cmd_802_11_radio_control(struct ieee80211_hw *hw, bool enable, bool force)
+static int mwl8k_cmd_802_11_radio_control(struct ieee80211_hw *hw, int enable)
 {
 	struct mwl8k_priv *priv = hw->priv;
 	struct mwl8k_cmd_802_11_radio_control *cmd;
 	int rc;
 
-	if (enable == priv->radio_on && !force)
+	if (((enable & MWL8K_RADIO_ENABLE) == priv->radio_state) &&
+	    !(enable & MWL8K_RADIO_FORCE))
 		return 0;
+
+	enable &= MWL8K_RADIO_ENABLE;
 
 	cmd = kzalloc(sizeof(*cmd), GFP_KERNEL);
 	if (cmd == NULL)
@@ -1748,19 +1752,9 @@ mwl8k_cmd_802_11_radio_control(struct ieee80211_hw *hw, bool enable, bool force)
 	kfree(cmd);
 
 	if (!rc)
-		priv->radio_on = enable;
+		priv->radio_state = enable;
 
 	return rc;
-}
-
-static int mwl8k_cmd_802_11_radio_disable(struct ieee80211_hw *hw)
-{
-	return mwl8k_cmd_802_11_radio_control(hw, 0, 0);
-}
-
-static int mwl8k_cmd_802_11_radio_enable(struct ieee80211_hw *hw)
-{
-	return mwl8k_cmd_802_11_radio_control(hw, 1, 0);
 }
 
 static int
@@ -1776,7 +1770,8 @@ mwl8k_set_radio_preamble(struct ieee80211_hw *hw, bool short_preamble)
 		MWL8K_RADIO_SHORT_PREAMBLE :
 		MWL8K_RADIO_LONG_PREAMBLE);
 
-	return mwl8k_cmd_802_11_radio_control(hw, 1, 1);
+	return mwl8k_cmd_802_11_radio_control(hw,
+			MWL8K_RADIO_ENABLE | MWL8K_RADIO_FORCE);
 }
 
 /*
@@ -2488,7 +2483,7 @@ static irqreturn_t mwl8k_interrupt(int irq, void *dev_id)
 
 	if (status & MWL8K_A2H_INT_QUEUE_EMPTY) {
 		if (!priv->inconfig &&
-			priv->radio_on &&
+			priv->radio_state &&
 			mwl8k_txq_busy(priv))
 				mwl8k_tx_start(priv);
 	}
@@ -2666,7 +2661,7 @@ static void mwl8k_config_thread(struct work_struct *wt)
 
 	spin_lock_irq(&priv->tx_lock);
 	priv->inconfig = false;
-	if (priv->pending_tx_pkts && priv->radio_on)
+	if (priv->pending_tx_pkts && priv->radio_state)
 		mwl8k_tx_start(priv);
 	spin_unlock_irq(&priv->tx_lock);
 	ieee80211_wake_queues(hw);
@@ -2750,7 +2745,7 @@ static int mwl8k_start_wt(struct work_struct *wt)
 	}
 
 	/* Turn on radio */
-	if (mwl8k_cmd_802_11_radio_enable(hw)) {
+	if (mwl8k_cmd_802_11_radio_control(hw, MWL8K_RADIO_ENABLE)) {
 		rc = -EIO;
 		goto mwl8k_start_exit;
 	}
@@ -2844,8 +2839,11 @@ static int mwl8k_stop_wt(struct work_struct *wt)
 {
 	struct mwl8k_stop_worker *worker = (struct mwl8k_stop_worker *)wt;
 	struct ieee80211_hw *hw = worker->header.hw;
+	int rc;
 
-	return mwl8k_cmd_802_11_radio_disable(hw);
+	rc = mwl8k_cmd_802_11_radio_control(hw, MWL8K_RADIO_DISABLE);
+
+	return rc;
 }
 
 static void mwl8k_stop(struct ieee80211_hw *hw)
@@ -2960,7 +2958,7 @@ static int mwl8k_config_wt(struct work_struct *wt)
 	struct mwl8k_priv *priv = hw->priv;
 	int rc = 0;
 
-	if (mwl8k_cmd_802_11_radio_enable(hw)) {
+	if (mwl8k_cmd_802_11_radio_control(hw, MWL8K_RADIO_ENABLE)) {
 		rc = -EINVAL;
 		goto mwl8k_config_exit;
 	}
@@ -3505,7 +3503,7 @@ static int __devinit mwl8k_probe(struct pci_dev *pdev,
 
 	/* Set default radio state and preamble */
 	priv->radio_preamble = MWL8K_RADIO_DEFAULT_PREAMBLE;
-	priv->radio_on = 0;
+	priv->radio_state = MWL8K_RADIO_DISABLE;
 
 	/* Finalize join worker */
 	INIT_WORK(&priv->finalize_join_worker, mwl8k_finalize_join_worker);
@@ -3586,7 +3584,7 @@ static int __devinit mwl8k_probe(struct pci_dev *pdev,
 	}
 
 	/* Turn radio off */
-	rc = mwl8k_cmd_802_11_radio_disable(hw);
+	rc = mwl8k_cmd_802_11_radio_control(hw, MWL8K_RADIO_DISABLE);
 	if (rc) {
 		printk(KERN_ERR "%s: Cannot disable\n", priv->name);
 		goto err_stop_firmware;
