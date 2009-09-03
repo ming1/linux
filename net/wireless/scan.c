@@ -495,6 +495,9 @@ cfg80211_inform_bss(struct wiphy *wiphy,
 
 	kref_init(&res->ref);
 
+	/* cfg80211_bss_update() eats up res - we ensure we free it there */
+	kmemleak_ignore(res);
+
 	res = cfg80211_bss_update(wiphy_to_dev(wiphy), res, 0);
 	if (!res)
 		return NULL;
