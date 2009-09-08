@@ -1127,7 +1127,7 @@ int cfg80211_wext_giwrate(struct net_device *dev,
 	struct cfg80211_registered_device *rdev = wiphy_to_dev(wdev->wiphy);
 	/* we are under RTNL - globally locked - so can use a static struct */
 	static struct station_info sinfo;
-	u8 addr[ETH_ALEN];
+	u8 *addr;
 	int err;
 
 	if (wdev->iftype != NL80211_IFTYPE_STATION)
@@ -1136,15 +1136,12 @@ int cfg80211_wext_giwrate(struct net_device *dev,
 	if (!rdev->ops->get_station)
 		return -EOPNOTSUPP;
 
-	err = 0;
-	wdev_lock(wdev);
 	if (wdev->current_bss)
-		memcpy(addr, wdev->current_bss->pub.bssid, ETH_ALEN);
+		addr = wdev->current_bss->pub.bssid;
+	else if (wdev->wext.connect.bssid)
+		addr = wdev->wext.connect.bssid;
 	else
-		err = -EOPNOTSUPP;
-	wdev_unlock(wdev);
-	if (err)
-		return err;
+		return -EOPNOTSUPP;
 
 	err = rdev->ops->get_station(&rdev->wiphy, dev, addr, &sinfo);
 	if (err)
