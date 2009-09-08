@@ -518,7 +518,7 @@ static int ieee80211_stop(struct net_device *dev)
 			 * the scan_sdata is NULL already don't send out a
 			 * scan event to userspace -- the scan is incomplete.
 			 */
-			if (test_bit(SCAN_SW_SCANNING, &local->scanning))
+			if (local->sw_scanning)
 				ieee80211_scan_completed(&local->hw, true);
 		}
 
@@ -920,7 +920,7 @@ u32 __ieee80211_recalc_idle(struct ieee80211_local *local)
 	struct ieee80211_sub_if_data *sdata;
 	int count = 0;
 
-	if (local->scanning)
+	if (local->hw_scanning || local->sw_scanning)
 		return ieee80211_idle_off(local, "scanning");
 
 	list_for_each_entry(sdata, &local->interfaces, list) {
