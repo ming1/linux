@@ -412,9 +412,11 @@ static void ieee80211_send_deauth_disassoc(struct ieee80211_sub_if_data *sdata,
 	mgmt->u.deauth.reason_code = cpu_to_le16(reason);
 
 	if (stype == IEEE80211_STYPE_DEAUTH)
-		cfg80211_send_deauth(sdata->dev, (u8 *) mgmt, skb->len);
+		cfg80211_send_deauth(sdata->dev, (u8 *) mgmt, skb->len,
+				     GFP_KERNEL);
 	else
-		cfg80211_send_disassoc(sdata->dev, (u8 *) mgmt, skb->len);
+		cfg80211_send_disassoc(sdata->dev, (u8 *) mgmt, skb->len,
+				       GFP_KERNEL);
 	ieee80211_tx_skb(sdata, skb, ifmgd->flags & IEEE80211_STA_MFP_ENABLED);
 }
 
@@ -1837,10 +1839,12 @@ static void ieee80211_sta_rx_queued_mgmt(struct ieee80211_sub_if_data *sdata,
 			/* no action */
 			break;
 		case RX_MGMT_CFG80211_DEAUTH:
-			cfg80211_send_deauth(sdata->dev, (u8 *)mgmt, skb->len);
+			cfg80211_send_deauth(sdata->dev, (u8 *) mgmt,
+					     skb->len, GFP_KERNEL);
 			break;
 		case RX_MGMT_CFG80211_DISASSOC:
-			cfg80211_send_disassoc(sdata->dev, (u8 *)mgmt, skb->len);
+			cfg80211_send_disassoc(sdata->dev, (u8 *) mgmt,
+					       skb->len, GFP_KERNEL);
 			break;
 		default:
 			WARN(1, "unexpected: %d", rma);
@@ -1889,10 +1893,12 @@ static void ieee80211_sta_rx_queued_mgmt(struct ieee80211_sub_if_data *sdata,
 		/* no action */
 		break;
 	case RX_MGMT_CFG80211_AUTH:
-		cfg80211_send_rx_auth(sdata->dev, (u8 *) mgmt, skb->len);
+		cfg80211_send_rx_auth(sdata->dev, (u8 *) mgmt, skb->len,
+				      GFP_KERNEL);
 		break;
 	case RX_MGMT_CFG80211_ASSOC:
-		cfg80211_send_rx_assoc(sdata->dev, (u8 *) mgmt, skb->len);
+		cfg80211_send_rx_assoc(sdata->dev, (u8 *) mgmt, skb->len,
+				       GFP_KERNEL);
 		break;
 	default:
 		WARN(1, "unexpected: %d", rma);
@@ -2020,11 +2026,13 @@ static void ieee80211_sta_work(struct work_struct *work)
 		switch (wk->tries) {
 		case RX_MGMT_CFG80211_AUTH_TO:
 			cfg80211_send_auth_timeout(sdata->dev,
-						   wk->bss->cbss.bssid);
+						   wk->bss->cbss.bssid,
+						   GFP_KERNEL);
 			break;
 		case RX_MGMT_CFG80211_ASSOC_TO:
-			cfg80211_send_assoc_timeout(sdata->dev,
-						    wk->bss->cbss.bssid);
+			cfg80211_send_auth_timeout(sdata->dev,
+						   wk->bss->cbss.bssid,
+						   GFP_KERNEL);
 			break;
 		default:
 			WARN(1, "unexpected: %d", wk->tries);
