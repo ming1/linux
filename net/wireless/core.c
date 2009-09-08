@@ -34,7 +34,9 @@ MODULE_DESCRIPTION("wireless configuration support");
 LIST_HEAD(cfg80211_rdev_list);
 
 /*
- * This is used to protect the cfg80211_rdev_list
+ * This is used to protect the cfg80211_rdev_list, cfg80211_regdomain,
+ * country_ie_regdomain, the reg_beacon_list and the the last regulatory
+ * request receipt (last_request).
  */
 DEFINE_MUTEX(cfg80211_mutex);
 
