@@ -66,26 +66,38 @@ out:
  * send test command to firmware
  *
  * @wl: wl struct
- * @buf: buffer containing the command, with all headers, must work with dma
+ * @buf: buffer containing the command, without headers, no dma requirements
  * @len: length of the buffer
  * @answer: is answer needed
+ *
+ * FIXME: cmd_test users need to be converted to the new interface
  */
 int wl12xx_cmd_test(struct wl12xx *wl, void *buf, size_t buf_len, u8 answer)
 {
+	struct wl12xx_command *cmd;
+	size_t cmd_len;
 	int ret;
 
 	wl12xx_debug(DEBUG_CMD, "cmd test");
 
-	ret = wl12xx_cmd_send(wl, CMD_TEST, buf, buf_len);
+	cmd = kzalloc(sizeof(*cmd), GFP_KERNEL);
+	if (!cmd) {
+		ret = -ENOMEM;
+		goto out;
+	}
 
+	memcpy(cmd->parameters, buf, buf_len);
+
+	/* FIXME: ugly */
+	cmd_len = sizeof(struct wl12xx_cmd_header) + buf_len;
+
+	ret = wl12xx_cmd_send(wl, CMD_TEST, cmd, cmd_len);
 	if (ret < 0) {
 		wl12xx_warning("TEST command failed");
-		return ret;
+		goto out;
 	}
 
 	if (answer) {
-		struct wl12xx_command *cmd_answer;
-
 		/*
 		 * The test command got in, we can read the answer.
 		 * The answer would be a wl12xx_command, where the
@@ -94,18 +106,19 @@ int wl12xx_cmd_test(struct wl12xx *wl, void *buf, size_t buf_len, u8 answer)
 
 		wl12xx_ps_elp_wakeup(wl);
 
-		wl12xx_spi_mem_read(wl, wl->cmd_box_addr, buf, buf_len);
+		wl12xx_spi_mem_read(wl, wl->cmd_box_addr, cmd, cmd_len);
 
 		wl12xx_ps_elp_sleep(wl);
 
-		cmd_answer = buf;
-
-		if (cmd_answer->header.status != CMD_STATUS_SUCCESS)
+		if (cmd->header.status != CMD_STATUS_SUCCESS)
 			wl12xx_error("TEST command answer error: %d",
-				     cmd_answer->header.status);
+				     cmd->header.status);
+		memcpy(buf, cmd->parameters, buf_len);
 	}
 
-	return 0;
+out:
+	kfree(cmd);
+	return ret;
 }
 
 /**
