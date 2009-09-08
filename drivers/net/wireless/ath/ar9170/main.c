@@ -917,10 +917,8 @@ static void ar9170_handle_mpdu(struct ar9170 *ar, u8 *buf, int len)
 		ar9170_rx_phy_status(ar, phy, &status);
 
 	skb = ar9170_rx_copy_data(buf, mpdu_len);
-	if (likely(skb)) {
-		memcpy(IEEE80211_SKB_RXCB(skb), &status, sizeof(status));
-		ieee80211_rx_irqsafe(ar->hw, skb);
-	}
+	if (likely(skb))
+		ieee80211_rx_irqsafe(ar->hw, skb, &status);
 }
 
 void ar9170_rx(struct ar9170 *ar, struct sk_buff *skb)

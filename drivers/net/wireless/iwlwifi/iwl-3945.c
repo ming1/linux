@@ -577,8 +577,7 @@ static void iwl3945_pass_packet_to_mac80211(struct iwl_priv *priv,
 	if (ieee80211_is_data(hdr->frame_control))
 		priv->rxtxpackets += len;
 #endif
-	memcpy(IEEE80211_SKB_RXCB(rxb->skb), stats, sizeof(*stats));
-	ieee80211_rx_irqsafe(priv->hw, rxb->skb);
+	ieee80211_rx_irqsafe(priv->hw, rxb->skb, stats);
 	rxb->skb = NULL;
 }
 
