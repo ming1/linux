@@ -1071,9 +1071,10 @@ ath5k_setup_bands(struct ieee80211_hw *hw)
 }
 
 /*
- * Set/change channels. We always reset the chip.
- * To accomplish this we must first cleanup any pending DMA,
- * then restart stuff after a la  ath5k_init.
+ * Set/change channels.  If the channel is really being changed,
+ * it's done by reseting the chip.  To accomplish this we must
+ * first cleanup any pending DMA, then restart stuff after a la
+ * ath5k_init.
  *
  * Called with sc->lock.
  */
@@ -1083,13 +1084,19 @@ ath5k_chan_set(struct ath5k_softc *sc, struct ieee80211_channel *chan)
 	ATH5K_DBG(sc, ATH5K_DEBUG_RESET, "(%u MHz) -> (%u MHz)\n",
 		sc->curchan->center_freq, chan->center_freq);
 
-	/*
-	 * To switch channels clear any pending DMA operations;
-	 * wait long enough for the RX fifo to drain, reset the
-	 * hardware at the new frequency, and then re-enable
-	 * the relevant bits of the h/w.
-	 */
-	return ath5k_reset(sc, chan);
+	if (chan->center_freq != sc->curchan->center_freq ||
+		chan->hw_value != sc->curchan->hw_value) {
+
+		/*
+		 * To switch channels clear any pending DMA operations;
+		 * wait long enough for the RX fifo to drain, reset the
+		 * hardware at the new frequency, and then re-enable
+		 * the relevant bits of the h/w.
+		 */
+		return ath5k_reset(sc, chan);
+	}
+
+	return 0;
 }
 
 static void
@@ -2804,11 +2811,9 @@ ath5k_config(struct ieee80211_hw *hw, u32 changed)
 
 	mutex_lock(&sc->lock);
 
-	if (changed & IEEE80211_CONF_CHANGE_CHANNEL) {
-		ret = ath5k_chan_set(sc, conf->channel);
-		if (ret < 0)
-			goto unlock;
-	}
+	ret = ath5k_chan_set(sc, conf->channel);
+	if (ret < 0)
+		goto unlock;
 
 	if ((changed & IEEE80211_CONF_CHANGE_POWER) &&
 	(sc->power_level != conf->power_level)) {
