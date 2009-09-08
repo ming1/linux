@@ -36,6 +36,8 @@
 #include "iwl-core.h"
 
 
+#define IWL_CMD(x) case x: return #x
+
 const char *get_cmd_string(u8 cmd)
 {
 	switch (cmd) {
