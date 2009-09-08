@@ -904,7 +904,6 @@ static void ath9k_hw_set_def_power_per_rate_table(struct ath_hw *ah,
 #define REDUCE_SCALED_POWER_BY_TWO_CHAIN     6  /* 10*log10(2)*2 */
 #define REDUCE_SCALED_POWER_BY_THREE_CHAIN   10 /* 10*log10(3)*2 */
 
-	struct ath_regulatory *regulatory = ath9k_hw_regulatory(ah);
 	struct ar5416_eeprom_def *pEepData = &ah->eeprom.def;
 	u16 twiceMaxEdgePower = AR5416_MAX_RATE_POWER;
 	static const u16 tpScaleReductionTable[5] =
@@ -954,9 +953,9 @@ static void ath9k_hw_set_def_power_per_rate_table(struct ath_hw *ah,
 
 	maxRegAllowedPower = twiceMaxRegulatoryPower + twiceLargestAntenna;
 
-	if (regulatory->tp_scale != ATH9K_TP_SCALE_MAX) {
+	if (ah->regulatory.tp_scale != ATH9K_TP_SCALE_MAX) {
 		maxRegAllowedPower -=
-			(tpScaleReductionTable[(regulatory->tp_scale)] * 2);
+			(tpScaleReductionTable[(ah->regulatory.tp_scale)] * 2);
 	}
 
 	scaledPower = min(powerLimit, maxRegAllowedPower);
@@ -1164,7 +1163,6 @@ static void ath9k_hw_def_set_txpower(struct ath_hw *ah,
 				    u8 powerLimit)
 {
 #define RT_AR_DELTA(x) (ratesArray[x] - cck_ofdm_delta)
-	struct ath_regulatory *regulatory = ath9k_hw_regulatory(ah);
 	struct ar5416_eeprom_def *pEepData = &ah->eeprom.def;
 	struct modal_eep_header *pModal =
 		&(pEepData->modalHeader[IS_CHAN_2GHZ(chan)]);
@@ -1294,19 +1292,19 @@ static void ath9k_hw_def_set_txpower(struct ath_hw *ah,
 		i = rateHt20_0;
 
 	if (AR_SREV_9280_10_OR_LATER(ah))
-		regulatory->max_power_level =
+		ah->regulatory.max_power_level =
 			ratesArray[i] + AR5416_PWR_TABLE_OFFSET * 2;
 	else
-		regulatory->max_power_level = ratesArray[i];
+		ah->regulatory.max_power_level = ratesArray[i];
 
 	switch(ar5416_get_ntxchains(ah->txchainmask)) {
 	case 1:
 		break;
 	case 2:
-		regulatory->max_power_level += INCREASE_MAXPOW_BY_TWO_CHAIN;
+		ah->regulatory.max_power_level += INCREASE_MAXPOW_BY_TWO_CHAIN;
 		break;
 	case 3:
-		regulatory->max_power_level += INCREASE_MAXPOW_BY_THREE_CHAIN;
+		ah->regulatory.max_power_level += INCREASE_MAXPOW_BY_THREE_CHAIN;
 		break;
 	default:
 		DPRINTF(ah->ah_sc, ATH_DBG_EEPROM,
