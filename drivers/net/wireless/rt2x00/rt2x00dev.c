@@ -206,7 +206,6 @@ void rt2x00lib_txdone(struct queue_entry *entry,
 	unsigned int header_length = ieee80211_get_hdrlen_from_skb(entry->skb);
 	u8 rate_idx, rate_flags, retry_rates;
 	unsigned int i;
-	bool success;
 
 	/*
 	 * Unmap the skb.
@@ -235,18 +234,13 @@ void rt2x00lib_txdone(struct queue_entry *entry,
 	rt2x00debug_dump_frame(rt2x00dev, DUMP_FRAME_TXDONE, entry->skb);
 
 	/*
-	 * Determine if the frame has been successfully transmitted.
-	 */
-	success =
-	    test_bit(TXDONE_SUCCESS, &txdesc->flags) ||
-	    test_bit(TXDONE_UNKNOWN, &txdesc->flags) ||
-	    test_bit(TXDONE_FALLBACK, &txdesc->flags);
-
-	/*
 	 * Update TX statistics.
 	 */
-	rt2x00dev->link.qual.tx_success += success;
-	rt2x00dev->link.qual.tx_failed += !success;
+	rt2x00dev->link.qual.tx_success +=
+	    test_bit(TXDONE_SUCCESS, &txdesc->flags) ||
+	    test_bit(TXDONE_UNKNOWN, &txdesc->flags);
+	rt2x00dev->link.qual.tx_failed +=
+	    test_bit(TXDONE_FAILURE, &txdesc->flags);
 
 	rate_idx = skbdesc->tx_rate_idx;
 	rate_flags = skbdesc->tx_rate_flags;
@@ -269,20 +263,22 @@ void rt2x00lib_txdone(struct queue_entry *entry,
 		tx_info->status.rates[i].flags = rate_flags;
 		tx_info->status.rates[i].count = 1;
 	}
-	if (i < (IEEE80211_TX_MAX_RATES - 1))
+	if (i < (IEEE80211_TX_MAX_RATES -1))
 		tx_info->status.rates[i].idx = -1; /* terminate */
 
 	if (!(tx_info->flags & IEEE80211_TX_CTL_NO_ACK)) {
-		if (success)
+		if (test_bit(TXDONE_SUCCESS, &txdesc->flags) ||
+				test_bit(TXDONE_UNKNOWN, &txdesc->flags))
 			tx_info->flags |= IEEE80211_TX_STAT_ACK;
-		else
+		else if (test_bit(TXDONE_FAILURE, &txdesc->flags))
 			rt2x00dev->low_level_stats.dot11ACKFailureCount++;
 	}
 
 	if (rate_flags & IEEE80211_TX_RC_USE_RTS_CTS) {
-		if (success)
+		if (test_bit(TXDONE_SUCCESS, &txdesc->flags) ||
+				test_bit(TXDONE_UNKNOWN, &txdesc->flags))
 			rt2x00dev->low_level_stats.dot11RTSSuccessCount++;
-		else
+		else if (test_bit(TXDONE_FAILURE, &txdesc->flags))
 			rt2x00dev->low_level_stats.dot11RTSFailureCount++;
 	}
 
