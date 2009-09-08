@@ -309,34 +309,6 @@ out:
 	mutex_unlock(&wl->mutex);
 }
 
-static int wl1251_join(struct wl1251 *wl, u8 bss_type, u8 channel,
-		       u16 beacon_interval, u8 dtim_period)
-{
-	int ret;
-
-	ret = wl1251_acx_frame_rates(wl, DEFAULT_HW_GEN_TX_RATE,
-				     DEFAULT_HW_GEN_MODULATION_TYPE,
-				     wl->tx_mgmt_frm_rate,
-				     wl->tx_mgmt_frm_mod);
-	if (ret < 0)
-		goto out;
-
-
-	ret = wl1251_cmd_join(wl, bss_type, channel, beacon_interval,
-			      dtim_period);
-	if (ret < 0)
-		goto out;
-
-	/*
-	 * FIXME: we should wait for JOIN_EVENT_COMPLETE_ID but to simplify
-	 * locking we just sleep instead, for now
-	 */
-	msleep(10);
-
-out:
-	return ret;
-}
-
 static void wl1251_filter_work(struct work_struct *work)
 {
 	struct wl1251 *wl =
@@ -352,8 +324,8 @@ static void wl1251_filter_work(struct work_struct *work)
 	if (ret < 0)
 		goto out;
 
-	ret = wl1251_join(wl, wl->bss_type, wl->channel, wl->beacon_int,
-			  wl->dtim_period);
+	ret = wl1251_cmd_join(wl, wl->bss_type, wl->channel, wl->beacon_int,
+				   wl->dtim_period);
 	if (ret < 0)
 		goto out_sleep;
 
@@ -593,8 +565,8 @@ static int wl1251_op_config(struct ieee80211_hw *hw, u32 changed)
 		goto out;
 
 	if (channel != wl->channel) {
-		ret = wl1251_join(wl, wl->bss_type, wl->channel,
-				  wl->beacon_int, wl->dtim_period);
+		ret = wl1251_cmd_join(wl, wl->bss_type, wl->channel,
+				      wl->beacon_int, wl->dtim_period);
 		if (ret < 0)
 			goto out_sleep;
 
@@ -1151,8 +1123,9 @@ static void wl1251_op_bss_info_changed(struct ieee80211_hw *hw,
 			goto out;
 
 		if (wl->bss_type != BSS_TYPE_IBSS) {
-			ret = wl1251_join(wl, wl->bss_type, wl->channel,
-					  wl->beacon_int, wl->dtim_period);
+			ret = wl1251_cmd_join(wl, wl->bss_type, wl->channel,
+					      wl->beacon_int,
+					      wl->dtim_period);
 			if (ret < 0)
 				goto out_sleep;
 			wl1251_warning("Set ctsprotect failed %d", ret);
@@ -1178,8 +1151,8 @@ static void wl1251_op_bss_info_changed(struct ieee80211_hw *hw,
 		if (ret < 0)
 			goto out;
 
-		ret = wl1251_join(wl, wl->bss_type, wl->beacon_int,
-				  wl->channel, wl->dtim_period);
+		ret = wl1251_cmd_join(wl, wl->bss_type, wl->beacon_int,
+				      wl->channel, wl->dtim_period);
 
 		if (ret < 0)
 			goto out;
