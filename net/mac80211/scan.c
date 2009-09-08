@@ -292,7 +292,13 @@ void ieee80211_scan_completed(struct ieee80211_hw *hw, bool aborted)
 	if (was_hw_scan)
 		goto done;
 
-	ieee80211_configure_filter(local);
+	spin_lock_bh(&local->filter_lock);
+	local->filter_flags &= ~FIF_BCN_PRBRESP_PROMISC;
+	drv_configure_filter(local, FIF_BCN_PRBRESP_PROMISC,
+			     &local->filter_flags,
+			     local->mc_count,
+			     local->mc_list);
+	spin_unlock_bh(&local->filter_lock);
 
 	drv_sw_scan_complete(local);
 
@@ -370,7 +376,13 @@ static int ieee80211_start_sw_scan(struct ieee80211_local *local)
 	local->next_scan_state = SCAN_DECISION;
 	local->scan_channel_idx = 0;
 
-	ieee80211_configure_filter(local);
+	spin_lock_bh(&local->filter_lock);
+	local->filter_flags |= FIF_BCN_PRBRESP_PROMISC;
+	drv_configure_filter(local, FIF_BCN_PRBRESP_PROMISC,
+			     &local->filter_flags,
+			     local->mc_count,
+			     local->mc_list);
+	spin_unlock_bh(&local->filter_lock);
 
 	/* TODO: start scan as soon as all nullfunc frames are ACKed */
 	ieee80211_queue_delayed_work(&local->hw,
