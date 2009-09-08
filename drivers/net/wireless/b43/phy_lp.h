@@ -825,11 +825,11 @@ struct b43_phy_lp {
 	enum b43_lpphy_txpctl_mode txpctl_mode;
 
 	/* Transmit isolation medium band */
-	u8 tx_isolation_med_band;
+	u8 tx_isolation_med_band; /* FIXME initial value? */
 	/* Transmit isolation low band */
-	u8 tx_isolation_low_band;
+	u8 tx_isolation_low_band; /* FIXME initial value? */
 	/* Transmit isolation high band */
-	u8 tx_isolation_hi_band;
+	u8 tx_isolation_hi_band; /* FIXME initial value? */
 
 	/* Max transmit power medium band */
 	u16 max_tx_pwr_med_band;
@@ -848,7 +848,7 @@ struct b43_phy_lp {
 	s16 txpa[3], txpal[3], txpah[3];
 
 	/* Receive power offset */
-	u8 rx_pwr_offset;
+	u8 rx_pwr_offset; /* FIXME initial value? */
 
 	/* TSSI transmit count */
 	u16 tssi_tx_count;
@@ -864,16 +864,16 @@ struct b43_phy_lp {
 	s8 tx_pwr_idx_over; /* FIXME initial value? */
 
 	/* RSSI vf */
-	u8 rssi_vf;
+	u8 rssi_vf; /* FIXME initial value? */
 	/* RSSI vc */
-	u8 rssi_vc;
+	u8 rssi_vc; /* FIXME initial value? */
 	/* RSSI gs */
-	u8 rssi_gs;
+	u8 rssi_gs; /* FIXME initial value? */
 
 	/* RC cap */
 	u8 rc_cap; /* FIXME initial value? */
 	/* BX arch */
-	u8 bx_arch;
+	u8 bx_arch; /* FIXME initial value? */
 
 	/* Full calibration channel */
 	u8 full_calib_chan; /* FIXME initial value? */
@@ -884,8 +884,6 @@ struct b43_phy_lp {
 
 	/* Used for "Save/Restore Dig Filt State" */
 	u16 dig_flt_state[9];
-
-	bool crs_usr_disable, crs_sys_disable;
 
 	unsigned int pdiv;
 };
