@@ -1797,7 +1797,6 @@ static void iwl4965_temperature_calib(struct iwl_priv *priv)
 	}
 
 	priv->temperature = temp;
-	iwl_tt_handler(priv);
 	set_bit(STATUS_TEMPERATURE, &priv->status);
 
 	if (!priv->disable_tx_power_cal &&
