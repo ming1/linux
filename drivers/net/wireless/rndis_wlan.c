@@ -2530,8 +2530,7 @@ static int rndis_wlan_reset(struct usbnet *usbdev)
 	if (retval)
 		devwarn(usbdev, "rndis_reset() failed: %d", retval);
 
-	/* rndis_reset cleared multicast list, so restore here.
-	   (set_multicast_list() also turns on current packet filter) */
+	/* rndis_reset cleared multicast list, so restore here. */
 	set_multicast_list(usbdev);
 
 	queue_delayed_work(priv->workqueue, &priv->stats_work,
@@ -2545,7 +2544,6 @@ static int rndis_wlan_stop(struct usbnet *usbdev)
 {
 	struct rndis_wlan_private *priv = get_rndis_wlan_priv(usbdev);
 	int retval;
-	__le32 filter;
 
 	devdbg(usbdev, "rndis_wlan_stop");
 
@@ -2561,12 +2559,6 @@ static int rndis_wlan_stop(struct usbnet *usbdev)
 		cfg80211_scan_done(priv->scan_request, true);
 		priv->scan_request = NULL;
 	}
-
-	/* Set current packet filter zero to block receiving data packets from
-	   device. */
-	filter = 0;
-	rndis_set_oid(usbdev, OID_GEN_CURRENT_PACKET_FILTER, &filter,
-								sizeof(filter));
 
 	return retval;
 }
