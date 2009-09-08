@@ -886,11 +886,6 @@ struct b43_phy_lp {
 	u16 dig_flt_state[9];
 };
 
-enum tssi_mux_mode {
-	TSSI_MUX_PREPA,
-	TSSI_MUX_POSTPA,
-	TSSI_MUX_EXT,
-};
 
 struct b43_phy_operations;
 extern const struct b43_phy_operations b43_phyops_lp;
