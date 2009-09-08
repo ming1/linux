@@ -276,9 +276,11 @@ rate_control_pid_get_rate(void *priv, struct ieee80211_sta *sta,
 {
 	struct sk_buff *skb = txrc->skb;
 	struct ieee80211_supported_band *sband = txrc->sband;
+	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *) skb->data;
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	struct rc_pid_sta_info *spinfo = priv_sta;
 	int rateidx;
+	__le16 fc;
 
 	if (txrc->rts)
 		info->control.rates[0].count =
@@ -288,8 +290,15 @@ rate_control_pid_get_rate(void *priv, struct ieee80211_sta *sta,
 			txrc->hw->conf.short_frame_max_tx_count;
 
 	/* Send management frames and NO_ACK data using lowest rate. */
-	if (rate_control_send_low(sta, priv_sta, txrc))
+	fc = hdr->frame_control;
+	if (!sta || !spinfo || !ieee80211_is_data(fc) ||
+	    info->flags & IEEE80211_TX_CTL_NO_ACK) {
+		info->control.rates[0].idx = rate_lowest_index(sband, sta);
+		if (info->flags & IEEE80211_TX_CTL_NO_ACK)
+			info->control.rates[0].count = 1;
+
 		return;
+	}
 
 	rateidx = spinfo->txrate_idx;
 
