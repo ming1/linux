@@ -55,15 +55,23 @@
 static int iwm_open(struct net_device *ndev)
 {
 	struct iwm_priv *iwm = ndev_to_iwm(ndev);
+	int ret = 0;
 
-	return iwm_up(iwm);
+	if (!test_bit(IWM_RADIO_RFKILL_SW, &iwm->radio))
+		ret = iwm_up(iwm);
+
+	return ret;
 }
 
 static int iwm_stop(struct net_device *ndev)
 {
 	struct iwm_priv *iwm = ndev_to_iwm(ndev);
+	int ret = 0;
 
-	return iwm_down(iwm);
+	if (!test_bit(IWM_RADIO_RFKILL_SW, &iwm->radio))
+		ret = iwm_down(iwm);
+
+	return ret;
 }
 
 /*
