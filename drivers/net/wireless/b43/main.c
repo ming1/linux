@@ -2589,7 +2589,6 @@ static void b43_rate_memory_init(struct b43_wldev *dev)
 	case B43_PHYTYPE_A:
 	case B43_PHYTYPE_G:
 	case B43_PHYTYPE_N:
-	case B43_PHYTYPE_LP:
 		b43_rate_memory_write(dev, B43_OFDM_RATE_6MB, 1);
 		b43_rate_memory_write(dev, B43_OFDM_RATE_12MB, 1);
 		b43_rate_memory_write(dev, B43_OFDM_RATE_18MB, 1);
@@ -3818,7 +3817,7 @@ static int b43_phy_versioning(struct b43_wldev *dev)
 #endif
 #ifdef CONFIG_B43_PHY_LP
 	case B43_PHYTYPE_LP:
-		if (phy_rev > 2)
+		if (phy_rev > 1)
 			unsupported = 1;
 		break;
 #endif
@@ -3875,7 +3874,7 @@ static int b43_phy_versioning(struct b43_wldev *dev)
 			unsupported = 1;
 		break;
 	case B43_PHYTYPE_LP:
-		if (radio_ver != 0x2062 && radio_ver != 0x2063)
+		if (radio_ver != 0x2062)
 			unsupported = 1;
 		break;
 	default:
@@ -4513,10 +4512,9 @@ static int b43_wireless_core_attach(struct b43_wldev *dev)
 		case B43_PHYTYPE_A:
 			have_5ghz_phy = 1;
 			break;
-		case B43_PHYTYPE_LP: //FIXME not always!
-			have_5ghz_phy = 1;
 		case B43_PHYTYPE_G:
 		case B43_PHYTYPE_N:
+		case B43_PHYTYPE_LP:
 			have_2ghz_phy = 1;
 			break;
 		default:
@@ -4531,8 +4529,7 @@ static int b43_wireless_core_attach(struct b43_wldev *dev)
 	}
 	if (1 /* disable A-PHY */) {
 		/* FIXME: For now we disable the A-PHY on multi-PHY devices. */
-		if (dev->phy.type != B43_PHYTYPE_N &&
-		    dev->phy.type != B43_PHYTYPE_LP) {
+		if (dev->phy.type != B43_PHYTYPE_N) {
 			have_2ghz_phy = 1;
 			have_5ghz_phy = 0;
 		}
