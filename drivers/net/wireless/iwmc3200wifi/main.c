@@ -260,11 +260,6 @@ int iwm_priv_init(struct iwm_priv *iwm)
 	iwm->watchdog.data = (unsigned long)iwm;
 	mutex_init(&iwm->mutex);
 
-	iwm->last_fw_err = kzalloc(sizeof(struct iwm_fw_error_hdr),
-				   GFP_KERNEL);
-	if (iwm->last_fw_err == NULL)
-		return -ENOMEM;
-
 	return 0;
 }
 
@@ -276,7 +271,6 @@ void iwm_priv_deinit(struct iwm_priv *iwm)
 		destroy_workqueue(iwm->txq[i].wq);
 
 	destroy_workqueue(iwm->rx_wq);
-	kfree(iwm->last_fw_err);
 }
 
 /*
