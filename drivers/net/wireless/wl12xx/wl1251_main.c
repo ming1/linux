@@ -75,10 +75,9 @@ static irqreturn_t wl1251_irq(int irq, void *cookie)
 static int wl1251_fetch_firmware(struct wl1251 *wl)
 {
 	const struct firmware *fw;
-	struct device *dev = wiphy_dev(wl->hw->wiphy);
 	int ret;
 
-	ret = request_firmware(&fw, wl->chip.fw_filename, dev);
+	ret = request_firmware(&fw, wl->chip.fw_filename, &wl->spi->dev);
 
 	if (ret < 0) {
 		wl1251_error("could not get firmware: %d", ret);
@@ -114,10 +113,9 @@ out:
 static int wl1251_fetch_nvs(struct wl1251 *wl)
 {
 	const struct firmware *fw;
-	struct device *dev = wiphy_dev(wl->hw->wiphy);
 	int ret;
 
-	ret = request_firmware(&fw, wl->chip.nvs_filename, dev);
+	ret = request_firmware(&fw, wl->chip.nvs_filename, &wl->spi->dev);
 
 	if (ret < 0) {
 		wl1251_error("could not get nvs file: %d", ret);
