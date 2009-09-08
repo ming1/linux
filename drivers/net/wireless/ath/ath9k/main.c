@@ -1292,13 +1292,7 @@ static int ath9k_reg_notifier(struct wiphy *wiphy,
 	return ath_reg_notifier_apply(wiphy, request, reg);
 }
 
-/*
- * Initialize and fill ath_softc, ath_sofct is the
- * "Software Carrier" struct. Historically it has existed
- * to allow the separation between hardware specific
- * variables (now in ath_hw) and driver specific variables.
- */
-static int ath_init_softc(u16 devid, struct ath_softc *sc)
+static int ath_init(u16 devid, struct ath_softc *sc)
 {
 	struct ath_hw *ah = NULL;
 	int r = 0, i;
@@ -1564,8 +1558,7 @@ void ath_set_hw_capab(struct ath_softc *sc, struct ieee80211_hw *hw)
 			&sc->sbands[IEEE80211_BAND_5GHZ];
 }
 
-/* Device driver core initialization */
-int ath_init_device(u16 devid, struct ath_softc *sc)
+int ath_attach(u16 devid, struct ath_softc *sc)
 {
 	struct ieee80211_hw *hw = sc->hw;
 	int error = 0, i;
@@ -1573,7 +1566,7 @@ int ath_init_device(u16 devid, struct ath_softc *sc)
 
 	DPRINTF(sc, ATH_DBG_CONFIG, "Attach ATH hw\n");
 
-	error = ath_init_softc(devid, sc);
+	error = ath_init(devid, sc);
 	if (error != 0)
 		return error;
 
