@@ -2181,7 +2181,7 @@ static int nl80211_dump_mpath(struct sk_buff *skb,
 
 	if (netdev->ieee80211_ptr->iftype != NL80211_IFTYPE_MESH_POINT) {
 		err = -EOPNOTSUPP;
-		goto out_err;
+		goto out;
 	}
 
 	while (1) {
