@@ -413,7 +413,8 @@ static bool mac80211_hwsim_tx_frame(struct ieee80211_hw *hw,
 
 	/* release the skb's source info */
 	skb_orphan(skb);
-	skb_dst_drop(skb);
+	dst_release(skb->dst);
+	skb->dst = NULL;
 	skb->mark = 0;
 	secpath_reset(skb);
 	nf_reset(skb);
