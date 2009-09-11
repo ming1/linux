@@ -12,7 +12,7 @@
 #include "core.h"
 #include "nl80211.h"
 
-void cfg80211_send_rx_auth(struct net_device *dev, const u8 *buf, size_t len)
+void cfg80211_send_rx_auth(struct net_device *dev, const u8 *buf, size_t len, gfp_t gfp)
 {
 	struct wireless_dev *wdev = dev->ieee80211_ptr;
 	struct wiphy *wiphy = wdev->wiphy;
@@ -22,8 +22,6 @@ void cfg80211_send_rx_auth(struct net_device *dev, const u8 *buf, size_t len)
 	int i;
 	u16 status = le16_to_cpu(mgmt->u.auth.status_code);
 	bool done = false;
-
-	might_sleep();
 
 	for (i = 0; i < MAX_AUTH_BSSES; i++) {
 		if (wdev->authtry_bsses[i] &&
@@ -43,12 +41,12 @@ void cfg80211_send_rx_auth(struct net_device *dev, const u8 *buf, size_t len)
 
 	WARN_ON(!done);
 
-	nl80211_send_rx_auth(rdev, dev, buf, len, GFP_KERNEL);
+	nl80211_send_rx_auth(rdev, dev, buf, len, gfp);
 	cfg80211_sme_rx_auth(dev, buf, len);
 }
 EXPORT_SYMBOL(cfg80211_send_rx_auth);
 
-void cfg80211_send_rx_assoc(struct net_device *dev, const u8 *buf, size_t len)
+void cfg80211_send_rx_assoc(struct net_device *dev, const u8 *buf, size_t len, gfp_t gfp)
 {
 	u16 status_code;
 	struct wireless_dev *wdev = dev->ieee80211_ptr;
@@ -59,14 +57,12 @@ void cfg80211_send_rx_assoc(struct net_device *dev, const u8 *buf, size_t len)
 	int i, ieoffs = offsetof(struct ieee80211_mgmt, u.assoc_resp.variable);
 	bool done;
 
-	might_sleep();
-
 	status_code = le16_to_cpu(mgmt->u.assoc_resp.status_code);
 
-	nl80211_send_rx_assoc(rdev, dev, buf, len, GFP_KERNEL);
+	nl80211_send_rx_assoc(rdev, dev, buf, len, gfp);
 
 	cfg80211_connect_result(dev, mgmt->bssid, NULL, 0, ie, len - ieoffs,
-				status_code, GFP_KERNEL);
+				status_code, gfp);
 
 	if (status_code == WLAN_STATUS_SUCCESS) {
 		for (i = 0; wdev->current_bss && i < MAX_AUTH_BSSES; i++) {
@@ -84,7 +80,7 @@ void cfg80211_send_rx_assoc(struct net_device *dev, const u8 *buf, size_t len)
 }
 EXPORT_SYMBOL(cfg80211_send_rx_assoc);
 
-void cfg80211_send_deauth(struct net_device *dev, const u8 *buf, size_t len)
+void cfg80211_send_deauth(struct net_device *dev, const u8 *buf, size_t len, gfp_t gfp)
 {
 	struct wireless_dev *wdev = dev->ieee80211_ptr;
 	struct wiphy *wiphy = wdev->wiphy;
@@ -94,9 +90,7 @@ void cfg80211_send_deauth(struct net_device *dev, const u8 *buf, size_t len)
 	int i;
 	bool done = false;
 
-	might_sleep();
-
-	nl80211_send_deauth(rdev, dev, buf, len, GFP_KERNEL);
+	nl80211_send_deauth(rdev, dev, buf, len, gfp);
 
 	if (wdev->current_bss &&
 	    memcmp(wdev->current_bss->pub.bssid, bssid, ETH_ALEN) == 0) {
@@ -138,17 +132,16 @@ void cfg80211_send_deauth(struct net_device *dev, const u8 *buf, size_t len)
 		reason_code = le16_to_cpu(mgmt->u.deauth.reason_code);
 
 		from_ap = memcmp(mgmt->da, dev->dev_addr, ETH_ALEN) == 0;
-		__cfg80211_disconnected(dev, GFP_KERNEL, NULL, 0,
+		__cfg80211_disconnected(dev, gfp, NULL, 0,
 					reason_code, from_ap);
 	} else if (wdev->sme_state == CFG80211_SME_CONNECTING) {
 		cfg80211_connect_result(dev, mgmt->bssid, NULL, 0, NULL, 0,
-					WLAN_STATUS_UNSPECIFIED_FAILURE,
-					GFP_KERNEL);
+					WLAN_STATUS_UNSPECIFIED_FAILURE, gfp);
 	}
 }
 EXPORT_SYMBOL(cfg80211_send_deauth);
 
-void cfg80211_send_disassoc(struct net_device *dev, const u8 *buf, size_t len)
+void cfg80211_send_disassoc(struct net_device *dev, const u8 *buf, size_t len, gfp_t gfp)
 {
 	struct wireless_dev *wdev = dev->ieee80211_ptr;
 	struct wiphy *wiphy = wdev->wiphy;
@@ -160,9 +153,7 @@ void cfg80211_send_disassoc(struct net_device *dev, const u8 *buf, size_t len)
 	bool from_ap;
 	bool done = false;
 
-	might_sleep();
-
-	nl80211_send_disassoc(rdev, dev, buf, len, GFP_KERNEL);
+	nl80211_send_disassoc(rdev, dev, buf, len, gfp);
 
 	if (!wdev->sme_state == CFG80211_SME_CONNECTED)
 		return;
@@ -186,12 +177,12 @@ void cfg80211_send_disassoc(struct net_device *dev, const u8 *buf, size_t len)
 	reason_code = le16_to_cpu(mgmt->u.disassoc.reason_code);
 
 	from_ap = memcmp(mgmt->da, dev->dev_addr, ETH_ALEN) == 0;
-	__cfg80211_disconnected(dev, GFP_KERNEL, NULL, 0,
+	__cfg80211_disconnected(dev, gfp, NULL, 0,
 				reason_code, from_ap);
 }
 EXPORT_SYMBOL(cfg80211_send_disassoc);
 
-void cfg80211_send_auth_timeout(struct net_device *dev, const u8 *addr)
+void cfg80211_send_auth_timeout(struct net_device *dev, const u8 *addr, gfp_t gfp)
 {
 	struct wireless_dev *wdev = dev->ieee80211_ptr;
 	struct wiphy *wiphy = wdev->wiphy;
@@ -199,13 +190,10 @@ void cfg80211_send_auth_timeout(struct net_device *dev, const u8 *addr)
 	int i;
 	bool done = false;
 
-	might_sleep();
-
-	nl80211_send_auth_timeout(rdev, dev, addr, GFP_KERNEL);
+	nl80211_send_auth_timeout(rdev, dev, addr, gfp);
 	if (wdev->sme_state == CFG80211_SME_CONNECTING)
 		cfg80211_connect_result(dev, addr, NULL, 0, NULL, 0,
-					WLAN_STATUS_UNSPECIFIED_FAILURE,
-					GFP_KERNEL);
+					WLAN_STATUS_UNSPECIFIED_FAILURE, gfp);
 
 	for (i = 0; addr && i < MAX_AUTH_BSSES; i++) {
 		if (wdev->authtry_bsses[i] &&
@@ -223,7 +211,7 @@ void cfg80211_send_auth_timeout(struct net_device *dev, const u8 *addr)
 }
 EXPORT_SYMBOL(cfg80211_send_auth_timeout);
 
-void cfg80211_send_assoc_timeout(struct net_device *dev, const u8 *addr)
+void cfg80211_send_assoc_timeout(struct net_device *dev, const u8 *addr, gfp_t gfp)
 {
 	struct wireless_dev *wdev = dev->ieee80211_ptr;
 	struct wiphy *wiphy = wdev->wiphy;
@@ -231,13 +219,10 @@ void cfg80211_send_assoc_timeout(struct net_device *dev, const u8 *addr)
 	int i;
 	bool done = false;
 
-	might_sleep();
-
-	nl80211_send_assoc_timeout(rdev, dev, addr, GFP_KERNEL);
+	nl80211_send_assoc_timeout(rdev, dev, addr, gfp);
 	if (wdev->sme_state == CFG80211_SME_CONNECTING)
 		cfg80211_connect_result(dev, addr, NULL, 0, NULL, 0,
-					WLAN_STATUS_UNSPECIFIED_FAILURE,
-					GFP_KERNEL);
+					WLAN_STATUS_UNSPECIFIED_FAILURE, gfp);
 
 	for (i = 0; addr && i < MAX_AUTH_BSSES; i++) {
 		if (wdev->auth_bsses[i] &&
