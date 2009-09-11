@@ -22,7 +22,6 @@
 #include <net/mac80211.h>
 
 #include "p54.h"
-#include "lmac.h"
 #include "p54pci.h"
 
 MODULE_AUTHOR("Michael Wu <flamingice@sourmilk.net>");
@@ -565,6 +564,7 @@ static int __devinit p54p_probe(struct pci_dev *pdev,
 
  err_free_common:
 	release_firmware(priv->firmware);
+	p54_free_common(dev);
 	pci_free_consistent(pdev, sizeof(*priv->ring_control),
 			    priv->ring_control, priv->ring_control_dma);
 
@@ -573,7 +573,7 @@ static int __devinit p54p_probe(struct pci_dev *pdev,
 
  err_free_dev:
 	pci_set_drvdata(pdev, NULL);
-	p54_free_common(dev);
+	ieee80211_free_hw(dev);
 
  err_free_reg:
 	pci_release_regions(pdev);
@@ -590,15 +590,16 @@ static void __devexit p54p_remove(struct pci_dev *pdev)
 	if (!dev)
 		return;
 
-	p54_unregister_common(dev);
+	ieee80211_unregister_hw(dev);
 	priv = dev->priv;
 	release_firmware(priv->firmware);
 	pci_free_consistent(pdev, sizeof(*priv->ring_control),
 			    priv->ring_control, priv->ring_control_dma);
+	p54_free_common(dev);
 	iounmap(priv->map);
 	pci_release_regions(pdev);
 	pci_disable_device(pdev);
-	p54_free_common(dev);
+	ieee80211_free_hw(dev);
 }
 
 #ifdef CONFIG_PM
