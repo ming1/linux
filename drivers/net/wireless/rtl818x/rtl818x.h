@@ -138,9 +138,8 @@ struct rtl818x_csr {
 	__le32	RF_PARA;
 	__le32	RF_TIMING;
 	u8	GP_ENABLE;
-	u8	GPIO0;
-	u8	GPIO1;
-	u8	reserved_12;
+	u8	GPIO;
+	u8	reserved_12[2];
 	__le32	HSSI_PARA;
 	u8	reserved_13[4];
 	u8	TX_AGC_CTL;
