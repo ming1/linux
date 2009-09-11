@@ -120,14 +120,16 @@ static int ath_ahb_probe(struct platform_device *pdev)
 	sc->irq = irq;
 
 	ret = ath_init_device(AR5416_AR9100_DEVID, sc);
-	if (ret) {
-		dev_err(&pdev->dev, "failed to initialize device\n");
+	if (ret != 0) {
+		dev_err(&pdev->dev, "failed to attach device, err=%d\n", ret);
+		ret = -ENODEV;
 		goto err_free_hw;
 	}
 
 	ret = request_irq(irq, ath_isr, IRQF_SHARED, "ath9k", sc);
 	if (ret) {
-		dev_err(&pdev->dev, "request_irq failed\n");
+		dev_err(&pdev->dev, "request_irq failed, err=%d\n", ret);
+		ret = -EIO;
 		goto err_detach;
 	}
 
