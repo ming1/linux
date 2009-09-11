@@ -84,14 +84,15 @@ static void ath_btcoex_period_timer(unsigned long data)
 {
 	struct ath_softc *sc = (struct ath_softc *) data;
 	struct ath_btcoex_info *btinfo = &sc->btcoex_info;
+	unsigned long flags;
 
 	ath_detect_bt_priority(sc);
 
-	spin_lock_bh(&btinfo->btcoex_lock);
+	spin_lock_irqsave(&btinfo->btcoex_lock, flags);
 
 	ath_btcoex_bt_stomp(sc, btinfo, btinfo->bt_stomp_type);
 
-	spin_unlock_bh(&btinfo->btcoex_lock);
+	spin_unlock_irqrestore(&btinfo->btcoex_lock, flags);
 
 	if (btinfo->btcoex_period != btinfo->btcoex_no_stomp) {
 		if (btinfo->hw_timer_enabled)
@@ -118,17 +119,18 @@ static void ath_btcoex_no_stomp_timer(void *arg)
 {
 	struct ath_softc *sc = (struct ath_softc *)arg;
 	struct ath_btcoex_info *btinfo = &sc->btcoex_info;
+	unsigned long flags;
 
 	DPRINTF(sc, ATH_DBG_BTCOEX, "no stomp timer running \n");
 
-	spin_lock_bh(&btinfo->btcoex_lock);
+	spin_lock_irqsave(&btinfo->btcoex_lock, flags);
 
 	if (btinfo->bt_stomp_type == ATH_BTCOEX_STOMP_LOW)
 		ath_btcoex_bt_stomp(sc, btinfo, ATH_BTCOEX_STOMP_NONE);
 	 else if (btinfo->bt_stomp_type == ATH_BTCOEX_STOMP_ALL)
 		ath_btcoex_bt_stomp(sc, btinfo, ATH_BTCOEX_STOMP_LOW);
 
-	spin_unlock_bh(&btinfo->btcoex_lock);
+	spin_unlock_irqrestore(&btinfo->btcoex_lock, flags);
 }
 
 static int ath_init_btcoex_info(struct ath_hw *hw,
