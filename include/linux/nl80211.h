@@ -262,9 +262,6 @@
  *	reasons, for this the %NL80211_ATTR_DISCONNECTED_BY_AP and
  *	%NL80211_ATTR_REASON_CODE attributes are used.
  *
- * @NL80211_CMD_SET_WIPHY_NETNS: Set a wiphy's netns. Note that all devices
- *	associated with this wiphy must be down and will follow.
- *
  * @NL80211_CMD_MAX: highest used command number
  * @__NL80211_CMD_AFTER_LAST: internal use
  */
@@ -338,8 +335,6 @@ enum nl80211_commands {
 	NL80211_CMD_CONNECT,
 	NL80211_CMD_ROAM,
 	NL80211_CMD_DISCONNECT,
-
-	NL80211_CMD_SET_WIPHY_NETNS,
 
 	/* add new commands above here */
 
@@ -578,8 +573,6 @@ enum nl80211_commands {
  *	and join_ibss(), key information is in a nested attribute each
  *	with %NL80211_KEY_* sub-attributes
  *
- * @NL80211_ATTR_PID: Process ID of a network namespace.
- *
  * @NL80211_ATTR_MAX: highest attribute number currently defined
  * @__NL80211_ATTR_AFTER_LAST: internal use
  */
@@ -707,8 +700,6 @@ enum nl80211_attrs {
 
 	NL80211_ATTR_KEY,
 	NL80211_ATTR_KEYS,
-
-	NL80211_ATTR_PID,
 
 	/* add attributes here, update the policy in nl80211.c */
 
