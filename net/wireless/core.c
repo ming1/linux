@@ -526,53 +526,52 @@ static int cfg80211_netdev_notifier_call(struct notifier_block * nb,
 					 void *ndev)
 {
 	struct net_device *dev = ndev;
-	struct wireless_dev *wdev = dev->ieee80211_ptr;
 	struct cfg80211_registered_device *rdev;
 
-	if (!wdev)
+	if (!dev->ieee80211_ptr)
 		return NOTIFY_DONE;
 
-	rdev = wiphy_to_dev(wdev->wiphy);
+	rdev = wiphy_to_dev(dev->ieee80211_ptr->wiphy);
 
-	WARN_ON(wdev->iftype == NL80211_IFTYPE_UNSPECIFIED);
+	WARN_ON(dev->ieee80211_ptr->iftype == NL80211_IFTYPE_UNSPECIFIED);
 
 	switch (state) {
 	case NETDEV_REGISTER:
 		mutex_lock(&rdev->devlist_mtx);
-		list_add(&wdev->list, &rdev->netdev_list);
+		list_add(&dev->ieee80211_ptr->list, &rdev->netdev_list);
 		if (sysfs_create_link(&dev->dev.kobj, &rdev->wiphy.dev.kobj,
 				      "phy80211")) {
 			printk(KERN_ERR "wireless: failed to add phy80211 "
 				"symlink to netdev!\n");
 		}
-		wdev->netdev = dev;
+		dev->ieee80211_ptr->netdev = dev;
 #ifdef CONFIG_WIRELESS_EXT
-		wdev->wext.default_key = -1;
-		wdev->wext.default_mgmt_key = -1;
+		dev->ieee80211_ptr->wext.default_key = -1;
+		dev->ieee80211_ptr->wext.default_mgmt_key = -1;
 #endif
 		mutex_unlock(&rdev->devlist_mtx);
 		break;
 	case NETDEV_GOING_DOWN:
-		if (wdev->iftype != NL80211_IFTYPE_ADHOC)
+		if (dev->ieee80211_ptr->iftype != NL80211_IFTYPE_ADHOC)
 			break;
-		if (!wdev->ssid_len)
+		if (!dev->ieee80211_ptr->ssid_len)
 			break;
 		cfg80211_leave_ibss(rdev, dev, true);
 		break;
 	case NETDEV_UP:
 #ifdef CONFIG_WIRELESS_EXT
-		if (wdev->iftype != NL80211_IFTYPE_ADHOC)
+		if (dev->ieee80211_ptr->iftype != NL80211_IFTYPE_ADHOC)
 			break;
-		if (!wdev->wext.ibss.ssid_len)
+		if (!dev->ieee80211_ptr->wext.ibss.ssid_len)
 			break;
-		cfg80211_join_ibss(rdev, dev, &wdev->wext.ibss);
-#endif
+		cfg80211_join_ibss(rdev, dev, &dev->ieee80211_ptr->wext.ibss);
 		break;
+#endif
 	case NETDEV_UNREGISTER:
 		mutex_lock(&rdev->devlist_mtx);
-		if (!list_empty(&wdev->list)) {
+		if (!list_empty(&dev->ieee80211_ptr->list)) {
 			sysfs_remove_link(&dev->dev.kobj, "phy80211");
-			list_del_init(&wdev->list);
+			list_del_init(&dev->ieee80211_ptr->list);
 		}
 		mutex_unlock(&rdev->devlist_mtx);
 		break;
