@@ -31,11 +31,6 @@
 #include "reg.h"
 #include "wl1251_spi.h"
 
-static struct spi_device *wl_to_spi(struct wl1251 *wl)
-{
-	return wl->if_priv;
-}
-
 static void wl1251_spi_reset(struct wl1251 *wl)
 {
 	u8 *cmd;
@@ -57,7 +52,7 @@ static void wl1251_spi_reset(struct wl1251 *wl)
 	t.len = WSPI_INIT_CMD_LEN;
 	spi_message_add_tail(&t, &m);
 
-	spi_sync(wl_to_spi(wl), &m);
+	spi_sync(wl->spi, &m);
 
 	wl1251_dump(DEBUG_SPI, "spi reset -> ", cmd, WSPI_INIT_CMD_LEN);
 }
@@ -111,7 +106,7 @@ static void wl1251_spi_wake(struct wl1251 *wl)
 	t.len = WSPI_INIT_CMD_LEN;
 	spi_message_add_tail(&t, &m);
 
-	spi_sync(wl_to_spi(wl), &m);
+	spi_sync(wl->spi, &m);
 
 	wl1251_dump(DEBUG_SPI, "spi init -> ", cmd, WSPI_INIT_CMD_LEN);
 }
@@ -154,7 +149,7 @@ static void wl1251_spi_read(struct wl1251 *wl, int addr, void *buf,
 	t[2].len = len;
 	spi_message_add_tail(&t[2], &m);
 
-	spi_sync(wl_to_spi(wl), &m);
+	spi_sync(wl->spi, &m);
 
 	/* FIXME: check busy words */
 
@@ -187,13 +182,13 @@ static void wl1251_spi_write(struct wl1251 *wl, int addr, void *buf,
 	t[1].len = len;
 	spi_message_add_tail(&t[1], &m);
 
-	spi_sync(wl_to_spi(wl), &m);
+	spi_sync(wl->spi, &m);
 
 	wl1251_dump(DEBUG_SPI, "spi_write cmd -> ", cmd, sizeof(*cmd));
 	wl1251_dump(DEBUG_SPI, "spi_write buf -> ", buf, len);
 }
 
-static const struct wl1251_if_operations wl1251_spi_ops = {
+const struct wl1251_if_operations wl1251_spi_ops = {
 	.read = wl1251_spi_read,
 	.write = wl1251_spi_write,
 	.reset = wl1251_spi_reset_wake,
@@ -220,7 +215,7 @@ static int __devinit wl1251_spi_probe(struct spi_device *spi)
 
 	SET_IEEE80211_DEV(hw, &spi->dev);
 	dev_set_drvdata(&spi->dev, wl);
-	wl->if_priv = spi;
+	wl->spi = spi;
 	wl->if_ops = &wl1251_spi_ops;
 
 	/* This is the only SPI value that we need to set here, the rest
