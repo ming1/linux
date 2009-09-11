@@ -336,12 +336,6 @@ void ieee80211_add_pending_skb(struct ieee80211_local *local,
 	struct ieee80211_hw *hw = &local->hw;
 	unsigned long flags;
 	int queue = skb_get_queue_mapping(skb);
-	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
-
-	if (WARN_ON(!info->control.vif)) {
-		kfree(skb);
-		return;
-	}
 
 	spin_lock_irqsave(&local->queue_stop_reason_lock, flags);
 	__ieee80211_stop_queue(hw, queue, IEEE80211_QUEUE_STOP_REASON_SKB_ADD);
@@ -364,13 +358,6 @@ int ieee80211_add_pending_skbs(struct ieee80211_local *local,
 			IEEE80211_QUEUE_STOP_REASON_SKB_ADD);
 
 	while ((skb = skb_dequeue(skbs))) {
-		struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
-
-		if (WARN_ON(!info->control.vif)) {
-			kfree(skb);
-			continue;
-		}
-
 		ret++;
 		queue = skb_get_queue_mapping(skb);
 		__skb_queue_tail(&local->pending[queue], skb);
