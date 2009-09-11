@@ -1701,8 +1701,6 @@ EXPORT_SYMBOL(iwl_init_drv);
 int iwl_set_tx_power(struct iwl_priv *priv, s8 tx_power, bool force)
 {
 	int ret = 0;
-	s8 prev_tx_power = priv->tx_power_user_lmt;
-
 	if (tx_power < IWL_TX_POWER_TARGET_POWER_MIN) {
 		IWL_WARN(priv, "Requested user TXPOWER %d below lower limit %d.\n",
 			 tx_power,
@@ -1720,27 +1718,15 @@ int iwl_set_tx_power(struct iwl_priv *priv, s8 tx_power, bool force)
 	if (priv->tx_power_user_lmt != tx_power)
 		force = true;
 
-	/* if nic is not up don't send command */
-	if (iwl_is_ready_rf(priv)) {
-		priv->tx_power_user_lmt = tx_power;
-		if (force && priv->cfg->ops->lib->send_tx_power)
-			ret = priv->cfg->ops->lib->send_tx_power(priv);
-		else if (!priv->cfg->ops->lib->send_tx_power)
-			ret = -EOPNOTSUPP;
-		/*
-		 * if fail to set tx_power, restore the orig. tx power
-		 */
-		if (ret)
-			priv->tx_power_user_lmt = prev_tx_power;
-	}
+	priv->tx_power_user_lmt = tx_power;
 
-	/*
-	 * Even this is an async host command, the command
-	 * will always report success from uCode
-	 * So once driver can placing the command into the queue
-	 * successfully, driver can use priv->tx_power_user_lmt
-	 * to reflect the current tx power
-	 */
+	/* if nic is not up don't send command */
+	if (!iwl_is_ready_rf(priv))
+		return ret;
+
+	if (force && priv->cfg->ops->lib->send_tx_power)
+		ret = priv->cfg->ops->lib->send_tx_power(priv);
+
 	return ret;
 }
 EXPORT_SYMBOL(iwl_set_tx_power);
