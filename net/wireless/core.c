@@ -32,7 +32,6 @@ MODULE_DESCRIPTION("wireless configuration support");
  * only read the list, and that can happen quite
  * often because we need to do it for each command */
 LIST_HEAD(cfg80211_rdev_list);
-int cfg80211_rdev_list_generation;
 
 /*
  * This is used to protect the cfg80211_rdev_list
@@ -512,7 +511,6 @@ int wiphy_register(struct wiphy *wiphy)
 	wiphy_update_regulatory(wiphy, NL80211_REGDOM_SET_BY_CORE);
 
 	list_add(&rdev->list, &cfg80211_rdev_list);
-	cfg80211_rdev_list_generation++;
 
 	mutex_unlock(&cfg80211_mutex);
 
@@ -595,7 +593,6 @@ void wiphy_unregister(struct wiphy *wiphy)
 	reg_device_remove(wiphy);
 
 	list_del(&rdev->list);
-	cfg80211_rdev_list_generation++;
 	device_del(&rdev->wiphy.dev);
 	debugfs_remove(rdev->wiphy.debugfsdir);
 
@@ -656,7 +653,6 @@ static int cfg80211_netdev_notifier_call(struct notifier_block * nb,
 		spin_lock_init(&wdev->event_lock);
 		mutex_lock(&rdev->devlist_mtx);
 		list_add(&wdev->list, &rdev->netdev_list);
-		rdev->devlist_generation++;
 		/* can only change netns with wiphy */
 		dev->features |= NETIF_F_NETNS_LOCAL;
 
@@ -737,7 +733,6 @@ static int cfg80211_netdev_notifier_call(struct notifier_block * nb,
 		if (!list_empty(&wdev->list)) {
 			sysfs_remove_link(&dev->dev.kobj, "phy80211");
 			list_del_init(&wdev->list);
-			rdev->devlist_generation++;
 			mutex_destroy(&wdev->mtx);
 #ifdef CONFIG_WIRELESS_EXT
 			kfree(wdev->wext.keys);

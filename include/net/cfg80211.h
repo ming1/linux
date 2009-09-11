@@ -372,10 +372,6 @@ struct rate_info {
  * @txrate: current unicast bitrate to this station
  * @rx_packets: packets received from this station
  * @tx_packets: packets transmitted to this station
- * @generation: generation number for nl80211 dumps.
- *	This number should increase every time the list of stations
- *	changes, i.e. when a station is added or removed, so that
- *	userspace can tell whether it got a consistent snapshot.
  */
 struct station_info {
 	u32 filled;
@@ -389,8 +385,6 @@ struct station_info {
 	struct rate_info txrate;
 	u32 rx_packets;
 	u32 tx_packets;
-
-	int generation;
 };
 
 /**
@@ -450,10 +444,6 @@ enum mpath_info_flags {
  * @flags: mesh path flags
  * @discovery_timeout: total mesh path discovery timeout, in msecs
  * @discovery_retries: mesh path discovery retries
- * @generation: generation number for nl80211 dumps.
- *	This number should increase every time the list of mesh paths
- *	changes, i.e. when a station is added or removed, so that
- *	userspace can tell whether it got a consistent snapshot.
  */
 struct mpath_info {
 	u32 filled;
@@ -464,8 +454,6 @@ struct mpath_info {
 	u32 discovery_timeout;
 	u8 discovery_retries;
 	u8 flags;
-
-	int generation;
 };
 
 /**
