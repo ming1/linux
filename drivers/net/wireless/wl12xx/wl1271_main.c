@@ -793,7 +793,9 @@ out:
 
 static void wl1271_op_configure_filter(struct ieee80211_hw *hw,
 				       unsigned int changed,
-				       unsigned int *total,u64 multicast)
+				       unsigned int *total,
+				       int mc_count,
+				       struct dev_addr_list *mc_list)
 {
 	struct wl1271 *wl = hw->priv;
 
