@@ -55,7 +55,7 @@
 
 #include <linux/workqueue.h>
 
-#include "libipw.h"
+#include "ieee80211.h"
 
 /* Authentication  and Association States */
 enum connection_manager_assoc_states {
@@ -365,8 +365,8 @@ enum connection_manager_assoc_states {
 /* QoS sturctures */
 struct ipw_qos_info {
 	int qos_enable;
-	struct libipw_qos_parameters *def_qos_parm_OFDM;
-	struct libipw_qos_parameters *def_qos_parm_CCK;
+	struct ieee80211_qos_parameters *def_qos_parm_OFDM;
+	struct ieee80211_qos_parameters *def_qos_parm_CCK;
 	u32 burst_duration_CCK;
 	u32 burst_duration_OFDM;
 	u16 qos_no_ack_mask;
@@ -534,7 +534,7 @@ typedef void destructor_func(const void *);
 struct clx2_tx_queue {
 	struct clx2_queue q;
 	struct tfd_frame *bd;
-	struct libipw_txb **txb;
+	struct ieee80211_txb **txb;
 };
 
 /*
@@ -1144,7 +1144,7 @@ enum ipw_prom_filter {
 struct ipw_priv;
 struct ipw_prom_priv {
 	struct ipw_priv *priv;
-	struct libipw_device *ieee;
+	struct ieee80211_device *ieee;
 	enum ipw_prom_filter filter;
 	int tx_packets;
 	int rx_packets;
@@ -1175,7 +1175,7 @@ struct ipw_rt_hdr {
 
 struct ipw_priv {
 	/* ieee device used by generic ieee processing code */
-	struct libipw_device *ieee;
+	struct ieee80211_device *ieee;
 
 	spinlock_t lock;
 	spinlock_t irq_lock;
@@ -1222,7 +1222,7 @@ struct ipw_priv {
 	u32 roaming_threshold;
 
 	struct ipw_associate assoc_request;
-	struct libipw_network *assoc_network;
+	struct ieee80211_network *assoc_network;
 
 	unsigned long ts_scan_abort;
 	struct ipw_supported_rates rates;
