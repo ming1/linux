@@ -1274,15 +1274,13 @@ static int __devinit wl12xx_probe(struct spi_device *spi)
 	wl->set_power = pdata->set_power;
 	if (!wl->set_power) {
 		wl12xx_error("set power function missing in platform data");
-		ret = -ENODEV;
-		goto out_free;
+		return -ENODEV;
 	}
 
 	wl->irq = spi->irq;
 	if (wl->irq < 0) {
 		wl12xx_error("irq missing in platform data");
-		ret = -ENODEV;
-		goto out_free;
+		return -ENODEV;
 	}
 
 	ret = request_irq(wl->irq, wl12xx_irq, 0, DRIVER_NAME, wl);
