@@ -273,7 +273,6 @@ struct iwm_priv {
 
 	struct iw_statistics wstats;
 	struct delayed_work stats_request;
-	struct delayed_work disconnect;
 
 	struct iwm_debugfs dbg;
 
