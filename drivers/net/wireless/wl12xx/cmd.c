@@ -1,4 +1,4 @@
-#include "wl1251_cmd.h"
+#include "cmd.h"
 
 #include <linux/module.h>
 #include <linux/crc7.h>
@@ -7,9 +7,9 @@
 #include "wl12xx.h"
 #include "wl12xx_80211.h"
 #include "reg.h"
-#include "wl1251_spi.h"
-#include "wl1251_ps.h"
-#include "wl1251_acx.h"
+#include "spi.h"
+#include "ps.h"
+#include "acx.h"
 
 /**
  * send command to firmware
