@@ -26,7 +26,6 @@
 #include "rc.h"
 #include "debug.h"
 #include "../ath.h"
-#include "btcoex.h"
 
 struct ath_node;
 
