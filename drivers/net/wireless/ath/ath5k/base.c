@@ -1905,8 +1905,7 @@ accept:
 		if (sc->opmode == NL80211_IFTYPE_ADHOC)
 			ath5k_check_ibss_tsf(sc, skb, &rxs);
 
-		memcpy(IEEE80211_SKB_RXCB(skb), &rxs, sizeof(rxs));
-		ieee80211_rx(sc->hw, skb);
+		__ieee80211_rx(sc->hw, skb, &rxs);
 
 		bf->skb = next_skb;
 		bf->skbaddr = next_skb_addr;
