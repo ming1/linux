@@ -609,14 +609,9 @@ static void lpphy_2063_init(struct b43_wldev *dev)
 	b43_radio_write(dev, B2063_PA_SP7, 0);
 	b43_radio_write(dev, B2063_TX_RF_SP6, 0x20);
 	b43_radio_write(dev, B2063_TX_RF_SP9, 0x40);
-	if (dev->phy.rev == 2) {
-		b43_radio_write(dev, B2063_PA_SP3, 0xa0);
-		b43_radio_write(dev, B2063_PA_SP4, 0xa0);
-		b43_radio_write(dev, B2063_PA_SP2, 0x18);
-	} else {
-		b43_radio_write(dev, B2063_PA_SP3, 0x20);
-		b43_radio_write(dev, B2063_PA_SP2, 0x20);
-	}
+	b43_radio_write(dev, B2063_PA_SP3, 0xa0);
+	b43_radio_write(dev, B2063_PA_SP4, 0xa0);
+	b43_radio_write(dev, B2063_PA_SP2, 0x18);
 }
 
 struct lpphy_stx_table_entry {
@@ -1977,9 +1972,7 @@ static int lpphy_b2062_tune(struct b43_wldev *dev,
 	return err;
 }
 
-
-/* This was previously called lpphy_japan_filter */
-static void lpphy_set_analog_filter(struct b43_wldev *dev, int channel)
+static void lpphy_japan_filter(struct b43_wldev *dev, int channel)
 {
 	struct b43_phy_lp *lpphy = dev->phy.lp;
 	u16 tmp = (channel == 14); //SPEC FIXME check japanwidefilter!
@@ -2148,7 +2141,7 @@ static int b43_lpphy_op_switch_channel(struct b43_wldev *dev,
 		err = lpphy_b2062_tune(dev, new_channel);
 		if (err)
 			return err;
-		lpphy_set_analog_filter(dev, new_channel);
+		lpphy_japan_filter(dev, new_channel);
 		lpphy_adjust_gain_table(dev, channel2freq_lp(new_channel));
 	}
 
