@@ -419,11 +419,9 @@ static void ieee80211_send_deauth_disassoc(struct ieee80211_sub_if_data *sdata,
 	mgmt->u.deauth.reason_code = cpu_to_le16(reason);
 
 	if (stype == IEEE80211_STYPE_DEAUTH)
-		cfg80211_send_deauth(sdata->dev, (u8 *) mgmt, skb->len,
-				     GFP_KERNEL);
+		cfg80211_send_deauth(sdata->dev, (u8 *) mgmt, skb->len);
 	else
-		cfg80211_send_disassoc(sdata->dev, (u8 *) mgmt, skb->len,
-				       GFP_KERNEL);
+		cfg80211_send_disassoc(sdata->dev, (u8 *) mgmt, skb->len);
 	ieee80211_tx_skb(sdata, skb, ifmgd->flags & IEEE80211_STA_MFP_ENABLED);
 }
 
@@ -1008,8 +1006,7 @@ static void ieee80211_direct_probe(struct ieee80211_sub_if_data *sdata)
 		       sdata->dev->name, ifmgd->bssid);
 		ifmgd->state = IEEE80211_STA_MLME_DISABLED;
 		ieee80211_recalc_idle(local);
-		cfg80211_send_auth_timeout(sdata->dev, ifmgd->bssid,
-					   GFP_KERNEL);
+		cfg80211_send_auth_timeout(sdata->dev, ifmgd->bssid);
 
 		/*
 		 * Most likely AP is not in the range so remove the
@@ -1058,8 +1055,7 @@ static void ieee80211_authenticate(struct ieee80211_sub_if_data *sdata)
 		       sdata->dev->name, ifmgd->bssid);
 		ifmgd->state = IEEE80211_STA_MLME_DISABLED;
 		ieee80211_recalc_idle(local);
-		cfg80211_send_auth_timeout(sdata->dev, ifmgd->bssid,
-					   GFP_KERNEL);
+		cfg80211_send_auth_timeout(sdata->dev, ifmgd->bssid);
 		ieee80211_rx_bss_remove(sdata, ifmgd->bssid,
 				sdata->local->hw.conf.channel->center_freq,
 				ifmgd->ssid, ifmgd->ssid_len);
@@ -1247,8 +1243,7 @@ static void ieee80211_associate(struct ieee80211_sub_if_data *sdata)
 		       sdata->dev->name, ifmgd->bssid);
 		ifmgd->state = IEEE80211_STA_MLME_DISABLED;
 		ieee80211_recalc_idle(local);
-		cfg80211_send_assoc_timeout(sdata->dev, ifmgd->bssid,
-					    GFP_KERNEL);
+		cfg80211_send_assoc_timeout(sdata->dev, ifmgd->bssid);
 		ieee80211_rx_bss_remove(sdata, ifmgd->bssid,
 				sdata->local->hw.conf.channel->center_freq,
 				ifmgd->ssid, ifmgd->ssid_len);
@@ -1522,14 +1517,12 @@ static void ieee80211_rx_mgmt_auth(struct ieee80211_sub_if_data *sdata,
 	case WLAN_AUTH_LEAP:
 	case WLAN_AUTH_FT:
 		ieee80211_auth_completed(sdata);
-		cfg80211_send_rx_auth(sdata->dev, (u8 *) mgmt, len,
-				      GFP_KERNEL);
+		cfg80211_send_rx_auth(sdata->dev, (u8 *) mgmt, len);
 		break;
 	case WLAN_AUTH_SHARED_KEY:
 		if (ifmgd->auth_transaction == 4) {
 			ieee80211_auth_completed(sdata);
-			cfg80211_send_rx_auth(sdata->dev, (u8 *) mgmt, len,
-					      GFP_KERNEL);
+			cfg80211_send_rx_auth(sdata->dev, (u8 *) mgmt, len);
 		} else
 			ieee80211_auth_challenge(sdata, mgmt, len);
 		break;
@@ -1567,7 +1560,7 @@ static void ieee80211_rx_mgmt_deauth(struct ieee80211_sub_if_data *sdata,
 
 	ieee80211_set_disassoc(sdata, true, false, 0);
 	ifmgd->flags &= ~IEEE80211_STA_AUTHENTICATED;
-	cfg80211_send_deauth(sdata->dev, (u8 *) mgmt, len, GFP_KERNEL);
+	cfg80211_send_deauth(sdata->dev, (u8 *) mgmt, len);
 }
 
 
@@ -1598,7 +1591,7 @@ static void ieee80211_rx_mgmt_disassoc(struct ieee80211_sub_if_data *sdata,
 	}
 
 	ieee80211_set_disassoc(sdata, false, false, reason_code);
-	cfg80211_send_disassoc(sdata->dev, (u8 *) mgmt, len, GFP_KERNEL);
+	cfg80211_send_disassoc(sdata->dev, (u8 *) mgmt, len);
 }
 
 
@@ -1667,8 +1660,7 @@ static void ieee80211_rx_mgmt_assoc_resp(struct ieee80211_sub_if_data *sdata,
 		 * association next time. This works around some broken APs
 		 * which do not correctly reject reassociation requests. */
 		ifmgd->flags &= ~IEEE80211_STA_PREV_BSSID_SET;
-		cfg80211_send_rx_assoc(sdata->dev, (u8 *) mgmt, len,
-				       GFP_KERNEL);
+		cfg80211_send_rx_assoc(sdata->dev, (u8 *) mgmt, len);
 		if (ifmgd->flags & IEEE80211_STA_EXT_SME) {
 			/* Wait for SME to decide what to do next */
 			ifmgd->state = IEEE80211_STA_MLME_DISABLED;
@@ -1831,7 +1823,7 @@ static void ieee80211_rx_mgmt_assoc_resp(struct ieee80211_sub_if_data *sdata,
 	ifmgd->last_beacon = jiffies;
 
 	ieee80211_associated(sdata);
-	cfg80211_send_rx_assoc(sdata->dev, (u8 *) mgmt, len, GFP_KERNEL);
+	cfg80211_send_rx_assoc(sdata->dev, (u8 *) mgmt, len);
 }
 
 
