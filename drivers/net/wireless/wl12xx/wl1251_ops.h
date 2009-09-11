@@ -1,5 +1,5 @@
 /*
- * This file is part of wl1251
+ * This file is part of wl12xx
  *
  * Copyright (C) 2008 Nokia Corporation
  *
@@ -34,7 +34,7 @@
 
 #define WL1251_POWER_ON_SLEEP 10 /* in miliseconds */
 
-void wl1251_setup(struct wl1251 *wl);
+void wl1251_setup(struct wl12xx *wl);
 
 
 struct wl1251_acx_memory {
