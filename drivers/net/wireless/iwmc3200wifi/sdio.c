@@ -65,7 +65,6 @@
 #include <linux/kernel.h>
 #include <linux/netdevice.h>
 #include <linux/debugfs.h>
-#include <linux/mmc/sdio_ids.h>
 #include <linux/mmc/sdio.h>
 #include <linux/mmc/sdio_func.h>
 
@@ -493,8 +492,7 @@ static void iwm_sdio_remove(struct sdio_func *func)
 }
 
 static const struct sdio_device_id iwm_sdio_ids[] = {
-	{ SDIO_DEVICE(SDIO_VENDOR_ID_INTEL,
-		      SDIO_DEVICE_ID_INTEL_IWMC3200WIFI) },
+	{ SDIO_DEVICE(SDIO_VENDOR_ID_INTEL, SDIO_DEVICE_ID_IWM) },
 	{ /* end: all zeroes */	},
 };
 MODULE_DEVICE_TABLE(sdio, iwm_sdio_ids);
