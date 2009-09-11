@@ -704,8 +704,8 @@ EXPORT_SYMBOL_GPL(rt2x00mac_conf_tx);
 void rt2x00mac_rfkill_poll(struct ieee80211_hw *hw)
 {
 	struct rt2x00_dev *rt2x00dev = hw->priv;
-	bool active = !!rt2x00dev->ops->lib->rfkill_poll(rt2x00dev);
+	bool blocked = !!rt2x00dev->ops->lib->rfkill_poll(rt2x00dev);
 
-	wiphy_rfkill_set_hw_state(hw->wiphy, !active);
+	wiphy_rfkill_set_hw_state(hw->wiphy, blocked);
 }
 EXPORT_SYMBOL_GPL(rt2x00mac_rfkill_poll);
