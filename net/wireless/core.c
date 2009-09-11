@@ -666,10 +666,14 @@ static int cfg80211_netdev_notifier_call(struct notifier_block * nb,
 		wdev_lock(wdev);
 		switch (wdev->iftype) {
 		case NL80211_IFTYPE_ADHOC:
-			cfg80211_ibss_wext_join(rdev, wdev);
+			if (wdev->wext.ibss.ssid_len)
+				__cfg80211_join_ibss(rdev, dev,
+						     &wdev->wext.ibss);
 			break;
 		case NL80211_IFTYPE_STATION:
-			cfg80211_mgd_wext_connect(rdev, wdev);
+			if (wdev->wext.connect.ssid_len)
+				__cfg80211_connect(rdev, dev,
+						   &wdev->wext.connect);
 			break;
 		default:
 			break;
@@ -686,9 +690,6 @@ static int cfg80211_netdev_notifier_call(struct notifier_block * nb,
 		}
 		mutex_unlock(&rdev->devlist_mtx);
 		mutex_destroy(&wdev->mtx);
-#ifdef CONFIG_WIRELESS_EXT
-		kfree(wdev->wext.keys);
-#endif
 		break;
 	case NETDEV_PRE_UP:
 		if (!(wdev->wiphy->interface_modes & BIT(wdev->iftype)))
