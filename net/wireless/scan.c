@@ -607,9 +607,6 @@ int cfg80211_wext_siwscan(struct net_device *dev,
 	if (!netif_running(dev))
 		return -ENETDOWN;
 
-	if (wrqu->data.length == sizeof(struct iw_scan_req))
-		wreq = (struct iw_scan_req *)extra;
-
 	rdev = cfg80211_get_dev_from_ifindex(dev_net(dev), dev->ifindex);
 
 	if (IS_ERR(rdev))
@@ -622,14 +619,9 @@ int cfg80211_wext_siwscan(struct net_device *dev,
 
 	wiphy = &rdev->wiphy;
 
-	/* Determine number of channels, needed to allocate creq */
-	if (wreq && wreq->num_channels)
-		n_channels = wreq->num_channels;
-	else {
-		for (band = 0; band < IEEE80211_NUM_BANDS; band++)
-			if (wiphy->bands[band])
-				n_channels += wiphy->bands[band]->n_channels;
-	}
+	for (band = 0; band < IEEE80211_NUM_BANDS; band++)
+		if (wiphy->bands[band])
+			n_channels += wiphy->bands[band]->n_channels;
 
 	creq = kzalloc(sizeof(*creq) + sizeof(struct cfg80211_ssid) +
 		       n_channels * sizeof(void *),
@@ -646,41 +638,22 @@ int cfg80211_wext_siwscan(struct net_device *dev,
 	creq->n_channels = n_channels;
 	creq->n_ssids = 1;
 
-	/* translate "Scan on frequencies" request */
+	/* all channels */
 	i = 0;
 	for (band = 0; band < IEEE80211_NUM_BANDS; band++) {
 		int j;
 		if (!wiphy->bands[band])
 			continue;
 		for (j = 0; j < wiphy->bands[band]->n_channels; j++) {
-
-			/* If we have a wireless request structure and the
-			 * wireless request specifies frequencies, then search
-			 * for the matching hardware channel.
-			 */
-			if (wreq && wreq->num_channels) {
-				int k;
-				int wiphy_freq = wiphy->bands[band]->channels[j].center_freq;
-				for (k = 0; k < wreq->num_channels; k++) {
-					int wext_freq = wreq->channel_list[k].m / 100000;
-					if (wext_freq == wiphy_freq)
-						goto wext_freq_found;
-				}
-				goto wext_freq_not_found;
-			}
-
-		wext_freq_found:
 			creq->channels[i] = &wiphy->bands[band]->channels[j];
 			i++;
-		wext_freq_not_found: ;
 		}
 	}
 
-	/* Set real number of channels specified in creq->channels[] */
-	creq->n_channels = i;
+	/* translate scan request */
+	if (wrqu->data.length == sizeof(struct iw_scan_req)) {
+		wreq = (struct iw_scan_req *)extra;
 
-	/* translate "Scan for SSID" request */
-	if (wreq) {
 		if (wrqu->data.flags & IW_SCAN_THIS_ESSID) {
 			if (wreq->essid_len > IEEE80211_MAX_SSID_LEN)
 				return -EINVAL;
