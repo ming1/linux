@@ -440,7 +440,7 @@ struct rndis_wlan_private {
 	struct cfg80211_scan_request *scan_request;
 
 	struct workqueue_struct *workqueue;
-	struct delayed_work dev_poller_work;
+	struct delayed_work stats_work;
 	struct delayed_work scan_work;
 	struct work_struct work;
 	struct mutex command_lock;
@@ -2984,16 +2984,15 @@ static int rndis_wlan_get_caps(struct usbnet *usbdev)
 }
 
 
-#define DEVICE_POLLER_JIFFIES (HZ)
-static void rndis_device_poller(struct work_struct *work)
+#define STATS_UPDATE_JIFFIES (HZ)
+static void rndis_update_wireless_stats(struct work_struct *work)
 {
 	struct rndis_wlan_private *priv =
-		container_of(work, struct rndis_wlan_private,
-							dev_poller_work.work);
+		container_of(work, struct rndis_wlan_private, stats_work.work);
 	struct usbnet *usbdev = priv->usbdev;
 	__le32 rssi, tmp;
 	int len, ret, j;
-	int update_jiffies = DEVICE_POLLER_JIFFIES;
+	int update_jiffies = STATS_UPDATE_JIFFIES;
 	void *buf;
 
 	/* Only check/do workaround when connected. Calling is_associated()
@@ -3008,8 +3007,8 @@ static void rndis_device_poller(struct work_struct *work)
 	if (ret == 0)
 		priv->last_qual = level_to_qual(le32_to_cpu(rssi));
 
-	devdbg(usbdev, "dev-poller: OID_802_11_RSSI -> %d, rssi:%d, qual: %d",
-		ret, le32_to_cpu(rssi), level_to_qual(le32_to_cpu(rssi)));
+	devdbg(usbdev, "stats: OID_802_11_RSSI -> %d, rssi:%d", ret,
+							le32_to_cpu(rssi));
 
 	/* Workaround transfer stalls on poor quality links.
 	 * TODO: find right way to fix these stalls (as stalls do not happen
@@ -3020,8 +3019,8 @@ static void rndis_device_poller(struct work_struct *work)
 		 * Slower doesn't catch stalls fast enough.
 		 */
 		j = msecs_to_jiffies(priv->param_workaround_interval);
-		if (j > DEVICE_POLLER_JIFFIES)
-			j = DEVICE_POLLER_JIFFIES;
+		if (j > STATS_UPDATE_JIFFIES)
+			j = STATS_UPDATE_JIFFIES;
 		else if (j <= 0)
 			j = 1;
 		update_jiffies = j;
@@ -3041,8 +3040,8 @@ static void rndis_device_poller(struct work_struct *work)
 		rndis_query_oid(usbdev, OID_802_11_BSSID_LIST, buf, &len);
 		kfree(buf);
 	}
-
 end:
+
 	if (update_jiffies >= HZ)
 		update_jiffies = round_jiffies_relative(update_jiffies);
 	else {
@@ -3051,8 +3050,7 @@ end:
 			update_jiffies = j;
 	}
 
-	queue_delayed_work(priv->workqueue, &priv->dev_poller_work,
-								update_jiffies);
+	queue_delayed_work(priv->workqueue, &priv->stats_work, update_jiffies);
 }
 
 
@@ -3177,7 +3175,7 @@ static int rndis_wlan_bind(struct usbnet *usbdev, struct usb_interface *intf)
 	/* because rndis_command() sleeps we need to use workqueue */
 	priv->workqueue = create_singlethread_workqueue("rndis_wlan");
 	INIT_WORK(&priv->work, rndis_wlan_worker);
-	INIT_DELAYED_WORK(&priv->dev_poller_work, rndis_device_poller);
+	INIT_DELAYED_WORK(&priv->stats_work, rndis_update_wireless_stats);
 	INIT_DELAYED_WORK(&priv->scan_work, rndis_get_scan_results);
 
 	/* try bind rndis_host */
@@ -3254,7 +3252,7 @@ static int rndis_wlan_bind(struct usbnet *usbdev, struct usb_interface *intf)
 	return 0;
 
 fail:
-	cancel_delayed_work_sync(&priv->dev_poller_work);
+	cancel_delayed_work_sync(&priv->stats_work);
 	cancel_delayed_work_sync(&priv->scan_work);
 	cancel_work_sync(&priv->work);
 	flush_workqueue(priv->workqueue);
@@ -3272,7 +3270,7 @@ static void rndis_wlan_unbind(struct usbnet *usbdev, struct usb_interface *intf)
 	/* turn radio off */
 	disassociate(usbdev, 0);
 
-	cancel_delayed_work_sync(&priv->dev_poller_work);
+	cancel_delayed_work_sync(&priv->stats_work);
 	cancel_delayed_work_sync(&priv->scan_work);
 	cancel_work_sync(&priv->work);
 	flush_workqueue(priv->workqueue);
@@ -3303,8 +3301,8 @@ static int rndis_wlan_reset(struct usbnet *usbdev)
 	   (set_multicast_list() also turns on current packet filter) */
 	set_multicast_list(usbdev);
 
-	queue_delayed_work(priv->workqueue, &priv->dev_poller_work,
-		round_jiffies_relative(DEVICE_POLLER_JIFFIES));
+	queue_delayed_work(priv->workqueue, &priv->stats_work,
+		round_jiffies_relative(STATS_UPDATE_JIFFIES));
 
 	return deauthenticate(usbdev);
 }
@@ -3321,7 +3319,7 @@ static int rndis_wlan_stop(struct usbnet *usbdev)
 	retval = disassociate(usbdev, 0);
 
 	priv->work_pending = 0;
-	cancel_delayed_work_sync(&priv->dev_poller_work);
+	cancel_delayed_work_sync(&priv->stats_work);
 	cancel_delayed_work_sync(&priv->scan_work);
 	cancel_work_sync(&priv->work);
 	flush_workqueue(priv->workqueue);
