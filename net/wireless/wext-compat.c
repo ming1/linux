@@ -531,8 +531,7 @@ static int __cfg80211_set_encryption(struct cfg80211_registered_device *rdev,
 			wdev->wext.keys->data[idx];
 	}
 
-	if ((params->cipher == WLAN_CIPHER_SUITE_WEP40 ||
-	     params->cipher == WLAN_CIPHER_SUITE_WEP104) &&
+	if (params->cipher != WLAN_CIPHER_SUITE_AES_CMAC &&
 	    (tx_key || (!addr && wdev->wext.default_key == -1))) {
 		if (wdev->current_bss)
 			err = rdev->ops->set_default_key(&rdev->wiphy,
