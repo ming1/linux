@@ -45,8 +45,6 @@ static ssize_t lbs_dev_info(struct file *file, char __user *userbuf,
 	unsigned long addr = get_zeroed_page(GFP_KERNEL);
 	char *buf = (char *)addr;
 	ssize_t res;
-	if (!buf)
-		return -ENOMEM;
 
 	pos += snprintf(buf+pos, len-pos, "state = %s\n",
 				szStates[priv->connect_status]);
@@ -70,8 +68,6 @@ static ssize_t lbs_getscantable(struct file *file, char __user *userbuf,
 	char *buf = (char *)addr;
 	DECLARE_SSID_BUF(ssid);
 	struct bss_descriptor * iter_bss;
-	if (!buf)
-		return -ENOMEM;
 
 	pos += snprintf(buf+pos, len-pos,
 		"# | ch  | rssi |       bssid       |   cap    | Qual | SSID \n");
@@ -114,8 +110,6 @@ static ssize_t lbs_sleepparams_write(struct file *file,
 	int p1, p2, p3, p4, p5, p6;
 	unsigned long addr = get_zeroed_page(GFP_KERNEL);
 	char *buf = (char *)addr;
-	if (!buf)
-		return -ENOMEM;
 
 	buf_size = min(count, len - 1);
 	if (copy_from_user(buf, user_buf, buf_size)) {
@@ -154,8 +148,6 @@ static ssize_t lbs_sleepparams_read(struct file *file, char __user *userbuf,
 	struct sleep_params sp;
 	unsigned long addr = get_zeroed_page(GFP_KERNEL);
 	char *buf = (char *)addr;
-	if (!buf)
-		return -ENOMEM;
 
 	ret = lbs_cmd_802_11_sleep_params(priv, CMD_ACT_GET, &sp);
 	if (ret)
@@ -441,8 +433,6 @@ static ssize_t lbs_rdmac_read(struct file *file, char __user *userbuf,
 	int ret;
 	unsigned long addr = get_zeroed_page(GFP_KERNEL);
 	char *buf = (char *)addr;
-	if (!buf)
-		return -ENOMEM;
 
 	offval.offset = priv->mac_offset;
 	offval.value = 0;
@@ -467,8 +457,6 @@ static ssize_t lbs_rdmac_write(struct file *file,
 	ssize_t res, buf_size;
 	unsigned long addr = get_zeroed_page(GFP_KERNEL);
 	char *buf = (char *)addr;
-	if (!buf)
-		return -ENOMEM;
 
 	buf_size = min(count, len - 1);
 	if (copy_from_user(buf, userbuf, buf_size)) {
@@ -493,8 +481,6 @@ static ssize_t lbs_wrmac_write(struct file *file,
 	struct lbs_offset_value offval;
 	unsigned long addr = get_zeroed_page(GFP_KERNEL);
 	char *buf = (char *)addr;
-	if (!buf)
-		return -ENOMEM;
 
 	buf_size = min(count, len - 1);
 	if (copy_from_user(buf, userbuf, buf_size)) {
@@ -529,8 +515,6 @@ static ssize_t lbs_rdbbp_read(struct file *file, char __user *userbuf,
 	int ret;
 	unsigned long addr = get_zeroed_page(GFP_KERNEL);
 	char *buf = (char *)addr;
-	if (!buf)
-		return -ENOMEM;
 
 	offval.offset = priv->bbp_offset;
 	offval.value = 0;
@@ -556,8 +540,6 @@ static ssize_t lbs_rdbbp_write(struct file *file,
 	ssize_t res, buf_size;
 	unsigned long addr = get_zeroed_page(GFP_KERNEL);
 	char *buf = (char *)addr;
-	if (!buf)
-		return -ENOMEM;
 
 	buf_size = min(count, len - 1);
 	if (copy_from_user(buf, userbuf, buf_size)) {
@@ -582,8 +564,6 @@ static ssize_t lbs_wrbbp_write(struct file *file,
 	struct lbs_offset_value offval;
 	unsigned long addr = get_zeroed_page(GFP_KERNEL);
 	char *buf = (char *)addr;
-	if (!buf)
-		return -ENOMEM;
 
 	buf_size = min(count, len - 1);
 	if (copy_from_user(buf, userbuf, buf_size)) {
@@ -618,8 +598,6 @@ static ssize_t lbs_rdrf_read(struct file *file, char __user *userbuf,
 	int ret;
 	unsigned long addr = get_zeroed_page(GFP_KERNEL);
 	char *buf = (char *)addr;
-	if (!buf)
-		return -ENOMEM;
 
 	offval.offset = priv->rf_offset;
 	offval.value = 0;
@@ -645,8 +623,6 @@ static ssize_t lbs_rdrf_write(struct file *file,
 	ssize_t res, buf_size;
 	unsigned long addr = get_zeroed_page(GFP_KERNEL);
 	char *buf = (char *)addr;
-	if (!buf)
-		return -ENOMEM;
 
 	buf_size = min(count, len - 1);
 	if (copy_from_user(buf, userbuf, buf_size)) {
@@ -671,8 +647,6 @@ static ssize_t lbs_wrrf_write(struct file *file,
 	struct lbs_offset_value offval;
 	unsigned long addr = get_zeroed_page(GFP_KERNEL);
 	char *buf = (char *)addr;
-	if (!buf)
-		return -ENOMEM;
 
 	buf_size = min(count, len - 1);
 	if (copy_from_user(buf, userbuf, buf_size)) {
@@ -879,8 +853,6 @@ static ssize_t lbs_debugfs_read(struct file *file, char __user *userbuf,
 	struct debug_data *d;
 	unsigned long addr = get_zeroed_page(GFP_KERNEL);
 	char *buf = (char *)addr;
-	if (!buf)
-		return -ENOMEM;
 
 	p = buf;
 
