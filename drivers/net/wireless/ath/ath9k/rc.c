@@ -817,17 +817,28 @@ static void ath_rc_rate_set_rtscts(struct ath_softc *sc,
 static u8 ath_rc_rate_getidx(struct ath_softc *sc,
 			     struct ath_rate_priv *ath_rc_priv,
 			     const struct ath_rate_table *rate_table,
-			     u8 rix, u16 stepdown)
+			     u8 rix, u16 stepdown,
+			     u16 min_rate)
 {
 	u32 j;
 	u8 nextindex = 0;
 
-	for (j = stepdown; j > 0; j--) {
-		if (ath_rc_get_nextlowervalid_txrate(rate_table,
-					ath_rc_priv, rix, &nextindex))
-			rix = nextindex;
-		else
-			break;
+	if (min_rate) {
+		for (j = RATE_TABLE_SIZE; j > 0; j--) {
+			if (ath_rc_get_nextlowervalid_txrate(rate_table,
+						ath_rc_priv, rix, &nextindex))
+				rix = nextindex;
+			else
+				break;
+		}
+	} else {
+		for (j = stepdown; j > 0; j--) {
+			if (ath_rc_get_nextlowervalid_txrate(rate_table,
+						ath_rc_priv, rix, &nextindex))
+				rix = nextindex;
+			else
+				break;
+		}
 	}
 	return rix;
 }
@@ -871,7 +882,7 @@ static void ath_rc_ratefind(struct ath_softc *sc,
 		 * after the probe rate
 		 */
 		nrix = ath_rc_rate_getidx(sc, ath_rc_priv,
-					  rate_table, nrix, 1);
+					  rate_table, nrix, 1, 0);
 		ath_rc_rate_set_series(rate_table, &rates[i++], txrc,
 				       try_per_rate, nrix, 0);
 
@@ -884,12 +895,16 @@ static void ath_rc_ratefind(struct ath_softc *sc,
 
 	/* Fill in the other rates for multirate retry */
 	for ( ; i < 4; i++) {
+		u8 min_rate;
+
 		/* Use twice the number of tries for the last MRR segment. */
 		if (i + 1 == 4)
 			try_per_rate = 4;
 
+		min_rate = (((i + 1) == 4) && 0);
+
 		nrix = ath_rc_rate_getidx(sc, ath_rc_priv,
-					  rate_table, nrix, 1);
+					  rate_table, nrix, 1, min_rate);
 		/* All other rates in the series have RTS enabled */
 		ath_rc_rate_set_series(rate_table, &rates[i], txrc,
 				       try_per_rate, nrix, 1);
