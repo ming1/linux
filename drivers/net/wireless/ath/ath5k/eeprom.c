@@ -414,11 +414,27 @@ static int ath5k_eeprom_read_modes(struct ath5k_hw *ah, u32 *offset,
 		break;
 	}
 
-	/*
-	 * Read turbo mode information on newer EEPROM versions
-	 */
+done:
+	/* return new offset */
+	*offset = o;
+
+	return 0;
+}
+
+/*
+ * Read turbo mode information on newer EEPROM versions
+ */
+static int
+ath5k_eeprom_read_turbo_modes(struct ath5k_hw *ah,
+			      u32 *offset, unsigned int mode)
+{
+	struct ath5k_eeprom_info *ee = &ah->ah_capabilities.cap_eeprom;
+	u32 o = *offset;
+	u16 val;
+	int ret;
+
 	if (ee->ee_version < AR5K_EEPROM_VERSION_5_0)
-		goto done;
+		return 0;
 
 	switch (mode){
 	case AR5K_EEPROM_MODE_11A:
@@ -452,7 +468,6 @@ static int ath5k_eeprom_read_modes(struct ath5k_hw *ah, u32 *offset,
 		break;
 	}
 
-done:
 	/* return new offset */
 	*offset = o;
 
@@ -487,6 +502,10 @@ ath5k_eeprom_init_modes(struct ath5k_hw *ah)
 			return ret;
 
 		ret = ath5k_eeprom_read_modes(ah, &offset, mode);
+		if (ret)
+			return ret;
+
+		ret = ath5k_eeprom_read_turbo_modes(ah, &offset, mode);
 		if (ret)
 			return ret;
 	}
