@@ -94,6 +94,7 @@ static ssize_t b43_attr_interfmode_store(struct device *dev,
 					 const char *buf, size_t count)
 {
 	struct b43_wldev *wldev = dev_to_b43_wldev(dev);
+	unsigned long flags;
 	int err;
 	int mode;
 
@@ -119,6 +120,7 @@ static ssize_t b43_attr_interfmode_store(struct device *dev,
 	}
 
 	mutex_lock(&wldev->wl->mutex);
+	spin_lock_irqsave(&wldev->wl->irq_lock, flags);
 
 	if (wldev->phy.ops->interf_mitigation) {
 		err = wldev->phy.ops->interf_mitigation(wldev, mode);
@@ -130,6 +132,7 @@ static ssize_t b43_attr_interfmode_store(struct device *dev,
 		err = -ENOSYS;
 
 	mmiowb();
+	spin_unlock_irqrestore(&wldev->wl->irq_lock, flags);
 	mutex_unlock(&wldev->wl->mutex);
 
 	return err ? err : count;

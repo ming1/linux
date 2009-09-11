@@ -570,6 +570,7 @@ out_unlock:
 	return err;
 }
 
+/* Called with IRQs disabled. */
 void b43_pio_handle_txstatus(struct b43_wldev *dev,
 			     const struct b43_txstatus *status)
 {
@@ -583,7 +584,7 @@ void b43_pio_handle_txstatus(struct b43_wldev *dev,
 		return;
 	B43_WARN_ON(!pack);
 
-	spin_lock_irq(&q->lock);
+	spin_lock(&q->lock); /* IRQs are already disabled. */
 
 	info = IEEE80211_SKB_CB(pack->skb);
 
@@ -603,7 +604,7 @@ void b43_pio_handle_txstatus(struct b43_wldev *dev,
 		q->stopped = 0;
 	}
 
-	spin_unlock_irq(&q->lock);
+	spin_unlock(&q->lock);
 }
 
 void b43_pio_get_tx_stats(struct b43_wldev *dev,
