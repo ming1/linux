@@ -718,9 +718,10 @@ int iwl_tx_skb(struct iwl_priv *priv, struct sk_buff *skb)
 		IWL_DEBUG_TX(priv, "Sending REASSOC frame\n");
 #endif
 
-	/* drop all non-injected data frame if we are not associated */
+	/* drop all data frame if we are not associated */
 	if (ieee80211_is_data(fc) &&
-	    !(info->flags & IEEE80211_TX_CTL_INJECTED) &&
+	    (!iwl_is_monitor_mode(priv) ||
+	    !(info->flags & IEEE80211_TX_CTL_INJECTED)) && /* packet injection */
 	    (!iwl_is_associated(priv) ||
 	     ((priv->iw_mode == NL80211_IFTYPE_STATION) && !priv->assoc_id) ||
 	     !priv->assoc_station_added)) {
@@ -731,10 +732,7 @@ int iwl_tx_skb(struct iwl_priv *priv, struct sk_buff *skb)
 	hdr_len = ieee80211_hdrlen(fc);
 
 	/* Find (or create) index into station table for destination station */
-	if (info->flags & IEEE80211_TX_CTL_INJECTED)
-		sta_id = priv->hw_params.bcast_sta_id;
-	else
-		sta_id = iwl_get_sta_id(priv, hdr);
+	sta_id = iwl_get_sta_id(priv, hdr);
 	if (sta_id == IWL_INVALID_STATION) {
 		IWL_DEBUG_DROP(priv, "Dropping - INVALID STATION: %pM\n",
 			       hdr->addr1);
