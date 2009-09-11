@@ -6,7 +6,6 @@
 #include <linux/delay.h>
 #include <linux/sched.h>
 #include <linux/idr.h>
-#include <linux/rculist.h>
 #include <net/net_namespace.h>
 #include <net/netns/generic.h>
 
@@ -128,7 +127,7 @@ static struct net *net_create(void)
 	rv = setup_net(net);
 	if (rv == 0) {
 		rtnl_lock();
-		list_add_tail_rcu(&net->list, &net_namespace_list);
+		list_add_tail(&net->list, &net_namespace_list);
 		rtnl_unlock();
 	}
 	mutex_unlock(&net_mutex);
@@ -157,15 +156,8 @@ static void cleanup_net(struct work_struct *work)
 
 	/* Don't let anyone else find us. */
 	rtnl_lock();
-	list_del_rcu(&net->list);
+	list_del(&net->list);
 	rtnl_unlock();
-
-	/*
-	 * Another CPU might be rcu-iterating the list, wait for it.
-	 * This needs to be before calling the exit() notifiers, so
-	 * the rcu_barrier() below isn't sufficient alone.
-	 */
-	synchronize_rcu();
 
 	/* Run all of the network namespace exit methods */
 	list_for_each_entry_reverse(ops, &pernet_list, list) {
@@ -227,7 +219,7 @@ static int __init net_ns_init(void)
 		panic("Could not setup the initial network namespace");
 
 	rtnl_lock();
-	list_add_tail_rcu(&init_net.list, &net_namespace_list);
+	list_add_tail(&init_net.list, &net_namespace_list);
 	rtnl_unlock();
 
 	mutex_unlock(&net_mutex);
