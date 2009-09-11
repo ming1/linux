@@ -1358,10 +1358,8 @@ static int __init ssb_modinit(void)
 	ssb_buses_lock();
 	err = ssb_attach_queued_buses();
 	ssb_buses_unlock();
-	if (err) {
+	if (err)
 		bus_unregister(&ssb_bustype);
-		goto out;
-	}
 
 	err = b43_pci_ssb_bridge_init();
 	if (err) {
@@ -1377,7 +1375,7 @@ static int __init ssb_modinit(void)
 		/* don't fail SSB init because of this */
 		err = 0;
 	}
-out:
+
 	return err;
 }
 /* ssb must be initialized after PCI but before the ssb drivers.
