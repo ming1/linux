@@ -265,6 +265,7 @@ struct iwl_cfg {
 	bool use_rts_for_ht;
 	u16 led_compensation;
 	int chain_noise_num_beacons;
+	const bool supports_idle;
 };
 
 /***************************
