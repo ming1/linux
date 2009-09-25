@@ -98,7 +98,8 @@ struct iwl_hcmd_utils_ops {
 	void (*gain_computation)(struct iwl_priv *priv,
 			u32 *average_noise,
 			u16 min_average_noise_antennat_i,
-			u32 min_average_noise);
+			u32 min_average_noise,
+			u8 default_chain);
 	void (*chain_noise_reset)(struct iwl_priv *priv);
 	void (*rts_tx_cmd_flag)(struct ieee80211_tx_info *info,
 			__le32 *tx_flags);
@@ -214,10 +215,11 @@ struct iwl_mod_params {
  * @pa_type: used by 6000 series only to identify the type of Power Amplifier
  * @max_ll_items: max number of OTP blocks
  * @shadow_ram_support: shadow support for OTP memory
- * @use_rts_for_ht: use rts/cts protection for HT traffic
  * @led_compensation: compensate on the led on/off time per HW according
  *	to the deviation to achieve the desired led frequency.
  *	The detail algorithm is described in iwl-led.c
+ * @use_rts_for_ht: use rts/cts protection for HT traffic
+ * @chain_noise_num_beacons: number of beacons used to compute chain noise
  *
  * We enable the driver to be backward compatible wrt API version. The
  * driver specifies which APIs it supports (with @ucode_api_max being the
@@ -260,8 +262,9 @@ struct iwl_cfg {
 	const bool shadow_ram_support;
 	const bool ht_greenfield_support;
 	const bool broken_powersave;
-	bool use_rts_for_ht;
 	u16 led_compensation;
+	bool use_rts_for_ht;
+	int chain_noise_num_beacons;
 };
 
 /***************************

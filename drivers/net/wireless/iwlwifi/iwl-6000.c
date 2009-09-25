@@ -222,18 +222,11 @@ static struct iwl_lib_ops iwl6000_lib = {
 	 },
 };
 
-static struct iwl_hcmd_utils_ops iwl6000_hcmd_utils = {
-	.get_hcmd_size = iwl5000_get_hcmd_size,
-	.build_addsta_hcmd = iwl5000_build_addsta_hcmd,
-	.rts_tx_cmd_flag = iwl5000_rts_tx_cmd_flag,
-	.calc_rssi = iwl5000_calc_rssi,
-};
-
 static struct iwl_ops iwl6000_ops = {
 	.ucode = &iwl5000_ucode,
 	.lib = &iwl6000_lib,
 	.hcmd = &iwl5000_hcmd,
-	.utils = &iwl6000_hcmd_utils,
+	.utils = &iwl5000_hcmd_utils,
 };
 
 
@@ -258,8 +251,9 @@ struct iwl_cfg iwl6000h_2agn_cfg = {
 	.max_ll_items = OTP_MAX_LL_ITEMS_6x00,
 	.shadow_ram_support = true,
 	.ht_greenfield_support = true,
-	.use_rts_for_ht = true, /* use rts/cts protection */
 	.led_compensation = 51,
+	.use_rts_for_ht = true, /* use rts/cts protection */
+	.chain_noise_num_beacons = IWL_CAL_NUM_BEACONS,
 };
 
 struct iwl_cfg iwl6000h_2abg_cfg = {
@@ -281,6 +275,7 @@ struct iwl_cfg iwl6000h_2abg_cfg = {
 	.shadow_ram_support = true,
 	.ht_greenfield_support = true,
 	.led_compensation = 51,
+	.chain_noise_num_beacons = IWL_CAL_NUM_BEACONS,
 };
 
 struct iwl_cfg iwl6000h_2bg_cfg = {
@@ -302,6 +297,7 @@ struct iwl_cfg iwl6000h_2bg_cfg = {
 	.shadow_ram_support = true,
 	.ht_greenfield_support = true,
 	.led_compensation = 51,
+	.chain_noise_num_beacons = IWL_CAL_NUM_BEACONS,
 };
 
 /*
@@ -325,8 +321,9 @@ struct iwl_cfg iwl6000i_2agn_cfg = {
 	.max_ll_items = OTP_MAX_LL_ITEMS_6x00,
 	.shadow_ram_support = true,
 	.ht_greenfield_support = true,
-	.use_rts_for_ht = true, /* use rts/cts protection */
 	.led_compensation = 51,
+	.use_rts_for_ht = true, /* use rts/cts protection */
+	.chain_noise_num_beacons = IWL_CAL_NUM_BEACONS,
 };
 
 struct iwl_cfg iwl6000i_2abg_cfg = {
@@ -348,6 +345,7 @@ struct iwl_cfg iwl6000i_2abg_cfg = {
 	.shadow_ram_support = true,
 	.ht_greenfield_support = true,
 	.led_compensation = 51,
+	.chain_noise_num_beacons = IWL_CAL_NUM_BEACONS,
 };
 
 struct iwl_cfg iwl6000i_2bg_cfg = {
@@ -369,6 +367,7 @@ struct iwl_cfg iwl6000i_2bg_cfg = {
 	.shadow_ram_support = true,
 	.ht_greenfield_support = true,
 	.led_compensation = 51,
+	.chain_noise_num_beacons = IWL_CAL_NUM_BEACONS,
 };
 
 struct iwl_cfg iwl6050_2agn_cfg = {
@@ -389,8 +388,9 @@ struct iwl_cfg iwl6050_2agn_cfg = {
 	.max_ll_items = OTP_MAX_LL_ITEMS_6x00,
 	.shadow_ram_support = true,
 	.ht_greenfield_support = true,
-	.use_rts_for_ht = true, /* use rts/cts protection */
 	.led_compensation = 51,
+	.use_rts_for_ht = true, /* use rts/cts protection */
+	.chain_noise_num_beacons = IWL_CAL_NUM_BEACONS,
 };
 
 struct iwl_cfg iwl6050_2abg_cfg = {
@@ -412,6 +412,7 @@ struct iwl_cfg iwl6050_2abg_cfg = {
 	.shadow_ram_support = true,
 	.ht_greenfield_support = true,
 	.led_compensation = 51,
+	.chain_noise_num_beacons = IWL_CAL_NUM_BEACONS,
 };
 
 struct iwl_cfg iwl6000_3agn_cfg = {
@@ -432,8 +433,9 @@ struct iwl_cfg iwl6000_3agn_cfg = {
 	.max_ll_items = OTP_MAX_LL_ITEMS_6x00,
 	.shadow_ram_support = true,
 	.ht_greenfield_support = true,
-	.use_rts_for_ht = true, /* use rts/cts protection */
 	.led_compensation = 51,
+	.use_rts_for_ht = true, /* use rts/cts protection */
+	.chain_noise_num_beacons = IWL_CAL_NUM_BEACONS,
 };
 
 struct iwl_cfg iwl6050_3agn_cfg = {
@@ -456,6 +458,8 @@ struct iwl_cfg iwl6050_3agn_cfg = {
 	.ht_greenfield_support = true,
 	.use_rts_for_ht = true, /* use rts/cts protection */
 	.led_compensation = 51,
+	.use_rts_for_ht = true, /* use rts/cts protection */
+	.chain_noise_num_beacons = IWL_CAL_NUM_BEACONS,
 };
 
 MODULE_FIRMWARE(IWL6000_MODULE_FIRMWARE(IWL6000_UCODE_API_MAX));
