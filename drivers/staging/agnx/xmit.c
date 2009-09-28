@@ -384,8 +384,7 @@ void handle_rx_irq(struct agnx_priv *priv)
 /*			dump_ieee80211_hdr((struct ieee80211_hdr *)skb->data, "RX G"); */
 		} else
 			agnx_bug("Unknown packets type");
-		memcpy(IEEE80211_SKB_RXCB(skb), &status, sizeof(status));
-		ieee80211_rx_irqsafe(priv->hw, skb);
+		ieee80211_rx_irqsafe(priv->hw, skb, &status);
 		rx_desc_reinit(priv, i);
 
 	} while (priv->rx.idx++);

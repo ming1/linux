@@ -397,11 +397,6 @@ static inline struct ieee80211_tx_info *IEEE80211_SKB_CB(struct sk_buff *skb)
 	return (struct ieee80211_tx_info *)skb->cb;
 }
 
-static inline struct ieee80211_rx_status *IEEE80211_SKB_RXCB(struct sk_buff *skb)
-{
-	return (struct ieee80211_rx_status *)skb->cb;
-}
-
 /**
  * ieee80211_tx_info_clear_status - clear TX status
  *
@@ -483,7 +478,7 @@ enum mac80211_rx_flags {
  *
  * The low-level driver should provide this information (the subset
  * supported by hardware) to the 802.11 code with each received
- * frame, in the skb's control buffer (cb).
+ * frame.
  *
  * @mactime: value in microseconds of the 64-bit Time Synchronization Function
  * 	(TSF) timer when the first data symbol (MPDU) arrived at the hardware.
@@ -1611,11 +1606,9 @@ void ieee80211_free_hw(struct ieee80211_hw *hw);
  */
 void ieee80211_restart_hw(struct ieee80211_hw *hw);
 
-/*
- * trick to avoid symbol clashes with the ieee80211 subsystem,
- * use the inline below instead
- */
-void __ieee80211_rx(struct ieee80211_hw *hw, struct sk_buff *skb);
+/* trick to avoid symbol clashes with the ieee80211 subsystem */
+void __ieee80211_rx(struct ieee80211_hw *hw, struct sk_buff *skb,
+		    struct ieee80211_rx_status *status);
 
 /**
  * ieee80211_rx - receive frame
@@ -1631,10 +1624,13 @@ void __ieee80211_rx(struct ieee80211_hw *hw, struct sk_buff *skb);
  *
  * @hw: the hardware this frame came in on
  * @skb: the buffer to receive, owned by mac80211 after this call
+ * @status: status of this frame; the status pointer need not be valid
+ *	after this function returns
  */
-static inline void ieee80211_rx(struct ieee80211_hw *hw, struct sk_buff *skb)
+static inline void ieee80211_rx(struct ieee80211_hw *hw, struct sk_buff *skb,
+				struct ieee80211_rx_status *status)
 {
-	__ieee80211_rx(hw, skb);
+	__ieee80211_rx(hw, skb, status);
 }
 
 /**
@@ -1648,8 +1644,13 @@ static inline void ieee80211_rx(struct ieee80211_hw *hw, struct sk_buff *skb)
  *
  * @hw: the hardware this frame came in on
  * @skb: the buffer to receive, owned by mac80211 after this call
+ * @status: status of this frame; the status pointer need not be valid
+ *	after this function returns and is not freed by mac80211,
+ *	it is recommended that it points to a stack area
  */
-void ieee80211_rx_irqsafe(struct ieee80211_hw *hw, struct sk_buff *skb);
+void ieee80211_rx_irqsafe(struct ieee80211_hw *hw,
+			  struct sk_buff *skb,
+			  struct ieee80211_rx_status *status);
 
 /**
  * ieee80211_tx_status - transmit status callback

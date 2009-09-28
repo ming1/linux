@@ -1568,8 +1568,7 @@ static void at76_rx_tasklet(unsigned long param)
 
 	at76_dbg(DBG_MAC80211, "calling ieee80211_rx_irqsafe(): %d/%d",
 		 priv->rx_skb->len, priv->rx_skb->data_len);
-	memcpy(IEEE80211_SKB_RXCB(priv->rx_skb), &rx_status, sizeof(rx_status));
-	ieee80211_rx_irqsafe(priv->hw, priv->rx_skb);
+	ieee80211_rx_irqsafe(priv->hw, priv->rx_skb, &rx_status);
 
 	/* Use a new skb for the next receive */
 	priv->rx_skb = NULL;
