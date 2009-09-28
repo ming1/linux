@@ -351,12 +351,12 @@ static int nl80211_send_wiphy(struct sk_buff *msg, u32 pid, u32 seq, int flags,
 
 #undef CMD
 
-	if (dev->ops->connect || dev->ops->auth) {
+	if (dev->ops->connect) {
 		i++;
 		NLA_PUT_U32(msg, i, NL80211_CMD_CONNECT);
 	}
 
-	if (dev->ops->disconnect || dev->ops->deauth) {
+	if (dev->ops->disconnect) {
 		i++;
 		NLA_PUT_U32(msg, i, NL80211_CMD_DISCONNECT);
 	}
