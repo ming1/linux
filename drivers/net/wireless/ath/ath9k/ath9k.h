@@ -611,7 +611,6 @@ struct ath_softc {
 	struct ath_bus_ops *bus_ops;
 	struct ath_beacon_config cur_beacon_conf;
 	struct delayed_work tx_complete_work;
-	struct ath_btcoex_info btcoex_info;
 };
 
 struct ath_wiphy {
