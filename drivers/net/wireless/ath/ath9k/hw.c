@@ -3690,8 +3690,7 @@ void ath9k_hw_fill_cap_info(struct ath_hw *ah)
 	pCap->num_antcfg_2ghz =
 		ah->eep_ops->get_num_ant_config(ah, ATH9K_HAL_FREQ_BAND_2GHZ);
 
-	if (AR_SREV_9280_10_OR_LATER(ah) &&
-	    ath_btcoex_supported(ah->hw_version.subsysid)) {
+	if (AR_SREV_9280_10_OR_LATER(ah) && btcoex_enable) {
 		btcoex_info->btactive_gpio = ATH_BTACTIVE_GPIO;
 		btcoex_info->wlanactive_gpio = ATH_WLANACTIVE_GPIO;
 
