@@ -4,7 +4,6 @@
  */
 #include <linux/kernel.h>
 #include <linux/firmware.h>
-#include <linux/device.h>
 
 #include "hermes.h"
 #include "hermes_dld.h"
@@ -100,7 +99,7 @@ orinoco_dl_firmware(struct orinoco_private *priv,
 	const void *end;
 	const char *firmware;
 	const char *fw_err;
-	struct device *dev = priv->dev;
+	struct net_device *dev = priv->ndev;
 	int err = 0;
 
 	pda = kzalloc(fw->pda_size, GFP_KERNEL);
@@ -112,11 +111,12 @@ orinoco_dl_firmware(struct orinoco_private *priv,
 	else
 		firmware = fw->sta_fw;
 
-	dev_dbg(dev, "Attempting to download firmware %s\n", firmware);
+	printk(KERN_DEBUG "%s: Attempting to download firmware %s\n",
+	       dev->name, firmware);
 
 	/* Read current plug data */
 	err = hermes_read_pda(hw, pda, fw->pda_addr, fw->pda_size, 0);
-	dev_dbg(dev, "Read PDA returned %d\n", err);
+	printk(KERN_DEBUG "%s: Read PDA returned %d\n", dev->name, err);
 	if (err)
 		goto free;
 
@@ -124,7 +124,8 @@ orinoco_dl_firmware(struct orinoco_private *priv,
 		err = request_firmware(&fw_entry, firmware, priv->dev);
 
 		if (err) {
-			dev_err(dev, "Cannot find firmware %s\n", firmware);
+			printk(KERN_ERR "%s: Cannot find firmware %s\n",
+			       dev->name, firmware);
 			err = -ENOENT;
 			goto free;
 		}
@@ -135,15 +136,16 @@ orinoco_dl_firmware(struct orinoco_private *priv,
 
 	fw_err = validate_fw(hdr, fw_entry->size);
 	if (fw_err) {
-		dev_warn(dev, "Invalid firmware image detected (%s). "
-			 "Aborting download\n", fw_err);
+		printk(KERN_WARNING "%s: Invalid firmware image detected (%s). "
+		       "Aborting download\n",
+		       dev->name, fw_err);
 		err = -EINVAL;
 		goto abort;
 	}
 
 	/* Enable aux port to allow programming */
 	err = hermesi_program_init(hw, le32_to_cpu(hdr->entry_point));
-	dev_dbg(dev, "Program init returned %d\n", err);
+	printk(KERN_DEBUG "%s: Program init returned %d\n", dev->name, err);
 	if (err != 0)
 		goto abort;
 
@@ -154,7 +156,7 @@ orinoco_dl_firmware(struct orinoco_private *priv,
 	end = fw_entry->data + fw_entry->size;
 
 	err = hermes_program(hw, first_block, end);
-	dev_dbg(dev, "Program returned %d\n", err);
+	printk(KERN_DEBUG "%s: Program returned %d\n", dev->name, err);
 	if (err != 0)
 		goto abort;
 
@@ -165,18 +167,19 @@ orinoco_dl_firmware(struct orinoco_private *priv,
 
 	err = hermes_apply_pda_with_defaults(hw, first_block, end, pda,
 					     &pda[fw->pda_size / sizeof(*pda)]);
-	dev_dbg(dev, "Apply PDA returned %d\n", err);
+	printk(KERN_DEBUG "%s: Apply PDA returned %d\n", dev->name, err);
 	if (err)
 		goto abort;
 
 	/* Tell card we've finished */
 	err = hermesi_program_end(hw);
-	dev_dbg(dev, "Program end returned %d\n", err);
+	printk(KERN_DEBUG "%s: Program end returned %d\n", dev->name, err);
 	if (err != 0)
 		goto abort;
 
 	/* Check if we're running */
-	dev_dbg(dev, "hermes_present returned %d\n", hermes_present(hw));
+	printk(KERN_DEBUG "%s: hermes_present returned %d\n",
+	       dev->name, hermes_present(hw));
 
 abort:
 	/* If we requested the firmware, release it. */
@@ -279,13 +282,14 @@ static int
 symbol_dl_firmware(struct orinoco_private *priv,
 		   const struct fw_info *fw)
 {
-	struct device *dev = priv->dev;
+	struct net_device *dev = priv->ndev;
 	int ret;
 	const struct firmware *fw_entry;
 
 	if (!orinoco_cached_fw_get(priv, true)) {
 		if (request_firmware(&fw_entry, fw->pri_fw, priv->dev) != 0) {
-			dev_err(dev, "Cannot find firmware: %s\n", fw->pri_fw);
+			printk(KERN_ERR "%s: Cannot find firmware: %s\n",
+			       dev->name, fw->pri_fw);
 			return -ENOENT;
 		}
 	} else
@@ -298,13 +302,15 @@ symbol_dl_firmware(struct orinoco_private *priv,
 	if (!orinoco_cached_fw_get(priv, true))
 		release_firmware(fw_entry);
 	if (ret) {
-		dev_err(dev, "Primary firmware download failed\n");
+		printk(KERN_ERR "%s: Primary firmware download failed\n",
+		       dev->name);
 		return ret;
 	}
 
 	if (!orinoco_cached_fw_get(priv, false)) {
 		if (request_firmware(&fw_entry, fw->sta_fw, priv->dev) != 0) {
-			dev_err(dev, "Cannot find firmware: %s\n", fw->sta_fw);
+			printk(KERN_ERR "%s: Cannot find firmware: %s\n",
+			       dev->name, fw->sta_fw);
 			return -ENOENT;
 		}
 	} else
@@ -316,7 +322,8 @@ symbol_dl_firmware(struct orinoco_private *priv,
 	if (!orinoco_cached_fw_get(priv, false))
 		release_firmware(fw_entry);
 	if (ret) {
-		dev_err(dev, "Secondary firmware download failed\n");
+		printk(KERN_ERR "%s: Secondary firmware download failed\n",
+		       dev->name);
 	}
 
 	return ret;
