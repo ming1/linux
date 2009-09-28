@@ -255,7 +255,8 @@ int wl1251_set_partition(struct wl1251 *wl,
 	return 0;
 }
 
-void wl1251_spi_read(struct wl1251 *wl, int addr, void *buf, size_t len)
+void wl1251_spi_read(struct wl1251 *wl, int addr, void *buf,
+		     size_t len, bool fixed)
 {
 	struct spi_transfer t[3];
 	struct spi_message m;
@@ -269,6 +270,9 @@ void wl1251_spi_read(struct wl1251 *wl, int addr, void *buf, size_t len)
 	*cmd |= WSPI_CMD_READ;
 	*cmd |= (len << WSPI_CMD_BYTE_LENGTH_OFFSET) & WSPI_CMD_BYTE_LENGTH;
 	*cmd |= addr & WSPI_CMD_BYTE_ADDR;
+
+	if (fixed)
+		*cmd |= WSPI_CMD_FIXED;
 
 	spi_message_init(&m);
 	memset(t, 0, sizeof(t));
@@ -294,7 +298,8 @@ void wl1251_spi_read(struct wl1251 *wl, int addr, void *buf, size_t len)
 	wl1251_dump(DEBUG_SPI, "spi_read buf <- ", buf, len);
 }
 
-void wl1251_spi_write(struct wl1251 *wl, int addr, void *buf, size_t len)
+void wl1251_spi_write(struct wl1251 *wl, int addr, void *buf,
+		      size_t len, bool fixed)
 {
 	struct spi_transfer t[2];
 	struct spi_message m;
@@ -306,6 +311,9 @@ void wl1251_spi_write(struct wl1251 *wl, int addr, void *buf, size_t len)
 	*cmd |= WSPI_CMD_WRITE;
 	*cmd |= (len << WSPI_CMD_BYTE_LENGTH_OFFSET) & WSPI_CMD_BYTE_LENGTH;
 	*cmd |= addr & WSPI_CMD_BYTE_ADDR;
+
+	if (fixed)
+		*cmd |= WSPI_CMD_FIXED;
 
 	spi_message_init(&m);
 	memset(t, 0, sizeof(t));
@@ -331,7 +339,7 @@ void wl1251_spi_mem_read(struct wl1251 *wl, int addr, void *buf,
 
 	physical = wl1251_translate_mem_addr(wl, addr);
 
-	wl1251_spi_read(wl, physical, buf, len);
+	wl1251_spi_read(wl, physical, buf, len, false);
 }
 
 void wl1251_spi_mem_write(struct wl1251 *wl, int addr, void *buf,
@@ -341,25 +349,27 @@ void wl1251_spi_mem_write(struct wl1251 *wl, int addr, void *buf,
 
 	physical = wl1251_translate_mem_addr(wl, addr);
 
-	wl1251_spi_write(wl, physical, buf, len);
+	wl1251_spi_write(wl, physical, buf, len, false);
 }
 
-void wl1251_spi_reg_read(struct wl1251 *wl, int addr, void *buf, size_t len)
+void wl1251_spi_reg_read(struct wl1251 *wl, int addr, void *buf, size_t len,
+			 bool fixed)
 {
 	int physical;
 
 	physical = wl1251_translate_reg_addr(wl, addr);
 
-	wl1251_spi_read(wl, physical, buf, len);
+	wl1251_spi_read(wl, physical, buf, len, fixed);
 }
 
-void wl1251_spi_reg_write(struct wl1251 *wl, int addr, void *buf, size_t len)
+void wl1251_spi_reg_write(struct wl1251 *wl, int addr, void *buf, size_t len,
+			  bool fixed)
 {
 	int physical;
 
 	physical = wl1251_translate_reg_addr(wl, addr);
 
-	wl1251_spi_write(wl, physical, buf, len);
+	wl1251_spi_write(wl, physical, buf, len, fixed);
 }
 
 u32 wl1251_mem_read32(struct wl1251 *wl, int addr)
