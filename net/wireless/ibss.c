@@ -39,8 +39,6 @@ void __cfg80211_ibss_joined(struct net_device *dev, const u8 *bssid)
 	cfg80211_hold_bss(bss_from_pub(bss));
 	wdev->current_bss = bss_from_pub(bss);
 
-	cfg80211_upload_connect_keys(wdev);
-
 	nl80211_send_ibss_bssid(wiphy_to_dev(wdev->wiphy), dev, bssid,
 				GFP_KERNEL);
 #ifdef CONFIG_WIRELESS_EXT
@@ -73,8 +71,7 @@ EXPORT_SYMBOL(cfg80211_ibss_joined);
 
 int __cfg80211_join_ibss(struct cfg80211_registered_device *rdev,
 			 struct net_device *dev,
-			 struct cfg80211_ibss_params *params,
-			 struct cfg80211_cached_keys *connkeys)
+			 struct cfg80211_ibss_params *params)
 {
 	struct wireless_dev *wdev = dev->ieee80211_ptr;
 	int err;
@@ -84,18 +81,13 @@ int __cfg80211_join_ibss(struct cfg80211_registered_device *rdev,
 	if (wdev->ssid_len)
 		return -EALREADY;
 
-	if (WARN_ON(wdev->connect_keys))
-		kfree(wdev->connect_keys);
-	wdev->connect_keys = connkeys;
-
 #ifdef CONFIG_WIRELESS_EXT
 	wdev->wext.ibss.channel = params->channel;
 #endif
 	err = rdev->ops->join_ibss(&rdev->wiphy, dev, params);
-	if (err) {
-		wdev->connect_keys = NULL;
+
+	if (err)
 		return err;
-	}
 
 	memcpy(wdev->ssid, params->ssid, params->ssid_len);
 	wdev->ssid_len = params->ssid_len;
@@ -105,14 +97,13 @@ int __cfg80211_join_ibss(struct cfg80211_registered_device *rdev,
 
 int cfg80211_join_ibss(struct cfg80211_registered_device *rdev,
 		       struct net_device *dev,
-		       struct cfg80211_ibss_params *params,
-		       struct cfg80211_cached_keys *connkeys)
+		       struct cfg80211_ibss_params *params)
 {
 	struct wireless_dev *wdev = dev->ieee80211_ptr;
 	int err;
 
 	wdev_lock(wdev);
-	err = __cfg80211_join_ibss(rdev, dev, params, connkeys);
+	err = __cfg80211_join_ibss(rdev, dev, params);
 	wdev_unlock(wdev);
 
 	return err;
@@ -121,21 +112,8 @@ int cfg80211_join_ibss(struct cfg80211_registered_device *rdev,
 static void __cfg80211_clear_ibss(struct net_device *dev, bool nowext)
 {
 	struct wireless_dev *wdev = dev->ieee80211_ptr;
-	struct cfg80211_registered_device *rdev = wiphy_to_dev(wdev->wiphy);
-	int i;
 
 	ASSERT_WDEV_LOCK(wdev);
-
-	kfree(wdev->connect_keys);
-	wdev->connect_keys = NULL;
-
-	/*
-	 * Delete all the keys ... pairwise keys can't really
-	 * exist any more anyway, but default keys might.
-	 */
-	if (rdev->ops->del_key)
-		for (i = 0; i < 6; i++)
-			rdev->ops->del_key(wdev->wiphy, dev, i, NULL);
 
 	if (wdev->current_bss) {
 		cfg80211_unhold_bss(wdev->current_bss);
@@ -194,14 +172,11 @@ int cfg80211_leave_ibss(struct cfg80211_registered_device *rdev,
 }
 
 #ifdef CONFIG_WIRELESS_EXT
-int cfg80211_ibss_wext_join(struct cfg80211_registered_device *rdev,
-			    struct wireless_dev *wdev)
+static int cfg80211_ibss_wext_join(struct cfg80211_registered_device *rdev,
+				   struct wireless_dev *wdev)
 {
-	struct cfg80211_cached_keys *ck = NULL;
 	enum ieee80211_band band;
-	int i, err;
-
-	ASSERT_WDEV_LOCK(wdev);
+	int i;
 
 	if (!wdev->wext.ibss.beacon_interval)
 		wdev->wext.ibss.beacon_interval = 100;
@@ -241,24 +216,8 @@ int cfg80211_ibss_wext_join(struct cfg80211_registered_device *rdev,
 	if (!netif_running(wdev->netdev))
 		return 0;
 
-	if (wdev->wext.keys)
-		wdev->wext.keys->def = wdev->wext.default_key;
-
-	wdev->wext.ibss.privacy = wdev->wext.default_key != -1;
-
-	if (wdev->wext.keys) {
-		ck = kmemdup(wdev->wext.keys, sizeof(*ck), GFP_KERNEL);
-		if (!ck)
-			return -ENOMEM;
-		for (i = 0; i < 6; i++)
-			ck->params[i].key = ck->data[i];
-	}
-	err = __cfg80211_join_ibss(rdev, wdev->netdev,
-				   &wdev->wext.ibss, ck);
-	if (err)
-		kfree(ck);
-
-	return err;
+	return cfg80211_join_ibss(wiphy_to_dev(wdev->wiphy),
+				  wdev->netdev, &wdev->wext.ibss);
 }
 
 int cfg80211_ibss_wext_siwfreq(struct net_device *dev,
@@ -306,11 +265,7 @@ int cfg80211_ibss_wext_siwfreq(struct net_device *dev,
 		wdev->wext.ibss.channel_fixed = false;
 	}
 
-	wdev_lock(wdev);
-	err = cfg80211_ibss_wext_join(wiphy_to_dev(wdev->wiphy), wdev);
-	wdev_unlock(wdev);
-
-	return err;
+	return cfg80211_ibss_wext_join(wiphy_to_dev(wdev->wiphy), wdev);
 }
 /* temporary symbol - mark GPL - in the future the handler won't be */
 EXPORT_SYMBOL_GPL(cfg80211_ibss_wext_siwfreq);
@@ -378,11 +333,7 @@ int cfg80211_ibss_wext_siwessid(struct net_device *dev,
 	memcpy(wdev->wext.ibss.ssid, ssid, len);
 	wdev->wext.ibss.ssid_len = len;
 
-	wdev_lock(wdev);
-	err = cfg80211_ibss_wext_join(wiphy_to_dev(wdev->wiphy), wdev);
-	wdev_unlock(wdev);
-
-	return err;
+	return cfg80211_ibss_wext_join(wiphy_to_dev(wdev->wiphy), wdev);
 }
 /* temporary symbol - mark GPL - in the future the handler won't be */
 EXPORT_SYMBOL_GPL(cfg80211_ibss_wext_siwessid);
@@ -463,11 +414,7 @@ int cfg80211_ibss_wext_siwap(struct net_device *dev,
 	} else
 		wdev->wext.ibss.bssid = NULL;
 
-	wdev_lock(wdev);
-	err = cfg80211_ibss_wext_join(wiphy_to_dev(wdev->wiphy), wdev);
-	wdev_unlock(wdev);
-
-	return err;
+	return cfg80211_ibss_wext_join(wiphy_to_dev(wdev->wiphy), wdev);
 }
 /* temporary symbol - mark GPL - in the future the handler won't be */
 EXPORT_SYMBOL_GPL(cfg80211_ibss_wext_siwap);
