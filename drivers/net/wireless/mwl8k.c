@@ -188,7 +188,9 @@ struct mwl8k_priv {
 
 	bool radio_on;
 	bool radio_short_preamble;
-	bool wmm_enabled;
+
+	/* WMM MODE 1 for enabled; 0 for disabled */
+	bool wmm_mode;
 
 	/* Set if PHY config is in progress */
 	bool inconfig;
@@ -273,6 +275,10 @@ static const struct ieee80211_rate mwl8k_rates[] = {
 	{ .bitrate = 480, .hw_value = 96, },
 	{ .bitrate = 540, .hw_value = 108, },
 };
+
+/* WMM */
+#define MWL8K_WMM_ENABLE		1
+#define MWL8K_WMM_DISABLE		0
 
 /* Slot time */
 
@@ -2022,13 +2028,13 @@ static int mwl8k_set_wmm(struct ieee80211_hw *hw, bool enable)
 
 	cmd->header.code = cpu_to_le16(MWL8K_CMD_SET_WMM_MODE);
 	cmd->header.length = cpu_to_le16(sizeof(*cmd));
-	cmd->action = cpu_to_le16(!!enable);
+	cmd->action = enable ? cpu_to_le16(MWL8K_CMD_SET) : 0;
 
 	rc = mwl8k_post_cmd(hw, &cmd->header);
 	kfree(cmd);
 
 	if (!rc)
-		priv->wmm_enabled = enable;
+		priv->wmm_mode = enable;
 
 	return rc;
 }
@@ -2756,7 +2762,7 @@ static int mwl8k_start_wt(struct work_struct *wt)
 	}
 
 	/* Disable WMM. WMM gets enabled when stack sends WMM parms */
-	if (mwl8k_set_wmm(hw, 0)) {
+	if (mwl8k_set_wmm(hw, MWL8K_WMM_DISABLE)) {
 		rc = -EIO;
 		goto mwl8k_start_exit;
 	}
@@ -3266,11 +3272,10 @@ static int mwl8k_conf_tx_wt(struct work_struct *wt)
 	struct mwl8k_priv *priv = hw->priv;
 	int rc = 0;
 
-	if (!priv->wmm_enabled) {
-		if (mwl8k_set_wmm(hw, 1)) {
+	if (priv->wmm_mode == MWL8K_WMM_DISABLE)
+		if (mwl8k_set_wmm(hw, MWL8K_WMM_ENABLE)) {
 			rc = -EINVAL;
 			goto mwl8k_conf_tx_exit;
-		}
 	}
 
 	if (mwl8k_set_edca_params(hw, GET_TXQ(queue), params->cw_min,
@@ -3441,7 +3446,7 @@ static int __devinit mwl8k_probe(struct pci_dev *pdev,
 	priv->hostcmd_wait = NULL;
 	priv->tx_wait = NULL;
 	priv->inconfig = false;
-	priv->wmm_enabled = false;
+	priv->wmm_mode = false;
 	priv->pending_tx_pkts = 0;
 	strncpy(priv->name, MWL8K_NAME, sizeof(priv->name));
 
