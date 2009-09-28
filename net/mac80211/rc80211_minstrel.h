@@ -33,6 +33,7 @@ struct minstrel_rate {
 
 	/* per-rate throughput */
 	u32 cur_tp;
+	u32 throughput;
 
 	u64 succ_hist;
 	u64 att_hist;
