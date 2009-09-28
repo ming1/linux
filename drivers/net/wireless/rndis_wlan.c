@@ -420,8 +420,7 @@ struct rndis_wlan_private {
 /*
  * cfg80211 ops
  */
-static int rndis_change_virtual_intf(struct wiphy *wiphy,
-					struct net_device *dev,
+static int rndis_change_virtual_intf(struct wiphy *wiphy, int ifindex,
 					enum nl80211_iftype type, u32 *flags,
 					struct vif_params *params);
 
@@ -1223,13 +1222,19 @@ static void set_multicast_list(struct usbnet *usbdev)
 /*
  * cfg80211 ops
  */
-static int rndis_change_virtual_intf(struct wiphy *wiphy,
-					struct net_device *dev,
+static int rndis_change_virtual_intf(struct wiphy *wiphy, int ifindex,
 					enum nl80211_iftype type, u32 *flags,
 					struct vif_params *params)
 {
-	struct usbnet *usbdev = netdev_priv(dev);
+	struct net_device *dev;
+	struct usbnet *usbdev;
 	int mode;
+
+	/* we're under RTNL */
+	dev = __dev_get_by_index(&init_net, ifindex);
+	if (!dev)
+		return -ENODEV;
+	usbdev = netdev_priv(dev);
 
 	switch (type) {
 	case NL80211_IFTYPE_ADHOC:
