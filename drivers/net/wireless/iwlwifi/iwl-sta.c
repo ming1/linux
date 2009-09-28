@@ -98,8 +98,7 @@ static void iwl_sta_ucode_activate(struct iwl_priv *priv, u8 sta_id)
 }
 
 static int iwl_add_sta_callback(struct iwl_priv *priv,
-				struct iwl_device_cmd *cmd,
-				struct sk_buff *skb)
+				   struct iwl_cmd *cmd, struct sk_buff *skb)
 {
 	struct iwl_rx_packet *res = NULL;
 	struct iwl_addsta_cmd *addsta =
@@ -140,14 +139,14 @@ int iwl_send_add_sta(struct iwl_priv *priv,
 	u8 data[sizeof(*sta)];
 	struct iwl_host_cmd cmd = {
 		.id = REPLY_ADD_STA,
-		.flags = flags,
+		.meta.flags = flags,
 		.data = data,
 	};
 
 	if (flags & CMD_ASYNC)
-		cmd.callback = iwl_add_sta_callback;
+		cmd.meta.u.callback = iwl_add_sta_callback;
 	else
-		cmd.flags |= CMD_WANT_SKB;
+		cmd.meta.flags |= CMD_WANT_SKB;
 
 	cmd.len = priv->cfg->ops->utils->build_addsta_hcmd(sta, data);
 	ret = iwl_send_cmd(priv, &cmd);
@@ -155,7 +154,7 @@ int iwl_send_add_sta(struct iwl_priv *priv,
 	if (ret || (flags & CMD_ASYNC))
 		return ret;
 
-	res = (struct iwl_rx_packet *)cmd.reply_skb->data;
+	res = (struct iwl_rx_packet *)cmd.meta.u.skb->data;
 	if (res->hdr.flags & IWL_CMD_FAILED_MSK) {
 		IWL_ERR(priv, "Bad return from REPLY_ADD_STA (0x%08X)\n",
 			  res->hdr.flags);
@@ -176,7 +175,7 @@ int iwl_send_add_sta(struct iwl_priv *priv,
 	}
 
 	priv->alloc_rxb_skb--;
-	dev_kfree_skb_any(cmd.reply_skb);
+	dev_kfree_skb_any(cmd.meta.u.skb);
 
 	return ret;
 }
@@ -326,8 +325,7 @@ static void iwl_sta_ucode_deactivate(struct iwl_priv *priv, const char *addr)
 }
 
 static int iwl_remove_sta_callback(struct iwl_priv *priv,
-				   struct iwl_device_cmd *cmd,
-				   struct sk_buff *skb)
+				   struct iwl_cmd *cmd, struct sk_buff *skb)
 {
 	struct iwl_rx_packet *res = NULL;
 	struct iwl_rem_sta_cmd *rm_sta =
@@ -370,7 +368,7 @@ static int iwl_send_remove_station(struct iwl_priv *priv, const u8 *addr,
 	struct iwl_host_cmd cmd = {
 		.id = REPLY_REMOVE_STA,
 		.len = sizeof(struct iwl_rem_sta_cmd),
-		.flags = flags,
+		.meta.flags = flags,
 		.data = &rm_sta_cmd,
 	};
 
@@ -379,15 +377,15 @@ static int iwl_send_remove_station(struct iwl_priv *priv, const u8 *addr,
 	memcpy(&rm_sta_cmd.addr, addr , ETH_ALEN);
 
 	if (flags & CMD_ASYNC)
-		cmd.callback = iwl_remove_sta_callback;
+		cmd.meta.u.callback = iwl_remove_sta_callback;
 	else
-		cmd.flags |= CMD_WANT_SKB;
+		cmd.meta.flags |= CMD_WANT_SKB;
 	ret = iwl_send_cmd(priv, &cmd);
 
 	if (ret || (flags & CMD_ASYNC))
 		return ret;
 
-	res = (struct iwl_rx_packet *)cmd.reply_skb->data;
+	res = (struct iwl_rx_packet *)cmd.meta.u.skb->data;
 	if (res->hdr.flags & IWL_CMD_FAILED_MSK) {
 		IWL_ERR(priv, "Bad return from REPLY_REMOVE_STA (0x%08X)\n",
 			  res->hdr.flags);
@@ -408,7 +406,7 @@ static int iwl_send_remove_station(struct iwl_priv *priv, const u8 *addr,
 	}
 
 	priv->alloc_rxb_skb--;
-	dev_kfree_skb_any(cmd.reply_skb);
+	dev_kfree_skb_any(cmd.meta.u.skb);
 
 	return ret;
 }
@@ -527,7 +525,7 @@ int iwl_send_static_wepkey_cmd(struct iwl_priv *priv, u8 send_if_empty)
 	struct iwl_host_cmd cmd = {
 		.id = REPLY_WEPKEY,
 		.data = wep_cmd,
-		.flags = CMD_ASYNC,
+		.meta.flags = CMD_ASYNC,
 	};
 
 	memset(wep_cmd, 0, cmd_size +
@@ -932,7 +930,7 @@ int iwl_send_lq_cmd(struct iwl_priv *priv,
 	struct iwl_host_cmd cmd = {
 		.id = REPLY_TX_LINK_QUALITY_CMD,
 		.len = sizeof(struct iwl_link_quality_cmd),
-		.flags = flags,
+		.meta.flags = flags,
 		.data = lq,
 	};
 
