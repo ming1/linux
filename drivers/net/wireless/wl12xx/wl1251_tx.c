@@ -311,9 +311,7 @@ void wl1251_tx_work(struct work_struct *work)
 
 	while ((skb = skb_dequeue(&wl->tx_queue))) {
 		if (!woken_up) {
-			ret = wl12xx_ps_elp_wakeup(wl);
-			if (ret < 0)
-				goto out;
+			wl12xx_ps_elp_wakeup(wl);
 			woken_up = true;
 		}
 
