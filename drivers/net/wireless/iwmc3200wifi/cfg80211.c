@@ -326,8 +326,11 @@ static int iwm_cfg80211_change_iface(struct wiphy *wiphy,
 
 	iwm->umac_profile->mode = cpu_to_le32(iwm->conf.mode);
 
-	if (iwm->umac_profile_active)
-		iwm_invalidate_mlme_profile(iwm);
+	if (iwm->umac_profile_active) {
+		int ret = iwm_invalidate_mlme_profile(iwm);
+		if (ret < 0)
+			IWM_ERR(iwm, "Couldn't invalidate profile\n");
+	}
 
 	return 0;
 }
@@ -569,14 +572,6 @@ static int iwm_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
 
 	if (!sme->ssid)
 		return -EINVAL;
-
-	if (iwm->umac_profile_active) {
-		ret = iwm_invalidate_mlme_profile(iwm);
-		if (ret) {
-			IWM_ERR(iwm, "Couldn't invalidate profile\n");
-			return ret;
-		}
-	}
 
 	if (chan)
 		iwm->channel =
