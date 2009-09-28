@@ -22,8 +22,8 @@
  */
 
 #include "reg.h"
-#include "wl1251_ps.h"
-#include "wl1251_spi.h"
+#include "ps.h"
+#include "spi.h"
 
 #define WL12XX_WAKEUP_TIMEOUT 2000
 
