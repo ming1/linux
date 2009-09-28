@@ -2447,13 +2447,17 @@ void ieee80211_rx(struct ieee80211_hw *hw, struct sk_buff *skb)
 	struct ieee80211_supported_band *sband;
 	struct ieee80211_rx_status *status = IEEE80211_SKB_RXCB(skb);
 
-	if (WARN_ON(status->band < 0 ||
-		    status->band >= IEEE80211_NUM_BANDS))
-		goto drop;
+	if (status->band < 0 ||
+	    status->band >= IEEE80211_NUM_BANDS) {
+		WARN_ON(1);
+		return;
+	}
 
 	sband = local->hw.wiphy->bands[status->band];
-	if (WARN_ON(!sband))
-		goto drop;
+	if (!sband) {
+		WARN_ON(1);
+		return;
+	}
 
 	/*
 	 * If we're suspending, it is possible although not too likely
@@ -2462,21 +2466,25 @@ void ieee80211_rx(struct ieee80211_hw *hw, struct sk_buff *skb)
 	 * that might, for example, cause stations to be added or other
 	 * driver callbacks be invoked.
 	 */
-	if (unlikely(local->quiescing || local->suspended))
-		goto drop;
+	if (unlikely(local->quiescing || local->suspended)) {
+		kfree_skb(skb);
+		return;
+	}
 
 	/*
 	 * The same happens when we're not even started,
 	 * but that's worth a warning.
 	 */
-	if (WARN_ON(!local->started))
-		goto drop;
+	if (WARN_ON(!local->started)) {
+		kfree_skb(skb);
+		return;
+	}
 
 	if (status->flag & RX_FLAG_HT) {
 		/* rate_idx is MCS index */
 		if (WARN_ON(status->rate_idx < 0 ||
 			    status->rate_idx >= 76))
-			goto drop;
+			return;
 		/* HT rates are not in the table - use the highest legacy rate
 		 * for now since other parts of mac80211 may not yet be fully
 		 * MCS aware. */
@@ -2484,7 +2492,7 @@ void ieee80211_rx(struct ieee80211_hw *hw, struct sk_buff *skb)
 	} else {
 		if (WARN_ON(status->rate_idx < 0 ||
 			    status->rate_idx >= sband->n_bitrates))
-			goto drop;
+			return;
 		rate = &sband->bitrates[status->rate_idx];
 	}
 
@@ -2523,10 +2531,6 @@ void ieee80211_rx(struct ieee80211_hw *hw, struct sk_buff *skb)
 		__ieee80211_rx_handle_packet(hw, skb, rate);
 
 	rcu_read_unlock();
-
-	return;
- drop:
-	kfree_skb(skb);
 }
 EXPORT_SYMBOL(ieee80211_rx);
 
