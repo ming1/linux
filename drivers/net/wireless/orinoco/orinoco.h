@@ -121,7 +121,7 @@ struct orinoco_private {
 	unsigned int broken_monitor:1;
 
 	/* Configuration paramaters */
-	enum nl80211_iftype iw_mode;
+	u32 iw_mode;
 	int prefer_port3;
 	u16 encode_alg, wep_restrict, tx_key;
 	struct orinoco_key keys[ORINOCO_MAX_KEYS];
