@@ -351,7 +351,7 @@ void __cfg80211_connect_result(struct net_device *dev, const u8 *bssid,
 	if (WARN_ON(wdev->iftype != NL80211_IFTYPE_STATION))
 		return;
 
-	if (wdev->sme_state != CFG80211_SME_CONNECTING)
+	if (WARN_ON(wdev->sme_state != CFG80211_SME_CONNECTING))
 		return;
 
 	nl80211_send_connect_result(wiphy_to_dev(wdev->wiphy), dev,
@@ -445,8 +445,6 @@ void cfg80211_connect_result(struct net_device *dev, const u8 *bssid,
 	struct cfg80211_event *ev;
 	unsigned long flags;
 
-	CFG80211_DEV_WARN_ON(wdev->sme_state != CFG80211_SME_CONNECTING);
-
 	ev = kzalloc(sizeof(*ev) + req_ie_len + resp_ie_len, gfp);
 	if (!ev)
 		return;
@@ -483,7 +481,7 @@ void __cfg80211_roamed(struct wireless_dev *wdev, const u8 *bssid,
 	if (WARN_ON(wdev->iftype != NL80211_IFTYPE_STATION))
 		return;
 
-	if (wdev->sme_state != CFG80211_SME_CONNECTED)
+	if (WARN_ON(wdev->sme_state != CFG80211_SME_CONNECTED))
 		return;
 
 	/* internal error -- how did we get to CONNECTED w/o BSS? */
@@ -542,8 +540,6 @@ void cfg80211_roamed(struct net_device *dev, const u8 *bssid,
 	struct cfg80211_event *ev;
 	unsigned long flags;
 
-	CFG80211_DEV_WARN_ON(wdev->sme_state != CFG80211_SME_CONNECTED);
-
 	ev = kzalloc(sizeof(*ev) + req_ie_len + resp_ie_len, gfp);
 	if (!ev)
 		return;
@@ -579,7 +575,7 @@ void __cfg80211_disconnected(struct net_device *dev, const u8 *ie,
 	if (WARN_ON(wdev->iftype != NL80211_IFTYPE_STATION))
 		return;
 
-	if (wdev->sme_state != CFG80211_SME_CONNECTED)
+	if (WARN_ON(wdev->sme_state != CFG80211_SME_CONNECTED))
 		return;
 
 	if (wdev->current_bss) {
@@ -642,8 +638,6 @@ void cfg80211_disconnected(struct net_device *dev, u16 reason,
 	struct cfg80211_registered_device *rdev = wiphy_to_dev(wdev->wiphy);
 	struct cfg80211_event *ev;
 	unsigned long flags;
-
-	CFG80211_DEV_WARN_ON(wdev->sme_state != CFG80211_SME_CONNECTED);
 
 	ev = kzalloc(sizeof(*ev) + ie_len, gfp);
 	if (!ev)
