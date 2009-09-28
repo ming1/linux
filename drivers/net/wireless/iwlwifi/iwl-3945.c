@@ -2889,8 +2889,7 @@ static struct iwl_cfg iwl3945_bg_cfg = {
 	.eeprom_ver = EEPROM_3945_EEPROM_VERSION,
 	.ops = &iwl3945_ops,
 	.mod_params = &iwl3945_mod_params,
-	.use_isr_legacy = true,
-	.ht_greenfield_support = false,
+	.use_isr_legacy = true
 };
 
 static struct iwl_cfg iwl3945_abg_cfg = {
@@ -2903,8 +2902,7 @@ static struct iwl_cfg iwl3945_abg_cfg = {
 	.eeprom_ver = EEPROM_3945_EEPROM_VERSION,
 	.ops = &iwl3945_ops,
 	.mod_params = &iwl3945_mod_params,
-	.use_isr_legacy = true,
-	.ht_greenfield_support = false,
+	.use_isr_legacy = true
 };
 
 struct pci_device_id iwl3945_hw_card_ids[] = {
