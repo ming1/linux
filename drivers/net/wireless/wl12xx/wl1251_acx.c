@@ -5,17 +5,18 @@
 #include <linux/spi/spi.h>
 
 #include "wl1251.h"
+#include "wl12xx_80211.h"
 #include "reg.h"
 #include "wl1251_spi.h"
 #include "wl1251_ps.h"
 
-int wl1251_acx_frame_rates(struct wl1251 *wl, u8 ctrl_rate, u8 ctrl_mod,
+int wl12xx_acx_frame_rates(struct wl12xx *wl, u8 ctrl_rate, u8 ctrl_mod,
 			   u8 mgt_rate, u8 mgt_mod)
 {
 	struct acx_fw_gen_frame_rates *rates;
 	int ret;
 
-	wl1251_debug(DEBUG_ACX, "acx frame rates");
+	wl12xx_debug(DEBUG_ACX, "acx frame rates");
 
 	rates = kzalloc(sizeof(*rates), GFP_KERNEL);
 	if (!rates) {
@@ -28,10 +29,10 @@ int wl1251_acx_frame_rates(struct wl1251 *wl, u8 ctrl_rate, u8 ctrl_mod,
 	rates->tx_mgt_frame_rate = mgt_rate;
 	rates->tx_mgt_frame_mod = mgt_mod;
 
-	ret = wl1251_cmd_configure(wl, ACX_FW_GEN_FRAME_RATES,
+	ret = wl12xx_cmd_configure(wl, ACX_FW_GEN_FRAME_RATES,
 				   rates, sizeof(*rates));
 	if (ret < 0) {
-		wl1251_error("Failed to set FW rates and modulation");
+		wl12xx_error("Failed to set FW rates and modulation");
 		goto out;
 	}
 
@@ -41,12 +42,12 @@ out:
 }
 
 
-int wl1251_acx_station_id(struct wl1251 *wl)
+int wl12xx_acx_station_id(struct wl12xx *wl)
 {
 	struct acx_dot11_station_id *mac;
 	int ret, i;
 
-	wl1251_debug(DEBUG_ACX, "acx dot11_station_id");
+	wl12xx_debug(DEBUG_ACX, "acx dot11_station_id");
 
 	mac = kzalloc(sizeof(*mac), GFP_KERNEL);
 	if (!mac) {
@@ -57,7 +58,7 @@ int wl1251_acx_station_id(struct wl1251 *wl)
 	for (i = 0; i < ETH_ALEN; i++)
 		mac->mac[i] = wl->mac_addr[ETH_ALEN - 1 - i];
 
-	ret = wl1251_cmd_configure(wl, DOT11_STATION_ID, mac, sizeof(*mac));
+	ret = wl12xx_cmd_configure(wl, DOT11_STATION_ID, mac, sizeof(*mac));
 	if (ret < 0)
 		goto out;
 
@@ -66,12 +67,12 @@ out:
 	return ret;
 }
 
-int wl1251_acx_default_key(struct wl1251 *wl, u8 key_id)
+int wl12xx_acx_default_key(struct wl12xx *wl, u8 key_id)
 {
 	struct acx_dot11_default_key *default_key;
 	int ret;
 
-	wl1251_debug(DEBUG_ACX, "acx dot11_default_key (%d)", key_id);
+	wl12xx_debug(DEBUG_ACX, "acx dot11_default_key (%d)", key_id);
 
 	default_key = kzalloc(sizeof(*default_key), GFP_KERNEL);
 	if (!default_key) {
@@ -81,10 +82,10 @@ int wl1251_acx_default_key(struct wl1251 *wl, u8 key_id)
 
 	default_key->id = key_id;
 
-	ret = wl1251_cmd_configure(wl, DOT11_DEFAULT_KEY,
+	ret = wl12xx_cmd_configure(wl, DOT11_DEFAULT_KEY,
 				   default_key, sizeof(*default_key));
 	if (ret < 0) {
-		wl1251_error("Couldnt set default key");
+		wl12xx_error("Couldnt set default key");
 		goto out;
 	}
 
@@ -95,13 +96,13 @@ out:
 	return ret;
 }
 
-int wl1251_acx_wake_up_conditions(struct wl1251 *wl, u8 wake_up_event,
+int wl12xx_acx_wake_up_conditions(struct wl12xx *wl, u8 wake_up_event,
 				  u8 listen_interval)
 {
 	struct acx_wake_up_condition *wake_up;
 	int ret;
 
-	wl1251_debug(DEBUG_ACX, "acx wake up conditions");
+	wl12xx_debug(DEBUG_ACX, "acx wake up conditions");
 
 	wake_up = kzalloc(sizeof(*wake_up), GFP_KERNEL);
 	if (!wake_up) {
@@ -112,10 +113,10 @@ int wl1251_acx_wake_up_conditions(struct wl1251 *wl, u8 wake_up_event,
 	wake_up->wake_up_event = wake_up_event;
 	wake_up->listen_interval = listen_interval;
 
-	ret = wl1251_cmd_configure(wl, ACX_WAKE_UP_CONDITIONS,
+	ret = wl12xx_cmd_configure(wl, ACX_WAKE_UP_CONDITIONS,
 				   wake_up, sizeof(*wake_up));
 	if (ret < 0) {
-		wl1251_warning("could not set wake up conditions: %d", ret);
+		wl12xx_warning("could not set wake up conditions: %d", ret);
 		goto out;
 	}
 
@@ -124,12 +125,12 @@ out:
 	return ret;
 }
 
-int wl1251_acx_sleep_auth(struct wl1251 *wl, u8 sleep_auth)
+int wl12xx_acx_sleep_auth(struct wl12xx *wl, u8 sleep_auth)
 {
 	struct acx_sleep_auth *auth;
 	int ret;
 
-	wl1251_debug(DEBUG_ACX, "acx sleep auth");
+	wl12xx_debug(DEBUG_ACX, "acx sleep auth");
 
 	auth = kzalloc(sizeof(*auth), GFP_KERNEL);
 	if (!auth) {
@@ -139,7 +140,7 @@ int wl1251_acx_sleep_auth(struct wl1251 *wl, u8 sleep_auth)
 
 	auth->sleep_auth = sleep_auth;
 
-	ret = wl1251_cmd_configure(wl, ACX_SLEEP_AUTH, auth, sizeof(*auth));
+	ret = wl12xx_cmd_configure(wl, ACX_SLEEP_AUTH, auth, sizeof(*auth));
 	if (ret < 0)
 		return ret;
 
@@ -148,12 +149,12 @@ out:
 	return ret;
 }
 
-int wl1251_acx_fw_version(struct wl1251 *wl, char *buf, size_t len)
+int wl12xx_acx_fw_version(struct wl12xx *wl, char *buf, size_t len)
 {
 	struct acx_revision *rev;
 	int ret;
 
-	wl1251_debug(DEBUG_ACX, "acx fw rev");
+	wl12xx_debug(DEBUG_ACX, "acx fw rev");
 
 	rev = kzalloc(sizeof(*rev), GFP_KERNEL);
 	if (!rev) {
@@ -161,9 +162,9 @@ int wl1251_acx_fw_version(struct wl1251 *wl, char *buf, size_t len)
 		goto out;
 	}
 
-	ret = wl1251_cmd_interrogate(wl, ACX_FW_REV, rev, sizeof(*rev));
+	ret = wl12xx_cmd_interrogate(wl, ACX_FW_REV, rev, sizeof(*rev));
 	if (ret < 0) {
-		wl1251_warning("ACX_FW_REV interrogate failed");
+		wl12xx_warning("ACX_FW_REV interrogate failed");
 		goto out;
 	}
 
@@ -182,12 +183,12 @@ out:
 	return ret;
 }
 
-int wl1251_acx_tx_power(struct wl1251 *wl, int power)
+int wl12xx_acx_tx_power(struct wl12xx *wl, int power)
 {
 	struct acx_current_tx_power *acx;
 	int ret;
 
-	wl1251_debug(DEBUG_ACX, "acx dot11_cur_tx_pwr");
+	wl12xx_debug(DEBUG_ACX, "acx dot11_cur_tx_pwr");
 
 	if (power < 0 || power > 25)
 		return -EINVAL;
@@ -200,9 +201,9 @@ int wl1251_acx_tx_power(struct wl1251 *wl, int power)
 
 	acx->current_tx_power = power * 10;
 
-	ret = wl1251_cmd_configure(wl, DOT11_CUR_TX_PWR, acx, sizeof(*acx));
+	ret = wl12xx_cmd_configure(wl, DOT11_CUR_TX_PWR, acx, sizeof(*acx));
 	if (ret < 0) {
-		wl1251_warning("configure of tx power failed: %d", ret);
+		wl12xx_warning("configure of tx power failed: %d", ret);
 		goto out;
 	}
 
@@ -211,12 +212,12 @@ out:
 	return ret;
 }
 
-int wl1251_acx_feature_cfg(struct wl1251 *wl)
+int wl12xx_acx_feature_cfg(struct wl12xx *wl)
 {
 	struct acx_feature_config *feature;
 	int ret;
 
-	wl1251_debug(DEBUG_ACX, "acx feature cfg");
+	wl12xx_debug(DEBUG_ACX, "acx feature cfg");
 
 	feature = kzalloc(sizeof(*feature), GFP_KERNEL);
 	if (!feature) {
@@ -228,10 +229,10 @@ int wl1251_acx_feature_cfg(struct wl1251 *wl)
 	feature->data_flow_options = 0;
 	feature->options = 0;
 
-	ret = wl1251_cmd_configure(wl, ACX_FEATURE_CFG,
+	ret = wl12xx_cmd_configure(wl, ACX_FEATURE_CFG,
 				   feature, sizeof(*feature));
 	if (ret < 0) {
-		wl1251_error("Couldnt set HW encryption");
+		wl12xx_error("Couldnt set HW encryption");
 		goto out;
 	}
 
@@ -240,27 +241,27 @@ out:
 	return ret;
 }
 
-int wl1251_acx_mem_map(struct wl1251 *wl, struct acx_header *mem_map,
+int wl12xx_acx_mem_map(struct wl12xx *wl, struct acx_header *mem_map,
 		       size_t len)
 {
 	int ret;
 
-	wl1251_debug(DEBUG_ACX, "acx mem map");
+	wl12xx_debug(DEBUG_ACX, "acx mem map");
 
-	ret = wl1251_cmd_interrogate(wl, ACX_MEM_MAP, mem_map, len);
+	ret = wl12xx_cmd_interrogate(wl, ACX_MEM_MAP, mem_map, len);
 	if (ret < 0)
 		return ret;
 
 	return 0;
 }
 
-int wl1251_acx_data_path_params(struct wl1251 *wl,
+int wl12xx_acx_data_path_params(struct wl12xx *wl,
 				struct acx_data_path_params_resp *resp)
 {
 	struct acx_data_path_params *params;
 	int ret;
 
-	wl1251_debug(DEBUG_ACX, "acx data path params");
+	wl12xx_debug(DEBUG_ACX, "acx data path params");
 
 	params = kzalloc(sizeof(*params), GFP_KERNEL);
 	if (!params) {
@@ -280,20 +281,20 @@ int wl1251_acx_data_path_params(struct wl1251 *wl,
 
 	params->tx_complete_timeout = DP_TX_COMPLETE_TIME_OUT;
 
-	ret = wl1251_cmd_configure(wl, ACX_DATA_PATH_PARAMS,
+	ret = wl12xx_cmd_configure(wl, ACX_DATA_PATH_PARAMS,
 				   params, sizeof(*params));
 	if (ret < 0)
 		goto out;
 
 	/* FIXME: shouldn't this be ACX_DATA_PATH_RESP_PARAMS? */
-	ret = wl1251_cmd_interrogate(wl, ACX_DATA_PATH_PARAMS,
+	ret = wl12xx_cmd_interrogate(wl, ACX_DATA_PATH_PARAMS,
 				     resp, sizeof(*resp));
 
 	if (ret < 0) {
-		wl1251_warning("failed to read data path parameters: %d", ret);
+		wl12xx_warning("failed to read data path parameters: %d", ret);
 		goto out;
 	} else if (resp->header.cmd.status != CMD_STATUS_SUCCESS) {
-		wl1251_warning("data path parameter acx status failed");
+		wl12xx_warning("data path parameter acx status failed");
 		ret = -EIO;
 		goto out;
 	}
@@ -303,12 +304,12 @@ out:
 	return ret;
 }
 
-int wl1251_acx_rx_msdu_life_time(struct wl1251 *wl, u32 life_time)
+int wl12xx_acx_rx_msdu_life_time(struct wl12xx *wl, u32 life_time)
 {
 	struct acx_rx_msdu_lifetime *acx;
 	int ret;
 
-	wl1251_debug(DEBUG_ACX, "acx rx msdu life time");
+	wl12xx_debug(DEBUG_ACX, "acx rx msdu life time");
 
 	acx = kzalloc(sizeof(*acx), GFP_KERNEL);
 	if (!acx) {
@@ -317,10 +318,10 @@ int wl1251_acx_rx_msdu_life_time(struct wl1251 *wl, u32 life_time)
 	}
 
 	acx->lifetime = life_time;
-	ret = wl1251_cmd_configure(wl, DOT11_RX_MSDU_LIFE_TIME,
+	ret = wl12xx_cmd_configure(wl, DOT11_RX_MSDU_LIFE_TIME,
 				   acx, sizeof(*acx));
 	if (ret < 0) {
-		wl1251_warning("failed to set rx msdu life time: %d", ret);
+		wl12xx_warning("failed to set rx msdu life time: %d", ret);
 		goto out;
 	}
 
@@ -329,12 +330,12 @@ out:
 	return ret;
 }
 
-int wl1251_acx_rx_config(struct wl1251 *wl, u32 config, u32 filter)
+int wl12xx_acx_rx_config(struct wl12xx *wl, u32 config, u32 filter)
 {
 	struct acx_rx_config *rx_config;
 	int ret;
 
-	wl1251_debug(DEBUG_ACX, "acx rx config");
+	wl12xx_debug(DEBUG_ACX, "acx rx config");
 
 	rx_config = kzalloc(sizeof(*rx_config), GFP_KERNEL);
 	if (!rx_config) {
@@ -345,10 +346,10 @@ int wl1251_acx_rx_config(struct wl1251 *wl, u32 config, u32 filter)
 	rx_config->config_options = config;
 	rx_config->filter_options = filter;
 
-	ret = wl1251_cmd_configure(wl, ACX_RX_CFG,
+	ret = wl12xx_cmd_configure(wl, ACX_RX_CFG,
 				   rx_config, sizeof(*rx_config));
 	if (ret < 0) {
-		wl1251_warning("failed to set rx config: %d", ret);
+		wl12xx_warning("failed to set rx config: %d", ret);
 		goto out;
 	}
 
@@ -357,12 +358,12 @@ out:
 	return ret;
 }
 
-int wl1251_acx_pd_threshold(struct wl1251 *wl)
+int wl12xx_acx_pd_threshold(struct wl12xx *wl)
 {
 	struct acx_packet_detection *pd;
 	int ret;
 
-	wl1251_debug(DEBUG_ACX, "acx data pd threshold");
+	wl12xx_debug(DEBUG_ACX, "acx data pd threshold");
 
 	pd = kzalloc(sizeof(*pd), GFP_KERNEL);
 	if (!pd) {
@@ -372,9 +373,9 @@ int wl1251_acx_pd_threshold(struct wl1251 *wl)
 
 	/* FIXME: threshold value not set */
 
-	ret = wl1251_cmd_configure(wl, ACX_PD_THRESHOLD, pd, sizeof(*pd));
+	ret = wl12xx_cmd_configure(wl, ACX_PD_THRESHOLD, pd, sizeof(*pd));
 	if (ret < 0) {
-		wl1251_warning("failed to set pd threshold: %d", ret);
+		wl12xx_warning("failed to set pd threshold: %d", ret);
 		goto out;
 	}
 
@@ -383,12 +384,12 @@ out:
 	return 0;
 }
 
-int wl1251_acx_slot(struct wl1251 *wl, enum acx_slot_type slot_time)
+int wl12xx_acx_slot(struct wl12xx *wl, enum acx_slot_type slot_time)
 {
 	struct acx_slot *slot;
 	int ret;
 
-	wl1251_debug(DEBUG_ACX, "acx slot");
+	wl12xx_debug(DEBUG_ACX, "acx slot");
 
 	slot = kzalloc(sizeof(*slot), GFP_KERNEL);
 	if (!slot) {
@@ -399,9 +400,9 @@ int wl1251_acx_slot(struct wl1251 *wl, enum acx_slot_type slot_time)
 	slot->wone_index = STATION_WONE_INDEX;
 	slot->slot_time = slot_time;
 
-	ret = wl1251_cmd_configure(wl, ACX_SLOT, slot, sizeof(*slot));
+	ret = wl12xx_cmd_configure(wl, ACX_SLOT, slot, sizeof(*slot));
 	if (ret < 0) {
-		wl1251_warning("failed to set slot time: %d", ret);
+		wl12xx_warning("failed to set slot time: %d", ret);
 		goto out;
 	}
 
@@ -410,12 +411,12 @@ out:
 	return ret;
 }
 
-int wl1251_acx_group_address_tbl(struct wl1251 *wl)
+int wl12xx_acx_group_address_tbl(struct wl12xx *wl)
 {
 	struct acx_dot11_grp_addr_tbl *acx;
 	int ret;
 
-	wl1251_debug(DEBUG_ACX, "acx group address tbl");
+	wl12xx_debug(DEBUG_ACX, "acx group address tbl");
 
 	acx = kzalloc(sizeof(*acx), GFP_KERNEL);
 	if (!acx) {
@@ -428,10 +429,10 @@ int wl1251_acx_group_address_tbl(struct wl1251 *wl)
 	acx->num_groups = 0;
 	memset(acx->mac_table, 0, ADDRESS_GROUP_MAX_LEN);
 
-	ret = wl1251_cmd_configure(wl, DOT11_GROUP_ADDRESS_TBL,
+	ret = wl12xx_cmd_configure(wl, DOT11_GROUP_ADDRESS_TBL,
 				   acx, sizeof(*acx));
 	if (ret < 0) {
-		wl1251_warning("failed to set group addr table: %d", ret);
+		wl12xx_warning("failed to set group addr table: %d", ret);
 		goto out;
 	}
 
@@ -440,7 +441,7 @@ out:
 	return ret;
 }
 
-int wl1251_acx_service_period_timeout(struct wl1251 *wl)
+int wl12xx_acx_service_period_timeout(struct wl12xx *wl)
 {
 	struct acx_rx_timeout *rx_timeout;
 	int ret;
@@ -451,15 +452,15 @@ int wl1251_acx_service_period_timeout(struct wl1251 *wl)
 		goto out;
 	}
 
-	wl1251_debug(DEBUG_ACX, "acx service period timeout");
+	wl12xx_debug(DEBUG_ACX, "acx service period timeout");
 
 	rx_timeout->ps_poll_timeout = RX_TIMEOUT_PS_POLL_DEF;
 	rx_timeout->upsd_timeout = RX_TIMEOUT_UPSD_DEF;
 
-	ret = wl1251_cmd_configure(wl, ACX_SERVICE_PERIOD_TIMEOUT,
+	ret = wl12xx_cmd_configure(wl, ACX_SERVICE_PERIOD_TIMEOUT,
 				   rx_timeout, sizeof(*rx_timeout));
 	if (ret < 0) {
-		wl1251_warning("failed to set service period timeout: %d",
+		wl12xx_warning("failed to set service period timeout: %d",
 			       ret);
 		goto out;
 	}
@@ -469,12 +470,12 @@ out:
 	return ret;
 }
 
-int wl1251_acx_rts_threshold(struct wl1251 *wl, u16 rts_threshold)
+int wl12xx_acx_rts_threshold(struct wl12xx *wl, u16 rts_threshold)
 {
 	struct acx_rts_threshold *rts;
 	int ret;
 
-	wl1251_debug(DEBUG_ACX, "acx rts threshold");
+	wl12xx_debug(DEBUG_ACX, "acx rts threshold");
 
 	rts = kzalloc(sizeof(*rts), GFP_KERNEL);
 	if (!rts) {
@@ -484,9 +485,9 @@ int wl1251_acx_rts_threshold(struct wl1251 *wl, u16 rts_threshold)
 
 	rts->threshold = rts_threshold;
 
-	ret = wl1251_cmd_configure(wl, DOT11_RTS_THRESHOLD, rts, sizeof(*rts));
+	ret = wl12xx_cmd_configure(wl, DOT11_RTS_THRESHOLD, rts, sizeof(*rts));
 	if (ret < 0) {
-		wl1251_warning("failed to set rts threshold: %d", ret);
+		wl12xx_warning("failed to set rts threshold: %d", ret);
 		goto out;
 	}
 
@@ -495,12 +496,12 @@ out:
 	return ret;
 }
 
-int wl1251_acx_beacon_filter_opt(struct wl1251 *wl)
+int wl12xx_acx_beacon_filter_opt(struct wl12xx *wl)
 {
 	struct acx_beacon_filter_option *beacon_filter;
 	int ret;
 
-	wl1251_debug(DEBUG_ACX, "acx beacon filter opt");
+	wl12xx_debug(DEBUG_ACX, "acx beacon filter opt");
 
 	beacon_filter = kzalloc(sizeof(*beacon_filter), GFP_KERNEL);
 	if (!beacon_filter) {
@@ -511,10 +512,10 @@ int wl1251_acx_beacon_filter_opt(struct wl1251 *wl)
 	beacon_filter->enable = 0;
 	beacon_filter->max_num_beacons = 0;
 
-	ret = wl1251_cmd_configure(wl, ACX_BEACON_FILTER_OPT,
+	ret = wl12xx_cmd_configure(wl, ACX_BEACON_FILTER_OPT,
 				   beacon_filter, sizeof(*beacon_filter));
 	if (ret < 0) {
-		wl1251_warning("failed to set beacon filter opt: %d", ret);
+		wl12xx_warning("failed to set beacon filter opt: %d", ret);
 		goto out;
 	}
 
@@ -523,12 +524,12 @@ out:
 	return ret;
 }
 
-int wl1251_acx_beacon_filter_table(struct wl1251 *wl)
+int wl12xx_acx_beacon_filter_table(struct wl12xx *wl)
 {
 	struct acx_beacon_filter_ie_table *ie_table;
 	int ret;
 
-	wl1251_debug(DEBUG_ACX, "acx beacon filter table");
+	wl12xx_debug(DEBUG_ACX, "acx beacon filter table");
 
 	ie_table = kzalloc(sizeof(*ie_table), GFP_KERNEL);
 	if (!ie_table) {
@@ -539,10 +540,10 @@ int wl1251_acx_beacon_filter_table(struct wl1251 *wl)
 	ie_table->num_ie = 0;
 	memset(ie_table->table, 0, BEACON_FILTER_TABLE_MAX_SIZE);
 
-	ret = wl1251_cmd_configure(wl, ACX_BEACON_FILTER_TABLE,
+	ret = wl12xx_cmd_configure(wl, ACX_BEACON_FILTER_TABLE,
 				   ie_table, sizeof(*ie_table));
 	if (ret < 0) {
-		wl1251_warning("failed to set beacon filter table: %d", ret);
+		wl12xx_warning("failed to set beacon filter table: %d", ret);
 		goto out;
 	}
 
@@ -551,12 +552,12 @@ out:
 	return ret;
 }
 
-int wl1251_acx_sg_enable(struct wl1251 *wl)
+int wl12xx_acx_sg_enable(struct wl12xx *wl)
 {
 	struct acx_bt_wlan_coex *pta;
 	int ret;
 
-	wl1251_debug(DEBUG_ACX, "acx sg enable");
+	wl12xx_debug(DEBUG_ACX, "acx sg enable");
 
 	pta = kzalloc(sizeof(*pta), GFP_KERNEL);
 	if (!pta) {
@@ -566,9 +567,9 @@ int wl1251_acx_sg_enable(struct wl1251 *wl)
 
 	pta->enable = SG_ENABLE;
 
-	ret = wl1251_cmd_configure(wl, ACX_SG_ENABLE, pta, sizeof(*pta));
+	ret = wl12xx_cmd_configure(wl, ACX_SG_ENABLE, pta, sizeof(*pta));
 	if (ret < 0) {
-		wl1251_warning("failed to set softgemini enable: %d", ret);
+		wl12xx_warning("failed to set softgemini enable: %d", ret);
 		goto out;
 	}
 
@@ -577,12 +578,12 @@ out:
 	return ret;
 }
 
-int wl1251_acx_sg_cfg(struct wl1251 *wl)
+int wl12xx_acx_sg_cfg(struct wl12xx *wl)
 {
 	struct acx_bt_wlan_coex_param *param;
 	int ret;
 
-	wl1251_debug(DEBUG_ACX, "acx sg cfg");
+	wl12xx_debug(DEBUG_ACX, "acx sg cfg");
 
 	param = kzalloc(sizeof(*param), GFP_KERNEL);
 	if (!param) {
@@ -620,9 +621,9 @@ int wl1251_acx_sg_cfg(struct wl1251 *wl)
 	param->pta_auto_mode_enable = PTA_AUTO_MODE_NO_CTS_DEF;
 	param->bt_hp_respected_num = PTA_BT_HP_RESPECTED_DEF;
 
-	ret = wl1251_cmd_configure(wl, ACX_SG_CFG, param, sizeof(*param));
+	ret = wl12xx_cmd_configure(wl, ACX_SG_CFG, param, sizeof(*param));
 	if (ret < 0) {
-		wl1251_warning("failed to set sg config: %d", ret);
+		wl12xx_warning("failed to set sg config: %d", ret);
 		goto out;
 	}
 
@@ -631,12 +632,12 @@ out:
 	return ret;
 }
 
-int wl1251_acx_cca_threshold(struct wl1251 *wl)
+int wl12xx_acx_cca_threshold(struct wl12xx *wl)
 {
 	struct acx_energy_detection *detection;
 	int ret;
 
-	wl1251_debug(DEBUG_ACX, "acx cca threshold");
+	wl12xx_debug(DEBUG_ACX, "acx cca threshold");
 
 	detection = kzalloc(sizeof(*detection), GFP_KERNEL);
 	if (!detection) {
@@ -647,10 +648,10 @@ int wl1251_acx_cca_threshold(struct wl1251 *wl)
 	detection->rx_cca_threshold = CCA_THRSH_DISABLE_ENERGY_D;
 	detection->tx_energy_detection = 0;
 
-	ret = wl1251_cmd_configure(wl, ACX_CCA_THRESHOLD,
+	ret = wl12xx_cmd_configure(wl, ACX_CCA_THRESHOLD,
 				   detection, sizeof(*detection));
 	if (ret < 0) {
-		wl1251_warning("failed to set cca threshold: %d", ret);
+		wl12xx_warning("failed to set cca threshold: %d", ret);
 		return ret;
 	}
 
@@ -659,12 +660,12 @@ out:
 	return ret;
 }
 
-int wl1251_acx_bcn_dtim_options(struct wl1251 *wl)
+int wl12xx_acx_bcn_dtim_options(struct wl12xx *wl)
 {
 	struct acx_beacon_broadcast *bb;
 	int ret;
 
-	wl1251_debug(DEBUG_ACX, "acx bcn dtim options");
+	wl12xx_debug(DEBUG_ACX, "acx bcn dtim options");
 
 	bb = kzalloc(sizeof(*bb), GFP_KERNEL);
 	if (!bb) {
@@ -677,9 +678,9 @@ int wl1251_acx_bcn_dtim_options(struct wl1251 *wl)
 	bb->rx_broadcast_in_ps = RX_BROADCAST_IN_PS_DEF_VALUE;
 	bb->ps_poll_threshold = CONSECUTIVE_PS_POLL_FAILURE_DEF;
 
-	ret = wl1251_cmd_configure(wl, ACX_BCN_DTIM_OPTIONS, bb, sizeof(*bb));
+	ret = wl12xx_cmd_configure(wl, ACX_BCN_DTIM_OPTIONS, bb, sizeof(*bb));
 	if (ret < 0) {
-		wl1251_warning("failed to set rx config: %d", ret);
+		wl12xx_warning("failed to set rx config: %d", ret);
 		goto out;
 	}
 
@@ -688,12 +689,12 @@ out:
 	return ret;
 }
 
-int wl1251_acx_aid(struct wl1251 *wl, u16 aid)
+int wl12xx_acx_aid(struct wl12xx *wl, u16 aid)
 {
 	struct acx_aid *acx_aid;
 	int ret;
 
-	wl1251_debug(DEBUG_ACX, "acx aid");
+	wl12xx_debug(DEBUG_ACX, "acx aid");
 
 	acx_aid = kzalloc(sizeof(*acx_aid), GFP_KERNEL);
 	if (!acx_aid) {
@@ -703,9 +704,9 @@ int wl1251_acx_aid(struct wl1251 *wl, u16 aid)
 
 	acx_aid->aid = aid;
 
-	ret = wl1251_cmd_configure(wl, ACX_AID, acx_aid, sizeof(*acx_aid));
+	ret = wl12xx_cmd_configure(wl, ACX_AID, acx_aid, sizeof(*acx_aid));
 	if (ret < 0) {
-		wl1251_warning("failed to set aid: %d", ret);
+		wl12xx_warning("failed to set aid: %d", ret);
 		goto out;
 	}
 
@@ -714,12 +715,12 @@ out:
 	return ret;
 }
 
-int wl1251_acx_event_mbox_mask(struct wl1251 *wl, u32 event_mask)
+int wl12xx_acx_event_mbox_mask(struct wl12xx *wl, u32 event_mask)
 {
 	struct acx_event_mask *mask;
 	int ret;
 
-	wl1251_debug(DEBUG_ACX, "acx event mbox mask");
+	wl12xx_debug(DEBUG_ACX, "acx event mbox mask");
 
 	mask = kzalloc(sizeof(*mask), GFP_KERNEL);
 	if (!mask) {
@@ -732,10 +733,10 @@ int wl1251_acx_event_mbox_mask(struct wl1251 *wl, u32 event_mask)
 
 	mask->event_mask = event_mask;
 
-	ret = wl1251_cmd_configure(wl, ACX_EVENT_MBOX_MASK,
+	ret = wl12xx_cmd_configure(wl, ACX_EVENT_MBOX_MASK,
 				   mask, sizeof(*mask));
 	if (ret < 0) {
-		wl1251_warning("failed to set acx_event_mbox_mask: %d", ret);
+		wl12xx_warning("failed to set acx_event_mbox_mask: %d", ret);
 		goto out;
 	}
 
@@ -744,12 +745,12 @@ out:
 	return ret;
 }
 
-int wl1251_acx_set_preamble(struct wl1251 *wl, enum acx_preamble_type preamble)
+int wl12xx_acx_set_preamble(struct wl12xx *wl, enum acx_preamble_type preamble)
 {
 	struct acx_preamble *acx;
 	int ret;
 
-	wl1251_debug(DEBUG_ACX, "acx_set_preamble");
+	wl12xx_debug(DEBUG_ACX, "acx_set_preamble");
 
 	acx = kzalloc(sizeof(*acx), GFP_KERNEL);
 	if (!acx) {
@@ -759,9 +760,9 @@ int wl1251_acx_set_preamble(struct wl1251 *wl, enum acx_preamble_type preamble)
 
 	acx->preamble = preamble;
 
-	ret = wl1251_cmd_configure(wl, ACX_PREAMBLE_TYPE, acx, sizeof(*acx));
+	ret = wl12xx_cmd_configure(wl, ACX_PREAMBLE_TYPE, acx, sizeof(*acx));
 	if (ret < 0) {
-		wl1251_warning("Setting of preamble failed: %d", ret);
+		wl12xx_warning("Setting of preamble failed: %d", ret);
 		goto out;
 	}
 
@@ -770,13 +771,13 @@ out:
 	return ret;
 }
 
-int wl1251_acx_cts_protect(struct wl1251 *wl,
+int wl12xx_acx_cts_protect(struct wl12xx *wl,
 			   enum acx_ctsprotect_type ctsprotect)
 {
 	struct acx_ctsprotect *acx;
 	int ret;
 
-	wl1251_debug(DEBUG_ACX, "acx_set_ctsprotect");
+	wl12xx_debug(DEBUG_ACX, "acx_set_ctsprotect");
 
 	acx = kzalloc(sizeof(*acx), GFP_KERNEL);
 	if (!acx) {
@@ -786,9 +787,9 @@ int wl1251_acx_cts_protect(struct wl1251 *wl,
 
 	acx->ctsprotect = ctsprotect;
 
-	ret = wl1251_cmd_configure(wl, ACX_CTS_PROTECTION, acx, sizeof(*acx));
+	ret = wl12xx_cmd_configure(wl, ACX_CTS_PROTECTION, acx, sizeof(*acx));
 	if (ret < 0) {
-		wl1251_warning("Setting of ctsprotect failed: %d", ret);
+		wl12xx_warning("Setting of ctsprotect failed: %d", ret);
 		goto out;
 	}
 
@@ -797,7 +798,7 @@ out:
 	return ret;
 }
 
-int wl1251_acx_tsf_info(struct wl1251 *wl, u64 *mactime)
+int wl12xx_acx_tsf_info(struct wl12xx *wl, u64 *mactime)
 {
 	struct acx_tsf_info *tsf_info;
 	int ret;
@@ -808,10 +809,10 @@ int wl1251_acx_tsf_info(struct wl1251 *wl, u64 *mactime)
 		goto out;
 	}
 
-	ret = wl1251_cmd_interrogate(wl, ACX_TSF_INFO,
+	ret = wl12xx_cmd_interrogate(wl, ACX_TSF_INFO,
 				     tsf_info, sizeof(*tsf_info));
 	if (ret < 0) {
-		wl1251_warning("ACX_FW_REV interrogate failed");
+		wl12xx_warning("ACX_FW_REV interrogate failed");
 		goto out;
 	}
 
@@ -823,16 +824,16 @@ out:
 	return ret;
 }
 
-int wl1251_acx_statistics(struct wl1251 *wl, struct acx_statistics *stats)
+int wl12xx_acx_statistics(struct wl12xx *wl, struct acx_statistics *stats)
 {
 	int ret;
 
-	wl1251_debug(DEBUG_ACX, "acx statistics");
+	wl12xx_debug(DEBUG_ACX, "acx statistics");
 
-	ret = wl1251_cmd_interrogate(wl, ACX_STATISTICS, stats,
+	ret = wl12xx_cmd_interrogate(wl, ACX_STATISTICS, stats,
 				     sizeof(*stats));
 	if (ret < 0) {
-		wl1251_warning("acx statistics failed: %d", ret);
+		wl12xx_warning("acx statistics failed: %d", ret);
 		return -ENOMEM;
 	}
 
