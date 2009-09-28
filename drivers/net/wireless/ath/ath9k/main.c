@@ -2394,7 +2394,8 @@ skip_chan_change:
 static void ath9k_configure_filter(struct ieee80211_hw *hw,
 				   unsigned int changed_flags,
 				   unsigned int *total_flags,
-				   u64 multicast)
+				   int mc_count,
+				   struct dev_mc_list *mclist)
 {
 	struct ath_wiphy *aphy = hw->priv;
 	struct ath_softc *sc = aphy->sc;
