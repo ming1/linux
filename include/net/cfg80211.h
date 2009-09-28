@@ -538,7 +538,7 @@ struct cfg80211_ssid {
  * @ssids: SSIDs to scan for (active scan only)
  * @n_ssids: number of SSIDs
  * @channels: channels to scan on.
- * @n_channels: total number of channels to scan
+ * @n_channels: number of channels for each band
  * @ie: optional information element(s) to add into Probe Request or %NULL
  * @ie_len: length of ie in octets
  * @wiphy: the wiphy this was for
