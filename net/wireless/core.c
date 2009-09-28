@@ -664,7 +664,7 @@ static void wdev_cleanup_work(struct work_struct *work)
 
 	if (WARN_ON(rdev->scan_req && rdev->scan_req->dev == wdev->netdev)) {
 		rdev->scan_req->aborted = true;
-		___cfg80211_scan_done(rdev, true);
+		___cfg80211_scan_done(rdev);
 	}
 
 	cfg80211_unlock_rdev(rdev);
@@ -755,8 +755,6 @@ static int cfg80211_netdev_notifier_call(struct notifier_block * nb,
 		default:
 			break;
 		}
-		break;
-	case NETDEV_DOWN:
 		dev_hold(dev);
 		schedule_work(&wdev->cleanup_work);
 		break;
