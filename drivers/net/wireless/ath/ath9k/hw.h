@@ -507,6 +507,7 @@ struct ath_hw {
 
 	/* ANI */
 	u32 proc_phyerr;
+	bool has_hw_phycounters;
 	u32 aniperiod;
 	struct ar5416AniState *curani;
 	struct ar5416AniState ani[255];
