@@ -112,7 +112,10 @@ static void b43_led_brightness_set(struct led_classdev *led_dev,
 	struct b43_led *led = container_of(led_dev, struct b43_led, led_dev);
 	struct b43_wl *wl = led->wl;
 
-	if (likely(!wl->leds.stop)) {
+	/* The check for current_dev is only needed while unregistering,
+	 * so it is sequencial and does not race. But we must not dereference
+	 * current_dev here. */
+	if (likely(wl->current_dev)) {
 		atomic_set(&led->state, brightness);
 		ieee80211_queue_work(wl->hw, &wl->leds.work);
 	}
@@ -311,8 +314,6 @@ void b43_leds_init(struct b43_wldev *dev)
 			break;
 		}
 	}
-
-	dev->wl->leds.stop = 0;
 }
 
 void b43_leds_exit(struct b43_wldev *dev)

@@ -35,7 +35,6 @@ struct b43_leds {
 	struct b43_led led_radio;
 	struct b43_led led_assoc;
 
-	bool stop;
 	struct work_struct work;
 };
 
