@@ -134,17 +134,6 @@
 				  GET_DURATION(IEEE80211_HEADER + ACK_SIZE, 10) )
 
 /*
- * Structure for average calculation
- * The avg field contains the actual average value,
- * but avg_weight is internally used during calculations
- * to prevent rounding errors.
- */
-struct avg_val {
-	int avg;
-	int avg_weight;
-};
-
-/*
  * Chipset identification
  * The chipset on the device is composed of a RT and RF chip.
  * The chipset combination is important for determining device capabilities.
@@ -267,7 +256,7 @@ struct link_ant {
 	 * Similar to the avg_rssi in the link_qual structure
 	 * this value is updated by using the walking average.
 	 */
-	struct avg_val rssi_ant;
+	int rssi_ant;
 };
 
 /*
@@ -296,7 +285,7 @@ struct link {
 	/*
 	 * Currently active average RSSI value
 	 */
-	struct avg_val avg_rssi;
+	int avg_rssi;
 
 	/*
 	 * Currently precalculated percentages of successful
