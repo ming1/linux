@@ -120,8 +120,7 @@ struct orinoco_private {
 	enum nl80211_iftype iw_mode;
 	enum orinoco_alg encode_alg;
 	u16 wep_restrict, tx_key;
-	struct key_params keys[ORINOCO_MAX_KEYS];
-
+	struct orinoco_key keys[ORINOCO_MAX_KEYS];
 	int bitratemode;
 	char nick[IW_ESSID_MAX_SIZE+1];
 	char desired_essid[IW_ESSID_MAX_SIZE+1];
@@ -151,6 +150,7 @@ struct orinoco_private {
 	u8 *wpa_ie;
 	int wpa_ie_len;
 
+	struct orinoco_tkip_key tkip_key[ORINOCO_MAX_KEYS];
 	struct crypto_hash *rx_tfm_mic;
 	struct crypto_hash *tx_tfm_mic;
 
