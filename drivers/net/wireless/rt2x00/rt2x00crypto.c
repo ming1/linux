@@ -154,7 +154,7 @@ void rt2x00crypto_tx_insert_iv(struct sk_buff *skb, unsigned int header_length)
 	skbdesc->flags &= ~SKBDESC_IV_STRIPPED;
 }
 
-void rt2x00crypto_rx_insert_iv(struct sk_buff *skb,
+void rt2x00crypto_rx_insert_iv(struct sk_buff *skb, bool l2pad,
 			       unsigned int header_length,
 			       struct rxdone_entry_desc *rxdesc)
 {
@@ -199,7 +199,7 @@ void rt2x00crypto_rx_insert_iv(struct sk_buff *skb,
 	 * move the header more then iv_len since we must
 	 * make room for the payload move as well.
 	 */
-	if (rxdesc->dev_flags & RXDONE_L2PAD) {
+	if (l2pad) {
 		skb_push(skb, iv_len - align);
 		skb_put(skb, icv_len);
 
@@ -230,7 +230,7 @@ void rt2x00crypto_rx_insert_iv(struct sk_buff *skb,
 	 * Move payload for alignment purposes. Note that
 	 * this is only needed when no l2 padding is present.
 	 */
-	if (!(rxdesc->dev_flags & RXDONE_L2PAD)) {
+	if (!l2pad) {
 		memmove(skb->data + transfer,
 			skb->data + transfer + align,
 			payload_len);
