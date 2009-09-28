@@ -1439,11 +1439,8 @@ static int mwl8k_post_cmd(struct ieee80211_hw *hw, struct mwl8k_cmd_pkt *cmd)
 		return -ENOMEM;
 
 	rc = mwl8k_fw_lock(hw);
-	if (rc) {
-		pci_unmap_single(priv->pdev, dma_addr, dma_size,
-						PCI_DMA_BIDIRECTIONAL);
+	if (rc)
 		return rc;
-	}
 
 	priv->hostcmd_wait = &cmd_wait;
 	iowrite32(dma_addr, regs + MWL8K_HIU_GEN_PTR);
