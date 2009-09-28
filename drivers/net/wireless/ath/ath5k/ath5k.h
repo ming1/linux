@@ -27,6 +27,8 @@
 #include <linux/types.h>
 #include <net/mac80211.h>
 
+#include "../regd.h"
+
 /* RX/TX descriptor hw structs
  * TODO: Driver part should only see sw structs */
 #include "desc.h"
@@ -1075,6 +1077,7 @@ struct ath5k_hw {
 
 	int			ah_gpio_npins;
 
+	struct ath_regulatory	ah_regulatory;
 	struct ath5k_capabilities ah_capabilities;
 
 	struct ath5k_txq_info	ah_txq[AR5K_NUM_TX_QUEUES];

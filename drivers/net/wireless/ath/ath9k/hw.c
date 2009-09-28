@@ -439,13 +439,8 @@ static void ath9k_hw_init_config(struct ath_hw *ah)
 
 static void ath9k_hw_init_defaults(struct ath_hw *ah)
 {
-	struct ath_regulatory *regulatory = ath9k_hw_regulatory(ah);
-
-	regulatory->country_code = CTRY_DEFAULT;
-	regulatory->power_limit = MAX_RATE_POWER;
-	regulatory->tp_scale = ATH9K_TP_SCALE_MAX;
-
 	ah->hw_version.magic = AR5416_MAGIC;
+	ah->regulatory.country_code = CTRY_DEFAULT;
 	ah->hw_version.subvendorid = 0;
 
 	ah->ah_flags = 0;
@@ -454,6 +449,8 @@ static void ath9k_hw_init_defaults(struct ath_hw *ah)
 	if (!AR_SREV_9100(ah))
 		ah->ah_flags = AH_USE_EEPROM;
 
+	ah->regulatory.power_limit = MAX_RATE_POWER;
+	ah->regulatory.tp_scale = ATH9K_TP_SCALE_MAX;
 	ah->atim_window = 0;
 	ah->sta_id1_defaults = AR_STA_ID1_CRPT_MIC_ENABLE;
 	ah->beacon_interval = 100;
@@ -1371,7 +1368,6 @@ static int ath9k_hw_process_ini(struct ath_hw *ah,
 				struct ath9k_channel *chan,
 				enum ath9k_ht_macmode macmode)
 {
-	struct ath_regulatory *regulatory = ath9k_hw_regulatory(ah);
 	int i, regWrites = 0;
 	struct ieee80211_channel *channel = chan->chan;
 	u32 modesIndex, freqIndex;
@@ -1478,11 +1474,11 @@ static int ath9k_hw_process_ini(struct ath_hw *ah,
 		ath9k_olc_init(ah);
 
 	ah->eep_ops->set_txpower(ah, chan,
-				 ath9k_regd_get_ctl(regulatory, chan),
+				 ath9k_regd_get_ctl(&ah->regulatory, chan),
 				 channel->max_antenna_gain * 2,
 				 channel->max_power * 2,
 				 min((u32) MAX_RATE_POWER,
-				 (u32) regulatory->power_limit));
+				 (u32) ah->regulatory.power_limit));
 
 	if (!ath9k_hw_set_rf_regs(ah, chan, freqIndex)) {
 		DPRINTF(ah->ah_sc, ATH_DBG_FATAL,
@@ -1800,7 +1796,6 @@ static bool ath9k_hw_channel_change(struct ath_hw *ah,
 				    struct ath9k_channel *chan,
 				    enum ath9k_ht_macmode macmode)
 {
-	struct ath_regulatory *regulatory = ath9k_hw_regulatory(ah);
 	struct ieee80211_channel *channel = chan->chan;
 	u32 synthDelay, qnum;
 
@@ -1833,11 +1828,11 @@ static bool ath9k_hw_channel_change(struct ath_hw *ah,
 	}
 
 	ah->eep_ops->set_txpower(ah, chan,
-			     ath9k_regd_get_ctl(regulatory, chan),
+			     ath9k_regd_get_ctl(&ah->regulatory, chan),
 			     channel->max_antenna_gain * 2,
 			     channel->max_power * 2,
 			     min((u32) MAX_RATE_POWER,
-			     (u32) regulatory->power_limit));
+			     (u32) ah->regulatory.power_limit));
 
 	synthDelay = REG_READ(ah, AR_PHY_RX_DELAY) & AR_PHY_RX_DELAY_DELAY;
 	if (IS_CHAN_B(chan))
@@ -3485,29 +3480,27 @@ void ath9k_hw_set_sta_beacon_timers(struct ath_hw *ah,
 void ath9k_hw_fill_cap_info(struct ath_hw *ah)
 {
 	struct ath9k_hw_capabilities *pCap = &ah->caps;
-	struct ath_regulatory *regulatory = ath9k_hw_regulatory(ah);
-
 	u16 capField = 0, eeval;
 
 	eeval = ah->eep_ops->get_eeprom(ah, EEP_REG_0);
-	regulatory->current_rd = eeval;
+	ah->regulatory.current_rd = eeval;
 
 	eeval = ah->eep_ops->get_eeprom(ah, EEP_REG_1);
 	if (AR_SREV_9285_10_OR_LATER(ah))
 		eeval |= AR9285_RDEXT_DEFAULT;
-	regulatory->current_rd_ext = eeval;
+	ah->regulatory.current_rd_ext = eeval;
 
 	capField = ah->eep_ops->get_eeprom(ah, EEP_OP_CAP);
 
 	if (ah->opmode != NL80211_IFTYPE_AP &&
 	    ah->hw_version.subvendorid == AR_SUBVENDOR_ID_NEW_A) {
-		if (regulatory->current_rd == 0x64 ||
-		    regulatory->current_rd == 0x65)
-			regulatory->current_rd += 5;
-		else if (regulatory->current_rd == 0x41)
-			regulatory->current_rd = 0x43;
+		if (ah->regulatory.current_rd == 0x64 ||
+		    ah->regulatory.current_rd == 0x65)
+			ah->regulatory.current_rd += 5;
+		else if (ah->regulatory.current_rd == 0x41)
+			ah->regulatory.current_rd = 0x43;
 		DPRINTF(ah->ah_sc, ATH_DBG_REGULATORY,
-			"regdomain mapped to 0x%x\n", regulatory->current_rd);
+			"regdomain mapped to 0x%x\n", ah->regulatory.current_rd);
 	}
 
 	eeval = ah->eep_ops->get_eeprom(ah, EEP_OP_MODE);
@@ -3642,7 +3635,7 @@ void ath9k_hw_fill_cap_info(struct ath_hw *ah)
 	else
 		pCap->hw_caps |= ATH9K_HW_CAP_4KB_SPLITTRANS;
 
-	if (regulatory->current_rd_ext & (1 << REG_EXT_JAPAN_MIDBAND)) {
+	if (ah->regulatory.current_rd_ext & (1 << REG_EXT_JAPAN_MIDBAND)) {
 		pCap->reg_cap =
 			AR_EEPROM_EEREGCAP_EN_KK_NEW_11A |
 			AR_EEPROM_EEREGCAP_EN_KK_U1_EVEN |
@@ -3671,7 +3664,6 @@ void ath9k_hw_fill_cap_info(struct ath_hw *ah)
 bool ath9k_hw_getcapability(struct ath_hw *ah, enum ath9k_capability_type type,
 			    u32 capability, u32 *result)
 {
-	struct ath_regulatory *regulatory = ath9k_hw_regulatory(ah);
 	switch (type) {
 	case ATH9K_CAP_CIPHER:
 		switch (capability) {
@@ -3720,13 +3712,13 @@ bool ath9k_hw_getcapability(struct ath_hw *ah, enum ath9k_capability_type type,
 		case 0:
 			return 0;
 		case 1:
-			*result = regulatory->power_limit;
+			*result = ah->regulatory.power_limit;
 			return 0;
 		case 2:
-			*result = regulatory->max_power_level;
+			*result = ah->regulatory.max_power_level;
 			return 0;
 		case 3:
-			*result = regulatory->tp_scale;
+			*result = ah->regulatory.tp_scale;
 			return 0;
 		}
 		return false;
@@ -3964,18 +3956,17 @@ bool ath9k_hw_disable(struct ath_hw *ah)
 
 void ath9k_hw_set_txpowerlimit(struct ath_hw *ah, u32 limit)
 {
-	struct ath_regulatory *regulatory = ath9k_hw_regulatory(ah);
 	struct ath9k_channel *chan = ah->curchan;
 	struct ieee80211_channel *channel = chan->chan;
 
-	regulatory->power_limit = min(limit, (u32) MAX_RATE_POWER);
+	ah->regulatory.power_limit = min(limit, (u32) MAX_RATE_POWER);
 
 	ah->eep_ops->set_txpower(ah, chan,
-				 ath9k_regd_get_ctl(regulatory, chan),
+				 ath9k_regd_get_ctl(&ah->regulatory, chan),
 				 channel->max_antenna_gain * 2,
 				 channel->max_power * 2,
 				 min((u32) MAX_RATE_POWER,
-				 (u32) regulatory->power_limit));
+				 (u32) ah->regulatory.power_limit));
 }
 
 void ath9k_hw_setmac(struct ath_hw *ah, const u8 *mac)
