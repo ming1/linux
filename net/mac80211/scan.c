@@ -280,7 +280,6 @@ void ieee80211_scan_completed(struct ieee80211_hw *hw, bool aborted)
 	if (local->scan_req != local->int_scan_req)
 		cfg80211_scan_done(local->scan_req, aborted);
 	local->scan_req = NULL;
-	local->scan_sdata = NULL;
 
 	was_hw_scan = test_bit(SCAN_HW_SCANNING, &local->scanning);
 	local->scanning = 0;
@@ -661,7 +660,6 @@ void ieee80211_scan_work(struct work_struct *work)
 		int rc;
 
 		local->scan_req = NULL;
-		local->scan_sdata = NULL;
 
 		rc = __ieee80211_start_scan(sdata, req);
 		mutex_unlock(&local->scan_mtx);
@@ -744,7 +742,7 @@ int ieee80211_request_internal_scan(struct ieee80211_sub_if_data *sdata,
 
 void ieee80211_scan_cancel(struct ieee80211_local *local)
 {
-	bool abortscan;
+	bool swscan;
 
 	cancel_delayed_work_sync(&local->scan_work);
 
@@ -753,10 +751,9 @@ void ieee80211_scan_cancel(struct ieee80211_local *local)
 	 * queued -- mostly at suspend under RTNL.
 	 */
 	mutex_lock(&local->scan_mtx);
-	abortscan = test_bit(SCAN_SW_SCANNING, &local->scanning) ||
-		    (!local->scanning && local->scan_req);
+	swscan = test_bit(SCAN_SW_SCANNING, &local->scanning);
 	mutex_unlock(&local->scan_mtx);
 
-	if (abortscan)
+	if (swscan)
 		ieee80211_scan_completed(&local->hw, true);
 }
