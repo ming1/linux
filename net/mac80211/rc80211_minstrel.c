@@ -75,11 +75,12 @@ use_low_rate(struct sk_buff *skb)
 {
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *) skb->data;
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
-	__le16 fc;
+	u16 fc;
 
-	fc = hdr->frame_control;
+	fc = le16_to_cpu(hdr->frame_control);
 
-	return ((info->flags & IEEE80211_TX_CTL_NO_ACK) || !ieee80211_is_data(fc));
+	return ((info->flags & IEEE80211_TX_CTL_NO_ACK) ||
+		(fc & IEEE80211_FCTL_FTYPE) != IEEE80211_FTYPE_DATA);
 }
 
 
