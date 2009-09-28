@@ -499,7 +499,8 @@ static void ath9k_tasklet(unsigned long data)
 	if (status & ATH9K_INT_TX)
 		ath_tx_tasklet(sc);
 
-	if ((status & ATH9K_INT_TSFOOR) && sc->ps_enabled) {
+	if ((status & ATH9K_INT_TSFOOR) &&
+	    (sc->hw->conf.flags & IEEE80211_CONF_PS)) {
 		/*
 		 * TSF sync does not look correct; remain awake to sync with
 		 * the next Beacon.
@@ -2000,7 +2001,7 @@ static int ath9k_tx(struct ieee80211_hw *hw,
 		goto exit;
 	}
 
-	if (sc->ps_enabled) {
+	if (sc->hw->conf.flags & IEEE80211_CONF_PS) {
 		struct ieee80211_hdr *hdr = (struct ieee80211_hdr *) skb->data;
 		/*
 		 * mac80211 does not set PM field for normal data frames, so we
@@ -2288,9 +2289,8 @@ static int ath9k_config(struct ieee80211_hw *hw, u32 changed)
 				}
 				ath9k_hw_setrxabort(sc->sc_ah, 1);
 			}
-			sc->ps_enabled = true;
+			ath9k_hw_setpower(sc->sc_ah, ATH9K_PM_NETWORK_SLEEP);
 		} else {
-			sc->ps_enabled = false;
 			ath9k_hw_setpower(sc->sc_ah, ATH9K_PM_AWAKE);
 			if (!(ah->caps.hw_caps &
 			      ATH9K_HW_CAP_AUTOSLEEP)) {
