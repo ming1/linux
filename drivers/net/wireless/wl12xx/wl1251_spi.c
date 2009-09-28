@@ -29,7 +29,7 @@
 #include "reg.h"
 #include "wl1251_spi.h"
 
-static void wl1251_spi_reset(struct wl1251 *wl)
+void wl1251_spi_reset(struct wl1251 *wl)
 {
 	u8 *cmd;
 	struct spi_transfer t;
@@ -55,7 +55,7 @@ static void wl1251_spi_reset(struct wl1251 *wl)
 	wl1251_dump(DEBUG_SPI, "spi reset -> ", cmd, WSPI_INIT_CMD_LEN);
 }
 
-static void wl1251_spi_init(struct wl1251 *wl)
+void wl1251_spi_init(struct wl1251 *wl)
 {
 	u8 crc[WSPI_INIT_CMD_CRC_LEN], *cmd;
 	struct spi_transfer t;
@@ -108,13 +108,6 @@ static void wl1251_spi_init(struct wl1251 *wl)
 
 	wl1251_dump(DEBUG_SPI, "spi init -> ", cmd, WSPI_INIT_CMD_LEN);
 }
-
-static void wl1251_spi_reset_wake(struct wl1251 *wl)
-{
-	wl1251_spi_reset(wl);
-	wl1251_spi_init(wl);
-}
-
 
 /* Set the SPI partitions to access the chip addresses
  *
@@ -239,8 +232,7 @@ int wl1251_set_partition(struct wl1251 *wl,
 	return 0;
 }
 
-static void wl1251_spi_read(struct wl1251 *wl, int addr, void *buf,
-			    size_t len)
+void wl1251_spi_read(struct wl1251 *wl, int addr, void *buf, size_t len)
 {
 	struct spi_transfer t[3];
 	struct spi_message m;
@@ -279,8 +271,7 @@ static void wl1251_spi_read(struct wl1251 *wl, int addr, void *buf,
 	wl1251_dump(DEBUG_SPI, "spi_read buf <- ", buf, len);
 }
 
-static void wl1251_spi_write(struct wl1251 *wl, int addr, void *buf,
-			     size_t len)
+void wl1251_spi_write(struct wl1251 *wl, int addr, void *buf, size_t len)
 {
 	struct spi_transfer t[2];
 	struct spi_message m;
@@ -309,9 +300,3 @@ static void wl1251_spi_write(struct wl1251 *wl, int addr, void *buf,
 	wl1251_dump(DEBUG_SPI, "spi_write cmd -> ", cmd, sizeof(*cmd));
 	wl1251_dump(DEBUG_SPI, "spi_write buf -> ", buf, len);
 }
-
-const struct wl1251_if_operations wl1251_spi_ops = {
-	.read = wl1251_spi_read,
-	.write = wl1251_spi_write,
-	.reset = wl1251_spi_reset_wake,
-};
