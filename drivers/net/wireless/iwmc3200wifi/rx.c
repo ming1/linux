@@ -487,6 +487,8 @@ static int iwm_mlme_assoc_start(struct iwm_priv *iwm, u8 *buf,
 
 	start = (struct iwm_umac_notif_assoc_start *)buf;
 
+	set_bit(IWM_STATUS_ASSOCIATING, &iwm->status);
+
 	IWM_DBG_MLME(iwm, INFO, "Association with %pM Started, reason: %d\n",
 		     start->bssid, le32_to_cpu(start->roam_reason));
 
@@ -505,22 +507,13 @@ static int iwm_mlme_assoc_complete(struct iwm_priv *iwm, u8 *buf,
 	IWM_DBG_MLME(iwm, INFO, "Association with %pM completed, status: %d\n",
 		     complete->bssid, complete->status);
 
+	clear_bit(IWM_STATUS_ASSOCIATING, &iwm->status);
+
 	switch (le32_to_cpu(complete->status)) {
 	case UMAC_ASSOC_COMPLETE_SUCCESS:
 		set_bit(IWM_STATUS_ASSOCIATED, &iwm->status);
 		memcpy(iwm->bssid, complete->bssid, ETH_ALEN);
 		iwm->channel = complete->channel;
-
-		/* Internal roaming state, avoid notifying SME. */
-		if (!test_and_clear_bit(IWM_STATUS_SME_CONNECTING, &iwm->status)
-		    && iwm->conf.mode == UMAC_MODE_BSS) {
-			cfg80211_roamed(iwm_to_ndev(iwm),
-					complete->bssid,
-					iwm->req_ie, iwm->req_ie_len,
-					iwm->resp_ie, iwm->resp_ie_len,
-					GFP_KERNEL);
-			break;
-		}
 
 		iwm_link_on(iwm);
 
@@ -538,11 +531,6 @@ static int iwm_mlme_assoc_complete(struct iwm_priv *iwm, u8 *buf,
 		memset(iwm->bssid, 0, ETH_ALEN);
 		iwm->channel = 0;
 
-		/* Internal roaming state, avoid notifying SME. */
-		if (!test_and_clear_bit(IWM_STATUS_SME_CONNECTING, &iwm->status)
-		    && iwm->conf.mode == UMAC_MODE_BSS)
-			break;
-
 		iwm_link_off(iwm);
 
 		if (iwm->conf.mode == UMAC_MODE_IBSS)
@@ -552,7 +540,6 @@ static int iwm_mlme_assoc_complete(struct iwm_priv *iwm, u8 *buf,
 					NULL, 0, NULL, 0,
 					WLAN_STATUS_UNSPECIFIED_FAILURE,
 					GFP_KERNEL);
-		break;
 	default:
 		break;
 	}
@@ -575,7 +562,7 @@ static int iwm_mlme_profile_invalidate(struct iwm_priv *iwm, u8 *buf,
 	IWM_DBG_MLME(iwm, INFO, "Profile Invalidated. Reason: %d\n",
 		     le32_to_cpu(invalid->reason));
 
-	clear_bit(IWM_STATUS_SME_CONNECTING, &iwm->status);
+	clear_bit(IWM_STATUS_ASSOCIATING, &iwm->status);
 	clear_bit(IWM_STATUS_ASSOCIATED, &iwm->status);
 
 	iwm->umac_profile_active = 0;
@@ -826,8 +813,7 @@ static int iwm_mlme_mgt_frame(struct iwm_priv *iwm, u8 *buf,
 		iwm->resp_ie = kmemdup(mgt->u.reassoc_resp.variable,
 				       iwm->resp_ie_len, GFP_KERNEL);
 	} else {
-		IWM_ERR(iwm, "Unsupported management frame: 0x%x",
-			cpu_to_le16(mgt->frame_control));
+		IWM_ERR(iwm, "Unsupported management frame");
 		return 0;
 	}
 
