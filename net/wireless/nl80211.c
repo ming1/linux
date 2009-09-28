@@ -2696,31 +2696,6 @@ static int nl80211_set_reg(struct sk_buff *skb, struct genl_info *info)
 	return r;
 }
 
-static int validate_scan_freqs(struct nlattr *freqs)
-{
-	struct nlattr *attr1, *attr2;
-	int n_channels = 0, tmp1, tmp2;
-
-	nla_for_each_nested(attr1, freqs, tmp1) {
-		n_channels++;
-		/*
-		 * Some hardware has a limited channel list for
-		 * scanning, and it is pretty much nonsensical
-		 * to scan for a channel twice, so disallow that
-		 * and don't require drivers to check that the
-		 * channel list they get isn't longer than what
-		 * they can scan, as long as they can scan all
-		 * the channels they registered at once.
-		 */
-		nla_for_each_nested(attr2, freqs, tmp2)
-			if (attr1 != attr2 &&
-			    nla_get_u32(attr1) == nla_get_u32(attr2))
-				return 0;
-	}
-
-	return n_channels;
-}
-
 static int nl80211_trigger_scan(struct sk_buff *skb, struct genl_info *info)
 {
 	struct cfg80211_registered_device *drv;
@@ -2730,7 +2705,7 @@ static int nl80211_trigger_scan(struct sk_buff *skb, struct genl_info *info)
 	struct ieee80211_channel *channel;
 	struct nlattr *attr;
 	struct wiphy *wiphy;
-	int err, tmp, n_ssids = 0, n_channels, i;
+	int err, tmp, n_ssids = 0, n_channels = 0, i;
 	enum ieee80211_band band;
 	size_t ie_len;
 
@@ -2761,15 +2736,13 @@ static int nl80211_trigger_scan(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	if (info->attrs[NL80211_ATTR_SCAN_FREQUENCIES]) {
-		n_channels = validate_scan_freqs(
-				info->attrs[NL80211_ATTR_SCAN_FREQUENCIES]);
+		nla_for_each_nested(attr, info->attrs[NL80211_ATTR_SCAN_FREQUENCIES], tmp)
+			n_channels++;
 		if (!n_channels) {
 			err = -EINVAL;
 			goto out;
 		}
 	} else {
-		n_channels = 0;
-
 		for (band = 0; band < IEEE80211_NUM_BANDS; band++)
 			if (wiphy->bands[band])
 				n_channels += wiphy->bands[band]->n_channels;
