@@ -16,7 +16,7 @@
 #include <net/sock.h>
 #include <linux/rtnetlink.h>
 #include <linux/wireless.h>
-#include <net/wext.h>
+#include <net/iw_handler.h>
 
 #include "net-sysfs.h"
 
@@ -363,13 +363,15 @@ static ssize_t wireless_show(struct device *d, char *buf,
 					       char *))
 {
 	struct net_device *dev = to_net_dev(d);
-	const struct iw_statistics *iw;
+	const struct iw_statistics *iw = NULL;
 	ssize_t ret = -EINVAL;
 
 	read_lock(&dev_base_lock);
 	if (dev_isalive(dev)) {
-		iw = get_wireless_stats(dev);
-		if (iw)
+		if (dev->wireless_handlers &&
+		    dev->wireless_handlers->get_wireless_stats)
+			iw = dev->wireless_handlers->get_wireless_stats(dev);
+		if (iw != NULL)
 			ret = (*format)(iw, buf);
 	}
 	read_unlock(&dev_base_lock);
@@ -503,7 +505,7 @@ int netdev_register_kobject(struct net_device *net)
 	*groups++ = &netstat_group;
 
 #ifdef CONFIG_WIRELESS_EXT_SYSFS
-	if (net->wireless_handlers || net->ieee80211_ptr)
+	if (net->wireless_handlers && net->wireless_handlers->get_wireless_stats)
 		*groups++ = &wireless_group;
 #endif
 #endif /* CONFIG_SYSFS */
