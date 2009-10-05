@@ -340,15 +340,10 @@ static u16 tx_write_2byte_queue(struct b43_pio_txqueue *q,
 			q->mmio_base + B43_PIO_TXDATA,
 			sizeof(u16));
 	if (data_len & 1) {
-		u8 tail[2] = { 0, };
-
 		/* Write the last byte. */
 		ctl &= ~B43_PIO_TXCTL_WRITEHI;
 		b43_piotx_write16(q, B43_PIO_TXCTL, ctl);
-		tail[0] = data[data_len - 1];
-		ssb_block_write(dev->dev, tail, 2,
-				q->mmio_base + B43_PIO_TXDATA,
-				sizeof(u16));
+		b43_piotx_write16(q, B43_PIO_TXDATA, data[data_len - 1]);
 	}
 
 	return ctl;
@@ -391,31 +386,26 @@ static u32 tx_write_4byte_queue(struct b43_pio_txqueue *q,
 			q->mmio_base + B43_PIO8_TXDATA,
 			sizeof(u32));
 	if (data_len & 3) {
-		u8 tail[4] = { 0, };
+		u32 value = 0;
 
 		/* Write the last few bytes. */
 		ctl &= ~(B43_PIO8_TXCTL_8_15 | B43_PIO8_TXCTL_16_23 |
 			 B43_PIO8_TXCTL_24_31);
+		data = &(data[data_len - 1]);
 		switch (data_len & 3) {
 		case 3:
-			ctl |= B43_PIO8_TXCTL_16_23 | B43_PIO8_TXCTL_8_15;
-			tail[0] = data[data_len - 3];
-			tail[1] = data[data_len - 2];
-			tail[2] = data[data_len - 1];
-			break;
+			ctl |= B43_PIO8_TXCTL_16_23;
+			value |= (u32)(*data) << 16;
+			data--;
 		case 2:
 			ctl |= B43_PIO8_TXCTL_8_15;
-			tail[0] = data[data_len - 2];
-			tail[1] = data[data_len - 1];
-			break;
+			value |= (u32)(*data) << 8;
+			data--;
 		case 1:
-			tail[0] = data[data_len - 1];
-			break;
+			value |= (u32)(*data);
 		}
 		b43_piotx_write32(q, B43_PIO8_TXCTL, ctl);
-		ssb_block_write(dev->dev, tail, 4,
-				q->mmio_base + B43_PIO8_TXDATA,
-				sizeof(u32));
+		b43_piotx_write32(q, B43_PIO8_TXDATA, value);
 	}
 
 	return ctl;
@@ -703,25 +693,21 @@ data_ready:
 			       q->mmio_base + B43_PIO8_RXDATA,
 			       sizeof(u32));
 		if (len & 3) {
-			u8 tail[4] = { 0, };
+			u32 value;
+			char *data;
 
 			/* Read the last few bytes. */
-			ssb_block_read(dev->dev, tail, 4,
-				       q->mmio_base + B43_PIO8_RXDATA,
-				       sizeof(u32));
+			value = b43_piorx_read32(q, B43_PIO8_RXDATA);
+			data = &(skb->data[len + padding - 1]);
 			switch (len & 3) {
 			case 3:
-				skb->data[len + padding - 3] = tail[0];
-				skb->data[len + padding - 2] = tail[1];
-				skb->data[len + padding - 1] = tail[2];
-				break;
+				*data = (value >> 16);
+				data--;
 			case 2:
-				skb->data[len + padding - 2] = tail[0];
-				skb->data[len + padding - 1] = tail[1];
-				break;
+				*data = (value >> 8);
+				data--;
 			case 1:
-				skb->data[len + padding - 1] = tail[0];
-				break;
+				*data = value;
 			}
 		}
 	} else {
@@ -729,13 +715,11 @@ data_ready:
 			       q->mmio_base + B43_PIO_RXDATA,
 			       sizeof(u16));
 		if (len & 1) {
-			u8 tail[2] = { 0, };
+			u16 value;
 
 			/* Read the last byte. */
-			ssb_block_read(dev->dev, tail, 2,
-				       q->mmio_base + B43_PIO_RXDATA,
-				       sizeof(u16));
-			skb->data[len + padding - 1] = tail[0];
+			value = b43_piorx_read16(q, B43_PIO_RXDATA);
+			skb->data[len + padding - 1] = value;
 		}
 	}
 
