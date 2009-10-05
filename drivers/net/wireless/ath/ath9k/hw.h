@@ -451,6 +451,7 @@ struct ath_hw {
 
 	bool sw_mgmt_crypto;
 	bool is_pciexpress;
+	u8 macaddr[ETH_ALEN];
 	u16 tx_trig_level;
 	u16 rfsilent;
 	u32 rfkill_gpio;
