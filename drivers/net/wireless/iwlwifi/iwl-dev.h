@@ -743,8 +743,7 @@ struct iwl_dma_ptr {
 
 /* Sensitivity and chain noise calibration */
 #define INITIALIZATION_VALUE		0xFFFF
-#define IWL4965_CAL_NUM_BEACONS		20
-#define IWL_CAL_NUM_BEACONS		16
+#define CAL_NUM_OF_BEACONS		20
 #define MAXIMUM_ALLOWED_PATHLOSS	15
 
 #define CHAIN_NOISE_MAX_DELTA_GAIN_CODE 3
