@@ -679,4 +679,5 @@ u32 ath9k_hw_gettsf32(struct ath_hw *ah);
 #define ATH_PCIE_CAP_LINK_L0S	1
 #define ATH_PCIE_CAP_LINK_L1	2
 
+void ath_pcie_aspm_disable(struct ath_softc *sc);
 #endif
