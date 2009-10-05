@@ -265,7 +265,6 @@ struct iwl_cfg {
 	const bool broken_powersave;
 	bool use_rts_for_ht;
 	int chain_noise_num_beacons;
-	const bool supports_idle;
 };
 
 /***************************
