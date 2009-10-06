@@ -1,4 +1,4 @@
-#include <linux/utsrelease.h>
+#include <linux/utsname.h>
 #include <net/cfg80211.h>
 #include "ethtool.h"
 
@@ -10,7 +10,7 @@ static void cfg80211_get_drvinfo(struct net_device *dev,
 	strlcpy(info->driver, wiphy_dev(wdev->wiphy)->driver->name,
 		sizeof(info->driver));
 
-	strlcpy(info->version, UTS_RELEASE, sizeof(info->version));
+	strlcpy(info->version, init_utsname()->release, sizeof(info->version));
 
 	if (wdev->wiphy->fw_version[0])
 		strncpy(info->fw_version, wdev->wiphy->fw_version,
