@@ -241,6 +241,9 @@ void b43_pio_free(struct b43_wldev *dev)
 	destroy_queue_tx(pio, tx_queue_AC_VI);
 	destroy_queue_tx(pio, tx_queue_AC_BE);
 	destroy_queue_tx(pio, tx_queue_AC_BK);
+
+	kfree(pio->rxhdr);
+	kfree(pio->txhdr);
 }
 
 int b43_pio_init(struct b43_wldev *dev)
@@ -276,11 +279,23 @@ int b43_pio_init(struct b43_wldev *dev)
 	if (!pio->rx_queue)
 		goto err_destroy_mcast;
 
+	pio->rxhdr = kzalloc(sizeof(*pio->rxhdr), GFP_KERNEL);
+	if (!pio->rxhdr)
+		goto err_destroy_rx;
+
+	pio->txhdr = kzalloc(sizeof(*pio->txhdr), GFP_KERNEL);
+	if (!pio->txhdr)
+		goto err_destroy_rxhdr;
+
 	b43dbg(dev->wl, "PIO initialized\n");
 	err = 0;
 out:
 	return err;
 
+err_destroy_rxhdr:
+	kfree(pio->rxhdr);
+err_destroy_rx:
+	destroy_queue_rx(pio, rx_queue);
 err_destroy_mcast:
 	destroy_queue_tx(pio, tx_queue_mcast);
 err_destroy_vo:
@@ -445,8 +460,9 @@ static void pio_tx_frame_4byte_queue(struct b43_pio_txpacket *pack,
 static int pio_tx_frame(struct b43_pio_txqueue *q,
 			struct sk_buff *skb)
 {
+	struct b43_wldev *dev = q->dev;
+	struct b43_pio *pio = &dev->pio;
 	struct b43_pio_txpacket *pack;
-	struct b43_txhdr txhdr;
 	u16 cookie;
 	int err;
 	unsigned int hdrlen;
@@ -457,8 +473,8 @@ static int pio_tx_frame(struct b43_pio_txqueue *q,
 			  struct b43_pio_txpacket, list);
 
 	cookie = generate_cookie(q, pack);
-	hdrlen = b43_txhdr_size(q->dev);
-	err = b43_generate_txhdr(q->dev, (u8 *)&txhdr, skb,
+	hdrlen = b43_txhdr_size(dev);
+	err = b43_generate_txhdr(dev, (u8 *)pio->txhdr, skb,
 				 info, cookie);
 	if (err)
 		return err;
@@ -466,15 +482,15 @@ static int pio_tx_frame(struct b43_pio_txqueue *q,
 	if (info->flags & IEEE80211_TX_CTL_SEND_AFTER_DTIM) {
 		/* Tell the firmware about the cookie of the last
 		 * mcast frame, so it can clear the more-data bit in it. */
-		b43_shm_write16(q->dev, B43_SHM_SHARED,
+		b43_shm_write16(dev, B43_SHM_SHARED,
 				B43_SHM_SH_MCASTCOOKIE, cookie);
 	}
 
 	pack->skb = skb;
 	if (q->rev >= 8)
-		pio_tx_frame_4byte_queue(pack, (const u8 *)&txhdr, hdrlen);
+		pio_tx_frame_4byte_queue(pack, (const u8 *)pio->txhdr, hdrlen);
 	else
-		pio_tx_frame_2byte_queue(pack, (const u8 *)&txhdr, hdrlen);
+		pio_tx_frame_2byte_queue(pack, (const u8 *)pio->txhdr, hdrlen);
 
 	/* Remove it from the list of available packet slots.
 	 * It will be put back when we receive the status report. */
@@ -614,14 +630,14 @@ void b43_pio_get_tx_stats(struct b43_wldev *dev,
 static bool pio_rx_frame(struct b43_pio_rxqueue *q)
 {
 	struct b43_wldev *dev = q->dev;
-	struct b43_rxhdr_fw4 rxhdr;
+	struct b43_pio *pio = &dev->pio;
 	u16 len;
 	u32 macstat;
 	unsigned int i, padding;
 	struct sk_buff *skb;
 	const char *err_msg = NULL;
 
-	memset(&rxhdr, 0, sizeof(rxhdr));
+	memset(pio->rxhdr, 0, sizeof(*pio->rxhdr));
 
 	/* Check if we have data and wait for it to get ready. */
 	if (q->rev >= 8) {
@@ -659,16 +675,16 @@ data_ready:
 
 	/* Get the preamble (RX header) */
 	if (q->rev >= 8) {
-		ssb_block_read(dev->dev, &rxhdr, sizeof(rxhdr),
+		ssb_block_read(dev->dev, pio->rxhdr, sizeof(*pio->rxhdr),
 			       q->mmio_base + B43_PIO8_RXDATA,
 			       sizeof(u32));
 	} else {
-		ssb_block_read(dev->dev, &rxhdr, sizeof(rxhdr),
+		ssb_block_read(dev->dev, pio->rxhdr, sizeof(*pio->rxhdr),
 			       q->mmio_base + B43_PIO_RXDATA,
 			       sizeof(u16));
 	}
 	/* Sanity checks. */
-	len = le16_to_cpu(rxhdr.frame_len);
+	len = le16_to_cpu(pio->rxhdr->frame_len);
 	if (unlikely(len > 0x700)) {
 		err_msg = "len > 0x700";
 		goto rx_error;
@@ -678,7 +694,7 @@ data_ready:
 		goto rx_error;
 	}
 
-	macstat = le32_to_cpu(rxhdr.mac_status);
+	macstat = le32_to_cpu(pio->rxhdr->mac_status);
 	if (macstat & B43_RX_MAC_FCSERR) {
 		if (!(q->dev->wl->filter_flags & FIF_FCSFAIL)) {
 			/* Drop frames with failed FCS. */
@@ -739,7 +755,7 @@ data_ready:
 		}
 	}
 
-	b43_rx(q->dev, skb, &rxhdr);
+	b43_rx(q->dev, skb, pio->rxhdr);
 
 	return 1;
 
