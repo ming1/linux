@@ -550,9 +550,6 @@ struct b43_dma {
 struct b43_pio_txqueue;
 struct b43_pio_rxqueue;
 
-struct b43_rxhdr_fw4;
-struct b43_txhdr;
-
 /* Data structures for PIO transmission, per 80211 core. */
 struct b43_pio {
 	struct b43_pio_txqueue *tx_queue_AC_BK; /* Background */
@@ -562,12 +559,6 @@ struct b43_pio {
 	struct b43_pio_txqueue *tx_queue_mcast; /* Multicast */
 
 	struct b43_pio_rxqueue *rx_queue;
-
-	/*
-	 * RX/TX header buffers used by the frame transmit functions.
-	 */
-	struct b43_rxhdr_fw4 *rxhdr;
-	struct b43_txhdr *txhdr;
 };
 
 /* Context information for a noise calculation (Link Quality). */
