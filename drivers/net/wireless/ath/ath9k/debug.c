@@ -23,12 +23,12 @@ module_param_named(debug, ath9k_debug, uint, 0);
 
 static struct dentry *ath9k_debugfs_root;
 
-void DPRINTF(struct ath_hw *ah, int dbg_mask, const char *fmt, ...)
+void DPRINTF(struct ath_softc *sc, int dbg_mask, const char *fmt, ...)
 {
-	if (!ah->ah_sc)
+	if (!sc)
 		return;
 
-	if (ah->ah_sc->debug.debug_mask & dbg_mask) {
+	if (sc->debug.debug_mask & dbg_mask) {
 		va_list args;
 
 		va_start(args, fmt);
@@ -568,10 +568,8 @@ static const struct file_operations fops_xmit = {
 	.owner = THIS_MODULE
 };
 
-int ath9k_init_debug(struct ath_hw *ah)
+int ath9k_init_debug(struct ath_softc *sc)
 {
-	struct ath_softc *sc = ah->ah_sc;
-
 	sc->debug.debug_mask = ath9k_debug;
 
 	if (!ath9k_debugfs_root)
@@ -621,14 +619,12 @@ int ath9k_init_debug(struct ath_hw *ah)
 
 	return 0;
 err:
-	ath9k_exit_debug(ah);
+	ath9k_exit_debug(sc);
 	return -ENOMEM;
 }
 
-void ath9k_exit_debug(struct ath_hw *ah)
+void ath9k_exit_debug(struct ath_softc *sc)
 {
-	struct ath_softc *sc = ah->ah_sc;
-
 	debugfs_remove(sc->debug.debugfs_xmit);
 	debugfs_remove(sc->debug.debugfs_wiphy);
 	debugfs_remove(sc->debug.debugfs_rcstat);
