@@ -46,8 +46,7 @@
 #include "iwl-eeprom.h"
 #include "iwl-helpers.h"
 #include "iwl-core.h"
-#include "iwl-led.h"
-#include "iwl-3945-led.h"
+#include "iwl-agn-rs.h"
 
 #define IWL_DECLARE_RATE_INFO(r, ip, in, rp, rn, pp, np)    \
 	[IWL_RATE_##r##M_INDEX] = { IWL_RATE_##r##M_PLCP,   \
@@ -360,7 +359,7 @@ void iwl3945_hw_rx_statistics(struct iwl_priv *priv,
 
 	memcpy(&priv->statistics_39, pkt->u.raw, sizeof(priv->statistics_39));
 
-	iwl_leds_background(priv);
+	iwl3945_led_background(priv);
 
 	priv->last_statistics_time = jiffies;
 }
@@ -573,6 +572,10 @@ static void iwl3945_pass_packet_to_mac80211(struct iwl_priv *priv,
 				       (struct ieee80211_hdr *)rxb->skb->data,
 				       le32_to_cpu(rx_end->status), stats);
 
+#ifdef CONFIG_IWLWIFI_LEDS
+	if (ieee80211_is_data(hdr->frame_control))
+		priv->rxtxpackets += len;
+#endif
 	iwl_update_stats(priv, false, hdr->frame_control, len);
 
 	memcpy(IEEE80211_SKB_RXCB(rxb->skb), stats, sizeof(*stats));
@@ -2877,7 +2880,6 @@ static struct iwl_ops iwl3945_ops = {
 	.lib = &iwl3945_lib,
 	.hcmd = &iwl3945_hcmd,
 	.utils = &iwl3945_hcmd_utils,
-	.led = &iwl3945_led_ops,
 };
 
 static struct iwl_cfg iwl3945_bg_cfg = {

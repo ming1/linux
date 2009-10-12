@@ -42,7 +42,6 @@
 #include "iwl-io.h"
 #include "iwl-sta.h"
 #include "iwl-helpers.h"
-#include "iwl-agn-led.h"
 #include "iwl-5000-hw.h"
 #include "iwl-6000-hw.h"
 
@@ -1642,12 +1641,11 @@ static struct iwl_lib_ops iwl5150_lib = {
 	 },
 };
 
-static struct iwl_ops iwl5000_ops = {
+struct iwl_ops iwl5000_ops = {
 	.ucode = &iwl5000_ucode,
 	.lib = &iwl5000_lib,
 	.hcmd = &iwl5000_hcmd,
 	.utils = &iwl5000_hcmd_utils,
-	.led = &iwlagn_led_ops,
 };
 
 static struct iwl_ops iwl5150_ops = {
@@ -1655,7 +1653,6 @@ static struct iwl_ops iwl5150_ops = {
 	.lib = &iwl5150_lib,
 	.hcmd = &iwl5000_hcmd,
 	.utils = &iwl5000_hcmd_utils,
-	.led = &iwlagn_led_ops,
 };
 
 struct iwl_mod_params iwl50_mod_params = {
