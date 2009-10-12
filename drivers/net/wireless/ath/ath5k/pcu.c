@@ -288,8 +288,13 @@ void ath5k_hw_set_associd(struct ath5k_hw *ah, const u8 *bssid, u16 assoc_id)
 	/*
 	 * Set simple BSSID mask on 5212
 	 */
-	if (ah->ah_version == AR5K_AR5212)
-		ath_hw_setbssidmask(common);
+	if (ah->ah_version == AR5K_AR5212) {
+		ath5k_hw_reg_write(ah, get_unaligned_le32(common->bssidmask),
+				   AR_BSSMSKL);
+		ath5k_hw_reg_write(ah,
+				   get_unaligned_le16(common->bssidmask + 4),
+				   AR_BSSMSKU);
+	}
 
 	/*
 	 * Set BSSID which triggers the "SME Join" operation
