@@ -1459,7 +1459,7 @@ ieee80211_rx_mgmt_assoc_resp(struct ieee80211_sub_if_data *sdata,
 		       sdata->dev->name, status_code);
 		list_del(&wk->list);
 		kfree(wk);
-		return RX_MGMT_CFG80211_ASSOC;
+		return RX_MGMT_CFG80211_DEAUTH;
 	}
 
 	if ((aid & (BIT(15) | BIT(14))) != (BIT(15) | BIT(14)))
