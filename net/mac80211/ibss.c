@@ -829,7 +829,7 @@ void ieee80211_ibss_notify_scan_completed(struct ieee80211_local *local)
 		if (!sdata->u.ibss.ssid_len)
 			continue;
 		sdata->u.ibss.last_scan_completed = jiffies;
-		mod_timer(&sdata->u.ibss.timer, 0);
+		ieee80211_sta_find_ibss(sdata);
 	}
 	mutex_unlock(&local->iflist_mtx);
 }
