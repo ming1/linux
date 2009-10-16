@@ -8,7 +8,6 @@
 #include <linux/kfifo.h>
 #include <linux/sched.h>
 #include "host.h"
-#include "hostcmd.h"
 #include "decl.h"
 #include "defs.h"
 #include "dev.h"
