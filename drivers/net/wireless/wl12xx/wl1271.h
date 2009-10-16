@@ -441,8 +441,6 @@ struct wl1271 {
 
 	/* Current chipset configuration */
 	struct conf_drv_settings conf;
-
-	struct list_head list;
 };
 
 int wl1271_plt_start(struct wl1271 *wl);
