@@ -225,6 +225,7 @@ struct iwl_mod_params {
  *	to the deviation to achieve the desired led frequency.
  *	The detail algorithm is described in iwl-led.c
  * @chain_noise_num_beacons: number of beacons used to compute chain noise
+ * @adv_thermal_throttle: support advance thermal throttle
  *
  * We enable the driver to be backward compatible wrt API version. The
  * driver specifies which APIs it supports (with @ucode_api_max being the
@@ -278,6 +279,7 @@ struct iwl_cfg {
 	u16 led_compensation;
 	int chain_noise_num_beacons;
 	const bool supports_idle;
+	bool adv_thermal_throttle;
 };
 
 /***************************
