@@ -100,7 +100,6 @@ struct lbs_mesh_stats {
 
 /** Private structure for the MV device */
 struct lbs_private {
-	struct wireless_dev *wdev;
 	int mesh_open;
 	int mesh_fw_ver;
 	int infra_open;

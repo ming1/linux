@@ -1,6 +1,5 @@
 libertas-y += 11d.o
 libertas-y += assoc.o
-libertas-y += cfg.o
 libertas-y += cmd.o
 libertas-y += cmdresp.o
 libertas-y += debugfs.o
