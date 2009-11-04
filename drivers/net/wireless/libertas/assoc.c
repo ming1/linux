@@ -1567,8 +1567,7 @@ static int assoc_helper_mode(struct lbs_private *priv,
 	}
 
 	priv->mode = assoc_req->mode;
-	ret = lbs_set_snmp_mib(priv, SNMP_MIB_OID_BSS_TYPE,
-		assoc_req->mode == IW_MODE_ADHOC ? 2 : 1);
+	ret = lbs_set_snmp_mib(priv, SNMP_MIB_OID_BSS_TYPE, assoc_req->mode);
 
 done:
 	lbs_deb_leave_args(LBS_DEB_ASSOC, "ret %d", ret);
