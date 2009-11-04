@@ -5,7 +5,7 @@
 #include <linux/etherdevice.h>
 #include <linux/sched.h>
 
-#include "host.h"
+#include "hostcmd.h"
 #include "radiotap.h"
 #include "decl.h"
 #include "defs.h"
