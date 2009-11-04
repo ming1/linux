@@ -36,7 +36,8 @@ struct current_bss_params {
 
 	/** band */
 	u8 band;
-	/** channel is directly in priv->channel */
+	/** channel */
+	u8 channel;
 	/** zero-terminated array of supported data rates */
 	u8 rates[MAX_RATES + 1];
 };
