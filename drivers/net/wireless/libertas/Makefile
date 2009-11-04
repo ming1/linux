@@ -1,3 +1,4 @@
+libertas-y += 11d.o
 libertas-y += assoc.o
 libertas-y += cfg.o
 libertas-y += cmd.o
