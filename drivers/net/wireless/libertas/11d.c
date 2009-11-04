@@ -6,7 +6,6 @@
 #include <linux/wireless.h>
 
 #include "host.h"
-#include "cmd.h"
 #include "decl.h"
 #include "11d.h"
 #include "dev.h"
