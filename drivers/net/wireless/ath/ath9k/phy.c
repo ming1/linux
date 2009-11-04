@@ -26,7 +26,6 @@ ath9k_hw_write_regs(struct ath_hw *ah, u32 modesIndex, u32 freqIndex,
 bool
 ath9k_hw_set_channel(struct ath_hw *ah, struct ath9k_channel *chan)
 {
-	struct ath_common *common = ath9k_hw_common(ah);
 	u32 channelSel = 0;
 	u32 bModeSynth = 0;
 	u32 aModeRefSel = 0;
@@ -47,8 +46,8 @@ ath9k_hw_set_channel(struct ath_hw *ah, struct ath9k_channel *chan)
 			channelSel = ((freq - 704) * 2 - 3040) / 10;
 			bModeSynth = 1;
 		} else {
-			ath_print(common, ATH_DBG_FATAL,
-				  "Invalid channel %u MHz\n", freq);
+			DPRINTF(ah, ATH_DBG_FATAL,
+				"Invalid channel %u MHz\n", freq);
 			return false;
 		}
 
@@ -80,8 +79,8 @@ ath9k_hw_set_channel(struct ath_hw *ah, struct ath9k_channel *chan)
 		channelSel = ath9k_hw_reverse_bits((freq - 4800) / 5, 8);
 		aModeRefSel = ath9k_hw_reverse_bits(1, 2);
 	} else {
-		ath_print(common, ATH_DBG_FATAL,
-			  "Invalid channel %u MHz\n", freq);
+		DPRINTF(ah, ATH_DBG_FATAL,
+			"Invalid channel %u MHz\n", freq);
 		return false;
 	}
 
@@ -286,8 +285,6 @@ ath9k_hw_rf_free(struct ath_hw *ah)
 
 bool ath9k_hw_init_rf(struct ath_hw *ah, int *status)
 {
-	struct ath_common *common = ath9k_hw_common(ah);
-
 	if (!AR_SREV_9280_10_OR_LATER(ah)) {
 		ah->analogBank0Data =
 		    kzalloc((sizeof(u32) *
@@ -318,8 +315,8 @@ bool ath9k_hw_init_rf(struct ath_hw *ah, int *status)
 		    || ah->analogBank6Data == NULL
 		    || ah->analogBank6TPCData == NULL
 		    || ah->analogBank7Data == NULL) {
-			ath_print(common, ATH_DBG_FATAL,
-				  "Cannot allocate RF banks\n");
+			DPRINTF(ah, ATH_DBG_FATAL,
+				"Cannot allocate RF banks\n");
 			*status = -ENOMEM;
 			return false;
 		}
@@ -329,8 +326,8 @@ bool ath9k_hw_init_rf(struct ath_hw *ah, int *status)
 			     ah->iniAddac.ia_rows *
 			     ah->iniAddac.ia_columns), GFP_KERNEL);
 		if (ah->addac5416_21 == NULL) {
-			ath_print(common, ATH_DBG_FATAL,
-				  "Cannot allocate addac5416_21\n");
+			DPRINTF(ah, ATH_DBG_FATAL,
+				"Cannot allocate addac5416_21\n");
 			*status = -ENOMEM;
 			return false;
 		}
@@ -339,8 +336,8 @@ bool ath9k_hw_init_rf(struct ath_hw *ah, int *status)
 		    kzalloc((sizeof(u32) *
 			     ah->iniBank6.ia_rows), GFP_KERNEL);
 		if (ah->bank6Temp == NULL) {
-			ath_print(common, ATH_DBG_FATAL,
-				  "Cannot allocate bank6Temp\n");
+			DPRINTF(ah, ATH_DBG_FATAL,
+				"Cannot allocate bank6Temp\n");
 			*status = -ENOMEM;
 			return false;
 		}
