@@ -923,6 +923,7 @@ int ieee80211_register_hw(struct ieee80211_hw *hw)
  fail_wep:
 	sta_info_stop(local);
  fail_sta_info:
+	debugfs_hw_del(local);
 	destroy_workqueue(local->workqueue);
  fail_workqueue:
 	wiphy_unregister(local->hw.wiphy);
@@ -958,6 +959,7 @@ void ieee80211_unregister_hw(struct ieee80211_hw *hw)
 	ieee80211_clear_tx_pending(local);
 	sta_info_stop(local);
 	rate_control_deinitialize(local);
+	debugfs_hw_del(local);
 
 	if (skb_queue_len(&local->skb_queue)
 			|| skb_queue_len(&local->skb_queue_unreliable))
