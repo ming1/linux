@@ -1227,6 +1227,7 @@ EXPORT_SYMBOL_GPL(lbs_add_card);
 void lbs_remove_card(struct lbs_private *priv)
 {
 	struct net_device *dev = priv->dev;
+	union iwreq_data wrqu;
 
 	lbs_deb_enter(LBS_DEB_MAIN);
 
@@ -1251,7 +1252,9 @@ void lbs_remove_card(struct lbs_private *priv)
 		lbs_ps_wakeup(priv, CMD_OPTION_WAITFORRSP);
 	}
 
-	lbs_send_disconnect_notification(priv);
+	memset(wrqu.ap_addr.sa_data, 0xaa, ETH_ALEN);
+	wrqu.ap_addr.sa_family = ARPHRD_ETHER;
+	wireless_send_event(priv->dev, SIOCGIWAP, &wrqu, NULL);
 
 	if (priv->is_deep_sleep) {
 		priv->is_deep_sleep = 0;
