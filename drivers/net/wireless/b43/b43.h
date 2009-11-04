@@ -749,6 +749,12 @@ struct b43_wldev {
 #endif
 };
 
+/*
+ * Include goes here to avoid a dependency problem.
+ * A better fix would be to integrate xmit.h into b43.h.
+ */
+#include "xmit.h"
+
 /* Data structure for the WLAN parts (802.11 cores) of the b43 chip. */
 struct b43_wl {
 	/* Pointer to the active wireless device on this chip */
@@ -824,9 +830,13 @@ struct b43_wl {
 	struct b43_leds leds;
 
 #ifdef CONFIG_B43_PIO
-	/* Kmalloc'ed scratch space for PIO TX/RX. Protected by wl->mutex. */
-	u8 pio_scratchspace[110] __attribute__((__aligned__(8)));
-	u8 pio_tailspace[4] __attribute__((__aligned__(8)));
+	/*
+	 * RX/TX header/tail buffers used by the frame transmit functions.
+	 */
+	struct b43_rxhdr_fw4 rxhdr;
+	struct b43_txhdr txhdr;
+	u8 rx_tail[4];
+	u8 tx_tail[4];
 #endif /* CONFIG_B43_PIO */
 };
 
