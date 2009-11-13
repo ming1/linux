@@ -24,9 +24,23 @@
  *
  *****************************************************************************/
 
-#ifndef __iwl_3945_led_h__
-#define __iwl_3945_led_h__
+#ifndef IWL3945_LEDS_H
+#define IWL3945_LEDS_H
 
-extern const struct iwl_led_ops iwl3945_led_ops;
+struct iwl_priv;
 
-#endif /* __iwl_3945_led_h__ */
+#ifdef CONFIG_IWLWIFI_LEDS
+
+#include "iwl-led.h"
+
+extern int iwl3945_led_register(struct iwl_priv *priv);
+extern void iwl3945_led_unregister(struct iwl_priv *priv);
+extern void iwl3945_led_background(struct iwl_priv *priv);
+
+#else
+static inline int iwl3945_led_register(struct iwl_priv *priv) { return 0; }
+static inline void iwl3945_led_unregister(struct iwl_priv *priv) {}
+static inline void iwl3945_led_background(struct iwl_priv *priv) {}
+
+#endif /* IWLWIFI_LEDS*/
+#endif /* IWL3945_LEDS_H */
