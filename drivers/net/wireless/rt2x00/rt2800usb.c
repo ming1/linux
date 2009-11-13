@@ -667,11 +667,7 @@ static void rt2800usb_fill_rxdone(struct queue_entry *entry,
  */
 static int rt2800usb_validate_eeprom(struct rt2x00_dev *rt2x00dev)
 {
-	if (rt2800_efuse_detect(rt2x00dev))
-		rt2800_read_eeprom_efuse(rt2x00dev);
-	else
-		rt2x00usb_eeprom_read(rt2x00dev, rt2x00dev->eeprom,
-				      EEPROM_SIZE);
+	rt2x00usb_eeprom_read(rt2x00dev, rt2x00dev->eeprom, EEPROM_SIZE);
 
 	return rt2800_validate_eeprom(rt2x00dev);
 }
