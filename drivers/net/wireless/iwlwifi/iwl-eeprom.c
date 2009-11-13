@@ -283,8 +283,7 @@ int iwlcore_eeprom_acquire_semaphore(struct iwl_priv *priv)
 			    CSR_HW_IF_CONFIG_REG_BIT_EEPROM_OWN_SEM);
 
 		/* See if we got it */
-		ret = iwl_poll_bit(priv, CSR_HW_IF_CONFIG_REG,
-				CSR_HW_IF_CONFIG_REG_BIT_EEPROM_OWN_SEM,
+		ret = iwl_poll_direct_bit(priv, CSR_HW_IF_CONFIG_REG,
 				CSR_HW_IF_CONFIG_REG_BIT_EEPROM_OWN_SEM,
 				EEPROM_SEM_TIMEOUT);
 		if (ret >= 0) {
@@ -323,8 +322,7 @@ static int iwl_init_otp_access(struct iwl_priv *priv)
 		     CSR_GP_CNTRL_REG_FLAG_INIT_DONE);
 
 	/* wait for clock to be ready */
-	ret = iwl_poll_bit(priv, CSR_GP_CNTRL,
-				  CSR_GP_CNTRL_REG_FLAG_MAC_CLOCK_READY,
+	ret = iwl_poll_direct_bit(priv, CSR_GP_CNTRL,
 				  CSR_GP_CNTRL_REG_FLAG_MAC_CLOCK_READY,
 				  25000);
 	if (ret < 0)
@@ -347,8 +345,7 @@ static int iwl_read_otp_word(struct iwl_priv *priv, u16 addr, u16 *eeprom_data)
 
 	_iwl_write32(priv, CSR_EEPROM_REG,
 		     CSR_EEPROM_REG_MSK_ADDR & (addr << 1));
-	ret = iwl_poll_bit(priv, CSR_EEPROM_REG,
-				  CSR_EEPROM_REG_READ_VALID_MSK,
+	ret = iwl_poll_direct_bit(priv, CSR_EEPROM_REG,
 				  CSR_EEPROM_REG_READ_VALID_MSK,
 				  IWL_EEPROM_ACCESS_TIMEOUT);
 	if (ret < 0) {
@@ -540,8 +537,7 @@ int iwl_eeprom_init(struct iwl_priv *priv)
 			_iwl_write32(priv, CSR_EEPROM_REG,
 				     CSR_EEPROM_REG_MSK_ADDR & (addr << 1));
 
-			ret = iwl_poll_bit(priv, CSR_EEPROM_REG,
-						  CSR_EEPROM_REG_READ_VALID_MSK,
+			ret = iwl_poll_direct_bit(priv, CSR_EEPROM_REG,
 						  CSR_EEPROM_REG_READ_VALID_MSK,
 						  IWL_EEPROM_ACCESS_TIMEOUT);
 			if (ret < 0) {
