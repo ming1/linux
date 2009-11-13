@@ -165,7 +165,6 @@ struct lbs_private {
 	/* NIC/link operation characteristics */
 	u16 mac_control;
 	u8 radio_on;
-	u8 channel;
 	s16 txpower_cur;
 	s16 txpower_min;
 	s16 txpower_max;
