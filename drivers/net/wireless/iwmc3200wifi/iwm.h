@@ -285,7 +285,6 @@ struct iwm_priv {
 	u8 *eeprom;
 	struct timer_list watchdog;
 	struct work_struct reset_worker;
-	struct work_struct auth_retry_worker;
 	struct mutex mutex;
 
 	u8 *req_ie;

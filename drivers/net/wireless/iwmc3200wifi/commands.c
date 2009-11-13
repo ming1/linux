@@ -794,7 +794,7 @@ int iwm_invalidate_mlme_profile(struct iwm_priv *iwm)
 		return ret;
 
 	ret = wait_event_interruptible_timeout(iwm->mlme_queue,
-				(iwm->umac_profile_active == 0), 5 * HZ);
+				(iwm->umac_profile_active == 0), 2 * HZ);
 
 	return ret ? 0 : -EBUSY;
 }
