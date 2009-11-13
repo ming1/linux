@@ -313,6 +313,13 @@ struct link {
 	struct avg_val avg_rssi;
 
 	/*
+	 * Currently precalculated percentages of successful
+	 * TX and RX frames.
+	 */
+	int rx_percentage;
+	int tx_percentage;
+
+	/*
 	 * Work structure for scheduling periodic link tuning.
 	 */
 	struct delayed_work work;
