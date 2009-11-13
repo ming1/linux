@@ -609,7 +609,6 @@ static bool ath9k_hw_devid_supported(u16 devid)
 	case AR9285_DEVID_PCIE:
 	case AR5416_DEVID_AR9287_PCI:
 	case AR5416_DEVID_AR9287_PCIE:
-	case AR9271_USB:
 		return true;
 	default:
 		break;
@@ -627,8 +626,9 @@ static bool ath9k_hw_macversion_supported(u32 macversion)
 	case AR_SREV_VERSION_9280:
 	case AR_SREV_VERSION_9285:
 	case AR_SREV_VERSION_9287:
-	case AR_SREV_VERSION_9271:
 		return true;
+	/* Not yet */
+	case AR_SREV_VERSION_9271:
 	default:
 		break;
 	}
