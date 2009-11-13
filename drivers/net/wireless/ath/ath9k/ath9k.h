@@ -323,6 +323,7 @@ struct ath_rx {
 	u8 defant;
 	u8 rxotherant;
 	u32 *rxlink;
+	int bufsize;
 	unsigned int rxfilter;
 	spinlock_t rxflushlock;
 	spinlock_t rxbuflock;
