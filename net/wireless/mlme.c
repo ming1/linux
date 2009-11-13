@@ -130,7 +130,7 @@ void cfg80211_send_rx_assoc(struct net_device *dev, const u8 *buf, size_t len)
 }
 EXPORT_SYMBOL(cfg80211_send_rx_assoc);
 
-void __cfg80211_send_deauth(struct net_device *dev,
+static void __cfg80211_send_deauth(struct net_device *dev,
 				   const u8 *buf, size_t len)
 {
 	struct wireless_dev *wdev = dev->ieee80211_ptr;
@@ -186,19 +186,27 @@ void __cfg80211_send_deauth(struct net_device *dev,
 					  false, NULL);
 	}
 }
-EXPORT_SYMBOL(__cfg80211_send_deauth);
 
-void cfg80211_send_deauth(struct net_device *dev, const u8 *buf, size_t len)
+
+void cfg80211_send_deauth(struct net_device *dev, const u8 *buf, size_t len,
+			  void *cookie)
 {
 	struct wireless_dev *wdev = dev->ieee80211_ptr;
 
-	wdev_lock(wdev);
-	__cfg80211_send_deauth(dev, buf, len);
-	wdev_unlock(wdev);
+	BUG_ON(cookie && wdev != cookie);
+
+	if (cookie) {
+		/* called within callback */
+		__cfg80211_send_deauth(dev, buf, len);
+	} else {
+		wdev_lock(wdev);
+		__cfg80211_send_deauth(dev, buf, len);
+		wdev_unlock(wdev);
+	}
 }
 EXPORT_SYMBOL(cfg80211_send_deauth);
 
-void __cfg80211_send_disassoc(struct net_device *dev,
+static void __cfg80211_send_disassoc(struct net_device *dev,
 				     const u8 *buf, size_t len)
 {
 	struct wireless_dev *wdev = dev->ieee80211_ptr;
@@ -239,15 +247,22 @@ void __cfg80211_send_disassoc(struct net_device *dev,
 	from_ap = memcmp(mgmt->sa, dev->dev_addr, ETH_ALEN) != 0;
 	__cfg80211_disconnected(dev, NULL, 0, reason_code, from_ap);
 }
-EXPORT_SYMBOL(__cfg80211_send_disassoc);
 
-void cfg80211_send_disassoc(struct net_device *dev, const u8 *buf, size_t len)
+void cfg80211_send_disassoc(struct net_device *dev, const u8 *buf, size_t len,
+			    void *cookie)
 {
 	struct wireless_dev *wdev = dev->ieee80211_ptr;
 
-	wdev_lock(wdev);
-	__cfg80211_send_disassoc(dev, buf, len);
-	wdev_unlock(wdev);
+	BUG_ON(cookie && wdev != cookie);
+
+	if (cookie) {
+		/* called within callback */
+		__cfg80211_send_disassoc(dev, buf, len);
+	} else {
+		wdev_lock(wdev);
+		__cfg80211_send_disassoc(dev, buf, len);
+		wdev_unlock(wdev);
+	}
 }
 EXPORT_SYMBOL(cfg80211_send_disassoc);
 
