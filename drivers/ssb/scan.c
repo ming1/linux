@@ -162,8 +162,6 @@ static u8 chipid_to_nrcores(u16 chipid)
 static u32 scan_read32(struct ssb_bus *bus, u8 current_coreidx,
 		       u16 offset)
 {
-	u32 lo, hi;
-
 	switch (bus->bustype) {
 	case SSB_BUSTYPE_SSB:
 		offset += current_coreidx * SSB_CORE_SIZE;
@@ -176,9 +174,7 @@ static u32 scan_read32(struct ssb_bus *bus, u8 current_coreidx,
 			offset -= 0x800;
 		} else
 			ssb_pcmcia_switch_segment(bus, 0);
-		lo = readw(bus->mmio + offset);
-		hi = readw(bus->mmio + offset + 2);
-		return lo | (hi << 16);
+		break;
 	case SSB_BUSTYPE_SDIO:
 		offset += current_coreidx * SSB_CORE_SIZE;
 		return ssb_sdio_scan_read32(bus, offset);
