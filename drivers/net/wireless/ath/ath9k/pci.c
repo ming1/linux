@@ -114,7 +114,6 @@ static int ath_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	u32 val;
 	int ret = 0;
 	struct ath_hw *ah;
-	char hw_name[64];
 
 	if (pci_enable_device(pdev))
 		return -EIO;
@@ -219,11 +218,15 @@ static int ath_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	sc->irq = pdev->irq;
 
 	ah = sc->sc_ah;
-	ath9k_hw_name(ah, hw_name, sizeof(hw_name));
 	printk(KERN_INFO
-	       "%s: %s mem=0x%lx, irq=%d\n",
+	       "%s: Atheros AR%s MAC/BB Rev:%x "
+	       "AR%s RF Rev:%x: mem=0x%lx, irq=%d\n",
 	       wiphy_name(hw->wiphy),
-	       hw_name,
+	       ath9k_hw_mac_bb_name(ah->hw_version.macVersion),
+	       ah->hw_version.macRev,
+	       ath9k_hw_rf_name((ah->hw_version.analog5GhzRev &
+				 AR_RADIO_SREV_MAJOR)),
+	       ah->hw_version.phyRev,
 	       (unsigned long)mem, pdev->irq);
 
 	return 0;
