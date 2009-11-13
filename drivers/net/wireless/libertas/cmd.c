@@ -880,7 +880,7 @@ out:
  *
  *  @return 	   	The channel on success, error on failure
  */
-static int lbs_get_channel(struct lbs_private *priv)
+int lbs_get_channel(struct lbs_private *priv)
 {
 	struct cmd_ds_802_11_rf_channel cmd;
 	int ret = 0;
