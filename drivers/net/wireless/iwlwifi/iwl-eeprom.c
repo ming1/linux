@@ -518,11 +518,6 @@ int iwl_eeprom_init(struct iwl_priv *priv)
 	}
 	e = (u16 *)priv->eeprom;
 
-	if (priv->nvm_device_type == NVM_DEVICE_TYPE_OTP) {
-		/* OTP reads require powered-up chip */
-		priv->cfg->ops->lib->apm_ops.init(priv);
-	}
-
 	ret = priv->cfg->ops->lib->eeprom_ops.verify_signature(priv);
 	if (ret < 0) {
 		IWL_ERR(priv, "EEPROM not found, EEPROM_GP=0x%08x\n", gp);
@@ -537,8 +532,10 @@ int iwl_eeprom_init(struct iwl_priv *priv)
 		ret = -ENOENT;
 		goto err;
 	}
-
 	if (priv->nvm_device_type == NVM_DEVICE_TYPE_OTP) {
+
+		/* OTP reads require powered-up chip */
+		priv->cfg->ops->lib->apm_ops.init(priv);
 
 		ret = iwl_init_otp_access(priv);
 		if (ret) {
