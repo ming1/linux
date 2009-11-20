@@ -283,6 +283,8 @@ static int ath_rx_prepare(struct ath_common *common,
 {
 	struct ath_hw *ah = common->ah;
 
+	memset(rx_status, 0, sizeof(struct ieee80211_rx_status));
+
 	if (!ath9k_rx_accept(common, skb, rx_status, rx_stats, decrypt_error))
 		goto rx_next;
 
@@ -652,7 +654,7 @@ static void ath_rx_ps(struct ath_softc *sc, struct sk_buff *skb)
 
 static void ath_rx_send_to_mac80211(struct ieee80211_hw *hw,
 				    struct ath_softc *sc, struct sk_buff *skb,
-				    struct ieee80211_rx_status *rxs)
+				    struct ieee80211_rx_status *rx_status)
 {
 	struct ieee80211_hdr *hdr;
 
@@ -672,14 +674,19 @@ static void ath_rx_send_to_mac80211(struct ieee80211_hw *hw,
 			if (aphy == NULL)
 				continue;
 			nskb = skb_copy(skb, GFP_ATOMIC);
-			if (!nskb)
-				continue;
-			ieee80211_rx(aphy->hw, nskb);
+			if (nskb) {
+				memcpy(IEEE80211_SKB_RXCB(nskb), rx_status,
+					sizeof(*rx_status));
+				ieee80211_rx(aphy->hw, nskb);
+			}
 		}
+		memcpy(IEEE80211_SKB_RXCB(skb), rx_status, sizeof(*rx_status));
 		ieee80211_rx(sc->hw, skb);
-	} else
+	} else {
 		/* Deliver unicast frames based on receiver address */
+		memcpy(IEEE80211_SKB_RXCB(skb), rx_status, sizeof(*rx_status));
 		ieee80211_rx(hw, skb);
+	}
 }
 
 int ath_rx_tasklet(struct ath_softc *sc, int flush)
@@ -692,7 +699,7 @@ int ath_rx_tasklet(struct ath_softc *sc, int flush)
 	struct ath_desc *ds;
 	struct ath_rx_status *rx_stats;
 	struct sk_buff *skb = NULL, *requeue_skb;
-	struct ieee80211_rx_status *rxs;
+	struct ieee80211_rx_status rx_status;
 	struct ath_hw *ah = sc->sc_ah;
 	struct ath_common *common = ath9k_hw_common(ah);
 	/*
@@ -781,8 +788,6 @@ int ath_rx_tasklet(struct ath_softc *sc, int flush)
 				DMA_FROM_DEVICE);
 
 		hdr = (struct ieee80211_hdr *) skb->data;
-		rxs =  IEEE80211_SKB_RXCB(skb);
-
 		hw = ath_get_virt_hw(sc, hdr);
 		rx_stats = &ds->ds_rxstat;
 
@@ -801,7 +806,7 @@ int ath_rx_tasklet(struct ath_softc *sc, int flush)
 			goto requeue;
 
 		if (!ath_rx_prepare(common, hw, skb, rx_stats,
-				    rxs, &decrypt_error))
+				    &rx_status, &decrypt_error))
 			goto requeue;
 
 		/* Ensure we always have an skb to requeue once we are done
@@ -843,19 +848,20 @@ int ath_rx_tasklet(struct ath_softc *sc, int flush)
 		keyix = rx_stats->rs_keyix;
 
 		if (!(keyix == ATH9K_RXKEYIX_INVALID) && !decrypt_error) {
-			rxs->flag |= RX_FLAG_DECRYPTED;
+			rx_status.flag |= RX_FLAG_DECRYPTED;
 		} else if (ieee80211_has_protected(fc)
 			   && !decrypt_error && skb->len >= hdrlen + 4) {
 			keyix = skb->data[hdrlen + 3] >> 6;
 
 			if (test_bit(keyix, sc->keymap))
-				rxs->flag |= RX_FLAG_DECRYPTED;
+				rx_status.flag |= RX_FLAG_DECRYPTED;
 		}
 		if (ah->sw_mgmt_crypto &&
-		    (rxs->flag & RX_FLAG_DECRYPTED) &&
-		    ieee80211_is_mgmt(fc))
+		    (rx_status.flag & RX_FLAG_DECRYPTED) &&
+		    ieee80211_is_mgmt(fc)) {
 			/* Use software decrypt for management frames. */
-			rxs->flag &= ~RX_FLAG_DECRYPTED;
+			rx_status.flag &= ~RX_FLAG_DECRYPTED;
+		}
 
 		/* We will now give hardware our shiny new allocated skb */
 		bf->bf_mpdu = requeue_skb;
@@ -868,7 +874,7 @@ int ath_rx_tasklet(struct ath_softc *sc, int flush)
 			bf->bf_mpdu = NULL;
 			ath_print(common, ATH_DBG_FATAL,
 				  "dma_mapping_error() on RX\n");
-			ath_rx_send_to_mac80211(hw, sc, skb, rxs);
+			ath_rx_send_to_mac80211(hw, sc, skb, &rx_status);
 			break;
 		}
 		bf->bf_dmacontext = bf->bf_buf_addr;
@@ -889,7 +895,7 @@ int ath_rx_tasklet(struct ath_softc *sc, int flush)
 					     SC_OP_WAIT_FOR_PSPOLL_DATA)))
 			ath_rx_ps(sc, skb);
 
-		ath_rx_send_to_mac80211(hw, sc, skb, rxs);
+		ath_rx_send_to_mac80211(hw, sc, skb, &rx_status);
 
 requeue:
 		list_move_tail(&bf->list, &sc->rx.rxbuf);
