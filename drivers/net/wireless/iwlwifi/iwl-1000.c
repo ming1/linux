@@ -165,6 +165,5 @@ struct iwl_cfg iwl1000_bgn_cfg = {
 	.shadow_ram_support = false,
 	.ht_greenfield_support = true,
 	.use_rts_for_ht = true, /* use rts/cts protection */
-	.led_compensation = 51,
 };
 
