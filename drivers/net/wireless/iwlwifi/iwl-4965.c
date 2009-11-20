@@ -496,15 +496,14 @@ static void iwl4965_chain_noise_reset(struct iwl_priv *priv)
 static void iwl4965_gain_computation(struct iwl_priv *priv,
 		u32 *average_noise,
 		u16 min_average_noise_antenna_i,
-		u32 min_average_noise,
-		u8 default_chain)
+		u32 min_average_noise)
 {
 	int i, ret;
 	struct iwl_chain_noise_data *data = &priv->chain_noise_data;
 
 	data->delta_gain_code[min_average_noise_antenna_i] = 0;
 
-	for (i = default_chain; i < NUM_RX_CHAINS; i++) {
+	for (i = 0; i < NUM_RX_CHAINS; i++) {
 		s32 delta_g = 0;
 
 		if (!(data->disconn_array[i]) &&
@@ -2358,7 +2357,6 @@ struct iwl_cfg iwl4965_agn_cfg = {
 	.ht_greenfield_support = false,
 	.broken_powersave = true,
 	.led_compensation = 61,
-	.chain_noise_num_beacons = IWL4965_CAL_NUM_BEACONS,
 };
 
 /* Module firmware */
