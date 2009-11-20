@@ -195,6 +195,9 @@ struct mwl8k_priv {
 
 	/* Tasklet to reclaim TX descriptors and buffers after tx */
 	struct tasklet_struct tx_reclaim_task;
+
+	/* Work thread to serialize configuration requests */
+	struct workqueue_struct *config_wq;
 };
 
 /* Per interface specific private data */
@@ -878,11 +881,9 @@ mwl8k_capture_bssid(struct mwl8k_priv *priv, struct ieee80211_hdr *wh)
 		!compare_ether_addr(wh->addr3, priv->capture_bssid);
 }
 
-static inline void mwl8k_save_beacon(struct ieee80211_hw *hw,
-				     struct sk_buff *skb)
+static inline void mwl8k_save_beacon(struct mwl8k_priv *priv,
+							struct sk_buff *skb)
 {
-	struct mwl8k_priv *priv = hw->priv;
-
 	priv->capture_beacon = false;
 	memset(priv->capture_bssid, 0, ETH_ALEN);
 
@@ -893,7 +894,8 @@ static inline void mwl8k_save_beacon(struct ieee80211_hw *hw,
 	 */
 	priv->beacon_skb = skb_copy(skb, GFP_ATOMIC);
 	if (priv->beacon_skb != NULL)
-		ieee80211_queue_work(hw, &priv->finalize_join_worker);
+		queue_work(priv->config_wq,
+				&priv->finalize_join_worker);
 }
 
 static int rxq_process(struct ieee80211_hw *hw, int index, int limit)
@@ -938,7 +940,7 @@ static int rxq_process(struct ieee80211_hw *hw, int index, int limit)
 		 * send a FINALIZE_JOIN command to the firmware.
 		 */
 		if (mwl8k_capture_bssid(priv, wh))
-			mwl8k_save_beacon(hw, skb);
+			mwl8k_save_beacon(priv, skb);
 
 		memset(&status, 0, sizeof(status));
 		status.mactime = 0;
@@ -2502,6 +2504,9 @@ static void mwl8k_stop(struct ieee80211_hw *hw)
 	/* Stop tx reclaim tasklet */
 	tasklet_disable(&priv->tx_reclaim_task);
 
+	/* Stop config thread */
+	flush_workqueue(priv->config_wq);
+
 	/* Return all skbs to mac80211 */
 	for (i = 0; i < MWL8K_TX_QUEUES; i++)
 		mwl8k_txq_reclaim(hw, i, 1);
@@ -2915,6 +2920,11 @@ static int __devinit mwl8k_probe(struct pci_dev *pdev,
 			mwl8k_tx_reclaim_handler, (unsigned long)hw);
 	tasklet_disable(&priv->tx_reclaim_task);
 
+	/* Config workthread */
+	priv->config_wq = create_singlethread_workqueue("mwl8k_config");
+	if (priv->config_wq == NULL)
+		goto err_iounmap;
+
 	/* Power management cookie */
 	priv->cookie = pci_alloc_consistent(priv->pdev, 4, &priv->cookie_dma);
 	if (priv->cookie == NULL)
@@ -3037,6 +3047,9 @@ err_iounmap:
 	if (priv->regs != NULL)
 		pci_iounmap(pdev, priv->regs);
 
+	if (priv->config_wq != NULL)
+		destroy_workqueue(priv->config_wq);
+
 	pci_set_drvdata(pdev, NULL);
 	ieee80211_free_hw(hw);
 
@@ -3068,6 +3081,9 @@ static void __devexit mwl8k_remove(struct pci_dev *pdev)
 
 	/* Remove tx reclaim tasklet */
 	tasklet_kill(&priv->tx_reclaim_task);
+
+	/* Stop config thread */
+	destroy_workqueue(priv->config_wq);
 
 	/* Stop hardware */
 	mwl8k_hw_reset(priv);
