@@ -927,11 +927,13 @@ enum iwl_access_mode {
 /**
  * enum iwl_pa_type - Power Amplifier type
  * @IWL_PA_SYSTEM:  based on uCode configuration
+ * @IWL_PA_HYBRID: use both Internal and external PA
  * @IWL_PA_INTERNAL: use Internal only
  */
 enum iwl_pa_type {
 	IWL_PA_SYSTEM = 0,
-	IWL_PA_INTERNAL = 1,
+	IWL_PA_HYBRID = 1,
+	IWL_PA_INTERNAL = 2,
 };
 
 /* interrupt statistics */
