@@ -2705,23 +2705,12 @@ static void mwl8k_configure_filter(struct ieee80211_hw *hw,
 		return;
 
 	if (changed_flags & FIF_BCN_PRBRESP_PROMISC) {
-		if (*total_flags & FIF_BCN_PRBRESP_PROMISC) {
-			/*
-			 * Disable the BSS filter.
-			 */
+		if (*total_flags & FIF_BCN_PRBRESP_PROMISC)
 			mwl8k_cmd_set_pre_scan(hw);
-		} else {
+		else {
 			u8 *bssid;
 
-			/*
-			 * Enable the BSS filter.
-			 *
-			 * If there is an active STA interface, use that
-			 * interface's BSSID, otherwise use a dummy one
-			 * (where the OUI part needs to be nonzero for
-			 * the BSSID to be accepted by POST_SCAN).
-			 */
-			bssid = "\x01\x00\x00\x00\x00\x00";
+			bssid = "\x00\x00\x00\x00\x00\x00";
 			if (priv->vif != NULL)
 				bssid = MWL8K_VIF(priv->vif)->bssid;
 
