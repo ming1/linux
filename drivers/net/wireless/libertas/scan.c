@@ -1291,11 +1291,11 @@ static int lbs_ret_80211_scan(struct lbs_private *priv, unsigned long dummy,
 	/* The size of the TLV buffer is equal to the entire command response
 	 *   size (scanrespsize) minus the fixed fields (sizeof()'s), the
 	 *   BSS Descriptions (bssdescriptsize as bytesLef) and the command
-	 *   response header (sizeof(struct cmd_header))
+	 *   response header (S_DS_GEN)
 	 */
 	tlvbufsize = scanrespsize - (bytesleft + sizeof(scanresp->bssdescriptsize)
 				     + sizeof(scanresp->nr_sets)
-				     + sizeof(struct cmd_header));
+				     + S_DS_GEN);
 
 	/*
 	 *  Process each scan response returned (scanresp->nr_sets). Save
