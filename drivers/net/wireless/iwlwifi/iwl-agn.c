@@ -134,7 +134,6 @@ int iwl_commit_rxon(struct iwl_priv *priv)
 		}
 
 		memcpy(active_rxon, &priv->staging_rxon, sizeof(*active_rxon));
-		iwl_print_rx_config_cmd(priv);
 		return 0;
 	}
 
@@ -230,7 +229,6 @@ int iwl_commit_rxon(struct iwl_priv *priv)
 		}
 		memcpy(active_rxon, &priv->staging_rxon, sizeof(*active_rxon));
 	}
-	iwl_print_rx_config_cmd(priv);
 
 	iwl_init_sensitivity(priv);
 
