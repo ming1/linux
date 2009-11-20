@@ -257,7 +257,7 @@ struct iwl_eeprom_enhanced_txpwr {
 #define EEPROM_5050_EEPROM_VERSION	(0x21E)
 
 /* 1000 Specific */
-#define EEPROM_1000_EEPROM_VERSION	(0x15C)
+#define EEPROM_1000_EEPROM_VERSION	(0x15D)
 
 /* 60x0 Specific */
 #define EEPROM_6000_EEPROM_VERSION	(0x434)
