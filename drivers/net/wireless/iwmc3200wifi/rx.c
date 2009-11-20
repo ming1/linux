@@ -1079,7 +1079,6 @@ static int iwm_ntf_wifi_if_wrapper(struct iwm_priv *iwm, u8 *buf,
 	return 0;
 }
 
-#define CT_KILL_DELAY (30 * HZ)
 static int iwm_ntf_card_state(struct iwm_priv *iwm, u8 *buf,
 			      unsigned long buf_size, struct iwm_wifi_cmd *cmd)
 {
@@ -1092,20 +1091,7 @@ static int iwm_ntf_card_state(struct iwm_priv *iwm, u8 *buf,
 		 flags & IWM_CARD_STATE_HW_DISABLED ? "ON" : "OFF",
 		 flags & IWM_CARD_STATE_CTKILL_DISABLED ? "ON" : "OFF");
 
-	if (flags & IWM_CARD_STATE_CTKILL_DISABLED) {
-		/*
-		 * We got a CTKILL event: We bring the interface down in
-		 * oder to cool the device down, and try to bring it up
-		 * 30 seconds later. If it's still too hot, we'll go through
-		 * this code path again.
-		 */
-		cancel_delayed_work_sync(&iwm->ct_kill_delay);
-		schedule_delayed_work(&iwm->ct_kill_delay, CT_KILL_DELAY);
-	}
-
-	wiphy_rfkill_set_hw_state(wiphy, flags &
-				  (IWM_CARD_STATE_HW_DISABLED |
-				   IWM_CARD_STATE_CTKILL_DISABLED));
+	wiphy_rfkill_set_hw_state(wiphy, flags & IWM_CARD_STATE_HW_DISABLED);
 
 	return 0;
 }
