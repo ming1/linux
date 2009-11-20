@@ -262,12 +262,7 @@ struct iwl_cfg {
 	const struct iwl_mod_params *mod_params;
 	u8   valid_tx_ant;
 	u8   valid_rx_ant;
-
-	/* for iwl_apm_init() */
-	u32 pll_cfg_val;
-	bool set_l0s;
-	bool use_bsm;
-
+	bool need_pll_cfg;
 	bool use_isr_legacy;
 	enum iwl_pa_type pa_type;
 	const u16 max_ll_items;
@@ -668,7 +663,6 @@ void iwl_rx_reply_compressed_ba(struct iwl_priv *priv,
 					   struct iwl_rx_mem_buffer *rxb);
 void iwl_apm_stop(struct iwl_priv *priv);
 int iwl_apm_stop_master(struct iwl_priv *priv);
-int iwl_apm_init(struct iwl_priv *priv);
 
 void iwl_setup_rxon_timing(struct iwl_priv *priv);
 static inline int iwl_send_rxon_assoc(struct iwl_priv *priv)
