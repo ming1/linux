@@ -985,7 +985,7 @@ static u8 iwl_count_chain_bitmap(u32 chain_bitmap)
 	res = (chain_bitmap & BIT(0)) >> 0;
 	res += (chain_bitmap & BIT(1)) >> 1;
 	res += (chain_bitmap & BIT(2)) >> 2;
-	res += (chain_bitmap & BIT(3)) >> 3;
+	res += (chain_bitmap & BIT(4)) >> 4;
 	return res;
 }
 
