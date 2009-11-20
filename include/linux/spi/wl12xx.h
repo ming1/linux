@@ -26,7 +26,6 @@
 
 struct wl12xx_platform_data {
 	void (*set_power)(bool enable);
-	bool use_eeprom;
 };
 
 #endif
