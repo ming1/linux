@@ -172,7 +172,6 @@ struct iwl_cfg iwl1000_bgn_cfg = {
 	.use_rts_for_ht = true, /* use rts/cts protection */
 	.led_compensation = 51,
 	.chain_noise_num_beacons = IWL_CAL_NUM_BEACONS,
-	.support_ct_kill_exit = true,
 };
 
 struct iwl_cfg iwl1000_bg_cfg = {
@@ -198,7 +197,6 @@ struct iwl_cfg iwl1000_bg_cfg = {
 	.ht_greenfield_support = true,
 	.led_compensation = 51,
 	.chain_noise_num_beacons = IWL_CAL_NUM_BEACONS,
-	.support_ct_kill_exit = true,
 };
 
 MODULE_FIRMWARE(IWL1000_MODULE_FIRMWARE(IWL1000_UCODE_API_MAX));
