@@ -1192,13 +1192,10 @@ __ieee80211_data_to_8023(struct ieee80211_rx_data *rx)
 	struct net_device *dev = sdata->dev;
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)rx->skb->data;
 
-	if (ieee80211_has_a4(hdr->frame_control) &&
-	    sdata->vif.type == NL80211_IFTYPE_AP_VLAN && !sdata->u.vlan.sta)
+	if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN && !sdata->use_4addr &&
+	    ieee80211_has_a4(hdr->frame_control))
 		return -1;
-
-	if (is_multicast_ether_addr(hdr->addr1) &&
-	    ((sdata->vif.type == NL80211_IFTYPE_AP_VLAN && sdata->u.vlan.sta) ||
-	     (sdata->vif.type == NL80211_IFTYPE_STATION && sdata->u.mgd.use_4addr)))
+	if (sdata->use_4addr && is_multicast_ether_addr(hdr->addr1))
 		return -1;
 
 	return ieee80211_data_to_8023(rx->skb, dev->dev_addr, sdata->vif.type);
@@ -1248,8 +1245,7 @@ ieee80211_deliver_skb(struct ieee80211_rx_data *rx)
 	if ((sdata->vif.type == NL80211_IFTYPE_AP ||
 	     sdata->vif.type == NL80211_IFTYPE_AP_VLAN) &&
 	    !(sdata->flags & IEEE80211_SDATA_DONT_BRIDGE_PACKETS) &&
-	    (rx->flags & IEEE80211_RX_RA_MATCH) &&
-	    (sdata->vif.type != NL80211_IFTYPE_AP_VLAN || !sdata->u.vlan.sta)) {
+	    (rx->flags & IEEE80211_RX_RA_MATCH) && !rx->sdata->use_4addr) {
 		if (is_multicast_ether_addr(ehdr->h_dest)) {
 			/*
 			 * send multicast frames both to higher layers in
@@ -2011,7 +2007,7 @@ static int prepare_for_handlers(struct ieee80211_sub_if_data *sdata,
 
 	switch (sdata->vif.type) {
 	case NL80211_IFTYPE_STATION:
-		if (!bssid && !sdata->u.mgd.use_4addr)
+		if (!bssid && !sdata->use_4addr)
 			return 0;
 		if (!multicast &&
 		    compare_ether_addr(sdata->dev->dev_addr, hdr->addr1) != 0) {
