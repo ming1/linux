@@ -95,6 +95,10 @@ ieee80211_rx_radiotap_len(struct ieee80211_local *local,
 	if (len & 1) /* padding for RX_FLAGS if necessary */
 		len++;
 
+	/* make sure radiotap starts at a naturally aligned address */
+	if (len % 8)
+		len = roundup(len, 8);
+
 	return len;
 }
 
@@ -112,7 +116,6 @@ ieee80211_add_rx_radiotap_header(struct ieee80211_local *local,
 	struct ieee80211_rx_status *status = IEEE80211_SKB_RXCB(skb);
 	struct ieee80211_radiotap_header *rthdr;
 	unsigned char *pos;
-	u16 rx_flags = 0;
 
 	rthdr = (struct ieee80211_radiotap_header *)skb_push(skb, rtap_len);
 	memset(rthdr, 0, rtap_len);
@@ -131,7 +134,7 @@ ieee80211_add_rx_radiotap_header(struct ieee80211_local *local,
 
 	/* IEEE80211_RADIOTAP_TSFT */
 	if (status->flag & RX_FLAG_TSFT) {
-		put_unaligned_le64(status->mactime, pos);
+		*(__le64 *)pos = cpu_to_le64(status->mactime);
 		rthdr->it_present |=
 			cpu_to_le32(1 << IEEE80211_RADIOTAP_TSFT);
 		pos += 8;
@@ -163,17 +166,17 @@ ieee80211_add_rx_radiotap_header(struct ieee80211_local *local,
 	pos++;
 
 	/* IEEE80211_RADIOTAP_CHANNEL */
-	put_unaligned_le16(status->freq, pos);
+	*(__le16 *)pos = cpu_to_le16(status->freq);
 	pos += 2;
 	if (status->band == IEEE80211_BAND_5GHZ)
-		put_unaligned_le16(IEEE80211_CHAN_OFDM | IEEE80211_CHAN_5GHZ,
-				   pos);
+		*(__le16 *)pos = cpu_to_le16(IEEE80211_CHAN_OFDM |
+					     IEEE80211_CHAN_5GHZ);
 	else if (rate->flags & IEEE80211_RATE_ERP_G)
-		put_unaligned_le16(IEEE80211_CHAN_OFDM | IEEE80211_CHAN_2GHZ,
-				   pos);
+		*(__le16 *)pos = cpu_to_le16(IEEE80211_CHAN_OFDM |
+					     IEEE80211_CHAN_2GHZ);
 	else
-		put_unaligned_le16(IEEE80211_CHAN_CCK | IEEE80211_CHAN_2GHZ,
-				   pos);
+		*(__le16 *)pos = cpu_to_le16(IEEE80211_CHAN_CCK |
+					     IEEE80211_CHAN_2GHZ);
 	pos += 2;
 
 	/* IEEE80211_RADIOTAP_DBM_ANTSIGNAL */
@@ -202,11 +205,10 @@ ieee80211_add_rx_radiotap_header(struct ieee80211_local *local,
 
 	/* IEEE80211_RADIOTAP_RX_FLAGS */
 	/* ensure 2 byte alignment for the 2 byte field as required */
-	if ((pos - (u8 *)rthdr) & 1)
+	if ((pos - (unsigned char *)rthdr) & 1)
 		pos++;
 	if (status->flag & RX_FLAG_FAILED_PLCP_CRC)
-		rx_flags |= IEEE80211_RADIOTAP_F_RX_BADPLCP;
-	put_unaligned_le16(rx_flags, pos);
+		*(__le16 *)pos |= cpu_to_le16(IEEE80211_RADIOTAP_F_RX_BADPLCP);
 	pos += 2;
 }
 
