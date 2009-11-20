@@ -635,9 +635,9 @@ static u8 iwl_is_channel_extension(struct iwl_priv *priv,
 u8 iwl_is_ht40_tx_allowed(struct iwl_priv *priv,
 			 struct ieee80211_sta_ht_cap *sta_ht_inf)
 {
-	struct iwl_ht_config *ht_conf = &priv->current_ht_config;
+	struct iwl_ht_info *iwl_ht_conf = &priv->current_ht_config;
 
-	if (!ht_conf->is_ht || !ht_conf->is_40mhz)
+	if (!iwl_ht_conf->is_ht || !iwl_ht_conf->is_40mhz)
 		return 0;
 
 	/* We do not check for IEEE80211_HT_CAP_SUP_WIDTH_20_40
@@ -653,7 +653,7 @@ u8 iwl_is_ht40_tx_allowed(struct iwl_priv *priv,
 #endif
 	return iwl_is_channel_extension(priv, priv->band,
 			le16_to_cpu(priv->staging_rxon.channel),
-			ht_conf->extension_chan_offset);
+			iwl_ht_conf->extension_chan_offset);
 }
 EXPORT_SYMBOL(iwl_is_ht40_tx_allowed);
 
@@ -877,11 +877,11 @@ u8 iwl_rate_get_lowest_plcp(struct iwl_priv *priv)
 }
 EXPORT_SYMBOL(iwl_rate_get_lowest_plcp);
 
-void iwl_set_rxon_ht(struct iwl_priv *priv, struct iwl_ht_config *ht_conf)
+void iwl_set_rxon_ht(struct iwl_priv *priv, struct iwl_ht_info *ht_info)
 {
 	struct iwl_rxon_cmd *rxon = &priv->staging_rxon;
 
-	if (!ht_conf->is_ht) {
+	if (!ht_info->is_ht) {
 		rxon->flags &= ~(RXON_FLG_CHANNEL_MODE_MSK |
 			RXON_FLG_CTRL_CHANNEL_LOC_HI_MSK |
 			RXON_FLG_HT40_PROT_MSK |
@@ -892,7 +892,7 @@ void iwl_set_rxon_ht(struct iwl_priv *priv, struct iwl_ht_config *ht_conf)
 	/* FIXME: if the definition of ht_protection changed, the "translation"
 	 * will be needed for rxon->flags
 	 */
-	rxon->flags |= cpu_to_le32(ht_conf->ht_protection << RXON_FLG_HT_OPERATING_MODE_POS);
+	rxon->flags |= cpu_to_le32(ht_info->ht_protection << RXON_FLG_HT_OPERATING_MODE_POS);
 
 	/* Set up channel bandwidth:
 	 * 20 MHz only, 20/40 mixed or pure 40 if ht40 ok */
@@ -901,10 +901,10 @@ void iwl_set_rxon_ht(struct iwl_priv *priv, struct iwl_ht_config *ht_conf)
 			 RXON_FLG_CTRL_CHANNEL_LOC_HI_MSK);
 	if (iwl_is_ht40_tx_allowed(priv, NULL)) {
 		/* pure ht40 */
-		if (ht_conf->ht_protection == IEEE80211_HT_OP_MODE_PROTECTION_20MHZ) {
+		if (ht_info->ht_protection == IEEE80211_HT_OP_MODE_PROTECTION_20MHZ) {
 			rxon->flags |= RXON_FLG_CHANNEL_MODE_PURE_40;
 			/* Note: control channel is opposite of extension channel */
-			switch (ht_conf->extension_chan_offset) {
+			switch (ht_info->extension_chan_offset) {
 			case IEEE80211_HT_PARAM_CHA_SEC_ABOVE:
 				rxon->flags &= ~RXON_FLG_CTRL_CHANNEL_LOC_HI_MSK;
 				break;
@@ -914,7 +914,7 @@ void iwl_set_rxon_ht(struct iwl_priv *priv, struct iwl_ht_config *ht_conf)
 			}
 		} else {
 			/* Note: control channel is opposite of extension channel */
-			switch (ht_conf->extension_chan_offset) {
+			switch (ht_info->extension_chan_offset) {
 			case IEEE80211_HT_PARAM_CHA_SEC_ABOVE:
 				rxon->flags &= ~(RXON_FLG_CTRL_CHANNEL_LOC_HI_MSK);
 				rxon->flags |= RXON_FLG_CHANNEL_MODE_MIXED;
@@ -940,11 +940,11 @@ void iwl_set_rxon_ht(struct iwl_priv *priv, struct iwl_ht_config *ht_conf)
 	IWL_DEBUG_ASSOC(priv, "supported HT rate 0x%X 0x%X 0x%X "
 			"rxon flags 0x%X operation mode :0x%X "
 			"extension channel offset 0x%x\n",
-			ht_conf->mcs.rx_mask[0],
-			ht_conf->mcs.rx_mask[1],
-			ht_conf->mcs.rx_mask[2],
-			le32_to_cpu(rxon->flags), ht_conf->ht_protection,
-			ht_conf->extension_chan_offset);
+			ht_info->mcs.rx_mask[0],
+			ht_info->mcs.rx_mask[1],
+			ht_info->mcs.rx_mask[2],
+			le32_to_cpu(rxon->flags), ht_info->ht_protection,
+			ht_info->extension_chan_offset);
 	return;
 }
 EXPORT_SYMBOL(iwl_set_rxon_ht);
@@ -2229,13 +2229,13 @@ EXPORT_SYMBOL(iwl_mac_conf_tx);
 static void iwl_ht_conf(struct iwl_priv *priv,
 			    struct ieee80211_bss_conf *bss_conf)
 {
-	struct iwl_ht_config *ht_conf = &priv->current_ht_config;
-	struct ieee80211_sta_ht_cap *ht_cap;
+	struct ieee80211_sta_ht_cap *ht_conf;
+	struct iwl_ht_info *iwl_conf = &priv->current_ht_config;
 	struct ieee80211_sta *sta;
 
 	IWL_DEBUG_MAC80211(priv, "enter: \n");
 
-	if (!ht_conf->is_ht)
+	if (!iwl_conf->is_ht)
 		return;
 
 
@@ -2251,15 +2251,15 @@ static void iwl_ht_conf(struct iwl_priv *priv,
 		rcu_read_unlock();
 		return;
 	}
-	ht_cap = &sta->ht_cap;
+	ht_conf = &sta->ht_cap;
 
-	ht_conf->sm_ps = (u8)((ht_cap->cap & IEEE80211_HT_CAP_SM_PS) >> 2);
+	iwl_conf->sm_ps = (u8)((ht_conf->cap & IEEE80211_HT_CAP_SM_PS) >> 2);
 
-	memcpy(&ht_conf->mcs, &ht_cap->mcs, 16);
+	memcpy(&iwl_conf->mcs, &ht_conf->mcs, 16);
 
-	ht_conf->ht_protection =
+	iwl_conf->ht_protection =
 		bss_conf->ht_operation_mode & IEEE80211_HT_OP_MODE_PROTECTION;
-	ht_conf->non_GF_STA_present =
+	iwl_conf->non_GF_STA_present =
 		!!(bss_conf->ht_operation_mode & IEEE80211_HT_OP_MODE_NON_GF_STA_PRSNT);
 
 	rcu_read_unlock();
@@ -2569,7 +2569,7 @@ int iwl_mac_config(struct ieee80211_hw *hw, u32 changed)
 	struct iwl_priv *priv = hw->priv;
 	const struct iwl_channel_info *ch_info;
 	struct ieee80211_conf *conf = &hw->conf;
-	struct iwl_ht_config *ht_conf = &priv->current_ht_config;
+	struct iwl_ht_info *ht_conf = &priv->current_ht_config;
 	unsigned long flags = 0;
 	int ret = 0;
 	u16 ch;
@@ -2736,7 +2736,7 @@ void iwl_mac_reset_tsf(struct ieee80211_hw *hw)
 	IWL_DEBUG_MAC80211(priv, "enter\n");
 
 	spin_lock_irqsave(&priv->lock, flags);
-	memset(&priv->current_ht_config, 0, sizeof(struct iwl_ht_config));
+	memset(&priv->current_ht_config, 0, sizeof(struct iwl_ht_info));
 	spin_unlock_irqrestore(&priv->lock, flags);
 
 	iwl_reset_qos(priv);
