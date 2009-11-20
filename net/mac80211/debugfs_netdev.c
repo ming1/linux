@@ -149,8 +149,6 @@ IEEE80211_IF_FILE(path_refresh_time,
 		u.mesh.mshcfg.path_refresh_time, DEC);
 IEEE80211_IF_FILE(min_discovery_timeout,
 		u.mesh.mshcfg.min_discovery_timeout, DEC);
-IEEE80211_IF_FILE(dot11MeshHWMPRootMode,
-		u.mesh.mshcfg.dot11MeshHWMPRootMode, DEC);
 #endif
 
 
