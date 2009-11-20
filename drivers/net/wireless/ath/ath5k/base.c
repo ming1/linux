@@ -1684,14 +1684,13 @@ static void
 ath5k_check_ibss_tsf(struct ath5k_softc *sc, struct sk_buff *skb,
 		     struct ieee80211_rx_status *rxs)
 {
-	struct ath_common *common = ath5k_hw_common(sc->ah);
 	u64 tsf, bc_tstamp;
 	u32 hw_tu;
 	struct ieee80211_mgmt *mgmt = (struct ieee80211_mgmt *)skb->data;
 
 	if (ieee80211_is_beacon(mgmt->frame_control) &&
 	    le16_to_cpu(mgmt->u.beacon.capab_info) & WLAN_CAPABILITY_IBSS &&
-	    memcmp(mgmt->bssid, common->curbssid, ETH_ALEN) == 0) {
+	    memcmp(mgmt->bssid, sc->ah->ah_bssid, ETH_ALEN) == 0) {
 		/*
 		 * Received an IBSS beacon with the same BSSID. Hardware *must*
 		 * have updated the local TSF. We have to work around various
@@ -3177,7 +3176,6 @@ static void ath5k_bss_info_changed(struct ieee80211_hw *hw,
 {
 	struct ath5k_softc *sc = hw->priv;
 	struct ath5k_hw *ah = sc->ah;
-	struct ath_common *common = ath5k_hw_common(ah);
 	unsigned long flags;
 
 	mutex_lock(&sc->lock);
@@ -3186,10 +3184,10 @@ static void ath5k_bss_info_changed(struct ieee80211_hw *hw,
 
 	if (changes & BSS_CHANGED_BSSID) {
 		/* Cache for later use during resets */
-		memcpy(common->curbssid, bss_conf->bssid, ETH_ALEN);
+		memcpy(ah->ah_bssid, bss_conf->bssid, ETH_ALEN);
 		/* XXX: assoc id is set to 0 for now, mac80211 doesn't have
 		 * a clean way of letting us retrieve this yet. */
-		ath5k_hw_set_associd(ah, common->curbssid, 0);
+		ath5k_hw_set_associd(ah, ah->ah_bssid, 0);
 		mmiowb();
 	}
 
