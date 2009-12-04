@@ -191,7 +191,11 @@ int iwl_commit_rxon(struct iwl_priv *priv)
 	priv->start_calib = 0;
 
 	/* Add the broadcast address so we can send broadcast frames */
-	iwl_add_bcast_station(priv);
+	if (iwl_rxon_add_station(priv, iwl_bcast_addr, 0) ==
+						IWL_INVALID_STATION) {
+		IWL_ERR(priv, "Error adding BROADCAST address for transmit.\n");
+		return -EIO;
+	}
 
 	/* If we have set the ASSOC_MSK and we are in BSS mode then
 	 * add the IWL_AP_ID to the station rate table */
@@ -2521,7 +2525,7 @@ void iwl_config_ap(struct iwl_priv *priv)
 		spin_lock_irqsave(&priv->lock, flags);
 		iwl_activate_qos(priv, 1);
 		spin_unlock_irqrestore(&priv->lock, flags);
-		iwl_add_bcast_station(priv);
+		iwl_rxon_add_station(priv, iwl_bcast_addr, 0);
 	}
 	iwl_send_beacon_cmd(priv);
 
