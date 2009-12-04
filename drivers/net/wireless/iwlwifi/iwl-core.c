@@ -2301,7 +2301,7 @@ static void iwl_ht_conf(struct iwl_priv *priv,
 	switch (priv->iw_mode) {
 	case NL80211_IFTYPE_STATION:
 		rcu_read_lock();
-		sta = ieee80211_find_sta(priv->vif, priv->bssid);
+		sta = ieee80211_find_sta(priv->hw, priv->bssid);
 		if (sta) {
 			struct ieee80211_sta_ht_cap *ht_cap = &sta->ht_cap;
 			int maxstreams;
