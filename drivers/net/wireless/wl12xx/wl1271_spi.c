@@ -183,13 +183,13 @@ int wl1271_set_partition(struct wl1271 *wl,
 		     p->mem3.start, p->mem3.size);
 
 	/* write partition info to the chipset */
-	wl1271_raw_write32(wl, HW_PART0_START_ADDR, p->mem.start);
-	wl1271_raw_write32(wl, HW_PART0_SIZE_ADDR, p->mem.size);
-	wl1271_raw_write32(wl, HW_PART1_START_ADDR, p->reg.start);
-	wl1271_raw_write32(wl, HW_PART1_SIZE_ADDR, p->reg.size);
-	wl1271_raw_write32(wl, HW_PART2_START_ADDR, p->mem2.start);
-	wl1271_raw_write32(wl, HW_PART2_SIZE_ADDR, p->mem2.size);
-	wl1271_raw_write32(wl, HW_PART3_START_ADDR, p->mem3.start);
+	wl1271_write32(wl, HW_PART0_START_ADDR, p->mem.start);
+	wl1271_write32(wl, HW_PART0_SIZE_ADDR, p->mem.size);
+	wl1271_write32(wl, HW_PART1_START_ADDR, p->reg.start);
+	wl1271_write32(wl, HW_PART1_SIZE_ADDR, p->reg.size);
+	wl1271_write32(wl, HW_PART2_START_ADDR, p->mem2.start);
+	wl1271_write32(wl, HW_PART2_SIZE_ADDR, p->mem2.size);
+	wl1271_write32(wl, HW_PART3_START_ADDR, p->mem3.start);
 
 	return 0;
 }
@@ -257,8 +257,8 @@ void wl1271_spi_read_busy(struct wl1271 *wl, void *buf, size_t len)
 	wl1271_error("SPI read busy-word timeout!\n");
 }
 
-void wl1271_spi_raw_read(struct wl1271 *wl, int addr, void *buf,
-			 size_t len, bool fixed)
+void wl1271_spi_read(struct wl1271 *wl, int addr, void *buf,
+		     size_t len, bool fixed)
 {
 	struct spi_transfer t[3];
 	struct spi_message m;
@@ -302,8 +302,8 @@ void wl1271_spi_raw_read(struct wl1271 *wl, int addr, void *buf,
 	wl1271_dump(DEBUG_SPI, "spi_read buf <- ", buf, len);
 }
 
-void wl1271_spi_raw_write(struct wl1271 *wl, int addr, void *buf,
-			  size_t len, bool fixed)
+void wl1271_spi_write(struct wl1271 *wl, int addr, void *buf,
+		      size_t len, bool fixed)
 {
 	struct spi_transfer t[2];
 	struct spi_message m;
@@ -336,47 +336,77 @@ void wl1271_spi_raw_write(struct wl1271 *wl, int addr, void *buf,
 	wl1271_dump(DEBUG_SPI, "spi_write buf -> ", buf, len);
 }
 
-void wl1271_spi_read(struct wl1271 *wl, int addr, void *buf, size_t len,
-		     bool fixed)
+void wl1271_spi_mem_read(struct wl1271 *wl, int addr, void *buf,
+			 size_t len)
 {
 	int physical;
 
 	physical = wl1271_translate_addr(wl, addr);
 
-	wl1271_spi_raw_read(wl, physical, buf, len, fixed);
+	wl1271_spi_read(wl, physical, buf, len, false);
 }
 
-void wl1271_spi_write(struct wl1271 *wl, int addr, void *buf, size_t len,
-		      bool fixed)
+void wl1271_spi_mem_write(struct wl1271 *wl, int addr, void *buf,
+			  size_t len)
 {
 	int physical;
 
 	physical = wl1271_translate_addr(wl, addr);
 
-	wl1271_spi_raw_write(wl, physical, buf, len, fixed);
+	wl1271_spi_write(wl, physical, buf, len, false);
 }
 
-u32 wl1271_spi_read32(struct wl1271 *wl, int addr)
+void wl1271_spi_reg_read(struct wl1271 *wl, int addr, void *buf, size_t len,
+			 bool fixed)
 {
-	return wl1271_raw_read32(wl, wl1271_translate_addr(wl, addr));
+	int physical;
+
+	physical = wl1271_translate_addr(wl, addr);
+
+	wl1271_spi_read(wl, physical, buf, len, fixed);
 }
 
-void wl1271_spi_write32(struct wl1271 *wl, int addr, u32 val)
+void wl1271_spi_reg_write(struct wl1271 *wl, int addr, void *buf, size_t len,
+			  bool fixed)
 {
-	wl1271_raw_write32(wl, wl1271_translate_addr(wl, addr), val);
+	int physical;
+
+	physical = wl1271_translate_addr(wl, addr);
+
+	wl1271_spi_write(wl, physical, buf, len, fixed);
+}
+
+u32 wl1271_mem_read32(struct wl1271 *wl, int addr)
+{
+	return wl1271_read32(wl, wl1271_translate_addr(wl, addr));
+}
+
+void wl1271_mem_write32(struct wl1271 *wl, int addr, u32 val)
+{
+	wl1271_write32(wl, wl1271_translate_addr(wl, addr), val);
+}
+
+u32 wl1271_reg_read32(struct wl1271 *wl, int addr)
+{
+	return wl1271_read32(wl, wl1271_translate_addr(wl, addr));
+}
+
+void wl1271_reg_write32(struct wl1271 *wl, int addr, u32 val)
+{
+	wl1271_write32(wl, wl1271_translate_addr(wl, addr), val);
 }
 
 void wl1271_top_reg_write(struct wl1271 *wl, int addr, u16 val)
 {
 	/* write address >> 1 + 0x30000 to OCP_POR_CTR */
 	addr = (addr >> 1) + 0x30000;
-	wl1271_spi_write32(wl, OCP_POR_CTR, addr);
+	wl1271_reg_write32(wl, OCP_POR_CTR, addr);
 
 	/* write value to OCP_POR_WDATA */
-	wl1271_spi_write32(wl, OCP_DATA_WRITE, val);
+	wl1271_reg_write32(wl, OCP_DATA_WRITE, val);
 
 	/* write 1 to OCP_CMD */
-	wl1271_spi_write32(wl, OCP_CMD, OCP_CMD_WRITE);
+	wl1271_reg_write32(wl, OCP_CMD, OCP_CMD_WRITE);
 }
 
 u16 wl1271_top_reg_read(struct wl1271 *wl, int addr)
@@ -386,14 +416,14 @@ u16 wl1271_top_reg_read(struct wl1271 *wl, int addr)
 
 	/* write address >> 1 + 0x30000 to OCP_POR_CTR */
 	addr = (addr >> 1) + 0x30000;
-	wl1271_spi_write32(wl, OCP_POR_CTR, addr);
+	wl1271_reg_write32(wl, OCP_POR_CTR, addr);
 
 	/* write 2 to OCP_CMD */
-	wl1271_spi_write32(wl, OCP_CMD, OCP_CMD_READ);
+	wl1271_reg_write32(wl, OCP_CMD, OCP_CMD_READ);
 
 	/* poll for data ready */
 	do {
-		val = wl1271_spi_read32(wl, OCP_DATA_READ);
+		val = wl1271_reg_read32(wl, OCP_DATA_READ);
 		timeout--;
 	} while (!(val & OCP_READY_MASK) && timeout);
 
@@ -410,3 +440,4 @@ u16 wl1271_top_reg_read(struct wl1271 *wl, int addr)
 		return 0xffff;
 	}
 }
+
