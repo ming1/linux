@@ -429,6 +429,7 @@ struct wl1271 {
 	u32 buffer_32;
 	u32 buffer_cmd;
 	u32 buffer_busyword[WL1271_BUSY_WORD_CNT];
+	struct wl1271_rx_descriptor *rx_descriptor;
 
 	struct wl1271_fw_status *fw_status;
 	struct wl1271_tx_hw_res_if *tx_res_if;
