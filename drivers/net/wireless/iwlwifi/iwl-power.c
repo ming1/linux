@@ -66,7 +66,7 @@ MODULE_PARM_DESC(no_sleep_autoadjust,
 
 struct iwl_power_vec_entry {
 	struct iwl_powertable_cmd cmd;
-	u8 no_dtim;	/* number of skip dtim */
+	u8 no_dtim;
 };
 
 #define IWL_DTIM_RANGE_0_MAX	2
@@ -83,9 +83,8 @@ struct iwl_power_vec_entry {
 				     cpu_to_le32(X4)}
 /* default power management (not Tx power) table values */
 /* for DTIM period 0 through IWL_DTIM_RANGE_0_MAX */
-/* DTIM 0 - 2 */
 static const struct iwl_power_vec_entry range_0[IWL_POWER_NUM] = {
-	{{SLP, SLP_TOUT(200), SLP_TOUT(500), SLP_VEC(1, 1, 2, 2, 0xFF)}, 0},
+	{{SLP, SLP_TOUT(200), SLP_TOUT(500), SLP_VEC(1, 2, 2, 2, 0xFF)}, 0},
 	{{SLP, SLP_TOUT(200), SLP_TOUT(300), SLP_VEC(1, 2, 2, 2, 0xFF)}, 0},
 	{{SLP, SLP_TOUT(50), SLP_TOUT(100), SLP_VEC(2, 2, 2, 2, 0xFF)}, 0},
 	{{SLP, SLP_TOUT(50), SLP_TOUT(25), SLP_VEC(2, 2, 4, 4, 0xFF)}, 1},
@@ -94,17 +93,15 @@ static const struct iwl_power_vec_entry range_0[IWL_POWER_NUM] = {
 
 
 /* for DTIM period IWL_DTIM_RANGE_0_MAX + 1 through IWL_DTIM_RANGE_1_MAX */
-/* DTIM 3 - 10 */
 static const struct iwl_power_vec_entry range_1[IWL_POWER_NUM] = {
 	{{SLP, SLP_TOUT(200), SLP_TOUT(500), SLP_VEC(1, 2, 3, 4, 4)}, 0},
 	{{SLP, SLP_TOUT(200), SLP_TOUT(300), SLP_VEC(1, 2, 3, 4, 7)}, 0},
 	{{SLP, SLP_TOUT(50), SLP_TOUT(100), SLP_VEC(2, 4, 6, 7, 9)}, 0},
 	{{SLP, SLP_TOUT(50), SLP_TOUT(25), SLP_VEC(2, 4, 6, 9, 10)}, 1},
-	{{SLP, SLP_TOUT(25), SLP_TOUT(25), SLP_VEC(2, 4, 6, 10, 10)}, 2}
+	{{SLP, SLP_TOUT(25), SLP_TOUT(25), SLP_VEC(2, 4, 7, 10, 10)}, 2}
 };
 
 /* for DTIM period > IWL_DTIM_RANGE_1_MAX */
-/* DTIM 11 - */
 static const struct iwl_power_vec_entry range_2[IWL_POWER_NUM] = {
 	{{SLP, SLP_TOUT(200), SLP_TOUT(500), SLP_VEC(1, 2, 3, 4, 0xFF)}, 0},
 	{{SLP, SLP_TOUT(200), SLP_TOUT(300), SLP_VEC(2, 4, 6, 7, 0xFF)}, 0},
@@ -118,15 +115,13 @@ static void iwl_static_sleep_cmd(struct iwl_priv *priv,
 				 enum iwl_power_level lvl, int period)
 {
 	const struct iwl_power_vec_entry *table;
-	int max_sleep[IWL_POWER_VEC_SIZE] = { 0 };
-	int i;
-	u8 skip;
-	u32 slp_itrvl;
+	int max_sleep, i;
+	bool skip;
 
 	table = range_2;
-	if (period <= IWL_DTIM_RANGE_1_MAX)
+	if (period < IWL_DTIM_RANGE_1_MAX)
 		table = range_1;
-	if (period <= IWL_DTIM_RANGE_0_MAX)
+	if (period < IWL_DTIM_RANGE_0_MAX)
 		table = range_0;
 
 	BUG_ON(lvl < 0 || lvl >= IWL_POWER_NUM);
@@ -134,60 +129,34 @@ static void iwl_static_sleep_cmd(struct iwl_priv *priv,
 	*cmd = table[lvl].cmd;
 
 	if (period == 0) {
-		skip = 0;
+		skip = false;
 		period = 1;
-		for (i = 0; i < IWL_POWER_VEC_SIZE; i++)
-			max_sleep[i] =  1;
-
 	} else {
-		skip = table[lvl].no_dtim;
-		for (i = 0; i < IWL_POWER_VEC_SIZE; i++)
-			max_sleep[i] = le32_to_cpu(cmd->sleep_interval[i]);
-		max_sleep[IWL_POWER_VEC_SIZE - 1] = skip + 1;
+		skip = !!table[lvl].no_dtim;
 	}
 
-	slp_itrvl = le32_to_cpu(cmd->sleep_interval[IWL_POWER_VEC_SIZE - 1]);
-	/* figure out the listen interval based on dtim period and skip */
-	if (slp_itrvl == 0xFF)
-		cmd->sleep_interval[IWL_POWER_VEC_SIZE - 1] =
-			cpu_to_le32(period * (skip + 1));
-
-	slp_itrvl = le32_to_cpu(cmd->sleep_interval[IWL_POWER_VEC_SIZE - 1]);
-	if (slp_itrvl > period)
-		cmd->sleep_interval[IWL_POWER_VEC_SIZE - 1] =
-			cpu_to_le32((slp_itrvl / period) * period);
-
-	if (skip)
+	if (skip) {
+		__le32 slp_itrvl = cmd->sleep_interval[IWL_POWER_VEC_SIZE - 1];
+		max_sleep = le32_to_cpu(slp_itrvl);
+		if (max_sleep == 0xFF)
+			max_sleep = period * (skip + 1);
+		else if (max_sleep > period)
+			max_sleep = (le32_to_cpu(slp_itrvl) / period) * period;
 		cmd->flags |= IWL_POWER_SLEEP_OVER_DTIM_MSK;
-	else
+	} else {
+		max_sleep = period;
 		cmd->flags &= ~IWL_POWER_SLEEP_OVER_DTIM_MSK;
-
-	slp_itrvl = le32_to_cpu(cmd->sleep_interval[IWL_POWER_VEC_SIZE - 1]);
-	if (slp_itrvl > IWL_CONN_LISTEN_INTERVAL)
-		cmd->sleep_interval[IWL_POWER_VEC_SIZE - 1] =
-			cpu_to_le32(IWL_CONN_LISTEN_INTERVAL);
-
-	/* enforce max sleep interval */
-	for (i = IWL_POWER_VEC_SIZE - 1; i >= 0 ; i--) {
-		if (le32_to_cpu(cmd->sleep_interval[i]) >
-		    (max_sleep[i] * period))
-			cmd->sleep_interval[i] =
-				cpu_to_le32(max_sleep[i] * period);
-		if (i != (IWL_POWER_VEC_SIZE - 1)) {
-			if (le32_to_cpu(cmd->sleep_interval[i]) >
-			    le32_to_cpu(cmd->sleep_interval[i+1]))
-				cmd->sleep_interval[i] =
-					cmd->sleep_interval[i+1];
-		}
 	}
+
+	for (i = 0; i < IWL_POWER_VEC_SIZE; i++)
+		if (le32_to_cpu(cmd->sleep_interval[i]) > max_sleep)
+			cmd->sleep_interval[i] = cpu_to_le32(max_sleep);
 
 	if (priv->power_data.pci_pm)
 		cmd->flags |= IWL_POWER_PCI_PM_MSK;
 	else
 		cmd->flags &= ~IWL_POWER_PCI_PM_MSK;
 
-	IWL_DEBUG_POWER(priv, "numSkipDtim = %u, dtimPeriod = %d\n",
-			skip, period);
 	IWL_DEBUG_POWER(priv, "Sleep command for index %d\n", lvl + 1);
 }
 
