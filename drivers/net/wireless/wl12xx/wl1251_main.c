@@ -28,7 +28,6 @@
 #include <linux/irq.h>
 #include <linux/crc32.h>
 #include <linux/etherdevice.h>
-#include <linux/vmalloc.h>
 
 #include "wl1251.h"
 #include "wl12xx_80211.h"
@@ -84,7 +83,7 @@ static int wl1251_fetch_firmware(struct wl1251 *wl)
 	}
 
 	wl->fw_len = fw->size;
-	wl->fw = vmalloc(wl->fw_len);
+	wl->fw = kmalloc(wl->fw_len, GFP_KERNEL);
 
 	if (!wl->fw) {
 		wl1251_error("could not allocate memory for the firmware");
@@ -1428,7 +1427,7 @@ int wl1251_free_hw(struct wl1251 *wl)
 
 	kfree(wl->target_mem_map);
 	kfree(wl->data_path);
-	vfree(wl->fw);
+	kfree(wl->fw);
 	wl->fw = NULL;
 	kfree(wl->nvs);
 	wl->nvs = NULL;
