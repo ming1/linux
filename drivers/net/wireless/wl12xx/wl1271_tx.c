@@ -33,7 +33,8 @@
 static int wl1271_tx_id(struct wl1271 *wl, struct sk_buff *skb)
 {
 	int i;
-	for (i = 0; i < ACX_TX_DESCRIPTORS; i++)
+
+	for (i = 0; i < FW_TX_CMPLT_BLOCK_SIZE; i++)
 		if (wl->tx_frames[i] == NULL) {
 			wl->tx_frames[i] = skb;
 			return i;
@@ -261,13 +262,14 @@ out:
 static void wl1271_tx_complete_packet(struct wl1271 *wl,
 				      struct wl1271_tx_hw_res_descr *result)
 {
+
 	struct ieee80211_tx_info *info;
 	struct sk_buff *skb;
 	u16 seq;
 	int id = result->id;
 
 	/* check for id legality */
-	if (id >= ACX_TX_DESCRIPTORS || wl->tx_frames[id] == NULL) {
+	if (id >= TX_HW_RESULT_QUEUE_LEN || wl->tx_frames[id] == NULL) {
 		wl1271_warning("TX result illegal id: %d", id);
 		return;
 	}
@@ -380,7 +382,7 @@ void wl1271_tx_flush(struct wl1271 *wl)
 		ieee80211_tx_status(wl->hw, skb);
 	}
 
-	for (i = 0; i < ACX_TX_DESCRIPTORS; i++)
+	for (i = 0; i < FW_TX_CMPLT_BLOCK_SIZE; i++)
 		if (wl->tx_frames[i] != NULL) {
 			skb = wl->tx_frames[i];
 			info = IEEE80211_SKB_CB(skb);
