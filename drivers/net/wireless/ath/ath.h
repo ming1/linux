@@ -18,7 +18,6 @@
 #define ATH_H
 
 #include <linux/skbuff.h>
-#include <linux/if_ether.h>
 
 static const u8 ath_bcast_mac[ETH_ALEN] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 
