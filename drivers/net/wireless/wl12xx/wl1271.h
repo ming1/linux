@@ -369,9 +369,6 @@ struct wl1271 {
 	/* Our association ID */
 	u16 aid;
 
-	/* The current band */
-	enum ieee80211_band band;
-
 	/* Default key (for WEP) */
 	u32 default_key;
 
