@@ -45,7 +45,6 @@
 #include "iwl-helpers.h"
 #include "iwl-5000-hw.h"
 #include "iwl-6000-hw.h"
-#include "iwl-agn-led.h"
 
 /* Highest firmware API version supported */
 #define IWL6000_UCODE_API_MAX 4
@@ -228,7 +227,6 @@ static struct iwl_ops iwl6000_ops = {
 	.lib = &iwl6000_lib,
 	.hcmd = &iwl5000_hcmd,
 	.utils = &iwl5000_hcmd_utils,
-	.led = &iwlagn_led_ops,
 };
 
 
