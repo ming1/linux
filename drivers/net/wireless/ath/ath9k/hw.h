@@ -563,6 +563,7 @@ struct ath_hw {
 	struct ath_btcoex_hw btcoex_hw;
 
 	u32 intr_txqs;
+	enum ath9k_ht_extprotspacing extprotspacing;
 	u8 txchainmask;
 	u8 rxchainmask;
 
