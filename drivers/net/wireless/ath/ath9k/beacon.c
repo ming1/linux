@@ -62,7 +62,6 @@ static void ath_beacon_setup(struct ath_softc *sc, struct ath_vif *avp,
 {
 	struct sk_buff *skb = bf->bf_mpdu;
 	struct ath_hw *ah = sc->sc_ah;
-	struct ath_common *common = ath9k_hw_common(ah);
 	struct ath_desc *ds;
 	struct ath9k_11n_rate_series series[4];
 	const struct ath_rate_table *rt;
@@ -110,7 +109,7 @@ static void ath_beacon_setup(struct ath_softc *sc, struct ath_vif *avp,
 	memset(series, 0, sizeof(struct ath9k_11n_rate_series) * 4);
 	series[0].Tries = 1;
 	series[0].Rate = rate;
-	series[0].ChSel = common->tx_chainmask;
+	series[0].ChSel = sc->tx_chainmask;
 	series[0].RateFlags = (ctsrate) ? ATH9K_RATESERIES_RTS_CTS : 0;
 	ath9k_hw_set11n_ratescenario(ah, ds, ds, 0, ctsrate, ctsduration,
 				     series, 4, 0);
