@@ -1008,7 +1008,7 @@ static void handle_channel(struct wiphy *wiphy, enum ieee80211_band band,
 
 	if (last_request->initiator == NL80211_REGDOM_SET_BY_DRIVER &&
 	    request_wiphy && request_wiphy == wiphy &&
-	    request_wiphy->flags & WIPHY_FLAG_STRICT_REGULATORY) {
+	    request_wiphy->strict_regulatory) {
 		/*
 		 * This gaurantees the driver's requested regulatory domain
 		 * will always be used as a base for further regulatory
@@ -1051,13 +1051,13 @@ static bool ignore_reg_update(struct wiphy *wiphy,
 	if (!last_request)
 		return true;
 	if (initiator == NL80211_REGDOM_SET_BY_CORE &&
-	    wiphy->flags & WIPHY_FLAG_CUSTOM_REGULATORY)
+		  wiphy->custom_regulatory)
 		return true;
 	/*
 	 * wiphy->regd will be set once the device has its own
 	 * desired regulatory domain set
 	 */
-	if (wiphy->flags & WIPHY_FLAG_STRICT_REGULATORY && !wiphy->regd &&
+	if (wiphy->strict_regulatory && !wiphy->regd &&
 	    !is_world_regdom(last_request->alpha2))
 		return true;
 	return false;
@@ -1093,7 +1093,7 @@ static void handle_reg_beacon(struct wiphy *wiphy,
 
 	chan->beacon_found = true;
 
-	if (wiphy->flags & WIPHY_FLAG_DISABLE_BEACON_HINTS)
+	if (wiphy->disable_beacon_hints)
 		return;
 
 	chan_before.center_freq = chan->center_freq;
@@ -1164,7 +1164,7 @@ static bool reg_is_world_roaming(struct wiphy *wiphy)
 		return true;
 	if (last_request &&
 	    last_request->initiator != NL80211_REGDOM_SET_BY_COUNTRY_IE &&
-	    wiphy->flags & WIPHY_FLAG_CUSTOM_REGULATORY)
+	    wiphy->custom_regulatory)
 		return true;
 	return false;
 }
@@ -1591,8 +1591,7 @@ static void reg_process_hint(struct regulatory_request *reg_request)
 
 	r = __regulatory_hint(wiphy, reg_request);
 	/* This is required so that the orig_* parameters are saved */
-	if (r == -EALREADY && wiphy &&
-	    wiphy->flags & WIPHY_FLAG_STRICT_REGULATORY)
+	if (r == -EALREADY && wiphy && wiphy->strict_regulatory)
 		wiphy_update_regulatory(wiphy, reg_request->initiator);
 out:
 	mutex_unlock(&reg_mutex);

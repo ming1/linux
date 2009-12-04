@@ -231,7 +231,7 @@ int cfg80211_switch_netns(struct cfg80211_registered_device *rdev,
 	struct wireless_dev *wdev;
 	int err = 0;
 
-	if (!(rdev->wiphy.flags & WIPHY_FLAG_NETNS_OK))
+	if (!rdev->wiphy.netnsok)
 		return -EOPNOTSUPP;
 
 	list_for_each_entry(wdev, &rdev->netdev_list, list) {
@@ -368,9 +368,7 @@ struct wiphy *wiphy_new(const struct cfg80211_ops *ops, int sizeof_priv)
 	rdev->wiphy.dev.class = &ieee80211_class;
 	rdev->wiphy.dev.platform_data = rdev;
 
-#ifdef CONFIG_CFG80211_DEFAULT_PS
-	rdev->wiphy.flags |= WIPHY_FLAG_PS_ON_BY_DEFAULT;
-#endif
+	rdev->wiphy.ps_default = CONFIG_CFG80211_DEFAULT_PS_VALUE;
 
 	wiphy_net_set(&rdev->wiphy, &init_net);
 
@@ -485,7 +483,7 @@ int wiphy_register(struct wiphy *wiphy)
 	if (IS_ERR(rdev->wiphy.debugfsdir))
 		rdev->wiphy.debugfsdir = NULL;
 
-	if (wiphy->flags & WIPHY_FLAG_CUSTOM_REGULATORY) {
+	if (wiphy->custom_regulatory) {
 		struct regulatory_request request;
 
 		request.wiphy_idx = get_wiphy_idx(wiphy);
@@ -676,10 +674,7 @@ static int cfg80211_netdev_notifier_call(struct notifier_block * nb,
 		wdev->wext.default_key = -1;
 		wdev->wext.default_mgmt_key = -1;
 		wdev->wext.connect.auth_type = NL80211_AUTHTYPE_AUTOMATIC;
-		if (wdev->wiphy->flags & WIPHY_FLAG_PS_ON_BY_DEFAULT)
-			wdev->wext.ps = true;
-		else
-			wdev->wext.ps = false;
+		wdev->wext.ps = wdev->wiphy->ps_default;
 		wdev->wext.ps_timeout = 100;
 		if (rdev->ops->set_power_mgmt)
 			if (rdev->ops->set_power_mgmt(wdev->wiphy, dev,
