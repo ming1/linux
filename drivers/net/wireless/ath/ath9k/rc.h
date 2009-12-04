@@ -19,8 +19,6 @@
 #ifndef RC_H
 #define RC_H
 
-#include "hw.h"
-
 struct ath_softc;
 
 #define ATH_RATE_MAX     30
