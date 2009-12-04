@@ -70,16 +70,14 @@ static int wl1271_event_process(struct wl1271 *wl, struct event_mailbox *mbox)
 			return ret;
 	}
 
-	/*
-	 * The BSS_LOSE_EVENT_ID is only needed while psm (and hence beacon
-	 * filtering) is enabled. Without PSM, the stack will receive all
-	 * beacons and can detect beacon loss by itself.
-	 */
-	if (vector & BSS_LOSE_EVENT_ID && wl->psm) {
+	if (vector & BSS_LOSE_EVENT_ID) {
 		wl1271_debug(DEBUG_EVENT, "BSS_LOSE_EVENT");
 
-		/* indicate to the stack, that beacons have been lost */
-		ieee80211_beacon_loss(wl->vif);
+		if (wl->psm_requested && wl->psm) {
+			ret = wl1271_ps_set_mode(wl, STATION_ACTIVE_MODE);
+			if (ret < 0)
+				return ret;
+		}
 	}
 
 	return 0;
