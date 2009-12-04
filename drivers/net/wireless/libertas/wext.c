@@ -45,31 +45,6 @@ static inline void lbs_cancel_association_work(struct lbs_private *priv)
 	priv->pending_assoc_req = NULL;
 }
 
-/**
- *  @brief This function checks if the command is allowed.
- *
- *  @param priv         A pointer to lbs_private structure
- *  @return             allowed or not allowed.
- */
-
-int lbs_is_cmd_allowed(struct lbs_private *priv)
-{
-	int         ret = 1;
-
-	lbs_deb_enter(LBS_DEB_WEXT);
-
-	if (!priv->is_auto_deep_sleep_enabled) {
-		if (priv->is_deep_sleep) {
-			lbs_deb_wext("IOCTLS called when station"
-					"is in deep sleep\n");
-			ret = 0;
-		}
-	}
-
-	lbs_deb_leave(LBS_DEB_WEXT);
-	return ret;
-}
-
 
 /**
  *  @brief Find the channel frequency power info with specific channel
@@ -193,11 +168,6 @@ static int lbs_get_freq(struct net_device *dev, struct iw_request_info *info,
 
 	lbs_deb_enter(LBS_DEB_WEXT);
 
-	if (!lbs_is_cmd_allowed(priv)) {
-		lbs_deb_leave(LBS_DEB_WEXT);
-		return -EBUSY;
-	}
-
 	cfp = lbs_find_cfp_by_band_and_channel(priv, 0,
 					   priv->curbssparams.channel);
 
@@ -308,12 +278,6 @@ static int lbs_set_rts(struct net_device *dev, struct iw_request_info *info,
 
 	lbs_deb_enter(LBS_DEB_WEXT);
 
-	if (!lbs_is_cmd_allowed(priv)) {
-		ret = -EBUSY;
-		lbs_deb_leave_args(LBS_DEB_WEXT, "ret %d", ret);
-		return ret;
-	}
-
 	if (vwrq->disabled)
 		val = MRVDRV_RTS_MAX_VALUE;
 
@@ -334,11 +298,6 @@ static int lbs_get_rts(struct net_device *dev, struct iw_request_info *info,
 	u16 val = 0;
 
 	lbs_deb_enter(LBS_DEB_WEXT);
-
-	if (!lbs_is_cmd_allowed(priv)) {
-		ret = -EBUSY;
-		goto out;
-	}
 
 	ret = lbs_get_snmp_mib(priv, SNMP_MIB_OID_RTS_THRESHOLD, &val);
 	if (ret)
@@ -362,12 +321,6 @@ static int lbs_set_frag(struct net_device *dev, struct iw_request_info *info,
 
 	lbs_deb_enter(LBS_DEB_WEXT);
 
-	if (!lbs_is_cmd_allowed(priv)) {
-		ret = -EBUSY;
-		lbs_deb_leave_args(LBS_DEB_WEXT, "ret %d", ret);
-		return ret;
-	}
-
 	if (vwrq->disabled)
 		val = MRVDRV_FRAG_MAX_VALUE;
 
@@ -388,11 +341,6 @@ static int lbs_get_frag(struct net_device *dev, struct iw_request_info *info,
 	u16 val = 0;
 
 	lbs_deb_enter(LBS_DEB_WEXT);
-
-	if (!lbs_is_cmd_allowed(priv)) {
-		ret = -EBUSY;
-		goto out;
-	}
 
 	ret = lbs_get_snmp_mib(priv, SNMP_MIB_OID_FRAG_THRESHOLD, &val);
 	if (ret)
@@ -443,11 +391,6 @@ static int lbs_get_txpow(struct net_device *dev,
 
 	lbs_deb_enter(LBS_DEB_WEXT);
 
-	if (!lbs_is_cmd_allowed(priv)) {
-		ret = -EBUSY;
-		goto out;
-	}
-
 	if (!priv->radio_on) {
 		lbs_deb_wext("tx power off\n");
 		vwrq->value = 0;
@@ -480,11 +423,6 @@ static int lbs_set_retry(struct net_device *dev, struct iw_request_info *info,
 	u16 slimit = 0, llimit = 0;
 
 	lbs_deb_enter(LBS_DEB_WEXT);
-
-	if (!lbs_is_cmd_allowed(priv)) {
-		ret = -EBUSY;
-		goto out;
-	}
 
         if ((vwrq->flags & IW_RETRY_TYPE) != IW_RETRY_LIMIT)
                 return -EOPNOTSUPP;
@@ -533,11 +471,6 @@ static int lbs_get_retry(struct net_device *dev, struct iw_request_info *info,
 	u16 val = 0;
 
 	lbs_deb_enter(LBS_DEB_WEXT);
-
-	if (!lbs_is_cmd_allowed(priv)) {
-		ret = -EBUSY;
-		goto out;
-	}
 
 	vwrq->disabled = 0;
 
@@ -776,7 +709,6 @@ static int lbs_set_power(struct net_device *dev, struct iw_request_info *info,
 			  struct iw_param *vwrq, char *extra)
 {
 	struct lbs_private *priv = dev->ml_priv;
-	int ret = 0;
 
 	lbs_deb_enter(LBS_DEB_WEXT);
 
@@ -805,54 +737,8 @@ static int lbs_set_power(struct net_device *dev, struct iw_request_info *info,
 		       "setting power timeout is not supported\n");
 		return -EINVAL;
 	} else if ((vwrq->flags & IW_POWER_TYPE) == IW_POWER_PERIOD) {
-		vwrq->value = vwrq->value / 1000;
-		if (!priv->enter_deep_sleep) {
-			lbs_pr_err("deep sleep feature is not implemented "
-					"for this interface driver\n");
-			return -EINVAL;
-		}
-
-		if (priv->connect_status == LBS_CONNECTED) {
-			if ((priv->is_auto_deep_sleep_enabled) &&
-						(vwrq->value == -1000)) {
-				lbs_exit_auto_deep_sleep(priv);
-				return 0;
-			} else {
-				lbs_pr_err("can't use deep sleep cmd in "
-						"connected state\n");
-				return -EINVAL;
-			}
-		}
-
-		if ((vwrq->value < 0) && (vwrq->value != -1000)) {
-			lbs_pr_err("unknown option\n");
-			return -EINVAL;
-		}
-
-		if (vwrq->value > 0) {
-			if (!priv->is_auto_deep_sleep_enabled) {
-				priv->is_activity_detected = 0;
-				priv->auto_deep_sleep_timeout = vwrq->value;
-				lbs_enter_auto_deep_sleep(priv);
-			} else {
-				priv->auto_deep_sleep_timeout = vwrq->value;
-				lbs_deb_debugfs("auto deep sleep: "
-						"already enabled\n");
-			}
-			return 0;
-		} else {
-			if (priv->is_auto_deep_sleep_enabled) {
-				lbs_exit_auto_deep_sleep(priv);
-				/* Try to exit deep sleep if auto */
-				/*deep sleep disabled */
-				ret = lbs_set_deep_sleep(priv, 0);
-			}
-			if (vwrq->value == 0)
-				ret = lbs_set_deep_sleep(priv, 1);
-			else if (vwrq->value == -1000)
-				ret = lbs_set_deep_sleep(priv, 0);
-			return ret;
-		}
+		lbs_deb_wext("setting power period not supported\n");
+		return -EINVAL;
 	}
 
 	if (priv->psmode != LBS802_11POWERMODECAM) {
@@ -866,7 +752,6 @@ static int lbs_set_power(struct net_device *dev, struct iw_request_info *info,
 	}
 
 	lbs_deb_leave(LBS_DEB_WEXT);
-
 	return 0;
 }
 
@@ -906,9 +791,6 @@ static struct iw_statistics *lbs_get_wireless_stats(struct net_device *dev)
 	struct cmd_ds_802_11_get_log log;
 
 	lbs_deb_enter(LBS_DEB_WEXT);
-
-	if (!lbs_is_cmd_allowed(priv))
-		return NULL;
 
 	priv->wstats.status = priv->mode;
 
@@ -1009,12 +891,6 @@ static int lbs_set_freq(struct net_device *dev, struct iw_request_info *info,
 	struct assoc_request * assoc_req;
 
 	lbs_deb_enter(LBS_DEB_WEXT);
-
-	if (!lbs_is_cmd_allowed(priv)) {
-		ret = -EBUSY;
-		lbs_deb_leave_args(LBS_DEB_WEXT, "ret %d", ret);
-		return ret;
-	}
 
 	mutex_lock(&priv->lock);
 	assoc_req = lbs_get_association_request(priv);
@@ -1124,12 +1000,6 @@ static int lbs_set_rate(struct net_device *dev, struct iw_request_info *info,
 	u8 rates[MAX_RATES + 1];
 
 	lbs_deb_enter(LBS_DEB_WEXT);
-
-	if (!lbs_is_cmd_allowed(priv)) {
-		ret = -EBUSY;
-		goto out;
-	}
-
 	lbs_deb_wext("vwrq->value %d\n", vwrq->value);
 	lbs_deb_wext("vwrq->fixed %d\n", vwrq->fixed);
 
@@ -1188,11 +1058,6 @@ static int lbs_get_rate(struct net_device *dev, struct iw_request_info *info,
 
 	lbs_deb_enter(LBS_DEB_WEXT);
 
-	if (!lbs_is_cmd_allowed(priv)) {
-		lbs_deb_leave(LBS_DEB_WEXT);
-		return -EBUSY;
-	}
-
 	if (priv->connect_status == LBS_CONNECTED) {
 		vwrq->value = priv->cur_rate * 500000;
 
@@ -1218,11 +1083,6 @@ static int lbs_set_mode(struct net_device *dev,
 	struct assoc_request * assoc_req;
 
 	lbs_deb_enter(LBS_DEB_WEXT);
-
-	if (!lbs_is_cmd_allowed(priv)) {
-		ret = -EBUSY;
-		goto out;
-	}
 
 	if (   (*uwrq != IW_MODE_ADHOC)
 	    && (*uwrq != IW_MODE_INFRA)
@@ -1465,12 +1325,6 @@ static int lbs_set_encode(struct net_device *dev,
 
 	lbs_deb_enter(LBS_DEB_WEXT);
 
-	if (!lbs_is_cmd_allowed(priv)) {
-		ret = -EBUSY;
-		lbs_deb_leave_args(LBS_DEB_WEXT, "ret %d", ret);
-		return ret;
-	}
-
 	mutex_lock(&priv->lock);
 	assoc_req = lbs_get_association_request(priv);
 	if (!assoc_req) {
@@ -1653,12 +1507,6 @@ static int lbs_set_encodeext(struct net_device *dev,
 	struct assoc_request * assoc_req;
 
 	lbs_deb_enter(LBS_DEB_WEXT);
-
-	if (!lbs_is_cmd_allowed(priv)) {
-		ret = -EBUSY;
-		lbs_deb_leave_args(LBS_DEB_WEXT, "ret %d", ret);
-		return ret;
-	}
 
 	mutex_lock(&priv->lock);
 	assoc_req = lbs_get_association_request(priv);
@@ -1872,12 +1720,6 @@ static int lbs_set_auth(struct net_device *dev,
 
 	lbs_deb_enter(LBS_DEB_WEXT);
 
-	if (!lbs_is_cmd_allowed(priv)) {
-		ret = -EBUSY;
-		lbs_deb_leave_args(LBS_DEB_WEXT, "ret %d", ret);
-		return ret;
-	}
-
 	mutex_lock(&priv->lock);
 	assoc_req = lbs_get_association_request(priv);
 	if (!assoc_req) {
@@ -1980,12 +1822,6 @@ static int lbs_get_auth(struct net_device *dev,
 
 	lbs_deb_enter(LBS_DEB_WEXT);
 
-	if (!lbs_is_cmd_allowed(priv)) {
-		ret = -EBUSY;
-		lbs_deb_leave_args(LBS_DEB_WEXT, "ret %d", ret);
-		return ret;
-	}
-
 	switch (dwrq->flags & IW_AUTH_INDEX) {
 	case IW_AUTH_KEY_MGMT:
 		dwrq->value = priv->secinfo.key_mgmt;
@@ -2027,11 +1863,6 @@ static int lbs_set_txpow(struct net_device *dev, struct iw_request_info *info,
 	s16 dbm = (s16) vwrq->value;
 
 	lbs_deb_enter(LBS_DEB_WEXT);
-
-	if (!lbs_is_cmd_allowed(priv)) {
-		ret = -EBUSY;
-		goto out;
-	}
 
 	if (vwrq->disabled) {
 		lbs_set_radio(priv, RADIO_PREAMBLE_AUTO, 0);
@@ -2151,12 +1982,6 @@ static int lbs_set_essid(struct net_device *dev, struct iw_request_info *info,
 	DECLARE_SSID_BUF(ssid_buf);
 
 	lbs_deb_enter(LBS_DEB_WEXT);
-
-	if (!lbs_is_cmd_allowed(priv)) {
-		ret = -EBUSY;
-		lbs_deb_leave_args(LBS_DEB_WEXT, "ret %d", ret);
-		return ret;
-	}
 
 	if (!priv->radio_on) {
 		ret = -EINVAL;
@@ -2284,12 +2109,6 @@ static int lbs_set_wap(struct net_device *dev, struct iw_request_info *info,
 	int ret = 0;
 
 	lbs_deb_enter(LBS_DEB_WEXT);
-
-	if (!lbs_is_cmd_allowed(priv)) {
-		ret = -EBUSY;
-		lbs_deb_leave_args(LBS_DEB_WEXT, "ret %d", ret);
-		return ret;
-	}
 
 	if (!priv->radio_on)
 		return -EINVAL;
