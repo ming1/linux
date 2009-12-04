@@ -14,6 +14,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#include "ath9k.h"
 #include "hw.h"
 
 static void ath9k_get_txgain_index(struct ath_hw *ah,
