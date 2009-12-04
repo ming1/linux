@@ -45,9 +45,6 @@ DEFINE_MUTEX(cfg80211_mutex);
 /* for debugfs */
 static struct dentry *ieee80211_debugfs_dir;
 
-/* for the cleanup, scan and event works */
-struct workqueue_struct *cfg80211_wq;
-
 /* requires cfg80211_mutex to be held! */
 struct cfg80211_registered_device *cfg80211_rdev_by_wiphy_idx(int wiphy_idx)
 {
@@ -723,7 +720,7 @@ static int cfg80211_netdev_notifier_call(struct notifier_block * nb,
 		break;
 	case NETDEV_DOWN:
 		dev_hold(dev);
-		queue_work(cfg80211_wq, &wdev->cleanup_work);
+		schedule_work(&wdev->cleanup_work);
 		break;
 	case NETDEV_UP:
 		/*
@@ -841,14 +838,8 @@ static int __init cfg80211_init(void)
 	if (err)
 		goto out_fail_reg;
 
-	cfg80211_wq = create_singlethread_workqueue("cfg80211");
-	if (!cfg80211_wq)
-		goto out_fail_wq;
-
 	return 0;
 
-out_fail_wq:
-	regulatory_exit();
 out_fail_reg:
 	debugfs_remove(ieee80211_debugfs_dir);
 out_fail_nl80211:
@@ -870,6 +861,5 @@ static void cfg80211_exit(void)
 	wiphy_sysfs_exit();
 	regulatory_exit();
 	unregister_pernet_device(&cfg80211_pernet_ops);
-	destroy_workqueue(cfg80211_wq);
 }
 module_exit(cfg80211_exit);
