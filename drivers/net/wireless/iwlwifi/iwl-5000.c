@@ -1657,7 +1657,6 @@ struct iwl_cfg iwl5300_agn_cfg = {
 	.valid_rx_ant = ANT_ABC,
 	.need_pll_cfg = true,
 	.ht_greenfield_support = true,
-	.led_compensation = 51,
 };
 
 struct iwl_cfg iwl5100_bg_cfg = {
@@ -1675,7 +1674,6 @@ struct iwl_cfg iwl5100_bg_cfg = {
 	.valid_rx_ant = ANT_AB,
 	.need_pll_cfg = true,
 	.ht_greenfield_support = true,
-	.led_compensation = 51,
 };
 
 struct iwl_cfg iwl5100_abg_cfg = {
@@ -1693,7 +1691,6 @@ struct iwl_cfg iwl5100_abg_cfg = {
 	.valid_rx_ant = ANT_AB,
 	.need_pll_cfg = true,
 	.ht_greenfield_support = true,
-	.led_compensation = 51,
 };
 
 struct iwl_cfg iwl5100_agn_cfg = {
@@ -1711,7 +1708,6 @@ struct iwl_cfg iwl5100_agn_cfg = {
 	.valid_rx_ant = ANT_AB,
 	.need_pll_cfg = true,
 	.ht_greenfield_support = true,
-	.led_compensation = 51,
 };
 
 struct iwl_cfg iwl5350_agn_cfg = {
@@ -1729,7 +1725,6 @@ struct iwl_cfg iwl5350_agn_cfg = {
 	.valid_rx_ant = ANT_ABC,
 	.need_pll_cfg = true,
 	.ht_greenfield_support = true,
-	.led_compensation = 51,
 };
 
 struct iwl_cfg iwl5150_agn_cfg = {
@@ -1747,7 +1742,6 @@ struct iwl_cfg iwl5150_agn_cfg = {
 	.valid_rx_ant = ANT_AB,
 	.need_pll_cfg = true,
 	.ht_greenfield_support = true,
-	.led_compensation = 51,
 };
 
 MODULE_FIRMWARE(IWL5000_MODULE_FIRMWARE(IWL5000_UCODE_API_MAX));
