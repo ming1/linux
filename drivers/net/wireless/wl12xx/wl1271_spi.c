@@ -196,9 +196,7 @@ int wl1271_set_partition(struct wl1271 *wl,
 
 #define WL1271_BUSY_WORD_TIMEOUT 1000
 
-/* FIXME: Check busy words, removed due to SPI bug */
-#if 0
-static void wl1271_spi_read_busy(struct wl1271 *wl, void *buf, size_t len)
+void wl1271_spi_read_busy(struct wl1271 *wl, void *buf, size_t len)
 {
 	struct spi_transfer t[1];
 	struct spi_message m;
@@ -258,7 +256,6 @@ static void wl1271_spi_read_busy(struct wl1271 *wl, void *buf, size_t len)
 	memset(buf, 0, len);
 	wl1271_error("SPI read busy-word timeout!\n");
 }
-#endif
 
 void wl1271_spi_raw_read(struct wl1271 *wl, int addr, void *buf,
 			 size_t len, bool fixed)
