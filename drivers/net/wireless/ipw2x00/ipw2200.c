@@ -1758,13 +1758,10 @@ static DEVICE_ATTR(direct_dword, S_IWUSR | S_IRUGO,
 
 static int rf_kill_active(struct ipw_priv *priv)
 {
-	if (0 == (ipw_read32(priv, 0x30) & 0x10000)) {
+	if (0 == (ipw_read32(priv, 0x30) & 0x10000))
 		priv->status |= STATUS_RF_KILL_HW;
-		wiphy_rfkill_set_hw_state(priv->ieee->wdev.wiphy, true);
-	} else {
+	else
 		priv->status &= ~STATUS_RF_KILL_HW;
-		wiphy_rfkill_set_hw_state(priv->ieee->wdev.wiphy, false);
-	}
 
 	return (priv->status & STATUS_RF_KILL_HW) ? 1 : 0;
 }
@@ -2047,7 +2044,6 @@ static void ipw_irq_tasklet(struct ipw_priv *priv)
 	if (inta & IPW_INTA_BIT_RF_KILL_DONE) {
 		IPW_DEBUG_RF_KILL("RF_KILL_DONE\n");
 		priv->status |= STATUS_RF_KILL_HW;
-		wiphy_rfkill_set_hw_state(priv->ieee->wdev.wiphy, true);
 		wake_up_interruptible(&priv->wait_command_queue);
 		priv->status &= ~(STATUS_ASSOCIATED | STATUS_ASSOCIATING);
 		cancel_delayed_work(&priv->request_scan);
