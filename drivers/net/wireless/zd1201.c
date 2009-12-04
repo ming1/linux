@@ -112,9 +112,6 @@ exit:
 	return err;
 }
 
-MODULE_FIRMWARE("zd1201-ap.fw");
-MODULE_FIRMWARE("zd1201.fw");
-
 static void zd1201_usbfree(struct urb *urb)
 {
 	struct zd1201 *zd = urb->context;
