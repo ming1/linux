@@ -592,13 +592,11 @@ static const char *rfkill_get_type_str(enum rfkill_type type)
 		return "wwan";
 	case RFKILL_TYPE_GPS:
 		return "gps";
-	case RFKILL_TYPE_FM:
-		return "fm";
 	default:
 		BUG();
 	}
 
-	BUILD_BUG_ON(NUM_RFKILL_TYPES != RFKILL_TYPE_FM + 1);
+	BUILD_BUG_ON(NUM_RFKILL_TYPES != RFKILL_TYPE_GPS + 1);
 }
 
 static ssize_t rfkill_type_show(struct device *dev,
