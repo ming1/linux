@@ -92,14 +92,6 @@ static int wl1271_tx_fill_hdr(struct wl1271 *wl, struct sk_buff *skb,
 
 	desc = (struct wl1271_tx_hw_descr *) skb->data;
 
-	/* relocate space for security header */
-	if (extra) {
-		void *framestart = skb->data + sizeof(*desc);
-		u16 fc = *(u16 *)(framestart + extra);
-		int hdrlen = ieee80211_hdrlen(fc);
-		memmove(framestart, framestart + extra, hdrlen);
-	}
-
 	/* configure packet life time */
 	desc->start_time = jiffies_to_usecs(jiffies) - wl->time_offset;
 	desc->life_time = TX_HW_MGMT_PKT_LIFETIME_TU;
@@ -265,6 +257,7 @@ static void wl1271_tx_complete_packet(struct wl1271 *wl,
 
 	struct ieee80211_tx_info *info;
 	struct sk_buff *skb;
+	u32 header_len;
 	u16 seq;
 	int id = result->id;
 
@@ -302,21 +295,21 @@ static void wl1271_tx_complete_packet(struct wl1271 *wl,
 		wl->tx_security_seq_32++;
 	wl->tx_security_seq_16 = seq;
 
-	/* remove private header from packet */
-	skb_pull(skb, sizeof(struct wl1271_tx_hw_descr));
-
-	/* remove TKIP header space if present */
+	/* get header len */
 	if (info->control.hw_key &&
-	    info->control.hw_key->alg == ALG_TKIP) {
-		int hdrlen = ieee80211_get_hdrlen_from_skb(skb);
-		memmove(skb->data + WL1271_TKIP_IV_SPACE, skb->data, hdrlen);
-		skb_pull(skb, WL1271_TKIP_IV_SPACE);
-	}
+	    info->control.hw_key->alg == ALG_TKIP)
+		header_len = WL1271_TKIP_IV_SPACE +
+			sizeof(struct wl1271_tx_hw_descr);
+	else
+		header_len = sizeof(struct wl1271_tx_hw_descr);
 
 	wl1271_debug(DEBUG_TX, "tx status id %u skb 0x%p failures %u rate 0x%x"
 		     " status 0x%x",
 		     result->id, skb, result->ack_failures,
 		     result->rate_class_index, result->status);
+
+	/* remove private header from packet */
+	skb_pull(skb, header_len);
 
 	/* return the packet to the stack */
 	ieee80211_tx_status(wl->hw, skb);
