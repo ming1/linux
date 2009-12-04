@@ -29,7 +29,8 @@ bool ath9k_hw_set_rf_regs(struct ath_hw *ah,
 			  u16 modesIndex);
 void ath9k_hw_decrease_chain_power(struct ath_hw *ah,
 				   struct ath9k_channel *chan);
-int ath9k_hw_rf_alloc_ext_banks(struct ath_hw *ah);
+bool ath9k_hw_init_rf(struct ath_hw *ah,
+		      int *status);
 
 #define AR_PHY_BASE     0x9800
 #define AR_PHY(_n)      (AR_PHY_BASE + ((_n)<<2))
