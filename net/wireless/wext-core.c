@@ -802,8 +802,7 @@ static int ioctl_standard_iw_point(struct iw_point *iwp, unsigned int cmd,
 	}
 
 	/* Generate an event to notify listeners of the change */
-	if ((descr->flags & IW_DESCR_FLAG_EVENT) &&
-	    ((err == 0) || (err == -EIWCOMMIT))) {
+	if ((descr->flags & IW_DESCR_FLAG_EVENT) && err == -EIWCOMMIT) {
 		union iwreq_data *data = (union iwreq_data *) iwp;
 
 		if (descr->flags & IW_DESCR_FLAG_RESTRICT)
