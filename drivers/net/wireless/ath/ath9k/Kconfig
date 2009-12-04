@@ -16,8 +16,6 @@ config ATH9K
 
 	  If you choose to build a module, it'll be called ath9k.
 
-if ATH_DEBUG
-
 config ATH9K_DEBUG
 	bool "Atheros ath9k debugging"
 	depends on ATH9K
@@ -28,5 +26,3 @@ config ATH9K_DEBUG
 	  modprobe ath9k debug=0x00000200
 
 	  Look in ath9k/debug.h for possible debug masks
-
-endif # ATH_DEBUG
