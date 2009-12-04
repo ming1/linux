@@ -534,7 +534,7 @@ int ieee80211_stop_tx_ba_session(struct ieee80211_sta *pubsta, u16 tid,
 	struct ieee80211_sub_if_data *sdata = sta->sdata;
 	struct ieee80211_local *local = sdata->local;
 
-	if (!local->ops->ampdu_action)
+	if (WARN_ON(!local->ops->ampdu_action))
 		return -EINVAL;
 
 	if (tid >= STA_TID_NUM)
