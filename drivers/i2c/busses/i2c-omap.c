@@ -2,7 +2,7 @@
  * TI OMAP I2C master mode driver
  *
  * Copyright (C) 2003 MontaVista Software, Inc.
- * Copyright (C) 2005 Nokia Corporation
+ * Copyright (C) 2005, 2009 Nokia Corporation
  * Copyright (C) 2004 - 2007 Texas Instruments.
  *
  * Originally written by MontaVista Software, Inc.
@@ -26,6 +26,10 @@
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ *
+ * To do:
+ * - Add DMA for transfers longer than the FIFO
+ *
  */
 
 #include <linux/module.h>
@@ -37,6 +41,8 @@
 #include <linux/platform_device.h>
 #include <linux/clk.h>
 #include <linux/io.h>
+
+#include <plat/i2c.h>
 
 /* I2C controller revisions */
 #define OMAP_I2C_REV_2			0x20
@@ -168,8 +174,6 @@ struct omap_i2c_dev {
 	struct device		*dev;
 	void __iomem		*base;		/* virtual */
 	int			irq;
-	struct clk		*iclk;		/* Interface clock */
-	struct clk		*fclk;		/* Functional clock */
 	struct completion	cmd_complete;
 	struct resource		*ioarea;
 	u32			speed;		/* Speed of bus in Khz */
@@ -252,45 +256,19 @@ static inline u16 omap_i2c_read_reg(struct omap_i2c_dev *i2c_dev, int reg)
 	return __raw_readw(i2c_dev->base + i2c_dev->regs[reg]);
 }
 
-static int __init omap_i2c_get_clocks(struct omap_i2c_dev *dev)
-{
-	int ret;
-
-	dev->iclk = clk_get(dev->dev, "ick");
-	if (IS_ERR(dev->iclk)) {
-		ret = PTR_ERR(dev->iclk);
-		dev->iclk = NULL;
-		return ret;
-	}
-
-	dev->fclk = clk_get(dev->dev, "fck");
-	if (IS_ERR(dev->fclk)) {
-		ret = PTR_ERR(dev->fclk);
-		if (dev->iclk != NULL) {
-			clk_put(dev->iclk);
-			dev->iclk = NULL;
-		}
-		dev->fclk = NULL;
-		return ret;
-	}
-
-	return 0;
-}
-
-static void omap_i2c_put_clocks(struct omap_i2c_dev *dev)
-{
-	clk_put(dev->fclk);
-	dev->fclk = NULL;
-	clk_put(dev->iclk);
-	dev->iclk = NULL;
-}
-
 static void omap_i2c_unidle(struct omap_i2c_dev *dev)
 {
+	struct platform_device *pdev;
+	struct omap_i2c_platform_data *pdata;
+
 	WARN_ON(!dev->idle);
 
-	clk_enable(dev->iclk);
-	clk_enable(dev->fclk);
+	pdev = container_of(dev->dev, struct platform_device, dev);
+	pdata = pdev->dev.platform_data;
+
+	if (pdata->device_enable)
+		pdata->device_enable(pdev);
+
 	if (cpu_is_omap34xx()) {
 		omap_i2c_write_reg(dev, OMAP_I2C_CON_REG, 0);
 		omap_i2c_write_reg(dev, OMAP_I2C_PSC_REG, dev->pscstate);
@@ -313,9 +291,14 @@ static void omap_i2c_unidle(struct omap_i2c_dev *dev)
 
 static void omap_i2c_idle(struct omap_i2c_dev *dev)
 {
+	struct platform_device *pdev;
+	struct omap_i2c_platform_data *pdata;
 	u16 iv;
 
 	WARN_ON(dev->idle);
+
+	pdev = container_of(dev->dev, struct platform_device, dev);
+	pdata = pdev->dev.platform_data;
 
 	dev->iestate = omap_i2c_read_reg(dev, OMAP_I2C_IE_REG);
 	if (dev->rev >= OMAP_I2C_REV_ON_4430)
@@ -332,8 +315,8 @@ static void omap_i2c_idle(struct omap_i2c_dev *dev)
 		omap_i2c_read_reg(dev, OMAP_I2C_STAT_REG);
 	}
 	dev->idle = 1;
-	clk_disable(dev->fclk);
-	clk_disable(dev->iclk);
+	if (pdata->device_idle)
+		pdata->device_idle(pdev);
 }
 
 static int omap_i2c_init(struct omap_i2c_dev *dev)
@@ -343,6 +326,7 @@ static int omap_i2c_init(struct omap_i2c_dev *dev)
 	unsigned long fclk_rate = 12000000;
 	unsigned long timeout;
 	unsigned long internal_clk = 0;
+	struct clk *fclk;
 
 	if (dev->rev >= OMAP_I2C_REV_2) {
 		/* Disable I2C controller before soft reset */
@@ -401,7 +385,8 @@ static int omap_i2c_init(struct omap_i2c_dev *dev)
 		 * always returns 12MHz for the functional clock, we can
 		 * do this bit unconditionally.
 		 */
-		fclk_rate = clk_get_rate(dev->fclk);
+		fclk = clk_get(dev->dev, "fck");
+		fclk_rate = clk_get_rate(fclk);
 
 		/* TRM for 5912 says the I2C clock must be prescaled to be
 		 * between 7 - 12 MHz. The XOR input clock is typically
@@ -430,11 +415,9 @@ static int omap_i2c_init(struct omap_i2c_dev *dev)
 			internal_clk = 9600;
 		else
 			internal_clk = 4000;
-		/* FIXME: Remove this once clock framework is available*/
-		if (dev->rev >= OMAP_I2C_REV_ON_4430)
-			fclk_rate = 96000;
-		else
-			fclk_rate = clk_get_rate(dev->fclk) / 1000;
+
+		fclk = clk_get(dev->dev, "fck");
+		fclk_rate = clk_get_rate(fclk) / 1000;
 
 		/* Compute prescaler divisor */
 		psc = fclk_rate / internal_clk;
@@ -927,6 +910,7 @@ omap_i2c_probe(struct platform_device *pdev)
 	struct i2c_adapter	*adap;
 	struct resource		*mem, *irq, *ioarea;
 	irq_handler_t isr;
+	struct omap_i2c_platform_data *pdata;
 	int r;
 	u32 speed = 0;
 
@@ -955,8 +939,10 @@ omap_i2c_probe(struct platform_device *pdev)
 		goto err_release_region;
 	}
 
-	if (pdev->dev.platform_data != NULL)
-		speed = *(u32 *)pdev->dev.platform_data;
+	pdata = pdev->dev.platform_data;
+
+	if (pdata->rate)
+		speed = pdata->rate;
 	else
 		speed = 100;	/* Defualt speed */
 
@@ -971,9 +957,6 @@ omap_i2c_probe(struct platform_device *pdev)
 	}
 
 	platform_set_drvdata(pdev, dev);
-
-	if ((r = omap_i2c_get_clocks(dev)) != 0)
-		goto err_iounmap;
 
 	if (cpu_is_omap44xx())
 		dev->regs = (u8 *) omap4_reg_map;
@@ -1044,8 +1027,6 @@ err_free_irq:
 err_unuse_clocks:
 	omap_i2c_write_reg(dev, OMAP_I2C_CON_REG, 0);
 	omap_i2c_idle(dev);
-	omap_i2c_put_clocks(dev);
-err_iounmap:
 	iounmap(dev->base);
 err_free_mem:
 	platform_set_drvdata(pdev, NULL);
@@ -1067,7 +1048,6 @@ omap_i2c_remove(struct platform_device *pdev)
 	free_irq(dev->irq, dev);
 	i2c_del_adapter(&dev->adapter);
 	omap_i2c_write_reg(dev, OMAP_I2C_CON_REG, 0);
-	omap_i2c_put_clocks(dev);
 	iounmap(dev->base);
 	kfree(dev);
 	mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
