@@ -1539,10 +1539,7 @@ struct mwl8k_cmd_mac_multicast_adr {
 	__u8 addr[0][ETH_ALEN];
 };
 
-#define MWL8K_ENABLE_RX_DIRECTED	0x0001
-#define MWL8K_ENABLE_RX_MULTICAST	0x0002
-#define MWL8K_ENABLE_RX_ALL_MULTICAST	0x0004
-#define MWL8K_ENABLE_RX_BROADCAST	0x0008
+#define MWL8K_ENABLE_RX_MULTICAST 0x000F
 
 static struct mwl8k_cmd_pkt *
 __mwl8k_cmd_mac_multicast_adr(struct ieee80211_hw *hw,
@@ -1550,14 +1547,11 @@ __mwl8k_cmd_mac_multicast_adr(struct ieee80211_hw *hw,
 {
 	struct mwl8k_priv *priv = hw->priv;
 	struct mwl8k_cmd_mac_multicast_adr *cmd;
-	int allmulti;
 	int size;
+	int i;
 
-	allmulti = 0;
-	if (mc_count > priv->num_mcaddrs) {
-		allmulti = 1;
-		mc_count = 0;
-	}
+	if (mc_count > priv->num_mcaddrs)
+		mc_count = priv->num_mcaddrs;
 
 	size = sizeof(*cmd) + mc_count * ETH_ALEN;
 
@@ -1567,24 +1561,16 @@ __mwl8k_cmd_mac_multicast_adr(struct ieee80211_hw *hw,
 
 	cmd->header.code = cpu_to_le16(MWL8K_CMD_MAC_MULTICAST_ADR);
 	cmd->header.length = cpu_to_le16(size);
-	cmd->action = cpu_to_le16(MWL8K_ENABLE_RX_DIRECTED |
-				  MWL8K_ENABLE_RX_BROADCAST);
+	cmd->action = cpu_to_le16(MWL8K_ENABLE_RX_MULTICAST);
+	cmd->numaddr = cpu_to_le16(mc_count);
 
-	if (allmulti) {
-		cmd->action |= cpu_to_le16(MWL8K_ENABLE_RX_ALL_MULTICAST);
-	} else if (mc_count) {
-		int i;
-
-		cmd->action |= cpu_to_le16(MWL8K_ENABLE_RX_MULTICAST);
-		cmd->numaddr = cpu_to_le16(mc_count);
-		for (i = 0; i < mc_count && mclist; i++) {
-			if (mclist->da_addrlen != ETH_ALEN) {
-				kfree(cmd);
-				return NULL;
-			}
-			memcpy(cmd->addr[i], mclist->da_addr, ETH_ALEN);
-			mclist = mclist->next;
+	for (i = 0; i < mc_count && mclist; i++) {
+		if (mclist->da_addrlen != ETH_ALEN) {
+			kfree(cmd);
+			return NULL;
 		}
+		memcpy(cmd->addr[i], mclist->da_addr, ETH_ALEN);
+		mclist = mclist->next;
 	}
 
 	return &cmd->header;
