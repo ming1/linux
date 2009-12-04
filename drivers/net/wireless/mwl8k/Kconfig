@@ -1,0 +1,29 @@
+config MWL8K_COMMON
+	tristate "Marvell 88W8xxx PCI/PCIe Wireless support"
+	depends on MAC80211 && PCI && WLAN_80211 && EXPERIMENTAL
+	---help---
+	  This is common code for Marvell TOPDOG 802.11 wireless cards.  This
+	  module does nothing by itself - the device-specific front-ends
+	  also need to be enabled in order to support any devices.
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called mwl8k.  If unsure, say N.
+
+config MWL8687
+	tristate "Marvell 88W8687 PCI/PCIe Wireless support"
+	depends on MWL8K_COMMON
+	---help---
+	  This driver is for Marvell TOPDOG 88w8687-based wireless cards.
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called mwl8687.  If unsure, say N.
+
+config MWL8366
+	tristate "Marvell 88W8366 PCI/PCIe Wireless support"
+	depends on MWL8K_COMMON
+	---help---
+	  This driver is for Marvell TOPDOG 88w8366-based wireless cards.
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called mwl8366.  If unsure, say N.
+

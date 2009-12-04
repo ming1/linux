@@ -24,76 +24,7 @@
 #include <linux/firmware.h>
 #include <linux/workqueue.h>
 
-#define MWL8K_DESC	"Marvell TOPDOG(R) 802.11 Wireless Network Driver"
-#define MWL8K_NAME	KBUILD_MODNAME
-#define MWL8K_VERSION	"0.10"
-
-/* Register definitions */
-#define MWL8K_HIU_GEN_PTR			0x00000c10
-#define  MWL8K_MODE_STA				 0x0000005a
-#define  MWL8K_MODE_AP				 0x000000a5
-#define MWL8K_HIU_INT_CODE			0x00000c14
-#define  MWL8K_FWSTA_READY			 0xf0f1f2f4
-#define  MWL8K_FWAP_READY			 0xf1f2f4a5
-#define  MWL8K_INT_CODE_CMD_FINISHED		 0x00000005
-#define MWL8K_HIU_SCRATCH			0x00000c40
-
-/* Host->device communications */
-#define MWL8K_HIU_H2A_INTERRUPT_EVENTS		0x00000c18
-#define MWL8K_HIU_H2A_INTERRUPT_STATUS		0x00000c1c
-#define MWL8K_HIU_H2A_INTERRUPT_MASK		0x00000c20
-#define MWL8K_HIU_H2A_INTERRUPT_CLEAR_SEL	0x00000c24
-#define MWL8K_HIU_H2A_INTERRUPT_STATUS_MASK	0x00000c28
-#define  MWL8K_H2A_INT_DUMMY			 (1 << 20)
-#define  MWL8K_H2A_INT_RESET			 (1 << 15)
-#define  MWL8K_H2A_INT_DOORBELL			 (1 << 1)
-#define  MWL8K_H2A_INT_PPA_READY		 (1 << 0)
-
-/* Device->host communications */
-#define MWL8K_HIU_A2H_INTERRUPT_EVENTS		0x00000c2c
-#define MWL8K_HIU_A2H_INTERRUPT_STATUS		0x00000c30
-#define MWL8K_HIU_A2H_INTERRUPT_MASK		0x00000c34
-#define MWL8K_HIU_A2H_INTERRUPT_CLEAR_SEL	0x00000c38
-#define MWL8K_HIU_A2H_INTERRUPT_STATUS_MASK	0x00000c3c
-#define  MWL8K_A2H_INT_DUMMY			 (1 << 20)
-#define  MWL8K_A2H_INT_CHNL_SWITCHED		 (1 << 11)
-#define  MWL8K_A2H_INT_QUEUE_EMPTY		 (1 << 10)
-#define  MWL8K_A2H_INT_RADAR_DETECT		 (1 << 7)
-#define  MWL8K_A2H_INT_RADIO_ON			 (1 << 6)
-#define  MWL8K_A2H_INT_RADIO_OFF		 (1 << 5)
-#define  MWL8K_A2H_INT_MAC_EVENT		 (1 << 3)
-#define  MWL8K_A2H_INT_OPC_DONE			 (1 << 2)
-#define  MWL8K_A2H_INT_RX_READY			 (1 << 1)
-#define  MWL8K_A2H_INT_TX_DONE			 (1 << 0)
-
-#define MWL8K_A2H_EVENTS	(MWL8K_A2H_INT_DUMMY | \
-				 MWL8K_A2H_INT_CHNL_SWITCHED | \
-				 MWL8K_A2H_INT_QUEUE_EMPTY | \
-				 MWL8K_A2H_INT_RADAR_DETECT | \
-				 MWL8K_A2H_INT_RADIO_ON | \
-				 MWL8K_A2H_INT_RADIO_OFF | \
-				 MWL8K_A2H_INT_MAC_EVENT | \
-				 MWL8K_A2H_INT_OPC_DONE | \
-				 MWL8K_A2H_INT_RX_READY | \
-				 MWL8K_A2H_INT_TX_DONE)
-
-#define MWL8K_RX_QUEUES		1
-#define MWL8K_TX_QUEUES		4
-
-struct rxd_ops {
-	int rxd_size;
-	void (*rxd_init)(void *rxd, dma_addr_t next_dma_addr);
-	void (*rxd_refill)(void *rxd, dma_addr_t addr, int len);
-	int (*rxd_process)(void *rxd, struct ieee80211_rx_status *status);
-};
-
-struct mwl8k_device_info {
-	char *part_name;
-	char *helper_image;
-	char *fw_image;
-	struct rxd_ops *rxd_ops;
-	u16 modes;
-};
+#include "mwl8k.h"
 
 struct mwl8k_rx_queue {
 	int rxd_count;
@@ -251,52 +182,6 @@ static const struct ieee80211_channel mwl8k_channels[] = {
 	{ .center_freq = 2457, .hw_value = 10, },
 	{ .center_freq = 2462, .hw_value = 11, },
 };
-
-static const struct ieee80211_rate mwl8k_rates[] = {
-	{ .bitrate = 10, .hw_value = 2, },
-	{ .bitrate = 20, .hw_value = 4, },
-	{ .bitrate = 55, .hw_value = 11, },
-	{ .bitrate = 110, .hw_value = 22, },
-	{ .bitrate = 220, .hw_value = 44, },
-	{ .bitrate = 60, .hw_value = 12, },
-	{ .bitrate = 90, .hw_value = 18, },
-	{ .bitrate = 120, .hw_value = 24, },
-	{ .bitrate = 180, .hw_value = 36, },
-	{ .bitrate = 240, .hw_value = 48, },
-	{ .bitrate = 360, .hw_value = 72, },
-	{ .bitrate = 480, .hw_value = 96, },
-	{ .bitrate = 540, .hw_value = 108, },
-};
-
-/* Set or get info from Firmware */
-#define MWL8K_CMD_SET			0x0001
-#define MWL8K_CMD_GET			0x0000
-
-/* Firmware command codes */
-#define MWL8K_CMD_CODE_DNLD		0x0001
-#define MWL8K_CMD_GET_HW_SPEC		0x0003
-#define MWL8K_CMD_SET_HW_SPEC		0x0004
-#define MWL8K_CMD_MAC_MULTICAST_ADR	0x0010
-#define MWL8K_CMD_GET_STAT		0x0014
-#define MWL8K_CMD_RADIO_CONTROL		0x001c
-#define MWL8K_CMD_RF_TX_POWER		0x001e
-#define MWL8K_CMD_RF_ANTENNA		0x0020
-#define MWL8K_CMD_SET_PRE_SCAN		0x0107
-#define MWL8K_CMD_SET_POST_SCAN		0x0108
-#define MWL8K_CMD_SET_RF_CHANNEL	0x010a
-#define MWL8K_CMD_SET_AID		0x010d
-#define MWL8K_CMD_SET_RATE		0x0110
-#define MWL8K_CMD_SET_FINALIZE_JOIN	0x0111
-#define MWL8K_CMD_RTS_THRESHOLD		0x0113
-#define MWL8K_CMD_SET_SLOT		0x0114
-#define MWL8K_CMD_SET_EDCA_PARAMS	0x0115
-#define MWL8K_CMD_SET_WMM_MODE		0x0123
-#define MWL8K_CMD_MIMO_CONFIG		0x0125
-#define MWL8K_CMD_USE_FIXED_RATE	0x0126
-#define MWL8K_CMD_ENABLE_SNIFFER	0x0150
-#define MWL8K_CMD_SET_MAC_ADDR		0x0202
-#define MWL8K_CMD_SET_RATEADAPT_MODE	0x0203
-#define MWL8K_CMD_UPDATE_STADB		0x1123
 
 static const char *mwl8k_cmd_name(u16 cmd, char *buf, int bufsize)
 {
@@ -756,179 +641,6 @@ static inline void mwl8k_add_dma_header(struct sk_buff *skb)
 	 */
 	tr->fwlen = cpu_to_le16(pktlen - hdrlen);
 }
-
-
-/*
- * Packet reception for 88w8366.
- */
-struct mwl8k_rxd_8366 {
-	__le16 pkt_len;
-	__u8 sq2;
-	__u8 rate;
-	__le32 pkt_phys_addr;
-	__le32 next_rxd_phys_addr;
-	__le16 qos_control;
-	__le16 htsig2;
-	__le32 hw_rssi_info;
-	__le32 hw_noise_floor_info;
-	__u8 noise_floor;
-	__u8 pad0[3];
-	__u8 rssi;
-	__u8 rx_status;
-	__u8 channel;
-	__u8 rx_ctrl;
-} __attribute__((packed));
-
-#define MWL8K_8366_RX_CTRL_OWNED_BY_HOST	0x80
-
-static void mwl8k_rxd_8366_init(void *_rxd, dma_addr_t next_dma_addr)
-{
-	struct mwl8k_rxd_8366 *rxd = _rxd;
-
-	rxd->next_rxd_phys_addr = cpu_to_le32(next_dma_addr);
-	rxd->rx_ctrl = MWL8K_8366_RX_CTRL_OWNED_BY_HOST;
-}
-
-static void mwl8k_rxd_8366_refill(void *_rxd, dma_addr_t addr, int len)
-{
-	struct mwl8k_rxd_8366 *rxd = _rxd;
-
-	rxd->pkt_len = cpu_to_le16(len);
-	rxd->pkt_phys_addr = cpu_to_le32(addr);
-	wmb();
-	rxd->rx_ctrl = 0;
-}
-
-static int
-mwl8k_rxd_8366_process(void *_rxd, struct ieee80211_rx_status *status)
-{
-	struct mwl8k_rxd_8366 *rxd = _rxd;
-
-	if (!(rxd->rx_ctrl & MWL8K_8366_RX_CTRL_OWNED_BY_HOST))
-		return -1;
-	rmb();
-
-	memset(status, 0, sizeof(*status));
-
-	status->signal = -rxd->rssi;
-	status->noise = -rxd->noise_floor;
-
-	if (rxd->rate & 0x80) {
-		status->flag |= RX_FLAG_HT;
-		status->rate_idx = rxd->rate & 0x7f;
-	} else {
-		int i;
-
-		for (i = 0; i < ARRAY_SIZE(mwl8k_rates); i++) {
-			if (mwl8k_rates[i].hw_value == rxd->rate) {
-				status->rate_idx = i;
-				break;
-			}
-		}
-	}
-
-	status->band = IEEE80211_BAND_2GHZ;
-	status->freq = ieee80211_channel_to_frequency(rxd->channel);
-
-	return le16_to_cpu(rxd->pkt_len);
-}
-
-static struct rxd_ops rxd_8366_ops = {
-	.rxd_size	= sizeof(struct mwl8k_rxd_8366),
-	.rxd_init	= mwl8k_rxd_8366_init,
-	.rxd_refill	= mwl8k_rxd_8366_refill,
-	.rxd_process	= mwl8k_rxd_8366_process,
-};
-
-/*
- * Packet reception for 88w8687.
- */
-struct mwl8k_rxd_8687 {
-	__le16 pkt_len;
-	__u8 link_quality;
-	__u8 noise_level;
-	__le32 pkt_phys_addr;
-	__le32 next_rxd_phys_addr;
-	__le16 qos_control;
-	__le16 rate_info;
-	__le32 pad0[4];
-	__u8 rssi;
-	__u8 channel;
-	__le16 pad1;
-	__u8 rx_ctrl;
-	__u8 rx_status;
-	__u8 pad2[2];
-} __attribute__((packed));
-
-#define MWL8K_8687_RATE_INFO_SHORTPRE		0x8000
-#define MWL8K_8687_RATE_INFO_ANTSELECT(x)	(((x) >> 11) & 0x3)
-#define MWL8K_8687_RATE_INFO_RATEID(x)		(((x) >> 3) & 0x3f)
-#define MWL8K_8687_RATE_INFO_40MHZ		0x0004
-#define MWL8K_8687_RATE_INFO_SHORTGI		0x0002
-#define MWL8K_8687_RATE_INFO_MCS_FORMAT		0x0001
-
-#define MWL8K_8687_RX_CTRL_OWNED_BY_HOST	0x02
-
-static void mwl8k_rxd_8687_init(void *_rxd, dma_addr_t next_dma_addr)
-{
-	struct mwl8k_rxd_8687 *rxd = _rxd;
-
-	rxd->next_rxd_phys_addr = cpu_to_le32(next_dma_addr);
-	rxd->rx_ctrl = MWL8K_8687_RX_CTRL_OWNED_BY_HOST;
-}
-
-static void mwl8k_rxd_8687_refill(void *_rxd, dma_addr_t addr, int len)
-{
-	struct mwl8k_rxd_8687 *rxd = _rxd;
-
-	rxd->pkt_len = cpu_to_le16(len);
-	rxd->pkt_phys_addr = cpu_to_le32(addr);
-	wmb();
-	rxd->rx_ctrl = 0;
-}
-
-static int
-mwl8k_rxd_8687_process(void *_rxd, struct ieee80211_rx_status *status)
-{
-	struct mwl8k_rxd_8687 *rxd = _rxd;
-	u16 rate_info;
-
-	if (!(rxd->rx_ctrl & MWL8K_8687_RX_CTRL_OWNED_BY_HOST))
-		return -1;
-	rmb();
-
-	rate_info = le16_to_cpu(rxd->rate_info);
-
-	memset(status, 0, sizeof(*status));
-
-	status->signal = -rxd->rssi;
-	status->noise = -rxd->noise_level;
-	status->qual = rxd->link_quality;
-	status->antenna = MWL8K_8687_RATE_INFO_ANTSELECT(rate_info);
-	status->rate_idx = MWL8K_8687_RATE_INFO_RATEID(rate_info);
-
-	if (rate_info & MWL8K_8687_RATE_INFO_SHORTPRE)
-		status->flag |= RX_FLAG_SHORTPRE;
-	if (rate_info & MWL8K_8687_RATE_INFO_40MHZ)
-		status->flag |= RX_FLAG_40MHZ;
-	if (rate_info & MWL8K_8687_RATE_INFO_SHORTGI)
-		status->flag |= RX_FLAG_SHORT_GI;
-	if (rate_info & MWL8K_8687_RATE_INFO_MCS_FORMAT)
-		status->flag |= RX_FLAG_HT;
-
-	status->band = IEEE80211_BAND_2GHZ;
-	status->freq = ieee80211_channel_to_frequency(rxd->channel);
-
-	return le16_to_cpu(rxd->pkt_len);
-}
-
-static struct rxd_ops rxd_8687_ops = {
-	.rxd_size	= sizeof(struct mwl8k_rxd_8687),
-	.rxd_init	= mwl8k_rxd_8687_init,
-	.rxd_refill	= mwl8k_rxd_8687_refill,
-	.rxd_process	= mwl8k_rxd_8687_process,
-};
-
 
 #define MWL8K_RX_DESCS		256
 #define MWL8K_RX_MAXSZ		3800
@@ -3311,38 +3023,7 @@ static void mwl8k_finalize_join_worker(struct work_struct *work)
 	priv->beacon_skb = NULL;
 }
 
-enum {
-	MWL8687 = 0,
-	MWL8366,
-};
-
-static struct mwl8k_device_info mwl8k_info_tbl[] __devinitdata = {
-	{
-		.part_name	= "88w8687",
-		.helper_image	= "mwl8k/helper_8687.fw",
-		.fw_image	= "mwl8k/fmimage_8687.fw",
-		.rxd_ops	= &rxd_8687_ops,
-		.modes		= BIT(NL80211_IFTYPE_STATION),
-	},
-	{
-		.part_name	= "88w8366",
-		.helper_image	= "mwl8k/helper_8366.fw",
-		.fw_image	= "mwl8k/fmimage_8366.fw",
-		.rxd_ops	= &rxd_8366_ops,
-		.modes		= 0,
-	},
-};
-
-static DEFINE_PCI_DEVICE_TABLE(mwl8k_pci_id_table) = {
-	{ PCI_VDEVICE(MARVELL, 0x2a2b), .driver_data = MWL8687, },
-	{ PCI_VDEVICE(MARVELL, 0x2a30), .driver_data = MWL8687, },
-	{ PCI_VDEVICE(MARVELL, 0x2a40), .driver_data = MWL8366, },
-	{ },
-};
-MODULE_DEVICE_TABLE(pci, mwl8k_pci_id_table);
-
-static int __devinit mwl8k_probe(struct pci_dev *pdev,
-				 const struct pci_device_id *id)
+int mwl8k_probe(struct pci_dev *pdev, struct mwl8k_device_info *info)
 {
 	static int printed_version = 0;
 	struct ieee80211_hw *hw;
@@ -3381,7 +3062,7 @@ static int __devinit mwl8k_probe(struct pci_dev *pdev,
 	priv = hw->priv;
 	priv->hw = hw;
 	priv->pdev = pdev;
-	priv->device_info = &mwl8k_info_tbl[id->driver_data];
+	priv->device_info = info;
 	priv->rxd_ops = priv->device_info->rxd_ops;
 	priv->sniffer_enabled = false;
 	priv->wmm_enabled = false;
@@ -3601,13 +3282,15 @@ err_free_reg:
 
 	return rc;
 }
+EXPORT_SYMBOL_GPL(mwl8k_probe);
 
-static void __devexit mwl8k_shutdown(struct pci_dev *pdev)
+void mwl8k_shutdown(struct pci_dev *pdev)
 {
 	printk(KERN_ERR "===>%s(%u)\n", __func__, __LINE__);
 }
+EXPORT_SYMBOL_GPL(mwl8k_shutdown);
 
-static void __devexit mwl8k_remove(struct pci_dev *pdev)
+void mwl8k_remove(struct pci_dev *pdev)
 {
 	struct ieee80211_hw *hw = pci_get_drvdata(pdev);
 	struct mwl8k_priv *priv;
@@ -3645,27 +3328,7 @@ static void __devexit mwl8k_remove(struct pci_dev *pdev)
 	pci_release_regions(pdev);
 	pci_disable_device(pdev);
 }
-
-static struct pci_driver mwl8k_driver = {
-	.name		= MWL8K_NAME,
-	.id_table	= mwl8k_pci_id_table,
-	.probe		= mwl8k_probe,
-	.remove		= __devexit_p(mwl8k_remove),
-	.shutdown	= __devexit_p(mwl8k_shutdown),
-};
-
-static int __init mwl8k_init(void)
-{
-	return pci_register_driver(&mwl8k_driver);
-}
-
-static void __exit mwl8k_exit(void)
-{
-	pci_unregister_driver(&mwl8k_driver);
-}
-
-module_init(mwl8k_init);
-module_exit(mwl8k_exit);
+EXPORT_SYMBOL_GPL(mwl8k_remove);
 
 MODULE_DESCRIPTION(MWL8K_DESC);
 MODULE_VERSION(MWL8K_VERSION);
