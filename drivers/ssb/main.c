@@ -140,19 +140,6 @@ static void ssb_device_put(struct ssb_device *dev)
 		put_device(dev->dev);
 }
 
-static inline struct ssb_driver *ssb_driver_get(struct ssb_driver *drv)
-{
-	if (drv)
-		get_driver(&drv->drv);
-	return drv;
-}
-
-static inline void ssb_driver_put(struct ssb_driver *drv)
-{
-	if (drv)
-		put_driver(&drv->drv);
-}
-
 static int ssb_device_resume(struct device *dev)
 {
 	struct ssb_device *ssb_dev = dev_to_ssb_dev(dev);
@@ -223,81 +210,90 @@ int ssb_bus_suspend(struct ssb_bus *bus)
 EXPORT_SYMBOL(ssb_bus_suspend);
 
 #ifdef CONFIG_SSB_SPROM
-/** ssb_devices_freeze - Freeze all devices on the bus.
- *
- * After freezing no device driver will be handling a device
- * on this bus anymore. ssb_devices_thaw() must be called after
- * a successful freeze to reactivate the devices.
- *
- * @bus: The bus.
- * @ctx: Context structure. Pass this to ssb_devices_thaw().
- */
-int ssb_devices_freeze(struct ssb_bus *bus, struct ssb_freeze_context *ctx)
+int ssb_devices_freeze(struct ssb_bus *bus)
 {
-	struct ssb_device *sdev;
-	struct ssb_driver *sdrv;
-	unsigned int i;
+	struct ssb_device *dev;
+	struct ssb_driver *drv;
+	int err = 0;
+	int i;
+	pm_message_t state = PMSG_FREEZE;
 
-	memset(ctx, 0, sizeof(*ctx));
-	ctx->bus = bus;
-	SSB_WARN_ON(bus->nr_devices > ARRAY_SIZE(ctx->device_frozen));
-
+	/* First check that we are capable to freeze all devices. */
 	for (i = 0; i < bus->nr_devices; i++) {
-		sdev = ssb_device_get(&bus->devices[i]);
-
-		if (!sdev->dev || !sdev->dev->driver ||
-		    !device_is_registered(sdev->dev)) {
-			ssb_device_put(sdev);
+		dev = &(bus->devices[i]);
+		if (!dev->dev ||
+		    !dev->dev->driver ||
+		    !device_is_registered(dev->dev))
 			continue;
-		}
-		sdrv = ssb_driver_get(drv_to_ssb_drv(sdev->dev->driver));
-		if (!sdrv || SSB_WARN_ON(!sdrv->remove)) {
-			ssb_device_put(sdev);
+		drv = drv_to_ssb_drv(dev->dev->driver);
+		if (!drv)
 			continue;
+		if (!drv->suspend) {
+			/* Nope, can't suspend this one. */
+			return -EOPNOTSUPP;
 		}
-		sdrv->remove(sdev);
-		ctx->device_frozen[i] = 1;
+	}
+	/* Now suspend all devices */
+	for (i = 0; i < bus->nr_devices; i++) {
+		dev = &(bus->devices[i]);
+		if (!dev->dev ||
+		    !dev->dev->driver ||
+		    !device_is_registered(dev->dev))
+			continue;
+		drv = drv_to_ssb_drv(dev->dev->driver);
+		if (!drv)
+			continue;
+		err = drv->suspend(dev, state);
+		if (err) {
+			ssb_printk(KERN_ERR PFX "Failed to freeze device %s\n",
+				   dev_name(dev->dev));
+			goto err_unwind;
+		}
 	}
 
 	return 0;
+err_unwind:
+	for (i--; i >= 0; i--) {
+		dev = &(bus->devices[i]);
+		if (!dev->dev ||
+		    !dev->dev->driver ||
+		    !device_is_registered(dev->dev))
+			continue;
+		drv = drv_to_ssb_drv(dev->dev->driver);
+		if (!drv)
+			continue;
+		if (drv->resume)
+			drv->resume(dev);
+	}
+	return err;
 }
 
-/** ssb_devices_thaw - Unfreeze all devices on the bus.
- *
- * This will re-attach the device drivers and re-init the devices.
- *
- * @ctx: The context structure from ssb_devices_freeze()
- */
-int ssb_devices_thaw(struct ssb_freeze_context *ctx)
+int ssb_devices_thaw(struct ssb_bus *bus)
 {
-	struct ssb_bus *bus = ctx->bus;
-	struct ssb_device *sdev;
-	struct ssb_driver *sdrv;
-	unsigned int i;
-	int err, result = 0;
+	struct ssb_device *dev;
+	struct ssb_driver *drv;
+	int err;
+	int i;
 
 	for (i = 0; i < bus->nr_devices; i++) {
-		if (!ctx->device_frozen[i])
+		dev = &(bus->devices[i]);
+		if (!dev->dev ||
+		    !dev->dev->driver ||
+		    !device_is_registered(dev->dev))
 			continue;
-		sdev = &bus->devices[i];
-
-		if (SSB_WARN_ON(!sdev->dev || !sdev->dev->driver))
+		drv = drv_to_ssb_drv(dev->dev->driver);
+		if (!drv)
 			continue;
-		sdrv = drv_to_ssb_drv(sdev->dev->driver);
-		if (SSB_WARN_ON(!sdrv || !sdrv->probe))
+		if (SSB_WARN_ON(!drv->resume))
 			continue;
-
-		err = sdrv->probe(sdev, &sdev->id);
+		err = drv->resume(dev);
 		if (err) {
 			ssb_printk(KERN_ERR PFX "Failed to thaw device %s\n",
-				   dev_name(sdev->dev));
-			result = err;
+				   dev_name(dev->dev));
 		}
-		ssb_driver_put(sdrv);
-		ssb_device_put(sdev);
 	}
 
-	return result;
+	return 0;
 }
 #endif /* CONFIG_SSB_SPROM */
 
