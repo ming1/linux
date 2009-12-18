@@ -32,8 +32,6 @@
 #include <linux/bitops.h>
 #include <net/mac80211.h>
 
-#include "wl1271_conf.h"
-
 #define DRIVER_NAME "wl1271"
 #define DRIVER_PREFIX DRIVER_NAME ": "
 
@@ -422,9 +420,6 @@ struct wl1271 {
 
 	/* Used for a workaround to send disconnect before rejoining */
 	bool joined;
-
-	/* Current chipset configuration */
-	struct conf_drv_settings conf;
 };
 
 int wl1271_plt_start(struct wl1271 *wl);
