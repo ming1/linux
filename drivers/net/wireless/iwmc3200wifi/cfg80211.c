@@ -678,9 +678,6 @@ static int iwm_cfg80211_set_txpower(struct wiphy *wiphy,
 	case TX_POWER_AUTOMATIC:
 		return 0;
 	case TX_POWER_FIXED:
-		if (!test_bit(IWM_STATUS_READY, &iwm->status))
-			return 0;
-
 		ret = iwm_umac_set_config_fix(iwm, UMAC_PARAM_TBL_CFG_FIX,
 					      CFG_TX_PWR_LIMIT_USR, dbm * 2);
 		if (ret < 0)
@@ -688,7 +685,6 @@ static int iwm_cfg80211_set_txpower(struct wiphy *wiphy,
 
 		return iwm_tx_power_trigger(iwm);
 	default:
-		IWM_ERR(iwm, "Unsupported power type: %d\n", type);
 		return -EOPNOTSUPP;
 	}
 
