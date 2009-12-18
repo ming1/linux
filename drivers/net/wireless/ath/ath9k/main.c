@@ -2015,7 +2015,7 @@ static int ath9k_start(struct ieee80211_hw *hw)
 
 		ath_pcie_aspm_disable(sc);
 		if (sc->btcoex_info.btcoex_scheme == ATH_BTCOEX_CFG_3WIRE)
-			ath_btcoex_timer_resume(sc);
+			ath_btcoex_timer_resume(sc, &sc->btcoex_info);
 	}
 
 mutex_unlock:
@@ -2154,7 +2154,7 @@ static void ath9k_stop(struct ieee80211_hw *hw)
 	if (sc->sc_flags & SC_OP_BTCOEX_ENABLED) {
 		ath9k_hw_btcoex_disable(sc->sc_ah);
 		if (sc->btcoex_info.btcoex_scheme == ATH_BTCOEX_CFG_3WIRE)
-			ath_btcoex_timer_pause(sc);
+			ath_btcoex_timer_pause(sc, &sc->btcoex_info);
 	}
 
 	/* make sure h/w will not generate any interrupt
