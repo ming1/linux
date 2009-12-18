@@ -1,4 +1,6 @@
-ATH9K_HW_FIX +=	eeprom.o
+ATH9K_HW_FIX +=	eeprom.o \
+		mac.o \
+
 ATH9K_HW +=	hw.o \
 		eeprom_def.o \
 		eeprom_4k.o \
@@ -6,8 +8,7 @@ ATH9K_HW +=	hw.o \
 		calib.o \
 		ani.o \
 		phy.o \
-		btcoex.o \
-		mac.o \
+		btcoex.o
 
 ath9k-y +=	$(ATH9K_HW) \
 		$(ATH9K_HW_FIX) \
