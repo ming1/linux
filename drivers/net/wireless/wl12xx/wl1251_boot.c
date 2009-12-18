@@ -296,12 +296,8 @@ int wl1251_boot_run_firmware(struct wl1251 *wl)
 		WL1251_ACX_INTR_INIT_COMPLETE;
 	wl1251_boot_target_enable_interrupts(wl);
 
-	wl->event_mask = SCAN_COMPLETE_EVENT_ID | BSS_LOSE_EVENT_ID |
-		SYNCHRONIZATION_TIMEOUT_EVENT_ID |
-		ROAMING_TRIGGER_LOW_RSSI_EVENT_ID |
-		ROAMING_TRIGGER_REGAINED_RSSI_EVENT_ID |
-		REGAINED_BSS_EVENT_ID | BT_PTA_SENSE_EVENT_ID |
-		BT_PTA_PREDICTION_EVENT_ID;
+	/* unmask all mbox events  */
+	wl->event_mask = 0xffffffff;
 
 	ret = wl1251_event_unmask(wl);
 	if (ret < 0) {
