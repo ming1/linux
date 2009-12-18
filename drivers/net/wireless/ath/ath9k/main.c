@@ -1325,17 +1325,6 @@ void ath_cleanup(struct ath_softc *sc)
 	ieee80211_free_hw(sc->hw);
 }
 
-static void ath9k_uninit_hw(struct ath_softc *sc)
-{
-	struct ath_hw *ah = sc->sc_ah;
-
-	BUG_ON(!ah);
-
-	ath9k_exit_debug(ah);
-	ath9k_hw_detach(ah);
-	sc->sc_ah = NULL;
-}
-
 void ath_detach(struct ath_softc *sc)
 {
 	struct ieee80211_hw *hw = sc->hw;
@@ -1376,7 +1365,9 @@ void ath_detach(struct ath_softc *sc)
 	    ah->btcoex_hw.scheme == ATH_BTCOEX_CFG_3WIRE)
 		ath_gen_timer_free(ah, sc->btcoex.no_stomp_timer);
 
-	ath9k_uninit_hw(sc);
+	ath9k_exit_debug(ah);
+	ath9k_hw_detach(ah);
+	sc->sc_ah = NULL;
 }
 
 static int ath9k_reg_notifier(struct wiphy *wiphy,
@@ -1859,8 +1850,10 @@ bad2:
 		if (ATH_TXQ_SETUP(sc, i))
 			ath_tx_cleanupq(sc, &sc->tx.txq[i]);
 
+	ath9k_exit_debug(ah);
 bad_free_hw:
-	ath9k_uninit_hw(sc);
+	ath9k_hw_detach(ah);
+	sc->sc_ah = NULL;
 	return r;
 }
 
@@ -1975,7 +1968,9 @@ error_attach:
 		if (ATH_TXQ_SETUP(sc, i))
 			ath_tx_cleanupq(sc, &sc->tx.txq[i]);
 
-	ath9k_uninit_hw(sc);
+	ath9k_exit_debug(ah);
+	ath9k_hw_detach(ah);
+	sc->sc_ah = NULL;
 
 	return error;
 }
