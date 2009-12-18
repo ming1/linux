@@ -258,7 +258,6 @@ static void wl1271_tx_complete_packet(struct wl1271 *wl,
 	struct ieee80211_tx_info *info;
 	struct sk_buff *skb;
 	u32 header_len;
-	u16 seq;
 	int id = result->id;
 
 	/* check for id legality */
@@ -284,16 +283,6 @@ static void wl1271_tx_complete_packet(struct wl1271 *wl,
 	/* FIXME */
 	/* info->status.retry_count = result->ack_failures; */
 	wl->stats.retry_count += result->ack_failures;
-
-	/* update security sequence number */
-	seq = wl->tx_security_seq_16 +
-		(result->lsb_security_sequence_number -
-		 wl->tx_security_last_seq);
-	wl->tx_security_last_seq = result->lsb_security_sequence_number;
-
-	if (seq < wl->tx_security_seq_16)
-		wl->tx_security_seq_32++;
-	wl->tx_security_seq_16 = seq;
 
 	/* get header len */
 	if (info->control.hw_key &&

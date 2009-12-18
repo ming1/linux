@@ -592,9 +592,6 @@ static void wl1271_op_stop(struct ieee80211_hw *hw)
 	wl->tx_blocks_available = 0;
 	wl->tx_results_count = 0;
 	wl->tx_packets_count = 0;
-	wl->tx_security_last_seq = 0;
-	wl->tx_security_seq_16 = 0;
-	wl->tx_security_seq_32 = 0;
 	wl->time_offset = 0;
 	wl->session_counter = 0;
 	for (i = 0; i < NUM_TX_QUEUES; i++)
@@ -826,8 +823,6 @@ static int wl1271_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 	struct wl1271 *wl = hw->priv;
 	const u8 *addr;
 	int ret;
-	u32 tx_seq_32 = 0;
-	u16 tx_seq_16 = 0;
 	u8 key_type;
 
 	static const u8 bcast_addr[ETH_ALEN] =
@@ -866,15 +861,11 @@ static int wl1271_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 		key_type = KEY_TKIP;
 
 		key_conf->hw_key_idx = key_conf->keyidx;
-		tx_seq_32 = wl->tx_security_seq_32;
-		tx_seq_16 = wl->tx_security_seq_16;
 		break;
 	case ALG_CCMP:
 		key_type = KEY_AES;
 
 		key_conf->flags |= IEEE80211_KEY_FLAG_GENERATE_IV;
-		tx_seq_32 = wl->tx_security_seq_32;
-		tx_seq_16 = wl->tx_security_seq_16;
 		break;
 	default:
 		wl1271_error("Unknown key algo 0x%x", key_conf->alg);
@@ -888,7 +879,7 @@ static int wl1271_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 		ret = wl1271_cmd_set_key(wl, KEY_ADD_OR_REPLACE,
 					 key_conf->keyidx, key_type,
 					 key_conf->keylen, key_conf->key,
-					 addr, tx_seq_32, tx_seq_16);
+					 addr);
 		if (ret < 0) {
 			wl1271_error("Could not add or replace key");
 			goto out_sleep;
@@ -899,7 +890,7 @@ static int wl1271_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 		ret = wl1271_cmd_set_key(wl, KEY_REMOVE,
 					 key_conf->keyidx, key_type,
 					 key_conf->keylen, key_conf->key,
-					 addr, 0, 0);
+					 addr);
 		if (ret < 0) {
 			wl1271_error("Could not remove key");
 			goto out_sleep;
