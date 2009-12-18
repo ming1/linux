@@ -3378,7 +3378,7 @@ static int __devinit mwl8k_probe(struct pci_dev *pdev,
 	if (rc) {
 		printk(KERN_ERR "%s: Cannot obtain PCI resources\n",
 		       MWL8K_NAME);
-		goto err_disable_device;
+		return rc;
 	}
 
 	pci_set_master(pdev);
@@ -3609,8 +3609,6 @@ err_iounmap:
 
 err_free_reg:
 	pci_release_regions(pdev);
-
-err_disable_device:
 	pci_disable_device(pdev);
 
 	return rc;
