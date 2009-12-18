@@ -1034,12 +1034,11 @@ static void iwl_irq_tasklet_legacy(struct iwl_priv *priv)
 		handled |= (CSR_INT_BIT_FH_RX | CSR_INT_BIT_SW_RX);
 	}
 
-	/* This "Tx" DMA channel is used only for loading uCode */
 	if (inta & CSR_INT_BIT_FH_TX) {
-		IWL_DEBUG_ISR(priv, "uCode load interrupt\n");
+		IWL_DEBUG_ISR(priv, "Tx interrupt\n");
 		priv->isr_stats.tx++;
 		handled |= CSR_INT_BIT_FH_TX;
-		/* Wake up uCode load routine, now that load is complete */
+		/* FH finished to write, send event */
 		priv->ucode_write_complete = 1;
 		wake_up_interruptible(&priv->wait_command_queue);
 	}
@@ -1236,13 +1235,12 @@ static void iwl_irq_tasklet(struct iwl_priv *priv)
 		iwl_leds_background(priv);
 	}
 
-	/* This "Tx" DMA channel is used only for loading uCode */
 	if (inta & CSR_INT_BIT_FH_TX) {
 		iwl_write32(priv, CSR_FH_INT_STATUS, CSR49_FH_INT_TX_MASK);
-		IWL_DEBUG_ISR(priv, "uCode load interrupt\n");
+		IWL_DEBUG_ISR(priv, "Tx interrupt\n");
 		priv->isr_stats.tx++;
 		handled |= CSR_INT_BIT_FH_TX;
-		/* Wake up uCode load routine, now that load is complete */
+		/* FH finished to write, send event */
 		priv->ucode_write_complete = 1;
 		wake_up_interruptible(&priv->wait_command_queue);
 	}
