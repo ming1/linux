@@ -39,8 +39,11 @@ static u8 ieee80211_sta_manage_reorder_buf(struct ieee80211_hw *hw,
  * only useful for monitoring.
  */
 static struct sk_buff *remove_monitor_info(struct ieee80211_local *local,
-					   struct sk_buff *skb)
+					   struct sk_buff *skb,
+					   int rtap_len)
 {
+	skb_pull(skb, rtap_len);
+
 	if (local->hw.flags & IEEE80211_HW_RX_INCLUDES_FCS) {
 		if (likely(skb->len > FCS_LEN))
 			skb_trim(skb, skb->len - FCS_LEN);
@@ -56,14 +59,15 @@ static struct sk_buff *remove_monitor_info(struct ieee80211_local *local,
 }
 
 static inline int should_drop_frame(struct sk_buff *skb,
-				    int present_fcs_len)
+				    int present_fcs_len,
+				    int radiotap_len)
 {
 	struct ieee80211_rx_status *status = IEEE80211_SKB_RXCB(skb);
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
 
 	if (status->flag & (RX_FLAG_FAILED_FCS_CRC | RX_FLAG_FAILED_PLCP_CRC))
 		return 1;
-	if (unlikely(skb->len < 16 + present_fcs_len))
+	if (unlikely(skb->len < 16 + present_fcs_len + radiotap_len))
 		return 1;
 	if (ieee80211_is_ctl(hdr->frame_control) &&
 	    !ieee80211_is_pspoll(hdr->frame_control) &&
@@ -221,6 +225,7 @@ ieee80211_rx_monitor(struct ieee80211_local *local, struct sk_buff *origskb,
 	struct sk_buff *skb, *skb2;
 	struct net_device *prev_dev = NULL;
 	int present_fcs_len = 0;
+	int rtap_len = 0;
 
 	/*
 	 * First, we may need to make a copy of the skb because
@@ -230,23 +235,25 @@ ieee80211_rx_monitor(struct ieee80211_local *local, struct sk_buff *origskb,
 	 * We don't need to, of course, if we aren't going to return
 	 * the SKB because it has a bad FCS/PLCP checksum.
 	 */
-
-	/* room for the radiotap header based on driver features */
-	needed_headroom = ieee80211_rx_radiotap_len(local, status);
+	if (status->flag & RX_FLAG_RADIOTAP)
+		rtap_len = ieee80211_get_radiotap_len(origskb->data);
+	else
+		/* room for the radiotap header based on driver features */
+		needed_headroom = ieee80211_rx_radiotap_len(local, status);
 
 	if (local->hw.flags & IEEE80211_HW_RX_INCLUDES_FCS)
 		present_fcs_len = FCS_LEN;
 
 	if (!local->monitors) {
-		if (should_drop_frame(origskb, present_fcs_len)) {
+		if (should_drop_frame(origskb, present_fcs_len, rtap_len)) {
 			dev_kfree_skb(origskb);
 			return NULL;
 		}
 
-		return remove_monitor_info(local, origskb);
+		return remove_monitor_info(local, origskb, rtap_len);
 	}
 
-	if (should_drop_frame(origskb, present_fcs_len)) {
+	if (should_drop_frame(origskb, present_fcs_len, rtap_len)) {
 		/* only need to expand headroom if necessary */
 		skb = origskb;
 		origskb = NULL;
@@ -270,14 +277,16 @@ ieee80211_rx_monitor(struct ieee80211_local *local, struct sk_buff *origskb,
 		 */
 		skb = skb_copy_expand(origskb, needed_headroom, 0, GFP_ATOMIC);
 
-		origskb = remove_monitor_info(local, origskb);
+		origskb = remove_monitor_info(local, origskb, rtap_len);
 
 		if (!skb)
 			return origskb;
 	}
 
-	/* prepend radiotap information */
-	ieee80211_add_rx_radiotap_header(local, skb, rate, needed_headroom);
+	/* if necessary, prepend radiotap information */
+	if (!(status->flag & RX_FLAG_RADIOTAP))
+		ieee80211_add_rx_radiotap_header(local, skb, rate,
+						 needed_headroom);
 
 	skb_reset_mac_header(skb);
 	skb->ip_summed = CHECKSUM_UNNECESSARY;
