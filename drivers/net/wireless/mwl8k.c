@@ -782,10 +782,6 @@ struct mwl8k_rxd_8366 {
 	__u8 rx_ctrl;
 } __attribute__((packed));
 
-#define MWL8K_8366_RATE_INFO_MCS_FORMAT		0x80
-#define MWL8K_8366_RATE_INFO_40MHZ		0x40
-#define MWL8K_8366_RATE_INFO_RATEID(x)		((x) & 0x3f)
-
 #define MWL8K_8366_RX_CTRL_OWNED_BY_HOST	0x80
 
 static void mwl8k_rxd_8366_init(void *_rxd, dma_addr_t next_dma_addr)
@@ -821,11 +817,9 @@ mwl8k_rxd_8366_process(void *_rxd, struct ieee80211_rx_status *status,
 	status->signal = -rxd->rssi;
 	status->noise = -rxd->noise_floor;
 
-	if (rxd->rate & MWL8K_8366_RATE_INFO_MCS_FORMAT) {
+	if (rxd->rate & 0x80) {
 		status->flag |= RX_FLAG_HT;
-		if (rxd->rate & MWL8K_8366_RATE_INFO_40MHZ)
-			status->flag |= RX_FLAG_40MHZ;
-		status->rate_idx = MWL8K_8366_RATE_INFO_RATEID(rxd->rate);
+		status->rate_idx = rxd->rate & 0x7f;
 	} else {
 		int i;
 
