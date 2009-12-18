@@ -18,7 +18,6 @@
 #define DEBUG_H
 
 #include "hw.h"
-#include "rc.h"
 
 struct ath_txq;
 struct ath_buf;
@@ -139,7 +138,7 @@ void ath9k_exit_debug(struct ath_hw *ah);
 int ath9k_debug_create_root(void);
 void ath9k_debug_remove_root(void);
 void ath_debug_stat_interrupt(struct ath_softc *sc, enum ath9k_int status);
-void ath_debug_stat_rc(struct ath_softc *sc, int final_rate);
+void ath_debug_stat_rc(struct ath_softc *sc, struct sk_buff *skb);
 void ath_debug_stat_tx(struct ath_softc *sc, struct ath_txq *txq,
 		       struct ath_buf *bf);
 void ath_debug_stat_retries(struct ath_softc *sc, int rix,
@@ -171,7 +170,7 @@ static inline void ath_debug_stat_interrupt(struct ath_softc *sc,
 }
 
 static inline void ath_debug_stat_rc(struct ath_softc *sc,
-				     int final_rate)
+				     struct sk_buff *skb)
 {
 }
 

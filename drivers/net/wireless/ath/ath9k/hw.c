@@ -148,19 +148,22 @@ bool ath9k_get_channel_edges(struct ath_hw *ah,
 }
 
 u16 ath9k_hw_computetxtime(struct ath_hw *ah,
-			   u8 phy, int kbps,
+			   const struct ath_rate_table *rates,
 			   u32 frameLen, u16 rateix,
 			   bool shortPreamble)
 {
 	u32 bitsPerSymbol, numBits, numSymbols, phyTime, txTime;
+	u32 kbps;
+
+	kbps = rates->info[rateix].ratekbps;
 
 	if (kbps == 0)
 		return 0;
 
-	switch (phy) {
+	switch (rates->info[rateix].phy) {
 	case WLAN_RC_PHY_CCK:
 		phyTime = CCK_PREAMBLE_BITS + CCK_PLCP_BITS;
-		if (shortPreamble)
+		if (shortPreamble && rates->info[rateix].short_preamble)
 			phyTime >>= 1;
 		numBits = frameLen << 3;
 		txTime = CCK_SIFS_TIME + phyTime + ((numBits * 1000) / kbps);
@@ -191,7 +194,8 @@ u16 ath9k_hw_computetxtime(struct ath_hw *ah,
 		break;
 	default:
 		ath_print(ath9k_hw_common(ah), ATH_DBG_FATAL,
-			  "Unknown phy %u (rate ix %u)\n", phy, rateix);
+			  "Unknown phy %u (rate ix %u)\n",
+			  rates->info[rateix].phy, rateix);
 		txTime = 0;
 		break;
 	}
