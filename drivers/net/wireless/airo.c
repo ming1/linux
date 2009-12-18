@@ -5659,8 +5659,7 @@ static int airo_pci_suspend(struct pci_dev *pdev, pm_message_t state)
 
 	pci_enable_wake(pdev, pci_choose_state(pdev, state), 1);
 	pci_save_state(pdev);
-	pci_set_power_state(pdev, pci_choose_state(pdev, state));
-	return 0;
+	return pci_set_power_state(pdev, pci_choose_state(pdev, state));
 }
 
 static int airo_pci_resume(struct pci_dev *pdev)
