@@ -1079,6 +1079,7 @@ static void iwl_irq_tasklet_legacy(struct iwl_priv *priv)
 	if (inta & (CSR_INT_BIT_FH_RX | CSR_INT_BIT_SW_RX)) {
 		iwl_rx_handle(priv);
 		priv->isr_stats.rx++;
+		iwl_leds_background(priv);
 		handled |= (CSR_INT_BIT_FH_RX | CSR_INT_BIT_SW_RX);
 	}
 
@@ -1287,6 +1288,7 @@ static void iwl_irq_tasklet(struct iwl_priv *priv)
 				    CSR_INT_PERIODIC_ENA);
 
 		priv->isr_stats.rx++;
+		iwl_leds_background(priv);
 	}
 
 	/* This "Tx" DMA channel is used only for loading uCode */
