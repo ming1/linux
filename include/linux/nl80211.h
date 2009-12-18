@@ -349,10 +349,6 @@ enum nl80211_commands {
 	NL80211_CMD_GET_SURVEY,
 	NL80211_CMD_NEW_SURVEY_RESULTS,
 
-	NL80211_CMD_SET_PMKSA,
-	NL80211_CMD_DEL_PMKSA,
-	NL80211_CMD_FLUSH_PMKSA,
-
 	/* add new commands above here */
 
 	/* used to define NL80211_CMD_MAX below */
@@ -602,10 +598,6 @@ enum nl80211_commands {
  *      the survey response for %NL80211_CMD_GET_SURVEY, nested attribute
  *      containing info as possible, see &enum survey_info.
  *
- * @NL80211_ATTR_PMKID: PMK material for PMKSA caching.
- * @NL80211_ATTR_MAX_NUM_PMKIDS: maximum number of PMKIDs a firmware can
- *	cache, a wiphy attribute.
- *
  * @NL80211_ATTR_MAX: highest attribute number currently defined
  * @__NL80211_ATTR_AFTER_LAST: internal use
  */
@@ -739,9 +731,6 @@ enum nl80211_attrs {
 	NL80211_ATTR_4ADDR,
 
 	NL80211_ATTR_SURVEY_INFO,
-
-	NL80211_ATTR_PMKID,
-	NL80211_ATTR_MAX_NUM_PMKIDS,
 
 	/* add attributes here, update the policy in nl80211.c */
 
