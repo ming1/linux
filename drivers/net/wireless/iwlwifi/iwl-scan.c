@@ -144,7 +144,8 @@ static int iwl_send_scan_abort(struct iwl_priv *priv)
 		clear_bit(STATUS_SCAN_HW, &priv->status);
 	}
 
-	iwl_free_pages(priv, cmd.reply_page);
+	priv->alloc_rxb_page--;
+	free_pages(cmd.reply_page, priv->hw_params.rx_page_order);
 
 	return ret;
 }
