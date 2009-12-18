@@ -795,22 +795,17 @@ void iwl3945_hw_build_tx_cmd_rate(struct iwl_priv *priv,
 	 * in this running context */
 	rate_mask = IWL_RATES_MASK;
 
-
-	/* Set retry limit on DATA packets and Probe Responses*/
-	if (ieee80211_is_probe_resp(fc))
-		data_retry_limit = 3;
-	else
-		data_retry_limit = IWL_DEFAULT_TX_RETRY;
-	tx_cmd->data_retry_limit = data_retry_limit;
-
 	if (tx_id >= IWL_CMD_QUEUE_NUM)
 		rts_retry_limit = 3;
 	else
 		rts_retry_limit = 7;
 
-	if (data_retry_limit < rts_retry_limit)
-		rts_retry_limit = data_retry_limit;
-	tx_cmd->rts_retry_limit = rts_retry_limit;
+	if (ieee80211_is_probe_resp(fc)) {
+		data_retry_limit = 3;
+		if (data_retry_limit < rts_retry_limit)
+			rts_retry_limit = data_retry_limit;
+	} else
+		data_retry_limit = IWL_DEFAULT_TX_RETRY;
 
 	if (ieee80211_is_mgmt(fc)) {
 		switch (fc & cpu_to_le16(IEEE80211_FCTL_STYPE)) {
@@ -828,6 +823,8 @@ void iwl3945_hw_build_tx_cmd_rate(struct iwl_priv *priv,
 		}
 	}
 
+	tx_cmd->rts_retry_limit = rts_retry_limit;
+	tx_cmd->data_retry_limit = data_retry_limit;
 	tx_cmd->rate = rate;
 	tx_cmd->tx_flags = tx_flags;
 
