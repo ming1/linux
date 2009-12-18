@@ -769,8 +769,7 @@ int wl1271_cmd_build_null_data(struct wl1271 *wl)
 
 	memcpy(template.header.sa, wl->mac_addr, ETH_ALEN);
 	template.header.frame_ctl = cpu_to_le16(IEEE80211_FTYPE_DATA |
-						IEEE80211_STYPE_NULLFUNC |
-						IEEE80211_FCTL_TODS);
+						IEEE80211_STYPE_NULLFUNC);
 
 	return wl1271_cmd_template_set(wl, CMD_TEMPL_NULL_DATA, &template,
 				       sizeof(template));
