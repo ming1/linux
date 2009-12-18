@@ -891,7 +891,6 @@ static void iwl_irq_tasklet_legacy(struct iwl_priv *priv)
 	u32 inta, handled = 0;
 	u32 inta_fh;
 	unsigned long flags;
-	u32 i;
 #ifdef CONFIG_IWLWIFI_DEBUG
 	u32 inta_mask;
 #endif
@@ -1009,17 +1008,19 @@ static void iwl_irq_tasklet_legacy(struct iwl_priv *priv)
 		handled |= CSR_INT_BIT_SW_ERR;
 	}
 
-	/*
-	 * uCode wakes up after power-down sleep.
-	 * Tell device about any new tx or host commands enqueued,
-	 * and about any Rx buffers made available while asleep.
-	 */
+	/* uCode wakes up after power-down sleep */
 	if (inta & CSR_INT_BIT_WAKEUP) {
 		IWL_DEBUG_ISR(priv, "Wakeup interrupt\n");
 		iwl_rx_queue_update_write_ptr(priv, &priv->rxq);
-		for (i = 0; i < priv->hw_params.max_txq_num; i++)
-			iwl_txq_update_write_ptr(priv, &priv->txq[i]);
+		iwl_txq_update_write_ptr(priv, &priv->txq[0]);
+		iwl_txq_update_write_ptr(priv, &priv->txq[1]);
+		iwl_txq_update_write_ptr(priv, &priv->txq[2]);
+		iwl_txq_update_write_ptr(priv, &priv->txq[3]);
+		iwl_txq_update_write_ptr(priv, &priv->txq[4]);
+		iwl_txq_update_write_ptr(priv, &priv->txq[5]);
+
 		priv->isr_stats.wakeup++;
+
 		handled |= CSR_INT_BIT_WAKEUP;
 	}
 
