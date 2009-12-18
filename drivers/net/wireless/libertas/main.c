@@ -14,13 +14,11 @@
 #include <linux/stddef.h>
 #include <linux/ieee80211.h>
 #include <net/iw_handler.h>
-#include <net/cfg80211.h>
 
 #include "host.h"
 #include "decl.h"
 #include "dev.h"
 #include "wext.h"
-#include "cfg.h"
 #include "debugfs.h"
 #include "scan.h"
 #include "assoc.h"
@@ -1247,42 +1245,31 @@ static const struct net_device_ops lbs_netdev_ops = {
  */
 struct lbs_private *lbs_add_card(void *card, struct device *dmdev)
 {
-	struct net_device *dev;
-	struct wireless_dev *wdev;
+	struct net_device *dev = NULL;
 	struct lbs_private *priv = NULL;
 
 	lbs_deb_enter(LBS_DEB_MAIN);
 
 	/* Allocate an Ethernet device and register it */
-	wdev = lbs_cfg_alloc(dmdev);
-	if (IS_ERR(wdev)) {
-		lbs_pr_err("cfg80211 init failed\n");
+	dev = alloc_etherdev(sizeof(struct lbs_private));
+	if (!dev) {
+		lbs_pr_err("init wlanX device failed\n");
 		goto done;
 	}
-	/* TODO? */
-	wdev->iftype = NL80211_IFTYPE_STATION;
-	priv = wdev_priv(wdev);
-	priv->wdev = wdev;
+	priv = netdev_priv(dev);
+	dev->ml_priv = priv;
 
 	if (lbs_init_adapter(priv)) {
 		lbs_pr_err("failed to initialize adapter structure.\n");
-		goto err_wdev;
+		goto err_init_adapter;
 	}
 
-	//TODO? dev = alloc_netdev_mq(0, "wlan%d", ether_setup, IWM_TX_QUEUES);
-	dev = alloc_netdev(0, "wlan%d", ether_setup);
-	if (!dev) {
-		dev_err(dmdev, "no memory for network device instance\n");
-		goto err_adapter;
-	}
-
-	dev->netdev_ops = &lbs_netdev_ops;
-	dev->ieee80211_ptr = wdev;
-	dev->ml_priv = priv;
-	SET_NETDEV_DEV(dev, dmdev);
-	wdev->netdev = dev;
 	priv->dev = dev;
+	priv->card = card;
+	priv->mesh_open = 0;
+	priv->infra_open = 0;
 
+	/* Setup the OS Interface to our functions */
  	dev->netdev_ops = &lbs_netdev_ops;
 	dev->watchdog_timeo = 5 * HZ;
 	dev->ethtool_ops = &lbs_ethtool_ops;
@@ -1291,14 +1278,7 @@ struct lbs_private *lbs_add_card(void *card, struct device *dmdev)
 #endif
 	dev->flags |= IFF_BROADCAST | IFF_MULTICAST;
 
-
-	// TODO: kzalloc + iwm_init_default_profile(iwm, iwm->umac_profile); ??
-
-
-	priv->card = card;
-	priv->mesh_open = 0;
-	priv->infra_open = 0;
-
+	SET_NETDEV_DEV(dev, dmdev);
 
 	priv->rtap_net_dev = NULL;
 	strcpy(dev->name, "wlan%d");
@@ -1308,7 +1288,7 @@ struct lbs_private *lbs_add_card(void *card, struct device *dmdev)
 	priv->main_thread = kthread_run(lbs_thread, dev, "lbs_main");
 	if (IS_ERR(priv->main_thread)) {
 		lbs_deb_thread("Error creating main thread.\n");
-		goto err_ndev;
+		goto err_init_adapter;
 	}
 
 	priv->work_thread = create_singlethread_workqueue("lbs_worker");
@@ -1325,15 +1305,9 @@ struct lbs_private *lbs_add_card(void *card, struct device *dmdev)
 
 	goto done;
 
- err_ndev:
-	free_netdev(dev);
-
- err_adapter:
+err_init_adapter:
 	lbs_free_adapter(priv);
-
- err_wdev:
-	lbs_cfg_free(priv);
-
+	free_netdev(dev);
 	priv = NULL;
 
 done:
@@ -1385,7 +1359,6 @@ void lbs_remove_card(struct lbs_private *priv)
 	kthread_stop(priv->main_thread);
 
 	lbs_free_adapter(priv);
-	lbs_cfg_free(priv);
 
 	priv->dev = NULL;
 	free_netdev(dev);
@@ -1410,8 +1383,8 @@ int lbs_start_card(struct lbs_private *priv)
 	/* init 802.11d */
 	lbs_init_11d(priv);
 
-	if (lbs_cfg_register(priv)) {
-		lbs_pr_err("cannot register device\n");
+	if (register_netdev(dev)) {
+		lbs_pr_err("cannot register ethX device\n");
 		goto done;
 	}
 
