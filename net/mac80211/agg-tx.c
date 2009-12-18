@@ -143,8 +143,7 @@ int ___ieee80211_stop_tx_ba_session(struct sta_info *sta, u16 tid,
 	*state = HT_AGG_STATE_REQ_STOP_BA_MSK |
 		(initiator << HT_AGG_STATE_INITIATOR_SHIFT);
 
-	ret = drv_ampdu_action(local, &sta->sdata->vif,
-			       IEEE80211_AMPDU_TX_STOP,
+	ret = drv_ampdu_action(local, IEEE80211_AMPDU_TX_STOP,
 			       &sta->sta, tid, NULL);
 
 	/* HW shall not deny going back to legacy */
@@ -203,11 +202,11 @@ static inline int ieee80211_ac_from_tid(int tid)
 	return ieee802_1d_to_ac[tid & 7];
 }
 
-int ieee80211_start_tx_ba_session(struct ieee80211_sta *pubsta, u16 tid)
+int ieee80211_start_tx_ba_session(struct ieee80211_hw *hw, u8 *ra, u16 tid)
 {
-	struct sta_info *sta = container_of(pubsta, struct sta_info, sta);
-	struct ieee80211_sub_if_data *sdata = sta->sdata;
-	struct ieee80211_local *local = sdata->local;
+	struct ieee80211_local *local = hw_to_local(hw);
+	struct sta_info *sta;
+	struct ieee80211_sub_if_data *sdata;
 	u8 *state;
 	int ret = 0;
 	u16 start_seq_num;
@@ -215,14 +214,24 @@ int ieee80211_start_tx_ba_session(struct ieee80211_sta *pubsta, u16 tid)
 	if (WARN_ON(!local->ops->ampdu_action))
 		return -EINVAL;
 
-	if ((tid >= STA_TID_NUM) ||
-	    !(local->hw.flags & IEEE80211_HW_AMPDU_AGGREGATION))
+	if ((tid >= STA_TID_NUM) || !(hw->flags & IEEE80211_HW_AMPDU_AGGREGATION))
 		return -EINVAL;
 
 #ifdef CONFIG_MAC80211_HT_DEBUG
 	printk(KERN_DEBUG "Open BA session requested for %pM tid %u\n",
-	       pubsta->addr, tid);
+	       ra, tid);
 #endif /* CONFIG_MAC80211_HT_DEBUG */
+
+	rcu_read_lock();
+
+	sta = sta_info_get(local, ra);
+	if (!sta) {
+#ifdef CONFIG_MAC80211_HT_DEBUG
+		printk(KERN_DEBUG "Could not find the station\n");
+#endif
+		ret = -ENOENT;
+		goto unlock;
+	}
 
 	/*
 	 * The aggregation code is not prepared to handle
@@ -230,21 +239,26 @@ int ieee80211_start_tx_ba_session(struct ieee80211_sta *pubsta, u16 tid)
 	 * IBSS could work in the code but isn't supported
 	 * by drivers or the standard.
 	 */
-	if (sdata->vif.type != NL80211_IFTYPE_STATION &&
-	    sdata->vif.type != NL80211_IFTYPE_AP_VLAN &&
-	    sdata->vif.type != NL80211_IFTYPE_AP)
-		return -EINVAL;
+	if (sta->sdata->vif.type != NL80211_IFTYPE_STATION &&
+	    sta->sdata->vif.type != NL80211_IFTYPE_AP_VLAN &&
+	    sta->sdata->vif.type != NL80211_IFTYPE_AP) {
+		ret = -EINVAL;
+		goto unlock;
+	}
 
 	if (test_sta_flags(sta, WLAN_STA_SUSPEND)) {
 #ifdef CONFIG_MAC80211_HT_DEBUG
 		printk(KERN_DEBUG "Suspend in progress. "
 		       "Denying BA session request\n");
 #endif
-		return -EINVAL;
+		ret = -EINVAL;
+		goto unlock;
 	}
 
 	spin_lock_bh(&sta->lock);
 	spin_lock(&local->ampdu_lock);
+
+	sdata = sta->sdata;
 
 	/* we have tried too many times, receiver does not want A-MPDU */
 	if (sta->ampdu_mlme.addba_req_num[tid] > HT_AGG_MAX_RETRIES) {
@@ -302,9 +316,8 @@ int ieee80211_start_tx_ba_session(struct ieee80211_sta *pubsta, u16 tid)
 
 	start_seq_num = sta->tid_seq[tid];
 
-	ret = drv_ampdu_action(local, &sdata->vif,
-			       IEEE80211_AMPDU_TX_START,
-			       pubsta, tid, &start_seq_num);
+	ret = drv_ampdu_action(local, IEEE80211_AMPDU_TX_START,
+			       &sta->sta, tid, &start_seq_num);
 
 	if (ret) {
 #ifdef CONFIG_MAC80211_HT_DEBUG
@@ -329,7 +342,7 @@ int ieee80211_start_tx_ba_session(struct ieee80211_sta *pubsta, u16 tid)
 			sta->ampdu_mlme.dialog_token_allocator;
 	sta->ampdu_mlme.tid_tx[tid]->ssn = start_seq_num;
 
-	ieee80211_send_addba_request(sdata, pubsta->addr, tid,
+	ieee80211_send_addba_request(sta->sdata, ra, tid,
 			 sta->ampdu_mlme.tid_tx[tid]->dialog_token,
 			 sta->ampdu_mlme.tid_tx[tid]->ssn,
 			 0x40, 5000);
@@ -341,7 +354,7 @@ int ieee80211_start_tx_ba_session(struct ieee80211_sta *pubsta, u16 tid)
 #ifdef CONFIG_MAC80211_HT_DEBUG
 	printk(KERN_DEBUG "activated addBA response timer on tid %d\n", tid);
 #endif
-	return 0;
+	goto unlock;
 
  err_free:
 	kfree(sta->ampdu_mlme.tid_tx[tid]);
@@ -353,6 +366,8 @@ int ieee80211_start_tx_ba_session(struct ieee80211_sta *pubsta, u16 tid)
  err_unlock_sta:
 	spin_unlock(&local->ampdu_lock);
 	spin_unlock_bh(&sta->lock);
+ unlock:
+	rcu_read_unlock();
 	return ret;
 }
 EXPORT_SYMBOL(ieee80211_start_tx_ba_session);
@@ -419,15 +434,13 @@ static void ieee80211_agg_tx_operational(struct ieee80211_local *local,
 	ieee80211_agg_splice_finish(local, sta, tid);
 	spin_unlock(&local->ampdu_lock);
 
-	drv_ampdu_action(local, &sta->sdata->vif,
-			 IEEE80211_AMPDU_TX_OPERATIONAL,
+	drv_ampdu_action(local, IEEE80211_AMPDU_TX_OPERATIONAL,
 			 &sta->sta, tid, NULL);
 }
 
-void ieee80211_start_tx_ba_cb(struct ieee80211_vif *vif, u8 *ra, u16 tid)
+void ieee80211_start_tx_ba_cb(struct ieee80211_hw *hw, u8 *ra, u16 tid)
 {
-	struct ieee80211_sub_if_data *sdata = vif_to_sdata(vif);
-	struct ieee80211_local *local = sdata->local;
+	struct ieee80211_local *local = hw_to_local(hw);
 	struct sta_info *sta;
 	u8 *state;
 
@@ -476,11 +489,10 @@ void ieee80211_start_tx_ba_cb(struct ieee80211_vif *vif, u8 *ra, u16 tid)
 }
 EXPORT_SYMBOL(ieee80211_start_tx_ba_cb);
 
-void ieee80211_start_tx_ba_cb_irqsafe(struct ieee80211_vif *vif,
+void ieee80211_start_tx_ba_cb_irqsafe(struct ieee80211_hw *hw,
 				      const u8 *ra, u16 tid)
 {
-	struct ieee80211_sub_if_data *sdata = vif_to_sdata(vif);
-	struct ieee80211_local *local = sdata->local;
+	struct ieee80211_local *local = hw_to_local(hw);
 	struct ieee80211_ra_tid *ra_tid;
 	struct sk_buff *skb = dev_alloc_skb(0);
 
@@ -524,12 +536,13 @@ int __ieee80211_stop_tx_ba_session(struct sta_info *sta, u16 tid,
 	return ret;
 }
 
-int ieee80211_stop_tx_ba_session(struct ieee80211_sta *pubsta, u16 tid,
+int ieee80211_stop_tx_ba_session(struct ieee80211_hw *hw,
+				 u8 *ra, u16 tid,
 				 enum ieee80211_back_parties initiator)
 {
-	struct sta_info *sta = container_of(pubsta, struct sta_info, sta);
-	struct ieee80211_sub_if_data *sdata = sta->sdata;
-	struct ieee80211_local *local = sdata->local;
+	struct ieee80211_local *local = hw_to_local(hw);
+	struct sta_info *sta;
+	int ret = 0;
 
 	if (!local->ops->ampdu_action)
 		return -EINVAL;
@@ -537,14 +550,22 @@ int ieee80211_stop_tx_ba_session(struct ieee80211_sta *pubsta, u16 tid,
 	if (tid >= STA_TID_NUM)
 		return -EINVAL;
 
-	return __ieee80211_stop_tx_ba_session(sta, tid, initiator);
+	rcu_read_lock();
+	sta = sta_info_get(local, ra);
+	if (!sta) {
+		rcu_read_unlock();
+		return -ENOENT;
+	}
+
+	ret = __ieee80211_stop_tx_ba_session(sta, tid, initiator);
+	rcu_read_unlock();
+	return ret;
 }
 EXPORT_SYMBOL(ieee80211_stop_tx_ba_session);
 
-void ieee80211_stop_tx_ba_cb(struct ieee80211_vif *vif, u8 *ra, u8 tid)
+void ieee80211_stop_tx_ba_cb(struct ieee80211_hw *hw, u8 *ra, u8 tid)
 {
-	struct ieee80211_sub_if_data *sdata = vif_to_sdata(vif);
-	struct ieee80211_local *local = sdata->local;
+	struct ieee80211_local *local = hw_to_local(hw);
 	struct sta_info *sta;
 	u8 *state;
 
@@ -607,11 +628,10 @@ void ieee80211_stop_tx_ba_cb(struct ieee80211_vif *vif, u8 *ra, u8 tid)
 }
 EXPORT_SYMBOL(ieee80211_stop_tx_ba_cb);
 
-void ieee80211_stop_tx_ba_cb_irqsafe(struct ieee80211_vif *vif,
+void ieee80211_stop_tx_ba_cb_irqsafe(struct ieee80211_hw *hw,
 				     const u8 *ra, u16 tid)
 {
-	struct ieee80211_sub_if_data *sdata = vif_to_sdata(vif);
-	struct ieee80211_local *local = sdata->local;
+	struct ieee80211_local *local = hw_to_local(hw);
 	struct ieee80211_ra_tid *ra_tid;
 	struct sk_buff *skb = dev_alloc_skb(0);
 

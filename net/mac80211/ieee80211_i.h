@@ -779,9 +779,8 @@ IEEE80211_DEV_TO_SUB_IF(struct net_device *dev)
 	return netdev_priv(dev);
 }
 
-/* this struct represents 802.11n's RA/TID combination along with our vif */
+/* this struct represents 802.11n's RA/TID combination */
 struct ieee80211_ra_tid {
-	struct ieee80211_vif *vif;
 	u8 ra[ETH_ALEN];
 	u16 tid;
 };

@@ -1313,7 +1313,7 @@ int iwl_tx_agg_start(struct iwl_priv *priv, const u8 *ra, u16 tid, u16 *ssn)
 	if (tid_data->tfds_in_queue == 0) {
 		IWL_DEBUG_HT(priv, "HW queue is empty\n");
 		tid_data->agg.state = IWL_AGG_ON;
-		ieee80211_start_tx_ba_cb_irqsafe(priv->vif, ra, tid);
+		ieee80211_start_tx_ba_cb_irqsafe(priv->hw, ra, tid);
 	} else {
 		IWL_DEBUG_HT(priv, "HW queue is NOT empty: %d packets in HW queue\n",
 			     tid_data->tfds_in_queue);
@@ -1386,7 +1386,7 @@ int iwl_tx_agg_stop(struct iwl_priv *priv , const u8 *ra, u16 tid)
 	if (ret)
 		return ret;
 
-	ieee80211_stop_tx_ba_cb_irqsafe(priv->vif, ra, tid);
+	ieee80211_stop_tx_ba_cb_irqsafe(priv->hw, ra, tid);
 
 	return 0;
 }
@@ -1410,7 +1410,7 @@ int iwl_txq_check_empty(struct iwl_priv *priv, int sta_id, u8 tid, int txq_id)
 			priv->cfg->ops->lib->txq_agg_disable(priv, txq_id,
 							     ssn, tx_fifo);
 			tid_data->agg.state = IWL_AGG_OFF;
-			ieee80211_stop_tx_ba_cb_irqsafe(priv->vif, addr, tid);
+			ieee80211_stop_tx_ba_cb_irqsafe(priv->hw, addr, tid);
 		}
 		break;
 	case IWL_EMPTYING_HW_QUEUE_ADDBA:
@@ -1418,7 +1418,7 @@ int iwl_txq_check_empty(struct iwl_priv *priv, int sta_id, u8 tid, int txq_id)
 		if (tid_data->tfds_in_queue == 0) {
 			IWL_DEBUG_HT(priv, "HW queue empty: continue ADDBA flow\n");
 			tid_data->agg.state = IWL_AGG_ON;
-			ieee80211_start_tx_ba_cb_irqsafe(priv->vif, addr, tid);
+			ieee80211_start_tx_ba_cb_irqsafe(priv->hw, addr, tid);
 		}
 		break;
 	}
