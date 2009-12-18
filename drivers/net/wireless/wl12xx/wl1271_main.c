@@ -625,7 +625,7 @@ static int wl1271_chip_wakeup(struct wl1271 *wl)
 
 		ret = wl1271_setup(wl);
 		if (ret < 0)
-			goto out_power_off;
+			goto out;
 		break;
 	case CHIP_ID_1271_PG20:
 		wl1271_debug(DEBUG_BOOT, "chip id 0x%x (1271 PG20)",
@@ -633,31 +633,26 @@ static int wl1271_chip_wakeup(struct wl1271 *wl)
 
 		ret = wl1271_setup(wl);
 		if (ret < 0)
-			goto out_power_off;
+			goto out;
 		break;
 	default:
 		wl1271_error("unsupported chip id: 0x%x", wl->chip.id);
 		ret = -ENODEV;
-		goto out_power_off;
+		goto out;
 	}
 
 	if (wl->fw == NULL) {
 		ret = wl1271_fetch_firmware(wl);
 		if (ret < 0)
-			goto out_power_off;
+			goto out;
 	}
 
 	/* No NVS from netlink, try to get it from the filesystem */
 	if (wl->nvs == NULL) {
 		ret = wl1271_fetch_nvs(wl);
 		if (ret < 0)
-			goto out_power_off;
+			goto out;
 	}
-
-	goto out;
-
-out_power_off:
-	wl1271_power_off(wl);
 
 out:
 	return ret;
@@ -754,21 +749,13 @@ int wl1271_plt_start(struct wl1271 *wl)
 
 	ret = wl1271_boot(wl);
 	if (ret < 0)
-		goto out_power_off;
+		goto out;
 
 	wl1271_notice("firmware booted in PLT mode (%s)", wl->chip.fw_ver);
 
 	ret = wl1271_plt_init(wl);
 	if (ret < 0)
-		goto out_irq_disable;
-
-	goto out;
-
-out_irq_disable:
-	wl1271_disable_interrupts(wl);
-
-out_power_off:
-	wl1271_power_off(wl);
+		goto out;
 
 out:
 	mutex_unlock(&wl->mutex);
@@ -856,25 +843,20 @@ static int wl1271_op_start(struct ieee80211_hw *hw)
 
 	ret = wl1271_boot(wl);
 	if (ret < 0)
-		goto out_power_off;
+		goto out;
 
 	ret = wl1271_hw_init(wl);
 	if (ret < 0)
-		goto out_irq_disable;
+		goto out;
 
 	wl->state = WL1271_STATE_ON;
 
 	wl1271_info("firmware booted (%s)", wl->chip.fw_ver);
 
-	goto out;
-
-out_irq_disable:
-	wl1271_disable_interrupts(wl);
-
-out_power_off:
-	wl1271_power_off(wl);
-
 out:
+	if (ret < 0)
+		wl1271_power_off(wl);
+
 	mutex_unlock(&wl->mutex);
 
 	return ret;
