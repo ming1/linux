@@ -426,8 +426,7 @@ static void ieee80211_send_assoc(struct ieee80211_sub_if_data *sdata,
 		memcpy(pos, &sband->ht_cap.mcs, sizeof(sband->ht_cap.mcs));
 	}
 
-	IEEE80211_SKB_CB(skb)->flags |= IEEE80211_TX_INTFL_DONT_ENCRYPT;
-	ieee80211_tx_skb(sdata, skb);
+	ieee80211_tx_skb(sdata, skb, 0);
 }
 
 
@@ -468,9 +467,7 @@ static void ieee80211_send_deauth_disassoc(struct ieee80211_sub_if_data *sdata,
 			__cfg80211_send_disassoc(sdata->dev, (u8 *)mgmt, skb->len);
 		else
 			cfg80211_send_disassoc(sdata->dev, (u8 *)mgmt, skb->len);
-	if (!(ifmgd->flags & IEEE80211_STA_MFP_ENABLED))
-		IEEE80211_SKB_CB(skb)->flags |= IEEE80211_TX_INTFL_DONT_ENCRYPT;
-	ieee80211_tx_skb(sdata, skb);
+	ieee80211_tx_skb(sdata, skb, ifmgd->flags & IEEE80211_STA_MFP_ENABLED);
 }
 
 void ieee80211_send_pspoll(struct ieee80211_local *local,
@@ -501,8 +498,7 @@ void ieee80211_send_pspoll(struct ieee80211_local *local,
 	memcpy(pspoll->bssid, ifmgd->bssid, ETH_ALEN);
 	memcpy(pspoll->ta, sdata->dev->dev_addr, ETH_ALEN);
 
-	IEEE80211_SKB_CB(skb)->flags |= IEEE80211_TX_INTFL_DONT_ENCRYPT;
-	ieee80211_tx_skb(sdata, skb);
+	ieee80211_tx_skb(sdata, skb, 0);
 }
 
 void ieee80211_send_nullfunc(struct ieee80211_local *local,
@@ -535,8 +531,7 @@ void ieee80211_send_nullfunc(struct ieee80211_local *local,
 	memcpy(nullfunc->addr2, sdata->dev->dev_addr, ETH_ALEN);
 	memcpy(nullfunc->addr3, sdata->u.mgd.bssid, ETH_ALEN);
 
-	IEEE80211_SKB_CB(skb)->flags |= IEEE80211_TX_INTFL_DONT_ENCRYPT;
-	ieee80211_tx_skb(sdata, skb);
+	ieee80211_tx_skb(sdata, skb, 0);
 }
 
 /* spectrum management related things */
