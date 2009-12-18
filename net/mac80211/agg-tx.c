@@ -495,7 +495,6 @@ void ieee80211_start_tx_ba_cb_irqsafe(struct ieee80211_vif *vif,
 	ra_tid = (struct ieee80211_ra_tid *) &skb->cb;
 	memcpy(&ra_tid->ra, ra, ETH_ALEN);
 	ra_tid->tid = tid;
-	ra_tid->vif = vif;
 
 	skb->pkt_type = IEEE80211_ADDBA_MSG;
 	skb_queue_tail(&local->skb_queue, skb);
@@ -627,7 +626,6 @@ void ieee80211_stop_tx_ba_cb_irqsafe(struct ieee80211_vif *vif,
 	ra_tid = (struct ieee80211_ra_tid *) &skb->cb;
 	memcpy(&ra_tid->ra, ra, ETH_ALEN);
 	ra_tid->tid = tid;
-	ra_tid->vif = vif;
 
 	skb->pkt_type = IEEE80211_DELBA_MSG;
 	skb_queue_tail(&local->skb_queue, skb);
