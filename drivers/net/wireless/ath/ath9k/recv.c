@@ -202,8 +202,7 @@ static int ath_rx_prepare(struct sk_buff *skb, struct ath_desc *ds,
 	}
 
 	rcu_read_lock();
-	/* XXX: use ieee80211_find_sta! */
-	sta = ieee80211_find_sta_by_hw(sc->hw, hdr->addr2);
+	sta = ieee80211_find_sta(sc->hw, hdr->addr2);
 	if (sta) {
 		an = (struct ath_node *) sta->drv_priv;
 		if (ds->ds_rxstat.rs_rssi != ATH9K_RSSI_BAD &&
