@@ -176,6 +176,7 @@ struct ieee80211_rx_data {
 	struct ieee80211_rate *rate;
 
 	unsigned int flags;
+	int sent_ps_buffered;
 	int queue;
 	u32 tkip_iv32;
 	u16 tkip_iv16;
