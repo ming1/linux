@@ -68,7 +68,8 @@ ath9k_hw_write_regs(struct ath_hw *ah, u32 modesIndex, u32 freqIndex,
  * the channel value. Assumes writes enabled to analog bus and bank6 register
  * cache in ah->analogBank6Data.
  */
-int ath9k_hw_set_channel(struct ath_hw *ah, struct ath9k_channel *chan)
+bool
+ath9k_hw_set_channel(struct ath_hw *ah, struct ath9k_channel *chan)
 {
 	struct ath_common *common = ath9k_hw_common(ah);
 	u32 channelSel = 0;
@@ -93,7 +94,7 @@ int ath9k_hw_set_channel(struct ath_hw *ah, struct ath9k_channel *chan)
 		} else {
 			ath_print(common, ATH_DBG_FATAL,
 				  "Invalid channel %u MHz\n", freq);
-			return -EINVAL;
+			return false;
 		}
 
 		channelSel = (channelSel << 2) & 0xff;
@@ -126,7 +127,7 @@ int ath9k_hw_set_channel(struct ath_hw *ah, struct ath9k_channel *chan)
 	} else {
 		ath_print(common, ATH_DBG_FATAL,
 			  "Invalid channel %u MHz\n", freq);
-		return -EINVAL;
+		return false;
 	}
 
 	reg32 =
@@ -138,7 +139,7 @@ int ath9k_hw_set_channel(struct ath_hw *ah, struct ath9k_channel *chan)
 	ah->curchan = chan;
 	ah->curchan_rad_index = -1;
 
-	return 0;
+	return true;
 }
 
 /**
@@ -162,7 +163,8 @@ int ath9k_hw_set_channel(struct ath_hw *ah, struct ath9k_channel *chan)
  * Channel Frequency = (3/2) * freq_ref * (chansel[8:0] + chanfrac[16:0]/2^10)
  * (freq_ref = 40MHz/(24>>amodeRefSel))
  */
-int ath9k_hw_ar9280_set_channel(struct ath_hw *ah, struct ath9k_channel *chan)
+void ath9k_hw_ar9280_set_channel(struct ath_hw *ah,
+				 struct ath9k_channel *chan)
 {
 	u16 bMode, fracMode, aModeRefSel = 0;
 	u32 freq, ndiv, channelSel = 0, channelFrac = 0, reg32 = 0;
@@ -250,8 +252,6 @@ int ath9k_hw_ar9280_set_channel(struct ath_hw *ah, struct ath9k_channel *chan)
 
 	ah->curchan = chan;
 	ah->curchan_rad_index = -1;
-
-	return 0;
 }
 
 /**
