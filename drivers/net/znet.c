@@ -103,7 +103,8 @@
 #include <asm/io.h>
 #include <asm/dma.h>
 
-#include <linux/i82593.h>
+/* This include could be elsewhere, since it is not wireless specific */
+#include "wireless/i82593.h"
 
 static char version[] __initdata = "znet.c:v1.02 9/23/94 becker@scyld.com\n";
 
