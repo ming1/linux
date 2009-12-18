@@ -503,12 +503,8 @@ int netdev_register_kobject(struct net_device *net)
 	*groups++ = &netstat_group;
 
 #ifdef CONFIG_WIRELESS_EXT_SYSFS
-	if (net->ieee80211_ptr)
+	if (net->wireless_handlers || net->ieee80211_ptr)
 		*groups++ = &wireless_group;
-#ifdef CONFIG_WIRELESS_EXT
-	else if (net->wireless_handlers)
-		*groups++ = &wireless_group;
-#endif
 #endif
 #endif /* CONFIG_SYSFS */
 
