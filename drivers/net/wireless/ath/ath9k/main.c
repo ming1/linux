@@ -2032,7 +2032,7 @@ int ath_descdma_setup(struct ath_softc *sc, struct ath_descdma *dd,
 	if ((sizeof(struct ath_desc) % 4) != 0) {
 		ath_print(common, ATH_DBG_FATAL,
 			  "ath_desc not DWORD aligned\n");
-		BUG_ON((sizeof(struct ath_desc) % 4) != 0);
+		ASSERT((sizeof(struct ath_desc) % 4) == 0);
 		error = -ENOMEM;
 		goto fail;
 	}
@@ -2090,7 +2090,7 @@ int ath_descdma_setup(struct ath_softc *sc, struct ath_descdma *dd,
 			 * descriptor fetch.
 			 */
 			while (ATH_DESC_4KB_BOUND_CHECK(bf->bf_daddr)) {
-				BUG_ON((caddr_t) bf->bf_desc >=
+				ASSERT((caddr_t) bf->bf_desc <
 				       ((caddr_t) dd->dd_desc +
 					dd->dd_desc_len));
 
