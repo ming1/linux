@@ -23,12 +23,17 @@ config ATH9K
 
 	  If you choose to build a module, it'll be called ath9k.
 
-config ATH9K_DEBUGFS
+if ATH_DEBUG
+
+config ATH9K_DEBUG
 	bool "Atheros ath9k debugging"
 	depends on ATH9K
 	---help---
-	  Say Y, if you need access to ath9k's statistics for
-	  interrupts, rate control, etc.
+	  Say Y, if you need ath9k to display debug messages.
+	  Pass the debug mask as a module parameter:
 
-	  Also required for changing debug message flags at run time.
+	  modprobe ath9k debug=0x00000200
 
+	  Look in ath9k/debug.h for possible debug masks
+
+endif # ATH_DEBUG

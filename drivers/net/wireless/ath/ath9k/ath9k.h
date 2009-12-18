@@ -486,7 +486,7 @@ struct ath_softc {
 
 	int beacon_interval;
 
-#ifdef CONFIG_ATH9K_DEBUGFS
+#ifdef CONFIG_ATH9K_DEBUG
 	struct ath9k_debug debug;
 #endif
 	struct ath_beacon_config cur_beacon_conf;
