@@ -41,10 +41,6 @@ struct ath_regulatory {
 
 struct ath_common {
 	u16 cachelsz;
-	u16 curaid;
-	u8 macaddr[ETH_ALEN];
-	u8 curbssid[ETH_ALEN];
-	u8 bssidmask[ETH_ALEN];
 	struct ath_regulatory regulatory;
 };
 
