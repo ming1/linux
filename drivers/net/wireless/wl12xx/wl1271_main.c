@@ -219,9 +219,7 @@ static struct conf_drv_settings default_conf = {
 			.rssi_pkt_avg_weight = 10,
 			.snr_bcn_avg_weight  = 10,
 			.snr_pkt_avg_weight  = 10
-		},
-		.bet_enable                  = CONF_BET_MODE_ENABLE,
-		.bet_max_consecutive         = 100
+		}
 	},
 	.init = {
 		.sr_err_tbl = {
