@@ -392,6 +392,7 @@ static int rt2800usb_config_shared_key(struct rt2x00_dev *rt2x00dev,
 {
 	struct hw_key_entry key_entry;
 	struct rt2x00_field32 field;
+	int timeout;
 	u32 offset;
 	u32 reg;
 
@@ -406,8 +407,12 @@ static int rt2800usb_config_shared_key(struct rt2x00_dev *rt2x00dev,
 		       sizeof(key_entry.rx_mic));
 
 		offset = SHARED_KEY_ENTRY(key->hw_key_idx);
-		rt2x00usb_register_multiwrite(rt2x00dev, offset,
-					      &key_entry, sizeof(key_entry));
+		timeout = REGISTER_TIMEOUT32(sizeof(key_entry));
+		rt2x00usb_vendor_request_large_buff(rt2x00dev, USB_MULTI_WRITE,
+						    USB_VENDOR_REQUEST_OUT,
+						    offset, &key_entry,
+						    sizeof(key_entry),
+						    timeout);
 	}
 
 	/*
@@ -440,6 +445,7 @@ static int rt2800usb_config_pairwise_key(struct rt2x00_dev *rt2x00dev,
 					 struct ieee80211_key_conf *key)
 {
 	struct hw_key_entry key_entry;
+	int timeout;
 	u32 offset;
 
 	if (crypto->cmd == SET_KEY) {
@@ -461,8 +467,12 @@ static int rt2800usb_config_pairwise_key(struct rt2x00_dev *rt2x00dev,
 		       sizeof(key_entry.rx_mic));
 
 		offset = PAIRWISE_KEY_ENTRY(key->hw_key_idx);
-		rt2x00usb_register_multiwrite(rt2x00dev, offset,
-					      &key_entry, sizeof(key_entry));
+		timeout = REGISTER_TIMEOUT32(sizeof(key_entry));
+		rt2x00usb_vendor_request_large_buff(rt2x00dev, USB_MULTI_WRITE,
+						    USB_VENDOR_REQUEST_OUT,
+						    offset, &key_entry,
+						    sizeof(key_entry),
+						    timeout);
 	}
 
 	/*
