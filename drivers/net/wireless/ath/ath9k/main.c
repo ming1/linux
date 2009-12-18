@@ -733,11 +733,10 @@ static u32 ath_get_extchanmode(struct ath_softc *sc,
 	return chanmode;
 }
 
-static int ath_setkey_tkip(struct ath_common *common, u16 keyix, const u8 *key,
+static int ath_setkey_tkip(struct ath_softc *sc, u16 keyix, const u8 *key,
 			   struct ath9k_keyval *hk, const u8 *addr,
 			   bool authenticator)
 {
-	struct ath_hw *ah = common->ah;
 	const u8 *key_rxmic;
 	const u8 *key_txmic;
 
@@ -757,42 +756,42 @@ static int ath_setkey_tkip(struct ath_common *common, u16 keyix, const u8 *key,
 			memcpy(hk->kv_mic, key_rxmic, sizeof(hk->kv_mic));
 			memcpy(hk->kv_txmic, key_rxmic, sizeof(hk->kv_mic));
 		}
-		return ath9k_hw_set_keycache_entry(ah, keyix, hk, addr);
+		return ath9k_hw_set_keycache_entry(sc->sc_ah, keyix, hk, addr);
 	}
-	if (!common->splitmic) {
+	if (!sc->splitmic) {
 		/* TX and RX keys share the same key cache entry. */
 		memcpy(hk->kv_mic, key_rxmic, sizeof(hk->kv_mic));
 		memcpy(hk->kv_txmic, key_txmic, sizeof(hk->kv_txmic));
-		return ath9k_hw_set_keycache_entry(ah, keyix, hk, addr);
+		return ath9k_hw_set_keycache_entry(sc->sc_ah, keyix, hk, addr);
 	}
 
 	/* Separate key cache entries for TX and RX */
 
 	/* TX key goes at first index, RX key at +32. */
 	memcpy(hk->kv_mic, key_txmic, sizeof(hk->kv_mic));
-	if (!ath9k_hw_set_keycache_entry(ah, keyix, hk, NULL)) {
+	if (!ath9k_hw_set_keycache_entry(sc->sc_ah, keyix, hk, NULL)) {
 		/* TX MIC entry failed. No need to proceed further */
-		ath_print(common, ATH_DBG_FATAL,
+		ath_print(ath9k_hw_common(sc->sc_ah), ATH_DBG_FATAL,
 			  "Setting TX MIC Key Failed\n");
 		return 0;
 	}
 
 	memcpy(hk->kv_mic, key_rxmic, sizeof(hk->kv_mic));
 	/* XXX delete tx key on failure? */
-	return ath9k_hw_set_keycache_entry(ah, keyix + 32, hk, addr);
+	return ath9k_hw_set_keycache_entry(sc->sc_ah, keyix + 32, hk, addr);
 }
 
-static int ath_reserve_key_cache_slot_tkip(struct ath_common *common)
+static int ath_reserve_key_cache_slot_tkip(struct ath_softc *sc)
 {
 	int i;
 
-	for (i = IEEE80211_WEP_NKID; i < common->keymax / 2; i++) {
-		if (test_bit(i, common->keymap) ||
-		    test_bit(i + 64, common->keymap))
+	for (i = IEEE80211_WEP_NKID; i < sc->keymax / 2; i++) {
+		if (test_bit(i, sc->keymap) ||
+		    test_bit(i + 64, sc->keymap))
 			continue; /* At least one part of TKIP key allocated */
-		if (common->splitmic &&
-		    (test_bit(i + 32, common->keymap) ||
-		     test_bit(i + 64 + 32, common->keymap)))
+		if (sc->splitmic &&
+		    (test_bit(i + 32, sc->keymap) ||
+		     test_bit(i + 64 + 32, sc->keymap)))
 			continue; /* At least one part of TKIP key allocated */
 
 		/* Found a free slot for a TKIP key */
@@ -801,60 +800,60 @@ static int ath_reserve_key_cache_slot_tkip(struct ath_common *common)
 	return -1;
 }
 
-static int ath_reserve_key_cache_slot(struct ath_common *common)
+static int ath_reserve_key_cache_slot(struct ath_softc *sc)
 {
 	int i;
 
 	/* First, try to find slots that would not be available for TKIP. */
-	if (common->splitmic) {
-		for (i = IEEE80211_WEP_NKID; i < common->keymax / 4; i++) {
-			if (!test_bit(i, common->keymap) &&
-			    (test_bit(i + 32, common->keymap) ||
-			     test_bit(i + 64, common->keymap) ||
-			     test_bit(i + 64 + 32, common->keymap)))
+	if (sc->splitmic) {
+		for (i = IEEE80211_WEP_NKID; i < sc->keymax / 4; i++) {
+			if (!test_bit(i, sc->keymap) &&
+			    (test_bit(i + 32, sc->keymap) ||
+			     test_bit(i + 64, sc->keymap) ||
+			     test_bit(i + 64 + 32, sc->keymap)))
 				return i;
-			if (!test_bit(i + 32, common->keymap) &&
-			    (test_bit(i, common->keymap) ||
-			     test_bit(i + 64, common->keymap) ||
-			     test_bit(i + 64 + 32, common->keymap)))
+			if (!test_bit(i + 32, sc->keymap) &&
+			    (test_bit(i, sc->keymap) ||
+			     test_bit(i + 64, sc->keymap) ||
+			     test_bit(i + 64 + 32, sc->keymap)))
 				return i + 32;
-			if (!test_bit(i + 64, common->keymap) &&
-			    (test_bit(i , common->keymap) ||
-			     test_bit(i + 32, common->keymap) ||
-			     test_bit(i + 64 + 32, common->keymap)))
+			if (!test_bit(i + 64, sc->keymap) &&
+			    (test_bit(i , sc->keymap) ||
+			     test_bit(i + 32, sc->keymap) ||
+			     test_bit(i + 64 + 32, sc->keymap)))
 				return i + 64;
-			if (!test_bit(i + 64 + 32, common->keymap) &&
-			    (test_bit(i, common->keymap) ||
-			     test_bit(i + 32, common->keymap) ||
-			     test_bit(i + 64, common->keymap)))
+			if (!test_bit(i + 64 + 32, sc->keymap) &&
+			    (test_bit(i, sc->keymap) ||
+			     test_bit(i + 32, sc->keymap) ||
+			     test_bit(i + 64, sc->keymap)))
 				return i + 64 + 32;
 		}
 	} else {
-		for (i = IEEE80211_WEP_NKID; i < common->keymax / 2; i++) {
-			if (!test_bit(i, common->keymap) &&
-			    test_bit(i + 64, common->keymap))
+		for (i = IEEE80211_WEP_NKID; i < sc->keymax / 2; i++) {
+			if (!test_bit(i, sc->keymap) &&
+			    test_bit(i + 64, sc->keymap))
 				return i;
-			if (test_bit(i, common->keymap) &&
-			    !test_bit(i + 64, common->keymap))
+			if (test_bit(i, sc->keymap) &&
+			    !test_bit(i + 64, sc->keymap))
 				return i + 64;
 		}
 	}
 
 	/* No partially used TKIP slots, pick any available slot */
-	for (i = IEEE80211_WEP_NKID; i < common->keymax; i++) {
+	for (i = IEEE80211_WEP_NKID; i < sc->keymax; i++) {
 		/* Do not allow slots that could be needed for TKIP group keys
 		 * to be used. This limitation could be removed if we know that
 		 * TKIP will not be used. */
 		if (i >= 64 && i < 64 + IEEE80211_WEP_NKID)
 			continue;
-		if (common->splitmic) {
+		if (sc->splitmic) {
 			if (i >= 32 && i < 32 + IEEE80211_WEP_NKID)
 				continue;
 			if (i >= 64 + 32 && i < 64 + 32 + IEEE80211_WEP_NKID)
 				continue;
 		}
 
-		if (!test_bit(i, common->keymap))
+		if (!test_bit(i, sc->keymap))
 			return i; /* Found a free slot for a key */
 	}
 
@@ -862,12 +861,11 @@ static int ath_reserve_key_cache_slot(struct ath_common *common)
 	return -1;
 }
 
-static int ath_key_config(struct ath_common *common,
+static int ath_key_config(struct ath_softc *sc,
 			  struct ieee80211_vif *vif,
 			  struct ieee80211_sta *sta,
 			  struct ieee80211_key_conf *key)
 {
-	struct ath_hw *ah = common->ah;
 	struct ath9k_keyval hk;
 	const u8 *mac = NULL;
 	int ret = 0;
@@ -913,50 +911,48 @@ static int ath_key_config(struct ath_common *common,
 		mac = sta->addr;
 
 		if (key->alg == ALG_TKIP)
-			idx = ath_reserve_key_cache_slot_tkip(common);
+			idx = ath_reserve_key_cache_slot_tkip(sc);
 		else
-			idx = ath_reserve_key_cache_slot(common);
+			idx = ath_reserve_key_cache_slot(sc);
 		if (idx < 0)
 			return -ENOSPC; /* no free key cache entries */
 	}
 
 	if (key->alg == ALG_TKIP)
-		ret = ath_setkey_tkip(common, idx, key->key, &hk, mac,
+		ret = ath_setkey_tkip(sc, idx, key->key, &hk, mac,
 				      vif->type == NL80211_IFTYPE_AP);
 	else
-		ret = ath9k_hw_set_keycache_entry(ah, idx, &hk, mac);
+		ret = ath9k_hw_set_keycache_entry(sc->sc_ah, idx, &hk, mac);
 
 	if (!ret)
 		return -EIO;
 
-	set_bit(idx, common->keymap);
+	set_bit(idx, sc->keymap);
 	if (key->alg == ALG_TKIP) {
-		set_bit(idx + 64, common->keymap);
-		if (common->splitmic) {
-			set_bit(idx + 32, common->keymap);
-			set_bit(idx + 64 + 32, common->keymap);
+		set_bit(idx + 64, sc->keymap);
+		if (sc->splitmic) {
+			set_bit(idx + 32, sc->keymap);
+			set_bit(idx + 64 + 32, sc->keymap);
 		}
 	}
 
 	return idx;
 }
 
-static void ath_key_delete(struct ath_common *common, struct ieee80211_key_conf *key)
+static void ath_key_delete(struct ath_softc *sc, struct ieee80211_key_conf *key)
 {
-	struct ath_hw *ah = common->ah;
-
-	ath9k_hw_keyreset(ah, key->hw_key_idx);
+	ath9k_hw_keyreset(sc->sc_ah, key->hw_key_idx);
 	if (key->hw_key_idx < IEEE80211_WEP_NKID)
 		return;
 
-	clear_bit(key->hw_key_idx, common->keymap);
+	clear_bit(key->hw_key_idx, sc->keymap);
 	if (key->alg != ALG_TKIP)
 		return;
 
-	clear_bit(key->hw_key_idx + 64, common->keymap);
-	if (common->splitmic) {
-		clear_bit(key->hw_key_idx + 32, common->keymap);
-		clear_bit(key->hw_key_idx + 64 + 32, common->keymap);
+	clear_bit(key->hw_key_idx + 64, sc->keymap);
+	if (sc->splitmic) {
+		clear_bit(key->hw_key_idx + 32, sc->keymap);
+		clear_bit(key->hw_key_idx + 64 + 32, sc->keymap);
 	}
 }
 
@@ -1683,19 +1679,19 @@ static int ath_init_softc(u16 devid, struct ath_softc *sc, u16 subsysid,
 	}
 
 	/* Get the hardware key cache size. */
-	common->keymax = ah->caps.keycache_size;
-	if (common->keymax > ATH_KEYMAX) {
+	sc->keymax = ah->caps.keycache_size;
+	if (sc->keymax > ATH_KEYMAX) {
 		ath_print(common, ATH_DBG_ANY,
 			  "Warning, using only %u entries in %u key cache\n",
-			  ATH_KEYMAX, common->keymax);
-		common->keymax = ATH_KEYMAX;
+			  ATH_KEYMAX, sc->keymax);
+		sc->keymax = ATH_KEYMAX;
 	}
 
 	/*
 	 * Reset the key cache since some parts do not
 	 * reset the contents on initial power up.
 	 */
-	for (i = 0; i < common->keymax; i++)
+	for (i = 0; i < sc->keymax; i++)
 		ath9k_hw_keyreset(ah, (u16) i);
 
 	/* default to MONITOR mode */
@@ -1792,7 +1788,7 @@ static int ath_init_softc(u16 devid, struct ath_softc *sc, u16 subsysid,
 				      ATH9K_CIPHER_MIC, NULL)
 	    && ath9k_hw_getcapability(ah, ATH9K_CAP_TKIP_SPLIT,
 				      0, NULL))
-		common->splitmic = 1;
+		sc->splitmic = 1;
 
 	/* turn on mcast key search if possible */
 	if (!ath9k_hw_getcapability(ah, ATH9K_CAP_MCAST_KEYSRCH, 0, NULL))
@@ -2923,7 +2919,7 @@ static int ath9k_set_key(struct ieee80211_hw *hw,
 
 	switch (cmd) {
 	case SET_KEY:
-		ret = ath_key_config(common, vif, sta, key);
+		ret = ath_key_config(sc, vif, sta, key);
 		if (ret >= 0) {
 			key->hw_key_idx = ret;
 			/* push IV and Michael MIC generation to stack */
@@ -2936,7 +2932,7 @@ static int ath9k_set_key(struct ieee80211_hw *hw,
 		}
 		break;
 	case DISABLE_KEY:
-		ath_key_delete(common, key);
+		ath_key_delete(sc, key);
 		break;
 	default:
 		ret = -EINVAL;
