@@ -324,9 +324,8 @@ struct iwl_channel_info {
 #define IWL_MIN_NUM_QUEUES	10
 
 /*
- * Queue #4 is the command queue for 3945/4965/5x00/1000/6x00,
- * the driver maps it into the appropriate device FIFO for the
- * uCode.
+ * uCode queue management definitions ...
+ * Queue #4 is the command queue for 3945/4965/5x00/1000/6x00.
  */
 #define IWL_CMD_QUEUE_NUM	4
 
