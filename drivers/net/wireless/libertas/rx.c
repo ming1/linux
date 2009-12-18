@@ -160,8 +160,15 @@ int lbs_process_rxed_packet(struct lbs_private *priv, struct sk_buff *skb)
 	p_rx_pd = (struct rxpd *) skb->data;
 	p_rx_pkt = (struct rxpackethdr *) ((u8 *)p_rx_pd +
 		le32_to_cpu(p_rx_pd->pkt_ptr));
-
-	dev = lbs_mesh_set_dev(priv, dev, p_rx_pd);
+	if (priv->mesh_dev) {
+		if (priv->mesh_fw_ver == MESH_FW_OLD) {
+			if (p_rx_pd->rx_control & RxPD_MESH_FRAME)
+				dev = priv->mesh_dev;
+		} else if (priv->mesh_fw_ver == MESH_FW_NEW) {
+			if (p_rx_pd->u.bss.bss_num == MESH_IFACE_ID)
+				dev = priv->mesh_dev;
+		}
+	}
 
 	lbs_deb_hex(LBS_DEB_RX, "RX Data: Before chop rxpd", skb->data,
 		 min_t(unsigned int, skb->len, 100));
