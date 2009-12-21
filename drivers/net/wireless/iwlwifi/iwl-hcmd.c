@@ -234,7 +234,7 @@ cancel:
 	}
 fail:
 	if (cmd->reply_page) {
-		iwl_free_pages(priv, cmd->reply_page);
+		free_pages(cmd->reply_page, priv->hw_params.rx_page_order);
 		cmd->reply_page = 0;
 	}
 out:
