@@ -1319,6 +1319,50 @@ static int ieee80211_testmode_cmd(struct wiphy *wiphy, void *data, int len)
 }
 #endif
 
+int __ieee80211_request_smps(struct ieee80211_sub_if_data *sdata,
+			     enum ieee80211_smps_mode smps_mode)
+{
+	const u8 *ap;
+	enum ieee80211_smps_mode old_req;
+	int err;
+
+	old_req = sdata->u.mgd.req_smps;
+	sdata->u.mgd.req_smps = smps_mode;
+
+	if (old_req == smps_mode &&
+	    smps_mode != IEEE80211_SMPS_AUTOMATIC)
+		return 0;
+
+	/*
+	 * If not associated, or current association is not an HT
+	 * association, there's no need to send an action frame.
+	 */
+	if (!sdata->u.mgd.associated ||
+	    sdata->local->oper_channel_type == NL80211_CHAN_NO_HT) {
+		mutex_lock(&sdata->local->iflist_mtx);
+		ieee80211_recalc_smps(sdata->local, sdata);
+		mutex_unlock(&sdata->local->iflist_mtx);
+		return 0;
+	}
+
+	ap = sdata->u.mgd.associated->cbss.bssid;
+
+	if (smps_mode == IEEE80211_SMPS_AUTOMATIC) {
+		if (sdata->u.mgd.powersave)
+			smps_mode = IEEE80211_SMPS_DYNAMIC;
+		else
+			smps_mode = IEEE80211_SMPS_OFF;
+	}
+
+	/* send SM PS frame to AP */
+	err = ieee80211_send_smps_action(sdata, smps_mode,
+					 ap, ap);
+	if (err)
+		sdata->u.mgd.req_smps = old_req;
+
+	return err;
+}
+
 static int ieee80211_set_power_mgmt(struct wiphy *wiphy, struct net_device *dev,
 				    bool enabled, int timeout)
 {
@@ -1336,6 +1380,11 @@ static int ieee80211_set_power_mgmt(struct wiphy *wiphy, struct net_device *dev,
 	sdata->u.mgd.powersave = enabled;
 	conf->dynamic_ps_timeout = timeout;
 
+	/* no change, but if automatic follow powersave */
+	mutex_lock(&sdata->u.mgd.mtx);
+	__ieee80211_request_smps(sdata, sdata->u.mgd.req_smps);
+	mutex_unlock(&sdata->u.mgd.mtx);
+
 	if (local->hw.flags & IEEE80211_HW_SUPPORTS_DYNAMIC_PS)
 		ieee80211_hw_config(local, IEEE80211_CONF_CHANGE_PS);
 
@@ -1351,15 +1400,25 @@ static int ieee80211_set_bitrate_mask(struct wiphy *wiphy,
 {
 	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 	struct ieee80211_local *local = wdev_priv(dev->ieee80211_ptr);
-	int i, err = -EINVAL;
+	int i;
 	u32 target_rate;
 	struct ieee80211_supported_band *sband;
 
+	/*
+	 * This _could_ be supported by providing a hook for
+	 * drivers for this function, but at this point it
+	 * doesn't seem worth bothering.
+	 */
+	if (local->hw.flags & IEEE80211_HW_HAS_RATE_CONTROL)
+		return -EOPNOTSUPP;
+
 	sband = local->hw.wiphy->bands[local->hw.conf.channel->band];
 
-	/* target_rate = -1, rate->fixed = 0 means auto only, so use all rates
+	/*
+	 * target_rate = -1, rate->fixed = 0 means auto only, so use all rates
 	 * target_rate = X, rate->fixed = 1 means only rate X
-	 * target_rate = X, rate->fixed = 0 means all rates <= X */
+	 * target_rate = X, rate->fixed = 0 means all rates <= X
+	 */
 	sdata->max_ratectrl_rateidx = -1;
 	sdata->force_unicast_rateidx = -1;
 
@@ -1370,20 +1429,18 @@ static int ieee80211_set_bitrate_mask(struct wiphy *wiphy,
 	else
 		return 0;
 
-	for (i=0; i< sband->n_bitrates; i++) {
-		struct ieee80211_rate *brate = &sband->bitrates[i];
-		int this_rate = brate->bitrate;
+	for (i = 0; i< sband->n_bitrates; i++) {
+		if (target_rate != sband->bitrates[i].bitrate)
+			continue;
 
-		if (target_rate == this_rate) {
-			sdata->max_ratectrl_rateidx = i;
-			if (mask->fixed)
-				sdata->force_unicast_rateidx = i;
-			err = 0;
-			break;
-		}
+		/* requested bitrate found */
+		sdata->max_ratectrl_rateidx = i;
+		if (mask->fixed)
+			sdata->force_unicast_rateidx = i;
+		return 0;
 	}
 
-	return err;
+	return -EINVAL;
 }
 
 struct cfg80211_ops mac80211_config_ops = {

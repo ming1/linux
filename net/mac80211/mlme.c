@@ -75,6 +75,9 @@ enum rx_mgmt_action {
 	/* caller must call cfg80211_send_disassoc() */
 	RX_MGMT_CFG80211_DISASSOC,
 
+	/* caller must tell cfg80211 about internal error */
+	RX_MGMT_CFG80211_ASSOC_ERROR,
+
 	/* caller must call cfg80211_auth_timeout() & free work */
 	RX_MGMT_CFG80211_AUTH_TO,
 
@@ -398,6 +401,14 @@ static void ieee80211_send_assoc(struct ieee80211_sub_if_data *sdata,
 		__le16 tmp;
 		u32 flags = local->hw.conf.channel->flags;
 
+		/* determine capability flags */
+
+		if (ieee80211_disable_40mhz_24ghz &&
+		    sband->band == IEEE80211_BAND_2GHZ) {
+			cap &= ~IEEE80211_HT_CAP_SUP_WIDTH_20_40;
+			cap &= ~IEEE80211_HT_CAP_SGI_40;
+		}
+
 		switch (ht_info->ht_param & IEEE80211_HT_PARAM_CHA_SEC_OFFSET) {
 		case IEEE80211_HT_PARAM_CHA_SEC_ABOVE:
 			if (flags & IEEE80211_CHAN_NO_HT40PLUS) {
@@ -413,17 +424,64 @@ static void ieee80211_send_assoc(struct ieee80211_sub_if_data *sdata,
 			break;
 		}
 
-		tmp = cpu_to_le16(cap);
-		pos = skb_put(skb, sizeof(struct ieee80211_ht_cap)+2);
+		/* set SM PS mode properly */
+		cap &= ~IEEE80211_HT_CAP_SM_PS;
+		/* new association always uses requested smps mode */
+		if (ifmgd->req_smps == IEEE80211_SMPS_AUTOMATIC) {
+			if (ifmgd->powersave)
+				ifmgd->ap_smps = IEEE80211_SMPS_DYNAMIC;
+			else
+				ifmgd->ap_smps = IEEE80211_SMPS_OFF;
+		} else
+			ifmgd->ap_smps = ifmgd->req_smps;
+
+		switch (ifmgd->ap_smps) {
+		case IEEE80211_SMPS_AUTOMATIC:
+		case IEEE80211_SMPS_NUM_MODES:
+			WARN_ON(1);
+		case IEEE80211_SMPS_OFF:
+			cap |= WLAN_HT_CAP_SM_PS_DISABLED <<
+				IEEE80211_HT_CAP_SM_PS_SHIFT;
+			break;
+		case IEEE80211_SMPS_STATIC:
+			cap |= WLAN_HT_CAP_SM_PS_STATIC <<
+				IEEE80211_HT_CAP_SM_PS_SHIFT;
+			break;
+		case IEEE80211_SMPS_DYNAMIC:
+			cap |= WLAN_HT_CAP_SM_PS_DYNAMIC <<
+				IEEE80211_HT_CAP_SM_PS_SHIFT;
+			break;
+		}
+
+		/* reserve and fill IE */
+
+		pos = skb_put(skb, sizeof(struct ieee80211_ht_cap) + 2);
 		*pos++ = WLAN_EID_HT_CAPABILITY;
 		*pos++ = sizeof(struct ieee80211_ht_cap);
 		memset(pos, 0, sizeof(struct ieee80211_ht_cap));
+
+		/* capability flags */
+		tmp = cpu_to_le16(cap);
 		memcpy(pos, &tmp, sizeof(u16));
 		pos += sizeof(u16);
-		/* TODO: needs a define here for << 2 */
+
+		/* AMPDU parameters */
 		*pos++ = sband->ht_cap.ampdu_factor |
-			 (sband->ht_cap.ampdu_density << 2);
+			 (sband->ht_cap.ampdu_density <<
+				IEEE80211_HT_AMPDU_PARM_DENSITY_SHIFT);
+
+		/* MCS set */
 		memcpy(pos, &sband->ht_cap.mcs, sizeof(sband->ht_cap.mcs));
+		pos += sizeof(sband->ht_cap.mcs);
+
+		/* extended capabilities */
+		pos += sizeof(__le16);
+
+		/* BF capabilities */
+		pos += sizeof(__le32);
+
+		/* antenna selection */
+		pos += sizeof(u8);
 	}
 
 	IEEE80211_SKB_CB(skb)->flags |= IEEE80211_TX_INTFL_DONT_ENCRYPT;
@@ -940,6 +998,7 @@ static void ieee80211_set_associated(struct ieee80211_sub_if_data *sdata,
 
 	mutex_lock(&local->iflist_mtx);
 	ieee80211_recalc_ps(local, -1);
+	ieee80211_recalc_smps(local, sdata);
 	mutex_unlock(&local->iflist_mtx);
 
 	netif_start_queue(sdata->dev);
@@ -1431,8 +1490,8 @@ ieee80211_rx_mgmt_assoc_resp(struct ieee80211_sub_if_data *sdata,
 	struct ieee80211_bss_conf *bss_conf = &sdata->vif.bss_conf;
 	u8 *pos;
 	u32 changed = 0;
-	int i, j;
-	bool have_higher_than_11mbit = false, newsta = false;
+	int i, j, err;
+	bool have_higher_than_11mbit = false;
 	u16 ap_ht_cap_flags;
 
 	/*
@@ -1494,29 +1553,17 @@ ieee80211_rx_mgmt_assoc_resp(struct ieee80211_sub_if_data *sdata,
 	printk(KERN_DEBUG "%s: associated\n", sdata->name);
 	ifmgd->aid = aid;
 
-	rcu_read_lock();
-
-	/* Add STA entry for the AP */
-	sta = sta_info_get(sdata, wk->bss->cbss.bssid);
+	sta = sta_info_alloc(sdata, wk->bss->cbss.bssid, GFP_KERNEL);
 	if (!sta) {
-		newsta = true;
-
-		rcu_read_unlock();
-
-		sta = sta_info_alloc(sdata, wk->bss->cbss.bssid, GFP_KERNEL);
-		if (!sta) {
-			printk(KERN_DEBUG "%s: failed to alloc STA entry for"
-			       " the AP\n", sdata->name);
-			return RX_MGMT_NONE;
-		}
-
-		set_sta_flags(sta, WLAN_STA_AUTH | WLAN_STA_ASSOC |
-				   WLAN_STA_ASSOC_AP);
-		if (!(ifmgd->flags & IEEE80211_STA_CONTROL_PORT))
-			set_sta_flags(sta, WLAN_STA_AUTHORIZED);
-
-		rcu_read_lock();
+		printk(KERN_DEBUG "%s: failed to alloc STA entry for"
+		       " the AP\n", sdata->name);
+		return RX_MGMT_CFG80211_ASSOC_ERROR;
 	}
+
+	set_sta_flags(sta, WLAN_STA_AUTH | WLAN_STA_ASSOC |
+			   WLAN_STA_ASSOC_AP);
+	if (!(ifmgd->flags & IEEE80211_STA_CONTROL_PORT))
+		set_sta_flags(sta, WLAN_STA_AUTHORIZED);
 
 	rates = 0;
 	basic_rates = 0;
@@ -1580,17 +1627,13 @@ ieee80211_rx_mgmt_assoc_resp(struct ieee80211_sub_if_data *sdata,
 	if (elems.wmm_param)
 		set_sta_flags(sta, WLAN_STA_WME);
 
-	if (newsta) {
-		int err = sta_info_insert(sta);
-		if (err) {
-			printk(KERN_DEBUG "%s: failed to insert STA entry for"
-			       " the AP (error %d)\n", sdata->name, err);
-			rcu_read_unlock();
-			return RX_MGMT_NONE;
-		}
+	err = sta_info_insert(sta);
+	sta = NULL;
+	if (err) {
+		printk(KERN_DEBUG "%s: failed to insert STA entry for"
+		       " the AP (error %d)\n", sdata->name, err);
+		return RX_MGMT_CFG80211_ASSOC_ERROR;
 	}
-
-	rcu_read_unlock();
 
 	if (elems.wmm_param)
 		ieee80211_sta_wmm_params(local, ifmgd, elems.wmm_param,
@@ -2036,6 +2079,10 @@ static void ieee80211_sta_rx_queued_mgmt(struct ieee80211_sub_if_data *sdata,
 	case RX_MGMT_CFG80211_DEAUTH:
 		cfg80211_send_deauth(sdata->dev, (u8 *)mgmt, skb->len);
 		break;
+	case RX_MGMT_CFG80211_ASSOC_ERROR:
+		/* an internal error -- pretend timeout for now */
+		cfg80211_send_assoc_timeout(sdata->dev, mgmt->bssid);
+		break;
 	default:
 		WARN(1, "unexpected: %d", rma);
 	}
@@ -2336,6 +2383,11 @@ void ieee80211_sta_setup_sdata(struct ieee80211_sub_if_data *sdata)
 		ifmgd->flags |= IEEE80211_STA_WMM_ENABLED;
 
 	mutex_init(&ifmgd->mtx);
+
+	if (sdata->local->hw.flags & IEEE80211_HW_SUPPORTS_DYNAMIC_SMPS)
+		ifmgd->req_smps = IEEE80211_SMPS_AUTOMATIC;
+	else
+		ifmgd->req_smps = IEEE80211_SMPS_OFF;
 }
 
 /* scan finished notification */

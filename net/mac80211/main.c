@@ -33,6 +33,12 @@
 #include "cfg.h"
 #include "debugfs.h"
 
+
+bool ieee80211_disable_40mhz_24ghz;
+module_param(ieee80211_disable_40mhz_24ghz, bool, 0644);
+MODULE_PARM_DESC(ieee80211_disable_40mhz_24ghz,
+		 "Disable 40MHz support in the 2.4GHz band");
+
 void ieee80211_configure_filter(struct ieee80211_local *local)
 {
 	u64 mc;
@@ -111,6 +117,18 @@ int ieee80211_hw_config(struct ieee80211_local *local, u32 changed)
 		local->hw.conf.channel = chan;
 		local->hw.conf.channel_type = channel_type;
 		changed |= IEEE80211_CONF_CHANGE_CHANNEL;
+	}
+
+	if (!conf_is_ht(&local->hw.conf)) {
+		/*
+		 * mac80211.h documents that this is only valid
+		 * when the channel is set to an HT type, and
+		 * that otherwise STATIC is used.
+		 */
+		local->hw.conf.smps_mode = IEEE80211_SMPS_STATIC;
+	} else if (local->hw.conf.smps_mode != local->smps_mode) {
+		local->hw.conf.smps_mode = local->smps_mode;
+		changed |= IEEE80211_CONF_CHANGE_SMPS;
 	}
 
 	if (scan_chan)
@@ -297,6 +315,16 @@ void ieee80211_restart_hw(struct ieee80211_hw *hw)
 }
 EXPORT_SYMBOL(ieee80211_restart_hw);
 
+static void ieee80211_recalc_smps_work(struct work_struct *work)
+{
+	struct ieee80211_local *local =
+		container_of(work, struct ieee80211_local, recalc_smps);
+
+	mutex_lock(&local->iflist_mtx);
+	ieee80211_recalc_smps(local, NULL);
+	mutex_unlock(&local->iflist_mtx);
+}
+
 struct ieee80211_hw *ieee80211_alloc_hw(size_t priv_data_len,
 					const struct ieee80211_ops *ops)
 {
@@ -370,6 +398,8 @@ struct ieee80211_hw *ieee80211_alloc_hw(size_t priv_data_len,
 	INIT_WORK(&local->restart_work, ieee80211_restart_work);
 
 	INIT_WORK(&local->reconfig_filter, ieee80211_reconfig_filter);
+	INIT_WORK(&local->recalc_smps, ieee80211_recalc_smps_work);
+	local->smps_mode = IEEE80211_SMPS_OFF;
 
 	INIT_WORK(&local->dynamic_ps_enable_work,
 		  ieee80211_dynamic_ps_enable_work);
