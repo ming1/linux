@@ -202,7 +202,7 @@ static u32 ieee80211_enable_ht(struct ieee80211_sub_if_data *sdata,
 		ieee80211_hw_config(local, 0);
 
 		rcu_read_lock();
-		sta = sta_info_get(local, bssid);
+		sta = sta_info_get(sdata, bssid);
 		if (sta)
 			rate_control_rate_update(local, sband, sta,
 						 IEEE80211_RC_HT_CHANGED);
@@ -248,7 +248,7 @@ static void ieee80211_send_assoc(struct ieee80211_sub_if_data *sdata,
 			    wk->ssid_len);
 	if (!skb) {
 		printk(KERN_DEBUG "%s: failed to allocate buffer for assoc "
-		       "frame\n", sdata->dev->name);
+		       "frame\n", sdata->name);
 		return;
 	}
 	skb_reserve(skb, local->hw.extra_tx_headroom);
@@ -282,7 +282,7 @@ static void ieee80211_send_assoc(struct ieee80211_sub_if_data *sdata,
 	mgmt = (struct ieee80211_mgmt *) skb_put(skb, 24);
 	memset(mgmt, 0, 24);
 	memcpy(mgmt->da, wk->bss->cbss.bssid, ETH_ALEN);
-	memcpy(mgmt->sa, sdata->dev->dev_addr, ETH_ALEN);
+	memcpy(mgmt->sa, sdata->vif.addr, ETH_ALEN);
 	memcpy(mgmt->bssid, wk->bss->cbss.bssid, ETH_ALEN);
 
 	if (!is_zero_ether_addr(wk->prev_bssid)) {
@@ -443,7 +443,7 @@ static void ieee80211_send_deauth_disassoc(struct ieee80211_sub_if_data *sdata,
 	skb = dev_alloc_skb(local->hw.extra_tx_headroom + sizeof(*mgmt));
 	if (!skb) {
 		printk(KERN_DEBUG "%s: failed to allocate buffer for "
-		       "deauth/disassoc frame\n", sdata->dev->name);
+		       "deauth/disassoc frame\n", sdata->name);
 		return;
 	}
 	skb_reserve(skb, local->hw.extra_tx_headroom);
@@ -451,7 +451,7 @@ static void ieee80211_send_deauth_disassoc(struct ieee80211_sub_if_data *sdata,
 	mgmt = (struct ieee80211_mgmt *) skb_put(skb, 24);
 	memset(mgmt, 0, 24);
 	memcpy(mgmt->da, bssid, ETH_ALEN);
-	memcpy(mgmt->sa, sdata->dev->dev_addr, ETH_ALEN);
+	memcpy(mgmt->sa, sdata->vif.addr, ETH_ALEN);
 	memcpy(mgmt->bssid, bssid, ETH_ALEN);
 	mgmt->frame_control = cpu_to_le16(IEEE80211_FTYPE_MGMT | stype);
 	skb_put(skb, 2);
@@ -484,7 +484,7 @@ void ieee80211_send_pspoll(struct ieee80211_local *local,
 	skb = dev_alloc_skb(local->hw.extra_tx_headroom + sizeof(*pspoll));
 	if (!skb) {
 		printk(KERN_DEBUG "%s: failed to allocate buffer for "
-		       "pspoll frame\n", sdata->dev->name);
+		       "pspoll frame\n", sdata->name);
 		return;
 	}
 	skb_reserve(skb, local->hw.extra_tx_headroom);
@@ -499,7 +499,7 @@ void ieee80211_send_pspoll(struct ieee80211_local *local,
 	pspoll->aid |= cpu_to_le16(1 << 15 | 1 << 14);
 
 	memcpy(pspoll->bssid, ifmgd->bssid, ETH_ALEN);
-	memcpy(pspoll->ta, sdata->dev->dev_addr, ETH_ALEN);
+	memcpy(pspoll->ta, sdata->vif.addr, ETH_ALEN);
 
 	IEEE80211_SKB_CB(skb)->flags |= IEEE80211_TX_INTFL_DONT_ENCRYPT;
 	ieee80211_tx_skb(sdata, skb);
@@ -519,7 +519,7 @@ void ieee80211_send_nullfunc(struct ieee80211_local *local,
 	skb = dev_alloc_skb(local->hw.extra_tx_headroom + 24);
 	if (!skb) {
 		printk(KERN_DEBUG "%s: failed to allocate buffer for nullfunc "
-		       "frame\n", sdata->dev->name);
+		       "frame\n", sdata->name);
 		return;
 	}
 	skb_reserve(skb, local->hw.extra_tx_headroom);
@@ -532,7 +532,7 @@ void ieee80211_send_nullfunc(struct ieee80211_local *local,
 		fc |= cpu_to_le16(IEEE80211_FCTL_PM);
 	nullfunc->frame_control = fc;
 	memcpy(nullfunc->addr1, sdata->u.mgd.bssid, ETH_ALEN);
-	memcpy(nullfunc->addr2, sdata->dev->dev_addr, ETH_ALEN);
+	memcpy(nullfunc->addr2, sdata->vif.addr, ETH_ALEN);
 	memcpy(nullfunc->addr3, sdata->u.mgd.bssid, ETH_ALEN);
 
 	IEEE80211_SKB_CB(skb)->flags |= IEEE80211_TX_INTFL_DONT_ENCRYPT;
@@ -956,7 +956,7 @@ ieee80211_direct_probe(struct ieee80211_sub_if_data *sdata,
 	wk->tries++;
 	if (wk->tries > IEEE80211_AUTH_MAX_TRIES) {
 		printk(KERN_DEBUG "%s: direct probe to AP %pM timed out\n",
-		       sdata->dev->name, wk->bss->cbss.bssid);
+		       sdata->name, wk->bss->cbss.bssid);
 
 		/*
 		 * Most likely AP is not in the range so remove the
@@ -974,7 +974,7 @@ ieee80211_direct_probe(struct ieee80211_sub_if_data *sdata,
 	}
 
 	printk(KERN_DEBUG "%s: direct probe to AP %pM (try %d)\n",
-			sdata->dev->name, wk->bss->cbss.bssid,
+			sdata->name, wk->bss->cbss.bssid,
 			wk->tries);
 
 	/*
@@ -1001,7 +1001,7 @@ ieee80211_authenticate(struct ieee80211_sub_if_data *sdata,
 	if (wk->tries > IEEE80211_AUTH_MAX_TRIES) {
 		printk(KERN_DEBUG "%s: authentication with AP %pM"
 		       " timed out\n",
-		       sdata->dev->name, wk->bss->cbss.bssid);
+		       sdata->name, wk->bss->cbss.bssid);
 
 		/*
 		 * Most likely AP is not in the range so remove the
@@ -1019,7 +1019,7 @@ ieee80211_authenticate(struct ieee80211_sub_if_data *sdata,
 	}
 
 	printk(KERN_DEBUG "%s: authenticate with AP %pM (try %d)\n",
-	       sdata->dev->name, wk->bss->cbss.bssid, wk->tries);
+	       sdata->name, wk->bss->cbss.bssid, wk->tries);
 
 	ieee80211_send_auth(sdata, 1, wk->auth_alg, wk->ie, wk->ie_len,
 			    wk->bss->cbss.bssid, NULL, 0, 0);
@@ -1078,7 +1078,7 @@ static void ieee80211_set_disassoc(struct ieee80211_sub_if_data *sdata,
 	netif_carrier_off(sdata->dev);
 
 	rcu_read_lock();
-	sta = sta_info_get(local, bssid);
+	sta = sta_info_get(sdata, bssid);
 	if (sta)
 		ieee80211_sta_tear_down_BA_sessions(sta);
 	rcu_read_unlock();
@@ -1115,7 +1115,7 @@ static void ieee80211_set_disassoc(struct ieee80211_sub_if_data *sdata,
 
 	rcu_read_lock();
 
-	sta = sta_info_get(local, bssid);
+	sta = sta_info_get(sdata, bssid);
 	if (!sta) {
 		rcu_read_unlock();
 		return;
@@ -1139,7 +1139,7 @@ ieee80211_associate(struct ieee80211_sub_if_data *sdata,
 	if (wk->tries > IEEE80211_ASSOC_MAX_TRIES) {
 		printk(KERN_DEBUG "%s: association with AP %pM"
 		       " timed out\n",
-		       sdata->dev->name, wk->bss->cbss.bssid);
+		       sdata->name, wk->bss->cbss.bssid);
 
 		/*
 		 * Most likely AP is not in the range so remove the
@@ -1157,7 +1157,7 @@ ieee80211_associate(struct ieee80211_sub_if_data *sdata,
 	}
 
 	printk(KERN_DEBUG "%s: associate with AP %pM (try %d)\n",
-	       sdata->dev->name, wk->bss->cbss.bssid, wk->tries);
+	       sdata->name, wk->bss->cbss.bssid, wk->tries);
 	ieee80211_send_assoc(sdata, wk);
 
 	wk->timeout = jiffies + IEEE80211_ASSOC_TIMEOUT;
@@ -1218,7 +1218,7 @@ static void ieee80211_mgd_probe_ap(struct ieee80211_sub_if_data *sdata,
 #ifdef CONFIG_MAC80211_VERBOSE_DEBUG
 	if (beacon && net_ratelimit())
 		printk(KERN_DEBUG "%s: detected beacon loss from AP "
-		       "- sending probe request\n", sdata->dev->name);
+		       "- sending probe request\n", sdata->name);
 #endif
 
 	/*
@@ -1275,7 +1275,7 @@ static void ieee80211_auth_completed(struct ieee80211_sub_if_data *sdata,
 				     struct ieee80211_mgd_work *wk)
 {
 	wk->state = IEEE80211_MGD_STATE_IDLE;
-	printk(KERN_DEBUG "%s: authenticated\n", sdata->dev->name);
+	printk(KERN_DEBUG "%s: authenticated\n", sdata->name);
 }
 
 
@@ -1372,7 +1372,7 @@ ieee80211_rx_mgmt_deauth(struct ieee80211_sub_if_data *sdata,
 	reason_code = le16_to_cpu(mgmt->u.deauth.reason_code);
 
 	printk(KERN_DEBUG "%s: deauthenticated from %pM (Reason: %u)\n",
-			sdata->dev->name, bssid, reason_code);
+			sdata->name, bssid, reason_code);
 
 	if (!wk) {
 		ieee80211_set_disassoc(sdata, true);
@@ -1407,7 +1407,7 @@ ieee80211_rx_mgmt_disassoc(struct ieee80211_sub_if_data *sdata,
 	reason_code = le16_to_cpu(mgmt->u.disassoc.reason_code);
 
 	printk(KERN_DEBUG "%s: disassociated from %pM (Reason: %u)\n",
-			sdata->dev->name, mgmt->sa, reason_code);
+			sdata->name, mgmt->sa, reason_code);
 
 	ieee80211_set_disassoc(sdata, false);
 	ieee80211_recalc_idle(sdata->local);
@@ -1452,7 +1452,7 @@ ieee80211_rx_mgmt_assoc_resp(struct ieee80211_sub_if_data *sdata,
 
 	printk(KERN_DEBUG "%s: RX %sssocResp from %pM (capab=0x%x "
 	       "status=%d aid=%d)\n",
-	       sdata->dev->name, reassoc ? "Rea" : "A", mgmt->sa,
+	       sdata->name, reassoc ? "Rea" : "A", mgmt->sa,
 	       capab_info, status_code, (u16)(aid & ~(BIT(15) | BIT(14))));
 
 	pos = mgmt->u.assoc_resp.variable;
@@ -1466,7 +1466,7 @@ ieee80211_rx_mgmt_assoc_resp(struct ieee80211_sub_if_data *sdata,
 		ms = tu * 1024 / 1000;
 		printk(KERN_DEBUG "%s: AP rejected association temporarily; "
 		       "comeback duration %u TU (%u ms)\n",
-		       sdata->dev->name, tu, ms);
+		       sdata->name, tu, ms);
 		wk->timeout = jiffies + msecs_to_jiffies(ms);
 		if (ms > IEEE80211_ASSOC_TIMEOUT)
 			run_again(ifmgd, jiffies + msecs_to_jiffies(ms));
@@ -1475,29 +1475,29 @@ ieee80211_rx_mgmt_assoc_resp(struct ieee80211_sub_if_data *sdata,
 
 	if (status_code != WLAN_STATUS_SUCCESS) {
 		printk(KERN_DEBUG "%s: AP denied association (code=%d)\n",
-		       sdata->dev->name, status_code);
+		       sdata->name, status_code);
 		wk->state = IEEE80211_MGD_STATE_IDLE;
 		return RX_MGMT_CFG80211_ASSOC;
 	}
 
 	if ((aid & (BIT(15) | BIT(14))) != (BIT(15) | BIT(14)))
 		printk(KERN_DEBUG "%s: invalid aid value %d; bits 15:14 not "
-		       "set\n", sdata->dev->name, aid);
+		       "set\n", sdata->name, aid);
 	aid &= ~(BIT(15) | BIT(14));
 
 	if (!elems.supp_rates) {
 		printk(KERN_DEBUG "%s: no SuppRates element in AssocResp\n",
-		       sdata->dev->name);
+		       sdata->name);
 		return RX_MGMT_NONE;
 	}
 
-	printk(KERN_DEBUG "%s: associated\n", sdata->dev->name);
+	printk(KERN_DEBUG "%s: associated\n", sdata->name);
 	ifmgd->aid = aid;
 
 	rcu_read_lock();
 
 	/* Add STA entry for the AP */
-	sta = sta_info_get(local, wk->bss->cbss.bssid);
+	sta = sta_info_get(sdata, wk->bss->cbss.bssid);
 	if (!sta) {
 		newsta = true;
 
@@ -1506,7 +1506,7 @@ ieee80211_rx_mgmt_assoc_resp(struct ieee80211_sub_if_data *sdata,
 		sta = sta_info_alloc(sdata, wk->bss->cbss.bssid, GFP_KERNEL);
 		if (!sta) {
 			printk(KERN_DEBUG "%s: failed to alloc STA entry for"
-			       " the AP\n", sdata->dev->name);
+			       " the AP\n", sdata->name);
 			return RX_MGMT_NONE;
 		}
 
@@ -1584,7 +1584,7 @@ ieee80211_rx_mgmt_assoc_resp(struct ieee80211_sub_if_data *sdata,
 		int err = sta_info_insert(sta);
 		if (err) {
 			printk(KERN_DEBUG "%s: failed to insert STA entry for"
-			       " the AP (error %d)\n", sdata->dev->name, err);
+			       " the AP (error %d)\n", sdata->name, err);
 			rcu_read_unlock();
 			return RX_MGMT_NONE;
 		}
@@ -1679,7 +1679,7 @@ static void ieee80211_rx_mgmt_probe_resp(struct ieee80211_sub_if_data *sdata,
 
 	ASSERT_MGD_MTX(ifmgd);
 
-	if (memcmp(mgmt->da, sdata->dev->dev_addr, ETH_ALEN))
+	if (memcmp(mgmt->da, sdata->vif.addr, ETH_ALEN))
 		return; /* ignore ProbeResp to foreign address */
 
 	baselen = (u8 *) mgmt->u.probe_resp.variable - (u8 *) mgmt;
@@ -1694,7 +1694,7 @@ static void ieee80211_rx_mgmt_probe_resp(struct ieee80211_sub_if_data *sdata,
 	/* direct probe may be part of the association flow */
 	if (wk && wk->state == IEEE80211_MGD_STATE_PROBE) {
 		printk(KERN_DEBUG "%s: direct probe responded\n",
-		       sdata->dev->name);
+		       sdata->name);
 		wk->tries = 0;
 		wk->state = IEEE80211_MGD_STATE_AUTH;
 		WARN_ON(ieee80211_authenticate(sdata, wk) != RX_MGMT_NONE);
@@ -1787,7 +1787,7 @@ static void ieee80211_rx_mgmt_beacon(struct ieee80211_sub_if_data *sdata,
 #ifdef CONFIG_MAC80211_VERBOSE_DEBUG
 		if (net_ratelimit()) {
 			printk(KERN_DEBUG "%s: cancelling probereq poll due "
-			       "to a received beacon\n", sdata->dev->name);
+			       "to a received beacon\n", sdata->name);
 		}
 #endif
 		ifmgd->flags &= ~IEEE80211_STA_BEACON_POLL;
@@ -1865,7 +1865,7 @@ static void ieee80211_rx_mgmt_beacon(struct ieee80211_sub_if_data *sdata,
 
 		rcu_read_lock();
 
-		sta = sta_info_get(local, bssid);
+		sta = sta_info_get(sdata, bssid);
 		if (WARN_ON(!sta)) {
 			rcu_read_unlock();
 			return;
@@ -2563,7 +2563,7 @@ int ieee80211_mgd_deauth(struct ieee80211_sub_if_data *sdata,
 	mutex_unlock(&ifmgd->mtx);
 
 	printk(KERN_DEBUG "%s: deauthenticating from %pM by local choice (reason=%d)\n",
-	       sdata->dev->name, bssid, req->reason_code);
+	       sdata->name, bssid, req->reason_code);
 
 	ieee80211_send_deauth_disassoc(sdata, bssid,
 			IEEE80211_STYPE_DEAUTH, req->reason_code,
@@ -2594,7 +2594,7 @@ int ieee80211_mgd_disassoc(struct ieee80211_sub_if_data *sdata,
 	}
 
 	printk(KERN_DEBUG "%s: disassociating from %pM by local choice (reason=%d)\n",
-	       sdata->dev->name, req->bss->bssid, req->reason_code);
+	       sdata->name, req->bss->bssid, req->reason_code);
 
 	ieee80211_set_disassoc(sdata, false);
 

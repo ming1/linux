@@ -150,7 +150,7 @@ static int ieee80211_add_key(struct wiphy *wiphy, struct net_device *dev,
 	rcu_read_lock();
 
 	if (mac_addr) {
-		sta = sta_info_get(sdata->local, mac_addr);
+		sta = sta_info_get(sdata, mac_addr);
 		if (!sta) {
 			ieee80211_key_free(key);
 			err = -ENOENT;
@@ -181,7 +181,7 @@ static int ieee80211_del_key(struct wiphy *wiphy, struct net_device *dev,
 	if (mac_addr) {
 		ret = -ENOENT;
 
-		sta = sta_info_get(sdata->local, mac_addr);
+		sta = sta_info_get(sdata, mac_addr);
 		if (!sta)
 			goto out_unlock;
 
@@ -228,7 +228,7 @@ static int ieee80211_get_key(struct wiphy *wiphy, struct net_device *dev,
 	rcu_read_lock();
 
 	if (mac_addr) {
-		sta = sta_info_get(sdata->local, mac_addr);
+		sta = sta_info_get(sdata, mac_addr);
 		if (!sta)
 			goto out;
 
@@ -415,15 +415,13 @@ static int ieee80211_dump_station(struct wiphy *wiphy, struct net_device *dev,
 static int ieee80211_get_station(struct wiphy *wiphy, struct net_device *dev,
 				 u8 *mac, struct station_info *sinfo)
 {
-	struct ieee80211_local *local = wdev_priv(dev->ieee80211_ptr);
+	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 	struct sta_info *sta;
 	int ret = -ENOENT;
 
 	rcu_read_lock();
 
-	/* XXX: verify sta->dev == dev */
-
-	sta = sta_info_get(local, mac);
+	sta = sta_info_get(sdata, mac);
 	if (sta) {
 		ret = 0;
 		sta_set_sinfo(sta, sinfo);
@@ -732,7 +730,7 @@ static int ieee80211_add_station(struct wiphy *wiphy, struct net_device *dev,
 	} else
 		sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 
-	if (compare_ether_addr(mac, dev->dev_addr) == 0)
+	if (compare_ether_addr(mac, sdata->vif.addr) == 0)
 		return -EINVAL;
 
 	if (is_multicast_ether_addr(mac))
@@ -779,8 +777,7 @@ static int ieee80211_del_station(struct wiphy *wiphy, struct net_device *dev,
 	if (mac) {
 		rcu_read_lock();
 
-		/* XXX: get sta belonging to dev */
-		sta = sta_info_get(local, mac);
+		sta = sta_info_get(sdata, mac);
 		if (!sta) {
 			rcu_read_unlock();
 			return -ENOENT;
@@ -801,14 +798,14 @@ static int ieee80211_change_station(struct wiphy *wiphy,
 				    u8 *mac,
 				    struct station_parameters *params)
 {
+	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 	struct ieee80211_local *local = wiphy_priv(wiphy);
 	struct sta_info *sta;
 	struct ieee80211_sub_if_data *vlansdata;
 
 	rcu_read_lock();
 
-	/* XXX: get sta belonging to dev */
-	sta = sta_info_get(local, mac);
+	sta = sta_info_get(sdata, mac);
 	if (!sta) {
 		rcu_read_unlock();
 		return -ENOENT;
@@ -847,7 +844,6 @@ static int ieee80211_change_station(struct wiphy *wiphy,
 static int ieee80211_add_mpath(struct wiphy *wiphy, struct net_device *dev,
 				 u8 *dst, u8 *next_hop)
 {
-	struct ieee80211_local *local = wiphy_priv(wiphy);
 	struct ieee80211_sub_if_data *sdata;
 	struct mesh_path *mpath;
 	struct sta_info *sta;
@@ -856,7 +852,7 @@ static int ieee80211_add_mpath(struct wiphy *wiphy, struct net_device *dev,
 	sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 
 	rcu_read_lock();
-	sta = sta_info_get(local, next_hop);
+	sta = sta_info_get(sdata, next_hop);
 	if (!sta) {
 		rcu_read_unlock();
 		return -ENOENT;
@@ -895,7 +891,6 @@ static int ieee80211_change_mpath(struct wiphy *wiphy,
 				    struct net_device *dev,
 				    u8 *dst, u8 *next_hop)
 {
-	struct ieee80211_local *local = wiphy_priv(wiphy);
 	struct ieee80211_sub_if_data *sdata;
 	struct mesh_path *mpath;
 	struct sta_info *sta;
@@ -904,7 +899,7 @@ static int ieee80211_change_mpath(struct wiphy *wiphy,
 
 	rcu_read_lock();
 
-	sta = sta_info_get(local, next_hop);
+	sta = sta_info_get(sdata, next_hop);
 	if (!sta) {
 		rcu_read_unlock();
 		return -ENOENT;
