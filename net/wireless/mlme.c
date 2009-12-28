@@ -691,3 +691,40 @@ void cfg80211_mlme_down(struct cfg80211_registered_device *rdev,
 		}
 	}
 }
+
+void cfg80211_ready_on_channel(struct net_device *dev, u64 cookie,
+			       struct ieee80211_channel *chan,
+			       enum nl80211_channel_type channel_type,
+			       unsigned int duration, gfp_t gfp)
+{
+	struct wiphy *wiphy = dev->ieee80211_ptr->wiphy;
+	struct cfg80211_registered_device *rdev = wiphy_to_dev(wiphy);
+
+	nl80211_send_remain_on_channel(rdev, dev, cookie, chan, channel_type,
+				       duration, gfp);
+}
+EXPORT_SYMBOL(cfg80211_ready_on_channel);
+
+void cfg80211_remain_on_channel_expired(struct net_device *dev,
+					u64 cookie,
+					struct ieee80211_channel *chan,
+					enum nl80211_channel_type channel_type,
+					gfp_t gfp)
+{
+	struct wiphy *wiphy = dev->ieee80211_ptr->wiphy;
+	struct cfg80211_registered_device *rdev = wiphy_to_dev(wiphy);
+
+	nl80211_send_remain_on_channel_cancel(rdev, dev, cookie, chan,
+					      channel_type, gfp);
+}
+EXPORT_SYMBOL(cfg80211_remain_on_channel_expired);
+
+void cfg80211_new_sta(struct net_device *dev, const u8 *mac_addr,
+		      struct station_info *sinfo, gfp_t gfp)
+{
+	struct wiphy *wiphy = dev->ieee80211_ptr->wiphy;
+	struct cfg80211_registered_device *rdev = wiphy_to_dev(wiphy);
+
+	nl80211_send_sta_event(rdev, dev, mac_addr, sinfo, gfp);
+}
+EXPORT_SYMBOL(cfg80211_new_sta);
