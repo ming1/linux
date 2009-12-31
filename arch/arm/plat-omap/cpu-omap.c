@@ -32,6 +32,8 @@ static struct cpufreq_frequency_table *freq_table;
 
 #ifdef CONFIG_ARCH_OMAP1
 #define MPU_CLK		"mpu"
+#elif CONFIG_ARCH_OMAP4
+#define MPU_CLK		"dpll_mpu_ck"
 #else
 #define MPU_CLK		"virt_prcm_set"
 #endif
@@ -62,7 +64,7 @@ unsigned int omap_getspeed(unsigned int cpu)
 {
 	unsigned long rate;
 
-	if (cpu)
+	if (!cpu_is_omap44xx() && cpu)
 		return 0;
 
 	rate = clk_get_rate(mpu_clk) / 1000;
@@ -83,21 +85,38 @@ static int omap_target(struct cpufreq_policy *policy,
 	if (target_freq > policy->max)
 		target_freq = policy->max;
 
-	freqs.old = omap_getspeed(0);
+	freqs.old = omap_getspeed(policy->cpu);
 	freqs.new = clk_round_rate(mpu_clk, target_freq * 1000) / 1000;
-	freqs.cpu = 0;
+	freqs.cpu = policy->cpu;
 
 	if (freqs.old == freqs.new)
 		return ret;
 
+#ifdef CONFIG_SMP
+	int i;
+	for_each_cpu(i, cpumask_of(policy->cpu)) {
+		freqs.cpu = i;
+		cpufreq_notify_transition(&freqs, CPUFREQ_PRECHANGE);
+	}
+#else
 	cpufreq_notify_transition(&freqs, CPUFREQ_PRECHANGE);
+#endif
+
 #ifdef CONFIG_CPU_FREQ_DEBUG
 	printk(KERN_DEBUG "cpufreq-omap: transition: %u --> %u\n",
 	       freqs.old, freqs.new);
 #endif
+	/* Both CPU's are clocked from same clock source */
 	ret = clk_set_rate(mpu_clk, freqs.new * 1000);
-	cpufreq_notify_transition(&freqs, CPUFREQ_POSTCHANGE);
 
+#ifdef CONFIG_SMP
+	for_each_cpu(i, cpumask_of(policy->cpu)) {
+		freqs.cpu = i;
+		cpufreq_notify_transition(&freqs, CPUFREQ_POSTCHANGE);
+	}
+#else
+	cpufreq_notify_transition(&freqs, CPUFREQ_POSTCHANGE);
+#endif
 	return ret;
 }
 
@@ -109,10 +128,10 @@ static int __init omap_cpu_init(struct cpufreq_policy *policy)
 	if (IS_ERR(mpu_clk))
 		return PTR_ERR(mpu_clk);
 
-	if (policy->cpu != 0)
+	if (!cpu_is_omap44xx() && policy->cpu != 0)
 		return -EINVAL;
 
-	policy->cur = policy->min = policy->max = omap_getspeed(0);
+	policy->cur = policy->min = policy->max = omap_getspeed(policy->cpu);
 
 	clk_init_cpufreq_table(&freq_table);
 	if (freq_table) {
