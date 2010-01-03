@@ -23,6 +23,7 @@
 #include <linux/serial_reg.h>
 #include <linux/clk.h>
 #include <linux/io.h>
+#include <linux/delay.h>
 
 #include <plat/common.h>
 #include <plat/board.h>
@@ -590,6 +591,20 @@ static unsigned int serial_in_override(struct uart_port *up, int offset)
 	return serial_read_reg(omap_uart[up->line].p, offset);
 }
 
+static void serial_out_override(struct uart_port *up, int offset, int value)
+{
+	unsigned int status, tmout = 10000;
+
+	/* Wait up to 10ms for the character(s) to be sent. */
+	do {
+		status = serial_read_reg(omap_uart[up->line].p, UART_LSR);
+		if (--tmout == 0)
+			break;
+		udelay(1);
+	} while (!(status & UART_LSR_THRE));
+
+	serial_write_reg(omap_uart[up->line].p, offset, value);
+}
 void __init omap_serial_early_init(void)
 {
 	int i;
@@ -690,11 +705,15 @@ void __init omap_serial_init_port(int port)
 		 * omap3xxx: Never read empty UART fifo on UARTs
 		 * with IP rev >=0x52
 		 */
-		if (cpu_is_omap44xx())
+		if (cpu_is_omap44xx()) {
 			uart->p->serial_in = serial_in_override;
+			uart->p->serial_out = serial_out_override;
+		}
 		else if ((serial_read_reg(uart->p, UART_OMAP_MVER) & 0xFF)
-				>= UART_OMAP_NO_EMPTY_FIFO_READ_IP_REV)
+				>= UART_OMAP_NO_EMPTY_FIFO_READ_IP_REV) {
 			uart->p->serial_in = serial_in_override;
+			uart->p->serial_out = serial_out_override;
+		}
 }
 
 /**
