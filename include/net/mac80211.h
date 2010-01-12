@@ -113,6 +113,7 @@ struct ieee80211_tx_queue_params {
 	u16 cw_min;
 	u16 cw_max;
 	u8 aifs;
+	bool uapsd;
 };
 
 /**
@@ -255,9 +256,6 @@ struct ieee80211_bss_conf {
  * @IEEE80211_TX_CTL_RATE_CTRL_PROBE: internal to mac80211, can be
  *	set by rate control algorithms to indicate probe rate, will
  *	be cleared for fragmented frames (except on the last fragment)
- * @IEEE80211_TX_INTFL_RCALGO: mac80211 internal flag, do not test or
- *	set this flag in the driver; indicates that the rate control
- *	algorithm was used and should be notified of TX status
  * @IEEE80211_TX_INTFL_NEED_TXPROCESSING: completely internal to mac80211,
  *	used to indicate that a pending frame requires TX processing before
  *	it can be sent out.
@@ -287,7 +285,6 @@ enum mac80211_tx_control_flags {
 	IEEE80211_TX_STAT_AMPDU			= BIT(10),
 	IEEE80211_TX_STAT_AMPDU_NO_BACK		= BIT(11),
 	IEEE80211_TX_CTL_RATE_CTRL_PROBE	= BIT(12),
-	IEEE80211_TX_INTFL_RCALGO		= BIT(13),
 	IEEE80211_TX_INTFL_NEED_TXPROCESSING	= BIT(14),
 	IEEE80211_TX_INTFL_RETRIED		= BIT(15),
 	IEEE80211_TX_INTFL_DONT_ENCRYPT		= BIT(16),
@@ -933,6 +930,11 @@ enum ieee80211_tkip_key_type {
  *	Hardware supports dynamic spatial multiplexing powersave,
  *	ie. can turn off all but one chain and then wake the rest
  *	up as required after, for example, rts/cts handshake.
+ *
+ * @IEEE80211_HW_SUPPORTS_UAPSD:
+ *	Hardware supports Unscheduled Automatic Power Save Delivery
+ *	(U-APSD) in managed mode. The mode is configured with
+ *	conf_tx() operation.
  */
 enum ieee80211_hw_flags {
 	IEEE80211_HW_HAS_RATE_CONTROL			= 1<<0,
@@ -952,6 +954,7 @@ enum ieee80211_hw_flags {
 	IEEE80211_HW_BEACON_FILTER			= 1<<14,
 	IEEE80211_HW_SUPPORTS_STATIC_SMPS		= 1<<15,
 	IEEE80211_HW_SUPPORTS_DYNAMIC_SMPS		= 1<<16,
+	IEEE80211_HW_SUPPORTS_UAPSD			= 1<<17,
 };
 
 /**
@@ -1533,6 +1536,10 @@ enum ieee80211_ampdu_mlme_action {
  *	and need to call wiphy_rfkill_set_hw_state() in the callback.
  *	The callback can sleep.
  *
+ * @set_coverage_class: Set slot time for given coverage class as specified
+ *	in IEEE 802.11-2007 section 17.3.8.6 and modify ACK timeout
+ *	accordingly. This callback is not required and may sleep.
+ *
  * @testmode_cmd: Implement a cfg80211 test mode command.
  *	The callback can sleep.
  *
@@ -1592,6 +1599,7 @@ struct ieee80211_ops {
 			    struct ieee80211_sta *sta, u16 tid, u16 *ssn);
 
 	void (*rfkill_poll)(struct ieee80211_hw *hw);
+	void (*set_coverage_class)(struct ieee80211_hw *hw, u8 coverage_class);
 #ifdef CONFIG_NL80211_TESTMODE
 	int (*testmode_cmd)(struct ieee80211_hw *hw, void *data, int len);
 #endif
@@ -1872,6 +1880,53 @@ static inline struct sk_buff *ieee80211_beacon_get(struct ieee80211_hw *hw,
 {
 	return ieee80211_beacon_get_tim(hw, vif, NULL, NULL);
 }
+
+/**
+ * ieee80211_pspoll_get - retrieve a PS Poll template
+ * @hw: pointer obtained from ieee80211_alloc_hw().
+ * @vif: &struct ieee80211_vif pointer from the add_interface callback.
+ *
+ * Creates a PS Poll a template which can, for example, uploaded to
+ * hardware. The template must be updated after association so that correct
+ * AID, BSSID and MAC address is used.
+ *
+ * Note: Caller (or hardware) is responsible for setting the
+ * &IEEE80211_FCTL_PM bit.
+ */
+struct sk_buff *ieee80211_pspoll_get(struct ieee80211_hw *hw,
+				     struct ieee80211_vif *vif);
+
+/**
+ * ieee80211_nullfunc_get - retrieve a nullfunc template
+ * @hw: pointer obtained from ieee80211_alloc_hw().
+ * @vif: &struct ieee80211_vif pointer from the add_interface callback.
+ *
+ * Creates a Nullfunc template which can, for example, uploaded to
+ * hardware. The template must be updated after association so that correct
+ * BSSID and address is used.
+ *
+ * Note: Caller (or hardware) is responsible for setting the
+ * &IEEE80211_FCTL_PM bit as well as Duration and Sequence Control fields.
+ */
+struct sk_buff *ieee80211_nullfunc_get(struct ieee80211_hw *hw,
+				       struct ieee80211_vif *vif);
+
+/**
+ * ieee80211_probereq_get - retrieve a Probe Request template
+ * @hw: pointer obtained from ieee80211_alloc_hw().
+ * @vif: &struct ieee80211_vif pointer from the add_interface callback.
+ * @ssid: SSID buffer
+ * @ssid_len: length of SSID
+ * @ie: buffer containing all IEs except SSID for the template
+ * @ie_len: length of the IE buffer
+ *
+ * Creates a Probe Request template which can, for example, be uploaded to
+ * hardware.
+ */
+struct sk_buff *ieee80211_probereq_get(struct ieee80211_hw *hw,
+				       struct ieee80211_vif *vif,
+				       const u8 *ssid, size_t ssid_len,
+				       const u8 *ie, size_t ie_len);
 
 /**
  * ieee80211_rts_get - RTS frame generation function
@@ -2292,8 +2347,12 @@ enum rate_control_changed {
  * @short_preamble: whether mac80211 will request short-preamble transmission
  *	if the selected rate supports it
  * @max_rate_idx: user-requested maximum rate (not MCS for now)
+ *	(deprecated; this will be removed once drivers get updated to use
+ *	rate_idx_mask)
+ * @rate_idx_mask: user-requested rate mask (not MCS for now)
  * @skb: the skb that will be transmitted, the control information in it needs
  *	to be filled in
+ * @ap: whether this frame is sent out in AP mode
  */
 struct ieee80211_tx_rate_control {
 	struct ieee80211_hw *hw;
@@ -2303,6 +2362,8 @@ struct ieee80211_tx_rate_control {
 	struct ieee80211_tx_rate reported_rate;
 	bool rts, short_preamble;
 	u8 max_rate_idx;
+	u32 rate_idx_mask;
+	bool ap;
 };
 
 struct rate_control_ops {
