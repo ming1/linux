@@ -585,6 +585,9 @@ static int max_subband_chan(int orig_cur_chan,
 			break;
 		}
 
+		if (triplet->chans.num_channels == 0)
+			return 0;
+
 		/* Monitonically increasing channel order */
 		if (triplet->chans.first_channel <= end_subband_chan)
 			return 0;
@@ -737,10 +740,13 @@ static struct ieee80211_regdomain *country_ie_2_rd(
 			break;
 		}
 
+		if (triplet->chans.num_channels == 0)
+			return NULL;
+
 		/* 2 GHz */
 		if (triplet->chans.first_channel <= 14)
 			end_channel = triplet->chans.first_channel +
-				triplet->chans.num_channels;
+				triplet->chans.num_channels - 1;
 		else
 			/*
 			 * 5 GHz -- For example in country IEs if the first
@@ -863,7 +869,7 @@ static struct ieee80211_regdomain *country_ie_2_rd(
 		/* 2 GHz */
 		if (triplet->chans.first_channel <= 14)
 			end_channel = triplet->chans.first_channel +
-				triplet->chans.num_channels;
+				triplet->chans.num_channels -1;
 		else
 			end_channel =  triplet->chans.first_channel +
 				(4 * (triplet->chans.num_channels - 1));
