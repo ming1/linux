@@ -1789,6 +1789,7 @@ static void ath9k_bss_info_changed(struct ieee80211_hw *hw,
 	struct ath_hw *ah = sc->sc_ah;
 	struct ath_common *common = ath9k_hw_common(ah);
 	struct ath_vif *avp = (void *)vif->drv_priv;
+	int slottime;
 	int error;
 
 	mutex_lock(&sc->mutex);
@@ -1822,6 +1823,25 @@ static void ath9k_bss_info_changed(struct ieee80211_hw *hw,
 		error = ath_beacon_alloc(aphy, vif);
 		if (!error)
 			ath_beacon_config(sc, vif);
+	}
+
+	if (changed & BSS_CHANGED_ERP_SLOT) {
+		if (bss_conf->use_short_slot)
+			slottime = 9;
+		else
+			slottime = 20;
+		if (vif->type == NL80211_IFTYPE_AP) {
+			/*
+			 * Defer update, so that connected stations can adjust
+			 * their settings at the same time.
+			 * See beacon.c for more details
+			 */
+			sc->beacon.slottime = slottime;
+			sc->beacon.updateslot = UPDATE;
+		} else {
+			ah->slottime = slottime;
+			ath9k_hw_init_global_settings(ah);
+		}
 	}
 
 	/* Disable transmission of beacons */
@@ -1994,6 +2014,18 @@ static void ath9k_sw_scan_complete(struct ieee80211_hw *hw)
 	mutex_unlock(&sc->mutex);
 }
 
+static void ath9k_set_coverage_class(struct ieee80211_hw *hw, u8 coverage_class)
+{
+	struct ath_wiphy *aphy = hw->priv;
+	struct ath_softc *sc = aphy->sc;
+	struct ath_hw *ah = sc->sc_ah;
+
+	mutex_lock(&sc->mutex);
+	ah->coverage_class = coverage_class;
+	ath9k_hw_init_global_settings(ah);
+	mutex_unlock(&sc->mutex);
+}
+
 struct ieee80211_ops ath9k_ops = {
 	.tx 		    = ath9k_tx,
 	.start 		    = ath9k_start,
@@ -2013,4 +2045,5 @@ struct ieee80211_ops ath9k_ops = {
 	.sw_scan_start      = ath9k_sw_scan_start,
 	.sw_scan_complete   = ath9k_sw_scan_complete,
 	.rfkill_poll        = ath9k_rfkill_poll_state,
+	.set_coverage_class = ath9k_set_coverage_class,
 };
