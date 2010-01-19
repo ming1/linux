@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- * Copyright(c) 2003 - 2009 Intel Corporation. All rights reserved.
+ * Copyright(c) 2003 - 2010 Intel Corporation. All rights reserved.
  *
  * Portions of this file are derived from the ipw3945 project.
  *
@@ -111,6 +111,7 @@ struct iwl_debugfs {
 		struct dentry *file_clear_traffic_statistics;
 		struct dentry *file_csr;
 		struct dentry *file_ucode_tracing;
+		struct dentry *file_fh_reg;
 	} dbgfs_debug_files;
 	u32 sram_offset;
 	u32 sram_len;

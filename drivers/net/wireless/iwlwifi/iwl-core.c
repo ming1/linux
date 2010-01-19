@@ -2,7 +2,7 @@
  *
  * GPL LICENSE SUMMARY
  *
- * Copyright(c) 2008 - 2009 Intel Corporation. All rights reserved.
+ * Copyright(c) 2008 - 2010 Intel Corporation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of version 2 of the GNU General Public License as
@@ -257,8 +257,8 @@ int iwl_hw_nic_init(struct iwl_priv *priv)
 	spin_lock_irqsave(&priv->lock, flags);
 	priv->cfg->ops->lib->apm_ops.init(priv);
 
-	/* Set interrupt coalescing timer to 512 usecs */
-	iwl_write8(priv, CSR_INT_COALESCING, 512 / 32);
+	/* Set interrupt coalescing calibration timer to default (512 usecs) */
+	iwl_write8(priv, CSR_INT_COALESCING, IWL_HOST_INT_CALIB_TIMEOUT_DEF);
 
 	spin_unlock_irqrestore(&priv->lock, flags);
 
@@ -1353,6 +1353,8 @@ void iwl_irq_handle_error(struct iwl_priv *priv)
 	priv->cfg->ops->lib->dump_nic_error_log(priv);
 	if (priv->cfg->ops->lib->dump_csr)
 		priv->cfg->ops->lib->dump_csr(priv);
+	if (priv->cfg->ops->lib->dump_fh)
+		priv->cfg->ops->lib->dump_fh(priv, NULL, false);
 	priv->cfg->ops->lib->dump_nic_event_log(priv, false, NULL, false);
 #ifdef CONFIG_IWLWIFI_DEBUG
 	if (iwl_get_debug_level(priv) & IWL_DL_FW_ERRORS)
@@ -1802,6 +1804,16 @@ irqreturn_t iwl_isr_ict(int irq, void *data)
 	/* We should not get this value, just ignore it. */
 	if (val == 0xffffffff)
 		val = 0;
+
+	/*
+	 * this is a w/a for a h/w bug. the h/w bug may cause the Rx bit
+	 * (bit 15 before shifting it to 31) to clear when using interrupt
+	 * coalescing. fortunately, bits 18 and 19 stay set when this happens
+	 * so we use them to decide on the real state of the Rx bit.
+	 * In order words, bit 15 is set if bit 18 or bit 19 are set.
+	 */
+	if (val & 0xC0000)
+		val |= 0x8000;
 
 	inta = (0xff & val) | ((0xff00 & val) << 16);
 	IWL_DEBUG_ISR(priv, "ISR inta 0x%08x, enabled 0x%08x ict 0x%08x\n",
@@ -3267,6 +3279,69 @@ void iwl_dump_csr(struct iwl_priv *priv)
 	}
 }
 EXPORT_SYMBOL(iwl_dump_csr);
+
+const static char *get_fh_string(int cmd)
+{
+	switch (cmd) {
+		IWL_CMD(FH_RSCSR_CHNL0_STTS_WPTR_REG);
+		IWL_CMD(FH_RSCSR_CHNL0_RBDCB_BASE_REG);
+		IWL_CMD(FH_RSCSR_CHNL0_WPTR);
+		IWL_CMD(FH_MEM_RCSR_CHNL0_CONFIG_REG);
+		IWL_CMD(FH_MEM_RSSR_SHARED_CTRL_REG);
+		IWL_CMD(FH_MEM_RSSR_RX_STATUS_REG);
+		IWL_CMD(FH_MEM_RSSR_RX_ENABLE_ERR_IRQ2DRV);
+		IWL_CMD(FH_TSSR_TX_STATUS_REG);
+		IWL_CMD(FH_TSSR_TX_ERROR_REG);
+	default:
+		return "UNKNOWN";
+
+	}
+}
+
+int iwl_dump_fh(struct iwl_priv *priv, char **buf, bool display)
+{
+	int i;
+#ifdef CONFIG_IWLWIFI_DEBUG
+	int pos = 0;
+	size_t bufsz = 0;
+#endif
+	u32 fh_tbl[] = {
+		FH_RSCSR_CHNL0_STTS_WPTR_REG,
+		FH_RSCSR_CHNL0_RBDCB_BASE_REG,
+		FH_RSCSR_CHNL0_WPTR,
+		FH_MEM_RCSR_CHNL0_CONFIG_REG,
+		FH_MEM_RSSR_SHARED_CTRL_REG,
+		FH_MEM_RSSR_RX_STATUS_REG,
+		FH_MEM_RSSR_RX_ENABLE_ERR_IRQ2DRV,
+		FH_TSSR_TX_STATUS_REG,
+		FH_TSSR_TX_ERROR_REG
+	};
+#ifdef CONFIG_IWLWIFI_DEBUG
+	if (display) {
+		bufsz = ARRAY_SIZE(fh_tbl) * 48 + 40;
+		*buf = kmalloc(bufsz, GFP_KERNEL);
+		if (!*buf)
+			return -ENOMEM;
+		pos += scnprintf(*buf + pos, bufsz - pos,
+				"FH register values:\n");
+		for (i = 0; i < ARRAY_SIZE(fh_tbl); i++) {
+			pos += scnprintf(*buf + pos, bufsz - pos,
+				"  %34s: 0X%08x\n",
+				get_fh_string(fh_tbl[i]),
+				iwl_read_direct32(priv, fh_tbl[i]));
+		}
+		return pos;
+	}
+#endif
+	IWL_ERR(priv, "FH register values:\n");
+	for (i = 0; i <  ARRAY_SIZE(fh_tbl); i++) {
+		IWL_ERR(priv, "  %34s: 0X%08x\n",
+			get_fh_string(fh_tbl[i]),
+			iwl_read_direct32(priv, fh_tbl[i]));
+	}
+	return 0;
+}
+EXPORT_SYMBOL(iwl_dump_fh);
 
 #ifdef CONFIG_PM
 

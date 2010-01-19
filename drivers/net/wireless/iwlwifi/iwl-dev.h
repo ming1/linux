@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- * Copyright(c) 2003 - 2009 Intel Corporation. All rights reserved.
+ * Copyright(c) 2003 - 2010 Intel Corporation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of version 2 of the GNU General Public License as
@@ -1011,6 +1011,21 @@ struct iwl_event_log {
 	int wraps_more_count;
 };
 
+/*
+ * host interrupt timeout value
+ * used with setting interrupt coalescing timer
+ * the CSR_INT_COALESCING is an 8 bit register in 32-usec unit
+ *
+ * default interrupt coalescing timer is 64 x 32 = 2048 usecs
+ * default interrupt coalescing calibration timer is 16 x 32 = 512 usecs
+ */
+#define IWL_HOST_INT_TIMEOUT_MAX	(0xFF)
+#define IWL_HOST_INT_TIMEOUT_DEF	(0x40)
+#define IWL_HOST_INT_TIMEOUT_MIN	(0x0)
+#define IWL_HOST_INT_CALIB_TIMEOUT_MAX	(0xFF)
+#define IWL_HOST_INT_CALIB_TIMEOUT_DEF	(0x10)
+#define IWL_HOST_INT_CALIB_TIMEOUT_MIN	(0x0)
+
 struct iwl_priv {
 
 	/* ieee device used by generic ieee processing code */
@@ -1162,6 +1177,8 @@ struct iwl_priv {
 	struct iwl_notif_statistics statistics;
 #ifdef CONFIG_IWLWIFI_DEBUG
 	struct iwl_notif_statistics accum_statistics;
+	struct iwl_notif_statistics delta_statistics;
+	struct iwl_notif_statistics max_delta;
 #endif
 
 	/* context information */

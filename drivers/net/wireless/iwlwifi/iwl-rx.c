@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- * Copyright(c) 2003 - 2009 Intel Corporation. All rights reserved.
+ * Copyright(c) 2003 - 2010 Intel Corporation. All rights reserved.
  *
  * Portions of this file are derived from the ipw3945 project, as well
  * as portions of the ieee80211 subsystem header files.
@@ -473,8 +473,8 @@ int iwl_rx_init(struct iwl_priv *priv, struct iwl_rx_queue *rxq)
 			   (rb_timeout << FH_RCSR_RX_CONFIG_REG_IRQ_RBTH_POS)|
 			   (rfdnlog << FH_RCSR_RX_CONFIG_RBDCB_SIZE_POS));
 
-	/* Set interrupt coalescing timer to 64 x 32 = 2048 usecs */
-	iwl_write8(priv, CSR_INT_COALESCING, 0x40);
+	/* Set interrupt coalescing timer to default (2048 usecs) */
+	iwl_write8(priv, CSR_INT_COALESCING, IWL_HOST_INT_TIMEOUT_DEF);
 
 	return 0;
 }
@@ -564,15 +564,24 @@ static void iwl_accumulative_statistics(struct iwl_priv *priv,
 	int i;
 	__le32 *prev_stats;
 	u32 *accum_stats;
+	u32 *delta, *max_delta;
 
 	prev_stats = (__le32 *)&priv->statistics;
 	accum_stats = (u32 *)&priv->accum_statistics;
+	delta = (u32 *)&priv->delta_statistics;
+	max_delta = (u32 *)&priv->max_delta;
 
 	for (i = sizeof(__le32); i < sizeof(struct iwl_notif_statistics);
-	     i += sizeof(__le32), stats++, prev_stats++, accum_stats++)
-		if (le32_to_cpu(*stats) > le32_to_cpu(*prev_stats))
-			*accum_stats += (le32_to_cpu(*stats) -
+	     i += sizeof(__le32), stats++, prev_stats++, delta++,
+	     max_delta++, accum_stats++) {
+		if (le32_to_cpu(*stats) > le32_to_cpu(*prev_stats)) {
+			*delta = (le32_to_cpu(*stats) -
 				le32_to_cpu(*prev_stats));
+			*accum_stats += *delta;
+			if (*delta > *max_delta)
+				*max_delta = *delta;
+		}
+	}
 
 	/* reset accumulative statistics for "no-counter" type statistics */
 	priv->accum_statistics.general.temperature =
@@ -638,10 +647,12 @@ void iwl_reply_statistics(struct iwl_priv *priv,
 	struct iwl_rx_packet *pkt = rxb_addr(rxb);
 
 	if (le32_to_cpu(pkt->u.stats.flag) & UCODE_STATISTICS_CLEAR_MSK) {
-		memset(&priv->statistics, 0,
-			sizeof(struct iwl_notif_statistics));
 #ifdef CONFIG_IWLWIFI_DEBUG
 		memset(&priv->accum_statistics, 0,
+			sizeof(struct iwl_notif_statistics));
+		memset(&priv->delta_statistics, 0,
+			sizeof(struct iwl_notif_statistics));
+		memset(&priv->max_delta, 0,
 			sizeof(struct iwl_notif_statistics));
 #endif
 		IWL_DEBUG_RX(priv, "Statistics have been cleared\n");

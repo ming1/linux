@@ -5,7 +5,7 @@
  *
  * GPL LICENSE SUMMARY
  *
- * Copyright(c) 2005 - 2009 Intel Corporation. All rights reserved.
+ * Copyright(c) 2005 - 2010 Intel Corporation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of version 2 of the GNU General Public License as
@@ -30,7 +30,7 @@
  *
  * BSD LICENSE
  *
- * Copyright(c) 2005 - 2009 Intel Corporation. All rights reserved.
+ * Copyright(c) 2005 - 2010 Intel Corporation. All rights reserved.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -3095,7 +3095,12 @@ struct statistics_general {
 	__le32 ttl_timestamp;
 	struct statistics_div div;
 	__le32 rx_enable_counter;
-	__le32 reserved1;
+	/*
+	 * num_of_sos_states:
+	 *  count the number of times we have to re-tune
+	 *  in order to get out of bad PHY status
+	 */
+	__le32 num_of_sos_states;
 	__le32 reserved2;
 	__le32 reserved3;
 } __attribute__ ((packed));

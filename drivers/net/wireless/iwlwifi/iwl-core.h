@@ -5,7 +5,7 @@
  *
  * GPL LICENSE SUMMARY
  *
- * Copyright(c) 2008 - 2009 Intel Corporation. All rights reserved.
+ * Copyright(c) 2008 - 2010 Intel Corporation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of version 2 of the GNU General Public License as
@@ -30,7 +30,7 @@
  *
  * BSD LICENSE
  *
- * Copyright(c) 2005 - 2009 Intel Corporation. All rights reserved.
+ * Copyright(c) 2005 - 2010 Intel Corporation. All rights reserved.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -71,7 +71,7 @@ struct iwl_cmd;
 
 
 #define IWLWIFI_VERSION "in-tree:"
-#define DRV_COPYRIGHT	"Copyright(c) 2003-2009 Intel Corporation"
+#define DRV_COPYRIGHT	"Copyright(c) 2003-2010 Intel Corporation"
 #define DRV_AUTHOR     "<ilw@linux.intel.com>"
 
 #define IWL_PCI_DEVICE(dev, subdev, cfg) \
@@ -171,6 +171,7 @@ struct iwl_lib_ops {
 				  bool full_log, char **buf, bool display);
 	void (*dump_nic_error_log)(struct iwl_priv *priv);
 	void (*dump_csr)(struct iwl_priv *priv);
+	int (*dump_fh)(struct iwl_priv *priv, char **buf, bool display);
 	int (*set_channel_switch)(struct iwl_priv *priv, u16 channel);
 	/* power management */
 	struct iwl_apm_ops apm_ops;
@@ -582,6 +583,7 @@ void iwl_dump_nic_error_log(struct iwl_priv *priv);
 int iwl_dump_nic_event_log(struct iwl_priv *priv,
 			   bool full_log, char **buf, bool display);
 void iwl_dump_csr(struct iwl_priv *priv);
+int iwl_dump_fh(struct iwl_priv *priv, char **buf, bool display);
 #ifdef CONFIG_IWLWIFI_DEBUG
 void iwl_print_rx_config_cmd(struct iwl_priv *priv);
 #else

@@ -55,6 +55,18 @@ struct nphy_iq_est {
 	u32 q1_pwr;
 };
 
+enum b43_nphy_rf_sequence {
+	B43_RFSEQ_RX2TX,
+	B43_RFSEQ_TX2RX,
+	B43_RFSEQ_RESET2RX,
+	B43_RFSEQ_UPDATE_GAINH,
+	B43_RFSEQ_UPDATE_GAINL,
+	B43_RFSEQ_UPDATE_GAINU,
+};
+
+static void b43_nphy_force_rf_sequence(struct b43_wldev *dev,
+				       enum b43_nphy_rf_sequence seq);
+
 void b43_nphy_set_rxantenna(struct b43_wldev *dev, int antenna)
 {//TODO
 }
@@ -421,7 +433,49 @@ static void b43_nphy_reset_cca(struct b43_wldev *dev)
 	udelay(1);
 	b43_phy_write(dev, B43_NPHY_BBCFG, bbcfg & ~B43_NPHY_BBCFG_RSTCCA);
 	b43_nphy_bmac_clock_fgc(dev, 0);
-	/* TODO: N PHY Force RF Seq with argument 2 */
+	b43_nphy_force_rf_sequence(dev, B43_RFSEQ_RESET2RX);
+}
+
+/* http://bcm-v4.sipsolutions.net/802.11/PHY/N/MIMOConfig */
+static void b43_nphy_update_mimo_config(struct b43_wldev *dev, s32 preamble)
+{
+	u16 mimocfg = b43_phy_read(dev, B43_NPHY_MIMOCFG);
+
+	mimocfg |= B43_NPHY_MIMOCFG_AUTO;
+	if (preamble == 1)
+		mimocfg |= B43_NPHY_MIMOCFG_GFMIX;
+	else
+		mimocfg &= ~B43_NPHY_MIMOCFG_GFMIX;
+
+	b43_phy_write(dev, B43_NPHY_MIMOCFG, mimocfg);
+}
+
+/* http://bcm-v4.sipsolutions.net/802.11/PHY/N/Chains */
+static void b43_nphy_update_txrx_chain(struct b43_wldev *dev)
+{
+	struct b43_phy_n *nphy = dev->phy.n;
+
+	bool override = false;
+	u16 chain = 0x33;
+
+	if (nphy->txrx_chain == 0) {
+		chain = 0x11;
+		override = true;
+	} else if (nphy->txrx_chain == 1) {
+		chain = 0x22;
+		override = true;
+	}
+
+	b43_phy_maskset(dev, B43_NPHY_RFSEQCA,
+			~(B43_NPHY_RFSEQCA_TXEN | B43_NPHY_RFSEQCA_RXEN),
+			chain);
+
+	if (override)
+		b43_phy_set(dev, B43_NPHY_RFSEQMODE,
+				B43_NPHY_RFSEQMODE_CAOVER);
+	else
+		b43_phy_mask(dev, B43_NPHY_RFSEQMODE,
+				~B43_NPHY_RFSEQMODE_CAOVER);
 }
 
 /* http://bcm-v4.sipsolutions.net/802.11/PHY/N/RxIqEst */
@@ -478,6 +532,88 @@ static void b43_nphy_rx_iq_coeffs(struct b43_wldev *dev, bool write,
 		pcomp->a1 = b43_phy_read(dev, B43_NPHY_C2_RXIQ_COMPA1);
 		pcomp->b1 = b43_phy_read(dev, B43_NPHY_C2_RXIQ_COMPB1);
 	}
+}
+
+/* http://bcm-v4.sipsolutions.net/802.11/PHY/N/RxCalPhyCleanup */
+static void b43_nphy_rx_cal_phy_cleanup(struct b43_wldev *dev, u8 core)
+{
+	u16 *regs = dev->phy.n->tx_rx_cal_phy_saveregs;
+
+	b43_phy_write(dev, B43_NPHY_RFSEQCA, regs[0]);
+	if (core == 0) {
+		b43_phy_write(dev, B43_NPHY_AFECTL_C1, regs[1]);
+		b43_phy_write(dev, B43_NPHY_AFECTL_OVER1, regs[2]);
+	} else {
+		b43_phy_write(dev, B43_NPHY_AFECTL_C2, regs[1]);
+		b43_phy_write(dev, B43_NPHY_AFECTL_OVER, regs[2]);
+	}
+	b43_phy_write(dev, B43_NPHY_RFCTL_INTC1, regs[3]);
+	b43_phy_write(dev, B43_NPHY_RFCTL_INTC2, regs[4]);
+	b43_phy_write(dev, B43_NPHY_RFCTL_RSSIO1, regs[5]);
+	b43_phy_write(dev, B43_NPHY_RFCTL_RSSIO2, regs[6]);
+	b43_phy_write(dev, B43_NPHY_TXF_40CO_B1S1, regs[7]);
+	b43_phy_write(dev, B43_NPHY_RFCTL_OVER, regs[8]);
+	b43_phy_write(dev, B43_NPHY_PAPD_EN0, regs[9]);
+	b43_phy_write(dev, B43_NPHY_PAPD_EN1, regs[10]);
+}
+
+/* http://bcm-v4.sipsolutions.net/802.11/PHY/N/RxCalPhySetup */
+static void b43_nphy_rx_cal_phy_setup(struct b43_wldev *dev, u8 core)
+{
+	u8 rxval, txval;
+	u16 *regs = dev->phy.n->tx_rx_cal_phy_saveregs;
+
+	regs[0] = b43_phy_read(dev, B43_NPHY_RFSEQCA);
+	if (core == 0) {
+		regs[1] = b43_phy_read(dev, B43_NPHY_AFECTL_C1);
+		regs[2] = b43_phy_read(dev, B43_NPHY_AFECTL_OVER1);
+	} else {
+		regs[1] = b43_phy_read(dev, B43_NPHY_AFECTL_C2);
+		regs[2] = b43_phy_read(dev, B43_NPHY_AFECTL_OVER);
+	}
+	regs[3] = b43_phy_read(dev, B43_NPHY_RFCTL_INTC1);
+	regs[4] = b43_phy_read(dev, B43_NPHY_RFCTL_INTC2);
+	regs[5] = b43_phy_read(dev, B43_NPHY_RFCTL_RSSIO1);
+	regs[6] = b43_phy_read(dev, B43_NPHY_RFCTL_RSSIO2);
+	regs[7] = b43_phy_read(dev, B43_NPHY_TXF_40CO_B1S1);
+	regs[8] = b43_phy_read(dev, B43_NPHY_RFCTL_OVER);
+	regs[9] = b43_phy_read(dev, B43_NPHY_PAPD_EN0);
+	regs[10] = b43_phy_read(dev, B43_NPHY_PAPD_EN1);
+
+	b43_phy_mask(dev, B43_NPHY_PAPD_EN0, ~0x0001);
+	b43_phy_mask(dev, B43_NPHY_PAPD_EN1, ~0x0001);
+
+	b43_phy_maskset(dev, B43_NPHY_RFSEQCA, (u16)~B43_NPHY_RFSEQCA_RXDIS,
+			((1 - core) << B43_NPHY_RFSEQCA_RXDIS_SHIFT));
+	b43_phy_maskset(dev, B43_NPHY_RFSEQCA, ~B43_NPHY_RFSEQCA_TXEN,
+			((1 - core) << B43_NPHY_RFSEQCA_TXEN_SHIFT));
+	b43_phy_maskset(dev, B43_NPHY_RFSEQCA, ~B43_NPHY_RFSEQCA_RXEN,
+			(core << B43_NPHY_RFSEQCA_RXEN_SHIFT));
+	b43_phy_maskset(dev, B43_NPHY_RFSEQCA, ~B43_NPHY_RFSEQCA_TXDIS,
+			(core << B43_NPHY_RFSEQCA_TXDIS_SHIFT));
+
+	if (core == 0) {
+		b43_phy_mask(dev, B43_NPHY_AFECTL_C1, ~0x0007);
+		b43_phy_set(dev, B43_NPHY_AFECTL_OVER1, 0x0007);
+	} else {
+		b43_phy_mask(dev, B43_NPHY_AFECTL_C2, ~0x0007);
+		b43_phy_set(dev, B43_NPHY_AFECTL_OVER, 0x0007);
+	}
+
+	/* TODO: Call N PHY RF Ctrl Intc Override with 2, 0, 3 as arguments */
+	/* TODO: Call N PHY RF Intc Override with 8, 0, 3, 0 as arguments */
+	b43_nphy_force_rf_sequence(dev, B43_RFSEQ_RX2TX);
+
+	if (core == 0) {
+		rxval = 1;
+		txval = 8;
+	} else {
+		rxval = 4;
+		txval = 2;
+	}
+
+	/* TODO: Call N PHY RF Ctrl Intc Override with 1, rxval, (core + 1) */
+	/* TODO: Call N PHY RF Ctrl Intc Override with 1, txval, (2 - core) */
 }
 
 /* http://bcm-v4.sipsolutions.net/802.11/PHY/N/CalcRxIqComp */
@@ -653,6 +789,33 @@ static void b43_nphy_stay_in_carrier_search(struct b43_wldev *dev, bool enable)
 	}
 }
 
+/* http://bcm-v4.sipsolutions.net/802.11/PHY/N/stop-playback */
+static void b43_nphy_stop_playback(struct b43_wldev *dev)
+{
+	struct b43_phy_n *nphy = dev->phy.n;
+	u16 tmp;
+
+	if (nphy->hang_avoid)
+		b43_nphy_stay_in_carrier_search(dev, 1);
+
+	tmp = b43_phy_read(dev, B43_NPHY_SAMP_STAT);
+	if (tmp & 0x1)
+		b43_phy_set(dev, B43_NPHY_SAMP_CMD, B43_NPHY_SAMP_CMD_STOP);
+	else if (tmp & 0x2)
+		b43_phy_mask(dev, B43_NPHY_IQLOCAL_CMDGCTL, (u16)~0x8000);
+
+	b43_phy_mask(dev, B43_NPHY_SAMP_CMD, ~0x0004);
+
+	if (nphy->bb_mult_save & 0x80000000) {
+		tmp = nphy->bb_mult_save & 0xFFFF;
+		b43_ntab_write(dev, B43_NTAB16(15, 87), tmp);
+		nphy->bb_mult_save = 0;
+	}
+
+	if (nphy->hang_avoid)
+		b43_nphy_stay_in_carrier_search(dev, 0);
+}
+
 /* http://bcm-v4.sipsolutions.net/802.11/PHY/N/TxPwrCtrlCoefSetup */
 static void b43_nphy_tx_pwr_ctrl_coef_setup(struct b43_wldev *dev)
 {
@@ -666,8 +829,7 @@ static void b43_nphy_tx_pwr_ctrl_coef_setup(struct b43_wldev *dev)
 	if (nphy->hang_avoid)
 		b43_nphy_stay_in_carrier_search(dev, true);
 
-	/* TODO: Read an N PHY Table with ID 15, length 7, offset 80,
-		width 16, and data pointer buffer */
+	b43_ntab_read_bulk(dev, B43_NTAB16(15, 80), 7, buffer);
 
 	for (i = 0; i < 2; i++) {
 		tmp = ((buffer[i * 2] & 0x3FF) << 10) |
@@ -720,15 +882,7 @@ static void b43_nphy_tx_pwr_ctrl_coef_setup(struct b43_wldev *dev)
 		b43_nphy_stay_in_carrier_search(dev, false);
 }
 
-enum b43_nphy_rf_sequence {
-	B43_RFSEQ_RX2TX,
-	B43_RFSEQ_TX2RX,
-	B43_RFSEQ_RESET2RX,
-	B43_RFSEQ_UPDATE_GAINH,
-	B43_RFSEQ_UPDATE_GAINL,
-	B43_RFSEQ_UPDATE_GAINU,
-};
-
+/* http://bcm-v4.sipsolutions.net/802.11/PHY/N/ForceRFSeq */
 static void b43_nphy_force_rf_sequence(struct b43_wldev *dev,
 				       enum b43_nphy_rf_sequence seq)
 {
@@ -741,6 +895,7 @@ static void b43_nphy_force_rf_sequence(struct b43_wldev *dev,
 		[B43_RFSEQ_UPDATE_GAINU]	= B43_NPHY_RFSEQTR_UPGU,
 	};
 	int i;
+	u16 seq_mode = b43_phy_read(dev, B43_NPHY_RFSEQMODE);
 
 	B43_WARN_ON(seq >= ARRAY_SIZE(trigger));
 
@@ -754,8 +909,7 @@ static void b43_nphy_force_rf_sequence(struct b43_wldev *dev,
 	}
 	b43err(dev->wl, "RF sequence status timeout\n");
 ok:
-	b43_phy_mask(dev, B43_NPHY_RFSEQMODE,
-		     ~(B43_NPHY_RFSEQMODE_CAOVER | B43_NPHY_RFSEQMODE_TROVER));
+	b43_phy_write(dev, B43_NPHY_RFSEQMODE, seq_mode);
 }
 
 static void b43_nphy_bphy_init(struct b43_wldev *dev)
@@ -1330,13 +1484,11 @@ static void b43_nphy_update_tx_cal_ladder(struct b43_wldev *dev, u16 core)
 	for (i = 0; i < 18; i++) {
 		scale = (ladder_lo[i].percent * tmp) / 100;
 		entry = ((scale & 0xFF) << 8) | ladder_lo[i].g_env;
-		/* TODO: Write an N PHY Table with ID 15, length 1,
-			offset i, width 16, and data entry */
+		b43_ntab_write(dev, B43_NTAB16(15, i), entry);
 
 		scale = (ladder_iq[i].percent * tmp) / 100;
 		entry = ((scale & 0xFF) << 8) | ladder_iq[i].g_env;
-		/* TODO: Write an N PHY Table with ID 15, length 1,
-			offset i + 32, width 16, and data entry */
+		b43_ntab_write(dev, B43_NTAB16(15, i + 32), entry);
 	}
 }
 
@@ -1354,8 +1506,7 @@ static struct nphy_txgains b43_nphy_get_tx_gains(struct b43_wldev *dev)
 
 		if (nphy->hang_avoid)
 			b43_nphy_stay_in_carrier_search(dev, true);
-		/* TODO: Read an N PHY Table with ID 7, length 2,
-			offset 0x110, width 16, and curr_gain */
+		b43_ntab_read_bulk(dev, B43_NTAB16(7, 0x110), 2, curr_gain);
 		if (nphy->hang_avoid)
 			b43_nphy_stay_in_carrier_search(dev, false);
 
@@ -1423,6 +1574,101 @@ static struct nphy_txgains b43_nphy_get_tx_gains(struct b43_wldev *dev)
 	return target;
 }
 
+/* http://bcm-v4.sipsolutions.net/802.11/PHY/N/TxCalPhyCleanup */
+static void b43_nphy_tx_cal_phy_cleanup(struct b43_wldev *dev)
+{
+	u16 *regs = dev->phy.n->tx_rx_cal_phy_saveregs;
+
+	if (dev->phy.rev >= 3) {
+		b43_phy_write(dev, B43_NPHY_AFECTL_C1, regs[0]);
+		b43_phy_write(dev, B43_NPHY_AFECTL_C2, regs[1]);
+		b43_phy_write(dev, B43_NPHY_AFECTL_OVER1, regs[2]);
+		b43_phy_write(dev, B43_NPHY_AFECTL_OVER, regs[3]);
+		b43_phy_write(dev, B43_NPHY_BBCFG, regs[4]);
+		b43_ntab_write(dev, B43_NTAB16(8, 3), regs[5]);
+		b43_ntab_write(dev, B43_NTAB16(8, 19), regs[6]);
+		b43_phy_write(dev, B43_NPHY_RFCTL_INTC1, regs[7]);
+		b43_phy_write(dev, B43_NPHY_RFCTL_INTC2, regs[8]);
+		b43_phy_write(dev, B43_NPHY_PAPD_EN0, regs[9]);
+		b43_phy_write(dev, B43_NPHY_PAPD_EN1, regs[10]);
+		b43_nphy_reset_cca(dev);
+	} else {
+		b43_phy_maskset(dev, B43_NPHY_AFECTL_C1, 0x0FFF, regs[0]);
+		b43_phy_maskset(dev, B43_NPHY_AFECTL_C2, 0x0FFF, regs[1]);
+		b43_phy_write(dev, B43_NPHY_AFECTL_OVER, regs[2]);
+		b43_ntab_write(dev, B43_NTAB16(8, 2), regs[3]);
+		b43_ntab_write(dev, B43_NTAB16(8, 18), regs[4]);
+		b43_phy_write(dev, B43_NPHY_RFCTL_INTC1, regs[5]);
+		b43_phy_write(dev, B43_NPHY_RFCTL_INTC2, regs[6]);
+	}
+}
+
+/* http://bcm-v4.sipsolutions.net/802.11/PHY/N/TxCalPhySetup */
+static void b43_nphy_tx_cal_phy_setup(struct b43_wldev *dev)
+{
+	u16 *regs = dev->phy.n->tx_rx_cal_phy_saveregs;
+	u16 tmp;
+
+	regs[0] = b43_phy_read(dev, B43_NPHY_AFECTL_C1);
+	regs[1] = b43_phy_read(dev, B43_NPHY_AFECTL_C2);
+	if (dev->phy.rev >= 3) {
+		b43_phy_maskset(dev, B43_NPHY_AFECTL_C1, 0xF0FF, 0x0A00);
+		b43_phy_maskset(dev, B43_NPHY_AFECTL_C2, 0xF0FF, 0x0A00);
+
+		tmp = b43_phy_read(dev, B43_NPHY_AFECTL_OVER1);
+		regs[2] = tmp;
+		b43_phy_write(dev, B43_NPHY_AFECTL_OVER1, tmp | 0x0600);
+
+		tmp = b43_phy_read(dev, B43_NPHY_AFECTL_OVER);
+		regs[3] = tmp;
+		b43_phy_write(dev, B43_NPHY_AFECTL_OVER, tmp | 0x0600);
+
+		regs[4] = b43_phy_read(dev, B43_NPHY_BBCFG);
+		b43_phy_mask(dev, B43_NPHY_BBCFG, (u16)~B43_NPHY_BBCFG_RSTRX);
+
+		tmp = b43_ntab_read(dev, B43_NTAB16(8, 3));
+		regs[5] = tmp;
+		b43_ntab_write(dev, B43_NTAB16(8, 3), 0);
+
+		tmp = b43_ntab_read(dev, B43_NTAB16(8, 19));
+		regs[6] = tmp;
+		b43_ntab_write(dev, B43_NTAB16(8, 19), 0);
+		regs[7] = b43_phy_read(dev, B43_NPHY_RFCTL_INTC1);
+		regs[8] = b43_phy_read(dev, B43_NPHY_RFCTL_INTC2);
+
+		/* TODO: Call N PHY RF Ctrl Intc Override with 2, 1, 3 */
+		/* TODO: Call N PHY RF Ctrl Intc Override with 1, 2, 1 */
+		/* TODO: Call N PHY RF Ctrl Intc Override with 1, 8, 2 */
+
+		regs[9] = b43_phy_read(dev, B43_NPHY_PAPD_EN0);
+		regs[10] = b43_phy_read(dev, B43_NPHY_PAPD_EN1);
+		b43_phy_mask(dev, B43_NPHY_PAPD_EN0, ~0x0001);
+		b43_phy_mask(dev, B43_NPHY_PAPD_EN1, ~0x0001);
+	} else {
+		b43_phy_maskset(dev, B43_NPHY_AFECTL_C1, 0x0FFF, 0xA000);
+		b43_phy_maskset(dev, B43_NPHY_AFECTL_C2, 0x0FFF, 0xA000);
+		tmp = b43_phy_read(dev, B43_NPHY_AFECTL_OVER);
+		regs[2] = tmp;
+		b43_phy_write(dev, B43_NPHY_AFECTL_OVER, tmp | 0x3000);
+		tmp = b43_ntab_read(dev, B43_NTAB16(8, 2));
+		regs[3] = tmp;
+		tmp |= 0x2000;
+		b43_ntab_write(dev, B43_NTAB16(8, 2), tmp);
+		tmp = b43_ntab_read(dev, B43_NTAB16(8, 18));
+		regs[4] = tmp;
+		tmp |= 0x2000;
+		b43_ntab_write(dev, B43_NTAB16(8, 18), tmp);
+		regs[5] = b43_phy_read(dev, B43_NPHY_RFCTL_INTC1);
+		regs[6] = b43_phy_read(dev, B43_NPHY_RFCTL_INTC2);
+		if (b43_current_band(dev->wl) == IEEE80211_BAND_5GHZ)
+			tmp = 0x0180;
+		else
+			tmp = 0x0120;
+		b43_phy_write(dev, B43_NPHY_RFCTL_INTC1, tmp);
+		b43_phy_write(dev, B43_NPHY_RFCTL_INTC2, tmp);
+	}
+}
+
 /* http://bcm-v4.sipsolutions.net/802.11/PHY/N/RestoreCal */
 static void b43_nphy_restore_cal(struct b43_wldev *dev)
 {
@@ -1448,8 +1694,7 @@ static void b43_nphy_restore_cal(struct b43_wldev *dev)
 		loft = &nphy->cal_cache.txcal_coeffs_5G[5];
 	}
 
-	/* TODO: Write an N PHY table with ID 15, length 4, offset 80,
-		width 16, and data from table */
+	b43_ntab_write_bulk(dev, B43_NTAB16(15, 80), 4, table);
 
 	for (i = 0; i < 4; i++) {
 		if (dev->phy.rev >= 3)
@@ -1458,12 +1703,9 @@ static void b43_nphy_restore_cal(struct b43_wldev *dev)
 			coef[i] = 0;
 	}
 
-	/* TODO: Write an N PHY table with ID 15, length 4, offset 88,
-		width 16, and data from coef */
-	/* TODO: Write an N PHY table with ID 15, length 2, offset 85,
-		width 16 and data from loft */
-	/* TODO: Write an N PHY table with ID 15, length 2, offset 93,
-		width 16 and data from loft */
+	b43_ntab_write_bulk(dev, B43_NTAB16(15, 88), 4, coef);
+	b43_ntab_write_bulk(dev, B43_NTAB16(15, 85), 2, loft);
+	b43_ntab_write_bulk(dev, B43_NTAB16(15, 93), 2, loft);
 
 	if (dev->phy.rev < 2)
 		b43_nphy_tx_iq_workaround(dev);
@@ -1524,18 +1766,17 @@ static int b43_nphy_cal_tx_iq_lo(struct b43_wldev *dev,
 		nphy->hang_avoid = 0;
 	}
 
-	/* TODO: Read an N PHY Table with ID 7, length 2, offset 0x110,
-		width 16, and data pointer save */
+	b43_ntab_read_bulk(dev, B43_NTAB16(7, 0x110), 2, save);
 
 	for (i = 0; i < 2; i++) {
 		b43_nphy_iq_cal_gain_params(dev, i, target, &params[i]);
 		gain[i] = params[i].cal_gain;
 	}
-	/* TODO: Write an N PHY Table with ID 7, length 2, offset 0x110,
-		width 16, and data pointer gain */
+
+	b43_ntab_write_bulk(dev, B43_NTAB16(7, 0x110), 2, gain);
 
 	b43_nphy_tx_cal_radio_setup(dev);
-	/* TODO: Call N PHY TX Cal PHY Setup */
+	b43_nphy_tx_cal_phy_setup(dev);
 
 	phy6or5x = dev->phy.rev >= 6 ||
 		(dev->phy.rev == 5 && nphy->ipa2g_on &&
@@ -1582,8 +1823,7 @@ static int b43_nphy_cal_tx_iq_lo(struct b43_wldev *dev,
 			}
 		}
 
-		/* TODO: Write an N PHY Table with ID 15, length from above,
-			offset 64, width 16, and the data pointer from above */
+		b43_ntab_write_bulk(dev, B43_NTAB16(15, 64), length, table);
 
 		if (full) {
 			if (dev->phy.rev >= 3)
@@ -1631,14 +1871,12 @@ static int b43_nphy_cal_tx_iq_lo(struct b43_wldev *dev,
 			b43_phy_write(dev, B43_NPHY_IQLOCAL_CMDNNUM, tmp);
 
 			if (type == 1 || type == 3 || type == 4) {
-				/* TODO: Read an N PHY Table with ID 15,
-					length 1, offset 69 + core,
-					width 16, and data pointer buffer */
+				buffer[0] = b43_ntab_read(dev,
+						B43_NTAB16(15, 69 + core));
 				diq_start = buffer[0];
 				buffer[0] = 0;
-				/* TODO: Write an N PHY Table with ID 15,
-					length 1, offset 69 + core, width 16,
-					and data of 0 */
+				b43_ntab_write(dev, B43_NTAB16(15, 69 + core),
+						0);
 			}
 
 			b43_phy_write(dev, B43_NPHY_IQLOCAL_CMD, cmd);
@@ -1649,12 +1887,10 @@ static int b43_nphy_cal_tx_iq_lo(struct b43_wldev *dev,
 				udelay(10);
 			}
 
-			/* TODO: Read an N PHY Table with ID 15,
-				length table_length, offset 96, width 16,
-				and data pointer buffer */
-			/* TODO: Write an N PHY Table with ID 15,
-				length table_length, offset 64, width 16,
-				and data pointer buffer */
+			b43_ntab_read_bulk(dev, B43_NTAB16(15, 96), length,
+						buffer);
+			b43_ntab_write_bulk(dev, B43_NTAB16(15, 64), length,
+						buffer);
 
 			if (type == 1 || type == 3 || type == 4)
 				buffer[0] = diq_start;
@@ -1666,30 +1902,27 @@ static int b43_nphy_cal_tx_iq_lo(struct b43_wldev *dev,
 		last = (dev->phy.rev < 3) ? 6 : 7;
 
 		if (!mphase || nphy->mphase_cal_phase_id == last) {
-			/* TODO: Write an N PHY Table with ID 15, length 4,
-				offset 96, width 16, and data pointer buffer */
-			/* TODO: Read an N PHY Table with ID 15, length 4,
-				offset 80, width 16, and data pointer buffer */
+			b43_ntab_write_bulk(dev, B43_NTAB16(15, 96), 4, buffer);
+			b43_ntab_read_bulk(dev, B43_NTAB16(15, 80), 4, buffer);
 			if (dev->phy.rev < 3) {
 				buffer[0] = 0;
 				buffer[1] = 0;
 				buffer[2] = 0;
 				buffer[3] = 0;
 			}
-			/* TODO: Write an N PHY Table with ID 15, length 4,
-				offset 88, width 16, and data pointer buffer */
-			/* TODO: Read an N PHY Table with ID 15, length 2,
-				offset 101, width 16, and data pointer buffer*/
-			/* TODO: Write an N PHY Table with ID 15, length 2,
-				offset 85, width 16, and data pointer buffer */
-			/* TODO: Write an N PHY Table with ID 15, length 2,
-				offset 93, width 16, and data pointer buffer */
+			b43_ntab_write_bulk(dev, B43_NTAB16(15, 88), 4,
+						buffer);
+			b43_ntab_write_bulk(dev, B43_NTAB16(15, 101), 2,
+						buffer);
+			b43_ntab_write_bulk(dev, B43_NTAB16(15, 85), 2,
+						buffer);
+			b43_ntab_write_bulk(dev, B43_NTAB16(15, 93), 2,
+						buffer);
 			length = 11;
 			if (dev->phy.rev < 3)
 				length -= 2;
-			/* TODO: Read an N PHY Table with ID 15, length length,
-				offset 96, width 16, and data pointer
-				nphy->txiqlocal_bestc */
+			b43_ntab_read_bulk(dev, B43_NTAB16(15, 96), length,
+						nphy->txiqlocal_bestc);
 			nphy->txiqlocal_coeffsvalid = true;
 			/* TODO: Set nphy->txiqlocal_chanspec to
 				the current channel */
@@ -1697,18 +1930,16 @@ static int b43_nphy_cal_tx_iq_lo(struct b43_wldev *dev,
 			length = 11;
 			if (dev->phy.rev < 3)
 				length -= 2;
-			/* TODO: Read an N PHY Table with ID 5, length length,
-				offset 96, width 16, and data pointer
-				nphy->mphase_txcal_bestcoeffs */
+			b43_ntab_read_bulk(dev, B43_NTAB16(15, 96), length,
+						nphy->mphase_txcal_bestcoeffs);
 		}
 
-		/* TODO: Call N PHY Stop Playback */
+		b43_nphy_stop_playback(dev);
 		b43_phy_write(dev, B43_NPHY_IQLOCAL_CMDGCTL, 0);
 	}
 
-	/* TODO: Call N PHY TX Cal PHY Cleanup */
-	/* TODO: Write an N PHY Table with ID 7, length 2, offset 0x110,
-		width 16, and data from save */
+	b43_nphy_tx_cal_phy_cleanup(dev);
+	b43_ntab_write_bulk(dev, B43_NTAB16(7, 0x110), 2, save);
 
 	if (dev->phy.rev < 2 && (!mphase || nphy->mphase_cal_phase_id == last))
 		b43_nphy_tx_iq_workaround(dev);
@@ -1739,7 +1970,7 @@ static int b43_nphy_rev2_cal_rx_iq(struct b43_wldev *dev,
 	u16 lna[3] = { 3, 3, 1 };
 	u16 hpf1[3] = { 7, 2, 0 };
 	u16 hpf2[3] = { 2, 0, 0 };
-	u32 power[3];
+	u32 power[3] = { };
 	u16 gain_save[2];
 	u16 cal_gain[2];
 	struct nphy_iqcal_params cal_params[2];
@@ -1752,14 +1983,12 @@ static int b43_nphy_rev2_cal_rx_iq(struct b43_wldev *dev,
 
 	if (dev->phy.rev < 2)
 		;/* TODO: Call N PHY Reapply TX Cal Coeffs */
-	/* TODO: Read an N PHY Table with ID 7, length 2, offset 0x110,
-		width 16, and data gain_save */
+	b43_ntab_read_bulk(dev, B43_NTAB16(7, 0x110), 2, gain_save);
 	for (i = 0; i < 2; i++) {
 		b43_nphy_iq_cal_gain_params(dev, i, target, &cal_params[i]);
 		cal_gain[i] = cal_params[i].cal_gain;
 	}
-	/* TODO: Write an N PHY Table with ID 7, length 2, offset 0x110,
-		width 16, and data from cal_gain */
+	b43_ntab_write_bulk(dev, B43_NTAB16(7, 0x110), 2, cal_gain);
 
 	for (i = 0; i < 2; i++) {
 		if (i == 0) {
@@ -1848,8 +2077,8 @@ static int b43_nphy_rev2_cal_rx_iq(struct b43_wldev *dev,
 					(cur_lna << 2));
 			/* TODO:Call N PHY RF Ctrl Override with 0x400, tmp[0],
 				3, 0 as arguments */
-			/* TODO: Call N PHY Force RF Seq with 2 as argument */
-			/* TODO: Call N PHT Stop Playback */
+			b43_nphy_force_rf_sequence(dev, B43_RFSEQ_RESET2RX);
+			b43_nphy_stop_playback(dev);
 
 			if (playtone) {
 				/* TODO: Call N PHY TX Tone with 4000,
@@ -1876,7 +2105,7 @@ static int b43_nphy_rev2_cal_rx_iq(struct b43_wldev *dev,
 				} else {
 					b43_nphy_calc_rx_iq_comp(dev, 1 << i);
 				}
-				/* TODO: Call N PHY Stop Playback */
+				b43_nphy_stop_playback(dev);
 			}
 
 			if (ret != 0)
@@ -1896,9 +2125,8 @@ static int b43_nphy_rev2_cal_rx_iq(struct b43_wldev *dev,
 	}
 
 	/* TODO: Call N PHY RF Ctrl Override with 0x400, 0, 3, 1 as arguments*/
-	/* TODO: Call N PHY Force RF Seq with 2 as argument */
-	/* TODO: Write an N PHY Table with ID 7, length 2, offset 0x110,
-		width 16, and data from gain_save */
+	b43_nphy_force_rf_sequence(dev, B43_RFSEQ_RESET2RX);
+	b43_ntab_write_bulk(dev, B43_NTAB16(7, 0x110), 2, gain_save);
 
 	b43_nphy_stay_in_carrier_search(dev, 0);
 
@@ -1990,8 +2218,8 @@ int b43_phy_initn(struct b43_wldev *dev)
 	b43_phy_write(dev, B43_NPHY_PLOAD_CSENSE_EXTLEN, 0x50);
 	b43_phy_write(dev, B43_NPHY_TXRIFS_FRDEL, 0x30);
 
-	/* TODO MIMO-Config */
-	/* TODO Update TX/RX chain */
+	b43_nphy_update_mimo_config(dev, nphy->preamble_override);
+	b43_nphy_update_txrx_chain(dev);
 
 	if (phy->rev < 2) {
 		b43_phy_write(dev, B43_NPHY_DUP40_GFBL, 0xAA8);
@@ -2040,8 +2268,10 @@ int b43_phy_initn(struct b43_wldev *dev)
 	if (phy->rev >= 3) {
 		/* TODO */
 	} else {
-		/* TODO Write an N PHY table with ID 26, length 128, offset 192, width 32, and the data from Rev 2 TX Power Control Table */
-		/* TODO Write an N PHY table with ID 27, length 128, offset 192, width 32, and the data from Rev 2 TX Power Control Table */
+		b43_ntab_write_bulk(dev, B43_NTAB32(26, 192), 128,
+					b43_ntab_tx_gain_rev0_1_2);
+		b43_ntab_write_bulk(dev, B43_NTAB32(27, 192), 128,
+					b43_ntab_tx_gain_rev0_1_2);
 	}
 
 	if (nphy->phyrxchain != 3)
