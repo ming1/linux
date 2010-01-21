@@ -145,7 +145,8 @@ static int omap_wdt_open(struct inode *inode, struct file *file)
 	if (test_and_set_bit(1, (unsigned long *)&(wdev->omap_wdt_users)))
 		return -EBUSY;
 
-	clk_enable(wdev->ick);    /* Enable the interface clock */
+	if (!cpu_is_omap44xx())
+		clk_enable(wdev->ick);    /* Enable the interface clock */
 	clk_enable(wdev->fck);    /* Enable the functional clock */
 
 	/* initialize prescaler */
@@ -176,7 +177,8 @@ static int omap_wdt_release(struct inode *inode, struct file *file)
 
 	omap_wdt_disable(wdev);
 
-	clk_disable(wdev->ick);
+	if (!cpu_is_omap44xx())
+		clk_disable(wdev->ick);
 	clk_disable(wdev->fck);
 #else
 	printk(KERN_CRIT "omap_wdt: Unexpected close, not stopping!\n");
@@ -292,11 +294,13 @@ static int __devinit omap_wdt_probe(struct platform_device *pdev)
 	wdev->omap_wdt_users = 0;
 	wdev->mem = mem;
 
-	wdev->ick = clk_get(&pdev->dev, "ick");
-	if (IS_ERR(wdev->ick)) {
-		ret = PTR_ERR(wdev->ick);
-		wdev->ick = NULL;
-		goto err_clk;
+	if (!cpu_is_omap44xx()) {
+		wdev->ick = clk_get(&pdev->dev, "ick");
+		if (IS_ERR(wdev->ick)) {
+			ret = PTR_ERR(wdev->ick);
+			wdev->ick = NULL;
+			goto err_clk;
+		}
 	}
 	wdev->fck = clk_get(&pdev->dev, "fck");
 	if (IS_ERR(wdev->fck)) {
@@ -313,7 +317,8 @@ static int __devinit omap_wdt_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, wdev);
 
-	clk_enable(wdev->ick);
+	if (!cpu_is_omap44xx())
+		clk_enable(wdev->ick);
 	clk_enable(wdev->fck);
 
 	omap_wdt_disable(wdev);
@@ -335,7 +340,8 @@ static int __devinit omap_wdt_probe(struct platform_device *pdev)
 	/* autogate OCP interface clock */
 	__raw_writel(0x01, wdev->base + OMAP_WATCHDOG_SYS_CONFIG);
 
-	clk_disable(wdev->ick);
+	if (!cpu_is_omap44xx())
+		clk_disable(wdev->ick);
 	clk_disable(wdev->fck);
 
 	omap_wdt_dev = pdev;
@@ -350,8 +356,9 @@ err_ioremap:
 	wdev->base = NULL;
 
 err_clk:
-	if (wdev->ick)
-		clk_put(wdev->ick);
+	if (!cpu_is_omap44xx())
+		if (wdev->ick)
+			clk_put(wdev->ick);
 	if (wdev->fck)
 		clk_put(wdev->fck);
 	kfree(wdev);
@@ -385,7 +392,8 @@ static int __devexit omap_wdt_remove(struct platform_device *pdev)
 	release_mem_region(res->start, resource_size(res));
 	platform_set_drvdata(pdev, NULL);
 
-	clk_put(wdev->ick);
+	if (!cpu_is_omap44xx())
+		clk_put(wdev->ick);
 	clk_put(wdev->fck);
 	iounmap(wdev->base);
 
