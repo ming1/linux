@@ -1286,11 +1286,13 @@ static int __devinit omap_mcbsp_probe(struct platform_device *pdev)
 	mcbsp->dma_rx_sync = pdata->dma_rx_sync;
 	mcbsp->dma_tx_sync = pdata->dma_tx_sync;
 
-	mcbsp->iclk = clk_get(&pdev->dev, "ick");
-	if (IS_ERR(mcbsp->iclk)) {
-		ret = PTR_ERR(mcbsp->iclk);
-		dev_err(&pdev->dev, "unable to get ick: %d\n", ret);
-		goto err_iclk;
+	if (!cpu_is_omap44xx()) {
+		mcbsp->iclk = clk_get(&pdev->dev, "ick");
+		if (IS_ERR(mcbsp->iclk)) {
+			ret = PTR_ERR(mcbsp->iclk);
+			dev_err(&pdev->dev, "unable to get ick: %d\n", ret);
+			goto err_iclk;
+		}
 	}
 
 	mcbsp->fclk = clk_get(&pdev->dev, "fck");
