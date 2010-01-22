@@ -45,7 +45,7 @@ endif
 # PRCM
 obj-$(CONFIG_ARCH_OMAP2)		+= cm.o
 obj-$(CONFIG_ARCH_OMAP3)		+= cm.o
-obj-$(CONFIG_ARCH_OMAP4)		+= cm4xxx.o voltage.o opp4xxx.o cpuidle44xx.o
+obj-$(CONFIG_ARCH_OMAP4)		+= cm4xxx.o voltage.o opp4xxx.o cpuidle44xx.o pm44xx.o
 
 # Clock framework
 obj-$(CONFIG_ARCH_OMAP2)		+= clock2xxx.o clock2xxx_data.o
