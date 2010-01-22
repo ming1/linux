@@ -844,8 +844,10 @@ static void rx_tkip_phase1_write(struct b43_wldev *dev, u8 index, u32 iv32,
 }
 
 static void b43_op_update_tkip_key(struct ieee80211_hw *hw,
-			struct ieee80211_key_conf *keyconf, const u8 *addr,
-			u32 iv32, u16 *phase1key)
+				   struct ieee80211_vif *vif,
+				   struct ieee80211_key_conf *keyconf,
+				   struct ieee80211_sta *sta,
+				   u32 iv32, u16 *phase1key)
 {
 	struct b43_wl *wl = hw_to_b43_wl(hw);
 	struct b43_wldev *dev;
@@ -863,7 +865,10 @@ static void b43_op_update_tkip_key(struct ieee80211_hw *hw,
 	keymac_write(dev, index, NULL);	/* First zero out mac to avoid race */
 
 	rx_tkip_phase1_write(dev, index, iv32, phase1key);
-	keymac_write(dev, index, addr);
+	/* only pairwise TKIP keys are supported right now */
+	if (WARN_ON(!sta))
+		goto out_unlock;
+	keymac_write(dev, index, sta->addr);
 
 out_unlock:
 	mutex_unlock(&wl->mutex);
@@ -3570,6 +3575,12 @@ static int b43_op_config(struct ieee80211_hw *hw, u32 changed)
 		goto out_unlock_mutex;
 	dev = wl->current_dev;
 	phy = &dev->phy;
+
+	if (conf_is_ht(conf))
+		phy->is_40mhz =
+			(conf_is_ht40_minus(conf) || conf_is_ht40_plus(conf));
+	else
+		phy->is_40mhz = false;
 
 	b43_mac_suspend(dev);
 
