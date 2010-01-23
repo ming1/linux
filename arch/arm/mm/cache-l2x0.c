@@ -43,7 +43,7 @@ static void debug_writel(unsigned long val)
 		"dsb\n"
 		"smc\n"
 		: : "r" (r0)
-		: "r4", "r5", "r10", "r12", "lr");
+		: "r4", "r5", "r6", "r7", "r8");
 }
 #endif
 
