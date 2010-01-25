@@ -140,6 +140,7 @@ static struct iwl_lib_ops iwl1000_lib = {
 		.temperature = iwl5000_temperature,
 		.set_ct_kill = iwl1000_set_ct_threshold,
 	 },
+	.add_bcast_station = iwl_add_bcast_station,
 };
 
 static const struct iwl_ops iwl1000_ops = {
@@ -175,6 +176,7 @@ struct iwl_cfg iwl1000_bgn_cfg = {
 	.use_rts_for_ht = true, /* use rts/cts protection */
 	.chain_noise_num_beacons = IWL_CAL_NUM_BEACONS,
 	.support_ct_kill_exit = true,
+	.plcp_delta_threshold = IWL_MAX_PLCP_ERR_THRESHOLD_DEF,
 };
 
 struct iwl_cfg iwl1000_bg_cfg = {
@@ -201,6 +203,7 @@ struct iwl_cfg iwl1000_bg_cfg = {
 	.led_compensation = 51,
 	.chain_noise_num_beacons = IWL_CAL_NUM_BEACONS,
 	.support_ct_kill_exit = true,
+	.plcp_delta_threshold = IWL_MAX_PLCP_ERR_THRESHOLD_DEF,
 };
 
 MODULE_FIRMWARE(IWL1000_MODULE_FIRMWARE(IWL1000_UCODE_API_MAX));

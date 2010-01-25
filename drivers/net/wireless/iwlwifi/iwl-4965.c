@@ -2206,6 +2206,7 @@ static struct iwl_lib_ops iwl4965_lib = {
 		.temperature = iwl4965_temperature_calib,
 		.set_ct_kill = iwl4965_set_ct_threshold,
 	},
+	.add_bcast_station = iwl_add_bcast_station,
 };
 
 static const struct iwl_ops iwl4965_ops = {
@@ -2239,6 +2240,7 @@ struct iwl_cfg iwl4965_agn_cfg = {
 	.broken_powersave = true,
 	.led_compensation = 61,
 	.chain_noise_num_beacons = IWL4965_CAL_NUM_BEACONS,
+	.plcp_delta_threshold = IWL_MAX_PLCP_ERR_THRESHOLD_DEF,
 };
 
 /* Module firmware */

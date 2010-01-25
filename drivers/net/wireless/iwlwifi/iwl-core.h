@@ -188,6 +188,8 @@ struct iwl_lib_ops {
 
 	/* temperature */
 	struct iwl_temp_ops temp_ops;
+	/* station management */
+	void (*add_bcast_station)(struct iwl_priv *priv);
 };
 
 struct iwl_led_ops {
@@ -232,6 +234,8 @@ struct iwl_mod_params {
  * @adv_thermal_throttle: support advance thermal throttle
  * @support_ct_kill_exit: support ct kill exit condition
  * @support_wimax_coexist: support wimax/wifi co-exist
+ * @plcp_delta_threshold: plcp error rate threshold used to trigger
+ *	radio tuning when there is a high receiving plcp error rate
  *
  * We enable the driver to be backward compatible wrt API version. The
  * driver specifies which APIs it supports (with @ucode_api_max being the
@@ -288,6 +292,7 @@ struct iwl_cfg {
 	bool adv_thermal_throttle;
 	bool support_ct_kill_exit;
 	const bool support_wimax_coexist;
+	u8 plcp_delta_threshold;
 };
 
 /***************************
@@ -424,6 +429,8 @@ int iwl_tx_queue_reclaim(struct iwl_priv *priv, int txq_id, int index);
 /* Handlers */
 void iwl_rx_missed_beacon_notif(struct iwl_priv *priv,
 			       struct iwl_rx_mem_buffer *rxb);
+void iwl_rx_spectrum_measure_notif(struct iwl_priv *priv,
+					  struct iwl_rx_mem_buffer *rxb);
 void iwl_rx_statistics(struct iwl_priv *priv,
 			      struct iwl_rx_mem_buffer *rxb);
 void iwl_reply_statistics(struct iwl_priv *priv,
@@ -494,6 +501,8 @@ void iwl_init_scan_params(struct iwl_priv *priv);
 int iwl_scan_cancel(struct iwl_priv *priv);
 int iwl_scan_cancel_timeout(struct iwl_priv *priv, unsigned long ms);
 int iwl_mac_hw_scan(struct ieee80211_hw *hw, struct cfg80211_scan_request *req);
+int iwl_internal_short_hw_scan(struct iwl_priv *priv);
+void iwl_force_rf_reset(struct iwl_priv *priv);
 u16 iwl_fill_probe_req(struct iwl_priv *priv, struct ieee80211_mgmt *frame,
 		       const u8 *ie, int ie_len, int left);
 void iwl_setup_rx_scan_handlers(struct iwl_priv *priv);
@@ -524,14 +533,6 @@ int iwl_send_calib_results(struct iwl_priv *priv);
 int iwl_calib_set(struct iwl_calib_result *res, const u8 *buf, int len);
 void iwl_calib_free_results(struct iwl_priv *priv);
 
-/*******************************************************************************
- * Spectrum Measureemtns in  iwl-spectrum.c
- ******************************************************************************/
-#ifdef CONFIG_IWLWIFI_SPECTRUM_MEASUREMENT
-void iwl_setup_spectrum_handlers(struct iwl_priv *priv);
-#else
-static inline void iwl_setup_spectrum_handlers(struct iwl_priv *priv) {}
-#endif
 /*****************************************************
  *   S e n d i n g     H o s t     C o m m a n d s   *
  *****************************************************/

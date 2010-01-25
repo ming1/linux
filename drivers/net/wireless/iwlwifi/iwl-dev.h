@@ -1026,6 +1026,15 @@ struct iwl_event_log {
 #define IWL_HOST_INT_CALIB_TIMEOUT_DEF	(0x10)
 #define IWL_HOST_INT_CALIB_TIMEOUT_MIN	(0x0)
 
+/*
+ * This is the threshold value of plcp error rate per 100mSecs.  It is
+ * used to set and check for the validity of plcp_delta.
+ */
+#define IWL_MAX_PLCP_ERR_THRESHOLD_MIN	(0)
+#define IWL_MAX_PLCP_ERR_THRESHOLD_DEF	(50)
+#define IWL_MAX_PLCP_ERR_LONG_THRESHOLD_DEF	(100)
+#define IWL_MAX_PLCP_ERR_THRESHOLD_MAX	(255)
+
 struct iwl_priv {
 
 	/* ieee device used by generic ieee processing code */
@@ -1046,13 +1055,16 @@ struct iwl_priv {
 
 	struct ieee80211_supported_band bands[IEEE80211_NUM_BANDS];
 
-#if defined(CONFIG_IWLWIFI_SPECTRUM_MEASUREMENT) || defined(CONFIG_IWL3945_SPECTRUM_MEASUREMENT)
 	/* spectrum measurement report caching */
 	struct iwl_spectrum_notification measure_report;
 	u8 measurement_status;
-#endif
+
 	/* ucode beacon time */
 	u32 ucode_beacon_time;
+	int missed_beacon_threshold;
+
+	/* storing the jiffies when the plcp error rate is received */
+	unsigned long plcp_jiffies;
 
 	/* we allocate array of iwl4965_channel_info for NIC's valid channels.
 	 *    Access via channel # using indirect index array */
@@ -1071,14 +1083,15 @@ struct iwl_priv {
 	struct iwl_calib_result calib_results[IWL_CALIB_MAX];
 
 	/* Scan related variables */
-	unsigned long last_scan_jiffies;
 	unsigned long next_scan_jiffies;
 	unsigned long scan_start;
 	unsigned long scan_pass_start;
 	unsigned long scan_start_tsf;
+	unsigned long last_internal_scan_jiffies;
 	void *scan;
 	int scan_bands;
 	struct cfg80211_scan_request *scan_request;
+	bool is_internal_short_scan;
 	u8 scan_tx_ant[IEEE80211_NUM_BANDS];
 	u8 mgmt_tx_ant;
 
@@ -1295,7 +1308,8 @@ struct iwl_priv {
 	u16 rx_traffic_idx;
 	u8 *tx_traffic;
 	u8 *rx_traffic;
-	struct iwl_debugfs *dbgfs;
+	struct dentry *debugfs_dir;
+	u32 dbgfs_sram_offset, dbgfs_sram_len;
 #endif /* CONFIG_IWLWIFI_DEBUGFS */
 #endif /* CONFIG_IWLWIFI_DEBUG */
 

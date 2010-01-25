@@ -73,13 +73,7 @@
 #define VD
 #endif
 
-#ifdef CONFIG_IWLWIFI_SPECTRUM_MEASUREMENT
-#define VS "s"
-#else
-#define VS
-#endif
-
-#define DRV_VERSION     IWLWIFI_VERSION VD VS
+#define DRV_VERSION     IWLWIFI_VERSION VD
 
 
 MODULE_DESCRIPTION(DRV_DESCRIPTION);
@@ -203,7 +197,8 @@ int iwl_commit_rxon(struct iwl_priv *priv)
 	priv->start_calib = 0;
 
 	/* Add the broadcast address so we can send broadcast frames */
-	iwl_add_bcast_station(priv);
+	priv->cfg->ops->lib->add_bcast_station(priv);
+
 
 	/* If we have set the ASSOC_MSK and we are in BSS mode then
 	 * add the IWL_AP_ID to the station rate table */
@@ -704,7 +699,7 @@ static void iwl_print_cont_event_trace(struct iwl_priv *priv, u32 base,
 	spin_unlock_irqrestore(&priv->reg_lock, reg_flags);
 }
 
-void iwl_continuous_event_trace(struct iwl_priv *priv)
+static void iwl_continuous_event_trace(struct iwl_priv *priv)
 {
 	u32 capacity;   /* event log capacity in # entries */
 	u32 base;       /* SRAM byte address of event log header */
@@ -888,6 +883,8 @@ static void iwl_setup_rx_handlers(struct iwl_priv *priv)
 	priv->rx_handlers[REPLY_ALIVE] = iwl_rx_reply_alive;
 	priv->rx_handlers[REPLY_ERROR] = iwl_rx_reply_error;
 	priv->rx_handlers[CHANNEL_SWITCH_NOTIFICATION] = iwl_rx_csa;
+	priv->rx_handlers[SPECTRUM_MEASURE_NOTIFICATION] =
+			iwl_rx_spectrum_measure_notif;
 	priv->rx_handlers[PM_SLEEP_NOTIFICATION] = iwl_rx_pm_sleep_notif;
 	priv->rx_handlers[PM_DEBUG_STATISTIC_NOTIFIC] =
 	    iwl_rx_pm_debug_statistics_notif;
@@ -901,7 +898,6 @@ static void iwl_setup_rx_handlers(struct iwl_priv *priv)
 	priv->rx_handlers[REPLY_STATISTICS_CMD] = iwl_reply_statistics;
 	priv->rx_handlers[STATISTICS_NOTIFICATION] = iwl_rx_statistics;
 
-	iwl_setup_spectrum_handlers(priv);
 	iwl_setup_rx_scan_handlers(priv);
 
 	/* status change handler */
@@ -2607,7 +2603,7 @@ void iwl_post_associate(struct iwl_priv *priv)
  * Not a mac80211 entry point function, but it fits in with all the
  * other mac80211 functions grouped here.
  */
-static int iwl_setup_mac(struct iwl_priv *priv)
+static int iwl_mac_setup_register(struct iwl_priv *priv)
 {
 	int ret;
 	struct ieee80211_hw *hw = priv->hw;
@@ -3372,6 +3368,7 @@ static int iwl_init_drv(struct iwl_priv *priv)
 
 	priv->iw_mode = NL80211_IFTYPE_STATION;
 	priv->current_ht_config.smps = IEEE80211_SMPS_STATIC;
+	priv->missed_beacon_threshold = IWL_MISSED_BEACON_THRESHOLD_DEF;
 
 	/* Choose which receivers/antennas to use */
 	if (priv->cfg->ops->hcmd->set_rxon_chain)
@@ -3623,9 +3620,9 @@ static int iwl_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	iwl_setup_deferred_work(priv);
 	iwl_setup_rx_handlers(priv);
 
-	/**********************************
-	 * 8. Setup and register mac80211
-	 **********************************/
+	/*********************************************
+	 * 8. Enable interrupts and read RFKILL state
+	 *********************************************/
 
 	/* enable interrupts if needed: hw bug w/a */
 	pci_read_config_word(priv->pci_dev, PCI_COMMAND, &pci_cmd);
@@ -3635,14 +3632,6 @@ static int iwl_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	}
 
 	iwl_enable_interrupts(priv);
-
-	err = iwl_setup_mac(priv);
-	if (err)
-		goto out_remove_sysfs;
-
-	err = iwl_dbgfs_register(priv, DRV_NAME);
-	if (err)
-		IWL_ERR(priv, "failed to create debugfs files. Ignoring error: %d\n", err);
 
 	/* If platform's RF_KILL switch is NOT set to KILL */
 	if (iwl_read32(priv, CSR_GP_CNTRL) & CSR_GP_CNTRL_REG_FLAG_HW_RF_KILL_SW)
@@ -3655,6 +3644,18 @@ static int iwl_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	iwl_power_initialize(priv);
 	iwl_tt_initialize(priv);
+
+	/**************************************************
+	 * 9. Setup and register with mac80211 and debugfs
+	 **************************************************/
+	err = iwl_mac_setup_register(priv);
+	if (err)
+		goto out_remove_sysfs;
+
+	err = iwl_dbgfs_register(priv, DRV_NAME);
+	if (err)
+		IWL_ERR(priv, "failed to create debugfs files. Ignoring error: %d\n", err);
+
 	return 0;
 
  out_remove_sysfs:
