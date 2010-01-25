@@ -48,6 +48,7 @@
 #include "omap_hwmod_2420.h"
 #include "omap_hwmod_2430.h"
 #include "omap_hwmod_34xx.h"
+#include "omap_hwmod_44xx.h"
 
 /*
  * The machine specific code may provide the extra mapping besides the
@@ -312,6 +313,8 @@ void __init omap2_init_common_hw(struct omap_sdrc_params *sdrc_cs0,
 		hwmods = omap2430_hwmods;
 	else if (cpu_is_omap34xx())
 		hwmods = omap34xx_hwmods;
+	else if (cpu_is_omap44xx())
+		hwmods = omap44xx_hwmods;
 
 	pwrdm_init(powerdomains_omap);
 	clkdm_init(clockdomains_omap, clkdm_pwrdm_autodeps);
