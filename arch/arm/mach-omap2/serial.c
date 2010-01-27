@@ -665,6 +665,15 @@ void __init omap_serial_init_port(int port)
 		p->irqflags = IRQF_SHARED;
 		p->private_data = uart;
 
+		/* omap44xx: Never read empty UART fifo
+		 * omap3xxx: Never read empty UART fifo on UARTs
+		 * with IP rev >=0x52
+		 */
+		if (cpu_is_omap44xx()) {
+			p->serial_in = serial_in_override;
+			p->serial_out = serial_out_override;
+		}
+
 		pdata = &ports[0];
 		pdata_size = 2 * sizeof(struct plat_serial8250_port);
 
@@ -715,19 +724,6 @@ void __init omap_serial_init_port(int port)
 			DEV_CREATE_FILE(&od->pdev.dev, &dev_attr_sleep_timeout);
 		}
 
-		/* omap44xx: Never read empty UART fifo
-		 * omap3xxx: Never read empty UART fifo on UARTs
-		 * with IP rev >=0x52
-		 */
-		if (cpu_is_omap44xx()) {
-			p->serial_in = serial_in_override;
-			p->serial_out = serial_out_override;
-		}
-		else if ((serial_read_reg(uart, UART_OMAP_MVER) & 0xFF)
-				>= UART_OMAP_NO_EMPTY_FIFO_READ_IP_REV) {
-			p->serial_in = serial_in_override;
-			p->serial_out = serial_out_override;
-		}
 	}
 }
 
