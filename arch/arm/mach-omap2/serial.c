@@ -222,8 +222,7 @@ static inline void omap_uart_enable_clocks(struct omap_uart_state *uart)
 		return;
 
 	clk_enable(uart->ick);
-	if (!cpu_is_omap44xx())
-		clk_enable(uart->fck);
+	clk_enable(uart->fck);
 	uart->clocked = 1;
 	omap_uart_restore_context(uart);
 }
@@ -238,8 +237,7 @@ static inline void omap_uart_disable_clocks(struct omap_uart_state *uart)
 	omap_uart_save_context(uart);
 	uart->clocked = 0;
 	clk_disable(uart->ick);
-	if (!cpu_is_omap44xx())
-		clk_disable(uart->fck);
+	clk_disable(uart->fck);
 }
 
 static void omap_uart_enable_wakeup(struct omap_uart_state *uart)
@@ -634,24 +632,18 @@ void __init omap_serial_early_init(void)
 			continue;
 		}
 
-		if (!cpu_is_omap44xx())
-			sprintf(name, "uart%d_ick", i+1);
-		else
-			sprintf(name, "uart%d_ck", i+1);
+		sprintf(name, "uart%d_ick", i+1);
 		uart->ick = clk_get(NULL, name);
 		if (IS_ERR(uart->ick)) {
 			printk(KERN_ERR "Could not get uart%d_ick\n", i+1);
 			uart->ick = NULL;
 		}
 
-		if (!cpu_is_omap44xx()) {
-			sprintf(name, "uart%d_fck", i+1);
-			uart->fck = clk_get(NULL, name);
-			if (IS_ERR(uart->fck)) {
-				printk(KERN_ERR "Could not get uart%d_fck\n",
-									 i+1);
-				uart->fck = NULL;
-			}
+		sprintf(name, "uart%d_fck", i+1);
+		uart->fck = clk_get(NULL, name);
+		if (IS_ERR(uart->fck)) {
+			printk(KERN_ERR "Could not get uart%d_fck\n", i+1);
+			uart->fck = NULL;
 		}
 
 		/* FIXME: Remove this once the clkdev is ready */
