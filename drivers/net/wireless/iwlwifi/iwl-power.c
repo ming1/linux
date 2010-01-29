@@ -303,13 +303,12 @@ static int iwl_set_power(struct iwl_priv *priv, struct iwl_powertable_cmd *cmd)
 				sizeof(struct iwl_powertable_cmd), cmd);
 }
 
-
+/* priv->mutex must be held */
 int iwl_power_update_mode(struct iwl_priv *priv, bool force)
 {
 	int ret = 0;
 	struct iwl_tt_mgmt *tt = &priv->thermal_throttle;
-	bool enabled = (priv->iw_mode == NL80211_IFTYPE_STATION) &&
-			(priv->hw->conf.flags & IEEE80211_CONF_PS);
+	bool enabled = priv->hw->conf.flags & IEEE80211_CONF_PS;
 	bool update_chains;
 	struct iwl_powertable_cmd cmd;
 	int dtimper;

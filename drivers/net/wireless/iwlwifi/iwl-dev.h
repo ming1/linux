@@ -1264,15 +1264,10 @@ struct iwl_priv {
 
 	struct workqueue_struct *workqueue;
 
-	struct work_struct up;
 	struct work_struct restart;
-	struct work_struct calibrated_work;
 	struct work_struct scan_completed;
 	struct work_struct rx_replenish;
 	struct work_struct abort_scan;
-	struct work_struct update_link_led;
-	struct work_struct auth_work;
-	struct work_struct report_work;
 	struct work_struct request_scan;
 	struct work_struct beacon_update;
 	struct work_struct tt_work;
