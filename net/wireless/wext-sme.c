@@ -34,7 +34,7 @@ int cfg80211_mgd_wext_connect(struct cfg80211_registered_device *rdev,
 			wdev->wext.connect.privacy = true;
 	}
 
-	if (!wdev->wext.connect.ssid_len)
+	if (!wdev->wext.connect.ssid_len && !wdev->wext.connect.bssid)
 		return 0;
 
 	if (wdev->wext.keys) {
@@ -280,6 +280,7 @@ int cfg80211_mgd_wext_siwap(struct net_device *dev,
 	if (bssid) {
 		memcpy(wdev->wext.bssid, bssid, ETH_ALEN);
 		wdev->wext.connect.bssid = wdev->wext.bssid;
+		wdev->wext.connect.ssid_len = 0;
 	} else
 		wdev->wext.connect.bssid = NULL;
 
