@@ -778,15 +778,10 @@ int __cfg80211_connect(struct cfg80211_registered_device *rdev,
 			wdev->conn->auto_auth = false;
 		}
 
-		/* make sure it can connect if only bssid is provided */
+		memcpy(wdev->ssid, connect->ssid, connect->ssid_len);
 		wdev->ssid_len = connect->ssid_len;
+		wdev->conn->params.ssid = wdev->ssid;
 		wdev->conn->params.ssid_len = connect->ssid_len;
-		if (connect->ssid_len) {
-			memcpy(wdev->ssid, connect->ssid, connect->ssid_len);
-			wdev->conn->params.ssid = wdev->ssid;
-		}
-		else
-			wdev->conn->params.ssid = NULL;
 
 		/* see if we have the bss already */
 		bss = cfg80211_get_conn_bss(wdev);
