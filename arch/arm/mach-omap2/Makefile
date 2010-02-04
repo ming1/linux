@@ -108,7 +108,8 @@ obj-$(CONFIG_MACH_IGEP0020)		+= board-igep0020.o \
 					   mmc-twl4030.o
 obj-$(CONFIG_MACH_OMAP3_TOUCHBOOK)	+= board-omap3touchbook.o \
 					   mmc-twl4030.o
-obj-$(CONFIG_MACH_OMAP_4430SDP)		+= board-4430sdp.o
+obj-$(CONFIG_MACH_OMAP_4430SDP)		+= board-4430sdp.o \
+					   mmc-twl4030.o
 
 obj-$(CONFIG_MACH_OMAP3517EVM)     += board-am3517evm.o
 
