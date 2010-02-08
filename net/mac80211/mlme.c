@@ -27,10 +27,6 @@
 #include "rate.h"
 #include "led.h"
 
-#define IEEE80211_AUTH_TIMEOUT (HZ / 5)
-#define IEEE80211_AUTH_MAX_TRIES 3
-#define IEEE80211_ASSOC_TIMEOUT (HZ / 5)
-#define IEEE80211_ASSOC_MAX_TRIES 3
 #define IEEE80211_MAX_PROBE_TRIES 5
 
 /*
@@ -826,19 +822,7 @@ static void ieee80211_set_disassoc(struct ieee80211_sub_if_data *sdata)
 	changed |= BSS_CHANGED_BSSID;
 	ieee80211_bss_info_change_notify(sdata, changed);
 
-	rcu_read_lock();
-
-	sta = sta_info_get(sdata, bssid);
-	if (!sta) {
-		rcu_read_unlock();
-		return;
-	}
-
-	sta_info_unlink(&sta);
-
-	rcu_read_unlock();
-
-	sta_info_destroy(sta);
+	sta_info_destroy_addr(sdata, bssid);
 }
 
 void ieee80211_sta_rx_notify(struct ieee80211_sub_if_data *sdata,
@@ -1844,7 +1828,11 @@ int ieee80211_mgd_auth(struct ieee80211_sub_if_data *sdata,
 	wk->probe_auth.algorithm = auth_alg;
 	wk->probe_auth.privacy = req->bss->capability & WLAN_CAPABILITY_PRIVACY;
 
-	wk->type = IEEE80211_WORK_DIRECT_PROBE;
+	/* if we already have a probe, don't probe again */
+	if (req->bss->proberesp_ies)
+		wk->type = IEEE80211_WORK_AUTH;
+	else
+		wk->type = IEEE80211_WORK_DIRECT_PROBE;
 	wk->chan = req->bss->channel;
 	wk->sdata = sdata;
 	wk->done = ieee80211_probe_auth_done;
@@ -2007,12 +1995,18 @@ int ieee80211_mgd_deauth(struct ieee80211_sub_if_data *sdata,
 
 		mutex_lock(&local->work_mtx);
 		list_for_each_entry(wk, &local->work_list, list) {
-			if (wk->type != IEEE80211_WORK_DIRECT_PROBE)
+			if (wk->sdata != sdata)
 				continue;
+
+			if (wk->type != IEEE80211_WORK_DIRECT_PROBE &&
+			    wk->type != IEEE80211_WORK_AUTH)
+				continue;
+
 			if (memcmp(req->bss->bssid, wk->filter_ta, ETH_ALEN))
 				continue;
-			not_auth_yet = true;
-			list_del(&wk->list);
+
+			not_auth_yet = wk->type == IEEE80211_WORK_DIRECT_PROBE;
+			list_del_rcu(&wk->list);
 			free_work(wk);
 			break;
 		}
