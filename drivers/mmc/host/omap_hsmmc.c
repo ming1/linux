@@ -2107,6 +2107,9 @@ static int omap_hsmmc_resume(struct platform_device *pdev)
 	if (host && !host->suspended)
 		return 0;
 
+	if (cpu_is_omap44xx())
+		return 0;
+
 	if (host) {
 		ret = clk_enable(host->iclk);
 		if (ret)
