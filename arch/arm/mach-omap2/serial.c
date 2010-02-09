@@ -682,7 +682,7 @@ void __init omap_serial_init_port(int port)
 
 		od = omap_device_build(name, uart->num, oh, pdata, pdata_size,
 				       omap_uart_latency,
-				       ARRAY_SIZE(omap_uart_latency));
+				       ARRAY_SIZE(omap_uart_latency), 0);
 		WARN(IS_ERR(od), "Could not build omap_device for %s: %s.\n",
 		     name, oh->name);
 
