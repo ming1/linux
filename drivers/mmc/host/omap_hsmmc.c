@@ -1791,15 +1791,17 @@ static int __init omap_hsmmc_probe(struct platform_device *pdev)
 	host->power_mode = -1;
 	host->dma_type = DMA_TYPE_SDMA;
 
-	ctrlr_caps = OMAP_HSMMC_READ(host->base, CAPA);
-	if (ctrlr_caps & CAPA_ADMA_SUPPORT) {
-		/* FIXME: passing the device structure fails
-		 * due to unset conherency mask
-		 */
-		host->adma_table = dma_alloc_coherent(NULL, ADMA_TABLE_SZ,
-					&host->phy_adma_table, 0);
-		if (host->adma_table != NULL)
-			host->dma_type = DMA_TYPE_ADMA;
+	if (cpu_is_omap44xx()) {
+		ctrlr_caps = OMAP_HSMMC_READ(host->base, CAPA);
+		if (ctrlr_caps & CAPA_ADMA_SUPPORT) {
+			/* FIXME: passing the device structure fails
+			 * due to unset conherency mask
+			 */
+			host->adma_table = dma_alloc_coherent(NULL,
+				ADMA_TABLE_SZ, &host->phy_adma_table, 0);
+			if (host->adma_table != NULL)
+				host->dma_type = DMA_TYPE_ADMA;
+		}
 	}
 	dev_dbg(mmc_dev(host->mmc), "DMA Mode=%d\n", host->dma_type);
 
