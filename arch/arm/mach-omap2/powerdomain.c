@@ -1255,7 +1255,7 @@ int pwrdm_wait_transition(struct powerdomain *pwrdm)
 	else
 		v = prm_read_mod_reg(pwrdm->prcm_offs, pwrstst_reg_offs);
 
-	while ((v & OMAP_INTRANSITION) && (c++ < PWRDM_TRANSITION_BAILOUT))
+	while ((v & OMAP_INTRANSITION) && (c++ < PWRDM_TRANSITION_BAILOUT)) {
 		udelay(1);
 		if (cpu_is_omap44xx() &&
 			((pwrdm->prcm_offs == OMAP4430_CHIRONSS_CHIRONSS_CPU0_MOD) ||
@@ -1263,6 +1263,7 @@ int pwrdm_wait_transition(struct powerdomain *pwrdm)
 			v = chiron_read_mod_reg(pwrdm->prcm_offs, pwrstst_reg_offs);
 		else
 			v = prm_read_mod_reg(pwrdm->prcm_offs, pwrstst_reg_offs);
+	}
 
 
 	if (c > PWRDM_TRANSITION_BAILOUT) {
