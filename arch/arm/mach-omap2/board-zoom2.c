@@ -28,10 +28,9 @@
 
 static void __init omap_zoom2_init_irq(void)
 {
+	omap_init_irq();
 	omap2_init_common_hw(mt46h32m32lf6_sdrc_params,
 				 mt46h32m32lf6_sdrc_params);
-	omap_init_irq();
-	omap_gpio_init();
 }
 
 /* REVISIT: These audio entries can be removed once MFD code is merged */

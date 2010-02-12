@@ -400,9 +400,8 @@ static void __init omap3_evm_init_irq(void)
 {
 	omap_board_config = omap3_evm_config;
 	omap_board_config_size = ARRAY_SIZE(omap3_evm_config);
-	omap2_init_common_hw(mt46h32m32lf6_sdrc_params, NULL);
 	omap_init_irq();
-	omap_gpio_init();
+	omap2_init_common_hw(mt46h32m32lf6_sdrc_params, NULL);
 }
 
 static struct platform_device *omap3_evm_devices[] __initdata = {

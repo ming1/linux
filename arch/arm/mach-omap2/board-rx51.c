@@ -63,9 +63,8 @@ static void __init rx51_init_irq(void)
 	omap_board_config = rx51_config;
 	omap_board_config_size = ARRAY_SIZE(rx51_config);
 	sdrc_params = rx51_get_sdram_timings();
-	omap2_init_common_hw(sdrc_params, sdrc_params);
 	omap_init_irq();
-	omap_gpio_init();
+	omap2_init_common_hw(sdrc_params, sdrc_params);
 }
 
 extern void __init rx51_peripherals_init(void);
