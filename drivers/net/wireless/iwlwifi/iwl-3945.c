@@ -2846,7 +2846,7 @@ static struct iwl_cfg iwl3945_abg_cfg = {
 	.plcp_delta_threshold = IWL_MAX_PLCP_ERR_THRESHOLD_DEF,
 };
 
-struct pci_device_id iwl3945_hw_card_ids[] = {
+DEFINE_PCI_DEVICE_TABLE(iwl3945_hw_card_ids) = {
 	{IWL_PCI_DEVICE(0x4222, 0x1005, iwl3945_bg_cfg)},
 	{IWL_PCI_DEVICE(0x4222, 0x1034, iwl3945_bg_cfg)},
 	{IWL_PCI_DEVICE(0x4222, 0x1044, iwl3945_bg_cfg)},

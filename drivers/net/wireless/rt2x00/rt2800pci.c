@@ -1184,7 +1184,7 @@ static const struct rt2x00_ops rt2800pci_ops = {
 /*
  * RT2800pci module information.
  */
-static struct pci_device_id rt2800pci_device_table[] = {
+static DEFINE_PCI_DEVICE_TABLE(rt2800pci_device_table) = {
 	{ PCI_DEVICE(0x1814, 0x0601), PCI_DEVICE_DATA(&rt2800pci_ops) },
 	{ PCI_DEVICE(0x1814, 0x0681), PCI_DEVICE_DATA(&rt2800pci_ops) },
 	{ PCI_DEVICE(0x1814, 0x0701), PCI_DEVICE_DATA(&rt2800pci_ops) },
@@ -1225,7 +1225,7 @@ MODULE_LICENSE("GPL");
 #ifdef CONFIG_RT2800PCI_SOC
 static int rt2800soc_probe(struct platform_device *pdev)
 {
-	return rt2x00soc_probe(pdev, rt2800pci_ops);
+	return rt2x00soc_probe(pdev, &rt2800pci_ops);
 }
 
 static struct platform_driver rt2800soc_driver = {
