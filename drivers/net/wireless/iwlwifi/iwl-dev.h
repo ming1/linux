@@ -1132,7 +1132,6 @@ struct iwl_priv {
 	u8   rev_id;
 
 	/* uCode images, save to reload in case of failure */
-	int fw_index;			/* firmware we're trying to load */
 	u32 ucode_ver;			/* version of ucode, copy of
 					   iwl_ucode.ver */
 	struct fw_desc ucode_code;	/* runtime inst */
@@ -1143,7 +1142,6 @@ struct iwl_priv {
 	struct fw_desc ucode_boot;	/* bootstrap inst */
 	enum ucode_type ucode_type;
 	u8 ucode_write_complete;	/* the image write is complete */
-	char firmware_name[25];
 
 
 	struct iwl_rxon_time_cmd rxon_timing;
