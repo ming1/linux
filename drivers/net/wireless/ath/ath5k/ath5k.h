@@ -202,7 +202,6 @@
 #define AR5K_TUNE_MAX_TXPOWER			63
 #define AR5K_TUNE_DEFAULT_TXPOWER		25
 #define AR5K_TUNE_TPC_TXPOWER			false
-#define AR5K_TUNE_HWTXTRIES			4
 
 #define AR5K_INIT_CARR_SENSE_EN			1
 
@@ -1028,7 +1027,6 @@ struct ath5k_nfcal_hist
 
 /* TODO: Clean up and merge with ath5k_softc */
 struct ath5k_hw {
-	u32			ah_magic;
 	struct ath_common       common;
 
 	struct ath5k_softc	*ah_sc;
@@ -1036,7 +1034,6 @@ struct ath5k_hw {
 
 	enum ath5k_int		ah_imr;
 
-	enum nl80211_iftype	ah_op_mode;
 	struct ieee80211_channel *ah_current_channel;
 	bool			ah_turbo;
 	bool			ah_calibration;
@@ -1049,7 +1046,6 @@ struct ath5k_hw {
 	u32			ah_phy;
 	u32			ah_mac_srev;
 	u16			ah_mac_version;
-	u16			ah_mac_revision;
 	u16			ah_phy_revision;
 	u16			ah_radio_5ghz_revision;
 	u16			ah_radio_2ghz_revision;
@@ -1070,8 +1066,6 @@ struct ath5k_hw {
 	u8			ah_tx_ant;
 	u8			ah_def_ant;
 	bool			ah_software_retry;
-
-	int			ah_gpio_npins;
 
 	struct ath5k_capabilities ah_capabilities;
 
@@ -1141,9 +1135,9 @@ struct ath5k_hw {
 	int (*ah_setup_rx_desc)(struct ath5k_hw *ah, struct ath5k_desc *desc,
 				u32 size, unsigned int flags);
 	int (*ah_setup_tx_desc)(struct ath5k_hw *, struct ath5k_desc *,
-		unsigned int, unsigned int, enum ath5k_pkt_type, unsigned int,
+		unsigned int, unsigned int, int, enum ath5k_pkt_type,
 		unsigned int, unsigned int, unsigned int, unsigned int,
-		unsigned int, unsigned int, unsigned int);
+		unsigned int, unsigned int, unsigned int, unsigned int);
 	int (*ah_setup_mrr_tx_desc)(struct ath5k_hw *, struct ath5k_desc *,
 		unsigned int, unsigned int, unsigned int, unsigned int,
 		unsigned int, unsigned int);
@@ -1200,7 +1194,7 @@ void ath5k_eeprom_detach(struct ath5k_hw *ah);
 int ath5k_eeprom_read_mac(struct ath5k_hw *ah, u8 *mac);
 
 /* Protocol Control Unit Functions */
-int ath5k_hw_set_opmode(struct ath5k_hw *ah);
+extern int ath5k_hw_set_opmode(struct ath5k_hw *ah, enum nl80211_iftype opmode);
 void ath5k_hw_set_coverage_class(struct ath5k_hw *ah, u8 coverage_class);
 /* BSSID Functions */
 int ath5k_hw_set_lladdr(struct ath5k_hw *ah, const u8 *mac);
@@ -1340,11 +1334,6 @@ static inline u32 ath5k_hw_bitswap(u32 val, unsigned int bits)
 	}
 
 	return retval;
-}
-
-static inline int ath5k_pad_size(int hdrlen)
-{
-	return (hdrlen < 24) ? 0 : hdrlen & 3;
 }
 
 #endif

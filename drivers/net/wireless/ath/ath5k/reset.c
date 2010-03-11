@@ -1036,11 +1036,6 @@ int ath5k_hw_reset(struct ath5k_hw *ah, enum nl80211_iftype op_mode,
 	if (ret)
 		return ret;
 
-	/*
-	 * Initialize operating mode
-	 */
-	ah->ah_op_mode = op_mode;
-
 	/* PHY access enable */
 	if (ah->ah_mac_srev >= AR5K_SREV_AR5211)
 		ath5k_hw_reg_write(ah, AR5K_PHY_SHIFT_5GHZ, AR5K_PHY(0));
@@ -1211,7 +1206,7 @@ int ath5k_hw_reset(struct ath5k_hw *ah, enum nl80211_iftype op_mode,
 	ath5k_hw_set_associd(ah);
 
 	/* Set PCU config */
-	ath5k_hw_set_opmode(ah);
+	ath5k_hw_set_opmode(ah, op_mode);
 
 	/* Clear any pending interrupts
 	 * PISR/SISR Not available on 5210 */
@@ -1397,7 +1392,7 @@ int ath5k_hw_reset(struct ath5k_hw *ah, enum nl80211_iftype op_mode,
 	 * external 32KHz crystal when sleeping if one
 	 * exists */
 	if (ah->ah_version == AR5K_AR5212 &&
-	    ah->ah_op_mode != NL80211_IFTYPE_AP)
+	    op_mode != NL80211_IFTYPE_AP)
 		ath5k_hw_set_sleep_clock(ah, true);
 
 	/*
