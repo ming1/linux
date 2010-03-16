@@ -264,20 +264,17 @@ static void ieee80211_rx_bss_info(struct ieee80211_sub_if_data *sdata,
 			sta->sta.supp_rates[band] = supp_rates |
 				ieee80211_mandatory_rates(local, band);
 
+			if (sta->sta.supp_rates[band] != prev_rates) {
 #ifdef CONFIG_MAC80211_IBSS_DEBUG
-			if (sta->sta.supp_rates[band] != prev_rates)
 				printk(KERN_DEBUG "%s: updated supp_rates set "
-				    "for %pM based on beacon info (0x%llx | "
-				    "0x%llx -> 0x%llx)\n",
-				    sdata->name,
-				    sta->sta.addr,
-				    (unsigned long long) prev_rates,
-				    (unsigned long long) supp_rates,
-				    (unsigned long long) sta->sta.supp_rates[band]);
+				    "for %pM based on beacon/probe_response "
+				    "(0x%x -> 0x%x)\n",
+				    sdata->name, sta->sta.addr,
+				    prev_rates, sta->sta.supp_rates[band]);
 #endif
+				rate_control_rate_init(sta);
+			}
 			rcu_read_unlock();
-
-			/* FIXME: update rate control */
 		} else {
 			rcu_read_unlock();
 			ieee80211_ibss_add_sta(sdata, mgmt->bssid, mgmt->sa,
