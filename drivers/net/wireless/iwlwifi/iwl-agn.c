@@ -1236,15 +1236,7 @@ static void iwl_irq_tasklet(struct iwl_priv *priv)
 	/* Ack/clear/reset pending uCode interrupts.
 	 * Note:  Some bits in CSR_INT are "OR" of bits in CSR_FH_INT_STATUS,
 	 */
-	/* There is a hardware bug in the interrupt mask function that some
-	 * interrupts (i.e. CSR_INT_BIT_SCD) can still be generated even if
-	 * they are disabled in the CSR_INT_MASK register. Furthermore the
-	 * ICT interrupt handling mechanism has another bug that might cause
-	 * these unmasked interrupts fail to be detected. We workaround the
-	 * hardware bugs here by ACKing all the possible interrupts so that
-	 * interrupt coalescing can still be achieved.
-	 */
-	iwl_write32(priv, CSR_INT, priv->_agn.inta | ~priv->inta_mask);
+	iwl_write32(priv, CSR_INT, priv->_agn.inta);
 
 	inta = priv->_agn.inta;
 
