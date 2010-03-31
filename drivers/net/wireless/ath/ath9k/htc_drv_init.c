@@ -421,6 +421,7 @@ static void ath9k_init_misc(struct ath9k_htc_priv *priv)
 		memcpy(common->bssidmask, ath_bcast_mac, ETH_ALEN);
 
 	priv->op_flags |= OP_TXAGGR;
+	priv->ah->opmode = NL80211_IFTYPE_STATION;
 }
 
 static int ath9k_init_priv(struct ath9k_htc_priv *priv, u16 devid)
@@ -449,6 +450,7 @@ static int ath9k_init_priv(struct ath9k_htc_priv *priv, u16 devid)
 
 	spin_lock_init(&priv->wmi->wmi_lock);
 	spin_lock_init(&priv->beacon_lock);
+	spin_lock_init(&priv->tx_lock);
 	mutex_init(&priv->mutex);
 	mutex_init(&priv->aggr_work.mutex);
 	tasklet_init(&priv->wmi_tasklet, ath9k_wmi_tasklet,
@@ -511,7 +513,8 @@ static void ath9k_set_hw_capab(struct ath9k_htc_priv *priv,
 	hw->flags = IEEE80211_HW_SIGNAL_DBM |
 		IEEE80211_HW_AMPDU_AGGREGATION |
 		IEEE80211_HW_SPECTRUM_MGMT |
-		IEEE80211_HW_HAS_RATE_CONTROL;
+		IEEE80211_HW_HAS_RATE_CONTROL |
+		IEEE80211_HW_RX_INCLUDES_FCS;
 
 	hw->wiphy->interface_modes =
 		BIT(NL80211_IFTYPE_STATION) |

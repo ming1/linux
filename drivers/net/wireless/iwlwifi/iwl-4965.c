@@ -46,6 +46,7 @@
 #include "iwl-calib.h"
 #include "iwl-sta.h"
 #include "iwl-agn-led.h"
+#include "iwl-agn.h"
 
 static int iwl4965_send_tx_power(struct iwl_priv *priv);
 static int iwl4965_hw_get_temperature(struct iwl_priv *priv);
@@ -1880,7 +1881,7 @@ static int iwl4965_tx_status_reply_tx(struct iwl_priv *priv,
 		info->status.rates[0].count = tx_resp->failure_frame + 1;
 		info->flags &= ~IEEE80211_TX_CTL_AMPDU;
 		info->flags |= iwl_tx_status_to_mac80211(status);
-		iwl_hwrate_to_tx_control(priv, rate_n_flags, info);
+		iwlagn_hwrate_to_tx_control(priv, rate_n_flags, info);
 		/* FIXME: code repetition end */
 
 		IWL_DEBUG_TX_REPLY(priv, "1 Frame 0x%x failure :%d\n",
@@ -2020,7 +2021,7 @@ static void iwl4965_rx_reply_tx(struct iwl_priv *priv,
 			index = iwl_queue_dec_wrap(scd_ssn & 0xff, txq->q.n_bd);
 			IWL_DEBUG_TX_REPLY(priv, "Retry scheduler reclaim scd_ssn "
 					   "%d index %d\n", scd_ssn , index);
-			freed = iwl_tx_queue_reclaim(priv, txq_id, index);
+			freed = iwlagn_tx_queue_reclaim(priv, txq_id, index);
 			iwl_free_tfds_in_queue(priv, sta_id, tid, freed);
 
 			if (priv->mac80211_registered &&
@@ -2035,7 +2036,7 @@ static void iwl4965_rx_reply_tx(struct iwl_priv *priv,
 	} else {
 		info->status.rates[0].count = tx_resp->failure_frame + 1;
 		info->flags |= iwl_tx_status_to_mac80211(status);
-		iwl_hwrate_to_tx_control(priv,
+		iwlagn_hwrate_to_tx_control(priv,
 					le32_to_cpu(tx_resp->rate_n_flags),
 					info);
 
@@ -2046,7 +2047,7 @@ static void iwl4965_rx_reply_tx(struct iwl_priv *priv,
 				   le32_to_cpu(tx_resp->rate_n_flags),
 				   tx_resp->failure_frame);
 
-		freed = iwl_tx_queue_reclaim(priv, txq_id, index);
+		freed = iwlagn_tx_queue_reclaim(priv, txq_id, index);
 		iwl_free_tfds_in_queue(priv, sta_id, tid, freed);
 
 		if (priv->mac80211_registered &&
@@ -2054,7 +2055,7 @@ static void iwl4965_rx_reply_tx(struct iwl_priv *priv,
 			iwl_wake_queue(priv, txq_id);
 	}
 
-	iwl_txq_check_empty(priv, sta_id, tid, txq_id);
+	iwlagn_txq_check_empty(priv, sta_id, tid, txq_id);
 
 	if (iwl_check_bits(status, TX_ABORT_REQUIRED_MSK))
 		IWL_ERR(priv, "TODO:  Implement Tx ABORT REQUIRED!!!\n");
@@ -2099,7 +2100,7 @@ static int iwl4965_calc_rssi(struct iwl_priv *priv,
 static void iwl4965_rx_handler_setup(struct iwl_priv *priv)
 {
 	/* Legacy Rx frames */
-	priv->rx_handlers[REPLY_RX] = iwl_rx_reply_rx;
+	priv->rx_handlers[REPLY_RX] = iwlagn_rx_reply_rx;
 	/* Tx response */
 	priv->rx_handlers[REPLY_TX] = iwl4965_rx_reply_tx;
 }
@@ -2255,6 +2256,8 @@ struct iwl_cfg iwl4965_agn_cfg = {
 	.chain_noise_num_beacons = IWL4965_CAL_NUM_BEACONS,
 	.plcp_delta_threshold = IWL_MAX_PLCP_ERR_THRESHOLD_DEF,
 	.monitor_recover_period = IWL_MONITORING_PERIOD,
+	.temperature_kelvin = true,
+	.off_channel_workaround = true,
 };
 
 /* Module firmware */

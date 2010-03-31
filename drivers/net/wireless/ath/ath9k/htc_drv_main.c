@@ -412,31 +412,30 @@ static int ath9k_htc_aggr_oper(struct ath9k_htc_priv *priv,
 	if (tid > ATH9K_HTC_MAX_TID)
 		return -EINVAL;
 
-	rcu_read_lock();
-	sta = ieee80211_find_sta(vif, sta_addr);
-	if (sta) {
-		ista = (struct ath9k_htc_sta *) sta->drv_priv;
-	} else {
-		rcu_read_unlock();
-		return -EINVAL;
-	}
-
-	if (!ista) {
-		rcu_read_unlock();
-		return -EINVAL;
-	}
-
 	memset(&aggr, 0, sizeof(struct ath9k_htc_target_aggr));
 
-	aggr.sta_index = ista->index;
-	rcu_read_unlock();
-	aggr.tidno = tid;
-	aggr.aggr_enable = oper;
+	rcu_read_lock();
+
+	/* Check if we are able to retrieve the station */
+	sta = ieee80211_find_sta(vif, sta_addr);
+	if (!sta) {
+		rcu_read_unlock();
+		return -EINVAL;
+	}
+
+	ista = (struct ath9k_htc_sta *) sta->drv_priv;
 
 	if (oper)
 		ista->tid_state[tid] = AGGR_START;
 	else
 		ista->tid_state[tid] = AGGR_STOP;
+
+	aggr.sta_index = ista->index;
+
+	rcu_read_unlock();
+
+	aggr.tidno = tid;
+	aggr.aggr_enable = oper;
 
 	WMI_CMD_BUF(WMI_TX_AGGR_ENABLE_CMDID, &aggr);
 	if (ret)
@@ -995,7 +994,7 @@ static int ath9k_htc_tx(struct ieee80211_hw *hw, struct sk_buff *skb)
 {
 	struct ieee80211_hdr *hdr;
 	struct ath9k_htc_priv *priv = hw->priv;
-	int padpos, padsize;
+	int padpos, padsize, ret;
 
 	hdr = (struct ieee80211_hdr *) skb->data;
 
@@ -1009,8 +1008,19 @@ static int ath9k_htc_tx(struct ieee80211_hw *hw, struct sk_buff *skb)
 		memmove(skb->data, skb->data + padsize, padpos);
 	}
 
-	if (ath9k_htc_tx_start(priv, skb) != 0) {
-		ath_print(ath9k_hw_common(priv->ah), ATH_DBG_XMIT, "Tx failed");
+	ret = ath9k_htc_tx_start(priv, skb);
+	if (ret != 0) {
+		if (ret == -ENOMEM) {
+			ath_print(ath9k_hw_common(priv->ah), ATH_DBG_XMIT,
+				  "Stopping TX queues\n");
+			ieee80211_stop_queues(hw);
+			spin_lock_bh(&priv->tx_lock);
+			priv->tx_queues_stop = true;
+			spin_unlock_bh(&priv->tx_lock);
+		} else {
+			ath_print(ath9k_hw_common(priv->ah), ATH_DBG_XMIT,
+				  "Tx failed");
+		}
 		goto fail_tx;
 	}
 
@@ -1074,6 +1084,12 @@ static int ath9k_htc_start(struct ieee80211_hw *hw)
 
 	priv->op_flags &= ~OP_INVALID;
 	htc_start(priv->htc);
+
+	spin_lock_bh(&priv->tx_lock);
+	priv->tx_queues_stop = false;
+	spin_unlock_bh(&priv->tx_lock);
+
+	ieee80211_wake_queues(hw);
 
 mutex_unlock:
 	mutex_unlock(&priv->mutex);
@@ -1299,7 +1315,7 @@ static void ath9k_htc_configure_filter(struct ieee80211_hw *hw,
 	*total_flags &= SUPPORTED_FILTERS;
 
 	priv->rxfilter = *total_flags;
-	rfilt = ath9k_cmn_calcrxfilter(hw, priv->ah, priv->rxfilter);
+	rfilt = ath9k_htc_calcrxfilter(priv);
 	ath9k_hw_setrxfilter(priv->ah, rfilt);
 
 	ath_print(ath9k_hw_common(priv->ah), ATH_DBG_CONFIG,

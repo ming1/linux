@@ -504,12 +504,17 @@ out:
 	return ret;
 }
 
-int wl1271_acx_conn_monit_params(struct wl1271 *wl)
+#define ACX_CONN_MONIT_DISABLE_VALUE  0xffffffff
+
+int wl1271_acx_conn_monit_params(struct wl1271 *wl, bool enable)
 {
 	struct acx_conn_monit_params *acx;
+	u32 threshold = ACX_CONN_MONIT_DISABLE_VALUE;
+	u32 timeout = ACX_CONN_MONIT_DISABLE_VALUE;
 	int ret;
 
-	wl1271_debug(DEBUG_ACX, "acx connection monitor parameters");
+	wl1271_debug(DEBUG_ACX, "acx connection monitor parameters: %s",
+		     enable ? "enabled" : "disabled");
 
 	acx = kzalloc(sizeof(*acx), GFP_KERNEL);
 	if (!acx) {
@@ -517,8 +522,13 @@ int wl1271_acx_conn_monit_params(struct wl1271 *wl)
 		goto out;
 	}
 
-	acx->synch_fail_thold = cpu_to_le32(wl->conf.conn.synch_fail_thold);
-	acx->bss_lose_timeout = cpu_to_le32(wl->conf.conn.bss_lose_timeout);
+	if (enable) {
+		threshold = wl->conf.conn.synch_fail_thold;
+		timeout = wl->conf.conn.bss_lose_timeout;
+	}
+
+	acx->synch_fail_thold = cpu_to_le32(threshold);
+	acx->bss_lose_timeout = cpu_to_le32(timeout);
 
 	ret = wl1271_cmd_configure(wl, ACX_CONN_MONIT_PARAMS,
 				   acx, sizeof(*acx));
@@ -1122,6 +1132,61 @@ int wl1271_acx_pm_config(struct wl1271 *wl)
 	ret = wl1271_cmd_configure(wl, ACX_PM_CONFIG, acx, sizeof(*acx));
 	if (ret < 0) {
 		wl1271_warning("acx pm config failed: %d", ret);
+		goto out;
+	}
+
+out:
+	kfree(acx);
+	return ret;
+}
+
+int wl1271_acx_keep_alive_mode(struct wl1271 *wl, bool enable)
+{
+	struct wl1271_acx_keep_alive_mode *acx = NULL;
+	int ret = 0;
+
+	wl1271_debug(DEBUG_ACX, "acx keep alive mode: %d", enable);
+
+	acx = kzalloc(sizeof(*acx), GFP_KERNEL);
+	if (!acx) {
+		ret = -ENOMEM;
+		goto out;
+	}
+
+	acx->enabled = enable;
+
+	ret = wl1271_cmd_configure(wl, ACX_KEEP_ALIVE_MODE, acx, sizeof(*acx));
+	if (ret < 0) {
+		wl1271_warning("acx keep alive mode failed: %d", ret);
+		goto out;
+	}
+
+out:
+	kfree(acx);
+	return ret;
+}
+int wl1271_acx_keep_alive_config(struct wl1271 *wl, u8 index, u8 tpl_valid)
+{
+	struct wl1271_acx_keep_alive_config *acx = NULL;
+	int ret = 0;
+
+	wl1271_debug(DEBUG_ACX, "acx keep alive config");
+
+	acx = kzalloc(sizeof(*acx), GFP_KERNEL);
+	if (!acx) {
+		ret = -ENOMEM;
+		goto out;
+	}
+
+	acx->period = cpu_to_le32(wl->conf.conn.keep_alive_interval);
+	acx->index = index;
+	acx->tpl_validation = tpl_valid;
+	acx->trigger = ACX_KEEP_ALIVE_NO_TX;
+
+	ret = wl1271_cmd_configure(wl, ACX_SET_KEEP_ALIVE_CONFIG,
+				   acx, sizeof(*acx));
+	if (ret < 0) {
+		wl1271_warning("acx keep alive config failed: %d", ret);
 		goto out;
 	}
 

@@ -55,6 +55,7 @@ enum {
 	DEBUG_ACX	= BIT(13),
 	DEBUG_SDIO	= BIT(14),
 	DEBUG_FILTERS   = BIT(15),
+	DEBUG_ADHOC     = BIT(16),
 	DEBUG_ALL	= ~0,
 };
 
@@ -147,14 +148,7 @@ struct wl1271_nvs_file {
  */
 #undef WL1271_80211A_ENABLED
 
-/*
- * FIXME: for the wl1271, a busy word count of 1 here will result in a more
- * optimal SPI interface. There is some SPI bug however, causing RXS time outs
- * with this mode occasionally on boot, so lets have three for now. A value of
- * three should make sure, that the chipset will always be ready, though this
- * will impact throughput and latencies slightly.
- */
-#define WL1271_BUSY_WORD_CNT 3
+#define WL1271_BUSY_WORD_CNT 1
 #define WL1271_BUSY_WORD_LEN (WL1271_BUSY_WORD_CNT * sizeof(u32))
 
 #define WL1271_ELP_HW_STATE_ASLEEP 0
@@ -396,6 +390,7 @@ struct wl1271 {
 	u8 bssid[ETH_ALEN];
 	u8 mac_addr[ETH_ALEN];
 	u8 bss_type;
+	u8 set_bss_type;
 	u8 ssid[IW_ESSID_MAX_SIZE + 1];
 	u8 ssid_len;
 	int channel;
@@ -456,6 +451,9 @@ struct wl1271 {
 
 	/* The current band */
 	enum ieee80211_band band;
+
+	/* Beaconing interval (needed for ad-hoc) */
+	u32 beacon_int;
 
 	/* Default key (for WEP) */
 	u32 default_key;

@@ -66,6 +66,32 @@ enum {
 };
 
 enum {
+	CONF_HW_RXTX_RATE_MCS7 = 0,
+	CONF_HW_RXTX_RATE_MCS6,
+	CONF_HW_RXTX_RATE_MCS5,
+	CONF_HW_RXTX_RATE_MCS4,
+	CONF_HW_RXTX_RATE_MCS3,
+	CONF_HW_RXTX_RATE_MCS2,
+	CONF_HW_RXTX_RATE_MCS1,
+	CONF_HW_RXTX_RATE_MCS0,
+	CONF_HW_RXTX_RATE_54,
+	CONF_HW_RXTX_RATE_48,
+	CONF_HW_RXTX_RATE_36,
+	CONF_HW_RXTX_RATE_24,
+	CONF_HW_RXTX_RATE_22,
+	CONF_HW_RXTX_RATE_18,
+	CONF_HW_RXTX_RATE_12,
+	CONF_HW_RXTX_RATE_11,
+	CONF_HW_RXTX_RATE_9,
+	CONF_HW_RXTX_RATE_6,
+	CONF_HW_RXTX_RATE_5_5,
+	CONF_HW_RXTX_RATE_2,
+	CONF_HW_RXTX_RATE_1,
+	CONF_HW_RXTX_RATE_MAX,
+	CONF_HW_RXTX_RATE_UNSUPPORTED = 0xff
+};
+
+enum {
 	CONF_SG_DISABLE = 0,
 	CONF_SG_PROTECTIVE,
 	CONF_SG_OPPORTUNISTIC
@@ -929,6 +955,15 @@ struct conf_conn_settings {
 	 * Range 0 - 255
 	 */
 	u8 psm_entry_retries;
+
+	/*
+	 *
+	 * Specifies the interval of the connection keep-alive null-func
+	 * frame in ms.
+	 *
+	 * Range: 1000 - 3600000
+	 */
+	u32 keep_alive_interval;
 };
 
 enum {

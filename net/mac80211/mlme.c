@@ -46,6 +46,13 @@
  */
 #define IEEE80211_PROBE_WAIT		(HZ / 2)
 
+/*
+ * Weight given to the latest Beacon frame when calculating average signal
+ * strength for Beacon frames received in the current BSS. This must be
+ * between 1 and 15.
+ */
+#define IEEE80211_SIGNAL_AVE_WEIGHT	3
+
 #define TMR_RUNNING_TIMER	0
 #define TMR_RUNNING_CHANSW	1
 
@@ -589,6 +596,9 @@ static void ieee80211_sta_wmm_params(struct ieee80211_local *local,
 	int count;
 	u8 *pos, uapsd_queues = 0;
 
+	if (!local->ops->conf_tx)
+		return;
+
 	if (local->hw.queues < 4)
 		return;
 
@@ -663,11 +673,15 @@ static void ieee80211_sta_wmm_params(struct ieee80211_local *local,
 		       params.aifs, params.cw_min, params.cw_max, params.txop,
 		       params.uapsd);
 #endif
-		if (drv_conf_tx(local, queue, &params) && local->ops->conf_tx)
+		if (drv_conf_tx(local, queue, &params))
 			printk(KERN_DEBUG "%s: failed to set TX queue "
 			       "parameters for queue %d\n",
 			       wiphy_name(local->hw.wiphy), queue);
 	}
+
+	/* enable WMM or activate new settings */
+	local->hw.conf.flags |=	IEEE80211_CONF_QOS;
+	drv_config(local, IEEE80211_CONF_CHANGE_QOS);
 }
 
 static u32 ieee80211_handle_bss_capability(struct ieee80211_sub_if_data *sdata,
@@ -728,6 +742,8 @@ static void ieee80211_set_associated(struct ieee80211_sub_if_data *sdata,
 	sdata->u.mgd.associated = cbss;
 	memcpy(sdata->u.mgd.bssid, cbss->bssid, ETH_ALEN);
 
+	sdata->u.mgd.flags |= IEEE80211_STA_RESET_SIGNAL_AVE;
+
 	/* just to be sure */
 	sdata->u.mgd.flags &= ~(IEEE80211_STA_CONNECTION_POLL |
 				IEEE80211_STA_BEACON_POLL);
@@ -769,7 +785,8 @@ static void ieee80211_set_associated(struct ieee80211_sub_if_data *sdata,
 	netif_carrier_on(sdata->dev);
 }
 
-static void ieee80211_set_disassoc(struct ieee80211_sub_if_data *sdata)
+static void ieee80211_set_disassoc(struct ieee80211_sub_if_data *sdata,
+				   bool remove_sta)
 {
 	struct ieee80211_if_managed *ifmgd = &sdata->u.mgd;
 	struct ieee80211_local *local = sdata->local;
@@ -842,7 +859,8 @@ static void ieee80211_set_disassoc(struct ieee80211_sub_if_data *sdata)
 	changed |= BSS_CHANGED_BSSID;
 	ieee80211_bss_info_change_notify(sdata, changed);
 
-	sta_info_destroy_addr(sdata, bssid);
+	if (remove_sta)
+		sta_info_destroy_addr(sdata, bssid);
 }
 
 void ieee80211_sta_rx_notify(struct ieee80211_sub_if_data *sdata,
@@ -955,7 +973,7 @@ static void __ieee80211_connection_loss(struct ieee80211_sub_if_data *sdata)
 
 	printk(KERN_DEBUG "Connection to AP %pM lost.\n", bssid);
 
-	ieee80211_set_disassoc(sdata);
+	ieee80211_set_disassoc(sdata, true);
 	ieee80211_recalc_idle(local);
 	mutex_unlock(&ifmgd->mtx);
 	/*
@@ -1021,7 +1039,7 @@ ieee80211_rx_mgmt_deauth(struct ieee80211_sub_if_data *sdata,
 	printk(KERN_DEBUG "%s: deauthenticated from %pM (Reason: %u)\n",
 			sdata->name, bssid, reason_code);
 
-	ieee80211_set_disassoc(sdata);
+	ieee80211_set_disassoc(sdata, true);
 	ieee80211_recalc_idle(sdata->local);
 
 	return RX_MGMT_CFG80211_DEAUTH;
@@ -1051,7 +1069,7 @@ ieee80211_rx_mgmt_disassoc(struct ieee80211_sub_if_data *sdata,
 	printk(KERN_DEBUG "%s: disassociated from %pM (Reason: %u)\n",
 			sdata->name, mgmt->sa, reason_code);
 
-	ieee80211_set_disassoc(sdata);
+	ieee80211_set_disassoc(sdata, true);
 	ieee80211_recalc_idle(sdata->local);
 	return RX_MGMT_CFG80211_DISASSOC;
 }
@@ -1343,6 +1361,7 @@ static void ieee80211_rx_mgmt_beacon(struct ieee80211_sub_if_data *sdata,
 				     struct ieee80211_rx_status *rx_status)
 {
 	struct ieee80211_if_managed *ifmgd = &sdata->u.mgd;
+	struct ieee80211_bss_conf *bss_conf = &sdata->vif.bss_conf;
 	size_t baselen;
 	struct ieee802_11_elems elems;
 	struct ieee80211_local *local = sdata->local;
@@ -1377,6 +1396,41 @@ static void ieee80211_rx_mgmt_beacon(struct ieee80211_sub_if_data *sdata,
 	 */
 	if (memcmp(bssid, mgmt->bssid, ETH_ALEN) != 0)
 		return;
+
+	/* Track average RSSI from the Beacon frames of the current AP */
+	ifmgd->last_beacon_signal = rx_status->signal;
+	if (ifmgd->flags & IEEE80211_STA_RESET_SIGNAL_AVE) {
+		ifmgd->flags &= ~IEEE80211_STA_RESET_SIGNAL_AVE;
+		ifmgd->ave_beacon_signal = rx_status->signal;
+		ifmgd->last_cqm_event_signal = 0;
+	} else {
+		ifmgd->ave_beacon_signal =
+			(IEEE80211_SIGNAL_AVE_WEIGHT * rx_status->signal * 16 +
+			 (16 - IEEE80211_SIGNAL_AVE_WEIGHT) *
+			 ifmgd->ave_beacon_signal) / 16;
+	}
+	if (bss_conf->cqm_rssi_thold &&
+	    !(local->hw.flags & IEEE80211_HW_SUPPORTS_CQM_RSSI)) {
+		int sig = ifmgd->ave_beacon_signal / 16;
+		int last_event = ifmgd->last_cqm_event_signal;
+		int thold = bss_conf->cqm_rssi_thold;
+		int hyst = bss_conf->cqm_rssi_hyst;
+		if (sig < thold &&
+		    (last_event == 0 || sig < last_event - hyst)) {
+			ifmgd->last_cqm_event_signal = sig;
+			ieee80211_cqm_rssi_notify(
+				&sdata->vif,
+				NL80211_CQM_RSSI_THRESHOLD_EVENT_LOW,
+				GFP_KERNEL);
+		} else if (sig > thold &&
+			   (last_event == 0 || sig > last_event + hyst)) {
+			ifmgd->last_cqm_event_signal = sig;
+			ieee80211_cqm_rssi_notify(
+				&sdata->vif,
+				NL80211_CQM_RSSI_THRESHOLD_EVENT_HIGH,
+				GFP_KERNEL);
+		}
+	}
 
 	if (ifmgd->flags & IEEE80211_STA_BEACON_POLL) {
 #ifdef CONFIG_MAC80211_VERBOSE_DEBUG
@@ -1663,7 +1717,7 @@ static void ieee80211_sta_work(struct work_struct *work)
 			printk(KERN_DEBUG "No probe response from AP %pM"
 				" after %dms, disconnecting.\n",
 				bssid, (1000 * IEEE80211_PROBE_WAIT)/HZ);
-			ieee80211_set_disassoc(sdata);
+			ieee80211_set_disassoc(sdata, true);
 			ieee80211_recalc_idle(local);
 			mutex_unlock(&ifmgd->mtx);
 			/*
@@ -1965,7 +2019,7 @@ int ieee80211_mgd_assoc(struct ieee80211_sub_if_data *sdata,
 		}
 
 		/* Trying to reassociate - clear previous association state */
-		ieee80211_set_disassoc(sdata);
+		ieee80211_set_disassoc(sdata, true);
 	}
 	mutex_unlock(&ifmgd->mtx);
 
@@ -2069,7 +2123,7 @@ int ieee80211_mgd_deauth(struct ieee80211_sub_if_data *sdata,
 
 	if (ifmgd->associated == req->bss) {
 		bssid = req->bss->bssid;
-		ieee80211_set_disassoc(sdata);
+		ieee80211_set_disassoc(sdata, true);
 		mutex_unlock(&ifmgd->mtx);
 	} else {
 		bool not_auth_yet = false;
@@ -2126,6 +2180,7 @@ int ieee80211_mgd_disassoc(struct ieee80211_sub_if_data *sdata,
 			   void *cookie)
 {
 	struct ieee80211_if_managed *ifmgd = &sdata->u.mgd;
+	u8 bssid[ETH_ALEN];
 
 	mutex_lock(&ifmgd->mtx);
 
@@ -2143,13 +2198,15 @@ int ieee80211_mgd_disassoc(struct ieee80211_sub_if_data *sdata,
 	printk(KERN_DEBUG "%s: disassociating from %pM by local choice (reason=%d)\n",
 	       sdata->name, req->bss->bssid, req->reason_code);
 
-	ieee80211_set_disassoc(sdata);
+	memcpy(bssid, req->bss->bssid, ETH_ALEN);
+	ieee80211_set_disassoc(sdata, false);
 
 	mutex_unlock(&ifmgd->mtx);
 
 	ieee80211_send_deauth_disassoc(sdata, req->bss->bssid,
 			IEEE80211_STYPE_DISASSOC, req->reason_code,
 			cookie);
+	sta_info_destroy_addr(sdata, bssid);
 
 	ieee80211_recalc_idle(sdata->local);
 

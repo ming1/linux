@@ -915,6 +915,33 @@ struct wl1271_acx_pm_config {
 	u8 padding[3];
 } __attribute__ ((packed));
 
+struct wl1271_acx_keep_alive_mode {
+	struct acx_header header;
+
+	u8 enabled;
+	u8 padding[3];
+} __attribute__ ((packed));
+
+enum {
+	ACX_KEEP_ALIVE_NO_TX = 0,
+	ACX_KEEP_ALIVE_PERIOD_ONLY
+};
+
+enum {
+	ACX_KEEP_ALIVE_TPL_INVALID = 0,
+	ACX_KEEP_ALIVE_TPL_VALID
+};
+
+struct wl1271_acx_keep_alive_config {
+	struct acx_header header;
+
+	__le32 period;
+	u8 index;
+	u8 tpl_validation;
+	u8 trigger;
+	u8 padding;
+} __attribute__ ((packed));
+
 enum {
 	ACX_WAKE_UP_CONDITIONS      = 0x0002,
 	ACX_MEM_CFG                 = 0x0003,
@@ -964,7 +991,7 @@ enum {
 	ACX_BET_ENABLE              = 0x0050,
 	ACX_RSSI_SNR_TRIGGER        = 0x0051,
 	ACX_RSSI_SNR_WEIGHTS        = 0x0051,
-	ACX_KEEP_ALIVE_MODE         = 0x0052,
+	ACX_KEEP_ALIVE_MODE         = 0x0053,
 	ACX_SET_KEEP_ALIVE_CONFIG   = 0x0054,
 	ACX_BA_SESSION_RESPONDER_POLICY = 0x0055,
 	ACX_BA_SESSION_INITIATOR_POLICY = 0x0056,
@@ -1004,7 +1031,7 @@ int wl1271_acx_rts_threshold(struct wl1271 *wl, u16 rts_threshold);
 int wl1271_acx_dco_itrim_params(struct wl1271 *wl);
 int wl1271_acx_beacon_filter_opt(struct wl1271 *wl, bool enable_filter);
 int wl1271_acx_beacon_filter_table(struct wl1271 *wl);
-int wl1271_acx_conn_monit_params(struct wl1271 *wl);
+int wl1271_acx_conn_monit_params(struct wl1271 *wl, bool enable);
 int wl1271_acx_sg_enable(struct wl1271 *wl, bool enable);
 int wl1271_acx_sg_cfg(struct wl1271 *wl);
 int wl1271_acx_cca_threshold(struct wl1271 *wl);
@@ -1031,5 +1058,7 @@ int wl1271_acx_bet_enable(struct wl1271 *wl, bool enable);
 int wl1271_acx_arp_ip_filter(struct wl1271 *wl, bool enable, u8 *address,
 			     u8 version);
 int wl1271_acx_pm_config(struct wl1271 *wl);
+int wl1271_acx_keep_alive_mode(struct wl1271 *wl, bool enable);
+int wl1271_acx_keep_alive_config(struct wl1271 *wl, u8 index, u8 tpl_valid);
 
 #endif /* __WL1271_ACX_H__ */
