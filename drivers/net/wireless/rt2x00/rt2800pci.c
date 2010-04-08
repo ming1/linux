@@ -60,6 +60,12 @@ static void rt2800pci_mcu_status(struct rt2x00_dev *rt2x00dev, const u8 token)
 	unsigned int i;
 	u32 reg;
 
+	/*
+	 * SOC devices don't support MCU requests.
+	 */
+	if (rt2x00_is_soc(rt2x00dev))
+		return;
+
 	for (i = 0; i < 200; i++) {
 		rt2800_register_read(rt2x00dev, H2M_MAILBOX_CID, &reg);
 
@@ -1009,6 +1015,14 @@ static void rt2800pci_txdone(struct rt2x00_dev *rt2x00dev)
 	}
 }
 
+static void rt2800pci_wakeup(struct rt2x00_dev *rt2x00dev)
+{
+	struct ieee80211_conf conf = { .flags = 0 };
+	struct rt2x00lib_conf libconf = { .conf = &conf };
+
+	rt2800_config(rt2x00dev, &libconf, IEEE80211_CONF_CHANGE_PS);
+}
+
 static irqreturn_t rt2800pci_interrupt(int irq, void *dev_instance)
 {
 	struct rt2x00_dev *rt2x00dev = dev_instance;
@@ -1032,6 +1046,9 @@ static irqreturn_t rt2800pci_interrupt(int irq, void *dev_instance)
 
 	if (rt2x00_get_field32(reg, INT_SOURCE_CSR_TX_FIFO_STATUS))
 		rt2800pci_txdone(rt2x00dev);
+
+	if (rt2x00_get_field32(reg, INT_SOURCE_CSR_AUTO_WAKEUP))
+		rt2800pci_wakeup(rt2x00dev);
 
 	return IRQ_HANDLED;
 }

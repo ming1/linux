@@ -674,6 +674,19 @@ struct conf_tx_settings {
 	 */
 	u16 tx_compl_threshold;
 
+	/*
+	 * The rate used for control messages and scanning on the 2.4GHz band
+	 *
+	 * Range: CONF_HW_BIT_RATE_* bit mask
+	 */
+	u32 basic_rate;
+
+	/*
+	 * The rate used for control messages and scanning on the 5GHz band
+	 *
+	 * Range: CONF_HW_BIT_RATE_* bit mask
+	 */
+	u32 basic_rate_5;
 };
 
 enum {
@@ -964,6 +977,13 @@ struct conf_conn_settings {
 	 * Range: 1000 - 3600000
 	 */
 	u32 keep_alive_interval;
+
+	/*
+	 * Maximum listen interval supported by the driver in units of beacons.
+	 *
+	 * Range: u16
+	 */
+	u8 max_listen_interval;
 };
 
 enum {

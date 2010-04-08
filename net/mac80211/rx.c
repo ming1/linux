@@ -720,14 +720,16 @@ static void ieee80211_rx_reorder_ampdu(struct ieee80211_rx_data *rx,
 
 	tid = *ieee80211_get_qos_ctl(hdr) & IEEE80211_QOS_CTL_TID_MASK;
 
-	if (sta->ampdu_mlme.tid_state_rx[tid] != HT_AGG_STATE_OPERATIONAL)
-		goto dont_reorder;
+	spin_lock(&sta->lock);
+
+	if (!sta->ampdu_mlme.tid_active_rx[tid])
+		goto dont_reorder_unlock;
 
 	tid_agg_rx = sta->ampdu_mlme.tid_rx[tid];
 
 	/* qos null data frames are excluded */
 	if (unlikely(hdr->frame_control & cpu_to_le16(IEEE80211_STYPE_NULLFUNC)))
-		goto dont_reorder;
+		goto dont_reorder_unlock;
 
 	/* new, potentially un-ordered, ampdu frame - process it */
 
@@ -739,15 +741,20 @@ static void ieee80211_rx_reorder_ampdu(struct ieee80211_rx_data *rx,
 	/* if this mpdu is fragmented - terminate rx aggregation session */
 	sc = le16_to_cpu(hdr->seq_ctrl);
 	if (sc & IEEE80211_SCTL_FRAG) {
-		ieee80211_sta_stop_rx_ba_session(sta->sdata, sta->sta.addr,
-			tid, 0, WLAN_REASON_QSTA_REQUIRE_SETUP);
+		spin_unlock(&sta->lock);
+		__ieee80211_stop_rx_ba_session(sta, tid, WLAN_BACK_RECIPIENT,
+					       WLAN_REASON_QSTA_REQUIRE_SETUP);
 		dev_kfree_skb(skb);
 		return;
 	}
 
-	if (ieee80211_sta_manage_reorder_buf(hw, tid_agg_rx, skb, frames))
+	if (ieee80211_sta_manage_reorder_buf(hw, tid_agg_rx, skb, frames)) {
+		spin_unlock(&sta->lock);
 		return;
+	}
 
+ dont_reorder_unlock:
+	spin_unlock(&sta->lock);
  dont_reorder:
 	__skb_queue_tail(frames, skb);
 }
@@ -813,7 +820,7 @@ ieee80211_rx_h_decrypt(struct ieee80211_rx_data *rx)
 {
 	struct sk_buff *skb = rx->skb;
 	struct ieee80211_rx_status *status = IEEE80211_SKB_RXCB(skb);
-	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
+	struct ieee80211_hdr *hdr;
 	int keyidx;
 	int hdrlen;
 	ieee80211_rx_result result = RX_DROP_UNUSABLE;
@@ -853,6 +860,11 @@ ieee80211_rx_h_decrypt(struct ieee80211_rx_data *rx)
 	 */
 	if (!(rx->flags & IEEE80211_RX_RA_MATCH))
 		return RX_CONTINUE;
+
+	if (skb_linearize(rx->skb))
+		return RX_DROP_UNUSABLE;
+
+	hdr = (struct ieee80211_hdr *)skb->data;
 
 	/* start without a key */
 	rx->key = NULL;
@@ -936,9 +948,6 @@ ieee80211_rx_h_decrypt(struct ieee80211_rx_data *rx)
 	} else {
 		return RX_DROP_MONITOR;
 	}
-
-	if (skb_linearize(rx->skb))
-		return RX_DROP_UNUSABLE;
 
 	/* Check for weak IVs if possible */
 	if (rx->sta && rx->key->conf.alg == ALG_WEP &&
@@ -1419,7 +1428,8 @@ ieee80211_drop_unencrypted_mgmt(struct ieee80211_rx_data *rx)
 		return 0;
 
 	if (rx->sta && test_sta_flags(rx->sta, WLAN_STA_MFP)) {
-		if (unlikely(ieee80211_is_unicast_robust_mgmt_frame(rx->skb) &&
+		if (unlikely(!ieee80211_has_protected(fc) &&
+			     ieee80211_is_unicast_robust_mgmt_frame(rx->skb) &&
 			     rx->key))
 			return -EACCES;
 		/* BIP does not use Protected field, so need to check MMIE */
@@ -1803,10 +1813,12 @@ ieee80211_rx_h_ctrl(struct ieee80211_rx_data *rx, struct sk_buff_head *frames)
 	if (ieee80211_is_back_req(bar->frame_control)) {
 		if (!rx->sta)
 			return RX_DROP_MONITOR;
+		spin_lock(&rx->sta->lock);
 		tid = le16_to_cpu(bar->control) >> 12;
-		if (rx->sta->ampdu_mlme.tid_state_rx[tid]
-					!= HT_AGG_STATE_OPERATIONAL)
+		if (!rx->sta->ampdu_mlme.tid_active_rx[tid]) {
+			spin_unlock(&rx->sta->lock);
 			return RX_DROP_MONITOR;
+		}
 		tid_agg_rx = rx->sta->ampdu_mlme.tid_rx[tid];
 
 		start_seq_num = le16_to_cpu(bar->start_seq_num) >> 4;
@@ -1820,6 +1832,7 @@ ieee80211_rx_h_ctrl(struct ieee80211_rx_data *rx, struct sk_buff_head *frames)
 		ieee80211_release_reorder_frames(hw, tid_agg_rx, start_seq_num,
 						 frames);
 		kfree_skb(skb);
+		spin_unlock(&rx->sta->lock);
 		return RX_QUEUED;
 	}
 

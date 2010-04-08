@@ -547,7 +547,6 @@ static bool ath9k_hw_devid_supported(u16 devid)
 	case AR9285_DEVID_PCIE:
 	case AR5416_DEVID_AR9287_PCI:
 	case AR5416_DEVID_AR9287_PCIE:
-	case AR9271_USB:
 	case AR2427_DEVID_PCIE:
 		return true;
 	default:
@@ -816,15 +815,30 @@ static void ath9k_hw_init_mode_gain_regs(struct ath_hw *ah)
 
 		/* txgain table */
 		if (txgain_type == AR5416_EEP_TXGAIN_HIGH_POWER) {
-			INIT_INI_ARRAY(&ah->iniModesTxGain,
-			ar9285Modes_high_power_tx_gain_9285_1_2,
-			ARRAY_SIZE(ar9285Modes_high_power_tx_gain_9285_1_2), 6);
+			if (AR_SREV_9285E_20(ah)) {
+				INIT_INI_ARRAY(&ah->iniModesTxGain,
+				ar9285Modes_XE2_0_high_power,
+				ARRAY_SIZE(
+				  ar9285Modes_XE2_0_high_power), 6);
+			} else {
+				INIT_INI_ARRAY(&ah->iniModesTxGain,
+				ar9285Modes_high_power_tx_gain_9285_1_2,
+				ARRAY_SIZE(
+				  ar9285Modes_high_power_tx_gain_9285_1_2), 6);
+			}
 		} else {
-			INIT_INI_ARRAY(&ah->iniModesTxGain,
-			ar9285Modes_original_tx_gain_9285_1_2,
-			ARRAY_SIZE(ar9285Modes_original_tx_gain_9285_1_2), 6);
+			if (AR_SREV_9285E_20(ah)) {
+				INIT_INI_ARRAY(&ah->iniModesTxGain,
+				ar9285Modes_XE2_0_normal_power,
+				ARRAY_SIZE(
+				  ar9285Modes_XE2_0_normal_power), 6);
+			} else {
+				INIT_INI_ARRAY(&ah->iniModesTxGain,
+				ar9285Modes_original_tx_gain_9285_1_2,
+				ARRAY_SIZE(
+				  ar9285Modes_original_tx_gain_9285_1_2), 6);
+			}
 		}
-
 	}
 }
 
@@ -855,11 +869,13 @@ int ath9k_hw_init(struct ath_hw *ah)
 	struct ath_common *common = ath9k_hw_common(ah);
 	int r = 0;
 
-	if (!ath9k_hw_devid_supported(ah->hw_version.devid)) {
-		ath_print(common, ATH_DBG_FATAL,
-			  "Unsupported device ID: 0x%0x\n",
-			  ah->hw_version.devid);
-		return -EOPNOTSUPP;
+	if (common->bus_ops->ath_bus_type != ATH_USB) {
+		if (!ath9k_hw_devid_supported(ah->hw_version.devid)) {
+			ath_print(common, ATH_DBG_FATAL,
+				  "Unsupported device ID: 0x%0x\n",
+				  ah->hw_version.devid);
+			return -EOPNOTSUPP;
+		}
 	}
 
 	ath9k_hw_init_defaults(ah);
@@ -1120,23 +1136,23 @@ static void ath9k_hw_init_chain_masks(struct ath_hw *ah)
 static void ath9k_hw_init_interrupt_masks(struct ath_hw *ah,
 					  enum nl80211_iftype opmode)
 {
-	ah->mask_reg = AR_IMR_TXERR |
+	u32 imr_reg = AR_IMR_TXERR |
 		AR_IMR_TXURN |
 		AR_IMR_RXERR |
 		AR_IMR_RXORN |
 		AR_IMR_BCNMISC;
 
 	if (ah->config.rx_intr_mitigation)
-		ah->mask_reg |= AR_IMR_RXINTM | AR_IMR_RXMINTR;
+		imr_reg |= AR_IMR_RXINTM | AR_IMR_RXMINTR;
 	else
-		ah->mask_reg |= AR_IMR_RXOK;
+		imr_reg |= AR_IMR_RXOK;
 
-	ah->mask_reg |= AR_IMR_TXOK;
+	imr_reg |= AR_IMR_TXOK;
 
 	if (opmode == NL80211_IFTYPE_AP)
-		ah->mask_reg |= AR_IMR_MIB;
+		imr_reg |= AR_IMR_MIB;
 
-	REG_WRITE(ah, AR_IMR, ah->mask_reg);
+	REG_WRITE(ah, AR_IMR, imr_reg);
 	ah->imrs2_reg |= AR_IMR_S2_GTT;
 	REG_WRITE(ah, AR_IMR_S2, ah->imrs2_reg);
 
@@ -2839,7 +2855,7 @@ EXPORT_SYMBOL(ath9k_hw_getisr);
 
 enum ath9k_int ath9k_hw_set_interrupts(struct ath_hw *ah, enum ath9k_int ints)
 {
-	u32 omask = ah->mask_reg;
+	enum ath9k_int omask = ah->imask;
 	u32 mask, mask2;
 	struct ath9k_hw_capabilities *pCap = &ah->caps;
 	struct ath_common *common = ath9k_hw_common(ah);
@@ -2911,7 +2927,6 @@ enum ath9k_int ath9k_hw_set_interrupts(struct ath_hw *ah, enum ath9k_int ints)
 			   AR_IMR_S2_TSFOOR | AR_IMR_S2_GTT | AR_IMR_S2_CST);
 	ah->imrs2_reg |= mask2;
 	REG_WRITE(ah, AR_IMR_S2, ah->imrs2_reg);
-	ah->mask_reg = ints;
 
 	if (!(pCap->hw_caps & ATH9K_HW_CAP_AUTOSLEEP)) {
 		if (ints & ATH9K_INT_TIM_TIMER)
@@ -3230,8 +3245,10 @@ int ath9k_hw_fill_cap_info(struct ath_hw *ah)
 		pCap->hw_caps |= ATH9K_HW_CAP_RFSILENT;
 	}
 #endif
-
-	pCap->hw_caps &= ~ATH9K_HW_CAP_AUTOSLEEP;
+	if (AR_SREV_9271(ah))
+		pCap->hw_caps |= ATH9K_HW_CAP_AUTOSLEEP;
+	else
+		pCap->hw_caps &= ~ATH9K_HW_CAP_AUTOSLEEP;
 
 	if (AR_SREV_9280(ah) || AR_SREV_9285(ah))
 		pCap->hw_caps &= ~ATH9K_HW_CAP_4KB_SPLITTRANS;

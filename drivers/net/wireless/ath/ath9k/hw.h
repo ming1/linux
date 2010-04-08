@@ -44,8 +44,6 @@
 
 #define AR5416_AR9100_DEVID	0x000b
 
-#define AR9271_USB             0x9271
-
 #define	AR_SUBVENDOR_ID_NOG	0x0e11
 #define AR_SUBVENDOR_ID_NEW_A	0x7065
 #define AR5416_MAGIC		0x19641014
@@ -478,7 +476,7 @@ struct ath_hw {
 	struct ath9k_tx_queue_info txq[ATH9K_NUM_TX_QUEUES];
 
 	int16_t curchan_rad_index;
-	u32 mask_reg;
+	enum ath9k_int imask;
 	u32 imrs2_reg;
 	u32 txok_interrupt_mask;
 	u32 txerr_interrupt_mask;

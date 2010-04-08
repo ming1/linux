@@ -116,8 +116,7 @@ static struct conf_drv_settings default_conf = {
 	.tx = {
 		.tx_energy_detection         = 0,
 		.rc_conf                     = {
-			.enabled_rates       = CONF_HW_BIT_RATE_1MBPS |
-					       CONF_HW_BIT_RATE_2MBPS,
+			.enabled_rates       = 0,
 			.short_retry_limit   = 10,
 			.long_retry_limit    = 10,
 			.aflags              = 0
@@ -214,11 +213,13 @@ static struct conf_drv_settings default_conf = {
 		},
 		.frag_threshold              = IEEE80211_MAX_FRAG_THRESHOLD,
 		.tx_compl_timeout            = 700,
-		.tx_compl_threshold          = 4
+		.tx_compl_threshold          = 4,
+		.basic_rate                  = CONF_HW_BIT_RATE_1MBPS,
+		.basic_rate_5                = CONF_HW_BIT_RATE_6MBPS,
 	},
 	.conn = {
 		.wake_up_event               = CONF_WAKE_UP_EVENT_DTIM,
-		.listen_interval             = 0,
+		.listen_interval             = 1,
 		.bcn_filt_mode               = CONF_BCN_FILT_MODE_ENABLED,
 		.bcn_filt_ie_count           = 1,
 		.bcn_filt_ie = {
@@ -265,7 +266,8 @@ static struct conf_drv_settings default_conf = {
 		.bet_enable                  = CONF_BET_MODE_ENABLE,
 		.bet_max_consecutive         = 10,
 		.psm_entry_retries           = 3,
-		.keep_alive_interval         = 55000
+		.keep_alive_interval         = 55000,
+		.max_listen_interval         = 20,
 	},
 	.init = {
 		.radioparam = {
@@ -1171,6 +1173,32 @@ out:
 	return ret;
 }
 
+static void wl1271_set_band_rate(struct wl1271 *wl)
+{
+	if (wl->band == IEEE80211_BAND_2GHZ)
+		wl->basic_rate_set = wl->conf.tx.basic_rate;
+	else
+		wl->basic_rate_set = wl->conf.tx.basic_rate_5;
+}
+
+static u32 wl1271_min_rate_get(struct wl1271 *wl)
+{
+	int i;
+	u32 rate = 0;
+
+	if (!wl->basic_rate_set) {
+		WARN_ON(1);
+		wl->basic_rate_set = wl->conf.tx.basic_rate;
+	}
+
+	for (i = 0; !rate; i++) {
+		if ((wl->basic_rate_set >> i) & 0x1)
+			rate = 1 << i;
+	}
+
+	return rate;
+}
+
 static int wl1271_op_config(struct ieee80211_hw *hw, u32 changed)
 {
 	struct wl1271 *wl = hw->priv;
@@ -1187,11 +1215,37 @@ static int wl1271_op_config(struct ieee80211_hw *hw, u32 changed)
 
 	mutex_lock(&wl->mutex);
 
-	wl->band = conf->channel->band;
-
 	ret = wl1271_ps_elp_wakeup(wl, false);
 	if (ret < 0)
 		goto out;
+
+	/* if the channel changes while joined, join again */
+	if (changed & IEEE80211_CONF_CHANGE_CHANNEL) {
+		wl->band = conf->channel->band;
+		wl->channel = channel;
+
+		/*
+		 * FIXME: the mac80211 should really provide a fixed rate
+		 * to use here. for now, just use the smallest possible rate
+		 * for the band as a fixed rate for association frames and
+		 * other control messages.
+		 */
+		if (!test_bit(WL1271_FLAG_STA_ASSOCIATED, &wl->flags))
+			wl1271_set_band_rate(wl);
+
+		wl->basic_rate = wl1271_min_rate_get(wl);
+		ret = wl1271_acx_rate_policies(wl);
+		if (ret < 0)
+			wl1271_warning("rate policy for update channel "
+				       "failed %d", ret);
+
+		if (test_bit(WL1271_FLAG_JOINED, &wl->flags)) {
+			ret = wl1271_cmd_join(wl, wl->set_bss_type);
+			if (ret < 0)
+				wl1271_warning("cmd join to update channel "
+					       "failed %d", ret);
+		}
+	}
 
 	if (changed & IEEE80211_CONF_CHANGE_IDLE) {
 		if (conf->flags & IEEE80211_CONF_IDLE &&
@@ -1201,7 +1255,7 @@ static int wl1271_op_config(struct ieee80211_hw *hw, u32 changed)
 			wl1271_join_channel(wl, channel);
 
 		if (conf->flags & IEEE80211_CONF_IDLE) {
-			wl->rate_set = CONF_TX_RATE_MASK_BASIC;
+			wl->rate_set = wl1271_min_rate_get(wl);
 			wl->sta_rate_set = 0;
 			wl1271_acx_rate_policies(wl);
 			wl1271_acx_keep_alive_config(
@@ -1209,18 +1263,6 @@ static int wl1271_op_config(struct ieee80211_hw *hw, u32 changed)
 				ACX_KEEP_ALIVE_TPL_INVALID);
 		}
 	}
-
-	/* if the channel changes while joined, join again */
-	if (channel != wl->channel &&
-	    test_bit(WL1271_FLAG_JOINED, &wl->flags)) {
-		wl->channel = channel;
-		/* FIXME: maybe use CMD_CHANNEL_SWITCH for this? */
-		ret = wl1271_cmd_join(wl, wl->set_bss_type);
-		if (ret < 0)
-			wl1271_warning("cmd join to update channel failed %d",
-				       ret);
-	} else
-		wl->channel = channel;
 
 	if (conf->flags & IEEE80211_CONF_PS &&
 	    !test_bit(WL1271_FLAG_PSM_REQUESTED, &wl->flags)) {
@@ -1569,6 +1611,7 @@ static void wl1271_op_bss_info_changed(struct ieee80211_hw *hw,
 	enum wl1271_cmd_ps_mode mode;
 	struct wl1271 *wl = hw->priv;
 	bool do_join = false;
+	bool do_keepalive = false;
 	int ret;
 
 	wl1271_debug(DEBUG_MAC80211, "mac80211 bss info changed");
@@ -1600,7 +1643,8 @@ static void wl1271_op_bss_info_changed(struct ieee80211_hw *hw,
 			wl1271_ssid_set(wl, beacon);
 			ret = wl1271_cmd_template_set(wl, CMD_TEMPL_BEACON,
 						      beacon->data,
-						      beacon->len, 0);
+						      beacon->len, 0,
+						      wl1271_min_rate_get(wl));
 
 			if (ret < 0) {
 				dev_kfree_skb(beacon);
@@ -1615,7 +1659,8 @@ static void wl1271_op_bss_info_changed(struct ieee80211_hw *hw,
 			ret = wl1271_cmd_template_set(wl,
 						      CMD_TEMPL_PROBE_RESPONSE,
 						      beacon->data,
-						      beacon->len, 0);
+						      beacon->len, 0,
+						      wl1271_min_rate_get(wl));
 			dev_kfree_skb(beacon);
 			if (ret < 0)
 				goto out_sleep;
@@ -1658,8 +1703,21 @@ static void wl1271_op_bss_info_changed(struct ieee80211_hw *hw,
 
 	if (changed & BSS_CHANGED_ASSOC) {
 		if (bss_conf->assoc) {
+			u32 rates;
 			wl->aid = bss_conf->aid;
 			set_bit(WL1271_FLAG_STA_ASSOCIATED, &wl->flags);
+
+			/*
+			 * use basic rates from AP, and determine lowest rate
+			 * to use with control frames.
+			 */
+			rates = bss_conf->basic_rates;
+			wl->basic_rate_set = wl1271_tx_enabled_rates_get(wl,
+									 rates);
+			wl->basic_rate = wl1271_min_rate_get(wl);
+			ret = wl1271_acx_rate_policies(wl);
+			if (ret < 0)
+				goto out_sleep;
 
 			/*
 			 * with wl1271, we don't need to update the
@@ -1685,6 +1743,14 @@ static void wl1271_op_bss_info_changed(struct ieee80211_hw *hw,
 			if (ret < 0)
 				goto out_sleep;
 
+			/*
+			 * This is awkward. The keep-alive configs must be done
+			 * *after* the join command, because otherwise it will
+			 * not work, but it must only be done *once* because
+			 * otherwise the firmware will start complaining.
+			 */
+			do_keepalive = true;
+
 			/* enable the connection monitoring feature */
 			ret = wl1271_acx_conn_monit_params(wl, true);
 			if (ret < 0)
@@ -1702,6 +1768,13 @@ static void wl1271_op_bss_info_changed(struct ieee80211_hw *hw,
 			/* use defaults when not associated */
 			clear_bit(WL1271_FLAG_STA_ASSOCIATED, &wl->flags);
 			wl->aid = 0;
+
+			/* revert back to minimum rates for the current band */
+			wl1271_set_band_rate(wl);
+			wl->basic_rate = wl1271_min_rate_get(wl);
+			ret = wl1271_acx_rate_policies(wl);
+			if (ret < 0)
+				goto out_sleep;
 
 			/* disable connection monitor features */
 			ret = wl1271_acx_conn_monit_params(wl, false);
@@ -1763,6 +1836,9 @@ static void wl1271_op_bss_info_changed(struct ieee80211_hw *hw,
 		ret = wl1271_acx_aid(wl, wl->aid);
 		if (ret < 0)
 			goto out_sleep;
+	}
+
+	if (do_keepalive) {
 		ret = wl1271_cmd_build_klv_null_data(wl);
 		if (ret < 0)
 			goto out_sleep;
@@ -2178,6 +2254,7 @@ int wl1271_init_ieee80211(struct wl1271 *wl)
 	/* unit us */
 	/* FIXME: find a proper value */
 	wl->hw->channel_change_time = 10000;
+	wl->hw->max_listen_interval = wl->conf.conn.max_listen_interval;
 
 	wl->hw->flags = IEEE80211_HW_SIGNAL_DBM |
 		IEEE80211_HW_NOISE_DBM |
@@ -2249,6 +2326,7 @@ struct ieee80211_hw *wl1271_alloc_hw(void)
 	wl->psm_entry_retry = 0;
 	wl->power_level = WL1271_DEFAULT_POWER_LEVEL;
 	wl->basic_rate_set = CONF_TX_RATE_MASK_BASIC;
+	wl->basic_rate = CONF_TX_RATE_MASK_BASIC;
 	wl->rate_set = CONF_TX_RATE_MASK_BASIC;
 	wl->sta_rate_set = 0;
 	wl->band = IEEE80211_BAND_2GHZ;
