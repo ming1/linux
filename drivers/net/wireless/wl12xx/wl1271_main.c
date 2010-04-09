@@ -234,35 +234,6 @@ static struct conf_drv_settings default_conf = {
 		.broadcast_timeout           = 20000,
 		.rx_broadcast_in_ps          = 1,
 		.ps_poll_threshold           = 20,
-		.sig_trigger_count           = 2,
-		.sig_trigger = {
-			[0] = {
-				.threshold   = -75,
-				.pacing      = 500,
-				.metric      = CONF_TRIG_METRIC_RSSI_BEACON,
-				.type        = CONF_TRIG_EVENT_TYPE_EDGE,
-				.direction   = CONF_TRIG_EVENT_DIR_LOW,
-				.hysteresis  = 2,
-				.index       = 0,
-				.enable      = 1
-			},
-			[1] = {
-				.threshold   = -75,
-				.pacing      = 500,
-				.metric      = CONF_TRIG_METRIC_RSSI_BEACON,
-				.type        = CONF_TRIG_EVENT_TYPE_EDGE,
-				.direction   = CONF_TRIG_EVENT_DIR_HIGH,
-				.hysteresis  = 2,
-				.index       = 1,
-				.enable      = 1
-			}
-		},
-		.sig_weights = {
-			.rssi_bcn_avg_weight = 10,
-			.rssi_pkt_avg_weight = 10,
-			.snr_bcn_avg_weight  = 10,
-			.snr_pkt_avg_weight  = 10
-		},
 		.bet_enable                  = CONF_BET_MODE_ENABLE,
 		.bet_max_consecutive         = 10,
 		.psm_entry_retries           = 3,
@@ -281,6 +252,14 @@ static struct conf_drv_settings default_conf = {
 	.pm_config = {
 		.host_clk_settling_time = 5000,
 		.host_fast_wakeup_support = false
+	},
+	.roam_trigger = {
+		/* FIXME: due to firmware bug, must use value 1 for now */
+		.trigger_pacing               = 1,
+		.avg_weight_rssi_beacon       = 20,
+		.avg_weight_rssi_data         = 10,
+		.avg_weight_snr_beacon        = 20,
+		.avg_weight_snr_data          = 10
 	}
 };
 
@@ -1093,6 +1072,14 @@ static void wl1271_op_remove_interface(struct ieee80211_hw *hw,
 		wl->tx_blocks_freed[i] = 0;
 
 	wl1271_debugfs_reset(wl);
+
+	kfree(wl->fw_status);
+	wl->fw_status = NULL;
+	kfree(wl->tx_res_if);
+	wl->tx_res_if = NULL;
+	kfree(wl->target_mem_map);
+	wl->target_mem_map = NULL;
+
 	mutex_unlock(&wl->mutex);
 }
 
@@ -1215,6 +1202,9 @@ static int wl1271_op_config(struct ieee80211_hw *hw, u32 changed)
 
 	mutex_lock(&wl->mutex);
 
+	if (unlikely(wl->state == WL1271_STATE_OFF))
+		goto out;
+
 	ret = wl1271_ps_elp_wakeup(wl, false);
 	if (ret < 0)
 		goto out;
@@ -1261,7 +1251,9 @@ static int wl1271_op_config(struct ieee80211_hw *hw, u32 changed)
 			wl1271_acx_keep_alive_config(
 				wl, CMD_TEMPL_KLV_IDX_NULL_DATA,
 				ACX_KEEP_ALIVE_TPL_INVALID);
-		}
+			set_bit(WL1271_FLAG_IDLE, &wl->flags);
+		} else
+			clear_bit(WL1271_FLAG_IDLE, &wl->flags);
 	}
 
 	if (conf->flags & IEEE80211_CONF_PS &&
@@ -1316,7 +1308,11 @@ static u64 wl1271_op_prepare_multicast(struct ieee80211_hw *hw, int mc_count,
 				       struct dev_addr_list *mc_list)
 {
 	struct wl1271_filter_params *fp;
+	struct wl1271 *wl = hw->priv;
 	int i;
+
+	if (unlikely(wl->state == WL1271_STATE_OFF))
+		return 0;
 
 	fp = kzalloc(sizeof(*fp), GFP_ATOMIC);
 	if (!fp) {
@@ -1364,15 +1360,16 @@ static void wl1271_op_configure_filter(struct ieee80211_hw *hw,
 
 	mutex_lock(&wl->mutex);
 
-	if (wl->state == WL1271_STATE_OFF)
+	*total &= WL1271_SUPPORTED_FILTERS;
+	changed &= WL1271_SUPPORTED_FILTERS;
+
+	if (unlikely(wl->state == WL1271_STATE_OFF))
 		goto out;
 
 	ret = wl1271_ps_elp_wakeup(wl, false);
 	if (ret < 0)
 		goto out;
 
-	*total &= WL1271_SUPPORTED_FILTERS;
-	changed &= WL1271_SUPPORTED_FILTERS;
 
 	if (*total & FIF_ALLMULTI)
 		ret = wl1271_acx_group_address_tbl(wl, false, NULL, 0);
@@ -1566,9 +1563,12 @@ out:
 static int wl1271_op_set_rts_threshold(struct ieee80211_hw *hw, u32 value)
 {
 	struct wl1271 *wl = hw->priv;
-	int ret;
+	int ret = 0;
 
 	mutex_lock(&wl->mutex);
+
+	if (unlikely(wl->state == WL1271_STATE_OFF))
+		goto out;
 
 	ret = wl1271_ps_elp_wakeup(wl, false);
 	if (ret < 0)
@@ -1680,6 +1680,18 @@ static void wl1271_op_bss_info_changed(struct ieee80211_hw *hw,
 		else
 			wl->set_bss_type = BSS_TYPE_STA_BSS;
 		do_join = true;
+	}
+
+	if (changed & BSS_CHANGED_CQM) {
+		bool enable = false;
+		if (bss_conf->cqm_rssi_thold)
+			enable = true;
+		ret = wl1271_acx_rssi_snr_trigger(wl, enable,
+						  bss_conf->cqm_rssi_thold,
+						  bss_conf->cqm_rssi_hyst);
+		if (ret < 0)
+			goto out;
+		wl->rssi_thold = bss_conf->cqm_rssi_thold;
 	}
 
 	if ((changed & BSS_CHANGED_BSSID) &&
@@ -2262,7 +2274,8 @@ int wl1271_init_ieee80211(struct wl1271 *wl)
 		IEEE80211_HW_SUPPORTS_PS |
 		IEEE80211_HW_SUPPORTS_UAPSD |
 		IEEE80211_HW_HAS_RATE_CONTROL |
-		IEEE80211_HW_CONNECTION_MONITOR;
+		IEEE80211_HW_CONNECTION_MONITOR |
+		IEEE80211_HW_SUPPORTS_CQM_RSSI;
 
 	wl->hw->wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION) |
 		BIT(NL80211_IFTYPE_ADHOC);
@@ -2387,7 +2400,6 @@ int wl1271_free_hw(struct wl1271 *wl)
 
 	wl1271_debugfs_exit(wl);
 
-	kfree(wl->target_mem_map);
 	vfree(wl->fw);
 	wl->fw = NULL;
 	kfree(wl->nvs);

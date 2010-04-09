@@ -374,6 +374,7 @@ struct wl1271 {
 #define WL1271_FLAG_PSM_REQUESTED      (8)
 #define WL1271_FLAG_IRQ_PENDING        (9)
 #define WL1271_FLAG_IRQ_RUNNING       (10)
+#define WL1271_FLAG_IDLE              (11)
 	unsigned long flags;
 
 	struct wl1271_partition_set part;
@@ -471,6 +472,9 @@ struct wl1271 {
 
 	/* in dBm */
 	int power_level;
+
+	int rssi_thold;
+	int last_rssi_event;
 
 	struct wl1271_stats stats;
 	struct wl1271_debugfs debugfs;
