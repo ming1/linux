@@ -2559,8 +2559,7 @@ ath5k_init(struct ath5k_softc *sc)
 	for (i = 0; i < AR5K_KEYTABLE_SIZE; i++)
 		ath5k_hw_reset_key(ah, i);
 
-	/* Set ack to be sent at low bit-rates */
-	ath5k_hw_set_ack_bitrate_high(ah, false);
+	ath5k_hw_set_ack_bitrate_high(ah, true);
 	ret = 0;
 done:
 	mmiowb();
@@ -2707,7 +2706,20 @@ ath5k_intr(int irq, void *dev_id)
 			 */
 			tasklet_schedule(&sc->restq);
 		} else if (unlikely(status & AR5K_INT_RXORN)) {
-			tasklet_schedule(&sc->restq);
+			/*
+			 * Receive buffers are full. Either the bus is busy or
+			 * the CPU is not fast enough to process all received
+			 * frames.
+			 * Older chipsets need a reset to come out of this
+			 * condition, but we treat it as RX for newer chips.
+			 * We don't know exactly which versions need a reset -
+			 * this guess is copied from the HAL.
+			 */
+			sc->stats.rxorn_intr++;
+			if (ah->ah_mac_srev < AR5K_SREV_AR5212)
+				tasklet_schedule(&sc->restq);
+			else
+				tasklet_schedule(&sc->rxtq);
 		} else {
 			if (status & AR5K_INT_SWBA) {
 				tasklet_hi_schedule(&sc->beacontq);
