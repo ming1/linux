@@ -401,6 +401,7 @@ void ath9k_tasklet(unsigned long data)
 	struct ath_common *common = ath9k_hw_common(ah);
 
 	u32 status = sc->intrstatus;
+	u32 rxmask;
 
 	ath9k_ps_wakeup(sc);
 
@@ -410,14 +411,30 @@ void ath9k_tasklet(unsigned long data)
 		return;
 	}
 
-	if (status & (ATH9K_INT_RX | ATH9K_INT_RXEOL | ATH9K_INT_RXORN)) {
+	if (ah->caps.hw_caps & ATH9K_HW_CAP_EDMA)
+		rxmask = (ATH9K_INT_RXHP | ATH9K_INT_RXLP | ATH9K_INT_RXEOL |
+			  ATH9K_INT_RXORN);
+	else
+		rxmask = (ATH9K_INT_RX | ATH9K_INT_RXEOL | ATH9K_INT_RXORN);
+
+	if (status & rxmask) {
 		spin_lock_bh(&sc->rx.rxflushlock);
-		ath_rx_tasklet(sc, 0);
+
+		/* Check for high priority Rx first */
+		if ((ah->caps.hw_caps & ATH9K_HW_CAP_EDMA) &&
+		    (status & ATH9K_INT_RXHP))
+			ath_rx_tasklet(sc, 0, true);
+
+		ath_rx_tasklet(sc, 0, false);
 		spin_unlock_bh(&sc->rx.rxflushlock);
 	}
 
-	if (status & ATH9K_INT_TX)
-		ath_tx_tasklet(sc);
+	if (status & ATH9K_INT_TX) {
+		if (ah->caps.hw_caps & ATH9K_HW_CAP_EDMA)
+			ath_tx_edma_tasklet(sc);
+		else
+			ath_tx_tasklet(sc);
+	}
 
 	if ((status & ATH9K_INT_TSFOOR) && sc->ps_enabled) {
 		/*
@@ -445,6 +462,8 @@ irqreturn_t ath_isr(int irq, void *dev)
 		ATH9K_INT_RXORN |		\
 		ATH9K_INT_RXEOL |		\
 		ATH9K_INT_RX |			\
+		ATH9K_INT_RXLP |		\
+		ATH9K_INT_RXHP |		\
 		ATH9K_INT_TX |			\
 		ATH9K_INT_BMISS |		\
 		ATH9K_INT_CST |			\
@@ -496,7 +515,8 @@ irqreturn_t ath_isr(int irq, void *dev)
 	 * If a FATAL or RXORN interrupt is received, we have to reset the
 	 * chip immediately.
 	 */
-	if (status & (ATH9K_INT_FATAL | ATH9K_INT_RXORN))
+	if ((status & ATH9K_INT_FATAL) || ((status & ATH9K_INT_RXORN) &&
+	    !(ah->caps.hw_caps & ATH9K_HW_CAP_EDMA)))
 		goto chip_reset;
 
 	if (status & ATH9K_INT_SWBA)
@@ -504,6 +524,13 @@ irqreturn_t ath_isr(int irq, void *dev)
 
 	if (status & ATH9K_INT_TXURN)
 		ath9k_hw_updatetxtriglevel(ah, true);
+
+	if (ah->caps.hw_caps & ATH9K_HW_CAP_EDMA) {
+		if (status & ATH9K_INT_RXEOL) {
+			ah->imask &= ~(ATH9K_INT_RXEOL | ATH9K_INT_RXORN);
+			ath9k_hw_set_interrupts(ah, ah->imask);
+		}
+	}
 
 	if (status & ATH9K_INT_MIB) {
 		/*
@@ -1162,9 +1189,14 @@ static int ath9k_start(struct ieee80211_hw *hw)
 	}
 
 	/* Setup our intr mask. */
-	ah->imask = ATH9K_INT_RX | ATH9K_INT_TX
-		| ATH9K_INT_RXEOL | ATH9K_INT_RXORN
-		| ATH9K_INT_FATAL | ATH9K_INT_GLOBAL;
+	ah->imask = ATH9K_INT_TX | ATH9K_INT_RXEOL |
+		    ATH9K_INT_RXORN | ATH9K_INT_FATAL |
+		    ATH9K_INT_GLOBAL;
+
+	if (ah->caps.hw_caps & ATH9K_HW_CAP_EDMA)
+		ah->imask |= ATH9K_INT_RXHP | ATH9K_INT_RXLP;
+	else
+		ah->imask |= ATH9K_INT_RX;
 
 	if (ah->caps.hw_caps & ATH9K_HW_CAP_GTT)
 		ah->imask |= ATH9K_INT_GTT;
@@ -1436,7 +1468,8 @@ static int ath9k_add_interface(struct ieee80211_hw *hw,
 	if ((vif->type == NL80211_IFTYPE_STATION) ||
 	    (vif->type == NL80211_IFTYPE_ADHOC) ||
 	    (vif->type == NL80211_IFTYPE_MESH_POINT)) {
-		ah->imask |= ATH9K_INT_MIB;
+		if (ah->config.enable_ani)
+			ah->imask |= ATH9K_INT_MIB;
 		ah->imask |= ATH9K_INT_TSFOOR;
 	}
 
