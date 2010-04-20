@@ -19,7 +19,7 @@
 
 #define BITS_PER_BYTE           8
 #define OFDM_PLCP_BITS          22
-#define HT_RC_2_MCS(_rc)        ((_rc) & 0x0f)
+#define HT_RC_2_MCS(_rc)        ((_rc) & 0x1f)
 #define HT_RC_2_STREAMS(_rc)    ((((_rc) & 0x78) >> 3) + 1)
 #define L_STF                   8
 #define L_LTF                   8
@@ -34,7 +34,7 @@
 
 #define OFDM_SIFS_TIME    	    16
 
-static u32 bits_per_symbol[][2] = {
+static u16 bits_per_symbol[][2] = {
 	/* 20MHz 40MHz */
 	{    26,   54 },     /*  0: BPSK */
 	{    52,  108 },     /*  1: QPSK 1/2 */
@@ -44,14 +44,6 @@ static u32 bits_per_symbol[][2] = {
 	{   208,  432 },     /*  5: 64-QAM 2/3 */
 	{   234,  486 },     /*  6: 64-QAM 3/4 */
 	{   260,  540 },     /*  7: 64-QAM 5/6 */
-	{    52,  108 },     /*  8: BPSK */
-	{   104,  216 },     /*  9: QPSK 1/2 */
-	{   156,  324 },     /* 10: QPSK 3/4 */
-	{   208,  432 },     /* 11: 16-QAM 1/2 */
-	{   312,  648 },     /* 12: 16-QAM 3/4 */
-	{   416,  864 },     /* 13: 64-QAM 2/3 */
-	{   468,  972 },     /* 14: 64-QAM 3/4 */
-	{   520, 1080 },     /* 15: 64-QAM 5/6 */
 };
 
 #define IS_HT_RATE(_rate)     ((_rate) & 0x80)
@@ -71,24 +63,36 @@ static void ath_tx_rc_status(struct ath_buf *bf, struct ath_tx_status *ts,
 			     int nbad, int txok, bool update_rc);
 
 enum {
-	MCS_DEFAULT,
+	MCS_HT20,
+	MCS_HT20_SGI,
 	MCS_HT40,
 	MCS_HT40_SGI,
 };
 
-static int ath_max_4ms_framelen[3][16] = {
-	[MCS_DEFAULT] = {
-		3216,  6434,  9650,  12868, 19304, 25740,  28956,  32180,
-		6430,  12860, 19300, 25736, 38600, 51472,  57890,  64320,
+static int ath_max_4ms_framelen[4][32] = {
+	[MCS_HT20] = {
+		3212,  6432,  9648,  12864,  19300,  25736,  28952,  32172,
+		6424,  12852, 19280, 25708,  38568,  51424,  57852,  64280,
+		9628,  19260, 28896, 38528,  57792,  65532,  65532,  65532,
+		12828, 25656, 38488, 51320,  65532,  65532,  65532,  65532,
+	},
+	[MCS_HT20_SGI] = {
+		3572,  7144,  10720,  14296,  21444,  28596,  32172,  35744,
+		7140,  14284, 21428,  28568,  42856,  57144,  64288,  65532,
+		10700, 21408, 32112,  42816,  64228,  65532,  65532,  65532,
+		14256, 28516, 42780,  57040,  65532,  65532,  65532,  65532,
 	},
 	[MCS_HT40] = {
-		6684,  13368, 20052, 26738, 40104, 53476,  60156,  66840,
-		13360, 26720, 40080, 53440, 80160, 106880, 120240, 133600,
+		6680,  13360,  20044,  26724,  40092,  53456,  60140,  65532,
+		13348, 26700,  40052,  53400,  65532,  65532,  65532,  65532,
+		20004, 40008,  60016,  65532,  65532,  65532,  65532,  65532,
+		26644, 53292,  65532,  65532,  65532,  65532,  65532,  65532,
 	},
 	[MCS_HT40_SGI] = {
-		/* TODO: Only MCS 7 and 15 updated, recalculate the rest */
-		6684,  13368, 20052, 26738, 40104, 53476,  60156,  74200,
-		13360, 26720, 40080, 53440, 80160, 106880, 120240, 148400,
+		7420,  14844,  22272,  29696,  44544,  59396,  65532,  65532,
+		14832, 29668,  44504,  59340,  65532,  65532,  65532,  65532,
+		22232, 44464,  65532,  65532,  65532,  65532,  65532,  65532,
+		29616, 59232,  65532,  65532,  65532,  65532,  65532,  65532,
 	}
 };
 
@@ -261,18 +265,39 @@ static void ath_tx_set_retry(struct ath_softc *sc, struct ath_txq *txq,
 	hdr->frame_control |= cpu_to_le16(IEEE80211_FCTL_RETRY);
 }
 
+static struct ath_buf *ath_tx_get_buffer(struct ath_softc *sc)
+{
+	struct ath_buf *bf = NULL;
+
+	spin_lock_bh(&sc->tx.txbuflock);
+
+	if (unlikely(list_empty(&sc->tx.txbuf))) {
+		spin_unlock_bh(&sc->tx.txbuflock);
+		return NULL;
+	}
+
+	bf = list_first_entry(&sc->tx.txbuf, struct ath_buf, list);
+	list_del(&bf->list);
+
+	spin_unlock_bh(&sc->tx.txbuflock);
+
+	return bf;
+}
+
+static void ath_tx_return_buffer(struct ath_softc *sc, struct ath_buf *bf)
+{
+	spin_lock_bh(&sc->tx.txbuflock);
+	list_add_tail(&bf->list, &sc->tx.txbuf);
+	spin_unlock_bh(&sc->tx.txbuflock);
+}
+
 static struct ath_buf* ath_clone_txbuf(struct ath_softc *sc, struct ath_buf *bf)
 {
 	struct ath_buf *tbf;
 
-	spin_lock_bh(&sc->tx.txbuflock);
-	if (WARN_ON(list_empty(&sc->tx.txbuf))) {
-		spin_unlock_bh(&sc->tx.txbuflock);
+	tbf = ath_tx_get_buffer(sc);
+	if (WARN_ON(!tbf))
 		return NULL;
-	}
-	tbf = list_first_entry(&sc->tx.txbuf, struct ath_buf, list);
-	list_del(&tbf->list);
-	spin_unlock_bh(&sc->tx.txbuflock);
 
 	ATH_TXBUF_RESET(tbf);
 
@@ -517,12 +542,13 @@ static u32 ath_lookup_rate(struct ath_softc *sc, struct ath_buf *bf,
 				break;
 			}
 
-			if (rates[i].flags & IEEE80211_TX_RC_SHORT_GI)
-				modeidx = MCS_HT40_SGI;
-			else if (rates[i].flags & IEEE80211_TX_RC_40_MHZ_WIDTH)
+			if (rates[i].flags & IEEE80211_TX_RC_40_MHZ_WIDTH)
 				modeidx = MCS_HT40;
 			else
-				modeidx = MCS_DEFAULT;
+				modeidx = MCS_HT20;
+
+			if (rates[i].flags & IEEE80211_TX_RC_SHORT_GI)
+				modeidx++;
 
 			frmlen = ath_max_4ms_framelen[modeidx][rates[i].idx];
 			max_4ms_framelen = min(max_4ms_framelen, frmlen);
@@ -567,7 +593,7 @@ static int ath_compute_num_delims(struct ath_softc *sc, struct ath_atx_tid *tid,
 	u32 nsymbits, nsymbols;
 	u16 minlen;
 	u8 flags, rix;
-	int width, half_gi, ndelim, mindelim;
+	int width, streams, half_gi, ndelim, mindelim;
 
 	/* Select standard number of delimiters based on frame length alone */
 	ndelim = ATH_AGGR_GET_NDELIM(frmlen);
@@ -607,7 +633,8 @@ static int ath_compute_num_delims(struct ath_softc *sc, struct ath_atx_tid *tid,
 	if (nsymbols == 0)
 		nsymbols = 1;
 
-	nsymbits = bits_per_symbol[rix][width];
+	streams = HT_RC_2_STREAMS(rix);
+	nsymbits = bits_per_symbol[rix % 8][width] * streams;
 	minlen = (nsymbols * nsymbits) / BITS_PER_BYTE;
 
 	if (frmlen < minlen) {
@@ -1081,9 +1108,7 @@ void ath_draintxq(struct ath_softc *sc, struct ath_txq *txq, bool retry_tx)
 				list_del(&bf->list);
 				spin_unlock_bh(&txq->axq_lock);
 
-				spin_lock_bh(&sc->tx.txbuflock);
-				list_add_tail(&bf->list, &sc->tx.txbuf);
-				spin_unlock_bh(&sc->tx.txbuflock);
+				ath_tx_return_buffer(sc, bf);
 				continue;
 			}
 		}
@@ -1325,25 +1350,6 @@ static void ath_tx_txqaddbuf(struct ath_softc *sc, struct ath_txq *txq,
 	txq->axq_depth++;
 }
 
-static struct ath_buf *ath_tx_get_buffer(struct ath_softc *sc)
-{
-	struct ath_buf *bf = NULL;
-
-	spin_lock_bh(&sc->tx.txbuflock);
-
-	if (unlikely(list_empty(&sc->tx.txbuf))) {
-		spin_unlock_bh(&sc->tx.txbuflock);
-		return NULL;
-	}
-
-	bf = list_first_entry(&sc->tx.txbuf, struct ath_buf, list);
-	list_del(&bf->list);
-
-	spin_unlock_bh(&sc->tx.txbuflock);
-
-	return bf;
-}
-
 static void ath_tx_send_ampdu(struct ath_softc *sc, struct ath_atx_tid *tid,
 			      struct list_head *bf_head,
 			      struct ath_tx_control *txctl)
@@ -1520,8 +1526,9 @@ static u32 ath_pkt_duration(struct ath_softc *sc, u8 rix, struct ath_buf *bf,
 	pktlen = bf_isaggr(bf) ? bf->bf_al : bf->bf_frmlen;
 
 	/* find number of symbols: PLCP + data */
+	streams = HT_RC_2_STREAMS(rix);
 	nbits = (pktlen << 3) + OFDM_PLCP_BITS;
-	nsymbits = bits_per_symbol[rix][width];
+	nsymbits = bits_per_symbol[rix % 8][width] * streams;
 	nsymbols = (nbits + nsymbits - 1) / nsymbits;
 
 	if (!half_gi)
@@ -1530,7 +1537,6 @@ static u32 ath_pkt_duration(struct ath_softc *sc, u8 rix, struct ath_buf *bf,
 		duration = SYMBOL_TIME_HALFGI(nsymbols);
 
 	/* addup duration for legacy/ht training and signal fields */
-	streams = HT_RC_2_STREAMS(rix);
 	duration += L_STF + L_LTF + L_SIG + HT_SIG + HT_STF + HT_LTF(streams);
 
 	return duration;
@@ -1601,6 +1607,8 @@ static void ath_buf_set_rate(struct ath_softc *sc, struct ath_buf *bf)
 			series[i].Rate = rix | 0x80;
 			series[i].PktDuration = ath_pkt_duration(sc, rix, bf,
 				 is_40, is_sgi, is_sp);
+			if (rix < 8 && (tx_info->flags & IEEE80211_TX_CTL_STBC))
+				series[i].RateFlags |= ATH9K_RATESERIES_STBC;
 			continue;
 		}
 
@@ -1825,9 +1833,7 @@ int ath_tx_start(struct ieee80211_hw *hw, struct sk_buff *skb,
 		}
 		spin_unlock_bh(&txq->axq_lock);
 
-		spin_lock_bh(&sc->tx.txbuflock);
-		list_add_tail(&bf->list, &sc->tx.txbuf);
-		spin_unlock_bh(&sc->tx.txbuflock);
+		ath_tx_return_buffer(sc, bf);
 
 		return r;
 	}
@@ -2141,13 +2147,12 @@ static void ath_tx_processq(struct ath_softc *sc, struct ath_txq *txq)
 		txq->axq_depth--;
 		txok = !(ts.ts_status & ATH9K_TXERR_MASK);
 		txq->axq_tx_inprogress = false;
+		if (bf_held)
+			list_del(&bf_held->list);
 		spin_unlock_bh(&txq->axq_lock);
 
-		if (bf_held) {
-			spin_lock_bh(&sc->tx.txbuflock);
-			list_move_tail(&bf_held->list, &sc->tx.txbuf);
-			spin_unlock_bh(&sc->tx.txbuflock);
-		}
+		if (bf_held)
+			ath_tx_return_buffer(sc, bf_held);
 
 		if (!bf_isampdu(bf)) {
 			/*
