@@ -107,7 +107,7 @@
 /*
  * INT_SOURCE_CSR: Interrupt source register.
  * Write one to clear corresponding bit.
- * TX_FIFO_STATUS: FIFO Statistics is full, sw should read 0x171c
+ * TX_FIFO_STATUS: FIFO Statistics is full, sw should read TX_STA_FIFO
  */
 #define INT_SOURCE_CSR			0x0200
 #define INT_SOURCE_CSR_RXDELAYINT	FIELD32(0x00000001)
@@ -1564,6 +1564,11 @@ struct mac_iveiv_entry {
  * RFCSR 12:
  */
 #define RFCSR12_TX_POWER		FIELD8(0x1f)
+
+/*
+ * RFCSR 13:
+ */
+#define RFCSR13_TX_POWER		FIELD8(0x1f)
 
 /*
  * RFCSR 15:

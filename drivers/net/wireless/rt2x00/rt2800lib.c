@@ -794,6 +794,11 @@ static void rt2800_config_channel_rf3xxx(struct rt2x00_dev *rt2x00dev,
 			  TXPOWER_G_TO_DEV(info->tx_power1));
 	rt2800_rfcsr_write(rt2x00dev, 12, rfcsr);
 
+	rt2800_rfcsr_read(rt2x00dev, 13, &rfcsr);
+	rt2x00_set_field8(&rfcsr, RFCSR13_TX_POWER,
+			  TXPOWER_G_TO_DEV(info->tx_power2));
+	rt2800_rfcsr_write(rt2x00dev, 13, rfcsr);
+
 	rt2800_rfcsr_read(rt2x00dev, 23, &rfcsr);
 	rt2x00_set_field8(&rfcsr, RFCSR23_FREQ_OFFSET, rt2x00dev->freq_offset);
 	rt2800_rfcsr_write(rt2x00dev, 23, rfcsr);
@@ -1703,7 +1708,8 @@ int rt2800_init_rfcsr(struct rt2x00_dev *rt2x00dev)
 	if (!rt2x00_rt(rt2x00dev, RT3070) &&
 	    !rt2x00_rt(rt2x00dev, RT3071) &&
 	    !rt2x00_rt(rt2x00dev, RT3090) &&
-	    !rt2x00_rt(rt2x00dev, RT3390))
+	    !rt2x00_rt(rt2x00dev, RT3390) &&
+	    !(rt2x00_is_soc(rt2x00dev) && rt2x00_rt(rt2x00dev, RT2872)))
 		return 0;
 
 	/*
@@ -1771,6 +1777,37 @@ int rt2800_init_rfcsr(struct rt2x00_dev *rt2x00dev)
 		rt2800_rfcsr_write(rt2x00dev, 29, 0x8f);
 		rt2800_rfcsr_write(rt2x00dev, 30, 0x20);
 		rt2800_rfcsr_write(rt2x00dev, 31, 0x0f);
+	} else if (rt2x00_rt(rt2x00dev, RT2872)) {
+		rt2800_rfcsr_write(rt2x00dev, 0, 0x50);
+		rt2800_rfcsr_write(rt2x00dev, 1, 0x01);
+		rt2800_rfcsr_write(rt2x00dev, 2, 0xf7);
+		rt2800_rfcsr_write(rt2x00dev, 3, 0x75);
+		rt2800_rfcsr_write(rt2x00dev, 4, 0x40);
+		rt2800_rfcsr_write(rt2x00dev, 5, 0x03);
+		rt2800_rfcsr_write(rt2x00dev, 6, 0x02);
+		rt2800_rfcsr_write(rt2x00dev, 7, 0x50);
+		rt2800_rfcsr_write(rt2x00dev, 8, 0x39);
+		rt2800_rfcsr_write(rt2x00dev, 9, 0x0f);
+		rt2800_rfcsr_write(rt2x00dev, 10, 0x60);
+		rt2800_rfcsr_write(rt2x00dev, 11, 0x21);
+		rt2800_rfcsr_write(rt2x00dev, 12, 0x75);
+		rt2800_rfcsr_write(rt2x00dev, 13, 0x75);
+		rt2800_rfcsr_write(rt2x00dev, 14, 0x90);
+		rt2800_rfcsr_write(rt2x00dev, 15, 0x58);
+		rt2800_rfcsr_write(rt2x00dev, 16, 0xb3);
+		rt2800_rfcsr_write(rt2x00dev, 17, 0x92);
+		rt2800_rfcsr_write(rt2x00dev, 18, 0x2c);
+		rt2800_rfcsr_write(rt2x00dev, 19, 0x02);
+		rt2800_rfcsr_write(rt2x00dev, 20, 0xba);
+		rt2800_rfcsr_write(rt2x00dev, 21, 0xdb);
+		rt2800_rfcsr_write(rt2x00dev, 22, 0x00);
+		rt2800_rfcsr_write(rt2x00dev, 23, 0x31);
+		rt2800_rfcsr_write(rt2x00dev, 24, 0x08);
+		rt2800_rfcsr_write(rt2x00dev, 25, 0x01);
+		rt2800_rfcsr_write(rt2x00dev, 26, 0x25);
+		rt2800_rfcsr_write(rt2x00dev, 27, 0x23);
+		rt2800_rfcsr_write(rt2x00dev, 28, 0x13);
+		rt2800_rfcsr_write(rt2x00dev, 29, 0x83);
 	}
 
 	if (rt2x00_rt_rev_lt(rt2x00dev, RT3070, REV_RT3070F)) {
@@ -1986,7 +2023,6 @@ int rt2800_validate_eeprom(struct rt2x00_dev *rt2x00dev)
 		EEPROM(rt2x00dev, "Antenna: 0x%04x\n", word);
 	} else if (rt2x00_rt(rt2x00dev, RT2860) ||
 		   rt2x00_rt(rt2x00dev, RT2870) ||
-		   rt2x00_rt(rt2x00dev, RT2872) ||
 		   rt2x00_rt(rt2x00dev, RT2872)) {
 		/*
 		 * There is a max of 2 RX streams for RT28x0 series
@@ -2318,8 +2354,11 @@ int rt2800_probe_hw_mode(struct rt2x00_dev *rt2x00dev)
 	else
 		spec->ht.ht_supported = false;
 
+	/*
+	 * Don't set IEEE80211_HT_CAP_SUP_WIDTH_20_40 for now as it causes
+	 * reception problems with HT40 capable 11n APs
+	 */
 	spec->ht.cap =
-	    IEEE80211_HT_CAP_SUP_WIDTH_20_40 |
 	    IEEE80211_HT_CAP_GRN_FLD |
 	    IEEE80211_HT_CAP_SGI_20 |
 	    IEEE80211_HT_CAP_SGI_40 |
