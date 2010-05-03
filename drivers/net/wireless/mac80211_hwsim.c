@@ -1021,7 +1021,7 @@ static void mac80211_hwsim_sw_scan_complete(struct ieee80211_hw *hw)
 	mutex_lock(&hwsim->mutex);
 
 	printk(KERN_DEBUG "hwsim sw_scan_complete\n");
-	hwsim->scanning = true;
+	hwsim->scanning = false;
 
 	mutex_unlock(&hwsim->mutex);
 }
@@ -1300,7 +1300,8 @@ static int __init init_mac80211_hwsim(void)
 		hw->flags = IEEE80211_HW_MFP_CAPABLE |
 			    IEEE80211_HW_SIGNAL_DBM |
 			    IEEE80211_HW_SUPPORTS_STATIC_SMPS |
-			    IEEE80211_HW_SUPPORTS_DYNAMIC_SMPS;
+			    IEEE80211_HW_SUPPORTS_DYNAMIC_SMPS |
+			    IEEE80211_HW_AMPDU_AGGREGATION;
 
 		/* ask mac80211 to reserve space for magic */
 		hw->vif_data_size = sizeof(struct hwsim_vif_priv);
