@@ -41,9 +41,6 @@
 #if defined(CONFIG_RT2X00_LIB_USB) || defined(CONFIG_RT2X00_LIB_USB_MODULE)
 #include "rt2x00usb.h"
 #endif
-#if defined(CONFIG_RT2X00_LIB_PCI) || defined(CONFIG_RT2X00_LIB_PCI_MODULE)
-#include "rt2x00pci.h"
-#endif
 #include "rt2800lib.h"
 #include "rt2800.h"
 #include "rt2800usb.h"
@@ -871,7 +868,7 @@ static void rt2800_config_channel(struct rt2x00_dev *rt2x00dev,
 	}
 
 	rt2800_register_read(rt2x00dev, TX_BAND_CFG, &reg);
-	rt2x00_set_field32(&reg, TX_BAND_CFG_HT40_PLUS, conf_is_ht40_plus(conf));
+	rt2x00_set_field32(&reg, TX_BAND_CFG_HT40_MINUS, conf_is_ht40_minus(conf));
 	rt2x00_set_field32(&reg, TX_BAND_CFG_A, rf->channel > 14);
 	rt2x00_set_field32(&reg, TX_BAND_CFG_BG, rf->channel <= 14);
 	rt2800_register_write(rt2x00dev, TX_BAND_CFG, reg);
@@ -904,7 +901,7 @@ static void rt2800_config_channel(struct rt2x00_dev *rt2x00dev,
 	rt2800_bbp_write(rt2x00dev, 4, bbp);
 
 	rt2800_bbp_read(rt2x00dev, 3, &bbp);
-	rt2x00_set_field8(&bbp, BBP3_HT40_PLUS, conf_is_ht40_plus(conf));
+	rt2x00_set_field8(&bbp, BBP3_HT40_MINUS, conf_is_ht40_minus(conf));
 	rt2800_bbp_write(rt2x00dev, 3, bbp);
 
 	if (rt2x00_rt_rev(rt2x00dev, RT2860, REV_RT2860C)) {
