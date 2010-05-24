@@ -71,7 +71,7 @@ void ieee80211_configure_filter(struct ieee80211_local *local)
 	spin_lock_bh(&local->filter_lock);
 	changed_flags = local->filter_flags ^ new_flags;
 
-	mc = drv_prepare_multicast(local, local->mc_count, local->mc_list);
+	mc = drv_prepare_multicast(local, &local->mc_list);
 	spin_unlock_bh(&local->filter_lock);
 
 	/* be a bit nasty */
@@ -390,6 +390,9 @@ struct ieee80211_hw *ieee80211_alloc_hw(size_t priv_data_len,
 	local->uapsd_max_sp_len = IEEE80211_DEFAULT_MAX_SP_LEN;
 
 	INIT_LIST_HEAD(&local->interfaces);
+
+	__hw_addr_init(&local->mc_list);
+
 	mutex_init(&local->iflist_mtx);
 	mutex_init(&local->scan_mtx);
 

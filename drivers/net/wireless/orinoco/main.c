@@ -560,7 +560,6 @@ static netdev_tx_t orinoco_xmit(struct sk_buff *skb, struct net_device *dev)
 		goto busy;
 	}
 
-	dev->trans_start = jiffies;
 	stats->tx_bytes += HERMES_802_3_OFFSET + skb->len;
 	goto ok;
 
@@ -1619,8 +1618,6 @@ void __orinoco_ev_info(struct net_device *dev, hermes_t *hw)
 		/* We don't actually do anything about it */
 		break;
 	}
-
-	return;
 }
 EXPORT_SYMBOL(__orinoco_ev_info);
 

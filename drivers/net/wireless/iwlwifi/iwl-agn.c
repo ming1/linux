@@ -2692,7 +2692,6 @@ static void iwl_bg_run_time_calib_work(struct work_struct *work)
 	}
 
 	mutex_unlock(&priv->mutex);
-	return;
 }
 
 static void iwl_bg_restart(struct work_struct *data)

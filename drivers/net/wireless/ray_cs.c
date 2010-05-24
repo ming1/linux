@@ -51,7 +51,6 @@
 #include <pcmcia/cistpl.h>
 #include <pcmcia/cisreg.h>
 #include <pcmcia/ds.h>
-#include <pcmcia/mem_op.h>
 
 #include <linux/wireless.h>
 #include <net/iw_handler.h>
@@ -321,10 +320,6 @@ static int ray_probe(struct pcmcia_device *p_dev)
 	p_dev->io.Attributes1 = IO_DATA_PATH_WIDTH_8;
 	p_dev->io.IOAddrLines = 5;
 
-	/* Interrupt setup. For PCMCIA, driver takes what's given */
-	p_dev->irq.Attributes = IRQ_TYPE_DYNAMIC_SHARING;
-	p_dev->irq.Handler = &ray_interrupt;
-
 	/* General socket configuration */
 	p_dev->conf.Attributes = CONF_ENABLE_IRQ;
 	p_dev->conf.IntType = INT_MEMORY_AND_IO;
@@ -383,8 +378,7 @@ static void ray_detach(struct pcmcia_device *link)
 	del_timer(&local->timer);
 
 	if (link->priv) {
-		if (link->dev_node)
-			unregister_netdev(dev);
+		unregister_netdev(dev);
 		free_netdev(dev);
 	}
 	dev_dbg(&link->dev, "ray_cs ray_detach ending\n");
@@ -417,10 +411,10 @@ static int ray_config(struct pcmcia_device *link)
 	/* Now allocate an interrupt line.  Note that this does not
 	   actually assign a handler to the interrupt.
 	 */
-	ret = pcmcia_request_irq(link, &link->irq);
+	ret = pcmcia_request_irq(link, ray_interrupt);
 	if (ret)
 		goto failed;
-	dev->irq = link->irq.AssignedIRQ;
+	dev->irq = link->irq;
 
 	/* This actually configures the PCMCIA socket -- setting up
 	   the I/O windows and the interrupt mapping.
@@ -492,9 +486,6 @@ static int ray_config(struct pcmcia_device *link)
 		ray_release(link);
 		return i;
 	}
-
-	strcpy(local->node.dev_name, dev->name);
-	link->dev_node = &local->node;
 
 	printk(KERN_INFO "%s: RayLink, irq %d, hw_addr %pM\n",
 	       dev->name, dev->irq, dev->dev_addr);
@@ -735,8 +726,6 @@ static void verify_dl_startup(u_long data)
 		start_net((u_long) local);
 	else
 		join_net((u_long) local);
-
-	return;
 } /* end verify_dl_startup */
 
 /*===========================================================================*/
@@ -764,7 +753,6 @@ static void start_net(u_long data)
 		return;
 	}
 	local->card_status = CARD_DOING_ACQ;
-	return;
 } /* end start_net */
 
 /*===========================================================================*/
@@ -795,7 +783,6 @@ static void join_net(u_long data)
 		return;
 	}
 	local->card_status = CARD_DOING_ACQ;
-	return;
 }
 
 /*============================================================================
@@ -941,7 +928,6 @@ static netdev_tx_t ray_dev_start_xmit(struct sk_buff *skb,
 	case XMIT_MSG_BAD:
 	case XMIT_OK:
 	default:
-		dev->trans_start = jiffies;
 		dev_kfree_skb(skb);
 	}
 
@@ -1627,7 +1613,6 @@ static int ray_dev_close(struct net_device *dev)
 static void ray_reset(struct net_device *dev)
 {
 	pr_debug("ray_reset entered\n");
-	return;
 }
 
 /*===========================================================================*/
@@ -1874,17 +1859,17 @@ static void ray_update_multi_list(struct net_device *dev, int all)
 		writeb(0xff, &pccs->var);
 		local->num_multi = 0xff;
 	} else {
-		struct dev_mc_list *dmi;
+		struct netdev_hw_addr *ha;
 		int i = 0;
 
 		/* Copy the kernel's list of MC addresses to card */
-		netdev_for_each_mc_addr(dmi, dev) {
-			memcpy_toio(p, dmi->dmi_addr, ETH_ALEN);
+		netdev_for_each_mc_addr(ha, dev) {
+			memcpy_toio(p, ha->addr, ETH_ALEN);
 			dev_dbg(&link->dev,
 			      "ray_update_multi add addr %02x%02x%02x%02x%02x%02x\n",
-			      dmi->dmi_addr[0], dmi->dmi_addr[1],
-			      dmi->dmi_addr[2], dmi->dmi_addr[3],
-			      dmi->dmi_addr[4], dmi->dmi_addr[5]);
+			      ha->addr[0], ha->addr[1],
+			      ha->addr[2], ha->addr[3],
+			      ha->addr[4], ha->addr[5]);
 			p += ETH_ALEN;
 			i++;
 		}
