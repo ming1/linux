@@ -954,18 +954,22 @@ int dev_alloc_name(struct net_device *dev, const char *name)
 }
 EXPORT_SYMBOL(dev_alloc_name);
 
-static int dev_get_valid_name(struct net *net, const char *name, char *buf,
-			      bool fmt)
+static int dev_get_valid_name(struct net_device *dev, const char *name, bool fmt)
 {
+	struct net *net;
+
+	BUG_ON(!dev_net(dev));
+	net = dev_net(dev);
+
 	if (!dev_valid_name(name))
 		return -EINVAL;
 
 	if (fmt && strchr(name, '%'))
-		return __dev_alloc_name(net, name, buf);
+		return dev_alloc_name(dev, name);
 	else if (__dev_get_by_name(net, name))
 		return -EEXIST;
-	else if (buf != name)
-		strlcpy(buf, name, IFNAMSIZ);
+	else if (dev->name != name)
+		strlcpy(dev->name, name, IFNAMSIZ);
 
 	return 0;
 }
@@ -997,20 +1001,15 @@ int dev_change_name(struct net_device *dev, const char *newname)
 
 	memcpy(oldname, dev->name, IFNAMSIZ);
 
-	err = dev_get_valid_name(net, newname, dev->name, 1);
+	err = dev_get_valid_name(dev, newname, 1);
 	if (err < 0)
 		return err;
 
 rollback:
-	/* For now only devices in the initial network namespace
-	 * are in sysfs.
-	 */
-	if (net_eq(net, &init_net)) {
-		ret = device_rename(&dev->dev, dev->name);
-		if (ret) {
-			memcpy(dev->name, oldname, IFNAMSIZ);
-			return ret;
-		}
+	ret = device_rename(&dev->dev, dev->name);
+	if (ret) {
+		memcpy(dev->name, oldname, IFNAMSIZ);
+		return ret;
 	}
 
 	write_lock_bh(&dev_base_lock);
@@ -4965,7 +4964,7 @@ int register_netdevice(struct net_device *dev)
 		}
 	}
 
-	ret = dev_get_valid_name(net, dev->name, dev->name, 0);
+	ret = dev_get_valid_name(dev, dev->name, 0);
 	if (ret)
 		goto err_uninit;
 
@@ -4993,8 +4992,6 @@ int register_netdevice(struct net_device *dev)
 	/* Enable software GSO if SG is supported. */
 	if (dev->features & NETIF_F_SG)
 		dev->features |= NETIF_F_GSO;
-
-	netdev_initialize_kobject(dev);
 
 	ret = call_netdevice_notifiers(NETDEV_POST_INIT, dev);
 	ret = notifier_to_errno(ret);
@@ -5547,15 +5544,6 @@ int dev_change_net_namespace(struct net_device *dev, struct net *net, const char
 	if (dev->features & NETIF_F_NETNS_LOCAL)
 		goto out;
 
-#ifdef CONFIG_SYSFS
-	/* Don't allow real devices to be moved when sysfs
-	 * is enabled.
-	 */
-	err = -EINVAL;
-	if (dev->dev.parent)
-		goto out;
-#endif
-
 	/* Ensure the device has been registrered */
 	err = -EINVAL;
 	if (dev->reg_state != NETREG_REGISTERED)
@@ -5574,7 +5562,7 @@ int dev_change_net_namespace(struct net_device *dev, struct net *net, const char
 		/* We get here if we can't use the current device name */
 		if (!pat)
 			goto out;
-		if (dev_get_valid_name(net, pat, dev->name, 1))
+		if (dev_get_valid_name(dev, pat, 1))
 			goto out;
 	}
 
@@ -5606,8 +5594,6 @@ int dev_change_net_namespace(struct net_device *dev, struct net *net, const char
 	dev_uc_flush(dev);
 	dev_mc_flush(dev);
 
-	netdev_unregister_kobject(dev);
-
 	/* Actually switch the network namespace */
 	dev_net_set(dev, net);
 
@@ -5620,7 +5606,7 @@ int dev_change_net_namespace(struct net_device *dev, struct net *net, const char
 	}
 
 	/* Fixup kobjects */
-	err = netdev_register_kobject(dev);
+	err = device_rename(&dev->dev, dev->name);
 	WARN_ON(err);
 
 	/* Add the device back in the hashes */

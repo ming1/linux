@@ -646,23 +646,13 @@ Who:	Thomas Gleixner <tglx@linutronix.de>
 
 ----------------------------
 
-What:	iwlwifi 50XX module parameters
-When:	2.6.40
-Why:	The "..50" modules parameters were used to configure 5000 series and
-	up devices; different set of module parameters also available for 4965
-	with same functionalities. Consolidate both set into single place
-	in drivers/net/wireless/iwlwifi/iwl-agn.c
-
-Who:	Wey-Yi Guy <wey-yi.w.guy@intel.com>
-
-----------------------------
-
-What:	iwl4965 alias support
-When:	2.6.40
-Why:	Internal alias support has been present in module-init-tools for some
-	time, the MODULE_ALIAS("iwl4965") boilerplate aliases can be removed
-	with no impact.
-
-Who:	Wey-Yi Guy <wey-yi.w.guy@intel.com>
+What:	old ieee1394 subsystem (CONFIG_IEEE1394)
+When:	2.6.37
+Files:	drivers/ieee1394/ except init_ohci1394_dma.c
+Why:	superseded by drivers/firewire/ (CONFIG_FIREWIRE) which offers more
+	features, better performance, and better security, all with smaller
+	and more modern code base
+Who:	Stefan Richter <stefanr@s5r6.in-berlin.de>
 
 ----------------------------
+
