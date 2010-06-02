@@ -392,12 +392,6 @@ static void ath9k_hw_init_config(struct ath_hw *ah)
 	ah->config.rx_intr_mitigation = true;
 
 	/*
-	 * Tx IQ Calibration (ah->config.tx_iq_calibration) is only
-	 * used by AR9003, but it is showing reliability issues.
-	 * It will take a while to fix so this is currently disabled.
-	 */
-
-	/*
 	 * We need this for PCI devices only (Cardbus, PCI, miniPCI)
 	 * _and_ if on non-uniprocessor systems (Multiprocessor/HT).
 	 * This means we use it for all AR5416 devices, and the few
@@ -627,6 +621,7 @@ static int __ath9k_hw_init(struct ath_hw *ah)
 		ar9003_hw_set_nf_limits(ah);
 
 	ath9k_init_nfcal_hist_buffer(ah);
+	ah->bb_watchdog_timeout_ms = 25;
 
 	common->state = ATH_HW_INITIALIZED;
 
@@ -1441,6 +1436,7 @@ int ath9k_hw_reset(struct ath_hw *ah, struct ath9k_channel *chan,
 	if (AR_SREV_9300_20_OR_LATER(ah)) {
 		ath9k_hw_loadnf(ah, curchan);
 		ath9k_hw_start_nfcal(ah);
+		ar9003_hw_bb_watchdog_config(ah);
 	}
 
 	return 0;
@@ -2165,7 +2161,7 @@ int ath9k_hw_fill_cap_info(struct ath_hw *ah)
 		pCap->hw_caps |= ATH9K_HW_CAP_RFSILENT;
 	}
 #endif
-	if (AR_SREV_9271(ah))
+	if (AR_SREV_9271(ah) || AR_SREV_9300_20_OR_LATER(ah))
 		pCap->hw_caps |= ATH9K_HW_CAP_AUTOSLEEP;
 	else
 		pCap->hw_caps &= ~ATH9K_HW_CAP_AUTOSLEEP;
@@ -2231,6 +2227,9 @@ int ath9k_hw_fill_cap_info(struct ath_hw *ah)
 
 	if (AR_SREV_9300_20_OR_LATER(ah))
 		pCap->hw_caps |= ATH9K_HW_CAP_RAC_SUPPORTED;
+
+	if (AR_SREV_9287_10_OR_LATER(ah) || AR_SREV_9271(ah))
+		pCap->hw_caps |= ATH9K_HW_CAP_SGI_20;
 
 	return 0;
 }

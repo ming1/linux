@@ -404,6 +404,11 @@ static void setup_ht_cap(struct ath9k_htc_priv *priv,
 		       IEEE80211_HT_CAP_SGI_40 |
 		       IEEE80211_HT_CAP_DSSSCCK40;
 
+	if (priv->ah->caps.hw_caps & ATH9K_HW_CAP_SGI_20)
+		ht_info->cap |= IEEE80211_HT_CAP_SGI_20;
+
+	ht_info->cap |= (1 << IEEE80211_HT_CAP_RX_STBC_SHIFT);
+
 	ht_info->ampdu_factor = IEEE80211_HT_MAX_AMPDU_64K;
 	ht_info->ampdu_density = IEEE80211_HT_MPDU_DENSITY_8;
 
@@ -419,6 +424,20 @@ static int ath9k_init_queues(struct ath9k_htc_priv *priv)
 
 	for (i = 0; i < ARRAY_SIZE(priv->hwq_map); i++)
 		priv->hwq_map[i] = -1;
+
+	priv->beaconq = ath9k_hw_beaconq_setup(priv->ah);
+	if (priv->beaconq == -1) {
+		ath_print(common, ATH_DBG_FATAL,
+			  "Unable to setup BEACON xmit queue\n");
+		goto err;
+	}
+
+	priv->cabq = ath9k_htc_cabq_setup(priv);
+	if (priv->cabq == -1) {
+		ath_print(common, ATH_DBG_FATAL,
+			  "Unable to setup CAB xmit queue\n");
+		goto err;
+	}
 
 	if (!ath9k_htc_txq_setup(priv, ATH9K_WME_AC_BE)) {
 		ath_print(common, ATH_DBG_FATAL,

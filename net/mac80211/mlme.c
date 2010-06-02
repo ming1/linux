@@ -1763,7 +1763,7 @@ static void ieee80211_sta_work(struct work_struct *work)
 
 	/*
 	 * ieee80211_queue_work() should have picked up most cases,
-	 * here we'll pick the the rest.
+	 * here we'll pick the rest.
 	 */
 	if (WARN(local->suspended, "STA MLME work scheduled while "
 		 "going to suspend\n"))
@@ -2308,6 +2308,7 @@ int ieee80211_mgd_disassoc(struct ieee80211_sub_if_data *sdata,
 int ieee80211_mgd_action(struct ieee80211_sub_if_data *sdata,
 			 struct ieee80211_channel *chan,
 			 enum nl80211_channel_type channel_type,
+			 bool channel_type_valid,
 			 const u8 *buf, size_t len, u64 *cookie)
 {
 	struct ieee80211_local *local = sdata->local;
@@ -2315,9 +2316,11 @@ int ieee80211_mgd_action(struct ieee80211_sub_if_data *sdata,
 	struct sk_buff *skb;
 
 	/* Check that we are on the requested channel for transmission */
-	if ((chan != local->tmp_channel ||
-	     channel_type != local->tmp_channel_type) &&
-	    (chan != local->oper_channel ||
+	if (chan != local->tmp_channel &&
+	    chan != local->oper_channel)
+		return -EBUSY;
+	if (channel_type_valid &&
+	    (channel_type != local->tmp_channel_type &&
 	     channel_type != local->_oper_channel_type))
 		return -EBUSY;
 
