@@ -160,6 +160,7 @@ struct avg_val {
 
 enum rt2x00_chip_intf {
 	RT2X00_CHIP_INTF_PCI,
+	RT2X00_CHIP_INTF_PCIE,
 	RT2X00_CHIP_INTF_USB,
 	RT2X00_CHIP_INTF_SOC,
 };
@@ -176,8 +177,7 @@ struct rt2x00_chip {
 #define RT2570		0x2570
 #define RT2661		0x2661
 #define RT2573		0x2573
-#define RT2860		0x2860	/* 2.4GHz PCI/CB */
-#define RT2870		0x2870
+#define RT2860		0x2860	/* 2.4GHz */
 #define RT2872		0x2872	/* WSOC */
 #define RT2883		0x2883	/* WSOC */
 #define RT3070		0x3070
@@ -552,6 +552,8 @@ struct rt2x00lib_ops {
 			       struct txentry_desc *txdesc);
 	int (*write_tx_data) (struct queue_entry *entry,
 			      struct txentry_desc *txdesc);
+	void (*write_tx_datadesc) (struct queue_entry *entry,
+				   struct txentry_desc *txdesc);
 	void (*write_beacon) (struct queue_entry *entry,
 			      struct txentry_desc *txdesc);
 	int (*get_tx_data_len) (struct queue_entry *entry);
@@ -979,7 +981,13 @@ static inline bool rt2x00_intf(struct rt2x00_dev *rt2x00dev,
 
 static inline bool rt2x00_is_pci(struct rt2x00_dev *rt2x00dev)
 {
-	return rt2x00_intf(rt2x00dev, RT2X00_CHIP_INTF_PCI);
+	return rt2x00_intf(rt2x00dev, RT2X00_CHIP_INTF_PCI) ||
+	       rt2x00_intf(rt2x00dev, RT2X00_CHIP_INTF_PCIE);
+}
+
+static inline bool rt2x00_is_pcie(struct rt2x00_dev *rt2x00dev)
+{
+	return rt2x00_intf(rt2x00dev, RT2X00_CHIP_INTF_PCIE);
 }
 
 static inline bool rt2x00_is_usb(struct rt2x00_dev *rt2x00dev)
@@ -998,6 +1006,13 @@ static inline bool rt2x00_is_soc(struct rt2x00_dev *rt2x00dev)
  * @skb: The skb to map.
  */
 void rt2x00queue_map_txskb(struct rt2x00_dev *rt2x00dev, struct sk_buff *skb);
+
+/**
+ * rt2x00queue_unmap_skb - Unmap a skb from DMA.
+ * @rt2x00dev: Pointer to &struct rt2x00_dev.
+ * @skb: The skb to unmap.
+ */
+void rt2x00queue_unmap_skb(struct rt2x00_dev *rt2x00dev, struct sk_buff *skb);
 
 /**
  * rt2x00queue_get_queue - Convert queue index to queue pointer

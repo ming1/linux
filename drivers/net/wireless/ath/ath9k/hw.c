@@ -1298,6 +1298,9 @@ int ath9k_hw_reset(struct ath_hw *ah, struct ath9k_channel *chan,
 	if (AR_SREV_9280_10_OR_LATER(ah))
 		REG_SET_BIT(ah, AR_GPIO_INPUT_EN_VAL, AR_GPIO_JTAG_DISABLE);
 
+	if (!AR_SREV_9300_20_OR_LATER(ah))
+		ar9002_hw_enable_async_fifo(ah);
+
 	r = ath9k_hw_process_ini(ah, chan);
 	if (r)
 		return r;
@@ -1370,7 +1373,7 @@ int ath9k_hw_reset(struct ath_hw *ah, struct ath9k_channel *chan,
 	ath9k_hw_init_global_settings(ah);
 
 	if (!AR_SREV_9300_20_OR_LATER(ah)) {
-		ar9002_hw_enable_async_fifo(ah);
+		ar9002_hw_update_async_fifo(ah);
 		ar9002_hw_enable_wep_aggregation(ah);
 	}
 
@@ -1485,6 +1488,7 @@ EXPORT_SYMBOL(ath9k_hw_keyreset);
 bool ath9k_hw_keysetmac(struct ath_hw *ah, u16 entry, const u8 *mac)
 {
 	u32 macHi, macLo;
+	u32 unicast_flag = AR_KEYTABLE_VALID;
 
 	if (entry >= ah->caps.keycache_size) {
 		ath_print(ath9k_hw_common(ah), ATH_DBG_FATAL,
@@ -1493,6 +1497,16 @@ bool ath9k_hw_keysetmac(struct ath_hw *ah, u16 entry, const u8 *mac)
 	}
 
 	if (mac != NULL) {
+		/*
+		 * AR_KEYTABLE_VALID indicates that the address is a unicast
+		 * address, which must match the transmitter address for
+		 * decrypting frames.
+		 * Not setting this bit allows the hardware to use the key
+		 * for multicast frame decryption.
+		 */
+		if (mac[0] & 0x01)
+			unicast_flag = 0;
+
 		macHi = (mac[5] << 8) | mac[4];
 		macLo = (mac[3] << 24) |
 			(mac[2] << 16) |
@@ -1505,7 +1519,7 @@ bool ath9k_hw_keysetmac(struct ath_hw *ah, u16 entry, const u8 *mac)
 		macLo = macHi = 0;
 	}
 	REG_WRITE(ah, AR_KEYTABLE_MAC0(entry), macLo);
-	REG_WRITE(ah, AR_KEYTABLE_MAC1(entry), macHi | AR_KEYTABLE_VALID);
+	REG_WRITE(ah, AR_KEYTABLE_MAC1(entry), macHi | unicast_flag);
 
 	return true;
 }

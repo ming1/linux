@@ -105,13 +105,6 @@ struct sk_buff *rt2x00queue_alloc_rxskb(struct rt2x00_dev *rt2x00dev,
 					struct queue_entry *entry);
 
 /**
- * rt2x00queue_unmap_skb - Unmap a skb from DMA.
- * @rt2x00dev: Pointer to &struct rt2x00_dev.
- * @skb: The skb to unmap.
- */
-void rt2x00queue_unmap_skb(struct rt2x00_dev *rt2x00dev, struct sk_buff *skb);
-
-/**
  * rt2x00queue_free_skb - free a skb
  * @rt2x00dev: Pointer to &struct rt2x00_dev.
  * @skb: The skb to free.
@@ -374,11 +367,20 @@ static inline void rt2x00crypto_rx_insert_iv(struct sk_buff *skb,
 void rt2x00ht_create_tx_descriptor(struct queue_entry *entry,
 				   struct txentry_desc *txdesc,
 				   const struct rt2x00_rate *hwrate);
+
+u16 rt2x00ht_center_channel(struct rt2x00_dev *rt2x00dev,
+			    struct ieee80211_conf *conf);
 #else
 static inline void rt2x00ht_create_tx_descriptor(struct queue_entry *entry,
 						 struct txentry_desc *txdesc,
 						 const struct rt2x00_rate *hwrate)
 {
+}
+
+static inline u16 rt2x00ht_center_channel(struct rt2x00_dev *rt2x00dev,
+					  struct ieee80211_conf *conf)
+{
+	return conf->channel->hw_value;
 }
 #endif /* CONFIG_RT2X00_LIB_HT */
 
