@@ -325,9 +325,9 @@ static int ath9k_htc_update_cap_target(struct ath9k_htc_priv *priv)
 	tcap.flags_ext = 0x80601000;
 	tcap.ampdu_limit = 0xffff0000;
 	tcap.ampdu_subframes = 20;
-	tcap.tx_chainmask_legacy = 1;
+	tcap.tx_chainmask_legacy = priv->ah->caps.tx_chainmask;
 	tcap.protmode = 1;
-	tcap.tx_chainmask = 1;
+	tcap.tx_chainmask = priv->ah->caps.tx_chainmask;
 
 	WMI_CMD_BUF(WMI_TARGET_IC_UPDATE_CMDID, &tcap);
 
@@ -343,8 +343,7 @@ static void ath9k_htc_setup_rate(struct ath9k_htc_priv *priv,
 	u32 caps = 0;
 	int i, j;
 
-	/* Only 2GHz is supported */
-	sband = priv->hw->wiphy->bands[IEEE80211_BAND_2GHZ];
+	sband = priv->hw->wiphy->bands[priv->hw->conf.channel->band];
 
 	for (i = 0, j = 0; i < sband->n_bitrates; i++) {
 		if (sta->supp_rates[sband->band] & BIT(i)) {
@@ -365,6 +364,11 @@ static void ath9k_htc_setup_rate(struct ath9k_htc_priv *priv,
 		trate->rates.ht_rates.rs_nrates = j;
 
 		caps = WLAN_RC_HT_FLAG;
+		if (priv->ah->caps.tx_chainmask != 1 &&
+		    ath9k_hw_getcapability(priv->ah, ATH9K_CAP_DS, 0, NULL)) {
+			if (sta->ht_cap.mcs.rx_mask[1])
+				caps |= WLAN_RC_DS_FLAG;
+		}
 		if (sta->ht_cap.cap & IEEE80211_HT_CAP_SUP_WIDTH_20_40)
 			caps |= WLAN_RC_40_FLAG;
 		if (conf_is_ht40(&priv->hw->conf) &&
@@ -1516,32 +1520,38 @@ static void ath9k_htc_configure_filter(struct ieee80211_hw *hw,
 	mutex_unlock(&priv->mutex);
 }
 
-static void ath9k_htc_sta_notify(struct ieee80211_hw *hw,
-				 struct ieee80211_vif *vif,
-				 enum sta_notify_cmd cmd,
-				 struct ieee80211_sta *sta)
+static int ath9k_htc_sta_add(struct ieee80211_hw *hw,
+			     struct ieee80211_vif *vif,
+			     struct ieee80211_sta *sta)
 {
 	struct ath9k_htc_priv *priv = hw->priv;
 	int ret;
 
 	mutex_lock(&priv->mutex);
 	ath9k_htc_ps_wakeup(priv);
-
-	switch (cmd) {
-	case STA_NOTIFY_ADD:
-		ret = ath9k_htc_add_station(priv, vif, sta);
-		if (!ret)
-			ath9k_htc_init_rate(priv, sta);
-		break;
-	case STA_NOTIFY_REMOVE:
-		ath9k_htc_remove_station(priv, vif, sta);
-		break;
-	default:
-		break;
-	}
-
+	ret = ath9k_htc_add_station(priv, vif, sta);
+	if (!ret)
+		ath9k_htc_init_rate(priv, sta);
 	ath9k_htc_ps_restore(priv);
 	mutex_unlock(&priv->mutex);
+
+	return ret;
+}
+
+static int ath9k_htc_sta_remove(struct ieee80211_hw *hw,
+				struct ieee80211_vif *vif,
+				struct ieee80211_sta *sta)
+{
+	struct ath9k_htc_priv *priv = hw->priv;
+	int ret;
+
+	mutex_lock(&priv->mutex);
+	ath9k_htc_ps_wakeup(priv);
+	ret = ath9k_htc_remove_station(priv, vif, sta);
+	ath9k_htc_ps_restore(priv);
+	mutex_unlock(&priv->mutex);
+
+	return ret;
 }
 
 static int ath9k_htc_conf_tx(struct ieee80211_hw *hw, u16 queue,
@@ -1849,7 +1859,8 @@ struct ieee80211_ops ath9k_htc_ops = {
 	.remove_interface   = ath9k_htc_remove_interface,
 	.config             = ath9k_htc_config,
 	.configure_filter   = ath9k_htc_configure_filter,
-	.sta_notify         = ath9k_htc_sta_notify,
+	.sta_add            = ath9k_htc_sta_add,
+	.sta_remove         = ath9k_htc_sta_remove,
 	.conf_tx            = ath9k_htc_conf_tx,
 	.bss_info_changed   = ath9k_htc_bss_info_changed,
 	.set_key            = ath9k_htc_set_key,
