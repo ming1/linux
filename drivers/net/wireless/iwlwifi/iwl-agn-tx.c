@@ -469,7 +469,8 @@ static void iwlagn_tx_cmd_build_rate(struct iwl_priv *priv,
 	}
 
 	/* Set up antennas */
-	priv->mgmt_tx_ant = iwl_toggle_tx_ant(priv, priv->mgmt_tx_ant);
+	priv->mgmt_tx_ant = iwl_toggle_tx_ant(priv, priv->mgmt_tx_ant,
+					      priv->hw_params.valid_tx_ant);
 	rate_flags |= iwl_ant_idx_to_flags(priv->mgmt_tx_ant);
 
 	/* Set the rate in the TX cmd */
@@ -638,7 +639,7 @@ int iwlagn_tx_skb(struct iwl_priv *priv, struct sk_buff *skb)
 
 	/* Set up driver data for this TFD */
 	memset(&(txq->txb[q->write_ptr]), 0, sizeof(struct iwl_tx_info));
-	txq->txb[q->write_ptr].skb[0] = skb;
+	txq->txb[q->write_ptr].skb = skb;
 
 	/* Set up first empty entry in queue's array of Tx/cmd buffers */
 	out_cmd = txq->cmd[q->write_ptr];
@@ -1178,12 +1179,12 @@ int iwlagn_tx_queue_reclaim(struct iwl_priv *priv, int txq_id, int index)
 	     q->read_ptr = iwl_queue_inc_wrap(q->read_ptr, q->n_bd)) {
 
 		tx_info = &txq->txb[txq->q.read_ptr];
-		iwlagn_tx_status(priv, tx_info->skb[0]);
+		iwlagn_tx_status(priv, tx_info->skb);
 
-		hdr = (struct ieee80211_hdr *)tx_info->skb[0]->data;
+		hdr = (struct ieee80211_hdr *)tx_info->skb->data;
 		if (hdr && ieee80211_is_data_qos(hdr->frame_control))
 			nfreed++;
-		tx_info->skb[0] = NULL;
+		tx_info->skb = NULL;
 
 		if (priv->cfg->ops->lib->txq_inval_byte_cnt_tbl)
 			priv->cfg->ops->lib->txq_inval_byte_cnt_tbl(priv, txq);
@@ -1207,7 +1208,7 @@ static int iwlagn_tx_status_reply_compressed_ba(struct iwl_priv *priv,
 	int i, sh, ack;
 	u16 seq_ctl = le16_to_cpu(ba_resp->seq_ctl);
 	u16 scd_flow = le16_to_cpu(ba_resp->scd_flow);
-	u64 bitmap;
+	u64 bitmap, sent_bitmap;
 	int successes = 0;
 	struct ieee80211_tx_info *info;
 
@@ -1235,19 +1236,22 @@ static int iwlagn_tx_status_reply_compressed_ba(struct iwl_priv *priv,
 
 	/* check for success or failure according to the
 	 * transmitted bitmap and block-ack bitmap */
-	bitmap &= agg->bitmap;
+	sent_bitmap = bitmap & agg->bitmap;
 
 	/* For each frame attempted in aggregation,
 	 * update driver's record of tx frame's status. */
-	for (i = 0; i < agg->frame_count ; i++) {
-		ack = bitmap & (1ULL << i);
-		successes += !!ack;
+	i = 0;
+	while (sent_bitmap) {
+		ack = sent_bitmap & 1ULL;
+		successes += ack;
 		IWL_DEBUG_TX_REPLY(priv, "%s ON i=%d idx=%d raw=%d\n",
 			ack ? "ACK" : "NACK", i, (agg->start_idx + i) & 0xff,
 			agg->start_idx + i);
+		sent_bitmap >>= 1;
+		++i;
 	}
 
-	info = IEEE80211_SKB_CB(priv->txq[scd_flow].txb[agg->start_idx].skb[0]);
+	info = IEEE80211_SKB_CB(priv->txq[scd_flow].txb[agg->start_idx].skb);
 	memset(&info->status, 0, sizeof(info->status));
 	info->flags |= IEEE80211_TX_STAT_ACK;
 	info->flags |= IEEE80211_TX_STAT_AMPDU;

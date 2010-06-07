@@ -120,7 +120,7 @@ int iwl_commit_rxon(struct iwl_priv *priv)
 	    (priv->switch_rxon.channel != priv->staging_rxon.channel)) {
 		IWL_DEBUG_11H(priv, "abort channel switch on %d\n",
 		      le16_to_cpu(priv->switch_rxon.channel));
-		priv->switch_rxon.switch_in_progress = false;
+		iwl_chswitch_done(priv, false);
 	}
 
 	/* If we don't need to send a full RXON, we can use
@@ -367,7 +367,8 @@ static unsigned int iwl_hw_get_beacon_cmd(struct iwl_priv *priv,
 
 	/* Set up packet rate and flags */
 	rate = iwl_rate_get_lowest_plcp(priv);
-	priv->mgmt_tx_ant = iwl_toggle_tx_ant(priv, priv->mgmt_tx_ant);
+	priv->mgmt_tx_ant = iwl_toggle_tx_ant(priv, priv->mgmt_tx_ant,
+					      priv->hw_params.valid_tx_ant);
 	rate_flags = iwl_ant_idx_to_flags(priv->mgmt_tx_ant);
 	if ((rate >= IWL_FIRST_CCK_RATE) && (rate <= IWL_LAST_CCK_RATE))
 		rate_flags |= RATE_MCS_CCK_MSK;
@@ -479,13 +480,20 @@ void iwl_hw_txq_free_tfd(struct iwl_priv *priv, struct iwl_tx_queue *txq)
 				PCI_DMA_BIDIRECTIONAL);
 
 	/* Unmap chunks, if any. */
-	for (i = 1; i < num_tbs; i++) {
+	for (i = 1; i < num_tbs; i++)
 		pci_unmap_single(dev, iwl_tfd_tb_get_addr(tfd, i),
 				iwl_tfd_tb_get_len(tfd, i), PCI_DMA_TODEVICE);
 
-		if (txq->txb) {
-			dev_kfree_skb(txq->txb[txq->q.read_ptr].skb[i - 1]);
-			txq->txb[txq->q.read_ptr].skb[i - 1] = NULL;
+	/* free SKB */
+	if (txq->txb) {
+		struct sk_buff *skb;
+
+		skb = txq->txb[txq->q.read_ptr].skb;
+
+		/* can be called from irqs-disabled context */
+		if (skb) {
+			dev_kfree_skb_any(skb);
+			txq->txb[txq->q.read_ptr].skb = NULL;
 		}
 	}
 }
@@ -1489,6 +1497,156 @@ bool iwl_good_ack_health(struct iwl_priv *priv,
 }
 
 
+/*****************************************************************************
+ *
+ * sysfs attributes
+ *
+ *****************************************************************************/
+
+#ifdef CONFIG_IWLWIFI_DEBUG
+
+/*
+ * The following adds a new attribute to the sysfs representation
+ * of this device driver (i.e. a new file in /sys/class/net/wlan0/device/)
+ * used for controlling the debug level.
+ *
+ * See the level definitions in iwl for details.
+ *
+ * The debug_level being managed using sysfs below is a per device debug
+ * level that is used instead of the global debug level if it (the per
+ * device debug level) is set.
+ */
+static ssize_t show_debug_level(struct device *d,
+				struct device_attribute *attr, char *buf)
+{
+	struct iwl_priv *priv = dev_get_drvdata(d);
+	return sprintf(buf, "0x%08X\n", iwl_get_debug_level(priv));
+}
+static ssize_t store_debug_level(struct device *d,
+				struct device_attribute *attr,
+				 const char *buf, size_t count)
+{
+	struct iwl_priv *priv = dev_get_drvdata(d);
+	unsigned long val;
+	int ret;
+
+	ret = strict_strtoul(buf, 0, &val);
+	if (ret)
+		IWL_ERR(priv, "%s is not in hex or decimal form.\n", buf);
+	else {
+		priv->debug_level = val;
+		if (iwl_alloc_traffic_mem(priv))
+			IWL_ERR(priv,
+				"Not enough memory to generate traffic log\n");
+	}
+	return strnlen(buf, count);
+}
+
+static DEVICE_ATTR(debug_level, S_IWUSR | S_IRUGO,
+			show_debug_level, store_debug_level);
+
+
+#endif /* CONFIG_IWLWIFI_DEBUG */
+
+
+static ssize_t show_temperature(struct device *d,
+				struct device_attribute *attr, char *buf)
+{
+	struct iwl_priv *priv = dev_get_drvdata(d);
+
+	if (!iwl_is_alive(priv))
+		return -EAGAIN;
+
+	return sprintf(buf, "%d\n", priv->temperature);
+}
+
+static DEVICE_ATTR(temperature, S_IRUGO, show_temperature, NULL);
+
+static ssize_t show_tx_power(struct device *d,
+			     struct device_attribute *attr, char *buf)
+{
+	struct iwl_priv *priv = dev_get_drvdata(d);
+
+	if (!iwl_is_ready_rf(priv))
+		return sprintf(buf, "off\n");
+	else
+		return sprintf(buf, "%d\n", priv->tx_power_user_lmt);
+}
+
+static ssize_t store_tx_power(struct device *d,
+			      struct device_attribute *attr,
+			      const char *buf, size_t count)
+{
+	struct iwl_priv *priv = dev_get_drvdata(d);
+	unsigned long val;
+	int ret;
+
+	ret = strict_strtoul(buf, 10, &val);
+	if (ret)
+		IWL_INFO(priv, "%s is not in decimal form.\n", buf);
+	else {
+		ret = iwl_set_tx_power(priv, val, false);
+		if (ret)
+			IWL_ERR(priv, "failed setting tx power (0x%d).\n",
+				ret);
+		else
+			ret = count;
+	}
+	return ret;
+}
+
+static DEVICE_ATTR(tx_power, S_IWUSR | S_IRUGO, show_tx_power, store_tx_power);
+
+static ssize_t show_rts_ht_protection(struct device *d,
+			     struct device_attribute *attr, char *buf)
+{
+	struct iwl_priv *priv = dev_get_drvdata(d);
+
+	return sprintf(buf, "%s\n",
+		priv->cfg->use_rts_for_ht ? "RTS/CTS" : "CTS-to-self");
+}
+
+static ssize_t store_rts_ht_protection(struct device *d,
+			      struct device_attribute *attr,
+			      const char *buf, size_t count)
+{
+	struct iwl_priv *priv = dev_get_drvdata(d);
+	unsigned long val;
+	int ret;
+
+	ret = strict_strtoul(buf, 10, &val);
+	if (ret)
+		IWL_INFO(priv, "Input is not in decimal form.\n");
+	else {
+		if (!iwl_is_associated(priv))
+			priv->cfg->use_rts_for_ht = val ? true : false;
+		else
+			IWL_ERR(priv, "Sta associated with AP - "
+				"Change protection mechanism is not allowed\n");
+		ret = count;
+	}
+	return ret;
+}
+
+static DEVICE_ATTR(rts_ht_protection, S_IWUSR | S_IRUGO,
+			show_rts_ht_protection, store_rts_ht_protection);
+
+
+static struct attribute *iwl_sysfs_entries[] = {
+	&dev_attr_temperature.attr,
+	&dev_attr_tx_power.attr,
+	&dev_attr_rts_ht_protection.attr,
+#ifdef CONFIG_IWLWIFI_DEBUG
+	&dev_attr_debug_level.attr,
+#endif
+	NULL
+};
+
+static struct attribute_group iwl_attribute_group = {
+	.name = NULL,		/* put in device directory */
+	.attrs = iwl_sysfs_entries,
+};
+
 /******************************************************************************
  *
  * uCode download functions
@@ -2029,6 +2187,13 @@ static void iwl_ucode_callback(const struct firmware *ucode_raw, void *context)
 	if (err)
 		IWL_ERR(priv, "failed to create debugfs files. Ignoring error: %d\n", err);
 
+	err = sysfs_create_group(&priv->pci_dev->dev.kobj,
+					&iwl_attribute_group);
+	if (err) {
+		IWL_ERR(priv, "failed to create sysfs device attributes\n");
+		goto out_unbind;
+	}
+
 	/* We have our copies now, allow OS release its copies */
 	release_firmware(ucode_raw);
 	complete(&priv->_agn.firmware_loading_complete);
@@ -2444,8 +2609,6 @@ static void iwl_alive_start(struct iwl_priv *priv)
 
 		if (priv->cfg->ops->hcmd->set_rxon_chain)
 			priv->cfg->ops->hcmd->set_rxon_chain(priv);
-
-		memcpy(priv->staging_rxon.node_addr, priv->mac_addr, ETH_ALEN);
 	}
 
 	/* Configure Bluetooth device coexistence support */
@@ -3327,140 +3490,97 @@ static int iwlagn_mac_sta_add(struct ieee80211_hw *hw,
 	return 0;
 }
 
-/*****************************************************************************
- *
- * sysfs attributes
- *
- *****************************************************************************/
-
-#ifdef CONFIG_IWLWIFI_DEBUG
-
-/*
- * The following adds a new attribute to the sysfs representation
- * of this device driver (i.e. a new file in /sys/class/net/wlan0/device/)
- * used for controlling the debug level.
- *
- * See the level definitions in iwl for details.
- *
- * The debug_level being managed using sysfs below is a per device debug
- * level that is used instead of the global debug level if it (the per
- * device debug level) is set.
- */
-static ssize_t show_debug_level(struct device *d,
-				struct device_attribute *attr, char *buf)
+static void iwl_mac_channel_switch(struct ieee80211_hw *hw,
+				   struct ieee80211_channel_switch *ch_switch)
 {
-	struct iwl_priv *priv = dev_get_drvdata(d);
-	return sprintf(buf, "0x%08X\n", iwl_get_debug_level(priv));
-}
-static ssize_t store_debug_level(struct device *d,
-				struct device_attribute *attr,
-				 const char *buf, size_t count)
-{
-	struct iwl_priv *priv = dev_get_drvdata(d);
-	unsigned long val;
-	int ret;
+	struct iwl_priv *priv = hw->priv;
+	const struct iwl_channel_info *ch_info;
+	struct ieee80211_conf *conf = &hw->conf;
+	struct iwl_ht_config *ht_conf = &priv->current_ht_config;
+	u16 ch;
+	unsigned long flags = 0;
 
-	ret = strict_strtoul(buf, 0, &val);
-	if (ret)
-		IWL_ERR(priv, "%s is not in hex or decimal form.\n", buf);
-	else {
-		priv->debug_level = val;
-		if (iwl_alloc_traffic_mem(priv))
-			IWL_ERR(priv,
-				"Not enough memory to generate traffic log\n");
+	IWL_DEBUG_MAC80211(priv, "enter\n");
+
+	if (iwl_is_rfkill(priv))
+		goto out_exit;
+
+	if (test_bit(STATUS_EXIT_PENDING, &priv->status) ||
+	    test_bit(STATUS_SCANNING, &priv->status))
+		goto out_exit;
+
+	if (!iwl_is_associated(priv))
+		goto out_exit;
+
+	/* channel switch in progress */
+	if (priv->switch_rxon.switch_in_progress == true)
+		goto out_exit;
+
+	mutex_lock(&priv->mutex);
+	if (priv->cfg->ops->lib->set_channel_switch) {
+
+		ch = ieee80211_frequency_to_channel(
+			ch_switch->channel->center_freq);
+		if (le16_to_cpu(priv->active_rxon.channel) != ch) {
+			ch_info = iwl_get_channel_info(priv,
+						       conf->channel->band,
+						       ch);
+			if (!is_channel_valid(ch_info)) {
+				IWL_DEBUG_MAC80211(priv, "invalid channel\n");
+				goto out;
+			}
+			spin_lock_irqsave(&priv->lock, flags);
+
+			priv->current_ht_config.smps = conf->smps_mode;
+
+			/* Configure HT40 channels */
+			ht_conf->is_ht = conf_is_ht(conf);
+			if (ht_conf->is_ht) {
+				if (conf_is_ht40_minus(conf)) {
+					ht_conf->extension_chan_offset =
+						IEEE80211_HT_PARAM_CHA_SEC_BELOW;
+					ht_conf->is_40mhz = true;
+				} else if (conf_is_ht40_plus(conf)) {
+					ht_conf->extension_chan_offset =
+						IEEE80211_HT_PARAM_CHA_SEC_ABOVE;
+					ht_conf->is_40mhz = true;
+				} else {
+					ht_conf->extension_chan_offset =
+						IEEE80211_HT_PARAM_CHA_SEC_NONE;
+					ht_conf->is_40mhz = false;
+				}
+			} else
+				ht_conf->is_40mhz = false;
+
+			/* if we are switching from ht to 2.4 clear flags
+			 * from any ht related info since 2.4 does not
+			 * support ht */
+			if ((le16_to_cpu(priv->staging_rxon.channel) != ch))
+				priv->staging_rxon.flags = 0;
+
+			iwl_set_rxon_channel(priv, conf->channel);
+			iwl_set_rxon_ht(priv, ht_conf);
+			iwl_set_flags_for_band(priv, conf->channel->band,
+					       priv->vif);
+			spin_unlock_irqrestore(&priv->lock, flags);
+
+			iwl_set_rate(priv);
+			/*
+			 * at this point, staging_rxon has the
+			 * configuration for channel switch
+			 */
+			if (priv->cfg->ops->lib->set_channel_switch(priv,
+								    ch_switch))
+				priv->switch_rxon.switch_in_progress = false;
+		}
 	}
-	return strnlen(buf, count);
+out:
+	mutex_unlock(&priv->mutex);
+out_exit:
+	if (!priv->switch_rxon.switch_in_progress)
+		ieee80211_chswitch_done(priv->vif, false);
+	IWL_DEBUG_MAC80211(priv, "leave\n");
 }
-
-static DEVICE_ATTR(debug_level, S_IWUSR | S_IRUGO,
-			show_debug_level, store_debug_level);
-
-
-#endif /* CONFIG_IWLWIFI_DEBUG */
-
-
-static ssize_t show_temperature(struct device *d,
-				struct device_attribute *attr, char *buf)
-{
-	struct iwl_priv *priv = dev_get_drvdata(d);
-
-	if (!iwl_is_alive(priv))
-		return -EAGAIN;
-
-	return sprintf(buf, "%d\n", priv->temperature);
-}
-
-static DEVICE_ATTR(temperature, S_IRUGO, show_temperature, NULL);
-
-static ssize_t show_tx_power(struct device *d,
-			     struct device_attribute *attr, char *buf)
-{
-	struct iwl_priv *priv = dev_get_drvdata(d);
-
-	if (!iwl_is_ready_rf(priv))
-		return sprintf(buf, "off\n");
-	else
-		return sprintf(buf, "%d\n", priv->tx_power_user_lmt);
-}
-
-static ssize_t store_tx_power(struct device *d,
-			      struct device_attribute *attr,
-			      const char *buf, size_t count)
-{
-	struct iwl_priv *priv = dev_get_drvdata(d);
-	unsigned long val;
-	int ret;
-
-	ret = strict_strtoul(buf, 10, &val);
-	if (ret)
-		IWL_INFO(priv, "%s is not in decimal form.\n", buf);
-	else {
-		ret = iwl_set_tx_power(priv, val, false);
-		if (ret)
-			IWL_ERR(priv, "failed setting tx power (0x%d).\n",
-				ret);
-		else
-			ret = count;
-	}
-	return ret;
-}
-
-static DEVICE_ATTR(tx_power, S_IWUSR | S_IRUGO, show_tx_power, store_tx_power);
-
-static ssize_t show_rts_ht_protection(struct device *d,
-			     struct device_attribute *attr, char *buf)
-{
-	struct iwl_priv *priv = dev_get_drvdata(d);
-
-	return sprintf(buf, "%s\n",
-		priv->cfg->use_rts_for_ht ? "RTS/CTS" : "CTS-to-self");
-}
-
-static ssize_t store_rts_ht_protection(struct device *d,
-			      struct device_attribute *attr,
-			      const char *buf, size_t count)
-{
-	struct iwl_priv *priv = dev_get_drvdata(d);
-	unsigned long val;
-	int ret;
-
-	ret = strict_strtoul(buf, 10, &val);
-	if (ret)
-		IWL_INFO(priv, "Input is not in decimal form.\n");
-	else {
-		if (!iwl_is_associated(priv))
-			priv->cfg->use_rts_for_ht = val ? true : false;
-		else
-			IWL_ERR(priv, "Sta associated with AP - "
-				"Change protection mechanism is not allowed\n");
-		ret = count;
-	}
-	return ret;
-}
-
-static DEVICE_ATTR(rts_ht_protection, S_IWUSR | S_IRUGO,
-			show_rts_ht_protection, store_rts_ht_protection);
-
 
 /*****************************************************************************
  *
@@ -3615,21 +3735,6 @@ static void iwl_uninit_drv(struct iwl_priv *priv)
 	kfree(priv->scan_cmd);
 }
 
-static struct attribute *iwl_sysfs_entries[] = {
-	&dev_attr_temperature.attr,
-	&dev_attr_tx_power.attr,
-	&dev_attr_rts_ht_protection.attr,
-#ifdef CONFIG_IWLWIFI_DEBUG
-	&dev_attr_debug_level.attr,
-#endif
-	NULL
-};
-
-static struct attribute_group iwl_attribute_group = {
-	.name = NULL,		/* put in device directory */
-	.attrs = iwl_sysfs_entries,
-};
-
 static struct ieee80211_ops iwl_hw_ops = {
 	.tx = iwl_mac_tx,
 	.start = iwl_mac_start,
@@ -3648,6 +3753,7 @@ static struct ieee80211_ops iwl_hw_ops = {
 	.sta_notify = iwl_mac_sta_notify,
 	.sta_add = iwlagn_mac_sta_add,
 	.sta_remove = iwl_mac_sta_remove,
+	.channel_switch = iwl_mac_channel_switch,
 };
 
 static int iwl_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
@@ -3658,6 +3764,7 @@ static int iwl_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	struct iwl_cfg *cfg = (struct iwl_cfg *)(ent->driver_data);
 	unsigned long flags;
 	u16 pci_cmd;
+	u8 perm_addr[ETH_ALEN];
 
 	/************************
 	 * 1. Allocating HW data
@@ -3687,9 +3794,6 @@ static int iwl_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	priv->pci_dev = pdev;
 	priv->inta_mask = CSR_INI_SET_MASK;
 
-#ifdef CONFIG_IWLWIFI_DEBUG
-	atomic_set(&priv->restrict_refcnt, 0);
-#endif
 	if (iwl_alloc_traffic_mem(priv))
 		IWL_ERR(priv, "Not enough memory to generate traffic log\n");
 
@@ -3778,9 +3882,9 @@ static int iwl_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		goto out_free_eeprom;
 
 	/* extract MAC Address */
-	iwl_eeprom_get_mac(priv, priv->mac_addr);
-	IWL_DEBUG_INFO(priv, "MAC address: %pM\n", priv->mac_addr);
-	SET_IEEE80211_PERM_ADDR(priv->hw, priv->mac_addr);
+	iwl_eeprom_get_mac(priv, perm_addr);
+	IWL_DEBUG_INFO(priv, "MAC address: %pM\n", perm_addr);
+	SET_IEEE80211_PERM_ADDR(priv->hw, perm_addr);
 
 	/************************
 	 * 5. Setup HW constants
@@ -3815,11 +3919,6 @@ static int iwl_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		IWL_ERR(priv, "Error allocating IRQ %d\n", priv->pci_dev->irq);
 		goto out_disable_msi;
 	}
-	err = sysfs_create_group(&pdev->dev.kobj, &iwl_attribute_group);
-	if (err) {
-		IWL_ERR(priv, "failed to create sysfs device attributes\n");
-		goto out_free_irq;
-	}
 
 	iwl_setup_deferred_work(priv);
 	iwl_setup_rx_handlers(priv);
@@ -3853,15 +3952,13 @@ static int iwl_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	err = iwl_request_firmware(priv, true);
 	if (err)
-		goto out_remove_sysfs;
+		goto out_destroy_workqueue;
 
 	return 0;
 
- out_remove_sysfs:
+ out_destroy_workqueue:
 	destroy_workqueue(priv->workqueue);
 	priv->workqueue = NULL;
-	sysfs_remove_group(&pdev->dev.kobj, &iwl_attribute_group);
- out_free_irq:
 	free_irq(priv->pci_dev->irq, priv);
 	iwl_free_isr_ict(priv);
  out_disable_msi:

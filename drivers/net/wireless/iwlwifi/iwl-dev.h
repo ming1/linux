@@ -142,7 +142,7 @@ struct iwl_queue {
 
 /* One for each TFD */
 struct iwl_tx_info {
-	struct sk_buff *skb[IWL_NUM_OF_TBS - 1];
+	struct sk_buff *skb;
 };
 
 /**
@@ -662,6 +662,7 @@ struct iwl_sensitivity_ranges {
  * @sw_crypto: 0 for hw, 1 for sw
  * @max_xxx_size: for ucode uses
  * @ct_kill_threshold: temperature threshold
+ * @beacon_time_tsf_bits: number of valid tsf bits for beacon time
  * @calib_init_cfg: setup initial calibrations for the hw
  * @struct iwl_sensitivity_ranges: range of sensitivity values
  */
@@ -688,6 +689,7 @@ struct iwl_hw_params {
 	u32 ct_kill_threshold; /* value in hw-dependent units */
 	u32 ct_kill_exit_threshold; /* value in hw-dependent units */
 				    /* for 1000, 6000 series and up */
+	u16 beacon_time_tsf_bits;
 	u32 calib_init_cfg;
 	const struct iwl_sensitivity_ranges *sens;
 };
@@ -1062,6 +1064,20 @@ struct iwl_force_reset {
 	unsigned long last_force_reset_jiffies;
 };
 
+/* extend beacon time format bit shifting  */
+/*
+ * for _3945 devices
+ * bits 31:24 - extended
+ * bits 23:0  - interval
+ */
+#define IWL3945_EXT_BEACON_TIME_POS	24
+/*
+ * for _agn devices
+ * bits 31:22 - extended
+ * bits 21:0  - interval
+ */
+#define IWLAGN_EXT_BEACON_TIME_POS	22
+
 struct iwl_priv {
 
 	/* ieee device used by generic ieee processing code */
@@ -1114,6 +1130,7 @@ struct iwl_priv {
 	void *scan_cmd;
 	enum ieee80211_band scan_band;
 	struct cfg80211_scan_request *scan_request;
+	struct ieee80211_vif *scan_vif;
 	bool is_internal_short_scan;
 	u8 scan_tx_ant[IEEE80211_NUM_BANDS];
 	u8 mgmt_tx_ant;
@@ -1208,7 +1225,7 @@ struct iwl_priv {
 	struct iwl_tt_mgmt thermal_throttle;
 
 	struct iwl_notif_statistics statistics;
-#ifdef CONFIG_IWLWIFI_DEBUG
+#ifdef CONFIG_IWLWIFI_DEBUGFS
 	struct iwl_notif_statistics accum_statistics;
 	struct iwl_notif_statistics delta_statistics;
 	struct iwl_notif_statistics max_delta;
@@ -1216,7 +1233,6 @@ struct iwl_priv {
 
 	/* context information */
 	u8 bssid[ETH_ALEN]; /* used only on 3945 but filled by core */
-	u8 mac_addr[ETH_ALEN];
 
 	/* station table variables */
 
@@ -1345,8 +1361,6 @@ struct iwl_priv {
 	/* debugging info */
 	u32 debug_level; /* per device debugging will override global
 			    iwl_debug_level if set */
-	u32 framecnt_to_us;
-	atomic_t restrict_refcnt;
 #endif /* CONFIG_IWLWIFI_DEBUG */
 #ifdef CONFIG_IWLWIFI_DEBUGFS
 	/* debugfs */
@@ -1411,9 +1425,9 @@ static inline u32 iwl_get_debug_level(struct iwl_priv *priv)
 static inline struct ieee80211_hdr *iwl_tx_queue_get_hdr(struct iwl_priv *priv,
 							 int txq_id, int idx)
 {
-	if (priv->txq[txq_id].txb[idx].skb[0])
+	if (priv->txq[txq_id].txb[idx].skb)
 		return (struct ieee80211_hdr *)priv->txq[txq_id].
-				txb[idx].skb[0]->data;
+				txb[idx].skb->data;
 	return NULL;
 }
 
