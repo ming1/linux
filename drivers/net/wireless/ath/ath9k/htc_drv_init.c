@@ -521,23 +521,23 @@ static int ath9k_init_queues(struct ath9k_htc_priv *priv)
 		goto err;
 	}
 
-	if (!ath9k_htc_txq_setup(priv, ATH9K_WME_AC_BE)) {
+	if (!ath9k_htc_txq_setup(priv, WME_AC_BE)) {
 		ath_print(common, ATH_DBG_FATAL,
 			  "Unable to setup xmit queue for BE traffic\n");
 		goto err;
 	}
 
-	if (!ath9k_htc_txq_setup(priv, ATH9K_WME_AC_BK)) {
+	if (!ath9k_htc_txq_setup(priv, WME_AC_BK)) {
 		ath_print(common, ATH_DBG_FATAL,
 			  "Unable to setup xmit queue for BK traffic\n");
 		goto err;
 	}
-	if (!ath9k_htc_txq_setup(priv, ATH9K_WME_AC_VI)) {
+	if (!ath9k_htc_txq_setup(priv, WME_AC_VI)) {
 		ath_print(common, ATH_DBG_FATAL,
 			  "Unable to setup xmit queue for VI traffic\n");
 		goto err;
 	}
-	if (!ath9k_htc_txq_setup(priv, ATH9K_WME_AC_VO)) {
+	if (!ath9k_htc_txq_setup(priv, WME_AC_VO)) {
 		ath_print(common, ATH_DBG_FATAL,
 			  "Unable to setup xmit queue for VO traffic\n");
 		goto err;
@@ -569,36 +569,6 @@ static void ath9k_init_crypto(struct ath9k_htc_priv *priv)
 	 */
 	for (i = 0; i < common->keymax; i++)
 		ath9k_hw_keyreset(priv->ah, (u16) i);
-
-	if (ath9k_hw_getcapability(priv->ah, ATH9K_CAP_CIPHER,
-				   ATH9K_CIPHER_TKIP, NULL)) {
-		/*
-		 * Whether we should enable h/w TKIP MIC.
-		 * XXX: if we don't support WME TKIP MIC, then we wouldn't
-		 * report WMM capable, so it's always safe to turn on
-		 * TKIP MIC in this case.
-		 */
-		ath9k_hw_setcapability(priv->ah, ATH9K_CAP_TKIP_MIC, 0, 1, NULL);
-	}
-
-	/*
-	 * Check whether the separate key cache entries
-	 * are required to handle both tx+rx MIC keys.
-	 * With split mic keys the number of stations is limited
-	 * to 27 otherwise 59.
-	 */
-	if (ath9k_hw_getcapability(priv->ah, ATH9K_CAP_CIPHER,
-				   ATH9K_CIPHER_TKIP, NULL)
-	    && ath9k_hw_getcapability(priv->ah, ATH9K_CAP_CIPHER,
-				      ATH9K_CIPHER_MIC, NULL)
-	    && ath9k_hw_getcapability(priv->ah, ATH9K_CAP_TKIP_SPLIT,
-				      0, NULL))
-		common->splitmic = 1;
-
-	/* turn on mcast key search if possible */
-	if (!ath9k_hw_getcapability(priv->ah, ATH9K_CAP_MCAST_KEYSRCH, 0, NULL))
-		(void)ath9k_hw_setcapability(priv->ah, ATH9K_CAP_MCAST_KEYSRCH,
-					     1, 1, NULL);
 }
 
 static void ath9k_init_channels_rates(struct ath9k_htc_priv *priv)

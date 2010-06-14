@@ -27,13 +27,11 @@ static struct dentry *ath9k_debugfs_root;
 static void ath_update_txpow(struct ath9k_htc_priv *priv)
 {
 	struct ath_hw *ah = priv->ah;
-	u32 txpow;
 
 	if (priv->curtxpow != priv->txpowlimit) {
 		ath9k_hw_set_txpowerlimit(ah, priv->txpowlimit);
 		/* read back in case value is clamped */
-		ath9k_hw_getcapability(ah, ATH9K_CAP_TXPOW, 1, &txpow);
-		priv->curtxpow = txpow;
+		priv->curtxpow = ath9k_hw_regulatory(ah)->power_limit;
 	}
 }
 
@@ -364,11 +362,8 @@ static void ath9k_htc_setup_rate(struct ath9k_htc_priv *priv,
 		trate->rates.ht_rates.rs_nrates = j;
 
 		caps = WLAN_RC_HT_FLAG;
-		if (priv->ah->caps.tx_chainmask != 1 &&
-		    ath9k_hw_getcapability(priv->ah, ATH9K_CAP_DS, 0, NULL)) {
-			if (sta->ht_cap.mcs.rx_mask[1])
-				caps |= WLAN_RC_DS_FLAG;
-		}
+		if (sta->ht_cap.mcs.rx_mask[1])
+			caps |= WLAN_RC_DS_FLAG;
 		if (sta->ht_cap.cap & IEEE80211_HT_CAP_SUP_WIDTH_20_40)
 			caps |= WLAN_RC_40_FLAG;
 		if (conf_is_ht40(&priv->hw->conf) &&
@@ -510,13 +505,13 @@ void ath9k_htc_aggr_work(struct work_struct *work)
 		ret = ath9k_htc_aggr_oper(priv, wk->vif, wk->sta_addr,
 					  wk->tid, true);
 		if (!ret)
-			ieee80211_start_tx_ba_cb(wk->vif, wk->sta_addr,
-						 wk->tid);
+			ieee80211_start_tx_ba_cb_irqsafe(wk->vif, wk->sta_addr,
+							 wk->tid);
 		break;
 	case IEEE80211_AMPDU_TX_STOP:
 		ath9k_htc_aggr_oper(priv, wk->vif, wk->sta_addr,
 				    wk->tid, false);
-		ieee80211_stop_tx_ba_cb(wk->vif, wk->sta_addr, wk->tid);
+		ieee80211_stop_tx_ba_cb_irqsafe(wk->vif, wk->sta_addr, wk->tid);
 		break;
 	default:
 		ath_print(ath9k_hw_common(priv->ah), ATH_DBG_FATAL,
@@ -1590,7 +1585,7 @@ static int ath9k_htc_conf_tx(struct ieee80211_hw *hw, u16 queue,
 	}
 
 	if ((priv->ah->opmode == NL80211_IFTYPE_ADHOC) &&
-	    (qnum == priv->hwq_map[ATH9K_WME_AC_BE]))
+	    (qnum == priv->hwq_map[WME_AC_BE]))
 		    ath9k_htc_beaconq_config(priv);
 out:
 	ath9k_htc_ps_restore(priv);
