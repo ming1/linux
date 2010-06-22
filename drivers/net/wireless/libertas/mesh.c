@@ -5,6 +5,7 @@
 #include <linux/if_arp.h>
 #include <linux/kthread.h>
 #include <linux/kfifo.h>
+#include <net/cfg80211.h>
 
 #include "mesh.h"
 #include "decl.h"
@@ -314,7 +315,7 @@ static int lbs_mesh_dev_open(struct net_device *dev)
 
 	spin_lock_irq(&priv->driver_lock);
 
-	if (priv->monitormode) {
+	if (priv->wdev->iftype == NL80211_IFTYPE_MONITOR) {
 		ret = -EBUSY;
 		goto out;
 	}
