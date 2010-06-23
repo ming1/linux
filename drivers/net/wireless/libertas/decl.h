@@ -1,4 +1,3 @@
-
 /**
   *  This file contains declaration referring to
   *  functions defined in other source files
@@ -34,8 +33,6 @@ void lbs_remove_card(struct lbs_private *priv);
 int lbs_start_card(struct lbs_private *priv);
 void lbs_stop_card(struct lbs_private *priv);
 void lbs_host_to_card_done(struct lbs_private *priv);
-
-int lbs_rtap_supported(struct lbs_private *priv);
 
 int lbs_set_mac_address(struct net_device *dev, void *addr);
 void lbs_set_multicast_list(struct net_device *dev);
