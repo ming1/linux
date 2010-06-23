@@ -295,8 +295,6 @@ static void ar9003_hw_configpcipowersave(struct ath_hw *ah,
 		/* Several PCIe massages to ensure proper behaviour */
 		if (ah->config.pcie_waen)
 			REG_WRITE(ah, AR_WA, ah->config.pcie_waen);
-		else
-			REG_WRITE(ah, AR_WA, ah->WARegVal);
 	}
 }
 
