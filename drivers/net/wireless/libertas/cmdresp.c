@@ -31,9 +31,7 @@ void lbs_mac_event_disconnected(struct lbs_private *priv)
 	 * It causes problem in the Supplicant
 	 */
 	msleep_interruptible(1000);
-
-	if (priv->wdev->iftype == NL80211_IFTYPE_STATION)
-		lbs_send_disconnect_notification(priv);
+	lbs_send_disconnect_notification(priv);
 
 	/* report disconnect to upper layer */
 	netif_stop_queue(priv->dev);
