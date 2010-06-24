@@ -268,7 +268,6 @@ void ath_paprd_calibrate(struct work_struct *work)
 	int time_left;
 	int i;
 
-	ath9k_ps_wakeup(sc);
 	skb = alloc_skb(len, GFP_KERNEL);
 	if (!skb)
 		return;
@@ -289,6 +288,7 @@ void ath_paprd_calibrate(struct work_struct *work)
 	qnum = sc->tx.hwq_map[WME_AC_BE];
 	txctl.txq = &sc->tx.txq[qnum];
 
+	ath9k_ps_wakeup(sc);
 	ar9003_paprd_init_table(ah);
 	for (chain = 0; chain < AR9300_MAX_CHAINS; chain++) {
 		if (!(ah->caps.tx_chainmask & BIT(chain)))
@@ -310,13 +310,13 @@ void ath_paprd_calibrate(struct work_struct *work)
 			break;
 
 		time_left = wait_for_completion_timeout(&sc->paprd_complete,
-							100);
+				msecs_to_jiffies(ATH_PAPRD_TIMEOUT));
 		if (!time_left) {
 			ath_print(ath9k_hw_common(ah), ATH_DBG_CALIBRATE,
 				  "Timeout waiting for paprd training on "
 				  "TX chain %d\n",
 				  chain);
-			break;
+			goto fail_paprd;
 		}
 
 		if (!ar9003_paprd_is_done(ah))
@@ -334,6 +334,7 @@ void ath_paprd_calibrate(struct work_struct *work)
 		ath_paprd_activate(sc);
 	}
 
+fail_paprd:
 	ath9k_ps_restore(sc);
 }
 
