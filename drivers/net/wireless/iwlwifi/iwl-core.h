@@ -196,6 +196,7 @@ struct iwl_lib_ops {
 	/* station management */
 	int (*manage_ibss_station)(struct iwl_priv *priv,
 				   struct ieee80211_vif *vif, bool add);
+	int (*update_bcast_station)(struct iwl_priv *priv);
 	/* recover from tx queue stall */
 	void (*recover_from_tx_stall)(unsigned long data);
 	/* check for plcp health */
@@ -330,6 +331,7 @@ struct iwl_cfg {
 	const bool chain_noise_calib_by_driver;
 	u8 scan_rx_antennas[IEEE80211_NUM_BANDS];
 	u8 scan_tx_antennas[IEEE80211_NUM_BANDS];
+	const bool need_dc_calib;
 };
 
 /***************************
