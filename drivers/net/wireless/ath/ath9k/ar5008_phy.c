@@ -1497,50 +1497,25 @@ static bool ar5008_hw_ani_control_new(struct ath_hw *ah,
 static void ar5008_hw_do_getnf(struct ath_hw *ah,
 			      int16_t nfarray[NUM_NF_READINGS])
 {
-	struct ath_common *common = ath9k_hw_common(ah);
 	int16_t nf;
 
 	nf = MS(REG_READ(ah, AR_PHY_CCA), AR_PHY_MINCCA_PWR);
-	if (nf & 0x100)
-		nf = 0 - ((nf ^ 0x1ff) + 1);
-	ath_print(common, ATH_DBG_CALIBRATE,
-		  "NF calibrated [ctl] [chain 0] is %d\n", nf);
-	nfarray[0] = nf;
+	nfarray[0] = sign_extend(nf, 9);
 
 	nf = MS(REG_READ(ah, AR_PHY_CH1_CCA), AR_PHY_CH1_MINCCA_PWR);
-	if (nf & 0x100)
-		nf = 0 - ((nf ^ 0x1ff) + 1);
-	ath_print(common, ATH_DBG_CALIBRATE,
-		  "NF calibrated [ctl] [chain 1] is %d\n", nf);
-	nfarray[1] = nf;
+	nfarray[1] = sign_extend(nf, 9);
 
 	nf = MS(REG_READ(ah, AR_PHY_CH2_CCA), AR_PHY_CH2_MINCCA_PWR);
-	if (nf & 0x100)
-		nf = 0 - ((nf ^ 0x1ff) + 1);
-	ath_print(common, ATH_DBG_CALIBRATE,
-		  "NF calibrated [ctl] [chain 2] is %d\n", nf);
-	nfarray[2] = nf;
+	nfarray[2] = sign_extend(nf, 9);
 
 	nf = MS(REG_READ(ah, AR_PHY_EXT_CCA), AR_PHY_EXT_MINCCA_PWR);
-	if (nf & 0x100)
-		nf = 0 - ((nf ^ 0x1ff) + 1);
-	ath_print(common, ATH_DBG_CALIBRATE,
-		  "NF calibrated [ext] [chain 0] is %d\n", nf);
-	nfarray[3] = nf;
+	nfarray[3] = sign_extend(nf, 9);
 
 	nf = MS(REG_READ(ah, AR_PHY_CH1_EXT_CCA), AR_PHY_CH1_EXT_MINCCA_PWR);
-	if (nf & 0x100)
-		nf = 0 - ((nf ^ 0x1ff) + 1);
-	ath_print(common, ATH_DBG_CALIBRATE,
-		  "NF calibrated [ext] [chain 1] is %d\n", nf);
-	nfarray[4] = nf;
+	nfarray[4] = sign_extend(nf, 9);
 
 	nf = MS(REG_READ(ah, AR_PHY_CH2_EXT_CCA), AR_PHY_CH2_EXT_MINCCA_PWR);
-	if (nf & 0x100)
-		nf = 0 - ((nf ^ 0x1ff) + 1);
-	ath_print(common, ATH_DBG_CALIBRATE,
-		  "NF calibrated [ext] [chain 2] is %d\n", nf);
-	nfarray[5] = nf;
+	nfarray[5] = sign_extend(nf, 9);
 }
 
 static void ar5008_hw_loadnf(struct ath_hw *ah, struct ath9k_channel *chan)
@@ -1678,6 +1653,15 @@ static void ar5008_hw_ani_cache_ini_regs(struct ath_hw *ah)
 	aniState->cycleCount = 0;
 }
 
+static void ar5008_hw_set_nf_limits(struct ath_hw *ah)
+{
+	ah->nf_2g.max = AR_PHY_CCA_MAX_GOOD_VAL_5416_2GHZ;
+	ah->nf_2g.min = AR_PHY_CCA_MIN_GOOD_VAL_5416_2GHZ;
+	ah->nf_2g.nominal = AR_PHY_CCA_NOM_VAL_5416_2GHZ;
+	ah->nf_5g.max = AR_PHY_CCA_MAX_GOOD_VAL_5416_5GHZ;
+	ah->nf_5g.min = AR_PHY_CCA_MIN_GOOD_VAL_5416_5GHZ;
+	ah->nf_5g.nominal = AR_PHY_CCA_NOM_VAL_5416_5GHZ;
+}
 
 void ar5008_hw_attach_phy_ops(struct ath_hw *ah)
 {
@@ -1715,4 +1699,6 @@ void ar5008_hw_attach_phy_ops(struct ath_hw *ah)
 		priv_ops->compute_pll_control = ar9160_hw_compute_pll_control;
 	else
 		priv_ops->compute_pll_control = ar5008_hw_compute_pll_control;
+
+	ar5008_hw_set_nf_limits(ah);
 }
