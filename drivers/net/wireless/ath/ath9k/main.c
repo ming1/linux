@@ -857,9 +857,14 @@ void ath_radio_disable(struct ath_softc *sc, struct ieee80211_hw *hw)
 	ath9k_ps_wakeup(sc);
 	ieee80211_stop_queues(hw);
 
-	/* Disable LED */
-	ath9k_hw_set_gpio(ah, ah->led_pin, 1);
-	ath9k_hw_cfg_gpio_input(ah, ah->led_pin);
+	/*
+	 * Keep the LED on when the radio is disabled
+	 * during idle unassociated state.
+	 */
+	if (!sc->ps_idle) {
+		ath9k_hw_set_gpio(ah, ah->led_pin, 1);
+		ath9k_hw_cfg_gpio_input(ah, ah->led_pin);
+	}
 
 	/* Disable interrupts */
 	ath9k_hw_set_interrupts(ah, 0);
@@ -1264,6 +1269,7 @@ static void ath9k_stop(struct ieee80211_hw *hw)
 	struct ath_softc *sc = aphy->sc;
 	struct ath_hw *ah = sc->sc_ah;
 	struct ath_common *common = ath9k_hw_common(ah);
+	int i;
 
 	mutex_lock(&sc->mutex);
 
@@ -1276,7 +1282,12 @@ static void ath9k_stop(struct ieee80211_hw *hw)
 	cancel_work_sync(&sc->paprd_work);
 	cancel_work_sync(&sc->hw_check_work);
 
-	if (!sc->num_sec_wiphy) {
+	for (i = 0; i < sc->num_sec_wiphy; i++) {
+		if (sc->sec_wiphy[i])
+			break;
+	}
+
+	if (i == sc->num_sec_wiphy) {
 		cancel_delayed_work_sync(&sc->wiphy_work);
 		cancel_work_sync(&sc->chan_work);
 	}
