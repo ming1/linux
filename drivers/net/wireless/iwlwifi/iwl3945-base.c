@@ -311,9 +311,7 @@ unsigned int iwl3945_fill_beacon_frame(struct iwl_priv *priv,
 				int left)
 {
 
-	if (!iwl_is_associated(priv) || !priv->ibss_beacon ||
-	    ((priv->iw_mode != NL80211_IFTYPE_ADHOC) &&
-	     (priv->iw_mode != NL80211_IFTYPE_AP)))
+	if (!iwl_is_associated(priv) || !priv->ibss_beacon)
 		return 0;
 
 	if (priv->ibss_beacon->len > left)
@@ -2883,7 +2881,10 @@ void iwl3945_request_scan(struct iwl_priv *priv, struct ieee80211_vif *vif)
 		IWL_DEBUG_INFO(priv, "Scanning while associated...\n");
 
 		spin_lock_irqsave(&priv->lock, flags);
-		interval = vif ? vif->bss_conf.beacon_int : 0;
+		if (priv->is_internal_short_scan)
+			interval = 0;
+		else
+			interval = vif->bss_conf.beacon_int;
 		spin_unlock_irqrestore(&priv->lock, flags);
 
 		scan->suspend_time = 0;
