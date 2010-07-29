@@ -156,9 +156,6 @@ EXPORT_SYMBOL(ath9k_hw_reset_calvalid);
 
 void ath9k_hw_start_nfcal(struct ath_hw *ah)
 {
-	if (ah->caldata)
-		ah->caldata->nfcal_pending = true;
-
 	REG_SET_BIT(ah, AR_PHY_AGC_CONTROL,
 		    AR_PHY_AGC_CONTROL_ENABLE_NF);
 	REG_SET_BIT(ah, AR_PHY_AGC_CONTROL,
@@ -285,7 +282,8 @@ static void ath9k_hw_nf_sanitize(struct ath_hw *ah, s16 *nf)
 	}
 }
 
-bool ath9k_hw_getnf(struct ath_hw *ah, struct ath9k_channel *chan)
+int16_t ath9k_hw_getnf(struct ath_hw *ah,
+		       struct ath9k_channel *chan)
 {
 	struct ath_common *common = ath9k_hw_common(ah);
 	int16_t nf, nfThresh;
@@ -295,7 +293,7 @@ bool ath9k_hw_getnf(struct ath_hw *ah, struct ath9k_channel *chan)
 	struct ath9k_hw_cal_data *caldata = ah->caldata;
 
 	if (!caldata)
-		return false;
+		return ath9k_hw_get_default_nf(ah, chan);
 
 	chan->channelFlags &= (~CHANNEL_CW_INT);
 	if (REG_READ(ah, AR_PHY_AGC_CONTROL) & AR_PHY_AGC_CONTROL_NF) {
@@ -303,7 +301,7 @@ bool ath9k_hw_getnf(struct ath_hw *ah, struct ath9k_channel *chan)
 			  "NF did not complete in calibration window\n");
 		nf = 0;
 		caldata->rawNoiseFloor = nf;
-		return false;
+		return caldata->rawNoiseFloor;
 	} else {
 		ath9k_hw_do_getnf(ah, nfarray);
 		ath9k_hw_nf_sanitize(ah, nfarray);
@@ -319,10 +317,11 @@ bool ath9k_hw_getnf(struct ath_hw *ah, struct ath9k_channel *chan)
 	}
 
 	h = caldata->nfCalHist;
-	caldata->nfcal_pending = false;
+
 	ath9k_hw_update_nfcal_hist_buffer(h, nfarray);
 	caldata->rawNoiseFloor = h[0].privNF;
-	return true;
+
+	return ah->caldata->rawNoiseFloor;
 }
 
 void ath9k_init_nfcal_hist_buffer(struct ath_hw *ah,
