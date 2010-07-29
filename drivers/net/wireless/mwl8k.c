@@ -86,7 +86,7 @@ struct rxd_ops {
 	void (*rxd_init)(void *rxd, dma_addr_t next_dma_addr);
 	void (*rxd_refill)(void *rxd, dma_addr_t addr, int len);
 	int (*rxd_process)(void *rxd, struct ieee80211_rx_status *status,
-			   __le16 *qos, s8 *noise);
+			   __le16 *qos);
 };
 
 struct mwl8k_device_info {
@@ -207,9 +207,6 @@ struct mwl8k_priv {
 
 	/* Tasklet to perform RX.  */
 	struct tasklet_struct poll_rx_task;
-
-	/* Most recently reported noise in dBm */
-	s8 noise;
 };
 
 /* Per interface specific private data */
@@ -744,7 +741,7 @@ static void mwl8k_rxd_8366_ap_refill(void *_rxd, dma_addr_t addr, int len)
 
 static int
 mwl8k_rxd_8366_ap_process(void *_rxd, struct ieee80211_rx_status *status,
-			  __le16 *qos, s8 *noise)
+			  __le16 *qos)
 {
 	struct mwl8k_rxd_8366_ap *rxd = _rxd;
 
@@ -755,7 +752,6 @@ mwl8k_rxd_8366_ap_process(void *_rxd, struct ieee80211_rx_status *status,
 	memset(status, 0, sizeof(*status));
 
 	status->signal = -rxd->rssi;
-	*noise = -rxd->noise_floor;
 
 	if (rxd->rate & MWL8K_8366_AP_RATE_INFO_MCS_FORMAT) {
 		status->flag |= RX_FLAG_HT;
@@ -843,7 +839,7 @@ static void mwl8k_rxd_sta_refill(void *_rxd, dma_addr_t addr, int len)
 
 static int
 mwl8k_rxd_sta_process(void *_rxd, struct ieee80211_rx_status *status,
-		       __le16 *qos, s8 *noise)
+		       __le16 *qos)
 {
 	struct mwl8k_rxd_sta *rxd = _rxd;
 	u16 rate_info;
@@ -857,7 +853,6 @@ mwl8k_rxd_sta_process(void *_rxd, struct ieee80211_rx_status *status,
 	memset(status, 0, sizeof(*status));
 
 	status->signal = -rxd->rssi;
-	*noise = -rxd->noise_level;
 	status->antenna = MWL8K_STA_RATE_INFO_ANTSELECT(rate_info);
 	status->rate_idx = MWL8K_STA_RATE_INFO_RATEID(rate_info);
 
@@ -1058,8 +1053,7 @@ static int rxq_process(struct ieee80211_hw *hw, int index, int limit)
 
 		rxd = rxq->rxd + (rxq->head * priv->rxd_ops->rxd_size);
 
-		pkt_len = priv->rxd_ops->rxd_process(rxd, &status, &qos,
-							&priv->noise);
+		pkt_len = priv->rxd_ops->rxd_process(rxd, &status, &qos);
 		if (pkt_len < 0)
 			break;
 
@@ -3761,22 +3755,6 @@ static int mwl8k_get_stats(struct ieee80211_hw *hw,
 	return mwl8k_cmd_get_stat(hw, stats);
 }
 
-static int mwl8k_get_survey(struct ieee80211_hw *hw, int idx,
-				struct survey_info *survey)
-{
-	struct mwl8k_priv *priv = hw->priv;
-	struct ieee80211_conf *conf = &hw->conf;
-
-	if (idx != 0)
-		return -ENOENT;
-
-	survey->channel = conf->channel;
-	survey->filled = SURVEY_INFO_NOISE_DBM;
-	survey->noise = priv->noise;
-
-	return 0;
-}
-
 static int
 mwl8k_ampdu_action(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 		   enum ieee80211_ampdu_mlme_action action,
@@ -3808,7 +3786,6 @@ static const struct ieee80211_ops mwl8k_ops = {
 	.sta_remove		= mwl8k_sta_remove,
 	.conf_tx		= mwl8k_conf_tx,
 	.get_stats		= mwl8k_get_stats,
-	.get_survey		= mwl8k_get_survey,
 	.ampdu_action		= mwl8k_ampdu_action,
 };
 
