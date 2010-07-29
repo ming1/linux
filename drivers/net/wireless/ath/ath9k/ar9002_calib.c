@@ -63,7 +63,6 @@ static bool ar9002_hw_per_calibration(struct ath_hw *ah,
 				      u8 rxchainmask,
 				      struct ath9k_cal_list *currCal)
 {
-	struct ath9k_hw_cal_data *caldata = ah->caldata;
 	bool iscaldone = false;
 
 	if (currCal->calState == CAL_RUNNING) {
@@ -82,14 +81,14 @@ static bool ar9002_hw_per_calibration(struct ath_hw *ah,
 				}
 
 				currCal->calData->calPostProc(ah, numChains);
-				caldata->CalValid |= currCal->calData->calType;
+				ichan->CalValid |= currCal->calData->calType;
 				currCal->calState = CAL_DONE;
 				iscaldone = true;
 			} else {
 				ar9002_hw_setup_calibration(ah, currCal);
 			}
 		}
-	} else if (!(caldata->CalValid & currCal->calData->calType)) {
+	} else if (!(ichan->CalValid & currCal->calData->calType)) {
 		ath9k_hw_reset_calibration(ah, currCal);
 	}
 
@@ -902,8 +901,7 @@ static bool ar9002_hw_init_cal(struct ath_hw *ah, struct ath9k_channel *chan)
 			ath9k_hw_reset_calibration(ah, ah->cal_list_curr);
 	}
 
-	if (ah->caldata)
-		ah->caldata->CalValid = 0;
+	chan->CalValid = 0;
 
 	return true;
 }
