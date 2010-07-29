@@ -839,6 +839,7 @@ static int wl1271_op_add_interface(struct ieee80211_hw *hw,
 				   struct ieee80211_vif *vif)
 {
 	struct wl1271 *wl = hw->priv;
+	struct wiphy *wiphy = hw->wiphy;
 	int retries = WL1271_BOOT_RETRIES;
 	int ret = 0;
 
@@ -892,6 +893,12 @@ static int wl1271_op_add_interface(struct ieee80211_hw *hw,
 
 		wl->state = WL1271_STATE_ON;
 		wl1271_info("firmware booted (%s)", wl->chip.fw_ver);
+
+		/* update hw/fw version info in wiphy struct */
+		wiphy->hw_version = wl->chip.id;
+		strncpy(wiphy->fw_version, wl->chip.fw_ver,
+			sizeof(wiphy->fw_version));
+
 		goto out;
 
 irq_disable:
@@ -1927,6 +1934,22 @@ out:
 	return mactime;
 }
 
+static int wl1271_op_get_survey(struct ieee80211_hw *hw, int idx,
+				struct survey_info *survey)
+{
+	struct wl1271 *wl = hw->priv;
+	struct ieee80211_conf *conf = &hw->conf;
+ 
+	if (idx != 0)
+		return -ENOENT;
+ 
+	survey->channel = conf->channel;
+	survey->filled = SURVEY_INFO_NOISE_DBM;
+	survey->noise = wl->noise;
+ 
+	return 0;
+}
+
 /* can't be const, mac80211 writes to this */
 static struct ieee80211_rate wl1271_rates[] = {
 	{ .bitrate = 10,
@@ -2156,6 +2179,7 @@ static const struct ieee80211_ops wl1271_ops = {
 	.set_rts_threshold = wl1271_op_set_rts_threshold,
 	.conf_tx = wl1271_op_conf_tx,
 	.get_tsf = wl1271_op_get_tsf,
+	.get_survey = wl1271_op_get_survey,
 	CFG80211_TESTMODE_CMD(wl1271_tm_cmd)
 };
 
