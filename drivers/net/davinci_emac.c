@@ -298,6 +298,11 @@ static const char emac_version_string[] = "TI DaVinci EMAC Linux v6.1";
 #define EMAC_CTRL_EWCTL		(0x4)
 #define EMAC_CTRL_EWINTTCNT	(0x8)
 
+/* EMAC DM644x control module masks */
+#define EMAC_DM644X_EWINTCNT_MASK	0x1FFFF
+#define EMAC_DM644X_INTMIN_INTVL	0x1
+#define EMAC_DM644X_INTMAX_INTVL	(EMAC_DM644X_EWINTCNT_MASK)
+
 /* EMAC MDIO related */
 /* Mask & Control defines */
 #define MDIO_CONTROL_CLKDIV	(0xFF)
@@ -318,8 +323,20 @@ static const char emac_version_string[] = "TI DaVinci EMAC Linux v6.1";
 #define MDIO_CONTROL		(0x04)
 
 /* EMAC DM646X control module registers */
-#define EMAC_DM646X_CMRXINTEN	(0x14)
-#define EMAC_DM646X_CMTXINTEN	(0x18)
+#define EMAC_DM646X_CMINTCTRL	0x0C
+#define EMAC_DM646X_CMRXINTEN	0x14
+#define EMAC_DM646X_CMTXINTEN	0x18
+#define EMAC_DM646X_CMRXINTMAX	0x70
+#define EMAC_DM646X_CMTXINTMAX	0x74
+
+/* EMAC DM646X control module masks */
+#define EMAC_DM646X_INTPACEEN		(0x3 << 16)
+#define EMAC_DM646X_INTPRESCALE_MASK	(0x7FF << 0)
+#define EMAC_DM646X_CMINTMAX_CNT	63
+#define EMAC_DM646X_CMINTMIN_CNT	2
+#define EMAC_DM646X_CMINTMAX_INTVL	(1000 / EMAC_DM646X_CMINTMIN_CNT)
+#define EMAC_DM646X_CMINTMIN_INTVL	((1000 / EMAC_DM646X_CMINTMAX_CNT) + 1)
+
 
 /* EMAC EOI codes for C0 */
 #define EMAC_DM646X_MAC_EOI_C0_RXEN	(0x01)
@@ -468,6 +485,8 @@ struct emac_priv {
 	u32 duplex; /* Link duplex: 0=Half, 1=Full */
 	u32 rx_buf_size;
 	u32 isr_count;
+	u32 coal_intvl;
+	u32 bus_freq_mhz;
 	u8 rmii_en;
 	u8 version;
 	u32 mac_hash1;
@@ -545,9 +564,11 @@ static void emac_dump_regs(struct emac_priv *priv)
 
 	/* Print important registers in EMAC */
 	dev_info(emac_dev, "EMAC Basic registers\n");
-	dev_info(emac_dev, "EMAC: EWCTL: %08X, EWINTTCNT: %08X\n",
-		emac_ctrl_read(EMAC_CTRL_EWCTL),
-		emac_ctrl_read(EMAC_CTRL_EWINTTCNT));
+	if (priv->version == EMAC_VERSION_1) {
+		dev_info(emac_dev, "EMAC: EWCTL: %08X, EWINTTCNT: %08X\n",
+			emac_ctrl_read(EMAC_CTRL_EWCTL),
+			emac_ctrl_read(EMAC_CTRL_EWINTTCNT));
+	}
 	dev_info(emac_dev, "EMAC: TXID: %08X %s, RXID: %08X %s\n",
 		emac_read(EMAC_TXIDVER),
 		((emac_read(EMAC_TXCONTROL)) ? "enabled" : "disabled"),
@@ -691,6 +712,103 @@ static int emac_set_settings(struct net_device *ndev, struct ethtool_cmd *ecmd)
 }
 
 /**
+ * emac_get_coalesce : Get interrupt coalesce settings for this device
+ * @ndev : The DaVinci EMAC network adapter
+ * @coal : ethtool coalesce settings structure
+ *
+ * Fetch the current interrupt coalesce settings
+ *
+ */
+static int emac_get_coalesce(struct net_device *ndev,
+				struct ethtool_coalesce *coal)
+{
+	struct emac_priv *priv = netdev_priv(ndev);
+
+	coal->rx_coalesce_usecs = priv->coal_intvl;
+	return 0;
+
+}
+
+/**
+ * emac_set_coalesce : Set interrupt coalesce settings for this device
+ * @ndev : The DaVinci EMAC network adapter
+ * @coal : ethtool coalesce settings structure
+ *
+ * Set interrupt coalesce parameters
+ *
+ */
+static int emac_set_coalesce(struct net_device *ndev,
+				struct ethtool_coalesce *coal)
+{
+	struct emac_priv *priv = netdev_priv(ndev);
+	u32 int_ctrl, num_interrupts = 0;
+	u32 prescale = 0, addnl_dvdr = 1, coal_intvl = 0;
+
+	if (!coal->rx_coalesce_usecs)
+		return -EINVAL;
+
+	coal_intvl = coal->rx_coalesce_usecs;
+
+	switch (priv->version) {
+	case EMAC_VERSION_2:
+		int_ctrl =  emac_ctrl_read(EMAC_DM646X_CMINTCTRL);
+		prescale = priv->bus_freq_mhz * 4;
+
+		if (coal_intvl < EMAC_DM646X_CMINTMIN_INTVL)
+			coal_intvl = EMAC_DM646X_CMINTMIN_INTVL;
+
+		if (coal_intvl > EMAC_DM646X_CMINTMAX_INTVL) {
+			/*
+			 * Interrupt pacer works with 4us Pulse, we can
+			 * throttle further by dilating the 4us pulse.
+			 */
+			addnl_dvdr = EMAC_DM646X_INTPRESCALE_MASK / prescale;
+
+			if (addnl_dvdr > 1) {
+				prescale *= addnl_dvdr;
+				if (coal_intvl > (EMAC_DM646X_CMINTMAX_INTVL
+							* addnl_dvdr))
+					coal_intvl = (EMAC_DM646X_CMINTMAX_INTVL
+							* addnl_dvdr);
+			} else {
+				addnl_dvdr = 1;
+				coal_intvl = EMAC_DM646X_CMINTMAX_INTVL;
+			}
+		}
+
+		num_interrupts = (1000 * addnl_dvdr) / coal_intvl;
+
+		int_ctrl |= EMAC_DM646X_INTPACEEN;
+		int_ctrl &= (~EMAC_DM646X_INTPRESCALE_MASK);
+		int_ctrl |= (prescale & EMAC_DM646X_INTPRESCALE_MASK);
+		emac_ctrl_write(EMAC_DM646X_CMINTCTRL, int_ctrl);
+
+		emac_ctrl_write(EMAC_DM646X_CMRXINTMAX, num_interrupts);
+		emac_ctrl_write(EMAC_DM646X_CMTXINTMAX, num_interrupts);
+
+		break;
+	default:
+		int_ctrl = emac_ctrl_read(EMAC_CTRL_EWINTTCNT);
+		int_ctrl &= (~EMAC_DM644X_EWINTCNT_MASK);
+		prescale = coal_intvl * priv->bus_freq_mhz;
+		if (prescale > EMAC_DM644X_EWINTCNT_MASK) {
+			prescale = EMAC_DM644X_EWINTCNT_MASK;
+			coal_intvl = prescale / priv->bus_freq_mhz;
+		}
+		emac_ctrl_write(EMAC_CTRL_EWINTTCNT, (int_ctrl | prescale));
+
+		break;
+	}
+
+	printk(KERN_INFO"Set coalesce to %d usecs.\n", coal_intvl);
+	priv->coal_intvl = coal_intvl;
+
+	return 0;
+
+}
+
+
+/**
  * ethtool_ops: DaVinci EMAC Ethtool structure
  *
  * Ethtool support for EMAC adapter
@@ -701,6 +819,8 @@ static const struct ethtool_ops ethtool_ops = {
 	.get_settings = emac_get_settings,
 	.set_settings = emac_set_settings,
 	.get_link = ethtool_op_get_link,
+	.get_coalesce = emac_get_coalesce,
+	.set_coalesce =  emac_set_coalesce,
 };
 
 /**
@@ -1182,8 +1302,8 @@ static int emac_net_tx_complete(struct emac_priv *priv,
 	struct net_device *ndev = priv->ndev;
 	u32 cnt;
 
-	if (unlikely(num_tokens && netif_queue_stopped(dev)))
-		netif_start_queue(dev);
+	if (unlikely(num_tokens && netif_queue_stopped(ndev)))
+		netif_start_queue(ndev);
 	for (cnt = 0; cnt < num_tokens; cnt++) {
 		struct sk_buff *skb = (struct sk_buff *)net_data_tokens[cnt];
 		if (skb == NULL)
@@ -2148,7 +2268,7 @@ static int emac_poll(struct napi_struct *napi, int budget)
 	struct net_device *ndev = priv->ndev;
 	struct device *emac_dev = &ndev->dev;
 	u32 status = 0;
-	u32 num_pkts = 0;
+	u32 num_tx_pkts = 0, num_rx_pkts = 0;
 
 	/* Check interrupt vectors and call packet processing */
 	status = emac_read(EMAC_MACINVECTOR);
@@ -2159,12 +2279,9 @@ static int emac_poll(struct napi_struct *napi, int budget)
 		mask = EMAC_DM646X_MAC_IN_VECTOR_TX_INT_VEC;
 
 	if (status & mask) {
-		num_pkts = emac_tx_bdproc(priv, EMAC_DEF_TX_CH,
+		num_tx_pkts = emac_tx_bdproc(priv, EMAC_DEF_TX_CH,
 					  EMAC_DEF_TX_MAX_SERVICE);
 	} /* TX processing */
-
-	if (num_pkts)
-		return budget;
 
 	mask = EMAC_DM644X_MAC_IN_VECTOR_RX_INT_VEC;
 
@@ -2172,13 +2289,8 @@ static int emac_poll(struct napi_struct *napi, int budget)
 		mask = EMAC_DM646X_MAC_IN_VECTOR_RX_INT_VEC;
 
 	if (status & mask) {
-		num_pkts = emac_rx_bdproc(priv, EMAC_DEF_RX_CH, budget);
+		num_rx_pkts = emac_rx_bdproc(priv, EMAC_DEF_RX_CH, budget);
 	} /* RX processing */
-
-	if (num_pkts < budget) {
-		napi_complete(napi);
-		emac_int_enable(priv);
-	}
 
 	mask = EMAC_DM644X_MAC_IN_VECTOR_HOST_INT;
 	if (priv->version == EMAC_VERSION_2)
@@ -2210,9 +2322,12 @@ static int emac_poll(struct napi_struct *napi, int budget)
 				dev_err(emac_dev, "RX Host error %s on ch=%d\n",
 					&emac_rxhost_errcodes[cause][0], ch);
 		}
-	} /* Host error processing */
+	} else if (num_rx_pkts < budget) {
+		napi_complete(napi);
+		emac_int_enable(priv);
+	}
 
-	return num_pkts;
+	return num_rx_pkts;
 }
 
 #ifdef CONFIG_NET_POLL_CONTROLLER
@@ -2436,6 +2551,14 @@ static int emac_dev_open(struct net_device *ndev)
 
 	/* Start/Enable EMAC hardware */
 	emac_hw_enable(priv);
+
+	/* Enable Interrupt pacing if configured */
+	if (priv->coal_intvl != 0) {
+		struct ethtool_coalesce coal;
+
+		coal.rx_coalesce_usecs = (priv->coal_intvl << 4);
+		emac_set_coalesce(ndev, &coal);
+	}
 
 	/* find the first phy */
 	priv->phydev = NULL;
@@ -2676,6 +2799,9 @@ static int __devinit davinci_emac_probe(struct platform_device *pdev)
 	priv->version = pdata->version;
 	priv->int_enable = pdata->interrupt_enable;
 	priv->int_disable = pdata->interrupt_disable;
+
+	priv->coal_intvl = 0;
+	priv->bus_freq_mhz = (u32)(emac_bus_frequency / 1000000);
 
 	emac_dev = &ndev->dev;
 	/* Get EMAC platform data */

@@ -1785,25 +1785,25 @@ void e1000e_reset_interrupt_capability(struct e1000_adapter *adapter)
 void e1000e_set_interrupt_capability(struct e1000_adapter *adapter)
 {
 	int err;
-	int numvecs, i;
-
+	int i;
 
 	switch (adapter->int_mode) {
 	case E1000E_INT_MODE_MSIX:
 		if (adapter->flags & FLAG_HAS_MSIX) {
-			numvecs = 3; /* RxQ0, TxQ0 and other */
-			adapter->msix_entries = kcalloc(numvecs,
+			adapter->num_vectors = 3; /* RxQ0, TxQ0 and other */
+			adapter->msix_entries = kcalloc(adapter->num_vectors,
 						      sizeof(struct msix_entry),
 						      GFP_KERNEL);
 			if (adapter->msix_entries) {
-				for (i = 0; i < numvecs; i++)
+				for (i = 0; i < adapter->num_vectors; i++)
 					adapter->msix_entries[i].entry = i;
 
 				err = pci_enable_msix(adapter->pdev,
 						      adapter->msix_entries,
-						      numvecs);
-				if (err == 0)
+						      adapter->num_vectors);
+				if (err == 0) {
 					return;
+				}
 			}
 			/* MSI-X failed, so fall through and try MSI */
 			e_err("Failed to initialize MSI-X interrupts.  "
@@ -1825,6 +1825,9 @@ void e1000e_set_interrupt_capability(struct e1000_adapter *adapter)
 		/* Don't do anything; this is the system default */
 		break;
 	}
+
+	/* store the number of vectors being used */
+	adapter->num_vectors = 1;
 }
 
 /**
@@ -1946,7 +1949,14 @@ static void e1000_irq_disable(struct e1000_adapter *adapter)
 	if (adapter->msix_entries)
 		ew32(EIAC_82574, 0);
 	e1e_flush();
-	synchronize_irq(adapter->pdev->irq);
+
+	if (adapter->msix_entries) {
+		int i;
+		for (i = 0; i < adapter->num_vectors; i++)
+			synchronize_irq(adapter->msix_entries[i].vector);
+	} else {
+		synchronize_irq(adapter->pdev->irq);
+	}
 }
 
 /**
@@ -3218,12 +3228,6 @@ int e1000e_up(struct e1000_adapter *adapter)
 {
 	struct e1000_hw *hw = &adapter->hw;
 
-	/* DMA latency requirement to workaround early-receive/jumbo issue */
-	if (adapter->flags & FLAG_HAS_ERT)
-		adapter->netdev->pm_qos_req =
-			pm_qos_add_request(PM_QOS_CPU_DMA_LATENCY,
-				       PM_QOS_DEFAULT_VALUE);
-
 	/* hardware has been reset, we need to reload some things */
 	e1000_configure(adapter);
 
@@ -3286,12 +3290,6 @@ void e1000e_down(struct e1000_adapter *adapter)
 		e1000e_reset(adapter);
 	e1000_clean_tx_ring(adapter);
 	e1000_clean_rx_ring(adapter);
-
-	if (adapter->flags & FLAG_HAS_ERT) {
-		pm_qos_remove_request(
-			      adapter->netdev->pm_qos_req);
-		adapter->netdev->pm_qos_req = NULL;
-	}
 
 	/*
 	 * TODO: for power management, we could drop the link and
@@ -3527,6 +3525,12 @@ static int e1000_open(struct net_device *netdev)
 	     E1000_MNG_DHCP_COOKIE_STATUS_VLAN))
 		e1000_update_mng_vlan(adapter);
 
+	/* DMA latency requirement to workaround early-receive/jumbo issue */
+	if (adapter->flags & FLAG_HAS_ERT)
+		adapter->netdev->pm_qos_req =
+		                    pm_qos_add_request(PM_QOS_CPU_DMA_LATENCY,
+		                                       PM_QOS_DEFAULT_VALUE);
+
 	/*
 	 * before we allocate an interrupt, we must be ready to handle it.
 	 * Setting DEBUG_SHIRQ in the kernel makes it fire an interrupt
@@ -3630,6 +3634,11 @@ static int e1000_close(struct net_device *netdev)
 	 */
 	if (adapter->flags & FLAG_HAS_AMT)
 		e1000_release_hw_control(adapter);
+
+	if (adapter->flags & FLAG_HAS_ERT) {
+		pm_qos_remove_request(adapter->netdev->pm_qos_req);
+		adapter->netdev->pm_qos_req = NULL;
+	}
 
 	pm_runtime_put_sync(&pdev->dev);
 
@@ -5649,8 +5658,6 @@ static int __devinit e1000_probe(struct pci_dev *pdev,
 	err = e1000_sw_init(adapter);
 	if (err)
 		goto err_sw_init;
-
-	err = -EIO;
 
 	memcpy(&hw->mac.ops, ei->mac_ops, sizeof(hw->mac.ops));
 	memcpy(&hw->nvm.ops, ei->nvm_ops, sizeof(hw->nvm.ops));

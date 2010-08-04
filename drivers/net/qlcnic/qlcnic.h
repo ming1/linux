@@ -1074,8 +1074,8 @@ struct qlcnic_eswitch {
 /* Return codes for Error handling */
 #define QL_STATUS_INVALID_PARAM	-1
 
-#define MAX_BW			10000
-#define MIN_BW			100
+#define MAX_BW			100
+#define MIN_BW			1
 #define MAX_VLAN_ID		4095
 #define MIN_VLAN_ID		2
 #define MAX_TX_QUEUES		1
@@ -1083,8 +1083,7 @@ struct qlcnic_eswitch {
 #define DEFAULT_MAC_LEARN	1
 
 #define IS_VALID_VLAN(vlan)	(vlan >= MIN_VLAN_ID && vlan <= MAX_VLAN_ID)
-#define IS_VALID_BW(bw)		(bw >= MIN_BW && bw <= MAX_BW \
-							&& (bw % 100) == 0)
+#define IS_VALID_BW(bw)		(bw >= MIN_BW && bw <= MAX_BW)
 #define IS_VALID_TX_QUEUES(que)	(que > 0 && que <= MAX_TX_QUEUES)
 #define IS_VALID_RX_QUEUES(que)	(que > 0 && que <= MAX_RX_QUEUES)
 #define IS_VALID_MODE(mode)	(mode == 0 || mode == 1)
@@ -1302,8 +1301,6 @@ struct qlcnic_nic_template {
 	int (*get_mac_addr) (struct qlcnic_adapter *, u8*);
 	int (*config_bridged_mode) (struct qlcnic_adapter *, u32);
 	int (*config_led) (struct qlcnic_adapter *, u32, u32);
-	int (*set_ilb_mode) (struct qlcnic_adapter *);
-	void (*clear_ilb_mode) (struct qlcnic_adapter *);
 	int (*start_firmware) (struct qlcnic_adapter *);
 };
 

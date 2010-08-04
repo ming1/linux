@@ -1020,10 +1020,16 @@ static int __devinit vortex_init_one(struct pci_dev *pdev,
 	ioaddr = pci_iomap(pdev, pci_bar, 0);
 	if (!ioaddr) /* If mapping fails, fall-back to BAR 0... */
 		ioaddr = pci_iomap(pdev, 0, 0);
+	if (!ioaddr) {
+		pci_disable_device(pdev);
+		rc = -ENOMEM;
+		goto out;
+	}
 
 	rc = vortex_probe1(&pdev->dev, ioaddr, pdev->irq,
 			   ent->driver_data, unit);
 	if (rc < 0) {
+		pci_iounmap(pdev, ioaddr);
 		pci_disable_device(pdev);
 		goto out;
 	}
@@ -1387,7 +1393,7 @@ static int __devinit vortex_probe1(struct device *gendev,
 		mii_preamble_required++;
 		if (vp->drv_flags & EXTRA_PREAMBLE)
 			mii_preamble_required++;
-		mdio_sync(ioaddr, 32);
+		mdio_sync(vp, 32);
 		mdio_read(dev, 24, MII_BMSR);
 		for (phy = 0; phy < 32 && phy_idx < 1; phy++) {
 			int mii_status, phyx;
@@ -2912,6 +2918,36 @@ static void vortex_get_drvinfo(struct net_device *dev,
 	}
 }
 
+static void vortex_get_wol(struct net_device *dev, struct ethtool_wolinfo *wol)
+{
+	struct vortex_private *vp = netdev_priv(dev);
+
+	spin_lock_irq(&vp->lock);
+	wol->supported = WAKE_MAGIC;
+
+	wol->wolopts = 0;
+	if (vp->enable_wol)
+		wol->wolopts |= WAKE_MAGIC;
+	spin_unlock_irq(&vp->lock);
+}
+
+static int vortex_set_wol(struct net_device *dev, struct ethtool_wolinfo *wol)
+{
+	struct vortex_private *vp = netdev_priv(dev);
+	if (wol->wolopts & ~WAKE_MAGIC)
+		return -EINVAL;
+
+	spin_lock_irq(&vp->lock);
+	if (wol->wolopts & WAKE_MAGIC)
+		vp->enable_wol = 1;
+	else
+		vp->enable_wol = 0;
+	acpi_set_WOL(dev);
+	spin_unlock_irq(&vp->lock);
+
+	return 0;
+}
+
 static const struct ethtool_ops vortex_ethtool_ops = {
 	.get_drvinfo		= vortex_get_drvinfo,
 	.get_strings            = vortex_get_strings,
@@ -2923,6 +2959,8 @@ static const struct ethtool_ops vortex_ethtool_ops = {
 	.set_settings           = vortex_set_settings,
 	.get_link               = ethtool_op_get_link,
 	.nway_reset             = vortex_nway_reset,
+	.get_wol                = vortex_get_wol,
+	.set_wol                = vortex_set_wol,
 };
 
 #ifdef CONFIG_PCI

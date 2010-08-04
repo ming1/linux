@@ -169,6 +169,7 @@ struct skb_shared_hwtstamps {
  * @software:		generate software time stamp
  * @in_progress:	device driver is going to provide
  *			hardware time stamp
+ * @prevent_sk_orphan:	make sk reference available on driver level
  * @flags:		all shared_tx flags
  *
  * These flags are attached to packets as part of the
@@ -178,7 +179,8 @@ union skb_shared_tx {
 	struct {
 		__u8	hardware:1,
 			software:1,
-			in_progress:1;
+			in_progress:1,
+			prevent_sk_orphan:1;
 	};
 	__u8 flags;
 };
@@ -202,10 +204,11 @@ struct skb_shared_info {
 	 */
 	atomic_t	dataref;
 
-	skb_frag_t	frags[MAX_SKB_FRAGS];
 	/* Intermediate layers must ensure that destructor_arg
 	 * remains valid until skb destructor */
 	void *		destructor_arg;
+	/* must be last field, see pskb_expand_head() */
+	skb_frag_t	frags[MAX_SKB_FRAGS];
 };
 
 /* We divide dataref into two halves.  The higher 16 bits hold references

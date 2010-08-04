@@ -101,8 +101,6 @@
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
 #include <linux/stat.h>
-#include <linux/if_bridge.h>
-#include <linux/if_macvlan.h>
 #include <net/dst.h>
 #include <net/pkt_sched.h>
 #include <net/checksum.h>
@@ -1593,9 +1591,7 @@ EXPORT_SYMBOL(__netif_schedule);
 
 void dev_kfree_skb_irq(struct sk_buff *skb)
 {
-	if (!skb->destructor)
-		dev_kfree_skb(skb);
-	else if (atomic_dec_and_test(&skb->users)) {
+	if (atomic_dec_and_test(&skb->users)) {
 		struct softnet_data *sd;
 		unsigned long flags;
 
@@ -2646,10 +2642,10 @@ static int ing_filter(struct sk_buff *skb)
 	int result = TC_ACT_OK;
 	struct Qdisc *q;
 
-	if (MAX_RED_LOOP < ttl++) {
-		printk(KERN_WARNING
-		       "Redir loop detected Dropping packet (%d->%d)\n",
-		       skb->skb_iif, dev->ifindex);
+	if (unlikely(MAX_RED_LOOP < ttl++)) {
+		if (net_ratelimit())
+			pr_warning( "Redir loop detected Dropping packet (%d->%d)\n",
+			       skb->skb_iif, dev->ifindex);
 		return TC_ACT_SHOT;
 	}
 

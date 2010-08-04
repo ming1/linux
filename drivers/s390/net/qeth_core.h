@@ -188,8 +188,7 @@ static inline int qeth_is_ipa_enabled(struct qeth_ipa_info *ipa,
 		qeth_is_enabled6(c, f) : qeth_is_enabled(c, f))
 
 #define QETH_IDX_FUNC_LEVEL_OSD		 0x0101
-#define QETH_IDX_FUNC_LEVEL_IQD_ENA_IPAT 0x4108
-#define QETH_IDX_FUNC_LEVEL_IQD_DIS_IPAT 0x5108
+#define QETH_IDX_FUNC_LEVEL_IQD		 0x4108
 
 #define QETH_MODELLIST_ARRAY \
 	{{0x1731, 0x01, 0x1732, QETH_CARD_TYPE_OSD, QETH_MAX_QUEUES, 0}, \
@@ -741,6 +740,7 @@ struct qeth_card {
 	struct qeth_qdio_info qdio;
 	struct qeth_perf_stats perf_stats;
 	int use_hard_stop;
+	int read_or_write_problem;
 	struct qeth_osn_info osn_info;
 	struct qeth_discipline discipline;
 	atomic_t force_alloc_skb;
@@ -748,6 +748,7 @@ struct qeth_card {
 	struct qdio_ssqd_desc ssqd;
 	debug_info_t *debug;
 	struct mutex conf_mutex;
+	struct mutex discipline_mutex;
 };
 
 struct qeth_card_list_struct {

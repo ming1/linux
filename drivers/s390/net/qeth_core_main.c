@@ -262,6 +262,7 @@ static int qeth_issue_next_read(struct qeth_card *card)
 		QETH_DBF_MESSAGE(2, "%s error in starting next read ccw! "
 			"rc=%i\n", dev_name(&card->gdev->dev), rc);
 		atomic_set(&card->read.irq_pending, 0);
+		card->read_or_write_problem = 1;
 		qeth_schedule_recovery(card);
 		wake_up(&card->wait_q);
 	}
@@ -382,6 +383,7 @@ void qeth_clear_ipacmd_list(struct qeth_card *card)
 		qeth_put_reply(reply);
 	}
 	spin_unlock_irqrestore(&card->lock, flags);
+	atomic_set(&card->write.irq_pending, 0);
 }
 EXPORT_SYMBOL_GPL(qeth_clear_ipacmd_list);
 
@@ -1076,6 +1078,7 @@ static int qeth_setup_card(struct qeth_card *card)
 	card->state = CARD_STATE_DOWN;
 	card->lan_online = 0;
 	card->use_hard_stop = 0;
+	card->read_or_write_problem = 0;
 	card->dev = NULL;
 	spin_lock_init(&card->vlanlock);
 	spin_lock_init(&card->mclock);
@@ -1084,6 +1087,7 @@ static int qeth_setup_card(struct qeth_card *card)
 	spin_lock_init(&card->ip_lock);
 	spin_lock_init(&card->thread_mask_lock);
 	mutex_init(&card->conf_mutex);
+	mutex_init(&card->discipline_mutex);
 	card->thread_start_mask = 0;
 	card->thread_allowed_mask = 0;
 	card->thread_running_mask = 0;
@@ -1383,12 +1387,7 @@ static void qeth_init_func_level(struct qeth_card *card)
 {
 	switch (card->info.type) {
 	case QETH_CARD_TYPE_IQD:
-		if (card->ipato.enabled)
-			card->info.func_level =
-				QETH_IDX_FUNC_LEVEL_IQD_ENA_IPAT;
-		else
-			card->info.func_level =
-				QETH_IDX_FUNC_LEVEL_IQD_DIS_IPAT;
+		card->info.func_level =	QETH_IDX_FUNC_LEVEL_IQD;
 		break;
 	case QETH_CARD_TYPE_OSD:
 	case QETH_CARD_TYPE_OSN:
@@ -1662,6 +1661,10 @@ int qeth_send_control_data(struct qeth_card *card, int len,
 
 	QETH_CARD_TEXT(card, 2, "sendctl");
 
+	if (card->read_or_write_problem) {
+		qeth_release_buffer(iob->channel, iob);
+		return -EIO;
+	}
 	reply = qeth_alloc_reply(card);
 	if (!reply) {
 		return -ENOMEM;
@@ -1733,6 +1736,9 @@ time_err:
 	spin_unlock_irqrestore(&reply->card->lock, flags);
 	reply->rc = -ETIME;
 	atomic_inc(&reply->received);
+	atomic_set(&card->write.irq_pending, 0);
+	qeth_release_buffer(iob->channel, iob);
+	card->write.buf_no = (card->write.buf_no + 1) % QETH_CMD_BUFFER_NO;
 	wake_up(&reply->wait_q);
 	rc = reply->rc;
 	qeth_put_reply(reply);
@@ -1990,7 +1996,7 @@ static int qeth_ulp_setup_cb(struct qeth_card *card, struct qeth_reply *reply,
 		QETH_DBF_TEXT(SETUP, 2, "olmlimit");
 		dev_err(&card->gdev->dev, "A connection could not be "
 			"established because of an OLM limit\n");
-		rc = -EMLINK;
+		iob->rc = -EMLINK;
 	}
 	QETH_DBF_TEXT_(SETUP, 2, "  rc%d", iob->rc);
 	return rc;
@@ -2489,6 +2495,10 @@ int qeth_send_ipa_cmd(struct qeth_card *card, struct qeth_cmd_buffer *iob,
 	qeth_prepare_ipa_cmd(card, iob, prot_type);
 	rc = qeth_send_control_data(card, IPA_CMD_LENGTH,
 						iob, reply_cb, reply_param);
+	if (rc == -ETIME) {
+		qeth_clear_ipacmd_list(card);
+		qeth_schedule_recovery(card);
+	}
 	return rc;
 }
 EXPORT_SYMBOL_GPL(qeth_send_ipa_cmd);
@@ -3413,7 +3423,6 @@ static int qeth_setadpparms_set_access_ctrl_cb(struct qeth_card *card,
 {
 	struct qeth_ipa_cmd *cmd;
 	struct qeth_set_access_ctrl *access_ctrl_req;
-	int rc;
 
 	QETH_CARD_TEXT(card, 4, "setaccb");
 
@@ -3440,7 +3449,6 @@ static int qeth_setadpparms_set_access_ctrl_cb(struct qeth_card *card,
 			card->gdev->dev.kobj.name,
 			access_ctrl_req->subcmd_code,
 			cmd->data.setadapterparms.hdr.return_code);
-		rc = 0;
 		break;
 	}
 	case SET_ACCESS_CTRL_RC_NOT_SUPPORTED:
@@ -3454,7 +3462,6 @@ static int qeth_setadpparms_set_access_ctrl_cb(struct qeth_card *card,
 
 		/* ensure isolation mode is "none" */
 		card->options.isolation = ISOLATION_MODE_NONE;
-		rc = -EOPNOTSUPP;
 		break;
 	}
 	case SET_ACCESS_CTRL_RC_NONE_SHARED_ADAPTER:
@@ -3469,7 +3476,6 @@ static int qeth_setadpparms_set_access_ctrl_cb(struct qeth_card *card,
 
 		/* ensure isolation mode is "none" */
 		card->options.isolation = ISOLATION_MODE_NONE;
-		rc = -EOPNOTSUPP;
 		break;
 	}
 	case SET_ACCESS_CTRL_RC_ACTIVE_CHECKSUM_OFF:
@@ -3483,7 +3489,6 @@ static int qeth_setadpparms_set_access_ctrl_cb(struct qeth_card *card,
 
 		/* ensure isolation mode is "none" */
 		card->options.isolation = ISOLATION_MODE_NONE;
-		rc = -EPERM;
 		break;
 	}
 	default:
@@ -3497,12 +3502,11 @@ static int qeth_setadpparms_set_access_ctrl_cb(struct qeth_card *card,
 
 		/* ensure isolation mode is "none" */
 		card->options.isolation = ISOLATION_MODE_NONE;
-		rc = 0;
 		break;
 	}
 	}
 	qeth_default_setadapterparms_cb(card, reply, (unsigned long) cmd);
-	return rc;
+	return 0;
 }
 
 static int qeth_setadpparms_set_access_ctrl(struct qeth_card *card,
@@ -3744,15 +3748,10 @@ int qeth_snmp_command(struct qeth_card *card, char __user *udata)
 	/* skip 4 bytes (data_len struct member) to get req_len */
 	if (copy_from_user(&req_len, udata + sizeof(int), sizeof(int)))
 		return -EFAULT;
-	ureq = kmalloc(req_len+sizeof(struct qeth_snmp_ureq_hdr), GFP_KERNEL);
-	if (!ureq) {
+	ureq = memdup_user(udata, req_len + sizeof(struct qeth_snmp_ureq_hdr));
+	if (IS_ERR(ureq)) {
 		QETH_CARD_TEXT(card, 2, "snmpnome");
-		return -ENOMEM;
-	}
-	if (copy_from_user(ureq, udata,
-			req_len + sizeof(struct qeth_snmp_ureq_hdr))) {
-		kfree(ureq);
-		return -EFAULT;
+		return PTR_ERR(ureq);
 	}
 	qinfo.udata_len = ureq->hdr.data_len;
 	qinfo.udata = kzalloc(qinfo.udata_len, GFP_KERNEL);
@@ -3971,6 +3970,7 @@ retriable:
 		else
 			goto retry;
 	}
+	card->read_or_write_problem = 0;
 	rc = qeth_mpc_initialize(card);
 	if (rc) {
 		QETH_DBF_TEXT_(SETUP, 2, "5err%d", rc);
@@ -4353,16 +4353,18 @@ static void qeth_core_remove_device(struct ccwgroup_device *gdev)
 	struct qeth_card *card = dev_get_drvdata(&gdev->dev);
 
 	QETH_DBF_TEXT(SETUP, 2, "removedv");
-	if (card->discipline.ccwgdriver) {
-		card->discipline.ccwgdriver->remove(gdev);
-		qeth_core_free_discipline(card);
-	}
 
 	if (card->info.type == QETH_CARD_TYPE_OSN) {
 		qeth_core_remove_osn_attributes(&gdev->dev);
 	} else {
 		qeth_core_remove_device_attributes(&gdev->dev);
 	}
+
+	if (card->discipline.ccwgdriver) {
+		card->discipline.ccwgdriver->remove(gdev);
+		qeth_core_free_discipline(card);
+	}
+
 	debug_unregister(card->debug);
 	write_lock_irqsave(&qeth_core_card_list.rwlock, flags);
 	list_del(&card->list);
