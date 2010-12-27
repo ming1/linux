@@ -731,7 +731,7 @@ static int get_dimm_config(const struct mem_ctl_info *mci)
 			debugf1("\t\t%#x\t%#x\t%#x\n",
 				(value[j] >> 27) & 0x1,
 				(value[j] >> 24) & 0x7,
-				(value[j] && ((1 << 24) - 1)));
+				(value[j] & ((1 << 24) - 1)));
 	}
 
 	return 0;
@@ -1670,7 +1670,7 @@ static void i7core_mce_output_error(struct mem_ctl_info *mci,
 	char *type, *optype, *err, *msg;
 	unsigned long error = m->status & 0x1ff0000l;
 	u32 optypenum = (m->status >> 4) & 0x07;
-	u32 core_err_cnt = (m->status >> 38) && 0x7fff;
+	u32 core_err_cnt = (m->status >> 38) & 0x7fff;
 	u32 dimm = (m->misc >> 16) & 0x3;
 	u32 channel = (m->misc >> 18) & 0x3;
 	u32 syndrome = m->misc >> 32;
