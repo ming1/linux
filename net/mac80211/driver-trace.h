@@ -38,7 +38,7 @@ static inline void trace_ ## name(proto) {}
  * Tracing for driver callbacks.
  */
 
-TRACE_EVENT(drv_return_void,
+DECLARE_EVENT_CLASS(local_only_evt,
 	TP_PROTO(struct ieee80211_local *local),
 	TP_ARGS(local),
 	TP_STRUCT__entry(
@@ -48,6 +48,11 @@ TRACE_EVENT(drv_return_void,
 		LOCAL_ASSIGN;
 	),
 	TP_printk(LOCAL_PR_FMT, LOCAL_PR_ARG)
+);
+
+DEFINE_EVENT(local_only_evt, drv_return_void,
+	TP_PROTO(struct ieee80211_local *local),
+	TP_ARGS(local)
 );
 
 TRACE_EVENT(drv_return_int,
@@ -78,40 +83,14 @@ TRACE_EVENT(drv_return_u64,
 	TP_printk(LOCAL_PR_FMT " - %llu", LOCAL_PR_ARG, __entry->ret)
 );
 
-TRACE_EVENT(drv_start,
+DEFINE_EVENT(local_only_evt, drv_start,
 	TP_PROTO(struct ieee80211_local *local),
-
-	TP_ARGS(local),
-
-	TP_STRUCT__entry(
-		LOCAL_ENTRY
-	),
-
-	TP_fast_assign(
-		LOCAL_ASSIGN;
-	),
-
-	TP_printk(
-		LOCAL_PR_FMT, LOCAL_PR_ARG
-	)
+	TP_ARGS(local)
 );
 
-TRACE_EVENT(drv_stop,
+DEFINE_EVENT(local_only_evt, drv_stop,
 	TP_PROTO(struct ieee80211_local *local),
-
-	TP_ARGS(local),
-
-	TP_STRUCT__entry(
-		LOCAL_ENTRY
-	),
-
-	TP_fast_assign(
-		LOCAL_ASSIGN;
-	),
-
-	TP_printk(
-		LOCAL_PR_FMT, LOCAL_PR_ARG
-	)
+	TP_ARGS(local)
 );
 
 TRACE_EVENT(drv_add_interface,
@@ -439,40 +418,14 @@ TRACE_EVENT(drv_hw_scan,
 	)
 );
 
-TRACE_EVENT(drv_sw_scan_start,
+DEFINE_EVENT(local_only_evt, drv_sw_scan_start,
 	TP_PROTO(struct ieee80211_local *local),
-
-	TP_ARGS(local),
-
-	TP_STRUCT__entry(
-		LOCAL_ENTRY
-	),
-
-	TP_fast_assign(
-		LOCAL_ASSIGN;
-	),
-
-	TP_printk(
-		LOCAL_PR_FMT, LOCAL_PR_ARG
-	)
+	TP_ARGS(local)
 );
 
-TRACE_EVENT(drv_sw_scan_complete,
+DEFINE_EVENT(local_only_evt, drv_sw_scan_complete,
 	TP_PROTO(struct ieee80211_local *local),
-
-	TP_ARGS(local),
-
-	TP_STRUCT__entry(
-		LOCAL_ENTRY
-	),
-
-	TP_fast_assign(
-		LOCAL_ASSIGN;
-	),
-
-	TP_printk(
-		LOCAL_PR_FMT, LOCAL_PR_ARG
-	)
+	TP_ARGS(local)
 );
 
 TRACE_EVENT(drv_get_stats,
@@ -702,23 +655,9 @@ TRACE_EVENT(drv_conf_tx,
 	)
 );
 
-TRACE_EVENT(drv_get_tsf,
+DEFINE_EVENT(local_only_evt, drv_get_tsf,
 	TP_PROTO(struct ieee80211_local *local),
-
-	TP_ARGS(local),
-
-	TP_STRUCT__entry(
-		LOCAL_ENTRY
-	),
-
-	TP_fast_assign(
-		LOCAL_ASSIGN;
-	),
-
-	TP_printk(
-		LOCAL_PR_FMT,
-		LOCAL_PR_ARG
-	)
+	TP_ARGS(local)
 );
 
 TRACE_EVENT(drv_set_tsf,
@@ -742,41 +681,14 @@ TRACE_EVENT(drv_set_tsf,
 	)
 );
 
-TRACE_EVENT(drv_reset_tsf,
+DEFINE_EVENT(local_only_evt, drv_reset_tsf,
 	TP_PROTO(struct ieee80211_local *local),
-
-	TP_ARGS(local),
-
-	TP_STRUCT__entry(
-		LOCAL_ENTRY
-	),
-
-	TP_fast_assign(
-		LOCAL_ASSIGN;
-	),
-
-	TP_printk(
-		LOCAL_PR_FMT, LOCAL_PR_ARG
-	)
+	TP_ARGS(local)
 );
 
-TRACE_EVENT(drv_tx_last_beacon,
+DEFINE_EVENT(local_only_evt, drv_tx_last_beacon,
 	TP_PROTO(struct ieee80211_local *local),
-
-	TP_ARGS(local),
-
-	TP_STRUCT__entry(
-		LOCAL_ENTRY
-	),
-
-	TP_fast_assign(
-		LOCAL_ASSIGN;
-	),
-
-	TP_printk(
-		LOCAL_PR_FMT,
-		LOCAL_PR_ARG
-	)
+	TP_ARGS(local)
 );
 
 TRACE_EVENT(drv_ampdu_action,
@@ -962,22 +874,9 @@ TRACE_EVENT(drv_remain_on_channel,
 	)
 );
 
-TRACE_EVENT(drv_cancel_remain_on_channel,
+DEFINE_EVENT(local_only_evt, drv_cancel_remain_on_channel,
 	TP_PROTO(struct ieee80211_local *local),
-
-	TP_ARGS(local),
-
-	TP_STRUCT__entry(
-		LOCAL_ENTRY
-	),
-
-	TP_fast_assign(
-		LOCAL_ASSIGN;
-	),
-
-	TP_printk(
-		LOCAL_PR_FMT, LOCAL_PR_ARG
-	)
+	TP_ARGS(local)
 );
 
 /*
@@ -1072,23 +971,9 @@ TRACE_EVENT(api_stop_tx_ba_cb,
 	)
 );
 
-TRACE_EVENT(api_restart_hw,
+DEFINE_EVENT(local_only_evt, api_restart_hw,
 	TP_PROTO(struct ieee80211_local *local),
-
-	TP_ARGS(local),
-
-	TP_STRUCT__entry(
-		LOCAL_ENTRY
-	),
-
-	TP_fast_assign(
-		LOCAL_ASSIGN;
-	),
-
-	TP_printk(
-		LOCAL_PR_FMT,
-		LOCAL_PR_ARG
-	)
+	TP_ARGS(local)
 );
 
 TRACE_EVENT(api_beacon_loss,
@@ -1217,40 +1102,14 @@ TRACE_EVENT(api_chswitch_done,
 	)
 );
 
-TRACE_EVENT(api_ready_on_channel,
+DEFINE_EVENT(local_only_evt, api_ready_on_channel,
 	TP_PROTO(struct ieee80211_local *local),
-
-	TP_ARGS(local),
-
-	TP_STRUCT__entry(
-		LOCAL_ENTRY
-	),
-
-	TP_fast_assign(
-		LOCAL_ASSIGN;
-	),
-
-	TP_printk(
-		LOCAL_PR_FMT, LOCAL_PR_ARG
-	)
+	TP_ARGS(local)
 );
 
-TRACE_EVENT(api_remain_on_channel_expired,
+DEFINE_EVENT(local_only_evt, api_remain_on_channel_expired,
 	TP_PROTO(struct ieee80211_local *local),
-
-	TP_ARGS(local),
-
-	TP_STRUCT__entry(
-		LOCAL_ENTRY
-	),
-
-	TP_fast_assign(
-		LOCAL_ASSIGN;
-	),
-
-	TP_printk(
-		LOCAL_PR_FMT, LOCAL_PR_ARG
-	)
+	TP_ARGS(local)
 );
 
 /*
