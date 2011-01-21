@@ -185,7 +185,6 @@ void iwlagn_rx_reply_rx(struct iwl_priv *priv,
 		     struct iwl_rx_mem_buffer *rxb);
 void iwlagn_rx_reply_rx_phy(struct iwl_priv *priv,
 			 struct iwl_rx_mem_buffer *rxb);
-void iwl_rx_handle(struct iwl_priv *priv);
 
 /* tx */
 void iwl_hw_txq_free_tfd(struct iwl_priv *priv, struct iwl_tx_queue *txq);
@@ -329,6 +328,21 @@ void iwlcore_eeprom_enhanced_txpower(struct iwl_priv *priv);
 void iwl_eeprom_get_mac(const struct iwl_priv *priv, u8 *mac);
 int iwlcore_eeprom_acquire_semaphore(struct iwl_priv *priv);
 void iwlcore_eeprom_release_semaphore(struct iwl_priv *priv);
+
+/* notification wait support */
+void __acquires(wait_entry)
+iwlagn_init_notification_wait(struct iwl_priv *priv,
+			      struct iwl_notification_wait *wait_entry,
+			      void (*fn)(struct iwl_priv *priv,
+					 struct iwl_rx_packet *pkt),
+			      u8 cmd);
+signed long __releases(wait_entry)
+iwlagn_wait_notification(struct iwl_priv *priv,
+			 struct iwl_notification_wait *wait_entry,
+			 unsigned long timeout);
+void __releases(wait_entry)
+iwlagn_remove_notification(struct iwl_priv *priv,
+			   struct iwl_notification_wait *wait_entry);
 
 /* mac80211 handlers (for 4965) */
 int iwlagn_mac_tx(struct ieee80211_hw *hw, struct sk_buff *skb);
