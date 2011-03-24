@@ -196,10 +196,27 @@ static unsigned int ath9k_ioread32(void *hw_priv, u32 reg_offset)
 	return val;
 }
 
-static const struct ath_ops ath9k_common_ops = {
-	.read = ath9k_ioread32,
-	.write = ath9k_iowrite32,
-};
+static unsigned int ath9k_reg_rmw(void *hw_priv, u32 reg_offset, u32 set, u32 clr)
+{
+	struct ath_hw *ah = (struct ath_hw *) hw_priv;
+	struct ath_common *common = ath9k_hw_common(ah);
+	struct ath_softc *sc = (struct ath_softc *) common->priv;
+	unsigned long uninitialized_var(flags);
+	u32 val;
+
+	if (ah->config.serialize_regmode == SER_REG_MODE_ON)
+		spin_lock_irqsave(&sc->sc_serial_rw, flags);
+
+	val = ioread32(sc->mem + reg_offset);
+	val &= ~clr;
+	val |= set;
+	iowrite32(val, sc->mem + reg_offset);
+
+	if (ah->config.serialize_regmode == SER_REG_MODE_ON)
+		spin_unlock_irqrestore(&sc->sc_serial_rw, flags);
+
+	return val;
+}
 
 /**************************/
 /*     Initialization     */
@@ -390,13 +407,7 @@ void ath9k_init_crypto(struct ath_softc *sc)
 	int i = 0;
 
 	/* Get the hardware key cache size. */
-	common->keymax = sc->sc_ah->caps.keycache_size;
-	if (common->keymax > ATH_KEYMAX) {
-		ath_dbg(common, ATH_DBG_ANY,
-			"Warning, using only %u entries in %u key cache\n",
-			ATH_KEYMAX, common->keymax);
-		common->keymax = ATH_KEYMAX;
-	}
+	common->keymax = AR_KEYTABLE_SIZE;
 
 	/*
 	 * Reset the key cache since some parts do not
@@ -551,6 +562,9 @@ static int ath9k_init_softc(u16 devid, struct ath_softc *sc, u16 subsysid,
 	ah->hw = sc->hw;
 	ah->hw_version.devid = devid;
 	ah->hw_version.subsysid = subsysid;
+	ah->reg_ops.read = ath9k_ioread32;
+	ah->reg_ops.write = ath9k_iowrite32;
+	ah->reg_ops.rmw = ath9k_reg_rmw;
 	sc->sc_ah = ah;
 
 	if (!pdata) {
@@ -563,7 +577,7 @@ static int ath9k_init_softc(u16 devid, struct ath_softc *sc, u16 subsysid,
 	}
 
 	common = ath9k_hw_common(ah);
-	common->ops = &ath9k_common_ops;
+	common->ops = &ah->reg_ops;
 	common->bus_ops = bus_ops;
 	common->ah = ah;
 	common->hw = sc->hw;
@@ -689,6 +703,8 @@ void ath9k_set_hw_capab(struct ath_softc *sc, struct ieee80211_hw *hw)
 
 	if (AR_SREV_5416(sc->sc_ah))
 		hw->wiphy->flags &= ~WIPHY_FLAG_PS_ON_BY_DEFAULT;
+
+	hw->wiphy->flags |= WIPHY_FLAG_IBSS_RSN;
 
 	hw->queues = 4;
 	hw->max_rates = 4;

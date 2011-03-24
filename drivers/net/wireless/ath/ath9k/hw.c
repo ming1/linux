@@ -130,6 +130,20 @@ bool ath9k_hw_wait(struct ath_hw *ah, u32 reg, u32 mask, u32 val, u32 timeout)
 }
 EXPORT_SYMBOL(ath9k_hw_wait);
 
+void ath9k_hw_write_array(struct ath_hw *ah, struct ar5416IniArray *array,
+			  int column, unsigned int *writecnt)
+{
+	int r;
+
+	ENABLE_REGWRITE_BUFFER(ah);
+	for (r = 0; r < array->ia_rows; r++) {
+		REG_WRITE(ah, INI_RA(array, r, 0),
+			  INI_RA(array, r, column));
+		DO_DELAY(*writecnt);
+	}
+	REGWRITE_BUFFER_FLUSH(ah);
+}
+
 u32 ath9k_hw_reverse_bits(u32 val, u32 n)
 {
 	u32 retval;
@@ -363,11 +377,6 @@ static void ath9k_hw_init_config(struct ath_hw *ah)
 		ah->config.spurchans[i][0] = AR_NO_SPUR;
 		ah->config.spurchans[i][1] = AR_NO_SPUR;
 	}
-
-	if (ah->hw_version.devid != AR2427_DEVID_PCIE)
-		ah->config.ht_enable = 1;
-	else
-		ah->config.ht_enable = 0;
 
 	/* PAPRD needs some more work to be enabled */
 	ah->config.paprd_disable = 1;
@@ -675,14 +684,14 @@ static void ath9k_hw_init_qos(struct ath_hw *ah)
 
 unsigned long ar9003_get_pll_sqsum_dvc(struct ath_hw *ah)
 {
-		REG_WRITE(ah, PLL3, (REG_READ(ah, PLL3) & ~(PLL3_DO_MEAS_MASK)));
+	REG_CLR_BIT(ah, PLL3, PLL3_DO_MEAS_MASK);
+	udelay(100);
+	REG_SET_BIT(ah, PLL3, PLL3_DO_MEAS_MASK);
+
+	while ((REG_READ(ah, PLL4) & PLL4_MEAS_DONE) == 0)
 		udelay(100);
-		REG_WRITE(ah, PLL3, (REG_READ(ah, PLL3) | PLL3_DO_MEAS_MASK));
 
-		while ((REG_READ(ah, PLL4) & PLL4_MEAS_DONE) == 0)
-			udelay(100);
-
-		return (REG_READ(ah, PLL3) & SQSUM_DVC_MASK) >> 3;
+	return (REG_READ(ah, PLL3) & SQSUM_DVC_MASK) >> 3;
 }
 EXPORT_SYMBOL(ar9003_get_pll_sqsum_dvc);
 
@@ -832,8 +841,7 @@ void ath9k_hw_init_global_settings(struct ath_hw *ah)
 		ah->misc_mode);
 
 	if (ah->misc_mode != 0)
-		REG_WRITE(ah, AR_PCU_MISC,
-			  REG_READ(ah, AR_PCU_MISC) | ah->misc_mode);
+		REG_SET_BIT(ah, AR_PCU_MISC, ah->misc_mode);
 
 	if (conf->channel && conf->channel->band == IEEE80211_BAND_5GHZ)
 		sifstime = 16;
@@ -901,23 +909,19 @@ u32 ath9k_regd_get_ctl(struct ath_regulatory *reg, struct ath9k_channel *chan)
 static inline void ath9k_hw_set_dma(struct ath_hw *ah)
 {
 	struct ath_common *common = ath9k_hw_common(ah);
-	u32 regval;
 
 	ENABLE_REGWRITE_BUFFER(ah);
 
 	/*
 	 * set AHB_MODE not to do cacheline prefetches
 	*/
-	if (!AR_SREV_9300_20_OR_LATER(ah)) {
-		regval = REG_READ(ah, AR_AHB_MODE);
-		REG_WRITE(ah, AR_AHB_MODE, regval | AR_AHB_PREFETCH_RD_EN);
-	}
+	if (!AR_SREV_9300_20_OR_LATER(ah))
+		REG_SET_BIT(ah, AR_AHB_MODE, AR_AHB_PREFETCH_RD_EN);
 
 	/*
 	 * let mac dma reads be in 128 byte chunks
 	 */
-	regval = REG_READ(ah, AR_TXCFG) & ~AR_TXCFG_DMASZ_MASK;
-	REG_WRITE(ah, AR_TXCFG, regval | AR_TXCFG_DMASZ_128B);
+	REG_RMW(ah, AR_TXCFG, AR_TXCFG_DMASZ_128B, AR_TXCFG_DMASZ_MASK);
 
 	REGWRITE_BUFFER_FLUSH(ah);
 
@@ -934,8 +938,7 @@ static inline void ath9k_hw_set_dma(struct ath_hw *ah)
 	/*
 	 * let mac dma writes be in 128 byte chunks
 	 */
-	regval = REG_READ(ah, AR_RXCFG) & ~AR_RXCFG_DMASZ_MASK;
-	REG_WRITE(ah, AR_RXCFG, regval | AR_RXCFG_DMASZ_128B);
+	REG_RMW(ah, AR_RXCFG, AR_RXCFG_DMASZ_128B, AR_RXCFG_DMASZ_MASK);
 
 	/*
 	 * Setup receive FIFO threshold to hold off TX activities
@@ -974,30 +977,27 @@ static inline void ath9k_hw_set_dma(struct ath_hw *ah)
 
 static void ath9k_hw_set_operating_mode(struct ath_hw *ah, int opmode)
 {
-	u32 val;
+	u32 mask = AR_STA_ID1_STA_AP | AR_STA_ID1_ADHOC;
+	u32 set = AR_STA_ID1_KSRCH_MODE;
 
-	val = REG_READ(ah, AR_STA_ID1);
-	val &= ~(AR_STA_ID1_STA_AP | AR_STA_ID1_ADHOC);
 	switch (opmode) {
-	case NL80211_IFTYPE_AP:
-		REG_WRITE(ah, AR_STA_ID1, val | AR_STA_ID1_STA_AP
-			  | AR_STA_ID1_KSRCH_MODE);
-		REG_CLR_BIT(ah, AR_CFG, AR_CFG_AP_ADHOC_INDICATION);
-		break;
 	case NL80211_IFTYPE_ADHOC:
 	case NL80211_IFTYPE_MESH_POINT:
-		REG_WRITE(ah, AR_STA_ID1, val | AR_STA_ID1_ADHOC
-			  | AR_STA_ID1_KSRCH_MODE);
+		set |= AR_STA_ID1_ADHOC;
 		REG_SET_BIT(ah, AR_CFG, AR_CFG_AP_ADHOC_INDICATION);
 		break;
+	case NL80211_IFTYPE_AP:
+		set |= AR_STA_ID1_STA_AP;
+		/* fall through */
 	case NL80211_IFTYPE_STATION:
-		REG_WRITE(ah, AR_STA_ID1, val | AR_STA_ID1_KSRCH_MODE);
+		REG_CLR_BIT(ah, AR_CFG, AR_CFG_AP_ADHOC_INDICATION);
 		break;
 	default:
-		if (ah->is_monitoring)
-			REG_WRITE(ah, AR_STA_ID1, val | AR_STA_ID1_KSRCH_MODE);
+		if (!ah->is_monitoring)
+			set = 0;
 		break;
 	}
+	REG_RMW(ah, AR_STA_ID1, set, mask);
 }
 
 void ath9k_hw_get_delta_slope_vals(struct ath_hw *ah, u32 coef_scaled,
@@ -1023,10 +1023,8 @@ static bool ath9k_hw_set_reset(struct ath_hw *ah, int type)
 	u32 tmpReg;
 
 	if (AR_SREV_9100(ah)) {
-		u32 val = REG_READ(ah, AR_RTC_DERIVED_CLK);
-		val &= ~AR_RTC_DERIVED_CLK_PERIOD;
-		val |= SM(1, AR_RTC_DERIVED_CLK_PERIOD);
-		REG_WRITE(ah, AR_RTC_DERIVED_CLK, val);
+		REG_RMW_FIELD(ah, AR_RTC_DERIVED_CLK,
+			      AR_RTC_DERIVED_CLK_PERIOD, 1);
 		(void)REG_READ(ah, AR_RTC_DERIVED_CLK);
 	}
 
@@ -1434,7 +1432,7 @@ int ath9k_hw_reset(struct ath_hw *ah, struct ath9k_channel *chan,
 	REGWRITE_BUFFER_FLUSH(ah);
 
 	ah->intr_txqs = 0;
-	for (i = 0; i < ah->caps.total_queues; i++)
+	for (i = 0; i < ATH9K_NUM_TX_QUEUES; i++)
 		ath9k_hw_resettxqueue(ah, i);
 
 	ath9k_hw_init_interrupt_masks(ah, ah->opmode);
@@ -1451,8 +1449,7 @@ int ath9k_hw_reset(struct ath_hw *ah, struct ath9k_channel *chan,
 		ar9002_hw_enable_wep_aggregation(ah);
 	}
 
-	REG_WRITE(ah, AR_STA_ID1,
-		  REG_READ(ah, AR_STA_ID1) | AR_STA_ID1_PRESERVE_SEQNUM);
+	REG_SET_BIT(ah, AR_STA_ID1, AR_STA_ID1_PRESERVE_SEQNUM);
 
 	ath9k_hw_set_dma(ah);
 
@@ -1697,21 +1694,15 @@ void ath9k_hw_beaconinit(struct ath_hw *ah, u32 next_beacon, u32 beacon_period)
 	case NL80211_IFTYPE_MESH_POINT:
 		REG_SET_BIT(ah, AR_TXCFG,
 			    AR_TXCFG_ADHOC_BEACON_ATIM_TX_POLICY);
-		REG_WRITE(ah, AR_NEXT_NDP_TIMER,
-			  TU_TO_USEC(next_beacon +
-				     (ah->atim_window ? ah->
-				      atim_window : 1)));
+		REG_WRITE(ah, AR_NEXT_NDP_TIMER, next_beacon +
+			  TU_TO_USEC(ah->atim_window ? ah->atim_window : 1));
 		flags |= AR_NDP_TIMER_EN;
 	case NL80211_IFTYPE_AP:
-		REG_WRITE(ah, AR_NEXT_TBTT_TIMER, TU_TO_USEC(next_beacon));
-		REG_WRITE(ah, AR_NEXT_DMA_BEACON_ALERT,
-			  TU_TO_USEC(next_beacon -
-				     ah->config.
-				     dma_beacon_response_time));
-		REG_WRITE(ah, AR_NEXT_SWBA,
-			  TU_TO_USEC(next_beacon -
-				     ah->config.
-				     sw_beacon_response_time));
+		REG_WRITE(ah, AR_NEXT_TBTT_TIMER, next_beacon);
+		REG_WRITE(ah, AR_NEXT_DMA_BEACON_ALERT, next_beacon -
+			  TU_TO_USEC(ah->config.dma_beacon_response_time));
+		REG_WRITE(ah, AR_NEXT_SWBA, next_beacon -
+			  TU_TO_USEC(ah->config.sw_beacon_response_time));
 		flags |=
 			AR_TBTT_TIMER_EN | AR_DBA_TIMER_EN | AR_SWBA_TIMER_EN;
 		break;
@@ -1723,17 +1714,12 @@ void ath9k_hw_beaconinit(struct ath_hw *ah, u32 next_beacon, u32 beacon_period)
 		break;
 	}
 
-	REG_WRITE(ah, AR_BEACON_PERIOD, TU_TO_USEC(beacon_period));
-	REG_WRITE(ah, AR_DMA_BEACON_PERIOD, TU_TO_USEC(beacon_period));
-	REG_WRITE(ah, AR_SWBA_PERIOD, TU_TO_USEC(beacon_period));
-	REG_WRITE(ah, AR_NDP_PERIOD, TU_TO_USEC(beacon_period));
+	REG_WRITE(ah, AR_BEACON_PERIOD, beacon_period);
+	REG_WRITE(ah, AR_DMA_BEACON_PERIOD, beacon_period);
+	REG_WRITE(ah, AR_SWBA_PERIOD, beacon_period);
+	REG_WRITE(ah, AR_NDP_PERIOD, beacon_period);
 
 	REGWRITE_BUFFER_FLUSH(ah);
-
-	beacon_period &= ~ATH9K_BEACON_ENA;
-	if (beacon_period & ATH9K_BEACON_RESET_TSF) {
-		ath9k_hw_reset_tsf(ah);
-	}
 
 	REG_SET_BIT(ah, AR_TIMER_MODE, flags);
 }
@@ -1889,27 +1875,10 @@ int ath9k_hw_fill_cap_info(struct ath_hw *ah)
 
 	common->crypt_caps |= ATH_CRYPT_CAP_CIPHER_AESCCM;
 
-	if (ah->config.ht_enable)
+	if (ah->hw_version.devid != AR2427_DEVID_PCIE)
 		pCap->hw_caps |= ATH9K_HW_CAP_HT;
 	else
 		pCap->hw_caps &= ~ATH9K_HW_CAP_HT;
-
-	if (capField & AR_EEPROM_EEPCAP_MAXQCU)
-		pCap->total_queues =
-			MS(capField, AR_EEPROM_EEPCAP_MAXQCU);
-	else
-		pCap->total_queues = ATH9K_NUM_TX_QUEUES;
-
-	if (capField & AR_EEPROM_EEPCAP_KC_ENTRIES)
-		pCap->keycache_size =
-			1 << MS(capField, AR_EEPROM_EEPCAP_KC_ENTRIES);
-	else
-		pCap->keycache_size = AR_KEYTABLE_SIZE;
-
-	if (AR_SREV_9285(ah) || AR_SREV_9271(ah))
-		pCap->tx_triglevel_max = MAX_TX_FIFO_THRESHOLD >> 1;
-	else
-		pCap->tx_triglevel_max = MAX_TX_FIFO_THRESHOLD;
 
 	if (AR_SREV_9271(ah))
 		pCap->num_gpio_pins = AR9271_NUM_GPIO;
@@ -1928,8 +1897,6 @@ int ath9k_hw_fill_cap_info(struct ath_hw *ah)
 	} else {
 		pCap->rts_aggr_limit = (8 * 1024);
 	}
-
-	pCap->hw_caps |= ATH9K_HW_CAP_ENHANCEDPM;
 
 #if defined(CONFIG_RFKILL) || defined(CONFIG_RFKILL_MODULE)
 	ah->rfsilent = ah->eep_ops->get_eeprom(ah, EEP_RF_SILENT);
@@ -1951,23 +1918,6 @@ int ath9k_hw_fill_cap_info(struct ath_hw *ah)
 		pCap->hw_caps &= ~ATH9K_HW_CAP_4KB_SPLITTRANS;
 	else
 		pCap->hw_caps |= ATH9K_HW_CAP_4KB_SPLITTRANS;
-
-	if (regulatory->current_rd_ext & (1 << REG_EXT_JAPAN_MIDBAND)) {
-		pCap->reg_cap =
-			AR_EEPROM_EEREGCAP_EN_KK_NEW_11A |
-			AR_EEPROM_EEREGCAP_EN_KK_U1_EVEN |
-			AR_EEPROM_EEREGCAP_EN_KK_U2 |
-			AR_EEPROM_EEREGCAP_EN_KK_MIDBAND;
-	} else {
-		pCap->reg_cap =
-			AR_EEPROM_EEREGCAP_EN_KK_NEW_11A |
-			AR_EEPROM_EEREGCAP_EN_KK_U1_EVEN;
-	}
-
-	/* Advertise midband for AR5416 with FCC midband set in eeprom */
-	if (regulatory->current_rd_ext & (1 << REG_EXT_FCC_MIDBAND) &&
-	    AR_SREV_5416(ah))
-		pCap->reg_cap |= AR_EEPROM_EEREGCAP_EN_FCC_MIDBAND;
 
 	if (AR_SREV_9280_20_OR_LATER(ah) && common->btcoex_enabled) {
 		btcoex_hw->btactive_gpio = ATH_BTACTIVE_GPIO;
@@ -2215,11 +2165,9 @@ void ath9k_hw_setrxfilter(struct ath_hw *ah, u32 bits)
 	REG_WRITE(ah, AR_PHY_ERR, phybits);
 
 	if (phybits)
-		REG_WRITE(ah, AR_RXCFG,
-			  REG_READ(ah, AR_RXCFG) | AR_RXCFG_ZLFDMA);
+		REG_SET_BIT(ah, AR_RXCFG, AR_RXCFG_ZLFDMA);
 	else
-		REG_WRITE(ah, AR_RXCFG,
-			  REG_READ(ah, AR_RXCFG) & ~AR_RXCFG_ZLFDMA);
+		REG_CLR_BIT(ah, AR_RXCFG, AR_RXCFG_ZLFDMA);
 
 	REGWRITE_BUFFER_FLUSH(ah);
 }
@@ -2395,10 +2343,11 @@ static u32 rightmost_index(struct ath_gen_timer_table *timer_table, u32 *mask)
 	return timer_table->gen_timer_index[b];
 }
 
-static u32 ath9k_hw_gettsf32(struct ath_hw *ah)
+u32 ath9k_hw_gettsf32(struct ath_hw *ah)
 {
 	return REG_READ(ah, AR_TSF_L32);
 }
+EXPORT_SYMBOL(ath9k_hw_gettsf32);
 
 struct ath_gen_timer *ath_gen_timer_alloc(struct ath_hw *ah,
 					  void (*trigger)(void *),
