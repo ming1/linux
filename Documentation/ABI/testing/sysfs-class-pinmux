@@ -1,0 +1,11 @@
+What:		/sys/class/pinmux/.../name
+Date:		May 2011
+KernelVersion:	3.1
+Contact:	Linus Walleij <linus.walleij@linaro.org>
+Description:
+		Each pinmux directory will contain a field called
+		name. This holds a string identifying the pinmux for
+		display purposes.
+
+		NOTE: this will be empty if no suitable name is provided
+		by platform or pinmux drivers.
