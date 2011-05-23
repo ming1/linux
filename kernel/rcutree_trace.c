@@ -33,7 +33,7 @@
 #include <linux/sched.h>
 #include <linux/atomic.h>
 #include <linux/bitops.h>
-#include <linux/module.h>
+#include <linux/export.h>
 #include <linux/completion.h>
 #include <linux/moduleparam.h>
 #include <linux/percpu.h>
