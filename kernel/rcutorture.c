@@ -25,7 +25,7 @@
 #include <linux/types.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
-#include <linux/module.h>
+#include <linux/export.h>
 #include <linux/kthread.h>
 #include <linux/err.h>
 #include <linux/spinlock.h>
