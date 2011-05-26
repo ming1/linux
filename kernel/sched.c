@@ -27,7 +27,6 @@
  */
 
 #include <linux/mm.h>
-#include <linux/export.h>
 #include <linux/nmi.h>
 #include <linux/init.h>
 #include <linux/uaccess.h>
