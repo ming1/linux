@@ -19,6 +19,7 @@
 #include <linux/delay.h>
 #include <linux/freezer.h>
 #include <linux/kthread.h>
+#include <linux/module.h>
 #include <linux/lockdep.h>
 #include <linux/notifier.h>
 #include <linux/export.h>

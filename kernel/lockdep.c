@@ -43,6 +43,7 @@
 #include <linux/stringify.h>
 #include <linux/bitops.h>
 #include <linux/gfp.h>
+#include <linux/module.h>
 
 #include <asm/sections.h>
 
