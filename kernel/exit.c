@@ -19,6 +19,7 @@
 #include <linux/acct.h>
 #include <linux/tsacct_kern.h>
 #include <linux/file.h>
+#include <linux/module.h>
 #include <linux/fdtable.h>
 #include <linux/binfmts.h>
 #include <linux/nsproxy.h>

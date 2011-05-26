@@ -45,6 +45,7 @@
 #include <linux/freezer.h>
 #include <linux/vmalloc.h>
 #include <linux/blkdev.h>
+#include <linux/module.h>
 #include <linux/delay.h>
 #include <linux/pid_namespace.h>
 #include <linux/smp.h>

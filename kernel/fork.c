@@ -19,6 +19,7 @@
 #include <linux/completion.h>
 #include <linux/personality.h>
 #include <linux/mempolicy.h>
+#include <linux/module.h>
 #include <linux/sem.h>
 #include <linux/file.h>
 #include <linux/fdtable.h>
