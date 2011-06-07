@@ -108,10 +108,12 @@ done:
  */
 unsigned long __init find_ibft_region(unsigned long *sizep)
 {
+#ifdef CONFIG_ACPI
+	int i;
+#endif
 	ibft_addr = NULL;
 
 #ifdef CONFIG_ACPI
-	int i;
 	for (i = 0; i < ARRAY_SIZE(ibft_signs) && !ibft_addr; i++)
 		acpi_table_parse(ibft_signs[i].sign, acpi_find_ibft);
 #endif /* CONFIG_ACPI */
