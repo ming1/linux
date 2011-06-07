@@ -863,7 +863,6 @@ asmlinkage int vprintk(const char *fmt, va_list args)
 		zap_locks();
 	}
 
-	lockdep_off();
 	raw_spin_lock(&logbuf_lock);
 	printk_cpu = this_cpu;
 
@@ -960,7 +959,6 @@ asmlinkage int vprintk(const char *fmt, va_list args)
 	if (console_trylock_for_printk(this_cpu))
 		console_unlock();
 
-	lockdep_on();
 out_restore_irqs:
 	local_irq_restore(flags);
 
