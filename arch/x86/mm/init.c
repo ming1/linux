@@ -104,6 +104,10 @@ static void __init find_early_table_space(unsigned long start,
 
 	printk(KERN_DEBUG "kernel direct mapping tables up to %lx @ %lx-%lx\n",
 		end, pgt_buf_start << PAGE_SHIFT, pgt_buf_top << PAGE_SHIFT);
+
+	if (pgt_buf_top > pgt_buf_start)
+		memblock_x86_reserve_range(pgt_buf_start << PAGE_SHIFT,
+				 pgt_buf_top << PAGE_SHIFT, "PGTABLE");
 }
 
 struct map_range {
@@ -300,10 +304,6 @@ unsigned long __init_refok init_memory_mapping(unsigned long start,
 	if (pgt_buf_end != pgt_buf_top)
 		printk(KERN_DEBUG "initial kernel pagetable allocation wasted %lx"
 				" pages\n", pgt_buf_top - pgt_buf_end);
-
-	if (!after_bootmem && pgt_buf_end > pgt_buf_start)
-		memblock_x86_reserve_range(pgt_buf_start << PAGE_SHIFT,
-				 pgt_buf_end << PAGE_SHIFT, "PGTABLE");
 
 	if (!after_bootmem)
 		early_memtest(start, end);
