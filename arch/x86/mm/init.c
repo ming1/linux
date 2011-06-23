@@ -42,12 +42,19 @@ static void __init find_early_table_space(unsigned long start,
 			(PMD_SIZE * PTRS_PER_PMD));
 	pmd_mapped *= (PMD_SIZE * PTRS_PER_PMD);
 
+	/*
+	 * On x86_64 do not limit the size we need to cover with 4KB pages
+	 * depending on the initial allocation because head_64.S always uses
+	 * 2MB pages.
+	 */
+#ifdef CONFIG_X86_32
 	if (start < PFN_PHYS(max_pfn_mapped)) {
 		if (PFN_PHYS(max_pfn_mapped) < end)
 			size -= PFN_PHYS(max_pfn_mapped) - start;
 		else
 			size = 0;
 	}
+#endif
 
 #ifndef __PAGETABLE_PUD_FOLDED
 	if (end > pud_mapped) {
