@@ -231,6 +231,14 @@ static inline void destroy_rcu_head_on_stack(struct rcu_head *head)
 }
 #endif	/* #else !CONFIG_DEBUG_OBJECTS_RCU_HEAD */
 
+
+#if defined(CONFIG_PROVE_RCU) && defined(CONFIG_NO_HZ)
+extern bool rcu_check_extended_qs(void);
+#else
+static inline bool rcu_check_extended_qs(void) { return false; }
+#endif
+
+
 #ifdef CONFIG_DEBUG_LOCK_ALLOC
 
 #define PROVE_RCU(a) a
@@ -264,11 +272,25 @@ extern int debug_lockdep_rcu_enabled(void);
  *
  * Checks debug_lockdep_rcu_enabled() to prevent false positives during boot
  * and while lockdep is disabled.
+ *
+ * Note that if the CPU is in an extended quiescent state, for example,
+ * if the CPU is in dyntick-idle mode, then rcu_read_lock_held() returns
+ * false even if the CPU did an rcu_read_lock().  The reason for this is
+ * that RCU ignores CPUs that are in extended quiescent states, so such
+ * a CPU is effectively never in an RCU read-side critical section
+ * regardless of what RCU primitives it invokes.  This state of affairs
+ * is required -- RCU would otherwise need to periodically wake up
+ * dyntick-idle CPUs, which would defeat the whole purpose of dyntick-idle
+ * mode.
  */
 static inline int rcu_read_lock_held(void)
 {
 	if (!debug_lockdep_rcu_enabled())
 		return 1;
+
+	if (rcu_check_extended_qs())
+		return 0;
+
 	return lock_is_held(&rcu_lock_map);
 }
 
@@ -292,6 +314,16 @@ extern int rcu_read_lock_bh_held(void);
  *
  * Check debug_lockdep_rcu_enabled() to prevent false positives during boot
  * and while lockdep is disabled.
+ *
+ * Note that if the CPU is in an extended quiescent state, for example,
+ * if the CPU is in dyntick-idle mode, then rcu_read_lock_held() returns
+ * false even if the CPU did an rcu_read_lock().  The reason for this is
+ * that RCU ignores CPUs that are in extended quiescent states, so such
+ * a CPU is effectively never in an RCU read-side critical section
+ * regardless of what RCU primitives it invokes.  This state of affairs
+ * is required -- RCU would otherwise need to periodically wake up
+ * dyntick-idle CPUs, which would defeat the whole purpose of dyntick-idle
+ * mode.
  */
 #ifdef CONFIG_PREEMPT
 static inline int rcu_read_lock_sched_held(void)
@@ -300,6 +332,10 @@ static inline int rcu_read_lock_sched_held(void)
 
 	if (!debug_lockdep_rcu_enabled())
 		return 1;
+
+	if (rcu_check_extended_qs())
+		return 0;
+
 	if (debug_locks)
 		lockdep_opinion = lock_is_held(&rcu_sched_lock_map);
 	return lockdep_opinion || preempt_count() != 0 || irqs_disabled();

@@ -78,6 +78,20 @@ void rcu_exit_nohz(void)
 	rcu_dynticks_nesting++;
 }
 
+
+#ifdef CONFIG_PROVE_RCU
+
+bool rcu_check_extended_qs(void)
+{
+	if (!rcu_dynticks_nesting)
+		return true;
+
+	return false;
+}
+EXPORT_SYMBOL_GPL(rcu_check_extended_qs);
+
+#endif
+
 #endif /* #ifdef CONFIG_NO_HZ */
 
 /*

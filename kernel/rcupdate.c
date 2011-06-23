@@ -87,12 +87,27 @@ EXPORT_SYMBOL_GPL(debug_lockdep_rcu_enabled);
  * that require that they be called within an RCU read-side critical
  * section.
  *
- * Check debug_lockdep_rcu_enabled() to prevent false positives during boot.
+ * Check debug_lockdep_rcu_enabled() to prevent false positives during boot
+ * and while lockdep is disabled.
+ *
+ * Note that if the CPU is in an extended quiescent state, for example,
+ * if the CPU is in dyntick-idle mode, then rcu_read_lock_held() returns
+ * false even if the CPU did an rcu_read_lock().  The reason for this is
+ * that RCU ignores CPUs that are in extended quiescent states, so such
+ * a CPU is effectively never in an RCU read-side critical section
+ * regardless of what RCU primitives it invokes.  This state of affairs
+ * is required -- RCU would otherwise need to periodically wake up
+ * dyntick-idle CPUs, which would defeat the whole purpose of dyntick-idle
+ * mode.
  */
 int rcu_read_lock_bh_held(void)
 {
 	if (!debug_lockdep_rcu_enabled())
 		return 1;
+
+	if (rcu_check_extended_qs())
+		return 0;
+
 	return in_softirq() || irqs_disabled();
 }
 EXPORT_SYMBOL_GPL(rcu_read_lock_bh_held);
