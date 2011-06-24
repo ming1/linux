@@ -280,4 +280,25 @@ static inline unsigned long cmpxchg_386(volatile void *ptr, unsigned long old,
 
 #endif
 
+#define xadd(ptr, inc)							\
+	do {								\
+		switch (sizeof(*(ptr))) {				\
+		case 1:							\
+			asm volatile (LOCK_PREFIX "xaddb %b0, %1\n"	\
+				      : "+r" (inc), "+m" (*(ptr))	\
+				      : : "memory", "cc");		\
+			break;						\
+		case 2:							\
+			asm volatile (LOCK_PREFIX "xaddw %w0, %1\n"	\
+				      : "+r" (inc), "+m" (*(ptr))	\
+				      : : "memory", "cc");		\
+			break;						\
+		case 4:							\
+			asm volatile (LOCK_PREFIX "xaddl %0, %1\n"	\
+				      : "+r" (inc), "+m" (*(ptr))	\
+				      : : "memory", "cc");		\
+			break;						\
+		}							\
+	} while(0)
+
 #endif /* _ASM_X86_CMPXCHG_32_H */
