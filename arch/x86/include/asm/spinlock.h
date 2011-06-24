@@ -71,14 +71,7 @@ static __always_inline struct __raw_tickets __ticket_spin_claim(struct arch_spin
 {
 	register struct __raw_tickets tickets = { .tail = 1 };
 
-	if (sizeof(lock->tickets.head) == sizeof(u8))
-		asm volatile (LOCK_PREFIX "xaddw %w0, %1\n"
-			      : "+r" (tickets), "+m" (lock->tickets)
-			      : : "memory", "cc");
-	else
-		asm volatile (LOCK_PREFIX "xaddl %0, %1\n"
-			     : "+r" (tickets), "+m" (lock->tickets)
-			     : : "memory", "cc");
+	xadd(&lock->tickets, tickets);
 
 	return tickets;
 }
