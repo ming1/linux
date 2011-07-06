@@ -384,6 +384,8 @@ config ARCH_EP93XX
 	select ARCH_REQUIRE_GPIOLIB
 	select ARCH_HAS_HOLES_MEMORYMODEL
 	select ARCH_USES_GETTIMEOFFSET
+	select NO_MACH_MEMORY_H
+	select AUTO_ZRELADDR if !ZBOOT_ROM
 	help
 	  This enables support for the Cirrus EP93xx series of CPUs.
 
