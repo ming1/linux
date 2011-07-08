@@ -84,6 +84,9 @@ long srcu_batches_completed(struct srcu_struct *sp);
  * this assumes we are in an SRCU read-side critical section unless it can
  * prove otherwise.
  *
+ * Checks debug_lockdep_rcu_enabled() to prevent false positives during boot
+ * and while lockdep is disabled.
+ *
  * Note that if the CPU is in an extended quiescent state, for example,
  * if the CPU is in dyntick-idle mode, then rcu_read_lock_held() returns
  * false even if the CPU did an rcu_read_lock().  The reason for this is
@@ -96,7 +99,7 @@ long srcu_batches_completed(struct srcu_struct *sp);
  */
 static inline int srcu_read_lock_held(struct srcu_struct *sp)
 {
-	if (debug_locks)
+	if (!debug_lockdep_rcu_enabled())
 		return lock_is_held(&sp->dep_map);
 	if (rcu_check_extended_qs())
 		return 0;
