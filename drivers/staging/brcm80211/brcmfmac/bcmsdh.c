@@ -16,6 +16,7 @@
 /* ****************** SDIO CARD Interface Functions **************************/
 
 #include <linux/types.h>
+#include <linux/export.h>
 #include <linux/netdevice.h>
 #include <linux/pci.h>
 #include <linux/pci_ids.h>

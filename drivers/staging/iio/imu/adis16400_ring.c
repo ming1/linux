@@ -10,6 +10,7 @@
 #include <linux/sysfs.h>
 #include <linux/list.h>
 #include <linux/bitops.h>
+#include <linux/export.h>
 
 #include "../iio.h"
 #include "../sysfs.h"
