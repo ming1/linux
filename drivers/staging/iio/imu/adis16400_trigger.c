@@ -6,6 +6,7 @@
 #include <linux/sysfs.h>
 #include <linux/list.h>
 #include <linux/spi/spi.h>
+#include <linux/export.h>
 
 #include "../iio.h"
 #include "../sysfs.h"
