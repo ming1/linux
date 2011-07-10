@@ -19,6 +19,7 @@
 #include <linux/cdev.h>
 #include <linux/slab.h>
 #include <linux/poll.h>
+#include <linux/export.h>
 
 #include "iio.h"
 #include "ring_generic.h"
