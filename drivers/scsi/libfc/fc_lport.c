@@ -88,6 +88,7 @@
  */
 
 #include <linux/timer.h>
+#include <linux/module.h>
 #include <linux/slab.h>
 #include <asm/unaligned.h>
 
