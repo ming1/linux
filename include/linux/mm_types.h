@@ -56,20 +56,26 @@ struct page {
 		};
 
 		union {
-			atomic_t _mapcount;	/* Count of ptes mapped in mms,
+			/* Used for cmpxchg_double in slub */
+			unsigned long counters;
+
+			struct {
+
+				union {
+					atomic_t _mapcount;	/* Count of ptes mapped in mms,
 							 * to show when page is mapped
 							 * & limit reverse map searches.
 							 */
 
-			/* Used for cmpxchg_double in slub */
-			unsigned long counters;
-			struct {
-					unsigned inuse:16;
-					unsigned objects:15;
-					unsigned frozen:1;
+					struct {
+						unsigned inuse:16;
+						unsigned objects:15;
+						unsigned frozen:1;
+					};
+				};
+				atomic_t _count;		/* Usage count, see below. */
 			};
 		};
-		atomic_t _count;		/* Usage count, see below. */
 	};
 
 	/* Third double word block */
