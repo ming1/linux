@@ -37,7 +37,6 @@
 #include <linux/fs.h>
 #include <linux/mm.h>
 #include <linux/debugfs.h>
-#include <linux/edac_mce.h>
 
 #include <asm/processor.h>
 #include <asm/hw_irq.h>
