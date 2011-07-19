@@ -1086,6 +1086,17 @@ static int pwc_log_status(struct file *file, void *priv)
 	return 0;
 }
 
+static int pwc_subscribe_event(struct v4l2_fh *fh,
+			       struct v4l2_event_subscription *sub)
+{
+	switch (sub->type) {
+	case V4L2_EVENT_CTRL:
+		return v4l2_event_subscribe(fh, sub, 0);
+	default:
+		return -EINVAL;
+	}
+}
+
 static long pwc_default(struct file *file, void *fh, bool valid_prio,
 			int cmd, void *arg)
 {
@@ -1112,8 +1123,7 @@ const struct v4l2_ioctl_ops pwc_ioctl_ops = {
 	.vidioc_log_status		    = pwc_log_status,
 	.vidioc_enum_framesizes		    = pwc_enum_framesizes,
 	.vidioc_enum_frameintervals	    = pwc_enum_frameintervals,
+	.vidioc_subscribe_event		    = pwc_subscribe_event,
+	.vidioc_unsubscribe_event	    = v4l2_event_unsubscribe,
 	.vidioc_default		    = pwc_default,
 };
-
-
-/* vim: set cino= formatoptions=croql cindent shiftwidth=8 tabstop=8: */
