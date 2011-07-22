@@ -36,11 +36,11 @@
 static __always_inline void __ticket_unlock_release(struct arch_spinlock *lock)
 {
 	if (sizeof(lock->tickets.head) == sizeof(u8))
-		asm (LOCK_PREFIX "incb %0"
-		     : "+m" (lock->tickets.head) : : "memory");
+		asm volatile(LOCK_PREFIX "incb %0"
+			     : "+m" (lock->tickets.head) : : "memory");
 	else
-		asm (LOCK_PREFIX "incw %0"
-		     : "+m" (lock->tickets.head) : : "memory");
+		asm volatile(LOCK_PREFIX "incw %0"
+			     : "+m" (lock->tickets.head) : : "memory");
 
 }
 #else
