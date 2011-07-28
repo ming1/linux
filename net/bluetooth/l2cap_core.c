@@ -1240,7 +1240,7 @@ static void l2cap_drop_acked_frames(struct l2cap_chan *chan)
 		__clear_retrans_timer(chan);
 }
 
-void l2cap_do_send(struct l2cap_chan *chan, struct sk_buff *skb)
+static void l2cap_do_send(struct l2cap_chan *chan, struct sk_buff *skb)
 {
 	struct hci_conn *hcon = chan->conn->hcon;
 	u16 flags;
@@ -1256,7 +1256,7 @@ void l2cap_do_send(struct l2cap_chan *chan, struct sk_buff *skb)
 	hci_send_acl(hcon, skb, flags);
 }
 
-void l2cap_streaming_send(struct l2cap_chan *chan)
+static void l2cap_streaming_send(struct l2cap_chan *chan)
 {
 	struct sk_buff *skb;
 	u16 control, fcs;
@@ -1322,7 +1322,7 @@ static void l2cap_retransmit_one_frame(struct l2cap_chan *chan, u8 tx_seq)
 	l2cap_do_send(chan, tx_skb);
 }
 
-int l2cap_ertm_send(struct l2cap_chan *chan)
+static int l2cap_ertm_send(struct l2cap_chan *chan)
 {
 	struct sk_buff *skb, *tx_skb;
 	u16 control, fcs;
@@ -1460,7 +1460,7 @@ static inline int l2cap_skbuff_fromiovec(struct sock *sk, struct msghdr *msg, in
 	return sent;
 }
 
-struct sk_buff *l2cap_create_connless_pdu(struct l2cap_chan *chan, struct msghdr *msg, size_t len)
+static struct sk_buff *l2cap_create_connless_pdu(struct l2cap_chan *chan, struct msghdr *msg, size_t len)
 {
 	struct sock *sk = chan->sk;
 	struct l2cap_conn *conn = chan->conn;
@@ -1490,7 +1490,7 @@ struct sk_buff *l2cap_create_connless_pdu(struct l2cap_chan *chan, struct msghdr
 	return skb;
 }
 
-struct sk_buff *l2cap_create_basic_pdu(struct l2cap_chan *chan, struct msghdr *msg, size_t len)
+static struct sk_buff *l2cap_create_basic_pdu(struct l2cap_chan *chan, struct msghdr *msg, size_t len)
 {
 	struct sock *sk = chan->sk;
 	struct l2cap_conn *conn = chan->conn;
@@ -1519,7 +1519,7 @@ struct sk_buff *l2cap_create_basic_pdu(struct l2cap_chan *chan, struct msghdr *m
 	return skb;
 }
 
-struct sk_buff *l2cap_create_iframe_pdu(struct l2cap_chan *chan, struct msghdr *msg, size_t len, u16 control, u16 sdulen)
+static struct sk_buff *l2cap_create_iframe_pdu(struct l2cap_chan *chan, struct msghdr *msg, size_t len, u16 control, u16 sdulen)
 {
 	struct sock *sk = chan->sk;
 	struct l2cap_conn *conn = chan->conn;
@@ -1565,7 +1565,7 @@ struct sk_buff *l2cap_create_iframe_pdu(struct l2cap_chan *chan, struct msghdr *
 	return skb;
 }
 
-int l2cap_sar_segment_sdu(struct l2cap_chan *chan, struct msghdr *msg, size_t len)
+static int l2cap_sar_segment_sdu(struct l2cap_chan *chan, struct msghdr *msg, size_t len)
 {
 	struct sk_buff *skb;
 	struct sk_buff_head sar_queue;
