@@ -11,6 +11,7 @@
  *
  */
 
+#include <linux/export.h>
 #include <linux/device.h>
 #include <linux/string.h>
 #include <linux/slab.h>
