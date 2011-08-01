@@ -9,6 +9,7 @@
 #include <linux/irq.h>
 #include <linux/of_device.h>
 #include <linux/of_platform.h>
+#include <asm/spitfire.h>	/* for tlb_type */
 
 #include "of_device_common.h"
 
