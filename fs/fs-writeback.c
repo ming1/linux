@@ -234,6 +234,21 @@ static void requeue_io(struct inode *inode, struct bdi_writeback *wb)
 	list_move(&inode->i_wb_list, &wb->b_more_io);
 }
 
+/*
+ * The inode should be retried in an opportunistic way.
+ *
+ * The only difference between b_more_io and b_more_io_wait is:
+ * wb_writeback() won't quit as long as b_more_io is not empty.  When
+ * wb_writeback() quit on empty b_more_io and non-empty b_more_io_wait,
+ * the kupdate work will wakeup more frequently to retry the inodes in
+ * b_more_io_wait.
+ */
+static void requeue_io_wait(struct inode *inode, struct bdi_writeback *wb)
+{
+	assert_spin_locked(&wb->list_lock);
+	list_move(&inode->i_wb_list, &wb->b_more_io_wait);
+}
+
 static void inode_sync_complete(struct inode *inode)
 {
 	/*
@@ -321,6 +336,7 @@ static void queue_io(struct bdi_writeback *wb, struct wb_writeback_work *work)
 	int moved;
 	assert_spin_locked(&wb->list_lock);
 	list_splice_init(&wb->b_more_io, &wb->b_io);
+	list_splice_init(&wb->b_more_io_wait, &wb->b_io);
 	moved = move_expired_inodes(&wb->b_dirty, &wb->b_io, work);
 	trace_writeback_queue_io(wb, work, moved);
 }
