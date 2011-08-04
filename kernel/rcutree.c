@@ -476,7 +476,9 @@ void rcu_irq_exit(void)
  */
 static int dyntick_save_progress_counter(struct rcu_data *rdp)
 {
+	smp_mb();  /* Work around some architectures weak impls. */
 	rdp->dynticks_snap = atomic_add_return(0, &rdp->dynticks->dynticks);
+	smp_mb();  /* Work around some architectures weak impls. */
 	return 0;
 }
 
@@ -491,7 +493,9 @@ static int rcu_implicit_dynticks_qs(struct rcu_data *rdp)
 	unsigned int curr;
 	unsigned int snap;
 
+	smp_mb();  /* Work around some architectures weak impls. */
 	curr = (unsigned int)atomic_add_return(0, &rdp->dynticks->dynticks);
+	smp_mb();  /* Work around some architectures weak impls. */
 	snap = (unsigned int)rdp->dynticks_snap;
 
 	/*

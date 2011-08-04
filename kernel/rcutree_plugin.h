@@ -1615,7 +1615,9 @@ static int rcu_node_kthread(void *arg)
 		rcu_wait(atomic_read(&rnp->wakemask) != 0);
 		rnp->node_kthread_status = RCU_KTHREAD_RUNNING;
 		raw_spin_lock_irqsave(&rnp->lock, flags);
+		smp_mb();  /* Work around some architectures weak impls. */
 		mask = atomic_xchg(&rnp->wakemask, 0);
+		smp_mb();  /* Work around some architectures weak impls. */
 		rcu_initiate_boost(rnp, flags); /* releases rnp->lock. */
 		for (cpu = rnp->grplo; cpu <= rnp->grphi; cpu++, mask >>= 1) {
 			if ((mask & 0x1) == 0)
@@ -1851,7 +1853,9 @@ void synchronize_sched_expedited(void)
 	int firstsnap, s, snap, trycount = 0;
 
 	/* Note that atomic_inc_return() implies full memory barrier. */
+	smp_mb();  /* Work around some architectures weak impls. */
 	firstsnap = snap = atomic_inc_return(&sync_sched_expedited_started);
+	smp_mb();  /* Work around some architectures weak impls. */
 	get_online_cpus();
 
 	/*
@@ -1904,6 +1908,7 @@ void synchronize_sched_expedited(void)
 			break;
 		}
 	} while (atomic_cmpxchg(&sync_sched_expedited_done, s, snap) != s);
+	smp_mb();
 
 	put_online_cpus();
 }
@@ -1974,9 +1979,10 @@ int rcu_needs_cpu(int cpu)
 	for_each_online_cpu(thatcpu) {
 		if (thatcpu == cpu)
 			continue;
+		smp_mb();  /* Work around some architectures weak impls. */
 		snap = atomic_add_return(0, &per_cpu(rcu_dynticks,
 						     thatcpu).dynticks);
-		smp_mb(); /* Order sampling of snap with end of grace period. */
+		smp_mb();  /* Work around some architectures weak impls. */
 		if ((snap & 0x1) != 0) {
 			per_cpu(rcu_dyntick_drain, cpu) = 0;
 			per_cpu(rcu_dyntick_holdoff, cpu) = jiffies - 1;
