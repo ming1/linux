@@ -2509,6 +2509,11 @@ static void btrfs_read_locked_inode(struct inode *inode)
 	int maybe_acls;
 	u32 rdev;
 	int ret;
+	bool filled = false;
+
+	ret = btrfs_fill_inode(inode, &rdev);
+	if (!ret)
+		filled = true;
 
 	path = btrfs_alloc_path();
 	BUG_ON(!path);
@@ -2520,6 +2525,10 @@ static void btrfs_read_locked_inode(struct inode *inode)
 		goto make_bad;
 
 	leaf = path->nodes[0];
+
+	if (filled)
+		goto cache_acl;
+
 	inode_item = btrfs_item_ptr(leaf, path->slots[0],
 				    struct btrfs_inode_item);
 	if (!leaf->map_token)
@@ -2556,7 +2565,7 @@ static void btrfs_read_locked_inode(struct inode *inode)
 
 	BTRFS_I(inode)->index_cnt = (u64)-1;
 	BTRFS_I(inode)->flags = btrfs_inode_flags(leaf, inode_item);
-
+cache_acl:
 	/*
 	 * try to precache a NULL acl entry for files that don't have
 	 * any xattrs or acls
@@ -2572,7 +2581,6 @@ static void btrfs_read_locked_inode(struct inode *inode)
 	}
 
 	btrfs_free_path(path);
-	inode_item = NULL;
 
 	switch (inode->i_mode & S_IFMT) {
 	case S_IFREG:
@@ -2670,12 +2678,14 @@ noinline int btrfs_update_inode(struct btrfs_trans_handle *trans,
 	int ret;
 
 	/*
-	 * If root is tree root, it means this inode is used to
-	 * store free space information. And these inodes are updated
-	 * when committing the transaction, so they needn't delaye to
-	 * be updated, or deadlock will occured.
+	 * If the inode is a free space inode, we can deadlock during commit
+	 * if we put it into the delayed code.
+	 *
+	 * The data relocation inode should also be directly updated
+	 * without delay
 	 */
-	if (!is_free_space_inode(root, inode)) {
+	if (!is_free_space_inode(root, inode)
+	    && root->root_key.objectid != BTRFS_DATA_RELOC_TREE_OBJECTID) {
 		ret = btrfs_delayed_update_inode(trans, root, inode);
 		if (!ret)
 			btrfs_set_inode_last_trans(trans, inode);
@@ -4069,13 +4079,7 @@ static int btrfs_dentry_delete(const struct dentry *dentry)
 static struct dentry *btrfs_lookup(struct inode *dir, struct dentry *dentry,
 				   struct nameidata *nd)
 {
-	struct inode *inode;
-
-	inode = btrfs_lookup_dentry(dir, dentry);
-	if (IS_ERR(inode))
-		return ERR_CAST(inode);
-
-	return d_splice_alias(inode, dentry);
+	return d_splice_alias(btrfs_lookup_dentry(dir, dentry), dentry);
 }
 
 unsigned char btrfs_filetype_table[] = {
@@ -4520,6 +4524,7 @@ static struct inode *btrfs_new_inode(struct btrfs_trans_handle *trans,
 	inode_tree_add(inode);
 
 	trace_btrfs_inode_new(inode);
+	btrfs_set_inode_last_trans(trans, inode);
 
 	return inode;
 fail:
@@ -4761,11 +4766,10 @@ static int btrfs_link(struct dentry *old_dentry, struct inode *dir,
 	if (err) {
 		drop_inode = 1;
 	} else {
-		struct dentry *parent = dget_parent(dentry);
+		struct dentry *parent = dentry->d_parent;
 		err = btrfs_update_inode(trans, root, inode);
 		BUG_ON(err);
 		btrfs_log_new_name(trans, inode, NULL, parent);
-		dput(parent);
 	}
 
 	nr = trans->blocks_used;
@@ -6889,7 +6893,7 @@ static int btrfs_getattr(struct vfsmount *mnt,
 {
 	struct inode *inode = dentry->d_inode;
 	generic_fillattr(inode, stat);
-	stat->dev = BTRFS_I(inode)->root->anon_super.s_dev;
+	stat->dev = BTRFS_I(inode)->root->anon_dev;
 	stat->blksize = PAGE_CACHE_SIZE;
 	stat->blocks = (inode_get_bytes(inode) +
 			BTRFS_I(inode)->delalloc_bytes) >> 9;
@@ -7057,9 +7061,8 @@ static int btrfs_rename(struct inode *old_dir, struct dentry *old_dentry,
 	BUG_ON(ret);
 
 	if (old_ino != BTRFS_FIRST_FREE_OBJECTID) {
-		struct dentry *parent = dget_parent(new_dentry);
+		struct dentry *parent = new_dentry->d_parent;
 		btrfs_log_new_name(trans, old_inode, old_dir, parent);
-		dput(parent);
 		btrfs_end_log_trans(root);
 	}
 out_fail:
@@ -7320,7 +7323,7 @@ static int btrfs_set_page_dirty(struct page *page)
 	return __set_page_dirty_nobuffers(page);
 }
 
-static int btrfs_permission(struct inode *inode, int mask, unsigned int flags)
+static int btrfs_permission(struct inode *inode, int mask)
 {
 	struct btrfs_root *root = BTRFS_I(inode)->root;
 
@@ -7328,7 +7331,7 @@ static int btrfs_permission(struct inode *inode, int mask, unsigned int flags)
 		return -EROFS;
 	if ((BTRFS_I(inode)->flags & BTRFS_INODE_READONLY) && (mask & MAY_WRITE))
 		return -EACCES;
-	return generic_permission(inode, mask, flags, btrfs_check_acl);
+	return generic_permission(inode, mask);
 }
 
 static const struct inode_operations btrfs_dir_inode_operations = {
@@ -7348,10 +7351,12 @@ static const struct inode_operations btrfs_dir_inode_operations = {
 	.listxattr	= btrfs_listxattr,
 	.removexattr	= btrfs_removexattr,
 	.permission	= btrfs_permission,
+	.check_acl	= btrfs_check_acl,
 };
 static const struct inode_operations btrfs_dir_ro_inode_operations = {
 	.lookup		= btrfs_lookup,
 	.permission	= btrfs_permission,
+	.check_acl	= btrfs_check_acl,
 };
 
 static const struct file_operations btrfs_dir_file_operations = {
@@ -7420,6 +7425,7 @@ static const struct inode_operations btrfs_file_inode_operations = {
 	.removexattr	= btrfs_removexattr,
 	.permission	= btrfs_permission,
 	.fiemap		= btrfs_fiemap,
+	.check_acl	= btrfs_check_acl,
 };
 static const struct inode_operations btrfs_special_inode_operations = {
 	.getattr	= btrfs_getattr,
@@ -7429,6 +7435,7 @@ static const struct inode_operations btrfs_special_inode_operations = {
 	.getxattr	= btrfs_getxattr,
 	.listxattr	= btrfs_listxattr,
 	.removexattr	= btrfs_removexattr,
+	.check_acl	= btrfs_check_acl,
 };
 static const struct inode_operations btrfs_symlink_inode_operations = {
 	.readlink	= generic_readlink,
@@ -7440,6 +7447,7 @@ static const struct inode_operations btrfs_symlink_inode_operations = {
 	.getxattr	= btrfs_getxattr,
 	.listxattr	= btrfs_listxattr,
 	.removexattr	= btrfs_removexattr,
+	.check_acl	= btrfs_check_acl,
 };
 
 const struct dentry_operations btrfs_dentry_operations = {
