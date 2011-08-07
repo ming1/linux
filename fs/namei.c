@@ -179,19 +179,14 @@ static int check_acl(struct inode *inode, int mask)
 #ifdef CONFIG_FS_POSIX_ACL
 	struct posix_acl *acl;
 
-	/*
-	 * Under RCU walk, we cannot even do a "get_cached_acl()",
-	 * because that involves locking and getting a refcount on
-	 * a cached ACL.
-	 *
-	 * So the only case we handle during RCU walking is the
-	 * case of a cached "no ACL at all", which needs no locks
-	 * or refcounts.
-	 */
 	if (mask & MAY_NOT_BLOCK) {
-	        if (negative_cached_acl(inode, ACL_TYPE_ACCESS))
+		acl = get_cached_acl_rcu(inode, ACL_TYPE_ACCESS);
+	        if (!acl)
 	                return -EAGAIN;
-	        return -ECHILD;
+		/* no ->get_acl() calls in RCU mode... */
+		if (acl == ACL_NOT_CACHED)
+			return -ECHILD;
+	        return posix_acl_permission(inode, acl, mask);
 	}
 
 	acl = get_cached_acl(inode, ACL_TYPE_ACCESS);
@@ -716,19 +711,25 @@ static int follow_automount(struct path *path, unsigned flags,
 	if ((flags & LOOKUP_NO_AUTOMOUNT) && !(flags & LOOKUP_PARENT))
 		return -EISDIR; /* we actually want to stop here */
 
-	/* We want to mount if someone is trying to open/create a file of any
-	 * type under the mountpoint, wants to traverse through the mountpoint
-	 * or wants to open the mounted directory.
-	 *
+	/*
 	 * We don't want to mount if someone's just doing a stat and they've
 	 * set AT_SYMLINK_NOFOLLOW - unless they're stat'ing a directory and
 	 * appended a '/' to the name.
 	 */
-	if (!(flags & LOOKUP_FOLLOW) &&
-	    !(flags & (LOOKUP_PARENT | LOOKUP_DIRECTORY |
-		       LOOKUP_OPEN | LOOKUP_CREATE)))
-		return -EISDIR;
-
+	if (!(flags & LOOKUP_FOLLOW)) {
+		/* We do, however, want to mount if someone wants to open or
+		 * create a file of any type under the mountpoint, wants to
+		 * traverse through the mountpoint or wants to open the mounted
+		 * directory.
+		 * Also, autofs may mark negative dentries as being automount
+		 * points.  These will need the attentions of the daemon to
+		 * instantiate them before they can be used.
+		 */
+		if (!(flags & (LOOKUP_PARENT | LOOKUP_DIRECTORY |
+			     LOOKUP_OPEN | LOOKUP_CREATE)) &&
+		    path->dentry->d_inode)
+			return -EISDIR;
+	}
 	current->total_link_count++;
 	if (current->total_link_count >= 40)
 		return -ELOOP;
