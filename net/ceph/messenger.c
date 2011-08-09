@@ -2351,6 +2351,7 @@ out:
 	if (!can_fail) {
 		pr_err("msg_new can't create type %d front %d\n", type,
 		       front_len);
+		WARN_ON(1);
 	} else {
 		dout("msg_new can't create type %d front %d\n", type,
 		     front_len);
