@@ -154,44 +154,16 @@ SECTIONS
 
 #ifdef CONFIG_X86_64
 
-#define VSYSCALL_ADDR (-10*1024*1024)
-
-#define VLOAD_OFFSET (VSYSCALL_ADDR - __vsyscall_0 + LOAD_OFFSET)
-#define VLOAD(x) (ADDR(x) - VLOAD_OFFSET)
-
-#define VVIRT_OFFSET (VSYSCALL_ADDR - __vsyscall_0)
-#define VVIRT(x) (ADDR(x) - VVIRT_OFFSET)
-
-	. = ALIGN(4096);
-	__vsyscall_0 = .;
-
-	. = VSYSCALL_ADDR;
-	.vsyscall : AT(VLOAD(.vsyscall)) {
-		*(.vsyscall_0)
-
-		. = 1024;
-		*(.vsyscall_1)
-
-		. = 2048;
-		*(.vsyscall_2)
-
-		. = 4096;  /* Pad the whole page. */
-	} :user =0xcc
-	. = ALIGN(__vsyscall_0 + PAGE_SIZE, PAGE_SIZE);
-
-#undef VSYSCALL_ADDR
-#undef VLOAD_OFFSET
-#undef VLOAD
-#undef VVIRT_OFFSET
-#undef VVIRT
-
+	. = ALIGN(PAGE_SIZE);
 	__vvar_page = .;
 
 	.vvar : AT(ADDR(.vvar) - LOAD_OFFSET) {
+		/* work around gold bug 13023 */
+		__vvar_beginning_hack = .;
 
-	      /* Place all vvars at the offsets in asm/vvar.h. */
-#define EMIT_VVAR(name, offset) 		\
-		. = offset;		\
+		/* Place all vvars at the offsets in asm/vvar.h. */
+#define EMIT_VVAR(name, offset) 			\
+		. = __vvar_beginning_hack + offset;	\
 		*(.vvar_ ## name)
 #define __VVAR_KERNEL_LDS
 #include <asm/vvar.h>
@@ -201,6 +173,38 @@ SECTIONS
 	} :data
 
        . = ALIGN(__vvar_page + PAGE_SIZE, PAGE_SIZE);
+
+#define VSYSCALL_ADDR (-10*1024*1024)
+
+#define VLOAD_OFFSET (VSYSCALL_ADDR - __vsyscall_0 + LOAD_OFFSET)
+#define VLOAD(x) (ADDR(x) - VLOAD_OFFSET)
+
+#define VVIRT_OFFSET (VSYSCALL_ADDR - __vsyscall_0)
+#define VVIRT(x) (ADDR(x) - VVIRT_OFFSET)
+
+	__vsyscall_0 = .;
+
+	. = VSYSCALL_ADDR;
+	.vsyscall : AT(VLOAD(.vsyscall)) {
+		/* work around gold bug 13023 */
+		__vsyscall_beginning_hack = .;
+		*(.vsyscall_0)
+
+		. = __vsyscall_beginning_hack + 1024;
+		*(.vsyscall_1)
+
+		. = __vsyscall_beginning_hack + 2048;
+		*(.vsyscall_2)
+
+		. = __vsyscall_beginning_hack + 4096;  /* Pad the whole page. */
+	} :user =0xcc
+	. = ALIGN(__vsyscall_0 + PAGE_SIZE, PAGE_SIZE);
+
+#undef VSYSCALL_ADDR
+#undef VLOAD_OFFSET
+#undef VLOAD
+#undef VVIRT_OFFSET
+#undef VVIRT
 
 #endif /* CONFIG_X86_64 */
 
