@@ -598,7 +598,7 @@ static void frontend_changed(struct xenbus_device *dev,
 
 		/*
 		 * Enforce precondition before potential leak point.
-		 * blkif_disconnect() is idempotent.
+		 * xen_blkif_disconnect() is idempotent.
 		 */
 		xen_blkif_disconnect(be->blkif);
 
@@ -619,7 +619,7 @@ static void frontend_changed(struct xenbus_device *dev,
 			break;
 		/* fall through if not online */
 	case XenbusStateUnknown:
-		/* implies blkif_disconnect() via blkback_remove() */
+		/* implies xen_blkif_disconnect() via xen_blkbk_remove() */
 		device_unregister(&dev->dev);
 		break;
 
