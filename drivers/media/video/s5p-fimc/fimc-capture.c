@@ -49,7 +49,7 @@ static struct v4l2_subdev *fimc_subdev_register(struct fimc_dev *fimc,
 		return NULL;
 	}
 
-	v4l2_info(&vid_cap->v4l2_dev, "subdevice %s registered successfuly\n",
+	v4l2_info(&vid_cap->v4l2_dev, "subdevice %s registered successfully\n",
 		isp_info->board_info->type);
 
 	return sd;
