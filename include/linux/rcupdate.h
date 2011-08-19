@@ -233,6 +233,8 @@ static inline void destroy_rcu_head_on_stack(struct rcu_head *head)
 
 #ifdef CONFIG_DEBUG_LOCK_ALLOC
 
+#define PROVE_RCU(a) a
+
 extern struct lockdep_map rcu_lock_map;
 # define rcu_read_acquire() \
 		lock_acquire(&rcu_lock_map, 0, 0, 2, 1, NULL, _THIS_IP_)
@@ -311,6 +313,7 @@ static inline int rcu_read_lock_sched_held(void)
 
 #else /* #ifdef CONFIG_DEBUG_LOCK_ALLOC */
 
+# define PROVE_RCU(a)			do { } while (0)
 # define rcu_read_acquire()		do { } while (0)
 # define rcu_read_release()		do { } while (0)
 # define rcu_read_acquire_bh()		do { } while (0)

@@ -1790,6 +1790,9 @@ static int rcu_pending(int cpu)
  */
 static int rcu_needs_cpu_quick_check(int cpu)
 {
+	PROVE_RCU(WARN_ON_ONCE(lock_is_held(&rcu_lock_map)));
+	PROVE_RCU(WARN_ON_ONCE(lock_is_held(&rcu_bh_lock_map)));
+	PROVE_RCU(WARN_ON_ONCE(lock_is_held(&rcu_sched_lock_map)));
 	/* RCU callbacks either ready or pending? */
 	return per_cpu(rcu_sched_data, cpu).nxtlist ||
 	       per_cpu(rcu_bh_data, cpu).nxtlist ||
