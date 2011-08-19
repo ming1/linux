@@ -458,21 +458,16 @@ int autofs4_wait(struct autofs_sb_info *sbi, struct dentry *dentry,
 	 */
 	if (wq->name.name) {
 		/* Block all but "shutdown" signals while waiting */
-		sigset_t oldset;
+		sigset_t oldset, blocked;
 		unsigned long irqflags;
 
-		spin_lock_irqsave(&current->sighand->siglock, irqflags);
 		oldset = current->blocked;
-		siginitsetinv(&current->blocked, SHUTDOWN_SIGS & ~oldset.sig[0]);
-		recalc_sigpending();
-		spin_unlock_irqrestore(&current->sighand->siglock, irqflags);
+		siginitsetinv(&blocked, SHUTDOWN_SIGS & ~oldset.sig[0]);
+		set_current_blocked(&blocked);
 
 		wait_event_interruptible(wq->queue, wq->name.name == NULL);
 
-		spin_lock_irqsave(&current->sighand->siglock, irqflags);
-		current->blocked = oldset;
-		recalc_sigpending();
-		spin_unlock_irqrestore(&current->sighand->siglock, irqflags);
+		set_current_blocked(&oldset);
 	} else {
 		DPRINTK("skipped sleeping");
 	}
