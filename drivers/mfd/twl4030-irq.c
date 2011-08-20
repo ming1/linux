@@ -289,9 +289,6 @@ static int twl4030_irq_thread(void *data)
 	static unsigned i2c_errors;
 	static const unsigned max_i2c_errors = 100;
 
-
-	current->flags |= PF_NOFREEZE;
-
 	while (!kthread_should_stop()) {
 		int ret;
 		int module_irq;
