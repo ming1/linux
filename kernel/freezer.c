@@ -43,9 +43,6 @@ bool __refrigerator(bool check_kthr_stop)
 	recalc_sigpending(); /* We sent fake signal, clean it up */
 	spin_unlock_irq(&current->sighand->siglock);
 
-	/* prevent accounting of that task to load */
-	current->flags |= PF_FREEZING;
-
 	for (;;) {
 		set_current_state(TASK_UNINTERRUPTIBLE);
 		if (!freezing(current) ||
@@ -54,9 +51,6 @@ bool __refrigerator(bool check_kthr_stop)
 		was_frozen = true;
 		schedule();
 	}
-
-	/* Remove the accounting blocker */
-	current->flags &= ~PF_FREEZING;
 
 	/* leave FROZEN */
 	spin_lock_irq(&freezer_lock);
