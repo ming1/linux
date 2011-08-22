@@ -2969,6 +2969,165 @@ void ext4_set_aops(struct inode *inode)
 		inode->i_mapping->a_ops = &ext4_journalled_aops;
 }
 
+
+/*
+ * ext4_discard_partial_page_buffers()
+ * Wrapper function for ext4_discard_partial_page_buffers_no_lock.
+ * This function finds and locks the page containing the offset
+ * "from" and passes it to ext4_discard_partial_page_buffers_no_lock.
+ * Calling functions that already have the page locked should call
+ * ext4_discard_partial_page_buffers_no_lock directly.
+ */
+int ext4_discard_partial_page_buffers(handle_t *handle,
+		struct address_space *mapping, loff_t from,
+		loff_t length, int flags)
+{
+	struct inode *inode = mapping->host;
+	struct page *page;
+	int err = 0;
+
+	page = find_or_create_page(mapping, from >> PAGE_CACHE_SHIFT,
+				   mapping_gfp_mask(mapping) & ~__GFP_FS);
+	if (!page)
+		return -EINVAL;
+
+	err = ext4_discard_partial_page_buffers_no_lock(handle, inode, page,
+		from, length, flags);
+
+	unlock_page(page);
+	page_cache_release(page);
+	return err;
+}
+
+/*
+ * ext4_discard_partial_page_buffers_no_lock()
+ * Zeros a page range of length 'length' starting from offset 'from'
+ * and unmaps the buffer heads that correspond to the block aligned
+ * regions of the page that were fully zeroed.  This function assumes
+ * that page has already been locked.  The range to be discarded
+ * must be contained with in the given page.  If the specified range
+ * exceeds the end of the page it will be shortened to the end
+ * of the page that corresponds to 'from'.  This function is appropriate
+ * for updateing a page and it buffer heads to be unmaped and zeroed
+ * for blocks that have been either released, or are going to be released.
+ *
+ * handle: The journal handle
+ * inode:  The files inode
+ * page:   A locked page that contains the offset "from"
+ * from:   The starting byte offset (from the begining of the file)
+ *         to begin discarding
+ * len:    The length of bytes to discard
+ * flags:  Optional flags that may be used:
+ *
+ *         EXT4_DSCRD_PARTIAL_PG_ZERO_UNMAPED
+ *         Only zero the regions of the page whose buffer heads
+ *         have already been unmapped.  This flag is appropriate
+ *         for updateing the contents of a page whose blocks may
+ *         have already been released, and we only want to zero
+ *         out the regions that correspond to those released blocks.
+ *
+ * Returns zero on sucess or negative on failure.
+ */
+int ext4_discard_partial_page_buffers_no_lock(handle_t *handle,
+		struct inode *inode, struct page *page, loff_t from,
+		loff_t length, int flags)
+{
+	ext4_fsblk_t index = from >> PAGE_CACHE_SHIFT;
+	unsigned int offset = from & (PAGE_CACHE_SIZE-1);
+	unsigned int blocksize, max, pos;
+	unsigned int end_of_block, range_to_discard;
+	ext4_lblk_t iblock;
+	struct buffer_head *bh;
+	int err = 0;
+
+	blocksize = inode->i_sb->s_blocksize;
+	max = PAGE_CACHE_SIZE - offset;
+
+	if (index != page->index)
+		return -EINVAL;
+
+	/*
+	 * correct length if it does not fall between
+	 * 'from' and the end of the page
+	 */
+	if (length > max || length < 0)
+		length = max;
+
+	iblock = index << (PAGE_CACHE_SHIFT - inode->i_sb->s_blocksize_bits);
+
+	if (!page_has_buffers(page))
+		return 0;
+
+	/* Find the buffer that contains "offset" */
+	bh = page_buffers(page);
+	pos = blocksize;
+	while (offset >= pos) {
+		bh = bh->b_this_page;
+		iblock++;
+		pos += blocksize;
+	}
+
+	pos = offset;
+	while (pos < offset + length) {
+		err = 0;
+
+		/* The length of space left to zero and unmap */
+		range_to_discard = offset + length - pos;
+
+		/* The length of space until the end of the block */
+		end_of_block = blocksize - (pos & (blocksize-1));
+
+		/* Do not unmap or zero past end of block */
+		if (range_to_discard > end_of_block)
+			range_to_discard = end_of_block;
+
+
+		if (flags & EXT4_DSCRD_PARTIAL_PG_ZERO_UNMAPED &&
+			buffer_mapped(bh))
+				goto next;
+
+		if (ext4_should_journal_data(inode)) {
+			BUFFER_TRACE(bh, "get write access");
+			err = ext4_journal_get_write_access(handle, bh);
+			if (err)
+				goto unmap;
+		}
+
+		zero_user(page, pos, range_to_discard);
+
+		BUFFER_TRACE(bh, "buffer discarded");
+
+		err = 0;
+		if (ext4_should_journal_data(inode)) {
+			err = ext4_handle_dirty_metadata(handle, inode, bh);
+		} else {
+			if (ext4_should_order_data(inode) &&
+			    EXT4_I(inode)->jinode)
+				err = ext4_jbd2_file_inode(handle, inode);
+		}
+unmap:
+
+		/* If the range is block aligned, unmap */
+		if (range_to_discard == blocksize) {
+			clear_buffer_dirty(bh);
+			bh->b_bdev = NULL;
+			clear_buffer_mapped(bh);
+			clear_buffer_req(bh);
+			clear_buffer_new(bh);
+			clear_buffer_delay(bh);
+			clear_buffer_unwritten(bh);
+			clear_buffer_uptodate(bh);
+			ClearPageUptodate(page);
+		}
+next:
+		bh = bh->b_this_page;
+		iblock++;
+		pos += range_to_discard;
+	}
+
+	return err;
+}
+
 /*
  * ext4_block_truncate_page() zeroes out a mapping from file offset `from'
  * up to the end of the block which corresponds to `from'.
