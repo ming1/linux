@@ -4184,8 +4184,8 @@ int ext4_ext_punch_hole(struct file *file, loff_t offset, loff_t length)
 		EXT4_BLOCK_SIZE_BITS(sb);
 	last_block = (offset + length) >> EXT4_BLOCK_SIZE_BITS(sb);
 
-	first_block_offset = first_block << EXT4_BLOCK_SIZE_BITS(sb);
-	last_block_offset = last_block << EXT4_BLOCK_SIZE_BITS(sb);
+	first_block_offset = ((loff_t)first_block) << EXT4_BLOCK_SIZE_BITS(sb);
+	last_block_offset = ((loff_t)last_block) << EXT4_BLOCK_SIZE_BITS(sb);
 
 	first_page = (offset + PAGE_CACHE_SIZE - 1) >> PAGE_CACHE_SHIFT;
 	last_page = (offset + length) >> PAGE_CACHE_SHIFT;
