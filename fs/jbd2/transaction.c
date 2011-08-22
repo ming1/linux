@@ -1093,8 +1093,20 @@ int jbd2_journal_dirty_metadata(handle_t *handle, struct buffer_head *bh)
 	 */
 	if (jh->b_transaction == transaction && jh->b_jlist == BJ_Metadata) {
 		JBUFFER_TRACE(jh, "fastpath");
-		J_ASSERT_JH(jh, jh->b_transaction ==
-					journal->j_running_transaction);
+		if (unlikely(jh->b_transaction !=
+			     journal->j_running_transaction)) {
+			printk(KERN_EMERG "JBD: %s: "
+			       "jh->b_transaction (%llu, %p, %u) != "
+			       "journal->j_running_transaction (%p, %u)",
+			       journal->j_devname,
+			       (unsigned long long) bh->b_blocknr,
+			       jh->b_transaction,
+			       jh->b_transaction ? jh->b_transaction->t_tid : 0,
+			       journal->j_running_transaction,
+			       journal->j_running_transaction ?
+			         journal->j_running_transaction->t_tid : 0);
+			BUG_ON(1);
+		}
 		goto out_unlock_bh;
 	}
 
@@ -1108,9 +1120,33 @@ int jbd2_journal_dirty_metadata(handle_t *handle, struct buffer_head *bh)
 	 */
 	if (jh->b_transaction != transaction) {
 		JBUFFER_TRACE(jh, "already on other transaction");
-		J_ASSERT_JH(jh, jh->b_transaction ==
-					journal->j_committing_transaction);
-		J_ASSERT_JH(jh, jh->b_next_transaction == transaction);
+		if (unlikely(jh->b_transaction !=
+			     journal->j_committing_transaction)) {
+			printk(KERN_EMERG "JBD: %s: "
+			       "jh->b_transaction (%llu, %p, %u) != "
+			       "journal->j_committing_transaction (%p, %u)",
+			       journal->j_devname,
+			       (unsigned long long) bh->b_blocknr,
+			       jh->b_transaction,
+			       jh->b_transaction ? jh->b_transaction->t_tid : 0,
+			       journal->j_committing_transaction,
+			       journal->j_committing_transaction ?
+			         journal->j_committing_transaction->t_tid : 0);
+			BUG_ON(1);
+		}
+		if (unlikely(jh->b_next_transaction != transaction)) {
+			printk(KERN_EMERG "JBD: %s: "
+			       "jh->b_next_transaction (%llu, %p, %u) != "
+			       "transaction (%p, %u)",
+			       journal->j_devname,
+			       (unsigned long long) bh->b_blocknr,
+			       jh->b_next_transaction,
+			       jh->b_next_transaction ?
+			         jh->b_next_transaction->t_tid : 0,
+			       transaction,
+			       transaction ? transaction->t_tid : 0);
+			BUG_ON(1);
+		}
 		/* And this case is illegal: we can't reuse another
 		 * transaction's data buffer, ever. */
 		goto out_unlock_bh;
