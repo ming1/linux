@@ -148,7 +148,7 @@
  *   a2:	new stack pointer, original in DEPC
  *   a3:	dispatch table
  *   depc:	a2, original value saved on stack (PT_DEPC)
- *   excsave_1:	a3
+ *   excsave1:	a3
  *
  *   PT_DEPC >= VALID_DOUBLE_EXCEPTION_ADDRESS: double exception, DEPC
  *	     <  VALID_DOUBLE_EXCEPTION_ADDRESS: regular exception
@@ -171,7 +171,7 @@ ENTRY(fast_unaligned)
 	s32i	a8, a2, PT_AREG8
 
 	rsr	a0, DEPC
-	xsr	a3, EXCSAVE_1
+	xsr	a3, EXCSAVE1
 	s32i	a0, a2, PT_AREG2
 	s32i	a3, a2, PT_AREG3
 
@@ -184,7 +184,7 @@ ENTRY(fast_unaligned)
 	 *
 	 * The only possible danger of a double exception on the
 	 * following l32i instructions is kernel code in vmalloc
-	 * memory. The processor was just executing at the EPC_1
+	 * memory. The processor was just executing at the EPC1
 	 * address, and indeed, already fetched the instruction.  That
 	 * guarantees a TLB mapping, which hasn't been replaced by
 	 * this unaligned exception handler that uses only static TLB
@@ -197,7 +197,7 @@ ENTRY(fast_unaligned)
 
 	/* Extract the instruction that caused the unaligned access. */
 
-	rsr	a7, EPC_1	# load exception address
+	rsr	a7, EPC1	# load exception address
 	movi	a3, ~3
 	and	a3, a3, a7	# mask lower bits
 
@@ -284,7 +284,7 @@ ENTRY(fast_unaligned)
 	wsr	a5, LCOUNT
 #endif
 
-1:	wsr	a7, EPC_1		# skip load instruction
+1:	wsr	a7, EPC1		# skip load instruction
 	extui	a4, a4, INSN_T, 4	# extract target register
 	movi	a5, .Lload_table
 	addx8	a4, a4, a5
@@ -364,7 +364,7 @@ ENTRY(fast_unaligned)
 	wsr	a4, LCOUNT
 #endif
 
-1:	wsr	a7, EPC_1		# skip store instruction
+1:	wsr	a7, EPC1		# skip store instruction
 	movi	a4, ~3
 	and	a4, a4, a8		# align memory address
 
@@ -406,7 +406,7 @@ ENTRY(fast_unaligned)
 
 .Lexit:
 	movi	a4, 0
-	rsr	a3, EXCSAVE_1
+	rsr	a3, EXCSAVE1
 	s32i	a4, a3, EXC_TABLE_FIXUP
 
 	/* Restore working register */
