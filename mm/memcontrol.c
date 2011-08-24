@@ -664,26 +664,22 @@ static unsigned long mem_cgroup_read_events(struct mem_cgroup *memcg,
 static void mem_cgroup_charge_statistics(struct mem_cgroup *memcg,
 					 bool file, int nr_pages)
 {
-	preempt_disable();
-
 	if (file)
-		__this_cpu_add(memcg->stat->count[MEM_CGROUP_STAT_CACHE],
+		this_cpu_add(memcg->stat->count[MEM_CGROUP_STAT_CACHE],
 				nr_pages);
 	else
-		__this_cpu_add(memcg->stat->count[MEM_CGROUP_STAT_RSS],
+		this_cpu_add(memcg->stat->count[MEM_CGROUP_STAT_RSS],
 				nr_pages);
 
 	/* pagein of a big page is an event. So, ignore page size */
-	if (nr_pages > 0)
-		__this_cpu_inc(memcg->stat->events[MEM_CGROUP_EVENTS_PGPGIN]);
-	else {
-		__this_cpu_inc(memcg->stat->events[MEM_CGROUP_EVENTS_PGPGOUT]);
+	if (nr_pages > 0) {
+		this_cpu_inc(memcg->stat->events[MEM_CGROUP_EVENTS_PGPGIN]);
+	} else {
+		this_cpu_inc(memcg->stat->events[MEM_CGROUP_EVENTS_PGPGOUT]);
 		nr_pages = -nr_pages; /* for event */
 	}
 
-	__this_cpu_add(memcg->stat->events[MEM_CGROUP_EVENTS_COUNT], nr_pages);
-
-	preempt_enable();
+	this_cpu_add(memcg->stat->events[MEM_CGROUP_EVENTS_COUNT], nr_pages);
 }
 
 unsigned long
@@ -2704,10 +2700,8 @@ static int mem_cgroup_move_account(struct page *page,
 
 	if (PageCgroupFileMapped(pc)) {
 		/* Update mapped_file data for mem_cgroup */
-		preempt_disable();
-		__this_cpu_dec(from->stat->count[MEM_CGROUP_STAT_FILE_MAPPED]);
-		__this_cpu_inc(to->stat->count[MEM_CGROUP_STAT_FILE_MAPPED]);
-		preempt_enable();
+		this_cpu_dec(from->stat->count[MEM_CGROUP_STAT_FILE_MAPPED]);
+		this_cpu_inc(to->stat->count[MEM_CGROUP_STAT_FILE_MAPPED]);
 	}
 	mem_cgroup_charge_statistics(from, PageCgroupCache(pc), -nr_pages);
 	if (uncharge)
