@@ -161,11 +161,6 @@ static char *getname_flags_empty(const char __user * filename,
 	return result;
 }
 
-static char *getname_flags(const char __user * filename, int flags)
-{
-	return getname_flags_empty(filename, flags, 0);
-}
-
 char *getname(const char __user * filename)
 {
 	return getname_flags_empty(filename, 0, 0);
