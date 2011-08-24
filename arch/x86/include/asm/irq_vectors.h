@@ -177,4 +177,54 @@ static inline int invalid_vm86_irq(int irq)
 # define NR_IRQS			NR_IRQS_LEGACY
 #endif
 
+#define irq_vector_name(sirq) { sirq, #sirq }
+#define invalidate_tlb_vector_name(i) { INVALIDATE_TLB_VECTOR_END-31+i, \
+					"INVALIDATE_TLB_VECTOR" }
+
+#define irq_vector_name_table						\
+			irq_vector_name(NMI_VECTOR),			\
+			irq_vector_name(LOCAL_TIMER_VECTOR),		\
+			irq_vector_name(ERROR_APIC_VECTOR),		\
+			irq_vector_name(RESCHEDULE_VECTOR),		\
+			irq_vector_name(CALL_FUNCTION_VECTOR),		\
+			irq_vector_name(CALL_FUNCTION_SINGLE_VECTOR),	\
+			irq_vector_name(THERMAL_APIC_VECTOR),		\
+			irq_vector_name(THRESHOLD_APIC_VECTOR),		\
+			irq_vector_name(REBOOT_VECTOR),			\
+			irq_vector_name(SPURIOUS_APIC_VECTOR),		\
+			irq_vector_name(IRQ_WORK_VECTOR),		\
+			irq_vector_name(X86_PLATFORM_IPI_VECTOR),	\
+			invalidate_tlb_vector_name(0),			\
+			invalidate_tlb_vector_name(1),			\
+			invalidate_tlb_vector_name(2),			\
+			invalidate_tlb_vector_name(3),			\
+			invalidate_tlb_vector_name(4),			\
+			invalidate_tlb_vector_name(5),			\
+			invalidate_tlb_vector_name(6),			\
+			invalidate_tlb_vector_name(7),			\
+			invalidate_tlb_vector_name(8),			\
+			invalidate_tlb_vector_name(9),			\
+			invalidate_tlb_vector_name(10),			\
+			invalidate_tlb_vector_name(11),			\
+			invalidate_tlb_vector_name(12),			\
+			invalidate_tlb_vector_name(13),			\
+			invalidate_tlb_vector_name(14),			\
+			invalidate_tlb_vector_name(15),			\
+			invalidate_tlb_vector_name(16),			\
+			invalidate_tlb_vector_name(17),			\
+			invalidate_tlb_vector_name(18),			\
+			invalidate_tlb_vector_name(19),			\
+			invalidate_tlb_vector_name(20),			\
+			invalidate_tlb_vector_name(21),			\
+			invalidate_tlb_vector_name(22),			\
+			invalidate_tlb_vector_name(23),			\
+			invalidate_tlb_vector_name(24),			\
+			invalidate_tlb_vector_name(25),			\
+			invalidate_tlb_vector_name(26),			\
+			invalidate_tlb_vector_name(27),			\
+			invalidate_tlb_vector_name(28),			\
+			invalidate_tlb_vector_name(29),			\
+			invalidate_tlb_vector_name(30),			\
+			invalidate_tlb_vector_name(31)
+
 #endif /* _ASM_X86_IRQ_VECTORS_H */
