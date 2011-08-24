@@ -34,6 +34,7 @@
 #include <linux/dmi.h>
 #include <linux/smp.h>
 #include <linux/mm.h>
+#include <trace/events/irq_vectors.h>
 
 #include <asm/perf_event.h>
 #include <asm/x86_init.h>
@@ -859,7 +860,9 @@ void __irq_entry smp_apic_timer_interrupt(struct pt_regs *regs)
 	 */
 	irq_enter();
 	exit_idle();
+	trace_irq_vector_entry(LOCAL_TIMER_VECTOR);
 	local_apic_timer_interrupt();
+	trace_irq_vector_exit(LOCAL_TIMER_VECTOR);
 	irq_exit();
 
 	set_irq_regs(old_regs);
@@ -1792,6 +1795,7 @@ void smp_spurious_interrupt(struct pt_regs *regs)
 
 	irq_enter();
 	exit_idle();
+	trace_irq_vector_entry(SPURIOUS_APIC_VECTOR);
 	/*
 	 * Check if this really is a spurious interrupt and ACK it
 	 * if it is a vectored one.  Just in case...
@@ -1806,6 +1810,7 @@ void smp_spurious_interrupt(struct pt_regs *regs)
 	/* see sw-dev-man vol 3, chapter 7.4.13.5 */
 	pr_info("spurious APIC interrupt on CPU#%d, "
 		"should never happen.\n", smp_processor_id());
+	trace_irq_vector_exit(SPURIOUS_APIC_VECTOR);
 	irq_exit();
 }
 
@@ -1829,6 +1834,7 @@ void smp_error_interrupt(struct pt_regs *regs)
 
 	irq_enter();
 	exit_idle();
+	trace_irq_vector_entry(ERROR_APIC_VECTOR);
 	/* First tickle the hardware, only then report what went on. -- REW */
 	v0 = apic_read(APIC_ESR);
 	apic_write(APIC_ESR, 0);
@@ -1849,6 +1855,7 @@ void smp_error_interrupt(struct pt_regs *regs)
 
 	apic_printk(APIC_DEBUG, KERN_CONT "\n");
 
+	trace_irq_vector_exit(ERROR_APIC_VECTOR);
 	irq_exit();
 }
 
