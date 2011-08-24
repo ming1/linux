@@ -20,6 +20,7 @@
 #include <linux/init.h>
 #include <linux/io.h>
 #include <linux/string.h>
+#include <linux/module.h>
 #include <linux/leds.h>
 #include <linux/platform_device.h>
 #include <linux/gpio.h>
