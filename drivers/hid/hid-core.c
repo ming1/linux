@@ -1643,8 +1643,10 @@ static int hid_device_probe(struct device *dev)
 
 	if (!hdev->driver) {
 		id = hid_match_device(hdev, hdrv);
-		if (id == NULL)
-			return -ENODEV;
+		if (id == NULL) {
+			ret = -ENODEV;
+			goto unlock;
+		}
 
 		hdev->driver = hdrv;
 		if (hdrv->probe) {
@@ -1657,7 +1659,7 @@ static int hid_device_probe(struct device *dev)
 		if (ret)
 			hdev->driver = NULL;
 	}
-
+unlock:
 	up(&hdev->driver_lock);
 	return ret;
 }
