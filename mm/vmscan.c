@@ -1833,7 +1833,7 @@ static void get_scan_count(struct zone *zone, struct scan_control *sc,
 	bool force_scan = false;
 	unsigned long nr_force_scan[2];
 
-	/* kswapd does zone balancing and need to scan this zone */
+	/* kswapd does zone balancing and needs to scan this zone */
 	if (scanning_global_lru(sc) && current_is_kswapd())
 		force_scan = true;
 	/* memcg may have small limit and need to avoid priority drop */
