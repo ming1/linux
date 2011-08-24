@@ -360,7 +360,7 @@ static int brd_make_request(struct request_queue *q, struct bio *bio)
 out:
 	bio_endio(bio, err);
 
-	return 0;
+	return err;
 }
 
 #ifdef CONFIG_BLK_DEV_XIP
