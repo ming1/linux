@@ -164,7 +164,7 @@ config HP_ACCEL
 
 	  Support for a led indicating disk protection will be provided as
 	  hp::hddprotect. For more information on the feature, refer to
-	  Documentation/hwmon/lis3lv02d.
+	  Documentation/misc-devices/lis3lv02d.
 
 	  To compile this driver as a module, choose M here: the module will
 	  be called hp_accel.
