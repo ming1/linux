@@ -181,3 +181,9 @@ copy_user_handle_tail(char *to, char *from, unsigned len, unsigned zerorest)
 			break;
 	return len;
 }
+
+void copy_from_user_overflow(void)
+{
+	WARN(1, "Buffer overflow detected!\n");
+}
+EXPORT_SYMBOL(copy_from_user_overflow);
