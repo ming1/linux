@@ -32,8 +32,6 @@
 #include <linux/atomic.h>
 #include "crc32defs.h"
 
-#include <asm/msr.h>
-
 #if CRC_LE_BITS > 8
 # define tole(x) (__force u32) __constant_cpu_to_le32(x)
 #else
