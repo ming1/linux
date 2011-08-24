@@ -155,13 +155,13 @@ unsigned long move_page_tables(struct vm_area_struct *vma,
 			if (err > 0) {
 				need_flush = true;
 				continue;
-			} else if (!err)
+			} else if (!err) {
 				split_huge_page_pmd(vma->vm_mm, old_pmd);
+			}
 			VM_BUG_ON(pmd_trans_huge(*old_pmd));
 		}
 		if (pmd_none(*new_pmd) && __pte_alloc(new_vma->vm_mm, new_vma,
-						      new_pmd,
-						      new_addr))
+						      new_pmd, new_addr))
 			break;
 		next = (new_addr + PMD_SIZE) & PMD_MASK;
 		if (extent > next - new_addr)
