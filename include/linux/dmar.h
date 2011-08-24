@@ -219,13 +219,18 @@ struct dmar_rmrr_unit {
 #define for_each_rmrr_units(rmrr) \
 	list_for_each_entry(rmrr, &dmar_rmrr_units, list)
 
+extern struct list_head dmar_atsr_units;
 struct dmar_atsr_unit {
 	struct list_head list;		/* list of ATSR units */
 	struct acpi_dmar_header *hdr;	/* ACPI header */
 	struct pci_dev **devices;	/* target devices */
 	int devices_cnt;		/* target device count */
+	u16	segment;		/* PCI domain		*/
 	u8 include_all:1;		/* include all ports */
 };
+
+#define for_each_atsr_unit(atsr) \
+	list_for_each_entry(atsr, &dmar_atsr_units, list)
 
 extern int intel_iommu_init(void);
 #else /* !CONFIG_DMAR: */
