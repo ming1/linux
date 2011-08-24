@@ -5,6 +5,7 @@
 #include <linux/smp.h>
 #include <linux/interrupt.h>
 #include <linux/module.h>
+#include <trace/events/irq_vectors.h>
 #include <linux/cpu.h>
 
 #include <asm/tlbflush.h>
@@ -141,6 +142,7 @@ void smp_invalidate_interrupt(struct pt_regs *regs)
 	sender = ~regs->orig_ax - INVALIDATE_TLB_VECTOR_START;
 	f = &flush_state[sender];
 
+	trace_irq_vector_entry(INVALIDATE_TLB_VECTOR_START + sender);
 	if (!cpumask_test_cpu(cpu, to_cpumask(f->flush_cpumask)))
 		goto out;
 		/*
@@ -167,6 +169,7 @@ out:
 	cpumask_clear_cpu(cpu, to_cpumask(f->flush_cpumask));
 	smp_mb__after_clear_bit();
 	inc_irq_stat(irq_tlb_count);
+	trace_irq_vector_exit(INVALIDATE_TLB_VECTOR_START + sender);
 }
 
 static void flush_tlb_others_ipi(const struct cpumask *cpumask,
