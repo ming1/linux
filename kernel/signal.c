@@ -2463,6 +2463,7 @@ void set_current_blocked(const sigset_t *newset)
 	__set_task_blocked(tsk, newset);
 	spin_unlock_irq(&tsk->sighand->siglock);
 }
+EXPORT_SYMBOL(set_current_blocked);
 
 /*
  * This is also useful for kernel threads that want to temporarily
