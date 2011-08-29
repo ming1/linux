@@ -11,7 +11,7 @@
 #include <linux/skbuff.h>
 #include <linux/netdevice.h>
 #include <linux/genhd.h>
-#include <linux/moduleparam.h>
+#include <linux/module.h>
 #include <net/net_namespace.h>
 #include <asm/unaligned.h>
 #include "aoe.h"
