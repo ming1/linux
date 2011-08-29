@@ -168,6 +168,24 @@ do_open_permission(struct svc_rqst *rqstp, struct svc_fh *current_fh, struct nfs
 	return status;
 }
 
+static __be32 nfsd_check_obj_isreg(struct svc_fh *fh)
+{
+	umode_t mode = fh->fh_dentry->d_inode->i_mode;
+
+	if (S_ISREG(mode))
+		return nfs_ok;
+	if (S_ISDIR(mode))
+		return nfserr_isdir;
+	/*
+	 * Using err_symlink as our catch-all case may look odd; but
+	 * there's no other obvious error for this case in 4.0, and we
+	 * happen to know that it will cause the linux v4 client to do
+	 * the right thing on attempts to open something other than a
+	 * regular file.
+	 */
+	return nfserr_symlink;
+}
+
 static __be32
 do_open_lookup(struct svc_rqst *rqstp, struct svc_fh *current_fh, struct nfsd4_open *open)
 {
@@ -216,6 +234,9 @@ do_open_lookup(struct svc_rqst *rqstp, struct svc_fh *current_fh, struct nfsd4_o
 		status = nfsd_lookup(rqstp, current_fh,
 				     open->op_fname.data, open->op_fname.len, &resfh);
 		fh_unlock(current_fh);
+		if (status)
+			goto out;
+		status = nfsd_check_obj_isreg(&resfh);
 	}
 	if (status)
 		goto out;
@@ -467,17 +488,12 @@ static __be32
 nfsd4_commit(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 	     struct nfsd4_commit *commit)
 {
-	__be32 status;
-
 	u32 *p = (u32 *)commit->co_verf.data;
 	*p++ = nfssvc_boot.tv_sec;
 	*p++ = nfssvc_boot.tv_usec;
 
-	status = nfsd_commit(rqstp, &cstate->current_fh, commit->co_offset,
+	return nfsd_commit(rqstp, &cstate->current_fh, commit->co_offset,
 			     commit->co_count);
-	if (status == nfserr_symlink)
-		status = nfserr_inval;
-	return status;
 }
 
 static __be32
@@ -492,8 +508,6 @@ nfsd4_create(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 
 	status = fh_verify(rqstp, &cstate->current_fh, S_IFDIR,
 			   NFSD_MAY_CREATE);
-	if (status == nfserr_symlink)
-		status = nfserr_notdir;
 	if (status)
 		return status;
 
@@ -691,7 +705,7 @@ nfsd4_readdir(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 	readdir->rd_bmval[1] &= nfsd_suppattrs1(cstate->minorversion);
 	readdir->rd_bmval[2] &= nfsd_suppattrs2(cstate->minorversion);
 
-	if ((cookie > ~(u32)0) || (cookie == 1) || (cookie == 2) ||
+	if ((cookie == 1) || (cookie == 2) ||
 	    (cookie == 0 && memcmp(readdir->rd_verf.data, zeroverf.data, NFS4_VERIFIER_SIZE)))
 		return nfserr_bad_cookie;
 
@@ -719,8 +733,6 @@ nfsd4_remove(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 		return nfserr_grace;
 	status = nfsd_unlink(rqstp, &cstate->current_fh, 0,
 			     remove->rm_name, remove->rm_namelen);
-	if (status == nfserr_symlink)
-		return nfserr_notdir;
 	if (!status) {
 		fh_unlock(&cstate->current_fh);
 		set_change_info(&remove->rm_cinfo, &cstate->current_fh);
@@ -751,8 +763,6 @@ nfsd4_rename(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
                   (S_ISDIR(cstate->save_fh.fh_dentry->d_inode->i_mode) &&
                    S_ISDIR(cstate->current_fh.fh_dentry->d_inode->i_mode)))
 		status = nfserr_exist;
-	else if (status == nfserr_symlink)
-		status = nfserr_notdir;
 
 	if (!status) {
 		set_change_info(&rename->rn_sinfo, &cstate->current_fh);
@@ -892,8 +902,6 @@ nfsd4_write(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 
 	write->wr_bytes_written = cnt;
 
-	if (status == nfserr_symlink)
-		status = nfserr_inval;
 	return status;
 }
 
