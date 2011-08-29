@@ -17,6 +17,7 @@
 #include <linux/kernel.h>
 #include <linux/pci.h>
 #include <linux/gpio.h>
+#include <linux/module.h>
 
 #define PCH_GPIO_ALL_PINS	0xfff /* Mask for GPIO pins 0 to 11 */
 #define GPIO_NUM_PINS	12	/* Specifies number of GPIO PINS GPIO0-GPIO11 */
