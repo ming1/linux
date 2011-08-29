@@ -459,7 +459,6 @@ int autofs4_wait(struct autofs_sb_info *sbi, struct dentry *dentry,
 	if (wq->name.name) {
 		/* Block all but "shutdown" signals while waiting */
 		sigset_t oldset, blocked;
-		unsigned long irqflags;
 
 		oldset = current->blocked;
 		siginitsetinv(&blocked, SHUTDOWN_SIGS & ~oldset.sig[0]);
