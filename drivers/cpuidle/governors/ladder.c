@@ -17,6 +17,7 @@
 #include <linux/pm_qos_params.h>
 #include <linux/moduleparam.h>
 #include <linux/jiffies.h>
+#include <linux/module.h>
 
 #include <asm/io.h>
 #include <asm/uaccess.h>
