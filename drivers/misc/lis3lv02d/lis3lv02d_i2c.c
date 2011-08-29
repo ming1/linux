@@ -161,8 +161,13 @@ static int __devinit lis3lv02d_i2c_probe(struct i2c_client *client,
 	if (lis3_dev.reg_ctrl)
 		lis3_reg_ctrl(&lis3_dev, LIS3_REG_OFF);
 
-	if (ret == 0)
-		return 0;
+	if (ret)
+		goto fail2;
+	return 0;
+
+fail2:
+	regulator_bulk_free(ARRAY_SIZE(lis3_dev.regulators),
+				lis3_dev.regulators);
 fail:
 	if (pdata && pdata->release_resources)
 		pdata->release_resources();
@@ -177,7 +182,7 @@ static int __devexit lis3lv02d_i2c_remove(struct i2c_client *client)
 	if (pdata && pdata->release_resources)
 		pdata->release_resources();
 
-	lis3lv02d_joystick_disable();
+	lis3lv02d_joystick_disable(lis3);
 	lis3lv02d_remove_fs(&lis3_dev);
 
 	if (lis3_dev.reg_ctrl)
