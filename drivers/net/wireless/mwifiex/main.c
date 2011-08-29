@@ -627,7 +627,7 @@ static const struct net_device_ops mwifiex_netdev_ops = {
 	.ndo_set_mac_address = mwifiex_set_mac_address,
 	.ndo_tx_timeout = mwifiex_tx_timeout,
 	.ndo_get_stats = mwifiex_get_stats,
-	.ndo_set_multicast_list = mwifiex_set_multicast_list,
+	.ndo_set_rx_mode = mwifiex_set_multicast_list,
 };
 
 /*
@@ -849,6 +849,7 @@ mwifiex_add_card(void *card, struct semaphore *sem,
 {
 	int i;
 	struct mwifiex_adapter *adapter;
+	char fmt[64];
 
 	if (down_interruptible(sem))
 		goto exit_sem_err;
@@ -896,6 +897,9 @@ mwifiex_add_card(void *card, struct semaphore *sem,
 	}
 
 	up(sem);
+
+	mwifiex_drv_get_driver_version(adapter, fmt, sizeof(fmt) - 1);
+	dev_notice(adapter->dev, "driver_version = %s\n", fmt);
 
 	return 0;
 

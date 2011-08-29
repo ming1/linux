@@ -62,7 +62,7 @@ static int ieee80211_change_iface(struct wiphy *wiphy,
 
 	if (type == NL80211_IFTYPE_AP_VLAN &&
 	    params && params->use_4addr == 0)
-		rcu_assign_pointer(sdata->u.vlan.sta, NULL);
+		RCU_INIT_POINTER(sdata->u.vlan.sta, NULL);
 	else if (type == NL80211_IFTYPE_STATION &&
 		 params && params->use_4addr >= 0)
 		sdata->u.mgd.use_4addr = params->use_4addr;
@@ -542,7 +542,7 @@ static int ieee80211_config_beacon(struct ieee80211_sub_if_data *sdata,
 
 	sdata->vif.bss_conf.dtim_period = new->dtim_period;
 
-	rcu_assign_pointer(sdata->u.ap.beacon, new);
+	RCU_INIT_POINTER(sdata->u.ap.beacon, new);
 
 	synchronize_rcu();
 
@@ -594,7 +594,7 @@ static int ieee80211_del_beacon(struct wiphy *wiphy, struct net_device *dev)
 	if (!old)
 		return -ENOENT;
 
-	rcu_assign_pointer(sdata->u.ap.beacon, NULL);
+	RCU_INIT_POINTER(sdata->u.ap.beacon, NULL);
 	synchronize_rcu();
 	kfree(old);
 
@@ -857,7 +857,7 @@ static int ieee80211_change_station(struct wiphy *wiphy,
 				return -EBUSY;
 			}
 
-			rcu_assign_pointer(vlansdata->u.vlan.sta, sta);
+			RCU_INIT_POINTER(vlansdata->u.vlan.sta, sta);
 		}
 
 		sta->sdata = vlansdata;
@@ -1898,33 +1898,6 @@ static int ieee80211_mgmt_tx(struct wiphy *wiphy, struct net_device *dev,
 
 	*cookie = (unsigned long) skb;
 
-	if (is_offchan && local->ops->offchannel_tx) {
-		int ret;
-
-		IEEE80211_SKB_CB(skb)->band = chan->band;
-
-		mutex_lock(&local->mtx);
-
-		if (local->hw_offchan_tx_cookie) {
-			mutex_unlock(&local->mtx);
-			return -EBUSY;
-		}
-
-		/* TODO: bitrate control, TX processing? */
-		ret = drv_offchannel_tx(local, skb, chan, channel_type, wait);
-
-		if (ret == 0)
-			local->hw_offchan_tx_cookie = *cookie;
-		mutex_unlock(&local->mtx);
-
-		/*
-		 * Allow driver to return 1 to indicate it wants to have the
-		 * frame transmitted with a remain_on_channel + regular TX.
-		 */
-		if (ret != 1)
-			return ret;
-	}
-
 	if (is_offchan && local->ops->remain_on_channel) {
 		unsigned int duration;
 		int ret;
@@ -2010,18 +1983,6 @@ static int ieee80211_mgmt_tx_cancel_wait(struct wiphy *wiphy,
 	int ret = -ENOENT;
 
 	mutex_lock(&local->mtx);
-
-	if (local->ops->offchannel_tx_cancel_wait &&
-	    local->hw_offchan_tx_cookie == cookie) {
-		ret = drv_offchannel_tx_cancel_wait(local);
-
-		if (!ret)
-			local->hw_offchan_tx_cookie = 0;
-
-		mutex_unlock(&local->mtx);
-
-		return ret;
-	}
 
 	if (local->ops->cancel_remain_on_channel) {
 		cookie ^= 2;
