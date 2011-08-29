@@ -1,0 +1,21 @@
+Importing i2c based on 3.1-rc3
+Unchanged quilt series i2c
+Importing jdelvare-hwmon based on 3.1-rc3
+Unchanged quilt series jdelvare-hwmon
+Importing kernel-doc based on 3.1-rc3
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard fcb8ce5cfe30ca9ca5c9a79cdfe26d1993e65e0c
+HEAD is now at fcb8ce5 Linux 3.1-rc3
+$ git am ../quilt/kernel-doc/docum-cgroup-task-move.patch
+Applying: - ns cgroup has been removed.
+$ git am ../quilt/kernel-doc/docum-tpad-acpi-grammo.patch
+Applying: This commit adds minor grammatical fixes to the description of the
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/kernel-doc
+From ../quilt-tmp
+ + c60e5d0...9befeb8 master     -> quilt/kernel-doc  (forced update)
+Importing rr based on v3.1-rc2-188-g6719db6
+Unchanged quilt series rr
+Importing device-mapper based on v3.1-rc1
+Unchanged quilt series device-mapper
