@@ -336,10 +336,10 @@ void __init trap_init(void)
 			set_handler (EXC_TABLE_FAST_KERNEL/4 + cause, handler);
 	}
 
-	/* Initialize EXCSAVE_1 to hold the address of the exception table. */
+	/* Initialize EXCSAVE1 to hold the address of the exception table. */
 
 	i = (unsigned long)exc_table;
-	__asm__ __volatile__("wsr  %0, "__stringify(EXCSAVE_1)"\n" : : "a" (i));
+	__asm__ __volatile__("wsr  %0, EXCSAVE1\n" : : "a" (i));
 }
 
 /*
