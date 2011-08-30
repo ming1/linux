@@ -217,7 +217,6 @@ struct ath_buf_state {
 	u8 bf_type;
 	u8 bfs_paprd;
 	unsigned long bfs_paprd_timestamp;
-	enum ath9k_internal_frame_type bfs_ftype;
 };
 
 struct ath_buf {
@@ -273,8 +272,6 @@ struct ath_node {
 struct ath_tx_control {
 	struct ath_txq *txq;
 	struct ath_node *an;
-	int if_id;
-	enum ath9k_internal_frame_type frame_type;
 	u8 paprd;
 };
 
@@ -561,8 +558,7 @@ struct ath_ant_comb {
 #define SC_OP_BT_PRIORITY_DETECTED   BIT(12)
 #define SC_OP_BT_SCAN		     BIT(13)
 #define SC_OP_ANI_RUN		     BIT(14)
-#define SC_OP_ENABLE_APM	     BIT(15)
-#define SC_OP_PRIM_STA_VIF	     BIT(16)
+#define SC_OP_PRIM_STA_VIF	     BIT(15)
 
 /* Powersave flags */
 #define PS_WAIT_FOR_BEACON        BIT(0)
@@ -570,7 +566,6 @@ struct ath_ant_comb {
 #define PS_WAIT_FOR_PSPOLL_DATA   BIT(2)
 #define PS_WAIT_FOR_TX_ACK        BIT(3)
 #define PS_BEACON_SYNC            BIT(4)
-#define PS_TSFOOR_SYNC            BIT(5)
 
 struct ath_rate_table;
 
@@ -668,8 +663,7 @@ extern int led_blink;
 extern bool is_ath9k_unloaded;
 
 irqreturn_t ath_isr(int irq, void *dev);
-void ath9k_init_crypto(struct ath_softc *sc);
-int ath9k_init_device(u16 devid, struct ath_softc *sc, u16 subsysid,
+int ath9k_init_device(u16 devid, struct ath_softc *sc,
 		    const struct ath_bus_ops *bus_ops);
 void ath9k_deinit_device(struct ath_softc *sc);
 void ath9k_set_hw_capab(struct ath_softc *sc, struct ieee80211_hw *hw);

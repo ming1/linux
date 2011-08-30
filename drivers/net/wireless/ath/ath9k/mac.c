@@ -345,21 +345,8 @@ int ath9k_hw_setuptxqueue(struct ath_hw *ah, enum ath9k_tx_queue type,
 	}
 	memset(qi, 0, sizeof(struct ath9k_tx_queue_info));
 	qi->tqi_type = type;
-	if (qinfo == NULL) {
-		qi->tqi_qflags =
-			TXQ_FLAG_TXOKINT_ENABLE
-			| TXQ_FLAG_TXERRINT_ENABLE
-			| TXQ_FLAG_TXDESCINT_ENABLE | TXQ_FLAG_TXURNINT_ENABLE;
-		qi->tqi_aifs = INIT_AIFS;
-		qi->tqi_cwmin = ATH9K_TXQ_USEDEFAULT;
-		qi->tqi_cwmax = INIT_CWMAX;
-		qi->tqi_shretry = INIT_SH_RETRY;
-		qi->tqi_lgretry = INIT_LG_RETRY;
-		qi->tqi_physCompBuf = 0;
-	} else {
-		qi->tqi_physCompBuf = qinfo->tqi_physCompBuf;
-		(void) ath9k_hw_set_txq_props(ah, q, qinfo);
-	}
+	qi->tqi_physCompBuf = qinfo->tqi_physCompBuf;
+	(void) ath9k_hw_set_txq_props(ah, q, qinfo);
 
 	return q;
 }
@@ -564,7 +551,7 @@ bool ath9k_hw_resettxqueue(struct ath_hw *ah, u32 q)
 EXPORT_SYMBOL(ath9k_hw_resettxqueue);
 
 int ath9k_hw_rxprocdesc(struct ath_hw *ah, struct ath_desc *ds,
-			struct ath_rx_status *rs, u64 tsf)
+			struct ath_rx_status *rs)
 {
 	struct ar5416_desc ads;
 	struct ar5416_desc *adsp = AR5416DESC(ds);
@@ -800,6 +787,11 @@ void ath9k_hw_disable_interrupts(struct ath_hw *ah)
 {
 	struct ath_common *common = ath9k_hw_common(ah);
 
+	if (!(ah->imask & ATH9K_INT_GLOBAL))
+		atomic_set(&ah->intr_ref_cnt, -1);
+	else
+		atomic_dec(&ah->intr_ref_cnt);
+
 	ath_dbg(common, ATH_DBG_INTERRUPT, "disable IER\n");
 	REG_WRITE(ah, AR_IER, AR_IER_DISABLE);
 	(void) REG_READ(ah, AR_IER);
@@ -820,6 +812,13 @@ void ath9k_hw_enable_interrupts(struct ath_hw *ah)
 
 	if (!(ah->imask & ATH9K_INT_GLOBAL))
 		return;
+
+	if (!atomic_inc_and_test(&ah->intr_ref_cnt)) {
+		ath_dbg(common, ATH_DBG_INTERRUPT,
+			"Do not enable IER ref count %d\n",
+			atomic_read(&ah->intr_ref_cnt));
+		return;
+	}
 
 	if (AR_SREV_9340(ah))
 		sync_default &= ~AR_INTR_SYNC_HOST1_FATAL;
@@ -852,7 +851,6 @@ void ath9k_hw_set_interrupts(struct ath_hw *ah, enum ath9k_int ints)
 
 	ath_dbg(common, ATH_DBG_INTERRUPT, "0x%x => 0x%x\n", omask, ints);
 
-	/* TODO: global int Ref count */
 	mask = ints & ATH9K_INT_COMMON;
 	mask2 = 0;
 
@@ -928,9 +926,6 @@ void ath9k_hw_set_interrupts(struct ath_hw *ah, enum ath9k_int ints)
 		else
 			REG_CLR_BIT(ah, AR_IMR_S5, AR_IMR_S5_TIM_TIMER);
 	}
-
-	if (ints & ATH9K_INT_GLOBAL)
-		ath9k_hw_enable_interrupts(ah);
 
 	return;
 }
