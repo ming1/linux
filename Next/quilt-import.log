@@ -1,0 +1,73 @@
+Importing i2c based on 3.1-rc4
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard c6a389f123b9f68d605bb7e0f9b32ec1e3e14132
+HEAD is now at c6a389f Linux 3.1-rc4
+$ git am ../quilt/i2c/i2c-i2c_elektor-should-depend-on-has_ioport.patch
+Applying: i2c: I2C_ELEKTOR should depend on HAS_IOPORT
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/i2c
+From ../quilt-tmp
+ + 0650a12...a3c55c2 master     -> quilt/i2c  (forced update)
+Importing jdelvare-hwmon based on 3.1-rc4
+$ cd ../quilt-tmp
+$ git reset --hard c6a389f123b9f68d605bb7e0f9b32ec1e3e14132
+HEAD is now at c6a389f Linux 3.1-rc4
+$ git am ../quilt/jdelvare-hwmon/hwmon-avoid-building-drivers-for-powerpc-that-read-write-isa-addresses.patch
+Applying: hwmon: Avoid building drivers for powerpc that read/write ISA addresses
+$ git am ../quilt/jdelvare-hwmon/hwmon-ibmaem-01-fix-error-paths.patch
+Applying: hwmon: (ibmaem) Fix error paths
+$ git am ../quilt/jdelvare-hwmon/hwmon-ibmaem-02-independent-instance-initialization.patch
+Applying: hwmon: (ibmaem) Make instance initializations independent
+$ git am ../quilt/jdelvare-hwmon/hwmon-ibmaem-03-avoid-repeated-kzalloc.patch
+Applying: hwmon: (ibmaem) Avoid repeated memory allocations
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm90-01-fix-warnings.patch
+Applying: hwmon: (lm90) Fix warnings
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm90-02-short-var-names.patch
+Applying: hwmon: (lm90) Make code more readable
+$ git am ../quilt/jdelvare-hwmon/hwmon-smsc47b397-fix-checkpatch-errors.patch
+Applying: hwmon: (smsc47b397) Fix checkpatch errors
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/jdelvare-hwmon
+From ../quilt-tmp
+ + a47980c...ef0ab42 master     -> quilt/jdelvare-hwmon  (forced update)
+Importing kernel-doc based on 3.1-rc3
+$ cd ../quilt-tmp
+$ git reset --hard fcb8ce5cfe30ca9ca5c9a79cdfe26d1993e65e0c
+HEAD is now at fcb8ce5 Linux 3.1-rc3
+$ git am ../quilt/kernel-doc/docum-cgroup-task-move.patch
+Applying: - ns cgroup has been removed.
+$ git am ../quilt/kernel-doc/docum-tpad-acpi-grammo.patch
+Applying: This commit adds minor grammatical fixes to the description of the
+$ git am ../quilt/kernel-doc/docum-inotify-pathnames.patch
+Applying: Fixes the path to find the source files of the inotify subsystem.
+$ git am ../quilt/kernel-doc/docum-codestyle-ifbraces.patch
+Applying: After commit 38829dc highlight that if _only_one_ branch of a
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/kernel-doc
+From ../quilt-tmp
+ + 9befeb8...1006b1a master     -> quilt/kernel-doc  (forced update)
+Importing rr based on v3.1-rc2-188-g6719db6
+$ cd ../quilt-tmp
+$ git reset --hard 6719db6a23d4b7f1e5052eedae394135e3aef9c1
+HEAD is now at 6719db6 Btrfs: fix 64 bit divide problem
+$ git am ../quilt/rr/lguest-weaken-paravirt-restriction.patch
+Applying: lguest: Allow running under paravirt-enabled KVM.
+$ git am ../quilt/rr/lguest-remove-kvm-cpuid-signature.patch
+Applying: lguest: don't allow KVM-detection cpuid.
+$ git am ../quilt/rr/virtio:console_use_config_val_for_retrieving_config.patch
+Applying: virtio-console: Use virtio_config_val() for retrieving config
+$ git am ../quilt/rr/virtio:config_add_config_val_len.patch
+Applying: virtio_config: Add virtio_config_val_len()
+$ git am ../quilt/rr/virtio:net_use_config_val_for_retrieving_config.patch
+Applying: virtio-net: Use virtio_config_val() for retrieving config
+$ git am ../quilt/rr/virtio:h_correct_comment_for_struct_driver.patch
+Applying: virtio.h: correct comment for struct virtio_driver
+$ git am ../quilt/rr/virtio:fix_size_computation_according_to_the_definition_of_struct_vring_used_in_vring_size.patch
+Applying: virtio: modify vring_init and vring_size to take account of the layout containing *_event_idx
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/rr
+From ../quilt-tmp
+ + bbdb3ec...ed98031 master     -> quilt/rr  (forced update)
+Importing device-mapper based on v3.1-rc1
+Unchanged quilt series device-mapper
