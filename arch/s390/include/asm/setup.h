@@ -30,11 +30,15 @@
 #define IPL_DEVICE        (*(unsigned long *)  (0x10400))
 #define INITRD_START      (*(unsigned long *)  (0x10408))
 #define INITRD_SIZE       (*(unsigned long *)  (0x10410))
+#define OLDMEM_BASE	  (*(unsigned long *)  (0x10418))
+#define OLDMEM_SIZE	  (*(unsigned long *)  (0x10420))
 #endif /* __s390x__ */
 #define COMMAND_LINE      ((char *)            (0x10480))
 
 #define CHUNK_READ_WRITE 0
 #define CHUNK_READ_ONLY  1
+#define CHUNK_OLDMEM	 4
+#define CHUNK_CRASHK	 5
 
 struct mem_chunk {
 	unsigned long addr;
@@ -48,6 +52,8 @@ extern int memory_end_set;
 extern unsigned long memory_end;
 
 void detect_memory_layout(struct mem_chunk chunk[]);
+void create_mem_hole(struct mem_chunk memory_chunk[], unsigned long addr,
+		     unsigned long size, int type);
 
 #define PRIMARY_SPACE_MODE	0
 #define ACCESS_REGISTER_MODE	1
@@ -106,6 +112,7 @@ extern unsigned int user_mode;
 #endif /* __s390x__ */
 
 #define ZFCPDUMP_HSA_SIZE	(32UL<<20)
+#define ZFCPDUMP_HSA_SIZE_MAX	(64UL<<20)
 
 /*
  * Console mode. Override with conmode=
@@ -138,6 +145,8 @@ extern char kernel_nss_name[];
 #define IPL_DEVICE        0x10400
 #define INITRD_START      0x10408
 #define INITRD_SIZE       0x10410
+#define OLDMEM_BASE	  0x10418
+#define OLDMEM_SIZE	  0x10420
 #endif /* __s390x__ */
 #define COMMAND_LINE      0x10480
 
