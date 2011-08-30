@@ -35,6 +35,7 @@ static void connect(struct backend_info *);
 static int connect_ring(struct backend_info *);
 static void backend_changed(struct xenbus_watch *, const char **,
 			    unsigned int);
+static void xen_vbd_sync(struct xen_vbd *vbd);
 
 struct xenbus_device *xen_blkbk_xenbus(struct backend_info *be)
 {
@@ -232,6 +233,7 @@ static void xen_blkif_disconnect(struct xen_blkif *blkif)
 		free_vm_area(blkif->blk_ring_area);
 		blkif->blk_rings.common.sring = NULL;
 	}
+	xen_vbd_sync(&blkif->vbd);
 }
 
 void xen_blkif_free(struct xen_blkif *blkif)
@@ -330,6 +332,12 @@ static void xen_vbd_free(struct xen_vbd *vbd)
 	if (vbd->bdev)
 		blkdev_put(vbd->bdev, vbd->readonly ? FMODE_READ : FMODE_WRITE);
 	vbd->bdev = NULL;
+}
+
+static void xen_vbd_sync(struct xen_vbd *vbd)
+{
+	if (vbd->bdev)
+		fsync_bdev(vbd->bdev);
 }
 
 static int xen_vbd_create(struct xen_blkif *blkif, blkif_vdev_t handle,
@@ -590,7 +598,7 @@ static void frontend_changed(struct xenbus_device *dev,
 
 		/*
 		 * Enforce precondition before potential leak point.
-		 * blkif_disconnect() is idempotent.
+		 * xen_blkif_disconnect() is idempotent.
 		 */
 		xen_blkif_disconnect(be->blkif);
 
@@ -601,17 +609,17 @@ static void frontend_changed(struct xenbus_device *dev,
 		break;
 
 	case XenbusStateClosing:
-		xen_blkif_disconnect(be->blkif);
 		xenbus_switch_state(dev, XenbusStateClosing);
 		break;
 
 	case XenbusStateClosed:
+		xen_blkif_disconnect(be->blkif);
 		xenbus_switch_state(dev, XenbusStateClosed);
 		if (xenbus_dev_is_online(dev))
 			break;
 		/* fall through if not online */
 	case XenbusStateUnknown:
-		/* implies blkif_disconnect() via blkback_remove() */
+		/* implies xen_blkif_disconnect() via xen_blkbk_remove() */
 		device_unregister(&dev->dev);
 		break;
 
