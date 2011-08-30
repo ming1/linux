@@ -26,6 +26,7 @@
 #include <linux/mmc/sdio_func.h>
 #include <linux/semaphore.h>
 #include <linux/firmware.h>
+#include <linux/module.h>
 #include <asm/unaligned.h>
 #include <defs.h>
 #include <brcmu_wifi.h>
