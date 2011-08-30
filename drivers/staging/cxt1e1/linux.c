@@ -163,6 +163,7 @@ mkret (int bsd)
 
 /***************************************************************************/
 #include <linux/workqueue.h>
+#include <linux/module.h>
 
 /***
  * One workqueue (wq) per port (since musycc allows simultaneous group
