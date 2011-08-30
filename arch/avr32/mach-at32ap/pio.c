@@ -327,6 +327,7 @@ gpio_irq_setup(struct pio_device *pio, int irq, int gpio_irq)
 #ifdef CONFIG_DEBUG_FS
 
 #include <linux/seq_file.h>
+#include <linux/export.h>
 
 /*
  * This shows more info than the generic gpio dump code:
