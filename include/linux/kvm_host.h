@@ -55,16 +55,16 @@ struct kvm;
 struct kvm_vcpu;
 extern struct kmem_cache *kvm_vcpu_cache;
 
-/*
- * It would be nice to use something smarter than a linear search, TBD...
- * Thankfully we dont expect many devices to register (famous last words :),
- * so until then it will suffice.  At least its abstracted so we can change
- * in one place.
- */
+struct kvm_io_range {
+	gpa_t addr;
+	int len;
+	struct kvm_io_device *dev;
+};
+
 struct kvm_io_bus {
 	int                   dev_count;
-#define NR_IOBUS_DEVS 200
-	struct kvm_io_device *devs[NR_IOBUS_DEVS];
+#define NR_IOBUS_DEVS 300
+	struct kvm_io_range range[NR_IOBUS_DEVS];
 };
 
 enum kvm_bus {
@@ -77,8 +77,8 @@ int kvm_io_bus_write(struct kvm *kvm, enum kvm_bus bus_idx, gpa_t addr,
 		     int len, const void *val);
 int kvm_io_bus_read(struct kvm *kvm, enum kvm_bus bus_idx, gpa_t addr, int len,
 		    void *val);
-int kvm_io_bus_register_dev(struct kvm *kvm, enum kvm_bus bus_idx,
-			    struct kvm_io_device *dev);
+int kvm_io_bus_register_dev(struct kvm *kvm, enum kvm_bus bus_idx, gpa_t addr,
+			    int len, struct kvm_io_device *dev);
 int kvm_io_bus_unregister_dev(struct kvm *kvm, enum kvm_bus bus_idx,
 			      struct kvm_io_device *dev);
 
@@ -256,8 +256,9 @@ struct kvm {
 	struct kvm_arch arch;
 	atomic_t users_count;
 #ifdef KVM_COALESCED_MMIO_PAGE_OFFSET
-	struct kvm_coalesced_mmio_dev *coalesced_mmio_dev;
 	struct kvm_coalesced_mmio_ring *coalesced_mmio_ring;
+	spinlock_t ring_lock;
+	struct list_head coalesced_zones;
 #endif
 
 	struct mutex irq_lock;
