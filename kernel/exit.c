@@ -679,8 +679,6 @@ static void exit_mm(struct task_struct * tsk)
 	tsk->mm = NULL;
 	up_read(&mm->mmap_sem);
 	enter_lazy_tlb(mm, current);
-	/* We don't want this task to be frozen prematurely */
-	clear_freeze_flag(tsk);
 	if (tsk->signal->oom_score_adj == OOM_SCORE_ADJ_MIN)
 		atomic_dec(&mm->oom_disable_count);
 	task_unlock(tsk);
@@ -914,6 +912,12 @@ NORET_TYPE void do_exit(long code)
 	set_fs(USER_DS);
 
 	ptrace_event(PTRACE_EVENT_EXIT, code);
+
+	/*
+	 * With ptrace notification done, there's no point in freezing from
+	 * here on.  Disallow freezing.
+	 */
+	current->flags |= PF_NOFREEZE;
 
 	validate_creds_for_do_exit(tsk);
 
