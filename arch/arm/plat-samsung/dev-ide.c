@@ -14,6 +14,8 @@
 #include <linux/interrupt.h>
 #include <linux/platform_device.h>
 
+#include <asm/sizes.h>
+
 #include <mach/map.h>
 #include <plat/ata.h>
 #include <plat/devs.h>
