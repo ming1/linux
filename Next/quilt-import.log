@@ -1,0 +1,51 @@
+Importing i2c based on 3.1-rc4
+Unchanged quilt series i2c
+Importing jdelvare-hwmon based on 3.1-rc4
+Unchanged quilt series jdelvare-hwmon
+Importing kernel-doc based on 3.1-rc3
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard fcb8ce5cfe30ca9ca5c9a79cdfe26d1993e65e0c
+HEAD is now at fcb8ce5 Linux 3.1-rc3
+$ git am ../quilt/kernel-doc/docum-cgroup-task-move.patch
+Applying: - ns cgroup has been removed.
+$ git am ../quilt/kernel-doc/docum-tpad-acpi-grammo.patch
+Applying: This commit adds minor grammatical fixes to the description of the
+$ git am ../quilt/kernel-doc/docum-inotify-pathnames.patch
+Applying: Fixes the path to find the source files of the inotify subsystem.
+$ git am ../quilt/kernel-doc/docum-codestyle-ifbraces.patch
+Applying: After commit 38829dc highlight that if _only_one_ branch of a
+$ git am ../quilt/kernel-doc/docum-fs-hfs-orphan.patch
+Applying: Removed the reference of Roman Zippel, last maintainer, of orphaned
+$ git am ../quilt/kernel-doc/docum-net-dmfe-orphan.patch
+Applying: The dmfe module is an orphaned driver, and this patch removes the maintainer
+$ git am ../quilt/kernel-doc/docum-serial-computone-orphan.patch
+Applying: Removed the email for support and fixes for orphaned ip2 driver.
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/kernel-doc
+From ../quilt-tmp
+ + 8f9fe7f...db1cd00 master     -> quilt/kernel-doc  (forced update)
+Importing rr based on v3.1-rc2-188-g6719db6
+$ cd ../quilt-tmp
+$ git reset --hard 6719db6a23d4b7f1e5052eedae394135e3aef9c1
+HEAD is now at 6719db6 Btrfs: fix 64 bit divide problem
+$ git am ../quilt/rr/lguest-weaken-paravirt-restriction.patch
+Applying: lguest: Allow running under paravirt-enabled KVM.
+$ git am ../quilt/rr/lguest-remove-kvm-cpuid-signature.patch
+Applying: lguest: don't allow KVM-detection cpuid.
+$ git am ../quilt/rr/virtio:console_use_config_val_for_retrieving_config.patch
+Applying: virtio-console: Use virtio_config_val() for retrieving config
+$ git am ../quilt/rr/virtio:config_add_config_val_len.patch
+Applying: virtio_config: Add virtio_config_val_len()
+$ git am ../quilt/rr/virtio:net_use_config_val_for_retrieving_config.patch
+Applying: virtio-net: Use virtio_config_val() for retrieving config
+$ git am ../quilt/rr/virtio:h_correct_comment_for_struct_driver.patch
+Applying: virtio.h: correct comment for struct virtio_driver
+$ git am ../quilt/rr/virtio:fix_size_computation_according_to_the_definition_of_struct_vring_used_in_vring_size.patch
+Applying: virtio: modify vring_init and vring_size to take account of the layout containing *_event_idx
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/rr
+From ../quilt-tmp
+ + 217391e...c11e239 master     -> quilt/rr  (forced update)
+Importing device-mapper based on v3.1-rc1
+Unchanged quilt series device-mapper
