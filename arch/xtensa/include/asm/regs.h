@@ -25,54 +25,61 @@
 #ifndef _XTENSA_REGS_H
 #define _XTENSA_REGS_H
 
-/*  Special registers.  */
-
-#define LBEG		0
-#define LEND		1
-#define LCOUNT		2
-#define SAR		3
-#define BR		4
-#define SCOMPARE1	12
-#define ACCHI		16
-#define ACCLO		17
-#define MR		32
-#define WINDOWBASE	72
-#define WINDOWSTART	73
-#define PTEVADDR	83
-#define RASID		90
-#define ITLBCFG		91
-#define DTLBCFG		92
-#define IBREAKENABLE	96
-#define DDR		104
-#define IBREAKA		128
-#define DBREAKA		144
-#define DBREAKC		160
-#define EPC		176
-#define EPC_1		177
-#define DEPC		192
-#define EPS		192
-#define EPS_1		193
-#define EXCSAVE		208
-#define EXCSAVE_1	209
-#define INTERRUPT	226
-#define INTENABLE	228
-#define PS		230
-#define THREADPTR	231
-#define EXCCAUSE	232
-#define DEBUGCAUSE	233
-#define CCOUNT		234
-#define PRID		235
-#define ICOUNT		236
-#define ICOUNTLEVEL	237
-#define EXCVADDR	238
-#define CCOMPARE	240
-#define MISC		244
+/* Special register numbers
+ *
+ * LBEG		0
+ * LEND		1
+ * LCOUNT	2
+ * SAR		3
+ * BR		4
+ * SCOMPARE1	12
+ * ACCHI	16
+ * ACCLO	17
+ * MR		32
+ * WINDOWBASE	72
+ * WINDOWSTART	73
+ * PTEVADDR	83
+ * RASID	90
+ * ITLBCFG	91
+ * DTLBCFG	92
+ * IBREAKENABLE	96
+ * DDR		104
+ * IBREAKA	128
+ * DBREAKA	144
+ * DBREAKC	160
+ * EPC		176
+ * EPC1		177
+ * DEPC		192
+ * EPS		192
+ * EPS1		193
+ * EXCSAVE	208
+ * EXCSAVE1	209
+ * INTERRUPT	226
+ * INTENABLE	228
+ * PS		230
+ * THREADPTR	231
+ * EXCCAUSE	232
+ * DEBUGCAUSE	233
+ * CCOUNT	234
+ * PRID		235
+ * ICOUNT	236
+ * ICOUNTLEVEL	237
+ * EXCVADDR	238
+ * CCOMPARE	240
+ * MISC		244
+ */
 
 /*  Special names for read-only and write-only interrupt registers.  */
 
 #define INTREAD		226
 #define INTSET		226
 #define INTCLEAR	227
+
+#define XTREG_EPS(x)		(192+(x))
+#define XTREG_EPC(x)		(176+(x))
+#define XTREG_EXCSAVE(x)	(208+(x))
+#define XTREG_CCOMPARE(x)	(240+(x))
+#define XTREG_DBREAKC(x)	(160+(x))
 
 /*  EXCCAUSE register fields  */
 
