@@ -22,15 +22,6 @@
  */
 #define TIMEOUT	(20 * HZ)
 
-static inline int freezable(struct task_struct * p)
-{
-	if ((p == current) ||
-	    (p->flags & PF_NOFREEZE) ||
-	    (p->exit_state != 0))
-		return 0;
-	return 1;
-}
-
 static int try_to_freeze_tasks(bool sig_only)
 {
 	struct task_struct *g, *p;
@@ -53,10 +44,7 @@ static int try_to_freeze_tasks(bool sig_only)
 		todo = 0;
 		read_lock(&tasklist_lock);
 		do_each_thread(g, p) {
-			if (frozen(p) || !freezable(p))
-				continue;
-
-			if (!freeze_task(p, sig_only))
+			if (p == current || !freeze_task(p, sig_only))
 				continue;
 
 			/*
@@ -103,11 +91,6 @@ static int try_to_freeze_tasks(bool sig_only)
 	elapsed_csecs = elapsed_csecs64;
 
 	if (todo) {
-		/* This does not unfreeze processes that are already frozen
-		 * (we have slightly ugly calling convention in that respect,
-		 * and caller must call thaw_processes() if something fails),
-		 * but it cleans up leftover PF_FREEZE requests.
-		 */
 		printk("\n");
 		printk(KERN_ERR "Freezing of tasks %s after %d.%02d seconds "
 		       "(%d tasks refusing to freeze, wq_busy=%d):\n",
@@ -115,15 +98,11 @@ static int try_to_freeze_tasks(bool sig_only)
 		       elapsed_csecs / 100, elapsed_csecs % 100,
 		       todo - wq_busy, wq_busy);
 
-		thaw_workqueues();
-
 		read_lock(&tasklist_lock);
 		do_each_thread(g, p) {
-			task_lock(p);
-			if (!wakeup && freezing(p) && !freezer_should_skip(p))
+			if (!wakeup && !freezer_should_skip(p) &&
+			    p != current && freezing(p) && !frozen(p))
 				sched_show_task(p);
-			cancel_freezing(p);
-			task_unlock(p);
 		} while_each_thread(g, p);
 		read_unlock(&tasklist_lock);
 	} else {
@@ -141,13 +120,18 @@ int freeze_processes(void)
 {
 	int error;
 
+	if (!pm_freezing)
+		atomic_inc(&system_freezing_cnt);
+
 	printk("Freezing user space processes ... ");
+	pm_freezing = true;
 	error = try_to_freeze_tasks(true);
 	if (error)
 		goto Exit;
 	printk("done.\n");
 
 	printk("Freezing remaining freezable tasks ... ");
+	pm_nosig_freezing = true;
 	error = try_to_freeze_tasks(false);
 	if (error)
 		goto Exit;
@@ -155,40 +139,35 @@ int freeze_processes(void)
 
 	oom_killer_disable();
  Exit:
+	if (error)
+		thaw_processes();
 	BUG_ON(in_atomic());
 	printk("\n");
 
 	return error;
 }
 
-static void thaw_tasks(bool nosig_only)
+void thaw_processes(void)
 {
 	struct task_struct *g, *p;
 
-	read_lock(&tasklist_lock);
-	do_each_thread(g, p) {
-		if (!freezable(p))
-			continue;
+	if (pm_freezing)
+		atomic_dec(&system_freezing_cnt);
+	pm_freezing = false;
+	pm_nosig_freezing = false;
 
-		if (nosig_only && should_send_signal(p))
-			continue;
-
-		if (cgroup_freezing_or_frozen(p))
-			continue;
-
-		thaw_process(p);
-	} while_each_thread(g, p);
-	read_unlock(&tasklist_lock);
-}
-
-void thaw_processes(void)
-{
 	oom_killer_enable();
 
 	printk("Restarting tasks ... ");
+
 	thaw_workqueues();
-	thaw_tasks(true);
-	thaw_tasks(false);
+
+	read_lock(&tasklist_lock);
+	do_each_thread(g, p) {
+		__thaw_task(p);
+	} while_each_thread(g, p);
+	read_unlock(&tasklist_lock);
+
 	schedule();
 	printk("done.\n");
 }
