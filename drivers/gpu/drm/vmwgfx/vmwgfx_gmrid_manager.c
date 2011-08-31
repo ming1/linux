@@ -37,7 +37,6 @@
 #include <linux/kernel.h>
 
 struct vmwgfx_gmrid_man {
-	spinlock_t lock;
 	struct ida gmr_ida;
 	uint32_t max_gmr_ids;
 };
@@ -49,34 +48,20 @@ static int vmw_gmrid_man_get_node(struct ttm_mem_type_manager *man,
 {
 	struct vmwgfx_gmrid_man *gman =
 		(struct vmwgfx_gmrid_man *)man->priv;
-	int ret;
 	int id;
 
 	mem->mm_node = NULL;
 
-	do {
-		if (unlikely(ida_pre_get(&gman->gmr_ida, GFP_KERNEL) == 0))
-			return -ENOMEM;
-
-		spin_lock(&gman->lock);
-		ret = ida_get_new(&gman->gmr_ida, &id);
-
-		if (unlikely(ret == 0 && id >= gman->max_gmr_ids)) {
-			ida_remove(&gman->gmr_ida, id);
-			spin_unlock(&gman->lock);
+	id = ida_simple_get(&gman->gmr_ida, 0, gman->max_gmr_ids, GFP_KERNEL);
+	if (id < 0) {
+		if (id == -ENOSPC)
 			return 0;
-		}
-
-		spin_unlock(&gman->lock);
-
-	} while (ret == -EAGAIN);
-
-	if (likely(ret == 0)) {
-		mem->mm_node = gman;
-		mem->start = id;
+		return id;
 	}
+	mem->mm_node = gman;
+	mem->start = id;
 
-	return ret;
+	return 0;
 }
 
 static void vmw_gmrid_man_put_node(struct ttm_mem_type_manager *man,
@@ -86,9 +71,7 @@ static void vmw_gmrid_man_put_node(struct ttm_mem_type_manager *man,
 		(struct vmwgfx_gmrid_man *)man->priv;
 
 	if (mem->mm_node) {
-		spin_lock(&gman->lock);
-		ida_remove(&gman->gmr_ida, mem->start);
-		spin_unlock(&gman->lock);
+		ida_simple_remove(&gman->gmr_ida, mem->start);
 		mem->mm_node = NULL;
 	}
 }
@@ -102,7 +85,6 @@ static int vmw_gmrid_man_init(struct ttm_mem_type_manager *man,
 	if (unlikely(gman == NULL))
 		return -ENOMEM;
 
-	spin_lock_init(&gman->lock);
 	ida_init(&gman->gmr_ida);
 	gman->max_gmr_ids = p_size;
 	man->priv = (void *) gman;

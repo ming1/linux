@@ -18,6 +18,9 @@
 #include <asm/mce.h>
 #include <asm/hw_irq.h>
 
+#define CREATE_TRACE_POINTS
+#include <trace/events/irq_vectors.h>
+
 atomic_t irq_err_count;
 
 /* Function pointer for generic interrupt vector handling */
@@ -212,12 +215,13 @@ void smp_x86_platform_ipi(struct pt_regs *regs)
 	exit_idle();
 
 	irq_enter();
-
+	trace_irq_vector_entry(X86_PLATFORM_IPI_VECTOR);
 	inc_irq_stat(x86_platform_ipis);
 
 	if (x86_platform_ipi_callback)
 		x86_platform_ipi_callback();
 
+	trace_irq_vector_exit(X86_PLATFORM_IPI_VECTOR);
 	irq_exit();
 
 	set_irq_regs(old_regs);
