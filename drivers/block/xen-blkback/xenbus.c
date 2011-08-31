@@ -35,6 +35,7 @@ static void connect(struct backend_info *);
 static int connect_ring(struct backend_info *);
 static void backend_changed(struct xenbus_watch *, const char **,
 			    unsigned int);
+static void xen_vbd_sync(struct xen_vbd *vbd);
 
 struct xenbus_device *xen_blkbk_xenbus(struct backend_info *be)
 {
@@ -232,6 +233,7 @@ static void xen_blkif_disconnect(struct xen_blkif *blkif)
 		free_vm_area(blkif->blk_ring_area);
 		blkif->blk_rings.common.sring = NULL;
 	}
+	xen_vbd_sync(&blkif->vbd);
 }
 
 void xen_blkif_free(struct xen_blkif *blkif)
@@ -330,6 +332,12 @@ static void xen_vbd_free(struct xen_vbd *vbd)
 	if (vbd->bdev)
 		blkdev_put(vbd->bdev, vbd->readonly ? FMODE_READ : FMODE_WRITE);
 	vbd->bdev = NULL;
+}
+
+static void xen_vbd_sync(struct xen_vbd *vbd)
+{
+	if (vbd->bdev)
+		fsync_bdev(vbd->bdev);
 }
 
 static int xen_vbd_create(struct xen_blkif *blkif, blkif_vdev_t handle,
