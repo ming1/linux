@@ -23,7 +23,7 @@
 #include <linux/stringify.h>
 /*
  * module.h includes tracepoints, and because ftrace.h
- * pulls in module.h:
+ * used to pull in module.h via this path:
  *  trace/ftrace.h -> linux/ftrace_event.h -> linux/perf_event.h ->
  *  linux/ftrace.h -> linux/module.h
  * we must include module.h here before we play with any of

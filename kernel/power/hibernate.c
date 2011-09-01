@@ -14,6 +14,7 @@
 #include <linux/reboot.h>
 #include <linux/string.h>
 #include <linux/device.h>
+#include <linux/export.h>
 #include <linux/kmod.h>
 #include <linux/delay.h>
 #include <linux/fs.h>
