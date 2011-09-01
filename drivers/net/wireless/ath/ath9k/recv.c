@@ -601,7 +601,6 @@ static void ath_rx_ps_beacon(struct ath_softc *sc, struct sk_buff *skb)
 		ath_dbg(common, ATH_DBG_PS,
 			"Reconfigure Beacon timers based on timestamp from the AP\n");
 		ath_set_beacon(sc);
-		sc->ps_flags &= ~PS_TSFOOR_SYNC;
 	}
 
 	if (ath_beacon_dtim_pending_cab(skb)) {
@@ -762,7 +761,7 @@ static struct ath_buf *ath_get_next_rx_buf(struct ath_softc *sc,
 	 * on.  All this is necessary because of our use of
 	 * a self-linked list to avoid rx overruns.
 	 */
-	ret = ath9k_hw_rxprocdesc(ah, ds, rs, 0);
+	ret = ath9k_hw_rxprocdesc(ah, ds, rs);
 	if (ret == -EINPROGRESS) {
 		struct ath_rx_status trs;
 		struct ath_buf *tbf;
@@ -788,7 +787,7 @@ static struct ath_buf *ath_get_next_rx_buf(struct ath_softc *sc,
 		 */
 
 		tds = tbf->bf_desc;
-		ret = ath9k_hw_rxprocdesc(ah, tds, &trs, 0);
+		ret = ath9k_hw_rxprocdesc(ah, tds, &trs);
 		if (ret == -EINPROGRESS)
 			return NULL;
 	}
@@ -825,7 +824,8 @@ static bool ath9k_rx_accept(struct ath_common *common,
 	is_mc = !!is_multicast_ether_addr(hdr->addr1);
 	is_valid_tkip = rx_stats->rs_keyix != ATH9K_RXKEYIX_INVALID &&
 		test_bit(rx_stats->rs_keyix, common->tkip_keymap);
-	strip_mic = is_valid_tkip && !(rx_stats->rs_status &
+	strip_mic = is_valid_tkip && ieee80211_is_data(fc) &&
+		!(rx_stats->rs_status &
 		(ATH9K_RXERR_DECRYPT | ATH9K_RXERR_CRC | ATH9K_RXERR_MIC));
 
 	if (!rx_stats->rs_datalen)
@@ -995,6 +995,8 @@ static int ath9k_rx_skb_preprocess(struct ath_common *common,
 				   struct ieee80211_rx_status *rx_status,
 				   bool *decrypt_error)
 {
+	struct ath_hw *ah = common->ah;
+
 	memset(rx_status, 0, sizeof(struct ieee80211_rx_status));
 
 	/*
@@ -1015,7 +1017,7 @@ static int ath9k_rx_skb_preprocess(struct ath_common *common,
 
 	rx_status->band = hw->conf.channel->band;
 	rx_status->freq = hw->conf.channel->center_freq;
-	rx_status->signal = ATH_DEFAULT_NOISE_FLOOR + rx_stats->rs_rssi;
+	rx_status->signal = ah->noise + rx_stats->rs_rssi;
 	rx_status->antenna = rx_stats->rs_antenna;
 	rx_status->flag |= RX_FLAG_MACTIME_MPDU;
 
@@ -1783,11 +1785,6 @@ int ath_rx_tasklet(struct ath_softc *sc, int flush, bool hp)
 	struct ieee80211_rx_status *rxs;
 	struct ath_hw *ah = sc->sc_ah;
 	struct ath_common *common = ath9k_hw_common(ah);
-	/*
-	 * The hw can technically differ from common->hw when using ath9k
-	 * virtual wiphy so to account for that we iterate over the active
-	 * wiphys and find the appropriate wiphy and therefore hw.
-	 */
 	struct ieee80211_hw *hw = sc->hw;
 	struct ieee80211_hdr *hdr;
 	int retval;
@@ -1981,6 +1978,11 @@ requeue:
 	} while (1);
 
 	spin_unlock_bh(&sc->rx.rxbuflock);
+
+	if (!(ah->imask & ATH9K_INT_RXEOL)) {
+		ah->imask |= (ATH9K_INT_RXEOL | ATH9K_INT_RXORN);
+		ath9k_hw_set_interrupts(ah, ah->imask);
+	}
 
 	return 0;
 }
