@@ -1748,6 +1748,21 @@ static u64 guest_read_tsc(void)
 }
 
 /*
+ * Like guest_read_tsc, but always returns L1's notion of the timestamp
+ * counter, even if a nested guest (L2) is currently running.
+ */
+u64 vmx_read_l1_tsc(struct kvm_vcpu *vcpu)
+{
+	u64 host_tsc, tsc_offset;
+
+	rdtscll(host_tsc);
+	tsc_offset = is_guest_mode(vcpu) ?
+		to_vmx(vcpu)->nested.vmcs01_tsc_offset :
+		vmcs_read64(TSC_OFFSET);
+	return host_tsc + tsc_offset;
+}
+
+/*
  * Empty call-back. Needs to be implemented when VMX enables the SET_TSC_KHZ
  * ioctl. In this case the call-back should update internal vmx state to make
  * the changes effective.
@@ -1762,15 +1777,23 @@ static void vmx_set_tsc_khz(struct kvm_vcpu *vcpu, u32 user_tsc_khz)
  */
 static void vmx_write_tsc_offset(struct kvm_vcpu *vcpu, u64 offset)
 {
-	vmcs_write64(TSC_OFFSET, offset);
-	if (is_guest_mode(vcpu))
+	if (is_guest_mode(vcpu)) {
 		/*
-		 * We're here if L1 chose not to trap the TSC MSR. Since
-		 * prepare_vmcs12() does not copy tsc_offset, we need to also
-		 * set the vmcs12 field here.
+		 * We're here if L1 chose not to trap WRMSR to TSC. According
+		 * to the spec, this should set L1's TSC; The offset that L1
+		 * set for L2 remains unchanged, and still needs to be added
+		 * to the newly set TSC to get L2's TSC.
 		 */
-		get_vmcs12(vcpu)->tsc_offset = offset -
-			to_vmx(vcpu)->nested.vmcs01_tsc_offset;
+		struct vmcs12 *vmcs12;
+		to_vmx(vcpu)->nested.vmcs01_tsc_offset = offset;
+		/* recalculate vmcs02.TSC_OFFSET: */
+		vmcs12 = get_vmcs12(vcpu);
+		vmcs_write64(TSC_OFFSET, offset +
+			(nested_cpu_has(vmcs12, CPU_BASED_USE_TSC_OFFSETING) ?
+			 vmcs12->tsc_offset : 0));
+	} else {
+		vmcs_write64(TSC_OFFSET, offset);
+	}
 }
 
 static void vmx_adjust_tsc_offset(struct kvm_vcpu *vcpu, s64 adjustment)
@@ -4115,8 +4138,7 @@ static int handle_exception(struct kvm_vcpu *vcpu)
 		error_code = vmcs_read32(VM_EXIT_INTR_ERROR_CODE);
 	if (is_page_fault(intr_info)) {
 		/* EPT won't cause page fault directly */
-		if (enable_ept)
-			BUG();
+		BUG_ON(enable_ept);
 		cr2 = vmcs_readl(EXIT_QUALIFICATION);
 		trace_kvm_page_fault(cr2, error_code);
 
@@ -6241,49 +6263,6 @@ static u64 vmx_get_mt_mask(struct kvm_vcpu *vcpu, gfn_t gfn, bool is_mmio)
 	return ret;
 }
 
-#define _ER(x) { EXIT_REASON_##x, #x }
-
-static const struct trace_print_flags vmx_exit_reasons_str[] = {
-	_ER(EXCEPTION_NMI),
-	_ER(EXTERNAL_INTERRUPT),
-	_ER(TRIPLE_FAULT),
-	_ER(PENDING_INTERRUPT),
-	_ER(NMI_WINDOW),
-	_ER(TASK_SWITCH),
-	_ER(CPUID),
-	_ER(HLT),
-	_ER(INVLPG),
-	_ER(RDPMC),
-	_ER(RDTSC),
-	_ER(VMCALL),
-	_ER(VMCLEAR),
-	_ER(VMLAUNCH),
-	_ER(VMPTRLD),
-	_ER(VMPTRST),
-	_ER(VMREAD),
-	_ER(VMRESUME),
-	_ER(VMWRITE),
-	_ER(VMOFF),
-	_ER(VMON),
-	_ER(CR_ACCESS),
-	_ER(DR_ACCESS),
-	_ER(IO_INSTRUCTION),
-	_ER(MSR_READ),
-	_ER(MSR_WRITE),
-	_ER(MWAIT_INSTRUCTION),
-	_ER(MONITOR_INSTRUCTION),
-	_ER(PAUSE_INSTRUCTION),
-	_ER(MCE_DURING_VMENTRY),
-	_ER(TPR_BELOW_THRESHOLD),
-	_ER(APIC_ACCESS),
-	_ER(EPT_VIOLATION),
-	_ER(EPT_MISCONFIG),
-	_ER(WBINVD),
-	{ -1, NULL }
-};
-
-#undef _ER
-
 static int vmx_get_lpage_level(void)
 {
 	if (enable_ept && !cpu_has_vmx_ept_1g_page())
@@ -6514,8 +6493,11 @@ static void prepare_vmcs02(struct kvm_vcpu *vcpu, struct vmcs12 *vmcs12)
 
 	set_cr4_guest_host_mask(vmx);
 
-	vmcs_write64(TSC_OFFSET,
-		vmx->nested.vmcs01_tsc_offset + vmcs12->tsc_offset);
+	if (vmcs12->cpu_based_vm_exec_control & CPU_BASED_USE_TSC_OFFSETING)
+		vmcs_write64(TSC_OFFSET,
+			vmx->nested.vmcs01_tsc_offset + vmcs12->tsc_offset);
+	else
+		vmcs_write64(TSC_OFFSET, vmx->nested.vmcs01_tsc_offset);
 
 	if (enable_vpid) {
 		/*
@@ -6922,7 +6904,7 @@ static void nested_vmx_vmexit(struct kvm_vcpu *vcpu)
 
 	load_vmcs12_host_state(vcpu, vmcs12);
 
-	/* Update TSC_OFFSET if vmx_adjust_tsc_offset() was used while L2 ran */
+	/* Update TSC_OFFSET if TSC was changed while L2 ran */
 	vmcs_write64(TSC_OFFSET, vmx->nested.vmcs01_tsc_offset);
 
 	/* This is needed for same reason as it was needed in prepare_vmcs02 */
@@ -7039,7 +7021,6 @@ static struct kvm_x86_ops vmx_x86_ops = {
 	.get_mt_mask = vmx_get_mt_mask,
 
 	.get_exit_info = vmx_get_exit_info,
-	.exit_reasons_str = vmx_exit_reasons_str,
 
 	.get_lpage_level = vmx_get_lpage_level,
 
@@ -7055,6 +7036,7 @@ static struct kvm_x86_ops vmx_x86_ops = {
 	.write_tsc_offset = vmx_write_tsc_offset,
 	.adjust_tsc_offset = vmx_adjust_tsc_offset,
 	.compute_tsc_offset = vmx_compute_tsc_offset,
+	.read_l1_tsc = vmx_read_l1_tsc,
 
 	.set_tdp_cr3 = vmx_set_cr3,
 
