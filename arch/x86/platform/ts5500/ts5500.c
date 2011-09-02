@@ -24,6 +24,8 @@
 #include <linux/io.h>
 #include <linux/slab.h>
 #include <asm/processor.h>
+#include <linux/gpio.h>
+#include "ts5500_gpio.h"
 
 /* Hardware info for pre-detection */
 #define AMD_ELAN_FAMILY			4
@@ -168,7 +170,26 @@ error:
 
 #define TS5500_IS_JP_SET(sbc, jmp) (!!(sbc->jumpers & TS5500_JP##jmp))
 
+
+#ifdef CONFIG_TS5500_GPIO
+/* Callback for releasing resources */
+static void ts5500_gpio_device_release(struct device *dev)
+{
+	/* noop */
+}
+
+static struct platform_device ts5500_gpio_device = {
+	.name = "ts5500_gpio",
+	.id = -1,
+	.dev = {
+		.release = ts5500_gpio_device_release,
+	}
+};
+#endif
 static struct platform_device *ts5500_devices[] __initdata = {
+#ifdef CONFIG_TS5500_GPIO
+	&ts5500_gpio_device,
+#endif
 };
 
 static ssize_t ts5500_show_id(struct device *dev,
