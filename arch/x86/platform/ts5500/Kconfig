@@ -13,3 +13,10 @@ config TS5500_GPIO
 	default y
 	help
 	  This enables support for the DIO headers for GPIO usage.
+
+config TS5500_LED
+	bool "TS-5500 LED Support"
+	depends on TS5500 && LEDS_CLASS
+	default y
+	help
+	  This option enables support for the on-chip LED.

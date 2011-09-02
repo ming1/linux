@@ -24,6 +24,7 @@
 #include <linux/io.h>
 #include <linux/slab.h>
 #include <asm/processor.h>
+#include <linux/leds.h>
 #include <linux/gpio.h>
 #include "ts5500_gpio.h"
 
@@ -170,6 +171,43 @@ error:
 
 #define TS5500_IS_JP_SET(sbc, jmp) (!!(sbc->jumpers & TS5500_JP##jmp))
 
+#ifdef CONFIG_TS5500_LED
+static struct led_info ts5500_led_info = {
+	.name = "ts5500_led",
+	.default_trigger = "ts5500_led",
+	.flags = TS5500_LED_MASK
+};
+
+static struct led_platform_data ts5500_led_platform_data = {
+	.num_leds = 1,
+	.leds = &ts5500_led_info
+};
+
+static struct resource ts5500_led_resources[] = {
+	{
+		.name = "ts5500_led",
+		.start = TS5500_LED_JMPRS_REG,
+		.end = TS5500_LED_JMPRS_REG,
+		.flags = IORESOURCE_IO
+	}
+};
+
+static void ts5500_led_release(struct device *dev)
+{
+	/* noop */
+}
+
+static struct platform_device ts5500_led_device = {
+	.name = "ts5500_led",
+	.resource = ts5500_led_resources,
+	.num_resources = ARRAY_SIZE(ts5500_led_resources),
+	.id = -1,
+	.dev = {
+		.platform_data = &ts5500_led_platform_data,
+		.release = ts5500_led_release
+	}
+};
+#endif
 
 #ifdef CONFIG_TS5500_GPIO
 /* Callback for releasing resources */
@@ -187,6 +225,9 @@ static struct platform_device ts5500_gpio_device = {
 };
 #endif
 static struct platform_device *ts5500_devices[] __initdata = {
+#ifdef CONFIG_TS5500_LED
+	&ts5500_led_device,
+#endif
 #ifdef CONFIG_TS5500_GPIO
 	&ts5500_gpio_device,
 #endif
