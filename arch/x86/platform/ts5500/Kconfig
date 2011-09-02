@@ -20,3 +20,9 @@ config TS5500_LED
 	default y
 	help
 	  This option enables support for the on-chip LED.
+
+config TS5500_ADC
+	bool "TS-5500 ADC"
+	depends on TS5500
+	help
+      Support for the A/D converter on Technologic Systems TS-5500 SBCs.

@@ -27,6 +27,7 @@
 #include <linux/leds.h>
 #include <linux/gpio.h>
 #include "ts5500_gpio.h"
+#include "ts5500_adc.h"
 
 /* Hardware info for pre-detection */
 #define AMD_ELAN_FAMILY			4
@@ -224,6 +225,71 @@ static struct platform_device ts5500_gpio_device = {
 	}
 };
 #endif
+
+#ifdef CONFIG_TS5500_ADC
+static void ts5500_adc_release(struct device *dev)
+{
+	/* noop */
+}
+
+static struct resource ts5500_adc_resources[] = {
+	{
+		.name  = "ts5500_adc" "-data",
+		.start = TS5500_ADC_INIT_LSB_REG,
+		.end   = TS5500_ADC_MSB_REG,
+		.flags = IORESOURCE_IO,
+	},
+	{
+		.name  = "ts5500_adc" "-ctrl",
+		.start = TS5500_ADC_CTRL_REG,
+		.end   = TS5500_ADC_CTRL_REG,
+		.flags = IORESOURCE_IO,
+	}
+};
+
+static struct ts5500_adc_platform_data ts5500_adc_platform_data = {
+	.name = TS5500_ADC_NAME,
+	.ioaddr = {
+		.data = TS5500_ADC_INIT_LSB_REG,
+		.ctrl = TS5500_ADC_CTRL_REG,
+	},
+	.read = {
+		.delay     = TS5500_ADC_READ_DELAY,
+		.busy_mask = TS5500_ADC_READ_BUSY_MASK,
+	},
+	.ctrl = {
+		{ TS5500_ADC_UNIPOLAR | TS5500_ADC_RANGE_5V,
+		  TS5500_ADC_UNIPOLAR | TS5500_ADC_RANGE_10V },
+		{ TS5500_ADC_BIPOLAR  | TS5500_ADC_RANGE_5V,
+		  TS5500_ADC_BIPOLAR  | TS5500_ADC_RANGE_10V },
+	},
+	.ranges = {
+		.min = {
+			{  0,     0 },
+			{ -5000, -10000 },
+		},
+		.max = {
+			{  5000,  10000 },
+			{  5000,  10000 },
+		},
+	},
+	.scale = {
+		{ 12207, 24414 },
+		{ 24414, 48828 },
+	},
+};
+
+static struct platform_device ts5500_adc_device = {
+	.name = "ts5500_adc",
+	.id = -1,
+	.resource = ts5500_adc_resources,
+	.num_resources = ARRAY_SIZE(ts5500_adc_resources),
+	.dev = {
+		.platform_data = &ts5500_adc_platform_data,
+		.release = ts5500_adc_release,
+	},
+};
+#endif
 static struct platform_device *ts5500_devices[] __initdata = {
 #ifdef CONFIG_TS5500_LED
 	&ts5500_led_device,
@@ -370,6 +436,14 @@ static int __init ts5500_init(void)
 	ret = platform_add_devices(ts5500_devices, ARRAY_SIZE(ts5500_devices));
 	if (ret)
 		goto release_pdev;
+
+#ifdef CONFIG_TS5500_ADC
+	if (ts5500->adc) {
+		ret = platform_device_register(&ts5500_adc_device);
+		if (ret)
+			goto release_pdev;
+	}
+#endif
 
 	ret = sysfs_create_group(&pdev->dev.kobj,
 				 &ts5500_attr_group);
