@@ -2064,6 +2064,8 @@ config OLPC_XO15_SCI
 	   - AC adapter status updates
 	   - Battery status updates
 
+source "arch/x86/platform/ts5500/Kconfig"
+
 endif # X86_32
 
 config AMD_NB

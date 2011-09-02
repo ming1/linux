@@ -1,0 +1,46 @@
+What:		/sys/devices/platform/ts5500/id
+Date:		August 2011
+KernelVersion:	3.0
+Contact:	"Savoir-faire Linux, Inc." <kernel-ts@savoirfairelinux.com>
+Description:
+		Product ID of the TS board. TS-5500 ID is 0x60.
+
+What:		/sys/devices/platform/ts5500/sram
+Date:		August 2011
+KernelVersion:	3.0
+Contact:	"Savoir-faire Linux, Inc." <kernel-ts@savoirfairelinux.com>
+Description:
+		Say if the SRAM feature is present. If it is enabled, it will
+		display "1", otherwise "0".
+
+What:		/sys/devices/platform/ts5500/ereset
+Date:		August 2011
+KernelVersion:	3.0
+Contact:	"Savoir-faire Linux, Inc." <kernel-ts@savoirfairelinux.com>
+Description:
+		Say if an external reset is present. If it is present, it will
+		display "1", otherwise "0".
+
+What:		/sys/devices/platform/ts5500/jp{1,2,3,4,5,6}
+Date:		August 2011
+KernelVersion:	3.0
+Contact:	"Savoir-faire Linux, Inc." <kernel-ts@savoirfairelinux.com>
+Description:
+		Show the state of a plugged jumper. If it is present, it will
+		display "1", otherwise "0".
+
+What:		/sys/devices/platform/ts5500/adc
+Date:		August 2011
+KernelVersion:	3.0
+Contact:	"Savoir-faire Linux, Inc." <kernel-ts@savoirfairelinux.com>
+Description:
+		Say if the Analogic to Digital Converter is present. If it is
+		enabled, it will display "1", otherwise "0".
+
+What:		/sys/devices/platform/ts5500/rs485
+Date:		August 2011
+KernelVersion:	3.0
+Contact:	"Savoir-faire Linux, Inc." <kernel-ts@savoirfairelinux.com>
+Description:
+		Say if the RS485 feature is present. If it is enabled, it
+		will display "1", otherwise "0".
