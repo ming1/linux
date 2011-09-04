@@ -715,12 +715,14 @@ EXPORT_SYMBOL(arch_free_page);
 /* NB: reg/unreg are called while guarded with the tracepoints_mutex */
 extern long hcall_tracepoint_refcount;
 
+#if 0 /* work around buggy use of RCU from dyntick-idle mode */
 /* 
  * Since the tracing code might execute hcalls we need to guard against
  * recursion. One example of this are spinlocks calling H_YIELD on
  * shared processor partitions.
  */
 static DEFINE_PER_CPU(unsigned int, hcall_trace_depth);
+#endif /* #if 0 work around buggy use of RCU from dyntick-idle mode */
 
 void hcall_tracepoint_regfunc(void)
 {
@@ -734,6 +736,7 @@ void hcall_tracepoint_unregfunc(void)
 
 void __trace_hcall_entry(unsigned long opcode, unsigned long *args)
 {
+#if 0 /* work around buggy use of RCU from dyntick-idle mode */
 	unsigned long flags;
 	unsigned int *depth;
 
@@ -750,11 +753,13 @@ void __trace_hcall_entry(unsigned long opcode, unsigned long *args)
 
 out:
 	local_irq_restore(flags);
+#endif /* #if 0 work around buggy use of RCU from dyntick-idle mode */
 }
 
 void __trace_hcall_exit(long opcode, unsigned long retval,
 			unsigned long *retbuf)
 {
+#if 0 /* work around buggy use of RCU from dyntick-idle mode */
 	unsigned long flags;
 	unsigned int *depth;
 
@@ -771,6 +776,7 @@ void __trace_hcall_exit(long opcode, unsigned long retval,
 
 out:
 	local_irq_restore(flags);
+#endif /* #if 0 work around buggy use of RCU from dyntick-idle mode */
 }
 #endif
 
