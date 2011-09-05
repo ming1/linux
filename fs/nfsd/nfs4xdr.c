@@ -1631,7 +1631,7 @@ static void write_cinfo(__be32 **p, struct nfsd4_change_info *c)
  */
 
 #define ENCODE_SEQID_OP_TAIL(stateowner) do {			\
-	if (seqid_mutating_err(nfserr) && stateowner) { 	\
+	if (seqid_mutating_err(ntohl(nfserr)) && stateowner) { 	\
 		stateowner->so_seqid++;				\
 		stateowner->so_replay.rp_status = nfserr;   	\
 		stateowner->so_replay.rp_buflen = 		\
@@ -1760,12 +1760,19 @@ static __be32 nfsd4_encode_fs_locations(struct svc_rqst *rqstp,
 	return 0;
 }
 
-static u32 nfs4_ftypes[16] = {
-        NF4BAD,  NF4FIFO, NF4CHR, NF4BAD,
-        NF4DIR,  NF4BAD,  NF4BLK, NF4BAD,
-        NF4REG,  NF4BAD,  NF4LNK, NF4BAD,
-        NF4SOCK, NF4BAD,  NF4LNK, NF4BAD,
-};
+static u32 nfs4_file_type(umode_t mode)
+{
+	switch (mode & S_IFMT) {
+	case S_IFIFO:	return NF4FIFO;
+	case S_IFCHR:	return NF4CHR;
+	case S_IFDIR:	return NF4DIR;
+	case S_IFBLK:	return NF4BLK;
+	case S_IFLNK:	return NF4LNK;
+	case S_IFREG:	return NF4REG;
+	case S_IFSOCK:	return NF4SOCK;
+	default:	return NF4BAD;
+	};
+}
 
 static __be32
 nfsd4_encode_name(struct svc_rqst *rqstp, int whotype, uid_t id, int group,
@@ -1954,7 +1961,7 @@ nfsd4_encode_fattr(struct svc_fh *fhp, struct svc_export *exp,
 	if (bmval0 & FATTR4_WORD0_TYPE) {
 		if ((buflen -= 4) < 0)
 			goto out_resource;
-		dummy = nfs4_ftypes[(stat.mode & S_IFMT) >> 12];
+		dummy = nfs4_file_type(stat.mode);
 		if (dummy == NF4BAD)
 			goto out_serverfault;
 		WRITE32(dummy);
@@ -2759,8 +2766,6 @@ nfsd4_encode_read(struct nfsd4_compoundres *resp, __be32 nfserr,
 			read->rd_offset, resp->rqstp->rq_vec, read->rd_vlen,
 			&maxcount);
 
-	if (nfserr == nfserr_symlink)
-		nfserr = nfserr_inval;
 	if (nfserr)
 		return nfserr;
 	eof = (read->rd_offset + maxcount >=
@@ -2886,8 +2891,6 @@ nfsd4_encode_readdir(struct nfsd4_compoundres *resp, __be32 nfserr, struct nfsd4
 	    readdir->common.err == nfserr_toosmall &&
 	    readdir->buffer == page) 
 		nfserr = nfserr_toosmall;
-	if (nfserr == nfserr_symlink)
-		nfserr = nfserr_notdir;
 	if (nfserr)
 		goto err_no_verf;
 
@@ -3218,9 +3221,9 @@ nfsd4_encode_sequence(struct nfsd4_compoundres *resp, int nfserr,
 	WRITEMEM(seq->sessionid.data, NFS4_MAX_SESSIONID_LEN);
 	WRITE32(seq->seqid);
 	WRITE32(seq->slotid);
-	WRITE32(seq->maxslots);
-	/* For now: target_maxslots = maxslots */
-	WRITE32(seq->maxslots);
+	/* Note slotid's are numbered from zero: */
+	WRITE32(seq->maxslots - 1); /* sr_highest_slotid */
+	WRITE32(seq->maxslots - 1); /* sr_target_highest_slotid */
 	WRITE32(seq->status_flags);
 
 	ADJUST_ARGS();
