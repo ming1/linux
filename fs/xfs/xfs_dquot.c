@@ -1242,9 +1242,11 @@ xfs_qm_dqflush(
 	}
 
 	if (flags & SYNC_WAIT)
-		error = xfs_bwrite(mp, bp);
+		error = xfs_bwrite(bp);
 	else
-		xfs_bdwrite(mp, bp);
+		xfs_buf_delwri_queue(bp);
+
+	xfs_buf_relse(bp);
 
 	trace_xfs_dqflush_done(dqp);
 
