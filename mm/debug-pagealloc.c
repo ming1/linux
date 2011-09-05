@@ -1,7 +1,9 @@
 #include <linux/kernel.h>
+#include <linux/string.h>
 #include <linux/mm.h>
 #include <linux/page-debug-flags.h>
 #include <linux/poison.h>
+#include <linux/ratelimit.h>
 
 static inline void set_page_poison(struct page *page)
 {
@@ -59,14 +61,12 @@ static bool single_bit_flip(unsigned char a, unsigned char b)
 
 static void check_poison_mem(unsigned char *mem, size_t bytes)
 {
+	static DEFINE_RATELIMIT_STATE(ratelimit, 5 * HZ, 10);
 	unsigned char *start;
 	unsigned char *end;
 
-	for (start = mem; start < mem + bytes; start++) {
-		if (*start != PAGE_POISON)
-			break;
-	}
-	if (start == mem + bytes)
+	start = memchr_inv(mem, PAGE_POISON, bytes);
+	if (!start)
 		return;
 
 	for (end = mem + bytes - 1; end > start; end--) {
@@ -74,7 +74,7 @@ static void check_poison_mem(unsigned char *mem, size_t bytes)
 			break;
 	}
 
-	if (!printk_ratelimit())
+	if (!__ratelimit(&ratelimit))
 		return;
 	else if (start == end && single_bit_flip(*start, PAGE_POISON))
 		printk(KERN_ERR "pagealloc: single bit error\n");
