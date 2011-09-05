@@ -29,6 +29,7 @@
 
 #include <linux/blkdev.h>
 #include <linux/pagemap.h>
+#include <linux/export.h>
 #include <asm/unaligned.h>
 
 #include <linux/usb/composite.h>
