@@ -33,17 +33,19 @@
 #define MTD_CHAR_MAJOR 90
 #define MTD_BLOCK_MAJOR 31
 
-#define MTD_ERASE_PENDING      	0x01
+#define MTD_ERASE_PENDING	0x01
 #define MTD_ERASING		0x02
 #define MTD_ERASE_SUSPEND	0x04
-#define MTD_ERASE_DONE          0x08
-#define MTD_ERASE_FAILED        0x10
+#define MTD_ERASE_DONE		0x08
+#define MTD_ERASE_FAILED	0x10
 
 #define MTD_FAIL_ADDR_UNKNOWN -1LL
 
-/* If the erase fails, fail_addr might indicate exactly which block failed.  If
-   fail_addr = MTD_FAIL_ADDR_UNKNOWN, the failure was not at the device level or was not
-   specific to any particular block. */
+/*
+ * If the erase fails, fail_addr might indicate exactly which block failed. If
+ * fail_addr = MTD_FAIL_ADDR_UNKNOWN, the failure was not at the device level
+ * or was not specific to any particular block.
+ */
 struct erase_info {
 	struct mtd_info *mtd;
 	uint64_t addr;
@@ -60,7 +62,7 @@ struct erase_info {
 };
 
 struct mtd_erase_region_info {
-	uint64_t offset;			/* At which this region starts, from the beginning of the MTD */
+	uint64_t offset;		/* At which this region starts, from the beginning of the MTD */
 	uint32_t erasesize;		/* For this region */
 	uint32_t numblocks;		/* Number of blocks of erasesize in this region */
 	unsigned long *lockmap;		/* If keeping bitmap of locks */
@@ -172,7 +174,7 @@ struct mtd_info {
 	const char *name;
 	int index;
 
-	/* ecc layout structure pointer - read only ! */
+	/* ECC layout structure pointer - read only! */
 	struct nand_ecclayout *ecclayout;
 
 	/* Data for variable erase regions. If numeraseregions is zero,
@@ -323,10 +325,15 @@ static inline uint32_t mtd_mod_by_ws(uint64_t sz, struct mtd_info *mtd)
 	/* Kernel-side ioctl definitions */
 
 struct mtd_partition;
+struct mtd_part_parser_data;
 
-extern int mtd_device_register(struct mtd_info *master,
-			       const struct mtd_partition *parts,
-			       int nr_parts);
+extern int mtd_device_parse_register(struct mtd_info *mtd,
+			      const char **part_probe_types,
+			      struct mtd_part_parser_data *parser_data,
+			      const struct mtd_partition *defparts,
+			      int defnr_parts);
+#define mtd_device_register(master, parts, nr_parts)	\
+	mtd_device_parse_register(master, NULL, NULL, parts, nr_parts)
 extern int mtd_device_unregister(struct mtd_info *master);
 extern struct mtd_info *get_mtd_device(struct mtd_info *mtd, int num);
 extern int __get_mtd_device(struct mtd_info *mtd);
@@ -354,28 +361,5 @@ int default_mtd_readv(struct mtd_info *mtd, struct kvec *vecs,
 void *mtd_kmalloc_up_to(const struct mtd_info *mtd, size_t *size);
 
 void mtd_erase_callback(struct erase_info *instr);
-
-/*
- * Debugging macro and defines
- */
-#define MTD_DEBUG_LEVEL0	(0)	/* Quiet   */
-#define MTD_DEBUG_LEVEL1	(1)	/* Audible */
-#define MTD_DEBUG_LEVEL2	(2)	/* Loud    */
-#define MTD_DEBUG_LEVEL3	(3)	/* Noisy   */
-
-#ifdef CONFIG_MTD_DEBUG
-#define DEBUG(n, args...)				\
-	do {						\
-		if (n <= CONFIG_MTD_DEBUG_VERBOSE)	\
-			printk(KERN_INFO args);		\
-	} while(0)
-#else /* CONFIG_MTD_DEBUG */
-#define DEBUG(n, args...)				\
-	do {						\
-		if (0)					\
-			printk(KERN_INFO args);		\
-	} while(0)
-
-#endif /* CONFIG_MTD_DEBUG */
 
 #endif /* __MTD_MTD_H__ */
