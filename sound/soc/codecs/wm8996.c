@@ -982,6 +982,8 @@ SND_SOC_DAPM_SUPPLY_S("Charge Pump", 2, WM8996_CHARGE_PUMP_1, 15, 0, cp_event,
 		      SND_SOC_DAPM_POST_PMU),
 
 SND_SOC_DAPM_SUPPLY("LDO2", WM8996_POWER_MANAGEMENT_2, 1, 0, NULL, 0),
+SND_SOC_DAPM_SUPPLY("MICB1 Audio", WM8996_MICBIAS_1, 4, 1, NULL, 0),
+SND_SOC_DAPM_SUPPLY("MICB2 Audio", WM8996_MICBIAS_2, 4, 1, NULL, 0),
 SND_SOC_DAPM_MICBIAS("MICB2", WM8996_POWER_MANAGEMENT_1, 9, 0),
 SND_SOC_DAPM_MICBIAS("MICB1", WM8996_POWER_MANAGEMENT_1, 8, 0),
 
@@ -1137,7 +1139,9 @@ static const struct snd_soc_dapm_route wm8996_dapm_routes[] = {
 	{ "Charge Pump", NULL, "SYSCLK" },
 
 	{ "MICB1", NULL, "LDO2" },
+	{ "MICB1", NULL, "MICB1 Audio" },
 	{ "MICB2", NULL, "LDO2" },
+	{ "MICB2", NULL, "MICB2 Audio" },
 
 	{ "IN1L PGA", NULL, "IN2LN" },
 	{ "IN1L PGA", NULL, "IN2LP" },
@@ -2412,6 +2416,9 @@ static irqreturn_t wm8996_irq(int irq, void *data)
 	}
 	irq_val &= ~snd_soc_read(codec, WM8996_INTERRUPT_STATUS_2_MASK);
 
+	if (!irq_val)
+		return IRQ_NONE;
+
 	snd_soc_write(codec, WM8996_INTERRUPT_STATUS_2, irq_val);
 
 	if (irq_val & (WM8996_DCS_DONE_01_EINT | WM8996_DCS_DONE_23_EINT)) {
@@ -2430,10 +2437,7 @@ static irqreturn_t wm8996_irq(int irq, void *data)
 	if (irq_val & WM8996_MICD_EINT)
 		wm8996_micd(codec);
 
-	if (irq_val)
-		return IRQ_HANDLED;
-	else
-		return IRQ_NONE;
+	return IRQ_HANDLED;
 }
 
 static irqreturn_t wm8996_edge_irq(int irq, void *data)
