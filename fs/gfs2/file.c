@@ -59,15 +59,24 @@ static loff_t gfs2_llseek(struct file *file, loff_t offset, int origin)
 	struct gfs2_holder i_gh;
 	loff_t error;
 
-	if (origin == 2) {
+	switch (origin) {
+	case SEEK_END: /* These reference inode->i_size */
+	case SEEK_DATA:
+	case SEEK_HOLE:
 		error = gfs2_glock_nq_init(ip->i_gl, LM_ST_SHARED, LM_FLAG_ANY,
 					   &i_gh);
 		if (!error) {
 			error = generic_file_llseek_unlocked(file, offset, origin);
 			gfs2_glock_dq_uninit(&i_gh);
 		}
-	} else
+		break;
+	case SEEK_CUR:
+	case SEEK_SET:
 		error = generic_file_llseek_unlocked(file, offset, origin);
+		break;
+	default:
+		error = -EINVAL;
+	}
 
 	return error;
 }
@@ -551,8 +560,16 @@ static int gfs2_close(struct inode *inode, struct file *file)
  * @end: the end position in the file to sync
  * @datasync: set if we can ignore timestamp changes
  *
- * The VFS will flush data for us. We only need to worry
- * about metadata here.
+ * We split the data flushing here so that we don't wait for the data
+ * until after we've also sent the metadata to disk. Note that for
+ * data=ordered, we will write & wait for the data at the log flush
+ * stage anyway, so this is unlikely to make much of a difference
+ * except in the data=writeback case.
+ *
+ * If the fdatawrite fails due to any reason except -EIO, we will
+ * continue the remainder of the fsync, although we'll still report
+ * the error at the end. This is to match filemap_write_and_wait_range()
+ * behaviour.
  *
  * Returns: errno
  */
@@ -560,30 +577,38 @@ static int gfs2_close(struct inode *inode, struct file *file)
 static int gfs2_fsync(struct file *file, loff_t start, loff_t end,
 		      int datasync)
 {
-	struct inode *inode = file->f_mapping->host;
+	struct address_space *mapping = file->f_mapping;
+	struct inode *inode = mapping->host;
 	int sync_state = inode->i_state & (I_DIRTY_SYNC|I_DIRTY_DATASYNC);
 	struct gfs2_inode *ip = GFS2_I(inode);
-	int ret;
+	int ret, ret1 = 0;
 
-	ret = filemap_write_and_wait_range(inode->i_mapping, start, end);
-	if (ret)
-		return ret;
-	mutex_lock(&inode->i_mutex);
+	if (mapping->nrpages) {
+		ret1 = filemap_fdatawrite_range(mapping, start, end);
+		if (ret1 == -EIO)
+			return ret1;
+	}
 
 	if (datasync)
 		sync_state &= ~I_DIRTY_SYNC;
 
 	if (sync_state) {
+		mutex_lock(&inode->i_mutex);
 		ret = sync_inode_metadata(inode, 1);
 		if (ret) {
 			mutex_unlock(&inode->i_mutex);
 			return ret;
 		}
+		if (gfs2_is_jdata(ip))
+			filemap_write_and_wait(mapping);
 		gfs2_ail_flush(ip->i_gl);
+		mutex_unlock(&inode->i_mutex);
 	}
 
-	mutex_unlock(&inode->i_mutex);
-	return 0;
+	if (mapping->nrpages)
+		ret = filemap_fdatawait_range(mapping, start, end);
+
+	return ret ? ret : ret1;
 }
 
 /**
@@ -786,7 +811,6 @@ static int fallocate_chunk(struct inode *inode, loff_t offset, loff_t len,
 		from = 0;
 	}
 
-	gfs2_dinode_out(ip, dibh->b_data);
 	mark_inode_dirty(inode);
 
 	brelse(dibh);
