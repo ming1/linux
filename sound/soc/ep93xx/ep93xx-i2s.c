@@ -2,7 +2,7 @@
  * linux/sound/soc/ep93xx-i2s.c
  * EP93xx I2S driver
  *
- * Copyright (C) 2010 Ryan Mallon <ryan@bluewatersys.com>
+ * Copyright (C) 2010 Ryan Mallon
  *
  * Based on the original driver by:
  *   Copyright (C) 2007 Chase Douglas <chasedouglas@gmail>
@@ -385,14 +385,14 @@ static int ep93xx_i2s_probe(struct platform_device *pdev)
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!res) {
 		err = -ENODEV;
-		goto fail;
+		goto fail_free_info;
 	}
 
 	info->mem = request_mem_region(res->start, resource_size(res),
 				       pdev->name);
 	if (!info->mem) {
 		err = -EBUSY;
-		goto fail;
+		goto fail_free_info;
 	}
 
 	info->regs = ioremap(info->mem->start, resource_size(info->mem));
@@ -435,6 +435,7 @@ fail_unmap_mem:
 	iounmap(info->regs);
 fail_release_mem:
 	release_mem_region(info->mem->start, resource_size(info->mem));
+fail_free_info:
 	kfree(info);
 fail:
 	return err;
@@ -477,6 +478,6 @@ module_init(ep93xx_i2s_init);
 module_exit(ep93xx_i2s_exit);
 
 MODULE_ALIAS("platform:ep93xx-i2s");
-MODULE_AUTHOR("Ryan Mallon <ryan@bluewatersys.com>");
+MODULE_AUTHOR("Ryan Mallon");
 MODULE_DESCRIPTION("EP93XX I2S driver");
 MODULE_LICENSE("GPL");

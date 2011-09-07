@@ -23,6 +23,7 @@
 #include <linux/log2.h>
 #include <linux/regulator/consumer.h>
 #include <linux/pm_runtime.h>
+#include <linux/suspend.h>
 
 #include <linux/mmc/card.h>
 #include <linux/mmc/host.h>
@@ -1501,7 +1502,7 @@ static int mmc_do_erase(struct mmc_card *card, unsigned int from,
 			goto out;
 		}
 	} while (!(cmd.resp[0] & R1_READY_FOR_DATA) ||
-		 R1_CURRENT_STATE(cmd.resp[0]) == 7);
+		 R1_CURRENT_STATE(cmd.resp[0]) == R1_STATE_PRG);
 out:
 	return err;
 }
