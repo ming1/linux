@@ -15,6 +15,7 @@
 #include <linux/kernel.h>
 #include <linux/string.h>
 #include <linux/platform_device.h>
+#include <linux/export.h>
 
 #include <mach/irqs.h>
 #include <mach/map.h>
