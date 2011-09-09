@@ -1608,7 +1608,9 @@ netdev_tx_t ieee80211_monitor_start_xmit(struct sk_buff *skb,
 	struct ieee80211_radiotap_header *prthdr =
 		(struct ieee80211_radiotap_header *)skb->data;
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
+	struct ieee80211_hdr *hdr;
 	u16 len_rthdr;
+	u8 *payload;
 
 	/*
 	 * Frame injection is not allowed if beaconing is not allowed
@@ -1658,6 +1660,24 @@ netdev_tx_t ieee80211_monitor_start_xmit(struct sk_buff *skb,
 	 */
 	skb_set_network_header(skb, len_rthdr);
 	skb_set_transport_header(skb, len_rthdr);
+
+	/*
+	 * Initialize skb->protocol if the injected frame is a data frame
+	 * carrying a rfc1042 header
+	 */
+	if (skb->len > len_rthdr + 2) {
+		hdr = (struct ieee80211_hdr *)(skb->data + len_rthdr);
+		if (ieee80211_is_data(hdr->frame_control) &&
+		    skb->len >= len_rthdr +
+				ieee80211_hdrlen(hdr->frame_control) +
+				sizeof(rfc1042_header) + 2) {
+			payload = (u8 *)hdr +
+				  ieee80211_hdrlen(hdr->frame_control);
+			if (compare_ether_addr(payload, rfc1042_header) == 0)
+				skb->protocol = cpu_to_be16((payload[6] << 8) |
+							    payload[7]);
+		}
+	}
 
 	memset(info, 0, sizeof(*info));
 
@@ -2275,13 +2295,23 @@ struct sk_buff *ieee80211_beacon_get_tim(struct ieee80211_hw *hw,
 		memcpy(mgmt->bssid, sdata->vif.addr, ETH_ALEN);
 		mgmt->u.beacon.beacon_int =
 			cpu_to_le16(sdata->vif.bss_conf.beacon_int);
-		mgmt->u.beacon.capab_info = 0x0; /* 0x0 for MPs */
+		mgmt->u.beacon.capab_info |= cpu_to_le16(
+			sdata->u.mesh.security ? WLAN_CAPABILITY_PRIVACY : 0);
 
 		pos = skb_put(skb, 2);
 		*pos++ = WLAN_EID_SSID;
 		*pos++ = 0x0;
 
-		mesh_mgmt_ies_add(skb, sdata);
+		if (mesh_add_srates_ie(skb, sdata) ||
+		    mesh_add_ds_params_ie(skb, sdata) ||
+		    mesh_add_ext_srates_ie(skb, sdata) ||
+		    mesh_add_rsn_ie(skb, sdata) ||
+		    mesh_add_meshid_ie(skb, sdata) ||
+		    mesh_add_meshconf_ie(skb, sdata) ||
+		    mesh_add_vendor_ies(skb, sdata)) {
+			pr_err("o11s: couldn't add ies!\n");
+			goto out;
+		}
 	} else {
 		WARN_ON(1);
 		goto out;
