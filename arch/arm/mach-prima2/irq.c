@@ -13,6 +13,7 @@
 #include <asm/mach/irq.h>
 #include <linux/of.h>
 #include <linux/of_address.h>
+#include <linux/irqdomain.h>
 
 #define SIRFSOC_INT_RISC_MASK0          0x0018
 #define SIRFSOC_INT_RISC_MASK1          0x001C
@@ -51,6 +52,7 @@ static __init void sirfsoc_irq_init(void)
 
 static struct of_device_id intc_ids[]  = {
 	{ .compatible = "sirf,prima2-intc" },
+	{},
 };
 
 void __init sirfsoc_of_irq_init(void)
@@ -64,6 +66,8 @@ void __init sirfsoc_of_irq_init(void)
 	sirfsoc_intc_base = of_iomap(np, 0);
 	if (!sirfsoc_intc_base)
 		panic("unable to map intc cpu registers\n");
+
+	irq_domain_add_simple(np, 0);
 
 	of_node_put(np);
 
