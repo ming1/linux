@@ -23,6 +23,7 @@
 #include <linux/interrupt.h>
 #include <linux/cpu.h>
 #include <linux/gfp.h>
+#include <trace/events/irq_vectors.h>
 
 #include <asm/mtrr.h>
 #include <asm/tlbflush.h>
@@ -200,8 +201,10 @@ static void native_stop_other_cpus(int wait)
 void smp_reschedule_interrupt(struct pt_regs *regs)
 {
 	ack_APIC_irq();
+	trace_irq_vector_entry(RESCHEDULE_VECTOR);
 	inc_irq_stat(irq_resched_count);
 	scheduler_ipi();
+	trace_irq_vector_exit(RESCHEDULE_VECTOR);
 	/*
 	 * KVM uses this interrupt to force a cpu out of guest mode
 	 */
@@ -211,8 +214,10 @@ void smp_call_function_interrupt(struct pt_regs *regs)
 {
 	ack_APIC_irq();
 	irq_enter();
+	trace_irq_vector_entry(CALL_FUNCTION_VECTOR);
 	generic_smp_call_function_interrupt();
 	inc_irq_stat(irq_call_count);
+	trace_irq_vector_exit(CALL_FUNCTION_VECTOR);
 	irq_exit();
 }
 
@@ -220,8 +225,10 @@ void smp_call_function_single_interrupt(struct pt_regs *regs)
 {
 	ack_APIC_irq();
 	irq_enter();
+	trace_irq_vector_entry(CALL_FUNCTION_SINGLE_VECTOR);
 	generic_smp_call_function_single_interrupt();
 	inc_irq_stat(irq_call_count);
+	trace_irq_vector_exit(CALL_FUNCTION_SINGLE_VECTOR);
 	irq_exit();
 }
 
