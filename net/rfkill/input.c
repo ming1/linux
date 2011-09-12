@@ -15,6 +15,7 @@
 
 #include <linux/input.h>
 #include <linux/slab.h>
+#include <linux/module.h>
 #include <linux/workqueue.h>
 #include <linux/init.h>
 #include <linux/rfkill.h>
