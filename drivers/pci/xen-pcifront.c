@@ -401,8 +401,8 @@ static int pcifront_claim_resource(struct pci_dev *dev, void *data)
 				pci_name(dev), i);
 			if (pci_claim_resource(dev, i)) {
 				dev_err(&pdev->xdev->dev, "Could not claim "
-					"resource %s/%d! Device offline. Try "
-					"giving less than 4GB to domain.\n",
+					"resource %s/%d! Device offline. Try"
+					"using e820_host=1 in the guest config.\n",
 					pci_name(dev), i);
 			}
 		}
