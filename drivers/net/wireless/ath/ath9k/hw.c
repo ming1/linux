@@ -603,10 +603,7 @@ static int __ath9k_hw_init(struct ath_hw *ah)
 
 	ath9k_hw_init_mode_regs(ah);
 
-
-	if (ah->is_pciexpress)
-		ath9k_hw_aspm_init(ah);
-	else
+	if (!ah->is_pciexpress)
 		ath9k_hw_disablepcie(ah);
 
 	if (!AR_SREV_9300_20_OR_LATER(ah))
@@ -620,6 +617,9 @@ static int __ath9k_hw_init(struct ath_hw *ah)
 	r = ath9k_hw_fill_cap_info(ah);
 	if (r)
 		return r;
+
+	if (ah->is_pciexpress)
+		ath9k_hw_aspm_init(ah);
 
 	r = ath9k_hw_init_macaddr(ah);
 	if (r) {
@@ -663,6 +663,7 @@ int ath9k_hw_init(struct ath_hw *ah)
 	case AR9300_DEVID_AR9485_PCIE:
 	case AR9300_DEVID_AR9330:
 	case AR9300_DEVID_AR9340:
+	case AR9300_DEVID_AR9580:
 		break;
 	default:
 		if (common->bus_ops->ath_bus_type == ATH_USB)
@@ -996,7 +997,7 @@ void ath9k_hw_init_global_settings(struct ath_hw *ah)
 		slottime = 21;
 		sifstime = 64;
 	} else {
-		eifs = REG_READ(ah, AR_D_GBL_IFS_EIFS);
+		eifs = REG_READ(ah, AR_D_GBL_IFS_EIFS)/common->clockrate;
 		reg = REG_READ(ah, AR_USEC);
 		rx_lat = MS(reg, AR_USEC_RX_LAT);
 		tx_lat = MS(reg, AR_USEC_TX_LAT);
@@ -1486,6 +1487,7 @@ int ath9k_hw_reset(struct ath_hw *ah, struct ath9k_channel *chan,
 		memset(caldata, 0, sizeof(*caldata));
 		ath9k_init_nfcal_hist_buffer(ah, chan);
 	}
+	ah->noise = ath9k_hw_getchan_noise(ah, chan);
 
 	if (bChannelChange &&
 	    (ah->chip_fullsleep != true) &&
@@ -2439,15 +2441,18 @@ void ath9k_hw_set_txpowerlimit(struct ath_hw *ah, u32 limit, bool test)
 	struct ath_regulatory *regulatory = ath9k_hw_regulatory(ah);
 	struct ath9k_channel *chan = ah->curchan;
 	struct ieee80211_channel *channel = chan->chan;
+	int reg_pwr = min_t(int, MAX_RATE_POWER, regulatory->power_limit);
+	int chan_pwr = channel->max_power * 2;
+
+	if (test)
+		reg_pwr = chan_pwr = MAX_RATE_POWER;
 
 	regulatory->power_limit = min(limit, (u32) MAX_RATE_POWER);
 
 	ah->eep_ops->set_txpower(ah, chan,
 				 ath9k_regd_get_ctl(regulatory, chan),
 				 channel->max_antenna_gain * 2,
-				 channel->max_power * 2,
-				 min((u32) MAX_RATE_POWER,
-				 (u32) regulatory->power_limit), test);
+				 chan_pwr, reg_pwr, test);
 }
 EXPORT_SYMBOL(ath9k_hw_set_txpowerlimit);
 
