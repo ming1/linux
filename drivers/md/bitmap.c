@@ -868,7 +868,8 @@ static void bitmap_file_kick(struct bitmap *bitmap)
 
 enum bitmap_page_attr {
 	BITMAP_PAGE_DIRTY = 0,     /* there are set bits that need to be synced */
-	BITMAP_PAGE_CLEAN = 1,     /* there are bits that might need to be cleared */
+	BITMAP_PAGE_PENDING = 1,   /* there are bits that are being cleaned.
+				    * i.e. counter is 1 or 2. */
 	BITMAP_PAGE_NEEDWRITE = 2, /* there are cleared bits that need to be synced */
 };
 
@@ -1111,7 +1112,6 @@ static int bitmap_init_from_disk(struct bitmap *bitmap, sector_t start)
 					       (sector_t)i << CHUNK_BLOCK_SHIFT(bitmap),
 					       needed);
 			bit_cnt++;
-			set_page_attr(bitmap, page, BITMAP_PAGE_CLEAN);
 		}
 	}
 
@@ -1146,6 +1146,7 @@ void bitmap_write_all(struct bitmap *bitmap)
 	for (i = 0; i < bitmap->file_pages; i++)
 		set_page_attr(bitmap, bitmap->filemap[i],
 			      BITMAP_PAGE_NEEDWRITE);
+	bitmap->allclean = 0;
 }
 
 static void bitmap_count_page(struct bitmap *bitmap, sector_t offset, int inc)
@@ -1204,17 +1205,15 @@ void bitmap_daemon_work(mddev_t *mddev)
 
 		if (page != lastpage) {
 			/* skip this page unless it's marked as needing cleaning */
-			if (!test_page_attr(bitmap, page, BITMAP_PAGE_CLEAN)) {
+			if (!test_page_attr(bitmap, page, BITMAP_PAGE_PENDING)) {
 				int need_write = test_page_attr(bitmap, page,
 								BITMAP_PAGE_NEEDWRITE);
 				if (need_write)
 					clear_page_attr(bitmap, page, BITMAP_PAGE_NEEDWRITE);
 
 				spin_unlock_irqrestore(&bitmap->lock, flags);
-				if (need_write) {
+				if (need_write)
 					write_page(bitmap, page, 0);
-					bitmap->allclean = 0;
-				}
 				spin_lock_irqsave(&bitmap->lock, flags);
 				j |= (PAGE_BITS - 1);
 				continue;
@@ -1222,12 +1221,16 @@ void bitmap_daemon_work(mddev_t *mddev)
 
 			/* grab the new page, sync and release the old */
 			if (lastpage != NULL) {
-				if (test_page_attr(bitmap, lastpage, BITMAP_PAGE_NEEDWRITE)) {
-					clear_page_attr(bitmap, lastpage, BITMAP_PAGE_NEEDWRITE);
+				if (test_page_attr(bitmap, lastpage,
+						   BITMAP_PAGE_NEEDWRITE)) {
+					clear_page_attr(bitmap, lastpage,
+							BITMAP_PAGE_NEEDWRITE);
 					spin_unlock_irqrestore(&bitmap->lock, flags);
 					write_page(bitmap, lastpage, 0);
 				} else {
-					set_page_attr(bitmap, lastpage, BITMAP_PAGE_NEEDWRITE);
+					set_page_attr(bitmap, lastpage,
+						      BITMAP_PAGE_NEEDWRITE);
+					bitmap->allclean = 0;
 					spin_unlock_irqrestore(&bitmap->lock, flags);
 				}
 			} else
@@ -1249,19 +1252,17 @@ void bitmap_daemon_work(mddev_t *mddev)
 			}
 			spin_lock_irqsave(&bitmap->lock, flags);
 			if (!bitmap->need_sync)
-				clear_page_attr(bitmap, page, BITMAP_PAGE_CLEAN);
+				clear_page_attr(bitmap, page, BITMAP_PAGE_PENDING);
+			else
+				bitmap->allclean = 0;
 		}
 		bmc = bitmap_get_counter(bitmap,
 					 (sector_t)j << CHUNK_BLOCK_SHIFT(bitmap),
 					 &blocks, 0);
-		if (bmc) {
-			if (*bmc)
-				bitmap->allclean = 0;
-
-			if (*bmc == 2) {
-				*bmc = 1; /* maybe clear the bit next time */
-				set_page_attr(bitmap, page, BITMAP_PAGE_CLEAN);
-			} else if (*bmc == 1 && !bitmap->need_sync) {
+		if (!bmc)
+			j |= PAGE_COUNTER_MASK;
+		else if (*bmc) {
+			if (*bmc == 1 && !bitmap->need_sync) {
 				/* we can clear the bit */
 				*bmc = 0;
 				bitmap_count_page(bitmap,
@@ -1275,13 +1276,16 @@ void bitmap_daemon_work(mddev_t *mddev)
 						  paddr);
 				else
 					__clear_bit_le(
-							file_page_offset(bitmap,
-									 j),
-							paddr);
+						file_page_offset(bitmap,
+								 j),
+						paddr);
 				kunmap_atomic(paddr, KM_USER0);
+			} else if (*bmc <= 2) {
+				*bmc = 1; /* maybe clear the bit next time */
+				set_page_attr(bitmap, page, BITMAP_PAGE_PENDING);
+				bitmap->allclean = 0;
 			}
-		} else
-			j |= PAGE_COUNTER_MASK;
+		}
 	}
 	spin_unlock_irqrestore(&bitmap->lock, flags);
 
@@ -1294,6 +1298,7 @@ void bitmap_daemon_work(mddev_t *mddev)
 			write_page(bitmap, lastpage, 0);
 		} else {
 			set_page_attr(bitmap, lastpage, BITMAP_PAGE_NEEDWRITE);
+			bitmap->allclean = 0;
 			spin_unlock_irqrestore(&bitmap->lock, flags);
 		}
 	}
@@ -1407,7 +1412,6 @@ int bitmap_startwrite(struct bitmap *bitmap, sector_t offset, unsigned long sect
 		else
 			sectors = 0;
 	}
-	bitmap->allclean = 0;
 	return 0;
 }
 EXPORT_SYMBOL(bitmap_startwrite);
@@ -1453,13 +1457,14 @@ void bitmap_endwrite(struct bitmap *bitmap, sector_t offset, unsigned long secto
 			wake_up(&bitmap->overflow_wait);
 
 		(*bmc)--;
-		if (*bmc <= 2)
+		if (*bmc <= 2) {
 			set_page_attr(bitmap,
 				      filemap_get_page(
 					      bitmap,
 					      offset >> CHUNK_BLOCK_SHIFT(bitmap)),
-				      BITMAP_PAGE_CLEAN);
-
+				      BITMAP_PAGE_PENDING);
+			bitmap->allclean = 0;
+		}
 		spin_unlock_irqrestore(&bitmap->lock, flags);
 		offset += blocks;
 		if (sectors > blocks)
@@ -1495,7 +1500,6 @@ static int __bitmap_start_sync(struct bitmap *bitmap, sector_t offset, sector_t 
 		}
 	}
 	spin_unlock_irq(&bitmap->lock);
-	bitmap->allclean = 0;
 	return rv;
 }
 
@@ -1543,15 +1547,16 @@ void bitmap_end_sync(struct bitmap *bitmap, sector_t offset, sector_t *blocks, i
 		if (!NEEDED(*bmc) && aborted)
 			*bmc |= NEEDED_MASK;
 		else {
-			if (*bmc <= 2)
+			if (*bmc <= 2) {
 				set_page_attr(bitmap,
 					      filemap_get_page(bitmap, offset >> CHUNK_BLOCK_SHIFT(bitmap)),
-					      BITMAP_PAGE_CLEAN);
+					      BITMAP_PAGE_PENDING);
+				bitmap->allclean = 0;
+			}
 		}
 	}
  unlock:
 	spin_unlock_irqrestore(&bitmap->lock, flags);
-	bitmap->allclean = 0;
 }
 EXPORT_SYMBOL(bitmap_end_sync);
 
@@ -1622,10 +1627,10 @@ static void bitmap_set_memory_bits(struct bitmap *bitmap, sector_t offset, int n
 		*bmc = 1 | (needed ? NEEDED_MASK : 0);
 		bitmap_count_page(bitmap, offset, 1);
 		page = filemap_get_page(bitmap, offset >> CHUNK_BLOCK_SHIFT(bitmap));
-		set_page_attr(bitmap, page, BITMAP_PAGE_CLEAN);
+		set_page_attr(bitmap, page, BITMAP_PAGE_PENDING);
+		bitmap->allclean = 0;
 	}
 	spin_unlock_irq(&bitmap->lock);
-	bitmap->allclean = 0;
 }
 
 /* dirty the memory and file bits for bitmap chunks "s" to "e" */
