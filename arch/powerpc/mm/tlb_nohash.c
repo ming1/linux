@@ -36,6 +36,7 @@
 #include <linux/spinlock.h>
 #include <linux/memblock.h>
 #include <linux/of_fdt.h>
+#include <linux/export.h>
 
 #include <asm/tlbflush.h>
 #include <asm/tlb.h>
