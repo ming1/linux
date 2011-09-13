@@ -114,6 +114,20 @@ struct sysdev_attribute {
 extern int sysdev_create_file(struct sys_device *, struct sysdev_attribute *);
 extern void sysdev_remove_file(struct sys_device *, struct sysdev_attribute *);
 
+#if defined(CONFIG_PROC_FS) || defined(CONFIG_SYSFS)
+#define sysdev_create_file_optional(sysdev, sysdevattr)	\
+	return sysdev_create_file(sysdev, sysdevattr);
+
+#define sysdev_remove_file_optional(sysdev, sysdevattr)	\
+		sysdev_remove_file(sysdev, sysdevattr);
+#else
+#define sysdev_create_file_optional(sysdev, sysdevattr)	\
+		(0)
+
+#define sysdev_remove_file_optional(sysdev, sysdevattr)	\
+		do {} while (0)
+#endif
+
 /* Create/remove NULL terminated attribute list */
 static inline int
 sysdev_create_files(struct sys_device *d, struct sysdev_attribute **a)
