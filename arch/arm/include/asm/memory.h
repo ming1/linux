@@ -77,16 +77,7 @@
  */
 #define IOREMAP_MAX_ORDER	24
 
-/*
- * Size of DMA-consistent memory region.  Must be multiple of 2M,
- * between 2MB and 14MB inclusive.
- */
-#ifndef CONSISTENT_DMA_SIZE
-#define CONSISTENT_DMA_SIZE 	SZ_2M
-#endif
-
 #define CONSISTENT_END		(0xffe00000UL)
-#define CONSISTENT_BASE		(CONSISTENT_END - CONSISTENT_DMA_SIZE)
 
 #else /* CONFIG_MMU */
 
@@ -160,7 +151,6 @@
  * so that all we need to do is modify the 8-bit constant field.
  */
 #define __PV_BITS_31_24	0x81000000
-#define __PV_BITS_23_16	0x00810000
 
 extern unsigned long __pv_phys_offset;
 #define PHYS_OFFSET __pv_phys_offset
@@ -178,9 +168,6 @@ static inline unsigned long __virt_to_phys(unsigned long x)
 {
 	unsigned long t;
 	__pv_stub(x, t, "add", __PV_BITS_31_24);
-#ifdef CONFIG_ARM_PATCH_PHYS_VIRT_16BIT
-	__pv_stub(t, t, "add", __PV_BITS_23_16);
-#endif
 	return t;
 }
 
@@ -188,9 +175,6 @@ static inline unsigned long __phys_to_virt(unsigned long x)
 {
 	unsigned long t;
 	__pv_stub(x, t, "sub", __PV_BITS_31_24);
-#ifdef CONFIG_ARM_PATCH_PHYS_VIRT_16BIT
-	__pv_stub(t, t, "sub", __PV_BITS_23_16);
-#endif
 	return t;
 }
 #else
