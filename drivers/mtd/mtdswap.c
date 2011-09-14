@@ -86,7 +86,7 @@ struct swap_eb {
 	unsigned int flags;
 	unsigned int active_count;
 	unsigned int erase_count;
-	unsigned int pad;		/* speeds up pointer decremtnt */
+	unsigned int pad;		/* speeds up pointer decrement */
 };
 
 #define MTDSWAP_ECNT_MIN(rbroot) (rb_entry(rb_first(rbroot), struct swap_eb, \
@@ -350,7 +350,7 @@ static int mtdswap_read_markers(struct mtdswap_dev *d, struct swap_eb *eb)
 	ops.oobbuf = d->oob_buf;
 	ops.ooboffs = 0;
 	ops.datbuf = NULL;
-	ops.mode = MTD_OOB_AUTO;
+	ops.mode = MTD_OPS_AUTO_OOB;
 
 	ret = mtdswap_read_oob(d, offset, &ops);
 
@@ -389,7 +389,7 @@ static int mtdswap_write_marker(struct mtdswap_dev *d, struct swap_eb *eb,
 
 	ops.ooboffs = 0;
 	ops.oobbuf = (uint8_t *)&n;
-	ops.mode = MTD_OOB_AUTO;
+	ops.mode = MTD_OPS_AUTO_OOB;
 	ops.datbuf = NULL;
 
 	if (marker == MTDSWAP_TYPE_CLEAN) {
@@ -931,7 +931,7 @@ static unsigned int mtdswap_eblk_passes(struct mtdswap_dev *d,
 	struct mtd_oob_ops ops;
 	int ret;
 
-	ops.mode = MTD_OOB_AUTO;
+	ops.mode = MTD_OPS_AUTO_OOB;
 	ops.len = mtd->writesize;
 	ops.ooblen = mtd->ecclayout->oobavail;
 	ops.ooboffs = 0;
@@ -1374,11 +1374,10 @@ static int mtdswap_init(struct mtdswap_dev *d, unsigned int eblocks,
 		goto revmap_fail;
 
 	eblk_bytes = sizeof(struct swap_eb)*d->eblks;
-	d->eb_data = vmalloc(eblk_bytes);
+	d->eb_data = vzalloc(eblk_bytes);
 	if (!d->eb_data)
 		goto eb_data_fail;
 
-	memset(d->eb_data, 0, eblk_bytes);
 	for (i = 0; i < pages; i++)
 		d->page_data[i] = BLOCK_UNDEF;
 
