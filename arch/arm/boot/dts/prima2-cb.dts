@@ -67,6 +67,11 @@
 				compatible = "sirf,prima2-rstc";
 				reg = <0x88010000 0x1000>;
 			};
+
+			rsc-controller@88020000 {
+				compatible = "sirf,prima2-rsc";
+				reg = <0x88020000 0x1000>;
+			};
 		};
 
 		mem-iobg {
@@ -274,7 +279,7 @@
 			gpio: gpio-controller@b0120000 {
 				#gpio-cells = <2>;
 				#interrupt-cells = <2>;
-				compatible = "sirf,prima2-gpio";
+				compatible = "sirf,prima2-gpio-pinmux";
 				reg = <0xb0120000 0x10000>;
 				gpio-controller;
 				interrupt-controller;
@@ -358,7 +363,7 @@
 		};
 
 		rtc-iobg {
-			compatible = "sirf,prima2-rtciobg", "simple-bus";
+			compatible = "sirf,prima2-rtciobg", "sirf-prima2-rtciobg-bus";
 			#address-cells = <1>;
 			#size-cells = <1>;
 			reg = <0x80030000 0x10000>;
