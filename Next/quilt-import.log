@@ -1,0 +1,88 @@
+Importing i2c based on 3.1-rc4
+Unchanged quilt series i2c
+Importing jdelvare-hwmon based on 3.1-rc4
+Unchanged quilt series jdelvare-hwmon
+Importing kernel-doc based on 3.1-rc3
+Unchanged quilt series kernel-doc
+Importing rr based on v3.1-rc2-188-g6719db6
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard 6719db6a23d4b7f1e5052eedae394135e3aef9c1
+HEAD is now at 6719db6 Btrfs: fix 64 bit divide problem
+$ git am ../quilt/rr/lguest-weaken-paravirt-restriction.patch
+Applying: lguest: Allow running under paravirt-enabled KVM.
+$ git am ../quilt/rr/lguest-remove-kvm-cpuid-signature.patch
+Applying: lguest: don't allow KVM-detection cpuid.
+$ git am ../quilt/rr/virtio:console_use_config_val_for_retrieving_config.patch
+Applying: virtio-console: Use virtio_config_val() for retrieving config
+$ git am ../quilt/rr/virtio:config_add_config_val_len.patch
+Applying: virtio_config: Add virtio_config_val_len()
+$ git am ../quilt/rr/virtio:net_use_config_val_for_retrieving_config.patch
+Applying: virtio-net: Use virtio_config_val() for retrieving config
+$ git am ../quilt/rr/virtio:h_correct_comment_for_struct_driver.patch
+Applying: virtio.h: correct comment for struct virtio_driver
+$ git am ../quilt/rr/virtio:fix_size_computation_according_to_the_definition_of_struct_vring_used_in_vring_size.patch
+Applying: virtio: modify vring_init and vring_size to take account of the layout containing *_event_idx
+$ git am ../quilt/rr/virtio:console_fix_indentation.patch
+Applying: virtio: console: Fix indentation
+$ git am ../quilt/rr/virtio:console_ignore_port_name_update_request_if_name_already_set.patch
+Applying: virtio: console: Ignore port name update request if name already set
+$ git am ../quilt/rr/virtio:console_use_wait_event_freezable_instead_of_interruptible.patch
+Applying: virtio: console: Use wait_event_freezable instead of _interruptible
+$ git am ../quilt/rr/virtio:console_fix_return_type_for_get_inbuf.patch
+Applying: virtio: console: Fix return type for get_inbuf()
+$ git am ../quilt/rr/virtio:console_make_get_inbuf_return_port_inbuf_if_present.patch
+Applying: virtio: console: make get_inbuf() return port->inbuf if present
+$ git am ../quilt/rr/virtio:console_rename_variable.patch
+Applying: virtio: console: rename variable
+$ git am ../quilt/rr/virtio:console_make_discard_port_data_use_get_inbuf.patch
+Applying: virtio: console: make discard_port_data() use get_inbuf()
+$ git am ../quilt/rr/virtio:console_add_port_stats_for_bytes_received_sent_and_discarded.patch
+Applying: virtio: console: add port stats for bytes received, sent and discarded
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/rr
+From ../quilt-tmp
+ + 5e7a6e8...7762393 master     -> quilt/rr  (forced update)
+Importing device-mapper based on v3.1-rc1
+Unchanged quilt series device-mapper
+Importing hexagon based on v3.1-rc5
+Unchanged quilt series hexagon
+Importing hexagon based on v3.1-rc5
+Unchanged quilt series hexagon
+Importing i2c based on 3.1-rc4
+Unchanged quilt series i2c
+Importing jdelvare-hwmon based on 3.1-rc4
+Unchanged quilt series jdelvare-hwmon
+Importing kernel-doc based on 3.1-rc3
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard fcb8ce5cfe30ca9ca5c9a79cdfe26d1993e65e0c
+HEAD is now at fcb8ce5 Linux 3.1-rc3
+$ git am ../quilt/kernel-doc/docum-cgroup-task-move.patch
+Applying: - ns cgroup has been removed.
+$ git am ../quilt/kernel-doc/docum-tpad-acpi-grammo.patch
+Applying: This commit adds minor grammatical fixes to the description of the
+$ git am ../quilt/kernel-doc/docum-inotify-pathnames.patch
+Applying: Fixes the path to find the source files of the inotify subsystem.
+$ git am ../quilt/kernel-doc/docum-codestyle-ifbraces.patch
+Applying: After commit 38829dc highlight that if _only_one_ branch of a
+$ git am ../quilt/kernel-doc/docum-fs-hfs-orphan.patch
+Applying: Removed the reference of Roman Zippel, last maintainer, of orphaned
+$ git am ../quilt/kernel-doc/docum-net-dmfe-orphan.patch
+Applying: The dmfe module is an orphaned driver, and this patch removes the maintainer
+$ git am ../quilt/kernel-doc/docum-serial-computone-orphan.patch
+Applying: Removed the email for support and fixes for orphaned ip2 driver.
+$ git am ../quilt/kernel-doc/docum-leds-class-fix-typo.patch
+Applying: Fix a typo (duplicated word) in Documentation/leds/leds-class.txt
+$ git am ../quilt/kernel-doc/docum-elev-drop-as.patch
+Applying: The patch is against 3.1-rc3.
+$ git am ../quilt/kernel-doc/docum-pci-txt-fix-filename-ref.patch
+Applying: Documentation/PCI/pci.txt: fix a reference doc name
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/kernel-doc
+From ../quilt-tmp
+ + db44015...4d742fd master     -> quilt/kernel-doc  (forced update)
+Importing rr based on v3.1-rc2-188-g6719db6
+Unchanged quilt series rr
+Importing device-mapper based on v3.1-rc1
+Unchanged quilt series device-mapper
