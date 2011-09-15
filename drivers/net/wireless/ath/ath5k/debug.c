@@ -58,6 +58,7 @@
  * THE POSSIBILITY OF SUCH DAMAGES.
  */
 #include <linux/export.h>
+#include <linux/moduleparam.h>
 
 #include "base.h"
 #include "debug.h"
