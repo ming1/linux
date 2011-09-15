@@ -551,7 +551,8 @@ static void ath_tx_complete_aggr(struct ath_softc *sc, struct ath_txq *txq,
 		if (clear_filter)
 			tid->ac->clear_ps_filter = true;
 		list_splice(&bf_pending, &tid->buf_q);
-		ath_tx_queue_tid(txq, tid);
+		if (!an->sleeping)
+			ath_tx_queue_tid(txq, tid);
 		spin_unlock_bh(&txq->axq_lock);
 	}
 
@@ -568,6 +569,25 @@ static void ath_tx_complete_aggr(struct ath_softc *sc, struct ath_txq *txq,
 
 	if (needreset)
 		ath_reset(sc, false);
+}
+
+static bool ath_lookup_legacy(struct ath_buf *bf)
+{
+	struct sk_buff *skb;
+	struct ieee80211_tx_info *tx_info;
+	struct ieee80211_tx_rate *rates;
+	int i;
+
+	skb = bf->bf_mpdu;
+	tx_info = IEEE80211_SKB_CB(skb);
+	rates = tx_info->control.rates;
+
+	for (i = 3; i >= 0; i--) {
+		if (!(rates[i].flags & IEEE80211_TX_RC_MCS))
+			return true;
+	}
+
+	return false;
 }
 
 static u32 ath_lookup_rate(struct ath_softc *sc, struct ath_buf *bf,
@@ -643,8 +663,10 @@ static u32 ath_lookup_rate(struct ath_softc *sc, struct ath_buf *bf,
  * meet the minimum required mpdudensity.
  */
 static int ath_compute_num_delims(struct ath_softc *sc, struct ath_atx_tid *tid,
-				  struct ath_buf *bf, u16 frmlen)
+				  struct ath_buf *bf, u16 frmlen,
+				  bool first_subfrm)
 {
+#define FIRST_DESC_NDELIMS 60
 	struct sk_buff *skb = bf->bf_mpdu;
 	struct ieee80211_tx_info *tx_info = IEEE80211_SKB_CB(skb);
 	u32 nsymbits, nsymbols;
@@ -665,6 +687,13 @@ static int ath_compute_num_delims(struct ath_softc *sc, struct ath_atx_tid *tid,
 	if ((fi->keyix != ATH9K_TXKEYIX_INVALID) &&
 	    !(sc->sc_ah->caps.hw_caps & ATH9K_HW_CAP_EDMA))
 		ndelim += ATH_AGGR_ENCRYPTDELIM;
+
+	/*
+	 * Add delimiter when using RTS/CTS with aggregation
+	 * and non enterprise AR9003 card
+	 */
+	if (first_subfrm)
+		ndelim = max(ndelim, FIRST_DESC_NDELIMS);
 
 	/*
 	 * Convert desired mpdu density from microeconds to bytes based
@@ -740,7 +769,8 @@ static enum ATH_AGGR_STATUS ath_tx_form_aggr(struct ath_softc *sc,
 		al_delta = ATH_AGGR_DELIM_SZ + fi->framelen;
 
 		if (nframes &&
-		    (aggr_limit < (al + bpad + al_delta + prev_al))) {
+		    ((aggr_limit < (al + bpad + al_delta + prev_al)) ||
+		     ath_lookup_legacy(bf))) {
 			status = ATH_AGGR_LIMITED;
 			break;
 		}
@@ -755,7 +785,6 @@ static enum ATH_AGGR_STATUS ath_tx_form_aggr(struct ath_softc *sc,
 			status = ATH_AGGR_LIMITED;
 			break;
 		}
-		nframes++;
 
 		/* add padding for previous frame to aggregation length */
 		al += bpad + al_delta;
@@ -764,9 +793,11 @@ static enum ATH_AGGR_STATUS ath_tx_form_aggr(struct ath_softc *sc,
 		 * Get the delimiters needed to meet the MPDU
 		 * density for this node.
 		 */
-		ndelim = ath_compute_num_delims(sc, tid, bf_first, fi->framelen);
+		ndelim = ath_compute_num_delims(sc, tid, bf_first, fi->framelen,
+						!nframes);
 		bpad = PADBYTES(al_delta) + (ndelim << 2);
 
+		nframes++;
 		bf->bf_next = NULL;
 		ath9k_hw_set_desc_link(sc->sc_ah, bf->bf_desc, 0);
 
@@ -1413,7 +1444,8 @@ static void ath_tx_send_ampdu(struct ath_softc *sc, struct ath_atx_tid *tid,
 		 */
 		TX_STAT_INC(txctl->txq->axq_qnum, a_queued_sw);
 		list_add_tail(&bf->list, &tid->buf_q);
-		ath_tx_queue_tid(txctl->txq, tid);
+		if (!txctl->an || !txctl->an->sleeping)
+			ath_tx_queue_tid(txctl->txq, tid);
 		return;
 	}
 
@@ -1572,9 +1604,9 @@ u8 ath_txchainmask_reduction(struct ath_softc *sc, u8 chainmask, u32 rate)
 {
 	struct ath_hw *ah = sc->sc_ah;
 	struct ath9k_channel *curchan = ah->curchan;
-	if ((sc->sc_flags & SC_OP_ENABLE_APM) &&
-			(curchan->channelFlags & CHANNEL_5GHZ) &&
-			(chainmask == 0x7) && (rate < 0x90))
+	if ((ah->caps.hw_caps & ATH9K_HW_CAP_APM) &&
+	    (curchan->channelFlags & CHANNEL_5GHZ) &&
+	    (chainmask == 0x7) && (rate < 0x90))
 		return 0x3;
 	else
 		return chainmask;
@@ -1777,7 +1809,6 @@ static void ath_tx_start_dma(struct ath_softc *sc, struct ath_buf *bf,
 		INIT_LIST_HEAD(&bf_head);
 		list_add_tail(&bf->list, &bf_head);
 
-		bf->bf_state.bfs_ftype = txctl->frame_type;
 		bf->bf_state.bfs_paprd = txctl->paprd;
 
 		if (bf->bf_state.bfs_paprd)
@@ -1876,7 +1907,7 @@ int ath_tx_start(struct ieee80211_hw *hw, struct sk_buff *skb,
 /*****************/
 
 static void ath_tx_complete(struct ath_softc *sc, struct sk_buff *skb,
-			    int tx_flags, int ftype, struct ath_txq *txq)
+			    int tx_flags, struct ath_txq *txq)
 {
 	struct ieee80211_hw *hw = sc->hw;
 	struct ieee80211_tx_info *tx_info = IEEE80211_SKB_CB(skb);
@@ -1961,8 +1992,7 @@ static void ath_tx_complete_buf(struct ath_softc *sc, struct ath_buf *bf,
 			complete(&sc->paprd_complete);
 	} else {
 		ath_debug_stat_tx(sc, bf, ts, txq);
-		ath_tx_complete(sc, skb, tx_flags,
-				bf->bf_state.bfs_ftype, txq);
+		ath_tx_complete(sc, skb, tx_flags, txq);
 	}
 	/* At this point, skb (bf->bf_mpdu) is consumed...make sure we don't
 	 * accidentally reference it later.
