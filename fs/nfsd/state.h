@@ -293,6 +293,9 @@ static inline void
 update_stateid(stateid_t *stateid)
 {
 	stateid->si_generation++;
+	/* Wraparound recommendation from 3530bis-13 9.1.3.2: */
+	if (stateid->si_generation == 0)
+		stateid->si_generation = 1;
 }
 
 /* A reasonable value for REPLAY_ISIZE was estimated as follows:  
@@ -312,7 +315,6 @@ struct nfs4_replay {
 	__be32			rp_status;
 	unsigned int		rp_buflen;
 	char			*rp_buf;
-	unsigned		intrp_allocated;
 	struct knfsd_fh		rp_openfh;
 	char			rp_ibuf[NFSD4_REPLAY_ISIZE];
 };
@@ -426,6 +428,9 @@ static inline struct file *find_any_file(struct nfs4_file *f)
 */
 
 struct nfs4_stateid {
+#define NFS4_OPEN_STID 1
+#define NFS4_LOCK_STID 2
+	char st_type;
 	struct list_head              st_hash; 
 	struct list_head              st_perfile;
 	struct list_head              st_perstateowner;
@@ -439,19 +444,12 @@ struct nfs4_stateid {
 };
 
 /* flags for preprocess_seqid_op() */
-#define HAS_SESSION             0x00000001
 #define CONFIRM                 0x00000002
 #define OPEN_STATE              0x00000004
 #define LOCK_STATE              0x00000008
 #define RD_STATE	        0x00000010
 #define WR_STATE	        0x00000020
 #define CLOSE_STATE             0x00000040
-
-#define seqid_mutating_err(err)                       \
-	(((err) != nfserr_stale_clientid) &&    \
-	((err) != nfserr_bad_seqid) &&          \
-	((err) != nfserr_stale_stateid) &&      \
-	((err) != nfserr_bad_stateid))
 
 struct nfsd4_compound_state;
 
@@ -473,7 +471,7 @@ extern void nfsd4_destroy_callback_queue(void);
 extern void nfsd4_shutdown_callback(struct nfs4_client *);
 extern void nfs4_put_delegation(struct nfs4_delegation *dp);
 extern __be32 nfs4_make_rec_clidname(char *clidname, struct xdr_netobj *clname);
-extern void nfsd4_init_recdir(char *recdir_name);
+extern void nfsd4_init_recdir(void);
 extern int nfsd4_recdir_load(void);
 extern void nfsd4_shutdown_recdir(void);
 extern int nfs4_client_to_reclaim(const char *name);
@@ -482,7 +480,7 @@ extern void nfsd4_recdir_purge_old(void);
 extern int nfsd4_create_clid_dir(struct nfs4_client *clp);
 extern void nfsd4_remove_clid_dir(struct nfs4_client *clp);
 extern void release_session_client(struct nfsd4_session *);
-extern __be32 nfs4_validate_stateid(stateid_t *, int);
+extern __be32 nfs4_validate_stateid(stateid_t *, bool);
 
 static inline void
 nfs4_put_stateowner(struct nfs4_stateowner *so)
