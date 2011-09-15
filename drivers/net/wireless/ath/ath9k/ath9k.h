@@ -206,16 +206,17 @@ struct ath_atx_ac {
 };
 
 struct ath_frame_info {
+	struct ath_buf *bf;
 	int framelen;
-	u32 keyix;
 	enum ath9k_key_type keytype;
+	u8 keyix;
 	u8 retries;
-	u16 seqno;
 };
 
 struct ath_buf_state {
 	u8 bf_type;
 	u8 bfs_paprd;
+	u16 seqno;
 	unsigned long bfs_paprd_timestamp;
 };
 
@@ -235,7 +236,7 @@ struct ath_buf {
 
 struct ath_atx_tid {
 	struct list_head list;
-	struct list_head buf_q;
+	struct sk_buff_head buf_q;
 	struct ath_node *an;
 	struct ath_atx_ac *ac;
 	unsigned long tx_buf[BITS_TO_LONGS(ATH_TID_MAX_BUFS)];
@@ -424,6 +425,7 @@ void ath9k_set_beaconing_status(struct ath_softc *sc, bool status);
 
 #define ATH_PAPRD_TIMEOUT	100 /* msecs */
 
+void ath_reset_work(struct work_struct *work);
 void ath_hw_check(struct work_struct *work);
 void ath_hw_pll_work(struct work_struct *work);
 void ath_paprd_calibrate(struct work_struct *work);
@@ -603,6 +605,7 @@ struct ath_softc {
 	struct mutex mutex;
 	struct work_struct paprd_work;
 	struct work_struct hw_check_work;
+	struct work_struct hw_reset_work;
 	struct completion paprd_complete;
 
 	unsigned int hw_busy_count;
@@ -646,10 +649,10 @@ struct ath_softc {
 	struct ath_descdma txsdma;
 
 	struct ath_ant_comb ant_comb;
+	u8 ant_tx, ant_rx;
 };
 
 void ath9k_tasklet(unsigned long data);
-int ath_reset(struct ath_softc *sc, bool retry_tx);
 int ath_cabq_update(struct ath_softc *);
 
 static inline void ath_read_cachesize(struct ath_common *common, int *csz)
@@ -667,6 +670,7 @@ int ath9k_init_device(u16 devid, struct ath_softc *sc,
 		    const struct ath_bus_ops *bus_ops);
 void ath9k_deinit_device(struct ath_softc *sc);
 void ath9k_set_hw_capab(struct ath_softc *sc, struct ieee80211_hw *hw);
+void ath9k_reload_chainmask_settings(struct ath_softc *sc);
 
 void ath_radio_disable(struct ath_softc *sc, struct ieee80211_hw *hw);
 bool ath9k_uses_beacons(int type);
