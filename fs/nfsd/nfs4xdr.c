@@ -456,7 +456,6 @@ nfsd4_decode_close(struct nfsd4_compoundargs *argp, struct nfsd4_close *close)
 {
 	DECODE_HEAD;
 
-	close->cl_stateowner = NULL;
 	READ_BUF(4);
 	READ32(close->cl_seqid);
 	return nfsd4_decode_stateid(argp, &close->cl_stateid);
@@ -551,7 +550,6 @@ nfsd4_decode_lock(struct nfsd4_compoundargs *argp, struct nfsd4_lock *lock)
 {
 	DECODE_HEAD;
 
-	lock->lk_replay_owner = NULL;
 	/*
 	* type, reclaim(boolean), offset, length, new_lock_owner(boolean)
 	*/
@@ -611,7 +609,6 @@ nfsd4_decode_locku(struct nfsd4_compoundargs *argp, struct nfsd4_locku *locku)
 {
 	DECODE_HEAD;
 
-	locku->lu_stateowner = NULL;
 	READ_BUF(8);
 	READ32(locku->lu_type);
 	if ((locku->lu_type < NFS4_READ_LT) || (locku->lu_type > NFS4_WRITEW_LT))
@@ -739,7 +736,6 @@ nfsd4_decode_open_confirm(struct nfsd4_compoundargs *argp, struct nfsd4_open_con
 {
 	DECODE_HEAD;
 		    
-	open_conf->oc_stateowner = NULL;
 	status = nfsd4_decode_stateid(argp, &open_conf->oc_req_stateid);
 	if (status)
 		return status;
@@ -754,7 +750,6 @@ nfsd4_decode_open_downgrade(struct nfsd4_compoundargs *argp, struct nfsd4_open_d
 {
 	DECODE_HEAD;
 		    
-	open_down->od_stateowner = NULL;
 	status = nfsd4_decode_stateid(argp, &open_down->od_stateid);
 	if (status)
 		return status;
@@ -1630,15 +1625,19 @@ static void write_cinfo(__be32 **p, struct nfsd4_change_info *c)
  * we know whether the error to be returned is a sequence id mutating error.
  */
 
-#define ENCODE_SEQID_OP_TAIL(stateowner) do {			\
-	if (seqid_mutating_err(nfserr) && stateowner) { 	\
-		stateowner->so_seqid++;				\
-		stateowner->so_replay.rp_status = nfserr;   	\
-		stateowner->so_replay.rp_buflen = 		\
-			  (((char *)(resp)->p - (char *)save)); \
-		memcpy(stateowner->so_replay.rp_buf, save,      \
- 			stateowner->so_replay.rp_buflen); 	\
-	} } while (0);
+static void encode_seqid_op_tail(struct nfsd4_compoundres *resp, __be32 *save, __be32 nfserr)
+{
+	struct nfs4_stateowner *stateowner = resp->cstate.replay_owner;
+
+	if (seqid_mutating_err(ntohl(nfserr)) && stateowner) {
+		stateowner->so_seqid++;
+		stateowner->so_replay.rp_status = nfserr;
+		stateowner->so_replay.rp_buflen =
+			  (char *)resp->p - (char *)save;
+		memcpy(stateowner->so_replay.rp_buf, save,
+			stateowner->so_replay.rp_buflen);
+	}
+}
 
 /* Encode as an array of strings the string given with components
  * separated @sep.
@@ -1760,12 +1759,19 @@ static __be32 nfsd4_encode_fs_locations(struct svc_rqst *rqstp,
 	return 0;
 }
 
-static u32 nfs4_ftypes[16] = {
-        NF4BAD,  NF4FIFO, NF4CHR, NF4BAD,
-        NF4DIR,  NF4BAD,  NF4BLK, NF4BAD,
-        NF4REG,  NF4BAD,  NF4LNK, NF4BAD,
-        NF4SOCK, NF4BAD,  NF4LNK, NF4BAD,
-};
+static u32 nfs4_file_type(umode_t mode)
+{
+	switch (mode & S_IFMT) {
+	case S_IFIFO:	return NF4FIFO;
+	case S_IFCHR:	return NF4CHR;
+	case S_IFDIR:	return NF4DIR;
+	case S_IFBLK:	return NF4BLK;
+	case S_IFLNK:	return NF4LNK;
+	case S_IFREG:	return NF4REG;
+	case S_IFSOCK:	return NF4SOCK;
+	default:	return NF4BAD;
+	};
+}
 
 static __be32
 nfsd4_encode_name(struct svc_rqst *rqstp, int whotype, uid_t id, int group,
@@ -1954,7 +1960,7 @@ nfsd4_encode_fattr(struct svc_fh *fhp, struct svc_export *exp,
 	if (bmval0 & FATTR4_WORD0_TYPE) {
 		if ((buflen -= 4) < 0)
 			goto out_resource;
-		dummy = nfs4_ftypes[(stat.mode & S_IFMT) >> 12];
+		dummy = nfs4_file_type(stat.mode);
 		if (dummy == NF4BAD)
 			goto out_serverfault;
 		WRITE32(dummy);
@@ -2488,7 +2494,7 @@ nfsd4_encode_close(struct nfsd4_compoundres *resp, __be32 nfserr, struct nfsd4_c
 	if (!nfserr)
 		nfsd4_encode_stateid(resp, &close->cl_stateid);
 
-	ENCODE_SEQID_OP_TAIL(close->cl_stateowner);
+	encode_seqid_op_tail(resp, save, nfserr);
 	return nfserr;
 }
 
@@ -2592,7 +2598,7 @@ nfsd4_encode_lock(struct nfsd4_compoundres *resp, __be32 nfserr, struct nfsd4_lo
 	else if (nfserr == nfserr_denied)
 		nfsd4_encode_lock_denied(resp, &lock->lk_denied);
 
-	ENCODE_SEQID_OP_TAIL(lock->lk_replay_owner);
+	encode_seqid_op_tail(resp, save, nfserr);
 	return nfserr;
 }
 
@@ -2612,7 +2618,7 @@ nfsd4_encode_locku(struct nfsd4_compoundres *resp, __be32 nfserr, struct nfsd4_l
 	if (!nfserr)
 		nfsd4_encode_stateid(resp, &locku->lu_stateid);
 
-	ENCODE_SEQID_OP_TAIL(locku->lu_stateowner);
+	encode_seqid_op_tail(resp, save, nfserr);
 	return nfserr;
 }
 
@@ -2693,7 +2699,7 @@ nfsd4_encode_open(struct nfsd4_compoundres *resp, __be32 nfserr, struct nfsd4_op
 	}
 	/* XXX save filehandle here */
 out:
-	ENCODE_SEQID_OP_TAIL(open->op_stateowner);
+	encode_seqid_op_tail(resp, save, nfserr);
 	return nfserr;
 }
 
@@ -2705,7 +2711,7 @@ nfsd4_encode_open_confirm(struct nfsd4_compoundres *resp, __be32 nfserr, struct 
 	if (!nfserr)
 		nfsd4_encode_stateid(resp, &oc->oc_resp_stateid);
 
-	ENCODE_SEQID_OP_TAIL(oc->oc_stateowner);
+	encode_seqid_op_tail(resp, save, nfserr);
 	return nfserr;
 }
 
@@ -2717,7 +2723,7 @@ nfsd4_encode_open_downgrade(struct nfsd4_compoundres *resp, __be32 nfserr, struc
 	if (!nfserr)
 		nfsd4_encode_stateid(resp, &od->od_stateid);
 
-	ENCODE_SEQID_OP_TAIL(od->od_stateowner);
+	encode_seqid_op_tail(resp, save, nfserr);
 	return nfserr;
 }
 
@@ -2759,8 +2765,6 @@ nfsd4_encode_read(struct nfsd4_compoundres *resp, __be32 nfserr,
 			read->rd_offset, resp->rqstp->rq_vec, read->rd_vlen,
 			&maxcount);
 
-	if (nfserr == nfserr_symlink)
-		nfserr = nfserr_inval;
 	if (nfserr)
 		return nfserr;
 	eof = (read->rd_offset + maxcount >=
@@ -2886,8 +2890,6 @@ nfsd4_encode_readdir(struct nfsd4_compoundres *resp, __be32 nfserr, struct nfsd4
 	    readdir->common.err == nfserr_toosmall &&
 	    readdir->buffer == page) 
 		nfserr = nfserr_toosmall;
-	if (nfserr == nfserr_symlink)
-		nfserr = nfserr_notdir;
 	if (nfserr)
 		goto err_no_verf;
 
@@ -3218,9 +3220,9 @@ nfsd4_encode_sequence(struct nfsd4_compoundres *resp, int nfserr,
 	WRITEMEM(seq->sessionid.data, NFS4_MAX_SESSIONID_LEN);
 	WRITE32(seq->seqid);
 	WRITE32(seq->slotid);
-	WRITE32(seq->maxslots);
-	/* For now: target_maxslots = maxslots */
-	WRITE32(seq->maxslots);
+	/* Note slotid's are numbered from zero: */
+	WRITE32(seq->maxslots - 1); /* sr_highest_slotid */
+	WRITE32(seq->maxslots - 1); /* sr_target_highest_slotid */
 	WRITE32(seq->status_flags);
 
 	ADJUST_ARGS();
