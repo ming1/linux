@@ -211,16 +211,17 @@ static ssize_t overlay_enabled_show(struct omap_overlay *ovl, char *buf)
 static ssize_t overlay_enabled_store(struct omap_overlay *ovl, const char *buf,
 		size_t size)
 {
-	int r, enable;
+	int r;
+	bool enable;
 	struct omap_overlay_info info;
 
 	ovl->get_overlay_info(ovl, &info);
 
-	r = kstrtoint(buf, 0, &enable);
+	r = strtobool(buf, &enable);
 	if (r)
 		return r;
 
-	info.enabled = !!enable;
+	info.enabled = enable;
 
 	r = ovl->set_overlay_info(ovl, &info);
 	if (r)
@@ -248,7 +249,7 @@ static ssize_t overlay_global_alpha_store(struct omap_overlay *ovl,
 	u8 alpha;
 	struct omap_overlay_info info;
 
-	if (!dss_has_feature(FEAT_GLOBAL_ALPHA))
+	if ((ovl->caps & OMAP_DSS_OVL_CAP_GLOBAL_ALPHA) == 0)
 		return -ENODEV;
 
 	r = kstrtou8(buf, 0, &alpha);
@@ -257,14 +258,7 @@ static ssize_t overlay_global_alpha_store(struct omap_overlay *ovl,
 
 	ovl->get_overlay_info(ovl, &info);
 
-	/* Video1 plane does not support global alpha
-	 * to always make it 255 completely opaque
-	 */
-	if (!dss_has_feature(FEAT_GLOBAL_ALPHA_VID1) &&
-			ovl->id == OMAP_DSS_VIDEO1)
-		info.global_alpha = 255;
-	else
-		info.global_alpha = alpha;
+	info.global_alpha = alpha;
 
 	r = ovl->set_overlay_info(ovl, &info);
 	if (r)
@@ -293,20 +287,16 @@ static ssize_t overlay_pre_mult_alpha_store(struct omap_overlay *ovl,
 	u8 alpha;
 	struct omap_overlay_info info;
 
+	if ((ovl->caps & OMAP_DSS_OVL_CAP_PRE_MULT_ALPHA) == 0)
+		return -ENODEV;
+
 	r = kstrtou8(buf, 0, &alpha);
 	if (r)
 		return r;
 
 	ovl->get_overlay_info(ovl, &info);
 
-	/* only GFX and Video2 plane support pre alpha multiplied
-	 * set zero for Video1 plane
-	 */
-	if (!dss_has_feature(FEAT_GLOBAL_ALPHA_VID1) &&
-		ovl->id == OMAP_DSS_VIDEO1)
-		info.pre_mult_alpha = 0;
-	else
-		info.pre_mult_alpha = alpha;
+	info.pre_mult_alpha = alpha;
 
 	r = ovl->set_overlay_info(ovl, &info);
 	if (r)
@@ -516,6 +506,7 @@ static int omap_dss_set_manager(struct omap_overlay *ovl,
 	}
 
 	ovl->manager = mgr;
+	ovl->manager_changed = true;
 
 	/* XXX: When there is an overlay on a DSI manual update display, and
 	 * the overlay is first disabled, then moved to tv, and enabled, we
@@ -529,15 +520,12 @@ static int omap_dss_set_manager(struct omap_overlay *ovl,
 	 * Userspace workaround for this is to update the LCD after disabling
 	 * the overlay, but before moving the overlay to TV.
 	 */
-	dispc_set_channel_out(ovl->id, mgr->id);
 
 	return 0;
 }
 
 static int omap_dss_unset_manager(struct omap_overlay *ovl)
 {
-	int r;
-
 	if (!ovl->manager) {
 		DSSERR("failed to detach overlay: manager not set\n");
 		return -EINVAL;
@@ -548,11 +536,8 @@ static int omap_dss_unset_manager(struct omap_overlay *ovl)
 		return -EINVAL;
 	}
 
-	r = ovl->wait_for_go(ovl);
-	if (r)
-		return r;
-
 	ovl->manager = NULL;
+	ovl->manager_changed = true;
 
 	return 0;
 }
@@ -618,21 +603,16 @@ void dss_init_overlays(struct platform_device *pdev)
 		case 0:
 			ovl->name = "gfx";
 			ovl->id = OMAP_DSS_GFX;
-			ovl->caps = OMAP_DSS_OVL_CAP_DISPC;
 			ovl->info.global_alpha = 255;
 			break;
 		case 1:
 			ovl->name = "vid1";
 			ovl->id = OMAP_DSS_VIDEO1;
-			ovl->caps = OMAP_DSS_OVL_CAP_SCALE |
-				OMAP_DSS_OVL_CAP_DISPC;
 			ovl->info.global_alpha = 255;
 			break;
 		case 2:
 			ovl->name = "vid2";
 			ovl->id = OMAP_DSS_VIDEO2;
-			ovl->caps = OMAP_DSS_OVL_CAP_SCALE |
-				OMAP_DSS_OVL_CAP_DISPC;
 			ovl->info.global_alpha = 255;
 			break;
 		}
@@ -643,6 +623,7 @@ void dss_init_overlays(struct platform_device *pdev)
 		ovl->get_overlay_info = &dss_ovl_get_overlay_info;
 		ovl->wait_for_go = &dss_ovl_wait_for_go;
 
+		ovl->caps = dss_feat_get_overlay_caps(ovl->id);
 		ovl->supported_modes =
 			dss_feat_get_supported_color_modes(ovl->id);
 
