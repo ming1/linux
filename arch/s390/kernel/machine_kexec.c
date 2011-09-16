@@ -234,7 +234,7 @@ static void __machine_kdump(void *image)
 
 	pfault_fini();
 	s390_reset_system();
-	__load_psw_mask(PSW_BASE_BITS | PSW_DEFAULT_KEY);
+	__load_psw_mask(PSW_MASK_BASE | PSW_DEFAULT_KEY | PSW_MASK_EA | PSW_MASK_BA);
 	setup_regs();
 	start_kdump(1);
 	disabled_wait((unsigned long) __builtin_return_address(0));
