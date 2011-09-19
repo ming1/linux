@@ -14,6 +14,8 @@
 #include <linux/platform_device.h>
 #include <linux/io.h>
 #include <linux/input.h>
+#include <linux/pwm_backlight.h>
+#include <linux/gpio_keys.h>
 
 #include <asm/mach/arch.h>
 #include <asm/mach-types.h>
@@ -24,6 +26,10 @@
 #include <plat/devs.h>
 #include <plat/sdhci.h>
 #include <plat/iic.h>
+#include <plat/ehci.h>
+#include <plat/clock.h>
+#include <plat/gpio-cfg.h>
+#include <plat/backlight.h>
 
 #include <mach/map.h>
 
@@ -72,17 +78,107 @@ static struct s3c2410_uartcfg origen_uartcfgs[] __initdata = {
 	},
 };
 
-static struct s3c_sdhci_platdata origen_hsmmc2_pdata __initdata = {
-	.cd_type		= S3C_SDHCI_CD_GPIO,
-	.ext_cd_gpio		= EXYNOS4_GPK2(2),
-	.ext_cd_gpio_invert	= 1,
+static struct s3c_sdhci_platdata origen_hsmmc0_pdata __initdata = {
+	.cd_type		= S3C_SDHCI_CD_INTERNAL,
 	.clk_type		= S3C_SDHCI_CLK_DIV_EXTERNAL,
+};
+
+static struct s3c_sdhci_platdata origen_hsmmc2_pdata __initdata = {
+	.cd_type		= S3C_SDHCI_CD_INTERNAL,
+	.clk_type		= S3C_SDHCI_CLK_DIV_EXTERNAL,
+};
+
+/* USB EHCI */
+static struct s5p_ehci_platdata origen_ehci_pdata;
+
+static void __init origen_ehci_init(void)
+{
+	struct s5p_ehci_platdata *pdata = &origen_ehci_pdata;
+
+	s5p_ehci_set_platdata(pdata);
+}
+
+static struct gpio_keys_button origen_gpio_keys_table[] = {
+	{
+		.code			= KEY_MENU,
+		.gpio			= EXYNOS4_GPX1(5),
+		.desc			= "gpio-keys: KEY_MENU",
+		.type			= EV_KEY,
+		.active_low		= 1,
+		.wakeup			= 1,
+		.debounce_interval	= 1,
+	}, {
+		.code			= KEY_HOME,
+		.gpio			= EXYNOS4_GPX1(6),
+		.desc			= "gpio-keys: KEY_HOME",
+		.type			= EV_KEY,
+		.active_low		= 1,
+		.wakeup			= 1,
+		.debounce_interval	= 1,
+	}, {
+		.code			= KEY_BACK,
+		.gpio			= EXYNOS4_GPX1(7),
+		.desc			= "gpio-keys: KEY_BACK",
+		.type			= EV_KEY,
+		.active_low		= 1,
+		.wakeup			= 1,
+		.debounce_interval	= 1,
+	}, {
+		.code			= KEY_UP,
+		.gpio			= EXYNOS4_GPX2(0),
+		.desc			= "gpio-keys: KEY_UP",
+		.type			= EV_KEY,
+		.active_low		= 1,
+		.wakeup			= 1,
+		.debounce_interval	= 1,
+	}, {
+		.code			= KEY_DOWN,
+		.gpio			= EXYNOS4_GPX2(1),
+		.desc			= "gpio-keys: KEY_DOWN",
+		.type			= EV_KEY,
+		.active_low		= 1,
+		.wakeup			= 1,
+		.debounce_interval	= 1,
+	},
+};
+
+static struct gpio_keys_platform_data origen_gpio_keys_data = {
+	.buttons	= origen_gpio_keys_table,
+	.nbuttons	= ARRAY_SIZE(origen_gpio_keys_table),
+};
+
+static struct platform_device origen_device_gpiokeys = {
+	.name		= "gpio-keys",
+	.dev		= {
+		.platform_data	= &origen_gpio_keys_data,
+	},
 };
 
 static struct platform_device *origen_devices[] __initdata = {
 	&s3c_device_hsmmc2,
+	&s3c_device_hsmmc0,
 	&s3c_device_rtc,
 	&s3c_device_wdt,
+	&s5p_device_ehci,
+	&s5p_device_fimc0,
+	&s5p_device_fimc1,
+	&s5p_device_fimc2,
+	&s5p_device_fimc3,
+	&s5p_device_hdmi,
+	&s5p_device_i2c_hdmiphy,
+	&s5p_device_mixer,
+	&origen_device_gpiokeys,
+};
+
+/* LCD Backlight data */
+static struct samsung_bl_gpio_info origen_bl_gpio_info = {
+	.no = EXYNOS4_GPD0(0),
+	.func = S3C_GPIO_SFN(2),
+};
+
+static struct platform_pwm_backlight_data origen_bl_data = {
+	.pwm_id = 0,
+	.pwm_period_ns = 1000,
 };
 
 static void __init origen_map_io(void)
@@ -94,8 +190,21 @@ static void __init origen_map_io(void)
 
 static void __init origen_machine_init(void)
 {
+	/*
+	 * Since sdhci instance 2 can contain a bootable media,
+	 * sdhci instance 0 is registered after instance 2.
+	 */
 	s3c_sdhci2_set_platdata(&origen_hsmmc2_pdata);
+	s3c_sdhci0_set_platdata(&origen_hsmmc0_pdata);
+
+	origen_ehci_init();
+	clk_xusbxti.rate = 24000000;
+
+	s5p_i2c_hdmiphy_set_platdata(NULL);
+
 	platform_add_devices(origen_devices, ARRAY_SIZE(origen_devices));
+
+	samsung_bl_set(&origen_bl_gpio_info, &origen_bl_data);
 }
 
 MACHINE_START(ORIGEN, "ORIGEN")
