@@ -284,7 +284,7 @@ static void __init smdk4212_machine_init(void)
 
 MACHINE_START(SMDK4212, "SMDK4212")
 	/* Maintainer: Kukjin Kim <kgene.kim@samsung.com> */
-	.boot_params	= S5P_PA_SDRAM + 0x100,
+	.atag_offset	= 0x100,
 	.init_irq	= exynos4_init_irq,
 	.map_io		= smdk4212_map_io,
 	.init_machine	= smdk4212_machine_init,
