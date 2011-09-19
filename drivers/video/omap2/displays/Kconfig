@@ -10,6 +10,13 @@ config PANEL_GENERIC_DPI
 	  Supports LCD Panel used in TI SDP3430 and EVM boards,
 	  OMAP3517 EVM boards and CM-T35.
 
+config PANEL_DVI
+	tristate "DVI output"
+	depends on OMAP2_DSS_DPI
+	help
+	  Driver for external monitors, connected via DVI. The driver uses i2c
+	  to read EDID information from the monitor.
+
 config PANEL_LGPHILIPS_LB035Q02
 	tristate "LG.Philips LB035Q02 LCD Panel"
 	depends on OMAP2_DSS_DPI && SPI
@@ -29,6 +36,13 @@ config PANEL_NEC_NL8048HL11_01B
 	help
 		This NEC NL8048HL11-01B panel is TFT LCD
 		used in the Zoom2/3/3630 sdp boards.
+
+config PANEL_PICODLP
+	tristate "TI PICO DLP mini-projector"
+	depends on OMAP2_DSS && I2C
+	help
+		A mini-projector used in TI's SDP4430 and EVM boards
+		For more info please visit http://www.dlp.com/projector/
 
 config PANEL_TAAL
         tristate "Taal DSI Panel"
