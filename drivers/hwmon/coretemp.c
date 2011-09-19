@@ -36,10 +36,19 @@
 #include <linux/cpu.h>
 #include <linux/pci.h>
 #include <linux/smp.h>
+#include <linux/moduleparam.h>
 #include <asm/msr.h>
 #include <asm/processor.h>
 
 #define DRVNAME	"coretemp"
+
+/*
+ * force_tjmax only matters when TjMax can't be read from the CPU itself.
+ * When set, it replaces the driver's suboptimal heuristic.
+ */
+static int force_tjmax;
+module_param_named(tjmax, force_tjmax, int, 0444);
+MODULE_PARM_DESC(tjmax, "TjMax value in degrees Celsius");
 
 #define BASE_SYSFS_ATTR_NO	2	/* Sysfs Base attr no for coretemp */
 #define NUM_REAL_CORES		16	/* Number of Real cores per cpu */
@@ -374,7 +383,6 @@ static int adjust_tjmax(struct cpuinfo_x86 *c, u32 id, struct device *dev)
 
 static int get_tjmax(struct cpuinfo_x86 *c, u32 id, struct device *dev)
 {
-	/* The 100C is default for both mobile and non mobile CPUs */
 	int err;
 	u32 eax, edx;
 	u32 val;
@@ -385,7 +393,8 @@ static int get_tjmax(struct cpuinfo_x86 *c, u32 id, struct device *dev)
 	 */
 	err = rdmsr_safe_on_cpu(id, MSR_IA32_TEMPERATURE_TARGET, &eax, &edx);
 	if (err) {
-		dev_warn(dev, "Unable to read TjMax from CPU.\n");
+		if (c->x86_model > 0xe && c->x86_model != 0x1c)
+			dev_warn(dev, "Unable to read TjMax from CPU %u\n", id);
 	} else {
 		val = (eax >> 16) & 0xff;
 		/*
@@ -393,9 +402,15 @@ static int get_tjmax(struct cpuinfo_x86 *c, u32 id, struct device *dev)
 		 * will be used
 		 */
 		if (val) {
-			dev_info(dev, "TjMax is %d C.\n", val);
+			dev_dbg(dev, "TjMax is %d degrees C\n", val);
 			return val * 1000;
 		}
+	}
+
+	if (force_tjmax) {
+		dev_notice(dev, "TjMax forced to %d degrees C by user\n",
+			   force_tjmax);
+		return force_tjmax * 1000;
 	}
 
 	/*
@@ -412,21 +427,6 @@ static void __devinit get_ucode_rev_on_cpu(void *edx)
 	wrmsr(MSR_IA32_UCODE_REV, 0, 0);
 	sync_core();
 	rdmsr(MSR_IA32_UCODE_REV, eax, *(u32 *)edx);
-}
-
-static int get_pkg_tjmax(unsigned int cpu, struct device *dev)
-{
-	int err;
-	u32 eax, edx, val;
-
-	err = rdmsr_safe_on_cpu(cpu, MSR_IA32_TEMPERATURE_TARGET, &eax, &edx);
-	if (!err) {
-		val = (eax >> 16) & 0xff;
-		if (val)
-			return val * 1000;
-	}
-	dev_warn(dev, "Unable to read Pkg-TjMax from CPU:%u\n", cpu);
-	return 100000; /* Default TjMax: 100 degree celsius */
 }
 
 static int create_name_attr(struct platform_data *pdata, struct device *dev)
@@ -588,10 +588,7 @@ static int create_core_data(struct platform_data *pdata,
 		goto exit_free;
 
 	/* We can access status register. Get Critical Temperature */
-	if (pkg_flag)
-		tdata->tjmax = get_pkg_tjmax(pdev->id, &pdev->dev);
-	else
-		tdata->tjmax = get_tjmax(c, cpu, &pdev->dev);
+	tdata->tjmax = get_tjmax(c, cpu, &pdev->dev);
 
 	/*
 	 * Test if we can access the intrpt register. If so, increase the
