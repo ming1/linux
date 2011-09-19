@@ -1347,6 +1347,7 @@ static int pair_device(struct sock *sk, u16 index, unsigned char *data, u16 len)
 	struct hci_dev *hdev;
 	struct mgmt_cp_pair_device *cp;
 	struct pending_cmd *cmd;
+	struct adv_entry *entry;
 	u8 sec_level, auth_type;
 	struct hci_conn *conn;
 	int err;
@@ -1372,7 +1373,14 @@ static int pair_device(struct sock *sk, u16 index, unsigned char *data, u16 len)
 		auth_type = HCI_AT_DEDICATED_BONDING_MITM;
 	}
 
-	conn = hci_connect(hdev, ACL_LINK, &cp->bdaddr, sec_level, auth_type);
+	entry = hci_find_adv_entry(hdev, &cp->bdaddr);
+	if (entry)
+		conn = hci_connect(hdev, LE_LINK, &cp->bdaddr, sec_level,
+								auth_type);
+	else
+		conn = hci_connect(hdev, ACL_LINK, &cp->bdaddr, sec_level,
+								auth_type);
+
 	if (IS_ERR(conn)) {
 		err = PTR_ERR(conn);
 		goto unlock;
@@ -1391,7 +1399,10 @@ static int pair_device(struct sock *sk, u16 index, unsigned char *data, u16 len)
 		goto unlock;
 	}
 
-	conn->connect_cfm_cb = pairing_complete_cb;
+	/* For LE, just connecting isn't a proof that the pairing finished */
+	if (!entry)
+		conn->connect_cfm_cb = pairing_complete_cb;
+
 	conn->security_cfm_cb = pairing_complete_cb;
 	conn->disconn_cfm_cb = pairing_complete_cb;
 	conn->io_capability = cp->io_cap;
@@ -1689,12 +1700,11 @@ static int block_device(struct sock *sk, u16 index, unsigned char *data,
 								u16 len)
 {
 	struct hci_dev *hdev;
-	struct mgmt_cp_block_device *cp;
+	struct pending_cmd *cmd;
+	struct mgmt_cp_block_device *cp = (void *) data;
 	int err;
 
 	BT_DBG("hci%u", index);
-
-	cp = (void *) data;
 
 	if (len != sizeof(*cp))
 		return cmd_status(sk, index, MGMT_OP_BLOCK_DEVICE,
@@ -1705,6 +1715,14 @@ static int block_device(struct sock *sk, u16 index, unsigned char *data,
 		return cmd_status(sk, index, MGMT_OP_BLOCK_DEVICE,
 							ENODEV);
 
+	hci_dev_lock_bh(hdev);
+
+	cmd = mgmt_pending_add(sk, MGMT_OP_BLOCK_DEVICE, index, NULL, 0);
+	if (!cmd) {
+		err = -ENOMEM;
+		goto failed;
+	}
+
 	err = hci_blacklist_add(hdev, &cp->bdaddr);
 
 	if (err < 0)
@@ -1712,6 +1730,11 @@ static int block_device(struct sock *sk, u16 index, unsigned char *data,
 	else
 		err = cmd_complete(sk, index, MGMT_OP_BLOCK_DEVICE,
 							NULL, 0);
+
+	mgmt_pending_remove(cmd);
+
+failed:
+	hci_dev_unlock_bh(hdev);
 	hci_dev_put(hdev);
 
 	return err;
@@ -1721,12 +1744,11 @@ static int unblock_device(struct sock *sk, u16 index, unsigned char *data,
 								u16 len)
 {
 	struct hci_dev *hdev;
-	struct mgmt_cp_unblock_device *cp;
+	struct pending_cmd *cmd;
+	struct mgmt_cp_unblock_device *cp = (void *) data;
 	int err;
 
 	BT_DBG("hci%u", index);
-
-	cp = (void *) data;
 
 	if (len != sizeof(*cp))
 		return cmd_status(sk, index, MGMT_OP_UNBLOCK_DEVICE,
@@ -1737,6 +1759,14 @@ static int unblock_device(struct sock *sk, u16 index, unsigned char *data,
 		return cmd_status(sk, index, MGMT_OP_UNBLOCK_DEVICE,
 								ENODEV);
 
+	hci_dev_lock_bh(hdev);
+
+	cmd = mgmt_pending_add(sk, MGMT_OP_UNBLOCK_DEVICE, index, NULL, 0);
+	if (!cmd) {
+		err = -ENOMEM;
+		goto failed;
+	}
+
 	err = hci_blacklist_del(hdev, &cp->bdaddr);
 
 	if (err < 0)
@@ -1744,6 +1774,11 @@ static int unblock_device(struct sock *sk, u16 index, unsigned char *data,
 	else
 		err = cmd_complete(sk, index, MGMT_OP_UNBLOCK_DEVICE,
 								NULL, 0);
+
+	mgmt_pending_remove(cmd);
+
+failed:
+	hci_dev_unlock_bh(hdev);
 	hci_dev_put(hdev);
 
 	return err;
@@ -2001,11 +2036,12 @@ int mgmt_new_key(u16 index, struct link_key *key, u8 persistent)
 	return err;
 }
 
-int mgmt_connected(u16 index, bdaddr_t *bdaddr)
+int mgmt_connected(u16 index, bdaddr_t *bdaddr, u8 link_type)
 {
 	struct mgmt_ev_connected ev;
 
 	bacpy(&ev.bdaddr, bdaddr);
+	ev.link_type = link_type;
 
 	return mgmt_event(MGMT_EV_CONNECTED, index, &ev, sizeof(ev), NULL);
 }
@@ -2285,4 +2321,30 @@ int mgmt_discovering(u16 index, u8 discovering)
 {
 	return mgmt_event(MGMT_EV_DISCOVERING, index, &discovering,
 						sizeof(discovering), NULL);
+}
+
+int mgmt_device_blocked(u16 index, bdaddr_t *bdaddr)
+{
+	struct pending_cmd *cmd;
+	struct mgmt_ev_device_blocked ev;
+
+	cmd = mgmt_pending_find(MGMT_OP_BLOCK_DEVICE, index);
+
+	bacpy(&ev.bdaddr, bdaddr);
+
+	return mgmt_event(MGMT_EV_DEVICE_BLOCKED, index, &ev, sizeof(ev),
+						cmd ? cmd->sk : NULL);
+}
+
+int mgmt_device_unblocked(u16 index, bdaddr_t *bdaddr)
+{
+	struct pending_cmd *cmd;
+	struct mgmt_ev_device_unblocked ev;
+
+	cmd = mgmt_pending_find(MGMT_OP_UNBLOCK_DEVICE, index);
+
+	bacpy(&ev.bdaddr, bdaddr);
+
+	return mgmt_event(MGMT_EV_DEVICE_UNBLOCKED, index, &ev, sizeof(ev),
+						cmd ? cmd->sk : NULL);
 }
