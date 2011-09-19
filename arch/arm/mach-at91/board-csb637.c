@@ -59,6 +59,7 @@ static struct at91_eth_data __initdata csb637_eth_data = {
 
 static struct at91_usbh_data __initdata csb637_usbh_data = {
 	.ports		= 2,
+	.vbus_pin	= {-EINVAL, -EINVAL},
 };
 
 static struct at91_udc_data __initdata csb637_udc_data = {
