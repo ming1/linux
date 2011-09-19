@@ -16,6 +16,7 @@ static DEFINE_SPINLOCK(tomoyo_io_buffer_list_lock);
 /* Size of an element. */
 static const u8 tomoyo_element_size[TOMOYO_MAX_POLICY] = {
 	[TOMOYO_ID_GROUP] = sizeof(struct tomoyo_group),
+	[TOMOYO_ID_ADDRESS_GROUP] = sizeof(struct tomoyo_address_group),
 	[TOMOYO_ID_PATH_GROUP] = sizeof(struct tomoyo_path_group),
 	[TOMOYO_ID_NUMBER_GROUP] = sizeof(struct tomoyo_number_group),
 	[TOMOYO_ID_AGGREGATOR] = sizeof(struct tomoyo_aggregator),
@@ -36,6 +37,9 @@ static const u8 tomoyo_acl_size[] = {
 	[TOMOYO_TYPE_PATH_NUMBER_ACL] = sizeof(struct tomoyo_path_number_acl),
 	[TOMOYO_TYPE_MKDEV_ACL] = sizeof(struct tomoyo_mkdev_acl),
 	[TOMOYO_TYPE_MOUNT_ACL] = sizeof(struct tomoyo_mount_acl),
+	[TOMOYO_TYPE_INET_ACL] = sizeof(struct tomoyo_inet_acl),
+	[TOMOYO_TYPE_UNIX_ACL] = sizeof(struct tomoyo_unix_acl),
+	[TOMOYO_TYPE_ENV_ACL] = sizeof(struct tomoyo_env_acl),
 };
 
 /**
@@ -293,6 +297,31 @@ static void tomoyo_del_acl(struct list_head *element)
 			tomoyo_put_number_union(&entry->flags);
 		}
 		break;
+	case TOMOYO_TYPE_ENV_ACL:
+		{
+			struct tomoyo_env_acl *entry =
+				container_of(acl, typeof(*entry), head);
+
+			tomoyo_put_name(entry->env);
+		}
+		break;
+	case TOMOYO_TYPE_INET_ACL:
+		{
+			struct tomoyo_inet_acl *entry =
+				container_of(acl, typeof(*entry), head);
+
+			tomoyo_put_group(entry->address.group);
+			tomoyo_put_number_union(&entry->port);
+		}
+		break;
+	case TOMOYO_TYPE_UNIX_ACL:
+		{
+			struct tomoyo_unix_acl *entry =
+				container_of(acl, typeof(*entry), head);
+
+			tomoyo_put_name_union(&entry->name);
+		}
+		break;
 	}
 }
 
@@ -422,6 +451,18 @@ static void tomoyo_del_group(struct list_head *element)
 }
 
 /**
+ * tomoyo_del_address_group - Delete members in "struct tomoyo_address_group".
+ *
+ * @element: Pointer to "struct list_head".
+ *
+ * Returns nothing.
+ */
+static inline void tomoyo_del_address_group(struct list_head *element)
+{
+	/* Nothing to do. */
+}
+
+/**
  * tomoyo_del_number_group - Delete members in "struct tomoyo_number_group".
  *
  * @element: Pointer to "struct list_head".
@@ -518,8 +559,11 @@ static void tomoyo_collect_entry(void)
 			case 0:
 				id = TOMOYO_ID_PATH_GROUP;
 				break;
-			default:
+			case 1:
 				id = TOMOYO_ID_NUMBER_GROUP;
+				break;
+			default:
+				id = TOMOYO_ID_ADDRESS_GROUP;
 				break;
 			}
 			list_for_each_entry(group, list, head.list) {
@@ -625,6 +669,9 @@ static bool tomoyo_kfree_entry(void)
 		case TOMOYO_ID_PATH_GROUP:
 			tomoyo_del_path_group(element);
 			break;
+		case TOMOYO_ID_ADDRESS_GROUP:
+			tomoyo_del_address_group(element);
+			break;
 		case TOMOYO_ID_GROUP:
 			tomoyo_del_group(element);
 			break;
@@ -660,7 +707,7 @@ static int tomoyo_gc_thread(void *unused)
 	static DEFINE_MUTEX(tomoyo_gc_mutex);
 	if (!mutex_trylock(&tomoyo_gc_mutex))
 		goto out;
-	daemonize("GC for TOMOYO");
+
 	do {
 		tomoyo_collect_entry();
 		if (list_empty(&tomoyo_gc_list))
