@@ -1,0 +1,181 @@
+Importing hexagon based on 
+Unknown BASE
+Importing i2c based on 3.1-rc4
+Unchanged quilt series i2c
+Importing jdelvare-hwmon based on 3.1-rc4
+Unchanged quilt series jdelvare-hwmon
+Importing kernel-doc based on 3.1-rc3
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard fcb8ce5cfe30ca9ca5c9a79cdfe26d1993e65e0c
+HEAD is now at fcb8ce5 Linux 3.1-rc3
+$ git am ../quilt/kernel-doc/docum-cgroup-task-move.patch
+Applying: - ns cgroup has been removed.
+$ git am ../quilt/kernel-doc/docum-tpad-acpi-grammo.patch
+Applying: This commit adds minor grammatical fixes to the description of the
+$ git am ../quilt/kernel-doc/docum-inotify-pathnames.patch
+Applying: Fixes the path to find the source files of the inotify subsystem.
+$ git am ../quilt/kernel-doc/docum-codestyle-ifbraces.patch
+Applying: After commit 38829dc highlight that if _only_one_ branch of a
+$ git am ../quilt/kernel-doc/docum-fs-hfs-orphan.patch
+Applying: Removed the reference of Roman Zippel, last maintainer, of orphaned
+$ git am ../quilt/kernel-doc/docum-serial-computone-orphan.patch
+Applying: Removed the email for support and fixes for orphaned ip2 driver.
+$ git am ../quilt/kernel-doc/docum-leds-class-fix-typo.patch
+Applying: Fix a typo (duplicated word) in Documentation/leds/leds-class.txt
+$ git am ../quilt/kernel-doc/docum-elev-drop-as.patch
+Applying: The patch is against 3.1-rc3.
+$ git am ../quilt/kernel-doc/docum-pci-txt-fix-filename-ref.patch
+Applying: Documentation/PCI/pci.txt: fix a reference doc name
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/kernel-doc
+From ../quilt-tmp
+ + 181f295...0ffbd2e master     -> quilt/kernel-doc  (forced update)
+Importing rr based on v3.1-rc2-188-g6719db6
+Unchanged quilt series rr
+Importing device-mapper based on v3.1-rc1
+Unchanged quilt series device-mapper
+Importing hexagon based on v3.1-rc6
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard b6fd41e29dea9c6753b1843a77e50433e6123bcb
+HEAD is now at b6fd41e Linux 3.1-rc6
+$ git am ../quilt/hexagon/0001-Hexagon-Add-generic-headers.patch
+Applying: Hexagon: Add generic headers
+/home/sfr/kernels/next/quilt-tmp/.git/rebase-apply/patch:19: new blank line at EOF.
++
+warning: 1 line adds whitespace errors.
+$ git am ../quilt/hexagon/0002-Hexagon-Core-arch-specific-header-files.patch
+Applying: Hexagon: Core arch-specific header files
+/home/sfr/kernels/next/quilt-tmp/.git/rebase-apply/patch:681: new blank line at EOF.
++
+warning: 1 line adds whitespace errors.
+$ git am ../quilt/hexagon/0003-Hexagon-Add-bitops-support.patch
+Applying: Hexagon: Add bitops support
+$ git am ../quilt/hexagon/0004-Hexagon-Add-atomic-ops-support.patch
+Applying: Hexagon: Add atomic ops support
+$ git am ../quilt/hexagon/0005-Hexagon-Add-syscalls.patch
+Applying: Hexagon: Add syscalls
+$ git am ../quilt/hexagon/0006-Hexagon-Add-processor-and-system-headers.patch
+Applying: Hexagon: Add processor and system headers
+$ git am ../quilt/hexagon/0007-Hexagon-Add-threadinfo.patch
+Applying: Hexagon: Add threadinfo
+$ git am ../quilt/hexagon/0008-Hexagon-Add-delay-functions.patch
+Applying: Hexagon: Add delay functions
+$ git am ../quilt/hexagon/0009-Hexagon-Add-checksum-functions.patch
+Applying: Hexagon: Add checksum functions
+$ git am ../quilt/hexagon/0010-Hexagon-Add-memcpy-and-memset-accelerated-functions.patch
+Applying: Hexagon: Add memcpy and memset accelerated functions
+/home/sfr/kernels/next/quilt-tmp/.git/rebase-apply/patch:562: new blank line at EOF.
++
+warning: 1 line adds whitespace errors.
+$ git am ../quilt/hexagon/0011-Hexagon-Add-hypervisor-interface.patch
+Applying: Hexagon: Add hypervisor interface
+/home/sfr/kernels/next/quilt-tmp/.git/rebase-apply/patch:1468: new blank line at EOF.
++
+warning: 1 line adds whitespace errors.
+$ git am ../quilt/hexagon/0012-Hexagon-Export-ksyms-defined-in-assembly-files.patch
+Applying: Hexagon: Export ksyms defined in assembly files.
+/home/sfr/kernels/next/quilt-tmp/.git/rebase-apply/patch:11: new blank line at EOF.
++
+warning: 1 line adds whitespace errors.
+$ git am ../quilt/hexagon/0013-Hexagon-Support-dynamic-module-loading.patch
+Applying: Hexagon: Support dynamic module loading.
+$ git am ../quilt/hexagon/0014-Hexagon-Add-signal-functions.patch
+Applying: Hexagon: Add signal functions
+/home/sfr/kernels/next/quilt-tmp/.git/rebase-apply/patch:92: new blank line at EOF.
++
+/home/sfr/kernels/next/quilt-tmp/.git/rebase-apply/patch:521: new blank line at EOF.
++
+warning: 2 lines add whitespace errors.
+$ git am ../quilt/hexagon/0015-Hexagon-Add-init_task-and-process-functions.patch
+Applying: Hexagon: Add init_task and process functions
+$ git am ../quilt/hexagon/0016-Hexagon-Add-startup-code.patch
+Applying: Hexagon: Add startup code
+/home/sfr/kernels/next/quilt-tmp/.git/rebase-apply/patch:44: space before tab in indent.
+       	__INIT
+warning: 1 line adds whitespace errors.
+$ git am ../quilt/hexagon/0017-Hexagon-Add-interrupts.patch
+Applying: Hexagon: Add interrupts
+$ git am ../quilt/hexagon/0018-Hexagon-Add-time-and-timer-functions.patch
+Applying: Hexagon: Add time and timer functions
+$ git am ../quilt/hexagon/0019-Hexagon-Add-ptrace-support.patch
+Applying: Hexagon: Add ptrace support
+$ git am ../quilt/hexagon/0020-Hexagon-Provide-basic-debugging-and-system-trap-supp.patch
+Applying: Hexagon: Provide basic debugging and system trap support.
+$ git am ../quilt/hexagon/0021-Hexagon-Add-SMP-support.patch
+Applying: Hexagon: Add SMP support
+$ git am ../quilt/hexagon/0022-Hexagon-Add-locking-types-and-functions.patch
+Applying: Hexagon: Add locking types and functions
+$ git am ../quilt/hexagon/0023-Hexagon-Add-user-access-functions.patch
+Applying: Hexagon: Add user access functions
+/home/sfr/kernels/next/quilt-tmp/.git/rebase-apply/patch:552: new blank line at EOF.
++
+warning: 1 line adds whitespace errors.
+$ git am ../quilt/hexagon/0024-Hexagon-Provide-basic-implementation-and-or-stubs-fo.patch
+Applying: Hexagon: Provide basic implementation and/or stubs for I/O routines.
+$ git am ../quilt/hexagon/0025-Hexagon-Implement-basic-cache-flush-support.patch
+Applying: Hexagon: Implement basic cache-flush support
+$ git am ../quilt/hexagon/0026-Hexagon-Implement-basic-TLB-management-routines-for-.patch
+Applying: Hexagon: Implement basic TLB management routines for Hexagon.
+$ git am ../quilt/hexagon/0027-Hexagon-Provide-DMA-implementation.patch
+Applying: Hexagon: Provide DMA implementation
+$ git am ../quilt/hexagon/0028-Hexagon-Add-ioremap-support.patch
+Applying: Hexagon: Add ioremap support
+$ git am ../quilt/hexagon/0029-Hexagon-Add-page-table-header-files-etc.patch
+Applying: Hexagon: Add page table header files & etc.
+/home/sfr/kernels/next/quilt-tmp/.git/rebase-apply/patch:1090: new blank line at EOF.
++
+warning: 1 line adds whitespace errors.
+$ git am ../quilt/hexagon/0030-Hexagon-Add-page-fault-support.patch
+Applying: Hexagon: Add page-fault support.
+$ git am ../quilt/hexagon/0031-Hexagon-kgdb-support-files.patch
+Applying: Hexagon: kgdb support files
+/home/sfr/kernels/next/quilt-tmp/.git/rebase-apply/patch:62: new blank line at EOF.
++
+warning: 1 line adds whitespace errors.
+$ git am ../quilt/hexagon/0032-Hexagon-Comet-platform-support.patch
+Applying: Hexagon: Comet platform support
+$ git am ../quilt/hexagon/0033-Hexagon-Add-configuration-and-makefiles-for-the-Hexa.patch
+Applying: Hexagon: Add configuration and makefiles for the Hexagon architecture.
+/home/sfr/kernels/next/quilt-tmp/.git/rebase-apply/patch:249: new blank line at EOF.
++
+/home/sfr/kernels/next/quilt-tmp/.git/rebase-apply/patch:314: new blank line at EOF.
++
+/home/sfr/kernels/next/quilt-tmp/.git/rebase-apply/patch:449: new blank line at EOF.
++
+/home/sfr/kernels/next/quilt-tmp/.git/rebase-apply/patch:558: new blank line at EOF.
++
+warning: 4 lines add whitespace errors.
+$ git am ../quilt/hexagon/0034-Hexagon-Add-basic-stacktrace-functionality-for-Hexag.patch
+Applying: Hexagon: Add basic stacktrace functionality for Hexagon architecture.
+$ git am ../quilt/hexagon/0035-Hexagon-Add-self-to-MAINTAINERS.patch
+Applying: Hexagon: Add self to MAINTAINERS
+$ git am ../quilt/hexagon/0036-Add-extra-arch-overrides-to-asm-generic-checksum.h.patch
+Applying: Add extra arch overrides to asm-generic/checksum.h
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/hexagon
+From ../quilt-tmp
+ + ee3b30d...f794f68 master     -> quilt/hexagon  (forced update)
+Importing i2c based on 3.1-rc4
+Unchanged quilt series i2c
+Importing jdelvare-hwmon based on 3.1-rc4
+Unchanged quilt series jdelvare-hwmon
+Importing kernel-doc based on 3.1-rc3
+Unchanged quilt series kernel-doc
+Importing rr based on v3.1-rc2-188-g6719db6
+Unchanged quilt series rr
+Importing device-mapper based on v3.1-rc1
+Unchanged quilt series device-mapper
+Importing hexagon based on v3.1-rc6
+Unchanged quilt series hexagon
+Importing i2c based on 3.1-rc4
+Unchanged quilt series i2c
+Importing jdelvare-hwmon based on 3.1-rc4
+Unchanged quilt series jdelvare-hwmon
+Importing kernel-doc based on 3.1-rc3
+Unchanged quilt series kernel-doc
+Importing rr based on v3.1-rc2-188-g6719db6
+Unchanged quilt series rr
+Importing device-mapper based on v3.1-rc1
+Unchanged quilt series device-mapper
