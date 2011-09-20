@@ -366,6 +366,8 @@ extern struct dev_pm_ops generic_subsys_pm_ops;
 #define PMSG_AUTO_RESUME	((struct pm_message) \
 					{ .event = PM_EVENT_AUTO_RESUME, })
 
+#define PMSG_IS_AUTO(msg)	(((msg).event & PM_EVENT_AUTO) != 0)
+
 /**
  * Device run-time power management status.
  *
@@ -419,7 +421,31 @@ enum rpm_request {
 	RPM_REQ_RESUME,
 };
 
+/* Per-device PM QoS constraints data struct state */
+enum dev_pm_qos_state {
+	DEV_PM_QOS_NO_DEVICE,		/* No device present */
+	DEV_PM_QOS_DEVICE_PRESENT,	/* Device present, data not allocated */
+	DEV_PM_QOS_ALLOCATED,		/* Device present, data allocated */
+};
+
 struct wakeup_source;
+
+struct pm_domain_data {
+	struct list_head list_node;
+	struct device *dev;
+	bool need_restore;
+};
+
+struct pm_subsys_data {
+	spinlock_t lock;
+	unsigned int refcount;
+#ifdef CONFIG_PM_CLK
+	struct list_head clock_list;
+#endif
+#ifdef CONFIG_PM_GENERIC_DOMAINS
+	struct pm_domain_data domain_data;
+#endif
+};
 
 struct dev_pm_info {
 	pm_message_t		power_state;
@@ -462,10 +488,14 @@ struct dev_pm_info {
 	unsigned long		suspended_jiffies;
 	unsigned long		accounting_timestamp;
 #endif
-	void			*subsys_data;  /* Owned by the subsystem. */
+	struct pm_subsys_data	*subsys_data;  /* Owned by the subsystem. */
+	struct pm_qos_constraints *constraints;
+	enum dev_pm_qos_state	constraints_state;
 };
 
 extern void update_pm_runtime_accounting(struct device *dev);
+extern int dev_pm_get_subsys_data(struct device *dev);
+extern int dev_pm_put_subsys_data(struct device *dev);
 
 /*
  * Power domains provide callbacks that are executed during system suspend,
