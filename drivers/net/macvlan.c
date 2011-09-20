@@ -543,7 +543,8 @@ static int macvlan_ethtool_get_settings(struct net_device *dev,
 					struct ethtool_cmd *cmd)
 {
 	const struct macvlan_dev *vlan = netdev_priv(dev);
-	return dev_ethtool_get_settings(vlan->lowerdev, cmd);
+
+	return __ethtool_get_settings(vlan->lowerdev, cmd);
 }
 
 static const struct ethtool_ops macvlan_ethtool_ops = {
@@ -561,7 +562,7 @@ static const struct net_device_ops macvlan_netdev_ops = {
 	.ndo_change_mtu		= macvlan_change_mtu,
 	.ndo_change_rx_flags	= macvlan_change_rx_flags,
 	.ndo_set_mac_address	= macvlan_set_mac_address,
-	.ndo_set_multicast_list	= macvlan_set_multicast_list,
+	.ndo_set_rx_mode	= macvlan_set_multicast_list,
 	.ndo_get_stats64	= macvlan_dev_get_stats64,
 	.ndo_validate_addr	= eth_validate_addr,
 	.ndo_vlan_rx_add_vid	= macvlan_vlan_rx_add_vid,

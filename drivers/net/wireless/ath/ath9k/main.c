@@ -163,7 +163,7 @@ static void ath_update_survey_nf(struct ath_softc *sc, int channel)
 
 	if (chan->noisefloor) {
 		survey->filled |= SURVEY_INFO_NOISE_DBM;
-		survey->noise = chan->noisefloor;
+		survey->noise = ath9k_hw_getchan_noise(ah, chan);
 	}
 }
 
@@ -294,6 +294,7 @@ static int ath_set_channel(struct ath_softc *sc, struct ieee80211_hw *hw,
 	ath9k_cmn_update_txpow(ah, sc->curtxpow,
 			       sc->config.txpowlimit, &sc->curtxpow);
 	ath9k_hw_set_interrupts(ah, ah->imask);
+	ath9k_hw_enable_interrupts(ah);
 
 	if (!(sc->sc_flags & (SC_OP_OFFCHANNEL))) {
 		if (sc->sc_flags & SC_OP_BEACONS)
@@ -545,6 +546,7 @@ set_timer:
 	* The interval must be the shortest necessary to satisfy ANI,
 	* short calibration and long calibration.
 	*/
+	ath9k_debug_samp_bb_mac(sc);
 	cal_interval = ATH_LONG_CALINTERVAL;
 	if (sc->sc_ah->config.enable_ani)
 		cal_interval = min(cal_interval,
@@ -564,7 +566,6 @@ set_timer:
 static void ath_node_attach(struct ath_softc *sc, struct ieee80211_sta *sta)
 {
 	struct ath_node *an;
-	struct ath_hw *ah = sc->sc_ah;
 	an = (struct ath_node *)sta->drv_priv;
 
 #ifdef CONFIG_ATH9K_DEBUGFS
@@ -573,9 +574,6 @@ static void ath_node_attach(struct ath_softc *sc, struct ieee80211_sta *sta)
 	spin_unlock(&sc->nodes_lock);
 	an->sta = sta;
 #endif
-	if ((ah->caps.hw_caps) & ATH9K_HW_CAP_APM)
-		sc->sc_flags |= SC_OP_ENABLE_APM;
-
 	if (sc->sc_flags & SC_OP_TXAGGR) {
 		ath_tx_node_init(sc, an);
 		an->maxampdu = 1 << (IEEE80211_HT_MAX_AMPDU_FACTOR +
@@ -706,8 +704,7 @@ void ath9k_tasklet(unsigned long data)
 		 */
 		ath_dbg(common, ATH_DBG_PS,
 			"TSFOOR - Sync with next Beacon\n");
-		sc->ps_flags |= PS_WAIT_FOR_BEACON | PS_BEACON_SYNC |
-				PS_TSFOOR_SYNC;
+		sc->ps_flags |= PS_WAIT_FOR_BEACON | PS_BEACON_SYNC;
 	}
 
 	if (ah->caps.hw_caps & ATH9K_HW_CAP_EDMA)
@@ -826,11 +823,9 @@ irqreturn_t ath_isr(int irq, void *dev)
 	if (status & ATH9K_INT_TXURN)
 		ath9k_hw_updatetxtriglevel(ah, true);
 
-	if (ah->caps.hw_caps & ATH9K_HW_CAP_EDMA) {
-		if (status & ATH9K_INT_RXEOL) {
-			ah->imask &= ~(ATH9K_INT_RXEOL | ATH9K_INT_RXORN);
-			ath9k_hw_set_interrupts(ah, ah->imask);
-		}
+	if (status & ATH9K_INT_RXEOL) {
+		ah->imask &= ~(ATH9K_INT_RXEOL | ATH9K_INT_RXORN);
+		ath9k_hw_set_interrupts(ah, ah->imask);
 	}
 
 	if (status & ATH9K_INT_MIB) {
@@ -886,8 +881,9 @@ static void ath_radio_enable(struct ath_softc *sc, struct ieee80211_hw *hw)
 
 	ath9k_ps_wakeup(sc);
 	spin_lock_bh(&sc->sc_pcu_lock);
+	atomic_set(&ah->intr_ref_cnt, -1);
 
-	ath9k_hw_configpcipowersave(ah, 0, 0);
+	ath9k_hw_configpcipowersave(ah, false);
 
 	if (!ah->curchan)
 		ah->curchan = ath9k_cmn_get_curchannel(sc->hw, ah);
@@ -910,6 +906,7 @@ static void ath_radio_enable(struct ath_softc *sc, struct ieee80211_hw *hw)
 
 	/* Re-Enable  interrupts */
 	ath9k_hw_set_interrupts(ah, ah->imask);
+	ath9k_hw_enable_interrupts(ah);
 
 	/* Enable LED */
 	ath9k_hw_cfg_output(ah, ah->led_pin,
@@ -967,7 +964,7 @@ void ath_radio_disable(struct ath_softc *sc, struct ieee80211_hw *hw)
 
 	ath9k_hw_phy_disable(ah);
 
-	ath9k_hw_configpcipowersave(ah, 1, 1);
+	ath9k_hw_configpcipowersave(ah, true);
 
 	spin_unlock_bh(&sc->sc_pcu_lock);
 	ath9k_ps_restore(sc);
@@ -982,6 +979,7 @@ int ath_reset(struct ath_softc *sc, bool retry_tx)
 
 	sc->hw_busy_count = 0;
 
+	ath9k_debug_samp_bb_mac(sc);
 	/* Stop ANI */
 
 	del_timer_sync(&common->ani.timer);
@@ -1016,6 +1014,7 @@ int ath_reset(struct ath_softc *sc, bool retry_tx)
 		ath_set_beacon(sc);	/* restart beacons */
 
 	ath9k_hw_set_interrupts(ah, ah->imask);
+	ath9k_hw_enable_interrupts(ah);
 
 	if (retry_tx) {
 		int i;
@@ -1066,7 +1065,7 @@ static int ath9k_start(struct ieee80211_hw *hw)
 	init_channel = ath9k_cmn_get_curchannel(hw, ah);
 
 	/* Reset SERDES registers */
-	ath9k_hw_configpcipowersave(ah, 0, 0);
+	ath9k_hw_configpcipowersave(ah, false);
 
 	/*
 	 * The basic interface to setting the hardware in a good
@@ -1130,6 +1129,7 @@ static int ath9k_start(struct ieee80211_hw *hw)
 	/* Disable BMISS interrupt when we're not associated */
 	ah->imask &= ~(ATH9K_INT_SWBA | ATH9K_INT_BMISS);
 	ath9k_hw_set_interrupts(ah, ah->imask);
+	ath9k_hw_enable_interrupts(ah);
 
 	ieee80211_wake_queues(hw);
 
@@ -1141,8 +1141,6 @@ static int ath9k_start(struct ieee80211_hw *hw)
 					   AR_STOMP_LOW_WLAN_WGHT);
 		ath9k_hw_btcoex_enable(ah);
 
-		if (common->bus_ops->bt_coex_prep)
-			common->bus_ops->bt_coex_prep(common);
 		if (ah->btcoex_hw.scheme == ATH_BTCOEX_CFG_3WIRE)
 			ath9k_btcoex_timer_resume(sc);
 	}
@@ -1676,6 +1674,7 @@ static int ath9k_config(struct ieee80211_hw *hw, u32 changed)
 
 	if (changed & IEEE80211_CONF_CHANGE_CHANNEL) {
 		struct ieee80211_channel *curchan = hw->conf.channel;
+		struct ath9k_channel old_chan;
 		int pos = curchan->hw_value;
 		int old_pos = -1;
 		unsigned long flags;
@@ -1692,13 +1691,23 @@ static int ath9k_config(struct ieee80211_hw *hw, u32 changed)
 			"Set channel: %d MHz type: %d\n",
 			curchan->center_freq, conf->channel_type);
 
-		ath9k_cmn_update_ichannel(&sc->sc_ah->channels[pos],
-					  curchan, conf->channel_type);
-
 		/* update survey stats for the old channel before switching */
 		spin_lock_irqsave(&common->cc_lock, flags);
 		ath_update_survey_stats(sc);
 		spin_unlock_irqrestore(&common->cc_lock, flags);
+
+		/*
+		 * Preserve the current channel values, before updating
+		 * the same channel
+		 */
+		if (old_pos == pos) {
+			memcpy(&old_chan, &sc->sc_ah->channels[pos],
+				sizeof(struct ath9k_channel));
+			ah->curchan = &old_chan;
+		}
+
+		ath9k_cmn_update_ichannel(&sc->sc_ah->channels[pos],
+					  curchan, conf->channel_type);
 
 		/*
 		 * If the operating channel changes, change the survey in-use flags
@@ -2406,6 +2415,20 @@ skip:
 	return sc->beacon.tx_last;
 }
 
+static int ath9k_get_stats(struct ieee80211_hw *hw,
+			   struct ieee80211_low_level_stats *stats)
+{
+	struct ath_softc *sc = hw->priv;
+	struct ath_hw *ah = sc->sc_ah;
+	struct ath9k_mib_stats *mib_stats = &ah->ah_mibStats;
+
+	stats->dot11ACKFailureCount = mib_stats->ackrcv_bad;
+	stats->dot11RTSFailureCount = mib_stats->rts_bad;
+	stats->dot11FCSErrorCount = mib_stats->fcs_bad;
+	stats->dot11RTSSuccessCount = mib_stats->rts_good;
+	return 0;
+}
+
 struct ieee80211_ops ath9k_ops = {
 	.tx 		    = ath9k_tx,
 	.start 		    = ath9k_start,
@@ -2430,5 +2453,6 @@ struct ieee80211_ops ath9k_ops = {
 	.set_coverage_class = ath9k_set_coverage_class,
 	.flush		    = ath9k_flush,
 	.tx_frames_pending  = ath9k_tx_frames_pending,
-	.tx_last_beacon = ath9k_tx_last_beacon,
+	.tx_last_beacon     = ath9k_tx_last_beacon,
+	.get_stats	    = ath9k_get_stats,
 };
