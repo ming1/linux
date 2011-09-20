@@ -81,7 +81,6 @@ struct nfsd4_access {
 struct nfsd4_close {
 	u32		cl_seqid;           /* request */
 	stateid_t	cl_stateid;         /* request+response */
-	struct nfs4_stateowner * cl_stateowner;	/* response */
 };
 
 struct nfsd4_commit {
@@ -131,7 +130,7 @@ struct nfsd4_link {
 
 struct nfsd4_lock_denied {
 	clientid_t	ld_clientid;
-	struct nfs4_stateowner   *ld_sop;
+	struct xdr_netobj	ld_owner;
 	u64             ld_start;
 	u64             ld_length;
 	u32             ld_type;
@@ -165,9 +164,6 @@ struct nfsd4_lock {
 		} ok;
 		struct nfsd4_lock_denied        denied;
 	} u;
-	/* The lk_replay_owner is the open owner in the open_to_lock_owner
-	 * case and the lock owner otherwise: */
-	struct nfs4_stateowner *lk_replay_owner;
 };
 #define lk_new_open_seqid       v.new.open_seqid
 #define lk_new_open_stateid     v.new.open_stateid
@@ -188,7 +184,6 @@ struct nfsd4_lockt {
 	struct xdr_netobj		lt_owner;
 	u64				lt_offset;
 	u64				lt_length;
-	struct nfs4_stateowner * 	lt_stateowner;
 	struct nfsd4_lock_denied  	lt_denied;
 };
 
@@ -199,7 +194,6 @@ struct nfsd4_locku {
 	stateid_t       lu_stateid;
 	u64             lu_offset;
 	u64             lu_length;
-	struct nfs4_stateowner  *lu_stateowner;
 };
 
 
@@ -243,7 +237,6 @@ struct nfsd4_open_confirm {
 	stateid_t	oc_req_stateid		/* request */;
 	u32		oc_seqid    		/* request */;
 	stateid_t	oc_resp_stateid		/* response */;
-	struct nfs4_stateowner * oc_stateowner;	/* response */
 };
 
 struct nfsd4_open_downgrade {
@@ -251,7 +244,6 @@ struct nfsd4_open_downgrade {
 	u32             od_seqid;
 	u32             od_share_access;
 	u32             od_share_deny;
-	struct nfs4_stateowner *od_stateowner;
 };
 
 
@@ -351,7 +343,7 @@ struct nfsd4_saved_compoundargs {
 
 struct nfsd4_test_stateid {
 	__be32		ts_num_ids;
-	__be32		ts_has_session;
+	bool		ts_has_session;
 	struct nfsd4_compoundargs *ts_saved_args;
 	struct nfsd4_saved_compoundargs ts_savedp;
 };
