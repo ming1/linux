@@ -249,6 +249,7 @@ struct mgmt_ev_new_key {
 #define MGMT_EV_CONNECTED		0x000B
 struct mgmt_ev_connected {
 	bdaddr_t bdaddr;
+	__u8 link_type;
 } __packed;
 
 #define MGMT_EV_DISCONNECTED		0x000C
@@ -301,3 +302,13 @@ struct mgmt_ev_remote_name {
 } __packed;
 
 #define MGMT_EV_DISCOVERING		0x0014
+
+#define MGMT_EV_DEVICE_BLOCKED		0x0015
+struct mgmt_ev_device_blocked {
+	bdaddr_t bdaddr;
+} __packed;
+
+#define MGMT_EV_DEVICE_UNBLOCKED	0x0016
+struct mgmt_ev_device_unblocked {
+	bdaddr_t bdaddr;
+} __packed;
