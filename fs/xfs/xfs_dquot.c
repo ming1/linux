@@ -402,8 +402,11 @@ xfs_qm_dqalloc(
 			       dqp->q_blkno,
 			       mp->m_quotainfo->qi_dqchunklen,
 			       0);
-	if (!bp || (error = xfs_buf_geterror(bp)))
+
+	error = xfs_buf_geterror(bp);
+	if (error)
 		goto error1;
+
 	/*
 	 * Make a chunk of dquots out of this buffer and log
 	 * the entire thing.
@@ -1242,9 +1245,11 @@ xfs_qm_dqflush(
 	}
 
 	if (flags & SYNC_WAIT)
-		error = xfs_bwrite(mp, bp);
+		error = xfs_bwrite(bp);
 	else
-		xfs_bdwrite(mp, bp);
+		xfs_buf_delwri_queue(bp);
+
+	xfs_buf_relse(bp);
 
 	trace_xfs_dqflush_done(dqp);
 
