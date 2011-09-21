@@ -37,6 +37,7 @@
 #include <plat/pd.h>
 #include <plat/gpio-cfg.h>
 #include <plat/backlight.h>
+#include <plat/mfc.h>
 
 #include <mach/map.h>
 
@@ -243,6 +244,9 @@ static struct platform_device *smdkv310_devices[] __initdata = {
 	&exynos4_device_ac97,
 	&exynos4_device_i2s0,
 	&samsung_device_keypad,
+	&s5p_device_mfc,
+	&s5p_device_mfc_l,
+	&s5p_device_mfc_r,
 	&exynos4_device_pd[PD_MFC],
 	&exynos4_device_pd[PD_G3D],
 	&exynos4_device_pd[PD_LCD0],
@@ -301,6 +305,11 @@ static void __init smdkv310_map_io(void)
 	s3c24xx_init_uarts(smdkv310_uartcfgs, ARRAY_SIZE(smdkv310_uartcfgs));
 }
 
+static void __init smdkv310_reserve(void)
+{
+	s5p_mfc_reserve_mem(0x43000000, 8 << 20, 0x51000000, 8 << 20);
+}
+
 static void __init smdkv310_machine_init(void)
 {
 	s3c_i2c1_set_platdata(NULL);
@@ -319,6 +328,7 @@ static void __init smdkv310_machine_init(void)
 	s5p_fimd0_set_platdata(&smdkv310_lcd0_pdata);
 
 	platform_add_devices(smdkv310_devices, ARRAY_SIZE(smdkv310_devices));
+	s5p_device_mfc.dev.parent = &exynos4_device_pd[PD_MFC].dev;
 }
 
 MACHINE_START(SMDKV310, "SMDKV310")
@@ -329,6 +339,7 @@ MACHINE_START(SMDKV310, "SMDKV310")
 	.map_io		= smdkv310_map_io,
 	.init_machine	= smdkv310_machine_init,
 	.timer		= &exynos4_timer,
+	.reserve	= &smdkv310_reserve,
 MACHINE_END
 
 MACHINE_START(SMDKC210, "SMDKC210")
