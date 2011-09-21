@@ -1240,7 +1240,7 @@ void blk_queue_bio(struct request_queue *q, struct bio *bio)
 	 * any locks.
 	 */
 	if (attempt_plug_merge(current, q, bio, &request_count))
-		goto out;
+		return;
 
 	spin_lock_irq(q->queue_lock);
 
