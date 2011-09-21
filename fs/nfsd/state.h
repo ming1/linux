@@ -76,6 +76,15 @@ struct nfsd4_callback {
 	bool cb_done;
 };
 
+struct nfs4_stid {
+#define NFS4_OPEN_STID 1
+#define NFS4_LOCK_STID 2
+#define NFS4_DELEG_STID 4
+	char sc_type;
+	struct list_head sc_hash;
+	stateid_t sc_stateid;
+};
+
 struct nfs4_delegation {
 	struct list_head	dl_perfile;
 	struct list_head	dl_perclnt;
@@ -86,7 +95,7 @@ struct nfs4_delegation {
 	u32			dl_type;
 	time_t			dl_time;
 /* For recall: */
-	stateid_t		dl_stateid;
+	struct nfs4_stid	dl_stid;
 	struct knfsd_fh		dl_fh;
 	int			dl_retries;
 	struct nfsd4_callback	dl_recall;
@@ -103,6 +112,11 @@ struct nfs4_cb_conn {
 	u32                     cb_ident;	/* minorversion 0 only */
 	struct svc_xprt		*cb_xprt;	/* minorversion 1 only */
 };
+
+static inline struct nfs4_delegation *delegstateid(struct nfs4_stid *s)
+{
+	return container_of(s, struct nfs4_delegation, dl_stid);
+}
 
 /* Maximum number of slots per session. 160 is useful for long haul TCP */
 #define NFSD_MAX_SLOTS_PER_SESSION     160
@@ -293,6 +307,9 @@ static inline void
 update_stateid(stateid_t *stateid)
 {
 	stateid->si_generation++;
+	/* Wraparound recommendation from 3530bis-13 9.1.3.2: */
+	if (stateid->si_generation == 0)
+		stateid->si_generation = 1;
 }
 
 /* A reasonable value for REPLAY_ISIZE was estimated as follows:  
@@ -312,7 +329,6 @@ struct nfs4_replay {
 	__be32			rp_status;
 	unsigned int		rp_buflen;
 	char			*rp_buf;
-	unsigned		intrp_allocated;
 	struct knfsd_fh		rp_openfh;
 	char			rp_ibuf[NFSD4_REPLAY_ISIZE];
 };
@@ -326,24 +342,20 @@ struct nfs4_replay {
 *         for lock_owner
 *    so_perclient: nfs4_client->cl_perclient entry - used when nfs4_client
 *         struct is reaped.
-*    so_perfilestate: heads the list of nfs4_stateid (either open or lock) 
-*         and is used to ensure no dangling nfs4_stateid references when we 
+*    so_perfilestate: heads the list of nfs4_ol_stateid (either open or lock) 
+*         and is used to ensure no dangling nfs4_ol_stateid references when we 
 *         release a stateowner.
-*    so_perlockowner: (open) nfs4_stateid->st_perlockowner entry - used when
+*    so_perlockowner: (open) nfs4_ol_stateid->st_perlockowner entry - used when
 *         close is called to reap associated byte-range locks
 *    so_close_lru: (open) stateowner is placed on this list instead of being
 *         reaped (when so_perfilestate is empty) to hold the last close replay.
 *         reaped by laundramat thread after lease period.
 */
+
 struct nfs4_stateowner {
-	struct kref		so_ref;
 	struct list_head        so_idhash;   /* hash by so_id */
 	struct list_head        so_strhash;   /* hash by op_name */
-	struct list_head        so_perclient;
 	struct list_head        so_stateids;
-	struct list_head        so_perstateid; /* for lockowners only */
-	struct list_head	so_close_lru; /* tail queue */
-	time_t			so_time; /* time of placement on so_close_lru */
 	int			so_is_open_owner; /* 1=openowner,0=lockowner */
 	u32                     so_id;
 	struct nfs4_client *    so_client;
@@ -351,9 +363,32 @@ struct nfs4_stateowner {
 	 * sequence id expected from the client: */
 	u32                     so_seqid;
 	struct xdr_netobj       so_owner;     /* open owner name */
-	int                     so_confirmed; /* successful OPEN_CONFIRM? */
 	struct nfs4_replay	so_replay;
 };
+
+struct nfs4_openowner {
+	struct nfs4_stateowner	oo_owner; /* must be first field */
+	struct list_head        oo_perclient;
+	struct list_head	oo_close_lru; /* tail queue */
+	time_t			oo_time; /* time of placement on so_close_lru */
+	int                     oo_confirmed; /* successful OPEN_CONFIRM? */
+};
+
+struct nfs4_lockowner {
+	struct nfs4_stateowner	lo_owner; /* must be first element */
+	struct list_head        lo_perstateid; /* for lockowners only */
+	struct list_head	lo_list; /* for temporary uses */
+};
+
+static inline struct nfs4_openowner * openowner(struct nfs4_stateowner *so)
+{
+	return container_of(so, struct nfs4_openowner, oo_owner);
+}
+
+static inline struct nfs4_lockowner * lockowner(struct nfs4_stateowner *so)
+{
+	return container_of(so, struct nfs4_lockowner, lo_owner);
+}
 
 /*
 *  nfs4_file: a file opened by some number of (open) nfs4_stateowners.
@@ -409,9 +444,9 @@ static inline struct file *find_any_file(struct nfs4_file *f)
 }
 
 /*
-* nfs4_stateid can either be an open stateid or (eventually) a lock stateid
+* nfs4_ol_stateid can either be an open stateid or (eventually) a lock stateid
 *
-* (open)nfs4_stateid: one per (open)nfs4_stateowner, nfs4_file
+* (open)nfs4_ol_stateid: one per (open)nfs4_stateowner, nfs4_file
 *
 * 	st_hash: stateid_hashtbl[] entry or lockstateid_hashtbl entry
 * 	st_perfile: file_hashtbl[] entry.
@@ -425,33 +460,27 @@ static inline struct file *find_any_file(struct nfs4_file *f)
 * we should consider defining separate structs for the two cases.
 */
 
-struct nfs4_stateid {
-	struct list_head              st_hash; 
+/* "ol" stands for "Open or Lock".  Better suggestions welcome. */
+struct nfs4_ol_stateid {
+	struct nfs4_stid    st_stid;
 	struct list_head              st_perfile;
 	struct list_head              st_perstateowner;
 	struct list_head              st_lockowners;
 	struct nfs4_stateowner      * st_stateowner;
 	struct nfs4_file            * st_file;
-	stateid_t                     st_stateid;
 	unsigned long                 st_access_bmap;
 	unsigned long                 st_deny_bmap;
-	struct nfs4_stateid         * st_openstp;
+	struct nfs4_ol_stateid         * st_openstp;
 };
 
+static inline struct nfs4_ol_stateid *openlockstateid(struct nfs4_stid *s)
+{
+	return container_of(s, struct nfs4_ol_stateid, st_stid);
+}
+
 /* flags for preprocess_seqid_op() */
-#define HAS_SESSION             0x00000001
-#define CONFIRM                 0x00000002
-#define OPEN_STATE              0x00000004
-#define LOCK_STATE              0x00000008
 #define RD_STATE	        0x00000010
 #define WR_STATE	        0x00000020
-#define CLOSE_STATE             0x00000040
-
-#define seqid_mutating_err(err)                       \
-	(((err) != nfserr_stale_clientid) &&    \
-	((err) != nfserr_bad_seqid) &&          \
-	((err) != nfserr_stale_stateid) &&      \
-	((err) != nfserr_bad_stateid))
 
 struct nfsd4_compound_state;
 
@@ -461,7 +490,8 @@ extern void nfs4_lock_state(void);
 extern void nfs4_unlock_state(void);
 extern int nfs4_in_grace(void);
 extern __be32 nfs4_check_open_reclaim(clientid_t *clid);
-extern void nfs4_free_stateowner(struct kref *kref);
+extern void nfs4_free_openowner(struct nfs4_openowner *);
+extern void nfs4_free_lockowner(struct nfs4_lockowner *);
 extern int set_callback_cred(void);
 extern void nfsd4_probe_callback(struct nfs4_client *clp);
 extern void nfsd4_probe_callback_sync(struct nfs4_client *clp);
@@ -473,7 +503,7 @@ extern void nfsd4_destroy_callback_queue(void);
 extern void nfsd4_shutdown_callback(struct nfs4_client *);
 extern void nfs4_put_delegation(struct nfs4_delegation *dp);
 extern __be32 nfs4_make_rec_clidname(char *clidname, struct xdr_netobj *clname);
-extern void nfsd4_init_recdir(char *recdir_name);
+extern void nfsd4_init_recdir(void);
 extern int nfsd4_recdir_load(void);
 extern void nfsd4_shutdown_recdir(void);
 extern int nfs4_client_to_reclaim(const char *name);
@@ -482,18 +512,6 @@ extern void nfsd4_recdir_purge_old(void);
 extern int nfsd4_create_clid_dir(struct nfs4_client *clp);
 extern void nfsd4_remove_clid_dir(struct nfs4_client *clp);
 extern void release_session_client(struct nfsd4_session *);
-extern __be32 nfs4_validate_stateid(stateid_t *, int);
-
-static inline void
-nfs4_put_stateowner(struct nfs4_stateowner *so)
-{
-	kref_put(&so->so_ref, nfs4_free_stateowner);
-}
-
-static inline void
-nfs4_get_stateowner(struct nfs4_stateowner *so)
-{
-	kref_get(&so->so_ref);
-}
+extern __be32 nfs4_validate_stateid(stateid_t *, bool);
 
 #endif   /* NFSD4_STATE_H */
