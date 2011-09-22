@@ -36,6 +36,18 @@ static struct mutex uprobes_mutex[UPROBES_HASH_SZ];
 #define uprobes_hash(v)	(&uprobes_mutex[((unsigned long)(v)) %\
 						UPROBES_HASH_SZ])
 
+/* serialize uprobe->pending_list */
+static struct mutex uprobes_mmap_mutex[UPROBES_HASH_SZ];
+#define uprobes_mmap_hash(v)	(&uprobes_mmap_mutex[((unsigned long)(v)) %\
+						UPROBES_HASH_SZ])
+
+/*
+ * uprobe_events allows us to skip the mmap_uprobe if there are no uprobe
+ * events active at this time.  Probably a fine grained per inode count is
+ * better?
+ */
+static atomic_t uprobe_events = ATOMIC_INIT(0);
+
 /*
  * Maintain a temporary per vma info that can be used to search if a vma
  * has already been handled. This structure is introduced since extending
@@ -105,7 +117,6 @@ static struct uprobe *__find_uprobe(struct inode *inode, loff_t offset)
 			n = n->rb_left;
 		else
 			n = n->rb_right;
-
 	}
 	return NULL;
 }
@@ -191,6 +202,7 @@ static struct uprobe *alloc_uprobe(struct inode *inode, loff_t offset)
 	uprobe->inode = igrab(inode);
 	uprobe->offset = offset;
 	init_rwsem(&uprobe->consumer_rwsem);
+	INIT_LIST_HEAD(&uprobe->pending_list);
 
 	/* add to uprobes_tree, sorted on inode:offset */
 	cur_uprobe = insert_uprobe(uprobe);
@@ -200,7 +212,8 @@ static struct uprobe *alloc_uprobe(struct inode *inode, loff_t offset)
 		kfree(uprobe);
 		uprobe = cur_uprobe;
 		iput(inode);
-	}
+	} else
+		atomic_inc(&uprobe_events);
 	return uprobe;
 }
 
@@ -238,15 +251,24 @@ static bool del_consumer(struct uprobe *uprobe,
 	return ret;
 }
 
-static int install_breakpoint(struct mm_struct *mm)
+static int install_breakpoint(struct mm_struct *mm, struct uprobe *uprobe)
 {
-	/* Placeholder: Yet to be implemented */
+	/*
+	 * Probe is to be deleted;
+	 * Dont know if somebody already inserted the probe;
+	 * behave as if probe already exists.
+	 */
+	if (!uprobe->consumers)
+		return -EEXIST;
+
+	atomic_inc(&mm->mm_uprobes_count);
 	return 0;
 }
 
-static void remove_breakpoint(struct mm_struct *mm)
+static void remove_breakpoint(struct mm_struct *mm, struct uprobe *uprobe)
 {
 	/* Placeholder: Yet to be implemented */
+	atomic_dec(&mm->mm_uprobes_count);
 	return;
 }
 
@@ -259,6 +281,7 @@ static void delete_uprobe(struct uprobe *uprobe)
 	spin_unlock_irqrestore(&uprobes_treelock, flags);
 	iput(uprobe->inode);
 	put_uprobe(uprobe);
+	atomic_dec(&uprobe_events);
 }
 
 static struct vma_info *__find_next_vma_info(struct list_head *head,
@@ -362,7 +385,7 @@ static int __register_uprobe(struct inode *inode, loff_t offset,
 			mmput(mm);
 			continue;
 		}
-		ret = install_breakpoint(mm);
+		ret = install_breakpoint(mm, uprobe);
 		up_read(&mm->mmap_sem);
 		mmput(mm);
 		if (ret && ret == -EEXIST)
@@ -413,7 +436,7 @@ static void __unregister_uprobe(struct inode *inode, loff_t offset,
 			mmput(mm);
 			continue;
 		}
-		remove_breakpoint(mm);
+		remove_breakpoint(mm, uprobe);
 		up_read(&mm->mmap_sem);
 		mmput(mm);
 	}
@@ -514,13 +537,160 @@ unreg_out:
 		iput(inode);
 }
 
+/*
+ * Of all the nodes that correspond to the given inode, return the node
+ * with the least offset.
+ */
+static struct rb_node *find_least_offset_node(struct inode *inode)
+{
+	struct uprobe u = { .inode = inode, .offset = 0};
+	struct rb_node *n = uprobes_tree.rb_node;
+	struct rb_node *close_node = NULL;
+	struct uprobe *uprobe;
+	int match;
+
+	while (n) {
+		uprobe = rb_entry(n, struct uprobe, rb_node);
+		match = match_uprobe(&u, uprobe);
+		if (uprobe->inode == inode)
+			close_node = n;
+
+		if (!match)
+			return close_node;
+
+		if (match < 0)
+			n = n->rb_left;
+		else
+			n = n->rb_right;
+	}
+	return close_node;
+}
+
+/*
+ * For a given inode, build a list of probes that need to be inserted.
+ */
+static void build_probe_list(struct inode *inode, struct list_head *head)
+{
+	struct uprobe *uprobe;
+	struct rb_node *n;
+	unsigned long flags;
+
+	spin_lock_irqsave(&uprobes_treelock, flags);
+	n = find_least_offset_node(inode);
+	for (; n; n = rb_next(n)) {
+		uprobe = rb_entry(n, struct uprobe, rb_node);
+		if (uprobe->inode != inode)
+			break;
+
+		list_add(&uprobe->pending_list, head);
+		atomic_inc(&uprobe->ref);
+	}
+	spin_unlock_irqrestore(&uprobes_treelock, flags);
+}
+
+/*
+ * Called from mmap_region.
+ * called with mm->mmap_sem acquired.
+ *
+ * Return -ve no if we fail to insert probes and we cannot
+ * bail-out.
+ * Return 0 otherwise. i.e :
+ *	- successful insertion of probes
+ *	- (or) no possible probes to be inserted.
+ *	- (or) insertion of probes failed but we can bail-out.
+ */
+int mmap_uprobe(struct vm_area_struct *vma)
+{
+	struct list_head tmp_list;
+	struct uprobe *uprobe, *u;
+	struct inode *inode;
+	int ret = 0, count = 0;
+
+	if (!atomic_read(&uprobe_events) || !valid_vma(vma, true))
+		return ret;	/* Bail-out */
+
+	inode = igrab(vma->vm_file->f_mapping->host);
+	if (!inode)
+		return ret;
+
+	INIT_LIST_HEAD(&tmp_list);
+	mutex_lock(uprobes_mmap_hash(inode));
+	build_probe_list(inode, &tmp_list);
+	list_for_each_entry_safe(uprobe, u, &tmp_list, pending_list) {
+		loff_t vaddr;
+
+		list_del(&uprobe->pending_list);
+		if (!ret) {
+			vaddr = vma->vm_start + uprobe->offset;
+			vaddr -= vma->vm_pgoff << PAGE_SHIFT;
+			if (vaddr < vma->vm_start || vaddr >= vma->vm_end) {
+				put_uprobe(uprobe);
+				continue;
+			}
+			ret = install_breakpoint(vma->vm_mm, uprobe);
+			if (ret == -EEXIST) {
+				atomic_inc(&vma->vm_mm->mm_uprobes_count);
+				ret = 0;
+			}
+			if (!ret)
+				count++;
+		}
+		put_uprobe(uprobe);
+	}
+
+	mutex_unlock(uprobes_mmap_hash(inode));
+	iput(inode);
+	if (ret)
+		atomic_sub(count, &vma->vm_mm->mm_uprobes_count);
+
+	return ret;
+}
+
+/*
+ * Called in context of a munmap of a vma.
+ */
+void munmap_uprobe(struct vm_area_struct *vma)
+{
+	struct list_head tmp_list;
+	struct uprobe *uprobe, *u;
+	struct inode *inode;
+
+	if (!atomic_read(&uprobe_events) || !valid_vma(vma, false))
+		return;		/* Bail-out */
+
+	if (!atomic_read(&vma->vm_mm->mm_uprobes_count))
+		return;
+
+	inode = igrab(vma->vm_file->f_mapping->host);
+	if (!inode)
+		return;
+
+	INIT_LIST_HEAD(&tmp_list);
+	mutex_lock(uprobes_mmap_hash(inode));
+	build_probe_list(inode, &tmp_list);
+	list_for_each_entry_safe(uprobe, u, &tmp_list, pending_list) {
+		loff_t vaddr;
+
+		list_del(&uprobe->pending_list);
+		vaddr = vma->vm_start + uprobe->offset;
+		vaddr -= vma->vm_pgoff << PAGE_SHIFT;
+		if (vaddr >= vma->vm_start && vaddr < vma->vm_end)
+			atomic_dec(&vma->vm_mm->mm_uprobes_count);
+		put_uprobe(uprobe);
+	}
+	mutex_unlock(uprobes_mmap_hash(inode));
+	iput(inode);
+	return;
+}
+
 static int __init init_uprobes(void)
 {
 	int i;
 
-	for (i = 0; i < UPROBES_HASH_SZ; i++)
+	for (i = 0; i < UPROBES_HASH_SZ; i++) {
 		mutex_init(&uprobes_mutex[i]);
-
+		mutex_init(&uprobes_mmap_mutex[i]);
+	}
 	return 0;
 }
 
