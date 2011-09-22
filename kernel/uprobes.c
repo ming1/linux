@@ -23,6 +23,7 @@
 
 #include <linux/kernel.h>
 #include <linux/highmem.h>
+#include <linux/pagemap.h>	/* read_mapping_page */
 #include <linux/slab.h>
 #include <linux/sched.h>
 #include <linux/uprobes.h>
@@ -80,6 +81,20 @@ static bool valid_vma(struct vm_area_struct *vma, bool is_reg)
 		return true;
 
 	return false;
+}
+
+int __weak set_bkpt(struct mm_struct *mm, struct uprobe *uprobe,
+						unsigned long vaddr)
+{
+	/* placeholder: yet to be implemented */
+	return 0;
+}
+
+int __weak set_orig_insn(struct mm_struct *mm, struct uprobe *uprobe,
+					unsigned long vaddr, bool verify)
+{
+	/* placeholder: yet to be implemented */
+	return 0;
 }
 
 static int match_uprobe(struct uprobe *l, struct uprobe *r)
@@ -251,8 +266,71 @@ static bool del_consumer(struct uprobe *uprobe,
 	return ret;
 }
 
-static int install_breakpoint(struct mm_struct *mm, struct uprobe *uprobe)
+static int __copy_insn(struct address_space *mapping,
+			struct vm_area_struct *vma, char *insn,
+			unsigned long nbytes, unsigned long offset)
 {
+	struct file *filp = vma->vm_file;
+	struct page *page;
+	void *vaddr;
+	unsigned long off1;
+	unsigned long idx;
+
+	if (!filp)
+		return -EINVAL;
+
+	idx = (unsigned long)(offset >> PAGE_CACHE_SHIFT);
+	off1 = offset &= ~PAGE_MASK;
+
+	/*
+	 * Ensure that the page that has the original instruction is
+	 * populated and in page-cache.
+	 */
+	page = read_mapping_page(mapping, idx, filp);
+	if (IS_ERR(page))
+		return -ENOMEM;
+
+	vaddr = kmap_atomic(page);
+	memcpy(insn, vaddr + off1, nbytes);
+	kunmap_atomic(vaddr);
+	page_cache_release(page);
+	return 0;
+}
+
+static int copy_insn(struct uprobe *uprobe, struct vm_area_struct *vma,
+					unsigned long addr)
+{
+	struct address_space *mapping;
+	int bytes;
+	unsigned long nbytes;
+
+	addr &= ~PAGE_MASK;
+	nbytes = PAGE_SIZE - addr;
+	mapping = uprobe->inode->i_mapping;
+
+	/* Instruction at end of binary; copy only available bytes */
+	if (uprobe->offset + MAX_UINSN_BYTES > uprobe->inode->i_size)
+		bytes = uprobe->inode->i_size - uprobe->offset;
+	else
+		bytes = MAX_UINSN_BYTES;
+
+	/* Instruction at the page-boundary; copy bytes in second page */
+	if (nbytes < bytes) {
+		if (__copy_insn(mapping, vma, uprobe->insn + nbytes,
+				bytes - nbytes, uprobe->offset + nbytes))
+			return -ENOMEM;
+
+		bytes = nbytes;
+	}
+	return __copy_insn(mapping, vma, uprobe->insn, bytes, uprobe->offset);
+}
+
+static int install_breakpoint(struct mm_struct *mm, struct uprobe *uprobe,
+				struct vm_area_struct *vma, loff_t vaddr)
+{
+	unsigned long addr;
+	int ret = -EINVAL;
+
 	/*
 	 * Probe is to be deleted;
 	 * Dont know if somebody already inserted the probe;
@@ -261,15 +339,27 @@ static int install_breakpoint(struct mm_struct *mm, struct uprobe *uprobe)
 	if (!uprobe->consumers)
 		return -EEXIST;
 
-	atomic_inc(&mm->mm_uprobes_count);
-	return 0;
+	addr = (unsigned long)vaddr;
+	if (!uprobe->copy) {
+		ret = copy_insn(uprobe, vma, addr);
+		if (ret)
+			return ret;
+
+		/* TODO : Analysis and verification of instruction */
+		uprobe->copy = 1;
+	}
+	ret = set_bkpt(mm, uprobe, addr);
+	if (!ret)
+		atomic_inc(&mm->mm_uprobes_count);
+
+	return ret;
 }
 
-static void remove_breakpoint(struct mm_struct *mm, struct uprobe *uprobe)
+static void remove_breakpoint(struct mm_struct *mm, struct uprobe *uprobe,
+							loff_t vaddr)
 {
-	/* Placeholder: Yet to be implemented */
-	atomic_dec(&mm->mm_uprobes_count);
-	return;
+	if (!set_orig_insn(mm, uprobe, (unsigned long)vaddr, true))
+		atomic_dec(&mm->mm_uprobes_count);
 }
 
 static void delete_uprobe(struct uprobe *uprobe)
@@ -385,7 +475,7 @@ static int __register_uprobe(struct inode *inode, loff_t offset,
 			mmput(mm);
 			continue;
 		}
-		ret = install_breakpoint(mm, uprobe);
+		ret = install_breakpoint(mm, uprobe, vma, vi->vaddr);
 		up_read(&mm->mmap_sem);
 		mmput(mm);
 		if (ret && ret == -EEXIST)
@@ -436,7 +526,7 @@ static void __unregister_uprobe(struct inode *inode, loff_t offset,
 			mmput(mm);
 			continue;
 		}
-		remove_breakpoint(mm, uprobe);
+		remove_breakpoint(mm, uprobe, vi->vaddr);
 		up_read(&mm->mmap_sem);
 		mmput(mm);
 	}
@@ -627,7 +717,8 @@ int mmap_uprobe(struct vm_area_struct *vma)
 				put_uprobe(uprobe);
 				continue;
 			}
-			ret = install_breakpoint(vma->vm_mm, uprobe);
+			ret = install_breakpoint(vma->vm_mm, uprobe, vma,
+								vaddr);
 			if (ret == -EEXIST) {
 				atomic_inc(&vma->vm_mm->mm_uprobes_count);
 				ret = 0;

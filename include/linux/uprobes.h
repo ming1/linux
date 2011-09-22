@@ -27,6 +27,12 @@
 #include <linux/rbtree.h>
 
 struct vm_area_struct;
+#ifdef CONFIG_ARCH_SUPPORTS_UPROBES
+#include <asm/uprobes.h>
+#else
+
+#define MAX_UINSN_BYTES 4
+#endif
 
 struct uprobe_consumer {
 	int (*handler)(struct uprobe_consumer *self, struct pt_regs *regs);
@@ -47,9 +53,15 @@ struct uprobe {
 	struct uprobe_consumer	*consumers;
 	struct inode		*inode;		/* Also hold a ref to inode */
 	loff_t			offset;
+	int			copy;
+	u8			insn[MAX_UINSN_BYTES];
 };
 
 #ifdef CONFIG_UPROBES
+extern int __weak set_bkpt(struct mm_struct *mm, struct uprobe *uprobe,
+							unsigned long vaddr);
+extern int __weak set_orig_insn(struct mm_struct *mm, struct uprobe *uprobe,
+					unsigned long vaddr, bool verify);
 extern int register_uprobe(struct inode *inode, loff_t offset,
 				struct uprobe_consumer *consumer);
 extern void unregister_uprobe(struct inode *inode, loff_t offset,
