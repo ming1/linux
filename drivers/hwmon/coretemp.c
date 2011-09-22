@@ -36,16 +36,25 @@
 #include <linux/cpu.h>
 #include <linux/pci.h>
 #include <linux/smp.h>
+#include <linux/moduleparam.h>
 #include <asm/msr.h>
 #include <asm/processor.h>
 
 #define DRVNAME	"coretemp"
 
+/*
+ * force_tjmax only matters when TjMax can't be read from the CPU itself.
+ * When set, it replaces the driver's suboptimal heuristic.
+ */
+static int force_tjmax;
+module_param_named(tjmax, force_tjmax, int, 0444);
+MODULE_PARM_DESC(tjmax, "TjMax value in degrees Celsius");
+
 #define BASE_SYSFS_ATTR_NO	2	/* Sysfs Base attr no for coretemp */
 #define NUM_REAL_CORES		16	/* Number of Real cores per cpu */
-#define CORETEMP_NAME_LENGTH	17	/* String Length of attrs */
-#define MAX_CORE_ATTRS		4	/* Maximum no of basic attrs */
-#define MAX_THRESH_ATTRS	3	/* Maximum no of Threshold attrs */
+#define CORETEMP_NAME_LENGTH	33	/* String Length of attrs */
+#define MAX_CORE_ATTRS		5	/* Maximum no of basic attrs */
+#define MAX_THRESH_ATTRS	4	/* Maximum no of threshold attrs */
 #define TOTAL_ATTRS		(MAX_CORE_ATTRS + MAX_THRESH_ATTRS)
 #define MAX_CORE_DATA		(NUM_REAL_CORES + BASE_SYSFS_ATTR_NO)
 
@@ -79,7 +88,6 @@
 struct temp_data {
 	int temp;
 	int ttarget;
-	int tmin;
 	int tjmax;
 	unsigned long last_updated;
 	unsigned int cpu;
@@ -143,8 +151,9 @@ static ssize_t show_crit_alarm(struct device *dev,
 	return sprintf(buf, "%d\n", (eax >> 5) & 1);
 }
 
-static ssize_t show_max_alarm(struct device *dev,
-				struct device_attribute *devattr, char *buf)
+static ssize_t show_tx_triggered(struct device *dev,
+				 struct device_attribute *devattr, char *buf,
+				 u32 mask)
 {
 	u32 eax, edx;
 	struct sensor_device_attribute *attr = to_sensor_dev_attr(devattr);
@@ -153,7 +162,19 @@ static ssize_t show_max_alarm(struct device *dev,
 
 	rdmsr_on_cpu(tdata->cpu, tdata->status_reg, &eax, &edx);
 
-	return sprintf(buf, "%d\n", !!(eax & THERM_STATUS_THRESHOLD1));
+	return sprintf(buf, "%d\n", !!(eax & mask));
+}
+
+static ssize_t show_t0_triggered(struct device *dev,
+				 struct device_attribute *devattr, char *buf)
+{
+	return show_tx_triggered(dev, devattr, buf, THERM_STATUS_THRESHOLD0);
+}
+
+static ssize_t show_t1_triggered(struct device *dev,
+				 struct device_attribute *devattr, char *buf)
+{
+	return show_tx_triggered(dev, devattr, buf, THERM_STATUS_THRESHOLD1);
 }
 
 static ssize_t show_tjmax(struct device *dev,
@@ -174,9 +195,25 @@ static ssize_t show_ttarget(struct device *dev,
 	return sprintf(buf, "%d\n", pdata->core_data[attr->index]->ttarget);
 }
 
-static ssize_t store_ttarget(struct device *dev,
-				struct device_attribute *devattr,
-				const char *buf, size_t count)
+static ssize_t show_tx(struct device *dev,
+		       struct device_attribute *devattr, char *buf,
+		       u32 mask, int shift)
+{
+	struct platform_data *pdata = dev_get_drvdata(dev);
+	struct sensor_device_attribute *attr = to_sensor_dev_attr(devattr);
+	struct temp_data *tdata = pdata->core_data[attr->index];
+	u32 eax, edx;
+	int t;
+
+	rdmsr_on_cpu(tdata->cpu, tdata->intrpt_reg, &eax, &edx);
+	t = tdata->tjmax - ((eax & mask) >> shift) * 1000;
+	return sprintf(buf, "%d\n", t);
+}
+
+static ssize_t store_tx(struct device *dev,
+			struct device_attribute *devattr,
+			const char *buf, size_t count,
+			u32 mask, int shift)
 {
 	struct platform_data *pdata = dev_get_drvdata(dev);
 	struct sensor_device_attribute *attr = to_sensor_dev_attr(devattr);
@@ -189,7 +226,7 @@ static ssize_t store_ttarget(struct device *dev,
 		return -EINVAL;
 
 	/*
-	 * THERM_MASK_THRESHOLD1 is 7 bits wide. Values are entered in terms
+	 * Thermal threshold mask is 7 bits wide. Values are entered in terms
 	 * of milli degree celsius. Hence don't accept val > (127 * 1000)
 	 */
 	if (val > tdata->tjmax || val > 127000)
@@ -199,56 +236,41 @@ static ssize_t store_ttarget(struct device *dev,
 
 	mutex_lock(&tdata->update_lock);
 	rdmsr_on_cpu(tdata->cpu, tdata->intrpt_reg, &eax, &edx);
-	eax = (eax & ~THERM_MASK_THRESHOLD1) |
-				(diff << THERM_SHIFT_THRESHOLD1);
+	eax = (eax & ~mask) | (diff << shift);
 	wrmsr_on_cpu(tdata->cpu, tdata->intrpt_reg, eax, edx);
-	tdata->ttarget = val;
 	mutex_unlock(&tdata->update_lock);
 
 	return count;
 }
 
-static ssize_t show_tmin(struct device *dev,
-			struct device_attribute *devattr, char *buf)
+static ssize_t show_t0(struct device *dev,
+		       struct device_attribute *devattr, char *buf)
 {
-	struct sensor_device_attribute *attr = to_sensor_dev_attr(devattr);
-	struct platform_data *pdata = dev_get_drvdata(dev);
-
-	return sprintf(buf, "%d\n", pdata->core_data[attr->index]->tmin);
+	return show_tx(dev, devattr, buf, THERM_MASK_THRESHOLD0,
+		       THERM_SHIFT_THRESHOLD0);
 }
 
-static ssize_t store_tmin(struct device *dev,
-				struct device_attribute *devattr,
-				const char *buf, size_t count)
+static ssize_t store_t0(struct device *dev,
+			struct device_attribute *devattr,
+			const char *buf, size_t count)
 {
-	struct platform_data *pdata = dev_get_drvdata(dev);
-	struct sensor_device_attribute *attr = to_sensor_dev_attr(devattr);
-	struct temp_data *tdata = pdata->core_data[attr->index];
-	u32 eax, edx;
-	unsigned long val;
-	int diff;
+	return store_tx(dev, devattr, buf, count, THERM_MASK_THRESHOLD0,
+			THERM_SHIFT_THRESHOLD0);
+}
 
-	if (strict_strtoul(buf, 10, &val))
-		return -EINVAL;
+static ssize_t show_t1(struct device *dev,
+		       struct device_attribute *devattr, char *buf)
+{
+	return show_tx(dev, devattr, buf, THERM_MASK_THRESHOLD1,
+		       THERM_SHIFT_THRESHOLD1);
+}
 
-	/*
-	 * THERM_MASK_THRESHOLD0 is 7 bits wide. Values are entered in terms
-	 * of milli degree celsius. Hence don't accept val > (127 * 1000)
-	 */
-	if (val > tdata->tjmax || val > 127000)
-		return -EINVAL;
-
-	diff = (tdata->tjmax - val) / 1000;
-
-	mutex_lock(&tdata->update_lock);
-	rdmsr_on_cpu(tdata->cpu, tdata->intrpt_reg, &eax, &edx);
-	eax = (eax & ~THERM_MASK_THRESHOLD0) |
-				(diff << THERM_SHIFT_THRESHOLD0);
-	wrmsr_on_cpu(tdata->cpu, tdata->intrpt_reg, eax, edx);
-	tdata->tmin = val;
-	mutex_unlock(&tdata->update_lock);
-
-	return count;
+static ssize_t store_t1(struct device *dev,
+			struct device_attribute *devattr,
+			const char *buf, size_t count)
+{
+	return store_tx(dev, devattr, buf, count, THERM_MASK_THRESHOLD1,
+			THERM_SHIFT_THRESHOLD1);
 }
 
 static ssize_t show_temp(struct device *dev,
@@ -374,7 +396,6 @@ static int adjust_tjmax(struct cpuinfo_x86 *c, u32 id, struct device *dev)
 
 static int get_tjmax(struct cpuinfo_x86 *c, u32 id, struct device *dev)
 {
-	/* The 100C is default for both mobile and non mobile CPUs */
 	int err;
 	u32 eax, edx;
 	u32 val;
@@ -385,7 +406,8 @@ static int get_tjmax(struct cpuinfo_x86 *c, u32 id, struct device *dev)
 	 */
 	err = rdmsr_safe_on_cpu(id, MSR_IA32_TEMPERATURE_TARGET, &eax, &edx);
 	if (err) {
-		dev_warn(dev, "Unable to read TjMax from CPU.\n");
+		if (c->x86_model > 0xe && c->x86_model != 0x1c)
+			dev_warn(dev, "Unable to read TjMax from CPU %u\n", id);
 	} else {
 		val = (eax >> 16) & 0xff;
 		/*
@@ -393,9 +415,15 @@ static int get_tjmax(struct cpuinfo_x86 *c, u32 id, struct device *dev)
 		 * will be used
 		 */
 		if (val) {
-			dev_info(dev, "TjMax is %d C.\n", val);
+			dev_dbg(dev, "TjMax is %d degrees C\n", val);
 			return val * 1000;
 		}
+	}
+
+	if (force_tjmax) {
+		dev_notice(dev, "TjMax forced to %d degrees C by user\n",
+			   force_tjmax);
+		return force_tjmax * 1000;
 	}
 
 	/*
@@ -414,21 +442,6 @@ static void __devinit get_ucode_rev_on_cpu(void *edx)
 	rdmsr(MSR_IA32_UCODE_REV, eax, *(u32 *)edx);
 }
 
-static int get_pkg_tjmax(unsigned int cpu, struct device *dev)
-{
-	int err;
-	u32 eax, edx, val;
-
-	err = rdmsr_safe_on_cpu(cpu, MSR_IA32_TEMPERATURE_TARGET, &eax, &edx);
-	if (!err) {
-		val = (eax >> 16) & 0xff;
-		if (val)
-			return val * 1000;
-	}
-	dev_warn(dev, "Unable to read Pkg-TjMax from CPU:%u\n", cpu);
-	return 100000; /* Default TjMax: 100 degree celsius */
-}
-
 static int create_name_attr(struct platform_data *pdata, struct device *dev)
 {
 	sysfs_attr_init(&pdata->name_attr.attr);
@@ -439,24 +452,30 @@ static int create_name_attr(struct platform_data *pdata, struct device *dev)
 }
 
 static int create_core_attrs(struct temp_data *tdata, struct device *dev,
-				int attr_no)
+				int attr_no, bool have_ttarget)
 {
 	int err, i;
 	static ssize_t (*rd_ptr[TOTAL_ATTRS]) (struct device *dev,
 			struct device_attribute *devattr, char *buf) = {
 			show_label, show_crit_alarm, show_temp, show_tjmax,
-			show_max_alarm, show_ttarget, show_tmin };
+			show_ttarget, show_t0, show_t0_triggered,
+			show_t1, show_t1_triggered };
 	static ssize_t (*rw_ptr[TOTAL_ATTRS]) (struct device *dev,
 			struct device_attribute *devattr, const char *buf,
 			size_t count) = { NULL, NULL, NULL, NULL, NULL,
-					store_ttarget, store_tmin };
+					store_t0, NULL, store_t1, NULL };
 	static const char *names[TOTAL_ATTRS] = {
 					"temp%d_label", "temp%d_crit_alarm",
 					"temp%d_input", "temp%d_crit",
-					"temp%d_max_alarm", "temp%d_max",
-					"temp%d_max_hyst" };
+					"temp%d_max",
+					"temp%d_threshold1",
+					"temp%d_threshold1_triggered",
+					"temp%d_threshold2",
+					"temp%d_threshold2_triggered" };
 
 	for (i = 0; i < tdata->attr_size; i++) {
+		if (rd_ptr[i] == show_ttarget && !have_ttarget)
+			continue;
 		snprintf(tdata->attr_name[i], CORETEMP_NAME_LENGTH, names[i],
 			attr_no);
 		sysfs_attr_init(&tdata->sd_attrs[i].dev_attr.attr);
@@ -475,8 +494,11 @@ static int create_core_attrs(struct temp_data *tdata, struct device *dev,
 	return 0;
 
 exit_free:
-	while (--i >= 0)
+	while (--i >= 0) {
+		if (!tdata->sd_attrs[i].dev_attr.attr.name)
+			continue;
 		device_remove_file(dev, &tdata->sd_attrs[i].dev_attr);
+	}
 	return err;
 }
 
@@ -556,6 +578,7 @@ static int create_core_data(struct platform_data *pdata,
 	struct cpuinfo_x86 *c = &cpu_data(cpu);
 	u32 eax, edx;
 	int err, attr_no;
+	bool have_ttarget = false;
 
 	/*
 	 * Find attr number for sysfs:
@@ -588,31 +611,35 @@ static int create_core_data(struct platform_data *pdata,
 		goto exit_free;
 
 	/* We can access status register. Get Critical Temperature */
-	if (pkg_flag)
-		tdata->tjmax = get_pkg_tjmax(pdev->id, &pdev->dev);
-	else
-		tdata->tjmax = get_tjmax(c, cpu, &pdev->dev);
+	tdata->tjmax = get_tjmax(c, cpu, &pdev->dev);
 
 	/*
-	 * Test if we can access the intrpt register. If so, increase the
-	 * 'size' enough to have ttarget/tmin/max_alarm interfaces.
-	 * Initialize ttarget with bits 16:22 of MSR_IA32_THERM_INTERRUPT
+	 * Read the still undocumented bits 8:15 of IA32_TEMPERATURE_TARGET.
+	 * The target temperature is available on older CPUs but not in this
+	 * register. Atoms don't have the register at all.
+	 */
+	if (c->x86_model > 0xe && c->x86_model != 0x1c) {
+		err = rdmsr_safe_on_cpu(cpu, MSR_IA32_TEMPERATURE_TARGET,
+					&eax, &edx);
+		if (!err) {
+			tdata->ttarget
+			  = tdata->tjmax - ((eax >> 8) & 0xff) * 1000;
+			have_ttarget = true;
+		}
+	}
+
+	/*
+	 * Test if we can access the intrpt register. If so, increase
+	 * 'size' enough to support t0 and t1 attributes.
 	 */
 	err = rdmsr_safe_on_cpu(cpu, tdata->intrpt_reg, &eax, &edx);
-	if (!err) {
+	if (!err)
 		tdata->attr_size += MAX_THRESH_ATTRS;
-		tdata->tmin = tdata->tjmax -
-			      ((eax & THERM_MASK_THRESHOLD0) >>
-			       THERM_SHIFT_THRESHOLD0) * 1000;
-		tdata->ttarget = tdata->tjmax -
-				 ((eax & THERM_MASK_THRESHOLD1) >>
-				  THERM_SHIFT_THRESHOLD1) * 1000;
-	}
 
 	pdata->core_data[attr_no] = tdata;
 
 	/* Create sysfs interfaces */
-	err = create_core_attrs(tdata, &pdev->dev, attr_no);
+	err = create_core_attrs(tdata, &pdev->dev, attr_no, have_ttarget);
 	if (err)
 		goto exit_free;
 
@@ -645,8 +672,11 @@ static void coretemp_remove_core(struct platform_data *pdata,
 	struct temp_data *tdata = pdata->core_data[indx];
 
 	/* Remove the sysfs attributes */
-	for (i = 0; i < tdata->attr_size; i++)
+	for (i = 0; i < tdata->attr_size; i++) {
+		if (!tdata->sd_attrs[i].dev_attr.attr.name)
+			continue;
 		device_remove_file(dev, &tdata->sd_attrs[i].dev_attr);
+	}
 
 	kfree(pdata->core_data[indx]);
 	pdata->core_data[indx] = NULL;
