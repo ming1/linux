@@ -62,13 +62,7 @@ config OPTPROBES
 	depends on !PREEMPT
 
 config UPROBES
-	bool "User-space probes (EXPERIMENTAL)"
-	help
-	  Uprobes enables kernel subsystems to establish probepoints
-	  in user applications and execute handler functions when
-	  the probepoints are hit.
-
-	  If in doubt, say "N".
+	def_bool n
 
 config HAVE_EFFICIENT_UNALIGNED_ACCESS
 	bool
