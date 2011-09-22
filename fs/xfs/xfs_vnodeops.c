@@ -308,6 +308,10 @@ xfs_inactive_symlink_rmt(
 		bp = xfs_trans_get_buf(tp, mp->m_ddev_targp,
 			XFS_FSB_TO_DADDR(mp, mval[i].br_startblock),
 			XFS_FSB_TO_BB(mp, mval[i].br_blockcount), 0);
+		if (!bp) {
+			error = ENOMEM;
+			goto error1;
+		}
 		xfs_trans_binval(tp, bp);
 	}
 	/*
@@ -646,8 +650,6 @@ xfs_inactive(
 	tp = xfs_trans_alloc(mp, XFS_TRANS_INACTIVE);
 	if (truncate) {
 		xfs_ilock(ip, XFS_IOLOCK_EXCL);
-
-		xfs_ioend_wait(ip);
 
 		error = xfs_trans_reserve(tp, 0,
 					  XFS_ITRUNCATE_LOG_RES(mp),
@@ -1650,7 +1652,10 @@ xfs_symlink(
 			byte_cnt = XFS_FSB_TO_B(mp, mval[n].br_blockcount);
 			bp = xfs_trans_get_buf(tp, mp->m_ddev_targp, d,
 					       BTOBB(byte_cnt), 0);
-			ASSERT(!xfs_buf_geterror(bp));
+			if (!bp) {
+				error = ENOMEM;
+				goto error2;
+			}
 			if (pathlen < byte_cnt) {
 				byte_cnt = pathlen;
 			}
@@ -2076,7 +2081,7 @@ xfs_free_file_space(
 	if (need_iolock) {
 		xfs_ilock(ip, XFS_IOLOCK_EXCL);
 		/* wait for the completion of any pending DIOs */
-		xfs_ioend_wait(ip);
+		inode_dio_wait(VFS_I(ip));
 	}
 
 	rounding = max_t(uint, 1 << mp->m_sb.sb_blocklog, PAGE_CACHE_SIZE);
