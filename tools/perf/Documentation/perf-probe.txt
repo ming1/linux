@@ -78,6 +78,8 @@ OPTIONS
 -F::
 --funcs::
 	Show available functions in given module or kernel.
+	With -x/--exec, can also list functions in a user space executable
+	/ shared library.
 
 --filter=FILTER::
 	(Only for --vars and --funcs) Set filter. FILTER is a combination of glob
@@ -101,7 +103,7 @@ OPTIONS
 -x::
 --exec=PATH::
 	Specify path to the executable or shared library file for user
-	space tracing.
+	space tracing. Can also be used with --funcs option.
 
 PROBE SYNTAX
 ------------
