@@ -26,6 +26,8 @@
 #include <linux/errno.h>
 #include <linux/rbtree.h>
 
+struct vm_area_struct;
+
 struct uprobe_consumer {
 	int (*handler)(struct uprobe_consumer *self, struct pt_regs *regs);
 	/*
@@ -41,6 +43,7 @@ struct uprobe {
 	struct rb_node		rb_node;	/* node in the rb tree */
 	atomic_t		ref;
 	struct rw_semaphore	consumer_rwsem;
+	struct list_head	pending_list;
 	struct uprobe_consumer	*consumers;
 	struct inode		*inode;		/* Also hold a ref to inode */
 	loff_t			offset;
@@ -51,6 +54,8 @@ extern int register_uprobe(struct inode *inode, loff_t offset,
 				struct uprobe_consumer *consumer);
 extern void unregister_uprobe(struct inode *inode, loff_t offset,
 				struct uprobe_consumer *consumer);
+extern int mmap_uprobe(struct vm_area_struct *vma);
+extern void munmap_uprobe(struct vm_area_struct *vma);
 #else /* CONFIG_UPROBES is not defined */
 static inline int register_uprobe(struct inode *inode, loff_t offset,
 				struct uprobe_consumer *consumer)
@@ -59,6 +64,13 @@ static inline int register_uprobe(struct inode *inode, loff_t offset,
 }
 static inline void unregister_uprobe(struct inode *inode, loff_t offset,
 				struct uprobe_consumer *consumer)
+{
+}
+static inline int mmap_uprobe(struct vm_area_struct *vma)
+{
+	return 0;
+}
+static inline void munmap_uprobe(struct vm_area_struct *vma)
 {
 }
 #endif /* CONFIG_UPROBES */
