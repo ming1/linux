@@ -30,6 +30,7 @@
 #include <linux/mmu_notifier.h>	/* set_pte_at_notify */
 #include <linux/swap.h>		/* try_to_free_swap */
 #include <linux/ptrace.h>	/* user_enable_single_step */
+#include <linux/kdebug.h>	/* notifier mechanism */
 #include <linux/uprobes.h>
 
 static bulkref_t uprobes_srcu;
@@ -1229,6 +1230,11 @@ int uprobe_post_notifier(struct pt_regs *regs)
 	return 1;
 }
 
+struct notifier_block uprobe_exception_nb = {
+	.notifier_call = uprobe_exception_notify,
+	.priority = INT_MAX - 1,	/* notified after kprobes, kgdb */
+};
+
 static int __init init_uprobes(void)
 {
 	int i;
@@ -1238,7 +1244,7 @@ static int __init init_uprobes(void)
 		mutex_init(&uprobes_mmap_mutex[i]);
 	}
 	init_bulkref(&uprobes_srcu);
-	return 0;
+	return register_die_notifier(&uprobe_exception_nb);
 }
 
 static void __exit exit_uprobes(void)
