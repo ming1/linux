@@ -972,8 +972,6 @@ source "arch/arm/mach-netx/Kconfig"
 source "arch/arm/mach-nomadik/Kconfig"
 source "arch/arm/plat-nomadik/Kconfig"
 
-source "arch/arm/mach-nuc93x/Kconfig"
-
 source "arch/arm/plat-omap/Kconfig"
 
 source "arch/arm/mach-omap1/Kconfig"
