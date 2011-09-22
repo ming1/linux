@@ -29,6 +29,7 @@ struct vm_area_struct;
 #ifdef CONFIG_ARCH_SUPPORTS_UPROBES
 #include <asm/uprobes.h>
 #else
+typedef u8 uprobe_opcode_t;
 struct uprobe_arch_info {};
 #define MAX_UINSN_BYTES 4
 #endif
@@ -74,6 +75,7 @@ extern int __weak set_bkpt(struct mm_struct *mm, struct uprobe *uprobe,
 							unsigned long vaddr);
 extern int __weak set_orig_insn(struct mm_struct *mm, struct uprobe *uprobe,
 					unsigned long vaddr, bool verify);
+extern bool __weak is_bkpt_insn(u8 *insn);
 extern int register_uprobe(struct inode *inode, loff_t offset,
 				struct uprobe_consumer *consumer);
 extern void unregister_uprobe(struct inode *inode, loff_t offset,
