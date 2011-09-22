@@ -27,6 +27,7 @@
 #include <linux/rbtree.h>
 
 struct vm_area_struct;
+struct mm_struct;
 #ifdef CONFIG_ARCH_SUPPORTS_UPROBES
 #include <asm/uprobes.h>
 #else
@@ -91,6 +92,26 @@ struct uprobe_task {
 	struct uprobe *active_uprobe;
 };
 
+/*
+ * On a breakpoint hit, thread contests for a slot.  It free the
+ * slot after singlestep.  Only definite number of slots are
+ * allocated.
+ */
+
+struct uprobes_xol_area {
+	wait_queue_head_t wq;	/* if all slots are busy */
+	atomic_t slot_count;	/* currently in use slots */
+	unsigned long *bitmap;	/* 0 = free slot */
+	struct page *page;
+
+	/*
+	 * We keep the vma's vm_start rather than a pointer to the vma
+	 * itself.  The probed process or a naughty kernel module could make
+	 * the vma go away, and we must handle that reasonably gracefully.
+	 */
+	unsigned long vaddr;		/* Page(s) of instruction slots */
+};
+
 #ifdef CONFIG_UPROBES
 extern int __weak set_bkpt(struct mm_struct *mm, struct uprobe *uprobe,
 							unsigned long vaddr);
@@ -102,6 +123,7 @@ extern int register_uprobe(struct inode *inode, loff_t offset,
 extern void unregister_uprobe(struct inode *inode, loff_t offset,
 				struct uprobe_consumer *consumer);
 extern void free_uprobe_utask(struct task_struct *tsk);
+extern void free_uprobes_xol_area(struct mm_struct *mm);
 extern int mmap_uprobe(struct vm_area_struct *vma);
 extern void munmap_uprobe(struct vm_area_struct *vma);
 extern unsigned long __weak get_uprobe_bkpt_addr(struct pt_regs *regs);
@@ -133,6 +155,9 @@ static inline unsigned long get_uprobe_bkpt_addr(struct pt_regs *regs)
 	return 0;
 }
 static inline void free_uprobe_utask(struct task_struct *tsk)
+{
+}
+static inline void free_uprobes_xol_area(struct mm_struct *mm)
 {
 }
 #endif /* CONFIG_UPROBES */
