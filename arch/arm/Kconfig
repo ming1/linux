@@ -586,14 +586,6 @@ config ARCH_W90X900
 	  <http://www.nuvoton.com/hq/enu/ProductAndSales/ProductLines/
 		ConsumerElectronicsIC/ARMMicrocontroller/ARMMicrocontroller>
 
-config ARCH_NUC93X
-	bool "Nuvoton NUC93X CPU"
-	select CPU_ARM926T
-	select CLKDEV_LOOKUP
-	help
-	  Support for Nuvoton (Winbond logic dept.) NUC93X MCU,The NUC93X is a
-	  low-power and high performance MPEG-4/JPEG multimedia controller chip.
-
 config ARCH_TEGRA
 	bool "NVIDIA Tegra"
 	select CLKDEV_LOOKUP
@@ -830,6 +822,7 @@ config ARCH_U300
 	select HAVE_SCHED_CLOCK
 	select HAVE_TCM
 	select ARM_AMBA
+	select ARM_PATCH_PHYS_VIRT
 	select ARM_VIC
 	select GENERIC_CLOCKEVENTS
 	select CLKDEV_LOOKUP
