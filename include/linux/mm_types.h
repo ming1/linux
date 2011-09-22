@@ -12,6 +12,7 @@
 #include <linux/completion.h>
 #include <linux/cpumask.h>
 #include <linux/page-debug-flags.h>
+#include <linux/uprobes.h>
 #include <asm/page.h>
 #include <asm/mmu.h>
 
@@ -391,6 +392,7 @@ struct mm_struct {
 #endif
 #ifdef CONFIG_UPROBES
 	atomic_t mm_uprobes_count;
+	struct uprobes_xol_area *uprobes_xol_area;
 #endif
 };
 
