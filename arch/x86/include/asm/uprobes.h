@@ -39,4 +39,5 @@ struct uprobe_arch_info {};
 #endif
 struct uprobe;
 extern int analyze_insn(struct mm_struct *mm, struct uprobe *uprobe);
+extern void set_instruction_pointer(struct pt_regs *regs, unsigned long vaddr);
 #endif	/* _ASM_UPROBES_H */
