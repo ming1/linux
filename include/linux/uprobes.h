@@ -23,6 +23,7 @@
  *	Jim Keniston
  */
 
+#include <linux/errno.h>
 #include <linux/rbtree.h>
 
 struct uprobe_consumer {
@@ -45,4 +46,20 @@ struct uprobe {
 	loff_t			offset;
 };
 
+#ifdef CONFIG_UPROBES
+extern int register_uprobe(struct inode *inode, loff_t offset,
+				struct uprobe_consumer *consumer);
+extern void unregister_uprobe(struct inode *inode, loff_t offset,
+				struct uprobe_consumer *consumer);
+#else /* CONFIG_UPROBES is not defined */
+static inline int register_uprobe(struct inode *inode, loff_t offset,
+				struct uprobe_consumer *consumer)
+{
+	return -ENOSYS;
+}
+static inline void unregister_uprobe(struct inode *inode, loff_t offset,
+				struct uprobe_consumer *consumer)
+{
+}
+#endif /* CONFIG_UPROBES */
 #endif	/* _LINUX_UPROBES_H */
