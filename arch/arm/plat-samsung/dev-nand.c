@@ -12,6 +12,7 @@
 
 #include <linux/mtd/mtd.h>
 #include <linux/mtd/partitions.h>
+#include <linux/export.h>
 
 #include <mach/map.h>
 #include <plat/devs.h>

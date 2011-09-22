@@ -21,6 +21,7 @@
 #include <linux/mmc/host.h>
 #include <linux/scatterlist.h>
 #include <linux/io.h>
+#include <linux/module.h>
 
 #include "sdhci.h"
 
