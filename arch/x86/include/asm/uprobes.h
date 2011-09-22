@@ -23,6 +23,8 @@
  *	Jim Keniston
  */
 
+#include <linux/notifier.h>
+
 typedef u8 uprobe_opcode_t;
 #define MAX_UINSN_BYTES 16
 #define UPROBES_XOL_SLOT_BYTES	128	/* to keep it cache aligned */
@@ -40,4 +42,6 @@ struct uprobe_arch_info {};
 struct uprobe;
 extern int analyze_insn(struct mm_struct *mm, struct uprobe *uprobe);
 extern void set_instruction_pointer(struct pt_regs *regs, unsigned long vaddr);
+extern int uprobe_exception_notify(struct notifier_block *self,
+				       unsigned long val, void *data);
 #endif	/* _ASM_UPROBES_H */
