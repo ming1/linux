@@ -402,8 +402,10 @@ static int mmc_read_ext_csd(struct mmc_card *card, u8 *ext_csd)
 			ext_csd[EXT_CSD_TRIM_MULT];
 	}
 
-	if (card->ext_csd.rev >= 5)
+	if (card->ext_csd.rev >= 5) {
 		card->ext_csd.rel_param = ext_csd[EXT_CSD_WR_REL_PARAM];
+		card->ext_csd.rst_n_function = ext_csd[EXT_CSD_RST_N_FUNCTION];
+	}
 
 	if (ext_csd[EXT_CSD_ERASED_MEM_CONT])
 		card->erased_byte = 0xFF;
@@ -548,11 +550,16 @@ static int mmc_init_card(struct mmc_host *host, u32 ocr,
 	BUG_ON(!host);
 	WARN_ON(!host->claimed);
 
+	/* Set correct bus mode for MMC before attempting init */
+	if (!mmc_host_is_spi(host))
+		mmc_set_bus_mode(host, MMC_BUSMODE_OPENDRAIN);
+
 	/*
 	 * Since we're changing the OCR value, we seem to
 	 * need to tell some cards to go back to the idle
 	 * state.  We wait 1ms to give cards time to
 	 * respond.
+	 * mmc_go_idle is needed for eMMC that are asleep
 	 */
 	mmc_go_idle(host);
 
@@ -891,6 +898,7 @@ static void mmc_detect(struct mmc_host *host)
 
 		mmc_claim_host(host);
 		mmc_detach_bus(host);
+		mmc_power_off(host);
 		mmc_release_host(host);
 	}
 }
@@ -900,16 +908,20 @@ static void mmc_detect(struct mmc_host *host)
  */
 static int mmc_suspend(struct mmc_host *host)
 {
+	int err = 0;
+
 	BUG_ON(!host);
 	BUG_ON(!host->card);
 
 	mmc_claim_host(host);
-	if (!mmc_host_is_spi(host))
+	if (mmc_card_can_sleep(host))
+		err = mmc_card_sleep(host);
+	else if (!mmc_host_is_spi(host))
 		mmc_deselect_cards(host);
 	host->card->state &= ~MMC_STATE_HIGHSPEED;
 	mmc_release_host(host);
 
-	return 0;
+	return err;
 }
 
 /*
@@ -1015,6 +1027,10 @@ int mmc_attach_mmc(struct mmc_host *host)
 
 	BUG_ON(!host);
 	WARN_ON(!host->claimed);
+
+	/* Set correct bus mode for MMC before attempting attach */
+	if (!mmc_host_is_spi(host))
+		mmc_set_bus_mode(host, MMC_BUSMODE_OPENDRAIN);
 
 	err = mmc_send_op_cond(host, 0, &ocr);
 	if (err)
