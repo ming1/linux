@@ -48,6 +48,7 @@ struct thread_info {
 	unsigned int		cpu;		/* current CPU */
 	int			preempt_count;	/* 0 => preemptable, <0 => BUG */
 	struct restart_block	restart_block;
+	unsigned long		system_call;
 	__u64			user_timer;
 	__u64			system_timer;
 	unsigned long		last_break;	/* last breaking-event-address. */
@@ -117,7 +118,7 @@ static inline struct thread_info *current_thread_info(void)
 #define _TIF_SIE		(1<<TIF_SIE)
 #define _TIF_POLLING_NRFLAG	(1<<TIF_POLLING_NRFLAG)
 #define _TIF_31BIT		(1<<TIF_31BIT)
-#define _TIF_SINGLE_STEP	(1<<TIF_FREEZE)
+#define _TIF_SINGLE_STEP	(1<<TIF_SINGLE_STEP)
 #define _TIF_FREEZE		(1<<TIF_FREEZE)
 
 #ifdef CONFIG_64BIT
