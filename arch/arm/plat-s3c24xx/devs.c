@@ -23,6 +23,7 @@
 #include <linux/slab.h>
 #include <linux/string.h>
 #include <linux/dma-mapping.h>
+#include <linux/export.h>
 
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>

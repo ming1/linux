@@ -16,6 +16,8 @@
 #include <linux/kernel.h>
 #include <linux/platform_device.h>
 
+#include <asm/sizes.h>
+
 #include <mach/irqs.h>
 #include <mach/map.h>
 

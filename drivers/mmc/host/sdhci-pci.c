@@ -23,6 +23,7 @@
 #include <linux/io.h>
 #include <linux/gpio.h>
 #include <linux/sfi.h>
+#include <linux/module.h>
 
 #include "sdhci.h"
 
