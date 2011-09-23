@@ -575,24 +575,21 @@ int venus_statfs(struct dentry *dentry, struct kstatfs *sfs)
  */
 static void coda_block_signals(sigset_t *old)
 {
-	spin_lock_irq(&current->sighand->siglock);
+	sigset_t blocked;
+
 	*old = current->blocked;
 
-	sigfillset(&current->blocked);
-	sigdelset(&current->blocked, SIGKILL);
-	sigdelset(&current->blocked, SIGSTOP);
-	sigdelset(&current->blocked, SIGINT);
+	sigfillset(&blocked);
+	sigdelset(&blocked, SIGKILL);
+	sigdelset(&blocked, SIGSTOP);
+	sigdelset(&blocked, SIGINT);
 
-	recalc_sigpending();
-	spin_unlock_irq(&current->sighand->siglock);
+	set_current_blocked(&blocked);
 }
 
 static void coda_unblock_signals(sigset_t *old)
 {
-	spin_lock_irq(&current->sighand->siglock);
-	current->blocked = *old;
-	recalc_sigpending();
-	spin_unlock_irq(&current->sighand->siglock);
+	set_current_blocked(old);
 }
 
 /* Don't allow signals to interrupt the following upcalls before venus
