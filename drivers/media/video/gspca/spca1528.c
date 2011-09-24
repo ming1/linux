@@ -1,7 +1,7 @@
 /*
  * spca1528 subdriver
  *
- * Copyright (C) 2010 Jean-Francois Moine (http://moinejf.free.fr)
+ * Copyright (C) 2010-2011 Jean-Francois Moine (http://moinejf.free.fr)
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -226,14 +226,16 @@ static void reg_wb(struct gspca_dev *gspca_dev,
 
 static void wait_status_0(struct gspca_dev *gspca_dev)
 {
-	int i;
+	int i, w;
 
-	i = 20;
+	i = 16;
+	w = 0;
 	do {
 		reg_r(gspca_dev, 0x21, 0x0000, 1);
 		if (gspca_dev->usb_buf[0] == 0)
 			return;
-		msleep(30);
+		w += 15;
+		msleep(w);
 	} while (--i > 0);
 	PDEBUG(D_ERR, "wait_status_0 timeout");
 	gspca_dev->usb_err = -ETIME;
@@ -309,8 +311,6 @@ static int sd_config(struct gspca_dev *gspca_dev,
 	sd->color = COLOR_DEF;
 	sd->sharpness = SHARPNESS_DEF;
 
-	gspca_dev->nbalt = 4;		/* use alternate setting 3 */
-
 	return 0;
 }
 
@@ -349,8 +349,12 @@ static int sd_isoc_init(struct gspca_dev *gspca_dev)
 	mode = gspca_dev->cam.cam_mode[gspca_dev->curr_mode].priv;
 	reg_wb(gspca_dev, 0x25, 0x0000, 0x0004, mode);
 	reg_r(gspca_dev, 0x25, 0x0004, 1);
-	reg_wb(gspca_dev, 0x27, 0x0000, 0x0000, 0x06);
+	reg_wb(gspca_dev, 0x27, 0x0000, 0x0000, 0x06);	/* 420 */
 	reg_r(gspca_dev, 0x27, 0x0000, 1);
+
+/* not useful..
+	gspca_dev->alt = 4;		* use alternate setting 3 */
+
 	return gspca_dev->usb_err;
 }
 
@@ -363,8 +367,8 @@ static int sd_start(struct gspca_dev *gspca_dev)
 	jpeg_define(sd->jpeg_hdr, gspca_dev->height, gspca_dev->width,
 			0x22);		/* JPEG 411 */
 
-	/* the JPEG quality seems to be 82% */
-	jpeg_set_qual(sd->jpeg_hdr, 82);
+	/* the JPEG quality shall be 85% */
+	jpeg_set_qual(sd->jpeg_hdr, 85);
 
 	/* set the controls */
 	setbrightness(gspca_dev);
@@ -379,7 +383,7 @@ static int sd_start(struct gspca_dev *gspca_dev)
 
 	/* start the capture */
 	wait_status_0(gspca_dev);
-	reg_w(gspca_dev, 0x31, 0x0000, 0x0004);
+	reg_w(gspca_dev, 0x31, 0x0000, 0x0004);	/* start request */
 	wait_status_1(gspca_dev);
 	wait_status_0(gspca_dev);
 	msleep(200);
@@ -392,7 +396,7 @@ static void sd_stopN(struct gspca_dev *gspca_dev)
 {
 	/* stop the capture */
 	wait_status_0(gspca_dev);
-	reg_w(gspca_dev, 0x31, 0x0000, 0x0000);
+	reg_w(gspca_dev, 0x31, 0x0000, 0x0000);	/* stop request */
 	wait_status_1(gspca_dev);
 	wait_status_0(gspca_dev);
 }
