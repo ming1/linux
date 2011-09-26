@@ -29,6 +29,7 @@
 #include <linux/basic_mmio_gpio.h>
 #include <linux/of.h>
 #include <linux/of_device.h>
+#include <linux/module.h>
 #include <asm-generic/bug.h>
 
 #define irq_to_gpio(irq)	((irq) - MXC_GPIO_IRQ_START)

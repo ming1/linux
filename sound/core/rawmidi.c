@@ -23,6 +23,7 @@
 #include <linux/major.h>
 #include <linux/init.h>
 #include <linux/sched.h>
+#include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/time.h>
 #include <linux/wait.h>
