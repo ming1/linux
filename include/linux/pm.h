@@ -481,6 +481,7 @@ struct dev_pm_info {
 	unsigned long		accounting_timestamp;
 #endif
 	struct pm_subsys_data	*subsys_data;  /* Owned by the subsystem. */
+	struct pm_qos_constraints *constraints;
 };
 
 extern void update_pm_runtime_accounting(struct device *dev);
