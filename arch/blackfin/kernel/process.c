@@ -88,7 +88,7 @@ void cpu_idle(void)
 #endif
 		if (!idle)
 			idle = default_idle;
-		tick_nohz_idle_enter();
+		tick_nohz_idle_enter(true);
 		while (!need_resched())
 			idle();
 		tick_nohz_idle_exit();

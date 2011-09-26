@@ -90,7 +90,7 @@ static void default_idle(void)
 void cpu_idle(void)
 {
 	for (;;) {
-		tick_nohz_idle_enter();
+		tick_nohz_idle_enter(true);
 		while (!need_resched())
 			default_idle();
 		tick_nohz_idle_exit();

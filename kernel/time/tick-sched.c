@@ -427,17 +427,30 @@ out:
 
 static void tick_nohz_stop_sched_tick(struct tick_sched *ts)
 {
-	if (__tick_nohz_stop_sched_tick(ts))
+	if (__tick_nohz_stop_sched_tick(ts) && ts->rcu_ext_qs)
 		rcu_enter_nohz();
 }
 
 /**
  * tick_nohz_idle_enter - stop the idle tick from the idle task
+ * @rcu_ext_qs: enter into rcu extended quiescent state
  *
- * When the next event is more than a tick into the future, stop the idle tick
+ * When the next event is more than a tick into the future, stop the idle tick.
  * Called when we start the idle loop.
+ *
+ * If no use of RCU is made in the idle loop between
+ * tick_nohz_enter_idle() and tick_nohz_exit_idle() calls, rcu_ext_qs
+ * must be set to true and the arch doesn't need to call rcu_enter_nohz()
+ * and rcu_exit_nohz() explicitly.
+ *
+ * Otherwise the parameter must be set to false and the arch is
+ * responsible of calling:
+ *
+ * - rcu_enter_nohz() after its last use of RCU before the CPU is put
+ *  to sleep.
+ * - rcu_exit_nohz() before the first use of RCU after the CPU is woken up.
  */
-void tick_nohz_idle_enter(void)
+void tick_nohz_idle_enter(bool rcu_ext_qs)
 {
 	struct tick_sched *ts;
 
@@ -452,6 +465,10 @@ void tick_nohz_idle_enter(void)
 	 * update of the idle time accounting in tick_nohz_start_idle().
 	 */
 	ts->inidle = 1;
+
+	if (rcu_ext_qs)
+		ts->rcu_ext_qs = 1;
+
 	tick_nohz_stop_sched_tick(ts);
 
 	local_irq_enable();
@@ -542,7 +559,10 @@ void tick_nohz_idle_exit(void)
 
 	ts->inidle = 0;
 
-	rcu_exit_nohz();
+	if (ts->rcu_ext_qs) {
+		rcu_exit_nohz();
+		ts->rcu_ext_qs = 0;
+	}
 
 	/* Update jiffies first */
 	select_nohz_load_balancer(0);
