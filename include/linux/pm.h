@@ -419,13 +419,6 @@ enum rpm_request {
 	RPM_REQ_RESUME,
 };
 
-/* Per-device PM QoS constraints data struct state */
-enum dev_pm_qos_state {
-	DEV_PM_QOS_NO_DEVICE,		/* No device present */
-	DEV_PM_QOS_DEVICE_PRESENT,	/* Device present, data not allocated */
-	DEV_PM_QOS_ALLOCATED,		/* Device present, data allocated */
-};
-
 struct wakeup_source;
 
 struct pm_domain_data {
@@ -488,7 +481,6 @@ struct dev_pm_info {
 #endif
 	struct pm_subsys_data	*subsys_data;  /* Owned by the subsystem. */
 	struct pm_qos_constraints *constraints;
-	enum dev_pm_qos_state	constraints_state;
 };
 
 extern void update_pm_runtime_accounting(struct device *dev);
