@@ -187,6 +187,13 @@ static inline void activate_irq(int irq)
 #endif
 }
 
+int twl6030_irq_set_wake(struct irq_data *d, unsigned int on)
+{
+	int twl_irq = (int)irq_get_chip_data(d->irq);
+
+	return irq_set_irq_wake(twl_irq, on);
+}
+
 /*----------------------------------------------------------------------*/
 
 static unsigned twl6030_irq_next;
@@ -318,10 +325,12 @@ int twl6030_init_irq(int irq_num, unsigned irq_base, unsigned irq_end)
 	twl6030_irq_chip = dummy_irq_chip;
 	twl6030_irq_chip.name = "twl6030";
 	twl6030_irq_chip.irq_set_type = NULL;
+	twl6030_irq_chip.irq_set_wake = twl6030_irq_set_wake;
 
 	for (i = irq_base; i < irq_end; i++) {
 		irq_set_chip_and_handler(i, &twl6030_irq_chip,
 					 handle_simple_irq);
+		irq_set_chip_data(i, (void *)irq_num);
 		activate_irq(i);
 	}
 
@@ -331,24 +340,26 @@ int twl6030_init_irq(int irq_num, unsigned irq_base, unsigned irq_end)
 
 	/* install an irq handler to demultiplex the TWL6030 interrupt */
 	init_completion(&irq_event);
+
+	status = request_irq(irq_num, handle_twl6030_pih, 0,
+				"TWL6030-PIH", &irq_event);
+	if (status < 0) {
+		pr_err("twl6030: could not claim irq%d: %d\n", irq_num, status);
+		goto fail_irq;
+	}
+
 	task = kthread_run(twl6030_irq_thread, (void *)irq_num, "twl6030-irq");
 	if (IS_ERR(task)) {
 		pr_err("twl6030: could not create irq %d thread!\n", irq_num);
 		status = PTR_ERR(task);
 		goto fail_kthread;
 	}
-
-	status = request_irq(irq_num, handle_twl6030_pih, IRQF_DISABLED,
-				"TWL6030-PIH", &irq_event);
-	if (status < 0) {
-		pr_err("twl6030: could not claim irq%d: %d\n", irq_num, status);
-		goto fail_irq;
-	}
 	return status;
-fail_irq:
-	free_irq(irq_num, &irq_event);
 
 fail_kthread:
+	free_irq(irq_num, &irq_event);
+
+fail_irq:
 	for (i = irq_base; i < irq_end; i++)
 		irq_set_chip_and_handler(i, NULL, NULL);
 	return status;
