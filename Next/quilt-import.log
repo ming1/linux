@@ -1,0 +1,51 @@
+Importing hexagon based on v3.1-rc6
+Unchanged quilt series hexagon
+Importing i2c based on 3.1-rc4
+Unchanged quilt series i2c
+Importing jdelvare-hwmon based on 3.1-rc4
+Unchanged quilt series jdelvare-hwmon
+Importing kernel-doc based on 3.1-rc3
+Unchanged quilt series kernel-doc
+Importing rr based on v3.1-rc2-188-g6719db6
+Unchanged quilt series rr
+Importing device-mapper based on v3.1-rc7
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard d93dc5c4478c1fd5de85a3e8aece9aad7bbae044
+HEAD is now at d93dc5c Linux 3.1-rc7
+$ git am ../quilt/device-mapper/dm-flakey-fix-corrupt_bio_byte-error-path.patch
+Applying: If no arguments were provided to the corrupt_bio_byte feature an error
+$ git am ../quilt/device-mapper/dm-table-avoid-crash-if-integrity-profile-changes.patch
+Applying: Commit a63a5cf (dm: improve block integrity support) introduced a
+$ git am ../quilt/device-mapper/dm-raid-fix-write_mostly-arg-validation.patch
+Applying: Fix off-by-one error in validation of write_mostly.
+$ git am ../quilt/device-mapper/dm-crypt-always-disable-discard_zeroes_data.patch
+Applying: If optional discard support in dm-crypt is enabled, discards requests
+$ git am ../quilt/device-mapper/dm-table-propagate-non-rotational-flag.patch
+Applying: Allow QUEUE_FLAG_NONROT to propagate up the device stack if all
+$ git am ../quilt/device-mapper/dm-use-local-printk-ratelimit.patch
+Applying: printk_ratelimit() shares global ratelimiting state with all
+$ git am ../quilt/device-mapper/dm-remove-superfluous-smp_mb.patch
+Applying: Since set_current_state() contains a memory barrier in it,
+$ git am ../quilt/device-mapper/dm-kcopyd-add-dm_kcopyd_zero-to-zero-an-area.patch
+Applying: This patch introduces dm_kcopyd_zero() to make it easy to use
+$ git am ../quilt/device-mapper/dm-table-add-singleton-feature.patch
+Applying: Introduce the concept of a singleton table which contains exactly one target.
+$ git am ../quilt/device-mapper/dm-table-add-always-writeable-feature.patch
+Applying: Add a target feature flag to indicate that a target does not work in
+$ git am ../quilt/device-mapper/dm-export-dm-get-md.patch
+Applying: Export dm_get_md() for the new thin provisioning target to use.
+$ git am ../quilt/device-mapper/dm-add-persistent-data-library.patch
+Applying: The persistent-data library offers a re-usable framework for the storage
+/home/sfr/kernels/next/quilt-tmp/.git/rebase-apply/patch:3273: new blank line at EOF.
++
+warning: 1 line adds whitespace errors.
+$ git am ../quilt/device-mapper/dm-add-thin-provisioning-target.patch
+Applying: Initial EXPERIMENTAL implementation of device-mapper thin provisioning
+/home/sfr/kernels/next/quilt-tmp/.git/rebase-apply/patch:239: space before tab in indent.
+   	Create a new snapshot of another thinly-provisioned device.
+warning: 1 line adds whitespace errors.
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/device-mapper
+From ../quilt-tmp
+ + 1beb2a4...c0b2b8c master     -> quilt/device-mapper  (forced update)
