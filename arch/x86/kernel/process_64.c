@@ -120,7 +120,7 @@ void cpu_idle(void)
 
 	/* endless idle loop with no priority at all */
 	while (1) {
-		tick_nohz_idle_enter(true);
+		tick_nohz_idle_enter(false);
 		while (!need_resched()) {
 
 			rmb();
@@ -136,7 +136,12 @@ void cpu_idle(void)
 			enter_idle();
 			/* Don't trace irqs off for idle */
 			stop_critical_timings();
+
+			/* enter_idle() needs rcu for notifiers */
+			rcu_enter_nohz();
 			pm_idle();
+			rcu_exit_nohz();
+
 			start_critical_timings();
 
 			/* In many cases the interrupt that ended idle
