@@ -469,13 +469,15 @@ void rcu_irq_exit(void)
 
 bool rcu_check_extended_qs(void)
 {
-	struct rcu_dynticks *rdtp;
+	struct rcu_dynticks *rdtp = &get_cpu_var(rcu_dynticks);
+	bool ext_qs = true;
 
-	rdtp = &per_cpu(rcu_dynticks, raw_smp_processor_id());
 	if (atomic_read(&rdtp->dynticks) & 0x1)
-		return false;
+		ext_qs = false;
 
-	return true;
+	put_cpu_var(rcu_dynticks);
+
+	return ext_qs;
 }
 EXPORT_SYMBOL_GPL(rcu_check_extended_qs);
 
