@@ -160,7 +160,7 @@ int pmbus_set_page(struct i2c_client *client, u8 page)
 		rv = i2c_smbus_write_byte_data(client, PMBUS_PAGE, page);
 		newpage = i2c_smbus_read_byte_data(client, PMBUS_PAGE);
 		if (newpage != page)
-			rv = -EINVAL;
+			rv = -EIO;
 		else
 			data->currpage = page;
 	}
@@ -229,7 +229,7 @@ static int _pmbus_write_word_data(struct i2c_client *client, int page, int reg,
 			return status;
 	}
 	if (reg >= PMBUS_VIRT_BASE)
-		return -EINVAL;
+		return -ENXIO;
 	return pmbus_write_word_data(client, page, reg, word);
 }
 
@@ -261,7 +261,7 @@ static int _pmbus_read_word_data(struct i2c_client *client, int page, int reg)
 			return status;
 	}
 	if (reg >= PMBUS_VIRT_BASE)
-		return -EINVAL;
+		return -ENXIO;
 	return pmbus_read_word_data(client, page, reg);
 }
 
@@ -316,11 +316,11 @@ static int pmbus_check_status_cml(struct i2c_client *client)
 {
 	int status, status2;
 
-	status = pmbus_read_byte_data(client, -1, PMBUS_STATUS_BYTE);
+	status = _pmbus_read_byte_data(client, -1, PMBUS_STATUS_BYTE);
 	if (status < 0 || (status & PB_STATUS_CML)) {
-		status2 = pmbus_read_byte_data(client, -1, PMBUS_STATUS_CML);
+		status2 = _pmbus_read_byte_data(client, -1, PMBUS_STATUS_CML);
 		if (status2 < 0 || (status2 & PB_CML_FAULT_INVALID_COMMAND))
-			return -EINVAL;
+			return -EIO;
 	}
 	return 0;
 }
@@ -371,8 +371,8 @@ static struct pmbus_data *pmbus_update_device(struct device *dev)
 
 		for (i = 0; i < info->pages; i++)
 			data->status[PB_STATUS_BASE + i]
-			    = pmbus_read_byte_data(client, i,
-						   PMBUS_STATUS_BYTE);
+			    = _pmbus_read_byte_data(client, i,
+						    PMBUS_STATUS_BYTE);
 		for (i = 0; i < info->pages; i++) {
 			if (!(info->func[i] & PMBUS_HAVE_STATUS_VOUT))
 				continue;
@@ -1596,7 +1596,7 @@ static int pmbus_identify_common(struct i2c_client *client,
 	int vout_mode = -1, exponent;
 
 	if (pmbus_check_byte_register(client, 0, PMBUS_VOUT_MODE))
-		vout_mode = pmbus_read_byte_data(client, 0, PMBUS_VOUT_MODE);
+		vout_mode = _pmbus_read_byte_data(client, 0, PMBUS_VOUT_MODE);
 	if (vout_mode >= 0 && vout_mode != 0xff) {
 		/*
 		 * Not all chips support the VOUT_MODE command,
@@ -1682,7 +1682,7 @@ int pmbus_do_probe(struct i2c_client *client, const struct i2c_device_id *id,
 	if (info->pages <= 0 || info->pages > PMBUS_PAGES) {
 		dev_err(&client->dev, "Bad number of PMBus pages: %d\n",
 			info->pages);
-		ret = -EINVAL;
+		ret = -ENODEV;
 		goto out_data;
 	}
 
@@ -1764,7 +1764,7 @@ out_data:
 }
 EXPORT_SYMBOL_GPL(pmbus_do_probe);
 
-int pmbus_do_remove(struct i2c_client *client)
+void pmbus_do_remove(struct i2c_client *client)
 {
 	struct pmbus_data *data = i2c_get_clientdata(client);
 	hwmon_device_unregister(data->hwmon_dev);
@@ -1774,7 +1774,6 @@ int pmbus_do_remove(struct i2c_client *client)
 	kfree(data->booleans);
 	kfree(data->sensors);
 	kfree(data);
-	return 0;
 }
 EXPORT_SYMBOL_GPL(pmbus_do_remove);
 
