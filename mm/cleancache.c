@@ -199,7 +199,7 @@ EXPORT_SYMBOL(__cleancache_flush_fs);
 
 #ifdef CONFIG_SYSFS
 
-/* see Documentation/ABI/xxx/sysfs-kernel-mm-cleancache */
+/* see Documentation/ABI/testing/sysfs-kernel-mm-cleancache */
 
 #define CLEANCACHE_SYSFS_RO(_name) \
 	static ssize_t cleancache_##_name##_show(struct kobject *kobj, \
