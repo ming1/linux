@@ -20,17 +20,7 @@
 #ifndef __FSL_DIU_FB_H__
 #define __FSL_DIU_FB_H__
 
-/* Arbitrary threshold to determine the allocation method
- * See mpc8610fb_set_par(), map_video_memory(), and unmap_video_memory()
- */
-#define MEM_ALLOC_THRESHOLD (1024*768*4+32)
-
 #include <linux/types.h>
-
-struct mfb_alpha {
-	int enable;
-	int alpha;
-};
 
 struct mfb_chroma_key {
 	int enable;
@@ -167,7 +157,7 @@ struct diu_hw {
 };
 
 struct diu_addr {
-	__u8 __iomem *vaddr;	/* Virtual address */
+	void *vaddr;		/* Virtual address */
 	dma_addr_t paddr;	/* Physical address */
 	__u32 	   offset;
 };
