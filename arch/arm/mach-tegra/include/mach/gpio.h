@@ -20,33 +20,12 @@
 #ifndef __MACH_TEGRA_GPIO_H
 #define __MACH_TEGRA_GPIO_H
 
-#include <linux/init.h>
+#include <linux/types.h>
 #include <mach/irqs.h>
 
 #define TEGRA_NR_GPIOS		INT_GPIO_NR
 
-#include <asm-generic/gpio.h>
-
-#define gpio_get_value		__gpio_get_value
-#define gpio_set_value		__gpio_set_value
-#define gpio_cansleep		__gpio_cansleep
-
 #define TEGRA_GPIO_TO_IRQ(gpio) (INT_GPIO_BASE + (gpio))
-#define TEGRA_IRQ_TO_GPIO(irq) ((irq) - INT_GPIO_BASE)
-
-static inline int gpio_to_irq(unsigned int gpio)
-{
-	if (gpio < TEGRA_NR_GPIOS)
-		return INT_GPIO_BASE + gpio;
-	return -EINVAL;
-}
-
-static inline int irq_to_gpio(unsigned int irq)
-{
-	if ((irq >= INT_GPIO_BASE) && (irq < INT_GPIO_BASE + INT_GPIO_NR))
-		return irq - INT_GPIO_BASE;
-	return -EINVAL;
-}
 
 struct tegra_gpio_table {
 	int	gpio;	/* GPIO number */
