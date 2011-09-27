@@ -12,9 +12,12 @@
 
 #include <linux/kernel.h>
 #include <linux/platform_device.h>
+#include <linux/export.h>
 
 #include <mach/irqs.h>
 #include <mach/map.h>
+
+#include <asm/sizes.h>
 
 #include <plat/devs.h>
 
