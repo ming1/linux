@@ -1,4 +1,9 @@
-#ifdef CONFIG_CPU_SUP_AMD
+#include <linux/perf_event.h>
+#include <linux/types.h>
+#include <linux/init.h>
+#include <linux/slab.h>
+
+#include "perf_event.h"
 
 static __initconst const u64 amd_hw_cache_event_ids
 				[PERF_COUNT_HW_CACHE_MAX]
@@ -350,7 +355,7 @@ static void amd_pmu_cpu_starting(int cpu)
 			continue;
 
 		if (nb->nb_id == nb_id) {
-			kfree(cpuc->amd_nb);
+			cpuc->kfree_on_online = cpuc->amd_nb;
 			cpuc->amd_nb = nb;
 			break;
 		}
@@ -573,7 +578,7 @@ static __initconst const struct x86_pmu amd_pmu_f15h = {
 #endif
 };
 
-static __init int amd_pmu_init(void)
+__init int amd_pmu_init(void)
 {
 	/* Performance-monitoring supported from K7 and later: */
 	if (boot_cpu_data.x86 < 6)
@@ -602,12 +607,3 @@ static __init int amd_pmu_init(void)
 
 	return 0;
 }
-
-#else /* CONFIG_CPU_SUP_AMD */
-
-static int amd_pmu_init(void)
-{
-	return 0;
-}
-
-#endif
