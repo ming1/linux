@@ -16,6 +16,7 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  */
 
+#include <linux/kernel.h>
 #include <linux/bug.h>
 #include <linux/types.h>
 #include <linux/module.h>
@@ -38,6 +39,20 @@ bool iommu_found(void)
 	return iommu_ops != NULL;
 }
 EXPORT_SYMBOL_GPL(iommu_found);
+
+/**
+ * iommu_set_fault_handler() - set a fault handler for an iommu domain
+ * @domain: iommu domain
+ * @handler: fault handler
+ */
+void iommu_set_fault_handler(struct iommu_domain *domain,
+					iommu_fault_handler_t handler)
+{
+	BUG_ON(!domain);
+
+	domain->handler = handler;
+}
+EXPORT_SYMBOL_GPL(iommu_set_fault_handler);
 
 struct iommu_domain *iommu_domain_alloc(void)
 {
@@ -97,13 +112,11 @@ EXPORT_SYMBOL_GPL(iommu_domain_has_cap);
 int iommu_map(struct iommu_domain *domain, unsigned long iova,
 	      phys_addr_t paddr, int gfp_order, int prot)
 {
-	unsigned long invalid_mask;
 	size_t size;
 
-	size         = 0x1000UL << gfp_order;
-	invalid_mask = size - 1;
+	size         = PAGE_SIZE << gfp_order;
 
-	BUG_ON((iova | paddr) & invalid_mask);
+	BUG_ON(!IS_ALIGNED(iova | paddr, size));
 
 	return iommu_ops->map(domain, iova, paddr, gfp_order, prot);
 }
@@ -111,13 +124,11 @@ EXPORT_SYMBOL_GPL(iommu_map);
 
 int iommu_unmap(struct iommu_domain *domain, unsigned long iova, int gfp_order)
 {
-	unsigned long invalid_mask;
 	size_t size;
 
-	size         = 0x1000UL << gfp_order;
-	invalid_mask = size - 1;
+	size         = PAGE_SIZE << gfp_order;
 
-	BUG_ON(iova & invalid_mask);
+	BUG_ON(!IS_ALIGNED(iova, size));
 
 	return iommu_ops->unmap(domain, iova, gfp_order);
 }
