@@ -692,8 +692,9 @@ int m2p_add_override(unsigned long mfn, struct page *page, bool clear_pte)
 					"m2p_add_override: pfn %lx not mapped", pfn))
 			return -EINVAL;
 	}
-
-	page->private = mfn;
+	WARN_ON(PagePrivate(page));
+	SetPagePrivate(page);
+	set_page_private(page, mfn);
 	page->index = pfn_to_mfn(pfn);
 
 	if (unlikely(!set_phys_to_machine(pfn, FOREIGN_FRAME(mfn))))
@@ -736,7 +737,8 @@ int m2p_remove_override(struct page *page, bool clear_pte)
 	list_del(&page->lru);
 	spin_unlock_irqrestore(&m2p_override_lock, flags);
 	set_phys_to_machine(pfn, page->index);
-
+	WARN_ON(!PagePrivate(page));
+	ClearPagePrivate(page);
 	if (clear_pte && !PageHighMem(page))
 		set_pte_at(&init_mm, address, ptep,
 				pfn_pte(pfn, PAGE_KERNEL));
@@ -758,7 +760,7 @@ struct page *m2p_find_override(unsigned long mfn)
 	spin_lock_irqsave(&m2p_override_lock, flags);
 
 	list_for_each_entry(p, bucket, lru) {
-		if (p->private == mfn) {
+		if (page_private(p) == mfn) {
 			ret = p;
 			break;
 		}
@@ -782,8 +784,9 @@ unsigned long m2p_find_override_pfn(unsigned long mfn, unsigned long pfn)
 EXPORT_SYMBOL_GPL(m2p_find_override_pfn);
 
 #ifdef CONFIG_XEN_DEBUG_FS
-
-int p2m_dump_show(struct seq_file *m, void *v)
+#include <linux/debugfs.h>
+#include "debugfs.h"
+static int p2m_dump_show(struct seq_file *m, void *v)
 {
 	static const char * const level_name[] = { "top", "middle",
 						"entry", "abnormal" };
@@ -856,4 +859,32 @@ int p2m_dump_show(struct seq_file *m, void *v)
 #undef TYPE_PFN
 #undef TYPE_UNKNOWN
 }
-#endif
+
+static int p2m_dump_open(struct inode *inode, struct file *filp)
+{
+	return single_open(filp, p2m_dump_show, NULL);
+}
+
+static const struct file_operations p2m_dump_fops = {
+	.open		= p2m_dump_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+
+static struct dentry *d_mmu_debug;
+
+static int __init xen_p2m_debugfs(void)
+{
+	struct dentry *d_xen = xen_init_debugfs();
+
+	if (d_xen == NULL)
+		return -ENOMEM;
+
+	d_mmu_debug = debugfs_create_dir("mmu", d_xen);
+
+	debugfs_create_file("p2m", 0600, d_mmu_debug, NULL, &p2m_dump_fops);
+	return 0;
+}
+fs_initcall(xen_p2m_debugfs);
+#endif /* CONFIG_XEN_DEBUG_FS */
