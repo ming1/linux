@@ -749,10 +749,9 @@ static int ncp_do_request(struct ncp_server *server, int size,
 		return -EIO;
 	}
 	{
-		sigset_t old_set;
-		unsigned long mask, flags;
+		sigset_t old_set, blocked;
+		unsigned long mask;
 
-		spin_lock_irqsave(&current->sighand->siglock, flags);
 		old_set = current->blocked;
 		if (current->flags & PF_EXITING)
 			mask = 0;
@@ -769,16 +768,12 @@ static int ncp_do_request(struct ncp_server *server, int size,
 			if (current->sighand->action[SIGQUIT - 1].sa.sa_handler == SIG_DFL)
 				mask |= sigmask(SIGQUIT);
 		}
-		siginitsetinv(&current->blocked, mask);
-		recalc_sigpending();
-		spin_unlock_irqrestore(&current->sighand->siglock, flags);
+		siginitsetinv(&blocked, mask);
+		set_current_blocked(&blocked);
 		
 		result = do_ncp_rpc_call(server, size, reply, max_reply_size);
 
-		spin_lock_irqsave(&current->sighand->siglock, flags);
-		current->blocked = old_set;
-		recalc_sigpending();
-		spin_unlock_irqrestore(&current->sighand->siglock, flags);
+		set_current_blocked(&old_set);
 	}
 
 	DDPRINTK("do_ncp_rpc_call returned %d\n", result);
