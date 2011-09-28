@@ -16,6 +16,8 @@
 #include <mach/irqs.h>
 #include <mach/map.h>
 
+#include <asm/sizes.h>
+
 #include <plat/adc.h>
 #include <plat/devs.h>
 #include <plat/cpu.h>
