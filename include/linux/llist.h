@@ -70,6 +70,12 @@ struct llist_node {
 #define LLIST_HEAD_INIT(name)	{ NULL }
 #define LLIST_HEAD(name)	struct llist_head name = LLIST_HEAD_INIT(name)
 
+#ifdef CONFIG_ARCH_HAVE_NMI_SAFE_CMPXCHG
+#define CHECK_NMI_SAFE_CMPXCHG()
+#else
+#define CHECK_NMI_SAFE_CMPXCHG()	BUG_ON(in_nmi())
+#endif
+
 /**
  * init_llist_head - initialize lock-less list head
  * @head:	the head for your lock-less list
@@ -147,9 +153,7 @@ static inline void llist_add(struct llist_node *new, struct llist_head *head)
 {
 	struct llist_node *entry, *old_entry;
 
-#ifndef CONFIG_ARCH_HAVE_NMI_SAFE_CMPXCHG
-	BUG_ON(in_nmi());
-#endif
+	CHECK_NMI_SAFE_CMPXCHG();
 
 	entry = head->first;
 	do {
@@ -171,9 +175,7 @@ static inline void llist_add_batch(struct llist_node *new_first,
 {
 	struct llist_node *entry, *old_entry;
 
-#ifndef CONFIG_ARCH_HAVE_NMI_SAFE_CMPXCHG
-	BUG_ON(in_nmi());
-#endif
+	CHECK_NMI_SAFE_CMPXCHG();
 
 	entry = head->first;
 	do {
@@ -201,9 +203,7 @@ static inline struct llist_node *llist_del_first(struct llist_head *head)
 {
 	struct llist_node *entry, *old_entry, *next;
 
-#ifndef CONFIG_ARCH_HAVE_NMI_SAFE_CMPXCHG
-	BUG_ON(in_nmi());
-#endif
+	CHECK_NMI_SAFE_CMPXCHG();
 
 	entry = head->first;
 	do {
@@ -227,9 +227,7 @@ static inline struct llist_node *llist_del_first(struct llist_head *head)
  */
 static inline struct llist_node *llist_del_all(struct llist_head *head)
 {
-#ifndef CONFIG_ARCH_HAVE_NMI_SAFE_CMPXCHG
-	BUG_ON(in_nmi());
-#endif
+	CHECK_NMI_SAFE_CMPXCHG();
 
 	return xchg(&head->first, NULL);
 }
