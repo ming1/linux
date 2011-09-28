@@ -73,6 +73,7 @@ struct llist_node {
 #ifdef CONFIG_ARCH_HAVE_NMI_SAFE_CMPXCHG
 #define CHECK_NMI_SAFE_CMPXCHG()
 #else
+#include <linux/hardirq.h>
 #define CHECK_NMI_SAFE_CMPXCHG()	BUG_ON(in_nmi())
 #endif
 
