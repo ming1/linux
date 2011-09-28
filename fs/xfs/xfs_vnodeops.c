@@ -72,8 +72,8 @@ xfs_readlink_bmap(
 	xfs_buf_t	*bp;
 	int		error = 0;
 
-	error = xfs_bmapi(NULL, ip, 0, XFS_B_TO_FSB(mp, pathlen), 0, NULL, 0,
-			mval, &nmaps, NULL);
+	error = xfs_bmapi_read(ip, 0, XFS_B_TO_FSB(mp, pathlen), mval, &nmaps,
+			       0);
 	if (error)
 		goto out;
 
@@ -178,8 +178,7 @@ xfs_free_eofblocks(
 
 	nimaps = 1;
 	xfs_ilock(ip, XFS_ILOCK_SHARED);
-	error = xfs_bmapi(NULL, ip, end_fsb, map_len, 0,
-			  NULL, 0, &imap, &nimaps, NULL);
+	error = xfs_bmapi_read(ip, end_fsb, map_len, &imap, &nimaps, 0);
 	xfs_iunlock(ip, XFS_ILOCK_SHARED);
 
 	if (!error && (nimaps != 0) &&
@@ -297,9 +296,9 @@ xfs_inactive_symlink_rmt(
 	done = 0;
 	xfs_bmap_init(&free_list, &first_block);
 	nmaps = ARRAY_SIZE(mval);
-	if ((error = xfs_bmapi(tp, ip, 0, XFS_B_TO_FSB(mp, size),
-			XFS_BMAPI_METADATA, &first_block, 0, mval, &nmaps,
-			&free_list)))
+	error = xfs_bmapi_read(ip, 0, XFS_B_TO_FSB(mp, size),
+				mval, &nmaps, 0);
+	if (error)
 		goto error0;
 	/*
 	 * Invalidate the block(s).
@@ -308,6 +307,10 @@ xfs_inactive_symlink_rmt(
 		bp = xfs_trans_get_buf(tp, mp->m_ddev_targp,
 			XFS_FSB_TO_DADDR(mp, mval[i].br_startblock),
 			XFS_FSB_TO_BB(mp, mval[i].br_blockcount), 0);
+		if (!bp) {
+			error = ENOMEM;
+			goto error1;
+		}
 		xfs_trans_binval(tp, bp);
 	}
 	/*
@@ -646,8 +649,6 @@ xfs_inactive(
 	tp = xfs_trans_alloc(mp, XFS_TRANS_INACTIVE);
 	if (truncate) {
 		xfs_ilock(ip, XFS_IOLOCK_EXCL);
-
-		xfs_ioend_wait(ip);
 
 		error = xfs_trans_reserve(tp, 0,
 					  XFS_ITRUNCATE_LOG_RES(mp),
@@ -1632,10 +1633,9 @@ xfs_symlink(
 		first_fsb = 0;
 		nmaps = SYMLINK_MAPS;
 
-		error = xfs_bmapi(tp, ip, first_fsb, fs_blocks,
-				  XFS_BMAPI_WRITE | XFS_BMAPI_METADATA,
-				  &first_block, resblks, mval, &nmaps,
-				  &free_list);
+		error = xfs_bmapi_write(tp, ip, first_fsb, fs_blocks,
+				  XFS_BMAPI_METADATA, &first_block, resblks,
+				  mval, &nmaps, &free_list);
 		if (error)
 			goto error2;
 
@@ -1650,7 +1650,10 @@ xfs_symlink(
 			byte_cnt = XFS_FSB_TO_B(mp, mval[n].br_blockcount);
 			bp = xfs_trans_get_buf(tp, mp->m_ddev_targp, d,
 					       BTOBB(byte_cnt), 0);
-			ASSERT(!xfs_buf_geterror(bp));
+			if (!bp) {
+				error = ENOMEM;
+				goto error2;
+			}
 			if (pathlen < byte_cnt) {
 				byte_cnt = pathlen;
 			}
@@ -1778,7 +1781,6 @@ xfs_alloc_file_space(
 	xfs_fileoff_t		startoffset_fsb;
 	xfs_fsblock_t		firstfsb;
 	int			nimaps;
-	int			bmapi_flag;
 	int			quota_flag;
 	int			rt;
 	xfs_trans_t		*tp;
@@ -1806,7 +1808,6 @@ xfs_alloc_file_space(
 	count = len;
 	imapp = &imaps[0];
 	nimaps = 1;
-	bmapi_flag = XFS_BMAPI_WRITE | alloc_type;
 	startoffset_fsb	= XFS_B_TO_FSBT(mp, offset);
 	allocatesize_fsb = XFS_B_TO_FSB(mp, count);
 
@@ -1879,14 +1880,10 @@ xfs_alloc_file_space(
 
 		xfs_trans_ijoin(tp, ip);
 
-		/*
-		 * Issue the xfs_bmapi() call to allocate the blocks
-		 */
 		xfs_bmap_init(&free_list, &firstfsb);
-		error = xfs_bmapi(tp, ip, startoffset_fsb,
-				  allocatesize_fsb, bmapi_flag,
-				  &firstfsb, 0, imapp, &nimaps,
-				  &free_list);
+		error = xfs_bmapi_write(tp, ip, startoffset_fsb,
+					allocatesize_fsb, alloc_type, &firstfsb,
+					0, imapp, &nimaps, &free_list);
 		if (error) {
 			goto error0;
 		}
@@ -1976,8 +1973,7 @@ xfs_zero_remaining_bytes(
 	for (offset = startoff; offset <= endoff; offset = lastoffset + 1) {
 		offset_fsb = XFS_B_TO_FSBT(mp, offset);
 		nimap = 1;
-		error = xfs_bmapi(NULL, ip, offset_fsb, 1, 0,
-			NULL, 0, &imap, &nimap, NULL);
+		error = xfs_bmapi_read(ip, offset_fsb, 1, &imap, &nimap, 0);
 		if (error || nimap < 1)
 			break;
 		ASSERT(imap.br_blockcount >= 1);
@@ -2076,7 +2072,7 @@ xfs_free_file_space(
 	if (need_iolock) {
 		xfs_ilock(ip, XFS_IOLOCK_EXCL);
 		/* wait for the completion of any pending DIOs */
-		xfs_ioend_wait(ip);
+		inode_dio_wait(VFS_I(ip));
 	}
 
 	rounding = max_t(uint, 1 << mp->m_sb.sb_blocklog, PAGE_CACHE_SIZE);
@@ -2096,8 +2092,8 @@ xfs_free_file_space(
 	 */
 	if (rt && !xfs_sb_version_hasextflgbit(&mp->m_sb)) {
 		nimap = 1;
-		error = xfs_bmapi(NULL, ip, startoffset_fsb,
-			1, 0, NULL, 0, &imap, &nimap, NULL);
+		error = xfs_bmapi_read(ip, startoffset_fsb, 1,
+					&imap, &nimap, 0);
 		if (error)
 			goto out_unlock_iolock;
 		ASSERT(nimap == 0 || nimap == 1);
@@ -2111,8 +2107,8 @@ xfs_free_file_space(
 				startoffset_fsb += mp->m_sb.sb_rextsize - mod;
 		}
 		nimap = 1;
-		error = xfs_bmapi(NULL, ip, endoffset_fsb - 1,
-			1, 0, NULL, 0, &imap, &nimap, NULL);
+		error = xfs_bmapi_read(ip, endoffset_fsb - 1, 1,
+					&imap, &nimap, 0);
 		if (error)
 			goto out_unlock_iolock;
 		ASSERT(nimap == 0 || nimap == 1);
