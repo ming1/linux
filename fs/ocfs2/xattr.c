@@ -7185,12 +7185,11 @@ int ocfs2_init_security_and_acl(struct inode *dir,
 {
 	int ret = 0;
 	struct buffer_head *dir_bh = NULL;
-	struct ocfs2_security_xattr_info si = {
-		.enable = 1,
-	};
+	struct ocfs2_security_xattr_info si = {0, };
 
 	ret = ocfs2_init_security_get(inode, dir, qstr, &si);
 	if (!ret) {
+		si.enable = 1;
 		ret = ocfs2_xattr_set(inode, OCFS2_XATTR_INDEX_SECURITY,
 				      si.name, si.value, si.value_len,
 				      XATTR_CREATE);
@@ -7216,6 +7215,10 @@ int ocfs2_init_security_and_acl(struct inode *dir,
 	ocfs2_inode_unlock(dir, 0);
 	brelse(dir_bh);
 leave:
+	if (si.enable) {
+		kfree(si.name);
+		kfree(si.value);
+	}
 	return ret;
 }
 /*
