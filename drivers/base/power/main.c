@@ -22,7 +22,6 @@
 #include <linux/mutex.h>
 #include <linux/pm.h>
 #include <linux/pm_runtime.h>
-#include <linux/pm_qos.h>
 #include <linux/resume-trace.h>
 #include <linux/interrupt.h>
 #include <linux/sched.h>
@@ -66,6 +65,7 @@ void device_pm_init(struct device *dev)
 	spin_lock_init(&dev->power.lock);
 	pm_runtime_init(dev);
 	INIT_LIST_HEAD(&dev->power.entry);
+	dev->power.power_state = PMSG_INVALID;
 }
 
 /**

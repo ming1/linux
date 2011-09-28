@@ -7,6 +7,7 @@
 #include <linux/plist.h>
 #include <linux/notifier.h>
 #include <linux/miscdevice.h>
+#include <linux/device.h>
 
 #define PM_QOS_RESERVED 0
 #define PM_QOS_CPU_DMA_LATENCY 1
@@ -142,9 +143,13 @@ static inline int dev_pm_qos_remove_global_notifier(
 					struct notifier_block *notifier)
 			{ return 0; }
 static inline void dev_pm_qos_constraints_init(struct device *dev)
-			{ return; }
+{
+	dev->power.power_state = PMSG_ON;
+}
 static inline void dev_pm_qos_constraints_destroy(struct device *dev)
-			{ return; }
+{
+	dev->power.power_state = PMSG_INVALID;
+}
 #endif
 
 #endif

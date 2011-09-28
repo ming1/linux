@@ -149,6 +149,7 @@ void dev_pm_qos_constraints_init(struct device *dev)
 {
 	mutex_lock(&dev_pm_qos_mtx);
 	dev->power.constraints = NULL;
+	dev->power.power_state = PMSG_ON;
 	mutex_unlock(&dev_pm_qos_mtx);
 }
 
@@ -165,6 +166,7 @@ void dev_pm_qos_constraints_destroy(struct device *dev)
 
 	mutex_lock(&dev_pm_qos_mtx);
 
+	dev->power.power_state = PMSG_INVALID;
 	c = dev->power.constraints;
 	if (!c)
 		goto out;
@@ -222,20 +224,15 @@ int dev_pm_qos_add_request(struct device *dev, struct dev_pm_qos_request *req,
 
 	req->dev = dev;
 
-	device_pm_lock();
 	mutex_lock(&dev_pm_qos_mtx);
 
-	if (dev->power.constraints) {
-		device_pm_unlock();
-	} else {
-		if (list_empty(&dev->power.entry)) {
+	if (!dev->power.constraints) {
+		if (dev->power.power_state.event == PM_EVENT_INVALID) {
 			/* The device has been removed from the system. */
-			device_pm_unlock();
 			req->dev = NULL;
 			ret = -ENODEV;
 			goto out;
 		} else {
-			device_pm_unlock();
 			/*
 			 * Allocate the constraints data on the first call to
 			 * add_request, i.e. only if the data is not already
