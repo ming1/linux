@@ -579,9 +579,8 @@ extern const struct ethtool_ops mlx4_en_ethtool_ops;
  * printk / logging functions
  */
 
-__printf(3, 4)
 int en_print(const char *level, const struct mlx4_en_priv *priv,
-	     const char *format, ...);
+	     const char *format, ...) __attribute__ ((format (printf, 3, 4)));
 
 #define en_dbg(mlevel, priv, format, arg...)			\
 do {								\

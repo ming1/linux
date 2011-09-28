@@ -77,8 +77,8 @@ void __gameport_register_port(struct gameport *gameport, struct module *owner);
 
 void gameport_unregister_port(struct gameport *gameport);
 
-__printf(2, 3)
-void gameport_set_phys(struct gameport *gameport, const char *fmt, ...);
+void gameport_set_phys(struct gameport *gameport, const char *fmt, ...)
+	__attribute__ ((format (printf, 2, 3)));
 
 #else
 
@@ -92,8 +92,8 @@ static inline void gameport_unregister_port(struct gameport *gameport)
 	return;
 }
 
-static inline __printf(2, 3)
-void gameport_set_phys(struct gameport *gameport, const char *fmt, ...)
+static inline void gameport_set_phys(struct gameport *gameport,
+				     const char *fmt, ...)
 {
 	return;
 }

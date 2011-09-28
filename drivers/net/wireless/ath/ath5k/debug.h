@@ -141,10 +141,10 @@ ath5k_debug_printtxbuf(struct ath5k_hw *ah, struct ath5k_buf *bf);
 
 #include <linux/compiler.h>
 
-static inline __printf(3, 4) void
+static inline void __attribute__ ((format (printf, 3, 4)))
 ATH5K_DBG(struct ath5k_hw *ah, unsigned int m, const char *fmt, ...) {}
 
-static inline __printf(3, 4) void
+static inline void __attribute__ ((format (printf, 3, 4)))
 ATH5K_DBG_UNLIMIT(struct ath5k_hw *ah, unsigned int m, const char *fmt, ...)
 {}
 

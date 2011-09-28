@@ -1254,13 +1254,13 @@ static inline int sata_srst_pmp(struct ata_link *link)
 /*
  * printk helpers
  */
-__printf(3, 4)
+__attribute__((format (printf, 3, 4)))
 int ata_port_printk(const struct ata_port *ap, const char *level,
 		    const char *fmt, ...);
-__printf(3, 4)
+__attribute__((format (printf, 3, 4)))
 int ata_link_printk(const struct ata_link *link, const char *level,
 		    const char *fmt, ...);
-__printf(3, 4)
+__attribute__((format (printf, 3, 4)))
 int ata_dev_printk(const struct ata_device *dev, const char *level,
 		   const char *fmt, ...);
 
@@ -1302,10 +1302,10 @@ void ata_print_version(const struct device *dev, const char *version);
 /*
  * ata_eh_info helpers
  */
-extern __printf(2, 3)
-void __ata_ehi_push_desc(struct ata_eh_info *ehi, const char *fmt, ...);
-extern __printf(2, 3)
-void ata_ehi_push_desc(struct ata_eh_info *ehi, const char *fmt, ...);
+extern void __ata_ehi_push_desc(struct ata_eh_info *ehi, const char *fmt, ...)
+	__attribute__ ((format (printf, 2, 3)));
+extern void ata_ehi_push_desc(struct ata_eh_info *ehi, const char *fmt, ...)
+	__attribute__ ((format (printf, 2, 3)));
 extern void ata_ehi_clear_desc(struct ata_eh_info *ehi);
 
 static inline void ata_ehi_hotplugged(struct ata_eh_info *ehi)
@@ -1319,8 +1319,8 @@ static inline void ata_ehi_hotplugged(struct ata_eh_info *ehi)
 /*
  * port description helpers
  */
-extern __printf(2, 3)
-void ata_port_desc(struct ata_port *ap, const char *fmt, ...);
+extern void ata_port_desc(struct ata_port *ap, const char *fmt, ...)
+	__attribute__ ((format (printf, 2, 3)));
 #ifdef CONFIG_PCI
 extern void ata_port_pbar_desc(struct ata_port *ap, int bar, ssize_t offset,
 			       const char *name);

@@ -115,7 +115,8 @@ void iio_trigger_poll_chained(struct iio_trigger *trig, s64 time);
 
 irqreturn_t iio_trigger_generic_data_rdy_poll(int irq, void *private);
 
-__printf(1, 2) struct iio_trigger *iio_allocate_trigger(const char *fmt, ...);
+struct iio_trigger *iio_allocate_trigger(const char *fmt, ...)
+	__attribute__((format(printf, 1, 2)));
 void iio_free_trigger(struct iio_trigger *trig);
 
 #endif /* _IIO_TRIGGER_H_ */

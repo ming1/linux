@@ -3,29 +3,31 @@
 
 struct xfs_mount;
 
-extern __printf(2, 3)
-void xfs_emerg(const struct xfs_mount *mp, const char *fmt, ...);
-extern __printf(2, 3)
-void xfs_alert(const struct xfs_mount *mp, const char *fmt, ...);
-extern __printf(3, 4)
-void xfs_alert_tag(const struct xfs_mount *mp, int tag, const char *fmt, ...);
-extern __printf(2, 3)
-void xfs_crit(const struct xfs_mount *mp, const char *fmt, ...);
-extern __printf(2, 3)
-void xfs_err(const struct xfs_mount *mp, const char *fmt, ...);
-extern __printf(2, 3)
-void xfs_warn(const struct xfs_mount *mp, const char *fmt, ...);
-extern __printf(2, 3)
-void xfs_notice(const struct xfs_mount *mp, const char *fmt, ...);
-extern __printf(2, 3)
-void xfs_info(const struct xfs_mount *mp, const char *fmt, ...);
+extern void xfs_emerg(const struct xfs_mount *mp, const char *fmt, ...)
+        __attribute__ ((format (printf, 2, 3)));
+extern void xfs_alert(const struct xfs_mount *mp, const char *fmt, ...)
+        __attribute__ ((format (printf, 2, 3)));
+extern void xfs_alert_tag(const struct xfs_mount *mp, int tag,
+			 const char *fmt, ...)
+        __attribute__ ((format (printf, 3, 4)));
+extern void xfs_crit(const struct xfs_mount *mp, const char *fmt, ...)
+        __attribute__ ((format (printf, 2, 3)));
+extern void xfs_err(const struct xfs_mount *mp, const char *fmt, ...)
+        __attribute__ ((format (printf, 2, 3)));
+extern void xfs_warn(const struct xfs_mount *mp, const char *fmt, ...)
+        __attribute__ ((format (printf, 2, 3)));
+extern void xfs_notice(const struct xfs_mount *mp, const char *fmt, ...)
+        __attribute__ ((format (printf, 2, 3)));
+extern void xfs_info(const struct xfs_mount *mp, const char *fmt, ...)
+        __attribute__ ((format (printf, 2, 3)));
 
 #ifdef DEBUG
-extern __printf(2, 3)
-void xfs_debug(const struct xfs_mount *mp, const char *fmt, ...);
+extern void xfs_debug(const struct xfs_mount *mp, const char *fmt, ...)
+        __attribute__ ((format (printf, 2, 3)));
 #else
-static inline __printf(2, 3)
-void xfs_debug(const struct xfs_mount *mp, const char *fmt, ...)
+static inline void
+__attribute__ ((format (printf, 2, 3)))
+xfs_debug(const struct xfs_mount *mp, const char *fmt, ...)
 {
 }
 #endif

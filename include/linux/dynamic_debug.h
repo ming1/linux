@@ -37,21 +37,22 @@ int ddebug_add_module(struct _ddebug *tab, unsigned int n,
 
 #if defined(CONFIG_DYNAMIC_DEBUG)
 extern int ddebug_remove_module(const char *mod_name);
-extern __printf(2, 3)
-int __dynamic_pr_debug(struct _ddebug *descriptor, const char *fmt, ...);
+extern int __dynamic_pr_debug(struct _ddebug *descriptor, const char *fmt, ...)
+	__attribute__ ((format (printf, 2, 3)));
 
 struct device;
 
-extern __printf(3, 4)
-int __dynamic_dev_dbg(struct _ddebug *descriptor, const struct device *dev,
-		      const char *fmt, ...);
+extern int __dynamic_dev_dbg(struct _ddebug *descriptor,
+			     const struct device *dev,
+			     const char *fmt, ...)
+	__attribute__ ((format (printf, 3, 4)));
 
 struct net_device;
 
-extern __printf(3, 4)
-int __dynamic_netdev_dbg(struct _ddebug *descriptor,
-			 const struct net_device *dev,
-			 const char *fmt, ...);
+extern int __dynamic_netdev_dbg(struct _ddebug *descriptor,
+			     const struct net_device *dev,
+			     const char *fmt, ...)
+	__attribute__ ((format (printf, 3, 4)));
 
 #define DEFINE_DYNAMIC_DEBUG_METADATA(name, fmt)		\
 	static struct _ddebug __used __aligned(8)		\
