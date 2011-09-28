@@ -1668,9 +1668,9 @@ static int proc_pid_fd_link_getattr(struct vfsmount *mnt, struct dentry *dentry,
 
 	generic_fillattr(inode, stat);
 	unlock_trace(task);
-	put_task_struct(task);
 	rc = 0;
 out_task:
+	put_task_struct(task);
 	return rc;
 }
 
