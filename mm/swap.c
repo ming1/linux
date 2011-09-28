@@ -79,6 +79,7 @@ static void put_compound_page(struct page *page)
 	if (unlikely(PageTail(page))) {
 		/* __split_huge_page_refcount can run under us */
 		struct page *page_head = compound_trans_head(page);
+
 		if (likely(page != page_head &&
 			   get_page_unless_zero(page_head))) {
 			unsigned long flags;
@@ -143,7 +144,11 @@ void put_page(struct page *page)
 }
 EXPORT_SYMBOL(put_page);
 
-int __get_page_tail(struct page *page)
+/*
+ * This function is exported but must not be called by anything other
+ * than get_page(). It implements the slow path of get_page().
+ */
+bool __get_page_tail(struct page *page)
 {
 	/*
 	 * This takes care of get_page() if run on a tail page
@@ -154,8 +159,9 @@ int __get_page_tail(struct page *page)
 	 * split_huge_page().
 	 */
 	unsigned long flags;
-	int got = 0;
+	bool got = false;
 	struct page *page_head = compound_trans_head(page);
+
 	if (likely(page != page_head && get_page_unless_zero(page_head))) {
 		/*
 		 * page_head wasn't a dangling pointer but it
@@ -167,7 +173,7 @@ int __get_page_tail(struct page *page)
 		/* here __split_huge_page_refcount won't run anymore */
 		if (likely(PageTail(page))) {
 			__get_page_tail_foll(page, false);
-			got = 1;
+			got = true;
 		}
 		compound_unlock_irqrestore(page_head, flags);
 		if (unlikely(!got))
