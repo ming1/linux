@@ -1287,6 +1287,7 @@ SYSCALL_DEFINE2(sethostname, char __user *, name, int, len)
 		memset(u->nodename + len, 0, sizeof(u->nodename) - len);
 		errno = 0;
 	}
+	uts_proc_notify(UTS_PROC_HOSTNAME);
 	up_write(&uts_sem);
 	return errno;
 }
@@ -1337,6 +1338,7 @@ SYSCALL_DEFINE2(setdomainname, char __user *, name, int, len)
 		memset(u->domainname + len, 0, sizeof(u->domainname) - len);
 		errno = 0;
 	}
+	uts_proc_notify(UTS_PROC_DOMAINNAME);
 	up_write(&uts_sem);
 	return errno;
 }
@@ -1760,6 +1762,7 @@ SYSCALL_DEFINE5(prctl, int, option, unsigned long, arg2, unsigned long, arg3,
 					      sizeof(me->comm) - 1) < 0)
 				return -EFAULT;
 			set_task_comm(me, comm);
+			proc_comm_connector(me);
 			return 0;
 		case PR_GET_NAME:
 			get_task_comm(comm, me);
