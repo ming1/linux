@@ -59,6 +59,11 @@ static inline void __get_page_tail_foll(struct page *page,
 	atomic_inc(&page->_mapcount);
 }
 
+/*
+ * This is meant to be called as the FOLL_GET operation of
+ * follow_page() and it must be called while holding the proper PT
+ * lock while the pte (or pmd_trans_huge) is still mapping the page.
+ */
 static inline void get_page_foll(struct page *page)
 {
 	if (unlikely(PageTail(page)))
