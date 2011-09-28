@@ -68,11 +68,6 @@
 #define TWL6040_REG_ACCCTL		0x2D
 #define TWL6040_REG_STATUS		0x2E
 
-#define TWL6040_CACHEREGNUM		(TWL6040_REG_STATUS + 1)
-
-#define TWL6040_VIOREGNUM		18
-#define TWL6040_VDDREGNUM		21
-
 /* INTID (0x03) fields */
 
 #define TWL6040_THINT			0x01
@@ -125,15 +120,10 @@
 #define TWL6040_LPLLFIN			0x08
 #define TWL6040_HPLLSEL			0x10
 
-/* HSLCTL (0x10) fields */
+/* HSLCTL/R (0x10/0x11) fields */
 
-#define TWL6040_HSDACMODEL		0x02
-#define TWL6040_HSDRVMODEL		0x08
-
-/* HSRCTL (0x11) fields */
-
-#define TWL6040_HSDACMODER		0x02
-#define TWL6040_HSDRVMODER		0x08
+#define TWL6040_HSDACMODE		(1 << 1)
+#define TWL6040_HSDRVMODE		(1 << 3)
 
 /* VIBCTLL (0x18) fields */
 
@@ -224,5 +214,10 @@ int twl6040_get_pll(struct twl6040 *twl6040);
 unsigned int twl6040_get_sysclk(struct twl6040 *twl6040);
 int twl6040_irq_init(struct twl6040 *twl6040);
 void twl6040_irq_exit(struct twl6040 *twl6040);
+
+static inline int twl6040_get_revid(struct twl6040 *twl6040)
+{
+	return twl6040->rev;
+}
 
 #endif  /* End of __TWL6040_CODEC_H__ */
