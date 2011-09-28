@@ -7,12 +7,11 @@
 #define	EINVAL		22	/* Invalid argument */
 #define ENOSPC		28	/* No space left on device */
 
-extern int printf(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
+extern __printf(1, 2) int printf(const char *fmt, ...);
 
 #define fprintf(fmt, args...)	printf(args)
 
-extern int sprintf(char *buf, const char *fmt, ...)
-	__attribute__((format(printf, 2, 3)));
+extern __printf(2, 3) int sprintf(char *buf, const char *fmt, ...);
 
 extern int vsprintf(char *buf, const char *fmt, va_list args);
 
