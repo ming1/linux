@@ -376,10 +376,8 @@ void dio_end_io(struct bio *bio, int error)
 }
 EXPORT_SYMBOL_GPL(dio_end_io);
 
-static void inline
-dio_bio_alloc(struct dio *dio, struct dio_submit *sdio,
-	      struct block_device *bdev,
-	      sector_t first_sector, int nr_vecs)
+static inline void dio_bio_alloc(struct dio *dio, struct dio_submit *sdio,
+	      	struct block_device *bdev, sector_t first_sector, int nr_vecs)
 {
 	struct bio *bio;
 
@@ -627,7 +625,7 @@ static int get_more_blocks(struct dio *dio, struct dio_submit *sdio,
 /*
  * There is no bio.  Make one now.
  */
-static inline int dio_new_bio(struct dio *dio, struct dio_submit *sdio, 
+static inline int dio_new_bio(struct dio *dio, struct dio_submit *sdio,
 		       sector_t start_sector, struct buffer_head *map_bh)
 {
 	sector_t sector;
@@ -686,7 +684,7 @@ static inline int dio_bio_add_page(struct dio *dio, struct dio_submit *sdio)
  * dio, and for dropping the refcount which came from that presence.
  */
 static inline int dio_send_cur_page(struct dio *dio, struct dio_submit *sdio,
-	  		    	    struct buffer_head *map_bh)
+				    struct buffer_head *map_bh)
 {
 	int ret = 0;
 
@@ -1209,10 +1207,10 @@ direct_io_worker(int rw, struct kiocb *iocb, struct inode *inode,
  * expected that filesystem provide exclusion between new direct I/O
  * and truncates.  For DIO_LOCKING filesystems this is done by i_mutex,
  * but other filesystems need to take care of this on their own.
- * 
+ *
  * NOTE: if you pass "sdio" to anything by pointer make sure that function
  * is always inlined. Otherwise gcc is unable to split the structure into
- * individual fields and will generate much worse code. 
+ * individual fields and will generate much worse code.
  * This is important for the whole file.
  */
 ssize_t
