@@ -23,14 +23,11 @@ static inline bool page_poison(struct page *page)
 
 static void poison_page(struct page *page)
 {
-	void *addr;
+	void *addr = kmap_atomic(page);
 
-	preempt_disable();
-	addr = kmap_atomic(page);
 	set_page_poison(page);
 	memset(addr, PAGE_POISON, PAGE_SIZE);
 	kunmap_atomic(addr);
-	preempt_enable();
 }
 
 static void poison_pages(struct page *page, int n)
@@ -82,12 +79,10 @@ static void unpoison_page(struct page *page)
 	if (!page_poison(page))
 		return;
 
-	preempt_disable();
 	addr = kmap_atomic(page);
 	check_poison_mem(addr, PAGE_SIZE);
 	clear_page_poison(page);
 	kunmap_atomic(addr);
-	preempt_enable();
 }
 
 static void unpoison_pages(struct page *page, int n)
