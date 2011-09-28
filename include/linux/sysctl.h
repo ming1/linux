@@ -1029,7 +1029,7 @@ void proc_sys_poll_notify(struct ctl_table_poll *poll);
 	.event = ATOMIC_INIT(0),					\
 	.wait = __WAIT_QUEUE_HEAD_INITIALIZER(name.wait) }
 
-#define DECLARE_CTL_TABLE_POLL(name)					\
+#define DEFINE_CTL_TABLE_POLL(name)					\
 	struct ctl_table_poll name = __CTL_TABLE_POLL_INITIALIZER(name)
 
 /* A sysctl table is an array of struct ctl_table: */
