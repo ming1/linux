@@ -156,11 +156,14 @@ static inline void llist_add(struct llist_node *new, struct llist_head *head)
 	CHECK_NMI_SAFE_CMPXCHG();
 
 	entry = head->first;
-	do {
+	for (;;) {
 		old_entry = entry;
 		new->next = entry;
+		entry = cmpxchg(&head->first, old_entry, new);
+		if (entry == old_entry)
+			break;
 		cpu_relax();
-	} while ((entry = cmpxchg(&head->first, old_entry, new)) != old_entry);
+	}
 }
 
 /**
@@ -178,11 +181,14 @@ static inline void llist_add_batch(struct llist_node *new_first,
 	CHECK_NMI_SAFE_CMPXCHG();
 
 	entry = head->first;
-	do {
+	for (;;) {
 		old_entry = entry;
 		new_last->next = entry;
+		entry = cmpxchg(&head->first, old_entry, new_first);
+		if (entry == old_entry)
+			break;
 		cpu_relax();
-	} while ((entry = cmpxchg(&head->first, old_entry, new_first)) != old_entry);
+	}
 }
 
 /**
@@ -206,13 +212,16 @@ static inline struct llist_node *llist_del_first(struct llist_head *head)
 	CHECK_NMI_SAFE_CMPXCHG();
 
 	entry = head->first;
-	do {
+	for (;;) {
 		if (entry == NULL)
 			return NULL;
 		old_entry = entry;
 		next = entry->next;
+		entry = cmpxchg(&head->first, old_entry, next);
+		if (entry == old_entry)
+			break;
 		cpu_relax();
-	} while ((entry = cmpxchg(&head->first, old_entry, next)) != old_entry);
+	}
 
 	return entry;
 }
