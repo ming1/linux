@@ -28,6 +28,7 @@
 #include <linux/smp.h>
 #include <linux/compat.h>
 #include <linux/fs.h>
+#include <linux/module.h>
 #include <linux/genhd.h>
 #include <linux/blkdev.h>
 #include <linux/bio.h>
@@ -80,7 +81,7 @@ static int instance;
  * Global variable used to hold the major block device number
  * allocated in mtip_init().
  */
-int mtip_major;
+static int mtip_major;
 
 static DEFINE_SPINLOCK(rssd_index_lock);
 static DEFINE_IDA(rssd_index_ida);
@@ -106,6 +107,72 @@ static int mtip_exec_internal_command(struct mtip_port *port,
 				u32 opts,
 				gfp_t atomic,
 				unsigned long timeout);
+
+/*
+ * This function check_for_surprise_removal is called
+ * while card is removed from the system and it will
+ * read the vendor id from the configration space
+ *
+ * @pdev Pointer to the pci_dev structure.
+ *
+ * return value
+ *	 true if device removed, else false
+ */
+static bool mtip_check_surprise_removal(struct pci_dev *pdev)
+{
+	u16 vendor_id = 0;
+
+       /* Read the vendorID from the configuration space */
+	pci_read_config_word(pdev, 0x00, &vendor_id);
+	if (vendor_id == 0xFFFF)
+		return true; /* device removed */
+
+	return false; /* device present */
+}
+
+/*
+ * This function is called for clean the pending command in the
+ * command slot during the surprise removal of device and return
+ * error to the upper layer.
+ *
+ * @dd Pointer to the DRIVER_DATA structure.
+ *
+ * return value
+ *	None
+ */
+static void mtip_command_cleanup(struct driver_data *dd)
+{
+	int group = 0, commandslot = 0, commandindex = 0;
+	struct mtip_cmd *command;
+	struct mtip_port *port = dd->port;
+
+	for (group = 0; group < 4; group++) {
+		for (commandslot = 0; commandslot < 32; commandslot++) {
+			if (!(port->allocated[group] & (1 << commandslot)))
+				continue;
+
+			commandindex = group << 5 | commandslot;
+			command = &port->commands[commandindex];
+
+			if (atomic_read(&command->active)
+			    && (command->async_callback)) {
+				command->async_callback(command->async_data,
+					-ENODEV);
+				command->async_callback = NULL;
+				command->async_data = NULL;
+			}
+
+			dma_unmap_sg(&port->dd->pdev->dev,
+				command->sg,
+				command->scatter_ents,
+				command->direction);
+		}
+	}
+
+	up(&port->cmd_slot);
+
+	atomic_set(&dd->drv_cleanup_done, true);
+}
 
 /*
  * Obtain an empty command slot.
@@ -167,6 +234,47 @@ static inline void release_slot(struct mtip_port *port, int tag)
 }
 
 /*
+ * Reset the HBA (without sleeping)
+ *
+ * Just like hba_reset, except does not call sleep, so can be
+ * run from interrupt/tasklet context.
+ *
+ * @dd Pointer to the driver data structure.
+ *
+ * return value
+ *	0	The reset was successful.
+ *	-1	The HBA Reset bit did not clear.
+ */
+static int hba_reset_nosleep(struct driver_data *dd)
+{
+	unsigned long timeout;
+
+	/* Chip quirk: quiesce any chip function */
+	mdelay(10);
+
+	/* Set the reset bit */
+	writel(HOST_RESET, dd->mmio + HOST_CTL);
+
+	/* Flush */
+	readl(dd->mmio + HOST_CTL);
+
+	/*
+	 * Wait 10ms then spin for up to 1 second
+	 * waiting for reset acknowledgement
+	 */
+	timeout = jiffies + msecs_to_jiffies(1000);
+	mdelay(10);
+	while ((readl(dd->mmio + HOST_CTL) & HOST_RESET)
+		 && time_before(jiffies, timeout))
+		mdelay(1);
+
+	if (readl(dd->mmio + HOST_CTL) & HOST_RESET)
+		return -1;
+
+	return 0;
+}
+
+/*
  * Issue a command to the hardware.
  *
  * Set the appropriate bit in the s_active and Command Issue hardware
@@ -195,6 +303,207 @@ static inline void mtip_issue_ncq_command(struct mtip_port *port, int tag)
 }
 
 /*
+ * Enable/disable the reception of FIS
+ *
+ * @port   Pointer to the port data structure
+ * @enable 1 to enable, 0 to disable
+ *
+ * return value
+ *	Previous state: 1 enabled, 0 disabled
+ */
+static int mtip_enable_fis(struct mtip_port *port, int enable)
+{
+	u32 tmp;
+
+	/* enable FIS reception */
+	tmp = readl(port->mmio + PORT_CMD);
+	if (enable)
+		writel(tmp | PORT_CMD_FIS_RX, port->mmio + PORT_CMD);
+	else
+		writel(tmp & ~PORT_CMD_FIS_RX, port->mmio + PORT_CMD);
+
+	/* Flush */
+	readl(port->mmio + PORT_CMD);
+
+	return (((tmp & PORT_CMD_FIS_RX) == PORT_CMD_FIS_RX));
+}
+
+/*
+ * Enable/disable the DMA engine
+ *
+ * @port   Pointer to the port data structure
+ * @enable 1 to enable, 0 to disable
+ *
+ * return value
+ *	Previous state: 1 enabled, 0 disabled.
+ */
+static int mtip_enable_engine(struct mtip_port *port, int enable)
+{
+	u32 tmp;
+
+	/* enable FIS reception */
+	tmp = readl(port->mmio + PORT_CMD);
+	if (enable)
+		writel(tmp | PORT_CMD_START, port->mmio + PORT_CMD);
+	else
+		writel(tmp & ~PORT_CMD_START, port->mmio + PORT_CMD);
+
+	readl(port->mmio + PORT_CMD);
+	return (((tmp & PORT_CMD_START) == PORT_CMD_START));
+}
+
+/*
+ * Enables the port DMA engine and FIS reception.
+ *
+ * return value
+ *	None
+ */
+static inline void mtip_start_port(struct mtip_port *port)
+{
+	/* Enable FIS reception */
+	mtip_enable_fis(port, 1);
+
+	/* Enable the DMA engine */
+	mtip_enable_engine(port, 1);
+}
+
+/*
+ * Deinitialize a port by disabling port interrupts, the DMA engine,
+ * and FIS reception.
+ *
+ * @port Pointer to the port structure
+ *
+ * return value
+ *	None
+ */
+static inline void mtip_deinit_port(struct mtip_port *port)
+{
+	/* Disable interrupts on this port */
+	writel(0, port->mmio + PORT_IRQ_MASK);
+
+	/* Disable the DMA engine */
+	mtip_enable_engine(port, 0);
+
+	/* Disable FIS reception */
+	mtip_enable_fis(port, 0);
+}
+
+/*
+ * Initialize a port.
+ *
+ * This function deinitializes the port by calling mtip_deinit_port() and
+ * then initializes it by setting the command header and RX FIS addresses,
+ * clearing the SError register and any pending port interrupts before
+ * re-enabling the default set of port interrupts.
+ *
+ * @port Pointer to the port structure.
+ *
+ * return value
+ *	None
+ */
+static void mtip_init_port(struct mtip_port *port)
+{
+	int i;
+	mtip_deinit_port(port);
+
+	/* Program the command list base and FIS base addresses */
+	if (readl(port->dd->mmio + HOST_CAP) & HOST_CAP_64) {
+		writel((port->command_list_dma >> 16) >> 16,
+			 port->mmio + PORT_LST_ADDR_HI);
+		writel((port->rxfis_dma >> 16) >> 16,
+			 port->mmio + PORT_FIS_ADDR_HI);
+	}
+
+	writel(port->command_list_dma & 0xffffffff,
+			port->mmio + PORT_LST_ADDR);
+	writel(port->rxfis_dma & 0xffffffff, port->mmio + PORT_FIS_ADDR);
+
+	/* Clear SError */
+	writel(readl(port->mmio + PORT_SCR_ERR), port->mmio + PORT_SCR_ERR);
+
+	/* reset the completed registers.*/
+	for (i = 0; i < port->dd->slot_groups; i++)
+		writel(0xFFFFFFFF, port->completed[i]);
+
+	/* Clear any pending interrupts for this port */
+	writel(readl(port->mmio + PORT_IRQ_STAT), port->mmio + PORT_IRQ_STAT);
+
+	/* Enable port interrupts */
+	writel(DEF_PORT_IRQ, port->mmio + PORT_IRQ_MASK);
+}
+
+/*
+ * Restart a port
+ *
+ * @port Pointer to the port data structure.
+ *
+ * return value
+ *	None
+ */
+static void mtip_restart_port(struct mtip_port *port)
+{
+	unsigned long timeout;
+
+	/* Disable the DMA engine */
+	mtip_enable_engine(port, 0);
+
+	/* Chip quirk: wait up to 500ms for PxCMD.CR == 0 */
+	timeout = jiffies + msecs_to_jiffies(500);
+	while ((readl(port->mmio + PORT_CMD) & PORT_CMD_LIST_ON)
+		 && time_before(jiffies, timeout))
+		;
+
+	/*
+	 * Chip quirk: escalate to hba reset if
+	 * PxCMD.CR not clear after 500 ms
+	 */
+	if (readl(port->mmio + PORT_CMD) & PORT_CMD_LIST_ON) {
+		dev_warn(&port->dd->pdev->dev,
+			"PxCMD.CR not clear, escalating reset\n");
+
+		if (hba_reset_nosleep(port->dd))
+			dev_err(&port->dd->pdev->dev,
+				"HBA reset escalation failed.\n");
+
+		/* 30 ms delay before com reset to quiesce chip */
+		mdelay(30);
+	}
+
+	dev_warn(&port->dd->pdev->dev, "Issuing COM reset\n");
+
+	/* Set PxSCTL.DET */
+	writel(readl(port->mmio + PORT_SCR_CTL) |
+			 1, port->mmio + PORT_SCR_CTL);
+	readl(port->mmio + PORT_SCR_CTL);
+
+	/* Wait 1 ms to quiesce chip function */
+	timeout = jiffies + msecs_to_jiffies(1);
+	while (time_before(jiffies, timeout))
+		;
+
+	/* Clear PxSCTL.DET */
+	writel(readl(port->mmio + PORT_SCR_CTL) & ~1,
+			 port->mmio + PORT_SCR_CTL);
+	readl(port->mmio + PORT_SCR_CTL);
+
+	/* Wait 500 ms for bit 0 of PORT_SCR_STS to be set */
+	timeout = jiffies + msecs_to_jiffies(500);
+	while (((readl(port->mmio + PORT_SCR_STAT) & 0x01) == 0)
+			 && time_before(jiffies, timeout))
+		;
+
+	if ((readl(port->mmio + PORT_SCR_STAT) & 0x01) == 0)
+		dev_warn(&port->dd->pdev->dev,
+			"COM reset failed\n");
+
+	/* Clear SError, the PxSERR.DIAG.x should be set so clear it */
+	writel(readl(port->mmio + PORT_SCR_ERR), port->mmio + PORT_SCR_ERR);
+
+	/* Enable the DMA engine */
+	mtip_enable_engine(port, 1);
+}
+
+/*
  * Called periodically to see if any read/write commands are
  * taking too long to complete.
  *
@@ -203,7 +512,7 @@ static inline void mtip_issue_ncq_command(struct mtip_port *port, int tag)
  * return value
  *	None
  */
-void mtip_timeout_function(unsigned long int data)
+static void mtip_timeout_function(unsigned long int data)
 {
 	struct mtip_port *port = (struct mtip_port *) data;
 	struct host_to_dev_fis *fis;
@@ -375,248 +684,6 @@ static void mtip_completion(struct mtip_port *port,
 	command->comp_func = NULL;
 
 	complete(waiting);
-}
-
-/*
- * Enable/disable the reception of FIS
- *
- * @port   Pointer to the port data structure
- * @enable 1 to enable, 0 to disable
- *
- * return value
- *	Previous state: 1 enabled, 0 disabled
- */
-static int mtip_enable_fis(struct mtip_port *port, int enable)
-{
-	u32 tmp;
-
-	/* enable FIS reception */
-	tmp = readl(port->mmio + PORT_CMD);
-	if (enable)
-		writel(tmp | PORT_CMD_FIS_RX, port->mmio + PORT_CMD);
-	else
-		writel(tmp & ~PORT_CMD_FIS_RX, port->mmio + PORT_CMD);
-
-	/* Flush */
-	readl(port->mmio + PORT_CMD);
-
-	return (((tmp & PORT_CMD_FIS_RX) == PORT_CMD_FIS_RX));
-}
-
-/*
- * Enable/disable the DMA engine
- *
- * @port   Pointer to the port data structure
- * @enable 1 to enable, 0 to disable
- *
- * return value
- *	Previous state: 1 enabled, 0 disabled.
- */
-static int mtip_enable_engine(struct mtip_port *port, int enable)
-{
-	u32 tmp;
-
-	/* enable FIS reception */
-	tmp = readl(port->mmio + PORT_CMD);
-	if (enable)
-		writel(tmp | PORT_CMD_START, port->mmio + PORT_CMD);
-	else
-		writel(tmp & ~PORT_CMD_START, port->mmio + PORT_CMD);
-
-	readl(port->mmio + PORT_CMD);
-	return (((tmp & PORT_CMD_START) == PORT_CMD_START));
-}
-
-/*
- * Enables the port DMA engine and FIS reception.
- *
- * return value
- *	None
- */
-static inline void mtip_start_port(struct mtip_port *port)
-{
-	/* Enable FIS reception */
-	mtip_enable_fis(port, 1);
-
-	/* Enable the DMA engine */
-	mtip_enable_engine(port, 1);
-}
-
-/*
- * Deinitialize a port by disabling port interrupts, the DMA engine,
- * and FIS reception.
- *
- * @port Pointer to the port structure
- *
- * return value
- *	None
- */
-static inline void mtip_deinit_port(struct mtip_port *port)
-{
-	/* Disable interrupts on this port */
-	writel(0, port->mmio + PORT_IRQ_MASK);
-
-	/* Disable the DMA engine */
-	mtip_enable_engine(port, 0);
-
-	/* Disable FIS reception */
-	mtip_enable_fis(port, 0);
-}
-
-/*
- * Initialize a port.
- *
- * This function deinitializes the port by calling mtip_deinit_port() and
- * then initializes it by setting the command header and RX FIS addresses,
- * clearing the SError register and any pending port interrupts before
- * re-enabling the default set of port interrupts.
- *
- * @port Pointer to the port structure.
- *
- * return value
- *	None
- */
-static void mtip_init_port(struct mtip_port *port)
-{
-	int i;
-	mtip_deinit_port(port);
-
-	/* Program the command list base and FIS base addresses */
-	if (readl(port->dd->mmio + HOST_CAP) & HOST_CAP_64) {
-		writel((port->command_list_dma >> 16) >> 16,
-			 port->mmio + PORT_LST_ADDR_HI);
-		writel((port->rxfis_dma >> 16) >> 16,
-			 port->mmio + PORT_FIS_ADDR_HI);
-	}
-
-	writel(port->command_list_dma & 0xffffffff,
-			port->mmio + PORT_LST_ADDR);
-	writel(port->rxfis_dma & 0xffffffff, port->mmio + PORT_FIS_ADDR);
-
-	/* Clear SError */
-	writel(readl(port->mmio + PORT_SCR_ERR), port->mmio + PORT_SCR_ERR);
-
-	/* reset the completed registers.*/
-	for (i = 0; i < port->dd->slot_groups; i++)
-		writel(0xFFFFFFFF, port->completed[i]);
-
-	/* Clear any pending interrupts for this port */
-	writel(readl(port->mmio + PORT_IRQ_STAT), port->mmio + PORT_IRQ_STAT);
-
-	/* Enable port interrupts */
-	writel(DEF_PORT_IRQ, port->mmio + PORT_IRQ_MASK);
-}
-
-/*
- * Reset the HBA (without sleeping)
- *
- * Just like hba_reset, except does not call sleep, so can be
- * run from interrupt/tasklet context.
- *
- * @dd Pointer to the driver data structure.
- *
- * return value
- *	0	The reset was successful.
- *	-1	The HBA Reset bit did not clear.
- */
-int hba_reset_nosleep(struct driver_data *dd)
-{
-	unsigned long timeout;
-
-	/* Chip quirk: quiesce any chip function */
-	mdelay(10);
-
-	/* Set the reset bit */
-	writel(HOST_RESET, dd->mmio + HOST_CTL);
-
-	/* Flush */
-	readl(dd->mmio + HOST_CTL);
-
-	/*
-	 * Wait 10ms then spin for up to 1 second
-	 * waiting for reset acknowledgement
-	 */
-	timeout = jiffies + msecs_to_jiffies(1000);
-	mdelay(10);
-	while ((readl(dd->mmio + HOST_CTL) & HOST_RESET)
-		 && time_before(jiffies, timeout))
-		mdelay(1);
-
-	if (readl(dd->mmio + HOST_CTL) & HOST_RESET)
-		return -1;
-
-	return 0;
-}
-
-/*
- * Restart a port
- *
- * @port Pointer to the port data structure.
- *
- * return value
- *	None
- */
-void mtip_restart_port(struct mtip_port *port)
-{
-	unsigned long timeout;
-
-	/* Disable the DMA engine */
-	mtip_enable_engine(port, 0);
-
-	/* Chip quirk: wait up to 500ms for PxCMD.CR == 0 */
-	timeout = jiffies + msecs_to_jiffies(500);
-	while ((readl(port->mmio + PORT_CMD) & PORT_CMD_LIST_ON)
-		 && time_before(jiffies, timeout))
-		;
-
-	/*
-	 * Chip quirk: escalate to hba reset if
-	 * PxCMD.CR not clear after 500 ms
-	 */
-	if (readl(port->mmio + PORT_CMD) & PORT_CMD_LIST_ON) {
-		dev_warn(&port->dd->pdev->dev,
-			"PxCMD.CR not clear, escalating reset\n");
-
-		if (hba_reset_nosleep(port->dd))
-			dev_err(&port->dd->pdev->dev,
-				"HBA reset escalation failed.\n");
-
-		/* 30 ms delay before com reset to quiesce chip */
-		mdelay(30);
-	}
-
-	dev_warn(&port->dd->pdev->dev, "Issuing COM reset\n");
-
-	/* Set PxSCTL.DET */
-	writel(readl(port->mmio + PORT_SCR_CTL) |
-			 1, port->mmio + PORT_SCR_CTL);
-	readl(port->mmio + PORT_SCR_CTL);
-
-	/* Wait 1 ms to quiesce chip function */
-	timeout = jiffies + msecs_to_jiffies(1);
-	while (time_before(jiffies, timeout))
-		;
-
-	/* Clear PxSCTL.DET */
-	writel(readl(port->mmio + PORT_SCR_CTL) & ~1,
-			 port->mmio + PORT_SCR_CTL);
-	readl(port->mmio + PORT_SCR_CTL);
-
-	/* Wait 500 ms for bit 0 of PORT_SCR_STS to be set */
-	timeout = jiffies + msecs_to_jiffies(500);
-	while (((readl(port->mmio + PORT_SCR_STAT) & 0x01) == 0)
-			 && time_before(jiffies, timeout))
-		;
-
-	if ((readl(port->mmio + PORT_SCR_STAT) & 0x01) == 0)
-		dev_warn(&port->dd->pdev->dev,
-			"COM reset failed\n");
-
-	/* Clear SError, the PxSERR.DIAG.x should be set so clear it */
-	writel(readl(port->mmio + PORT_SCR_ERR), port->mmio + PORT_SCR_ERR);
-
-	/* Enable the DMA engine */
-	mtip_enable_engine(port, 1);
 }
 
 /*
@@ -1276,7 +1343,7 @@ static int mtip_standby_immediate(struct mtip_port *port)
  *	1 Capacity was returned successfully.
  *	0 The identify information is invalid.
  */
-bool mtip_hw_get_capacity(struct driver_data *dd, sector_t *sectors)
+static bool mtip_hw_get_capacity(struct driver_data *dd, sector_t *sectors)
 {
 	struct mtip_port *port = dd->port;
 	u64 total, raw0, raw1, raw2, raw3;
@@ -1423,7 +1490,7 @@ static inline void fill_command_sg(struct driver_data *dd,
  * return value 0 The command completed successfully.
  * return value -1 An error occurred while executing the command.
  */
-int exec_drive_task(struct mtip_port *port, u8 *command)
+static int exec_drive_task(struct mtip_port *port, u8 *command)
 {
 	struct host_to_dev_fis	fis;
 	struct host_to_dev_fis *reply = (port->rxfis + RX_FIS_D2H_REG);
@@ -1499,8 +1566,8 @@ int exec_drive_task(struct mtip_port *port, u8 *command)
  *                 data to the user space buffer.
  * return value -1 An error occurred while executing the command.
  */
-int exec_drive_command(struct mtip_port *port, u8 *command,
-			void __user *user_buffer)
+static int exec_drive_command(struct mtip_port *port, u8 *command,
+				void __user *user_buffer)
 {
 	struct host_to_dev_fis	fis;
 	struct host_to_dev_fis *reply = (port->rxfis + RX_FIS_D2H_REG);
@@ -1622,76 +1689,26 @@ static unsigned int implicit_sector(unsigned char command,
  * See ide_taskfile_ioctl() for derivation
  */
 static int exec_drive_taskfile(struct driver_data *dd,
-				unsigned long arg,
-				unsigned char compat)
+			       void __user *buf,
+			       ide_task_request_t *req_task,
+			       int outtotal)
 {
 	struct host_to_dev_fis	fis;
 	struct host_to_dev_fis *reply;
-	ide_task_request_t *req_task;
 	u8 *outbuf = NULL;
 	u8 *inbuf = NULL;
 	dma_addr_t outbuf_dma = 0;
 	dma_addr_t inbuf_dma = 0;
 	dma_addr_t dma_buffer = 0;
 	int err = 0;
-	int tasksize = sizeof(struct ide_task_request_s);
 	unsigned int taskin = 0;
 	unsigned int taskout = 0;
 	u8 nsect = 0;
-	char __user *buf = (char __user *)arg;
 	unsigned int timeout = MTIP_IOCTL_COMMAND_TIMEOUT_MS;
 	unsigned int force_single_sector;
 	unsigned int transfer_size;
 	unsigned long task_file_data;
-	int intotal, outtotal;
-#ifdef CONFIG_COMPAT
-	struct mtip_compat_ide_task_request_s *compat_req_task = NULL;
-	int compat_tasksize = sizeof(struct mtip_compat_ide_task_request_s);
-#endif
-
-
-	req_task = kzalloc(tasksize, GFP_KERNEL);
-	if (req_task == NULL)
-		return -ENOMEM;
-
-	if (compat == 1) {
-#ifdef CONFIG_COMPAT
-		compat_req_task =
-			(struct mtip_compat_ide_task_request_s __user *) arg;
-
-		if (copy_from_user(req_task, buf,
-				compat_tasksize -
-				(2 * sizeof(compat_long_t)))) {
-			err = -EFAULT;
-			goto abort;
-		}
-
-		if (get_user(req_task->out_size, &compat_req_task->out_size)) {
-			err = -EFAULT;
-			goto abort;
-		}
-
-		if (get_user(req_task->in_size, &compat_req_task->in_size)) {
-			err = -EFAULT;
-			goto abort;
-		}
-
-		outtotal = compat_tasksize;
-		intotal = compat_tasksize + req_task->out_size;
-#else
-		outtotal = 0;
-		intotal = 0;
-#endif
-	} else {
-		if (copy_from_user(req_task, buf, tasksize)) {
-			kfree(req_task);
-			err = -EFAULT;
-			goto abort;
-		}
-
-		outtotal = tasksize;
-		intotal = tasksize + req_task->out_size;
-	}
+	int intotal = outtotal + req_task->out_size;
 
 	taskout = req_task->out_size;
 	taskin = req_task->in_size;
@@ -1922,30 +1939,6 @@ static int exec_drive_taskfile(struct driver_data *dd,
 
 	up_write(&dd->internal_sem);
 
-	if (compat == 1) {
-#ifdef CONFIG_COMPAT
-		if (copy_to_user(buf, req_task,
-				compat_tasksize -
-				(2 * sizeof(compat_long_t)))) {
-			err = -EFAULT;
-			goto abort;
-		}
-		if (put_user(req_task->out_size,
-				&compat_req_task->out_size)) {
-			err = -EFAULT;
-			goto abort;
-		}
-		if (put_user(req_task->in_size, &compat_req_task->in_size)) {
-			err = -EFAULT;
-			goto abort;
-		}
-#endif
-	} else {
-		if (copy_to_user(buf, req_task, tasksize)) {
-			err = -EFAULT;
-			goto abort;
-		}
-	}
 	if (taskout) {
 		if (copy_to_user(buf + outtotal, outbuf, taskout)) {
 			err = -EFAULT;
@@ -1965,7 +1958,6 @@ abort:
 	if (outbuf_dma)
 		pci_unmap_single(dd->pdev, outbuf_dma,
 					taskout, DMA_TO_DEVICE);
-	kfree(req_task);
 	kfree(outbuf);
 	kfree(inbuf);
 
@@ -1989,10 +1981,8 @@ abort:
  *	-EFAULT An error occurred copying data to a user space buffer.
  *	-EIO	An error occurred while executing the command.
  */
-int mtip_hw_ioctl(struct driver_data *dd,
-		  unsigned int cmd,
-		  unsigned long arg,
-		  unsigned char compat)
+static int mtip_hw_ioctl(struct driver_data *dd, unsigned int cmd,
+			 unsigned long arg)
 {
 	switch (cmd) {
 	case HDIO_GET_IDENTITY:
@@ -2049,8 +2039,24 @@ int mtip_hw_ioctl(struct driver_data *dd,
 
 		break;
 	}
-	case HDIO_DRIVE_TASKFILE:
-		return exec_drive_taskfile(dd, arg, compat);
+	case HDIO_DRIVE_TASKFILE: {
+		ide_task_request_t req_task;
+		int ret, outtotal;
+
+		if (copy_from_user(&req_task, (void __user *) arg,
+					sizeof(req_task)))
+			return -EFAULT;
+
+		outtotal = sizeof(req_task);
+
+		ret = exec_drive_taskfile(dd, (void __user *) arg,
+						&req_task, outtotal);
+
+		if (copy_to_user((void __user *) arg, &req_task, sizeof(req_task)))
+			return -EFAULT;
+
+		return ret;
+	}
 
 	default:
 		return -EINVAL;
@@ -2081,15 +2087,9 @@ int mtip_hw_ioctl(struct driver_data *dd,
  * return value
  *	None
  */
-void mtip_hw_submit_io(struct driver_data *dd,
-			sector_t start,
-			int nsect,
-			int nents,
-			int tag,
-			void *callback,
-			void *data,
-			int barrier,
-			int dir)
+static void mtip_hw_submit_io(struct driver_data *dd, sector_t start,
+			      int nsect, int nents, int tag, void *callback,
+			      void *data, int barrier, int dir)
 {
 	struct host_to_dev_fis	*fis;
 	struct mtip_port *port = dd->port;
@@ -2176,7 +2176,7 @@ void mtip_hw_submit_io(struct driver_data *dd,
  * return value
  *      None
  */
-void mtip_hw_release_scatterlist(struct driver_data *dd, int tag)
+static void mtip_hw_release_scatterlist(struct driver_data *dd, int tag)
 {
 	release_slot(dd->port, tag);
 }
@@ -2192,8 +2192,8 @@ void mtip_hw_release_scatterlist(struct driver_data *dd, int tag)
  *	Pointer to the scatter list for the allocated command slot
  *	or NULL if no command slots are available.
  */
-struct scatterlist *mtip_hw_get_scatterlist(struct driver_data *dd,
-						int *tag)
+static struct scatterlist *mtip_hw_get_scatterlist(struct driver_data *dd,
+						   int *tag)
 {
 	/*
 	 * It is possible that, even with this semaphore, a thread
@@ -2277,7 +2277,7 @@ static DEVICE_ATTR(registers, S_IRUGO, hw_show_registers, NULL);
  *	0	Operation completed successfully.
  *	-EINVAL Invalid parameter.
  */
-int mtip_hw_sysfs_init(struct driver_data *dd, struct kobject *kobj)
+static int mtip_hw_sysfs_init(struct driver_data *dd, struct kobject *kobj)
 {
 	if (!kobj || !dd)
 		return -EINVAL;
@@ -2298,7 +2298,7 @@ int mtip_hw_sysfs_init(struct driver_data *dd, struct kobject *kobj)
  *	0	Operation completed successfully.
  *	-EINVAL Invalid parameter.
  */
-int mtip_hw_sysfs_exit(struct driver_data *dd, struct kobject *kobj)
+static int mtip_hw_sysfs_exit(struct driver_data *dd, struct kobject *kobj)
 {
 	if (!kobj || !dd)
 		return -EINVAL;
@@ -2446,7 +2446,7 @@ static int mtip_ftl_rebuild_poll(struct driver_data *dd)
  * return value
  *	0 on success, else an error code.
  */
-int mtip_hw_init(struct driver_data *dd)
+static int mtip_hw_init(struct driver_data *dd)
 {
 	int i;
 	int rv;
@@ -2647,7 +2647,7 @@ out1:
  * return value
  *	0
  */
-int mtip_hw_exit(struct driver_data *dd)
+static int mtip_hw_exit(struct driver_data *dd)
 {
 	/*
 	 * Send standby immediate (E0h) to the drive so that it
@@ -2695,7 +2695,7 @@ int mtip_hw_exit(struct driver_data *dd)
  * return value
  *	0
  */
-int mtip_hw_shutdown(struct driver_data *dd)
+static int mtip_hw_shutdown(struct driver_data *dd)
 {
 	/*
 	 * Send standby immediate (E0h) to the drive so that it
@@ -2718,7 +2718,7 @@ int mtip_hw_shutdown(struct driver_data *dd)
  *	0	Suspend was successful
  *	-EFAULT Suspend was not successful
  */
-int mtip_hw_suspend(struct driver_data *dd)
+static int mtip_hw_suspend(struct driver_data *dd)
 {
 	/*
 	 * Send standby immediate (E0h) to the drive
@@ -2750,7 +2750,7 @@ int mtip_hw_suspend(struct driver_data *dd)
  *	0	Resume was successful
  *      -EFAULT Resume was not successful
  */
-int mtip_hw_resume(struct driver_data *dd)
+static int mtip_hw_resume(struct driver_data *dd)
 {
 	/* Perform any needed hardware setup steps */
 	hba_setup(dd);
@@ -2774,50 +2774,6 @@ int mtip_hw_resume(struct driver_data *dd)
 			dd->mmio + HOST_CTL);
 
 	return 0;
-}
-
-/*
- * This function is called for clean the pending command in the
- * command slot during the surprise removal of device and return
- * error to the upper layer.
- *
- * @dd Pointer to the DRIVER_DATA structure.
- *
- * return value
- *	None
- */
-void mtip_command_cleanup(struct driver_data *dd)
-{
-	int group = 0, commandslot = 0, commandindex = 0;
-	struct mtip_cmd *command;
-	struct mtip_port *port = dd->port;
-
-	for (group = 0; group < 4; group++) {
-		for (commandslot = 0; commandslot < 32; commandslot++) {
-			if (!(port->allocated[group] & (1 << commandslot)))
-				continue;
-
-			commandindex = group << 5 | commandslot;
-			command = &port->commands[commandindex];
-
-			if (atomic_read(&command->active)
-			    && (command->async_callback)) {
-				command->async_callback(command->async_data,
-					-ENODEV);
-				command->async_callback = NULL;
-				command->async_data = NULL;
-			}
-
-			dma_unmap_sg(&port->dd->pdev->dev,
-				command->sg,
-				command->scatter_ents,
-				command->direction);
-		}
-	}
-
-	up(&port->cmd_slot);
-
-	atomic_set(&dd->drv_cleanup_done, true);
 }
 
 /*
@@ -2881,7 +2837,7 @@ static int mtip_block_ioctl(struct block_device *dev,
 	case BLKFLSBUF:
 		return 0;
 	default:
-		return mtip_hw_ioctl(dd, cmd, arg, 0);
+		return mtip_hw_ioctl(dd, cmd, arg);
 	}
 }
 
@@ -2915,8 +2871,46 @@ static int mtip_block_compat_ioctl(struct block_device *dev,
 	switch (cmd) {
 	case BLKFLSBUF:
 		return 0;
+	case HDIO_DRIVE_TASKFILE: {
+		struct mtip_compat_ide_task_request_s *compat_req_task;
+		ide_task_request_t req_task;
+		int compat_tasksize, outtotal, ret;
+
+		compat_tasksize = sizeof(struct mtip_compat_ide_task_request_s);
+
+		compat_req_task =
+			(struct mtip_compat_ide_task_request_s __user *) arg;
+
+		if (copy_from_user(&req_task, (void __user *) arg,
+				compat_tasksize - (2 * sizeof(compat_long_t))))
+			return -EFAULT;
+
+		if (get_user(req_task.out_size, &compat_req_task->out_size))
+			return -EFAULT;
+
+		if (get_user(req_task.in_size, &compat_req_task->in_size))
+			return -EFAULT;
+
+		outtotal = sizeof(struct mtip_compat_ide_task_request_s);
+
+		ret = exec_drive_taskfile(dd, (void __user *) arg,
+						&req_task, outtotal);
+
+		if (copy_to_user((void __user *) arg, &req_task,
+				compat_tasksize -
+				(2 * sizeof(compat_long_t))))
+			return -EFAULT;
+
+		if (put_user(req_task.out_size, &compat_req_task->out_size))
+			return -EFAULT;
+
+		if (put_user(req_task.in_size, &compat_req_task->in_size))
+			return -EFAULT;
+
+		return ret;
+	}
 	default:
-		return mtip_hw_ioctl(dd, cmd, arg, 1);
+		return mtip_hw_ioctl(dd, cmd, arg);
 	}
 }
 #endif
@@ -3058,7 +3052,7 @@ static void mtip_make_request(struct request_queue *queue, struct bio *bio)
  * return value
  *	0 on success else an error code.
  */
-int mtip_block_initialize(struct driver_data *dd)
+static int mtip_block_initialize(struct driver_data *dd)
 {
 	int rv = 0;
 	sector_t capacity;
@@ -3189,7 +3183,7 @@ protocol_init_error:
  * return value
  *	0
  */
-int mtip_block_remove(struct driver_data *dd)
+static int mtip_block_remove(struct driver_data *dd)
 {
 	struct kobject *kobj;
 	/* Clean up the sysfs attributes managed by the protocol layer. */
@@ -3226,7 +3220,7 @@ int mtip_block_remove(struct driver_data *dd)
  * return value
  *	0
  */
-int mtip_block_shutdown(struct driver_data *dd)
+static int mtip_block_shutdown(struct driver_data *dd)
 {
 	dev_info(&dd->pdev->dev,
 		"Shutting down %s ...\n", dd->disk->disk_name);
@@ -3241,7 +3235,7 @@ int mtip_block_shutdown(struct driver_data *dd)
 	return 0;
 }
 
-int mtip_block_suspend(struct driver_data *dd)
+static int mtip_block_suspend(struct driver_data *dd)
 {
 	dev_info(&dd->pdev->dev,
 		"Suspending %s ...\n", dd->disk->disk_name);
@@ -3249,7 +3243,7 @@ int mtip_block_suspend(struct driver_data *dd)
 	return 0;
 }
 
-int mtip_block_resume(struct driver_data *dd)
+static int mtip_block_resume(struct driver_data *dd)
 {
 	dev_info(&dd->pdev->dev, "Resuming %s ...\n",
 		dd->disk->disk_name);
@@ -3500,28 +3494,6 @@ static void mtip_pci_shutdown(struct pci_dev *pdev)
 		mtip_block_shutdown(dd);
 }
 
-/*
- * This function check_for_surprise_removal is called
- * while card is removed from the system and it will
- * read the vendor id from the configration space
- *
- * @pdev Pointer to the pci_dev structure.
- *
- * return value
- *	 true if device removed, else false
- */
-bool mtip_check_surprise_removal(struct pci_dev *pdev)
-{
-	u16 vendor_id = 0;
-
-       /* Read the vendorID from the configuration space */
-	pci_read_config_word(pdev, 0x00, &vendor_id);
-	if (vendor_id == 0xFFFF)
-		return true; /* device removed */
-
-	return false; /* device present */
-}
-
 /* Table of device ids supported by this driver. */
 static DEFINE_PCI_DEVICE_TABLE(mtip_pci_tbl) = {
 	{  PCI_DEVICE(PCI_VENDOR_ID_MICRON, P320_DEVICE_ID) },
@@ -3529,7 +3501,7 @@ static DEFINE_PCI_DEVICE_TABLE(mtip_pci_tbl) = {
 };
 
 /* Structure that describes the PCI driver functions. */
-struct pci_driver mtip_pci_driver = {
+static struct pci_driver mtip_pci_driver = {
 	.name			= MTIP_DRV_NAME,
 	.id_table		= mtip_pci_tbl,
 	.probe			= mtip_pci_probe,
