@@ -200,7 +200,7 @@ static int lis3lv02d_get_odr(struct lis3lv02d *lis3)
 	u8 ctrl;
 	int shift;
 
-	lis3->read(&lis3, CTRL_REG1, &ctrl);
+	lis3->read(lis3, CTRL_REG1, &ctrl);
 	ctrl &= lis3->odr_mask;
 	shift = ffs(lis3->odr_mask) - 1;
 	return lis3->odrs[(ctrl >> shift)];
