@@ -68,6 +68,7 @@ config USB_ARCH_HAS_EHCI
 	default y if ARCH_MSM
 	default y if MICROBLAZE
 	default y if SPARC_LEON
+	default y if ARCH_MMP
 	default PCI
 
 # ARM SA1111 chips have a non-PCI based "OHCI-compatible" USB host interface.
@@ -108,6 +109,8 @@ config USB
 	  module will be called usbcore.
 
 source "drivers/usb/core/Kconfig"
+
+source "drivers/usb/dwc3/Kconfig"
 
 source "drivers/usb/mon/Kconfig"
 
