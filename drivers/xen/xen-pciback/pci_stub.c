@@ -220,6 +220,8 @@ void pcistub_put_pci_dev(struct pci_dev *dev)
 	}
 
 	spin_unlock_irqrestore(&pcistub_devices_lock, flags);
+	if (!found_psdev)
+		return;
 
 	/*hold this lock for avoiding breaking link between
 	* pcistub and xen_pcibk when AER is in processing
@@ -513,8 +515,8 @@ static void kill_domain_by_device(struct pcistub_device *psdev)
 	char nodename[PCI_NODENAME_MAX];
 
 	if (!psdev) {
-		dev_err(&psdev->dev->dev,
-			"device is NULL when do AER recovery/kill_domain\n");
+		printk(KERN_ERR DRV_NAME
+			":device is NULL when do AER recovery/kill_domain\n");
 		return;
 	}
 
@@ -866,7 +868,7 @@ static inline int str_to_slot(const char *buf, int *domain, int *bus,
 	if (err == 4)
 		return 0;
 	else if (err < 0)
-		return -EINVAL;
+		return err;
 
 	/* try again without domain */
 	*domain = 0;

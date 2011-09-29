@@ -237,7 +237,7 @@ static void xen_cpuid(unsigned int *ax, unsigned int *bx,
 
 static void __init xen_init_cpuid_mask(void)
 {
-	unsigned int ax, bx, cx, dx;
+	unsigned int ax, bx, uninitialized_var(cx), dx;
 	unsigned int xsave_mask;
 
 	cpuid_leaf1_edx_mask =
