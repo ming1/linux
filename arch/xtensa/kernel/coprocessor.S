@@ -34,7 +34,7 @@
  *   a2:	new stack pointer, original in DEPC
  *   a3:	dispatch table
  *   depc:	a2, original value saved on stack (PT_DEPC)
- *   excsave_1:	a3
+ *   excsave1:	a3
  *
  *   PT_DEPC >= VALID_DOUBLE_EXCEPTION_ADDRESS: double exception, DEPC
  *	     <  VALID_DOUBLE_EXCEPTION_ADDRESS: regular exception
@@ -43,7 +43,7 @@
 /* IO protection is currently unsupported. */
 
 ENTRY(fast_io_protect)
-	wsr	a0, EXCSAVE_1
+	wsr	a0, EXCSAVE1
 	movi	a0, unrecoverable_exception
 	callx0	a0
 
@@ -213,14 +213,14 @@ ENTRY(coprocessor_restore)
  *   a2:	new stack pointer, original in DEPC
  *   a3:	dispatch table
  *   depc:	a2, original value saved on stack (PT_DEPC)
- *   excsave_1:	a3
+ *   excsave1:	a3
  *
  *   PT_DEPC >= VALID_DOUBLE_EXCEPTION_ADDRESS: double exception, DEPC
  *	     <  VALID_DOUBLE_EXCEPTION_ADDRESS: regular exception
  */
 
 ENTRY(fast_coprocessor_double)
-	wsr	a0, EXCSAVE_1
+	wsr	a0, EXCSAVE1
 	movi	a0, unrecoverable_exception
 	callx0	a0
 
@@ -229,7 +229,7 @@ ENTRY(fast_coprocessor)
 
 	/* Save remaining registers a1-a3 and SAR */
 
-	xsr	a3, EXCSAVE_1
+	xsr	a3, EXCSAVE1
 	s32i	a3, a2, PT_AREG3
 	rsr	a3, SAR
 	s32i	a1, a2, PT_AREG1
