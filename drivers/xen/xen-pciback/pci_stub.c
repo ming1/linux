@@ -868,7 +868,7 @@ static inline int str_to_slot(const char *buf, int *domain, int *bus,
 	if (err == 4)
 		return 0;
 	else if (err < 0)
-		return -EINVAL;
+		return err;
 
 	/* try again without domain */
 	*domain = 0;
