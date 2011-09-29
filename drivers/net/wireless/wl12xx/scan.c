@@ -33,6 +33,8 @@ void wl1271_scan_complete_work(struct work_struct *work)
 {
 	struct delayed_work *dwork;
 	struct wl1271 *wl;
+	int ret;
+	bool is_sta, is_ibss;
 
 	dwork = container_of(work, struct delayed_work, work);
 	wl = container_of(dwork, struct wl1271, scan_complete_work);
@@ -50,20 +52,33 @@ void wl1271_scan_complete_work(struct work_struct *work)
 	wl->scan.state = WL1271_SCAN_STATE_IDLE;
 	memset(wl->scan.scanned_ch, 0, sizeof(wl->scan.scanned_ch));
 	wl->scan.req = NULL;
-	ieee80211_scan_completed(wl->hw, false);
 
-	/* restore hardware connection monitoring template */
+	ret = wl1271_ps_elp_wakeup(wl);
+	if (ret < 0)
+		goto out;
+
 	if (test_bit(WL1271_FLAG_STA_ASSOCIATED, &wl->flags)) {
-		if (wl1271_ps_elp_wakeup(wl) == 0) {
-			wl1271_cmd_build_ap_probe_req(wl, wl->probereq);
-			wl1271_ps_elp_sleep(wl);
-		}
+		/* restore hardware connection monitoring template */
+		wl1271_cmd_build_ap_probe_req(wl, wl->probereq);
 	}
+
+	/* return to ROC if needed */
+	is_sta = (wl->bss_type == BSS_TYPE_STA_BSS);
+	is_ibss = (wl->bss_type == BSS_TYPE_IBSS);
+	if ((is_sta && !test_bit(WL1271_FLAG_STA_ASSOCIATED, &wl->flags)) ||
+	    (is_ibss && !test_bit(WL1271_FLAG_IBSS_JOINED, &wl->flags))) {
+		/* restore remain on channel */
+		wl12xx_cmd_role_start_dev(wl);
+		wl12xx_roc(wl, wl->dev_role_id);
+	}
+	wl1271_ps_elp_sleep(wl);
 
 	if (wl->scan.failed) {
 		wl1271_info("Scan completed due to error.");
 		wl12xx_queue_recovery_work(wl);
 	}
+
+	ieee80211_scan_completed(wl->hw, false);
 
 out:
 	mutex_unlock(&wl->mutex);
@@ -156,6 +171,11 @@ static int wl1271_scan_send(struct wl1271 *wl, enum ieee80211_band band,
 	if (passive || wl->scan.req->n_ssids == 0)
 		scan_options |= WL1271_SCAN_OPT_PASSIVE;
 
+	if (WARN_ON(wl->role_id == WL12XX_INVALID_ROLE_ID)) {
+		ret = -EINVAL;
+		goto out;
+	}
+	cmd->params.role_id = wl->role_id;
 	cmd->params.scan_options = cpu_to_le16(scan_options);
 
 	cmd->params.n_ch = wl1271_get_scan_channels(wl, wl->scan.req,
@@ -167,10 +187,6 @@ static int wl1271_scan_send(struct wl1271 *wl, enum ieee80211_band band,
 	}
 
 	cmd->params.tx_rate = cpu_to_le32(basic_rate);
-	cmd->params.rx_config_options = cpu_to_le32(CFG_RX_ALL_GOOD);
-	cmd->params.rx_filter_options =
-		cpu_to_le32(CFG_RX_PRSP_EN | CFG_RX_MGMT_EN | CFG_RX_BCN_EN);
-
 	cmd->params.n_probe_reqs = wl->conf.scan.num_probe_reqs;
 	cmd->params.tx_rate = cpu_to_le32(basic_rate);
 	cmd->params.tid_trigger = 0;
@@ -185,6 +201,8 @@ static int wl1271_scan_send(struct wl1271 *wl, enum ieee80211_band band,
 		cmd->params.ssid_len = wl->scan.ssid_len;
 		memcpy(cmd->params.ssid, wl->scan.ssid, wl->scan.ssid_len);
 	}
+
+	memcpy(cmd->addr, wl->mac_addr, ETH_ALEN);
 
 	ret = wl1271_cmd_build_probe_req(wl, wl->scan.ssid, wl->scan.ssid_len,
 					 wl->scan.req->ie, wl->scan.req->ie_len,
@@ -455,6 +473,51 @@ wl1271_scan_sched_scan_channels(struct wl1271 *wl,
 		cfg->passive[2] || cfg->active[2];
 }
 
+/* Returns 0 if no wildcard is used, 1 if wildcard is used or a
+ * negative value on error */
+static int
+wl12xx_scan_sched_scan_ssid_list(struct wl1271 *wl,
+				 struct cfg80211_sched_scan_request *req)
+{
+	struct wl1271_cmd_sched_scan_ssid_list *cmd = NULL;
+	struct cfg80211_ssid *ssid = req->ssids;
+	int ret, wildcard = 0;
+
+	wl1271_debug(DEBUG_CMD, "cmd sched scan ssid list");
+
+	cmd = kzalloc(sizeof(*cmd), GFP_KERNEL);
+	if (!cmd)
+		return -ENOMEM;
+
+	while ((cmd->n_ssids < req->n_ssids) && ssid) {
+		if (ssid->ssid_len == 0) {
+			wildcard = 1;
+			cmd->ssids[cmd->n_ssids].type = SCAN_SSID_TYPE_PUBLIC;
+		} else {
+			cmd->ssids[cmd->n_ssids].type = SCAN_SSID_TYPE_HIDDEN;
+		}
+		cmd->ssids[cmd->n_ssids].len = ssid->ssid_len;
+		memcpy(cmd->ssids[cmd->n_ssids].ssid, ssid->ssid,
+		       ssid->ssid_len);
+		ssid++;
+		cmd->n_ssids++;
+	}
+
+	wl1271_dump(DEBUG_SCAN, "SSID_LIST: ", cmd, sizeof(*cmd));
+
+	ret = wl1271_cmd_send(wl, CMD_CONNECTION_SCAN_SSID_CFG, cmd,
+			      sizeof(*cmd), 0);
+	if (ret < 0) {
+		wl1271_error("cmd sched scan ssid list failed");
+		goto out;
+	}
+
+	ret = wildcard;
+out:
+	kfree(cmd);
+	return ret;
+}
+
 int wl1271_scan_sched_scan_config(struct wl1271 *wl,
 				  struct cfg80211_sched_scan_request *req,
 				  struct ieee80211_sched_scan_ies *ies)
@@ -486,14 +549,21 @@ int wl1271_scan_sched_scan_config(struct wl1271 *wl,
 	for (i = 0; i < SCAN_MAX_CYCLE_INTERVALS; i++)
 		cfg->intervals[i] = cpu_to_le32(req->interval);
 
-	if (!force_passive && req->ssids[0].ssid_len && req->ssids[0].ssid) {
-		cfg->filter_type = SCAN_SSID_FILTER_SPECIFIC;
-		cfg->ssid_len = req->ssids[0].ssid_len;
-		memcpy(cfg->ssid, req->ssids[0].ssid,
-		       req->ssids[0].ssid_len);
-	} else {
+	cfg->ssid_len = 0;
+	if (req->n_ssids == 0) {
+		wl1271_debug(DEBUG_SCAN, "using SCAN_SSID_FILTER_ANY");
 		cfg->filter_type = SCAN_SSID_FILTER_ANY;
-		cfg->ssid_len = 0;
+	} else {
+		ret = wl12xx_scan_sched_scan_ssid_list(wl, req);
+		if (ret < 0)
+			goto out;
+		if (ret) {
+			wl1271_debug(DEBUG_SCAN, "using SCAN_SSID_FILTER_DISABLED");
+			cfg->filter_type = SCAN_SSID_FILTER_DISABLED;
+		} else {
+			wl1271_debug(DEBUG_SCAN, "using SCAN_SSID_FILTER_LIST");
+			cfg->filter_type = SCAN_SSID_FILTER_LIST;
+		}
 	}
 
 	if (!wl1271_scan_sched_scan_channels(wl, req, cfg)) {

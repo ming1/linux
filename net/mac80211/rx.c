@@ -476,7 +476,6 @@ static ieee80211_rx_result
 ieee80211_rx_mesh_check(struct ieee80211_rx_data *rx)
 {
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)rx->skb->data;
-	unsigned int hdrlen = ieee80211_hdrlen(hdr->frame_control);
 	char *dev_addr = rx->sdata->vif.addr;
 
 	if (ieee80211_is_data(hdr->frame_control)) {
@@ -523,14 +522,6 @@ ieee80211_rx_mesh_check(struct ieee80211_rx_data *rx)
 		return RX_DROP_MONITOR;
 
 	}
-
-#define msh_h_get(h, l) ((struct ieee80211s_hdr *) ((u8 *)h + l))
-
-	if (ieee80211_is_data(hdr->frame_control) &&
-	    is_multicast_ether_addr(hdr->addr1) &&
-	    mesh_rmc_check(hdr->addr3, msh_h_get(hdr, hdrlen), rx->sdata))
-		return RX_DROP_MONITOR;
-#undef msh_h_get
 
 	return RX_CONTINUE;
 }
@@ -850,8 +841,21 @@ ieee80211_rx_h_check(struct ieee80211_rx_data *rx)
 		      ieee80211_is_pspoll(hdr->frame_control)) &&
 		     rx->sdata->vif.type != NL80211_IFTYPE_ADHOC &&
 		     rx->sdata->vif.type != NL80211_IFTYPE_WDS &&
-		     (!rx->sta || !test_sta_flags(rx->sta, WLAN_STA_ASSOC))))
+		     (!rx->sta || !test_sta_flags(rx->sta, WLAN_STA_ASSOC)))) {
+		if (rx->sta && rx->sta->dummy &&
+		    ieee80211_is_data_present(hdr->frame_control)) {
+			u16 ethertype;
+			u8 *payload;
+
+			payload = rx->skb->data +
+				ieee80211_hdrlen(hdr->frame_control);
+			ethertype = (payload[6] << 8) | payload[7];
+			if (cpu_to_be16(ethertype) ==
+			    rx->sdata->control_port_protocol)
+				return RX_CONTINUE;
+		}
 		return RX_DROP_MONITOR;
+	}
 
 	return RX_CONTINUE;
 }
@@ -1827,12 +1831,24 @@ ieee80211_rx_h_mesh_fwding(struct ieee80211_rx_data *rx)
 	hdrlen = ieee80211_hdrlen(hdr->frame_control);
 	mesh_hdr = (struct ieee80211s_hdr *) (skb->data + hdrlen);
 
+	/* frame is in RMC, don't forward */
+	if (ieee80211_is_data(hdr->frame_control) &&
+	    is_multicast_ether_addr(hdr->addr1) &&
+	    mesh_rmc_check(hdr->addr3, mesh_hdr, rx->sdata))
+		return RX_DROP_MONITOR;
+
 	if (!ieee80211_is_data(hdr->frame_control))
 		return RX_CONTINUE;
 
 	if (!mesh_hdr->ttl)
 		/* illegal frame */
 		return RX_DROP_MONITOR;
+
+	if (ieee80211_queue_stopped(&local->hw, skb_get_queue_mapping(skb))) {
+		IEEE80211_IFSTA_MESH_CTR_INC(&sdata->u.mesh,
+						dropped_frames_congestion);
+		return RX_DROP_MONITOR;
+	}
 
 	if (mesh_hdr->flags & MESH_FLAGS_AE) {
 		struct mesh_path *mppath;
@@ -1889,13 +1905,13 @@ ieee80211_rx_h_mesh_fwding(struct ieee80211_rx_data *rx)
 			memset(info, 0, sizeof(*info));
 			info->flags |= IEEE80211_TX_INTFL_NEED_TXPROCESSING;
 			info->control.vif = &rx->sdata->vif;
-			skb_set_queue_mapping(skb,
-				ieee80211_select_queue(rx->sdata, fwd_skb));
-			ieee80211_set_qos_hdr(local, skb);
-			if (is_multicast_ether_addr(fwd_hdr->addr1))
+			if (is_multicast_ether_addr(fwd_hdr->addr1)) {
 				IEEE80211_IFSTA_MESH_CTR_INC(&sdata->u.mesh,
 								fwded_mcast);
-			else {
+				skb_set_queue_mapping(fwd_skb,
+					ieee80211_select_queue(sdata, fwd_skb));
+				ieee80211_set_qos_hdr(sdata, fwd_skb);
+			} else {
 				int err;
 				/*
 				 * Save TA to addr1 to send TA a path error if a
@@ -2220,12 +2236,29 @@ ieee80211_rx_h_action(struct ieee80211_rx_data *rx)
 			goto handled;
 		}
 		break;
+	case WLAN_CATEGORY_SELF_PROTECTED:
+		switch (mgmt->u.action.u.self_prot.action_code) {
+		case WLAN_SP_MESH_PEERING_OPEN:
+		case WLAN_SP_MESH_PEERING_CLOSE:
+		case WLAN_SP_MESH_PEERING_CONFIRM:
+			if (!ieee80211_vif_is_mesh(&sdata->vif))
+				goto invalid;
+			if (sdata->u.mesh.security != IEEE80211_MESH_SEC_NONE)
+				/* userspace handles this frame */
+				break;
+			goto queue;
+		case WLAN_SP_MGK_INFORM:
+		case WLAN_SP_MGK_ACK:
+			if (!ieee80211_vif_is_mesh(&sdata->vif))
+				goto invalid;
+			break;
+		}
+		break;
 	case WLAN_CATEGORY_MESH_ACTION:
 		if (!ieee80211_vif_is_mesh(&sdata->vif))
 			break;
-		goto queue;
-	case WLAN_CATEGORY_MESH_PATH_SEL:
-		if (!mesh_path_sel_is_hwmp(sdata))
+		if (mesh_action_is_path_sel(mgmt) &&
+		  (!mesh_path_sel_is_hwmp(sdata)))
 			break;
 		goto queue;
 	}
@@ -2539,12 +2572,12 @@ static void ieee80211_rx_handlers(struct ieee80211_rx_data *rx)
 		CALL_RXH(ieee80211_rx_h_ps_poll)
 		CALL_RXH(ieee80211_rx_h_michael_mic_verify)
 		/* must be after MMIC verify so header is counted in MPDU mic */
-		CALL_RXH(ieee80211_rx_h_remove_qos_control)
-		CALL_RXH(ieee80211_rx_h_amsdu)
 #ifdef CONFIG_MAC80211_MESH
 		if (ieee80211_vif_is_mesh(&rx->sdata->vif))
 			CALL_RXH(ieee80211_rx_h_mesh_fwding);
 #endif
+		CALL_RXH(ieee80211_rx_h_remove_qos_control)
+		CALL_RXH(ieee80211_rx_h_amsdu)
 		CALL_RXH(ieee80211_rx_h_data)
 		CALL_RXH(ieee80211_rx_h_ctrl);
 		CALL_RXH(ieee80211_rx_h_mgmt_check)
@@ -2686,7 +2719,9 @@ static int prepare_for_handlers(struct ieee80211_rx_data *rx,
 		} else if (!ieee80211_bssid_match(bssid,
 					sdata->vif.addr)) {
 			if (!(status->rx_flags & IEEE80211_RX_IN_SCAN) &&
-			    !ieee80211_is_beacon(hdr->frame_control))
+			    !ieee80211_is_beacon(hdr->frame_control) &&
+			    !(ieee80211_is_action(hdr->frame_control) &&
+			      sdata->vif.p2p))
 				return 0;
 			status->rx_flags &= ~IEEE80211_RX_RA_MATCH;
 		}
@@ -2791,7 +2826,7 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 	if (ieee80211_is_data(fc)) {
 		prev_sta = NULL;
 
-		for_each_sta_info(local, hdr->addr2, sta, tmp) {
+		for_each_sta_info_rx(local, hdr->addr2, sta, tmp) {
 			if (!prev_sta) {
 				prev_sta = sta;
 				continue;
@@ -2835,7 +2870,7 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 			continue;
 		}
 
-		rx.sta = sta_info_get_bss(prev, hdr->addr2);
+		rx.sta = sta_info_get_bss_rx(prev, hdr->addr2);
 		rx.sdata = prev;
 		ieee80211_prepare_and_rx_handle(&rx, skb, false);
 
@@ -2843,7 +2878,7 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 	}
 
 	if (prev) {
-		rx.sta = sta_info_get_bss(prev, hdr->addr2);
+		rx.sta = sta_info_get_bss_rx(prev, hdr->addr2);
 		rx.sdata = prev;
 
 		if (ieee80211_prepare_and_rx_handle(&rx, skb, true))
