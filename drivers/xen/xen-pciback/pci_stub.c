@@ -222,6 +222,8 @@ void pcistub_put_pci_dev(struct pci_dev *dev)
 	}
 
 	spin_unlock_irqrestore(&pcistub_devices_lock, flags);
+	if (!found_psdev)
+		return;
 
 	/*hold this lock for avoiding breaking link between
 	* pcistub and xen_pcibk when AER is in processing
