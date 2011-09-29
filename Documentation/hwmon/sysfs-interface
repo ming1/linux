@@ -394,6 +394,18 @@ temp_reset_history
 		Reset temp_lowest and temp_highest for all sensors
 		WO
 
+temp[1-*]_threshold[1-*]
+		Unspecified threshold. Use if the chip provides temperature
+		thresholds which are not associated with lower or upper limits.
+		RW
+		Unit: millidegree Celsius
+
+temp[1-*]_threshold[1-*]_triggered
+		Channel trigger information.
+		0: Temperature is below threshold.
+		1: Temperature is at or above threshold.
+		RO
+
 Some chips measure temperature using external thermistors and an ADC, and
 report the temperature measurement as a voltage. Converting this voltage
 back to a temperature (or the other way around for limits) requires
