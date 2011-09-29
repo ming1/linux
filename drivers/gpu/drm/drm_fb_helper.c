@@ -31,6 +31,8 @@
 #include <linux/sysrq.h>
 #include <linux/slab.h>
 #include <linux/fb.h>
+#include <linux/export.h>
+#include <linux/module.h>
 #include "drmP.h"
 #include "drm_crtc.h"
 #include "drm_fb_helper.h"
