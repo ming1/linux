@@ -15,6 +15,7 @@
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include <linux/types.h>
+#include <linux/module.h>
 #include <linux/netdevice.h>
 #include <linux/hdlc.h>
 #include <linux/if_arp.h>
@@ -163,7 +164,6 @@ mkret (int bsd)
 
 /***************************************************************************/
 #include <linux/workqueue.h>
-#include <linux/module.h>
 
 /***
  * One workqueue (wq) per port (since musycc allows simultaneous group
