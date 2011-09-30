@@ -12,6 +12,7 @@
 
 #include <linux/module.h>
 #include <linux/pm.h>
+#include <linux/dma-mapping.h>
 
 #include <asm/irq.h>
 #include <asm/mach/arch.h>
@@ -215,6 +216,8 @@ static struct clk_lookup periph_clocks_lookups[] = {
 	CLKDEV_CON_DEV_ID("t0_clk", "atmel_tcb.1", &tcb0_clk),
 	CLKDEV_CON_DEV_ID("pclk", "ssc.0", &ssc0_clk),
 	CLKDEV_CON_DEV_ID("pclk", "ssc.1", &ssc1_clk),
+	/* fake hclk clock */
+	CLKDEV_CON_DEV_ID("hclk", "at91_ohci", &uhphs_clk),
 };
 
 static struct clk_lookup usart_clocks_lookups[] = {
@@ -319,6 +322,7 @@ static void at91sam9g45_poweroff(void)
 static void __init at91sam9g45_map_io(void)
 {
 	at91_init_sram(0, AT91SAM9G45_SRAM_BASE, AT91SAM9G45_SRAM_SIZE);
+	init_consistent_dma_size(SZ_4M);
 }
 
 static void __init at91sam9g45_initialize(void)
