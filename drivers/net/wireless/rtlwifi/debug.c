@@ -26,6 +26,8 @@
  * Larry Finger <Larry.Finger@lwfinger.net>
  *****************************************************************************/
 
+#include <linux/moduleparam.h>
+
 #include "wifi.h"
 
 static unsigned int debug = DBG_EMERG;

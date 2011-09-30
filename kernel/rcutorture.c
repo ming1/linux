@@ -25,13 +25,14 @@
 #include <linux/types.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
-#include <linux/module.h>
+#include <linux/export.h>
 #include <linux/kthread.h>
 #include <linux/err.h>
 #include <linux/spinlock.h>
 #include <linux/smp.h>
 #include <linux/rcupdate.h>
 #include <linux/interrupt.h>
+#include <linux/module.h>
 #include <linux/sched.h>
 #include <linux/atomic.h>
 #include <linux/bitops.h>

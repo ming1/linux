@@ -36,6 +36,7 @@
 #include <net/nfc/nci.h>
 #include <net/nfc/nci_core.h>
 #include <linux/nfc.h>
+#include <linux/export.h>
 
 static void nci_cmd_work(struct work_struct *work);
 static void nci_rx_work(struct work_struct *work);

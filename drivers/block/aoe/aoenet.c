@@ -8,7 +8,7 @@
 #include <linux/hdreg.h>
 #include <linux/blkdev.h>
 #include <linux/netdevice.h>
-#include <linux/moduleparam.h>
+#include <linux/module.h>
 #include <net/net_namespace.h>
 #include <asm/unaligned.h>
 #include "aoe.h"

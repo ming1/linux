@@ -34,6 +34,7 @@
 #include <linux/bio.h>
 #include <linux/dma-mapping.h>
 #include <linux/idr.h>
+#include <linux/module.h>
 #include <../drivers/ata/ahci.h>
 #include "mtip32xx.h"
 
