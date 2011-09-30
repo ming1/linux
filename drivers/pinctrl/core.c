@@ -537,9 +537,7 @@ struct pinctrl_dev *pinctrl_register(struct pinctrl_desc *pctldesc,
 	ret = device_register(&pctldev->dev);
 	if (ret != 0) {
 		pr_err("error in device registration\n");
-		put_device(&pctldev->dev);
-		kfree(pctldev);
-		goto out_err;
+		goto out_reg_dev_err;
 	}
 	dev_set_drvdata(&pctldev->dev, pctldev);
 
@@ -551,7 +549,7 @@ struct pinctrl_dev *pinctrl_register(struct pinctrl_desc *pctldesc,
 		pr_err("error during pin registration\n");
 		pinctrl_free_pindescs(pctldev, pctldesc->pins,
 				      pctldesc->npins);
-		goto out_err;
+		goto out_reg_pins_err;
 	}
 
 	pinctrl_init_device_debugfs(pctldev);
@@ -561,7 +559,9 @@ struct pinctrl_dev *pinctrl_register(struct pinctrl_desc *pctldesc,
 	pinmux_hog_maps(pctldev);
 	return pctldev;
 
-out_err:
+out_reg_pins_err:
+	device_del(&pctldev->dev);
+out_reg_dev_err:
 	put_device(&pctldev->dev);
 	return ERR_PTR(ret);
 }
@@ -583,11 +583,10 @@ void pinctrl_unregister(struct pinctrl_dev *pctldev)
 	mutex_lock(&pinctrldev_list_mutex);
 	list_del(&pctldev->node);
 	mutex_unlock(&pinctrldev_list_mutex);
-	device_unregister(&pctldev->dev);
 	/* Destroy descriptor tree */
 	pinctrl_free_pindescs(pctldev, pctldev->desc->pins,
 			      pctldev->desc->npins);
-	kfree(pctldev);
+	device_unregister(&pctldev->dev);
 }
 EXPORT_SYMBOL_GPL(pinctrl_unregister);
 
