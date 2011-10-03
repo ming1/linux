@@ -316,8 +316,7 @@ static void realview_pb1176_reset(char mode)
 	__raw_writel(REALVIEW_PB1176_SYS_SOFT_RESET, reset_ctrl);
 }
 
-static void realview_pb1176_fixup(struct machine_desc *mdesc,
-				  struct tag *tags, char **from,
+static void realview_pb1176_fixup(struct tag *tags, char **from,
 				  struct meminfo *meminfo)
 {
 	/*
@@ -358,7 +357,7 @@ static void __init realview_pb1176_init(void)
 
 MACHINE_START(REALVIEW_PB1176, "ARM-RealView PB1176")
 	/* Maintainer: ARM Ltd/Deep Blue Solutions Ltd */
-	.boot_params	= PLAT_PHYS_OFFSET + 0x00000100,
+	.atag_offset	= 0x100,
 	.fixup		= realview_pb1176_fixup,
 	.map_io		= realview_pb1176_map_io,
 	.init_early	= realview_init_early,
