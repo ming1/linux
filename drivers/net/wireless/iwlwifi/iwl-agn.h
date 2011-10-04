@@ -65,54 +65,9 @@
 
 #include "iwl-dev.h"
 
-/* configuration for the _agn devices */
-extern struct iwl_cfg iwl5300_agn_cfg;
-extern struct iwl_cfg iwl5100_agn_cfg;
-extern struct iwl_cfg iwl5350_agn_cfg;
-extern struct iwl_cfg iwl5100_bgn_cfg;
-extern struct iwl_cfg iwl5100_abg_cfg;
-extern struct iwl_cfg iwl5150_agn_cfg;
-extern struct iwl_cfg iwl5150_abg_cfg;
-extern struct iwl_cfg iwl6005_2agn_cfg;
-extern struct iwl_cfg iwl6005_2abg_cfg;
-extern struct iwl_cfg iwl6005_2bg_cfg;
-extern struct iwl_cfg iwl1030_bgn_cfg;
-extern struct iwl_cfg iwl1030_bg_cfg;
-extern struct iwl_cfg iwl6030_2agn_cfg;
-extern struct iwl_cfg iwl6030_2abg_cfg;
-extern struct iwl_cfg iwl6030_2bgn_cfg;
-extern struct iwl_cfg iwl6030_2bg_cfg;
-extern struct iwl_cfg iwl6000i_2agn_cfg;
-extern struct iwl_cfg iwl6000i_2abg_cfg;
-extern struct iwl_cfg iwl6000i_2bg_cfg;
-extern struct iwl_cfg iwl6000_3agn_cfg;
-extern struct iwl_cfg iwl6050_2agn_cfg;
-extern struct iwl_cfg iwl6050_2abg_cfg;
-extern struct iwl_cfg iwl6150_bgn_cfg;
-extern struct iwl_cfg iwl6150_bg_cfg;
-extern struct iwl_cfg iwl1000_bgn_cfg;
-extern struct iwl_cfg iwl1000_bg_cfg;
-extern struct iwl_cfg iwl100_bgn_cfg;
-extern struct iwl_cfg iwl100_bg_cfg;
-extern struct iwl_cfg iwl130_bgn_cfg;
-extern struct iwl_cfg iwl130_bg_cfg;
-extern struct iwl_cfg iwl2000_2bgn_cfg;
-extern struct iwl_cfg iwl2000_2bg_cfg;
-extern struct iwl_cfg iwl2030_2bgn_cfg;
-extern struct iwl_cfg iwl2030_2bg_cfg;
-extern struct iwl_cfg iwl6035_2agn_cfg;
-extern struct iwl_cfg iwl6035_2abg_cfg;
-extern struct iwl_cfg iwl6035_2bg_cfg;
-extern struct iwl_cfg iwl105_bg_cfg;
-extern struct iwl_cfg iwl105_bgn_cfg;
-extern struct iwl_cfg iwl135_bg_cfg;
-extern struct iwl_cfg iwl135_bgn_cfg;
-
-extern struct iwl_mod_params iwlagn_mod_params;
-
 extern struct ieee80211_ops iwlagn_hw_ops;
 
-int iwl_reset_ict(struct iwl_priv *priv);
+int iwl_reset_ict(struct iwl_trans *trans);
 
 static inline void iwl_set_calib_hdr(struct iwl_calib_hdr *hdr, u8 cmd)
 {
@@ -121,10 +76,6 @@ static inline void iwl_set_calib_hdr(struct iwl_calib_hdr *hdr, u8 cmd)
 	hdr->groups_num = 1;
 	hdr->data_valid = 1;
 }
-
-/* tx queue */
-void iwl_free_tfds_in_queue(struct iwl_priv *priv,
-			    int sta_id, int tid, int freed);
 
 /* RXON */
 int iwlagn_set_pan_params(struct iwl_priv *priv);
@@ -137,8 +88,9 @@ void iwlagn_bss_info_changed(struct ieee80211_hw *hw,
 			     u32 changes);
 
 /* uCode */
-void iwlagn_rx_calib_result(struct iwl_priv *priv,
-			 struct iwl_rx_mem_buffer *rxb);
+int iwlagn_rx_calib_result(struct iwl_priv *priv,
+			    struct iwl_rx_mem_buffer *rxb,
+			    struct iwl_device_cmd *cmd);
 int iwlagn_send_bt_env(struct iwl_priv *priv, u8 action, u8 type);
 void iwlagn_send_prio_tbl(struct iwl_priv *priv);
 int iwlagn_run_init_ucode(struct iwl_priv *priv);
@@ -147,13 +99,9 @@ int iwlagn_load_ucode_wait_alive(struct iwl_priv *priv,
 				 enum iwlagn_ucode_type ucode_type);
 
 /* lib */
-void iwl_check_abort_status(struct iwl_priv *priv,
-			    u8 frame_count, u32 status);
-int iwlagn_hw_valid_rtc_data_addr(u32 addr);
 int iwlagn_send_tx_power(struct iwl_priv *priv);
 void iwlagn_temperature(struct iwl_priv *priv);
 u16 iwlagn_eeprom_calib_version(struct iwl_priv *priv);
-int iwlagn_wait_tx_queue_empty(struct iwl_priv *priv);
 int iwlagn_txfifo_flush(struct iwl_priv *priv, u16 flush_control);
 void iwlagn_dev_txfifo_flush(struct iwl_priv *priv, u16 flush_control);
 int iwlagn_send_beacon_cmd(struct iwl_priv *priv);
@@ -161,25 +109,19 @@ int iwlagn_send_beacon_cmd(struct iwl_priv *priv);
 /* rx */
 int iwlagn_hwrate_to_mac80211_idx(u32 rate_n_flags, enum ieee80211_band band);
 void iwl_setup_rx_handlers(struct iwl_priv *priv);
-void iwl_rx_dispatch(struct iwl_priv *priv, struct iwl_rx_mem_buffer *rxb);
 
 
 /* tx */
-void iwlagn_txq_free_tfd(struct iwl_priv *priv, struct iwl_tx_queue *txq,
-				int index);
-void iwlagn_hwrate_to_tx_control(struct iwl_priv *priv, u32 rate_n_flags,
-			      struct ieee80211_tx_info *info);
 int iwlagn_tx_skb(struct iwl_priv *priv, struct sk_buff *skb);
 int iwlagn_tx_agg_start(struct iwl_priv *priv, struct ieee80211_vif *vif,
 			struct ieee80211_sta *sta, u16 tid, u16 *ssn);
 int iwlagn_tx_agg_stop(struct iwl_priv *priv, struct ieee80211_vif *vif,
 		       struct ieee80211_sta *sta, u16 tid);
-int iwlagn_txq_check_empty(struct iwl_priv *priv,
-			   int sta_id, u8 tid, int txq_id);
-void iwlagn_rx_reply_compressed_ba(struct iwl_priv *priv,
-				struct iwl_rx_mem_buffer *rxb);
-void iwlagn_rx_reply_tx(struct iwl_priv *priv, struct iwl_rx_mem_buffer *rxb);
-int iwlagn_tx_queue_reclaim(struct iwl_priv *priv, int txq_id, int index);
+int iwlagn_rx_reply_compressed_ba(struct iwl_priv *priv,
+				   struct iwl_rx_mem_buffer *rxb,
+				   struct iwl_device_cmd *cmd);
+int iwlagn_rx_reply_tx(struct iwl_priv *priv, struct iwl_rx_mem_buffer *rxb,
+			       struct iwl_device_cmd *cmd);
 
 static inline u32 iwl_tx_status_to_mac80211(u32 status)
 {
@@ -207,8 +149,8 @@ static inline bool iwl_is_tx_success(u32 status)
 u8 iwl_toggle_tx_ant(struct iwl_priv *priv, u8 ant_idx, u8 valid);
 
 /* scan */
-int iwlagn_request_scan(struct iwl_priv *priv, struct ieee80211_vif *vif);
 void iwlagn_post_scan(struct iwl_priv *priv);
+void iwlagn_disable_roc(struct iwl_priv *priv);
 
 /* station mgmt */
 int iwlagn_manage_ibss_station(struct iwl_priv *priv,
@@ -216,8 +158,9 @@ int iwlagn_manage_ibss_station(struct iwl_priv *priv,
 
 /* bt coex */
 void iwlagn_send_advance_bt_config(struct iwl_priv *priv);
-void iwlagn_bt_coex_profile_notif(struct iwl_priv *priv,
-				  struct iwl_rx_mem_buffer *rxb);
+int iwlagn_bt_coex_profile_notif(struct iwl_priv *priv,
+				  struct iwl_rx_mem_buffer *rxb,
+				  struct iwl_device_cmd *cmd);
 void iwlagn_bt_rx_handler_setup(struct iwl_priv *priv);
 void iwlagn_bt_setup_deferred_work(struct iwl_priv *priv);
 void iwlagn_bt_cancel_deferred_work(struct iwl_priv *priv);
@@ -286,7 +229,7 @@ static inline __le32 iwl_hw_set_rate_n_flags(u8 rate, u32 flags)
 }
 
 /* eeprom */
-void iwlcore_eeprom_enhanced_txpower(struct iwl_priv *priv);
+void iwl_eeprom_enhanced_txpower(struct iwl_priv *priv);
 void iwl_eeprom_get_mac(const struct iwl_priv *priv, u8 *mac);
 
 /* notification wait support */
