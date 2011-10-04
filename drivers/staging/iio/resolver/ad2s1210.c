@@ -16,6 +16,7 @@
 #include <linux/sysfs.h>
 #include <linux/delay.h>
 #include <linux/gpio.h>
+#include <linux/module.h>
 
 #include "../iio.h"
 #include "../sysfs.h"
@@ -639,7 +640,6 @@ static struct attribute *ad2s1210_attributes[] = {
 };
 
 static const struct attribute_group ad2s1210_attribute_group = {
-	.name = DRV_NAME,
 	.attrs = ad2s1210_attributes,
 };
 
@@ -784,8 +784,9 @@ static int __devexit ad2s1210_remove(struct spi_device *spi)
 {
 	struct iio_dev *indio_dev = spi_get_drvdata(spi);
 	struct ad2s1210_state *st = iio_priv(indio_dev);
-	iio_device_unregister(indio_dev);
+
 	ad2s1210_free_gpios(st);
+	iio_device_unregister(indio_dev);
 
 	return 0;
 }

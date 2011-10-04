@@ -16,13 +16,6 @@
 # CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 ccflags-y :=				\
-	-DWLC_HIGH				\
-	-DWLC_LOW				\
-	-DSTA					\
-	-DWME					\
-	-DWL11N					\
-	-DDBAND					\
-	-DBCMNVRAMR				\
 	-Idrivers/staging/brcm80211/brcmsmac \
 	-Idrivers/staging/brcm80211/brcmsmac/phy \
 	-Idrivers/staging/brcm80211/include
@@ -30,10 +23,8 @@ ccflags-y :=				\
 BRCMSMAC_OFILES := \
 	mac80211_if.o \
 	ucode_loader.o \
-	alloc.o \
 	ampdu.o \
 	antsel.o \
-	bmac.o \
 	channel.o \
 	main.o \
 	phy_shim.o \
