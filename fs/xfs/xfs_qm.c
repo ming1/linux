@@ -1296,7 +1296,8 @@ xfs_qm_dqiter_bufs(
 			break;
 
 		xfs_qm_reset_dqcounts(mp, bp, firstid, type);
-		xfs_bdwrite(mp, bp);
+		xfs_buf_delwri_queue(bp);
+		xfs_buf_relse(bp);
 		/*
 		 * goto the next block.
 		 */
@@ -1346,11 +1347,8 @@ xfs_qm_dqiterate(
 		 * the inode is never added to the transaction.
 		 */
 		xfs_ilock(qip, XFS_ILOCK_SHARED);
-		error = xfs_bmapi(NULL, qip, lblkno,
-				  maxlblkcnt - lblkno,
-				  XFS_BMAPI_METADATA,
-				  NULL,
-				  0, map, &nmaps, NULL);
+		error = xfs_bmapi_read(qip, lblkno, maxlblkcnt - lblkno,
+				       map, &nmaps, 0);
 		xfs_iunlock(qip, XFS_ILOCK_SHARED);
 		if (error)
 			break;

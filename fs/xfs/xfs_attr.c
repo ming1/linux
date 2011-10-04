@@ -823,18 +823,6 @@ xfs_attr_inactive(xfs_inode_t *dp)
 	if (error)
 		goto out;
 
-	/*
-	 * Signal synchronous inactive transactions unless this is a
-	 * synchronous mount filesystem in which case we know that we're here
-	 * because we've been called out of xfs_inactive which means that the
-	 * last reference is gone and the unlink transaction has already hit
-	 * the disk so async inactive transactions are safe.
-	 */
-	if (!(mp->m_flags & XFS_MOUNT_WSYNC)) {
-		if (dp->i_d.di_anextents > 0)
-			xfs_trans_set_sync(trans);
-	}
-
 	error = xfs_itruncate_extents(&trans, dp, XFS_ATTR_FORK, 0);
 	if (error)
 		goto out;
@@ -1975,10 +1963,9 @@ xfs_attr_rmtval_get(xfs_da_args_t *args)
 	lblkno = args->rmtblkno;
 	while (valuelen > 0) {
 		nmap = ATTR_RMTVALUE_MAPSIZE;
-		error = xfs_bmapi(args->trans, args->dp, (xfs_fileoff_t)lblkno,
-				  args->rmtblkcnt,
-				  XFS_BMAPI_ATTRFORK | XFS_BMAPI_METADATA,
-				  NULL, 0, map, &nmap, NULL);
+		error = xfs_bmapi_read(args->dp, (xfs_fileoff_t)lblkno,
+				       args->rmtblkcnt, map, &nmap,
+				       XFS_BMAPI_ATTRFORK);
 		if (error)
 			return(error);
 		ASSERT(nmap >= 1);
@@ -2052,10 +2039,9 @@ xfs_attr_rmtval_set(xfs_da_args_t *args)
 		 */
 		xfs_bmap_init(args->flist, args->firstblock);
 		nmap = 1;
-		error = xfs_bmapi(args->trans, dp, (xfs_fileoff_t)lblkno,
+		error = xfs_bmapi_write(args->trans, dp, (xfs_fileoff_t)lblkno,
 				  blkcnt,
-				  XFS_BMAPI_ATTRFORK | XFS_BMAPI_METADATA |
-							XFS_BMAPI_WRITE,
+				  XFS_BMAPI_ATTRFORK | XFS_BMAPI_METADATA,
 				  args->firstblock, args->total, &map, &nmap,
 				  args->flist);
 		if (!error) {
@@ -2104,14 +2090,11 @@ xfs_attr_rmtval_set(xfs_da_args_t *args)
 		 */
 		xfs_bmap_init(args->flist, args->firstblock);
 		nmap = 1;
-		error = xfs_bmapi(NULL, dp, (xfs_fileoff_t)lblkno,
-				  args->rmtblkcnt,
-				  XFS_BMAPI_ATTRFORK | XFS_BMAPI_METADATA,
-				  args->firstblock, 0, &map, &nmap,
-				  NULL);
-		if (error) {
+		error = xfs_bmapi_read(dp, (xfs_fileoff_t)lblkno,
+				       args->rmtblkcnt, &map, &nmap,
+				       XFS_BMAPI_ATTRFORK);
+		if (error)
 			return(error);
-		}
 		ASSERT(nmap == 1);
 		ASSERT((map.br_startblock != DELAYSTARTBLOCK) &&
 		       (map.br_startblock != HOLESTARTBLOCK));
@@ -2121,16 +2104,17 @@ xfs_attr_rmtval_set(xfs_da_args_t *args)
 
 		bp = xfs_buf_get(mp->m_ddev_targp, dblkno, blkcnt,
 				 XBF_LOCK | XBF_DONT_BLOCK);
-		ASSERT(!xfs_buf_geterror(bp));
-
+		if (!bp)
+			return ENOMEM;
 		tmp = (valuelen < XFS_BUF_SIZE(bp)) ? valuelen :
 							XFS_BUF_SIZE(bp);
 		xfs_buf_iomove(bp, 0, tmp, src, XBRW_WRITE);
 		if (tmp < XFS_BUF_SIZE(bp))
 			xfs_buf_zero(bp, tmp, XFS_BUF_SIZE(bp) - tmp);
-		if ((error = xfs_bwrite(mp, bp))) {/* GROT: NOTE: synchronous write */
-			return (error);
-		}
+		error = xfs_bwrite(bp);	/* GROT: NOTE: synchronous write */
+		xfs_buf_relse(bp);
+		if (error)
+			return error;
 		src += tmp;
 		valuelen -= tmp;
 
@@ -2166,16 +2150,12 @@ xfs_attr_rmtval_remove(xfs_da_args_t *args)
 		/*
 		 * Try to remember where we decided to put the value.
 		 */
-		xfs_bmap_init(args->flist, args->firstblock);
 		nmap = 1;
-		error = xfs_bmapi(NULL, args->dp, (xfs_fileoff_t)lblkno,
-					args->rmtblkcnt,
-					XFS_BMAPI_ATTRFORK | XFS_BMAPI_METADATA,
-					args->firstblock, 0, &map, &nmap,
-					args->flist);
-		if (error) {
+		error = xfs_bmapi_read(args->dp, (xfs_fileoff_t)lblkno,
+				       args->rmtblkcnt, &map, &nmap,
+				       XFS_BMAPI_ATTRFORK);
+		if (error)
 			return(error);
-		}
 		ASSERT(nmap == 1);
 		ASSERT((map.br_startblock != DELAYSTARTBLOCK) &&
 		       (map.br_startblock != HOLESTARTBLOCK));
@@ -2189,7 +2169,7 @@ xfs_attr_rmtval_remove(xfs_da_args_t *args)
 		bp = xfs_incore(mp->m_ddev_targp, dblkno, blkcnt, XBF_TRYLOCK);
 		if (bp) {
 			XFS_BUF_STALE(bp);
-			XFS_BUF_UNDELAYWRITE(bp);
+			xfs_buf_delwri_dequeue(bp);
 			xfs_buf_relse(bp);
 			bp = NULL;
 		}
