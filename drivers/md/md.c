@@ -61,6 +61,11 @@
 static void autostart_arrays(int part);
 #endif
 
+/* pers_list is a list of registered personalities protected
+ * by pers_lock.
+ * pers_lock does extra service to protect accesses to
+ * mddev->thread when the mutex cannot be held.
+ */
 static LIST_HEAD(pers_list);
 static DEFINE_SPINLOCK(pers_lock);
 
@@ -735,7 +740,12 @@ static void mddev_unlock(mddev_t * mddev)
 	} else
 		mutex_unlock(&mddev->reconfig_mutex);
 
+	/* was we've dropped the mutex we need a spinlock to
+	 * make sur the thread doesn't disappear
+	 */
+	spin_lock(&pers_lock);
 	md_wakeup_thread(mddev->thread);
+	spin_unlock(&pers_lock);
 }
 
 static mdk_rdev_t * find_rdev_nr(mddev_t *mddev, int nr)
@@ -6425,11 +6435,18 @@ mdk_thread_t *md_register_thread(void (*run) (mddev_t *), mddev_t *mddev,
 	return thread;
 }
 
-void md_unregister_thread(mdk_thread_t *thread)
+void md_unregister_thread(mdk_thread_t **threadp)
 {
+	mdk_thread_t *thread = *threadp;
 	if (!thread)
 		return;
 	dprintk("interrupting MD-thread pid %d\n", task_pid_nr(thread->tsk));
+	/* Locking ensures that mddev_unlock does not wake_up a
+	 * non-existent thread
+	 */
+	spin_lock(&pers_lock);
+	*threadp = NULL;
+	spin_unlock(&pers_lock);
 
 	kthread_stop(thread->tsk);
 	kfree(thread);
@@ -7336,8 +7353,7 @@ static void reap_sync_thread(mddev_t *mddev)
 	mdk_rdev_t *rdev;
 
 	/* resync has finished, collect result */
-	md_unregister_thread(mddev->sync_thread);
-	mddev->sync_thread = NULL;
+	md_unregister_thread(&mddev->sync_thread);
 	if (!test_bit(MD_RECOVERY_INTR, &mddev->recovery) &&
 	    !test_bit(MD_RECOVERY_REQUESTED, &mddev->recovery)) {
 		/* success...*/
@@ -8055,12 +8071,13 @@ static int md_notify_reboot(struct notifier_block *this,
 {
 	struct list_head *tmp;
 	mddev_t *mddev;
+	int need_delay = 0;
 
 	if ((code == SYS_DOWN) || (code == SYS_HALT) || (code == SYS_POWER_OFF)) {
 
 		printk(KERN_INFO "md: stopping all md devices.\n");
 
-		for_each_mddev(mddev, tmp)
+		for_each_mddev(mddev, tmp) {
 			if (mddev_trylock(mddev)) {
 				/* Force a switch to readonly even array
 				 * appears to still be in use.  Hence
@@ -8069,13 +8086,16 @@ static int md_notify_reboot(struct notifier_block *this,
 				md_set_readonly(mddev, 100);
 				mddev_unlock(mddev);
 			}
+			need_delay = 1;
+		}
 		/*
 		 * certain more exotic SCSI devices are known to be
 		 * volatile wrt too early system reboots. While the
 		 * right place to handle this issue is the given
 		 * driver, we do want to have a safe RAID driver ...
 		 */
-		mdelay(1000*1);
+		if (need_delay)
+			mdelay(1000*1);
 	}
 	return NOTIFY_DONE;
 }
