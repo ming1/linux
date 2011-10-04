@@ -52,6 +52,7 @@
 
 #include <linux/usb/ch9.h>
 #include <linux/usb/gadget.h>
+#include <linux/module.h>
 
 #include "core.h"
 #include "gadget.h"

@@ -18,6 +18,7 @@
 #include <linux/tty_flip.h>
 #include <linux/irqreturn.h>
 #include <linux/mutex.h>
+#include <linux/export.h>
 #include <linux/of_platform.h>
 #include <linux/of_device.h>
 #include <linux/nwpserial.h>

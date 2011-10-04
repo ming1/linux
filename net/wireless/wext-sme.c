@@ -8,6 +8,7 @@
 #include <linux/etherdevice.h>
 #include <linux/if_arp.h>
 #include <linux/slab.h>
+#include <linux/export.h>
 #include <net/cfg80211.h>
 #include <net/cfg80211-wext.h>
 #include "wext-compat.h"
