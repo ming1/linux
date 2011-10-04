@@ -4,6 +4,8 @@
 #include <linux/slab.h>
 #include <asm/apicdef.h>
 
+#include <asm/apicdef.h>
+
 #include "perf_event.h"
 
 static __initconst const u64 amd_hw_cache_event_ids
