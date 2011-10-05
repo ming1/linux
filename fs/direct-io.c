@@ -191,7 +191,7 @@ EXPORT_SYMBOL_GPL(inode_dio_done);
 /*
  * How many pages are in the queue?
  */
-static inline unsigned dio_pages_present(struct dio *dio, struct dio_submit *sdio)
+static inline unsigned dio_pages_present(struct dio_submit *sdio)
 {
 	return sdio->tail - sdio->head;
 }
@@ -247,13 +247,13 @@ out:
  */
 static inline struct page *dio_get_page(struct dio *dio, struct dio_submit *sdio)
 {
-	if (dio_pages_present(dio, sdio) == 0) {
+	if (dio_pages_present(sdio) == 0) {
 		int ret;
 
 		ret = dio_refill_pages(dio, sdio);
 		if (ret)
 			return ERR_PTR(ret);
-		BUG_ON(dio_pages_present(dio, sdio) == 0);
+		BUG_ON(dio_pages_present(sdio) == 0);
 	}
 	return dio->pages[sdio->head++];
 }
@@ -435,7 +435,7 @@ static inline void dio_bio_submit(struct dio *dio, struct dio_submit *sdio)
  */
 static inline void dio_cleanup(struct dio *dio, struct dio_submit *sdio)
 {
-	while (dio_pages_present(dio, sdio))
+	while (dio_pages_present(sdio))
 		page_cache_release(dio_get_page(dio, sdio));
 }
 
