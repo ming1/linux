@@ -11,6 +11,7 @@
 #include <linux/cgroup.h>
 #include <linux/slab.h>
 #include <linux/res_counter.h>
+#include <linux/err.h>
 
 
 struct task_counter {
