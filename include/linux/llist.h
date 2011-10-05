@@ -56,6 +56,8 @@
  */
 
 #include <linux/kernel.h>
+#include <linux/hardirq.h>
+
 #include <asm/system.h>
 #include <asm/processor.h>
 
