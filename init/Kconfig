@@ -690,6 +690,15 @@ config CGROUP_MEM_RES_CTLR_SWAP_ENABLED
 	  select this option (if, for some reason, they need to disable it
 	  then swapaccount=0 does the trick).
 
+config CGROUP_TASK_COUNTER
+	bool "Control number of tasks in a cgroup"
+	depends on RESOURCE_COUNTERS
+	help
+	  Let the user set up an upper boundary of the allowed number of tasks
+	  running in a cgroup. When a task forks or is migrated to a cgroup that
+	  has this subsystem binded, the limit is checked to either accept or
+	  reject the fork/migration.
+
 config CGROUP_PERF
 	bool "Enable perf_event per-cpu per-container group (cgroup) monitoring"
 	depends on PERF_EVENTS && CGROUPS
