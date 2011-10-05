@@ -938,12 +938,12 @@ extern int ext3_group_extend(struct super_block *sb,
 
 /* super.c */
 extern __printf(3, 4)
-void ext3_error (struct super_block *, const char *, const char *, ...);
+void ext3_error(struct super_block *, const char *, const char *, ...);
 extern void __ext3_std_error (struct super_block *, const char *, int);
 extern __printf(3, 4)
-void ext3_abort (struct super_block *, const char *, const char *, ...);
+void ext3_abort(struct super_block *, const char *, const char *, ...);
 extern __printf(3, 4)
-void ext3_warning (struct super_block *, const char *, const char *, ...);
+void ext3_warning(struct super_block *, const char *, const char *, ...);
 extern __printf(3, 4)
 void ext3_msg(struct super_block *, const char *, const char *, ...);
 extern void ext3_update_dynamic_rev (struct super_block *sb);

@@ -62,7 +62,7 @@ void _ldm_printk(const char *level, const char *function, const char *fmt, ...)
 
 	printk("%s%s(): %pV\n", level, function, &vaf);
 
-	va_end (args);
+	va_end(args);
 }
 
 /**
