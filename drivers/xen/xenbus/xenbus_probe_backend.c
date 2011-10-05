@@ -103,9 +103,10 @@ static int xenbus_uevent_backend(struct device *dev,
 		return -ENODEV;
 
 	xdev = to_xenbus_device(dev);
-	bus = container_of(xdev->dev.bus, struct xen_bus_type, bus);
 	if (xdev == NULL)
 		return -ENODEV;
+
+	bus = container_of(xdev->dev.bus, struct xen_bus_type, bus);
 
 	if (add_uevent_var(env, "MODALIAS=xen-backend:%s", xdev->devicetype))
 		return -ENOMEM;
