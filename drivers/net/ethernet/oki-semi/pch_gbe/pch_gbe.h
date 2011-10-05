@@ -21,8 +21,6 @@
 #ifndef _PCH_GBE_H_
 #define _PCH_GBE_H_
 
-#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
-
 #include <linux/mii.h>
 #include <linux/delay.h>
 #include <linux/pci.h>
