@@ -263,15 +263,39 @@ static void hpet_timer_set_irq(struct hpet_dev *devp)
 
 static int hpet_open(struct inode *inode, struct file *file)
 {
-	struct hpet_dev *devp;
 	struct hpets *hpetp;
-	int i;
 
 	if (file->f_mode & FMODE_WRITE)
 		return -EINVAL;
 
+	hpetp = hpets;
+	/* starting with timer-neutral instance */
+	file->private_data = &hpetp->hp_dev[hpetp->hp_ntimer];
+
+	return 0;
+}
+
+static int hpet_alloc_timer(struct file *file)
+{
+	struct hpet_dev *devp;
+	struct hpets *hpetp;
+	int i;
+
+	/* once acquired, will remain */
+	devp = file->private_data;
+	if (devp->hd_timer)
+		return 0;
+
 	mutex_lock(&hpet_mutex);
 	spin_lock_irq(&hpet_lock);
+
+	/* check for race acquiring */
+	devp = file->private_data;
+	if (devp->hd_timer) {
+		spin_unlock_irq(&hpet_lock);
+		mutex_unlock(&hpet_mutex);
+		return 0;
+	}
 
 	for (devp = NULL, hpetp = hpets; hpetp && !devp; hpetp = hpetp->hp_next)
 		for (i = 0; i < hpetp->hp_ntimer; i++)
@@ -402,6 +426,11 @@ static int hpet_mmap(struct file *file, struct vm_area_struct *vma)
 static int hpet_fasync(int fd, struct file *file, int on)
 {
 	struct hpet_dev *devp;
+	int r;
+
+	r = hpet_alloc_timer(file);
+	if (r < 0)
+		return r;
 
 	devp = file->private_data;
 
@@ -419,6 +448,9 @@ static int hpet_release(struct inode *inode, struct file *file)
 
 	devp = file->private_data;
 	timer = devp->hd_timer;
+
+	if (!timer)
+		goto out;
 
 	spin_lock_irq(&hpet_lock);
 
@@ -444,7 +476,7 @@ static int hpet_release(struct inode *inode, struct file *file)
 
 	if (irq)
 		free_irq(irq, devp);
-
+out:
 	file->private_data = NULL;
 	return 0;
 }
@@ -593,6 +625,9 @@ hpet_ioctl_common(struct hpet_dev *devp, int cmd, unsigned long arg,
 		break;
 	case HPET_IE_ON:
 		return hpet_ioctl_ieon(devp);
+	case HPET_ALLOC_TIMER:
+		/* nothing to do */
+		return 0;
 	default:
 		return -EINVAL;
 	}
@@ -859,7 +894,11 @@ int hpet_alloc(struct hpet_data *hdp)
 		return 0;
 	}
 
-	siz = sizeof(struct hpets) + ((hdp->hd_nirqs - 1) *
+	/*
+	 * last hpet_dev will have null timer pointer, gives timer-neutral
+	 * representation of block
+	 */
+	siz = sizeof(struct hpets) + ((hdp->hd_nirqs) *
 				      sizeof(struct hpet_dev));
 
 	hpetp = kzalloc(siz, GFP_KERNEL);
@@ -925,13 +964,16 @@ int hpet_alloc(struct hpet_data *hdp)
 		writeq(mcfg, &hpet->hpet_config);
 	}
 
-	for (i = 0, devp = hpetp->hp_dev; i < hpetp->hp_ntimer; i++, devp++) {
+	for (i = 0, devp = hpetp->hp_dev; i < hpetp->hp_ntimer + 1;
+	     i++, devp++) {
 		struct hpet_timer __iomem *timer;
-
-		timer = &hpet->hpet_timers[devp - hpetp->hp_dev];
 
 		devp->hd_hpets = hpetp;
 		devp->hd_hpet = hpet;
+		if (i == hpetp->hp_ntimer)
+			continue;
+
+		timer = &hpet->hpet_timers[devp - hpetp->hp_dev];
 		devp->hd_timer = timer;
 
 		/*
