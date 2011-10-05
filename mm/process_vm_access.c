@@ -221,6 +221,10 @@ static int process_vm_rw_single_vec(unsigned long addr,
 	return rc;
 }
 
+/* Maximum number of entries for process pages array
+   which lives on stack */
+#define PVM_MAX_PP_ARRAY_COUNT 16
+
 /**
  * process_vm_rw_core - core of reading/writing pages from task specified
  * @pid: PID of process to read/write from/to
@@ -241,7 +245,8 @@ static ssize_t process_vm_rw_core(pid_t pid, const struct iovec *lvec,
 				  unsigned long flags, int vm_write)
 {
 	struct task_struct *task;
-	struct page **process_pages = NULL;
+	struct page *pp_stack[PVM_MAX_PP_ARRAY_COUNT];
+	struct page **process_pages = pp_stack;
 	struct mm_struct *mm;
 	unsigned long i;
 	ssize_t rc = 0;
@@ -271,13 +276,16 @@ static ssize_t process_vm_rw_core(pid_t pid, const struct iovec *lvec,
 	if (nr_pages == 0)
 		return 0;
 
-	/* For reliability don't try to kmalloc more than 2 pages worth */
-	process_pages = kmalloc(min_t(size_t, PVM_MAX_KMALLOC_PAGES,
-				      sizeof(struct pages *)*nr_pages),
-				GFP_KERNEL);
+	if (nr_pages > PVM_MAX_PP_ARRAY_COUNT) {
+		/* For reliability don't try to kmalloc more than
+		   2 pages worth */
+		process_pages = kmalloc(min_t(size_t, PVM_MAX_KMALLOC_PAGES,
+					      sizeof(struct pages *)*nr_pages),
+					GFP_KERNEL);
 
-	if (!process_pages)
-		return -ENOMEM;
+		if (!process_pages)
+			return -ENOMEM;
+	}
 
 	/* Get process information */
 	rcu_read_lock();
@@ -331,7 +339,8 @@ put_task_struct:
 	put_task_struct(task);
 
 free_proc_pages:
-	kfree(process_pages);
+	if (process_pages != pp_stack)
+		kfree(process_pages);
 	return rc;
 }
 
