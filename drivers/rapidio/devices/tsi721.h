@@ -505,7 +505,7 @@ struct tsi721_dma_desc {
 		__le32 data[4];		   /* if DTYPE == 2 */
 		u32    reserved[4];	   /* if DTYPE == 3 */
 	};
-} __attribute__((aligned(32)));
+} __aligned(32);
 
 /*
  * Inbound Messaging Descriptor
@@ -533,7 +533,7 @@ struct tsi721_imsg_desc {
 	__le32 bufptr_hi;
 	u32    reserved[12];
 
-} __attribute__((aligned(64)));
+} __aligned(64);
 
 /*
  * Outbound Messaging Descriptor
@@ -567,11 +567,11 @@ struct tsi721_omsg_desc {
 		__le32 next_hi;		/* if DTYPE == 5 */
 	};
 
-} __attribute__((aligned(16)));
+} __aligned(16);
 
 struct tsi721_dma_sts {
 	__le64	desc_sts[8];
-} __attribute__((aligned(64)));
+} __aligned(64);
 
 struct tsi721_desc_sts_fifo {
 	union {
@@ -581,7 +581,7 @@ struct tsi721_desc_sts_fifo {
 			__le32	hi;
 		} da32;
 	} stat[8];
-} __attribute__((aligned(64)));
+} __aligned(64);
 
 /* Descriptor types for BDMA and Messaging blocks */
 enum dma_dtype {
@@ -624,7 +624,7 @@ enum tsi721_smsg_int_flag {
 
 /* Structures */
 
-struct dma_chan {
+struct tsi721_bdma_chan {
 	int		bd_num;		/* number of buffer descriptors */
 	void		*bd_base;	/* start of DMA descriptors */
 	dma_addr_t	bd_phys;
@@ -651,6 +651,7 @@ struct tsi721_imsg_ring {
 	void		*dev_id;
 	u32		fq_wrptr;
 	u32		desc_rdptr;
+	spinlock_t	lock;
 };
 
 struct tsi721_omsg_ring {
@@ -679,6 +680,7 @@ enum tsi721_flags {
 	TSI721_IMSGID_SET	= (1 << 2),
 };
 
+#ifdef CONFIG_PCI_MSI
 /*
  * MSI-X Table Entries (0 ... 69)
  */
@@ -726,14 +728,16 @@ struct msix_irq {
 	u16	vector;
 	char	irq_name[IRQ_DEVICE_NAME_MAX];
 };
+#endif /* CONFIG_PCI_MSI */
 
 struct tsi721_device {
 	struct pci_dev	*pdev;
 	struct rio_mport *mport;
 	u32		flags;
 	void __iomem	*regs;
+#ifdef CONFIG_PCI_MSI
 	struct msix_irq	msix[TSI721_VECT_MAX];
-
+#endif
 	/* Doorbells */
 	void __iomem	*odb_base;
 	void		*idb_base;
@@ -748,7 +752,7 @@ struct tsi721_device {
 	u32		pw_discard_count;
 
 	/* BDMA Engine */
-	struct dma_chan bdma[TSI721_DMA_CHNUM];
+	struct tsi721_bdma_chan bdma[TSI721_DMA_CHNUM];
 
 	/* Inbound Messaging */
 	int		imsg_init[TSI721_IMSG_CHNUM];
