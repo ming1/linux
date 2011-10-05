@@ -1,0 +1,53 @@
+Importing hexagon based on v3.1-rc6
+Unchanged quilt series hexagon
+Importing i2c based on 3.1-rc4
+Unchanged quilt series i2c
+Importing jdelvare-hwmon based on 3.1-rc4
+Unchanged quilt series jdelvare-hwmon
+Importing kernel-doc based on 3.1-rc3
+Unchanged quilt series kernel-doc
+Importing rr based on v3.1-rc2-1095-gd942e43
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard d942e43b58dc27b36305bcd374a74f7cc15183a3
+HEAD is now at d942e43 Merge branch 'for-linus' of git://git.selinuxproject.org/~jmorris/linux-security
+$ git am ../quilt/rr/module:kmod_prevent_kmod_loop_msg_overflow_in_request.patch
+Applying: kmod: prevent kmod_loop_msg overflow in __request_module()
+$ git am ../quilt/rr/lguest-weaken-paravirt-restriction.patch
+Applying: lguest: Allow running under paravirt-enabled KVM.
+$ git am ../quilt/rr/lguest-remove-kvm-cpuid-signature.patch
+Applying: lguest: don't allow KVM-detection cpuid.
+$ git am ../quilt/rr/virtio:console_use_config_val_for_retrieving_config.patch
+Applying: virtio-console: Use virtio_config_val() for retrieving config
+$ git am ../quilt/rr/virtio:config_add_config_val_len.patch
+Applying: virtio_config: Add virtio_config_val_len()
+$ git am ../quilt/rr/virtio:net_use_config_val_for_retrieving_config.patch
+Applying: virtio-net: Use virtio_config_val() for retrieving config
+$ git am ../quilt/rr/virtio:h_correct_comment_for_struct_driver.patch
+Applying: virtio.h: correct comment for struct virtio_driver
+$ git am ../quilt/rr/virtio:fix_size_computation_according_to_the_definition_of_struct_vring_used_in_vring_size.patch
+Applying: virtio: modify vring_init and vring_size to take account of the layout containing *_event_idx
+$ git am ../quilt/rr/virtio:console_fix_indentation.patch
+Applying: virtio: console: Fix indentation
+$ git am ../quilt/rr/virtio:console_ignore_port_name_update_request_if_name_already_set.patch
+Applying: virtio: console: Ignore port name update request if name already set
+$ git am ../quilt/rr/virtio:console_use_wait_event_freezable_instead_of_interruptible.patch
+Applying: virtio: console: Use wait_event_freezable instead of _interruptible
+$ git am ../quilt/rr/virtio:console_fix_return_type_for_get_inbuf.patch
+Applying: virtio: console: Fix return type for get_inbuf()
+$ git am ../quilt/rr/virtio:console_make_get_inbuf_return_port_inbuf_if_present.patch
+Applying: virtio: console: make get_inbuf() return port->inbuf if present
+$ git am ../quilt/rr/virtio:console_rename_variable.patch
+Applying: virtio: console: rename variable
+$ git am ../quilt/rr/virtio:console_make_discard_port_data_use_get_inbuf.patch
+Applying: virtio: console: make discard_port_data() use get_inbuf()
+$ git am ../quilt/rr/virtio:console_add_port_stats_for_bytes_received_sent_and_discarded.patch
+Applying: virtio: console: add port stats for bytes received, sent and discarded
+$ git am ../quilt/rr/virtio:console_wait_for_first_console_port_for_early_console_output.patch
+Applying: virtio: console: wait for first console port for early console output
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/rr
+From ../quilt-tmp
+ + aea7c0f...31d269b master     -> quilt/rr  (forced update)
+Importing device-mapper based on v3.1-rc7
+Unchanged quilt series device-mapper
