@@ -1187,6 +1187,7 @@ xfs_isize_check(
 	xfs_fileoff_t		map_first;
 	int			nimaps;
 	xfs_bmbt_irec_t		imaps[2];
+	int			error;
 
 	if (!S_ISREG(ip->i_d.di_mode))
 		return;
@@ -1203,13 +1204,12 @@ xfs_isize_check(
 	 * The filesystem could be shutting down, so bmapi may return
 	 * an error.
 	 */
-	if (xfs_bmapi(NULL, ip, map_first,
+	error = xfs_bmapi_read(ip, map_first,
 			 (XFS_B_TO_FSB(mp,
-				       (xfs_ufsize_t)XFS_MAXIOFFSET(mp)) -
-			  map_first),
-			 XFS_BMAPI_ENTIRE, NULL, 0, imaps, &nimaps,
-			 NULL))
-	    return;
+			       (xfs_ufsize_t)XFS_MAXIOFFSET(mp)) - map_first),
+			 imaps, &nimaps, XFS_BMAPI_ENTIRE);
+	if (error)
+		return;
 	ASSERT(nimaps == 1);
 	ASSERT(imaps[0].br_startblock == HOLESTARTBLOCK);
 }
@@ -1644,7 +1644,7 @@ xfs_iunlink_remove(
  * inodes that are in memory - they all must be marked stale and attached to
  * the cluster buffer.
  */
-STATIC void
+STATIC int
 xfs_ifree_cluster(
 	xfs_inode_t	*free_ip,
 	xfs_trans_t	*tp,
@@ -1690,6 +1690,8 @@ xfs_ifree_cluster(
 					mp->m_bsize * blks_per_cluster,
 					XBF_LOCK);
 
+		if (!bp)
+			return ENOMEM;
 		/*
 		 * Walk the inodes already attached to the buffer and mark them
 		 * stale. These will all have the flush locks held, so an
@@ -1799,6 +1801,7 @@ retry:
 	}
 
 	xfs_perag_put(pag);
+	return 0;
 }
 
 /*
@@ -1878,10 +1881,10 @@ xfs_ifree(
 	dip->di_mode = 0;
 
 	if (delete) {
-		xfs_ifree_cluster(ip, tp, first_ino);
+		error = xfs_ifree_cluster(ip, tp, first_ino);
 	}
 
-	return 0;
+	return error;
 }
 
 /*
@@ -2597,9 +2600,11 @@ xfs_iflush(
 		goto cluster_corrupt_out;
 
 	if (flags & SYNC_WAIT)
-		error = xfs_bwrite(mp, bp);
+		error = xfs_bwrite(bp);
 	else
-		xfs_bdwrite(mp, bp);
+		xfs_buf_delwri_queue(bp);
+
+	xfs_buf_relse(bp);
 	return error;
 
 corrupt_out:
