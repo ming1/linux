@@ -2582,7 +2582,6 @@ int mm_take_all_locks(struct mm_struct *mm)
 
 out_unlock:
 	mm_drop_all_locks(mm);
-
 	return -EINTR;
 }
 
