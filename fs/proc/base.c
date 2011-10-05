@@ -1652,44 +1652,10 @@ out:
 	return error;
 }
 
-static int proc_pid_fd_link_getattr(struct vfsmount *mnt, struct dentry *dentry,
-		struct kstat *stat)
-{
-	struct inode *inode = dentry->d_inode;
-	struct task_struct *task = get_proc_task(inode);
-	int rc;
-
-	if (task == NULL)
-		return -ESRCH;
-
-	rc = -EACCES;
-	if (lock_trace(task))
-		goto out_task;
-
-	generic_fillattr(inode, stat);
-	unlock_trace(task);
-	rc = 0;
-out_task:
-	put_task_struct(task);
-	return rc;
-}
-
 static const struct inode_operations proc_pid_link_inode_operations = {
 	.readlink	= proc_pid_readlink,
 	.follow_link	= proc_pid_follow_link,
 	.setattr	= proc_setattr,
-};
-
-static const struct inode_operations proc_fdinfo_link_inode_operations = {
-	.setattr	= proc_setattr,
-	.getattr	= proc_pid_fd_link_getattr,
-};
-
-static const struct inode_operations proc_fd_link_inode_operations = {
-	.readlink	= proc_pid_readlink,
-	.follow_link	= proc_pid_follow_link,
-	.setattr	= proc_setattr,
-	.getattr	= proc_pid_fd_link_getattr,
 };
 
 
@@ -2000,6 +1966,11 @@ static int tid_fd_revalidate(struct dentry *dentry, struct nameidata *nd)
 	task = get_proc_task(inode);
 	fd = proc_fd(inode);
 
+	if (!ptrace_may_access(task, PTRACE_MODE_READ)) {
+		put_task_struct(task);
+		task = NULL;
+	}
+
 	if (task) {
 		files = get_files_struct(task);
 		if (files) {
@@ -2072,7 +2043,7 @@ static struct dentry *proc_fd_instantiate(struct inode *dir,
 	spin_unlock(&files->file_lock);
 	put_files_struct(files);
 
-	inode->i_op = &proc_fd_link_inode_operations;
+	inode->i_op = &proc_pid_link_inode_operations;
 	inode->i_size = 64;
 	ei->op.proc_get_link = proc_fd_link;
 	d_set_d_op(dentry, &tid_fd_dentry_operations);
@@ -2254,7 +2225,6 @@ static struct dentry *proc_fdinfo_instantiate(struct inode *dir,
 	ei->fd = fd;
 	inode->i_mode = S_IFREG | S_IRUSR;
 	inode->i_fop = &proc_fdinfo_file_operations;
-	inode->i_op = &proc_fdinfo_link_inode_operations;
 	d_set_d_op(dentry, &tid_fd_dentry_operations);
 	d_add(dentry, inode);
 	/* Close the race of the process dying before we return the dentry */
