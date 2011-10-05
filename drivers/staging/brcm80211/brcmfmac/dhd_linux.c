@@ -24,6 +24,7 @@
 #include <linux/mmc/sdio_func.h>
 #include <linux/random.h>
 #include <linux/spinlock.h>
+#include <linux/module.h>
 #include <linux/ethtool.h>
 #include <linux/fcntl.h>
 #include <linux/fs.h>

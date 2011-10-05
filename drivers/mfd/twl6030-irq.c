@@ -38,6 +38,7 @@
 #include <linux/i2c/twl.h>
 #include <linux/platform_device.h>
 #include <linux/suspend.h>
+#include <linux/export.h>
 
 #include "twl-core.h"
 

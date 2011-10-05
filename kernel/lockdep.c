@@ -29,7 +29,6 @@
 #include <linux/mutex.h>
 #include <linux/sched.h>
 #include <linux/delay.h>
-#include <linux/module.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
 #include <linux/spinlock.h>
@@ -44,6 +43,7 @@
 #include <linux/stringify.h>
 #include <linux/bitops.h>
 #include <linux/gfp.h>
+#include <linux/module.h>
 
 #include <asm/sections.h>
 
