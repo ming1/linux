@@ -18,14 +18,14 @@
 #define UDF_PREALLOCATE
 #define UDF_DEFAULT_PREALLOC_BLOCKS	8
 
-__attribute__((format(printf, 3, 4)))
-extern void _udf_err(struct super_block *sb, const char *function,
+extern __printf(3, 4)
+void _udf_err(struct super_block *sb, const char *function,
 		     const char *fmt, ...);
 #define udf_err(sb, fmt, ...)					\
 	_udf_err(sb, __func__, fmt, ##__VA_ARGS__)
 
-__attribute__((format(printf, 3, 4)))
-extern void _udf_warn(struct super_block *sb, const char *function,
+extern __printf(3, 4)
+void _udf_warn(struct super_block *sb, const char *function,
 		      const char *fmt, ...);
 #define udf_warn(sb, fmt, ...)					\
 	_udf_warn(sb, __func__, fmt, ##__VA_ARGS__)

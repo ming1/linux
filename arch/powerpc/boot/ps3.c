@@ -36,8 +36,7 @@ extern int lv1_get_repository_node_value(u64 in_1, u64 in_2, u64 in_3,
 #ifdef DEBUG
 #define DBG(fmt...) printf(fmt)
 #else
-static inline int __attribute__ ((format (printf, 1, 2))) DBG(
-	const char *fmt, ...) {return 0;}
+static inline __printf(1, 2) int DBG(const char *fmt, ...) {return 0;}
 #endif
 
 BSS_STACK(4096);
