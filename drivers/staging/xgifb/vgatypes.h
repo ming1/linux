@@ -47,18 +47,13 @@ enum XGI_LCD_TYPE {
 };
 #endif
 
-struct XGI_DSReg {
-	unsigned char jIdx;
-	unsigned char jVal;
-};
-
 struct xgi_hw_device_info {
 	unsigned long ulExternalChip; /* NO VB or other video bridge*/
 				      /* if ujVBChipID = VB_CHIP_UNKNOWN, */
 
 	unsigned char *pjVirtualRomBase; /* ROM image */
 
-	unsigned char *pjVideoMemoryAddress;/* base virtual memory address */
+	void __iomem *pjVideoMemoryAddress;/* base virtual memory address */
 					    /* of Linear VGA memory */
 
 	unsigned long ulVideoMemorySize; /* size, in bytes, of the

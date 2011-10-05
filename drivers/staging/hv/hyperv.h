@@ -27,17 +27,16 @@
 
 #include <linux/scatterlist.h>
 #include <linux/list.h>
+#include <linux/uuid.h>
 #include <linux/timer.h>
 #include <linux/workqueue.h>
 #include <linux/completion.h>
 #include <linux/device.h>
+#include <linux/mod_devicetable.h>
 
 
 #include <asm/hyperv.h>
 
-struct hv_guid {
-	unsigned char data[16];
-};
 
 #define MAX_PAGE_BUFFER_COUNT				16
 #define MAX_MULTIPAGE_BUFFER_COUNT			32 /* 128K */
@@ -156,8 +155,8 @@ struct hv_ring_buffer_debug_info {
  * struct contains the fundamental information about an offer.
  */
 struct vmbus_channel_offer {
-	struct hv_guid if_type;
-	struct hv_guid if_instance;
+	uuid_le if_type;
+	uuid_le if_instance;
 	u64 int_latency; /* in 100ns units */
 	u32 if_revision;
 	u32 server_ctx_size;	/* in bytes */
@@ -526,8 +525,8 @@ enum vmbus_channel_state {
 struct vmbus_channel_debug_info {
 	u32 relid;
 	enum vmbus_channel_state state;
-	struct hv_guid interfacetype;
-	struct hv_guid interface_instance;
+	uuid_le interfacetype;
+	uuid_le interface_instance;
 	u32 monitorid;
 	u32 servermonitor_pending;
 	u32 servermonitor_latency;
@@ -582,11 +581,6 @@ struct vmbus_channel {
 	struct work_struct work;
 
 	enum vmbus_channel_state state;
-	/*
-	 * For util channels, stash the
-	 * the service index for easy access.
-	 */
-	s8 util_index;
 
 	struct vmbus_channel_offer_channel offermsg;
 	/*
@@ -786,8 +780,8 @@ struct hv_dev_port_info {
 struct hv_device_info {
 	u32 chn_id;
 	u32 chn_state;
-	struct hv_guid chn_type;
-	struct hv_guid chn_instance;
+	uuid_le chn_type;
+	uuid_le chn_instance;
 
 	u32 monitor_id;
 	u32 server_monitor_pending;
@@ -806,11 +800,12 @@ struct hv_driver {
 	const char *name;
 
 	/* the device type supported by this driver */
-	struct hv_guid dev_type;
+	uuid_le dev_type;
+	const struct hv_vmbus_device_id *id_table;
 
 	struct device_driver driver;
 
-	int (*probe)(struct hv_device *);
+	int (*probe)(struct hv_device *, const struct hv_vmbus_device_id *);
 	int (*remove)(struct hv_device *);
 	void (*shutdown)(struct hv_device *);
 
@@ -819,17 +814,14 @@ struct hv_driver {
 /* Base device object */
 struct hv_device {
 	/* the device type id of this device */
-	struct hv_guid dev_type;
+	uuid_le dev_type;
 
 	/* the device instance id of this device */
-	struct hv_guid dev_instance;
+	uuid_le dev_instance;
 
 	struct device device;
 
 	struct vmbus_channel *channel;
-
-	/* Device extension; */
-	void *ext;
 };
 
 
@@ -843,10 +835,34 @@ static inline struct hv_driver *drv_to_hv_drv(struct device_driver *d)
 	return container_of(d, struct hv_driver, driver);
 }
 
+static inline void hv_set_drvdata(struct hv_device *dev, void *data)
+{
+	dev_set_drvdata(&dev->device, data);
+}
+
+static inline void *hv_get_drvdata(struct hv_device *dev)
+{
+	return dev_get_drvdata(&dev->device);
+}
 
 /* Vmbus interface */
-int vmbus_child_driver_register(struct device_driver *drv);
-void vmbus_child_driver_unregister(struct device_driver *drv);
+#define vmbus_driver_register(driver)	\
+	__vmbus_driver_register(driver, THIS_MODULE, KBUILD_MODNAME)
+int __must_check __vmbus_driver_register(struct hv_driver *hv_driver,
+					 struct module *owner,
+					 const char *mod_name);
+void vmbus_driver_unregister(struct hv_driver *hv_driver);
+
+/**
+ * VMBUS_DEVICE - macro used to describe a specific hyperv vmbus device
+ *
+ * This macro is used to create a struct hv_vmbus_device_id that matches a
+ * specific device.
+ */
+#define VMBUS_DEVICE(g0, g1, g2, g3, g4, g5, g6, g7,	\
+		     g8, g9, ga, gb, gc, gd, ge, gf)	\
+	.guid = { g0, g1, g2, g3, g4, g5, g6, g7,	\
+		  g8, g9, ga, gb, gc, gd, ge, gf },
 
 /*
  * Common header for Hyper-V ICs
@@ -867,6 +883,19 @@ void vmbus_child_driver_unregister(struct device_driver *drv);
 #define HV_E_FAIL			0x80004005
 #define HV_ERROR_NOT_SUPPORTED		0x80070032
 #define HV_ERROR_MACHINE_LOCKED		0x800704F7
+
+/*
+ * While we want to handle util services as regular devices,
+ * there is only one instance of each of these services; so
+ * we statically allocate the service specific state.
+ */
+
+struct hv_util_service {
+	u8 *recv_buffer;
+	void (*util_cb)(void *);
+	int (*util_init)(struct hv_util_service *);
+	void (*util_deinit)(void);
+};
 
 struct vmbuspipe_hdr {
 	u32 flags;
@@ -926,23 +955,15 @@ struct ictimesync_data {
 	u8 flags;
 } __packed;
 
-/* Index for each IC struct in array hv_cb_utils[] */
-#define HV_SHUTDOWN_MSG		0
-#define HV_TIMESYNC_MSG		1
-#define HV_HEARTBEAT_MSG	2
-#define HV_KVP_MSG		3
-
 struct hyperv_service_callback {
 	u8 msg_type;
 	char *log_msg;
-	unsigned char data[16];
+	uuid_le data;
 	struct vmbus_channel *channel;
 	void (*callback) (void *context);
 };
 
 extern void prep_negotiate_resp(struct icmsg_hdr *,
 				struct icmsg_negotiate *, u8 *);
-extern void chn_cb_negotiate(void *);
-extern struct hyperv_service_callback hv_cb_utils[];
 
 #endif /* _HYPERV_H */
