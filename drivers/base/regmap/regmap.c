@@ -15,34 +15,54 @@
 #include <linux/mutex.h>
 #include <linux/err.h>
 
-#include <linux/regmap.h>
+#define CREATE_TRACE_POINTS
+#include <trace/events/regmap.h>
 
-struct regmap;
+#include "internal.h"
 
-struct regmap_format {
-	size_t buf_size;
-	size_t reg_bytes;
-	size_t val_bytes;
-	void (*format_write)(struct regmap *map,
-			     unsigned int reg, unsigned int val);
-	void (*format_reg)(void *buf, unsigned int reg);
-	void (*format_val)(void *buf, unsigned int val);
-	unsigned int (*parse_val)(void *buf);
-};
+bool regmap_writeable(struct regmap *map, unsigned int reg)
+{
+	if (map->max_register && reg > map->max_register)
+		return false;
 
-struct regmap {
-	struct mutex lock;
+	if (map->writeable_reg)
+		return map->writeable_reg(map->dev, reg);
 
-	struct device *dev; /* Device we do I/O on */
-	void *work_buf;     /* Scratch buffer used to format I/O */
-	struct regmap_format format;  /* Buffer format */
-	const struct regmap_bus *bus;
+	return true;
+}
 
-	unsigned int max_register;
-	bool (*writeable_reg)(struct device *dev, unsigned int reg);
-	bool (*readable_reg)(struct device *dev, unsigned int reg);
-	bool (*volatile_reg)(struct device *dev, unsigned int reg);
-};
+bool regmap_readable(struct regmap *map, unsigned int reg)
+{
+	if (map->max_register && reg > map->max_register)
+		return false;
+
+	if (map->readable_reg)
+		return map->readable_reg(map->dev, reg);
+
+	return true;
+}
+
+bool regmap_volatile(struct regmap *map, unsigned int reg)
+{
+	if (map->max_register && reg > map->max_register)
+		return false;
+
+	if (map->volatile_reg)
+		return map->volatile_reg(map->dev, reg);
+
+	return true;
+}
+
+bool regmap_precious(struct regmap *map, unsigned int reg)
+{
+	if (map->max_register && reg > map->max_register)
+		return false;
+
+	if (map->precious_reg)
+		return map->precious_reg(map->dev, reg);
+
+	return false;
+}
 
 static void regmap_format_4_12_write(struct regmap *map,
 				     unsigned int reg, unsigned int val)
@@ -125,6 +145,21 @@ struct regmap *regmap_init(struct device *dev,
 	map->writeable_reg = config->writeable_reg;
 	map->readable_reg = config->readable_reg;
 	map->volatile_reg = config->volatile_reg;
+	map->precious_reg = config->precious_reg;
+	map->cache_type = config->cache_type;
+	map->reg_defaults = config->reg_defaults;
+	map->num_reg_defaults = config->num_reg_defaults;
+	map->num_reg_defaults_raw = config->num_reg_defaults_raw;
+	map->reg_defaults_raw = config->reg_defaults_raw;
+	map->cache_size_raw = (config->val_bits / 8) * config->num_reg_defaults_raw;
+	map->cache_word_size = config->val_bits / 8;
+
+	if (config->read_flag_mask || config->write_flag_mask) {
+		map->read_flag_mask = config->read_flag_mask;
+		map->write_flag_mask = config->write_flag_mask;
+	} else {
+		map->read_flag_mask = bus->read_flag_mask;
+	}
 
 	switch (config->reg_bits) {
 	case 4:
@@ -180,6 +215,12 @@ struct regmap *regmap_init(struct device *dev,
 		goto err_map;
 	}
 
+	ret = regcache_init(map);
+	if (ret < 0)
+		goto err_map;
+
+	regmap_debugfs_init(map);
+
 	return map;
 
 err_map:
@@ -194,6 +235,8 @@ EXPORT_SYMBOL_GPL(regmap_init);
  */
 void regmap_exit(struct regmap *map)
 {
+	regcache_exit(map);
+	regmap_debugfs_exit(map);
 	kfree(map->work_buf);
 	kfree(map);
 }
@@ -202,19 +245,38 @@ EXPORT_SYMBOL_GPL(regmap_exit);
 static int _regmap_raw_write(struct regmap *map, unsigned int reg,
 			     const void *val, size_t val_len)
 {
+	u8 *u8 = map->work_buf;
 	void *buf;
 	int ret = -ENOTSUPP;
 	size_t len;
+	int i;
+
+	/* Check for unwritable registers before we start */
+	if (map->writeable_reg)
+		for (i = 0; i < val_len / map->format.val_bytes; i++)
+			if (!map->writeable_reg(map->dev, reg + i))
+				return -EINVAL;
 
 	map->format.format_reg(map->work_buf, reg);
 
-	/* Try to do a gather write if we can */
-	if (map->bus->gather_write)
+	u8[0] |= map->write_flag_mask;
+
+	trace_regmap_hw_write_start(map->dev, reg,
+				    val_len / map->format.val_bytes);
+
+	/* If we're doing a single register write we can probably just
+	 * send the work_buf directly, otherwise try to do a gather
+	 * write.
+	 */
+	if (val == map->work_buf + map->format.reg_bytes)
+		ret = map->bus->write(map->dev, map->work_buf,
+				      map->format.reg_bytes + val_len);
+	else if (map->bus->gather_write)
 		ret = map->bus->gather_write(map->dev, map->work_buf,
 					     map->format.reg_bytes,
 					     val, val_len);
 
-	/* Otherwise fall back on linearising by hand. */
+	/* If that didn't work fall back on linearising by hand. */
 	if (ret == -ENOTSUPP) {
 		len = map->format.reg_bytes + val_len;
 		buf = kmalloc(len, GFP_KERNEL);
@@ -228,19 +290,39 @@ static int _regmap_raw_write(struct regmap *map, unsigned int reg,
 		kfree(buf);
 	}
 
+	trace_regmap_hw_write_done(map->dev, reg,
+				   val_len / map->format.val_bytes);
+
 	return ret;
 }
 
-static int _regmap_write(struct regmap *map, unsigned int reg,
-			 unsigned int val)
+int _regmap_write(struct regmap *map, unsigned int reg,
+		  unsigned int val)
 {
+	int ret;
 	BUG_ON(!map->format.format_write && !map->format.format_val);
+
+	if (!map->cache_bypass) {
+		ret = regcache_write(map, reg, val);
+		if (ret != 0)
+			return ret;
+		if (map->cache_only)
+			return 0;
+	}
+
+	trace_regmap_reg_write(map->dev, reg, val);
 
 	if (map->format.format_write) {
 		map->format.format_write(map, reg, val);
 
-		return map->bus->write(map->dev, map->work_buf,
-				       map->format.buf_size);
+		trace_regmap_hw_write_start(map->dev, reg, 1);
+
+		ret = map->bus->write(map->dev, map->work_buf,
+				      map->format.buf_size);
+
+		trace_regmap_hw_write_done(map->dev, reg, 1);
+
+		return ret;
 	} else {
 		map->format.format_val(map->work_buf + map->format.reg_bytes,
 				       val);
@@ -314,20 +396,23 @@ static int _regmap_raw_read(struct regmap *map, unsigned int reg, void *val,
 	map->format.format_reg(map->work_buf, reg);
 
 	/*
-	 * Some buses flag reads by setting the high bits in the
+	 * Some buses or devices flag reads by setting the high bits in the
 	 * register addresss; since it's always the high bits for all
 	 * current formats we can do this here rather than in
 	 * formatting.  This may break if we get interesting formats.
 	 */
-	if (map->bus->read_flag_mask)
-		u8[0] |= map->bus->read_flag_mask;
+	u8[0] |= map->read_flag_mask;
+
+	trace_regmap_hw_read_start(map->dev, reg,
+				   val_len / map->format.val_bytes);
 
 	ret = map->bus->read(map->dev, map->work_buf, map->format.reg_bytes,
 			     val, val_len);
-	if (ret != 0)
-		return ret;
 
-	return 0;
+	trace_regmap_hw_read_done(map->dev, reg,
+				  val_len / map->format.val_bytes);
+
+	return ret;
 }
 
 static int _regmap_read(struct regmap *map, unsigned int reg,
@@ -338,9 +423,20 @@ static int _regmap_read(struct regmap *map, unsigned int reg,
 	if (!map->format.parse_val)
 		return -EINVAL;
 
+	if (!map->cache_bypass) {
+		ret = regcache_read(map, reg, val);
+		if (ret == 0)
+			return 0;
+	}
+
+	if (map->cache_only)
+		return -EBUSY;
+
 	ret = _regmap_raw_read(map, reg, map->work_buf, map->format.val_bytes);
-	if (ret == 0)
+	if (ret == 0) {
 		*val = map->format.parse_val(map->work_buf);
+		trace_regmap_reg_read(map->dev, reg, *val);
+	}
 
 	return ret;
 }
@@ -412,6 +508,8 @@ int regmap_bulk_read(struct regmap *map, unsigned int reg, void *val,
 	int ret, i;
 	size_t val_bytes = map->format.val_bytes;
 
+	WARN_ON(map->cache_type != REGCACHE_NONE);
+
 	if (!map->format.parse_val)
 		return -EINVAL;
 
@@ -459,3 +557,11 @@ out:
 	return ret;
 }
 EXPORT_SYMBOL_GPL(regmap_update_bits);
+
+static int __init regmap_initcall(void)
+{
+	regmap_debugfs_initcall();
+
+	return 0;
+}
+postcore_initcall(regmap_initcall);
