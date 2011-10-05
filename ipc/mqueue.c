@@ -33,6 +33,7 @@
 #include <linux/pid.h>
 #include <linux/ipc_namespace.h>
 #include <linux/slab.h>
+#include <linux/vmalloc.h>
 
 #include <net/sock.h>
 #include "util.h"
