@@ -419,7 +419,7 @@ int __bitmap_parse(const char *buf, unsigned int buflen,
 {
 	int c, old_c, totaldigits, ndigits, nchunks, nbits;
 	u32 chunk;
-	const char __user __force *ubuf = buf;
+	const char __user __force *ubuf = (const char __user __force *)buf;
 
 	bitmap_zero(maskp, nmaskbits);
 
@@ -596,7 +596,7 @@ static int __bitmap_parselist(const char *buf, unsigned int buflen,
 {
 	unsigned a, b;
 	int c, old_c, totaldigits;
-	const char __user __force *ubuf = buf;
+	const char __user __force *ubuf = (const char __user __force *)buf;
 	int exp_digit, in_range;
 
 	totaldigits = c = 0;
