@@ -314,7 +314,7 @@ static void pmic_battery_read_status(struct pmic_power_module_info *pbi)
 			pbi->batt_health = POWER_SUPPLY_HEALTH_GOOD;
 			if (r8 & PMIC_BATT_CHR_SDCLMT_MASK) {
 				/* PMIC will change charging current automatically */
-				pmic_battery_log_event(pbi, BATT_EVENT_DCLMT_EXCPT);
+				pmic_battery_log_event(BATT_EVENT_DCLMT_EXCPT);
 			}
 		}
 	}
