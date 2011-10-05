@@ -377,7 +377,7 @@ static inline int page_count(struct page *page)
 	return atomic_read(&compound_head(page)->_count);
 }
 
-extern int __get_page_tail(struct page *page);
+extern bool __get_page_tail(struct page *page);
 
 static inline void get_page(struct page *page)
 {
