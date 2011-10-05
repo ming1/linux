@@ -172,7 +172,7 @@ debug_text_event(debug_info_t* id, int level, const char* txt)
  * stored in the s390dbf. See Documentation/s390/s390dbf.txt for more details!
  */
 extern __printf(3, 4) debug_entry_t *
-debug_sprintf_event(debug_info_t* id, int level, char *string, ...);
+debug_sprintf_event(debug_info_t *id, int level, char *string, ...);
 
 static inline debug_entry_t*
 debug_exception(debug_info_t* id, int level, void* data, int length)
@@ -213,7 +213,7 @@ debug_text_exception(debug_info_t* id, int level, const char* txt)
  * stored in the s390dbf. See Documentation/s390/s390dbf.txt for more details!
  */
 extern __printf(3, 4) debug_entry_t *
-debug_sprintf_exception(debug_info_t *id, int level, char *string,...);
+debug_sprintf_exception(debug_info_t *id, int level, char *string, ...);
 
 int debug_register_view(debug_info_t* id, struct debug_view* view);
 int debug_unregister_view(debug_info_t* id, struct debug_view* view);

@@ -118,11 +118,11 @@ extern const struct file_operations ufs_dir_operations;
 
 /* super.c */
 extern __printf(3, 4)
-void ufs_warning (struct super_block *, const char *, const char *, ...);
+void ufs_warning(struct super_block *, const char *, const char *, ...);
 extern __printf(3, 4)
-void ufs_error (struct super_block *, const char *, const char *, ...);
+void ufs_error(struct super_block *, const char *, const char *, ...);
 extern __printf(3, 4)
-void ufs_panic (struct super_block *, const char *, const char *, ...);
+void ufs_panic(struct super_block *, const char *, const char *, ...);
 
 /* symlink.c */
 extern const struct inode_operations ufs_fast_symlink_inode_operations;
