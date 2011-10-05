@@ -55,7 +55,7 @@ static irqreturn_t pps_gpio_irq_handler(int irq, void *data)
 	/* Get the time stamp first */
 	pps_get_ts(&ts);
 
-	info = (const struct pps_gpio_device_data *)data;
+	info = data;
 
 	rising_edge = gpio_get_value(info->pdata->gpio_pin);
 	if ((rising_edge && !info->pdata->assert_falling_edge) ||
