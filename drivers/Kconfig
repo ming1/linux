@@ -56,6 +56,10 @@ source "drivers/pps/Kconfig"
 
 source "drivers/ptp/Kconfig"
 
+# pinctrl before gpio - gpio drivers may need it
+
+source "drivers/pinctrl/Kconfig"
+
 source "drivers/gpio/Kconfig"
 
 source "drivers/w1/Kconfig"
