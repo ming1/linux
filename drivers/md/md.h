@@ -1,5 +1,5 @@
 /*
-   md_k.h : kernel internal structure of the Linux MD driver
+   md.h : kernel internal structure of the Linux MD driver
           Copyright (C) 1996-98 Ingo Molnar, Gadi Oxman
 	  
    This program is free software; you can redistribute it and/or modify
@@ -560,7 +560,7 @@ extern int register_md_personality(struct mdk_personality *p);
 extern int unregister_md_personality(struct mdk_personality *p);
 extern mdk_thread_t * md_register_thread(void (*run) (mddev_t *mddev),
 				mddev_t *mddev, const char *name);
-extern void md_unregister_thread(mdk_thread_t *thread);
+extern void md_unregister_thread(mdk_thread_t **threadp);
 extern void md_wakeup_thread(mdk_thread_t *thread);
 extern void md_check_recovery(mddev_t *mddev);
 extern void md_write_start(mddev_t *mddev, struct bio *bi);
