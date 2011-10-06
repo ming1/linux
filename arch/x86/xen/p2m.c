@@ -845,9 +845,9 @@ EXPORT_SYMBOL_GPL(m2p_find_override_pfn);
 static int p2m_dump_show(struct seq_file *m, void *v)
 {
 	static const char * const level_name[] = { "top", "middle",
-						"entry", "abnormal", NULL};
+						"entry", "abnormal" };
 	static const char * const type_name[] = { "identity", "missing",
-						"pfn", "abnormal", NULL};
+						"pfn", "abnormal"};
 #define TYPE_IDENTITY 0
 #define TYPE_MISSING 1
 #define TYPE_PFN 2
