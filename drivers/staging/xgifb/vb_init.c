@@ -1,7 +1,6 @@
-#include "vgatypes.h"
-
 #include <linux/types.h>
 #include <linux/delay.h> /* udelay */
+#include "vgatypes.h"
 #include "XGIfb.h"
 
 #include "vb_def.h"
@@ -679,12 +678,13 @@ static int XGINew_ReadWriteRest(unsigned short StopAddr,
 {
 	int i;
 	unsigned long Position = 0;
+	void __iomem *fbaddr = pVBInfo->FBAddr;
 
-	*((unsigned long *) (pVBInfo->FBAddr + Position)) = Position;
+	writel(Position, fbaddr + Position);
 
 	for (i = StartAddr; i <= StopAddr; i++) {
 		Position = 1 << i;
-		*((unsigned long *) (pVBInfo->FBAddr + Position)) = Position;
+		writel(Position, fbaddr + Position);
 	}
 
 	udelay(500); /* [Vicent] 2004/04/16.
@@ -692,13 +692,12 @@ static int XGINew_ReadWriteRest(unsigned short StopAddr,
 
 	Position = 0;
 
-	if ((*(unsigned long *) (pVBInfo->FBAddr + Position)) != Position)
+	if (readl(fbaddr + Position) != Position)
 		return 0;
 
 	for (i = StartAddr; i <= StopAddr; i++) {
 		Position = 1 << i;
-		if ((*(unsigned long *) (pVBInfo->FBAddr + Position)) !=
-		    Position)
+		if (readl(fbaddr + Position) != Position)
 			return 0;
 	}
 	return 1;
@@ -1732,15 +1731,6 @@ unsigned char XGIInitNew(struct xgi_hw_device_info *HwDeviceExtension)
 
 	printk("183");
 	/* XGINew_DetectMonitor(HwDeviceExtension); */
-	pVBInfo->IF_DEF_CH7007 = 0;
-	if ((HwDeviceExtension->jChipType == XG21) &&
-	    (pVBInfo->IF_DEF_CH7007)) {
-		printk("184");
-		/* sense CRT2 */
-		XGI_GetSenseStatus(HwDeviceExtension, pVBInfo);
-		printk("185");
-
-	}
 	if (HwDeviceExtension->jChipType == XG21) {
 		printk("186");
 

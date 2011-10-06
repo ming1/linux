@@ -15,13 +15,6 @@
 # OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
 # CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
-ccflags-y :=			\
-	-DBRCMF_FIRSTREAD=64	\
-	-DBRCMF_SDALIGN=64	\
-	-DMAX_HDR_READ=64
-
-ccflags-$(CONFIG_BRCMDBG)	+= -DSHOW_EVENTS
-
 ccflags-y += \
 	-Idrivers/staging/brcm80211/brcmfmac	\
 	-Idrivers/staging/brcm80211/include
@@ -37,3 +30,4 @@ DHDOFILES = \
 
 obj-$(CONFIG_BRCMFMAC) += brcmfmac.o
 brcmfmac-objs += $(DHDOFILES)
+ccflags-y += -D__CHECK_ENDIAN__
