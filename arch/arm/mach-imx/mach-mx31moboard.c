@@ -28,6 +28,7 @@
 #include <linux/spi/spi.h>
 #include <linux/types.h>
 #include <linux/memblock.h>
+#include <linux/input.h>
 
 #include <linux/usb/otg.h>
 #include <linux/usb/ulpi.h>
@@ -222,7 +223,7 @@ static struct mc13xxx_regulator_init_data moboard_regulators[] = {
 	},
 };
 
-static struct mc13783_led_platform_data moboard_led[] = {
+static struct mc13xxx_led_platform_data moboard_led[] = {
 	{
 		.id = MC13783_LED_R1,
 		.name = "coreboard-led-4:red",
@@ -255,7 +256,7 @@ static struct mc13783_led_platform_data moboard_led[] = {
 	},
 };
 
-static struct mc13783_leds_platform_data moboard_leds = {
+static struct mc13xxx_leds_platform_data moboard_leds = {
 	.num_leds = ARRAY_SIZE(moboard_led),
 	.led = moboard_led,
 	.flags = MC13783_LED_SLEWLIMTC,
@@ -264,14 +265,20 @@ static struct mc13783_leds_platform_data moboard_leds = {
 	.tc2_period = MC13783_LED_PERIOD_10MS,
 };
 
+static struct mc13xxx_buttons_platform_data moboard_buttons = {
+	.b1on_flags = MC13783_BUTTON_DBNC_750MS | MC13783_BUTTON_ENABLE |
+			MC13783_BUTTON_POL_INVERT,
+	.b1on_key = KEY_POWER,
+};
+
 static struct mc13xxx_platform_data moboard_pmic = {
 	.regulators = {
 		.regulators = moboard_regulators,
 		.num_regulators = ARRAY_SIZE(moboard_regulators),
 	},
 	.leds = &moboard_leds,
-	.flags = MC13XXX_USE_REGULATOR | MC13XXX_USE_RTC |
-		MC13XXX_USE_ADC | MC13XXX_USE_LED,
+	.buttons = &moboard_buttons,
+	.flags = MC13XXX_USE_RTC | MC13XXX_USE_ADC,
 };
 
 static struct spi_board_info moboard_spi_board_info[] __initdata = {
