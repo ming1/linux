@@ -26,6 +26,7 @@
 #include <linux/pm_qos.h>
 #include <linux/uio.h>
 #include <linux/dma-mapping.h>
+#include <linux/module.h>
 #include <sound/core.h>
 #include <sound/control.h>
 #include <sound/info.h>
