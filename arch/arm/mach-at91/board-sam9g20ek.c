@@ -217,7 +217,7 @@ static struct mci_platform_data __initdata ek_mmc_data = {
 	.slot[1] = {
 		.bus_width	= 4,
 		.detect_pin	= AT91_PIN_PC9,
-		.wp_pin		= -1;
+		.wp_pin		= -EINVAL,
 	},
 
 };
@@ -237,7 +237,7 @@ static void __init ek_add_device_mmc(void)
 	if (ek_have_2mmc()) {
 		ek_mmc_data.slot[0].bus_width = 4;
 		ek_mmc_data.slot[0].detect_pin = AT91_PIN_PC2;
-		ek_mmc_data.slot[0].wp_pin = -1;
+		ek_mmc_data.slot[0].wp_pin = -EINVAL;
 	}
 	at91_add_device_mci(0, &ek_mmc_data);
 #else
