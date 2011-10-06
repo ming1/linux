@@ -55,13 +55,13 @@
 #define BURST_BASEFREQ_HZ	49152000
 
 #define SAMPLES_TO_US(rate, samples) \
-	(1000000000 / ((rate * 1000) / samples))
+	(1000000000 / (((rate) * 1000) / (samples)))
 
 #define US_TO_SAMPLES(rate, us) \
-	(rate / (1000000 / (us < 1000000 ? us : 1000000)))
+	((rate) / (1000000 / ((us) < 1000000 ? (us) : 1000000)))
 
 #define UTHR_FROM_PERIOD_SIZE(samples, playrate, burstrate) \
-	((samples * 5000) / ((burstrate * 5000) / (burstrate - playrate)))
+	(((samples)*5000) / (((burstrate)*5000) / ((burstrate) - (playrate))))
 
 static void dac33_calculate_times(struct snd_pcm_substream *substream);
 static int dac33_prepare_chip(struct snd_pcm_substream *substream);
@@ -1431,7 +1431,7 @@ static int dac33_soc_probe(struct snd_soc_codec *codec)
 	/* Check if the IRQ number is valid and request it */
 	if (dac33->irq >= 0) {
 		ret = request_irq(dac33->irq, dac33_interrupt_handler,
-				  IRQF_TRIGGER_RISING | IRQF_DISABLED,
+				  IRQF_TRIGGER_RISING,
 				  codec->name, codec);
 		if (ret < 0) {
 			dev_err(codec->dev, "Could not request IRQ%d (%d)\n",
