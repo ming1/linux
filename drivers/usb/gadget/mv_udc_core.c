@@ -493,7 +493,7 @@ static int mv_ep_enable(struct usb_ep *_ep,
 		return -ESHUTDOWN;
 
 	direction = ep_dir(ep);
-	max = le16_to_cpu(desc->wMaxPacketSize);
+	max = usb_endpoint_maxp(desc);
 
 	/*
 	 * disable HW zero length termination select
@@ -2049,7 +2049,7 @@ int mv_udc_probe(struct platform_device *dev)
 	}
 	udc->irq = r->start;
 	if (request_irq(udc->irq, mv_udc_irq,
-		IRQF_DISABLED | IRQF_SHARED, driver_name, udc)) {
+		IRQF_SHARED, driver_name, udc)) {
 		dev_err(&dev->dev, "Request irq %d for UDC failed\n",
 			udc->irq);
 		retval = -ENODEV;
