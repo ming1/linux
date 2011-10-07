@@ -334,12 +334,16 @@ int hibernation_snapshot(int platform_mode)
 	if (error)
 		goto Close;
 
-	error = dpm_prepare(PMSG_FREEZE);
-	if (error)
-		goto Complete_devices;
-
 	/* Preallocate image memory before shutting down devices. */
 	error = hibernate_preallocate_memory();
+	if (error)
+		goto Close;
+
+	error = freeze_kernel_threads();
+	if (error)
+		goto Close;
+
+	error = dpm_prepare(PMSG_FREEZE);
 	if (error)
 		goto Complete_devices;
 
@@ -463,7 +467,7 @@ static int resume_target_kernel(bool platform_mode)
  * @platform_mode: If set, use platform driver to prepare for the transition.
  *
  * This routine must be called with pm_mutex held.  If it is successful, control
- * reappears in the restored target kernel in hibernation_snaphot().
+ * reappears in the restored target kernel in hibernation_snapshot().
  */
 int hibernation_restore(int platform_mode)
 {
