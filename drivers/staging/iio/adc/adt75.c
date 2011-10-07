@@ -12,6 +12,7 @@
 #include <linux/slab.h>
 #include <linux/sysfs.h>
 #include <linux/i2c.h>
+#include <linux/module.h>
 
 #include "../iio.h"
 #include "../sysfs.h"
@@ -257,14 +258,14 @@ static const struct attribute_group adt75_attribute_group = {
  * temperature bound events
  */
 
-#define IIO_EVENT_CODE_ADT75_OTI IIO_UNMOD_EVENT_CODE(IIO_EV_CLASS_TEMP, \
+#define IIO_EVENT_CODE_ADT75_OTI IIO_UNMOD_EVENT_CODE(IIO_TEMP,		\
 						      0,		\
 						      IIO_EV_TYPE_THRESH, \
 						      IIO_EV_DIR_FALLING)
 
 static irqreturn_t adt75_event_handler(int irq, void *private)
 {
-	iio_push_event(private, 0,
+	iio_push_event(private,
 		       IIO_EVENT_CODE_ADT75_OTI,
 		       iio_get_time_ns());
 
@@ -529,11 +530,11 @@ static struct attribute *adt75_event_attributes[] = {
 
 static struct attribute_group adt75_event_attribute_group = {
 	.attrs = adt75_event_attributes,
+	.name = "events",
 };
 
 static const struct iio_info adt75_info = {
 	.attrs = &adt75_attribute_group,
-	.num_interrupt_lines = 1,
 	.event_attrs = &adt75_event_attribute_group,
 	.driver_module = THIS_MODULE,
 };
@@ -566,10 +567,6 @@ static int __devinit adt75_probe(struct i2c_client *client,
 	indio_dev->info = &adt75_info;
 	indio_dev->modes = INDIO_DIRECT_MODE;
 
-	ret = iio_device_register(indio_dev);
-	if (ret)
-		goto error_free_dev;
-
 	if (client->irq > 0) {
 		ret = request_threaded_irq(client->irq,
 					   NULL,
@@ -578,7 +575,7 @@ static int __devinit adt75_probe(struct i2c_client *client,
 					   indio_dev->name,
 					   indio_dev);
 		if (ret)
-			goto error_unreg_dev;
+			goto error_free_dev;
 
 		ret = adt75_i2c_read(indio_dev, ADT75_CONFIG, &chip->config);
 		if (ret) {
@@ -596,14 +593,16 @@ static int __devinit adt75_probe(struct i2c_client *client,
 		}
 	}
 
+	ret = iio_device_register(indio_dev);
+	if (ret)
+		goto error_unreg_irq;
+
 	dev_info(&client->dev, "%s temperature sensor registered.\n",
 			 indio_dev->name);
 
 	return 0;
 error_unreg_irq:
 	free_irq(client->irq, indio_dev);
-error_unreg_dev:
-	iio_device_unregister(indio_dev);
 error_free_dev:
 	iio_free_device(indio_dev);
 error_ret:
@@ -617,7 +616,6 @@ static int __devexit adt75_remove(struct i2c_client *client)
 	if (client->irq)
 		free_irq(client->irq, indio_dev);
 	iio_device_unregister(indio_dev);
-	iio_free_device(indio_dev);
 
 	return 0;
 }

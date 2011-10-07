@@ -34,9 +34,10 @@
 #include "vme.h"
 #include "vme_bridge.h"
 
-/* Bitmask and mutex to keep track of bridge numbers */
+/* Bitmask and list of registered buses both protected by common mutex */
 static unsigned int vme_bus_numbers;
-static DEFINE_MUTEX(vme_bus_num_mtx);
+static LIST_HEAD(vme_bus_list);
+static DEFINE_MUTEX(vme_buses_lock);
 
 static void __exit vme_exit(void);
 static int __init vme_init(void);
@@ -83,15 +84,11 @@ static struct vme_bridge *find_bridge(struct vme_resource *resource)
 /*
  * Allocate a contiguous block of memory for use by the driver. This is used to
  * create the buffers for the slave windows.
- *
- * XXX VME bridges could be available on buses other than PCI. At the momment
- *     this framework only supports PCI devices.
  */
 void *vme_alloc_consistent(struct vme_resource *resource, size_t size,
 	dma_addr_t *dma)
 {
 	struct vme_bridge *bridge;
-	struct pci_dev *pdev;
 
 	if (resource == NULL) {
 		printk(KERN_ERR "No resource\n");
@@ -104,28 +101,29 @@ void *vme_alloc_consistent(struct vme_resource *resource, size_t size,
 		return NULL;
 	}
 
-	/* Find pci_dev container of dev */
 	if (bridge->parent == NULL) {
-		printk(KERN_ERR "Dev entry NULL\n");
+		printk(KERN_ERR "Dev entry NULL for"
+			" bridge %s\n", bridge->name);
 		return NULL;
 	}
-	pdev = container_of(bridge->parent, struct pci_dev, dev);
 
-	return pci_alloc_consistent(pdev, size, dma);
+	if (bridge->alloc_consistent == NULL) {
+		printk(KERN_ERR "alloc_consistent not supported by"
+			" bridge %s\n", bridge->name);
+		return NULL;
+	}
+
+	return bridge->alloc_consistent(bridge->parent, size, dma);
 }
 EXPORT_SYMBOL(vme_alloc_consistent);
 
 /*
  * Free previously allocated contiguous block of memory.
- *
- * XXX VME bridges could be available on buses other than PCI. At the momment
- *     this framework only supports PCI devices.
  */
 void vme_free_consistent(struct vme_resource *resource, size_t size,
 	void *vaddr, dma_addr_t dma)
 {
 	struct vme_bridge *bridge;
-	struct pci_dev *pdev;
 
 	if (resource == NULL) {
 		printk(KERN_ERR "No resource\n");
@@ -138,10 +136,19 @@ void vme_free_consistent(struct vme_resource *resource, size_t size,
 		return;
 	}
 
-	/* Find pci_dev container of dev */
-	pdev = container_of(bridge->parent, struct pci_dev, dev);
+	if (bridge->parent == NULL) {
+		printk(KERN_ERR "Dev entry NULL for"
+			" bridge %s\n", bridge->name);
+		return;
+	}
 
-	pci_free_consistent(pdev, size, vaddr, dma);
+	if (bridge->free_consistent == NULL) {
+		printk(KERN_ERR "free_consistent not supported by"
+			" bridge %s\n", bridge->name);
+		return;
+	}
+
+	bridge->free_consistent(bridge->parent, size, vaddr, dma);
 }
 EXPORT_SYMBOL(vme_free_consistent);
 
@@ -1303,27 +1310,37 @@ EXPORT_SYMBOL(vme_slot_get);
 
 /* - Bridge Registration --------------------------------------------------- */
 
-static int vme_alloc_bus_num(void)
+static int vme_add_bus(struct vme_bridge *bridge)
 {
 	int i;
+	int ret = -1;
 
-	mutex_lock(&vme_bus_num_mtx);
+	mutex_lock(&vme_buses_lock);
 	for (i = 0; i < sizeof(vme_bus_numbers) * 8; i++) {
-		if (((vme_bus_numbers >> i) & 0x1) == 0) {
-			vme_bus_numbers |= (0x1 << i);
+		if ((vme_bus_numbers & (1 << i)) == 0) {
+			vme_bus_numbers |= (1 << i);
+			bridge->num = i;
+			list_add_tail(&bridge->bus_list, &vme_bus_list);
+			ret = 0;
 			break;
 		}
 	}
-	mutex_unlock(&vme_bus_num_mtx);
+	mutex_unlock(&vme_buses_lock);
 
-	return i;
+	return ret;
 }
 
-static void vme_free_bus_num(int bus)
+static void vme_remove_bus(struct vme_bridge *bridge)
 {
-	mutex_lock(&vme_bus_num_mtx);
-	vme_bus_numbers &= ~(0x1 << bus);
-	mutex_unlock(&vme_bus_num_mtx);
+	mutex_lock(&vme_buses_lock);
+	vme_bus_numbers &= ~(1 << bridge->num);
+	list_del(&bridge->bus_list);
+	mutex_unlock(&vme_buses_lock);
+}
+
+static void vme_dev_release(struct device *dev)
+{
+	kfree(dev);
 }
 
 int vme_register_bridge(struct vme_bridge *bridge)
@@ -1332,18 +1349,26 @@ int vme_register_bridge(struct vme_bridge *bridge)
 	int retval;
 	int i;
 
-	bridge->num = vme_alloc_bus_num();
+	retval = vme_add_bus(bridge);
+	if (retval)
+		return retval;
 
 	/* This creates 32 vme "slot" devices. This equates to a slot for each
 	 * ID available in a system conforming to the ANSI/VITA 1-1994
 	 * specification.
 	 */
 	for (i = 0; i < VME_SLOTS_MAX; i++) {
-		dev = &bridge->dev[i];
+		bridge->dev[i] = kzalloc(sizeof(struct device), GFP_KERNEL);
+		if (!bridge->dev[i]) {
+			retval = -ENOMEM;
+			goto err_devalloc;
+		}
+		dev = bridge->dev[i];
 		memset(dev, 0, sizeof(struct device));
 
 		dev->parent = bridge->parent;
 		dev->bus = &vme_bus_type;
+		dev->release = vme_dev_release;
 		/*
 		 * We save a pointer to the bridge in platform_data so that we
 		 * can get to it later. We keep driver_data for use by the
@@ -1360,11 +1385,13 @@ int vme_register_bridge(struct vme_bridge *bridge)
 	return retval;
 
 err_reg:
+	kfree(dev);
+err_devalloc:
 	while (--i >= 0) {
-		dev = &bridge->dev[i];
+		dev = bridge->dev[i];
 		device_unregister(dev);
 	}
-	vme_free_bus_num(bridge->num);
+	vme_remove_bus(bridge);
 	return retval;
 }
 EXPORT_SYMBOL(vme_register_bridge);
@@ -1376,10 +1403,10 @@ void vme_unregister_bridge(struct vme_bridge *bridge)
 
 
 	for (i = 0; i < VME_SLOTS_MAX; i++) {
-		dev = &bridge->dev[i];
+		dev = bridge->dev[i];
 		device_unregister(dev);
 	}
-	vme_free_bus_num(bridge->num);
+	vme_remove_bus(bridge);
 }
 EXPORT_SYMBOL(vme_unregister_bridge);
 
@@ -1413,7 +1440,7 @@ static int vme_calc_slot(struct device *dev)
 	/* Determine slot number */
 	num = 0;
 	while (num < VME_SLOTS_MAX) {
-		if (&bridge->dev[num] == dev)
+		if (bridge->dev[num] == dev)
 			break;
 
 		num++;
