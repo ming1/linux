@@ -31,7 +31,6 @@
 #include <linux/sched.h>
 #include <linux/skbuff.h>
 #include <linux/netdevice.h>
-#include <linux/wireless.h>
 #include <net/mac80211.h>
 #include <linux/etherdevice.h>
 #include <asm/unaligned.h>
@@ -47,6 +46,8 @@
 #include "iwl-agn-hw.h"
 #include "iwl-5000-hw.h"
 #include "iwl-trans.h"
+#include "iwl-shared.h"
+#include "iwl-cfg.h"
 
 /* Highest firmware API version supported */
 #define IWL5000_UCODE_API_MAX 5
@@ -69,27 +70,27 @@ static void iwl5000_nic_config(struct iwl_priv *priv)
 
 	iwl_rf_config(priv);
 
-	spin_lock_irqsave(&priv->lock, flags);
+	spin_lock_irqsave(&priv->shrd->lock, flags);
 
 	/* W/A : NIC is stuck in a reset state after Early PCIe power off
 	 * (PCIe power is lost before PERST# is asserted),
 	 * causing ME FW to lose ownership and not being able to obtain it back.
 	 */
-	iwl_set_bits_mask_prph(priv, APMG_PS_CTRL_REG,
+	iwl_set_bits_mask_prph(bus(priv), APMG_PS_CTRL_REG,
 				APMG_PS_CTRL_EARLY_PWR_OFF_RESET_DIS,
 				~APMG_PS_CTRL_EARLY_PWR_OFF_RESET_DIS);
 
 
-	spin_unlock_irqrestore(&priv->lock, flags);
+	spin_unlock_irqrestore(&priv->shrd->lock, flags);
 }
 
 static struct iwl_sensitivity_ranges iwl5000_sensitivity = {
-	.min_nrg_cck = 95,
+	.min_nrg_cck = 100,
 	.max_nrg_cck = 0, /* not used, set to 0 */
 	.auto_corr_min_ofdm = 90,
 	.auto_corr_min_ofdm_mrc = 170,
-	.auto_corr_min_ofdm_x1 = 120,
-	.auto_corr_min_ofdm_mrc_x1 = 240,
+	.auto_corr_min_ofdm_x1 = 105,
+	.auto_corr_min_ofdm_mrc_x1 = 220,
 
 	.auto_corr_max_ofdm = 120,
 	.auto_corr_max_ofdm_mrc = 210,
@@ -98,10 +99,10 @@ static struct iwl_sensitivity_ranges iwl5000_sensitivity = {
 
 	.auto_corr_min_cck = 125,
 	.auto_corr_max_cck = 200,
-	.auto_corr_min_cck_mrc = 170,
+	.auto_corr_min_cck_mrc = 200,
 	.auto_corr_max_cck_mrc = 400,
-	.nrg_th_cck = 95,
-	.nrg_th_ofdm = 95,
+	.nrg_th_cck = 100,
+	.nrg_th_ofdm = 100,
 
 	.barker_corr_th_min = 190,
 	.barker_corr_th_min_mrc = 390,
@@ -140,13 +141,13 @@ static void iwl5150_set_ct_threshold(struct iwl_priv *priv)
 	s32 threshold = (s32)CELSIUS_TO_KELVIN(CT_KILL_THRESHOLD_LEGACY) -
 			iwl_temp_calib_to_offset(priv);
 
-	priv->hw_params.ct_kill_threshold = threshold * volt2temp_coef;
+	hw_params(priv).ct_kill_threshold = threshold * volt2temp_coef;
 }
 
 static void iwl5000_set_ct_threshold(struct iwl_priv *priv)
 {
 	/* want Celsius */
-	priv->hw_params.ct_kill_threshold = CT_KILL_THRESHOLD_LEGACY;
+	hw_params(priv).ct_kill_threshold = CT_KILL_THRESHOLD_LEGACY;
 }
 
 static int iwl5000_hw_set_hw_params(struct iwl_priv *priv)
@@ -156,38 +157,32 @@ static int iwl5000_hw_set_hw_params(struct iwl_priv *priv)
 		priv->cfg->base_params->num_of_queues =
 			iwlagn_mod_params.num_of_queues;
 
-	priv->hw_params.max_txq_num = priv->cfg->base_params->num_of_queues;
-	priv->hw_params.scd_bc_tbls_size =
-			priv->cfg->base_params->num_of_queues *
-			sizeof(struct iwlagn_scd_bc_tbl);
-	priv->hw_params.tfd_size = sizeof(struct iwl_tfd);
-	priv->hw_params.max_stations = IWLAGN_STATION_COUNT;
+	hw_params(priv).max_txq_num = priv->cfg->base_params->num_of_queues;
+	hw_params(priv).max_stations = IWLAGN_STATION_COUNT;
 	priv->contexts[IWL_RXON_CTX_BSS].bcast_sta_id = IWLAGN_BROADCAST_ID;
 
-	priv->hw_params.max_data_size = IWLAGN_RTC_DATA_SIZE;
-	priv->hw_params.max_inst_size = IWLAGN_RTC_INST_SIZE;
+	hw_params(priv).max_data_size = IWLAGN_RTC_DATA_SIZE;
+	hw_params(priv).max_inst_size = IWLAGN_RTC_INST_SIZE;
 
-	priv->hw_params.ht40_channel =  BIT(IEEE80211_BAND_2GHZ) |
+	hw_params(priv).ht40_channel =  BIT(IEEE80211_BAND_2GHZ) |
 					BIT(IEEE80211_BAND_5GHZ);
 
-	priv->hw_params.tx_chains_num = num_of_ant(priv->cfg->valid_tx_ant);
-	priv->hw_params.rx_chains_num = num_of_ant(priv->cfg->valid_rx_ant);
-	priv->hw_params.valid_tx_ant = priv->cfg->valid_tx_ant;
-	priv->hw_params.valid_rx_ant = priv->cfg->valid_rx_ant;
+	hw_params(priv).tx_chains_num = num_of_ant(priv->cfg->valid_tx_ant);
+	hw_params(priv).rx_chains_num = num_of_ant(priv->cfg->valid_rx_ant);
+	hw_params(priv).valid_tx_ant = priv->cfg->valid_tx_ant;
+	hw_params(priv).valid_rx_ant = priv->cfg->valid_rx_ant;
 
 	iwl5000_set_ct_threshold(priv);
 
 	/* Set initial sensitivity parameters */
 	/* Set initial calibration set */
-	priv->hw_params.sens = &iwl5000_sensitivity;
-	priv->hw_params.calib_init_cfg =
+	hw_params(priv).sens = &iwl5000_sensitivity;
+	hw_params(priv).calib_init_cfg =
 		BIT(IWL_CALIB_XTAL)		|
 		BIT(IWL_CALIB_LO)		|
 		BIT(IWL_CALIB_TX_IQ)		|
 		BIT(IWL_CALIB_TX_IQ_PERD)	|
 		BIT(IWL_CALIB_BASE_BAND);
-
-	priv->hw_params.beacon_time_tsf_bits = IWLAGN_EXT_BEACON_TIME_POS;
 
 	return 0;
 }
@@ -199,38 +194,32 @@ static int iwl5150_hw_set_hw_params(struct iwl_priv *priv)
 		priv->cfg->base_params->num_of_queues =
 			iwlagn_mod_params.num_of_queues;
 
-	priv->hw_params.max_txq_num = priv->cfg->base_params->num_of_queues;
-	priv->hw_params.scd_bc_tbls_size =
-			priv->cfg->base_params->num_of_queues *
-			sizeof(struct iwlagn_scd_bc_tbl);
-	priv->hw_params.tfd_size = sizeof(struct iwl_tfd);
-	priv->hw_params.max_stations = IWLAGN_STATION_COUNT;
+	hw_params(priv).max_txq_num = priv->cfg->base_params->num_of_queues;
+	hw_params(priv).max_stations = IWLAGN_STATION_COUNT;
 	priv->contexts[IWL_RXON_CTX_BSS].bcast_sta_id = IWLAGN_BROADCAST_ID;
 
-	priv->hw_params.max_data_size = IWLAGN_RTC_DATA_SIZE;
-	priv->hw_params.max_inst_size = IWLAGN_RTC_INST_SIZE;
+	hw_params(priv).max_data_size = IWLAGN_RTC_DATA_SIZE;
+	hw_params(priv).max_inst_size = IWLAGN_RTC_INST_SIZE;
 
-	priv->hw_params.ht40_channel =  BIT(IEEE80211_BAND_2GHZ) |
+	hw_params(priv).ht40_channel =  BIT(IEEE80211_BAND_2GHZ) |
 					BIT(IEEE80211_BAND_5GHZ);
 
-	priv->hw_params.tx_chains_num = num_of_ant(priv->cfg->valid_tx_ant);
-	priv->hw_params.rx_chains_num = num_of_ant(priv->cfg->valid_rx_ant);
-	priv->hw_params.valid_tx_ant = priv->cfg->valid_tx_ant;
-	priv->hw_params.valid_rx_ant = priv->cfg->valid_rx_ant;
+	hw_params(priv).tx_chains_num = num_of_ant(priv->cfg->valid_tx_ant);
+	hw_params(priv).rx_chains_num = num_of_ant(priv->cfg->valid_rx_ant);
+	hw_params(priv).valid_tx_ant = priv->cfg->valid_tx_ant;
+	hw_params(priv).valid_rx_ant = priv->cfg->valid_rx_ant;
 
 	iwl5150_set_ct_threshold(priv);
 
 	/* Set initial sensitivity parameters */
 	/* Set initial calibration set */
-	priv->hw_params.sens = &iwl5150_sensitivity;
-	priv->hw_params.calib_init_cfg =
+	hw_params(priv).sens = &iwl5150_sensitivity;
+	hw_params(priv).calib_init_cfg =
 		BIT(IWL_CALIB_LO)		|
 		BIT(IWL_CALIB_TX_IQ)		|
 		BIT(IWL_CALIB_BASE_BAND);
 	if (priv->cfg->need_dc_calib)
-		priv->hw_params.calib_init_cfg |= BIT(IWL_CALIB_DC);
-
-	priv->hw_params.beacon_time_tsf_bits = IWLAGN_EXT_BEACON_TIME_POS;
+		hw_params(priv).calib_init_cfg |= BIT(IWL_CALIB_DC);
 
 	return 0;
 }
@@ -315,7 +304,7 @@ static int iwl5000_hw_channel_switch(struct iwl_priv *priv,
 		return -EFAULT;
 	}
 
-	return trans_send_cmd(&priv->trans, &hcmd);
+	return iwl_trans_send_cmd(trans(priv), &hcmd);
 }
 
 static struct iwl_lib_ops iwl5000_lib = {
@@ -360,7 +349,6 @@ static struct iwl_base_params iwl5000_base_params = {
 	.num_of_ampdu_queues = IWLAGN_NUM_AMPDU_QUEUES,
 	.pll_cfg_val = CSR50_ANA_PLL_CFG_VAL,
 	.led_compensation = 51,
-	.chain_noise_num_beacons = IWL_CAL_NUM_BEACONS,
 	.plcp_delta_threshold = IWL_MAX_PLCP_ERR_LONG_THRESHOLD_DEF,
 	.chain_noise_scale = 1000,
 	.wd_timeout = IWL_LONG_WD_TIMEOUT,
