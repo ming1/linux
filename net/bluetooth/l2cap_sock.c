@@ -934,7 +934,6 @@ static void l2cap_sock_init(struct sock *sk, struct sock *parent)
 		chan->role_switch = pchan->role_switch;
 		chan->force_reliable = pchan->force_reliable;
 		chan->flushable = pchan->flushable;
-		chan->force_active = pchan->force_active;
 
 		security_sk_clone(parent, sk);
 	} else {
