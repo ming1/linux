@@ -494,8 +494,18 @@ writeback_single_inode(struct inode *inode, struct bdi_writeback *wb,
 			 * operations, such as delayed allocation during
 			 * submission or metadata updates after data IO
 			 * completion.
+			 *
+			 * For the latter case it is very important to give
+			 * the inode another turn on b_more_io instead of
+			 * redirtying it.  Constantly moving dirtied_when
+			 * forward will prevent us from ever writing out
+			 * the metadata dirtied in the I/O completion handler.
+			 *
+			 * For files on XFS that constantly get appended to
+			 * calling redirty_tail means they will never get
+			 * their updated i_size written out.
 			 */
-			redirty_tail(inode, wb);
+			requeue_io_wait(inode, wb);
 		} else {
 			/*
 			 * The inode is clean.  At this point we either have
