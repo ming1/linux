@@ -779,14 +779,14 @@ static int ext4_ext_insert_index(handle_t *handle, struct inode *inode,
 		ix = curp->p_idx;
 	}
 
-	ix->ei_block = cpu_to_le32(logical);
-	ext4_idx_store_pblock(ix, ptr);
-	le16_add_cpu(&curp->p_hdr->eh_entries, 1);
-
 	if (unlikely(ix > EXT_LAST_INDEX(curp->p_hdr))) {
 		EXT4_ERROR_INODE(inode, "ix > EXT_LAST_INDEX!");
 		return -EIO;
 	}
+
+	ix->ei_block = cpu_to_le32(logical);
+	ext4_idx_store_pblock(ix, ptr);
+	le16_add_cpu(&curp->p_hdr->eh_entries, 1);
 
 	err = ext4_ext_dirty(handle, inode, curp);
 	ext4_std_error(inode->i_sb, err);
