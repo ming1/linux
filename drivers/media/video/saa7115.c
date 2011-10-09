@@ -1344,35 +1344,57 @@ static int saa711x_g_vbi_data(struct v4l2_subdev *sd, struct v4l2_sliced_vbi_dat
 static int saa711x_querystd(struct v4l2_subdev *sd, v4l2_std_id *std)
 {
 	struct saa711x_state *state = to_state(sd);
-	int reg1e;
+	int reg1f, reg1e;
 
-	*std = V4L2_STD_ALL;
-	if (state->ident != V4L2_IDENT_SAA7115) {
-		int reg1f = saa711x_read(sd, R_1F_STATUS_BYTE_2_VD_DEC);
+	/*
+	 * The V4L2 core already initializes std with all supported
+	 * Standards. All driver needs to do is to mask it, to remove
+	 * standards that don't apply from the mask
+	 */
 
-		if (reg1f & 0x20)
-			*std = V4L2_STD_525_60;
-		else
-			*std = V4L2_STD_625_50;
+	reg1f = saa711x_read(sd, R_1F_STATUS_BYTE_2_VD_DEC);
+	v4l2_dbg(1, debug, sd, "Status byte 2 (0x1f)=0x%02x\n", reg1f);
 
-		return 0;
-	}
+	/* horizontal/vertical not locked */
+	if (reg1f & 0x40)
+		goto ret;
+
+	if (reg1f & 0x20)
+		*std &= V4L2_STD_525_60;
+	else
+		*std &= V4L2_STD_625_50;
+
+	if (state->ident != V4L2_IDENT_SAA7115)
+		goto ret;
 
 	reg1e = saa711x_read(sd, R_1E_STATUS_BYTE_1_VD_DEC);
 
 	switch (reg1e & 0x03) {
 	case 1:
-		*std = V4L2_STD_NTSC;
+		*std &= V4L2_STD_NTSC;
 		break;
 	case 2:
-		*std = V4L2_STD_PAL;
+		/*
+		 * V4L2_STD_PAL just cover the european PAL standards.
+		 * This is wrong, as the device could also be using an
+		 * other PAL standard.
+		 */
+		*std &= V4L2_STD_PAL   | V4L2_STD_PAL_N  | V4L2_STD_PAL_Nc |
+			V4L2_STD_PAL_M | V4L2_STD_PAL_60;
 		break;
 	case 3:
-		*std = V4L2_STD_SECAM;
+		*std &= V4L2_STD_SECAM;
 		break;
 	default:
+		/* Can't detect anything */
 		break;
 	}
+
+	v4l2_dbg(1, debug, sd, "Status byte 1 (0x1e)=0x%02x\n", reg1e);
+
+ret:
+	v4l2_dbg(1, debug, sd, "detected std mask = %08Lx\n", *std);
+
 	return 0;
 }
 
