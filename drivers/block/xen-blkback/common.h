@@ -72,6 +72,7 @@ struct blkif_x86_32_request_rw {
 struct blkif_x86_32_request_discard {
 	blkif_sector_t sector_number;/* start sector idx on disk (r/w only)  */
 	uint64_t nr_sectors;
+	uint32_t flag;
 };
 
 struct blkif_x86_32_request {
@@ -101,6 +102,7 @@ struct blkif_x86_64_request_rw {
 struct blkif_x86_64_request_discard {
 	blkif_sector_t sector_number;/* start sector idx on disk (r/w only)  */
 	uint64_t nr_sectors;
+	uint32_t flag;
 };
 
 struct blkif_x86_64_request {
@@ -157,6 +159,7 @@ struct xen_vbd {
 	/* Cached size parameter. */
 	sector_t		size;
 	bool			flush_support;
+	bool			discard_secure;
 };
 
 struct backend_info;
@@ -259,6 +262,7 @@ static inline void blkif_get_x86_32_req(struct blkif_request *dst,
 	case BLKIF_OP_DISCARD:
 		dst->u.discard.sector_number = src->u.discard.sector_number;
 		dst->u.discard.nr_sectors = src->u.discard.nr_sectors;
+		dst->u.discard.flag = src->u.discard.flag;
 		break;
 	default:
 		break;
@@ -288,6 +292,7 @@ static inline void blkif_get_x86_64_req(struct blkif_request *dst,
 	case BLKIF_OP_DISCARD:
 		dst->u.discard.sector_number = src->u.discard.sector_number;
 		dst->u.discard.nr_sectors = src->u.discard.nr_sectors;
+		dst->u.discard.flag = src->u.discard.flag;
 		break;
 	default:
 		break;

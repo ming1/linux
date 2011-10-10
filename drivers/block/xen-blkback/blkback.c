@@ -422,13 +422,16 @@ static void xen_blk_discard(struct xen_blkif *blkif, struct blkif_request *req)
 	int status = BLKIF_RSP_OKAY;
 	struct block_device *bdev = blkif->vbd.bdev;
 
-	if (blkif->blk_backend_type == BLKIF_BACKEND_PHY)
+	if (blkif->blk_backend_type == BLKIF_BACKEND_PHY) {
+		unsigned long secure = (blkif->vbd.discard_secure &&
+			(req->u.discard.flag & BLKIF_OP_DISCARD_FLAG_SECURE)) ?
+			BLKDEV_DISCARD_SECURE : 0;
 		/* just forward the discard request */
 		err = blkdev_issue_discard(bdev,
 				req->u.discard.sector_number,
 				req->u.discard.nr_sectors,
-				GFP_KERNEL, 0);
-	else if (blkif->blk_backend_type == BLKIF_BACKEND_FILE) {
+				GFP_KERNEL, secure);
+	} else if (blkif->blk_backend_type == BLKIF_BACKEND_FILE) {
 		/* punch a hole in the backing file */
 		struct loop_device *lo = bdev->bd_disk->private_data;
 		struct file *file = lo->lo_backing_file;
