@@ -138,6 +138,19 @@ static int amd_pmu_hw_config(struct perf_event *event)
 	if (ret)
 		return ret;
 
+	if (event->attr.exclude_host && event->attr.exclude_guest)
+		/*
+		 * When HO == GO == 1 the hardware treats that as GO == HO == 0
+		 * and will count in both modes. We don't want to count in that
+		 * case so we emulate no-counting by setting US = OS = 0.
+		 */
+		event->hw.config &= ~(ARCH_PERFMON_EVENTSEL_USR |
+				      ARCH_PERFMON_EVENTSEL_OS);
+	else if (event->attr.exclude_host)
+		event->hw.config |= AMD_PERFMON_EVENTSEL_GUESTONLY;
+	else if (event->attr.exclude_guest)
+		event->hw.config |= AMD_PERFMON_EVENTSEL_HOSTONLY;
+
 	if (event->attr.type != PERF_TYPE_RAW)
 		return 0;
 
@@ -398,7 +411,7 @@ static __initconst const struct x86_pmu amd_pmu = {
 	.perfctr		= MSR_K7_PERFCTR0,
 	.event_map		= amd_pmu_event_map,
 	.max_events		= ARRAY_SIZE(amd_perfmon_event_map),
-	.num_counters		= 4,
+	.num_counters		= AMD64_NUM_COUNTERS,
 	.cntval_bits		= 48,
 	.cntval_mask		= (1ULL << 48) - 1,
 	.apic			= 1,
@@ -562,7 +575,7 @@ static __initconst const struct x86_pmu amd_pmu_f15h = {
 	.perfctr		= MSR_F15H_PERF_CTR,
 	.event_map		= amd_pmu_event_map,
 	.max_events		= ARRAY_SIZE(amd_perfmon_event_map),
-	.num_counters		= 6,
+	.num_counters		= AMD64_NUM_COUNTERS_F15H,
 	.cntval_bits		= 48,
 	.cntval_mask		= (1ULL << 48) - 1,
 	.apic			= 1,
