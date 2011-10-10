@@ -72,6 +72,7 @@ struct blkif_x86_32_request_rw {
 struct blkif_x86_32_request_discard {
 	blkif_sector_t sector_number;/* start sector idx on disk (r/w only)  */
 	uint64_t nr_sectors;
+	uint32_t flag;
 };
 
 struct blkif_x86_32_request {
@@ -101,6 +102,7 @@ struct blkif_x86_64_request_rw {
 struct blkif_x86_64_request_discard {
 	blkif_sector_t sector_number;/* start sector idx on disk (r/w only)  */
 	uint64_t nr_sectors;
+	uint32_t flag;
 };
 
 struct blkif_x86_64_request {
@@ -157,6 +159,7 @@ struct xen_vbd {
 	/* Cached size parameter. */
 	sector_t		size;
 	bool			flush_support;
+	bool			discard_secure;
 };
 
 struct backend_info;
@@ -181,6 +184,9 @@ struct xen_blkif {
 	atomic_t		refcnt;
 
 	wait_queue_head_t	wq;
+	/* for barrier (drain) requests */
+	struct completion	drain_complete;
+	atomic_t		drain;
 	/* One thread per one blkif. */
 	struct task_struct	*xenblkd;
 	unsigned int		waiting_reqs;
@@ -229,6 +235,8 @@ int xen_blkif_schedule(void *arg);
 int xen_blkbk_flush_diskcache(struct xenbus_transaction xbt,
 			      struct backend_info *be, int state);
 
+int xen_blkbk_barrier(struct xenbus_transaction xbt,
+		      struct backend_info *be, int state);
 struct xenbus_device *xen_blkbk_xenbus(struct backend_info *be);
 
 static inline void blkif_get_x86_32_req(struct blkif_request *dst,
@@ -254,6 +262,7 @@ static inline void blkif_get_x86_32_req(struct blkif_request *dst,
 	case BLKIF_OP_DISCARD:
 		dst->u.discard.sector_number = src->u.discard.sector_number;
 		dst->u.discard.nr_sectors = src->u.discard.nr_sectors;
+		dst->u.discard.flag = src->u.discard.flag;
 		break;
 	default:
 		break;
@@ -283,6 +292,7 @@ static inline void blkif_get_x86_64_req(struct blkif_request *dst,
 	case BLKIF_OP_DISCARD:
 		dst->u.discard.sector_number = src->u.discard.sector_number;
 		dst->u.discard.nr_sectors = src->u.discard.nr_sectors;
+		dst->u.discard.flag = src->u.discard.flag;
 		break;
 	default:
 		break;
