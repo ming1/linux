@@ -362,7 +362,7 @@ static int xen_blkbk_map(struct blkif_request *req,
 {
 	struct gnttab_map_grant_ref map[BLKIF_MAX_SEGMENTS_PER_REQUEST];
 	int i;
-	int nseg = req->nr_segments;
+	int nseg = req->u1.nr_segments;
 	int ret = 0;
 
 	/*
@@ -422,13 +422,16 @@ static void xen_blk_discard(struct xen_blkif *blkif, struct blkif_request *req)
 	int status = BLKIF_RSP_OKAY;
 	struct block_device *bdev = blkif->vbd.bdev;
 
-	if (blkif->blk_backend_type == BLKIF_BACKEND_PHY)
+	if (blkif->blk_backend_type == BLKIF_BACKEND_PHY) {
+		unsigned long secure = (blkif->vbd.discard_secure &&
+			(req->u1.flag & BLKIF_OP_DISCARD_FLAG_SECURE)) ?
+			BLKDEV_DISCARD_SECURE : 0;
 		/* just forward the discard request */
 		err = blkdev_issue_discard(bdev,
 				req->u.discard.sector_number,
 				req->u.discard.nr_sectors,
-				GFP_KERNEL, 0);
-	else if (blkif->blk_backend_type == BLKIF_BACKEND_FILE) {
+				GFP_KERNEL, secure);
+	} else if (blkif->blk_backend_type == BLKIF_BACKEND_FILE) {
 		/* punch a hole in the backing file */
 		struct loop_device *lo = bdev->bd_disk->private_data;
 		struct file *file = lo->lo_backing_file;
@@ -618,6 +621,9 @@ static int dispatch_rw_block_io(struct xen_blkif *blkif,
 	struct blk_plug plug;
 	bool drain = false;
 
+	/* Check that the number of segments is sane. */
+	nseg = req->u1.nr_segments;
+
 	switch (req->operation) {
 	case BLKIF_OP_READ:
 		blkif->st_rd_req++;
@@ -636,6 +642,7 @@ static int dispatch_rw_block_io(struct xen_blkif *blkif,
 	case BLKIF_OP_DISCARD:
 		blkif->st_ds_req++;
 		operation = REQ_DISCARD;
+		nseg = 0; /* The nr_segments and flag share the same space. */
 		break;
 	default:
 		operation = 0; /* make gcc happy */
@@ -643,8 +650,6 @@ static int dispatch_rw_block_io(struct xen_blkif *blkif,
 		break;
 	}
 
-	/* Check that the number of segments is sane. */
-	nseg = req->nr_segments;
 	if (unlikely(nseg == 0 && operation != WRITE_FLUSH &&
 				operation != REQ_DISCARD) ||
 	    unlikely(nseg > BLKIF_MAX_SEGMENTS_PER_REQUEST)) {
