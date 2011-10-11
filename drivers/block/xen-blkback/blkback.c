@@ -362,7 +362,7 @@ static int xen_blkbk_map(struct blkif_request *req,
 {
 	struct gnttab_map_grant_ref map[BLKIF_MAX_SEGMENTS_PER_REQUEST];
 	int i;
-	int nseg = req->nr_segments;
+	int nseg = req->u1.nr_segments;
 	int ret = 0;
 
 	/*
@@ -422,13 +422,16 @@ static void xen_blk_discard(struct xen_blkif *blkif, struct blkif_request *req)
 	int status = BLKIF_RSP_OKAY;
 	struct block_device *bdev = blkif->vbd.bdev;
 
-	if (blkif->blk_backend_type == BLKIF_BACKEND_PHY)
+	if (blkif->blk_backend_type == BLKIF_BACKEND_PHY) {
+		unsigned long secure = (blkif->vbd.discard_secure &&
+			(req->u1.flag & BLKIF_OP_DISCARD_FLAG_SECURE)) ?
+			BLKDEV_DISCARD_SECURE : 0;
 		/* just forward the discard request */
 		err = blkdev_issue_discard(bdev,
 				req->u.discard.sector_number,
 				req->u.discard.nr_sectors,
-				GFP_KERNEL, 0);
-	else if (blkif->blk_backend_type == BLKIF_BACKEND_FILE) {
+				GFP_KERNEL, secure);
+	} else if (blkif->blk_backend_type == BLKIF_BACKEND_FILE) {
 		/* punch a hole in the backing file */
 		struct loop_device *lo = bdev->bd_disk->private_data;
 		struct file *file = lo->lo_backing_file;
@@ -452,6 +455,23 @@ static void xen_blk_discard(struct xen_blkif *blkif, struct blkif_request *req)
 	make_response(blkif, req->id, req->operation, status);
 }
 
+static void xen_blk_drain_io(struct xen_blkif *blkif)
+{
+	atomic_set(&blkif->drain, 1);
+	do {
+		wait_for_completion_interruptible_timeout(
+				&blkif->drain_complete, HZ);
+
+		if (!atomic_read(&blkif->drain))
+			break;
+		/* The initial value is one, and one refcnt taken at the
+		 * start of the xen_blkif_schedule thread. */
+		if (atomic_read(&blkif->refcnt) <= 2)
+			break;
+	} while (!kthread_should_stop());
+	atomic_set(&blkif->drain, 0);
+}
+
 /*
  * Completion callback on the bio's. Called as bh->b_end_io()
  */
@@ -463,6 +483,11 @@ static void __end_block_io_op(struct pending_req *pending_req, int error)
 	    (error == -EOPNOTSUPP)) {
 		pr_debug(DRV_PFX "flush diskcache op failed, not supported\n");
 		xen_blkbk_flush_diskcache(XBT_NIL, pending_req->blkif->be, 0);
+		pending_req->status = BLKIF_RSP_EOPNOTSUPP;
+	} else if ((pending_req->operation == BLKIF_OP_WRITE_BARRIER) &&
+		    (error == -EOPNOTSUPP)) {
+		pr_debug(DRV_PFX "write barrier op failed, not supported\n");
+		xen_blkbk_barrier(XBT_NIL, pending_req->blkif->be, 0);
 		pending_req->status = BLKIF_RSP_EOPNOTSUPP;
 	} else if (error) {
 		pr_debug(DRV_PFX "Buffer not up-to-date at end of operation,"
@@ -481,6 +506,10 @@ static void __end_block_io_op(struct pending_req *pending_req, int error)
 			      pending_req->operation, pending_req->status);
 		xen_blkif_put(pending_req->blkif);
 		free_req(pending_req);
+		if (atomic_read(&pending_req->blkif->refcnt) <= 2) {
+			if (atomic_read(&pending_req->blkif->drain))
+				complete(&pending_req->blkif->drain_complete);
+		}
 	}
 }
 
@@ -574,7 +603,6 @@ do_block_io_op(struct xen_blkif *blkif)
 
 	return more_to_do;
 }
-
 /*
  * Transmutation of the 'struct blkif_request' to a proper 'struct bio'
  * and call the 'submit_bio' to pass it to the underlying storage.
@@ -591,6 +619,10 @@ static int dispatch_rw_block_io(struct xen_blkif *blkif,
 	int i, nbio = 0;
 	int operation;
 	struct blk_plug plug;
+	bool drain = false;
+
+	/* Check that the number of segments is sane. */
+	nseg = req->u1.nr_segments;
 
 	switch (req->operation) {
 	case BLKIF_OP_READ:
@@ -601,6 +633,8 @@ static int dispatch_rw_block_io(struct xen_blkif *blkif,
 		blkif->st_wr_req++;
 		operation = WRITE_ODIRECT;
 		break;
+	case BLKIF_OP_WRITE_BARRIER:
+		drain = true;
 	case BLKIF_OP_FLUSH_DISKCACHE:
 		blkif->st_f_req++;
 		operation = WRITE_FLUSH;
@@ -608,16 +642,14 @@ static int dispatch_rw_block_io(struct xen_blkif *blkif,
 	case BLKIF_OP_DISCARD:
 		blkif->st_ds_req++;
 		operation = REQ_DISCARD;
+		nseg = 0; /* The nr_segments and flag share the same space. */
 		break;
-	case BLKIF_OP_WRITE_BARRIER:
 	default:
 		operation = 0; /* make gcc happy */
 		goto fail_response;
 		break;
 	}
 
-	/* Check that the number of segments is sane. */
-	nseg = req->nr_segments;
 	if (unlikely(nseg == 0 && operation != WRITE_FLUSH &&
 				operation != REQ_DISCARD) ||
 	    unlikely(nseg > BLKIF_MAX_SEGMENTS_PER_REQUEST)) {
@@ -668,14 +700,19 @@ static int dispatch_rw_block_io(struct xen_blkif *blkif,
 		}
 	}
 
+	/* Wait on all outstanding I/O's and once that has been completed
+	 * issue the WRITE_FLUSH.
+	 */
+	if (drain)
+		xen_blk_drain_io(pending_req->blkif);
+
 	/*
 	 * If we have failed at this point, we need to undo the M2P override,
 	 * set gnttab_set_unmap_op on all of the grant references and perform
 	 * the hypercall to unmap the grants - that is all done in
 	 * xen_blkbk_unmap.
 	 */
-	if (operation != BLKIF_OP_DISCARD &&
-			xen_blkbk_map(req, pending_req, seg))
+	if (nseg && xen_blkbk_map(req, pending_req, seg))
 		goto fail_flush;
 
 	/*
@@ -743,7 +780,7 @@ static int dispatch_rw_block_io(struct xen_blkif *blkif,
 
 	if (operation == READ)
 		blkif->st_rd_sect += preq.nr_sects;
-	else if (operation == WRITE || operation == WRITE_FLUSH)
+	else if (operation & WRITE)
 		blkif->st_wr_sect += preq.nr_sects;
 
 	return 0;

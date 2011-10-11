@@ -84,6 +84,20 @@ typedef uint64_t blkif_sector_t;
  *     e07154r6-Data_Set_Management_Proposal_for_ATA-ACS2.doc
  * http://www.seagate.com/staticfiles/support/disc/manuals/
  *     Interface%20manuals/100293068c.pdf
+ * The backend can optionally provide three extra XenBus attributes to
+ * further optimize the discard functionality:
+ * 'discard-aligment' - Devices that support discard functionality may
+ * internally allocate space in units that are bigger than the exported
+ * logical block size. The discard-alignment parameter indicates how many bytes
+ * the beginning of the partition is offset from the internal allocation unit's
+ * natural alignment.
+ * 'discard-granularity'  - Devices that support discard functionality may
+ * internally allocate space using units that are bigger than the logical block
+ * size. The discard-granularity parameter indicates the size of the internal
+ * allocation unit in bytes if reported by the device. Otherwise the
+ * discard-granularity will be set to match the device's physical block size.
+ * 'discard-secure' - All copies of the discarded sectors (potentially created
+ * by garbage collection) must also be erased.
  */
 #define BLKIF_OP_DISCARD           5
 
@@ -111,7 +125,11 @@ struct blkif_request_discard {
 
 struct blkif_request {
 	uint8_t        operation;    /* BLKIF_OP_???                         */
-	uint8_t        nr_segments;  /* number of segments                   */
+	union {
+		uint8_t nr_segments; /* number of segments                   */
+		uint8_t	flag;        /* flag for blkif_request_discard       */
+#define BLKIF_OP_DISCARD_FLAG_SECURE	(1<<0) /* ignored if discard-secure=0 */
+	} u1;
 	blkif_vdev_t   handle;       /* only for read/write requests         */
 	uint64_t       id;           /* private guest value, echoed in resp  */
 	union {
