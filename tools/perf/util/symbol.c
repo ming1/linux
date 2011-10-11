@@ -46,6 +46,7 @@ struct symbol_conf symbol_conf = {
 	.exclude_other	  = true,
 	.use_modules	  = true,
 	.try_vmlinux_path = true,
+	.annotate_src	  = true,
 	.symfs            = "",
 };
 
