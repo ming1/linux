@@ -133,6 +133,10 @@ int rtl92c_init_sw_vars(struct ieee80211_hw *hw)
 	rtlpriv->psc.inactiveps = rtlpriv->cfg->mod_params->inactiveps;
 	rtlpriv->psc.swctrl_lps = rtlpriv->cfg->mod_params->swctrl_lps;
 	rtlpriv->psc.fwctrl_lps = rtlpriv->cfg->mod_params->fwctrl_lps;
+	if (!rtlpriv->psc.inactiveps)
+		pr_info("rtl8192ce: Power Save off (module option)\n");
+	if (!rtlpriv->psc.fwctrl_lps)
+		pr_info("rtl8192ce: FW Power Save off (module option)\n");
 	rtlpriv->psc.reg_fwctrl_lps = 3;
 	rtlpriv->psc.reg_max_lps_awakeintvl = 5;
 	/* for ASPM, you can close aspm through
@@ -318,21 +322,21 @@ static struct rtl_hal_cfg rtl92ce_hal_cfg = {
 	.maps[RTL_IMR_ROK] = IMR_ROK,
 	.maps[RTL_IBSS_INT_MASKS] = (IMR_BCNINT | IMR_TBDOK | IMR_TBDER),
 
-	.maps[RTL_RC_CCK_RATE1M] = DESC92C_RATE1M,
-	.maps[RTL_RC_CCK_RATE2M] = DESC92C_RATE2M,
-	.maps[RTL_RC_CCK_RATE5_5M] = DESC92C_RATE5_5M,
-	.maps[RTL_RC_CCK_RATE11M] = DESC92C_RATE11M,
-	.maps[RTL_RC_OFDM_RATE6M] = DESC92C_RATE6M,
-	.maps[RTL_RC_OFDM_RATE9M] = DESC92C_RATE9M,
-	.maps[RTL_RC_OFDM_RATE12M] = DESC92C_RATE12M,
-	.maps[RTL_RC_OFDM_RATE18M] = DESC92C_RATE18M,
-	.maps[RTL_RC_OFDM_RATE24M] = DESC92C_RATE24M,
-	.maps[RTL_RC_OFDM_RATE36M] = DESC92C_RATE36M,
-	.maps[RTL_RC_OFDM_RATE48M] = DESC92C_RATE48M,
-	.maps[RTL_RC_OFDM_RATE54M] = DESC92C_RATE54M,
+	.maps[RTL_RC_CCK_RATE1M] = DESC92_RATE1M,
+	.maps[RTL_RC_CCK_RATE2M] = DESC92_RATE2M,
+	.maps[RTL_RC_CCK_RATE5_5M] = DESC92_RATE5_5M,
+	.maps[RTL_RC_CCK_RATE11M] = DESC92_RATE11M,
+	.maps[RTL_RC_OFDM_RATE6M] = DESC92_RATE6M,
+	.maps[RTL_RC_OFDM_RATE9M] = DESC92_RATE9M,
+	.maps[RTL_RC_OFDM_RATE12M] = DESC92_RATE12M,
+	.maps[RTL_RC_OFDM_RATE18M] = DESC92_RATE18M,
+	.maps[RTL_RC_OFDM_RATE24M] = DESC92_RATE24M,
+	.maps[RTL_RC_OFDM_RATE36M] = DESC92_RATE36M,
+	.maps[RTL_RC_OFDM_RATE48M] = DESC92_RATE48M,
+	.maps[RTL_RC_OFDM_RATE54M] = DESC92_RATE54M,
 
-	.maps[RTL_RC_HT_RATEMCS7] = DESC92C_RATEMCS7,
-	.maps[RTL_RC_HT_RATEMCS15] = DESC92C_RATEMCS15,
+	.maps[RTL_RC_HT_RATEMCS7] = DESC92_RATEMCS7,
+	.maps[RTL_RC_HT_RATEMCS15] = DESC92_RATEMCS15,
 };
 
 DEFINE_PCI_DEVICE_TABLE(rtl92ce_pci_ids) = {
@@ -356,10 +360,10 @@ module_param_named(swenc, rtl92ce_mod_params.sw_crypto, bool, 0444);
 module_param_named(ips, rtl92ce_mod_params.inactiveps, bool, 0444);
 module_param_named(swlps, rtl92ce_mod_params.swctrl_lps, bool, 0444);
 module_param_named(fwlps, rtl92ce_mod_params.fwctrl_lps, bool, 0444);
-MODULE_PARM_DESC(swenc, "using hardware crypto (default 0 [hardware])\n");
-MODULE_PARM_DESC(ips, "using no link power save (default 1 is open)\n");
-MODULE_PARM_DESC(fwlps, "using linked fw control power save "
-		 "(default 1 is open)\n");
+MODULE_PARM_DESC(swenc, "Set to 1 for software crypto (default 0)\n");
+MODULE_PARM_DESC(ips, "Set to 0 to not use link power save (default 1)\n");
+MODULE_PARM_DESC(swlps, "Set to 1 to use SW control power save (default 0)\n");
+MODULE_PARM_DESC(fwlps, "Set to 1 to use FW control power save (default 1)\n");
 
 static struct pci_driver rtl92ce_driver = {
 	.name = KBUILD_MODNAME,

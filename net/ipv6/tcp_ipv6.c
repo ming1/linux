@@ -1608,7 +1608,7 @@ static int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb)
 		opt_skb = skb_clone(skb, GFP_ATOMIC);
 
 	if (sk->sk_state == TCP_ESTABLISHED) { /* Fast path */
-		sock_rps_save_rxhash(sk, skb->rxhash);
+		sock_rps_save_rxhash(sk, skb);
 		if (tcp_rcv_established(sk, skb, tcp_hdr(skb), skb->len))
 			goto reset;
 		if (opt_skb)
@@ -1630,7 +1630,7 @@ static int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb)
 		 * the new socket..
 		 */
 		if(nsk != sk) {
-			sock_rps_save_rxhash(nsk, skb->rxhash);
+			sock_rps_save_rxhash(nsk, skb);
 			if (tcp_child_process(sk, nsk, skb))
 				goto reset;
 			if (opt_skb)
@@ -1638,7 +1638,7 @@ static int tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb)
 			return 0;
 		}
 	} else
-		sock_rps_save_rxhash(sk, skb->rxhash);
+		sock_rps_save_rxhash(sk, skb);
 
 	if (tcp_rcv_state_process(sk, skb, tcp_hdr(skb), skb->len))
 		goto reset;
@@ -1722,7 +1722,7 @@ static int tcp_v6_rcv(struct sk_buff *skb)
 				    skb->len - th->doff*4);
 	TCP_SKB_CB(skb)->ack_seq = ntohl(th->ack_seq);
 	TCP_SKB_CB(skb)->when = 0;
-	TCP_SKB_CB(skb)->flags = ipv6_get_dsfield(hdr);
+	TCP_SKB_CB(skb)->ip_dsfield = ipv6_get_dsfield(hdr);
 	TCP_SKB_CB(skb)->sacked = 0;
 
 	sk = __inet6_lookup_skb(&tcp_hashinfo, skb, th->source, th->dest);
