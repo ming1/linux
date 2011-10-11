@@ -98,8 +98,7 @@ struct blkfront_info
 	unsigned long shadow_free;
 	unsigned int feature_flush;
 	unsigned int flush_op;
-	unsigned int feature_discard:1;
-	unsigned int feature_secdiscard:1;
+	unsigned int feature_discard;
 	unsigned int discard_granularity;
 	unsigned int discard_alignment;
 	int is_ready;
@@ -306,13 +305,11 @@ static int blkif_queue_request(struct request *req)
 		ring_req->operation = info->flush_op;
 	}
 
-	if (unlikely(req->cmd_flags & (REQ_DISCARD | REQ_SECURE))) {
+	if (unlikely(req->cmd_flags & REQ_DISCARD)) {
 		/* id, sector_number and handle are set above. */
 		ring_req->operation = BLKIF_OP_DISCARD;
 		ring_req->nr_segments = 0;
 		ring_req->u.discard.nr_sectors = blk_rq_sectors(req);
-		if ((req->cmd_flags & REQ_SECURE) && info->feature_secdiscard)
-			ring_req->u.discard.flag = BLKIF_OP_DISCARD_FLAG_SECURE;
 	} else {
 		ring_req->nr_segments = blk_rq_map_sg(req->q, req, info->sg);
 		BUG_ON(ring_req->nr_segments > BLKIF_MAX_SEGMENTS_PER_REQUEST);
@@ -427,8 +424,6 @@ static int xlvbd_init_blk_queue(struct gendisk *gd, u16 sector_size)
 		blk_queue_max_discard_sectors(rq, get_capacity(gd));
 		rq->limits.discard_granularity = info->discard_granularity;
 		rq->limits.discard_alignment = info->discard_alignment;
-		if (info->feature_secdiscard)
-			queue_flag_set_unlocked(QUEUE_FLAG_SECDISCARD, rq);
 	}
 
 	/* Hard sector size and max sectors impersonate the equiv. hardware. */
@@ -754,9 +749,7 @@ static irqreturn_t blkif_interrupt(int irq, void *dev_id)
 					   info->gd->disk_name);
 				error = -EOPNOTSUPP;
 				info->feature_discard = 0;
-				info->feature_secdiscard = 0;
 				queue_flag_clear(QUEUE_FLAG_DISCARD, rq);
-				queue_flag_clear(QUEUE_FLAG_SECDISCARD, rq);
 			}
 			__blk_end_request_all(req, error);
 			break;
@@ -1142,13 +1135,11 @@ static void blkfront_setup_discard(struct blkfront_info *info)
 	char *type;
 	unsigned int discard_granularity;
 	unsigned int discard_alignment;
-	unsigned int discard_secure;
 
 	type = xenbus_read(XBT_NIL, info->xbdev->otherend, "type", NULL);
 	if (IS_ERR(type))
 		return;
 
-	info->feature_secdiscard = 0;
 	if (strncmp(type, "phy", 3) == 0) {
 		err = xenbus_gather(XBT_NIL, info->xbdev->otherend,
 			"discard-granularity", "%u", &discard_granularity,
@@ -1159,12 +1150,6 @@ static void blkfront_setup_discard(struct blkfront_info *info)
 			info->discard_granularity = discard_granularity;
 			info->discard_alignment = discard_alignment;
 		}
-		err = xenbus_gather(XBT_NIL, info->xbdev->otherend,
-			    "discard-secure", "%d", &discard_secure,
-			    NULL);
-		if (!err)
-			info->feature_secdiscard = discard_secure;
-
 	} else if (strncmp(type, "file", 4) == 0)
 		info->feature_discard = 1;
 
@@ -1465,8 +1450,6 @@ static struct xenbus_driver blkfront = {
 
 static int __init xlblk_init(void)
 {
-	int ret;
-
 	if (!xen_domain())
 		return -ENODEV;
 
@@ -1476,13 +1459,7 @@ static int __init xlblk_init(void)
 		return -ENODEV;
 	}
 
-	ret = xenbus_register_frontend(&blkfront);
-	if (ret) {
-		unregister_blkdev(XENVBD_MAJOR, DEV_NAME);
-		return ret;
-	}
-
-	return 0;
+	return xenbus_register_frontend(&blkfront);
 }
 module_init(xlblk_init);
 

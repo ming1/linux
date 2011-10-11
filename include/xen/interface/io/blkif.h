@@ -84,10 +84,6 @@ typedef uint64_t blkif_sector_t;
  *     e07154r6-Data_Set_Management_Proposal_for_ATA-ACS2.doc
  * http://www.seagate.com/staticfiles/support/disc/manuals/
  *     Interface%20manuals/100293068c.pdf
- * We also provide three extra XenBus options to the discard operation:
- * 'discard-granularity' - Max amount of sectors that can be discarded.
- * 'discard-alignment' - 4K, 128K, etc aligment on sectors to erased.
- * 'discard-secure' - whether the discard can also securely erase data.
  */
 #define BLKIF_OP_DISCARD           5
 
@@ -111,8 +107,6 @@ struct blkif_request_rw {
 struct blkif_request_discard {
 	blkif_sector_t sector_number;
 	uint64_t nr_sectors;
-#define BLKIF_OP_DISCARD_FLAG_SECURE	(1<<1) /* ignored if discard-secure=0 */
-	uint32_t flag;
 };
 
 struct blkif_request {
