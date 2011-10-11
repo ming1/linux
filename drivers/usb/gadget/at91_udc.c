@@ -9,16 +9,6 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the
- * Free Software Foundation, Inc., 59 Temple Place - Suite 330,
- * Boston, MA  02111-1307, USA.
  */
 
 #undef	VERBOSE_DEBUG
@@ -487,7 +477,7 @@ static int at91_ep_enable(struct usb_ep *_ep,
 			|| !desc || ep->desc
 			|| _ep->name == ep0name
 			|| desc->bDescriptorType != USB_DT_ENDPOINT
-			|| (maxpacket = le16_to_cpu(desc->wMaxPacketSize)) == 0
+			|| (maxpacket = usb_endpoint_maxp(desc)) == 0
 			|| maxpacket > ep->maxpacket) {
 		DBG("bad ep or descriptor\n");
 		return -EINVAL;
@@ -1820,7 +1810,7 @@ static int __init at91udc_probe(struct platform_device *pdev)
 	/* request UDC and maybe VBUS irqs */
 	udc->udp_irq = platform_get_irq(pdev, 0);
 	retval = request_irq(udc->udp_irq, at91_udc_irq,
-			IRQF_DISABLED, driver_name, udc);
+			0, driver_name, udc);
 	if (retval < 0) {
 		DBG("request irq %d failed\n", udc->udp_irq);
 		goto fail1;
@@ -1848,7 +1838,7 @@ static int __init at91udc_probe(struct platform_device *pdev)
 				  jiffies + VBUS_POLL_TIMEOUT);
 		} else {
 			if (request_irq(udc->board.vbus_pin, at91_vbus_irq,
-					IRQF_DISABLED, driver_name, udc)) {
+					0, driver_name, udc)) {
 				DBG("request vbus irq %d failed\n",
 				    udc->board.vbus_pin);
 				retval = -EBUSY;

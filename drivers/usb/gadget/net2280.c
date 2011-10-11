@@ -33,15 +33,6 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
 #undef	DEBUG		/* messages on error and most fault paths */
@@ -169,7 +160,7 @@ net2280_enable (struct usb_ep *_ep, const struct usb_endpoint_descriptor *desc)
 		return -EDOM;
 
 	/* sanity check ep-e/ep-f since their fifos are small */
-	max = le16_to_cpu (desc->wMaxPacketSize) & 0x1fff;
+	max = usb_endpoint_maxp (desc) & 0x1fff;
 	if (ep->num > 4 && max > 64)
 		return -ERANGE;
 
@@ -1640,7 +1631,7 @@ show_queues (struct device *_dev, struct device_attribute *attr, char *buf)
 				 default:
 					val = "iso"; break;
 				 }; val; }),
-				le16_to_cpu (d->wMaxPacketSize) & 0x1fff,
+				usb_endpoint_maxp (d) & 0x1fff,
 				ep->dma ? "dma" : "pio", ep->fifo_size
 				);
 		} else /* ep0 should only have one transfer queued */
@@ -2266,9 +2257,7 @@ static void handle_stat0_irqs (struct net2280 *dev, u32 stat)
 			else
 				dev->gadget.speed = USB_SPEED_FULL;
 			net2280_led_speed (dev, dev->gadget.speed);
-			DEBUG (dev, "%s speed\n",
-				(dev->gadget.speed == USB_SPEED_HIGH)
-					? "high" : "full");
+			DEBUG(dev, "%s\n", usb_speed_string(dev->gadget.speed));
 		}
 
 		ep = &dev->ep [0];
