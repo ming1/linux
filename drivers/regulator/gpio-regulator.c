@@ -31,6 +31,7 @@
 #include <linux/gpio.h>
 #include <linux/delay.h>
 #include <linux/slab.h>
+#include <linux/module.h>
 
 struct gpio_regulator_data {
 	struct regulator_desc desc;
