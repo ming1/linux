@@ -50,6 +50,8 @@ static struct {
 
 static int kvp_send_key(int index);
 
+#define TIMEOUT_FIRED 1
+
 static void kvp_respond_to_host(char *key, char *value, int error);
 static void kvp_work_func(struct work_struct *dummy);
 static void kvp_register(void);
@@ -58,7 +60,6 @@ static DECLARE_DELAYED_WORK(kvp_work, kvp_work_func);
 
 static struct cb_id kvp_id = { CN_KVP_IDX, CN_KVP_VAL };
 static const char kvp_name[] = "kvp_kernel_module";
-static int timeout_fired;
 static u8 *recv_buffer;
 /*
  * Register the kernel component with the user-level daemon.
@@ -90,8 +91,7 @@ kvp_work_func(struct work_struct *dummy)
 	 * If the timer fires, the user-mode component has not responded;
 	 * process the pending transaction.
 	 */
-	kvp_respond_to_host("Unknown key", "Guest timed out", timeout_fired);
-	timeout_fired = 1;
+	kvp_respond_to_host("Unknown key", "Guest timed out", TIMEOUT_FIRED);
 }
 
 /*
@@ -177,6 +177,15 @@ kvp_respond_to_host(char *key, char *value, int error)
 	channel = kvp_transaction.recv_channel;
 	req_id = kvp_transaction.recv_req_id;
 
+	kvp_transaction.active = false;
+
+	if (channel->onchannel_callback == NULL)
+		/*
+		 * We have raced with util driver being unloaded;
+		 * silently return.
+		 */
+		return;
+
 	icmsghdrp = (struct icmsg_hdr *)
 			&recv_buffer[sizeof(struct vmbuspipe_hdr)];
 	kvp_msg = (struct hv_kvp_msg *)
@@ -217,7 +226,6 @@ response_done:
 	vmbus_sendpacket(channel, recv_buffer, buf_len, req_id,
 				VM_PKT_DATA_INBAND, 0);
 
-	kvp_transaction.active = false;
 }
 
 /*
@@ -241,10 +249,6 @@ void hv_kvp_onchannelcallback(void *context)
 
 	struct icmsg_hdr *icmsghdrp;
 	struct icmsg_negotiate *negop = NULL;
-
-
-	if (kvp_transaction.active)
-		return;
 
 
 	vmbus_recvpacket(channel, recv_buffer, PAGE_SIZE, &recvlen, &requestid);
@@ -312,16 +316,14 @@ callback_done:
 }
 
 int
-hv_kvp_init(void)
+hv_kvp_init(struct hv_util_service *srv)
 {
 	int err;
 
 	err = cn_add_callback(&kvp_id, kvp_name, kvp_cn_callback);
 	if (err)
 		return err;
-	recv_buffer = kmalloc(PAGE_SIZE, GFP_KERNEL);
-	if (!recv_buffer)
-		return -ENOMEM;
+	recv_buffer = srv->recv_buffer;
 
 	return 0;
 }
@@ -330,5 +332,4 @@ void hv_kvp_deinit(void)
 {
 	cn_del_callback(&kvp_id);
 	cancel_delayed_work_sync(&kvp_work);
-	kfree(recv_buffer);
 }

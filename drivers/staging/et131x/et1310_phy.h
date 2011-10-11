@@ -6,6 +6,8 @@
  * All rights reserved.
  *   http://www.agere.com
  *
+ * Copyright (c) 2011 Mark Einon <mark.einon@gmail.com>
+ *
  *------------------------------------------------------------------------------
  *
  * et1310_phy.h - Defines, structs, enums, prototypes, etc. pertaining to the
@@ -61,198 +63,32 @@
 
 #include "et1310_address_map.h"
 
-/* MI Register Addresses */
-#define MI_CONTROL_REG                      0
-#define MI_STATUS_REG                       1
-#define MI_PHY_IDENTIFIER_1_REG             2
-#define MI_PHY_IDENTIFIER_2_REG             3
-#define MI_AUTONEG_ADVERTISEMENT_REG        4
-#define MI_AUTONEG_LINK_PARTNER_ABILITY_REG 5
-#define MI_AUTONEG_EXPANSION_REG            6
-#define MI_AUTONEG_NEXT_PAGE_TRANSMIT_REG   7
-#define MI_LINK_PARTNER_NEXT_PAGE_REG       8
-#define MI_1000BASET_CONTROL_REG            9
-#define MI_1000BASET_STATUS_REG             10
-#define MI_RESERVED11_REG                   11
-#define MI_RESERVED12_REG                   12
-#define MI_RESERVED13_REG                   13
-#define MI_RESERVED14_REG                   14
-#define MI_EXTENDED_STATUS_REG              15
-
-/* VMI Register Addresses */
-#define VMI_RESERVED16_REG                  16
-#define VMI_RESERVED17_REG                  17
-#define VMI_RESERVED18_REG                  18
-#define VMI_LOOPBACK_CONTROL_REG            19
-#define VMI_RESERVED20_REG                  20
-#define VMI_MI_CONTROL_REG                  21
-#define VMI_PHY_CONFIGURATION_REG           22
-#define VMI_PHY_CONTROL_REG                 23
-#define VMI_INTERRUPT_MASK_REG              24
-#define VMI_INTERRUPT_STATUS_REG            25
-#define VMI_PHY_STATUS_REG                  26
-#define VMI_LED_CONTROL_1_REG               27
-#define VMI_LED_CONTROL_2_REG               28
-#define VMI_RESERVED29_REG                  29
-#define VMI_RESERVED30_REG                  30
-#define VMI_RESERVED31_REG                  31
-
-/* PHY Register Mapping(MI) Management Interface Regs */
-struct mi_regs {
-	u8 bmcr;	/* Basic mode control reg(Reg 0x00) */
-	u8 bmsr;	/* Basic mode status reg(Reg 0x01) */
-	u8 idr1;	/* Phy identifier reg 1(Reg 0x02) */
-	u8 idr2;	/* Phy identifier reg 2(Reg 0x03) */
-	u8 anar;	/* Auto-Negotiation advertisement(Reg 0x04) */
-	u8 anlpar;	/* Auto-Negotiation link Partner Ability(Reg 0x05) */
-	u8 aner;	/* Auto-Negotiation expansion reg(Reg 0x06) */
-	u8 annptr;	/* Auto-Negotiation next page transmit reg(Reg 0x07) */
-	u8 lpnpr;	/* link partner next page reg(Reg 0x08) */
-	u8 gcr;		/* Gigabit basic mode control reg(Reg 0x09) */
-	u8 gsr;		/* Gigabit basic mode status reg(Reg 0x0A) */
-	u8 mi_res1[4];	/* Future use by MI working group(Reg 0x0B - 0x0E) */
-	u8 esr;		/* Extended status reg(Reg 0x0F) */
-	u8 mi_res2[3];	/* Future use by MI working group(Reg 0x10 - 0x12) */
-	u8 loop_ctl;	/* Loopback Control Reg(Reg 0x13) */
-	u8 mi_res3;	/* Future use by MI working group(Reg 0x14) */
-	u8 mcr;		/* MI Control Reg(Reg 0x15) */
-	u8 pcr;		/* Configuration Reg(Reg 0x16) */
-	u8 phy_ctl;	/* PHY Control Reg(Reg 0x17) */
-	u8 imr;		/* Interrupt Mask Reg(Reg 0x18) */
-	u8 isr;		/* Interrupt Status Reg(Reg 0x19) */
-	u8 psr;		/* PHY Status Reg(Reg 0x1A) */
-	u8 lcr1;		/* LED Control 1 Reg(Reg 0x1B) */
-	u8 lcr2;		/* LED Control 2 Reg(Reg 0x1C) */
-	u8 mi_res4[3];	/* Future use by MI working group(Reg 0x1D - 0x1F) */
-};
-
 /*
- * MI Register 0: Basic mode control register
- *	15:	reset
- *	14:	loopback
- *	13:	speed_sel
- *	12:	enable_autoneg
- *	11:	power_down
- *	10:	isolate
- *	9:	restart_autoneg
- *	8:	duplex_mode
- *	7:	col_test
- *	6:	speed_1000_sel
- *	5-0:	res1
+ * Defines for generic MII registers 0x00 -> 0x0F can be found in
+ * include/linux/mii.h
  */
 
-/*
- * MI Register 1:  Basic mode status register
- *	15:	link_100T4
- *	14:	link_100fdx
- *	13:	link_100hdx
- *	12:	link_10fdx
- *	11:	link_10hdx
- *	10:	link_100T2fdx
- *	9:	link_100T2hdx
- *	8:	extend_status
- *	7:	res1
- *	6:	preamble_supress
- *	5:	auto_neg_complete
- *	4:	remote_fault
- *	3:	auto_neg_able
- *	2:	link_status
- *	1:	jabber_detect
- *	0:	ext_cap
- */
+/* some defines for modem registers that seem to be 'reserved' */
+#define PHY_INDEX_REG              0x10
+#define PHY_DATA_REG               0x11
+#define PHY_MPHY_CONTROL_REG       0x12
 
-#define MI_BMSR_LINK_STATUS	  0x04
-#define MI_BMSR_AUTO_NEG_COMPLETE 0x20
+/* defines for specified registers */
+#define PHY_LOOPBACK_CONTROL       0x13	/* TRU_VMI_LOOPBACK_CONTROL_1_REG 19 */
+					/* TRU_VMI_LOOPBACK_CONTROL_2_REG 20 */
+#define PHY_REGISTER_MGMT_CONTROL  0x15	/* TRU_VMI_MI_SEQ_CONTROL_REG     21 */
+#define PHY_CONFIG                 0x16	/* TRU_VMI_CONFIGURATION_REG      22 */
+#define PHY_PHY_CONTROL            0x17	/* TRU_VMI_PHY_CONTROL_REG        23 */
+#define PHY_INTERRUPT_MASK         0x18	/* TRU_VMI_INTERRUPT_MASK_REG     24 */
+#define PHY_INTERRUPT_STATUS       0x19	/* TRU_VMI_INTERRUPT_STATUS_REG   25 */
+#define PHY_PHY_STATUS             0x1A	/* TRU_VMI_PHY_STATUS_REG         26 */
+#define PHY_LED_1                  0x1B	/* TRU_VMI_LED_CONTROL_1_REG      27 */
+#define PHY_LED_2                  0x1C	/* TRU_VMI_LED_CONTROL_2_REG      28 */
+					/* TRU_VMI_LINK_CONTROL_REG       29 */
+					/* TRU_VMI_TIMING_CONTROL_REG        */
 
-/*
- * MI Register 4: Auto-negotiation advertisement register
- *
- *	15:	np_indication
- *	14:	res2
- *	13:	remote_fault
- *	12:	res1
- *	11:	cap_asmpause
- *	10:	cap_pause
- *	9:	cap_100T4
- *	8:	cap_100fdx
- *	7:	cap_100hdx
- *	6:	cap_10fdx
- *	5:	cap_10hdx
- *	4-0:	selector
- */
-
-/* MI Register 5: Auto-negotiation link partner advertisement register
- *	15:	np_indication
- *	14:	acknowledge
- *	13:	remote_fault
- *	12:	res1
- *	11:	cap_asmpause
- *	10:	cap_pause
- *	9:	cap_100T4
- *	8:	cap_100fdx
- *	7:	cap_100hdx
- *	6:	cap_10fdx
- *	5:	cap_10hdx
- *	4-0:	selector
- */
-
-/* MI Register 6: Auto-negotiation expansion register
- *	15-5:	reserved
- *	4:	pdf
- *	3:	lp_np_able
- *	2:	np_able
- *	1:	page_rx
- *	0:	lp_an_able
- */
-
-/* MI Register 7: Auto-negotiation next page transmit reg(0x07)
- *	15:	np
- *	14:	reserved
- *	13:	msg_page
- *	12:	ack2
- *	11:	toggle
- *	10-0	msg
- */
-
-/* MI Register 8: Link Partner Next Page Reg(0x08)
- *	15:	np
- *	14:	ack
- *	13:	msg_page
- *	12:	ack2
- *	11:	toggle
- *	10-0:	msg
- */
-
-/* MI Register 9: 1000BaseT Control Reg(0x09)
- *	15-13:	test_mode
- *	12:	ms_config_en
- *	11:	ms_value
- *	10:	port_type
- *	9:	link_1000fdx
- *	8:	link_1000hdx
- *	7-0:	reserved
- */
-
-/* MI Register 10: 1000BaseT Status Reg(0x0A)
- *	15:	ms_config_fault
- *	14:	ms_resolve
- *	13:	local_rx_status
- *	12:	remote_rx_status
- *	11:	link_1000fdx
- *	10:	link_1000hdx
- *	9-8:	reserved
- *	7-0:	idle_err_cnt
- */
-
-/* MI Register 11 - 14: Reserved Regs(0x0B - 0x0E) */
-
-/* MI Register 15: Extended status Reg(0x0F)
- *	15:	link_1000Xfdx
- *	14:	link_1000Xhdx
- *	13:	link_1000fdx
- *	12:	link_1000hdx
- *	11-0:	reserved
- */
+/* MI Register 10: Gigabit basic mode status reg(Reg 0x0A) */
+#define ET_1000BT_MSTR_SLV 0x4000
 
 /* MI Register 16 - 18: Reserved Reg(0x10-0x12) */
 
@@ -292,6 +128,13 @@ struct mi_regs {
  *	2-0:	mac_if_mode
  */
 
+#define ET_PHY_CONFIG_TX_FIFO_DEPTH	0x3000
+
+#define ET_PHY_CONFIG_FIFO_DEPTH_8	0x0000
+#define ET_PHY_CONFIG_FIFO_DEPTH_16	0x1000
+#define ET_PHY_CONFIG_FIFO_DEPTH_32	0x2000
+#define ET_PHY_CONFIG_FIFO_DEPTH_64	0x3000
+
 /* MI Register 23: PHY CONTROL Reg(0x17)
  *	15:	reserved
  *	14:	tdr_en
@@ -320,6 +163,9 @@ struct mi_regs {
  *	0:	int_en
  */
 
+#define ET_PHY_INT_MASK_AUTONEGSTAT	0x0100
+#define ET_PHY_INT_MASK_LINKSTAT	0x0004
+#define ET_PHY_INT_MASK_ENABLE		0x0001
 
 /* MI Register 25: Interrupt Status Reg(0x19)
  *	15-10:	reserved
@@ -351,6 +197,12 @@ struct mi_regs {
  *	1:	pause_en
  *	0:	asymmetric_dir
  */
+#define ET_PHY_AUTONEG_STATUS	0x1000
+#define ET_PHY_POLARITY_STATUS	0x0400
+#define ET_PHY_SPEED_STATUS	0x0300
+#define ET_PHY_DUPLEX_STATUS	0x0080
+#define ET_PHY_LSTATUS		0x0040
+#define ET_PHY_AUTONEG_ENABLE	0x0020
 
 /* MI Register 27: LED Control Reg 1(0x1B)
  *	15-14:	reserved
@@ -369,11 +221,35 @@ struct mi_regs {
  *	7-4:	led_100BaseTX
  *	3-0:	led_1000BaseT
  */
+#define ET_LED2_LED_LINK	0xF000
+#define ET_LED2_LED_TXRX	0x0F00
+#define ET_LED2_LED_100TX	0x00F0
+#define ET_LED2_LED_1000T	0x000F
+
+/* defines for LED control reg 2 values */
+#define LED_VAL_1000BT			0x0
+#define LED_VAL_100BTX			0x1
+#define LED_VAL_10BT			0x2
+#define LED_VAL_1000BT_100BTX		0x3 /* 1000BT on, 100BTX blink */
+#define LED_VAL_LINKON			0x4
+#define LED_VAL_TX			0x5
+#define LED_VAL_RX			0x6
+#define LED_VAL_TXRX			0x7 /* TX or RX */
+#define LED_VAL_DUPLEXFULL		0x8
+#define LED_VAL_COLLISION		0x9
+#define LED_VAL_LINKON_ACTIVE		0xA /* Link on, activity blink */
+#define LED_VAL_LINKON_RECV		0xB /* Link on, receive blink */
+#define LED_VAL_DUPLEXFULL_COLLISION	0xC /* Duplex on, collision blink */
+#define LED_VAL_BLINK			0xD
+#define LED_VAL_ON			0xE
+#define LED_VAL_OFF			0xF
+
+#define LED_LINK_SHIFT			12
+#define LED_TXRX_SHIFT			8
+#define LED_100TX_SHIFT			4
 
 /* MI Register 29 - 31: Reserved Reg(0x1D - 0x1E) */
 
-
-/* Prototypes for ET1310_phy.c */
 /* Defines for PHY access routines */
 
 /* Define bit operation flags */
@@ -387,15 +263,6 @@ struct mi_regs {
 #define TRUEPHY_WRITE                   1
 #define TRUEPHY_MASK                    2
 #endif
-
-/* Define speeds */
-#define TRUEPHY_SPEED_10MBPS            0
-#define TRUEPHY_SPEED_100MBPS           1
-#define TRUEPHY_SPEED_1000MBPS          2
-
-/* Define duplex modes */
-#define TRUEPHY_DUPLEX_HALF             0
-#define TRUEPHY_DUPLEX_FULL             1
 
 /* Define master/slave configuration values */
 #define TRUEPHY_CFG_SLAVE               0
@@ -421,38 +288,5 @@ struct mi_regs {
 #define TRUEPHY_ADV_DUPLEX_HALF         0x02
 #define TRUEPHY_ADV_DUPLEX_BOTH     \
 	(TRUEPHY_ADV_DUPLEX_FULL | TRUEPHY_ADV_DUPLEX_HALF)
-
-#define PHY_CONTROL                0x00	/* #define TRU_MI_CONTROL_REGISTER                 0 */
-#define PHY_STATUS                 0x01	/* #define TRU_MI_STATUS_REGISTER                  1 */
-#define PHY_ID_1                   0x02	/* #define TRU_MI_PHY_IDENTIFIER_1_REGISTER        2 */
-#define PHY_ID_2                   0x03	/* #define TRU_MI_PHY_IDENTIFIER_2_REGISTER        3 */
-#define PHY_AUTO_ADVERTISEMENT     0x04	/* #define TRU_MI_ADVERTISEMENT_REGISTER           4 */
-#define PHY_AUTO_LINK_PARTNER      0x05	/* #define TRU_MI_LINK_PARTNER_ABILITY_REGISTER    5 */
-#define PHY_AUTO_EXPANSION         0x06	/* #define TRU_MI_EXPANSION_REGISTER               6 */
-#define PHY_AUTO_NEXT_PAGE_TX      0x07	/* #define TRU_MI_NEXT_PAGE_TRANSMIT_REGISTER      7 */
-#define PHY_LINK_PARTNER_NEXT_PAGE 0x08	/* #define TRU_MI_LINK_PARTNER_NEXT_PAGE_REGISTER  8 */
-#define PHY_1000_CONTROL           0x09	/* #define TRU_MI_1000BASET_CONTROL_REGISTER       9 */
-#define PHY_1000_STATUS            0x0A	/* #define TRU_MI_1000BASET_STATUS_REGISTER        10 */
-
-#define PHY_EXTENDED_STATUS        0x0F	/* #define TRU_MI_EXTENDED_STATUS_REGISTER         15 */
-
-/* some defines for modem registers that seem to be 'reserved' */
-#define PHY_INDEX_REG              0x10
-#define PHY_DATA_REG               0x11
-
-#define PHY_MPHY_CONTROL_REG       0x12	/* #define TRU_VMI_MPHY_CONTROL_REGISTER           18 */
-
-#define PHY_LOOPBACK_CONTROL       0x13	/* #define TRU_VMI_LOOPBACK_CONTROL_1_REGISTER     19 */
-					/* #define TRU_VMI_LOOPBACK_CONTROL_2_REGISTER     20 */
-#define PHY_REGISTER_MGMT_CONTROL  0x15	/* #define TRU_VMI_MI_SEQ_CONTROL_REGISTER         21 */
-#define PHY_CONFIG                 0x16	/* #define TRU_VMI_CONFIGURATION_REGISTER          22 */
-#define PHY_PHY_CONTROL            0x17	/* #define TRU_VMI_PHY_CONTROL_REGISTER            23 */
-#define PHY_INTERRUPT_MASK         0x18	/* #define TRU_VMI_INTERRUPT_MASK_REGISTER         24 */
-#define PHY_INTERRUPT_STATUS       0x19	/* #define TRU_VMI_INTERRUPT_STATUS_REGISTER       25 */
-#define PHY_PHY_STATUS             0x1A	/* #define TRU_VMI_PHY_STATUS_REGISTER             26 */
-#define PHY_LED_1                  0x1B	/* #define TRU_VMI_LED_CONTROL_1_REGISTER          27 */
-#define PHY_LED_2                  0x1C	/* #define TRU_VMI_LED_CONTROL_2_REGISTER          28 */
-					/* #define TRU_VMI_LINK_CONTROL_REGISTER           29 */
-					/* #define TRU_VMI_TIMING_CONTROL_REGISTER */
 
 #endif /* _ET1310_PHY_H_ */
