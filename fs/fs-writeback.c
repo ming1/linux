@@ -626,7 +626,7 @@ static long writeback_sb_inodes(struct super_block *sb,
 			 * writeback is not making progress due to locked
 			 * buffers.  Skip this inode for now.
 			 */
-			redirty_tail(inode, wb);
+			requeue_io_wait(inode, wb);
 		}
 		spin_unlock(&inode->i_lock);
 		spin_unlock(&wb->list_lock);
