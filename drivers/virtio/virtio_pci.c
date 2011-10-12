@@ -642,9 +642,13 @@ static int __devinit virtio_pci_probe(struct pci_dev *pci_dev,
 	if (err)
 		goto out_enable_device;
 
-	vp_dev->ioaddr = pci_iomap(pci_dev, 0, 0);
-	if (vp_dev->ioaddr == NULL)
-		goto out_req_regions;
+	vp_dev->ioaddr = pci_iomap(pci_dev, 2, 0);
+	if (vp_dev->ioaddr == NULL) {
+		printk(KERN_INFO "virtio_pci: no memory BAR, falling back to IO\n");
+		vp_dev->ioaddr = pci_iomap(pci_dev, 0, 0);
+		if (vp_dev->ioaddr == NULL)
+			goto out_req_regions;
+	}
 
 	pci_set_drvdata(pci_dev, vp_dev);
 	pci_set_master(pci_dev);
