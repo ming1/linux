@@ -663,7 +663,7 @@ static long __writeback_inodes_wb(struct bdi_writeback *wb,
 			 * s_umount being grabbed by someone else. Don't use
 			 * requeue_io() to avoid busy retrying the inode/sb.
 			 */
-			redirty_tail(inode, wb);
+			requeue_io_wait(inode, wb);
 			continue;
 		}
 		wrote += writeback_sb_inodes(sb, wb, work);
