@@ -114,8 +114,6 @@ static struct xen_blkif *xen_blkif_alloc(domid_t domid)
 	spin_lock_init(&blkif->blk_ring_lock);
 	atomic_set(&blkif->refcnt, 1);
 	init_waitqueue_head(&blkif->wq);
-	init_completion(&blkif->drain_complete);
-	atomic_set(&blkif->drain, 0);
 	blkif->st_print = jiffies;
 	init_waitqueue_head(&blkif->waiting_to_free);
 
@@ -378,9 +376,6 @@ static int xen_vbd_create(struct xen_blkif *blkif, blkif_vdev_t handle,
 	if (q && q->flush_flags)
 		vbd->flush_support = true;
 
-	if (q && blk_queue_secdiscard(q))
-		vbd->discard_secure = true;
-
 	DPRINTK("Successful creation of handle=%04x (dom=%u)\n",
 		handle, blkif->domid);
 	return 0;
@@ -463,15 +458,6 @@ int xen_blkbk_discard(struct xenbus_transaction xbt, struct backend_info *be)
 				state = 1;
 				blkif->blk_backend_type = BLKIF_BACKEND_PHY;
 			}
-			/* Optional. */
-			err = xenbus_printf(xbt, dev->nodename,
-				"discard-secure", "%d",
-				blkif->vbd.discard_secure);
-			if (err) {
-				xenbus_dev_fatal(dev, err,
-					"writting discard-secure");
-				goto kfree;
-			}
 		}
 	} else {
 		err = PTR_ERR(type);
@@ -486,19 +472,6 @@ int xen_blkbk_discard(struct xenbus_transaction xbt, struct backend_info *be)
 kfree:
 	kfree(type);
 out:
-	return err;
-}
-int xen_blkbk_barrier(struct xenbus_transaction xbt,
-		      struct backend_info *be, int state)
-{
-	struct xenbus_device *dev = be->dev;
-	int err;
-
-	err = xenbus_printf(xbt, dev->nodename, "feature-barrier",
-			    "%d", state);
-	if (err)
-		xenbus_dev_fatal(dev, err, "writing feature-barrier");
-
 	return err;
 }
 
@@ -734,9 +707,6 @@ again:
 		goto abort;
 
 	err = xen_blkbk_discard(xbt, be);
-
-	/* If we can't advertise it is OK. */
-	err = xen_blkbk_barrier(xbt, be, be->blkif->vbd.flush_support);
 
 	err = xenbus_printf(xbt, dev->nodename, "sectors", "%llu",
 			    (unsigned long long)vbd_sz(&be->blkif->vbd));
