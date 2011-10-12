@@ -486,7 +486,7 @@ writeback_single_inode(struct inode *inode, struct bdi_writeback *wb,
 				 * retrying writeback of the dirty page/inode
 				 * that cannot be performed immediately.
 				 */
-				redirty_tail(inode, wb);
+				requeue_io_wait(inode, wb);
 			}
 		} else if (inode->i_state & I_DIRTY) {
 			/*
