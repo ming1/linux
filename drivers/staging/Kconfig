@@ -42,7 +42,7 @@ source "drivers/staging/wlan-ng/Kconfig"
 
 source "drivers/staging/echo/Kconfig"
 
-source "drivers/staging/brcm80211/Kconfig"
+
 
 source "drivers/staging/comedi/Kconfig"
 
