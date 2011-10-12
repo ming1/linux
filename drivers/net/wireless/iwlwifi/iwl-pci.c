@@ -62,6 +62,7 @@
  *****************************************************************************/
 #include <linux/pci.h>
 #include <linux/pci-aspm.h>
+#include <linux/module.h>
 
 #include "iwl-bus.h"
 #include "iwl-io.h"

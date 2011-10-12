@@ -26,6 +26,8 @@
  * Larry Finger <Larry.Finger@lwfinger.net>
  *****************************************************************************/
 
+#include <linux/moduleparam.h>
+
 #include "wifi.h"
 
 void rtl_dbgp_flag_init(struct ieee80211_hw *hw)

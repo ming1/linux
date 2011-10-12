@@ -4,7 +4,7 @@
 
 #include <linux/init.h>
 #include <linux/kernel.h>
-#include <linux/moduleparam.h>
+#include <linux/module.h>
 #include <acpi/acpi_drivers.h>
 
 #define _COMPONENT		ACPI_SYSTEM_COMPONENT
