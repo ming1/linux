@@ -45,6 +45,8 @@
 #define AR9300_DEVID_PCIE	0x0030
 #define AR9300_DEVID_AR9340	0x0031
 #define AR9300_DEVID_AR9485_PCIE 0x0032
+#define AR9300_DEVID_AR9580	0x0033
+#define AR9300_DEVID_AR9480	0x0034
 #define AR9300_DEVID_AR9330	0x0035
 
 #define AR5416_AR9100_DEVID	0x000b
@@ -91,6 +93,12 @@
 	do {								\
 		if ((_ah)->reg_ops.write_flush)		\
 			(_ah)->reg_ops.write_flush((_ah));	\
+	} while (0)
+
+#define PR_EEP(_s, _val)						\
+	do {								\
+		len += snprintf(buf + len, size - len, "%20s : %10d\n",	\
+				_s, (_val));				\
 	} while (0)
 
 #define SM(_v, _f)  (((_v) << _f##_S) & _f)
@@ -438,7 +446,6 @@ struct ath9k_hw_version {
 	u16 phyRev;
 	u16 analog5GhzRev;
 	u16 analog2GhzRev;
-	u16 subsysid;
 	enum ath_usb_dev usbdev;
 };
 
@@ -577,7 +584,6 @@ struct ath_hw_private_ops {
 	bool (*rfbus_req)(struct ath_hw *ah);
 	void (*rfbus_done)(struct ath_hw *ah);
 	void (*restore_chainmask)(struct ath_hw *ah);
-	void (*set_diversity)(struct ath_hw *ah, bool value);
 	u32 (*compute_pll_control)(struct ath_hw *ah,
 				   struct ath9k_channel *chan);
 	bool (*ani_control)(struct ath_hw *ah, enum ath9k_ani_cmd cmd,
@@ -601,8 +607,7 @@ struct ath_hw_private_ops {
  */
 struct ath_hw_ops {
 	void (*config_pci_powersave)(struct ath_hw *ah,
-				     int restore,
-				     int power_off);
+				     bool power_off);
 	void (*rx_enable)(struct ath_hw *ah);
 	void (*set_desc_link)(void *ds, u32 link);
 	bool (*calibrate)(struct ath_hw *ah,
@@ -610,30 +615,10 @@ struct ath_hw_ops {
 			  u8 rxchainmask,
 			  bool longcal);
 	bool (*get_isr)(struct ath_hw *ah, enum ath9k_int *masked);
-	void (*fill_txdesc)(struct ath_hw *ah, void *ds, u32 seglen,
-			    bool is_firstseg, bool is_is_lastseg,
-			    const void *ds0, dma_addr_t buf_addr,
-			    unsigned int qcu);
+	void (*set_txdesc)(struct ath_hw *ah, void *ds,
+			   struct ath_tx_info *i);
 	int (*proc_txdesc)(struct ath_hw *ah, void *ds,
 			   struct ath_tx_status *ts);
-	void (*set11n_txdesc)(struct ath_hw *ah, void *ds,
-			      u32 pktLen, enum ath9k_pkt_type type,
-			      u32 txPower, u32 keyIx,
-			      enum ath9k_key_type keyType,
-			      u32 flags);
-	void (*set11n_ratescenario)(struct ath_hw *ah, void *ds,
-				void *lastds,
-				u32 durUpdateEn, u32 rtsctsRate,
-				u32 rtsctsDuration,
-				struct ath9k_11n_rate_series series[],
-				u32 nseries, u32 flags);
-	void (*set11n_aggr_first)(struct ath_hw *ah, void *ds,
-				  u32 aggrLen);
-	void (*set11n_aggr_middle)(struct ath_hw *ah, void *ds,
-				   u32 numDelims);
-	void (*set11n_aggr_last)(struct ath_hw *ah, void *ds);
-	void (*clr11n_aggr)(struct ath_hw *ah, void *ds);
-	void (*set_clrdmask)(struct ath_hw *ah, void *ds, bool val);
 	void (*antdiv_comb_conf_get)(struct ath_hw *ah,
 			struct ath_hw_antcomb_conf *antconf);
 	void (*antdiv_comb_conf_set)(struct ath_hw *ah,
@@ -690,6 +675,7 @@ struct ath_hw {
 	enum nl80211_iftype opmode;
 	enum ath9k_power_mode power_mode;
 
+	s8 noise;
 	struct ath9k_hw_cal_data *caldata;
 	struct ath9k_pacal_info pacal_info;
 	struct ar5416Stats stats;
@@ -703,6 +689,7 @@ struct ath_hw {
 	u32 txdesc_interrupt_mask;
 	u32 txeol_interrupt_mask;
 	u32 txurn_interrupt_mask;
+	atomic_t intr_ref_cnt;
 	bool chip_fullsleep;
 	u32 atim_window;
 
@@ -820,11 +807,14 @@ struct ath_hw {
 	struct ar5416IniArray iniModes_9271_1_0_only;
 	struct ar5416IniArray iniCckfirNormal;
 	struct ar5416IniArray iniCckfirJapan2484;
+	struct ar5416IniArray ini_japan2484;
 	struct ar5416IniArray iniCommon_normal_cck_fir_coeff_9271;
 	struct ar5416IniArray iniCommon_japan_2484_cck_fir_coeff_9271;
 	struct ar5416IniArray iniModes_9271_ANI_reg;
 	struct ar5416IniArray iniModes_high_power_tx_gain_9271;
 	struct ar5416IniArray iniModes_normal_power_tx_gain_9271;
+	struct ar5416IniArray ini_radio_post_sys2ant;
+	struct ar5416IniArray ini_BTCOEX_MAX_TXPWR;
 
 	struct ar5416IniArray iniMac[ATH_INI_NUM_SPLIT];
 	struct ar5416IniArray iniBB[ATH_INI_NUM_SPLIT];
@@ -1029,10 +1019,6 @@ extern int modparam_force_new_ani;
 void ath9k_ani_reset(struct ath_hw *ah, bool is_scanning);
 void ath9k_hw_proc_mib_event(struct ath_hw *ah);
 void ath9k_hw_ani_monitor(struct ath_hw *ah, struct ath9k_channel *chan);
-
-#define ATH_PCIE_CAP_LINK_CTRL	0x70
-#define ATH_PCIE_CAP_LINK_L0S	1
-#define ATH_PCIE_CAP_LINK_L1	2
 
 #define ATH9K_CLOCK_RATE_CCK		22
 #define ATH9K_CLOCK_RATE_5GHZ_OFDM	40
