@@ -13,6 +13,7 @@
 #include <linux/i2c.h>
 #include <linux/module.h>
 #include <linux/sigma.h>
+#include <linux/export.h>
 
 /* Return: 0==OK, <0==error, =1 ==no more actions */
 static int

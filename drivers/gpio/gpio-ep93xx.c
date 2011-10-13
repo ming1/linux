@@ -21,6 +21,7 @@
 #include <linux/irq.h>
 #include <linux/slab.h>
 #include <linux/basic_mmio_gpio.h>
+#include <linux/module.h>
 
 #include <mach/hardware.h>
 #include <mach/gpio-ep93xx.h>
