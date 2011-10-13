@@ -34,15 +34,29 @@ struct ore_comp {
 
 struct ore_layout {
 	/* Our way of looking at the data_map */
+	enum pnfs_osd_raid_algorithm4
+		 raid_algorithm;
 	unsigned stripe_unit;
 	unsigned mirrors_p1;
 
 	unsigned group_width;
 	u64	 group_depth;
 	unsigned group_count;
+
+	/* Cached often needed calculations filled in by
+	 * ore_verify_layout
+	 */
+	unsigned long max_io_length;	/* Max length that should be passed to
+					 * ore_get_rw_state
+					 */
+};
+
+struct ore_dev {
+	struct osd_dev *od;
 };
 
 struct ore_components {
+	unsigned	first_dev;		/* First logical device no    */
 	unsigned	numdevs;		/* Num of devices in array    */
 	/* If @single_comp == EC_SINGLE_COMP, @comps points to a single
 	 * component. else there are @numdevs components
@@ -51,7 +65,35 @@ struct ore_components {
 		EC_SINGLE_COMP = 0, EC_MULTPLE_COMPS = 0xffffffff
 	}		single_comp;
 	struct ore_comp	*comps;
-	struct osd_dev	**ods;			/* osd_dev array              */
+
+	/* Array of pointers to ore_dev-* . User will usually have these pointed
+	 * too a bigger struct which contain an "ore_dev ored" member and use
+	 * container_of(oc->ods[i], struct foo_dev, ored) to access the bigger
+	 * structure.
+	 */
+	struct ore_dev	**ods;
+};
+
+/* ore_comp_dev Recievies a logical device index */
+static inline struct osd_dev *ore_comp_dev(
+	const struct ore_components *oc, unsigned i)
+{
+	BUG_ON((i < oc->first_dev) || (oc->first_dev + oc->numdevs <= i));
+	return oc->ods[i - oc->first_dev]->od;
+}
+
+static inline void ore_comp_set_dev(
+	struct ore_components *oc, unsigned i, struct osd_dev *od)
+{
+	oc->ods[i - oc->first_dev]->od = od;
+}
+
+struct ore_striping_info {
+	u64 obj_offset;
+	u64 group_length;
+	u64 M; /* for truncate */
+	unsigned dev;
+	unsigned unit_off;
 };
 
 struct ore_io_state;
@@ -59,12 +101,13 @@ typedef void (*ore_io_done_fn)(struct ore_io_state *ios, void *private);
 
 struct ore_io_state {
 	struct kref		kref;
+	struct ore_striping_info si;
 
 	void			*private;
 	ore_io_done_fn	done;
 
 	struct ore_layout	*layout;
-	struct ore_components	*comps;
+	struct ore_components	*oc;
 
 	/* Global read/write IO*/
 	loff_t			offset;
@@ -102,6 +145,7 @@ static inline unsigned ore_io_state_size(unsigned numdevs)
 }
 
 /* ore.c */
+int ore_verify_layout(unsigned total_comps, struct ore_layout *layout);
 int ore_get_rw_state(struct ore_layout *layout, struct ore_components *comps,
 		     bool is_reading, u64 offset, u64 length,
 		     struct ore_io_state **ios);
@@ -109,7 +153,10 @@ int ore_get_io_state(struct ore_layout *layout, struct ore_components *comps,
 		     struct ore_io_state **ios);
 void ore_put_io_state(struct ore_io_state *ios);
 
-int ore_check_io(struct ore_io_state *ios, u64 *resid);
+typedef void (*ore_on_dev_error)(struct ore_io_state *ios, struct ore_dev *od,
+	unsigned dev_index, enum osd_err_priority oep,
+	u64 dev_offset, u64  dev_len);
+int ore_check_io(struct ore_io_state *ios, ore_on_dev_error rep);
 
 int ore_create(struct ore_io_state *ios);
 int ore_remove(struct ore_io_state *ios);
