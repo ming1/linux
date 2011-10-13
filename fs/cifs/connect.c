@@ -181,7 +181,7 @@ cifs_reconnect(struct TCP_Server_Info *server)
 		-EINVAL = invalid transact2
 
  */
-static int check2ndT2(struct smb_hdr *pSMB, unsigned int maxBufSize)
+static int check2ndT2(struct smb_hdr *pSMB)
 {
 	struct smb_t2_rsp *pSMBt;
 	int remaining;
@@ -214,9 +214,9 @@ static int check2ndT2(struct smb_hdr *pSMB, unsigned int maxBufSize)
 
 	cFYI(1, "missing %d bytes from transact2, check next response",
 		remaining);
-	if (total_data_size > maxBufSize) {
+	if (total_data_size > CIFSMaxBufSize) {
 		cERROR(1, "TotalDataSize %d is over maximum buffer %d",
-			total_data_size, maxBufSize);
+			total_data_size, CIFSMaxBufSize);
 		return -EINVAL;
 	}
 	return remaining;
@@ -358,17 +358,43 @@ allocate_buffers(char **bigbuf, char **smallbuf, unsigned int size,
 	return true;
 }
 
+static bool
+server_unresponsive(struct TCP_Server_Info *server)
+{
+	if (echo_retries > 0 && server->tcpStatus == CifsGood &&
+	    time_after(jiffies, server->lstrp +
+				(echo_retries * SMB_ECHO_INTERVAL))) {
+		cERROR(1, "Server %s has not responded in %d seconds. "
+			  "Reconnecting...", server->hostname,
+			  (echo_retries * SMB_ECHO_INTERVAL / HZ));
+		cifs_reconnect(server);
+		wake_up(&server->response_q);
+		return true;
+	}
+
+	return false;
+}
+
 static int
-read_from_socket(struct TCP_Server_Info *server, struct msghdr *smb_msg,
+read_from_socket(struct TCP_Server_Info *server,
 		 struct kvec *iov, unsigned int to_read,
 		 unsigned int *ptotal_read, bool is_header_read)
 {
 	int length, rc = 0;
 	unsigned int total_read;
+	struct msghdr smb_msg;
 	char *buf = iov->iov_base;
 
+	smb_msg.msg_control = NULL;
+	smb_msg.msg_controllen = 0;
+
 	for (total_read = 0; total_read < to_read; total_read += length) {
-		length = kernel_recvmsg(server->ssocket, smb_msg, iov, 1,
+		if (server_unresponsive(server)) {
+			rc = 1;
+			break;
+		}
+
+		length = kernel_recvmsg(server->ssocket, &smb_msg, iov, 1,
 					to_read - total_read, 0);
 		if (server->tcpStatus == CifsExiting) {
 			/* then will exit */
@@ -397,8 +423,6 @@ read_from_socket(struct TCP_Server_Info *server, struct msghdr *smb_msg,
 				iov->iov_base = (to_read - total_read) +
 						buf;
 				iov->iov_len = to_read - total_read;
-				smb_msg->msg_control = NULL;
-				smb_msg->msg_controllen = 0;
 				rc = 3;
 			} else
 				rc = 1;
@@ -486,7 +510,7 @@ find_cifs_mid(struct TCP_Server_Info *server, struct smb_hdr *buf,
 		    mid->command != buf->Command)
 			continue;
 
-		if (*length == 0 && check2ndT2(buf, server->maxBuf) > 0) {
+		if (*length == 0 && check2ndT2(buf) > 0) {
 			/* We have a multipart transact2 resp */
 			*is_multi_rsp = true;
 			if (mid->resp_buf) {
@@ -634,7 +658,6 @@ cifs_demultiplex_thread(void *p)
 	unsigned int pdu_length, total_read;
 	char *buf = NULL, *bigbuf = NULL, *smallbuf = NULL;
 	struct smb_hdr *smb_buffer = NULL;
-	struct msghdr smb_msg;
 	struct kvec iov;
 	struct task_struct *task_to_wake = NULL;
 	struct mid_q_entry *mid_entry;
@@ -665,23 +688,10 @@ cifs_demultiplex_thread(void *p)
 		buf = smallbuf;
 		iov.iov_base = buf;
 		iov.iov_len = 4;
-		smb_msg.msg_control = NULL;
-		smb_msg.msg_controllen = 0;
 		pdu_length = 4; /* enough to get RFC1001 header */
 
 incomplete_rcv:
-		if (echo_retries > 0 && server->tcpStatus == CifsGood &&
-		    time_after(jiffies, server->lstrp +
-					(echo_retries * SMB_ECHO_INTERVAL))) {
-			cERROR(1, "Server %s has not responded in %d seconds. "
-				  "Reconnecting...", server->hostname,
-				  (echo_retries * SMB_ECHO_INTERVAL / HZ));
-			cifs_reconnect(server);
-			wake_up(&server->response_q);
-			continue;
-		}
-
-		rc = read_from_socket(server, &smb_msg, &iov, pdu_length,
+		rc = read_from_socket(server, &iov, pdu_length,
 				      &total_read, true /* header read */);
 		if (rc == 3)
 			goto incomplete_rcv;
@@ -693,12 +703,6 @@ incomplete_rcv:
 		/*
 		 * The right amount was read from socket - 4 bytes,
 		 * so we can now interpret the length field.
-		 */
-
-		/*
-		 * Note that RFC 1001 length is big endian on the wire,
-		 * but we convert it here so it is always manipulated
-		 * as host byte order.
 		 */
 		pdu_length = be32_to_cpu(smb_buffer->smb_buf_length);
 
@@ -716,7 +720,7 @@ incomplete_rcv:
 
 		iov.iov_base = 4 + buf;
 		iov.iov_len = pdu_length;
-		rc = read_from_socket(server, &smb_msg, &iov, pdu_length,
+		rc = read_from_socket(server, &iov, pdu_length,
 				      &total_read, false);
 		if (rc == 2)
 			break;
@@ -827,6 +831,7 @@ cifs_parse_mount_options(const char *mountdata, const char *devname,
 {
 	char *value, *data, *end;
 	char *mountdata_copy = NULL, *options;
+	int err;
 	unsigned int  temp_len, i, j;
 	char separator[2];
 	short int override_uid = -1;
@@ -883,6 +888,8 @@ cifs_parse_mount_options(const char *mountdata, const char *devname,
 			cFYI(1, "Null separator not allowed");
 		}
 	}
+	vol->backupuid_specified = false; /* no backup intent for a user */
+	vol->backupgid_specified = false; /* no backup intent for a group */
 
 	while ((data = strsep(&options, separator)) != NULL) {
 		if (!*data)
@@ -1442,6 +1449,22 @@ cifs_parse_mount_options(const char *mountdata, const char *devname,
 			vol->mfsymlinks = true;
 		} else if (strnicmp(data, "multiuser", 8) == 0) {
 			vol->multiuser = true;
+		} else if (!strnicmp(data, "backupuid", 9) && value && *value) {
+			err = kstrtouint(value, 0, &vol->backupuid);
+			if (err < 0) {
+				cERROR(1, "%s: Invalid backupuid value",
+					__func__);
+				goto cifs_parse_mount_err;
+			}
+			vol->backupuid_specified = true;
+		} else if (!strnicmp(data, "backupgid", 9) && value && *value) {
+			err = kstrtouint(value, 0, &vol->backupgid);
+			if (err < 0) {
+				cERROR(1, "%s: Invalid backupgid value",
+					__func__);
+				goto cifs_parse_mount_err;
+			}
+			vol->backupgid_specified = true;
 		} else
 			printk(KERN_WARNING "CIFS: Unknown mount option %s\n",
 						data);
@@ -2733,6 +2756,10 @@ void cifs_setup_cifs_sb(struct smb_vol *pvolume_info,
 
 	cifs_sb->mnt_uid = pvolume_info->linux_uid;
 	cifs_sb->mnt_gid = pvolume_info->linux_gid;
+	if (pvolume_info->backupuid_specified)
+		cifs_sb->mnt_backupuid = pvolume_info->backupuid;
+	if (pvolume_info->backupgid_specified)
+		cifs_sb->mnt_backupgid = pvolume_info->backupgid;
 	cifs_sb->mnt_file_mode = pvolume_info->file_mode;
 	cifs_sb->mnt_dir_mode = pvolume_info->dir_mode;
 	cFYI(1, "file mode: 0x%x  dir mode: 0x%x",
@@ -2763,6 +2790,10 @@ void cifs_setup_cifs_sb(struct smb_vol *pvolume_info,
 		cifs_sb->mnt_cifs_flags |= CIFS_MOUNT_RWPIDFORWARD;
 	if (pvolume_info->cifs_acl)
 		cifs_sb->mnt_cifs_flags |= CIFS_MOUNT_CIFS_ACL;
+	if (pvolume_info->backupuid_specified)
+		cifs_sb->mnt_cifs_flags |= CIFS_MOUNT_CIFS_BACKUPUID;
+	if (pvolume_info->backupgid_specified)
+		cifs_sb->mnt_cifs_flags |= CIFS_MOUNT_CIFS_BACKUPGID;
 	if (pvolume_info->override_uid)
 		cifs_sb->mnt_cifs_flags |= CIFS_MOUNT_OVERR_UID;
 	if (pvolume_info->override_gid)
@@ -3130,8 +3161,7 @@ try_mount_again:
 		cFYI(DBG2, "no very large read support, rsize now 127K");
 	}
 	if (!(tcon->ses->capabilities & CAP_LARGE_READ_X))
-		cifs_sb->rsize = min(cifs_sb->rsize,
-			       (tcon->ses->server->maxBuf - MAX_CIFS_HDR_SIZE));
+		cifs_sb->rsize = min(cifs_sb->rsize, CIFSMaxBufSize);
 
 	cifs_sb->wsize = cifs_negotiate_wsize(tcon, volume_info);
 
