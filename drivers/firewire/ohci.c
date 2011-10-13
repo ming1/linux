@@ -42,6 +42,7 @@
 #include <linux/string.h>
 #include <linux/time.h>
 #include <linux/vmalloc.h>
+#include <linux/workqueue.h>
 
 #include <asm/byteorder.h>
 #include <asm/page.h>
@@ -226,7 +227,7 @@ struct fw_ohci {
 
 	__le32    *self_id_cpu;
 	dma_addr_t self_id_bus;
-	struct tasklet_struct bus_reset_tasklet;
+	struct work_struct bus_reset_work;
 
 	u32 self_id_buffer[512];
 };
@@ -263,6 +264,8 @@ static char ohci_driver_name[] = KBUILD_MODNAME;
 #define PCI_DEVICE_ID_AGERE_FW643	0x5901
 #define PCI_DEVICE_ID_JMICRON_JMB38X_FW	0x2380
 #define PCI_DEVICE_ID_TI_TSB12LV22	0x8009
+#define PCI_DEVICE_ID_TI_TSB12LV26	0x8020
+#define PCI_DEVICE_ID_TI_TSB82AA2	0x8025
 #define PCI_VENDOR_ID_PINNACLE_SYSTEMS	0x11bd
 
 #define QUIRK_CYCLE_TIMER		1
@@ -270,6 +273,7 @@ static char ohci_driver_name[] = KBUILD_MODNAME;
 #define QUIRK_BE_HEADERS		4
 #define QUIRK_NO_1394A			8
 #define QUIRK_NO_MSI			16
+#define QUIRK_TI_SLLZ059		32
 
 /* In case of multiple matches in ohci_quirks[], only the first one is used. */
 static const struct {
@@ -299,6 +303,12 @@ static const struct {
 	{PCI_VENDOR_ID_TI, PCI_DEVICE_ID_TI_TSB12LV22, PCI_ANY_ID,
 		QUIRK_CYCLE_TIMER | QUIRK_RESET_PACKET | QUIRK_NO_1394A},
 
+	{PCI_VENDOR_ID_TI, PCI_DEVICE_ID_TI_TSB12LV26, PCI_ANY_ID,
+		QUIRK_RESET_PACKET | QUIRK_TI_SLLZ059},
+
+	{PCI_VENDOR_ID_TI, PCI_DEVICE_ID_TI_TSB82AA2, PCI_ANY_ID,
+		QUIRK_RESET_PACKET | QUIRK_TI_SLLZ059},
+
 	{PCI_VENDOR_ID_TI, PCI_ANY_ID, PCI_ANY_ID,
 		QUIRK_RESET_PACKET},
 
@@ -315,6 +325,7 @@ MODULE_PARM_DESC(quirks, "Chip quirks (default = 0"
 	", AR/selfID endianess = "	__stringify(QUIRK_BE_HEADERS)
 	", no 1394a enhancements = "	__stringify(QUIRK_NO_1394A)
 	", disable MSI = "		__stringify(QUIRK_NO_MSI)
+	", TI SLLZ059 erratum = "	__stringify(QUIRK_TI_SLLZ059)
 	")");
 
 #define OHCI_PARAM_DEBUG_AT_AR		1
@@ -859,7 +870,7 @@ static __le32 *handle_ar_packet(struct ar_context *ctx, __le32 *buffer)
 	 *
 	 * Alas some chips sometimes emit bus reset packets with a
 	 * wrong generation.  We set the correct generation for these
-	 * at a slightly incorrect time (in bus_reset_tasklet).
+	 * at a slightly incorrect time (in bus_reset_work).
 	 */
 	if (evt == OHCI1394_evt_bus_reset) {
 		if (!(ohci->quirks & QUIRK_RESET_PACKET))
@@ -1713,9 +1724,94 @@ static u32 update_bus_time(struct fw_ohci *ohci)
 	return ohci->bus_time | cycle_time_seconds;
 }
 
-static void bus_reset_tasklet(unsigned long data)
+static int get_status_for_port(struct fw_ohci *ohci, int port_index)
 {
-	struct fw_ohci *ohci = (struct fw_ohci *)data;
+	int reg;
+
+	mutex_lock(&ohci->phy_reg_mutex);
+	reg = write_phy_reg(ohci, 7, port_index);
+	if (reg >= 0)
+		reg = read_phy_reg(ohci, 8);
+	mutex_unlock(&ohci->phy_reg_mutex);
+	if (reg < 0)
+		return reg;
+
+	switch (reg & 0x0f) {
+	case 0x06:
+		return 2;	/* is child node (connected to parent node) */
+	case 0x0e:
+		return 3;	/* is parent node (connected to child node) */
+	}
+	return 1;		/* not connected */
+}
+
+static int get_self_id_pos(struct fw_ohci *ohci, u32 self_id,
+	int self_id_count)
+{
+	int i;
+	u32 entry;
+
+	for (i = 0; i < self_id_count; i++) {
+		entry = ohci->self_id_buffer[i];
+		if ((self_id & 0xff000000) == (entry & 0xff000000))
+			return -1;
+		if ((self_id & 0xff000000) < (entry & 0xff000000))
+			return i;
+	}
+	return i;
+}
+
+/*
+ * TI TSB82AA2B and TSB12LV26 do not receive the selfID of a locally
+ * attached TSB41BA3D phy; see http://www.ti.com/litv/pdf/sllz059.
+ * Construct the selfID from phy register contents.
+ * FIXME:  How to determine the selfID.i flag?
+ */
+static int find_and_insert_self_id(struct fw_ohci *ohci, int self_id_count)
+{
+	int reg, i, pos, status;
+	/* link active 1, speed 3, bridge 0, contender 1, more packets 0 */
+	u32 self_id = 0x8040c800;
+
+	reg = reg_read(ohci, OHCI1394_NodeID);
+	if (!(reg & OHCI1394_NodeID_idValid)) {
+		fw_notify("node ID not valid, new bus reset in progress\n");
+		return -EBUSY;
+	}
+	self_id |= ((reg & 0x3f) << 24); /* phy ID */
+
+	reg = ohci_read_phy_reg(&ohci->card, 4);
+	if (reg < 0)
+		return reg;
+	self_id |= ((reg & 0x07) << 8); /* power class */
+
+	reg = ohci_read_phy_reg(&ohci->card, 1);
+	if (reg < 0)
+		return reg;
+	self_id |= ((reg & 0x3f) << 16); /* gap count */
+
+	for (i = 0; i < 3; i++) {
+		status = get_status_for_port(ohci, i);
+		if (status < 0)
+			return status;
+		self_id |= ((status & 0x3) << (6 - (i * 2)));
+	}
+
+	pos = get_self_id_pos(ohci, self_id, self_id_count);
+	if (pos >= 0) {
+		memmove(&(ohci->self_id_buffer[pos+1]),
+			&(ohci->self_id_buffer[pos]),
+			(self_id_count - pos) * sizeof(*ohci->self_id_buffer));
+		ohci->self_id_buffer[pos] = self_id;
+		self_id_count++;
+	}
+	return self_id_count;
+}
+
+static void bus_reset_work(struct work_struct *work)
+{
+	struct fw_ohci *ohci =
+		container_of(work, struct fw_ohci, bus_reset_work);
 	int self_id_count, i, j, reg;
 	int generation, new_generation;
 	unsigned long flags;
@@ -1753,10 +1849,12 @@ static void bus_reset_tasklet(unsigned long data)
 	 * bit extra to get the actual number of self IDs.
 	 */
 	self_id_count = (reg >> 3) & 0xff;
-	if (self_id_count == 0 || self_id_count > 252) {
+
+	if (self_id_count > 252) {
 		fw_notify("inconsistent self IDs\n");
 		return;
 	}
+
 	generation = (cond_le32_to_cpu(ohci->self_id_cpu[0]) >> 16) & 0xff;
 	rmb();
 
@@ -1767,6 +1865,19 @@ static void bus_reset_tasklet(unsigned long data)
 		}
 		ohci->self_id_buffer[j] =
 				cond_le32_to_cpu(ohci->self_id_cpu[i]);
+	}
+
+	if (ohci->quirks & QUIRK_TI_SLLZ059) {
+		self_id_count = find_and_insert_self_id(ohci, self_id_count);
+		if (self_id_count < 0) {
+			fw_notify("could not construct local self ID\n");
+			return;
+		}
+	}
+
+	if (self_id_count == 0) {
+		fw_notify("inconsistent self IDs\n");
+		return;
 	}
 	rmb();
 
@@ -1887,7 +1998,7 @@ static irqreturn_t irq_handler(int irq, void *data)
 	log_irqs(event);
 
 	if (event & OHCI1394_selfIDComplete)
-		tasklet_schedule(&ohci->bus_reset_tasklet);
+		queue_work(fw_workqueue, &ohci->bus_reset_work);
 
 	if (event & OHCI1394_RQPkt)
 		tasklet_schedule(&ohci->ar_request_ctx.tasklet);
@@ -1934,7 +2045,8 @@ static irqreturn_t irq_handler(int irq, void *data)
 		reg_read(ohci, OHCI1394_PostedWriteAddressLo);
 		reg_write(ohci, OHCI1394_IntEventClear,
 			  OHCI1394_postedWriteErr);
-		fw_error("PCI posted write error\n");
+		if (printk_ratelimit())
+			fw_error("PCI posted write error\n");
 	}
 
 	if (unlikely(event & OHCI1394_cycleTooLong)) {
@@ -2048,6 +2160,28 @@ static int configure_1394a_enhancements(struct fw_ohci *ohci)
 	return 0;
 }
 
+static int probe_tsb41ba3d(struct fw_ohci *ohci)
+{
+	/* TI vendor ID = 0x080028, TSB41BA3D product ID = 0x833005 (sic) */
+	static const u8 id[] = { 0x08, 0x00, 0x28, 0x83, 0x30, 0x05, };
+	int reg, i;
+
+	reg = read_phy_reg(ohci, 2);
+	if (reg < 0)
+		return reg;
+	if ((reg & PHY_EXTENDED_REGISTERS) != PHY_EXTENDED_REGISTERS)
+		return 0;
+
+	for (i = ARRAY_SIZE(id) - 1; i >= 0; i--) {
+		reg = read_paged_phy_reg(ohci, 1, i + 10);
+		if (reg < 0)
+			return reg;
+		if (reg != id[i])
+			return 0;
+	}
+	return 1;
+}
+
 static int ohci_enable(struct fw_card *card,
 		       const __be32 *config_rom, size_t length)
 {
@@ -2083,6 +2217,16 @@ static int ohci_enable(struct fw_card *card,
 	if (!lps) {
 		fw_error("Failed to set Link Power Status\n");
 		return -EIO;
+	}
+
+	if (ohci->quirks & QUIRK_TI_SLLZ059) {
+		ret = probe_tsb41ba3d(ohci);
+		if (ret < 0)
+			return ret;
+		if (ret)
+			fw_notify("local TSB41BA3D phy\n");
+		else
+			ohci->quirks &= ~QUIRK_TI_SLLZ059;
 	}
 
 	reg_write(ohci, OHCI1394_HCControlClear,
@@ -2260,7 +2404,7 @@ static int ohci_set_config_rom(struct fw_card *card,
 	 * then set up the real values for the two registers.
 	 *
 	 * We use ohci->lock to avoid racing with the code that sets
-	 * ohci->next_config_rom to NULL (see bus_reset_tasklet).
+	 * ohci->next_config_rom to NULL (see bus_reset_work).
 	 */
 
 	next_config_rom =
@@ -3239,8 +3383,7 @@ static int __devinit pci_probe(struct pci_dev *dev,
 	spin_lock_init(&ohci->lock);
 	mutex_init(&ohci->phy_reg_mutex);
 
-	tasklet_init(&ohci->bus_reset_tasklet,
-		     bus_reset_tasklet, (unsigned long)ohci);
+	INIT_WORK(&ohci->bus_reset_work, bus_reset_work);
 
 	err = pci_request_region(dev, 0, ohci_driver_name);
 	if (err) {
@@ -3382,6 +3525,7 @@ static void pci_remove(struct pci_dev *dev)
 	ohci = pci_get_drvdata(dev);
 	reg_write(ohci, OHCI1394_IntMaskClear, ~0);
 	flush_writes(ohci);
+	cancel_work_sync(&ohci->bus_reset_work);
 	fw_core_remove_card(&ohci->card);
 
 	/*
