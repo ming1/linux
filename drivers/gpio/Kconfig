@@ -386,7 +386,7 @@ config GPIO_LANGWELL
 	  Say Y here to support Intel Langwell/Penwell GPIO.
 
 config GPIO_PCH
-	tristate "Intel EG20T PCH / OKI SEMICONDUCTOR ML7223 IOH GPIO"
+	bool "Intel EG20T PCH / OKI SEMICONDUCTOR ML7223 IOH GPIO"
 	depends on PCI && X86
 	select GENERIC_IRQ_CHIP
 	help
@@ -401,7 +401,7 @@ config GPIO_PCH
 	  ML7223 is completely compatible for Intel EG20T PCH.
 
 config GPIO_ML_IOH
-	tristate "OKI SEMICONDUCTOR ML7213 IOH GPIO support"
+	bool "OKI SEMICONDUCTOR ML7213 IOH GPIO support"
 	depends on PCI
 	select GENERIC_IRQ_CHIP
 	help
