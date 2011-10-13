@@ -78,7 +78,7 @@ int mwifiex_process_tx(struct mwifiex_private *priv, struct sk_buff *skb,
 				(struct txpd *) (head_ptr + INTF_HEADER_LEN);
 
 		ret = adapter->if_ops.host_to_card(adapter, MWIFIEX_TYPE_DATA,
-					     skb->data, skb->len, tx_param);
+						   skb, tx_param);
 	}
 
 	switch (ret) {
@@ -87,7 +87,8 @@ int mwifiex_process_tx(struct mwifiex_private *priv, struct sk_buff *skb,
 			(adapter->pps_uapsd_mode) &&
 			(adapter->tx_lock_flag)) {
 				priv->adapter->tx_lock_flag = false;
-				local_tx_pd->flags = 0;
+				if (local_tx_pd)
+					local_tx_pd->flags = 0;
 		}
 		dev_dbg(adapter->dev, "data: -EBUSY is returned\n");
 		break;
