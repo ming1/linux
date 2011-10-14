@@ -54,6 +54,12 @@
 				reg = <0xfffff000 0x200>;
 			};
 
+			pit: timer@fffffd30 {
+				compatible = "atmel,at91sam9260-pit";
+				reg = <0xfffffd30 0xf>;
+				interrupts = <1>;
+			};
+
 			dbgu: serial@fffff200 {
 				compatible = "atmel,at91sam9260-usart";
 				reg = <0xfffff200 0x200>;
