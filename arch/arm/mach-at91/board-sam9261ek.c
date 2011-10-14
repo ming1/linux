@@ -151,6 +151,7 @@ static void __init ek_add_device_dm9000(void) {}
  */
 static struct at91_usbh_data __initdata ek_usbh_data = {
 	.ports		= 2,
+	.vbus_pin	= {-EINVAL, -EINVAL},
 };
 
 
@@ -159,7 +160,7 @@ static struct at91_usbh_data __initdata ek_usbh_data = {
  */
 static struct at91_udc_data __initdata ek_udc_data = {
 	.vbus_pin	= AT91_PIN_PB29,
-	.pullup_pin	= 0,		/* pull-up driven by UDC */
+	.pullup_pin	= -EINVAL,		/* pull-up driven by UDC */
 };
 
 
@@ -188,7 +189,7 @@ static struct mtd_partition * __init nand_partitions(int size, int *num_partitio
 static struct atmel_nand_data __initdata ek_nand_data = {
 	.ale		= 22,
 	.cle		= 21,
-//	.det_pin	= ... not connected
+	.det_pin	= -EINVAL,
 	.rdy_pin	= AT91_PIN_PC15,
 	.enable_pin	= AT91_PIN_PC14,
 	.partition_info	= nand_partitions,
@@ -350,6 +351,9 @@ static struct spi_board_info ek_spi_devices[] = {
  */
 static struct at91_mmc_data __initdata ek_mmc_data = {
 	.wire4		= 1,
+	.det_pin	= -EINVAL,
+	.wp_pin		= -EINVAL,
+	.vcc_pin	= -EINVAL,
 };
 
 #endif /* CONFIG_SPI_ATMEL_* */

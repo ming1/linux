@@ -54,6 +54,11 @@ static struct clk pioDE_clk = {
 	.pmc_mask	= 1 << AT91SAM9G45_ID_PIODE,
 	.type		= CLK_TYPE_PERIPHERAL,
 };
+static struct clk trng_clk = {
+	.name		= "trng_clk",
+	.pmc_mask	= 1 << AT91SAM9G45_ID_TRNG,
+	.type		= CLK_TYPE_PERIPHERAL,
+};
 static struct clk usart0_clk = {
 	.name		= "usart0_clk",
 	.pmc_mask	= 1 << AT91SAM9G45_ID_US0,
@@ -177,6 +182,7 @@ static struct clk *periph_clocks[] __initdata = {
 	&pioB_clk,
 	&pioC_clk,
 	&pioDE_clk,
+	&trng_clk,
 	&usart0_clk,
 	&usart1_clk,
 	&usart2_clk,
@@ -216,6 +222,7 @@ static struct clk_lookup periph_clocks_lookups[] = {
 	CLKDEV_CON_DEV_ID("t0_clk", "atmel_tcb.1", &tcb0_clk),
 	CLKDEV_CON_DEV_ID("pclk", "ssc.0", &ssc0_clk),
 	CLKDEV_CON_DEV_ID("pclk", "ssc.1", &ssc1_clk),
+	CLKDEV_CON_DEV_ID(NULL, "atmel-trng", &trng_clk),
 	/* fake hclk clock */
 	CLKDEV_CON_DEV_ID("hclk", "at91_ohci", &uhphs_clk),
 };
@@ -283,23 +290,23 @@ void __init at91sam9g45_set_console_clock(int id)
 static struct at91_gpio_bank at91sam9g45_gpio[] = {
 	{
 		.id		= AT91SAM9G45_ID_PIOA,
-		.offset		= AT91_PIOA,
+		.regbase	= AT91SAM9G45_BASE_PIOA,
 		.clock		= &pioA_clk,
 	}, {
 		.id		= AT91SAM9G45_ID_PIOB,
-		.offset		= AT91_PIOB,
+		.regbase	= AT91SAM9G45_BASE_PIOB,
 		.clock		= &pioB_clk,
 	}, {
 		.id		= AT91SAM9G45_ID_PIOC,
-		.offset		= AT91_PIOC,
+		.regbase	= AT91SAM9G45_BASE_PIOC,
 		.clock		= &pioC_clk,
 	}, {
 		.id		= AT91SAM9G45_ID_PIODE,
-		.offset		= AT91_PIOD,
+		.regbase	= AT91SAM9G45_BASE_PIOD,
 		.clock		= &pioDE_clk,
 	}, {
 		.id		= AT91SAM9G45_ID_PIODE,
-		.offset		= AT91_PIOE,
+		.regbase	= AT91SAM9G45_BASE_PIOE,
 		.clock		= &pioDE_clk,
 	}
 };
