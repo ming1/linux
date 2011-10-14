@@ -56,7 +56,7 @@ DEFINE_VVAR(struct vsyscall_gtod_data, vsyscall_gtod_data) =
 	.lock = __SEQLOCK_UNLOCKED(__vsyscall_gtod_data.lock),
 };
 
-static enum { EMULATE, NATIVE, NONE } vsyscall_mode = EMULATE;
+static enum { EMULATE, NATIVE, NONE } vsyscall_mode = NATIVE;
 
 static int __init vsyscall_setup(char *str)
 {
@@ -206,7 +206,7 @@ bool emulate_vsyscall(struct pt_regs *regs, unsigned long address)
 		 * vsyscalls harder, generate SIGSEGV here as well.
 		 */
 		warn_bad_vsyscall(KERN_INFO, regs,
-				  "vsyscall fault (exploit attempt?)");
+				  "vsyscall fault (exploit attempt?) - if this is a legitimate program boot with vsyscall=native (read kernel-parameters.txt for the security implications)");
 		goto sigsegv;
 	}
 
