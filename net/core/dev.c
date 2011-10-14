@@ -133,6 +133,9 @@
 #include <linux/pci.h>
 #include <linux/inetdevice.h>
 #include <linux/cpu_rmap.h>
+#include <linux/if_tunnel.h>
+#include <linux/if_pppox.h>
+#include <linux/ppp_defs.h>
 
 #include "net-sysfs.h"
 
@@ -1955,9 +1958,11 @@ static int illegal_highdma(struct net_device *dev, struct sk_buff *skb)
 #ifdef CONFIG_HIGHMEM
 	int i;
 	if (!(dev->features & NETIF_F_HIGHDMA)) {
-		for (i = 0; i < skb_shinfo(skb)->nr_frags; i++)
-			if (PageHighMem(skb_shinfo(skb)->frags[i].page))
+		for (i = 0; i < skb_shinfo(skb)->nr_frags; i++) {
+			skb_frag_t *frag = &skb_shinfo(skb)->frags[i];
+			if (PageHighMem(skb_frag_page(frag)))
 				return 1;
+		}
 	}
 
 	if (PCI_DMA_BUS_IS_PHYS) {
@@ -1966,7 +1971,8 @@ static int illegal_highdma(struct net_device *dev, struct sk_buff *skb)
 		if (!pdev)
 			return 0;
 		for (i = 0; i < skb_shinfo(skb)->nr_frags; i++) {
-			dma_addr_t addr = page_to_phys(skb_shinfo(skb)->frags[i].page);
+			skb_frag_t *frag = &skb_shinfo(skb)->frags[i];
+			dma_addr_t addr = page_to_phys(skb_frag_page(frag));
 			if (!pdev->dma_mask || addr + PAGE_SIZE - 1 > *pdev->dma_mask)
 				return 1;
 		}
@@ -2527,25 +2533,31 @@ static inline void ____napi_schedule(struct softnet_data *sd,
 
 /*
  * __skb_get_rxhash: calculate a flow hash based on src/dst addresses
- * and src/dst port numbers. Returns a non-zero hash number on success
- * and 0 on failure.
+ * and src/dst port numbers.  Sets rxhash in skb to non-zero hash value
+ * on success, zero indicates no valid hash.  Also, sets l4_rxhash in skb
+ * if hash is a canonical 4-tuple hash over transport ports.
  */
-__u32 __skb_get_rxhash(struct sk_buff *skb)
+void __skb_get_rxhash(struct sk_buff *skb)
 {
 	int nhoff, hash = 0, poff;
 	const struct ipv6hdr *ip6;
 	const struct iphdr *ip;
+	const struct vlan_hdr *vlan;
 	u8 ip_proto;
-	u32 addr1, addr2, ihl;
+	u32 addr1, addr2;
+	u16 proto;
 	union {
 		u32 v32;
 		u16 v16[2];
 	} ports;
 
 	nhoff = skb_network_offset(skb);
+	proto = skb->protocol;
 
-	switch (skb->protocol) {
+again:
+	switch (proto) {
 	case __constant_htons(ETH_P_IP):
+ip:
 		if (!pskb_may_pull(skb, sizeof(*ip) + nhoff))
 			goto done;
 
@@ -2556,9 +2568,10 @@ __u32 __skb_get_rxhash(struct sk_buff *skb)
 			ip_proto = ip->protocol;
 		addr1 = (__force u32) ip->saddr;
 		addr2 = (__force u32) ip->daddr;
-		ihl = ip->ihl;
+		nhoff += ip->ihl * 4;
 		break;
 	case __constant_htons(ETH_P_IPV6):
+ipv6:
 		if (!pskb_may_pull(skb, sizeof(*ip6) + nhoff))
 			goto done;
 
@@ -2566,20 +2579,71 @@ __u32 __skb_get_rxhash(struct sk_buff *skb)
 		ip_proto = ip6->nexthdr;
 		addr1 = (__force u32) ip6->saddr.s6_addr32[3];
 		addr2 = (__force u32) ip6->daddr.s6_addr32[3];
-		ihl = (40 >> 2);
+		nhoff += 40;
 		break;
+	case __constant_htons(ETH_P_8021Q):
+		if (!pskb_may_pull(skb, sizeof(*vlan) + nhoff))
+			goto done;
+		vlan = (const struct vlan_hdr *) (skb->data + nhoff);
+		proto = vlan->h_vlan_encapsulated_proto;
+		nhoff += sizeof(*vlan);
+		goto again;
+	case __constant_htons(ETH_P_PPP_SES):
+		if (!pskb_may_pull(skb, PPPOE_SES_HLEN + nhoff))
+			goto done;
+		proto = *((__be16 *) (skb->data + nhoff +
+				      sizeof(struct pppoe_hdr)));
+		nhoff += PPPOE_SES_HLEN;
+		switch (proto) {
+		case __constant_htons(PPP_IP):
+			goto ip;
+		case __constant_htons(PPP_IPV6):
+			goto ipv6;
+		default:
+			goto done;
+		}
 	default:
 		goto done;
+	}
+
+	switch (ip_proto) {
+	case IPPROTO_GRE:
+		if (pskb_may_pull(skb, nhoff + 16)) {
+			u8 *h = skb->data + nhoff;
+			__be16 flags = *(__be16 *)h;
+
+			/*
+			 * Only look inside GRE if version zero and no
+			 * routing
+			 */
+			if (!(flags & (GRE_VERSION|GRE_ROUTING))) {
+				proto = *(__be16 *)(h + 2);
+				nhoff += 4;
+				if (flags & GRE_CSUM)
+					nhoff += 4;
+				if (flags & GRE_KEY)
+					nhoff += 4;
+				if (flags & GRE_SEQ)
+					nhoff += 4;
+				goto again;
+			}
+		}
+		break;
+	case IPPROTO_IPIP:
+		goto again;
+	default:
+		break;
 	}
 
 	ports.v32 = 0;
 	poff = proto_ports_offset(ip_proto);
 	if (poff >= 0) {
-		nhoff += ihl * 4 + poff;
+		nhoff += poff;
 		if (pskb_may_pull(skb, nhoff + 4)) {
 			ports.v32 = * (__force u32 *) (skb->data + nhoff);
 			if (ports.v16[1] < ports.v16[0])
 				swap(ports.v16[0], ports.v16[1]);
+			skb->l4_rxhash = 1;
 		}
 	}
 
@@ -2592,7 +2656,7 @@ __u32 __skb_get_rxhash(struct sk_buff *skb)
 		hash = 1;
 
 done:
-	return hash;
+	skb->rxhash = hash;
 }
 EXPORT_SYMBOL(__skb_get_rxhash);
 
@@ -2606,10 +2670,7 @@ static struct rps_dev_flow *
 set_rps_cpu(struct net_device *dev, struct sk_buff *skb,
 	    struct rps_dev_flow *rflow, u16 next_cpu)
 {
-	u16 tcpu;
-
-	tcpu = rflow->cpu = next_cpu;
-	if (tcpu != RPS_NO_CPU) {
+	if (next_cpu != RPS_NO_CPU) {
 #ifdef CONFIG_RFS_ACCEL
 		struct netdev_rx_queue *rxqueue;
 		struct rps_dev_flow_table *flow_table;
@@ -2637,16 +2698,16 @@ set_rps_cpu(struct net_device *dev, struct sk_buff *skb,
 			goto out;
 		old_rflow = rflow;
 		rflow = &flow_table->flows[flow_id];
-		rflow->cpu = next_cpu;
 		rflow->filter = rc;
 		if (old_rflow->filter == rflow->filter)
 			old_rflow->filter = RPS_NO_FILTER;
 	out:
 #endif
 		rflow->last_qtail =
-			per_cpu(softnet_data, tcpu).input_queue_head;
+			per_cpu(softnet_data, next_cpu).input_queue_head;
 	}
 
+	rflow->cpu = next_cpu;
 	return rflow;
 }
 
@@ -2681,13 +2742,13 @@ static int get_rps_cpu(struct net_device *dev, struct sk_buff *skb,
 	map = rcu_dereference(rxqueue->rps_map);
 	if (map) {
 		if (map->len == 1 &&
-		    !rcu_dereference_raw(rxqueue->rps_flow_table)) {
+		    !rcu_access_pointer(rxqueue->rps_flow_table)) {
 			tcpu = map->cpus[0];
 			if (cpu_online(tcpu))
 				cpu = tcpu;
 			goto done;
 		}
-	} else if (!rcu_dereference_raw(rxqueue->rps_flow_table)) {
+	} else if (!rcu_access_pointer(rxqueue->rps_flow_table)) {
 		goto done;
 	}
 
@@ -3102,8 +3163,8 @@ void netdev_rx_handler_unregister(struct net_device *dev)
 {
 
 	ASSERT_RTNL();
-	rcu_assign_pointer(dev->rx_handler, NULL);
-	rcu_assign_pointer(dev->rx_handler_data, NULL);
+	RCU_INIT_POINTER(dev->rx_handler, NULL);
+	RCU_INIT_POINTER(dev->rx_handler_data, NULL);
 }
 EXPORT_SYMBOL_GPL(netdev_rx_handler_unregister);
 
@@ -3195,10 +3256,9 @@ ncls:
 			ret = deliver_skb(skb, pt_prev, orig_dev);
 			pt_prev = NULL;
 		}
-		if (vlan_do_receive(&skb)) {
-			ret = __netif_receive_skb(skb);
-			goto out;
-		} else if (unlikely(!skb))
+		if (vlan_do_receive(&skb))
+			goto another_round;
+		else if (unlikely(!skb))
 			goto out;
 	}
 
@@ -3432,7 +3492,7 @@ pull:
 		skb_shinfo(skb)->frags[0].size -= grow;
 
 		if (unlikely(!skb_shinfo(skb)->frags[0].size)) {
-			put_page(skb_shinfo(skb)->frags[0].page);
+			skb_frag_unref(skb, 0);
 			memmove(skb_shinfo(skb)->frags,
 				skb_shinfo(skb)->frags + 1,
 				--skb_shinfo(skb)->nr_frags * sizeof(skb_frag_t));
@@ -3496,10 +3556,9 @@ void skb_gro_reset_offset(struct sk_buff *skb)
 	NAPI_GRO_CB(skb)->frag0_len = 0;
 
 	if (skb->mac_header == skb->tail &&
-	    !PageHighMem(skb_shinfo(skb)->frags[0].page)) {
+	    !PageHighMem(skb_frag_page(&skb_shinfo(skb)->frags[0]))) {
 		NAPI_GRO_CB(skb)->frag0 =
-			page_address(skb_shinfo(skb)->frags[0].page) +
-			skb_shinfo(skb)->frags[0].page_offset;
+			skb_frag_address(&skb_shinfo(skb)->frags[0]);
 		NAPI_GRO_CB(skb)->frag0_len = skb_shinfo(skb)->frags[0].size;
 	}
 }
@@ -4497,9 +4556,7 @@ void __dev_set_rx_mode(struct net_device *dev)
 	if (!netif_device_present(dev))
 		return;
 
-	if (ops->ndo_set_rx_mode)
-		ops->ndo_set_rx_mode(dev);
-	else {
+	if (!(dev->priv_flags & IFF_UNICAST_FLT)) {
 		/* Unicast addresses changes may only happen under the rtnl,
 		 * therefore calling __dev_set_promiscuity here is safe.
 		 */
@@ -4510,10 +4567,10 @@ void __dev_set_rx_mode(struct net_device *dev)
 			__dev_set_promiscuity(dev, -1);
 			dev->uc_promisc = false;
 		}
-
-		if (ops->ndo_set_multicast_list)
-			ops->ndo_set_multicast_list(dev);
 	}
+
+	if (ops->ndo_set_rx_mode)
+		ops->ndo_set_rx_mode(dev);
 }
 
 void dev_set_rx_mode(struct net_device *dev)
@@ -4522,30 +4579,6 @@ void dev_set_rx_mode(struct net_device *dev)
 	__dev_set_rx_mode(dev);
 	netif_addr_unlock_bh(dev);
 }
-
-/**
- *	dev_ethtool_get_settings - call device's ethtool_ops::get_settings()
- *	@dev: device
- *	@cmd: memory area for ethtool_ops::get_settings() result
- *
- *      The cmd arg is initialized properly (cleared and
- *      ethtool_cmd::cmd field set to ETHTOOL_GSET).
- *
- *	Return device's ethtool_ops::get_settings() result value or
- *	-EOPNOTSUPP when device doesn't expose
- *	ethtool_ops::get_settings() operation.
- */
-int dev_ethtool_get_settings(struct net_device *dev,
-			     struct ethtool_cmd *cmd)
-{
-	if (!dev->ethtool_ops || !dev->ethtool_ops->get_settings)
-		return -EOPNOTSUPP;
-
-	memset(cmd, 0, sizeof(struct ethtool_cmd));
-	cmd->cmd = ETHTOOL_GSET;
-	return dev->ethtool_ops->get_settings(dev, cmd);
-}
-EXPORT_SYMBOL(dev_ethtool_get_settings);
 
 /**
  *	dev_get_flags - get flags reported to userspace
@@ -4863,7 +4896,7 @@ static int dev_ifsioc(struct net *net, struct ifreq *ifr, unsigned int cmd)
 		return -EOPNOTSUPP;
 
 	case SIOCADDMULTI:
-		if ((!ops->ndo_set_multicast_list && !ops->ndo_set_rx_mode) ||
+		if (!ops->ndo_set_rx_mode ||
 		    ifr->ifr_hwaddr.sa_family != AF_UNSPEC)
 			return -EINVAL;
 		if (!netif_device_present(dev))
@@ -4871,7 +4904,7 @@ static int dev_ifsioc(struct net *net, struct ifreq *ifr, unsigned int cmd)
 		return dev_mc_add_global(dev, ifr->ifr_hwaddr.sa_data);
 
 	case SIOCDELMULTI:
-		if ((!ops->ndo_set_multicast_list && !ops->ndo_set_rx_mode) ||
+		if (!ops->ndo_set_rx_mode ||
 		    ifr->ifr_hwaddr.sa_family != AF_UNSPEC)
 			return -EINVAL;
 		if (!netif_device_present(dev))
@@ -5735,8 +5768,8 @@ void netdev_run_todo(void)
 
 		/* paranoia */
 		BUG_ON(netdev_refcnt_read(dev));
-		WARN_ON(rcu_dereference_raw(dev->ip_ptr));
-		WARN_ON(rcu_dereference_raw(dev->ip6_ptr));
+		WARN_ON(rcu_access_pointer(dev->ip_ptr));
+		WARN_ON(rcu_access_pointer(dev->ip6_ptr));
 		WARN_ON(dev->dn_ptr);
 
 		if (dev->destructor)
@@ -5940,7 +5973,7 @@ void free_netdev(struct net_device *dev)
 	kfree(dev->_rx);
 #endif
 
-	kfree(rcu_dereference_raw(dev->ingress_queue));
+	kfree(rcu_dereference_protected(dev->ingress_queue, 1));
 
 	/* Flush device addresses */
 	dev_addr_flush(dev);

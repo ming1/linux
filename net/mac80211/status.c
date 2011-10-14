@@ -14,6 +14,7 @@
 #include "rate.h"
 #include "mesh.h"
 #include "led.h"
+#include "wme.h"
 
 
 void ieee80211_tx_status_irqsafe(struct ieee80211_hw *hw,
@@ -43,6 +44,8 @@ static void ieee80211_handle_filtered_frame(struct ieee80211_local *local,
 					    struct sk_buff *skb)
 {
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
+	struct ieee80211_hdr *hdr = (void *)skb->data;
+	int ac;
 
 	/*
 	 * This skb 'survived' a round-trip through the driver, and
@@ -63,11 +66,37 @@ static void ieee80211_handle_filtered_frame(struct ieee80211_local *local,
 	sta->tx_filtered_count++;
 
 	/*
+	 * Clear more-data bit on filtered frames, it might be set
+	 * but later frames might time out so it might have to be
+	 * clear again ... It's all rather unlikely (this frame
+	 * should time out first, right?) but let's not confuse
+	 * peers unnecessarily.
+	 */
+	if (hdr->frame_control & cpu_to_le16(IEEE80211_FCTL_MOREDATA))
+		hdr->frame_control &= ~cpu_to_le16(IEEE80211_FCTL_MOREDATA);
+
+	if (ieee80211_is_data_qos(hdr->frame_control)) {
+		u8 *p = ieee80211_get_qos_ctl(hdr);
+		int tid = *p & IEEE80211_QOS_CTL_TID_MASK;
+
+		/*
+		 * Clear EOSP if set, this could happen e.g.
+		 * if an absence period (us being a P2P GO)
+		 * shortens the SP.
+		 */
+		if (*p & IEEE80211_QOS_CTL_EOSP)
+			*p &= ~IEEE80211_QOS_CTL_EOSP;
+		ac = ieee802_1d_to_ac[tid & 7];
+	} else {
+		ac = IEEE80211_AC_BE;
+	}
+
+	/*
 	 * Clear the TX filter mask for this STA when sending the next
 	 * packet. If the STA went to power save mode, this will happen
 	 * when it wakes up for the next time.
 	 */
-	set_sta_flags(sta, WLAN_STA_CLEAR_PS_FILT);
+	set_sta_flag(sta, WLAN_STA_CLEAR_PS_FILT);
 
 	/*
 	 * This code races in the following way:
@@ -103,13 +132,19 @@ static void ieee80211_handle_filtered_frame(struct ieee80211_local *local,
 	 *      changes before calling TX status events if ordering can be
 	 *	unknown.
 	 */
-	if (test_sta_flags(sta, WLAN_STA_PS_STA) &&
-	    skb_queue_len(&sta->tx_filtered) < STA_MAX_TX_BUFFER) {
-		skb_queue_tail(&sta->tx_filtered, skb);
+	if (test_sta_flag(sta, WLAN_STA_PS_STA) &&
+	    skb_queue_len(&sta->tx_filtered[ac]) < STA_MAX_TX_BUFFER) {
+		skb_queue_tail(&sta->tx_filtered[ac], skb);
+		sta_info_recalc_tim(sta);
+
+		if (!timer_pending(&local->sta_cleanup))
+			mod_timer(&local->sta_cleanup,
+				  round_jiffies(jiffies +
+						STA_INFO_CLEANUP_INTERVAL));
 		return;
 	}
 
-	if (!test_sta_flags(sta, WLAN_STA_PS_STA) &&
+	if (!test_sta_flag(sta, WLAN_STA_PS_STA) &&
 	    !(info->flags & IEEE80211_TX_INTFL_RETRIED)) {
 		/* Software retry the packet once */
 		info->flags |= IEEE80211_TX_INTFL_RETRIED;
@@ -121,10 +156,22 @@ static void ieee80211_handle_filtered_frame(struct ieee80211_local *local,
 	if (net_ratelimit())
 		wiphy_debug(local->hw.wiphy,
 			    "dropped TX filtered frame, queue_len=%d PS=%d @%lu\n",
-			    skb_queue_len(&sta->tx_filtered),
-			    !!test_sta_flags(sta, WLAN_STA_PS_STA), jiffies);
+			    skb_queue_len(&sta->tx_filtered[ac]),
+			    !!test_sta_flag(sta, WLAN_STA_PS_STA), jiffies);
 #endif
 	dev_kfree_skb(skb);
+}
+
+static void ieee80211_check_pending_bar(struct sta_info *sta, u8 *addr, u8 tid)
+{
+	struct tid_ampdu_tx *tid_tx;
+
+	tid_tx = rcu_dereference(sta->ampdu_mlme.tid_tx[tid]);
+	if (!tid_tx || !tid_tx->bar_pending)
+		return;
+
+	tid_tx->bar_pending = false;
+	ieee80211_send_bar(&sta->sdata->vif, addr, tid, tid_tx->failed_bar_ssn);
 }
 
 static void ieee80211_frame_acked(struct sta_info *sta, struct sk_buff *skb)
@@ -132,6 +179,14 @@ static void ieee80211_frame_acked(struct sta_info *sta, struct sk_buff *skb)
 	struct ieee80211_mgmt *mgmt = (void *) skb->data;
 	struct ieee80211_local *local = sta->local;
 	struct ieee80211_sub_if_data *sdata = sta->sdata;
+
+	if (ieee80211_is_data_qos(mgmt->frame_control)) {
+		struct ieee80211_hdr *hdr = (void *) skb->data;
+		u8 *qc = ieee80211_get_qos_ctl(hdr);
+		u16 tid = qc[0] & 0xf;
+
+		ieee80211_check_pending_bar(sta, hdr->addr1, tid);
+	}
 
 	if (ieee80211_is_action(mgmt->frame_control) &&
 	    sdata->vif.type == NL80211_IFTYPE_STATION &&
@@ -161,6 +216,18 @@ static void ieee80211_frame_acked(struct sta_info *sta, struct sk_buff *skb)
 	}
 }
 
+static void ieee80211_set_bar_pending(struct sta_info *sta, u8 tid, u16 ssn)
+{
+	struct tid_ampdu_tx *tid_tx;
+
+	tid_tx = rcu_dereference(sta->ampdu_mlme.tid_tx[tid]);
+	if (!tid_tx)
+		return;
+
+	tid_tx->failed_bar_ssn = ssn;
+	tid_tx->bar_pending = true;
+}
+
 /*
  * Use a static threshold for now, best value to be determined
  * by testing ...
@@ -187,6 +254,8 @@ void ieee80211_tx_status(struct ieee80211_hw *hw, struct sk_buff *skb)
 	int rates_idx = -1;
 	bool send_to_cooked;
 	bool acked;
+	struct ieee80211_bar *bar;
+	u16 tid;
 
 	for (i = 0; i < IEEE80211_TX_MAX_RATES; i++) {
 		if (info->status.rates[i].idx < 0) {
@@ -215,8 +284,11 @@ void ieee80211_tx_status(struct ieee80211_hw *hw, struct sk_buff *skb)
 		if (memcmp(hdr->addr2, sta->sdata->vif.addr, ETH_ALEN))
 			continue;
 
+		if (info->flags & IEEE80211_TX_STATUS_EOSP)
+			clear_sta_flag(sta, WLAN_STA_SP);
+
 		acked = !!(info->flags & IEEE80211_TX_STAT_ACK);
-		if (!acked && test_sta_flags(sta, WLAN_STA_PS_STA)) {
+		if (!acked && test_sta_flag(sta, WLAN_STA_PS_STA)) {
 			/*
 			 * The STA is in power save mode, so assume
 			 * that this TX packet failed because of that.
@@ -239,8 +311,29 @@ void ieee80211_tx_status(struct ieee80211_hw *hw, struct sk_buff *skb)
 			tid = qc[0] & 0xf;
 			ssn = ((le16_to_cpu(hdr->seq_ctrl) + 0x10)
 						& IEEE80211_SCTL_SEQ);
-			ieee80211_send_bar(sta->sdata, hdr->addr1,
+			ieee80211_send_bar(&sta->sdata->vif, hdr->addr1,
 					   tid, ssn);
+		}
+
+		if (!acked && ieee80211_is_back_req(fc)) {
+			u16 control;
+
+			/*
+			 * BAR failed, store the last SSN and retry sending
+			 * the BAR when the next unicast transmission on the
+			 * same TID succeeds.
+			 */
+			bar = (struct ieee80211_bar *) skb->data;
+			control = le16_to_cpu(bar->control);
+			if (!(control & IEEE80211_BAR_CTRL_MULTI_TID)) {
+				u16 ssn = le16_to_cpu(bar->start_seq_num);
+
+				tid = (control &
+				       IEEE80211_BAR_CTRL_TID_INFO_MASK) >>
+				      IEEE80211_BAR_CTRL_TID_INFO_SHIFT;
+
+				ieee80211_set_bar_pending(sta, tid, ssn);
+			}
 		}
 
 		if (info->flags & IEEE80211_TX_STAT_TX_FILTERED) {
@@ -344,9 +437,6 @@ void ieee80211_tx_status(struct ieee80211_hw *hw, struct sk_buff *skb)
 			cookie = local->hw_roc_cookie ^ 2;
 			local->hw_roc_skb_for_status = NULL;
 		}
-
-		if (cookie == local->hw_offchan_tx_cookie)
-			local->hw_offchan_tx_cookie = 0;
 
 		cfg80211_mgmt_tx_status(
 			skb->dev, cookie, skb->data, skb->len,
