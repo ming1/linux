@@ -26,7 +26,6 @@
 /* codec private data */
 struct ak4671_priv {
 	enum snd_soc_control_type control_type;
-	void *control_data;
 };
 
 /* ak4671 register cache & default register settings */
@@ -629,8 +628,6 @@ static int ak4671_probe(struct snd_soc_codec *codec)
 	struct ak4671_priv *ak4671 = snd_soc_codec_get_drvdata(codec);
 	int ret;
 
-	codec->hw_write = (hw_write_t)i2c_master_send;
-
 	ret = snd_soc_codec_set_cache_io(codec, 8, 8, ak4671->control_type);
 	if (ret < 0) {
 		dev_err(codec->dev, "Failed to set cache I/O: %d\n", ret);
@@ -675,7 +672,6 @@ static int __devinit ak4671_i2c_probe(struct i2c_client *client,
 		return -ENOMEM;
 
 	i2c_set_clientdata(client, ak4671);
-	ak4671->control_data = client;
 	ak4671->control_type = SND_SOC_I2C;
 
 	ret = snd_soc_register_codec(&client->dev,
