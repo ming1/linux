@@ -232,7 +232,7 @@ int xhci_find_slot_id_by_port(struct usb_hcd *hcd, struct xhci_hcd *xhci,
 			continue;
 		speed = xhci->devs[i]->udev->speed;
 		if (((speed == USB_SPEED_SUPER) == (hcd->speed == HCD_USB3))
-				&& xhci->devs[i]->port == port) {
+				&& xhci->devs[i]->fake_port == port) {
 			slot_id = i;
 			break;
 		}
@@ -392,13 +392,39 @@ static int xhci_get_ports(struct usb_hcd *hcd, __le32 __iomem ***port_array)
 	return max_ports;
 }
 
+void xhci_set_link_state(struct xhci_hcd *xhci, __le32 __iomem **port_array,
+				int port_id, u32 link_state)
+{
+	u32 temp;
+
+	temp = xhci_readl(xhci, port_array[port_id]);
+	temp = xhci_port_state_to_neutral(temp);
+	temp &= ~PORT_PLS_MASK;
+	temp |= PORT_LINK_STROBE | link_state;
+	xhci_writel(xhci, temp, port_array[port_id]);
+}
+
+/* Test and clear port RWC bit */
+void xhci_test_and_clear_bit(struct xhci_hcd *xhci, __le32 __iomem **port_array,
+				int port_id, u32 port_bit)
+{
+	u32 temp;
+
+	temp = xhci_readl(xhci, port_array[port_id]);
+	if (temp & port_bit) {
+		temp = xhci_port_state_to_neutral(temp);
+		temp |= port_bit;
+		xhci_writel(xhci, temp, port_array[port_id]);
+	}
+}
+
 int xhci_hub_control(struct usb_hcd *hcd, u16 typeReq, u16 wValue,
 		u16 wIndex, char *buf, u16 wLength)
 {
 	struct xhci_hcd	*xhci = hcd_to_xhci(hcd);
 	int max_ports;
 	unsigned long flags;
-	u32 temp, temp1, status;
+	u32 temp, status;
 	int retval = 0;
 	__le32 __iomem **port_array;
 	int slot_id;
@@ -472,11 +498,8 @@ int xhci_hub_control(struct usb_hcd *hcd, u16 typeReq, u16 wValue,
 				xhci_dbg(xhci, "Resume USB2 port %d\n",
 					wIndex + 1);
 				bus_state->resume_done[wIndex] = 0;
-				temp1 = xhci_port_state_to_neutral(temp);
-				temp1 &= ~PORT_PLS_MASK;
-				temp1 |= PORT_LINK_STROBE | XDEV_U0;
-				xhci_writel(xhci, temp1, port_array[wIndex]);
-
+				xhci_set_link_state(xhci, port_array, wIndex,
+							XDEV_U0);
 				xhci_dbg(xhci, "set port %d resume\n",
 					wIndex + 1);
 				slot_id = xhci_find_slot_id_by_port(hcd, xhci,
@@ -551,10 +574,19 @@ int xhci_hub_control(struct usb_hcd *hcd, u16 typeReq, u16 wValue,
 		switch (wValue) {
 		case USB_PORT_FEAT_SUSPEND:
 			temp = xhci_readl(xhci, port_array[wIndex]);
+			if ((temp & PORT_PLS_MASK) != XDEV_U0) {
+				/* Resume the port to U0 first */
+				xhci_set_link_state(xhci, port_array, wIndex,
+							XDEV_U0);
+				spin_unlock_irqrestore(&xhci->lock, flags);
+				msleep(10);
+				spin_lock_irqsave(&xhci->lock, flags);
+			}
 			/* In spec software should not attempt to suspend
 			 * a port unless the port reports that it is in the
 			 * enabled (PED = ‘1’,PLS < ‘3’) state.
 			 */
+			temp = xhci_readl(xhci, port_array[wIndex]);
 			if ((temp & PORT_PE) == 0 || (temp & PORT_RESET)
 				|| (temp & PORT_PLS_MASK) >= XDEV_U3) {
 				xhci_warn(xhci, "USB core suspending device "
@@ -573,10 +605,7 @@ int xhci_hub_control(struct usb_hcd *hcd, u16 typeReq, u16 wValue,
 			xhci_stop_device(xhci, slot_id, 1);
 			spin_lock_irqsave(&xhci->lock, flags);
 
-			temp = xhci_port_state_to_neutral(temp);
-			temp &= ~PORT_PLS_MASK;
-			temp |= PORT_LINK_STROBE | XDEV_U3;
-			xhci_writel(xhci, temp, port_array[wIndex]);
+			xhci_set_link_state(xhci, port_array, wIndex, XDEV_U3);
 
 			spin_unlock_irqrestore(&xhci->lock, flags);
 			msleep(10); /* wait device to enter */
@@ -610,10 +639,8 @@ int xhci_hub_control(struct usb_hcd *hcd, u16 typeReq, u16 wValue,
 				}
 			}
 
-			temp = xhci_port_state_to_neutral(temp);
-			temp &= ~PORT_PLS_MASK;
-			temp |= PORT_LINK_STROBE | link_state;
-			xhci_writel(xhci, temp, port_array[wIndex]);
+			xhci_set_link_state(xhci, port_array, wIndex,
+						link_state);
 
 			spin_unlock_irqrestore(&xhci->lock, flags);
 			msleep(20); /* wait device to enter */
@@ -677,24 +704,13 @@ int xhci_hub_control(struct usb_hcd *hcd, u16 typeReq, u16 wValue,
 				if ((temp & PORT_PE) == 0)
 					goto error;
 
-				temp = xhci_port_state_to_neutral(temp);
-				temp &= ~PORT_PLS_MASK;
-				temp |= PORT_LINK_STROBE | XDEV_RESUME;
-				xhci_writel(xhci, temp,
-						port_array[wIndex]);
-
-				spin_unlock_irqrestore(&xhci->lock,
-						       flags);
+				xhci_set_link_state(xhci, port_array, wIndex,
+							XDEV_RESUME);
+				spin_unlock_irqrestore(&xhci->lock, flags);
 				msleep(20);
 				spin_lock_irqsave(&xhci->lock, flags);
-
-				temp = xhci_readl(xhci,
-						port_array[wIndex]);
-				temp = xhci_port_state_to_neutral(temp);
-				temp &= ~PORT_PLS_MASK;
-				temp |= PORT_LINK_STROBE | XDEV_U0;
-				xhci_writel(xhci, temp,
-						port_array[wIndex]);
+				xhci_set_link_state(xhci, port_array, wIndex,
+							XDEV_U0);
 			}
 			bus_state->port_c_suspend |= 1 << wIndex;
 
@@ -910,25 +926,18 @@ int xhci_bus_resume(struct usb_hcd *hcd)
 		if (test_bit(port_index, &bus_state->bus_suspended) &&
 		    (temp & PORT_PLS_MASK)) {
 			if (DEV_SUPERSPEED(temp)) {
-				temp = xhci_port_state_to_neutral(temp);
-				temp &= ~PORT_PLS_MASK;
-				temp |= PORT_LINK_STROBE | XDEV_U0;
-				xhci_writel(xhci, temp, port_array[port_index]);
+				xhci_set_link_state(xhci, port_array,
+							port_index, XDEV_U0);
 			} else {
-				temp = xhci_port_state_to_neutral(temp);
-				temp &= ~PORT_PLS_MASK;
-				temp |= PORT_LINK_STROBE | XDEV_RESUME;
-				xhci_writel(xhci, temp, port_array[port_index]);
+				xhci_set_link_state(xhci, port_array,
+						port_index, XDEV_RESUME);
 
 				spin_unlock_irqrestore(&xhci->lock, flags);
 				msleep(20);
 				spin_lock_irqsave(&xhci->lock, flags);
 
-				temp = xhci_readl(xhci, port_array[port_index]);
-				temp = xhci_port_state_to_neutral(temp);
-				temp &= ~PORT_PLS_MASK;
-				temp |= PORT_LINK_STROBE | XDEV_U0;
-				xhci_writel(xhci, temp, port_array[port_index]);
+				xhci_set_link_state(xhci, port_array,
+							port_index, XDEV_U0);
 			}
 			/* wait for the port to enter U0 and report port link
 			 * state change.
@@ -938,12 +947,8 @@ int xhci_bus_resume(struct usb_hcd *hcd)
 			spin_lock_irqsave(&xhci->lock, flags);
 
 			/* Clear PLC */
-			temp = xhci_readl(xhci, port_array[port_index]);
-			if (temp & PORT_PLC) {
-				temp = xhci_port_state_to_neutral(temp);
-				temp |= PORT_PLC;
-				xhci_writel(xhci, temp, port_array[port_index]);
-			}
+			xhci_test_and_clear_bit(xhci, port_array, port_index,
+						PORT_PLC);
 
 			slot_id = xhci_find_slot_id_by_port(hcd,
 					xhci, port_index + 1);
