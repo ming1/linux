@@ -651,7 +651,7 @@ static unsigned int zv_max_zsize = (PAGE_SIZE / 8) * 7;
 /*
  * byte count defining poor *mean* compression; pages with greater zsize
  * will be rejected until sufficient better-compressed pages are accepted
- * driving the man below this threshold
+ * driving the mean below this threshold
  */
 static unsigned int zv_max_mean_zsize = (PAGE_SIZE / 8) * 5;
 
@@ -1357,8 +1357,14 @@ static int zcache_cpu_notifier(struct notifier_block *nb,
 			kp->objnodes[kp->nr - 1] = NULL;
 			kp->nr--;
 		}
-		kmem_cache_free(zcache_obj_cache, kp->obj);
-		free_page((unsigned long)kp->page);
+		if (kp->obj) {
+			kmem_cache_free(zcache_obj_cache, kp->obj);
+			kp->obj = NULL;
+		}
+		if (kp->page) {
+			free_page((unsigned long)kp->page);
+			kp->page = NULL;
+		}
 		break;
 	default:
 		break;
@@ -1668,7 +1674,7 @@ static int zcache_new_pool(uint16_t cli_id, uint32_t flags)
 	if (cli == NULL)
 		goto out;
 	atomic_inc(&cli->refcount);
-	pool = kmalloc(sizeof(struct tmem_pool), GFP_KERNEL);
+	pool = kmalloc(sizeof(struct tmem_pool), GFP_ATOMIC);
 	if (pool == NULL) {
 		pr_info("zcache: pool creation failed: out of memory\n");
 		goto out;
@@ -1798,8 +1804,10 @@ static int zcache_frontswap_poolid = -1;
 /*
  * Swizzling increases objects per swaptype, increasing tmem concurrency
  * for heavy swaploads.  Later, larger nr_cpus -> larger SWIZ_BITS
+ * Setting SWIZ_BITS to 27 basically reconstructs the swap entry from
+ * frontswap_get_page()
  */
-#define SWIZ_BITS		4
+#define SWIZ_BITS		27
 #define SWIZ_MASK		((1 << SWIZ_BITS) - 1)
 #define _oswiz(_type, _ind)	((_type << SWIZ_BITS) | (_ind & SWIZ_MASK))
 #define iswiz(_ind)		(_ind >> SWIZ_BITS)
@@ -1993,7 +2001,7 @@ static int __init zcache_init(void)
 		pr_info("zcache: frontswap enabled using kernel "
 			"transcendent memory and xvmalloc\n");
 		if (old_ops.init != NULL)
-			pr_warning("ktmem: frontswap_ops overridden");
+			pr_warning("zcache: frontswap_ops overridden");
 	}
 #endif
 out:

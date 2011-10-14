@@ -2,24 +2,20 @@ This is a driver for the ET1310 network device.
 
 Based on the driver found at https://sourceforge.net/projects/et131x/
 
-Cleaned up immensely by Olaf Hartman <o.hartmann@telovital.com> and Christoph
-Hellwig <hch@infradead.org>
+Cleaned up immensely by Olaf Hartman and Christoph Hellwig <hch@infradead.org>
 
 Note, the powermanagement options were removed from the vendor provided
 driver as they did not build properly at the time.
 
 TODO:
-	- kernel coding style cleanups
-	- forward port for latest network driver changes
-	- kill useless typecasts (e.g. in et1310_phy.c)
-	- alloc_etherdev is initializing memory with zero?!?
-	- add_timer call in et131x_netdev.c is correct?
-	- Add power saving functionality (suspend, sleep, resume)
-	- Implement a few more kernel Parameter (set mac )
+	- Put the driver into a single file, with a .h for the registers layout.
+	- rx_ring.fbr{0, 1} can probably share a common structure
+	- Use of kmem_cache seems a bit unusual
+	- Use dma_alloc_... in place of pci_alloc_...
+	- It's too late stopping the tx queue when there is no room for the current packet. The condition should be detected for the next packet.
+	- PCI_VDEVICE ?
 
 Please send patches to:
 	Greg Kroah-Hartman <gregkh@suse.de>
-
-And Cc: Olaf Hartmann <o.hartmann@telovital.com> as he has this device and can
-test any changes.
+	Mark Einon <mark.einon@gmail.com>
 

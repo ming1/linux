@@ -48,19 +48,22 @@
  *
  */
 
+#define DRIVER_NAME "et131x"
+#define DRIVER_VERSION "v2.0"
+
 /* et131x_eeprom.c */
-int et131x_init_eeprom(struct et131x_adapter *etdev);
+int et131x_init_eeprom(struct et131x_adapter *adapter);
 
 /* et131x_initpci.c */
-void ConfigGlobalRegs(struct et131x_adapter *pAdapter);
-void ConfigMMCRegs(struct et131x_adapter *pAdapter);
+void et131x_error_timer_handler(unsigned long data);
+void et131x_configure_global_regs(struct et131x_adapter *adapter);
 void et131x_enable_interrupts(struct et131x_adapter *adapter);
 void et131x_disable_interrupts(struct et131x_adapter *adapter);
 void et131x_align_allocated_memory(struct et131x_adapter *adapter,
 				   u64 *phys_addr,
 				   u64 *offset, u64 mask);
 
-int et131x_adapter_setup(struct et131x_adapter *adapter);
+void et131x_adapter_setup(struct et131x_adapter *adapter);
 int et131x_adapter_memory_alloc(struct et131x_adapter *adapter);
 void et131x_adapter_memory_free(struct et131x_adapter *adapter);
 void et131x_hwaddr_init(struct et131x_adapter *adapter);
@@ -71,56 +74,52 @@ irqreturn_t et131x_isr(int irq, void *dev_id);
 void et131x_isr_handler(struct work_struct *work);
 
 /* et1310_mac.c */
-void ConfigMACRegs1(struct et131x_adapter *adapter);
-void ConfigMACRegs2(struct et131x_adapter *adapter);
-void ConfigRxMacRegs(struct et131x_adapter *adapter);
-void ConfigTxMacRegs(struct et131x_adapter *adapter);
-void ConfigMacStatRegs(struct et131x_adapter *adapter);
-void ConfigFlowControl(struct et131x_adapter *adapter);
-void UpdateMacStatHostCounters(struct et131x_adapter *adapter);
-void HandleMacStatInterrupt(struct et131x_adapter *adapter);
-void SetupDeviceForMulticast(struct et131x_adapter *adapter);
-void SetupDeviceForUnicast(struct et131x_adapter *adapter);
+void et1310_config_mac_regs1(struct et131x_adapter *adapter);
+void et1310_config_mac_regs2(struct et131x_adapter *adapter);
+void et1310_config_rxmac_regs(struct et131x_adapter *adapter);
+void et1310_config_txmac_regs(struct et131x_adapter *adapter);
+void et1310_config_macstat_regs(struct et131x_adapter *adapter);
+void et1310_config_flow_control(struct et131x_adapter *adapter);
+void et1310_update_macstat_host_counters(struct et131x_adapter *adapter);
+void et1310_handle_macstat_interrupt(struct et131x_adapter *adapter);
+void et1310_setup_device_for_multicast(struct et131x_adapter *adapter);
+void et1310_setup_device_for_unicast(struct et131x_adapter *adapter);
 
 /* et131x_netdev.c */
+int et131x_open(struct net_device *netdev);
+int et131x_close(struct net_device *netdev);
+void et131x_up(struct net_device *netdev);
+void et131x_down(struct net_device *netdev);
 struct net_device *et131x_device_alloc(void);
+void et131x_enable_txrx(struct net_device *netdev);
+void et131x_disable_txrx(struct net_device *netdev);
 
-/* et131x_pm.c */
-void EnablePhyComa(struct et131x_adapter *adapter);
-void DisablePhyComa(struct et131x_adapter *adapter);
+/* et1310_pm.c */
+int et1310_in_phy_coma(struct et131x_adapter *adapter);
+void et1310_enable_phy_coma(struct et131x_adapter *adapter);
+void et1310_disable_phy_coma(struct et131x_adapter *adapter);
 
-/* et131x_phy.c */
-void ET1310_PhyInit(struct et131x_adapter *adapter);
-void ET1310_PhyReset(struct et131x_adapter *adapter);
-void ET1310_PhyPowerDown(struct et131x_adapter *adapter, bool down);
-void ET1310_PhyAdvertise1000BaseT(struct et131x_adapter *adapter,
-				  u16 duplex);
-void ET1310_PhyAccessMiBit(struct et131x_adapter *adapter,
-			   u16 action,
-			   u16 regnum, u16 bitnum, u8 *value);
+/* et1310_phy.c */
+void et1310_phy_power_down(struct et131x_adapter *adapter, bool down);
+void et1310_phy_access_mii_bit(struct et131x_adapter *adapter,
+			       u16 action,
+			       u16 regnum, u16 bitnum, u8 *value);
 
-int et131x_xcvr_find(struct et131x_adapter *adapter);
-void et131x_setphy_normal(struct et131x_adapter *adapter);
+void et131x_xcvr_init(struct et131x_adapter *adapter);
 
 /* static inline function does not work because et131x_adapter is not always
  * defined
  */
-int PhyMiRead(struct et131x_adapter *adapter, u8 xcvrAddr,
-	      u8 xcvrReg, u16 *value);
-#define MiRead(adapter, xcvrReg, value) \
-	PhyMiRead((adapter), (adapter)->stats.xcvr_addr, (xcvrReg), (value))
+int et131x_phy_mii_read(struct et131x_adapter *adapter, u8 addr,
+	      u8 reg, u16 *value);
+int32_t et131x_mii_read(struct et131x_adapter *adapter,
+		u8 reg, u16 *value);
+int32_t et131x_mii_write(struct et131x_adapter *adapter,
+		u8 reg, u16 value);
 
-int32_t MiWrite(struct et131x_adapter *adapter,
-		u8 xcvReg, u16 value);
-void et131x_Mii_check(struct et131x_adapter *pAdapter,
-		      u16 bmsr, u16 bmsr_ints);
-
-/* This last is not strictly required (the driver could call the TPAL
- * version instead), but this sets the adapter up correctly, and calls the
- * access routine indirectly.  This protects the driver from changes in TPAL.
- */
-void SetPhy_10BaseTHalfDuplex(struct et131x_adapter *adapter);
-
+int et131x_mdio_read(struct mii_bus *bus, int phy_addr, int reg);
+int et131x_mdio_write(struct mii_bus *bus, int phy_addr, int reg, u16 value);
+int et131x_mdio_reset(struct mii_bus *bus);
 
 /* et1310_rx.c */
 int et131x_rx_dma_memory_alloc(struct et131x_adapter *adapter);
@@ -131,8 +130,8 @@ void et131x_rfd_resources_free(struct et131x_adapter *adapter,
 			       struct rfd *rfd);
 int et131x_init_recv(struct et131x_adapter *adapter);
 
-void ConfigRxDmaRegs(struct et131x_adapter *adapter);
-void SetRxDmaTimer(struct et131x_adapter *adapter);
+void et131x_config_rx_dma_regs(struct et131x_adapter *adapter);
+void et131x_set_rx_dma_timer(struct et131x_adapter *adapter);
 void et131x_rx_dma_disable(struct et131x_adapter *adapter);
 void et131x_rx_dma_enable(struct et131x_adapter *adapter);
 
@@ -143,7 +142,7 @@ void et131x_handle_recv_interrupt(struct et131x_adapter *adapter);
 /* et131x_tx.c */
 int et131x_tx_dma_memory_alloc(struct et131x_adapter *adapter);
 void et131x_tx_dma_memory_free(struct et131x_adapter *adapter);
-void ConfigTxDmaRegs(struct et131x_adapter *adapter);
+void et131x_config_tx_dma_regs(struct et131x_adapter *adapter);
 void et131x_init_send(struct et131x_adapter *adapter);
 void et131x_tx_dma_disable(struct et131x_adapter *adapter);
 void et131x_tx_dma_enable(struct et131x_adapter *adapter);
@@ -151,3 +150,5 @@ void et131x_handle_send_interrupt(struct et131x_adapter *adapter);
 void et131x_free_busy_send_packets(struct et131x_adapter *adapter);
 int et131x_send_packets(struct sk_buff *skb, struct net_device *netdev);
 
+/* et131x_ethtool.c */
+void et131x_set_ethtool_ops(struct net_device *netdev);
