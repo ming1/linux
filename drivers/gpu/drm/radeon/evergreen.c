@@ -39,7 +39,7 @@
 
 static void evergreen_gpu_init(struct radeon_device *rdev);
 void evergreen_fini(struct radeon_device *rdev);
-static void evergreen_pcie_gen2_enable(struct radeon_device *rdev);
+void evergreen_pcie_gen2_enable(struct radeon_device *rdev);
 
 void evergreen_fix_pci_max_read_req_size(struct radeon_device *rdev)
 {
@@ -935,6 +935,9 @@ int evergreen_pcie_gart_enable(struct radeon_device *rdev)
 	WREG32(VM_CONTEXT1_CNTL, 0);
 
 	evergreen_pcie_gart_tlb_flush(rdev);
+	DRM_INFO("PCIE GART of %uM enabled (table at 0x%016llX).\n",
+		 (unsigned)(rdev->mc.gtt_size >> 20),
+		 (unsigned long long)rdev->gart.table_addr);
 	rdev->gart.ready = true;
 	return 0;
 }
@@ -3003,8 +3006,7 @@ static int evergreen_startup(struct radeon_device *rdev)
 	int r;
 
 	/* enable pcie gen2 link */
-	if (!ASIC_IS_DCE5(rdev))
-		evergreen_pcie_gen2_enable(rdev);
+	evergreen_pcie_gen2_enable(rdev);
 
 	if (ASIC_IS_DCE5(rdev)) {
 		if (!rdev->me_fw || !rdev->pfp_fw || !rdev->rlc_fw || !rdev->mc_fw) {
@@ -3273,7 +3275,7 @@ void evergreen_fini(struct radeon_device *rdev)
 	rdev->bios = NULL;
 }
 
-static void evergreen_pcie_gen2_enable(struct radeon_device *rdev)
+void evergreen_pcie_gen2_enable(struct radeon_device *rdev)
 {
 	u32 link_width_cntl, speed_cntl;
 
