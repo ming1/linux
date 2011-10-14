@@ -42,8 +42,8 @@ static const struct irq_class intrclass_names[] = {
 	{.name = "SCP", .desc = "[EXT] Service Call" },
 	{.name = "IUC", .desc = "[EXT] IUCV" },
 	{.name = "CPM", .desc = "[EXT] CPU Measurement" },
+	{.name = "CIO", .desc = "[I/O] Common I/O Layer Interrupt" },
 	{.name = "QAI", .desc = "[I/O] QDIO Adapter Interrupt" },
-	{.name = "QDI", .desc = "[I/O] QDIO Interrupt" },
 	{.name = "DAS", .desc = "[I/O] DASD" },
 	{.name = "C15", .desc = "[I/O] 3215" },
 	{.name = "C70", .desc = "[I/O] 3270" },
@@ -53,6 +53,7 @@ static const struct irq_class intrclass_names[] = {
 	{.name = "CLW", .desc = "[I/O] CLAW" },
 	{.name = "CTC", .desc = "[I/O] CTC" },
 	{.name = "APB", .desc = "[I/O] AP Bus" },
+	{.name = "CSC", .desc = "[I/O] CHSC Subchannel" },
 	{.name = "NMI", .desc = "[NMI] Machine Check" },
 };
 
