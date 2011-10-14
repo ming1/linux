@@ -65,9 +65,6 @@ int oprofilefs_ulong_from_user(unsigned long *val, char const __user *buf, size_
 	char tmpbuf[TMPBUFSIZE];
 	unsigned long flags;
 
-	if (!count)
-		return 0;
-
 	if (count > TMPBUFSIZE - 1)
 		return -EINVAL;
 
@@ -97,6 +94,8 @@ static ssize_t ulong_write_file(struct file *file, char const __user *buf, size_
 
 	if (*offset)
 		return -EINVAL;
+	if (count == 0)
+		return 0;
 
 	retval = oprofilefs_ulong_from_user(&value, buf, count);
 	if (retval)
