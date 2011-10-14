@@ -90,6 +90,7 @@ extern int SendReceiveBlockingLock(const unsigned int xid,
 extern int checkSMB(struct smb_hdr *smb, __u16 mid, unsigned int length);
 extern bool is_valid_oplock_break(struct smb_hdr *smb,
 				  struct TCP_Server_Info *);
+extern bool backup_cred(struct cifs_sb_info *);
 extern bool is_size_safe_to_change(struct cifsInodeInfo *, __u64 eof);
 extern void cifs_update_eof(struct cifsInodeInfo *cifsi, loff_t offset,
 			    unsigned int bytes_written);
@@ -360,7 +361,7 @@ extern int CIFSGetSrvInodeNumber(const int xid, struct cifs_tcon *tcon,
 			int remap_special_chars);
 
 extern int CIFSSMBLock(const int xid, struct cifs_tcon *tcon,
-			const __u16 netfid, const __u64 len,
+			const __u16 netfid, const __u32 netpid, const __u64 len,
 			const __u64 offset, const __u32 numUnlock,
 			const __u32 numLock, const __u8 lockType,
 			const bool waitFlag, const __u8 oplock_level);
@@ -380,7 +381,7 @@ extern void tconInfoFree(struct cifs_tcon *);
 extern int cifs_sign_smb(struct smb_hdr *, struct TCP_Server_Info *, __u32 *);
 extern int cifs_sign_smb2(struct kvec *iov, int n_vec, struct TCP_Server_Info *,
 			  __u32 *);
-extern int cifs_verify_signature(struct smb_hdr *,
+extern int cifs_verify_signature(struct kvec *iov, unsigned int nr_iov,
 				 struct TCP_Server_Info *server,
 				__u32 expected_sequence_number);
 extern int SMBNTencrypt(unsigned char *, unsigned char *, unsigned char *);
