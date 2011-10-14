@@ -20,6 +20,7 @@
 #include <linux/gpio.h>
 #include <linux/interrupt.h>
 #include <linux/irq.h>
+#include <linux/module.h>
 
 #define IOH_EDGE_FALLING	0
 #define IOH_EDGE_RISING		BIT(0)

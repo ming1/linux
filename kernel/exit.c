@@ -7,7 +7,7 @@
 #include <linux/mm.h>
 #include <linux/slab.h>
 #include <linux/interrupt.h>
-#include <linux/module.h>
+#include <linux/export.h>
 #include <linux/capability.h>
 #include <linux/completion.h>
 #include <linux/personality.h>
@@ -19,6 +19,7 @@
 #include <linux/acct.h>
 #include <linux/tsacct_kern.h>
 #include <linux/file.h>
+#include <linux/module.h>
 #include <linux/fdtable.h>
 #include <linux/binfmts.h>
 #include <linux/nsproxy.h>

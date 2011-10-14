@@ -10,6 +10,7 @@
 #include <linux/moduleparam.h>
 #include <linux/debugfs.h>
 #include <linux/fs.h>
+#include <linux/export.h>
 #include <linux/seq_file.h>
 #include <linux/slab.h>
 #include <linux/stat.h>
