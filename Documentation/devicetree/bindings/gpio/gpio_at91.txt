@@ -1,0 +1,9 @@
+Atmel AT91 GPIO controller
+
+Required properties:
+ - compatible : "atmel,at91rm9200-gpio"
+ - interrupts : Should be the port interrupt shared by all 32 pins.
+ - #gpio-cells : Should be two.  The first cell is the pin number and
+  the second cell is used to specify optional parameters (currently
+  unused).
+ - gpio-controller : Marks the device node as a GPIO controller.

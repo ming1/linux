@@ -22,6 +22,11 @@
 		serial2 = &usart1;
 		serial3 = &usart2;
 		serial4 = &usart3;
+		gpio0 = &pioA;
+		gpio1 = &pioB;
+		gpio2 = &pioC;
+		gpio3 = &pioD;
+		gpio4 = &pioE;
 	};
 	cpus {
 		cpu@0 {
@@ -63,6 +68,46 @@
 				compatible = "atmel,at91sam9g45-dma";
 				reg = <0xffffec00 0x200>;
 				interrupts = <21>;
+			};
+
+			pioA: gpio@fffff200 {
+				compatible = "atmel,at91rm9200-gpio";
+				reg = < 0xfffff200 0x200 >;
+				interrupts = <2>;
+				#gpio-cells = <2>;
+				gpio-controller;
+			};
+
+			pioB: gpio@fffff400 {
+				compatible = "atmel,at91rm9200-gpio";
+				reg = < 0xfffff400 0x200 >;
+				interrupts = <3>;
+				#gpio-cells = <2>;
+				gpio-controller;
+			};
+
+			pioC: gpio@fffff600 {
+				compatible = "atmel,at91rm9200-gpio";
+				reg = < 0xfffff600 0x200 >;
+				interrupts = <4>;
+				#gpio-cells = <2>;
+				gpio-controller;
+			};
+
+			pioD: gpio@fffff800 {
+				compatible = "atmel,at91rm9200-gpio";
+				reg = < 0xfffff800 0x200 >;
+				interrupts = <5>;
+				#gpio-cells = <2>;
+				gpio-controller;
+			};
+
+			pioE: gpio@fffffa00 {
+				compatible = "atmel,at91rm9200-gpio";
+				reg = < 0xfffffa00 0x200 >;
+				interrupts = <5>;
+				#gpio-cells = <2>;
+				gpio-controller;
 			};
 
 			dbgu: serial@ffffee00 {
