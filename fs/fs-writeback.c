@@ -885,7 +885,7 @@ static long wb_check_old_data_flush(struct bdi_writeback *wb)
 
 	expired = wb->last_old_flush +
 			msecs_to_jiffies(dirty_writeback_interval * 10);
-	if (time_before(jiffies, expired))
+	if (time_before(jiffies, expired) && list_empty(&wb->b_more_io_wait))
 		return 0;
 
 	wb->last_old_flush = jiffies;
@@ -957,6 +957,10 @@ int bdi_writeback_thread(void *data)
 	struct bdi_writeback *wb = data;
 	struct backing_dev_info *bdi = wb->bdi;
 	long progress;
+	unsigned int pause = 1;
+	unsigned int max_pause = dirty_writeback_interval ?
+			msecs_to_jiffies(dirty_writeback_interval * 10) :
+			HZ;
 
 	current->flags |= PF_SWAPWRITE;
 	set_freezable();
@@ -978,8 +982,10 @@ int bdi_writeback_thread(void *data)
 
 		progress = wb_do_writeback(wb, 0);
 
-		if (progress)
+		if (progress) {
 			wb->last_active = jiffies;
+			pause = 1;
+		}
 
 		set_current_state(TASK_INTERRUPTIBLE);
 		if (!list_empty(&bdi->work_list) || kthread_should_stop()) {
@@ -987,8 +993,11 @@ int bdi_writeback_thread(void *data)
 			continue;
 		}
 
-		if (wb_has_dirty_io(wb) && dirty_writeback_interval)
-			schedule_timeout(msecs_to_jiffies(dirty_writeback_interval * 10));
+		if (!list_empty(&wb->b_more_io_wait) && pause < max_pause) {
+			schedule_timeout(pause);
+			pause <<= 1;
+		} else if (wb_has_dirty_io(wb) && dirty_writeback_interval)
+			schedule_timeout(max_pause);
 		else {
 			/*
 			 * We have nothing to do, so can go sleep without any
