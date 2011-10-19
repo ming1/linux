@@ -28,6 +28,7 @@
 #include <linux/pinctrl/machine.h>
 #include "core.h"
 #include "pinmux.h"
+#include "pinconf.h"
 
 /* Global list of pin control devices */
 static DEFINE_MUTEX(pinctrldev_list_mutex);
@@ -160,6 +161,7 @@ static int pinctrl_register_one_pin(struct pinctrl_dev *pctldev,
 	pindesc = kzalloc(sizeof(*pindesc), GFP_KERNEL);
 	if (pindesc == NULL)
 		return -ENOMEM;
+
 	spin_lock_init(&pindesc->lock);
 
 	/* Set owner */
@@ -492,6 +494,7 @@ static void pinctrl_init_device_debugfs(struct pinctrl_dev *pctldev)
 	debugfs_create_file("gpio-ranges", S_IFREG | S_IRUGO,
 			    device_root, pctldev, &pinctrl_gpioranges_ops);
 	pinmux_init_device_debugfs(device_root, pctldev);
+	pinconf_init_device_debugfs(device_root, pctldev);
 }
 
 static void pinctrl_init_debugfs(void)
@@ -543,6 +546,16 @@ struct pinctrl_dev *pinctrl_register(struct pinctrl_desc *pctldesc,
 		ret = pinmux_check_ops(pctldesc->pmxops);
 		if (ret) {
 			pr_err("%s pinmux ops lacks necessary functions\n",
+			       pctldesc->name);
+			return NULL;
+		}
+	}
+
+	/* If we're implementing pinconfig, check the ops for sanity */
+	if (pctldesc->confops) {
+		ret = pinconf_check_ops(pctldesc->confops);
+		if (ret) {
+			pr_err("%s pin config ops lacks necessary functions\n",
 			       pctldesc->name);
 			return NULL;
 		}

@@ -1,0 +1,32 @@
+/*
+ * Internal interface between the core pin control system and the
+ * pin config portions
+ *
+ * Copyright (C) 2011 ST-Ericsson SA
+ * Written on behalf of Linaro for ST-Ericsson
+ * Based on bits of regulator core, gpio core and clk core
+ *
+ * Author: Linus Walleij <linus.walleij@linaro.org>
+ *
+ * License terms: GNU General Public License (GPL) version 2
+ */
+
+#ifdef CONFIG_PINCONF
+
+int pinconf_check_ops(const struct pinconf_ops *ops);
+void pinconf_init_device_debugfs(struct dentry *devroot,
+				 struct pinctrl_dev *pctldev);
+
+#else
+
+static inline int pinconf_check_ops(const struct pinconf_ops *ops)
+{
+	return 0;
+}
+
+static inline void pinconf_init_device_debugfs(struct dentry *devroot,
+					       struct pinctrl_dev *pctldev)
+{
+}
+
+#endif
