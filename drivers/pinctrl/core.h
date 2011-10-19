@@ -9,6 +9,10 @@
  * License terms: GNU General Public License (GPL) version 2
  */
 
+#include <linux/pinctrl/pinconf.h>
+
+struct pinctrl_gpio_range;
+
 /**
  * struct pinctrl_dev - pin control class device
  * @node: node to include this pin controller in the global pin controller list
