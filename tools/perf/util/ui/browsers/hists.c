@@ -24,14 +24,11 @@ struct hist_browser {
 	struct hists	    *hists;
 	struct hist_entry   *he_selection;
 	struct map_symbol   *selection;
-	const struct thread *thread_filter;
-	const struct dso    *dso_filter;
 	bool		     has_symbols;
 };
 
 static int hists__browser_title(struct hists *self, char *bf, size_t size,
-				const char *ev_name, const struct dso *dso,
-				const struct thread *thread);
+				const char *ev_name);
 
 static void hist_browser__refresh_dimensions(struct hist_browser *self)
 {
@@ -307,8 +304,7 @@ static int hist_browser__run(struct hist_browser *self, const char *ev_name,
 	self->b.nr_entries = self->hists->nr_entries;
 
 	hist_browser__refresh_dimensions(self);
-	hists__browser_title(self->hists, title, sizeof(title), ev_name,
-			     self->dso_filter, self->thread_filter);
+	hists__browser_title(self->hists, title, sizeof(title), ev_name);
 
 	if (ui_browser__show(&self->b, title,
 			     "Press '?' for help on key bindings") < 0)
@@ -323,8 +319,7 @@ static int hist_browser__run(struct hist_browser *self, const char *ev_name,
 			timer(arg);
 			ui_browser__update_nr_entries(&self->b, self->hists->nr_entries);
 			hists__browser_title(self->hists, title, sizeof(title),
-					     ev_name, self->dso_filter,
-					     self->thread_filter);
+					     ev_name);
 			ui_browser__show_title(&self->b, title);
 			continue;
 		case 'D': { /* Debug */
@@ -547,7 +542,7 @@ static int hist_browser__show_entry(struct hist_browser *self,
 	char s[256];
 	double percent;
 	int printed = 0;
-	int color, width = self->b.width;
+	int width = self->b.width - 6; /* The percentage */
 	char folded_sign = ' ';
 	bool current_entry = ui_browser__is_current_entry(&self->b, row);
 	off_t row_offset = entry->row_offset;
@@ -563,26 +558,25 @@ static int hist_browser__show_entry(struct hist_browser *self,
 	}
 
 	if (row_offset == 0) {
-		hist_entry__snprintf(entry, s, sizeof(s), self->hists, NULL, false,
-				     0, false, self->hists->stats.total_period);
+		hist_entry__snprintf(entry, s, sizeof(s), self->hists);
 		percent = (entry->period * 100.0) / self->hists->stats.total_period;
 
-		color = HE_COLORSET_SELECTED;
-		if (!current_entry) {
-			if (percent >= MIN_RED)
-				color = HE_COLORSET_TOP;
-			else if (percent >= MIN_GREEN)
-				color = HE_COLORSET_MEDIUM;
-			else
-				color = HE_COLORSET_NORMAL;
-		}
-
-		ui_browser__set_color(&self->b, color);
+		ui_browser__set_percent_color(&self->b, percent, current_entry);
 		ui_browser__gotorc(&self->b, row, 0);
 		if (symbol_conf.use_callchain) {
 			slsmg_printf("%c ", folded_sign);
 			width -= 2;
 		}
+
+		slsmg_printf(" %5.2f%%", percent);
+
+		/* The scroll bar isn't being used */
+		if (!self->b.navkeypressed)
+			width += 1;
+
+		if (!current_entry || !self->b.navkeypressed)
+			ui_browser__set_color(&self->b, HE_COLORSET_NORMAL);
+
 		slsmg_write_nstring(s, width);
 		++row;
 		++printed;
@@ -787,6 +781,7 @@ static struct hist_browser *hist_browser__new(struct hists *hists)
 		self->hists = hists;
 		self->b.refresh = hist_browser__refresh;
 		self->b.seek = ui_browser__hists_seek;
+		self->b.use_navkeypressed = true,
 		self->has_symbols = sort_sym.list.next != NULL;
 	}
 
@@ -809,11 +804,12 @@ static struct thread *hist_browser__selected_thread(struct hist_browser *self)
 }
 
 static int hists__browser_title(struct hists *self, char *bf, size_t size,
-				const char *ev_name, const struct dso *dso,
-				const struct thread *thread)
+				const char *ev_name)
 {
 	char unit;
 	int printed;
+	const struct dso *dso = self->dso_filter;
+	const struct thread *thread = self->thread_filter;
 	unsigned long nr_events = self->stats.nr_events[PERF_RECORD_SAMPLE];
 
 	nr_events = convert_unit(nr_events, &unit);
@@ -868,6 +864,8 @@ static int perf_evsel__hists_browse(struct perf_evsel *evsel, int nr_events,
 		switch (key) {
 		case NEWT_KEY_TAB:
 		case NEWT_KEY_UNTAB:
+			if (nr_events == 1)
+				continue;
 			/*
 			 * Exit the browser, let hists__browser_tree
 			 * go to the next or previous
@@ -886,17 +884,20 @@ static int perf_evsel__hists_browse(struct perf_evsel *evsel, int nr_events,
 		case NEWT_KEY_F1:
 		case 'h':
 		case '?':
-			ui__help_window("h/?/F1    Show this window\n"
-					"TAB/UNTAB Switch events\n"
-					"q/CTRL+C  Exit browser\n\n"
+			ui__help_window("h/?/F1        Show this window\n"
+					"UP/DOWN/PGUP\n"
+					"PGDN/SPACE    Navigate\n"
+					"q/ESC/CTRL+C  Exit browser\n\n"
+					"For multiple event sessions:\n\n"
+					"TAB/UNTAB Switch events\n\n"
 					"For symbolic views (--sort has sym):\n\n"
-					"->        Zoom into DSO/Threads & Annotate current symbol\n"
-					"<-        Zoom out\n"
-					"a         Annotate current symbol\n"
-					"C         Collapse all callchains\n"
-					"E         Expand all callchains\n"
-					"d         Zoom into current DSO\n"
-					"t         Zoom into current Thread\n");
+					"->            Zoom into DSO/Threads & Annotate current symbol\n"
+					"<-            Zoom out\n"
+					"a             Annotate current symbol\n"
+					"C             Collapse all callchains\n"
+					"E             Expand all callchains\n"
+					"d             Zoom into current DSO\n"
+					"t             Zoom into current Thread\n");
 			continue;
 		case NEWT_KEY_ENTER:
 		case NEWT_KEY_RIGHT:
@@ -914,9 +915,9 @@ static int perf_evsel__hists_browse(struct perf_evsel *evsel, int nr_events,
 				continue;
 			}
 			top = pstack__pop(fstack);
-			if (top == &browser->dso_filter)
+			if (top == &browser->hists->dso_filter)
 				goto zoom_out_dso;
-			if (top == &browser->thread_filter)
+			if (top == &browser->hists->thread_filter)
 				goto zoom_out_thread;
 			continue;
 		}
@@ -944,14 +945,14 @@ static int perf_evsel__hists_browse(struct perf_evsel *evsel, int nr_events,
 
 		if (thread != NULL &&
 		    asprintf(&options[nr_options], "Zoom %s %s(%d) thread",
-			     (browser->thread_filter ? "out of" : "into"),
+			     (browser->hists->thread_filter ? "out of" : "into"),
 			     (thread->comm_set ? thread->comm : ""),
 			     thread->pid) > 0)
 			zoom_thread = nr_options++;
 
 		if (dso != NULL &&
 		    asprintf(&options[nr_options], "Zoom %s %s DSO",
-			     (browser->dso_filter ? "out of" : "into"),
+			     (browser->hists->dso_filter ? "out of" : "into"),
 			     (dso->kernel ? "the Kernel" : dso->short_name)) > 0)
 			zoom_dso = nr_options++;
 
@@ -991,36 +992,36 @@ do_annotate:
 			map__browse(browser->selection->map);
 		else if (choice == zoom_dso) {
 zoom_dso:
-			if (browser->dso_filter) {
-				pstack__remove(fstack, &browser->dso_filter);
+			if (browser->hists->dso_filter) {
+				pstack__remove(fstack, &browser->hists->dso_filter);
 zoom_out_dso:
 				ui_helpline__pop();
-				browser->dso_filter = NULL;
+				browser->hists->dso_filter = NULL;
 			} else {
 				if (dso == NULL)
 					continue;
 				ui_helpline__fpush("To zoom out press <- or -> + \"Zoom out of %s DSO\"",
 						   dso->kernel ? "the Kernel" : dso->short_name);
-				browser->dso_filter = dso;
-				pstack__push(fstack, &browser->dso_filter);
+				browser->hists->dso_filter = dso;
+				pstack__push(fstack, &browser->hists->dso_filter);
 			}
-			hists__filter_by_dso(self, browser->dso_filter);
+			hists__filter_by_dso(self);
 			hist_browser__reset(browser);
 		} else if (choice == zoom_thread) {
 zoom_thread:
-			if (browser->thread_filter) {
-				pstack__remove(fstack, &browser->thread_filter);
+			if (browser->hists->thread_filter) {
+				pstack__remove(fstack, &browser->hists->thread_filter);
 zoom_out_thread:
 				ui_helpline__pop();
-				browser->thread_filter = NULL;
+				browser->hists->thread_filter = NULL;
 			} else {
 				ui_helpline__fpush("To zoom out press <- or -> + \"Zoom out of %s(%d) thread\"",
 						   thread->comm_set ? thread->comm : "",
 						   thread->pid);
-				browser->thread_filter = thread;
-				pstack__push(fstack, &browser->thread_filter);
+				browser->hists->thread_filter = thread;
+				pstack__push(fstack, &browser->hists->thread_filter);
 			}
-			hists__filter_by_thread(self, browser->thread_filter);
+			hists__filter_by_thread(self);
 			hist_browser__reset(browser);
 		}
 	}
