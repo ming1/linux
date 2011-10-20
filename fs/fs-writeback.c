@@ -743,6 +743,7 @@ static long wb_writeback(struct bdi_writeback *wb,
 	unsigned long oldest_jif;
 	struct inode *inode;
 	long progress;
+	long total_progress = 0;
 
 	oldest_jif = jiffies;
 	work->older_than_this = &oldest_jif;
@@ -786,6 +787,7 @@ static long wb_writeback(struct bdi_writeback *wb,
 		else
 			progress = __writeback_inodes_wb(wb, work);
 		trace_writeback_written(wb->bdi, work);
+		total_progress += progress;
 
 		wb_update_bandwidth(wb, wb_start);
 
@@ -819,7 +821,8 @@ static long wb_writeback(struct bdi_writeback *wb,
 	}
 	spin_unlock(&wb->list_lock);
 
-	return nr_pages - work->nr_pages;
+	trace_writeback_pages_written(nr_pages - work->nr_pages);
+	return total_progress;
 }
 
 /*
@@ -953,7 +956,7 @@ int bdi_writeback_thread(void *data)
 {
 	struct bdi_writeback *wb = data;
 	struct backing_dev_info *bdi = wb->bdi;
-	long pages_written;
+	long progress;
 
 	current->flags |= PF_SWAPWRITE;
 	set_freezable();
@@ -973,11 +976,9 @@ int bdi_writeback_thread(void *data)
 		 */
 		del_timer(&wb->wakeup_timer);
 
-		pages_written = wb_do_writeback(wb, 0);
+		progress = wb_do_writeback(wb, 0);
 
-		trace_writeback_pages_written(pages_written);
-
-		if (pages_written)
+		if (progress)
 			wb->last_active = jiffies;
 
 		set_current_state(TASK_INTERRUPTIBLE);
