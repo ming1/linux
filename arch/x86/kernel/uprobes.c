@@ -409,6 +409,8 @@ void set_instruction_pointer(struct pt_regs *regs, unsigned long vaddr)
 	regs->ip = vaddr;
 }
 
+#define	UPROBE_TRAP_NO	-1ul
+
 /*
  * pre_xol - prepare to execute out of line.
  * @uprobe: the probepoint information.
@@ -423,6 +425,9 @@ void set_instruction_pointer(struct pt_regs *regs, unsigned long vaddr)
 int pre_xol(struct uprobe *uprobe, struct pt_regs *regs)
 {
 	struct uprobe_task_arch_info *tskinfo = &current->utask->tskinfo;
+
+	tskinfo->saved_trap_no = current->thread.trap_no;
+	current->thread.trap_no = UPROBE_TRAP_NO;
 
 	regs->ip = current->utask->xol_vaddr;
 	if (uprobe->fixups & UPROBES_FIX_RIP_AX) {
@@ -439,6 +444,11 @@ int pre_xol(struct uprobe *uprobe, struct pt_regs *regs)
 #else
 int pre_xol(struct uprobe *uprobe, struct pt_regs *regs)
 {
+	struct uprobe_task_arch_info *tskinfo = &current->utask->tskinfo;
+
+	tskinfo->saved_trap_no = current->thread.trap_no;
+	current->thread.trap_no = UPROBE_TRAP_NO;
+
 	regs->ip = current->utask->xol_vaddr;
 	return 0;
 }
@@ -494,7 +504,8 @@ static void handle_riprel_post_xol(struct uprobe *uprobe,
 		 * Fall through to handle stuff like "jmpq *...(%rip)" and
 		 * "callq *...(%rip)".
 		 */
-		*correction += 4;
+		if (correction)
+			*correction += 4;
 	}
 }
 #else
@@ -503,6 +514,14 @@ static void handle_riprel_post_xol(struct uprobe *uprobe,
 {
 }
 #endif
+
+bool xol_was_trapped(struct task_struct *tsk)
+{
+	if (tsk->thread.trap_no != UPROBE_TRAP_NO)
+		return true;
+
+	return false;
+}
 
 /*
  * Called after single-stepping. To avoid the SMP problems that can
@@ -534,6 +553,9 @@ int post_xol(struct uprobe *uprobe, struct pt_regs *regs)
 	int result = 0;
 	long correction;
 
+	WARN_ON_ONCE(current->thread.trap_no != UPROBE_TRAP_NO);
+
+	current->thread.trap_no = utask->tskinfo.saved_trap_no;
 	correction = (long)(utask->vaddr - utask->xol_vaddr);
 	handle_riprel_post_xol(uprobe, regs, &correction);
 	if (uprobe->fixups & UPROBES_FIX_IP)
@@ -570,4 +592,13 @@ int uprobe_exception_notify(struct notifier_block *self,
 		break;
 	}
 	return ret;
+}
+
+void abort_xol(struct pt_regs *regs, struct uprobe *uprobe)
+{
+	struct uprobe_task *utask = current->utask;
+
+	current->thread.trap_no = utask->tskinfo.saved_trap_no;
+	handle_riprel_post_xol(uprobe, regs, NULL);
+	set_instruction_pointer(regs, utask->vaddr);
 }
