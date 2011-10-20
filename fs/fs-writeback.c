@@ -234,6 +234,21 @@ static void requeue_io(struct inode *inode, struct bdi_writeback *wb)
 	list_move(&inode->i_wb_list, &wb->b_more_io);
 }
 
+/*
+ * The inode should be retried in an opportunistic way.
+ *
+ * The only difference between b_more_io and b_more_io_wait is:
+ * wb_writeback() won't quit as long as b_more_io is not empty.  When
+ * wb_writeback() quit on empty b_more_io and non-empty b_more_io_wait,
+ * the kupdate work will wakeup more frequently to retry the inodes in
+ * b_more_io_wait.
+ */
+static void requeue_io_wait(struct inode *inode, struct bdi_writeback *wb)
+{
+	assert_spin_locked(&wb->list_lock);
+	list_move(&inode->i_wb_list, &wb->b_more_io_wait);
+}
+
 static void inode_sync_complete(struct inode *inode)
 {
 	/*
@@ -321,6 +336,7 @@ static void queue_io(struct bdi_writeback *wb, struct wb_writeback_work *work)
 	int moved;
 	assert_spin_locked(&wb->list_lock);
 	list_splice_init(&wb->b_more_io, &wb->b_io);
+	list_splice_init(&wb->b_more_io_wait, &wb->b_io);
 	moved = move_expired_inodes(&wb->b_dirty, &wb->b_io, work);
 	trace_writeback_queue_io(wb, work, moved);
 }
@@ -470,7 +486,7 @@ writeback_single_inode(struct inode *inode, struct bdi_writeback *wb,
 				 * retrying writeback of the dirty page/inode
 				 * that cannot be performed immediately.
 				 */
-				redirty_tail(inode, wb);
+				requeue_io_wait(inode, wb);
 			}
 		} else if (inode->i_state & I_DIRTY) {
 			/*
@@ -478,8 +494,18 @@ writeback_single_inode(struct inode *inode, struct bdi_writeback *wb,
 			 * operations, such as delayed allocation during
 			 * submission or metadata updates after data IO
 			 * completion.
+			 *
+			 * For the latter case it is very important to give
+			 * the inode another turn on b_more_io instead of
+			 * redirtying it.  Constantly moving dirtied_when
+			 * forward will prevent us from ever writing out
+			 * the metadata dirtied in the I/O completion handler.
+			 *
+			 * For files on XFS that constantly get appended to
+			 * calling redirty_tail means they will never get
+			 * their updated i_size written out.
 			 */
-			redirty_tail(inode, wb);
+			requeue_io_wait(inode, wb);
 		} else {
 			/*
 			 * The inode is clean.  At this point we either have
@@ -600,7 +626,7 @@ static long writeback_sb_inodes(struct super_block *sb,
 			 * writeback is not making progress due to locked
 			 * buffers.  Skip this inode for now.
 			 */
-			redirty_tail(inode, wb);
+			requeue_io_wait(inode, wb);
 		}
 		spin_unlock(&inode->i_lock);
 		spin_unlock(&wb->list_lock);
@@ -637,7 +663,7 @@ static long __writeback_inodes_wb(struct bdi_writeback *wb,
 			 * s_umount being grabbed by someone else. Don't use
 			 * requeue_io() to avoid busy retrying the inode/sb.
 			 */
-			redirty_tail(inode, wb);
+			requeue_io_wait(inode, wb);
 			continue;
 		}
 		wrote += writeback_sb_inodes(sb, wb, work);
@@ -724,6 +750,7 @@ static long wb_writeback(struct bdi_writeback *wb,
 	unsigned long oldest_jif;
 	struct inode *inode;
 	long progress;
+	long total_progress = 0;
 
 	oldest_jif = jiffies;
 	work->older_than_this = &oldest_jif;
@@ -767,6 +794,7 @@ static long wb_writeback(struct bdi_writeback *wb,
 		else
 			progress = __writeback_inodes_wb(wb, work);
 		trace_writeback_written(wb->bdi, work);
+		total_progress += progress;
 
 		wb_update_bandwidth(wb, wb_start);
 
@@ -800,7 +828,8 @@ static long wb_writeback(struct bdi_writeback *wb,
 	}
 	spin_unlock(&wb->list_lock);
 
-	return nr_pages - work->nr_pages;
+	trace_writeback_pages_written(nr_pages - work->nr_pages);
+	return total_progress;
 }
 
 /*
@@ -863,7 +892,7 @@ static long wb_check_old_data_flush(struct bdi_writeback *wb)
 
 	expired = wb->last_old_flush +
 			msecs_to_jiffies(dirty_writeback_interval * 10);
-	if (time_before(jiffies, expired))
+	if (time_before(jiffies, expired) && list_empty(&wb->b_more_io_wait))
 		return 0;
 
 	wb->last_old_flush = jiffies;
@@ -934,7 +963,11 @@ int bdi_writeback_thread(void *data)
 {
 	struct bdi_writeback *wb = data;
 	struct backing_dev_info *bdi = wb->bdi;
-	long pages_written;
+	long progress;
+	unsigned int pause = 1;
+	unsigned int max_pause = dirty_writeback_interval ?
+			msecs_to_jiffies(dirty_writeback_interval * 10) :
+			HZ;
 
 	current->flags |= PF_SWAPWRITE;
 	set_freezable();
@@ -954,12 +987,12 @@ int bdi_writeback_thread(void *data)
 		 */
 		del_timer(&wb->wakeup_timer);
 
-		pages_written = wb_do_writeback(wb, 0);
+		progress = wb_do_writeback(wb, 0);
 
-		trace_writeback_pages_written(pages_written);
-
-		if (pages_written)
+		if (progress) {
 			wb->last_active = jiffies;
+			pause = 1;
+		}
 
 		set_current_state(TASK_INTERRUPTIBLE);
 		if (!list_empty(&bdi->work_list) || kthread_should_stop()) {
@@ -967,8 +1000,11 @@ int bdi_writeback_thread(void *data)
 			continue;
 		}
 
-		if (wb_has_dirty_io(wb) && dirty_writeback_interval)
-			schedule_timeout(msecs_to_jiffies(dirty_writeback_interval * 10));
+		if (!list_empty(&wb->b_more_io_wait) && pause < max_pause) {
+			schedule_timeout(pause);
+			pause <<= 1;
+		} else if (wb_has_dirty_io(wb) && dirty_writeback_interval)
+			schedule_timeout(max_pause);
 		else {
 			/*
 			 * We have nothing to do, so can go sleep without any

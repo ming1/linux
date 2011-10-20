@@ -59,6 +59,7 @@ struct bdi_writeback {
 	struct list_head b_dirty;	/* dirty inodes */
 	struct list_head b_io;		/* parked for writeback */
 	struct list_head b_more_io;	/* parked for more writeback */
+	struct list_head b_more_io_wait;/* opportunistic retry io */
 	spinlock_t list_lock;		/* protects the b_* lists */
 };
 
@@ -133,9 +134,10 @@ extern struct list_head bdi_pending_list;
 
 static inline int wb_has_dirty_io(struct bdi_writeback *wb)
 {
-	return !list_empty(&wb->b_dirty) ||
-	       !list_empty(&wb->b_io) ||
-	       !list_empty(&wb->b_more_io);
+	return !list_empty(&wb->b_dirty)	||
+	       !list_empty(&wb->b_io)		||
+	       !list_empty(&wb->b_more_io)	||
+	       !list_empty(&wb->b_more_io_wait);
 }
 
 static inline void __add_bdi_stat(struct backing_dev_info *bdi,
