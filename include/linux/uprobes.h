@@ -131,6 +131,7 @@ extern unsigned long __weak get_uprobe_bkpt_addr(struct pt_regs *regs);
 extern int uprobe_post_notifier(struct pt_regs *regs);
 extern int uprobe_bkpt_notifier(struct pt_regs *regs);
 extern void uprobe_notify_resume(struct pt_regs *regs);
+extern bool uprobe_deny_signal(void);
 #else /* CONFIG_UPROBES is not defined */
 static inline int register_uprobe(struct inode *inode, loff_t offset,
 				struct uprobe_consumer *consumer)
@@ -150,6 +151,10 @@ static inline void munmap_uprobe(struct vm_area_struct *vma)
 }
 static inline void uprobe_notify_resume(struct pt_regs *regs)
 {
+}
+static inline bool uprobe_deny_signal(void)
+{
+	return false;
 }
 static inline unsigned long get_uprobe_bkpt_addr(struct pt_regs *regs)
 {
