@@ -33,17 +33,19 @@
 #define GIC_DIST_SOFTINT		0xf00
 
 #ifndef __ASSEMBLY__
+#include <linux/irqdomain.h>
+
 extern void __iomem *gic_cpu_base_addr;
 extern struct irq_chip gic_arch_extn;
 
 void gic_init(unsigned int, unsigned int, void __iomem *, void __iomem *);
+int gic_of_init(struct device_node *node, struct device_node *parent);
 void gic_secondary_init(unsigned int);
 void gic_cascade_irq(unsigned int gic_nr, unsigned int irq);
 void gic_raise_softirq(const struct cpumask *mask, unsigned int irq);
 void gic_enable_ppi(unsigned int);
 
 struct gic_chip_data {
-	unsigned int irq_offset;
 	void __iomem *dist_base;
 	void __iomem *cpu_base;
 #ifdef CONFIG_CPU_PM
@@ -53,6 +55,7 @@ struct gic_chip_data {
 	u32 __percpu *saved_ppi_enable;
 	u32 __percpu *saved_ppi_conf;
 #endif
+	struct irq_domain domain;
 	unsigned int gic_irqs;
 };
 #endif
