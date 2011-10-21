@@ -13,7 +13,7 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
-
+#include <linux/gpio.h>
 #include <linux/platform_device.h>
 #include <linux/mtd/mtd.h>
 #include <linux/mtd/map.h>
@@ -27,7 +27,6 @@
 #include <asm/mach/arch.h>
 #include <asm/mach/time.h>
 #include <asm/mach/map.h>
-#include <mach/gpio.h>
 #include <mach/iomux-mx27.h>
 
 #include "devices-imx27.h"
@@ -349,6 +348,7 @@ MACHINE_START(MX27ADS, "Freescale i.MX27ADS")
 	.map_io = mx27ads_map_io,
 	.init_early = imx27_init_early,
 	.init_irq = mx27_init_irq,
+	.handle_irq = imx27_handle_irq,
 	.timer = &mx27ads_timer,
 	.init_machine = mx27ads_board_init,
 MACHINE_END

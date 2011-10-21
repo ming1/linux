@@ -26,6 +26,7 @@
 #include <linux/pda_power.h>
 #include <linux/io.h>
 #include <linux/i2c.h>
+#include <linux/gpio.h>
 
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
@@ -35,7 +36,6 @@
 #include <mach/iomap.h>
 #include <mach/irqs.h>
 #include <mach/sdhci.h>
-#include <mach/gpio.h>
 
 #include "board.h"
 #include "board-paz00.h"

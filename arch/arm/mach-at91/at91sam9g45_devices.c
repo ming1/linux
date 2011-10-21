@@ -13,6 +13,7 @@
 #include <asm/mach/map.h>
 
 #include <linux/dma-mapping.h>
+#include <linux/gpio.h>
 #include <linux/platform_device.h>
 #include <linux/i2c-gpio.h>
 #include <linux/atmel-mci.h>
@@ -21,7 +22,6 @@
 #include <video/atmel_lcdc.h>
 
 #include <mach/board.h>
-#include <mach/gpio.h>
 #include <mach/at91sam9g45.h>
 #include <mach/at91sam9g45_matrix.h>
 #include <mach/at91sam9_smc.h>
@@ -122,6 +122,12 @@ void __init at91_add_device_usbh_ohci(struct at91_usbh_data *data)
 	for (i = 0; i < data->ports; i++) {
 		if (data->vbus_pin[i])
 			at91_set_gpio_output(data->vbus_pin[i], 0);
+	}
+
+	/* Enable overcurrent notification */
+	for (i = 0; i < data->ports; i++) {
+		if (data->overcurrent_pin[i])
+			at91_set_gpio_input(data->overcurrent_pin[i], 1);
 	}
 
 	usbh_ohci_data = *data;
