@@ -280,18 +280,19 @@ static void __init cacheid_init(void)
 	if (arch >= CPU_ARCH_ARMv6) {
 		if ((cachetype & (7 << 29)) == 4 << 29) {
 			/* ARMv7 register format */
+			arch = CPU_ARCH_ARMv7;
 			cacheid = CACHEID_VIPT_NONALIASING;
 			if ((cachetype & (3 << 14)) == 1 << 14)
 				cacheid |= CACHEID_ASID_TAGGED;
-			else if (cpu_has_aliasing_icache(CPU_ARCH_ARMv7))
-				cacheid |= CACHEID_VIPT_I_ALIASING;
-		} else if (cachetype & (1 << 23)) {
-			cacheid = CACHEID_VIPT_ALIASING;
 		} else {
-			cacheid = CACHEID_VIPT_NONALIASING;
-			if (cpu_has_aliasing_icache(CPU_ARCH_ARMv6))
-				cacheid |= CACHEID_VIPT_I_ALIASING;
+			arch = CPU_ARCH_ARMv6;
+			if (cachetype & (1 << 23))
+				cacheid = CACHEID_VIPT_ALIASING;
+			else
+				cacheid = CACHEID_VIPT_NONALIASING;
 		}
+		if (cpu_has_aliasing_icache(arch))
+			cacheid |= CACHEID_VIPT_I_ALIASING;
 	} else {
 		cacheid = CACHEID_VIVT;
 	}
@@ -819,25 +820,8 @@ static struct machine_desc * __init setup_machine_tags(unsigned int nr)
 
 	if (__atags_pointer)
 		tags = phys_to_virt(__atags_pointer);
-	else if (mdesc->boot_params) {
-#ifdef CONFIG_MMU
-		/*
-		 * We still are executing with a minimal MMU mapping created
-		 * with the presumption that the machine default for this
-		 * is located in the first MB of RAM.  Anything else will
-		 * fault and silently hang the kernel at this point.
-		 */
-		if (mdesc->boot_params < PHYS_OFFSET ||
-		    mdesc->boot_params >= PHYS_OFFSET + SZ_1M) {
-			printk(KERN_WARNING
-			       "Default boot params at physical 0x%08lx out of reach\n",
-			       mdesc->boot_params);
-		} else
-#endif
-		{
-			tags = phys_to_virt(mdesc->boot_params);
-		}
-	}
+	else if (mdesc->atag_offset)
+		tags = (void *)(PAGE_OFFSET + mdesc->atag_offset);
 
 #if defined(CONFIG_DEPRECATED_PARAM_STRUCT)
 	/*

@@ -45,6 +45,7 @@
 #include <linux/tca6416_keypad.h>
 #include <linux/usb/r8a66597.h>
 #include <linux/usb/renesas_usbhs.h>
+#include <linux/dma-mapping.h>
 
 #include <video/sh_mobile_hdmi.h>
 #include <video/sh_mobile_lcdc.h>
@@ -641,6 +642,8 @@ static struct usbhs_private usbhs0_private = {
 		},
 		.driver_param = {
 			.buswait_bwait	= 4,
+			.d0_tx_id	= SHDMA_SLAVE_USB0_TX,
+			.d1_rx_id	= SHDMA_SLAVE_USB0_RX,
 		},
 	},
 };
@@ -810,6 +813,8 @@ static struct usbhs_private usbhs1_private = {
 			.buswait_bwait	= 4,
 			.pipe_type	= usbhs1_pipe_cfg,
 			.pipe_size	= ARRAY_SIZE(usbhs1_pipe_cfg),
+			.d0_tx_id	= SHDMA_SLAVE_USB1_TX,
+			.d1_rx_id	= SHDMA_SLAVE_USB1_RX,
 		},
 	},
 };
@@ -1377,6 +1382,8 @@ static struct map_desc mackerel_io_desc[] __initdata = {
 static void __init mackerel_map_io(void)
 {
 	iotable_init(mackerel_io_desc, ARRAY_SIZE(mackerel_io_desc));
+	/* DMA memory at 0xf6000000 - 0xffdfffff */
+	init_consistent_dma_size(158 << 20);
 
 	/* setup early devices and console here as well */
 	sh7372_add_early_devices();
