@@ -36,6 +36,7 @@
 
 #include <mach/clock.h>
 #include <mach/common.h>
+#include <mach/hardware.h>
 #include <mach/iomux-mx3.h>
 
 #include "devices-imx31.h"
@@ -271,7 +272,7 @@ static struct sys_timer kzm_timer = {
 };
 
 MACHINE_START(KZM_ARM11_01, "Kyoto Microcomputer Co., Ltd. KZM-ARM11-01")
-	.boot_params = MX3x_PHYS_OFFSET + 0x100,
+	.atag_offset = 0x100,
 	.map_io = kzm_map_io,
 	.init_early = imx31_init_early,
 	.init_irq = mx31_init_irq,
