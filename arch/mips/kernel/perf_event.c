@@ -314,8 +314,7 @@ static int mipspmu_get_irq(void)
 	if (mipspmu->irq >= 0) {
 		/* Request my own irq handler. */
 		err = request_irq(mipspmu->irq, mipspmu->handle_irq,
-			IRQF_DISABLED | IRQF_NOBALANCING,
-			"mips_perf_pmu", NULL);
+			IRQF_NOBALANCING, "mips_perf_pmu", NULL);
 		if (err) {
 			pr_warning("Unable to request IRQ%d for MIPS "
 			   "performance counters!\n", mipspmu->irq);

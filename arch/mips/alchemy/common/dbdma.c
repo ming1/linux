@@ -1048,7 +1048,7 @@ static int __init au1xxx_dbdma_init(void)
 		return -ENODEV;
 	}
 
-	ret = request_irq(irq_nr, dbdma_interrupt, IRQF_DISABLED,
+	ret = request_irq(irq_nr, dbdma_interrupt, 0,
 			"Au1xxx dbdma", (void *)dbdma_gptr);
 	if (ret)
 		printk(KERN_ERR "Cannot grab DBDMA interrupt!\n");
