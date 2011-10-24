@@ -62,8 +62,8 @@ static int proc_do_uts_string(ctl_table *table, int write,
 #define proc_do_uts_string NULL
 #endif
 
-static DECLARE_CTL_TABLE_POLL(hostname_poll);
-static DECLARE_CTL_TABLE_POLL(domainname_poll);
+static DEFINE_CTL_TABLE_POLL(hostname_poll);
+static DEFINE_CTL_TABLE_POLL(domainname_poll);
 
 static struct ctl_table uts_kern_table[] = {
 	{
