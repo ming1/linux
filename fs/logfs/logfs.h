@@ -528,7 +528,7 @@ void logfs_destroy_inode_cache(void);
 void logfs_set_blocks(struct inode *inode, u64 no);
 /* these logically belong into inode.c but actually reside in readwrite.c */
 int logfs_read_inode(struct inode *inode);
-int __logfs_write_inode(struct inode *inode, long flags);
+int __logfs_write_inode(struct inode *inode, struct page *, long flags);
 void logfs_evict_inode(struct inode *inode);
 
 /* journal.c */
@@ -594,6 +594,7 @@ int logfs_init_mapping(struct super_block *sb);
 void logfs_sync_area(struct logfs_area *area);
 void logfs_sync_segments(struct super_block *sb);
 void freeseg(struct super_block *sb, u32 segno);
+void free_areas(struct super_block *sb);
 
 /* area handling */
 int logfs_init_areas(struct super_block *sb);
