@@ -18,14 +18,6 @@
 #define QDIO_BUSY_BIT_RETRIES		1000		/* = 10s retry time */
 #define QDIO_INPUT_THRESHOLD		(500 << 12)	/* 500 microseconds */
 
-/*
- * if an asynchronous HiperSockets queue runs full, the 10 seconds timer wait
- * till next initiative to give transmitted skbs back to the stack is too long.
- * Therefore polling is started in case of multicast queue is filled more
- * than 50 percent.
- */
-#define QDIO_IQDIO_POLL_LVL		65	/* HS multicast queue */
-
 enum qdio_irq_states {
 	QDIO_IRQ_STATE_INACTIVE,
 	QDIO_IRQ_STATE_ESTABLISHED,
@@ -289,6 +281,9 @@ struct qdio_q {
 	/* error condition during a data transfer */
 	unsigned int qdio_error;
 
+	/* last scan of the queue */
+	u64 timestamp;
+
 	struct tasklet_struct tasklet;
 	struct qdio_queue_perf_stat q_stats;
 
@@ -436,6 +431,8 @@ static inline int shared_ind(u32 *dsci)
 {
 	return dsci == &q_indicators[TIQDIO_SHARED_IND].ind;
 }
+
+extern u64 last_ai_time;
 
 /* prototypes for thin interrupt */
 void qdio_setup_thinint(struct qdio_irq *irq_ptr);
