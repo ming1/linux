@@ -1096,7 +1096,7 @@ __blockdev_direct_IO(int rw, struct kiocb *iocb, struct inode *inode,
 	loff_t end = offset;
 	struct dio *dio;
 	struct dio_submit sdio = { 0, };
-	unsigned long user_addr; 
+	unsigned long user_addr;
 	size_t bytes;
 	struct buffer_head map_bh = { 0, };
 
@@ -1206,7 +1206,7 @@ __blockdev_direct_IO(int rw, struct kiocb *iocb, struct inode *inode,
 	for (seg = 0; seg < nr_segs; seg++) {
 		user_addr = (unsigned long)iov[seg].iov_base;
 		sdio.pages_in_io +=
-			((user_addr+iov[seg].iov_len +PAGE_SIZE-1)/PAGE_SIZE
+			((user_addr+iov[seg].iov_len + PAGE_SIZE - 1)/PAGE_SIZE
 				- user_addr/PAGE_SIZE);
 	}
 
@@ -1230,7 +1230,7 @@ __blockdev_direct_IO(int rw, struct kiocb *iocb, struct inode *inode,
 		}
 		sdio.total_pages += (bytes + PAGE_SIZE - 1) / PAGE_SIZE;
 		sdio.curr_user_address = user_addr;
-	
+
 		retval = do_direct_IO(dio, &sdio, &map_bh);
 
 		dio->result += iov[seg].iov_len -
