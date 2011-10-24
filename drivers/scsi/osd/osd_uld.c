@@ -387,7 +387,7 @@ static void __remove(struct device *dev)
 
 	if (oud->disk)
 		put_disk(oud->disk);
-	ida_remove(&osd_minor_ida, oud->minor);
+	ida_simple_remove(&osd_minor_ida, oud->minor);
 
 	kfree(oud);
 }
@@ -403,18 +403,12 @@ static int osd_probe(struct device *dev)
 	if (scsi_device->type != TYPE_OSD)
 		return -ENODEV;
 
-	do {
-		if (!ida_pre_get(&osd_minor_ida, GFP_KERNEL))
-			return -ENODEV;
-
-		error = ida_get_new(&osd_minor_ida, &minor);
-	} while (error == -EAGAIN);
-
-	if (error)
-		return error;
-	if (minor >= SCSI_OSD_MAX_MINOR) {
-		error = -EBUSY;
-		goto err_retract_minor;
+	minor = ida_simple_get(&osd_minor_ida, 0,
+			       SCSI_OSD_MAX_MINOR, GFP_KERNEL);
+	if (minor < 0) {
+		if (minor == -ENOSPC)
+			return -EBUSY;
+		return minor;
 	}
 
 	error = -ENOMEM;
@@ -491,7 +485,7 @@ err_free_osd:
 	dev_set_drvdata(dev, NULL);
 	kfree(oud);
 err_retract_minor:
-	ida_remove(&osd_minor_ida, minor);
+	ida_simple_remove(&osd_minor_ida, minor);
 	return error;
 }
 
