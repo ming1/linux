@@ -1065,15 +1065,14 @@ int move_huge_pmd(struct vm_area_struct *vma, struct vm_area_struct *new_vma,
 	if ((old_addr & ~HPAGE_PMD_MASK) ||
 	    (new_addr & ~HPAGE_PMD_MASK) ||
 	    (old_addr + HPAGE_PMD_SIZE) > old_end ||
-	    new_vma->vm_flags & VM_NOHUGEPAGE)
+	    (new_vma->vm_flags & VM_NOHUGEPAGE))
 		goto out;
 
 	/*
 	 * The destination pmd shouldn't be established, free_pgtables()
 	 * should have release it.
 	 */
-	if (!pmd_none(*new_pmd)) {
-		WARN_ON(1);
+	if (!WARN_ON(pmd_none(*new_pmd))) {
 		VM_BUG_ON(pmd_trans_huge(*new_pmd));
 		goto out;
 	}
@@ -1091,9 +1090,9 @@ int move_huge_pmd(struct vm_area_struct *vma, struct vm_area_struct *new_vma,
 			spin_unlock(&mm->page_table_lock);
 			ret = 1;
 		}
-	} else
+	} else {
 		spin_unlock(&mm->page_table_lock);
-
+	}
 out:
 	return ret;
 }
