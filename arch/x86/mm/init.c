@@ -149,10 +149,9 @@ static void __init find_early_table_space(unsigned long start,
 
 	if (!tables)
 		return;
-
 #ifdef CONFIG_X86_32
-	good_end = max_pfn_mapped << PAGE_SHIFT;
 #endif
+	good_end = max_pfn_mapped << PAGE_SHIFT;
 
 	base = memblock_find_in_range(0x00, good_end, tables, PAGE_SIZE);
 	if (base == MEMBLOCK_ERROR)
