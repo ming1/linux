@@ -785,7 +785,7 @@ do_sync_io:
 	PRINTK("%dB behind alloc failed, doing sync I/O\n", bio->bi_size);
 }
 
-static int make_request(mddev_t *mddev, struct bio * bio)
+static void make_request(mddev_t *mddev, struct bio * bio)
 {
 	conf_t *conf = mddev->private;
 	mirror_info_t *mirror;
@@ -870,7 +870,7 @@ read_again:
 		if (rdisk < 0) {
 			/* couldn't find anywhere to read from */
 			raid_end_bio_io(r1_bio);
-			return 0;
+			return;
 		}
 		mirror = conf->mirrors + rdisk;
 
@@ -928,7 +928,7 @@ read_again:
 			goto read_again;
 		} else
 			generic_make_request(read_bio);
-		return 0;
+		return;
 	}
 
 	/*
@@ -1123,8 +1123,6 @@ read_again:
 
 	if (do_sync || !bitmap || !plugged)
 		md_wakeup_thread(mddev->thread);
-
-	return 0;
 }
 
 static void status(struct seq_file *seq, mddev_t *mddev)
@@ -2174,7 +2172,6 @@ static sector_t sync_request(mddev_t *mddev, sector_t sector_nr, int *skipped, i
 		bio->bi_next = NULL;
 		bio->bi_flags &= ~(BIO_POOL_MASK-1);
 		bio->bi_flags |= 1 << BIO_UPTODATE;
-		bio->bi_comp_cpu = -1;
 		bio->bi_rw = READ;
 		bio->bi_vcnt = 0;
 		bio->bi_idx = 0;
