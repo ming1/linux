@@ -134,7 +134,7 @@ static int minolduid;
 static int min_percpu_pagelist_fract = 8;
 
 static int ngroups_max = NGROUPS_MAX;
-static int cap_last_cap = CAP_LAST_CAP;
+static const int cap_last_cap = CAP_LAST_CAP;
 
 #ifdef CONFIG_INOTIFY_USER
 #include <linux/inotify.h>
@@ -735,7 +735,7 @@ static struct ctl_table kern_table[] = {
 	},
 	{
 		.procname	= "cap_last_cap",
-		.data		= &cap_last_cap,
+		.data		= (void *)&cap_last_cap,
 		.maxlen		= sizeof(int),
 		.mode		= 0444,
 		.proc_handler	= proc_dointvec,
