@@ -687,11 +687,10 @@ static int __devinit lp5521_probe(struct i2c_client *client,
 				     */
 
 	/*
-	 * Make sure that the chip is reset by reading back
-	 * r channel current reg. This is a dummy read, otherwise
-	 * in some platforms, access to R G B channel program
-	 * execution mode to 'Run' in LP5521_REG_ENABLE register
-	 * will not have any affect - strange!
+	 * Make sure that the chip is reset by reading back the r channel
+	 * current reg. This is dummy read is required on some platforms -
+	 * otherwise further access to the R G B channels in the
+	 * LP5521_REG_ENABLE register will not have any effect - strange!
 	 */
 	lp5521_read(client, LP5521_REG_R_CURRENT, &buf);
 	if (buf != LP5521_REG_R_CURR_DEFAULT) {
