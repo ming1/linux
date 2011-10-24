@@ -1538,11 +1538,27 @@ shrink_inactive_list(unsigned long nr_to_scan, struct zone *zone,
 	putback_lru_pages(zone, sc, nr_anon, nr_file, &page_list);
 
 	/*
-	 * If we have encountered a high number of dirty pages under writeback
-	 * then we are reaching the end of the LRU too quickly and global
-	 * limits are not enough to throttle processes due to the page
-	 * distribution throughout zones. Scale the number of dirty pages that
-	 * must be under writeback before being throttled to priority.
+	 * If reclaim is isolating dirty pages under writeback, it implies
+	 * that the long-lived page allocation rate is exceeding the page
+	 * laundering rate. Either the global limits are not being effective
+	 * at throttling processes due to the page distribution throughout
+	 * zones or there is heavy usage of a slow backing device. The
+	 * only option is to throttle from reclaim context which is not ideal
+	 * as there is no guarantee the dirtying process is throttled in the
+	 * same way balance_dirty_pages() manages.
+	 *
+	 * This scales the number of dirty pages that must be under writeback
+	 * before throttling depending on priority. It is a simple backoff
+	 * function that has the most effect in the range DEF_PRIORITY to
+	 * DEF_PRIORITY-2 which is the priority reclaim is considered to be
+	 * in trouble and reclaim is considered to be in trouble.
+	 *
+	 * DEF_PRIORITY   100% isolated pages must be PageWriteback to throttle
+	 * DEF_PRIORITY-1  50% must be PageWriteback
+	 * DEF_PRIORITY-2  25% must be PageWriteback, kswapd in trouble
+	 * ...
+	 * DEF_PRIORITY-6 For SWAP_CLUSTER_MAX isolated pages, throttle if any
+	 *                     isolated page is PageWriteback
 	 */
 	if (nr_writeback && nr_writeback >= (nr_taken >> (DEF_PRIORITY-priority)))
 		wait_iff_congested(zone, BLK_RW_ASYNC, HZ/10);
