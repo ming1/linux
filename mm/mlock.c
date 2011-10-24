@@ -112,6 +112,11 @@ void munlock_vma_page(struct page *page)
 		if (!isolate_lru_page(page)) {
 			int ret = SWAP_AGAIN;
 
+			/*
+			 * Optimization: if the page was mapped just once,
+			 * that's our mapping and we don't need to check all the
+			 * other vmas.
+			 */
 			if (page_mapcount(page) > 1)
 				ret = try_to_munlock(page);
 			/*
