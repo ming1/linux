@@ -2,13 +2,13 @@
 #include <linux/module.h>
 #include <linux/lglock.h>
 
-void lg_lock_init(struct lglock *lg, char *name) 
+void lg_lock_init(struct lglock *lg, char *name)
 {
 	LOCKDEP_INIT_MAP(&lg->lock_dep_map, name, &lg->lock_key, 0);
 }
 EXPORT_SYMBOL(lg_lock_init);
 
-void lg_local_lock(struct lglock *lg) 
+void lg_local_lock(struct lglock *lg)
 {
 	arch_spinlock_t *lock;
 	preempt_disable();
@@ -18,7 +18,7 @@ void lg_local_lock(struct lglock *lg)
 }
 EXPORT_SYMBOL(lg_local_lock);
 
-void lg_local_unlock(struct lglock *lg) 
+void lg_local_unlock(struct lglock *lg)
 {
 	arch_spinlock_t *lock;
 	rwlock_release(&lg->lock_dep_map, 1, _RET_IP_);
@@ -28,7 +28,7 @@ void lg_local_unlock(struct lglock *lg)
 }
 EXPORT_SYMBOL(lg_local_unlock);
 
-void lg_local_lock_cpu(struct lglock *lg, int cpu) 
+void lg_local_lock_cpu(struct lglock *lg, int cpu)
 {
 	arch_spinlock_t *lock;
 	preempt_disable();
@@ -38,7 +38,7 @@ void lg_local_lock_cpu(struct lglock *lg, int cpu)
 }
 EXPORT_SYMBOL(lg_local_lock_cpu);
 
-void lg_local_unlock_cpu(struct lglock *lg, int cpu) 
+void lg_local_unlock_cpu(struct lglock *lg, int cpu)
 {
 	arch_spinlock_t *lock;
 	rwlock_release(&lg->lock_dep_map, 1, _RET_IP_);
@@ -48,7 +48,7 @@ void lg_local_unlock_cpu(struct lglock *lg, int cpu)
 }
 EXPORT_SYMBOL(lg_local_unlock_cpu);
 
-void lg_global_lock_online(struct lglock *lg) 
+void lg_global_lock_online(struct lglock *lg)
 {
 	int i;
 	preempt_disable();
