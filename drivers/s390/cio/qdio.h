@@ -289,6 +289,9 @@ struct qdio_q {
 	/* error condition during a data transfer */
 	unsigned int qdio_error;
 
+	/* last scan of the queue */
+	u64 timestamp;
+
 	struct tasklet_struct tasklet;
 	struct qdio_queue_perf_stat q_stats;
 
@@ -436,6 +439,8 @@ static inline int shared_ind(u32 *dsci)
 {
 	return dsci == &q_indicators[TIQDIO_SHARED_IND].ind;
 }
+
+extern u64 last_ai_time;
 
 /* prototypes for thin interrupt */
 void qdio_setup_thinint(struct qdio_irq *irq_ptr);
