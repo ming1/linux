@@ -97,6 +97,9 @@
 /* Status */
 #define LP5521_EXT_CLK_USED		0x08
 
+/* default R channel current register value */
+#define LP5521_REG_R_CURR_DEFAULT	0xAF
+
 struct lp5521_engine {
 	int		id;
 	u8		mode;
@@ -643,6 +646,7 @@ static int __devinit lp5521_probe(struct i2c_client *client,
 	struct lp5521_chip		*chip;
 	struct lp5521_platform_data	*pdata;
 	int ret, i, led;
+	u8 buf;
 
 	chip = kzalloc(sizeof(*chip), GFP_KERNEL);
 	if (!chip)
@@ -681,6 +685,21 @@ static int __devinit lp5521_probe(struct i2c_client *client,
 				     * Exact value is not available. 10 - 20ms
 				     * appears to be enough for reset.
 				     */
+
+	/*
+	 * Make sure that the chip is reset by reading back
+	 * r channel current reg. This is a dummy read, otherwise
+	 * in some platforms, access to R G B channel program
+	 * execution mode to 'Run' in LP5521_REG_ENABLE register
+	 * will not have any affect - strange!
+	 */
+	lp5521_read(client, LP5521_REG_R_CURRENT, &buf);
+	if (buf != LP5521_REG_R_CURR_DEFAULT) {
+		dev_err(&client->dev, "error in reseting chip\n");
+		goto fail2;
+	}
+	usleep_range(10000, 20000);
+
 	ret = lp5521_detect(client);
 
 	if (ret) {
