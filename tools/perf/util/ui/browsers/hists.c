@@ -577,6 +577,16 @@ static int hist_browser__show_entry(struct hist_browser *self,
 		if (!current_entry || !self->b.navkeypressed)
 			ui_browser__set_color(&self->b, HE_COLORSET_NORMAL);
 
+		if (symbol_conf.show_nr_samples) {
+			slsmg_printf(" %11u", entry->nr_events);
+			width -= 12;
+		}
+
+		if (symbol_conf.show_total_period) {
+			slsmg_printf(" %12" PRIu64, entry->period);
+			width -= 13;
+		}
+
 		slsmg_write_nstring(s, width);
 		++row;
 		++printed;
@@ -997,12 +1007,14 @@ zoom_dso:
 zoom_out_dso:
 				ui_helpline__pop();
 				browser->hists->dso_filter = NULL;
+				sort_dso.elide = false;
 			} else {
 				if (dso == NULL)
 					continue;
 				ui_helpline__fpush("To zoom out press <- or -> + \"Zoom out of %s DSO\"",
 						   dso->kernel ? "the Kernel" : dso->short_name);
 				browser->hists->dso_filter = dso;
+				sort_dso.elide = true;
 				pstack__push(fstack, &browser->hists->dso_filter);
 			}
 			hists__filter_by_dso(self);
@@ -1014,11 +1026,13 @@ zoom_thread:
 zoom_out_thread:
 				ui_helpline__pop();
 				browser->hists->thread_filter = NULL;
+				sort_thread.elide = false;
 			} else {
 				ui_helpline__fpush("To zoom out press <- or -> + \"Zoom out of %s(%d) thread\"",
 						   thread->comm_set ? thread->comm : "",
 						   thread->pid);
 				browser->hists->thread_filter = thread;
+				sort_thread.elide = true;
 				pstack__push(fstack, &browser->hists->thread_filter);
 			}
 			hists__filter_by_thread(self);

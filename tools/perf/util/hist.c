@@ -105,11 +105,16 @@ static void hist_entry__decay(struct hist_entry *he)
 
 static bool hists__decay_entry(struct hists *hists, struct hist_entry *he)
 {
-	if (he->period == 0)
+	u64 prev_period = he->period;
+
+	if (prev_period == 0)
 		return true;
-	hists->stats.total_period -= he->period;
+
 	hist_entry__decay(he);
-	hists->stats.total_period += he->period;
+
+	if (!he->filtered)
+		hists->stats.total_period -= prev_period - he->period;
+
 	return he->period == 0;
 }
 
@@ -720,7 +725,8 @@ void hists__output_recalc_col_len(struct hists *hists, int max_rows)
 
 	while (next && row++ < max_rows) {
 		n = rb_entry(next, struct hist_entry, rb_node);
-		hists__calc_col_len(hists, n);
+		if (!n->filtered)
+			hists__calc_col_len(hists, n);
 		next = rb_next(&n->rb_node);
 	}
 }
