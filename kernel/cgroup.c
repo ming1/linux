@@ -1844,7 +1844,7 @@ int cgroup_attach_task(struct cgroup *cgrp, struct task_struct *tsk)
 			}
 		}
 		if (ss->can_attach_task) {
-			retval = ss->can_attach_task(cgrp, tsk);
+			retval = ss->can_attach_task(cgrp, oldcgrp, tsk);
 			if (retval) {
 				failed_ss = ss;
 				goto out;
@@ -1860,7 +1860,7 @@ int cgroup_attach_task(struct cgroup *cgrp, struct task_struct *tsk)
 		if (ss->pre_attach)
 			ss->pre_attach(cgrp);
 		if (ss->attach_task)
-			ss->attach_task(cgrp, tsk);
+			ss->attach_task(cgrp, oldcgrp, tsk);
 		if (ss->attach)
 			ss->attach(ss, cgrp, oldcgrp, tsk);
 	}
@@ -2075,7 +2075,10 @@ int cgroup_attach_proc(struct cgroup *cgrp, struct task_struct *leader)
 			/* run on each task in the threadgroup. */
 			for (i = 0; i < group_size; i++) {
 				tsk = flex_array_get_ptr(group, i);
-				retval = ss->can_attach_task(cgrp, tsk);
+				oldcgrp = task_cgroup_from_root(tsk, root);
+
+				retval = ss->can_attach_task(cgrp,
+							     oldcgrp, tsk);
 				if (retval) {
 					failed_ss = ss;
 					cancel_failed_ss = true;
@@ -2141,7 +2144,7 @@ int cgroup_attach_proc(struct cgroup *cgrp, struct task_struct *leader)
 			/* attach each task to each subsystem */
 			for_each_subsys(root, ss) {
 				if (ss->attach_task)
-					ss->attach_task(cgrp, tsk);
+					ss->attach_task(cgrp, oldcgrp, tsk);
 			}
 		} else {
 			BUG_ON(retval != -ESRCH);
