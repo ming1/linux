@@ -23,12 +23,14 @@
 #include <stddef.h>
 #endif
 
-extern __printf(1, 2) void panic(const char *fmt, ...);
+extern void panic(const char *fmt, ...)
+	__attribute__ ((format (printf, 1, 2)));
 
 #ifdef UML_CONFIG_PRINTK
-extern __printf(1, 2) int printk(const char *fmt, ...);
+extern int printk(const char *fmt, ...)
+	__attribute__ ((format (printf, 1, 2)));
 #else
-static inline __printf(1, 2) int printk(const char *fmt, ...)
+static inline int printk(const char *fmt, ...)
 {
 	return 0;
 }
