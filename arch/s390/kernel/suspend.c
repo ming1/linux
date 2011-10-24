@@ -7,6 +7,7 @@
  */
 
 #include <linux/pfn.h>
+#include <linux/suspend.h>
 #include <asm/system.h>
 
 /*
