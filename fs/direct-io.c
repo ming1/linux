@@ -68,7 +68,7 @@ struct dio_submit {
 	unsigned start_zero_done;	/* flag: sub-blocksize zeroing has
 					   been performed at the start of a
 					   write */
-	int pages_in_io;		/* approximate total IO pages */	
+	int pages_in_io;		/* approximate total IO pages */
 	size_t	size;			/* total request size (doesn't change)*/
 	sector_t block_in_file;		/* Current offset into the underlying
 					   file in dio_block units. */
@@ -78,13 +78,13 @@ struct dio_submit {
 	int boundary;			/* prev block is at a boundary */
 	int reap_counter;		/* rate limit reaping */
 	get_block_t *get_block;		/* block mapping function */
-	dio_submit_t *submit_io;	/* IO submition function */	
+	dio_submit_t *submit_io;	/* IO submition function */
 
 	loff_t logical_offset_in_bio;	/* current first logical block in bio */
 	sector_t final_block_in_bio;	/* current final block in bio + 1 */
 	sector_t next_block_for_io;	/* next block to be put under IO,
 					   in dio_blocks units */
-	
+
 	/*
 	 * Deferred addition of a page to the dio.  These variables are
 	 * private to dio_send_cur_page(), submit_page_section() and
@@ -140,7 +140,7 @@ struct dio {
 	 * allocation time.  Don't add new fields after pages[] unless you
 	 * wish that they not be zeroed.
 	 */
-	struct page *pages[DIO_PAGES];	/* page buffer */	
+	struct page *pages[DIO_PAGES];	/* page buffer */
 };
 
 static void __inode_dio_wait(struct inode *inode)
@@ -623,7 +623,7 @@ static int get_more_blocks(struct dio *dio, struct dio_submit *sdio)
 /*
  * There is no bio.  Make one now.
  */
-static int dio_new_bio(struct dio *dio, struct dio_submit *sdio, 
+static int dio_new_bio(struct dio *dio, struct dio_submit *sdio,
 		       sector_t start_sector)
 {
 	sector_t sector;
@@ -766,7 +766,7 @@ submit_page_section(struct dio *dio, struct dio_submit *sdio, struct page *page,
 	/*
 	 * Can we just grow the current page's presence in the dio?
 	 */
-	if (	(sdio->cur_page == page) &&
+	if ((sdio->cur_page == page) &&
 		(sdio->cur_page_offset + sdio->cur_page_len == offset) &&
 		(sdio->cur_page_block +
 			(sdio->cur_page_len >> sdio->blkbits) == blocknr)) {
@@ -859,7 +859,7 @@ static void dio_zero_block(struct dio *dio, struct dio_submit *sdio, int end)
 	this_chunk_bytes = this_chunk_blocks << sdio->blkbits;
 
 	page = ZERO_PAGE(0);
-	if (submit_page_section(dio, sdio, page, 0, this_chunk_bytes, 
+	if (submit_page_section(dio, sdio, page, 0, this_chunk_bytes,
 				sdio->next_block_for_io))
 		return;
 
