@@ -769,10 +769,10 @@ static void *check_bytes8(const u8 *start, u8 value, unsigned int bytes)
 }
 
 /**
- * memchr_inv - Find a character in an area of memory.
- * @s: The memory area
- * @c: The byte to search for
- * @n: The size of the area.
+ * memchr_inv - Find an unmatching character in an area of memory.
+ * @start: The memory area
+ * @c: Find a character other than c
+ * @bytes: The size of the area.
  *
  * returns the address of the first character other than @c, or %NULL
  * if the whole buffer contains just @c.
