@@ -145,9 +145,10 @@ extern u8	gdbstub_busy;
 extern u8	gdbstub_rx_unget;
 
 #ifdef CONFIG_GDBSTUB_DEBUGGING
-extern __printf(1, 2) void gdbstub_printk(const char *fmt, ...);
+extern void gdbstub_printk(const char *fmt, ...)
+	__attribute__((format(printf, 1, 2)));
 #else
-static inline __printf(1, 2)
+static inline __attribute__((format(printf, 1, 2)))
 void gdbstub_printk(const char *fmt, ...)
 {
 }

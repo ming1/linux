@@ -16,6 +16,7 @@ long nf_call(long id, ...);
 void nf_init(void);
 void nf_shutdown(void);
 
-__printf(1, 2) void nfprint(const char *fmt, ...);
+void nfprint(const char *fmt, ...)
+	__attribute__ ((format (printf, 1, 2)));
 
 # endif /* _NATFEAT_H */
