@@ -427,7 +427,7 @@ static inline int rsv_is_empty(struct ext3_reserve_window *rsv)
 void ext3_init_block_alloc_info(struct inode *inode)
 {
 	struct ext3_inode_info *ei = EXT3_I(inode);
-	struct ext3_block_alloc_info *block_i = ei->i_block_alloc_info;
+	struct ext3_block_alloc_info *block_i;
 	struct super_block *sb = inode->i_sb;
 
 	block_i = kmalloc(sizeof(*block_i), GFP_NOFS);
@@ -1924,9 +1924,10 @@ unsigned long ext3_bg_num_gdb(struct super_block *sb, int group)
  * reaches any used block. Then issue a TRIM command on this extent and free
  * the extent in the block bitmap. This is done until whole group is scanned.
  */
-ext3_grpblk_t ext3_trim_all_free(struct super_block *sb, unsigned int group,
-				ext3_grpblk_t start, ext3_grpblk_t max,
-				ext3_grpblk_t minblocks)
+static ext3_grpblk_t ext3_trim_all_free(struct super_block *sb,
+					unsigned int group,
+					ext3_grpblk_t start, ext3_grpblk_t max,
+					ext3_grpblk_t minblocks)
 {
 	handle_t *handle;
 	ext3_grpblk_t next, free_blocks, bit, freed, count = 0;
