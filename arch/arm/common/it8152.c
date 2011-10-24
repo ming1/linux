@@ -319,13 +319,6 @@ err0:
 	return -EBUSY;
 }
 
-/*
- * If we set up a device for bus mastering, we need to check the latency
- * timer as we don't have even crappy BIOSes to set it properly.
- * The implementation is from arch/i386/pci/i386.c
- */
-unsigned int pcibios_max_latency = 255;
-
 void pcibios_set_master(struct pci_dev *dev)
 {
 	u8 lat;
