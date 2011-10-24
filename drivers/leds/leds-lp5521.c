@@ -182,9 +182,7 @@ static int lp5521_set_engine_mode(struct lp5521_engine *engine, u8 mode)
 	engine_state &= ~(engine->engine_mask);
 	mode &= engine->engine_mask;
 	engine_state |= mode;
-	ret |= lp5521_write(client, LP5521_REG_OP_MODE, engine_state);
-
-	return ret;
+	return lp5521_write(client, LP5521_REG_OP_MODE, engine_state);
 }
 
 static int lp5521_load_program(struct lp5521_engine *eng, const u8 *pattern)
