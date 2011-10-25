@@ -956,7 +956,7 @@ nouveau_ttm_io_mem_reserve(struct ttm_bo_device *bdev, struct ttm_mem_reg *mem)
 			break;
 		}
 
-		if (dev_priv->card_type == NV_C0)
+		if (dev_priv->card_type >= NV_C0)
 			page_shift = node->page_shift;
 		else
 			page_shift = 12;
@@ -1104,7 +1104,8 @@ nouveau_bo_vma_del(struct nouveau_bo *nvbo, struct nouveau_vma *vma)
 	if (vma->node) {
 		if (nvbo->bo.mem.mem_type != TTM_PL_SYSTEM) {
 			spin_lock(&nvbo->bo.bdev->fence_lock);
-			ttm_bo_wait(&nvbo->bo, false, false, false);
+			ttm_bo_wait(&nvbo->bo, false, false, false,
+				    TTM_USAGE_READWRITE);
 			spin_unlock(&nvbo->bo.bdev->fence_lock);
 			nouveau_vm_unmap(vma);
 		}
