@@ -70,6 +70,8 @@
 #include <linux/kernel.h>
 #include <linux/bootmem.h>
 #include <linux/swap.h>
+#include <linux/stat.h>
+#include <linux/module.h>
 #include <linux/mm.h>
 #include <linux/mman.h>
 #include <linux/module.h>
