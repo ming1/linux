@@ -377,7 +377,6 @@ config ARCH_GEMINI
 config ARCH_PRIMA2
 	bool "CSR SiRFSoC PRIMA2 ARM Cortex A9 Platform"
 	select CPU_V7
-	select GENERIC_TIME
 	select NO_IOPORT
 	select GENERIC_CLOCKEVENTS
 	select CLKDEV_LOOKUP
@@ -558,7 +557,6 @@ config ARCH_LPC32XX
 	select ARM_AMBA
 	select USB_ARCH_HAS_OHCI
 	select CLKDEV_LOOKUP
-	select GENERIC_TIME
 	select GENERIC_CLOCKEVENTS
 	help
 	  Support for the NXP LPC32XX family of processors
@@ -630,7 +628,6 @@ config ARCH_TEGRA
 	bool "NVIDIA Tegra"
 	select CLKDEV_LOOKUP
 	select CLKSRC_MMIO
-	select GENERIC_TIME
 	select GENERIC_CLOCKEVENTS
 	select GENERIC_GPIO
 	select HAVE_CLK
@@ -972,7 +969,6 @@ config ARCH_VT8500
 config ARCH_ZYNQ
 	bool "Xilinx Zynq ARM Cortex A9 Platform"
 	select CPU_V7
-	select GENERIC_TIME
 	select GENERIC_CLOCKEVENTS
 	select CLKDEV_LOOKUP
 	select ARM_GIC

@@ -6431,6 +6431,11 @@ W:	http://tcp-lp-mod.sourceforge.net/
 S:	Maintained
 F:	net/ipv4/tcp_lp.c
 
+TECHNOLOGIC SYSTEMS TS-5500 MACHINE SUPPORT
+M:	Savoir-faire Linux Inc. <ts-kernel@savoirfairelinux.com>
+S:	Maintained
+F:  arch/x86/platform/ts5500/*
+
 TEGRA SUPPORT
 M:	Colin Cross <ccross@android.com>
 M:	Olof Johansson <olof@lixom.net>

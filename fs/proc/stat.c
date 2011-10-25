@@ -10,6 +10,7 @@
 #include <linux/time.h>
 #include <linux/irqnr.h>
 #include <asm/cputime.h>
+#include <linux/tick.h>
 
 #ifndef arch_irq_stat_cpu
 #define arch_irq_stat_cpu(cpu) 0
@@ -20,6 +21,34 @@
 #ifndef arch_idle_time
 #define arch_idle_time(cpu) 0
 #endif
+
+static cputime64_t get_idle_time(int cpu)
+{
+	u64 idle_time = get_cpu_idle_time_us(cpu, NULL);
+	cputime64_t idle;
+
+	if (idle_time == -1ULL) {
+		/* !NO_HZ so we can rely on cpustat.idle */
+		idle = kstat_cpu(cpu).cpustat.idle + arch_idle_time(cpu);
+	} else
+		idle = usecs_to_cputime(idle_time);
+
+	return idle;
+}
+
+static cputime64_t get_iowait_time(int cpu)
+{
+	u64 iowait_time = get_cpu_iowait_time_us(cpu, NULL);
+	cputime64_t iowait;
+
+	if (iowait_time == -1ULL)
+		/* !NO_HZ so we can rely on cpustat.iowait */
+		iowait = kstat_cpu(cpu).cpustat.iowait;
+	else
+		iowait = usecs_to_cputime(iowait_time);
+
+	return iowait;
+}
 
 static int show_stat(struct seq_file *p, void *v)
 {
@@ -42,8 +71,8 @@ static int show_stat(struct seq_file *p, void *v)
 		user += kstat_cpu(i).cpustat.user;
 		nice += kstat_cpu(i).cpustat.nice;
 		system += kstat_cpu(i).cpustat.system;
-		idle += kstat_cpu(i).cpustat.idle + arch_idle_time(i);
-		iowait += kstat_cpu(i).cpustat.iowait;
+		idle += get_idle_time(i);
+		iowait +=  get_iowait_time(i);
 		irq += kstat_cpu(i).cpustat.irq;
 		softirq += kstat_cpu(i).cpustat.softirq;
 		steal += kstat_cpu(i).cpustat.steal;
@@ -74,13 +103,12 @@ static int show_stat(struct seq_file *p, void *v)
 		(unsigned long long)cputime64_to_clock_t(guest),
 		(unsigned long long)cputime64_to_clock_t(guest_nice));
 	for_each_online_cpu(i) {
-
 		/* Copy values here to work around gcc-2.95.3, gcc-2.96 */
 		user = kstat_cpu(i).cpustat.user;
 		nice = kstat_cpu(i).cpustat.nice;
 		system = kstat_cpu(i).cpustat.system;
-		idle = kstat_cpu(i).cpustat.idle + arch_idle_time(i);
-		iowait = kstat_cpu(i).cpustat.iowait;
+		idle = get_idle_time(i);
+		iowait = get_iowait_time(i);
 		irq = kstat_cpu(i).cpustat.irq;
 		softirq = kstat_cpu(i).cpustat.softirq;
 		steal = kstat_cpu(i).cpustat.steal;
