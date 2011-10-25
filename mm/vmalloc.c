@@ -1118,6 +1118,31 @@ void *vm_map_ram(struct page **pages, unsigned int count, int node, pgprot_t pro
 EXPORT_SYMBOL(vm_map_ram);
 
 /**
+ * vm_area_add_early - add vmap area early during boot
+ * @vm: vm_struct to add
+ *
+ * This function is used to add fixed kernel vm area to vmlist before
+ * vmalloc_init() is called.  @vm->addr, @vm->size, and @vm->flags
+ * should contain proper values and the other fields should be zero.
+ *
+ * DO NOT USE THIS FUNCTION UNLESS YOU KNOW WHAT YOU'RE DOING.
+ */
+void __init vm_area_add_early(struct vm_struct *vm)
+{
+	struct vm_struct *tmp, **p;
+
+	for (p = &vmlist; (tmp = *p) != NULL; p = &tmp->next) {
+		if (tmp->addr >= vm->addr) {
+			BUG_ON(tmp->addr < vm->addr + vm->size);
+			break;
+		} else
+			BUG_ON(tmp->addr + tmp->size > vm->addr);
+	}
+	vm->next = *p;
+	*p = vm;
+}
+
+/**
  * vm_area_register_early - register vmap area early during boot
  * @vm: vm_struct to register
  * @align: requested alignment
@@ -1139,8 +1164,7 @@ void __init vm_area_register_early(struct vm_struct *vm, size_t align)
 
 	vm->addr = (void *)addr;
 
-	vm->next = vmlist;
-	vmlist = vm;
+	vm_area_add_early(vm);
 }
 
 void __init vmalloc_init(void)
@@ -1253,18 +1277,22 @@ EXPORT_SYMBOL_GPL(map_vm_area);
 DEFINE_RWLOCK(vmlist_lock);
 struct vm_struct *vmlist;
 
-static void insert_vmalloc_vm(struct vm_struct *vm, struct vmap_area *va,
+static void setup_vmalloc_vm(struct vm_struct *vm, struct vmap_area *va,
 			      unsigned long flags, void *caller)
 {
-	struct vm_struct *tmp, **p;
-
 	vm->flags = flags;
 	vm->addr = (void *)va->va_start;
 	vm->size = va->va_end - va->va_start;
 	vm->caller = caller;
 	va->private = vm;
 	va->flags |= VM_VM_AREA;
+}
 
+static void insert_vmalloc_vmlist(struct vm_struct *vm)
+{
+	struct vm_struct *tmp, **p;
+
+	vm->flags &= ~VM_UNLIST;
 	write_lock(&vmlist_lock);
 	for (p = &vmlist; (tmp = *p) != NULL; p = &tmp->next) {
 		if (tmp->addr >= vm->addr)
@@ -1273,6 +1301,13 @@ static void insert_vmalloc_vm(struct vm_struct *vm, struct vmap_area *va,
 	vm->next = *p;
 	*p = vm;
 	write_unlock(&vmlist_lock);
+}
+
+static void insert_vmalloc_vm(struct vm_struct *vm, struct vmap_area *va,
+			      unsigned long flags, void *caller)
+{
+	setup_vmalloc_vm(vm, va, flags, caller);
+	insert_vmalloc_vmlist(vm);
 }
 
 static struct vm_struct *__get_vm_area_node(unsigned long size,
@@ -1313,7 +1348,18 @@ static struct vm_struct *__get_vm_area_node(unsigned long size,
 		return NULL;
 	}
 
-	insert_vmalloc_vm(area, va, flags, caller);
+	/*
+	 * When this function is called from __vmalloc_node_range,
+	 * we do not add vm_struct to vmlist here to avoid
+	 * accessing uninitialized members of vm_struct such as
+	 * pages and nr_pages fields. They will be set later.
+	 * To distinguish it from others, we use a VM_UNLIST flag.
+	 */
+	if (flags & VM_UNLIST)
+		setup_vmalloc_vm(area, va, flags, caller);
+	else
+		insert_vmalloc_vm(area, va, flags, caller);
+
 	return area;
 }
 
@@ -1381,17 +1427,20 @@ struct vm_struct *remove_vm_area(const void *addr)
 	va = find_vmap_area((unsigned long)addr);
 	if (va && va->flags & VM_VM_AREA) {
 		struct vm_struct *vm = va->private;
-		struct vm_struct *tmp, **p;
-		/*
-		 * remove from list and disallow access to this vm_struct
-		 * before unmap. (address range confliction is maintained by
-		 * vmap.)
-		 */
-		write_lock(&vmlist_lock);
-		for (p = &vmlist; (tmp = *p) != vm; p = &tmp->next)
-			;
-		*p = tmp->next;
-		write_unlock(&vmlist_lock);
+
+		if (!(vm->flags & VM_UNLIST)) {
+			struct vm_struct *tmp, **p;
+			/*
+			 * remove from list and disallow access to
+			 * this vm_struct before unmap. (address range
+			 * confliction is maintained by vmap.)
+			 */
+			write_lock(&vmlist_lock);
+			for (p = &vmlist; (tmp = *p) != vm; p = &tmp->next)
+				;
+			*p = tmp->next;
+			write_unlock(&vmlist_lock);
+		}
 
 		vmap_debug_free_range(va->va_start, va->va_end);
 		free_unmap_vmap_area(va);
@@ -1568,8 +1617,8 @@ static void *__vmalloc_area_node(struct vm_struct *area, gfp_t gfp_mask,
 	return area->addr;
 
 fail:
-	warn_alloc_failed(gfp_mask, order, "vmalloc: allocation failure, "
-			  "allocated %ld of %ld bytes\n",
+	warn_alloc_failed(gfp_mask, order,
+			  "vmalloc: allocation failure, allocated %ld of %ld bytes\n",
 			  (area->nr_pages*PAGE_SIZE), area->size);
 	vfree(area->addr);
 	return NULL;
@@ -1600,15 +1649,20 @@ void *__vmalloc_node_range(unsigned long size, unsigned long align,
 
 	size = PAGE_ALIGN(size);
 	if (!size || (size >> PAGE_SHIFT) > totalram_pages)
-		return NULL;
+		goto fail;
 
-	area = __get_vm_area_node(size, align, VM_ALLOC, start, end, node,
-				  gfp_mask, caller);
-
+	area = __get_vm_area_node(size, align, VM_ALLOC | VM_UNLIST,
+				  start, end, node, gfp_mask, caller);
 	if (!area)
-		return NULL;
+		goto fail;
 
 	addr = __vmalloc_area_node(area, gfp_mask, prot, node, caller);
+
+	/*
+	 * In this function, newly allocated vm_struct is not added
+	 * to vmlist at __get_vm_area_node(). so, it is added here.
+	 */
+	insert_vmalloc_vmlist(area);
 
 	/*
 	 * A ref_count = 3 is needed because the vm_struct and vmap_area
@@ -1618,6 +1672,12 @@ void *__vmalloc_node_range(unsigned long size, unsigned long align,
 	kmemleak_alloc(addr, real_size, 3, gfp_mask);
 
 	return addr;
+
+fail:
+	warn_alloc_failed(gfp_mask, 0,
+			  "vmalloc: allocation failure: %lu bytes\n",
+			  real_size);
+	return NULL;
 }
 
 /**

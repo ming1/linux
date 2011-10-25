@@ -316,6 +316,10 @@ W:	http://wiki.analog.com/AD7879
 S:	Supported
 F:	drivers/input/touchscreen/ad7879.c
 
+ADDRESS SPACE LAYOUT RANDOMIZATION (ASLR)
+M:	Jiri Kosina <jkosina@suse.cz>
+S:	Maintained
+
 ADM1025 HARDWARE MONITOR DRIVER
 M:	Jean Delvare <khali@linux-fr.org>
 L:	lm-sensors@lm-sensors.org
@@ -3254,6 +3258,13 @@ F:	Documentation/ide/
 F:	drivers/ide/
 F:	include/linux/ide.h
 
+IDEAPAD LAPTOP EXTRAS DRIVER
+M:	Ike Panhc <ike.pan@canonical.com>
+L:	platform-driver-x86@vger.kernel.org
+W:	http://launchpad.net/ideapad-laptop
+S:	Maintained
+F:	drivers/platform/x86/ideapad-laptop.c
+
 IDE/ATAPI DRIVERS
 M:	Borislav Petkov <petkovbb@gmail.com>
 L:	linux-ide@vger.kernel.org
@@ -4040,6 +4051,7 @@ M:	Eric Piel <eric.piel@tremplin-utc.net>
 S:	Maintained
 F:	Documentation/misc-devices/lis3lv02d
 F:	drivers/misc/lis3lv02d/
+F:	drivers/platform/x86/hp_accel.c
 
 LLC (802.2)
 M:	Arnaldo Carvalho de Melo <acme@ghostprotocols.net>
@@ -5010,7 +5022,7 @@ F:	include/linux/i2c-algo-pca.h
 F:	include/linux/i2c-pca-platform.h
 
 PCI ERROR RECOVERY
-M:	Linas Vepstas <linas@austin.ibm.com>
+M:     Linas Vepstas <linasvepstas@gmail.com>
 L:	linux-pci@vger.kernel.org
 S:	Supported
 F:	Documentation/PCI/pci-error-recovery.txt
