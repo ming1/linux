@@ -29,7 +29,7 @@ config ARCH_MX5
 	select AUTO_ZRELADDR
 	select ARM_PATCH_PHYS_VIRT
 	help
-	  This enables support for machines using Freescale's i.MX50 and i.MX51
+	  This enables support for machines using Freescale's i.MX50 and i.MX53
 	  processors.
 
 endchoice
