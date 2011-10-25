@@ -1,0 +1,273 @@
+Importing hexagon based on v3.1-rc6
+Unchanged quilt series hexagon
+Importing i2c based on 3.1-rc4
+Unchanged quilt series i2c
+Importing jdelvare-hwmon based on 3.1-rc4
+Unchanged quilt series jdelvare-hwmon
+Importing kernel-doc based on 3.1-rc3
+Unchanged quilt series kernel-doc
+Importing rr based on v3.1-rc9-93-ga84a79e
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard a84a79e4d369a73c0130b5858199e949432da4c6
+HEAD is now at a84a79e Avoid using variable-length arrays in kernel/sys.c
+$ git am ../quilt/rr/module:kmod_prevent_kmod_loop_msg_overflow_in_request.patch
+Applying: kmod: prevent kmod_loop_msg overflow in __request_module()
+$ git am ../quilt/rr/lguest-weaken-paravirt-restriction.patch
+Applying: lguest: Allow running under paravirt-enabled KVM.
+$ git am ../quilt/rr/lguest-remove-kvm-cpuid-signature.patch
+Applying: lguest: don't allow KVM-detection cpuid.
+$ git am ../quilt/rr/lguest:move_process_freezing_before_pending_signals_check.patch
+Applying: lguest: move process freezing before pending signals check
+$ git am ../quilt/rr/virtio:console_use_config_val_for_retrieving_config.patch
+Applying: virtio-console: Use virtio_config_val() for retrieving config
+$ git am ../quilt/rr/virtio:config_add_config_val_len.patch
+Applying: virtio_config: Add virtio_config_val_len()
+$ git am ../quilt/rr/virtio:net_use_config_val_for_retrieving_config.patch
+Applying: virtio-net: Use virtio_config_val() for retrieving config
+$ git am ../quilt/rr/virtio:h_correct_comment_for_struct_driver.patch
+Applying: virtio.h: correct comment for struct virtio_driver
+$ git am ../quilt/rr/virtio:fix_size_computation_according_to_the_definition_of_struct_vring_used_in_vring_size.patch
+Applying: virtio: modify vring_init and vring_size to take account of the layout containing *_event_idx
+$ git am ../quilt/rr/virtio:console_fix_indentation.patch
+Applying: virtio: console: Fix indentation
+$ git am ../quilt/rr/virtio:console_ignore_port_name_update_request_if_name_already_set.patch
+Applying: virtio: console: Ignore port name update request if name already set
+$ git am ../quilt/rr/virtio:console_use_wait_event_freezable_instead_of_interruptible.patch
+Applying: virtio: console: Use wait_event_freezable instead of _interruptible
+$ git am ../quilt/rr/virtio:console_fix_return_type_for_get_inbuf.patch
+Applying: virtio: console: Fix return type for get_inbuf()
+$ git am ../quilt/rr/virtio:console_make_get_inbuf_return_port_inbuf_if_present.patch
+Applying: virtio: console: make get_inbuf() return port->inbuf if present
+$ git am ../quilt/rr/virtio:console_rename_variable.patch
+Applying: virtio: console: rename variable
+$ git am ../quilt/rr/virtio:console_make_discard_port_data_use_get_inbuf.patch
+Applying: virtio: console: make discard_port_data() use get_inbuf()
+$ git am ../quilt/rr/virtio:console_add_port_stats_for_bytes_received_sent_and_discarded.patch
+Applying: virtio: console: add port stats for bytes received, sent and discarded
+$ git am ../quilt/rr/virtio:console_wait_for_first_console_port_for_early_console_output.patch
+Applying: virtio: console: wait for first console port for early console output
+$ git am ../quilt/rr/virtio:dont_add_config_to_list_for_per_vq_vector.patch
+Applying: virtio: Dont add "config" to list for !per_vq_vector
+$ git am ../quilt/rr/virtio:pci_use_pci_mmio_instead_of_pio_when_available.patch
+Applying: virtio-pci: Use PCI MMIO instead of PIO when available
+$ git am ../quilt/rr/misc:params_make_dashes_and_underscores_in_parameter_names_truly_equal.patch
+Applying: params: make dashes and underscores in parameter names truly equal
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/rr
+From ../quilt-tmp
+ + e7282dd...1b6c40b master     -> quilt/rr  (forced update)
+Importing device-mapper based on v3.1-rc10
+$ cd ../quilt-tmp
+$ git reset --hard 899e3ee404961a90b828ad527573aaaac39f0ab1
+HEAD is now at 899e3ee Linux 3.1-rc10
+$ git am ../quilt/device-mapper/dm-kcopyd-fix-job_pool-leak.patch
+Applying: Fix memory leak introduced by commit a6e50b409d3f9e0833e69c3c9cca822e8fa4adbb
+$ git am ../quilt/device-mapper/dm-table-propagate-non-rotational-flag.patch
+Applying: Allow QUEUE_FLAG_NONROT to propagate up the device stack if all
+$ git am ../quilt/device-mapper/dm-use-local-printk-ratelimit.patch
+Applying: printk_ratelimit() shares global ratelimiting state with all
+$ git am ../quilt/device-mapper/dm-remove-superfluous-smp_mb.patch
+Applying: Since set_current_state() contains a memory barrier in it,
+$ git am ../quilt/device-mapper/dm-kcopyd-add-dm_kcopyd_zero-to-zero-an-area.patch
+Applying: This patch introduces dm_kcopyd_zero() to make it easy to use
+$ git am ../quilt/device-mapper/dm-table-add-singleton-feature.patch
+Applying: Introduce the concept of a singleton table which contains exactly one target.
+$ git am ../quilt/device-mapper/dm-table-add-always-writeable-feature.patch
+Applying: Add a target feature flag to indicate that a target does not work in
+$ git am ../quilt/device-mapper/dm-table-add-immutable-feature.patch
+Applying: Introduce DM_TARGET_IMMUTABLE to indicate that the target type cannot be mixed
+$ git am ../quilt/device-mapper/dm-export-dm-get-md.patch
+Applying: Export dm_get_md() for the new thin provisioning target to use.
+$ git am ../quilt/device-mapper/dm-add-bufio.patch
+Applying: This interface allows you to do I/O on device and act as a cache,
+$ git am ../quilt/device-mapper/dm-add-persistent-data-library.patch
+Applying: The persistent-data library offers a re-usable framework for the storage
+error: drivers/md/persistent-data/dm-space-map-common.c: does not exist in index
+Patch failed at 0001 The persistent-data library offers a re-usable framework for the storage
+When you have resolved this problem run "git am --resolved".
+If you would prefer to skip this patch, instead run "git am --skip".
+To restore the original branch and stop patching run "git am --abort".
+Importing hexagon based on v3.1-rc9
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard 976d167615b64e14bc1491ca51d424e2ba9a5e84
+HEAD is now at 976d167 Linux 3.1-rc9
+$ git am ../quilt/hexagon/0001-Hexagon-Add-generic-headers.patch
+Applying: Hexagon: Add generic headers
+/home/sfr/kernels/next/quilt-tmp/.git/rebase-apply/patch:19: new blank line at EOF.
++
+warning: 1 line adds whitespace errors.
+$ git am ../quilt/hexagon/0002-Hexagon-Core-arch-specific-header-files.patch
+Applying: Hexagon: Core arch-specific header files
+/home/sfr/kernels/next/quilt-tmp/.git/rebase-apply/patch:681: new blank line at EOF.
++
+warning: 1 line adds whitespace errors.
+$ git am ../quilt/hexagon/0003-Hexagon-Add-bitops-support.patch
+Applying: Hexagon: Add bitops support
+$ git am ../quilt/hexagon/0004-Hexagon-Add-atomic-ops-support.patch
+Applying: Hexagon: Add atomic ops support
+$ git am ../quilt/hexagon/0005-Hexagon-Add-syscalls.patch
+Applying: Hexagon: Add syscalls
+$ git am ../quilt/hexagon/0006-Hexagon-Add-processor-and-system-headers.patch
+Applying: Hexagon: Add processor and system headers
+$ git am ../quilt/hexagon/0007-Hexagon-Add-threadinfo.patch
+Applying: Hexagon: Add threadinfo
+$ git am ../quilt/hexagon/0008-Hexagon-Add-delay-functions.patch
+Applying: Hexagon: Add delay functions
+$ git am ../quilt/hexagon/0009-Hexagon-Add-checksum-functions.patch
+Applying: Hexagon: Add checksum functions
+$ git am ../quilt/hexagon/0010-Hexagon-Add-memcpy-and-memset-accelerated-functions.patch
+Applying: Hexagon: Add memcpy and memset accelerated functions
+/home/sfr/kernels/next/quilt-tmp/.git/rebase-apply/patch:562: new blank line at EOF.
++
+warning: 1 line adds whitespace errors.
+$ git am ../quilt/hexagon/0011-Hexagon-Add-hypervisor-interface.patch
+Applying: Hexagon: Add hypervisor interface
+/home/sfr/kernels/next/quilt-tmp/.git/rebase-apply/patch:1468: new blank line at EOF.
++
+warning: 1 line adds whitespace errors.
+$ git am ../quilt/hexagon/0012-Hexagon-Export-ksyms-defined-in-assembly-files.patch
+Applying: Hexagon: Export ksyms defined in assembly files.
+/home/sfr/kernels/next/quilt-tmp/.git/rebase-apply/patch:11: new blank line at EOF.
++
+warning: 1 line adds whitespace errors.
+$ git am ../quilt/hexagon/0013-Hexagon-Support-dynamic-module-loading.patch
+Applying: Hexagon: Support dynamic module loading.
+$ git am ../quilt/hexagon/0014-Hexagon-Add-signal-functions.patch
+Applying: Hexagon: Add signal functions
+/home/sfr/kernels/next/quilt-tmp/.git/rebase-apply/patch:92: new blank line at EOF.
++
+/home/sfr/kernels/next/quilt-tmp/.git/rebase-apply/patch:521: new blank line at EOF.
++
+warning: 2 lines add whitespace errors.
+$ git am ../quilt/hexagon/0015-Hexagon-Add-init_task-and-process-functions.patch
+Applying: Hexagon: Add init_task and process functions
+$ git am ../quilt/hexagon/0016-Hexagon-Add-startup-code.patch
+Applying: Hexagon: Add startup code
+/home/sfr/kernels/next/quilt-tmp/.git/rebase-apply/patch:44: space before tab in indent.
+       	__INIT
+warning: 1 line adds whitespace errors.
+$ git am ../quilt/hexagon/0017-Hexagon-Add-interrupts.patch
+Applying: Hexagon: Add interrupts
+$ git am ../quilt/hexagon/0018-Hexagon-Add-time-and-timer-functions.patch
+Applying: Hexagon: Add time and timer functions
+/home/sfr/kernels/next/quilt-tmp/.git/rebase-apply/patch:185: trailing whitespace.
+	
+warning: 1 line adds whitespace errors.
+$ git am ../quilt/hexagon/0019-Hexagon-Add-ptrace-support.patch
+Applying: Hexagon: Add ptrace support
+$ git am ../quilt/hexagon/0020-Hexagon-Provide-basic-debugging-and-system-trap-supp.patch
+Applying: Hexagon: Provide basic debugging and system trap support.
+$ git am ../quilt/hexagon/0021-Hexagon-Add-SMP-support.patch
+Applying: Hexagon: Add SMP support
+$ git am ../quilt/hexagon/0022-Hexagon-Add-locking-types-and-functions.patch
+Applying: Hexagon: Add locking types and functions
+$ git am ../quilt/hexagon/0023-Hexagon-Add-user-access-functions.patch
+Applying: Hexagon: Add user access functions
+/home/sfr/kernels/next/quilt-tmp/.git/rebase-apply/patch:552: new blank line at EOF.
++
+warning: 1 line adds whitespace errors.
+$ git am ../quilt/hexagon/0024-Hexagon-Provide-basic-implementation-and-or-stubs-fo.patch
+Applying: Hexagon: Provide basic implementation and/or stubs for I/O routines.
+$ git am ../quilt/hexagon/0025-Hexagon-Implement-basic-cache-flush-support.patch
+Applying: Hexagon: Implement basic cache-flush support
+$ git am ../quilt/hexagon/0026-Hexagon-Implement-basic-TLB-management-routines-for-.patch
+Applying: Hexagon: Implement basic TLB management routines for Hexagon.
+$ git am ../quilt/hexagon/0027-Hexagon-Provide-DMA-implementation.patch
+Applying: Hexagon: Provide DMA implementation
+$ git am ../quilt/hexagon/0028-Hexagon-Add-ioremap-support.patch
+Applying: Hexagon: Add ioremap support
+$ git am ../quilt/hexagon/0029-Hexagon-Add-page-table-header-files-etc.patch
+Applying: Hexagon: Add page table header files & etc.
+/home/sfr/kernels/next/quilt-tmp/.git/rebase-apply/patch:1090: new blank line at EOF.
++
+warning: 1 line adds whitespace errors.
+$ git am ../quilt/hexagon/0030-Hexagon-Add-page-fault-support.patch
+Applying: Hexagon: Add page-fault support.
+$ git am ../quilt/hexagon/0031-Hexagon-kgdb-support-files.patch
+Applying: Hexagon: kgdb support files
+/home/sfr/kernels/next/quilt-tmp/.git/rebase-apply/patch:62: new blank line at EOF.
++
+warning: 1 line adds whitespace errors.
+$ git am ../quilt/hexagon/0032-Hexagon-Comet-platform-support.patch
+Applying: Hexagon: Comet platform support
+$ git am ../quilt/hexagon/0033-Hexagon-Add-configuration-and-makefiles-for-the-Hexa.patch
+Applying: Hexagon: Add configuration and makefiles for the Hexagon architecture.
+/home/sfr/kernels/next/quilt-tmp/.git/rebase-apply/patch:249: new blank line at EOF.
++
+/home/sfr/kernels/next/quilt-tmp/.git/rebase-apply/patch:314: new blank line at EOF.
++
+/home/sfr/kernels/next/quilt-tmp/.git/rebase-apply/patch:449: new blank line at EOF.
++
+/home/sfr/kernels/next/quilt-tmp/.git/rebase-apply/patch:558: new blank line at EOF.
++
+warning: 4 lines add whitespace errors.
+$ git am ../quilt/hexagon/0034-Hexagon-Add-basic-stacktrace-functionality-for-Hexag.patch
+Applying: Hexagon: Add basic stacktrace functionality for Hexagon architecture.
+$ git am ../quilt/hexagon/0035-Hexagon-Add-self-to-MAINTAINERS.patch
+Applying: Hexagon: Add self to MAINTAINERS
+$ git am ../quilt/hexagon/0036-Add-extra-arch-overrides-to-asm-generic-checksum.h.patch
+Applying: Add extra arch overrides to asm-generic/checksum.h
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/hexagon
+From ../quilt-tmp
+ + f794f68...081d83b master     -> quilt/hexagon  (forced update)
+Importing i2c based on 3.1-rc4
+Unchanged quilt series i2c
+Importing jdelvare-hwmon based on 3.1-rc4
+Unchanged quilt series jdelvare-hwmon
+Importing kernel-doc based on 3.1-rc3
+Unchanged quilt series kernel-doc
+Importing rr based on v3.1-rc9-93-ga84a79e
+$ cd ../quilt-tmp
+$ git reset --hard a84a79e4d369a73c0130b5858199e949432da4c6
+HEAD is now at a84a79e Avoid using variable-length arrays in kernel/sys.c
+$ git am ../quilt/rr/module:kmod_prevent_kmod_loop_msg_overflow_in_request.patch
+Applying: kmod: prevent kmod_loop_msg overflow in __request_module()
+$ git am ../quilt/rr/lguest-weaken-paravirt-restriction.patch
+Applying: lguest: Allow running under paravirt-enabled KVM.
+$ git am ../quilt/rr/lguest-remove-kvm-cpuid-signature.patch
+Applying: lguest: don't allow KVM-detection cpuid.
+$ git am ../quilt/rr/lguest:move_process_freezing_before_pending_signals_check.patch
+Applying: lguest: move process freezing before pending signals check
+$ git am ../quilt/rr/virtio:console_use_config_val_for_retrieving_config.patch
+Applying: virtio-console: Use virtio_config_val() for retrieving config
+$ git am ../quilt/rr/virtio:config_add_config_val_len.patch
+Applying: virtio_config: Add virtio_config_val_len()
+$ git am ../quilt/rr/virtio:net_use_config_val_for_retrieving_config.patch
+Applying: virtio-net: Use virtio_config_val() for retrieving config
+$ git am ../quilt/rr/virtio:h_correct_comment_for_struct_driver.patch
+Applying: virtio.h: correct comment for struct virtio_driver
+$ git am ../quilt/rr/virtio:fix_size_computation_according_to_the_definition_of_struct_vring_used_in_vring_size.patch
+Applying: virtio: modify vring_init and vring_size to take account of the layout containing *_event_idx
+$ git am ../quilt/rr/virtio:console_fix_indentation.patch
+Applying: virtio: console: Fix indentation
+$ git am ../quilt/rr/virtio:console_ignore_port_name_update_request_if_name_already_set.patch
+Applying: virtio: console: Ignore port name update request if name already set
+$ git am ../quilt/rr/virtio:console_use_wait_event_freezable_instead_of_interruptible.patch
+Applying: virtio: console: Use wait_event_freezable instead of _interruptible
+$ git am ../quilt/rr/virtio:console_fix_return_type_for_get_inbuf.patch
+Applying: virtio: console: Fix return type for get_inbuf()
+$ git am ../quilt/rr/virtio:console_make_get_inbuf_return_port_inbuf_if_present.patch
+Applying: virtio: console: make get_inbuf() return port->inbuf if present
+$ git am ../quilt/rr/virtio:console_rename_variable.patch
+Applying: virtio: console: rename variable
+$ git am ../quilt/rr/virtio:console_make_discard_port_data_use_get_inbuf.patch
+Applying: virtio: console: make discard_port_data() use get_inbuf()
+$ git am ../quilt/rr/virtio:console_add_port_stats_for_bytes_received_sent_and_discarded.patch
+Applying: virtio: console: add port stats for bytes received, sent and discarded
+$ git am ../quilt/rr/virtio:console_wait_for_first_console_port_for_early_console_output.patch
+Applying: virtio: console: wait for first console port for early console output
+$ git am ../quilt/rr/virtio:dont_add_config_to_list_for_per_vq_vector.patch
+Applying: virtio: Dont add "config" to list for !per_vq_vector
+$ git am ../quilt/rr/virtio:pci_use_pci_mmio_instead_of_pio_when_available.patch
+Applying: virtio-pci: Use PCI MMIO instead of PIO when available
+$ git am ../quilt/rr/misc:params_make_dashes_and_underscores_in_parameter_names_truly_equal.patch
+Applying: params: make dashes and underscores in parameter names truly equal
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/rr
+From ../quilt-tmp
+ + 1b6c40b...7b285a5 master     -> quilt/rr  (forced update)
+Importing device-mapper based on v3.1-rc9-20-g3ee72ca
+Unchanged quilt series device-mapper
