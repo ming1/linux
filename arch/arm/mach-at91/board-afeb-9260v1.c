@@ -131,20 +131,15 @@ static struct mtd_partition __initdata afeb9260_nand_partition[] = {
 	},
 };
 
-static struct mtd_partition * __init nand_partitions(int size, int *num_partitions)
-{
-	*num_partitions = ARRAY_SIZE(afeb9260_nand_partition);
-	return afeb9260_nand_partition;
-}
-
 static struct atmel_nand_data __initdata afeb9260_nand_data = {
 	.ale		= 21,
 	.cle		= 22,
 	.rdy_pin	= AT91_PIN_PC13,
 	.enable_pin	= AT91_PIN_PC14,
-	.partition_info	= nand_partitions,
 	.bus_width_16	= 0,
 	.det_pin	= -EINVAL,
+	.parts		= afeb9260_nand_partition,
+	.num_parts	= ARRAY_SIZE(afeb9260_nand_partition),
 };
 
 

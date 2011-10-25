@@ -12,19 +12,6 @@ menuconfig MTD
 
 if MTD
 
-config MTD_DEBUG
-	bool "Debugging"
-	help
-	  This turns on low-level debugging for the entire MTD sub-system.
-	  Normally, you should say 'N'.
-
-config MTD_DEBUG_VERBOSE
-	int "Debugging verbosity (0 = quiet, 3 = noisy)"
-	depends on MTD_DEBUG
-	default "0"
-	help
-	  Determines the verbosity level of the MTD debugging messages.
-
 config MTD_TESTS
 	tristate "MTD tests support"
 	depends on m
@@ -137,7 +124,8 @@ config MTD_AFS_PARTS
 	  'physmap' map driver (CONFIG_MTD_PHYSMAP) does this, for example.
 
 config MTD_OF_PARTS
-	def_bool y
+	tristate "OpenFirmware partitioning information support"
+	default Y
 	depends on OF
 	help
 	  This provides a partition parsing function which derives
