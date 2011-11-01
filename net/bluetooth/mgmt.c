@@ -48,6 +48,7 @@ static int cmd_status(struct sock *sk, u16 index, u16 cmd, u8 status)
 	struct sk_buff *skb;
 	struct mgmt_hdr *hdr;
 	struct mgmt_ev_cmd_status *ev;
+	int err;
 
 	BT_DBG("sock %p, index %u, cmd %u, status %u", sk, index, cmd, status);
 
@@ -65,10 +66,11 @@ static int cmd_status(struct sock *sk, u16 index, u16 cmd, u8 status)
 	ev->status = status;
 	put_unaligned_le16(cmd, &ev->opcode);
 
-	if (sock_queue_rcv_skb(sk, skb) < 0)
+	err = sock_queue_rcv_skb(sk, skb);
+	if (err < 0)
 		kfree_skb(skb);
 
-	return 0;
+	return err;
 }
 
 static int cmd_complete(struct sock *sk, u16 index, u16 cmd, void *rp,
@@ -77,6 +79,7 @@ static int cmd_complete(struct sock *sk, u16 index, u16 cmd, void *rp,
 	struct sk_buff *skb;
 	struct mgmt_hdr *hdr;
 	struct mgmt_ev_cmd_complete *ev;
+	int err;
 
 	BT_DBG("sock %p", sk);
 
@@ -96,10 +99,11 @@ static int cmd_complete(struct sock *sk, u16 index, u16 cmd, void *rp,
 	if (rp)
 		memcpy(ev->data, rp, rp_len);
 
-	if (sock_queue_rcv_skb(sk, skb) < 0)
+	err = sock_queue_rcv_skb(sk, skb);
+	if (err < 0)
 		kfree_skb(skb);
 
-	return 0;
+	return err;;
 }
 
 static int read_version(struct sock *sk)
@@ -690,14 +694,11 @@ static int update_eir(struct hci_dev *hdev)
 
 static u8 get_service_classes(struct hci_dev *hdev)
 {
-	struct list_head *p;
+	struct bt_uuid *uuid;
 	u8 val = 0;
 
-	list_for_each(p, &hdev->uuids) {
-		struct bt_uuid *uuid = list_entry(p, struct bt_uuid, list);
-
+	list_for_each_entry(uuid, &hdev->uuids, list)
 		val |= uuid->svc_hint;
-	}
 
 	return val;
 }
@@ -896,6 +897,9 @@ static int set_service_cache(struct sock *sk, u16 index,  unsigned char *data,
 	if (err == 0)
 		err = cmd_complete(sk, index, MGMT_OP_SET_SERVICE_CACHE, NULL,
 									0);
+	else
+		cmd_status(sk, index, MGMT_OP_SET_SERVICE_CACHE, -err);
+
 
 	hci_dev_unlock_bh(hdev);
 	hci_dev_put(hdev);
@@ -913,7 +917,7 @@ static int load_keys(struct sock *sk, u16 index, unsigned char *data, u16 len)
 	cp = (void *) data;
 
 	if (len < sizeof(*cp))
-		return -EINVAL;
+		return cmd_status(sk, index, MGMT_OP_LOAD_KEYS, EINVAL);
 
 	key_count = get_unaligned_le16(&cp->key_count);
 
@@ -921,7 +925,7 @@ static int load_keys(struct sock *sk, u16 index, unsigned char *data, u16 len)
 	if (expected_len != len) {
 		BT_ERR("load_keys: expected %u bytes, got %u bytes",
 							len, expected_len);
-		return -EINVAL;
+		return cmd_status(sk, index, MGMT_OP_LOAD_KEYS, EINVAL);
 	}
 
 	hdev = hci_dev_get(index);

@@ -542,22 +542,28 @@ static int auto_accept_delay_get(void *data, u64 *val)
 DEFINE_SIMPLE_ATTRIBUTE(auto_accept_delay_fops, auto_accept_delay_get,
 					auto_accept_delay_set, "%llu\n");
 
-int hci_register_sysfs(struct hci_dev *hdev)
+void hci_init_sysfs(struct hci_dev *hdev)
+{
+	struct device *dev = &hdev->dev;
+
+	dev->type = &bt_host;
+	dev->class = bt_class;
+
+	dev_set_drvdata(dev, hdev);
+	device_initialize(dev);
+}
+
+int hci_add_sysfs(struct hci_dev *hdev)
 {
 	struct device *dev = &hdev->dev;
 	int err;
 
 	BT_DBG("%p name %s bus %d", hdev, hdev->name, hdev->bus);
 
-	dev->type = &bt_host;
-	dev->class = bt_class;
 	dev->parent = hdev->parent;
-
 	dev_set_name(dev, "%s", hdev->name);
 
-	dev_set_drvdata(dev, hdev);
-
-	err = device_register(dev);
+	err = device_add(dev);
 	if (err < 0)
 		return err;
 
@@ -581,7 +587,7 @@ int hci_register_sysfs(struct hci_dev *hdev)
 	return 0;
 }
 
-void hci_unregister_sysfs(struct hci_dev *hdev)
+void hci_del_sysfs(struct hci_dev *hdev)
 {
 	BT_DBG("%p name %s bus %d", hdev, hdev->name, hdev->bus);
 
