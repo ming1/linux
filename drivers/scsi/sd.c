@@ -111,6 +111,7 @@ static void scsi_disk_release(struct device *cdev);
 static void sd_print_sense_hdr(struct scsi_disk *, struct scsi_sense_hdr *);
 static void sd_print_result(struct scsi_disk *, int);
 
+static DEFINE_SPINLOCK(sd_index_lock);
 static DEFINE_IDA(sd_index_ida);
 
 /* This semaphore is used to mediate the 0->1 reference get in the
@@ -2580,14 +2581,17 @@ static int sd_probe(struct device *dev)
 	if (!gd)
 		goto out_free;
 
-	index = ida_simple_get(&sd_index_ida, 0, SD_MAX_DISKS, GFP_KERNEL);
-	if (index < 0) {
-		error = index;
-		if (error == -ENOSPC) {
-			sdev_printk(KERN_WARNING, sdp,
-				    "SCSI disk (sd) name space exhausted.\n");
-			error = -ENODEV;
-		}
+	do {
+		if (!ida_pre_get(&sd_index_ida, GFP_KERNEL))
+			goto out_put;
+
+		spin_lock(&sd_index_lock);
+		error = ida_get_new(&sd_index_ida, &index);
+		spin_unlock(&sd_index_lock);
+	} while (error == -EAGAIN);
+
+	if (error) {
+		sdev_printk(KERN_WARNING, sdp, "sd_probe: memory exhausted.\n");
 		goto out_put;
 	}
 
@@ -2628,7 +2632,9 @@ static int sd_probe(struct device *dev)
 	return 0;
 
  out_free_index:
-	ida_simple_remove(&sd_index_ida, index);
+	spin_lock(&sd_index_lock);
+	ida_remove(&sd_index_ida, index);
+	spin_unlock(&sd_index_lock);
  out_put:
 	put_disk(gd);
  out_free:
@@ -2684,7 +2690,9 @@ static void scsi_disk_release(struct device *dev)
 	struct scsi_disk *sdkp = to_scsi_disk(dev);
 	struct gendisk *disk = sdkp->disk;
 	
-	ida_simple_remove(&sd_index_ida, sdkp->index);
+	spin_lock(&sd_index_lock);
+	ida_remove(&sd_index_ida, sdkp->index);
+	spin_unlock(&sd_index_lock);
 
 	disk->private_data = NULL;
 	put_disk(disk);
