@@ -1,5 +1,5 @@
 /*
- * P2040RDB Device Tree Source
+ * P2041RDB Device Tree Source
  *
  * Copyright 2011 Freescale Semiconductor Inc.
  *
@@ -32,17 +32,21 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-/include/ "p2040si.dtsi"
+/include/ "p2041si.dtsi"
 
 / {
-	model = "fsl,P2040RDB";
-	compatible = "fsl,P2040RDB";
+	model = "fsl,P2041RDB";
+	compatible = "fsl,P2041RDB";
 	#address-cells = <2>;
 	#size-cells = <2>;
 	interrupt-parent = <&mpic>;
 
 	memory {
 		device_type = "memory";
+	};
+
+	dcsr: dcsr@f00000000 {
+		ranges = <0x00000000 0xf 0x00000000 0x01008000>;
 	};
 
 	soc: soc@ffe000000 {
@@ -97,13 +101,8 @@
 			};
 		};
 
-		usb0: usb@210000 {
-			phy_type = "utmi";
-		};
-
 		usb1: usb@211000 {
 			dr_mode = "host";
-			phy_type = "utmi";
 		};
 	};
 
