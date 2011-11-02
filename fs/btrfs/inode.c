@@ -1863,7 +1863,8 @@ static int btrfs_io_failed_hook(struct bio *failed_bio,
 
 		read_lock(&em_tree->lock);
 		em = lookup_extent_mapping(em_tree, start, failrec->len);
-		if (em->start > start || em->start + em->len < start) {
+		if (em && !IS_ERR(em) && (em->start > start ||
+					em->start + em->len < start)) {
 			free_extent_map(em);
 			em = NULL;
 		}
