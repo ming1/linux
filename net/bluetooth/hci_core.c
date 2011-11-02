@@ -319,8 +319,7 @@ static void hci_linkpol_req(struct hci_dev *hdev, unsigned long opt)
  * Device is held on return. */
 struct hci_dev *hci_dev_get(int index)
 {
-	struct hci_dev *hdev = NULL;
-	struct list_head *p;
+	struct hci_dev *hdev = NULL, *d;
 
 	BT_DBG("%d", index);
 
@@ -328,8 +327,7 @@ struct hci_dev *hci_dev_get(int index)
 		return NULL;
 
 	read_lock(&hci_dev_list_lock);
-	list_for_each(p, &hci_dev_list) {
-		struct hci_dev *d = list_entry(p, struct hci_dev, list);
+	list_for_each_entry(d, &hci_dev_list, list) {
 		if (d->id == index) {
 			hdev = hci_dev_hold(d);
 			break;
@@ -613,7 +611,7 @@ static int hci_dev_do_close(struct hci_dev *hdev)
 	if (!test_bit(HCI_RAW, &hdev->flags)) {
 		set_bit(HCI_INIT, &hdev->flags);
 		__hci_request(hdev, hci_reset_req, 0,
-					msecs_to_jiffies(250));
+					msecs_to_jiffies(HCI_INIT_TIMEOUT));
 		clear_bit(HCI_INIT, &hdev->flags);
 	}
 
@@ -794,9 +792,9 @@ int hci_dev_cmd(unsigned int cmd, void __user *arg)
 
 int hci_get_dev_list(void __user *arg)
 {
+	struct hci_dev *hdev;
 	struct hci_dev_list_req *dl;
 	struct hci_dev_req *dr;
-	struct list_head *p;
 	int n = 0, size, err;
 	__u16 dev_num;
 
@@ -815,11 +813,7 @@ int hci_get_dev_list(void __user *arg)
 	dr = dl->dev_req;
 
 	read_lock_bh(&hci_dev_list_lock);
-	list_for_each(p, &hci_dev_list) {
-		struct hci_dev *hdev;
-
-		hdev = list_entry(p, struct hci_dev, list);
-
+	list_for_each_entry(hdev, &hci_dev_list, list) {
 		hci_del_off_timer(hdev);
 
 		if (!test_bit(HCI_MGMT, &hdev->flags))
@@ -912,6 +906,7 @@ struct hci_dev *hci_alloc_dev(void)
 	if (!hdev)
 		return NULL;
 
+	hci_init_sysfs(hdev);
 	skb_queue_head_init(&hdev->driver_init);
 
 	return hdev;
@@ -1007,16 +1002,11 @@ int hci_link_keys_clear(struct hci_dev *hdev)
 
 struct link_key *hci_find_link_key(struct hci_dev *hdev, bdaddr_t *bdaddr)
 {
-	struct list_head *p;
+	struct link_key *k;
 
-	list_for_each(p, &hdev->link_keys) {
-		struct link_key *k;
-
-		k = list_entry(p, struct link_key, list);
-
+	list_for_each_entry(k, &hdev->link_keys, list)
 		if (bacmp(bdaddr, &k->bdaddr) == 0)
 			return k;
-	}
 
 	return NULL;
 }
@@ -1279,16 +1269,11 @@ int hci_add_remote_oob_data(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 *hash,
 struct bdaddr_list *hci_blacklist_lookup(struct hci_dev *hdev,
 						bdaddr_t *bdaddr)
 {
-	struct list_head *p;
+	struct bdaddr_list *b;
 
-	list_for_each(p, &hdev->blacklist) {
-		struct bdaddr_list *b;
-
-		b = list_entry(p, struct bdaddr_list, list);
-
+	list_for_each_entry(b, &hdev->blacklist, list)
 		if (bacmp(bdaddr, &b->bdaddr) == 0)
 			return b;
-	}
 
 	return NULL;
 }
@@ -1425,7 +1410,7 @@ int hci_add_adv_entry(struct hci_dev *hdev,
 int hci_register_dev(struct hci_dev *hdev)
 {
 	struct list_head *head = &hci_dev_list, *p;
-	int i, id = 0;
+	int i, id = 0, error;
 
 	BT_DBG("%p name %s bus %d owner %p", hdev, hdev->name,
 						hdev->bus, hdev->owner);
@@ -1502,10 +1487,14 @@ int hci_register_dev(struct hci_dev *hdev)
 	write_unlock_bh(&hci_dev_list_lock);
 
 	hdev->workqueue = create_singlethread_workqueue(hdev->name);
-	if (!hdev->workqueue)
-		goto nomem;
+	if (!hdev->workqueue) {
+		error = -ENOMEM;
+		goto err;
+	}
 
-	hci_register_sysfs(hdev);
+	error = hci_add_sysfs(hdev);
+	if (error < 0)
+		goto err_wqueue;
 
 	hdev->rfkill = rfkill_alloc(hdev->name, &hdev->dev,
 				RFKILL_TYPE_BLUETOOTH, &hci_rfkill_ops, hdev);
@@ -1524,17 +1513,19 @@ int hci_register_dev(struct hci_dev *hdev)
 
 	return id;
 
-nomem:
+err_wqueue:
+	destroy_workqueue(hdev->workqueue);
+err:
 	write_lock_bh(&hci_dev_list_lock);
 	list_del(&hdev->list);
 	write_unlock_bh(&hci_dev_list_lock);
 
-	return -ENOMEM;
+	return error;
 }
 EXPORT_SYMBOL(hci_register_dev);
 
 /* Unregister HCI device */
-int hci_unregister_dev(struct hci_dev *hdev)
+void hci_unregister_dev(struct hci_dev *hdev)
 {
 	int i;
 
@@ -1560,7 +1551,7 @@ int hci_unregister_dev(struct hci_dev *hdev)
 		rfkill_destroy(hdev->rfkill);
 	}
 
-	hci_unregister_sysfs(hdev);
+	hci_del_sysfs(hdev);
 
 	hci_del_off_timer(hdev);
 	del_timer(&hdev->adv_timer);
@@ -1576,8 +1567,6 @@ int hci_unregister_dev(struct hci_dev *hdev)
 	hci_dev_unlock_bh(hdev);
 
 	__hci_dev_put(hdev);
-
-	return 0;
 }
 EXPORT_SYMBOL(hci_unregister_dev);
 
@@ -2026,16 +2015,12 @@ EXPORT_SYMBOL(hci_send_sco);
 static inline struct hci_conn *hci_low_sent(struct hci_dev *hdev, __u8 type, int *quote)
 {
 	struct hci_conn_hash *h = &hdev->conn_hash;
-	struct hci_conn *conn = NULL;
+	struct hci_conn *conn = NULL, *c;
 	int num = 0, min = ~0;
-	struct list_head *p;
 
 	/* We don't have to lock device here. Connections are always
 	 * added and removed with TX task disabled. */
-	list_for_each(p, &h->list) {
-		struct hci_conn *c;
-		c = list_entry(p, struct hci_conn, list);
-
+	list_for_each_entry(c, &h->list, list) {
 		if (c->type != type || skb_queue_empty(&c->data_q))
 			continue;
 
@@ -2084,14 +2069,12 @@ static inline struct hci_conn *hci_low_sent(struct hci_dev *hdev, __u8 type, int
 static inline void hci_link_tx_to(struct hci_dev *hdev, __u8 type)
 {
 	struct hci_conn_hash *h = &hdev->conn_hash;
-	struct list_head *p;
-	struct hci_conn  *c;
+	struct hci_conn *c;
 
 	BT_ERR("%s link tx timeout", hdev->name);
 
 	/* Kill stalled connections */
-	list_for_each(p, &h->list) {
-		c = list_entry(p, struct hci_conn, list);
+	list_for_each_entry(c, &h->list, list) {
 		if (c->type == type && c->sent) {
 			BT_ERR("%s killing stalled connection %s",
 				hdev->name, batostr(&c->dst));
