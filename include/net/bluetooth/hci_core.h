@@ -32,6 +32,9 @@
 #define HCI_PROTO_L2CAP	0
 #define HCI_PROTO_SCO	1
 
+/* HCI priority */
+#define HCI_PRIO_MAX	7
+
 /* HCI Core structures */
 struct inquiry_data {
 	bdaddr_t	bdaddr;
@@ -149,6 +152,17 @@ struct hci_dev {
 	__u32		idle_timeout;
 	__u16		sniff_min_interval;
 	__u16		sniff_max_interval;
+
+	__u8		amp_status;
+	__u32		amp_total_bw;
+	__u32		amp_max_bw;
+	__u32		amp_min_latency;
+	__u32		amp_max_pdu;
+	__u8		amp_type;
+	__u16		amp_pal_cap;
+	__u16		amp_assoc_size;
+	__u32		amp_max_flush_to;
+	__u32		amp_be_flush_to;
 
 	unsigned int	auto_accept_delay;
 
@@ -543,7 +557,7 @@ struct hci_dev *hci_get_route(bdaddr_t *src, bdaddr_t *dst);
 struct hci_dev *hci_alloc_dev(void);
 void hci_free_dev(struct hci_dev *hdev);
 int hci_register_dev(struct hci_dev *hdev);
-int hci_unregister_dev(struct hci_dev *hdev);
+void hci_unregister_dev(struct hci_dev *hdev);
 int hci_suspend_dev(struct hci_dev *hdev);
 int hci_resume_dev(struct hci_dev *hdev);
 int hci_dev_open(__u16 dev);
@@ -597,8 +611,9 @@ int hci_recv_frame(struct sk_buff *skb);
 int hci_recv_fragment(struct hci_dev *hdev, int type, void *data, int count);
 int hci_recv_stream_fragment(struct hci_dev *hdev, void *data, int count);
 
-int hci_register_sysfs(struct hci_dev *hdev);
-void hci_unregister_sysfs(struct hci_dev *hdev);
+void hci_init_sysfs(struct hci_dev *hdev);
+int hci_add_sysfs(struct hci_dev *hdev);
+void hci_del_sysfs(struct hci_dev *hdev);
 void hci_conn_init_sysfs(struct hci_conn *conn);
 void hci_conn_add_sysfs(struct hci_conn *conn);
 void hci_conn_del_sysfs(struct hci_conn *conn);
@@ -872,6 +887,7 @@ int mgmt_read_local_oob_data_reply_complete(u16 index, u8 *hash, u8 *randomizer,
 int mgmt_device_found(u16 index, bdaddr_t *bdaddr, u8 *dev_class, s8 rssi,
 								u8 *eir);
 int mgmt_remote_name(u16 index, bdaddr_t *bdaddr, u8 *name);
+int mgmt_inquiry_failed(u16 index, u8 status);
 int mgmt_discovering(u16 index, u8 discovering);
 int mgmt_device_blocked(u16 index, bdaddr_t *bdaddr);
 int mgmt_device_unblocked(u16 index, bdaddr_t *bdaddr);
