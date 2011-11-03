@@ -67,8 +67,8 @@ static struct usba_platform_data __initdata ek_usba_udc_data = {
 static struct at91_mmc_data __initdata ek_mmc_data = {
 	.wire4		= 1,
 	.det_pin	= AT91_PIN_PA15,
-//	.wp_pin		= ... not connected
-//	.vcc_pin	= ... not connected
+	.wp_pin		= -EINVAL,
+	.vcc_pin	= -EINVAL,
 };
 
 
@@ -97,7 +97,7 @@ static struct mtd_partition * __init nand_partitions(int size, int *num_partitio
 static struct atmel_nand_data __initdata ek_nand_data = {
 	.ale		= 21,
 	.cle		= 22,
-//	.det_pin	= ... not connected
+	.det_pin	= -EINVAL,
 	.rdy_pin	= AT91_PIN_PD17,
 	.enable_pin	= AT91_PIN_PB6,
 	.partition_info	= nand_partitions,
@@ -209,6 +209,7 @@ static struct atmel_lcdfb_info __initdata ek_lcdc_data;
  * reset_pin is not connected: NRST
  */
 static struct ac97c_platform_data ek_ac97_data = {
+	.reset_pin	= -EINVAL,
 };
 
 
