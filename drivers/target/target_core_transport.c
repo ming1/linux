@@ -514,13 +514,16 @@ static int transport_cmd_check_stop(
 			 * Some fabric modules like tcm_loop can release
 			 * their internally allocated I/O reference now and
 			 * struct se_cmd now.
+			 *
+			 * Fabric modules are expected to return '1' here if the
+			 * se_cmd being passed is released at this point,
+			 * or zero if not being released.
 			 */
 			if (cmd->se_tfo->check_stop_free != NULL) {
 				spin_unlock_irqrestore(
 					&cmd->t_state_lock, flags);
 
-				cmd->se_tfo->check_stop_free(cmd);
-				return 1;
+				return cmd->se_tfo->check_stop_free(cmd);
 			}
 		}
 		spin_unlock_irqrestore(&cmd->t_state_lock, flags);
@@ -730,6 +733,10 @@ void transport_complete_task(struct se_task *task, int success)
 		complete(&task->task_stop_comp);
 		return;
 	}
+
+	if (!success)
+		cmd->t_tasks_failed = 1;
+
 	/*
 	 * Decrement the outstanding t_task_cdbs_left count.  The last
 	 * struct se_task from struct se_cmd will complete itself into the
@@ -740,7 +747,7 @@ void transport_complete_task(struct se_task *task, int success)
 		return;
 	}
 
-	if (!success || cmd->t_tasks_failed) {
+	if (cmd->t_tasks_failed) {
 		if (!task->task_error_status) {
 			task->task_error_status =
 				PYX_TRANSPORT_UNKNOWN_SAM_OPCODE;
@@ -908,7 +915,7 @@ void transport_remove_task_from_execute_queue(
 }
 
 /*
- * Handle QUEUE_FULL / -EAGAIN status
+ * Handle QUEUE_FULL / -EAGAIN and -ENOMEM status
  */
 
 static void target_qf_do_work(struct work_struct *work)
@@ -1645,9 +1652,7 @@ int transport_handle_cdb_direct(
 	 * and call transport_generic_request_failure() if necessary..
 	 */
 	ret = transport_generic_new_cmd(cmd);
-	if (ret == -EAGAIN)
-		return 0;
-	else if (ret < 0) {
+	if (ret < 0) {
 		cmd->transport_error_status = ret;
 		transport_generic_request_failure(cmd, 0,
 				(cmd->data_direction != DMA_TO_DEVICE));
@@ -1716,13 +1721,6 @@ int transport_generic_handle_tmr(
 	return 0;
 }
 EXPORT_SYMBOL(transport_generic_handle_tmr);
-
-void transport_generic_free_cmd_intr(
-	struct se_cmd *cmd)
-{
-	transport_add_cmd_to_queue(cmd, TRANSPORT_FREE_CMD_INTR, false);
-}
-EXPORT_SYMBOL(transport_generic_free_cmd_intr);
 
 /*
  * If the task is active, request it to be stopped and sleep until it
@@ -1886,7 +1884,7 @@ static void transport_generic_request_failure(
 				ASCQ_2CH_PREVIOUS_RESERVATION_CONFLICT_STATUS);
 
 		ret = cmd->se_tfo->queue_status(cmd);
-		if (ret == -EAGAIN)
+		if (ret == -EAGAIN || ret == -ENOMEM)
 			goto queue_full;
 		goto check_stop;
 	case PYX_TRANSPORT_USE_SENSE_REASON:
@@ -1913,7 +1911,7 @@ static void transport_generic_request_failure(
 	else {
 		ret = transport_send_check_condition_and_sense(cmd,
 				cmd->scsi_sense_reason, 0);
-		if (ret == -EAGAIN)
+		if (ret == -EAGAIN || ret == -ENOMEM)
 			goto queue_full;
 	}
 
@@ -3308,7 +3306,7 @@ static void target_complete_ok_work(struct work_struct *work)
 		if (cmd->scsi_status) {
 			ret = transport_send_check_condition_and_sense(
 					cmd, reason, 1);
-			if (ret == -EAGAIN)
+			if (ret == -EAGAIN || ret == -ENOMEM)
 				goto queue_full;
 
 			transport_lun_remove_cmd(cmd);
@@ -3333,7 +3331,7 @@ static void target_complete_ok_work(struct work_struct *work)
 		spin_unlock(&cmd->se_lun->lun_sep_lock);
 
 		ret = cmd->se_tfo->queue_data_in(cmd);
-		if (ret == -EAGAIN)
+		if (ret == -EAGAIN || ret == -ENOMEM)
 			goto queue_full;
 		break;
 	case DMA_TO_DEVICE:
@@ -3354,14 +3352,14 @@ static void target_complete_ok_work(struct work_struct *work)
 			}
 			spin_unlock(&cmd->se_lun->lun_sep_lock);
 			ret = cmd->se_tfo->queue_data_in(cmd);
-			if (ret == -EAGAIN)
+			if (ret == -EAGAIN || ret == -ENOMEM)
 				goto queue_full;
 			break;
 		}
 		/* Fall through for DMA_TO_DEVICE */
 	case DMA_NONE:
 		ret = cmd->se_tfo->queue_status(cmd);
-		if (ret == -EAGAIN)
+		if (ret == -EAGAIN || ret == -ENOMEM)
 			goto queue_full;
 		break;
 	default:
@@ -3890,7 +3888,10 @@ EXPORT_SYMBOL(transport_generic_process_write);
 
 static void transport_write_pending_qf(struct se_cmd *cmd)
 {
-	if (cmd->se_tfo->write_pending(cmd) == -EAGAIN) {
+	int ret;
+
+	ret = cmd->se_tfo->write_pending(cmd);
+	if (ret == -EAGAIN || ret == -ENOMEM) {
 		pr_debug("Handling write_pending QUEUE__FULL: se_cmd: %p\n",
 			 cmd);
 		transport_handle_queue_full(cmd, cmd->se_dev);
@@ -3920,7 +3921,7 @@ static int transport_generic_write_pending(struct se_cmd *cmd)
 	 * frontend know that WRITE buffers are ready.
 	 */
 	ret = cmd->se_tfo->write_pending(cmd);
-	if (ret == -EAGAIN)
+	if (ret == -EAGAIN || ret == -ENOMEM)
 		goto queue_full;
 	else if (ret < 0)
 		return ret;
@@ -3931,7 +3932,7 @@ queue_full:
 	pr_debug("Handling write_pending QUEUE__FULL: se_cmd: %p\n", cmd);
 	cmd->t_state = TRANSPORT_COMPLETE_QF_WP;
 	transport_handle_queue_full(cmd, cmd->se_dev);
-	return ret;
+	return 0;
 }
 
 /**
@@ -4583,9 +4584,7 @@ get_cmd:
 				break;
 			}
 			ret = transport_generic_new_cmd(cmd);
-			if (ret == -EAGAIN)
-				break;
-			else if (ret < 0) {
+			if (ret < 0) {
 				cmd->transport_error_status = ret;
 				transport_generic_request_failure(cmd,
 					0, (cmd->data_direction !=
@@ -4594,9 +4593,6 @@ get_cmd:
 			break;
 		case TRANSPORT_PROCESS_WRITE:
 			transport_generic_process_write(cmd);
-			break;
-		case TRANSPORT_FREE_CMD_INTR:
-			transport_generic_free_cmd(cmd, 0);
 			break;
 		case TRANSPORT_PROCESS_TMR:
 			transport_generic_do_tmr(cmd);
