@@ -426,24 +426,6 @@ static struct clk init_clocks_off[] = {
 		.enable		= s5pc100_d0_2_ctrl,
 		.ctrlbit	= (1 << 1),
 	}, {
-		.name		= "hsmmc",
-		.devname	= "s3c-sdhci.2",
-		.parent		= &clk_div_d1_bus.clk,
-		.enable		= s5pc100_d1_0_ctrl,
-		.ctrlbit	= (1 << 7),
-	}, {
-		.name		= "hsmmc",
-		.devname	= "s3c-sdhci.1",
-		.parent		= &clk_div_d1_bus.clk,
-		.enable		= s5pc100_d1_0_ctrl,
-		.ctrlbit	= (1 << 6),
-	}, {
-		.name		= "hsmmc",
-		.devname	= "s3c-sdhci.0",
-		.parent		= &clk_div_d1_bus.clk,
-		.enable		= s5pc100_d1_0_ctrl,
-		.ctrlbit	= (1 << 5),
-	}, {
 		.name		= "modemif",
 		.parent		= &clk_div_d1_bus.clk,
 		.enable		= s5pc100_d1_0_ctrl,
@@ -711,6 +693,30 @@ static struct clk init_clocks_off[] = {
 	},
 };
 
+static struct clk clk_hsmmc2 = {
+	.name		= "hsmmc",
+	.devname	= "s3c-sdhci.2",
+	.parent		= &clk_div_d1_bus.clk,
+	.enable		= s5pc100_d1_0_ctrl,
+	.ctrlbit	= (1 << 7),
+};
+
+static struct clk clk_hsmmc1 = {
+	.name		= "hsmmc",
+	.devname	= "s3c-sdhci.1",
+	.parent		= &clk_div_d1_bus.clk,
+	.enable		= s5pc100_d1_0_ctrl,
+	.ctrlbit	= (1 << 6),
+};
+
+static struct clk clk_hsmmc0 = {
+	.name		= "hsmmc",
+	.devname	= "s3c-sdhci.0",
+	.parent		= &clk_div_d1_bus.clk,
+	.enable		= s5pc100_d1_0_ctrl,
+	.ctrlbit	= (1 << 5),
+};
+
 static struct clk clk_vclk54m = {
 	.name		= "vclk_54m",
 	.rate		= 54000000,
@@ -962,16 +968,6 @@ static struct clksrc_clk clksrcs[] = {
 		.reg_div = { .reg = S5P_CLK_DIV2, .shift = 12, .size = 4 },
 	}, {
 		.clk	= {
-			.name		= "uclk1",
-			.ctrlbit	= (1 << 3),
-			.enable		= s5pc100_sclk0_ctrl,
-
-		},
-		.sources = &clk_src_group2,
-		.reg_src = { .reg = S5P_CLK_SRC1, .shift = 0, .size = 1 },
-		.reg_div = { .reg = S5P_CLK_DIV2, .shift = 0, .size = 4 },
-	}, {
-		.clk	= {
 			.name		= "sclk_mixer",
 			.ctrlbit	= (1 << 6),
 			.enable		= s5pc100_sclk0_ctrl,
@@ -1024,39 +1020,6 @@ static struct clksrc_clk clksrcs[] = {
 		.reg_div = { .reg = S5P_CLK_DIV3, .shift = 24, .size = 4 },
 	}, {
 		.clk	= {
-			.name		= "sclk_mmc",
-			.devname	= "s3c-sdhci.0",
-			.ctrlbit	= (1 << 12),
-			.enable		= s5pc100_sclk1_ctrl,
-
-		},
-		.sources = &clk_src_mmc0,
-		.reg_src = { .reg = S5P_CLK_SRC2, .shift = 0, .size = 2 },
-		.reg_div = { .reg = S5P_CLK_DIV3, .shift = 0, .size = 4 },
-	}, {
-		.clk	= {
-			.name		= "sclk_mmc",
-			.devname	= "s3c-sdhci.1",
-			.ctrlbit	= (1 << 13),
-			.enable		= s5pc100_sclk1_ctrl,
-
-		},
-		.sources = &clk_src_mmc12,
-		.reg_src = { .reg = S5P_CLK_SRC2, .shift = 4, .size = 2 },
-		.reg_div = { .reg = S5P_CLK_DIV3, .shift = 4, .size = 4 },
-	}, {
-		.clk	= {
-			.name		= "sclk_mmc",
-			.devname	= "s3c-sdhci.2",
-			.ctrlbit	= (1 << 14),
-			.enable		= s5pc100_sclk1_ctrl,
-
-		},
-		.sources = &clk_src_mmc12,
-		.reg_src = { .reg = S5P_CLK_SRC2, .shift = 8, .size = 2 },
-		.reg_div = { .reg = S5P_CLK_DIV3, .shift = 8, .size = 4 },
-	}, {
-		.clk	= {
 			.name		= "sclk_irda",
 			.ctrlbit	= (1 << 10),
 			.enable		= s5pc100_sclk0_ctrl,
@@ -1098,6 +1061,53 @@ static struct clksrc_clk clksrcs[] = {
 	},
 };
 
+static struct clksrc_clk clk_sclk_uart = {
+	.clk	= {
+		.name		= "uclk1",
+		.ctrlbit	= (1 << 3),
+		.enable		= s5pc100_sclk0_ctrl,
+	},
+	.sources = &clk_src_group2,
+	.reg_src = { .reg = S5P_CLK_SRC1, .shift = 0, .size = 1 },
+	.reg_div = { .reg = S5P_CLK_DIV2, .shift = 0, .size = 4 },
+};
+
+static struct clksrc_clk clk_sclk_mmc0 = {
+	.clk	= {
+		.name		= "sclk_mmc",
+		.devname	= "s3c-sdhci.0",
+		.ctrlbit	= (1 << 12),
+		.enable		= s5pc100_sclk1_ctrl,
+	},
+	.sources = &clk_src_mmc0,
+	.reg_src = { .reg = S5P_CLK_SRC2, .shift = 0, .size = 2 },
+	.reg_div = { .reg = S5P_CLK_DIV3, .shift = 0, .size = 4 },
+};
+
+static struct clksrc_clk clk_sclk_mmc1 = {
+	.clk	= {
+		.name		= "sclk_mmc",
+		.devname	= "s3c-sdhci.1",
+		.ctrlbit	= (1 << 13),
+		.enable		= s5pc100_sclk1_ctrl,
+	},
+	.sources = &clk_src_mmc12,
+	.reg_src = { .reg = S5P_CLK_SRC2, .shift = 4, .size = 2 },
+	.reg_div = { .reg = S5P_CLK_DIV3, .shift = 4, .size = 4 },
+};
+
+static struct clksrc_clk clk_sclk_mmc2 = {
+	.clk	= {
+		.name		= "sclk_mmc",
+		.devname	= "s3c-sdhci.2",
+		.ctrlbit	= (1 << 14),
+		.enable		= s5pc100_sclk1_ctrl,
+	},
+	.sources = &clk_src_mmc12,
+	.reg_src = { .reg = S5P_CLK_SRC2, .shift = 8, .size = 2 },
+	.reg_div = { .reg = S5P_CLK_DIV3, .shift = 8, .size = 4 },
+};
+
 /* Clock initialisation code */
 static struct clksrc_clk *sysclks[] = {
 	&clk_mout_apll,
@@ -1125,6 +1135,19 @@ static struct clksrc_clk *sysclks[] = {
 	&clk_sclk_audio1,
 	&clk_sclk_audio2,
 	&clk_sclk_spdif,
+};
+
+static struct clk *clk_cdev[] = {
+	&clk_hsmmc0,
+	&clk_hsmmc1,
+	&clk_hsmmc2,
+};
+
+static struct clksrc_clk *clksrc_cdev[] = {
+	&clk_sclk_uart,
+	&clk_sclk_mmc0,
+	&clk_sclk_mmc1,
+	&clk_sclk_mmc2,
 };
 
 void __init_or_cpufreq s5pc100_setup_clocks(void)
@@ -1266,6 +1289,17 @@ static struct clk *clks[] __initdata = {
 	&clk_pcmcdclk1,
 };
 
+static struct clk_lookup s5pc100_clk_lookup[] = {
+	CLKDEV_INIT(NULL, "clk_uart_baud2", &clk_p),
+	CLKDEV_INIT(NULL, "clk_uart_baud3", &clk_sclk_uart.clk),
+	CLKDEV_INIT("s3c-sdhci.0", "mmc_busclk.0", &clk_hsmmc0),
+	CLKDEV_INIT("s3c-sdhci.1", "mmc_busclk.0", &clk_hsmmc1),
+	CLKDEV_INIT("s3c-sdhci.2", "mmc_busclk.0", &clk_hsmmc2),
+	CLKDEV_INIT("s3c-sdhci.0", "mmc_busclk.2", &clk_sclk_mmc0.clk),
+	CLKDEV_INIT("s3c-sdhci.1", "mmc_busclk.2", &clk_sclk_mmc1.clk),
+	CLKDEV_INIT("s3c-sdhci.2", "mmc_busclk.2", &clk_sclk_mmc2.clk),
+};
+
 void __init s5pc100_register_clocks(void)
 {
 	int ptr;
@@ -1277,9 +1311,16 @@ void __init s5pc100_register_clocks(void)
 
 	s3c_register_clksrc(clksrcs, ARRAY_SIZE(clksrcs));
 	s3c_register_clocks(init_clocks, ARRAY_SIZE(init_clocks));
+	for (ptr = 0; ptr < ARRAY_SIZE(clksrc_cdev); ptr++)
+		s3c_register_clksrc(clksrc_cdev[ptr], 1);
 
 	s3c_register_clocks(init_clocks_off, ARRAY_SIZE(init_clocks_off));
 	s3c_disable_clocks(init_clocks_off, ARRAY_SIZE(init_clocks_off));
+	clkdev_add_table(s5pc100_clk_lookup, ARRAY_SIZE(s5pc100_clk_lookup));
+
+	s3c24xx_register_clocks(clk_cdev, ARRAY_SIZE(clk_cdev));
+	for (ptr = 0; ptr < ARRAY_SIZE(clk_cdev); ptr++)
+		s3c_disable_clocks(clk_cdev[ptr], 1);
 
 	s3c24xx_register_clock(&dummy_apb_pclk);
 
