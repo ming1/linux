@@ -1,0 +1,24 @@
+Importing hexagon based on v3.1-rc9
+Unchanged quilt series hexagon
+Importing i2c based on 839d8810747bbf39e0a5a7f223b67bffa7945f8d
+Unchanged quilt series i2c
+Importing jdelvare-hwmon based on 839d8810747bbf39e0a5a7f223b67bffa7945f8d
+Unchanged quilt series jdelvare-hwmon
+Importing kernel-doc based on 3.1-rc3
+Unchanged quilt series kernel-doc
+Importing rr based on v3.1-8907-g43672a0
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard 43672a0784707d795556b1f93925da8b8e797d03
+HEAD is now at 43672a0 Merge git://git.kernel.org/pub/scm/linux/kernel/git/steve/linux-dm
+$ git am ../quilt/rr/module:enable_dynamic_debugging_regardless_of_taint.patch
+Applying: module: Enable dynamic debugging regardless of taint
+$ git am ../quilt/rr/module:bug_add_taint_oot_flag_for_s_not_built_in_tree.patch
+Applying: module,bug: Add TAINT_OOT_MODULE flag for modules not built in-tree
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/rr
+From ../quilt-tmp
+ + dfb79dc...05478c6 master     -> quilt/rr  (forced update)
+Importing device-mapper based on v3.1-8907-g43672a0
+	quilt series is empty
+$ git update-ref refs/heads/quilt/device-mapper 43672a0784707d795556b1f93925da8b8e797d03
