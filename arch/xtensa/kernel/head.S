@@ -63,9 +63,9 @@ _startup:
 	movi	a0, LOCKLEVEL
 	wsr	a0, PS
 
-	/* Preserve the pointer to the boot parameter list in EXCSAVE_1 */
+	/* Preserve the pointer to the boot parameter list in EXCSAVE1 */
 
-	wsr	a2, EXCSAVE_1
+	wsr	a2, EXCSAVE1
 
 	/* Start with a fresh windowbase and windowstart.  */
 
@@ -89,7 +89,7 @@ _startup:
 
 	.set	_index, 0
 	.rept	XCHAL_NUM_DBREAK - 1
-	wsr	a0, DBREAKC + _index
+	wsr	a0, XTREG_DBREAKC(_index)
 	.set	_index, _index + 1
 	.endr
 #endif
@@ -108,7 +108,7 @@ _startup:
 
 	.set	_index, 0
 	.rept	XCHAL_NUM_TIMERS - 1
-	wsr	a0, CCOMPARE + _index
+	wsr	a0, XTREG_CCOMPARE(_index)
 	.set	_index, _index + 1
 	.endr
 
@@ -212,12 +212,12 @@ _startup:
 	/* Set up EXCSAVE[DEBUGLEVEL] to point to the Debug Exception Handler.*/
 
 	movi	a2, debug_exception
-	wsr	a2, EXCSAVE + XCHAL_DEBUGLEVEL
+	wsr	a2, XTREG_EXCSAVE(XCHAL_DEBUGLEVEL)
 
 	/* Set up EXCSAVE[1] to point to the exc_table. */
 
 	movi	a6, exc_table
-	xsr	a6, EXCSAVE_1
+	xsr	a6, EXCSAVE1
 
 	/* init_arch kick-starts the linux kernel */
 
