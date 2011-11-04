@@ -27,15 +27,20 @@
 #include <linux/pwm_backlight.h>
 
 #include <video/platform_lcd.h>
+#include <media/m5mols.h>
+#include <media/s5p_fimc.h>
+#include <media/v4l2-mediabus.h>
 
 #include <asm/mach/arch.h>
 #include <asm/mach-types.h>
 
 #include <plat/adc.h>
+#include <plat/regs-fb-v4.h>
 #include <plat/regs-serial.h>
 #include <plat/exynos4.h>
 #include <plat/cpu.h>
 #include <plat/devs.h>
+#include <plat/fb.h>
 #include <plat/sdhci.h>
 #include <plat/ehci.h>
 #include <plat/clock.h>
@@ -43,6 +48,9 @@
 #include <plat/iic.h>
 #include <plat/mfc.h>
 #include <plat/pd.h>
+#include <plat/fimc-core.h>
+#include <plat/camport.h>
+#include <plat/mipi_csis.h>
 
 #include <mach/map.h>
 
@@ -63,6 +71,8 @@
 enum fixed_regulator_id {
 	FIXED_REG_ID_MMC = 0,
 	FIXED_REG_ID_MAX8903,
+	FIXED_REG_ID_CAM_A28V,
+	FIXED_REG_ID_CAM_12V,
 };
 
 static struct s3c2410_uartcfg nuri_uartcfgs[] __initdata = {
@@ -197,6 +207,33 @@ static struct platform_device nuri_gpio_keys = {
 	.dev			= {
 		.platform_data	= &nuri_gpio_keys_data,
 	},
+};
+
+/* Frame Buffer */
+static struct s3c_fb_pd_win nuri_fb_win0 = {
+	.win_mode = {
+		.left_margin	= 64,
+		.right_margin	= 16,
+		.upper_margin	= 64,
+		.lower_margin	= 1,
+		.hsync_len	= 48,
+		.vsync_len	= 3,
+		.xres		= 1280,
+		.yres		= 800,
+		.refresh	= 60,
+	},
+	.max_bpp	= 24,
+	.default_bpp	= 16,
+	.virtual_x	= 1280,
+	.virtual_y	= 800,
+};
+
+static struct s3c_fb_platdata nuri_fb_pdata __initdata = {
+	.win[0]		= &nuri_fb_win0,
+	.vidcon0	= VIDCON0_VIDOUT_RGB | VIDCON0_PNRMODE_RGB |
+			  VIDCON0_CLKSEL_LCD,
+	.vidcon1	= VIDCON1_INV_HSYNC | VIDCON1_INV_VSYNC,
+	.setup_gpio	= exynos4_fimd0_gpio_setup_24bpp,
 };
 
 static void nuri_lcd_power_on(struct plat_lcd_data *pd, unsigned int power)
@@ -1037,13 +1074,6 @@ static struct platform_device nuri_max8903_device = {
 	},
 };
 
-static struct device *nuri_cm_devices[] = {
-	&s3c_device_i2c5.dev,
-	&s3c_device_adc.dev,
-	NULL, /* Reserved for UART */
-	NULL,
-};
-
 static void __init nuri_power_init(void)
 {
 	int gpio;
@@ -1088,10 +1118,141 @@ static void __init nuri_ehci_init(void)
 	s5p_ehci_set_platdata(pdata);
 }
 
+/* CAMERA */
+static struct regulator_consumer_supply cam_vdda_supply[] = {
+	REGULATOR_SUPPLY("a_sensor", "0-001f"),
+};
+
+static struct regulator_init_data cam_vdda_reg_init_data = {
+	.constraints = { .valid_ops_mask = REGULATOR_CHANGE_STATUS },
+	.num_consumer_supplies = ARRAY_SIZE(cam_vdda_supply),
+	.consumer_supplies = cam_vdda_supply,
+};
+
+static struct fixed_voltage_config cam_vdda_fixed_voltage_cfg = {
+	.supply_name	= "CAM_IO_EN",
+	.microvolts	= 2800000,
+	.gpio		= EXYNOS4_GPE2(1), /* CAM_IO_EN */
+	.enable_high	= 1,
+	.init_data	= &cam_vdda_reg_init_data,
+};
+
+static struct platform_device cam_vdda_fixed_rdev = {
+	.name = "reg-fixed-voltage", .id = FIXED_REG_ID_CAM_A28V,
+	.dev = { .platform_data	= &cam_vdda_fixed_voltage_cfg },
+};
+
+static struct regulator_consumer_supply camera_8m_12v_supply =
+	REGULATOR_SUPPLY("dig_12", "0-001f");
+
+static struct regulator_init_data cam_8m_12v_reg_init_data = {
+	.num_consumer_supplies	= 1,
+	.consumer_supplies	= &camera_8m_12v_supply,
+	.constraints = {
+		.valid_ops_mask = REGULATOR_CHANGE_STATUS
+	},
+};
+
+static struct fixed_voltage_config cam_8m_12v_fixed_voltage_cfg = {
+	.supply_name	= "8M_1.2V",
+	.microvolts	= 1200000,
+	.gpio		= EXYNOS4_GPE2(5), /* 8M_1.2V_EN */
+	.enable_high	= 1,
+	.init_data	= &cam_8m_12v_reg_init_data,
+};
+
+static struct platform_device cam_8m_12v_fixed_rdev = {
+	.name = "reg-fixed-voltage", .id = FIXED_REG_ID_CAM_12V,
+	.dev = { .platform_data = &cam_8m_12v_fixed_voltage_cfg },
+};
+
+static struct s5p_platform_mipi_csis mipi_csis_platdata = {
+	.clk_rate	= 166000000UL,
+	.lanes		= 2,
+	.alignment	= 32,
+	.hs_settle	= 12,
+	.phy_enable	= s5p_csis_phy_enable,
+};
+
+#define GPIO_CAM_MEGA_RST	EXYNOS4_GPY3(7) /* ISP_RESET */
+#define GPIO_CAM_8M_ISP_INT	EXYNOS4_GPL2(5)
+
+static struct m5mols_platform_data m5mols_platdata = {
+	.gpio_reset = GPIO_CAM_MEGA_RST,
+};
+
+static struct i2c_board_info m5mols_board_info = {
+	I2C_BOARD_INFO("M5MOLS", 0x1F),
+	.platform_data	= &m5mols_platdata,
+};
+
+static struct s5p_fimc_isp_info nuri_camera_sensors[] = {
+	{
+		.flags		= V4L2_MBUS_PCLK_SAMPLE_FALLING |
+				  V4L2_MBUS_VSYNC_ACTIVE_LOW,
+		.bus_type	= FIMC_MIPI_CSI2,
+		.board_info	= &m5mols_board_info,
+		.clk_frequency	= 24000000UL,
+		.csi_data_align	= 32,
+	},
+};
+
+static struct s5p_platform_fimc fimc_md_platdata = {
+	.isp_info	= nuri_camera_sensors,
+	.num_clients	= ARRAY_SIZE(nuri_camera_sensors),
+};
+
+static struct gpio nuri_camera_gpios[] = {
+	{ GPIO_CAM_8M_ISP_INT,	GPIOF_IN,           "8M_ISP_INT"  },
+	{ GPIO_CAM_MEGA_RST,	GPIOF_OUT_INIT_LOW, "CAM_8M_NRST" },
+};
+
+static void nuri_camera_init(void)
+{
+	s3c_set_platdata(&mipi_csis_platdata, sizeof(mipi_csis_platdata),
+			 &s5p_device_mipi_csis0);
+	s3c_set_platdata(&fimc_md_platdata,  sizeof(fimc_md_platdata),
+			 &s5p_device_fimc_md);
+
+	if (gpio_request_array(nuri_camera_gpios,
+			       ARRAY_SIZE(nuri_camera_gpios))) {
+		pr_err("%s: GPIO request failed\n", __func__);
+		return;
+	}
+
+	m5mols_board_info.irq = s5p_register_gpio_interrupt(GPIO_CAM_8M_ISP_INT);
+	if (!IS_ERR_VALUE(m5mols_board_info.irq))
+		s3c_gpio_cfgpin(GPIO_CAM_8M_ISP_INT, S3C_GPIO_SFN(0xF));
+	else
+		pr_err("%s: Failed to configure 8M_ISP_INT GPIO\n", __func__);
+
+	/* Free GPIOs controlled directly by the sensor drivers. */
+	gpio_free(GPIO_CAM_MEGA_RST);
+
+	if (exynos4_fimc_setup_gpio(S5P_CAMPORT_A)) {
+		pr_err("%s: Camera port A setup failed\n", __func__);
+		return;
+	}
+	/* Increase drive strength of the sensor clock output */
+	s5p_gpio_set_drvstr(EXYNOS4_GPJ1(3), S5P_GPIO_DRVSTR_LV4);
+}
+
+static struct s3c2410_platform_i2c nuri_i2c0_platdata __initdata = {
+	.frequency	= 400000U,
+	.sda_delay	= 200,
+};
+
 static struct platform_device *nuri_devices[] __initdata = {
 	/* Samsung Platform Devices */
 	&s3c_device_i2c5, /* PMIC should initialize first */
+	&s3c_device_i2c0,
 	&emmc_fixed_voltage,
+	&s5p_device_mipi_csis0,
+	&s5p_device_fimc0,
+	&s5p_device_fimc1,
+	&s5p_device_fimc2,
+	&s5p_device_fimc3,
+	&s5p_device_fimd0,
 	&s3c_device_hsmmc0,
 	&s3c_device_hsmmc2,
 	&s3c_device_hsmmc3,
@@ -1106,6 +1267,9 @@ static struct platform_device *nuri_devices[] __initdata = {
 	&s5p_device_mfc_l,
 	&s5p_device_mfc_r,
 	&exynos4_device_pd[PD_MFC],
+	&exynos4_device_pd[PD_LCD0],
+	&exynos4_device_pd[PD_CAM],
+	&s5p_device_fimc_md,
 
 	/* NURI Devices */
 	&nuri_gpio_keys,
@@ -1113,6 +1277,8 @@ static struct platform_device *nuri_devices[] __initdata = {
 	&nuri_backlight_device,
 	&max8903_fixed_reg_dev,
 	&nuri_max8903_device,
+	&cam_vdda_fixed_rdev,
+	&cam_8m_12v_fixed_rdev,
 };
 
 static void __init nuri_map_io(void)
@@ -1133,6 +1299,7 @@ static void __init nuri_machine_init(void)
 	nuri_tsp_init();
 	nuri_power_init();
 
+	s3c_i2c0_set_platdata(&nuri_i2c0_platdata);
 	i2c_register_board_info(1, i2c1_devs, ARRAY_SIZE(i2c1_devs));
 	s3c_i2c3_set_platdata(&i2c3_data);
 	i2c_register_board_info(3, i2c3_devs, ARRAY_SIZE(i2c3_devs));
@@ -1142,12 +1309,23 @@ static void __init nuri_machine_init(void)
 	i2c9_devs[I2C9_MAX17042].irq = gpio_to_irq(EXYNOS4_GPX2(3));
 	i2c_register_board_info(9, i2c9_devs, ARRAY_SIZE(i2c9_devs));
 
+	s5p_fimd0_set_platdata(&nuri_fb_pdata);
+
+	nuri_camera_init();
+
 	nuri_ehci_init();
 	clk_xusbxti.rate = 24000000;
 
 	/* Last */
 	platform_add_devices(nuri_devices, ARRAY_SIZE(nuri_devices));
 	s5p_device_mfc.dev.parent = &exynos4_device_pd[PD_MFC].dev;
+	s5p_device_fimd0.dev.parent = &exynos4_device_pd[PD_LCD0].dev;
+
+	s5p_device_fimc0.dev.parent = &exynos4_device_pd[PD_CAM].dev;
+	s5p_device_fimc1.dev.parent = &exynos4_device_pd[PD_CAM].dev;
+	s5p_device_fimc2.dev.parent = &exynos4_device_pd[PD_CAM].dev;
+	s5p_device_fimc3.dev.parent = &exynos4_device_pd[PD_CAM].dev;
+	s5p_device_mipi_csis0.dev.parent = &exynos4_device_pd[PD_CAM].dev;
 }
 
 MACHINE_START(NURI, "NURI")
