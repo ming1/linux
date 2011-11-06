@@ -141,6 +141,28 @@ static struct map_desc exynos4_iodesc1[] __initdata = {
 	},
 };
 
+/*
+ * For all ioremap requests of statically mapped regions, intercept ioremap and
+ * return virtual address from the iodesc table.
+ */
+void __iomem *exynos4_ioremap(unsigned long phy, size_t size, unsigned int type)
+{
+	struct map_desc *desc;
+	unsigned int idx;
+
+	desc = exynos_iodesc;
+	for (idx = 0; idx < ARRAY_SIZE(exynos_iodesc); idx++, desc++)
+		if (desc->pfn == __phys_to_pfn(phy) && desc->type == type)
+			return (void __iomem *)desc->virtual;
+
+	desc = exynos4_iodesc;
+	for (idx = 0; idx < ARRAY_SIZE(exynos4_iodesc); idx++, desc++)
+		if (desc->pfn == __phys_to_pfn(phy) && desc->type == type)
+			return (void __iomem *)desc->virtual;
+
+	return __arm_ioremap(phy, size, type);
+}
+
 static void exynos_idle(void)
 {
 	if (!need_resched())
