@@ -90,7 +90,7 @@ static void fake_signal_wake_up(struct task_struct *p)
 	unsigned long flags;
 
 	if (lock_task_sighand(p, &flags)) {
-		signal_wake_up(p, 1);
+		signal_wake_up(p, 0);
 		unlock_task_sighand(p, &flags);
 	}
 }
