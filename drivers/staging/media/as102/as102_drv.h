@@ -30,6 +30,7 @@
 extern int as102_debug;
 #define debug	as102_debug
 extern struct usb_driver as102_usb_driver;
+extern int elna_enable;
 
 #define dprintk(debug, args...) \
 	do { if (debug) {	\
