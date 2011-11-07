@@ -319,8 +319,7 @@ static void hci_linkpol_req(struct hci_dev *hdev, unsigned long opt)
  * Device is held on return. */
 struct hci_dev *hci_dev_get(int index)
 {
-	struct hci_dev *hdev = NULL;
-	struct list_head *p;
+	struct hci_dev *hdev = NULL, *d;
 
 	BT_DBG("%d", index);
 
@@ -328,8 +327,7 @@ struct hci_dev *hci_dev_get(int index)
 		return NULL;
 
 	read_lock(&hci_dev_list_lock);
-	list_for_each(p, &hci_dev_list) {
-		struct hci_dev *d = list_entry(p, struct hci_dev, list);
+	list_for_each_entry(d, &hci_dev_list, list) {
 		if (d->id == index) {
 			hdev = hci_dev_hold(d);
 			break;
@@ -794,9 +792,9 @@ int hci_dev_cmd(unsigned int cmd, void __user *arg)
 
 int hci_get_dev_list(void __user *arg)
 {
+	struct hci_dev *hdev;
 	struct hci_dev_list_req *dl;
 	struct hci_dev_req *dr;
-	struct list_head *p;
 	int n = 0, size, err;
 	__u16 dev_num;
 
@@ -815,11 +813,7 @@ int hci_get_dev_list(void __user *arg)
 	dr = dl->dev_req;
 
 	read_lock_bh(&hci_dev_list_lock);
-	list_for_each(p, &hci_dev_list) {
-		struct hci_dev *hdev;
-
-		hdev = list_entry(p, struct hci_dev, list);
-
+	list_for_each_entry(hdev, &hci_dev_list, list) {
 		hci_del_off_timer(hdev);
 
 		if (!test_bit(HCI_MGMT, &hdev->flags))
@@ -912,6 +906,7 @@ struct hci_dev *hci_alloc_dev(void)
 	if (!hdev)
 		return NULL;
 
+	hci_init_sysfs(hdev);
 	skb_queue_head_init(&hdev->driver_init);
 
 	return hdev;
@@ -1007,16 +1002,11 @@ int hci_link_keys_clear(struct hci_dev *hdev)
 
 struct link_key *hci_find_link_key(struct hci_dev *hdev, bdaddr_t *bdaddr)
 {
-	struct list_head *p;
+	struct link_key *k;
 
-	list_for_each(p, &hdev->link_keys) {
-		struct link_key *k;
-
-		k = list_entry(p, struct link_key, list);
-
+	list_for_each_entry(k, &hdev->link_keys, list)
 		if (bacmp(bdaddr, &k->bdaddr) == 0)
 			return k;
-	}
 
 	return NULL;
 }
@@ -1279,16 +1269,11 @@ int hci_add_remote_oob_data(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 *hash,
 struct bdaddr_list *hci_blacklist_lookup(struct hci_dev *hdev,
 						bdaddr_t *bdaddr)
 {
-	struct list_head *p;
+	struct bdaddr_list *b;
 
-	list_for_each(p, &hdev->blacklist) {
-		struct bdaddr_list *b;
-
-		b = list_entry(p, struct bdaddr_list, list);
-
+	list_for_each_entry(b, &hdev->blacklist, list)
 		if (bacmp(bdaddr, &b->bdaddr) == 0)
 			return b;
-	}
 
 	return NULL;
 }
@@ -1425,13 +1410,18 @@ int hci_add_adv_entry(struct hci_dev *hdev,
 int hci_register_dev(struct hci_dev *hdev)
 {
 	struct list_head *head = &hci_dev_list, *p;
-	int i, id = 0;
+	int i, id, error;
 
 	BT_DBG("%p name %s bus %d owner %p", hdev, hdev->name,
 						hdev->bus, hdev->owner);
 
 	if (!hdev->open || !hdev->close || !hdev->destruct)
 		return -EINVAL;
+
+	/* Do not allow HCI_AMP devices to register at index 0,
+	 * so the index can be used as the AMP controller ID.
+	 */
+	id = (hdev->dev_type == HCI_BREDR) ? 0 : 1;
 
 	write_lock_bh(&hci_dev_list_lock);
 
@@ -1502,10 +1492,14 @@ int hci_register_dev(struct hci_dev *hdev)
 	write_unlock_bh(&hci_dev_list_lock);
 
 	hdev->workqueue = create_singlethread_workqueue(hdev->name);
-	if (!hdev->workqueue)
-		goto nomem;
+	if (!hdev->workqueue) {
+		error = -ENOMEM;
+		goto err;
+	}
 
-	hci_register_sysfs(hdev);
+	error = hci_add_sysfs(hdev);
+	if (error < 0)
+		goto err_wqueue;
 
 	hdev->rfkill = rfkill_alloc(hdev->name, &hdev->dev,
 				RFKILL_TYPE_BLUETOOTH, &hci_rfkill_ops, hdev);
@@ -1524,17 +1518,19 @@ int hci_register_dev(struct hci_dev *hdev)
 
 	return id;
 
-nomem:
+err_wqueue:
+	destroy_workqueue(hdev->workqueue);
+err:
 	write_lock_bh(&hci_dev_list_lock);
 	list_del(&hdev->list);
 	write_unlock_bh(&hci_dev_list_lock);
 
-	return -ENOMEM;
+	return error;
 }
 EXPORT_SYMBOL(hci_register_dev);
 
 /* Unregister HCI device */
-int hci_unregister_dev(struct hci_dev *hdev)
+void hci_unregister_dev(struct hci_dev *hdev)
 {
 	int i;
 
@@ -1560,7 +1556,7 @@ int hci_unregister_dev(struct hci_dev *hdev)
 		rfkill_destroy(hdev->rfkill);
 	}
 
-	hci_unregister_sysfs(hdev);
+	hci_del_sysfs(hdev);
 
 	hci_del_off_timer(hdev);
 	del_timer(&hdev->adv_timer);
@@ -1576,8 +1572,6 @@ int hci_unregister_dev(struct hci_dev *hdev)
 	hci_dev_unlock_bh(hdev);
 
 	__hci_dev_put(hdev);
-
-	return 0;
 }
 EXPORT_SYMBOL(hci_unregister_dev);
 
@@ -1948,23 +1942,18 @@ static void hci_add_acl_hdr(struct sk_buff *skb, __u16 handle, __u16 flags)
 	hdr->dlen   = cpu_to_le16(len);
 }
 
-void hci_send_acl(struct hci_conn *conn, struct sk_buff *skb, __u16 flags)
+static void hci_queue_acl(struct hci_conn *conn, struct sk_buff_head *queue,
+				struct sk_buff *skb, __u16 flags)
 {
 	struct hci_dev *hdev = conn->hdev;
 	struct sk_buff *list;
-
-	BT_DBG("%s conn %p flags 0x%x", hdev->name, conn, flags);
-
-	skb->dev = (void *) hdev;
-	bt_cb(skb)->pkt_type = HCI_ACLDATA_PKT;
-	hci_add_acl_hdr(skb, conn->handle, flags);
 
 	list = skb_shinfo(skb)->frag_list;
 	if (!list) {
 		/* Non fragmented */
 		BT_DBG("%s nonfrag skb %p len %d", hdev->name, skb, skb->len);
 
-		skb_queue_tail(&conn->data_q, skb);
+		skb_queue_tail(queue, skb);
 	} else {
 		/* Fragmented */
 		BT_DBG("%s frag %p len %d", hdev->name, skb, skb->len);
@@ -1972,9 +1961,9 @@ void hci_send_acl(struct hci_conn *conn, struct sk_buff *skb, __u16 flags)
 		skb_shinfo(skb)->frag_list = NULL;
 
 		/* Queue all fragments atomically */
-		spin_lock_bh(&conn->data_q.lock);
+		spin_lock_bh(&queue->lock);
 
-		__skb_queue_tail(&conn->data_q, skb);
+		__skb_queue_tail(queue, skb);
 
 		flags &= ~ACL_START;
 		flags |= ACL_CONT;
@@ -1987,11 +1976,25 @@ void hci_send_acl(struct hci_conn *conn, struct sk_buff *skb, __u16 flags)
 
 			BT_DBG("%s frag %p len %d", hdev->name, skb, skb->len);
 
-			__skb_queue_tail(&conn->data_q, skb);
+			__skb_queue_tail(queue, skb);
 		} while (list);
 
-		spin_unlock_bh(&conn->data_q.lock);
+		spin_unlock_bh(&queue->lock);
 	}
+}
+
+void hci_send_acl(struct hci_chan *chan, struct sk_buff *skb, __u16 flags)
+{
+	struct hci_conn *conn = chan->conn;
+	struct hci_dev *hdev = conn->hdev;
+
+	BT_DBG("%s chan %p flags 0x%x", hdev->name, chan, flags);
+
+	skb->dev = (void *) hdev;
+	bt_cb(skb)->pkt_type = HCI_ACLDATA_PKT;
+	hci_add_acl_hdr(skb, conn->handle, flags);
+
+	hci_queue_acl(conn, &chan->data_q, skb, flags);
 
 	tasklet_schedule(&hdev->tx_task);
 }
@@ -2026,16 +2029,12 @@ EXPORT_SYMBOL(hci_send_sco);
 static inline struct hci_conn *hci_low_sent(struct hci_dev *hdev, __u8 type, int *quote)
 {
 	struct hci_conn_hash *h = &hdev->conn_hash;
-	struct hci_conn *conn = NULL;
+	struct hci_conn *conn = NULL, *c;
 	int num = 0, min = ~0;
-	struct list_head *p;
 
 	/* We don't have to lock device here. Connections are always
 	 * added and removed with TX task disabled. */
-	list_for_each(p, &h->list) {
-		struct hci_conn *c;
-		c = list_entry(p, struct hci_conn, list);
-
+	list_for_each_entry(c, &h->list, list) {
 		if (c->type != type || skb_queue_empty(&c->data_q))
 			continue;
 
@@ -2084,14 +2083,12 @@ static inline struct hci_conn *hci_low_sent(struct hci_dev *hdev, __u8 type, int
 static inline void hci_link_tx_to(struct hci_dev *hdev, __u8 type)
 {
 	struct hci_conn_hash *h = &hdev->conn_hash;
-	struct list_head *p;
-	struct hci_conn  *c;
+	struct hci_conn *c;
 
 	BT_ERR("%s link tx timeout", hdev->name);
 
 	/* Kill stalled connections */
-	list_for_each(p, &h->list) {
-		c = list_entry(p, struct hci_conn, list);
+	list_for_each_entry(c, &h->list, list) {
 		if (c->type == type && c->sent) {
 			BT_ERR("%s killing stalled connection %s",
 				hdev->name, batostr(&c->dst));
@@ -2100,11 +2097,137 @@ static inline void hci_link_tx_to(struct hci_dev *hdev, __u8 type)
 	}
 }
 
+static inline struct hci_chan *hci_chan_sent(struct hci_dev *hdev, __u8 type,
+						int *quote)
+{
+	struct hci_conn_hash *h = &hdev->conn_hash;
+	struct hci_chan *chan = NULL;
+	int num = 0, min = ~0, cur_prio = 0;
+	struct hci_conn *conn;
+	int cnt, q, conn_num = 0;
+
+	BT_DBG("%s", hdev->name);
+
+	list_for_each_entry(conn, &h->list, list) {
+		struct hci_chan_hash *ch;
+		struct hci_chan *tmp;
+
+		if (conn->type != type)
+			continue;
+
+		if (conn->state != BT_CONNECTED && conn->state != BT_CONFIG)
+			continue;
+
+		conn_num++;
+
+		ch = &conn->chan_hash;
+
+		list_for_each_entry(tmp, &ch->list, list) {
+			struct sk_buff *skb;
+
+			if (skb_queue_empty(&tmp->data_q))
+				continue;
+
+			skb = skb_peek(&tmp->data_q);
+			if (skb->priority < cur_prio)
+				continue;
+
+			if (skb->priority > cur_prio) {
+				num = 0;
+				min = ~0;
+				cur_prio = skb->priority;
+			}
+
+			num++;
+
+			if (conn->sent < min) {
+				min  = conn->sent;
+				chan = tmp;
+			}
+		}
+
+		if (hci_conn_num(hdev, type) == conn_num)
+			break;
+	}
+
+	if (!chan)
+		return NULL;
+
+	switch (chan->conn->type) {
+	case ACL_LINK:
+		cnt = hdev->acl_cnt;
+		break;
+	case SCO_LINK:
+	case ESCO_LINK:
+		cnt = hdev->sco_cnt;
+		break;
+	case LE_LINK:
+		cnt = hdev->le_mtu ? hdev->le_cnt : hdev->acl_cnt;
+		break;
+	default:
+		cnt = 0;
+		BT_ERR("Unknown link type");
+	}
+
+	q = cnt / num;
+	*quote = q ? q : 1;
+	BT_DBG("chan %p quote %d", chan, *quote);
+	return chan;
+}
+
+static void hci_prio_recalculate(struct hci_dev *hdev, __u8 type)
+{
+	struct hci_conn_hash *h = &hdev->conn_hash;
+	struct hci_conn *conn;
+	int num = 0;
+
+	BT_DBG("%s", hdev->name);
+
+	list_for_each_entry(conn, &h->list, list) {
+		struct hci_chan_hash *ch;
+		struct hci_chan *chan;
+
+		if (conn->type != type)
+			continue;
+
+		if (conn->state != BT_CONNECTED && conn->state != BT_CONFIG)
+			continue;
+
+		num++;
+
+		ch = &conn->chan_hash;
+		list_for_each_entry(chan, &ch->list, list) {
+			struct sk_buff *skb;
+
+			if (chan->sent) {
+				chan->sent = 0;
+				continue;
+			}
+
+			if (skb_queue_empty(&chan->data_q))
+				continue;
+
+			skb = skb_peek(&chan->data_q);
+			if (skb->priority >= HCI_PRIO_MAX - 1)
+				continue;
+
+			skb->priority = HCI_PRIO_MAX - 1;
+
+			BT_DBG("chan %p skb %p promoted to %d", chan, skb,
+								skb->priority);
+		}
+
+		if (hci_conn_num(hdev, type) == num)
+			break;
+	}
+}
+
 static inline void hci_sched_acl(struct hci_dev *hdev)
 {
-	struct hci_conn *conn;
+	struct hci_chan *chan;
 	struct sk_buff *skb;
 	int quote;
+	unsigned int cnt;
 
 	BT_DBG("%s", hdev->name);
 
@@ -2118,19 +2241,35 @@ static inline void hci_sched_acl(struct hci_dev *hdev)
 			hci_link_tx_to(hdev, ACL_LINK);
 	}
 
-	while (hdev->acl_cnt && (conn = hci_low_sent(hdev, ACL_LINK, &quote))) {
-		while (quote-- && (skb = skb_dequeue(&conn->data_q))) {
-			BT_DBG("skb %p len %d", skb, skb->len);
+	cnt = hdev->acl_cnt;
 
-			hci_conn_enter_active_mode(conn, bt_cb(skb)->force_active);
+	while (hdev->acl_cnt &&
+			(chan = hci_chan_sent(hdev, ACL_LINK, &quote))) {
+		u32 priority = (skb_peek(&chan->data_q))->priority;
+		while (quote-- && (skb = skb_peek(&chan->data_q))) {
+			BT_DBG("chan %p skb %p len %d priority %u", chan, skb,
+					skb->len, skb->priority);
+
+			/* Stop if priority has changed */
+			if (skb->priority < priority)
+				break;
+
+			skb = skb_dequeue(&chan->data_q);
+
+			hci_conn_enter_active_mode(chan->conn,
+						bt_cb(skb)->force_active);
 
 			hci_send_frame(skb);
 			hdev->acl_last_tx = jiffies;
 
 			hdev->acl_cnt--;
-			conn->sent++;
+			chan->sent++;
+			chan->conn->sent++;
 		}
 	}
+
+	if (cnt != hdev->acl_cnt)
+		hci_prio_recalculate(hdev, ACL_LINK);
 }
 
 /* Schedule SCO */
@@ -2182,9 +2321,9 @@ static inline void hci_sched_esco(struct hci_dev *hdev)
 
 static inline void hci_sched_le(struct hci_dev *hdev)
 {
-	struct hci_conn *conn;
+	struct hci_chan *chan;
 	struct sk_buff *skb;
-	int quote, cnt;
+	int quote, cnt, tmp;
 
 	BT_DBG("%s", hdev->name);
 
@@ -2200,21 +2339,35 @@ static inline void hci_sched_le(struct hci_dev *hdev)
 	}
 
 	cnt = hdev->le_pkts ? hdev->le_cnt : hdev->acl_cnt;
-	while (cnt && (conn = hci_low_sent(hdev, LE_LINK, &quote))) {
-		while (quote-- && (skb = skb_dequeue(&conn->data_q))) {
-			BT_DBG("skb %p len %d", skb, skb->len);
+	tmp = cnt;
+	while (cnt && (chan = hci_chan_sent(hdev, LE_LINK, &quote))) {
+		u32 priority = (skb_peek(&chan->data_q))->priority;
+		while (quote-- && (skb = skb_peek(&chan->data_q))) {
+			BT_DBG("chan %p skb %p len %d priority %u", chan, skb,
+					skb->len, skb->priority);
+
+			/* Stop if priority has changed */
+			if (skb->priority < priority)
+				break;
+
+			skb = skb_dequeue(&chan->data_q);
 
 			hci_send_frame(skb);
 			hdev->le_last_tx = jiffies;
 
 			cnt--;
-			conn->sent++;
+			chan->sent++;
+			chan->conn->sent++;
 		}
 	}
+
 	if (hdev->le_pkts)
 		hdev->le_cnt = cnt;
 	else
 		hdev->acl_cnt = cnt;
+
+	if (cnt != tmp)
+		hci_prio_recalculate(hdev, LE_LINK);
 }
 
 static void hci_tx_task(unsigned long arg)
