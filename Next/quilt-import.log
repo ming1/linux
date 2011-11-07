@@ -1,0 +1,15 @@
+Importing hexagon based on v3.1-rc9
+Unchanged quilt series hexagon
+Importing i2c based on c861cd3e92d92ae946e19099f198018fcb4fd887
+	quilt series is empty
+$ git update-ref refs/heads/quilt/i2c c861cd3e92d92ae946e19099f198018fcb4fd887
+Importing jdelvare-hwmon based on c861cd3e92d92ae946e19099f198018fcb4fd887
+	quilt series is empty
+$ git update-ref refs/heads/quilt/jdelvare-hwmon c861cd3e92d92ae946e19099f198018fcb4fd887
+Importing kernel-doc based on 3.1
+	quilt series is empty
+$ git update-ref refs/heads/quilt/kernel-doc c3b92c8787367a8bb53d57d9789b558f1295cc96
+Importing rr based on v3.1-8907-g43672a0
+Unchanged quilt series rr
+Importing device-mapper based on v3.1-8907-g43672a0
+Unchanged quilt series device-mapper
