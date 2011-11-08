@@ -1,0 +1,22 @@
+Importing hexagon based on v3.1-rc9
+Unchanged quilt series hexagon
+Importing i2c based on c861cd3e92d92ae946e19099f198018fcb4fd887
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard c861cd3e92d92ae946e19099f198018fcb4fd887
+HEAD is now at c861cd3 Merge branch 'next/devel2' of git://git.linaro.org/people/arnd/arm-soc
+$ git am ../quilt/i2c/i2c-algo-bit-generate-correct-10-bit-address.patch
+Applying: i2c-algo-bit: Generate correct i2c address sequence for 10-bit target
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/i2c
+From ../quilt-tmp
+   c861cd3..e415e35  master     -> quilt/i2c
+Importing jdelvare-hwmon based on c861cd3e92d92ae946e19099f198018fcb4fd887
+Unchanged quilt series jdelvare-hwmon
+Importing kernel-doc based on 3.1
+Unchanged quilt series kernel-doc
+Importing rr based on v3.1-8907-g43672a0
+Unchanged quilt series rr
+Importing device-mapper based on v3.1-10674-g94956ee
+	quilt series is empty
+$ git update-ref refs/heads/quilt/device-mapper 94956eed14b4b16d401c8ad36d68df0608f968cb
