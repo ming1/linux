@@ -69,6 +69,10 @@ struct mgmt_mode {
 #define MGMT_OP_SET_POWERED		0x0005
 
 #define MGMT_OP_SET_DISCOVERABLE	0x0006
+struct mgmt_cp_set_discoverable {
+	__u8 val;
+	__u16 timeout;
+} __packed;
 
 #define MGMT_OP_SET_CONNECTABLE		0x0007
 
@@ -101,8 +105,6 @@ struct mgmt_key_info {
 	u8 type;
 	u8 val[16];
 	u8 pin_len;
-	u8 dlen;
-	u8 data[0];
 } __packed;
 
 #define MGMT_OP_LOAD_KEYS		0x000D

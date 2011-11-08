@@ -33,6 +33,8 @@
 #define MGMT_VERSION	0
 #define MGMT_REVISION	1
 
+#define INQUIRY_LEN_BREDR 0x08 /* TGAP(100) */
+
 struct pending_cmd {
 	struct list_head list;
 	__u16 opcode;
@@ -49,6 +51,7 @@ static int cmd_status(struct sock *sk, u16 index, u16 cmd, u8 status)
 	struct sk_buff *skb;
 	struct mgmt_hdr *hdr;
 	struct mgmt_ev_cmd_status *ev;
+	int err;
 
 	BT_DBG("sock %p, index %u, cmd %u, status %u", sk, index, cmd, status);
 
@@ -66,10 +69,11 @@ static int cmd_status(struct sock *sk, u16 index, u16 cmd, u8 status)
 	ev->status = status;
 	put_unaligned_le16(cmd, &ev->opcode);
 
-	if (sock_queue_rcv_skb(sk, skb) < 0)
+	err = sock_queue_rcv_skb(sk, skb);
+	if (err < 0)
 		kfree_skb(skb);
 
-	return 0;
+	return err;
 }
 
 static int cmd_complete(struct sock *sk, u16 index, u16 cmd, void *rp,
@@ -78,6 +82,7 @@ static int cmd_complete(struct sock *sk, u16 index, u16 cmd, void *rp,
 	struct sk_buff *skb;
 	struct mgmt_hdr *hdr;
 	struct mgmt_ev_cmd_complete *ev;
+	int err;
 
 	BT_DBG("sock %p", sk);
 
@@ -97,10 +102,11 @@ static int cmd_complete(struct sock *sk, u16 index, u16 cmd, void *rp,
 	if (rp)
 		memcpy(ev->data, rp, rp_len);
 
-	if (sock_queue_rcv_skb(sk, skb) < 0)
+	err = sock_queue_rcv_skb(sk, skb);
+	if (err < 0)
 		kfree_skb(skb);
 
-	return 0;
+	return err;;
 }
 
 static int read_version(struct sock *sk)
@@ -120,6 +126,7 @@ static int read_index_list(struct sock *sk)
 {
 	struct mgmt_rp_read_index_list *rp;
 	struct list_head *p;
+	struct hci_dev *d;
 	size_t rp_len;
 	u16 count;
 	int i, err;
@@ -143,10 +150,9 @@ static int read_index_list(struct sock *sk)
 	put_unaligned_le16(count, &rp->num_controllers);
 
 	i = 0;
-	list_for_each(p, &hci_dev_list) {
-		struct hci_dev *d = list_entry(p, struct hci_dev, list);
-
-		hci_del_off_timer(d);
+	list_for_each_entry(d, &hci_dev_list, list) {
+		if (test_and_clear_bit(HCI_AUTO_OFF, &d->flags))
+			cancel_delayed_work_sync(&d->power_off);
 
 		if (test_bit(HCI_SETUP, &d->flags))
 			continue;
@@ -176,7 +182,8 @@ static int read_controller_info(struct sock *sk, u16 index)
 	if (!hdev)
 		return cmd_status(sk, index, MGMT_OP_READ_INFO, ENODEV);
 
-	hci_del_off_timer(hdev);
+	if (test_and_clear_bit(HCI_AUTO_OFF, &hdev->flags))
+		cancel_delayed_work_sync(&hdev->power_off);
 
 	hci_dev_lock_bh(hdev);
 
@@ -260,7 +267,7 @@ static void mgmt_pending_foreach(u16 opcode, int index,
 
 		cmd = list_entry(p, struct pending_cmd, list);
 
-		if (cmd->opcode != opcode)
+		if (opcode > 0 && cmd->opcode != opcode)
 			continue;
 
 		if (index >= 0 && cmd->index != index)
@@ -272,13 +279,9 @@ static void mgmt_pending_foreach(u16 opcode, int index,
 
 static struct pending_cmd *mgmt_pending_find(u16 opcode, int index)
 {
-	struct list_head *p;
+	struct pending_cmd *cmd;
 
-	list_for_each(p, &cmd_list) {
-		struct pending_cmd *cmd;
-
-		cmd = list_entry(p, struct pending_cmd, list);
-
+	list_for_each_entry(cmd, &cmd_list, list) {
 		if (cmd->opcode != opcode)
 			continue;
 
@@ -337,7 +340,7 @@ static int set_powered(struct sock *sk, u16 index, unsigned char *data, u16 len)
 	if (cp->val)
 		queue_work(hdev->workqueue, &hdev->power_on);
 	else
-		queue_work(hdev->workqueue, &hdev->power_off);
+		queue_work(hdev->workqueue, &hdev->power_off.work);
 
 	err = 0;
 
@@ -350,7 +353,7 @@ failed:
 static int set_discoverable(struct sock *sk, u16 index, unsigned char *data,
 									u16 len)
 {
-	struct mgmt_mode *cp;
+	struct mgmt_cp_set_discoverable *cp;
 	struct hci_dev *hdev;
 	struct pending_cmd *cmd;
 	u8 scan;
@@ -396,10 +399,15 @@ static int set_discoverable(struct sock *sk, u16 index, unsigned char *data,
 
 	if (cp->val)
 		scan |= SCAN_INQUIRY;
+	else
+		cancel_delayed_work_sync(&hdev->discov_off);
 
 	err = hci_send_cmd(hdev, HCI_OP_WRITE_SCAN_ENABLE, 1, &scan);
 	if (err < 0)
 		mgmt_pending_remove(cmd);
+
+	if (cp->val)
+		hdev->discov_timeout = get_unaligned_le16(&cp->timeout);
 
 failed:
 	hci_dev_unlock_bh(hdev);
@@ -587,7 +595,7 @@ static void create_eir(struct hci_dev *hdev, u8 *data)
 	u16 eir_len = 0;
 	u16 uuid16_list[HCI_MAX_EIR_LENGTH / sizeof(u16)];
 	int i, truncated = 0;
-	struct list_head *p;
+	struct bt_uuid *uuid;
 	size_t name_len;
 
 	name_len = strlen(hdev->dev_name);
@@ -612,8 +620,7 @@ static void create_eir(struct hci_dev *hdev, u8 *data)
 	memset(uuid16_list, 0, sizeof(uuid16_list));
 
 	/* Group all UUID16 types */
-	list_for_each(p, &hdev->uuids) {
-		struct bt_uuid *uuid = list_entry(p, struct bt_uuid, list);
+	list_for_each_entry(uuid, &hdev->uuids, list) {
 		u16 uuid16;
 
 		uuid16 = get_uuid16(uuid->uuid);
@@ -689,14 +696,11 @@ static int update_eir(struct hci_dev *hdev)
 
 static u8 get_service_classes(struct hci_dev *hdev)
 {
-	struct list_head *p;
+	struct bt_uuid *uuid;
 	u8 val = 0;
 
-	list_for_each(p, &hdev->uuids) {
-		struct bt_uuid *uuid = list_entry(p, struct bt_uuid, list);
-
+	list_for_each_entry(uuid, &hdev->uuids, list)
 		val |= uuid->svc_hint;
-	}
 
 	return val;
 }
@@ -895,6 +899,9 @@ static int set_service_cache(struct sock *sk, u16 index,  unsigned char *data,
 	if (err == 0)
 		err = cmd_complete(sk, index, MGMT_OP_SET_SERVICE_CACHE, NULL,
 									0);
+	else
+		cmd_status(sk, index, MGMT_OP_SET_SERVICE_CACHE, -err);
+
 
 	hci_dev_unlock_bh(hdev);
 	hci_dev_put(hdev);
@@ -912,7 +919,7 @@ static int load_keys(struct sock *sk, u16 index, unsigned char *data, u16 len)
 	cp = (void *) data;
 
 	if (len < sizeof(*cp))
-		return -EINVAL;
+		return cmd_status(sk, index, MGMT_OP_LOAD_KEYS, EINVAL);
 
 	key_count = get_unaligned_le16(&cp->key_count);
 
@@ -920,7 +927,7 @@ static int load_keys(struct sock *sk, u16 index, unsigned char *data, u16 len)
 	if (expected_len != len) {
 		BT_ERR("load_keys: expected %u bytes, got %u bytes",
 							len, expected_len);
-		return -EINVAL;
+		return cmd_status(sk, index, MGMT_OP_LOAD_KEYS, EINVAL);
 	}
 
 	hdev = hci_dev_get(index);
@@ -1064,6 +1071,7 @@ static int get_connections(struct sock *sk, u16 index)
 {
 	struct mgmt_rp_get_connections *rp;
 	struct hci_dev *hdev;
+	struct hci_conn *c;
 	struct list_head *p;
 	size_t rp_len;
 	u16 count;
@@ -1092,11 +1100,8 @@ static int get_connections(struct sock *sk, u16 index)
 	put_unaligned_le16(count, &rp->conn_count);
 
 	i = 0;
-	list_for_each(p, &hdev->conn_hash.list) {
-		struct hci_conn *c = list_entry(p, struct hci_conn, list);
-
+	list_for_each_entry(c, &hdev->conn_hash.list, list)
 		bacpy(&rp->conn[i++], &c->dst);
-	}
 
 	err = cmd_complete(sk, index, MGMT_OP_GET_CONNECTIONS, rp, rp_len);
 
@@ -1265,13 +1270,9 @@ static int set_io_capability(struct sock *sk, u16 index, unsigned char *data,
 static inline struct pending_cmd *find_pairing(struct hci_conn *conn)
 {
 	struct hci_dev *hdev = conn->hdev;
-	struct list_head *p;
+	struct pending_cmd *cmd;
 
-	list_for_each(p, &cmd_list) {
-		struct pending_cmd *cmd;
-
-		cmd = list_entry(p, struct pending_cmd, list);
-
+	list_for_each_entry(cmd, &cmd_list, list) {
 		if (cmd->opcode != MGMT_OP_PAIR_DEVICE)
 			continue;
 
@@ -1607,8 +1608,6 @@ static int remove_remote_oob_data(struct sock *sk, u16 index,
 
 static int start_discovery(struct sock *sk, u16 index)
 {
-	u8 lap[3] = { 0x33, 0x8b, 0x9e };
-	struct hci_cp_inquiry cp;
 	struct pending_cmd *cmd;
 	struct hci_dev *hdev;
 	int err;
@@ -1627,12 +1626,7 @@ static int start_discovery(struct sock *sk, u16 index)
 		goto failed;
 	}
 
-	memset(&cp, 0, sizeof(cp));
-	memcpy(&cp.lap, lap, 3);
-	cp.length  = 0x08;
-	cp.num_rsp = 0x00;
-
-	err = hci_send_cmd(hdev, HCI_OP_INQUIRY, sizeof(cp), &cp);
+	err = hci_do_inquiry(hdev, INQUIRY_LEN_BREDR);
 	if (err < 0)
 		mgmt_pending_remove(cmd);
 
@@ -1663,7 +1657,7 @@ static int stop_discovery(struct sock *sk, u16 index)
 		goto failed;
 	}
 
-	err = hci_send_cmd(hdev, HCI_OP_INQUIRY_CANCEL, 0, NULL);
+	err = hci_cancel_inquiry(hdev);
 	if (err < 0)
 		mgmt_pending_remove(cmd);
 
@@ -1958,6 +1952,14 @@ done:
 	return err;
 }
 
+static void cmd_status_rsp(struct pending_cmd *cmd, void *data)
+{
+	u8 *status = data;
+
+	cmd_status(cmd->sk, cmd->index, cmd->opcode, *status);
+	mgmt_pending_remove(cmd);
+}
+
 int mgmt_index_added(u16 index)
 {
 	return mgmt_event(MGMT_EV_INDEX_ADDED, index, NULL, 0, NULL);
@@ -1965,6 +1967,10 @@ int mgmt_index_added(u16 index)
 
 int mgmt_index_removed(u16 index)
 {
+	u8 status = ENODEV;
+
+	mgmt_pending_foreach(0, index, cmd_status_rsp, &status);
+
 	return mgmt_event(MGMT_EV_INDEX_REMOVED, index, NULL, 0, NULL);
 }
 
@@ -2000,6 +2006,11 @@ int mgmt_powered(u16 index, u8 powered)
 	int ret;
 
 	mgmt_pending_foreach(MGMT_OP_SET_POWERED, index, mode_rsp, &match);
+
+	if (!powered) {
+		u8 status = ENETDOWN;
+		mgmt_pending_foreach(0, index, cmd_status_rsp, &status);
+	}
 
 	ev.val = powered;
 
@@ -2046,6 +2057,19 @@ int mgmt_connectable(u16 index, u8 connectable)
 		sock_put(match.sk);
 
 	return ret;
+}
+
+int mgmt_write_scan_failed(u16 index, u8 scan, u8 status)
+{
+	if (scan & SCAN_PAGE)
+		mgmt_pending_foreach(MGMT_OP_SET_CONNECTABLE, index,
+						cmd_status_rsp, &status);
+
+	if (scan & SCAN_INQUIRY)
+		mgmt_pending_foreach(MGMT_OP_SET_DISCOVERABLE, index,
+						cmd_status_rsp, &status);
+
+	return 0;
 }
 
 int mgmt_new_key(u16 index, struct link_key *key, u8 persistent)
@@ -2346,8 +2370,35 @@ int mgmt_remote_name(u16 index, bdaddr_t *bdaddr, u8 *name)
 	return mgmt_event(MGMT_EV_REMOTE_NAME, index, &ev, sizeof(ev), NULL);
 }
 
+int mgmt_inquiry_failed(u16 index, u8 status)
+{
+	struct pending_cmd *cmd;
+	int err;
+
+	cmd = mgmt_pending_find(MGMT_OP_START_DISCOVERY, index);
+	if (!cmd)
+		return -ENOENT;
+
+	err = cmd_status(cmd->sk, index, cmd->opcode, status);
+	mgmt_pending_remove(cmd);
+
+	return err;
+}
+
 int mgmt_discovering(u16 index, u8 discovering)
 {
+	struct pending_cmd *cmd;
+
+	if (discovering)
+		cmd = mgmt_pending_find(MGMT_OP_START_DISCOVERY, index);
+	else
+		cmd = mgmt_pending_find(MGMT_OP_STOP_DISCOVERY, index);
+
+	if (cmd != NULL) {
+		cmd_complete(cmd->sk, index, cmd->opcode, NULL, 0);
+		mgmt_pending_remove(cmd);
+	}
+
 	return mgmt_event(MGMT_EV_DISCOVERING, index, &discovering,
 						sizeof(discovering), NULL);
 }
