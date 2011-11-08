@@ -202,3 +202,21 @@ int res_counter_write(struct res_counter *counter, int member,
 
 	return 0;
 }
+
+/*
+ * Simple inheritance implementation to get the same value
+ * than a parent. However this doesn't enforce the child value
+ * to be always below the one of the parent. But the child is
+ * subject to its parent limitation anyway.
+ */
+void res_counter_inherit(struct res_counter *counter, int member)
+{
+	struct res_counter *parent;
+	unsigned long long val;
+
+	parent = counter->parent;
+	if (parent) {
+		val = res_counter_read_u64(parent, member);
+		res_counter_write_u64(counter, member, val);
+	}
+}
