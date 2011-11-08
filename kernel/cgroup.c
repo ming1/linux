@@ -1883,6 +1883,9 @@ out:
 				 * remaining subsystems.
 				 */
 				break;
+
+			if (ss->cancel_attach_task)
+				ss->cancel_attach_task(cgrp, tsk);
 			if (ss->cancel_attach)
 				ss->cancel_attach(ss, cgrp, tsk);
 		}
@@ -1992,7 +1995,7 @@ int cgroup_attach_proc(struct cgroup *cgrp, struct task_struct *leader)
 {
 	int retval, i, group_size;
 	struct cgroup_subsys *ss, *failed_ss = NULL;
-	bool cancel_failed_ss = false;
+	struct task_struct *failed_task = NULL;
 	/* guaranteed to be initialized later, but the compiler needs this */
 	struct cgroup *oldcgrp = NULL;
 	struct css_set *oldcg;
@@ -2081,7 +2084,7 @@ int cgroup_attach_proc(struct cgroup *cgrp, struct task_struct *leader)
 							     oldcgrp, tsk);
 				if (retval) {
 					failed_ss = ss;
-					cancel_failed_ss = true;
+					failed_task = tsk;
 					goto out_cancel_attach;
 				}
 			}
@@ -2146,8 +2149,11 @@ int cgroup_attach_proc(struct cgroup *cgrp, struct task_struct *leader)
 				if (ss->attach_task)
 					ss->attach_task(cgrp, oldcgrp, tsk);
 			}
+		} else if (retval == -ESRCH) {
+			if (ss->cancel_attach_task)
+				ss->cancel_attach_task(cgrp, tsk);
 		} else {
-			BUG_ON(retval != -ESRCH);
+			BUG_ON(1);
 		}
 	}
 	/* nothing is sensitive to fork() after this point. */
@@ -2179,8 +2185,18 @@ out_cancel_attach:
 	/* same deal as in cgroup_attach_task */
 	if (retval) {
 		for_each_subsys(root, ss) {
+			if (ss->cancel_attach_task && (ss != failed_ss ||
+						       failed_task)) {
+				for (i = 0; i < group_size; i++) {
+					tsk = flex_array_get_ptr(group, i);
+					if (tsk == failed_task)
+						break;
+					ss->cancel_attach_task(cgrp, tsk);
+				}
+			}
+
 			if (ss == failed_ss) {
-				if (cancel_failed_ss && ss->cancel_attach)
+				if (failed_task && ss->cancel_attach)
 					ss->cancel_attach(ss, cgrp, leader);
 				break;
 			}
