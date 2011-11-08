@@ -995,6 +995,7 @@ void __init tsc_init(void)
 	check_system_tsc_reliable();
 }
 
+#ifdef CONFIG_SMP
 /*
  * If we have a constant TSC and are using the TSC for the delay loop,
  * we can skip clock calibration if another cpu in the same socket has already
@@ -1013,4 +1014,4 @@ unsigned long __cpuinit calibrate_delay_is_known(void)
 			return cpu_data(i).loops_per_jiffy;
 	return 0;
 }
-
+#endif
