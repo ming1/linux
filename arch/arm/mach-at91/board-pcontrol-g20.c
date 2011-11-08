@@ -107,6 +107,7 @@ static void __init add_device_pcontrol(void)
  */
 static struct at91_usbh_data __initdata usbh_data = {
 	.ports		= 2,
+	.vbus_pin	= {-EINVAL, -EINVAL},
 };
 
 

@@ -100,6 +100,7 @@ static struct mci_platform_data __initdata mci0_data = {
 	.slot[0] = {
 		.bus_width	= 4,
 		.detect_pin	= AT91_PIN_PD10,
+		.wp_pin		= -EINVAL,
 	},
 };
 
@@ -143,6 +144,7 @@ static struct atmel_nand_data __initdata ek_nand_data = {
 	.cle		= 22,
 	.rdy_pin	= AT91_PIN_PC8,
 	.enable_pin	= AT91_PIN_PC14,
+	.det_pin	= -EINVAL,
 	.parts		= ek_nand_partition,
 	.num_parts	= ARRAY_SIZE(ek_nand_partition),
 };
@@ -330,6 +332,7 @@ static void __init ek_add_device_buttons(void) {}
  * reset_pin is not connected: NRST
  */
 static struct ac97c_platform_data ek_ac97_data = {
+	.reset_pin	= -EINVAL,
 };
 
 
