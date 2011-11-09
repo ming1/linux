@@ -58,9 +58,9 @@ static void hci_cc_inquiry_cancel(struct hci_dev *hdev, struct sk_buff *skb)
 	if (status)
 		return;
 
-	if (test_and_clear_bit(HCI_INQUIRY, &hdev->flags) &&
-			test_bit(HCI_MGMT, &hdev->flags))
-		mgmt_discovering(hdev->id, 0);
+	clear_bit(HCI_INQUIRY, &hdev->flags);
+
+	mgmt_discovering(hdev->id, 0);
 
 	hci_req_complete(hdev, HCI_OP_INQUIRY_CANCEL, status);
 
@@ -75,10 +75,6 @@ static void hci_cc_exit_periodic_inq(struct hci_dev *hdev, struct sk_buff *skb)
 
 	if (status)
 		return;
-
-	if (test_and_clear_bit(HCI_INQUIRY, &hdev->flags) &&
-				test_bit(HCI_MGMT, &hdev->flags))
-		mgmt_discovering(hdev->id, 0);
 
 	hci_conn_check_pending(hdev);
 }
@@ -274,7 +270,8 @@ static void hci_cc_write_encrypt_mode(struct hci_dev *hdev, struct sk_buff *skb)
 
 static void hci_cc_write_scan_enable(struct hci_dev *hdev, struct sk_buff *skb)
 {
-	__u8 status = *((__u8 *) skb->data);
+	__u8 param, status = *((__u8 *) skb->data);
+	int old_pscan, old_iscan;
 	void *sent;
 
 	BT_DBG("%s status 0x%x", hdev->name, status);
@@ -283,28 +280,37 @@ static void hci_cc_write_scan_enable(struct hci_dev *hdev, struct sk_buff *skb)
 	if (!sent)
 		return;
 
-	if (!status) {
-		__u8 param = *((__u8 *) sent);
-		int old_pscan, old_iscan;
+	param = *((__u8 *) sent);
 
-		old_pscan = test_and_clear_bit(HCI_PSCAN, &hdev->flags);
-		old_iscan = test_and_clear_bit(HCI_ISCAN, &hdev->flags);
-
-		if (param & SCAN_INQUIRY) {
-			set_bit(HCI_ISCAN, &hdev->flags);
-			if (!old_iscan)
-				mgmt_discoverable(hdev->id, 1);
-		} else if (old_iscan)
-			mgmt_discoverable(hdev->id, 0);
-
-		if (param & SCAN_PAGE) {
-			set_bit(HCI_PSCAN, &hdev->flags);
-			if (!old_pscan)
-				mgmt_connectable(hdev->id, 1);
-		} else if (old_pscan)
-			mgmt_connectable(hdev->id, 0);
+	if (status != 0) {
+		mgmt_write_scan_failed(hdev->id, param, status);
+		hdev->discov_timeout = 0;
+		goto done;
 	}
 
+	old_pscan = test_and_clear_bit(HCI_PSCAN, &hdev->flags);
+	old_iscan = test_and_clear_bit(HCI_ISCAN, &hdev->flags);
+
+	if (param & SCAN_INQUIRY) {
+		set_bit(HCI_ISCAN, &hdev->flags);
+		if (!old_iscan)
+			mgmt_discoverable(hdev->id, 1);
+		if (hdev->discov_timeout > 0) {
+			int to = msecs_to_jiffies(hdev->discov_timeout * 1000);
+			queue_delayed_work(hdev->workqueue, &hdev->discov_off,
+									to);
+		}
+	} else if (old_iscan)
+		mgmt_discoverable(hdev->id, 0);
+
+	if (param & SCAN_PAGE) {
+		set_bit(HCI_PSCAN, &hdev->flags);
+		if (!old_pscan)
+			mgmt_connectable(hdev->id, 1);
+	} else if (old_pscan)
+		mgmt_connectable(hdev->id, 0);
+
+done:
 	hci_req_complete(hdev, HCI_OP_WRITE_SCAN_ENABLE, status);
 }
 
@@ -748,6 +754,30 @@ static void hci_cc_write_ca_timeout(struct hci_dev *hdev, struct sk_buff *skb)
 	hci_req_complete(hdev, HCI_OP_WRITE_CA_TIMEOUT, status);
 }
 
+static void hci_cc_read_local_amp_info(struct hci_dev *hdev,
+		struct sk_buff *skb)
+{
+	struct hci_rp_read_local_amp_info *rp = (void *) skb->data;
+
+	BT_DBG("%s status 0x%x", hdev->name, rp->status);
+
+	if (rp->status)
+		return;
+
+	hdev->amp_status = rp->amp_status;
+	hdev->amp_total_bw = __le32_to_cpu(rp->total_bw);
+	hdev->amp_max_bw = __le32_to_cpu(rp->max_bw);
+	hdev->amp_min_latency = __le32_to_cpu(rp->min_latency);
+	hdev->amp_max_pdu = __le32_to_cpu(rp->max_pdu);
+	hdev->amp_type = rp->amp_type;
+	hdev->amp_pal_cap = __le16_to_cpu(rp->pal_cap);
+	hdev->amp_assoc_size = __le16_to_cpu(rp->max_assoc_size);
+	hdev->amp_be_flush_to = __le32_to_cpu(rp->be_flush_to);
+	hdev->amp_max_flush_to = __le32_to_cpu(rp->max_flush_to);
+
+	hci_req_complete(hdev, HCI_OP_READ_LOCAL_AMP_INFO, rp->status);
+}
+
 static void hci_cc_delete_stored_link_key(struct hci_dev *hdev,
 							struct sk_buff *skb)
 {
@@ -955,12 +985,14 @@ static inline void hci_cs_inquiry(struct hci_dev *hdev, __u8 status)
 	if (status) {
 		hci_req_complete(hdev, HCI_OP_INQUIRY, status);
 		hci_conn_check_pending(hdev);
+		if (test_bit(HCI_MGMT, &hdev->flags))
+			mgmt_inquiry_failed(hdev->id, status);
 		return;
 	}
 
-	if (!test_and_set_bit(HCI_INQUIRY, &hdev->flags) &&
-				test_bit(HCI_MGMT, &hdev->flags))
-		mgmt_discovering(hdev->id, 1);
+	set_bit(HCI_INQUIRY, &hdev->flags);
+
+	mgmt_discovering(hdev->id, 1);
 }
 
 static inline void hci_cs_create_conn(struct hci_dev *hdev, __u8 status)
@@ -1339,13 +1371,14 @@ static inline void hci_inquiry_complete_evt(struct hci_dev *hdev, struct sk_buff
 
 	BT_DBG("%s status %d", hdev->name, status);
 
-	if (test_and_clear_bit(HCI_INQUIRY, &hdev->flags) &&
-				test_bit(HCI_MGMT, &hdev->flags))
-		mgmt_discovering(hdev->id, 0);
-
 	hci_req_complete(hdev, HCI_OP_INQUIRY, status);
 
 	hci_conn_check_pending(hdev);
+
+	if (!test_and_clear_bit(HCI_INQUIRY, &hdev->flags))
+		return;
+
+	mgmt_discovering(hdev->id, 0);
 }
 
 static inline void hci_inquiry_result_evt(struct hci_dev *hdev, struct sk_buff *skb)
@@ -1361,12 +1394,6 @@ static inline void hci_inquiry_result_evt(struct hci_dev *hdev, struct sk_buff *
 
 	hci_dev_lock(hdev);
 
-	if (!test_and_set_bit(HCI_INQUIRY, &hdev->flags)) {
-
-		if (test_bit(HCI_MGMT, &hdev->flags))
-			mgmt_discovering(hdev->id, 1);
-	}
-
 	for (; num_rsp; num_rsp--, info++) {
 		bacpy(&data.bdaddr, &info->bdaddr);
 		data.pscan_rep_mode	= info->pscan_rep_mode;
@@ -1377,8 +1404,8 @@ static inline void hci_inquiry_result_evt(struct hci_dev *hdev, struct sk_buff *
 		data.rssi		= 0x00;
 		data.ssp_mode		= 0x00;
 		hci_inquiry_cache_update(hdev, &data);
-		mgmt_device_found(hdev->id, &info->bdaddr, info->dev_class, 0,
-									NULL);
+		mgmt_device_found(hdev->id, &info->bdaddr, ACL_LINK,
+						info->dev_class, 0, NULL);
 	}
 
 	hci_dev_unlock(hdev);
@@ -1444,7 +1471,8 @@ static inline void hci_conn_complete_evt(struct hci_dev *hdev, struct sk_buff *s
 	} else {
 		conn->state = BT_CLOSED;
 		if (conn->type == ACL_LINK)
-			mgmt_connect_failed(hdev->id, &ev->bdaddr, ev->status);
+			mgmt_connect_failed(hdev->id, &ev->bdaddr, conn->type,
+								ev->status);
 	}
 
 	if (conn->type == ACL_LINK)
@@ -1531,7 +1559,7 @@ static inline void hci_conn_request_evt(struct hci_dev *hdev, struct sk_buff *sk
 		struct hci_cp_reject_conn_req cp;
 
 		bacpy(&cp.bdaddr, &ev->bdaddr);
-		cp.reason = 0x0f;
+		cp.reason = HCI_ERROR_REJ_BAD_ADDR;
 		hci_send_cmd(hdev, HCI_OP_REJECT_CONN_REQ, sizeof(cp), &cp);
 	}
 }
@@ -1557,7 +1585,7 @@ static inline void hci_disconn_complete_evt(struct hci_dev *hdev, struct sk_buff
 	conn->state = BT_CLOSED;
 
 	if (conn->type == ACL_LINK || conn->type == LE_LINK)
-		mgmt_disconnected(hdev->id, &conn->dst);
+		mgmt_disconnected(hdev->id, &conn->dst, conn->type);
 
 	hci_proto_disconn_cfm(conn, ev->reason);
 	hci_conn_del(conn);
@@ -1896,6 +1924,10 @@ static inline void hci_cmd_complete_evt(struct hci_dev *hdev, struct sk_buff *sk
 
 	case HCI_OP_WRITE_CA_TIMEOUT:
 		hci_cc_write_ca_timeout(hdev, skb);
+		break;
+
+	case HCI_OP_READ_LOCAL_AMP_INFO:
+		hci_cc_read_local_amp_info(hdev, skb);
 		break;
 
 	case HCI_OP_DELETE_STORED_LINK_KEY:
@@ -2363,12 +2395,6 @@ static inline void hci_inquiry_result_with_rssi_evt(struct hci_dev *hdev, struct
 
 	hci_dev_lock(hdev);
 
-	if (!test_and_set_bit(HCI_INQUIRY, &hdev->flags)) {
-
-		if (test_bit(HCI_MGMT, &hdev->flags))
-			mgmt_discovering(hdev->id, 1);
-	}
-
 	if ((skb->len - 1) / num_rsp != sizeof(struct inquiry_info_with_rssi)) {
 		struct inquiry_info_with_rssi_and_pscan_mode *info;
 		info = (void *) (skb->data + 1);
@@ -2383,7 +2409,7 @@ static inline void hci_inquiry_result_with_rssi_evt(struct hci_dev *hdev, struct
 			data.rssi		= info->rssi;
 			data.ssp_mode		= 0x00;
 			hci_inquiry_cache_update(hdev, &data);
-			mgmt_device_found(hdev->id, &info->bdaddr,
+			mgmt_device_found(hdev->id, &info->bdaddr, ACL_LINK,
 						info->dev_class, info->rssi,
 						NULL);
 		}
@@ -2400,7 +2426,7 @@ static inline void hci_inquiry_result_with_rssi_evt(struct hci_dev *hdev, struct
 			data.rssi		= info->rssi;
 			data.ssp_mode		= 0x00;
 			hci_inquiry_cache_update(hdev, &data);
-			mgmt_device_found(hdev->id, &info->bdaddr,
+			mgmt_device_found(hdev->id, &info->bdaddr, ACL_LINK,
 						info->dev_class, info->rssi,
 						NULL);
 		}
@@ -2531,12 +2557,6 @@ static inline void hci_extended_inquiry_result_evt(struct hci_dev *hdev, struct 
 	if (!num_rsp)
 		return;
 
-	if (!test_and_set_bit(HCI_INQUIRY, &hdev->flags)) {
-
-		if (test_bit(HCI_MGMT, &hdev->flags))
-			mgmt_discovering(hdev->id, 1);
-	}
-
 	hci_dev_lock(hdev);
 
 	for (; num_rsp; num_rsp--, info++) {
@@ -2549,8 +2569,8 @@ static inline void hci_extended_inquiry_result_evt(struct hci_dev *hdev, struct 
 		data.rssi		= info->rssi;
 		data.ssp_mode		= 0x01;
 		hci_inquiry_cache_update(hdev, &data);
-		mgmt_device_found(hdev->id, &info->bdaddr, info->dev_class,
-						info->rssi, info->data);
+		mgmt_device_found(hdev->id, &info->bdaddr, ACL_LINK,
+				info->dev_class, info->rssi, info->data);
 	}
 
 	hci_dev_unlock(hdev);
@@ -2614,7 +2634,7 @@ static inline void hci_io_capa_request_evt(struct hci_dev *hdev, struct sk_buff 
 		struct hci_cp_io_capability_neg_reply cp;
 
 		bacpy(&cp.bdaddr, &ev->bdaddr);
-		cp.reason = 0x18; /* Pairing not allowed */
+		cp.reason = HCI_ERROR_PAIRING_NOT_ALLOWED;
 
 		hci_send_cmd(hdev, HCI_OP_IO_CAPABILITY_NEG_REPLY,
 							sizeof(cp), &cp);
@@ -2813,7 +2833,8 @@ static inline void hci_le_conn_complete_evt(struct hci_dev *hdev, struct sk_buff
 	}
 
 	if (ev->status) {
-		mgmt_connect_failed(hdev->id, &ev->bdaddr, ev->status);
+		mgmt_connect_failed(hdev->id, &ev->bdaddr, conn->type,
+								ev->status);
 		hci_proto_connect_cfm(conn, ev->status);
 		conn->state = BT_CLOSED;
 		hci_conn_del(conn);
@@ -3104,5 +3125,5 @@ void hci_si_event(struct hci_dev *hdev, int type, int dlen, void *data)
 	kfree_skb(skb);
 }
 
-module_param(enable_le, bool, 0444);
+module_param(enable_le, bool, 0644);
 MODULE_PARM_DESC(enable_le, "Enable LE support");
