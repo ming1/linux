@@ -5360,8 +5360,9 @@ static int raid5_add_disk(struct mddev *mddev, struct md_rdev *rdev)
 		disk = rdev->saved_raid_disk;
 	else
 		disk = first;
-	for ( ; disk <= last ; disk++)
-		if ((p=conf->disks + disk)->rdev == NULL) {
+	for ( ; disk <= last ; disk++) {
+		p = conf->disks + disk;
+		if (p->rdev == NULL) {
 			clear_bit(In_sync, &rdev->flags);
 			rdev->raid_disk = disk;
 			err = 0;
@@ -5370,6 +5371,17 @@ static int raid5_add_disk(struct mddev *mddev, struct md_rdev *rdev)
 			rcu_assign_pointer(p->rdev, rdev);
 			break;
 		}
+		if (test_bit(Replaceable, &p->rdev->flags) &&
+		    p->replacement == NULL) {
+			clear_bit(In_sync, &rdev->flags);
+			set_bit(Replacement, &rdev->flags);
+			rdev->raid_disk = disk;
+			err = 0;
+			conf->fullsync = 1;
+			rcu_assign_pointer(p->replacement, rdev);
+			break;
+		}
+	}
 	print_raid5_conf(conf);
 	return err;
 }
