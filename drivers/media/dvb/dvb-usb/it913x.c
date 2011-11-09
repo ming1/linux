@@ -60,15 +60,6 @@ struct it913x_state {
 	u8 id;
 };
 
-struct ite_config {
-	u8 chip_ver;
-	u16 chip_type;
-	u32 firmware;
-	u8 tuner_id_0;
-	u8 tuner_id_1;
-	u8 dual_mode;
-};
-
 struct ite_config it913x_config;
 
 static int it913x_bulk_write(struct usb_device *dev,
@@ -359,6 +350,19 @@ static int it913x_identify_state(struct usb_device *udev,
 	/* checnk for dual mode */
 	it913x_config.dual_mode =  it913x_read_reg(udev, 0x49c5);
 
+	if (udev->speed != USB_SPEED_HIGH) {
+		props->adapter[0].fe[0].pid_filter_count = 5;
+		info("USB 1 low speed mode - connect to USB 2 port");
+		if (pid_filter > 0)
+			pid_filter = 0;
+		if (it913x_config.dual_mode) {
+			it913x_config.dual_mode = 0;
+			info("Dual mode not supported in USB 1");
+		}
+	} else /* For replugging */
+		if(props->adapter[0].fe[0].pid_filter_count == 5)
+			props->adapter[0].fe[0].pid_filter_count = 31;
+
 	/* TODO different remotes */
 	remote = it913x_read_reg(udev, 0x49ac); /* Remote */
 	if (remote == 0)
@@ -390,8 +394,8 @@ static int it913x_identify_state(struct usb_device *udev,
 			if (ret != 0)
 				ret = it913x_wr_reg(udev, DEV_0,
 					GPIOH1_O, 0x0);
+			props->num_adapters = 2;
 		}
-		props->num_adapters = 2;
 	} else
 		props->num_adapters = 1;
 
@@ -474,12 +478,17 @@ static int it913x_download_firmware(struct usb_device *udev,
 	/* Tuner function */
 	if (it913x_config.dual_mode)
 		ret |= it913x_wr_reg(udev, DEV_0_DMOD , 0xec4c, 0xa0);
+	else
+		ret |= it913x_wr_reg(udev, DEV_0_DMOD , 0xec4c, 0x68);
 
-	ret |= it913x_wr_reg(udev, DEV_0,  PADODPU, 0x0);
-	ret |= it913x_wr_reg(udev, DEV_0,  AGC_O_D, 0x0);
-	if (it913x_config.dual_mode) {
-		ret |= it913x_wr_reg(udev, DEV_1,  PADODPU, 0x0);
-		ret |= it913x_wr_reg(udev, DEV_1,  AGC_O_D, 0x0);
+	if ((it913x_config.chip_ver == 1) &&
+		(it913x_config.chip_type == 0x9135)) {
+		ret |= it913x_wr_reg(udev, DEV_0,  PADODPU, 0x0);
+		ret |= it913x_wr_reg(udev, DEV_0,  AGC_O_D, 0x0);
+		if (it913x_config.dual_mode) {
+			ret |= it913x_wr_reg(udev, DEV_1,  PADODPU, 0x0);
+			ret |= it913x_wr_reg(udev, DEV_1,  AGC_O_D, 0x0);
+		}
 	}
 
 	return (ret < 0) ? -ENODEV : 0;
@@ -501,31 +510,17 @@ static int it913x_frontend_attach(struct dvb_usb_adapter *adap)
 {
 	struct usb_device *udev = adap->dev->udev;
 	int ret = 0;
-	u8 adf = it913x_read_reg(udev, IO_MUX_POWER_CLK);
 	u8 adap_addr = I2C_BASE_ADDR + (adap->id << 5);
 	u16 ep_size = adap->props.fe[0].stream.u.bulk.buffersize;
-	u8 tuner_id, tuner_type;
+	u8 pkt_size = 0x80;
 
-	if (adap->id == 0)
-		tuner_id = it913x_config.tuner_id_0;
-	else
-		tuner_id = it913x_config.tuner_id_1;
+	if (adap->dev->udev->speed != USB_SPEED_HIGH)
+		pkt_size = 0x10;
 
-	/* TODO we always use IT9137 possible references here*/
-	/* Documentation suggests don't care */
-	switch (tuner_id) {
-	case 0x51:
-	case 0x52:
-	case 0x60:
-	case 0x61:
-	case 0x62:
-	default:
-	case 0x38:
-		tuner_type = IT9137;
-	}
+	it913x_config.adf = it913x_read_reg(udev, IO_MUX_POWER_CLK);
 
 	adap->fe_adap[0].fe = dvb_attach(it913x_fe_attach,
-		&adap->dev->i2c_adap, adap_addr, adf, tuner_type);
+		&adap->dev->i2c_adap, adap_addr, &it913x_config);
 
 	if (adap->id == 0 && adap->fe_adap[0].fe) {
 		ret = it913x_wr_reg(udev, DEV_0_DMOD, MP2_SW_RST, 0x1);
@@ -536,13 +531,13 @@ static int it913x_frontend_attach(struct dvb_usb_adapter *adap)
 		ret = it913x_wr_reg(udev, DEV_0, EP4_TX_LEN_LSB,
 					ep_size & 0xff);
 		ret = it913x_wr_reg(udev, DEV_0, EP4_TX_LEN_MSB, ep_size >> 8);
-		ret = it913x_wr_reg(udev, DEV_0, EP4_MAX_PKT, 0x80);
+		ret = it913x_wr_reg(udev, DEV_0, EP4_MAX_PKT, pkt_size);
 	} else if (adap->id == 1 && adap->fe_adap[0].fe) {
 		ret = it913x_wr_reg(udev, DEV_0, EP0_TX_EN, 0x6f);
 		ret = it913x_wr_reg(udev, DEV_0, EP5_TX_LEN_LSB,
 					ep_size & 0xff);
 		ret = it913x_wr_reg(udev, DEV_0, EP5_TX_LEN_MSB, ep_size >> 8);
-		ret = it913x_wr_reg(udev, DEV_0, EP5_MAX_PKT, 0x80);
+		ret = it913x_wr_reg(udev, DEV_0, EP5_MAX_PKT, pkt_size);
 		ret = it913x_wr_reg(udev, DEV_0_DMOD, MP2IF2_EN, 0x1);
 		ret = it913x_wr_reg(udev, DEV_1_DMOD, MP2IF_SERIAL, 0x1);
 		ret = it913x_wr_reg(udev, DEV_1, TOP_HOSTB_SER_MODE, 0x1);
@@ -582,6 +577,7 @@ static int it913x_probe(struct usb_interface *intf,
 static struct usb_device_id it913x_table[] = {
 	{ USB_DEVICE(USB_VID_KWORLD_2, USB_PID_KWORLD_UB499_2T_T09) },
 	{ USB_DEVICE(USB_VID_ITETECH, USB_PID_ITETECH_IT9135) },
+	{ USB_DEVICE(USB_VID_KWORLD_2, USB_PID_SVEON_STV22_IT9137) },
 	{}		/* Terminating entry */
 };
 
@@ -657,13 +653,16 @@ static struct dvb_usb_device_properties it913x_properties = {
 		.rc_codes	= RC_MAP_KWORLD_315U,
 	},
 	.i2c_algo         = &it913x_i2c_algo,
-	.num_device_descs = 2,
+	.num_device_descs = 3,
 	.devices = {
 		{   "Kworld UB499-2T T09(IT9137)",
 			{ &it913x_table[0], NULL },
 			},
 		{   "ITE 9135 Generic",
 			{ &it913x_table[1], NULL },
+			},
+		{   "Sveon STV22 Dual DVB-T HDTV(IT9137)",
+			{ &it913x_table[2], NULL },
 			},
 	}
 };
@@ -698,5 +697,5 @@ module_exit(it913x_module_exit);
 
 MODULE_AUTHOR("Malcolm Priestley <tvboxspy@gmail.com>");
 MODULE_DESCRIPTION("it913x USB 2 Driver");
-MODULE_VERSION("1.07");
+MODULE_VERSION("1.09");
 MODULE_LICENSE("GPL");
