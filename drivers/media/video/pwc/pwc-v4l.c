@@ -49,6 +49,7 @@ static const struct v4l2_ctrl_ops pwc_ctrl_ops = {
 
 enum { awb_indoor, awb_outdoor, awb_fl, awb_manual, awb_auto };
 enum { custom_autocontour, custom_contour, custom_noise_reduction,
+	custom_awb_speed, custom_awb_delay,
 	custom_save_user, custom_restore_user, custom_restore_factory };
 
 const char * const pwc_auto_whitebal_qmenu[] = {
@@ -136,6 +137,26 @@ static const struct v4l2_ctrl_config pwc_restore_factory_cfg = {
 	.id	= PWC_CID_CUSTOM(restore_factory),
 	.type	= V4L2_CTRL_TYPE_BUTTON,
 	.name    = "Restore Factory Settings",
+};
+
+static const struct v4l2_ctrl_config pwc_awb_speed_cfg = {
+	.ops	= &pwc_ctrl_ops,
+	.id	= PWC_CID_CUSTOM(awb_speed),
+	.type	= V4L2_CTRL_TYPE_INTEGER,
+	.name	= "Auto White Balance Speed",
+	.min	= 1,
+	.max	= 32,
+	.step	= 1,
+};
+
+static const struct v4l2_ctrl_config pwc_awb_delay_cfg = {
+	.ops	= &pwc_ctrl_ops,
+	.id	= PWC_CID_CUSTOM(awb_delay),
+	.type	= V4L2_CTRL_TYPE_INTEGER,
+	.name	= "Auto White Balance Delay",
+	.min	= 0,
+	.max	= 63,
+	.step	= 1,
 };
 
 int pwc_init_controls(struct pwc_device *pdev)
@@ -338,6 +359,23 @@ int pwc_init_controls(struct pwc_device *pdev)
 	if (pdev->restore_factory)
 		pdev->restore_factory->flags |= V4L2_CTRL_FLAG_UPDATE;
 
+	/* Auto White Balance speed & delay */
+	r = pwc_get_u8_ctrl(pdev, GET_CHROM_CTL,
+			    AWB_CONTROL_SPEED_FORMATTER, &def);
+	if (r || def < 1 || def > 32)
+		def = 1;
+	cfg = pwc_awb_speed_cfg;
+	cfg.def = def;
+	pdev->awb_speed = v4l2_ctrl_new_custom(hdl, &cfg, NULL);
+
+	r = pwc_get_u8_ctrl(pdev, GET_CHROM_CTL,
+			    AWB_CONTROL_DELAY_FORMATTER, &def);
+	if (r || def > 63)
+		def = 0;
+	cfg = pwc_awb_delay_cfg;
+	cfg.def = def;
+	pdev->awb_delay = v4l2_ctrl_new_custom(hdl, &cfg, NULL);
+
 	if (!(pdev->features & FEATURE_MOTOR_PANTILT))
 		return hdl->error;
 
@@ -437,17 +475,11 @@ static int pwc_s_fmt_vid_cap(struct file *file, void *fh, struct v4l2_format *f)
 	struct pwc_device *pdev = video_drvdata(file);
 	int ret, fps, snapshot, compression, pixelformat;
 
-	if (!pdev->udev)
-		return -ENODEV;
-
-	if (pdev->capt_file != NULL &&
-	    pdev->capt_file != file)
+	if (pwc_test_n_set_capt_file(pdev, file))
 		return -EBUSY;
 
-	pdev->capt_file = file;
-
 	ret = pwc_vidioc_try_fmt(pdev, f);
-	if (ret<0)
+	if (ret < 0)
 		return ret;
 
 	pixelformat = f->fmt.pix.pixelformat;
@@ -467,8 +499,16 @@ static int pwc_s_fmt_vid_cap(struct file *file, void *fh, struct v4l2_format *f)
 	    pixelformat != V4L2_PIX_FMT_PWC2)
 		return -EINVAL;
 
-	if (vb2_is_streaming(&pdev->vb_queue))
-		return -EBUSY;
+	mutex_lock(&pdev->udevlock);
+	if (!pdev->udev) {
+		ret = -ENODEV;
+		goto leave;
+	}
+
+	if (pdev->iso_init) {
+		ret = -EBUSY;
+		goto leave;
+	}
 
 	PWC_DEBUG_IOCTL("Trying to set format to: width=%d height=%d fps=%d "
 			"compression=%d snapshot=%d format=%c%c%c%c\n",
@@ -488,15 +528,14 @@ static int pwc_s_fmt_vid_cap(struct file *file, void *fh, struct v4l2_format *f)
 
 	PWC_DEBUG_IOCTL("pwc_set_video_mode(), return=%d\n", ret);
 
-	if (ret)
-		return ret;
+	if (ret == 0) {
+		pdev->pixfmt = pixelformat;
+		pwc_vidioc_fill_fmt(pdev, f);
+	}
 
-	pdev->pixfmt = pixelformat;
-
-	pwc_vidioc_fill_fmt(pdev, f);
-
-	return 0;
-
+leave:
+	mutex_unlock(&pdev->udevlock);
+	return ret;
 }
 
 static int pwc_querycap(struct file *file, void *fh, struct v4l2_capability *cap)
@@ -536,30 +575,14 @@ static int pwc_s_input(struct file *file, void *fh, unsigned int i)
 	return i ? -EINVAL : 0;
 }
 
-static int pwc_g_volatile_ctrl(struct v4l2_ctrl *ctrl)
+static int pwc_g_volatile_ctrl_unlocked(struct v4l2_ctrl *ctrl)
 {
 	struct pwc_device *pdev =
 		container_of(ctrl->handler, struct pwc_device, ctrl_handler);
 	int ret = 0;
 
-	/*
-	 * Sometimes it can take quite long for the pwc to complete usb control
-	 * transfers, so release the modlock to give streaming by another
-	 * process / thread the chance to continue with a dqbuf.
-	 */
-	mutex_unlock(&pdev->modlock);
-
-	/*
-	 * Take the udev-lock to protect against the disconnect handler
-	 * completing and setting dev->udev to NULL underneath us. Other code
-	 * does not need to do this since it is protected by the modlock.
-	 */
-	mutex_lock(&pdev->udevlock);
-
-	if (!pdev->udev) {
-		ret = -ENODEV;
-		goto leave;
-	}
+	if (!pdev->udev)
+		return -ENODEV;
 
 	switch (ctrl->id) {
 	case V4L2_CID_AUTO_WHITE_BALANCE:
@@ -624,9 +647,18 @@ static int pwc_g_volatile_ctrl(struct v4l2_ctrl *ctrl)
 	if (ret)
 		PWC_ERROR("g_ctrl %s error %d\n", ctrl->name, ret);
 
-leave:
+	return ret;
+}
+
+static int pwc_g_volatile_ctrl(struct v4l2_ctrl *ctrl)
+{
+	struct pwc_device *pdev =
+		container_of(ctrl->handler, struct pwc_device, ctrl_handler);
+	int ret;
+
+	mutex_lock(&pdev->udevlock);
+	ret = pwc_g_volatile_ctrl_unlocked(ctrl);
 	mutex_unlock(&pdev->udevlock);
-	mutex_lock(&pdev->modlock);
 	return ret;
 }
 
@@ -643,6 +675,15 @@ static int pwc_set_awb(struct pwc_device *pdev)
 
 		if (pdev->auto_white_balance->val != awb_manual)
 			pdev->color_bal_valid = false; /* Force cache update */
+
+		/*
+		 * If this is a preset, update our red / blue balance values
+		 * so that events get generated for the new preset values
+		 */
+		if (pdev->auto_white_balance->val == awb_indoor ||
+		    pdev->auto_white_balance->val == awb_outdoor ||
+		    pdev->auto_white_balance->val == awb_fl)
+			pwc_g_volatile_ctrl_unlocked(pdev->auto_white_balance);
 	}
 	if (pdev->auto_white_balance->val != awb_manual)
 		return 0;
@@ -806,8 +847,6 @@ static int pwc_s_ctrl(struct v4l2_ctrl *ctrl)
 		container_of(ctrl->handler, struct pwc_device, ctrl_handler);
 	int ret = 0;
 
-	/* See the comments on locking in pwc_g_volatile_ctrl */
-	mutex_unlock(&pdev->modlock);
 	mutex_lock(&pdev->udevlock);
 
 	if (!pdev->udev) {
@@ -891,6 +930,16 @@ static int pwc_s_ctrl(struct v4l2_ctrl *ctrl)
 		ret = pwc_button_ctrl(pdev,
 				      RESTORE_FACTORY_DEFAULTS_FORMATTER);
 		break;
+	case PWC_CID_CUSTOM(awb_speed):
+		ret = pwc_set_u8_ctrl(pdev, SET_CHROM_CTL,
+				      AWB_CONTROL_SPEED_FORMATTER,
+				      ctrl->val);
+		break;
+	case PWC_CID_CUSTOM(awb_delay):
+		ret = pwc_set_u8_ctrl(pdev, SET_CHROM_CTL,
+				      AWB_CONTROL_DELAY_FORMATTER,
+				      ctrl->val);
+		break;
 	case V4L2_CID_PAN_RELATIVE:
 		ret = pwc_set_motor(pdev);
 		break;
@@ -903,7 +952,6 @@ static int pwc_s_ctrl(struct v4l2_ctrl *ctrl)
 
 leave:
 	mutex_unlock(&pdev->udevlock);
-	mutex_lock(&pdev->modlock);
 	return ret;
 }
 
@@ -933,9 +981,11 @@ static int pwc_g_fmt_vid_cap(struct file *file, void *fh, struct v4l2_format *f)
 {
 	struct pwc_device *pdev = video_drvdata(file);
 
+	mutex_lock(&pdev->udevlock); /* To avoid race with s_fmt */
 	PWC_DEBUG_IOCTL("ioctl(VIDIOC_G_FMT) return size %dx%d\n",
 			pdev->image.x, pdev->image.y);
 	pwc_vidioc_fill_fmt(pdev, f);
+	mutex_unlock(&pdev->udevlock);
 	return 0;
 }
 
@@ -951,11 +1001,8 @@ static int pwc_reqbufs(struct file *file, void *fh,
 {
 	struct pwc_device *pdev = video_drvdata(file);
 
-	if (pdev->capt_file != NULL &&
-	    pdev->capt_file != file)
+	if (pwc_test_n_set_capt_file(pdev, file))
 		return -EBUSY;
-
-	pdev->capt_file = file;
 
 	return vb2_reqbufs(&pdev->vb_queue, rb);
 }
@@ -1086,6 +1133,17 @@ static int pwc_log_status(struct file *file, void *priv)
 	return 0;
 }
 
+static int pwc_subscribe_event(struct v4l2_fh *fh,
+			       struct v4l2_event_subscription *sub)
+{
+	switch (sub->type) {
+	case V4L2_EVENT_CTRL:
+		return v4l2_event_subscribe(fh, sub, 0);
+	default:
+		return -EINVAL;
+	}
+}
+
 static long pwc_default(struct file *file, void *fh, bool valid_prio,
 			int cmd, void *arg)
 {
@@ -1112,8 +1170,7 @@ const struct v4l2_ioctl_ops pwc_ioctl_ops = {
 	.vidioc_log_status		    = pwc_log_status,
 	.vidioc_enum_framesizes		    = pwc_enum_framesizes,
 	.vidioc_enum_frameintervals	    = pwc_enum_frameintervals,
+	.vidioc_subscribe_event		    = pwc_subscribe_event,
+	.vidioc_unsubscribe_event	    = v4l2_event_unsubscribe,
 	.vidioc_default		    = pwc_default,
 };
-
-
-/* vim: set cino= formatoptions=croql cindent shiftwidth=8 tabstop=8: */
