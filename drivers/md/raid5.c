@@ -4830,7 +4830,15 @@ static struct r5conf *setup_conf(struct mddev *mddev)
 			continue;
 		disk = conf->disks + raid_disk;
 
-		disk->rdev = rdev;
+		if (test_bit(Replacement, &rdev->flags)) {
+			if (disk->replacement)
+				goto abort;
+			disk->replacement = rdev;
+		} else {
+			if (disk->rdev)
+				goto abort;
+			disk->rdev = rdev;
+		}
 
 		if (test_bit(In_sync, &rdev->flags)) {
 			char b[BDEVNAME_SIZE];
@@ -4919,6 +4927,7 @@ static int run(struct mddev *mddev)
 	int dirty_parity_disks = 0;
 	struct md_rdev *rdev;
 	sector_t reshape_offset = 0;
+	int i;
 
 	if (mddev->recovery_cp != MaxSector)
 		printk(KERN_NOTICE "md/raid:%s: not clean"
@@ -5008,12 +5017,25 @@ static int run(struct mddev *mddev)
 	conf->thread = NULL;
 	mddev->private = conf;
 
-	/*
-	 * 0 for a fully functional array, 1 or 2 for a degraded array.
-	 */
-	list_for_each_entry(rdev, &mddev->disks, same_set) {
-		if (rdev->raid_disk < 0)
+	for (i = 0; i < conf->raid_disks && conf->previous_raid_disks;
+	     i++) {
+		rdev = conf->disks[i].rdev;
+		if (!rdev && conf->disks[i].replacement) {
+			/* The replacement is all we have yet */
+			rdev = conf->disks[i].replacement;
+			conf->disks[i].replacement = NULL;
+			clear_bit(Replacement, &rdev->flags);
+			conf->disks[i].rdev = rdev;
+		}
+		if (!rdev)
 			continue;
+		if (conf->disks[i].replacement &&
+		    conf->reshape_progress != MaxSector) {
+			/* replacements and reshape simply do not mix. */
+			printk(KERN_ERR "md: cannot handle concurrent "
+			       "replacement and reshape.\n");
+			goto abort;
+		}
 		if (test_bit(In_sync, &rdev->flags)) {
 			working_disks++;
 			continue;
@@ -5047,6 +5069,9 @@ static int run(struct mddev *mddev)
 		dirty_parity_disks++;
 	}
 
+	/*
+	 * 0 for a fully functional array, 1 or 2 for a degraded array.
+	 */
 	mddev->degraded = (max(conf->raid_disks, conf->previous_raid_disks)
 			   - working_disks);
 
