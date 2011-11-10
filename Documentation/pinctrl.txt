@@ -61,7 +61,7 @@ this in our driver:
 
 #include <linux/pinctrl/pinctrl.h>
 
-const struct pinctrl_pin_desc __refdata foo_pins[] = {
+const struct pinctrl_pin_desc foo_pins[] = {
       PINCTRL_PIN(0, "A1"),
       PINCTRL_PIN(1, "A2"),
       PINCTRL_PIN(2, "A3"),
