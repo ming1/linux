@@ -207,7 +207,7 @@ bool emulate_vsyscall(struct pt_regs *regs, unsigned long address)
 		 * vsyscalls harder, generate SIGSEGV here as well.
 		 */
 		warn_bad_vsyscall(KERN_INFO, regs,
-				  "vsyscall fault (exploit attempt?)");
+				  "vsyscall fault (exploit attempt?) - if this is a legitimate program boot with vsyscall=native (read kernel-parameters.txt for the security implications)");
 		goto sigsegv;
 	}
 
