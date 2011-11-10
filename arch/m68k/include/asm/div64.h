@@ -1,7 +1,9 @@
 #ifndef _M68K_DIV64_H
 #define _M68K_DIV64_H
 
-#ifdef CONFIG_MMU
+#if defined(CONFIG_M68000) || defined(CONFIG_COLDFIRE)
+#include <asm-generic/div64.h>
+#else
 
 #include <linux/types.h>
 
@@ -27,8 +29,6 @@
 	__rem;							\
 })
 
-#else
-#include <asm-generic/div64.h>
-#endif /* CONFIG_MMU */
+#endif /* CONFIG_M68000 || CONFIG_COLDFIRE */
 
 #endif /* _M68K_DIV64_H */
