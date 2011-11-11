@@ -48,6 +48,14 @@ struct uprobe_task_arch_info {};	/* arch specific task info */
 /* Adjust the return address of a call insn */
 #define UPROBES_FIX_CALL	0x2
 
+/* flags that denote/change uprobes behaviour */
+/* Have a copy of original instruction */
+#define UPROBES_COPY_INSN	0x1
+/* Dont run handlers when first register/ last unregister in progress*/
+#define UPROBES_RUN_HANDLER	0x2
+/* Can skip singlestep */
+#define UPROBES_SKIP_SSTEP	0x4
+
 struct uprobe_consumer {
 	int (*handler)(struct uprobe_consumer *self, struct pt_regs *regs);
 	/*
@@ -68,7 +76,7 @@ struct uprobe {
 	struct uprobe_consumer	*consumers;
 	struct inode		*inode;		/* Also hold a ref to inode */
 	loff_t			offset;
-	int			copy;
+	int			flags;
 	u16			fixups;
 	u8			insn[MAX_UINSN_BYTES];
 };
@@ -133,6 +141,7 @@ extern int uprobe_post_notifier(struct pt_regs *regs);
 extern int uprobe_bkpt_notifier(struct pt_regs *regs);
 extern void uprobe_notify_resume(struct pt_regs *regs);
 extern bool uprobe_deny_signal(void);
+extern bool __weak can_skip_xol(struct pt_regs *regs, struct uprobe *u);
 #else /* CONFIG_UPROBES is not defined */
 static inline int register_uprobe(struct inode *inode, loff_t offset,
 				struct uprobe_consumer *consumer)

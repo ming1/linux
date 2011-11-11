@@ -436,6 +436,9 @@ static struct uprobe *insert_uprobe(struct uprobe *uprobe)
 	spin_lock_irqsave(&uprobes_treelock, flags);
 	u = __insert_uprobe(uprobe);
 	spin_unlock_irqrestore(&uprobes_treelock, flags);
+
+	/* For now assume that the instruction need not be single-stepped */
+	uprobe->flags |= UPROBES_SKIP_SSTEP;
 	return u;
 }
 
@@ -474,6 +477,9 @@ static struct uprobe *alloc_uprobe(struct inode *inode, loff_t offset)
 static void handler_chain(struct uprobe *uprobe, struct pt_regs *regs)
 {
 	struct uprobe_consumer *consumer;
+
+	if (!(uprobe->flags & UPROBES_RUN_HANDLER))
+		return;
 
 	down_read(&uprobe->consumer_rwsem);
 	consumer = uprobe->consumers;
@@ -594,7 +600,7 @@ static int install_breakpoint(struct mm_struct *mm, struct uprobe *uprobe,
 		return -EEXIST;
 
 	addr = (unsigned long)vaddr;
-	if (!uprobe->copy) {
+	if (!(uprobe->flags & UPROBES_COPY_INSN)) {
 		ret = copy_insn(uprobe, vma, addr);
 		if (ret)
 			return ret;
@@ -606,7 +612,7 @@ static int install_breakpoint(struct mm_struct *mm, struct uprobe *uprobe,
 		if (ret)
 			return ret;
 
-		uprobe->copy = 1;
+		uprobe->flags |= UPROBES_COPY_INSN;
 	}
 	ret = set_bkpt(mm, uprobe, addr);
 	if (!ret)
@@ -850,7 +856,8 @@ int register_uprobe(struct inode *inode, loff_t offset,
 		if (ret) {
 			uprobe->consumers = NULL;
 			__unregister_uprobe(inode, offset, uprobe);
-		}
+		} else
+			uprobe->flags |= UPROBES_RUN_HANDLER;
 	}
 
 	mutex_unlock(uprobes_hash(inode));
@@ -886,9 +893,10 @@ void unregister_uprobe(struct inode *inode, loff_t offset,
 		goto unreg_out;
 	}
 
-	if (!uprobe->consumers)
+	if (!uprobe->consumers) {
 		__unregister_uprobe(inode, offset, uprobe);
-
+		uprobe->flags &= ~UPROBES_RUN_HANDLER;
+	}
 	mutex_unlock(uprobes_hash(inode));
 
 unreg_out:
@@ -1337,6 +1345,12 @@ bool uprobe_deny_signal(void)
 	return true;
 }
 
+bool __weak can_skip_xol(struct pt_regs *regs, struct uprobe *u)
+{
+	u->flags &= ~UPROBES_SKIP_SSTEP;
+	return false;
+}
+
 /*
  * uprobe_notify_resume gets called in task context just before returning
  * to userspace.
@@ -1378,6 +1392,10 @@ void uprobe_notify_resume(struct pt_regs *regs)
 		}
 		utask->active_uprobe = u;
 		handler_chain(u, regs);
+
+		if (u->flags & UPROBES_SKIP_SSTEP && can_skip_xol(regs, u))
+			goto cleanup_ret;
+
 		utask->state = UTASK_SSTEP;
 		if (!pre_ssout(u, regs, probept))
 			user_enable_single_step(current);
@@ -1411,8 +1429,10 @@ cleanup_ret:
 		utask->state = UTASK_RUNNING;
 	}
 	if (u) {
+		if (!(u->flags & UPROBES_SKIP_SSTEP))
+			set_instruction_pointer(regs, probept);
+
 		put_uprobe(u);
-		set_instruction_pointer(regs, probept);
 	} else
 		send_sig(SIGTRAP, current, 0);
 }
