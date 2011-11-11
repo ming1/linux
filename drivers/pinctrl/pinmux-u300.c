@@ -1023,6 +1023,7 @@ static struct pinctrl_gpio_range u300_gpio_range = {
 	.name = "COH901*",
 	.id = 0,
 	.base = 0,
+	.pin_base = 0,
 	.npins = 64,
 };
 
