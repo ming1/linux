@@ -1,0 +1,24 @@
+Importing hexagon based on v3.1-rc9
+Unchanged quilt series hexagon
+Importing i2c based on 3.2-rc1
+Unchanged quilt series i2c
+Importing jdelvare-hwmon based on 3.2-rc1
+	quilt series is empty
+$ git update-ref refs/heads/quilt/jdelvare-hwmon 1ea6b8f48918282bdca0b32a34095504ee65bab5
+Importing kernel-doc based on 3.1
+Unchanged quilt series kernel-doc
+Importing rr based on v3.2-rc1
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard 1ea6b8f48918282bdca0b32a34095504ee65bab5
+HEAD is now at 1ea6b8f Linux 3.2-rc1
+$ git am ../quilt/rr/virtio:pci_fix_use_after_free.patch
+Applying: virtio-pci: fix use after free
+$ git am ../quilt/rr/virtio:balloon_trivial_cleanups.patch
+Applying: virtio-balloon: Trivial cleanups
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/rr
+From ../quilt-tmp
+ + 05478c6...bb6f197 master     -> quilt/rr  (forced update)
+Importing device-mapper based on v3.1-10674-g94956ee
+Unchanged quilt series device-mapper
