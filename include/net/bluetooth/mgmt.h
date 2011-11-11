@@ -119,6 +119,10 @@ struct mgmt_cp_remove_keys {
 	bdaddr_t bdaddr;
 	__u8 disconnect;
 } __packed;
+struct mgmt_rp_remove_keys {
+	bdaddr_t bdaddr;
+	__u8 status;
+};
 
 #define MGMT_OP_DISCONNECT		0x000F
 struct mgmt_cp_disconnect {
@@ -126,11 +130,12 @@ struct mgmt_cp_disconnect {
 } __packed;
 struct mgmt_rp_disconnect {
 	bdaddr_t bdaddr;
+	__u8 status;
 } __packed;
 
 #define MGMT_ADDR_BREDR			0x00
-#define MGMT_ADDR_LE			0x01
-#define MGMT_ADDR_BREDR_LE		0x02
+#define MGMT_ADDR_LE_PUBLIC		0x01
+#define MGMT_ADDR_LE_RANDOM		0x02
 #define MGMT_ADDR_INVALID		0xff
 
 struct mgmt_addr_info {
