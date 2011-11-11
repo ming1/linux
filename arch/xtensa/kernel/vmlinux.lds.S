@@ -113,6 +113,7 @@ SECTIONS
   /* Data section */
 
   _fdata = .;
+  _sdata = .;
   RW_DATA_SECTION(XCHAL_ICACHE_LINESIZE, PAGE_SIZE, THREAD_SIZE)
   _edata = .;
 
