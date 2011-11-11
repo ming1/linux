@@ -1954,6 +1954,11 @@ static int tid_fd_revalidate(struct dentry *dentry, struct nameidata *nd)
 	task = get_proc_task(inode);
 	fd = proc_fd(inode);
 
+	if (!ptrace_may_access(task, PTRACE_MODE_READ)) {
+		put_task_struct(task);
+		task = NULL;
+	}
+
 	if (task) {
 		files = get_files_struct(task);
 		if (files) {
