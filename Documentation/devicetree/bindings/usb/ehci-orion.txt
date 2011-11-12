@@ -1,0 +1,5 @@
+Marvell Orion SoC USB controller
+
+Required properties :
+ - compatible : should be "mrvl,orion-ehci".
+ - phy_version : should be "orion".
