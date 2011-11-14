@@ -602,3 +602,50 @@ void abort_xol(struct pt_regs *regs, struct uprobe *uprobe)
 	handle_riprel_post_xol(uprobe, regs, NULL);
 	set_instruction_pointer(regs, utask->vaddr);
 }
+
+/*
+ * Skip these instructions:
+ *
+ * 0f 19 90 90 90 90 90		nopl   -0x6f6f6f70(%rax)
+ * 0f 1f 00			nopl (%rax)
+ * 0f 1f 40 00			nopl 0x0(%rax)
+ * 0f 1f 44 00 00		nopl 0x0(%rax,%rax,1)
+ * 0f 1f 80 00 00 00 00		nopl 0x0(%rax)
+ * 0f 1f 84 00 00 00 00		nopl 0x0(%rax,%rax,1)
+ * 66 0f 1f 44 00 00 00		nopw 0x0(%rax,%rax,1)
+ * 66 0f 1f 84 00 00 00		nopw 0x0(%rax,%rax,1)
+ * 66 87 c0			xchg %eax,%eax
+ * 66 90			nop
+ * 87 c0			xchg %eax,%eax
+ * 90 				nop
+ */
+
+bool can_skip_xol(struct pt_regs *regs, struct uprobe *u)
+{
+	int i;
+
+	for (i = 0; i < MAX_UINSN_BYTES; i++) {
+		if ((u->insn[i] == 0x66))
+			continue;
+
+		if (u->insn[i] == 0x90)
+			return true;
+
+		if (i == (MAX_UINSN_BYTES - 1))
+			break;
+
+		if ((u->insn[i] == 0x0f) && (u->insn[i+1] == 0x1f))
+			return true;
+
+		if ((u->insn[i] == 0x0f) && (u->insn[i+1] == 0x19))
+			return true;
+
+		if ((u->insn[i] == 0x87) && (u->insn[i+1] == 0xc0))
+			return true;
+
+		break;
+	}
+
+	u->flags &= ~UPROBES_SKIP_SSTEP;
+	return false;
+}
