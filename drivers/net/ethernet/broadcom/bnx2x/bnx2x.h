@@ -23,8 +23,8 @@
  * (you will need to reboot afterwards) */
 /* #define BNX2X_STOP_ON_ERROR */
 
-#define DRV_MODULE_VERSION      "1.70.30-0"
-#define DRV_MODULE_RELDATE      "2011/10/25"
+#define DRV_MODULE_VERSION      "1.70.35-0"
+#define DRV_MODULE_RELDATE      "2011/11/10"
 #define BNX2X_BC_VER            0x040200
 
 #if defined(CONFIG_DCB)
@@ -411,8 +411,7 @@ union db_prod {
 
 
 /* Number of u64 elements in SGE mask array */
-#define RX_SGE_MASK_LEN			((NUM_RX_SGE_PAGES * RX_SGE_CNT) / \
-					 BIT_VEC64_ELEM_SZ)
+#define RX_SGE_MASK_LEN			(NUM_RX_SGE / BIT_VEC64_ELEM_SZ)
 #define RX_SGE_MASK_LEN_MASK		(RX_SGE_MASK_LEN - 1)
 #define NEXT_SGE_MASK_ELEM(el)		(((el) + 1) & RX_SGE_MASK_LEN_MASK)
 
@@ -507,6 +506,7 @@ struct bnx2x_fastpath {
 	__le16			fp_hc_idx;
 
 	u8			index;		/* number in fp array */
+	u8			rx_queue;	/* index for skb_record */
 	u8			cl_id;		/* eth client id */
 	u8			cl_qzone_id;
 	u8			fw_sb_id;	/* status block number in FW */
@@ -1141,6 +1141,7 @@ struct bnx2x_fw_stats_data {
 enum {
 	BNX2X_SP_RTNL_SETUP_TC,
 	BNX2X_SP_RTNL_TX_TIMEOUT,
+	BNX2X_SP_RTNL_FAN_FAILURE,
 };
 
 
@@ -1984,13 +1985,6 @@ static inline u32 reg_poll(struct bnx2x *bp, u32 reg, u32 expected, int ms,
 #define HW_PRTY_ASSERT_SET_4 (AEU_INPUTS_ATTN_BITS_PGLUE_PARITY_ERROR | \
 			      AEU_INPUTS_ATTN_BITS_ATC_PARITY_ERROR)
 
-#define RSS_FLAGS(bp) \
-		(TSTORM_ETH_FUNCTION_COMMON_CONFIG_RSS_IPV4_CAPABILITY | \
-		 TSTORM_ETH_FUNCTION_COMMON_CONFIG_RSS_IPV4_TCP_CAPABILITY | \
-		 TSTORM_ETH_FUNCTION_COMMON_CONFIG_RSS_IPV6_CAPABILITY | \
-		 TSTORM_ETH_FUNCTION_COMMON_CONFIG_RSS_IPV6_TCP_CAPABILITY | \
-		 (bp->multi_mode << \
-		  TSTORM_ETH_FUNCTION_COMMON_CONFIG_RSS_MODE_SHIFT))
 #define MULTI_MASK			0x7f
 
 
@@ -2054,6 +2048,8 @@ static inline u32 reg_poll(struct bnx2x *bp, u32 reg, u32 expected, int ms,
 
 #define BNX2X_VPD_LEN			128
 #define VENDOR_ID_LEN			4
+
+int bnx2x_close(struct net_device *dev);
 
 /* Congestion management fairness mode */
 #define CMNG_FNS_NONE		0

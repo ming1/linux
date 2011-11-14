@@ -31,11 +31,8 @@ static void be_mcc_notify(struct be_adapter *adapter)
 	struct be_queue_info *mccq = &adapter->mcc_obj.q;
 	u32 val = 0;
 
-	if (adapter->eeh_err) {
-		dev_info(&adapter->pdev->dev,
-			"Error in Card Detected! Cannot issue commands\n");
+	if (be_error(adapter))
 		return;
-	}
 
 	val |= mccq->id & DB_MCCQ_RING_ID_MASK;
 	val |= 1 << DB_MCCQ_NUM_POSTED_SHIFT;
@@ -266,10 +263,10 @@ static int be_mcc_wait_compl(struct be_adapter *adapter)
 	int i, num, status = 0;
 	struct be_mcc_obj *mcc_obj = &adapter->mcc_obj;
 
-	if (adapter->eeh_err)
-		return -EIO;
-
 	for (i = 0; i < mcc_timeout; i++) {
+		if (be_error(adapter))
+			return -EIO;
+
 		num = be_process_mcc(adapter, &status);
 		if (num)
 			be_cq_notify(adapter, mcc_obj->cq.id,
@@ -280,7 +277,8 @@ static int be_mcc_wait_compl(struct be_adapter *adapter)
 		udelay(100);
 	}
 	if (i == mcc_timeout) {
-		dev_err(&adapter->pdev->dev, "mccq poll timed out\n");
+		dev_err(&adapter->pdev->dev, "FW not responding\n");
+		adapter->fw_timeout = true;
 		return -1;
 	}
 	return status;
@@ -298,26 +296,21 @@ static int be_mbox_db_ready_wait(struct be_adapter *adapter, void __iomem *db)
 	int msecs = 0;
 	u32 ready;
 
-	if (adapter->eeh_err) {
-		dev_err(&adapter->pdev->dev,
-			"Error detected in card.Cannot issue commands\n");
-		return -EIO;
-	}
-
 	do {
+		if (be_error(adapter))
+			return -EIO;
+
 		ready = ioread32(db);
-		if (ready == 0xffffffff) {
-			dev_err(&adapter->pdev->dev,
-				"pci slot disconnected\n");
+		if (ready == 0xffffffff)
 			return -1;
-		}
 
 		ready &= MPU_MAILBOX_DB_RDY_MASK;
 		if (ready)
 			break;
 
 		if (msecs > 4000) {
-			dev_err(&adapter->pdev->dev, "mbox poll timed out\n");
+			dev_err(&adapter->pdev->dev, "FW not responding\n");
+			adapter->fw_timeout = true;
 			be_detect_dump_ue(adapter);
 			return -1;
 		}
@@ -555,9 +548,6 @@ int be_cmd_fw_clean(struct be_adapter *adapter)
 	u8 *wrb;
 	int status;
 
-	if (adapter->eeh_err)
-		return -EIO;
-
 	if (mutex_lock_interruptible(&adapter->mbox_lock))
 		return -1;
 
@@ -695,11 +685,14 @@ err:
 }
 
 /* Uses synchronous MCCQ */
-int be_cmd_pmac_del(struct be_adapter *adapter, u32 if_id, u32 pmac_id, u32 dom)
+int be_cmd_pmac_del(struct be_adapter *adapter, u32 if_id, int pmac_id, u32 dom)
 {
 	struct be_mcc_wrb *wrb;
 	struct be_cmd_req_pmac_del *req;
 	int status;
+
+	if (pmac_id == -1)
+		return 0;
 
 	spin_lock_bh(&adapter->mcc_lock);
 
@@ -1018,9 +1011,6 @@ int be_cmd_q_destroy(struct be_adapter *adapter, struct be_queue_info *q,
 	u8 subsys = 0, opcode = 0;
 	int status;
 
-	if (adapter->eeh_err)
-		return -EIO;
-
 	if (mutex_lock_interruptible(&adapter->mbox_lock))
 		return -1;
 
@@ -1136,16 +1126,13 @@ err:
 }
 
 /* Uses MCCQ */
-int be_cmd_if_destroy(struct be_adapter *adapter, u32 interface_id, u32 domain)
+int be_cmd_if_destroy(struct be_adapter *adapter, int interface_id, u32 domain)
 {
 	struct be_mcc_wrb *wrb;
 	struct be_cmd_req_if_destroy *req;
 	int status;
 
-	if (adapter->eeh_err)
-		return -EIO;
-
-	if (!interface_id)
+	if (interface_id == -1)
 		return 0;
 
 	spin_lock_bh(&adapter->mcc_lock);

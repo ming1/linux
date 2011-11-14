@@ -874,8 +874,7 @@ static inline void bnx2x_clear_sge_mask_next_elems(struct bnx2x_fastpath *fp)
 static inline void bnx2x_init_sge_ring_bit_mask(struct bnx2x_fastpath *fp)
 {
 	/* Set the mask to all 1-s: it's faster to compare to 0 than to 0xf-s */
-	memset(fp->sge_mask, 0xff,
-	       (NUM_RX_SGE >> BIT_VEC64_ELEM_SHIFT)*sizeof(u64));
+	memset(fp->sge_mask, 0xff, sizeof(fp->sge_mask));
 
 	/* Clear the two last indices in the page to 1:
 	   these are the indices that correspond to the "next" element,
@@ -1318,6 +1317,7 @@ static inline void bnx2x_init_fcoe_fp(struct bnx2x *bp)
 	struct bnx2x_fastpath *fp = bnx2x_fcoe_fp(bp);
 	unsigned long q_type = 0;
 
+	bnx2x_fcoe(bp, rx_queue) = BNX2X_NUM_ETH_QUEUES(bp);
 	bnx2x_fcoe(bp, cl_id) = bnx2x_cnic_eth_cl_id(bp,
 						     BNX2X_FCOE_ETH_CL_ID_IDX);
 	/** Current BNX2X_FCOE_ETH_CID deffinition implies not more than
@@ -1486,6 +1486,70 @@ static inline u16 bnx2x_extract_max_cfg(struct bnx2x *bp, u32 mf_cfg)
 		max_cfg = 100;
 	}
 	return max_cfg;
+}
+
+#ifdef BCM_CNIC
+/**
+ * bnx2x_get_iscsi_info - update iSCSI params according to licensing info.
+ *
+ * @bp:		driver handle
+ *
+ */
+void bnx2x_get_iscsi_info(struct bnx2x *bp);
+#endif
+
+/* returns func by VN for current port */
+static inline int func_by_vn(struct bnx2x *bp, int vn)
+{
+	return 2 * vn + BP_PORT(bp);
+}
+
+/**
+ * bnx2x_link_sync_notify - send notification to other functions.
+ *
+ * @bp:		driver handle
+ *
+ */
+static inline void bnx2x_link_sync_notify(struct bnx2x *bp)
+{
+	int func;
+	int vn;
+
+	/* Set the attention towards other drivers on the same port */
+	for (vn = VN_0; vn < BP_MAX_VN_NUM(bp); vn++) {
+		if (vn == BP_VN(bp))
+			continue;
+
+		func = func_by_vn(bp, vn);
+		REG_WR(bp, MISC_REG_AEU_GENERAL_ATTN_0 +
+		       (LINK_SYNC_ATTENTION_BIT_FUNC_0 + func)*4, 1);
+	}
+}
+
+/**
+ * bnx2x_update_drv_flags - update flags in shmem
+ *
+ * @bp:		driver handle
+ * @flags:	flags to update
+ * @set:	set or clear
+ *
+ */
+static inline void bnx2x_update_drv_flags(struct bnx2x *bp, u32 flags, u32 set)
+{
+	if (SHMEM2_HAS(bp, drv_flags)) {
+		u32 drv_flags;
+		bnx2x_acquire_hw_lock(bp, HW_LOCK_DRV_FLAGS);
+		drv_flags = SHMEM2_RD(bp, drv_flags);
+
+		if (set)
+			SET_FLAGS(drv_flags, flags);
+		else
+			RESET_FLAGS(drv_flags, flags);
+
+		SHMEM2_WR(bp, drv_flags, drv_flags);
+		DP(NETIF_MSG_HW, "drv_flags 0x%08x\n", drv_flags);
+		bnx2x_release_hw_lock(bp, HW_LOCK_DRV_FLAGS);
+	}
 }
 
 #endif /* BNX2X_CMN_H */

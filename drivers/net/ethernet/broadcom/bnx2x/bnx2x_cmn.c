@@ -79,19 +79,21 @@ static inline void bnx2x_bz_fp(struct bnx2x *bp, int index)
  * @to:		destination FP index
  *
  * Makes sure the contents of the bp->fp[to].napi is kept
- * intact.
+ * intact. This is done by first copying the napi struct from
+ * the target to the source, and then mem copying the entire
+ * source onto the target
  */
 static inline void bnx2x_move_fp(struct bnx2x *bp, int from, int to)
 {
 	struct bnx2x_fastpath *from_fp = &bp->fp[from];
 	struct bnx2x_fastpath *to_fp = &bp->fp[to];
-	struct napi_struct orig_napi = to_fp->napi;
+
+	/* Copy the NAPI object as it has been already initialized */
+	from_fp->napi = to_fp->napi;
+
 	/* Move bnx2x_fastpath contents */
 	memcpy(to_fp, from_fp, sizeof(*to_fp));
 	to_fp->index = to;
-
-	/* Restore the NAPI object as it has been already initialized */
-	to_fp->napi = orig_napi;
 }
 
 int load_count[2][3] = { {0} }; /* per-path: 0-common, 1-port0, 2-port1 */
@@ -755,7 +757,7 @@ reuse_rx:
 			}
 		}
 
-		skb_record_rx_queue(skb, fp->index);
+		skb_record_rx_queue(skb, fp->rx_queue);
 
 		if (le16_to_cpu(cqe_fp->pars_flags.flags) &
 		    PARSING_FLAGS_VLAN)
@@ -1094,13 +1096,11 @@ static void bnx2x_free_tx_skbs(struct bnx2x *bp)
 		for_each_cos_in_tx_queue(fp, cos) {
 			struct bnx2x_fp_txdata *txdata = &fp->txdata[cos];
 
-			u16 bd_cons = txdata->tx_bd_cons;
 			u16 sw_prod = txdata->tx_pkt_prod;
 			u16 sw_cons = txdata->tx_pkt_cons;
 
 			while (sw_cons != sw_prod) {
-				bd_cons = bnx2x_free_tx_pkt(bp, txdata,
-							    TX_BD(sw_cons));
+				bnx2x_free_tx_pkt(bp, txdata, TX_BD(sw_cons));
 				sw_cons++;
 			}
 		}
@@ -1929,13 +1929,17 @@ int bnx2x_nic_load(struct bnx2x *bp, int load_mode)
 		break;
 	}
 
-	if (!bp->port.pmf)
+	if (bp->port.pmf)
+		bnx2x_update_drv_flags(bp, DRV_FLAGS_DCB_CONFIGURED, 0);
+	else
 		bnx2x__link_status_update(bp);
 
 	/* start the timer */
 	mod_timer(&bp->timer, jiffies + bp->current_interval);
 
 #ifdef BCM_CNIC
+	/* re-read iscsi info */
+	bnx2x_get_iscsi_info(bp);
 	bnx2x_setup_cnic_irq_info(bp);
 	if (bp->state == BNX2X_STATE_OPEN)
 		bnx2x_cnic_notify(bp, CNIC_CTL_START_CMD);
