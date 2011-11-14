@@ -245,8 +245,18 @@ add_head:
 
 	/* Put entry in available array (but don't update avail->idx until they
 	 * do sync). */
-	avail = ((vq->vring.avail->idx + vq->num_added++) & (vq->vring.num-1));
+	avail = (vq->vring.avail->idx & (vq->vring.num-1));
 	vq->vring.avail->ring[avail] = head;
+
+	/* Descriptors and available array need to be set before we expose the
+	 * new available array entries. */
+	virtio_wmb();
+	vq->vring.avail->idx++;
+	vq->num_added++;
+
+	/* If you haven't kicked in this long, you're probably doing something
+	 * wrong. */
+	WARN_ON(vq->num_added > vq->vring.num);
 
 	pr_debug("Added buffer head %i to %p\n", head, vq);
 	END_USE(vq);
@@ -277,12 +287,9 @@ bool virtqueue_kick_prepare(struct virtqueue *_vq)
 	 * new available array entries. */
 	virtio_wmb();
 
-	old = vq->vring.avail->idx;
-	new = vq->vring.avail->idx = old + vq->num_added;
+	old = vq->vring.avail->idx - vq->num_added;
+	new = vq->vring.avail->idx;
 	vq->num_added = 0;
-
-	/* Need to update avail index before checking if we should notify */
-	virtio_mb();
 
 	if (vq->event) {
 		needs_kick = vring_need_event(vring_avail_event(&vq->vring),
