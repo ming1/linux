@@ -100,10 +100,13 @@ struct pinmux_hog {
  *	means that you want to mux in the pin for use as GPIO number NN
  * @gpio_range: the range matching the GPIO pin if this is a request for a
  *	single GPIO pin
+ * @gpio_direction: if the pin is muxed for GPIO, this provides the direction
+ *	of the GPIO @true means output, @false means input
  */
 static int pin_request(struct pinctrl_dev *pctldev,
 		       int pin, const char *function,
-		       struct pinctrl_gpio_range *gpio_range)
+		       struct pinctrl_gpio_range *gpio_range,
+		       bool gpio_direction)
 {
 	struct pin_desc *desc;
 	const struct pinmux_ops *ops = pctldev->desc->pmxops;
@@ -148,7 +151,8 @@ static int pin_request(struct pinctrl_dev *pctldev,
 	 */
 	if (gpio_range && ops->gpio_request_enable)
 		/* This requests and enables a single GPIO pin */
-		status = ops->gpio_request_enable(pctldev, gpio_range, pin);
+	  status = ops->gpio_request_enable(pctldev, gpio_range, pin,
+					    gpio_direction);
 	else if (ops->request)
 		status = ops->request(pctldev, pin);
 	else
@@ -218,8 +222,15 @@ static const char *pin_free(struct pinctrl_dev *pctldev, int pin,
 /**
  * pinmux_request_gpio() - request a single pin to be muxed in as GPIO
  * @gpio: the GPIO pin number from the GPIO subsystem number space
+ * @direction: the direction of the GPIO, @true means output, @false
+ *	means input
+ *
+ * This function should *ONLY* be used from gpiolib-based GPIO drivers,
+ * as part of their gpio_request() and gpio_direction_[input|output()
+ * semantics, platforms and individual driver shall *NOT* request GPIO pins to
+ * be muxed in.
  */
-int pinmux_request_gpio(unsigned gpio)
+int pinmux_request_gpio(unsigned gpio, bool direction)
 {
 	char gpiostr[16];
 	const char *function;
@@ -242,7 +253,7 @@ int pinmux_request_gpio(unsigned gpio)
 	if (!function)
 		return -EINVAL;
 
-	ret = pin_request(pctldev, pin, function, range);
+	ret = pin_request(pctldev, pin, function, range, direction);
 	if (ret < 0)
 		kfree(function);
 
@@ -253,6 +264,11 @@ EXPORT_SYMBOL_GPL(pinmux_request_gpio);
 /**
  * pinmux_free_gpio() - free a single pin, currently used as GPIO
  * @gpio: the GPIO pin number from the GPIO subsystem number space
+ *
+ * This function should *ONLY* be used from gpiolib-based GPIO drivers,
+ * as part of their gpio_request() and gpio_direction_[input|output()
+ * semantics, platforms and individual driver shall *NOT* request GPIO pins to
+ * be muxed in.
  */
 void pinmux_free_gpio(unsigned gpio)
 {
@@ -360,7 +376,7 @@ static int acquire_pins(struct pinctrl_dev *pctldev,
 
 	/* Try to allocate all pins in this group, one by one */
 	for (i = 0; i < num_pins; i++) {
-		ret = pin_request(pctldev, pins[i], func, NULL);
+	  ret = pin_request(pctldev, pins[i], func, NULL, false);
 		if (ret) {
 			dev_err(&pctldev->dev,
 				"could not get pin %d for function %s "
