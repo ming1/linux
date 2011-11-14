@@ -191,6 +191,7 @@ void __init check_wait(void)
 	case CPU_CAVIUM_OCTEON_PLUS:
 	case CPU_CAVIUM_OCTEON2:
 	case CPU_JZRISC:
+	case CPU_XLR:
 		cpu_wait = r4k_wait;
 		break;
 
@@ -1013,6 +1014,13 @@ static inline void cpu_probe_ingenic(struct cpuinfo_mips *c, unsigned int cpu)
 static inline void cpu_probe_netlogic(struct cpuinfo_mips *c, int cpu)
 {
 	decode_configs(c);
+
+	if ((c->processor_id & 0xff00) == PRID_IMP_NETLOGIC_AU13XX) {
+		c->cputype = CPU_ALCHEMY;
+		__cpu_name[cpu] = "Au1300";
+		/* following stuff is not for Alchemy */
+		return;
+	}
 
 	c->options = (MIPS_CPU_TLB       |
 			MIPS_CPU_4KEX    |
