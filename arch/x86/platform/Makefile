@@ -9,3 +9,4 @@ obj-y	+= scx200/
 obj-y	+= sfi/
 obj-y	+= visws/
 obj-y	+= uv/
+obj-y	+= ts5500/

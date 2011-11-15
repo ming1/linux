@@ -28,22 +28,110 @@ int direct_gbpages
 #endif
 ;
 
-static void __init find_early_table_space(unsigned long end, int use_pse,
-					  int use_gbpages)
+static unsigned long __init find_early_fixmap_space(void)
 {
-	unsigned long puds, pmds, ptes, tables, start = 0, good_end = end;
+	unsigned long size = 0;
+#ifdef CONFIG_X86_32
+	int kmap_begin_pmd_idx, kmap_end_pmd_idx;
+	int fixmap_begin_pmd_idx, fixmap_end_pmd_idx;
+	int btmap_begin_pmd_idx;
+
+	fixmap_begin_pmd_idx =
+		__fix_to_virt(__end_of_fixed_addresses - 1) >> PMD_SHIFT;
+	/*
+	 * fixmap_end_pmd_idx is the end of the fixmap minus the PMD that
+	 * has been defined in the data section by head_32.S (see
+	 * initial_pg_fixmap).
+	 * Note: This is similar to what early_ioremap_page_table_range_init
+	 * does except that the "end" has PMD_SIZE expunged as per previous
+	 * comment.
+	 */
+	fixmap_end_pmd_idx = (FIXADDR_TOP - 1) >> PMD_SHIFT;
+	btmap_begin_pmd_idx = __fix_to_virt(FIX_BTMAP_BEGIN) >> PMD_SHIFT;
+	kmap_begin_pmd_idx = __fix_to_virt(FIX_KMAP_END) >> PMD_SHIFT;
+	kmap_end_pmd_idx = __fix_to_virt(FIX_KMAP_BEGIN) >> PMD_SHIFT;
+
+	size = fixmap_end_pmd_idx - fixmap_begin_pmd_idx;
+	/*
+	 * early_ioremap_init has already allocated a PMD at
+	 * btmap_begin_pmd_idx
+	 */
+	if (btmap_begin_pmd_idx < fixmap_end_pmd_idx)
+		size--;
+
+#ifdef CONFIG_HIGHMEM
+	/*
+	 * see page_table_kmap_check: if the kmap spans multiple PMDs, make
+	 * sure the pte pages are allocated contiguously. It might need up
+	 * to two additional pte pages to replace the page declared by
+	 * head_32.S and the one allocated by early_ioremap_init, if they
+	 * are even partially used for the kmap.
+	 */
+	if (kmap_begin_pmd_idx != kmap_end_pmd_idx) {
+		if (kmap_end_pmd_idx == fixmap_end_pmd_idx)
+			size++;
+		if (btmap_begin_pmd_idx >= kmap_begin_pmd_idx &&
+				btmap_begin_pmd_idx <= kmap_end_pmd_idx)
+			size++;
+	}
+#endif
+#endif
+	return (size * PMD_SIZE + PAGE_SIZE - 1) >> PAGE_SHIFT;
+}
+
+static void __init find_early_table_space(unsigned long start,
+		unsigned long end, int use_pse, int use_gbpages)
+{
+	unsigned long pmds = 0, ptes = 0, tables = 0, good_end = end,
+				  pud_mapped = 0, pmd_mapped = 0, size = end - start;
 	phys_addr_t base;
 
-	puds = (end + PUD_SIZE - 1) >> PUD_SHIFT;
-	tables = roundup(puds * sizeof(pud_t), PAGE_SIZE);
+	pud_mapped = DIV_ROUND_UP(PFN_PHYS(max_pfn_mapped),
+			(PUD_SIZE * PTRS_PER_PUD));
+	pud_mapped *= (PUD_SIZE * PTRS_PER_PUD);
+	pmd_mapped = DIV_ROUND_UP(PFN_PHYS(max_pfn_mapped),
+			(PMD_SIZE * PTRS_PER_PMD));
+	pmd_mapped *= (PMD_SIZE * PTRS_PER_PMD);
+
+	/*
+	 * On x86_64 do not limit the size we need to cover with 4KB pages
+	 * depending on the initial allocation because head_64.S always uses
+	 * 2MB pages.
+	 */
+#ifdef CONFIG_X86_32
+	if (start < PFN_PHYS(max_pfn_mapped)) {
+		if (PFN_PHYS(max_pfn_mapped) < end)
+			size -= PFN_PHYS(max_pfn_mapped) - start;
+		else
+			size = 0;
+	}
+#endif
+
+#ifndef __PAGETABLE_PUD_FOLDED
+	if (end > pud_mapped) {
+		unsigned long puds;
+		if (start < pud_mapped)
+			puds = (end - pud_mapped + PUD_SIZE - 1) >> PUD_SHIFT;
+		else
+			puds = (end - start + PUD_SIZE - 1) >> PUD_SHIFT;
+		tables += roundup(puds * sizeof(pud_t), PAGE_SIZE);
+	}
+#endif
 
 	if (use_gbpages) {
 		unsigned long extra;
 
 		extra = end - ((end>>PUD_SHIFT) << PUD_SHIFT);
 		pmds = (extra + PMD_SIZE - 1) >> PMD_SHIFT;
-	} else
-		pmds = (end + PMD_SIZE - 1) >> PMD_SHIFT;
+	}
+#ifndef __PAGETABLE_PMD_FOLDED
+	else if (end > pmd_mapped) {
+		if (start < pmd_mapped)
+			pmds = (end - pmd_mapped + PMD_SIZE - 1) >> PMD_SHIFT;
+		else
+			pmds = (end - start + PMD_SIZE - 1) >> PMD_SHIFT;
+	}
+#endif
 
 	tables += roundup(pmds * sizeof(pmd_t), PAGE_SIZE);
 
@@ -51,22 +139,21 @@ static void __init find_early_table_space(unsigned long end, int use_pse,
 		unsigned long extra;
 
 		extra = end - ((end>>PMD_SHIFT) << PMD_SHIFT);
-#ifdef CONFIG_X86_32
-		extra += PMD_SIZE;
-#endif
 		ptes = (extra + PAGE_SIZE - 1) >> PAGE_SHIFT;
 	} else
-		ptes = (end + PAGE_SIZE - 1) >> PAGE_SHIFT;
+		ptes = (size + PAGE_SIZE - 1) >> PAGE_SHIFT;
+
+	ptes += find_early_fixmap_space();
 
 	tables += roundup(ptes * sizeof(pte_t), PAGE_SIZE);
 
+	if (!tables)
+		return;
 #ifdef CONFIG_X86_32
-	/* for fixmap */
-	tables += roundup(__end_of_fixed_addresses * sizeof(pte_t), PAGE_SIZE);
 #endif
 	good_end = max_pfn_mapped << PAGE_SHIFT;
 
-	base = memblock_find_in_range(start, good_end, tables, PAGE_SIZE);
+	base = memblock_find_in_range(0x00, good_end, tables, PAGE_SIZE);
 	if (base == MEMBLOCK_ERROR)
 		panic("Cannot find space for the kernel page tables");
 
@@ -76,11 +163,10 @@ static void __init find_early_table_space(unsigned long end, int use_pse,
 
 	printk(KERN_DEBUG "kernel direct mapping tables up to %lx @ %lx-%lx\n",
 		end, pgt_buf_start << PAGE_SHIFT, pgt_buf_top << PAGE_SHIFT);
-}
 
-void __init native_pagetable_reserve(u64 start, u64 end)
-{
-	memblock_x86_reserve_range(start, end, "PGTABLE");
+	if (pgt_buf_top > pgt_buf_start)
+		memblock_x86_reserve_range(pgt_buf_start << PAGE_SHIFT,
+				 pgt_buf_top << PAGE_SHIFT, "PGTABLE");
 }
 
 struct map_range {
@@ -260,7 +346,7 @@ unsigned long __init_refok init_memory_mapping(unsigned long start,
 	 * nodes are discovered.
 	 */
 	if (!after_bootmem)
-		find_early_table_space(end, use_pse, use_gbpages);
+		find_early_table_space(start, end, use_pse, use_gbpages);
 
 	for (i = 0; i < nr_range; i++)
 		ret = kernel_physical_mapping_init(mr[i].start, mr[i].end,
@@ -274,24 +360,9 @@ unsigned long __init_refok init_memory_mapping(unsigned long start,
 
 	__flush_tlb_all();
 
-	/*
-	 * Reserve the kernel pagetable pages we used (pgt_buf_start -
-	 * pgt_buf_end) and free the other ones (pgt_buf_end - pgt_buf_top)
-	 * so that they can be reused for other purposes.
-	 *
-	 * On native it just means calling memblock_x86_reserve_range, on Xen it
-	 * also means marking RW the pagetable pages that we allocated before
-	 * but that haven't been used.
-	 *
-	 * In fact on xen we mark RO the whole range pgt_buf_start -
-	 * pgt_buf_top, because we have to make sure that when
-	 * init_memory_mapping reaches the pagetable pages area, it maps
-	 * RO all the pagetable pages, including the ones that are beyond
-	 * pgt_buf_end at that time.
-	 */
-	if (!after_bootmem && pgt_buf_end > pgt_buf_start)
-		x86_init.mapping.pagetable_reserve(PFN_PHYS(pgt_buf_start),
-				PFN_PHYS(pgt_buf_end));
+	if (pgt_buf_end != pgt_buf_top)
+		printk(KERN_DEBUG "initial kernel pagetable allocation wasted %lx"
+				" pages\n", pgt_buf_top - pgt_buf_end);
 
 	if (!after_bootmem)
 		early_memtest(start, end);
