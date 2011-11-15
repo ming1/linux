@@ -1,0 +1,37 @@
+Importing hexagon based on v3.1-rc9
+Unchanged quilt series hexagon
+Importing i2c based on 3.2-rc1
+Unchanged quilt series i2c
+Importing jdelvare-hwmon based on 3.2-rc1
+Unchanged quilt series jdelvare-hwmon
+Importing kernel-doc based on 3.1
+Unchanged quilt series kernel-doc
+Importing rr based on v3.2-rc1
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard 1ea6b8f48918282bdca0b32a34095504ee65bab5
+HEAD is now at 1ea6b8f Linux 3.2-rc1
+$ git am ../quilt/rr/virtio:pci_fix_use_after_free.patch
+Applying: virtio-pci: fix use after free
+$ git am ../quilt/rr/virtio:balloon_trivial_cleanups.patch
+Applying: virtio-balloon: Trivial cleanups
+$ git am ../quilt/rr/virtio-documentation.patch
+Applying: virtio: document functions better.
+$ git am ../quilt/rr/virtio-virtqueue_add_buf_gfp-rename.patch
+Applying: virtio: rename virtqueue_add_buf_gfp to virtqueue_add_buf
+$ git am ../quilt/rr/virtio:support_unlocked_queue_kick.patch
+Applying: virtio: support unlocked queue kick
+$ git am ../quilt/rr/virtio_ring-avoid-modulus.patch
+Applying: virtio: avoid modulus operation.
+$ git am ../quilt/rr/virtio-add-should-expose.patch
+Applying: virtio: expose added descriptors immediately.
+$ git am ../quilt/rr/module:add_comments_describing_how_the_strmap_logic_works.patch
+Applying: module: Add comments describing how the "strmap" logic works
+$ git am ../quilt/rr/module:fix_performance_regression_on_s_with_large_symbol_tables.patch
+Applying: module: Fix performance regression on modules with large symbol tables
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/rr
+From ../quilt-tmp
+ + bb6f197...55cbf3b master     -> quilt/rr  (forced update)
+Importing device-mapper based on v3.1-10674-g94956ee
+Unchanged quilt series device-mapper
