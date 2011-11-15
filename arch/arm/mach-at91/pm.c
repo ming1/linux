@@ -34,7 +34,7 @@
 /*
  * Show the reason for the previous system reset.
  */
-#if defined(AT91_SHDWC)
+#if defined(AT91_RSTC)
 
 #include <mach/at91_rstc.h>
 #include <mach/at91_shdwc.h>
@@ -58,8 +58,11 @@ static void __init show_reset_status(void)
 	char *reason, *r2 = reset;
 	u32 reset_type, wake_type;
 
+	if (!at91_shdwc_base)
+		return;
+
 	reset_type = at91_sys_read(AT91_RSTC_SR) & AT91_RSTC_RSTTYP;
-	wake_type = at91_sys_read(AT91_SHDW_SR);
+	wake_type = at91_shdwc_read(AT91_SHDW_SR);
 
 	switch (reset_type) {
 	case AT91_RSTC_RSTTYP_GENERAL:
@@ -159,21 +162,21 @@ static int at91_pm_verify_clocks(void)
 		}
 	}
 
-#ifdef CONFIG_AT91_PROGRAMMABLE_CLOCKS
-	/* PCK0..PCK3 must be disabled, or configured to use clk32k */
-	for (i = 0; i < 4; i++) {
-		u32 css;
+	if (IS_BUILTIN(CONFIG_AT91_PROGRAMMABLE_CLOCKS)) {
+		/* PCK0..PCK3 must be disabled, or configured to use clk32k */
+		for (i = 0; i < 4; i++) {
+			u32 css;
 
-		if ((scsr & (AT91_PMC_PCK0 << i)) == 0)
-			continue;
+			if ((scsr & (AT91_PMC_PCK0 << i)) == 0)
+				continue;
 
-		css = at91_sys_read(AT91_PMC_PCKR(i)) & AT91_PMC_CSS;
-		if (css != AT91_PMC_CSS_SLOW) {
-			pr_err("AT91: PM - Suspend-to-RAM with PCK%d src %d\n", i, css);
-			return 0;
+			css = at91_sys_read(AT91_PMC_PCKR(i)) & AT91_PMC_CSS;
+			if (css != AT91_PMC_CSS_SLOW) {
+				pr_err("AT91: PM - Suspend-to-RAM with PCK%d src %d\n", i, css);
+				return 0;
+			}
 		}
 	}
-#endif
 
 	return 1;
 }
