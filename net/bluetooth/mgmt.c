@@ -962,6 +962,9 @@ static int remove_keys(struct sock *sk, u16 index, unsigned char *data,
 {
 	struct hci_dev *hdev;
 	struct mgmt_cp_remove_keys *cp;
+	struct mgmt_rp_remove_keys rp;
+	struct hci_cp_disconnect dc;
+	struct pending_cmd *cmd;
 	struct hci_conn *conn;
 	int err;
 
@@ -976,27 +979,44 @@ static int remove_keys(struct sock *sk, u16 index, unsigned char *data,
 
 	hci_dev_lock_bh(hdev);
 
+	memset(&rp, 0, sizeof(rp));
+	bacpy(&rp.bdaddr, &cp->bdaddr);
+
 	err = hci_remove_link_key(hdev, &cp->bdaddr);
-	if (err < 0) {
-		err = cmd_status(sk, index, MGMT_OP_REMOVE_KEYS, -err);
+	if (err < 0)
+		goto unlock;
+
+	if (!test_bit(HCI_UP, &hdev->flags) || !cp->disconnect) {
+		err = cmd_complete(sk, index, MGMT_OP_REMOVE_KEYS, &rp,
+								sizeof(rp));
 		goto unlock;
 	}
-
-	err = 0;
-
-	if (!test_bit(HCI_UP, &hdev->flags) || !cp->disconnect)
-		goto unlock;
 
 	conn = hci_conn_hash_lookup_ba(hdev, ACL_LINK, &cp->bdaddr);
-	if (conn) {
-		struct hci_cp_disconnect dc;
-
-		put_unaligned_le16(conn->handle, &dc.handle);
-		dc.reason = 0x13; /* Remote User Terminated Connection */
-		err = hci_send_cmd(hdev, HCI_OP_DISCONNECT, sizeof(dc), &dc);
+	if (!conn) {
+		err = cmd_complete(sk, index, MGMT_OP_REMOVE_KEYS, &rp,
+								sizeof(rp));
+		goto unlock;
 	}
 
+	cmd = mgmt_pending_add(sk, MGMT_OP_REMOVE_KEYS, hdev, cp, sizeof(*cp));
+	if (!cmd) {
+		err = -ENOMEM;
+		goto unlock;
+	}
+
+	put_unaligned_le16(conn->handle, &dc.handle);
+	dc.reason = 0x13; /* Remote User Terminated Connection */
+	err = hci_send_cmd(hdev, HCI_OP_DISCONNECT, sizeof(dc), &dc);
+	if (err < 0)
+		mgmt_pending_remove(cmd);
+
 unlock:
+	if (err < 0) {
+		rp.status = -err;
+		err = cmd_complete(sk, index, MGMT_OP_REMOVE_KEYS, &rp,
+								sizeof(rp));
+	}
 	hci_dev_unlock_bh(hdev);
 	hci_dev_put(hdev);
 
@@ -1064,11 +1084,18 @@ failed:
 	return err;
 }
 
-static u8 link_to_mgmt(u8 link_type)
+static u8 link_to_mgmt(u8 link_type, u8 addr_type)
 {
 	switch (link_type) {
 	case LE_LINK:
-		return MGMT_ADDR_LE;
+		switch (addr_type) {
+		case ADDR_LE_DEV_PUBLIC:
+			return MGMT_ADDR_LE_PUBLIC;
+		case ADDR_LE_DEV_RANDOM:
+			return MGMT_ADDR_LE_RANDOM;
+		default:
+			return MGMT_ADDR_INVALID;
+		}
 	case ACL_LINK:
 		return MGMT_ADDR_BREDR;
 	default:
@@ -1111,7 +1138,7 @@ static int get_connections(struct sock *sk, u16 index)
 	i = 0;
 	list_for_each_entry(c, &hdev->conn_hash.list, list) {
 		bacpy(&rp->addr[i].bdaddr, &c->dst);
-		rp->addr[i].type = link_to_mgmt(c->type);
+		rp->addr[i].type = link_to_mgmt(c->type, c->dst_type);
 		if (rp->addr[i].type == MGMT_ADDR_INVALID)
 			continue;
 		i++;
@@ -1325,19 +1352,14 @@ static void pairing_complete(struct pending_cmd *cmd, u8 status)
 static void pairing_complete_cb(struct hci_conn *conn, u8 status)
 {
 	struct pending_cmd *cmd;
-	struct hci_dev *hdev = conn->hdev;
 
 	BT_DBG("status %u", status);
-
-	hci_dev_lock_bh(hdev);
 
 	cmd = find_pairing(conn);
 	if (!cmd)
 		BT_DBG("Unable to find a pending command");
 	else
 		pairing_complete(cmd, status);
-
-	hci_dev_unlock_bh(hdev);
 }
 
 static int pair_device(struct sock *sk, u16 index, unsigned char *data, u16 len)
@@ -2089,12 +2111,13 @@ int mgmt_new_link_key(struct hci_dev *hdev, struct link_key *key,
 	return mgmt_event(MGMT_EV_NEW_LINK_KEY, hdev, &ev, sizeof(ev), NULL);
 }
 
-int mgmt_connected(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 link_type)
+int mgmt_connected(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 link_type,
+								u8 addr_type)
 {
 	struct mgmt_addr_info ev;
 
 	bacpy(&ev.bdaddr, bdaddr);
-	ev.type = link_to_mgmt(link_type);
+	ev.type = link_to_mgmt(link_type, addr_type);
 
 	return mgmt_event(MGMT_EV_CONNECTED, hdev, &ev, sizeof(ev), NULL);
 }
@@ -2106,6 +2129,7 @@ static void disconnect_rsp(struct pending_cmd *cmd, void *data)
 	struct mgmt_rp_disconnect rp;
 
 	bacpy(&rp.bdaddr, &cp->bdaddr);
+	rp.status = 0;
 
 	cmd_complete(cmd->sk, cmd->index, MGMT_OP_DISCONNECT, &rp, sizeof(rp));
 
@@ -2115,7 +2139,25 @@ static void disconnect_rsp(struct pending_cmd *cmd, void *data)
 	mgmt_pending_remove(cmd);
 }
 
-int mgmt_disconnected(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 type)
+static void remove_keys_rsp(struct pending_cmd *cmd, void *data)
+{
+	u8 *status = data;
+	struct mgmt_cp_remove_keys *cp = cmd->param;
+	struct mgmt_rp_remove_keys rp;
+
+	memset(&rp, 0, sizeof(rp));
+	bacpy(&rp.bdaddr, &cp->bdaddr);
+	if (status != NULL)
+		rp.status = *status;
+
+	cmd_complete(cmd->sk, cmd->index, MGMT_OP_REMOVE_KEYS, &rp,
+								sizeof(rp));
+
+	mgmt_pending_remove(cmd);
+}
+
+int mgmt_disconnected(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 link_type,
+								u8 addr_type)
 {
 	struct mgmt_addr_info ev;
 	struct sock *sk = NULL;
@@ -2124,17 +2166,19 @@ int mgmt_disconnected(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 type)
 	mgmt_pending_foreach(MGMT_OP_DISCONNECT, hdev, disconnect_rsp, &sk);
 
 	bacpy(&ev.bdaddr, bdaddr);
-	ev.type = link_to_mgmt(type);
+	ev.type = link_to_mgmt(link_type, addr_type);
 
 	err = mgmt_event(MGMT_EV_DISCONNECTED, hdev, &ev, sizeof(ev), sk);
 
 	if (sk)
 		sock_put(sk);
 
+	mgmt_pending_foreach(MGMT_OP_REMOVE_KEYS, hdev, remove_keys_rsp, NULL);
+
 	return err;
 }
 
-int mgmt_disconnect_failed(struct hci_dev *hdev)
+int mgmt_disconnect_failed(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 status)
 {
 	struct pending_cmd *cmd;
 	int err;
@@ -2143,20 +2187,30 @@ int mgmt_disconnect_failed(struct hci_dev *hdev)
 	if (!cmd)
 		return -ENOENT;
 
-	err = cmd_status(cmd->sk, hdev->id, MGMT_OP_DISCONNECT, EIO);
+	if (bdaddr) {
+		struct mgmt_rp_disconnect rp;
+
+		bacpy(&rp.bdaddr, bdaddr);
+		rp.status = status;
+
+		err = cmd_complete(cmd->sk, cmd->index, MGMT_OP_DISCONNECT,
+							&rp, sizeof(rp));
+	} else
+		err = cmd_status(cmd->sk, hdev->id, MGMT_OP_DISCONNECT,
+								status);
 
 	mgmt_pending_remove(cmd);
 
 	return err;
 }
 
-int mgmt_connect_failed(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 type,
-								u8 status)
+int mgmt_connect_failed(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 link_type,
+						u8 addr_type, u8 status)
 {
 	struct mgmt_ev_connect_failed ev;
 
 	bacpy(&ev.addr.bdaddr, bdaddr);
-	ev.addr.type = link_to_mgmt(type);
+	ev.addr.type = link_to_mgmt(link_type, addr_type);
 	ev.status = status;
 
 	return mgmt_event(MGMT_EV_CONNECT_FAILED, hdev, &ev, sizeof(ev), NULL);
@@ -2343,15 +2397,15 @@ int mgmt_read_local_oob_data_reply_complete(struct hci_dev *hdev, u8 *hash,
 	return err;
 }
 
-int mgmt_device_found(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 type,
-					u8 *dev_class, s8 rssi, u8 *eir)
+int mgmt_device_found(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 link_type,
+				u8 addr_type, u8 *dev_class, s8 rssi, u8 *eir)
 {
 	struct mgmt_ev_device_found ev;
 
 	memset(&ev, 0, sizeof(ev));
 
 	bacpy(&ev.addr.bdaddr, bdaddr);
-	ev.addr.type = link_to_mgmt(type);
+	ev.addr.type = link_to_mgmt(link_type, addr_type);
 	ev.rssi = rssi;
 
 	if (eir)
