@@ -1,3 +1,4 @@
+#include <linux/export.h>
 #include <linux/init.h>
 #include <linux/bitops.h>
 #include <linux/elf.h>
@@ -473,7 +474,6 @@ static void __cpuinit early_init_amd(struct cpuinfo_x86 *c)
 	}
 #endif
 	rdmsr_safe(MSR_AMD64_PATCH_LEVEL, &c->microcode, &dummy);
-
 }
 
 static void __cpuinit init_amd(struct cpuinfo_x86 *c)

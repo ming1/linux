@@ -194,9 +194,6 @@ config NEED_PER_CPU_EMBED_FIRST_CHUNK
 config NEED_PER_CPU_PAGE_FIRST_CHUNK
 	def_bool y
 
-config HAVE_CPUMASK_OF_CPU_MAP
-	def_bool X86_64_SMP
-
 config ARCH_HIBERNATION_POSSIBLE
 	def_bool y
 
@@ -281,7 +278,7 @@ config SMP
 	  Y to "Enhanced Real Time Clock Support", below. The "Advanced Power
 	  Management" code will be disabled if you say Y here.
 
-	  See also <file:Documentation/i386/IO-APIC.txt>,
+	  See also <file:Documentation/x86/i386/IO-APIC.txt>,
 	  <file:Documentation/nmi_watchdog.txt> and the SMP-HOWTO available at
 	  <http://www.tldp.org/docs.html#howto>.
 

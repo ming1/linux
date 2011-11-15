@@ -1332,8 +1332,8 @@ late_initcall(random_int_secret_init);
 DEFINE_PER_CPU(__u32 [MD5_DIGEST_WORDS], get_random_int_hash);
 unsigned int get_random_int(void)
 {
-	unsigned int ret;
 	__u32 *hash;
+	unsigned int ret;
 
 	if (arch_get_random_int(&ret))
 		return ret;
