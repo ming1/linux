@@ -133,7 +133,7 @@ int gfs2_unstuff_dinode(struct gfs2_inode *ip, struct page *page)
 		   and write it out to disk */
 
 		unsigned int n = 1;
-		error = gfs2_alloc_block(ip, &block, &n);
+		error = gfs2_alloc_block(ip, &block, &n, 0, NULL);
 		if (error)
 			goto out_brelse;
 		if (isdir) {
@@ -503,7 +503,7 @@ static int gfs2_bmap_alloc(struct inode *inode, const sector_t lblock,
 	do {
 		int error;
 		n = blks - alloced;
-		error = gfs2_alloc_block(ip, &bn, &n);
+		error = gfs2_alloc_block(ip, &bn, &n, 0, NULL);
 		if (error)
 			return error;
 		alloced += n;
@@ -742,9 +742,6 @@ static int do_strip(struct gfs2_inode *ip, struct buffer_head *dibh,
 		revokes = (height) ? sdp->sd_inptrs : sdp->sd_diptrs;
 	else if (ip->i_depth)
 		revokes = sdp->sd_inptrs;
-
-	if (error)
-		return error;
 
 	memset(&rlist, 0, sizeof(struct gfs2_rgrp_list));
 	bstart = 0;
