@@ -28,34 +28,41 @@
 /**
  * @file
  *
- * Functions for SGMII initialization, configuration,
+ * Functions for RGMII/GMII/MII initialization, configuration,
  * and monitoring.
  *
  */
-#ifndef __CVMX_HELPER_SGMII_H__
-#define __CVMX_HELPER_SGMII_H__
+#ifndef __CVMX_HELPER_RGMII_H__
+#define __CVMX_HELPER_RGMII_H__
 
 /**
- * Probe a SGMII interface and determine the number of ports
- * connected to it. The SGMII interface should still be down after
- * this call.
+ * Probe RGMII ports and determine the number present
  *
  * @interface: Interface to probe
  *
- * Returns Number of ports on the interface. Zero to disable.
+ * Returns Number of RGMII/GMII/MII ports (0-4).
  */
-extern int __cvmx_helper_sgmii_probe(int interface);
+extern int __cvmx_helper_rgmii_probe(int interface);
+#define __cvmx_helper_rgmii_enumerate __cvmx_helper_rgmii_probe
 
 /**
- * Bringup and enable a SGMII interface. After this call packet
- * I/O should be fully functional. This is called with IPD
- * enabled but PKO disabled.
+ * Put an RGMII interface in loopback mode. Internal packets sent
+ * out will be received back again on the same port. Externally
+ * received packets will echo back out.
  *
- * @interface: Interface to bring up
- *
- * Returns Zero on success, negative on failure
+ * @port:   IPD port number to loop.
  */
-extern int __cvmx_helper_sgmii_enable(int interface);
+extern void cvmx_helper_rgmii_internal_loopback(int port);
+
+/**
+ * Configure all of the ASX, GMX, and PKO regsiters required
+ * to get RGMII to function on the supplied interface.
+ *
+ * @interface: PKO Interface to configure (0 or 1)
+ *
+ * Returns Zero on success
+ */
+extern int __cvmx_helper_rgmii_enable(int interface);
 
 /**
  * Return the link state of an IPD/PKO port as returned by
@@ -67,7 +74,7 @@ extern int __cvmx_helper_sgmii_enable(int interface);
  *
  * Returns Link state
  */
-extern cvmx_helper_link_info_t __cvmx_helper_sgmii_link_get(int ipd_port);
+extern cvmx_helper_link_info_t __cvmx_helper_rgmii_link_get(int ipd_port);
 
 /**
  * Configure an IPD/PKO port for the specified link state. This
@@ -81,7 +88,7 @@ extern cvmx_helper_link_info_t __cvmx_helper_sgmii_link_get(int ipd_port);
  *
  * Returns Zero on success, negative on failure
  */
-extern int __cvmx_helper_sgmii_link_set(int ipd_port,
+extern int __cvmx_helper_rgmii_link_set(int ipd_port,
 					cvmx_helper_link_info_t link_info);
 
 /**
@@ -97,7 +104,7 @@ extern int __cvmx_helper_sgmii_link_set(int ipd_port,
  *
  * Returns Zero on success, negative on failure.
  */
-extern int __cvmx_helper_sgmii_configure_loopback(int ipd_port,
+extern int __cvmx_helper_rgmii_configure_loopback(int ipd_port,
 						  int enable_internal,
 						  int enable_external);
 

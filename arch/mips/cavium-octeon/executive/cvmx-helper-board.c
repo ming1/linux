@@ -34,16 +34,16 @@
 #include <asm/octeon/octeon.h>
 #include <asm/octeon/cvmx-bootinfo.h>
 
-#include "cvmx-config.h"
+#include <asm/octeon/cvmx-config.h>
 
-#include "cvmx-mdio.h"
+#include <asm/octeon/cvmx-mdio.h>
 
-#include "cvmx-helper.h"
-#include "cvmx-helper-util.h"
-#include "cvmx-helper-board.h"
+#include <asm/octeon/cvmx-helper.h>
+#include <asm/octeon/cvmx-helper-util.h>
+#include <asm/octeon/cvmx-helper-board.h>
 
-#include "cvmx-gmxx-defs.h"
-#include "cvmx-asxx-defs.h"
+#include <asm/octeon/cvmx-gmxx-defs.h>
+#include <asm/octeon/cvmx-asxx-defs.h>
 
 /**
  * cvmx_override_board_link_get(int ipd_port) is a function
@@ -117,6 +117,10 @@ int cvmx_helper_board_get_mii_address(int ipd_port)
 	case CVMX_BOARD_TYPE_EBH5200:
 	case CVMX_BOARD_TYPE_EBH5201:
 	case CVMX_BOARD_TYPE_EBT5200:
+		/* Board has 2 management ports */
+		if ((ipd_port >= CVMX_HELPER_BOARD_MGMT_IPD_PORT) &&
+		    (ipd_port < (CVMX_HELPER_BOARD_MGMT_IPD_PORT + 2)))
+			return ipd_port - CVMX_HELPER_BOARD_MGMT_IPD_PORT;
 		/*
 		 * Board has 4 SGMII ports. The PHYs start right after the MII
 		 * ports MII0 = 0, MII1 = 1, SGMII = 2-5.
@@ -128,6 +132,9 @@ int cvmx_helper_board_get_mii_address(int ipd_port)
 	case CVMX_BOARD_TYPE_EBH5600:
 	case CVMX_BOARD_TYPE_EBH5601:
 	case CVMX_BOARD_TYPE_EBH5610:
+		/* Board has 1 management port */
+		if (ipd_port == CVMX_HELPER_BOARD_MGMT_IPD_PORT)
+			return 0;
 		/*
 		 * Board has 8 SGMII ports. 4 connect out, two connect
 		 * to a switch, and 2 loop to each other
@@ -145,6 +152,19 @@ int cvmx_helper_board_get_mii_address(int ipd_port)
 		/* Board has 4 SGMII ports. connected QLM3(interface 1) */
 		if ((ipd_port >= 16) && (ipd_port < 20))
 			return ipd_port - 16 + 1;
+		else
+			return -1;
+	case CVMX_BOARD_TYPE_NIC_XLE_10G:
+	case CVMX_BOARD_TYPE_NIC10E:
+		return -1;
+	case CVMX_BOARD_TYPE_NIC4E:
+		if (ipd_port >= 0 && ipd_port <= 3)
+			return (ipd_port + 0x1f) & 0x1f;
+		else
+			return -1;
+	case CVMX_BOARD_TYPE_NIC2E:
+		if (ipd_port >= 0 && ipd_port <= 1)
+			return ipd_port + 1;
 		else
 			return -1;
 	case CVMX_BOARD_TYPE_BBGW_REF:
@@ -493,7 +513,6 @@ int cvmx_helper_board_link_set_phy(int phy_addr,
 		cvmx_mdio_phy_reg_control_t reg_control;
 		cvmx_mdio_phy_reg_status_t reg_status;
 		cvmx_mdio_phy_reg_autoneg_adver_t reg_autoneg_adver;
-		cvmx_mdio_phy_reg_extended_status_t reg_extended_status;
 		cvmx_mdio_phy_reg_control_1000_t reg_control_1000;
 
 		reg_status.u16 =
@@ -508,9 +527,6 @@ int cvmx_helper_board_link_set_phy(int phy_addr,
 		reg_autoneg_adver.s.advert_100base_tx_full = 0;
 		reg_autoneg_adver.s.advert_100base_tx_half = 0;
 		if (reg_status.s.capable_extended_status) {
-			reg_extended_status.u16 =
-			    cvmx_mdio_read(phy_addr >> 8, phy_addr & 0xff,
-					   CVMX_MDIO_PHY_REG_EXTENDED_STATUS);
 			reg_control_1000.u16 =
 			    cvmx_mdio_read(phy_addr >> 8, phy_addr & 0xff,
 					   CVMX_MDIO_PHY_REG_CONTROL_1000);

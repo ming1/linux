@@ -32,19 +32,19 @@
  */
 #include <asm/octeon/octeon.h>
 
-#include "cvmx-config.h"
+#include <asm/octeon/cvmx-config.h>
 
-#include "cvmx-fpa.h"
-#include "cvmx-pip.h"
-#include "cvmx-pko.h"
-#include "cvmx-ipd.h"
-#include "cvmx-spi.h"
-#include "cvmx-helper.h"
-#include "cvmx-helper-board.h"
+#include <asm/octeon/cvmx-fpa.h>
+#include <asm/octeon/cvmx-pip.h>
+#include <asm/octeon/cvmx-pko.h>
+#include <asm/octeon/cvmx-ipd.h>
+#include <asm/octeon/cvmx-spi.h>
+#include <asm/octeon/cvmx-helper.h>
+#include <asm/octeon/cvmx-helper-board.h>
 
-#include "cvmx-pip-defs.h"
-#include "cvmx-smix-defs.h"
-#include "cvmx-asxx-defs.h"
+#include <asm/octeon/cvmx-pip-defs.h>
+#include <asm/octeon/cvmx-smix-defs.h>
+#include <asm/octeon/cvmx-asxx-defs.h>
 
 /**
  * cvmx_override_pko_queue_priority(int ipd_port, uint64_t
@@ -234,6 +234,80 @@ static int __cvmx_helper_port_setup_ipd(int ipd_port)
 }
 
 /**
+ * This function sets the interface_port_count[interface] correctly,
+ * without modifying any hardware configuration.  Hardware setup of
+ * the ports will be performed later.
+ *
+ * @interface: Interface to probe
+ *
+ * Returns Zero on success, negative on failure
+ */
+int cvmx_helper_interface_enumerate(int interface)
+{
+	switch (cvmx_helper_interface_get_mode(interface)) {
+		/* These types don't support ports to IPD/PKO */
+	case CVMX_HELPER_INTERFACE_MODE_DISABLED:
+	case CVMX_HELPER_INTERFACE_MODE_PCIE:
+		interface_port_count[interface] = 0;
+		break;
+		/* XAUI is a single high speed port */
+	case CVMX_HELPER_INTERFACE_MODE_XAUI:
+		interface_port_count[interface] =
+		    __cvmx_helper_xaui_enumerate(interface);
+		break;
+		/*
+		 * RGMII/GMII/MII are all treated about the same. Most
+		 * functions refer to these ports as RGMII.
+		 */
+	case CVMX_HELPER_INTERFACE_MODE_RGMII:
+	case CVMX_HELPER_INTERFACE_MODE_GMII:
+		interface_port_count[interface] =
+		    __cvmx_helper_rgmii_enumerate(interface);
+		break;
+		/*
+		 * SPI4 can have 1-16 ports depending on the device at
+		 * the other end.
+		 */
+	case CVMX_HELPER_INTERFACE_MODE_SPI:
+		interface_port_count[interface] =
+		    __cvmx_helper_spi_enumerate(interface);
+		break;
+		/*
+		 * SGMII can have 1-4 ports depending on how many are
+		 * hooked up.
+		 */
+	case CVMX_HELPER_INTERFACE_MODE_SGMII:
+	case CVMX_HELPER_INTERFACE_MODE_PICMG:
+		interface_port_count[interface] =
+		    __cvmx_helper_sgmii_enumerate(interface);
+		break;
+		/* PCI target Network Packet Interface */
+	case CVMX_HELPER_INTERFACE_MODE_NPI:
+		interface_port_count[interface] =
+		    __cvmx_helper_npi_enumerate(interface);
+		break;
+		/*
+		 * Special loopback only ports. These are not the same
+		 * as other ports in loopback mode.
+		 */
+	case CVMX_HELPER_INTERFACE_MODE_LOOP:
+		interface_port_count[interface] =
+		    __cvmx_helper_loop_enumerate(interface);
+		break;
+	}
+
+	interface_port_count[interface] =
+	    __cvmx_helper_board_interface_probe(interface,
+						interface_port_count
+						[interface]);
+
+	/* Make sure all global variables propagate to other cores */
+	CVMX_SYNCWS;
+
+	return 0;
+}
+
+/**
  * This function probes an interface to determine the actual
  * number of hardware ports connected to it. It doesn't setup the
  * ports or enable them. The main goal here is to set the global
@@ -246,6 +320,7 @@ static int __cvmx_helper_port_setup_ipd(int ipd_port)
  */
 int cvmx_helper_interface_probe(int interface)
 {
+	cvmx_helper_interface_enumerate(interface);
 	/* At this stage in the game we don't want packets to be moving yet.
 	   The following probe calls should perform hardware setup
 	   needed to determine port counts. Receive must still be disabled */
@@ -253,12 +328,10 @@ int cvmx_helper_interface_probe(int interface)
 		/* These types don't support ports to IPD/PKO */
 	case CVMX_HELPER_INTERFACE_MODE_DISABLED:
 	case CVMX_HELPER_INTERFACE_MODE_PCIE:
-		interface_port_count[interface] = 0;
 		break;
 		/* XAUI is a single high speed port */
 	case CVMX_HELPER_INTERFACE_MODE_XAUI:
-		interface_port_count[interface] =
-		    __cvmx_helper_xaui_probe(interface);
+		__cvmx_helper_xaui_probe(interface);
 		break;
 		/*
 		 * RGMII/GMII/MII are all treated about the same. Most
@@ -266,16 +339,14 @@ int cvmx_helper_interface_probe(int interface)
 		 */
 	case CVMX_HELPER_INTERFACE_MODE_RGMII:
 	case CVMX_HELPER_INTERFACE_MODE_GMII:
-		interface_port_count[interface] =
-		    __cvmx_helper_rgmii_probe(interface);
+		__cvmx_helper_rgmii_probe(interface);
 		break;
 		/*
 		 * SPI4 can have 1-16 ports depending on the device at
 		 * the other end.
 		 */
 	case CVMX_HELPER_INTERFACE_MODE_SPI:
-		interface_port_count[interface] =
-		    __cvmx_helper_spi_probe(interface);
+		__cvmx_helper_spi_probe(interface);
 		break;
 		/*
 		 * SGMII can have 1-4 ports depending on how many are
@@ -283,28 +354,20 @@ int cvmx_helper_interface_probe(int interface)
 		 */
 	case CVMX_HELPER_INTERFACE_MODE_SGMII:
 	case CVMX_HELPER_INTERFACE_MODE_PICMG:
-		interface_port_count[interface] =
-		    __cvmx_helper_sgmii_probe(interface);
+		__cvmx_helper_sgmii_probe(interface);
 		break;
 		/* PCI target Network Packet Interface */
 	case CVMX_HELPER_INTERFACE_MODE_NPI:
-		interface_port_count[interface] =
-		    __cvmx_helper_npi_probe(interface);
+		__cvmx_helper_npi_probe(interface);
 		break;
 		/*
 		 * Special loopback only ports. These are not the same
 		 * as other ports in loopback mode.
 		 */
 	case CVMX_HELPER_INTERFACE_MODE_LOOP:
-		interface_port_count[interface] =
-		    __cvmx_helper_loop_probe(interface);
+		__cvmx_helper_loop_probe(interface);
 		break;
 	}
-
-	interface_port_count[interface] =
-	    __cvmx_helper_board_interface_probe(interface,
-						interface_port_count
-						[interface]);
 
 	/* Make sure all global variables propagate to other cores */
 	CVMX_SYNCWS;
@@ -548,7 +611,6 @@ int __cvmx_helper_errata_fix_ipd_ptr_alignment(void)
 	union cvmx_gmxx_prtx_cfg gmx_cfg;
 	int retry_cnt;
 	int retry_loop_cnt;
-	int mtu;
 	int i;
 	cvmx_helper_link_info_t link_info;
 
@@ -662,10 +724,6 @@ int __cvmx_helper_errata_fix_ipd_ptr_alignment(void)
 		cvmx_write_csr(CVMX_ASXX_RX_PRT_EN(INTERFACE(FIX_IPD_OUTPORT)),
 			       1 << INDEX(FIX_IPD_OUTPORT));
 
-		mtu =
-		    cvmx_read_csr(CVMX_GMXX_RXX_JABBER
-				  (INDEX(FIX_IPD_OUTPORT),
-				   INTERFACE(FIX_IPD_OUTPORT)));
 		cvmx_write_csr(CVMX_GMXX_RXX_JABBER
 			       (INDEX(FIX_IPD_OUTPORT),
 				INTERFACE(FIX_IPD_OUTPORT)), 65392 - 14 - 4);
