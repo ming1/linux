@@ -1885,7 +1885,7 @@ out:
 				break;
 
 			if (ss->cancel_attach_task)
-				ss->cancel_attach_task(cgrp, tsk);
+				ss->cancel_attach_task(cgrp, oldcgrp, tsk);
 			if (ss->cancel_attach)
 				ss->cancel_attach(ss, cgrp, tsk);
 		}
@@ -1983,6 +1983,11 @@ static int css_set_prefetch(struct cgroup *cgrp, struct css_set *cg,
 	return 0;
 }
 
+struct task_cgroup {
+	struct task_struct *tsk;
+	struct cgroup *oldcgrp;
+};
+
 /**
  * cgroup_attach_proc - attach all threads in a threadgroup to a cgroup
  * @cgrp: the cgroup to attach to
@@ -2003,6 +2008,7 @@ int cgroup_attach_proc(struct cgroup *cgrp, struct task_struct *leader)
 	/* threadgroup list cursor and array */
 	struct task_struct *tsk;
 	struct flex_array *group;
+	struct task_cgroup *tc;
 	/*
 	 * we need to make sure we have css_sets for all the tasks we're
 	 * going to move -before- we actually start moving them, so that in
@@ -2020,7 +2026,7 @@ int cgroup_attach_proc(struct cgroup *cgrp, struct task_struct *leader)
 	 */
 	group_size = get_nr_threads(leader);
 	/* flex_array supports very large thread-groups better than kmalloc. */
-	group = flex_array_alloc(sizeof(struct task_struct *), group_size,
+	group = flex_array_alloc(sizeof(struct task_cgroup), group_size,
 				 GFP_KERNEL);
 	if (!group)
 		return -ENOMEM;
@@ -2047,14 +2053,18 @@ int cgroup_attach_proc(struct cgroup *cgrp, struct task_struct *leader)
 	tsk = leader;
 	i = 0;
 	do {
+		struct task_cgroup tsk_cgrp;
+
 		/* as per above, nr_threads may decrease, but not increase. */
 		BUG_ON(i >= group_size);
 		get_task_struct(tsk);
+		tsk_cgrp.tsk = tsk;
+		tsk_cgrp.oldcgrp = task_cgroup_from_root(tsk, root);
 		/*
 		 * saying GFP_ATOMIC has no effect here because we did prealloc
 		 * earlier, but it's good form to communicate our expectations.
 		 */
-		retval = flex_array_put_ptr(group, i, tsk, GFP_ATOMIC);
+		retval = flex_array_put(group, i, &tsk_cgrp, GFP_ATOMIC);
 		BUG_ON(retval != 0);
 		i++;
 	} while_each_thread(leader, tsk);
@@ -2077,14 +2087,13 @@ int cgroup_attach_proc(struct cgroup *cgrp, struct task_struct *leader)
 		if (ss->can_attach_task) {
 			/* run on each task in the threadgroup. */
 			for (i = 0; i < group_size; i++) {
-				tsk = flex_array_get_ptr(group, i);
-				oldcgrp = task_cgroup_from_root(tsk, root);
-
+				tc = flex_array_get(group, i);
 				retval = ss->can_attach_task(cgrp,
-							     oldcgrp, tsk);
+							     tc->oldcgrp,
+							     tc->tsk);
 				if (retval) {
 					failed_ss = ss;
-					failed_task = tsk;
+					failed_task = tc->tsk;
 					goto out_cancel_attach;
 				}
 			}
@@ -2097,10 +2106,10 @@ int cgroup_attach_proc(struct cgroup *cgrp, struct task_struct *leader)
 	 */
 	INIT_LIST_HEAD(&newcg_list);
 	for (i = 0; i < group_size; i++) {
-		tsk = flex_array_get_ptr(group, i);
+		tc = flex_array_get(group, i);
+		tsk = tc->tsk;
 		/* nothing to do if this task is already in the cgroup */
-		oldcgrp = task_cgroup_from_root(tsk, root);
-		if (cgrp == oldcgrp)
+		if (cgrp == tc->oldcgrp)
 			continue;
 		/* get old css_set pointer */
 		task_lock(tsk);
@@ -2136,9 +2145,10 @@ int cgroup_attach_proc(struct cgroup *cgrp, struct task_struct *leader)
 			ss->pre_attach(cgrp);
 	}
 	for (i = 0; i < group_size; i++) {
-		tsk = flex_array_get_ptr(group, i);
+		tc = flex_array_get(group, i);
+		tsk = tc->tsk;
+		oldcgrp = tc->oldcgrp;
 		/* leave current thread as it is if it's already there */
-		oldcgrp = task_cgroup_from_root(tsk, root);
 		if (cgrp == oldcgrp)
 			continue;
 		/* if the thread is PF_EXITING, it can just get skipped. */
@@ -2151,7 +2161,7 @@ int cgroup_attach_proc(struct cgroup *cgrp, struct task_struct *leader)
 			}
 		} else if (retval == -ESRCH) {
 			if (ss->cancel_attach_task)
-				ss->cancel_attach_task(cgrp, tsk);
+				ss->cancel_attach_task(cgrp, oldcgrp, tsk);
 		} else {
 			BUG_ON(1);
 		}
@@ -2188,10 +2198,10 @@ out_cancel_attach:
 			if (ss->cancel_attach_task && (ss != failed_ss ||
 						       failed_task)) {
 				for (i = 0; i < group_size; i++) {
-					tsk = flex_array_get_ptr(group, i);
-					if (tsk == failed_task)
+					tc = flex_array_get(group, i);
+					if (tc->tsk == failed_task)
 						break;
-					ss->cancel_attach_task(cgrp, tsk);
+					ss->cancel_attach_task(cgrp, tc->oldcgrp, tc->tsk);
 				}
 			}
 
@@ -2206,8 +2216,8 @@ out_cancel_attach:
 	}
 	/* clean up the array of referenced threads in the group. */
 	for (i = 0; i < group_size; i++) {
-		tsk = flex_array_get_ptr(group, i);
-		put_task_struct(tsk);
+		tc = flex_array_get(group, i);
+		put_task_struct(tc->tsk);
 	}
 out_free_group_list:
 	flex_array_free(group);
