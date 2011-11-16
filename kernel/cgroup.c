@@ -2201,7 +2201,8 @@ out_cancel_attach:
 					tc = flex_array_get(group, i);
 					if (tc->tsk == failed_task)
 						break;
-					ss->cancel_attach_task(cgrp, tc->oldcgrp, tc->tsk);
+					ss->cancel_attach_task(cgrp,
+							tc->oldcgrp, tc->tsk);
 				}
 			}
 
