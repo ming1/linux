@@ -16,6 +16,7 @@
 #include <linux/capability.h>
 #include <linux/init.h>
 #include <linux/pagemap.h>
+#include <linux/vmalloc.h>
 #include <linux/file.h>
 #include <linux/mount.h>
 #include <linux/namei.h>
