@@ -123,8 +123,8 @@ extern int mq_init_ns(struct ipc_namespace *ns);
 #define HARD_MSGMAX		    65536
 #define MIN_MSGSIZEMAX		      128
 #define DFLT_MSGSIZE		     8192U
-#define DFLT_MSGSIZEMAX		1024*1024
-#define HARD_MSGSIZEMAX	     16*1024*1024
+#define DFLT_MSGSIZEMAX		(1024*1024)
+#define HARD_MSGSIZEMAX	     (16*1024*1024)
 #else
 static inline int mq_init_ns(struct ipc_namespace *ns) { return 0; }
 #endif
