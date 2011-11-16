@@ -3451,7 +3451,10 @@ static void setup_zone_migrate_reserve(struct zone *zone)
 
 		/* Only test what is necessary when the reserves are not met */
 		if (reserve > 0) {
-			/* Blocks with reserved pages will never free, skip them. */
+			/*
+			 * Blocks with reserved pages will never free, skip
+			 * them.
+			 */
 			block_end_pfn = min(pfn + pageblock_nr_pages, end_pfn);
 			if (pageblock_is_reserved(pfn, block_end_pfn))
 				continue;
@@ -3464,8 +3467,10 @@ static void setup_zone_migrate_reserve(struct zone *zone)
 
 			/* Suitable for reserving if this block is movable */
 			if (block_migratetype == MIGRATE_MOVABLE) {
-				set_pageblock_migratetype(page, MIGRATE_RESERVE);
-				move_freepages_block(zone, page, MIGRATE_RESERVE);
+				set_pageblock_migratetype(page,
+							MIGRATE_RESERVE);
+				move_freepages_block(zone, page,
+							MIGRATE_RESERVE);
 				reserve--;
 				continue;
 			}
