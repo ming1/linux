@@ -332,11 +332,15 @@ store_mem_state(struct sys_device *dev,
 
 	mem = container_of(dev, struct memory_block, sysdev);
 
-	if (!strncmp(buf, "online", min((int)count, 6)))
+	if (!strncmp(buf, "online", min((int)count, 6))) {
 		ret = memory_block_change_state(mem, MEM_ONLINE, MEM_OFFLINE);
-	else if(!strncmp(buf, "offline", min((int)count, 7)))
+		if (ret == 0)
+			kobject_uevent(&dev->kobj, KOBJ_ONLINE);
+	} else if (!strncmp(buf, "offline", min((int)count, 7))) {
 		ret = memory_block_change_state(mem, MEM_OFFLINE, MEM_ONLINE);
-
+		if (ret == 0)
+			kobject_uevent(&dev->kobj, KOBJ_OFFLINE);
+	}
 	if (ret)
 		return ret;
 	return count;
