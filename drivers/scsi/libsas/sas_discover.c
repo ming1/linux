@@ -43,6 +43,7 @@ void sas_init_dev(struct domain_device *dev)
         case EDGE_DEV:
         case FANOUT_DEV:
                 INIT_LIST_HEAD(&dev->ex_dev.children);
+		mutex_init(&dev->ex_dev.cmd_mutex);
                 break;
         case SATA_DEV:
         case SATA_PM:
