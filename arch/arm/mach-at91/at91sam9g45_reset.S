@@ -26,7 +26,7 @@
 at91sam9g45_restart:
 			ldr	r0, .at91_va_base_sdramc0	@ preload constants
 			ldr	r5, .at91_va_base_sdramc1	@ preload constants
-			ldr	r4, .at91_va_base_rstc_cr
+			ldr	r4, =at91_rstc_base
 			ldr	r1, [r4]
 
 			mov	r2, #1
@@ -40,7 +40,7 @@ at91sam9g45_restart:
 			strne	r3, [r5, #AT91_DDRSDRC_LPR]	@ power down DDR1
 			str	r2, [r0, #AT91_DDRSDRC_RTR]	@ disable DDR0 access
 			str	r3, [r0, #AT91_DDRSDRC_LPR]	@ power down DDR0
-			str	r4, [r1]			@ reset processor
+			str	r4, [r1, #AT91_RSTC_CR]		@ reset processor
 
 			b	.
 
@@ -52,5 +52,3 @@ at91sam9g45_restart:
 #else
 	.word 0
 #endif
-.at91_va_base_rstc_cr:
-	.word AT91_VA_BASE_SYS + AT91_RSTC_CR
