@@ -110,6 +110,7 @@ struct sd_ssr {
 struct sd_switch_caps {
 	unsigned int		hs_max_dtr;
 	unsigned int		uhs_max_dtr;
+#define HIGH_SPEED_MAX_DTR	50000000
 #define UHS_SDR104_MAX_DTR	208000000
 #define UHS_SDR50_MAX_DTR	100000000
 #define UHS_DDR50_MAX_DTR	50000000
@@ -117,11 +118,13 @@ struct sd_switch_caps {
 #define UHS_SDR12_MAX_DTR	25000000
 	unsigned int		sd3_bus_mode;
 #define UHS_SDR12_BUS_SPEED	0
+#define HIGH_SPEED_BUS_SPEED	1
 #define UHS_SDR25_BUS_SPEED	1
 #define UHS_SDR50_BUS_SPEED	2
 #define UHS_SDR104_BUS_SPEED	3
 #define UHS_DDR50_BUS_SPEED	4
 
+#define SD_MODE_HIGH_SPEED	(1 << HIGH_SPEED_BUS_SPEED)
 #define SD_MODE_UHS_SDR12	(1 << UHS_SDR12_BUS_SPEED)
 #define SD_MODE_UHS_SDR25	(1 << UHS_SDR25_BUS_SPEED)
 #define SD_MODE_UHS_SDR50	(1 << UHS_SDR50_BUS_SPEED)
@@ -218,6 +221,7 @@ struct mmc_card {
 #define MMC_QUIRK_INAND_CMD38	(1<<6)		/* iNAND devices have broken CMD38 */
 #define MMC_QUIRK_BLK_NO_CMD23	(1<<7)		/* Avoid CMD23 for regular multiblock */
 #define MMC_QUIRK_BROKEN_BYTE_MODE_512 (1<<8)	/* Avoid sending 512 bytes in */
+#define MMC_QUIRK_LONG_READ_TIME (1<<9)		/* Data read time > CSD says */
 						/* byte mode */
 	unsigned int    poweroff_notify_state;	/* eMMC4.5 notify feature */
 #define MMC_NO_POWER_NOTIFICATION	0
@@ -363,7 +367,8 @@ static inline void __maybe_unused remove_quirk(struct mmc_card *card, int data)
 #define mmc_card_highspeed(c)	((c)->state & MMC_STATE_HIGHSPEED)
 #define mmc_card_blockaddr(c)	((c)->state & MMC_STATE_BLOCKADDR)
 #define mmc_card_ddr_mode(c)	((c)->state & MMC_STATE_HIGHSPEED_DDR)
-#define mmc_sd_card_uhs(c) ((c)->state & MMC_STATE_ULTRAHIGHSPEED)
+#define mmc_card_uhs(c)		((c)->state & MMC_STATE_ULTRAHIGHSPEED)
+#define mmc_sd_card_uhs(c)	((c)->state & MMC_STATE_ULTRAHIGHSPEED)
 #define mmc_card_ext_capacity(c) ((c)->state & MMC_CARD_SDXC)
 
 #define mmc_card_set_present(c)	((c)->state |= MMC_STATE_PRESENT)
@@ -371,6 +376,7 @@ static inline void __maybe_unused remove_quirk(struct mmc_card *card, int data)
 #define mmc_card_set_highspeed(c) ((c)->state |= MMC_STATE_HIGHSPEED)
 #define mmc_card_set_blockaddr(c) ((c)->state |= MMC_STATE_BLOCKADDR)
 #define mmc_card_set_ddr_mode(c) ((c)->state |= MMC_STATE_HIGHSPEED_DDR)
+#define mmc_card_set_uhs(c) ((c)->state |= MMC_STATE_ULTRAHIGHSPEED)
 #define mmc_sd_card_set_uhs(c) ((c)->state |= MMC_STATE_ULTRAHIGHSPEED)
 #define mmc_card_set_ext_capacity(c) ((c)->state |= MMC_CARD_SDXC)
 
@@ -431,6 +437,11 @@ static inline int mmc_card_nonstd_func_interface(const struct mmc_card *c)
 static inline int mmc_card_broken_byte_mode_512(const struct mmc_card *c)
 {
 	return c->quirks & MMC_QUIRK_BROKEN_BYTE_MODE_512;
+}
+
+static inline int mmc_card_long_read_time(const struct mmc_card *c)
+{
+	return c->quirks & MMC_QUIRK_LONG_READ_TIME;
 }
 
 #define mmc_card_name(c)	((c)->cid.prod_name)
