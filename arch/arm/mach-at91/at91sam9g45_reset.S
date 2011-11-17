@@ -12,11 +12,7 @@
 
 #include <linux/linkage.h>
 #include <mach/hardware.h>
-#if defined(CONFIG_ARCH_AT91CAP9)
-#include <mach/at91cap9_ddrsdr.h>
-#elif defined(CONFIG_ARCH_AT91SAM9G45)
 #include <mach/at91sam9_ddrsdr.h>
-#endif
 #include <mach/at91_rstc.h>
 
 			.arm
