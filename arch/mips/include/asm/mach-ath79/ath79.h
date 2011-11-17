@@ -26,7 +26,9 @@ enum ath79_soc_type {
 	ATH79_SOC_AR7241,
 	ATH79_SOC_AR7242,
 	ATH79_SOC_AR9130,
-	ATH79_SOC_AR9132
+	ATH79_SOC_AR9132,
+	ATH79_SOC_AR9330,
+	ATH79_SOC_AR9331,
 };
 
 extern enum ath79_soc_type ath79_soc;
@@ -64,6 +66,12 @@ static inline int soc_is_ar913x(void)
 {
 	return (ath79_soc == ATH79_SOC_AR9130 ||
 		ath79_soc == ATH79_SOC_AR9132);
+}
+
+static inline int soc_is_ar933x(void)
+{
+	return (ath79_soc == ATH79_SOC_AR9330 ||
+		ath79_soc == ATH79_SOC_AR9331);
 }
 
 extern void __iomem *ath79_ddr_base;
