@@ -228,18 +228,6 @@ static void hci_init_req(struct hci_dev *hdev, unsigned long opt)
 	/* Read Buffer Size (ACL mtu, max pkt, etc.) */
 	hci_send_cmd(hdev, HCI_OP_READ_BUFFER_SIZE, 0, NULL);
 
-#if 0
-	/* Host buffer size */
-	{
-		struct hci_cp_host_buffer_size cp;
-		cp.acl_mtu = cpu_to_le16(HCI_MAX_ACL_SIZE);
-		cp.sco_mtu = HCI_MAX_SCO_SIZE;
-		cp.acl_max_pkt = cpu_to_le16(0xffff);
-		cp.sco_max_pkt = cpu_to_le16(0xffff);
-		hci_send_cmd(hdev, HCI_OP_HOST_BUFFER_SIZE, sizeof(cp), &cp);
-	}
-#endif
-
 	/* Read BD Address */
 	hci_send_cmd(hdev, HCI_OP_READ_BD_ADDR, 0, NULL);
 
@@ -521,8 +509,9 @@ int hci_dev_open(__u16 dev)
 	if (test_bit(HCI_QUIRK_RAW_DEVICE, &hdev->quirks))
 		set_bit(HCI_RAW, &hdev->flags);
 
-	/* Treat all non BR/EDR controllers as raw devices for now */
-	if (hdev->dev_type != HCI_BREDR)
+	/* Treat all non BR/EDR controllers as raw devices if
+	   enable_hs is not set */
+	if (hdev->dev_type != HCI_BREDR && !enable_hs)
 		set_bit(HCI_RAW, &hdev->flags);
 
 	if (hdev->open(hdev)) {
@@ -1336,14 +1325,12 @@ int hci_blacklist_del(struct hci_dev *hdev, bdaddr_t *bdaddr)
 {
 	struct bdaddr_list *entry;
 
-	if (bacmp(bdaddr, BDADDR_ANY) == 0) {
+	if (bacmp(bdaddr, BDADDR_ANY) == 0)
 		return hci_blacklist_clear(hdev);
-	}
 
 	entry = hci_blacklist_lookup(hdev, bdaddr);
-	if (!entry) {
+	if (!entry)
 		return -ENOENT;
-	}
 
 	list_del(&entry->list);
 	kfree(entry);
