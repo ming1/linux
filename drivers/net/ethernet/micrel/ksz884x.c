@@ -6093,9 +6093,10 @@ static void netdev_get_drvinfo(struct net_device *dev,
 	struct dev_priv *priv = netdev_priv(dev);
 	struct dev_info *hw_priv = priv->adapter;
 
-	strcpy(info->driver, DRV_NAME);
-	strcpy(info->version, DRV_VERSION);
-	strcpy(info->bus_info, pci_name(hw_priv->pdev));
+	strlcpy(info->driver, DRV_NAME, sizeof(info->driver));
+	strlcpy(info->version, DRV_VERSION, sizeof(info->version));
+	strlcpy(info->bus_info, pci_name(hw_priv->pdev),
+		sizeof(info->bus_info));
 }
 
 /**
@@ -6587,7 +6588,8 @@ static void netdev_get_ethtool_stats(struct net_device *dev,
  *
  * Return 0 if successful; otherwise an error code.
  */
-static int netdev_set_features(struct net_device *dev, u32 features)
+static int netdev_set_features(struct net_device *dev,
+	netdev_features_t features)
 {
 	struct dev_priv *priv = netdev_priv(dev);
 	struct dev_info *hw_priv = priv->adapter;

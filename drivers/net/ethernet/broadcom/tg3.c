@@ -6968,7 +6968,7 @@ static int tg3_phy_lpbk_set(struct tg3 *tp, u32 speed, bool extlpbk)
 	return 0;
 }
 
-static void tg3_set_loopback(struct net_device *dev, u32 features)
+static void tg3_set_loopback(struct net_device *dev, netdev_features_t features)
 {
 	struct tg3 *tp = netdev_priv(dev);
 
@@ -6994,7 +6994,8 @@ static void tg3_set_loopback(struct net_device *dev, u32 features)
 	}
 }
 
-static u32 tg3_fix_features(struct net_device *dev, u32 features)
+static netdev_features_t tg3_fix_features(struct net_device *dev,
+	netdev_features_t features)
 {
 	struct tg3 *tp = netdev_priv(dev);
 
@@ -7004,9 +7005,9 @@ static u32 tg3_fix_features(struct net_device *dev, u32 features)
 	return features;
 }
 
-static int tg3_set_features(struct net_device *dev, u32 features)
+static int tg3_set_features(struct net_device *dev, netdev_features_t features)
 {
-	u32 changed = dev->features ^ features;
+	netdev_features_t changed = dev->features ^ features;
 
 	if ((changed & NETIF_F_LOOPBACK) && netif_running(dev))
 		tg3_set_loopback(dev, features);
@@ -10428,10 +10429,10 @@ static void tg3_get_drvinfo(struct net_device *dev, struct ethtool_drvinfo *info
 {
 	struct tg3 *tp = netdev_priv(dev);
 
-	strcpy(info->driver, DRV_MODULE_NAME);
-	strcpy(info->version, DRV_MODULE_VERSION);
-	strcpy(info->fw_version, tp->fw_ver);
-	strcpy(info->bus_info, pci_name(tp->pdev));
+	strlcpy(info->driver, DRV_MODULE_NAME, sizeof(info->driver));
+	strlcpy(info->version, DRV_MODULE_VERSION, sizeof(info->version));
+	strlcpy(info->fw_version, tp->fw_ver, sizeof(info->fw_version));
+	strlcpy(info->bus_info, pci_name(tp->pdev), sizeof(info->bus_info));
 }
 
 static void tg3_get_wol(struct net_device *dev, struct ethtool_wolinfo *wol)
@@ -15313,7 +15314,7 @@ static int __devinit tg3_init_one(struct pci_dev *pdev,
 	u32 sndmbx, rcvmbx, intmbx;
 	char str[40];
 	u64 dma_mask, persist_dma_mask;
-	u32 features = 0;
+	netdev_features_t features = 0;
 
 	printk_once(KERN_INFO "%s\n", version);
 
