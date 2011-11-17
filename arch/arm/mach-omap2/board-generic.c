@@ -20,14 +20,14 @@
 #include <asm/mach/arch.h>
 
 #include <plat/board.h>
-#include <plat/common.h>
-#include <mach/omap4-common.h>
+#include "common.h"
 #include "common-board-devices.h"
 
 /*
  * XXX: Still needed to boot until the i2c & twl driver is adapted to
  * device-tree
  */
+#ifdef CONFIG_ARCH_OMAP4
 static struct twl4030_platform_data sdp4430_twldata = {
 	.irq_base	= TWL6030_IRQ_BASE,
 	.irq_end	= TWL6030_IRQ_END,
@@ -37,7 +37,9 @@ static void __init omap4_i2c_init(void)
 {
 	omap4_pmic_init("twl6030", &sdp4430_twldata);
 }
+#endif
 
+#ifdef CONFIG_ARCH_OMAP3
 static struct twl4030_platform_data beagle_twldata = {
 	.irq_base	= TWL4030_IRQ_BASE,
 	.irq_end	= TWL4030_IRQ_END,
@@ -47,6 +49,7 @@ static void __init omap3_i2c_init(void)
 {
 	omap3_pmic_init("twl4030", &beagle_twldata);
 }
+#endif
 
 static struct of_device_id omap_dt_match_table[] __initdata = {
 	{ .compatible = "simple-bus", },
@@ -72,17 +75,21 @@ static void __init omap_generic_init(void)
 	of_platform_populate(NULL, omap_dt_match_table, NULL, NULL);
 }
 
+#ifdef CONFIG_ARCH_OMAP4
 static void __init omap4_init(void)
 {
 	omap4_i2c_init();
 	omap_generic_init();
 }
+#endif
 
+#ifdef CONFIG_ARCH_OMAP3
 static void __init omap3_init(void)
 {
 	omap3_i2c_init();
 	omap_generic_init();
 }
+#endif
 
 #if defined(CONFIG_SOC_OMAP2420)
 static const char *omap242x_boards_compat[] __initdata = {
