@@ -549,9 +549,10 @@ int gfs2_xattr_acl_get(struct gfs2_inode *ip, const char *name, char **ppdata)
 		goto out;
 
 	error = gfs2_ea_get_copy(ip, &el, data, len);
-	if (error == 0)
-		error = len;
-	*ppdata = data;
+	if (error < 0)
+		kfree(data);
+	else
+		*ppdata = data;
 out:
 	brelse(el.el_bh);
 	return error;
@@ -609,7 +610,7 @@ static int ea_alloc_blk(struct gfs2_inode *ip, struct buffer_head **bhp)
 	u64 block;
 	int error;
 
-	error = gfs2_alloc_block(ip, &block, &n);
+	error = gfs2_alloc_block(ip, &block, &n, 0, NULL);
 	if (error)
 		return error;
 	gfs2_trans_add_unrevoke(sdp, block, 1);
@@ -671,7 +672,7 @@ static int ea_write(struct gfs2_inode *ip, struct gfs2_ea_header *ea,
 			int mh_size = sizeof(struct gfs2_meta_header);
 			unsigned int n = 1;
 
-			error = gfs2_alloc_block(ip, &block, &n);
+			error = gfs2_alloc_block(ip, &block, &n, 0, NULL);
 			if (error)
 				return error;
 			gfs2_trans_add_unrevoke(sdp, block, 1);
@@ -991,7 +992,7 @@ static int ea_set_block(struct gfs2_inode *ip, struct gfs2_ea_request *er,
 	} else {
 		u64 blk;
 		unsigned int n = 1;
-		error = gfs2_alloc_block(ip, &blk, &n);
+		error = gfs2_alloc_block(ip, &blk, &n, 0, NULL);
 		if (error)
 			return error;
 		gfs2_trans_add_unrevoke(sdp, blk, 1);
