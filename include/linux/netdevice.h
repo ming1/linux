@@ -51,6 +51,8 @@
 #include <net/dcbnl.h>
 #endif
 
+#include <linux/netdev_features.h>
+
 struct vlan_group;
 struct netpoll_info;
 struct phy_device;
@@ -211,6 +213,11 @@ enum {
 
 #include <linux/cache.h>
 #include <linux/skbuff.h>
+
+#ifdef CONFIG_RPS
+#include <linux/jump_label.h>
+extern struct jump_label_key rps_needed;
+#endif
 
 struct neighbour;
 struct neigh_parms;
@@ -530,7 +537,7 @@ struct netdev_queue {
 	struct Qdisc		*qdisc;
 	unsigned long		state;
 	struct Qdisc		*qdisc_sleeping;
-#if defined(CONFIG_RPS) || defined(CONFIG_XPS)
+#ifdef CONFIG_SYSFS
 	struct kobject		kobj;
 #endif
 #if defined(CONFIG_XPS) && defined(CONFIG_NUMA)
@@ -545,6 +552,12 @@ struct netdev_queue {
 	 * please use this field instead of dev->trans_start
 	 */
 	unsigned long		trans_start;
+
+	/*
+	 * Number of TX timeouts for this queue
+	 * (/sys/class/net/DEV/Q/trans_timeout)
+	 */
+	unsigned long		trans_timeout;
 } ____cacheline_aligned_in_smp;
 
 static inline int netdev_queue_numa_node_read(const struct netdev_queue *q)
@@ -845,12 +858,13 @@ struct netdev_tc_txq {
  *	Called to release previously enslaved netdev.
  *
  *      Feature/offload setting functions.
- * u32 (*ndo_fix_features)(struct net_device *dev, u32 features);
+ * netdev_features_t (*ndo_fix_features)(struct net_device *dev,
+ *		netdev_features_t features);
  *	Adjusts the requested feature flags according to device-specific
  *	constraints, and returns the resulting flags. Must not modify
  *	the device state.
  *
- * int (*ndo_set_features)(struct net_device *dev, u32 features);
+ * int (*ndo_set_features)(struct net_device *dev, netdev_features_t features);
  *	Called to update device configuration to new features. Passed
  *	feature set might be less than what was returned by ndo_fix_features()).
  *	Must return >0 or -errno if it changed dev->features itself.
@@ -944,10 +958,10 @@ struct net_device_ops {
 						 struct net_device *slave_dev);
 	int			(*ndo_del_slave)(struct net_device *dev,
 						 struct net_device *slave_dev);
-	u32			(*ndo_fix_features)(struct net_device *dev,
-						    u32 features);
+	netdev_features_t	(*ndo_fix_features)(struct net_device *dev,
+						    netdev_features_t features);
 	int			(*ndo_set_features)(struct net_device *dev,
-						    u32 features);
+						    netdev_features_t features);
 };
 
 /*
@@ -997,91 +1011,13 @@ struct net_device {
 	struct list_head	unreg_list;
 
 	/* currently active device features */
-	u32			features;
+	netdev_features_t	features;
 	/* user-changeable features */
-	u32			hw_features;
+	netdev_features_t	hw_features;
 	/* user-requested features */
-	u32			wanted_features;
+	netdev_features_t	wanted_features;
 	/* mask of features inheritable by VLAN devices */
-	u32			vlan_features;
-
-	/* Net device feature bits; if you change something,
-	 * also update netdev_features_strings[] in ethtool.c */
-
-#define NETIF_F_SG		1	/* Scatter/gather IO. */
-#define NETIF_F_IP_CSUM		2	/* Can checksum TCP/UDP over IPv4. */
-#define NETIF_F_NO_CSUM		4	/* Does not require checksum. F.e. loopack. */
-#define NETIF_F_HW_CSUM		8	/* Can checksum all the packets. */
-#define NETIF_F_IPV6_CSUM	16	/* Can checksum TCP/UDP over IPV6 */
-#define NETIF_F_HIGHDMA		32	/* Can DMA to high memory. */
-#define NETIF_F_FRAGLIST	64	/* Scatter/gather IO. */
-#define NETIF_F_HW_VLAN_TX	128	/* Transmit VLAN hw acceleration */
-#define NETIF_F_HW_VLAN_RX	256	/* Receive VLAN hw acceleration */
-#define NETIF_F_HW_VLAN_FILTER	512	/* Receive filtering on VLAN */
-#define NETIF_F_VLAN_CHALLENGED	1024	/* Device cannot handle VLAN packets */
-#define NETIF_F_GSO		2048	/* Enable software GSO. */
-#define NETIF_F_LLTX		4096	/* LockLess TX - deprecated. Please */
-					/* do not use LLTX in new drivers */
-#define NETIF_F_NETNS_LOCAL	8192	/* Does not change network namespaces */
-#define NETIF_F_GRO		16384	/* Generic receive offload */
-#define NETIF_F_LRO		32768	/* large receive offload */
-
-/* the GSO_MASK reserves bits 16 through 23 */
-#define NETIF_F_FCOE_CRC	(1 << 24) /* FCoE CRC32 */
-#define NETIF_F_SCTP_CSUM	(1 << 25) /* SCTP checksum offload */
-#define NETIF_F_FCOE_MTU	(1 << 26) /* Supports max FCoE MTU, 2158 bytes*/
-#define NETIF_F_NTUPLE		(1 << 27) /* N-tuple filters supported */
-#define NETIF_F_RXHASH		(1 << 28) /* Receive hashing offload */
-#define NETIF_F_RXCSUM		(1 << 29) /* Receive checksumming offload */
-#define NETIF_F_NOCACHE_COPY	(1 << 30) /* Use no-cache copyfromuser */
-#define NETIF_F_LOOPBACK	(1 << 31) /* Enable loopback */
-
-	/* Segmentation offload features */
-#define NETIF_F_GSO_SHIFT	16
-#define NETIF_F_GSO_MASK	0x00ff0000
-#define NETIF_F_TSO		(SKB_GSO_TCPV4 << NETIF_F_GSO_SHIFT)
-#define NETIF_F_UFO		(SKB_GSO_UDP << NETIF_F_GSO_SHIFT)
-#define NETIF_F_GSO_ROBUST	(SKB_GSO_DODGY << NETIF_F_GSO_SHIFT)
-#define NETIF_F_TSO_ECN		(SKB_GSO_TCP_ECN << NETIF_F_GSO_SHIFT)
-#define NETIF_F_TSO6		(SKB_GSO_TCPV6 << NETIF_F_GSO_SHIFT)
-#define NETIF_F_FSO		(SKB_GSO_FCOE << NETIF_F_GSO_SHIFT)
-
-	/* Features valid for ethtool to change */
-	/* = all defined minus driver/device-class-related */
-#define NETIF_F_NEVER_CHANGE	(NETIF_F_VLAN_CHALLENGED | \
-				  NETIF_F_LLTX | NETIF_F_NETNS_LOCAL)
-#define NETIF_F_ETHTOOL_BITS	(0xff3fffff & ~NETIF_F_NEVER_CHANGE)
-
-	/* List of features with software fallbacks. */
-#define NETIF_F_GSO_SOFTWARE	(NETIF_F_TSO | NETIF_F_TSO_ECN | \
-				 NETIF_F_TSO6 | NETIF_F_UFO)
-
-
-#define NETIF_F_GEN_CSUM	(NETIF_F_NO_CSUM | NETIF_F_HW_CSUM)
-#define NETIF_F_V4_CSUM		(NETIF_F_GEN_CSUM | NETIF_F_IP_CSUM)
-#define NETIF_F_V6_CSUM		(NETIF_F_GEN_CSUM | NETIF_F_IPV6_CSUM)
-#define NETIF_F_ALL_CSUM	(NETIF_F_V4_CSUM | NETIF_F_V6_CSUM)
-
-#define NETIF_F_ALL_TSO 	(NETIF_F_TSO | NETIF_F_TSO6 | NETIF_F_TSO_ECN)
-
-#define NETIF_F_ALL_FCOE	(NETIF_F_FCOE_CRC | NETIF_F_FCOE_MTU | \
-				 NETIF_F_FSO)
-
-	/*
-	 * If one device supports one of these features, then enable them
-	 * for all in netdev_increment_features.
-	 */
-#define NETIF_F_ONE_FOR_ALL	(NETIF_F_GSO_SOFTWARE | NETIF_F_GSO_ROBUST | \
-				 NETIF_F_SG | NETIF_F_HIGHDMA |		\
-				 NETIF_F_FRAGLIST | NETIF_F_VLAN_CHALLENGED)
-	/*
-	 * If one device doesn't support one of these features, then disable it
-	 * for all in netdev_increment_features.
-	 */
-#define NETIF_F_ALL_FOR_ALL	(NETIF_F_NOCACHE_COPY | NETIF_F_FSO)
-
-	/* changeable features with no special hardware requirements */
-#define NETIF_F_SOFT_FEATURES	(NETIF_F_GSO | NETIF_F_GRO)
+	netdev_features_t	vlan_features;
 
 	/* Interface index. Unique device identifier	*/
 	int			ifindex;
@@ -1184,9 +1120,11 @@ struct net_device {
 
 	unsigned char		broadcast[MAX_ADDR_LEN];	/* hw bcast add	*/
 
-#if defined(CONFIG_RPS) || defined(CONFIG_XPS)
+#ifdef CONFIG_SYSFS
 	struct kset		*queues_kset;
+#endif
 
+#ifdef CONFIG_RPS
 	struct netdev_rx_queue	*_rx;
 
 	/* Number of RX queues allocated at register_netdev() time */
@@ -1515,7 +1453,7 @@ struct packet_type {
 					 struct packet_type *,
 					 struct net_device *);
 	struct sk_buff		*(*gso_segment)(struct sk_buff *skb,
-						u32 features);
+						netdev_features_t features);
 	int			(*gso_send_check)(struct sk_buff *skb);
 	struct sk_buff		**(*gro_receive)(struct sk_buff **head,
 					       struct sk_buff *skb);
@@ -2520,7 +2458,8 @@ extern int		netdev_set_master(struct net_device *dev, struct net_device *master)
 extern int netdev_set_bond_master(struct net_device *dev,
 				  struct net_device *master);
 extern int skb_checksum_help(struct sk_buff *skb);
-extern struct sk_buff *skb_gso_segment(struct sk_buff *skb, u32 features);
+extern struct sk_buff *skb_gso_segment(struct sk_buff *skb,
+	netdev_features_t features);
 #ifdef CONFIG_BUG
 extern void netdev_rx_csum_fault(struct net_device *dev);
 #else
@@ -2547,11 +2486,13 @@ extern const char *netdev_drivername(const struct net_device *dev);
 
 extern void linkwatch_run_queue(void);
 
-static inline u32 netdev_get_wanted_features(struct net_device *dev)
+static inline netdev_features_t netdev_get_wanted_features(
+	struct net_device *dev)
 {
 	return (dev->features & ~dev->hw_features) | dev->wanted_features;
 }
-u32 netdev_increment_features(u32 all, u32 one, u32 mask);
+netdev_features_t netdev_increment_features(netdev_features_t all,
+	netdev_features_t one, netdev_features_t mask);
 int __netdev_update_features(struct net_device *dev);
 void netdev_update_features(struct net_device *dev);
 void netdev_change_features(struct net_device *dev);
@@ -2559,21 +2500,31 @@ void netdev_change_features(struct net_device *dev);
 void netif_stacked_transfer_operstate(const struct net_device *rootdev,
 					struct net_device *dev);
 
-u32 netif_skb_features(struct sk_buff *skb);
+netdev_features_t netif_skb_features(struct sk_buff *skb);
 
-static inline int net_gso_ok(u32 features, int gso_type)
+static inline int net_gso_ok(netdev_features_t features, int gso_type)
 {
-	int feature = gso_type << NETIF_F_GSO_SHIFT;
+	netdev_features_t feature = gso_type << NETIF_F_GSO_SHIFT;
+
+	/* check flags correspondence */
+	BUILD_BUG_ON(SKB_GSO_TCPV4   != (NETIF_F_TSO >> NETIF_F_GSO_SHIFT));
+	BUILD_BUG_ON(SKB_GSO_UDP     != (NETIF_F_UFO >> NETIF_F_GSO_SHIFT));
+	BUILD_BUG_ON(SKB_GSO_DODGY   != (NETIF_F_GSO_ROBUST >> NETIF_F_GSO_SHIFT));
+	BUILD_BUG_ON(SKB_GSO_TCP_ECN != (NETIF_F_TSO_ECN >> NETIF_F_GSO_SHIFT));
+	BUILD_BUG_ON(SKB_GSO_TCPV6   != (NETIF_F_TSO6 >> NETIF_F_GSO_SHIFT));
+	BUILD_BUG_ON(SKB_GSO_FCOE    != (NETIF_F_FSO >> NETIF_F_GSO_SHIFT));
+
 	return (features & feature) == feature;
 }
 
-static inline int skb_gso_ok(struct sk_buff *skb, u32 features)
+static inline int skb_gso_ok(struct sk_buff *skb, netdev_features_t features)
 {
 	return net_gso_ok(features, skb_shinfo(skb)->gso_type) &&
 	       (!skb_has_frag_list(skb) || (features & NETIF_F_FRAGLIST));
 }
 
-static inline int netif_needs_gso(struct sk_buff *skb, int features)
+static inline int netif_needs_gso(struct sk_buff *skb,
+	netdev_features_t features)
 {
 	return skb_is_gso(skb) && (!skb_gso_ok(skb, features) ||
 		unlikely(skb->ip_summed != CHECKSUM_PARTIAL));
@@ -2591,22 +2542,6 @@ static inline int netif_is_bond_slave(struct net_device *dev)
 }
 
 extern struct pernet_operations __net_initdata loopback_net_ops;
-
-static inline u32 dev_ethtool_get_rx_csum(struct net_device *dev)
-{
-	if (dev->features & NETIF_F_RXCSUM)
-		return 1;
-	if (!dev->ethtool_ops || !dev->ethtool_ops->get_rx_csum)
-		return 0;
-	return dev->ethtool_ops->get_rx_csum(dev);
-}
-
-static inline u32 dev_ethtool_get_flags(struct net_device *dev)
-{
-	if (!dev->ethtool_ops || !dev->ethtool_ops->get_flags)
-		return 0;
-	return dev->ethtool_ops->get_flags(dev);
-}
 
 /* Logging, debugging and troubleshooting/diagnostic helpers. */
 

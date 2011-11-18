@@ -1284,7 +1284,7 @@ static const uint32_t rss_init_key[10] = {
 };
 
 /* Enable/disable receive hash calculation (RSS) */
-static void rx_set_rss(struct net_device *dev, u32 features)
+static void rx_set_rss(struct net_device *dev, netdev_features_t features)
 {
 	struct sky2_port *sky2 = netdev_priv(dev);
 	struct sky2_hw *hw = sky2->hw;
@@ -1402,7 +1402,7 @@ static int sky2_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
 
 #define SKY2_VLAN_OFFLOADS (NETIF_F_IP_CSUM | NETIF_F_SG | NETIF_F_TSO)
 
-static void sky2_vlan_mode(struct net_device *dev, u32 features)
+static void sky2_vlan_mode(struct net_device *dev, netdev_features_t features)
 {
 	struct sky2_port *sky2 = netdev_priv(dev);
 	struct sky2_hw *hw = sky2->hw;
@@ -3640,10 +3640,11 @@ static void sky2_get_drvinfo(struct net_device *dev,
 {
 	struct sky2_port *sky2 = netdev_priv(dev);
 
-	strcpy(info->driver, DRV_NAME);
-	strcpy(info->version, DRV_VERSION);
-	strcpy(info->fw_version, "N/A");
-	strcpy(info->bus_info, pci_name(sky2->hw->pdev));
+	strlcpy(info->driver, DRV_NAME, sizeof(info->driver));
+	strlcpy(info->version, DRV_VERSION, sizeof(info->version));
+	strlcpy(info->fw_version, "N/A", sizeof(info->fw_version));
+	strlcpy(info->bus_info, pci_name(sky2->hw->pdev),
+		sizeof(info->bus_info));
 }
 
 static const struct sky2_stat {
@@ -4298,7 +4299,8 @@ static int sky2_set_eeprom(struct net_device *dev, struct ethtool_eeprom *eeprom
 	return sky2_vpd_write(sky2->hw, cap, data, eeprom->offset, eeprom->len);
 }
 
-static u32 sky2_fix_features(struct net_device *dev, u32 features)
+static netdev_features_t sky2_fix_features(struct net_device *dev,
+	netdev_features_t features)
 {
 	const struct sky2_port *sky2 = netdev_priv(dev);
 	const struct sky2_hw *hw = sky2->hw;
@@ -4322,13 +4324,13 @@ static u32 sky2_fix_features(struct net_device *dev, u32 features)
 	return features;
 }
 
-static int sky2_set_features(struct net_device *dev, u32 features)
+static int sky2_set_features(struct net_device *dev, netdev_features_t features)
 {
 	struct sky2_port *sky2 = netdev_priv(dev);
-	u32 changed = dev->features ^ features;
+	netdev_features_t changed = dev->features ^ features;
 
 	if (changed & NETIF_F_RXCSUM) {
-		u32 on = features & NETIF_F_RXCSUM;
+		bool on = features & NETIF_F_RXCSUM;
 		sky2_write32(sky2->hw, Q_ADDR(rxqaddr[sky2->port], Q_CSR),
 			     on ? BMU_ENA_RX_CHKSUM : BMU_DIS_RX_CHKSUM);
 	}

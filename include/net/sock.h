@@ -306,8 +306,8 @@ struct sock {
 	kmemcheck_bitfield_end(flags);
 	int			sk_wmem_queued;
 	gfp_t			sk_allocation;
-	int			sk_route_caps;
-	int			sk_route_nocaps;
+	netdev_features_t	sk_route_caps;
+	netdev_features_t	sk_route_nocaps;
 	int			sk_gso_type;
 	unsigned int		sk_gso_max_size;
 	int			sk_rcvlowat;
@@ -563,6 +563,7 @@ enum sock_flags {
 	SOCK_FASYNC, /* fasync() active */
 	SOCK_RXQ_OVFL,
 	SOCK_ZEROCOPY, /* buffers from userspace */
+	SOCK_WIFI_STATUS, /* push wifi status to userspace */
 };
 
 static inline void sock_copy_flags(struct sock *nsk, struct sock *osk)
@@ -1089,8 +1090,8 @@ extern struct sock		*sk_alloc(struct net *net, int family,
 					  struct proto *prot);
 extern void			sk_free(struct sock *sk);
 extern void			sk_release_kernel(struct sock *sk);
-extern struct sock		*sk_clone(const struct sock *sk,
-					  const gfp_t priority);
+extern struct sock		*sk_clone_lock(const struct sock *sk,
+					       const gfp_t priority);
 
 extern struct sk_buff		*sock_wmalloc(struct sock *sk,
 					      unsigned long size, int force,
@@ -1393,7 +1394,7 @@ static inline int sk_can_gso(const struct sock *sk)
 
 extern void sk_setup_caps(struct sock *sk, struct dst_entry *dst);
 
-static inline void sk_nocaps_add(struct sock *sk, int flags)
+static inline void sk_nocaps_add(struct sock *sk, netdev_features_t flags)
 {
 	sk->sk_route_nocaps |= flags;
 	sk->sk_route_caps &= ~flags;
@@ -1714,6 +1715,8 @@ static inline int sock_intr_errno(long timeo)
 
 extern void __sock_recv_timestamp(struct msghdr *msg, struct sock *sk,
 	struct sk_buff *skb);
+extern void __sock_recv_wifi_status(struct msghdr *msg, struct sock *sk,
+	struct sk_buff *skb);
 
 static __inline__ void
 sock_recv_timestamp(struct msghdr *msg, struct sock *sk, struct sk_buff *skb)
@@ -1741,6 +1744,9 @@ sock_recv_timestamp(struct msghdr *msg, struct sock *sk, struct sk_buff *skb)
 		__sock_recv_timestamp(msg, sk, skb);
 	else
 		sk->sk_stamp = kt;
+
+	if (sock_flag(sk, SOCK_WIFI_STATUS) && skb->wifi_acked_valid)
+		__sock_recv_wifi_status(msg, sk, skb);
 }
 
 extern void __sock_recv_ts_and_drops(struct msghdr *msg, struct sock *sk,
