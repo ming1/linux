@@ -3649,8 +3649,7 @@ int isci_request_execute(struct isci_host *ihost, struct isci_remote_device *ide
 		/* Cause this task to be scheduled in the SCSI error
 		 * handler thread.
 		 */
-		isci_execpath_callback(ihost, task,
-				       sas_task_abort);
+		sas_task_abort(task);
 
 		/* Change the status, since we are holding
 		 * the I/O until it is managed by the SCSI
