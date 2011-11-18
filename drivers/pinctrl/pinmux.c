@@ -98,13 +98,15 @@ struct pinmux_hog {
  * @function: a functional name to give to this pin, passed to the driver
  *	so it knows what function to mux in, e.g. the string "gpioNN"
  *	means that you want to mux in the pin for use as GPIO number NN
- * @gpio: if this request concerns a single GPIO pin
  * @gpio_range: the range matching the GPIO pin if this is a request for a
  *	single GPIO pin
+ * @gpio_direction: if the pin is muxed for GPIO, this provides the direction
+ *	of the GPIO @true means output, @false means input
  */
 static int pin_request(struct pinctrl_dev *pctldev,
-		       int pin, const char *function, bool gpio,
-		       struct pinctrl_gpio_range *gpio_range)
+		       int pin, const char *function,
+		       struct pinctrl_gpio_range *gpio_range,
+		       bool gpio_direction)
 {
 	struct pin_desc *desc;
 	const struct pinmux_ops *ops = pctldev->desc->pmxops;
@@ -112,21 +114,16 @@ static int pin_request(struct pinctrl_dev *pctldev,
 
 	dev_dbg(&pctldev->dev, "request pin %d for %s\n", pin, function);
 
-	if (!pin_is_valid(pctldev, pin)) {
-		dev_err(&pctldev->dev, "pin is invalid\n");
-		return -EINVAL;
-	}
-
-	if (!function) {
-		dev_err(&pctldev->dev, "no function name given\n");
-		return -EINVAL;
-	}
-
 	desc = pin_desc_get(pctldev, pin);
 	if (desc == NULL) {
 		dev_err(&pctldev->dev,
 			"pin is not registered so it cannot be requested\n");
 		goto out;
+	}
+
+	if (!function) {
+		dev_err(&pctldev->dev, "no function name given\n");
+		return -EINVAL;
 	}
 
 	spin_lock(&desc->lock);
@@ -152,9 +149,10 @@ static int pin_request(struct pinctrl_dev *pctldev,
 	 * If there is no kind of request function for the pin we just assume
 	 * we got it by default and proceed.
 	 */
-	if (gpio && ops->gpio_request_enable)
+	if (gpio_range && ops->gpio_request_enable)
 		/* This requests and enables a single GPIO pin */
-		status = ops->gpio_request_enable(pctldev, gpio_range, pin);
+	  status = ops->gpio_request_enable(pctldev, gpio_range, pin,
+					    gpio_direction);
 	else if (ops->request)
 		status = ops->request(pctldev, pin);
 	else
@@ -182,36 +180,57 @@ out:
  * pin_free() - release a single muxed in pin so something else can be muxed
  * @pctldev: pin controller device handling this pin
  * @pin: the pin to free
- * @free_func: whether to free the pin's assigned function name string
+ * @gpio_range: the range matching the GPIO pin if this is a request for a
+ *	single GPIO pin
+ *
+ * This function returns a pointer to the function name in use. This is used
+ * for callers that dynamically allocate a function name so it can be freed
+ * once the pin is free. This is done for GPIO request functions.
  */
-static void pin_free(struct pinctrl_dev *pctldev, int pin, int free_func)
+static const char *pin_free(struct pinctrl_dev *pctldev, int pin,
+			    struct pinctrl_gpio_range *gpio_range)
 {
 	const struct pinmux_ops *ops = pctldev->desc->pmxops;
 	struct pin_desc *desc;
+	const char *func;
 
 	desc = pin_desc_get(pctldev, pin);
 	if (desc == NULL) {
 		dev_err(&pctldev->dev,
 			"pin is not registered so it cannot be freed\n");
-		return;
+		return NULL;
 	}
 
-	if (ops->free)
+	/*
+	 * If there is no kind of request function for the pin we just assume
+	 * we got it by default and proceed.
+	 */
+	if (gpio_range && ops->gpio_disable_free)
+		ops->gpio_disable_free(pctldev, gpio_range, pin);
+	else if (ops->free)
 		ops->free(pctldev, pin);
 
 	spin_lock(&desc->lock);
-	if (free_func)
-		kfree(desc->mux_function);
+	func = desc->mux_function;
 	desc->mux_function = NULL;
 	spin_unlock(&desc->lock);
 	module_put(pctldev->owner);
+
+	return func;
 }
 
 /**
  * pinmux_request_gpio() - request a single pin to be muxed in as GPIO
  * @gpio: the GPIO pin number from the GPIO subsystem number space
+ * @direction: the direction of the GPIO, @true means output, @false
+ *	means input
+ *
+ * This function should *ONLY* be used from gpiolib-based GPIO drivers,
+ * as part of their gpio_request() and gpio_direction_[input|output()
+ * semantics, platforms and individual driver shall *NOT* request GPIO pins to
+ * be muxed in.
  */
-int pinmux_request_gpio(unsigned gpio)
+int pinmux_request_gpio(unsigned gpio, bool direction)
 {
 	char gpiostr[16];
 	const char *function;
@@ -225,7 +244,7 @@ int pinmux_request_gpio(unsigned gpio)
 		return -EINVAL;
 
 	/* Convert to the pin controllers number space */
-	pin = gpio - range->base;
+	pin = gpio - range->base + range->pin_base;
 
 	/* Conjure some name stating what chip and pin this is taken by */
 	snprintf(gpiostr, 15, "%s:%d", range->name, gpio);
@@ -234,7 +253,7 @@ int pinmux_request_gpio(unsigned gpio)
 	if (!function)
 		return -EINVAL;
 
-	ret = pin_request(pctldev, pin, function, true, range);
+	ret = pin_request(pctldev, pin, function, range, direction);
 	if (ret < 0)
 		kfree(function);
 
@@ -245,6 +264,11 @@ EXPORT_SYMBOL_GPL(pinmux_request_gpio);
 /**
  * pinmux_free_gpio() - free a single pin, currently used as GPIO
  * @gpio: the GPIO pin number from the GPIO subsystem number space
+ *
+ * This function should *ONLY* be used from gpiolib-based GPIO drivers,
+ * as part of their gpio_request() and gpio_direction_[input|output()
+ * semantics, platforms and individual driver shall *NOT* request GPIO pins to
+ * be muxed in.
  */
 void pinmux_free_gpio(unsigned gpio)
 {
@@ -252,15 +276,17 @@ void pinmux_free_gpio(unsigned gpio)
 	struct pinctrl_gpio_range *range;
 	int ret;
 	int pin;
+	const char *func;
 
 	ret = pinctrl_get_device_gpio_range(gpio, &pctldev, &range);
 	if (ret)
 		return;
 
 	/* Convert to the pin controllers number space */
-	pin = gpio - range->base;
+	pin = gpio - range->base + range->pin_base;
 
-	pin_free(pctldev, pin, true);
+	func = pin_free(pctldev, pin, range);
+	kfree(func);
 }
 EXPORT_SYMBOL_GPL(pinmux_free_gpio);
 
@@ -350,7 +376,7 @@ static int acquire_pins(struct pinctrl_dev *pctldev,
 
 	/* Try to allocate all pins in this group, one by one */
 	for (i = 0; i < num_pins; i++) {
-		ret = pin_request(pctldev, pins[i], func, false, NULL);
+	  ret = pin_request(pctldev, pins[i], func, NULL, false);
 		if (ret) {
 			dev_err(&pctldev->dev,
 				"could not get pin %d for function %s "
@@ -360,7 +386,7 @@ static int acquire_pins(struct pinctrl_dev *pctldev,
 			/* On error release all taken pins */
 			i--; /* this pin just failed */
 			for (; i >= 0; i--)
-				pin_free(pctldev, pins[i], false);
+				pin_free(pctldev, pins[i], NULL);
 			return -ENODEV;
 		}
 	}
@@ -390,38 +416,7 @@ static void release_pins(struct pinctrl_dev *pctldev,
 		return;
 	}
 	for (i = 0; i < num_pins; i++)
-		pin_free(pctldev, pins[i], false);
-}
-
-/**
- * pinmux_get_group_selector() - returns the group selector for a group
- * @pctldev: the pin controller handling the group
- * @pin_group: the pin group to look up
- */
-static int pinmux_get_group_selector(struct pinctrl_dev *pctldev,
-				     const char *pin_group)
-{
-	const struct pinctrl_ops *pctlops = pctldev->desc->pctlops;
-	unsigned group_selector = 0;
-
-	while (pctlops->list_groups(pctldev, group_selector) >= 0) {
-		const char *gname = pctlops->get_group_name(pctldev,
-							    group_selector);
-		if (!strcmp(gname, pin_group)) {
-			dev_dbg(&pctldev->dev,
-				"found group selector %u for %s\n",
-				group_selector,
-				pin_group);
-			return group_selector;
-		}
-
-		group_selector++;
-	}
-
-	dev_err(&pctldev->dev, "does not have pin group %s\n",
-		pin_group);
-
-	return -EINVAL;
+		pin_free(pctldev, pins[i], NULL);
 }
 
 /**
@@ -465,7 +460,7 @@ static int pinmux_check_pin_group(struct pinctrl_dev *pctldev,
 			return ret;
 		if (num_groups < 1)
 			return -EINVAL;
-		ret = pinmux_get_group_selector(pctldev, groups[0]);
+		ret = pinctrl_get_group_selector(pctldev, groups[0]);
 		if (ret < 0) {
 			dev_err(&pctldev->dev,
 				"function %s wants group %s but the pin "
@@ -490,7 +485,7 @@ static int pinmux_check_pin_group(struct pinctrl_dev *pctldev,
 		"check if we have pin group %s on controller %s\n",
 		pin_group, pinctrl_dev_get_name(pctldev));
 
-	ret = pinmux_get_group_selector(pctldev, pin_group);
+	ret = pinctrl_get_group_selector(pctldev, pin_group);
 	if (ret < 0) {
 		dev_dbg(&pctldev->dev,
 			"%s does not support pin group %s with function %s\n",
