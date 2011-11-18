@@ -498,36 +498,32 @@ void get_usage_chars(struct lock_class *class, char usage[LOCK_USAGE_CHARS])
 	usage[i] = '\0';
 }
 
-static int __print_lock_name(struct lock_class *class)
+static void __print_lock_name(struct lock_class *class)
 {
 	char str[KSYM_NAME_LEN];
 	const char *name;
 
 	name = class->name;
-	if (!name)
-		name = __get_key_name(class->key, str);
-
-	return printk("%s", name);
-}
-
-static void print_lock_name(struct lock_class *class)
-{
-	char str[KSYM_NAME_LEN], usage[LOCK_USAGE_CHARS];
-	const char *name;
-
-	get_usage_chars(class, usage);
-
-	name = class->name;
 	if (!name) {
 		name = __get_key_name(class->key, str);
-		printk(" (%s", name);
+		printk("%s", name);
 	} else {
-		printk(" (%s", name);
+		printk("%s", name);
 		if (class->name_version > 1)
 			printk("#%d", class->name_version);
 		if (class->subclass)
 			printk("/%d", class->subclass);
 	}
+}
+
+static void print_lock_name(struct lock_class *class)
+{
+	char usage[LOCK_USAGE_CHARS];
+
+	get_usage_chars(class, usage);
+
+	printk(" (");
+	__print_lock_name(class);
 	printk("){%s}", usage);
 }
 
@@ -722,7 +718,7 @@ register_lock_class(struct lockdep_map *lock, unsigned int subclass, int force)
 
 	class = look_up_lock_class(lock, subclass);
 	if (likely(class))
-		return class;
+		goto out_set_class_cache;
 
 	/*
 	 * Debug-check: all keys must be persistent!
@@ -807,6 +803,7 @@ out_unlock_set:
 	graph_unlock();
 	raw_local_irq_restore(flags);
 
+out_set_class_cache:
 	if (!subclass || force)
 		lock->class_cache[0] = class;
 	else if (subclass < NR_LOCKDEP_CACHING_CLASSES)
