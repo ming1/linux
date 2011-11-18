@@ -64,6 +64,18 @@ bool regmap_precious(struct regmap *map, unsigned int reg)
 	return false;
 }
 
+static bool regmap_volatile_range(struct regmap *map, unsigned int reg,
+	unsigned int num)
+{
+	unsigned int i;
+
+	for (i = 0; i < num; i++)
+		if (!regmap_volatile(map, reg + i))
+			return false;
+
+	return true;
+}
+
 static void regmap_format_4_12_write(struct regmap *map,
 				     unsigned int reg, unsigned int val)
 {
@@ -76,6 +88,16 @@ static void regmap_format_7_9_write(struct regmap *map,
 {
 	__be16 *out = map->work_buf;
 	*out = cpu_to_be16((reg << 9) | val);
+}
+
+static void regmap_format_10_14_write(struct regmap *map,
+				    unsigned int reg, unsigned int val)
+{
+	u8 *out = map->work_buf;
+
+	out[2] = val;
+	out[1] = (val >> 8) | (reg << 6);
+	out[0] = reg >> 2;
 }
 
 static void regmap_format_8(void *buf, unsigned int val)
@@ -127,7 +149,7 @@ struct regmap *regmap_init(struct device *dev,
 	int ret = -EINVAL;
 
 	if (!bus || !config)
-		return NULL;
+		goto err;
 
 	map = kzalloc(sizeof(*map), GFP_KERNEL);
 	if (map == NULL) {
@@ -147,12 +169,6 @@ struct regmap *regmap_init(struct device *dev,
 	map->volatile_reg = config->volatile_reg;
 	map->precious_reg = config->precious_reg;
 	map->cache_type = config->cache_type;
-	map->reg_defaults = config->reg_defaults;
-	map->num_reg_defaults = config->num_reg_defaults;
-	map->num_reg_defaults_raw = config->num_reg_defaults_raw;
-	map->reg_defaults_raw = config->reg_defaults_raw;
-	map->cache_size_raw = (config->val_bits / 8) * config->num_reg_defaults_raw;
-	map->cache_word_size = config->val_bits / 8;
 
 	if (config->read_flag_mask || config->write_flag_mask) {
 		map->read_flag_mask = config->read_flag_mask;
@@ -176,6 +192,16 @@ struct regmap *regmap_init(struct device *dev,
 		switch (config->val_bits) {
 		case 9:
 			map->format.format_write = regmap_format_7_9_write;
+			break;
+		default:
+			goto err_map;
+		}
+		break;
+
+	case 10:
+		switch (config->val_bits) {
+		case 14:
+			map->format.format_write = regmap_format_10_14_write;
 			break;
 		default:
 			goto err_map;
@@ -215,14 +241,16 @@ struct regmap *regmap_init(struct device *dev,
 		goto err_map;
 	}
 
-	ret = regcache_init(map);
+	ret = regcache_init(map, config);
 	if (ret < 0)
-		goto err_map;
+		goto err_free_workbuf;
 
 	regmap_debugfs_init(map);
 
 	return map;
 
+err_free_workbuf:
+	kfree(map->work_buf);
 err_map:
 	kfree(map);
 err:
@@ -377,9 +405,11 @@ EXPORT_SYMBOL_GPL(regmap_write);
 int regmap_raw_write(struct regmap *map, unsigned int reg,
 		     const void *val, size_t val_len)
 {
+	size_t val_count = val_len / map->format.val_bytes;
 	int ret;
 
-	WARN_ON(map->cache_type != REGCACHE_NONE);
+	WARN_ON(!regmap_volatile_range(map, reg, val_count) &&
+		map->cache_type != REGCACHE_NONE);
 
 	mutex_lock(&map->lock);
 
@@ -424,14 +454,14 @@ static int _regmap_read(struct regmap *map, unsigned int reg,
 {
 	int ret;
 
-	if (!map->format.parse_val)
-		return -EINVAL;
-
 	if (!map->cache_bypass) {
 		ret = regcache_read(map, reg, val);
 		if (ret == 0)
 			return 0;
 	}
+
+	if (!map->format.parse_val)
+		return -EINVAL;
 
 	if (map->cache_only)
 		return -EBUSY;
@@ -483,15 +513,11 @@ EXPORT_SYMBOL_GPL(regmap_read);
 int regmap_raw_read(struct regmap *map, unsigned int reg, void *val,
 		    size_t val_len)
 {
+	size_t val_count = val_len / map->format.val_bytes;
 	int ret;
-	int i;
-	bool vol = true;
 
-	for (i = 0; i < val_len / map->format.val_bytes; i++)
-		if (!regmap_volatile(map, reg + i))
-			vol = false;
-
-	WARN_ON(!vol && map->cache_type != REGCACHE_NONE);
+	WARN_ON(!regmap_volatile_range(map, reg, val_count) &&
+		map->cache_type != REGCACHE_NONE);
 
 	mutex_lock(&map->lock);
 
@@ -519,15 +545,10 @@ int regmap_bulk_read(struct regmap *map, unsigned int reg, void *val,
 {
 	int ret, i;
 	size_t val_bytes = map->format.val_bytes;
-	bool vol = true;
+	bool vol = regmap_volatile_range(map, reg, val_count);
 
 	if (!map->format.parse_val)
 		return -EINVAL;
-
-	/* Is this a block of volatile registers? */
-	for (i = 0; i < val_count; i++)
-		if (!regmap_volatile(map, reg + i))
-			vol = false;
 
 	if (vol || map->cache_type == REGCACHE_NONE) {
 		ret = regmap_raw_read(map, reg, val, val_bytes * val_count);
@@ -549,7 +570,7 @@ int regmap_bulk_read(struct regmap *map, unsigned int reg, void *val,
 EXPORT_SYMBOL_GPL(regmap_bulk_read);
 
 /**
- * remap_update_bits: Perform a read/modify/write cycle on the register map
+ * regmap_update_bits: Perform a read/modify/write cycle on the register map
  *
  * @map: Register map to update
  * @reg: Register to update
