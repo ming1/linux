@@ -1675,6 +1675,21 @@ static const struct alg_test_desc alg_test_descs[] = {
 			}
 		}
 	}, {
+		.alg = "cbc(serpent)",
+		.test = alg_test_skcipher,
+		.suite = {
+			.cipher = {
+				.enc = {
+					.vecs = serpent_cbc_enc_tv_template,
+					.count = SERPENT_CBC_ENC_TEST_VECTORS
+				},
+				.dec = {
+					.vecs = serpent_cbc_dec_tv_template,
+					.count = SERPENT_CBC_DEC_TEST_VECTORS
+				}
+			}
+		}
+	}, {
 		.alg = "cbc(twofish)",
 		.test = alg_test_skcipher,
 		.suite = {
@@ -1767,6 +1782,21 @@ static const struct alg_test_desc alg_test_descs[] = {
 				.dec = {
 					.vecs = bf_ctr_dec_tv_template,
 					.count = BF_CTR_DEC_TEST_VECTORS
+				}
+			}
+		}
+	}, {
+		.alg = "ctr(serpent)",
+		.test = alg_test_skcipher,
+		.suite = {
+			.cipher = {
+				.enc = {
+					.vecs = serpent_ctr_enc_tv_template,
+					.count = SERPENT_CTR_ENC_TEST_VECTORS
+				},
+				.dec = {
+					.vecs = serpent_ctr_dec_tv_template,
+					.count = SERPENT_CTR_DEC_TEST_VECTORS
 				}
 			}
 		}
@@ -2207,6 +2237,36 @@ static const struct alg_test_desc alg_test_descs[] = {
 			}
 		}
 	}, {
+		.alg = "lrw(serpent)",
+		.test = alg_test_skcipher,
+		.suite = {
+			.cipher = {
+				.enc = {
+					.vecs = serpent_lrw_enc_tv_template,
+					.count = SERPENT_LRW_ENC_TEST_VECTORS
+				},
+				.dec = {
+					.vecs = serpent_lrw_dec_tv_template,
+					.count = SERPENT_LRW_DEC_TEST_VECTORS
+				}
+			}
+		}
+	}, {
+		.alg = "lrw(twofish)",
+		.test = alg_test_skcipher,
+		.suite = {
+			.cipher = {
+				.enc = {
+					.vecs = tf_lrw_enc_tv_template,
+					.count = TF_LRW_ENC_TEST_VECTORS
+				},
+				.dec = {
+					.vecs = tf_lrw_dec_tv_template,
+					.count = TF_LRW_DEC_TEST_VECTORS
+				}
+			}
+		}
+	}, {
 		.alg = "lzo",
 		.test = alg_test_comp,
 		.suite = {
@@ -2510,6 +2570,36 @@ static const struct alg_test_desc alg_test_descs[] = {
 				.dec = {
 					.vecs = aes_xts_dec_tv_template,
 					.count = AES_XTS_DEC_TEST_VECTORS
+				}
+			}
+		}
+	}, {
+		.alg = "xts(serpent)",
+		.test = alg_test_skcipher,
+		.suite = {
+			.cipher = {
+				.enc = {
+					.vecs = serpent_xts_enc_tv_template,
+					.count = SERPENT_XTS_ENC_TEST_VECTORS
+				},
+				.dec = {
+					.vecs = serpent_xts_dec_tv_template,
+					.count = SERPENT_XTS_DEC_TEST_VECTORS
+				}
+			}
+		}
+	}, {
+		.alg = "xts(twofish)",
+		.test = alg_test_skcipher,
+		.suite = {
+			.cipher = {
+				.enc = {
+					.vecs = tf_xts_enc_tv_template,
+					.count = TF_XTS_ENC_TEST_VECTORS
+				},
+				.dec = {
+					.vecs = tf_xts_dec_tv_template,
+					.count = TF_XTS_DEC_TEST_VECTORS
 				}
 			}
 		}
