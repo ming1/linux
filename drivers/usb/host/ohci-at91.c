@@ -465,7 +465,7 @@ static int ohci_hcd_at91_drv_probe(struct platform_device *pdev)
 
 	if (pdata) {
 		for (i = 0; i < ARRAY_SIZE(pdata->vbus_pin); i++) {
-			if (pdata->vbus_pin[i] <= 0)
+			if (!gpio_is_valid(pdata->vbus_pin[i]))
 				continue;
 			gpio_request(pdata->vbus_pin[i], "ohci_vbus");
 			ohci_at91_usb_set_power(pdata, i, 1);
@@ -499,7 +499,7 @@ static int ohci_hcd_at91_drv_remove(struct platform_device *pdev)
 
 	if (pdata) {
 		for (i = 0; i < ARRAY_SIZE(pdata->vbus_pin); i++) {
-			if (pdata->vbus_pin[i] <= 0)
+			if (!gpio_is_valid(pdata->vbus_pin[i]))
 				continue;
 			ohci_at91_usb_set_power(pdata, i, 0);
 			gpio_free(pdata->vbus_pin[i]);
