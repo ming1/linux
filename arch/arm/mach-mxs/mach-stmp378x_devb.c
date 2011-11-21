@@ -117,4 +117,5 @@ MACHINE_START(STMP378X, "STMP378X")
 	.init_irq	= mx23_init_irq,
 	.init_machine	= stmp378x_dvb_init,
 	.timer		= &stmp378x_dvb_timer,
+	.restart	= mxs_restart,
 MACHINE_END
