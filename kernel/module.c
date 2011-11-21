@@ -2193,6 +2193,13 @@ static void layout_symtab(struct module *mod, struct load_info *info)
 
 	src = (void *)info->hdr + symsect->sh_offset;
 	nsrc = symsect->sh_size / sizeof(*src);
+
+	/*
+	 * info->strmap has a '1' bit for each byte of .strtab we want to
+	 * keep resident in mod->core_strtab.  Everything else in .strtab
+	 * is unreferenced by the symbols in mod->core_symtab, and will be
+	 * discarded when add_kallsyms() compacts the string table.
+	 */
 	for (ndst = i = 1; i < nsrc; ++i, ++src)
 		if (is_core_symbol(src, info->sechdrs, info->hdr->e_shnum)) {
 			unsigned int j = src->st_name;
@@ -2215,6 +2222,8 @@ static void layout_symtab(struct module *mod, struct load_info *info)
 
 	/* Append room for core symbols' strings at end of core part. */
 	info->stroffs = mod->core_size;
+
+	/* First strtab byte (and first symtab entry) are zeroes. */
 	__set_bit(0, info->strmap);
 	mod->core_size += bitmap_weight(info->strmap, strsect->sh_size);
 }
@@ -2237,22 +2246,48 @@ static void add_kallsyms(struct module *mod, const struct load_info *info)
 		mod->symtab[i].st_info = elf_type(&mod->symtab[i], info);
 
 	mod->core_symtab = dst = mod->module_core + info->symoffs;
+	mod->core_strtab = s = mod->module_core + info->stroffs;
 	src = mod->symtab;
 	*dst = *src;
+	*s++ = 0;
 	for (ndst = i = 1; i < mod->num_symtab; ++i, ++src) {
+		const char *name;
 		if (!is_core_symbol(src, info->sechdrs, info->hdr->e_shnum))
 			continue;
 		dst[ndst] = *src;
-		dst[ndst].st_name = bitmap_weight(info->strmap,
-						  dst[ndst].st_name);
+
+		name = &mod->strtab[src->st_name];
+		if (unlikely(!test_bit(src->st_name, info->strmap))) {
+			/* Symbol name has already been copied; find it. */
+			char *dup;
+
+			for (dup = mod->core_strtab; strcmp(dup, name); dup++)
+				BUG_ON(dup > s);
+
+			dst[ndst].st_name = dup - mod->core_strtab;
+		} else {
+			/*
+			 * Copy the symbol name to mod->core_strtab.
+			 * "name" might point to the middle of a longer strtab
+			 * entry, so backtrack to the first "required" byte
+			 * of the string.
+			 */
+			unsigned start = src->st_name, len = 0;
+
+			for (; test_bit(start - 1, info->strmap) &&
+			       mod->strtab[start - 1]; start--)
+				len++;
+
+			dst[ndst].st_name = len + s - mod->core_strtab;
+			len += strlen(name) + 1;
+
+			memcpy(s, &mod->strtab[start], len);
+			s += len;
+			bitmap_clear(info->strmap, start, len);
+		}
 		++ndst;
 	}
 	mod->core_num_syms = ndst;
-
-	mod->core_strtab = s = mod->module_core + info->stroffs;
-	for (*s = 0, i = 1; i < info->sechdrs[info->index.str].sh_size; ++i)
-		if (test_bit(i, info->strmap))
-			*++s = mod->strtab[i];
 }
 #else
 static inline void layout_symtab(struct module *mod, struct load_info *info)
