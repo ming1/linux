@@ -570,7 +570,7 @@ static void slab_bug(struct kmem_cache *s, char *fmt, ...)
 	va_end(args);
 	printk(KERN_ERR "========================================"
 			"=====================================\n");
-	printk(KERN_ERR "BUG %s: %s\n", s->name, buf);
+	printk(KERN_ERR "BUG %s (%s): %s\n", s->name, print_tainted(), buf);
 	printk(KERN_ERR "----------------------------------------"
 			"-------------------------------------\n\n");
 }
@@ -1862,7 +1862,7 @@ static void unfreeze_partials(struct kmem_cache *s)
 {
 	struct kmem_cache_node *n = NULL;
 	struct kmem_cache_cpu *c = this_cpu_ptr(s->cpu_slab);
-	struct page *page;
+	struct page *page, *discard_page = NULL;
 
 	while ((page = c->partial)) {
 		enum slab_modes { M_PARTIAL, M_FREE };
@@ -1904,7 +1904,8 @@ static void unfreeze_partials(struct kmem_cache *s)
 				if (l == M_PARTIAL)
 					remove_partial(n, page);
 				else
-					add_partial(n, page, 1);
+					add_partial(n, page,
+						DEACTIVATE_TO_TAIL);
 
 				l = m;
 			}
@@ -1915,14 +1916,22 @@ static void unfreeze_partials(struct kmem_cache *s)
 				"unfreezing slab"));
 
 		if (m == M_FREE) {
-			stat(s, DEACTIVATE_EMPTY);
-			discard_slab(s, page);
-			stat(s, FREE_SLAB);
+			page->next = discard_page;
+			discard_page = page;
 		}
 	}
 
 	if (n)
 		spin_unlock(&n->list_lock);
+
+	while (discard_page) {
+		page = discard_page;
+		discard_page = discard_page->next;
+
+		stat(s, DEACTIVATE_EMPTY);
+		discard_slab(s, page);
+		stat(s, FREE_SLAB);
+	}
 }
 
 /*
