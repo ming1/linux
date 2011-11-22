@@ -606,9 +606,12 @@ static ssize_t store_rps_map(struct netdev_rx_queue *queue,
 	rcu_assign_pointer(queue->rps_map, map);
 	spin_unlock(&rps_map_lock);
 
-	if (old_map)
+	if (map)
+		jump_label_inc(&rps_needed);
+	if (old_map) {
 		kfree_rcu(old_map, rcu);
-
+		jump_label_dec(&rps_needed);
+	}
 	free_cpumask_var(mask);
 	return len;
 }
@@ -780,7 +783,7 @@ net_rx_queue_update_kobjects(struct net_device *net, int old_num, int new_num)
 #endif
 }
 
-#ifdef CONFIG_XPS
+#ifdef CONFIG_SYSFS
 /*
  * netdev_queue sysfs structures and functions.
  */
@@ -826,6 +829,23 @@ static const struct sysfs_ops netdev_queue_sysfs_ops = {
 	.store = netdev_queue_attr_store,
 };
 
+static ssize_t show_trans_timeout(struct netdev_queue *queue,
+				  struct netdev_queue_attribute *attribute,
+				  char *buf)
+{
+	unsigned long trans_timeout;
+
+	spin_lock_irq(&queue->_xmit_lock);
+	trans_timeout = queue->trans_timeout;
+	spin_unlock_irq(&queue->_xmit_lock);
+
+	return sprintf(buf, "%lu", trans_timeout);
+}
+
+static struct netdev_queue_attribute queue_trans_timeout =
+	__ATTR(tx_timeout, S_IRUGO, show_trans_timeout, NULL);
+
+#ifdef CONFIG_XPS
 static inline unsigned int get_netdev_queue_index(struct netdev_queue *queue)
 {
 	struct net_device *dev = queue->dev;
@@ -901,7 +921,7 @@ static ssize_t store_xps_map(struct netdev_queue *queue,
 	struct xps_map *map, *new_map;
 	struct xps_dev_maps *dev_maps, *new_dev_maps;
 	int nonempty = 0;
-	int numa_node = -2;
+	int numa_node_id = -2;
 
 	if (!capable(CAP_NET_ADMIN))
 		return -EPERM;
@@ -944,10 +964,10 @@ static ssize_t store_xps_map(struct netdev_queue *queue,
 		need_set = cpumask_test_cpu(cpu, mask) && cpu_online(cpu);
 #ifdef CONFIG_NUMA
 		if (need_set) {
-			if (numa_node == -2)
-				numa_node = cpu_to_node(cpu);
-			else if (numa_node != cpu_to_node(cpu))
-				numa_node = -1;
+			if (numa_node_id == -2)
+				numa_node_id = cpu_to_node(cpu);
+			else if (numa_node_id != cpu_to_node(cpu))
+				numa_node_id = -1;
 		}
 #endif
 		if (need_set && pos >= map_len) {
@@ -997,7 +1017,7 @@ static ssize_t store_xps_map(struct netdev_queue *queue,
 	if (dev_maps)
 		kfree_rcu(dev_maps, rcu);
 
-	netdev_queue_numa_node_write(queue, (numa_node >= 0) ? numa_node :
+	netdev_queue_numa_node_write(queue, (numa_node_id >= 0) ? numa_node_id :
 					    NUMA_NO_NODE);
 
 	mutex_unlock(&xps_map_mutex);
@@ -1020,12 +1040,17 @@ error:
 
 static struct netdev_queue_attribute xps_cpus_attribute =
     __ATTR(xps_cpus, S_IRUGO | S_IWUSR, show_xps_map, store_xps_map);
+#endif /* CONFIG_XPS */
 
 static struct attribute *netdev_queue_default_attrs[] = {
+	&queue_trans_timeout.attr,
+#ifdef CONFIG_XPS
 	&xps_cpus_attribute.attr,
+#endif
 	NULL
 };
 
+#ifdef CONFIG_XPS
 static void netdev_queue_release(struct kobject *kobj)
 {
 	struct netdev_queue *queue = to_netdev_queue(kobj);
@@ -1076,10 +1101,13 @@ static void netdev_queue_release(struct kobject *kobj)
 	memset(kobj, 0, sizeof(*kobj));
 	dev_put(queue->dev);
 }
+#endif /* CONFIG_XPS */
 
 static struct kobj_type netdev_queue_ktype = {
 	.sysfs_ops = &netdev_queue_sysfs_ops,
+#ifdef CONFIG_XPS
 	.release = netdev_queue_release,
+#endif
 	.default_attrs = netdev_queue_default_attrs,
 };
 
@@ -1102,12 +1130,12 @@ static int netdev_queue_add_kobject(struct net_device *net, int index)
 
 	return error;
 }
-#endif /* CONFIG_XPS */
+#endif /* CONFIG_SYSFS */
 
 int
 netdev_queue_update_kobjects(struct net_device *net, int old_num, int new_num)
 {
-#ifdef CONFIG_XPS
+#ifdef CONFIG_SYSFS
 	int i;
 	int error = 0;
 
@@ -1125,14 +1153,14 @@ netdev_queue_update_kobjects(struct net_device *net, int old_num, int new_num)
 	return error;
 #else
 	return 0;
-#endif
+#endif /* CONFIG_SYSFS */
 }
 
 static int register_queue_kobjects(struct net_device *net)
 {
 	int error = 0, txq = 0, rxq = 0, real_rx = 0, real_tx = 0;
 
-#if defined(CONFIG_RPS) || defined(CONFIG_XPS)
+#ifdef CONFIG_SYSFS
 	net->queues_kset = kset_create_and_add("queues",
 	    NULL, &net->dev.kobj);
 	if (!net->queues_kset)
@@ -1173,7 +1201,7 @@ static void remove_queue_kobjects(struct net_device *net)
 
 	net_rx_queue_update_kobjects(net, real_rx, 0);
 	netdev_queue_update_kobjects(net, real_tx, 0);
-#if defined(CONFIG_RPS) || defined(CONFIG_XPS)
+#ifdef CONFIG_SYSFS
 	kset_unregister(net->queues_kset);
 #endif
 }
