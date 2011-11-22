@@ -37,7 +37,7 @@
 #include <plat/led.h>
 #include <plat/usb.h>
 #include <plat/board.h>
-#include <plat/common.h>
+#include "common.h"
 #include <plat/gpmc.h>
 
 #include <video/omapdss.h>
@@ -356,4 +356,5 @@ MACHINE_START(OMAP_APOLLON, "OMAP24xx Apollon")
 	.init_irq	= omap2_init_irq,
 	.init_machine	= omap_apollon_init,
 	.timer		= &omap2_timer,
+	.restart	= omap_prcm_restart,
 MACHINE_END
