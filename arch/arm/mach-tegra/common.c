@@ -31,9 +31,7 @@
 #include "clock.h"
 #include "fuse.h"
 
-void (*arch_reset)(char mode, const char *cmd) = tegra_assert_system_reset;
-
-void tegra_assert_system_reset(char mode, const char *cmd)
+static void tegra_assert_system_reset(char mode, const char *cmd)
 {
 	void __iomem *reset = IO_ADDRESS(TEGRA_CLK_RESET_BASE + 0x04);
 	u32 reg;
@@ -76,6 +74,7 @@ static void __init tegra_init_cache(void)
 
 void __init tegra_init_early(void)
 {
+	arm_pm_restart = tegra_assert_system_reset;
 	tegra_init_fuse();
 	tegra_init_clock();
 	tegra_clk_init_from_table(common_clk_init_table);
