@@ -105,7 +105,7 @@ static int gfs2_readdir(struct file *file, void *dirent, filldir_t filldir)
 		return error;
 	}
 
-	error = gfs2_dir_read(dir, &offset, dirent, filldir);
+	error = gfs2_dir_read(dir, &offset, dirent, filldir, &file->f_ra);
 
 	gfs2_glock_dq_uninit(&d_gh);
 
@@ -609,7 +609,7 @@ static int gfs2_fsync(struct file *file, loff_t start, loff_t end,
 	struct inode *inode = mapping->host;
 	int sync_state = inode->i_state & (I_DIRTY_SYNC|I_DIRTY_DATASYNC);
 	struct gfs2_inode *ip = GFS2_I(inode);
-	int ret, ret1 = 0;
+	int ret = 0, ret1 = 0;
 
 	if (mapping->nrpages) {
 		ret1 = filemap_fdatawrite_range(mapping, start, end);
@@ -752,6 +752,8 @@ static long gfs2_fallocate(struct file *file, int mode, loff_t offset,
 	loff_t bytes, max_bytes;
 	struct gfs2_alloc *al;
 	int error;
+	const loff_t pos = offset;
+	const loff_t count = len;
 	loff_t bsize_mask = ~((loff_t)sdp->sd_sb.sb_bsize - 1);
 	loff_t next = (offset + len - 1) >> sdp->sd_sb.sb_bsize_shift;
 	loff_t max_chunk_size = UINT_MAX & bsize_mask;
@@ -834,6 +836,9 @@ retry:
 		gfs2_quota_unlock(ip);
 		gfs2_alloc_put(ip);
 	}
+
+	if (error == 0)
+		error = generic_write_sync(file, pos, count);
 	goto out_unlock;
 
 out_trans_fail:
