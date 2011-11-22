@@ -1,0 +1,63 @@
+Importing hexagon based on v3.2-rc2
+	quilt series is empty
+$ git update-ref refs/heads/quilt/hexagon cfcfc9eca2bcbd26a8e206baeb005b055dbf8e37
+Importing i2c based on 3.2-rc2
+Unchanged quilt series i2c
+Importing jdelvare-hwmon based on 3.2-rc2
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard cfcfc9eca2bcbd26a8e206baeb005b055dbf8e37
+HEAD is now at cfcfc9e Linux 3.2-rc2
+$ git am ../quilt/jdelvare-hwmon/hwmon-max1111-change-sysfs-interface-to-in_input-in-millivolts.patch
+Applying: hwmon: (max1111) Change sysfs interface to in[0-3]_input in millivolts
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm63-01-fix-checkpatch-errors.patch
+Applying: hwmon: (lm63) Fix checkpatch errors
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm63-02-support-for-external-temperature-offset.patch
+Applying: hwmon: (lm63) Add support for external temperature offset register
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm63-03-add-support-for-lm96163.patch
+Applying: hwmon: (lm63) Add support for LM96163
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/jdelvare-hwmon
+From ../quilt-tmp
+   1ea6b8f..dda4fa1  master     -> quilt/jdelvare-hwmon
+Importing kernel-doc based on 3.1
+Unchanged quilt series kernel-doc
+Importing rr based on v3.2-rc2-274-g6fe4c6d
+$ cd ../quilt-tmp
+$ git reset --hard 6fe4c6d466e95d31164f14b1ac4aefb51f0f4f82
+HEAD is now at 6fe4c6d Merge git://git.kernel.org/pub/scm/linux/kernel/git/davem/net
+$ git am ../quilt/rr/virtio:add_has_iomem_dependency_to_mmio_platform_bus_driver.patch
+Applying: virtio: add HAS_IOMEM dependency to MMIO platform bus driver
+/home/sfr/kernels/next/quilt-tmp/.git/rebase-apply/patch:14: space before tab in indent.
+ 	depends on HAS_IOMEM && EXPERIMENTAL
+warning: 1 line adds whitespace errors.
+$ git am ../quilt/rr/virtio:mmio_correct_the_name_of_the_guest_features_selector.patch
+Applying: virtio-mmio: Correct the name of the guest features selector
+$ git am ../quilt/rr/virtio:pci_make_reset_operation_safer.patch
+Applying: virtio-pci: make reset operation safer
+$ git am ../quilt/rr/virtio:balloon_trivial_cleanups.patch
+Applying: virtio-balloon: Trivial cleanups
+$ git am ../quilt/rr/virtio-documentation.patch
+Applying: virtio: document functions better.
+$ git am ../quilt/rr/virtio-virtqueue_add_buf_gfp-rename.patch
+Applying: virtio: rename virtqueue_add_buf_gfp to virtqueue_add_buf
+$ git am ../quilt/rr/virtio:support_unlocked_queue_kick.patch
+Applying: virtio: support unlocked queue kick
+$ git am ../quilt/rr/virtio_ring-avoid-modulus.patch
+Applying: virtio: avoid modulus operation.
+$ git am ../quilt/rr/virtio-add-should-expose.patch
+Applying: virtio: expose added descriptors immediately.
+$ git am ../quilt/rr/virtio-debug-missing-kick.patch
+Applying: virtio: add debugging if driver doesn't kick.
+$ git am ../quilt/rr/module:add_comments_describing_how_the_strmap_logic_works.patch
+Applying: module: Add comments describing how the "strmap" logic works
+$ git am ../quilt/rr/module:fix_performance_regression_on_s_with_large_symbol_tables.patch
+Applying: module: Fix performance regression on modules with large symbol tables
+$ git am ../quilt/rr/lguest:switched_segment_voodoo_numbers_to_readable_symbols.patch
+Applying: lguest: switch segment-voodoo-numbers to readable symbols
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/rr
+From ../quilt-tmp
+ + a1eabe9...7c9d1cc master     -> quilt/rr  (forced update)
+Importing device-mapper based on v3.1-10674-g94956ee
+Unchanged quilt series device-mapper
