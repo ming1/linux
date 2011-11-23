@@ -23,6 +23,7 @@
  *	Jim Keniston
  */
 
+#include <linux/errno.h>
 #include <linux/rbtree.h>
 
 struct vm_area_struct;
