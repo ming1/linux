@@ -26,6 +26,7 @@
 #include <linux/rbtree.h>
 
 struct vm_area_struct;
+struct mm_struct;
 #ifdef CONFIG_ARCH_SUPPORTS_UPROBES
 #include <asm/uprobes.h>
 #else
