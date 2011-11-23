@@ -1140,7 +1140,7 @@ void ixgbe_alloc_rx_buffers(struct ixgbe_ring *rx_ring, u16 cleaned_count)
 
 		if (ring_is_ps_enabled(rx_ring)) {
 			if (!bi->page) {
-				bi->page = netdev_alloc_page(rx_ring->netdev);
+				bi->page = alloc_page(GFP_ATOMIC | __GFP_COLD);
 				if (!bi->page) {
 					rx_ring->rx_stats.alloc_rx_page_failed++;
 					goto no_buffers;
@@ -7174,7 +7174,8 @@ void ixgbe_do_reset(struct net_device *netdev)
 		ixgbe_reset(adapter);
 }
 
-static u32 ixgbe_fix_features(struct net_device *netdev, u32 data)
+static netdev_features_t ixgbe_fix_features(struct net_device *netdev,
+	netdev_features_t data)
 {
 	struct ixgbe_adapter *adapter = netdev_priv(netdev);
 
@@ -7204,7 +7205,8 @@ static u32 ixgbe_fix_features(struct net_device *netdev, u32 data)
 	return data;
 }
 
-static int ixgbe_set_features(struct net_device *netdev, u32 data)
+static int ixgbe_set_features(struct net_device *netdev,
+	netdev_features_t data)
 {
 	struct ixgbe_adapter *adapter = netdev_priv(netdev);
 	bool need_reset = false;
