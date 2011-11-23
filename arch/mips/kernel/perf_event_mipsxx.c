@@ -711,15 +711,15 @@ static int validate_group(struct perf_event *event)
 	memset(&fake_cpuc, 0, sizeof(fake_cpuc));
 
 	if (mipsxx_pmu_alloc_counter(&fake_cpuc, &leader->hw) < 0)
-		return -ENOSPC;
+		return -EINVAL;
 
 	list_for_each_entry(sibling, &leader->sibling_list, group_entry) {
 		if (mipsxx_pmu_alloc_counter(&fake_cpuc, &sibling->hw) < 0)
-			return -ENOSPC;
+			return -EINVAL;
 	}
 
 	if (mipsxx_pmu_alloc_counter(&fake_cpuc, &event->hw) < 0)
-		return -ENOSPC;
+		return -EINVAL;
 
 	return 0;
 }
