@@ -88,7 +88,7 @@ struct pinctrl_dev *get_pinctrl_dev_from_dev(struct device *dev,
 	return found ? pctldev : NULL;
 }
 
-struct pin_desc *pin_desc_get(struct pinctrl_dev *pctldev, int pin)
+struct pin_desc *pin_desc_get(struct pinctrl_dev *pctldev, unsigned int pin)
 {
 	struct pin_desc *pindesc;
 	unsigned long flags;
@@ -284,6 +284,37 @@ void pinctrl_remove_gpio_range(struct pinctrl_dev *pctldev,
 	mutex_unlock(&pctldev->gpio_ranges_lock);
 }
 
+/**
+ * pinctrl_get_group_selector() - returns the group selector for a group
+ * @pctldev: the pin controller handling the group
+ * @pin_group: the pin group to look up
+ */
+int pinctrl_get_group_selector(struct pinctrl_dev *pctldev,
+			       const char *pin_group)
+{
+	const struct pinctrl_ops *pctlops = pctldev->desc->pctlops;
+	unsigned group_selector = 0;
+
+	while (pctlops->list_groups(pctldev, group_selector) >= 0) {
+		const char *gname = pctlops->get_group_name(pctldev,
+							    group_selector);
+		if (!strcmp(gname, pin_group)) {
+			dev_dbg(&pctldev->dev,
+				"found group selector %u for %s\n",
+				group_selector,
+				pin_group);
+			return group_selector;
+		}
+
+		group_selector++;
+	}
+
+	dev_err(&pctldev->dev, "does not have pin group %s\n",
+		pin_group);
+
+	return -EINVAL;
+}
+
 #ifdef CONFIG_DEBUG_FS
 
 static int pinctrl_pins_show(struct seq_file *s, void *what)
@@ -363,8 +394,11 @@ static int pinctrl_gpioranges_show(struct seq_file *s, void *what)
 	/* Loop over the ranges */
 	mutex_lock(&pctldev->gpio_ranges_lock);
 	list_for_each_entry(range, &pctldev->gpio_ranges, node) {
-		seq_printf(s, "%u: %s [%u - %u]\n", range->id, range->name,
-			   range->base, (range->base + range->npins - 1));
+		seq_printf(s, "%u: %s GPIOS [%u - %u] PINS [%u - %u]\n",
+			   range->id, range->name,
+			   range->base, (range->base + range->npins - 1),
+			   range->pin_base,
+			   (range->pin_base + range->npins - 1));
 	}
 	mutex_unlock(&pctldev->gpio_ranges_lock);
 
