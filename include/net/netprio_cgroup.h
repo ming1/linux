@@ -20,7 +20,9 @@
 
 struct cgroup_netprio_state
 {
+#ifdef CONFIG_CGROUPS
 	struct cgroup_subsys_state css;
+#endif
 	u32 prioidx;
 };
 
