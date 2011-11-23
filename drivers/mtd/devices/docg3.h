@@ -80,6 +80,7 @@
 
 #define DOC_CHIPID_G3			0x200
 #define DOC_ERASE_MARK			0xaa
+#define DOC_MAX_NBFLOORS		4
 /*
  * Flash registers
  */
@@ -105,7 +106,7 @@
 #define DOC_ECCCONF1			0x1042
 #define DOC_ECCPRESET			0x1044
 #define DOC_HAMMINGPARITY		0x1046
-#define DOC_BCH_SYNDROM(idx)		(0x1048 + (idx << 1))
+#define DOC_BCH_SYNDROM(idx)		(0x1048 + (idx << 0))
 
 #define DOC_PROTECTION			0x1056
 #define DOC_DPS0_ADDRLOW		0x1060
@@ -129,6 +130,8 @@
 #define DOC_SEQ_SET_PLANE1		0x0e
 #define DOC_SEQ_SET_PLANE2		0x10
 #define DOC_SEQ_PAGE_SETUP		0x1d
+#define DOC_SEQ_ERASE			0x27
+#define DOC_SEQ_PLANES_STATUS		0x31
 
 /*
  * Flash commands
@@ -143,7 +146,10 @@
 #define DOC_CMD_PROG_BLOCK_ADDR		0x60
 #define DOC_CMD_PROG_CYCLE1		0x80
 #define DOC_CMD_PROG_CYCLE2		0x10
+#define DOC_CMD_PROG_CYCLE3		0x11
 #define DOC_CMD_ERASECYCLE2		0xd0
+#define DOC_CMD_READ_STATUS		0x70
+#define DOC_CMD_PLANES_STATUS		0x71
 
 #define DOC_CMD_RELIABLE_MODE		0x22
 #define DOC_CMD_FAST_MODE		0xa2
@@ -185,7 +191,7 @@
  */
 #define DOC_ECCCONF1_BCH_SYNDROM_ERR	0x80
 #define DOC_ECCCONF1_UNKOWN1		0x40
-#define DOC_ECCCONF1_UNKOWN2		0x20
+#define DOC_ECCCONF1_PAGE_IS_WRITTEN	0x20
 #define DOC_ECCCONF1_UNKOWN3		0x10
 #define DOC_ECCCONF1_HAMMING_BITS_MASK	0x0f
 
@@ -223,6 +229,13 @@
 #define DOC_READADDR_ONE_BYTE		0x4000
 #define DOC_READADDR_ADDR_MASK		0x1fff
 
+/*
+ * Status of erase and write operation
+ */
+#define DOC_PLANES_STATUS_FAIL		0x01
+#define DOC_PLANES_STATUS_PLANE0_KO	0x02
+#define DOC_PLANES_STATUS_PLANE1_KO	0x04
+
 /**
  * struct docg3 - DiskOnChip driver private data
  * @dev: the device currently under control
@@ -230,6 +243,11 @@
  * @device_id: number of the cascaded DoCG3 device (0, 1, 2 or 3)
  * @if_cfg: if true, reads are on 16bits, else reads are on 8bits
  * @bbt: bad block table cache
+ * @oob_write_ofs: offset of the MTD where this OOB should belong (ie. in next
+ *                 page_write)
+ * @oob_autoecc: if 1, use only bytes 0-7, 15, and fill the others with HW ECC
+ *               if 0, use all the 16 bytes.
+ * @oob_write_buf: prepared OOB for next page_write
  * @debugfs_root: debugfs root node
  */
 struct docg3 {
@@ -239,6 +257,9 @@ struct docg3 {
 	unsigned int if_cfg:1;
 	int max_block;
 	u8 *bbt;
+	loff_t oob_write_ofs;
+	int oob_autoecc;
+	u8 oob_write_buf[DOC_LAYOUT_OOB_SIZE];
 	struct dentry *debugfs_root;
 };
 
