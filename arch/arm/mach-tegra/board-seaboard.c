@@ -34,6 +34,7 @@
 
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
+#include <asm/hardware/gic.h>
 
 #include "board.h"
 #include "board-seaboard.h"
@@ -284,6 +285,7 @@ MACHINE_START(SEABOARD, "seaboard")
 	.map_io         = tegra_map_common_io,
 	.init_early     = tegra_init_early,
 	.init_irq       = tegra_init_irq,
+	.handle_irq	= gic_handle_irq,
 	.timer          = &tegra_timer,
 	.init_machine   = tegra_seaboard_init,
 	.restart	= tegra_assert_system_reset,
@@ -294,6 +296,7 @@ MACHINE_START(KAEN, "kaen")
 	.map_io         = tegra_map_common_io,
 	.init_early     = tegra_init_early,
 	.init_irq       = tegra_init_irq,
+	.handle_irq	= gic_handle_irq,
 	.timer          = &tegra_timer,
 	.init_machine   = tegra_kaen_init,
 	.restart	= tegra_assert_system_reset,
@@ -304,6 +307,7 @@ MACHINE_START(WARIO, "wario")
 	.map_io         = tegra_map_common_io,
 	.init_early     = tegra_init_early,
 	.init_irq       = tegra_init_irq,
+	.handle_irq	= gic_handle_irq,
 	.timer          = &tegra_timer,
 	.init_machine   = tegra_wario_init,
 	.restart	= tegra_assert_system_reset,
