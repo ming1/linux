@@ -25,7 +25,7 @@
 
 #include <plat/mcspi.h>
 #include <plat/board.h>
-#include <plat/common.h>
+#include "common.h"
 #include <plat/dma.h>
 #include <plat/gpmc.h>
 #include <plat/usb.h>
@@ -129,4 +129,5 @@ MACHINE_START(NOKIA_RX51, "Nokia RX-51 board")
 	.init_irq	= omap3_init_irq,
 	.init_machine	= rx51_init,
 	.timer		= &omap3_timer,
+	.restart	= omap_prcm_restart,
 MACHINE_END
