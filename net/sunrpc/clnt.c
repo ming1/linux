@@ -112,7 +112,6 @@ static void rpc_clnt_remove_pipedir(struct rpc_clnt *clnt)
 		__rpc_clnt_remove_pipedir(clnt);
 		rpc_put_sb_net(clnt->cl_xprt->xprt_net);
 	}
-	rpc_put_mount();
 }
 
 static struct dentry *rpc_setup_pipedir_sb(struct super_block *sb,
@@ -158,21 +157,13 @@ rpc_setup_pipedir(struct rpc_clnt *clnt, char *dir_name)
 	clnt->cl_path.dentry = NULL;
 	if (dir_name == NULL)
 		return 0;
-
-	path.mnt = rpc_get_mount();
-	if (IS_ERR(path.mnt))
-		return PTR_ERR(path.mnt);
 	pipefs_sb = rpc_get_sb_net(clnt->cl_xprt->xprt_net);
-	if (!pipefs_sb) {
-		rpc_put_mount();
-		return -ENOENT;
-	}
+	if (!pipefs_sb)
+		return 0;
 	path.dentry = rpc_setup_pipedir_sb(pipefs_sb, clnt, dir_name);
 	rpc_put_sb_net(clnt->cl_xprt->xprt_net);
-	if (IS_ERR(path.dentry)) {
-		rpc_put_mount();
+	if (IS_ERR(path.dentry))
 		return PTR_ERR(path.dentry);
-	}
 	clnt->cl_path = path;
 	return 0;
 }
