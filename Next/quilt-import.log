@@ -1,0 +1,43 @@
+Importing hexagon based on v3.2-rc2
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard cfcfc9eca2bcbd26a8e206baeb005b055dbf8e37
+HEAD is now at cfcfc9e Linux 3.2-rc2
+$ git am ../quilt/hexagon/0001-Use-resource_size-function-on-resource-object.patch
+Applying: Use resource_size function on resource object instead of explicit computation.
+$ git am ../quilt/hexagon/0002-hexagon-drop-selects-of-bogus-Kconfig-symbols.patch
+Applying: hexagon: drop selects of bogus Kconfig symbols
+$ git am ../quilt/hexagon/0003-various-Kconfig-cleanup-and-old-platform-build-code-.patch
+Applying: various Kconfig cleanup and old platform build code removal
+$ git am ../quilt/hexagon/0004-Hexagon-misc-compile-warning-error-cleanup-due-to-mi.patch
+Applying: Hexagon: misc compile warning/error cleanup due to missing headers
+$ git am ../quilt/hexagon/0005-Remove-unneeded-include-of-version.h-from-arch-hexag.patch
+Applying: Remove unneeded include of version.h from arch/hexagon/include/asm/spinlock_types.h
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/hexagon
+From ../quilt-tmp
+   cfcfc9e..110b372  master     -> quilt/hexagon
+Importing i2c based on 3.2-rc2
+Unchanged quilt series i2c
+Importing jdelvare-hwmon based on 3.2-rc2
+$ cd ../quilt-tmp
+$ git reset --hard cfcfc9eca2bcbd26a8e206baeb005b055dbf8e37
+HEAD is now at cfcfc9e Linux 3.2-rc2
+$ git am ../quilt/jdelvare-hwmon/hwmon-max1111-change-sysfs-interface-to-in_input-in-millivolts.patch
+Applying: hwmon: (max1111) Change sysfs interface to in[0-3]_input in millivolts
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm63-01-fix-checkpatch-errors.patch
+Applying: hwmon: (lm63) Fix checkpatch errors
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm63-02-support-for-external-temperature-offset.patch
+Applying: hwmon: (lm63) Add support for external temperature offset register
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm63-03-add-support-for-lm96163.patch
+Applying: hwmon: (lm63) Add support for LM96163
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/jdelvare-hwmon
+From ../quilt-tmp
+ + dda4fa1...2ebbc92 master     -> quilt/jdelvare-hwmon  (forced update)
+Importing kernel-doc based on 3.1
+Unchanged quilt series kernel-doc
+Importing rr based on v3.2-rc2-274-g6fe4c6d
+Unchanged quilt series rr
+Importing device-mapper based on v3.1-10674-g94956ee
+Unchanged quilt series device-mapper
