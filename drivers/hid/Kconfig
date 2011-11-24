@@ -560,6 +560,12 @@ config GREENASIA_FF
 	(like MANTA Warrior MM816 and SpeedLink Strike2 SL-6635) or adapter
 	and want to enable force feedback support for it.
 
+config HID_HYPERV_MOUSE
+	tristate "Microsoft Hyper-V mouse driver"
+	depends on HYPERV
+	---help---
+	Select this option to enable the Hyper-V mouse driver.
+
 config HID_SMARTJOYPLUS
 	tristate "SmartJoy PLUS PS2/USB adapter support"
 	depends on USB_HID
@@ -622,6 +628,15 @@ config HID_WIIMOTE
 	select POWER_SUPPLY
 	---help---
 	Support for the Nintendo Wii Remote bluetooth device.
+
+config HID_WIIMOTE_EXT
+	bool "Nintendo Wii Remote Extension support"
+	depends on HID_WIIMOTE
+	default HID_WIIMOTE
+	---help---
+	Support for extension controllers of the Nintendo Wii Remote. Say yes
+	here if you want to use the Nintendo Motion+, Nunchuck or Classic
+	extension controllers with your Wii Remote.
 
 config HID_ZEROPLUS
 	tristate "Zeroplus based game controller support"
