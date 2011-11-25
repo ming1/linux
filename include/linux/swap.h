@@ -211,6 +211,8 @@ struct swap_list_t {
 /* linux/mm/page_alloc.c */
 extern unsigned long totalram_pages;
 extern unsigned long totalreserve_pages;
+extern int min_free_kbytes;
+extern int extra_free_kbytes;
 extern unsigned int nr_free_buffer_pages(void);
 extern unsigned int nr_free_pagecache_pages(void);
 
@@ -365,6 +367,26 @@ static inline void put_swap_token(struct mm_struct *mm)
 		__put_swap_token(mm);
 }
 
+static inline bool has_active_swap_token(struct mm_struct *mm)
+{
+	return has_swap_token(mm) && atomic_read(&mm->active_swap_token);
+}
+
+static inline bool activate_swap_token(struct mm_struct *mm)
+{
+	if (has_swap_token(mm)) {
+		atomic_inc(&mm->active_swap_token);
+		return true;
+	}
+	return false;
+}
+
+static inline void deactivate_swap_token(struct mm_struct *mm, bool swap_token)
+{
+	if (swap_token)
+		atomic_dec(&mm->active_swap_token);
+}
+
 #ifdef CONFIG_CGROUP_MEM_RES_CTLR
 extern void
 mem_cgroup_uncharge_swapcache(struct page *page, swp_entry_t ent, bool swapout);
@@ -488,6 +510,20 @@ static inline void grab_swap_token(struct mm_struct *mm)
 static inline int has_swap_token(struct mm_struct *mm)
 {
 	return 0;
+}
+
+static inline bool has_active_swap_token(struct mm_struct *mm)
+{
+	return false;
+}
+
+static inline bool activate_swap_token(struct mm_struct *mm)
+{
+	return false;
+}
+
+static inline void deactivate_swap_token(struct mm_struct *mm, bool swap_token)
+{
 }
 
 static inline void disable_swap_token(struct mem_cgroup *memcg)
