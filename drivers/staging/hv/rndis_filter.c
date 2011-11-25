@@ -388,7 +388,7 @@ int rndis_filter_receive(struct hv_device *dev,
 	}
 
 	rndis_hdr = (struct rndis_message *)kmap_atomic(
-			pfn_to_page(pkt->page_buf[0].pfn), KM_IRQ0);
+			pfn_to_page(pkt->page_buf[0].pfn));
 
 	rndis_hdr = (void *)((unsigned long)rndis_hdr +
 			pkt->page_buf[0].offset);
@@ -407,7 +407,7 @@ int rndis_filter_receive(struct hv_device *dev,
 			sizeof(struct rndis_message) :
 			rndis_hdr->msg_len);
 
-	kunmap_atomic(rndis_hdr - pkt->page_buf[0].offset, KM_IRQ0);
+	kunmap_atomic(rndis_hdr - pkt->page_buf[0].offset);
 
 	dump_rndis_message(dev, &rndis_msg);
 
