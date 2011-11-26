@@ -25,6 +25,8 @@
 struct tda18212_priv {
 	struct tda18212_config *cfg;
 	struct i2c_adapter *i2c;
+
+	u32 if_frequency;
 };
 
 #define dbg(fmt, arg...)					\
@@ -225,7 +227,7 @@ static int tda18212_set_params(struct dvb_frontend *fe,
 	buf[0] = 0x02;
 	buf[1] = bw_params[i][1];
 	buf[2] = 0x03; /* default value */
-	buf[3] = if_khz / 50;
+	buf[3] = DIV_ROUND_CLOSEST(if_khz, 50);
 	buf[4] = ((c->frequency / 1000) >> 16) & 0xff;
 	buf[5] = ((c->frequency / 1000) >>  8) & 0xff;
 	buf[6] = ((c->frequency / 1000) >>  0) & 0xff;
@@ -234,6 +236,9 @@ static int tda18212_set_params(struct dvb_frontend *fe,
 	ret = tda18212_wr_regs(priv, 0x12, buf, sizeof(buf));
 	if (ret)
 		goto error;
+
+	/* actual IF rounded as it is on register */
+	priv->if_frequency = buf[3] * 50 * 1000;
 
 exit:
 	if (fe->ops.i2c_gate_ctrl)
@@ -244,6 +249,15 @@ exit:
 error:
 	dbg("failed:%d\n", ret);
 	goto exit;
+}
+
+static int tda18212_get_if_frequency(struct dvb_frontend *fe, u32 *frequency)
+{
+	struct tda18212_priv *priv = fe->tuner_priv;
+
+	*frequency = priv->if_frequency;
+
+	return 0;
 }
 
 static int tda18212_release(struct dvb_frontend *fe)
@@ -265,6 +279,7 @@ static const struct dvb_tuner_ops tda18212_tuner_ops = {
 	.release       = tda18212_release,
 
 	.set_params    = tda18212_set_params,
+	.get_if_frequency = tda18212_get_if_frequency,
 };
 
 struct dvb_frontend *tda18212_attach(struct dvb_frontend *fe,

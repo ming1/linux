@@ -2343,6 +2343,13 @@ S:	Supported
 F:	drivers/gpu/drm/i915
 F:	include/drm/i915*
 
+DRM DRIVERS FOR EXYNOS
+M:	Inki Dae <inki.dae@samsung.com>
+L:	dri-devel@lists.freedesktop.org
+S:	Supported
+F:	drivers/gpu/drm/exynos
+F:	include/drm/exynos*
+
 DSCC4 DRIVER
 M:	Francois Romieu <romieu@fr.zoreil.com>
 L:	netdev@vger.kernel.org
@@ -2828,6 +2835,14 @@ M:	Jonathan Woithe <jwoithe@physics.adelaide.edu.au>
 L:	platform-driver-x86@vger.kernel.org
 S:	Maintained
 F:	drivers/platform/x86/fujitsu-laptop.c
+
+FUJITSU M-5MO LS CAMERA ISP DRIVER
+M:	Kyungmin Park <kyungmin.park@samsung.com>
+M:	Heungjun Kim <riverful.kim@samsung.com>
+L:	linux-media@vger.kernel.org
+S:	Maintained
+F:	drivers/media/video/m5mols/
+F:	include/media/m5mols.h
 
 FUSE: FILESYSTEM IN USERSPACE
 M:	Miklos Szeredi <miklos@szeredi.hu>
@@ -6123,7 +6138,7 @@ F:	sound/
 SOUND - SOC LAYER / DYNAMIC AUDIO POWER MANAGEMENT (ASoC)
 M:	Liam Girdwood <lrg@ti.com>
 M:	Mark Brown <broonie@opensource.wolfsonmicro.com>
-T:	git git://git.kernel.org/pub/scm/linux/kernel/git/broonie/sound-2.6.git
+T:	git git://git.kernel.org/pub/scm/linux/kernel/git/broonie/sound.git
 L:	alsa-devel@alsa-project.org (moderated for non-subscribers)
 W:	http://alsa-project.org/main/index.php/ASoC
 S:	Supported
