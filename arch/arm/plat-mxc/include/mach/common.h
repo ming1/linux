@@ -71,8 +71,8 @@ extern int mx6q_clocks_init(void);
 extern struct platform_device *mxc_register_gpio(char *name, int id,
 	resource_size_t iobase, resource_size_t iosize, int irq, int irq_high);
 extern void mxc_set_cpu_type(unsigned int type);
+extern void mxc_restart(char, const char *);
 extern void mxc_arch_reset_init(void __iomem *);
-extern void mx51_efikamx_reset(void);
 extern int mx53_revision(void);
 extern int mx53_display_revision(void);
 
@@ -90,7 +90,6 @@ extern void imx_print_silicon_rev(const char *cpu, int srev);
 
 void avic_handle_irq(struct pt_regs *);
 void tzic_handle_irq(struct pt_regs *);
-void gic_handle_irq(struct pt_regs *);
 
 #define imx1_handle_irq avic_handle_irq
 #define imx21_handle_irq avic_handle_irq
