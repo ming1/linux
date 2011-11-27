@@ -179,7 +179,7 @@ static unsigned long balloon3_ac97_pin_config[] __initdata = {
 };
 
 static struct ucb1400_pdata vpac270_ucb1400_pdata = {
-	.irq		= IRQ_GPIO(BALLOON3_GPIO_CODEC_IRQ),
+	.irq		= PXA_GPIO_TO_IRQ(BALLOON3_GPIO_CODEC_IRQ),
 };
 
 
@@ -307,7 +307,7 @@ static inline void balloon3_mmc_init(void) {}
 /******************************************************************************
  * USB Gadget
  ******************************************************************************/
-#if defined(CONFIG_USB_GADGET_PXA27X)||defined(CONFIG_USB_GADGET_PXA27X_MODULE)
+#if defined(CONFIG_USB_PXA27X)||defined(CONFIG_USB_PXA27X_MODULE)
 static void balloon3_udc_command(int cmd)
 {
 	if (cmd == PXA2XX_UDC_CMD_CONNECT)
