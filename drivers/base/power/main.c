@@ -763,31 +763,23 @@ static pm_message_t resume_event(pm_message_t sleep_state)
  */
 static int device_suspend_noirq(struct device *dev, pm_message_t state)
 {
-	int error;
+	int error = 0;
 
 	if (dev->pm_domain) {
 		pm_dev_dbg(dev, state, "LATE power domain ");
 		error = pm_noirq_op(dev, &dev->pm_domain->ops, state);
-		if (error)
-			return error;
 	} else if (dev->type && dev->type->pm) {
 		pm_dev_dbg(dev, state, "LATE type ");
 		error = pm_noirq_op(dev, dev->type->pm, state);
-		if (error)
-			return error;
 	} else if (dev->class && dev->class->pm) {
 		pm_dev_dbg(dev, state, "LATE class ");
 		error = pm_noirq_op(dev, dev->class->pm, state);
-		if (error)
-			return error;
 	} else if (dev->bus && dev->bus->pm) {
 		pm_dev_dbg(dev, state, "LATE ");
 		error = pm_noirq_op(dev, dev->bus->pm, state);
-		if (error)
-			return error;
 	}
 
-	return 0;
+	return error;
 }
 
 /**
@@ -1033,22 +1025,16 @@ static int device_prepare(struct device *dev, pm_message_t state)
 		if (dev->pm_domain->ops.prepare)
 			error = dev->pm_domain->ops.prepare(dev);
 		suspend_report_result(dev->pm_domain->ops.prepare, error);
-		if (error)
-			goto End;
 	} else if (dev->type && dev->type->pm) {
 		pm_dev_dbg(dev, state, "preparing type ");
 		if (dev->type->pm->prepare)
 			error = dev->type->pm->prepare(dev);
 		suspend_report_result(dev->type->pm->prepare, error);
-		if (error)
-			goto End;
 	} else if (dev->class && dev->class->pm) {
 		pm_dev_dbg(dev, state, "preparing class ");
 		if (dev->class->pm->prepare)
 			error = dev->class->pm->prepare(dev);
 		suspend_report_result(dev->class->pm->prepare, error);
-		if (error)
-			goto End;
 	} else if (dev->bus && dev->bus->pm) {
 		pm_dev_dbg(dev, state, "preparing ");
 		if (dev->bus->pm->prepare)
@@ -1056,7 +1042,6 @@ static int device_prepare(struct device *dev, pm_message_t state)
 		suspend_report_result(dev->bus->pm->prepare, error);
 	}
 
- End:
 	device_unlock(dev);
 
 	return error;
