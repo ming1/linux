@@ -1,0 +1,12 @@
+This file lists all branches that are pulled into the for-next branch
+of git://git.kernel.org/pub/scm/linux/kernel/git/arm/arm-soc.git
+and their external dependencies.
+
+Currently there are no dependencies.
+
+next/drivers
+  drivers/macb-gem	git://github.com/jamieiles/linux-2.6-ji.git macb-gem
+  drivers/pxa-gpio	git://github.com/hzhuang1/linux.git gpio
+
+next/move
+  imx/move		git://git.pengutronix.de/git/imx/linux-2.6.git mx5-merge
