@@ -48,39 +48,6 @@ struct dsa_switch {
 	struct net_device	*ports[DSA_MAX_PORTS];
 };
 
-struct dsa_switch_tree {
-	/*
-	 * Configuration data for the platform device that owns
-	 * this dsa switch tree instance.
-	 */
-	struct dsa_platform_data	*pd;
-
-	/*
-	 * Reference to network device to use, and which tagging
-	 * protocol to use.
-	 */
-	struct net_device	*master_netdev;
-	__be16			tag_protocol;
-
-	/*
-	 * The switch and port to which the CPU is attached.
-	 */
-	s8			cpu_switch;
-	s8			cpu_port;
-
-	/*
-	 * Link state polling.
-	 */
-	int			link_poll_needed;
-	struct work_struct	link_poll_work;
-	struct timer_list	link_poll_timer;
-
-	/*
-	 * Data for the individual switch chips.
-	 */
-	struct dsa_switch	*ds[DSA_MAX_SWITCHES];
-};
-
 static inline bool dsa_is_cpu_port(struct dsa_switch *ds, int p)
 {
 	return !!(ds->index == ds->dst->cpu_switch && p == ds->dst->cpu_port);
@@ -170,12 +137,15 @@ struct net_device *dsa_slave_create(struct dsa_switch *ds,
 
 /* tag_dsa.c */
 netdev_tx_t dsa_xmit(struct sk_buff *skb, struct net_device *dev);
+extern struct packet_type dsa_packet_type;
 
 /* tag_edsa.c */
 netdev_tx_t edsa_xmit(struct sk_buff *skb, struct net_device *dev);
+extern struct packet_type edsa_packet_type;
 
 /* tag_trailer.c */
 netdev_tx_t trailer_xmit(struct sk_buff *skb, struct net_device *dev);
+extern struct packet_type trailer_packet_type;
 
 
 #endif
