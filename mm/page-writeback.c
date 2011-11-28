@@ -1136,7 +1136,8 @@ pause:
 		if (task_ratelimit)
 			break;
 
-		if (fatal_signal_pending(current))
+		if (fatal_signal_pending(current) &&
+		    nr_dirty <= dirty_thresh + dirty_thresh / 2)
 			break;
 	}
 
