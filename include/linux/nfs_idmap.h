@@ -67,10 +67,10 @@ struct idmap_msg {
 struct nfs_client;
 struct nfs_server;
 
-#ifdef CONFIG_NFS_USE_NEW_IDMAPPER
-
 int nfs_idmap_init(void);
 void nfs_idmap_quit(void);
+
+#ifdef CONFIG_NFS_USE_NEW_IDMAPPER
 
 static inline int nfs_idmap_new(struct nfs_client *clp)
 {
@@ -82,15 +82,6 @@ static inline void nfs_idmap_delete(struct nfs_client *clp)
 }
 
 #else /* CONFIG_NFS_USE_NEW_IDMAPPER not set */
-
-static inline int nfs_idmap_init(void)
-{
-	return 0;
-}
-
-static inline void nfs_idmap_quit(void)
-{
-}
 
 int nfs_idmap_new(struct nfs_client *);
 void nfs_idmap_delete(struct nfs_client *);
