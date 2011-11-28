@@ -161,7 +161,7 @@ static struct sam9_smc_config __initdata ek_nand_smc_config = {
 static void __init ek_add_device_nand(void)
 {
 	/* configure chip-select 3 (NAND) */
-	sam9_smc_configure(3, &ek_nand_smc_config);
+	sam9_smc_configure(0, 3, &ek_nand_smc_config);
 
 	at91_add_device_nand(&ek_nand_data);
 }
@@ -251,7 +251,7 @@ static void __init ek_board_init(void)
 	/* LEDs */
 	at91_gpio_leds(ek_leds, ARRAY_SIZE(ek_leds));
 	/* shutdown controller, wakeup button (5 msec low) */
-	at91_sys_write(AT91_SHDW_MR, AT91_SHDW_CPTWK0_(10) | AT91_SHDW_WKMODE0_LOW
+	at91_shdwc_write(AT91_SHDW_MR, AT91_SHDW_CPTWK0_(10) | AT91_SHDW_WKMODE0_LOW
 				| AT91_SHDW_RTTWKEN);
 }
 

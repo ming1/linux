@@ -23,6 +23,7 @@
 #include "soc.h"
 #include "generic.h"
 #include "clock.h"
+#include "sam9_smc.h"
 
 static struct map_desc at91rm9200_io_desc[] __initdata = {
 	{
@@ -271,19 +272,19 @@ void __init at91rm9200_set_console_clock(int id)
 static struct at91_gpio_bank at91rm9200_gpio[] = {
 	{
 		.id		= AT91RM9200_ID_PIOA,
-		.offset		= AT91_PIOA,
+		.regbase	= AT91RM9200_BASE_PIOA,
 		.clock		= &pioA_clk,
 	}, {
 		.id		= AT91RM9200_ID_PIOB,
-		.offset		= AT91_PIOB,
+		.regbase	= AT91RM9200_BASE_PIOB,
 		.clock		= &pioB_clk,
 	}, {
 		.id		= AT91RM9200_ID_PIOC,
-		.offset		= AT91_PIOC,
+		.regbase	= AT91RM9200_BASE_PIOC,
 		.clock		= &pioC_clk,
 	}, {
 		.id		= AT91RM9200_ID_PIOD,
-		.offset		= AT91_PIOD,
+		.regbase	= AT91RM9200_BASE_PIOD,
 		.clock		= &pioD_clk,
 	}
 };
@@ -305,6 +306,10 @@ static void __init at91rm9200_map_io(void)
 	/* Map peripherals */
 	at91_init_sram(0, AT91RM9200_SRAM_BASE, AT91RM9200_SRAM_SIZE);
 	iotable_init(at91rm9200_io_desc, ARRAY_SIZE(at91rm9200_io_desc));
+}
+
+static void __init at91rm9200_ioremap_registers(void)
+{
 }
 
 static void __init at91rm9200_initialize(void)
@@ -366,6 +371,7 @@ static unsigned int at91rm9200_default_irq_priority[NR_AIC_IRQS] __initdata = {
 struct at91_init_soc __initdata at91rm9200_soc = {
 	.map_io = at91rm9200_map_io,
 	.default_irq_priority = at91rm9200_default_irq_priority,
+	.ioremap_registers = at91rm9200_ioremap_registers,
 	.register_clocks = at91rm9200_register_clocks,
 	.init = at91rm9200_initialize,
 };
