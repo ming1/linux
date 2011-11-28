@@ -681,7 +681,8 @@ static int init_state(struct drxk_state *state)
 	state->m_hasOOB = false;
 	state->m_hasAudio = false;
 
-	state->m_ChunkSize = 124;
+	if (!state->m_ChunkSize)
+		state->m_ChunkSize = 124;
 
 	state->m_oscClockFreq = 0;
 	state->m_smartAntInverted = false;
@@ -6218,6 +6219,13 @@ static int drxk_set_parameters(struct dvb_frontend *fe,
 		return -EINVAL;
 	}
 
+	if (state->m_OperationMode == OM_QAM_ITU_A ||
+	    state->m_OperationMode == OM_QAM_ITU_C) {
+		if (fe->dtv_property_cache.rolloff == ROLLOFF_13)
+			state->m_OperationMode = OM_QAM_ITU_C;
+		else
+			state->m_OperationMode = OM_QAM_ITU_A;
+	}
 
 	if (fe->ops.i2c_gate_ctrl)
 		fe->ops.i2c_gate_ctrl(fe, 1);
@@ -6423,6 +6431,7 @@ struct dvb_frontend *drxk_attach(const struct drxk_config *config,
 	state->no_i2c_bridge = config->no_i2c_bridge;
 	state->antenna_gpio = config->antenna_gpio;
 	state->antenna_dvbt = config->antenna_dvbt;
+	state->m_ChunkSize = config->chunk_size;
 
 	/* NOTE: as more UIO bits will be used, add them to the mask */
 	state->UIO_mask = config->antenna_gpio;
