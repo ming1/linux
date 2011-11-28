@@ -161,6 +161,7 @@ static long bcm_char_ioctl(struct file *filp, UINT cmd, ULONG arg)
 	INT Status = STATUS_FAILURE;
 	int timeout = 0;
 	IOCTL_BUFFER IoBuffer;
+	int bytes;
 
 	BCM_DEBUG_PRINT(Adapter, DBG_TYPE_OTHERS, OSAL_DBG, DBG_LVL_ALL, "Parameters Passed to control IOCTL cmd=0x%X arg=0x%lX", cmd, arg);
 
@@ -230,11 +231,14 @@ static long bcm_char_ioctl(struct file *filp, UINT cmd, ULONG arg)
 		if (!temp_buff)
 			return -ENOMEM;
 
-		Status = rdmalt(Adapter, (UINT)sRdmBuffer.Register,
+		bytes = rdmalt(Adapter, (UINT)sRdmBuffer.Register,
 				(PUINT)temp_buff, Bufflen);
-		if (Status == STATUS_SUCCESS) {
-			if (copy_to_user(IoBuffer.OutputBuffer, temp_buff, IoBuffer.OutputLength))
+		if (bytes > 0) {
+			Status = STATUS_SUCCESS;
+			if (copy_to_user(IoBuffer.OutputBuffer, temp_buff, bytes))
 				Status = -EFAULT;
+		} else {
+			Status = bytes;
 		}
 
 		kfree(temp_buff);
@@ -302,7 +306,11 @@ static long bcm_char_ioctl(struct file *filp, UINT cmd, ULONG arg)
 		if (copy_from_user(&sRdmBuffer, IoBuffer.InputBuffer, IoBuffer.InputLength))
 			return -EFAULT;
 
-		/* FIXME: don't trust user supplied length */
+		if (IoBuffer.OutputLength > USHRT_MAX ||
+			IoBuffer.OutputLength == 0) {
+			return -EINVAL;
+		}
+
 		temp_buff = kmalloc(IoBuffer.OutputLength, GFP_KERNEL);
 		if (!temp_buff)
 			return STATUS_FAILURE;
@@ -318,11 +326,15 @@ static long bcm_char_ioctl(struct file *filp, UINT cmd, ULONG arg)
 		}
 
 		uiTempVar = sRdmBuffer.Register & EEPROM_REJECT_MASK;
-		Status = rdmaltWithLock(Adapter, (UINT)sRdmBuffer.Register, (PUINT)temp_buff, IoBuffer.OutputLength);
+		bytes = rdmaltWithLock(Adapter, (UINT)sRdmBuffer.Register, (PUINT)temp_buff, IoBuffer.OutputLength);
 
-		if (Status == STATUS_SUCCESS)
-			if (copy_to_user(IoBuffer.OutputBuffer, temp_buff, IoBuffer.OutputLength))
+		if (bytes > 0) {
+			Status = STATUS_SUCCESS;
+			if (copy_to_user(IoBuffer.OutputBuffer, temp_buff, bytes))
 				Status = -EFAULT;
+		} else {
+			Status = bytes;
+		}
 
 		kfree(temp_buff);
 		break;
@@ -437,12 +449,14 @@ static long bcm_char_ioctl(struct file *filp, UINT cmd, ULONG arg)
 			}
 		}
 
-		Status = rdmaltWithLock(Adapter, (UINT)GPIO_MODE_REGISTER, (PUINT)ucResetValue, sizeof(UINT));
-
-		if (STATUS_SUCCESS != Status) {
+		bytes = rdmaltWithLock(Adapter, (UINT)GPIO_MODE_REGISTER, (PUINT)ucResetValue, sizeof(UINT));
+		if (bytes < 0) {
+			Status = bytes;
 			BCM_DEBUG_PRINT(Adapter, DBG_TYPE_OTHERS, OSAL_DBG, DBG_LVL_ALL,
 					"GPIO_MODE_REGISTER read failed");
 			break;
+		} else {
+			Status = STATUS_SUCCESS;
 		}
 
 		/* Set the gpio mode register to output */
@@ -519,12 +533,15 @@ static long bcm_char_ioctl(struct file *filp, UINT cmd, ULONG arg)
 		uiBit = gpio_info.uiGpioNumber;
 
 		/* Set the gpio output register */
-		Status = rdmaltWithLock(Adapter, (UINT)GPIO_PIN_STATE_REGISTER,
+		bytes = rdmaltWithLock(Adapter, (UINT)GPIO_PIN_STATE_REGISTER,
 					(PUINT)ucRead, sizeof(UINT));
 
-		if (Status != STATUS_SUCCESS) {
+		if (bytes < 0) {
+			Status = bytes;
 			BCM_DEBUG_PRINT(Adapter, DBG_TYPE_PRINTK, 0, 0, "RDM Failed\n");
 			return Status;
+		} else {
+			Status = STATUS_SUCCESS;
 		}
 	}
 	break;
@@ -590,11 +607,14 @@ static long bcm_char_ioctl(struct file *filp, UINT cmd, ULONG arg)
 		}
 
 		if (pgpio_multi_info[WIMAX_IDX].uiGPIOMask) {
-			Status = rdmaltWithLock(Adapter, (UINT)GPIO_PIN_STATE_REGISTER, (PUINT)ucResetValue, sizeof(UINT));
+			bytes = rdmaltWithLock(Adapter, (UINT)GPIO_PIN_STATE_REGISTER, (PUINT)ucResetValue, sizeof(UINT));
 
-			if (Status != STATUS_SUCCESS) {
+			if (bytes < 0) {
+				Status = bytes;
 				BCM_DEBUG_PRINT(Adapter, DBG_TYPE_PRINTK, 0, 0, "RDM to GPIO_PIN_STATE_REGISTER Failed.");
 				return Status;
+			} else {
+				Status = STATUS_SUCCESS;
 			}
 
 			pgpio_multi_info[WIMAX_IDX].uiGPIOValue = (*(UINT *)ucResetValue &
@@ -629,11 +649,14 @@ static long bcm_char_ioctl(struct file *filp, UINT cmd, ULONG arg)
 		if (copy_from_user(&gpio_multi_mode, IoBuffer.InputBuffer, IoBuffer.InputLength))
 			return -EFAULT;
 
-		Status = rdmaltWithLock(Adapter, (UINT)GPIO_MODE_REGISTER, (PUINT)ucResetValue, sizeof(UINT));
+		bytes = rdmaltWithLock(Adapter, (UINT)GPIO_MODE_REGISTER, (PUINT)ucResetValue, sizeof(UINT));
 
-		if (STATUS_SUCCESS != Status) {
+		if (bytes < 0) {
+			Status = bytes;
 			BCM_DEBUG_PRINT(Adapter, DBG_TYPE_PRINTK, 0, 0, "Read of GPIO_MODE_REGISTER failed");
 			return Status;
+		} else {
+			Status = STATUS_SUCCESS;
 		}
 
 		/* Validating the request */
@@ -769,59 +792,66 @@ cntrlEnd:
 	case IOCTL_BCM_BUFFER_DOWNLOAD: {
 		FIRMWARE_INFO *psFwInfo = NULL;
 		BCM_DEBUG_PRINT(Adapter, DBG_TYPE_PRINTK, 0, 0, "Starting the firmware download PID =0x%x!!!!\n", current->pid);
-		do {
-			if (!down_trylock(&Adapter->fw_download_sema)) {
-				BCM_DEBUG_PRINT(Adapter, DBG_TYPE_PRINTK, 0, 0,
-						"Invalid way to download buffer. Use Start and then call this!!!\n");
-				Status = -EINVAL;
-				break;
-			}
 
-			/* Copy Ioctl Buffer structure */
-			if (copy_from_user(&IoBuffer, argp, sizeof(IOCTL_BUFFER)))
-				return -EFAULT;
-
+		if (!down_trylock(&Adapter->fw_download_sema)) {
 			BCM_DEBUG_PRINT(Adapter, DBG_TYPE_PRINTK, 0, 0,
-					"Length for FW DLD is : %lx\n", IoBuffer.InputLength);
-
-			if (IoBuffer.InputLength > sizeof(FIRMWARE_INFO))
-				return -EINVAL;
-
-			psFwInfo = kmalloc(sizeof(*psFwInfo), GFP_KERNEL);
-			if (!psFwInfo)
-				return -ENOMEM;
-
-			if (copy_from_user(psFwInfo, IoBuffer.InputBuffer, IoBuffer.InputLength))
-				return -EFAULT;
-
-			if (!psFwInfo->pvMappedFirmwareAddress ||
-				(psFwInfo->u32FirmwareLength == 0)) {
-
-				BCM_DEBUG_PRINT(Adapter, DBG_TYPE_PRINTK, 0, 0, "Something else is wrong %lu\n",
-						psFwInfo->u32FirmwareLength);
-				Status = -EINVAL;
-				break;
-			}
-
-			Status = bcm_ioctl_fw_download(Adapter, psFwInfo);
-
-			if (Status != STATUS_SUCCESS) {
-				if (psFwInfo->u32StartingAddress == CONFIG_BEGIN_ADDR)
-					BCM_DEBUG_PRINT(Adapter, DBG_TYPE_PRINTK, 0, 0, "IOCTL: Configuration File Upload Failed\n");
-				else
-					BCM_DEBUG_PRINT(Adapter, DBG_TYPE_PRINTK, 0, 0,	"IOCTL: Firmware File Upload Failed\n");
-
-				/* up(&Adapter->fw_download_sema); */
-
-				if (Adapter->LEDInfo.led_thread_running & BCM_LED_THREAD_RUNNING_ACTIVELY) {
-					Adapter->DriverState = DRIVER_INIT;
-					Adapter->LEDInfo.bLedInitDone = FALSE;
-					wake_up(&Adapter->LEDInfo.notify_led_event);
-				}
-			}
+					"Invalid way to download buffer. Use Start and then call this!!!\n");
+			up(&Adapter->fw_download_sema);
+			Status = -EINVAL;
 			break;
+		}
 
-		} while (0);
+		/* Copy Ioctl Buffer structure */
+		if (copy_from_user(&IoBuffer, argp, sizeof(IOCTL_BUFFER))) {
+			up(&Adapter->fw_download_sema);
+			return -EFAULT;
+		}
+
+		BCM_DEBUG_PRINT(Adapter, DBG_TYPE_PRINTK, 0, 0,
+				"Length for FW DLD is : %lx\n", IoBuffer.InputLength);
+
+		if (IoBuffer.InputLength > sizeof(FIRMWARE_INFO)) {
+			up(&Adapter->fw_download_sema);
+			return -EINVAL;
+		}
+
+		psFwInfo = kmalloc(sizeof(*psFwInfo), GFP_KERNEL);
+		if (!psFwInfo) {
+			up(&Adapter->fw_download_sema);
+			return -ENOMEM;
+		}
+
+		if (copy_from_user(psFwInfo, IoBuffer.InputBuffer, IoBuffer.InputLength)) {
+			up(&Adapter->fw_download_sema);
+			return -EFAULT;
+		}
+
+		if (!psFwInfo->pvMappedFirmwareAddress ||
+			(psFwInfo->u32FirmwareLength == 0)) {
+
+			BCM_DEBUG_PRINT(Adapter, DBG_TYPE_PRINTK, 0, 0, "Something else is wrong %lu\n",
+					psFwInfo->u32FirmwareLength);
+			up(&Adapter->fw_download_sema);
+			Status = -EINVAL;
+			break;
+		}
+
+		Status = bcm_ioctl_fw_download(Adapter, psFwInfo);
+
+		if (Status != STATUS_SUCCESS) {
+			if (psFwInfo->u32StartingAddress == CONFIG_BEGIN_ADDR)
+				BCM_DEBUG_PRINT(Adapter, DBG_TYPE_PRINTK, 0, 0, "IOCTL: Configuration File Upload Failed\n");
+			else
+				BCM_DEBUG_PRINT(Adapter, DBG_TYPE_PRINTK, 0, 0,	"IOCTL: Firmware File Upload Failed\n");
+
+			/* up(&Adapter->fw_download_sema); */
+
+			if (Adapter->LEDInfo.led_thread_running & BCM_LED_THREAD_RUNNING_ACTIVELY) {
+				Adapter->DriverState = DRIVER_INIT;
+				Adapter->LEDInfo.bLedInitDone = FALSE;
+				wake_up(&Adapter->LEDInfo.notify_led_event);
+			}
+		}
 
 		if (Status != STATUS_SUCCESS)
 			up(&Adapter->fw_download_sema);
