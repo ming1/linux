@@ -1504,9 +1504,11 @@ sub process {
 		if ($line =~ /^diff --git.*?(\S+)$/) {
 			$realfile = $1;
 			$realfile =~ s@^([^/]*)/@@;
+			$in_commit_log = 0;
 		} elsif ($line =~ /^\+\+\+\s+(\S+)/) {
 			$realfile = $1;
 			$realfile =~ s@^([^/]*)/@@;
+			$in_commit_log = 0;
 
 			$p1_prefix = $1;
 			if (!$file && $tree && $p1_prefix ne '' &&
@@ -1546,7 +1548,8 @@ sub process {
 		}
 
 # Check signature styles
-		if ($line =~ /^(\s*)($signature_tags)(\s*)(.*)/) {
+		if (!$in_header_lines &&
+		    $line =~ /^(\s*)($signature_tags)(\s*)(.*)/) {
 			my $space_before = $1;
 			my $sign_off = $2;
 			my $space_after = $3;
@@ -1623,7 +1626,7 @@ sub process {
 # Check if it's the start of a commit log
 # (not a header line and we haven't seen the patch filename)
 		if ($in_header_lines && $realfile =~ /^$/ &&
-		    $rawline !~ /^(commit\b|from\b|\w+:).+$/i) {
+		    $rawline !~ /^(commit\b|from\b|[\w-]+:).+$/i) {
 			$in_header_lines = 0;
 			$in_commit_log = 1;
 		}
@@ -3109,6 +3112,12 @@ sub process {
 		if ($line =~ /\b__attribute__\s*\(\s*\(.*aligned/) {
 			WARN("PREFER_ALIGNED",
 			     "__aligned(size) is preferred over __attribute__((aligned(size)))\n" . $herecurr);
+		}
+
+# Check for __attribute__ format(printf, prefer __printf
+		if ($line =~ /\b__attribute__\s*\(\s*\(\s*format\s*\(\s*printf/) {
+			WARN("PREFER_PRINTF",
+			     "__printf(string-index, first-to-check) is preferred over __attribute__((format(printf, string-index, first-to-check)))\n" . $herecurr);
 		}
 
 # check for sizeof(&)
