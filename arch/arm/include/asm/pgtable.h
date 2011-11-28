@@ -11,17 +11,17 @@
 #define _ASMARM_PGTABLE_H
 
 #include <linux/const.h>
-#include <asm-generic/4level-fixup.h>
 #include <asm/proc-fns.h>
 
 #ifndef CONFIG_MMU
 
+#include <asm-generic/4level-fixup.h>
 #include "pgtable-nommu.h"
 
 #else
 
+#include <asm-generic/pgtable-nopud.h>
 #include <asm/memory.h>
-#include <mach/vmalloc.h>
 #include <asm/pgtable-hwdef.h>
 
 #include <asm/pgtable-2level.h>
@@ -33,14 +33,16 @@
  * any out-of-bounds memory accesses will hopefully be caught.
  * The vmalloc() routines leaves a hole of 4kB between each vmalloced
  * area for the same reason. ;)
- *
- * Note that platforms may override VMALLOC_START, but they must provide
- * VMALLOC_END.  VMALLOC_END defines the (exclusive) limit of this space,
- * which may not overlap IO space.
  */
-#ifndef VMALLOC_START
 #define VMALLOC_OFFSET		(8*1024*1024)
 #define VMALLOC_START		(((unsigned long)high_memory + VMALLOC_OFFSET) & ~(VMALLOC_OFFSET-1))
+#define VMALLOC_END		0xff000000UL
+
+/* This is a temporary hack until shmobile's DMA area size is sorted out */
+#ifdef CONFIG_ARCH_SHMOBILE
+#warning "SH-Mobile's consistent DMA size conflicts with VMALLOC_END by 144MB"
+#undef VMALLOC_END
+#define VMALLOC_END		0xF6000000UL
 #endif
 
 #define LIBRARY_TEXT_START	0x0c000000
@@ -164,20 +166,22 @@ extern pgd_t swapper_pg_dir[PTRS_PER_PGD];
 #define pgd_offset_k(addr)	pgd_offset(&init_mm, addr)
 
 /*
- * The "pgd_xxx()" functions here are trivial for a folded two-level
- * setup: the pgd is never bad, and a pmd always exists (as it's folded
- * into the pgd entry)
+ * The "pud_xxx()" functions here are trivial when the pmd is folded into
+ * the pud: the pud entry is never bad, always exists, and can't be set or
+ * cleared.
  */
-#define pgd_none(pgd)		(0)
-#define pgd_bad(pgd)		(0)
-#define pgd_present(pgd)	(1)
-#define pgd_clear(pgdp)		do { } while (0)
-#define set_pgd(pgd,pgdp)	do { } while (0)
+#define pud_none(pud)		(0)
+#define pud_bad(pud)		(0)
+#define pud_present(pud)	(1)
+#define pud_clear(pudp)		do { } while (0)
 #define set_pud(pud,pudp)	do { } while (0)
 
 
 /* Find an entry in the second-level page table.. */
-#define pmd_offset(dir, addr)	((pmd_t *)(dir))
+static inline pmd_t *pmd_offset(pud_t *pud, unsigned long addr)
+{
+	return (pmd_t *)pud;
+}
 
 #define pmd_none(pmd)		(!pmd_val(pmd))
 #define pmd_present(pmd)	(pmd_val(pmd))
