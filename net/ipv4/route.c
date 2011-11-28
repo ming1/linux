@@ -131,6 +131,7 @@ static int ip_rt_mtu_expires __read_mostly	= 10 * 60 * HZ;
 static int ip_rt_min_pmtu __read_mostly		= 512 + 20 + 20;
 static int ip_rt_min_advmss __read_mostly	= 256;
 static int rt_chain_length_max __read_mostly	= 20;
+static int redirect_genid;
 
 /*
  *	Interface to generic destination cache.
@@ -138,7 +139,7 @@ static int rt_chain_length_max __read_mostly	= 20;
 
 static struct dst_entry *ipv4_dst_check(struct dst_entry *dst, u32 cookie);
 static unsigned int	 ipv4_default_advmss(const struct dst_entry *dst);
-static unsigned int	 ipv4_default_mtu(const struct dst_entry *dst);
+static unsigned int	 ipv4_mtu(const struct dst_entry *dst);
 static void		 ipv4_dst_destroy(struct dst_entry *dst);
 static struct dst_entry *ipv4_negative_advice(struct dst_entry *dst);
 static void		 ipv4_link_failure(struct sk_buff *skb);
@@ -193,7 +194,7 @@ static struct dst_ops ipv4_dst_ops = {
 	.gc =			rt_garbage_collect,
 	.check =		ipv4_dst_check,
 	.default_advmss =	ipv4_default_advmss,
-	.default_mtu =		ipv4_default_mtu,
+	.mtu =			ipv4_mtu,
 	.cow_metrics =		ipv4_cow_metrics,
 	.destroy =		ipv4_dst_destroy,
 	.ifdown =		ipv4_dst_ifdown,
@@ -837,6 +838,7 @@ static void rt_cache_invalidate(struct net *net)
 
 	get_random_bytes(&shuffle, sizeof(shuffle));
 	atomic_add(shuffle + 1U, &net->ipv4.rt_genid);
+	redirect_genid++;
 }
 
 /*
@@ -1391,8 +1393,10 @@ void ip_rt_redirect(__be32 old_gw, __be32 daddr, __be32 new_gw,
 
 				peer = rt->peer;
 				if (peer) {
-					if (peer->redirect_learned.a4 != new_gw) {
+					if (peer->redirect_learned.a4 != new_gw ||
+					    peer->redirect_genid != redirect_genid) {
 						peer->redirect_learned.a4 = new_gw;
+						peer->redirect_genid = redirect_genid;
 						atomic_inc(&__rt_peer_genid);
 					}
 					check_peer_redir(&rt->dst, peer);
@@ -1701,6 +1705,8 @@ static struct dst_entry *ipv4_dst_check(struct dst_entry *dst, u32 cookie)
 		if (peer) {
 			check_peer_pmtu(dst, peer);
 
+			if (peer->redirect_genid != redirect_genid)
+				peer->redirect_learned.a4 = 0;
 			if (peer->redirect_learned.a4 &&
 			    peer->redirect_learned.a4 != rt->rt_gateway) {
 				if (check_peer_redir(dst, peer))
@@ -1814,12 +1820,17 @@ static unsigned int ipv4_default_advmss(const struct dst_entry *dst)
 	return advmss;
 }
 
-static unsigned int ipv4_default_mtu(const struct dst_entry *dst)
+static unsigned int ipv4_mtu(const struct dst_entry *dst)
 {
-	unsigned int mtu = dst->dev->mtu;
+	const struct rtable *rt = (const struct rtable *) dst;
+	unsigned int mtu = dst_metric_raw(dst, RTAX_MTU);
+
+	if (mtu && rt_is_output_route(rt))
+		return mtu;
+
+	mtu = dst->dev->mtu;
 
 	if (unlikely(dst_metric_locked(dst, RTAX_MTU))) {
-		const struct rtable *rt = (const struct rtable *) dst;
 
 		if (rt->rt_gateway != rt->rt_dst && mtu > 576)
 			mtu = 576;
@@ -1852,6 +1863,8 @@ static void rt_init_metrics(struct rtable *rt, const struct flowi4 *fl4,
 		dst_init_metrics(&rt->dst, peer->metrics, false);
 
 		check_peer_pmtu(&rt->dst, peer);
+		if (peer->redirect_genid != redirect_genid)
+			peer->redirect_learned.a4 = 0;
 		if (peer->redirect_learned.a4 &&
 		    peer->redirect_learned.a4 != rt->rt_gateway) {
 			rt->rt_gateway = peer->redirect_learned.a4;
@@ -2755,9 +2768,11 @@ static struct dst_entry *ipv4_blackhole_dst_check(struct dst_entry *dst, u32 coo
 	return NULL;
 }
 
-static unsigned int ipv4_blackhole_default_mtu(const struct dst_entry *dst)
+static unsigned int ipv4_blackhole_mtu(const struct dst_entry *dst)
 {
-	return 0;
+	unsigned int mtu = dst_metric_raw(dst, RTAX_MTU);
+
+	return mtu ? : dst->dev->mtu;
 }
 
 static void ipv4_rt_blackhole_update_pmtu(struct dst_entry *dst, u32 mtu)
@@ -2775,7 +2790,7 @@ static struct dst_ops ipv4_dst_blackhole_ops = {
 	.protocol		=	cpu_to_be16(ETH_P_IP),
 	.destroy		=	ipv4_dst_destroy,
 	.check			=	ipv4_blackhole_dst_check,
-	.default_mtu		=	ipv4_blackhole_default_mtu,
+	.mtu			=	ipv4_blackhole_mtu,
 	.default_advmss		=	ipv4_default_advmss,
 	.update_pmtu		=	ipv4_rt_blackhole_update_pmtu,
 	.cow_metrics		=	ipv4_rt_blackhole_cow_metrics,
