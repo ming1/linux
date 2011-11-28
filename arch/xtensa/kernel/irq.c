@@ -25,6 +25,11 @@
 static unsigned int cached_irq_mask;
 
 atomic_t irq_err_count;
+void ack_bad_irq(unsigned int irq)
+{
+        atomic_inc(&irq_err_count);
+        printk(KERN_ERR "IRQ: spurious interrupt %d\n", irq);
+}
 
 /*
  * do_IRQ handles all normal device IRQ's (the special
