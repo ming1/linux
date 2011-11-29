@@ -30,7 +30,6 @@
  *	when virtual port control is not in use.
  * @WLAN_STA_SHORT_PREAMBLE: Station is capable of receiving short-preamble
  *	frames.
- * @WLAN_STA_ASSOC_AP: We're associated to that station, it is an AP.
  * @WLAN_STA_WME: Station is a QoS-STA.
  * @WLAN_STA_WDS: Station is one of our WDS peers.
  * @WLAN_STA_CLEAR_PS_FILT: Clear PS filter in hardware (using the
@@ -60,7 +59,6 @@ enum ieee80211_sta_info_flags {
 	WLAN_STA_PS_STA,
 	WLAN_STA_AUTHORIZED,
 	WLAN_STA_SHORT_PREAMBLE,
-	WLAN_STA_ASSOC_AP,
 	WLAN_STA_WME,
 	WLAN_STA_WDS,
 	WLAN_STA_CLEAR_PS_FILT,
@@ -90,6 +88,7 @@ enum ieee80211_sta_info_flags {
  * struct tid_ampdu_tx - TID aggregation information (Tx).
  *
  * @rcu_head: rcu head for freeing structure
+ * @session_timer: check if we keep Tx-ing on the TID (by timeout value)
  * @addba_resp_timer: timer for peer's response to addba request
  * @pending: pending frames queue -- use sta's spinlock to protect
  * @dialog_token: dialog token for aggregation session
@@ -112,6 +111,7 @@ enum ieee80211_sta_info_flags {
  */
 struct tid_ampdu_tx {
 	struct rcu_head rcu_head;
+	struct timer_list session_timer;
 	struct timer_list addba_resp_timer;
 	struct sk_buff_head pending;
 	unsigned long state;
