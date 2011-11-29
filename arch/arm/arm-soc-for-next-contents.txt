@@ -6,6 +6,8 @@ Currently there are no dependencies.
 
 next/cleanup
   at91/ioremap		git://github.com/at91linux/linux-at91.git for-arnd-3.3-ioremap
+  at91/gpio		git://github.com/at91linux/linux-at91.git for-arnd-3.3-gpio
+  drivers/macb-gem-cleanup	parts of drivers/macb-gem that at91/gpio depends on
 
 next/drivers
   drivers/macb-gem	git://github.com/jamieiles/linux-2.6-ji.git macb-gem
