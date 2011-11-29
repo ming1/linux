@@ -175,6 +175,9 @@ static struct clk_lookup periph_clocks_lookups[] = {
 	CLKDEV_CON_DEV_ID("pclk", "ssc.1", &ssc1_clk),
 	CLKDEV_CON_DEV_ID("pclk", "ssc.2", &ssc2_clk),
 	CLKDEV_CON_DEV_ID("hclk", "at91_ohci", &hck0),
+	CLKDEV_CON_ID("pioA", &pioA_clk),
+	CLKDEV_CON_ID("pioB", &pioB_clk),
+	CLKDEV_CON_ID("pioC", &pioC_clk),
 };
 
 static struct clk_lookup usart_clocks_lookups[] = {
@@ -250,19 +253,16 @@ void __init at91sam9261_set_console_clock(int id)
  *  GPIO
  * -------------------------------------------------------------------- */
 
-static struct at91_gpio_bank at91sam9261_gpio[] = {
+static struct at91_gpio_bank at91sam9261_gpio[] __initdata = {
 	{
 		.id		= AT91SAM9261_ID_PIOA,
 		.regbase	= AT91SAM9261_BASE_PIOA,
-		.clock		= &pioA_clk,
 	}, {
 		.id		= AT91SAM9261_ID_PIOB,
 		.regbase	= AT91SAM9261_BASE_PIOB,
-		.clock		= &pioB_clk,
 	}, {
 		.id		= AT91SAM9261_ID_PIOC,
 		.regbase	= AT91SAM9261_BASE_PIOC,
-		.clock		= &pioC_clk,
 	}
 };
 
