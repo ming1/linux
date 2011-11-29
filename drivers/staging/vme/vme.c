@@ -1307,7 +1307,12 @@ EXPORT_SYMBOL(vme_slot_get);
 
 /* - Bridge Registration --------------------------------------------------- */
 
-static int vme_add_bus(struct vme_bridge *bridge)
+static void vme_dev_release(struct device *dev)
+{
+	kfree(dev_to_vme_dev(dev));
+}
+
+int vme_register_bridge(struct vme_bridge *bridge)
 {
 	int i;
 	int ret = -1;
@@ -1327,8 +1332,9 @@ static int vme_add_bus(struct vme_bridge *bridge)
 
 	return ret;
 }
+EXPORT_SYMBOL(vme_register_bridge);
 
-static void vme_remove_bus(struct vme_bridge *bridge)
+void vme_unregister_bridge(struct vme_bridge *bridge)
 {
 	struct vme_dev *vdev;
 	struct vme_dev *tmp;
@@ -1342,22 +1348,6 @@ static void vme_remove_bus(struct vme_bridge *bridge)
 	}
 	list_del(&bridge->bus_list);
 	mutex_unlock(&vme_buses_lock);
-}
-
-static void vme_dev_release(struct device *dev)
-{
-	kfree(dev_to_vme_dev(dev));
-}
-
-int vme_register_bridge(struct vme_bridge *bridge)
-{
-	return vme_add_bus(bridge);
-}
-EXPORT_SYMBOL(vme_register_bridge);
-
-void vme_unregister_bridge(struct vme_bridge *bridge)
-{
-	vme_remove_bus(bridge);
 }
 EXPORT_SYMBOL(vme_unregister_bridge);
 
@@ -1421,10 +1411,7 @@ static int __vme_register_driver(struct vme_driver *drv, unsigned int ndevs)
 		 * and if the bridge is removed, it will have to go through
 		 * vme_unregister_bridge() to do it (which calls remove() on
 		 * the bridge which in turn tries to acquire vme_buses_lock and
-		 * will have to wait). The probe() called after device
-		 * registration in __vme_register_driver below will also fail
-		 * as the bridge is being removed (since the probe() calls
-		 * vme_bridge_get()).
+		 * will have to wait).
 		 */
 		err = __vme_register_driver_bus(drv, bridge, ndevs);
 		if (err)
