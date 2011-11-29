@@ -21,15 +21,11 @@
 #include <asm/byteorder.h>
 #include <linux/crypto.h>
 #include <linux/types.h>
+#include <crypto/serpent.h>
 
 /* Key is padded to the maximum of 256 bits before round key generation.
  * Any key length <= 256 bits (32 bytes) is allowed by the algorithm.
  */
-
-#define SERPENT_MIN_KEY_SIZE		  0
-#define SERPENT_MAX_KEY_SIZE		 32
-#define SERPENT_EXPKEY_WORDS		132
-#define SERPENT_BLOCK_SIZE		 16
 
 #define PHI 0x9e3779b9UL
 
@@ -210,15 +206,9 @@
 	x1 ^= x4;	x3 ^= x4;	x4 &= x0;	\
 	x4 ^= x2;
 
-struct serpent_ctx {
-	u32 expkey[SERPENT_EXPKEY_WORDS];
-};
-
-
-static int serpent_setkey(struct crypto_tfm *tfm, const u8 *key,
-			  unsigned int keylen)
+int __serpent_setkey(struct serpent_ctx *ctx, const u8 *key,
+		     unsigned int keylen)
 {
-	struct serpent_ctx *ctx = crypto_tfm_ctx(tfm);
 	u32 *k = ctx->expkey;
 	u8  *k8 = (u8 *)k;
 	u32 r0,r1,r2,r3,r4;
@@ -359,12 +349,17 @@ static int serpent_setkey(struct crypto_tfm *tfm, const u8 *key,
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(__serpent_setkey);
 
-static void serpent_encrypt(struct crypto_tfm *tfm, u8 *dst, const u8 *src)
+int serpent_setkey(struct crypto_tfm *tfm, const u8 *key, unsigned int keylen)
 {
-	struct serpent_ctx *ctx = crypto_tfm_ctx(tfm);
-	const u32
-		*k = ctx->expkey;
+	return __serpent_setkey(crypto_tfm_ctx(tfm), key, keylen);
+}
+EXPORT_SYMBOL_GPL(serpent_setkey);
+
+void __serpent_encrypt(struct serpent_ctx *ctx, u8 *dst, const u8 *src)
+{
+	const u32 *k = ctx->expkey;
 	const __le32 *s = (const __le32 *)src;
 	__le32	*d = (__le32 *)dst;
 	u32	r0, r1, r2, r3, r4;
@@ -418,12 +413,18 @@ static void serpent_encrypt(struct crypto_tfm *tfm, u8 *dst, const u8 *src)
 	d[2] = cpu_to_le32(r2);
 	d[3] = cpu_to_le32(r3);
 }
+EXPORT_SYMBOL_GPL(__serpent_encrypt);
 
-static void serpent_decrypt(struct crypto_tfm *tfm, u8 *dst, const u8 *src)
+static void serpent_encrypt(struct crypto_tfm *tfm, u8 *dst, const u8 *src)
 {
 	struct serpent_ctx *ctx = crypto_tfm_ctx(tfm);
-	const u32
-		*k = ((struct serpent_ctx *)ctx)->expkey;
+
+	__serpent_encrypt(ctx, dst, src);
+}
+
+void __serpent_decrypt(struct serpent_ctx *ctx, u8 *dst, const u8 *src)
+{
+	const u32 *k = ctx->expkey;
 	const __le32 *s = (const __le32 *)src;
 	__le32	*d = (__le32 *)dst;
 	u32	r0, r1, r2, r3, r4;
@@ -472,9 +473,19 @@ static void serpent_decrypt(struct crypto_tfm *tfm, u8 *dst, const u8 *src)
 	d[2] = cpu_to_le32(r1);
 	d[3] = cpu_to_le32(r4);
 }
+EXPORT_SYMBOL_GPL(__serpent_decrypt);
+
+static void serpent_decrypt(struct crypto_tfm *tfm, u8 *dst, const u8 *src)
+{
+	struct serpent_ctx *ctx = crypto_tfm_ctx(tfm);
+
+	__serpent_decrypt(ctx, dst, src);
+}
 
 static struct crypto_alg serpent_alg = {
 	.cra_name		=	"serpent",
+	.cra_driver_name	=	"serpent-generic",
+	.cra_priority		=	100,
 	.cra_flags		=	CRYPTO_ALG_TYPE_CIPHER,
 	.cra_blocksize		=	SERPENT_BLOCK_SIZE,
 	.cra_ctxsize		=	sizeof(struct serpent_ctx),
@@ -585,3 +596,4 @@ MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Serpent and tnepres (kerneli compatible serpent reversed) Cipher Algorithm");
 MODULE_AUTHOR("Dag Arne Osvik <osvik@ii.uib.no>");
 MODULE_ALIAS("tnepres");
+MODULE_ALIAS("serpent");
