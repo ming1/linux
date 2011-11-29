@@ -1075,6 +1075,8 @@ static int __devinit omap_nand_probe(struct platform_device *pdev)
 		}
 	}
 
+	info->nand.options |= pdata->options;
+
 	/* rom code layout */
 	if (pdata->ecc_opt == OMAP_ECC_HAMMING_CODE_HW_ROMCODE) {
 
