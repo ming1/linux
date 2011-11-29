@@ -50,7 +50,6 @@ MODULE_LICENSE("GPL");
 #define MT_QUIRK_ALWAYS_VALID		(1 << 4)
 #define MT_QUIRK_VALID_IS_INRANGE	(1 << 5)
 #define MT_QUIRK_VALID_IS_CONFIDENCE	(1 << 6)
-#define MT_QUIRK_EGALAX_XYZ_FIXUP	(1 << 7)
 #define MT_QUIRK_SLOT_IS_CONTACTID_MINUS_ONE	(1 << 8)
 
 struct mt_slot {
@@ -58,20 +57,6 @@ struct mt_slot {
 	__s32 contactid;	/* the device ContactID assigned to this slot */
 	bool touch_state;	/* is the touch valid? */
 	bool seen_in_this_frame;/* has this slot been updated */
-};
-
-struct mt_device {
-	struct mt_slot curdata;	/* placeholder of incoming data */
-	struct mt_class *mtclass;	/* our mt device class */
-	unsigned last_field_index;	/* last field index of the report */
-	unsigned last_slot_field;	/* the last field of a slot */
-	int last_mt_collection;	/* last known mt-related collection */
-	__s8 inputmode;		/* InputMode HID feature, -1 if non-existent */
-	__u8 num_received;	/* how many contacts we received */
-	__u8 num_expected;	/* expected last contact index */
-	__u8 maxcontacts;
-	bool curvalid;		/* is the current contact valid? */
-	struct mt_slot *slots;
 };
 
 struct mt_class {
@@ -82,6 +67,20 @@ struct mt_class {
 	__s32 sn_height;	/* Signal/noise ratio for height events */
 	__s32 sn_pressure;	/* Signal/noise ratio for pressure events */
 	__u8 maxcontacts;
+};
+
+struct mt_device {
+	struct mt_slot curdata;	/* placeholder of incoming data */
+	struct mt_class mtclass;	/* our mt device class */
+	unsigned last_field_index;	/* last field index of the report */
+	unsigned last_slot_field;	/* the last field of a slot */
+	int last_mt_collection;	/* last known mt-related collection */
+	__s8 inputmode;		/* InputMode HID feature, -1 if non-existent */
+	__u8 num_received;	/* how many contacts we received */
+	__u8 num_expected;	/* expected last contact index */
+	__u8 maxcontacts;
+	bool curvalid;		/* is the current contact valid? */
+	struct mt_slot *slots;
 };
 
 /* classes of device behavior */
@@ -98,6 +97,7 @@ struct mt_class {
 #define MT_CLS_3M				0x0101
 #define MT_CLS_CYPRESS				0x0102
 #define MT_CLS_EGALAX				0x0103
+#define MT_CLS_EGALAX_SERIAL			0x0104
 
 #define MT_DEFAULT_MAXCONTACT	10
 
@@ -133,7 +133,7 @@ static int find_slot_from_contactid(struct mt_device *td)
 	return -1;
 }
 
-struct mt_class mt_classes[] = {
+static struct mt_class mt_classes[] = {
 	{ .name = MT_CLS_DEFAULT,
 		.quirks = MT_QUIRK_NOT_SEEN_MEANS_UP },
 	{ .name = MT_CLS_SERIAL,
@@ -171,14 +171,56 @@ struct mt_class mt_classes[] = {
 		.maxcontacts = 10 },
 	{ .name = MT_CLS_EGALAX,
 		.quirks =  MT_QUIRK_SLOT_IS_CONTACTID |
-			MT_QUIRK_VALID_IS_INRANGE |
-			MT_QUIRK_EGALAX_XYZ_FIXUP,
-		.maxcontacts = 2,
+			MT_QUIRK_VALID_IS_INRANGE,
+		.sn_move = 4096,
+		.sn_pressure = 32,
+	},
+	{ .name = MT_CLS_EGALAX_SERIAL,
+		.quirks =  MT_QUIRK_SLOT_IS_CONTACTID |
+			MT_QUIRK_ALWAYS_VALID,
 		.sn_move = 4096,
 		.sn_pressure = 32,
 	},
 
 	{ }
+};
+
+static ssize_t mt_show_quirks(struct device *dev,
+			   struct device_attribute *attr,
+			   char *buf)
+{
+	struct hid_device *hdev = container_of(dev, struct hid_device, dev);
+	struct mt_device *td = hid_get_drvdata(hdev);
+
+	return sprintf(buf, "%u\n", td->mtclass.quirks);
+}
+
+static ssize_t mt_set_quirks(struct device *dev,
+			  struct device_attribute *attr,
+			  const char *buf, size_t count)
+{
+	struct hid_device *hdev = container_of(dev, struct hid_device, dev);
+	struct mt_device *td = hid_get_drvdata(hdev);
+
+	unsigned long val;
+
+	if (kstrtoul(buf, 0, &val))
+		return -EINVAL;
+
+	td->mtclass.quirks = val;
+
+	return count;
+}
+
+static DEVICE_ATTR(quirks, S_IWUSR | S_IRUGO, mt_show_quirks, mt_set_quirks);
+
+static struct attribute *sysfs_attrs[] = {
+	&dev_attr_quirks.attr,
+	NULL
+};
+
+static struct attribute_group mt_attribute_group = {
+	.attrs = sysfs_attrs
 };
 
 static void mt_feature_mapping(struct hid_device *hdev,
@@ -192,9 +234,9 @@ static void mt_feature_mapping(struct hid_device *hdev,
 		break;
 	case HID_DG_CONTACTMAX:
 		td->maxcontacts = field->value[0];
-		if (td->mtclass->maxcontacts)
+		if (td->mtclass.maxcontacts)
 			/* check if the maxcontacts is given by the class */
-			td->maxcontacts = td->mtclass->maxcontacts;
+			td->maxcontacts = td->mtclass.maxcontacts;
 
 		break;
 	}
@@ -214,8 +256,7 @@ static int mt_input_mapping(struct hid_device *hdev, struct hid_input *hi,
 		unsigned long **bit, int *max)
 {
 	struct mt_device *td = hid_get_drvdata(hdev);
-	struct mt_class *cls = td->mtclass;
-	__s32 quirks = cls->quirks;
+	struct mt_class *cls = &td->mtclass;
 
 	/* Only map fields from TouchScreen or TouchPad collections.
          * We need to ignore fields that belong to other collections
@@ -227,13 +268,17 @@ static int mt_input_mapping(struct hid_device *hdev, struct hid_input *hi,
 	else
 		return 0;
 
+	/* eGalax devices provide a Digitizer.Stylus input which overrides
+	 * the correct Digitizers.Finger X/Y ranges.
+	 * Let's just ignore this input. */
+	if (field->physical == HID_DG_STYLUS)
+		return -1;
+
 	switch (usage->hid & HID_USAGE_PAGE) {
 
 	case HID_UP_GENDESK:
 		switch (usage->hid) {
 		case HID_GD_X:
-			if (quirks & MT_QUIRK_EGALAX_XYZ_FIXUP)
-				field->logical_maximum = 32760;
 			hid_map_usage(hi, usage, bit, max,
 					EV_ABS, ABS_MT_POSITION_X);
 			set_abs(hi->input, ABS_MT_POSITION_X, field,
@@ -246,8 +291,6 @@ static int mt_input_mapping(struct hid_device *hdev, struct hid_input *hi,
 			}
 			return 1;
 		case HID_GD_Y:
-			if (quirks & MT_QUIRK_EGALAX_XYZ_FIXUP)
-				field->logical_maximum = 32760;
 			hid_map_usage(hi, usage, bit, max,
 					EV_ABS, ABS_MT_POSITION_Y);
 			set_abs(hi->input, ABS_MT_POSITION_Y, field,
@@ -315,8 +358,6 @@ static int mt_input_mapping(struct hid_device *hdev, struct hid_input *hi,
 			}
 			return 1;
 		case HID_DG_TIPPRESSURE:
-			if (quirks & MT_QUIRK_EGALAX_XYZ_FIXUP)
-				field->logical_minimum = 0;
 			hid_map_usage(hi, usage, bit, max,
 					EV_ABS, ABS_MT_PRESSURE);
 			set_abs(hi->input, ABS_MT_PRESSURE, field,
@@ -363,7 +404,7 @@ static int mt_input_mapped(struct hid_device *hdev, struct hid_input *hi,
 
 static int mt_compute_slot(struct mt_device *td)
 {
-	__s32 quirks = td->mtclass->quirks;
+	__s32 quirks = td->mtclass.quirks;
 
 	if (quirks & MT_QUIRK_SLOT_IS_CONTACTID)
 		return td->curdata.contactid;
@@ -407,7 +448,7 @@ static void mt_emit_event(struct mt_device *td, struct input_dev *input)
 
 	for (i = 0; i < td->maxcontacts; ++i) {
 		struct mt_slot *s = &(td->slots[i]);
-		if ((td->mtclass->quirks & MT_QUIRK_NOT_SEEN_MEANS_UP) &&
+		if ((td->mtclass.quirks & MT_QUIRK_NOT_SEEN_MEANS_UP) &&
 			!s->seen_in_this_frame) {
 			s->touch_state = false;
 		}
@@ -444,7 +485,7 @@ static int mt_event(struct hid_device *hid, struct hid_field *field,
 				struct hid_usage *usage, __s32 value)
 {
 	struct mt_device *td = hid_get_drvdata(hid);
-	__s32 quirks = td->mtclass->quirks;
+	__s32 quirks = td->mtclass.quirks;
 
 	if (hid->claimed & HID_CLAIMED_INPUT && td->slots) {
 		switch (usage->hid) {
@@ -552,7 +593,7 @@ static int mt_probe(struct hid_device *hdev, const struct hid_device_id *id)
 		dev_err(&hdev->dev, "cannot allocate multitouch data\n");
 		return -ENOMEM;
 	}
-	td->mtclass = mtclass;
+	td->mtclass = *mtclass;
 	td->inputmode = -1;
 	td->last_mt_collection = -1;
 	hid_set_drvdata(hdev, td);
@@ -574,6 +615,8 @@ static int mt_probe(struct hid_device *hdev, const struct hid_device_id *id)
 		goto fail;
 	}
 
+	ret = sysfs_create_group(&hdev->dev.kobj, &mt_attribute_group);
+
 	mt_set_input_mode(hdev);
 
 	return 0;
@@ -594,6 +637,7 @@ static int mt_reset_resume(struct hid_device *hdev)
 static void mt_remove(struct hid_device *hdev)
 {
 	struct mt_device *td = hid_get_drvdata(hdev);
+	sysfs_remove_group(&hdev->dev.kobj, &mt_attribute_group);
 	hid_hw_stop(hdev);
 	kfree(td->slots);
 	kfree(td);
@@ -645,23 +689,32 @@ static const struct hid_device_id mt_devices[] = {
 			USB_DEVICE_ID_CYPRESS_TRUETOUCH) },
 
 	/* eGalax devices (resistive) */
-	{  .driver_data = MT_CLS_EGALAX,
+	{ .driver_data = MT_CLS_EGALAX,
 		HID_USB_DEVICE(USB_VENDOR_ID_DWAV,
-			USB_DEVICE_ID_DWAV_EGALAX_MULTITOUCH) },
-	{  .driver_data = MT_CLS_EGALAX,
+			USB_DEVICE_ID_DWAV_EGALAX_MULTITOUCH_480D) },
+	{ .driver_data = MT_CLS_EGALAX,
 		HID_USB_DEVICE(USB_VENDOR_ID_DWAV,
-			USB_DEVICE_ID_DWAV_EGALAX_MULTITOUCH3) },
+			USB_DEVICE_ID_DWAV_EGALAX_MULTITOUCH_480E) },
 
 	/* eGalax devices (capacitive) */
-	{  .driver_data = MT_CLS_EGALAX,
+	{ .driver_data = MT_CLS_EGALAX,
 		HID_USB_DEVICE(USB_VENDOR_ID_DWAV,
-			USB_DEVICE_ID_DWAV_EGALAX_MULTITOUCH1) },
-	{  .driver_data = MT_CLS_EGALAX,
+			USB_DEVICE_ID_DWAV_EGALAX_MULTITOUCH_720C) },
+	{ .driver_data = MT_CLS_EGALAX,
 		HID_USB_DEVICE(USB_VENDOR_ID_DWAV,
-			USB_DEVICE_ID_DWAV_EGALAX_MULTITOUCH2) },
-	{  .driver_data = MT_CLS_EGALAX,
+			USB_DEVICE_ID_DWAV_EGALAX_MULTITOUCH_726B) },
+	{ .driver_data = MT_CLS_EGALAX,
 		HID_USB_DEVICE(USB_VENDOR_ID_DWAV,
-			USB_DEVICE_ID_DWAV_EGALAX_MULTITOUCH4) },
+			USB_DEVICE_ID_DWAV_EGALAX_MULTITOUCH_72A1) },
+	{ .driver_data = MT_CLS_EGALAX,
+		HID_USB_DEVICE(USB_VENDOR_ID_DWAV,
+			USB_DEVICE_ID_DWAV_EGALAX_MULTITOUCH_72FA) },
+	{ .driver_data = MT_CLS_EGALAX,
+		HID_USB_DEVICE(USB_VENDOR_ID_DWAV,
+			USB_DEVICE_ID_DWAV_EGALAX_MULTITOUCH_7302) },
+	{ .driver_data = MT_CLS_EGALAX_SERIAL,
+		HID_USB_DEVICE(USB_VENDOR_ID_DWAV,
+			USB_DEVICE_ID_DWAV_EGALAX_MULTITOUCH_A001) },
 
 	/* Elo TouchSystems IntelliTouch Plus panel */
 	{ .driver_data = MT_CLS_DUAL_NSMU_CONTACTID,
