@@ -124,6 +124,24 @@ static inline int freezer_should_skip(struct task_struct *p)
 })
 
 /*
+ * Like schedule_timeout_killable(), but should not block the freezer. It may
+ * end up returning immediately if it ends up racing with the freezer. Callers
+ * must be able to deal with the loose wakeup timing that can occur when the
+ * freezer races in. When that occurs, this function will return the timeout
+ * value instead of 0.
+ */
+#define freezable_schedule_timeout_killable(timeout)			\
+({									\
+	freezer_do_not_count();						\
+	if (try_to_freeze()) {						\
+		freezer_count();					\
+		return timeout;						\
+	}								\
+	schedule_timeout_killable(timeout);				\
+	freezer_count();						\
+})
+
+/*
  * Freezer-friendly wrappers around wait_event_interruptible(),
  * wait_event_killable() and wait_event_interruptible_timeout(), originally
  * defined in <linux/wait.h>
@@ -183,6 +201,9 @@ static inline int freezer_should_skip(struct task_struct *p) { return 0; }
 static inline void set_freezable(void) {}
 
 #define freezable_schedule()  schedule()
+
+#define freezable_schedule_timeout_killable(timeout)			\
+	schedule_timeout_killable(timeout)
 
 #define wait_event_freezable(wq, condition)				\
 		wait_event_interruptible(wq, condition)
