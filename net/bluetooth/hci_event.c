@@ -55,8 +55,12 @@ static void hci_cc_inquiry_cancel(struct hci_dev *hdev, struct sk_buff *skb)
 
 	BT_DBG("%s status 0x%x", hdev->name, status);
 
-	if (status)
+	if (status) {
+		hci_dev_lock(hdev);
+		mgmt_stop_discovery_failed(hdev, status);
+		hci_dev_unlock(hdev);
 		return;
+	}
 
 	clear_bit(HCI_INQUIRY, &hdev->flags);
 
@@ -1014,7 +1018,7 @@ static inline void hci_cs_inquiry(struct hci_dev *hdev, __u8 status)
 		hci_conn_check_pending(hdev);
 		hci_dev_lock(hdev);
 		if (test_bit(HCI_MGMT, &hdev->flags))
-			mgmt_inquiry_failed(hdev, status);
+			mgmt_start_discovery_failed(hdev, status);
 		hci_dev_unlock(hdev);
 		return;
 	}
@@ -1437,7 +1441,7 @@ static inline void hci_inquiry_result_evt(struct hci_dev *hdev, struct sk_buff *
 		data.rssi		= 0x00;
 		data.ssp_mode		= 0x00;
 		hci_inquiry_cache_update(hdev, &data);
-		mgmt_device_found(hdev, &info->bdaddr, ACL_LINK,
+		mgmt_device_found(hdev, &info->bdaddr, ACL_LINK, 0x00,
 						info->dev_class, 0, NULL);
 	}
 
@@ -1472,7 +1476,8 @@ static inline void hci_conn_complete_evt(struct hci_dev *hdev, struct sk_buff *s
 			conn->state = BT_CONFIG;
 			hci_conn_hold(conn);
 			conn->disc_timeout = HCI_DISCONN_TIMEOUT;
-			mgmt_connected(hdev, &ev->bdaddr, conn->type);
+			mgmt_connected(hdev, &ev->bdaddr, conn->type,
+							conn->dst_type);
 		} else
 			conn->state = BT_CONNECTED;
 
@@ -1505,7 +1510,7 @@ static inline void hci_conn_complete_evt(struct hci_dev *hdev, struct sk_buff *s
 		conn->state = BT_CLOSED;
 		if (conn->type == ACL_LINK)
 			mgmt_connect_failed(hdev, &ev->bdaddr, conn->type,
-								ev->status);
+						conn->dst_type, ev->status);
 	}
 
 	if (conn->type == ACL_LINK)
@@ -1604,26 +1609,27 @@ static inline void hci_disconn_complete_evt(struct hci_dev *hdev, struct sk_buff
 
 	BT_DBG("%s status %d", hdev->name, ev->status);
 
-	if (ev->status) {
-		hci_dev_lock(hdev);
-		mgmt_disconnect_failed(hdev);
-		hci_dev_unlock(hdev);
-		return;
-	}
-
 	hci_dev_lock(hdev);
 
 	conn = hci_conn_hash_lookup_handle(hdev, __le16_to_cpu(ev->handle));
 	if (!conn)
 		goto unlock;
 
-	conn->state = BT_CLOSED;
+	if (ev->status == 0)
+		conn->state = BT_CLOSED;
 
-	if (conn->type == ACL_LINK || conn->type == LE_LINK)
-		mgmt_disconnected(hdev, &conn->dst, conn->type);
+	if (conn->type == ACL_LINK || conn->type == LE_LINK) {
+		if (ev->status != 0)
+			mgmt_disconnect_failed(hdev, &conn->dst, ev->status);
+		else
+			mgmt_disconnected(hdev, &conn->dst, conn->type,
+							conn->dst_type);
+	}
 
-	hci_proto_disconn_cfm(conn, ev->reason);
-	hci_conn_del(conn);
+	if (ev->status == 0) {
+		hci_proto_disconn_cfm(conn, ev->reason);
+		hci_conn_del(conn);
+	}
 
 unlock:
 	hci_dev_unlock(hdev);
@@ -2096,7 +2102,7 @@ static inline void hci_cmd_status_evt(struct hci_dev *hdev, struct sk_buff *skb)
 
 	case HCI_OP_DISCONNECT:
 		if (ev->status != 0)
-			mgmt_disconnect_failed(hdev);
+			mgmt_disconnect_failed(hdev, NULL, ev->status);
 		break;
 
 	case HCI_OP_LE_CREATE_CONN:
@@ -2444,7 +2450,7 @@ static inline void hci_inquiry_result_with_rssi_evt(struct hci_dev *hdev, struct
 			data.rssi		= info->rssi;
 			data.ssp_mode		= 0x00;
 			hci_inquiry_cache_update(hdev, &data);
-			mgmt_device_found(hdev, &info->bdaddr, ACL_LINK,
+			mgmt_device_found(hdev, &info->bdaddr, ACL_LINK, 0x00,
 						info->dev_class, info->rssi,
 						NULL);
 		}
@@ -2461,7 +2467,7 @@ static inline void hci_inquiry_result_with_rssi_evt(struct hci_dev *hdev, struct
 			data.rssi		= info->rssi;
 			data.ssp_mode		= 0x00;
 			hci_inquiry_cache_update(hdev, &data);
-			mgmt_device_found(hdev, &info->bdaddr, ACL_LINK,
+			mgmt_device_found(hdev, &info->bdaddr, ACL_LINK, 0x00,
 						info->dev_class, info->rssi,
 						NULL);
 		}
@@ -2604,7 +2610,7 @@ static inline void hci_extended_inquiry_result_evt(struct hci_dev *hdev, struct 
 		data.rssi		= info->rssi;
 		data.ssp_mode		= 0x01;
 		hci_inquiry_cache_update(hdev, &data);
-		mgmt_device_found(hdev, &info->bdaddr, ACL_LINK,
+		mgmt_device_found(hdev, &info->bdaddr, ACL_LINK, 0x00,
 				info->dev_class, info->rssi, info->data);
 	}
 
@@ -2868,14 +2874,15 @@ static inline void hci_le_conn_complete_evt(struct hci_dev *hdev, struct sk_buff
 	}
 
 	if (ev->status) {
-		mgmt_connect_failed(hdev, &ev->bdaddr, conn->type, ev->status);
+		mgmt_connect_failed(hdev, &ev->bdaddr, conn->type,
+						conn->dst_type, ev->status);
 		hci_proto_connect_cfm(conn, ev->status);
 		conn->state = BT_CLOSED;
 		hci_conn_del(conn);
 		goto unlock;
 	}
 
-	mgmt_connected(hdev, &ev->bdaddr, conn->type);
+	mgmt_connected(hdev, &ev->bdaddr, conn->type, conn->dst_type);
 
 	conn->sec_level = BT_SECURITY_LOW;
 	conn->handle = __le16_to_cpu(ev->handle);
