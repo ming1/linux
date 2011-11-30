@@ -11,12 +11,11 @@
 #ifndef __ASM_GENERIC_PCI_IOMAP_H
 #define __ASM_GENERIC_PCI_IOMAP_H
 
+struct pci_dev;
 #ifdef CONFIG_PCI
 /* Create a virtual mapping cookie for a PCI BAR (memory or IO) */
-struct pci_dev;
 extern void __iomem *pci_iomap(struct pci_dev *dev, int bar, unsigned long max);
 #else
-struct pci_dev;
 static inline void __iomem *pci_iomap(struct pci_dev *dev, int bar, unsigned long max)
 {
 	return NULL;
