@@ -75,6 +75,24 @@ static struct map_desc at91_io_desc __initdata = {
 	.type		= MT_DEVICE,
 };
 
+void __iomem *at91_ioremap(unsigned long p, size_t size, unsigned int type)
+{
+	if (p >= AT91_BASE_SYS && p <= (AT91_BASE_SYS + SZ_16K - 1))
+		return (void __iomem *)AT91_IO_P2V(p);
+
+	return __arm_ioremap_caller(p, size, type, __builtin_return_address(0));
+}
+EXPORT_SYMBOL(at91_ioremap);
+
+void at91_iounmap(volatile void __iomem *addr)
+{
+	unsigned long virt = (unsigned long)addr;
+
+	if (virt >= VMALLOC_START && virt < VMALLOC_END)
+		__iounmap(addr);
+}
+EXPORT_SYMBOL(at91_iounmap);
+
 static void __init soc_detect(u32 dbgu_base)
 {
 	u32 cidr, socid;
@@ -279,6 +297,15 @@ void __init at91_ioremap_shdwc(u32 base_addr)
 	if (!at91_shdwc_base)
 		panic("Impossible to ioremap at91_shdwc_base\n");
 	pm_power_off = at91sam9_poweroff;
+}
+
+void __iomem *at91_rstc_base;
+
+void __init at91_ioremap_rstc(u32 base_addr)
+{
+	at91_rstc_base = ioremap(base_addr, 16);
+	if (!at91_rstc_base)
+		panic("Impossible to ioremap at91_rstc_base\n");
 }
 
 void __init at91_initialize(unsigned long main_clock)

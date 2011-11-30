@@ -21,7 +21,6 @@
 #include <mach/cpu.h>
 #include <mach/at91cap9.h>
 #include <mach/at91_pmc.h>
-#include <mach/at91_rstc.h>
 
 #include "soc.h"
 #include "generic.h"
@@ -136,7 +135,7 @@ static struct clk pwm_clk = {
 	.type		= CLK_TYPE_PERIPHERAL,
 };
 static struct clk macb_clk = {
-	.name		= "pclk",
+	.name		= "macb_clk",
 	.pmc_mask	= 1 << AT91CAP9_ID_EMAC,
 	.type		= CLK_TYPE_PERIPHERAL,
 };
@@ -209,8 +208,6 @@ static struct clk *periph_clocks[] __initdata = {
 };
 
 static struct clk_lookup periph_clocks_lookups[] = {
-	/* One additional fake clock for macb_hclk */
-	CLKDEV_CON_ID("hclk", &macb_clk),
 	CLKDEV_CON_DEV_ID("hclk", "atmel_usba_udc", &utmi_clk),
 	CLKDEV_CON_DEV_ID("pclk", "atmel_usba_udc", &udphs_clk),
 	CLKDEV_CON_DEV_ID("mci_clk", "at91_mci.0", &mmc0_clk),
@@ -314,11 +311,6 @@ static struct at91_gpio_bank at91cap9_gpio[] __initdata = {
 	}
 };
 
-static void at91cap9_restart(char mode, const char *cmd)
-{
-	at91_sys_write(AT91_RSTC_CR, AT91_RSTC_KEY | AT91_RSTC_PROCRST | AT91_RSTC_PERRST);
-}
-
 /* --------------------------------------------------------------------
  *  AT91CAP9 processor initialization
  * -------------------------------------------------------------------- */
@@ -331,13 +323,14 @@ static void __init at91cap9_map_io(void)
 static void __init at91cap9_ioremap_registers(void)
 {
 	at91_ioremap_shdwc(AT91CAP9_BASE_SHDWC);
+	at91_ioremap_rstc(AT91CAP9_BASE_RSTC);
 	at91sam926x_ioremap_pit(AT91CAP9_BASE_PIT);
 	at91sam9_ioremap_smc(0, AT91CAP9_BASE_SMC);
 }
 
 static void __init at91cap9_initialize(void)
 {
-	arm_pm_restart = at91cap9_restart;
+	arm_pm_restart = at91sam9g45_restart;
 	at91_extern_irq = (1 << AT91CAP9_ID_IRQ0) | (1 << AT91CAP9_ID_IRQ1);
 
 	/* Register GPIO subsystem */

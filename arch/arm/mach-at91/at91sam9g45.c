@@ -18,7 +18,6 @@
 #include <asm/mach/map.h>
 #include <mach/at91sam9g45.h>
 #include <mach/at91_pmc.h>
-#include <mach/at91_rstc.h>
 #include <mach/cpu.h>
 
 #include "soc.h"
@@ -149,7 +148,7 @@ static struct clk ac97_clk = {
 	.type		= CLK_TYPE_PERIPHERAL,
 };
 static struct clk macb_clk = {
-	.name		= "pclk",
+	.name		= "macb_clk",
 	.pmc_mask	= 1 << AT91SAM9G45_ID_EMAC,
 	.type		= CLK_TYPE_PERIPHERAL,
 };
@@ -208,8 +207,6 @@ static struct clk *periph_clocks[] __initdata = {
 };
 
 static struct clk_lookup periph_clocks_lookups[] = {
-	/* One additional fake clock for macb_hclk */
-	CLKDEV_CON_ID("hclk", &macb_clk),
 	/* One additional fake clock for ohci */
 	CLKDEV_CON_ID("ohci_clk", &uhphs_clk),
 	CLKDEV_CON_DEV_ID("ehci_clk", "atmel-ehci", &uhphs_clk),
@@ -318,11 +315,6 @@ static struct at91_gpio_bank at91sam9g45_gpio[] __initdata = {
 	}
 };
 
-static void at91sam9g45_restart(char mode, const char *cmd)
-{
-	at91_sys_write(AT91_RSTC_CR, AT91_RSTC_KEY | AT91_RSTC_PROCRST | AT91_RSTC_PERRST);
-}
-
 /* --------------------------------------------------------------------
  *  AT91SAM9G45 processor initialization
  * -------------------------------------------------------------------- */
@@ -336,6 +328,7 @@ static void __init at91sam9g45_map_io(void)
 static void __init at91sam9g45_ioremap_registers(void)
 {
 	at91_ioremap_shdwc(AT91SAM9G45_BASE_SHDWC);
+	at91_ioremap_rstc(AT91SAM9G45_BASE_RSTC);
 	at91sam926x_ioremap_pit(AT91SAM9G45_BASE_PIT);
 	at91sam9_ioremap_smc(0, AT91SAM9G45_BASE_SMC);
 }

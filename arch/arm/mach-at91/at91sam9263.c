@@ -117,7 +117,7 @@ static struct clk pwm_clk = {
 	.type		= CLK_TYPE_PERIPHERAL,
 };
 static struct clk macb_clk = {
-	.name		= "pclk",
+	.name		= "macb_clk",
 	.pmc_mask	= 1 << AT91SAM9263_ID_EMAC,
 	.type		= CLK_TYPE_PERIPHERAL,
 };
@@ -181,8 +181,6 @@ static struct clk *periph_clocks[] __initdata = {
 };
 
 static struct clk_lookup periph_clocks_lookups[] = {
-	/* One additional fake clock for macb_hclk */
-	CLKDEV_CON_ID("hclk", &macb_clk),
 	CLKDEV_CON_DEV_ID("pclk", "ssc.0", &ssc0_clk),
 	CLKDEV_CON_DEV_ID("pclk", "ssc.1", &ssc1_clk),
 	CLKDEV_CON_DEV_ID("mci_clk", "at91_mci.0", &mmc0_clk),
@@ -301,6 +299,7 @@ static void __init at91sam9263_map_io(void)
 static void __init at91sam9263_ioremap_registers(void)
 {
 	at91_ioremap_shdwc(AT91SAM9263_BASE_SHDWC);
+	at91_ioremap_rstc(AT91SAM9263_BASE_RSTC);
 	at91sam926x_ioremap_pit(AT91SAM9263_BASE_PIT);
 	at91sam9_ioremap_smc(0, AT91SAM9263_BASE_SMC0);
 	at91sam9_ioremap_smc(1, AT91SAM9263_BASE_SMC1);

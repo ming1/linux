@@ -1,0 +1,7 @@
+Atmel AT91 device tree bindings.
+========================================
+
+PIT Timers required properties:
+    - compatible = "atmel,at91sam9260-pit"
+    - interrupts : The single IRQ line for the timer.
+    - reg : The register bank for the timer.
