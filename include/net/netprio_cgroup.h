@@ -18,6 +18,12 @@
 #include <linux/hardirq.h>
 #include <linux/rcupdate.h>
 
+#if IS_ENABLED(CONFIG_NETPRIO_CGROUP)
+
+struct cgroup_netprio_state {
+	struct cgroup_subsys_state css;
+	u32 prioidx;
+};
 
 struct netprio_map {
 	struct rcu_head rcu;
@@ -25,33 +31,29 @@ struct netprio_map {
 	u32 priomap[];
 };
 
-#ifdef CONFIG_CGROUPS
-
-struct cgroup_netprio_state {
-	struct cgroup_subsys_state css;
-	u32 prioidx;
-};
-
-#ifndef CONFIG_NETPRIO_CGROUP
 extern int net_prio_subsys_id;
-#endif
 
 extern void sock_update_netprioidx(struct sock *sk);
 
-static inline struct cgroup_netprio_state
-		*task_netprio_state(struct task_struct *p)
+static inline struct cgroup_netprio_state *
+task_netprio_state(struct task_struct *p)
 {
-#if IS_ENABLED(CONFIG_NETPRIO_CGROUP)
 	return container_of(task_subsys_state(p, net_prio_subsys_id),
 			    struct cgroup_netprio_state, css);
-#else
-	return NULL;
-#endif
 }
 
-#else
+#else	/* CONFIG_NETPRIO_CGROUP */
 
-#define sock_update_netprioidx(sk)
-#endif
+static inline void sock_update_netprioidx(struct sock *sk)
+{
+}
+
+static inline struct cgroup_netprio_state *
+task_netprio_state(struct task_struct *p)
+{
+	return NULL;
+}
+
+#endif	/* CONFIG_NETPRIO_CGROUP */
 
 #endif  /* _NET_CLS_CGROUP_H */
