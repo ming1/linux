@@ -35,7 +35,8 @@
 
 #include "../iio.h"
 #include "../sysfs.h"
-#include "../buffer_generic.h"
+#include "../events.h"
+#include "../buffer.h"
 
 #include "ad799x.h"
 
@@ -161,7 +162,7 @@ static int ad799x_read_raw(struct iio_dev *indio_dev,
 		*val = (ret >> chan->scan_type.shift) &
 			RES_MASK(chan->scan_type.realbits);
 		return IIO_VAL_INT;
-	case (1 << IIO_CHAN_INFO_SCALE_SHARED):
+	case IIO_CHAN_INFO_SCALE:
 		scale_uv = (st->int_vref_mv * 1000) >> chan->scan_type.realbits;
 		*val =  scale_uv / 1000;
 		*val2 = (scale_uv % 1000) * 1000;
@@ -934,4 +935,3 @@ module_i2c_driver(ad799x_driver);
 MODULE_AUTHOR("Michael Hennerich <hennerich@blackfin.uclinux.org>");
 MODULE_DESCRIPTION("Analog Devices AD799x ADC");
 MODULE_LICENSE("GPL v2");
-MODULE_ALIAS("i2c:ad799x");

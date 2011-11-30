@@ -135,7 +135,7 @@ static int send_midi_async(struct usb_line6 *line6, unsigned char *data,
 	line6_write_hexdump(line6, 'S', data, length);
 #endif
 
-	transfer_buffer = kmalloc(length, GFP_ATOMIC);
+	transfer_buffer = kmemdup(data, length, GFP_ATOMIC);
 
 	if (transfer_buffer == NULL) {
 		usb_free_urb(urb);
@@ -143,7 +143,6 @@ static int send_midi_async(struct usb_line6 *line6, unsigned char *data,
 		return -ENOMEM;
 	}
 
-	memcpy(transfer_buffer, data, length);
 	usb_fill_int_urb(urb, line6->usbdev,
 			 usb_sndbulkpipe(line6->usbdev,
 					 line6->ep_control_write),
@@ -173,6 +172,7 @@ static int send_midi_async(struct usb_line6 *line6, unsigned char *data,
 		break;
 
 	case LINE6_DEVID_VARIAX:
+	case LINE6_DEVID_PODHD300:
 		break;
 
 	default:
@@ -391,12 +391,17 @@ int line6_init_midi(struct usb_line6 *line6)
 		return -ENOMEM;
 
 	err = line6_midibuf_init(&line6midi->midibuf_in, MIDI_BUFFER_SIZE, 0);
-	if (err < 0)
+	if (err < 0) {
+		kfree(line6midi);
 		return err;
+	}
 
 	err = line6_midibuf_init(&line6midi->midibuf_out, MIDI_BUFFER_SIZE, 1);
-	if (err < 0)
+	if (err < 0) {
+		kfree(line6midi->midibuf_in.buf);
+		kfree(line6midi);
 		return err;
+	}
 
 	line6midi->line6 = line6;
 	line6midi->midi_mask_transmit = 1;
