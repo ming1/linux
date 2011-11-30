@@ -289,13 +289,11 @@ struct be_drv_stats {
 
 struct be_vf_cfg {
 	unsigned char vf_mac_addr[ETH_ALEN];
-	u32 vf_if_handle;
-	u32 vf_pmac_id;
+	int vf_if_handle;
+	int vf_pmac_id;
 	u16 vf_vlan_tag;
 	u32 vf_tx_rate;
 };
-
-#define BE_INVALID_PMAC_ID		0xffffffff
 
 struct be_adapter {
 	struct pci_dev *pdev;
@@ -347,11 +345,13 @@ struct be_adapter {
 
 	/* Ethtool knobs and info */
 	char fw_ver[FW_VER_LEN];
-	u32 if_handle;		/* Used to configure filtering */
+	int if_handle;		/* Used to configure filtering */
 	u32 pmac_id;		/* MAC addr handle used by BE card */
 	u32 beacon_state;	/* for set_phys_id */
 
 	bool eeh_err;
+	bool ue_detected;
+	bool fw_timeout;
 	u32 port_num;
 	bool promiscuous;
 	bool wol;
@@ -359,7 +359,6 @@ struct be_adapter {
 	u32 function_caps;
 	u32 rx_fc;		/* Rx flow control */
 	u32 tx_fc;		/* Tx flow control */
-	bool ue_detected;
 	bool stats_cmd_sent;
 	int link_speed;
 	u8 port_type;
@@ -522,6 +521,11 @@ static inline void be_vf_eth_addr_generate(struct be_adapter *adapter, u8 *mac)
 static inline bool be_multi_rxq(const struct be_adapter *adapter)
 {
 	return adapter->num_rx_qs > 1;
+}
+
+static inline bool be_error(struct be_adapter *adapter)
+{
+	return adapter->eeh_err || adapter->ue_detected || adapter->fw_timeout;
 }
 
 extern void be_cq_notify(struct be_adapter *adapter, u16 qid, bool arm,

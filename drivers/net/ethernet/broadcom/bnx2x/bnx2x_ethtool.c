@@ -352,7 +352,7 @@ static int bnx2x_set_settings(struct net_device *dev, struct ethtool_cmd *cmd)
 		DP(NETIF_MSG_LINK, "Unsupported port type\n");
 		return -EINVAL;
 	}
-	/* Save new config in case command complete successuly */
+	/* Save new config in case command complete successully */
 	new_multi_phy_config = bp->link_params.multi_phy_config;
 	/* Get the new cfg_idx */
 	cfg_idx = bnx2x_get_link_cfg_idx(bp);
@@ -761,8 +761,8 @@ static void bnx2x_get_drvinfo(struct net_device *dev,
 	struct bnx2x *bp = netdev_priv(dev);
 	u8 phy_fw_ver[PHY_FW_VER_LEN];
 
-	strcpy(info->driver, DRV_MODULE_NAME);
-	strcpy(info->version, DRV_MODULE_VERSION);
+	strlcpy(info->driver, DRV_MODULE_NAME, sizeof(info->driver));
+	strlcpy(info->version, DRV_MODULE_VERSION, sizeof(info->version));
 
 	phy_fw_ver[0] = '\0';
 	if (bp->port.pmf) {
@@ -773,14 +773,14 @@ static void bnx2x_get_drvinfo(struct net_device *dev,
 		bnx2x_release_phy_lock(bp);
 	}
 
-	strncpy(info->fw_version, bp->fw_ver, 32);
+	strlcpy(info->fw_version, bp->fw_ver, sizeof(info->fw_version));
 	snprintf(info->fw_version + strlen(bp->fw_ver), 32 - strlen(bp->fw_ver),
 		 "bc %d.%d.%d%s%s",
 		 (bp->common.bc_ver & 0xff0000) >> 16,
 		 (bp->common.bc_ver & 0xff00) >> 8,
 		 (bp->common.bc_ver & 0xff),
 		 ((phy_fw_ver[0] != '\0') ? " phy " : ""), phy_fw_ver);
-	strcpy(info->bus_info, pci_name(bp->pdev));
+	strlcpy(info->bus_info, pci_name(bp->pdev), sizeof(info->bus_info));
 	info->n_stats = BNX2X_NUM_STATS;
 	info->testinfo_len = BNX2X_NUM_TESTS;
 	info->eedump_len = bp->common.flash_size;
@@ -1740,6 +1740,7 @@ static int bnx2x_run_loopback(struct bnx2x *bp, int loopback_mode)
 	struct sw_rx_bd *rx_buf;
 	u16 len;
 	int rc = -ENODEV;
+	u8 *data;
 
 	/* check the loopback mode */
 	switch (loopback_mode) {
@@ -1748,8 +1749,18 @@ static int bnx2x_run_loopback(struct bnx2x *bp, int loopback_mode)
 			return -EINVAL;
 		break;
 	case BNX2X_MAC_LOOPBACK:
-		bp->link_params.loopback_mode = CHIP_IS_E3(bp) ?
-						LOOPBACK_XMAC : LOOPBACK_BMAC;
+		if (CHIP_IS_E3(bp)) {
+			int cfg_idx = bnx2x_get_link_cfg_idx(bp);
+			if (bp->port.supported[cfg_idx] &
+			    (SUPPORTED_10000baseT_Full |
+			     SUPPORTED_20000baseMLD2_Full |
+			     SUPPORTED_20000baseKR2_Full))
+				bp->link_params.loopback_mode = LOOPBACK_XMAC;
+			else
+				bp->link_params.loopback_mode = LOOPBACK_UMAC;
+		} else
+			bp->link_params.loopback_mode = LOOPBACK_BMAC;
+
 		bnx2x_phy_init(&bp->link_params, &bp->link_vars);
 		break;
 	default:
@@ -1865,10 +1876,9 @@ static int bnx2x_run_loopback(struct bnx2x *bp, int loopback_mode)
 	dma_sync_single_for_cpu(&bp->pdev->dev,
 				   dma_unmap_addr(rx_buf, mapping),
 				   fp_rx->rx_buf_size, DMA_FROM_DEVICE);
-	skb = rx_buf->skb;
-	skb_reserve(skb, cqe->fast_path_cqe.placement_offset);
+	data = rx_buf->data + NET_SKB_PAD + cqe->fast_path_cqe.placement_offset;
 	for (i = ETH_HLEN; i < pkt_size; i++)
-		if (*(skb->data + i) != (unsigned char) (i & 0xff))
+		if (*(data + i) != (unsigned char) (i & 0xff))
 			goto test_loopback_rx_exit;
 
 	rc = 0;

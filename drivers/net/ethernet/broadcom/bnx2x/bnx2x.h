@@ -23,8 +23,8 @@
  * (you will need to reboot afterwards) */
 /* #define BNX2X_STOP_ON_ERROR */
 
-#define DRV_MODULE_VERSION      "1.70.30-0"
-#define DRV_MODULE_RELDATE      "2011/10/25"
+#define DRV_MODULE_VERSION      "1.70.35-0"
+#define DRV_MODULE_RELDATE      "2011/11/10"
 #define BNX2X_BC_VER            0x040200
 
 #if defined(CONFIG_DCB)
@@ -293,8 +293,13 @@ enum {
 #define FCOE_TXQ_IDX(bp)	(MAX_ETH_TXQ_IDX(bp))
 
 /* fast path */
+/*
+ * This driver uses new build_skb() API :
+ * RX ring buffer contains pointer to kmalloc() data only,
+ * skb are built only after Hardware filled the frame.
+ */
 struct sw_rx_bd {
-	struct sk_buff	*skb;
+	u8		*data;
 	DEFINE_DMA_UNMAP_ADDR(mapping);
 };
 
@@ -411,8 +416,7 @@ union db_prod {
 
 
 /* Number of u64 elements in SGE mask array */
-#define RX_SGE_MASK_LEN			((NUM_RX_SGE_PAGES * RX_SGE_CNT) / \
-					 BIT_VEC64_ELEM_SZ)
+#define RX_SGE_MASK_LEN			(NUM_RX_SGE / BIT_VEC64_ELEM_SZ)
 #define RX_SGE_MASK_LEN_MASK		(RX_SGE_MASK_LEN - 1)
 #define NEXT_SGE_MASK_ELEM(el)		(((el) + 1) & RX_SGE_MASK_LEN_MASK)
 
@@ -425,8 +429,8 @@ union host_hc_status_block {
 
 struct bnx2x_agg_info {
 	/*
-	 * First aggregation buffer is an skb, the following - are pages.
-	 * We will preallocate the skbs for each aggregation when
+	 * First aggregation buffer is a data buffer, the following - are pages.
+	 * We will preallocate the data buffer for each aggregation when
 	 * we open the interface and will replace the BD at the consumer
 	 * with this one when we receive the TPA_START CQE in order to
 	 * keep the Rx BD ring consistent.
@@ -440,6 +444,7 @@ struct bnx2x_agg_info {
 	u16			parsing_flags;
 	u16			vlan_tag;
 	u16			len_on_bd;
+	u32			rxhash;
 };
 
 #define Q_STATS_OFFSET32(stat_name) \
@@ -507,6 +512,7 @@ struct bnx2x_fastpath {
 	__le16			fp_hc_idx;
 
 	u8			index;		/* number in fp array */
+	u8			rx_queue;	/* index for skb_record */
 	u8			cl_id;		/* eth client id */
 	u8			cl_qzone_id;
 	u8			fw_sb_id;	/* status block number in FW */
@@ -1141,6 +1147,7 @@ struct bnx2x_fw_stats_data {
 enum {
 	BNX2X_SP_RTNL_SETUP_TC,
 	BNX2X_SP_RTNL_TX_TIMEOUT,
+	BNX2X_SP_RTNL_FAN_FAILURE,
 };
 
 
@@ -1186,10 +1193,20 @@ struct bnx2x {
 #define ETH_MAX_JUMBO_PACKET_SIZE	9600
 
 	/* Max supported alignment is 256 (8 shift) */
-#define BNX2X_RX_ALIGN_SHIFT		((L1_CACHE_SHIFT < 8) ? \
-					 L1_CACHE_SHIFT : 8)
-	/* FW use 2 Cache lines Alignment for start packet and size  */
-#define BNX2X_FW_RX_ALIGN		(2 << BNX2X_RX_ALIGN_SHIFT)
+#define BNX2X_RX_ALIGN_SHIFT		min(8, L1_CACHE_SHIFT)
+
+	/* FW uses 2 Cache lines Alignment for start packet and size
+	 *
+	 * We assume skb_build() uses sizeof(struct skb_shared_info) bytes
+	 * at the end of skb->data, to avoid wasting a full cache line.
+	 * This reduces memory use (skb->truesize).
+	 */
+#define BNX2X_FW_RX_ALIGN_START	(1UL << BNX2X_RX_ALIGN_SHIFT)
+
+#define BNX2X_FW_RX_ALIGN_END					\
+	max(1UL << BNX2X_RX_ALIGN_SHIFT, 			\
+	    SKB_DATA_ALIGN(sizeof(struct skb_shared_info)))
+
 #define BNX2X_PXP_DRAM_ALIGN		(BNX2X_RX_ALIGN_SHIFT - 5)
 
 	struct host_sp_status_block *def_status_blk;
@@ -1984,13 +2001,6 @@ static inline u32 reg_poll(struct bnx2x *bp, u32 reg, u32 expected, int ms,
 #define HW_PRTY_ASSERT_SET_4 (AEU_INPUTS_ATTN_BITS_PGLUE_PARITY_ERROR | \
 			      AEU_INPUTS_ATTN_BITS_ATC_PARITY_ERROR)
 
-#define RSS_FLAGS(bp) \
-		(TSTORM_ETH_FUNCTION_COMMON_CONFIG_RSS_IPV4_CAPABILITY | \
-		 TSTORM_ETH_FUNCTION_COMMON_CONFIG_RSS_IPV4_TCP_CAPABILITY | \
-		 TSTORM_ETH_FUNCTION_COMMON_CONFIG_RSS_IPV6_CAPABILITY | \
-		 TSTORM_ETH_FUNCTION_COMMON_CONFIG_RSS_IPV6_TCP_CAPABILITY | \
-		 (bp->multi_mode << \
-		  TSTORM_ETH_FUNCTION_COMMON_CONFIG_RSS_MODE_SHIFT))
 #define MULTI_MASK			0x7f
 
 
@@ -2054,6 +2064,8 @@ static inline u32 reg_poll(struct bnx2x *bp, u32 reg, u32 expected, int ms,
 
 #define BNX2X_VPD_LEN			128
 #define VENDOR_ID_LEN			4
+
+int bnx2x_close(struct net_device *dev);
 
 /* Congestion management fairness mode */
 #define CMNG_FNS_NONE		0
