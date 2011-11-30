@@ -67,7 +67,7 @@ extern void ioport_unmap(void __iomem *);
 #endif
 
 #ifdef CONFIG_PCI
-/* Create a virtual mapping cookie for a PCI BAR (memory or IO) */
+/* Destroy a virtual mapping cookie for a PCI BAR (memory or IO) */
 struct pci_dev;
 extern void pci_iounmap(struct pci_dev *dev, void __iomem *);
 #else

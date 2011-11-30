@@ -285,6 +285,7 @@ static inline void writesb(const void __iomem *addr, const void *buf, int len)
 #define __io_virt(x) ((void __force *) (x))
 
 #ifndef CONFIG_GENERIC_IOMAP
+struct pci_dev;
 static inline void pci_iounmap(struct pci_dev *dev, void __iomem *p)
 {
 }
