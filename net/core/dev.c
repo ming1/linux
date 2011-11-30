@@ -2479,7 +2479,9 @@ static void skb_update_prio(struct sk_buff *skb)
 		skb->priority = map->priomap[skb->sk->sk_cgrp_prioidx];
 }
 #else
-#define skb_update_prio(skb)
+static inline void skb_update_prio(struct sk_buff *skb)
+{
+}
 #endif
 
 static DEFINE_PER_CPU(int, xmit_recursion);
