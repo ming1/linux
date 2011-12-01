@@ -920,12 +920,26 @@ temac_poll_controller(struct net_device *ndev)
 }
 #endif
 
+static int temac_ioctl(struct net_device *ndev, struct ifreq *rq, int cmd)
+{
+	struct temac_local *lp = netdev_priv(ndev);
+
+	if (!netif_running(ndev))
+		return -EINVAL;
+
+	if (!lp->phy_dev)
+		return -EINVAL;
+
+	return phy_mii_ioctl(lp->phy_dev, rq, cmd);
+}
+
 static const struct net_device_ops temac_netdev_ops = {
 	.ndo_open = temac_open,
 	.ndo_stop = temac_stop,
 	.ndo_start_xmit = temac_start_xmit,
 	.ndo_set_mac_address = netdev_set_mac_address,
 	.ndo_validate_addr = eth_validate_addr,
+	.ndo_do_ioctl = temac_ioctl,
 #ifdef CONFIG_NET_POLL_CONTROLLER
 	.ndo_poll_controller = temac_poll_controller,
 #endif
@@ -1167,17 +1181,7 @@ static struct platform_driver temac_of_driver = {
 	},
 };
 
-static int __init temac_init(void)
-{
-	return platform_driver_register(&temac_of_driver);
-}
-module_init(temac_init);
-
-static void __exit temac_exit(void)
-{
-	platform_driver_unregister(&temac_of_driver);
-}
-module_exit(temac_exit);
+module_platform_driver(temac_of_driver);
 
 MODULE_DESCRIPTION("Xilinx LL_TEMAC Ethernet driver");
 MODULE_AUTHOR("Yoshio Kashiwagi");

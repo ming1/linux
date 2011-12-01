@@ -202,14 +202,9 @@ vmxnet3_get_drvinfo(struct net_device *netdev, struct ethtool_drvinfo *drvinfo)
 	struct vmxnet3_adapter *adapter = netdev_priv(netdev);
 
 	strlcpy(drvinfo->driver, vmxnet3_driver_name, sizeof(drvinfo->driver));
-	drvinfo->driver[sizeof(drvinfo->driver) - 1] = '\0';
 
 	strlcpy(drvinfo->version, VMXNET3_DRIVER_VERSION_REPORT,
 		sizeof(drvinfo->version));
-	drvinfo->driver[sizeof(drvinfo->version) - 1] = '\0';
-
-	strlcpy(drvinfo->fw_version, "N/A", sizeof(drvinfo->fw_version));
-	drvinfo->fw_version[sizeof(drvinfo->fw_version) - 1] = '\0';
 
 	strlcpy(drvinfo->bus_info, pci_name(adapter->pdev),
 		ETHTOOL_BUSINFO_LEN);
@@ -262,11 +257,11 @@ vmxnet3_get_strings(struct net_device *netdev, u32 stringset, u8 *buf)
 	}
 }
 
-int vmxnet3_set_features(struct net_device *netdev, u32 features)
+int vmxnet3_set_features(struct net_device *netdev, netdev_features_t features)
 {
 	struct vmxnet3_adapter *adapter = netdev_priv(netdev);
 	unsigned long flags;
-	u32 changed = features ^ netdev->features;
+	netdev_features_t changed = features ^ netdev->features;
 
 	if (changed & (NETIF_F_RXCSUM | NETIF_F_LRO | NETIF_F_HW_VLAN_RX)) {
 		if (features & NETIF_F_RXCSUM)
