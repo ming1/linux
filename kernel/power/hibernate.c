@@ -333,7 +333,7 @@ static int create_image(int platform_mode)
  */
 int hibernation_snapshot(int platform_mode)
 {
-	pm_message_t msg = PMSG_RECOVER;
+	pm_message_t msg;
 	int error;
 
 	error = platform_begin(platform_mode);
@@ -347,7 +347,7 @@ int hibernation_snapshot(int platform_mode)
 
 	error = freeze_kernel_threads();
 	if (error)
-		goto Close;
+		goto Cleanup;
 
 	if (hibernation_test(TEST_FREEZER) ||
 		hibernation_testmode(HIBERNATION_TESTPROC)) {
@@ -357,29 +357,31 @@ int hibernation_snapshot(int platform_mode)
 		 * successful freezer test.
 		 */
 		freezer_test_done = true;
-		goto Close;
+		goto Cleanup;
 	}
 
 	error = dpm_prepare(PMSG_FREEZE);
-	if (error)
-		goto Complete_devices;
+	if (error) {
+		dpm_complete(PMSG_RECOVER);
+		goto Cleanup;
+	}
 
 	suspend_console();
 	pm_restrict_gfp_mask();
+
 	error = dpm_suspend(PMSG_FREEZE);
-	if (error)
-		goto Recover_platform;
 
-	if (hibernation_test(TEST_DEVICES))
-		goto Recover_platform;
+	if (error || hibernation_test(TEST_DEVICES))
+		platform_recover(platform_mode);
+	else
+		error = create_image(platform_mode);
 
-	error = create_image(platform_mode);
 	/*
-	 * Control returns here (1) after the image has been created or the
+	 * In the case that we call create_image() above, the control
+	 * returns here (1) after the image has been created or the
 	 * image creation has failed and (2) after a successful restore.
 	 */
 
- Resume_devices:
 	/* We may need to release the preallocated image pages here. */
 	if (error || !in_suspend)
 		swsusp_free();
@@ -391,17 +393,15 @@ int hibernation_snapshot(int platform_mode)
 		pm_restore_gfp_mask();
 
 	resume_console();
-
- Complete_devices:
 	dpm_complete(msg);
 
  Close:
 	platform_end(platform_mode);
 	return error;
 
- Recover_platform:
-	platform_recover(platform_mode);
-	goto Resume_devices;
+ Cleanup:
+	swsusp_free();
+	goto Close;
 }
 
 /**
@@ -607,17 +607,6 @@ static void power_down(void)
 	while(1);
 }
 
-static int prepare_processes(void)
-{
-	int error = 0;
-
-	if (freeze_processes()) {
-		error = -EBUSY;
-		thaw_processes();
-	}
-	return error;
-}
-
 /**
  * hibernate - Carry out system hibernation, including saving the image.
  */
@@ -650,7 +639,7 @@ int hibernate(void)
 	sys_sync();
 	printk("done.\n");
 
-	error = prepare_processes();
+	error = freeze_processes();
 	if (error)
 		goto Finish;
 
@@ -811,7 +800,7 @@ static int software_resume(void)
 		goto close_finish;
 
 	pr_debug("PM: Preparing processes for restore.\n");
-	error = prepare_processes();
+	error = freeze_processes();
 	if (error) {
 		swsusp_close(FMODE_READ);
 		goto Done;
