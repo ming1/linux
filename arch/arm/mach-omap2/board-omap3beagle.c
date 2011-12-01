@@ -40,7 +40,7 @@
 #include <asm/mach/flash.h>
 
 #include <plat/board.h>
-#include <plat/common.h>
+#include "common.h"
 #include <video/omapdss.h>
 #include <video/omap-panel-dvi.h>
 #include <plat/gpmc.h>
@@ -561,4 +561,5 @@ MACHINE_START(OMAP3_BEAGLE, "OMAP3 Beagle Board")
 	.init_irq	= omap3_init_irq,
 	.init_machine	= omap3_beagle_init,
 	.timer		= &omap3_secure_timer,
+	.restart	= omap_prcm_restart,
 MACHINE_END

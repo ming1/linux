@@ -39,7 +39,7 @@
 #include <asm/mach/map.h>
 
 #include <plat/board.h>
-#include <plat/common.h>
+#include "common.h"
 #include <plat/usb.h>
 #include <plat/nand.h>
 #include <plat/gpmc.h>
@@ -301,4 +301,5 @@ MACHINE_START(CM_T3517, "Compulab CM-T3517")
 	.init_irq	= omap3_init_irq,
 	.init_machine	= cm_t3517_init,
 	.timer		= &omap3_timer,
+	.restart	= omap_prcm_restart,
 MACHINE_END
