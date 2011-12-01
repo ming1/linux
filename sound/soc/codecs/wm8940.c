@@ -28,7 +28,6 @@
 #include <linux/delay.h>
 #include <linux/pm.h>
 #include <linux/i2c.h>
-#include <linux/platform_device.h>
 #include <linux/spi/spi.h>
 #include <linux/slab.h>
 #include <sound/core.h>
@@ -629,8 +628,8 @@ static int wm8940_set_dai_clkdiv(struct snd_soc_dai *codec_dai,
 		ret = snd_soc_write(codec, WM8940_CLOCK, reg | (div << 5));
 		break;
 	case WM8940_OPCLKDIV:
-		reg = snd_soc_read(codec, WM8940_ADDCNTRL) & 0xFFCF;
-		ret = snd_soc_write(codec, WM8940_ADDCNTRL, reg | (div << 4));
+		reg = snd_soc_read(codec, WM8940_GPIO) & 0xFFCF;
+		ret = snd_soc_write(codec, WM8940_GPIO, reg | (div << 4));
 		break;
 	}
 	return ret;
@@ -644,7 +643,7 @@ static int wm8940_set_dai_clkdiv(struct snd_soc_dai *codec_dai,
 			SNDRV_PCM_FMTBIT_S24_LE |			\
 			SNDRV_PCM_FMTBIT_S32_LE)
 
-static struct snd_soc_dai_ops wm8940_dai_ops = {
+static const struct snd_soc_dai_ops wm8940_dai_ops = {
 	.hw_params = wm8940_i2s_hw_params,
 	.set_sysclk = wm8940_set_dai_sysclk,
 	.digital_mute = wm8940_mute,
