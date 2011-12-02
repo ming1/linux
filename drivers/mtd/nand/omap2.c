@@ -1075,6 +1075,8 @@ static int __devinit omap_nand_probe(struct platform_device *pdev)
 		}
 	}
 
+	info->nand.options |= pdata->options;
+
 	/* rom code layout */
 	if (pdata->ecc_opt == OMAP_ECC_HAMMING_CODE_HW_ROMCODE) {
 
@@ -1145,20 +1147,7 @@ static struct platform_driver omap_nand_driver = {
 	},
 };
 
-static int __init omap_nand_init(void)
-{
-	pr_info("%s driver initializing\n", DRIVER_NAME);
-
-	return platform_driver_register(&omap_nand_driver);
-}
-
-static void __exit omap_nand_exit(void)
-{
-	platform_driver_unregister(&omap_nand_driver);
-}
-
-module_init(omap_nand_init);
-module_exit(omap_nand_exit);
+module_platform_driver(omap_nand_driver);
 
 MODULE_ALIAS("platform:" DRIVER_NAME);
 MODULE_LICENSE("GPL");
