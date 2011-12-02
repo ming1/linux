@@ -741,7 +741,7 @@ EXPORT_SYMBOL_GPL(snd_soc_resume);
 #define snd_soc_resume NULL
 #endif
 
-static struct snd_soc_dai_ops null_dai_ops = {
+static const struct snd_soc_dai_ops null_dai_ops = {
 };
 
 static int soc_bind_dai_link(struct snd_soc_card *card, int num)
@@ -1487,6 +1487,10 @@ static void snd_soc_instantiate_card(struct snd_soc_card *card)
 	}
 
 	snd_soc_dapm_new_widgets(&card->dapm);
+
+	if (card->fully_routed)
+		list_for_each_entry(codec, &card->codec_dev_list, card_list)
+			snd_soc_dapm_auto_nc_codec_pins(codec);
 
 	ret = snd_card_register(card->snd_card);
 	if (ret < 0) {
