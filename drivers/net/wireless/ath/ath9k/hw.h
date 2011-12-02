@@ -59,9 +59,6 @@
 #define AT9285_COEX3WIRE_SA_SUBSYSID	0x30aa
 #define AT9285_COEX3WIRE_DA_SUBSYSID	0x30ab
 
-#define AR9300_NUM_BT_WEIGHTS   4
-#define AR9300_NUM_WLAN_WEIGHTS 4
-
 #define ATH_AMPDU_LIMIT_MAX        (64 * 1024 - 1)
 
 #define	ATH_DEFAULT_NOISE_FLOOR -95
@@ -203,6 +200,7 @@ enum ath9k_hw_caps {
 	ATH9K_HW_CAP_5GHZ			= BIT(14),
 	ATH9K_HW_CAP_APM			= BIT(15),
 	ATH9K_HW_CAP_RTT			= BIT(16),
+	ATH9K_HW_CAP_MCI			= BIT(17),
 };
 
 struct ath9k_hw_capabilities {
@@ -417,6 +415,16 @@ enum ath9k_rx_qtype {
 	ATH9K_RX_QUEUE_HP,
 	ATH9K_RX_QUEUE_LP,
 	ATH9K_RX_QUEUE_MAX,
+};
+
+enum ath_mci_gpm_coex_profile_type {
+	MCI_GPM_COEX_PROFILE_UNKNOWN,
+	MCI_GPM_COEX_PROFILE_RFCOMM,
+	MCI_GPM_COEX_PROFILE_A2DP,
+	MCI_GPM_COEX_PROFILE_HID,
+	MCI_GPM_COEX_PROFILE_BNEP,
+	MCI_GPM_COEX_PROFILE_VOICE,
+	MCI_GPM_COEX_PROFILE_MAX
 };
 
 struct ath9k_beacon_state {
@@ -791,8 +799,6 @@ struct ath_hw {
 
 	/* Bluetooth coexistance */
 	struct ath_btcoex_hw btcoex_hw;
-	u32 bt_coex_bt_weight[AR9300_NUM_BT_WEIGHTS];
-	u32 bt_coex_wlan_weight[AR9300_NUM_WLAN_WEIGHTS];
 
 	u32 intr_txqs;
 	u8 txchainmask;

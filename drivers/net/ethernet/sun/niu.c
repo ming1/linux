@@ -1151,19 +1151,8 @@ static int link_status_mii(struct niu *np, int *link_up_p)
 		supported |= SUPPORTED_1000baseT_Full;
 	lp->supported = supported;
 
-	advertising = 0;
-	if (advert & ADVERTISE_10HALF)
-		advertising |= ADVERTISED_10baseT_Half;
-	if (advert & ADVERTISE_10FULL)
-		advertising |= ADVERTISED_10baseT_Full;
-	if (advert & ADVERTISE_100HALF)
-		advertising |= ADVERTISED_100baseT_Half;
-	if (advert & ADVERTISE_100FULL)
-		advertising |= ADVERTISED_100baseT_Full;
-	if (ctrl1000 & ADVERTISE_1000HALF)
-		advertising |= ADVERTISED_1000baseT_Half;
-	if (ctrl1000 & ADVERTISE_1000FULL)
-		advertising |= ADVERTISED_1000baseT_Full;
+	advertising = mii_adv_to_ethtool_adv_t(advert);
+	advertising |= mii_ctrl1000_to_ethtool_adv_t(ctrl1000);
 
 	if (bmcr & BMCR_ANENABLE) {
 		int neg, neg1000;
@@ -6823,12 +6812,13 @@ static void niu_get_drvinfo(struct net_device *dev,
 	struct niu *np = netdev_priv(dev);
 	struct niu_vpd *vpd = &np->vpd;
 
-	strcpy(info->driver, DRV_MODULE_NAME);
-	strcpy(info->version, DRV_MODULE_VERSION);
-	sprintf(info->fw_version, "%d.%d",
+	strlcpy(info->driver, DRV_MODULE_NAME, sizeof(info->driver));
+	strlcpy(info->version, DRV_MODULE_VERSION, sizeof(info->version));
+	snprintf(info->fw_version, sizeof(info->fw_version), "%d.%d",
 		vpd->fcode_major, vpd->fcode_minor);
 	if (np->parent->plat_type != PLAT_TYPE_NIU)
-		strcpy(info->bus_info, pci_name(np->pdev));
+		strlcpy(info->bus_info, pci_name(np->pdev),
+			sizeof(info->bus_info));
 }
 
 static int niu_get_settings(struct net_device *dev, struct ethtool_cmd *cmd)
