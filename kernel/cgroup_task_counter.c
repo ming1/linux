@@ -95,12 +95,6 @@ static void task_counter_exit(struct cgroup_subsys *ss, struct cgroup *cgrp,
 }
 
 /*
- * Protected amongst can_attach_task/attach_task/cancel_attach_task by
- * cgroup mutex
- */
-static struct res_counter *common_ancestor;
-
-/*
  * This does more than just probing the ability to attach to the dest cgroup.
  * We can not just _check_ if we can attach to the destination and do the real
  * attachment later in task_counter_attach_task() because a task in the dest
@@ -111,9 +105,10 @@ static int task_counter_can_attach_task(struct cgroup *cgrp,
 					struct cgroup *old_cgrp,
 					struct task_struct *tsk)
 {
+	int err;
+	struct res_counter *common_ancestor;
 	struct res_counter *res = cgroup_task_res_counter(cgrp);
 	struct res_counter *old_res = cgroup_task_res_counter(old_cgrp);
-	int err;
 
 	/*
 	 * When moving a task from a cgroup to another, we don't want
@@ -138,10 +133,15 @@ static int task_counter_can_attach_task(struct cgroup *cgrp,
 
 /* Uncharge the dest cgroup that we charged in task_counter_can_attach_task() */
 static void task_counter_cancel_attach_task(struct cgroup *cgrp,
+					    struct cgroup *old_cgrp,
 					    struct task_struct *tsk)
 {
-	res_counter_uncharge_until(cgroup_task_res_counter(cgrp),
-				   common_ancestor, 1);
+	struct res_counter *common_ancestor;
+	struct res_counter *res = cgroup_task_res_counter(cgrp);
+	struct res_counter *old_res = cgroup_task_res_counter(old_cgrp);
+
+	common_ancestor = res_counter_common_ancestor(res, old_res);
+	res_counter_uncharge_until(res, common_ancestor, 1);
 }
 
 /*
@@ -155,8 +155,12 @@ static void task_counter_attach_task(struct cgroup *cgrp,
 				     struct cgroup *old_cgrp,
 				     struct task_struct *tsk)
 {
-	res_counter_uncharge_until(cgroup_task_res_counter(old_cgrp),
-				   common_ancestor, 1);
+	struct res_counter *common_ancestor;
+	struct res_counter *res = cgroup_task_res_counter(cgrp);
+	struct res_counter *old_res = cgroup_task_res_counter(old_cgrp);
+
+	common_ancestor = res_counter_common_ancestor(res, old_res);
+	res_counter_uncharge_until(old_res, common_ancestor, 1);
 }
 
 static u64 task_counter_read_u64(struct cgroup *cgrp, struct cftype *cft)
