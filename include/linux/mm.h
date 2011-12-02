@@ -1493,8 +1493,8 @@ static inline unsigned long vma_pages(struct vm_area_struct *vma)
 }
 
 /* Look up the first VMA which exactly match the interval vm_start ... vm_end */
-static inline struct vm_area_struct *
-find_exact_vma(struct mm_struct *mm, unsigned long vm_start, unsigned long vm_end)
+static inline struct vm_area_struct *find_exact_vma(struct mm_struct *mm,
+				unsigned long vm_start, unsigned long vm_end)
 {
 	struct vm_area_struct *vma = find_vma(mm, vm_start);
 
