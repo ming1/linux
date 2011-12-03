@@ -782,6 +782,13 @@ static struct clk clk_pdma1 = {
 	.ctrlbit	= (1 << 1),
 };
 
+static struct clk clk_mdma1 = {
+	.name		= "dma",
+	.devname	= "dma-pl330.2",
+	.enable		= exynos4_clk_ip_image_ctrl,
+	.ctrlbit	= ((1 << 8) | (1 << 5) | (1 << 2)),
+};
+
 struct clk *clkset_group_list[] = {
 	[0] = &clk_ext_xtal_mux,
 	[1] = &clk_xusbxti,
@@ -1294,6 +1301,7 @@ static struct clksrc_clk *sysclks[] = {
 static struct clk *clk_cdev[] = {
 	&clk_pdma0,
 	&clk_pdma1,
+	&clk_mdma1,
 };
 
 static struct clksrc_clk *clksrc_cdev[] = {

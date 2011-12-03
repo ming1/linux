@@ -139,6 +139,38 @@ struct amba_device exynos4_device_pdma1 = {
 	.periphid = 0x00041330,
 };
 
+u8 mdma_peri[] = {
+	DMACH_MTOM_0,
+	DMACH_MTOM_1,
+	DMACH_MTOM_2,
+	DMACH_MTOM_3,
+	DMACH_MTOM_4,
+	DMACH_MTOM_5,
+	DMACH_MTOM_6,
+	DMACH_MTOM_7,
+};
+
+struct dma_pl330_platdata exynos4_mdma_pdata = {
+	.nr_valid_peri = ARRAY_SIZE(mdma_peri),
+	.peri_id = mdma_peri,
+};
+
+struct amba_device exynos4_device_mdma = {
+	.dev = {
+		.init_name = "dma-pl330.2",
+		.dma_mask = &dma_dmamask,
+		.coherent_dma_mask = DMA_BIT_MASK(32),
+		.platform_data = &exynos4_mdma_pdata,
+	},
+	.res = {
+		.start = EXYNOS4_PA_MDMA1,
+		.end = EXYNOS4_PA_MDMA1 + SZ_4K,
+		.flags = IORESOURCE_MEM,
+	},
+	.irq = {IRQ_MDMA1, NO_IRQ},
+	.periphid = 0x00041330,
+};
+
 static int __init exynos4_dma_init(void)
 {
 	if (of_have_populated_dt())
@@ -151,6 +183,9 @@ static int __init exynos4_dma_init(void)
 	dma_cap_set(DMA_SLAVE, exynos4_pdma1_pdata.cap_mask);
 	dma_cap_set(DMA_CYCLIC, exynos4_pdma1_pdata.cap_mask);
 	amba_device_register(&exynos4_device_pdma1, &iomem_resource);
+
+	dma_cap_set(DMA_MEMCPY, exynos4_mdma_pdata.cap_mask);
+	amba_device_register(&exynos4_device_mdma, &iomem_resource);
 
 	return 0;
 }
