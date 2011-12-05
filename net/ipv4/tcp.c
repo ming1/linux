@@ -891,15 +891,18 @@ EXPORT_SYMBOL(tcp_sendpage);
 #define TCP_PAGE(sk)	(sk->sk_sndmsg_page)
 #define TCP_OFF(sk)	(sk->sk_sndmsg_off)
 
-static inline int select_size(const struct sock *sk, int sg)
+static inline int select_size(const struct sock *sk, bool sg)
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
 	int tmp = tp->mss_cache;
 
 	if (sg) {
-		if (sk_can_gso(sk))
-			tmp = 0;
-		else {
+		if (sk_can_gso(sk)) {
+			/* Small frames wont use a full page:
+			 * Payload will immediately follow tcp header.
+			 */
+			tmp = SKB_WITH_OVERHEAD(2048 - MAX_TCP_HEADER);
+		} else {
 			int pgbreak = SKB_MAX_HEAD(MAX_TCP_HEADER);
 
 			if (tmp >= pgbreak &&
@@ -917,9 +920,9 @@ int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	struct iovec *iov;
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct sk_buff *skb;
-	int iovlen, flags;
+	int iovlen, flags, err, copied;
 	int mss_now, size_goal;
-	int sg, err, copied;
+	bool sg;
 	long timeo;
 
 	lock_sock(sk);
@@ -946,7 +949,7 @@ int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	if (sk->sk_err || (sk->sk_shutdown & SEND_SHUTDOWN))
 		goto out_err;
 
-	sg = sk->sk_route_caps & NETIF_F_SG;
+	sg = !!(sk->sk_route_caps & NETIF_F_SG);
 
 	while (--iovlen >= 0) {
 		size_t seglen = iov->iov_len;
@@ -1006,7 +1009,12 @@ new_segment:
 				int merge = 0;
 				int i = skb_shinfo(skb)->nr_frags;
 				struct page *page = TCP_PAGE(sk);
-				int off = TCP_OFF(sk);
+				int off;
+
+				if (page && page_count(page) == 1)
+					TCP_OFF(sk) = 0;
+
+				off = TCP_OFF(sk);
 
 				if (skb_can_coalesce(skb, i, page, off) &&
 				    off != PAGE_SIZE) {
@@ -2653,7 +2661,8 @@ int compat_tcp_getsockopt(struct sock *sk, int level, int optname,
 EXPORT_SYMBOL(compat_tcp_getsockopt);
 #endif
 
-struct sk_buff *tcp_tso_segment(struct sk_buff *skb, u32 features)
+struct sk_buff *tcp_tso_segment(struct sk_buff *skb,
+	netdev_features_t features)
 {
 	struct sk_buff *segs = ERR_PTR(-EINVAL);
 	struct tcphdr *th;

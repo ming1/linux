@@ -171,7 +171,7 @@ static int ipoib_stop(struct net_device *dev)
 	return 0;
 }
 
-static u32 ipoib_fix_features(struct net_device *dev, u32 features)
+static netdev_features_t ipoib_fix_features(struct net_device *dev, netdev_features_t features)
 {
 	struct ipoib_dev_priv *priv = netdev_priv(dev);
 
@@ -1221,6 +1221,8 @@ static struct net_device *ipoib_add_port(const char *format,
 	/* MTU will be reset when mcast join happens */
 	priv->dev->mtu  = IPOIB_UD_MTU(priv->max_ib_mtu);
 	priv->mcast_mtu  = priv->admin_mtu = priv->dev->mtu;
+
+	priv->dev->neigh_priv_len = sizeof(struct ipoib_neigh);
 
 	result = ib_query_pkey(hca, port, 0, &priv->pkey);
 	if (result) {
