@@ -14,7 +14,6 @@
 #include <linux/delay.h>
 #include <linux/pm.h>
 #include <linux/i2c.h>
-#include <linux/platform_device.h>
 #include <linux/slab.h>
 #include <sound/core.h>
 #include <sound/pcm.h>
@@ -265,7 +264,7 @@ SND_SOC_DAPM_INPUT("RINPUT2"),
 SND_SOC_DAPM_INPUT("LINPUT3"),
 SND_SOC_DAPM_INPUT("RINPUT3"),
 
-SND_SOC_DAPM_MICBIAS("MICB", WM8960_POWER1, 1, 0),
+SND_SOC_DAPM_SUPPLY("MICB", WM8960_POWER1, 1, 0, NULL, 0),
 
 SND_SOC_DAPM_MIXER("Left Boost Mixer", WM8960_POWER1, 5, 0,
 		   wm8960_lin_boost, ARRAY_SIZE(wm8960_lin_boost)),
@@ -869,7 +868,7 @@ static int wm8960_set_bias_level(struct snd_soc_codec *codec,
 	(SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S20_3LE | \
 	SNDRV_PCM_FMTBIT_S24_LE)
 
-static struct snd_soc_dai_ops wm8960_dai_ops = {
+static const struct snd_soc_dai_ops wm8960_dai_ops = {
 	.hw_params = wm8960_hw_params,
 	.digital_mute = wm8960_mute,
 	.set_fmt = wm8960_set_dai_fmt,
