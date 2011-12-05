@@ -153,13 +153,13 @@ void smp_invalidate_interrupt(struct pt_regs *regs)
 		 */
 
 	if (f->flush_mm == percpu_read(cpu_tlbstate.active_mm)) {
-		if (percpu_read(cpu_tlbstate.state) == TLBSTATE_OK) {
-			if (f->flush_va == TLB_FLUSH_ALL)
+		if (f->flush_va == TLB_FLUSH_ALL) {
+			if (percpu_read(cpu_tlbstate.state) == TLBSTATE_OK)
 				local_flush_tlb();
 			else
-				__flush_tlb_one(f->flush_va);
+				leave_mm(cpu);
 		} else
-			leave_mm(cpu);
+			__flush_tlb_one(f->flush_va);
 	}
 out:
 	ack_APIC_irq();
@@ -306,12 +306,8 @@ void flush_tlb_page(struct vm_area_struct *vma, unsigned long va)
 
 	preempt_disable();
 
-	if (current->active_mm == mm) {
-		if (current->mm)
-			__flush_tlb_one(va);
-		else
-			leave_mm(smp_processor_id());
-	}
+	if (current->active_mm == mm)
+		__flush_tlb_one(va);
 
 	if (cpumask_any_but(mm_cpumask(mm), smp_processor_id()) < nr_cpu_ids)
 		flush_tlb_others(mm_cpumask(mm), mm, va);
