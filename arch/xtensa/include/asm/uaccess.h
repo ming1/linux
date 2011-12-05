@@ -17,7 +17,6 @@
 #define _XTENSA_UACCESS_H
 
 #include <linux/errno.h>
-#include <linux/prefetch.h>
 #include <asm/types.h>
 
 #define VERIFY_READ    0
@@ -158,6 +157,7 @@
 #else /* __ASSEMBLY__ not defined */
 
 #include <linux/sched.h>
+#include <linux/prefetch.h>
 
 /*
  * The fs value determines whether argument validity checking should
