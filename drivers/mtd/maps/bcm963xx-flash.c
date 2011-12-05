@@ -93,18 +93,18 @@ static int parse_cfe_partitions(struct mtd_info *master,
 	if (rootfslen > 0) {
 		nrparts++;
 		namelen += 6;
-	};
+	}
 	if (kernellen > 0) {
 		nrparts++;
 		namelen += 6;
-	};
+	}
 
 	/* Ask kernel for more memory */
 	parts = kzalloc(sizeof(*parts) * nrparts + 10 * nrparts, GFP_KERNEL);
 	if (!parts) {
 		vfree(buf);
 		return -ENOMEM;
-	};
+	}
 
 	/* Start building partition list */
 	parts[curpart].name = "CFE";
@@ -117,7 +117,7 @@ static int parse_cfe_partitions(struct mtd_info *master,
 		parts[curpart].offset = kerneladdr;
 		parts[curpart].size = kernellen;
 		curpart++;
-	};
+	}
 
 	if (rootfslen > 0) {
 		parts[curpart].name = "rootfs";
@@ -126,7 +126,7 @@ static int parse_cfe_partitions(struct mtd_info *master,
 		if (sparelen > 0)
 			parts[curpart].size += sparelen;
 		curpart++;
-	};
+	}
 
 	parts[curpart].name = "nvram";
 	parts[curpart].offset = master->size - master->erasesize;
