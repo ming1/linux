@@ -153,6 +153,7 @@ struct stedma40_platform_data {
 	struct stedma40_chan_cfg	*memcpy_conf_phy;
 	struct stedma40_chan_cfg	*memcpy_conf_log;
 	int				 disabled_channels[STEDMA40_MAX_PHYS];
+	bool				 use_esram_lcla;
 };
 
 #ifdef CONFIG_STE_DMA40
@@ -187,7 +188,7 @@ static inline struct
 dma_async_tx_descriptor *stedma40_slave_mem(struct dma_chan *chan,
 					    dma_addr_t addr,
 					    unsigned int size,
-					    enum dma_data_direction direction,
+					    enum dma_transfer_direction direction,
 					    unsigned long flags)
 {
 	struct scatterlist sg;
@@ -209,7 +210,7 @@ static inline struct
 dma_async_tx_descriptor *stedma40_slave_mem(struct dma_chan *chan,
 					    dma_addr_t addr,
 					    unsigned int size,
-					    enum dma_data_direction direction,
+					    enum dma_transfer_direction direction,
 					    unsigned long flags)
 {
 	return NULL;
