@@ -420,7 +420,7 @@ static void sh_mobile_lcdc_geometry(struct sh_mobile_lcdc_chan *ch)
 	tmp = ((display_var->xres & 7) << 24) |
 		((display_h_total & 7) << 16) |
 		((display_var->hsync_len & 7) << 8) |
-		hsync_pos;
+		(hsync_pos & 7);
 	lcdc_write_chan(ch, LDHAJR, tmp);
 }
 
@@ -1709,18 +1709,7 @@ static struct platform_driver sh_mobile_lcdc_driver = {
 	.remove		= sh_mobile_lcdc_remove,
 };
 
-static int __init sh_mobile_lcdc_init(void)
-{
-	return platform_driver_register(&sh_mobile_lcdc_driver);
-}
-
-static void __exit sh_mobile_lcdc_exit(void)
-{
-	platform_driver_unregister(&sh_mobile_lcdc_driver);
-}
-
-module_init(sh_mobile_lcdc_init);
-module_exit(sh_mobile_lcdc_exit);
+module_platform_driver(sh_mobile_lcdc_driver);
 
 MODULE_DESCRIPTION("SuperH Mobile LCDC Framebuffer driver");
 MODULE_AUTHOR("Magnus Damm <damm@opensource.se>");
