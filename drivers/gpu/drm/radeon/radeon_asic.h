@@ -212,6 +212,7 @@ extern int rs600_init(struct radeon_device *rdev);
 extern void rs600_fini(struct radeon_device *rdev);
 extern int rs600_suspend(struct radeon_device *rdev);
 extern int rs600_resume(struct radeon_device *rdev);
+void rs600_restore_sanity(struct radeon_device *rdev);
 int rs600_irq_set(struct radeon_device *rdev);
 int rs600_irq_process(struct radeon_device *rdev);
 void rs600_irq_disable(struct radeon_device *rdev);
@@ -382,6 +383,7 @@ u32 rv770_page_flip(struct radeon_device *rdev, int crtc, u64 crtc_base);
 void r700_vram_gtt_location(struct radeon_device *rdev, struct radeon_mc *mc);
 void r700_cp_stop(struct radeon_device *rdev);
 void r700_cp_fini(struct radeon_device *rdev);
+void rv770_restore_sanity(struct radeon_device *rdev);
 
 /*
  * evergreen

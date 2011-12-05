@@ -3183,6 +3183,8 @@ int evergreen_init(struct radeon_device *rdev)
 {
 	int r;
 
+	/* restore some register to sane defaults */
+	rv770_restore_sanity(rdev);
 	/* This don't do much */
 	r = radeon_gem_init(rdev);
 	if (r)
