@@ -21,6 +21,7 @@
 #include "midi.h"
 #include "playback.h"
 #include "pod.h"
+#include "podhd.h"
 #include "revision.h"
 #include "toneport.h"
 #include "usbdefs.h"
@@ -49,6 +50,7 @@ static const struct usb_device_id line6_id_table[] = {
 	{USB_DEVICE(LINE6_VENDOR_ID, LINE6_DEVID_TONEPORT_UX1)},
 	{USB_DEVICE(LINE6_VENDOR_ID, LINE6_DEVID_TONEPORT_UX2)},
 	{USB_DEVICE(LINE6_VENDOR_ID, LINE6_DEVID_VARIAX)},
+	{USB_DEVICE(LINE6_VENDOR_ID, LINE6_DEVID_PODHD300)},
 	{},
 };
 
@@ -72,7 +74,8 @@ static struct line6_properties line6_properties_table[] = {
 	{ "TonePortGX",    "TonePort GX",      LINE6_BIT_TONEPORT_GX,   LINE6_BIT_PCM               },
 	{ "TonePortUX1",   "TonePort UX1",     LINE6_BIT_TONEPORT_UX1,  LINE6_BIT_PCM               },
 	{ "TonePortUX2",   "TonePort UX2",     LINE6_BIT_TONEPORT_UX2,  LINE6_BIT_PCM               },
-	{ "Variax",        "Variax Workbench", LINE6_BIT_VARIAX,        LINE6_BIT_CONTROL           }
+	{ "Variax",        "Variax Workbench", LINE6_BIT_VARIAX,        LINE6_BIT_CONTROL           },
+	{ "PODHD300",      "POD HD300",        LINE6_BIT_PODHD300,      LINE6_BIT_CONTROL_PCM_HWMON },
 };
 /* *INDENT-ON* */
 
@@ -437,6 +440,9 @@ static void line6_data_received(struct urb *urb)
 						  line6);
 			break;
 
+		case LINE6_DEVID_PODHD300:
+			break; /* let userspace handle MIDI */
+
 		case LINE6_DEVID_PODXTLIVE:
 			switch (line6->interface_number) {
 			case PODXTLIVE_INTERFACE_POD:
@@ -720,8 +726,8 @@ static int line6_probe(struct usb_interface *interface,
 		       const struct usb_device_id *id)
 {
 	int devtype;
-	struct usb_device *usbdev = NULL;
-	struct usb_line6 *line6 = NULL;
+	struct usb_device *usbdev;
+	struct usb_line6 *line6;
 	const struct line6_properties *properties;
 	int devnum;
 	int interface_number, alternate = 0;
@@ -812,6 +818,7 @@ static int line6_probe(struct usb_interface *interface,
 	case LINE6_DEVID_BASSPODXTPRO:
 	case LINE6_DEVID_PODXT:
 	case LINE6_DEVID_PODXTPRO:
+	case LINE6_DEVID_PODHD300:
 		alternate = 5;
 		break;
 
@@ -861,6 +868,12 @@ static int line6_probe(struct usb_interface *interface,
 	case LINE6_DEVID_PODXT:
 	case LINE6_DEVID_PODXTPRO:
 		size = sizeof(struct usb_line6_pod);
+		ep_read = 0x84;
+		ep_write = 0x03;
+		break;
+
+	case LINE6_DEVID_PODHD300:
+		size = sizeof(struct usb_line6_podhd);
 		ep_read = 0x84;
 		ep_write = 0x03;
 		break;
@@ -923,7 +936,7 @@ static int line6_probe(struct usb_interface *interface,
 	}
 
 	if (size == 0) {
-		dev_err(line6->ifcdev,
+		dev_err(&interface->dev,
 			"driver bug: interface data size not set\n");
 		ret = -ENODEV;
 		goto err_put;
@@ -1015,6 +1028,11 @@ static int line6_probe(struct usb_interface *interface,
 	case LINE6_DEVID_PODXT:
 	case LINE6_DEVID_PODXTPRO:
 		ret = line6_pod_init(interface, (struct usb_line6_pod *)line6);
+		break;
+
+	case LINE6_DEVID_PODHD300:
+		ret = line6_podhd_init(interface,
+				       (struct usb_line6_podhd *)line6);
 		break;
 
 	case LINE6_DEVID_PODXTLIVE:
@@ -1137,6 +1155,10 @@ static void line6_disconnect(struct usb_interface *interface)
 		case LINE6_DEVID_PODXT:
 		case LINE6_DEVID_PODXTPRO:
 			line6_pod_disconnect(interface);
+			break;
+
+		case LINE6_DEVID_PODHD300:
+			line6_podhd_disconnect(interface);
 			break;
 
 		case LINE6_DEVID_PODXTLIVE:
