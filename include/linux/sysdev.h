@@ -132,6 +132,8 @@ struct sysdev_ext_attribute {
 	void *var;
 };
 
+#define SYSDEV_TO_EXT_ATTR(x) container_of(x, struct sysdev_ext_attribute, attr)
+
 /*
  * Support for simple variable sysdev attributes.
  * The pointer to the variable is stored in a sysdev_ext_attribute

@@ -11,13 +11,6 @@
 #include <linux/swapops.h>
 #include <linux/kmemleak.h>
 
-static void __meminit init_page_cgroup(struct page_cgroup *pc, unsigned long id)
-{
-	pc->flags = 0;
-	set_page_cgroup_array_id(pc, id);
-	pc->mem_cgroup = NULL;
-	INIT_LIST_HEAD(&pc->lru);
-}
 static unsigned long total_usage;
 
 #if !defined(CONFIG_SPARSEMEM)
@@ -35,35 +28,27 @@ struct page_cgroup *lookup_page_cgroup(struct page *page)
 	struct page_cgroup *base;
 
 	base = NODE_DATA(page_to_nid(page))->node_page_cgroup;
+#ifdef CONFIG_DEBUG_VM
+	/*
+	 * The sanity checks the page allocator does upon freeing a
+	 * page can reach here before the page_cgroup arrays are
+	 * allocated when feeding a range of pages to the allocator
+	 * for the first time during bootup or memory hotplug.
+	 */
 	if (unlikely(!base))
 		return NULL;
-
+#endif
 	offset = pfn - NODE_DATA(page_to_nid(page))->node_start_pfn;
 	return base + offset;
 }
 
-struct page *lookup_cgroup_page(struct page_cgroup *pc)
-{
-	unsigned long pfn;
-	struct page *page;
-	pg_data_t *pgdat;
-
-	pgdat = NODE_DATA(page_cgroup_array_id(pc));
-	pfn = pc - pgdat->node_page_cgroup + pgdat->node_start_pfn;
-	page = pfn_to_page(pfn);
-	VM_BUG_ON(pc != lookup_page_cgroup(page));
-	return page;
-}
-
 static int __init alloc_node_page_cgroup(int nid)
 {
-	struct page_cgroup *base, *pc;
+	struct page_cgroup *base;
 	unsigned long table_size;
-	unsigned long start_pfn, nr_pages, index;
+	unsigned long nr_pages;
 
-	start_pfn = NODE_DATA(nid)->node_start_pfn;
 	nr_pages = NODE_DATA(nid)->node_spanned_pages;
-
 	if (!nr_pages)
 		return 0;
 
@@ -73,10 +58,6 @@ static int __init alloc_node_page_cgroup(int nid)
 			table_size, PAGE_SIZE, __pa(MAX_DMA_ADDRESS));
 	if (!base)
 		return -ENOMEM;
-	for (index = 0; index < nr_pages; index++) {
-		pc = base + index;
-		init_page_cgroup(pc, nid);
-	}
 	NODE_DATA(nid)->node_page_cgroup = base;
 	total_usage += table_size;
 	return 0;
@@ -111,29 +92,23 @@ struct page_cgroup *lookup_page_cgroup(struct page *page)
 {
 	unsigned long pfn = page_to_pfn(page);
 	struct mem_section *section = __pfn_to_section(pfn);
-
+#ifdef CONFIG_DEBUG_VM
+	/*
+	 * The sanity checks the page allocator does upon freeing a
+	 * page can reach here before the page_cgroup arrays are
+	 * allocated when feeding a range of pages to the allocator
+	 * for the first time during bootup or memory hotplug.
+	 */
 	if (!section->page_cgroup)
 		return NULL;
+#endif
 	return section->page_cgroup + pfn;
-}
-
-struct page *lookup_cgroup_page(struct page_cgroup *pc)
-{
-	struct mem_section *section;
-	struct page *page;
-	unsigned long nr;
-
-	nr = page_cgroup_array_id(pc);
-	section = __nr_to_section(nr);
-	page = pfn_to_page(pc - section->page_cgroup);
-	VM_BUG_ON(pc != lookup_page_cgroup(page));
-	return page;
 }
 
 static void *__meminit alloc_page_cgroup(size_t size, int nid)
 {
+	gfp_t flags = GFP_KERNEL | __GFP_ZERO | __GFP_NOWARN;
 	void *addr = NULL;
-	gfp_t flags = GFP_KERNEL | __GFP_NOWARN;
 
 	addr = alloc_pages_exact_nid(nid, size, flags);
 	if (addr) {
@@ -142,9 +117,9 @@ static void *__meminit alloc_page_cgroup(size_t size, int nid)
 	}
 
 	if (node_state(nid, N_HIGH_MEMORY))
-		addr = vmalloc_node(size, nid);
+		addr = vzalloc_node(size, nid);
 	else
-		addr = vmalloc(size);
+		addr = vzalloc(size);
 
 	return addr;
 }
@@ -167,14 +142,11 @@ static void free_page_cgroup(void *addr)
 
 static int __meminit init_section_page_cgroup(unsigned long pfn, int nid)
 {
-	struct page_cgroup *base, *pc;
 	struct mem_section *section;
+	struct page_cgroup *base;
 	unsigned long table_size;
-	unsigned long nr;
-	int index;
 
-	nr = pfn_to_section_nr(pfn);
-	section = __nr_to_section(nr);
+	section = __pfn_to_section(pfn);
 
 	if (section->page_cgroup)
 		return 0;
@@ -194,10 +166,6 @@ static int __meminit init_section_page_cgroup(unsigned long pfn, int nid)
 		return -ENOMEM;
 	}
 
-	for (index = 0; index < PAGES_PER_SECTION; index++) {
-		pc = base + index;
-		init_page_cgroup(pc, nr);
-	}
 	/*
 	 * The passed "pfn" may not be aligned to SECTION.  For the calculation
 	 * we need to apply a mask.
