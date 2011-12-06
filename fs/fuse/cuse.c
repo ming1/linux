@@ -461,6 +461,10 @@ static void cuse_fc_release(struct fuse_conn *fc)
 	kfree(cc);
 }
 
+static const struct fuse_conn_operations cuse_ops = {
+	.release = cuse_fc_release,
+};
+
 /**
  * cuse_channel_open - open method for /dev/cuse
  * @inode: inode for /dev/cuse
@@ -489,7 +493,7 @@ static int cuse_channel_open(struct inode *inode, struct file *file)
 	fuse_conn_init(&cc->fc);
 
 	INIT_LIST_HEAD(&cc->list);
-	cc->fc.release = cuse_fc_release;
+	cc->fc.ops = &cuse_ops;
 
 	cc->fc.connected = 1;
 	cc->fc.blocked = 0;
