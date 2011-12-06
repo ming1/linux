@@ -2759,7 +2759,7 @@ int inline qeth_l3_get_cast_type(struct qeth_card *card, struct sk_buff *skb)
 	rcu_read_lock();
 	dst = skb_dst(skb);
 	if (dst)
-		n = dst_get_neighbour(dst);
+		n = dst_get_neighbour_noref(dst);
 	if (n) {
 		cast_type = n->type;
 		rcu_read_unlock();
@@ -2855,7 +2855,7 @@ static void qeth_l3_fill_header(struct qeth_card *card, struct qeth_hdr *hdr,
 	rcu_read_lock();
 	dst = skb_dst(skb);
 	if (dst)
-		n = dst_get_neighbour(dst);
+		n = dst_get_neighbour_noref(dst);
 	if (ipv == 4) {
 		/* IPv4 */
 		hdr->hdr.l3.flags = qeth_l3_get_qeth_hdr_flags4(cast_type);
@@ -3209,7 +3209,8 @@ static int qeth_l3_stop(struct net_device *dev)
 	return 0;
 }
 
-static u32 qeth_l3_fix_features(struct net_device *dev, u32 features)
+static netdev_features_t qeth_l3_fix_features(struct net_device *dev,
+	netdev_features_t features)
 {
 	struct qeth_card *card = dev->ml_priv;
 
@@ -3223,7 +3224,8 @@ static u32 qeth_l3_fix_features(struct net_device *dev, u32 features)
 	return features;
 }
 
-static int qeth_l3_set_features(struct net_device *dev, u32 features)
+static int qeth_l3_set_features(struct net_device *dev,
+	netdev_features_t features)
 {
 	struct qeth_card *card = dev->ml_priv;
 	u32 changed = dev->features ^ features;
