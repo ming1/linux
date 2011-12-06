@@ -62,6 +62,7 @@ u32 rs600_page_flip(struct radeon_device *rdev, int crtc_id, u64 crtc_base)
 {
 	struct radeon_crtc *radeon_crtc = rdev->mode_info.crtcs[crtc_id];
 	u32 tmp = RREG32(AVIVO_D1GRPH_UPDATE + radeon_crtc->crtc_offset);
+	int i;
 
 	/* Lock the graphics update lock */
 	tmp |= AVIVO_D1GRPH_UPDATE_LOCK;
@@ -74,7 +75,11 @@ u32 rs600_page_flip(struct radeon_device *rdev, int crtc_id, u64 crtc_base)
 	       (u32)crtc_base);
 
 	/* Wait for update_pending to go high. */
-	while (!(RREG32(AVIVO_D1GRPH_UPDATE + radeon_crtc->crtc_offset) & AVIVO_D1GRPH_SURFACE_UPDATE_PENDING));
+	for (i = 0; i < rdev->usec_timeout; i++) {
+		if (RREG32(AVIVO_D1GRPH_UPDATE + radeon_crtc->crtc_offset) & AVIVO_D1GRPH_SURFACE_UPDATE_PENDING)
+			break;
+		udelay(1);
+	}
 	DRM_DEBUG("Update pending now high. Unlocking vupdate_lock.\n");
 
 	/* Unlock the lock, so double-buffering can take place inside vblank */
@@ -915,6 +920,24 @@ void rs600_fini(struct radeon_device *rdev)
 	rdev->bios = NULL;
 }
 
+
+/*
+ * Due to how kexec works, it can leave the hw fully initialised when it
+ * boots the new kernel.
+ */
+void rs600_restore_sanity(struct radeon_device *rdev)
+{
+	/* stop possible GPU activities */
+	WREG32(R_000740_CP_CSQ_CNTL, 0);
+	WREG32(R_000744_CP_CSQ_MODE, 0);
+	WREG32(R_000770_SCRATCH_UMSK, 0);
+	WREG32(R_000704_CP_RB_CNTL, S_000704_RB_NO_UPDATE(1));
+	WREG32(R_000040_GEN_INT_CNTL, 0);
+	WREG32(R_006540_DxMODE_INT_MASK, 0);
+	WREG32(R_007D08_DC_HOT_PLUG_DETECT1_INT_CONTROL, 0);
+	WREG32(R_007D18_DC_HOT_PLUG_DETECT2_INT_CONTROL, 0);
+}
+
 int rs600_init(struct radeon_device *rdev)
 {
 	int r;
@@ -926,7 +949,7 @@ int rs600_init(struct radeon_device *rdev)
 	/* Initialize surface registers */
 	radeon_surface_init(rdev);
 	/* restore some register to sane defaults */
-	r100_restore_sanity(rdev);
+	rs600_restore_sanity(rdev);
 	/* BIOS */
 	if (!radeon_get_bios(rdev)) {
 		if (ASIC_IS_AVIVO(rdev))

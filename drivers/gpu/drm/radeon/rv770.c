@@ -47,6 +47,7 @@ u32 rv770_page_flip(struct radeon_device *rdev, int crtc_id, u64 crtc_base)
 {
 	struct radeon_crtc *radeon_crtc = rdev->mode_info.crtcs[crtc_id];
 	u32 tmp = RREG32(AVIVO_D1GRPH_UPDATE + radeon_crtc->crtc_offset);
+	int i;
 
 	/* Lock the graphics update lock */
 	tmp |= AVIVO_D1GRPH_UPDATE_LOCK;
@@ -66,7 +67,11 @@ u32 rv770_page_flip(struct radeon_device *rdev, int crtc_id, u64 crtc_base)
 	       (u32)crtc_base);
 
 	/* Wait for update_pending to go high. */
-	while (!(RREG32(AVIVO_D1GRPH_UPDATE + radeon_crtc->crtc_offset) & AVIVO_D1GRPH_SURFACE_UPDATE_PENDING));
+	for (i = 0; i < rdev->usec_timeout; i++) {
+		if (RREG32(AVIVO_D1GRPH_UPDATE + radeon_crtc->crtc_offset) & AVIVO_D1GRPH_SURFACE_UPDATE_PENDING)
+			break;
+		udelay(1);
+	}
 	DRM_DEBUG("Update pending now high. Unlocking vupdate_lock.\n");
 
 	/* Unlock the lock, so double-buffering can take place inside vblank */
@@ -1146,6 +1151,20 @@ int rv770_suspend(struct radeon_device *rdev)
 	return 0;
 }
 
+/*
+ * Due to how kexec works, it can leave the hw fully initialised when it
+ * boots the new kernel.
+ */
+void rv770_restore_sanity(struct radeon_device *rdev)
+{
+	/* stop possible GPU activities */
+	WREG32(IH_RB_CNTL, 0);
+	WREG32(IH_CNTL, 0);
+	WREG32(CP_ME_CNTL, CP_ME_HALT | CP_PFP_HALT);
+	WREG32(SCRATCH_UMSK, 0);
+	WREG32(CP_RB_CNTL, RB_NO_UPDATE);
+}
+
 /* Plan is to move initialization in that function and use
  * helper function so that radeon_device_init pretty much
  * do nothing more than calling asic specific function. This
@@ -1156,6 +1175,8 @@ int rv770_init(struct radeon_device *rdev)
 {
 	int r;
 
+	/* restore some register to sane defaults */
+	rv770_restore_sanity(rdev);
 	/* This don't do much */
 	r = radeon_gem_init(rdev);
 	if (r)
