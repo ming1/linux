@@ -285,6 +285,7 @@ struct fuse_req {
 		} write;
 		struct fuse_notify_retrieve_in retrieve_in;
 		struct fuse_lk_in lk_in;
+		struct fuse_munmap_in munmap_in;
 	} misc;
 
 	/** page vector */
@@ -484,6 +485,9 @@ struct fuse_conn {
 	/** Is poll not implemented by fs? */
 	unsigned no_poll:1;
 
+	/** Is direct mmap not implemente by fs? */
+	unsigned no_dmmap:1;
+
 	/** Do multi-page cached writes */
 	unsigned big_writes:1;
 
@@ -531,6 +535,9 @@ struct fuse_conn {
 
 	/** Read/write semaphore to hold when accessing sb. */
 	struct rw_semaphore killsb;
+
+	/** List of direct mmaps (currently CUSE only) */
+	struct list_head dmmap_list;
 
 	/** Operations that fuse and cuse can implement differently */
 	const struct fuse_conn_operations *ops;
