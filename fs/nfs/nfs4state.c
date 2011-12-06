@@ -49,6 +49,7 @@
 #include <linux/ratelimit.h>
 #include <linux/workqueue.h>
 #include <linux/bitops.h>
+#include <linux/jiffies.h>
 
 #include "nfs4_fs.h"
 #include "callback.h"
@@ -453,6 +454,7 @@ nfs4_alloc_state_owner(void)
 	spin_lock_init(&sp->so_sequence.lock);
 	INIT_LIST_HEAD(&sp->so_sequence.list);
 	atomic_set(&sp->so_count, 1);
+	INIT_LIST_HEAD(&sp->so_lru);
 	return sp;
 }
 
@@ -464,9 +466,45 @@ nfs4_drop_state_owner(struct nfs4_state_owner *sp)
 		struct nfs_client *clp = server->nfs_client;
 
 		spin_lock(&clp->cl_lock);
+		list_del_init(&sp->so_lru);
 		rb_erase(&sp->so_server_node, &server->state_owners);
 		RB_CLEAR_NODE(&sp->so_server_node);
 		spin_unlock(&clp->cl_lock);
+	}
+}
+
+static void nfs4_release_state_owner(struct nfs4_state_owner *sp)
+{
+	struct nfs_client *clp = sp->so_server->nfs_client;
+
+	spin_lock(&clp->cl_lock);
+	nfs4_remove_state_owner_locked(sp);
+	spin_unlock(&clp->cl_lock);
+	rpc_destroy_wait_queue(&sp->so_sequence.wait);
+	put_rpccred(sp->so_cred);
+	kfree(sp);
+}
+
+static void nfs4_gc_state_owners(struct nfs_server *server)
+{
+	struct nfs_client *clp = server->nfs_client;
+	struct nfs4_state_owner *sp, *tmp;
+	unsigned long now = jiffies;
+	LIST_HEAD(doomed);
+
+	spin_lock(&clp->cl_lock);
+	list_for_each_entry_safe(sp, tmp, &server->state_owners_lru, so_lru) {
+		/* NB: LRU is sorted so that oldest is at the head */
+		if (time_in_range(now, sp->so_expires,
+				sp->so_expires + clp->cl_lease_time))
+			break;
+		list_move(&sp->so_lru, &doomed);
+	}
+	spin_unlock(&clp->cl_lock);
+
+	list_for_each_entry_safe(sp, tmp, &doomed, so_lru) {
+		list_del_init(&sp->so_lru);
+		nfs4_release_state_owner(sp);
 	}
 }
 
@@ -483,11 +521,13 @@ struct nfs4_state_owner *nfs4_get_state_owner(struct nfs_server *server,
 	struct nfs_client *clp = server->nfs_client;
 	struct nfs4_state_owner *sp, *new;
 
+	nfs4_gc_state_owners(server);
+
 	spin_lock(&clp->cl_lock);
 	sp = nfs4_find_state_owner_locked(server, cred);
 	spin_unlock(&clp->cl_lock);
 	if (sp != NULL)
-		return sp;
+		goto out;
 	new = nfs4_alloc_state_owner();
 	if (new == NULL)
 		return NULL;
@@ -502,26 +542,56 @@ struct nfs4_state_owner *nfs4_get_state_owner(struct nfs_server *server,
 		rpc_destroy_wait_queue(&new->so_sequence.wait);
 		kfree(new);
 	}
+out:
+	list_del_init(&sp->so_lru);
 	return sp;
 }
 
 /**
  * nfs4_put_state_owner - Release a nfs4_state_owner
  * @sp: state owner data to release
- *
  */
 void nfs4_put_state_owner(struct nfs4_state_owner *sp)
 {
-	struct nfs_client *clp = sp->so_server->nfs_client;
-	struct rpc_cred *cred = sp->so_cred;
+	struct nfs_server *server = sp->so_server;
+	struct nfs_client *clp = server->nfs_client;
 
 	if (!atomic_dec_and_lock(&sp->so_count, &clp->cl_lock))
 		return;
-	nfs4_remove_state_owner_locked(sp);
+
+	if (!RB_EMPTY_NODE(&sp->so_server_node)) {
+		sp->so_expires = jiffies;
+		list_move_tail(&sp->so_lru, &server->state_owners_lru);
+		spin_unlock(&clp->cl_lock);
+	} else {
+		list_del_init(&sp->so_lru);
+		spin_unlock(&clp->cl_lock);
+		nfs4_release_state_owner(sp);
+	}
+}
+
+/**
+ * nfs4_purge_state_owners - Release all cached state owners
+ * @server: nfs_server with cached state owners to release
+ *
+ * Called at umount time.  Remaining state owners will be on
+ * the LRU with ref count of zero.
+ */
+void nfs4_purge_state_owners(struct nfs_server *server)
+{
+	struct nfs_client *clp = server->nfs_client;
+	struct nfs4_state_owner *sp, *tmp;
+	LIST_HEAD(doomed);
+
+	spin_lock(&clp->cl_lock);
+	list_for_each_entry_safe(sp, tmp, &server->state_owners_lru, so_lru)
+		list_move(&sp->so_lru, &doomed);
 	spin_unlock(&clp->cl_lock);
-	rpc_destroy_wait_queue(&sp->so_sequence.wait);
-	put_rpccred(cred);
-	kfree(sp);
+
+	list_for_each_entry_safe(sp, tmp, &doomed, so_lru) {
+		list_del_init(&sp->so_lru);
+		nfs4_release_state_owner(sp);
+	}
 }
 
 static struct nfs4_state *
@@ -1393,6 +1463,7 @@ static int nfs4_do_reclaim(struct nfs_client *clp, const struct nfs4_state_recov
 restart:
 	rcu_read_lock();
 	list_for_each_entry_rcu(server, &clp->cl_superblocks, client_link) {
+		nfs4_purge_state_owners(server);
 		spin_lock(&clp->cl_lock);
 		for (pos = rb_first(&server->state_owners);
 		     pos != NULL;
