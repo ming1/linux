@@ -154,6 +154,8 @@ void omap_intc_restore_context(void);
 void omap3_intc_suspend(void);
 void omap3_intc_prepare_idle(void);
 void omap3_intc_resume_idle(void);
+void omap2_intc_handle_irq(struct pt_regs *regs);
+void omap3_intc_handle_irq(struct pt_regs *regs);
 
 /*
  * wfi used in low power code. Directly opcode is used instead
@@ -169,8 +171,6 @@ void omap3_intc_resume_idle(void);
 #ifdef CONFIG_CACHE_L2X0
 extern void __iomem *l2cache_base;
 #endif
-
-extern void __iomem *gic_dist_base_addr;
 
 extern void __init gic_init_irq(void);
 extern void omap_smc1(u32 fn, u32 arg);
