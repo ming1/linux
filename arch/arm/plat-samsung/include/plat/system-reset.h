@@ -16,6 +16,7 @@
 
 void (*s5p_reset_hook)(void);
 
+#error Fix me up
 static void arch_reset(char mode, const char *cmd)
 {
 	/* SWRESET support in s5p_reset_hook() */
