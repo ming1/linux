@@ -18,6 +18,7 @@ static void arch_idle(void)
 	/* nothing here yet */
 }
 
+#error Fix me up
 static void arch_reset(char mode, const char *cmd)
 {
 	if (mode != 's')

@@ -15,6 +15,7 @@
 
 extern void (*s3c24xx_reset_hook)(void);
 
+#error Fix me up
 static void
 arch_reset(char mode, const char *cmd)
 {
