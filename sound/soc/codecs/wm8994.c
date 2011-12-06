@@ -2536,7 +2536,7 @@ static int wm8994_aif2_probe(struct snd_soc_dai *dai)
 #define WM8994_FORMATS (SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S20_3LE |\
 			SNDRV_PCM_FMTBIT_S24_LE | SNDRV_PCM_FMTBIT_S32_LE)
 
-static struct snd_soc_dai_ops wm8994_aif1_dai_ops = {
+static const struct snd_soc_dai_ops wm8994_aif1_dai_ops = {
 	.set_sysclk	= wm8994_set_dai_sysclk,
 	.set_fmt	= wm8994_set_dai_fmt,
 	.hw_params	= wm8994_hw_params,
@@ -2546,7 +2546,7 @@ static struct snd_soc_dai_ops wm8994_aif1_dai_ops = {
 	.set_tristate	= wm8994_set_tristate,
 };
 
-static struct snd_soc_dai_ops wm8994_aif2_dai_ops = {
+static const struct snd_soc_dai_ops wm8994_aif2_dai_ops = {
 	.set_sysclk	= wm8994_set_dai_sysclk,
 	.set_fmt	= wm8994_set_dai_fmt,
 	.hw_params	= wm8994_hw_params,
@@ -2556,7 +2556,7 @@ static struct snd_soc_dai_ops wm8994_aif2_dai_ops = {
 	.set_tristate	= wm8994_set_tristate,
 };
 
-static struct snd_soc_dai_ops wm8994_aif3_dai_ops = {
+static const struct snd_soc_dai_ops wm8994_aif3_dai_ops = {
 	.hw_params	= wm8994_aif3_hw_params,
 	.set_tristate	= wm8994_set_tristate,
 };
@@ -3586,18 +3586,7 @@ static struct platform_driver wm8994_codec_driver = {
 	.remove = __devexit_p(wm8994_remove),
 };
 
-static __init int wm8994_init(void)
-{
-	return platform_driver_register(&wm8994_codec_driver);
-}
-module_init(wm8994_init);
-
-static __exit void wm8994_exit(void)
-{
-	platform_driver_unregister(&wm8994_codec_driver);
-}
-module_exit(wm8994_exit);
-
+module_platform_driver(wm8994_codec_driver);
 
 MODULE_DESCRIPTION("ASoC WM8994 driver");
 MODULE_AUTHOR("Mark Brown <broonie@opensource.wolfsonmicro.com>");
