@@ -34,6 +34,8 @@
 #include <mach/nand.h>
 #include <mach/fsmc.h>
 
+#include "cpu-8815.h"
+
 /* Initial value for SRC control register: all timers use MXTAL/8 source */
 #define SRC_CR_INIT_MASK	0x00007fff
 #define SRC_CR_INIT_VAL		0x2aaa8000
@@ -282,4 +284,5 @@ MACHINE_START(NOMADIK, "NHK8815")
 	.init_irq	= cpu8815_init_irq,
 	.timer		= &nomadik_timer,
 	.init_machine	= nhk8815_platform_init,
+	.restart	= cpu8815_restart,
 MACHINE_END
