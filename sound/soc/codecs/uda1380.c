@@ -705,7 +705,7 @@ static struct snd_soc_dai_driver uda1380_dai[] = {
 },
 };
 
-static int uda1380_suspend(struct snd_soc_codec *codec, pm_message_t state)
+static int uda1380_suspend(struct snd_soc_codec *codec)
 {
 	uda1380_set_bias_level(codec, SND_SOC_BIAS_OFF);
 	return 0;
@@ -732,27 +732,21 @@ static int uda1380_probe(struct snd_soc_codec *codec)
 		return -EINVAL;
 
 	if (gpio_is_valid(pdata->gpio_reset)) {
-		ret = gpio_request(pdata->gpio_reset, "uda1380 reset");
+		ret = gpio_request_one(pdata->gpio_reset, GPIOF_OUT_INIT_LOW,
+				       "uda1380 reset");
 		if (ret)
 			goto err_out;
-		ret = gpio_direction_output(pdata->gpio_reset, 0);
-		if (ret)
-			goto err_gpio_reset_conf;
 	}
 
 	if (gpio_is_valid(pdata->gpio_power)) {
-		ret = gpio_request(pdata->gpio_power, "uda1380 power");
+		ret = gpio_request_one(pdata->gpio_power, GPIOF_OUT_INIT_LOW,
+				   "uda1380 power");
 		if (ret)
-			goto err_gpio;
-		ret = gpio_direction_output(pdata->gpio_power, 0);
-		if (ret)
-			goto err_gpio_power_conf;
+			goto err_free_gpio;
 	} else {
 		ret = uda1380_reset(codec);
-		if (ret) {
-			dev_err(codec->dev, "Failed to issue reset\n");
-			goto err_reset;
-		}
+		if (ret)
+			goto err_free_gpio;
 	}
 
 	INIT_WORK(&uda1380->work, uda1380_flush_work);
@@ -776,13 +770,7 @@ static int uda1380_probe(struct snd_soc_codec *codec)
 
 	return 0;
 
-err_reset:
-err_gpio_power_conf:
-	if (gpio_is_valid(pdata->gpio_power))
-		gpio_free(pdata->gpio_power);
-
-err_gpio_reset_conf:
-err_gpio:
+err_free_gpio:
 	if (gpio_is_valid(pdata->gpio_reset))
 		gpio_free(pdata->gpio_reset);
 err_out:
@@ -863,13 +851,13 @@ static struct i2c_driver uda1380_i2c_driver = {
 
 static int __init uda1380_modinit(void)
 {
-	int ret;
+	int ret = 0;
 #if defined(CONFIG_I2C) || defined(CONFIG_I2C_MODULE)
 	ret = i2c_add_driver(&uda1380_i2c_driver);
 	if (ret != 0)
 		pr_err("Failed to register UDA1380 I2C driver: %d\n", ret);
 #endif
-	return 0;
+	return ret;
 }
 module_init(uda1380_modinit);
 
