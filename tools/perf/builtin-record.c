@@ -262,13 +262,16 @@ static bool perf_evlist__equal(struct perf_evlist *evlist,
 
 static void open_counters(struct perf_evlist *evlist)
 {
-	struct perf_evsel *pos;
+	struct perf_evsel *pos, *first;
 
 	if (evlist->cpus->map[0] < 0)
 		no_inherit = true;
 
+	first = list_entry(evlist->entries.next, struct perf_evsel, node);
+
 	list_for_each_entry(pos, &evlist->entries, node) {
 		struct perf_event_attr *attr = &pos->attr;
+		struct xyarray *group_fd = NULL;
 		/*
 		 * Check if parse_single_tracepoint_event has already asked for
 		 * PERF_SAMPLE_TIME.
@@ -283,15 +286,19 @@ static void open_counters(struct perf_evlist *evlist)
 		 */
 		bool time_needed = attr->sample_type & PERF_SAMPLE_TIME;
 
+		if (group && pos != first)
+			group_fd = first->fd;
+
 		config_attr(pos, evlist);
 retry_sample_id:
 		attr->sample_id_all = sample_id_all_avail ? 1 : 0;
 try_again:
-		if (perf_evsel__open(pos, evlist->cpus, evlist->threads, group) < 0) {
+		if (perf_evsel__open(pos, evlist->cpus, evlist->threads, group,
+				     group_fd) < 0) {
 			int err = errno;
 
 			if (err == EPERM || err == EACCES) {
-				ui__warning_paranoid();
+				ui__error_paranoid();
 				exit(EXIT_FAILURE);
 			} else if (err ==  ENODEV && cpu_list) {
 				die("No such device - did you specify"
@@ -528,6 +535,19 @@ static int __cmd_record(int argc, const char **argv)
 
 	if (have_tracepoints(&evsel_list->entries))
 		perf_header__set_feat(&session->header, HEADER_TRACE_INFO);
+
+	perf_header__set_feat(&session->header, HEADER_HOSTNAME);
+	perf_header__set_feat(&session->header, HEADER_OSRELEASE);
+	perf_header__set_feat(&session->header, HEADER_ARCH);
+	perf_header__set_feat(&session->header, HEADER_CPUDESC);
+	perf_header__set_feat(&session->header, HEADER_NRCPUS);
+	perf_header__set_feat(&session->header, HEADER_EVENT_DESC);
+	perf_header__set_feat(&session->header, HEADER_CMDLINE);
+	perf_header__set_feat(&session->header, HEADER_VERSION);
+	perf_header__set_feat(&session->header, HEADER_CPU_TOPOLOGY);
+	perf_header__set_feat(&session->header, HEADER_TOTAL_MEM);
+	perf_header__set_feat(&session->header, HEADER_NUMA_TOPOLOGY);
+	perf_header__set_feat(&session->header, HEADER_CPUID);
 
 	/* 512 kiB: default amount of unprivileged mlocked memory */
 	if (mmap_pages == UINT_MAX)
@@ -799,6 +819,8 @@ int cmd_record(int argc, const char **argv, const char *prefix __used)
 {
 	int err = -ENOMEM;
 	struct perf_evsel *pos;
+
+	perf_header__set_cmdline(argc, argv);
 
 	evsel_list = perf_evlist__new(NULL, NULL);
 	if (evsel_list == NULL)

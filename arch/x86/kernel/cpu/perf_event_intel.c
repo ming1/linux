@@ -9,6 +9,7 @@
 #include <linux/types.h>
 #include <linux/init.h>
 #include <linux/slab.h>
+#include <linux/export.h>
 
 #include <asm/hardirq.h>
 #include <asm/apic.h>
@@ -1544,6 +1545,13 @@ static void intel_clovertown_quirks(void)
 	x86_pmu.pebs_constraints = NULL;
 }
 
+static void intel_sandybridge_quirks(void)
+{
+	printk(KERN_WARNING "PEBS disabled due to CPU errata.\n");
+	x86_pmu.pebs = 0;
+	x86_pmu.pebs_constraints = NULL;
+}
+
 __init int intel_pmu_init(void)
 {
 	union cpuid10_edx edx;
@@ -1693,6 +1701,7 @@ __init int intel_pmu_init(void)
 		break;
 
 	case 42: /* SandyBridge */
+		x86_pmu.quirks = intel_sandybridge_quirks;
 	case 45: /* SandyBridge, "Romely-EP" */
 		memcpy(hw_cache_event_ids, snb_hw_cache_event_ids,
 		       sizeof(hw_cache_event_ids));
