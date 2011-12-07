@@ -550,6 +550,7 @@ void mmput(struct mm_struct *mm)
 	might_sleep();
 
 	if (atomic_dec_and_test(&mm->mm_users)) {
+		free_uprobes_xol_area(mm);
 		exit_aio(mm);
 		ksm_exit(mm);
 		khugepaged_exit(mm); /* must run before exit_mmap */
@@ -735,6 +736,9 @@ struct mm_struct *dup_mm(struct task_struct *tsk)
 
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
 	mm->pmd_huge_pte = NULL;
+#endif
+#ifdef CONFIG_UPROBES
+	mm->uprobes_xol_area = NULL;
 #endif
 
 	if (!mm_init(mm, tsk))
