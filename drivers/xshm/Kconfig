@@ -1,0 +1,17 @@
+# XSHM gets selected by whoever wants it.
+config XSHM
+	depends on CONFIG_C2C
+	tristate
+
+config XSHM_CHR
+	tristate "Character device for External Shared Memory (XSHM)"
+	select XSHM
+	default n
+	---help---
+	Say "Y" to use a character device for the External Shared
+	Memory (XSHM) IPC mechanism. XSHM is an IPC protocol used to
+	talk to external device such as modem over a shared memory
+	(e.g. Chip to Chip).
+	Only say "M" here if you want to test XSHM and need to load
+	and unload its module.
+	If unsure say N.
