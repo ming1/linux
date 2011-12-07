@@ -529,12 +529,16 @@ static int parse_probe_vars(char *arg, const struct fetch_type *t,
 
 /* Recursive argument parser */
 static int parse_probe_arg(char *arg, const struct fetch_type *t,
-		     struct fetch_param *f, bool is_return)
+		     struct fetch_param *f, bool is_return, bool is_kprobe)
 {
 	int ret = 0;
 	unsigned long param;
 	long offset;
 	char *tmp;
+
+	/* Until uprobe_events supports only reg arguments */
+	if (!is_kprobe && arg[0] != '%')
+		return -EINVAL;
 
 	switch (arg[0]) {
 	case '$':
@@ -585,7 +589,8 @@ static int parse_probe_arg(char *arg, const struct fetch_type *t,
 			if (!dprm)
 				return -ENOMEM;
 			dprm->offset = offset;
-			ret = parse_probe_arg(arg, t2, &dprm->orig, is_return);
+			ret = parse_probe_arg(arg, t2, &dprm->orig, is_return,
+							is_kprobe);
 			if (ret)
 				kfree(dprm);
 			else {
@@ -640,7 +645,7 @@ static int __parse_bitfield_probe_arg(const char *bf,
 
 /* String length checking wrapper */
 int traceprobe_parse_probe_arg(char *arg, ssize_t *size,
-		struct probe_arg *parg, bool is_return)
+		struct probe_arg *parg, bool is_return, bool is_kprobe)
 {
 	const char *t;
 	int ret;
@@ -666,7 +671,8 @@ int traceprobe_parse_probe_arg(char *arg, ssize_t *size,
 	}
 	parg->offset = *size;
 	*size += parg->type->size;
-	ret = parse_probe_arg(arg, parg->type, &parg->fetch, is_return);
+	ret = parse_probe_arg(arg, parg->type, &parg->fetch, is_return,
+							is_kprobe);
 	if (ret >= 0 && t != NULL)
 		ret = __parse_bitfield_probe_arg(t, parg->type, &parg->fetch);
 	if (ret >= 0) {
