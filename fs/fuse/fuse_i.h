@@ -312,6 +312,21 @@ struct fuse_req {
 	struct file *stolen_file;
 };
 
+struct fuse_copy_state;
+
+struct fuse_conn_operations {
+	/** Called on final put */
+	void (*release)(struct fuse_conn *);
+
+	/** Called to store data into a mapping */
+	int (*notify_store)(struct fuse_conn *, struct fuse_copy_state *,
+			    u64 nodeid, u32 size, u64 pos);
+
+	/** Called to retrieve data from a mapping */
+	int (*notify_retrieve)(struct fuse_conn *,
+			       struct fuse_notify_retrieve_out *);
+};
+
 /**
  * A Fuse connection.
  *
@@ -511,14 +526,14 @@ struct fuse_conn {
 	/** Version counter for attribute changes */
 	u64 attr_version;
 
-	/** Called on final put */
-	void (*release)(struct fuse_conn *);
-
 	/** Super block for this connection. */
 	struct super_block *sb;
 
 	/** Read/write semaphore to hold when accessing sb. */
 	struct rw_semaphore killsb;
+
+	/** Operations that fuse and cuse can implement differently */
+	const struct fuse_conn_operations *ops;
 };
 
 static inline struct fuse_conn *get_fuse_conn_super(struct super_block *sb)
@@ -777,5 +792,12 @@ unsigned fuse_file_poll(struct file *file, poll_table *wait);
 int fuse_dev_release(struct inode *inode, struct file *file);
 
 void fuse_write_update_size(struct inode *inode, loff_t pos);
+
+int fuse_copy_page(struct fuse_copy_state *cs, struct page **pagep,
+		   unsigned offset, unsigned count, int zeroing);
+
+int fuse_request_send_notify_reply(struct fuse_conn *fc,
+				   struct fuse_req *req, u64 unique);
+
 
 #endif /* _FS_FUSE_I_H */
