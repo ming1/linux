@@ -2845,6 +2845,14 @@ L:	platform-driver-x86@vger.kernel.org
 S:	Maintained
 F:	drivers/platform/x86/fujitsu-laptop.c
 
+FUJITSU M-5MO LS CAMERA ISP DRIVER
+M:	Kyungmin Park <kyungmin.park@samsung.com>
+M:	Heungjun Kim <riverful.kim@samsung.com>
+L:	linux-media@vger.kernel.org
+S:	Maintained
+F:	drivers/media/video/m5mols/
+F:	include/media/m5mols.h
+
 FUSE: FILESYSTEM IN USERSPACE
 M:	Miklos Szeredi <miklos@szeredi.hu>
 L:	fuse-devel@lists.sourceforge.net
@@ -4288,7 +4296,9 @@ T:	git git://git.kernel.org/pub/scm/linux/kernel/git/mchehab/linux-2.6.git
 S:	Maintained
 F:	Documentation/dvb/
 F:	Documentation/video4linux/
+F:	Documentation/DocBook/media/
 F:	drivers/media/
+F:	drivers/staging/media/
 F:	include/media/
 F:	include/linux/dvb/
 F:	include/linux/videodev*.h
