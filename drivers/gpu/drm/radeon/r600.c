@@ -2529,6 +2529,20 @@ int r600_suspend(struct radeon_device *rdev)
 	return 0;
 }
 
+/*
+ * Due to how kexec works, it can leave the hw fully initialised when it
+ * boots the new kernel.
+ */
+static void r600_restore_sanity(struct radeon_device *rdev)
+{
+	/* stop possible GPU activities */
+	WREG32(IH_RB_CNTL, 0);
+	WREG32(IH_CNTL, 0);
+	WREG32(R_0086D8_CP_ME_CNTL, S_0086D8_CP_ME_HALT(1));
+	WREG32(SCRATCH_UMSK, 0);
+	WREG32(CP_RB_CNTL, RB_NO_UPDATE);
+}
+
 /* Plan is to move initialization in that function and use
  * helper function so that radeon_device_init pretty much
  * do nothing more than calling asic specific function. This
@@ -2539,6 +2553,8 @@ int r600_init(struct radeon_device *rdev)
 {
 	int r;
 
+	/* restore some register to sane defaults */
+	r600_restore_sanity(rdev);
 	if (r600_debugfs_mc_info_init(rdev)) {
 		DRM_ERROR("Failed to register debugfs file for mc !\n");
 	}

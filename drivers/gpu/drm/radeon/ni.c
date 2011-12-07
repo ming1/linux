@@ -1440,6 +1440,22 @@ int cayman_suspend(struct radeon_device *rdev)
 	return 0;
 }
 
+/*
+ * Due to how kexec works, it can leave the hw fully initialised when it
+ * boots the new kernel.
+ */
+static void cayman_restore_sanity(struct radeon_device *rdev)
+{
+	/* stop possible GPU activities */
+	WREG32(IH_RB_CNTL, 0);
+	WREG32(IH_CNTL, 0);
+	WREG32(CP_ME_CNTL, CP_ME_HALT | CP_PFP_HALT);
+	WREG32(SCRATCH_UMSK, 0);
+	WREG32(CP_RB0_CNTL, RB_NO_UPDATE);
+	WREG32(CP_RB1_CNTL, RB_NO_UPDATE);
+	WREG32(CP_RB2_CNTL, RB_NO_UPDATE);
+}
+
 /* Plan is to move initialization in that function and use
  * helper function so that radeon_device_init pretty much
  * do nothing more than calling asic specific function. This
@@ -1450,6 +1466,8 @@ int cayman_init(struct radeon_device *rdev)
 {
 	int r;
 
+	/* restore some register to sane defaults */
+	cayman_restore_sanity(rdev);
 	/* This don't do much */
 	r = radeon_gem_init(rdev);
 	if (r)

@@ -3980,20 +3980,12 @@ void r100_fini(struct radeon_device *rdev)
  */
 void r100_restore_sanity(struct radeon_device *rdev)
 {
-	u32 tmp;
-
-	tmp = RREG32(RADEON_CP_CSQ_CNTL);
-	if (tmp) {
-		WREG32(RADEON_CP_CSQ_CNTL, 0);
-	}
-	tmp = RREG32(RADEON_CP_RB_CNTL);
-	if (tmp) {
-		WREG32(RADEON_CP_RB_CNTL, 0);
-	}
-	tmp = RREG32(RADEON_SCRATCH_UMSK);
-	if (tmp) {
-		WREG32(RADEON_SCRATCH_UMSK, 0);
-	}
+	/* stop possible GPU activities */
+	WREG32(RADEON_CP_CSQ_MODE, 0);
+	WREG32(RADEON_CP_CSQ_CNTL, 0);
+	WREG32(R_000770_SCRATCH_UMSK, 0);
+	WREG32(RADEON_CP_RB_CNTL, RADEON_RB_NO_UPDATE);
+	WREG32(RADEON_GEN_INT_CNTL, 0);
 }
 
 int r100_init(struct radeon_device *rdev)
