@@ -24,7 +24,7 @@
 #include "iio.h"
 #include "iio_core.h"
 #include "sysfs.h"
-#include "buffer_generic.h"
+#include "buffer.h"
 
 static const char * const iio_endian_prefix[] = {
 	[IIO_BE] = "be",
@@ -43,7 +43,7 @@ ssize_t iio_buffer_read_first_n_outer(struct file *filp, char __user *buf,
 	struct iio_dev *indio_dev = filp->private_data;
 	struct iio_buffer *rb = indio_dev->buffer;
 
-	if (!rb->access->read_first_n)
+	if (!rb || !rb->access->read_first_n)
 		return -EINVAL;
 	return rb->access->read_first_n(rb, n, buf);
 }
@@ -68,7 +68,7 @@ int iio_chrdev_buffer_open(struct iio_dev *indio_dev)
 {
 	struct iio_buffer *rb = indio_dev->buffer;
 	if (!rb)
-		return -EINVAL;
+		return 0;
 	if (rb->access->mark_in_use)
 		rb->access->mark_in_use(rb);
 	return 0;
@@ -78,6 +78,8 @@ void iio_chrdev_buffer_release(struct iio_dev *indio_dev)
 {
 	struct iio_buffer *rb = indio_dev->buffer;
 
+	if (!rb)
+		return;
 	clear_bit(IIO_BUSY_BIT_POS, &rb->flags);
 	if (rb->access->unmark_in_use)
 		rb->access->unmark_in_use(rb);
@@ -313,10 +315,9 @@ int iio_buffer_register(struct iio_dev *indio_dev,
 			attrcount += ret;
 		}
 		if (indio_dev->masklength && buffer->scan_mask == NULL) {
-			buffer->scan_mask
-				= kzalloc(sizeof(*buffer->scan_mask)*
-					  BITS_TO_LONGS(indio_dev->masklength),
-					  GFP_KERNEL);
+			buffer->scan_mask = kcalloc(BITS_TO_LONGS(indio_dev->masklength),
+						    sizeof(*buffer->scan_mask),
+						    GFP_KERNEL);
 			if (buffer->scan_mask == NULL) {
 				ret = -ENOMEM;
 				goto error_cleanup_dynamic;
@@ -326,10 +327,9 @@ int iio_buffer_register(struct iio_dev *indio_dev,
 
 	buffer->scan_el_group.name = iio_scan_elements_group_name;
 
-	buffer->scan_el_group.attrs
-		= kzalloc(sizeof(buffer->scan_el_group.attrs[0])*
-			  (attrcount + 1),
-			  GFP_KERNEL);
+	buffer->scan_el_group.attrs = kcalloc(attrcount + 1,
+					      sizeof(buffer->scan_el_group.attrs[0]),
+					      GFP_KERNEL);
 	if (buffer->scan_el_group.attrs == NULL) {
 		ret = -ENOMEM;
 		goto error_free_scan_mask;
