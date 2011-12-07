@@ -542,7 +542,7 @@ static int wm8804_set_bias_level(struct snd_soc_codec *codec,
 }
 
 #ifdef CONFIG_PM
-static int wm8804_suspend(struct snd_soc_codec *codec, pm_message_t state)
+static int wm8804_suspend(struct snd_soc_codec *codec)
 {
 	wm8804_set_bias_level(codec, SND_SOC_BIAS_OFF);
 	return 0;
@@ -670,7 +670,7 @@ err_reg_get:
 	return ret;
 }
 
-static struct snd_soc_dai_ops wm8804_dai_ops = {
+static const struct snd_soc_dai_ops wm8804_dai_ops = {
 	.hw_params = wm8804_hw_params,
 	.set_fmt = wm8804_set_fmt,
 	.set_sysclk = wm8804_set_sysclk,

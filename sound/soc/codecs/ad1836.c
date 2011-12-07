@@ -189,7 +189,7 @@ static int ad1836_hw_params(struct snd_pcm_substream *substream,
 	return 0;
 }
 
-static struct snd_soc_dai_ops ad1836_dai_ops = {
+static const struct snd_soc_dai_ops ad1836_dai_ops = {
 	.hw_params = ad1836_hw_params,
 	.set_fmt = ad1836_set_dai_fmt,
 };
@@ -223,7 +223,7 @@ static struct snd_soc_dai_driver ad183x_dais[] = {
 };
 
 #ifdef CONFIG_PM
-static int ad1836_suspend(struct snd_soc_codec *codec, pm_message_t state)
+static int ad1836_suspend(struct snd_soc_codec *codec)
 {
 	/* reset clock control mode */
 	return snd_soc_update_bits(codec, AD1836_ADC_CTRL2,
