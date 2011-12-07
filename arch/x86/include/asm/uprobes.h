@@ -23,6 +23,8 @@
  *	Jim Keniston
  */
 
+#include <linux/notifier.h>
+
 typedef u8 uprobe_opcode_t;
 #define MAX_UINSN_BYTES 16
 #define UPROBES_XOL_SLOT_BYTES	128	/* to keep it cache aligned */
@@ -37,6 +39,21 @@ struct uprobe_arch_info {
 #endif
 };
 
+struct uprobe_task_arch_info {
+	unsigned long saved_trap_no;
+#ifdef CONFIG_X86_64
+	unsigned long saved_scratch_register;
+#endif
+};
+
 struct uprobe;
+
 extern int analyze_insn(struct mm_struct *mm, struct uprobe *uprobe);
+extern void set_instruction_pointer(struct pt_regs *regs, unsigned long vaddr);
+extern int pre_xol(struct uprobe *uprobe, struct pt_regs *regs);
+extern int post_xol(struct uprobe *uprobe, struct pt_regs *regs);
+extern bool xol_was_trapped(struct task_struct *tsk);
+extern int uprobe_exception_notify(struct notifier_block *self,
+				       unsigned long val, void *data);
+extern void abort_xol(struct pt_regs *regs, struct uprobe *uprobe);
 #endif	/* _ASM_UPROBES_H */
