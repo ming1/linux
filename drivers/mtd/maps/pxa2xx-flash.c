@@ -98,7 +98,7 @@ static int __devinit pxa2xx_flash_probe(struct platform_device *pdev)
 	}
 	info->mtd->owner = THIS_MODULE;
 
-	mtd_device_parse_register(info->mtd, probes, 0, NULL, 0);
+	mtd_device_parse_register(info->mtd, probes, 0, flash->parts, flash->nr_parts);
 
 	platform_set_drvdata(pdev, info);
 	return 0;
@@ -142,18 +142,7 @@ static struct platform_driver pxa2xx_flash_driver = {
 	.shutdown	= pxa2xx_flash_shutdown,
 };
 
-static int __init init_pxa2xx_flash(void)
-{
-	return platform_driver_register(&pxa2xx_flash_driver);
-}
-
-static void __exit cleanup_pxa2xx_flash(void)
-{
-	platform_driver_unregister(&pxa2xx_flash_driver);
-}
-
-module_init(init_pxa2xx_flash);
-module_exit(cleanup_pxa2xx_flash);
+module_platform_driver(pxa2xx_flash_driver);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Nicolas Pitre <nico@fluxnic.net>");
