@@ -1210,6 +1210,18 @@ out:
 	local_irq_restore(flags);
 }
 
+void free_hot_cold_page_list(struct list_head *list, int cold)
+{
+	struct page *page, *next;
+
+	list_for_each_entry_safe(page, next, list, lru) {
+		trace_mm_pagevec_free(page, cold);
+		free_hot_cold_page(page, cold);
+	}
+
+	INIT_LIST_HEAD(list);
+}
+
 /*
  * split_page takes a non-compound higher-order page, and splits it into
  * n (1<<order) sub-pages: page[0..n]
