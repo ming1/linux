@@ -59,6 +59,7 @@
 #include <linux/mutex.h>
 #include <linux/workqueue.h>
 #include <linux/cgroup.h>
+#include <linux/kthread.h>
 
 /*
  * Workqueue for cpuset related tasks.
@@ -1407,9 +1408,11 @@ static int cpuset_can_attach(struct cgroup_subsys *ss, struct cgroup *cgrp,
 		 * unnecessary.  Thus, cpusets are not applicable for such
 		 * threads.  This prevents checking for success of
 		 * set_cpus_allowed_ptr() on all attached tasks before
-		 * cpus_allowed may be changed.
+		 * cpus_allowed may be changed.  We also disallow attaching
+		 * kthreadd, to prevent its child from becoming trapped should
+		 * it then acquire PF_THREAD_BOUND.
 		 */
-		if (task->flags & PF_THREAD_BOUND)
+		if (task->flags & PF_THREAD_BOUND || task == kthreadd_task)
 			return -EINVAL;
 		if ((ret = security_task_setscheduler(task)))
 			return ret;
