@@ -558,7 +558,7 @@ static void __do_notify(struct mqueue_inode_info *info)
 						ns_of_pid(info->notify_owner));
 			sig_i.si_uid = user_ns_map_uid(info->user->user_ns,
 						current_cred(), current_uid());
-			rcu_read_lock();
+			rcu_read_unlock();
 
 			kill_pid_info(info->notify.sigev_signo,
 				      &sig_i, info->notify_owner);
