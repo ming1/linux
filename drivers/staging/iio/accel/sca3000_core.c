@@ -20,7 +20,8 @@
 #include <linux/module.h>
 #include "../iio.h"
 #include "../sysfs.h"
-#include "../buffer_generic.h"
+#include "../events.h"
+#include "../buffer.h"
 
 #include "sca3000.h"
 
@@ -382,10 +383,10 @@ sca3000_store_measurement_mode(struct device *dev,
 	struct sca3000_state *st = iio_priv(indio_dev);
 	int ret;
 	int mask = 0x03;
-	long val;
+	u8 val;
 
 	mutex_lock(&st->lock);
-	ret = strict_strtol(buf, 10, &val);
+	ret = kstrtou8(buf, 10, &val);
 	if (ret)
 		goto error_ret;
 	ret = sca3000_read_data_short(st, SCA3000_REG_ADDR_MODE, 1);
@@ -424,7 +425,7 @@ static IIO_DEVICE_ATTR(measurement_mode, S_IRUGO | S_IWUSR,
 static IIO_DEVICE_ATTR(revision, S_IRUGO, sca3000_show_rev, NULL, 0);
 
 #define SCA3000_INFO_MASK			\
-	(1 << IIO_CHAN_INFO_SCALE_SHARED)
+	IIO_CHAN_INFO_SCALE_SHARED_BIT
 #define SCA3000_EVENT_MASK					\
 	(IIO_EV_BIT(IIO_EV_TYPE_MAG, IIO_EV_DIR_RISING))
 
@@ -474,7 +475,7 @@ static int sca3000_read_raw(struct iio_dev *indio_dev,
 			(sizeof(*val)*8 - 13);
 		mutex_unlock(&st->lock);
 		return IIO_VAL_INT;
-	case (1 << IIO_CHAN_INFO_SCALE_SHARED):
+	case IIO_CHAN_INFO_SCALE:
 		*val = 0;
 		if (chan->type == IIO_ACCEL)
 			*val2 = st->info->scale;
@@ -1240,6 +1241,7 @@ static const struct spi_device_id sca3000_id[] = {
 	{"sca3000_e05", e05},
 	{}
 };
+MODULE_DEVICE_TABLE(spi, sca3000_id);
 
 static struct spi_driver sca3000_driver = {
 	.driver = {
