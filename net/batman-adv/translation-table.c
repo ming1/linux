@@ -67,7 +67,7 @@ static struct tt_local_entry *tt_local_hash_find(struct bat_priv *bat_priv,
 	struct hlist_head *head;
 	struct hlist_node *node;
 	struct tt_local_entry *tt_local_entry, *tt_local_entry_tmp = NULL;
-	int index;
+	uint32_t index;
 
 	if (!hash)
 		return NULL;
@@ -99,7 +99,7 @@ static struct tt_global_entry *tt_global_hash_find(struct bat_priv *bat_priv,
 	struct hlist_node *node;
 	struct tt_global_entry *tt_global_entry;
 	struct tt_global_entry *tt_global_entry_tmp = NULL;
-	int index;
+	uint32_t index;
 
 	if (!hash)
 		return NULL;
@@ -316,9 +316,8 @@ int tt_local_seq_print_text(struct seq_file *seq, void *offset)
 	struct hard_iface *primary_if;
 	struct hlist_node *node;
 	struct hlist_head *head;
-	size_t buf_size, pos;
-	char *buff;
-	int i, ret = 0;
+	uint32_t i;
+	int ret = 0;
 
 	primary_if = primary_if_get_selected(bat_priv);
 	if (!primary_if) {
@@ -339,34 +338,13 @@ int tt_local_seq_print_text(struct seq_file *seq, void *offset)
 		   "announced via TT (TTVN: %u):\n",
 		   net_dev->name, (uint8_t)atomic_read(&bat_priv->ttvn));
 
-	buf_size = 1;
-	/* Estimate length for: " * xx:xx:xx:xx:xx:xx\n" */
-	for (i = 0; i < hash->size; i++) {
-		head = &hash->table[i];
-
-		rcu_read_lock();
-		__hlist_for_each_rcu(node, head)
-			buf_size += 29;
-		rcu_read_unlock();
-	}
-
-	buff = kmalloc(buf_size, GFP_ATOMIC);
-	if (!buff) {
-		ret = -ENOMEM;
-		goto out;
-	}
-
-	buff[0] = '\0';
-	pos = 0;
-
 	for (i = 0; i < hash->size; i++) {
 		head = &hash->table[i];
 
 		rcu_read_lock();
 		hlist_for_each_entry_rcu(tt_local_entry, node,
 					 head, hash_entry) {
-			pos += snprintf(buff + pos, 30, " * %pM "
-					"[%c%c%c%c%c]\n",
+			seq_printf(seq, " * %pM [%c%c%c%c%c]\n",
 					tt_local_entry->addr,
 					(tt_local_entry->flags &
 					 TT_CLIENT_ROAM ? 'R' : '.'),
@@ -381,9 +359,6 @@ int tt_local_seq_print_text(struct seq_file *seq, void *offset)
 		}
 		rcu_read_unlock();
 	}
-
-	seq_printf(seq, "%s", buff);
-	kfree(buff);
 out:
 	if (primary_if)
 		hardif_free_ref(primary_if);
@@ -429,7 +404,7 @@ static void tt_local_purge(struct bat_priv *bat_priv)
 	struct hlist_node *node, *node_tmp;
 	struct hlist_head *head;
 	spinlock_t *list_lock; /* protects write access to the hash lists */
-	int i;
+	uint32_t i;
 
 	for (i = 0; i < hash->size; i++) {
 		head = &hash->table[i];
@@ -467,7 +442,7 @@ static void tt_local_table_free(struct bat_priv *bat_priv)
 	struct tt_local_entry *tt_local_entry;
 	struct hlist_node *node, *node_tmp;
 	struct hlist_head *head;
-	int i;
+	uint32_t i;
 
 	if (!bat_priv->tt_local_hash)
 		return;
@@ -592,9 +567,8 @@ int tt_global_seq_print_text(struct seq_file *seq, void *offset)
 	struct hard_iface *primary_if;
 	struct hlist_node *node;
 	struct hlist_head *head;
-	size_t buf_size, pos;
-	char *buff;
-	int i, ret = 0;
+	uint32_t i;
+	int ret = 0;
 
 	primary_if = primary_if_get_selected(bat_priv);
 	if (!primary_if) {
@@ -617,35 +591,13 @@ int tt_global_seq_print_text(struct seq_file *seq, void *offset)
 	seq_printf(seq, "       %-13s %s       %-15s %s %s\n",
 		   "Client", "(TTVN)", "Originator", "(Curr TTVN)", "Flags");
 
-	buf_size = 1;
-	/* Estimate length for: " * xx:xx:xx:xx:xx:xx (ttvn) via
-	 * xx:xx:xx:xx:xx:xx (cur_ttvn)\n"*/
-	for (i = 0; i < hash->size; i++) {
-		head = &hash->table[i];
-
-		rcu_read_lock();
-		__hlist_for_each_rcu(node, head)
-			buf_size += 67;
-		rcu_read_unlock();
-	}
-
-	buff = kmalloc(buf_size, GFP_ATOMIC);
-	if (!buff) {
-		ret = -ENOMEM;
-		goto out;
-	}
-
-	buff[0] = '\0';
-	pos = 0;
-
 	for (i = 0; i < hash->size; i++) {
 		head = &hash->table[i];
 
 		rcu_read_lock();
 		hlist_for_each_entry_rcu(tt_global_entry, node,
 					 head, hash_entry) {
-			pos += snprintf(buff + pos, 69,
-					" * %pM  (%3u) via %pM     (%3u)   "
+			seq_printf(seq, " * %pM  (%3u) via %pM     (%3u)   "
 					"[%c%c%c]\n", tt_global_entry->addr,
 					tt_global_entry->ttvn,
 					tt_global_entry->orig_node->orig,
@@ -661,9 +613,6 @@ int tt_global_seq_print_text(struct seq_file *seq, void *offset)
 		}
 		rcu_read_unlock();
 	}
-
-	seq_printf(seq, "%s", buff);
-	kfree(buff);
 out:
 	if (primary_if)
 		hardif_free_ref(primary_if);
@@ -733,7 +682,7 @@ void tt_global_del_orig(struct bat_priv *bat_priv,
 			struct orig_node *orig_node, const char *message)
 {
 	struct tt_global_entry *tt_global_entry;
-	int i;
+	uint32_t i;
 	struct hashtable_t *hash = bat_priv->tt_global_hash;
 	struct hlist_node *node, *safe;
 	struct hlist_head *head;
@@ -752,9 +701,10 @@ void tt_global_del_orig(struct bat_priv *bat_priv,
 			if (tt_global_entry->orig_node == orig_node) {
 				bat_dbg(DBG_TT, bat_priv,
 					"Deleting global tt entry %pM "
-					"(via %pM): originator time out\n",
+					"(via %pM): %s\n",
 					tt_global_entry->addr,
-					tt_global_entry->orig_node->orig);
+					tt_global_entry->orig_node->orig,
+					message);
 				hlist_del_rcu(node);
 				tt_global_entry_free_ref(tt_global_entry);
 			}
@@ -771,7 +721,7 @@ static void tt_global_roam_purge(struct bat_priv *bat_priv)
 	struct hlist_node *node, *node_tmp;
 	struct hlist_head *head;
 	spinlock_t *list_lock; /* protects write access to the hash lists */
-	int i;
+	uint32_t i;
 
 	for (i = 0; i < hash->size; i++) {
 		head = &hash->table[i];
@@ -805,7 +755,7 @@ static void tt_global_table_free(struct bat_priv *bat_priv)
 	struct tt_global_entry *tt_global_entry;
 	struct hlist_node *node, *node_tmp;
 	struct hlist_head *head;
-	int i;
+	uint32_t i;
 
 	if (!bat_priv->tt_global_hash)
 		return;
@@ -891,7 +841,8 @@ uint16_t tt_global_crc(struct bat_priv *bat_priv, struct orig_node *orig_node)
 	struct tt_global_entry *tt_global_entry;
 	struct hlist_node *node;
 	struct hlist_head *head;
-	int i, j;
+	uint32_t i;
+	int j;
 
 	for (i = 0; i < hash->size; i++) {
 		head = &hash->table[i];
@@ -928,7 +879,8 @@ uint16_t tt_local_crc(struct bat_priv *bat_priv)
 	struct tt_local_entry *tt_local_entry;
 	struct hlist_node *node;
 	struct hlist_head *head;
-	int i, j;
+	uint32_t i;
+	int j;
 
 	for (i = 0; i < hash->size; i++) {
 		head = &hash->table[i];
@@ -1065,7 +1017,7 @@ static struct sk_buff *tt_response_fill_table(uint16_t tt_len, uint8_t ttvn,
 	struct sk_buff *skb = NULL;
 	uint16_t tt_tot, tt_count;
 	ssize_t tt_query_size = sizeof(struct tt_query_packet);
-	int i;
+	uint32_t i;
 
 	if (tt_query_size + tt_len > primary_if->soft_iface->mtu) {
 		tt_len = primary_if->soft_iface->mtu - tt_query_size;
@@ -1204,11 +1156,11 @@ static bool send_other_tt_response(struct bat_priv *bat_priv,
 		(tt_request->flags & TT_FULL_TABLE ? 'F' : '.'));
 
 	/* Let's get the orig node of the REAL destination */
-	req_dst_orig_node = get_orig_node(bat_priv, tt_request->dst);
+	req_dst_orig_node = orig_hash_find(bat_priv, tt_request->dst);
 	if (!req_dst_orig_node)
 		goto out;
 
-	res_dst_orig_node = get_orig_node(bat_priv, tt_request->src);
+	res_dst_orig_node = orig_hash_find(bat_priv, tt_request->src);
 	if (!res_dst_orig_node)
 		goto out;
 
@@ -1334,7 +1286,7 @@ static bool send_my_tt_response(struct bat_priv *bat_priv,
 	my_ttvn = (uint8_t)atomic_read(&bat_priv->ttvn);
 	req_ttvn = tt_request->ttvn;
 
-	orig_node = get_orig_node(bat_priv, tt_request->src);
+	orig_node = orig_hash_find(bat_priv, tt_request->src);
 	if (!orig_node)
 		goto out;
 
@@ -1742,7 +1694,7 @@ void tt_free(struct bat_priv *bat_priv)
  * entry */
 static void tt_local_reset_flags(struct bat_priv *bat_priv, uint16_t flags)
 {
-	int i;
+	uint32_t i;
 	struct hashtable_t *hash = bat_priv->tt_local_hash;
 	struct hlist_head *head;
 	struct hlist_node *node;
@@ -1775,7 +1727,7 @@ static void tt_local_purge_pending_clients(struct bat_priv *bat_priv)
 	struct hlist_node *node, *node_tmp;
 	struct hlist_head *head;
 	spinlock_t *list_lock; /* protects write access to the hash lists */
-	int i;
+	uint32_t i;
 
 	if (!hash)
 		return;
