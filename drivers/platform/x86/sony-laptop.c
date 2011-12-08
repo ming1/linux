@@ -381,7 +381,8 @@ static void sony_laptop_report_input_event(u8 event)
 			dprintk("sony_laptop_report_input_event, event not known: %d\n", event);
 			break;
 		}
-		if ((scancode = sony_laptop_input_index[event]) != -1) {
+		scancode = sony_laptop_input_index[event];
+		if (scancode != -1) {
 			kp.key = sony_laptop_input_keycode_map[scancode];
 			if (kp.key != KEY_UNKNOWN)
 				kp.dev = key_dev;
