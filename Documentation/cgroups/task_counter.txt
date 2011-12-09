@@ -1,0 +1,153 @@
+Task counter subsystem
+
+1. Description
+
+The task counter subsystem limits the number of tasks running
+inside a given cgroup. It behaves like the NR_PROC rlimit but in
+the scope of a cgroup instead of a user.
+
+It has two typical usecases, although more can probably be found:
+
+1.1 Protection against forkbomb in a container
+
+One usecase is to protect against forkbombs that explode inside
+a container when that container is implemented using a cgroup. The
+NR_PROC rlimit is known to be a working protection against this type
+of attack but is not suitable anymore when we run containers in
+parallel under the same user. One container could starve all the
+others by spawning a high number of tasks close to the rlimit
+boundary. So in this case we need this limitation to be done in a
+per cgroup granularity.
+
+Note this works by preventing forkbombs propagation. It doesn't cure
+the forkbomb effects when it has already grown up enough to make
+the system hardly responsive. While defining the limit on the number
+of tasks, it's up to the admin to find the right balance between the
+possible needs of a container and the resources the system can afford
+to provide.
+
+Also the NR_PROC rlimit and this cgroup subsystem are totally
+dissociated. But they can be complementary. The task counter limits
+the containers and the rlimit can provide an upper bound on the whole
+set of containers.
+
+
+1.2 Kill tasks inside a cgroup
+
+An other usecase comes along the forkbomb prevention: it brings
+the ability to kill all tasks inside a cgroup without races. By
+setting the limit of running tasks to 0, one can prevent from any
+further fork inside a cgroup and then kill all of its tasks without
+the need to retry an unbound amount of time due to races between
+kills and forks running in parallel (more details in "Kill a cgroup
+safely" paragraph).
+
+This is useful to kill a forkbomb for example. When its gazillion
+of forks are competing with the kills, one need to ensure this
+operation won't run in a nearly endless loop of retry.
+
+And more generally it is useful to kill a cgroup in a bound amount
+of pass.
+
+
+2. Interface
+
+When a hierarchy is mounted with the task counter subsystem binded, it
+adds two files into the cgroups directories, except the root one:
+
+- tasks.usage contains the number of tasks running inside a cgroup and
+its children in the hierarchy (see paragraph about Inheritance).
+
+- tasks.limit contains the maximum number of tasks that can run inside
+a cgroup. We check this limit when a task forks or when it is migrated
+to a cgroup.
+
+Note that the tasks.limit value can be forced below tasks.usage, in which
+case any new task in the cgroup will be rejected until the tasks.usage
+value goes below tasks.limit.
+
+For optimization reasons, the root directory of a hierarchy doesn't have
+a task counter.
+
+
+3. Inheritance
+
+When a task is added to a cgroup, by way of a cgroup migration or a fork,
+it increases the task counter of that cgroup and of all its ancestors.
+Hence a cgroup is also subject to the limit of its ancestors.
+
+In the following hierarchy:
+
+
+             A
+             |
+             B
+           /   \
+          C     D
+
+
+We have 1 task running in B, one running in C and none running in D.
+It means we have tasks.usage = 1 in C and tasks.usage = 2 in B because
+B counts its task and those of its children.
+
+Now lets set tasks.limit = 2 in B and tasks.limit = 1 in D.
+If we move a new task in D, it will be refused because the limit in B has
+been reached already.
+
+
+4. Kill a cgroup safely
+
+As explained in the description, this subsystem is also helpful to
+kill all tasks in a cgroup safely, after setting tasks.limit to 0,
+so that we don't race against parallel forks in an unbound numbers
+of kill iterations.
+
+But there is a small detail to be aware of to use this feature that
+way.
+
+Some typical way to proceed would be:
+
+	echo 0 > tasks.limit
+	for TASK in $(cat cgroup.procs)
+	do
+		kill -KILL $TASK
+	done
+
+However there is a small race window where a task can be in the way to
+be forked but hasn't enough completed the fork to have the PID of the
+fork appearing in the cgroup.procs file.
+
+The only way to get it right is to run a loop that reads tasks.usage, kill
+all the tasks in cgroup.procs and exit the loop only if the value in
+tasks.usage was the same than the number of tasks that were in cgroup.procs,
+ie: the number of tasks that were killed.
+
+It works because the new child appears in tasks.usage right before we check,
+in the fork path, whether the parent has a pending signal, in which case the
+fork is cancelled anyway. So relying on tasks.usage is fine and non-racy.
+
+This race window is tiny and unlikely to happen, so most of the time a single
+kill iteration should be enough. But it's worth knowing about that corner
+case spotted by Oleg Nesterov.
+
+Example of safe use would be:
+
+	echo 0 > tasks.limit
+	END=false
+
+	while [ $END == false ]
+	do
+		NR_TASKS=$(cat tasks.usage)
+		NR_KILLED=0
+
+		for TASK in $(cat cgroup.procs)
+		do
+			let NR_KILLED=NR_KILLED+1
+			kill -KILL $TASK
+		done
+
+		if [ "$NR_TASKS" = "$NR_KILLED" ]
+		then
+			END=true
+		fi
+	done
