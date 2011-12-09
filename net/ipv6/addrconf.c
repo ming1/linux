@@ -630,13 +630,13 @@ ipv6_add_addr(struct inet6_dev *idev, const struct in6_addr *addr, int pfxlen,
 		goto out;
 	}
 
-	rt = addrconf_dst_alloc(idev, addr, 0);
+	rt = addrconf_dst_alloc(idev, addr, false);
 	if (IS_ERR(rt)) {
 		err = PTR_ERR(rt);
 		goto out;
 	}
 
-	ipv6_addr_copy(&ifa->addr, addr);
+	ifa->addr = *addr;
 
 	spin_lock_init(&ifa->lock);
 	spin_lock_init(&ifa->state_lock);
@@ -657,7 +657,7 @@ ipv6_add_addr(struct inet6_dev *idev, const struct in6_addr *addr, int pfxlen,
 	 * layer address of our nexhop router
 	 */
 
-	if (dst_get_neighbour_raw(&rt->dst) == NULL)
+	if (dst_get_neighbour_noref_raw(&rt->dst) == NULL)
 		ifa->flags &= ~IFA_F_OPTIMISTIC;
 
 	ifa->idev = idev;
@@ -1228,7 +1228,7 @@ try_nextdev:
 	if (!hiscore->ifa)
 		return -EADDRNOTAVAIL;
 
-	ipv6_addr_copy(saddr, &hiscore->ifa->addr);
+	*saddr = hiscore->ifa->addr;
 	in6_ifa_put(hiscore->ifa);
 	return 0;
 }
@@ -1249,7 +1249,7 @@ int ipv6_get_lladdr(struct net_device *dev, struct in6_addr *addr,
 		list_for_each_entry(ifp, &idev->addr_list, if_list) {
 			if (ifp->scope == IFA_LINK &&
 			    !(ifp->flags & banned_flags)) {
-				ipv6_addr_copy(addr, &ifp->addr);
+				*addr = ifp->addr;
 				err = 0;
 				break;
 			}
@@ -1700,7 +1700,7 @@ addrconf_prefix_route(struct in6_addr *pfx, int plen, struct net_device *dev,
 		.fc_protocol = RTPROT_KERNEL,
 	};
 
-	ipv6_addr_copy(&cfg.fc_dst, pfx);
+	cfg.fc_dst = *pfx;
 
 	/* Prevent useless cloning on PtP SIT.
 	   This thing is done here expecting that the whole

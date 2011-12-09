@@ -186,7 +186,8 @@ static void br_getinfo(struct net_device *dev, struct ethtool_drvinfo *info)
 	strcpy(info->bus_info, "N/A");
 }
 
-static u32 br_fix_features(struct net_device *dev, u32 features)
+static netdev_features_t br_fix_features(struct net_device *dev,
+	netdev_features_t features)
 {
 	struct net_bridge *br = netdev_priv(dev);
 
@@ -341,10 +342,10 @@ void br_dev_setup(struct net_device *dev)
 	dev->priv_flags = IFF_EBRIDGE;
 
 	dev->features = NETIF_F_SG | NETIF_F_FRAGLIST | NETIF_F_HIGHDMA |
-			NETIF_F_GSO_MASK | NETIF_F_NO_CSUM | NETIF_F_LLTX |
+			NETIF_F_GSO_MASK | NETIF_F_HW_CSUM | NETIF_F_LLTX |
 			NETIF_F_NETNS_LOCAL | NETIF_F_HW_VLAN_TX;
 	dev->hw_features = NETIF_F_SG | NETIF_F_FRAGLIST | NETIF_F_HIGHDMA |
-			   NETIF_F_GSO_MASK | NETIF_F_NO_CSUM |
+			   NETIF_F_GSO_MASK | NETIF_F_HW_CSUM |
 			   NETIF_F_HW_VLAN_TX;
 
 	br->dev = dev;

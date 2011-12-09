@@ -125,6 +125,7 @@
 #include <net/xfrm.h>
 #include <linux/ipsec.h>
 #include <net/cls_cgroup.h>
+#include <net/netprio_cgroup.h>
 
 #include <linux/filter.h>
 
@@ -221,9 +222,15 @@ __u32 sysctl_rmem_default __read_mostly = SK_RMEM_MAX;
 int sysctl_optmem_max __read_mostly = sizeof(unsigned long)*(2*UIO_MAXIOV+512);
 EXPORT_SYMBOL(sysctl_optmem_max);
 
-#if defined(CONFIG_CGROUPS) && !defined(CONFIG_NET_CLS_CGROUP)
+#if defined(CONFIG_CGROUPS)
+#if !defined(CONFIG_NET_CLS_CGROUP)
 int net_cls_subsys_id = -1;
 EXPORT_SYMBOL_GPL(net_cls_subsys_id);
+#endif
+#if !defined(CONFIG_NETPRIO_CGROUP)
+int net_prio_subsys_id = -1;
+EXPORT_SYMBOL_GPL(net_prio_subsys_id);
+#endif
 #endif
 
 static int sock_set_timeout(long *timeo_p, char __user *optval, int optlen)
@@ -269,14 +276,14 @@ static void sock_warn_obsolete_bsdism(const char *name)
 	}
 }
 
-static void sock_disable_timestamp(struct sock *sk, int flag)
+#define SK_FLAGS_TIMESTAMP ((1UL << SOCK_TIMESTAMP) | (1UL << SOCK_TIMESTAMPING_RX_SOFTWARE))
+
+static void sock_disable_timestamp(struct sock *sk, unsigned long flags)
 {
-	if (sock_flag(sk, flag)) {
-		sock_reset_flag(sk, flag);
-		if (!sock_flag(sk, SOCK_TIMESTAMP) &&
-		    !sock_flag(sk, SOCK_TIMESTAMPING_RX_SOFTWARE)) {
+	if (sk->sk_flags & flags) {
+		sk->sk_flags &= ~flags;
+		if (!(sk->sk_flags & SK_FLAGS_TIMESTAMP))
 			net_disable_timestamp();
-		}
 	}
 }
 
@@ -682,7 +689,7 @@ set_rcvbuf:
 					      SOCK_TIMESTAMPING_RX_SOFTWARE);
 		else
 			sock_disable_timestamp(sk,
-					       SOCK_TIMESTAMPING_RX_SOFTWARE);
+					       (1UL << SOCK_TIMESTAMPING_RX_SOFTWARE));
 		sock_valbool_flag(sk, SOCK_TIMESTAMPING_SOFTWARE,
 				  val & SOF_TIMESTAMPING_SOFTWARE);
 		sock_valbool_flag(sk, SOCK_TIMESTAMPING_SYS_HARDWARE,
@@ -740,6 +747,11 @@ set_rcvbuf:
 	case SO_RXQ_OVFL:
 		sock_valbool_flag(sk, SOCK_RXQ_OVFL, valbool);
 		break;
+
+	case SO_WIFI_STATUS:
+		sock_valbool_flag(sk, SOCK_WIFI_STATUS, valbool);
+		break;
+
 	default:
 		ret = -ENOPROTOOPT;
 		break;
@@ -961,6 +973,10 @@ int sock_getsockopt(struct socket *sock, int level, int optname,
 		v.val = !!sock_flag(sk, SOCK_RXQ_OVFL);
 		break;
 
+	case SO_WIFI_STATUS:
+		v.val = !!sock_flag(sk, SOCK_WIFI_STATUS);
+		break;
+
 	default:
 		return -ENOPROTOOPT;
 	}
@@ -1111,6 +1127,18 @@ void sock_update_classid(struct sock *sk)
 		sk->sk_classid = classid;
 }
 EXPORT_SYMBOL(sock_update_classid);
+
+void sock_update_netprioidx(struct sock *sk)
+{
+	struct cgroup_netprio_state *state;
+	if (in_interrupt())
+		return;
+	rcu_read_lock();
+	state = task_netprio_state(current);
+	sk->sk_cgrp_prioidx = state ? state->prioidx : 0;
+	rcu_read_unlock();
+}
+EXPORT_SYMBOL_GPL(sock_update_netprioidx);
 #endif
 
 /**
@@ -1138,6 +1166,7 @@ struct sock *sk_alloc(struct net *net, int family, gfp_t priority,
 		atomic_set(&sk->sk_wmem_alloc, 1);
 
 		sock_update_classid(sk);
+		sock_update_netprioidx(sk);
 	}
 
 	return sk;
@@ -1158,8 +1187,7 @@ static void __sk_free(struct sock *sk)
 		RCU_INIT_POINTER(sk->sk_filter, NULL);
 	}
 
-	sock_disable_timestamp(sk, SOCK_TIMESTAMP);
-	sock_disable_timestamp(sk, SOCK_TIMESTAMPING_RX_SOFTWARE);
+	sock_disable_timestamp(sk, SK_FLAGS_TIMESTAMP);
 
 	if (atomic_read(&sk->sk_omem_alloc))
 		printk(KERN_DEBUG "%s: optmem leakage (%d bytes) detected.\n",
@@ -1204,7 +1232,14 @@ void sk_release_kernel(struct sock *sk)
 }
 EXPORT_SYMBOL(sk_release_kernel);
 
-struct sock *sk_clone(const struct sock *sk, const gfp_t priority)
+/**
+ *	sk_clone_lock - clone a socket, and lock its clone
+ *	@sk: the socket to clone
+ *	@priority: for allocation (%GFP_KERNEL, %GFP_ATOMIC, etc)
+ *
+ *	Caller must unlock socket even in error path (bh_unlock_sock(newsk))
+ */
+struct sock *sk_clone_lock(const struct sock *sk, const gfp_t priority)
 {
 	struct sock *newsk;
 
@@ -1290,14 +1325,13 @@ struct sock *sk_clone(const struct sock *sk, const gfp_t priority)
 		if (newsk->sk_prot->sockets_allocated)
 			percpu_counter_inc(newsk->sk_prot->sockets_allocated);
 
-		if (sock_flag(newsk, SOCK_TIMESTAMP) ||
-		    sock_flag(newsk, SOCK_TIMESTAMPING_RX_SOFTWARE))
+		if (newsk->sk_flags & SK_FLAGS_TIMESTAMP)
 			net_enable_timestamp();
 	}
 out:
 	return newsk;
 }
-EXPORT_SYMBOL_GPL(sk_clone);
+EXPORT_SYMBOL_GPL(sk_clone_lock);
 
 void sk_setup_caps(struct sock *sk, struct dst_entry *dst)
 {
@@ -2129,16 +2163,15 @@ EXPORT_SYMBOL(sock_get_timestampns);
 void sock_enable_timestamp(struct sock *sk, int flag)
 {
 	if (!sock_flag(sk, flag)) {
+		unsigned long previous_flags = sk->sk_flags;
+
 		sock_set_flag(sk, flag);
 		/*
 		 * we just set one of the two flags which require net
 		 * time stamping, but time stamping might have been on
 		 * already because of the other one
 		 */
-		if (!sock_flag(sk,
-				flag == SOCK_TIMESTAMP ?
-				SOCK_TIMESTAMPING_RX_SOFTWARE :
-				SOCK_TIMESTAMP))
+		if (!(previous_flags & SK_FLAGS_TIMESTAMP))
 			net_enable_timestamp();
 	}
 }
