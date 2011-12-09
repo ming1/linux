@@ -1804,7 +1804,7 @@ long fuse_do_ioctl(struct file *file, unsigned int cmd, unsigned long arg,
 	BUILD_BUG_ON(sizeof(struct fuse_ioctl_iovec) * FUSE_IOCTL_MAX_IOV > PAGE_SIZE);
 
 	err = -ENOMEM;
-	pages = kzalloc(sizeof(pages[0]) * FUSE_MAX_PAGES_PER_REQ, GFP_KERNEL);
+	pages = kcalloc(FUSE_MAX_PAGES_PER_REQ, sizeof(pages[0]), GFP_KERNEL);
 	iov_page = (struct iovec *) __get_free_page(GFP_KERNEL);
 	if (!pages || !iov_page)
 		goto out;
@@ -1954,8 +1954,8 @@ long fuse_do_ioctl(struct file *file, unsigned int cmd, unsigned long arg,
 }
 EXPORT_SYMBOL_GPL(fuse_do_ioctl);
 
-static long fuse_file_ioctl_common(struct file *file, unsigned int cmd,
-				   unsigned long arg, unsigned int flags)
+long fuse_ioctl_common(struct file *file, unsigned int cmd,
+		       unsigned long arg, unsigned int flags)
 {
 	struct inode *inode = file->f_dentry->d_inode;
 	struct fuse_conn *fc = get_fuse_conn(inode);
@@ -1972,13 +1972,13 @@ static long fuse_file_ioctl_common(struct file *file, unsigned int cmd,
 static long fuse_file_ioctl(struct file *file, unsigned int cmd,
 			    unsigned long arg)
 {
-	return fuse_file_ioctl_common(file, cmd, arg, 0);
+	return fuse_ioctl_common(file, cmd, arg, 0);
 }
 
 static long fuse_file_compat_ioctl(struct file *file, unsigned int cmd,
 				   unsigned long arg)
 {
-	return fuse_file_ioctl_common(file, cmd, arg, FUSE_IOCTL_COMPAT);
+	return fuse_ioctl_common(file, cmd, arg, FUSE_IOCTL_COMPAT);
 }
 
 /*
