@@ -14,7 +14,6 @@
 #include <linux/delay.h>
 #include <linux/pm.h>
 #include <linux/i2c.h>
-#include <linux/platform_device.h>
 #include <linux/slab.h>
 #include <sound/core.h>
 #include <sound/pcm.h>
@@ -25,8 +24,6 @@
 #include <sound/wm8960.h>
 
 #include "wm8960.h"
-
-#define AUDIO_NAME "wm8960"
 
 /* R25 - Power 1 */
 #define WM8960_VMID_MASK 0x180
@@ -265,7 +262,7 @@ SND_SOC_DAPM_INPUT("RINPUT2"),
 SND_SOC_DAPM_INPUT("LINPUT3"),
 SND_SOC_DAPM_INPUT("RINPUT3"),
 
-SND_SOC_DAPM_MICBIAS("MICB", WM8960_POWER1, 1, 0),
+SND_SOC_DAPM_SUPPLY("MICB", WM8960_POWER1, 1, 0, NULL, 0),
 
 SND_SOC_DAPM_MIXER("Left Boost Mixer", WM8960_POWER1, 5, 0,
 		   wm8960_lin_boost, ARRAY_SIZE(wm8960_lin_boost)),
@@ -869,7 +866,7 @@ static int wm8960_set_bias_level(struct snd_soc_codec *codec,
 	(SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S20_3LE | \
 	SNDRV_PCM_FMTBIT_S24_LE)
 
-static struct snd_soc_dai_ops wm8960_dai_ops = {
+static const struct snd_soc_dai_ops wm8960_dai_ops = {
 	.hw_params = wm8960_hw_params,
 	.digital_mute = wm8960_mute,
 	.set_fmt = wm8960_set_dai_fmt,
@@ -895,7 +892,7 @@ static struct snd_soc_dai_driver wm8960_dai = {
 	.symmetric_rates = 1,
 };
 
-static int wm8960_suspend(struct snd_soc_codec *codec, pm_message_t state)
+static int wm8960_suspend(struct snd_soc_codec *codec)
 {
 	struct wm8960_priv *wm8960 = snd_soc_codec_get_drvdata(codec);
 
@@ -995,7 +992,6 @@ static struct snd_soc_codec_driver soc_codec_dev_wm8960 = {
 	.reg_cache_default = wm8960_reg,
 };
 
-#if defined(CONFIG_I2C) || defined(CONFIG_I2C_MODULE)
 static __devinit int wm8960_i2c_probe(struct i2c_client *i2c,
 				      const struct i2c_device_id *id)
 {
@@ -1031,34 +1027,29 @@ MODULE_DEVICE_TABLE(i2c, wm8960_i2c_id);
 
 static struct i2c_driver wm8960_i2c_driver = {
 	.driver = {
-		.name = "wm8960-codec",
+		.name = "wm8960",
 		.owner = THIS_MODULE,
 	},
 	.probe =    wm8960_i2c_probe,
 	.remove =   __devexit_p(wm8960_i2c_remove),
 	.id_table = wm8960_i2c_id,
 };
-#endif
 
 static int __init wm8960_modinit(void)
 {
 	int ret = 0;
-#if defined(CONFIG_I2C) || defined(CONFIG_I2C_MODULE)
 	ret = i2c_add_driver(&wm8960_i2c_driver);
 	if (ret != 0) {
 		printk(KERN_ERR "Failed to register WM8960 I2C driver: %d\n",
 		       ret);
 	}
-#endif
 	return ret;
 }
 module_init(wm8960_modinit);
 
 static void __exit wm8960_exit(void)
 {
-#if defined(CONFIG_I2C) || defined(CONFIG_I2C_MODULE)
 	i2c_del_driver(&wm8960_i2c_driver);
-#endif
 }
 module_exit(wm8960_exit);
 
