@@ -258,7 +258,7 @@ static inline bool task_has_mempolicy(struct task_struct *task)
 	return task->mempolicy;
 }
 
-#else		/* CONFIG_NUMA */
+#else
 
 struct mempolicy {};
 
