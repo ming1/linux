@@ -938,6 +938,18 @@ static void cpuset_migrate_mm(struct mm_struct *mm, const nodemask_t *from,
 	guarantee_online_mems(task_cs(tsk),&tsk->mems_allowed);
 }
 
+#ifdef CONFIG_NUMA
+static inline bool task_has_mempolicy(struct task_struct *task)
+{
+	return task->mempolicy;
+}
+#else
+static inline bool task_has_mempolicy(struct task_struct *task)
+{
+	return false;
+}
+#endif
+
 /*
  * cpuset_change_task_nodemask - change task's mems_allowed and mempolicy
  * @tsk: the task to change
