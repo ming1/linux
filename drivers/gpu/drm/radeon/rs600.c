@@ -920,6 +920,24 @@ void rs600_fini(struct radeon_device *rdev)
 	rdev->bios = NULL;
 }
 
+
+/*
+ * Due to how kexec works, it can leave the hw fully initialised when it
+ * boots the new kernel.
+ */
+void rs600_restore_sanity(struct radeon_device *rdev)
+{
+	/* stop possible GPU activities */
+	WREG32(R_000740_CP_CSQ_CNTL, 0);
+	WREG32(R_000744_CP_CSQ_MODE, 0);
+	WREG32(R_000770_SCRATCH_UMSK, 0);
+	WREG32(R_000704_CP_RB_CNTL, S_000704_RB_NO_UPDATE(1));
+	WREG32(R_000040_GEN_INT_CNTL, 0);
+	WREG32(R_006540_DxMODE_INT_MASK, 0);
+	WREG32(R_007D08_DC_HOT_PLUG_DETECT1_INT_CONTROL, 0);
+	WREG32(R_007D18_DC_HOT_PLUG_DETECT2_INT_CONTROL, 0);
+}
+
 int rs600_init(struct radeon_device *rdev)
 {
 	int r;
@@ -931,7 +949,7 @@ int rs600_init(struct radeon_device *rdev)
 	/* Initialize surface registers */
 	radeon_surface_init(rdev);
 	/* restore some register to sane defaults */
-	r100_restore_sanity(rdev);
+	rs600_restore_sanity(rdev);
 	/* BIOS */
 	if (!radeon_get_bios(rdev)) {
 		if (ASIC_IS_AVIVO(rdev))

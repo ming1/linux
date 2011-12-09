@@ -668,4 +668,25 @@
 #define   PM_ASSERT_RESET                              (1 << 20)
 #define   PM_PWRDN_PPLL                                (1 << 24)
 
+#define R_000704_CP_RB_CNTL                          0x000704
+#define   S_000704_RB_NO_UPDATE(x)                     (((x) & 0x1) << 27)
+#define R_000740_CP_CSQ_CNTL                         0x000740
+#define   S_000740_CSQ_CNT_PRIMARY(x)                  (((x) & 0xFF) << 0)
+#define   G_000740_CSQ_CNT_PRIMARY(x)                  (((x) >> 0) & 0xFF)
+#define   C_000740_CSQ_CNT_PRIMARY                     0xFFFFFF00
+#define   S_000740_CSQ_CNT_INDIRECT(x)                 (((x) & 0xFF) << 8)
+#define   G_000740_CSQ_CNT_INDIRECT(x)                 (((x) >> 8) & 0xFF)
+#define   C_000740_CSQ_CNT_INDIRECT                    0xFFFF00FF
+#define   S_000740_CSQ_MODE(x)                         (((x) & 0xF) << 28)
+#define   G_000740_CSQ_MODE(x)                         (((x) >> 28) & 0xF)
+#define   C_000740_CSQ_MODE                            0x0FFFFFFF
+#define R_000744_CP_CSQ_MODE                         0x000744
+#define R_000770_SCRATCH_UMSK                        0x000770
+#define   S_000770_SCRATCH_UMSK(x)                     (((x) & 0x3F) << 0)
+#define   G_000770_SCRATCH_UMSK(x)                     (((x) >> 0) & 0x3F)
+#define   C_000770_SCRATCH_UMSK                        0xFFFFFFC0
+#define   S_000770_SCRATCH_SWAP(x)                     (((x) & 0x3) << 16)
+#define   G_000770_SCRATCH_SWAP(x)                     (((x) >> 16) & 0x3)
+#define   C_000770_SCRATCH_SWAP                        0xFFFCFFFF
+
 #endif
