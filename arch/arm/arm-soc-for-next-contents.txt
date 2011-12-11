@@ -1,0 +1,19 @@
+This file lists all branches that are pulled into the for-next branch
+of git://git.kernel.org/pub/scm/linux/kernel/git/arm/arm-soc.git
+and their external dependencies.
+
+next/cleanup
+  at91/ioremap		git://github.com/at91linux/linux-at91.git for-arnd-3.3-ioremap
+  at91/gpio		git://github.com/at91linux/linux-at91.git for-arnd-3.3-gpio
+  msm/misc		git://codeaurora.org/quic/kernel/davidb/linux-msm.git msm-misc
+  drivers/macb-gem-cleanup	parts of drivers/macb-gem that at91/gpio depends on
+
+next/drivers
+  drivers/macb-gem	git://github.com/jamieiles/linux-2.6-ji.git macb-gem
+  drivers/pxa-gpio	git://github.com/hzhuang1/linux.git gpio
+
+next/timer
+  msm/timer		git://codeaurora.org/quic/kernel/davidb/linux-msm.git msm-timer
+
+next/move
+  imx/move		git://git.pengutronix.de/git/imx/linux-2.6.git mx5-merge
