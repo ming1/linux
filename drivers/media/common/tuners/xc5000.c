@@ -676,8 +676,10 @@ static int xc5000_set_params(struct dvb_frontend *fe,
 			priv->freq_hz = params->frequency - 1750000;
 			break;
 		case BANDWIDTH_7_MHZ:
-			printk(KERN_ERR "xc5000 bandwidth 7MHz not supported\n");
-			return -EINVAL;
+			priv->bandwidth = BANDWIDTH_7_MHZ;
+			priv->video_standard = DTV7;
+			priv->freq_hz = params->frequency - 2250000;
+			break;
 		case BANDWIDTH_8_MHZ:
 			priv->bandwidth = BANDWIDTH_8_MHZ;
 			priv->video_standard = DTV8;
@@ -708,18 +710,24 @@ static int xc5000_set_params(struct dvb_frontend *fe,
 			 * is equal to 0.15 for Annex A, and 0.13 for annex C
 			 */
 			if (fe->dtv_property_cache.rolloff == ROLLOFF_13)
-				bw = (params->u.qam.symbol_rate * 13) / 10;
+				bw = (params->u.qam.symbol_rate * 113) / 100;
 			else
-				bw = (params->u.qam.symbol_rate * 15) / 10;
+				bw = (params->u.qam.symbol_rate * 115) / 100;
 			if (bw <= 6000000) {
 				priv->bandwidth = BANDWIDTH_6_MHZ;
 				priv->video_standard = DTV6;
 				priv->freq_hz = params->frequency - 1750000;
+			} else if (bw <= 7000000) {
+				priv->bandwidth = BANDWIDTH_7_MHZ;
+				priv->video_standard = DTV7;
+				priv->freq_hz = params->frequency - 2250000;
 			} else {
 				priv->bandwidth = BANDWIDTH_8_MHZ;
 				priv->video_standard = DTV7_8;
 				priv->freq_hz = params->frequency - 2750000;
 			}
+			dprintk(1, "%s() Bandwidth %dMHz (%d)\n", __func__,
+				BANDWIDTH_6_MHZ ? 6: 8, bw);
 			break;
 		default:
 			dprintk(1, "%s() Unsupported QAM type\n", __func__);
@@ -1004,8 +1012,6 @@ static int xc_load_fw_and_init_tuner(struct dvb_frontend *fe)
 	struct xc5000_priv *priv = fe->tuner_priv;
 	int ret = 0;
 
-	mutex_lock(&xc5000_list_mutex);
-
 	if (xc5000_is_firmware_loaded(fe) != XC_RESULT_SUCCESS) {
 		ret = xc5000_fwupload(fe);
 		if (ret != XC_RESULT_SUCCESS)
@@ -1024,8 +1030,6 @@ static int xc_load_fw_and_init_tuner(struct dvb_frontend *fe)
 
 	/* Default to "CABLE" mode */
 	ret |= xc_write_reg(priv, XREG_SIGNALSOURCE, XC_RF_MODE_CABLE);
-
-	mutex_unlock(&xc5000_list_mutex);
 
 	return ret;
 }
