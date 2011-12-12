@@ -1844,7 +1844,7 @@ int cgroup_attach_task(struct cgroup *cgrp, struct task_struct *tsk)
 			}
 		}
 		if (ss->can_attach_task) {
-			retval = ss->can_attach_task(cgrp, tsk);
+			retval = ss->can_attach_task(cgrp, oldcgrp, tsk);
 			if (retval) {
 				failed_ss = ss;
 				goto out;
@@ -1860,7 +1860,7 @@ int cgroup_attach_task(struct cgroup *cgrp, struct task_struct *tsk)
 		if (ss->pre_attach)
 			ss->pre_attach(cgrp);
 		if (ss->attach_task)
-			ss->attach_task(cgrp, tsk);
+			ss->attach_task(cgrp, oldcgrp, tsk);
 		if (ss->attach)
 			ss->attach(ss, cgrp, oldcgrp, tsk);
 	}
@@ -1883,6 +1883,9 @@ out:
 				 * remaining subsystems.
 				 */
 				break;
+
+			if (ss->cancel_attach_task)
+				ss->cancel_attach_task(cgrp, oldcgrp, tsk);
 			if (ss->cancel_attach)
 				ss->cancel_attach(ss, cgrp, tsk);
 		}
@@ -1980,6 +1983,11 @@ static int css_set_prefetch(struct cgroup *cgrp, struct css_set *cg,
 	return 0;
 }
 
+struct task_cgroup {
+	struct task_struct *tsk;
+	struct cgroup *oldcgrp;
+};
+
 /**
  * cgroup_attach_proc - attach all threads in a threadgroup to a cgroup
  * @cgrp: the cgroup to attach to
@@ -1992,7 +2000,7 @@ int cgroup_attach_proc(struct cgroup *cgrp, struct task_struct *leader)
 {
 	int retval, i, group_size;
 	struct cgroup_subsys *ss, *failed_ss = NULL;
-	bool cancel_failed_ss = false;
+	struct task_struct *failed_task = NULL;
 	/* guaranteed to be initialized later, but the compiler needs this */
 	struct cgroup *oldcgrp = NULL;
 	struct css_set *oldcg;
@@ -2000,6 +2008,7 @@ int cgroup_attach_proc(struct cgroup *cgrp, struct task_struct *leader)
 	/* threadgroup list cursor and array */
 	struct task_struct *tsk;
 	struct flex_array *group;
+	struct task_cgroup *tc;
 	/*
 	 * we need to make sure we have css_sets for all the tasks we're
 	 * going to move -before- we actually start moving them, so that in
@@ -2017,7 +2026,7 @@ int cgroup_attach_proc(struct cgroup *cgrp, struct task_struct *leader)
 	 */
 	group_size = get_nr_threads(leader);
 	/* flex_array supports very large thread-groups better than kmalloc. */
-	group = flex_array_alloc(sizeof(struct task_struct *), group_size,
+	group = flex_array_alloc(sizeof(struct task_cgroup), group_size,
 				 GFP_KERNEL);
 	if (!group)
 		return -ENOMEM;
@@ -2044,14 +2053,18 @@ int cgroup_attach_proc(struct cgroup *cgrp, struct task_struct *leader)
 	tsk = leader;
 	i = 0;
 	do {
+		struct task_cgroup tsk_cgrp;
+
 		/* as per above, nr_threads may decrease, but not increase. */
 		BUG_ON(i >= group_size);
 		get_task_struct(tsk);
+		tsk_cgrp.tsk = tsk;
+		tsk_cgrp.oldcgrp = task_cgroup_from_root(tsk, root);
 		/*
 		 * saying GFP_ATOMIC has no effect here because we did prealloc
 		 * earlier, but it's good form to communicate our expectations.
 		 */
-		retval = flex_array_put_ptr(group, i, tsk, GFP_ATOMIC);
+		retval = flex_array_put(group, i, &tsk_cgrp, GFP_ATOMIC);
 		BUG_ON(retval != 0);
 		i++;
 	} while_each_thread(leader, tsk);
@@ -2074,11 +2087,13 @@ int cgroup_attach_proc(struct cgroup *cgrp, struct task_struct *leader)
 		if (ss->can_attach_task) {
 			/* run on each task in the threadgroup. */
 			for (i = 0; i < group_size; i++) {
-				tsk = flex_array_get_ptr(group, i);
-				retval = ss->can_attach_task(cgrp, tsk);
+				tc = flex_array_get(group, i);
+				retval = ss->can_attach_task(cgrp,
+							     tc->oldcgrp,
+							     tc->tsk);
 				if (retval) {
 					failed_ss = ss;
-					cancel_failed_ss = true;
+					failed_task = tc->tsk;
 					goto out_cancel_attach;
 				}
 			}
@@ -2091,10 +2106,10 @@ int cgroup_attach_proc(struct cgroup *cgrp, struct task_struct *leader)
 	 */
 	INIT_LIST_HEAD(&newcg_list);
 	for (i = 0; i < group_size; i++) {
-		tsk = flex_array_get_ptr(group, i);
+		tc = flex_array_get(group, i);
+		tsk = tc->tsk;
 		/* nothing to do if this task is already in the cgroup */
-		oldcgrp = task_cgroup_from_root(tsk, root);
-		if (cgrp == oldcgrp)
+		if (cgrp == tc->oldcgrp)
 			continue;
 		/* get old css_set pointer */
 		task_lock(tsk);
@@ -2130,9 +2145,10 @@ int cgroup_attach_proc(struct cgroup *cgrp, struct task_struct *leader)
 			ss->pre_attach(cgrp);
 	}
 	for (i = 0; i < group_size; i++) {
-		tsk = flex_array_get_ptr(group, i);
+		tc = flex_array_get(group, i);
+		tsk = tc->tsk;
+		oldcgrp = tc->oldcgrp;
 		/* leave current thread as it is if it's already there */
-		oldcgrp = task_cgroup_from_root(tsk, root);
 		if (cgrp == oldcgrp)
 			continue;
 		/* if the thread is PF_EXITING, it can just get skipped. */
@@ -2141,10 +2157,13 @@ int cgroup_attach_proc(struct cgroup *cgrp, struct task_struct *leader)
 			/* attach each task to each subsystem */
 			for_each_subsys(root, ss) {
 				if (ss->attach_task)
-					ss->attach_task(cgrp, tsk);
+					ss->attach_task(cgrp, oldcgrp, tsk);
 			}
+		} else if (retval == -ESRCH) {
+			if (ss->cancel_attach_task)
+				ss->cancel_attach_task(cgrp, oldcgrp, tsk);
 		} else {
-			BUG_ON(retval != -ESRCH);
+			BUG_ON(1);
 		}
 	}
 	/* nothing is sensitive to fork() after this point. */
@@ -2176,8 +2195,19 @@ out_cancel_attach:
 	/* same deal as in cgroup_attach_task */
 	if (retval) {
 		for_each_subsys(root, ss) {
+			if (ss->cancel_attach_task && (ss != failed_ss ||
+						       failed_task)) {
+				for (i = 0; i < group_size; i++) {
+					tc = flex_array_get(group, i);
+					if (tc->tsk == failed_task)
+						break;
+					ss->cancel_attach_task(cgrp,
+							tc->oldcgrp, tc->tsk);
+				}
+			}
+
 			if (ss == failed_ss) {
-				if (cancel_failed_ss && ss->cancel_attach)
+				if (failed_task && ss->cancel_attach)
 					ss->cancel_attach(ss, cgrp, leader);
 				break;
 			}
@@ -2187,8 +2217,8 @@ out_cancel_attach:
 	}
 	/* clean up the array of referenced threads in the group. */
 	for (i = 0; i < group_size; i++) {
-		tsk = flex_array_get_ptr(group, i);
-		put_task_struct(tsk);
+		tc = flex_array_get(group, i);
+		put_task_struct(tc->tsk);
 	}
 out_free_group_list:
 	flex_array_free(group);
@@ -4521,8 +4551,11 @@ void cgroup_fork(struct task_struct *child)
  * tasklist. No need to take any locks since no-one can
  * be operating on this task.
  */
-void cgroup_fork_callbacks(struct task_struct *child)
+int cgroup_fork_callbacks(struct task_struct *child,
+			  struct cgroup_subsys **failed_ss)
 {
+	int err;
+
 	if (need_forkexit_callback) {
 		int i;
 		/*
@@ -4532,10 +4565,17 @@ void cgroup_fork_callbacks(struct task_struct *child)
 		 */
 		for (i = 0; i < CGROUP_BUILTIN_SUBSYS_COUNT; i++) {
 			struct cgroup_subsys *ss = subsys[i];
-			if (ss->fork)
-				ss->fork(ss, child);
+			if (ss->fork) {
+				err = ss->fork(ss, child);
+				if (err) {
+					*failed_ss = ss;
+					return err;
+				}
+			}
 		}
 	}
+
+	return 0;
 }
 
 /**
@@ -4593,7 +4633,8 @@ void cgroup_post_fork(struct task_struct *child)
  *    which wards off any cgroup_attach_task() attempts, or task is a failed
  *    fork, never visible to cgroup_attach_task.
  */
-void cgroup_exit(struct task_struct *tsk, int run_callbacks)
+void cgroup_exit(struct task_struct *tsk, int run_callbacks,
+		 struct cgroup_subsys *failed_ss)
 {
 	struct css_set *cg;
 	int i;
@@ -4622,6 +4663,10 @@ void cgroup_exit(struct task_struct *tsk, int run_callbacks)
 		 */
 		for (i = 0; i < CGROUP_BUILTIN_SUBSYS_COUNT; i++) {
 			struct cgroup_subsys *ss = subsys[i];
+
+			if (ss == failed_ss)
+				break;
+
 			if (ss->exit) {
 				struct cgroup *old_cgrp =
 					rcu_dereference_raw(cg->subsys[i])->cgroup;
