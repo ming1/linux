@@ -1,0 +1,73 @@
+Importing hexagon based on v3.2-rc2
+Unchanged quilt series hexagon
+Importing i2c based on 3.2-rc5
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard dc47ce90c3a822cd7c9e9339fe4d5f61dcb26b50
+HEAD is now at dc47ce9 Linux 3.2-rc5
+$ git am ../quilt/i2c/i2c-busses-fix-error-paths.patch
+Applying: i2c: Fix error value returned by several bus drivers
+$ git am ../quilt/i2c/i2c-ali1535-enable-sparc-support.patch
+Applying: i2c-ali1535: enable SPARC support
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/i2c
+From ../quilt-tmp
+ + 78f8424...a682833 master     -> quilt/i2c  (forced update)
+Importing jdelvare-hwmon based on 3.2-rc5
+$ cd ../quilt-tmp
+$ git reset --hard dc47ce90c3a822cd7c9e9339fe4d5f61dcb26b50
+HEAD is now at dc47ce9 Linux 3.2-rc5
+$ git am ../quilt/jdelvare-hwmon/hwmon-max1111-change-sysfs-interface-to-in_input-in-millivolts.patch
+Applying: hwmon: (max1111) Change sysfs interface to in[0-3]_input in millivolts
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm63-01-fix-checkpatch-errors.patch
+Applying: hwmon: (lm63) Fix checkpatch errors
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm63-02-support-for-external-temperature-offset.patch
+Applying: hwmon: (lm63) Add support for external temperature offset register
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm63-03-add-support-for-lm96163.patch
+Applying: hwmon: (lm63) Add support for LM96163
+$ git am ../quilt/jdelvare-hwmon/hwmon-coretemp-add-missing-section-tags.patch
+Applying: hwmon: (coretemp) Add missing section annotations
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/jdelvare-hwmon
+From ../quilt-tmp
+ + dda4fa1...4a96f1a master     -> quilt/jdelvare-hwmon  (forced update)
+Importing kernel-doc based on 3.1
+Unchanged quilt series kernel-doc
+Importing rr based on v3.2-rc4
+$ cd ../quilt-tmp
+$ git reset --hard 5611cc4572e889b62a7b4c72a413536bf6a9c416
+HEAD is now at 5611cc45 Linux 3.2-rc4
+$ git am ../quilt/rr/virtio:balloon_trivial_cleanups.patch
+Applying: virtio-balloon: Trivial cleanups
+$ git am ../quilt/rr/virtio-documentation.patch
+Applying: virtio: document functions better.
+$ git am ../quilt/rr/virtio-virtqueue_add_buf_gfp-rename.patch
+Applying: virtio: rename virtqueue_add_buf_gfp to virtqueue_add_buf
+$ git am ../quilt/rr/virtio:support_unlocked_queue_kick.patch
+Applying: virtio: support unlocked queue kick
+$ git am ../quilt/rr/virtio_ring-avoid-modulus.patch
+Applying: virtio: avoid modulus operation.
+$ git am ../quilt/rr/virtio-add-should-expose.patch
+Applying: virtio: expose added descriptors immediately.
+$ git am ../quilt/rr/virtio-debug-missing-kick.patch
+Applying: virtio: add debugging if driver doesn't kick.
+$ git am ../quilt/rr/module:add_comments_describing_how_the_strmap_logic_works.patch
+Applying: module: Add comments describing how the "strmap" logic works
+$ git am ../quilt/rr/module:fix_performance_regression_on_s_with_large_symbol_tables.patch
+Applying: module: Fix performance regression on modules with large symbol tables
+$ git am ../quilt/rr/lguest:switched_segment_voodoo_numbers_to_readable_symbols.patch
+Applying: lguest: switch segment-voodoo-numbers to readable symbols
+$ git am ../quilt/rr/lguest:move_the_tool_to_the_tools_directory.patch
+Applying: lguest: move the lguest tool to the tools directory
+$ git am ../quilt/rr/lguest-move-fixup.patch
+Applying: lguest: move the lguest tool to the tools directory (fixes)
+$ git am ../quilt/rr/module:kernel_replace_debugp_with_pr_debug.patch
+Applying: module: replace DEBUGP with pr_debug
+$ git am ../quilt/rr/param:kernel_replace_debugp_with_pr_debug.patch
+Applying: kernel/params: replace DEBUGP with pr_debug
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/rr
+From ../quilt-tmp
+ + bbdfe28...cf54f41 master     -> quilt/rr  (forced update)
+Importing device-mapper based on v3.1-10674-g94956ee
+Unchanged quilt series device-mapper
