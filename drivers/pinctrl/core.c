@@ -28,6 +28,7 @@
 #include <linux/pinctrl/machine.h>
 #include "core.h"
 #include "pinmux.h"
+#include "pinconf.h"
 
 /* Global list of pin control devices */
 static DEFINE_MUTEX(pinctrldev_list_mutex);
@@ -88,7 +89,7 @@ struct pinctrl_dev *get_pinctrl_dev_from_dev(struct device *dev,
 	return found ? pctldev : NULL;
 }
 
-struct pin_desc *pin_desc_get(struct pinctrl_dev *pctldev, int pin)
+struct pin_desc *pin_desc_get(struct pinctrl_dev *pctldev, unsigned int pin)
 {
 	struct pin_desc *pindesc;
 	unsigned long flags;
@@ -98,6 +99,30 @@ struct pin_desc *pin_desc_get(struct pinctrl_dev *pctldev, int pin)
 	spin_unlock_irqrestore(&pctldev->pin_desc_tree_lock, flags);
 
 	return pindesc;
+}
+
+/**
+ * pin_get_from_name() - look up a pin number from a name
+ * @pctldev: the pin control device to lookup the pin on
+ * @name: the name of the pin to look up
+ */
+int pin_get_from_name(struct pinctrl_dev *pctldev, const char *name)
+{
+	unsigned pin;
+
+	/* The highest pin number need to be included in the loop, thus <= */
+	for (pin = 0; pin <= pctldev->desc->maxpin; pin++) {
+		struct pin_desc *desc;
+
+		desc = pin_desc_get(pctldev, pin);
+		/* Pin space may be sparse */
+		if (desc == NULL)
+			continue;
+		if (desc->name && !strcmp(name, desc->name))
+			return pin;
+	}
+
+	return -EINVAL;
 }
 
 /**
@@ -160,6 +185,7 @@ static int pinctrl_register_one_pin(struct pinctrl_dev *pctldev,
 	pindesc = kzalloc(sizeof(*pindesc), GFP_KERNEL);
 	if (pindesc == NULL)
 		return -ENOMEM;
+
 	spin_lock_init(&pindesc->lock);
 
 	/* Set owner */
@@ -284,6 +310,37 @@ void pinctrl_remove_gpio_range(struct pinctrl_dev *pctldev,
 	mutex_unlock(&pctldev->gpio_ranges_lock);
 }
 
+/**
+ * pinctrl_get_group_selector() - returns the group selector for a group
+ * @pctldev: the pin controller handling the group
+ * @pin_group: the pin group to look up
+ */
+int pinctrl_get_group_selector(struct pinctrl_dev *pctldev,
+			       const char *pin_group)
+{
+	const struct pinctrl_ops *pctlops = pctldev->desc->pctlops;
+	unsigned group_selector = 0;
+
+	while (pctlops->list_groups(pctldev, group_selector) >= 0) {
+		const char *gname = pctlops->get_group_name(pctldev,
+							    group_selector);
+		if (!strcmp(gname, pin_group)) {
+			dev_dbg(&pctldev->dev,
+				"found group selector %u for %s\n",
+				group_selector,
+				pin_group);
+			return group_selector;
+		}
+
+		group_selector++;
+	}
+
+	dev_err(&pctldev->dev, "does not have pin group %s\n",
+		pin_group);
+
+	return -EINVAL;
+}
+
 #ifdef CONFIG_DEBUG_FS
 
 static int pinctrl_pins_show(struct seq_file *s, void *what)
@@ -363,8 +420,11 @@ static int pinctrl_gpioranges_show(struct seq_file *s, void *what)
 	/* Loop over the ranges */
 	mutex_lock(&pctldev->gpio_ranges_lock);
 	list_for_each_entry(range, &pctldev->gpio_ranges, node) {
-		seq_printf(s, "%u: %s [%u - %u]\n", range->id, range->name,
-			   range->base, (range->base + range->npins - 1));
+		seq_printf(s, "%u: %s GPIOS [%u - %u] PINS [%u - %u]\n",
+			   range->id, range->name,
+			   range->base, (range->base + range->npins - 1),
+			   range->pin_base,
+			   (range->pin_base + range->npins - 1));
 	}
 	mutex_unlock(&pctldev->gpio_ranges_lock);
 
@@ -458,6 +518,7 @@ static void pinctrl_init_device_debugfs(struct pinctrl_dev *pctldev)
 	debugfs_create_file("gpio-ranges", S_IFREG | S_IRUGO,
 			    device_root, pctldev, &pinctrl_gpioranges_ops);
 	pinmux_init_device_debugfs(device_root, pctldev);
+	pinconf_init_device_debugfs(device_root, pctldev);
 }
 
 static void pinctrl_init_debugfs(void)
@@ -509,6 +570,16 @@ struct pinctrl_dev *pinctrl_register(struct pinctrl_desc *pctldesc,
 		ret = pinmux_check_ops(pctldesc->pmxops);
 		if (ret) {
 			pr_err("%s pinmux ops lacks necessary functions\n",
+			       pctldesc->name);
+			return NULL;
+		}
+	}
+
+	/* If we're implementing pinconfig, check the ops for sanity */
+	if (pctldesc->confops) {
+		ret = pinconf_check_ops(pctldesc->confops);
+		if (ret) {
+			pr_err("%s pin config ops lacks necessary functions\n",
 			       pctldesc->name);
 			return NULL;
 		}
