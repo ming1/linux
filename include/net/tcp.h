@@ -628,7 +628,7 @@ extern u32 __tcp_select_window(struct sock *sk);
 struct tcp_skb_cb {
 	union {
 		struct inet_skb_parm	h4;
-#if defined(CONFIG_IPV6) || defined (CONFIG_IPV6_MODULE)
+#if IS_ENABLED(CONFIG_IPV6)
 		struct inet6_skb_parm	h6;
 #endif
 	} header;	/* For incoming frames		*/
@@ -833,6 +833,14 @@ static inline __u32 tcp_current_ssthresh(const struct sock *sk)
 
 extern void tcp_enter_cwr(struct sock *sk, const int set_ssthresh);
 extern __u32 tcp_init_cwnd(const struct tcp_sock *tp, const struct dst_entry *dst);
+
+/* The maximum number of MSS of available cwnd for which TSO defers
+ * sending if not using sysctl_tcp_tso_win_divisor.
+ */
+static inline __u32 tcp_max_tso_deferred_mss(const struct tcp_sock *tp)
+{
+	return 3;
+}
 
 /* Slow start with delack produces 3 packets of burst, so that
  * it is safe "de facto".  This will be the default - same as
@@ -1144,7 +1152,7 @@ struct tcp6_md5sig_key {
 /* - sock block */
 struct tcp_md5sig_info {
 	struct tcp4_md5sig_key	*keys4;
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+#if IS_ENABLED(CONFIG_IPV6)
 	struct tcp6_md5sig_key	*keys6;
 	u32			entries6;
 	u32			alloced6;
@@ -1171,7 +1179,7 @@ struct tcp6_pseudohdr {
 
 union tcp_md5sum_block {
 	struct tcp4_pseudohdr ip4;
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+#if IS_ENABLED(CONFIG_IPV6)
 	struct tcp6_pseudohdr ip6;
 #endif
 };
@@ -1430,7 +1438,8 @@ extern struct request_sock_ops tcp6_request_sock_ops;
 extern void tcp_v4_destroy_sock(struct sock *sk);
 
 extern int tcp_v4_gso_send_check(struct sk_buff *skb);
-extern struct sk_buff *tcp_tso_segment(struct sk_buff *skb, u32 features);
+extern struct sk_buff *tcp_tso_segment(struct sk_buff *skb,
+				       netdev_features_t features);
 extern struct sk_buff **tcp_gro_receive(struct sk_buff **head,
 					struct sk_buff *skb);
 extern struct sk_buff **tcp4_gro_receive(struct sk_buff **head,
