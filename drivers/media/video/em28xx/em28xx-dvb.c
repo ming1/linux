@@ -316,6 +316,14 @@ struct drxk_config terratec_h5_drxk = {
 	.microcode_name = "dvb-usb-terratec-h5-drxk.fw",
 };
 
+struct drxk_config hauppauge_930c_drxk = {
+	.adr = 0x29,
+	.single_master = 1,
+	.no_i2c_bridge = 1,
+	.microcode_name = "dvb-usb-hauppauge-hvr930c-drxk.fw",
+	.chunk_size = 56,
+};
+
 static int drxk_gate_ctrl(struct dvb_frontend *fe, int enable)
 {
 	struct em28xx_dvb *dvb = fe->sec_priv;
@@ -332,6 +340,73 @@ static int drxk_gate_ctrl(struct dvb_frontend *fe, int enable)
 		up(&dvb->pll_mutex);
 	}
 	return status;
+}
+
+static void hauppauge_hvr930c_init(struct em28xx *dev)
+{
+	int i;
+
+	struct em28xx_reg_seq hauppauge_hvr930c_init[] = {
+		{EM2874_R80_GPIO,	0xff,	0xff,	0x65},
+		{EM2874_R80_GPIO,	0xfb,	0xff,	0x32},
+		{EM2874_R80_GPIO,	0xff,	0xff,	0xb8},
+		{ -1,                   -1,     -1,     -1},
+	};
+	struct em28xx_reg_seq hauppauge_hvr930c_end[] = {
+		{EM2874_R80_GPIO,	0xef,	0xff,	0x01},
+		{EM2874_R80_GPIO,	0xaf,	0xff,	0x65},
+		{EM2874_R80_GPIO,	0xef,	0xff,	0x76},
+		{EM2874_R80_GPIO,	0xef,	0xff,	0x01},
+		{EM2874_R80_GPIO,	0xcf,	0xff,	0x0b},
+		{EM2874_R80_GPIO,	0xef,	0xff,	0x40},
+
+		{EM2874_R80_GPIO,	0xcf,	0xff,	0x65},
+		{EM2874_R80_GPIO,	0xef,	0xff,	0x65},
+		{EM2874_R80_GPIO,	0xcf,	0xff,	0x0b},
+		{EM2874_R80_GPIO,	0xef,	0xff,	0x65},
+
+		{ -1,                   -1,     -1,     -1},
+	};
+
+	struct {
+		unsigned char r[4];
+		int len;
+	} regs[] = {
+		{{ 0x06, 0x02, 0x00, 0x31 }, 4},
+		{{ 0x01, 0x02 }, 2},
+		{{ 0x01, 0x02, 0x00, 0xc6 }, 4},
+		{{ 0x01, 0x00 }, 2},
+		{{ 0x01, 0x00, 0xff, 0xaf }, 4},
+		{{ 0x01, 0x00, 0x03, 0xa0 }, 4},
+		{{ 0x01, 0x00 }, 2},
+		{{ 0x01, 0x00, 0x73, 0xaf }, 4},
+		{{ 0x04, 0x00 }, 2},
+		{{ 0x00, 0x04 }, 2},
+		{{ 0x00, 0x04, 0x00, 0x0a }, 4},
+		{{ 0x04, 0x14 }, 2},
+		{{ 0x04, 0x14, 0x00, 0x00 }, 4},
+	};
+
+	em28xx_gpio_set(dev, hauppauge_hvr930c_init);
+	em28xx_write_reg(dev, EM28XX_R06_I2C_CLK, 0x40);
+	msleep(10);
+	em28xx_write_reg(dev, EM28XX_R06_I2C_CLK, 0x44);
+	msleep(10);
+
+	dev->i2c_client.addr = 0x82 >> 1;
+
+	for (i = 0; i < ARRAY_SIZE(regs); i++)
+		i2c_master_send(&dev->i2c_client, regs[i].r, regs[i].len);
+	em28xx_gpio_set(dev, hauppauge_hvr930c_end);
+
+	msleep(100);
+
+	em28xx_write_reg(dev, EM28XX_R06_I2C_CLK, 0x44);
+	msleep(30);
+
+	em28xx_write_reg(dev, EM28XX_R06_I2C_CLK, 0x45);
+	msleep(10);
+
 }
 
 static void terratec_h5_init(struct em28xx *dev)
@@ -425,13 +500,6 @@ static struct tda10023_config em28xx_tda10023_config = {
 static struct cxd2820r_config em28xx_cxd2820r_config = {
 	.i2c_address = (0xd8 >> 1),
 	.ts_mode = CXD2820R_TS_SERIAL,
-	.if_dvbt_6  = 3300,
-	.if_dvbt_7  = 3500,
-	.if_dvbt_8  = 4000,
-	.if_dvbt2_6 = 3300,
-	.if_dvbt2_7 = 3500,
-	.if_dvbt2_8 = 4000,
-	.if_dvbc    = 5000,
 
 	/* enable LNA for DVB-T2 and DVB-C */
 	.gpio_dvbt2[0] = CXD2820R_GPIO_E | CXD2820R_GPIO_O | CXD2820R_GPIO_L,
@@ -788,7 +856,55 @@ static int em28xx_dvb_init(struct em28xx *dev)
 			mfe_shared = 1;
 		}
 		break;
+	case EM2884_BOARD_HAUPPAUGE_WINTV_HVR_930C:
+	{
+		struct xc5000_config cfg;
+		hauppauge_hvr930c_init(dev);
+
+		dvb->dont_attach_fe1 = 1;
+
+		dvb->fe[0] = dvb_attach(drxk_attach,
+					&hauppauge_930c_drxk, &dev->i2c_adap,
+					&dvb->fe[1]);
+		if (!dvb->fe[0]) {
+			result = -EINVAL;
+			goto out_free;
+		}
+		/* FIXME: do we need a pll semaphore? */
+		dvb->fe[0]->sec_priv = dvb;
+		sema_init(&dvb->pll_mutex, 1);
+		dvb->gate_ctrl = dvb->fe[0]->ops.i2c_gate_ctrl;
+		dvb->fe[0]->ops.i2c_gate_ctrl = drxk_gate_ctrl;
+		dvb->fe[1]->id = 1;
+
+		/* Attach xc5000 */
+		memset(&cfg, 0, sizeof(cfg));
+		cfg.i2c_address  = 0x61;
+		cfg.if_khz = 4000;
+
+		if (dvb->fe[0]->ops.i2c_gate_ctrl)
+			dvb->fe[0]->ops.i2c_gate_ctrl(dvb->fe[0], 1);
+		if (!dvb_attach(xc5000_attach, dvb->fe[0], &dev->i2c_adap,
+				&cfg)) {
+			result = -EINVAL;
+			goto out_free;
+		}
+
+		if (dvb->fe[0]->ops.i2c_gate_ctrl)
+			dvb->fe[0]->ops.i2c_gate_ctrl(dvb->fe[0], 0);
+
+		/* Hack - needed by drxk/tda18271c2dd */
+		dvb->fe[1]->tuner_priv = dvb->fe[0]->tuner_priv;
+		memcpy(&dvb->fe[1]->ops.tuner_ops,
+		       &dvb->fe[0]->ops.tuner_ops,
+		       sizeof(dvb->fe[0]->ops.tuner_ops));
+
+		mfe_shared = 1;
+
+		break;
+	}
 	case EM2884_BOARD_TERRATEC_H5:
+	case EM2884_BOARD_CINERGY_HTC_STICK:
 		terratec_h5_init(dev);
 
 		dvb->dont_attach_fe1 = 1;
@@ -798,7 +914,6 @@ static int em28xx_dvb_init(struct em28xx *dev)
 			result = -EINVAL;
 			goto out_free;
 		}
-
 		/* FIXME: do we need a pll semaphore? */
 		dvb->fe[0]->sec_priv = dvb;
 		sema_init(&dvb->pll_mutex, 1);
@@ -821,6 +936,8 @@ static int em28xx_dvb_init(struct em28xx *dev)
 		memcpy(&dvb->fe[1]->ops.tuner_ops,
 		       &dvb->fe[0]->ops.tuner_ops,
 		       sizeof(dvb->fe[0]->ops.tuner_ops));
+
+		mfe_shared = 1;
 
 		break;
 	case EM28174_BOARD_PCTV_460E:
@@ -845,6 +962,8 @@ static int em28xx_dvb_init(struct em28xx *dev)
 	}
 	/* define general-purpose callback pointer */
 	dvb->fe[0]->callback = em28xx_tuner_callback;
+	if (dvb->fe[1])
+		dvb->fe[1]->callback = em28xx_tuner_callback;
 
 	/* register everything */
 	result = em28xx_register_dvb(dvb, THIS_MODULE, dev, &dev->udev->dev);
