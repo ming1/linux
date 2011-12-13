@@ -2169,6 +2169,11 @@ redo:
 		goto new_slab;
 	}
 
+	/* must check again c->freelist in case of cpu migration or IRQ */
+	object = c->freelist;
+	if (object)
+		goto load_freelist;
+
 	stat(s, ALLOC_SLOWPATH);
 
 	do {
@@ -3031,7 +3036,9 @@ static int kmem_cache_open(struct kmem_cache *s,
 	 *    per node list when we run out of per cpu objects. We only fetch 50%
 	 *    to keep some capacity around for frees.
 	 */
-	if (s->size >= PAGE_SIZE)
+	if (kmem_cache_debug(s))
+		s->cpu_partial = 0;
+	else if (s->size >= PAGE_SIZE)
 		s->cpu_partial = 2;
 	else if (s->size >= 1024)
 		s->cpu_partial = 6;
