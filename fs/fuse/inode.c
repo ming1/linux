@@ -542,6 +542,7 @@ void fuse_conn_init(struct fuse_conn *fc)
 	fc->blocked = 1;
 	fc->attr_version = 1;
 	get_random_bytes(&fc->scramble_key, sizeof(fc->scramble_key));
+	INIT_LIST_HEAD(&fc->dmmap_list);
 }
 EXPORT_SYMBOL_GPL(fuse_conn_init);
 

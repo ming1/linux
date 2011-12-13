@@ -480,6 +480,7 @@ int fuse_request_send_notify_reply(struct fuse_conn *fc,
 
 	return err;
 }
+EXPORT_SYMBOL_GPL(fuse_request_send_notify_reply);
 
 /*
  * Called under fc->lock
@@ -850,6 +851,7 @@ int fuse_copy_page(struct fuse_copy_state *cs, struct page **pagep,
 		flush_dcache_page(page);
 	return 0;
 }
+EXPORT_SYMBOL_GPL(fuse_copy_page);
 
 /* Copy pages in the request to/from userspace buffer */
 static int fuse_copy_pages(struct fuse_copy_state *cs, unsigned nbytes,
