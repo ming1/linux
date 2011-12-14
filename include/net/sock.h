@@ -986,6 +986,7 @@ static inline long sk_prot_mem_limits(const struct sock *sk, int index)
 	return prot[index];
 }
 
+#ifdef CONFIG_INET
 static inline void memcg_memory_allocated_add(struct cg_proto *prot,
 					      unsigned long amt,
 					      int *parent_status)
@@ -999,6 +1000,7 @@ static inline void memcg_memory_allocated_add(struct cg_proto *prot,
 	if (ret < 0)
 		*parent_status = OVER_LIMIT;
 }
+#endif
 
 static inline void memcg_memory_allocated_sub(struct cg_proto *prot,
 					      unsigned long amt)
@@ -1028,12 +1030,14 @@ sk_memory_allocated_add(struct sock *sk, int amt, int *parent_status)
 {
 	struct proto *prot = sk->sk_prot;
 
+#ifdef CONFIG_INET
 	if (mem_cgroup_sockets_enabled && sk->sk_cgrp) {
 		memcg_memory_allocated_add(sk->sk_cgrp, amt, parent_status);
 		/* update the root cgroup regardless */
 		atomic_long_add_return(amt, prot->memory_allocated);
 		return memcg_memory_allocated_read(sk->sk_cgrp);
 	}
+#endif
 
 	return atomic_long_add_return(amt, prot->memory_allocated);
 }
@@ -1043,9 +1047,11 @@ sk_memory_allocated_sub(struct sock *sk, int amt, int parent_status)
 {
 	struct proto *prot = sk->sk_prot;
 
+#ifdef CONFIG_INET
 	if (mem_cgroup_sockets_enabled && sk->sk_cgrp &&
 	    parent_status != OVER_LIMIT) /* Otherwise was uncharged already */
 		memcg_memory_allocated_sub(sk->sk_cgrp, amt);
+#endif
 
 	atomic_long_sub(amt, prot->memory_allocated);
 }
