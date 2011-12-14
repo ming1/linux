@@ -258,6 +258,7 @@ config ARCH_INTEGRATOR
 	select ARCH_HAS_CPUFREQ
 	select CLKDEV_LOOKUP
 	select HAVE_MACH_CLKDEV
+	select HAVE_TCM
 	select ICST
 	select GENERIC_CLOCKEVENTS
 	select PLAT_VERSATILE
@@ -1126,6 +1127,11 @@ config ARM_TIMER_SP804
 
 source arch/arm/mm/Kconfig
 
+config ARM_NR_BANKS
+	int
+	default 16 if ARCH_EP93XX
+	default 8
+
 config IWMMXT
 	bool "Enable iWMMXt support"
 	depends on CPU_XSCALE || CPU_XSC3 || CPU_MOHAWK || CPU_PJ4
@@ -1972,7 +1978,7 @@ endchoice
 
 config XIP_KERNEL
 	bool "Kernel Execute-In-Place from ROM"
-	depends on !ZBOOT_ROM
+	depends on !ZBOOT_ROM && !ARM_LPAE
 	help
 	  Execute-In-Place allows the kernel to run from non-volatile storage
 	  directly addressable by the CPU, such as NOR flash. This saves RAM
@@ -2002,7 +2008,7 @@ config XIP_PHYS_ADDR
 
 config KEXEC
 	bool "Kexec system call (EXPERIMENTAL)"
-	depends on EXPERIMENTAL
+	depends on EXPERIMENTAL && (!SMP || HOTPLUG_CPU)
 	help
 	  kexec is a system call that implements the ability to shutdown your
 	  current kernel, and to start another kernel.  It is like a reboot
