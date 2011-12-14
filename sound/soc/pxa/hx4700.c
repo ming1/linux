@@ -209,9 +209,10 @@ static int __devinit hx4700_audio_probe(struct platform_device *pdev)
 	snd_soc_card_hx4700.dev = &pdev->dev;
 	ret = snd_soc_register_card(&snd_soc_card_hx4700);
 	if (ret)
-		return ret;
+		gpio_free_array(hx4700_audio_gpios,
+				ARRAY_SIZE(hx4700_audio_gpios));
 
-	return 0;
+	return ret;
 }
 
 static int __devexit hx4700_audio_remove(struct platform_device *pdev)
@@ -236,18 +237,7 @@ static struct platform_driver hx4700_audio_driver = {
 	.remove	= __devexit_p(hx4700_audio_remove),
 };
 
-static int __init hx4700_modinit(void)
-{
-	return platform_driver_register(&hx4700_audio_driver);
-}
-module_init(hx4700_modinit);
-
-static void __exit hx4700_modexit(void)
-{
-	platform_driver_unregister(&hx4700_audio_driver);
-}
-
-module_exit(hx4700_modexit);
+module_platform_driver(hx4700_audio_driver);
 
 MODULE_AUTHOR("Philipp Zabel");
 MODULE_DESCRIPTION("ALSA SoC iPAQ hx4700");
