@@ -211,7 +211,7 @@ static int reg_page_map_set(struct i2c_client *client, const u16 reg)
 	if (page > 2)
 		return -EINVAL;
 
-	ret = i2c_smbus_write_word_data(client, MT9M111_PAGE_MAP, swab16(page));
+	ret = i2c_smbus_write_word_swapped(client, MT9M111_PAGE_MAP, page);
 	if (!ret)
 		mt9m111->lastpage = page;
 	return ret;
@@ -223,7 +223,7 @@ static int mt9m111_reg_read(struct i2c_client *client, const u16 reg)
 
 	ret = reg_page_map_set(client, reg);
 	if (!ret)
-		ret = swab16(i2c_smbus_read_word_data(client, reg & 0xff));
+		ret = i2c_smbus_read_word_swapped(client, reg & 0xff);
 
 	dev_dbg(&client->dev, "read  reg.%03x -> %04x\n", reg, ret);
 	return ret;
@@ -236,8 +236,7 @@ static int mt9m111_reg_write(struct i2c_client *client, const u16 reg,
 
 	ret = reg_page_map_set(client, reg);
 	if (!ret)
-		ret = i2c_smbus_write_word_data(client, reg & 0xff,
-						swab16(data));
+		ret = i2c_smbus_write_word_swapped(client, reg & 0xff, data);
 	dev_dbg(&client->dev, "write reg.%03x = %04x -> %d\n", reg, data, ret);
 	return ret;
 }
@@ -955,6 +954,7 @@ static int mt9m111_probe(struct i2c_client *client,
 	mt9m111->rect.height	= MT9M111_MAX_HEIGHT;
 	mt9m111->fmt		= &mt9m111_colour_fmts[0];
 	mt9m111->lastpage	= -1;
+	mutex_init(&mt9m111->power_lock);
 
 	ret = mt9m111_video_probe(client);
 	if (ret) {
