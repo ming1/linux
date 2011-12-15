@@ -417,6 +417,9 @@ static int dup_mmap(struct mm_struct *mm, struct mm_struct *oldmm)
 
 		if (retval)
 			goto out;
+
+		if (file && mmap_uprobe(tmp))
+			goto out;
 	}
 	/* a new mm has just been created */
 	arch_dup_mmap(oldmm, mm);
@@ -738,6 +741,7 @@ struct mm_struct *dup_mm(struct task_struct *tsk)
 	mm->pmd_huge_pte = NULL;
 #endif
 #ifdef CONFIG_UPROBES
+	atomic_set(&mm->mm_uprobes_count, 0);
 	mm->uprobes_xol_area = NULL;
 #endif
 
