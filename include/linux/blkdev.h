@@ -111,10 +111,14 @@ struct request {
 	 * Three pointers are available for the IO schedulers, if they need
 	 * more they have to dynamically allocate it.  Flush requests are
 	 * never put on the IO scheduler. So let the flush fields share
-	 * space with the three elevator_private pointers.
+	 * space with the elevator data.
 	 */
 	union {
-		void *elevator_private[3];
+		struct {
+			struct io_cq		*icq;
+			void			*priv[2];
+		} elv;
+
 		struct {
 			unsigned int		seq;
 			struct list_head	list;
@@ -311,6 +315,12 @@ struct request_queue {
 	unsigned long		queue_flags;
 
 	/*
+	 * ida allocated id for this queue.  Used to index queues from
+	 * ioctx.
+	 */
+	int			id;
+
+	/*
 	 * queue needs bounce pages for pages above this limit
 	 */
 	gfp_t			bounce_gfp;
@@ -351,6 +361,8 @@ struct request_queue {
 	struct timer_list	timeout;
 	struct list_head	timeout_list;
 
+	struct list_head	icq_list;
+
 	struct queue_limits	limits;
 
 	/*
@@ -386,6 +398,9 @@ struct request_queue {
 #ifdef CONFIG_BLK_DEV_THROTTLING
 	/* Throttle data */
 	struct throtl_data *td;
+#endif
+#ifdef CONFIG_LOCKDEP
+	int			ioc_release_depth;
 #endif
 };
 
@@ -481,6 +496,7 @@ static inline void queue_flag_clear(unsigned int flag, struct request_queue *q)
 
 #define blk_queue_tagged(q)	test_bit(QUEUE_FLAG_QUEUED, &(q)->queue_flags)
 #define blk_queue_stopped(q)	test_bit(QUEUE_FLAG_STOPPED, &(q)->queue_flags)
+#define blk_queue_dead(q)	test_bit(QUEUE_FLAG_DEAD, &(q)->queue_flags)
 #define blk_queue_nomerges(q)	test_bit(QUEUE_FLAG_NOMERGES, &(q)->queue_flags)
 #define blk_queue_noxmerges(q)	\
 	test_bit(QUEUE_FLAG_NOXMERGES, &(q)->queue_flags)
@@ -660,7 +676,6 @@ extern void __blk_put_request(struct request_queue *, struct request *);
 extern struct request *blk_get_request(struct request_queue *, int, gfp_t);
 extern struct request *blk_make_request(struct request_queue *, struct bio *,
 					gfp_t);
-extern void blk_insert_request(struct request_queue *, struct request *, int, void *);
 extern void blk_requeue_request(struct request_queue *, struct request *);
 extern void blk_add_request_payload(struct request *rq, struct page *page,
 		unsigned int len);
@@ -856,7 +871,7 @@ extern int blk_rq_map_sg(struct request_queue *, struct request *, struct scatte
 extern void blk_dump_rq_flags(struct request *, char *);
 extern long nr_blockdev_pages(void);
 
-int blk_get_queue(struct request_queue *);
+bool __must_check blk_get_queue(struct request_queue *);
 struct request_queue *blk_alloc_queue(gfp_t);
 struct request_queue *blk_alloc_queue_node(gfp_t, int);
 extern void blk_put_queue(struct request_queue *);
