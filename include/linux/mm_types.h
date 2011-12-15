@@ -390,6 +390,7 @@ struct mm_struct {
 	struct cpumask cpumask_allocation;
 #endif
 #ifdef CONFIG_UPROBES
+	atomic_t mm_uprobes_count;
 	struct uprobes_xol_area *uprobes_xol_area;
 #endif
 };
