@@ -865,6 +865,73 @@ void tick_cancel_sched_timer(int cpu)
 }
 #endif
 
+#ifdef CONFIG_SYSFS
+/*
+ * Allow modification of tick_do_timer_cpu when nohz mode is off.
+ */
+static ssize_t sysfs_store_do_timer_cpu(struct sys_device *dev,
+						struct sysdev_attribute *attr,
+						const char *buf, size_t size)
+{
+	struct sysdev_ext_attribute *ea = SYSDEV_TO_EXT_ATTR(attr);
+	unsigned int new;
+	int rv;
+
+#ifdef CONFIG_NO_HZ
+	/* nohz mode not supported */
+	if (tick_nohz_enabled)
+		return -EINVAL;
+#endif
+
+	rv = kstrtouint(buf, 0, &new);
+	if (rv)
+		return rv;
+
+	/* Protect against cpu-hotplug */
+	get_online_cpus();
+
+	if (new >= nr_cpu_ids || !cpu_online(new)) {
+		put_online_cpus();
+		return -ERANGE;
+	}
+
+	*(unsigned int *)(ea->var) = new;
+
+	put_online_cpus();
+
+	return size;
+}
+
+static struct sysdev_ext_attribute attr_jiffies_cpu = {
+			_SYSDEV_ATTR(jiffies_cpu, 0644, sysdev_show_int,
+					sysfs_store_do_timer_cpu),
+			&tick_do_timer_cpu };
+
+static struct sysdev_class timekeeping_sysclass = {
+	.name = "timekeeping",
+};
+
+static struct sys_device device_timekeeping = {
+	.id     = 0,
+	.cls    = &timekeeping_sysclass,
+};
+
+static int __init init_timekeeping_sysfs(void)
+{
+	int error = sysdev_class_register(&timekeeping_sysclass);
+
+	if (!error)
+		error = sysdev_register(&device_timekeeping);
+	if (!error)
+		error = sysdev_create_file(
+				&device_timekeeping,
+				&attr_jiffies_cpu.attr);
+	return error;
+}
+
+device_initcall(init_timekeeping_sysfs);
+#endif /* SYSFS */
+
 /**
  * Async notification about clocksource changes
  */
