@@ -53,8 +53,6 @@ static int proc_parse_options(char *options, struct pid_namespace *pid)
 	substring_t args[MAX_OPT_ARGS];
 	int option;
 
-	pr_debug("proc: options = %s\n", options);
-
 	if (!options)
 		return 1;
 
