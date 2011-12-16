@@ -13,13 +13,16 @@
  *
  * Apart from OFF and ON there are three programmable brightness levels which
  * can be programmed from 0 to 15 and indicate how many 500usec intervals in
- * each 8msec that the led is 'on'.  The levels are named MASTER, BANK0 and BANK1.
+ * each 8msec that the led is 'on'.  The levels are named MASTER, BANK0 and
+ * BANK1.
  *
- * There are two different blink rates that can be programmed, each with separate
- * time for rise, on, fall, off and second-off.  Thus if 3 or more different
- * non-trivial rates are required, software must be used for the extra rates.
- * The two different blink rates must align with the two levels BANK0 and BANK1.
- * This drivers does not support double-blink so 'second-off' always matches 'off'.
+ * There are two different blink rates that can be programmed, each with
+ * separate time for rise, on, fall, off and second-off.  Thus if 3 or more
+ * different non-trivial rates are required, software must be used for the extra
+ * rates. The two different blink rates must align with the two levels BANK0 and
+ * BANK1.
+ * This driver does not support double-blink so 'second-off' always matches
+ * 'off'.
  *
  * Only 16 different times can be programmed is a roughly logarithmic scale from
  * 64ms to 16320ms.   Times that cannot be closely matched with these must be
@@ -35,20 +38,20 @@
  * either same blink rates, or some don't blink.
  * When a led changes, it relinquishes access and tries again, so it might
  * lose access to hardware blink.
- * If a blink engine cannot be allocated, software blink is used.
- * If the desired brightness cannot be allocated, the closest available non-zero
- * brightness is used.  As 'full' is always available, the worst case would be to
- * have two different blink rates at '1', with Max at '2', then other leds will
- * have to choose between '2' and '16'.  Hopefully this is not likely.
+ * If a blink engine cannot be allocated, software blink is used.  If the
+ * desired brightness cannot be allocated, the closest available non-zero
+ * brightness is used.  As 'full' is always available, the worst case would be
+ * to have two different blink rates at '1', with Max at '2', then other leds
+ * will have to choose between '2' and '16'.  Hopefully this is not likely.
  *
- * Each bank (BANK0 and BANK1) have two usage counts - Leds using the brightness and
- * Leds using the blink.  It can only be reprogrammed when appropriate counter
- * is zero.  The MASTER level has as single usage count.
+ * Each bank (BANK0 and BANK1) have two usage counts - Leds using the brightness
+ * and leds using the blink.  It can only be reprogrammed when appropriate
+ * counter is zero.  The MASTER level has as single usage count.
  *
  * Each Led has programmable 'on' and 'off' time as milliseconds.  With each
- * there is a flag saying if it was explicitly requested or defaulted.  Similarly
- * the banks know if each time was explicit or a default.  Defaults are permitted
- * to be changed freely - they are not recognised when matching.
+ * there is a flag saying if it was explicitly requested or defaulted.
+ * Similarly the banks know if each time was explicit or a default.  Defaults
+ * are permitted to be changed freely - they are not recognised when matching.
  *
  *
  * An led-tca6507 device must be provided with platform data.  This data
@@ -114,11 +117,14 @@ static int time_codes[TIMECODES] = {
 };
 
 /* Convert an led.brightness level (0..255) to a TCA6507 level (0..15) */
-static inline int TO_LEVEL(int brightness) {
+static inline int TO_LEVEL(int brightness)
+{
 	return brightness >> 4;
 }
+
 /* ...and convert back */
-static inline int TO_BRIGHT(int level) {
+static inline int TO_BRIGHT(int level)
+{
 	if (level)
 		return (level << 4) | 0xf;
 	return 0;
@@ -162,11 +168,13 @@ MODULE_DEVICE_TABLE(i2c, tca6507_id);
 
 static int choose_times(int msec, int *c1p, int *c2p)
 {
-	/* Chose two timecodes which add to 'msec' as near as possible.
+	/*
+	 * Choose two timecodes which add to 'msec' as near as possible.
 	 * The first returned should be the larger.
 	 * If cannot get within 1/8, fail.
 	 * If two possibilities are equally good (e.g. 512+0, 256+256), choose
-	 * the first pair so there is more change-time visible (i.e. it is softer).
+	 * the first pair so there is more change-time visible (i.e. it is
+	 * softer).
 	 */
 	int c1, c2;
 	int tmax = msec * 9 / 8;
@@ -210,16 +218,16 @@ static int choose_times(int msec, int *c1p, int *c2p)
  */
 static void set_select(struct tca6507_chip *tca, int led, int val)
 {
-	int mask = (1<<led);
+	int mask = (1 << led);
 	int bit;
 
 	for (bit = 0; bit < 3; bit++) {
 		int n = tca->reg_file[bit] & ~mask;
-		if (val & (1<<bit))
+		if (val & (1 << bit))
 			n |= mask;
 		if (tca->reg_file[bit] != n) {
 			tca->reg_file[bit] = n;
-			tca->reg_set |= (1<<bit);
+			tca->reg_set |= (1 << bit);
 		}
 	}
 }
@@ -244,7 +252,7 @@ static void set_code(struct tca6507_chip *tca, int reg, int bank, int new)
 /* Update brightness level. */
 static void set_level(struct tca6507_chip *tca, int bank, int level)
 {
-	switch(bank) {
+	switch (bank) {
 	case BANK0:
 	case BANK1:
 		set_code(tca, TCA6507_MAX_INTENSITY, bank, level);
@@ -313,9 +321,7 @@ static void led_release(struct tca6507_led *led)
 
 static int led_prepare(struct tca6507_led *led)
 {
-	/* Assign this led to a bank. configuring that
-	 * bank if necessary.
-	 */
+	/* Assign this led to a bank. configuring that bank if necessary */
 	int level = TO_LEVEL(led->led_cdev.brightness);
 	struct tca6507_chip *tca = led->chip;
 	int c1, c2;
@@ -330,7 +336,8 @@ static int led_prepare(struct tca6507_led *led)
 	}
 
 	if (led->ontime == 0 || led->offtime == 0) {
-		/* Just set the brightness, choosing first usable bank.
+		/*
+		 * Just set the brightness, choosing first usable bank.
 		 * If none perfect, choose best.
 		 * Count backwards so we check MASTER bank first
 		 * to avoid wasting a timer.
@@ -458,8 +465,9 @@ static int led_assign(struct tca6507_led *led)
 	led_release(led);
 	err = led_prepare(led);
 	if (err) {
-		/* Can only fail on timer setup.  In that
-		 * case need to re-establish as steady level.
+		/*
+		 * Can only fail on timer setup.  In that case we need to
+		 * re-establish as steady level.
 		 */
 		led->ontime = 0;
 		led->offtime = 0;
@@ -526,8 +534,9 @@ static void tca6507_gpio_set_value(struct gpio_chip *gc,
 	struct tca6507_chip *tca = container_of(gc, struct tca6507_chip, gpio);
 
 	spin_lock(&tca->lock);
-	/* 'OFF' is floating high, and 'ON' is pulled down, so it has
-	 * the inverse sense of 'val'.
+	/*
+	 * 'OFF' is floating high, and 'ON' is pulled down, so it has the
+	 * inverse sense of 'val'.
 	 */
 	set_select(tca, tca->gpio_map[offset],
 		   val ? TCA6507_LS_LED_OFF : TCA6507_LS_LED_ON);
