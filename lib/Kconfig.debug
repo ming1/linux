@@ -1276,3 +1276,6 @@ source "lib/Kconfig.kmemcheck"
 
 config TEST_KSTRTOX
 	tristate "Test kstrto*() family of functions at runtime"
+
+config DEBUG_REFCNT
+	bool "Debug reference count objects"

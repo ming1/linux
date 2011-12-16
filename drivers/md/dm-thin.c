@@ -12,6 +12,7 @@
 #include <linux/list.h>
 #include <linux/init.h>
 #include <linux/module.h>
+#include <linux/refcnt.h>
 #include <linux/slab.h>
 
 #define	DM_MSG_PREFIX	"thin"
@@ -494,7 +495,7 @@ struct pool {
 	struct workqueue_struct *wq;
 	struct work_struct worker;
 
-	unsigned ref_count;
+	_refcnt_t ref_count;
 
 	spinlock_t lock;
 	struct bio_list deferred_bios;
@@ -1548,7 +1549,7 @@ static struct pool *pool_create(struct mapped_device *pool_md,
 		err_p = ERR_PTR(-ENOMEM);
 		goto bad_endio_hook_pool;
 	}
-	pool->ref_count = 1;
+	_refcnt_init(&pool->ref_count);
 	pool->pool_md = pool_md;
 	pool->md_dev = metadata_dev;
 	__pool_table_insert(pool);
@@ -1575,14 +1576,13 @@ bad_pool:
 static void __pool_inc(struct pool *pool)
 {
 	BUG_ON(!mutex_is_locked(&dm_thin_pool_table.mutex));
-	pool->ref_count++;
+	_refcnt_get(&pool->ref_count);
 }
 
 static void __pool_dec(struct pool *pool)
 {
 	BUG_ON(!mutex_is_locked(&dm_thin_pool_table.mutex));
-	BUG_ON(!pool->ref_count);
-	if (!--pool->ref_count)
+	if (_refcnt_put(&pool->ref_count))
 		__pool_destroy(pool);
 }
 
