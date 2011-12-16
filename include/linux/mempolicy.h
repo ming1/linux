@@ -253,6 +253,11 @@ static inline int vma_migratable(struct vm_area_struct *vma)
 	return 1;
 }
 
+static inline bool task_has_mempolicy(struct task_struct *task)
+{
+	return task->mempolicy;
+}
+
 #else
 
 struct mempolicy {};
@@ -377,6 +382,11 @@ static inline int mpol_to_str(char *buffer, int maxlen, struct mempolicy *pol,
 				int no_context)
 {
 	return 0;
+}
+
+static inline bool task_has_mempolicy(struct task_struct *task)
+{
+	return false;
 }
 
 #endif /* CONFIG_NUMA */
