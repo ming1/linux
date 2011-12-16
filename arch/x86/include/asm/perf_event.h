@@ -57,6 +57,7 @@
 		(1 << (ARCH_PERFMON_UNHALTED_CORE_CYCLES_INDEX))
 
 #define ARCH_PERFMON_BRANCH_MISSES_RETIRED		6
+#define ARCH_PERFMON_EVENTS_COUNT			7
 
 /*
  * Intel "Architectural Performance Monitoring" CPUID
@@ -72,6 +73,19 @@ union cpuid10_eax {
 	unsigned int full;
 };
 
+union cpuid10_ebx {
+	struct {
+		unsigned int no_unhalted_core_cycles:1;
+		unsigned int no_instructions_retired:1;
+		unsigned int no_unhalted_reference_cycles:1;
+		unsigned int no_llc_reference:1;
+		unsigned int no_llc_misses:1;
+		unsigned int no_branch_instruction_retired:1;
+		unsigned int no_branch_misses_retired:1;
+	} split;
+	unsigned int full;
+};
+
 union cpuid10_edx {
 	struct {
 		unsigned int num_counters_fixed:5;
@@ -81,6 +95,15 @@ union cpuid10_edx {
 	unsigned int full;
 };
 
+struct x86_pmu_capability {
+	int		version;
+	int		num_counters_gp;
+	int		num_counters_fixed;
+	int		bit_width_gp;
+	int		bit_width_fixed;
+	unsigned int	events_mask;
+	int		events_mask_len;
+};
 
 /*
  * Fixed-purpose performance events:
@@ -153,6 +176,8 @@ union cpuid10_edx {
 #define IBS_FETCH_MAX_CNT	0x0000FFFFULL
 
 /* IbsOpCtl bits */
+/* lower 4 bits of the current count are ignored: */
+#define IBS_OP_CUR_CNT		(0xFFFF0ULL<<32)
 #define IBS_OP_CNT_CTL		(1ULL<<19)
 #define IBS_OP_VAL		(1ULL<<18)
 #define IBS_OP_ENABLE		(1ULL<<17)
@@ -202,11 +227,17 @@ struct perf_guest_switch_msr {
 };
 
 extern struct perf_guest_switch_msr *perf_guest_get_msrs(int *nr);
+extern void perf_get_x86_pmu_capability(struct x86_pmu_capability *cap);
 #else
 static inline perf_guest_switch_msr *perf_guest_get_msrs(int *nr)
 {
 	*nr = 0;
 	return NULL;
+}
+
+static inline void perf_get_x86_pmu_capability(struct x86_pmu_capability *cap)
+{
+	memset(cap, 0, sizeof(*cap));
 }
 
 static inline void perf_events_lapic_init(void)	{ }
