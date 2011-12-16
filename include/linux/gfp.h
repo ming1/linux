@@ -89,6 +89,9 @@ struct vm_area_struct;
  * 1. Do not wake kswapd (hence the flag name)
  * 2. Do not use stall in synchronous compaction for high-order allocations
  *    as this may cause the caller to stall writing out pages
+ *
+ * This flag it primarily intended for use with transparent hugepage support.
+ * If the flag is used outside the VM, linux-mm should be cc'd for review.
  */
 #define __GFP_NO_KSWAPD	((__force gfp_t)___GFP_NO_KSWAPD)
 
