@@ -158,7 +158,7 @@ static const struct i2c_device_id tca6507_id[] = {
 	{ "tca6507" },
 	{ }
 };
-MODULE_DEVICE_TABLE(i2c, tca6507);
+MODULE_DEVICE_TABLE(i2c, tca6507_id);
 
 static int choose_times(int msec, int *c1p, int *c2p)
 {
