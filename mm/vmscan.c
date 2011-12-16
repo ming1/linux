@@ -1841,7 +1841,7 @@ static unsigned long shrink_list(enum lru_list lru, unsigned long nr_to_scan,
 
 	if (is_active_lru(lru)) {
 		if (inactive_list_is_low(mz, file))
-		    shrink_active_list(nr_to_scan, mz, sc, priority, file);
+			shrink_active_list(nr_to_scan, mz, sc, priority, file);
 		return 0;
 	}
 
