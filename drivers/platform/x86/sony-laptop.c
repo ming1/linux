@@ -391,8 +391,10 @@ static void sony_laptop_report_input_event(u8 event)
 	}
 
 	if (kp.dev) {
-		/* if we have a scancode we emit it so we can always
-                   remap the key */
+		/*
+		 * If we have a scancode we emit it so we can always remap the
+		 * key
+		 */
 		if (scancode != -1)
 			input_event(kp.dev, EV_MSC, MSC_SCAN, scancode);
 		input_report_key(kp.dev, kp.key, 1);
