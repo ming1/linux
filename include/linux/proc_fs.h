@@ -1,11 +1,11 @@
 #ifndef _LINUX_PROC_FS_H
 #define _LINUX_PROC_FS_H
 
+#include <linux/refcnt.h>
 #include <linux/slab.h>
 #include <linux/fs.h>
 #include <linux/spinlock.h>
 #include <linux/magic.h>
-#include <linux/atomic.h>
 
 struct net;
 struct completion;
@@ -69,7 +69,7 @@ struct proc_dir_entry {
 	void *data;
 	read_proc_t *read_proc;
 	write_proc_t *write_proc;
-	atomic_t count;		/* use count */
+	refcnt_t refcnt;
 	int pde_users;	/* number of callers into module in progress */
 	struct completion *pde_unload_completion;
 	struct list_head pde_openers;	/* who did ->open, but not ->release */
@@ -253,7 +253,7 @@ extern const struct proc_ns_operations utsns_operations;
 extern const struct proc_ns_operations ipcns_operations;
 
 union proc_op {
-	int (*proc_get_link)(struct inode *, struct path *);
+	int (*proc_get_link)(struct dentry *, struct path *);
 	int (*proc_read)(struct task_struct *task, char *page);
 	int (*proc_show)(struct seq_file *m,
 		struct pid_namespace *ns, struct pid *pid,
