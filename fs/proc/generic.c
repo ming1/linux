@@ -624,7 +624,7 @@ static struct proc_dir_entry *__proc_create(struct proc_dir_entry **parent,
 	ent->namelen = len;
 	ent->mode = mode;
 	ent->nlink = nlink;
-	refcnt_init(&ent->refcnt);
+	atomic_set(&ent->count, 1);
 	ent->pde_users = 0;
 	spin_lock_init(&ent->pde_unload_lock);
 	ent->pde_unload_completion = NULL;
@@ -774,7 +774,7 @@ static void free_proc_entry(struct proc_dir_entry *de)
 
 void pde_put(struct proc_dir_entry *pde)
 {
-	if (refcnt_put(&pde->refcnt))
+	if (atomic_dec_and_test(&pde->count))
 		free_proc_entry(pde);
 }
 
