@@ -58,7 +58,8 @@ static ssize_t lid_wake_on_close_store(struct kobject *s,
 				       const char *buf, size_t n)
 {
 	unsigned int val;
-	if (!sscanf(buf, "%u", &val) == 1)
+
+	if (sscanf(buf, "%u", &val) != 1)
 		return -EINVAL;
 
 	set_lid_wake_behavior(!!val);
