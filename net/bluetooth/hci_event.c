@@ -378,11 +378,8 @@ static void hci_cc_read_voice_setting(struct hci_dev *hdev, struct sk_buff *skb)
 
 	BT_DBG("%s voice setting 0x%04x", hdev->name, setting);
 
-	if (hdev->notify) {
-		tasklet_disable(&hdev->tx_task);
+	if (hdev->notify)
 		hdev->notify(hdev, HCI_NOTIFY_VOICE_SETTING);
-		tasklet_enable(&hdev->tx_task);
-	}
 }
 
 static void hci_cc_write_voice_setting(struct hci_dev *hdev, struct sk_buff *skb)
@@ -409,11 +406,8 @@ static void hci_cc_write_voice_setting(struct hci_dev *hdev, struct sk_buff *skb
 
 	BT_DBG("%s voice setting 0x%04x", hdev->name, setting);
 
-	if (hdev->notify) {
-		tasklet_disable(&hdev->tx_task);
+	if (hdev->notify)
 		hdev->notify(hdev, HCI_NOTIFY_VOICE_SETTING);
-		tasklet_enable(&hdev->tx_task);
-	}
 }
 
 static void hci_cc_host_buffer_size(struct hci_dev *hdev, struct sk_buff *skb)
@@ -1017,7 +1011,7 @@ static void hci_cc_le_set_scan_enable(struct hci_dev *hdev,
 	if (cp->enable == 0x01) {
 		set_bit(HCI_LE_SCAN, &hdev->dev_flags);
 
-		del_timer(&hdev->adv_timer);
+		cancel_delayed_work_sync(&hdev->adv_work);
 
 		hci_dev_lock(hdev);
 		hci_adv_entries_clear(hdev);
@@ -1025,7 +1019,9 @@ static void hci_cc_le_set_scan_enable(struct hci_dev *hdev,
 	} else if (cp->enable == 0x00) {
 		clear_bit(HCI_LE_SCAN, &hdev->dev_flags);
 
-		mod_timer(&hdev->adv_timer, jiffies + ADV_CLEAR_TIMEOUT);
+		cancel_delayed_work_sync(&hdev->adv_work);
+		queue_delayed_work(hdev->workqueue, &hdev->adv_work,
+						 jiffies + ADV_CLEAR_TIMEOUT);
 	}
 }
 
@@ -2116,7 +2112,7 @@ static inline void hci_cmd_complete_evt(struct hci_dev *hdev, struct sk_buff *sk
 	if (ev->ncmd) {
 		atomic_set(&hdev->cmd_cnt, 1);
 		if (!skb_queue_empty(&hdev->cmd_q))
-			tasklet_schedule(&hdev->cmd_task);
+			queue_work(hdev->workqueue, &hdev->cmd_work);
 	}
 }
 
@@ -2198,7 +2194,7 @@ static inline void hci_cmd_status_evt(struct hci_dev *hdev, struct sk_buff *skb)
 	if (ev->ncmd && !test_bit(HCI_RESET, &hdev->flags)) {
 		atomic_set(&hdev->cmd_cnt, 1);
 		if (!skb_queue_empty(&hdev->cmd_q))
-			tasklet_schedule(&hdev->cmd_task);
+			queue_work(hdev->workqueue, &hdev->cmd_work);
 	}
 }
 
@@ -2243,8 +2239,6 @@ static inline void hci_num_comp_pkts_evt(struct hci_dev *hdev, struct sk_buff *s
 		return;
 	}
 
-	tasklet_disable(&hdev->tx_task);
-
 	for (i = 0, ptr = (__le16 *) skb->data; i < ev->num_hndl; i++) {
 		struct hci_conn *conn;
 		__u16  handle, count;
@@ -2278,9 +2272,7 @@ static inline void hci_num_comp_pkts_evt(struct hci_dev *hdev, struct sk_buff *s
 		}
 	}
 
-	tasklet_schedule(&hdev->tx_task);
-
-	tasklet_enable(&hdev->tx_task);
+	queue_work(hdev->workqueue, &hdev->tx_work);
 }
 
 static inline void hci_mode_change_evt(struct hci_dev *hdev, struct sk_buff *skb)
