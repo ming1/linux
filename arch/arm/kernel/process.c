@@ -61,8 +61,6 @@ extern void setup_mm_for_reboot(void);
 
 static volatile int hlt_counter;
 
-#include <mach/system.h>
-
 void disable_hlt(void)
 {
 	hlt_counter++;
@@ -161,7 +159,7 @@ static void default_idle(void)
 	if (arm_pm_idle)
 		arm_pm_idle();
 	else
-		arch_idle();
+		cpu_do_idle();
 	local_irq_enable();
 }
 
