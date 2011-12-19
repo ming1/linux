@@ -412,7 +412,7 @@ static void soc_init_card_debugfs(struct snd_soc_card *card)
 						     snd_soc_debugfs_root);
 	if (!card->debugfs_card_root) {
 		dev_warn(card->dev,
-			 "ASoC: Failed to create codec debugfs directory\n");
+			 "ASoC: Failed to create card debugfs directory\n");
 		return;
 	}
 
@@ -572,7 +572,7 @@ int snd_soc_suspend(struct device *dev)
 			switch (codec->dapm.bias_level) {
 			case SND_SOC_BIAS_STANDBY:
 			case SND_SOC_BIAS_OFF:
-				codec->driver->suspend(codec, PMSG_SUSPEND);
+				codec->driver->suspend(codec);
 				codec->suspended = 1;
 				codec->cache_sync = 1;
 				break;
@@ -741,7 +741,7 @@ EXPORT_SYMBOL_GPL(snd_soc_resume);
 #define snd_soc_resume NULL
 #endif
 
-static struct snd_soc_dai_ops null_dai_ops = {
+static const struct snd_soc_dai_ops null_dai_ops = {
 };
 
 static int soc_bind_dai_link(struct snd_soc_card *card, int num)
@@ -763,10 +763,11 @@ static int soc_bind_dai_link(struct snd_soc_card *card, int num)
 	}
 	/* no, then find CPU DAI from registered DAIs*/
 	list_for_each_entry(cpu_dai, &dai_list, list) {
-		if (!strcmp(cpu_dai->name, dai_link->cpu_dai_name)) {
-			rtd->cpu_dai = cpu_dai;
-			goto find_codec;
-		}
+		if (strcmp(cpu_dai->name, dai_link->cpu_dai_name))
+			continue;
+
+		rtd->cpu_dai = cpu_dai;
+		goto find_codec;
 	}
 	dev_dbg(card->dev, "CPU DAI %s not registered\n",
 			dai_link->cpu_dai_name);
@@ -779,22 +780,28 @@ find_codec:
 
 	/* no, then find CODEC from registered CODECs*/
 	list_for_each_entry(codec, &codec_list, list) {
-		if (!strcmp(codec->name, dai_link->codec_name)) {
-			rtd->codec = codec;
+		if (strcmp(codec->name, dai_link->codec_name))
+			continue;
 
-			/* CODEC found, so find CODEC DAI from registered DAIs from this CODEC*/
-			list_for_each_entry(codec_dai, &dai_list, list) {
-				if (codec->dev == codec_dai->dev &&
-						!strcmp(codec_dai->name, dai_link->codec_dai_name)) {
-					rtd->codec_dai = codec_dai;
-					goto find_platform;
-				}
+		rtd->codec = codec;
+
+		/*
+		 * CODEC found, so find CODEC DAI from registered DAIs from
+		 * this CODEC
+		 */
+		list_for_each_entry(codec_dai, &dai_list, list) {
+			if (codec->dev == codec_dai->dev &&
+				!strcmp(codec_dai->name,
+					dai_link->codec_dai_name)) {
+
+				rtd->codec_dai = codec_dai;
+				goto find_platform;
 			}
-			dev_dbg(card->dev, "CODEC DAI %s not registered\n",
-					dai_link->codec_dai_name);
-
-			goto find_platform;
 		}
+		dev_dbg(card->dev, "CODEC DAI %s not registered\n",
+				dai_link->codec_dai_name);
+
+		goto find_platform;
 	}
 	dev_dbg(card->dev, "CODEC %s not registered\n",
 			dai_link->codec_name);
@@ -811,10 +818,11 @@ find_platform:
 
 	/* no, then find one from the set of registered platforms */
 	list_for_each_entry(platform, &platform_list, list) {
-		if (!strcmp(platform->name, platform_name)) {
-			rtd->platform = platform;
-			goto out;
-		}
+		if (strcmp(platform->name, platform_name))
+			continue;
+
+		rtd->platform = platform;
+		goto out;
 	}
 
 	dev_dbg(card->dev, "platform %s not registered\n",
@@ -1487,6 +1495,10 @@ static void snd_soc_instantiate_card(struct snd_soc_card *card)
 	}
 
 	snd_soc_dapm_new_widgets(&card->dapm);
+
+	if (card->fully_routed)
+		list_for_each_entry(codec, &card->codec_dev_list, card_list)
+			snd_soc_dapm_auto_nc_codec_pins(codec);
 
 	ret = snd_card_register(card->snd_card);
 	if (ret < 0) {
