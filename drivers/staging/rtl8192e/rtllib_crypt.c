@@ -11,7 +11,6 @@
  *
  */
 
-#include <linux/version.h>
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/slab.h>
@@ -53,6 +52,7 @@ void rtllib_crypt_deinit_entries(struct rtllib_device *ieee,
 		kfree(entry);
 	}
 }
+EXPORT_SYMBOL(rtllib_crypt_deinit_entries);
 
 void rtllib_crypt_deinit_handler(unsigned long data)
 {
@@ -70,6 +70,7 @@ void rtllib_crypt_deinit_handler(unsigned long data)
 	spin_unlock_irqrestore(&ieee->lock, flags);
 
 }
+EXPORT_SYMBOL(rtllib_crypt_deinit_handler);
 
 void rtllib_crypt_delayed_deinit(struct rtllib_device *ieee,
 				    struct rtllib_crypt_data **crypt)
@@ -95,6 +96,7 @@ void rtllib_crypt_delayed_deinit(struct rtllib_device *ieee,
 	}
 	spin_unlock_irqrestore(&ieee->lock, flags);
 }
+EXPORT_SYMBOL(rtllib_crypt_delayed_deinit);
 
 int rtllib_register_crypto_ops(struct rtllib_crypto_ops *ops)
 {
@@ -104,11 +106,10 @@ int rtllib_register_crypto_ops(struct rtllib_crypto_ops *ops)
 	if (hcrypt == NULL)
 		return -1;
 
-	alg = kmalloc(sizeof(*alg), GFP_KERNEL);
+	alg = kzalloc(sizeof(*alg), GFP_KERNEL);
 	if (alg == NULL)
 		return -ENOMEM;
 
-	memset(alg, 0, sizeof(*alg));
 	alg->ops = ops;
 
 	spin_lock_irqsave(&hcrypt->lock, flags);
@@ -120,6 +121,7 @@ int rtllib_register_crypto_ops(struct rtllib_crypto_ops *ops)
 
 	return 0;
 }
+EXPORT_SYMBOL(rtllib_register_crypto_ops);
 
 int rtllib_unregister_crypto_ops(struct rtllib_crypto_ops *ops)
 {
@@ -150,6 +152,7 @@ int rtllib_unregister_crypto_ops(struct rtllib_crypto_ops *ops)
 
 	return del_alg ? 0 : -1;
 }
+EXPORT_SYMBOL(rtllib_unregister_crypto_ops);
 
 
 struct rtllib_crypto_ops *rtllib_get_crypto_ops(const char *name)
@@ -177,6 +180,7 @@ struct rtllib_crypto_ops *rtllib_get_crypto_ops(const char *name)
 	else
 		return NULL;
 }
+EXPORT_SYMBOL(rtllib_get_crypto_ops);
 
 
 static void * rtllib_crypt_null_init(int keyidx) { return (void *) 1; }
@@ -202,11 +206,10 @@ int __init rtllib_crypto_init(void)
 {
 	int ret = -ENOMEM;
 
-	hcrypt = kmalloc(sizeof(*hcrypt), GFP_KERNEL);
+	hcrypt = kzalloc(sizeof(*hcrypt), GFP_KERNEL);
 	if (!hcrypt)
 		goto out;
 
-	memset(hcrypt, 0, sizeof(*hcrypt));
 	INIT_LIST_HEAD(&hcrypt->algs);
 	spin_lock_init(&hcrypt->lock);
 
@@ -239,3 +242,8 @@ void __exit rtllib_crypto_deinit(void)
 
 	kfree(hcrypt);
 }
+
+module_init(rtllib_crypto_init);
+module_exit(rtllib_crypto_deinit);
+
+MODULE_LICENSE("GPL");

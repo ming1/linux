@@ -9,7 +9,6 @@
  * more details.
  */
 
-#include <linux/version.h>
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/slab.h>
@@ -63,10 +62,9 @@ static void *rtllib_ccmp_init(int key_idx)
 {
 	struct rtllib_ccmp_data *priv;
 
-	priv = kmalloc(sizeof(*priv), GFP_ATOMIC);
+	priv = kzalloc(sizeof(*priv), GFP_ATOMIC);
 	if (priv == NULL)
 		goto fail;
-	memset(priv, 0, sizeof(*priv));
 	priv->key_idx = key_idx;
 
 	priv->tfm = (void *)crypto_alloc_cipher("aes", 0, CRYPTO_ALG_ASYNC);
@@ -429,11 +427,6 @@ static char *rtllib_ccmp_print_stats(char *p, void *priv)
 	return p;
 }
 
-void rtllib_ccmp_null(void)
-{
-	return;
-}
-
 static struct rtllib_crypto_ops rtllib_crypt_ccmp = {
 	.name			= "CCMP",
 	.init			= rtllib_ccmp_init,
@@ -461,3 +454,8 @@ void __exit rtllib_crypto_ccmp_exit(void)
 {
 	rtllib_unregister_crypto_ops(&rtllib_crypt_ccmp);
 }
+
+module_init(rtllib_crypto_ccmp_init);
+module_exit(rtllib_crypto_ccmp_exit);
+
+MODULE_LICENSE("GPL");
