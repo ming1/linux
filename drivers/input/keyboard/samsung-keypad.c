@@ -24,7 +24,7 @@
 #include <linux/of.h>
 #include <linux/of_gpio.h>
 #include <linux/sched.h>
-#include <plat/keypad.h>
+#include <linux/input/samsung-keypad.h>
 
 #define SAMSUNG_KEYIFCON			0x00
 #define SAMSUNG_KEYIFSTSCLR			0x04
@@ -519,7 +519,7 @@ static int __devexit samsung_keypad_remove(struct platform_device *pdev)
 	return 0;
 }
 
-#ifdef CONFIG_PM
+#ifdef CONFIG_PM_SLEEP
 static void samsung_keypad_toggle_wakeup(struct samsung_keypad *keypad,
 					 bool enable)
 {
@@ -578,11 +578,6 @@ static int samsung_keypad_resume(struct device *dev)
 
 	return 0;
 }
-
-static const struct dev_pm_ops samsung_keypad_pm_ops = {
-	.suspend	= samsung_keypad_suspend,
-	.resume		= samsung_keypad_resume,
-};
 #endif
 
 #ifdef CONFIG_OF
@@ -595,6 +590,9 @@ MODULE_DEVICE_TABLE(of, samsung_keypad_dt_match);
 #else
 #define samsung_keypad_dt_match NULL
 #endif
+
+static SIMPLE_DEV_PM_OPS(samsung_keypad_pm_ops,
+			 samsung_keypad_suspend, samsung_keypad_resume);
 
 static struct platform_device_id samsung_keypad_driver_ids[] = {
 	{
@@ -615,27 +613,13 @@ static struct platform_driver samsung_keypad_driver = {
 		.name	= "samsung-keypad",
 		.owner	= THIS_MODULE,
 		.of_match_table = samsung_keypad_dt_match,
-#ifdef CONFIG_PM
 		.pm	= &samsung_keypad_pm_ops,
-#endif
 	},
 	.id_table	= samsung_keypad_driver_ids,
 };
-
-static int __init samsung_keypad_init(void)
-{
-	return platform_driver_register(&samsung_keypad_driver);
-}
-module_init(samsung_keypad_init);
-
-static void __exit samsung_keypad_exit(void)
-{
-	platform_driver_unregister(&samsung_keypad_driver);
-}
-module_exit(samsung_keypad_exit);
+module_platform_driver(samsung_keypad_driver);
 
 MODULE_DESCRIPTION("Samsung keypad driver");
 MODULE_AUTHOR("Joonyoung Shim <jy0922.shim@samsung.com>");
 MODULE_AUTHOR("Donghwa Lee <dh09.lee@samsung.com>");
 MODULE_LICENSE("GPL");
-MODULE_ALIAS("platform:samsung-keypad");
