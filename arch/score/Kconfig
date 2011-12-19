@@ -5,6 +5,9 @@ config SCORE
        select HAVE_GENERIC_HARDIRQS
        select GENERIC_IRQ_SHOW
        select GENERIC_IOMAP
+       select HAVE_MEMBLOCK
+       select HAVE_MEMBLOCK_NODE_MAP
+       select ARCH_DISCARD_MEMBLOCK
 
 choice
 	prompt "System type"
@@ -56,9 +59,6 @@ config 32BIT
 	def_bool y
 
 config ARCH_FLATMEM_ENABLE
-	def_bool y
-
-config ARCH_POPULATES_NODE_MAP
 	def_bool y
 
 source "mm/Kconfig"
