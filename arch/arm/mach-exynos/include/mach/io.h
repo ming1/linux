@@ -22,5 +22,10 @@
 #define __mem_pci(a)	(a)
 
 #define IO_SPACE_LIMIT (0xFFFFFFFF)
+#define __arch_ioremap	exynos4_ioremap
+#define __arch_iounmap	__iounmap
+
+void __iomem *exynos4_ioremap(unsigned long phy, size_t size,
+					unsigned int type);
 
 #endif /* __ASM_ARM_ARCH_IO_H */
