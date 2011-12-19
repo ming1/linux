@@ -154,6 +154,7 @@ static __devinit int max8998_battery_probe(struct platform_device *pdev)
 	case 0:
 		dev_dbg(max8998->dev,
 			"Full Timeout not set: leave it unchanged.\n");
+		break;
 	default:
 		dev_err(max8998->dev, "Invalid Full Timeout value\n");
 		ret = -EINVAL;
@@ -190,6 +191,7 @@ static int __devexit max8998_battery_remove(struct platform_device *pdev)
 
 static const struct platform_device_id max8998_battery_id[] = {
 	{ "max8998-battery", TYPE_MAX8998 },
+	{ }
 };
 
 static struct platform_driver max8998_battery_driver = {
