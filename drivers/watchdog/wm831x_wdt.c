@@ -213,10 +213,8 @@ static int __devinit wm831x_wdt_probe(struct platform_device *pdev)
 
 	wm831x_wdt->info = &wm831x_wdt_info;
 	wm831x_wdt->ops = &wm831x_wdt_ops;
+	watchdog_set_nowayout(wm831x_wdt, nowayout);
 	watchdog_set_drvdata(wm831x_wdt, driver_data);
-
-	if (nowayout)
-		wm831x_wdt->status |= WDOG_NO_WAY_OUT;
 
 	reg = wm831x_reg_read(wm831x, WM831X_WATCHDOG);
 	reg &= WM831X_WDOG_TO_MASK;
@@ -320,17 +318,7 @@ static struct platform_driver wm831x_wdt_driver = {
 	},
 };
 
-static int __init wm831x_wdt_init(void)
-{
-	return platform_driver_register(&wm831x_wdt_driver);
-}
-module_init(wm831x_wdt_init);
-
-static void __exit wm831x_wdt_exit(void)
-{
-	platform_driver_unregister(&wm831x_wdt_driver);
-}
-module_exit(wm831x_wdt_exit);
+module_platform_driver(wm831x_wdt_driver);
 
 MODULE_AUTHOR("Mark Brown");
 MODULE_DESCRIPTION("WM831x Watchdog");
