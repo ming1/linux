@@ -285,6 +285,7 @@ struct fuse_req {
 		} write;
 		struct fuse_notify_retrieve_in retrieve_in;
 		struct fuse_lk_in lk_in;
+		struct fuse_munmap_in munmap_in;
 	} misc;
 
 	/** page vector */
@@ -310,6 +311,21 @@ struct fuse_req {
 
 	/** Request is stolen from fuse_file->reserved_req */
 	struct file *stolen_file;
+};
+
+struct fuse_copy_state;
+
+struct fuse_conn_operations {
+	/** Called on final put */
+	void (*release)(struct fuse_conn *);
+
+	/** Called to store data into a mapping */
+	int (*notify_store)(struct fuse_conn *, struct fuse_copy_state *,
+			    u64 nodeid, u32 size, u64 pos);
+
+	/** Called to retrieve data from a mapping */
+	int (*notify_retrieve)(struct fuse_conn *,
+			       struct fuse_notify_retrieve_out *);
 };
 
 /**
@@ -469,6 +485,9 @@ struct fuse_conn {
 	/** Is poll not implemented by fs? */
 	unsigned no_poll:1;
 
+	/** Is direct mmap not implemente by fs? */
+	unsigned no_dmmap:1;
+
 	/** Do multi-page cached writes */
 	unsigned big_writes:1;
 
@@ -511,14 +530,17 @@ struct fuse_conn {
 	/** Version counter for attribute changes */
 	u64 attr_version;
 
-	/** Called on final put */
-	void (*release)(struct fuse_conn *);
-
 	/** Super block for this connection. */
 	struct super_block *sb;
 
 	/** Read/write semaphore to hold when accessing sb. */
 	struct rw_semaphore killsb;
+
+	/** List of direct mmaps (currently CUSE only) */
+	struct list_head dmmap_list;
+
+	/** Operations that fuse and cuse can implement differently */
+	const struct fuse_conn_operations *ops;
 };
 
 static inline struct fuse_conn *get_fuse_conn_super(struct super_block *sb)
@@ -755,9 +777,15 @@ int fuse_reverse_inval_inode(struct super_block *sb, u64 nodeid,
 /**
  * File-system tells the kernel to invalidate parent attributes and
  * the dentry matching parent/name.
+ *
+ * If the child_nodeid is non-zero and:
+ *    - matches the inode number for the dentry matching parent/name,
+ *    - is not a mount point
+ *    - is a file or oan empty directory
+ * then the dentry is unhashed (d_delete()).
  */
 int fuse_reverse_inval_entry(struct super_block *sb, u64 parent_nodeid,
-			     struct qstr *name);
+			     u64 child_nodeid, struct qstr *name);
 
 int fuse_do_open(struct fuse_conn *fc, u64 nodeid, struct file *file,
 		 bool isdir);
@@ -765,9 +793,18 @@ ssize_t fuse_direct_io(struct file *file, const char __user *buf,
 		       size_t count, loff_t *ppos, int write);
 long fuse_do_ioctl(struct file *file, unsigned int cmd, unsigned long arg,
 		   unsigned int flags);
+long fuse_ioctl_common(struct file *file, unsigned int cmd,
+		       unsigned long arg, unsigned int flags);
 unsigned fuse_file_poll(struct file *file, poll_table *wait);
 int fuse_dev_release(struct inode *inode, struct file *file);
 
 void fuse_write_update_size(struct inode *inode, loff_t pos);
+
+int fuse_copy_page(struct fuse_copy_state *cs, struct page **pagep,
+		   unsigned offset, unsigned count, int zeroing);
+
+int fuse_request_send_notify_reply(struct fuse_conn *fc,
+				   struct fuse_req *req, u64 unique);
+
 
 #endif /* _FS_FUSE_I_H */
