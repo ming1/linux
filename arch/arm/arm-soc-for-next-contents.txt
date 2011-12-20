@@ -1,0 +1,57 @@
+This file lists all branches that are pulled into the for-next branch
+of git://git.kernel.org/pub/scm/linux/kernel/git/arm/arm-soc.git
+and their external dependencies.
+
+next/cleanup
+  at91/ioremap		git://github.com/at91linux/linux-at91.git for-arnd-3.3-ioremap
+  at91/gpio		git://github.com/at91linux/linux-at91.git for-arnd-3.3-gpio
+  msm/misc		git://codeaurora.org/quic/kernel/davidb/linux-msm.git msm-misc
+  drivers/macb-gem-cleanup	parts of drivers/macb-gem that at91/gpio depends on
+  at91/defconfig	git://github.com/at91linux/linux-at91 for-arnd-3.3-defconfig
+  davinci/cleanup	git://gitorious.org/linux-davinci/linux-davinci.git cleanup
+  picoxcell/cleanup	git://github.com/jamieiles/linux-2.6-ji.git picoxcell-cleanup
+  u300/cleanup		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git u300-for-arm-soc
+
+next/drivers
+  drivers/macb-gem	git://github.com/jamieiles/linux-2.6-ji.git macb-gem
+  drivers/pxa-gpio	git://github.com/hzhuang1/linux.git gpio
+  at91/macb		git://github.com/at91linux/linux-at91.git for-arnd-3.3-driversV2
+					depends on drivers/macb-gem
+  omap/hsmmc 		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap hsmmc
+  mxs/saif		git://git.linaro.org/people/shawnguo/linux-2.6.git mxs/saif-recording
+
+next/boards
+  samsung/board		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next-samsung-devel
+					(cragganmore parts only)
+
+next/devel
+  highbank/devel	git://sources.calxeda.com/kernel/linux for-3.3
+  ux500/devel		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git for-arnd
+			and:
+			git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git ux500-for-arm-soc
+  omap/omap1		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap omap1
+				(depended on fixes that have gone upstream)
+  picoxcell/devel	git://github.com/jamieiles/linux-2.6-ji.git picoxcell-devel
+				(depends on picoxcell/cleanup)
+
+next/pm
+  omap/omap4		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap omap4
+				depends on depends/rmk/devel-stable
+  omap/prcm		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap prcm
+  omap/uart		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap uart
+
+
+next/fixes-non-critical
+  omap/fixes-non-critical git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap fixes-non-critical
+  omap/fixes-non-critical-part2 git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap fixes-hwmod
+
+next/timer
+  msm/timer		git://codeaurora.org/quic/kernel/davidb/linux-msm.git msm-timer
+
+next/move
+  imx/move		git://git.pengutronix.de/git/imx/linux-2.6.git mx5-merge
+
+next/soc
+  omap/soc		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap soc
+				depends on depends/rmk/devel-stable
+
