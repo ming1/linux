@@ -47,17 +47,6 @@ struct wb_writeback_work {
 	struct completion *done;	/* set if the caller waits */
 };
 
-const char *wb_reason_name[] = {
-	[WB_REASON_BACKGROUND]		= "background",
-	[WB_REASON_TRY_TO_FREE_PAGES]	= "try_to_free_pages",
-	[WB_REASON_SYNC]		= "sync",
-	[WB_REASON_PERIODIC]		= "periodic",
-	[WB_REASON_LAPTOP_TIMER]	= "laptop_timer",
-	[WB_REASON_FREE_MORE_MEM]	= "free_more_memory",
-	[WB_REASON_FS_FREE_SPACE]	= "fs_free_space",
-	[WB_REASON_FORKER_THREAD]	= "forker_thread"
-};
-
 /*
  * Include the creation of the trace points after defining the
  * wb_writeback_work structure so that the definition remains local to this
@@ -754,11 +743,17 @@ static long wb_writeback(struct bdi_writeback *wb,
 		if (work->for_background && !over_bground_thresh(wb->bdi))
 			break;
 
+		/*
+		 * Kupdate and background works are special and we want to
+		 * include all inodes that need writing. Livelock avoidance is
+		 * handled by these works yielding to any other work so we are
+		 * safe.
+		 */
 		if (work->for_kupdate) {
 			oldest_jif = jiffies -
 				msecs_to_jiffies(dirty_expire_interval * 10);
-			work->older_than_this = &oldest_jif;
-		}
+		} else if (work->for_background)
+			oldest_jif = jiffies;
 
 		trace_writeback_start(wb->bdi, work);
 		if (list_empty(&wb->b_io))
