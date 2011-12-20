@@ -126,7 +126,6 @@ static const struct neigh_ops ndisc_direct_ops = {
 
 struct neigh_table nd_tbl = {
 	.family =	AF_INET6,
-	.entry_size =	sizeof(struct neighbour) + sizeof(struct in6_addr),
 	.key_len =	sizeof(struct in6_addr),
 	.hash =		ndisc_hash,
 	.constructor =	ndisc_constructor,
@@ -141,7 +140,7 @@ struct neigh_table nd_tbl = {
 		.gc_staletime		= 60 * HZ,
 		.reachable_time		= ND_REACHABLE_TIME,
 		.delay_probe_time	= 5 * HZ,
-		.queue_len		= 3,
+		.queue_len_bytes	= 64*1024,
 		.ucast_probes		= 3,
 		.mcast_probes		= 3,
 		.anycast_delay		= 1 * HZ,
@@ -446,6 +445,8 @@ struct sk_buff *ndisc_build_skb(struct net_device *dev,
 	struct sock *sk = net->ipv6.ndisc_sk;
 	struct sk_buff *skb;
 	struct icmp6hdr *hdr;
+	int hlen = LL_RESERVED_SPACE(dev);
+	int tlen = dev->needed_tailroom;
 	int len;
 	int err;
 	u8 *opt;
@@ -459,7 +460,7 @@ struct sk_buff *ndisc_build_skb(struct net_device *dev,
 
 	skb = sock_alloc_send_skb(sk,
 				  (MAX_HEADER + sizeof(struct ipv6hdr) +
-				   len + LL_ALLOCATED_SPACE(dev)),
+				   len + hlen + tlen),
 				  1, &err);
 	if (!skb) {
 		ND_PRINTK0(KERN_ERR
@@ -468,7 +469,7 @@ struct sk_buff *ndisc_build_skb(struct net_device *dev,
 		return NULL;
 	}
 
-	skb_reserve(skb, LL_RESERVED_SPACE(dev));
+	skb_reserve(skb, hlen);
 	ip6_nd_hdr(sk, skb, dev, saddr, daddr, IPPROTO_ICMPV6, len);
 
 	skb->transport_header = skb->tail;
@@ -479,7 +480,7 @@ struct sk_buff *ndisc_build_skb(struct net_device *dev,
 
 	opt = skb_transport_header(skb) + sizeof(struct icmp6hdr);
 	if (target) {
-		ipv6_addr_copy((struct in6_addr *)opt, target);
+		*(struct in6_addr *)opt = *target;
 		opt += sizeof(*target);
 	}
 
@@ -515,14 +516,7 @@ void ndisc_send_skb(struct sk_buff *skb,
 	type = icmp6h->icmp6_type;
 
 	icmpv6_flow_init(sk, &fl6, type, saddr, daddr, dev->ifindex);
-
-	dst = icmp6_dst_alloc(dev, neigh, daddr);
-	if (!dst) {
-		kfree_skb(skb);
-		return;
-	}
-
-	dst = xfrm_lookup(net, dst, flowi6_to_flowi(&fl6), NULL, 0);
+	dst = icmp6_dst_alloc(dev, neigh, &fl6);
 	if (IS_ERR(dst)) {
 		kfree_skb(skb);
 		return;
@@ -1237,7 +1231,7 @@ static void ndisc_router_discovery(struct sk_buff *skb)
 	rt = rt6_get_dflt_router(&ipv6_hdr(skb)->saddr, skb->dev);
 
 	if (rt)
-		neigh = dst_get_neighbour(&rt->dst);
+		neigh = dst_get_neighbour_noref(&rt->dst);
 
 	if (rt && lifetime == 0) {
 		neigh_clone(neigh);
@@ -1257,7 +1251,7 @@ static void ndisc_router_discovery(struct sk_buff *skb)
 			return;
 		}
 
-		neigh = dst_get_neighbour(&rt->dst);
+		neigh = dst_get_neighbour_noref(&rt->dst);
 		if (neigh == NULL) {
 			ND_PRINTK0(KERN_ERR
 				   "ICMPv6 RA: %s() got default router without neighbour.\n",
@@ -1533,6 +1527,7 @@ void ndisc_send_redirect(struct sk_buff *skb, struct neighbour *neigh,
 	struct inet6_dev *idev;
 	struct flowi6 fl6;
 	u8 *opt;
+	int hlen, tlen;
 	int rd_len;
 	int err;
 	u8 ha_buf[MAX_ADDR_LEN], *ha = NULL;
@@ -1590,9 +1585,11 @@ void ndisc_send_redirect(struct sk_buff *skb, struct neighbour *neigh,
 	rd_len &= ~0x7;
 	len += rd_len;
 
+	hlen = LL_RESERVED_SPACE(dev);
+	tlen = dev->needed_tailroom;
 	buff = sock_alloc_send_skb(sk,
 				   (MAX_HEADER + sizeof(struct ipv6hdr) +
-				    len + LL_ALLOCATED_SPACE(dev)),
+				    len + hlen + tlen),
 				   1, &err);
 	if (buff == NULL) {
 		ND_PRINTK0(KERN_ERR
@@ -1601,7 +1598,7 @@ void ndisc_send_redirect(struct sk_buff *skb, struct neighbour *neigh,
 		goto release;
 	}
 
-	skb_reserve(buff, LL_RESERVED_SPACE(dev));
+	skb_reserve(buff, hlen);
 	ip6_nd_hdr(sk, buff, dev, &saddr_buf, &ipv6_hdr(skb)->saddr,
 		   IPPROTO_ICMPV6, len);
 
@@ -1617,9 +1614,9 @@ void ndisc_send_redirect(struct sk_buff *skb, struct neighbour *neigh,
 	 */
 
 	addrp = (struct in6_addr *)(icmph + 1);
-	ipv6_addr_copy(addrp, target);
+	*addrp = *target;
 	addrp++;
-	ipv6_addr_copy(addrp, &ipv6_hdr(skb)->daddr);
+	*addrp = ipv6_hdr(skb)->daddr;
 
 	opt = (u8*) (addrp + 1);
 
