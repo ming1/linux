@@ -10,6 +10,7 @@ next/cleanup
   at91/defconfig	git://github.com/at91linux/linux-at91 for-arnd-3.3-defconfig
   davinci/cleanup	git://gitorious.org/linux-davinci/linux-davinci.git cleanup
   picoxcell/cleanup	git://github.com/jamieiles/linux-2.6-ji.git picoxcell-cleanup
+  u300/cleanup		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git u300-for-arm-soc
 
 next/drivers
   drivers/macb-gem	git://github.com/jamieiles/linux-2.6-ji.git macb-gem
@@ -26,6 +27,8 @@ next/boards
 next/devel
   highbank/devel	git://sources.calxeda.com/kernel/linux for-3.3
   ux500/devel		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git for-arnd
+			and:
+			git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git ux500-for-arm-soc
   omap/omap1		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap omap1
 				(depended on fixes that have gone upstream)
   picoxcell/devel	git://github.com/jamieiles/linux-2.6-ji.git picoxcell-devel
@@ -40,6 +43,7 @@ next/pm
 
 next/fixes-non-critical
   omap/fixes-non-critical git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap fixes-non-critical
+  omap/fixes-non-critical-part2 git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap fixes-hwmod
 
 next/timer
   msm/timer		git://codeaurora.org/quic/kernel/davidb/linux-msm.git msm-timer
