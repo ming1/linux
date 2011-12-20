@@ -1222,6 +1222,8 @@ ext4_move_extents(struct file *o_filp, struct file *d_filp,
 	if (ret1)
 		goto out;
 
+	file_remove_suid(d_filp);
+
 	file_end = (i_size_read(orig_inode) - 1) >> orig_inode->i_blkbits;
 	block_end = block_start + len - 1;
 	if (file_end < block_end)
