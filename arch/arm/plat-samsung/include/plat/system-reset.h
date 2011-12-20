@@ -1,6 +1,6 @@
 /* linux/arch/arm/plat-samsung/include/plat/system-reset.h
  *
- * Copyright (c) 2010 Samsung Electronics Co., Ltd.
+ * Copyright (c) 2010-2011 Samsung Electronics Co., Ltd.
  *		http://www.samsung.com
  *
  * Based on arch/arm/mach-s3c2410/include/mach/system-reset.h
@@ -14,18 +14,10 @@
 
 #include <plat/watchdog-reset.h>
 
-void (*s5p_reset_hook)(void);
-
 static void arch_reset(char mode, const char *cmd)
 {
-	/* SWRESET support in s5p_reset_hook() */
+	if (mode != 's')
+		arch_wdt_reset();
 
-	if (s5p_reset_hook)
-		s5p_reset_hook();
-
-	/* Perform reset using Watchdog reset
-	 * if there is no s5p_reset_hook()
-	 */
-
-	arch_wdt_reset();
+	soft_restart(0);
 }
