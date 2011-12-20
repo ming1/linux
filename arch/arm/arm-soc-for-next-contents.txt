@@ -9,6 +9,7 @@ next/cleanup
   drivers/macb-gem-cleanup	parts of drivers/macb-gem that at91/gpio depends on
   at91/defconfig	git://github.com/at91linux/linux-at91 for-arnd-3.3-defconfig
   davinci/cleanup	git://gitorious.org/linux-davinci/linux-davinci.git cleanup
+  picoxcell/cleanup	git://github.com/jamieiles/linux-2.6-ji.git picoxcell-cleanup
 
 next/drivers
   drivers/macb-gem	git://github.com/jamieiles/linux-2.6-ji.git macb-gem
@@ -27,10 +28,15 @@ next/devel
   ux500/devel		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git for-arnd
   omap/omap1		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap omap1
 				(depended on fixes that have gone upstream)
+  picoxcell/devel	git://github.com/jamieiles/linux-2.6-ji.git picoxcell-devel
+				(depends on picoxcell/cleanup)
 
 next/pm
   omap/omap4		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap omap4
 				depends on depends/rmk/devel-stable
+  omap/prcm		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap prcm
+  omap/uart		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap uart
+
 
 next/fixes-non-critical
   omap/fixes-non-critical git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap fixes-non-critical
