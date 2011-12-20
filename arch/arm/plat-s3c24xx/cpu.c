@@ -38,10 +38,9 @@
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
 
-#include <mach/system-reset.h>
-
 #include <mach/regs-gpio.h>
 #include <plat/regs-serial.h>
+#include <plat/system-reset.h>
 
 #include <plat/cpu.h>
 #include <plat/devs.h>
