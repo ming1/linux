@@ -1142,7 +1142,7 @@ static int s3c_hsudc_start(struct usb_gadget_driver *driver,
 	int ret;
 
 	if (!driver
-		|| driver->speed < USB_SPEED_FULL
+		|| driver->max_speed < USB_SPEED_FULL
 		|| !bind
 		|| !driver->unbind || !driver->disconnect || !driver->setup)
 		return -EINVAL;
@@ -1310,7 +1310,7 @@ static int s3c_hsudc_probe(struct platform_device *pdev)
 	device_initialize(&hsudc->gadget.dev);
 	dev_set_name(&hsudc->gadget.dev, "gadget");
 
-	hsudc->gadget.is_dualspeed = 1;
+	hsudc->gadget.max_speed = USB_SPEED_HIGH;
 	hsudc->gadget.ops = &s3c_hsudc_gadget_ops;
 	hsudc->gadget.name = dev_name(dev);
 	hsudc->gadget.dev.parent = dev;
@@ -1377,21 +1377,10 @@ static struct platform_driver s3c_hsudc_driver = {
 	},
 	.probe		= s3c_hsudc_probe,
 };
-MODULE_ALIAS("platform:s3c-hsudc");
 
-static int __init s3c_hsudc_modinit(void)
-{
-	return platform_driver_register(&s3c_hsudc_driver);
-}
-
-static void __exit s3c_hsudc_modexit(void)
-{
-	platform_driver_unregister(&s3c_hsudc_driver);
-}
-
-module_init(s3c_hsudc_modinit);
-module_exit(s3c_hsudc_modexit);
+module_platform_driver(s3c_hsudc_driver);
 
 MODULE_DESCRIPTION("Samsung S3C24XX USB high-speed controller driver");
 MODULE_AUTHOR("Thomas Abraham <thomas.ab@samsung.com>");
 MODULE_LICENSE("GPL");
+MODULE_ALIAS("platform:s3c-hsudc");
