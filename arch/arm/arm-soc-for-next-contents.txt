@@ -2,6 +2,8 @@ This file lists all branches that are pulled into the for-next branch
 of git://git.kernel.org/pub/scm/linux/kernel/git/arm/arm-soc.git
 and their external dependencies.
 
+It also includes a couple of directly applied patches for build breaks with subject
+
 next/cleanup
   at91/ioremap		git://github.com/at91linux/linux-at91.git for-arnd-3.3-ioremap
   at91/gpio		git://github.com/at91linux/linux-at91.git for-arnd-3.3-gpio
@@ -11,6 +13,7 @@ next/cleanup
   davinci/cleanup	git://gitorious.org/linux-davinci/linux-davinci.git cleanup
   picoxcell/cleanup	git://github.com/jamieiles/linux-2.6-ji.git picoxcell-cleanup
   u300/cleanup		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git u300-for-arm-soc
+  + 0363e3dae10		arm/at91: fix build of stamp9g20
 
 next/drivers
   drivers/macb-gem	git://github.com/jamieiles/linux-2.6-ji.git macb-gem
@@ -19,6 +22,7 @@ next/drivers
 					depends on drivers/macb-gem
   omap/hsmmc 		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap hsmmc
   mxs/saif		git://git.linaro.org/people/shawnguo/linux-2.6.git mxs/saif-recording
+  + b17471f5d121	net: macb: fix build break with !CONFIG_OF
 
 next/boards
   samsung/board		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next-samsung-devel
