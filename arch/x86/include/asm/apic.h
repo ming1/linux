@@ -410,6 +410,7 @@ extern int wakeup_secondary_cpu_via_nmi(int apicid, unsigned long start_eip);
 #endif
 
 #ifdef CONFIG_X86_LOCAL_APIC
+
 static inline u32 apic_read(u32 reg)
 {
 	return apic->read(reg);
