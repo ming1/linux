@@ -1511,8 +1511,8 @@ static void i8xx_enable_fbc(struct drm_crtc *crtc, unsigned long interval)
 	u32 fbc_ctl, fbc_ctl2;
 
 	cfb_pitch = dev_priv->cfb_size / FBC_LL_SIZE;
-	if (fb->pitch < cfb_pitch)
-		cfb_pitch = fb->pitch;
+	if (fb->pitches[0] < cfb_pitch)
+		cfb_pitch = fb->pitches[0];
 
 	/* FBC_CTL wants 64B units */
 	cfb_pitch = (cfb_pitch / 64) - 1;
@@ -2073,11 +2073,11 @@ static int i9xx_update_plane(struct drm_crtc *crtc, struct drm_framebuffer *fb,
 	I915_WRITE(reg, dspcntr);
 
 	Start = obj->gtt_offset;
-	Offset = y * fb->pitch + x * (fb->bits_per_pixel / 8);
+	Offset = y * fb->pitches[0] + x * (fb->bits_per_pixel / 8);
 
 	DRM_DEBUG_KMS("Writing base %08lX %08lX %d %d %d\n",
-		      Start, Offset, x, y, fb->pitch);
-	I915_WRITE(DSPSTRIDE(plane), fb->pitch);
+		      Start, Offset, x, y, fb->pitches[0]);
+	I915_WRITE(DSPSTRIDE(plane), fb->pitches[0]);
 	if (INTEL_INFO(dev)->gen >= 4) {
 		I915_WRITE(DSPSURF(plane), Start);
 		I915_WRITE(DSPTILEOFF(plane), (y << 16) | x);
@@ -2154,11 +2154,11 @@ static int ironlake_update_plane(struct drm_crtc *crtc,
 	I915_WRITE(reg, dspcntr);
 
 	Start = obj->gtt_offset;
-	Offset = y * fb->pitch + x * (fb->bits_per_pixel / 8);
+	Offset = y * fb->pitches[0] + x * (fb->bits_per_pixel / 8);
 
 	DRM_DEBUG_KMS("Writing base %08lX %08lX %d %d %d\n",
-		      Start, Offset, x, y, fb->pitch);
-	I915_WRITE(DSPSTRIDE(plane), fb->pitch);
+		      Start, Offset, x, y, fb->pitches[0]);
+	I915_WRITE(DSPSTRIDE(plane), fb->pitches[0]);
 	I915_WRITE(DSPSURF(plane), Start);
 	I915_WRITE(DSPTILEOFF(plane), (y << 16) | x);
 	I915_WRITE(DSPADDR(plane), Offset);
@@ -5155,7 +5155,7 @@ static int i9xx_crtc_mode_set(struct drm_crtc *crtc,
 		adjusted_mode->crtc_vsync_end -= 1;
 		adjusted_mode->crtc_vsync_start -= 1;
 	} else
-		pipeconf &= ~PIPECONF_INTERLACE_W_FIELD_INDICATION; /* progressive */
+		pipeconf &= ~PIPECONF_INTERLACE_MASK; /* progressive */
 
 	I915_WRITE(HTOTAL(pipe),
 		   (adjusted_mode->crtc_hdisplay - 1) |
@@ -6298,7 +6298,7 @@ static struct drm_display_mode load_detect_mode = {
 
 static struct drm_framebuffer *
 intel_framebuffer_create(struct drm_device *dev,
-			 struct drm_mode_fb_cmd *mode_cmd,
+			 struct drm_mode_fb_cmd2 *mode_cmd,
 			 struct drm_i915_gem_object *obj)
 {
 	struct intel_framebuffer *intel_fb;
@@ -6340,7 +6340,7 @@ intel_framebuffer_create_for_mode(struct drm_device *dev,
 				  int depth, int bpp)
 {
 	struct drm_i915_gem_object *obj;
-	struct drm_mode_fb_cmd mode_cmd;
+	struct drm_mode_fb_cmd2 mode_cmd;
 
 	obj = i915_gem_alloc_object(dev,
 				    intel_framebuffer_size_for_mode(mode, bpp));
@@ -6349,9 +6349,9 @@ intel_framebuffer_create_for_mode(struct drm_device *dev,
 
 	mode_cmd.width = mode->hdisplay;
 	mode_cmd.height = mode->vdisplay;
-	mode_cmd.depth = depth;
-	mode_cmd.bpp = bpp;
-	mode_cmd.pitch = intel_framebuffer_pitch_for_width(mode_cmd.width, bpp);
+	mode_cmd.pitches[0] = intel_framebuffer_pitch_for_width(mode_cmd.width,
+								bpp);
+	mode_cmd.pixel_format = 0;
 
 	return intel_framebuffer_create(dev, &mode_cmd, obj);
 }
@@ -6372,11 +6372,11 @@ mode_fits_in_fbdev(struct drm_device *dev,
 		return NULL;
 
 	fb = &dev_priv->fbdev->ifb.base;
-	if (fb->pitch < intel_framebuffer_pitch_for_width(mode->hdisplay,
-							  fb->bits_per_pixel))
+	if (fb->pitches[0] < intel_framebuffer_pitch_for_width(mode->hdisplay,
+							       fb->bits_per_pixel))
 		return NULL;
 
-	if (obj->base.size < mode->vdisplay * fb->pitch)
+	if (obj->base.size < mode->vdisplay * fb->pitches[0])
 		return NULL;
 
 	return fb;
@@ -7009,7 +7009,7 @@ static int intel_gen2_queue_flip(struct drm_device *dev,
 		goto out;
 
 	/* Offset into the new buffer for cases of shared fbs between CRTCs */
-	offset = crtc->y * fb->pitch + crtc->x * fb->bits_per_pixel/8;
+	offset = crtc->y * fb->pitches[0] + crtc->x * fb->bits_per_pixel/8;
 
 	ret = BEGIN_LP_RING(6);
 	if (ret)
@@ -7026,7 +7026,7 @@ static int intel_gen2_queue_flip(struct drm_device *dev,
 	OUT_RING(MI_NOOP);
 	OUT_RING(MI_DISPLAY_FLIP |
 		 MI_DISPLAY_FLIP_PLANE(intel_crtc->plane));
-	OUT_RING(fb->pitch);
+	OUT_RING(fb->pitches[0]);
 	OUT_RING(obj->gtt_offset + offset);
 	OUT_RING(MI_NOOP);
 	ADVANCE_LP_RING();
@@ -7050,7 +7050,7 @@ static int intel_gen3_queue_flip(struct drm_device *dev,
 		goto out;
 
 	/* Offset into the new buffer for cases of shared fbs between CRTCs */
-	offset = crtc->y * fb->pitch + crtc->x * fb->bits_per_pixel/8;
+	offset = crtc->y * fb->pitches[0] + crtc->x * fb->bits_per_pixel/8;
 
 	ret = BEGIN_LP_RING(6);
 	if (ret)
@@ -7064,7 +7064,7 @@ static int intel_gen3_queue_flip(struct drm_device *dev,
 	OUT_RING(MI_NOOP);
 	OUT_RING(MI_DISPLAY_FLIP_I915 |
 		 MI_DISPLAY_FLIP_PLANE(intel_crtc->plane));
-	OUT_RING(fb->pitch);
+	OUT_RING(fb->pitches[0]);
 	OUT_RING(obj->gtt_offset + offset);
 	OUT_RING(MI_NOOP);
 
@@ -7097,7 +7097,7 @@ static int intel_gen4_queue_flip(struct drm_device *dev,
 	 */
 	OUT_RING(MI_DISPLAY_FLIP |
 		 MI_DISPLAY_FLIP_PLANE(intel_crtc->plane));
-	OUT_RING(fb->pitch);
+	OUT_RING(fb->pitches[0]);
 	OUT_RING(obj->gtt_offset | obj->tiling_mode);
 
 	/* XXX Enabling the panel-fitter across page-flip is so far
@@ -7132,7 +7132,7 @@ static int intel_gen6_queue_flip(struct drm_device *dev,
 
 	OUT_RING(MI_DISPLAY_FLIP |
 		 MI_DISPLAY_FLIP_PLANE(intel_crtc->plane));
-	OUT_RING(fb->pitch | obj->tiling_mode);
+	OUT_RING(fb->pitches[0] | obj->tiling_mode);
 	OUT_RING(obj->gtt_offset);
 
 	pf = I915_READ(PF_CTL(intel_crtc->pipe)) & PF_ENABLE;
@@ -7168,7 +7168,7 @@ static int intel_gen7_queue_flip(struct drm_device *dev,
 		goto out;
 
 	intel_ring_emit(ring, MI_DISPLAY_FLIP_I915 | (intel_crtc->plane << 19));
-	intel_ring_emit(ring, (fb->pitch | obj->tiling_mode));
+	intel_ring_emit(ring, (fb->pitches[0] | obj->tiling_mode));
 	intel_ring_emit(ring, (obj->gtt_offset));
 	intel_ring_emit(ring, (MI_NOOP));
 	intel_ring_advance(ring);
@@ -7594,7 +7594,7 @@ static const struct drm_framebuffer_funcs intel_fb_funcs = {
 
 int intel_framebuffer_init(struct drm_device *dev,
 			   struct intel_framebuffer *intel_fb,
-			   struct drm_mode_fb_cmd *mode_cmd,
+			   struct drm_mode_fb_cmd2 *mode_cmd,
 			   struct drm_i915_gem_object *obj)
 {
 	int ret;
@@ -7602,21 +7602,25 @@ int intel_framebuffer_init(struct drm_device *dev,
 	if (obj->tiling_mode == I915_TILING_Y)
 		return -EINVAL;
 
-	if (mode_cmd->pitch & 63)
+	if (mode_cmd->pitches[0] & 63)
 		return -EINVAL;
 
-	switch (mode_cmd->bpp) {
-	case 8:
-	case 16:
-		/* Only pre-ILK can handle 5:5:5 */
-		if (mode_cmd->depth == 15 && !HAS_PCH_SPLIT(dev))
-			return -EINVAL;
+	switch (mode_cmd->pixel_format) {
+	case DRM_FORMAT_RGB332:
+	case DRM_FORMAT_RGB565:
+	case DRM_FORMAT_XRGB8888:
+	case DRM_FORMAT_ARGB8888:
+	case DRM_FORMAT_XRGB2101010:
+	case DRM_FORMAT_ARGB2101010:
+		/* RGB formats are common across chipsets */
 		break;
-
-	case 24:
-	case 32:
+	case DRM_FORMAT_YUYV:
+	case DRM_FORMAT_UYVY:
+	case DRM_FORMAT_YVYU:
+	case DRM_FORMAT_VYUY:
 		break;
 	default:
+		DRM_ERROR("unsupported pixel format\n");
 		return -EINVAL;
 	}
 
@@ -7634,11 +7638,12 @@ int intel_framebuffer_init(struct drm_device *dev,
 static struct drm_framebuffer *
 intel_user_framebuffer_create(struct drm_device *dev,
 			      struct drm_file *filp,
-			      struct drm_mode_fb_cmd *mode_cmd)
+			      struct drm_mode_fb_cmd2 *mode_cmd)
 {
 	struct drm_i915_gem_object *obj;
 
-	obj = to_intel_bo(drm_gem_object_lookup(dev, filp, mode_cmd->handle));
+	obj = to_intel_bo(drm_gem_object_lookup(dev, filp,
+						mode_cmd->handles[0]));
 	if (&obj->base == NULL)
 		return ERR_PTR(-ENOENT);
 
