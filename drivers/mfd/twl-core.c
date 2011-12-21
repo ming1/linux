@@ -34,6 +34,10 @@
 #include <linux/platform_device.h>
 #include <linux/clk.h>
 #include <linux/err.h>
+#include <linux/slab.h>
+#include <linux/of_irq.h>
+#include <linux/of_platform.h>
+#include <linux/irqdomain.h>
 
 #include <linux/regulator/machine.h>
 
@@ -1183,22 +1187,53 @@ twl_probe(struct i2c_client *client, const struct i2c_device_id *id)
 	int				status;
 	unsigned			i;
 	struct twl4030_platform_data	*pdata = client->dev.platform_data;
+	struct device_node		*node = client->dev.of_node;
 	u8 temp;
 	int ret = 0;
 
+	if (node && !pdata) {
+		/*
+		 * XXX: Temporary fake pdata until the information
+		 * is correctly retrieved by every TWL modules from DT.
+		 */
+		pdata = kzalloc(sizeof(struct twl4030_platform_data),
+				GFP_KERNEL);
+		if (!pdata) {
+			status = -ENOMEM;
+			goto exit;
+		}
+
+		/*
+		 * XXX: For the moment the IRQs for TWL seems to be encoded in
+		 * the global OMAP space. That should be cleaned to allow
+		 * dynamically adding a new IRQ controller.
+		 */
+		if ((id->driver_data) & TWL6030_CLASS) {
+			pdata->irq_base = TWL6030_IRQ_BASE;
+			pdata->irq_end = pdata->irq_base + TWL6030_BASE_NR_IRQS;
+		} else {
+			pdata->irq_base = TWL4030_IRQ_BASE;
+			pdata->irq_end = pdata->irq_base + TWL4030_BASE_NR_IRQS;
+		}
+		irq_domain_add_simple(node, pdata->irq_base);
+	}
+
 	if (!pdata) {
 		dev_dbg(&client->dev, "no platform data?\n");
-		return -EINVAL;
+		status = -EINVAL;
+		goto fail_free;
 	}
 
 	if (i2c_check_functionality(client->adapter, I2C_FUNC_I2C) == 0) {
 		dev_dbg(&client->dev, "can't talk I2C?\n");
-		return -EIO;
+		status = -EIO;
+		goto fail_free;
 	}
 
 	if (inuse) {
 		dev_dbg(&client->dev, "driver is already in use\n");
-		return -EBUSY;
+		status = -EBUSY;
+		goto fail_free;
 	}
 
 	for (i = 0; i < TWL_NUM_SLAVES; i++) {
@@ -1270,10 +1305,20 @@ twl_probe(struct i2c_client *client, const struct i2c_device_id *id)
 		twl_i2c_write_u8(TWL4030_MODULE_INTBR, temp, REG_GPPUPDCTR1);
 	}
 
-	status = add_children(pdata, id->driver_data);
+#ifdef CONFIG_OF_DEVICE
+	if (node)
+		status = of_platform_populate(node, NULL, NULL, &client->dev);
+	else
+#endif
+		status = add_children(pdata, id->driver_data);
+
 fail:
 	if (status < 0)
 		twl_remove(client);
+fail_free:
+	if (node)
+		kfree(pdata);
+exit:
 	return status;
 }
 
