@@ -266,8 +266,6 @@ enum snd_soc_control_type {
 
 enum snd_soc_compress_type {
 	SND_SOC_FLAT_COMPRESSION = 1,
-	SND_SOC_LZO_COMPRESSION,
-	SND_SOC_RBTREE_COMPRESSION
 };
 
 enum snd_soc_pcm_subclass {
@@ -593,8 +591,7 @@ struct snd_soc_codec_driver {
 	/* driver ops */
 	int (*probe)(struct snd_soc_codec *);
 	int (*remove)(struct snd_soc_codec *);
-	int (*suspend)(struct snd_soc_codec *,
-			pm_message_t state);
+	int (*suspend)(struct snd_soc_codec *);
 	int (*resume)(struct snd_soc_codec *);
 
 	/* Default control and setup, added after probe() is run */
@@ -718,6 +715,9 @@ struct snd_soc_dai_link {
 	/* Symmetry requirements */
 	unsigned int symmetric_rates:1;
 
+	/* pmdown_time is ignored at stop */
+	unsigned int ignore_pmdown_time:1;
+
 	/* codec/machine specific init - e.g. add machine controls */
 	int (*init)(struct snd_soc_pcm_runtime *rtd);
 
@@ -813,6 +813,7 @@ struct snd_soc_card {
 	int num_dapm_widgets;
 	const struct snd_soc_dapm_route *dapm_routes;
 	int num_dapm_routes;
+	bool fully_routed;
 
 	struct work_struct deferred_resume_work;
 
@@ -840,7 +841,7 @@ struct snd_soc_card {
 };
 
 /* SoC machine DAI configuration, glues a codec and cpu DAI together */
-struct snd_soc_pcm_runtime  {
+struct snd_soc_pcm_runtime {
 	struct device dev;
 	struct snd_soc_card *card;
 	struct snd_soc_dai_link *dai_link;
