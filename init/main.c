@@ -847,3 +847,7 @@ static int __init kernel_init(void * unused)
 	init_post();
 	return 0;
 }
+
+static void __used testfunc(void)
+{
+}
