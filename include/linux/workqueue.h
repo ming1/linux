@@ -298,8 +298,7 @@ extern struct workqueue_struct *system_freezable_wq;
 
 extern struct workqueue_struct *
 __alloc_workqueue_key(const char *fmt, unsigned int flags, int max_active,
-		      struct lock_class_key *key, const char *lock_name, ...)
-	__attribute__((format (printf, 1, 6)));
+	struct lock_class_key *key, const char *lock_name, ...) __printf(1, 6);
 
 /**
  * alloc_workqueue - allocate a workqueue
