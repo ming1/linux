@@ -155,7 +155,7 @@ static inline void dev_pm_qos_constraints_destroy(struct device *dev)
 {
 	dev->power.power_state = PMSG_INVALID;
 }
-int dev_pm_qos_add_ancestor_request(struct device *dev,
+static inline int dev_pm_qos_add_ancestor_request(struct device *dev,
 				    struct dev_pm_qos_request *req, s32 value)
 			{ return 0; }
 #endif
