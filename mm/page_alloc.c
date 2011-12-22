@@ -419,18 +419,18 @@ static int __init debug_guardpage_minorder_setup(char *buf)
 }
 __setup("debug_guardpage_minorder=", debug_guardpage_minorder_setup);
 
-static inline void set_page_guard_flg(struct page *page)
+static inline void set_page_guard_flag(struct page *page)
 {
 	__set_bit(PAGE_DEBUG_FLAG_GUARD, &page->debug_flags);
 }
 
-static inline void clear_page_guard_flg(struct page *page)
+static inline void clear_page_guard_flag(struct page *page)
 {
 	__clear_bit(PAGE_DEBUG_FLAG_GUARD, &page->debug_flags);
 }
 #else
-static inline void set_page_guard_flg(struct page *page) { }
-static inline void clear_page_guard_flg(struct page *page) { }
+static inline void set_page_guard_flag(struct page *page) { }
+static inline void clear_page_guard_flag(struct page *page) { }
 #endif
 
 static inline void set_page_order(struct page *page, int order)
@@ -556,7 +556,7 @@ static inline void __free_one_page(struct page *page,
 		 * merge with it and move up one order.
 		 */
 		if (page_is_guard(buddy)) {
-			clear_page_guard_flg(buddy);
+			clear_page_guard_flag(buddy);
 			set_page_private(page, 0);
 			__mod_zone_page_state(zone, NR_FREE_PAGES, 1 << order);
 		} else {
@@ -799,7 +799,7 @@ static inline void expand(struct zone *zone, struct page *page,
 			 * pages will stay not present in virtual address space
 			 */
 			INIT_LIST_HEAD(&page[size].lru);
-			set_page_guard_flg(&page[size]);
+			set_page_guard_flag(&page[size]);
 			set_page_private(&page[size], high);
 			/* Guard pages are not available for any usage */
 			__mod_zone_page_state(zone, NR_FREE_PAGES, -(1 << high));
