@@ -1032,7 +1032,6 @@ struct lruvec *mem_cgroup_lru_add_list(struct zone *zone, struct page *page,
 
 	pc = lookup_page_cgroup(page);
 	memcg = pc->mem_cgroup;
-	VM_BUG_ON(!memcg);
 	mz = page_cgroup_zoneinfo(memcg, page);
 	/* compound_order() is stabilized through lru_lock */
 	MEM_CGROUP_ZSTAT(mz, lru) += 1 << compound_order(page);
@@ -2438,8 +2437,8 @@ static void __mem_cgroup_commit_charge(struct mem_cgroup *memcg,
 void mem_cgroup_split_huge_fixup(struct page *head)
 {
 	struct page_cgroup *head_pc = lookup_page_cgroup(head);
-	struct page_cgroup *pc;
 	struct mem_cgroup_per_zone *mz;
+	struct page_cgroup *pc;
 	enum lru_list lru;
 	int i;
 
