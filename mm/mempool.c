@@ -226,8 +226,8 @@ repeat_alloc:
 	 * alloc failed with that and @pool was empty, retry immediately.
 	 */
 	if (gfp_temp != gfp_mask) {
-		gfp_temp = gfp_mask;
 		spin_unlock_irqrestore(&pool->lock, flags);
+		gfp_temp = gfp_mask;
 		goto repeat_alloc;
 	}
 
