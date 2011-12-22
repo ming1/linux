@@ -280,8 +280,7 @@ int netvsc_recv_callback(struct hv_device *device_obj,
 	 * hv_netvsc_packet cannot be deallocated
 	 */
 	for (i = 0; i < packet->page_buf_cnt; i++) {
-		data = kmap_atomic(pfn_to_page(packet->page_buf[i].pfn),
-					       KM_IRQ1);
+		data = kmap_atomic(pfn_to_page(packet->page_buf[i].pfn));
 		data = (void *)(unsigned long)data +
 				packet->page_buf[i].offset;
 
@@ -289,7 +288,7 @@ int netvsc_recv_callback(struct hv_device *device_obj,
 		       packet->page_buf[i].len);
 
 		kunmap_atomic((void *)((unsigned long)data -
-				       packet->page_buf[i].offset), KM_IRQ1);
+				       packet->page_buf[i].offset));
 	}
 
 	local_irq_restore(flags);
