@@ -512,7 +512,7 @@ static unsigned long amiga_gettimeoffset(void)
 }
 
 static void amiga_reset(void)
-    ATTRIB_NORET;
+    __noreturn;
 
 static void amiga_reset(void)
 {
