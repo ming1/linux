@@ -872,7 +872,8 @@ static int btree_submit_bio_hook(struct inode *inode, int rw, struct bio *bio,
 
 #ifdef CONFIG_MIGRATION
 static int btree_migratepage(struct address_space *mapping,
-			struct page *newpage, struct page *page, bool sync)
+			struct page *newpage, struct page *page,
+			enum migrate_mode sync)
 {
 	/*
 	 * we can't safely write a btree page from here,
