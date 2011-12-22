@@ -1,0 +1,16 @@
+What:		/sys/devices/system/timekeeping/
+Date:		November 2011
+Contact:	Linux kernel mailing list <linux-kernel@vger.kernel.org>
+Description:	Timekeeping attributes
+
+
+What:		/sys/devices/system/timekeeping/timekeeping0/jiffies_cpu
+Date:		November 2011
+Contact:	Linux kernel mailing list <linux-kernel@vger.kernel.org>
+Description:	Show and modify the kernel's tick_do_timer_cpu.  This
+		determines the cpu on which global time (jiffies) updates
+		occur.  This can only be modified on systems running with
+		the nohz mode turned off (nohz=off).
+
+		Possible values are:
+			0 - <num online cpus>
