@@ -1711,7 +1711,7 @@ out_error:
 
 #ifdef CONFIG_MIGRATION
 int nfs_migrate_page(struct address_space *mapping, struct page *newpage,
-		struct page *page, bool sync)
+		struct page *page, enum migrate_mode sync)
 {
 	/*
 	 * If PagePrivate is set, then the page is currently associated with
