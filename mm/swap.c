@@ -262,7 +262,7 @@ static void pagevec_move_tail(struct pagevec *pvec)
  * moving a page from the LRU_IMMEDIATE to one of the [in]active_[file|anon]
  * lists
  */
-static void pagevec_putback_immediate_fn(struct page *page, void *arg)
+static void pagevec_putback_from_immediate_fn(struct page *page, void *arg)
 {
 	struct zone *zone = page_zone(page);
 
@@ -272,9 +272,9 @@ static void pagevec_putback_immediate_fn(struct page *page, void *arg)
 	}
 }
 
-static void pagevec_putback_immediate(struct pagevec *pvec)
+static void pagevec_putback_from_immediate(struct pagevec *pvec)
 {
-	pagevec_lru_move_fn(pvec, pagevec_putback_immediate_fn, NULL);
+	pagevec_lru_move_fn(pvec, pagevec_putback_from_immediate_fn, NULL);
 }
 
 /*
@@ -285,7 +285,7 @@ static void pagevec_putback_immediate(struct pagevec *pvec)
 void rotate_reclaimable_page(struct page *page)
 {
 	struct zone *zone = page_zone(page);
-	struct list_head *page_list;
+	struct list_head *list;
 	struct pagevec *pvec;
 	unsigned long flags;
 
@@ -302,7 +302,7 @@ void rotate_reclaimable_page(struct page *page)
 	} else {
 		pvec = &__get_cpu_var(lru_putback_immediate_pvecs);
 		if (!pagevec_add(pvec, page))
-			pagevec_putback_immediate(pvec);
+			pagevec_putback_from_immediate(pvec);
 	}
 
 	/*
@@ -318,17 +318,21 @@ void rotate_reclaimable_page(struct page *page)
 	 * problematic due to the problem of deciding when the right time
 	 * to scan this list is.
 	 */
-	page_list = &zone->lru[LRU_IMMEDIATE].list;
-	if (!zone_page_state(zone, NR_IMMEDIATE) && !list_empty(page_list)) {
+	if (!zone_page_state(zone, NR_IMMEDIATE)) {
 		struct page *page;
+		list = &zone->lru[LRU_IMMEDIATE].list;
 
-		spin_lock(&zone->lru_lock);
-		while (!list_empty(page_list)) {
-			page = list_entry(page_list->prev, struct page, lru);
-			list_move(&page->lru, &zone->lru[page_lru(page)].list);
-			__count_vm_event(PGRESCUED);
+		if (!list_empty(list)) {
+			spin_lock(&zone->lru_lock);
+			while (!list_empty(list)) {
+				int lru;
+				page = list_entry(list->prev, struct page, lru);
+				lru = page_lru(page);
+				list_move(&page->lru, &zone->lru[lru].list);
+				__count_vm_event(PGRESCUED);
+			}
+			spin_unlock(&zone->lru_lock);
 		}
-		spin_unlock(&zone->lru_lock);
 	}
 
 	local_irq_restore(flags);
