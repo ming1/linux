@@ -376,6 +376,27 @@ not_enough_page:
 	return -ENOMEM;
 }
 
+static struct swap_cgroup *swap_cgroup_getsc(swp_entry_t ent,
+					struct swap_cgroup_ctrl **ctrl)
+{
+	int type = swp_type(ent);
+	unsigned long offset = swp_offset(ent);
+	unsigned long idx = offset / SC_PER_PAGE;
+	unsigned long pos = offset & SC_POS_MASK;
+	struct swap_cgroup_ctrl *temp_ctrl;
+	struct page *mappage;
+	struct swap_cgroup *sc;
+
+	temp_ctrl = &swap_cgroup_ctrl[type];
+	if (ctrl)
+		*ctrl = temp_ctrl;
+
+	mappage = temp_ctrl->map[idx];
+	sc = page_address(mappage);
+	sc += pos;
+	return sc;
+}
+
 /**
  * swap_cgroup_cmpxchg - cmpxchg mem_cgroup's id for this swp_entry.
  * @end: swap entry to be cmpxchged
@@ -388,21 +409,13 @@ not_enough_page:
 unsigned short swap_cgroup_cmpxchg(swp_entry_t ent,
 					unsigned short old, unsigned short new)
 {
-	int type = swp_type(ent);
-	unsigned long offset = swp_offset(ent);
-	unsigned long idx = offset / SC_PER_PAGE;
-	unsigned long pos = offset & SC_POS_MASK;
 	struct swap_cgroup_ctrl *ctrl;
-	struct page *mappage;
 	struct swap_cgroup *sc;
 	unsigned long flags;
 	unsigned short retval;
 
-	ctrl = &swap_cgroup_ctrl[type];
+	sc = swap_cgroup_getsc(ent, &ctrl);
 
-	mappage = ctrl->map[idx];
-	sc = page_address(mappage);
-	sc += pos;
 	spin_lock_irqsave(&ctrl->lock, flags);
 	retval = sc->id;
 	if (retval == old)
@@ -423,21 +436,13 @@ unsigned short swap_cgroup_cmpxchg(swp_entry_t ent,
  */
 unsigned short swap_cgroup_record(swp_entry_t ent, unsigned short id)
 {
-	int type = swp_type(ent);
-	unsigned long offset = swp_offset(ent);
-	unsigned long idx = offset / SC_PER_PAGE;
-	unsigned long pos = offset & SC_POS_MASK;
 	struct swap_cgroup_ctrl *ctrl;
-	struct page *mappage;
 	struct swap_cgroup *sc;
 	unsigned short old;
 	unsigned long flags;
 
-	ctrl = &swap_cgroup_ctrl[type];
+	sc = swap_cgroup_getsc(ent, &ctrl);
 
-	mappage = ctrl->map[idx];
-	sc = page_address(mappage);
-	sc += pos;
 	spin_lock_irqsave(&ctrl->lock, flags);
 	old = sc->id;
 	sc->id = id;
@@ -454,21 +459,7 @@ unsigned short swap_cgroup_record(swp_entry_t ent, unsigned short id)
  */
 unsigned short lookup_swap_cgroup(swp_entry_t ent)
 {
-	int type = swp_type(ent);
-	unsigned long offset = swp_offset(ent);
-	unsigned long idx = offset / SC_PER_PAGE;
-	unsigned long pos = offset & SC_POS_MASK;
-	struct swap_cgroup_ctrl *ctrl;
-	struct page *mappage;
-	struct swap_cgroup *sc;
-	unsigned short ret;
-
-	ctrl = &swap_cgroup_ctrl[type];
-	mappage = ctrl->map[idx];
-	sc = page_address(mappage);
-	sc += pos;
-	ret = sc->id;
-	return ret;
+	return swap_cgroup_getsc(ent, NULL)->id;
 }
 
 int swap_cgroup_swapon(int type, unsigned long max_pages)
