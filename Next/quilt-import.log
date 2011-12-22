@@ -1,0 +1,77 @@
+Importing hexagon based on v3.2-rc2
+Unchanged quilt series hexagon
+Importing i2c based on 3.2-rc5
+Unchanged quilt series i2c
+Importing jdelvare-hwmon based on 3.2-rc5
+Unchanged quilt series jdelvare-hwmon
+Importing kernel-doc based on 3.1
+Unchanged quilt series kernel-doc
+Importing rr based on v3.2-rc6-38-g390f998
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard 390f998509bf049019df0b078c0a6606e0d57fb4
+HEAD is now at 390f998 Merge git://git.kernel.org/pub/scm/linux/kernel/git/jejb/scsi-rc-fixes-2.6
+$ git am ../quilt/rr/harsher-barriers.patch
+Applying: virtio: harsher barriers for virtio-mmio.
+$ git am ../quilt/rr/virtio:balloon_trivial_cleanups.patch
+Applying: virtio-balloon: Trivial cleanups
+$ git am ../quilt/rr/virtio-documentation.patch
+Applying: virtio: document functions better.
+$ git am ../quilt/rr/virtio-virtqueue_add_buf_gfp-rename.patch
+Applying: virtio: rename virtqueue_add_buf_gfp to virtqueue_add_buf
+$ git am ../quilt/rr/virtio:support_unlocked_queue_kick.patch
+Applying: virtio: support unlocked queue kick
+$ git am ../quilt/rr/virtio_ring-avoid-modulus.patch
+Applying: virtio: avoid modulus operation.
+$ git am ../quilt/rr/virtio-add-should-expose.patch
+Applying: virtio: expose added descriptors immediately.
+$ git am ../quilt/rr/virtio-debug-missing-kick.patch
+Applying: virtio: add debugging if driver doesn't kick.
+$ git am ../quilt/rr/virtio:blk_fix_config_handler_race.patch
+Applying: virtio_blk: fix config handler race
+$ git am ../quilt/rr/lguest:switched_segment_voodoo_numbers_to_readable_symbols.patch
+Applying: lguest: switch segment-voodoo-numbers to readable symbols
+$ git am ../quilt/rr/lguest:move_the_tool_to_the_tools_directory.patch
+Applying: lguest: move the lguest tool to the tools directory
+$ git am ../quilt/rr/lguest-move-fixup.patch
+Applying: lguest: move the lguest tool to the tools directory (fixes)
+$ git am ../quilt/rr/lguest:make_sure_the_interrupt_is_allocated_correctly_by.patch
+Applying: lguest: Make sure the interrupt is allocated correctly by
+$ git am ../quilt/rr/module:add_comments_describing_how_the_strmap_logic_works.patch
+Applying: module: Add comments describing how the "strmap" logic works
+$ git am ../quilt/rr/module:fix_performance_regression_on_s_with_large_symbol_tables.patch
+Applying: module: Fix performance regression on modules with large symbol tables
+$ git am ../quilt/rr/module:struct_ref_should_contains_long_fields.patch
+Applying: module: struct module_ref should contains long fields
+$ git am ../quilt/rr/module:kernel_replace_debugp_with_pr_debug.patch
+Applying: module: replace DEBUGP with pr_debug
+$ git am ../quilt/rr/param:kernel_replace_debugp_with_pr_debug.patch
+Applying: kernel/params: replace DEBUGP with pr_debug
+$ git am ../quilt/rr/modpost-table-driven-extraction.patch
+Applying: modpost: use a table rather than a giant if/else statement.
+$ git am ../quilt/rr/modpost-construct-table-with-macro.patch
+Applying: modpost: use linker section to generate table.
+$ git am ../quilt/rr/module-param-check-types-for-array.patch
+Applying: module_param: check type correctness for module_param_array
+$ git am ../quilt/rr/module-param-bool-not-really.patch
+Applying: module_param: avoid bool abuse, add bint for special cases.
+$ git am ../quilt/rr/lirc_parallel-fix-parmdesc.patch
+Applying: lirc_parallel: fix module parameter description.
+$ git am ../quilt/rr/printk-modparam-cleanup.patch
+Applying: printk: fix unnecessary module_param_name.
+$ git am ../quilt/rr/async-initcall-debug-decl-remove.patch
+Applying: kernel/async: remove redundant declaration.
+$ git am ../quilt/rr/module-param-bool-core.patch
+Applying: module_param: make bool parameters really bool (core code)
+$ git am ../quilt/rr/module-param-bool-arch.patch
+Applying: module_param: make bool parameters really bool (arch)
+$ git am ../quilt/rr/i810-param-fix.patch
+Applying: i810: fix module_param bool abuse.
+$ git am ../quilt/rr/module-param-bool-drivers.patch
+Applying: module_param: make bool parameters really bool (drivers & misc)
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/rr
+From ../quilt-tmp
+ + cc24040...f7a1441 master     -> quilt/rr  (forced update)
+Importing device-mapper based on v3.1-10674-g94956ee
+Unchanged quilt series device-mapper
