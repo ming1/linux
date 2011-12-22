@@ -39,6 +39,7 @@ int page_cluster;
 
 static DEFINE_PER_CPU(struct pagevec[NR_LRU_LISTS], lru_add_pvecs);
 static DEFINE_PER_CPU(struct pagevec, lru_rotate_pvecs);
+static DEFINE_PER_CPU(struct pagevec, lru_putback_immediate_pvecs);
 static DEFINE_PER_CPU(struct pagevec, lru_deactivate_pvecs);
 
 /*
@@ -232,12 +233,14 @@ static void pagevec_lru_move_fn(struct pagevec *pvec,
 static void pagevec_move_tail_fn(struct page *page, void *arg)
 {
 	int *pgmoved = arg;
-	struct zone *zone = page_zone(page);
 
 	if (PageLRU(page) && !PageActive(page) && !PageUnevictable(page)) {
 		enum lru_list lru = page_lru_base_type(page);
-		list_move_tail(&page->lru, &zone->lru[lru].list);
-		mem_cgroup_rotate_reclaimable_page(page);
+		struct lruvec *lruvec;
+
+		lruvec = mem_cgroup_lru_move_lists(page_zone(page),
+						   page, lru, lru);
+		list_move_tail(&page->lru, &lruvec->lists[lru]);
 		(*pgmoved)++;
 	}
 }
@@ -255,24 +258,83 @@ static void pagevec_move_tail(struct pagevec *pvec)
 }
 
 /*
+ * Similar pair of functions to pagevec_move_tail except it is called when
+ * moving a page from the LRU_IMMEDIATE to one of the [in]active_[file|anon]
+ * lists
+ */
+static void pagevec_putback_from_immediate_fn(struct page *page, void *arg)
+{
+	struct zone *zone = page_zone(page);
+
+	if (PageLRU(page)) {
+		enum lru_list lru = page_lru(page);
+		list_move(&page->lru, &zone->lruvec.lists[lru]);
+	}
+}
+
+static void pagevec_putback_from_immediate(struct pagevec *pvec)
+{
+	pagevec_lru_move_fn(pvec, pagevec_putback_from_immediate_fn, NULL);
+}
+
+/*
  * Writeback is about to end against a page which has been marked for immediate
  * reclaim.  If it still appears to be reclaimable, move it to the tail of the
  * inactive list.
  */
 void rotate_reclaimable_page(struct page *page)
 {
+	struct zone *zone = page_zone(page);
+	struct pagevec *pvec;
+	unsigned long flags;
+
+	page_cache_get(page);
+	local_irq_save(flags);
+	__mod_zone_page_state(zone, NR_IMMEDIATE, -1);
+
 	if (!PageLocked(page) && !PageDirty(page) && !PageActive(page) &&
 	    !PageUnevictable(page) && PageLRU(page)) {
-		struct pagevec *pvec;
-		unsigned long flags;
 
-		page_cache_get(page);
-		local_irq_save(flags);
 		pvec = &__get_cpu_var(lru_rotate_pvecs);
 		if (!pagevec_add(pvec, page))
 			pagevec_move_tail(pvec);
-		local_irq_restore(flags);
+	} else {
+		pvec = &__get_cpu_var(lru_putback_immediate_pvecs);
+		if (!pagevec_add(pvec, page))
+			pagevec_putback_from_immediate(pvec);
 	}
+
+	/*
+	 * There is a potential race that if a page is set PageReclaim
+	 * and moved to the LRU_IMMEDIATE list after writeback completed,
+	 * it can be left on the LRU_IMMEDATE list with no way for
+	 * reclaim to find it.
+	 *
+	 * This race should be very rare but count how often it happens.
+	 * If it is a continual race, then it's very unsatisfactory as there
+	 * is no guarantee that rotate_reclaimable_page() will be called
+	 * to rescue these pages but finding them in page reclaim is also
+	 * problematic due to the problem of deciding when the right time
+	 * to scan this list is.
+	 */
+	if (!zone_page_state(zone, NR_IMMEDIATE)) {
+		struct page *page;
+		struct list_head *list = &zone->lruvec.lists[LRU_IMMEDIATE];
+
+		if (!list_empty(list)) {
+			spin_lock(&zone->lru_lock);
+			while (!list_empty(list)) {
+				int lru;
+				page = list_entry(list->prev, struct page, lru);
+				lru = page_lru(page);
+				list_move(&page->lru, &zone->lruvec.lists[lru]);
+				__count_vm_event(PGRESCUED);
+			}
+			spin_unlock(&zone->lru_lock);
+		}
+	}
+
+	local_irq_restore(flags);
 }
 
 static void update_page_reclaim_stat(struct zone *zone, struct page *page,
@@ -475,13 +537,21 @@ static void lru_deactivate_fn(struct page *page, void *arg)
 		 * is _really_ small and  it's non-critical problem.
 		 */
 		SetPageReclaim(page);
+
+		/*
+		 * Move to the LRU_IMMEDIATE list to avoid being scanned
+		 * by page reclaim uselessly.
+		 */
+		list_move_tail(&page->lru, &zone->lruvec.lists[LRU_IMMEDIATE]);
+		__mod_zone_page_state(zone, NR_IMMEDIATE, 1);
 	} else {
+		struct lruvec *lruvec;
 		/*
 		 * The page's writeback ends up during pagevec
 		 * We moves tha page into tail of inactive.
 		 */
-		list_move_tail(&page->lru, &zone->lru[lru].list);
-		mem_cgroup_rotate_reclaimable_page(page);
+		lruvec = mem_cgroup_lru_move_lists(zone, page, lru, lru);
+		list_move_tail(&page->lru, &lruvec->lists[lru]);
 		__count_vm_event(PGROTATED);
 	}
 
@@ -585,11 +655,10 @@ int lru_add_drain_all(void)
 void release_pages(struct page **pages, int nr, int cold)
 {
 	int i;
-	struct pagevec pages_to_free;
+	LIST_HEAD(pages_to_free);
 	struct zone *zone = NULL;
 	unsigned long uninitialized_var(flags);
 
-	pagevec_init(&pages_to_free, cold);
 	for (i = 0; i < nr; i++) {
 		struct page *page = pages[i];
 
@@ -620,19 +689,12 @@ void release_pages(struct page **pages, int nr, int cold)
 			del_page_from_lru(zone, page);
 		}
 
-		if (!pagevec_add(&pages_to_free, page)) {
-			if (zone) {
-				spin_unlock_irqrestore(&zone->lru_lock, flags);
-				zone = NULL;
-			}
-			__pagevec_free(&pages_to_free);
-			pagevec_reinit(&pages_to_free);
-  		}
+		list_add(&page->lru, &pages_to_free);
 	}
 	if (zone)
 		spin_unlock_irqrestore(&zone->lru_lock, flags);
 
-	pagevec_free(&pages_to_free);
+	free_hot_cold_page_list(&pages_to_free, cold);
 }
 EXPORT_SYMBOL(release_pages);
 
@@ -662,7 +724,6 @@ void lru_add_page_tail(struct zone* zone,
 	int active;
 	enum lru_list lru;
 	const int file = 0;
-	struct list_head *head;
 
 	VM_BUG_ON(!PageHead(page));
 	VM_BUG_ON(PageCompound(page_tail));
@@ -672,6 +733,8 @@ void lru_add_page_tail(struct zone* zone,
 	SetPageLRU(page_tail);
 
 	if (page_evictable(page_tail, NULL)) {
+		struct lruvec *lruvec;
+
 		if (PageActive(page)) {
 			SetPageActive(page_tail);
 			active = 1;
@@ -681,11 +744,13 @@ void lru_add_page_tail(struct zone* zone,
 			lru = LRU_INACTIVE_ANON;
 		}
 		update_page_reclaim_stat(zone, page_tail, file, active);
+		lruvec = mem_cgroup_lru_add_list(zone, page_tail, lru);
 		if (likely(PageLRU(page)))
-			head = page->lru.prev;
+			list_add(&page_tail->lru, page->lru.prev);
 		else
-			head = &zone->lru[lru].list;
-		__add_page_to_lru_list(zone, page_tail, lru, head);
+			list_add(&page_tail->lru, lruvec->lists[lru].prev);
+		__mod_zone_page_state(zone, NR_LRU_BASE + lru,
+				      hpage_nr_pages(page_tail));
 	} else {
 		SetPageUnevictable(page_tail);
 		add_page_to_lru_list(zone, page_tail, LRU_UNEVICTABLE);
