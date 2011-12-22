@@ -16,6 +16,9 @@ obj-$(CONFIG_ROM)	+= romvec.o
 extra-y			:= head.o
 extra-$(CONFIG_M68328)	+= bootlogo.rh head.o
 
+$(obj)/head-pilot.o: $(obj)/bootlogo.rh
+$(obj)/head-rom.o: $(obj)/bootlogo.rh
+
 $(obj)/bootlogo.rh: $(src)/bootlogo.h
 	perl $(src)/bootlogo.pl < $(src)/bootlogo.h > $(obj)/bootlogo.rh
 
