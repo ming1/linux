@@ -521,6 +521,9 @@ static int __devinit sdhci_s3c_probe(struct platform_device *pdev)
 	if (pdata->host_caps)
 		host->mmc->caps |= pdata->host_caps;
 
+	if (pdata->pm_caps)
+		host->mmc->pm_caps |= pdata->pm_caps;
+
 	host->quirks |= (SDHCI_QUIRK_32BIT_DMA_ADDR |
 			 SDHCI_QUIRK_32BIT_DMA_SIZE);
 
@@ -654,18 +657,7 @@ static struct platform_driver sdhci_s3c_driver = {
 	},
 };
 
-static int __init sdhci_s3c_init(void)
-{
-	return platform_driver_register(&sdhci_s3c_driver);
-}
-
-static void __exit sdhci_s3c_exit(void)
-{
-	platform_driver_unregister(&sdhci_s3c_driver);
-}
-
-module_init(sdhci_s3c_init);
-module_exit(sdhci_s3c_exit);
+module_platform_driver(sdhci_s3c_driver);
 
 MODULE_DESCRIPTION("Samsung SDHCI (HSMMC) glue");
 MODULE_AUTHOR("Ben Dooks, <ben@simtec.co.uk>");
