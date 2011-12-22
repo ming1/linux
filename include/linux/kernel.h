@@ -710,7 +710,7 @@ extern int __build_bug_on_failed;
  * BUILD_BUG - break compile if used.
  *
  * If you have some code that you expect the compiler to eliminate at
- * build time, you should use BUILD_BUG_ON_USED to detect if it is
+ * build time, you should use BUILD_BUG to detect if it is
  * unexpectedly used.
  */
 #define BUILD_BUG()						\
