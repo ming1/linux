@@ -265,8 +265,11 @@ static int ab8500_rtc_set_calibration(struct device *dev, int calibration)
 	u8  rtccal = 0;
 
 	/*
-	 * Check that the calibration value (which is in units of 0.5 parts-per-million)
-	 * is in the AB8500's range for RtcCalibration register.
+	 * Check that the calibration value (which is in units of 0.5
+	 * parts-per-million) is in the AB8500's range for RtcCalibration
+	 * register. -128 (0x80) is not permitted because the AB8500 uses
+	 * a sign-bit rather than two's complement, so 0x80 is just another
+	 * representation of zero.
 	 */
 	if ((calibration < -127) || (calibration > 127)) {
 		dev_err(dev, "RtcCalibration value outside permitted range\n");
@@ -281,7 +284,7 @@ static int ab8500_rtc_set_calibration(struct device *dev, int calibration)
 	if (calibration >= 0)
 		rtccal = 0x7F & calibration;
 	else
-		rtccal = ~(calibration - 1) | 0x80;
+		rtccal = ~(calibration -1) | 0x80;
 
 	retval = abx500_set_register_interruptible(dev, AB8500_RTC,
 			AB8500_RTC_CALIB_REG, rtccal);
