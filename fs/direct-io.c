@@ -1109,7 +1109,7 @@ do_blockdev_direct_IO(int rw, struct kiocb *iocb, struct inode *inode,
 	if (rw & WRITE)
 		rw = WRITE_ODIRECT;
 
-	/* 
+	/*
 	 * Avoid references to bdev if not absolutely needed to give
 	 * the early prefetch in the caller enough time.
 	 */
@@ -1127,10 +1127,10 @@ do_blockdev_direct_IO(int rw, struct kiocb *iocb, struct inode *inode,
 		addr = (unsigned long)iov[seg].iov_base;
 		size = iov[seg].iov_len;
 		end += size;
-		if (unlikely((addr & blocksize_mask) || 
-			     (size & blocksize_mask)))  {
+		if (unlikely((addr & blocksize_mask) ||
+			     (size & blocksize_mask))) {
 			if (bdev)
-				 blkbits = blksize_bits(
+				blkbits = blksize_bits(
 					 bdev_logical_block_size(bdev));
 			blocksize_mask = (1 << blkbits) - 1;
 			if ((addr & blocksize_mask) || (size & blocksize_mask))
@@ -1319,16 +1319,16 @@ out:
 
 ssize_t
 __blockdev_direct_IO(int rw, struct kiocb *iocb, struct inode *inode,
-	struct block_device *bdev, const struct iovec *iov, loff_t offset, 
+	struct block_device *bdev, const struct iovec *iov, loff_t offset,
 	unsigned long nr_segs, get_block_t get_block, dio_iodone_t end_io,
 	dio_submit_t submit_io,	int flags)
 {
-	/* 
+	/*
 	 * The block device state is needed in the end to finally
 	 * submit everything.  Since it's likely to be cache cold
 	 * prefetch it here as first thing to hide some of the
 	 * latency.
-	 * 
+	 *
 	 * Attempt to prefetch the pieces we likely need later.
 	 */
 	prefetch(&bdev->bd_disk->part_tbl);
