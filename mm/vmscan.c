@@ -1421,6 +1421,17 @@ putback_lru_pages(struct mem_cgroup_zone *mz, struct scan_control *sc,
 		}
 		SetPageLRU(page);
 		lru = page_lru(page);
+
+		/*
+		 * If reclaim has tagged a file page reclaim, move it to
+		 * a separate LRU lists to avoid it being scanned by other
+		 * users. It is expected that as writeback completes that
+		 * they are taken back off and moved to the normal LRU
+		 */
+		if (lru == LRU_INACTIVE_FILE &&
+				PageReclaim(page) && PageWriteback(page))
+			lru = LRU_IMMEDIATE;
+
 		add_page_to_lru_list(zone, page, lru);
 		if (is_active_lru(lru)) {
 			int file = is_file_lru(lru);
