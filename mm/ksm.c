@@ -28,6 +28,7 @@
 #include <linux/kthread.h>
 #include <linux/wait.h>
 #include <linux/slab.h>
+#include <linux/memcontrol.h>
 #include <linux/rbtree.h>
 #include <linux/memory.h>
 #include <linux/mmu_notifier.h>
