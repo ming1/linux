@@ -26,6 +26,17 @@
 static unsigned long xo15_sci_gpe;
 static bool lid_wake_on_close;
 
+/*
+ * The normal ACPI LID wakeup behavior is wake-on-open, but not
+ * wake-on-close. This is implemented as standard by the XO-1.5 DSDT.
+ *
+ * We provide here a sysfs attribute that will additionally enable
+ * wake-on-close behavior. This is useful (e.g.) when we oportunistically
+ * suspend with the display running; if the lid is then closed, we want to
+ * wake up to turn the display off.
+ *
+ * This is controlled through a custom method in the XO-1.5 DSDT.
+ */
 static int set_lid_wake_behavior(bool wake_on_close)
 {
 	struct acpi_object_list arg_list;
@@ -39,7 +50,7 @@ static int set_lid_wake_behavior(bool wake_on_close)
 	status = acpi_evaluate_object(NULL, "\\_SB.PCI0.LID.LIDW", &arg_list,
 				      NULL);
 	if (ACPI_FAILURE(status)) {
-		pr_warning(PFX "failed to set lid behaviour\n");
+		pr_warning(PFX "failed to set lid behavior\n");
 		return 1;
 	}
 
