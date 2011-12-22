@@ -25,7 +25,6 @@
 #define RTLLIB_H
 #include <linux/if_ether.h> /* ETH_ALEN */
 #include <linux/kernel.h>   /* ARRAY_SIZE */
-#include <linux/version.h>
 #include <linux/module.h>
 #include <linux/interrupt.h>
 #include <linux/jiffies.h>
@@ -36,6 +35,7 @@
 #include <linux/delay.h>
 #include <linux/wireless.h>
 
+#include "rtllib_debug.h"
 #include "rtl819x_HT.h"
 #include "rtl819x_BA.h"
 #include "rtl819x_TS.h"
@@ -2774,7 +2774,7 @@ extern void rtllib_rx_mgt(struct rtllib_device *ieee,
 			     struct rtllib_rx_stats *stats);
 extern void rtllib_rx_probe_rq(struct rtllib_device *ieee,
 			   struct sk_buff *skb);
-extern int IsLegalChannel(struct rtllib_device *rtllib, u8 channel);
+extern int rtllib_legal_channel(struct rtllib_device *rtllib, u8 channel);
 
 /* rtllib_wx.c */
 extern int rtllib_wx_get_scan(struct rtllib_device *ieee,
@@ -2804,7 +2804,7 @@ extern int rtllib_wx_set_gen_ie(struct rtllib_device *ieee, u8 *ie, size_t len);
 
 /* rtllib_softmac.c */
 extern short rtllib_is_54g(struct rtllib_network *net);
-extern short rtllib_is_shortslot(struct rtllib_network net);
+extern short rtllib_is_shortslot(const struct rtllib_network *net);
 extern int rtllib_rx_frame_softmac(struct rtllib_device *ieee,
 				   struct sk_buff *skb,
 				   struct rtllib_rx_stats *rx_stats, u16 type,
@@ -2971,8 +2971,8 @@ extern void HTInitializeHTInfo(struct rtllib_device *ieee);
 extern void HTInitializeBssDesc(struct bss_ht *pBssHT);
 extern void HTResetSelfAndSavePeerSetting(struct rtllib_device *ieee,
 					  struct rtllib_network *pNetwork);
-extern void HTUpdateSelfAndPeerSetting(struct rtllib_device *ieee,
-				       struct rtllib_network *pNetwork);
+extern void HT_update_self_and_peer_setting(struct rtllib_device *ieee,
+					    struct rtllib_network *pNetwork);
 extern u8 HTGetHighestMCSRate(struct rtllib_device *ieee, u8 *pMCSRateSet,
 			      u8 *pMCSFilter);
 extern u8 MCS_FILTER_ALL[];
