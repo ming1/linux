@@ -61,8 +61,6 @@ static void hci_rx_work(struct work_struct *work);
 static void hci_cmd_work(struct work_struct *work);
 static void hci_tx_work(struct work_struct *work);
 
-static DEFINE_MUTEX(hci_task_lock);
-
 /* HCI device list */
 LIST_HEAD(hci_dev_list);
 DEFINE_RWLOCK(hci_dev_list_lock);
@@ -193,33 +191,20 @@ static void hci_reset_req(struct hci_dev *hdev, unsigned long opt)
 	hci_send_cmd(hdev, HCI_OP_RESET, 0, NULL);
 }
 
-static void hci_init_req(struct hci_dev *hdev, unsigned long opt)
+static void bredr_init(struct hci_dev *hdev)
 {
 	struct hci_cp_delete_stored_link_key cp;
-	struct sk_buff *skb;
 	__le16 param;
 	__u8 flt_type;
 
-	BT_DBG("%s %ld", hdev->name, opt);
-
-	/* Driver initialization */
-
-	/* Special commands */
-	while ((skb = skb_dequeue(&hdev->driver_init))) {
-		bt_cb(skb)->pkt_type = HCI_COMMAND_PKT;
-		skb->dev = (void *) hdev;
-
-		skb_queue_tail(&hdev->cmd_q, skb);
-		queue_work(hdev->workqueue, &hdev->cmd_work);
-	}
-	skb_queue_purge(&hdev->driver_init);
+	hdev->flow_ctl_mode = HCI_FLOW_CTL_MODE_PACKET_BASED;
 
 	/* Mandatory initialization */
 
 	/* Reset */
 	if (!test_bit(HCI_QUIRK_NO_RESET, &hdev->quirks)) {
-			set_bit(HCI_RESET, &hdev->flags);
-			hci_send_cmd(hdev, HCI_OP_RESET, 0, NULL);
+		set_bit(HCI_RESET, &hdev->flags);
+		hci_send_cmd(hdev, HCI_OP_RESET, 0, NULL);
 	}
 
 	/* Read Local Supported Features */
@@ -256,6 +241,51 @@ static void hci_init_req(struct hci_dev *hdev, unsigned long opt)
 	bacpy(&cp.bdaddr, BDADDR_ANY);
 	cp.delete_all = 1;
 	hci_send_cmd(hdev, HCI_OP_DELETE_STORED_LINK_KEY, sizeof(cp), &cp);
+}
+
+static void amp_init(struct hci_dev *hdev)
+{
+	hdev->flow_ctl_mode = HCI_FLOW_CTL_MODE_BLOCK_BASED;
+
+	/* Reset */
+	hci_send_cmd(hdev, HCI_OP_RESET, 0, NULL);
+
+	/* Read Local Version */
+	hci_send_cmd(hdev, HCI_OP_READ_LOCAL_VERSION, 0, NULL);
+}
+
+static void hci_init_req(struct hci_dev *hdev, unsigned long opt)
+{
+	struct sk_buff *skb;
+
+	BT_DBG("%s %ld", hdev->name, opt);
+
+	/* Driver initialization */
+
+	/* Special commands */
+	while ((skb = skb_dequeue(&hdev->driver_init))) {
+		bt_cb(skb)->pkt_type = HCI_COMMAND_PKT;
+		skb->dev = (void *) hdev;
+
+		skb_queue_tail(&hdev->cmd_q, skb);
+		queue_work(hdev->workqueue, &hdev->cmd_work);
+	}
+	skb_queue_purge(&hdev->driver_init);
+
+	switch (hdev->dev_type) {
+	case HCI_BREDR:
+		bredr_init(hdev);
+		break;
+
+	case HCI_AMP:
+		amp_init(hdev);
+		break;
+
+	default:
+		BT_ERR("Unknown device type %d", hdev->dev_type);
+		break;
+	}
+
 }
 
 static void hci_le_init_req(struct hci_dev *hdev, unsigned long opt)
@@ -1800,8 +1830,7 @@ EXPORT_SYMBOL(hci_recv_stream_fragment);
 
 /* ---- Interface to upper protocols ---- */
 
-/* Register/Unregister protocols.
- * hci_task_lock is used to ensure that no tasks are running. */
+/* Register/Unregister protocols. */
 int hci_register_proto(struct hci_proto *hp)
 {
 	int err = 0;
@@ -1811,14 +1840,10 @@ int hci_register_proto(struct hci_proto *hp)
 	if (hp->id >= HCI_MAX_PROTO)
 		return -EINVAL;
 
-	mutex_lock(&hci_task_lock);
-
 	if (!hci_proto[hp->id])
 		hci_proto[hp->id] = hp;
 	else
 		err = -EEXIST;
-
-	mutex_unlock(&hci_task_lock);
 
 	return err;
 }
@@ -1833,14 +1858,10 @@ int hci_unregister_proto(struct hci_proto *hp)
 	if (hp->id >= HCI_MAX_PROTO)
 		return -EINVAL;
 
-	mutex_lock(&hci_task_lock);
-
 	if (hci_proto[hp->id])
 		hci_proto[hp->id] = NULL;
 	else
 		err = -ENOENT;
-
-	mutex_unlock(&hci_task_lock);
 
 	return err;
 }
@@ -2407,8 +2428,6 @@ static void hci_tx_work(struct work_struct *work)
 	struct hci_dev *hdev = container_of(work, struct hci_dev, tx_work);
 	struct sk_buff *skb;
 
-	mutex_lock(&hci_task_lock);
-
 	BT_DBG("%s acl %d sco %d le %d", hdev->name, hdev->acl_cnt,
 		hdev->sco_cnt, hdev->le_cnt);
 
@@ -2425,8 +2444,6 @@ static void hci_tx_work(struct work_struct *work)
 	/* Send next queued raw (unknown type) packet */
 	while ((skb = skb_dequeue(&hdev->raw_q)))
 		hci_send_frame(skb);
-
-	mutex_unlock(&hci_task_lock);
 }
 
 /* ----- HCI RX task (incoming data processing) ----- */
@@ -2514,8 +2531,6 @@ static void hci_rx_work(struct work_struct *work)
 
 	BT_DBG("%s", hdev->name);
 
-	mutex_lock(&hci_task_lock);
-
 	while ((skb = skb_dequeue(&hdev->rx_q))) {
 		if (atomic_read(&hdev->promisc)) {
 			/* Send copy to the sockets */
@@ -2559,8 +2574,6 @@ static void hci_rx_work(struct work_struct *work)
 			break;
 		}
 	}
-
-	mutex_unlock(&hci_task_lock);
 }
 
 static void hci_cmd_work(struct work_struct *work)
