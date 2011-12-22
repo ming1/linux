@@ -2260,7 +2260,8 @@ static const struct inode_operations proc_map_files_inode_operations = {
 	.setattr	= proc_setattr,
 };
 
-static int proc_map_files_readdir(struct file *filp, void *dirent, filldir_t filldir)
+static int
+proc_map_files_readdir(struct file *filp, void *dirent, filldir_t filldir)
 {
 	struct dentry *dentry = filp->f_path.dentry;
 	struct inode *inode = dentry->d_inode;
@@ -2325,8 +2326,10 @@ static int proc_map_files_readdir(struct file *filp, void *dirent, filldir_t fil
 		}
 
 		if (nr_files) {
-			fa = flex_array_alloc(sizeof(info), nr_files, GFP_KERNEL);
-			if (!fa || flex_array_prealloc(fa, 0, nr_files, GFP_KERNEL)) {
+			fa = flex_array_alloc(sizeof(info), nr_files,
+						GFP_KERNEL);
+			if (!fa || flex_array_prealloc(fa, 0, nr_files,
+							GFP_KERNEL)) {
 				ret = -ENOMEM;
 				if (fa)
 					flex_array_free(fa);
@@ -2334,7 +2337,8 @@ static int proc_map_files_readdir(struct file *filp, void *dirent, filldir_t fil
 				mmput(mm);
 				goto out_unlock;
 			}
-			for (i = 0, vma = mm->mmap, pos = 2; vma; vma = vma->vm_next) {
+			for (i = 0, vma = mm->mmap, pos = 2; vma;
+					vma = vma->vm_next) {
 				if (!vma->vm_file)
 					continue;
 				if (++pos <= filp->f_pos)
@@ -2342,9 +2346,9 @@ static int proc_map_files_readdir(struct file *filp, void *dirent, filldir_t fil
 
 				get_file(vma->vm_file);
 				info.file = vma->vm_file;
-				info.len = snprintf(info.name, sizeof(info.name),
-						    "%lx-%lx", vma->vm_start,
-						    vma->vm_end);
+				info.len = snprintf(info.name,
+						sizeof(info.name), "%lx-%lx",
+						vma->vm_start, vma->vm_end);
 				if (flex_array_put(fa, i++, &info, GFP_KERNEL))
 					BUG();
 			}
