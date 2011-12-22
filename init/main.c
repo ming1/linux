@@ -654,7 +654,7 @@ static void __init do_ctors(void)
 #endif
 }
 
-int initcall_debug;
+bool initcall_debug;
 core_param(initcall_debug, initcall_debug, bool, 0644);
 
 static char msgbuf[64];
@@ -846,4 +846,8 @@ static int __init kernel_init(void * unused)
 
 	init_post();
 	return 0;
+}
+
+static void __used testfunc(void)
+{
 }
