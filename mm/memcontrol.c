@@ -1951,6 +1951,9 @@ void mem_cgroup_update_page_stat(struct page *page,
 	bool need_unlock = false;
 	unsigned long uninitialized_var(flags);
 
+	if (mem_cgroup_disabled())
+		return;
+
 	rcu_read_lock();
 	memcg = pc->mem_cgroup;
 	if (unlikely(!memcg || !PageCgroupUsed(pc)))
@@ -3424,7 +3427,8 @@ static struct page_cgroup *lookup_page_cgroup_used(struct page *page)
 	pc = lookup_page_cgroup(page);
 	/*
 	 * Can be NULL while feeding pages into the page allocator for
-	 * the first time, i.e. during boot or memory hotplug.
+	 * the first time, i.e. during boot or memory hotplug;
+	 * or when mem_cgroup_disabled().
 	 */
 	if (likely(pc) && PageCgroupUsed(pc))
 		return pc;
