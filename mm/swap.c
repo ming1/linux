@@ -39,6 +39,7 @@ int page_cluster;
 
 static DEFINE_PER_CPU(struct pagevec[NR_LRU_LISTS], lru_add_pvecs);
 static DEFINE_PER_CPU(struct pagevec, lru_rotate_pvecs);
+static DEFINE_PER_CPU(struct pagevec, lru_putback_immediate_pvecs);
 static DEFINE_PER_CPU(struct pagevec, lru_deactivate_pvecs);
 
 /*
@@ -257,24 +258,80 @@ static void pagevec_move_tail(struct pagevec *pvec)
 }
 
 /*
+ * Similar pair of functions to pagevec_move_tail except it is called when
+ * moving a page from the LRU_IMMEDIATE to one of the [in]active_[file|anon]
+ * lists
+ */
+static void pagevec_putback_immediate_fn(struct page *page, void *arg)
+{
+	struct zone *zone = page_zone(page);
+
+	if (PageLRU(page)) {
+		enum lru_list lru = page_lru(page);
+		list_move(&page->lru, &zone->lru[lru].list);
+	}
+}
+
+static void pagevec_putback_immediate(struct pagevec *pvec)
+{
+	pagevec_lru_move_fn(pvec, pagevec_putback_immediate_fn, NULL);
+}
+
+/*
  * Writeback is about to end against a page which has been marked for immediate
  * reclaim.  If it still appears to be reclaimable, move it to the tail of the
  * inactive list.
  */
 void rotate_reclaimable_page(struct page *page)
 {
+	struct zone *zone = page_zone(page);
+	struct list_head *page_list;
+	struct pagevec *pvec;
+	unsigned long flags;
+
+	page_cache_get(page);
+	local_irq_save(flags);
+	__mod_zone_page_state(zone, NR_IMMEDIATE, -1);
+
 	if (!PageLocked(page) && !PageDirty(page) && !PageActive(page) &&
 	    !PageUnevictable(page) && PageLRU(page)) {
-		struct pagevec *pvec;
-		unsigned long flags;
 
-		page_cache_get(page);
-		local_irq_save(flags);
 		pvec = &__get_cpu_var(lru_rotate_pvecs);
 		if (!pagevec_add(pvec, page))
 			pagevec_move_tail(pvec);
-		local_irq_restore(flags);
+	} else {
+		pvec = &__get_cpu_var(lru_putback_immediate_pvecs);
+		if (!pagevec_add(pvec, page))
+			pagevec_putback_immediate(pvec);
 	}
+
+	/*
+	 * There is a potential race that if a page is set PageReclaim
+	 * and moved to the LRU_IMMEDIATE list after writeback completed,
+	 * it can be left on the LRU_IMMEDATE list with no way for
+	 * reclaim to find it.
+	 *
+	 * This race should be very rare but count how often it happens.
+	 * If it is a continual race, then it's very unsatisfactory as there
+	 * is no guarantee that rotate_reclaimable_page() will be called
+	 * to rescue these pages but finding them in page reclaim is also
+	 * problematic due to the problem of deciding when the right time
+	 * to scan this list is.
+	 */
+	page_list = &zone->lru[LRU_IMMEDIATE].list;
+	if (!zone_page_state(zone, NR_IMMEDIATE) && !list_empty(page_list)) {
+		struct page *page;
+
+		spin_lock(&zone->lru_lock);
+		while (!list_empty(page_list)) {
+			page = list_entry(page_list->prev, struct page, lru);
+			list_move(&page->lru, &zone->lru[page_lru(page)].list);
+			__count_vm_event(PGRESCUED);
+		}
+		spin_unlock(&zone->lru_lock);
+	}
+
+	local_irq_restore(flags);
 }
 
 static void update_page_reclaim_stat(struct zone *zone, struct page *page,
@@ -477,6 +534,13 @@ static void lru_deactivate_fn(struct page *page, void *arg)
 		 * is _really_ small and  it's non-critical problem.
 		 */
 		SetPageReclaim(page);
+
+		/*
+		 * Move to the LRU_IMMEDIATE list to avoid being scanned
+		 * by page reclaim uselessly.
+		 */
+		list_move_tail(&page->lru, &zone->lru[LRU_IMMEDIATE].list);
+		__mod_zone_page_state(zone, NR_IMMEDIATE, 1);
 	} else {
 		struct lruvec *lruvec;
 		/*
