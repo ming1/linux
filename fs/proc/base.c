@@ -650,9 +650,14 @@ static bool has_pid_permissions(struct pid_namespace *pid,
 static int proc_pid_permission(struct inode *inode, int mask)
 {
 	struct pid_namespace *pid = inode->i_sb->s_fs_info;
-	struct task_struct *task = get_proc_task(inode);
+	struct task_struct *task;
+	bool has_perms;
 
-	if (!has_pid_permissions(pid, task, 1)) {
+	task = get_proc_task(inode);
+	has_perms = has_pid_permissions(pid, task, 1);
+	put_task_struct(task);
+
+	if (!has_perms) {
 		if (pid->hide_pid == 2) {
 			/*
 			 * Let's make getdents(), stat(), and open()
