@@ -1188,6 +1188,9 @@ out:
 	local_irq_restore(flags);
 }
 
+/*
+ * Free a list of 0-order pages
+ */
 void free_hot_cold_page_list(struct list_head *list, int cold)
 {
 	struct page *page, *next;
@@ -1196,8 +1199,6 @@ void free_hot_cold_page_list(struct list_head *list, int cold)
 		trace_mm_pagevec_free(page, cold);
 		free_hot_cold_page(page, cold);
 	}
-
-	INIT_LIST_HEAD(list);
 }
 
 /*
