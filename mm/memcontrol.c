@@ -2181,20 +2181,19 @@ static int mem_cgroup_do_charge(struct mem_cgroup *memcg, gfp_t gfp_mask,
  * 3. call memory reclaim if necessary.
  *
  * In some special case, if the task is fatal, fatal_signal_pending() or
- * TIF_MEMDIE, this functoion returns -EINTR with filling *ptr as
- * root_mem_cgroup. There are 2 reasons for this. 1st is that
- * fatal threads should quit as soon as possible without any hazards.
- * 2nd is that all page should have valid pc->mem_cgroup if it will be
- * used. If mm is NULL and the caller doesn't pass valid memcg pointer,
- * that's treated as charge to root_mem_cgroup.
+ * has TIF_MEMDIE, this function returns -EINTR while writing root_mem_cgroup
+ * to *ptr. There are two reasons for this. 1: fatal threads should quit as soon
+ * as possible without any hazards. 2: all pages should have a valid
+ * pc->mem_cgroup. If mm is NULL and the caller doesn't pass a valid memcg
+ * pointer, that is treated as a charge to root_mem_cgroup.
  *
- * So, try_charge will return
- *  0       ...  at success. filling *ptr with a valid memcg pointer.
+ * So __mem_cgroup_try_charge() will return
+ *  0       ...  on success, filling *ptr with a valid memcg pointer.
  *  -ENOMEM ...  charge failure because of resource limits.
  *  -EINTR  ...  if thread is fatal. *ptr is filled with root_mem_cgroup.
  *
- * Unlike exported interface, "oom" parameter is added. if oom==true,
- * oom-killer can be invoked.
+ * Unlike the exported interface, an "oom" parameter is added. if oom==true,
+ * the oom-killer can be invoked.
  */
 static int __mem_cgroup_try_charge(struct mm_struct *mm,
 				   gfp_t gfp_mask,
