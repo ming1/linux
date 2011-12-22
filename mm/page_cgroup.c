@@ -41,9 +41,7 @@ static int __init alloc_node_page_cgroup(int nid)
 	unsigned long table_size;
 	unsigned long nr_pages;
 
-	start_pfn = NODE_DATA(nid)->node_start_pfn;
 	nr_pages = NODE_DATA(nid)->node_spanned_pages;
-
 	if (!nr_pages)
 		return 0;
 
