@@ -334,7 +334,6 @@ struct swap_cgroup {
 	unsigned short		id;
 };
 #define SC_PER_PAGE	(PAGE_SIZE/sizeof(struct swap_cgroup))
-#define SC_POS_MASK	(SC_PER_PAGE - 1)
 
 /*
  * SwapCgroup implements "lookup" and "exchange" operations.
@@ -376,25 +375,19 @@ not_enough_page:
 	return -ENOMEM;
 }
 
-static struct swap_cgroup *swap_cgroup_getsc(swp_entry_t ent,
-					struct swap_cgroup_ctrl **ctrl)
+static struct swap_cgroup *lookup_swap_cgroup(swp_entry_t ent,
+					struct swap_cgroup_ctrl **ctrlp)
 {
-	int type = swp_type(ent);
-	unsigned long offset = swp_offset(ent);
-	unsigned long idx = offset / SC_PER_PAGE;
-	unsigned long pos = offset & SC_POS_MASK;
-	struct swap_cgroup_ctrl *temp_ctrl;
+	pgoff_t offset = swp_offset(ent);
+	struct swap_cgroup_ctrl *ctrl;
 	struct page *mappage;
-	struct swap_cgroup *sc;
 
-	temp_ctrl = &swap_cgroup_ctrl[type];
-	if (ctrl)
-		*ctrl = temp_ctrl;
+	ctrl = &swap_cgroup_ctrl[swp_type(ent)];
+	if (ctrlp)
+		*ctrlp = ctrl;
 
-	mappage = temp_ctrl->map[idx];
-	sc = page_address(mappage);
-	sc += pos;
-	return sc;
+	mappage = ctrl->map[offset / SC_PER_PAGE];
+	return page_address(mappage) + offset % SC_PER_PAGE;
 }
 
 /**
@@ -414,7 +407,7 @@ unsigned short swap_cgroup_cmpxchg(swp_entry_t ent,
 	unsigned long flags;
 	unsigned short retval;
 
-	sc = swap_cgroup_getsc(ent, &ctrl);
+	sc = lookup_swap_cgroup(ent, &ctrl);
 
 	spin_lock_irqsave(&ctrl->lock, flags);
 	retval = sc->id;
@@ -441,7 +434,7 @@ unsigned short swap_cgroup_record(swp_entry_t ent, unsigned short id)
 	unsigned short old;
 	unsigned long flags;
 
-	sc = swap_cgroup_getsc(ent, &ctrl);
+	sc = lookup_swap_cgroup(ent, &ctrl);
 
 	spin_lock_irqsave(&ctrl->lock, flags);
 	old = sc->id;
@@ -452,14 +445,14 @@ unsigned short swap_cgroup_record(swp_entry_t ent, unsigned short id)
 }
 
 /**
- * lookup_swap_cgroup - lookup mem_cgroup tied to swap entry
+ * lookup_swap_cgroup_id - lookup mem_cgroup id tied to swap entry
  * @ent: swap entry to be looked up.
  *
  * Returns CSS ID of mem_cgroup at success. 0 at failure. (0 is invalid ID)
  */
-unsigned short lookup_swap_cgroup(swp_entry_t ent)
+unsigned short lookup_swap_cgroup_id(swp_entry_t ent)
 {
-	return swap_cgroup_getsc(ent, NULL)->id;
+	return lookup_swap_cgroup(ent, NULL)->id;
 }
 
 int swap_cgroup_swapon(int type, unsigned long max_pages)
