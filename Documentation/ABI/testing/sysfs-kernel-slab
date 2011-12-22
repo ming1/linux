@@ -345,7 +345,9 @@ Description:
 		allocated.  It is writable and can be changed to increase the
 		number of objects per slab.  If a slab cannot be allocated
 		because of fragmentation, SLUB will retry with the minimum order
-		possible depending on its characteristics.
+		possible depending on its characteristics. 
+		When debug_guardpage_minorder > 0 parameter is specified, the
+		minimum possible order is used and cannot be changed.
 
 What:		/sys/kernel/slab/cache/order_fallback
 Date:		April 2008
