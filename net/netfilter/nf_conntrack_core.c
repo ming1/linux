@@ -1087,7 +1087,7 @@ static struct nf_ct_ext_type nf_ct_zone_extend __read_mostly = {
 };
 #endif
 
-#if defined(CONFIG_NF_CT_NETLINK) || defined(CONFIG_NF_CT_NETLINK_MODULE)
+#if IS_ENABLED(CONFIG_NF_CT_NETLINK)
 
 #include <linux/netfilter/nfnetlink.h>
 #include <linux/netfilter/nfnetlink_conntrack.h>
@@ -1342,8 +1342,7 @@ void *nf_ct_alloc_hashtable(unsigned int *sizep, int nulls)
 					get_order(sz));
 	if (!hash) {
 		printk(KERN_WARNING "nf_conntrack: falling back to vmalloc.\n");
-		hash = __vmalloc(sz, GFP_KERNEL | __GFP_HIGHMEM | __GFP_ZERO,
-				 PAGE_KERNEL);
+		hash = vzalloc(sz);
 	}
 
 	if (hash && nulls)

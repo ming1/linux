@@ -17,14 +17,13 @@
 #include <linux/in.h>
 #include <linux/errno.h>
 #include <linux/init.h>
-#include <linux/ipv6.h>
 #include <linux/skbuff.h>
 #include <linux/jhash.h>
 #include <linux/slab.h>
 #include <linux/vmalloc.h>
-#include <net/ip.h>
 #include <net/netlink.h>
 #include <net/pkt_sched.h>
+#include <net/flow_keys.h>
 
 
 /*	Stochastic Fairness Queuing algorithm.
@@ -137,61 +136,31 @@ static inline struct sfq_head *sfq_dep_head(struct sfq_sched_data *q, sfq_index 
 	return &q->dep[val - SFQ_SLOTS];
 }
 
-static unsigned int sfq_fold_hash(struct sfq_sched_data *q, u32 h, u32 h1)
+/*
+ * In order to be able to quickly rehash our queue when timer changes
+ * q->perturbation, we store flow_keys in skb->cb[]
+ */
+struct sfq_skb_cb {
+       struct flow_keys        keys;
+};
+
+static inline struct sfq_skb_cb *sfq_skb_cb(const struct sk_buff *skb)
 {
-	return jhash_2words(h, h1, q->perturbation) & (q->divisor - 1);
+       BUILD_BUG_ON(sizeof(skb->cb) <
+               sizeof(struct qdisc_skb_cb) + sizeof(struct sfq_skb_cb));
+       return (struct sfq_skb_cb *)qdisc_skb_cb(skb)->data;
 }
 
-static unsigned int sfq_hash(struct sfq_sched_data *q, struct sk_buff *skb)
+static unsigned int sfq_hash(const struct sfq_sched_data *q,
+			     const struct sk_buff *skb)
 {
-	u32 h, h2;
+	const struct flow_keys *keys = &sfq_skb_cb(skb)->keys;
+	unsigned int hash;
 
-	switch (skb->protocol) {
-	case htons(ETH_P_IP):
-	{
-		const struct iphdr *iph;
-		int poff;
-
-		if (!pskb_network_may_pull(skb, sizeof(*iph)))
-			goto err;
-		iph = ip_hdr(skb);
-		h = (__force u32)iph->daddr;
-		h2 = (__force u32)iph->saddr ^ iph->protocol;
-		if (ip_is_fragment(iph))
-			break;
-		poff = proto_ports_offset(iph->protocol);
-		if (poff >= 0 &&
-		    pskb_network_may_pull(skb, iph->ihl * 4 + 4 + poff)) {
-			iph = ip_hdr(skb);
-			h2 ^= *(u32 *)((void *)iph + iph->ihl * 4 + poff);
-		}
-		break;
-	}
-	case htons(ETH_P_IPV6):
-	{
-		const struct ipv6hdr *iph;
-		int poff;
-
-		if (!pskb_network_may_pull(skb, sizeof(*iph)))
-			goto err;
-		iph = ipv6_hdr(skb);
-		h = (__force u32)iph->daddr.s6_addr32[3];
-		h2 = (__force u32)iph->saddr.s6_addr32[3] ^ iph->nexthdr;
-		poff = proto_ports_offset(iph->nexthdr);
-		if (poff >= 0 &&
-		    pskb_network_may_pull(skb, sizeof(*iph) + 4 + poff)) {
-			iph = ipv6_hdr(skb);
-			h2 ^= *(u32 *)((void *)iph + sizeof(*iph) + poff);
-		}
-		break;
-	}
-	default:
-err:
-		h = (unsigned long)skb_dst(skb) ^ (__force u32)skb->protocol;
-		h2 = (unsigned long)skb->sk;
-	}
-
-	return sfq_fold_hash(q, h, h2);
+	hash = jhash_3words((__force u32)keys->dst,
+			    (__force u32)keys->src ^ keys->ip_proto,
+			    (__force u32)keys->ports, q->perturbation);
+	return hash & (q->divisor - 1);
 }
 
 static unsigned int sfq_classify(struct sk_buff *skb, struct Qdisc *sch,
@@ -206,8 +175,10 @@ static unsigned int sfq_classify(struct sk_buff *skb, struct Qdisc *sch,
 	    TC_H_MIN(skb->priority) <= q->divisor)
 		return TC_H_MIN(skb->priority);
 
-	if (!q->filter_list)
+	if (!q->filter_list) {
+		skb_flow_dissect(skb, &sfq_skb_cb(skb)->keys);
 		return sfq_hash(q, skb) + 1;
+	}
 
 	*qerr = NET_XMIT_SUCCESS | __NET_XMIT_BYPASS;
 	result = tc_classify(skb, q->filter_list, &res);
@@ -468,12 +439,71 @@ sfq_reset(struct Qdisc *sch)
 		kfree_skb(skb);
 }
 
+/*
+ * When q->perturbation is changed, we rehash all queued skbs
+ * to avoid OOO (Out Of Order) effects.
+ * We dont use sfq_dequeue()/sfq_enqueue() because we dont want to change
+ * counters.
+ */
+static void sfq_rehash(struct sfq_sched_data *q)
+{
+	struct sk_buff *skb;
+	int i;
+	struct sfq_slot *slot;
+	struct sk_buff_head list;
+
+	__skb_queue_head_init(&list);
+
+	for (i = 0; i < SFQ_SLOTS; i++) {
+		slot = &q->slots[i];
+		if (!slot->qlen)
+			continue;
+		while (slot->qlen) {
+			skb = slot_dequeue_head(slot);
+			sfq_dec(q, i);
+			__skb_queue_tail(&list, skb);
+		}
+		q->ht[slot->hash] = SFQ_EMPTY_SLOT;
+	}
+	q->tail = NULL;
+
+	while ((skb = __skb_dequeue(&list)) != NULL) {
+		unsigned int hash = sfq_hash(q, skb);
+		sfq_index x = q->ht[hash];
+
+		slot = &q->slots[x];
+		if (x == SFQ_EMPTY_SLOT) {
+			x = q->dep[0].next; /* get a free slot */
+			q->ht[hash] = x;
+			slot = &q->slots[x];
+			slot->hash = hash;
+		}
+		slot_queue_add(slot, skb);
+		sfq_inc(q, x);
+		if (slot->qlen == 1) {		/* The flow is new */
+			if (q->tail == NULL) {	/* It is the first flow */
+				slot->next = x;
+			} else {
+				slot->next = q->tail->next;
+				q->tail->next = x;
+			}
+			q->tail = slot;
+			slot->allot = q->scaled_quantum;
+		}
+	}
+}
+
 static void sfq_perturbation(unsigned long arg)
 {
 	struct Qdisc *sch = (struct Qdisc *)arg;
 	struct sfq_sched_data *q = qdisc_priv(sch);
+	spinlock_t *root_lock = qdisc_lock(qdisc_root_sleeping(sch));
 
+	spin_lock(root_lock);
 	q->perturbation = net_random();
+	if (!q->filter_list && q->tail)
+		sfq_rehash(q);
+	spin_unlock(root_lock);
 
 	if (q->perturb_period)
 		mod_timer(&q->perturb_timer, jiffies + q->perturb_period);

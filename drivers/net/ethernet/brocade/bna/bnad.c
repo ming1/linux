@@ -723,7 +723,7 @@ void
 bnad_cb_ethport_link_status(struct bnad *bnad,
 			enum bna_link_status link_status)
 {
-	bool link_up = 0;
+	bool link_up = false;
 
 	link_up = (link_status == BNA_LINK_UP) || (link_status == BNA_CEE_UP);
 
@@ -2968,7 +2968,7 @@ bnad_change_mtu(struct net_device *netdev, int new_mtu)
 	return err;
 }
 
-static void
+static int
 bnad_vlan_rx_add_vid(struct net_device *netdev,
 				 unsigned short vid)
 {
@@ -2976,7 +2976,7 @@ bnad_vlan_rx_add_vid(struct net_device *netdev,
 	unsigned long flags;
 
 	if (!bnad->rx_info[0].rx)
-		return;
+		return 0;
 
 	mutex_lock(&bnad->conf_mutex);
 
@@ -2986,9 +2986,11 @@ bnad_vlan_rx_add_vid(struct net_device *netdev,
 	spin_unlock_irqrestore(&bnad->bna_lock, flags);
 
 	mutex_unlock(&bnad->conf_mutex);
+
+	return 0;
 }
 
-static void
+static int
 bnad_vlan_rx_kill_vid(struct net_device *netdev,
 				  unsigned short vid)
 {
@@ -2996,7 +2998,7 @@ bnad_vlan_rx_kill_vid(struct net_device *netdev,
 	unsigned long flags;
 
 	if (!bnad->rx_info[0].rx)
-		return;
+		return 0;
 
 	mutex_lock(&bnad->conf_mutex);
 
@@ -3006,6 +3008,8 @@ bnad_vlan_rx_kill_vid(struct net_device *netdev,
 	spin_unlock_irqrestore(&bnad->bna_lock, flags);
 
 	mutex_unlock(&bnad->conf_mutex);
+
+	return 0;
 }
 
 #ifdef CONFIG_NET_POLL_CONTROLLER
@@ -3186,7 +3190,7 @@ bnad_pci_init(struct bnad *bnad,
 		goto disable_device;
 	if (!dma_set_mask(&pdev->dev, DMA_BIT_MASK(64)) &&
 	    !dma_set_coherent_mask(&pdev->dev, DMA_BIT_MASK(64))) {
-		*using_dac = 1;
+		*using_dac = true;
 	} else {
 		err = dma_set_mask(&pdev->dev, DMA_BIT_MASK(32));
 		if (err) {
@@ -3195,7 +3199,7 @@ bnad_pci_init(struct bnad *bnad,
 			if (err)
 				goto release_regions;
 		}
-		*using_dac = 0;
+		*using_dac = false;
 	}
 	pci_set_master(pdev);
 	return 0;

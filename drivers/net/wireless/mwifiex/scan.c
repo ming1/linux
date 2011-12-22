@@ -1391,11 +1391,8 @@ int mwifiex_set_user_scan_ioctl(struct mwifiex_private *priv,
 {
 	int status;
 
-	priv->adapter->scan_wait_q_woken = false;
-
 	status = mwifiex_scan_networks(priv, scan_req);
-	if (!status)
-		status = mwifiex_wait_queue_complete(priv->adapter);
+	queue_work(priv->adapter->workqueue, &priv->adapter->main_work);
 
 	return status;
 }
@@ -1535,11 +1532,6 @@ done:
 	kfree(bss_desc);
 	kfree(beacon_ie);
 	return 0;
-}
-
-static void mwifiex_free_bss_priv(struct cfg80211_bss *bss)
-{
-	kfree(bss->priv);
 }
 
 /*
@@ -1767,7 +1759,7 @@ int mwifiex_ret_802_11_scan(struct mwifiex_private *priv,
 					      cap_info_bitmap, beacon_period,
 					      ie_buf, ie_len, rssi, GFP_KERNEL);
 				*(u8 *)bss->priv = band;
-				bss->free_priv = mwifiex_free_bss_priv;
+				cfg80211_put_bss(bss);
 
 				if (priv->media_connected && !memcmp(bssid,
 					priv->curr_bss_params.bss_descriptor
@@ -1801,6 +1793,14 @@ int mwifiex_ret_802_11_scan(struct mwifiex_private *priv,
 			up(&priv->async_sem);
 		}
 
+		if (priv->user_scan_cfg) {
+			dev_dbg(priv->adapter->dev, "info: %s: sending scan "
+							"results\n", __func__);
+			cfg80211_scan_done(priv->scan_request, 0);
+			priv->scan_request = NULL;
+			kfree(priv->user_scan_cfg);
+			priv->user_scan_cfg = NULL;
+		}
 	} else {
 		/* Get scan command from scan_pending_q and put to
 		   cmd_pending_q */
