@@ -1655,22 +1655,11 @@ static int reiserfs_fill_super(struct super_block *s, void *data, int silent)
 	mutex_init(&REISERFS_SB(s)->lock);
 	REISERFS_SB(s)->lock_depth = -1;
 
-	/*
-	 * This function is called with the bkl, which also was the old
-	 * locking used here.
-	 * do_journal_begin() will soon check if we hold the lock (ie: was the
-	 * bkl). This is likely because do_journal_begin() has several another
-	 * callers because at this time, it doesn't seem to be necessary to
-	 * protect against anything.
-	 * Anyway, let's be conservative and lock for now.
-	 */
-	reiserfs_write_lock(s);
-
 	jdev_name = NULL;
 	if (reiserfs_parse_options
 	    (s, (char *)data, &(sbi->s_mount_opt), &blocks, &jdev_name,
 	     &commit_max_age, qf_names, &qfmt) == 0) {
-		goto error;
+		goto error_unlocked;
 	}
 #ifdef CONFIG_QUOTA
 	handle_quota_files(s, qf_names, &qfmt);
@@ -1678,7 +1667,7 @@ static int reiserfs_fill_super(struct super_block *s, void *data, int silent)
 
 	if (blocks) {
 		SWARN(silent, s, "jmacd-7", "resize option for remount only");
-		goto error;
+		goto error_unlocked;
 	}
 
 	/* try old format (undistributed bitmap, super block in 8-th 1k block of a device) */
@@ -1688,7 +1677,7 @@ static int reiserfs_fill_super(struct super_block *s, void *data, int silent)
 	else if (read_super_block(s, REISERFS_DISK_OFFSET_IN_BYTES)) {
 		SWARN(silent, s, "sh-2021", "can not find reiserfs on %s",
 		      reiserfs_bdevname(s));
-		goto error;
+		goto error_unlocked;
 	}
 
 	rs = SB_DISK_SUPER_BLOCK(s);
@@ -1704,7 +1693,7 @@ static int reiserfs_fill_super(struct super_block *s, void *data, int silent)
 		      "or increase size of your LVM partition");
 		SWARN(silent, s, "", "Or may be you forgot to "
 		      "reboot after fdisk when it told you to");
-		goto error;
+		goto error_unlocked;
 	}
 
 	sbi->s_mount_state = SB_REISERFS_STATE(s);
@@ -1712,8 +1701,9 @@ static int reiserfs_fill_super(struct super_block *s, void *data, int silent)
 
 	if ((errval = reiserfs_init_bitmap_cache(s))) {
 		SWARN(silent, s, "jmacd-8", "unable to read bitmap");
-		goto error;
+		goto error_unlocked;
 	}
+
 	errval = -EINVAL;
 #ifdef CONFIG_REISERFS_CHECK
 	SWARN(silent, s, "", "CONFIG_REISERFS_CHECK is set ON");
@@ -1736,6 +1726,17 @@ static int reiserfs_fill_super(struct super_block *s, void *data, int silent)
 	if (reiserfs_barrier_flush(s)) {
 		printk("reiserfs: using flush barriers\n");
 	}
+
+	/*
+	 * This path assumed to be called with the BKL in the old times.
+	 * Now we have inherited the big reiserfs lock from it and many
+	 * reiserfs helpers called in the mount path and elsewhere require
+	 * this lock to be held even if it's not always necessary. Let's be
+	 * conservative and hold it early. The window can be reduced after
+	 * careful review of the code.
+	 */
+	reiserfs_write_lock(s);
+
 	// set_device_ro(s->s_dev, 1) ;
 	if (journal_init(s, jdev_name, old_format, commit_max_age)) {
 		SWARN(silent, s, "sh-2022",
@@ -1896,11 +1897,15 @@ static int reiserfs_fill_super(struct super_block *s, void *data, int silent)
 	return (0);
 
 error:
-	if (jinit_done) {	/* kill the commit thread, free journal ram */
-		journal_release_error(NULL, s);
-	}
-
 	reiserfs_write_unlock(s);
+
+error_unlocked:
+	/* kill the commit thread, free journal ram */
+	if (jinit_done) {
+		reiserfs_write_lock(s);
+		journal_release_error(NULL, s);
+		reiserfs_write_unlock(s);
+	}
 
 	reiserfs_free_bitmap_cache(s);
 	if (SB_BUFFER_WITH_SB(s))
