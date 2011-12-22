@@ -466,12 +466,12 @@ static int mxc_rtc_resume(struct device *dev)
 
 	return 0;
 }
-#endif
 
 static struct dev_pm_ops mxc_rtc_pm_ops = {
 	.suspend	= mxc_rtc_suspend,
 	.resume		= mxc_rtc_resume,
 };
+#endif
 
 static struct platform_driver mxc_rtc_driver = {
 	.driver = {
