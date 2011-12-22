@@ -221,11 +221,19 @@ static unsigned long move_vma(struct vm_area_struct *vma,
 	moved_len = move_page_tables(vma, old_addr, new_vma, new_addr, old_len);
 	if (moved_len < old_len) {
 		/*
+		 * Before moving the page tables from the new vma to
+		 * the old vma, we need to be sure the old vma is
+		 * queued after new vma in the same_anon_vma list to
+		 * prevent SMP races with rmap_walk (that could lead
+		 * rmap_walk to miss some page table).
+		 */
+		anon_vma_moveto_tail(vma);
+
+		/*
 		 * On error, move entries back from new area to old,
 		 * which will succeed since page tables still there,
 		 * and then proceed to unmap new area instead of old.
 		 */
-		anon_vma_moveto_tail(vma);
 		move_page_tables(new_vma, new_addr, vma, old_addr, moved_len);
 		vma = new_vma;
 		old_len = new_len;
