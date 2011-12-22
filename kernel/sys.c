@@ -1701,6 +1701,7 @@ static int prctl_set_mm(int opt, unsigned long addr,
 	unsigned long vm_bad_flags;
 	struct vm_area_struct *vma;
 	int error = 0;
+	struct mm_struct *mm = current->mm;
 
 	if (arg4 | arg5)
 		return -EINVAL;
@@ -1711,8 +1712,8 @@ static int prctl_set_mm(int opt, unsigned long addr,
 	if (addr >= TASK_SIZE)
 		return -EINVAL;
 
-	down_read(&current->mm->mmap_sem);
-	vma = find_vma(current->mm, addr);
+	down_read(&mm->mmap_sem);
+	vma = find_vma(mm, addr);
 
 	if (opt != PR_SET_MM_START_BRK && opt != PR_SET_MM_BRK) {
 		/* It must be existing VMA */
@@ -1732,9 +1733,9 @@ static int prctl_set_mm(int opt, unsigned long addr,
 			goto out;
 
 		if (opt == PR_SET_MM_START_CODE)
-			current->mm->start_code = addr;
+			mm->start_code = addr;
 		else
-			current->mm->end_code = addr;
+			mm->end_code = addr;
 		break;
 
 	case PR_SET_MM_START_DATA:
@@ -1747,9 +1748,9 @@ static int prctl_set_mm(int opt, unsigned long addr,
 			goto out;
 
 		if (opt == PR_SET_MM_START_DATA)
-			current->mm->start_data = addr;
+			mm->start_data = addr;
 		else
-			current->mm->end_data = addr;
+			mm->end_data = addr;
 		break;
 
 	case PR_SET_MM_START_STACK:
@@ -1762,31 +1763,31 @@ static int prctl_set_mm(int opt, unsigned long addr,
 		if ((vma->vm_flags & vm_req_flags) != vm_req_flags)
 			goto out;
 
-		current->mm->start_stack = addr;
+		mm->start_stack = addr;
 		break;
 
 	case PR_SET_MM_START_BRK:
-		if (addr <= current->mm->end_data)
+		if (addr <= mm->end_data)
 			goto out;
 
 		if (rlim < RLIM_INFINITY &&
-		    (current->mm->brk - addr) +
-		    (current->mm->end_data - current->mm->start_data) > rlim)
+		    (mm->brk - addr) +
+		    (mm->end_data - mm->start_data) > rlim)
 			goto out;
 
-		current->mm->start_brk = addr;
+		mm->start_brk = addr;
 		break;
 
 	case PR_SET_MM_BRK:
-		if (addr <= current->mm->end_data)
+		if (addr <= mm->end_data)
 			goto out;
 
 		if (rlim < RLIM_INFINITY &&
-		    (addr - current->mm->start_brk) +
-		    (current->mm->end_data - current->mm->start_data) > rlim)
+		    (addr - mm->start_brk) +
+		    (mm->end_data - mm->start_data) > rlim)
 			goto out;
 
-		current->mm->brk = addr;
+		mm->brk = addr;
 		break;
 
 	default:
@@ -1797,7 +1798,7 @@ static int prctl_set_mm(int opt, unsigned long addr,
 	error = 0;
 
 out:
-	up_read(&current->mm->mmap_sem);
+	up_read(&mm->mmap_sem);
 
 	return error;
 }
