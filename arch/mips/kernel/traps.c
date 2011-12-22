@@ -1349,7 +1349,7 @@ int register_nmi_notifier(struct notifier_block *nb)
 	return raw_notifier_chain_register(&nmi_chain, nb);
 }
 
-NORET_TYPE void ATTRIB_NORET nmi_exception_handler(struct pt_regs *regs)
+void ATTRIB_NORET nmi_exception_handler(struct pt_regs *regs)
 {
 	raw_notifier_call_chain(&nmi_chain, 0, regs);
 	bust_spinlocks(1);
