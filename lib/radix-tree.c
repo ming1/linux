@@ -703,7 +703,13 @@ unsigned long radix_tree_range_tag_if_tagged(struct radix_tree_root *root,
 			node = node->parent;
 		}
 
-		/* optimization: no need to walk up from this node again */
+		/*
+		 * Small optimization: now clear that node pointer.
+		 * Since all of this slot's ancestors now have the tag set
+		 * from setting it above, we have no further need to walk
+		 * back up the tree setting tags, until we update slot to
+		 * point to another radix_tree_node.
+		 */
 		node = NULL;
 
 next:
