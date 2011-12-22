@@ -268,7 +268,7 @@ static void pagevec_putback_from_immediate_fn(struct page *page, void *arg)
 
 	if (PageLRU(page)) {
 		enum lru_list lru = page_lru(page);
-		list_move(&page->lru, &zone->lru[lru].list);
+		list_move(&page->lru, &zone->lruvec.lists[lru]);
 	}
 }
 
@@ -285,7 +285,6 @@ static void pagevec_putback_from_immediate(struct pagevec *pvec)
 void rotate_reclaimable_page(struct page *page)
 {
 	struct zone *zone = page_zone(page);
-	struct list_head *list;
 	struct pagevec *pvec;
 	unsigned long flags;
 
@@ -320,7 +319,7 @@ void rotate_reclaimable_page(struct page *page)
 	 */
 	if (!zone_page_state(zone, NR_IMMEDIATE)) {
 		struct page *page;
-		list = &zone->lru[LRU_IMMEDIATE].list;
+		struct list_head *list = &zone->lruvec.lists[LRU_IMMEDIATE];
 
 		if (!list_empty(list)) {
 			spin_lock(&zone->lru_lock);
@@ -328,7 +327,7 @@ void rotate_reclaimable_page(struct page *page)
 				int lru;
 				page = list_entry(list->prev, struct page, lru);
 				lru = page_lru(page);
-				list_move(&page->lru, &zone->lru[lru].list);
+				list_move(&page->lru, &zone->lruvec.lists[lru]);
 				__count_vm_event(PGRESCUED);
 			}
 			spin_unlock(&zone->lru_lock);
@@ -543,7 +542,7 @@ static void lru_deactivate_fn(struct page *page, void *arg)
 		 * Move to the LRU_IMMEDIATE list to avoid being scanned
 		 * by page reclaim uselessly.
 		 */
-		list_move_tail(&page->lru, &zone->lru[LRU_IMMEDIATE].list);
+		list_move_tail(&page->lru, &zone->lruvec.lists[LRU_IMMEDIATE]);
 		__mod_zone_page_state(zone, NR_IMMEDIATE, 1);
 	} else {
 		struct lruvec *lruvec;
