@@ -47,7 +47,8 @@ next/pm
 
 next/fixes-non-critical
   omap/fixes-non-critical git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap fixes-non-critical
-  omap/fixes-non-critical-part2 git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap fixes-hwmod
+  omap/fixes-hwmod git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap fixes-hwmod
+  omap/fixes-non-critical-part2 git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap fixes-non-critical-part2
 
 next/timer
   msm/timer		git://codeaurora.org/quic/kernel/davidb/linux-msm.git msm-timer
