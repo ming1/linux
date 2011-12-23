@@ -499,7 +499,7 @@ static int tmio_suspend(struct platform_device *dev, pm_message_t state)
 	const struct mfd_cell *cell = mfd_get_cell(dev);
 
 	if (cell->suspend)
-		cell->suspend(dev);
+		mtd_suspend(dev);
 
 	tmio_hw_stop(dev, platform_get_drvdata(dev));
 	return 0;
