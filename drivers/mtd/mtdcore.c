@@ -677,7 +677,7 @@ void __put_mtd_device(struct mtd_info *mtd)
 	BUG_ON(mtd->usecount < 0);
 
 	if (mtd->put_device)
-		mtd->put_device(mtd);
+		mtd_put_device(mtd);
 
 	module_put(mtd->owner);
 }
