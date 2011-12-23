@@ -515,7 +515,7 @@ static int tmio_resume(struct platform_device *dev)
 	tmio_hw_init(dev, platform_get_drvdata(dev));
 
 	if (cell->resume)
-		cell->resume(dev);
+		mtd_resume(dev);
 
 	return 0;
 }
