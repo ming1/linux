@@ -614,7 +614,7 @@ int __get_mtd_device(struct mtd_info *mtd)
 		return -ENODEV;
 
 	if (mtd->get_device) {
-		err = mtd->get_device(mtd);
+		err = mtd_get_device(mtd);
 
 		if (err) {
 			module_put(mtd->owner);
