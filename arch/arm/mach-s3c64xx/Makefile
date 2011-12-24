@@ -41,6 +41,7 @@ obj-$(CONFIG_S3C64XX_SETUP_SDHCI_GPIO) += setup-sdhci-gpio.o
 obj-$(CONFIG_PM)		+= pm.o
 obj-$(CONFIG_PM)		+= sleep.o
 obj-$(CONFIG_PM)		+= irq-pm.o
+obj-$(CONFIG_CPU_IDLE)		+= cpuidle.o
 
 # Machine support
 
