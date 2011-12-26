@@ -129,6 +129,7 @@ struct pl330_reqcfg {
 	enum pl330_dstcachectrl dcctl;
 	enum pl330_srccachectrl scctl;
 	enum pl330_byteswap swap;
+	struct pl330_config *pcfg;
 };
 
 /*
@@ -436,6 +437,11 @@ static inline u32 get_id(struct pl330_info *pi, u32 off)
 	id |= (readb(regs + off + 0xc) << 24);
 
 	return id;
+}
+
+static inline u32 get_revision(u32 periph_id)
+{
+	return (periph_id >> PERIPH_REV_SHIFT) & PERIPH_REV_MASK;
 }
 
 static inline u32 _emit_ADDH(unsigned dry_run, u8 buf[],
@@ -1026,12 +1032,21 @@ static inline int _ldst_memtomem(unsigned dry_run, u8 buf[],
 		const struct _xfer_spec *pxs, int cyc)
 {
 	int off = 0;
+	struct pl330_config *pcfg = pxs->r->cfg->pcfg;
 
-	while (cyc--) {
-		off += _emit_LD(dry_run, &buf[off], ALWAYS);
-		off += _emit_RMB(dry_run, &buf[off]);
-		off += _emit_ST(dry_run, &buf[off], ALWAYS);
-		off += _emit_WMB(dry_run, &buf[off]);
+	/* check lock-up free version */
+	if (get_revision(pcfg->periph_id) >= PERIPH_REV_R1P0) {
+		while (cyc--) {
+			off += _emit_LD(dry_run, &buf[off], ALWAYS);
+			off += _emit_ST(dry_run, &buf[off], ALWAYS);
+		}
+	} else {
+		while (cyc--) {
+			off += _emit_LD(dry_run, &buf[off], ALWAYS);
+			off += _emit_RMB(dry_run, &buf[off]);
+			off += _emit_ST(dry_run, &buf[off], ALWAYS);
+			off += _emit_WMB(dry_run, &buf[off]);
+		}
 	}
 
 	return off;
@@ -2398,6 +2413,7 @@ static struct dma_pl330_desc *pl330_get_desc(struct dma_pl330_chan *pch)
 	async_tx_ack(&desc->txd);
 
 	desc->req.peri = peri_id ? pch->chan.chan_id : 0;
+	desc->rqcfg.pcfg = &pch->dmac->pif.pcfg;
 
 	dma_async_tx_descriptor_init(&desc->txd, &pch->chan);
 
