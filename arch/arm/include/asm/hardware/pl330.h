@@ -144,6 +144,11 @@ enum pl330_reqtype {
 #define CRD		0xe14
 
 #define PERIPH_ID	0xfe0
+#define PERIPH_REV_SHIFT	20
+#define PERIPH_REV_MASK		0xf
+#define PERIPH_REV_R0P0		0
+#define PERIPH_REV_R1P0		1
+#define PERIPH_REV_R1P1		2
 #define PCELL_ID	0xff0
 
 #define CR0_PERIPH_REQ_SET	(1 << 0)
