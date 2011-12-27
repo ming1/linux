@@ -63,6 +63,7 @@ next/drivers
   omap/ehci		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap ehci
 				depends on omap/hwmod
   tegra/drivers		git://git.kernel.org/pub/scm/linux/kernel/git/olof/tegra.git for-3.3/drivers
+  samsung/ohci		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next-samsung-devel-ohci
 
 next/pm
   omap/omap4		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap omap4
