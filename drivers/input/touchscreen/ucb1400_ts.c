@@ -30,7 +30,7 @@
 #include <linux/freezer.h>
 #include <linux/ucb1400.h>
 
-static int adcsync;
+static bool adcsync;
 static int ts_delay = 55; /* us */
 static int ts_delay_pressure;	/* us */
 
