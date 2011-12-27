@@ -2347,8 +2347,7 @@ int sdhci_suspend_host(struct sdhci_host *host)
 	if (host->version >= SDHCI_SPEC_300 && host->tuning_count &&
 	    host->tuning_mode == SDHCI_TUNING_MODE_1) {
 		host->flags &= ~SDHCI_NEEDS_RETUNING;
-		mod_timer(&host->tuning_timer, jiffies +
-			host->tuning_count * HZ);
+		del_timer_sync(&host->tuning_timer);
 	}
 
 	ret = mmc_suspend_host(host->mmc);
