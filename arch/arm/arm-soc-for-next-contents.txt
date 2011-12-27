@@ -22,6 +22,9 @@ next/cleanup
   + 0363e3dae10		arm/at91: fix build of stamp9g20
   tegra/cleanup		git://git.kernel.org/pub/scm/linux/kernel/git/olof/tegra.git for-3.3/cleanup
 
+next/dt
+  tegra/dt		git://git.kernel.org/pub/scm/linux/kernel/git/olof/tegra.git for-3.3/dt
+
 next/boards
   samsung/board		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next-samsung-devel
 					(cragganmore parts only)
