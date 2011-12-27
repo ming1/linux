@@ -24,6 +24,8 @@ next/cleanup
 
 next/dt
   tegra/dt		git://git.kernel.org/pub/scm/linux/kernel/git/olof/tegra.git for-3.3/dt
+  samsung/dt		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next-samsung-devel-dt1
+				conflicts with depends/rmk/devel-stable
 
 next/soc
   omap/soc		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap soc
