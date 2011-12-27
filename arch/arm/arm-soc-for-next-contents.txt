@@ -20,6 +20,7 @@ next/cleanup
   picoxcell/cleanup	git://github.com/jamieiles/linux-2.6-ji.git picoxcell-cleanup
   u300/cleanup		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git u300-for-arm-soc
   + 0363e3dae10		arm/at91: fix build of stamp9g20
+  tegra/cleanup		git://git.kernel.org/pub/scm/linux/kernel/git/olof/tegra.git for-3.3/cleanup
 
 next/boards
   samsung/board		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next-samsung-devel
