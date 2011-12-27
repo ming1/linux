@@ -28,6 +28,11 @@ next/dt
 next/boards
   samsung/board		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next-samsung-devel
 					(cragganmore parts only)
+next/soc
+  omap/soc		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap soc
+				depends on depends/rmk/devel-stable
+  tegra/soc		git://git.kernel.org/pub/scm/linux/kernel/git/olof/tegra.git for-3.3/soc
+				depends on depends/rmk/devel-stable and tegra/dt
 
 next/devel
   highbank/devel	git://sources.calxeda.com/kernel/linux for-3.3
@@ -61,9 +66,6 @@ next/pm
 next/timer
   msm/timer		git://codeaurora.org/quic/kernel/davidb/linux-msm.git msm-timer
 
-next/soc
-  omap/soc		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap soc
-				depends on depends/rmk/devel-stable
 next/move
   imx/move		git://git.pengutronix.de/git/imx/linux-2.6.git mx5-merge
 
