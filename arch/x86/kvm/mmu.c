@@ -83,11 +83,11 @@ char *audit_point_name[] = {
 #endif
 
 #ifdef MMU_DEBUG
-static int dbg = 0;
+static bool dbg = 0;
 module_param(dbg, bool, 0644);
 #endif
 
-static int oos_shadow = 1;
+static bool oos_shadow = 1;
 module_param(oos_shadow, bool, 0644);
 
 #ifndef MMU_DEBUG
