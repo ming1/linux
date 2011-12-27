@@ -22,6 +22,7 @@ obj-$(CONFIG_CPU_S3C6410)	+= s3c6410.o
 # PM
 
 obj-$(CONFIG_PM)		+= pm.o irq-pm.o sleep.o
+obj-$(CONFIG_CPU_IDLE)		+= cpuidle.o
 
 # DMA support
 
@@ -31,7 +32,6 @@ obj-$(CONFIG_S3C64XX_DMA)	+= dma.o
 
 obj-y				+= dev-uart.o
 obj-y				+= dev-audio.o
-obj-$(CONFIG_S3C64XX_DEV_SPI)	+= dev-spi.o
 
 # Device setup
 
@@ -40,8 +40,8 @@ obj-$(CONFIG_S3C64XX_SETUP_I2C0)	+= setup-i2c0.o
 obj-$(CONFIG_S3C64XX_SETUP_I2C1)	+= setup-i2c1.o
 obj-$(CONFIG_S3C64XX_SETUP_IDE)		+= setup-ide.o
 obj-$(CONFIG_S3C64XX_SETUP_KEYPAD)	+= setup-keypad.o
-obj-$(CONFIG_S3C64XX_SETUP_SDHCI)	+= setup-sdhci.o
 obj-$(CONFIG_S3C64XX_SETUP_SDHCI_GPIO)	+= setup-sdhci-gpio.o
+obj-$(CONFIG_S3C64XX_SETUP_SPI)		+= setup-spi.o
 
 # Machine support
 
