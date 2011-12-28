@@ -139,7 +139,7 @@ register_slot(acpi_handle handle, u32 lvl, void *context, void **rv)
 			struct acpi_pci_root *root = acpi_pci_find_root(tmp);
 
 			if (root && (root->osc_control_set &
-					OSC_PCI_EXPRESS_NATIVE_HP_CONTROL))
+					OSC_PCI_NATIVE_HOTPLUG))
 				return AE_OK;
 		}
 	}
