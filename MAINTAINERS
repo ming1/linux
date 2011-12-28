@@ -2700,7 +2700,7 @@ FIREWIRE SUBSYSTEM
 M:	Stefan Richter <stefanr@s5r6.in-berlin.de>
 L:	linux1394-devel@lists.sourceforge.net
 W:	http://ieee1394.wiki.kernel.org/
-T:	git git://git.kernel.org/pub/scm/linux/kernel/git/ieee1394/linux1394-2.6.git
+T:	git git://git.kernel.org/pub/scm/linux/kernel/git/ieee1394/linux1394.git
 S:	Maintained
 F:	drivers/firewire/
 F:	include/linux/firewire*.h
@@ -4281,7 +4281,9 @@ T:	git git://git.kernel.org/pub/scm/linux/kernel/git/mchehab/linux-2.6.git
 S:	Maintained
 F:	Documentation/dvb/
 F:	Documentation/video4linux/
+F:	Documentation/DocBook/media/
 F:	drivers/media/
+F:	drivers/staging/media/
 F:	include/media/
 F:	include/linux/dvb/
 F:	include/linux/videodev*.h
