@@ -27,6 +27,14 @@ next/dt
   samsung/dt		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next-samsung-devel-dt1
 				conflicts with depends/rmk/devel-stable
 
+next/cleanup2
+  samsung/cleanup-mmc   git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next-samsung-cleanup-spi4
+				depends on samsung/dt
+  samsung/devel-spi     git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next-samsung-devel-spi3
+				depends on samsung/cleanup-mmc
+  samsung/cleanup-spi   git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next-samsung-cleanup-spi4
+				depends on samsung/devel-spi
+
 next/soc
   omap/soc		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap soc
 				depends on depends/rmk/devel-stable
