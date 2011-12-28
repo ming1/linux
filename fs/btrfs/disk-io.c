@@ -1142,7 +1142,6 @@ static int __setup_root(u32 nodesize, u32 leafsize, u32 sectorsize,
 	root->orphan_item_inserted = 0;
 	root->orphan_cleanup_state = 0;
 
-	root->fs_info = fs_info;
 	root->objectid = objectid;
 	root->last_trans = 0;
 	root->highest_objectid = 0;
@@ -1216,6 +1215,14 @@ static int find_and_setup_root(struct btrfs_root *tree_root,
 	return 0;
 }
 
+static struct btrfs_root *btrfs_alloc_root(struct btrfs_fs_info *fs_info)
+{
+	struct btrfs_root *root = kzalloc(sizeof(*root), GFP_NOFS);
+	if (root)
+		root->fs_info = fs_info;
+	return root;
+}
+
 static struct btrfs_root *alloc_log_tree(struct btrfs_trans_handle *trans,
 					 struct btrfs_fs_info *fs_info)
 {
@@ -1223,7 +1230,7 @@ static struct btrfs_root *alloc_log_tree(struct btrfs_trans_handle *trans,
 	struct btrfs_root *tree_root = fs_info->tree_root;
 	struct extent_buffer *leaf;
 
-	root = kzalloc(sizeof(*root), GFP_NOFS);
+	root = btrfs_alloc_root(fs_info);
 	if (!root)
 		return ERR_PTR(-ENOMEM);
 
@@ -1317,7 +1324,7 @@ struct btrfs_root *btrfs_read_fs_root_no_radix(struct btrfs_root *tree_root,
 	u32 blocksize;
 	int ret = 0;
 
-	root = kzalloc(sizeof(*root), GFP_NOFS);
+	root = btrfs_alloc_root(fs_info);
 	if (!root)
 		return ERR_PTR(-ENOMEM);
 	if (location->offset == (u64)-1) {
@@ -1877,9 +1884,9 @@ static void free_root_pointers(struct btrfs_fs_info *info, int chunk_root)
 }
 
 
-struct btrfs_root *open_ctree(struct super_block *sb,
-			      struct btrfs_fs_devices *fs_devices,
-			      char *options)
+int open_ctree(struct super_block *sb,
+	       struct btrfs_fs_devices *fs_devices,
+	       char *options)
 {
 	u32 sectorsize;
 	u32 nodesize;
@@ -1891,8 +1898,8 @@ struct btrfs_root *open_ctree(struct super_block *sb,
 	struct btrfs_key location;
 	struct buffer_head *bh;
 	struct btrfs_super_block *disk_super;
-	struct btrfs_root *tree_root = btrfs_sb(sb);
-	struct btrfs_fs_info *fs_info = tree_root->fs_info;
+	struct btrfs_fs_info *fs_info = btrfs_sb(sb);
+	struct btrfs_root *tree_root;
 	struct btrfs_root *extent_root;
 	struct btrfs_root *csum_root;
 	struct btrfs_root *chunk_root;
@@ -1903,16 +1910,14 @@ struct btrfs_root *open_ctree(struct super_block *sb,
 	int num_backups_tried = 0;
 	int backup_index = 0;
 
-	extent_root = fs_info->extent_root =
-		kzalloc(sizeof(struct btrfs_root), GFP_NOFS);
-	csum_root = fs_info->csum_root =
-		kzalloc(sizeof(struct btrfs_root), GFP_NOFS);
-	chunk_root = fs_info->chunk_root =
-		kzalloc(sizeof(struct btrfs_root), GFP_NOFS);
-	dev_root = fs_info->dev_root =
-		kzalloc(sizeof(struct btrfs_root), GFP_NOFS);
+	tree_root = fs_info->tree_root = btrfs_alloc_root(fs_info);
+	extent_root = fs_info->extent_root = btrfs_alloc_root(fs_info);
+	csum_root = fs_info->csum_root = btrfs_alloc_root(fs_info);
+	chunk_root = fs_info->chunk_root = btrfs_alloc_root(fs_info);
+	dev_root = fs_info->dev_root = btrfs_alloc_root(fs_info);
 
-	if (!extent_root || !csum_root || !chunk_root || !dev_root) {
+	if (!tree_root || !extent_root || !csum_root ||
+	    !chunk_root || !dev_root) {
 		err = -ENOMEM;
 		goto fail;
 	}
@@ -2371,7 +2376,7 @@ retry_root_backup:
 		     btrfs_level_size(tree_root,
 				      btrfs_super_log_root_level(disk_super));
 
-		log_tree_root = kzalloc(sizeof(struct btrfs_root), GFP_NOFS);
+		log_tree_root = btrfs_alloc_root(fs_info);
 		if (!log_tree_root) {
 			err = -ENOMEM;
 			goto fail_trans_kthread;
@@ -2428,11 +2433,11 @@ retry_root_backup:
 		up_read(&fs_info->cleanup_work_sem);
 		if (err) {
 			close_ctree(tree_root);
-			return ERR_PTR(err);
+			return err;
 		}
 	}
 
-	return tree_root;
+	return 0;
 
 fail_trans_kthread:
 	kthread_stop(fs_info->transaction_kthread);
@@ -2478,8 +2483,7 @@ fail_srcu:
 	cleanup_srcu_struct(&fs_info->subvol_srcu);
 fail:
 	btrfs_close_devices(fs_info->fs_devices);
-	free_fs_info(fs_info);
-	return ERR_PTR(err);
+	return err;
 
 recovery_tree_root:
 	if (!btrfs_test_opt(tree_root, RECOVERY))
@@ -2982,7 +2986,7 @@ int close_ctree(struct btrfs_root *root)
 		   (atomic_read(&fs_info->defrag_running) == 0));
 
 	/* clear out the rbtree of defraggable inodes */
-	btrfs_run_defrag_inodes(root->fs_info);
+	btrfs_run_defrag_inodes(fs_info);
 
 	/*
 	 * Here come 2 situations when btrfs is broken to flip readonly:
@@ -3011,8 +3015,8 @@ int close_ctree(struct btrfs_root *root)
 
 	btrfs_put_block_group_cache(fs_info);
 
-	kthread_stop(root->fs_info->transaction_kthread);
-	kthread_stop(root->fs_info->cleaner_kthread);
+	kthread_stop(fs_info->transaction_kthread);
+	kthread_stop(fs_info->cleaner_kthread);
 
 	fs_info->closing = 2;
 	smp_mb();
@@ -3030,14 +3034,14 @@ int close_ctree(struct btrfs_root *root)
 	free_extent_buffer(fs_info->extent_root->commit_root);
 	free_extent_buffer(fs_info->tree_root->node);
 	free_extent_buffer(fs_info->tree_root->commit_root);
-	free_extent_buffer(root->fs_info->chunk_root->node);
-	free_extent_buffer(root->fs_info->chunk_root->commit_root);
-	free_extent_buffer(root->fs_info->dev_root->node);
-	free_extent_buffer(root->fs_info->dev_root->commit_root);
-	free_extent_buffer(root->fs_info->csum_root->node);
-	free_extent_buffer(root->fs_info->csum_root->commit_root);
+	free_extent_buffer(fs_info->chunk_root->node);
+	free_extent_buffer(fs_info->chunk_root->commit_root);
+	free_extent_buffer(fs_info->dev_root->node);
+	free_extent_buffer(fs_info->dev_root->commit_root);
+	free_extent_buffer(fs_info->csum_root->node);
+	free_extent_buffer(fs_info->csum_root->commit_root);
 
-	btrfs_free_block_groups(root->fs_info);
+	btrfs_free_block_groups(fs_info);
 
 	del_fs_roots(fs_info);
 
@@ -3062,8 +3066,6 @@ int close_ctree(struct btrfs_root *root)
 
 	bdi_destroy(&fs_info->bdi);
 	cleanup_srcu_struct(&fs_info->subvol_srcu);
-
-	free_fs_info(fs_info);
 
 	return 0;
 }
