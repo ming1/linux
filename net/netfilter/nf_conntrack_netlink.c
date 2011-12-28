@@ -584,6 +584,11 @@ ctnetlink_conntrack_event(unsigned int events, struct nf_ct_event *item)
 		return 0;
 
 	net = nf_ct_net(ct);
+
+	/* container deinit, netlink may have died before death_by_timeout */
+	if (!net->nfnl)
+		return 0;
+
 	if (!item->report && !nfnetlink_has_listeners(net, group))
 		return 0;
 
