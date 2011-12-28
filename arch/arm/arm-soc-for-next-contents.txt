@@ -28,11 +28,11 @@ next/dt
 				conflicts with depends/rmk/devel-stable
 
 next/cleanup2
-  samsung/cleanup-mmc   git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next-samsung-cleanup-spi4
+  samsung/cleanup       git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next-samsung-cleanup-spi4
 				depends on samsung/dt
-  samsung/devel-spi     git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next-samsung-devel-spi3
+                        git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next-samsung-devel-spi3
 				depends on samsung/cleanup-mmc
-  samsung/cleanup-spi   git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next-samsung-cleanup-spi4
+                        git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next-samsung-cleanup-spi4
 				depends on samsung/devel-spi
 
 next/soc
@@ -72,6 +72,8 @@ next/drivers
 				depends on omap/hwmod
   tegra/drivers		git://git.kernel.org/pub/scm/linux/kernel/git/olof/tegra.git for-3.3/drivers
   samsung/ohci		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next-samsung-devel-ohci
+  samsung/drivers       git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next-samsung-devel-mmc-spi5
+				depends on samsung/cleanup
 
 next/pm
   omap/omap4		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap omap4
