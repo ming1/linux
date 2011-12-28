@@ -52,7 +52,7 @@ static int read_eraseblock_by_page(int ebnum)
 
 	for (i = 0; i < pgcnt; i++) {
 		memset(buf, 0 , pgcnt);
-		ret = mtd->read(mtd, addr, pgsize, &read, buf);
+		ret = mtd_read(mtd, addr, pgsize, &read, buf);
 		if (ret == -EUCLEAN)
 			ret = 0;
 		if (ret || read != pgsize) {
@@ -74,7 +74,7 @@ static int read_eraseblock_by_page(int ebnum)
 			ops.ooboffs   = 0;
 			ops.datbuf    = NULL;
 			ops.oobbuf    = oobbuf;
-			ret = mtd->read_oob(mtd, addr, &ops);
+			ret = mtd_read_oob(mtd, addr, &ops);
 			if ((ret && !mtd_is_bitflip(ret)) ||
 					ops.oobretlen != mtd->oobsize) {
 				printk(PRINT_PREF "error: read oob failed at "
@@ -132,7 +132,7 @@ static int is_block_bad(int ebnum)
 	loff_t addr = ebnum * mtd->erasesize;
 	int ret;
 
-	ret = mtd->block_isbad(mtd, addr);
+	ret = mtd_block_isbad(mtd, addr);
 	if (ret)
 		printk(PRINT_PREF "block %d is bad\n", ebnum);
 	return ret;

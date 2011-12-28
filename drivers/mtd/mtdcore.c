@@ -119,7 +119,7 @@ static int mtd_cls_suspend(struct device *dev, pm_message_t state)
 	struct mtd_info *mtd = dev_to_mtd(dev);
 
 	if (mtd && mtd->suspend)
-		return mtd->suspend(mtd);
+		return mtd_suspend(mtd);
 	else
 		return 0;
 }
@@ -129,7 +129,7 @@ static int mtd_cls_resume(struct device *dev)
 	struct mtd_info *mtd = dev_to_mtd(dev);
 	
 	if (mtd && mtd->resume)
-		mtd->resume(mtd);
+		mtd_resume(mtd);
 	return 0;
 }
 
@@ -340,7 +340,7 @@ int add_mtd_device(struct mtd_info *mtd)
 	/* Some chips always power up locked. Unlock them now */
 	if ((mtd->flags & MTD_WRITEABLE)
 	    && (mtd->flags & MTD_POWERUP_LOCK) && mtd->unlock) {
-		if (mtd->unlock(mtd, 0, mtd->size))
+		if (mtd_unlock(mtd, 0, mtd->size))
 			printk(KERN_WARNING
 			       "%s: unlock failed, writes may not work\n",
 			       mtd->name);
@@ -614,7 +614,7 @@ int __get_mtd_device(struct mtd_info *mtd)
 		return -ENODEV;
 
 	if (mtd->get_device) {
-		err = mtd->get_device(mtd);
+		err = mtd_get_device(mtd);
 
 		if (err) {
 			module_put(mtd->owner);
@@ -677,7 +677,7 @@ void __put_mtd_device(struct mtd_info *mtd)
 	BUG_ON(mtd->usecount < 0);
 
 	if (mtd->put_device)
-		mtd->put_device(mtd);
+		mtd_put_device(mtd);
 
 	module_put(mtd->owner);
 }
@@ -699,7 +699,8 @@ int default_mtd_writev(struct mtd_info *mtd, const struct kvec *vecs,
 		for (i=0; i<count; i++) {
 			if (!vecs[i].iov_len)
 				continue;
-			ret = mtd->write(mtd, to, vecs[i].iov_len, &thislen, vecs[i].iov_base);
+			ret = mtd_write(mtd, to, vecs[i].iov_len, &thislen,
+					vecs[i].iov_base);
 			totlen += thislen;
 			if (ret || thislen != vecs[i].iov_len)
 				break;

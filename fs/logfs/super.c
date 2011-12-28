@@ -504,7 +504,7 @@ static void logfs_kill_sb(struct super_block *sb)
 	logfs_cleanup_rw(sb);
 	if (super->s_erase_page)
 		__free_page(super->s_erase_page);
-	super->s_devops->put_device(super);
+	mtd_put_device(super);
 	logfs_mempool_destroy(super->s_btree_pool);
 	logfs_mempool_destroy(super->s_alias_pool);
 	kfree(super);
@@ -523,14 +523,14 @@ static struct dentry *logfs_get_sb_device(struct logfs_super *super,
 	err = -EINVAL;
 	sb = sget(type, logfs_sb_test, logfs_sb_set, super);
 	if (IS_ERR(sb)) {
-		super->s_devops->put_device(super);
+		mtd_put_device(super);
 		kfree(super);
 		return ERR_CAST(sb);
 	}
 
 	if (sb->s_root) {
 		/* Device is already in use */
-		super->s_devops->put_device(super);
+		mtd_put_device(super);
 		kfree(super);
 		return dget(sb->s_root);
 	}

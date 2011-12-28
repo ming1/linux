@@ -499,7 +499,7 @@ static int tmio_suspend(struct platform_device *dev, pm_message_t state)
 	const struct mfd_cell *cell = mfd_get_cell(dev);
 
 	if (cell->suspend)
-		cell->suspend(dev);
+		mtd_suspend(dev);
 
 	tmio_hw_stop(dev, platform_get_drvdata(dev));
 	return 0;
@@ -515,7 +515,7 @@ static int tmio_resume(struct platform_device *dev)
 	tmio_hw_init(dev, platform_get_drvdata(dev));
 
 	if (cell->resume)
-		cell->resume(dev);
+		mtd_resume(dev);
 
 	return 0;
 }
@@ -533,18 +533,7 @@ static struct platform_driver tmio_driver = {
 	.resume		= tmio_resume,
 };
 
-static int __init tmio_init(void)
-{
-	return platform_driver_register(&tmio_driver);
-}
-
-static void __exit tmio_exit(void)
-{
-	platform_driver_unregister(&tmio_driver);
-}
-
-module_init(tmio_init);
-module_exit(tmio_exit);
+module_platform_driver(tmio_driver);
 
 MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("Ian Molton, Dirk Opfer, Chris Humbert, Dmitry Baryshkov");
