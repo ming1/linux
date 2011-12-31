@@ -68,15 +68,18 @@ static int dvb_dummy_fe_read_ucblocks(struct dvb_frontend* fe, u32* ucblocks)
 	return 0;
 }
 
-static int dvb_dummy_fe_get_frontend(struct dvb_frontend* fe, struct dvb_frontend_parameters *p)
+/*
+ * Only needed if it actually reads something from the hardware
+ */
+static int dvb_dummy_fe_get_frontend(struct dvb_frontend *fe)
 {
 	return 0;
 }
 
-static int dvb_dummy_fe_set_frontend(struct dvb_frontend* fe, struct dvb_frontend_parameters *p)
+static int dvb_dummy_fe_set_frontend(struct dvb_frontend *fe)
 {
 	if (fe->ops.tuner_ops.set_params) {
-		fe->ops.tuner_ops.set_params(fe, p);
+		fe->ops.tuner_ops.set_params(fe);
 		if (fe->ops.i2c_gate_ctrl)
 			fe->ops.i2c_gate_ctrl(fe, 0);
 	}
@@ -171,7 +174,7 @@ error:
 }
 
 static struct dvb_frontend_ops dvb_dummy_fe_ofdm_ops = {
-
+	.delsys = { SYS_DVBT },
 	.info = {
 		.name			= "Dummy DVB-T",
 		.type			= FE_OFDM,
@@ -203,7 +206,7 @@ static struct dvb_frontend_ops dvb_dummy_fe_ofdm_ops = {
 };
 
 static struct dvb_frontend_ops dvb_dummy_fe_qam_ops = {
-
+	.delsys = { SYS_DVBC_ANNEX_A },
 	.info = {
 		.name			= "Dummy DVB-C",
 		.type			= FE_QAM,
@@ -233,7 +236,7 @@ static struct dvb_frontend_ops dvb_dummy_fe_qam_ops = {
 };
 
 static struct dvb_frontend_ops dvb_dummy_fe_qpsk_ops = {
-
+	.delsys = { SYS_DVBS },
 	.info = {
 		.name			= "Dummy DVB-S",
 		.type			= FE_QPSK,
