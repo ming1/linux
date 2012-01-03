@@ -186,7 +186,7 @@ static struct nfs_client *nfs_alloc_client(const struct nfs_client_initdata *cl_
 	clp->cl_minorversion = cl_init->minorversion;
 	clp->cl_mvops = nfs_v4_minor_ops[cl_init->minorversion];
 #endif
-	cred = rpc_lookup_machine_cred();
+	cred = rpc_lookup_machine_cred("*");
 	if (!IS_ERR(cred))
 		clp->cl_machine_cred = cred;
 	nfs_fscache_get_client_cookie(clp);
@@ -250,6 +250,11 @@ static void nfs_cb_idr_remove_locked(struct nfs_client *clp)
 static void pnfs_init_server(struct nfs_server *server)
 {
 	rpc_init_wait_queue(&server->roc_rpcwaitq, "pNFS ROC");
+}
+
+static void nfs4_destroy_server(struct nfs_server *server)
+{
+	nfs4_purge_state_owners(server);
 }
 
 #else
@@ -1071,6 +1076,7 @@ static struct nfs_server *nfs_alloc_server(void)
 	INIT_LIST_HEAD(&server->master_link);
 	INIT_LIST_HEAD(&server->delegations);
 	INIT_LIST_HEAD(&server->layouts);
+	INIT_LIST_HEAD(&server->state_owners_lru);
 
 	atomic_set(&server->active, 0);
 
@@ -1546,6 +1552,7 @@ static int nfs4_server_common_setup(struct nfs_server *server,
 
 	nfs_server_insert_lists(server);
 	server->mount_time = jiffies;
+	server->destroy = nfs4_destroy_server;
 out:
 	nfs_free_fattr(fattr);
 	return error;
@@ -1729,6 +1736,7 @@ struct nfs_server *nfs_clone_server(struct nfs_server *source,
 
 	/* Copy data from the source */
 	server->nfs_client = source->nfs_client;
+	server->destroy = source->destroy;
 	atomic_inc(&server->nfs_client->cl_count);
 	nfs_server_copy_userdata(server, source);
 
