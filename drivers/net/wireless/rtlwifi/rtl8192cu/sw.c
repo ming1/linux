@@ -42,6 +42,8 @@
 #include "led.h"
 #include "hw.h"
 #include <linux/vmalloc.h>
+#include <linux/atomic.h>
+#include <linux/types.h>
 
 MODULE_AUTHOR("Georgia		<georgia@realtek.com>");
 MODULE_AUTHOR("Ziv Huang	<ziv_huang@realtek.com>");
@@ -49,6 +51,10 @@ MODULE_AUTHOR("Larry Finger	<Larry.Finger@lwfinger.net>");
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Realtek 8192C/8188C 802.11n USB wireless");
 MODULE_FIRMWARE("rtlwifi/rtl8192cufw.bin");
+
+static char *rtl8192cu_firmware;		/* pointer to firmware */
+static int firmware_size;
+static atomic_t usage_count;
 
 static int rtl92cu_init_sw_vars(struct ieee80211_hw *hw)
 {
@@ -61,12 +67,21 @@ static int rtl92cu_init_sw_vars(struct ieee80211_hw *hw)
 	rtlpriv->dm.disable_framebursting = 0;
 	rtlpriv->dm.thermalvalue = 0;
 	rtlpriv->dbg.global_debuglevel = rtlpriv->cfg->mod_params->debug;
-	rtlpriv->rtlhal.pfirmware = vmalloc(0x4000);
-	if (!rtlpriv->rtlhal.pfirmware) {
+
+	if (rtl8192cu_firmware) {
+		/* firmware already loaded - true for suspend/resume
+		 * and multiple instances of the device */
+		rtlpriv->rtlhal.pfirmware = rtl8192cu_firmware;
+		rtlpriv->rtlhal.fwsize = firmware_size;
+		return 0;
+	}
+	rtl8192cu_firmware = vzalloc(0x4000);
+	if (!rtl8192cu_firmware) {
 		RT_TRACE(rtlpriv, COMP_ERR, DBG_EMERG,
 			 ("Can't alloc buffer for fw.\n"));
 		return 1;
 	}
+
 	/* request fw */
 	err = request_firmware(&firmware, rtlpriv->cfg->fw_name,
 			rtlpriv->io.dev);
@@ -81,9 +96,14 @@ static int rtl92cu_init_sw_vars(struct ieee80211_hw *hw)
 		release_firmware(firmware);
 		return 1;
 	}
-	memcpy(rtlpriv->rtlhal.pfirmware, firmware->data, firmware->size);
+	pr_info("rtl8192cu: Loaded firmware from file %s\n",
+		rtlpriv->cfg->fw_name);
+	memcpy(rtl8192cu_firmware, firmware->data, firmware->size);
+	firmware_size = firmware->size;
 	rtlpriv->rtlhal.fwsize = firmware->size;
+	rtlpriv->rtlhal.pfirmware = rtl8192cu_firmware;
 	release_firmware(firmware);
+	atomic_inc(&usage_count);
 
 	return 0;
 }
@@ -92,11 +112,29 @@ static void rtl92cu_deinit_sw_vars(struct ieee80211_hw *hw)
 {
 	struct rtl_priv *rtlpriv = rtl_priv(hw);
 
-	if (rtlpriv->rtlhal.pfirmware) {
-		vfree(rtlpriv->rtlhal.pfirmware);
+	atomic_dec(&usage_count);
+	if (!atomic_read(&usage_count) && rtlpriv->rtlhal.pfirmware) {
+		vfree(rtl8192cu_firmware);
+		rtl8192cu_firmware = NULL;
 		rtlpriv->rtlhal.pfirmware = NULL;
 	}
 }
+
+#ifdef CONFIG_PM
+static int rtl8192cu_usb_suspend(struct usb_interface *pusb_intf,
+				 pm_message_t message)
+{
+	/* Increase usage_count to Save loaded fw across suspend/resume */
+	atomic_inc(&usage_count);
+	return 0;
+}
+
+static int rtl8192cu_usb_resume(struct usb_interface *pusb_intf)
+{
+	atomic_dec(&usage_count);	/* after resume, decrease usage count */
+	return 0;
+}
+#endif
 
 static struct rtl_hal_ops rtl8192cu_hal_ops = {
 	.init_sw_vars = rtl92cu_init_sw_vars,
@@ -346,9 +384,9 @@ static struct usb_driver rtl8192cu_driver = {
 	.id_table = rtl8192c_usb_ids,
 
 #ifdef CONFIG_PM
-	/* .suspend = rtl_usb_suspend, */
-	/* .resume = rtl_usb_resume, */
-	/* .reset_resume = rtl8192c_resume, */
+	.suspend = rtl8192cu_usb_suspend,
+	.resume = rtl8192cu_usb_resume,
+	.reset_resume = rtl8192cu_usb_resume,
 #endif /* CONFIG_PM */
 #ifdef CONFIG_AUTOSUSPEND
 	.supports_autosuspend = 1,
