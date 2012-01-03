@@ -296,6 +296,11 @@ static struct platform_device littlemill_device = {
 	.id		= -1,
 };
 
+static struct platform_device littlemill_device = {
+	.name		= "littlemill",
+	.id		= -1,
+};
+
 static struct regulator_consumer_supply wallvdd_consumers[] = {
 	REGULATOR_SUPPLY("SPKVDD1", "1-001a"),
 	REGULATOR_SUPPLY("SPKVDD2", "1-001a"),
