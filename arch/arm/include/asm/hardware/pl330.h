@@ -47,102 +47,12 @@ enum pl330_dstcachectrl {
 	DCCTRL7, /* Cacheable write-back, allocate on writes only */
 };
 
-/* Populated by the PL330 core driver for DMA API driver's info */
-struct pl330_config {
-	u32	periph_id;
-	u32	pcell_id;
-#define DMAC_MODE_NS	(1 << 0)
-	unsigned int	mode;
-	unsigned int	data_bus_width:10; /* In number of bits */
-	unsigned int	data_buf_dep:10;
-	unsigned int	num_chan:4;
-	unsigned int	num_peri:6;
-	u32		peri_ns;
-	unsigned int	num_events:6;
-	u32		irq_ns;
-};
-
-/* Handle to the DMAC provided to the PL330 core */
-struct pl330_info {
-	/* Owning device */
-	struct device *dev;
-	/* Size of MicroCode buffers for each channel. */
-	unsigned mcbufsz;
-	/* ioremap'ed address of PL330 registers. */
-	void __iomem	*base;
-	/* Client can freely use it. */
-	void	*client_data;
-	/* PL330 core data, Client must not touch it. */
-	void	*pl330_data;
-	/* Populated by the PL330 core driver during pl330_add */
-	struct pl330_config	pcfg;
-	/*
-	 * If the DMAC has some reset mechanism, then the
-	 * client may want to provide pointer to the method.
-	 */
-	void (*dmac_reset)(struct pl330_info *pi);
-};
-
 enum pl330_byteswap {
 	SWAP_NO = 0,
 	SWAP_2,
 	SWAP_4,
 	SWAP_8,
 	SWAP_16,
-};
-
-/**
- * Request Configuration.
- * The PL330 core does not modify this and uses the last
- * working configuration if the request doesn't provide any.
- *
- * The Client may want to provide this info only for the
- * first request and a request with new settings.
- */
-struct pl330_reqcfg {
-	/* Address Incrementing */
-	unsigned dst_inc:1;
-	unsigned src_inc:1;
-
-	/*
-	 * For now, the SRC & DST protection levels
-	 * and burst size/length are assumed same.
-	 */
-	bool nonsecure;
-	bool privileged;
-	bool insnaccess;
-	unsigned brst_len:5;
-	unsigned brst_size:3; /* in power of 2 */
-
-	enum pl330_dstcachectrl dcctl;
-	enum pl330_srccachectrl scctl;
-	enum pl330_byteswap swap;
-};
-
-/*
- * One cycle of DMAC operation.
- * There may be more than one xfer in a request.
- */
-struct pl330_xfer {
-	u32 src_addr;
-	u32 dst_addr;
-	/* Size to xfer */
-	u32 bytes;
-	/*
-	 * Pointer to next xfer in the list.
-	 * The last xfer in the req must point to NULL.
-	 */
-	struct pl330_xfer *next;
-};
-
-/* The xfer callbacks are made with one of these arguments. */
-enum pl330_op_err {
-	/* The all xfers in the request were success. */
-	PL330_ERR_NONE,
-	/* If req aborted due to global error. */
-	PL330_ERR_ABORT,
-	/* If req failed due to problem with Channel. */
-	PL330_ERR_FAIL,
 };
 
 enum pl330_reqtype {
@@ -152,66 +62,192 @@ enum pl330_reqtype {
 	DEVTODEV,
 };
 
-/* A request defining Scatter-Gather List ending with NULL xfer. */
-struct pl330_req {
-	enum pl330_reqtype rqtype;
-	/* Index of peripheral for the xfer. */
-	unsigned peri:5;
-	/* Unique token for this xfer, set by the client. */
-	void *token;
-	/* Callback to be called after xfer. */
-	void (*xfer_cb)(void *token, enum pl330_op_err err);
-	/* If NULL, req will be done at last set parameters. */
-	struct pl330_reqcfg *cfg;
-	/* Pointer to first xfer in the request. */
-	struct pl330_xfer *x;
-};
+/* Register and Bit field Definitions */
+#define DS		0x0
+#define DS_ST_STOP	0x0
+#define DS_ST_EXEC	0x1
+#define DS_ST_CMISS	0x2
+#define DS_ST_UPDTPC	0x3
+#define DS_ST_WFE	0x4
+#define DS_ST_ATBRR	0x5
+#define DS_ST_QBUSY	0x6
+#define DS_ST_WFP	0x7
+#define DS_ST_KILL	0x8
+#define DS_ST_CMPLT	0x9
+#define DS_ST_FLTCMP	0xe
+#define DS_ST_FAULT	0xf
 
-/*
- * To know the status of the channel and DMAC, the client
- * provides a pointer to this structure. The PL330 core
- * fills it with current information.
- */
-struct pl330_chanstatus {
-	/*
-	 * If the DMAC engine halted due to some error,
-	 * the client should remove-add DMAC.
-	 */
-	bool dmac_halted;
-	/*
-	 * If channel is halted due to some error,
-	 * the client should ABORT/FLUSH and START the channel.
-	 */
-	bool faulting;
-	/* Location of last load */
-	u32 src_addr;
-	/* Location of last store */
-	u32 dst_addr;
-	/*
-	 * Pointer to the currently active req, NULL if channel is
-	 * inactive, even though the requests may be present.
-	 */
-	struct pl330_req *top_req;
-	/* Pointer to req waiting second in the queue if any. */
-	struct pl330_req *wait_req;
-};
+#define DPC		0x4
+#define INTEN		0x20
+#define ES		0x24
+#define INTSTATUS	0x28
+#define INTCLR		0x2c
+#define FSM		0x30
+#define FSC		0x34
+#define FTM		0x38
 
-enum pl330_chan_op {
-	/* Start the channel */
-	PL330_OP_START,
-	/* Abort the active xfer */
-	PL330_OP_ABORT,
-	/* Stop xfer and flush queue */
-	PL330_OP_FLUSH,
-};
+#define _FTC		0x40
+#define FTC(n)		(_FTC + (n)*0x4)
 
-extern int pl330_add(struct pl330_info *);
-extern void pl330_del(struct pl330_info *pi);
-extern int pl330_update(const struct pl330_info *pi);
-extern void pl330_release_channel(void *ch_id);
-extern void *pl330_request_channel(const struct pl330_info *pi);
-extern int pl330_chan_status(void *ch_id, struct pl330_chanstatus *pstatus);
-extern int pl330_chan_ctrl(void *ch_id, enum pl330_chan_op op);
-extern int pl330_submit_req(void *ch_id, struct pl330_req *r);
+#define _CS		0x100
+#define CS(n)		(_CS + (n)*0x8)
+#define CS_CNS		(1 << 21)
+
+#define _CPC		0x104
+#define CPC(n)		(_CPC + (n)*0x8)
+
+#define _SA		0x400
+#define SA(n)		(_SA + (n)*0x20)
+
+#define _DA		0x404
+#define DA(n)		(_DA + (n)*0x20)
+
+#define _CC		0x408
+#define CC(n)		(_CC + (n)*0x20)
+
+#define CC_SRCINC	(1 << 0)
+#define CC_DSTINC	(1 << 14)
+#define CC_SRCPRI	(1 << 8)
+#define CC_DSTPRI	(1 << 22)
+#define CC_SRCNS	(1 << 9)
+#define CC_DSTNS	(1 << 23)
+#define CC_SRCIA	(1 << 10)
+#define CC_DSTIA	(1 << 24)
+#define CC_SRCBRSTLEN_SHFT	4
+#define CC_DSTBRSTLEN_SHFT	18
+#define CC_SRCBRSTSIZE_SHFT	1
+#define CC_DSTBRSTSIZE_SHFT	15
+#define CC_SRCCCTRL_SHFT	11
+#define CC_SRCCCTRL_MASK	0x7
+#define CC_DSTCCTRL_SHFT	25
+#define CC_DRCCCTRL_MASK	0x7
+#define CC_SWAP_SHFT	28
+
+#define _LC0		0x40c
+#define LC0(n)		(_LC0 + (n)*0x20)
+
+#define _LC1		0x410
+#define LC1(n)		(_LC1 + (n)*0x20)
+
+#define DBGSTATUS	0xd00
+#define DBG_BUSY	(1 << 0)
+
+#define DBGCMD		0xd04
+#define DBGINST0	0xd08
+#define DBGINST1	0xd0c
+
+#define CR0		0xe00
+#define CR1		0xe04
+#define CR2		0xe08
+#define CR3		0xe0c
+#define CR4		0xe10
+#define CRD		0xe14
+
+#define PERIPH_ID	0xfe0
+#define PERIPH_REV_SHIFT	20
+#define PERIPH_REV_MASK		0xf
+#define PERIPH_REV_R0P0		0
+#define PERIPH_REV_R1P0		1
+#define PERIPH_REV_R1P1		2
+#define PCELL_ID	0xff0
+
+#define CR0_PERIPH_REQ_SET	(1 << 0)
+#define CR0_BOOT_EN_SET		(1 << 1)
+#define CR0_BOOT_MAN_NS		(1 << 2)
+#define CR0_NUM_CHANS_SHIFT	4
+#define CR0_NUM_CHANS_MASK	0x7
+#define CR0_NUM_PERIPH_SHIFT	12
+#define CR0_NUM_PERIPH_MASK	0x1f
+#define CR0_NUM_EVENTS_SHIFT	17
+#define CR0_NUM_EVENTS_MASK	0x1f
+
+#define CR1_ICACHE_LEN_SHIFT	0
+#define CR1_ICACHE_LEN_MASK	0x7
+#define CR1_NUM_ICACHELINES_SHIFT	4
+#define CR1_NUM_ICACHELINES_MASK	0xf
+
+#define CRD_DATA_WIDTH_SHIFT	0
+#define CRD_DATA_WIDTH_MASK	0x7
+#define CRD_WR_CAP_SHIFT	4
+#define CRD_WR_CAP_MASK		0x7
+#define CRD_WR_Q_DEP_SHIFT	8
+#define CRD_WR_Q_DEP_MASK	0xf
+#define CRD_RD_CAP_SHIFT	12
+#define CRD_RD_CAP_MASK		0x7
+#define CRD_RD_Q_DEP_SHIFT	16
+#define CRD_RD_Q_DEP_MASK	0xf
+#define CRD_DATA_BUFF_SHIFT	20
+#define CRD_DATA_BUFF_MASK	0x3ff
+
+#define	PART		0x330
+#define DESIGNER	0x41
+#define REVISION	0x0
+#define INTEG_CFG	0x0
+#define PERIPH_ID_VAL	((PART << 0) | (DESIGNER << 12))
+
+#define PCELL_ID_VAL	0xb105f00d
+
+#define PL330_STATE_STOPPED		(1 << 0)
+#define PL330_STATE_EXECUTING		(1 << 1)
+#define PL330_STATE_WFE			(1 << 2)
+#define PL330_STATE_FAULTING		(1 << 3)
+#define PL330_STATE_COMPLETING		(1 << 4)
+#define PL330_STATE_WFP			(1 << 5)
+#define PL330_STATE_KILLING		(1 << 6)
+#define PL330_STATE_FAULT_COMPLETING	(1 << 7)
+#define PL330_STATE_CACHEMISS		(1 << 8)
+#define PL330_STATE_UPDTPC		(1 << 9)
+#define PL330_STATE_ATBARRIER		(1 << 10)
+#define PL330_STATE_QUEUEBUSY		(1 << 11)
+#define PL330_STATE_INVALID		(1 << 15)
+
+#define PL330_STABLE_STATES (PL330_STATE_STOPPED | PL330_STATE_EXECUTING \
+				| PL330_STATE_WFE | PL330_STATE_FAULTING)
+
+#define CMD_DMAADDH	0x54
+#define CMD_DMAEND	0x00
+#define CMD_DMAFLUSHP	0x35
+#define CMD_DMAGO	0xa0
+#define CMD_DMALD	0x04
+#define CMD_DMALDP	0x25
+#define CMD_DMALP	0x20
+#define CMD_DMALPEND	0x28
+#define CMD_DMAKILL	0x01
+#define CMD_DMAMOV	0xbc
+#define CMD_DMANOP	0x18
+#define CMD_DMARMB	0x12
+#define CMD_DMASEV	0x34
+#define CMD_DMAST	0x08
+#define CMD_DMASTP	0x29
+#define CMD_DMASTZ	0x0c
+#define CMD_DMAWFE	0x36
+#define CMD_DMAWFP	0x30
+#define CMD_DMAWMB	0x13
+
+#define SZ_DMAADDH	3
+#define SZ_DMAEND	1
+#define SZ_DMAFLUSHP	2
+#define SZ_DMALD	1
+#define SZ_DMALDP	2
+#define SZ_DMALP	2
+#define SZ_DMALPEND	2
+#define SZ_DMAKILL	1
+#define SZ_DMAMOV	6
+#define SZ_DMANOP	1
+#define SZ_DMARMB	1
+#define SZ_DMASEV	2
+#define SZ_DMAST	1
+#define SZ_DMASTP	2
+#define SZ_DMASTZ	1
+#define SZ_DMAWFE	2
+#define SZ_DMAWFP	2
+#define SZ_DMAWMB	1
+#define SZ_DMAGO	6
+
+#define BRST_LEN(ccr)	((((ccr) >> CC_SRCBRSTLEN_SHFT) & 0xf) + 1)
+#define BRST_SIZE(ccr)	(1 << (((ccr) >> CC_SRCBRSTSIZE_SHFT) & 0x7))
+
+#define BYTE_TO_BURST(b, ccr)  ((b) / BRST_SIZE(ccr) / BRST_LEN(ccr))
+#define BURST_TO_BYTE(c, ccr)  ((c) * BRST_SIZE(ccr) * BRST_LEN(ccr))
 
 #endif	/* __PL330_CORE_H */
