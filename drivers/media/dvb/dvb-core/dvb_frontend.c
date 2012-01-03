@@ -876,6 +876,7 @@ static int dvb_frontend_clear_cache(struct dvb_frontend *fe)
 	c->symbol_rate = QAM_AUTO;
 	c->code_rate_HP = FEC_AUTO;
 	c->code_rate_LP = FEC_AUTO;
+	c->rolloff = ROLLOFF_AUTO;
 
 	c->isdbt_partial_reception = -1;
 	c->isdbt_sb_mode = -1;
@@ -973,6 +974,8 @@ static struct dtv_cmds_h dtv_cmds[DTV_MAX_COMMAND + 1] = {
 	_DTV_CMD(DTV_GUARD_INTERVAL, 0, 0),
 	_DTV_CMD(DTV_TRANSMISSION_MODE, 0, 0),
 	_DTV_CMD(DTV_HIERARCHY, 0, 0),
+
+	_DTV_CMD(DTV_ENUM_DELSYS, 0, 0),
 };
 
 static void dtv_property_dump(struct dtv_property *tvp)
@@ -1008,7 +1011,7 @@ static void dtv_property_dump(struct dtv_property *tvp)
 
 static int is_legacy_delivery_system(fe_delivery_system_t s)
 {
-	if((s == SYS_UNDEFINED) || (s == SYS_DVBC_ANNEX_AC) ||
+	if((s == SYS_UNDEFINED) || (s == SYS_DVBC_ANNEX_A) ||
 	   (s == SYS_DVBC_ANNEX_B) || (s == SYS_DVBT) || (s == SYS_DVBS) ||
 	   (s == SYS_ATSC))
 		return 1;
@@ -1029,7 +1032,7 @@ static void dtv_property_cache_init(struct dvb_frontend *fe,
 		c->delivery_system = SYS_DVBS;
 		break;
 	case FE_QAM:
-		c->delivery_system = SYS_DVBC_ANNEX_AC;
+		c->delivery_system = SYS_DVBC_ANNEX_A;
 		break;
 	case FE_OFDM:
 		c->delivery_system = SYS_DVBT;
@@ -1140,9 +1143,10 @@ static void dtv_property_legacy_params_sync(struct dvb_frontend *fe)
  */
 static void dtv_property_adv_params_sync(struct dvb_frontend *fe)
 {
-	const struct dtv_frontend_properties *c = &fe->dtv_property_cache;
+	struct dtv_frontend_properties *c = &fe->dtv_property_cache;
 	struct dvb_frontend_private *fepriv = fe->frontend_priv;
 	struct dvb_frontend_parameters *p = &fepriv->parameters_in;
+	u32 rolloff = 0;
 
 	p->frequency = c->frequency;
 	p->inversion = c->inversion;
@@ -1174,6 +1178,23 @@ static void dtv_property_adv_params_sync(struct dvb_frontend *fe)
 		else
 			p->u.ofdm.bandwidth = BANDWIDTH_AUTO;
 	}
+
+	/*
+	 * On DVB-C, the bandwidth is a function of roll-off and symbol rate.
+	 * The bandwidth is required for DVB-C tuners, in order to avoid
+	 * inter-channel noise. Instead of estimating the minimal required
+	 * bandwidth on every single driver, calculates it here and fills
+	 * it at the cache bandwidth parameter.
+	 * While not officially supported, a side effect of handling it at
+	 * the cache level is that a program could retrieve the bandwidth
+	 * via DTV_BANDWIDTH_HZ, wich may be useful for test programs.
+	 */
+	if (c->delivery_system == SYS_DVBC_ANNEX_A)
+		rolloff = 115;
+	if (c->delivery_system == SYS_DVBC_ANNEX_C)
+		rolloff = 113;
+	if (rolloff)
+		c->bandwidth_hz = (c->symbol_rate * rolloff) / 100;
 }
 
 static void dtv_property_cache_submit(struct dvb_frontend *fe)
@@ -1207,6 +1228,37 @@ static int dvb_frontend_ioctl_legacy(struct file *file,
 static int dvb_frontend_ioctl_properties(struct file *file,
 			unsigned int cmd, void *parg);
 
+static void dtv_set_default_delivery_caps(const struct dvb_frontend *fe, struct dtv_property *p)
+{
+	const struct dvb_frontend_info *info = &fe->ops.info;
+	u32 ncaps = 0;
+
+	switch (info->type) {
+	case FE_QPSK:
+		p->u.buffer.data[ncaps++] = SYS_DVBS;
+		if (info->caps & FE_CAN_2G_MODULATION)
+			p->u.buffer.data[ncaps++] = SYS_DVBS2;
+		if (info->caps & FE_CAN_TURBO_FEC)
+			p->u.buffer.data[ncaps++] = SYS_TURBO;
+		break;
+	case FE_QAM:
+		p->u.buffer.data[ncaps++] = SYS_DVBC_ANNEX_AC;
+		break;
+	case FE_OFDM:
+		p->u.buffer.data[ncaps++] = SYS_DVBT;
+		if (info->caps & FE_CAN_2G_MODULATION)
+			p->u.buffer.data[ncaps++] = SYS_DVBT2;
+		break;
+	case FE_ATSC:
+		if (info->caps & (FE_CAN_8VSB | FE_CAN_16VSB))
+			p->u.buffer.data[ncaps++] = SYS_ATSC;
+		if (info->caps & (FE_CAN_QAM_16 | FE_CAN_QAM_64 | FE_CAN_QAM_128 | FE_CAN_QAM_256))
+			p->u.buffer.data[ncaps++] = SYS_DVBC_ANNEX_B;
+		break;
+	}
+	p->u.buffer.len = ncaps;
+}
+
 static int dtv_property_process_get(struct dvb_frontend *fe,
 				    struct dtv_property *tvp,
 				    struct file *file)
@@ -1227,6 +1279,9 @@ static int dtv_property_process_get(struct dvb_frontend *fe,
 	}
 
 	switch(tvp->cmd) {
+	case DTV_ENUM_DELSYS:
+		dtv_set_default_delivery_caps(fe, tvp);
+		break;
 	case DTV_FREQUENCY:
 		tvp->u.data = c->frequency;
 		break;

@@ -681,7 +681,8 @@ static int init_state(struct drxk_state *state)
 	state->m_hasOOB = false;
 	state->m_hasAudio = false;
 
-	state->m_ChunkSize = 124;
+	if (!state->m_ChunkSize)
+		state->m_ChunkSize = 124;
 
 	state->m_oscClockFreq = 0;
 	state->m_smartAntInverted = false;
@@ -1846,6 +1847,7 @@ static int SetOperationMode(struct drxk_state *state,
 		*/
 	switch (oMode) {
 	case OM_DVBT:
+		dprintk(1, ": DVB-T\n");
 		state->m_OperationMode = oMode;
 		status = SetDVBTStandard(state, oMode);
 		if (status < 0)
@@ -1853,6 +1855,8 @@ static int SetOperationMode(struct drxk_state *state,
 		break;
 	case OM_QAM_ITU_A:	/* fallthrough */
 	case OM_QAM_ITU_C:
+		dprintk(1, ": DVB-C Annex %c\n",
+			(state->m_OperationMode == OM_QAM_ITU_A) ? 'A' : 'C');
 		state->m_OperationMode = oMode;
 		status = SetQAMStandard(state, oMode);
 		if (status < 0)
@@ -6182,7 +6186,10 @@ static int drxk_c_init(struct dvb_frontend *fe)
 	dprintk(1, "\n");
 	if (mutex_trylock(&state->ctlock) == 0)
 		return -EBUSY;
-	SetOperationMode(state, OM_QAM_ITU_A);
+	if (state->m_itut_annex_c)
+		SetOperationMode(state, OM_QAM_ITU_C);
+	else
+		SetOperationMode(state, OM_QAM_ITU_A);
 	return 0;
 }
 
@@ -6208,6 +6215,7 @@ static int drxk_set_parameters(struct dvb_frontend *fe,
 			       struct dvb_frontend_parameters *p)
 {
 	struct drxk_state *state = fe->demodulator_priv;
+	u32 delsys  = fe->dtv_property_cache.delivery_system;
 	u32 IF;
 
 	dprintk(1, "\n");
@@ -6218,6 +6226,16 @@ static int drxk_set_parameters(struct dvb_frontend *fe,
 		return -EINVAL;
 	}
 
+	switch (delsys) {
+	case SYS_DVBC_ANNEX_A:
+		state->m_itut_annex_c = false;
+		break;
+	case SYS_DVBC_ANNEX_C:
+		state->m_itut_annex_c = true;
+		break;
+	default:
+		return -EINVAL;
+	}
 
 	if (fe->ops.i2c_gate_ctrl)
 		fe->ops.i2c_gate_ctrl(fe, 1);
@@ -6346,6 +6364,32 @@ static int drxk_t_get_frontend(struct dvb_frontend *fe,
 	return 0;
 }
 
+static int drxk_c_get_property(struct dvb_frontend *fe, struct dtv_property *p)
+{
+	switch (p->cmd) {
+	case DTV_ENUM_DELSYS:
+		p->u.buffer.data[0] = SYS_DVBC_ANNEX_A;
+		p->u.buffer.data[1] = SYS_DVBC_ANNEX_C;
+		p->u.buffer.len = 2;
+		break;
+	default:
+		break;
+	}
+	return 0;
+}
+static int drxk_t_get_property(struct dvb_frontend *fe, struct dtv_property *p)
+{
+	switch (p->cmd) {
+	case DTV_ENUM_DELSYS:
+		p->u.buffer.data[0] = SYS_DVBT;
+		p->u.buffer.len = 1;
+		break;
+	default:
+		break;
+	}
+	return 0;
+}
+
 static struct dvb_frontend_ops drxk_c_ops = {
 	.info = {
 		 .name = "DRXK DVB-C",
@@ -6364,6 +6408,7 @@ static struct dvb_frontend_ops drxk_c_ops = {
 
 	.set_frontend = drxk_set_parameters,
 	.get_frontend = drxk_c_get_frontend,
+	.get_property = drxk_c_get_property,
 	.get_tune_settings = drxk_c_get_tune_settings,
 
 	.read_status = drxk_read_status,
@@ -6396,6 +6441,7 @@ static struct dvb_frontend_ops drxk_t_ops = {
 
 	.set_frontend = drxk_set_parameters,
 	.get_frontend = drxk_t_get_frontend,
+	.get_property = drxk_t_get_property,
 
 	.read_status = drxk_read_status,
 	.read_ber = drxk_read_ber,
@@ -6423,6 +6469,7 @@ struct dvb_frontend *drxk_attach(const struct drxk_config *config,
 	state->no_i2c_bridge = config->no_i2c_bridge;
 	state->antenna_gpio = config->antenna_gpio;
 	state->antenna_dvbt = config->antenna_dvbt;
+	state->m_ChunkSize = config->chunk_size;
 
 	/* NOTE: as more UIO bits will be used, add them to the mask */
 	state->UIO_mask = config->antenna_gpio;
