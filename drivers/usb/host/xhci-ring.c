@@ -2390,17 +2390,7 @@ hw_died:
 
 irqreturn_t xhci_msi_irq(int irq, struct usb_hcd *hcd)
 {
-	irqreturn_t ret;
-	struct xhci_hcd *xhci;
-
-	xhci = hcd_to_xhci(hcd);
-	set_bit(HCD_FLAG_SAW_IRQ, &hcd->flags);
-	if (xhci->shared_hcd)
-		set_bit(HCD_FLAG_SAW_IRQ, &xhci->shared_hcd->flags);
-
-	ret = xhci_irq(hcd);
-
-	return ret;
+	return xhci_irq(hcd);
 }
 
 /****		Endpoint Ring Operations	****/
@@ -2561,7 +2551,7 @@ static unsigned int count_sg_trbs_needed(struct xhci_hcd *xhci, struct urb *urb)
 	struct scatterlist *sg;
 
 	sg = NULL;
-	num_sgs = urb->num_sgs;
+	num_sgs = urb->num_mapped_sgs;
 	temp = urb->transfer_buffer_length;
 
 	xhci_dbg(xhci, "count sg list trbs: \n");
@@ -2745,7 +2735,7 @@ static int queue_bulk_sg_tx(struct xhci_hcd *xhci, gfp_t mem_flags,
 		return -EINVAL;
 
 	num_trbs = count_sg_trbs_needed(xhci, urb);
-	num_sgs = urb->num_sgs;
+	num_sgs = urb->num_mapped_sgs;
 	total_packet_count = roundup(urb->transfer_buffer_length,
 			usb_endpoint_maxp(&urb->ep->desc));
 
