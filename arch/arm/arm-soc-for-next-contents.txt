@@ -86,6 +86,8 @@ next/drivers
 next/drivers2
   samsung/dma		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next-samsung-devel-dma
 				depends on samsung/dt and depends/dma-slave/next
+  samsung/rtc		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next-samsung-devel-rtc
+				depends on samsung/rtc
 
 next/pm
   omap/omap4		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap omap4
