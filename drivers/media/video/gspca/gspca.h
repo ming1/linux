@@ -69,7 +69,6 @@ struct cam {
 	u8 bulk;		/* image transfer by 0:isoc / 1:bulk */
 	u8 npkt;		/* number of packets in an ISOC message
 				 * 0 is the default value: 32 packets */
-	u8 reverse_alts;	/* Alt settings are in high to low order */
 };
 
 struct gspca_dev;
@@ -208,7 +207,6 @@ struct gspca_dev {
 	char memory;			/* memory type (V4L2_MEMORY_xxx) */
 	__u8 iface;			/* USB interface number */
 	__u8 alt;			/* USB alternate setting */
-	__u8 nbalt;			/* number of USB alternate settings */
 	u8 audio;			/* presence of audio device */
 };
 
