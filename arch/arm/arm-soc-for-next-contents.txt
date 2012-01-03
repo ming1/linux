@@ -5,6 +5,10 @@ and their external dependencies.
 It also includes a couple of directly applied patches for build breaks with subject
 The next/* branches are kept in the order in which they get applied.
 
+depends/*
+  depends/rmk/devel-stable
+  depends/dma-slave/next
+
 next/fixes-non-critical
   omap/fixes-non-critical git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap fixes-non-critical
   omap/fixes-hwmod git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap fixes-hwmod
@@ -77,6 +81,11 @@ next/drivers
   samsung/drivers       git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next-samsung-devel-mmc-spi5
 				depends on samsung/cleanup
   drivers/rtc-sa1100	cherry-picked from git://github.com/hzhuang1/linux.git for-next
+
+
+next/drivers2
+  samsung/dma		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next-samsung-devel-dma
+				depends on samsung/dt and depends/dma-slave/next
 
 next/pm
   omap/omap4		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap omap4
