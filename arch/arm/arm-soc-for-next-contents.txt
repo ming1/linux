@@ -8,6 +8,7 @@ The next/* branches are kept in the order in which they get applied.
 depends/*
   depends/rmk/devel-stable
   depends/dma-slave/next
+  depends/v4l
 
 next/fixes-non-critical
   omap/fixes-non-critical git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap fixes-non-critical
