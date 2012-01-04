@@ -15,11 +15,12 @@
 
 extern void (*s3c24xx_reset_hook)(void);
 
+#error Fix me up
 static void
 arch_reset(char mode, const char *cmd)
 {
 	if (mode == 's') {
-		cpu_reset(0);
+		soft_restart(0);
 	}
 
 	if (s3c24xx_reset_hook)
@@ -28,5 +29,5 @@ arch_reset(char mode, const char *cmd)
 	arch_wdt_reset();
 
 	/* we'll take a jump through zero as a poor second */
-	cpu_reset(0);
+	soft_restart(0);
 }
