@@ -327,7 +327,7 @@ struct idmap_hashtable {
 };
 
 struct idmap {
-	struct dentry		*idmap_dentry;
+	struct rpc_pipe		*idmap_pipe;
 	wait_queue_head_t	idmap_wq;
 	struct idmap_msg	idmap_im;
 	struct mutex		idmap_lock;	/* Serializes upcalls */
@@ -348,10 +348,61 @@ static const struct rpc_pipe_ops idmap_upcall_ops = {
 	.destroy_msg	= idmap_pipe_destroy_msg,
 };
 
+static void __nfs_idmap_unregister(struct rpc_pipe *pipe)
+{
+	if (pipe->dentry)
+		rpc_unlink(pipe->dentry);
+}
+
+static int __nfs_idmap_register(struct dentry *dir,
+				     struct idmap *idmap,
+				     struct rpc_pipe *pipe)
+{
+	struct dentry *dentry;
+
+	dentry = rpc_mkpipe_dentry(dir, "idmap", idmap, pipe);
+	if (IS_ERR(dentry))
+		return PTR_ERR(dentry);
+	pipe->dentry = dentry;
+	return 0;
+}
+
+static void nfs_idmap_unregister(struct nfs_client *clp,
+				      struct rpc_pipe *pipe)
+{
+	struct net *net = clp->net;
+	struct super_block *pipefs_sb;
+
+	pipefs_sb = rpc_get_sb_net(net);
+	if (pipefs_sb) {
+		__nfs_idmap_unregister(pipe);
+		rpc_put_sb_net(net);
+	}
+}
+
+static int nfs_idmap_register(struct nfs_client *clp,
+				   struct idmap *idmap,
+				   struct rpc_pipe *pipe)
+{
+	struct net *net = clp->net;
+	struct super_block *pipefs_sb;
+	int err = 0;
+
+	pipefs_sb = rpc_get_sb_net(net);
+	if (pipefs_sb) {
+		if (clp->cl_rpcclient->cl_dentry)
+			err = __nfs_idmap_register(clp->cl_rpcclient->cl_dentry,
+						   idmap, pipe);
+		rpc_put_sb_net(net);
+	}
+	return err;
+}
+
 int
 nfs_idmap_new(struct nfs_client *clp)
 {
 	struct idmap *idmap;
+	struct rpc_pipe *pipe;
 	int error;
 
 	BUG_ON(clp->cl_idmap != NULL);
@@ -360,14 +411,19 @@ nfs_idmap_new(struct nfs_client *clp)
 	if (idmap == NULL)
 		return -ENOMEM;
 
-	idmap->idmap_dentry = rpc_mkpipe(clp->cl_rpcclient->cl_path.dentry,
-			"idmap", idmap, &idmap_upcall_ops, 0);
-	if (IS_ERR(idmap->idmap_dentry)) {
-		error = PTR_ERR(idmap->idmap_dentry);
+	pipe = rpc_mkpipe_data(&idmap_upcall_ops, 0);
+	if (IS_ERR(pipe)) {
+		error = PTR_ERR(pipe);
 		kfree(idmap);
 		return error;
 	}
-
+	error = nfs_idmap_register(clp, idmap, pipe);
+	if (error) {
+		rpc_destroy_pipe_data(pipe);
+		kfree(idmap);
+		return error;
+	}
+	idmap->idmap_pipe = pipe;
 	mutex_init(&idmap->idmap_lock);
 	mutex_init(&idmap->idmap_im_lock);
 	init_waitqueue_head(&idmap->idmap_wq);
@@ -385,7 +441,8 @@ nfs_idmap_delete(struct nfs_client *clp)
 
 	if (!idmap)
 		return;
-	rpc_unlink(idmap->idmap_dentry);
+	nfs_idmap_unregister(clp, idmap->idmap_pipe);
+	rpc_destroy_pipe_data(idmap->idmap_pipe);
 	clp->cl_idmap = NULL;
 	kfree(idmap);
 }
@@ -506,7 +563,7 @@ nfs_idmap_id(struct idmap *idmap, struct idmap_hashtable *h,
 	msg.len = sizeof(*im);
 
 	add_wait_queue(&idmap->idmap_wq, &wq);
-	if (rpc_queue_upcall(idmap->idmap_dentry->d_inode, &msg) < 0) {
+	if (rpc_queue_upcall(idmap->idmap_pipe, &msg) < 0) {
 		remove_wait_queue(&idmap->idmap_wq, &wq);
 		goto out;
 	}
@@ -567,7 +624,7 @@ nfs_idmap_name(struct idmap *idmap, struct idmap_hashtable *h,
 
 	add_wait_queue(&idmap->idmap_wq, &wq);
 
-	if (rpc_queue_upcall(idmap->idmap_dentry->d_inode, &msg) < 0) {
+	if (rpc_queue_upcall(idmap->idmap_pipe, &msg) < 0) {
 		remove_wait_queue(&idmap->idmap_wq, &wq);
 		goto out;
 	}
