@@ -167,6 +167,11 @@ struct mmc_async_req {
 	int (*err_check) (struct mmc_card *, struct mmc_async_req *);
 };
 
+struct mmc_hotplug {
+	unsigned int irq;
+	void *handler_priv;
+};
+
 struct mmc_host {
 	struct device		*parent;
 	struct device		class_dev;
@@ -242,6 +247,7 @@ struct mmc_host {
 #define MMC_CAP2_CACHE_CTRL	(1 << 1)	/* Allow cache control */
 #define MMC_CAP2_POWEROFF_NOTIFY (1 << 2)	/* Notify poweroff supported */
 #define MMC_CAP2_NO_MULTI_READ	(1 << 3)	/* Multiblock reads don't work */
+#define MMC_CAP2_NO_SLEEP_CMD	(1 << 4)	/* Don't allow sleep command */
 
 	mmc_pm_flag_t		pm_caps;	/* supported pm features */
 	unsigned int        power_notify_type;
@@ -253,10 +259,12 @@ struct mmc_host {
 	int			clk_requests;	/* internal reference counter */
 	unsigned int		clk_delay;	/* number of MCI clk hold cycles */
 	bool			clk_gated;	/* clock gated */
-	struct work_struct	clk_gate_work; /* delayed clock gate */
+	struct delayed_work	clk_gate_work; /* delayed clock gate */
 	unsigned int		clk_old;	/* old clock value cache */
 	spinlock_t		clk_lock;	/* lock for clk fields */
 	struct mutex		clk_gate_mutex;	/* mutex for clock gating */
+	struct device_attribute clkgate_delay_attr;
+	unsigned long           clkgate_delay;
 #endif
 
 	/* host specific block data */
@@ -297,6 +305,8 @@ struct mmc_host {
 	int			claim_cnt;	/* "claim" nesting count */
 
 	struct delayed_work	detect;
+	int			detect_change;	/* card detect flag */
+	struct mmc_hotplug	hotplug;
 
 	const struct mmc_bus_ops *bus_ops;	/* current bus driver */
 	unsigned int		bus_refs;	/* reference counter */
@@ -322,6 +332,8 @@ struct mmc_host {
 #ifdef CONFIG_FAIL_MMC_REQUEST
 	struct fault_attr	fail_mmc_request;
 #endif
+
+	unsigned int		actual_clock;	/* Actual HC clock rate */
 
 	unsigned long		private[0] ____cacheline_aligned;
 };
