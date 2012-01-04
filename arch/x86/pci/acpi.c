@@ -72,6 +72,16 @@ static const struct dmi_system_id pci_use_crs_table[] __initconst = {
 			DMI_MATCH(DMI_BOARD_NAME, "0M273C"),
 		},
 	},
+	/* https://bugzilla.redhat.com/show_bug.cgi?id=769657 */
+	{
+		.callback = set_nouse_crs,
+		.ident = "Dell Studio 1557",
+		.matches = {
+			DMI_MATCH(DMI_BOARD_VENDOR, "Dell Inc."),
+			DMI_MATCH(DMI_PRODUCT_NAME, "Studio 1557"),
+			DMI_MATCH(DMI_BIOS_VERSION, "A09"),
+		},
+	},
 	{}
 };
 
