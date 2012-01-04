@@ -90,10 +90,8 @@ enum isci_status {
  * @timer: timeout start/stop operations
  */
 struct isci_port {
-	enum isci_status status;
 	struct isci_host *isci_host;
 	struct list_head remote_dev_list;
-	spinlock_t state_lock;
 	struct list_head domain_dev_list;
 	struct completion hard_reset_complete;
 	enum sci_status hard_reset_status;
@@ -283,9 +281,6 @@ void sci_port_get_sas_address(
 void sci_port_get_attached_sas_address(
 	struct isci_port *iport,
 	struct sci_sas_address *sas_address);
-
-enum isci_status isci_port_get_state(
-	struct isci_port *isci_port);
 
 void isci_port_formed(struct asd_sas_phy *);
 void isci_port_deformed(struct asd_sas_phy *);
