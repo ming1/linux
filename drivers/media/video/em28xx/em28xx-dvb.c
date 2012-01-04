@@ -44,6 +44,7 @@
 #include "drxk.h"
 #include "tda10071.h"
 #include "a8293.h"
+#include "qt1010.h"
 
 MODULE_DESCRIPTION("driver for em28xx based DVB cards");
 MODULE_AUTHOR("Mauro Carvalho Chehab <mchehab@infradead.org>");
@@ -302,10 +303,12 @@ static struct zl10353_config em28xx_zl10353_xc3028_no_i2c_gate = {
 };
 
 static struct drxd_config em28xx_drxd = {
-	.index = 0, .demod_address = 0x70, .demod_revision = 0xa2,
-	.demoda_address = 0x00, .pll_address = 0x00,
-	.pll_type = DRXD_PLL_NONE, .clock = 12000, .insert_rs_byte = 1,
-	.pll_set = NULL, .osc_deviation = NULL, .IF = 42800000,
+	.demod_address = 0x70,
+	.demod_revision = 0xa2,
+	.pll_type = DRXD_PLL_NONE,
+	.clock = 12000,
+	.insert_rs_byte = 1,
+	.IF = 42800000,
 	.disable_i2c_gate_ctrl = 1,
 };
 
@@ -522,6 +525,17 @@ static const struct tda10071_config em28xx_tda10071_config = {
 
 static const struct a8293_config em28xx_a8293_config = {
 	.i2c_addr = 0x08, /* (0x10 >> 1) */
+};
+
+static struct zl10353_config em28xx_zl10353_no_i2c_gate_dev = {
+	.demod_address = (0x1e >> 1),
+	.disable_i2c_gate_ctrl = 1,
+	.no_tuner = 1,
+	.parallel_ts = 1,
+};
+static struct qt1010_config em28xx_qt1010_config = {
+	.i2c_address = 0x62
+
 };
 
 /* ------------------------------------------------------------------ */
@@ -776,6 +790,14 @@ static int em28xx_dvb_init(struct em28xx *dev)
 			goto out_free;
 		}
 		break;
+	case EM2870_BOARD_KWORLD_355U:
+		dvb->fe[0] = dvb_attach(zl10353_attach,
+					   &em28xx_zl10353_no_i2c_gate_dev,
+					   &dev->i2c_adap);
+		if (dvb->fe[0] != NULL)
+			dvb_attach(qt1010_attach, dvb->fe[0],
+				   &dev->i2c_adap, &em28xx_qt1010_config);
+		break;
 	case EM2883_BOARD_KWORLD_HYBRID_330U:
 	case EM2882_BOARD_EVGA_INDTUBE:
 		dvb->fe[0] = dvb_attach(s5h1409_attach,
@@ -829,31 +851,22 @@ static int em28xx_dvb_init(struct em28xx *dev)
 				   &dev->i2c_adap, &kworld_a340_config);
 		break;
 	case EM28174_BOARD_PCTV_290E:
-		/* MFE
-		 * FE 0 = DVB-T/T2 + FE 1 = DVB-C, both sharing same tuner. */
-		/* FE 0 */
 		dvb->fe[0] = dvb_attach(cxd2820r_attach,
-			&em28xx_cxd2820r_config, &dev->i2c_adap, NULL);
+					&em28xx_cxd2820r_config,
+					&dev->i2c_adap,
+					NULL);
 		if (dvb->fe[0]) {
 			/* FE 0 attach tuner */
-			if (!dvb_attach(tda18271_attach, dvb->fe[0], 0x60,
-				&dev->i2c_adap, &em28xx_cxd2820r_tda18271_config)) {
+			if (!dvb_attach(tda18271_attach,
+					dvb->fe[0],
+					0x60,
+					&dev->i2c_adap,
+					&em28xx_cxd2820r_tda18271_config)) {
+
 				dvb_frontend_detach(dvb->fe[0]);
 				result = -EINVAL;
 				goto out_free;
 			}
-			/* FE 1. This dvb_attach() cannot fail. */
-			dvb->fe[1] = dvb_attach(cxd2820r_attach, NULL, NULL,
-				dvb->fe[0]);
-			dvb->fe[1]->id = 1;
-			/* FE 1 attach tuner */
-			if (!dvb_attach(tda18271_attach, dvb->fe[1], 0x60,
-				&dev->i2c_adap, &em28xx_cxd2820r_tda18271_config)) {
-				dvb_frontend_detach(dvb->fe[1]);
-				/* leave FE 0 still active */
-			}
-
-			mfe_shared = 1;
 		}
 		break;
 	case EM2884_BOARD_HAUPPAUGE_WINTV_HVR_930C:
