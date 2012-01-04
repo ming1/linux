@@ -105,13 +105,14 @@
 #define PCD_NAME	"pcd"
 #define PCD_UNITS	4
 
+#include <linux/types.h>
 /* Here are things one can override from the insmod command.
    Most are autoprobed by paride unless set here.  Verbose is off
    by default.
 
 */
 
-static int verbose = 0;
+static bool verbose = 0;
 static int major = PCD_MAJOR;
 static char *name = PCD_NAME;
 static int nice = 0;
@@ -139,6 +140,7 @@ enum {D_PRT, D_PRO, D_UNI, D_MOD, D_SLV, D_DLY};
 #include <linux/spinlock.h>
 #include <linux/blkdev.h>
 #include <linux/mutex.h>
+#include <linux/types.h>
 #include <asm/uaccess.h>
 
 static DEFINE_MUTEX(pcd_mutex);
