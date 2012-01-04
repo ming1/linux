@@ -310,7 +310,19 @@ static struct super_block *quotactl_block(const char __user *special)
 	putname(tmp);
 	if (IS_ERR(bdev))
 		return ERR_CAST(bdev);
+retry_super:
 	sb = get_super(bdev);
+	if (sb && sb->s_frozen != SB_UNFROZEN) {
+		/*
+		 * When resuming a frozen device, s_umount is taken for write.
+		 * To avoid deadlock, we drop s_umount if the filesystem
+		 * is frozen and wait for it to thaw.
+		 */
+		up_read(&sb->s_umount);
+		vfs_check_frozen(sb, SB_FREEZE_WRITE);
+		put_super(sb);
+		goto retry_super;
+	}
 	bdput(bdev);
 	if (!sb)
 		return ERR_PTR(-ENODEV);
