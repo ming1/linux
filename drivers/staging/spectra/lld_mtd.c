@@ -188,7 +188,7 @@ u16 mtd_Erase_Block(u32 block_add)
 	erase.len = spectra_mtd->erasesize;
 	erase.priv = (unsigned long)&comp;
 
-	ret = spectra_mtd->erase(spectra_mtd, &erase);
+	ret = mtd_erase(spectra_mtd, &erase);
 	if (!ret) {
 		wait_for_completion(&comp);
 		if (erase.state != MTD_ERASE_DONE)
@@ -233,9 +233,11 @@ u16 mtd_Write_Page_Main(u8 *write_data, u32 Block,
 
 
 	while (PageCount) {
-		ret = spectra_mtd->write(spectra_mtd,
-					 (Block * spectra_mtd->erasesize) + (Page * spectra_mtd->writesize),
-					 DeviceInfo.wPageDataSize, &retlen, write_data);
+		ret = mtd_write(spectra_mtd,
+				(Block * spectra_mtd->erasesize) + (Page * spectra_mtd->writesize),
+				DeviceInfo.wPageDataSize,
+				&retlen,
+				write_data);
 		if (ret) {
 			printk(KERN_ERR "%s failed %d\n", __func__, ret);
 			return FAIL;
@@ -283,9 +285,11 @@ u16 mtd_Read_Page_Main(u8 *read_data, u32 Block,
 
 
 	while (PageCount) {
-		ret = spectra_mtd->read(spectra_mtd,
-					(Block * spectra_mtd->erasesize) + (Page * spectra_mtd->writesize),
-					DeviceInfo.wPageDataSize, &retlen, read_data);
+		ret = mtd_read(spectra_mtd,
+			       (Block * spectra_mtd->erasesize) + (Page * spectra_mtd->writesize),
+			       DeviceInfo.wPageDataSize,
+			       &retlen,
+			       read_data);
 		if (ret) {
 			printk(KERN_ERR "%s failed %d\n", __func__, ret);
 			return FAIL;
@@ -347,9 +351,9 @@ u16 mtd_Read_Page_Main_Spare(u8 *read_data, u32 Block,
 		ops.ooblen = BTSIG_BYTES;
 		ops.ooboffs = 0;
 
-		ret = spectra_mtd->read_oob(spectra_mtd,
-					    (Block * spectra_mtd->erasesize) + (Page * spectra_mtd->writesize),
-					    &ops);
+		ret = mtd_read_oob(spectra_mtd,
+				   (Block * spectra_mtd->erasesize) + (Page * spectra_mtd->writesize),
+				   &ops);
 		if (ret) {
 			printk(KERN_ERR "%s failed %d\n", __func__, ret);
 			return FAIL;
@@ -407,9 +411,9 @@ u16 mtd_Write_Page_Main_Spare(u8 *write_data, u32 Block,
 		ops.ooblen = BTSIG_BYTES;
 		ops.ooboffs = 0;
 
-		ret = spectra_mtd->write_oob(spectra_mtd,
-					     (Block * spectra_mtd->erasesize) + (Page * spectra_mtd->writesize),
-					     &ops);
+		ret = mtd_write_oob(spectra_mtd,
+				    (Block * spectra_mtd->erasesize) + (Page * spectra_mtd->writesize),
+				    &ops);
 		if (ret) {
 			printk(KERN_ERR "%s failed %d\n", __func__, ret);
 			return FAIL;
@@ -480,9 +484,9 @@ u16 mtd_Read_Page_Spare(u8 *read_data, u32 Block,
 		ops.ooblen = BTSIG_BYTES;
 		ops.ooboffs = 0;
 
-		ret = spectra_mtd->read_oob(spectra_mtd,
-					    (Block * spectra_mtd->erasesize) + (Page * spectra_mtd->writesize),
-					    &ops);
+		ret = mtd_read_oob(spectra_mtd,
+				   (Block * spectra_mtd->erasesize) + (Page * spectra_mtd->writesize),
+				   &ops);
 		if (ret) {
 			printk(KERN_ERR "%s failed %d\n", __func__, ret);
 			return FAIL;
