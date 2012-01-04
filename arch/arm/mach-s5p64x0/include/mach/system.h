@@ -15,7 +15,7 @@
 
 static void arch_idle(void)
 {
-	/* nothing here yet */
+	do_cpu_idle();
 }
 
 #endif /* __ASM_ARCH_SYSTEM_H */
