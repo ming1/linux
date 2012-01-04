@@ -630,13 +630,13 @@ ipv6_add_addr(struct inet6_dev *idev, const struct in6_addr *addr, int pfxlen,
 		goto out;
 	}
 
-	rt = addrconf_dst_alloc(idev, addr, 0);
+	rt = addrconf_dst_alloc(idev, addr, false);
 	if (IS_ERR(rt)) {
 		err = PTR_ERR(rt);
 		goto out;
 	}
 
-	ipv6_addr_copy(&ifa->addr, addr);
+	ifa->addr = *addr;
 
 	spin_lock_init(&ifa->lock);
 	spin_lock_init(&ifa->state_lock);
@@ -649,16 +649,6 @@ ipv6_add_addr(struct inet6_dev *idev, const struct in6_addr *addr, int pfxlen,
 	ifa->cstamp = ifa->tstamp = jiffies;
 
 	ifa->rt = rt;
-
-	/*
-	 * part one of RFC 4429, section 3.3
-	 * We should not configure an address as
-	 * optimistic if we do not yet know the link
-	 * layer address of our nexhop router
-	 */
-
-	if (dst_get_neighbour_raw(&rt->dst) == NULL)
-		ifa->flags &= ~IFA_F_OPTIMISTIC;
 
 	ifa->idev = idev;
 	in6_dev_hold(idev);
@@ -807,7 +797,7 @@ static void ipv6_del_addr(struct inet6_ifaddr *ifp)
 				ip6_del_rt(rt);
 				rt = NULL;
 			} else if (!(rt->rt6i_flags & RTF_EXPIRES)) {
-				rt->rt6i_expires = expires;
+				rt->dst.expires = expires;
 				rt->rt6i_flags |= RTF_EXPIRES;
 			}
 		}
@@ -1228,7 +1218,7 @@ try_nextdev:
 	if (!hiscore->ifa)
 		return -EADDRNOTAVAIL;
 
-	ipv6_addr_copy(saddr, &hiscore->ifa->addr);
+	*saddr = hiscore->ifa->addr;
 	in6_ifa_put(hiscore->ifa);
 	return 0;
 }
@@ -1249,7 +1239,7 @@ int ipv6_get_lladdr(struct net_device *dev, struct in6_addr *addr,
 		list_for_each_entry(ifp, &idev->addr_list, if_list) {
 			if (ifp->scope == IFA_LINK &&
 			    !(ifp->flags & banned_flags)) {
-				ipv6_addr_copy(addr, &ifp->addr);
+				*addr = ifp->addr;
 				err = 0;
 				break;
 			}
@@ -1700,7 +1690,7 @@ addrconf_prefix_route(struct in6_addr *pfx, int plen, struct net_device *dev,
 		.fc_protocol = RTPROT_KERNEL,
 	};
 
-	ipv6_addr_copy(&cfg.fc_dst, pfx);
+	cfg.fc_dst = *pfx;
 
 	/* Prevent useless cloning on PtP SIT.
 	   This thing is done here expecting that the whole
@@ -1733,7 +1723,7 @@ static struct rt6_info *addrconf_get_prefix_route(const struct in6_addr *pfx,
 	if (!fn)
 		goto out;
 	for (rt = fn->leaf; rt; rt = rt->dst.rt6_next) {
-		if (rt->rt6i_dev->ifindex != dev->ifindex)
+		if (rt->dst.dev->ifindex != dev->ifindex)
 			continue;
 		if ((rt->rt6i_flags & flags) != flags)
 			continue;
@@ -1891,11 +1881,11 @@ void addrconf_prefix_rcv(struct net_device *dev, u8 *opt, int len)
 				rt = NULL;
 			} else if (addrconf_finite_timeout(rt_expires)) {
 				/* not infinity */
-				rt->rt6i_expires = jiffies + rt_expires;
+				rt->dst.expires = jiffies + rt_expires;
 				rt->rt6i_flags |= RTF_EXPIRES;
 			} else {
 				rt->rt6i_flags &= ~RTF_EXPIRES;
-				rt->rt6i_expires = 0;
+				rt->dst.expires = 0;
 			}
 		} else if (valid_lft) {
 			clock_t expires = 0;

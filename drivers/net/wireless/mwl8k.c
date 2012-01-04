@@ -31,7 +31,7 @@
 #define MWL8K_VERSION	"0.12"
 
 /* Module parameters */
-static unsigned ap_mode_default;
+static bool ap_mode_default;
 module_param(ap_mode_default, bool, 0);
 MODULE_PARM_DESC(ap_mode_default,
 		 "Set to 1 to make ap mode the default instead of sta mode");
@@ -738,10 +738,10 @@ static int mwl8k_load_firmware(struct ieee80211_hw *hw)
 
 		ready_code = ioread32(priv->regs + MWL8K_HIU_INT_CODE);
 		if (ready_code == MWL8K_FWAP_READY) {
-			priv->ap_fw = 1;
+			priv->ap_fw = true;
 			break;
 		} else if (ready_code == MWL8K_FWSTA_READY) {
-			priv->ap_fw = 0;
+			priv->ap_fw = false;
 			break;
 		}
 
@@ -5044,14 +5044,14 @@ mwl8k_ampdu_action(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 		ieee80211_start_tx_ba_cb_irqsafe(vif, addr, tid);
 		break;
 	case IEEE80211_AMPDU_TX_STOP:
-		if (stream == NULL)
-			break;
-		if (stream->state == AMPDU_STREAM_ACTIVE) {
-			spin_unlock(&priv->stream_lock);
-			mwl8k_destroy_ba(hw, stream);
-			spin_lock(&priv->stream_lock);
+		if (stream) {
+			if (stream->state == AMPDU_STREAM_ACTIVE) {
+				spin_unlock(&priv->stream_lock);
+				mwl8k_destroy_ba(hw, stream);
+				spin_lock(&priv->stream_lock);
+			}
+			mwl8k_remove_stream(hw, stream);
 		}
-		mwl8k_remove_stream(hw, stream);
 		ieee80211_stop_tx_ba_cb_irqsafe(vif, addr, tid);
 		break;
 	case IEEE80211_AMPDU_TX_OPERATIONAL:
@@ -5517,8 +5517,8 @@ static int mwl8k_firmware_load_success(struct mwl8k_priv *priv)
 	INIT_LIST_HEAD(&priv->vif_list);
 
 	/* Set default radio state and preamble */
-	priv->radio_on = 0;
-	priv->radio_short_preamble = 0;
+	priv->radio_on = false;
+	priv->radio_short_preamble = false;
 
 	/* Finalize join worker */
 	INIT_WORK(&priv->finalize_join_worker, mwl8k_finalize_join_worker);
