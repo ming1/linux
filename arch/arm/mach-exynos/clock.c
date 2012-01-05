@@ -782,6 +782,13 @@ static struct clk clk_pdma1 = {
 	.ctrlbit	= (1 << 1),
 };
 
+static struct clk clk_mdma1 = {
+	.name		= "dma",
+	.devname	= "dma-pl330.2",
+	.enable		= exynos4_clk_ip_image_ctrl,
+	.ctrlbit	= ((1 << 8) | (1 << 5) | (1 << 2)),
+};
+
 struct clk *clkset_group_list[] = {
 	[0] = &clk_ext_xtal_mux,
 	[1] = &clk_xusbxti,
@@ -1111,36 +1118,6 @@ static struct clksrc_clk clksrcs[] = {
 		.reg_div = { .reg = S5P_CLKDIV_LCD0, .shift = 0, .size = 4 },
 	}, {
 		.clk		= {
-			.name		= "sclk_spi",
-			.devname	= "s3c64xx-spi.0",
-			.enable		= exynos4_clksrc_mask_peril1_ctrl,
-			.ctrlbit	= (1 << 16),
-		},
-		.sources = &clkset_group,
-		.reg_src = { .reg = S5P_CLKSRC_PERIL1, .shift = 16, .size = 4 },
-		.reg_div = { .reg = S5P_CLKDIV_PERIL1, .shift = 0, .size = 4 },
-	}, {
-		.clk		= {
-			.name		= "sclk_spi",
-			.devname	= "s3c64xx-spi.1",
-			.enable		= exynos4_clksrc_mask_peril1_ctrl,
-			.ctrlbit	= (1 << 20),
-		},
-		.sources = &clkset_group,
-		.reg_src = { .reg = S5P_CLKSRC_PERIL1, .shift = 20, .size = 4 },
-		.reg_div = { .reg = S5P_CLKDIV_PERIL1, .shift = 16, .size = 4 },
-	}, {
-		.clk		= {
-			.name		= "sclk_spi",
-			.devname	= "s3c64xx-spi.2",
-			.enable		= exynos4_clksrc_mask_peril1_ctrl,
-			.ctrlbit	= (1 << 24),
-		},
-		.sources = &clkset_group,
-		.reg_src = { .reg = S5P_CLKSRC_PERIL1, .shift = 24, .size = 4 },
-		.reg_div = { .reg = S5P_CLKDIV_PERIL2, .shift = 0, .size = 4 },
-	}, {
-		.clk		= {
 			.name		= "sclk_fimg2d",
 		},
 		.sources = &clkset_mout_g2d,
@@ -1257,6 +1234,42 @@ static struct clksrc_clk clk_sclk_mmc3 = {
 	.reg_div = { .reg = S5P_CLKDIV_FSYS2, .shift = 24, .size = 8 },
 };
 
+static struct clksrc_clk clk_sclk_spi0 = {
+	.clk		= {
+		.name		= "sclk_spi",
+		.devname		= "s3c64xx-spi.0",
+		.enable		= exynos4_clksrc_mask_peril1_ctrl,
+		.ctrlbit		= (1 << 16),
+	},
+	.sources = &clkset_group,
+	.reg_src = { .reg = S5P_CLKSRC_PERIL1, .shift = 16, .size = 4 },
+	.reg_div = { .reg = S5P_CLKDIV_PERIL1, .shift = 0, .size = 4 },
+};
+
+static struct clksrc_clk clk_sclk_spi1 = {
+	.clk		= {
+		.name		= "sclk_spi",
+		.devname		= "s3c64xx-spi.1",
+		.enable		= exynos4_clksrc_mask_peril1_ctrl,
+		.ctrlbit		= (1 << 20),
+	},
+	.sources = &clkset_group,
+	.reg_src = { .reg = S5P_CLKSRC_PERIL1, .shift = 20, .size = 4 },
+	.reg_div = { .reg = S5P_CLKDIV_PERIL1, .shift = 16, .size = 4 },
+};
+
+static struct clksrc_clk clk_sclk_spi2 = {
+	.clk		= {
+		.name		= "sclk_spi",
+		.devname		= "s3c64xx-spi.2",
+		.enable		= exynos4_clksrc_mask_peril1_ctrl,
+		.ctrlbit		= (1 << 24),
+	},
+	.sources = &clkset_group,
+	.reg_src = { .reg = S5P_CLKSRC_PERIL1, .shift = 24, .size = 4 },
+	.reg_div = { .reg = S5P_CLKDIV_PERIL2, .shift = 0, .size = 4 },
+};
+
 /* Clock initialization code */
 static struct clksrc_clk *sysclks[] = {
 	&clk_mout_apll,
@@ -1294,6 +1307,7 @@ static struct clksrc_clk *sysclks[] = {
 static struct clk *clk_cdev[] = {
 	&clk_pdma0,
 	&clk_pdma1,
+	&clk_mdma1,
 };
 
 static struct clksrc_clk *clksrc_cdev[] = {
@@ -1305,6 +1319,10 @@ static struct clksrc_clk *clksrc_cdev[] = {
 	&clk_sclk_mmc1,
 	&clk_sclk_mmc2,
 	&clk_sclk_mmc3,
+	&clk_sclk_spi0,
+	&clk_sclk_spi1,
+	&clk_sclk_spi2,
+
 };
 
 static struct clk_lookup exynos4_clk_lookup[] = {
@@ -1318,6 +1336,10 @@ static struct clk_lookup exynos4_clk_lookup[] = {
 	CLKDEV_INIT("s3c-sdhci.3", "mmc_busclk.2", &clk_sclk_mmc3.clk),
 	CLKDEV_INIT("dma-pl330.0", "apb_pclk", &clk_pdma0),
 	CLKDEV_INIT("dma-pl330.1", "apb_pclk", &clk_pdma1),
+	CLKDEV_INIT("dma-pl330.2", "apb_pclk", &clk_mdma1),
+	CLKDEV_INIT("s3c64xx-spi.0", "spi_busclk0", &clk_sclk_spi0.clk),
+	CLKDEV_INIT("s3c64xx-spi.1", "spi_busclk0", &clk_sclk_spi1.clk),
+	CLKDEV_INIT("s3c64xx-spi.2", "spi_busclk0", &clk_sclk_spi2.clk),
 };
 
 static int xtal_rate;

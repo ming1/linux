@@ -43,6 +43,8 @@
 #define IRQ_EINT15		IRQ_SPI(31)
 #define IRQ_EINT16_31		IRQ_SPI(32)
 
+#define IRQ_MDMA0		IRQ_SPI(33)
+#define IRQ_MDMA1		IRQ_SPI(34)
 #define IRQ_PDMA0		IRQ_SPI(35)
 #define IRQ_PDMA1		IRQ_SPI(36)
 #define IRQ_TIMER0_VIC		IRQ_SPI(37)
@@ -72,6 +74,9 @@
 #define IRQ_IIC5		IRQ_SPI(63)
 #define IRQ_IIC6		IRQ_SPI(64)
 #define IRQ_IIC7		IRQ_SPI(65)
+#define IRQ_SPI0		IRQ_SPI(66)
+#define IRQ_SPI1		IRQ_SPI(67)
+#define IRQ_SPI2		IRQ_SPI(68)
 
 #define IRQ_USB_HOST		IRQ_SPI(70)
 #define IRQ_USB_HSOTG		IRQ_SPI(71)
