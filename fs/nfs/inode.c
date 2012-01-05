@@ -50,6 +50,7 @@
 #include "fscache.h"
 #include "dns_resolve.h"
 #include "pnfs.h"
+#include "netns.h"
 
 #define NFSDBG_FACILITY		NFSDBG_VFS
 
@@ -1550,6 +1551,25 @@ static void nfsiod_stop(void)
 	destroy_workqueue(wq);
 }
 
+int nfs_net_id;
+
+static int nfs_net_init(struct net *net)
+{
+	return nfs_dns_resolver_cache_init(net);
+}
+
+static void nfs_net_exit(struct net *net)
+{
+	nfs_dns_resolver_cache_destroy(net);
+}
+
+static struct pernet_operations nfs_net_ops = {
+	.init = nfs_net_init,
+	.exit = nfs_net_exit,
+	.id   = &nfs_net_id,
+	.size = sizeof(struct nfs_net),
+};
+
 /*
  * Initialize NFS
  */
@@ -1559,9 +1579,13 @@ static int __init init_nfs_fs(void)
 
 	err = nfs_idmap_init();
 	if (err < 0)
-		goto out9;
+		goto out10;
 
 	err = nfs_dns_resolver_init();
+	if (err < 0)
+		goto out9;
+
+	err = register_pernet_subsys(&nfs_net_ops);
 	if (err < 0)
 		goto out8;
 
@@ -1623,10 +1647,12 @@ out5:
 out6:
 	nfs_fscache_unregister();
 out7:
-	nfs_dns_resolver_destroy();
+	unregister_pernet_subsys(&nfs_net_ops);
 out8:
-	nfs_idmap_quit();
+	nfs_dns_resolver_destroy();
 out9:
+	nfs_idmap_quit();
+out10:
 	return err;
 }
 
@@ -1638,6 +1664,7 @@ static void __exit exit_nfs_fs(void)
 	nfs_destroy_inodecache();
 	nfs_destroy_nfspagecache();
 	nfs_fscache_unregister();
+	unregister_pernet_subsys(&nfs_net_ops);
 	nfs_dns_resolver_destroy();
 	nfs_idmap_quit();
 #ifdef CONFIG_PROC_FS
