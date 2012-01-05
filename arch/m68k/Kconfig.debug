@@ -13,6 +13,14 @@ config EARLY_PRINTK
           early before the console code is initialized.
           You should normally say N here, unless you want to debug such a crash.
 
+config BOOTPARAM
+	bool 'Compiled-in Kernel Boot Parameter'
+
+config BOOTPARAM_STRING
+	string 'Kernel Boot Parameter'
+	default 'console=ttyS0,19200'
+	depends on BOOTPARAM
+
 if !MMU
 
 config FULLDEBUG
@@ -25,14 +33,6 @@ config HIGHPROFILE
 	depends on COLDFIRE
 	help
 	  Use a fast secondary clock to produce profiling information.
-
-config BOOTPARAM
-	bool 'Compiled-in Kernel Boot Parameter'
-
-config BOOTPARAM_STRING
-	string 'Kernel Boot Parameter'
-	default 'console=ttyS0,19200'
-	depends on BOOTPARAM
 
 config NO_KERNEL_MSG
 	bool "Suppress Kernel BUG Messages"
