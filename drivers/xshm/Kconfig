@@ -1,0 +1,61 @@
+#
+# XSHM Framework
+#
+
+config XSHM
+	tristate
+	default n
+	depends on EXPERIMENTAL
+
+if XSHM && NET
+
+menu "XSHM drivers and interfaces"
+
+config DUMMY_C2C
+	tristate "Dummy C2C GENIO driver"
+	depends on !C2C
+	default XSHM
+	---help---
+	Say "Y" or "M" if you want to compile a dummy C2C driver.
+	Use this if you want to compile without the real
+	C2C driver available.
+
+config XSHM_BUS
+	tristate
+	default XSHM_DEV
+
+config XSHM_BOOT
+	tristate
+	depends on XSHM_DEV
+	default XSHM_DEV
+
+config XSHM_DEV
+	tristate "XSHM Channels for External Shared Memory (XSHM)"
+	depends on DUMMY_C2C || C2C
+	select XSHM_BUS
+	select XSHM_BOOT
+	default XSHM
+	---help---
+	Say "Y" to use External Shared Memory (XSHM) IPC mechanism.
+	XSHM is an IPC protocol used to talk to external device such
+	as modem over a shared memory (e.g. Chip to Chip).
+	Only say "M" here if you want to test XSHM and need to load
+	and unload its module.
+	If unsure say N.
+
+config XSHM_CHR
+	tristate "Character device for External Shared Memory (XSHM)"
+	depends on XSHM_DEV
+	default XSHM_DEV
+	---help---
+	Say "Y" to use a character device for the External Shared
+	Memory (XSHM) IPC mechanism. XSHM is an IPC protocol used to
+	talk to external device such as modem over a shared memory
+	(e.g. Chip to Chip).
+	Only say "M" here if you want to test XSHM and need to load
+	and unload its module.
+	If unsure say N.
+
+endmenu
+
+endif
