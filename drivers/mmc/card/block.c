@@ -1273,6 +1273,17 @@ static int mmc_blk_issue_rw_rq(struct mmc_queue *mq, struct request *rqc)
 		type = rq_data_dir(req) == READ ? MMC_BLK_READ : MMC_BLK_WRITE;
 		mmc_queue_bounce_post(mq_rq);
 
+		/*
+		 * Check BKOPS urgency from each R1 response
+		 */
+		if (mmc_card_mmc(card) &&
+			(brq->cmd.flags == MMC_RSP_R1B ||
+			 brq->cmd.flags == MMC_RSP_R1) &&
+			(brq->cmd.resp[0] & R1_EXCEPTION_EVENT)) {
+			if (mmc_is_exception_event(card, EXT_CSD_URGENT_BKOPS))
+				mmc_card_set_need_bkops(card);
+		}
+
 		switch (status) {
 		case MMC_BLK_SUCCESS:
 		case MMC_BLK_PARTIAL:
