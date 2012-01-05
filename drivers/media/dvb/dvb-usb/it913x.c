@@ -473,9 +473,12 @@ static int it913x_identify_state(struct usb_device *udev,
 	else
 		props->adapter[0].fe[0].stream.u.bulk.buffersize =
 			TS_BUFFER_SIZE_PID;
-	if (it913x_config.dual_mode)
+	if (it913x_config.dual_mode) {
 		props->adapter[1].fe[0].stream.u.bulk.buffersize =
 			props->adapter[0].fe[0].stream.u.bulk.buffersize;
+		props->num_adapters = 2;
+	} else
+		props->num_adapters = 1;
 
 	ret = ite_firmware_select(udev, props);
 
@@ -499,10 +502,8 @@ static int it913x_identify_state(struct usb_device *udev,
 			if (ret != 0)
 				ret = it913x_wr_reg(udev, DEV_0,
 					GPIOH1_O, 0x0);
-			props->num_adapters = 2;
 		}
-	} else
-		props->num_adapters = 1;
+	}
 
 	reg = it913x_read_reg(udev, IO_MUX_POWER_CLK);
 
@@ -775,7 +776,7 @@ static struct dvb_usb_device_properties it913x_properties = {
 		.rc_codes	= RC_MAP_MSI_DIGIVOX_III,
 	},
 	.i2c_algo         = &it913x_i2c_algo,
-	.num_device_descs = 3,
+	.num_device_descs = 4,
 	.devices = {
 		{   "Kworld UB499-2T T09(IT9137)",
 			{ &it913x_table[0], NULL },
