@@ -93,52 +93,144 @@ static void rpc_unregister_client(struct rpc_clnt *clnt)
 	spin_unlock(&rpc_client_lock);
 }
 
-static int
-rpc_setup_pipedir(struct rpc_clnt *clnt, char *dir_name)
+static void __rpc_clnt_remove_pipedir(struct rpc_clnt *clnt)
+{
+	if (clnt->cl_dentry) {
+		if (clnt->cl_auth && clnt->cl_auth->au_ops->pipes_destroy)
+			clnt->cl_auth->au_ops->pipes_destroy(clnt->cl_auth);
+		rpc_remove_client_dir(clnt->cl_dentry);
+	}
+	clnt->cl_dentry = NULL;
+}
+
+static void rpc_clnt_remove_pipedir(struct rpc_clnt *clnt)
+{
+	struct super_block *pipefs_sb;
+
+	pipefs_sb = rpc_get_sb_net(clnt->cl_xprt->xprt_net);
+	if (pipefs_sb) {
+		__rpc_clnt_remove_pipedir(clnt);
+		rpc_put_sb_net(clnt->cl_xprt->xprt_net);
+	}
+}
+
+static struct dentry *rpc_setup_pipedir_sb(struct super_block *sb,
+				    struct rpc_clnt *clnt, char *dir_name)
 {
 	static uint32_t clntid;
-	struct path path, dir;
 	char name[15];
 	struct qstr q = {
 		.name = name,
 	};
+	struct dentry *dir, *dentry;
 	int error;
 
-	clnt->cl_path.mnt = ERR_PTR(-ENOENT);
-	clnt->cl_path.dentry = ERR_PTR(-ENOENT);
-	if (dir_name == NULL)
-		return 0;
-
-	path.mnt = rpc_get_mount();
-	if (IS_ERR(path.mnt))
-		return PTR_ERR(path.mnt);
-	error = vfs_path_lookup(path.mnt->mnt_root, path.mnt, dir_name, 0, &dir);
-	if (error)
-		goto err;
-
+	dir = rpc_d_lookup_sb(sb, dir_name);
+	if (dir == NULL)
+		return dir;
 	for (;;) {
 		q.len = snprintf(name, sizeof(name), "clnt%x", (unsigned int)clntid++);
 		name[sizeof(name) - 1] = '\0';
 		q.hash = full_name_hash(q.name, q.len);
-		path.dentry = rpc_create_client_dir(dir.dentry, &q, clnt);
-		if (!IS_ERR(path.dentry))
+		dentry = rpc_create_client_dir(dir, &q, clnt);
+		if (!IS_ERR(dentry))
 			break;
-		error = PTR_ERR(path.dentry);
+		error = PTR_ERR(dentry);
 		if (error != -EEXIST) {
 			printk(KERN_INFO "RPC: Couldn't create pipefs entry"
 					" %s/%s, error %d\n",
 					dir_name, name, error);
-			goto err_path_put;
+			break;
 		}
 	}
-	path_put(&dir);
-	clnt->cl_path = path;
+	dput(dir);
+	return dentry;
+}
+
+static int
+rpc_setup_pipedir(struct rpc_clnt *clnt, char *dir_name)
+{
+	struct super_block *pipefs_sb;
+	struct dentry *dentry;
+
+	clnt->cl_dentry = NULL;
+	if (dir_name == NULL)
+		return 0;
+	pipefs_sb = rpc_get_sb_net(clnt->cl_xprt->xprt_net);
+	if (!pipefs_sb)
+		return 0;
+	dentry = rpc_setup_pipedir_sb(pipefs_sb, clnt, dir_name);
+	rpc_put_sb_net(clnt->cl_xprt->xprt_net);
+	if (IS_ERR(dentry))
+		return PTR_ERR(dentry);
+	clnt->cl_dentry = dentry;
 	return 0;
-err_path_put:
-	path_put(&dir);
-err:
-	rpc_put_mount();
+}
+
+static int __rpc_pipefs_event(struct rpc_clnt *clnt, unsigned long event,
+				struct super_block *sb)
+{
+	struct dentry *dentry;
+	int err = 0;
+
+	switch (event) {
+	case RPC_PIPEFS_MOUNT:
+		if (clnt->cl_program->pipe_dir_name == NULL)
+			break;
+		dentry = rpc_setup_pipedir_sb(sb, clnt,
+					      clnt->cl_program->pipe_dir_name);
+		BUG_ON(dentry == NULL);
+		if (IS_ERR(dentry))
+			return PTR_ERR(dentry);
+		clnt->cl_dentry = dentry;
+		if (clnt->cl_auth->au_ops->pipes_create) {
+			err = clnt->cl_auth->au_ops->pipes_create(clnt->cl_auth);
+			if (err)
+				__rpc_clnt_remove_pipedir(clnt);
+		}
+		break;
+	case RPC_PIPEFS_UMOUNT:
+		__rpc_clnt_remove_pipedir(clnt);
+		break;
+	default:
+		printk(KERN_ERR "%s: unknown event: %ld\n", __func__, event);
+		return -ENOTSUPP;
+	}
+	return err;
+}
+
+static int rpc_pipefs_event(struct notifier_block *nb, unsigned long event,
+			    void *ptr)
+{
+	struct super_block *sb = ptr;
+	struct rpc_clnt *clnt;
+	int error = 0;
+
+	spin_lock(&rpc_client_lock);
+	list_for_each_entry(clnt, &all_clients, cl_clients) {
+		if (clnt->cl_xprt->xprt_net != sb->s_fs_info)
+			continue;
+		error = __rpc_pipefs_event(clnt, event, sb);
+		if (error)
+			break;
+	}
+	spin_unlock(&rpc_client_lock);
 	return error;
+}
+
+static struct notifier_block rpc_clients_block = {
+	.notifier_call	= rpc_pipefs_event,
+	.priority	= SUNRPC_PIPEFS_RPC_PRIO,
+};
+
+int rpc_clients_notifier_register(void)
+{
+	return rpc_pipefs_notifier_register(&rpc_clients_block);
+}
+
+void rpc_clients_notifier_unregister(void)
+{
+	return rpc_pipefs_notifier_unregister(&rpc_clients_block);
 }
 
 static struct rpc_clnt * rpc_new_client(const struct rpc_create_args *args, struct rpc_xprt *xprt)
@@ -246,10 +338,7 @@ static struct rpc_clnt * rpc_new_client(const struct rpc_create_args *args, stru
 	return clnt;
 
 out_no_auth:
-	if (!IS_ERR(clnt->cl_path.dentry)) {
-		rpc_remove_client_dir(clnt->cl_path.dentry);
-		rpc_put_mount();
-	}
+	rpc_clnt_remove_pipedir(clnt);
 out_no_path:
 	kfree(clnt->cl_principal);
 out_no_principal:
@@ -474,10 +563,6 @@ rpc_free_client(struct rpc_clnt *clnt)
 {
 	dprintk("RPC:       destroying %s client for %s\n",
 			clnt->cl_protname, clnt->cl_server);
-	if (!IS_ERR(clnt->cl_path.dentry)) {
-		rpc_remove_client_dir(clnt->cl_path.dentry);
-		rpc_put_mount();
-	}
 	if (clnt->cl_parent != clnt) {
 		rpc_release_client(clnt->cl_parent);
 		goto out_free;
@@ -486,6 +571,7 @@ rpc_free_client(struct rpc_clnt *clnt)
 		kfree(clnt->cl_server);
 out_free:
 	rpc_unregister_client(clnt);
+	rpc_clnt_remove_pipedir(clnt);
 	rpc_free_iostats(clnt->cl_metrics);
 	kfree(clnt->cl_principal);
 	clnt->cl_metrics = NULL;
