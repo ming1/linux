@@ -303,10 +303,10 @@ static int memory_block_change_state(struct memory_block *mem,
 	mem->state = to_state;
 	switch (mem->state) {
 	case MEM_OFFLINE:
-		kobject_uevent(&mem->sysdev.kobj, KOBJ_OFFLINE);
+		kobject_uevent(&mem->dev.kobj, KOBJ_OFFLINE);
 		break;
 	case MEM_ONLINE:
-		kobject_uevent(&mem->sysdev.kobj, KOBJ_ONLINE);
+		kobject_uevent(&mem->dev.kobj, KOBJ_ONLINE);
 		break;
 	default:
 		break;
