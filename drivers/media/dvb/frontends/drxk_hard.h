@@ -195,9 +195,8 @@ struct DRXKOfdmScCmd_t {
 };
 
 struct drxk_state {
-	struct dvb_frontend c_frontend;
-	struct dvb_frontend t_frontend;
-	struct dvb_frontend_parameters param;
+	struct dvb_frontend frontend;
+	struct dtv_frontend_properties props;
 	struct device *dev;
 
 	struct i2c_adapter *i2c;
@@ -205,7 +204,6 @@ struct drxk_state {
 	void  *priv;
 
 	struct mutex mutex;
-	struct mutex ctlock;
 
 	u32    m_Instance;           /**< Channel 1,2,3 or 4 */
 

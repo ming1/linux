@@ -3427,17 +3427,17 @@ err:
 	return -1;
 }
 
-static enum dvbfe_search stv090x_search(struct dvb_frontend *fe, struct dvb_frontend_parameters *p)
+static enum dvbfe_search stv090x_search(struct dvb_frontend *fe)
 {
 	struct stv090x_state *state = fe->demodulator_priv;
 	struct dtv_frontend_properties *props = &fe->dtv_property_cache;
 
-	if (p->frequency == 0)
+	if (props->frequency == 0)
 		return DVBFE_ALGO_SEARCH_INVALID;
 
 	state->delsys = props->delivery_system;
-	state->frequency = p->frequency;
-	state->srate = p->u.qpsk.symbol_rate;
+	state->frequency = props->frequency;
+	state->srate = props->symbol_rate;
 	state->search_mode = STV090x_SEARCH_AUTO;
 	state->algo = STV090x_COLD_SEARCH;
 	state->fec = STV090x_PRERR;
@@ -4711,26 +4711,10 @@ int stv090x_set_gpio(struct dvb_frontend *fe, u8 gpio, u8 dir, u8 value,
 }
 EXPORT_SYMBOL(stv090x_set_gpio);
 
-static int stv090x_get_property(struct dvb_frontend *fe, struct dtv_property *p)
-{
-	switch (p->cmd) {
-	case DTV_ENUM_DELSYS:
-		p->u.buffer.data[0] = SYS_DSS;
-		p->u.buffer.data[1] = SYS_DVBS;
-		p->u.buffer.data[2] = SYS_DVBS2;
-		p->u.buffer.len = 3;
-		break;
-	default:
-		break;
-	}
-	return 0;
-}
-
 static struct dvb_frontend_ops stv090x_ops = {
-
+	.delsys = { SYS_DVBS, SYS_DVBS2, SYS_DSS },
 	.info = {
 		.name			= "STV090x Multistandard",
-		.type			= FE_QPSK,
 		.frequency_min		= 950000,
 		.frequency_max 		= 2150000,
 		.frequency_stepsize	= 0,
@@ -4759,8 +4743,6 @@ static struct dvb_frontend_ops stv090x_ops = {
 	.read_ber			= stv090x_read_per,
 	.read_signal_strength		= stv090x_read_signal_strength,
 	.read_snr			= stv090x_read_cnr,
-
-	.get_property			= stv090x_get_property,
 };
 
 
