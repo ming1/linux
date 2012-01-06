@@ -271,20 +271,51 @@ static struct platform_device *ebsa110_devices[] = {
 	&am79c961_device,
 };
 
+/*
+ * EBSA110 idling methodology:
+ *
+ * We can not execute the "wait for interrupt" instruction since that
+ * will stop our MCLK signal (which provides the clock for the glue
+ * logic, and therefore the timer interrupt).
+ *
+ * Instead, we spin, polling the IRQ_STAT register for the occurrence
+ * of any interrupt with core clock down to the memory clock.
+ */
+static void ebsa110_idle(void)
+{
+	const char *irq_stat = (char *)0xff000000;
+
+	/* disable clock switching */
+	asm volatile ("mcr p15, 0, ip, c15, c2, 2" : : : "cc");
+
+	/* wait for an interrupt to occur */
+	while (!*irq_stat);
+
+	/* enable clock switching */
+	asm volatile ("mcr p15, 0, ip, c15, c1, 2" : : : "cc");
+}
+
 static int __init ebsa110_init(void)
 {
+	arm_pm_idle = ebsa110_idle;
 	return platform_add_devices(ebsa110_devices, ARRAY_SIZE(ebsa110_devices));
 }
 
 arch_initcall(ebsa110_init);
+
+static void ebsa110_restart(char mode, const char *cmd)
+{
+	soft_restart(0x80000000);
+}
 
 MACHINE_START(EBSA110, "EBSA110")
 	/* Maintainer: Russell King */
 	.atag_offset	= 0x400,
 	.reserve_lp0	= 1,
 	.reserve_lp2	= 1,
-	.soft_reboot	= 1,
+	.restart_mode	= 's',
 	.map_io		= ebsa110_map_io,
 	.init_irq	= ebsa110_init_irq,
 	.timer		= &ebsa110_timer,
+	.restart	= ebsa110_restart,
 MACHINE_END

@@ -42,6 +42,7 @@
 #include <plat/gpmc.h>
 #include <plat/dma.h>
 
+#include "common.h"
 #include "cm2xxx_3xxx.h"
 #include "cm-regbits-34xx.h"
 #include "prm-regbits-34xx.h"
@@ -493,13 +494,12 @@ int omap3_can_sleep(void)
 
 static void omap3_pm_idle(void)
 {
-	local_irq_disable();
 	local_fiq_disable();
 
 	if (!omap3_can_sleep())
 		goto out;
 
-	if (omap_irq_pending() || need_resched())
+	if (omap_irq_pending())
 		goto out;
 
 	trace_power_start(POWER_CSTATE, 1, smp_processor_id());
@@ -512,7 +512,6 @@ static void omap3_pm_idle(void)
 
 out:
 	local_fiq_enable();
-	local_irq_enable();
 }
 
 #ifdef CONFIG_SUSPEND
@@ -917,7 +916,7 @@ static int __init omap3_pm_init(void)
 	suspend_set_ops(&omap_pm_ops);
 #endif /* CONFIG_SUSPEND */
 
-	pm_idle = omap3_pm_idle;
+	arm_pm_idle = omap3_pm_idle;
 	omap3_idle_init();
 
 	/*
