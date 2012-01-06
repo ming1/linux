@@ -53,6 +53,16 @@ static struct map_desc mx50_io_desc[] __initdata = {
 };
 
 /*
+ * Define the MX50 memory map.
+ */
+static struct map_desc mx50_io_desc[] __initdata = {
+	imx_map_entry(MX50, TZIC, MT_DEVICE),
+	imx_map_entry(MX50, SPBA0, MT_DEVICE),
+	imx_map_entry(MX50, AIPS1, MT_DEVICE),
+	imx_map_entry(MX50, AIPS2, MT_DEVICE),
+};
+
+/*
  * Define the MX51 memory map.
  */
 static struct map_desc mx51_io_desc[] __initdata = {
@@ -98,6 +108,7 @@ void __init imx50_init_early(void)
 	mxc_set_cpu_type(MXC_CPU_MX50);
 	mxc_iomux_v3_init(MX50_IO_ADDRESS(MX50_IOMUXC_BASE_ADDR));
 	mxc_arch_reset_init(MX50_IO_ADDRESS(MX50_WDOG_BASE_ADDR));
+	arm_pm_idle = imx5_idle;
 }
 
 void __init imx51_init_early(void)
@@ -113,6 +124,7 @@ void __init imx53_init_early(void)
 	mxc_set_cpu_type(MXC_CPU_MX53);
 	mxc_iomux_v3_init(MX53_IO_ADDRESS(MX53_IOMUXC_BASE_ADDR));
 	mxc_arch_reset_init(MX53_IO_ADDRESS(MX53_WDOG1_BASE_ADDR));
+	arm_pm_idle = imx5_idle;
 }
 
 void __init mx50_init_irq(void)
