@@ -40,6 +40,7 @@ next/cleanup2
 				depends on samsung/cleanup-mmc
                         git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next-samsung-cleanup-spi4
 				depends on samsung/devel-spi
+			git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next-samsung-cleanup-samsung
 
 next/soc
   omap/soc		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap soc
@@ -98,6 +99,7 @@ next/pm
   omap/prcm		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap prcm
   omap/uart		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap uart
   imx6/pm		git://git.linaro.org/people/shawnguo/linux-2.6.git imx/pm
+			git://git.linaro.org/people/shawnguo/linux-2.6.git imx/pm2
 
 next/timer
   msm/timer		git://codeaurora.org/quic/kernel/davidb/linux-msm.git msm-timer
@@ -108,4 +110,6 @@ next/clk
 next/move
   imx/move		git://git.pengutronix.de/git/imx/linux-2.6.git mx5-merge
 
-
+late/devel
+  samsung/devel		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next-samsung-devel-samsung
+  imx/features-assorted	git://git.pengutronix.de/git/imx/linux-2.6.git imx-features-assorted
