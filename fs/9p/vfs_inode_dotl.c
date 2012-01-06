@@ -48,7 +48,7 @@
 #include "acl.h"
 
 static int
-v9fs_vfs_mknod_dotl(struct inode *dir, struct dentry *dentry, int omode,
+v9fs_vfs_mknod_dotl(struct inode *dir, struct dentry *dentry, umode_t omode,
 		    dev_t rdev);
 
 /**
@@ -253,7 +253,7 @@ int v9fs_open_to_dotl_flags(int flags)
  */
 
 static int
-v9fs_vfs_create_dotl(struct inode *dir, struct dentry *dentry, int omode,
+v9fs_vfs_create_dotl(struct inode *dir, struct dentry *dentry, umode_t omode,
 		struct nameidata *nd)
 {
 	int err = 0;
@@ -283,8 +283,8 @@ v9fs_vfs_create_dotl(struct inode *dir, struct dentry *dentry, int omode,
 	}
 
 	name = (char *) dentry->d_name.name;
-	p9_debug(P9_DEBUG_VFS, "name:%s flags:0x%x mode:0x%x\n",
-		 name, flags, omode);
+	p9_debug(P9_DEBUG_VFS, "v9fs_vfs_create_dotl: name:%s flags:0x%x "
+			"mode:0x%hx\n", name, flags, omode);
 
 	dfid = v9fs_fid_lookup(dentry->d_parent);
 	if (IS_ERR(dfid)) {
@@ -394,7 +394,7 @@ err_clunk_old_fid:
  */
 
 static int v9fs_vfs_mkdir_dotl(struct inode *dir,
-			       struct dentry *dentry, int omode)
+			       struct dentry *dentry, umode_t omode)
 {
 	int err;
 	struct v9fs_session_info *v9ses;
@@ -593,7 +593,7 @@ int v9fs_vfs_setattr_dotl(struct dentry *dentry, struct iattr *iattr)
 void
 v9fs_stat2inode_dotl(struct p9_stat_dotl *stat, struct inode *inode)
 {
-	mode_t mode;
+	umode_t mode;
 	struct v9fs_inode *v9inode = V9FS_I(inode);
 
 	if ((stat->st_result_mask & P9_STATS_BASIC) == P9_STATS_BASIC) {
@@ -796,7 +796,7 @@ v9fs_vfs_link_dotl(struct dentry *old_dentry, struct inode *dir,
  *
  */
 static int
-v9fs_vfs_mknod_dotl(struct inode *dir, struct dentry *dentry, int omode,
+v9fs_vfs_mknod_dotl(struct inode *dir, struct dentry *dentry, umode_t omode,
 		dev_t rdev)
 {
 	int err;
@@ -810,7 +810,7 @@ v9fs_vfs_mknod_dotl(struct inode *dir, struct dentry *dentry, int omode,
 	struct dentry *dir_dentry;
 	struct posix_acl *dacl = NULL, *pacl = NULL;
 
-	p9_debug(P9_DEBUG_VFS, " %lu,%s mode: %x MAJOR: %u MINOR: %u\n",
+	p9_debug(P9_DEBUG_VFS, " %lu,%s mode: %hx MAJOR: %u MINOR: %u\n",
 		 dir->i_ino, dentry->d_name.name, omode,
 		 MAJOR(rdev), MINOR(rdev));
 
