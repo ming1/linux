@@ -261,7 +261,7 @@ void store_topology(struct sysinfo_15_1_x *info)
 int arch_update_cpu_topology(void)
 {
 	struct sysinfo_15_1_x *info = tl_info;
-	struct sys_device *sysdev;
+	struct device *dev;
 	int cpu;
 
 	if (!MACHINE_HAS_TOPOLOGY) {
@@ -273,8 +273,8 @@ int arch_update_cpu_topology(void)
 	tl_to_cores(info);
 	update_cpu_core_map();
 	for_each_online_cpu(cpu) {
-		sysdev = get_cpu_sysdev(cpu);
-		kobject_uevent(&sysdev->kobj, KOBJ_CHANGE);
+		dev = get_cpu_device(cpu);
+		kobject_uevent(&dev->kobj, KOBJ_CHANGE);
 	}
 	return 1;
 }
@@ -366,8 +366,8 @@ void __init s390_init_cpu_topology(void)
 
 static int cpu_management;
 
-static ssize_t dispatching_show(struct sysdev_class *class,
-				struct sysdev_class_attribute *attr,
+static ssize_t dispatching_show(struct device *dev,
+				struct device_attribute *attr,
 				char *buf)
 {
 	ssize_t count;
@@ -378,8 +378,8 @@ static ssize_t dispatching_show(struct sysdev_class *class,
 	return count;
 }
 
-static ssize_t dispatching_store(struct sysdev_class *dev,
-				 struct sysdev_class_attribute *attr,
+static ssize_t dispatching_store(struct device *dev,
+				 struct device_attribute *attr,
 				 const char *buf,
 				 size_t count)
 {
@@ -405,11 +405,11 @@ out:
 	put_online_cpus();
 	return rc ? rc : count;
 }
-static SYSDEV_CLASS_ATTR(dispatching, 0644, dispatching_show,
+static DEIVCE_ATTR(dispatching, 0644, dispatching_show,
 			 dispatching_store);
 
-static ssize_t cpu_polarization_show(struct sys_device *dev,
-				     struct sysdev_attribute *attr, char *buf)
+static ssize_t cpu_polarization_show(struct device *dev,
+				     struct device_attribute *attr, char *buf)
 {
 	int cpu = dev->id;
 	ssize_t count;
@@ -435,10 +435,10 @@ static ssize_t cpu_polarization_show(struct sys_device *dev,
 	mutex_unlock(&smp_cpu_state_mutex);
 	return count;
 }
-static SYSDEV_ATTR(polarization, 0444, cpu_polarization_show, NULL);
+static DEVICE_ATTR(polarization, 0444, cpu_polarization_show, NULL);
 
 static struct attribute *topology_cpu_attrs[] = {
-	&attr_polarization.attr,
+	&dev_attr_polarization.attr,
 	NULL,
 };
 
@@ -448,7 +448,7 @@ static struct attribute_group topology_cpu_attr_group = {
 
 int topology_cpu_init(struct cpu *cpu)
 {
-	return sysfs_create_group(&cpu->sysdev.kobj, &topology_cpu_attr_group);
+	return sysfs_create_group(&cpu->dev.kobj, &topology_cpu_attr_group);
 }
 
 static int __init topology_init(void)
@@ -460,6 +460,6 @@ static int __init topology_init(void)
 	set_topology_timer();
 out:
 	update_cpu_core_map();
-	return sysdev_class_create_file(&cpu_sysdev_class, &attr_dispatching);
+	return device_create_file(cpu_subsys.dev_root, &dev_attr_dispatching);
 }
 device_initcall(topology_init);
