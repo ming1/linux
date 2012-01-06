@@ -24,6 +24,12 @@ static int __init set_use_crs(const struct dmi_system_id *id)
 	return 0;
 }
 
+static int __init set_nouse_crs(const struct dmi_system_id *id)
+{
+	pci_use_crs = false;
+	return 0;
+}
+
 static const struct dmi_system_id pci_use_crs_table[] __initconst = {
 	/* http://bugzilla.kernel.org/show_bug.cgi?id=14183 */
 	{
@@ -52,6 +58,38 @@ static const struct dmi_system_id pci_use_crs_table[] __initconst = {
 			DMI_MATCH(DMI_BOARD_VENDOR, "ASUSTeK Computer INC."),
 			DMI_MATCH(DMI_BOARD_NAME, "M2V-MX SE"),
 			DMI_MATCH(DMI_BIOS_VENDOR, "American Megatrends Inc."),
+		},
+	},
+
+	/* Now for the blacklist.. */
+
+	/* https://bugzilla.redhat.com/show_bug.cgi?id=770308 */
+	{
+		.callback = set_nouse_crs,
+		.ident = "Dell Studio 1536",
+		.matches = {
+			DMI_MATCH(DMI_BOARD_VENDOR, "Dell Inc."),
+			DMI_MATCH(DMI_BOARD_NAME, "0M273C"),
+		},
+	},
+	/* https://bugzilla.redhat.com/show_bug.cgi?id=769657 */
+	{
+		.callback = set_nouse_crs,
+		.ident = "Dell Studio 1557",
+		.matches = {
+			DMI_MATCH(DMI_BOARD_VENDOR, "Dell Inc."),
+			DMI_MATCH(DMI_PRODUCT_NAME, "Studio 1557"),
+			DMI_MATCH(DMI_BIOS_VERSION, "A09"),
+		},
+	},
+	/* https://bugzilla.redhat.com/show_bug.cgi?id=769657 */
+	{
+		.callback = set_nouse_crs,
+		.ident = "Thinkpad SL510",
+		.matches = {
+			DMI_MATCH(DMI_BOARD_VENDOR, "LENOVO"),
+			DMI_MATCH(DMI_BOARD_NAME, "2847DFG"),
+			DMI_MATCH(DMI_BIOS_VERSION, "6JET85WW (1.43 )"),
 		},
 	},
 	{}
