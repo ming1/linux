@@ -622,7 +622,7 @@ static struct rpc_program cb_program = {
 	.nrvers			= ARRAY_SIZE(nfs_cb_version),
 	.version		= nfs_cb_version,
 	.stats			= &cb_stats,
-	.pipe_dir_name		= "/nfsd4_cb",
+	.pipe_dir_name		= "nfsd4_cb",
 };
 
 static int max_cb_time(void)
@@ -718,7 +718,7 @@ int set_callback_cred(void)
 {
 	if (callback_cred)
 		return 0;
-	callback_cred = rpc_lookup_machine_cred();
+	callback_cred = rpc_lookup_machine_cred("nfs");
 	if (!callback_cred)
 		return -ENOMEM;
 	return 0;
