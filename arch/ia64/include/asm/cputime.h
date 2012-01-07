@@ -50,6 +50,8 @@ typedef u64 __nocast cputime64_t;
 	((__force u64)(__ct) / NSEC_PER_USEC)
 #define usecs_to_cputime(__usecs)	\
 	(__force cputime_t)((__usecs) * NSEC_PER_USEC)
+#define usecs_to_cputime64(__usecs)	\
+	(__force cputime64_t)((__usecs) * NSEC_PER_USEC)
 
 /*
  * Convert cputime <-> seconds

@@ -434,7 +434,7 @@ static int cleanup_scripting(void)
 	return scripting_ops->stop_script();
 }
 
-static char const		*input_name = "perf.data";
+static const char *input_name;
 
 static int process_sample_event(struct perf_tool *tool __used,
 				union perf_event *event,
@@ -443,7 +443,7 @@ static int process_sample_event(struct perf_tool *tool __used,
 				struct machine *machine)
 {
 	struct addr_location al;
-	struct thread *thread = machine__findnew_thread(machine, event->ip.pid);
+	struct thread *thread = machine__findnew_thread(machine, event->ip.tid);
 
 	if (thread == NULL) {
 		pr_debug("problem processing %d event, skipping it.\n",
@@ -536,12 +536,6 @@ static struct script_spec *script_spec__new(const char *spec,
 	return s;
 }
 
-static void script_spec__delete(struct script_spec *s)
-{
-	free(s->spec);
-	free(s);
-}
-
 static void script_spec__add(struct script_spec *s)
 {
 	list_add_tail(&s->node, &script_specs);
@@ -567,16 +561,11 @@ static struct script_spec *script_spec__findnew(const char *spec,
 
 	s = script_spec__new(spec, ops);
 	if (!s)
-		goto out_delete_spec;
+		return NULL;
 
 	script_spec__add(s);
 
 	return s;
-
-out_delete_spec:
-	script_spec__delete(s);
-
-	return NULL;
 }
 
 int script_spec_register(const char *spec, struct scripting_ops *ops)
@@ -1316,7 +1305,7 @@ int cmd_script(int argc, const char **argv, const char *prefix __used)
 			return -1;
 		}
 
-		input = open(input_name, O_RDONLY);
+		input = open(session->filename, O_RDONLY);	/* input_name */
 		if (input < 0) {
 			perror("failed to open file");
 			exit(-1);
