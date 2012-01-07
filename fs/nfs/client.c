@@ -52,8 +52,8 @@
 
 #define NFSDBG_FACILITY		NFSDBG_CLIENT
 
-static DEFINE_SPINLOCK(nfs_client_lock);
-static LIST_HEAD(nfs_client_list);
+DEFINE_SPINLOCK(nfs_client_lock);
+LIST_HEAD(nfs_client_list);
 static LIST_HEAD(nfs_volume_list);
 static DECLARE_WAIT_QUEUE_HEAD(nfs_client_active_wq);
 #ifdef CONFIG_NFS_V4
@@ -135,6 +135,7 @@ struct nfs_client_initdata {
 	const struct nfs_rpc_ops *rpc_ops;
 	int proto;
 	u32 minorversion;
+	struct net *net;
 };
 
 /*
@@ -189,6 +190,7 @@ static struct nfs_client *nfs_alloc_client(const struct nfs_client_initdata *cl_
 	if (!IS_ERR(cred))
 		clp->cl_machine_cred = cred;
 	nfs_fscache_get_client_cookie(clp);
+	clp->net = cl_init->net;
 
 	return clp;
 
@@ -481,6 +483,9 @@ static struct nfs_client *nfs_match_client(const struct nfs_client_initdata *dat
 		/* Match the full socket address */
 		if (!nfs_sockaddr_cmp(sap, clap))
 			continue;
+		/* Match network namespace */
+		if (clp->net != data->net)
+			continue;
 
 		atomic_inc(&clp->cl_count);
 		return clp;
@@ -642,7 +647,7 @@ static int nfs_create_rpc_client(struct nfs_client *clp,
 {
 	struct rpc_clnt		*clnt = NULL;
 	struct rpc_create_args args = {
-		.net		= &init_net,
+		.net		= clp->net,
 		.protocol	= clp->cl_proto,
 		.address	= (struct sockaddr *)&clp->cl_addr,
 		.addrsize	= clp->cl_addrlen,
@@ -831,6 +836,7 @@ static int nfs_init_server(struct nfs_server *server,
 		.addrlen = data->nfs_server.addrlen,
 		.rpc_ops = &nfs_v2_clientops,
 		.proto = data->nfs_server.protocol,
+		.net = data->net,
 	};
 	struct rpc_timeout timeparms;
 	struct nfs_client *clp;
@@ -1393,7 +1399,7 @@ static int nfs4_set_client(struct nfs_server *server,
 		const char *ip_addr,
 		rpc_authflavor_t authflavour,
 		int proto, const struct rpc_timeout *timeparms,
-		u32 minorversion)
+		u32 minorversion, struct net *net)
 {
 	struct nfs_client_initdata cl_init = {
 		.hostname = hostname,
@@ -1402,6 +1408,7 @@ static int nfs4_set_client(struct nfs_server *server,
 		.rpc_ops = &nfs_v4_clientops,
 		.proto = proto,
 		.minorversion = minorversion,
+		.net = net,
 	};
 	struct nfs_client *clp;
 	int error;
@@ -1453,6 +1460,7 @@ struct nfs_client *nfs4_set_ds_client(struct nfs_client* mds_clp,
 		.rpc_ops = &nfs_v4_clientops,
 		.proto = ds_proto,
 		.minorversion = mds_clp->cl_minorversion,
+		.net = mds_clp->net,
 	};
 	struct rpc_timeout ds_timeout = {
 		.to_initval = 15 * HZ,
@@ -1580,7 +1588,8 @@ static int nfs4_init_server(struct nfs_server *server,
 			data->auth_flavors[0],
 			data->nfs_server.protocol,
 			&timeparms,
-			data->minorversion);
+			data->minorversion,
+			data->net);
 	if (error < 0)
 		goto error;
 
@@ -1677,7 +1686,8 @@ struct nfs_server *nfs4_create_referral_server(struct nfs_clone_mount *data,
 				data->authflavor,
 				parent_server->client->cl_xprt->prot,
 				parent_server->client->cl_timeout,
-				parent_client->cl_mvops->minor_version);
+				parent_client->cl_mvops->minor_version,
+				parent_client->net);
 	if (error < 0)
 		goto error;
 
