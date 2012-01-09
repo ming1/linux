@@ -63,14 +63,18 @@ struct idmap_msg {
 
 #ifdef __KERNEL__
 
+#ifdef CONFIG_NFS_V4
+
 /* Forward declaration to make this header independent of others */
 struct nfs_client;
 struct nfs_server;
-
-#ifdef CONFIG_NFS_USE_NEW_IDMAPPER
+struct nfs_fattr;
+struct nfs4_string;
 
 int nfs_idmap_init(void);
 void nfs_idmap_quit(void);
+
+#ifdef CONFIG_NFS_USE_NEW_IDMAPPER
 
 static inline int nfs_idmap_new(struct nfs_client *clp)
 {
@@ -83,6 +87,26 @@ static inline void nfs_idmap_delete(struct nfs_client *clp)
 
 #else /* CONFIG_NFS_USE_NEW_IDMAPPER not set */
 
+int nfs_idmap_new(struct nfs_client *);
+void nfs_idmap_delete(struct nfs_client *);
+
+#endif /* CONFIG_NFS_USE_NEW_IDMAPPER */
+
+void nfs_fattr_init_names(struct nfs_fattr *fattr,
+		struct nfs4_string *owner_name,
+		struct nfs4_string *group_name);
+void nfs_fattr_free_names(struct nfs_fattr *);
+void nfs_fattr_map_and_free_names(struct nfs_server *, struct nfs_fattr *);
+
+int nfs_map_name_to_uid(const struct nfs_server *, const char *, size_t, __u32 *);
+int nfs_map_group_to_gid(const struct nfs_server *, const char *, size_t, __u32 *);
+int nfs_map_uid_to_name(const struct nfs_server *, __u32, char *, size_t);
+int nfs_map_gid_to_group(const struct nfs_server *, __u32, char *, size_t);
+
+extern unsigned int nfs_idmap_cache_timeout;
+
+#else /* CONFIG_NFS_V4 */
+
 static inline int nfs_idmap_init(void)
 {
 	return 0;
@@ -92,17 +116,8 @@ static inline void nfs_idmap_quit(void)
 {
 }
 
-int nfs_idmap_new(struct nfs_client *);
-void nfs_idmap_delete(struct nfs_client *);
+#endif /* CONFIG_NFS_V4 */
 
-#endif /* CONFIG_NFS_USE_NEW_IDMAPPER */
-
-int nfs_map_name_to_uid(const struct nfs_server *, const char *, size_t, __u32 *);
-int nfs_map_group_to_gid(const struct nfs_server *, const char *, size_t, __u32 *);
-int nfs_map_uid_to_name(const struct nfs_server *, __u32, char *, size_t);
-int nfs_map_gid_to_group(const struct nfs_server *, __u32, char *, size_t);
-
-extern unsigned int nfs_idmap_cache_timeout;
 #endif /* __KERNEL__ */
 
 #endif /* NFS_IDMAP_H */
