@@ -1,0 +1,41 @@
+Importing hexagon based on v3.2-rc2
+Unchanged quilt series hexagon
+Importing i2c based on 02550d61f49266930e674286379d3601006b2893
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard 02550d61f49266930e674286379d3601006b2893
+HEAD is now at 02550d6 Merge tag 'devicetree-for-linus' of git://git.secretlab.ca/git/linux-2.6
+$ git am ../quilt/i2c/i2c-busses-fix-error-paths.patch
+Applying: i2c: Fix error value returned by several bus drivers
+$ git am ../quilt/i2c/i2c-ali1535-enable-sparc-support.patch
+Applying: i2c-ali1535: enable SPARC support
+$ git am ../quilt/i2c/i2c-convert-to-define_pci_device_table.patch
+Applying: i2c: Convert to DEFINE_PCI_DEVICE_TABLE
+$ git am ../quilt/i2c/i2c-dev-use-memdup_user.patch
+Applying: i2c-dev: Use memdup_user
+$ git am ../quilt/i2c/i2c-convert-bus-drivers-to-use-module_platform_driver.patch
+Applying: i2c/busses: Use module_platform_driver()
+$ git am ../quilt/i2c/i2c-convert-gpio-i2cmux-to-use-module_platform_driver.patch
+Applying: i2c/gpio-i2cmux: Convert to use module_platform_driver()
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/i2c
+From ../quilt-tmp
+ + 6f44f1c...9b0c617 master     -> quilt/i2c  (forced update)
+Importing jdelvare-hwmon based on 3.2-rc5
+Unchanged quilt series jdelvare-hwmon
+Importing kernel-doc based on 3.2-rc7
+$ cd ../quilt-tmp
+$ git reset --hard 5f0a6e2d503896062f641639dacfe5055c2f593b
+HEAD is now at 5f0a6e2 Linux 3.2-rc7
+$ git am ../quilt/kernel-doc/docum-sysctl-more-tainted-bits.patch
+Applying: Two of the bits in the tainted flag are not documented.
+$ git am ../quilt/kernel-doc/docum-update-stable-email.patch
+Applying: The Japanese/Korean/Chinese versions still need updating.
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/kernel-doc
+From ../quilt-tmp
+   c3b92c8..5851bad  master     -> quilt/kernel-doc
+Importing rr based on v3.2-rc6-38-g390f998
+Unchanged quilt series rr
+Importing device-mapper based on v3.2-rc6-182-gecefc36
+Unchanged quilt series device-mapper
