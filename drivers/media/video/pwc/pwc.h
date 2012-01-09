@@ -35,8 +35,11 @@
 #include <asm/errno.h>
 #include <linux/videodev2.h>
 #include <media/v4l2-common.h>
+#include <media/v4l2-device.h>
 #include <media/v4l2-ioctl.h>
 #include <media/v4l2-ctrls.h>
+#include <media/v4l2-fh.h>
+#include <media/v4l2-event.h>
 #include <media/videobuf2-vmalloc.h>
 #ifdef CONFIG_USB_PWC_INPUT_EVDEV
 #include <linux/input.h>
@@ -198,11 +201,10 @@ struct pwc_frame_buf
 struct pwc_device
 {
 	struct video_device vdev;
-	struct mutex modlock;
+	struct v4l2_device v4l2_dev;
 
 	/* Pointer to our usb_device, may be NULL after unplug */
 	struct usb_device *udev;
-	/* Protects the setting of udev to NULL by our disconnect handler */
 	struct mutex udevlock;
 
 	/* type of cam (645, 646, 675, 680, 690, 720, 730, 740, 750) */
@@ -213,6 +215,7 @@ struct pwc_device
 
 	/*** Video data ***/
 	struct file *capt_file;	/* file doing video capture */
+	struct mutex capt_file_lock;
 	int vendpoint;		/* video isoc endpoint */
 	int vcinterface;	/* video control interface */
 	int valternate;		/* alternate interface needed */
@@ -328,6 +331,8 @@ struct pwc_device
 	struct v4l2_ctrl		*save_user;
 	struct v4l2_ctrl		*restore_user;
 	struct v4l2_ctrl		*restore_factory;
+	struct v4l2_ctrl		*awb_speed;
+	struct v4l2_ctrl		*awb_delay;
 	struct {
 		/* motor control cluster */
 		struct v4l2_ctrl	*motor_pan;
@@ -343,6 +348,8 @@ struct pwc_device
 #ifdef CONFIG_USB_PWC_DEBUG
 extern int pwc_trace;
 #endif
+
+int pwc_test_n_set_capt_file(struct pwc_device *pdev, struct file *file);
 
 /** Functions in pwc-misc.c */
 /* sizes in pixels */

@@ -21,8 +21,7 @@
 
 #include "cxd2820r_priv.h"
 
-int cxd2820r_set_frontend_t(struct dvb_frontend *fe,
-	struct dvb_frontend_parameters *p)
+int cxd2820r_set_frontend_t(struct dvb_frontend *fe)
 {
 	struct cxd2820r_priv *priv = fe->demodulator_priv;
 	struct dtv_frontend_properties *c = &fe->dtv_property_cache;
@@ -81,7 +80,7 @@ int cxd2820r_set_frontend_t(struct dvb_frontend *fe,
 
 	/* program tuner */
 	if (fe->ops.tuner_ops.set_params)
-		fe->ops.tuner_ops.set_params(fe, p);
+		fe->ops.tuner_ops.set_params(fe);
 
 	if (priv->delivery_system != SYS_DVBT) {
 		for (i = 0; i < ARRAY_SIZE(tab); i++) {
@@ -142,8 +141,7 @@ error:
 	return ret;
 }
 
-int cxd2820r_get_frontend_t(struct dvb_frontend *fe,
-	struct dvb_frontend_parameters *p)
+int cxd2820r_get_frontend_t(struct dvb_frontend *fe)
 {
 	struct cxd2820r_priv *priv = fe->demodulator_priv;
 	struct dtv_frontend_properties *c = &fe->dtv_property_cache;
