@@ -205,6 +205,12 @@ struct shared_policy {
 	spinlock_t lock;
 };
 
+extern struct mempolicy *mpol_new(unsigned short mode, unsigned short flags,
+				  nodemask_t *nodes);
+extern long mpol_do_mbind(unsigned long start, unsigned long len,
+				struct mempolicy *policy, unsigned long mode,
+				nodemask_t *nmask, unsigned long flags);
+
 void mpol_shared_policy_init(struct shared_policy *sp, struct mempolicy *mpol);
 int mpol_set_shared_policy(struct shared_policy *info,
 				struct vm_area_struct *vma,
@@ -218,6 +224,8 @@ struct mempolicy *get_vma_policy(struct task_struct *tsk,
 
 extern void numa_default_policy(void);
 extern void numa_policy_init(void);
+extern void mpol_rebind_policy(struct mempolicy *pol, const nodemask_t *new,
+				enum mpol_rebind_step step);
 extern void mpol_rebind_task(struct task_struct *tsk, const nodemask_t *new,
 				enum mpol_rebind_step step);
 extern void mpol_rebind_mm(struct mm_struct *mm, nodemask_t *new);

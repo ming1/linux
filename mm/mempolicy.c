@@ -243,7 +243,7 @@ static int mpol_set_nodemask(struct mempolicy *pol,
  * This function just creates a new policy, does some check and simple
  * initialization. You must invoke mpol_set_nodemask() to set nodes.
  */
-static struct mempolicy *mpol_new(unsigned short mode, unsigned short flags,
+struct mempolicy *mpol_new(unsigned short mode, unsigned short flags,
 				  nodemask_t *nodes)
 {
 	struct mempolicy *policy;
@@ -389,7 +389,7 @@ static void mpol_rebind_preferred(struct mempolicy *pol,
  * 	MPOL_REBIND_STEP1 - set all the newly nodes
  * 	MPOL_REBIND_STEP2 - clean all the disallowed nodes
  */
-static void mpol_rebind_policy(struct mempolicy *pol, const nodemask_t *newmask,
+void mpol_rebind_policy(struct mempolicy *pol, const nodemask_t *newmask,
 				enum mpol_rebind_step step)
 {
 	if (!pol)
@@ -1056,63 +1056,34 @@ static struct page *new_vma_page(struct page *page, unsigned long private, int *
 }
 #endif
 
-static long do_mbind(unsigned long start, unsigned long len,
-		     unsigned short mode, unsigned short mode_flags,
-		     nodemask_t *nmask, unsigned long flags)
+long mpol_do_mbind(unsigned long start, unsigned long len,
+		struct mempolicy *new, unsigned long mode,
+		nodemask_t *nmask, unsigned long flags)
 {
-	struct vm_area_struct *vma;
 	struct mm_struct *mm = current->mm;
-	struct mempolicy *new = NULL;
-	unsigned long end;
+	struct vm_area_struct *vma;
 	int err, nr_failed = 0;
+	unsigned long end;
 	LIST_HEAD(pagelist);
-
-  	if (flags & ~(unsigned long)MPOL_MF_VALID)
-		return -EINVAL;
-	if ((flags & MPOL_MF_MOVE_ALL) && !capable(CAP_SYS_NICE))
-		return -EPERM;
-
-	if (start & ~PAGE_MASK)
-		return -EINVAL;
-
-	if (mode == MPOL_DEFAULT || mode == MPOL_NOOP)
-		flags &= ~MPOL_MF_STRICT;
 
 	len = (len + PAGE_SIZE - 1) & PAGE_MASK;
 	end = start + len;
 
-	if (end < start)
-		return -EINVAL;
-	if (end == start)
-		return 0;
-
-	if (mode != MPOL_NOOP) {
-		new = mpol_new(mode, mode_flags, nmask);
-		if (IS_ERR(new))
-			return PTR_ERR(new);
-
-		if (flags & MPOL_MF_LAZY)
-			new->flags |= MPOL_F_MOF;
-
+	if (end < start) {
+		err = -EINVAL;
+		goto mpol_out;
 	}
-	/*
-	 * If we are using the default policy then operation
-	 * on discontinuous address spaces is okay after all
-	 */
-	if (!new)
-		flags |= MPOL_MF_DISCONTIG_OK;
 
-	pr_debug("mbind %lx-%lx mode:%d flags:%d nodes:%lx\n",
-		 start, start + len, mode, mode_flags,
-		 nmask ? nodes_addr(*nmask)[0] : -1);
+	if (end == start) {
+		err = 0;
+		goto mpol_out;
+	}
 
 	if (flags & (MPOL_MF_MOVE | MPOL_MF_MOVE_ALL)) {
 		err = migrate_prep();
 		if (err)
 			goto mpol_out;
 	}
-
-	down_write(&mm->mmap_sem);
 
 	if (mode != MPOL_NOOP) {
 		NODEMASK_SCRATCH(scratch);
@@ -1124,7 +1095,7 @@ static long do_mbind(unsigned long start, unsigned long len,
 		}
 		NODEMASK_SCRATCH_FREE(scratch);
 		if (err)
-			goto mpol_out_unlock;
+			goto mpol_out;
 	}
 
 	vma = check_range(mm, start, end, nmask,
@@ -1132,12 +1103,12 @@ static long do_mbind(unsigned long start, unsigned long len,
 
 	err = PTR_ERR(vma);	/* maybe ... */
 	if (IS_ERR(vma))
-		goto mpol_out_unlock;
+		goto mpol_out_putback;
 
 	if (mode != MPOL_NOOP) {
 		err = mbind_range(mm, start, end, new);
 		if (err)
-			goto mpol_out_unlock;
+			goto mpol_out_putback;
 	}
 
 	if (!list_empty(&pagelist)) {
@@ -1153,12 +1124,56 @@ static long do_mbind(unsigned long start, unsigned long len,
 	if (nr_failed && (flags & MPOL_MF_STRICT))
 		err = -EIO;
 
+mpol_out_putback:
 	putback_lru_pages(&pagelist);
 
-mpol_out_unlock:
-	up_write(&mm->mmap_sem);
 mpol_out:
+	return err;
+}
+
+static long do_mbind(unsigned long start, unsigned long len,
+		     unsigned short mode, unsigned short mode_flags,
+		     nodemask_t *nmask, unsigned long flags)
+{
+	struct mm_struct *mm = current->mm;
+	struct mempolicy *new = NULL;
+	int err;
+
+	if (flags & ~(unsigned long)MPOL_MF_VALID)
+		return -EINVAL;
+	if ((flags & MPOL_MF_MOVE_ALL) && !capable(CAP_SYS_NICE))
+		return -EPERM;
+
+	if (start & ~PAGE_MASK)
+		return -EINVAL;
+
+	if (mode == MPOL_DEFAULT || mode == MPOL_NOOP)
+		flags &= ~MPOL_MF_STRICT;
+
+	if (mode != MPOL_NOOP) {
+		new = mpol_new(mode, mode_flags, nmask);
+		if (IS_ERR(new))
+			return PTR_ERR(new);
+
+		if (flags & MPOL_MF_LAZY)
+			new->flags |= MPOL_F_MOF;
+	}
+	/*
+	 * If we are using the default policy then operation
+	 * on discontinuous address spaces is okay after all
+	 */
+	if (!new)
+		flags |= MPOL_MF_DISCONTIG_OK;
+
+	pr_debug("mbind %lx-%lx mode:%d flags:%d nodes:%lx\n",
+		 start, start + len, mode, mode_flags,
+		 nmask ? nodes_addr(*nmask)[0] : -1);
+
+	down_write(&mm->mmap_sem);
+	err = mpol_do_mbind(start, len, new, mode, nmask, flags);
+	up_write(&mm->mmap_sem);
 	mpol_put(new);
+
 	return err;
 }
 
