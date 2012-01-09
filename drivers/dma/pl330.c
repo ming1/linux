@@ -34,17 +34,6 @@
  */
 #define MCODE_BUFF_PER_REQ	256
 
-/*
- * Mark a _pl330_req as free.
- * We do it by writing DMAEND as the first instruction
- * because no valid request is going to have DMAEND as
- * its first instruction to execute.
- */
-#define MARK_FREE(req)	do { \
-				_emit_END(0, (req)->mc_cpu); \
-				(req)->mc_len = 0; \
-			} while (0)
-
 /* If the _pl330_req is available to the client */
 #define IS_FREE(req)	(*((u8 *)((req)->mc_cpu)) == CMD_DMAEND)
 
@@ -261,8 +250,10 @@ struct pl330_thread {
 	struct pl330_dmac *dmac;
 	/* Only two at a time */
 	struct _pl330_req req[2];
-	/* Index of the last submitted request */
+	/* Index of the last enqueued request */
 	unsigned lstenq;
+	/* Index of the last submitted request or -1 if the DMA is stopped */
+	int req_running;
 };
 
 enum pl330_dmac_state {
@@ -837,6 +828,22 @@ static inline void _execute_DBGINSN(struct pl330_thread *thrd,
 	writel(0, regs + DBGCMD);
 }
 
+/*
+ * Mark a _pl330_req as free.
+ * We do it by writing DMAEND as the first instruction
+ * because no valid request is going to have DMAEND as
+ * its first instruction to execute.
+ */
+static void mark_free(struct pl330_thread *thrd, int idx)
+{
+	struct _pl330_req *req = &thrd->req[idx];
+
+	_emit_END(0, req->mc_cpu);
+	req->mc_len = 0;
+
+	thrd->req_running = -1;
+}
+
 static inline u32 _state(struct pl330_thread *thrd)
 {
 	void __iomem *regs = thrd->dmac->pinfo->base;
@@ -895,31 +902,6 @@ static inline u32 _state(struct pl330_thread *thrd)
 	}
 }
 
-/* If the request 'req' of thread 'thrd' is currently active */
-static inline bool _req_active(struct pl330_thread *thrd,
-		struct _pl330_req *req)
-{
-	void __iomem *regs = thrd->dmac->pinfo->base;
-	u32 buf = req->mc_bus, pc = readl(regs + CPC(thrd->id));
-
-	if (IS_FREE(req))
-		return false;
-
-	return (pc >= buf && pc <= buf + req->mc_len) ? true : false;
-}
-
-/* Returns 0 if the thread is inactive, ID of active req + 1 otherwise */
-static inline unsigned _thrd_active(struct pl330_thread *thrd)
-{
-	if (_req_active(thrd, &thrd->req[0]))
-		return 1; /* First req active */
-
-	if (_req_active(thrd, &thrd->req[1]))
-		return 2; /* Second req active */
-
-	return 0;
-}
-
 static void _stop(struct pl330_thread *thrd)
 {
 	void __iomem *regs = thrd->dmac->pinfo->base;
@@ -951,17 +933,22 @@ static bool _trigger(struct pl330_thread *thrd)
 	struct _arg_GO go;
 	unsigned ns;
 	u8 insn[6] = {0, 0, 0, 0, 0, 0};
+	int idx;
 
 	/* Return if already ACTIVE */
 	if (_state(thrd) != PL330_STATE_STOPPED)
 		return true;
 
-	if (!IS_FREE(&thrd->req[1 - thrd->lstenq]))
-		req = &thrd->req[1 - thrd->lstenq];
-	else if (!IS_FREE(&thrd->req[thrd->lstenq]))
-		req = &thrd->req[thrd->lstenq];
-	else
-		req = NULL;
+	idx = 1 - thrd->lstenq;
+	if (!IS_FREE(&thrd->req[idx]))
+		req = &thrd->req[idx];
+	else {
+		idx = thrd->lstenq;
+		if (!IS_FREE(&thrd->req[idx]))
+			req = &thrd->req[idx];
+		else
+			req = NULL;
+	}
 
 	/* Return if no request */
 	if (!req || !req->r)
@@ -991,6 +978,8 @@ static bool _trigger(struct pl330_thread *thrd)
 
 	/* Only manager can execute GO */
 	_execute_DBGINSN(thrd, insn, true);
+
+	thrd->req_running = idx;
 
 	return true;
 }
@@ -1449,8 +1438,8 @@ static void pl330_dotask(unsigned long data)
 
 			thrd->req[0].r = NULL;
 			thrd->req[1].r = NULL;
-			MARK_FREE(&thrd->req[0]);
-			MARK_FREE(&thrd->req[1]);
+			mark_free(thrd, 0);
+			mark_free(thrd, 1);
 
 			/* Clear the reset flag */
 			pl330->dmac_tbd.reset_chan &= ~(1 << i);
@@ -1528,14 +1517,12 @@ static int pl330_update(const struct pl330_info *pi)
 
 			thrd = &pl330->channels[id];
 
-			active = _thrd_active(thrd);
-			if (!active) /* Aborted */
+			active = thrd->req_running;
+			if (active == -1) /* Aborted */
 				continue;
 
-			active -= 1;
-
 			rqdone = &thrd->req[active];
-			MARK_FREE(rqdone);
+			mark_free(thrd, active);
 
 			/* Get going again ASAP */
 			_start(thrd);
@@ -1547,13 +1534,19 @@ static int pl330_update(const struct pl330_info *pi)
 
 	/* Now that we are in no hurry, do the callbacks */
 	while (!list_empty(&pl330->req_done)) {
+		struct pl330_req *r;
+
 		rqdone = container_of(pl330->req_done.next,
 					struct _pl330_req, rqd);
 
 		list_del_init(&rqdone->rqd);
 
+		/* Detach the req */
+		r = rqdone->r;
+		rqdone->r = NULL;
+
 		spin_unlock_irqrestore(&pl330->lock, flags);
-		_callback(rqdone->r, PL330_ERR_NONE);
+		_callback(r, PL330_ERR_NONE);
 		spin_lock_irqsave(&pl330->lock, flags);
 	}
 
@@ -1575,7 +1568,7 @@ static int pl330_chan_ctrl(void *ch_id, enum pl330_chan_op op)
 	struct pl330_thread *thrd = ch_id;
 	struct pl330_dmac *pl330;
 	unsigned long flags;
-	int ret = 0, active;
+	int ret = 0, active = thrd->req_running;
 
 	if (!thrd || thrd->free || thrd->dmac->state == DYING)
 		return -EINVAL;
@@ -1591,28 +1584,24 @@ static int pl330_chan_ctrl(void *ch_id, enum pl330_chan_op op)
 
 		thrd->req[0].r = NULL;
 		thrd->req[1].r = NULL;
-		MARK_FREE(&thrd->req[0]);
-		MARK_FREE(&thrd->req[1]);
+		mark_free(thrd, 0);
+		mark_free(thrd, 1);
 		break;
 
 	case PL330_OP_ABORT:
-		active = _thrd_active(thrd);
-
 		/* Make sure the channel is stopped */
 		_stop(thrd);
 
 		/* ABORT is only for the active req */
-		if (!active)
+		if (active == -1)
 			break;
 
-		active--;
-
 		thrd->req[active].r = NULL;
-		MARK_FREE(&thrd->req[active]);
+		mark_free(thrd, active);
 
 		/* Start the next */
 	case PL330_OP_START:
-		if (!_thrd_active(thrd) && !_start(thrd))
+		if ((active == -1) && !_start(thrd))
 			ret = -EIO;
 		break;
 
@@ -1670,9 +1659,9 @@ static void *pl330_request_channel(const struct pl330_info *pi)
 				thrd->free = false;
 				thrd->lstenq = 1;
 				thrd->req[0].r = NULL;
-				MARK_FREE(&thrd->req[0]);
+				mark_free(thrd, 0);
 				thrd->req[1].r = NULL;
-				MARK_FREE(&thrd->req[1]);
+				mark_free(thrd, 1);
 				break;
 			}
 		}
@@ -1776,14 +1765,14 @@ static inline void _reset_thread(struct pl330_thread *thrd)
 	thrd->req[0].mc_bus = pl330->mcode_bus
 				+ (thrd->id * pi->mcbufsz);
 	thrd->req[0].r = NULL;
-	MARK_FREE(&thrd->req[0]);
+	mark_free(thrd, 0);
 
 	thrd->req[1].mc_cpu = thrd->req[0].mc_cpu
 				+ pi->mcbufsz / 2;
 	thrd->req[1].mc_bus = thrd->req[0].mc_bus
 				+ pi->mcbufsz / 2;
 	thrd->req[1].r = NULL;
-	MARK_FREE(&thrd->req[1]);
+	mark_free(thrd, 1);
 }
 
 static int dmac_alloc_threads(struct pl330_dmac *pl330)
