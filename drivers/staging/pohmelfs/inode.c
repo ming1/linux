@@ -1915,9 +1915,9 @@ static int pohmelfs_fill_super(struct super_block *sb, void *data, int silent)
 
 	root = &npi->vfs_inode;
 
-	sb->s_root = d_alloc_root(root);
+	sb->s_root = d_make_root(root);
 	if (!sb->s_root)
-		goto err_out_put_root;
+		goto err_out_crypto_exit;
 
 	INIT_DELAYED_WORK(&psb->drop_dwork, pohmelfs_drop_scan);
 	schedule_delayed_work(&psb->drop_dwork, psb->drop_scan_timeout);
@@ -1927,8 +1927,6 @@ static int pohmelfs_fill_super(struct super_block *sb, void *data, int silent)
 
 	return 0;
 
-err_out_put_root:
-	iput(root);
 err_out_crypto_exit:
 	pohmelfs_crypto_exit(psb);
 err_out_state_exit:
