@@ -1643,6 +1643,7 @@ int cache_register_net(struct cache_detail *cd, struct net *net)
 		sunrpc_destroy_cache_detail(cd);
 	return ret;
 }
+EXPORT_SYMBOL_GPL(cache_register_net);
 
 int cache_register(struct cache_detail *cd)
 {
@@ -1655,6 +1656,7 @@ void cache_unregister_net(struct cache_detail *cd, struct net *net)
 	remove_cache_proc_entries(cd, net);
 	sunrpc_destroy_cache_detail(cd);
 }
+EXPORT_SYMBOL_GPL(cache_unregister_net);
 
 void cache_unregister(struct cache_detail *cd)
 {
