@@ -522,6 +522,16 @@ int cleanup_journal_tail(journal_t *journal)
 	journal->j_tail_sequence = first_tid;
 	journal->j_tail = blocknr;
 	spin_unlock(&journal->j_state_lock);
+	/*
+	 * We need to make sure that any blocks that were recently written out
+	 * --- perhaps by log_do_checkpoint() --- are flushed out before we
+	 * drop the transactions from the journal. It's unlikely this will be
+	 * necessary, especially with an appropriately sized journal, but we
+	 * need this to guarantee correctness.  Fortunately
+	 * cleanup_journal_tail() doesn't get called all that often.
+	 */
+	if (journal->j_flags & JFS_BARRIER)
+		blkdev_issue_flush(journal->j_fs_dev, GFP_KERNEL, NULL);
 	if (!(journal->j_flags & JFS_ABORT))
 		journal_update_superblock(journal, 1);
 	return 0;
