@@ -52,6 +52,16 @@ static struct map_desc mx50_io_desc[] __initdata = {
 };
 
 /*
+ * Define the MX50 memory map.
+ */
+static struct map_desc mx50_io_desc[] __initdata = {
+	imx_map_entry(MX50, TZIC, MT_DEVICE),
+	imx_map_entry(MX50, SPBA0, MT_DEVICE),
+	imx_map_entry(MX50, AIPS1, MT_DEVICE),
+	imx_map_entry(MX50, AIPS2, MT_DEVICE),
+};
+
+/*
  * Define the MX51 memory map.
  */
 static struct map_desc mx51_io_desc[] __initdata = {
