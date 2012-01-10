@@ -128,6 +128,23 @@ void pci_disable_ats(struct pci_dev *dev)
 }
 EXPORT_SYMBOL_GPL(pci_disable_ats);
 
+void pci_restore_ats_state(struct pci_dev *dev)
+{
+	u16 ctrl;
+
+	if (!pci_ats_enabled(dev))
+		return;
+	if (!pci_find_ext_capability(dev, PCI_EXT_CAP_ID_ATS))
+		BUG();
+
+	ctrl = PCI_ATS_CTRL_ENABLE;
+	if (!dev->is_virtfn)
+		ctrl |= PCI_ATS_CTRL_STU(dev->ats->stu - PCI_ATS_MIN_STU);
+
+	pci_write_config_word(dev, dev->ats->pos + PCI_ATS_CTRL, ctrl);
+}
+EXPORT_SYMBOL_GPL(pci_restore_ats_state);
+
 /**
  * pci_ats_queue_depth - query the ATS Invalidate Queue Depth
  * @dev: the PCI device
@@ -175,7 +192,7 @@ int pci_enable_pri(struct pci_dev *pdev, u32 reqs)
 	u32 max_requests;
 	int pos;
 
-	pos = pci_find_ext_capability(pdev, PCI_PRI_CAP);
+	pos = pci_find_ext_capability(pdev, PCI_EXT_CAP_ID_PRI);
 	if (!pos)
 		return -EINVAL;
 
@@ -206,7 +223,7 @@ void pci_disable_pri(struct pci_dev *pdev)
 	u16 control;
 	int pos;
 
-	pos = pci_find_ext_capability(pdev, PCI_PRI_CAP);
+	pos = pci_find_ext_capability(pdev, PCI_EXT_CAP_ID_PRI);
 	if (!pos)
 		return;
 
@@ -227,7 +244,7 @@ bool pci_pri_enabled(struct pci_dev *pdev)
 	u16 control;
 	int pos;
 
-	pos = pci_find_ext_capability(pdev, PCI_PRI_CAP);
+	pos = pci_find_ext_capability(pdev, PCI_EXT_CAP_ID_PRI);
 	if (!pos)
 		return false;
 
@@ -249,7 +266,7 @@ int pci_reset_pri(struct pci_dev *pdev)
 	u16 control;
 	int pos;
 
-	pos = pci_find_ext_capability(pdev, PCI_PRI_CAP);
+	pos = pci_find_ext_capability(pdev, PCI_EXT_CAP_ID_PRI);
 	if (!pos)
 		return -EINVAL;
 
@@ -282,7 +299,7 @@ bool pci_pri_stopped(struct pci_dev *pdev)
 	u16 control, status;
 	int pos;
 
-	pos = pci_find_ext_capability(pdev, PCI_PRI_CAP);
+	pos = pci_find_ext_capability(pdev, PCI_EXT_CAP_ID_PRI);
 	if (!pos)
 		return true;
 
@@ -311,7 +328,7 @@ int pci_pri_status(struct pci_dev *pdev)
 	u16 status, control;
 	int pos;
 
-	pos = pci_find_ext_capability(pdev, PCI_PRI_CAP);
+	pos = pci_find_ext_capability(pdev, PCI_EXT_CAP_ID_PRI);
 	if (!pos)
 		return -EINVAL;
 
@@ -342,7 +359,7 @@ int pci_enable_pasid(struct pci_dev *pdev, int features)
 	u16 control, supported;
 	int pos;
 
-	pos = pci_find_ext_capability(pdev, PCI_PASID_CAP);
+	pos = pci_find_ext_capability(pdev, PCI_EXT_CAP_ID_PASID);
 	if (!pos)
 		return -EINVAL;
 
@@ -376,7 +393,7 @@ void pci_disable_pasid(struct pci_dev *pdev)
 	u16 control = 0;
 	int pos;
 
-	pos = pci_find_ext_capability(pdev, PCI_PASID_CAP);
+	pos = pci_find_ext_capability(pdev, PCI_EXT_CAP_ID_PASID);
 	if (!pos)
 		return;
 
@@ -400,7 +417,7 @@ int pci_pasid_features(struct pci_dev *pdev)
 	u16 supported;
 	int pos;
 
-	pos = pci_find_ext_capability(pdev, PCI_PASID_CAP);
+	pos = pci_find_ext_capability(pdev, PCI_EXT_CAP_ID_PASID);
 	if (!pos)
 		return -EINVAL;
 
@@ -426,7 +443,7 @@ int pci_max_pasids(struct pci_dev *pdev)
 	u16 supported;
 	int pos;
 
-	pos = pci_find_ext_capability(pdev, PCI_PASID_CAP);
+	pos = pci_find_ext_capability(pdev, PCI_EXT_CAP_ID_PASID);
 	if (!pos)
 		return -EINVAL;
 
