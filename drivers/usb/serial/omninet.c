@@ -49,7 +49,7 @@
 #include <linux/usb.h>
 #include <linux/usb/serial.h>
 
-static int debug;
+static bool debug;
 
 /*
  * Version Information
