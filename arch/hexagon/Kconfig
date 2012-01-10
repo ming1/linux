@@ -25,6 +25,7 @@ config HEXAGON
 	select HAVE_ARCH_TRACEHOOK
 	select NO_IOPORT
 	select STACKTRACE_SUPPORT
+	select GENERIC_IOMAP
 	---help---
 	  Qualcomm Hexagon is a processor architecture designed for high
 	  performance and low power across a wide variety of applications.
@@ -69,9 +70,6 @@ config GENERIC_CSUM
 # Use the generic interrupt handling code in kernel/irq/:
 #
 config GENERIC_IRQ_PROBE
-	def_bool y
-
-config GENERIC_IOMAP
 	def_bool y
 
 config NEED_SG_DMA_LENGTH
