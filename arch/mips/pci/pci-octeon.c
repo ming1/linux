@@ -99,7 +99,7 @@ int pcibios_plat_dev_init(struct pci_dev *dev)
 	 */
 	pci_write_config_byte(dev, PCI_CACHE_LINE_SIZE, 64 / 4);
 	/* Set latency timers for all devices */
-	pci_write_config_byte(dev, PCI_LATENCY_TIMER, 48);
+	pci_write_config_byte(dev, PCI_LATENCY_TIMER, 64);
 
 	/* Enable reporting System errors and parity errors on all devices */
 	/* Enable parity checking and error reporting */
@@ -109,7 +109,7 @@ int pcibios_plat_dev_init(struct pci_dev *dev)
 
 	if (dev->subordinate) {
 		/* Set latency timers on sub bridges */
-		pci_write_config_byte(dev, PCI_SEC_LATENCY_TIMER, 48);
+		pci_write_config_byte(dev, PCI_SEC_LATENCY_TIMER, 64);
 		/* More bridge error detection */
 		pci_read_config_word(dev, PCI_BRIDGE_CONTROL, &config);
 		config |= PCI_BRIDGE_CTL_PARITY | PCI_BRIDGE_CTL_SERR;
@@ -119,16 +119,22 @@ int pcibios_plat_dev_init(struct pci_dev *dev)
 	/* Enable the PCIe normal error reporting */
 	pos = pci_find_capability(dev, PCI_CAP_ID_EXP);
 	if (pos) {
+		pci_read_config_dword(dev, pos + PCI_EXP_DEVCAP, &dconfig);
 		/* Update Device Control */
 		pci_read_config_word(dev, pos + PCI_EXP_DEVCTL, &config);
-		/* Correctable Error Reporting */
-		config |= PCI_EXP_DEVCTL_CERE;
-		/* Non-Fatal Error Reporting */
-		config |= PCI_EXP_DEVCTL_NFERE;
-		/* Fatal Error Reporting */
-		config |= PCI_EXP_DEVCTL_FERE;
-		/* Unsupported Request */
-		config |= PCI_EXP_DEVCTL_URRE;
+		config |= PCI_EXP_DEVCTL_CERE; /* Correctable Error Reporting */
+		config |= PCI_EXP_DEVCTL_NFERE; /* Non-Fatal Error Reporting */
+		config |= PCI_EXP_DEVCTL_FERE;  /* Fatal Error Reporting */
+		config |= PCI_EXP_DEVCTL_URRE;  /* Unsupported Request */
+		/*
+		 * Octeon's max payload is 256 bytes. Set the device's
+		 * to that unless it can't go that big
+		 */
+		if ((dconfig & PCI_EXP_DEVCAP_PAYLOAD) >= 1)
+			config = (config & ~PCI_EXP_DEVCTL_PAYLOAD) | (1 << 5);
+		/* Set the max read size to 4KB, Octeon's max */
+		config = (config & ~PCI_EXP_DEVCTL_READRQ) | (5 << 12);
+
 		pci_write_config_word(dev, pos + PCI_EXP_DEVCTL, config);
 	}
 
