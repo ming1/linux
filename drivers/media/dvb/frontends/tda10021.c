@@ -228,8 +228,7 @@ struct qam_params {
 	u8 conf, agcref, lthr, mseth, aref;
 };
 
-static int tda10021_set_parameters (struct dvb_frontend *fe,
-			    struct dvb_frontend_parameters *p)
+static int tda10021_set_parameters(struct dvb_frontend *fe)
 {
 	struct dtv_frontend_properties *c = &fe->dtv_property_cache;
 	u32 delsys  = c->delivery_system;
@@ -280,10 +279,10 @@ static int tda10021_set_parameters (struct dvb_frontend *fe,
 	if (c->inversion != INVERSION_ON && c->inversion != INVERSION_OFF)
 		return -EINVAL;
 
-	//printk("tda10021: set frequency to %d qam=%d symrate=%d\n", p->frequency,qam,p->u.qam.symbol_rate);
+	/*printk("tda10021: set frequency to %d qam=%d symrate=%d\n", p->frequency,qam,p->symbol_rate);*/
 
 	if (fe->ops.tuner_ops.set_params) {
-		fe->ops.tuner_ops.set_params(fe, p);
+		fe->ops.tuner_ops.set_params(fe);
 		if (fe->ops.i2c_gate_ctrl) fe->ops.i2c_gate_ctrl(fe, 0);
 	}
 
@@ -387,8 +386,9 @@ static int tda10021_read_ucblocks(struct dvb_frontend* fe, u32* ucblocks)
 	return 0;
 }
 
-static int tda10021_get_frontend(struct dvb_frontend* fe, struct dvb_frontend_parameters *p)
+static int tda10021_get_frontend(struct dvb_frontend *fe)
 {
+	struct dtv_frontend_properties *p = &fe->dtv_property_cache;
 	struct tda10021_state* state = fe->demodulator_priv;
 	int sync;
 	s8 afc = 0;
@@ -400,17 +400,17 @@ static int tda10021_get_frontend(struct dvb_frontend* fe, struct dvb_frontend_pa
 		printk(sync & 2 ? "DVB: TDA10021(%d): AFC (%d) %dHz\n" :
 				  "DVB: TDA10021(%d): [AFC (%d) %dHz]\n",
 			state->frontend.dvb->num, afc,
-		       -((s32)p->u.qam.symbol_rate * afc) >> 10);
+		       -((s32)p->symbol_rate * afc) >> 10);
 	}
 
 	p->inversion = ((state->reg0 & 0x20) == 0x20) ^ (state->config->invert != 0) ? INVERSION_ON : INVERSION_OFF;
-	p->u.qam.modulation = ((state->reg0 >> 2) & 7) + QAM_16;
+	p->modulation = ((state->reg0 >> 2) & 7) + QAM_16;
 
-	p->u.qam.fec_inner = FEC_NONE;
+	p->fec_inner = FEC_NONE;
 	p->frequency = ((p->frequency + 31250) / 62500) * 62500;
 
 	if (sync & 2)
-		p->frequency -= ((s32)p->u.qam.symbol_rate * afc) >> 10;
+		p->frequency -= ((s32)p->symbol_rate * afc) >> 10;
 
 	return 0;
 }
@@ -483,26 +483,10 @@ error:
 	return NULL;
 }
 
-static int tda10021_get_property(struct dvb_frontend *fe,
-				 struct dtv_property *p)
-{
-	switch (p->cmd) {
-	case DTV_ENUM_DELSYS:
-		p->u.buffer.data[0] = SYS_DVBC_ANNEX_A;
-		p->u.buffer.data[1] = SYS_DVBC_ANNEX_C;
-		p->u.buffer.len = 2;
-		break;
-	default:
-		break;
-	}
-	return 0;
-}
-
 static struct dvb_frontend_ops tda10021_ops = {
-
+	.delsys = { SYS_DVBC_ANNEX_A, SYS_DVBC_ANNEX_C },
 	.info = {
 		.name = "Philips TDA10021 DVB-C",
-		.type = FE_QAM,
 		.frequency_stepsize = 62500,
 		.frequency_min = 47000000,
 		.frequency_max = 862000000,
@@ -526,7 +510,6 @@ static struct dvb_frontend_ops tda10021_ops = {
 
 	.set_frontend = tda10021_set_parameters,
 	.get_frontend = tda10021_get_frontend,
-	.get_property = tda10021_get_property,
 
 	.read_status = tda10021_read_status,
 	.read_ber = tda10021_read_ber,
