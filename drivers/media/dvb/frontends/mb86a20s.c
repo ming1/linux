@@ -485,18 +485,23 @@ static int mb86a20s_read_status(struct dvb_frontend *fe, fe_status_t *status)
 	return 0;
 }
 
-static int mb86a20s_set_frontend(struct dvb_frontend *fe,
-	struct dvb_frontend_parameters *p)
+static int mb86a20s_set_frontend(struct dvb_frontend *fe)
 {
 	struct mb86a20s_state *state = fe->demodulator_priv;
 	int rc;
+#if 0
+	/*
+	 * FIXME: Properly implement the set frontend properties
+	 */
+	struct dtv_frontend_properties *p = &fe->dtv_property_cache;
+#endif
 
 	dprintk("\n");
 
 	if (fe->ops.i2c_gate_ctrl)
 		fe->ops.i2c_gate_ctrl(fe, 1);
 	dprintk("Calling tuner set parameters\n");
-	fe->ops.tuner_ops.set_params(fe, p);
+	fe->ops.tuner_ops.set_params(fe);
 
 	/*
 	 * Make it more reliable: if, for some reason, the initial
@@ -520,22 +525,22 @@ static int mb86a20s_set_frontend(struct dvb_frontend *fe,
 	return rc;
 }
 
-static int mb86a20s_get_frontend(struct dvb_frontend *fe,
-	struct dvb_frontend_parameters *p)
+static int mb86a20s_get_frontend(struct dvb_frontend *fe)
 {
+	struct dtv_frontend_properties *p = &fe->dtv_property_cache;
 
 	/* FIXME: For now, it does nothing */
 
-	fe->dtv_property_cache.bandwidth_hz = 6000000;
-	fe->dtv_property_cache.transmission_mode = TRANSMISSION_MODE_AUTO;
-	fe->dtv_property_cache.guard_interval = GUARD_INTERVAL_AUTO;
-	fe->dtv_property_cache.isdbt_partial_reception = 0;
+	p->bandwidth_hz = 6000000;
+	p->transmission_mode = TRANSMISSION_MODE_AUTO;
+	p->guard_interval = GUARD_INTERVAL_AUTO;
+	p->isdbt_partial_reception = 0;
 
 	return 0;
 }
 
 static int mb86a20s_tune(struct dvb_frontend *fe,
-			struct dvb_frontend_parameters *params,
+			bool re_tune,
 			unsigned int mode_flags,
 			unsigned int *delay,
 			fe_status_t *status)
@@ -544,8 +549,8 @@ static int mb86a20s_tune(struct dvb_frontend *fe,
 
 	dprintk("\n");
 
-	if (params != NULL)
-		rc = mb86a20s_set_frontend(fe, params);
+	if (re_tune)
+		rc = mb86a20s_set_frontend(fe);
 
 	if (!(mode_flags & FE_TUNE_MODE_ONESHOT))
 		mb86a20s_read_status(fe, status);
@@ -608,10 +613,10 @@ error:
 EXPORT_SYMBOL(mb86a20s_attach);
 
 static struct dvb_frontend_ops mb86a20s_ops = {
+	.delsys = { SYS_ISDBT },
 	/* Use dib8000 values per default */
 	.info = {
 		.name = "Fujitsu mb86A20s",
-		.type = FE_OFDM,
 		.caps = FE_CAN_INVERSION_AUTO | FE_CAN_RECOVER |
 			FE_CAN_FEC_1_2  | FE_CAN_FEC_2_3 | FE_CAN_FEC_3_4 |
 			FE_CAN_FEC_5_6  | FE_CAN_FEC_7_8 | FE_CAN_FEC_AUTO |
