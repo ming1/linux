@@ -26,23 +26,19 @@ static struct clk *gpc_dvfs_clk;
 
 static void imx5_idle(void)
 {
-	if (!need_resched()) {
-		/* gpc clock is needed for SRPG */
-		if (gpc_dvfs_clk == NULL) {
-			gpc_dvfs_clk = clk_get(NULL, "gpc_dvfs");
-			if (IS_ERR(gpc_dvfs_clk))
-				goto err0;
-		}
-		clk_enable(gpc_dvfs_clk);
-		mx5_cpu_lp_set(WAIT_UNCLOCKED_POWER_OFF);
-		if (tzic_enable_wake())
-			goto err1;
-		cpu_do_idle();
-err1:
-		clk_disable(gpc_dvfs_clk);
+	/* gpc clock is needed for SRPG */
+	if (gpc_dvfs_clk == NULL) {
+		gpc_dvfs_clk = clk_get(NULL, "gpc_dvfs");
+		if (IS_ERR(gpc_dvfs_clk))
+			return;
 	}
-err0:
-	local_irq_enable();
+	clk_enable(gpc_dvfs_clk);
+	mx5_cpu_lp_set(WAIT_UNCLOCKED_POWER_OFF);
+	if (tzic_enable_wake())
+		goto err1;
+	cpu_do_idle();
+err1:
+	clk_disable(gpc_dvfs_clk);
 }
 
 /*
@@ -101,6 +97,7 @@ void __init imx50_init_early(void)
 	mxc_set_cpu_type(MXC_CPU_MX50);
 	mxc_iomux_v3_init(MX50_IO_ADDRESS(MX50_IOMUXC_BASE_ADDR));
 	mxc_arch_reset_init(MX50_IO_ADDRESS(MX50_WDOG_BASE_ADDR));
+	arm_pm_idle = imx5_idle;
 }
 
 void __init imx51_init_early(void)
@@ -108,7 +105,7 @@ void __init imx51_init_early(void)
 	mxc_set_cpu_type(MXC_CPU_MX51);
 	mxc_iomux_v3_init(MX51_IO_ADDRESS(MX51_IOMUXC_BASE_ADDR));
 	mxc_arch_reset_init(MX51_IO_ADDRESS(MX51_WDOG1_BASE_ADDR));
-	pm_idle = imx5_idle;
+	arm_pm_idle = imx5_idle;
 }
 
 void __init imx53_init_early(void)
@@ -116,6 +113,7 @@ void __init imx53_init_early(void)
 	mxc_set_cpu_type(MXC_CPU_MX53);
 	mxc_iomux_v3_init(MX53_IO_ADDRESS(MX53_IOMUXC_BASE_ADDR));
 	mxc_arch_reset_init(MX53_IO_ADDRESS(MX53_WDOG1_BASE_ADDR));
+	arm_pm_idle = imx5_idle;
 }
 
 void __init mx50_init_irq(void)
