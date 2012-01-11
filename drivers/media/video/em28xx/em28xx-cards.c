@@ -336,6 +336,23 @@ static struct em28xx_reg_seq pctv_460e[] = {
 	{             -1,   -1,   -1,  -1},
 };
 
+#if 0
+static struct em28xx_reg_seq hauppauge_930c_gpio[] = {
+	{EM2874_R80_GPIO,	0x6f,	0xff,	10},
+	{EM2874_R80_GPIO,	0x4f,	0xff,	10}, /* xc5000 reset */
+	{EM2874_R80_GPIO,	0x6f,	0xff,	10},
+	{EM2874_R80_GPIO,	0x4f,	0xff,	10},
+	{ -1,			-1,	-1,	-1},
+};
+
+static struct em28xx_reg_seq hauppauge_930c_digital[] = {
+	{EM2874_R80_GPIO,	0xf6,	0xff,	10},
+	{EM2874_R80_GPIO,	0xe6,	0xff,	100},
+	{EM2874_R80_GPIO,	0xa6,	0xff,	10},
+	{ -1,			-1,	-1,	-1},
+};
+#endif
+
 /*
  *  Board definitions
  */
@@ -881,6 +898,37 @@ struct em28xx_board em28xx_boards[] = {
 	},
 	[EM2884_BOARD_TERRATEC_H5] = {
 		.name         = "Terratec Cinergy H5",
+		.has_dvb      = 1,
+#if 0
+		.tuner_type   = TUNER_PHILIPS_TDA8290,
+		.tuner_addr   = 0x41,
+		.dvb_gpio     = terratec_h5_digital, /* FIXME: probably wrong */
+		.tuner_gpio   = terratec_h5_gpio,
+#else
+		.tuner_type   = TUNER_ABSENT,
+#endif
+		.i2c_speed    = EM2874_I2C_SECONDARY_BUS_SELECT |
+				EM28XX_I2C_CLK_WAIT_ENABLE |
+				EM28XX_I2C_FREQ_400_KHZ,
+	},
+	[EM2884_BOARD_HAUPPAUGE_WINTV_HVR_930C] = {
+		.name         = "Hauppauge WinTV HVR 930C",
+		.has_dvb      = 1,
+#if 0 /* FIXME: Add analog support */
+		.tuner_type   = TUNER_XC5000,
+		.tuner_addr   = 0x41,
+		.dvb_gpio     = hauppauge_930c_digital,
+		.tuner_gpio   = hauppauge_930c_gpio,
+#else
+		.tuner_type   = TUNER_ABSENT,
+#endif
+		.ir_codes     = RC_MAP_HAUPPAUGE,
+		.i2c_speed    = EM2874_I2C_SECONDARY_BUS_SELECT |
+				EM28XX_I2C_CLK_WAIT_ENABLE |
+				EM28XX_I2C_FREQ_400_KHZ,
+	},
+	[EM2884_BOARD_CINERGY_HTC_STICK] = {
+		.name         = "Terratec Cinergy HTC Stick",
 		.has_dvb      = 1,
 #if 0
 		.tuner_type   = TUNER_PHILIPS_TDA8290,
@@ -1914,17 +1962,19 @@ struct usb_device_id em28xx_id_table[] = {
 	{ USB_DEVICE(0x0ccd, 0x0042),
 			.driver_info = EM2882_BOARD_TERRATEC_HYBRID_XS },
 	{ USB_DEVICE(0x0ccd, 0x0043),
+			.driver_info = EM2870_BOARD_TERRATEC_XS },
+	{ USB_DEVICE(0x0ccd, 0x10a2),	/* H5 Rev. 1 */
 			.driver_info = EM2884_BOARD_TERRATEC_H5 },
-	{ USB_DEVICE(0x0ccd, 0x10a2),	/* Rev. 1 */
+	{ USB_DEVICE(0x0ccd, 0x10ad),	/* H5 Rev. 2 */
 			.driver_info = EM2884_BOARD_TERRATEC_H5 },
-	{ USB_DEVICE(0x0ccd, 0x10ad),	/* Rev. 2 */
-			.driver_info = EM2880_BOARD_TERRATEC_PRODIGY_XS },
 	{ USB_DEVICE(0x0ccd, 0x0084),
 			.driver_info = EM2860_BOARD_TERRATEC_AV350 },
 	{ USB_DEVICE(0x0ccd, 0x0096),
 			.driver_info = EM2860_BOARD_TERRATEC_GRABBY },
 	{ USB_DEVICE(0x0ccd, 0x10AF),
 			.driver_info = EM2860_BOARD_TERRATEC_GRABBY },
+	{ USB_DEVICE(0x0ccd, 0x00b2),
+			.driver_info = EM2884_BOARD_CINERGY_HTC_STICK },
 	{ USB_DEVICE(0x0fd9, 0x0033),
 			.driver_info = EM2860_BOARD_ELGATO_VIDEO_CAPTURE},
 	{ USB_DEVICE(0x185b, 0x2870),
@@ -1975,6 +2025,8 @@ struct usb_device_id em28xx_id_table[] = {
 			.driver_info = EM28174_BOARD_PCTV_290E },
 	{ USB_DEVICE(0x2013, 0x024c),
 			.driver_info = EM28174_BOARD_PCTV_460E },
+	{ USB_DEVICE(0x2040, 0x1605),
+			.driver_info = EM2884_BOARD_HAUPPAUGE_WINTV_HVR_930C },
 	{ },
 };
 MODULE_DEVICE_TABLE(usb, em28xx_id_table);
@@ -2028,10 +2080,10 @@ int em28xx_tuner_callback(void *ptr, int component, int command, int arg)
 	int rc = 0;
 	struct em28xx *dev = ptr;
 
-	if (dev->tuner_type != TUNER_XC2028)
+	if (dev->tuner_type != TUNER_XC2028 && dev->tuner_type != TUNER_XC5000)
 		return 0;
 
-	if (command != XC2028_TUNER_RESET)
+	if (command != XC2028_TUNER_RESET && command != XC5000_TUNER_RESET)
 		return 0;
 
 	rc = em28xx_gpio_set(dev, dev->board.tuner_gpio);
