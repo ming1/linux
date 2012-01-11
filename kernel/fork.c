@@ -77,6 +77,9 @@
 
 #include <trace/events/sched.h>
 
+#define CREATE_TRACE_POINTS
+#include <trace/events/task.h>
+
 /*
  * Protected counters by write_lock_irq(&tasklist_lock)
  */
@@ -736,6 +739,7 @@ struct mm_struct *dup_mm(struct task_struct *tsk)
 	/* Initializing for Swap token stuff */
 	mm->token_priority = 0;
 	mm->last_interval = 0;
+	atomic_set(&mm->active_swap_token, 0);
 
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
 	mm->pmd_huge_pte = NULL;
@@ -1388,6 +1392,9 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 	if (clone_flags & CLONE_THREAD)
 		threadgroup_change_end(current);
 	perf_event_fork(p);
+
+	trace_task_newtask(p, clone_flags);
+
 	return p;
 
 bad_fork_free_pid:
