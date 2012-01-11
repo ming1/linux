@@ -30,7 +30,7 @@
  *   a2:	new stack pointer, original value in depc
  *   a3:	dispatch table
  *   depc:	a2, original value saved on stack (PT_DEPC)
- *   excsave_1:	a3
+ *   excsave1:	a3
  *
  * The value for PT_DEPC saved to stack also functions as a boolean to
  * indicate that the exception is either a double or a regular exception:
@@ -69,7 +69,7 @@
 
 ENTRY(_UserExceptionVector)
 
-	xsr	a3, EXCSAVE_1		# save a3 and get dispatch table
+	xsr	a3, EXCSAVE1		# save a3 and get dispatch table
 	wsr	a2, DEPC		# save a2
 	l32i	a2, a3, EXC_TABLE_KSTK	# load kernel stack to a2
 	s32i	a0, a2, PT_AREG0	# save a0 to ESF
@@ -93,7 +93,7 @@ ENTRY(_UserExceptionVector)
 
 ENTRY(_KernelExceptionVector)
 
-	xsr	a3, EXCSAVE_1		# save a3, and get dispatch table
+	xsr	a3, EXCSAVE1		# save a3, and get dispatch table
 	wsr	a2, DEPC		# save a2
 	addi	a2, a1, -16-PT_SIZE	# adjust stack pointer
 	s32i	a0, a2, PT_AREG0	# save a0 to ESF
@@ -126,7 +126,7 @@ ENTRY(_KernelExceptionVector)
  * processing occurs. Also in kernel mode, TLB misses can occur if accessing
  * vmalloc memory, possibly requiring repair in a double exception handler.
  *
- * The variable at TABLE_FIXUP offset from the pointer in EXCSAVE_1 doubles as
+ * The variable at TABLE_FIXUP offset from the pointer in EXCSAVE1 doubles as
  * a boolean variable and a pointer to a fixup routine. If the variable
  * EXC_TABLE_FIXUP is non-zero, this handler jumps to that address. A value of
  * zero indicates to use the default kernel/user exception handler.
@@ -167,7 +167,7 @@ ENTRY(_KernelExceptionVector)
  *	a2:	   trashed, original value in EXC_TABLE_DOUBLE_A2
  *	a3:	   exctable
  *	depc:	   a0
- *	excsave_1: a3
+ *	excsave1: a3
  *
  *  - When the kernel enters the fixup handler, it still assumes it is in a
  *    critical section, so EXC_TABLE_FIXUP variable is set to exc_table.
@@ -189,7 +189,7 @@ ENTRY(_KernelExceptionVector)
  * All registers a0...a15 are unchanged from the last exception, except:
  *
  *	a0:	   last address before we jumped to the unrecoverable_exception.
- *	excsave_1: a0
+ *	excsave1: a0
  *
  *
  * See the handle_alloca_user and spill_registers routines for example clients.
@@ -205,7 +205,7 @@ ENTRY(_DoubleExceptionVector)
 
 	/* Deliberately destroy excsave (don't assume it's value was valid). */
 
-	wsr	a3, EXCSAVE_1		# save a3
+	wsr	a3, EXCSAVE1		# save a3
 
 	/* Check for kernel double exception (usually fatal). */
 
@@ -254,7 +254,7 @@ ENTRY(_DoubleExceptionVector)
 	xsr	a2, DEPC		# save a2 and get stack pointer
 	s32i	a0, a2, PT_AREG0
 
-	wsr	a3, EXCSAVE_1		# save a3
+	wsr	a3, EXCSAVE1		# save a3
 	movi	a3, exc_table
 
 	rsr	a0, EXCCAUSE
@@ -331,8 +331,8 @@ ENTRY(_DoubleExceptionVector)
 	xsr	a0, DEPC
 
 .Lunrecoverable:
-	rsr	a3, EXCSAVE_1
-	wsr	a0, EXCSAVE_1
+	rsr	a3, EXCSAVE1
+	wsr	a0, EXCSAVE1
 	movi	a0, unrecoverable_exception
 	callx0	a0
 
@@ -349,7 +349,7 @@ ENTRY(_DoubleExceptionVector)
 	.section .DebugInterruptVector.text, "ax"
 
 ENTRY(_DebugInterruptVector)
-	xsr	a0, EXCSAVE + XCHAL_DEBUGLEVEL
+	xsr	a0, XTREG_EXCSAVE(XCHAL_DEBUGLEVEL)
 	jx	a0
 
 
