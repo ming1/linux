@@ -157,8 +157,8 @@ static inline void ltq_cgu_w32_mask(u32 c, u32 s, u32 r)
 }
 
 /* request a non-gpio and set the PIO config */
-extern int  ltq_gpio_request(unsigned int pin, unsigned int alt0,
-	unsigned int alt1, unsigned int dir, const char *name);
+extern int  ltq_gpio_request(unsigned int pin, unsigned int mux,
+				unsigned int dir, const char *name);
 extern void ltq_pmu_enable(unsigned int module);
 extern void ltq_pmu_disable(unsigned int module);
 extern void ltq_cgu_enable(unsigned int clk);
