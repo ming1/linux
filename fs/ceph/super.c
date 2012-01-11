@@ -647,10 +647,10 @@ static struct dentry *open_root_dentry(struct ceph_fs_client *fsc,
 				root = ERR_PTR(-ENOMEM);
 				goto out;
 			}
-			ceph_init_dentry(root);
 		} else {
 			root = d_obtain_alias(inode);
 		}
+		ceph_init_dentry(root);
 		dout("open_root_inode success, root dentry is %p\n", root);
 	} else {
 		root = ERR_PTR(err);
