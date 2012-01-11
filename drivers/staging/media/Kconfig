@@ -29,8 +29,6 @@ source "drivers/staging/media/easycap/Kconfig"
 
 source "drivers/staging/media/go7007/Kconfig"
 
-source "drivers/staging/media/hd29l2/Kconfig"
-
 source "drivers/staging/media/solo6x10/Kconfig"
 
 # Keep LIRC at the end, as it has sub-menus
