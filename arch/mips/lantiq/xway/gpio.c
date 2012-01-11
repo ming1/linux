@@ -48,8 +48,8 @@ int irq_to_gpio(unsigned int gpio)
 }
 EXPORT_SYMBOL(irq_to_gpio);
 
-int ltq_gpio_request(unsigned int pin, unsigned int alt0,
-	unsigned int alt1, unsigned int dir, const char *name)
+int ltq_gpio_request(unsigned int pin, unsigned int mux,
+			unsigned int dir, const char *name)
 {
 	int id = 0;
 
@@ -67,13 +67,13 @@ int ltq_gpio_request(unsigned int pin, unsigned int alt0,
 		pin -= PINS_PER_PORT;
 		id++;
 	}
-	if (alt0)
+	if (mux & 0x2)
 		ltq_gpio_setbit(ltq_gpio_port[id].membase,
 			LTQ_GPIO_ALTSEL0, pin);
 	else
 		ltq_gpio_clearbit(ltq_gpio_port[id].membase,
 			LTQ_GPIO_ALTSEL0, pin);
-	if (alt1)
+	if (mux & 0x1)
 		ltq_gpio_setbit(ltq_gpio_port[id].membase,
 			LTQ_GPIO_ALTSEL1, pin);
 	else
