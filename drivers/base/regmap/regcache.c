@@ -79,7 +79,7 @@ static int regcache_hw_init(struct regmap *map)
 	return 0;
 }
 
-int regcache_init(struct regmap *map)
+int regcache_init(struct regmap *map, const struct regmap_config *config)
 {
 	int ret;
 	int i;
@@ -99,6 +99,13 @@ int regcache_init(struct regmap *map)
 			map->cache_type);
 		return -EINVAL;
 	}
+
+	map->reg_defaults = config->reg_defaults;
+	map->num_reg_defaults = config->num_reg_defaults;
+	map->num_reg_defaults_raw = config->num_reg_defaults_raw;
+	map->reg_defaults_raw = config->reg_defaults_raw;
+	map->cache_size_raw = (config->val_bits / 8) * config->num_reg_defaults_raw;
+	map->cache_word_size = config->val_bits / 8;
 
 	map->cache = NULL;
 	map->cache_ops = cache_types[i];
@@ -241,6 +248,8 @@ int regcache_sync(struct regmap *map)
 		map->cache_ops->name);
 	name = map->cache_ops->name;
 	trace_regcache_sync(map->dev, name, "start");
+	if (!map->cache_dirty)
+		goto out;
 	if (map->cache_ops->sync) {
 		ret = map->cache_ops->sync(map);
 	} else {
@@ -289,6 +298,23 @@ void regcache_cache_only(struct regmap *map, bool enable)
 	mutex_unlock(&map->lock);
 }
 EXPORT_SYMBOL_GPL(regcache_cache_only);
+
+/**
+ * regcache_mark_dirty: Mark the register cache as dirty
+ *
+ * @map: map to mark
+ *
+ * Mark the register cache as dirty, for example due to the device
+ * having been powered down for suspend.  If the cache is not marked
+ * as dirty then the cache sync will be suppressed.
+ */
+void regcache_mark_dirty(struct regmap *map)
+{
+	mutex_lock(&map->lock);
+	map->cache_dirty = true;
+	mutex_unlock(&map->lock);
+}
+EXPORT_SYMBOL_GPL(regcache_mark_dirty);
 
 /**
  * regcache_cache_bypass: Put a register map into cache bypass mode

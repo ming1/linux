@@ -201,7 +201,7 @@ static struct physmap_flash_data nor_flash_data = {
 static struct resource nor_flash_resources[] = {
 	[0]	= {
 		.start	= 0x20000000, /* CS0 shadow instead of regular CS0 */
-		.end	= 0x28000000 - 1, /* needed by USB MASK ROM boot */		
+		.end	= 0x28000000 - 1, /* needed by USB MASK ROM boot */
 		.flags	= IORESOURCE_MEM,
 	}
 };
@@ -762,9 +762,22 @@ static struct platform_device fsi_device = {
 	},
 };
 
-static struct platform_device fsi_ak4643_device = {
-	.name		= "sh_fsi2_a_ak4643",
+static struct fsi_ak4642_info fsi2_ak4643_info = {
+	.name		= "AK4643",
+	.card		= "FSI2A-AK4643",
+	.cpu_dai	= "fsia-dai",
+	.codec		= "ak4642-codec.0-0013",
+	.platform	= "sh_fsi2",
+	.id		= FSI_PORT_A,
 };
+
+static struct platform_device fsi_ak4643_device = {
+	.name	= "fsi-ak4642-audio",
+	.dev	= {
+		.platform_data	= &fsi_info,
+	},
+};
+
 static struct sh_mobile_meram_cfg hdmi_meram_cfg = {
 	.icb[0] = {
 		.marker_icb     = 30,
