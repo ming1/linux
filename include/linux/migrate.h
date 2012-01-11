@@ -32,6 +32,8 @@ extern int migrate_huge_page_move_mapping(struct address_space *mapping,
 				  struct page *newpage, struct page *page);
 
 extern int migrate_pages_unmap_only(struct list_head *);
+extern struct page *migrate_misplaced_page(struct page *,
+			struct mm_struct *, int);
 #else
 
 static inline void putback_lru_pages(struct list_head *l) {}
@@ -71,4 +73,16 @@ static inline int migrate_pages_unmap_only(struct list_head *l)
 #define fail_migrate_page NULL
 
 #endif /* CONFIG_MIGRATION */
+
+#if defined(CONFIG_MIGRATION) && defined(CONFIG_NUMA)
+extern struct page *check_migrate_misplaced_page(struct page *,
+			struct vm_area_struct *, unsigned long);
+#else
+static inline struct page *check_migrate_misplaced_page(struct page *page,
+			struct vm_area_struct *vma, unsigned long addr)
+{
+	return page;
+}
+#endif
+
 #endif /* _LINUX_MIGRATE_H */
