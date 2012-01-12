@@ -13,6 +13,7 @@
 #include <linux/module.h>
 #include <linux/pm.h>
 
+#include <asm/proc-fns.h>
 #include <asm/irq.h>
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
@@ -285,8 +286,15 @@ static void __init at91sam9261_map_io(void)
 		at91_init_sram(0, AT91SAM9261_SRAM_BASE, AT91SAM9261_SRAM_SIZE);
 }
 
+static void at91sam9261_idle(void)
+{
+	at91_sys_write(AT91_PMC_SCDR, AT91_PMC_PCK);
+	cpu_do_idle();
+}
+
 static void __init at91sam9261_initialize(void)
 {
+	arm_pm_idle = at91sam9261_idle;
 	arm_pm_restart = at91sam9_alt_restart;
 	pm_power_off = at91sam9261_poweroff;
 	at91_extern_irq = (1 << AT91SAM9261_ID_IRQ0) | (1 << AT91SAM9261_ID_IRQ1)
