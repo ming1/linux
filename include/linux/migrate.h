@@ -30,6 +30,8 @@ extern int migrate_vmas(struct mm_struct *mm,
 extern void migrate_page_copy(struct page *newpage, struct page *page);
 extern int migrate_huge_page_move_mapping(struct address_space *mapping,
 				  struct page *newpage, struct page *page);
+
+extern int migrate_pages_unmap_only(struct list_head *);
 #else
 
 static inline void putback_lru_pages(struct list_head *l) {}
@@ -55,6 +57,11 @@ static inline void migrate_page_copy(struct page *newpage,
 
 static inline int migrate_huge_page_move_mapping(struct address_space *mapping,
 				  struct page *newpage, struct page *page)
+{
+	return -ENOSYS;
+}
+
+static inline int migrate_pages_unmap_only(struct list_head *l)
 {
 	return -ENOSYS;
 }
