@@ -1,0 +1,35 @@
+Importing hexagon based on v3.2-rc2
+Unchanged quilt series hexagon
+Importing i2c based on e343a895a9f342f239c5e3c5ffc6c0b1707e6244
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard e343a895a9f342f239c5e3c5ffc6c0b1707e6244
+HEAD is now at e343a89 Merge tag 'for-linus' of git://git.kernel.org/pub/scm/linux/kernel/git/mst/vhost
+$ git am ../quilt/i2c/i2c-busses-fix-error-paths.patch
+Applying: i2c: Fix error value returned by several bus drivers
+$ git am ../quilt/i2c/i2c-ali1535-enable-sparc-support.patch
+Applying: i2c-ali1535: enable SPARC support
+$ git am ../quilt/i2c/i2c-convert-to-define_pci_device_table.patch
+Applying: i2c: Convert to DEFINE_PCI_DEVICE_TABLE
+$ git am ../quilt/i2c/i2c-dev-use-memdup_user.patch
+Applying: i2c-dev: Use memdup_user
+$ git am ../quilt/i2c/i2c-convert-bus-drivers-to-use-module_platform_driver.patch
+Applying: i2c/busses: Use module_platform_driver()
+$ git am ../quilt/i2c/i2c-convert-gpio-i2cmux-to-use-module_platform_driver.patch
+Applying: i2c/gpio-i2cmux: Convert to use module_platform_driver()
+$ git am ../quilt/i2c/maintainers-i2c-add-third-maintainer.patch
+Applying: MAINTAINERS: i2c: Add third maintainer
+$ git am ../quilt/i2c/i2c-add-omap-davinci-to-MAINTAINERS.patch
+Applying: MAINTAINERS: List i2c-omap and i2c-davinci drivers
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/i2c
+From ../quilt-tmp
+ + 3c356cc...1c25094 master     -> quilt/i2c  (forced update)
+Importing jdelvare-hwmon based on e4e11180dfa545233e5145919b75b7fac88638df
+Unchanged quilt series jdelvare-hwmon
+Importing kernel-doc based on 3.2-rc7
+Unchanged quilt series kernel-doc
+Importing rr based on v3.2-rc6-38-g390f998
+Unchanged quilt series rr
+Importing device-mapper based on v3.2-rc6-182-gecefc36
+Unchanged quilt series device-mapper
