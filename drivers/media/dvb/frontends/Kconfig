@@ -418,6 +418,13 @@ config DVB_CXD2820R
 	help
 	  Say Y when you want to support this frontend.
 
+config DVB_HD29L2
+	tristate "HDIC HD29L2"
+	depends on DVB_CORE && I2C
+	default m if DVB_FE_CUSTOMISE
+	help
+	  Say Y when you want to support this frontend.
+
 comment "DVB-C (cable) frontends"
 	depends on DVB_CORE
 

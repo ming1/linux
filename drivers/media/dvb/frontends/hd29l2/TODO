@@ -1,0 +1,3 @@
+Implement DTMB support for DVB API. Currently it abuses DVB-T support.
+
+Patches should be submitted to: linux-media@vger.kernel.org.

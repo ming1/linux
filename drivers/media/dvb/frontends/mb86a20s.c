@@ -485,18 +485,23 @@ static int mb86a20s_read_status(struct dvb_frontend *fe, fe_status_t *status)
 	return 0;
 }
 
-static int mb86a20s_set_frontend(struct dvb_frontend *fe,
-	struct dvb_frontend_parameters *p)
+static int mb86a20s_set_frontend(struct dvb_frontend *fe)
 {
 	struct mb86a20s_state *state = fe->demodulator_priv;
 	int rc;
+#if 0
+	/*
+	 * FIXME: Properly implement the set frontend properties
+	 */
+	struct dtv_frontend_properties *p = &fe->dtv_property_cache;
+#endif
 
 	dprintk("\n");
 
 	if (fe->ops.i2c_gate_ctrl)
 		fe->ops.i2c_gate_ctrl(fe, 1);
 	dprintk("Calling tuner set parameters\n");
-	fe->ops.tuner_ops.set_params(fe, p);
+	fe->ops.tuner_ops.set_params(fe);
 
 	/*
 	 * Make it more reliable: if, for some reason, the initial
@@ -520,22 +525,212 @@ static int mb86a20s_set_frontend(struct dvb_frontend *fe,
 	return rc;
 }
 
-static int mb86a20s_get_frontend(struct dvb_frontend *fe,
-	struct dvb_frontend_parameters *p)
+static int mb86a20s_get_modulation(struct mb86a20s_state *state,
+				   unsigned layer)
 {
+	int rc;
+	static unsigned char reg[] = {
+		[0] = 0x86,	/* Layer A */
+		[1] = 0x8a,	/* Layer B */
+		[2] = 0x8e,	/* Layer C */
+	};
 
-	/* FIXME: For now, it does nothing */
+	if (layer > ARRAY_SIZE(reg))
+		return -EINVAL;
+	rc = mb86a20s_writereg(state, 0x6d, reg[layer]);
+	if (rc < 0)
+		return rc;
+	rc = mb86a20s_readreg(state, 0x6e);
+	if (rc < 0)
+		return rc;
+	switch ((rc & 0x70) >> 4) {
+	case 0:
+		return DQPSK;
+	case 1:
+		return QPSK;
+	case 2:
+		return QAM_16;
+	case 3:
+		return QAM_64;
+	default:
+		return QAM_AUTO;
+	}
+}
 
-	fe->dtv_property_cache.bandwidth_hz = 6000000;
-	fe->dtv_property_cache.transmission_mode = TRANSMISSION_MODE_AUTO;
-	fe->dtv_property_cache.guard_interval = GUARD_INTERVAL_AUTO;
-	fe->dtv_property_cache.isdbt_partial_reception = 0;
+static int mb86a20s_get_fec(struct mb86a20s_state *state,
+			    unsigned layer)
+{
+	int rc;
+
+	static unsigned char reg[] = {
+		[0] = 0x87,	/* Layer A */
+		[1] = 0x8b,	/* Layer B */
+		[2] = 0x8f,	/* Layer C */
+	};
+
+	if (layer > ARRAY_SIZE(reg))
+		return -EINVAL;
+	rc = mb86a20s_writereg(state, 0x6d, reg[layer]);
+	if (rc < 0)
+		return rc;
+	rc = mb86a20s_readreg(state, 0x6e);
+	if (rc < 0)
+		return rc;
+	switch (rc) {
+	case 0:
+		return FEC_1_2;
+	case 1:
+		return FEC_2_3;
+	case 2:
+		return FEC_3_4;
+	case 3:
+		return FEC_5_6;
+	case 4:
+		return FEC_7_8;
+	default:
+		return FEC_AUTO;
+	}
+}
+
+static int mb86a20s_get_interleaving(struct mb86a20s_state *state,
+				     unsigned layer)
+{
+	int rc;
+
+	static unsigned char reg[] = {
+		[0] = 0x88,	/* Layer A */
+		[1] = 0x8c,	/* Layer B */
+		[2] = 0x90,	/* Layer C */
+	};
+
+	if (layer > ARRAY_SIZE(reg))
+		return -EINVAL;
+	rc = mb86a20s_writereg(state, 0x6d, reg[layer]);
+	if (rc < 0)
+		return rc;
+	rc = mb86a20s_readreg(state, 0x6e);
+	if (rc < 0)
+		return rc;
+	if (rc > 3)
+		return -EINVAL;	/* Not used */
+	return rc;
+}
+
+static int mb86a20s_get_segment_count(struct mb86a20s_state *state,
+				      unsigned layer)
+{
+	int rc, count;
+
+	static unsigned char reg[] = {
+		[0] = 0x89,	/* Layer A */
+		[1] = 0x8d,	/* Layer B */
+		[2] = 0x91,	/* Layer C */
+	};
+
+	if (layer > ARRAY_SIZE(reg))
+		return -EINVAL;
+	rc = mb86a20s_writereg(state, 0x6d, reg[layer]);
+	if (rc < 0)
+		return rc;
+	rc = mb86a20s_readreg(state, 0x6e);
+	if (rc < 0)
+		return rc;
+	count = (rc >> 4) & 0x0f;
+
+	return count;
+}
+
+static int mb86a20s_get_frontend(struct dvb_frontend *fe)
+{
+	struct mb86a20s_state *state = fe->demodulator_priv;
+	struct dtv_frontend_properties *p = &fe->dtv_property_cache;
+	int i, rc;
+
+	/* Fixed parameters */
+	p->delivery_system = SYS_ISDBT;
+	p->bandwidth_hz = 6000000;
+
+	if (fe->ops.i2c_gate_ctrl)
+		fe->ops.i2c_gate_ctrl(fe, 0);
+
+	/* Check for partial reception */
+	rc = mb86a20s_writereg(state, 0x6d, 0x85);
+	if (rc >= 0)
+		rc = mb86a20s_readreg(state, 0x6e);
+	if (rc >= 0)
+		p->isdbt_partial_reception = (rc & 0x10) ? 1 : 0;
+
+	/* Get per-layer data */
+	p->isdbt_layer_enabled = 0;
+	for (i = 0; i < 3; i++) {
+		rc = mb86a20s_get_segment_count(state, i);
+			if (rc >= 0 && rc < 14)
+				p->layer[i].segment_count = rc;
+		if (rc == 0x0f)
+			continue;
+		p->isdbt_layer_enabled |= 1 << i;
+		rc = mb86a20s_get_modulation(state, i);
+			if (rc >= 0)
+				p->layer[i].modulation = rc;
+		rc = mb86a20s_get_fec(state, i);
+			if (rc >= 0)
+				p->layer[i].fec = rc;
+		rc = mb86a20s_get_interleaving(state, i);
+			if (rc >= 0)
+				p->layer[i].interleaving = rc;
+	}
+
+	p->isdbt_sb_mode = 0;
+	rc = mb86a20s_writereg(state, 0x6d, 0x84);
+	if ((rc >= 0) && ((rc & 0x60) == 0x20)) {
+		p->isdbt_sb_mode = 1;
+		/* At least, one segment should exist */
+		if (!p->isdbt_sb_segment_count)
+			p->isdbt_sb_segment_count = 1;
+	} else
+		p->isdbt_sb_segment_count = 0;
+
+	/* Get transmission mode and guard interval */
+	p->transmission_mode = TRANSMISSION_MODE_AUTO;
+	p->guard_interval = GUARD_INTERVAL_AUTO;
+	rc = mb86a20s_readreg(state, 0x07);
+	if (rc >= 0) {
+		if ((rc & 0x60) == 0x20) {
+			switch (rc & 0x0c >> 2) {
+			case 0:
+				p->transmission_mode = TRANSMISSION_MODE_2K;
+				break;
+			case 1:
+				p->transmission_mode = TRANSMISSION_MODE_4K;
+				break;
+			case 2:
+				p->transmission_mode = TRANSMISSION_MODE_8K;
+				break;
+			}
+		}
+		if (!(rc & 0x10)) {
+			switch (rc & 0x3) {
+			case 0:
+				p->guard_interval = GUARD_INTERVAL_1_4;
+				break;
+			case 1:
+				p->guard_interval = GUARD_INTERVAL_1_8;
+				break;
+			case 2:
+				p->guard_interval = GUARD_INTERVAL_1_16;
+				break;
+			}
+		}
+	}
+
+	if (fe->ops.i2c_gate_ctrl)
+		fe->ops.i2c_gate_ctrl(fe, 1);
 
 	return 0;
 }
 
 static int mb86a20s_tune(struct dvb_frontend *fe,
-			struct dvb_frontend_parameters *params,
+			bool re_tune,
 			unsigned int mode_flags,
 			unsigned int *delay,
 			fe_status_t *status)
@@ -544,8 +739,8 @@ static int mb86a20s_tune(struct dvb_frontend *fe,
 
 	dprintk("\n");
 
-	if (params != NULL)
-		rc = mb86a20s_set_frontend(fe, params);
+	if (re_tune)
+		rc = mb86a20s_set_frontend(fe);
 
 	if (!(mode_flags & FE_TUNE_MODE_ONESHOT))
 		mb86a20s_read_status(fe, status);
@@ -608,10 +803,10 @@ error:
 EXPORT_SYMBOL(mb86a20s_attach);
 
 static struct dvb_frontend_ops mb86a20s_ops = {
+	.delsys = { SYS_ISDBT },
 	/* Use dib8000 values per default */
 	.info = {
 		.name = "Fujitsu mb86A20s",
-		.type = FE_OFDM,
 		.caps = FE_CAN_INVERSION_AUTO | FE_CAN_RECOVER |
 			FE_CAN_FEC_1_2  | FE_CAN_FEC_2_3 | FE_CAN_FEC_3_4 |
 			FE_CAN_FEC_5_6  | FE_CAN_FEC_7_8 | FE_CAN_FEC_AUTO |

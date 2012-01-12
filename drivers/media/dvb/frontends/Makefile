@@ -95,4 +95,4 @@ obj-$(CONFIG_DVB_TDA18271C2DD) += tda18271c2dd.o
 obj-$(CONFIG_DVB_IT913X_FE) += it913x-fe.o
 obj-$(CONFIG_DVB_A8293) += a8293.o
 obj-$(CONFIG_DVB_TDA10071) += tda10071.o
-
+obj-$(CONFIG_DVB_HD29L2)        += hd29l2.o

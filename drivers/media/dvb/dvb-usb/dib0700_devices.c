@@ -30,7 +30,7 @@ MODULE_PARM_DESC(force_lna_activation, "force the activation of Low-Noise-Amplif
 		"if applicable for the device (default: 0=automatic/off).");
 
 struct dib0700_adapter_state {
-	int (*set_param_save) (struct dvb_frontend *, struct dvb_frontend_parameters *);
+	int (*set_param_save) (struct dvb_frontend *);
 	const struct firmware *frontend_firmware;
 };
 
@@ -804,13 +804,14 @@ static struct dib0070_config dib7770p_dib0070_config = {
 	 .charge_pump = 2,
 };
 
-static int dib7070_set_param_override(struct dvb_frontend *fe, struct dvb_frontend_parameters *fep)
+static int dib7070_set_param_override(struct dvb_frontend *fe)
 {
+	struct dtv_frontend_properties *p = &fe->dtv_property_cache;
 	struct dvb_usb_adapter *adap = fe->dvb->priv;
 	struct dib0700_adapter_state *state = adap->priv;
 
 	u16 offset;
-	u8 band = BAND_OF_FREQUENCY(fep->frequency/1000);
+	u8 band = BAND_OF_FREQUENCY(p->frequency/1000);
 	switch (band) {
 		case BAND_VHF: offset = 950; break;
 		case BAND_UHF:
@@ -818,17 +819,17 @@ static int dib7070_set_param_override(struct dvb_frontend *fe, struct dvb_fronte
 	}
 	deb_info("WBD for DiB7000P: %d\n", offset + dib0070_wbd_offset(fe));
 	dib7000p_set_wbd_ref(fe, offset + dib0070_wbd_offset(fe));
-	return state->set_param_save(fe, fep);
+	return state->set_param_save(fe);
 }
 
-static int dib7770_set_param_override(struct dvb_frontend *fe,
-		struct dvb_frontend_parameters *fep)
+static int dib7770_set_param_override(struct dvb_frontend *fe)
 {
-	 struct dvb_usb_adapter *adap = fe->dvb->priv;
-	 struct dib0700_adapter_state *state = adap->priv;
+	struct dtv_frontend_properties *p = &fe->dtv_property_cache;
+	struct dvb_usb_adapter *adap = fe->dvb->priv;
+	struct dib0700_adapter_state *state = adap->priv;
 
 	 u16 offset;
-	 u8 band = BAND_OF_FREQUENCY(fep->frequency/1000);
+	 u8 band = BAND_OF_FREQUENCY(p->frequency/1000);
 	 switch (band) {
 	 case BAND_VHF:
 		  dib7000p_set_gpio(fe, 0, 0, 1);
@@ -842,7 +843,7 @@ static int dib7770_set_param_override(struct dvb_frontend *fe,
 	 }
 	 deb_info("WBD for DiB7000P: %d\n", offset + dib0070_wbd_offset(fe));
 	 dib7000p_set_wbd_ref(fe, offset + dib0070_wbd_offset(fe));
-	 return state->set_param_save(fe, fep);
+	 return state->set_param_save(fe);
 }
 
 static int dib7770p_tuner_attach(struct dvb_usb_adapter *adap)
@@ -1205,14 +1206,14 @@ static struct dib0070_config dib807x_dib0070_config[2] = {
 	}
 };
 
-static int dib807x_set_param_override(struct dvb_frontend *fe,
-		struct dvb_frontend_parameters *fep)
+static int dib807x_set_param_override(struct dvb_frontend *fe)
 {
+	struct dtv_frontend_properties *p = &fe->dtv_property_cache;
 	struct dvb_usb_adapter *adap = fe->dvb->priv;
 	struct dib0700_adapter_state *state = adap->priv;
 
 	u16 offset = dib0070_wbd_offset(fe);
-	u8 band = BAND_OF_FREQUENCY(fep->frequency/1000);
+	u8 band = BAND_OF_FREQUENCY(p->frequency/1000);
 	switch (band) {
 	case BAND_VHF:
 		offset += 750;
@@ -1224,7 +1225,7 @@ static int dib807x_set_param_override(struct dvb_frontend *fe,
 	deb_info("WBD for DiB8000: %d\n", offset);
 	dib8000_set_wbd_ref(fe, offset);
 
-	return state->set_param_save(fe, fep);
+	return state->set_param_save(fe);
 }
 
 static int dib807x_tuner_attach(struct dvb_usb_adapter *adap)
@@ -1503,18 +1504,18 @@ static struct dib0090_config dib809x_dib0090_config = {
 	.fref_clock_ratio = 6,
 };
 
-static int dib8096_set_param_override(struct dvb_frontend *fe,
-		struct dvb_frontend_parameters *fep)
+static int dib8096_set_param_override(struct dvb_frontend *fe)
 {
+	struct dtv_frontend_properties *p = &fe->dtv_property_cache;
 	struct dvb_usb_adapter *adap = fe->dvb->priv;
 	struct dib0700_adapter_state *state = adap->priv;
-	u8 band = BAND_OF_FREQUENCY(fep->frequency/1000);
+	u8 band = BAND_OF_FREQUENCY(p->frequency/1000);
 	u16 target;
 	int ret = 0;
 	enum frontend_tune_state tune_state = CT_SHUTDOWN;
 	u16 ltgain, rf_gain_limit;
 
-	ret = state->set_param_save(fe, fep);
+	ret = state->set_param_save(fe);
 	if (ret < 0)
 		return ret;
 
@@ -1819,9 +1820,9 @@ struct dibx090p_adc dib8090p_adc_tab[] = {
 	{0xffffffff, 0, 0, 0}, /* 60 MHz */
 };
 
-static int dib8096p_agc_startup(struct dvb_frontend *fe,
-		struct dvb_frontend_parameters *fep)
+static int dib8096p_agc_startup(struct dvb_frontend *fe)
 {
+	struct dtv_frontend_properties *p = &fe->dtv_property_cache;
 	struct dvb_usb_adapter *adap = fe->dvb->priv;
 	struct dib0700_adapter_state *state = adap->priv;
 	struct dibx000_bandwidth_config pll;
@@ -1829,7 +1830,7 @@ static int dib8096p_agc_startup(struct dvb_frontend *fe,
 	int better_sampling_freq = 0, ret;
 	struct dibx090p_adc *adc_table = &dib8090p_adc_tab[0];
 
-	ret = state->set_param_save(fe, fep);
+	ret = state->set_param_save(fe);
 	if (ret < 0)
 		return ret;
 	memset(&pll, 0, sizeof(struct dibx000_bandwidth_config));
@@ -1841,7 +1842,7 @@ static int dib8096p_agc_startup(struct dvb_frontend *fe,
 	dib8000_set_wbd_ref(fe, target);
 
 
-	while (fep->frequency / 1000 > adc_table->freq) {
+	while (p->frequency / 1000 > adc_table->freq) {
 		better_sampling_freq = 1;
 		adc_table++;
 	}
@@ -2320,7 +2321,7 @@ static int dib7090p_get_best_sampling(struct dvb_frontend *fe , struct dib7090p_
 		return 0;
 }
 
-static int dib7090_agc_startup(struct dvb_frontend *fe, struct dvb_frontend_parameters *fep)
+static int dib7090_agc_startup(struct dvb_frontend *fe)
 {
 	struct dvb_usb_adapter *adap = fe->dvb->priv;
 	struct dib0700_adapter_state *state = adap->priv;
@@ -2329,7 +2330,7 @@ static int dib7090_agc_startup(struct dvb_frontend *fe, struct dvb_frontend_para
 	struct dib7090p_best_adc adc;
 	int ret;
 
-	ret = state->set_param_save(fe, fep);
+	ret = state->set_param_save(fe);
 	if (ret < 0)
 		return ret;
 
