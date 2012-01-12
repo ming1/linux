@@ -424,7 +424,7 @@ static int omapvid_setup_overlay(struct omap_vout_device *vout,
 		"%s enable=%d addr=%x width=%d\n height=%d color_mode=%d\n"
 		"rotation=%d mirror=%d posx=%d posy=%d out_width = %d \n"
 		"out_height=%d rotation_type=%d screen_width=%d\n",
-		__func__, info.enabled, info.paddr, info.width, info.height,
+		__func__, ovl->is_enabled(ovl), info.paddr, info.width, info.height,
 		info.color_mode, info.rotation, info.mirror, info.pos_x,
 		info.pos_y, info.out_width, info.out_height, info.rotation_type,
 		info.screen_width);
@@ -948,12 +948,8 @@ static int omap_vout_release(struct file *file)
 	/* Disable all the overlay managers connected with this interface */
 	for (i = 0; i < ovid->num_overlays; i++) {
 		struct omap_overlay *ovl = ovid->overlays[i];
-		if (ovl->manager && ovl->manager->device) {
-			struct omap_overlay_info info;
-			ovl->get_overlay_info(ovl, &info);
-			info.enabled = 0;
-			ovl->set_overlay_info(ovl, &info);
-		}
+		if (ovl->manager && ovl->manager->device)
+			ovl->disable(ovl);
 	}
 	/* Turn off the pipeline */
 	ret = omapvid_apply_changes(vout);
@@ -1673,7 +1669,6 @@ static int vidioc_streamon(struct file *file, void *fh, enum v4l2_buf_type i)
 		if (ovl->manager && ovl->manager->device) {
 			struct omap_overlay_info info;
 			ovl->get_overlay_info(ovl, &info);
-			info.enabled = 1;
 			info.paddr = addr;
 			if (ovl->set_overlay_info(ovl, &info)) {
 				ret = -EINVAL;
@@ -1691,6 +1686,16 @@ static int vidioc_streamon(struct file *file, void *fh, enum v4l2_buf_type i)
 	ret = omapvid_apply_changes(vout);
 	if (ret)
 		v4l2_err(&vout->vid_dev->v4l2_dev, "failed to change mode\n");
+
+	for (j = 0; j < ovid->num_overlays; j++) {
+		struct omap_overlay *ovl = ovid->overlays[j];
+
+		if (ovl->manager && ovl->manager->device) {
+			ret = ovl->enable(ovl);
+			if (ret)
+				goto streamon_err1;
+		}
+	}
 
 	ret = 0;
 
@@ -1721,16 +1726,8 @@ static int vidioc_streamoff(struct file *file, void *fh, enum v4l2_buf_type i)
 	for (j = 0; j < ovid->num_overlays; j++) {
 		struct omap_overlay *ovl = ovid->overlays[j];
 
-		if (ovl->manager && ovl->manager->device) {
-			struct omap_overlay_info info;
-
-			ovl->get_overlay_info(ovl, &info);
-			info.enabled = 0;
-			ret = ovl->set_overlay_info(ovl, &info);
-			if (ret)
-				v4l2_err(&vout->vid_dev->v4l2_dev,
-				"failed to update overlay info in streamoff\n");
-		}
+		if (ovl->manager && ovl->manager->device)
+			ovl->disable(ovl);
 	}
 
 	/* Turn of the pipeline */
