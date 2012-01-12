@@ -1,6 +1,7 @@
 #ifndef __ASM_ARCH_SYSTEM_H
 #define __ASM_ARCH_SYSTEM_H
 
+#error Fix me up
 static inline void arch_reset(char mode, const char *cmd)
 {
 	soft_restart(0);
