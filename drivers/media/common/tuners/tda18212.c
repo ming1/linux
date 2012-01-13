@@ -130,8 +130,7 @@ static void tda18212_dump_regs(struct tda18212_priv *priv)
 }
 #endif
 
-static int tda18212_set_params(struct dvb_frontend *fe,
-	struct dvb_frontend_parameters *p)
+static int tda18212_set_params(struct dvb_frontend *fe)
 {
 	struct tda18212_priv *priv = fe->tuner_priv;
 	struct dtv_frontend_properties *c = &fe->dtv_property_cache;
@@ -203,7 +202,8 @@ static int tda18212_set_params(struct dvb_frontend *fe,
 			goto error;
 		}
 		break;
-	case SYS_DVBC_ANNEX_AC:
+	case SYS_DVBC_ANNEX_A:
+	case SYS_DVBC_ANNEX_C:
 		if_khz = priv->cfg->if_dvbc;
 		i = DVBC_8;
 		break;

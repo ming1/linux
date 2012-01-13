@@ -1124,8 +1124,7 @@ static int release(struct dvb_frontend *fe)
 }
 
 
-static int set_params(struct dvb_frontend *fe,
-		      struct dvb_frontend_parameters *params)
+static int set_params(struct dvb_frontend *fe)
 {
 	struct tda_state *state = fe->tuner_priv;
 	int status = 0;
@@ -1159,6 +1158,7 @@ static int set_params(struct dvb_frontend *fe,
 			Standard = HF_DVBC_7MHZ;
 		else
 			Standard = HF_DVBC_8MHZ;
+		break;
 	default:
 		return -EINVAL;
 	}
