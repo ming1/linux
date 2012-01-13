@@ -1,0 +1,63 @@
+Importing hexagon based on v3.2-rc2
+Unchanged quilt series hexagon
+Importing i2c based on 4c4d285ad5665bfbd983b95fde8d7a477d24a361
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard 4c4d285ad5665bfbd983b95fde8d7a477d24a361
+HEAD is now at 4c4d285 Merge tag 'rmobile-for-linus' of git://github.com/pmundt/linux-sh
+$ git am ../quilt/i2c/i2c-busses-fix-error-paths.patch
+Applying: i2c: Fix error value returned by several bus drivers
+$ git am ../quilt/i2c/i2c-ali1535-enable-sparc-support.patch
+Applying: i2c-ali1535: enable SPARC support
+$ git am ../quilt/i2c/i2c-convert-to-define_pci_device_table.patch
+Applying: i2c: Convert to DEFINE_PCI_DEVICE_TABLE
+$ git am ../quilt/i2c/i2c-dev-use-memdup_user.patch
+Applying: i2c-dev: Use memdup_user
+$ git am ../quilt/i2c/i2c-convert-bus-drivers-to-use-module_platform_driver.patch
+Applying: i2c/busses: Use module_platform_driver()
+$ git am ../quilt/i2c/i2c-convert-gpio-i2cmux-to-use-module_platform_driver.patch
+Applying: i2c/gpio-i2cmux: Convert to use module_platform_driver()
+$ git am ../quilt/i2c/maintainers-i2c-add-third-maintainer.patch
+Applying: MAINTAINERS: i2c: Add third maintainer
+$ git am ../quilt/i2c/i2c-add-omap-davinci-to-MAINTAINERS.patch
+Applying: MAINTAINERS: List i2c-omap and i2c-davinci drivers
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/i2c
+From ../quilt-tmp
+ + 1c25094...4309f8e master     -> quilt/i2c  (forced update)
+Importing jdelvare-hwmon based on 4c4d285ad5665bfbd983b95fde8d7a477d24a361
+$ cd ../quilt-tmp
+$ git reset --hard 4c4d285ad5665bfbd983b95fde8d7a477d24a361
+HEAD is now at 4c4d285 Merge tag 'rmobile-for-linus' of git://github.com/pmundt/linux-sh
+$ git am ../quilt/jdelvare-hwmon/hwmon-max1111-change-sysfs-interface-to-in_input-in-millivolts.patch
+Applying: hwmon: (max1111) Change sysfs interface to in[0-3]_input in millivolts
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm63-01-fix-checkpatch-errors.patch
+Applying: hwmon: (lm63) Fix checkpatch errors
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm63-02-support-for-external-temperature-offset.patch
+Applying: hwmon: (lm63) Add support for external temperature offset register
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm63-03-add-support-for-lm96163.patch
+Applying: hwmon: (lm63) Add support for LM96163
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm63-04-add-support-for-unsigned-upper-temperature-limits.patch
+Applying: hwmon: (lm63) Add support for unsigned upper temperature limits
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm63-05-add-support-for-writing-the-external-critical-temperature.patch
+Applying: hwmon: (lm63) Add support for writing the external critical temperature
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm63-06-add-support-for-update_interval.patch
+Applying: hwmon: (lm63) Add support for update_interval sysfs attribute
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm90-add-range-check-to-set_update_interval.patch
+Applying: hwmon: (lm90) Add range check to set_update_interval
+$ git am ../quilt/jdelvare-hwmon/hwmon-coretemp-add-missing-section-tags.patch
+Applying: hwmon: (coretemp) Add missing section annotations
+$ git am ../quilt/jdelvare-hwmon/hwmon-it87-add-IT8728F-support.patch
+Applying: hwmon: (it87) Add IT8728F support
+$ git am ../quilt/jdelvare-hwmon/hwmon-adm1031-fix-coding-style-issues.patch
+Applying: hwmon: (adm1031) Fix coding style issues
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/jdelvare-hwmon
+From ../quilt-tmp
+ + 23931a9...69fe4bc master     -> quilt/jdelvare-hwmon  (forced update)
+Importing kernel-doc based on 3.2-rc7
+Unchanged quilt series kernel-doc
+Importing rr based on v3.2-rc6-38-g390f998
+Unchanged quilt series rr
+Importing device-mapper based on v3.2-rc6-182-gecefc36
+Unchanged quilt series device-mapper
