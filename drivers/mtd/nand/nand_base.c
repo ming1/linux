@@ -407,6 +407,14 @@ static int nand_default_block_markbad(struct mtd_info *mtd, loff_t ofs)
 		ret = nand_update_bbt(mtd, ofs);
 	else {
 		struct mtd_oob_ops ops;
+		struct erase_info einfo;
+
+		/* Attempt erase before marking OOB */
+		memset(&einfo, 0, sizeof(einfo));
+		einfo.mtd = mtd;
+		einfo.addr = ofs;
+		einfo.len = 1 << chip->phys_erase_shift;
+		nand_erase_nand(mtd, &einfo, 0);
 
 		nand_get_device(chip, mtd, FL_WRITING);
 
