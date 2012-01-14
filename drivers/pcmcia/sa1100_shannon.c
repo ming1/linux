@@ -47,7 +47,6 @@ shannon_pcmcia_socket_state(struct soc_pcmcia_socket *skt,
 	switch (skt->nr) {
 	case 0:
 		state->ready  = (levels & SHANNON_GPIO_RDY_0) ? 1 : 0;
-		state->wrprot = 0; /* Not available on Shannon. */
 		state->bvd1   = 1; 
 		state->bvd2   = 1; 
 		state->vs_3v  = 1; /* FIXME Can only apply 3.3V on Shannon. */
@@ -56,7 +55,6 @@ shannon_pcmcia_socket_state(struct soc_pcmcia_socket *skt,
 
 	case 1:
 		state->ready  = (levels & SHANNON_GPIO_RDY_1) ? 1 : 0;
-		state->wrprot = 0; /* Not available on Shannon. */
 		state->bvd1   = 1; 
 		state->bvd2   = 1; 
 		state->vs_3v  = 1; /* FIXME Can only apply 3.3V on Shannon. */
