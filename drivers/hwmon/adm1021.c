@@ -182,7 +182,13 @@ static ssize_t set_temp_max(struct device *dev,
 	int index = to_sensor_dev_attr(devattr)->index;
 	struct i2c_client *client = to_i2c_client(dev);
 	struct adm1021_data *data = i2c_get_clientdata(client);
-	long temp = simple_strtol(buf, NULL, 10) / 1000;
+	long temp;
+	int err;
+
+	err = kstrtol(buf, 10, &temp);
+	if (err)
+		return err;
+	temp /= 1000;
 
 	mutex_lock(&data->update_lock);
 	data->temp_max[index] = SENSORS_LIMIT(temp, -128, 127);
@@ -201,7 +207,13 @@ static ssize_t set_temp_min(struct device *dev,
 	int index = to_sensor_dev_attr(devattr)->index;
 	struct i2c_client *client = to_i2c_client(dev);
 	struct adm1021_data *data = i2c_get_clientdata(client);
-	long temp = simple_strtol(buf, NULL, 10) / 1000;
+	long temp;
+	int err;
+
+	err = kstrtol(buf, 10, &temp);
+	if (err)
+		return err;
+	temp /= 1000;
 
 	mutex_lock(&data->update_lock);
 	data->temp_min[index] = SENSORS_LIMIT(temp, -128, 127);
@@ -226,7 +238,14 @@ static ssize_t set_low_power(struct device *dev,
 {
 	struct i2c_client *client = to_i2c_client(dev);
 	struct adm1021_data *data = i2c_get_clientdata(client);
-	int low_power = simple_strtol(buf, NULL, 10) != 0;
+	char low_power;
+	unsigned long val;
+	int err;
+
+	err = kstrtoul(buf, 10, &val);
+	if (err)
+		return err;
+	low_power = val != 0;
 
 	mutex_lock(&data->update_lock);
 	if (low_power != data->low_power) {
@@ -361,7 +380,8 @@ static int adm1021_probe(struct i2c_client *client,
 		adm1021_init_client(client);
 
 	/* Register sysfs hooks */
-	if ((err = sysfs_create_group(&client->dev.kobj, &adm1021_group)))
+	err = sysfs_create_group(&client->dev.kobj, &adm1021_group);
+	if (err)
 		goto error1;
 
 	data->hwmon_dev = hwmon_device_register(&client->dev);
@@ -453,7 +473,7 @@ static struct adm1021_data *adm1021_update_device(struct device *dev)
 
 module_i2c_driver(adm1021_driver);
 
-MODULE_AUTHOR ("Frodo Looijaard <frodol@dds.nl> and "
+MODULE_AUTHOR("Frodo Looijaard <frodol@dds.nl> and "
 		"Philip Edelbrock <phil@netroedge.com>");
 MODULE_DESCRIPTION("adm1021 driver");
 MODULE_LICENSE("GPL");
