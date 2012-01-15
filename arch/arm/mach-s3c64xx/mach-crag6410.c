@@ -19,7 +19,9 @@
 #include <linux/io.h>
 #include <linux/init.h>
 #include <linux/gpio.h>
+#include <linux/leds.h>
 #include <linux/delay.h>
+#include <linux/mmc/host.h>
 #include <linux/regulator/machine.h>
 #include <linux/regulator/fixed.h>
 #include <linux/pwm_backlight.h>
@@ -260,6 +262,7 @@ static struct platform_device crag6410_dm9k_device = {
 
 static struct resource crag6410_mmgpio_resource[] = {
 	[0] = {
+		.name	= "dat",
 		.start	= S3C64XX_PA_XM0CSN4 + 1,
 		.end	= S3C64XX_PA_XM0CSN4 + 1,
 		.flags	= IORESOURCE_MEM,
@@ -272,7 +275,7 @@ static struct platform_device crag6410_mmgpio = {
 	.resource	= crag6410_mmgpio_resource,
 	.num_resources	= ARRAY_SIZE(crag6410_mmgpio_resource),
 	.dev.platform_data = &(struct bgpio_pdata) {
-		.base	= -1,
+		.base	= MMGPIO_GPIO_BASE,
 	},
 };
 
@@ -328,7 +331,6 @@ static struct platform_device wallvdd_device = {
 
 static struct platform_device *crag6410_devices[] __initdata = {
 	&s3c_device_hsmmc0,
-	&s3c_device_hsmmc1,
 	&s3c_device_hsmmc2,
 	&s3c_device_i2c0,
 	&s3c_device_i2c1,
@@ -355,7 +357,7 @@ static struct platform_device *crag6410_devices[] __initdata = {
 
 static struct pca953x_platform_data crag6410_pca_data = {
 	.gpio_base	= PCA935X_GPIO_BASE,
-	.irq_base	= 0,
+	.irq_base	= -1,
 };
 
 /* VDDARM is controlled by DVS1 connected to GPK(0) */
@@ -681,12 +683,7 @@ static void __init crag6410_map_io(void)
 static struct s3c_sdhci_platdata crag6410_hsmmc2_pdata = {
 	.max_width		= 4,
 	.cd_type		= S3C_SDHCI_CD_PERMANENT,
-};
-
-static struct s3c_sdhci_platdata crag6410_hsmmc1_pdata = {
-	.max_width		= 4,
-	.cd_type		= S3C_SDHCI_CD_GPIO,
-	.ext_cd_gpio		= S3C64XX_GPF(11),
+	.host_caps		= MMC_CAP_POWER_OFF_CARD,
 };
 
 static void crag6410_cfg_sdhci0(struct platform_device *dev, int width)
@@ -702,6 +699,55 @@ static struct s3c_sdhci_platdata crag6410_hsmmc0_pdata = {
 	.max_width		= 4,
 	.cd_type		= S3C_SDHCI_CD_INTERNAL,
 	.cfg_gpio		= crag6410_cfg_sdhci0,
+	.host_caps		= MMC_CAP_POWER_OFF_CARD,
+};
+
+static const struct gpio_led gpio_leds[] = {
+	{
+		.name = "d13:green:",
+		.gpio = MMGPIO_GPIO_BASE + 0,
+		.default_state = LEDS_GPIO_DEFSTATE_ON,
+	},
+	{
+		.name = "d14:green:",
+		.gpio = MMGPIO_GPIO_BASE + 1,
+		.default_state = LEDS_GPIO_DEFSTATE_ON,
+	},
+	{
+		.name = "d15:green:",
+		.gpio = MMGPIO_GPIO_BASE + 2,
+		.default_state = LEDS_GPIO_DEFSTATE_ON,
+	},
+	{
+		.name = "d16:green:",
+		.gpio = MMGPIO_GPIO_BASE + 3,
+		.default_state = LEDS_GPIO_DEFSTATE_ON,
+	},
+	{
+		.name = "d17:green:",
+		.gpio = MMGPIO_GPIO_BASE + 4,
+		.default_state = LEDS_GPIO_DEFSTATE_ON,
+	},
+	{
+		.name = "d18:green:",
+		.gpio = MMGPIO_GPIO_BASE + 5,
+		.default_state = LEDS_GPIO_DEFSTATE_ON,
+	},
+	{
+		.name = "d19:green:",
+		.gpio = MMGPIO_GPIO_BASE + 6,
+		.default_state = LEDS_GPIO_DEFSTATE_ON,
+	},
+	{
+		.name = "d20:green:",
+		.gpio = MMGPIO_GPIO_BASE + 7,
+		.default_state = LEDS_GPIO_DEFSTATE_ON,
+	},
+};
+
+static const struct gpio_led_platform_data gpio_leds_pdata = {
+	.leds = gpio_leds,
+	.num_leds = ARRAY_SIZE(gpio_leds),
 };
 
 static void __init crag6410_machine_init(void)
@@ -723,7 +769,6 @@ static void __init crag6410_machine_init(void)
 	gpio_direction_output(S3C64XX_GPF(10), 1);
 
 	s3c_sdhci0_set_platdata(&crag6410_hsmmc0_pdata);
-	s3c_sdhci1_set_platdata(&crag6410_hsmmc1_pdata);
 	s3c_sdhci2_set_platdata(&crag6410_hsmmc2_pdata);
 
 	s3c_i2c0_set_platdata(&i2c0_pdata);
@@ -734,8 +779,11 @@ static void __init crag6410_machine_init(void)
 	i2c_register_board_info(1, i2c_devs1, ARRAY_SIZE(i2c_devs1));
 
 	samsung_keypad_set_platdata(&crag6410_keypad_data);
+	s3c64xx_spi0_set_platdata(NULL, 0, 1);
 
 	platform_add_devices(crag6410_devices, ARRAY_SIZE(crag6410_devices));
+
+	gpio_led_register_device(-1, &gpio_leds_pdata);
 
 	regulator_has_full_constraints();
 
