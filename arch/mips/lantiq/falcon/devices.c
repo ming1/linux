@@ -9,6 +9,7 @@
 
 #include <linux/platform_device.h>
 #include <linux/mtd/nand.h>
+#include <linux/gpio.h>
 
 #include <lantiq_soc.h>
 
@@ -84,4 +85,44 @@ void __init
 falcon_register_nand(void)
 {
 	platform_device_register(&ltq_flash_nand);
+}
+
+/* gpio */
+#define DECLARE_GPIO_RES(port) \
+static struct resource falcon_gpio ## port ## _res[] = { \
+	MEM_RES("gpio"#port, LTQ_GPIO ## port ## _BASE_ADDR, \
+		LTQ_GPIO ## port ## _SIZE), \
+	MEM_RES("padctrl"#port, LTQ_PADCTRL ## port ## _BASE_ADDR, \
+		LTQ_PADCTRL ## port ## _SIZE), \
+	IRQ_RES("gpio_mux"#port, FALCON_IRQ_GPIO_P ## port) \
+}
+DECLARE_GPIO_RES(0);
+DECLARE_GPIO_RES(1);
+DECLARE_GPIO_RES(2);
+DECLARE_GPIO_RES(3);
+DECLARE_GPIO_RES(4);
+
+void __init
+falcon_register_gpio(void)
+{
+	platform_device_register_simple("falcon_gpio", 0,
+		falcon_gpio0_res, ARRAY_SIZE(falcon_gpio0_res));
+	platform_device_register_simple("falcon_gpio", 1,
+		falcon_gpio1_res, ARRAY_SIZE(falcon_gpio1_res));
+	platform_device_register_simple("falcon_gpio", 2,
+		falcon_gpio2_res, ARRAY_SIZE(falcon_gpio2_res));
+	ltq_sysctl_activate(SYSCTL_SYS1, ACTS_PADCTRL1 | ACTS_P1);
+	ltq_sysctl_activate(SYSCTL_SYSETH, ACTS_PADCTRL0 |
+		ACTS_PADCTRL2 | ACTS_P0 | ACTS_P2);
+}
+
+void __init
+falcon_register_gpio_extra(void)
+{
+	platform_device_register_simple("falcon_gpio", 3,
+		falcon_gpio3_res, ARRAY_SIZE(falcon_gpio3_res));
+	platform_device_register_simple("falcon_gpio", 4,
+		falcon_gpio4_res, ARRAY_SIZE(falcon_gpio4_res));
+	ltq_sysctl_activate(SYSCTL_SYS1,
+		ACTS_PADCTRL3 | ACTS_PADCTRL4 | ACTS_P3 | ACTS_P4);
 }
