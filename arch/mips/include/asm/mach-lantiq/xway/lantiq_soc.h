@@ -61,6 +61,8 @@
 #define LTQ_CGU_BASE_ADDR	0x1F103000
 #define LTQ_CGU_SIZE		0x1000
 
+#define CGU_EPHY		0x10
+
 /* ICU - interrupt control unit */
 #define LTQ_ICU_BASE_ADDR	0x1F880200
 #define LTQ_ICU_SIZE		0x100
@@ -97,6 +99,8 @@
 #define LTQ_WDT_BASE_ADDR	0x1F8803F0
 #define LTQ_WDT_SIZE		0x10
 
+#define LTQ_RST_CAUSE_WDTRST	0x20
+
 /* STP - serial to parallel conversion unit */
 #define LTQ_STP_BASE_ADDR	0x1E100BB0
 #define LTQ_STP_SIZE		0x40
@@ -121,11 +125,43 @@
 #define LTQ_MPS_BASE_ADDR	(KSEG1 + 0x1F107000)
 #define LTQ_MPS_CHIPID		((u32 *)(LTQ_MPS_BASE_ADDR + 0x0344))
 
+extern __iomem void *ltq_ebu_membase;
+extern __iomem void *ltq_cgu_membase;
+
+/* ebu access */
+static inline void ltq_ebu_w32(u32 v, u32 r)
+{
+	ltq_w32(v, ltq_ebu_membase + r);
+}
+static inline u32 ltq_ebu_r32(u32 r)
+{
+	return ltq_r32(ltq_ebu_membase + r);
+}
+static inline void ltq_ebu_w32_mask(u32 c, u32 s, u32 r)
+{
+	ltq_ebu_w32((ltq_ebu_r32(r) & ~(c)) | (s), r);
+}
+
+/* cgu access */
+static inline void ltq_cgu_w32(u32 v, u32 r)
+{
+	ltq_w32(v, ltq_cgu_membase + r);
+}
+static inline u32 ltq_cgu_r32(u32 r)
+{
+	return ltq_r32(ltq_cgu_membase + r);
+}
+static inline void ltq_cgu_w32_mask(u32 c, u32 s, u32 r)
+{
+	ltq_cgu_w32((ltq_cgu_r32(r) & ~(c)) | (s), r);
+}
+
 /* request a non-gpio and set the PIO config */
 extern int  ltq_gpio_request(unsigned int pin, unsigned int alt0,
 	unsigned int alt1, unsigned int dir, const char *name);
 extern void ltq_pmu_enable(unsigned int module);
 extern void ltq_pmu_disable(unsigned int module);
+extern void ltq_cgu_enable(unsigned int clk);
 
 static inline int ltq_is_ar9(void)
 {
