@@ -14,5 +14,7 @@
 #include "../devices.h"
 
 extern void falcon_register_nand(void);
+extern void falcon_register_gpio(void);
+extern void falcon_register_gpio_extra(void);
 
 #endif
