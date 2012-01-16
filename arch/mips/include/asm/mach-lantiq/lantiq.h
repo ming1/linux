@@ -27,6 +27,7 @@ extern unsigned int ltq_get_soc_type(void);
 /* clock speeds */
 #define CLOCK_60M	60000000
 #define CLOCK_83M	83333333
+#define CLOCK_100M	100000000
 #define CLOCK_111M	111111111
 #define CLOCK_133M	133333333
 #define CLOCK_167M	166666667
