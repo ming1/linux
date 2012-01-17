@@ -74,18 +74,23 @@ void __init ltq_register_ase_asc(void)
 }
 
 /* ethernet */
-static struct resource ltq_etop_resources =
-	MEM_RES("etop", LTQ_ETOP_BASE_ADDR, LTQ_ETOP_SIZE);
+static struct resource ltq_etop_resources[] = {
+	MEM_RES("etop", LTQ_ETOP_BASE_ADDR, LTQ_ETOP_SIZE),
+	MEM_RES("gbit", LTQ_GBIT_BASE_ADDR, LTQ_GBIT_SIZE),
+};
 
 static struct platform_device ltq_etop = {
 	.name		= "ltq_etop",
-	.resource	= &ltq_etop_resources,
+	.resource	= ltq_etop_resources,
 	.num_resources	= 1,
 };
 
 void __init
 ltq_register_etop(struct ltq_eth_data *eth)
 {
+	/* only register the gphy on socs that have one */
+	if (ltq_is_ar9() | ltq_is_vr9())
+		ltq_etop.num_resources = 2;
 	if (eth) {
 		ltq_etop.dev.platform_data = eth;
 		platform_device_register(&ltq_etop);
