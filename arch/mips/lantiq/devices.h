@@ -14,6 +14,10 @@
 
 #define IRQ_RES(resname, irq) \
 	{.name = #resname, .start = (irq), .flags = IORESOURCE_IRQ}
+#define MEM_RES(resname, adr_start, adr_size) \
+	{ .name = resname, .flags = IORESOURCE_MEM, \
+	  .start = CPHYSADDR(adr_start), \
+	  .end = CPHYSADDR(adr_start + adr_size - 1) }
 
 extern void ltq_register_nor(struct physmap_flash_data *data);
 extern void ltq_register_wdt(void);
