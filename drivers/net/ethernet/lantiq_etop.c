@@ -614,7 +614,8 @@ ltq_etop_open(struct net_device *dev)
 		ltq_dma_open(&ch->dma);
 		napi_enable(&ch->napi);
 	}
-	phy_start(priv->phydev);
+	if (priv->phydev)
+		phy_start(priv->phydev);
 	netif_tx_start_all_queues(dev);
 	return 0;
 }
@@ -626,7 +627,8 @@ ltq_etop_stop(struct net_device *dev)
 	int i;
 
 	netif_tx_stop_all_queues(dev);
-	phy_stop(priv->phydev);
+	if (priv->phydev)
+		phy_stop(priv->phydev);
 	for (i = 0; i < MAX_DMA_CHAN; i++) {
 		struct ltq_etop_chan *ch = &priv->ch[i];
 
@@ -779,9 +781,10 @@ ltq_etop_init(struct net_device *dev)
 		dev->addr_assign_type |= NET_ADDR_RANDOM;
 
 	ltq_etop_set_multicast_list(dev);
-	err = ltq_etop_mdio_init(dev);
-	if (err)
-		goto err_netdev;
+	if (!ltq_etop_mdio_init(dev))
+		dev->ethtool_ops = &ltq_etop_ethtool_ops;
+	else
+		pr_warn("etop: mdio probe failed\n");
 	return 0;
 
 err_netdev:
@@ -881,7 +884,6 @@ ltq_etop_probe(struct platform_device *pdev)
 	}
 	strcpy(dev->name, "eth%d");
 	dev->netdev_ops = &ltq_eth_netdev_ops;
-	dev->ethtool_ops = &ltq_etop_ethtool_ops;
 	priv = netdev_priv(dev);
 	priv->res = res;
 	priv->pdev = pdev;
