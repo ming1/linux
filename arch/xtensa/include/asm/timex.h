@@ -65,8 +65,8 @@ extern cycles_t cacheflush_time;
 
 #define WSR_CCOUNT(r)	  asm volatile ("wsr %0,"__stringify(CCOUNT) :: "a" (r))
 #define RSR_CCOUNT(r)	  asm volatile ("rsr %0,"__stringify(CCOUNT) : "=a" (r))
-#define WSR_CCOMPARE(x,r) asm volatile ("wsr %0,"__stringify(CCOMPARE)"+"__stringify(x) :: "a"(r))
-#define RSR_CCOMPARE(x,r) asm volatile ("rsr %0,"__stringify(CCOMPARE)"+"__stringify(x) : "=a"(r))
+#define WSR_CCOMPARE(x,r) asm volatile ("wsr %0,"__stringify(XTREG_CCOMPARE(x)) :: "a"(r))
+#define RSR_CCOMPARE(x,r) asm volatile ("rsr %0,"__stringify(XTREG_CCOMPARE(x)) : "=a"(r))
 
 static inline unsigned long get_ccount (void)
 {
