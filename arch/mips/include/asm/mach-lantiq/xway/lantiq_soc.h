@@ -82,6 +82,7 @@
 #define LTQ_PMU_SIZE		0x1000
 
 #define PMU_DMA			0x0020
+#define PMU_EPHY		0x0080
 #define PMU_USB			0x8041
 #define PMU_LED			0x0800
 #define PMU_GPT			0x1000
@@ -92,6 +93,10 @@
 /* ETOP - ethernet */
 #define LTQ_ETOP_BASE_ADDR	0x1E180000
 #define LTQ_ETOP_SIZE		0x40000
+
+/* GBIT - gigabit switch */
+#define LTQ_GBIT_BASE_ADDR	0x1E108000
+#define LTQ_GBIT_SIZE		0x200
 
 /* DMA */
 #define LTQ_DMA_BASE_ADDR	0x1E104100
@@ -168,6 +173,11 @@ extern int  ltq_gpio_request(unsigned int pin, unsigned int mux,
 extern void ltq_pmu_enable(unsigned int module);
 extern void ltq_pmu_disable(unsigned int module);
 extern void ltq_cgu_enable(unsigned int clk);
+
+static inline int ltq_is_ase(void)
+{
+	return (ltq_get_soc_type() == SOC_TYPE_AMAZON_SE);
+}
 
 static inline int ltq_is_ar9(void)
 {
