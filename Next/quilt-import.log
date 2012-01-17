@@ -1,0 +1,55 @@
+Importing hexagon based on v3.2-rc2
+Unchanged quilt series hexagon
+Importing i2c based on 53999bf34d55981328f8ba9def558d3e104d6e36
+	quilt series is empty
+$ git update-ref refs/heads/quilt/i2c 53999bf34d55981328f8ba9def558d3e104d6e36
+Importing jdelvare-hwmon based on 53999bf34d55981328f8ba9def558d3e104d6e36
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard 53999bf34d55981328f8ba9def558d3e104d6e36
+HEAD is now at 53999bf error: implicit declaration of function 'module_flags_taint'
+$ git am ../quilt/jdelvare-hwmon/hwmon-max1111-change-sysfs-interface-to-in_input-in-millivolts.patch
+Applying: hwmon: (max1111) Change sysfs interface to in[0-3]_input in millivolts
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm63-01-fix-checkpatch-errors.patch
+Applying: hwmon: (lm63) Fix checkpatch errors
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm63-02-support-for-external-temperature-offset.patch
+Applying: hwmon: (lm63) Add support for external temperature offset register
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm63-03-add-support-for-lm96163.patch
+Applying: hwmon: (lm63) Add support for LM96163
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm63-04-add-support-for-unsigned-upper-temperature-limits.patch
+Applying: hwmon: (lm63) Add support for unsigned upper temperature limits
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm63-05-add-support-for-writing-the-external-critical-temperature.patch
+Applying: hwmon: (lm63) Add support for writing the external critical temperature
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm63-06-add-support-for-update_interval.patch
+Applying: hwmon: (lm63) Add support for update_interval sysfs attribute
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm63-07-add-sensor-type-attribute-for-external-sensor-on-lm96163.patch
+Applying: hwmon: (lm63) Add sensor type attribute for external sensor on LM96163
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm63-08-LM64-always-has-tachometer.patch
+Applying: hwmon: (lm63) LM64 has a dedicated pin for tachometer
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm63-09-fix-comment-about-address.patch
+Applying: hwmon: (lm63) Fix incorrect comment about I2C address
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm63-10-expose-pwm-lookup-table.patch
+Applying: hwmon: (lm63) Expose automatic fan speed control lookup table
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm63-11-LM96163-lookup-table-has-12-entries.patch
+Applying: hwmon: (lm63) Support extended lookup table of LM96163
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm90-add-range-check-to-set_update_interval.patch
+Applying: hwmon: (lm90) Add range check to set_update_interval
+$ git am ../quilt/jdelvare-hwmon/hwmon-coretemp-add-missing-section-tags.patch
+Applying: hwmon: (coretemp) Add missing section annotations
+$ git am ../quilt/jdelvare-hwmon/hwmon-it87-add-IT8728F-support.patch
+Applying: hwmon: (it87) Add IT8728F support
+$ git am ../quilt/jdelvare-hwmon/hwmon-adm1031-fix-coding-style-issues.patch
+Applying: hwmon: (adm1031) Fix coding style issues
+$ git am ../quilt/jdelvare-hwmon/hwmon-sysfs-interface-update-tempx_type-attribute.patch
+Applying: hwmon: (sysfs-interface) Update tempX_type attribute to be more generic
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/jdelvare-hwmon
+From ../quilt-tmp
+ + bdba5d4...90311a5 master     -> quilt/jdelvare-hwmon  (forced update)
+Importing kernel-doc based on 3.2-rc7
+Unchanged quilt series kernel-doc
+Importing rr based on v3.2-8694-g53999bf
+	quilt series is empty
+$ git update-ref refs/heads/quilt/rr 53999bf34d55981328f8ba9def558d3e104d6e36
+Importing device-mapper based on v3.2-rc6-182-gecefc36
+Unchanged quilt series device-mapper
