@@ -36,6 +36,23 @@ struct key_type key_type_user = {
 EXPORT_SYMBOL_GPL(key_type_user);
 
 /*
+ * This key type is essentially the same as key_type_user, but it does
+ * not define a .read op. This is suitable for storing information in
+ * the keyring that you do not want to be readable from userspace. For
+ * instance, passwords or secret encryption keys.
+ */
+struct key_type key_type_secret = {
+	.name		= "secret",
+	.instantiate	= user_instantiate,
+	.update		= user_update,
+	.match		= user_match,
+	.revoke		= user_revoke,
+	.destroy	= user_destroy,
+	.describe	= user_describe,
+};
+EXPORT_SYMBOL_GPL(key_type_secret);
+
+/*
  * instantiate a user defined key
  */
 int user_instantiate(struct key *key, const void *data, size_t datalen)
