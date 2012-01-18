@@ -110,9 +110,9 @@
 
 ENTRY(user_exception)
 
-	/* Save a2, a3, and depc, restore excsave_1 and set SP. */
+	/* Save a2, a3, and depc, restore excsave1 and set SP. */
 
-	xsr	a3, EXCSAVE_1
+	xsr	a3, EXCSAVE1
 	rsr	a0, DEPC
 	s32i	a1, a2, PT_AREG1
 	s32i	a0, a2, PT_AREG2
@@ -234,7 +234,7 @@ _user_exception:
  *   a2:	new stack pointer, original in DEPC
  *   a3:	dispatch table
  *   depc:	a2, original value saved on stack (PT_DEPC)
- *   excsave_1:	a3
+ *   excsave1:	a3
  *
  *   PT_DEPC >= VALID_DOUBLE_EXCEPTION_ADDRESS: double exception, DEPC
  *	     <  VALID_DOUBLE_EXCEPTION_ADDRESS: regular exception
@@ -252,7 +252,7 @@ ENTRY(kernel_exception)
 
 	/* Save a0, a2, a3, DEPC and set SP. */
 
-	xsr	a3, EXCSAVE_1		# restore a3, excsave_1
+	xsr	a3, EXCSAVE1		# restore a3, excsave1
 	rsr	a0, DEPC		# get a2
 	s32i	a1, a2, PT_AREG1
 	s32i	a0, a2, PT_AREG2
@@ -324,7 +324,7 @@ common_exception:
 	/* Save some registers, disable loops and clear the syscall flag. */
 
 	rsr	a2, DEBUGCAUSE
-	rsr	a3, EPC_1
+	rsr	a3, EPC1
 	s32i	a2, a1, PT_DEBUGCAUSE
 	s32i	a3, a1, PT_PC
 
@@ -340,7 +340,7 @@ common_exception:
 
 	rsr	a0, EXCCAUSE
 	movi	a3, 0
-	rsr	a2, EXCSAVE_1
+	rsr	a2, EXCSAVE1
 	s32i	a0, a1, PT_EXCCAUSE
 	s32i	a3, a2, EXC_TABLE_FIXUP
 
@@ -604,7 +604,7 @@ common_exception_exit:
 
 1:	l32i	a2, a1, PT_PC
 	l32i	a3, a1, PT_SAR
-	wsr	a2, EPC_1
+	wsr	a2, EPC1
 	wsr	a3, SAR
 
 	/* Restore LBEG, LEND, LCOUNT */
@@ -651,14 +651,14 @@ common_exception_exit:
 
 ENTRY(debug_exception)
 
-	rsr	a0, EPS + XCHAL_DEBUGLEVEL
+	rsr	a0, XTREG_EPS(XCHAL_DEBUGLEVEL)
 	bbsi.l	a0, PS_EXCM_BIT, 1f	# exception mode
 
-	/* Set EPC_1 and EXCCAUSE */
+	/* Set EPC1 and EXCCAUSE */
 
 	wsr	a2, DEPC		# save a2 temporarily
-	rsr	a2, EPC + XCHAL_DEBUGLEVEL
-	wsr	a2, EPC_1
+	rsr	a2, XTREG_EPC(XCHAL_DEBUGLEVEL)
+	wsr	a2, EPC1
 
 	movi	a2, EXCCAUSE_MAPPED_DEBUG
 	wsr	a2, EXCCAUSE
@@ -669,7 +669,7 @@ ENTRY(debug_exception)
 	or	a2, a0, a2
 	movi	a0, debug_exception	# restore a3, debug jump vector
 	wsr	a2, PS
-	xsr	a0, EXCSAVE + XCHAL_DEBUGLEVEL
+	xsr	a0, XTREG_EXCSAVE(XCHAL_DEBUGLEVEL)
 
 	/* Switch to kernel/user stack, restore jump vector, and save a0 */
 
@@ -686,7 +686,7 @@ ENTRY(debug_exception)
 	mov	a1, a2
 	j	_kernel_exception
 
-2:	rsr	a2, EXCSAVE_1
+2:	rsr	a2, EXCSAVE1
 	l32i	a2, a2, EXC_TABLE_KSTK	# load kernel stack pointer
 	s32i	a0, a2, PT_AREG0
 	movi	a0, 0
@@ -772,7 +772,7 @@ ENTRY(unrecoverable_exception)
  *   a2:	new stack pointer, original in DEPC
  *   a3:	dispatch table
  *   depc:	a2, original value saved on stack (PT_DEPC)
- *   excsave_1:	a3
+ *   excsave1:	a3
  *
  *   PT_DEPC >= VALID_DOUBLE_EXCEPTION_ADDRESS: double exception, DEPC
  *	     <  VALID_DOUBLE_EXCEPTION_ADDRESS: regular exception
@@ -802,10 +802,10 @@ ENTRY(fast_alloca)
 	movi	a0, 0
 	s32i	a0, a3, EXC_TABLE_FIXUP
 
-	/* Restore a3, excsave_1 */
+	/* Restore a3, excsave1 */
 
-	xsr	a3, EXCSAVE_1		# make sure excsave_1 is valid for dbl.
-	rsr	a4, EPC_1		# get exception address
+	xsr	a3, EXCSAVE1		# make sure excsave1 is valid for dbl.
+	rsr	a4, EPC1		# get exception address
 	s32i	a3, a2, PT_AREG3	# save a3 to stack
 
 #ifdef ALLOCA_EXCEPTION_IN_IRAM
@@ -820,7 +820,7 @@ ENTRY(fast_alloca)
 	jx	a3
 
 .Lunhandled_double:
-	wsr	a0, EXCSAVE_1
+	wsr	a0, EXCSAVE1
 	movi	a0, unrecoverable_exception
 	callx0	a0
 
@@ -852,7 +852,7 @@ ENTRY(fast_alloca)
 #endif
 	addi	a4, a4, 3		# step over movsp
 	_EXTUI_MOVSP_DST(a0)		# extract destination register
-	wsr	a4, EPC_1		# save new epc_1
+	wsr	a4, EPC1		# save new epc1
 
 	_bnei	a0, 1, 1f		# no 'movsp a1, ax': jump
 
@@ -946,16 +946,16 @@ ENTRY(fast_alloca)
  *   a2:	new stack pointer, original in DEPC
  *   a3:	dispatch table
  *   depc:	a2, original value saved on stack (PT_DEPC)
- *   excsave_1:	a3
+ *   excsave1:	a3
  */
 
 ENTRY(fast_syscall_kernel)
 
 	/* Skip syscall. */
 
-	rsr	a0, EPC_1
+	rsr	a0, EPC1
 	addi	a0, a0, 3
-	wsr	a0, EPC_1
+	wsr	a0, EPC1
 
 	l32i	a0, a2, PT_DEPC
 	bgeui	a0, VALID_DOUBLE_EXCEPTION_ADDRESS, fast_syscall_unrecoverable
@@ -970,9 +970,9 @@ ENTRY(fast_syscall_user)
 
 	/* Skip syscall. */
 
-	rsr	a0, EPC_1
+	rsr	a0, EPC1
 	addi	a0, a0, 3
-	wsr	a0, EPC_1
+	wsr	a0, EPC1
 
 	l32i	a0, a2, PT_DEPC
 	bgeui	a0, VALID_DOUBLE_EXCEPTION_ADDRESS, fast_syscall_unrecoverable
@@ -989,9 +989,9 @@ ENTRY(fast_syscall_unrecoverable)
 
         l32i    a0, a2, PT_AREG0        # restore a0
         xsr     a2, DEPC                # restore a2, depc
-        rsr     a3, EXCSAVE_1
+        rsr     a3, EXCSAVE1
 
-        wsr     a0, EXCSAVE_1
+        wsr     a0, EXCSAVE1
         movi    a0, unrecoverable_exception
         callx0  a0
 
@@ -1011,10 +1011,10 @@ ENTRY(fast_syscall_unrecoverable)
  *   a0:	a2 (syscall-nr), original value saved on stack (PT_AREG0)
  *   a1:	a1
  *   a2:	new stack pointer, original in a0 and DEPC
- *   a3:	dispatch table, original in excsave_1
+ *   a3:	dispatch table, original in excsave1
  *   a4..a15:	unchanged
  *   depc:	a2, original value saved on stack (PT_DEPC)
- *   excsave_1:	a3
+ *   excsave1:	a3
  *
  *   PT_DEPC >= VALID_DOUBLE_EXCEPTION_ADDRESS: double exception, DEPC
  *	     <  VALID_DOUBLE_EXCEPTION_ADDRESS: regular exception
@@ -1047,7 +1047,7 @@ ENTRY(fast_syscall_unrecoverable)
 
 ENTRY(fast_syscall_xtensa)
 
-	xsr	a3, EXCSAVE_1		# restore a3, excsave1
+	xsr	a3, EXCSAVE1		# restore a3, excsave1
 
 	s32i	a7, a2, PT_AREG7	# we need an additional register
 	movi	a7, 4			# sizeof(unsigned int)
@@ -1113,7 +1113,7 @@ CATCH
  *   a2:	new stack pointer, original in DEPC
  *   a3:	dispatch table
  *   depc:	a2, original value saved on stack (PT_DEPC)
- *   excsave_1:	a3
+ *   excsave1:	a3
  *
  * Note: We assume the stack pointer is EXC_TABLE_KSTK in the fixup handler.
  */
@@ -1130,7 +1130,7 @@ ENTRY(fast_syscall_spill_registers)
 	/* Save a3 and SAR on stack. */
 
 	rsr	a0, SAR
-	xsr	a3, EXCSAVE_1		# restore a3 and excsave_1
+	xsr	a3, EXCSAVE1		# restore a3 and excsave1
 	s32i	a3, a2, PT_AREG3
 	s32i	a4, a2, PT_AREG4
 	s32i	a0, a2, PT_AREG5	# store SAR to PT_AREG5
@@ -1182,7 +1182,7 @@ fast_syscall_spill_registers_fixup:
 	 * in WS, so that the exception handlers save them to the task stack.
 	 */
 
-	rsr	a3, EXCSAVE_1	# get spill-mask
+	rsr	a3, EXCSAVE1	# get spill-mask
 	slli	a2, a3, 1	# shift left by one
 
 	slli	a3, a2, 32-WSBITS
@@ -1196,9 +1196,9 @@ fast_syscall_spill_registers_fixup:
 	/* Return to the original (user task) WINDOWBASE.
 	 * We leave the following frame behind:
 	 * a0, a1, a2	same
-	 * a3:		trashed (saved in excsave_1)
+	 * a3:		trashed (saved in excsave1)
 	 * depc:	depc (we have to return to that address)
-	 * excsave_1:	a3
+	 * excsave1:	a3
 	 */
 
 	wsr	a3, WINDOWBASE
@@ -1208,7 +1208,7 @@ fast_syscall_spill_registers_fixup:
 	 *  a0: return address
 	 *  a1: used, stack pointer
 	 *  a2: kernel stack pointer
-	 *  a3: available, saved in EXCSAVE_1
+	 *  a3: available, saved in EXCSAVE1
 	 *  depc: exception address
 	 *  excsave: a3
 	 * Note: This frame might be the same as above.
@@ -1240,7 +1240,7 @@ fast_syscall_spill_registers_fixup_return:
 
 	/* Restore fixup handler. */
 
-	xsr	a3, EXCSAVE_1
+	xsr	a3, EXCSAVE1
 	movi	a2, fast_syscall_spill_registers_fixup
 	s32i	a2, a3, EXC_TABLE_FIXUP
 	rsr	a2, WINDOWBASE
@@ -1257,7 +1257,7 @@ fast_syscall_spill_registers_fixup_return:
 	/* Restore a3 and return. */
 
 	movi	a3, exc_table
-	xsr	a3, EXCSAVE_1
+	xsr	a3, EXCSAVE1
 
 	rfde
 
@@ -1447,7 +1447,7 @@ ENTRY(_spill_registers)
 
 	movi	a3, exc_table
 	l32i	a1, a3, EXC_TABLE_KSTK
-	wsr	a3, EXCSAVE_1
+	wsr	a3, EXCSAVE1
 
 	movi	a4, (1 << PS_WOE_BIT) | 1
 	wsr	a4, PS
@@ -1459,7 +1459,7 @@ ENTRY(_spill_registers)
 
 1:	/* Kernel space: PANIC! */
 
-	wsr	a0, EXCSAVE_1
+	wsr	a0, EXCSAVE1
 	movi	a0, unrecoverable_exception
 	callx0	a0		# should not return
 1:	j	1b
@@ -1489,7 +1489,7 @@ ENTRY(fast_second_level_miss_double_kernel)
  *   a2:	new stack pointer, original in DEPC
  *   a3:	dispatch table
  *   depc:	a2, original value saved on stack (PT_DEPC)
- *   excsave_1:	a3
+ *   excsave1:	a3
  *
  *   PT_DEPC >= VALID_DOUBLE_EXCEPTION_ADDRESS: double exception, DEPC
  *	     <  VALID_DOUBLE_EXCEPTION_ADDRESS: regular exception
@@ -1583,7 +1583,7 @@ ENTRY(fast_second_level_miss)
 	l32i	a0, a2, PT_AREG0
 	l32i	a1, a2, PT_AREG1
 	l32i	a2, a2, PT_DEPC
-	xsr	a3, EXCSAVE_1
+	xsr	a3, EXCSAVE1
 
 	bgeui	a2, VALID_DOUBLE_EXCEPTION_ADDRESS, 1f
 
@@ -1618,7 +1618,7 @@ ENTRY(fast_second_level_miss)
 	/* Make sure the exception originated in the special functions */
 
 	movi	a0, __tlbtemp_mapping_start
-	rsr	a3, EPC_1
+	rsr	a3, EPC1
 	bltu	a3, a0, 2f
 	movi	a0, __tlbtemp_mapping_end
 	bgeu	a3, a0, 2f
@@ -1635,7 +1635,7 @@ ENTRY(fast_second_level_miss)
 	/* Check if we have to restore an ITLB mapping. */
 
 	movi	a1, __tlbtemp_mapping_itlb
-	rsr	a3, EPC_1
+	rsr	a3, EPC1
 	sub	a3, a3, a1
 
 	/* Calculate VPN */
@@ -1672,7 +1672,7 @@ ENTRY(fast_second_level_miss)
 
 	movi	a3, exc_table
 	rsr	a1, DEPC
-	xsr	a3, EXCSAVE_1
+	xsr	a3, EXCSAVE1
 	s32i	a1, a2, PT_AREG2
 	s32i	a3, a2, PT_AREG3
 	mov	a1, a2
@@ -1695,7 +1695,7 @@ ENTRY(fast_second_level_miss)
  *   a2:	new stack pointer, original in DEPC
  *   a3:	dispatch table
  *   depc:	a2, original value saved on stack (PT_DEPC)
- *   excsave_1:	a3
+ *   excsave1:	a3
  *
  *   PT_DEPC >= VALID_DOUBLE_EXCEPTION_ADDRESS: double exception, DEPC
  *	     <  VALID_DOUBLE_EXCEPTION_ADDRESS: regular exception
@@ -1749,7 +1749,7 @@ ENTRY(fast_store_prohibited)
 
 	/* Restore excsave1 and a3. */
 
-	xsr	a3, EXCSAVE_1
+	xsr	a3, EXCSAVE1
 	bgeui	a2, VALID_DOUBLE_EXCEPTION_ADDRESS, 1f
 
 	rsr	a2, DEPC
@@ -1767,7 +1767,7 @@ ENTRY(fast_store_prohibited)
 2:	/* If there was a problem, handle fault in C */
 
 	rsr	a4, DEPC	# still holds a2
-	xsr	a3, EXCSAVE_1
+	xsr	a3, EXCSAVE1
 	s32i	a4, a2, PT_AREG2
 	s32i	a3, a2, PT_AREG3
 	l32i	a4, a2, PT_AREG4
@@ -1902,7 +1902,7 @@ ENTRY(_switch_to)
 
 	movi	a14, (1 << PS_EXCM_BIT) | LOCKLEVEL
 	xsr	a14, PS
-	rsr	a3, EXCSAVE_1
+	rsr	a3, EXCSAVE1
 	rsync
 	s32i	a3, a3, EXC_TABLE_FIXUP	/* enter critical section */
 
@@ -1924,7 +1924,7 @@ ENTRY(_switch_to)
 	 *       we return from kernel space.
 	 */
 
-	rsr	a3, EXCSAVE_1		# exc_table
+	rsr	a3, EXCSAVE1		# exc_table
 	movi	a6, 0
 	addi	a7, a5, PT_REGS_OFFSET
 	s32i	a6, a3, EXC_TABLE_FIXUP
