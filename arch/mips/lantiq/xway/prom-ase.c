@@ -13,6 +13,7 @@
 
 #include <lantiq_soc.h>
 
+#include "devices.h"
 #include "../prom.h"
 
 #define SOC_AMAZON_SE	"Amazon_SE"
@@ -26,6 +27,7 @@ void __init ltq_soc_detect(struct ltq_soc_info *i)
 {
 	i->partnum = (ltq_r32(LTQ_MPS_CHIPID) & PART_MASK) >> PART_SHIFT;
 	i->rev = (ltq_r32(LTQ_MPS_CHIPID) & REV_MASK) >> REV_SHIFT;
+	sprintf(i->rev_type, "1.%d", i->rev);
 	switch (i->partnum) {
 	case SOC_ID_AMAZON_SE:
 		i->name = SOC_AMAZON_SE;
@@ -36,4 +38,11 @@ void __init ltq_soc_detect(struct ltq_soc_info *i)
 		unreachable();
 		break;
 	}
+}
+
+void __init ltq_soc_setup(void)
+{
+	ltq_register_ase_asc();
+	ltq_register_gpio();
+	ltq_register_wdt();
 }
