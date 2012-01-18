@@ -1,7 +1,9 @@
 snd-soc-core-objs := soc-core.o soc-dapm.o soc-jack.o soc-cache.o soc-utils.o
 snd-soc-core-objs += soc-pcm.o soc-io.o
+snd-soc-dmaengine-objs := soc-dmaengine.o
 
 obj-$(CONFIG_SND_SOC)	+= snd-soc-core.o
+obj-$(CONFIG_SND_SOC_DMAENGINE) += snd-soc-dmaengine.o
 obj-$(CONFIG_SND_SOC)	+= codecs/
 obj-$(CONFIG_SND_SOC)	+= atmel/
 obj-$(CONFIG_SND_SOC)	+= au1x/
