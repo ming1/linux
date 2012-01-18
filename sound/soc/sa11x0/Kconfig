@@ -1,0 +1,4 @@
+config SND_SOC_SA11X0_SSP
+	tristate
+	depends on DMA_SA11X0
+	select SND_SOC_DMAENGINE
