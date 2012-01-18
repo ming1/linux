@@ -1,6 +1,6 @@
 /*
     thmc50.c - Part of lm_sensors, Linux kernel modules for hardware
-             monitoring
+	monitoring
     Copyright (C) 2007 Krzysztof Helt <krzysztof.h1@wp.pl>
     Based on 2.4 driver by Frodo Looijaard <frodol@dds.nl> and
     Philip Edelbrock <phil@netroedge.com>
@@ -124,8 +124,13 @@ static ssize_t set_analog_out(struct device *dev,
 {
 	struct i2c_client *client = to_i2c_client(dev);
 	struct thmc50_data *data = i2c_get_clientdata(client);
-	int tmp = simple_strtoul(buf, NULL, 10);
 	int config;
+	unsigned long tmp;
+	int err;
+
+	err = kstrtoul(buf, 10, &tmp);
+	if (err)
+		return err;
 
 	mutex_lock(&data->update_lock);
 	data->analog_out = SENSORS_LIMIT(tmp, 0, 255);
@@ -173,7 +178,12 @@ static ssize_t set_temp_min(struct device *dev, struct device_attribute *attr,
 	int nr = to_sensor_dev_attr(attr)->index;
 	struct i2c_client *client = to_i2c_client(dev);
 	struct thmc50_data *data = i2c_get_clientdata(client);
-	int val = simple_strtol(buf, NULL, 10);
+	long val;
+	int err;
+
+	err = kstrtol(buf, 10, &val);
+	if (err)
+		return err;
 
 	mutex_lock(&data->update_lock);
 	data->temp_min[nr] = SENSORS_LIMIT(val / 1000, -128, 127);
@@ -197,7 +207,12 @@ static ssize_t set_temp_max(struct device *dev, struct device_attribute *attr,
 	int nr = to_sensor_dev_attr(attr)->index;
 	struct i2c_client *client = to_i2c_client(dev);
 	struct thmc50_data *data = i2c_get_clientdata(client);
-	int val = simple_strtol(buf, NULL, 10);
+	long val;
+	int err;
+
+	err = kstrtol(buf, 10, &val);
+	if (err)
+		return err;
 
 	mutex_lock(&data->update_lock);
 	data->temp_max[nr] = SENSORS_LIMIT(val / 1000, -128, 127);
@@ -360,14 +375,16 @@ static int thmc50_probe(struct i2c_client *client,
 	thmc50_init_client(client);
 
 	/* Register sysfs hooks */
-	if ((err = sysfs_create_group(&client->dev.kobj, &thmc50_group)))
+	err = sysfs_create_group(&client->dev.kobj, &thmc50_group);
+	if (err)
 		goto exit_free;
 
 	/* Register ADM1022 sysfs hooks */
-	if (data->has_temp3)
-		if ((err = sysfs_create_group(&client->dev.kobj,
-					      &temp3_group)))
+	if (data->has_temp3) {
+		err = sysfs_create_group(&client->dev.kobj, &temp3_group);
+		if (err)
 			goto exit_remove_sysfs_thmc50;
+	}
 
 	/* Register a new directory entry with module sensors */
 	data->hwmon_dev = hwmon_device_register(&client->dev);
