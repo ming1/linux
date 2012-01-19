@@ -807,37 +807,6 @@ repeat_in_this_group:
 	goto out;
 
 got:
-	/* We may have to initialize the block bitmap if it isn't already */
-	if (EXT4_HAS_RO_COMPAT_FEATURE(sb, EXT4_FEATURE_RO_COMPAT_GDT_CSUM) &&
-	    gdp->bg_flags & cpu_to_le16(EXT4_BG_BLOCK_UNINIT)) {
-		struct buffer_head *block_bitmap_bh;
-
-		block_bitmap_bh = ext4_read_block_bitmap(sb, group);
-		BUFFER_TRACE(block_bitmap_bh, "get block bitmap access");
-		err = ext4_journal_get_write_access(handle, block_bitmap_bh);
-		if (err) {
-			brelse(block_bitmap_bh);
-			goto fail;
-		}
-
-		BUFFER_TRACE(block_bitmap_bh, "dirty block bitmap");
-		err = ext4_handle_dirty_metadata(handle, NULL, block_bitmap_bh);
-		brelse(block_bitmap_bh);
-
-		/* recheck and clear flag under lock if we still need to */
-		ext4_lock_group(sb, group);
-		if (gdp->bg_flags & cpu_to_le16(EXT4_BG_BLOCK_UNINIT)) {
-			gdp->bg_flags &= cpu_to_le16(~EXT4_BG_BLOCK_UNINIT);
-			ext4_free_group_clusters_set(sb, gdp,
-				ext4_free_clusters_after_init(sb, group, gdp));
-			gdp->bg_checksum = ext4_group_desc_csum(sbi, group,
-								gdp);
-		}
-		ext4_unlock_group(sb, group);
-
-		if (err)
-			goto fail;
-	}
 	BUFFER_TRACE(group_desc_bh, "call ext4_handle_dirty_metadata");
 	err = ext4_handle_dirty_metadata(handle, NULL, group_desc_bh);
 	if (err)
