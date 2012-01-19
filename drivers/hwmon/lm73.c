@@ -66,8 +66,10 @@ static ssize_t show_temp(struct device *dev, struct device_attribute *da,
 {
 	struct sensor_device_attribute *attr = to_sensor_dev_attr(da);
 	struct i2c_client *client = to_i2c_client(dev);
-	/* use integer division instead of equivalent right shift to
-	   guarantee arithmetic shift and preserve the sign */
+	/*
+	 * use integer division instead of equivalent right shift to
+	 * guarantee arithmetic shift and preserve the sign
+	 */
 	int temp = ((s16) (i2c_smbus_read_word_swapped(client,
 		    attr->index))*250) / 32;
 	return sprintf(buf, "%d\n", temp);
