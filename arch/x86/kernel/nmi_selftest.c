@@ -12,6 +12,7 @@
 #include <linux/smp.h>
 #include <linux/cpumask.h>
 #include <linux/delay.h>
+#include <linux/percpu.h>
 
 #include <asm/apic.h>
 #include <asm/nmi.h>
