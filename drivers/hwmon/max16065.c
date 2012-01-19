@@ -47,8 +47,10 @@ enum chips { max16065, max16066, max16067, max16068, max16070, max16071 };
 
 #define MAX16065_SW_ENABLE	0x73
 
-#define MAX16065_WARNING_OV	(1 << 3) /* Set if secondary threshold is OV
-					    warning */
+#define MAX16065_WARNING_OV	(1 << 3) /*
+					  * Set if secondary threshold is OV
+					  * warning
+					  */
 
 #define MAX16065_CURR_ENABLE	(1 << 0)
 
