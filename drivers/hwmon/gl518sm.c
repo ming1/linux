@@ -588,8 +588,10 @@ exit:
 }
 
 
-/* Called when we have found a new GL518SM.
-   Note that we preserve D4:NoFan2 and D2:beep_enable. */
+/*
+ * Called when we have found a new GL518SM.
+ * Note that we preserve D4:NoFan2 and D2:beep_enable.
+ */
 static void gl518_init_client(struct i2c_client *client)
 {
 	/* Make sure we leave D7:Reset untouched */
@@ -619,9 +621,11 @@ static int gl518_remove(struct i2c_client *client)
 	return 0;
 }
 
-/* Registers 0x07 to 0x0c are word-sized, others are byte-sized
-   GL518 uses a high-byte first convention, which is exactly opposite to
-   the SMBus standard. */
+/*
+ * Registers 0x07 to 0x0c are word-sized, others are byte-sized
+ * GL518 uses a high-byte first convention, which is exactly opposite to
+ * the SMBus standard.
+ */
 static int gl518_read_value(struct i2c_client *client, u8 reg)
 {
 	if ((reg >= 0x07) && (reg <= 0x0c))
