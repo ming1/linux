@@ -1,4 +1,5 @@
-/* tmp401.c
+/*
+ * tmp401.c
  *
  * Copyright (C) 2007,2008 Hans de Goede <hdegoede@redhat.com>
  * Preliminary tmp411 support by:
