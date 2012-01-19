@@ -1,25 +1,25 @@
 /*
-    gl520sm.c - Part of lm_sensors, Linux kernel modules for hardware
-		monitoring
-    Copyright (c) 1998, 1999  Frodo Looijaard <frodol@dds.nl>,
-			      Kyösti Mälkki <kmalkki@cc.hut.fi>
-    Copyright (c) 2005	Maarten Deprez <maartendeprez@users.sourceforge.net>
-
-    This program is free software; you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation; either version 2 of the License, or
-    (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with this program; if not, write to the Free Software
-    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
-
-*/
+ * gl520sm.c - Part of lm_sensors, Linux kernel modules for hardware
+ *	       monitoring
+ * Copyright (c) 1998, 1999  Frodo Looijaard <frodol@dds.nl>,
+ *			     Kyösti Mälkki <kmalkki@cc.hut.fi>
+ * Copyright (c) 2005	Maarten Deprez <maartendeprez@users.sourceforge.net>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ *
+ */
 
 #include <linux/module.h>
 #include <linux/init.h>
@@ -41,10 +41,11 @@ MODULE_PARM_DESC(extra_sensor_type, "Type of extra sensor (0=autodetect, 1=tempe
 /* Addresses to scan */
 static const unsigned short normal_i2c[] = { 0x2c, 0x2d, I2C_CLIENT_END };
 
-/* Many GL520 constants specified below
-One of the inputs can be configured as either temp or voltage.
-That's why _TEMP2 and _IN4 access the same register
-*/
+/*
+ * Many GL520 constants specified below
+ * One of the inputs can be configured as either temp or voltage.
+ * That's why _TEMP2 and _IN4 access the same register
+ */
 
 /* The GL520 registers */
 #define GL520_REG_CHIP_ID		0x00
@@ -884,8 +885,10 @@ static int gl520_remove(struct i2c_client *client)
 }
 
 
-/* Registers 0x07 to 0x0c are word-sized, others are byte-sized
-   GL520 uses a high-byte first convention */
+/*
+ * Registers 0x07 to 0x0c are word-sized, others are byte-sized
+ * GL520 uses a high-byte first convention
+ */
 static int gl520_read_value(struct i2c_client *client, u8 reg)
 {
 	if ((reg >= 0x07) && (reg <= 0x0c))
