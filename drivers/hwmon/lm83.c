@@ -155,9 +155,11 @@ struct lm83_data {
 	unsigned long last_updated; /* in jiffies */
 
 	/* registers values */
-	s8 temp[9];	/* 0..3: input 1-4,
-			   4..7: high limit 1-4,
-			   8   : critical limit */
+	s8 temp[9];	/*
+			 * 0..3: input 1-4,
+			 * 4..7: high limit 1-4,
+			 * 8   : critical limit
+			 */
 	u16 alarms; /* bitvector, combined */
 };
 
