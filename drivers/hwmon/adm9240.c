@@ -756,9 +756,11 @@ static struct adm9240_data *adm9240_update_device(struct device *dev)
 					i2c_smbus_read_byte_data(client,
 					ADM9240_REG_INT(1)) << 8;
 
-		/* read temperature: assume temperature changes less than
+		/*
+		 * read temperature: assume temperature changes less than
 		 * 0.5'C per two measurement cycles thus ignore possible
-		 * but unlikely aliasing error on lsb reading. --Grant */
+		 * but unlikely aliasing error on lsb reading. --Grant
+		 */
 		data->temp = ((i2c_smbus_read_byte_data(client,
 					ADM9240_REG_TEMP) << 8) |
 					i2c_smbus_read_byte_data(client,
