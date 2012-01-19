@@ -1,4 +1,5 @@
-/* tmp421.c
+/*
+ * tmp421.c
  *
  * Copyright (C) 2009 Andre Prendel <andre.prendel@gmx.de>
  * Preliminary support by:
