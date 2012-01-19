@@ -562,7 +562,7 @@ void machine_check_poll(enum mcp_flags flags, mce_banks_t *b)
 	struct mce m;
 	int i;
 
-	percpu_inc(mce_poll_count);
+	__this_cpu_inc(mce_poll_count);
 
 	mce_gather_info(&m, NULL);
 
@@ -954,7 +954,7 @@ void do_machine_check(struct pt_regs *regs, long error_code)
 
 	atomic_inc(&mce_entry);
 
-	percpu_inc(mce_exception_count);
+	__this_cpu_inc(mce_exception_count);
 
 	if (!banks)
 		goto out;
