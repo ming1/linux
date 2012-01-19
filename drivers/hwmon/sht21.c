@@ -1,4 +1,5 @@
-/* Sensirion SHT21 humidity and temperature sensor driver
+/*
+ * Sensirion SHT21 humidity and temperature sensor driver
  *
  * Copyright (C) 2010 Urs Fleisch <urs.fleisch@sensirion.com>
  *
@@ -34,7 +35,7 @@
 #define SHT21_TRIG_T_MEASUREMENT_HM  0xe3
 #define SHT21_TRIG_RH_MEASUREMENT_HM 0xe5
 
-/**
+/*
  * struct sht21 - SHT21 device specific data
  * @hwmon_dev: device registered with hwmon
  * @lock: mutex to protect measurement values
@@ -52,7 +53,7 @@ struct sht21 {
 	int humidity;
 };
 
-/**
+/*
  * sht21_temp_ticks_to_millicelsius() - convert raw temperature ticks to
  * milli celsius
  * @ticks: temperature ticks value received from sensor
@@ -67,7 +68,7 @@ static inline int sht21_temp_ticks_to_millicelsius(int ticks)
 	return ((21965 * ticks) >> 13) - 46850;
 }
 
-/**
+/*
  * sht21_rh_ticks_to_per_cent_mille() - convert raw humidity ticks to
  * one-thousandths of a percent relative humidity
  * @ticks: humidity ticks value received from sensor
@@ -82,7 +83,7 @@ static inline int sht21_rh_ticks_to_per_cent_mille(int ticks)
 	return ((15625 * ticks) >> 13) - 6000;
 }
 
-/**
+/*
  * sht21_update_measurements() - get updated measurements from device
  * @client: I2C client device
  *
@@ -119,7 +120,7 @@ out:
 	return ret >= 0 ? 0 : ret;
 }
 
-/**
+/*
  * sht21_show_temperature() - show temperature measurement value in sysfs
  * @dev: device
  * @attr: device attribute
@@ -140,7 +141,7 @@ static ssize_t sht21_show_temperature(struct device *dev,
 	return sprintf(buf, "%d\n", sht21->temperature);
 }
 
-/**
+/*
  * sht21_show_humidity() - show humidity measurement value in sysfs
  * @dev: device
  * @attr: device attribute
@@ -177,7 +178,7 @@ static const struct attribute_group sht21_attr_group = {
 	.attrs = sht21_attributes,
 };
 
-/**
+/*
  * sht21_probe() - probe device
  * @client: I2C client device
  * @id: device ID
@@ -232,7 +233,7 @@ fail_free:
 	return err;
 }
 
-/**
+/*
  * sht21_remove() - remove device
  * @client: I2C client device
  */
