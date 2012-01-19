@@ -1,54 +1,54 @@
 /*
-    sis5595.c - Part of lm_sensors, Linux kernel modules
-		for hardware monitoring
-
-    Copyright (C) 1998 - 2001 Frodo Looijaard <frodol@dds.nl>,
-			Kyösti Mälkki <kmalkki@cc.hut.fi>, and
-			Mark D. Studebaker <mdsxyz123@yahoo.com>
-    Ported to Linux 2.6 by Aurelien Jarno <aurelien@aurel32.net> with
-    the help of Jean Delvare <khali@linux-fr.org>
-
-    This program is free software; you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation; either version 2 of the License, or
-    (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with this program; if not, write to the Free Software
-    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
-*/
+ * sis5595.c - Part of lm_sensors, Linux kernel modules
+ *	       for hardware monitoring
+ *
+ * Copyright (C) 1998 - 2001 Frodo Looijaard <frodol@dds.nl>,
+ *			     Kyösti Mälkki <kmalkki@cc.hut.fi>, and
+ *			     Mark D. Studebaker <mdsxyz123@yahoo.com>
+ * Ported to Linux 2.6 by Aurelien Jarno <aurelien@aurel32.net> with
+ * the help of Jean Delvare <khali@linux-fr.org>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ */
 
 /*
-   SiS southbridge has a LM78-like chip integrated on the same IC.
-   This driver is a customized copy of lm78.c
-
-   Supports following revisions:
-	Version		PCI ID		PCI Revision
-	1		1039/0008	AF or less
-	2		1039/0008	B0 or greater
-
-   Note: these chips contain a 0008 device which is incompatible with the
-	 5595. We recognize these by the presence of the listed
-	 "blacklist" PCI ID and refuse to load.
-
-   NOT SUPPORTED	PCI ID		BLACKLIST PCI ID
-	 540		0008		0540
-	 550		0008		0550
-	5513		0008		5511
-	5581		0008		5597
-	5582		0008		5597
-	5597		0008		5597
-	5598		0008		5597/5598
-	 630		0008		0630
-	 645		0008		0645
-	 730		0008		0730
-	 735		0008		0735
-*/
+ * SiS southbridge has a LM78-like chip integrated on the same IC.
+ * This driver is a customized copy of lm78.c
+ *
+ * Supports following revisions:
+ *	Version		PCI ID		PCI Revision
+ *	1		1039/0008	AF or less
+ *	2		1039/0008	B0 or greater
+ *
+ * Note: these chips contain a 0008 device which is incompatible with the
+ *	5595. We recognize these by the presence of the listed
+ *	"blacklist" PCI ID and refuse to load.
+ *
+ * NOT SUPPORTED	PCI ID		BLACKLIST PCI ID
+ *	540		0008		0540
+ *	550		0008		0550
+ *	5513		0008		5511
+ *	5581		0008		5597
+ *	5582		0008		5597
+ *	5597		0008		5597
+ *	5598		0008		5597/5598
+ *	630		0008		0630
+ *	645		0008		0645
+ *	730		0008		0730
+ *	735		0008		0735
+ */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
@@ -68,8 +68,10 @@
 #include <linux/io.h>
 
 
-/* If force_addr is set to anything different from 0, we forcibly enable
-   the device at the given address. */
+/*
+ * If force_addr is set to anything different from 0, we forcibly enable
+ * the device at the given address.
+ */
 static u16 force_addr;
 module_param(force_addr, ushort, 0);
 MODULE_PARM_DESC(force_addr,
@@ -98,11 +100,13 @@ static struct platform_device *pdev;
 #define SIS5595_REG_FAN_MIN(nr) (0x3b + (nr))
 #define SIS5595_REG_FAN(nr) (0x28 + (nr))
 
-/* On the first version of the chip, the temp registers are separate.
-   On the second version,
-   TEMP pin is shared with IN4, configured in PCI register 0x7A.
-   The registers are the same as well.
-   OVER and HYST are really MAX and MIN. */
+/*
+ * On the first version of the chip, the temp registers are separate.
+ * On the second version,
+ * TEMP pin is shared with IN4, configured in PCI register 0x7A.
+ * The registers are the same as well.
+ * OVER and HYST are really MAX and MIN.
+ */
 
 #define REV2MIN	0xb0
 #define SIS5595_REG_TEMP	((data->revision) >= REV2MIN) ? \
@@ -117,11 +121,15 @@ static struct platform_device *pdev;
 #define SIS5595_REG_ALARM2 0x42
 #define SIS5595_REG_FANDIV 0x47
 
-/* Conversions. Limit checking is only done on the TO_REG
-   variants. */
+/*
+ * Conversions. Limit checking is only done on the TO_REG
+ * variants.
+ */
 
-/* IN: mV, (0V to 4.08V)
-   REG: 16mV/bit */
+/*
+ * IN: mV, (0V to 4.08V)
+ * REG: 16mV/bit
+ */
 static inline u8 IN_TO_REG(unsigned long val)
 {
 	unsigned long nval = SENSORS_LIMIT(val, 0, 4080);
@@ -141,8 +149,10 @@ static inline int FAN_FROM_REG(u8 val, int div)
 	return val == 0 ? -1 : val == 255 ? 0 : 1350000 / (val * div);
 }
 
-/* TEMP: mC (-54.12C to +157.53C)
-   REG: 0.83C/bit + 52.12, two's complement  */
+/*
+ * TEMP: mC (-54.12C to +157.53C)
+ * REG: 0.83C/bit + 52.12, two's complement
+ */
 static inline int TEMP_FROM_REG(s8 val)
 {
 	return val * 830 + 52120;
@@ -153,16 +163,20 @@ static inline s8 TEMP_TO_REG(int val)
 	return nval < 0 ? (nval - 5212 - 415) / 830 : (nval - 5212 + 415) / 830;
 }
 
-/* FAN DIV: 1, 2, 4, or 8 (defaults to 2)
-   REG: 0, 1, 2, or 3 (respectively) (defaults to 1) */
+/*
+ * FAN DIV: 1, 2, 4, or 8 (defaults to 2)
+ * REG: 0, 1, 2, or 3 (respectively) (defaults to 1)
+ */
 static inline u8 DIV_TO_REG(int val)
 {
 	return val == 8 ? 3 : val == 4 ? 2 : val == 1 ? 0 : 1;
 }
 #define DIV_FROM_REG(val) (1 << (val))
 
-/* For each registered chip, we need to keep some data in memory.
-   The structure is dynamically allocated. */
+/*
+ * For each registered chip, we need to keep some data in memory.
+ * The structure is dynamically allocated.
+ */
 struct sis5595_data {
 	unsigned short addr;
 	const char *name;
@@ -402,10 +416,12 @@ static ssize_t show_fan_div(struct device *dev, struct device_attribute *da,
 	return sprintf(buf, "%d\n", DIV_FROM_REG(data->fan_div[nr]));
 }
 
-/* Note: we save and restore the fan minimum here, because its value is
-   determined in part by the fan divisor.  This follows the principle of
-   least surprise; the user doesn't expect the fan minimum to change just
-   because the divisor changed. */
+/*
+ * Note: we save and restore the fan minimum here, because its value is
+ * determined in part by the fan divisor.  This follows the principle of
+ * least surprise; the user doesn't expect the fan minimum to change just
+ * because the divisor changed.
+ */
 static ssize_t set_fan_div(struct device *dev, struct device_attribute *da,
 			   const char *buf, size_t count)
 {
@@ -761,9 +777,11 @@ static int blacklist[] __devinitdata = {
 	PCI_DEVICE_ID_SI_645,
 	PCI_DEVICE_ID_SI_730,
 	PCI_DEVICE_ID_SI_735,
-	PCI_DEVICE_ID_SI_5511, /* 5513 chip has the 0008 device but
-				  that ID shows up in other chips so we
-				  use the 5511 ID for recognition */
+	PCI_DEVICE_ID_SI_5511, /*
+				* 5513 chip has the 0008 device but
+				* that ID shows up in other chips so we
+				* use the 5511 ID for recognition
+				*/
 	PCI_DEVICE_ID_SI_5597,
 	PCI_DEVICE_ID_SI_5598,
 	0 };
@@ -880,7 +898,8 @@ static int __devinit sis5595_pci_probe(struct pci_dev *dev,
 	if (sis5595_device_add(address))
 		goto exit_unregister;
 
-	/* Always return failure here.  This is to allow other drivers to bind
+	/*
+	 * Always return failure here.  This is to allow other drivers to bind
 	 * to this pci device.  We don't really want to have control over the
 	 * pci device, we only wanted to read as few register values from it.
 	 */
