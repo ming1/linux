@@ -1,4 +1,5 @@
-/* Texas Instruments TMP102 SMBus temperature sensor driver
+/*
+ * Texas Instruments TMP102 SMBus temperature sensor driver
  *
  * Copyright (C) 2010 Steven King <sfking@fdwdc.com>
  *
