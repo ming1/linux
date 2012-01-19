@@ -389,7 +389,8 @@ SMM665_SHOW(max);
 SMM665_SHOW(lcrit);
 SMM665_SHOW(crit);
 
-/* These macros are used below in constructing device attribute objects
+/*
+ * These macros are used below in constructing device attribute objects
  * for use with sysfs_create_group() to make a sysfs device file
  * for each register.
  */
