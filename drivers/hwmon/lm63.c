@@ -207,19 +207,27 @@ struct lm63_data {
 
 	/* registers values */
 	u8 config, config_fan;
-	u16 fan[2];	/* 0: input
-			   1: low limit */
+	u16 fan[2];	/*
+			 * 0: input
+			 * 1: low limit
+			 */
 	u8 pwm1_freq;
-	u8 pwm1[13];	/* 0: current output
-			   1-12: lookup table */
-	s8 temp8[15];	/* 0: local input
-			   1: local high limit
-			   2: remote critical limit
-			   3-14: lookup table */
-	s16 temp11[4];	/* 0: remote input
-			   1: remote low limit
-			   2: remote high limit
-			   3: remote offset */
+	u8 pwm1[13];	/*
+			 * 0: current output
+			 * 1-12: lookup table
+			 */
+	s8 temp8[15];	/*
+			 * 0: local input
+			 * 1: local high limit
+			 * 2: remote critical limit
+			 * 3-14: lookup table
+			 */
+	s16 temp11[4];	/*
+			 * 0: remote input
+			 * 1: remote low limit
+			 * 2: remote high limit
+			 * 3: remote offset
+			 */
 	u16 temp11u;	/* remote input (unsigned) */
 	u8 temp2_crit_hyst;
 	u8 lut_temp_hyst;
