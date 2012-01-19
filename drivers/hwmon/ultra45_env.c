@@ -1,4 +1,5 @@
-/* ultra45_env.c: Driver for Ultra45 PIC16F747 environmental monitor.
+/*
+ * ultra45_env.c: Driver for Ultra45 PIC16F747 environmental monitor.
  *
  * Copyright (C) 2008 David S. Miller <davem@davemloft.net>
  */
@@ -82,7 +83,8 @@ static void env_write(struct env *p, u8 ireg, u8 val)
 	spin_unlock(&p->lock);
 }
 
-/* There seems to be a adr7462 providing these values, thus a lot
+/*
+ * There seems to be a adr7462 providing these values, thus a lot
  * of these calculations are borrowed from the adt7470 driver.
  */
 #define FAN_PERIOD_TO_RPM(x)	((90000 * 60) / (x))
