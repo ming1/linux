@@ -996,7 +996,7 @@ static int ata_acpi_bind_host(struct device *dev, int host, acpi_handle *handle)
 	if (ap->flags & ATA_FLAG_ACPI_SATA)
 		return -ENODEV;
 
-	*handle = acpi_get_child(DEVICE_ACPI_HANDLE(dev->parent), ap->port_no);
+	*handle = acpi_get_child(DEVICE_ACPI_HANDLE(dev->parent->parent), ap->port_no);
 
 	if (!*handle)
 		return -ENODEV;
@@ -1036,13 +1036,13 @@ static int ata_acpi_find_device(struct device *dev, acpi_handle *handle)
 	unsigned int host, channel, id, lun;
 
 	if (sscanf(dev_name(dev), "host%u", &host) == 1) {
-		if (!is_pci_ata(dev->parent))
+		if (!is_pci_ata(dev->parent->parent))
 			return -ENODEV;
 
 		return ata_acpi_bind_host(dev, host, handle);
 	} else if (sscanf(dev_name(dev), "%d:%d:%d:%d",
 			&host, &channel, &id, &lun) == 4) {
-		if (!is_pci_ata(dev->parent->parent->parent))
+		if (!is_pci_ata(dev->parent->parent->parent->parent))
 			return -ENODEV;
 
 		return ata_acpi_bind_device(dev, channel, id, handle);
