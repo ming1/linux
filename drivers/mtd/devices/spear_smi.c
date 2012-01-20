@@ -1026,6 +1026,7 @@ static int __devexit spear_smi_remove(struct platform_device *pdev)
 {
 	struct spear_smi *dev;
 	struct spear_snor_flash *flash;
+	struct resource *smi_base;
 	int ret;
 	int i, irq;
 
@@ -1057,6 +1058,9 @@ static int __devexit spear_smi_remove(struct platform_device *pdev)
 	clk_put(dev->clk);
 	iounmap(dev->io_base);
 	kfree(dev);
+
+	smi_base = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	release_mem_region(smi_base->start, resource_size(smi_base));
 	platform_set_drvdata(pdev, NULL);
 
 	return 0;
