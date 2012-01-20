@@ -276,6 +276,84 @@ int is_dock_device(acpi_handle handle)
 EXPORT_SYMBOL_GPL(is_dock_device);
 
 /**
+ * dock_link_device - link a device from the dock
+ * @handle: acpi handle of the potentially dependent device
+ */
+struct device **dock_link_device(acpi_handle handle)
+{
+	struct device *dev = acpi_get_physical_device(handle);
+	struct dock_station *dock_station;
+	int ret, dock = 0;
+	struct device **devices;
+
+	devices = kmalloc(dock_station_count * sizeof(struct device *),
+			  GFP_KERNEL);
+
+	if (!dev)
+		return NULL;
+
+	if (is_dock(handle)) {
+		put_device(dev);
+		return NULL;
+	}
+
+	list_for_each_entry(dock_station, &dock_stations, sibling) {
+		if (find_dock_dependent_device(dock_station, handle)) {
+			ret = sysfs_create_link(&dock_station->dock_device->dev.kobj,
+						&dev->kobj, dev_name(dev));
+			WARN_ON(ret);
+			devices[dock] = &dock_station->dock_device->dev;
+			dock++;
+		}
+	}
+	if (!dock)
+		put_device(dev);
+
+	devices[dock] = NULL;
+	return devices;
+}
+EXPORT_SYMBOL_GPL(dock_link_device);
+
+/**
+ * dock_unlink_device - unlink a device from the dock
+ * @handle: acpi handle of the potentially dependent device
+ */
+struct device **dock_unlink_device(acpi_handle handle)
+{
+	struct device *dev = acpi_get_physical_device(handle);
+	struct dock_station *dock_station;
+	int dock = 0;
+	struct device **devices =
+		kmalloc(dock_station_count * sizeof(struct device *),
+			GFP_KERNEL);
+
+	if (!dev)
+		return NULL;
+
+	if (is_dock(handle)) {
+		put_device(dev);
+		return NULL;
+	}
+
+	list_for_each_entry(dock_station, &dock_stations, sibling) {
+		if (find_dock_dependent_device(dock_station, handle)) {
+			sysfs_remove_link(&dock_station->dock_device->dev.kobj,
+					  dev_name(dev));
+			devices[dock] = &dock_station->dock_device->dev;
+			dock++;
+		}
+	}
+	/* An extra reference has been held while the link existed */
+	if (dock)
+		put_device(dev);
+
+	put_device(dev);
+	devices[dock] = NULL;
+	return devices;
+}
+EXPORT_SYMBOL_GPL(dock_unlink_device);
+
+/**
  * dock_present - see if the dock station is present.
  * @ds: the dock station
  *
