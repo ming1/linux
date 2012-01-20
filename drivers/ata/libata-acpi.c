@@ -955,6 +955,26 @@ void ata_acpi_on_disable(struct ata_device *dev)
 	ata_acpi_clear_gtf(dev);
 }
 
+void ata_acpi_bind_dock(struct ata_device *dev)
+{
+	struct device **docks;
+
+	if (!ata_dev_acpi_handle(dev))
+		return;
+	docks = dock_link_device(ata_dev_acpi_handle(dev));
+	kfree(docks);
+}
+
+void ata_acpi_unbind_dock(struct ata_device *dev)
+{
+	struct device **docks;
+
+	if (!ata_dev_acpi_handle(dev))
+		return;
+	docks = dock_unlink_device(ata_dev_acpi_handle(dev));
+	kfree(docks);
+}
+
 static int is_pci_ata(struct device *dev)
 {
 	struct pci_dev *pdev;
