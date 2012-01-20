@@ -68,6 +68,12 @@ static struct gfs2_sbd *init_sbd(struct super_block *sb)
 
 	sb->s_fs_info = sdp;
 	sdp->sd_vfs = sb;
+	sdp->sd_lkstats = alloc_percpu(struct gfs2_pcpu_lkstats);
+	if (!sdp->sd_lkstats) {
+		kfree(sdp);
+		return NULL;
+	}
+
 	set_bit(SDF_NOJOURNALID, &sdp->sd_flags);
 	gfs2_tune_init(&sdp->sd_tune);
 
@@ -1216,6 +1222,7 @@ fail_sys:
 	gfs2_sys_fs_del(sdp);
 fail:
 	gfs2_delete_debugfs_file(sdp);
+	free_percpu(sdp->sd_lkstats);
 	kfree(sdp);
 	sb->s_fs_info = NULL;
 	return error;
@@ -1388,6 +1395,7 @@ static void gfs2_kill_sb(struct super_block *sb)
 	shrink_dcache_sb(sb);
 	kill_block_super(sb);
 	gfs2_delete_debugfs_file(sdp);
+	free_percpu(sdp->sd_lkstats);
 	kfree(sdp);
 }
 
