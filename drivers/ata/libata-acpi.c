@@ -74,9 +74,6 @@ acpi_handle ata_dev_acpi_handle(struct ata_device *dev)
 	acpi_integer adr;
 	struct ata_port *ap = dev->link->ap;
 
-	if (dev->sdev)
-		return DEVICE_ACPI_HANDLE(&dev->sdev->sdev_gendev);
-
 	if (ap->flags & ATA_FLAG_ACPI_SATA) {
 		if (!sata_pmp_attached(ap))
 			adr = SATA_ADR(ap->port_no, NO_PORT_MULT);
@@ -1004,8 +1001,7 @@ static int ata_acpi_bind_host(struct device *dev, int host, acpi_handle *handle)
 	if (!*handle)
 		return -ENODEV;
 
-	register_hotplug_dock_device(ata_ap_acpi_handle(ap),
-				     &ata_acpi_ap_dock_ops, ap);
+	register_hotplug_dock_device(*handle, &ata_acpi_ap_dock_ops, ap);
 
 	return 0;
 }
@@ -1027,8 +1023,8 @@ static int ata_acpi_bind_device(struct device *dev, int channel, int id,
 
 	if (!*handle)
 		return -ENODEV;
-	register_hotplug_dock_device(ata_dev_acpi_handle(ata_dev),
-				     &ata_acpi_dev_dock_ops, ata_dev);
+
+	register_hotplug_dock_device(*handle, &ata_acpi_dev_dock_ops, ata_dev);
 
 	return 0;
 }
