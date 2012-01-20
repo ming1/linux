@@ -171,9 +171,16 @@ int notify_change(struct dentry * dentry, struct iattr * attr)
 	struct timespec now;
 	unsigned int ia_valid = attr->ia_valid;
 
+	WARN_ON_ONCE(!mutex_is_locked(&inode->i_mutex));
+
 	if (ia_valid & (ATTR_MODE | ATTR_UID | ATTR_GID | ATTR_TIMES_SET)) {
 		if (IS_IMMUTABLE(inode) || IS_APPEND(inode))
 			return -EPERM;
+	}
+
+	if ((ia_valid & ATTR_SIZE) && IS_I_VERSION(inode)) {
+		if (attr->ia_size != inode->i_size)
+			inode_inc_iversion(inode);
 	}
 
 	if ((ia_valid & ATTR_MODE)) {
@@ -245,5 +252,4 @@ int notify_change(struct dentry * dentry, struct iattr * attr)
 
 	return error;
 }
-
 EXPORT_SYMBOL(notify_change);
