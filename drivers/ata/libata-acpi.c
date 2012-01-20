@@ -1001,7 +1001,8 @@ static int ata_acpi_bind_host(struct device *dev, int host, acpi_handle *handle)
 	if (!*handle)
 		return -ENODEV;
 
-	register_hotplug_dock_device(*handle, &ata_acpi_ap_dock_ops, ap);
+	if (!is_registered_hotplug_dock_device(&ata_acpi_ap_dock_ops))
+		register_hotplug_dock_device(*handle, &ata_acpi_ap_dock_ops, ap);
 
 	return 0;
 }
@@ -1024,7 +1025,8 @@ static int ata_acpi_bind_device(struct device *dev, int channel, int id,
 	if (!*handle)
 		return -ENODEV;
 
-	register_hotplug_dock_device(*handle, &ata_acpi_dev_dock_ops, ata_dev);
+	if (!is_registered_hotplug_dock_device(&ata_acpi_dev_dock_ops))
+		register_hotplug_dock_device(*handle, &ata_acpi_dev_dock_ops, ata_dev);
 
 	return 0;
 }

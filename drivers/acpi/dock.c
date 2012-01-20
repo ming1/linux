@@ -720,6 +720,26 @@ void unregister_hotplug_dock_device(acpi_handle handle)
 }
 EXPORT_SYMBOL_GPL(unregister_hotplug_dock_device);
 
+int is_registered_hotplug_dock_device(const struct acpi_dock_ops *ops)
+{
+	struct dock_dependent_device *dd;
+	struct dock_station *ds;
+
+	list_for_each_entry(ds, &dock_stations, sibling) {
+		mutex_lock(&ds->hp_lock);
+		list_for_each_entry(dd, &ds->hotplug_devices, hotplug_list) {
+			if (ops == dd->ops) {
+				mutex_unlock(&ds->hp_lock);
+				return 1;
+			}
+		}
+		mutex_unlock(&ds->hp_lock);
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(is_registered_hotplug_dock_device);
+
 /**
  * handle_eject_request - handle an undock request checking for error conditions
  *

@@ -131,6 +131,7 @@ extern int register_hotplug_dock_device(acpi_handle handle,
 					const struct acpi_dock_ops *ops,
 					void *context);
 extern void unregister_hotplug_dock_device(acpi_handle handle);
+extern int is_registered_hotplug_dock_device(const struct acpi_dock_ops *ops);
 extern struct device **dock_link_device(acpi_handle handle);
 extern struct device **dock_unlink_device(acpi_handle handle);
 #else
