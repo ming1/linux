@@ -19,7 +19,9 @@
 #include <linux/io.h>
 #include <linux/init.h>
 #include <linux/gpio.h>
+#include <linux/leds.h>
 #include <linux/delay.h>
+#include <linux/mmc/host.h>
 #include <linux/regulator/machine.h>
 #include <linux/regulator/fixed.h>
 #include <linux/pwm_backlight.h>
@@ -681,6 +683,7 @@ static void __init crag6410_map_io(void)
 static struct s3c_sdhci_platdata crag6410_hsmmc2_pdata = {
 	.max_width		= 4,
 	.cd_type		= S3C_SDHCI_CD_PERMANENT,
+	.host_caps		= MMC_CAP_POWER_OFF_CARD,
 };
 
 static void crag6410_cfg_sdhci0(struct platform_device *dev, int width)
@@ -696,6 +699,55 @@ static struct s3c_sdhci_platdata crag6410_hsmmc0_pdata = {
 	.max_width		= 4,
 	.cd_type		= S3C_SDHCI_CD_INTERNAL,
 	.cfg_gpio		= crag6410_cfg_sdhci0,
+	.host_caps		= MMC_CAP_POWER_OFF_CARD,
+};
+
+static const struct gpio_led gpio_leds[] = {
+	{
+		.name = "d13:green:",
+		.gpio = MMGPIO_GPIO_BASE + 0,
+		.default_state = LEDS_GPIO_DEFSTATE_ON,
+	},
+	{
+		.name = "d14:green:",
+		.gpio = MMGPIO_GPIO_BASE + 1,
+		.default_state = LEDS_GPIO_DEFSTATE_ON,
+	},
+	{
+		.name = "d15:green:",
+		.gpio = MMGPIO_GPIO_BASE + 2,
+		.default_state = LEDS_GPIO_DEFSTATE_ON,
+	},
+	{
+		.name = "d16:green:",
+		.gpio = MMGPIO_GPIO_BASE + 3,
+		.default_state = LEDS_GPIO_DEFSTATE_ON,
+	},
+	{
+		.name = "d17:green:",
+		.gpio = MMGPIO_GPIO_BASE + 4,
+		.default_state = LEDS_GPIO_DEFSTATE_ON,
+	},
+	{
+		.name = "d18:green:",
+		.gpio = MMGPIO_GPIO_BASE + 5,
+		.default_state = LEDS_GPIO_DEFSTATE_ON,
+	},
+	{
+		.name = "d19:green:",
+		.gpio = MMGPIO_GPIO_BASE + 6,
+		.default_state = LEDS_GPIO_DEFSTATE_ON,
+	},
+	{
+		.name = "d20:green:",
+		.gpio = MMGPIO_GPIO_BASE + 7,
+		.default_state = LEDS_GPIO_DEFSTATE_ON,
+	},
+};
+
+static const struct gpio_led_platform_data gpio_leds_pdata = {
+	.leds = gpio_leds,
+	.num_leds = ARRAY_SIZE(gpio_leds),
 };
 
 static void __init crag6410_machine_init(void)
@@ -727,8 +779,11 @@ static void __init crag6410_machine_init(void)
 	i2c_register_board_info(1, i2c_devs1, ARRAY_SIZE(i2c_devs1));
 
 	samsung_keypad_set_platdata(&crag6410_keypad_data);
+	s3c64xx_spi0_set_platdata(NULL, 0, 1);
 
 	platform_add_devices(crag6410_devices, ARRAY_SIZE(crag6410_devices));
+
+	gpio_led_register_device(-1, &gpio_leds_pdata);
 
 	regulator_has_full_constraints();
 
