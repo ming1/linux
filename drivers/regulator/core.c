@@ -1421,6 +1421,34 @@ void regulator_put(struct regulator *regulator)
 }
 EXPORT_SYMBOL_GPL(regulator_put);
 
+static int devm_regulator_match(struct device *dev, void *res, void *data)
+{
+	struct regulator **r = res;
+	if (!r || !*r) {
+		WARN_ON(!r || !*r);
+		return 0;
+	}
+	return *r == data;
+}
+
+/**
+ * devm_regulator_put - Resource managed regulator_put()
+ * @regulator: regulator to free
+ *
+ * Deallocate a regulator allocated with devm_regulator_get(). Normally
+ * this function will not need to be called and the resource management
+ * code will ensure that the resource is freed.
+ */
+void devm_regulator_put(struct regulator *regulator)
+{
+	int rc;
+
+	rc = devres_destroy(regulator->dev, devm_regulator_release,
+			    devm_regulator_match, regulator);
+	WARN_ON(rc);
+}
+EXPORT_SYMBOL_GPL(devm_regulator_put);
+
 static int _regulator_can_change_status(struct regulator_dev *rdev)
 {
 	if (!rdev->constraints)
@@ -2434,6 +2462,52 @@ err:
 	return ret;
 }
 EXPORT_SYMBOL_GPL(regulator_bulk_get);
+
+/**
+ * devm_regulator_bulk_get - managed get multiple regulator consumers
+ *
+ * @dev:           Device to supply
+ * @num_consumers: Number of consumers to register
+ * @consumers:     Configuration of consumers; clients are stored here.
+ *
+ * @return 0 on success, an errno on failure.
+ *
+ * This helper function allows drivers to get several regulator
+ * consumers in one operation with management, the regulators will
+ * automatically be freed when the device is unbound.  If any of the
+ * regulators cannot be acquired then any regulators that were
+ * allocated will be freed before returning to the caller.
+ */
+int devm_regulator_bulk_get(struct device *dev, int num_consumers,
+			    struct regulator_bulk_data *consumers)
+{
+	int i;
+	int ret;
+
+	for (i = 0; i < num_consumers; i++)
+		consumers[i].consumer = NULL;
+
+	for (i = 0; i < num_consumers; i++) {
+		consumers[i].consumer = devm_regulator_get(dev,
+							   consumers[i].supply);
+		if (IS_ERR(consumers[i].consumer)) {
+			ret = PTR_ERR(consumers[i].consumer);
+			dev_err(dev, "Failed to get supply '%s': %d\n",
+				consumers[i].supply, ret);
+			consumers[i].consumer = NULL;
+			goto err;
+		}
+	}
+
+	return 0;
+
+err:
+	for (i = 0; i < num_consumers && consumers[i].consumer; i++)
+		devm_regulator_put(consumers[i].consumer);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(devm_regulator_bulk_get);
 
 static void regulator_bulk_enable_async(void *data, async_cookie_t cookie)
 {
