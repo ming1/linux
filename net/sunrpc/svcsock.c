@@ -41,6 +41,7 @@
 #include <net/ipv6.h>
 #include <net/tcp.h>
 #include <net/tcp_states.h>
+#include <net/net_namespace.h>
 #include <asm/uaccess.h>
 #include <asm/ioctls.h>
 
@@ -1409,7 +1410,13 @@ static struct svc_sock *svc_setup_socket(struct svc_serv *serv,
 
 	/* Register socket with portmapper */
 	if (*errp >= 0 && pmap_register)
-		*errp = svc_register(serv, sock->sk->sk_net, inet->sk_family,
+		*errp = svc_register(serv,
+#ifdef CONFIG_NET_NS
+				     sock->sk->sk_net,
+#else
+				     &init_net,
+#endif
+				     inet->sk_family,
 				     inet->sk_protocol,
 				     ntohs(inet_sk(inet)->inet_sport));
 
