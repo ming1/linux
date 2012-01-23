@@ -483,6 +483,14 @@ void tick_nohz_idle_enter(void)
 	 * update of the idle time accounting in tick_nohz_start_idle().
 	 */
 	ts->inidle = 1;
+
+	/*
+	 * Update the idle state in the scheduler domain hierarchy
+	 * when tick_nohz_idle_enter() is called from the idle loop.
+	 * State will be updated to busy during the first busy tick after
+	 * exiting idle.
+	 */
+	set_cpu_sd_state_idle();
 	tick_nohz_stop_sched_tick(ts);
 
 	local_irq_enable();
