@@ -1,4 +1,5 @@
-/* Texas Instruments TMP102 SMBus temperature sensor driver
+/*
+ * Texas Instruments TMP102 SMBus temperature sensor driver
  *
  * Copyright (C) 2010 Steven King <sfking@fdwdc.com>
  *
@@ -292,17 +293,7 @@ static struct i2c_driver tmp102_driver = {
 	.id_table	= tmp102_id,
 };
 
-static int __init tmp102_init(void)
-{
-	return i2c_add_driver(&tmp102_driver);
-}
-module_init(tmp102_init);
-
-static void __exit tmp102_exit(void)
-{
-	i2c_del_driver(&tmp102_driver);
-}
-module_exit(tmp102_exit);
+module_i2c_driver(tmp102_driver);
 
 MODULE_AUTHOR("Steven King <sfking@fdwdc.com>");
 MODULE_DESCRIPTION("Texas Instruments TMP102 temperature sensor driver");

@@ -73,10 +73,12 @@ struct lm75_data {
 	u8			orig_conf;
 	char			valid;		/* !=0 if registers are valid */
 	unsigned long		last_updated;	/* In jiffies */
-	u16			temp[3];	/* Register values,
-						   0 = input
-						   1 = max
-						   2 = hyst */
+	u16			temp[3];	/*
+						 * Register values,
+						 * 0 = input
+						 * 1 = max
+						 * 2 = hyst
+						 */
 };
 
 static int lm75_read_value(struct i2c_client *client, u8 reg);
@@ -163,7 +165,8 @@ lm75_probe(struct i2c_client *client, const struct i2c_device_id *id)
 	i2c_set_clientdata(client, data);
 	mutex_init(&data->update_lock);
 
-	/* Set to LM75 resolution (9 bits, 1/2 degree C) and range.
+	/*
+	 * Set to LM75 resolution (9 bits, 1/2 degree C) and range.
 	 * Then tweak to be more precise when appropriate.
 	 */
 	set_mask = 0;
@@ -285,8 +288,10 @@ static int lm75_detect(struct i2c_client *new_client,
 
 	/* First check for LM75A */
 	if (i2c_smbus_read_byte_data(new_client, 7) == LM75A_ID) {
-		/* LM75A returns 0xff on unused registers so
-		   just to be sure we check for that too. */
+		/*
+		 * LM75A returns 0xff on unused registers so
+		 * just to be sure we check for that too.
+		 */
 		if (i2c_smbus_read_byte_data(new_client, 4) != 0xff
 		 || i2c_smbus_read_byte_data(new_client, 5) != 0xff
 		 || i2c_smbus_read_byte_data(new_client, 6) != 0xff)
@@ -438,23 +443,8 @@ abort:
 	return ret;
 }
 
-/*-----------------------------------------------------------------------*/
-
-/* module glue */
-
-static int __init sensors_lm75_init(void)
-{
-	return i2c_add_driver(&lm75_driver);
-}
-
-static void __exit sensors_lm75_exit(void)
-{
-	i2c_del_driver(&lm75_driver);
-}
+module_i2c_driver(lm75_driver);
 
 MODULE_AUTHOR("Frodo Looijaard <frodol@dds.nl>");
 MODULE_DESCRIPTION("LM75 driver");
 MODULE_LICENSE("GPL");
-
-module_init(sensors_lm75_init);
-module_exit(sensors_lm75_exit);

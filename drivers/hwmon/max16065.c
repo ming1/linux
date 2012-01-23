@@ -47,8 +47,10 @@ enum chips { max16065, max16066, max16067, max16068, max16070, max16071 };
 
 #define MAX16065_SW_ENABLE	0x73
 
-#define MAX16065_WARNING_OV	(1 << 3) /* Set if secondary threshold is OV
-					    warning */
+#define MAX16065_WARNING_OV	(1 << 3) /*
+					  * Set if secondary threshold is OV
+					  * warning
+					  */
 
 #define MAX16065_CURR_ENABLE	(1 << 0)
 
@@ -699,19 +701,8 @@ static struct i2c_driver max16065_driver = {
 	.id_table = max16065_id,
 };
 
-static int __init max16065_init(void)
-{
-	return i2c_add_driver(&max16065_driver);
-}
-
-static void __exit max16065_exit(void)
-{
-	i2c_del_driver(&max16065_driver);
-}
+module_i2c_driver(max16065_driver);
 
 MODULE_AUTHOR("Guenter Roeck <guenter.roeck@ericsson.com>");
 MODULE_DESCRIPTION("MAX16065 driver");
 MODULE_LICENSE("GPL");
-
-module_init(max16065_init);
-module_exit(max16065_exit);
