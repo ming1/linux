@@ -66,8 +66,10 @@ static ssize_t show_temp(struct device *dev, struct device_attribute *da,
 {
 	struct sensor_device_attribute *attr = to_sensor_dev_attr(da);
 	struct i2c_client *client = to_i2c_client(dev);
-	/* use integer division instead of equivalent right shift to
-	   guarantee arithmetic shift and preserve the sign */
+	/*
+	 * use integer division instead of equivalent right shift to
+	 * guarantee arithmetic shift and preserve the sign
+	 */
 	int temp = ((s16) (i2c_smbus_read_word_swapped(client,
 		    attr->index))*250) / 32;
 	return sprintf(buf, "%d\n", temp);
@@ -194,21 +196,8 @@ static struct i2c_driver lm73_driver = {
 	.address_list	= normal_i2c,
 };
 
-/* module glue */
-
-static int __init sensors_lm73_init(void)
-{
-	return i2c_add_driver(&lm73_driver);
-}
-
-static void __exit sensors_lm73_exit(void)
-{
-	i2c_del_driver(&lm73_driver);
-}
+module_i2c_driver(lm73_driver);
 
 MODULE_AUTHOR("Guillaume Ligneul <guillaume.ligneul@gmail.com>");
 MODULE_DESCRIPTION("LM73 driver");
 MODULE_LICENSE("GPL");
-
-module_init(sensors_lm73_init);
-module_exit(sensors_lm73_exit);
