@@ -1324,7 +1324,7 @@ static ssize_t store_vrm_reg(struct device *dev, struct device_attribute *attr,
 	if (kstrtoul(buf, 10, &val) < 0)
 		return -EINVAL;
 
-	data->vrm = val;
+	data->vrm = SENSORS_LIMIT(val, 0, 255);
 
 	return count;
 }
