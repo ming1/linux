@@ -44,6 +44,7 @@ struct reg_default {
  * Configuration for the register map of a device.
  *
  * @reg_bits: Number of bits in a register address, mandatory.
+ * @pad_bits: Number of bits of padding between register and value.
  * @val_bits: Number of bits in a register value, mandatory.
  *
  * @writeable_reg: Optional callback returning true if the register
@@ -74,6 +75,7 @@ struct reg_default {
  */
 struct regmap_config {
 	int reg_bits;
+	int pad_bits;
 	int val_bits;
 
 	bool (*writeable_reg)(struct device *dev, unsigned int reg);
@@ -148,6 +150,9 @@ int regcache_sync(struct regmap *map);
 void regcache_cache_only(struct regmap *map, bool enable);
 void regcache_cache_bypass(struct regmap *map, bool enable);
 void regcache_mark_dirty(struct regmap *map);
+
+int regmap_register_patch(struct regmap *map, const struct reg_default *regs,
+			  int num_regs);
 
 /**
  * Description of an IRQ for the generic regmap irq_chip.
