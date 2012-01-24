@@ -1,0 +1,28 @@
+Importing hexagon based on v3.2-rc2
+Unchanged quilt series hexagon
+Importing i2c based on 3.3-rc1
+Unchanged quilt series i2c
+Importing jdelvare-hwmon based on 3.3-rc1
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard dcd6c92267155e70a94b3927bce681ce74b80d1f
+HEAD is now at dcd6c92 Linux 3.3-rc1
+$ git am ../quilt/jdelvare-hwmon/hwmon-w83795-01-show-standard-pwm-attr.patch
+Applying: hwmon: (w83795) Unconditionally support manual fan speed control
+$ git am ../quilt/jdelvare-hwmon/hwmon-w83795-02-fix-multi-line-comments.patch
+Applying: hwmon: (w83795) Fix multi-line comments
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm90-01-fix-multi-line-comments.patch
+Applying: hwmon: (lm90) Fix multi-line comments
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm90-02-add-support-for-GMT-G781.patch
+Applying: hwmon: (lm90) Add support for GMT G781
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/jdelvare-hwmon
+From ../quilt-tmp
+ + f3b3d0e...8db3461 master     -> quilt/jdelvare-hwmon  (forced update)
+Importing kernel-doc based on 3.2-rc7
+Unchanged quilt series kernel-doc
+Importing rr based on v3.2-8694-g53999bf
+Unchanged quilt series rr
+Importing device-mapper based on v3.3-rc1
+	quilt series is empty
+$ git update-ref refs/heads/quilt/device-mapper dcd6c92267155e70a94b3927bce681ce74b80d1f
