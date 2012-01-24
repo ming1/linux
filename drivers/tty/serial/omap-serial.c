@@ -46,6 +46,18 @@
 
 #define DEFAULT_CLK_SPEED 48000000 /* 48Mhz*/
 
+/* SCR register bitmasks */
+#define OMAP_UART_SCR_RX_TRIG_GRANU1_MASK		(1 << 7)
+#define OMAP_UART_SCR_TX_TRIG_GRANU1_MASK		(1 << 6)
+
+/* FCR register bitmasks */
+#define OMAP_UART_FCR_RX_FIFO_TRIG_SHIFT		6
+#define OMAP_UART_FCR_RX_FIFO_TRIG_MASK			(0x3 << 6)
+#define OMAP_UART_FCR_TX_FIFO_TRIG_SHIFT		4
+
+/* TLR register bitmasks */
+#define OMAP_UART_TLR_TX_FIFO_TRIG_DMA_SHIFT		0
+
 static struct uart_omap_port *ui[OMAP_MAX_HSUART_PORTS];
 
 /* Forward declaration of functions */
@@ -74,6 +86,49 @@ static inline void serial_omap_clear_fifos(struct uart_omap_port *up)
 	serial_out(up, UART_FCR, UART_FCR_ENABLE_FIFO |
 		       UART_FCR_CLEAR_RCVR | UART_FCR_CLEAR_XMIT);
 	serial_out(up, UART_FCR, 0);
+}
+
+/**
+ * serial_omap_block_cpu_low_power_state - prevent MPU pwrdm from leaving ON
+ * @up: struct uart_omap_port *
+ *
+ * Prevent the MPU powerdomain from entering a power state lower than
+ * ON.  (It should be sufficient to prevent it from entering INACTIVE,
+ * but there is presently no easy way to do this.)  This works around
+ * a suspected silicon bug in the OMAP UART IP blocks.  The UARTs should
+ * wake the PRCM when the transmit FIFO threshold interrupt is raised, but
+ * they do not.   See also serial_omap_allow_cpu_low_power_state().  No
+ * return value.
+ */
+static void serial_omap_block_cpu_low_power_state(struct uart_omap_port *up)
+{
+#ifdef CONFIG_CPU_IDLE
+	up->latency = 1;
+	schedule_work(&up->qos_work);
+#else
+	up->max_tx_count = 1;
+#endif
+}
+
+/**
+ * serial_omap_allow_cpu_low_power_state - remove power state restriction on MPU
+ * @up: struct uart_omap_port *
+ *
+ * Cancel the effects of serial_omap_block_cpu_low_power_state().
+ * This should allow the MPU powerdomain to enter a power state lower
+ * than ON, assuming the rest of the kernel is not restricting it.
+ * This works around a suspected silicon bug in the OMAP UART IP
+ * blocks.  The UARTs should wake the PRCM when the transmit FIFO
+ * threshold interrupt is raised, but they do not.  No return value.
+ */
+static void serial_omap_allow_cpu_low_power_state(struct uart_omap_port *up)
+{
+#ifdef CONFIG_CPU_IDLE
+	up->latency = up->calc_latency;
+	schedule_work(&up->qos_work);
+#else
+	up->max_tx_count = up->port.fifosize / 4;
+#endif
 }
 
 /*
@@ -150,6 +205,9 @@ static void serial_omap_stop_tx(struct uart_port *port)
 		up->ier &= ~UART_IER_THRI;
 		serial_out(up, UART_IER, up->ier);
 	}
+
+	if (!up->use_dma)
+		serial_omap_allow_cpu_low_power_state(up);
 
 	pm_runtime_mark_last_busy(&up->pdev->dev);
 	pm_runtime_put_autosuspend(&up->pdev->dev);
@@ -252,7 +310,7 @@ static void transmit_chars(struct uart_omap_port *up)
 		serial_omap_stop_tx(&up->port);
 		return;
 	}
-	count = up->port.fifosize / 4;
+	count = up->max_tx_count;
 	do {
 		serial_out(up, UART_TX, xmit->buf[xmit->tail]);
 		xmit->tail = (xmit->tail + 1) & (UART_XMIT_SIZE - 1);
@@ -285,6 +343,7 @@ static void serial_omap_start_tx(struct uart_port *port)
 
 	if (!up->use_dma) {
 		pm_runtime_get_sync(&up->pdev->dev);
+		serial_omap_block_cpu_low_power_state(up);
 		serial_omap_enable_ier_thri(up);
 		pm_runtime_mark_last_busy(&up->pdev->dev);
 		pm_runtime_put_autosuspend(&up->pdev->dev);
@@ -694,6 +753,7 @@ serial_omap_set_termios(struct uart_port *port, struct ktermios *termios,
 	unsigned char efr = 0;
 	unsigned long flags = 0;
 	unsigned int baud, quot;
+	u32 tlr;
 
 	switch (termios->c_cflag & CSIZE) {
 	case CS5:
@@ -811,13 +871,27 @@ serial_omap_set_termios(struct uart_port *port, struct ktermios *termios,
 	up->mcr = serial_in(up, UART_MCR);
 	serial_out(up, UART_MCR, up->mcr | UART_MCR_TCRTLR);
 	/* FIFO ENABLE, DMA MODE */
-	serial_out(up, UART_FCR, up->fcr);
-	serial_out(up, UART_LCR, UART_LCR_CONF_MODE_B);
+
+	up->scr |= OMAP_UART_SCR_TX_TRIG_GRANU1_MASK;
+	up->scr |= OMAP_UART_SCR_RX_TRIG_GRANU1_MASK;
 
 	if (up->use_dma) {
-		serial_out(up, UART_TI752_TLR, 0);
-		up->scr |= (UART_FCR_TRIGGER_4 | UART_FCR_TRIGGER_8);
+		tlr = 0;
+	} else {
+		up->scr &= ~OMAP_UART_SCR_TX_EMPTY;
+
+		/* Set receive FIFO threshold to 1 */
+		up->fcr &= ~OMAP_UART_FCR_RX_FIFO_TRIG_MASK;
+		up->fcr |= (0x1 << OMAP_UART_FCR_RX_FIFO_TRIG_SHIFT);
+
+		/* Set TX FIFO threshold to "63" (actually 1) */
+		up->fcr |= (0x3 << OMAP_UART_FCR_TX_FIFO_TRIG_SHIFT);
+		tlr = (0xf << OMAP_UART_TLR_TX_FIFO_TRIG_DMA_SHIFT);
 	}
+
+	serial_out(up, UART_TI752_TLR, tlr);
+	serial_out(up, UART_FCR, up->fcr);
+	serial_out(up, UART_LCR, UART_LCR_CONF_MODE_B);
 
 	serial_out(up, UART_OMAP_SCR, up->scr);
 
@@ -1160,7 +1234,7 @@ static struct uart_driver serial_omap_reg = {
 	.cons		= OMAP_CONSOLE,
 };
 
-#ifdef CONFIG_SUSPEND
+#ifdef CONFIG_PM_SLEEP
 static int serial_omap_suspend(struct device *dev)
 {
 	struct uart_omap_port *up = dev_get_drvdata(dev);
@@ -1394,6 +1468,8 @@ static int serial_omap_probe(struct platform_device *pdev)
 	up->port.fifosize = 64;
 	up->port.ops = &serial_omap_pops;
 
+	up->max_tx_count = up->port.fifosize / 4;
+
 	if (pdev->dev.of_node)
 		up->port.line = of_alias_get_id(pdev->dev.of_node, "serial");
 	else
@@ -1521,6 +1597,7 @@ static void serial_omap_mdr1_errataset(struct uart_omap_port *up, u8 mdr1)
 	}
 }
 
+#ifdef CONFIG_PM_RUNTIME
 static void serial_omap_restore_context(struct uart_omap_port *up)
 {
 	if (up->errata & UART_ERRATA_i202_MDR1_ACCESS)
@@ -1550,7 +1627,6 @@ static void serial_omap_restore_context(struct uart_omap_port *up)
 		serial_out(up, UART_OMAP_MDR1, up->mdr1);
 }
 
-#ifdef CONFIG_PM_RUNTIME
 static int serial_omap_runtime_suspend(struct device *dev)
 {
 	struct uart_omap_port *up = dev_get_drvdata(dev);
