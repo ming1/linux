@@ -1,0 +1,23 @@
+Importing hexagon based on v3.2-rc2
+Unchanged quilt series hexagon
+Importing i2c based on c1aab02dac690af7ff634d8e1cb3be6a04387eef
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard c1aab02dac690af7ff634d8e1cb3be6a04387eef
+HEAD is now at c1aab02 migrate_mode.h is not exported to user mode
+$ git am ../quilt/i2c/i2c-isch-decrease-delay-in-command-completion-check-loop.patch
+Applying: i2c-isch: Decrease delay in command completion check loop
+$ git am ../quilt/i2c/i2c-i801-add-device-ids-for-intel-lynx-point.patch
+Applying: i2c-i801: Add device IDs for Intel Lynx Point
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/i2c
+From ../quilt-tmp
+   dcd6c92..792f6eb  master     -> quilt/i2c
+Importing jdelvare-hwmon based on 3.3-rc1
+Unchanged quilt series jdelvare-hwmon
+Importing kernel-doc based on 3.2-rc7
+Unchanged quilt series kernel-doc
+Importing rr based on v3.2-8694-g53999bf
+Unchanged quilt series rr
+Importing device-mapper based on v3.3-rc1
+Unchanged quilt series device-mapper
