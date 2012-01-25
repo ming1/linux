@@ -9,6 +9,7 @@ obj-y                                   += pinmux.o
 obj-y					+= fuse.o
 obj-y					+= cpuidle.o
 obj-y					+= sleep.o
+obj-y					+= pmc.o
 obj-$(CONFIG_ARCH_TEGRA_2x_SOC)		+= powergate.o
 obj-$(CONFIG_ARCH_TEGRA_2x_SOC)         += tegra2_clocks.o
 obj-$(CONFIG_ARCH_TEGRA_2x_SOC)		+= tegra2_emc.o
