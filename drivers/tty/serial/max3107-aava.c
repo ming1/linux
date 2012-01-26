@@ -36,6 +36,7 @@
 #include <linux/platform_device.h>
 #include <linux/gpio.h>
 #include <linux/sfi.h>
+#include <linux/module.h>
 #include <asm/mrst.h>
 #include "max3107.h"
 
@@ -314,7 +315,6 @@ static int __devinit max3107_probe_aava(struct spi_device *spi)
 static struct spi_driver max3107_driver = {
 	.driver = {
 		.name		= "aava-max3107",
-		.bus		= &spi_bus_type,
 		.owner		= THIS_MODULE,
 	},
 	.probe		= max3107_probe_aava,

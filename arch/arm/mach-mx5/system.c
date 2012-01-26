@@ -13,6 +13,7 @@
 #include <linux/platform_device.h>
 #include <linux/io.h>
 #include <mach/hardware.h>
+#include <mach/common.h>
 #include "crm_regs.h"
 
 /* set cpu low power mode before WFI instruction. This function is called
@@ -54,9 +55,6 @@ void mx5_cpu_lp_set(enum mxc_cpu_pwr_mode mode)
 			stop_mode = 1;
 		}
 		arm_srpgcr |= MXC_SRPGCR_PCR;
-
-		if (tzic_enable_wake(1) != 0)
-			return;
 		break;
 	case STOP_POWER_ON:
 		ccm_clpcr |= 0x2 << MXC_CCM_CLPCR_LPM_OFFSET;

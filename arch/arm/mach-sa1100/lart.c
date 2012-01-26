@@ -24,10 +24,20 @@
 static struct mcp_plat_data lart_mcp_data = {
 	.mccr0		= MCCR0_ADM,
 	.sclk_rate	= 11981000,
+	.codec		= "ucb1x00",
 };
 
 static void __init lart_init(void)
 {
+	/*
+	 * Setup the PPC unit correctly.
+	 */
+	PPDR &= ~PPC_RXD4;
+	PPDR |= PPC_TXD4 | PPC_SCLK | PPC_SFRM;
+	PSDR |= PPC_RXD4;
+	PSDR &= ~(PPC_TXD4 | PPC_SCLK | PPC_SFRM);
+	PPSR &= ~(PPC_TXD4 | PPC_SCLK | PPC_SFRM);
+
 	sa11x0_register_mcp(&lart_mcp_data);
 }
 
@@ -61,9 +71,10 @@ static void __init lart_map_io(void)
 }
 
 MACHINE_START(LART, "LART")
-	.boot_params	= 0xc0000100,
+	.atag_offset	= 0x100,
 	.map_io		= lart_map_io,
 	.init_irq	= sa1100_init_irq,
 	.init_machine	= lart_init,
 	.timer		= &sa1100_timer,
+	.restart	= sa11x0_restart,
 MACHINE_END

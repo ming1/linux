@@ -1351,7 +1351,8 @@ static int pcie_find_smpss(struct pci_dev *dev, void *data)
 	 * will occur as normal.
 	 */
 	if (dev->is_hotplug_bridge && (!list_is_singular(&dev->bus->devices) ||
-	    dev->bus->self->pcie_type != PCI_EXP_TYPE_ROOT_PORT))
+	     (dev->bus->self &&
+	      dev->bus->self->pcie_type != PCI_EXP_TYPE_ROOT_PORT)))
 		*smpss = 0;
 
 	if (*smpss > dev->pcie_mpss)
@@ -1362,31 +1363,25 @@ static int pcie_find_smpss(struct pci_dev *dev, void *data)
 
 static void pcie_write_mps(struct pci_dev *dev, int mps)
 {
-	int rc, dev_mpss;
-
-	dev_mpss = 128 << dev->pcie_mpss;
+	int rc;
 
 	if (pcie_bus_config == PCIE_BUS_PERFORMANCE) {
-		if (dev->bus->self) {
-			dev_dbg(&dev->bus->dev, "Bus MPSS %d\n",
-				128 << dev->bus->self->pcie_mpss);
+		mps = 128 << dev->pcie_mpss;
 
-			/* For "MPS Force Max", the assumption is made that
+		if (dev->pcie_type != PCI_EXP_TYPE_ROOT_PORT && dev->bus->self)
+			/* For "Performance", the assumption is made that
 			 * downstream communication will never be larger than
 			 * the MRRS.  So, the MPS only needs to be configured
 			 * for the upstream communication.  This being the case,
 			 * walk from the top down and set the MPS of the child
 			 * to that of the parent bus.
+			 *
+			 * Configure the device MPS with the smaller of the
+			 * device MPSS or the bridge MPS (which is assumed to be
+			 * properly configured at this point to the largest
+			 * allowable MPS based on its parent bus).
 			 */
-			mps = 128 << dev->bus->self->pcie_mpss;
-			if (mps > dev_mpss)
-				dev_warn(&dev->dev, "MPS configured higher than"
-					 " maximum supported by the device.  If"
-					 " a bus issue occurs, try running with"
-					 " pci=pcie_bus_safe.\n");
-		}
-
-		dev->pcie_mpss = ffs(mps) - 8;
+			mps = min(mps, pcie_get_mps(dev->bus->self));
 	}
 
 	rc = pcie_set_mps(dev, mps);
@@ -1394,25 +1389,22 @@ static void pcie_write_mps(struct pci_dev *dev, int mps)
 		dev_err(&dev->dev, "Failed attempting to set the MPS\n");
 }
 
-static void pcie_write_mrrs(struct pci_dev *dev, int mps)
+static void pcie_write_mrrs(struct pci_dev *dev)
 {
-	int rc, mrrs, dev_mpss;
+	int rc, mrrs;
 
 	/* In the "safe" case, do not configure the MRRS.  There appear to be
 	 * issues with setting MRRS to 0 on a number of devices.
 	 */
-
 	if (pcie_bus_config != PCIE_BUS_PERFORMANCE)
 		return;
 
-	dev_mpss = 128 << dev->pcie_mpss;
-
 	/* For Max performance, the MRRS must be set to the largest supported
 	 * value.  However, it cannot be configured larger than the MPS the
-	 * device or the bus can support.  This assumes that the largest MRRS
-	 * available on the device cannot be smaller than the device MPSS.
+	 * device or the bus can support.  This should already be properly
+	 * configured by a prior call to pcie_write_mps.
 	 */
-	mrrs = min(mps, dev_mpss);
+	mrrs = pcie_get_mps(dev);
 
 	/* MRRS is a R/W register.  Invalid values can be written, but a
 	 * subsequent read will verify if the value is acceptable or not.
@@ -1420,49 +1412,64 @@ static void pcie_write_mrrs(struct pci_dev *dev, int mps)
 	 * shrink the value until it is acceptable to the HW.
  	 */
 	while (mrrs != pcie_get_readrq(dev) && mrrs >= 128) {
-		dev_warn(&dev->dev, "Attempting to modify the PCI-E MRRS value"
-			 " to %d.  If any issues are encountered, please try "
-			 "running with pci=pcie_bus_safe\n", mrrs);
 		rc = pcie_set_readrq(dev, mrrs);
-		if (rc)
-			dev_err(&dev->dev,
-				"Failed attempting to set the MRRS\n");
+		if (!rc)
+			break;
 
+		dev_warn(&dev->dev, "Failed attempting to set the MRRS\n");
 		mrrs /= 2;
 	}
+
+	if (mrrs < 128)
+		dev_err(&dev->dev, "MRRS was unable to be configured with a "
+			"safe value.  If problems are experienced, try running "
+			"with pci=pcie_bus_safe.\n");
 }
 
 static int pcie_bus_configure_set(struct pci_dev *dev, void *data)
 {
-	int mps = 128 << *(u8 *)data;
+	int mps, orig_mps;
 
 	if (!pci_is_pcie(dev))
 		return 0;
 
-	dev_dbg(&dev->dev, "Dev MPS %d MPSS %d MRRS %d\n",
-		 pcie_get_mps(dev), 128<<dev->pcie_mpss, pcie_get_readrq(dev));
+	mps = 128 << *(u8 *)data;
+	orig_mps = pcie_get_mps(dev);
 
 	pcie_write_mps(dev, mps);
-	pcie_write_mrrs(dev, mps);
+	pcie_write_mrrs(dev);
 
-	dev_dbg(&dev->dev, "Dev MPS %d MPSS %d MRRS %d\n",
-		 pcie_get_mps(dev), 128<<dev->pcie_mpss, pcie_get_readrq(dev));
+	dev_info(&dev->dev, "PCI-E Max Payload Size set to %4d/%4d (was %4d), "
+		 "Max Read Rq %4d\n", pcie_get_mps(dev), 128 << dev->pcie_mpss,
+		 orig_mps, pcie_get_readrq(dev));
 
 	return 0;
 }
 
-/* pcie_bus_configure_mps requires that pci_walk_bus work in a top-down,
+/* pcie_bus_configure_settings requires that pci_walk_bus work in a top-down,
  * parents then children fashion.  If this changes, then this code will not
  * work as designed.
  */
 void pcie_bus_configure_settings(struct pci_bus *bus, u8 mpss)
 {
-	u8 smpss = mpss;
+	u8 smpss;
 
 	if (!pci_is_pcie(bus->self))
 		return;
 
+	if (pcie_bus_config == PCIE_BUS_TUNE_OFF)
+		return;
+
+	/* FIXME - Peer to peer DMA is possible, though the endpoint would need
+	 * to be aware to the MPS of the destination.  To work around this,
+	 * simply force the MPS of the entire system to the smallest possible.
+	 */
+	if (pcie_bus_config == PCIE_BUS_PEER2PEER)
+		smpss = 0;
+
 	if (pcie_bus_config == PCIE_BUS_SAFE) {
+		smpss = mpss;
+
 		pcie_find_smpss(bus->self, &smpss);
 		pci_walk_bus(bus, pcie_find_smpss, &smpss);
 	}
@@ -1515,19 +1522,21 @@ unsigned int __devinit pci_scan_child_bus(struct pci_bus *bus)
 	return max;
 }
 
-struct pci_bus * pci_create_bus(struct device *parent,
-		int bus, struct pci_ops *ops, void *sysdata)
+struct pci_bus *pci_create_root_bus(struct device *parent, int bus,
+		struct pci_ops *ops, void *sysdata, struct list_head *resources)
 {
-	int error;
+	int error, i;
 	struct pci_bus *b, *b2;
 	struct device *dev;
+	struct pci_bus_resource *bus_res, *n;
+	struct resource *res;
 
 	b = pci_alloc_bus();
 	if (!b)
 		return NULL;
 
 	dev = kzalloc(sizeof(*dev), GFP_KERNEL);
-	if (!dev){
+	if (!dev) {
 		kfree(b);
 		return NULL;
 	}
@@ -1570,8 +1579,20 @@ struct pci_bus * pci_create_bus(struct device *parent,
 	pci_create_legacy_files(b);
 
 	b->number = b->secondary = bus;
-	b->resource[0] = &ioport_resource;
-	b->resource[1] = &iomem_resource;
+
+	/* Add initial resources to the bus */
+	list_for_each_entry_safe(bus_res, n, resources, list)
+		list_move_tail(&bus_res->list, &b->resources);
+
+	if (parent)
+		dev_info(parent, "PCI host bridge to bus %s\n", dev_name(&b->dev));
+	else
+		printk(KERN_INFO "PCI host bridge to bus %s\n", dev_name(&b->dev));
+
+	pci_bus_for_each_resource(b, res, i) {
+		if (res)
+			dev_info(&b->dev, "root bus resource %pR\n", res);
+	}
 
 	return b;
 
@@ -1587,17 +1608,57 @@ err_out:
 	return NULL;
 }
 
-struct pci_bus * __devinit pci_scan_bus_parented(struct device *parent,
-		int bus, struct pci_ops *ops, void *sysdata)
+struct pci_bus * __devinit pci_scan_root_bus(struct device *parent, int bus,
+		struct pci_ops *ops, void *sysdata, struct list_head *resources)
 {
 	struct pci_bus *b;
 
-	b = pci_create_bus(parent, bus, ops, sysdata);
+	b = pci_create_root_bus(parent, bus, ops, sysdata, resources);
+	if (!b)
+		return NULL;
+
+	b->subordinate = pci_scan_child_bus(b);
+	pci_bus_add_devices(b);
+	return b;
+}
+EXPORT_SYMBOL(pci_scan_root_bus);
+
+/* Deprecated; use pci_scan_root_bus() instead */
+struct pci_bus * __devinit pci_scan_bus_parented(struct device *parent,
+		int bus, struct pci_ops *ops, void *sysdata)
+{
+	LIST_HEAD(resources);
+	struct pci_bus *b;
+
+	pci_add_resource(&resources, &ioport_resource);
+	pci_add_resource(&resources, &iomem_resource);
+	b = pci_create_root_bus(parent, bus, ops, sysdata, &resources);
 	if (b)
 		b->subordinate = pci_scan_child_bus(b);
+	else
+		pci_free_resource_list(&resources);
 	return b;
 }
 EXPORT_SYMBOL(pci_scan_bus_parented);
+
+struct pci_bus * __devinit pci_scan_bus(int bus, struct pci_ops *ops,
+					void *sysdata)
+{
+	LIST_HEAD(resources);
+	struct pci_bus *b;
+
+	pci_add_resource(&resources, &ioport_resource);
+	pci_add_resource(&resources, &iomem_resource);
+	b = pci_create_root_bus(NULL, bus, ops, sysdata, &resources);
+	if (b) {
+		b->subordinate = pci_scan_child_bus(b);
+		pci_bus_add_devices(b);
+	} else {
+		pci_free_resource_list(&resources);
+	}
+	return b;
+}
+EXPORT_SYMBOL(pci_scan_bus);
 
 #ifdef CONFIG_HOTPLUG
 /**

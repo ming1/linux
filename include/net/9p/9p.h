@@ -63,32 +63,15 @@ enum p9_debug_flags {
 
 #ifdef CONFIG_NET_9P_DEBUG
 extern unsigned int p9_debug_level;
-
-#define P9_DPRINTK(level, format, arg...) \
-do {  \
-	if ((p9_debug_level & level) == level) {\
-		if (level == P9_DEBUG_9P) \
-			printk(KERN_NOTICE "(%8.8d) " \
-			format , task_pid_nr(current) , ## arg); \
-		else \
-			printk(KERN_NOTICE "-- %s (%d): " \
-			format , __func__, task_pid_nr(current) , ## arg); \
-	} \
-} while (0)
-
-#define P9_DUMP_PKT(way, pdu) p9pdu_dump(way, pdu)
-
+__printf(3, 4)
+void _p9_debug(enum p9_debug_flags level, const char *func,
+	       const char *fmt, ...);
+#define p9_debug(level, fmt, ...)			\
+	_p9_debug(level, __func__, fmt, ##__VA_ARGS__)
 #else
-#define P9_DPRINTK(level, format, arg...)  do { } while (0)
-#define P9_DUMP_PKT(way, pdu) do { } while (0)
+#define p9_debug(level, fmt, ...)			\
+	no_printk(fmt, ##__VA_ARGS__)
 #endif
-
-
-#define P9_EPRINTK(level, format, arg...) \
-do { \
-	printk(level "9p: %s (%d): " \
-		format , __func__, task_pid_nr(current), ## arg); \
-} while (0)
 
 /**
  * enum p9_msg_t - 9P message types
@@ -359,6 +342,9 @@ enum p9_qid_t {
 /* Room for readdir header */
 #define P9_READDIRHDRSZ	24
 
+/* size of header for zero copy read/write */
+#define P9_ZC_HDR_SZ 4096
+
 /**
  * struct p9_qid - file system entity information
  * @type: 8-bit type &p9_qid_t
@@ -555,10 +541,6 @@ struct p9_rstatfs {
  * @tag: transaction id of the request
  * @offset: used by marshalling routines to track current position in buffer
  * @capacity: used by marshalling routines to track total malloc'd capacity
- * @pubuf: Payload user buffer given by the caller
- * @pkbuf: Payload kernel buffer given by the caller
- * @pbuf_size: pubuf/pkbuf(only one will be !NULL) size to be read/write.
- * @private: For transport layer's use.
  * @sdata: payload
  *
  * &p9_fcall represents the structure for all 9P RPC
@@ -575,10 +557,6 @@ struct p9_fcall {
 
 	size_t offset;
 	size_t capacity;
-	char __user *pubuf;
-	char *pkbuf;
-	size_t pbuf_size;
-	void *private;
 
 	u8 *sdata;
 };
