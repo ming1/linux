@@ -53,26 +53,25 @@ struct nfs4_minor_version_ops {
 	const struct nfs4_state_maintenance_ops *state_renewal_ops;
 };
 
-/*
- * struct rpc_sequence ensures that RPC calls are sent in the exact
- * order that they appear on the list.
- */
-struct rpc_sequence {
-	struct rpc_wait_queue	wait;	/* RPC call delay queue */
-	spinlock_t lock;		/* Protects the list */
-	struct list_head list;		/* Defines sequence of RPC calls */
+struct nfs_unique_id {
+	struct rb_node rb_node;
+	__u64 id;
 };
 
 #define NFS_SEQID_CONFIRMED 1
 struct nfs_seqid_counter {
-	struct rpc_sequence *sequence;
+	int owner_id;
 	int flags;
 	u32 counter;
+	spinlock_t lock;		/* Protects the list */
+	struct list_head list;		/* Defines sequence of RPC calls */
+	struct rpc_wait_queue	wait;	/* RPC call delay queue */
 };
 
 struct nfs_seqid {
 	struct nfs_seqid_counter *sequence;
 	struct list_head list;
+	struct rpc_task *task;
 };
 
 static inline void nfs_confirm_seqid(struct nfs_seqid_counter *seqid, int status)
@@ -81,18 +80,12 @@ static inline void nfs_confirm_seqid(struct nfs_seqid_counter *seqid, int status
 		seqid->flags |= NFS_SEQID_CONFIRMED;
 }
 
-struct nfs_unique_id {
-	struct rb_node rb_node;
-	__u64 id;
-};
-
 /*
  * NFS4 state_owners and lock_owners are simply labels for ordered
  * sequences of RPC calls. Their sole purpose is to provide once-only
  * semantics by allowing the server to identify replayed requests.
  */
 struct nfs4_state_owner {
-	struct nfs_unique_id so_owner_id;
 	struct nfs_server    *so_server;
 	struct list_head     so_lru;
 	unsigned long        so_expires;
@@ -105,7 +98,6 @@ struct nfs4_state_owner {
 	unsigned long	     so_flags;
 	struct list_head     so_states;
 	struct nfs_seqid_counter so_seqid;
-	struct rpc_sequence  so_sequence;
 };
 
 enum {
@@ -146,8 +138,6 @@ struct nfs4_lock_state {
 #define NFS_LOCK_INITIALIZED 1
 	int			ls_flags;
 	struct nfs_seqid_counter	ls_seqid;
-	struct rpc_sequence	ls_sequence;
-	struct nfs_unique_id	ls_id;
 	nfs4_stateid		ls_stateid;
 	atomic_t		ls_count;
 	struct nfs4_lock_owner	ls_owner;
@@ -233,12 +223,13 @@ static inline struct nfs4_session *nfs4_get_session(const struct nfs_server *ser
 	return server->nfs_client->cl_session;
 }
 
+extern bool nfs4_set_task_privileged(struct rpc_task *task, void *dummy);
 extern int nfs4_setup_sequence(const struct nfs_server *server,
 		struct nfs4_sequence_args *args, struct nfs4_sequence_res *res,
-		int cache_reply, struct rpc_task *task);
+		struct rpc_task *task);
 extern int nfs41_setup_sequence(struct nfs4_session *session,
 		struct nfs4_sequence_args *args, struct nfs4_sequence_res *res,
-		int cache_reply, struct rpc_task *task);
+		struct rpc_task *task);
 extern void nfs4_destroy_session(struct nfs4_session *session);
 extern struct nfs4_session *nfs4_alloc_session(struct nfs_client *clp);
 extern int nfs4_proc_create_session(struct nfs_client *);
@@ -269,7 +260,7 @@ static inline struct nfs4_session *nfs4_get_session(const struct nfs_server *ser
 
 static inline int nfs4_setup_sequence(const struct nfs_server *server,
 		struct nfs4_sequence_args *args, struct nfs4_sequence_res *res,
-		int cache_reply, struct rpc_task *task)
+		struct rpc_task *task)
 {
 	return 0;
 }
@@ -319,7 +310,7 @@ static inline void nfs4_schedule_session_recovery(struct nfs4_session *session)
 }
 #endif /* CONFIG_NFS_V4_1 */
 
-extern struct nfs4_state_owner * nfs4_get_state_owner(struct nfs_server *, struct rpc_cred *);
+extern struct nfs4_state_owner *nfs4_get_state_owner(struct nfs_server *, struct rpc_cred *, gfp_t);
 extern void nfs4_put_state_owner(struct nfs4_state_owner *);
 extern void nfs4_purge_state_owners(struct nfs_server *);
 extern struct nfs4_state * nfs4_get_open_state(struct inode *, struct nfs4_state_owner *);
