@@ -34,7 +34,6 @@
 /*
  * Show the reason for the previous system reset.
  */
-#if defined(AT91_RSTC)
 
 #include <mach/at91_rstc.h>
 #include <mach/at91_shdwc.h>
@@ -58,10 +57,10 @@ static void __init show_reset_status(void)
 	char *reason, *r2 = reset;
 	u32 reset_type, wake_type;
 
-	if (!at91_shdwc_base)
+	if (!at91_shdwc_base || !at91_rstc_base)
 		return;
 
-	reset_type = at91_sys_read(AT91_RSTC_SR) & AT91_RSTC_RSTTYP;
+	reset_type = at91_rstc_read(AT91_RSTC_SR) & AT91_RSTC_RSTTYP;
 	wake_type = at91_shdwc_read(AT91_SHDW_SR);
 
 	switch (reset_type) {
@@ -102,10 +101,6 @@ static void __init show_reset_status(void)
 	}
 	pr_info("AT91: Starting after %s %s\n", reason, r2);
 }
-#else
-static void __init show_reset_status(void) {}
-#endif
-
 
 static int at91_pm_valid_state(suspend_state_t state)
 {
@@ -152,11 +147,6 @@ static int at91_pm_verify_clocks(void)
 	} else if (cpu_is_at91sam9260() || cpu_is_at91sam9261() || cpu_is_at91sam9263()
 			|| cpu_is_at91sam9g20() || cpu_is_at91sam9g10()) {
 		if ((scsr & (AT91SAM926x_PMC_UHP | AT91SAM926x_PMC_UDP)) != 0) {
-			pr_err("AT91: PM - Suspend-to-RAM with USB still active\n");
-			return 0;
-		}
-	} else if (cpu_is_at91cap9()) {
-		if ((scsr & AT91CAP9_PMC_UHP) != 0) {
 			pr_err("AT91: PM - Suspend-to-RAM with USB still active\n");
 			return 0;
 		}
@@ -208,7 +198,6 @@ extern u32 at91_slow_clock_sz;
 
 static int at91_pm_enter(suspend_state_t state)
 {
-	u32 saved_lpr;
 	at91_gpio_suspend();
 	at91_irq_suspend();
 
@@ -264,16 +253,7 @@ static int at91_pm_enter(suspend_state_t state)
 			 * For ARM 926 based chips, this requirement is weaker
 			 * as at91sam9 can access a RAM in self-refresh mode.
 			 */
-			asm volatile (	"mov r0, #0\n\t"
-					"b 1f\n\t"
-					".align 5\n\t"
-					"1: mcr p15, 0, r0, c7, c10, 4\n\t"
-					: /* no output */
-					: /* no input */
-					: "r0");
-			saved_lpr = sdram_selfrefresh_enable();
-			wait_for_interrupt_enable();
-			sdram_selfrefresh_disable(saved_lpr);
+			at91_standby();
 			break;
 
 		case PM_SUSPEND_ON:

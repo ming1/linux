@@ -45,7 +45,6 @@ extern void __init at91sam9261_set_console_clock(int id);
 extern void __init at91sam9263_set_console_clock(int id);
 extern void __init at91sam9rl_set_console_clock(int id);
 extern void __init at91sam9g45_set_console_clock(int id);
-extern void __init at91cap9_set_console_clock(int id);
 #ifdef CONFIG_AT91_PMC_UNIT
 extern int __init at91_clock_init(unsigned long main_clock);
 #else
@@ -58,7 +57,9 @@ extern void at91_irq_suspend(void);
 extern void at91_irq_resume(void);
 
 /* reset */
+extern void at91_ioremap_rstc(u32 base_addr);
 extern void at91sam9_alt_restart(char, const char *);
+extern void at91sam9g45_restart(char, const char *);
 
 /* shutdown */
 extern void at91_ioremap_shdwc(u32 base_addr);
