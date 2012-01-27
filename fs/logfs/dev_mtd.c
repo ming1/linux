@@ -152,14 +152,13 @@ static struct page *logfs_mtd_find_first_sb(struct super_block *sb, u64 *ofs)
 	filler_t *filler = logfs_mtd_readpage;
 	struct mtd_info *mtd = super->s_mtd;
 
-	if (!mtd_can_have_bb(mtd))
-		return NULL;
-
 	*ofs = 0;
-	while (mtd_block_isbad(mtd, *ofs)) {
-		*ofs += mtd->erasesize;
-		if (*ofs >= mtd->size)
-			return NULL;
+	if (mtd_can_have_bb(mtd)) {
+		while (mtd_block_isbad(mtd, *ofs)) {
+			*ofs += mtd->erasesize;
+			if (*ofs >= mtd->size)
+				return NULL;
+		}
 	}
 	BUG_ON(*ofs & ~PAGE_MASK);
 	return read_cache_page(mapping, *ofs >> PAGE_SHIFT, filler, sb);
@@ -172,14 +171,13 @@ static struct page *logfs_mtd_find_last_sb(struct super_block *sb, u64 *ofs)
 	filler_t *filler = logfs_mtd_readpage;
 	struct mtd_info *mtd = super->s_mtd;
 
-	if (!mtd_can_have_bb(mtd))
-		return NULL;
-
 	*ofs = mtd->size - mtd->erasesize;
-	while (mtd_block_isbad(mtd, *ofs)) {
-		*ofs -= mtd->erasesize;
-		if (*ofs <= 0)
-			return NULL;
+	if (mtd_can_have_bb(mtd)) {
+		while (mtd_block_isbad(mtd, *ofs)) {
+			*ofs -= mtd->erasesize;
+			if (*ofs <= 0)
+				return NULL;
+		}
 	}
 	*ofs = *ofs + mtd->erasesize - 0x1000;
 	BUG_ON(*ofs & ~PAGE_MASK);
