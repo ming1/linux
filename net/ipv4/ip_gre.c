@@ -730,8 +730,7 @@ static netdev_tx_t ipgre_tunnel_xmit(struct sk_buff *skb, struct net_device *dev
 
 		if (skb->protocol == htons(ETH_P_IP)) {
 			rt = skb_rtable(skb);
-			if ((dst = rt->rt_gateway) == 0)
-				goto tx_error_icmp;
+			dst = rt->rt_gateway;
 		}
 #if IS_ENABLED(CONFIG_IPV6)
 		else if (skb->protocol == htons(ETH_P_IPV6)) {
@@ -914,9 +913,10 @@ static netdev_tx_t ipgre_tunnel_xmit(struct sk_buff *skb, struct net_device *dev
 	__IPTUNNEL_XMIT(tstats, &dev->stats);
 	return NETDEV_TX_OK;
 
+#if IS_ENABLED(CONFIG_IPV6)
 tx_error_icmp:
 	dst_link_failure(skb);
-
+#endif
 tx_error:
 	dev->stats.tx_errors++;
 	dev_kfree_skb(skb);
