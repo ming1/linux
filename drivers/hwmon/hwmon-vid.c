@@ -40,7 +40,7 @@
  * available at http://developer.intel.com/.
  *
  * AMD Athlon 64 and AMD Opteron Processors, AMD Publication 26094,
- * http://support.amd.com/us/Processor_TechDocs/26094.PDF 
+ * http://support.amd.com/us/Processor_TechDocs/26094.PDF
  * Table 74. VID Code Voltages
  * This corresponds to an arbitrary VRM code of 24 in the functions below.
  * These CPU models (K8 revision <= E) have 5 VID pins. See also:
@@ -96,14 +96,14 @@ int vid_from_reg(int val, u8 vrm)
 			vid = 1862500 - (val & 0x1f) * 25000;
 		if(val & 0x20)
 			vid -= 12500;
-		return((vid + 500) / 1000);
+		return (vid + 500) / 1000;
 
 	case 110:		/* Intel Conroe */
 				/* compute in uV, round to mV */
 		val &= 0xff;
 		if (val < 0x02 || val > 0xb2)
 			return 0;
-		return((1600000 - (val - 2) * 6250 + 500) / 1000);
+		return (1600000 - (val - 2) * 6250 + 500) / 1000;
 
 	case 24:		/* Athlon64 & Opteron */
 		val &= 0x1f;
@@ -118,38 +118,38 @@ int vid_from_reg(int val, u8 vrm)
 	case 91:		/* VRM 9.1 */
 	case 90:		/* VRM 9.0 */
 		val &= 0x1f;
-		return(val == 0x1f ? 0 :
-		                       1850 - val * 25);
+		return val == 0x1f ? 0 :
+		                       1850 - val * 25;
 
 	case 85:		/* VRM 8.5 */
 		val &= 0x1f;
-		return((val & 0x10  ? 25 : 0) +
+		return (val & 0x10  ? 25 : 0) +
 		       ((val & 0x0f) > 0x04 ? 2050 : 1250) -
-		       ((val & 0x0f) * 50));
+		       ((val & 0x0f) * 50);
 
 	case 84:		/* VRM 8.4 */
 		val &= 0x0f;
 				/* fall through */
 	case 82:		/* VRM 8.2 */
 		val &= 0x1f;
-		return(val == 0x1f ? 0 :
+		return val == 0x1f ? 0 :
 		       val & 0x10  ? 5100 - (val) * 100 :
-		                     2050 - (val) * 50);
+		                     2050 - (val) * 50;
 	case 17:		/* Intel IMVP-II */
 		val &= 0x1f;
-		return(val & 0x10 ? 975 - (val & 0xF) * 25 :
-				    1750 - val * 50);
+		return val & 0x10 ? 975 - (val & 0xF) * 25 :
+				    1750 - val * 50;
 	case 13:
 	case 131:
 		val &= 0x3f;
 		/* Exception for Eden ULV 500 MHz */
 		if (vrm == 131 && val == 0x3f)
 			val++;
-		return(1708 - val * 16);
+		return 1708 - val * 16;
 	case 14:		/* Intel Core */
 				/* compute in uV, round to mV */
 		val &= 0x7f;
-		return(val > 0x77 ? 0 : (1500000 - (val * 12500) + 500) / 1000);
+		return val > 0x77 ? 0 : (1500000 - (val * 12500) + 500) / 1000;
 	default:		/* report 0 for unknown */
 		if (vrm)
 			pr_warn("Requested unsupported VRM version (%u)\n",
@@ -185,10 +185,12 @@ struct vrm_model {
 static struct vrm_model vrm_models[] = {
 	{X86_VENDOR_AMD, 0x6, ANY, ANY, 90},		/* Athlon Duron etc */
 	{X86_VENDOR_AMD, 0xF, 0x3F, ANY, 24},		/* Athlon 64, Opteron */
-	/* In theory, all NPT family 0Fh processors have 6 VID pins and should
-	   thus use vrm 25, however in practice not all mainboards route the
-	   6th VID pin because it is never needed. So we use the 5 VID pin
-	   variant (vrm 24) for the models which exist today. */
+	/*
+	 * In theory, all NPT family 0Fh processors have 6 VID pins and should
+	 * thus use vrm 25, however in practice not all mainboards route the
+	 * 6th VID pin because it is never needed. So we use the 5 VID pin
+	 * variant (vrm 24) for the models which exist today.
+	 */
 	{X86_VENDOR_AMD, 0xF, 0x7F, ANY, 24},		/* NPT family 0Fh */
 	{X86_VENDOR_AMD, 0xF, ANY, ANY, 25},		/* future fam. 0Fh */
 	{X86_VENDOR_AMD, 0x10, ANY, ANY, 25},		/* NPT family 10h */
