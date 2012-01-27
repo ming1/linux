@@ -397,7 +397,7 @@ nfsd4_open(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 	 * successful, it (1) truncates the file if open->op_truncate was
 	 * set, (2) sets open->op_stateid, (3) sets open->op_delegation.
 	 */
-	status = nfsd4_process_open2(rqstp, resfh, open);
+	status = nfsd4_process_open2(rqstp, resfh, open, &cstate->current_fh);
 	WARN_ON(status && open->op_created);
 out:
 	if (resfh && resfh != &cstate->current_fh) {

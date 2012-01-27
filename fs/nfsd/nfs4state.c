@@ -2849,7 +2849,24 @@ static struct file_lock *nfs4_alloc_init_lease(struct nfs4_delegation *dp, int f
 	return fl;
 }
 
-static int nfs4_setlease(struct nfs4_delegation *dp, int flag)
+static bool nfsd4_name_still_same(struct svc_fh *parent, struct nfsd4_open *open, struct dentry *dentry)
+{
+	struct xdr_netobj *name = &open->op_fname;
+	struct dentry *res;
+
+	if (parent->fh_dentry == dentry)
+		/* This was an open by filehandle, we don't care: */
+		return true;
+	if (nfsd_mountpoint(dentry, parent->fh_export))
+		/* We assume those never change */
+		return true;
+	mutex_lock(&parent->fh_dentry->d_inode->i_mutex); /* XXX? */
+	res = lookup_one_len(name->data, parent->fh_dentry, name->len);
+	mutex_unlock(&parent->fh_dentry->d_inode->i_mutex);
+	return res == dentry;
+}
+
+static int nfs4_setlease(struct nfs4_delegation *dp, int flag, struct nfsd4_open *open, struct svc_fh *parent)
 {
 	struct nfs4_file *fp = dp->dl_file;
 	struct file_lock *fl;
@@ -2862,24 +2879,38 @@ static int nfs4_setlease(struct nfs4_delegation *dp, int flag)
 	status = vfs_setlease(fl->fl_file, fl->fl_type, &fl);
 	if (status)
 		goto out_free;
+	if (!nfsd4_name_still_same(parent, open, fl->fl_file->f_dentry))
+		goto out_unlease;
+	spin_lock(&recall_lock);
+	if (fp->fi_had_conflict)
+		/*
+		 * whoops, already broken, but before we got a chance to
+		 * install our delegation; never mind:
+		 */
+		 goto out_unlock;
+	list_add(&dp->dl_perfile, &fp->fi_delegations);
+	spin_unlock(&recall_lock);
 	list_add(&dp->dl_perclnt, &dp->dl_stid.sc_client->cl_delegations);
 	fp->fi_lease = fl;
 	fp->fi_deleg_file = fl->fl_file;
 	get_file(fp->fi_deleg_file);
 	atomic_set(&fp->fi_delegees, 1);
-	list_add(&dp->dl_perfile, &fp->fi_delegations);
 	return 0;
+out_unlock:
+	spin_unlock(&recall_lock);
+out_unlease:
+	vfs_setlease(fl->fl_file, F_UNLCK, &fl);
 out_free:
 	locks_free_lock(fl);
 	return -ENOMEM;
 }
 
-static int nfs4_set_delegation(struct nfs4_delegation *dp, int flag)
+static int nfs4_set_delegation(struct nfs4_delegation *dp, int flag, struct nfsd4_open *open, struct svc_fh *parent)
 {
 	struct nfs4_file *fp = dp->dl_file;
 
 	if (!fp->fi_lease)
-		return nfs4_setlease(dp, flag);
+		return nfs4_setlease(dp, flag, open, parent);
 	spin_lock(&recall_lock);
 	if (fp->fi_had_conflict) {
 		spin_unlock(&recall_lock);
@@ -2917,7 +2948,7 @@ static void nfsd4_open_deleg_none_ext(struct nfsd4_open *open, int status)
  * Attempt to hand out a delegation.
  */
 static void
-nfs4_open_delegation(struct svc_fh *fh, struct nfsd4_open *open, struct nfs4_ol_stateid *stp)
+nfs4_open_delegation(struct svc_fh *fh, struct nfsd4_open *open, struct nfs4_ol_stateid *stp, struct svc_fh *parent)
 {
 	struct nfs4_delegation *dp;
 	struct nfs4_openowner *oo = container_of(stp->st_stateowner, struct nfs4_openowner, oo_owner);
@@ -2954,7 +2985,7 @@ nfs4_open_delegation(struct svc_fh *fh, struct nfsd4_open *open, struct nfs4_ol_
 	dp = alloc_init_deleg(oo->oo_owner.so_client, stp, fh, flag);
 	if (dp == NULL)
 		goto out_no_deleg;
-	status = nfs4_set_delegation(dp, flag);
+	status = nfs4_set_delegation(dp, flag, open, parent);
 	if (status)
 		goto out_free;
 
@@ -3003,7 +3034,7 @@ static void nfsd4_deleg_xgrade_none_ext(struct nfsd4_open *open,
  * called with nfs4_lock_state() held.
  */
 __be32
-nfsd4_process_open2(struct svc_rqst *rqstp, struct svc_fh *current_fh, struct nfsd4_open *open)
+nfsd4_process_open2(struct svc_rqst *rqstp, struct svc_fh *current_fh, struct nfsd4_open *open, struct svc_fh *parent)
 {
 	struct nfsd4_compoundres *resp = rqstp->rq_resp;
 	struct nfs4_client *cl = open->op_openowner->oo_owner.so_client;
@@ -3074,7 +3105,7 @@ nfsd4_process_open2(struct svc_rqst *rqstp, struct svc_fh *current_fh, struct nf
 	* Attempt to hand out a delegation. No error return, because the
 	* OPEN succeeds even if we fail.
 	*/
-	nfs4_open_delegation(current_fh, open, stp);
+	nfs4_open_delegation(current_fh, open, stp, parent);
 nodeleg:
 	status = nfs_ok;
 
