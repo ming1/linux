@@ -1062,9 +1062,9 @@ static long do_mbind(unsigned long start, unsigned long len,
 {
 	struct vm_area_struct *vma;
 	struct mm_struct *mm = current->mm;
-	struct mempolicy *new;
+	struct mempolicy *new = NULL;
 	unsigned long end;
-	int err;
+	int err, nr_failed = 0;
 	LIST_HEAD(pagelist);
 
   	if (flags & ~(unsigned long)MPOL_MF_VALID)
@@ -1086,13 +1086,15 @@ static long do_mbind(unsigned long start, unsigned long len,
 	if (end == start)
 		return 0;
 
-	new = mpol_new(mode, mode_flags, nmask);
-	if (IS_ERR(new))
-		return PTR_ERR(new);
+	if (mode != MPOL_NOOP) {
+		new = mpol_new(mode, mode_flags, nmask);
+		if (IS_ERR(new))
+			return PTR_ERR(new);
 
-	if (flags & MPOL_MF_LAZY)
-		new->flags |= MPOL_F_MOF;
+		if (flags & MPOL_MF_LAZY)
+			new->flags |= MPOL_F_MOF;
 
+	}
 	/*
 	 * If we are using the default policy then operation
 	 * on discontinuous address spaces is okay after all
@@ -1105,56 +1107,57 @@ static long do_mbind(unsigned long start, unsigned long len,
 		 nmask ? nodes_addr(*nmask)[0] : -1);
 
 	if (flags & (MPOL_MF_MOVE | MPOL_MF_MOVE_ALL)) {
-
 		err = migrate_prep();
 		if (err)
 			goto mpol_out;
 	}
-	{
+
+	down_write(&mm->mmap_sem);
+
+	if (mode != MPOL_NOOP) {
 		NODEMASK_SCRATCH(scratch);
+		err = -ENOMEM;
 		if (scratch) {
-			down_write(&mm->mmap_sem);
 			task_lock(current);
 			err = mpol_set_nodemask(new, nmask, scratch);
 			task_unlock(current);
-			if (err)
-				up_write(&mm->mmap_sem);
-		} else
-			err = -ENOMEM;
+		}
 		NODEMASK_SCRATCH_FREE(scratch);
+		if (err)
+			goto mpol_out_unlock;
 	}
-	if (err)
-		goto mpol_out;
 
 	vma = check_range(mm, start, end, nmask,
 			  flags | MPOL_MF_INVERT, &pagelist);
 
 	err = PTR_ERR(vma);	/* maybe ... */
-	if (!IS_ERR(vma) && mode != MPOL_NOOP)
+	if (IS_ERR(vma))
+		goto mpol_out_unlock;
+
+	if (mode != MPOL_NOOP) {
 		err = mbind_range(mm, start, end, new);
+		if (err)
+			goto mpol_out_unlock;
+	}
 
-	if (!err) {
-		int nr_failed = 0;
-
-		if (!list_empty(&pagelist)) {
-			if (flags & MPOL_MF_LAZY)
-				nr_failed = migrate_pages_unmap_only(&pagelist);
-			else {
-				nr_failed = migrate_pages(&pagelist, new_vma_page,
-						(unsigned long)vma,
-						false, true);
-			}
-			if (nr_failed)
-				putback_lru_pages(&pagelist);
+	if (!list_empty(&pagelist)) {
+		if (flags & MPOL_MF_LAZY)
+			nr_failed = migrate_pages_unmap_only(&pagelist);
+		else {
+			nr_failed = migrate_pages(&pagelist, new_vma_page,
+					(unsigned long)vma,
+					false, true);
 		}
+	}
 
-		if (nr_failed && (flags & MPOL_MF_STRICT))
-			err = -EIO;
-	} else
-		putback_lru_pages(&pagelist);
+	if (nr_failed && (flags & MPOL_MF_STRICT))
+		err = -EIO;
 
+	putback_lru_pages(&pagelist);
+
+mpol_out_unlock:
 	up_write(&mm->mmap_sem);
- mpol_out:
+mpol_out:
 	mpol_put(new);
 	return err;
 }
