@@ -1,0 +1,59 @@
+Importing hexagon based on v3.2-rc2
+Unchanged quilt series hexagon
+Importing i2c based on 87f71ae2dd7471c1b4c94100be1f218e91dc64c3
+Unchanged quilt series i2c
+Importing jdelvare-hwmon based on 87f71ae2dd7471c1b4c94100be1f218e91dc64c3
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard 87f71ae2dd7471c1b4c94100be1f218e91dc64c3
+HEAD is now at 87f71ae Merge git://git.kernel.org/pub/scm/linux/kernel/git/herbert/crypto-2.6
+$ git am ../quilt/jdelvare-hwmon/hwmon-w83795-01-show-standard-pwm-attr.patch
+Applying: hwmon: (w83795) Unconditionally support manual fan speed control
+$ git am ../quilt/jdelvare-hwmon/hwmon-w83795-02-fix-multi-line-comments.patch
+Applying: hwmon: (w83795) Fix multi-line comments
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm90-01-fix-multi-line-comments.patch
+Applying: hwmon: (lm90) Fix multi-line comments
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm90-02-add-support-for-GMT-G781.patch
+Applying: hwmon: (lm90) Add support for GMT G781
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm63-01-rename-new_client.patch
+Applying: hwmon: (lm63) Reorganize the code
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm63-02-make-fan-speed-control-strategy-changeable.patch
+Applying: hwmon: (lm63) Make fan speed control strategy changeable
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm63-03-allow-editing-lut.patch
+Applying: hwmon: (lm63) Let the user adjust the lookup table
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/jdelvare-hwmon
+From ../quilt-tmp
+ + 0849a20...2eb1b72 master     -> quilt/jdelvare-hwmon  (forced update)
+Importing kernel-doc based on 3.2-rc7
+$ cd ../quilt-tmp
+$ git reset --hard 5f0a6e2d503896062f641639dacfe5055c2f593b
+HEAD is now at 5f0a6e2 Linux 3.2-rc7
+$ git am ../quilt/kernel-doc/docum-sysctl-more-tainted-bits.patch
+Applying: Two of the bits in the tainted flag are not documented.
+$ git am ../quilt/kernel-doc/docum-update-stable-email.patch
+Applying: The Japanese/Korean/Chinese versions still need updating.
+$ git am ../quilt/kernel-doc/scr-kernel-doc-skip-must-check.patch
+Applying: include/net/cfg80211.h uses __must_check in functions that
+$ git am ../quilt/kernel-doc/maint-docum-quilt-tree.patch
+Applying: Update quilt tree location for Documentation/ patches.
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/kernel-doc
+From ../quilt-tmp
+ + 5851bad...b177e93 master     -> quilt/kernel-doc  (forced update)
+Importing rr based on v3.3-rc1-246-g74ea15d
+$ cd ../quilt-tmp
+$ git reset --hard 74ea15d909b31158f9b63190a95b52bc05586d4b
+HEAD is now at 74ea15d Merge branch 'v4l_for_linus' of git://git.kernel.org/pub/scm/linux/kernel/git/mchehab/linux-media
+$ git am ../quilt/rr/virtio:fix_typos_of_memory_barriers.patch
+Applying: virtio: fix typos of memory barriers
+$ git am ../quilt/rr/virtio:correct_the_memory_barrier_in_virtqueue_kick_prepare.patch
+Applying: virtio: correct the memory barrier in virtqueue_kick_prepare()
+$ git am ../quilt/rr/lguest-kill-00-index-reference.patch
+Applying: lguest: remove reference from Documentation/virtual/00-INDEX
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/rr
+From ../quilt-tmp
+   53999bf..69aad94  master     -> quilt/rr
+Importing device-mapper based on v3.3-rc1
+Unchanged quilt series device-mapper
