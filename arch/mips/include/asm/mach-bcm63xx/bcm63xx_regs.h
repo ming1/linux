@@ -98,7 +98,7 @@
 #define CKCTL_6368_PCM_EN		(1 << 14)
 #define CKCTL_6368_USBH_EN		(1 << 15)
 #define CKCTL_6368_DISABLE_GLESS_EN	(1 << 16)
-#define CKCTL_6368_NAND_CLK_EN		(1 << 17)
+#define CKCTL_6368_NAND_EN		(1 << 17)
 #define CKCTL_6368_IPSEC_EN		(1 << 18)
 
 #define CKCTL_6368_ALL_SAFE_EN		(CKCTL_6368_SWPKT_USB_EN |	\
