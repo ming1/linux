@@ -9,6 +9,16 @@
 #include <linux/export.h>
 
 #ifdef CONFIG_PCI
+#ifndef CONFIG_NO_GENERIC_PCI_IOPORT_MAP
+/* Architectures can override ioport mapping while
+ * still using the rest of the generic infrastructure. */
+void __iomem *__pci_ioport_map(struct pci_dev *dev,
+			       unsigned long port,
+			       unsigned int nr)
+{
+	return ioport_map(port, nr);
+}
+#endif
 /**
  * pci_iomap - create a virtual mapping cookie for a PCI BAR
  * @dev: PCI device that owns the BAR
@@ -34,7 +44,7 @@ void __iomem *pci_iomap(struct pci_dev *dev, int bar, unsigned long maxlen)
 	if (maxlen && len > maxlen)
 		len = maxlen;
 	if (flags & IORESOURCE_IO)
-		return ioport_map(start, len);
+		return __pci_ioport_map(dev, start, len);
 	if (flags & IORESOURCE_MEM) {
 		if (flags & IORESOURCE_CACHEABLE)
 			return ioremap(start, len);
