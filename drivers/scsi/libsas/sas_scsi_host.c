@@ -463,11 +463,14 @@ EXPORT_SYMBOL_GPL(sas_get_local_phy);
 /* Attempt to send a LUN reset message to a device */
 int sas_eh_device_reset_handler(struct scsi_cmnd *cmd)
 {
-	struct domain_device *dev = cmd_to_domain_dev(cmd);
-	struct sas_internal *i =
-		to_sas_internal(dev->port->ha->core.shost->transportt);
-	struct scsi_lun lun;
 	int res;
+	struct scsi_lun lun;
+	struct Scsi_Host *host = cmd->device->host;
+	struct domain_device *dev = cmd_to_domain_dev(cmd);
+	struct sas_internal *i = to_sas_internal(host->transportt);
+
+	if (current != host->ehandler)
+		return FAILED;
 
 	int_to_scsilun(cmd->device->lun, &lun);
 
@@ -486,7 +489,11 @@ int sas_eh_bus_reset_handler(struct scsi_cmnd *cmd)
 {
 	struct domain_device *dev = cmd_to_domain_dev(cmd);
 	struct sas_phy *phy = sas_get_local_phy(dev);
+	struct Scsi_Host *host = cmd->device->host;
 	int res;
+
+	if (current != host->ehandler)
+		return FAILED;
 
 	res = sas_phy_reset(phy, 1);
 	if (res)
