@@ -293,6 +293,10 @@ static int sas_phy_enable(struct sas_phy *phy, int enable)
 	return ret;
 }
 
+static bool force_hard_reset;
+module_param(force_hard_reset, bool, S_IRUGO|S_IWUSR);
+MODULE_PARM_DESC(force_hard_reset, "clear sata affiliations on every reset");
+
 int sas_phy_reset(struct sas_phy *phy, int hard_reset)
 {
 	int ret;
@@ -301,7 +305,7 @@ int sas_phy_reset(struct sas_phy *phy, int hard_reset)
 	if (!phy->enabled)
 		return -ENODEV;
 
-	if (hard_reset)
+	if (hard_reset || force_hard_reset)
 		reset_type = PHY_FUNC_HARD_RESET;
 	else
 		reset_type = PHY_FUNC_LINK_RESET;
