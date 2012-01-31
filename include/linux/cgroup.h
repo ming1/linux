@@ -160,38 +160,6 @@ enum {
 	CGRP_CLONE_CHILDREN,
 };
 
-/* which pidlist file are we talking about? */
-enum cgroup_filetype {
-	CGROUP_FILE_PROCS,
-	CGROUP_FILE_TASKS,
-};
-
-/*
- * A pidlist is a list of pids that virtually represents the contents of one
- * of the cgroup files ("procs" or "tasks"). We keep a list of such pidlists,
- * a pair (one each for procs, tasks) for each pid namespace that's relevant
- * to the cgroup.
- */
-struct cgroup_pidlist {
-	/*
-	 * used to find which pidlist is wanted. doesn't change as long as
-	 * this particular list stays in the list.
-	 */
-	struct { enum cgroup_filetype type; struct pid_namespace *ns; } key;
-	/* array of xids */
-	pid_t *list;
-	/* how many elements the above list has */
-	int length;
-	/* how many files are using the current array */
-	int use_count;
-	/* each of these stored in a list by its cgroup */
-	struct list_head links;
-	/* pointer to the cgroup we belong to, for list removal purposes */
-	struct cgroup *owner;
-	/* protects the other fields */
-	struct rw_semaphore mutex;
-};
-
 struct cgroup {
 	unsigned long flags;		/* "unsigned long" so bitops work */
 
@@ -602,11 +570,6 @@ int cgroup_scan_tasks(struct cgroup_scanner *scan);
 int cgroup_attach_task(struct cgroup *, struct task_struct *);
 int cgroup_attach_task_all(struct task_struct *from, struct task_struct *);
 
-static inline int cgroup_attach_task_current_cg(struct task_struct *tsk)
-{
-	return cgroup_attach_task_all(current, tsk);
-}
-
 /*
  * CSS ID is ID for cgroup_subsys_state structs under subsys. This only works
  * if cgroup_subsys.use_id == true. It can be used for looking up and scanning.
@@ -666,10 +629,6 @@ static inline int cgroupstats_build(struct cgroupstats *stats,
 /* No cgroups - nothing to do */
 static inline int cgroup_attach_task_all(struct task_struct *from,
 					 struct task_struct *t)
-{
-	return 0;
-}
-static inline int cgroup_attach_task_current_cg(struct task_struct *t)
 {
 	return 0;
 }
