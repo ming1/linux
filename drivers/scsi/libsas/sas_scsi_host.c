@@ -460,6 +460,27 @@ struct sas_phy *sas_get_local_phy(struct domain_device *dev)
 }
 EXPORT_SYMBOL_GPL(sas_get_local_phy);
 
+int sas_eh_abort_handler(struct scsi_cmnd *cmd)
+{
+	int res;
+	struct sas_task *task = TO_SAS_TASK(cmd);
+	struct Scsi_Host *host = cmd->device->host;
+	struct sas_internal *i = to_sas_internal(host->transportt);
+
+	if (current != host->ehandler)
+		return FAILED;
+
+	if (!i->dft->lldd_abort_task)
+		return FAILED;
+
+	res = i->dft->lldd_abort_task(task);
+	if (res == TMF_RESP_FUNC_SUCC || res == TMF_RESP_FUNC_COMPLETE)
+		return SUCCESS;
+
+	return FAILED;
+}
+EXPORT_SYMBOL_GPL(sas_eh_abort_handler);
+
 /* Attempt to send a LUN reset message to a device */
 int sas_eh_device_reset_handler(struct scsi_cmnd *cmd)
 {
