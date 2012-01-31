@@ -107,7 +107,7 @@ static LIST_HEAD(mtd_notifiers);
  */
 static void mtd_release(struct device *dev)
 {
-	struct mtd_info *mtd = dev_get_drvdata(dev);
+	struct mtd_info __maybe_unused *mtd = dev_get_drvdata(dev);
 	dev_t index = MTD_DEVT(mtd->index);
 
 	/* remove /dev/mtdXro node if needed */
@@ -119,14 +119,14 @@ static int mtd_cls_suspend(struct device *dev, pm_message_t state)
 {
 	struct mtd_info *mtd = dev_get_drvdata(dev);
 
-	return mtd_suspend(mtd);
+	return mtd ? mtd_suspend(mtd) : 0;
 }
 
 static int mtd_cls_resume(struct device *dev)
 {
 	struct mtd_info *mtd = dev_get_drvdata(dev);
 
-	if (mtd && mtd->resume)
+	if (mtd && mtd->_resume)
 		mtd_resume(mtd);
 	return 0;
 }
@@ -610,8 +610,8 @@ int __get_mtd_device(struct mtd_info *mtd)
 	if (!try_module_get(mtd->owner))
 		return -ENODEV;
 
-	if (mtd->get_device) {
-		err = mtd->get_device(mtd);
+	if (mtd->_get_device) {
+		err = mtd->_get_device(mtd);
 
 		if (err) {
 			module_put(mtd->owner);
@@ -675,8 +675,8 @@ void __put_mtd_device(struct mtd_info *mtd)
 	--mtd->usecount;
 	BUG_ON(mtd->usecount < 0);
 
-	if (mtd->put_device)
-		mtd->put_device(mtd);
+	if (mtd->_put_device)
+		mtd->_put_device(mtd);
 
 	module_put(mtd->owner);
 }
@@ -729,9 +729,9 @@ int mtd_writev(struct mtd_info *mtd, const struct kvec *vecs,
 	       unsigned long count, loff_t to, size_t *retlen)
 {
 	*retlen = 0;
-	if (!mtd->writev)
+	if (!mtd->_writev)
 		return default_mtd_writev(mtd, vecs, count, to, retlen);
-	return mtd->writev(mtd, vecs, count, to, retlen);
+	return mtd->_writev(mtd, vecs, count, to, retlen);
 }
 EXPORT_SYMBOL_GPL(mtd_writev);
 
