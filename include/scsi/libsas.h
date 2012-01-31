@@ -174,10 +174,17 @@ struct sata_device {
 	struct ata_taskfile tf;
 };
 
+struct ssp_device {
+	struct list_head eh_list_node; /* pending a user requested eh action */
+	struct scsi_lun reset_lun;
+};
+
 enum {
 	SAS_DEV_GONE,
 	SAS_DEV_DESTROY,
 	SAS_DEV_EH_PENDING,
+	SAS_DEV_LU_RESET,
+	SAS_DEV_RESET,
 };
 
 struct domain_device {
@@ -211,6 +218,7 @@ struct domain_device {
         union {
                 struct expander_device ex_dev;
                 struct sata_device     sata_dev; /* STP & directly attached */
+		struct ssp_device      ssp_dev;
         };
 
         void *lldd_dev;
@@ -387,6 +395,8 @@ struct sas_ha_struct {
 	unsigned long	  state;
 	spinlock_t 	  lock;
 	int		  eh_active;
+	wait_queue_head_t eh_wait_q;
+	struct list_head  eh_dev_q;
 
 	struct mutex disco_mutex;
 
