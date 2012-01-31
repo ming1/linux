@@ -1,0 +1,34 @@
+Importing hexagon based on v3.2-rc2
+Unchanged quilt series hexagon
+Importing i2c based on 87f71ae2dd7471c1b4c94100be1f218e91dc64c3
+Unchanged quilt series i2c
+Importing jdelvare-hwmon based on acb42a3b611d7ad4cb173c3b37674b549df2ffeb
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard acb42a3b611d7ad4cb173c3b37674b549df2ffeb
+HEAD is now at acb42a3 Merge branch 'drm-fixes' of git://people.freedesktop.org/~airlied/linux
+$ git am ../quilt/jdelvare-hwmon/hwmon-w83795-01-show-standard-pwm-attr.patch
+Applying: hwmon: (w83795) Unconditionally support manual fan speed control
+$ git am ../quilt/jdelvare-hwmon/hwmon-w83795-02-fix-multi-line-comments.patch
+Applying: hwmon: (w83795) Fix multi-line comments
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm90-01-fix-multi-line-comments.patch
+Applying: hwmon: (lm90) Fix multi-line comments
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm90-02-add-support-for-GMT-G781.patch
+Applying: hwmon: (lm90) Add support for GMT G781
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm63-01-rename-new_client.patch
+Applying: hwmon: (lm63) Reorganize the code
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm63-02-make-fan-speed-control-strategy-changeable.patch
+Applying: hwmon: (lm63) Make fan speed control strategy changeable
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm63-03-allow-editing-lut.patch
+Applying: hwmon: (lm63) Let the user adjust the lookup table
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/jdelvare-hwmon
+From ../quilt-tmp
+ + 2eb1b72...723072e master     -> quilt/jdelvare-hwmon  (forced update)
+Importing kernel-doc based on 3.2-rc7
+Unchanged quilt series kernel-doc
+Importing rr based on v3.3-rc1-383-g0a96265
+	quilt series is empty
+$ git update-ref refs/heads/quilt/rr 0a9626575400879d1d5e6bc8768188b938d7c501
+Importing device-mapper based on v3.3-rc1
+Unchanged quilt series device-mapper
