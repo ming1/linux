@@ -91,6 +91,9 @@
 #define VIDCON1_VSTATUS_BACKPORCH		(0x1 << 13)
 #define VIDCON1_VSTATUS_ACTIVE			(0x2 << 13)
 #define VIDCON1_VSTATUS_FRONTPORCH		(0x0 << 13)
+#define VIDCON1_VCLK_MASK			(0x3 << 9)
+#define VIDCON1_VCLK_HOLD			(0x0 << 9)
+#define VIDCON1_VCLK_RUN			(0x1 << 9)
 
 #define VIDCON1_INV_VCLK			(1 << 7)
 #define VIDCON1_INV_HSYNC			(1 << 6)
@@ -383,4 +386,10 @@
 #define WPALCON_W0PAL_18BPP			(0x4 << 0)
 #define WPALCON_W0PAL_16BPP_A555		(0x5 << 0)
 #define WPALCON_W0PAL_16BPP_565			(0x6 << 0)
+
+/* Blending equation control */
+#define BLENDCON				(0x260)
+#define BLENDCON_NEW_MASK			(1 << 0)
+#define BLENDCON_NEW_8BIT_ALPHA_VALUE		(1 << 0)
+#define BLENDCON_NEW_4BIT_ALPHA_VALUE		(0 << 0)
 
