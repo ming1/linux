@@ -1302,8 +1302,6 @@ static struct genl_multicast_group thermal_event_mcgrp = {
 	.name = THERMAL_GENL_MCAST_GROUP_NAME,
 };
 
-static unsigned int thermal_event_seqnum;
-
 int thermal_generate_netlink_event(u32 orig, enum events event)
 {
 	struct sk_buff *skb;
@@ -1312,6 +1310,7 @@ int thermal_generate_netlink_event(u32 orig, enum events event)
 	void *msg_header;
 	int size;
 	int result;
+	static unsigned int thermal_event_seqnum;
 
 	/* allocate memory */
 	size = nla_total_size(sizeof(struct thermal_genl_event)) + \
