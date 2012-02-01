@@ -31,22 +31,9 @@
 
 /* gpio */
 static struct resource ltq_gpio_resource[] = {
-	{
-		.name	= "gpio0",
-		.start  = LTQ_GPIO0_BASE_ADDR,
-		.end    = LTQ_GPIO0_BASE_ADDR + LTQ_GPIO_SIZE - 1,
-		.flags  = IORESOURCE_MEM,
-	}, {
-		.name	= "gpio1",
-		.start  = LTQ_GPIO1_BASE_ADDR,
-		.end    = LTQ_GPIO1_BASE_ADDR + LTQ_GPIO_SIZE - 1,
-		.flags  = IORESOURCE_MEM,
-	}, {
-		.name	= "gpio2",
-		.start  = LTQ_GPIO2_BASE_ADDR,
-		.end    = LTQ_GPIO2_BASE_ADDR + LTQ_GPIO_SIZE - 1,
-		.flags  = IORESOURCE_MEM,
-	}
+	MEM_RES("gpio0", LTQ_GPIO0_BASE_ADDR, LTQ_GPIO_SIZE),
+	MEM_RES("gpio1", LTQ_GPIO1_BASE_ADDR, LTQ_GPIO_SIZE),
+	MEM_RES("gpio2", LTQ_GPIO2_BASE_ADDR, LTQ_GPIO_SIZE),
 };
 
 void __init ltq_register_gpio(void)
@@ -64,12 +51,8 @@ void __init ltq_register_gpio(void)
 }
 
 /* serial to parallel conversion */
-static struct resource ltq_stp_resource = {
-	.name   = "stp",
-	.start  = LTQ_STP_BASE_ADDR,
-	.end    = LTQ_STP_BASE_ADDR + LTQ_STP_SIZE - 1,
-	.flags  = IORESOURCE_MEM,
-};
+static struct resource ltq_stp_resource =
+	MEM_RES("stp", LTQ_STP_BASE_ADDR, LTQ_STP_SIZE);
 
 void __init ltq_register_gpio_stp(void)
 {
@@ -78,12 +61,7 @@ void __init ltq_register_gpio_stp(void)
 
 /* asc ports - amazon se has its own serial mapping */
 static struct resource ltq_ase_asc_resources[] = {
-	{
-		.name	= "asc0",
-		.start  = LTQ_ASC1_BASE_ADDR,
-		.end    = LTQ_ASC1_BASE_ADDR + LTQ_ASC_SIZE - 1,
-		.flags  = IORESOURCE_MEM,
-	},
+	MEM_RES("asc0", LTQ_ASC1_BASE_ADDR, LTQ_ASC_SIZE),
 	IRQ_RES(tx, LTQ_ASC_ASE_TIR),
 	IRQ_RES(rx, LTQ_ASC_ASE_RIR),
 	IRQ_RES(err, LTQ_ASC_ASE_EIR),
@@ -96,22 +74,23 @@ void __init ltq_register_ase_asc(void)
 }
 
 /* ethernet */
-static struct resource ltq_etop_resources = {
-	.name	= "etop",
-	.start	= LTQ_ETOP_BASE_ADDR,
-	.end	= LTQ_ETOP_BASE_ADDR + LTQ_ETOP_SIZE - 1,
-	.flags	= IORESOURCE_MEM,
+static struct resource ltq_etop_resources[] = {
+	MEM_RES("etop", LTQ_ETOP_BASE_ADDR, LTQ_ETOP_SIZE),
+	MEM_RES("gbit", LTQ_GBIT_BASE_ADDR, LTQ_GBIT_SIZE),
 };
 
 static struct platform_device ltq_etop = {
 	.name		= "ltq_etop",
-	.resource	= &ltq_etop_resources,
+	.resource	= ltq_etop_resources,
 	.num_resources	= 1,
 };
 
 void __init
 ltq_register_etop(struct ltq_eth_data *eth)
 {
+	/* only register the gphy on socs that have one */
+	if (ltq_is_ar9() | ltq_is_vr9())
+		ltq_etop.num_resources = 2;
 	if (eth) {
 		ltq_etop.dev.platform_data = eth;
 		platform_device_register(&ltq_etop);
