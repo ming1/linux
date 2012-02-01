@@ -89,18 +89,11 @@ static void vdso_init_data(struct vdso_data *vd)
 
 #ifdef CONFIG_64BIT
 /*
- * Setup per cpu vdso data page.
- */
-static void vdso_init_per_cpu_data(int cpu, struct vdso_per_cpu_data *vpcd)
-{
-}
-
-/*
  * Allocate/free per cpu vdso data.
  */
 #define SEGMENT_ORDER	2
 
-int vdso_alloc_per_cpu(int cpu, struct _lowcore *lowcore)
+int vdso_alloc_per_cpu(struct _lowcore *lowcore)
 {
 	unsigned long segment_table, page_table, page_frame;
 	u32 *psal, *aste;
@@ -139,7 +132,6 @@ int vdso_alloc_per_cpu(int cpu, struct _lowcore *lowcore)
 	aste[4] = (u32)(addr_t) psal;
 	lowcore->vdso_per_cpu_data = page_frame;
 
-	vdso_init_per_cpu_data(cpu, (struct vdso_per_cpu_data *) page_frame);
 	return 0;
 
 out:
@@ -149,7 +141,7 @@ out:
 	return -ENOMEM;
 }
 
-void vdso_free_per_cpu(int cpu, struct _lowcore *lowcore)
+void vdso_free_per_cpu(struct _lowcore *lowcore)
 {
 	unsigned long segment_table, page_table, page_frame;
 	u32 *psal, *aste;
