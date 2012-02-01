@@ -16,10 +16,10 @@
 #include <linux/kernel.h>
 #include <linux/notifier.h>
 #include <linux/of.h>
+#include <linux/pinctrl/pinconf.h>
 #include <linux/string.h>
 
 #include <mach/gpio-tegra.h>
-#include <mach/pinmux.h>
 
 #include "board-pinmux.h"
 #include "devices.h"
@@ -38,19 +38,58 @@ static void tegra_board_pinmux_setup_gpios(void)
 	}
 }
 
+static inline void tegra_board_pinmux_conf(const char *group, u16 param,
+					   u16 arg)
+{
+	if (arg == TEGRA_PINCONFIG_DONT_SET)
+		return;
+	pin_config_group_set(PINMUX_DEV, group, TEGRA_PINCONF_PACK(param, arg));
+}
+
 static void tegra_board_pinmux_setup_pinmux(void)
 {
-	int i;
+	int i, j;
+	const char *group;
 
 	for (i = 0; i < ARRAY_SIZE(confs); i++) {
 		if (!confs[i])
 			continue;
 
-		tegra_pinmux_config_table(confs[i]->pgs, confs[i]->pg_count);
+		for (j = 0; j < confs[i]->pg_count; j++) {
+			group = confs[i]->pgs[j].group;
+			tegra_board_pinmux_conf(group,
+				TEGRA_PINCONF_PARAM_PULL,
+				confs[i]->pgs[j].pull);
+			tegra_board_pinmux_conf(group,
+				TEGRA_PINCONF_PARAM_TRISTATE,
+				confs[i]->pgs[j].tristate);
+		}
 
-		if (confs[i]->drives)
-			tegra_drive_pinmux_config_table(confs[i]->drives,
-							confs[i]->drive_count);
+		for (j = 0; j < confs[i]->drive_count; j++) {
+			group = confs[i]->drives[j].group;
+
+			tegra_board_pinmux_conf(group,
+				TEGRA_PINCONF_PARAM_HIGH_SPEED_MODE,
+				confs[i]->drives[j].high_speed_mode);
+			tegra_board_pinmux_conf(group,
+				TEGRA_PINCONF_PARAM_SCHMITT,
+				confs[i]->drives[j].schmitt);
+			tegra_board_pinmux_conf(group,
+				TEGRA_PINCONF_PARAM_LOW_POWER_MODE,
+				confs[i]->drives[j].low_power_mode);
+			tegra_board_pinmux_conf(group,
+				TEGRA_PINCONF_PARAM_DRIVE_DOWN_STRENGTH,
+				confs[i]->drives[j].drive_down_strength);
+			tegra_board_pinmux_conf(group,
+				TEGRA_PINCONF_PARAM_DRIVE_UP_STRENGTH,
+				confs[i]->drives[j].drive_up_strength);
+			tegra_board_pinmux_conf(group,
+				TEGRA_PINCONF_PARAM_SLEW_RATE_FALLING,
+				confs[i]->drives[j].slew_falling);
+			tegra_board_pinmux_conf(group,
+				TEGRA_PINCONF_PARAM_SLEW_RATE_RISING,
+				confs[i]->drives[j].slew_rising);
+		}
 	}
 }
 
@@ -94,8 +133,17 @@ static struct platform_device *devices[] = {
 void tegra_board_pinmux_init(struct tegra_board_pinmux_conf *conf_a,
 			     struct tegra_board_pinmux_conf *conf_b)
 {
+	int i;
+
 	confs[0] = conf_a;
 	confs[1] = conf_b;
+
+	for (i = 0; i < ARRAY_SIZE(confs); i++) {
+		if (!confs[i])
+			continue;
+
+		pinmux_register_mappings(confs[i]->maps, confs[i]->map_count);
+	}
 
 	bus_register_notifier(&platform_bus_type, &nb);
 
