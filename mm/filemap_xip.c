@@ -263,8 +263,10 @@ found:
 							xip_pfn);
 		if (err == -ENOMEM)
 			return VM_FAULT_OOM;
-		/* err == -EBUSY is fine, we've raced against another thread
-		   that faulted-in the same page */
+		/*
+		 * err == -EBUSY is fine, we've raced against another thread
+		 * that faulted-in the same page
+		 */
 		if (err != -EBUSY)
 			BUG_ON(err);
 		return VM_FAULT_NOPAGE;
