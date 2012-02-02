@@ -291,12 +291,14 @@ struct perf_event_mmap_page {
 	__s64	offset;			/* add to hardware event value */
 	__u64	time_enabled;		/* time event active */
 	__u64	time_running;		/* time event on cpu */
+	__u32	time_mult, time_shift;
+	__u64	time_offset;
 
 		/*
 		 * Hole for extension of the self monitor capabilities
 		 */
 
-	__u64	__reserved[123];	/* align to 1k */
+	__u64	__reserved[121];	/* align to 1k */
 
 	/*
 	 * Control data for the mmap() data buffer.
@@ -587,6 +589,7 @@ struct hw_perf_event {
 	u64				sample_period;
 	u64				last_period;
 	local64_t			period_left;
+	u64                             interrupts_seq;
 	u64				interrupts;
 
 	u64				freq_time_stamp;
@@ -615,6 +618,7 @@ struct pmu {
 	struct list_head		entry;
 
 	struct device			*dev;
+	const struct attribute_group	**attr_groups;
 	char				*name;
 	int				type;
 
@@ -680,6 +684,12 @@ struct pmu {
 	 * for each successful ->add() during the transaction.
 	 */
 	void (*cancel_txn)		(struct pmu *pmu); /* optional */
+
+	/*
+	 * Will return the value for perf_event_mmap_page::index for this event,
+	 * if no implementation is provided it will default to: event->hw.idx + 1.
+	 */
+	int (*event_idx)		(struct perf_event *event); /*optional */
 };
 
 /**

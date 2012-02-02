@@ -74,6 +74,7 @@
 
 #include <asm/tlb.h>
 #include <asm/irq_regs.h>
+#include <asm/mutex.h>
 #ifdef CONFIG_PARAVIRT
 #include <asm/paravirt.h>
 #endif
@@ -723,9 +724,6 @@ static void dequeue_task(struct rq *rq, struct task_struct *p, int flags)
 	p->sched_class->dequeue_task(rq, p, flags);
 }
 
-/*
- * activate_task - move a task to the runqueue.
- */
 void activate_task(struct rq *rq, struct task_struct *p, int flags)
 {
 	if (task_contributes_to_load(p))
@@ -734,9 +732,6 @@ void activate_task(struct rq *rq, struct task_struct *p, int flags)
 	enqueue_task(rq, p, flags);
 }
 
-/*
- * deactivate_task - remove a task from the runqueue.
- */
 void deactivate_task(struct rq *rq, struct task_struct *p, int flags)
 {
 	if (task_contributes_to_load(p))
@@ -1512,7 +1507,7 @@ static int ttwu_activate_remote(struct task_struct *p, int wake_flags)
 }
 #endif /* __ARCH_WANT_INTERRUPTS_ON_CTXSW */
 
-static inline int ttwu_share_cache(int this_cpu, int that_cpu)
+bool cpus_share_cache(int this_cpu, int that_cpu)
 {
 	return per_cpu(sd_llc_id, this_cpu) == per_cpu(sd_llc_id, that_cpu);
 }
@@ -1523,7 +1518,7 @@ static void ttwu_queue(struct task_struct *p, int cpu)
 	struct rq *rq = cpu_rq(cpu);
 
 #if defined(CONFIG_SMP)
-	if (sched_feat(TTWU_QUEUE) && !ttwu_share_cache(smp_processor_id(), cpu)) {
+	if (sched_feat(TTWU_QUEUE) && !cpus_share_cache(smp_processor_id(), cpu)) {
 		sched_clock_cpu(cpu); /* sync clocks x-cpu */
 		ttwu_queue_remote(p, cpu);
 		return;
@@ -4134,7 +4129,7 @@ recheck:
 	on_rq = p->on_rq;
 	running = task_current(rq, p);
 	if (on_rq)
-		deactivate_task(rq, p, 0);
+		dequeue_task(rq, p, 0);
 	if (running)
 		p->sched_class->put_prev_task(rq, p);
 
@@ -4147,7 +4142,7 @@ recheck:
 	if (running)
 		p->sched_class->set_curr_task(rq);
 	if (on_rq)
-		activate_task(rq, p, 0);
+		enqueue_task(rq, p, 0);
 
 	check_class_changed(rq, p, prev_class, oldprio);
 	task_rq_unlock(rq, p, &flags);
@@ -4998,9 +4993,9 @@ static int __migrate_task(struct task_struct *p, int src_cpu, int dest_cpu)
 	 * placed properly.
 	 */
 	if (p->on_rq) {
-		deactivate_task(rq_src, p, 0);
+		dequeue_task(rq_src, p, 0);
 		set_task_cpu(p, dest_cpu);
-		activate_task(rq_dest, p, 0);
+		enqueue_task(rq_dest, p, 0);
 		check_preempt_curr(rq_dest, p, 0);
 	}
 done:
@@ -5759,7 +5754,7 @@ static void destroy_sched_domains(struct sched_domain *sd, int cpu)
  *
  * Also keep a unique ID per domain (we use the first cpu number in
  * the cpumask of the domain), this allows us to quickly tell if
- * two cpus are in the same cache domain, see ttwu_share_cache().
+ * two cpus are in the same cache domain, see cpus_share_cache().
  */
 DEFINE_PER_CPU(struct sched_domain *, sd_llc);
 DEFINE_PER_CPU(int, sd_llc_id);
@@ -7032,10 +7027,10 @@ static void normalize_task(struct rq *rq, struct task_struct *p)
 
 	on_rq = p->on_rq;
 	if (on_rq)
-		deactivate_task(rq, p, 0);
+		dequeue_task(rq, p, 0);
 	__setscheduler(rq, p, SCHED_NORMAL, 0);
 	if (on_rq) {
-		activate_task(rq, p, 0);
+		enqueue_task(rq, p, 0);
 		resched_task(rq->curr);
 	}
 

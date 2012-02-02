@@ -2300,6 +2300,9 @@ do {					\
 	return div64_u64(dividend, divisor);
 }
 
+static DEFINE_PER_CPU(int, perf_throttled_count);
+static DEFINE_PER_CPU(u64, perf_throttled_seq);
+
 static void perf_adjust_period(struct perf_event *event, u64 nsec, u64 count)
 {
 	struct hw_perf_event *hwc = &event->hw;
@@ -2325,15 +2328,28 @@ static void perf_adjust_period(struct perf_event *event, u64 nsec, u64 count)
 	}
 }
 
-static void perf_ctx_adjust_freq(struct perf_event_context *ctx, u64 period)
+/*
+ * combine freq adjustment with unthrottling to avoid two passes over the
+ * events. At the same time, make sure, having freq events does not change
+ * the rate of unthrottling as that would introduce bias.
+ */
+static void perf_adjust_freq_unthr_context(struct perf_event_context *ctx,
+					   int needs_unthr)
 {
 	struct perf_event *event;
 	struct hw_perf_event *hwc;
-	u64 interrupts, now;
+	u64 now, period = TICK_NSEC;
 	s64 delta;
 
-	if (!ctx->nr_freq)
+	/*
+	 * only need to iterate over all events iff:
+	 * - context have events in frequency mode (needs freq adjust)
+	 * - there are events to unthrottle on this cpu
+	 */
+	if (!(ctx->nr_freq || needs_unthr))
 		return;
+
+	raw_spin_lock(&ctx->lock);
 
 	list_for_each_entry_rcu(event, &ctx->event_list, event_entry) {
 		if (event->state != PERF_EVENT_STATE_ACTIVE)
@@ -2344,13 +2360,8 @@ static void perf_ctx_adjust_freq(struct perf_event_context *ctx, u64 period)
 
 		hwc = &event->hw;
 
-		interrupts = hwc->interrupts;
-		hwc->interrupts = 0;
-
-		/*
-		 * unthrottle events on the tick
-		 */
-		if (interrupts == MAX_INTERRUPTS) {
+		if (needs_unthr && hwc->interrupts == MAX_INTERRUPTS) {
+			hwc->interrupts = 0;
 			perf_log_throttle(event, 1);
 			event->pmu->start(event, 0);
 		}
@@ -2358,14 +2369,26 @@ static void perf_ctx_adjust_freq(struct perf_event_context *ctx, u64 period)
 		if (!event->attr.freq || !event->attr.sample_freq)
 			continue;
 
-		event->pmu->read(event);
+		/*
+		 * stop the event and update event->count
+		 */
+		event->pmu->stop(event, PERF_EF_UPDATE);
+
 		now = local64_read(&event->count);
 		delta = now - hwc->freq_count_stamp;
 		hwc->freq_count_stamp = now;
 
+		/*
+		 * restart the event
+		 * reload only if value has changed
+		 */
 		if (delta > 0)
 			perf_adjust_period(event, period, delta);
+
+		event->pmu->start(event, delta > 0 ? PERF_EF_RELOAD : 0);
 	}
+
+	raw_spin_unlock(&ctx->lock);
 }
 
 /*
@@ -2388,16 +2411,13 @@ static void rotate_ctx(struct perf_event_context *ctx)
  */
 static void perf_rotate_context(struct perf_cpu_context *cpuctx)
 {
-	u64 interval = (u64)cpuctx->jiffies_interval * TICK_NSEC;
 	struct perf_event_context *ctx = NULL;
-	int rotate = 0, remove = 1, freq = 0;
+	int rotate = 0, remove = 1;
 
 	if (cpuctx->ctx.nr_events) {
 		remove = 0;
 		if (cpuctx->ctx.nr_events != cpuctx->ctx.nr_active)
 			rotate = 1;
-		if (cpuctx->ctx.nr_freq)
-			freq = 1;
 	}
 
 	ctx = cpuctx->task_ctx;
@@ -2405,37 +2425,26 @@ static void perf_rotate_context(struct perf_cpu_context *cpuctx)
 		remove = 0;
 		if (ctx->nr_events != ctx->nr_active)
 			rotate = 1;
-		if (ctx->nr_freq)
-			freq = 1;
 	}
 
-	if (!rotate && !freq)
+	if (!rotate)
 		goto done;
 
 	perf_ctx_lock(cpuctx, cpuctx->task_ctx);
 	perf_pmu_disable(cpuctx->ctx.pmu);
 
-	if (freq) {
-		perf_ctx_adjust_freq(&cpuctx->ctx, interval);
-		if (ctx)
-			perf_ctx_adjust_freq(ctx, interval);
-	}
+	cpu_ctx_sched_out(cpuctx, EVENT_FLEXIBLE);
+	if (ctx)
+		ctx_sched_out(ctx, cpuctx, EVENT_FLEXIBLE);
 
-	if (rotate) {
-		cpu_ctx_sched_out(cpuctx, EVENT_FLEXIBLE);
-		if (ctx)
-			ctx_sched_out(ctx, cpuctx, EVENT_FLEXIBLE);
+	rotate_ctx(&cpuctx->ctx);
+	if (ctx)
+		rotate_ctx(ctx);
 
-		rotate_ctx(&cpuctx->ctx);
-		if (ctx)
-			rotate_ctx(ctx);
-
-		perf_event_sched_in(cpuctx, ctx, current);
-	}
+	perf_event_sched_in(cpuctx, ctx, current);
 
 	perf_pmu_enable(cpuctx->ctx.pmu);
 	perf_ctx_unlock(cpuctx, cpuctx->task_ctx);
-
 done:
 	if (remove)
 		list_del_init(&cpuctx->rotation_list);
@@ -2445,10 +2454,22 @@ void perf_event_task_tick(void)
 {
 	struct list_head *head = &__get_cpu_var(rotation_list);
 	struct perf_cpu_context *cpuctx, *tmp;
+	struct perf_event_context *ctx;
+	int throttled;
 
 	WARN_ON(!irqs_disabled());
 
+	__this_cpu_inc(perf_throttled_seq);
+	throttled = __this_cpu_xchg(perf_throttled_count, 0);
+
 	list_for_each_entry_safe(cpuctx, tmp, head, rotation_list) {
+		ctx = &cpuctx->ctx;
+		perf_adjust_freq_unthr_context(ctx, throttled);
+
+		ctx = cpuctx->task_ctx;
+		if (ctx)
+			perf_adjust_freq_unthr_context(ctx, throttled);
+
 		if (cpuctx->jiffies_interval == 1 ||
 				!(jiffies % cpuctx->jiffies_interval))
 			perf_rotate_context(cpuctx);
@@ -3208,10 +3229,6 @@ int perf_event_task_disable(void)
 	return 0;
 }
 
-#ifndef PERF_EVENT_INDEX_OFFSET
-# define PERF_EVENT_INDEX_OFFSET 0
-#endif
-
 static int perf_event_index(struct perf_event *event)
 {
 	if (event->hw.state & PERF_HES_STOPPED)
@@ -3220,19 +3237,24 @@ static int perf_event_index(struct perf_event *event)
 	if (event->state != PERF_EVENT_STATE_ACTIVE)
 		return 0;
 
-	return event->hw.idx + 1 - PERF_EVENT_INDEX_OFFSET;
+	return event->pmu->event_idx(event);
 }
 
 static void calc_timer_values(struct perf_event *event,
+				u64 *now,
 				u64 *enabled,
 				u64 *running)
 {
-	u64 now, ctx_time;
+	u64 ctx_time;
 
-	now = perf_clock();
-	ctx_time = event->shadow_ctx_time + now;
+	*now = perf_clock();
+	ctx_time = event->shadow_ctx_time + *now;
 	*enabled = ctx_time - event->tstamp_enabled;
 	*running = ctx_time - event->tstamp_running;
+}
+
+void __weak perf_update_user_clock(struct perf_event_mmap_page *userpg, u64 now)
+{
 }
 
 /*
@@ -3244,7 +3266,7 @@ void perf_event_update_userpage(struct perf_event *event)
 {
 	struct perf_event_mmap_page *userpg;
 	struct ring_buffer *rb;
-	u64 enabled, running;
+	u64 enabled, running, now;
 
 	rcu_read_lock();
 	/*
@@ -3256,7 +3278,7 @@ void perf_event_update_userpage(struct perf_event *event)
 	 * because of locking issue as we can be called in
 	 * NMI context
 	 */
-	calc_timer_values(event, &enabled, &running);
+	calc_timer_values(event, &now, &enabled, &running);
 	rb = rcu_dereference(event->rb);
 	if (!rb)
 		goto unlock;
@@ -3272,7 +3294,7 @@ void perf_event_update_userpage(struct perf_event *event)
 	barrier();
 	userpg->index = perf_event_index(event);
 	userpg->offset = perf_event_count(event);
-	if (event->state == PERF_EVENT_STATE_ACTIVE)
+	if (userpg->index)
 		userpg->offset -= local64_read(&event->hw.prev_count);
 
 	userpg->time_enabled = enabled +
@@ -3280,6 +3302,8 @@ void perf_event_update_userpage(struct perf_event *event)
 
 	userpg->time_running = running +
 			atomic64_read(&event->child_total_time_running);
+
+	perf_update_user_clock(userpg, now);
 
 	barrier();
 	++userpg->lock;
@@ -3538,6 +3562,8 @@ static int perf_mmap(struct file *file, struct vm_area_struct *vma)
 	event->mmap_user = get_current_user();
 	vma->vm_mm->pinned_vm += event->mmap_locked;
 
+	perf_event_update_userpage(event);
+
 unlock:
 	if (!ret)
 		atomic_inc(&event->mmap_count);
@@ -3769,7 +3795,7 @@ static void perf_output_read_group(struct perf_output_handle *handle,
 static void perf_output_read(struct perf_output_handle *handle,
 			     struct perf_event *event)
 {
-	u64 enabled = 0, running = 0;
+	u64 enabled = 0, running = 0, now;
 	u64 read_format = event->attr.read_format;
 
 	/*
@@ -3782,7 +3808,7 @@ static void perf_output_read(struct perf_output_handle *handle,
 	 * NMI context
 	 */
 	if (read_format & PERF_FORMAT_TOTAL_TIMES)
-		calc_timer_values(event, &enabled, &running);
+		calc_timer_values(event, &now, &enabled, &running);
 
 	if (event->attr.read_format & PERF_FORMAT_GROUP)
 		perf_output_read_group(handle, event, enabled, running);
@@ -4509,6 +4535,7 @@ static int __perf_event_overflow(struct perf_event *event,
 {
 	int events = atomic_read(&event->event_limit);
 	struct hw_perf_event *hwc = &event->hw;
+	u64 seq;
 	int ret = 0;
 
 	/*
@@ -4518,14 +4545,20 @@ static int __perf_event_overflow(struct perf_event *event,
 	if (unlikely(!is_sampling_event(event)))
 		return 0;
 
-	if (unlikely(hwc->interrupts >= max_samples_per_tick)) {
-		if (throttle) {
+	seq = __this_cpu_read(perf_throttled_seq);
+	if (seq != hwc->interrupts_seq) {
+		hwc->interrupts_seq = seq;
+		hwc->interrupts = 1;
+	} else {
+		hwc->interrupts++;
+		if (unlikely(throttle
+			     && hwc->interrupts >= max_samples_per_tick)) {
+			__this_cpu_inc(perf_throttled_count);
 			hwc->interrupts = MAX_INTERRUPTS;
 			perf_log_throttle(event, 0);
 			ret = 1;
 		}
-	} else
-		hwc->interrupts++;
+	}
 
 	if (event->attr.freq) {
 		u64 now = perf_clock();
@@ -4994,6 +5027,11 @@ static int perf_swevent_init(struct perf_event *event)
 	return 0;
 }
 
+static int perf_swevent_event_idx(struct perf_event *event)
+{
+	return 0;
+}
+
 static struct pmu perf_swevent = {
 	.task_ctx_nr	= perf_sw_context,
 
@@ -5003,6 +5041,8 @@ static struct pmu perf_swevent = {
 	.start		= perf_swevent_start,
 	.stop		= perf_swevent_stop,
 	.read		= perf_swevent_read,
+
+	.event_idx	= perf_swevent_event_idx,
 };
 
 #ifdef CONFIG_EVENT_TRACING
@@ -5089,6 +5129,8 @@ static struct pmu perf_tracepoint = {
 	.start		= perf_swevent_start,
 	.stop		= perf_swevent_stop,
 	.read		= perf_swevent_read,
+
+	.event_idx	= perf_swevent_event_idx,
 };
 
 static inline void perf_tp_register(void)
@@ -5308,6 +5350,8 @@ static struct pmu perf_cpu_clock = {
 	.start		= cpu_clock_event_start,
 	.stop		= cpu_clock_event_stop,
 	.read		= cpu_clock_event_read,
+
+	.event_idx	= perf_swevent_event_idx,
 };
 
 /*
@@ -5380,6 +5424,8 @@ static struct pmu perf_task_clock = {
 	.start		= task_clock_event_start,
 	.stop		= task_clock_event_stop,
 	.read		= task_clock_event_read,
+
+	.event_idx	= perf_swevent_event_idx,
 };
 
 static void perf_pmu_nop_void(struct pmu *pmu)
@@ -5405,6 +5451,11 @@ static int perf_pmu_commit_txn(struct pmu *pmu)
 static void perf_pmu_cancel_txn(struct pmu *pmu)
 {
 	perf_pmu_enable(pmu);
+}
+
+static int perf_event_idx_default(struct perf_event *event)
+{
+	return event->hw.idx + 1;
 }
 
 /*
@@ -5493,6 +5544,7 @@ static int pmu_dev_alloc(struct pmu *pmu)
 	if (!pmu->dev)
 		goto out;
 
+	pmu->dev->groups = pmu->attr_groups;
 	device_initialize(pmu->dev);
 	ret = dev_set_name(pmu->dev, "%s", pmu->name);
 	if (ret)
@@ -5595,6 +5647,9 @@ got_cpu_context:
 		pmu->pmu_enable  = perf_pmu_nop_void;
 		pmu->pmu_disable = perf_pmu_nop_void;
 	}
+
+	if (!pmu->event_idx)
+		pmu->event_idx = perf_event_idx_default;
 
 	list_add_rcu(&pmu->entry, &pmus);
 	ret = 0;
