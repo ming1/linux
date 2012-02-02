@@ -835,7 +835,6 @@ static int cas_saturn_firmware_init(struct cas *cp)
 	cp->fw_data = vmalloc(cp->fw_size);
 	if (!cp->fw_data) {
 		err = -ENOMEM;
-		pr_err("\"%s\" Failed %d\n", fw_name, err);
 		goto out;
 	}
 	memcpy(cp->fw_data, &fw->data[2], cp->fw_size);
@@ -4947,7 +4946,6 @@ static int __devinit cas_init_one(struct pci_dev *pdev,
 
 	dev = alloc_etherdev(sizeof(*cp));
 	if (!dev) {
-		dev_err(&pdev->dev, "Etherdev alloc failed, aborting\n");
 		err = -ENOMEM;
 		goto err_out_disable_pdev;
 	}

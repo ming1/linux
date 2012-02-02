@@ -1,6 +1,6 @@
 /* bnx2x.h: Broadcom Everest network driver.
  *
- * Copyright (c) 2007-2011 Broadcom Corporation
+ * Copyright (c) 2007-2012 Broadcom Corporation
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,8 +23,8 @@
  * (you will need to reboot afterwards) */
 /* #define BNX2X_STOP_ON_ERROR */
 
-#define DRV_MODULE_VERSION      "1.70.35-0"
-#define DRV_MODULE_RELDATE      "2011/11/10"
+#define DRV_MODULE_VERSION      "1.72.00-0"
+#define DRV_MODULE_RELDATE      "2012/01/26"
 #define BNX2X_BC_VER            0x040200
 
 #if defined(CONFIG_DCB)
@@ -1088,7 +1088,8 @@ enum bnx2x_recovery_state {
 	BNX2X_RECOVERY_DONE,
 	BNX2X_RECOVERY_INIT,
 	BNX2X_RECOVERY_WAIT,
-	BNX2X_RECOVERY_FAILED
+	BNX2X_RECOVERY_FAILED,
+	BNX2X_RECOVERY_NIC_LOADING
 };
 
 /*

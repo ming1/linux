@@ -1,6 +1,6 @@
 /* bnx2x_ethtool.c: Broadcom Everest network driver.
  *
- * Copyright (c) 2007-2011 Broadcom Corporation
+ * Copyright (c) 2007-2012 Broadcom Corporation
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -175,7 +175,11 @@ static const struct {
 	{ STATS_OFFSET32(total_tpa_aggregated_frames_hi),
 			8, STATS_FLAGS_FUNC, "tpa_aggregated_frames"},
 	{ STATS_OFFSET32(total_tpa_bytes_hi),
-			8, STATS_FLAGS_FUNC, "tpa_bytes"}
+			8, STATS_FLAGS_FUNC, "tpa_bytes"},
+	{ STATS_OFFSET32(recoverable_error),
+			4, STATS_FLAGS_FUNC, "recoverable_errors" },
+	{ STATS_OFFSET32(unrecoverable_error),
+			4, STATS_FLAGS_FUNC, "unrecoverable_errors" },
 };
 
 #define BNX2X_NUM_STATS		ARRAY_SIZE(bnx2x_stats_arr)
@@ -882,11 +886,27 @@ static int bnx2x_get_eeprom_len(struct net_device *dev)
 	return bp->common.flash_size;
 }
 
+/* Per pf misc lock must be aquired before the per port mcp lock. Otherwise, had
+ * we done things the other way around, if two pfs from the same port would
+ * attempt to access nvram at the same time, we could run into a scenario such
+ * as:
+ * pf A takes the port lock.
+ * pf B succeeds in taking the same lock since they are from the same port.
+ * pf A takes the per pf misc lock. Performs eeprom access.
+ * pf A finishes. Unlocks the per pf misc lock.
+ * Pf B takes the lock and proceeds to perform it's own access.
+ * pf A unlocks the per port lock, while pf B is still working (!).
+ * mcp takes the per port lock and corrupts pf B's access (and/or has it's own
+ * acess corrupted by pf B).*
+ */
 static int bnx2x_acquire_nvram_lock(struct bnx2x *bp)
 {
 	int port = BP_PORT(bp);
 	int count, i;
-	u32 val = 0;
+	u32 val;
+
+	/* acquire HW lock: protect against other PFs in PF Direct Assignment */
+	bnx2x_acquire_hw_lock(bp, HW_LOCK_RESOURCE_NVRAM);
 
 	/* adjust timeout for emulation/FPGA */
 	count = BNX2X_NVRAM_TIMEOUT_COUNT;
@@ -917,7 +937,7 @@ static int bnx2x_release_nvram_lock(struct bnx2x *bp)
 {
 	int port = BP_PORT(bp);
 	int count, i;
-	u32 val = 0;
+	u32 val;
 
 	/* adjust timeout for emulation/FPGA */
 	count = BNX2X_NVRAM_TIMEOUT_COUNT;
@@ -941,6 +961,8 @@ static int bnx2x_release_nvram_lock(struct bnx2x *bp)
 		return -EBUSY;
 	}
 
+	/* release HW lock: protect against other PFs in PF Direct Assignment */
+	bnx2x_release_hw_lock(bp, HW_LOCK_RESOURCE_NVRAM);
 	return 0;
 }
 
@@ -1370,7 +1392,8 @@ static int bnx2x_set_ringparam(struct net_device *dev,
 	struct bnx2x *bp = netdev_priv(dev);
 
 	if (bp->recovery_state != BNX2X_RECOVERY_DONE) {
-		pr_err("Handling parity error recovery. Try again later\n");
+		netdev_err(dev, "Handling parity error recovery. "
+				"Try again later\n");
 		return -EAGAIN;
 	}
 
@@ -2024,7 +2047,8 @@ static void bnx2x_self_test(struct net_device *dev,
 	struct bnx2x *bp = netdev_priv(dev);
 	u8 is_serdes;
 	if (bp->recovery_state != BNX2X_RECOVERY_DONE) {
-		pr_err("Handling parity error recovery. Try again later\n");
+		netdev_err(bp->dev, "Handling parity error recovery. "
+				    "Try again later\n");
 		etest->flags |= ETH_TEST_FL_FAILED;
 		return;
 	}
