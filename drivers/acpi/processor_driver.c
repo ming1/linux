@@ -579,12 +579,22 @@ static int __cpuinit acpi_processor_add(struct acpi_device *device)
 		goto err_free_cpumask;
 	}
 
-	/*
-	 * Do not start hotplugged CPUs now, but when they
-	 * are onlined the first time
-	 */
-	if (pr->flags.need_hotplug_init)
-		return 0;
+#ifdef CONFIG_CPU_FREQ
+	acpi_processor_ppc_has_changed(pr, 0);
+	acpi_processor_load_module(pr);
+#endif
+	acpi_processor_get_throttling_info(pr);
+	acpi_processor_get_limit_info(pr);
+
+	if (!cpuidle_get_driver() || cpuidle_get_driver() == &acpi_idle_driver)
+		acpi_processor_power_init(pr, device);
+
+	pr->cdev = thermal_cooling_device_register("Processor", device,
+						&processor_cooling_ops);
+	if (IS_ERR(pr->cdev)) {
+		result = PTR_ERR(pr->cdev);
+		goto err_remove_sysfs;
+	}
 
 	/*
 	 * Do not start hotplugged CPUs now, but when they
