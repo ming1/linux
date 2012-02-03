@@ -996,6 +996,7 @@ static int set_supply(struct regulator_dev *rdev,
 /**
  * set_consumer_device_supply - Bind a regulator to a symbolic supply
  * @rdev:         regulator source
+ * @consumer_dev: device the supply applies to
  * @consumer_dev_name: dev_name() string for device supply applies to
  * @supply:       symbolic name for supply
  *
@@ -1007,11 +1008,17 @@ static int set_supply(struct regulator_dev *rdev,
  * Only one of consumer_dev and consumer_dev_name may be specified.
  */
 static int set_consumer_device_supply(struct regulator_dev *rdev,
-				      const char *consumer_dev_name,
-				      const char *supply)
+	struct device *consumer_dev, const char *consumer_dev_name,
+	const char *supply)
 {
 	struct regulator_map *node;
 	int has_dev;
+
+	if (consumer_dev && consumer_dev_name)
+		return -EINVAL;
+
+	if (!consumer_dev_name && consumer_dev)
+		consumer_dev_name = dev_name(consumer_dev);
 
 	if (supply == NULL)
 		return -EINVAL;
@@ -1032,12 +1039,11 @@ static int set_consumer_device_supply(struct regulator_dev *rdev,
 		if (strcmp(node->supply, supply) != 0)
 			continue;
 
-		pr_debug("%s: %s/%s is '%s' supply; fail %s/%s\n",
-			 consumer_dev_name,
-			 dev_name(&node->regulator->dev),
-			 node->regulator->desc->name,
-			 supply,
-			 dev_name(&rdev->dev), rdev_get_name(rdev));
+		dev_dbg(consumer_dev, "%s/%s is '%s' supply; fail %s/%s\n",
+			dev_name(&node->regulator->dev),
+			node->regulator->desc->name,
+			supply,
+			dev_name(&rdev->dev), rdev_get_name(rdev));
 		return -EBUSY;
 	}
 
@@ -2957,6 +2963,7 @@ struct regulator_dev *regulator_register(struct regulator_desc *regulator_desc,
 	if (init_data) {
 		for (i = 0; i < init_data->num_consumer_supplies; i++) {
 			ret = set_consumer_device_supply(rdev,
+				init_data->consumer_supplies[i].dev,
 				init_data->consumer_supplies[i].dev_name,
 				init_data->consumer_supplies[i].supply);
 			if (ret < 0) {
