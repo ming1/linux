@@ -1269,10 +1269,8 @@ static int __devinit bmac_probe(struct macio_dev *mdev, const struct of_device_i
 	memcpy(addr, prop_addr, sizeof(addr));
 
 	dev = alloc_etherdev(PRIV_BYTES);
-	if (!dev) {
-		printk(KERN_ERR "BMAC: alloc_etherdev failed, out of memory\n");
+	if (!dev)
 		return -ENOMEM;
-	}
 
 	bp = netdev_priv(dev);
 	SET_NETDEV_DEV(dev, &mdev->ofdev.dev);
@@ -1660,10 +1658,8 @@ static int __init bmac_init(void)
 {
 	if (bmac_emergency_rxbuf == NULL) {
 		bmac_emergency_rxbuf = kmalloc(RX_BUFLEN, GFP_KERNEL);
-		if (bmac_emergency_rxbuf == NULL) {
-			printk(KERN_ERR "BMAC: can't allocate emergency RX buffer\n");
+		if (bmac_emergency_rxbuf == NULL)
 			return -ENOMEM;
-		}
 	}
 
 	return macio_register_driver(&bmac_driver);
