@@ -147,7 +147,7 @@ static int suspend_enter(suspend_state_t state, bool *wakeup)
 			goto Platform_finish;
 	}
 
-	error = dpm_suspend_noirq(PMSG_SUSPEND);
+	error = dpm_suspend_end(PMSG_SUSPEND);
 	if (error) {
 		printk(KERN_ERR "PM: Some devices failed to power down\n");
 		goto Platform_finish;
@@ -189,7 +189,7 @@ static int suspend_enter(suspend_state_t state, bool *wakeup)
 	if (suspend_ops->wake)
 		suspend_ops->wake();
 
-	dpm_resume_noirq(PMSG_RESUME);
+	dpm_resume_start(PMSG_RESUME);
 
  Platform_finish:
 	if (suspend_ops->finish)
@@ -321,11 +321,7 @@ int pm_suspend(suspend_state_t state)
 	int ret;
 	if (state > PM_SUSPEND_ON && state < PM_SUSPEND_MAX) {
 		ret = enter_state(state);
-		if (ret) {
-			suspend_stats.fail++;
-			dpm_save_failed_errno(ret);
-		} else
-			suspend_stats.success++;
+		suspend_stats_update(ret);
 		return ret;
 	}
 	return -EINVAL;
