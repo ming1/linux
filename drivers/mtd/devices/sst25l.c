@@ -403,9 +403,9 @@ static int __devinit sst25l_probe(struct spi_device *spi)
 	flash->mtd.erasesize	= flash_info->erase_size;
 	flash->mtd.writesize	= flash_info->page_size;
 	flash->mtd.size		= flash_info->page_size * flash_info->nr_pages;
-	flash->mtd.erase	= sst25l_erase;
-	flash->mtd.read		= sst25l_read;
-	flash->mtd.write 	= sst25l_write;
+	flash->mtd._erase	= sst25l_erase;
+	flash->mtd._read		= sst25l_read;
+	flash->mtd._write 	= sst25l_write;
 
 	dev_info(&spi->dev, "%s (%lld KiB)\n", flash_info->name,
 		 (long long)flash->mtd.size >> 10);
@@ -450,18 +450,7 @@ static struct spi_driver sst25l_driver = {
 	.remove		= __devexit_p(sst25l_remove),
 };
 
-static int __init sst25l_init(void)
-{
-	return spi_register_driver(&sst25l_driver);
-}
-
-static void __exit sst25l_exit(void)
-{
-	spi_unregister_driver(&sst25l_driver);
-}
-
-module_init(sst25l_init);
-module_exit(sst25l_exit);
+module_spi_driver(sst25l_driver);
 
 MODULE_DESCRIPTION("MTD SPI driver for SST25L Flash chips");
 MODULE_AUTHOR("Andre Renaud <andre@bluewatersys.com>, "
