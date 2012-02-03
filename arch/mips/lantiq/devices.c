@@ -27,12 +27,8 @@
 #include "devices.h"
 
 /* nor flash */
-static struct resource ltq_nor_resource = {
-	.name	= "nor",
-	.start	= LTQ_FLASH_START,
-	.end	= LTQ_FLASH_START + LTQ_FLASH_MAX - 1,
-	.flags  = IORESOURCE_MEM,
-};
+static struct resource ltq_nor_resource =
+	MEM_RES("nor", LTQ_FLASH_START, LTQ_FLASH_MAX);
 
 static struct platform_device ltq_nor = {
 	.name		= "ltq_nor",
@@ -47,12 +43,8 @@ void __init ltq_register_nor(struct physmap_flash_data *data)
 }
 
 /* watchdog */
-static struct resource ltq_wdt_resource = {
-	.name	= "watchdog",
-	.start  = LTQ_WDT_BASE_ADDR,
-	.end    = LTQ_WDT_BASE_ADDR + LTQ_WDT_SIZE - 1,
-	.flags  = IORESOURCE_MEM,
-};
+static struct resource ltq_wdt_resource =
+	MEM_RES("watchdog", LTQ_WDT_BASE_ADDR, LTQ_WDT_SIZE);
 
 void __init ltq_register_wdt(void)
 {
@@ -61,24 +53,14 @@ void __init ltq_register_wdt(void)
 
 /* asc ports */
 static struct resource ltq_asc0_resources[] = {
-	{
-		.name	= "asc0",
-		.start  = LTQ_ASC0_BASE_ADDR,
-		.end    = LTQ_ASC0_BASE_ADDR + LTQ_ASC_SIZE - 1,
-		.flags  = IORESOURCE_MEM,
-	},
+	MEM_RES("asc0", LTQ_ASC0_BASE_ADDR, LTQ_ASC_SIZE),
 	IRQ_RES(tx, LTQ_ASC_TIR(0)),
 	IRQ_RES(rx, LTQ_ASC_RIR(0)),
 	IRQ_RES(err, LTQ_ASC_EIR(0)),
 };
 
 static struct resource ltq_asc1_resources[] = {
-	{
-		.name	= "asc1",
-		.start  = LTQ_ASC1_BASE_ADDR,
-		.end    = LTQ_ASC1_BASE_ADDR + LTQ_ASC_SIZE - 1,
-		.flags  = IORESOURCE_MEM,
-	},
+	MEM_RES("asc1", LTQ_ASC1_BASE_ADDR, LTQ_ASC_SIZE),
 	IRQ_RES(tx, LTQ_ASC_TIR(1)),
 	IRQ_RES(rx, LTQ_ASC_RIR(1)),
 	IRQ_RES(err, LTQ_ASC_EIR(1)),
