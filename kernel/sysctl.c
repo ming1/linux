@@ -58,6 +58,7 @@
 #include <linux/oom.h>
 #include <linux/kmod.h>
 #include <linux/capability.h>
+#include <linux/bitmap.h>
 
 #include <asm/uaccess.h>
 #include <asm/processor.h>
@@ -96,7 +97,6 @@ extern int suid_dumpable;
 extern char core_pattern[];
 extern unsigned int core_pipe_limit;
 extern int pid_max;
-extern int min_free_kbytes;
 extern int pid_max_min, pid_max_max;
 extern int sysctl_drop_caches;
 extern int percpu_pagelist_fraction;
@@ -1191,7 +1191,15 @@ static struct ctl_table vm_table[] = {
 		.data		= &min_free_kbytes,
 		.maxlen		= sizeof(min_free_kbytes),
 		.mode		= 0644,
-		.proc_handler	= min_free_kbytes_sysctl_handler,
+		.proc_handler	= free_kbytes_sysctl_handler,
+		.extra1		= &zero,
+	},
+	{
+		.procname	= "extra_free_kbytes",
+		.data		= &extra_free_kbytes,
+		.maxlen		= sizeof(extra_free_kbytes),
+		.mode		= 0644,
+		.proc_handler	= free_kbytes_sysctl_handler,
 		.extra1		= &zero,
 	},
 	{
@@ -2392,9 +2400,7 @@ int proc_do_large_bitmap(struct ctl_table *table, int write,
 				}
 			}
 
-			while (val_a <= val_b)
-				set_bit(val_a++, tmp_bitmap);
-
+			bitmap_set(tmp_bitmap, val_a, val_b - val_a + 1);
 			first = 0;
 			proc_skip_char(&kbuf, &left, '\n');
 		}
@@ -2437,8 +2443,7 @@ int proc_do_large_bitmap(struct ctl_table *table, int write,
 			if (*ppos)
 				bitmap_or(bitmap, bitmap, tmp_bitmap, bitmap_len);
 			else
-				memcpy(bitmap, tmp_bitmap,
-					BITS_TO_LONGS(bitmap_len) * sizeof(unsigned long));
+				bitmap_copy(bitmap, tmp_bitmap, bitmap_len);
 		}
 		kfree(tmp_bitmap);
 		*lenp -= left;
