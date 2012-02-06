@@ -1602,9 +1602,6 @@ static int nand_read(struct mtd_info *mtd, loff_t from, size_t len,
 	struct mtd_oob_ops ops;
 	int ret;
 
-	if (!len)
-		return 0;
-
 	nand_get_device(chip, mtd, FL_READING);
 	ops.len = len;
 	ops.datbuf = buf;
@@ -2301,10 +2298,6 @@ static int panic_nand_write(struct mtd_info *mtd, loff_t to, size_t len,
 	struct mtd_oob_ops ops;
 	int ret;
 
-	/* Do not allow reads past end of device */
-	if (!len)
-		return 0;
-
 	/* Wait for the device to get ready */
 	panic_nand_wait(mtd, chip, 400);
 
@@ -2338,9 +2331,6 @@ static int nand_write(struct mtd_info *mtd, loff_t to, size_t len,
 	struct nand_chip *chip = mtd->priv;
 	struct mtd_oob_ops ops;
 	int ret;
-
-	if (!len)
-		return 0;
 
 	nand_get_device(chip, mtd, FL_WRITING);
 	ops.len = len;
