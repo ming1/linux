@@ -1207,19 +1207,8 @@ static struct i2c_driver lm63_driver = {
 	.address_list	= normal_i2c,
 };
 
-static int __init sensors_lm63_init(void)
-{
-	return i2c_add_driver(&lm63_driver);
-}
-
-static void __exit sensors_lm63_exit(void)
-{
-	i2c_del_driver(&lm63_driver);
-}
+module_i2c_driver(lm63_driver);
 
 MODULE_AUTHOR("Jean Delvare <khali@linux-fr.org>");
 MODULE_DESCRIPTION("LM63 driver");
 MODULE_LICENSE("GPL");
-
-module_init(sensors_lm63_init);
-module_exit(sensors_lm63_exit);
