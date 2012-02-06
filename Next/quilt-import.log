@@ -1,0 +1,48 @@
+Importing hexagon based on v3.2-rc2
+Unchanged quilt series hexagon
+Importing i2c based on 3.3-rc2
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard 62aa2b537c6f5957afd98e29f96897419ed5ebab
+HEAD is now at 62aa2b5 Linux 3.3-rc2
+$ git am ../quilt/i2c/i2c-core-comment-says-transmitted-but-means-received.patch
+Applying: i2c-core: Comment says "transmitted" but means "received"
+$ git am ../quilt/i2c/i2c-gpio-use-linux-gpio.h-rather-than-asm-gpio.h.patch
+Applying: i2c-gpio: Use linux/gpio.h rather than asm/gpio.h
+$ git am ../quilt/i2c/i2c-isch-decrease-delay-in-command-completion-check-loop.patch
+Applying: i2c-isch: Decrease delay in command completion check loop
+$ git am ../quilt/i2c/i2c-i801-01-add-device-ids-for-intel-lynx-point.patch
+Applying: i2c-i801: Add device IDs for Intel Lynx Point
+$ git am ../quilt/i2c/i2c-i801-02-use-usleep_range.patch
+Applying: i2c-i801: Use usleep_range to wait for command completion
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/i2c
+From ../quilt-tmp
+ + d6d9103...31798fe master     -> quilt/i2c  (forced update)
+Importing jdelvare-hwmon based on 3.3-rc2
+Unchanged quilt series jdelvare-hwmon
+Importing kernel-doc based on 3.2-rc7
+Unchanged quilt series kernel-doc
+Importing rr based on v3.3-rc1-383-g0a96265
+$ cd ../quilt-tmp
+$ git reset --hard 0a9626575400879d1d5e6bc8768188b938d7c501
+HEAD is now at 0a96265 Merge tag 'driver-core-3.3-rc1-bugfixes' of git://git.kernel.org/pub/scm/linux/kernel/git/gregkh/driver-core
+$ git am ../quilt/rr/module:make_param_bint_handle_nul_value.patch
+Applying: make module param bint handle nul value
+$ git am ../quilt/rr/module:add_kernel_param_to_force_disable_load.patch
+Applying: add kernel param to force disable module load
+$ git am ../quilt/rr/module-param-remove-bool.patch
+Applying: module_param: remove support for bool parameters which are really int.
+$ git am ../quilt/rr/misc:params_level_initcall_like_kernel_parameters.patch
+Applying: params: <level>_initcall-like kernel parameters
+$ git am ../quilt/rr/module-out-of-line-get.patch
+Applying: module: move __module_get and try_module_get() out of line.
+$ git am ../quilt/rr/module:remove_size_limit.patch
+Applying: module: Remove module size limit
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/rr
+From ../quilt-tmp
+ + 6d1d688...c8b9155 master     -> quilt/rr  (forced update)
+Importing device-mapper based on v3.3-rc2
+	quilt series is empty
+$ git update-ref refs/heads/quilt/device-mapper 62aa2b537c6f5957afd98e29f96897419ed5ebab
