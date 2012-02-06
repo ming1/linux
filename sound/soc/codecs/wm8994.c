@@ -2645,6 +2645,7 @@ static struct snd_soc_dai_driver wm8994_dai[] = {
 			.channels_max = 2,
 			.rates = WM8994_RATES,
 			.formats = WM8994_FORMATS,
+			.sig_bits = 24,
 		},
 		.capture = {
 			.stream_name = "AIF1 Capture",
@@ -2652,6 +2653,7 @@ static struct snd_soc_dai_driver wm8994_dai[] = {
 			.channels_max = 2,
 			.rates = WM8994_RATES,
 			.formats = WM8994_FORMATS,
+			.sig_bits = 24,
 		 },
 		.ops = &wm8994_aif1_dai_ops,
 	},
@@ -2664,6 +2666,7 @@ static struct snd_soc_dai_driver wm8994_dai[] = {
 			.channels_max = 2,
 			.rates = WM8994_RATES,
 			.formats = WM8994_FORMATS,
+			.sig_bits = 24,
 		},
 		.capture = {
 			.stream_name = "AIF2 Capture",
@@ -2671,6 +2674,7 @@ static struct snd_soc_dai_driver wm8994_dai[] = {
 			.channels_max = 2,
 			.rates = WM8994_RATES,
 			.formats = WM8994_FORMATS,
+			.sig_bits = 24,
 		},
 		.probe = wm8994_aif2_probe,
 		.ops = &wm8994_aif2_dai_ops,
@@ -2684,6 +2688,7 @@ static struct snd_soc_dai_driver wm8994_dai[] = {
 			.channels_max = 2,
 			.rates = WM8994_RATES,
 			.formats = WM8994_FORMATS,
+			.sig_bits = 24,
 		},
 		.capture = {
 			.stream_name = "AIF3 Capture",
@@ -2691,7 +2696,8 @@ static struct snd_soc_dai_driver wm8994_dai[] = {
 			.channels_max = 2,
 			.rates = WM8994_RATES,
 			.formats = WM8994_FORMATS,
-		},
+			.sig_bits = 24,
+		 },
 		.ops = &wm8994_aif3_dai_ops,
 	}
 };
@@ -3083,7 +3089,7 @@ static void wm8958_default_micdet(u16 status, void *data)
 	}
 
 
-	if (wm8994->mic_detecting && status & 0x4) {
+	if (wm8994->mic_detecting && status & 0xfc) {
 		dev_dbg(codec->dev, "Detected headphone\n");
 		wm8994->mic_detecting = false;
 
