@@ -1077,11 +1077,6 @@ static int wm8993_set_bias_level(struct snd_soc_codec *codec,
 			regcache_cache_only(wm8993->regmap, false);
 			regcache_sync(wm8993->regmap);
 
-			/* Tune DC servo configuration */
-			snd_soc_write(codec, 0x44, 3);
-			snd_soc_write(codec, 0x56, 3);
-			snd_soc_write(codec, 0x44, 0);
-
 			/* Bring up VMID with fast soft start */
 			snd_soc_update_bits(codec, WM8993_ANTIPOP2,
 					    WM8993_STARTUP_BIAS_ENA |
@@ -1627,6 +1622,12 @@ static int wm8993_probe(struct snd_soc_codec *codec)
 	wm_hubs_add_analogue_routes(codec, wm8993->pdata.lineout1_diff,
 				    wm8993->pdata.lineout2_diff);
 
+	/* If the line outputs are differential then we aren't presenting
+	 * VMID as an output and can disable it.
+	 */
+	if (wm8993->pdata.lineout1_diff && wm8993->pdata.lineout2_diff)
+		codec->dapm.idle_bias_off = 1;
+
 	return 0;
 
 }
@@ -1690,6 +1691,13 @@ static int wm8993_resume(struct snd_soc_codec *codec)
 #define wm8993_suspend NULL
 #define wm8993_resume NULL
 #endif
+
+/* Tune DC servo configuration */
+static struct reg_default wm8993_regmap_patch[] = {
+	{ 0x44, 3 },
+	{ 0x56, 3 },
+	{ 0x44, 0 },
+};
 
 static const struct regmap_config wm8993_regmap = {
 	.reg_bits = 8,
@@ -1768,6 +1776,12 @@ static __devinit int wm8993_i2c_probe(struct i2c_client *i2c,
 	ret = regmap_write(wm8993->regmap, WM8993_SOFTWARE_RESET, 0xffff);
 	if (ret != 0)
 		goto err_enable;
+
+	ret = regmap_register_patch(wm8993->regmap, wm8993_regmap_patch,
+				    ARRAY_SIZE(wm8993_regmap_patch));
+	if (ret != 0)
+		dev_warn(wm8993->dev, "Failed to apply regmap patch: %d\n",
+			 ret);
 
 	if (i2c->irq) {
 		/* Put GPIO1 into interrupt mode (only GPIO1 can output IRQ) */

@@ -2759,11 +2759,6 @@ static int wm8994_resume(struct snd_soc_codec *codec)
 		codec->cache_only = 0;
 	}
 
-	/* Restore the registers */
-	ret = snd_soc_cache_sync(codec);
-	if (ret != 0)
-		dev_err(codec->dev, "Failed to sync cache: %d\n", ret);
-
 	wm8994_set_bias_level(codec, SND_SOC_BIAS_STANDBY);
 
 	for (i = 0; i < ARRAY_SIZE(wm8994->fll); i++) {
@@ -3396,10 +3391,18 @@ static int wm8994_codec_probe(struct snd_soc_codec *codec)
 	pm_runtime_enable(codec->dev);
 	pm_runtime_resume(codec->dev);
 
+	/* By default use idle_bias_off, will override for WM8994 */
+	codec->dapm.idle_bias_off = 1;
+
 	/* Set revision-specific configuration */
 	wm8994->revision = snd_soc_read(codec, WM8994_CHIP_REVISION);
 	switch (control->type) {
 	case WM8994:
+		/* Single ended line outputs should have VMID on. */
+		if (!wm8994->pdata->lineout1_diff ||
+		    !wm8994->pdata->lineout2_diff)
+			codec->dapm.idle_bias_off = 0;
+
 		switch (wm8994->revision) {
 		case 2:
 		case 3:
