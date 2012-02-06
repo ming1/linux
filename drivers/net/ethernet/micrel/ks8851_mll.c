@@ -1,5 +1,5 @@
 /**
- * drivers/net/ks8851_mll.c
+ * drivers/net/ethernet/micrel/ks8851_mll.c
  * Copyright (c) 2009 Micrel Inc.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -1501,10 +1501,8 @@ static int ks_hw_init(struct ks_net *ks)
 	ks->mcast_lst_size = 0;
 
 	ks->frame_head_info = kmalloc(MHEADER_SIZE, GFP_KERNEL);
-	if (!ks->frame_head_info) {
-		pr_err("Error: Fail to allocate frame memory\n");
+	if (!ks->frame_head_info)
 		return false;
-	}
 
 	ks_set_mac(ks, KS_DEFAULT_MAC_ADDRESS);
 	return true;

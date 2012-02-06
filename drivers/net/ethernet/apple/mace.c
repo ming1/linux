@@ -136,10 +136,8 @@ static int __devinit mace_probe(struct macio_dev *mdev, const struct of_device_i
 	 */
 	if (dummy_buf == NULL) {
 		dummy_buf = kmalloc(RX_BUFLEN+2, GFP_KERNEL);
-		if (dummy_buf == NULL) {
-			printk(KERN_ERR "MACE: couldn't allocate dummy buffer\n");
+		if (dummy_buf == NULL)
 			return -ENOMEM;
-		}
 	}
 
 	if (macio_request_resources(mdev, "mace")) {
@@ -149,7 +147,6 @@ static int __devinit mace_probe(struct macio_dev *mdev, const struct of_device_i
 
 	dev = alloc_etherdev(PRIV_BYTES);
 	if (!dev) {
-		printk(KERN_ERR "MACE: can't allocate ethernet device !\n");
 		rc = -ENOMEM;
 		goto err_release;
 	}
