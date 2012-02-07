@@ -1,0 +1,23 @@
+Importing hexagon based on v3.2-rc2
+Unchanged quilt series hexagon
+Importing i2c based on 3.3-rc2
+Unchanged quilt series i2c
+Importing jdelvare-hwmon based on 3.3-rc2
+Unchanged quilt series jdelvare-hwmon
+Importing kernel-doc based on 3.3-rc2
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard 62aa2b537c6f5957afd98e29f96897419ed5ebab
+HEAD is now at 62aa2b5 Linux 3.3-rc2
+$ git am ../quilt/kernel-doc/docum-sysctl-more-tainted-bits.patch
+Applying: Two of the bits in the tainted flag are not documented.
+$ git am ../quilt/kernel-doc/maint-docum-quilt-tree.patch
+Applying: Update quilt tree location for Documentation/ patches.
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/kernel-doc
+From ../quilt-tmp
+ + 88a2052...7e7b32a master     -> quilt/kernel-doc  (forced update)
+Importing rr based on v3.3-rc1-383-g0a96265
+Unchanged quilt series rr
+Importing device-mapper based on v3.3-rc2
+Unchanged quilt series device-mapper
