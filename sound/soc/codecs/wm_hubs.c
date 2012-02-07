@@ -656,10 +656,10 @@ SND_SOC_DAPM_MIXER("SPKR Boost", SND_SOC_NOPM, 0, 0,
 		   right_speaker_boost, ARRAY_SIZE(right_speaker_boost)),
 
 SND_SOC_DAPM_SUPPLY("TSHUT", WM8993_POWER_MANAGEMENT_2, 14, 0, NULL, 0),
-SND_SOC_DAPM_PGA("SPKL Driver", WM8993_POWER_MANAGEMENT_1, 12, 0,
-		 NULL, 0),
-SND_SOC_DAPM_PGA("SPKR Driver", WM8993_POWER_MANAGEMENT_1, 13, 0,
-		 NULL, 0),
+SND_SOC_DAPM_OUT_DRV("SPKL Driver", WM8993_POWER_MANAGEMENT_1, 12, 0,
+		     NULL, 0),
+SND_SOC_DAPM_OUT_DRV("SPKR Driver", WM8993_POWER_MANAGEMENT_1, 13, 0,
+		     NULL, 0),
 
 SND_SOC_DAPM_MIXER("LINEOUT1 Mixer", SND_SOC_NOPM, 0, 0,
 		   line1_mix, ARRAY_SIZE(line1_mix)),
@@ -675,14 +675,14 @@ SND_SOC_DAPM_MIXER("LINEOUT2N Mixer", SND_SOC_NOPM, 0, 0,
 SND_SOC_DAPM_MIXER("LINEOUT2P Mixer", SND_SOC_NOPM, 0, 0,
 		   line2p_mix, ARRAY_SIZE(line2p_mix)),
 
-SND_SOC_DAPM_PGA("LINEOUT1N Driver", WM8993_POWER_MANAGEMENT_3, 13, 0,
-		 NULL, 0),
-SND_SOC_DAPM_PGA("LINEOUT1P Driver", WM8993_POWER_MANAGEMENT_3, 12, 0,
-		 NULL, 0),
-SND_SOC_DAPM_PGA("LINEOUT2N Driver", WM8993_POWER_MANAGEMENT_3, 11, 0,
-		 NULL, 0),
-SND_SOC_DAPM_PGA("LINEOUT2P Driver", WM8993_POWER_MANAGEMENT_3, 10, 0,
-		 NULL, 0),
+SND_SOC_DAPM_OUT_DRV("LINEOUT1N Driver", WM8993_POWER_MANAGEMENT_3, 13, 0,
+		     NULL, 0),
+SND_SOC_DAPM_OUT_DRV("LINEOUT1P Driver", WM8993_POWER_MANAGEMENT_3, 12, 0,
+		     NULL, 0),
+SND_SOC_DAPM_OUT_DRV("LINEOUT2N Driver", WM8993_POWER_MANAGEMENT_3, 11, 0,
+		     NULL, 0),
+SND_SOC_DAPM_OUT_DRV("LINEOUT2P Driver", WM8993_POWER_MANAGEMENT_3, 10, 0,
+		     NULL, 0),
 
 SND_SOC_DAPM_OUTPUT("SPKOUTLP"),
 SND_SOC_DAPM_OUTPUT("SPKOUTLN"),
@@ -901,7 +901,7 @@ int wm_hubs_add_analogue_controls(struct snd_soc_codec *codec)
 			    WM8993_MIXOUTR_ZC | WM8993_MIXOUT_VU,
 			    WM8993_MIXOUTR_ZC | WM8993_MIXOUT_VU);
 
-	snd_soc_add_controls(codec, analogue_snd_controls,
+	snd_soc_add_codec_controls(codec, analogue_snd_controls,
 			     ARRAY_SIZE(analogue_snd_controls));
 
 	snd_soc_dapm_new_controls(dapm, analogue_dapm_widgets,
@@ -957,12 +957,6 @@ int wm_hubs_handle_analogue_pdata(struct snd_soc_codec *codec,
 		snd_soc_update_bits(codec, WM8993_LINE_MIXER2,
 				    WM8993_LINEOUT2_MODE,
 				    WM8993_LINEOUT2_MODE);
-
-	/* If the line outputs are differential then we aren't presenting
-	 * VMID as an output and can disable it.
-	 */
-	if (lineout1_diff && lineout2_diff)
-		codec->dapm.idle_bias_off = 1;
 
 	if (lineout1fb)
 		snd_soc_update_bits(codec, WM8993_ADDITIONAL_CONTROL,

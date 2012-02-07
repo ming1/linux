@@ -994,7 +994,7 @@ static int alc5632_probe(struct snd_soc_codec *codec)
 
 	switch (alc5632->id) {
 	case 0x5c:
-		snd_soc_add_controls(codec, alc5632_vol_snd_controls,
+		snd_soc_add_codec_controls(codec, alc5632_vol_snd_controls,
 			ARRAY_SIZE(alc5632_vol_snd_controls));
 		break;
 	default:
@@ -1109,7 +1109,7 @@ static __devinit int alc5632_i2c_probe(struct i2c_client *client,
 	return ret;
 }
 
-static int alc5632_i2c_remove(struct i2c_client *client)
+static __devexit int alc5632_i2c_remove(struct i2c_client *client)
 {
 	struct alc5632_priv *alc5632 = i2c_get_clientdata(client);
 	snd_soc_unregister_codec(&client->dev);
