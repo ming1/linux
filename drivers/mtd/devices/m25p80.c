@@ -908,14 +908,14 @@ static int __devinit m25p_probe(struct spi_device *spi)
 	flash->mtd.writesize = 1;
 	flash->mtd.flags = MTD_CAP_NORFLASH;
 	flash->mtd.size = info->sector_size * info->n_sectors;
-	flash->mtd.erase = m25p80_erase;
-	flash->mtd.read = m25p80_read;
+	flash->mtd._erase = m25p80_erase;
+	flash->mtd._read = m25p80_read;
 
 	/* sst flash chips use AAI word program */
 	if (JEDEC_MFR(info->jedec_id) == CFI_MFR_SST)
-		flash->mtd.write = sst_write;
+		flash->mtd._write = sst_write;
 	else
-		flash->mtd.write = m25p80_write;
+		flash->mtd._write = m25p80_write;
 
 	/* prefer "small sector" erase if possible */
 	if (info->flags & SECT_4K) {
@@ -1004,21 +1004,7 @@ static struct spi_driver m25p80_driver = {
 	 */
 };
 
-
-static int __init m25p80_init(void)
-{
-	return spi_register_driver(&m25p80_driver);
-}
-
-
-static void __exit m25p80_exit(void)
-{
-	spi_unregister_driver(&m25p80_driver);
-}
-
-
-module_init(m25p80_init);
-module_exit(m25p80_exit);
+module_spi_driver(m25p80_driver);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Mike Lavender");

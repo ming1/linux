@@ -359,7 +359,7 @@ static int pmc551_write(struct mtd_info *mtd, loff_t to, size_t len,
  * mechanism
  * returns the size of the memory region found.
  */
-static u32 fixup_pmc551(struct pci_dev *dev)
+static int fixup_pmc551(struct pci_dev *dev)
 {
 #ifdef CONFIG_MTD_PMC551_BUGFIX
 	u32 dram_data;
@@ -669,7 +669,7 @@ static int __init init_pmc551(void)
 	struct mypriv *priv;
 	int found = 0;
 	struct mtd_info *mtd;
-	u32 length = 0;
+	int length = 0;
 
 	if (msize) {
 		msize = (1 << (ffs(msize) - 1)) << 20;
@@ -787,11 +787,11 @@ static int __init init_pmc551(void)
 
 		mtd->size = msize;
 		mtd->flags = MTD_CAP_RAM;
-		mtd->erase = pmc551_erase;
-		mtd->read = pmc551_read;
-		mtd->write = pmc551_write;
-		mtd->point = pmc551_point;
-		mtd->unpoint = pmc551_unpoint;
+		mtd->_erase = pmc551_erase;
+		mtd->_read = pmc551_read;
+		mtd->_write = pmc551_write;
+		mtd->_point = pmc551_point;
+		mtd->_unpoint = pmc551_unpoint;
 		mtd->type = MTD_RAM;
 		mtd->name = "PMC551 RAM board";
 		mtd->erasesize = 0x10000;
