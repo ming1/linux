@@ -324,8 +324,10 @@ set(temp_min, JC42_REG_TEMP_LOWER);
 set(temp_max, JC42_REG_TEMP_UPPER);
 set(temp_crit, JC42_REG_TEMP_CRITICAL);
 
-/* JC42.4 compliant chips only support four hysteresis values.
- * Pick best choice and go from there. */
+/*
+ * JC42.4 compliant chips only support four hysteresis values.
+ * Pick best choice and go from there.
+ */
 static ssize_t set_temp_crit_hyst(struct device *dev,
 				  struct device_attribute *attr,
 				  const char *buf, size_t count)
@@ -588,19 +590,8 @@ abort:
 	return ret;
 }
 
-static int __init sensors_jc42_init(void)
-{
-	return i2c_add_driver(&jc42_driver);
-}
-
-static void __exit sensors_jc42_exit(void)
-{
-	i2c_del_driver(&jc42_driver);
-}
+module_i2c_driver(jc42_driver);
 
 MODULE_AUTHOR("Guenter Roeck <guenter.roeck@ericsson.com>");
 MODULE_DESCRIPTION("JC42 driver");
 MODULE_LICENSE("GPL");
-
-module_init(sensors_jc42_init);
-module_exit(sensors_jc42_exit);
