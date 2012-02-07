@@ -901,7 +901,7 @@ int wm_hubs_add_analogue_controls(struct snd_soc_codec *codec)
 			    WM8993_MIXOUTR_ZC | WM8993_MIXOUT_VU,
 			    WM8993_MIXOUTR_ZC | WM8993_MIXOUT_VU);
 
-	snd_soc_add_controls(codec, analogue_snd_controls,
+	snd_soc_add_codec_controls(codec, analogue_snd_controls,
 			     ARRAY_SIZE(analogue_snd_controls));
 
 	snd_soc_dapm_new_controls(dapm, analogue_dapm_widgets,
@@ -957,12 +957,6 @@ int wm_hubs_handle_analogue_pdata(struct snd_soc_codec *codec,
 		snd_soc_update_bits(codec, WM8993_LINE_MIXER2,
 				    WM8993_LINEOUT2_MODE,
 				    WM8993_LINEOUT2_MODE);
-
-	/* If the line outputs are differential then we aren't presenting
-	 * VMID as an output and can disable it.
-	 */
-	if (lineout1_diff && lineout2_diff)
-		codec->dapm.idle_bias_off = 1;
 
 	if (lineout1fb)
 		snd_soc_update_bits(codec, WM8993_ADDITIONAL_CONTROL,
