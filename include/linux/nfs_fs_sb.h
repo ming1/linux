@@ -190,7 +190,8 @@ struct nfs_server {
 
 
 /* maximum number of slots to use */
-#define NFS4_MAX_SLOT_TABLE (128U)
+#define NFS4_DEF_SLOT_TABLE_SIZE (16U)
+#define NFS4_MAX_SLOT_TABLE (255U)
 #define NFS4_NO_SLOT ((u32)-1)
 
 #if defined(CONFIG_NFS_V4)
