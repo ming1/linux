@@ -199,10 +199,12 @@ struct twl6040_platform_data {
 };
 
 struct regmap;
+struct regulator_bulk_data;
 
 struct twl6040 {
 	struct device *dev;
 	struct regmap *regmap;
+	struct regulator_bulk_data *supplies; /* supplies for vio, v2v1 */
 	struct mutex mutex;
 	struct mutex io_mutex;
 	struct mutex irq_mutex;
