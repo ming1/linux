@@ -177,7 +177,7 @@ static bool __init alix_present_dmi(void)
 	return true;
 }
 
-static int  __init alix_init(void)
+static int __init alix_init(void)
 {
 	const char tinybios_sig[] = "PC Engines ALIX.";
 	const char coreboot_sig[] = "PC Engines\0ALIX.";
