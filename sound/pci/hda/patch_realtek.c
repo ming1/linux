@@ -1855,6 +1855,8 @@ static const char * const alc_slave_vols[] = {
 	"Speaker Playback Volume",
 	"Mono Playback Volume",
 	"Line-Out Playback Volume",
+	"CLFE Playback Volume",
+	"Bass Speaker Playback Volume",
 	"PCM Playback Volume",
 	NULL,
 };
@@ -1870,6 +1872,8 @@ static const char * const alc_slave_sws[] = {
 	"Mono Playback Switch",
 	"IEC958 Playback Switch",
 	"Line-Out Playback Switch",
+	"CLFE Playback Switch",
+	"Bass Speaker Playback Switch",
 	"PCM Playback Switch",
 	NULL,
 };
@@ -2318,7 +2322,7 @@ static int alc_build_pcms(struct hda_codec *codec)
 		 "%s Analog", codec->chip_name);
 	info->name = spec->stream_name_analog;
 
-	if (spec->multiout.dac_nids > 0) {
+	if (spec->multiout.num_dacs > 0) {
 		p = spec->stream_analog_playback;
 		if (!p)
 			p = &alc_pcm_analog_playback;
