@@ -114,6 +114,9 @@
 # define PR_SET_MM_START_BRK		6
 # define PR_SET_MM_BRK			7
 
+#define PR_SET_CHILD_SUBREAPER 35
+#define PR_GET_CHILD_SUBREAPER 36
+
 /*
  * Set specific pid that is allowed to ptrace the current task.
  * A value of 0 mean "no process".
