@@ -132,7 +132,7 @@ static int lp855x_bl_update_status(struct backlight_device *bl)
 		lp855x_write_byte(lp, BRIGHTNESS_CTRL, val);
 	}
 
-	return bl->props.brightness;
+	return 0;
 }
 
 static int lp855x_bl_get_brightness(struct backlight_device *bl)
@@ -242,7 +242,7 @@ static int lp855x_probe(struct i2c_client *cl, const struct i2c_device_id *id)
 	if (!i2c_check_functionality(cl->adapter, I2C_FUNC_SMBUS_I2C_BLOCK))
 		return -EIO;
 
-	lp = kzalloc(sizeof(struct lp855x), GFP_KERNEL);
+	lp = devm_kzalloc(&cl->dev, sizeof(struct lp855x), GFP_KERNEL);
 	if (!lp)
 		return -ENOMEM;
 
@@ -276,14 +276,11 @@ static int lp855x_probe(struct i2c_client *cl, const struct i2c_device_id *id)
 	}
 
 	backlight_update_status(lp->bl);
-	return ret;
+	return 0;
 
-err_dev:
-	kfree(lp);
-	return ret;
 err_sysfs:
 	lp855x_backlight_unregister(lp);
-	kfree(lp);
+err_dev:
 	return ret;
 }
 
@@ -295,7 +292,6 @@ static int __devexit lp855x_remove(struct i2c_client *cl)
 	backlight_update_status(lp->bl);
 	sysfs_remove_group(&lp->dev->kobj, &lp855x_attr_group);
 	lp855x_backlight_unregister(lp);
-	kfree(lp);
 
 	return 0;
 }
@@ -319,18 +315,7 @@ static struct i2c_driver lp855x_driver = {
 	.id_table = lp855x_ids,
 };
 
-static int __init lp855x_init(void)
-{
-	return i2c_add_driver(&lp855x_driver);
-}
-
-static void __exit lp855x_exit(void)
-{
-	i2c_del_driver(&lp855x_driver);
-}
-
-module_init(lp855x_init);
-module_exit(lp855x_exit);
+module_i2c_driver(lp855x_driver);
 
 MODULE_DESCRIPTION("Texas Instruments LP855x Backlight driver");
 MODULE_AUTHOR("Milo Kim <milo.kim@ti.com>");
