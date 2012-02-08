@@ -33,13 +33,9 @@ struct phram_mtd_list {
 
 static LIST_HEAD(phram_list);
 
-
 static int phram_erase(struct mtd_info *mtd, struct erase_info *instr)
 {
 	u_char *start = mtd->priv;
-
-	if (instr->addr + instr->len > mtd->size)
-		return -EINVAL;
 
 	memset(start + instr->addr, 0xff, instr->len);
 
@@ -47,20 +43,14 @@ static int phram_erase(struct mtd_info *mtd, struct erase_info *instr)
 	 * I don't feel at all ashamed. This kind of thing is possible anyway
 	 * with flash, but unlikely.
 	 */
-
 	instr->state = MTD_ERASE_DONE;
-
 	mtd_erase_callback(instr);
-
 	return 0;
 }
 
 static int phram_point(struct mtd_info *mtd, loff_t from, size_t len,
 		size_t *retlen, void **virt, resource_size_t *phys)
 {
-	if (from + len > mtd->size)
-		return -EINVAL;
-
 	/* can we return a physical address with this driver? */
 	if (phys)
 		return -EINVAL;
@@ -70,8 +60,9 @@ static int phram_point(struct mtd_info *mtd, loff_t from, size_t len,
 	return 0;
 }
 
-static void phram_unpoint(struct mtd_info *mtd, loff_t from, size_t len)
+static int phram_unpoint(struct mtd_info *mtd, loff_t from, size_t len)
 {
+	return 0;
 }
 
 static int phram_read(struct mtd_info *mtd, loff_t from, size_t len,
@@ -79,14 +70,7 @@ static int phram_read(struct mtd_info *mtd, loff_t from, size_t len,
 {
 	u_char *start = mtd->priv;
 
-	if (from >= mtd->size)
-		return -EINVAL;
-
-	if (len > mtd->size - from)
-		len = mtd->size - from;
-
 	memcpy(buf, start + from, len);
-
 	*retlen = len;
 	return 0;
 }
@@ -96,19 +80,10 @@ static int phram_write(struct mtd_info *mtd, loff_t to, size_t len,
 {
 	u_char *start = mtd->priv;
 
-	if (to >= mtd->size)
-		return -EINVAL;
-
-	if (len > mtd->size - to)
-		len = mtd->size - to;
-
 	memcpy(start + to, buf, len);
-
 	*retlen = len;
 	return 0;
 }
-
-
 
 static void unregister_devices(void)
 {
@@ -142,11 +117,11 @@ static int register_device(char *name, unsigned long start, unsigned long len)
 	new->mtd.name = name;
 	new->mtd.size = len;
 	new->mtd.flags = MTD_CAP_RAM;
-        new->mtd.erase = phram_erase;
-	new->mtd.point = phram_point;
-	new->mtd.unpoint = phram_unpoint;
-	new->mtd.read = phram_read;
-	new->mtd.write = phram_write;
+	new->mtd._erase = phram_erase;
+	new->mtd._point = phram_point;
+	new->mtd._unpoint = phram_unpoint;
+	new->mtd._read = phram_read;
+	new->mtd._write = phram_write;
 	new->mtd.owner = THIS_MODULE;
 	new->mtd.type = MTD_RAM;
 	new->mtd.erasesize = PAGE_SIZE;
