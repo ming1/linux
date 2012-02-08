@@ -161,7 +161,7 @@ static bool __init alix_present(unsigned long bios_phys,
 
 static bool __init alix_present_dmi(void)
 {
-	char *vendor, *product;
+	const char *vendor, *product;
 
 	vendor = dmi_get_system_info(DMI_SYS_VENDOR);
 	if (!vendor || strcmp(vendor, "PC Engines"))
