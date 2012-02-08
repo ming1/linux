@@ -1,9 +1,9 @@
 /*
  * Real time clock driver for DA9052
  *
- *Copyright(c) 2012 Dialog Semiconductor Ltd.
+ * Copyright(c) 2012 Dialog Semiconductor Ltd.
  *
- *Author: Dajun Dajun Chen <dajun.chen@diasemi.com>
+ * Author: Dajun Dajun Chen <dajun.chen@diasemi.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -69,7 +69,7 @@ static irqreturn_t da9052_rtc_irq(int irq, void *data)
 static int da9052_read_alarm(struct da9052 *da9052, struct rtc_time *rtc_tm)
 {
 	int ret;
-	uint8_t v[5] = {0, 0, 0, 0, 0};
+	uint8_t v[5];
 
 	ret = da9052_group_read(da9052, DA9052_ALARM_MI_REG, 5, v);
 	if (ret != 0) {
@@ -92,7 +92,7 @@ static int da9052_read_alarm(struct da9052 *da9052, struct rtc_time *rtc_tm)
 static int da9052_set_alarm(struct da9052 *da9052, struct rtc_time *rtc_tm)
 {
 	int ret;
-	uint8_t v[3] = {0, 0, 0};
+	uint8_t v[3];
 
 	rtc_tm->tm_year -= 100;
 	rtc_tm->tm_mon += 1;
@@ -136,7 +136,7 @@ static int da9052_rtc_get_alarm_status(struct da9052 *da9052)
 static int da9052_rtc_read_time(struct device *dev, struct rtc_time *rtc_tm)
 {
 	struct da9052_rtc *rtc = dev_get_drvdata(dev);
-	uint8_t v[6] = {0, 0, 0, 0, 0, 0};
+	uint8_t v[6];
 	int ret;
 
 	ret = da9052_group_read(rtc->da9052, DA9052_COUNT_S_REG, 6, v);
@@ -164,7 +164,7 @@ static int da9052_rtc_read_time(struct device *dev, struct rtc_time *rtc_tm)
 static int da9052_rtc_set_time(struct device *dev, struct rtc_time *tm)
 {
 	struct da9052_rtc *rtc;
-	uint8_t v[6] = {0, 0, 0, 0, 0, 0};
+	uint8_t v[6];
 
 	rtc = dev_get_drvdata(dev);
 
