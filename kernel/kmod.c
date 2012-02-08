@@ -44,6 +44,12 @@
 extern int max_threads;
 
 static struct workqueue_struct *khelper_wq;
+
+/*
+ * kmod_thread_locker is used for deadlock avoidance.  There is no explicit
+ * locking to protect this global - it is private to the singleton khelper
+ * thread and should only ever be modified by that thread.
+ */
 static const struct task_struct *kmod_thread_locker;
 
 #define CAP_BSET	(void *)1
