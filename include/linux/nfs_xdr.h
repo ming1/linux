@@ -2,7 +2,6 @@
 #define _LINUX_NFS_XDR_H
 
 #include <linux/nfsacl.h>
-#include <linux/nfs3.h>
 #include <linux/sunrpc/gss_api.h>
 
 /*
@@ -182,7 +181,7 @@ struct nfs4_slot {
 
 struct nfs4_sequence_args {
 	struct nfs4_session	*sa_session;
-	u8			sa_slotid;
+	u32			sa_slotid;
 	u8			sa_cache_this;
 };
 
@@ -1275,11 +1274,11 @@ struct nfs_rpc_ops {
 extern const struct nfs_rpc_ops	nfs_v2_clientops;
 extern const struct nfs_rpc_ops	nfs_v3_clientops;
 extern const struct nfs_rpc_ops	nfs_v4_clientops;
-extern struct rpc_version	nfs_version2;
-extern struct rpc_version	nfs_version3;
-extern struct rpc_version	nfs_version4;
+extern const struct rpc_version nfs_version2;
+extern const struct rpc_version nfs_version3;
+extern const struct rpc_version nfs_version4;
 
-extern struct rpc_version	nfsacl_version3;
-extern struct rpc_program	nfsacl_program;
+extern const struct rpc_version nfsacl_version3;
+extern const struct rpc_program nfsacl_program;
 
 #endif
