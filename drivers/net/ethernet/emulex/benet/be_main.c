@@ -286,7 +286,9 @@ static void populate_be2_stats(struct be_adapter *adapter)
 	drvs->rx_input_fifo_overflow_drop = port_stats->rx_input_fifo_overflow;
 	drvs->rx_dropped_header_too_small =
 		port_stats->rx_dropped_header_too_small;
-	drvs->rx_address_match_errors = port_stats->rx_address_match_errors;
+	drvs->rx_address_mismatch_drops =
+					port_stats->rx_address_mismatch_drops +
+					port_stats->rx_vlan_mismatch_drops;
 	drvs->rx_alignment_symbol_errors =
 		port_stats->rx_alignment_symbol_errors;
 
@@ -298,9 +300,7 @@ static void populate_be2_stats(struct be_adapter *adapter)
 	else
 		drvs->jabber_events = rxf_stats->port0_jabber_events;
 	drvs->rx_drops_no_pbuf = rxf_stats->rx_drops_no_pbuf;
-	drvs->rx_drops_no_txpb = rxf_stats->rx_drops_no_txpb;
 	drvs->rx_drops_no_erx_descr = rxf_stats->rx_drops_no_erx_descr;
-	drvs->rx_drops_invalid_ring = rxf_stats->rx_drops_invalid_ring;
 	drvs->forwarded_packets = rxf_stats->forwarded_packets;
 	drvs->rx_drops_mtu = rxf_stats->rx_drops_mtu;
 	drvs->rx_drops_no_tpre_descr = rxf_stats->rx_drops_no_tpre_descr;
@@ -337,7 +337,7 @@ static void populate_be3_stats(struct be_adapter *adapter)
 		port_stats->rx_dropped_header_too_small;
 	drvs->rx_input_fifo_overflow_drop =
 		port_stats->rx_input_fifo_overflow_drop;
-	drvs->rx_address_match_errors = port_stats->rx_address_match_errors;
+	drvs->rx_address_mismatch_drops = port_stats->rx_address_mismatch_drops;
 	drvs->rx_alignment_symbol_errors =
 		port_stats->rx_alignment_symbol_errors;
 	drvs->rxpp_fifo_overflow_drop = port_stats->rxpp_fifo_overflow_drop;
@@ -345,9 +345,7 @@ static void populate_be3_stats(struct be_adapter *adapter)
 	drvs->tx_controlframes = port_stats->tx_controlframes;
 	drvs->jabber_events = port_stats->jabber_events;
 	drvs->rx_drops_no_pbuf = rxf_stats->rx_drops_no_pbuf;
-	drvs->rx_drops_no_txpb = rxf_stats->rx_drops_no_txpb;
 	drvs->rx_drops_no_erx_descr = rxf_stats->rx_drops_no_erx_descr;
-	drvs->rx_drops_invalid_ring = rxf_stats->rx_drops_invalid_ring;
 	drvs->forwarded_packets = rxf_stats->forwarded_packets;
 	drvs->rx_drops_mtu = rxf_stats->rx_drops_mtu;
 	drvs->rx_drops_no_tpre_descr = rxf_stats->rx_drops_no_tpre_descr;
@@ -380,13 +378,14 @@ static void populate_lancer_stats(struct be_adapter *adapter)
 	drvs->rx_dropped_header_too_small =
 				pport_stats->rx_dropped_header_too_small;
 	drvs->rx_input_fifo_overflow_drop = pport_stats->rx_fifo_overflow;
-	drvs->rx_address_match_errors = pport_stats->rx_address_match_errors;
+	drvs->rx_address_mismatch_drops =
+					pport_stats->rx_address_mismatch_drops +
+					pport_stats->rx_vlan_mismatch_drops;
 	drvs->rx_alignment_symbol_errors = pport_stats->rx_symbol_errors_lo;
 	drvs->rxpp_fifo_overflow_drop = pport_stats->rx_fifo_overflow;
 	drvs->tx_pauseframes = pport_stats->tx_pause_frames_lo;
 	drvs->tx_controlframes = pport_stats->tx_control_frames_lo;
 	drvs->jabber_events = pport_stats->rx_jabbers;
-	drvs->rx_drops_invalid_ring = pport_stats->rx_drops_invalid_queue;
 	drvs->forwarded_packets = pport_stats->num_forwards_lo;
 	drvs->rx_drops_mtu = pport_stats->rx_drops_mtu_lo;
 	drvs->rx_drops_too_many_frags =
@@ -1189,7 +1188,7 @@ static void be_rx_compl_process(struct be_adapter *adapter,
 	struct net_device *netdev = adapter->netdev;
 	struct sk_buff *skb;
 
-	skb = netdev_alloc_skb_ip_align(netdev, BE_HDR_LEN);
+	skb = netdev_alloc_skb_ip_align(netdev, BE_RX_SKB_ALLOC_SIZE);
 	if (unlikely(!skb)) {
 		rx_stats(rxo)->rx_drops_no_skbs++;
 		be_rx_compl_discard(adapter, rxo, rxcp);
@@ -2609,19 +2608,28 @@ static void be_setup_init(struct be_adapter *adapter)
 	adapter->eq_next_idx = 0;
 }
 
-static int be_configure_mac_from_list(struct be_adapter *adapter, u8 *mac)
+static int be_add_mac_from_list(struct be_adapter *adapter, u8 *mac)
 {
 	u32 pmac_id;
-	int status = be_cmd_get_mac_from_list(adapter, 0, &pmac_id);
+	int status;
+	bool pmac_id_active;
+
+	status = be_cmd_get_mac_from_list(adapter, 0, &pmac_id_active,
+							&pmac_id, mac);
 	if (status != 0)
 		goto do_none;
-	status = be_cmd_mac_addr_query(adapter, mac,
-			MAC_ADDRESS_TYPE_NETWORK,
-			false, adapter->if_handle, pmac_id);
-	if (status != 0)
-		goto do_none;
-	status = be_cmd_pmac_add(adapter, mac, adapter->if_handle,
-			&adapter->pmac_id, 0);
+
+	if (pmac_id_active) {
+		status = be_cmd_mac_addr_query(adapter, mac,
+				MAC_ADDRESS_TYPE_NETWORK,
+				false, adapter->if_handle, pmac_id);
+
+		if (!status)
+			adapter->pmac_id = pmac_id;
+	} else {
+		status = be_cmd_pmac_add(adapter, mac,
+				adapter->if_handle, &adapter->pmac_id, 0);
+	}
 do_none:
 	return status;
 }
@@ -2686,7 +2694,7 @@ static int be_setup(struct be_adapter *adapter)
 	  */
 	if (!be_physfn(adapter)) {
 		if (lancer_chip(adapter))
-			status = be_configure_mac_from_list(adapter, mac);
+			status = be_add_mac_from_list(adapter, mac);
 		else
 			status = be_cmd_mac_addr_query(adapter, mac,
 					MAC_ADDRESS_TYPE_NETWORK, false,

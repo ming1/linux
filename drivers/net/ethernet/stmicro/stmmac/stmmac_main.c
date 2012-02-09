@@ -954,10 +954,9 @@ static int stmmac_open(struct net_device *dev)
 
 #ifdef CONFIG_STMMAC_TIMER
 	priv->tm = kzalloc(sizeof(struct stmmac_timer *), GFP_KERNEL);
-	if (unlikely(priv->tm == NULL)) {
-		pr_err("%s: ERROR: timer memory alloc failed\n", __func__);
+	if (unlikely(priv->tm == NULL))
 		return -ENOMEM;
-	}
+
 	priv->tm->freq = tmrate;
 
 	/* Test if the external timer can be actually used.
@@ -1802,10 +1801,8 @@ struct stmmac_priv *stmmac_dvr_probe(struct device *device,
 	struct stmmac_priv *priv;
 
 	ndev = alloc_etherdev(sizeof(struct stmmac_priv));
-	if (!ndev) {
-		pr_err("%s: ERROR: allocating the device\n", __func__);
+	if (!ndev)
 		return NULL;
-	}
 
 	SET_NETDEV_DEV(ndev, device);
 
