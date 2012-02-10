@@ -60,12 +60,13 @@
 #include <linux/efi.h>
 #include <asm/string.h>
 #include <scsi/scsi_host.h>
+#include "host.h"
 #include "isci.h"
 #include "task.h"
 #include "probe_roms.h"
 
 #define MAJ 1
-#define MIN 0
+#define MIN 1
 #define BUILD 0
 #define DRV_VERSION __stringify(MAJ) "." __stringify(MIN) "." \
 	__stringify(BUILD)
@@ -94,7 +95,7 @@ MODULE_DEVICE_TABLE(pci, isci_id_table);
 
 /* linux isci specific settings */
 
-unsigned char no_outbound_task_to = 20;
+unsigned char no_outbound_task_to = 2;
 module_param(no_outbound_task_to, byte, 0);
 MODULE_PARM_DESC(no_outbound_task_to, "No Outbound Task Timeout (1us incr)");
 
@@ -114,13 +115,21 @@ u16 stp_inactive_to = 5;
 module_param(stp_inactive_to, ushort, 0);
 MODULE_PARM_DESC(stp_inactive_to, "STP inactivity timeout (100us incr)");
 
-unsigned char phy_gen = 3;
+unsigned char phy_gen = SCIC_SDS_PARM_GEN2_SPEED;
 module_param(phy_gen, byte, 0);
 MODULE_PARM_DESC(phy_gen, "PHY generation (1: 1.5Gbps 2: 3.0Gbps 3: 6.0Gbps)");
 
 unsigned char max_concurr_spinup;
 module_param(max_concurr_spinup, byte, 0);
 MODULE_PARM_DESC(max_concurr_spinup, "Max concurrent device spinup");
+
+uint cable_selection_override = CABLE_OVERRIDE_DISABLED;
+module_param(cable_selection_override, uint, 0);
+
+MODULE_PARM_DESC(cable_selection_override,
+		 "This field indicates length of the SAS/SATA cable between "
+		 "host and device. If any bits > 15 are set (default) "
+		 "indicates \"use platform defaults\"");
 
 static ssize_t isci_show_id(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -409,6 +418,14 @@ static struct isci_host *isci_host_alloc(struct pci_dev *pdev, int id)
 		return NULL;
 	isci_host->shost = shost;
 
+	dev_info(&pdev->dev, "%sSCU controller %d: phy 3-0 cables: "
+		 "{%s, %s, %s, %s}\n",
+		 (is_cable_select_overridden() ? "* " : ""), isci_host->id,
+		 lookup_cable_names(decode_cable_selection(isci_host, 3)),
+		 lookup_cable_names(decode_cable_selection(isci_host, 2)),
+		 lookup_cable_names(decode_cable_selection(isci_host, 1)),
+		 lookup_cable_names(decode_cable_selection(isci_host, 0)));
+
 	err = isci_host_init(isci_host);
 	if (err)
 		goto err_shost;
@@ -463,7 +480,8 @@ static int __devinit isci_pci_probe(struct pci_dev *pdev, const struct pci_devic
 		orom = isci_request_oprom(pdev);
 
 	for (i = 0; orom && i < ARRAY_SIZE(orom->ctrl); i++) {
-		if (sci_oem_parameters_validate(&orom->ctrl[i])) {
+		if (sci_oem_parameters_validate(&orom->ctrl[i],
+						orom->hdr.version)) {
 			dev_warn(&pdev->dev,
 				 "[%d]: invalid oem parameters detected, falling back to firmware\n", i);
 			devm_kfree(&pdev->dev, orom);
@@ -508,6 +526,13 @@ static int __devinit isci_pci_probe(struct pci_dev *pdev, const struct pci_devic
 			goto err_host_alloc;
 		}
 		pci_info->hosts[i] = h;
+
+		/* turn on DIF support */
+		scsi_host_set_prot(h->shost,
+				   SHOST_DIF_TYPE1_PROTECTION |
+				   SHOST_DIF_TYPE2_PROTECTION |
+				   SHOST_DIF_TYPE3_PROTECTION);
+		scsi_host_set_guard(h->shost, SHOST_DIX_GUARD_CRC);
 	}
 
 	err = isci_setup_interrupts(pdev);
@@ -531,9 +556,9 @@ static void __devexit isci_pci_remove(struct pci_dev *pdev)
 	int i;
 
 	for_each_isci_host(i, ihost, pdev) {
+		wait_for_start(ihost);
 		isci_unregister(ihost);
 		isci_host_deinit(ihost);
-		sci_controller_disable_interrupts(ihost);
 	}
 }
 
