@@ -65,6 +65,9 @@ config OPTPROBES
 	depends on KPROBES && HAVE_OPTPROBES
 	depends on !PREEMPT
 
+config UPROBES
+	def_bool n
+
 config HAVE_EFFICIENT_UNALIGNED_ACCESS
 	bool
 	help
