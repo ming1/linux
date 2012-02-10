@@ -201,6 +201,7 @@ struct fuse_req *fuse_get_req_nofail(struct fuse_conn *fc, struct file *file)
 	req->waiting = 1;
 	return req;
 }
+EXPORT_SYMBOL_GPL(fuse_get_req_nofail);
 
 void fuse_put_request(struct fuse_conn *fc, struct fuse_req *req)
 {
@@ -463,8 +464,8 @@ void fuse_request_send_background(struct fuse_conn *fc, struct fuse_req *req)
 }
 EXPORT_SYMBOL_GPL(fuse_request_send_background);
 
-static int fuse_request_send_notify_reply(struct fuse_conn *fc,
-					  struct fuse_req *req, u64 unique)
+int fuse_request_send_notify_reply(struct fuse_conn *fc,
+				   struct fuse_req *req, u64 unique)
 {
 	int err = -ENODEV;
 
@@ -479,6 +480,7 @@ static int fuse_request_send_notify_reply(struct fuse_conn *fc,
 
 	return err;
 }
+EXPORT_SYMBOL_GPL(fuse_request_send_notify_reply);
 
 /*
  * Called under fc->lock
@@ -813,8 +815,8 @@ static int fuse_ref_page(struct fuse_copy_state *cs, struct page *page,
  * Copy a page in the request to/from the userspace buffer.  Must be
  * done atomically
  */
-static int fuse_copy_page(struct fuse_copy_state *cs, struct page **pagep,
-			  unsigned offset, unsigned count, int zeroing)
+int fuse_copy_page(struct fuse_copy_state *cs, struct page **pagep,
+		   unsigned offset, unsigned count, int zeroing)
 {
 	int err;
 	struct page *page = *pagep;
@@ -849,6 +851,7 @@ static int fuse_copy_page(struct fuse_copy_state *cs, struct page **pagep,
 		flush_dcache_page(page);
 	return 0;
 }
+EXPORT_SYMBOL_GPL(fuse_copy_page);
 
 /* Copy pages in the request to/from userspace buffer */
 static int fuse_copy_pages(struct fuse_copy_state *cs, unsigned nbytes,
@@ -1445,15 +1448,7 @@ static int fuse_notify_store(struct fuse_conn *fc, unsigned int size,
 			     struct fuse_copy_state *cs)
 {
 	struct fuse_notify_store_out outarg;
-	struct inode *inode;
-	struct address_space *mapping;
-	u64 nodeid;
 	int err;
-	pgoff_t index;
-	unsigned int offset;
-	unsigned int num;
-	loff_t file_size;
-	loff_t end;
 
 	err = -EINVAL;
 	if (size < sizeof(outarg))
@@ -1467,129 +1462,11 @@ static int fuse_notify_store(struct fuse_conn *fc, unsigned int size,
 	if (size - sizeof(outarg) != outarg.size)
 		goto out_finish;
 
-	nodeid = outarg.nodeid;
+	err = fc->ops->notify_store(fc, cs, outarg.nodeid, outarg.size,
+				       outarg.offset);
 
-	down_read(&fc->killsb);
-
-	err = -ENOENT;
-	if (!fc->sb)
-		goto out_up_killsb;
-
-	inode = ilookup5(fc->sb, nodeid, fuse_inode_eq, &nodeid);
-	if (!inode)
-		goto out_up_killsb;
-
-	mapping = inode->i_mapping;
-	index = outarg.offset >> PAGE_CACHE_SHIFT;
-	offset = outarg.offset & ~PAGE_CACHE_MASK;
-	file_size = i_size_read(inode);
-	end = outarg.offset + outarg.size;
-	if (end > file_size) {
-		file_size = end;
-		fuse_write_update_size(inode, file_size);
-	}
-
-	num = outarg.size;
-	while (num) {
-		struct page *page;
-		unsigned int this_num;
-
-		err = -ENOMEM;
-		page = find_or_create_page(mapping, index,
-					   mapping_gfp_mask(mapping));
-		if (!page)
-			goto out_iput;
-
-		this_num = min_t(unsigned, num, PAGE_CACHE_SIZE - offset);
-		err = fuse_copy_page(cs, &page, offset, this_num, 0);
-		if (!err && offset == 0 && (num != 0 || file_size == end))
-			SetPageUptodate(page);
-		unlock_page(page);
-		page_cache_release(page);
-
-		if (err)
-			goto out_iput;
-
-		num -= this_num;
-		offset = 0;
-		index++;
-	}
-
-	err = 0;
-
-out_iput:
-	iput(inode);
-out_up_killsb:
-	up_read(&fc->killsb);
 out_finish:
 	fuse_copy_finish(cs);
-	return err;
-}
-
-static void fuse_retrieve_end(struct fuse_conn *fc, struct fuse_req *req)
-{
-	release_pages(req->pages, req->num_pages, 0);
-}
-
-static int fuse_retrieve(struct fuse_conn *fc, struct inode *inode,
-			 struct fuse_notify_retrieve_out *outarg)
-{
-	int err;
-	struct address_space *mapping = inode->i_mapping;
-	struct fuse_req *req;
-	pgoff_t index;
-	loff_t file_size;
-	unsigned int num;
-	unsigned int offset;
-	size_t total_len = 0;
-
-	req = fuse_get_req(fc);
-	if (IS_ERR(req))
-		return PTR_ERR(req);
-
-	offset = outarg->offset & ~PAGE_CACHE_MASK;
-
-	req->in.h.opcode = FUSE_NOTIFY_REPLY;
-	req->in.h.nodeid = outarg->nodeid;
-	req->in.numargs = 2;
-	req->in.argpages = 1;
-	req->page_offset = offset;
-	req->end = fuse_retrieve_end;
-
-	index = outarg->offset >> PAGE_CACHE_SHIFT;
-	file_size = i_size_read(inode);
-	num = outarg->size;
-	if (outarg->offset > file_size)
-		num = 0;
-	else if (outarg->offset + num > file_size)
-		num = file_size - outarg->offset;
-
-	while (num && req->num_pages < FUSE_MAX_PAGES_PER_REQ) {
-		struct page *page;
-		unsigned int this_num;
-
-		page = find_get_page(mapping, index);
-		if (!page)
-			break;
-
-		this_num = min_t(unsigned, num, PAGE_CACHE_SIZE - offset);
-		req->pages[req->num_pages] = page;
-		req->num_pages++;
-
-		num -= this_num;
-		total_len += this_num;
-		index++;
-	}
-	req->misc.retrieve_in.offset = outarg->offset;
-	req->misc.retrieve_in.size = total_len;
-	req->in.args[0].size = sizeof(req->misc.retrieve_in);
-	req->in.args[0].value = &req->misc.retrieve_in;
-	req->in.args[1].size = total_len;
-
-	err = fuse_request_send_notify_reply(fc, req, outarg->notify_unique);
-	if (err)
-		fuse_retrieve_end(fc, req);
-
 	return err;
 }
 
@@ -1597,7 +1474,6 @@ static int fuse_notify_retrieve(struct fuse_conn *fc, unsigned int size,
 				struct fuse_copy_state *cs)
 {
 	struct fuse_notify_retrieve_out outarg;
-	struct inode *inode;
 	int err;
 
 	err = -EINVAL;
@@ -1610,18 +1486,7 @@ static int fuse_notify_retrieve(struct fuse_conn *fc, unsigned int size,
 
 	fuse_copy_finish(cs);
 
-	down_read(&fc->killsb);
-	err = -ENOENT;
-	if (fc->sb) {
-		u64 nodeid = outarg.nodeid;
-
-		inode = ilookup5(fc->sb, nodeid, fuse_inode_eq, &nodeid);
-		if (inode) {
-			err = fuse_retrieve(fc, inode, &outarg);
-			iput(inode);
-		}
-	}
-	up_read(&fc->killsb);
+	err = fc->ops->notify_retrieve(fc, &outarg);
 
 	return err;
 
