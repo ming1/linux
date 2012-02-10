@@ -64,6 +64,7 @@ config NFS_V4
 	bool "NFS client support for NFS version 4"
 	depends on NFS_FS
 	select SUNRPC_GSS
+	select KEYS
 	help
 	  This option enables support for version 4 of the NFS protocol
 	  (RFC 3530) in the kernel's NFS client.
@@ -130,16 +131,4 @@ config NFS_USE_KERNEL_DNS
 	bool
 	depends on NFS_V4 && !NFS_USE_LEGACY_DNS
 	select DNS_RESOLVER
-	select KEYS
 	default y
-
-config NFS_USE_NEW_IDMAPPER
-	bool "Use the new idmapper upcall routine"
-	depends on NFS_V4 && KEYS
-	help
-	  Say Y here if you want NFS to use the new idmapper upcall functions.
-	  You will need /sbin/request-key (usually provided by the keyutils
-	  package).  For details, read
-	  <file:Documentation/filesystems/nfs/idmapper.txt>.
-
-	  If you are unsure, say N.
