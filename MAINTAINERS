@@ -5584,7 +5584,7 @@ M:	Ohad Ben-Cohen <ohad@wizery.com>
 S:	Maintained
 F:	drivers/remoteproc/
 F:	Documentation/remoteproc.txt
-F:	include/linux/remoteproc.txt
+F:	include/linux/remoteproc.h
 
 RFKILL
 M:	Johannes Berg <johannes@sipsolutions.net>
@@ -6333,6 +6333,11 @@ M:	Ian Abbott <abbotti@mev.co.uk>
 M:	Mori Hess <fmhess@users.sourceforge.net>
 S:	Odd Fixes
 F:	drivers/staging/comedi/
+
+STAGING - CONEXANT CX25821 PCIE BRIDGE
+L:	linux-media@vger.kernel.org
+S:	Odd Fixes
+F:	drivers/staging/cx25821/
 
 STAGING - CRYSTAL HD VIDEO DECODER
 M:	Naren Sankar <nsankar@broadcom.com>
