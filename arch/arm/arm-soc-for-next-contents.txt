@@ -5,6 +5,9 @@ and their external dependencies.
 It also includes a couple of directly applied patches for build breaks with subject
 The next/* branches are kept in the order in which they get applied.
 
+next/fixes-non-critical:
+lpc32xx/fixup		applied from series: http://marc.info/?l=linux-arm-kernel&m=132873369523839
+
 next/cleanup:
 at91/base		git://github.com/at91linux/linux-at91.git at91-3.4-base
 at91/pm_cleanup		git://github.com/at91linux/linux-at91.git at91-3.4-base+pm_cleanup
