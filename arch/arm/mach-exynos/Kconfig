@@ -22,6 +22,12 @@ config ARCH_EXYNOS4
 	help
 	  Samsung EXYNOS4 SoCs based systems
 
+config ARCH_EXYNOS5
+	bool "SAMSUNG EXYNOS5"
+	select HAVE_SMP
+	help
+	  Samsung EXYNOS5 (Cortex-A15) SoC based systems
+
 endchoice
 
 comment "EXYNOS SoCs"
@@ -52,6 +58,13 @@ config SOC_EXYNOS4412
 	depends on ARCH_EXYNOS4
 	help
 	  Enable EXYNOS4412 SoC support
+
+config SOC_EXYNOS5250
+	bool "SAMSUNG EXYNOS5250"
+	default y
+	depends on ARCH_EXYNOS5
+	help
+	  Enable EXYNOS5250 SoC support
 
 config EXYNOS4_MCT
 	bool
