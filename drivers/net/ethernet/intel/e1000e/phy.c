@@ -1,7 +1,7 @@
 /*******************************************************************************
 
   Intel PRO/1000 Linux driver
-  Copyright(c) 1999 - 2011 Intel Corporation.
+  Copyright(c) 1999 - 2012 Intel Corporation.
 
   This program is free software; you can redistribute it and/or modify it
   under the terms and conditions of the GNU General Public License,
@@ -132,7 +132,7 @@ s32 e1000e_get_phy_id(struct e1000_hw *hw)
 	u16 phy_id;
 	u16 retry_count = 0;
 
-	if (!(phy->ops.read_reg))
+	if (!phy->ops.read_reg)
 		goto out;
 
 	while (retry_count < 2) {
@@ -382,7 +382,7 @@ static s32 __e1000e_read_phy_reg_igp(struct e1000_hw *hw, u32 offset, u16 *data,
 	s32 ret_val = 0;
 
 	if (!locked) {
-		if (!(hw->phy.ops.acquire))
+		if (!hw->phy.ops.acquire)
 			goto out;
 
 		ret_val = hw->phy.ops.acquire(hw);
@@ -453,7 +453,7 @@ static s32 __e1000e_write_phy_reg_igp(struct e1000_hw *hw, u32 offset, u16 data,
 	s32 ret_val = 0;
 
 	if (!locked) {
-		if (!(hw->phy.ops.acquire))
+		if (!hw->phy.ops.acquire)
 			goto out;
 
 		ret_val = hw->phy.ops.acquire(hw);
@@ -526,7 +526,7 @@ static s32 __e1000_read_kmrn_reg(struct e1000_hw *hw, u32 offset, u16 *data,
 	s32 ret_val = 0;
 
 	if (!locked) {
-		if (!(hw->phy.ops.acquire))
+		if (!hw->phy.ops.acquire)
 			goto out;
 
 		ret_val = hw->phy.ops.acquire(hw);
@@ -599,7 +599,7 @@ static s32 __e1000_write_kmrn_reg(struct e1000_hw *hw, u32 offset, u16 data,
 	s32 ret_val = 0;
 
 	if (!locked) {
-		if (!(hw->phy.ops.acquire))
+		if (!hw->phy.ops.acquire)
 			goto out;
 
 		ret_val = hw->phy.ops.acquire(hw);
@@ -1136,13 +1136,12 @@ static s32 e1000_copper_link_autoneg(struct e1000_hw *hw)
 	if (phy->autoneg_wait_to_complete) {
 		ret_val = e1000_wait_autoneg(hw);
 		if (ret_val) {
-			e_dbg("Error while waiting for "
-				 "autoneg to complete\n");
+			e_dbg("Error while waiting for autoneg to complete\n");
 			return ret_val;
 		}
 	}
 
-	hw->mac.get_link_status = 1;
+	hw->mac.get_link_status = true;
 
 	return ret_val;
 }

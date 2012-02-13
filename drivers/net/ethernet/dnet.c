@@ -421,7 +421,7 @@ static int dnet_poll(struct napi_struct *napi, int budget)
 			printk(KERN_ERR "%s packet receive error %x\n",
 			       __func__, cmd_word);
 
-		skb = dev_alloc_skb(pkt_len + 5);
+		skb = netdev_alloc_skb(dev, pkt_len + 5);
 		if (skb != NULL) {
 			/* Align IP on 16 byte boundaries */
 			skb_reserve(skb, 2);
@@ -854,10 +854,8 @@ static int __devinit dnet_probe(struct platform_device *pdev)
 
 	err = -ENOMEM;
 	dev = alloc_etherdev(sizeof(*bp));
-	if (!dev) {
-		dev_err(&pdev->dev, "etherdev alloc failed, aborting.\n");
+	if (!dev)
 		goto err_out_release_mem;
-	}
 
 	/* TODO: Actually, we have some interesting features... */
 	dev->features |= 0;
