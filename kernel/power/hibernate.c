@@ -343,13 +343,13 @@ int hibernation_snapshot(int platform_mode)
 		 * successful freezer test.
 		 */
 		freezer_test_done = true;
-		goto Cleanup;
+		goto Thaw;
 	}
 
 	error = dpm_prepare(PMSG_FREEZE);
 	if (error) {
 		dpm_complete(PMSG_RECOVER);
-		goto Cleanup;
+		goto Thaw;
 	}
 
 	suspend_console();
@@ -385,6 +385,8 @@ int hibernation_snapshot(int platform_mode)
 	platform_end(platform_mode);
 	return error;
 
+ Thaw:
+	thaw_kernel_threads();
  Cleanup:
 	swsusp_free();
 	goto Close;
@@ -627,12 +629,8 @@ int hibernate(void)
 		goto Finish;
 
 	error = hibernation_snapshot(hibernation_mode == HIBERNATION_PLATFORM);
-	if (error)
+	if (error || freezer_test_done)
 		goto Thaw;
-	if (freezer_test_done) {
-		freezer_test_done = false;
-		goto Thaw;
-	}
 
 	if (in_suspend) {
 		unsigned int flags = 0;
@@ -657,6 +655,10 @@ int hibernate(void)
 
  Thaw:
 	thaw_processes();
+
+	/* Don't bother checking whether freezer_test_done is true */
+	freezer_test_done = false;
+
  Finish:
 	free_basic_memory_bitmaps();
 	usermodehelper_enable();
