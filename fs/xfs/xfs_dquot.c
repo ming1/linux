@@ -63,82 +63,6 @@ int xfs_dqerror_mod = 33;
 static struct lock_class_key xfs_dquot_other_class;
 
 /*
- * Allocate and initialize a dquot. We don't always allocate fresh memory;
- * we try to reclaim a free dquot if the number of incore dquots are above
- * a threshold.
- * The only field inside the core that gets initialized at this point
- * is the d_id field. The idea is to fill in the entire q_core
- * when we read in the on disk dquot.
- */
-STATIC xfs_dquot_t *
-xfs_qm_dqinit(
-	xfs_mount_t  *mp,
-	xfs_dqid_t   id,
-	uint	     type)
-{
-	xfs_dquot_t	*dqp;
-	boolean_t	brandnewdquot;
-
-	brandnewdquot = xfs_qm_dqalloc_incore(&dqp);
-	dqp->dq_flags = type;
-	dqp->q_core.d_id = cpu_to_be32(id);
-	dqp->q_mount = mp;
-
-	/*
-	 * No need to re-initialize these if this is a reclaimed dquot.
-	 */
-	if (brandnewdquot) {
-		INIT_LIST_HEAD(&dqp->q_freelist);
-		mutex_init(&dqp->q_qlock);
-		init_waitqueue_head(&dqp->q_pinwait);
-
-		/*
-		 * Because we want to use a counting completion, complete
-		 * the flush completion once to allow a single access to
-		 * the flush completion without blocking.
-		 */
-		init_completion(&dqp->q_flush);
-		complete(&dqp->q_flush);
-
-		trace_xfs_dqinit(dqp);
-	} else {
-		/*
-		 * Only the q_core portion was zeroed in dqreclaim_one().
-		 * So, we need to reset others.
-		 */
-		dqp->q_nrefs = 0;
-		dqp->q_blkno = 0;
-		INIT_LIST_HEAD(&dqp->q_mplist);
-		INIT_LIST_HEAD(&dqp->q_hashlist);
-		dqp->q_bufoffset = 0;
-		dqp->q_fileoffset = 0;
-		dqp->q_transp = NULL;
-		dqp->q_gdquot = NULL;
-		dqp->q_res_bcount = 0;
-		dqp->q_res_icount = 0;
-		dqp->q_res_rtbcount = 0;
-		atomic_set(&dqp->q_pincount, 0);
-		dqp->q_hash = NULL;
-		ASSERT(list_empty(&dqp->q_freelist));
-
-		trace_xfs_dqreuse(dqp);
-	}
-
-	/*
-	 * In either case we need to make sure group quotas have a different
-	 * lock class than user quotas, to make sure lockdep knows we can
-	 * locks of one of each at the same time.
-	 */
-	if (!(type & XFS_DQ_USER))
-		lockdep_set_class(&dqp->q_qlock, &xfs_dquot_other_class);
-
-	/*
-	 * log item gets initialized later
-	 */
-	return (dqp);
-}
-
-/*
  * This is called to free all the memory associated with a dquot
  */
 void
@@ -358,7 +282,7 @@ xfs_qm_dqalloc(
 	 * Return if this type of quotas is turned off while we didn't
 	 * have an inode lock
 	 */
-	if (XFS_IS_THIS_QUOTA_OFF(dqp)) {
+	if (!xfs_this_quota_on(dqp->q_mount, dqp->dq_flags)) {
 		xfs_iunlock(quotip, XFS_ILOCK_EXCL);
 		return (ESRCH);
 	}
@@ -460,7 +384,7 @@ xfs_qm_dqtobp(
 	dqp->q_fileoffset = (xfs_fileoff_t)id / mp->m_quotainfo->qi_dqperchunk;
 
 	xfs_ilock(quotip, XFS_ILOCK_SHARED);
-	if (XFS_IS_THIS_QUOTA_OFF(dqp)) {
+	if (!xfs_this_quota_on(dqp->q_mount, dqp->dq_flags)) {
 		/*
 		 * Return if this type of quotas is turned off while we
 		 * didn't have the quota inode lock.
@@ -567,7 +491,32 @@ xfs_qm_dqread(
 	int			error;
 	int			cancelflags = 0;
 
-	dqp = xfs_qm_dqinit(mp, id, type);
+
+	dqp = kmem_zone_zalloc(xfs_Gqm->qm_dqzone, KM_SLEEP);
+
+	dqp->dq_flags = type;
+	dqp->q_core.d_id = cpu_to_be32(id);
+	dqp->q_mount = mp;
+	INIT_LIST_HEAD(&dqp->q_freelist);
+	mutex_init(&dqp->q_qlock);
+	init_waitqueue_head(&dqp->q_pinwait);
+
+	/*
+	 * Because we want to use a counting completion, complete
+	 * the flush completion once to allow a single access to
+	 * the flush completion without blocking.
+	 */
+	init_completion(&dqp->q_flush);
+	complete(&dqp->q_flush);
+
+	/*
+	 * Make sure group quotas have a different lock class than user
+	 * quotas.
+	 */
+	if (!(type & XFS_DQ_USER))
+		lockdep_set_class(&dqp->q_qlock, &xfs_dquot_other_class);
+
+	atomic_inc(&xfs_Gqm->qm_totaldquots);
 
 	trace_xfs_dqread(dqp);
 
@@ -723,7 +672,7 @@ xfs_qm_dqget(
 	uint		flags,	  /* DQALLOC, DQSUSER, DQREPAIR, DOWARN */
 	xfs_dquot_t	**O_dqpp) /* OUT : locked incore dquot */
 {
-	xfs_dquot_t	*dqp;
+	xfs_dquot_t	*dqp, *dqp1;
 	xfs_dqhash_t	*h;
 	uint		version;
 	int		error;
@@ -750,10 +699,7 @@ xfs_qm_dqget(
 	       type == XFS_DQ_GROUP);
 	if (ip) {
 		ASSERT(xfs_isilocked(ip, XFS_ILOCK_EXCL));
-		if (type == XFS_DQ_USER)
-			ASSERT(ip->i_udquot == NULL);
-		else
-			ASSERT(ip->i_gdquot == NULL);
+		ASSERT(xfs_inode_dquot(ip, type) == NULL);
 	}
 #endif
 
@@ -819,30 +765,18 @@ restart:
 		 * A dquot could be attached to this inode by now, since
 		 * we had dropped the ilock.
 		 */
-		if (type == XFS_DQ_USER) {
-			if (!XFS_IS_UQUOTA_ON(mp)) {
-				/* inode stays locked on return */
+		if (xfs_this_quota_on(mp, type)) {
+			dqp1 = xfs_inode_dquot(ip, type);
+			if (dqp1) {
 				xfs_qm_dqdestroy(dqp);
-				return XFS_ERROR(ESRCH);
-			}
-			if (ip->i_udquot) {
-				xfs_qm_dqdestroy(dqp);
-				dqp = ip->i_udquot;
+				dqp = dqp1;
 				xfs_dqlock(dqp);
 				goto dqret;
 			}
 		} else {
-			if (!XFS_IS_OQUOTA_ON(mp)) {
-				/* inode stays locked on return */
-				xfs_qm_dqdestroy(dqp);
-				return XFS_ERROR(ESRCH);
-			}
-			if (ip->i_gdquot) {
-				xfs_qm_dqdestroy(dqp);
-				dqp = ip->i_gdquot;
-				xfs_dqlock(dqp);
-				goto dqret;
-			}
+			/* inode stays locked on return */
+			xfs_qm_dqdestroy(dqp);
+			return XFS_ERROR(ESRCH);
 		}
 	}
 
