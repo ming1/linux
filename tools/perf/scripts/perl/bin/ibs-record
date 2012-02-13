@@ -1,0 +1,23 @@
+#! /bin/bash
+
+while [ "${1+defined}" ]; do
+    case $1 in
+	ibs_op|ibs_fetch)
+	    EVENT=$1
+	    shift
+	    break
+	    ;;
+	-*)
+	    REC_OPT+=($1)
+	    shift
+	    ;;
+	*)
+	    echo $0 "$@" >&2
+	    echo "Invalid option: $1" >&2
+	    echo "perf script ibs [ibs_op|ibs_fetch] [-c <period>]" >&2
+	    exit 1
+	    ;;
+    esac
+done
+
+perf record -e ${EVENT:-ibs_op}:r0 -c 100000 -R -a "${REC_OPT[@]}" "$@"
