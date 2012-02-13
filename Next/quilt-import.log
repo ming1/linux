@@ -1,0 +1,41 @@
+Importing hexagon based on v3.2-rc2
+Unchanged quilt series hexagon
+Importing i2c based on 8597559a78e1cde158b999212bc9543682638eb1
+Unchanged quilt series i2c
+Importing jdelvare-hwmon based on 3.3-rc2
+Unchanged quilt series jdelvare-hwmon
+Importing kernel-doc based on 3.3-rc2
+Unchanged quilt series kernel-doc
+Importing rr based on v3.3-rc1-383-g0a96265
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard 0a9626575400879d1d5e6bc8768188b938d7c501
+HEAD is now at 0a96265 Merge tag 'driver-core-3.3-rc1-bugfixes' of git://git.kernel.org/pub/scm/linux/kernel/git/gregkh/driver-core
+$ git am ../quilt/rr/module:make_param_bint_handle_nul_value.patch
+Applying: make module param bint handle nul value
+$ git am ../quilt/rr/misc:fix_broken_isapnp_handling_in_file2alias.patch
+Applying: fix broken isapnp handling in file2alias
+$ git am ../quilt/rr/module:add_kernel_param_to_force_disable_load.patch
+Applying: add kernel param to force disable module load
+$ git am ../quilt/rr/module-param-remove-bool.patch
+Applying: module_param: remove support for bool parameters which are really int.
+$ git am ../quilt/rr/misc:params_level_initcall_like_kernel_parameters.patch
+Applying: params: <level>_initcall-like kernel parameters
+$ git am ../quilt/rr/misc:params_add_missing_init_level_name.patch
+Applying: params: Add missing init level name
+$ git am ../quilt/rr/module-out-of-line-get.patch
+Applying: module: move __module_get and try_module_get() out of line.
+$ git am ../quilt/rr/module:remove_size_limit.patch
+Applying: module: Remove module size limit
+$ git am ../quilt/rr/virtio-spec-update.patch
+Applying: virtio: update documentation to v0.9.4 of spec
+/home/sfr/kernels/next/quilt-tmp/.git/rebase-apply/patch:1171: new blank line at EOF.
++
+warning: 1 line adds whitespace errors.
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/rr
+From ../quilt-tmp
+ + d414176...b7e745a master     -> quilt/rr  (forced update)
+Importing device-mapper based on v3.3-rc3
+	quilt series is empty
+$ git update-ref refs/heads/quilt/device-mapper d65b4e98d7ea3038b767b70fe8be959b2913f16d
