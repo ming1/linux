@@ -1,0 +1,41 @@
+Importing hexagon based on v3.2-rc2
+Unchanged quilt series hexagon
+Importing i2c based on 8597559a78e1cde158b999212bc9543682638eb1
+Unchanged quilt series i2c
+Importing jdelvare-hwmon based on 19e00f2f1d5273dbc52eab0ebc315cae3aa44b2a
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard 19e00f2f1d5273dbc52eab0ebc315cae3aa44b2a
+HEAD is now at 19e00f2 Merge tag 'tty-3.3-rc3' of git://git.kernel.org/pub/scm/linux/kernel/git/gregkh/tty
+$ git am ../quilt/jdelvare-hwmon/hwmon-fam15h_power-01-correct-sign-extension-of-running_avg_capture.patch
+Applying: hwmon: (fam15h_power) Correct sign extension of running_avg_capture
+$ git am ../quilt/jdelvare-hwmon/hwmon-fam15h_power-02-increase-output-resolution.patch
+Applying: hwmon: (fam15h_power) Increase output resolution
+$ git am ../quilt/jdelvare-hwmon/hwmon-w83795-01-show-standard-pwm-attr.patch
+Applying: hwmon: (w83795) Unconditionally support manual fan speed control
+$ git am ../quilt/jdelvare-hwmon/hwmon-w83795-02-fix-multi-line-comments.patch
+Applying: hwmon: (w83795) Fix multi-line comments
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm90-01-fix-multi-line-comments.patch
+Applying: hwmon: (lm90) Fix multi-line comments
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm90-02-add-support-for-GMT-G781.patch
+Applying: hwmon: (lm90) Add support for GMT G781
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm63-01-rename-new_client.patch
+Applying: hwmon: (lm63) Reorganize the code
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm63-02-make-fan-speed-control-strategy-changeable.patch
+Applying: hwmon: (lm63) Make fan speed control strategy changeable
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm63-03-allow-editing-lut.patch
+Applying: hwmon: (lm63) Let the user adjust the lookup table
+$ git am ../quilt/jdelvare-hwmon/hwmon-mc13783-adc-01-remove-space-before-tab.patch
+Applying: hwmon: (mc13783-adc) Remove space before tab
+$ git am ../quilt/jdelvare-hwmon/hwmon-mc13783-adc-02-add-support-for-the-mc13892-pmic.patch
+Applying: hwmon: (mc13xxx-adc) Add support for the MC13892 PMIC
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/jdelvare-hwmon
+From ../quilt-tmp
+ + 48a9dee...127e71e master     -> quilt/jdelvare-hwmon  (forced update)
+Importing kernel-doc based on 3.3-rc2
+Unchanged quilt series kernel-doc
+Importing rr based on v3.3-rc1-383-g0a96265
+Unchanged quilt series rr
+Importing device-mapper based on v3.3-rc3
+Unchanged quilt series device-mapper
