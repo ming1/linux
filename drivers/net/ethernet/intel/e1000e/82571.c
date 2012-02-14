@@ -1,7 +1,7 @@
 /*******************************************************************************
 
   Intel PRO/1000 Linux driver
-  Copyright(c) 1999 - 2011 Intel Corporation.
+  Copyright(c) 1999 - 2012 Intel Corporation.
 
   This program is free software; you can redistribute it and/or modify it
   under the terms and conditions of the GNU General Public License,
@@ -235,30 +235,42 @@ static s32 e1000_init_nvm_params_82571(struct e1000_hw *hw)
  *  e1000_init_mac_params_82571 - Init MAC func ptrs.
  *  @hw: pointer to the HW structure
  **/
-static s32 e1000_init_mac_params_82571(struct e1000_adapter *adapter)
+static s32 e1000_init_mac_params_82571(struct e1000_hw *hw)
 {
-	struct e1000_hw *hw = &adapter->hw;
 	struct e1000_mac_info *mac = &hw->mac;
-	struct e1000_mac_operations *func = &mac->ops;
 	u32 swsm = 0;
 	u32 swsm2 = 0;
 	bool force_clear_smbi = false;
 
-	/* Set media type */
-	switch (adapter->pdev->device) {
+	/* Set media type and media-dependent function pointers */
+	switch (hw->adapter->pdev->device) {
 	case E1000_DEV_ID_82571EB_FIBER:
 	case E1000_DEV_ID_82572EI_FIBER:
 	case E1000_DEV_ID_82571EB_QUAD_FIBER:
 		hw->phy.media_type = e1000_media_type_fiber;
+		mac->ops.setup_physical_interface =
+		    e1000_setup_fiber_serdes_link_82571;
+		mac->ops.check_for_link = e1000e_check_for_fiber_link;
+		mac->ops.get_link_up_info =
+		    e1000e_get_speed_and_duplex_fiber_serdes;
 		break;
 	case E1000_DEV_ID_82571EB_SERDES:
-	case E1000_DEV_ID_82572EI_SERDES:
 	case E1000_DEV_ID_82571EB_SERDES_DUAL:
 	case E1000_DEV_ID_82571EB_SERDES_QUAD:
+	case E1000_DEV_ID_82572EI_SERDES:
 		hw->phy.media_type = e1000_media_type_internal_serdes;
+		mac->ops.setup_physical_interface =
+		    e1000_setup_fiber_serdes_link_82571;
+		mac->ops.check_for_link = e1000_check_for_serdes_link_82571;
+		mac->ops.get_link_up_info =
+		    e1000e_get_speed_and_duplex_fiber_serdes;
 		break;
 	default:
 		hw->phy.media_type = e1000_media_type_copper;
+		mac->ops.setup_physical_interface =
+		    e1000_setup_copper_link_82571;
+		mac->ops.check_for_link = e1000e_check_for_copper_link;
+		mac->ops.get_link_up_info = e1000e_get_speed_and_duplex_copper;
 		break;
 	}
 
@@ -269,38 +281,13 @@ static s32 e1000_init_mac_params_82571(struct e1000_adapter *adapter)
 	/* Adaptive IFS supported */
 	mac->adaptive_ifs = true;
 
-	/* check for link */
-	switch (hw->phy.media_type) {
-	case e1000_media_type_copper:
-		func->setup_physical_interface = e1000_setup_copper_link_82571;
-		func->check_for_link = e1000e_check_for_copper_link;
-		func->get_link_up_info = e1000e_get_speed_and_duplex_copper;
-		break;
-	case e1000_media_type_fiber:
-		func->setup_physical_interface =
-			e1000_setup_fiber_serdes_link_82571;
-		func->check_for_link = e1000e_check_for_fiber_link;
-		func->get_link_up_info =
-			e1000e_get_speed_and_duplex_fiber_serdes;
-		break;
-	case e1000_media_type_internal_serdes:
-		func->setup_physical_interface =
-			e1000_setup_fiber_serdes_link_82571;
-		func->check_for_link = e1000_check_for_serdes_link_82571;
-		func->get_link_up_info =
-			e1000e_get_speed_and_duplex_fiber_serdes;
-		break;
-	default:
-		return -E1000_ERR_CONFIG;
-		break;
-	}
-
+	/* MAC-specific function pointers */
 	switch (hw->mac.type) {
 	case e1000_82573:
-		func->set_lan_id = e1000_set_lan_id_single_port;
-		func->check_mng_mode = e1000e_check_mng_mode_generic;
-		func->led_on = e1000e_led_on_generic;
-		func->blink_led = e1000e_blink_led_generic;
+		mac->ops.set_lan_id = e1000_set_lan_id_single_port;
+		mac->ops.check_mng_mode = e1000e_check_mng_mode_generic;
+		mac->ops.led_on = e1000e_led_on_generic;
+		mac->ops.blink_led = e1000e_blink_led_generic;
 
 		/* FWSM register */
 		mac->has_fwsm = true;
@@ -314,14 +301,14 @@ static s32 e1000_init_mac_params_82571(struct e1000_adapter *adapter)
 		break;
 	case e1000_82574:
 	case e1000_82583:
-		func->set_lan_id = e1000_set_lan_id_single_port;
-		func->check_mng_mode = e1000_check_mng_mode_82574;
-		func->led_on = e1000_led_on_82574;
+		mac->ops.set_lan_id = e1000_set_lan_id_single_port;
+		mac->ops.check_mng_mode = e1000_check_mng_mode_82574;
+		mac->ops.led_on = e1000_led_on_82574;
 		break;
 	default:
-		func->check_mng_mode = e1000e_check_mng_mode_generic;
-		func->led_on = e1000e_led_on_generic;
-		func->blink_led = e1000e_blink_led_generic;
+		mac->ops.check_mng_mode = e1000e_check_mng_mode_generic;
+		mac->ops.led_on = e1000e_led_on_generic;
+		mac->ops.blink_led = e1000e_blink_led_generic;
 
 		/* FWSM register */
 		mac->has_fwsm = true;
@@ -342,11 +329,11 @@ static s32 e1000_init_mac_params_82571(struct e1000_adapter *adapter)
 
 		if (!(swsm2 & E1000_SWSM2_LOCK)) {
 			/* Only do this for the first interface on this card */
-			ew32(SWSM2,
-			    swsm2 | E1000_SWSM2_LOCK);
+			ew32(SWSM2, swsm2 | E1000_SWSM2_LOCK);
 			force_clear_smbi = true;
-		} else
+		} else {
 			force_clear_smbi = false;
+		}
 		break;
 	default:
 		force_clear_smbi = true;
@@ -383,7 +370,7 @@ static s32 e1000_get_variants_82571(struct e1000_adapter *adapter)
 	int is_port_b = er32(STATUS) & E1000_STATUS_FUNC_1;
 	s32 rc;
 
-	rc = e1000_init_mac_params_82571(adapter);
+	rc = e1000_init_mac_params_82571(hw);
 	if (rc)
 		return rc;
 
@@ -1227,6 +1214,10 @@ static void e1000_initialize_hw_bits_82571(struct e1000_hw *hw)
 	case e1000_82572:
 		reg |= (1 << 23) | (1 << 24) | (1 << 25) | (1 << 26);
 		break;
+	case e1000_82574:
+	case e1000_82583:
+		reg |= (1 << 26);
+		break;
 	default:
 		break;
 	}
@@ -1873,7 +1864,7 @@ static void e1000_power_down_phy_copper_82571(struct e1000_hw *hw)
 	struct e1000_phy_info *phy = &hw->phy;
 	struct e1000_mac_info *mac = &hw->mac;
 
-	if (!(phy->ops.check_reset_block))
+	if (!phy->ops.check_reset_block)
 		return;
 
 	/* If the management interface is not enabled, then power down */

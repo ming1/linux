@@ -785,7 +785,6 @@ static int greth_rx(struct net_device *dev, int limit)
 
 			} else {
 				skb_reserve(skb, NET_IP_ALIGN);
-				skb->dev = dev;
 
 				dma_sync_single_for_cpu(greth->dev,
 							dma_addr,
@@ -1422,7 +1421,7 @@ static int __devinit greth_of_probe(struct platform_device *ofdev)
 	SET_NETDEV_DEV(dev, greth->dev);
 
 	if (netif_msg_probe(greth))
-		dev_dbg(greth->dev, "reseting controller.\n");
+		dev_dbg(greth->dev, "resetting controller.\n");
 
 	/* Reset the controller. */
 	GRETH_REGSAVE(regs->control, GRETH_RESET);

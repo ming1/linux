@@ -1,7 +1,7 @@
 /*******************************************************************************
 
   Intel PRO/1000 Linux driver
-  Copyright(c) 1999 - 2011 Intel Corporation.
+  Copyright(c) 1999 - 2012 Intel Corporation.
 
   This program is free software; you can redistribute it and/or modify it
   under the terms and conditions of the GNU General Public License,
@@ -201,19 +201,23 @@ static s32 e1000_init_nvm_params_80003es2lan(struct e1000_hw *hw)
  *  e1000_init_mac_params_80003es2lan - Init ESB2 MAC func ptrs.
  *  @hw: pointer to the HW structure
  **/
-static s32 e1000_init_mac_params_80003es2lan(struct e1000_adapter *adapter)
+static s32 e1000_init_mac_params_80003es2lan(struct e1000_hw *hw)
 {
-	struct e1000_hw *hw = &adapter->hw;
 	struct e1000_mac_info *mac = &hw->mac;
-	struct e1000_mac_operations *func = &mac->ops;
 
-	/* Set media type */
-	switch (adapter->pdev->device) {
+	/* Set media type and media-dependent function pointers */
+	switch (hw->adapter->pdev->device) {
 	case E1000_DEV_ID_80003ES2LAN_SERDES_DPT:
 		hw->phy.media_type = e1000_media_type_internal_serdes;
+		mac->ops.check_for_link = e1000e_check_for_serdes_link;
+		mac->ops.setup_physical_interface =
+		    e1000e_setup_fiber_serdes_link;
 		break;
 	default:
 		hw->phy.media_type = e1000_media_type_copper;
+		mac->ops.check_for_link = e1000e_check_for_copper_link;
+		mac->ops.setup_physical_interface =
+		    e1000_setup_copper_link_80003es2lan;
 		break;
 	}
 
@@ -230,25 +234,6 @@ static s32 e1000_init_mac_params_80003es2lan(struct e1000_adapter *adapter)
 	/* Adaptive IFS not supported */
 	mac->adaptive_ifs = false;
 
-	/* check for link */
-	switch (hw->phy.media_type) {
-	case e1000_media_type_copper:
-		func->setup_physical_interface = e1000_setup_copper_link_80003es2lan;
-		func->check_for_link = e1000e_check_for_copper_link;
-		break;
-	case e1000_media_type_fiber:
-		func->setup_physical_interface = e1000e_setup_fiber_serdes_link;
-		func->check_for_link = e1000e_check_for_fiber_link;
-		break;
-	case e1000_media_type_internal_serdes:
-		func->setup_physical_interface = e1000e_setup_fiber_serdes_link;
-		func->check_for_link = e1000e_check_for_serdes_link;
-		break;
-	default:
-		return -E1000_ERR_CONFIG;
-		break;
-	}
-
 	/* set lan id for port to determine which phy lock to use */
 	hw->mac.ops.set_lan_id(hw);
 
@@ -260,7 +245,7 @@ static s32 e1000_get_variants_80003es2lan(struct e1000_adapter *adapter)
 	struct e1000_hw *hw = &adapter->hw;
 	s32 rc;
 
-	rc = e1000_init_mac_params_80003es2lan(adapter);
+	rc = e1000_init_mac_params_80003es2lan(hw);
 	if (rc)
 		return rc;
 
@@ -667,8 +652,7 @@ static s32 e1000_phy_force_speed_duplex_80003es2lan(struct e1000_hw *hw)
 	udelay(1);
 
 	if (hw->phy.autoneg_wait_to_complete) {
-		e_dbg("Waiting for forced speed/duplex link "
-			 "on GG82563 phy.\n");
+		e_dbg("Waiting for forced speed/duplex link on GG82563 phy.\n");
 
 		ret_val = e1000e_phy_has_link_generic(hw, PHY_FORCE_LIMIT,
 						     100000, &link);
@@ -1502,8 +1486,7 @@ const struct e1000_info e1000_es2_info = {
 				  | FLAG_RX_NEEDS_RESTART /* errata */
 				  | FLAG_TARC_SET_BIT_ZERO /* errata */
 				  | FLAG_APME_CHECK_PORT_B
-				  | FLAG_DISABLE_FC_PAUSE_TIME /* errata */
-				  | FLAG_TIPG_MEDIUM_FOR_80003ESLAN,
+				  | FLAG_DISABLE_FC_PAUSE_TIME, /* errata */
 	.flags2			= FLAG2_DMA_BURST,
 	.pba			= 38,
 	.max_hw_frame_size	= DEFAULT_JUMBO,

@@ -85,7 +85,7 @@ static int __devinit stmmac_pci_probe(struct pci_dev *pdev,
 			continue;
 		addr = pci_iomap(pdev, i, 0);
 		if (addr == NULL) {
-			pr_err("%s: ERROR: cannot map regiser memory, aborting",
+			pr_err("%s: ERROR: cannot map register memory, aborting",
 			       __func__);
 			ret = -EIO;
 			goto err_out_map_failed;
@@ -98,7 +98,7 @@ static int __devinit stmmac_pci_probe(struct pci_dev *pdev,
 
 	priv = stmmac_dvr_probe(&(pdev->dev), &plat_dat);
 	if (!priv) {
-		pr_err("%s: main drivr probe failed", __func__);
+		pr_err("%s: main driver probe failed", __func__);
 		goto err_out;
 	}
 	priv->ioaddr = addr;

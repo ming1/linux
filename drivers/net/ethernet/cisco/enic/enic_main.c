@@ -2280,10 +2280,8 @@ static int __devinit enic_probe(struct pci_dev *pdev,
 	 */
 
 	netdev = alloc_etherdev(sizeof(struct enic));
-	if (!netdev) {
-		pr_err("Etherdev alloc failed, aborting\n");
+	if (!netdev)
 		return -ENOMEM;
-	}
 
 	pci_set_drvdata(pdev, netdev);
 
@@ -2388,7 +2386,6 @@ static int __devinit enic_probe(struct pci_dev *pdev,
 	/* Allocate structure for port profiles */
 	enic->pp = kcalloc(num_pps, sizeof(*enic->pp), GFP_KERNEL);
 	if (!enic->pp) {
-		pr_err("port profile alloc failed, aborting\n");
 		err = -ENOMEM;
 		goto err_out_disable_sriov_pp;
 	}
@@ -2465,11 +2462,6 @@ static int __devinit enic_probe(struct pci_dev *pdev,
 
 	enic->port_mtu = enic->config.mtu;
 	(void)enic_change_mtu(netdev, enic->port_mtu);
-
-#ifdef CONFIG_PCI_IOV
-	if (enic_is_sriov_vf(enic) && is_zero_ether_addr(enic->mac_addr))
-		random_ether_addr(enic->mac_addr);
-#endif
 
 	err = enic_set_mac_addr(netdev, enic->mac_addr);
 	if (err) {

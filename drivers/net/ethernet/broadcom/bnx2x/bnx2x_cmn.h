@@ -1,6 +1,6 @@
 /* bnx2x_cmn.h: Broadcom Everest network driver.
  *
- * Copyright (c) 2007-2011 Broadcom Corporation
+ * Copyright (c) 2007-2012 Broadcom Corporation
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -379,8 +379,8 @@ void bnx2x_set_q_rx_mode(struct bnx2x *bp, u8 cl_id,
 			 unsigned long ramrod_flags);
 
 /* Parity errors related */
-void bnx2x_inc_load_cnt(struct bnx2x *bp);
-u32 bnx2x_dec_load_cnt(struct bnx2x *bp);
+void bnx2x_set_pf_load(struct bnx2x *bp);
+bool bnx2x_clear_pf_load(struct bnx2x *bp);
 bool bnx2x_chk_parity_attn(struct bnx2x *bp, bool *global, bool print);
 bool bnx2x_reset_is_done(struct bnx2x *bp, int engine);
 void bnx2x_set_reset_in_progress(struct bnx2x *bp);
@@ -614,8 +614,7 @@ static inline void bnx2x_igu_clear_sb_gen(struct bnx2x *bp, u8 func,
 	u32 igu_addr_ctl = IGU_REG_COMMAND_REG_CTRL;
 	u32 igu_addr_ack = IGU_REG_CSTORM_TYPE_0_SB_CLEANUP + (idu_sb_id/32)*4;
 	u32 sb_bit =  1 << (idu_sb_id%32);
-	u32 func_encode = func |
-			((is_Pf == true ? 1 : 0) << IGU_FID_ENCODE_IS_PF_SHIFT);
+	u32 func_encode = func | (is_Pf ? 1 : 0) << IGU_FID_ENCODE_IS_PF_SHIFT;
 	u32 addr_encode = IGU_CMD_E2_PROD_UPD_BASE + idu_sb_id;
 
 	/* Not supported in BC mode */
@@ -984,10 +983,11 @@ static inline int bnx2x_func_start(struct bnx2x *bp)
 	/* Function parameters */
 	start_params->mf_mode = bp->mf_mode;
 	start_params->sd_vlan_tag = bp->mf_ov;
-	if (CHIP_IS_E1x(bp))
-		start_params->network_cos_mode = OVERRIDE_COS;
-	else
+
+	if (CHIP_IS_E2(bp) || CHIP_IS_E3(bp))
 		start_params->network_cos_mode = STATIC_COS;
+	else /* CHIP_IS_E1X */
+		start_params->network_cos_mode = FW_WRR;
 
 	return bnx2x_func_state_change(bp, &func_params);
 }
@@ -1539,7 +1539,7 @@ static inline void bnx2x_update_drv_flags(struct bnx2x *bp, u32 flags, u32 set)
 {
 	if (SHMEM2_HAS(bp, drv_flags)) {
 		u32 drv_flags;
-		bnx2x_acquire_hw_lock(bp, HW_LOCK_DRV_FLAGS);
+		bnx2x_acquire_hw_lock(bp, HW_LOCK_RESOURCE_DRV_FLAGS);
 		drv_flags = SHMEM2_RD(bp, drv_flags);
 
 		if (set)
@@ -1549,7 +1549,7 @@ static inline void bnx2x_update_drv_flags(struct bnx2x *bp, u32 flags, u32 set)
 
 		SHMEM2_WR(bp, drv_flags, drv_flags);
 		DP(NETIF_MSG_HW, "drv_flags 0x%08x\n", drv_flags);
-		bnx2x_release_hw_lock(bp, HW_LOCK_DRV_FLAGS);
+		bnx2x_release_hw_lock(bp, HW_LOCK_RESOURCE_DRV_FLAGS);
 	}
 }
 

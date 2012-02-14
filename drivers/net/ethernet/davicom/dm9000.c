@@ -1028,7 +1028,7 @@ dm9000_rx(struct net_device *dev)
 
 		/* Move data from DM9000 */
 		if (GoodPacket &&
-		    ((skb = dev_alloc_skb(RxLen + 4)) != NULL)) {
+		    ((skb = netdev_alloc_skb(dev, RxLen + 4)) != NULL)) {
 			skb_reserve(skb, 2);
 			rdptr = (u8 *) skb_put(skb, RxLen - 4);
 
@@ -1373,10 +1373,8 @@ dm9000_probe(struct platform_device *pdev)
 
 	/* Init network device */
 	ndev = alloc_etherdev(sizeof(struct board_info));
-	if (!ndev) {
-		dev_err(&pdev->dev, "could not allocate device.\n");
+	if (!ndev)
 		return -ENOMEM;
-	}
 
 	SET_NETDEV_DEV(ndev, &pdev->dev);
 
