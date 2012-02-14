@@ -211,7 +211,6 @@ int regcache_read(struct regmap *map,
 
 	return -EINVAL;
 }
-EXPORT_SYMBOL_GPL(regcache_read);
 
 /**
  * regcache_write: Set the value of a given register in the cache.
@@ -238,7 +237,6 @@ int regcache_write(struct regmap *map,
 
 	return 0;
 }
-EXPORT_SYMBOL_GPL(regcache_write);
 
 /**
  * regcache_sync: Sync the register cache with the hardware.
@@ -269,7 +267,11 @@ int regcache_sync(struct regmap *map)
 	name = map->cache_ops->name;
 	trace_regcache_sync(map->dev, name, "start");
 
+	if (!map->cache_dirty)
+		goto out;
+
 	/* Apply any patch first */
+	map->cache_bypass = 1;
 	for (i = 0; i < map->patch_regs; i++) {
 		ret = _regmap_write(map, map->patch[i].reg, map->patch[i].def);
 		if (ret != 0) {
@@ -278,9 +280,8 @@ int regcache_sync(struct regmap *map)
 			goto out;
 		}
 	}
+	map->cache_bypass = 0;
 
-	if (!map->cache_dirty)
-		goto out;
 	if (map->cache_ops->sync) {
 		ret = map->cache_ops->sync(map);
 	} else {
@@ -388,7 +389,6 @@ bool regcache_set_val(void *base, unsigned int idx,
 	default:
 		BUG();
 	}
-	/* unreachable */
 	return false;
 }
 
