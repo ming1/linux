@@ -21,6 +21,7 @@ config ARM
 	select HAVE_KERNEL_GZIP
 	select HAVE_KERNEL_LZO
 	select HAVE_KERNEL_LZMA
+	select HAVE_KERNEL_XZ
 	select HAVE_IRQ_WORK
 	select HAVE_PERF_EVENTS
 	select PERF_USE_VMALLOC
@@ -760,6 +761,7 @@ config ARCH_SA1100
 	select ARCH_REQUIRE_GPIOLIB
 	select HAVE_IDE
 	select NEED_MACH_MEMORY_H
+	select SPARSE_IRQ
 	help
 	  Support for StrongARM 11x0 based boards.
 
