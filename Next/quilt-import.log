@@ -1,0 +1,29 @@
+Importing hexagon based on v3.2-rc2
+Unchanged quilt series hexagon
+Importing i2c based on ce5afed937f0a823d3b00c9459409c3f5f2fbd5d
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard ce5afed937f0a823d3b00c9459409c3f5f2fbd5d
+HEAD is now at ce5afed Merge git://git.samba.org/sfrench/cifs-2.6
+$ git am ../quilt/i2c/i2c-core-comment-says-transmitted-but-means-received.patch
+Applying: i2c-core: Comment says "transmitted" but means "received"
+$ git am ../quilt/i2c/i2c-gpio-use-linux-gpio.h-rather-than-asm-gpio.h.patch
+Applying: i2c-gpio: Use linux/gpio.h rather than asm/gpio.h
+$ git am ../quilt/i2c/i2c-isch-decrease-delay-in-command-completion-check-loop.patch
+Applying: i2c-isch: Decrease delay in command completion check loop
+$ git am ../quilt/i2c/i2c-i801-01-add-device-ids-for-intel-lynx-point.patch
+Applying: i2c-i801: Add device IDs for Intel Lynx Point
+$ git am ../quilt/i2c/i2c-i801-02-use-usleep_range.patch
+Applying: i2c-i801: Use usleep_range to wait for command completion
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/i2c
+From ../quilt-tmp
+ + 8833619...c3632e0 master     -> quilt/i2c  (forced update)
+Importing jdelvare-hwmon based on 19e00f2f1d5273dbc52eab0ebc315cae3aa44b2a
+Unchanged quilt series jdelvare-hwmon
+Importing kernel-doc based on 3.3-rc2
+Unchanged quilt series kernel-doc
+Importing rr based on v3.3-rc1-383-g0a96265
+Unchanged quilt series rr
+Importing device-mapper based on v3.3-rc3
+Unchanged quilt series device-mapper
