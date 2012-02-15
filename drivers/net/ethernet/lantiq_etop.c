@@ -156,7 +156,7 @@ static int ltq_etop_mdio_wr(struct mii_bus *bus, int phy_addr,
 static int
 ltq_etop_alloc_skb(struct ltq_etop_chan *ch)
 {
-	ch->skb[ch->dma.desc] = dev_alloc_skb(MAX_DMA_DATA_LEN);
+	ch->skb[ch->dma.desc] = netdev_alloc_skb(ch->netdev, MAX_DMA_DATA_LEN);
 	if (!ch->skb[ch->dma.desc])
 		return -ENOMEM;
 	ch->dma.desc_base[ch->dma.desc].addr = dma_map_single(NULL,
@@ -876,6 +876,10 @@ ltq_etop_probe(struct platform_device *pdev)
 	}
 
 	dev = alloc_etherdev_mq(sizeof(struct ltq_etop_priv), 4);
+	if (!dev) {
+		err = -ENOMEM;
+		goto err_out;
+	}
 	strcpy(dev->name, "eth%d");
 	dev->netdev_ops = &ltq_eth_netdev_ops;
 	priv = netdev_priv(dev);

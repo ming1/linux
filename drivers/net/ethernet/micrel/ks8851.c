@@ -1,4 +1,4 @@
-/* drivers/net/ks8851.c
+/* drivers/net/ethernet/micrel/ks8851.c
  *
  * Copyright 2009 Simtec Electronics
  *	http://www.simtec.co.uk/
@@ -445,7 +445,7 @@ static void ks8851_init_mac(struct ks8851_net *ks)
 
 /**
  * ks8851_irq - device interrupt handler
- * @irq: Interrupt number passed from the IRQ hnalder.
+ * @irq: Interrupt number passed from the IRQ handler.
  * @pw: The private word passed to register_irq(), our struct ks8851_net.
  *
  * Disable the interrupt from happening again until we've processed the
@@ -1419,10 +1419,8 @@ static int __devinit ks8851_probe(struct spi_device *spi)
 	int ret;
 
 	ndev = alloc_etherdev(sizeof(struct ks8851_net));
-	if (!ndev) {
-		dev_err(&spi->dev, "failed to alloc ethernet device\n");
+	if (!ndev)
 		return -ENOMEM;
-	}
 
 	spi->bits_per_word = 8;
 
