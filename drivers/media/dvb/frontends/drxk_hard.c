@@ -28,7 +28,6 @@
 #include <linux/delay.h>
 #include <linux/firmware.h>
 #include <linux/i2c.h>
-#include <linux/version.h>
 #include <asm/div64.h>
 
 #include "dvb_frontend.h"
@@ -6317,15 +6316,12 @@ static int drxk_get_tune_settings(struct dvb_frontend *fe, struct dvb_frontend_t
 	switch (p->delivery_system) {
 	case SYS_DVBC_ANNEX_A:
 	case SYS_DVBC_ANNEX_C:
+	case SYS_DVBT:
 		sets->min_delay_ms = 3000;
 		sets->max_drift = 0;
 		sets->step_size = 0;
 		return 0;
 	default:
-		/*
-		 * For DVB-T, let it use the default DVB core way, that is:
-		 *	fepriv->step_size = fe->ops.info.frequency_stepsize * 2
-		 */
 		return -EINVAL;
 	}
 }
