@@ -377,7 +377,7 @@ __switch_to(struct task_struct *prev_p, struct task_struct *next_p)
 	if (prev->gs | next->gs)
 		lazy_load_gs(next->gs);
 
-	percpu_write(current_task, next_p);
+	__this_cpu_write(current_task, next_p);
 
 	return prev_p;
 }
