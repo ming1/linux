@@ -169,6 +169,19 @@ static inline struct snd_soc_card *dapm_get_soc_card(
 	return NULL;
 }
 
+static void dapm_reset(struct snd_soc_card *card)
+{
+	struct snd_soc_dapm_widget *w;
+
+	memset(&card->dapm_stats, 0, sizeof(card->dapm_stats));
+
+	list_for_each_entry(w, &card->widgets, list) {
+		w->power_checked = false;
+		w->inputs = -1;
+		w->outputs = -1;
+	}
+}
+
 static int soc_widget_read(struct snd_soc_dapm_widget *w, int reg)
 {
 	if (w->codec)
@@ -1402,13 +1415,7 @@ static int dapm_power_widgets(struct snd_soc_dapm_context *dapm, int event)
 		}
 	}
 
-	memset(&card->dapm_stats, 0, sizeof(card->dapm_stats));
-
-	list_for_each_entry(w, &card->widgets, list) {
-		w->power_checked = false;
-		w->inputs = -1;
-		w->outputs = -1;
-	}
+	dapm_reset(card);
 
 	/* Check which widgets we need to power and store them in
 	 * lists indicating if they should be powered up or down.  We
@@ -1508,6 +1515,12 @@ static int dapm_power_widgets(struct snd_soc_dapm_context *dapm, int event)
 		async_schedule_domain(dapm_post_sequence_async, d,
 					&async_domain);
 	async_synchronize_full_domain(&async_domain);
+
+	/* do we need to notify any clients that DAPM event is complete */
+	list_for_each_entry(d, &card->dapm_list, list) {
+		if (d->stream_event)
+			d->stream_event(d, event);
+	}
 
 	pop_dbg(dapm->dev, card->pop_time,
 		"DAPM sequencing finished, waiting %dms\n", card->pop_time);
@@ -2644,15 +2657,15 @@ EXPORT_SYMBOL_GPL(snd_soc_dapm_info_pin_switch);
 int snd_soc_dapm_get_pin_switch(struct snd_kcontrol *kcontrol,
 				struct snd_ctl_elem_value *ucontrol)
 {
-	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
+	struct snd_soc_card *card = snd_kcontrol_chip(kcontrol);
 	const char *pin = (const char *)kcontrol->private_value;
 
-	mutex_lock(&codec->mutex);
+	mutex_lock(&card->mutex);
 
 	ucontrol->value.integer.value[0] =
-		snd_soc_dapm_get_pin_status(&codec->dapm, pin);
+		snd_soc_dapm_get_pin_status(&card->dapm, pin);
 
-	mutex_unlock(&codec->mutex);
+	mutex_unlock(&card->mutex);
 
 	return 0;
 }
@@ -2667,19 +2680,19 @@ EXPORT_SYMBOL_GPL(snd_soc_dapm_get_pin_switch);
 int snd_soc_dapm_put_pin_switch(struct snd_kcontrol *kcontrol,
 				struct snd_ctl_elem_value *ucontrol)
 {
-	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
+	struct snd_soc_card *card = snd_kcontrol_chip(kcontrol);
 	const char *pin = (const char *)kcontrol->private_value;
 
-	mutex_lock(&codec->mutex);
+	mutex_lock(&card->mutex);
 
 	if (ucontrol->value.integer.value[0])
-		snd_soc_dapm_enable_pin(&codec->dapm, pin);
+		snd_soc_dapm_enable_pin(&card->dapm, pin);
 	else
-		snd_soc_dapm_disable_pin(&codec->dapm, pin);
+		snd_soc_dapm_disable_pin(&card->dapm, pin);
 
-	snd_soc_dapm_sync(&codec->dapm);
+	snd_soc_dapm_sync(&card->dapm);
 
-	mutex_unlock(&codec->mutex);
+	mutex_unlock(&card->mutex);
 
 	return 0;
 }
@@ -2847,10 +2860,6 @@ static void soc_dapm_stream_event(struct snd_soc_dapm_context *dapm,
 	}
 
 	dapm_power_widgets(dapm, event);
-
-	/* do we need to notify any clients that DAPM stream is complete */
-	if (dapm->stream_event)
-		dapm->stream_event(dapm, event);
 }
 
 /**
