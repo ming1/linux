@@ -167,7 +167,7 @@ static int lm3530_init_registers(struct lm3530_data *drvdata)
 		break;
 	case LM3530_BL_MODE_PWM:
 		gen_config |= LM3530_ENABLE_PWM | LM3530_ENABLE_PWM_SIMPLE |
-			      (pltfm->pwm_pol_hi << LM3530_PWM_POL_SHIFT);
+			      (pdata->pwm_pol_hi << LM3530_PWM_POL_SHIFT);
 		break;
 	}
 
