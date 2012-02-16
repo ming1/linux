@@ -267,6 +267,34 @@ struct platform_device s5p_device_fimc3 = {
 };
 #endif /* CONFIG_S5P_DEV_FIMC3 */
 
+/* G2D */
+
+#ifdef CONFIG_S5P_DEV_G2D
+static struct resource s5p_g2d_resource[] = {
+	[0] = {
+		.start	= S5P_PA_G2D,
+		.end	= S5P_PA_G2D + SZ_4K - 1,
+		.flags	= IORESOURCE_MEM,
+	},
+	[1] = {
+		.start	= IRQ_2D,
+		.end	= IRQ_2D,
+		.flags	= IORESOURCE_IRQ,
+	},
+};
+
+struct platform_device s5p_device_g2d = {
+	.name		= "s5p-g2d",
+	.id		= 0,
+	.num_resources	= ARRAY_SIZE(s5p_g2d_resource),
+	.resource	= s5p_g2d_resource,
+	.dev		= {
+		.dma_mask		= &samsung_device_dma_mask,
+		.coherent_dma_mask	= DMA_BIT_MASK(32),
+	},
+};
+#endif /* CONFIG_S5P_DEV_G2D */
+
 /* FIMD0 */
 
 #ifdef CONFIG_S5P_DEV_FIMD0
@@ -468,8 +496,10 @@ void __init s3c_i2c0_set_platdata(struct s3c2410_platform_i2c *pd)
 {
 	struct s3c2410_platform_i2c *npd;
 
-	if (!pd)
+	if (!pd) {
 		pd = &default_i2c_data;
+		pd->bus_num = 0;
+	}
 
 	npd = s3c_set_platdata(pd, sizeof(struct s3c2410_platform_i2c),
 			       &s3c_device_i2c0);
@@ -741,17 +771,6 @@ struct platform_device s3c_device_iis = {
 	}
 };
 #endif /* CONFIG_PLAT_S3C24XX */
-
-#ifdef CONFIG_CPU_S3C2440
-struct platform_device s3c2412_device_iis = {
-	.name		= "s3c2412-iis",
-	.id		= -1,
-	.dev		= {
-		.dma_mask		= &samsung_device_dma_mask,
-		.coherent_dma_mask	= DMA_BIT_MASK(32),
-	}
-};
-#endif /* CONFIG_CPU_S3C2440 */
 
 /* IDE CFCON */
 
@@ -1076,7 +1095,7 @@ static struct resource s5p_pmu_resource[] = {
 	DEFINE_RES_IRQ(IRQ_PMU)
 };
 
-struct platform_device s5p_device_pmu = {
+static struct platform_device s5p_device_pmu = {
 	.name		= "arm-pmu",
 	.id		= ARM_PMU_DEVICE_CPU,
 	.num_resources	= ARRAY_SIZE(s5p_pmu_resource),
