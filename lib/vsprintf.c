@@ -212,9 +212,15 @@ char *put_dec(char *buf, unsigned long long num)
 	}
 }
 
+/*
+ * Convert passed number to decimal string.
+ * Returns the length of string.  On buffer overflow, returns 0.
+ *
+ * If speed is not important, use snprintf(). It's easy to read the code.
+ */
 int num_to_str(char *buf, int size, unsigned long long num)
 {
-	char tmp[66];
+	char tmp[21];		/* Enough for 2^64 in decimal */
 	int idx, len;
 
 	len = put_dec(tmp, num) - tmp;
