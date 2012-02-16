@@ -396,7 +396,7 @@ static inline void mem_cgroup_replace_page_cache(struct page *oldpage,
 static inline void mem_cgroup_reset_owner(struct page *page)
 {
 }
-#endif /* CONFIG_CGROUP_MEM_CONT */
+#endif /* CONFIG_CGROUP_MEM_RES_CTLR */
 
 #if !defined(CONFIG_CGROUP_MEM_RES_CTLR) || !defined(CONFIG_DEBUG_VM)
 static inline bool
