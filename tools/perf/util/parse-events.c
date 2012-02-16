@@ -687,7 +687,7 @@ parse_symbolic_event(const char **strp, struct perf_event_attr *attr)
 }
 
 static enum event_result
-parse_raw_event(const char **strp, struct perf_event_attr *attr)
+parse_raw_config(const char **strp, struct perf_event_attr *attr)
 {
 	const char *str = *strp;
 	u64 config;
@@ -702,11 +702,87 @@ parse_raw_event(const char **strp, struct perf_event_attr *attr)
 			return EVT_FAILED;
 
 		*strp = end;
-		attr->type = PERF_TYPE_RAW;
 		attr->config = config;
 		return EVT_HANDLED;
 	}
 	return EVT_FAILED;
+}
+
+static enum event_result
+parse_raw_event(const char **strp, struct perf_event_attr *attr)
+{
+	if (parse_raw_config(strp, attr) != EVT_HANDLED)
+		return EVT_FAILED;
+
+	attr->type = PERF_TYPE_RAW;
+	return EVT_HANDLED;
+}
+
+#define EVENT_SOURCE_DIR "/sys/bus/event_source/devices"
+
+static u64 read_sysfs_entry(const char *path)
+{
+	char buf[19];
+	int fd;
+
+	fd = open(path, O_RDONLY);
+	if (fd < 0)
+		return -1;
+
+	if (read(fd, buf, sizeof(buf)) < 0) {
+		close(fd);
+		return -1;
+	}
+
+	close(fd);
+	return atoll(buf);
+}
+
+static u64 get_pmu_type(const char *pmu_name)
+{
+	char evt_path[MAXPATHLEN];
+
+	snprintf(evt_path, MAXPATHLEN, "%s/%s/type", EVENT_SOURCE_DIR,
+		 pmu_name);
+
+	return read_sysfs_entry(evt_path);
+}
+
+static u64 get_pmu_event_config(const char *pmu_name, const char *evt_name)
+{
+	char evt_path[MAXPATHLEN];
+
+	snprintf(evt_path, MAXPATHLEN, "%s/%s/events/%s", EVENT_SOURCE_DIR,
+		 pmu_name, evt_name);
+
+	return read_sysfs_entry(evt_path);
+}
+
+static enum event_result
+parse_sysfs_event(const char **strp, struct perf_event_attr *attr)
+{
+	char *pmu_name, *evt_name;
+	u64 type, config;
+
+	pmu_name = strchr(*strp, ':');
+	if (!pmu_name)
+		return EVT_FAILED;
+	pmu_name = strndup(*strp, pmu_name - *strp);
+	type = get_pmu_type(pmu_name);
+	if ((int)type < 0)
+		return EVT_FAILED;
+	attr->type = type;
+
+	evt_name = strchr(*strp, ':') + 1;
+	config = get_pmu_event_config(pmu_name, evt_name);
+	*strp += strlen(pmu_name) + 1; /* + 1 for the ':' */
+
+	if ((int)config < 0)
+		return parse_raw_config(strp, attr);
+
+	attr->config = config;
+	*strp += strlen(evt_name);
+	return EVT_HANDLED;
 }
 
 static enum event_result
@@ -799,6 +875,10 @@ parse_event_symbols(struct perf_evlist *evlist, const char **str,
 		    struct perf_event_attr *attr)
 {
 	enum event_result ret;
+
+	ret = parse_sysfs_event(str, attr);
+	if (ret != EVT_FAILED)
+		goto modifier;
 
 	ret = parse_tracepoint_event(evlist, str, attr);
 	if (ret != EVT_FAILED)
