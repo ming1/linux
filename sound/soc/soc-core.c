@@ -277,8 +277,7 @@ static void soc_init_codec_debugfs(struct snd_soc_codec *codec)
 	codec->debugfs_codec_root = debugfs_create_dir(codec->name,
 						       debugfs_card_root);
 	if (!codec->debugfs_codec_root) {
-		printk(KERN_WARNING
-		       "ASoC: Failed to create codec debugfs directory\n");
+		dev_warn(codec->dev, "Failed to create codec debugfs directory\n");
 		return;
 	}
 
@@ -291,8 +290,7 @@ static void soc_init_codec_debugfs(struct snd_soc_codec *codec)
 						 codec->debugfs_codec_root,
 						 codec, &codec_reg_fops);
 	if (!codec->debugfs_reg)
-		printk(KERN_WARNING
-		       "ASoC: Failed to create codec register debugfs file\n");
+		dev_warn(codec->dev, "Failed to create codec register debugfs file\n");
 
 	snd_soc_dapm_debugfs_init(&codec->dapm, codec->debugfs_codec_root);
 }
@@ -300,6 +298,27 @@ static void soc_init_codec_debugfs(struct snd_soc_codec *codec)
 static void soc_cleanup_codec_debugfs(struct snd_soc_codec *codec)
 {
 	debugfs_remove_recursive(codec->debugfs_codec_root);
+}
+
+static void soc_init_platform_debugfs(struct snd_soc_platform *platform)
+{
+	struct dentry *debugfs_card_root = platform->card->debugfs_card_root;
+
+	platform->debugfs_platform_root = debugfs_create_dir(platform->name,
+						       debugfs_card_root);
+	if (!platform->debugfs_platform_root) {
+		dev_warn(platform->dev,
+			"Failed to create platform debugfs directory\n");
+		return;
+	}
+
+	snd_soc_dapm_debugfs_init(&platform->dapm,
+		platform->debugfs_platform_root);
+}
+
+static void soc_cleanup_platform_debugfs(struct snd_soc_platform *platform)
+{
+	debugfs_remove_recursive(platform->debugfs_platform_root);
 }
 
 static ssize_t codec_list_read_file(struct file *file, char __user *user_buf,
@@ -432,6 +451,14 @@ static inline void soc_init_codec_debugfs(struct snd_soc_codec *codec)
 }
 
 static inline void soc_cleanup_codec_debugfs(struct snd_soc_codec *codec)
+{
+}
+
+static inline void soc_init_platform_debugfs(struct snd_soc_platform *platform)
+{
+}
+
+static inline void soc_cleanup_platform_debugfs(struct snd_soc_platform *platform)
 {
 }
 
@@ -922,6 +949,7 @@ static void soc_remove_dai_link(struct snd_soc_card *card, int num, int order)
 		/* Make sure all DAPM widgets are freed */
 		snd_soc_dapm_free(&platform->dapm);
 
+		soc_cleanup_platform_debugfs(platform);
 		platform->probed = 0;
 		list_del(&platform->card_list);
 		module_put(platform->dev->driver->owner);
@@ -1007,7 +1035,7 @@ static int soc_probe_codec(struct snd_soc_card *card,
 	}
 
 	if (driver->controls)
-		snd_soc_add_controls(codec, driver->controls,
+		snd_soc_add_codec_controls(codec, driver->controls,
 				     driver->num_controls);
 	if (driver->dapm_routes)
 		snd_soc_dapm_add_routes(&codec->dapm, driver->dapm_routes,
@@ -1038,6 +1066,8 @@ static int soc_probe_platform(struct snd_soc_card *card,
 
 	if (!try_module_get(platform->dev->driver->owner))
 		return -ENODEV;
+
+	soc_init_platform_debugfs(platform);
 
 	if (driver->dapm_widgets)
 		snd_soc_dapm_new_controls(&platform->dapm,
@@ -1468,13 +1498,8 @@ static void snd_soc_instantiate_card(struct snd_soc_card *card)
 		}
 	}
 
-	/* We should have a non-codec control add function but we don't */
 	if (card->controls)
-		snd_soc_add_controls(list_first_entry(&card->codec_dev_list,
-						      struct snd_soc_codec,
-						      card_list),
-				     card->controls,
-				     card->num_controls);
+		snd_soc_add_card_controls(card, card->controls, card->num_controls);
 
 	if (card->dapm_routes)
 		snd_soc_dapm_add_routes(&card->dapm, card->dapm_routes,
@@ -1674,8 +1699,7 @@ int snd_soc_poweroff(struct device *dev)
 EXPORT_SYMBOL_GPL(snd_soc_poweroff);
 
 const struct dev_pm_ops snd_soc_pm_ops = {
-	.suspend = snd_soc_suspend,
-	.resume = snd_soc_resume,
+	SET_SYSTEM_SLEEP_PM_OPS(snd_soc_suspend, snd_soc_resume)
 	.poweroff = snd_soc_poweroff,
 };
 EXPORT_SYMBOL_GPL(snd_soc_pm_ops);
@@ -2027,9 +2051,28 @@ struct snd_kcontrol *snd_soc_cnew(const struct snd_kcontrol_new *_template,
 }
 EXPORT_SYMBOL_GPL(snd_soc_cnew);
 
+static int snd_soc_add_controls(struct snd_card *card, struct device *dev,
+	const struct snd_kcontrol_new *controls, int num_controls,
+	const char *prefix, void *data)
+{
+	int err, i;
+
+	for (i = 0; i < num_controls; i++) {
+		const struct snd_kcontrol_new *control = &controls[i];
+		err = snd_ctl_add(card, snd_soc_cnew(control, data,
+						     control->name, prefix));
+		if (err < 0) {
+			dev_err(dev, "Failed to add %s: %d\n", control->name, err);
+			return err;
+		}
+	}
+
+	return 0;
+}
+
 /**
- * snd_soc_add_controls - add an array of controls to a codec.
- * Convienience function to add a list of controls. Many codecs were
+ * snd_soc_add_codec_controls - add an array of controls to a codec.
+ * Convenience function to add a list of controls. Many codecs were
  * duplicating this code.
  *
  * @codec: codec to add controls to
@@ -2038,31 +2081,19 @@ EXPORT_SYMBOL_GPL(snd_soc_cnew);
  *
  * Return 0 for success, else error.
  */
-int snd_soc_add_controls(struct snd_soc_codec *codec,
+int snd_soc_add_codec_controls(struct snd_soc_codec *codec,
 	const struct snd_kcontrol_new *controls, int num_controls)
 {
 	struct snd_card *card = codec->card->snd_card;
-	int err, i;
 
-	for (i = 0; i < num_controls; i++) {
-		const struct snd_kcontrol_new *control = &controls[i];
-		err = snd_ctl_add(card, snd_soc_cnew(control, codec,
-						     control->name,
-						     codec->name_prefix));
-		if (err < 0) {
-			dev_err(codec->dev, "%s: Failed to add %s: %d\n",
-				codec->name, control->name, err);
-			return err;
-		}
-	}
-
-	return 0;
+	return snd_soc_add_controls(card, codec->dev, controls, num_controls,
+			codec->name_prefix, codec);
 }
-EXPORT_SYMBOL_GPL(snd_soc_add_controls);
+EXPORT_SYMBOL_GPL(snd_soc_add_codec_controls);
 
 /**
  * snd_soc_add_platform_controls - add an array of controls to a platform.
- * Convienience function to add a list of controls.
+ * Convenience function to add a list of controls.
  *
  * @platform: platform to add controls to
  * @controls: array of controls to add
@@ -2074,21 +2105,51 @@ int snd_soc_add_platform_controls(struct snd_soc_platform *platform,
 	const struct snd_kcontrol_new *controls, int num_controls)
 {
 	struct snd_card *card = platform->card->snd_card;
-	int err, i;
 
-	for (i = 0; i < num_controls; i++) {
-		const struct snd_kcontrol_new *control = &controls[i];
-		err = snd_ctl_add(card, snd_soc_cnew(control, platform,
-				control->name, NULL));
-		if (err < 0) {
-			dev_err(platform->dev, "Failed to add %s %d\n",control->name, err);
-			return err;
-		}
-	}
-
-	return 0;
+	return snd_soc_add_controls(card, platform->dev, controls, num_controls,
+			NULL, platform);
 }
 EXPORT_SYMBOL_GPL(snd_soc_add_platform_controls);
+
+/**
+ * snd_soc_add_card_controls - add an array of controls to a SoC card.
+ * Convenience function to add a list of controls.
+ *
+ * @soc_card: SoC card to add controls to
+ * @controls: array of controls to add
+ * @num_controls: number of elements in the array
+ *
+ * Return 0 for success, else error.
+ */
+int snd_soc_add_card_controls(struct snd_soc_card *soc_card,
+	const struct snd_kcontrol_new *controls, int num_controls)
+{
+	struct snd_card *card = soc_card->snd_card;
+
+	return snd_soc_add_controls(card, soc_card->dev, controls, num_controls,
+			NULL, soc_card);
+}
+EXPORT_SYMBOL_GPL(snd_soc_add_card_controls);
+
+/**
+ * snd_soc_add_dai_controls - add an array of controls to a DAI.
+ * Convienience function to add a list of controls.
+ *
+ * @dai: DAI to add controls to
+ * @controls: array of controls to add
+ * @num_controls: number of elements in the array
+ *
+ * Return 0 for success, else error.
+ */
+int snd_soc_add_dai_controls(struct snd_soc_dai *dai,
+	const struct snd_kcontrol_new *controls, int num_controls)
+{
+	struct snd_card *card = dai->card->snd_card;
+
+	return snd_soc_add_controls(card, dai->dev, controls, num_controls,
+			NULL, dai);
+}
+EXPORT_SYMBOL_GPL(snd_soc_add_dai_controls);
 
 /**
  * snd_soc_info_enum_double - enumerated double mixer info callback
@@ -3292,6 +3353,7 @@ int snd_soc_register_codec(struct device *dev,
 	codec->volatile_register = codec_drv->volatile_register;
 	codec->readable_register = codec_drv->readable_register;
 	codec->writable_register = codec_drv->writable_register;
+	codec->ignore_pmdown_time = codec_drv->ignore_pmdown_time;
 	codec->dapm.bias_level = SND_SOC_BIAS_OFF;
 	codec->dapm.dev = dev;
 	codec->dapm.codec = codec;
