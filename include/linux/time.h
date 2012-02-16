@@ -261,7 +261,7 @@ static __always_inline void timespec_add_ns(struct timespec *a, u64 ns)
 
 static inline void __FD_SET(unsigned long __fd, __kernel_fd_set *__fdsetp)
 {
-	__set_bit( __fd, __fdsetp->fds_bits);
+	__set_bit(__fd, __fdsetp->fds_bits);
 }
 
 static inline void __FD_CLR(unsigned long __fd, __kernel_fd_set *__fdsetp)
