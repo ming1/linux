@@ -668,7 +668,7 @@ void __init setup_nr_cpu_ids(void)
 
 void __init async_cpu_up(void *data, async_cookie_t cookie)
 {
-	unsigned long nr = (unsigned long)data;
+	unsigned long nr = (unsigned long) data;
 	/*
 	 * we can only up one cpu at a time, as enforced by the hotplug
 	 * lock; it's better to wait for all earlier CPUs to be done before
@@ -693,7 +693,7 @@ void __init smp_init(void)
 		if (num_online_cpus() >= setup_max_cpus)
 			break;
 		if (!cpu_online(cpu))
-			async_schedule(async_cpu_up, (void *)(long)cpu);
+			async_schedule(async_cpu_up, (void *) cpu);
 	}
 
 	/* Any cleanup work */
