@@ -394,20 +394,11 @@ static int smaps_pte_range(pmd_t *pmd, unsigned long addr, unsigned long end,
 	pte_t *pte;
 	spinlock_t *ptl;
 
-	spin_lock(&walk->mm->page_table_lock);
-	if (pmd_trans_huge(*pmd)) {
-		if (pmd_trans_splitting(*pmd)) {
-			spin_unlock(&walk->mm->page_table_lock);
-			wait_split_huge_page(vma->anon_vma, pmd);
-		} else {
-			smaps_pte_entry(*(pte_t *)pmd, addr,
-					HPAGE_PMD_SIZE, walk);
-			spin_unlock(&walk->mm->page_table_lock);
-			mss->anonymous_thp += HPAGE_PMD_SIZE;
-			return 0;
-		}
-	} else {
+	if (pmd_trans_huge_lock(pmd, vma)) {
+		smaps_pte_entry(*(pte_t *)pmd, addr, HPAGE_PMD_SIZE, walk);
 		spin_unlock(&walk->mm->page_table_lock);
+		mss->anonymous_thp += HPAGE_PMD_SIZE;
+		return 0;
 	}
 	/*
 	 * The mmap_sem held all the way back in m_start() is what
@@ -697,25 +688,17 @@ static int pagemap_pte_range(pmd_t *pmd, unsigned long addr, unsigned long end,
 	/* find the first VMA at or above 'addr' */
 	vma = find_vma(walk->mm, addr);
 
-	spin_lock(&walk->mm->page_table_lock);
-	if (pmd_trans_huge(*pmd)) {
-		if (pmd_trans_splitting(*pmd)) {
-			spin_unlock(&walk->mm->page_table_lock);
-			wait_split_huge_page(vma->anon_vma, pmd);
-		} else {
-			for (; addr != end; addr += PAGE_SIZE) {
-				unsigned long offset = (addr & ~PAGEMAP_WALK_MASK)
-					>> PAGE_SHIFT;
-				pfn = thp_pmd_to_pagemap_entry(*pmd, offset);
-				err = add_to_pagemap(addr, pfn, pm);
-				if (err)
-					break;
-			}
-			spin_unlock(&walk->mm->page_table_lock);
-			return err;
+	if (pmd_trans_huge_lock(pmd, vma)) {
+		for (; addr != end; addr += PAGE_SIZE) {
+			unsigned long offset = (addr & ~PAGEMAP_WALK_MASK)
+				>> PAGE_SHIFT;
+			pfn = thp_pmd_to_pagemap_entry(*pmd, offset);
+			err = add_to_pagemap(addr, pfn, pm);
+			if (err)
+				break;
 		}
-	} else {
 		spin_unlock(&walk->mm->page_table_lock);
+		return err;
 	}
 
 	for (; addr != end; addr += PAGE_SIZE) {
@@ -982,24 +965,17 @@ static int gather_pte_stats(pmd_t *pmd, unsigned long addr,
 	pte_t *pte;
 
 	md = walk->private;
-	spin_lock(&walk->mm->page_table_lock);
-	if (pmd_trans_huge(*pmd)) {
-		if (pmd_trans_splitting(*pmd)) {
-			spin_unlock(&walk->mm->page_table_lock);
-			wait_split_huge_page(md->vma->anon_vma, pmd);
-		} else {
-			pte_t huge_pte = *(pte_t *)pmd;
-			struct page *page;
 
-			page = can_gather_numa_stats(huge_pte, md->vma, addr);
-			if (page)
-				gather_stats(page, md, pte_dirty(huge_pte),
-						HPAGE_PMD_SIZE/PAGE_SIZE);
-			spin_unlock(&walk->mm->page_table_lock);
-			return 0;
-		}
-	} else {
+	if (pmd_trans_huge_lock(pmd, md->vma)) {
+		pte_t huge_pte = *(pte_t *)pmd;
+		struct page *page;
+
+		page = can_gather_numa_stats(huge_pte, md->vma, addr);
+		if (page)
+			gather_stats(page, md, pte_dirty(huge_pte),
+				     HPAGE_PMD_SIZE/PAGE_SIZE);
 		spin_unlock(&walk->mm->page_table_lock);
+		return 0;
 	}
 
 	orig_pte = pte = pte_offset_map_lock(walk->mm, pmd, addr, &ptl);
