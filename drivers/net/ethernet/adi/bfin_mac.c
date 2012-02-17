@@ -113,7 +113,7 @@ static void desc_list_free(void)
 	}
 }
 
-static int desc_list_init(void)
+static int desc_list_init(struct net_device *dev)
 {
 	int i;
 	struct sk_buff *new_skb;
@@ -187,7 +187,7 @@ static int desc_list_init(void)
 		struct dma_descriptor *b = &(r->desc_b);
 
 		/* allocate a new skb for next time receive */
-		new_skb = dev_alloc_skb(PKT_BUF_SZ + NET_IP_ALIGN);
+		new_skb = netdev_alloc_skb(dev, PKT_BUF_SZ + NET_IP_ALIGN);
 		if (!new_skb) {
 			pr_notice("init: low on mem - packet dropped\n");
 			goto init_error;
@@ -1090,7 +1090,7 @@ static void bfin_mac_rx(struct net_device *dev)
 	/* allocate a new skb for next time receive */
 	skb = current_rx_ptr->skb;
 
-	new_skb = dev_alloc_skb(PKT_BUF_SZ + NET_IP_ALIGN);
+	new_skb = netdev_alloc_skb(dev, PKT_BUF_SZ + NET_IP_ALIGN);
 	if (!new_skb) {
 		netdev_notice(dev, "rx: low on mem - packet dropped\n");
 		dev->stats.rx_dropped++;
@@ -1397,7 +1397,7 @@ static int bfin_mac_open(struct net_device *dev)
 	}
 
 	/* initial rx and tx list */
-	ret = desc_list_init();
+	ret = desc_list_init(dev);
 	if (ret)
 		return ret;
 
@@ -1467,10 +1467,8 @@ static int __devinit bfin_mac_probe(struct platform_device *pdev)
 	int rc;
 
 	ndev = alloc_etherdev(sizeof(struct bfin_mac_local));
-	if (!ndev) {
-		dev_err(&pdev->dev, "Cannot allocate net device!\n");
+	if (!ndev)
 		return -ENOMEM;
-	}
 
 	SET_NETDEV_DEV(ndev, &pdev->dev);
 	platform_set_drvdata(pdev, ndev);
