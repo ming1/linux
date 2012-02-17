@@ -73,7 +73,6 @@ struct wm8996_priv {
 
 	struct regulator_bulk_data supplies[WM8996_NUM_SUPPLIES];
 	struct notifier_block disable_nb[WM8996_NUM_SUPPLIES];
-	struct regulator *cpvdd;
 	int bg_ena;
 
 	struct wm8996_pdata pdata;
@@ -90,6 +89,7 @@ struct wm8996_priv {
 	struct snd_soc_jack *jack;
 	bool detecting;
 	bool jack_mic;
+	int jack_flips;
 	wm8996_polarity_fn polarity_cb;
 
 #ifdef CONFIG_GPIOLIB
@@ -792,29 +792,18 @@ static int bg_event(struct snd_soc_dapm_widget *w,
 static int cp_event(struct snd_soc_dapm_widget *w,
 		    struct snd_kcontrol *kcontrol, int event)
 {
-	struct snd_soc_codec *codec = w->codec;
-	struct wm8996_priv *wm8996 = snd_soc_codec_get_drvdata(codec);
 	int ret = 0;
 
 	switch (event) {
-	case SND_SOC_DAPM_PRE_PMU:
-		ret = regulator_enable(wm8996->cpvdd);
-		if (ret != 0)
-			dev_err(codec->dev, "Failed to enable CPVDD: %d\n",
-				ret);
-		break;
 	case SND_SOC_DAPM_POST_PMU:
 		msleep(5);
-		break;
-	case SND_SOC_DAPM_POST_PMD:
-		regulator_disable_deferred(wm8996->cpvdd, 20);
 		break;
 	default:
 		BUG();
 		ret = -EINVAL;
 	}
 
-	return ret;
+	return 0;
 }
 
 static int rmv_short_event(struct snd_soc_dapm_widget *w,
@@ -1116,12 +1105,12 @@ SND_SOC_DAPM_INPUT("IN2RP"),
 SND_SOC_DAPM_INPUT("DMIC1DAT"),
 SND_SOC_DAPM_INPUT("DMIC2DAT"),
 
+SND_SOC_DAPM_REGULATOR_SUPPLY("CPVDD", 20),
 SND_SOC_DAPM_SUPPLY_S("SYSCLK", 1, WM8996_AIF_CLOCKING_1, 0, 0, NULL, 0),
 SND_SOC_DAPM_SUPPLY_S("SYSDSPCLK", 2, WM8996_CLOCKING_1, 1, 0, NULL, 0),
 SND_SOC_DAPM_SUPPLY_S("AIFCLK", 2, WM8996_CLOCKING_1, 2, 0, NULL, 0),
 SND_SOC_DAPM_SUPPLY_S("Charge Pump", 2, WM8996_CHARGE_PUMP_1, 15, 0, cp_event,
-		      SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMU |
-		      SND_SOC_DAPM_POST_PMD),
+		      SND_SOC_DAPM_POST_PMU),
 SND_SOC_DAPM_SUPPLY("Bandgap", SND_SOC_NOPM, 0, 0, bg_event,
 		    SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
 SND_SOC_DAPM_SUPPLY("LDO2", WM8996_POWER_MANAGEMENT_2, 1, 0, NULL, 0),
@@ -1280,6 +1269,7 @@ static const struct snd_soc_dapm_route wm8996_dapm_routes[] = {
 	{ "AIFCLK", NULL, "SYSCLK" },
 	{ "SYSDSPCLK", NULL, "SYSCLK" },
 	{ "Charge Pump", NULL, "SYSCLK" },
+	{ "Charge Pump", NULL, "CPVDD" },
 
 	{ "MICB1", NULL, "LDO2" },
 	{ "MICB1", NULL, "MICB1 Audio" },
@@ -1719,6 +1709,7 @@ static bool wm8996_volatile_register(struct device *dev, unsigned int reg)
 static int wm8996_reset(struct wm8996_priv *wm8996)
 {
 	if (wm8996->pdata.ldo_ena > 0) {
+		gpio_set_value_cansleep(wm8996->pdata.ldo_ena, 1);
 		gpio_set_value_cansleep(wm8996->pdata.ldo_ena, 0);
 		return 0;
 	} else {
@@ -2438,6 +2429,7 @@ int wm8996_detect(struct snd_soc_codec *codec, struct snd_soc_jack *jack,
 	wm8996->jack = jack;
 	wm8996->detecting = true;
 	wm8996->polarity_cb = polarity_cb;
+	wm8996->jack_flips = 0;
 
 	if (wm8996->polarity_cb)
 		wm8996->polarity_cb(codec, 0);
@@ -2553,6 +2545,19 @@ static void wm8996_hpdet_start(struct snd_soc_codec *codec)
 			    WM8996_HP_POLL, WM8996_HP_POLL);
 }
 
+static void wm8996_report_headphone(struct snd_soc_codec *codec)
+{
+	dev_dbg(codec->dev, "Headphone detected\n");
+	wm8996_hpdet_start(codec);
+
+	/* Increase the detection rate a bit for responsiveness. */
+	snd_soc_update_bits(codec, WM8996_MIC_DETECT_1,
+			    WM8996_MICD_RATE_MASK |
+			    WM8996_MICD_BIAS_STARTTIME_MASK,
+			    7 << WM8996_MICD_RATE_SHIFT |
+			    7 << WM8996_MICD_BIAS_STARTTIME_SHIFT);
+}
+
 static void wm8996_micd(struct snd_soc_codec *codec)
 {
 	struct wm8996_priv *wm8996 = snd_soc_codec_get_drvdata(codec);
@@ -2572,6 +2577,7 @@ static void wm8996_micd(struct snd_soc_codec *codec)
 		dev_dbg(codec->dev, "Jack removal detected\n");
 		wm8996->jack_mic = false;
 		wm8996->detecting = true;
+		wm8996->jack_flips = 0;
 		snd_soc_jack_report(wm8996->jack, 0,
 				    SND_JACK_LINEOUT | SND_JACK_HEADSET |
 				    SND_JACK_BTN_0);
@@ -2612,9 +2618,17 @@ static void wm8996_micd(struct snd_soc_codec *codec)
 	/* If we detected a lower impedence during initial startup
 	 * then we probably have the wrong polarity, flip it.  Don't
 	 * do this for the lowest impedences to speed up detection of
-	 * plain headphones.
+	 * plain headphones.  If both polarities report a low
+	 * impedence then give up and report headphones.
 	 */
 	if (wm8996->detecting && (val & 0x3f0)) {
+		wm8996->jack_flips++;
+
+		if (wm8996->jack_flips > 1) {
+			wm8996_report_headphone(codec);
+			return;
+		}
+
 		reg = snd_soc_read(codec, WM8996_ACCESSORY_DETECT_MODE_2);
 		reg ^= WM8996_HPOUT1FB_SRC | WM8996_MICD_SRC |
 			WM8996_MICD_BIAS_SRC;
@@ -2641,17 +2655,7 @@ static void wm8996_micd(struct snd_soc_codec *codec)
 			snd_soc_jack_report(wm8996->jack, SND_JACK_BTN_0,
 					    SND_JACK_BTN_0);
 		} else if (wm8996->detecting) {
-			dev_dbg(codec->dev, "Headphone detected\n");
-			wm8996_hpdet_start(codec);
-
-			/* Increase the detection rate a bit for
-			 * responsiveness.
-			 */
-			snd_soc_update_bits(codec, WM8996_MIC_DETECT_1,
-					    WM8996_MICD_RATE_MASK |
-					    WM8996_MICD_BIAS_STARTTIME_MASK,
-					    7 << WM8996_MICD_RATE_SHIFT |
-					    7 << WM8996_MICD_BIAS_STARTTIME_SHIFT);
+			wm8996_report_headphone(codec);
 		}
 	}
 }
@@ -2768,7 +2772,7 @@ static void wm8996_retune_mobile_pdata(struct snd_soc_codec *codec)
 	wm8996->retune_mobile_enum.max = wm8996->num_retune_mobile_texts;
 	wm8996->retune_mobile_enum.texts = wm8996->retune_mobile_texts;
 
-	ret = snd_soc_add_controls(codec, controls, ARRAY_SIZE(controls));
+	ret = snd_soc_add_codec_controls(codec, controls, ARRAY_SIZE(controls));
 	if (ret != 0)
 		dev_err(codec->dev,
 			"Failed to add ReTune Mobile controls: %d\n", ret);
@@ -2791,15 +2795,12 @@ static int wm8996_probe(struct snd_soc_codec *codec)
 	int ret;
 	struct wm8996_priv *wm8996 = snd_soc_codec_get_drvdata(codec);
 	struct i2c_client *i2c = to_i2c_client(codec->dev);
-	struct snd_soc_dapm_context *dapm = &codec->dapm;
 	int i, irq_flags;
 
 	wm8996->codec = codec;
 
 	init_completion(&wm8996->dcs_done);
 	init_completion(&wm8996->fll_lock);
-
-	dapm->idle_bias_off = true;
 
 	codec->control_data = wm8996->regmap;
 
@@ -2966,7 +2967,7 @@ static int wm8996_probe(struct snd_soc_codec *codec)
 	if (wm8996->pdata.num_retune_mobile_cfgs)
 		wm8996_retune_mobile_pdata(codec);
 	else
-		snd_soc_add_controls(codec, wm8996_eq_controls,
+		snd_soc_add_codec_controls(codec, wm8996_eq_controls,
 				     ARRAY_SIZE(wm8996_eq_controls));
 
 	/* If the TX LRCLK pins are not in LRCLK mode configure the
@@ -3038,7 +3039,6 @@ static int wm8996_remove(struct snd_soc_codec *codec)
 	for (i = 0; i < ARRAY_SIZE(wm8996->supplies); i++)
 		regulator_unregister_notifier(wm8996->supplies[i].consumer,
 					      &wm8996->disable_nb[i]);
-	regulator_put(wm8996->cpvdd);
 	regulator_bulk_free(ARRAY_SIZE(wm8996->supplies), wm8996->supplies);
 
 	return 0;
@@ -3054,6 +3054,7 @@ static struct snd_soc_codec_driver soc_codec_dev_wm8996 = {
 	.probe =	wm8996_probe,
 	.remove =	wm8996_remove,
 	.set_bias_level = wm8996_set_bias_level,
+	.idle_bias_off	= true,
 	.seq_notifier = wm8996_seq_notifier,
 	.controls = wm8996_snd_controls,
 	.num_controls = ARRAY_SIZE(wm8996_snd_controls),
@@ -3087,6 +3088,7 @@ static struct snd_soc_dai_driver wm8996_dai[] = {
 			.channels_max = 6,
 			.rates = WM8996_RATES,
 			.formats = WM8996_FORMATS,
+			.sig_bits = 24,
 		},
 		.capture = {
 			 .stream_name = "AIF1 Capture",
@@ -3094,6 +3096,7 @@ static struct snd_soc_dai_driver wm8996_dai[] = {
 			 .channels_max = 6,
 			 .rates = WM8996_RATES,
 			 .formats = WM8996_FORMATS,
+			 .sig_bits = 24,
 		 },
 		.ops = &wm8996_dai_ops,
 	},
@@ -3105,6 +3108,7 @@ static struct snd_soc_dai_driver wm8996_dai[] = {
 			.channels_max = 2,
 			.rates = WM8996_RATES,
 			.formats = WM8996_FORMATS,
+			.sig_bits = 24,
 		},
 		.capture = {
 			 .stream_name = "AIF2 Capture",
@@ -3112,6 +3116,7 @@ static struct snd_soc_dai_driver wm8996_dai[] = {
 			 .channels_max = 2,
 			 .rates = WM8996_RATES,
 			 .formats = WM8996_FORMATS,
+			.sig_bits = 24,
 		 },
 		.ops = &wm8996_dai_ops,
 	},
@@ -3149,25 +3154,18 @@ static __devinit int wm8996_i2c_probe(struct i2c_client *i2c,
 	for (i = 0; i < ARRAY_SIZE(wm8996->supplies); i++)
 		wm8996->supplies[i].supply = wm8996_supply_names[i];
 
-	ret = regulator_bulk_get(&i2c->dev, ARRAY_SIZE(wm8996->supplies),
-				 wm8996->supplies);
+	ret = devm_regulator_bulk_get(&i2c->dev, ARRAY_SIZE(wm8996->supplies),
+				      wm8996->supplies);
 	if (ret != 0) {
 		dev_err(&i2c->dev, "Failed to request supplies: %d\n", ret);
 		goto err_gpio;
-	}
-
-	wm8996->cpvdd = regulator_get(&i2c->dev, "CPVDD");
-	if (IS_ERR(wm8996->cpvdd)) {
-		ret = PTR_ERR(wm8996->cpvdd);
-		dev_err(&i2c->dev, "Failed to get CPVDD: %d\n", ret);
-		goto err_get;
 	}
 
 	ret = regulator_bulk_enable(ARRAY_SIZE(wm8996->supplies),
 				    wm8996->supplies);
 	if (ret != 0) {
 		dev_err(&i2c->dev, "Failed to enable supplies: %d\n", ret);
-		goto err_cpvdd;
+		goto err_gpio;
 	}
 
 	if (wm8996->pdata.ldo_ena > 0) {
@@ -3188,7 +3186,7 @@ static __devinit int wm8996_i2c_probe(struct i2c_client *i2c,
 		goto err_regmap;
 	}
 	if (reg != 0x8915) {
-		dev_err(&i2c->dev, "Device is not a WM8996, ID %x\n", ret);
+		dev_err(&i2c->dev, "Device is not a WM8996, ID %x\n", reg);
 		ret = -EINVAL;
 		goto err_regmap;
 	}
@@ -3229,10 +3227,6 @@ err_enable:
 	if (wm8996->pdata.ldo_ena > 0)
 		gpio_set_value_cansleep(wm8996->pdata.ldo_ena, 0);
 	regulator_bulk_disable(ARRAY_SIZE(wm8996->supplies), wm8996->supplies);
-err_cpvdd:
-	regulator_put(wm8996->cpvdd);
-err_get:
-	regulator_bulk_free(ARRAY_SIZE(wm8996->supplies), wm8996->supplies);
 err_gpio:
 	if (wm8996->pdata.ldo_ena > 0)
 		gpio_free(wm8996->pdata.ldo_ena);
@@ -3247,8 +3241,6 @@ static __devexit int wm8996_i2c_remove(struct i2c_client *client)
 
 	snd_soc_unregister_codec(&client->dev);
 	wm8996_free_gpio(wm8996);
-	regulator_put(wm8996->cpvdd);
-	regulator_bulk_free(ARRAY_SIZE(wm8996->supplies), wm8996->supplies);
 	regmap_exit(wm8996->regmap);
 	if (wm8996->pdata.ldo_ena > 0) {
 		gpio_set_value_cansleep(wm8996->pdata.ldo_ena, 0);
@@ -3273,25 +3265,7 @@ static struct i2c_driver wm8996_i2c_driver = {
 	.id_table = wm8996_i2c_id,
 };
 
-static int __init wm8996_modinit(void)
-{
-	int ret;
-
-	ret = i2c_add_driver(&wm8996_i2c_driver);
-	if (ret != 0) {
-		printk(KERN_ERR "Failed to register WM8996 I2C driver: %d\n",
-		       ret);
-	}
-
-	return ret;
-}
-module_init(wm8996_modinit);
-
-static void __exit wm8996_exit(void)
-{
-	i2c_del_driver(&wm8996_i2c_driver);
-}
-module_exit(wm8996_exit);
+module_i2c_driver(wm8996_i2c_driver);
 
 MODULE_DESCRIPTION("ASoC WM8996 driver");
 MODULE_AUTHOR("Mark Brown <broonie@opensource.wolfsonmicro.com>");
