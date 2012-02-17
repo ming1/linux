@@ -88,8 +88,6 @@ static int parse_one(char *param,
 		     char *val,
 		     const struct kernel_param *params,
 		     unsigned num_params,
-		     s16 min_level,
-		     s16 max_level,
 		     int (*handle_unknown)(char *param, char *val))
 {
 	unsigned int i;
@@ -98,9 +96,6 @@ static int parse_one(char *param,
 	/* Find parameter */
 	for (i = 0; i < num_params; i++) {
 		if (parameq(param, params[i].name)) {
-			if (params[i].level < min_level
-			    || params[i].level > max_level)
-				return 0;
 			/* No one handled NULL, so do it here. */
 			if (!val && params[i].ops->set != param_set_bool
 			    && params[i].ops->set != param_set_bint)
@@ -180,8 +175,6 @@ int parse_args(const char *name,
 	       char *args,
 	       const struct kernel_param *params,
 	       unsigned num,
-	       s16 min_level,
-	       s16 max_level,
 	       int (*unknown)(char *param, char *val))
 {
 	char *param, *val;
@@ -197,8 +190,7 @@ int parse_args(const char *name,
 
 		args = next_arg(args, &param, &val);
 		irq_was_disabled = irqs_disabled();
-		ret = parse_one(param, val, params, num,
-				min_level, max_level, unknown);
+		ret = parse_one(param, val, params, num, unknown);
 		if (irq_was_disabled && !irqs_disabled()) {
 			printk(KERN_WARNING "parse_args(): option '%s' enabled "
 					"irq's!\n", param);
@@ -383,7 +375,7 @@ static int param_array(const char *name,
 		       unsigned int min, unsigned int max,
 		       void *elem, int elemsize,
 		       int (*set)(const char *, const struct kernel_param *kp),
-		       s16 level,
+		       u16 flags,
 		       unsigned int *num)
 {
 	int ret;
@@ -393,7 +385,7 @@ static int param_array(const char *name,
 	/* Get the name right for errors. */
 	kp.name = name;
 	kp.arg = elem;
-	kp.level = level;
+	kp.flags = flags;
 
 	*num = 0;
 	/* We expect a comma-separated list of values. */
@@ -434,7 +426,7 @@ static int param_array_set(const char *val, const struct kernel_param *kp)
 	unsigned int temp_num;
 
 	return param_array(kp->name, val, 1, arr->max, arr->elem,
-			   arr->elemsize, arr->ops->set, kp->level,
+			   arr->elemsize, arr->ops->set, kp->flags,
 			   arr->num ?: &temp_num);
 }
 
