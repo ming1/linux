@@ -2059,7 +2059,7 @@ static int dsp2_event(struct snd_soc_dapm_widget *w,
 	return 0;
 }
 
-static const char *st_text[] = { "None", "Right", "Left" };
+static const char *st_text[] = { "None", "Left", "Right" };
 
 static const struct soc_enum str_enum =
 	SOC_ENUM_SINGLE(WM8962_DAC_DSP_MIXING_1, 2, 3, st_text);
@@ -2405,13 +2405,13 @@ static int wm8962_add_widgets(struct snd_soc_codec *codec)
 	struct wm8962_pdata *pdata = dev_get_platdata(codec->dev);
 	struct snd_soc_dapm_context *dapm = &codec->dapm;
 
-	snd_soc_add_controls(codec, wm8962_snd_controls,
+	snd_soc_add_codec_controls(codec, wm8962_snd_controls,
 			     ARRAY_SIZE(wm8962_snd_controls));
 	if (pdata && pdata->spk_mono)
-		snd_soc_add_controls(codec, wm8962_spk_mono_controls,
+		snd_soc_add_codec_controls(codec, wm8962_spk_mono_controls,
 				     ARRAY_SIZE(wm8962_spk_mono_controls));
 	else
-		snd_soc_add_controls(codec, wm8962_spk_stereo_controls,
+		snd_soc_add_codec_controls(codec, wm8962_spk_stereo_controls,
 				     ARRAY_SIZE(wm8962_spk_stereo_controls));
 
 
@@ -2634,6 +2634,9 @@ static int wm8962_hw_params(struct snd_pcm_substream *substream,
 	int adctl3 = 0;
 
 	wm8962->bclk = snd_soc_params_to_bclk(params);
+	if (params_channels(params) == 1)
+		wm8962->bclk *= 2;
+
 	wm8962->lrclk = params_rate(params);
 
 	for (i = 0; i < ARRAY_SIZE(sr_vals); i++) {
@@ -3008,14 +3011,14 @@ static struct snd_soc_dai_driver wm8962_dai = {
 	.name = "wm8962",
 	.playback = {
 		.stream_name = "Playback",
-		.channels_min = 2,
+		.channels_min = 1,
 		.channels_max = 2,
 		.rates = WM8962_RATES,
 		.formats = WM8962_FORMATS,
 	},
 	.capture = {
 		.stream_name = "Capture",
-		.channels_min = 2,
+		.channels_min = 1,
 		.channels_max = 2,
 		.rates = WM8962_RATES,
 		.formats = WM8962_FORMATS,
@@ -3715,7 +3718,7 @@ static __devinit int wm8962_i2c_probe(struct i2c_client *i2c,
 	}
 	if (reg != 0x6243) {
 		dev_err(&i2c->dev,
-			"Device is not a WM8962, ID %x != 0x6243\n", ret);
+			"Device is not a WM8962, ID %x != 0x6243\n", reg);
 		ret = -EINVAL;
 		goto err_regmap;
 	}
