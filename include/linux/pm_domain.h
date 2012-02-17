@@ -11,6 +11,7 @@
 
 #include <linux/device.h>
 #include <linux/err.h>
+#include <linux/of.h>
 
 enum gpd_status {
 	GPD_STATE_ACTIVE = 0,	/* PM domain is active */
@@ -70,6 +71,7 @@ struct generic_pm_domain {
 	s64 break_even_ns;	/* Power break even for the entire domain. */
 	s64 max_off_time_ns;	/* Maximum allowed "suspended" time. */
 	ktime_t power_off_time;
+	struct device_node *of_node; /* Node in device tree */
 };
 
 static inline struct generic_pm_domain *pd_to_genpd(struct dev_pm_domain *pd)
@@ -99,12 +101,12 @@ struct generic_pm_domain_data {
 	bool need_restore;
 };
 
+#ifdef CONFIG_PM_GENERIC_DOMAINS
 static inline struct generic_pm_domain_data *to_gpd_data(struct pm_domain_data *pdd)
 {
 	return container_of(pdd, struct generic_pm_domain_data, base);
 }
 
-#ifdef CONFIG_PM_GENERIC_DOMAINS
 static inline struct generic_pm_domain_data *dev_gpd_data(struct device *dev)
 {
 	return to_gpd_data(dev->power.subsys_data->domain_data);
@@ -117,10 +119,20 @@ extern int __pm_genpd_add_device(struct generic_pm_domain *genpd,
 				 struct device *dev,
 				 struct gpd_timing_data *td);
 
+extern int __pm_genpd_of_add_device(struct device_node *genpd_node,
+				    struct device *dev,
+				    struct gpd_timing_data *td);
+
 static inline int pm_genpd_add_device(struct generic_pm_domain *genpd,
 				      struct device *dev)
 {
 	return __pm_genpd_add_device(genpd, dev, NULL);
+}
+
+static inline int pm_genpd_of_add_device(struct device_node *genpd_node,
+					 struct device *dev)
+{
+	return __pm_genpd_of_add_device(genpd_node, dev, NULL);
 }
 
 extern int pm_genpd_remove_device(struct generic_pm_domain *genpd,
@@ -195,6 +207,10 @@ static inline bool default_stop_ok(struct device *dev)
 	return false;
 }
 #define pm_domain_always_on_gov NULL
+static inline struct generic_pm_domain_data *dev_gpd_data(struct device *dev)
+{
+	return NULL;
+}
 #endif
 
 static inline int pm_genpd_remove_callbacks(struct device *dev)
