@@ -70,8 +70,8 @@ static ssize_t sta_flags_read(struct file *file, char __user *userbuf,
 			    TEST(WME), TEST(WDS), TEST(CLEAR_PS_FILT),
 			    TEST(MFP), TEST(BLOCK_BA), TEST(PSPOLL),
 			    TEST(UAPSD), TEST(SP), TEST(TDLS_PEER),
-			    TEST(TDLS_PEER_AUTH), TEST(RATE_CONTROL),
-			    TEST(4ADDR_EVENT), TEST(INSERTED));
+			    TEST(TDLS_PEER_AUTH), TEST(4ADDR_EVENT),
+			    TEST(INSERTED), TEST(RATE_CONTROL));
 #undef TEST
 	return simple_read_from_buffer(userbuf, count, ppos, buf, res);
 }
