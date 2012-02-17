@@ -726,7 +726,6 @@ static initcall_t *initcall_levels[] __initdata = {
 };
 
 static char *initcall_level_names[] __initdata = {
-	"early parameters",
 	"core parameters",
 	"postcore parameters",
 	"arch parameters",
