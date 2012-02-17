@@ -80,6 +80,8 @@ enum {
 	ALC_AUTOMUTE_MIXER,	/* mute/unmute mixer widget AMP */
 };
 
+#define MAX_VOL_NIDS	0x40
+
 struct alc_spec {
 	/* codec parameterization */
 	const struct snd_kcontrol_new *mixers[5];	/* mixer arrays */
@@ -118,8 +120,8 @@ struct alc_spec {
 	const hda_nid_t *capsrc_nids;
 	hda_nid_t dig_in_nid;		/* digital-in NID; optional */
 	hda_nid_t mixer_nid;		/* analog-mixer NID */
-	DECLARE_BITMAP(vol_ctls, 0x20 << 1);
-	DECLARE_BITMAP(sw_ctls, 0x20 << 1);
+	DECLARE_BITMAP(vol_ctls, MAX_VOL_NIDS << 1);
+	DECLARE_BITMAP(sw_ctls, MAX_VOL_NIDS << 1);
 
 	/* capture setup for dynamic dual-adc switch */
 	hda_nid_t cur_adc;
@@ -1845,36 +1847,10 @@ DEFINE_CAPMIX_NOSRC(3);
 /*
  * slave controls for virtual master
  */
-static const char * const alc_slave_vols[] = {
-	"Front Playback Volume",
-	"Surround Playback Volume",
-	"Center Playback Volume",
-	"LFE Playback Volume",
-	"Side Playback Volume",
-	"Headphone Playback Volume",
-	"Speaker Playback Volume",
-	"Mono Playback Volume",
-	"Line-Out Playback Volume",
-	"CLFE Playback Volume",
-	"Bass Speaker Playback Volume",
-	"PCM Playback Volume",
-	NULL,
-};
-
-static const char * const alc_slave_sws[] = {
-	"Front Playback Switch",
-	"Surround Playback Switch",
-	"Center Playback Switch",
-	"LFE Playback Switch",
-	"Side Playback Switch",
-	"Headphone Playback Switch",
-	"Speaker Playback Switch",
-	"Mono Playback Switch",
-	"IEC958 Playback Switch",
-	"Line-Out Playback Switch",
-	"CLFE Playback Switch",
-	"Bass Speaker Playback Switch",
-	"PCM Playback Switch",
+static const char * const alc_slave_pfxs[] = {
+	"Front", "Surround", "Center", "LFE", "Side",
+	"Headphone", "Speaker", "Mono", "Line-Out",
+	"CLFE", "Bass Speaker", "PCM",
 	NULL,
 };
 
@@ -1965,14 +1941,16 @@ static int __alc_build_controls(struct hda_codec *codec)
 		snd_hda_set_vmaster_tlv(codec, spec->vmaster_nid,
 					HDA_OUTPUT, vmaster_tlv);
 		err = snd_hda_add_vmaster(codec, "Master Playback Volume",
-					  vmaster_tlv, alc_slave_vols);
+					  vmaster_tlv, alc_slave_pfxs,
+					  "Playback Volume");
 		if (err < 0)
 			return err;
 	}
 	if (!spec->no_analog &&
 	    !snd_hda_find_mixer_ctl(codec, "Master Playback Switch")) {
 		err = snd_hda_add_vmaster(codec, "Master Playback Switch",
-					  NULL, alc_slave_sws);
+					  NULL, alc_slave_pfxs,
+					  "Playback Switch");
 		if (err < 0)
 			return err;
 	}
@@ -3149,7 +3127,10 @@ static int alc_auto_fill_dac_nids(struct hda_codec *codec)
 static inline unsigned int get_ctl_pos(unsigned int data)
 {
 	hda_nid_t nid = get_amp_nid_(data);
-	unsigned int dir = get_amp_direction_(data);
+	unsigned int dir;
+	if (snd_BUG_ON(nid >= MAX_VOL_NIDS))
+		return 0;
+	dir = get_amp_direction_(data);
 	return (nid << 1) | dir;
 }
 
@@ -4231,34 +4212,111 @@ static const struct hda_amp_list alc260_loopbacks[] = {
  * Pin config fixes
  */
 enum {
-	PINFIX_HP_DC5750,
+	ALC260_FIXUP_HP_DC5750,
+	ALC260_FIXUP_HP_PIN_0F,
+	ALC260_FIXUP_COEF,
+	ALC260_FIXUP_GPIO1,
+	ALC260_FIXUP_GPIO1_TOGGLE,
+	ALC260_FIXUP_REPLACER,
+	ALC260_FIXUP_HP_B1900,
 };
 
+static void alc260_gpio1_automute(struct hda_codec *codec)
+{
+	struct alc_spec *spec = codec->spec;
+	snd_hda_codec_write(codec, 0x01, 0, AC_VERB_SET_GPIO_DATA,
+			    spec->hp_jack_present);
+}
+
+static void alc260_fixup_gpio1_toggle(struct hda_codec *codec,
+				      const struct alc_fixup *fix, int action)
+{
+	struct alc_spec *spec = codec->spec;
+	if (action == ALC_FIXUP_ACT_PROBE) {
+		/* although the machine has only one output pin, we need to
+		 * toggle GPIO1 according to the jack state
+		 */
+		spec->automute_hook = alc260_gpio1_automute;
+		spec->detect_hp = 1;
+		spec->automute_speaker = 1;
+		spec->autocfg.hp_pins[0] = 0x0f; /* copy it for automute */
+		snd_hda_jack_detect_enable(codec, 0x0f, ALC_HP_EVENT);
+		spec->unsol_event = alc_sku_unsol_event;
+		add_verb(codec->spec, alc_gpio1_init_verbs);
+	}
+}
+
 static const struct alc_fixup alc260_fixups[] = {
-	[PINFIX_HP_DC5750] = {
+	[ALC260_FIXUP_HP_DC5750] = {
 		.type = ALC_FIXUP_PINS,
 		.v.pins = (const struct alc_pincfg[]) {
 			{ 0x11, 0x90130110 }, /* speaker */
 			{ }
 		}
 	},
+	[ALC260_FIXUP_HP_PIN_0F] = {
+		.type = ALC_FIXUP_PINS,
+		.v.pins = (const struct alc_pincfg[]) {
+			{ 0x0f, 0x01214000 }, /* HP */
+			{ }
+		}
+	},
+	[ALC260_FIXUP_COEF] = {
+		.type = ALC_FIXUP_VERBS,
+		.v.verbs = (const struct hda_verb[]) {
+			{ 0x20, AC_VERB_SET_COEF_INDEX, 0x07 },
+			{ 0x20, AC_VERB_SET_PROC_COEF,  0x3040 },
+			{ }
+		},
+		.chained = true,
+		.chain_id = ALC260_FIXUP_HP_PIN_0F,
+	},
+	[ALC260_FIXUP_GPIO1] = {
+		.type = ALC_FIXUP_VERBS,
+		.v.verbs = alc_gpio1_init_verbs,
+	},
+	[ALC260_FIXUP_GPIO1_TOGGLE] = {
+		.type = ALC_FIXUP_FUNC,
+		.v.func = alc260_fixup_gpio1_toggle,
+		.chained = true,
+		.chain_id = ALC260_FIXUP_HP_PIN_0F,
+	},
+	[ALC260_FIXUP_REPLACER] = {
+		.type = ALC_FIXUP_VERBS,
+		.v.verbs = (const struct hda_verb[]) {
+			{ 0x20, AC_VERB_SET_COEF_INDEX, 0x07 },
+			{ 0x20, AC_VERB_SET_PROC_COEF,  0x3050 },
+			{ }
+		},
+		.chained = true,
+		.chain_id = ALC260_FIXUP_GPIO1_TOGGLE,
+	},
+	[ALC260_FIXUP_HP_B1900] = {
+		.type = ALC_FIXUP_FUNC,
+		.v.func = alc260_fixup_gpio1_toggle,
+		.chained = true,
+		.chain_id = ALC260_FIXUP_COEF,
+	}
 };
 
 static const struct snd_pci_quirk alc260_fixup_tbl[] = {
-	SND_PCI_QUIRK(0x103c, 0x280a, "HP dc5750", PINFIX_HP_DC5750),
+	SND_PCI_QUIRK(0x1025, 0x007b, "Acer C20x", ALC260_FIXUP_GPIO1),
+	SND_PCI_QUIRK(0x1025, 0x007f, "Acer Aspire 9500", ALC260_FIXUP_COEF),
+	SND_PCI_QUIRK(0x1025, 0x008f, "Acer", ALC260_FIXUP_GPIO1),
+	SND_PCI_QUIRK(0x103c, 0x280a, "HP dc5750", ALC260_FIXUP_HP_DC5750),
+	SND_PCI_QUIRK(0x103c, 0x30ba, "HP Presario B1900", ALC260_FIXUP_HP_B1900),
+	SND_PCI_QUIRK(0x1509, 0x4540, "Favorit 100XS", ALC260_FIXUP_GPIO1),
+	SND_PCI_QUIRK(0x161f, 0x2057, "Replacer 672V", ALC260_FIXUP_REPLACER),
+	SND_PCI_QUIRK(0x1631, 0xc017, "PB V7900", ALC260_FIXUP_COEF),
 	{}
 };
 
 /*
  */
-#ifdef CONFIG_SND_HDA_ENABLE_REALTEK_QUIRKS
-#include "alc260_quirks.c"
-#endif
-
 static int patch_alc260(struct hda_codec *codec)
 {
 	struct alc_spec *spec;
-	int err, board_config;
+	int err;
 
 	spec = kzalloc(sizeof(*spec), GFP_KERNEL);
 	if (spec == NULL)
@@ -4268,38 +4326,13 @@ static int patch_alc260(struct hda_codec *codec)
 
 	spec->mixer_nid = 0x07;
 
-	board_config = alc_board_config(codec, ALC260_MODEL_LAST,
-					alc260_models, alc260_cfg_tbl);
-	if (board_config < 0) {
-		snd_printd(KERN_INFO "hda_codec: %s: BIOS auto-probing.\n",
-			   codec->chip_name);
-		board_config = ALC_MODEL_AUTO;
-	}
+	alc_pick_fixup(codec, NULL, alc260_fixup_tbl, alc260_fixups);
+	alc_apply_fixup(codec, ALC_FIXUP_ACT_PRE_PROBE);
 
-	if (board_config == ALC_MODEL_AUTO) {
-		alc_pick_fixup(codec, NULL, alc260_fixup_tbl, alc260_fixups);
-		alc_apply_fixup(codec, ALC_FIXUP_ACT_PRE_PROBE);
-	}
-
-	if (board_config == ALC_MODEL_AUTO) {
-		/* automatic parse from the BIOS config */
-		err = alc260_parse_auto_config(codec);
-		if (err < 0)
-			goto error;
-#ifdef CONFIG_SND_HDA_ENABLE_REALTEK_QUIRKS
-		else if (!err) {
-			printk(KERN_INFO
-			       "hda_codec: Cannot set up configuration "
-			       "from BIOS.  Using base mode...\n");
-			board_config = ALC260_BASIC;
-		}
-#endif
-	}
-
-	if (board_config != ALC_MODEL_AUTO) {
-		setup_preset(codec, &alc260_presets[board_config]);
-		spec->vmaster_nid = 0x08;
-	}
+	/* automatic parse from the BIOS config */
+	err = alc260_parse_auto_config(codec);
+	if (err < 0)
+		goto error;
 
 	if (!spec->no_analog && !spec->adc_nids) {
 		alc_auto_fill_adc_caps(codec);
@@ -4320,10 +4353,7 @@ static int patch_alc260(struct hda_codec *codec)
 	alc_apply_fixup(codec, ALC_FIXUP_ACT_PROBE);
 
 	codec->patch_ops = alc_patch_ops;
-	if (board_config == ALC_MODEL_AUTO)
-		spec->init_hook = alc_auto_init_std;
-	else
-		codec->patch_ops.build_controls = __alc_build_controls;
+	spec->init_hook = alc_auto_init_std;
 	spec->shutup = alc_eapd_shutup;
 #ifdef CONFIG_SND_HDA_POWER_SAVE
 	if (!spec->loopback.amplist)
@@ -5394,7 +5424,7 @@ static const struct snd_pci_quirk alc269_fixup_tbl[] = {
 	SND_PCI_QUIRK(0x17aa, 0x3bf8, "Lenovo Ideapd", ALC269_FIXUP_PCM_44K),
 	SND_PCI_QUIRK(0x17aa, 0x9e54, "LENOVO NB", ALC269_FIXUP_LENOVO_EAPD),
 
-#if 1
+#if 0
 	/* Below is a quirk table taken from the old code.
 	 * Basically the device should work as is without the fixup table.
 	 * If BIOS doesn't give a proper info, enable the corresponding
@@ -5610,8 +5640,10 @@ static const struct hda_amp_list alc861_loopbacks[] = {
 
 /* Pin config fixes */
 enum {
-	PINFIX_FSC_AMILO_PI1505,
-	PINFIX_ASUS_A6RP,
+	ALC861_FIXUP_FSC_AMILO_PI1505,
+	ALC861_FIXUP_AMP_VREF_0F,
+	ALC861_FIXUP_NO_JACK_DETECT,
+	ALC861_FIXUP_ASUS_A6RP,
 };
 
 /* On some laptops, VREF of pin 0x0f is abused for controlling the main amp */
@@ -5633,8 +5665,16 @@ static void alc861_fixup_asus_amp_vref_0f(struct hda_codec *codec,
 	spec->keep_vref_in_automute = 1;
 }
 
+/* suppress the jack-detection */
+static void alc_fixup_no_jack_detect(struct hda_codec *codec,
+				     const struct alc_fixup *fix, int action)
+{
+	if (action == ALC_FIXUP_ACT_PRE_PROBE)
+		codec->no_jack_detect = 1;
+}	
+
 static const struct alc_fixup alc861_fixups[] = {
-	[PINFIX_FSC_AMILO_PI1505] = {
+	[ALC861_FIXUP_FSC_AMILO_PI1505] = {
 		.type = ALC_FIXUP_PINS,
 		.v.pins = (const struct alc_pincfg[]) {
 			{ 0x0b, 0x0221101f }, /* HP */
@@ -5642,17 +5682,29 @@ static const struct alc_fixup alc861_fixups[] = {
 			{ }
 		}
 	},
-	[PINFIX_ASUS_A6RP] = {
+	[ALC861_FIXUP_AMP_VREF_0F] = {
 		.type = ALC_FIXUP_FUNC,
 		.v.func = alc861_fixup_asus_amp_vref_0f,
 	},
+	[ALC861_FIXUP_NO_JACK_DETECT] = {
+		.type = ALC_FIXUP_FUNC,
+		.v.func = alc_fixup_no_jack_detect,
+	},
+	[ALC861_FIXUP_ASUS_A6RP] = {
+		.type = ALC_FIXUP_FUNC,
+		.v.func = alc861_fixup_asus_amp_vref_0f,
+		.chained = true,
+		.chain_id = ALC861_FIXUP_NO_JACK_DETECT,
+	}
 };
 
 static const struct snd_pci_quirk alc861_fixup_tbl[] = {
-	SND_PCI_QUIRK_VENDOR(0x1043, "ASUS laptop", PINFIX_ASUS_A6RP),
-	SND_PCI_QUIRK(0x1584, 0x0000, "Uniwill ECS M31EI", PINFIX_ASUS_A6RP),	
-	SND_PCI_QUIRK(0x1584, 0x2b01, "Haier W18", PINFIX_ASUS_A6RP),
-	SND_PCI_QUIRK(0x1734, 0x10c7, "FSC Amilo Pi1505", PINFIX_FSC_AMILO_PI1505),
+	SND_PCI_QUIRK(0x1043, 0x1393, "ASUS A6Rp", ALC861_FIXUP_ASUS_A6RP),
+	SND_PCI_QUIRK_VENDOR(0x1043, "ASUS laptop", ALC861_FIXUP_AMP_VREF_0F),
+	SND_PCI_QUIRK(0x1462, 0x7254, "HP DX2200", ALC861_FIXUP_NO_JACK_DETECT),
+	SND_PCI_QUIRK(0x1584, 0x2b01, "Haier W18", ALC861_FIXUP_AMP_VREF_0F),
+	SND_PCI_QUIRK(0x1584, 0x0000, "Uniwill ECS M31EI", ALC861_FIXUP_AMP_VREF_0F),
+	SND_PCI_QUIRK(0x1734, 0x10c7, "FSC Amilo Pi1505", ALC861_FIXUP_FSC_AMILO_PI1505),
 	{}
 };
 
@@ -5900,6 +5952,7 @@ enum {
 	ALC662_FIXUP_ASUS_MODE6,
 	ALC662_FIXUP_ASUS_MODE7,
 	ALC662_FIXUP_ASUS_MODE8,
+	ALC662_FIXUP_NO_JACK_DETECT,
 };
 
 static const struct alc_fixup alc662_fixups[] = {
@@ -6045,6 +6098,10 @@ static const struct alc_fixup alc662_fixups[] = {
 		.chained = true,
 		.chain_id = ALC662_FIXUP_SKU_IGNORE
 	},
+	[ALC662_FIXUP_NO_JACK_DETECT] = {
+		.type = ALC_FIXUP_FUNC,
+		.v.func = alc_fixup_no_jack_detect,
+	},
 };
 
 static const struct snd_pci_quirk alc662_fixup_tbl[] = {
@@ -6053,6 +6110,7 @@ static const struct snd_pci_quirk alc662_fixup_tbl[] = {
 	SND_PCI_QUIRK(0x1025, 0x031c, "Gateway NV79", ALC662_FIXUP_SKU_IGNORE),
 	SND_PCI_QUIRK(0x1025, 0x038b, "Acer Aspire 8943G", ALC662_FIXUP_ASPIRE),
 	SND_PCI_QUIRK(0x103c, 0x1632, "HP RP5800", ALC662_FIXUP_HP_RP5800),
+	SND_PCI_QUIRK(0x1043, 0x8469, "ASUS mobo", ALC662_FIXUP_NO_JACK_DETECT),
 	SND_PCI_QUIRK(0x105b, 0x0cd6, "Foxconn", ALC662_FIXUP_ASUS_MODE2),
 	SND_PCI_QUIRK(0x144d, 0xc051, "Samsung R720", ALC662_FIXUP_IDEAPAD),
 	SND_PCI_QUIRK(0x17aa, 0x38af, "Lenovo Ideapad Y550P", ALC662_FIXUP_IDEAPAD),
