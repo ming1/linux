@@ -541,6 +541,7 @@ void fuse_conn_init(struct fuse_conn *fc)
 	fc->blocked = 1;
 	fc->attr_version = 1;
 	get_random_bytes(&fc->scramble_key, sizeof(fc->scramble_key));
+	INIT_LIST_HEAD(&fc->dmmap_list);
 }
 EXPORT_SYMBOL_GPL(fuse_conn_init);
 
@@ -550,7 +551,7 @@ void fuse_conn_put(struct fuse_conn *fc)
 		if (fc->destroy_req)
 			fuse_request_free(fc->destroy_req);
 		mutex_destroy(&fc->inst_mutex);
-		fc->release(fc);
+		fc->ops->release(fc);
 	}
 }
 EXPORT_SYMBOL_GPL(fuse_conn_put);
@@ -914,6 +915,168 @@ static int fuse_bdi_init(struct fuse_conn *fc, struct super_block *sb)
 	return 0;
 }
 
+static int fuse_notify_store_to_inode(struct fuse_conn *fc,
+				      struct fuse_copy_state *cs,
+				      u64 nodeid, u32 size, u64 pos)
+{
+	struct inode *inode;
+	struct address_space *mapping;
+	pgoff_t index;
+	unsigned int off;
+	loff_t file_size;
+	loff_t end;
+	int err;
+
+	down_read(&fc->killsb);
+
+	err = -ENOENT;
+	if (!fc->sb)
+		goto out_up_killsb;
+
+	inode = ilookup5(fc->sb, nodeid, fuse_inode_eq, &nodeid);
+	if (!inode)
+		goto out_up_killsb;
+
+	mapping = inode->i_mapping;
+	index = pos >> PAGE_CACHE_SHIFT;
+	off = pos & ~PAGE_CACHE_MASK;
+	file_size = i_size_read(inode);
+	end = pos + size;
+	if (end > file_size) {
+		file_size = end;
+		fuse_write_update_size(inode, file_size);
+	}
+
+	while (size) {
+		struct page *page;
+		unsigned int this_num;
+
+		err = -ENOMEM;
+		page = find_or_create_page(mapping, index,
+					   mapping_gfp_mask(mapping));
+		if (!page)
+			goto out_iput;
+
+		this_num = min_t(unsigned, size, PAGE_CACHE_SIZE - off);
+		err = fuse_copy_page(cs, &page, off, this_num, 0);
+		if (!err && off == 0 && (size != 0 || file_size == end))
+			SetPageUptodate(page);
+		unlock_page(page);
+		page_cache_release(page);
+
+		if (err)
+			goto out_iput;
+
+		size -= this_num;
+		off = 0;
+		index++;
+	}
+
+	err = 0;
+
+out_iput:
+	iput(inode);
+out_up_killsb:
+	up_read(&fc->killsb);
+
+	return err;
+}
+
+static void fuse_retrieve_end(struct fuse_conn *fc, struct fuse_req *req)
+{
+	release_pages(req->pages, req->num_pages, 0);
+}
+
+static int fuse_retrieve(struct fuse_conn *fc, struct inode *inode,
+			 struct fuse_notify_retrieve_out *outarg)
+{
+	int err;
+	struct address_space *mapping = inode->i_mapping;
+	struct fuse_req *req;
+	pgoff_t index;
+	loff_t file_size;
+	unsigned int num;
+	unsigned int offset;
+	size_t total_len = 0;
+
+	req = fuse_get_req(fc);
+	if (IS_ERR(req))
+		return PTR_ERR(req);
+
+	offset = outarg->offset & ~PAGE_CACHE_MASK;
+
+	req->in.h.opcode = FUSE_NOTIFY_REPLY;
+	req->in.h.nodeid = outarg->nodeid;
+	req->in.numargs = 2;
+	req->in.argpages = 1;
+	req->page_offset = offset;
+	req->end = fuse_retrieve_end;
+
+	index = outarg->offset >> PAGE_CACHE_SHIFT;
+	file_size = i_size_read(inode);
+	num = outarg->size;
+	if (outarg->offset > file_size)
+		num = 0;
+	else if (outarg->offset + num > file_size)
+		num = file_size - outarg->offset;
+
+	while (num && req->num_pages < FUSE_MAX_PAGES_PER_REQ) {
+		struct page *page;
+		unsigned int this_num;
+
+		page = find_get_page(mapping, index);
+		if (!page)
+			break;
+
+		this_num = min_t(unsigned, num, PAGE_CACHE_SIZE - offset);
+		req->pages[req->num_pages] = page;
+		req->num_pages++;
+
+		num -= this_num;
+		total_len += this_num;
+		index++;
+	}
+	req->misc.retrieve_in.offset = outarg->offset;
+	req->misc.retrieve_in.size = total_len;
+	req->in.args[0].size = sizeof(req->misc.retrieve_in);
+	req->in.args[0].value = &req->misc.retrieve_in;
+	req->in.args[1].size = total_len;
+
+	err = fuse_request_send_notify_reply(fc, req, outarg->notify_unique);
+	if (err)
+		fuse_retrieve_end(fc, req);
+
+	return err;
+}
+
+static int fuse_notify_retrieve_from_inode(struct fuse_conn *fc,
+				struct fuse_notify_retrieve_out *outarg)
+{
+	struct inode *inode;
+	int err;
+
+	down_read(&fc->killsb);
+	err = -ENOENT;
+	if (fc->sb) {
+		u64 nodeid = outarg->nodeid;
+
+		inode = ilookup5(fc->sb, nodeid, fuse_inode_eq, &nodeid);
+		if (inode) {
+			err = fuse_retrieve(fc, inode, outarg);
+			iput(inode);
+		}
+	}
+	up_read(&fc->killsb);
+
+	return err;
+}
+
+static const struct fuse_conn_operations fuse_default_ops = {
+	.release = fuse_free_conn,
+	.notify_store = fuse_notify_store_to_inode,
+	.notify_retrieve = fuse_notify_retrieve_from_inode,
+};
+
 static int fuse_fill_super(struct super_block *sb, void *data, int silent)
 {
 	struct fuse_conn *fc;
@@ -977,7 +1140,7 @@ static int fuse_fill_super(struct super_block *sb, void *data, int silent)
 		fc->dont_mask = 1;
 	sb->s_flags |= MS_POSIXACL;
 
-	fc->release = fuse_free_conn;
+	fc->ops = &fuse_default_ops;
 	fc->flags = d.flags;
 	fc->user_id = d.user_id;
 	fc->group_id = d.group_id;
