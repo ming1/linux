@@ -313,6 +313,8 @@ static long gfs2_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		return gfs2_get_flags(filp, (u32 __user *)arg);
 	case FS_IOC_SETFLAGS:
 		return gfs2_set_flags(filp, (u32 __user *)arg);
+	case FITRIM:
+		return gfs2_fitrim(filp, (void __user *)arg);
 	}
 	return -ENOTTY;
 }
@@ -772,6 +774,11 @@ static long gfs2_fallocate(struct file *file, int mode, loff_t offset,
 	if (bytes == 0)
 		bytes = sdp->sd_sb.sb_bsize;
 
+	error = gfs2_rindex_update(sdp);
+	if (error) {
+		fs_warn(sdp, "rindex update returns %d\n", error);
+		return error;
+	}
 	gfs2_holder_init(ip->i_gl, LM_ST_EXCLUSIVE, 0, &ip->i_gh);
 	error = gfs2_glock_nq(&ip->i_gh);
 	if (unlikely(error))
