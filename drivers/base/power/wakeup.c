@@ -64,7 +64,6 @@ struct wakeup_source *wakeup_source_create(const char *name)
 	if (!ws)
 		return NULL;
 
-	spin_lock_init(&ws->lock);
 	if (name)
 		ws->name = kstrdup(name, GFP_KERNEL);
 
@@ -75,22 +74,17 @@ EXPORT_SYMBOL_GPL(wakeup_source_create);
 /**
  * wakeup_source_destroy - Destroy a struct wakeup_source object.
  * @ws: Wakeup source to destroy.
+ *
+ * Callers must ensure that __pm_stay_awake() or __pm_wakeup_event() will never
+ * be run in parallel with this function for the same wakeup source object.
  */
 void wakeup_source_destroy(struct wakeup_source *ws)
 {
 	if (!ws)
 		return;
 
-	spin_lock_irq(&ws->lock);
-	while (ws->active) {
-		spin_unlock_irq(&ws->lock);
-
-		schedule_timeout_interruptible(msecs_to_jiffies(TIMEOUT));
-
-		spin_lock_irq(&ws->lock);
-	}
-	spin_unlock_irq(&ws->lock);
-
+	del_timer_sync(&ws->timer);
+	__pm_relax(ws);
 	kfree(ws->name);
 	kfree(ws);
 }
@@ -105,6 +99,7 @@ void wakeup_source_add(struct wakeup_source *ws)
 	if (WARN_ON(!ws))
 		return;
 
+	spin_lock_init(&ws->lock);
 	setup_timer(&ws->timer, pm_wakeup_timer_fn, (unsigned long)ws);
 	ws->active = false;
 
@@ -349,7 +344,6 @@ static void wakeup_source_activate(struct wakeup_source *ws)
 {
 	ws->active = true;
 	ws->active_count++;
-	ws->timer_expires = jiffies;
 	ws->last_time = ktime_get();
 
 	/* Increment the counter of events in progress. */
@@ -370,9 +364,14 @@ void __pm_stay_awake(struct wakeup_source *ws)
 		return;
 
 	spin_lock_irqsave(&ws->lock, flags);
+
 	ws->event_count++;
 	if (!ws->active)
 		wakeup_source_activate(ws);
+
+	del_timer(&ws->timer);
+	ws->timer_expires = 0;
+
 	spin_unlock_irqrestore(&ws->lock, flags);
 }
 EXPORT_SYMBOL_GPL(__pm_stay_awake);
@@ -438,6 +437,7 @@ static void wakeup_source_deactivate(struct wakeup_source *ws)
 		ws->max_time = duration;
 
 	del_timer(&ws->timer);
+	ws->timer_expires = 0;
 
 	/*
 	 * Increment the counter of registered wakeup events and decrement the
@@ -492,11 +492,22 @@ EXPORT_SYMBOL_GPL(pm_relax);
  * pm_wakeup_timer_fn - Delayed finalization of a wakeup event.
  * @data: Address of the wakeup source object associated with the event source.
  *
- * Call __pm_relax() for the wakeup source whose address is stored in @data.
+ * Call wakeup_source_deactivate() for the wakeup source whose address is stored
+ * in @data if it is currently active and its timer has not been canceled and
+ * the expiration time of the timer is not in future.
  */
 static void pm_wakeup_timer_fn(unsigned long data)
 {
-	__pm_relax((struct wakeup_source *)data);
+	struct wakeup_source *ws = (struct wakeup_source *)data;
+	unsigned long flags;
+
+	spin_lock_irqsave(&ws->lock, flags);
+
+	if (ws->active && ws->timer_expires
+	    && time_after_eq(jiffies, ws->timer_expires))
+		wakeup_source_deactivate(ws);
+
+	spin_unlock_irqrestore(&ws->lock, flags);
 }
 
 /**
@@ -534,7 +545,7 @@ void __pm_wakeup_event(struct wakeup_source *ws, unsigned int msec)
 	if (!expires)
 		expires = 1;
 
-	if (time_after(expires, ws->timer_expires)) {
+	if (!ws->timer_expires || time_after(expires, ws->timer_expires)) {
 		mod_timer(&ws->timer, expires);
 		ws->timer_expires = expires;
 	}
