@@ -22,7 +22,7 @@
 #include <linux/gpio.h>
 #include <linux/list.h>
 #include <linux/slab.h>
-#include <linux/pinctrl/pinmux.h>
+#include <linux/pinctrl/consumer.h>
 #include <mach/gpio-u300.h>
 
 /*
@@ -360,14 +360,14 @@ static int u300_gpio_request(struct gpio_chip *chip, unsigned offset)
 	 */
 	int gpio = chip->base + offset;
 
-	return pinmux_request_gpio(gpio);
+	return pinctrl_request_gpio(gpio);
 }
 
 static void u300_gpio_free(struct gpio_chip *chip, unsigned offset)
 {
 	int gpio = chip->base + offset;
 
-	pinmux_free_gpio(gpio);
+	pinctrl_free_gpio(gpio);
 }
 
 static int u300_gpio_get(struct gpio_chip *chip, unsigned offset)
