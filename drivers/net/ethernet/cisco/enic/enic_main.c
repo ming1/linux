@@ -865,6 +865,7 @@ static int enic_set_mac_addr(struct net_device *netdev, char *addr)
 	}
 
 	memcpy(netdev->dev_addr, addr, netdev->addr_len);
+	netdev->addr_assign_type &= ~NET_ADDR_RANDOM;
 
 	return 0;
 }
@@ -1119,7 +1120,7 @@ static int enic_set_vf_port(struct net_device *netdev, int vf,
 		memcpy(pp->mac_addr, prev_pp.vf_mac, ETH_ALEN);
 
 	if (vf == PORT_SELF_VF && is_zero_ether_addr(netdev->dev_addr))
-		random_ether_addr(netdev->dev_addr);
+		eth_hw_addr_random(netdev);
 
 	err = enic_process_set_pp_request(enic, vf, &prev_pp, &restore_pp);
 	if (err) {
@@ -2280,10 +2281,8 @@ static int __devinit enic_probe(struct pci_dev *pdev,
 	 */
 
 	netdev = alloc_etherdev(sizeof(struct enic));
-	if (!netdev) {
-		pr_err("Etherdev alloc failed, aborting\n");
+	if (!netdev)
 		return -ENOMEM;
-	}
 
 	pci_set_drvdata(pdev, netdev);
 
@@ -2388,7 +2387,6 @@ static int __devinit enic_probe(struct pci_dev *pdev,
 	/* Allocate structure for port profiles */
 	enic->pp = kcalloc(num_pps, sizeof(*enic->pp), GFP_KERNEL);
 	if (!enic->pp) {
-		pr_err("port profile alloc failed, aborting\n");
 		err = -ENOMEM;
 		goto err_out_disable_sriov_pp;
 	}
@@ -2465,11 +2463,6 @@ static int __devinit enic_probe(struct pci_dev *pdev,
 
 	enic->port_mtu = enic->config.mtu;
 	(void)enic_change_mtu(netdev, enic->port_mtu);
-
-#ifdef CONFIG_PCI_IOV
-	if (enic_is_sriov_vf(enic) && is_zero_ether_addr(enic->mac_addr))
-		random_ether_addr(enic->mac_addr);
-#endif
 
 	err = enic_set_mac_addr(netdev, enic->mac_addr);
 	if (err) {
