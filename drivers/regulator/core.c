@@ -13,8 +13,6 @@
  *
  */
 
-#define pr_fmt(fmt) "%s: " fmt, __func__
-
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/debugfs.h>
@@ -807,6 +805,11 @@ static void print_constraints(struct regulator_dev *rdev)
 		count += sprintf(buf + count, "standby");
 
 	rdev_info(rdev, "%s\n", buf);
+
+	if ((constraints->min_uV != constraints->max_uV) &&
+	    !(constraints->valid_ops_mask & REGULATOR_CHANGE_VOLTAGE))
+		rdev_warn(rdev,
+			  "Voltage range but no REGULATOR_CHANGE_VOLTAGE\n");
 }
 
 static int machine_constraints_voltage(struct regulator_dev *rdev,
@@ -996,7 +999,6 @@ static int set_supply(struct regulator_dev *rdev,
 /**
  * set_consumer_device_supply - Bind a regulator to a symbolic supply
  * @rdev:         regulator source
- * @consumer_dev: device the supply applies to
  * @consumer_dev_name: dev_name() string for device supply applies to
  * @supply:       symbolic name for supply
  *
@@ -1004,21 +1006,13 @@ static int set_supply(struct regulator_dev *rdev,
  * sources to symbolic names for supplies for use by devices.  Devices
  * should use these symbolic names to request regulators, avoiding the
  * need to provide board-specific regulator names as platform data.
- *
- * Only one of consumer_dev and consumer_dev_name may be specified.
  */
 static int set_consumer_device_supply(struct regulator_dev *rdev,
-	struct device *consumer_dev, const char *consumer_dev_name,
-	const char *supply)
+				      const char *consumer_dev_name,
+				      const char *supply)
 {
 	struct regulator_map *node;
 	int has_dev;
-
-	if (consumer_dev && consumer_dev_name)
-		return -EINVAL;
-
-	if (!consumer_dev_name && consumer_dev)
-		consumer_dev_name = dev_name(consumer_dev);
 
 	if (supply == NULL)
 		return -EINVAL;
@@ -1039,11 +1033,12 @@ static int set_consumer_device_supply(struct regulator_dev *rdev,
 		if (strcmp(node->supply, supply) != 0)
 			continue;
 
-		dev_dbg(consumer_dev, "%s/%s is '%s' supply; fail %s/%s\n",
-			dev_name(&node->regulator->dev),
-			node->regulator->desc->name,
-			supply,
-			dev_name(&rdev->dev), rdev_get_name(rdev));
+		pr_debug("%s: %s/%s is '%s' supply; fail %s/%s\n",
+			 consumer_dev_name,
+			 dev_name(&node->regulator->dev),
+			 node->regulator->desc->name,
+			 supply,
+			 dev_name(&rdev->dev), rdev_get_name(rdev));
 		return -EBUSY;
 	}
 
@@ -2456,7 +2451,7 @@ int regulator_bulk_get(struct device *dev, int num_consumers,
 	return 0;
 
 err:
-	for (i = 0; i < num_consumers && consumers[i].consumer; i++)
+	while (--i >= 0)
 		regulator_put(consumers[i].consumer);
 
 	return ret;
@@ -2552,12 +2547,9 @@ int regulator_bulk_enable(int num_consumers,
 	return 0;
 
 err:
-	for (i = 0; i < num_consumers; i++)
-		if (consumers[i].ret == 0)
-			regulator_disable(consumers[i].consumer);
-		else
-			pr_err("Failed to enable %s: %d\n",
-			       consumers[i].supply, consumers[i].ret);
+	pr_err("Failed to enable %s: %d\n", consumers[i].supply, ret);
+	while (--i >= 0)
+		regulator_disable(consumers[i].consumer);
 
 	return ret;
 }
@@ -2571,8 +2563,8 @@ EXPORT_SYMBOL_GPL(regulator_bulk_enable);
  * @return         0 on success, an errno on failure
  *
  * This convenience API allows consumers to disable multiple regulator
- * clients in a single API call.  If any consumers cannot be enabled
- * then any others that were disabled will be disabled again prior to
+ * clients in a single API call.  If any consumers cannot be disabled
+ * then any others that were disabled will be enabled again prior to
  * return.
  */
 int regulator_bulk_disable(int num_consumers,
@@ -2581,7 +2573,7 @@ int regulator_bulk_disable(int num_consumers,
 	int i;
 	int ret;
 
-	for (i = 0; i < num_consumers; i++) {
+	for (i = num_consumers - 1; i >= 0; --i) {
 		ret = regulator_disable(consumers[i].consumer);
 		if (ret != 0)
 			goto err;
@@ -2591,7 +2583,7 @@ int regulator_bulk_disable(int num_consumers,
 
 err:
 	pr_err("Failed to disable %s: %d\n", consumers[i].supply, ret);
-	for (--i; i >= 0; --i)
+	for (++i; i < num_consumers; ++i)
 		regulator_enable(consumers[i].consumer);
 
 	return ret;
@@ -2963,7 +2955,6 @@ struct regulator_dev *regulator_register(struct regulator_desc *regulator_desc,
 	if (init_data) {
 		for (i = 0; i < init_data->num_consumer_supplies; i++) {
 			ret = set_consumer_device_supply(rdev,
-				init_data->consumer_supplies[i].dev,
 				init_data->consumer_supplies[i].dev_name,
 				init_data->consumer_supplies[i].supply);
 			if (ret < 0) {
