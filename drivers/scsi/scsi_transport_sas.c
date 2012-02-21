@@ -652,9 +652,21 @@ sas_phy_linkerror_attr(running_disparity_error_count);
 sas_phy_linkerror_attr(loss_of_dword_sync_count);
 sas_phy_linkerror_attr(phy_reset_problem_count);
 
+static int sas_phy_setup(struct transport_container *tc, struct device *dev,
+			 struct device *cdev)
+{
+	struct sas_phy *phy = dev_to_phy(dev);
+	struct Scsi_Host *shost = dev_to_shost(phy->dev.parent);
+	struct sas_internal *i = to_sas_internal(shost->transportt);
+
+	if (i->f->phy_setup)
+		i->f->phy_setup(phy);
+
+	return 0;
+}
 
 static DECLARE_TRANSPORT_CLASS(sas_phy_class,
-		"sas_phy", NULL, NULL, NULL);
+		"sas_phy", sas_phy_setup, NULL, NULL);
 
 static int sas_phy_match(struct attribute_container *cont, struct device *dev)
 {
@@ -678,7 +690,11 @@ static int sas_phy_match(struct attribute_container *cont, struct device *dev)
 static void sas_phy_release(struct device *dev)
 {
 	struct sas_phy *phy = dev_to_phy(dev);
+	struct Scsi_Host *shost = dev_to_shost(phy->dev.parent);
+	struct sas_internal *i = to_sas_internal(shost->transportt);
 
+	if (i->f->phy_release)
+		i->f->phy_release(phy);
 	put_device(dev->parent);
 	kfree(phy);
 }
@@ -1603,6 +1619,20 @@ sas_rphy_delete(struct sas_rphy *rphy)
 EXPORT_SYMBOL(sas_rphy_delete);
 
 /**
+ * sas_rphy_unlink  -  unlink SAS remote PHY
+ * @rphy:	SAS remote phy to unlink from its parent port
+ *
+ * Removes port reference to an rphy
+ */
+void sas_rphy_unlink(struct sas_rphy *rphy)
+{
+	struct sas_port *parent = dev_to_sas_port(rphy->dev.parent);
+
+	parent->rphy = NULL;
+}
+EXPORT_SYMBOL(sas_rphy_unlink);
+
+/**
  * sas_rphy_remove  -  remove SAS remote PHY
  * @rphy:	SAS remote phy to remove
  *
@@ -1612,7 +1642,6 @@ void
 sas_rphy_remove(struct sas_rphy *rphy)
 {
 	struct device *dev = &rphy->dev;
-	struct sas_port *parent = dev_to_sas_port(dev->parent);
 
 	switch (rphy->identify.device_type) {
 	case SAS_END_DEVICE:
@@ -1626,10 +1655,9 @@ sas_rphy_remove(struct sas_rphy *rphy)
 		break;
 	}
 
+	sas_rphy_unlink(rphy);
 	transport_remove_device(dev);
 	device_del(dev);
-
-	parent->rphy = NULL;
 }
 EXPORT_SYMBOL(sas_rphy_remove);
 
