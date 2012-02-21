@@ -615,6 +615,7 @@ do_sas_phy_reset(struct device *dev, size_t count, int hard_reset)
 	error = i->f->phy_reset(phy, hard_reset);
 	if (error)
 		return error;
+	phy->enabled = 1;
 	return count;
 };
 
@@ -1058,6 +1059,29 @@ int scsi_is_sas_port(const struct device *dev)
 	return dev->release == sas_port_release;
 }
 EXPORT_SYMBOL(scsi_is_sas_port);
+
+/**
+ * sas_port_get_phy - try to take a reference on a port member
+ * @port: port to check
+ */
+struct sas_phy *sas_port_get_phy(struct sas_port *port)
+{
+	struct sas_phy *phy;
+
+	mutex_lock(&port->phy_list_mutex);
+	if (list_empty(&port->phy_list))
+		phy = NULL;
+	else {
+		struct list_head *ent = port->phy_list.next;
+
+		phy = list_entry(ent, typeof(*phy), port_siblings);
+		get_device(&phy->dev);
+	}
+	mutex_unlock(&port->phy_list_mutex);
+
+	return phy;
+}
+EXPORT_SYMBOL(sas_port_get_phy);
 
 /**
  * sas_port_add_phy - add another phy to a port to form a wide port
