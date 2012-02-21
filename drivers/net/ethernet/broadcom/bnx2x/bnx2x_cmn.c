@@ -1,6 +1,6 @@
 /* bnx2x_cmn.c: Broadcom Everest network driver.
  *
- * Copyright (c) 2007-2011 Broadcom Corporation
+ * Copyright (c) 2007-2012 Broadcom Corporation
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,46 +30,6 @@
 #include "bnx2x_sp.h"
 
 
-
-/**
- * bnx2x_bz_fp - zero content of the fastpath structure.
- *
- * @bp:		driver handle
- * @index:	fastpath index to be zeroed
- *
- * Makes sure the contents of the bp->fp[index].napi is kept
- * intact.
- */
-static inline void bnx2x_bz_fp(struct bnx2x *bp, int index)
-{
-	struct bnx2x_fastpath *fp = &bp->fp[index];
-	struct napi_struct orig_napi = fp->napi;
-	/* bzero bnx2x_fastpath contents */
-	memset(fp, 0, sizeof(*fp));
-
-	/* Restore the NAPI object as it has been already initialized */
-	fp->napi = orig_napi;
-
-	fp->bp = bp;
-	fp->index = index;
-	if (IS_ETH_FP(fp))
-		fp->max_cos = bp->max_cos;
-	else
-		/* Special queues support only one CoS */
-		fp->max_cos = 1;
-
-	/*
-	 * set the tpa flag for each queue. The tpa flag determines the queue
-	 * minimal size so it must be set prior to queue memory allocation
-	 */
-	fp->disable_tpa = ((bp->flags & TPA_ENABLE_FLAG) == 0);
-
-#ifdef BCM_CNIC
-	/* We don't want TPA on an FCoE L2 ring */
-	if (IS_FCOE_FP(fp))
-		fp->disable_tpa = 1;
-#endif
-}
 
 /**
  * bnx2x_move_fp - move content of the fastpath structure.
@@ -1766,12 +1726,27 @@ int bnx2x_nic_load(struct bnx2x *bp, int load_mode)
 
 	bnx2x_napi_enable(bp);
 
+	/* set pf load just before approaching the MCP */
+	bnx2x_set_pf_load(bp);
+
 	/* Send LOAD_REQUEST command to MCP
 	 * Returns the type of LOAD command:
 	 * if it is the first port to be initialized
 	 * common blocks should be initialized, otherwise - not
 	 */
 	if (!BP_NOMCP(bp)) {
+		/* init fw_seq */
+		bp->fw_seq =
+			(SHMEM_RD(bp, func_mb[BP_FW_MB_IDX(bp)].drv_mb_header) &
+			 DRV_MSG_SEQ_NUMBER_MASK);
+		BNX2X_DEV_INFO("fw_seq 0x%08x\n", bp->fw_seq);
+
+		/* Get current FW pulse sequence */
+		bp->fw_drv_pulse_wr_seq =
+			(SHMEM_RD(bp, func_mb[BP_FW_MB_IDX(bp)].drv_pulse_mb) &
+			 DRV_PULSE_SEQ_MASK);
+		BNX2X_DEV_INFO("drv_pulse 0x%x\n", bp->fw_drv_pulse_wr_seq);
+
 		load_code = bnx2x_fw_command(bp, DRV_MSG_CODE_LOAD_REQ, 0);
 		if (!load_code) {
 			BNX2X_ERR("MCP response failure, aborting\n");
@@ -1781,6 +1756,29 @@ int bnx2x_nic_load(struct bnx2x *bp, int load_mode)
 		if (load_code == FW_MSG_CODE_DRV_LOAD_REFUSED) {
 			rc = -EBUSY; /* other port in diagnostic mode */
 			LOAD_ERROR_EXIT(bp, load_error1);
+		}
+		if (load_code != FW_MSG_CODE_DRV_LOAD_COMMON_CHIP &&
+		    load_code != FW_MSG_CODE_DRV_LOAD_COMMON) {
+			/* build FW version dword */
+			u32 my_fw = (BCM_5710_FW_MAJOR_VERSION) +
+					(BCM_5710_FW_MINOR_VERSION << 8) +
+					(BCM_5710_FW_REVISION_VERSION << 16) +
+					(BCM_5710_FW_ENGINEERING_VERSION << 24);
+
+			/* read loaded FW from chip */
+			u32 loaded_fw = REG_RD(bp, XSEM_REG_PRAM);
+
+			DP(BNX2X_MSG_SP, "loaded fw %x, my fw %x",
+			   loaded_fw, my_fw);
+
+			/* abort nic load if version mismatch */
+			if (my_fw != loaded_fw) {
+				BNX2X_ERR("bnx2x with FW %x already loaded, "
+					  "which mismatches my %x FW. aborting",
+					  loaded_fw, my_fw);
+				rc = -EBUSY;
+				LOAD_ERROR_EXIT(bp, load_error2);
+			}
 		}
 
 	} else {
@@ -1948,7 +1946,6 @@ int bnx2x_nic_load(struct bnx2x *bp, int load_mode)
 	if (bp->state == BNX2X_STATE_OPEN)
 		bnx2x_cnic_notify(bp, CNIC_CTL_START_CMD);
 #endif
-	bnx2x_inc_load_cnt(bp);
 
 	/* Wait for all pending SP commands to complete */
 	if (!bnx2x_wait_sp_comp(bp, ~0x0UL)) {
@@ -1988,6 +1985,8 @@ load_error2:
 	bp->port.pmf = 0;
 load_error1:
 	bnx2x_napi_disable(bp);
+	/* clear pf_load status, as it was already set */
+	bnx2x_clear_pf_load(bp);
 load_error0:
 	bnx2x_free_mem(bp);
 
@@ -2045,6 +2044,7 @@ int bnx2x_nic_unload(struct bnx2x *bp, int unload_mode)
 	bnx2x_drv_pulse(bp);
 
 	bnx2x_stats_handle(bp, STATS_EVENT_STOP);
+	bnx2x_save_statistics(bp);
 
 	/* Cleanup the chip if needed */
 	if (unload_mode != UNLOAD_RECOVERY)
@@ -2108,7 +2108,7 @@ int bnx2x_nic_unload(struct bnx2x *bp, int unload_mode)
 	/* The last driver must disable a "close the gate" if there is no
 	 * parity attention or "process kill" pending.
 	 */
-	if (!bnx2x_dec_load_cnt(bp) && bnx2x_reset_is_done(bp, BP_PATH(bp)))
+	if (!bnx2x_clear_pf_load(bp) && bnx2x_reset_is_done(bp, BP_PATH(bp)))
 		bnx2x_disable_close_the_gate(bp);
 
 	return 0;
@@ -3007,6 +3007,7 @@ int bnx2x_change_mac_addr(struct net_device *dev, void *p)
 			return rc;
 	}
 
+	dev->addr_assign_type &= ~NET_ADDR_RANDOM;
 	memcpy(dev->dev_addr, addr->sa_data, dev->addr_len);
 
 	if (netif_running(dev))
@@ -3122,8 +3123,15 @@ static int bnx2x_alloc_fp_mem_at(struct bnx2x *bp, int index)
 	} else
 #endif
 	if (!bp->rx_ring_size) {
+		u32 cfg = SHMEM_RD(bp,
+			     dev_info.port_hw_config[BP_PORT(bp)].default_cfg);
 
 		rx_ring_size = MAX_RX_AVAIL/BNX2X_NUM_RX_QUEUES(bp);
+
+		/* Dercease ring size for 1G functions */
+		if ((cfg & PORT_HW_CFG_NET_SERDES_IF_MASK) ==
+		    PORT_HW_CFG_NET_SERDES_IF_SGMII)
+			rx_ring_size /= 10;
 
 		/* allocate at least number of buffers required by FW */
 		rx_ring_size = max_t(int, bp->disable_tpa ? MIN_RX_SIZE_NONTPA :
@@ -3414,7 +3422,7 @@ int bnx2x_change_mtu(struct net_device *dev, int new_mtu)
 	struct bnx2x *bp = netdev_priv(dev);
 
 	if (bp->recovery_state != BNX2X_RECOVERY_DONE) {
-		pr_err("Handling parity error recovery. Try again later\n");
+		netdev_err(dev, "Handling parity error recovery. Try again later\n");
 		return -EAGAIN;
 	}
 
@@ -3541,7 +3549,7 @@ int bnx2x_resume(struct pci_dev *pdev)
 	bp = netdev_priv(dev);
 
 	if (bp->recovery_state != BNX2X_RECOVERY_DONE) {
-		pr_err("Handling parity error recovery. Try again later\n");
+		netdev_err(dev, "Handling parity error recovery. Try again later\n");
 		return -EAGAIN;
 	}
 
@@ -3557,8 +3565,6 @@ int bnx2x_resume(struct pci_dev *pdev)
 	bnx2x_set_power_state(bp, PCI_D0);
 	netif_device_attach(dev);
 
-	/* Since the chip was reset, clear the FW sequence number */
-	bp->fw_seq = 0;
 	rc = bnx2x_nic_load(bp, LOAD_OPEN);
 
 	rtnl_unlock();

@@ -285,10 +285,9 @@ int mlx4_en_create_rx_ring(struct mlx4_en_priv *priv,
 	tmp = size * roundup_pow_of_two(MLX4_EN_MAX_RX_FRAGS *
 					sizeof(struct skb_frag_struct));
 	ring->rx_info = vmalloc(tmp);
-	if (!ring->rx_info) {
-		en_err(priv, "Failed allocating rx_info ring\n");
+	if (!ring->rx_info)
 		return -ENOMEM;
-	}
+
 	en_dbg(DRV, priv, "Allocated rx_info ring at addr:%p size:%d\n",
 		 ring->rx_info, tmp);
 
@@ -468,12 +467,11 @@ static struct sk_buff *mlx4_en_rx_skb(struct mlx4_en_priv *priv,
 	int used_frags;
 	dma_addr_t dma;
 
-	skb = dev_alloc_skb(SMALL_PACKET_SIZE + NET_IP_ALIGN);
+	skb = netdev_alloc_skb(priv->dev, SMALL_PACKET_SIZE + NET_IP_ALIGN);
 	if (!skb) {
 		en_dbg(RX_ERR, priv, "Failed allocating skb\n");
 		return NULL;
 	}
-	skb->dev = priv->dev;
 	skb_reserve(skb, NET_IP_ALIGN);
 	skb->len = length;
 

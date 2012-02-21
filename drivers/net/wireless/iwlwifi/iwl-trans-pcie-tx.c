@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- * Copyright(c) 2003 - 2011 Intel Corporation. All rights reserved.
+ * Copyright(c) 2003 - 2012 Intel Corporation. All rights reserved.
  *
  * Portions of this file are derived from the ipw3945 project, as well
  * as portions of the ieee80211 subsystem header files.
@@ -478,7 +478,7 @@ void iwl_trans_pcie_tx_agg_setup(struct iwl_trans *trans,
 	}
 
 	txq_id = trans_pcie->agg_txq[sta_id][tid];
-	if (WARN_ON_ONCE(is_agg_txqid_valid(trans, txq_id) == false)) {
+	if (WARN_ON_ONCE(!is_agg_txqid_valid(trans, txq_id))) {
 		IWL_ERR(trans,
 			"queue number out of range: %d, must be %d to %d\n",
 			txq_id, IWLAGN_FIRST_AMPDU_QUEUE,
@@ -573,7 +573,7 @@ int iwl_trans_pcie_tx_agg_disable(struct iwl_trans *trans, int sta_id, int tid)
 	struct iwl_trans_pcie *trans_pcie = IWL_TRANS_GET_PCIE_TRANS(trans);
 	u8 txq_id = trans_pcie->agg_txq[sta_id][tid];
 
-	if (WARN_ON_ONCE(is_agg_txqid_valid(trans, txq_id) == false)) {
+	if (WARN_ON_ONCE(!is_agg_txqid_valid(trans, txq_id))) {
 		IWL_ERR(trans,
 			"queue number out of range: %d, must be %d to %d\n",
 			txq_id, IWLAGN_FIRST_AMPDU_QUEUE,

@@ -1,6 +1,6 @@
 /* bnx2x.h: Broadcom Everest network driver.
  *
- * Copyright (c) 2007-2011 Broadcom Corporation
+ * Copyright (c) 2007-2012 Broadcom Corporation
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,8 +23,8 @@
  * (you will need to reboot afterwards) */
 /* #define BNX2X_STOP_ON_ERROR */
 
-#define DRV_MODULE_VERSION      "1.70.35-0"
-#define DRV_MODULE_RELDATE      "2011/11/10"
+#define DRV_MODULE_VERSION      "1.72.00-0"
+#define DRV_MODULE_RELDATE      "2012/01/26"
 #define BNX2X_BC_VER            0x040200
 
 #if defined(CONFIG_DCB)
@@ -540,6 +540,7 @@ struct bnx2x_fastpath {
 	struct ustorm_per_queue_stats old_uclient;
 	struct xstorm_per_queue_stats old_xclient;
 	struct bnx2x_eth_q_stats eth_q_stats;
+	struct bnx2x_eth_q_stats_old eth_q_stats_old;
 
 	/* The size is calculated using the following:
 	     sizeof name field from netdev structure +
@@ -1046,7 +1047,6 @@ struct bnx2x_slowpath {
 	struct nig_stats		nig_stats;
 	struct host_port_stats		port_stats;
 	struct host_func_stats		func_stats;
-	struct host_func_stats		func_stats_base;
 
 	u32				wb_comp;
 	u32				wb_data[4];
@@ -1088,7 +1088,8 @@ enum bnx2x_recovery_state {
 	BNX2X_RECOVERY_DONE,
 	BNX2X_RECOVERY_INIT,
 	BNX2X_RECOVERY_WAIT,
-	BNX2X_RECOVERY_FAILED
+	BNX2X_RECOVERY_FAILED,
+	BNX2X_RECOVERY_NIC_LOADING
 };
 
 /*
@@ -1461,6 +1462,10 @@ struct bnx2x {
 
 	u16			stats_counter;
 	struct bnx2x_eth_stats	eth_stats;
+	struct bnx2x_eth_stats_old	eth_stats_old;
+	struct bnx2x_net_stats_old	net_stats_old;
+	struct bnx2x_fw_port_stats_old	fw_stats_old;
+	bool			stats_init;
 
 	struct z_stream_s	*strm;
 	void			*gunzip_buf;
@@ -2072,8 +2077,6 @@ static inline u32 reg_poll(struct bnx2x *bp, u32 reg, u32 expected, int ms,
 
 #define BNX2X_VPD_LEN			128
 #define VENDOR_ID_LEN			4
-
-int bnx2x_close(struct net_device *dev);
 
 /* Congestion management fairness mode */
 #define CMNG_FNS_NONE		0
