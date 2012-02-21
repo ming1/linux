@@ -3172,6 +3172,14 @@ static void wm8958_default_micdet(u16 status, void *data)
 
 			wm1811_jackdet_set_mode(codec,
 						WM1811_JACKDET_MODE_JACK);
+
+			if (wm8994->pdata->jd_ext_cap) {
+				mutex_lock(&codec->mutex);
+				snd_soc_dapm_disable_pin(&codec->dapm,
+							 "MICBIAS2");
+				snd_soc_dapm_sync(&codec->dapm);
+				mutex_unlock(&codec->mutex);
+			}
 		}
 	}
 
@@ -3224,6 +3232,18 @@ static irqreturn_t wm1811_jackdet_irq(int irq, void *data)
 		snd_soc_jack_report(wm8994->micdet[0].jack,
 				    SND_JACK_MECHANICAL, SND_JACK_MECHANICAL);
 
+		snd_soc_update_bits(codec, WM8958_MICBIAS2,
+				    WM8958_MICB2_DISCH, 0);
+
+		/* If required for an external cap force MICBIAS on */
+		if (wm8994->pdata->jd_ext_cap) {
+			mutex_lock(&codec->mutex);
+			snd_soc_dapm_force_enable_pin(&codec->dapm,
+						      "MICBIAS2");
+			snd_soc_dapm_sync(&codec->dapm);
+			mutex_unlock(&codec->mutex);
+		}
+
 		/*
 		 * Start off measument of microphone impedence to find
 		 * out what's actually there.
@@ -3234,6 +3254,16 @@ static irqreturn_t wm1811_jackdet_irq(int irq, void *data)
 				    WM8958_MICD_ENA, WM8958_MICD_ENA);
 	} else {
 		dev_dbg(codec->dev, "Jack not detected\n");
+
+		snd_soc_update_bits(codec, WM8958_MICBIAS2,
+				    WM8958_MICB2_DISCH, WM8958_MICB2_DISCH);
+
+		if (wm8994->pdata->jd_ext_cap) {
+			mutex_lock(&codec->mutex);
+			snd_soc_dapm_disable_pin(&codec->dapm, "MICBIAS2");
+			snd_soc_dapm_sync(&codec->dapm);
+			mutex_unlock(&codec->mutex);
+		}
 
 		snd_soc_jack_report(wm8994->micdet[0].jack, 0,
 				    SND_JACK_MECHANICAL | SND_JACK_HEADSET |
@@ -3320,6 +3350,9 @@ int wm8958_mic_detect(struct snd_soc_codec *codec, struct snd_soc_jack *jack,
 		 * otherwise jump straight to microphone detection.
 		 */
 		if (wm8994->jackdet) {
+			snd_soc_update_bits(codec, WM8958_MICBIAS2,
+					    WM8958_MICB2_DISCH,
+					    WM8958_MICB2_DISCH);
 			snd_soc_update_bits(codec, WM8994_LDO_1,
 					    WM8994_LDO1_DISCH, 0);
 			wm1811_jackdet_set_mode(codec,
@@ -3492,11 +3525,13 @@ static int wm8994_codec_probe(struct snd_soc_codec *codec)
 
 	case WM8958:
 		wm8994->hubs.dcs_readback_mode = 1;
+		wm8994->hubs.hp_startup_mode = 1;
 		break;
 
 	case WM1811:
 		wm8994->hubs.dcs_readback_mode = 2;
 		wm8994->hubs.no_series_update = 1;
+		wm8994->hubs.hp_startup_mode = 1;
 
 		switch (wm8994->revision) {
 		case 0:
