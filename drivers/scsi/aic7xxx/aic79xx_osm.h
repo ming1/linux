@@ -49,6 +49,8 @@
 #include <linux/pci.h>
 #include <linux/interrupt.h>
 #include <linux/module.h>
+#include <linux/proc_fs.h>
+#include <linux/seq_file.h>
 #include <linux/slab.h>
 #include <asm/byteorder.h>
 #include <asm/io.h>
@@ -379,14 +381,6 @@ void ahd_insb(struct ahd_softc * ahd, long port,
 int		ahd_linux_register_host(struct ahd_softc *,
 					struct scsi_host_template *);
 
-/*************************** Pretty Printing **********************************/
-struct info_str {
-	char *buffer;
-	int length;
-	off_t offset;
-	int pos;
-};
-
 /******************************** Locking *************************************/
 static inline void
 ahd_lockinit(struct ahd_softc *ahd)
@@ -513,8 +507,7 @@ ahd_flush_device_writes(struct ahd_softc *ahd)
 }
 
 /**************************** Proc FS Support *********************************/
-int	ahd_linux_proc_info(struct Scsi_Host *, char *, char **,
-			    off_t, int, int);
+extern const struct file_operations ahd_linux_proc_ops;
 
 /*********************** Transaction Access Wrappers **************************/
 static inline void ahd_cmd_set_transaction_status(struct scsi_cmnd *, uint32_t);
