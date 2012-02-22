@@ -104,12 +104,10 @@ static void sas_form_port(struct asd_sas_phy *phy)
 
 	/* add the phy to the port */
 	list_add_tail(&phy->port_phy_el, &port->phy_list);
+	sas_phy_set_target(phy, port->port_dev);
 	phy->port = port;
 	port->num_phys++;
 	port->phy_mask |= (1U << phy->id);
-
-	if (!port->phy)
-		port->phy = phy->phy;
 
 	if (*(u64 *)port->attached_sas_addr == 0) {
 		port->class = phy->class;
@@ -125,7 +123,7 @@ static void sas_form_port(struct asd_sas_phy *phy)
 	spin_unlock_irqrestore(&sas_ha->phy_port_lock, flags);
 
 	if (!port->port) {
-		port->port = sas_port_alloc(phy->phy->dev.parent, port->id);
+		port->port = sas_port_alloc(phy->phy->dev.parent, phy->id);
 		BUG_ON(!port->port);
 		sas_port_add(port->port);
 	}
@@ -170,13 +168,13 @@ void sas_deform_port(struct asd_sas_phy *phy, int gone)
 		dev->pathways--;
 
 	if (port->num_phys == 1) {
-		if (dev && gone)
-			set_bit(SAS_DEV_GONE, &dev->state);
-		sas_unregister_domain_devices(port);
+		sas_unregister_domain_devices(port, gone);
 		sas_port_delete(port->port);
 		port->port = NULL;
-	} else
+	} else {
 		sas_port_delete_phy(port->port, phy->phy);
+		sas_device_set_phy(dev, port->port);
+	}
 
 	if (si->dft->lldd_port_deformed)
 		si->dft->lldd_port_deformed(phy);
@@ -185,6 +183,7 @@ void sas_deform_port(struct asd_sas_phy *phy, int gone)
 	spin_lock(&port->phy_list_lock);
 
 	list_del_init(&phy->port_phy_el);
+	sas_phy_set_target(phy, NULL);
 	phy->port = NULL;
 	port->num_phys--;
 	port->phy_mask &= ~(1U << phy->id);
