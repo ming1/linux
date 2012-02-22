@@ -106,7 +106,7 @@ out:
 
 void scsi_proc_hostdir_add(struct scsi_host_template *sht)
 {
-	if (!sht->proc_info)
+	if (!sht->proc_info && !sht->proc_ops)
 		return;
 
 	mutex_lock(&global_host_template_mutex);
@@ -125,7 +125,7 @@ void scsi_proc_hostdir_add(struct scsi_host_template *sht)
  */
 void scsi_proc_hostdir_rm(struct scsi_host_template *sht)
 {
-	if (!sht->proc_info)
+	if (!sht->proc_info && !sht->proc_ops)
 		return;
 
 	mutex_lock(&global_host_template_mutex);
@@ -151,16 +151,26 @@ void scsi_proc_host_add(struct Scsi_Host *shost)
 		return;
 
 	sprintf(name,"%d", shost->host_no);
-	p = create_proc_read_entry(name, S_IFREG | S_IRUGO | S_IWUSR,
+	if (sht->proc_ops) {
+		mode_t mode;
+
+		mode = S_IRUGO;
+		if (sht->proc_ops->write)
+			mode |= S_IWUSR;
+		p = proc_create_data(name, mode, sht->proc_dir,
+				     sht->proc_ops, shost);
+	} else {
+		p = create_proc_read_entry(name, S_IFREG | S_IRUGO | S_IWUSR,
 			sht->proc_dir, proc_scsi_read, shost);
+		if (p)
+			p->write_proc = proc_scsi_write_proc;
+	}
 	if (!p) {
 		printk(KERN_ERR "%s: Failed to register host %d in"
 		       "%s\n", __func__, shost->host_no,
 		       sht->proc_name);
 		return;
 	} 
-
-	p->write_proc = proc_scsi_write_proc;
 }
 
 /**
