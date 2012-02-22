@@ -1981,7 +1981,7 @@ xfs_qm_dqcheck(
 
 	if (!errs && ddq->d_id) {
 		if (ddq->d_blk_softlimit &&
-		    be64_to_cpu(ddq->d_bcount) >=
+		    be64_to_cpu(ddq->d_bcount) >
 				be64_to_cpu(ddq->d_blk_softlimit)) {
 			if (!ddq->d_btimer) {
 				if (flags & XFS_QMOPT_DOWARN)
@@ -1992,7 +1992,7 @@ xfs_qm_dqcheck(
 			}
 		}
 		if (ddq->d_ino_softlimit &&
-		    be64_to_cpu(ddq->d_icount) >=
+		    be64_to_cpu(ddq->d_icount) >
 				be64_to_cpu(ddq->d_ino_softlimit)) {
 			if (!ddq->d_itimer) {
 				if (flags & XFS_QMOPT_DOWARN)
@@ -2003,7 +2003,7 @@ xfs_qm_dqcheck(
 			}
 		}
 		if (ddq->d_rtb_softlimit &&
-		    be64_to_cpu(ddq->d_rtbcount) >=
+		    be64_to_cpu(ddq->d_rtbcount) >
 				be64_to_cpu(ddq->d_rtb_softlimit)) {
 			if (!ddq->d_rtbtimer) {
 				if (flags & XFS_QMOPT_DOWARN)
@@ -3695,7 +3695,7 @@ xlog_do_recover(
 
 	/* Convert superblock from on-disk format */
 	sbp = &log->l_mp->m_sb;
-	xfs_sb_from_disk(sbp, XFS_BUF_TO_SBP(bp));
+	xfs_sb_from_disk(log->l_mp, XFS_BUF_TO_SBP(bp));
 	ASSERT(sbp->sb_magicnum == XFS_SB_MAGIC);
 	ASSERT(xfs_sb_good_version(sbp));
 	xfs_buf_relse(bp);
