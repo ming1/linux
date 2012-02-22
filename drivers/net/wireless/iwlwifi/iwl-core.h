@@ -5,7 +5,7 @@
  *
  * GPL LICENSE SUMMARY
  *
- * Copyright(c) 2008 - 2011 Intel Corporation. All rights reserved.
+ * Copyright(c) 2008 - 2012 Intel Corporation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of version 2 of the GNU General Public License as
@@ -30,7 +30,7 @@
  *
  * BSD LICENSE
  *
- * Copyright(c) 2005 - 2011 Intel Corporation. All rights reserved.
+ * Copyright(c) 2005 - 2012 Intel Corporation. All rights reserved.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -295,12 +295,6 @@ static inline bool iwl_advanced_bt_coexist(struct iwl_priv *priv)
 {
 	return cfg(priv)->bt_params &&
 	       cfg(priv)->bt_params->advanced_bt_coexist;
-}
-
-static inline void iwl_enable_rfkill_int(struct iwl_priv *priv)
-{
-	IWL_DEBUG_ISR(priv, "Enabling rfkill interrupt\n");
-	iwl_write32(bus(priv), CSR_INT_MASK, CSR_INT_BIT_RF_KILL);
 }
 
 extern bool bt_siso_mode;

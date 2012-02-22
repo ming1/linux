@@ -318,9 +318,9 @@ static int ieee80211_do_open(struct net_device *dev, bool coming_up)
 			goto err_del_interface;
 		}
 
-		sta_info_move_state(sta, IEEE80211_STA_AUTH);
-		sta_info_move_state(sta, IEEE80211_STA_ASSOC);
-		sta_info_move_state(sta, IEEE80211_STA_AUTHORIZED);
+		sta_info_pre_move_state(sta, IEEE80211_STA_AUTH);
+		sta_info_pre_move_state(sta, IEEE80211_STA_ASSOC);
+		sta_info_pre_move_state(sta, IEEE80211_STA_AUTHORIZED);
 
 		res = sta_info_insert(sta);
 		if (res) {
@@ -1181,6 +1181,13 @@ int ieee80211_if_add(struct ieee80211_local *local, const char *name,
 		sband = local->hw.wiphy->bands[i];
 		sdata->rc_rateidx_mask[i] =
 			sband ? (1 << sband->n_bitrates) - 1 : 0;
+		if (sband)
+			memcpy(sdata->rc_rateidx_mcs_mask[i],
+			       sband->ht_cap.mcs.rx_mask,
+			       sizeof(sdata->rc_rateidx_mcs_mask[i]));
+		else
+			memset(sdata->rc_rateidx_mcs_mask[i], 0,
+			       sizeof(sdata->rc_rateidx_mcs_mask[i]));
 	}
 
 	/* setup type-dependent data */
@@ -1303,7 +1310,9 @@ u32 __ieee80211_recalc_idle(struct ieee80211_local *local)
 
 		/* do not count disabled managed interfaces */
 		if (sdata->vif.type == NL80211_IFTYPE_STATION &&
-		    !sdata->u.mgd.associated) {
+		    !sdata->u.mgd.associated &&
+		    !sdata->u.mgd.auth_data &&
+		    !sdata->u.mgd.assoc_data) {
 			sdata->vif.bss_conf.idle = true;
 			continue;
 		}
@@ -1323,7 +1332,8 @@ u32 __ieee80211_recalc_idle(struct ieee80211_local *local)
 		wk->sdata->vif.bss_conf.idle = false;
 	}
 
-	if (local->scan_sdata) {
+	if (local->scan_sdata &&
+	    !(local->hw.flags & IEEE80211_HW_SCAN_WHILE_IDLE)) {
 		scanning = true;
 		local->scan_sdata->vif.bss_conf.idle = false;
 	}

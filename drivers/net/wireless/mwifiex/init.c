@@ -280,6 +280,7 @@ static void mwifiex_init_adapter(struct mwifiex_adapter *adapter)
 	adapter->adhoc_awake_period = 0;
 	memset(&adapter->arp_filter, 0, sizeof(adapter->arp_filter));
 	adapter->arp_filter_size = 0;
+	adapter->channel_type = NL80211_CHAN_HT20;
 }
 
 /*
@@ -527,8 +528,9 @@ static void mwifiex_delete_bss_prio_tbl(struct mwifiex_private *priv)
 		cur = &adapter->bss_prio_tbl[i].bss_prio_cur;
 		lock = &adapter->bss_prio_tbl[i].bss_prio_lock;
 		dev_dbg(adapter->dev, "info: delete BSS priority table,"
-				" index = %d, i = %d, head = %p, cur = %p\n",
-			      priv->bss_index, i, head, *cur);
+				" bss_type = %d, bss_num = %d, i = %d,"
+				" head = %p, cur = %p\n",
+			      priv->bss_type, priv->bss_num, i, head, *cur);
 		if (*cur) {
 			spin_lock_irqsave(lock, flags);
 			if (list_empty(head)) {
