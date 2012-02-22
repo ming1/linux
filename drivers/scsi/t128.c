@@ -202,7 +202,7 @@ int __init t128_detect(struct scsi_host_template * tpnt){
     int sig, count;
 
     tpnt->proc_name = "t128";
-    tpnt->proc_info = &t128_proc_info;
+    tpnt->proc_ops = &t128_proc_ops;
 
     for (count = 0; current_override < NO_OVERRIDES; ++current_override) {
 	base = 0;

@@ -314,8 +314,7 @@ static void NCR5380_print(struct Scsi_Host *instance);
 static int NCR5380_abort(Scsi_Cmnd * cmd);
 static int NCR5380_bus_reset(Scsi_Cmnd * cmd);
 static int NCR5380_queue_command(struct Scsi_Host *, struct scsi_cmnd *);
-static int __maybe_unused NCR5380_proc_info(struct Scsi_Host *instance,
-	char *buffer, char **start, off_t offset, int length, int inout);
+static const struct file_operations __maybe_unused NCR5380_proc_ops;
 
 static void NCR5380_reselect(struct Scsi_Host *instance);
 static int NCR5380_select(struct Scsi_Host *instance, Scsi_Cmnd * cmd, int tag);
