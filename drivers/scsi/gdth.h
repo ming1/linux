@@ -1012,10 +1012,4 @@ typedef struct {
 typedef struct {
     unsigned long       b[10];                          /* 32/64 bit compiler ! */
 } __attribute__((packed)) gdth_stackframe;
-
-
-/* function prototyping */
-
-int gdth_proc_info(struct Scsi_Host *, char *,char **,off_t,int,int);
-
 #endif
