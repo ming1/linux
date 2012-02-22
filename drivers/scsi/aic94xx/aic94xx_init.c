@@ -68,7 +68,6 @@ static struct scsi_host_template aic94xx_sht = {
 	.queuecommand		= sas_queuecommand,
 	.target_alloc		= sas_target_alloc,
 	.slave_configure	= sas_slave_configure,
-	.slave_destroy		= sas_slave_destroy,
 	.scan_finished		= asd_scan_finished,
 	.scan_start		= asd_scan_start,
 	.change_queue_depth	= sas_change_queue_depth,
@@ -972,7 +971,7 @@ static int asd_scan_finished(struct Scsi_Host *shost, unsigned long time)
 	if (time < HZ)
 		return 0;
 	/* Wait for discovery to finish */
-	scsi_flush_work(shost);
+	sas_drain_work(SHOST_TO_SAS_HA(shost));
 	return 1;
 }
 
@@ -1010,6 +1009,8 @@ static struct sas_domain_function_template aic94xx_transport_functions = {
 	.lldd_clear_nexus_ha	= asd_clear_nexus_ha,
 
 	.lldd_control_phy	= asd_control_phy,
+
+	.lldd_ata_set_dmamode	= asd_set_dmamode,
 };
 
 static const struct pci_device_id aic94xx_pci_table[] __devinitdata = {

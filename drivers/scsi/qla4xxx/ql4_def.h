@@ -150,8 +150,6 @@
 #define QL4_SESS_RECOVERY_TMO		120	/* iSCSI session */
 						/* recovery timeout */
 
-#define MSB(x) ((uint8_t)((uint16_t)(x) >> 8))
-#define LSW(x) ((uint16_t)(x))
 #define LSDW(x) ((u32)((u64)(x)))
 #define MSDW(x) ((u32)((((u64)(x)) >> 16) >> 16))
 
@@ -221,6 +219,15 @@ struct srb {
 	uint8_t *req_sense_ptr;
 	uint16_t req_sense_len;
 	uint16_t reserved2;
+};
+
+/* Mailbox request block structure */
+struct mrb {
+	struct scsi_qla_host *ha;
+	struct mbox_cmd_iocb *mbox;
+	uint32_t mbox_cmd;
+	uint16_t iocb_cnt;		/* Number of used iocbs */
+	uint32_t pid;
 };
 
 /*
@@ -303,7 +310,28 @@ struct ql4_tuple_ddb {
 #define DF_ISNS_DISCOVERED	2	/* Device was discovered via iSNS */
 #define DF_FO_MASKED		3
 
+enum qla4_work_type {
+	QLA4_EVENT_AEN,
+	QLA4_EVENT_PING_STATUS,
+};
 
+struct qla4_work_evt {
+	struct list_head list;
+	enum qla4_work_type type;
+	union {
+		struct {
+			enum iscsi_host_event_code code;
+			uint32_t data_size;
+			uint8_t data[0];
+		} aen;
+		struct {
+			uint32_t status;
+			uint32_t pid;
+			uint32_t data_size;
+			uint8_t data[0];
+		} ping;
+	} u;
+};
 
 struct ql82xx_hw_data {
 	/* Offsets for flash/nvram access (set to ~0 if not used). */
@@ -674,6 +702,15 @@ struct scsi_qla_host {
 	uint16_t sec_ddb_idx;
 	int is_reset;
 	uint16_t temperature;
+
+	/* event work list */
+	struct list_head work_list;
+	spinlock_t work_lock;
+
+	/* mbox iocb */
+#define MAX_MRB		128
+	struct mrb *active_mrb_array[MAX_MRB];
+	uint32_t mrb_index;
 };
 
 struct ql4_task_data {
