@@ -391,77 +391,64 @@ const char *eesoxscsi_info(struct Scsi_Host *host)
 	return string;
 }
 
-/* Prototype: int eesoxscsi_set_proc_info(struct Scsi_Host *host, char *buffer, int length)
- * Purpose  : Set a driver specific function
- * Params   : host   - host to setup
- *          : buffer - buffer containing string describing operation
- *          : length - length of string
- * Returns  : -EINVAL, or 0
- */
-static int
-eesoxscsi_set_proc_info(struct Scsi_Host *host, char *buffer, int length)
+static int eesoxscsi_proc_show(struct seq_file *m, void *v)
 {
-	int ret = length;
+	struct Scsi_Host *host = m->private;
+	struct eesoxscsi_info *info = (struct eesoxscsi_info *)host->hostdata;
 
-	if (length >= 9 && strncmp(buffer, "EESOXSCSI", 9) == 0) {
-		buffer += 9;
-		length -= 9;
-
-		if (length >= 5 && strncmp(buffer, "term=", 5) == 0) {
-			if (buffer[5] == '1')
-				eesoxscsi_terminator_ctl(host, 1);
-			else if (buffer[5] == '0')
-				eesoxscsi_terminator_ctl(host, 0);
-			else
-				ret = -EINVAL;
-		} else
-			ret = -EINVAL;
-	} else
-		ret = -EINVAL;
-
-	return ret;
-}
-
-/* Prototype: int eesoxscsi_proc_info(char *buffer, char **start, off_t offset,
- *				      int length, int host_no, int inout)
- * Purpose  : Return information about the driver to a user process accessing
- *	      the /proc filesystem.
- * Params   : buffer - a buffer to write information to
- *	      start  - a pointer into this buffer set by this routine to the start
- *		       of the required information.
- *	      offset - offset into information that we have read up to.
- *	      length - length of buffer
- *	      host_no - host number to return information for
- *	      inout  - 0 for reading, 1 for writing.
- * Returns  : length of data written to buffer.
- */
-int eesoxscsi_proc_info(struct Scsi_Host *host, char *buffer, char **start, off_t offset,
-			    int length, int inout)
-{
-	struct eesoxscsi_info *info;
-	char *p = buffer;
-	int pos;
-
-	if (inout == 1)
-		return eesoxscsi_set_proc_info(host, buffer, length);
-
-	info = (struct eesoxscsi_info *)host->hostdata;
-
-	p += sprintf(p, "EESOX SCSI driver v%s\n", VERSION);
-	p += fas216_print_host(&info->info, p);
-	p += sprintf(p, "Term    : o%s\n",
+	seq_printf(m, "EESOX SCSI driver v%s\n", VERSION);
+	fas216_print_host(&info->info, m);
+	seq_printf(m, "Term    : o%s\n",
 			info->control & EESOX_TERM_ENABLE ? "n" : "ff");
 
-	p += fas216_print_stats(&info->info, p);
-	p += fas216_print_devices(&info->info, p);
-
-	*start = buffer + offset;
-	pos = p - buffer - offset;
-	if (pos > length)
-		pos = length;
-
-	return pos;
+	fas216_print_stats(&info->info, m);
+	fas216_print_devices(&info->info, m);
+	return 0;
 }
+
+static int eesoxscsi_proc_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, eesoxscsi_proc_show, PDE(inode)->data);
+}
+
+static ssize_t eesoxscsi_proc_write(struct file *file, const char __user *buf, size_t count, loff_t *pos)
+{
+	struct Scsi_Host *host = PDE(file->f_path.dentry->d_inode)->data;
+	char kbuf[42], *p;
+	size_t len;
+
+	len = min(count, sizeof(kbuf) - 1);
+	if (copy_from_user(kbuf, buf, len))
+		return -EFAULT;
+	kbuf[len] = '\0';
+
+	p = kbuf;
+	if (strncmp(p, "EESOXSCSI", 9) != 0)
+		return -EINVAL;
+	p += 9;
+	if (strncmp(p, "term=", 5) != 0)
+		return -EINVAL;
+	p += 5;
+	switch (*p) {
+	case '0':
+		eesoxscsi_terminator_ctl(host, 0);
+		break;
+	case '1':
+		eesoxscsi_terminator_ctl(host, 1);
+		break;
+	default:
+		return -EINVAL;
+	}
+	return count;
+}
+
+static const struct file_operations eesoxscsi_proc_ops = {
+	.open		= eesoxscsi_proc_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+	.write		= eesoxscsi_proc_write,
+};
 
 static ssize_t eesoxscsi_show_term(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -498,7 +485,7 @@ static DEVICE_ATTR(bus_term, S_IRUGO | S_IWUSR,
 
 static struct scsi_host_template eesox_template = {
 	.module				= THIS_MODULE,
-	.proc_info			= eesoxscsi_proc_info,
+	.proc_ops			= &eesoxscsi_proc_ops,
 	.name				= "EESOX SCSI",
 	.info				= eesoxscsi_info,
 	.queuecommand			= fas216_queue_command,
