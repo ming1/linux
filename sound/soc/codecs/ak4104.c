@@ -224,7 +224,6 @@ static int ak4104_probe(struct snd_soc_codec *codec)
 	if (ret < 0)
 		return ret;
 
-	dev_info(codec->dev, "SPI device initialized\n");
 	return 0;
 }
 
@@ -290,17 +289,7 @@ static struct spi_driver ak4104_spi_driver = {
 	.remove = __devexit_p(ak4104_spi_remove),
 };
 
-static int __init ak4104_init(void)
-{
-	return spi_register_driver(&ak4104_spi_driver);
-}
-module_init(ak4104_init);
-
-static void __exit ak4104_exit(void)
-{
-	spi_unregister_driver(&ak4104_spi_driver);
-}
-module_exit(ak4104_exit);
+module_spi_driver(ak4104_spi_driver);
 
 MODULE_AUTHOR("Daniel Mack <daniel@caiaq.de>");
 MODULE_DESCRIPTION("Asahi Kasei AK4104 ALSA SoC driver");
