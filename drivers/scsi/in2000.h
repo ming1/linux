@@ -383,7 +383,6 @@ struct IN2000_hostdata {
 #define PR_INPUTQ    1<<4
 #define PR_DISCQ     1<<5
 #define PR_TEST      1<<6
-#define PR_STOP      1<<7
 
 
 # include <linux/init.h>
