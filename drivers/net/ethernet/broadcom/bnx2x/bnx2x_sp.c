@@ -1,6 +1,6 @@
 /* bnx2x_sp.c: Broadcom Everest network driver.
  *
- * Copyright 2011 Broadcom Corporation
+ * Copyright (c) 2011-2012 Broadcom Corporation
  *
  * Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -1836,6 +1836,7 @@ static int bnx2x_vlan_mac_del_all(struct bnx2x *bp,
 			rc = exeq->remove(bp, exeq->owner, exeq_pos);
 			if (rc) {
 				BNX2X_ERR("Failed to remove command\n");
+				spin_unlock_bh(&exeq->lock);
 				return rc;
 			}
 			list_del(&exeq_pos->link);
@@ -4430,9 +4431,10 @@ static void bnx2x_q_fill_init_rx_data(struct bnx2x_queue_sp_obj *o,
 				struct client_init_rx_data *rx_data,
 				unsigned long *flags)
 {
-		/* Rx data */
 	rx_data->tpa_en = test_bit(BNX2X_Q_FLG_TPA, flags) *
 				CLIENT_INIT_RX_DATA_TPA_EN_IPV4;
+	rx_data->tpa_en |= test_bit(BNX2X_Q_FLG_TPA_GRO, flags) *
+				CLIENT_INIT_RX_DATA_TPA_MODE;
 	rx_data->vmqueue_mode_en_flg = 0;
 
 	rx_data->cache_line_alignment_log_size =
