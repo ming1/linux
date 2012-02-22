@@ -211,7 +211,6 @@ int regcache_read(struct regmap *map,
 
 	return -EINVAL;
 }
-EXPORT_SYMBOL_GPL(regcache_read);
 
 /**
  * regcache_write: Set the value of a given register in the cache.
@@ -238,7 +237,6 @@ int regcache_write(struct regmap *map,
 
 	return 0;
 }
-EXPORT_SYMBOL_GPL(regcache_write);
 
 /**
  * regcache_sync: Sync the register cache with the hardware.
@@ -374,10 +372,16 @@ bool regcache_set_val(void *base, unsigned int idx,
 		cache[idx] = val;
 		break;
 	}
+	case 4: {
+		u32 *cache = base;
+		if (cache[idx] == val)
+			return true;
+		cache[idx] = val;
+		break;
+	}
 	default:
 		BUG();
 	}
-	/* unreachable */
 	return false;
 }
 
@@ -394,6 +398,10 @@ unsigned int regcache_get_val(const void *base, unsigned int idx,
 	}
 	case 2: {
 		const u16 *cache = base;
+		return cache[idx];
+	}
+	case 4: {
+		const u32 *cache = base;
 		return cache[idx];
 	}
 	default:

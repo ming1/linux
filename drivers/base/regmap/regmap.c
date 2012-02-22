@@ -36,6 +36,9 @@ bool regmap_readable(struct regmap *map, unsigned int reg)
 	if (map->max_register && reg > map->max_register)
 		return false;
 
+	if (map->format.format_write)
+		return false;
+
 	if (map->readable_reg)
 		return map->readable_reg(map->dev, reg);
 
@@ -44,7 +47,7 @@ bool regmap_readable(struct regmap *map, unsigned int reg)
 
 bool regmap_volatile(struct regmap *map, unsigned int reg)
 {
-	if (map->max_register && reg > map->max_register)
+	if (!regmap_readable(map, reg))
 		return false;
 
 	if (map->volatile_reg)
@@ -55,7 +58,7 @@ bool regmap_volatile(struct regmap *map, unsigned int reg)
 
 bool regmap_precious(struct regmap *map, unsigned int reg)
 {
-	if (map->max_register && reg > map->max_register)
+	if (!regmap_readable(map, reg))
 		return false;
 
 	if (map->precious_reg)
@@ -74,6 +77,14 @@ static bool regmap_volatile_range(struct regmap *map, unsigned int reg,
 			return false;
 
 	return true;
+}
+
+static void regmap_format_2_6_write(struct regmap *map,
+				     unsigned int reg, unsigned int val)
+{
+	u8 *out = map->work_buf;
+
+	*out = (reg << 6) | val;
 }
 
 static void regmap_format_4_12_write(struct regmap *map,
@@ -114,6 +125,13 @@ static void regmap_format_16(void *buf, unsigned int val)
 	b[0] = cpu_to_be16(val);
 }
 
+static void regmap_format_32(void *buf, unsigned int val)
+{
+	__be32 *b = buf;
+
+	b[0] = cpu_to_be32(val);
+}
+
 static unsigned int regmap_parse_8(void *buf)
 {
 	u8 *b = buf;
@@ -126,6 +144,15 @@ static unsigned int regmap_parse_16(void *buf)
 	__be16 *b = buf;
 
 	b[0] = be16_to_cpu(b[0]);
+
+	return b[0];
+}
+
+static unsigned int regmap_parse_32(void *buf)
+{
+	__be32 *b = buf;
+
+	b[0] = be32_to_cpu(b[0]);
 
 	return b[0];
 }
@@ -159,8 +186,10 @@ struct regmap *regmap_init(struct device *dev,
 
 	mutex_init(&map->lock);
 	map->format.buf_size = (config->reg_bits + config->val_bits) / 8;
-	map->format.reg_bytes = config->reg_bits / 8;
-	map->format.val_bytes = config->val_bits / 8;
+	map->format.reg_bytes = DIV_ROUND_UP(config->reg_bits, 8);
+	map->format.pad_bytes = config->pad_bits / 8;
+	map->format.val_bytes = DIV_ROUND_UP(config->val_bits, 8);
+	map->format.buf_size += map->format.pad_bytes;
 	map->dev = dev;
 	map->bus = bus;
 	map->max_register = config->max_register;
@@ -178,6 +207,16 @@ struct regmap *regmap_init(struct device *dev,
 	}
 
 	switch (config->reg_bits) {
+	case 2:
+		switch (config->val_bits) {
+		case 6:
+			map->format.format_write = regmap_format_2_6_write;
+			break;
+		default:
+			goto err_map;
+		}
+		break;
+
 	case 4:
 		switch (config->val_bits) {
 		case 12:
@@ -216,6 +255,10 @@ struct regmap *regmap_init(struct device *dev,
 		map->format.format_reg = regmap_format_16;
 		break;
 
+	case 32:
+		map->format.format_reg = regmap_format_32;
+		break;
+
 	default:
 		goto err_map;
 	}
@@ -229,13 +272,17 @@ struct regmap *regmap_init(struct device *dev,
 		map->format.format_val = regmap_format_16;
 		map->format.parse_val = regmap_parse_16;
 		break;
+	case 32:
+		map->format.format_val = regmap_format_32;
+		map->format.parse_val = regmap_parse_32;
+		break;
 	}
 
 	if (!map->format.format_write &&
 	    !(map->format.format_reg && map->format.format_val))
 		goto err_map;
 
-	map->work_buf = kmalloc(map->format.buf_size, GFP_KERNEL);
+	map->work_buf = kzalloc(map->format.buf_size, GFP_KERNEL);
 	if (map->work_buf == NULL) {
 		ret = -ENOMEM;
 		goto err_map;
@@ -276,6 +323,7 @@ int regmap_reinit_cache(struct regmap *map, const struct regmap_config *config)
 	mutex_lock(&map->lock);
 
 	regcache_exit(map);
+	regmap_debugfs_exit(map);
 
 	map->max_register = config->max_register;
 	map->writeable_reg = config->writeable_reg;
@@ -283,6 +331,8 @@ int regmap_reinit_cache(struct regmap *map, const struct regmap_config *config)
 	map->volatile_reg = config->volatile_reg;
 	map->precious_reg = config->precious_reg;
 	map->cache_type = config->cache_type;
+
+	regmap_debugfs_init(map);
 
 	map->cache_bypass = false;
 	map->cache_only = false;
@@ -332,23 +382,28 @@ static int _regmap_raw_write(struct regmap *map, unsigned int reg,
 	 * send the work_buf directly, otherwise try to do a gather
 	 * write.
 	 */
-	if (val == map->work_buf + map->format.reg_bytes)
+	if (val == (map->work_buf + map->format.pad_bytes +
+		    map->format.reg_bytes))
 		ret = map->bus->write(map->dev, map->work_buf,
-				      map->format.reg_bytes + val_len);
+				      map->format.reg_bytes +
+				      map->format.pad_bytes +
+				      val_len);
 	else if (map->bus->gather_write)
 		ret = map->bus->gather_write(map->dev, map->work_buf,
-					     map->format.reg_bytes,
+					     map->format.reg_bytes +
+					     map->format.pad_bytes,
 					     val, val_len);
 
 	/* If that didn't work fall back on linearising by hand. */
 	if (ret == -ENOTSUPP) {
-		len = map->format.reg_bytes + val_len;
-		buf = kmalloc(len, GFP_KERNEL);
+		len = map->format.reg_bytes + map->format.pad_bytes + val_len;
+		buf = kzalloc(len, GFP_KERNEL);
 		if (!buf)
 			return -ENOMEM;
 
 		memcpy(buf, map->work_buf, map->format.reg_bytes);
-		memcpy(buf + map->format.reg_bytes, val, val_len);
+		memcpy(buf + map->format.reg_bytes + map->format.pad_bytes,
+		       val, val_len);
 		ret = map->bus->write(map->dev, buf, len);
 
 		kfree(buf);
@@ -390,10 +445,12 @@ int _regmap_write(struct regmap *map, unsigned int reg,
 
 		return ret;
 	} else {
-		map->format.format_val(map->work_buf + map->format.reg_bytes,
-				       val);
+		map->format.format_val(map->work_buf + map->format.reg_bytes
+				       + map->format.pad_bytes, val);
 		return _regmap_raw_write(map, reg,
-					 map->work_buf + map->format.reg_bytes,
+					 map->work_buf +
+					 map->format.reg_bytes +
+					 map->format.pad_bytes,
 					 map->format.val_bytes);
 	}
 }
@@ -476,7 +533,8 @@ static int _regmap_raw_read(struct regmap *map, unsigned int reg, void *val,
 	trace_regmap_hw_read_start(map->dev, reg,
 				   val_len / map->format.val_bytes);
 
-	ret = map->bus->read(map->dev, map->work_buf, map->format.reg_bytes,
+	ret = map->bus->read(map->dev, map->work_buf,
+			     map->format.reg_bytes + map->format.pad_bytes,
 			     val, val_len);
 
 	trace_regmap_hw_read_done(map->dev, reg,
@@ -549,16 +607,32 @@ EXPORT_SYMBOL_GPL(regmap_read);
 int regmap_raw_read(struct regmap *map, unsigned int reg, void *val,
 		    size_t val_len)
 {
-	size_t val_count = val_len / map->format.val_bytes;
-	int ret;
-
-	WARN_ON(!regmap_volatile_range(map, reg, val_count) &&
-		map->cache_type != REGCACHE_NONE);
+	size_t val_bytes = map->format.val_bytes;
+	size_t val_count = val_len / val_bytes;
+	unsigned int v;
+	int ret, i;
 
 	mutex_lock(&map->lock);
 
-	ret = _regmap_raw_read(map, reg, val, val_len);
+	if (regmap_volatile_range(map, reg, val_count) || map->cache_bypass ||
+	    map->cache_type == REGCACHE_NONE) {
+		/* Physical block read if there's no cache involved */
+		ret = _regmap_raw_read(map, reg, val, val_len);
 
+	} else {
+		/* Otherwise go word by word for the cache; should be low
+		 * cost as we expect to hit the cache.
+		 */
+		for (i = 0; i < val_count; i++) {
+			ret = _regmap_read(map, reg + i, &v);
+			if (ret != 0)
+				goto out;
+
+			map->format.format_val(val + (i * val_bytes), v);
+		}
+	}
+
+ out:
 	mutex_unlock(&map->lock);
 
 	return ret;
