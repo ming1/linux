@@ -34,6 +34,7 @@
 #include <linux/ptrace.h>
 #include <linux/freezer.h>
 #include <linux/ftrace.h>
+#include <linux/ratelimit.h>
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/oom.h>
@@ -434,66 +435,18 @@ static void dump_header(struct task_struct *p, gfp_t gfp_mask, int order,
 }
 
 #define K(x) ((x) << (PAGE_SHIFT-10))
-static int oom_kill_task(struct task_struct *p)
-{
-	struct task_struct *q;
-	struct mm_struct *mm;
-
-	p = find_lock_task_mm(p);
-	if (!p)
-		return 1;
-
-	/* mm cannot be safely dereferenced after task_unlock(p) */
-	mm = p->mm;
-
-	pr_err("Killed process %d (%s) total-vm:%lukB, anon-rss:%lukB, file-rss:%lukB\n",
-		task_pid_nr(p), p->comm, K(p->mm->total_vm),
-		K(get_mm_counter(p->mm, MM_ANONPAGES)),
-		K(get_mm_counter(p->mm, MM_FILEPAGES)));
-	task_unlock(p);
-
-	/*
-	 * Kill all user processes sharing p->mm in other thread groups, if any.
-	 * They don't get access to memory reserves or a higher scheduler
-	 * priority, though, to avoid depletion of all memory or task
-	 * starvation.  This prevents mm->mmap_sem livelock when an oom killed
-	 * task cannot exit because it requires the semaphore and its contended
-	 * by another thread trying to allocate memory itself.  That thread will
-	 * now get access to memory reserves since it has a pending fatal
-	 * signal.
-	 */
-	for_each_process(q)
-		if (q->mm == mm && !same_thread_group(q, p) &&
-		    !(q->flags & PF_KTHREAD)) {
-			if (q->signal->oom_score_adj == OOM_SCORE_ADJ_MIN)
-				continue;
-
-			task_lock(q);	/* Protect ->comm from prctl() */
-			pr_err("Kill process %d (%s) sharing same memory\n",
-				task_pid_nr(q), q->comm);
-			task_unlock(q);
-			force_sig(SIGKILL, q);
-		}
-
-	set_tsk_thread_flag(p, TIF_MEMDIE);
-	force_sig(SIGKILL, p);
-
-	return 0;
-}
-#undef K
-
-static int oom_kill_process(struct task_struct *p, gfp_t gfp_mask, int order,
-			    unsigned int points, unsigned long totalpages,
-			    struct mem_cgroup *memcg, nodemask_t *nodemask,
-			    const char *message)
+static void oom_kill_process(struct task_struct *p, gfp_t gfp_mask, int order,
+			     unsigned int points, unsigned long totalpages,
+			     struct mem_cgroup *memcg, nodemask_t *nodemask,
+			     const char *message)
 {
 	struct task_struct *victim = p;
 	struct task_struct *child;
 	struct task_struct *t = p;
+	struct mm_struct *mm;
 	unsigned int victim_points = 0;
-
-	if (printk_ratelimit())
-		dump_header(p, gfp_mask, order, memcg, nodemask);
+	static DEFINE_RATELIMIT_STATE(oom_rs, DEFAULT_RATELIMIT_INTERVAL,
+					      DEFAULT_RATELIMIT_BURST);
 
 	/*
 	 * If the task is already exiting, don't alarm the sysadmin or kill
@@ -501,8 +454,11 @@ static int oom_kill_process(struct task_struct *p, gfp_t gfp_mask, int order,
 	 */
 	if (p->flags & PF_EXITING) {
 		set_tsk_thread_flag(p, TIF_MEMDIE);
-		return 0;
+		return;
 	}
+
+	if (__ratelimit(&oom_rs))
+		dump_header(p, gfp_mask, order, memcg, nodemask);
 
 	task_lock(p);
 	pr_err("%s: Kill process %d (%s) score %d or sacrifice child\n",
@@ -533,8 +489,44 @@ static int oom_kill_process(struct task_struct *p, gfp_t gfp_mask, int order,
 		}
 	} while_each_thread(p, t);
 
-	return oom_kill_task(victim);
+	victim = find_lock_task_mm(victim);
+	if (!victim)
+		return;
+
+	/* mm cannot safely be dereferenced after task_unlock(victim) */
+	mm = victim->mm;
+	pr_err("Killed process %d (%s) total-vm:%lukB, anon-rss:%lukB, file-rss:%lukB\n",
+		task_pid_nr(victim), victim->comm, K(victim->mm->total_vm),
+		K(get_mm_counter(victim->mm, MM_ANONPAGES)),
+		K(get_mm_counter(victim->mm, MM_FILEPAGES)));
+	task_unlock(victim);
+
+	/*
+	 * Kill all user processes sharing victim->mm in other thread groups, if
+	 * any.  They don't get access to memory reserves, though, to avoid
+	 * depletion of all memory.  This prevents mm->mmap_sem livelock when an
+	 * oom killed thread cannot exit because it requires the semaphore and
+	 * its contended by another thread trying to allocate memory itself.
+	 * That thread will now get access to memory reserves since it has a
+	 * pending fatal signal.
+	 */
+	for_each_process(p)
+		if (p->mm == mm && !same_thread_group(p, victim) &&
+		    !(p->flags & PF_KTHREAD)) {
+			if (p->signal->oom_score_adj == OOM_SCORE_ADJ_MIN)
+				continue;
+
+			task_lock(p);	/* Protect ->comm from prctl() */
+			pr_err("Kill process %d (%s) sharing same memory\n",
+				task_pid_nr(p), p->comm);
+			task_unlock(p);
+			do_send_sig_info(SIGKILL, SEND_SIG_FORCED, p, true);
+		}
+
+	set_tsk_thread_flag(victim, TIF_MEMDIE);
+	do_send_sig_info(SIGKILL, SEND_SIG_FORCED, victim, true);
 }
+#undef K
 
 /*
  * Determines whether the kernel must panic because of the panic_on_oom sysctl.
@@ -580,15 +572,10 @@ void mem_cgroup_out_of_memory(struct mem_cgroup *memcg, gfp_t gfp_mask)
 	check_panic_on_oom(CONSTRAINT_MEMCG, gfp_mask, 0, NULL);
 	limit = mem_cgroup_get_limit(memcg) >> PAGE_SHIFT;
 	read_lock(&tasklist_lock);
-retry:
 	p = select_bad_process(&points, limit, memcg, NULL);
-	if (!p || PTR_ERR(p) == -1UL)
-		goto out;
-
-	if (oom_kill_process(p, gfp_mask, 0, points, limit, memcg, NULL,
-				"Memory cgroup out of memory"))
-		goto retry;
-out:
+	if (p && PTR_ERR(p) != -1UL)
+		oom_kill_process(p, gfp_mask, 0, points, limit, memcg, NULL,
+				 "Memory cgroup out of memory");
 	read_unlock(&tasklist_lock);
 }
 #endif
@@ -745,33 +732,24 @@ void out_of_memory(struct zonelist *zonelist, gfp_t gfp_mask,
 	if (sysctl_oom_kill_allocating_task &&
 	    !oom_unkillable_task(current, NULL, nodemask) &&
 	    current->mm) {
-		/*
-		 * oom_kill_process() needs tasklist_lock held.  If it returns
-		 * non-zero, current could not be killed so we must fallback to
-		 * the tasklist scan.
-		 */
-		if (!oom_kill_process(current, gfp_mask, order, 0, totalpages,
-				NULL, nodemask,
-				"Out of memory (oom_kill_allocating_task)"))
-			goto out;
+		oom_kill_process(current, gfp_mask, order, 0, totalpages, NULL,
+				 nodemask,
+				 "Out of memory (oom_kill_allocating_task)");
+		goto out;
 	}
 
-retry:
 	p = select_bad_process(&points, totalpages, NULL, mpol_mask);
-	if (PTR_ERR(p) == -1UL)
-		goto out;
-
 	/* Found nothing?!?! Either we hang forever, or we panic. */
 	if (!p) {
 		dump_header(NULL, gfp_mask, order, NULL, mpol_mask);
 		read_unlock(&tasklist_lock);
 		panic("Out of memory and no killable processes...\n");
 	}
-
-	if (oom_kill_process(p, gfp_mask, order, points, totalpages, NULL,
-				nodemask, "Out of memory"))
-		goto retry;
-	killed = 1;
+	if (PTR_ERR(p) != -1UL) {
+		oom_kill_process(p, gfp_mask, order, points, totalpages, NULL,
+				 nodemask, "Out of memory");
+		killed = 1;
+	}
 out:
 	read_unlock(&tasklist_lock);
 
