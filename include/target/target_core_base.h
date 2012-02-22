@@ -230,6 +230,7 @@ enum tcm_sense_reason_table {
 enum target_sc_flags_table {
 	TARGET_SCF_BIDI_OP		= 0x01,
 	TARGET_SCF_ACK_KREF		= 0x02,
+	TARGET_SCF_UNKNOWN_SIZE		= 0x04,
 };
 
 /* fabric independent task management function values */
@@ -474,12 +475,6 @@ struct t10_reservation {
 	struct t10_reservation_ops pr_ops;
 };
 
-struct se_queue_req {
-	int			state;
-	struct se_cmd		*cmd;
-	struct list_head	qr_list;
-};
-
 struct se_queue_obj {
 	atomic_t		queue_cnt;
 	spinlock_t		cmd_queue_lock;
@@ -522,6 +517,7 @@ struct se_cmd {
 	/* Used to signal cmd->se_tfo->check_release_cmd() usage per cmd */
 	unsigned		check_release:1;
 	unsigned		cmd_wait_set:1;
+	unsigned		unknown_data_length:1;
 	/* See se_cmd_flags_table */
 	u32			se_cmd_flags;
 	u32			se_ordered_id;
@@ -555,23 +551,23 @@ struct se_cmd {
 	unsigned char		*t_task_cdb;
 	unsigned char		__t_task_cdb[TCM_MAX_COMMAND_SIZE];
 	unsigned long long	t_task_lba;
-	int			t_tasks_failed;
 	u32			t_tasks_sg_chained_no;
 	atomic_t		t_fe_count;
 	atomic_t		t_se_count;
 	atomic_t		t_task_cdbs_left;
 	atomic_t		t_task_cdbs_ex_left;
 	atomic_t		t_task_cdbs_sent;
-	atomic_t		t_transport_aborted;
-	atomic_t		t_transport_active;
-	atomic_t		t_transport_complete;
-	atomic_t		t_transport_queue_active;
-	atomic_t		t_transport_sent;
-	atomic_t		t_transport_stop;
-	atomic_t		transport_dev_active;
-	atomic_t		transport_lun_active;
-	atomic_t		transport_lun_fe_stop;
-	atomic_t		transport_lun_stop;
+	unsigned int		transport_state;
+#define CMD_T_ABORTED		(1 << 0)
+#define CMD_T_ACTIVE		(1 << 1)
+#define CMD_T_COMPLETE		(1 << 2)
+#define CMD_T_QUEUED		(1 << 3)
+#define CMD_T_SENT		(1 << 4)
+#define CMD_T_STOP		(1 << 5)
+#define CMD_T_FAILED		(1 << 6)
+#define CMD_T_LUN_STOP		(1 << 7)
+#define CMD_T_LUN_FE_STOP	(1 << 8)
+#define CMD_T_DEV_ACTIVE	(1 << 9)
 	spinlock_t		t_state_lock;
 	struct completion	t_transport_stop_comp;
 	struct completion	transport_lun_fe_stop_comp;
@@ -593,12 +589,12 @@ struct se_cmd {
 };
 
 struct se_tmr_req {
-	/* Task Management function to be preformed */
+	/* Task Management function to be performed */
 	u8			function;
 	/* Task Management response to send */
 	u8			response;
 	int			call_transport;
-	/* Reference to ITT that Task Mgmt should be preformed */
+	/* Reference to ITT that Task Mgmt should be performed */
 	u32			ref_task_tag;
 	/* 64-bit encoded SAM LUN from $FABRIC_MOD TMR header */
 	u64			ref_task_lun;
