@@ -125,8 +125,6 @@ MODULE_PARM_DESC(workarounds, "Work around device bugs (default = 0"
 	", override internal blacklist = " __stringify(SBP2_WORKAROUND_OVERRIDE)
 	", or a combination)");
 
-static const char sbp2_driver_name[] = "sbp2";
-
 /*
  * We create one struct sbp2_logical_unit per SBP-2 Logical Unit Number Entry
  * and one struct scsi_device per sbp2_logical_unit.
@@ -220,6 +218,7 @@ static const struct device *lu_dev(const struct sbp2_logical_unit *lu)
 #define SBP2_CSR_UNIT_CHARACTERISTICS	0x3a
 #define SBP2_CSR_FIRMWARE_REVISION	0x3c
 #define SBP2_CSR_LOGICAL_UNIT_NUMBER	0x14
+#define SBP2_CSR_UNIT_UNIQUE_ID		0x8d
 #define SBP2_CSR_LOGICAL_UNIT_DIRECTORY	0xd4
 
 /* Management orb opcodes */
@@ -1007,6 +1006,13 @@ static int sbp2_add_logical_unit(struct sbp2_target *tgt, int lun_entry)
 	return 0;
 }
 
+static void sbp2_get_unit_unique_id(struct sbp2_target *tgt,
+				    const u32 *leaf)
+{
+	if ((leaf[0] & 0xffff0000) == 0x00020000)
+		tgt->guid = (u64)leaf[1] << 32 | leaf[2];
+}
+
 static int sbp2_scan_logical_unit_dir(struct sbp2_target *tgt,
 				      const u32 *directory)
 {
@@ -1056,6 +1062,10 @@ static int sbp2_scan_unit_dir(struct sbp2_target *tgt, const u32 *directory,
 		case SBP2_CSR_LOGICAL_UNIT_NUMBER:
 			if (sbp2_add_logical_unit(tgt, value) < 0)
 				return -ENOMEM;
+			break;
+
+		case SBP2_CSR_UNIT_UNIQUE_ID:
+			sbp2_get_unit_unique_id(tgt, ci.p - 1 + value);
 			break;
 
 		case SBP2_CSR_LOGICAL_UNIT_DIRECTORY:
@@ -1130,6 +1140,10 @@ static int sbp2_probe(struct device *dev)
 	struct sbp2_logical_unit *lu;
 	struct Scsi_Host *shost;
 	u32 model, firmware_revision;
+
+	/* cannot (or should not) handle targets on the local node */
+	if (device->is_local)
+		return -ENODEV;
 
 	if (dma_get_max_seg_size(device->card->device) > SBP2_MAX_SEG_SIZE)
 		BUG_ON(dma_set_max_seg_size(device->card->device,
@@ -1270,7 +1284,7 @@ static const struct ieee1394_device_id sbp2_id_table[] = {
 static struct fw_driver sbp2_driver = {
 	.driver   = {
 		.owner  = THIS_MODULE,
-		.name   = sbp2_driver_name,
+		.name   = KBUILD_MODNAME,
 		.bus    = &fw_bus_type,
 		.probe  = sbp2_probe,
 		.remove = sbp2_remove,
@@ -1295,10 +1309,19 @@ static void sbp2_unmap_scatterlist(struct device *card_device,
 static unsigned int sbp2_status_to_sense_data(u8 *sbp2_status, u8 *sense_data)
 {
 	int sam_status;
+	int sfmt = (sbp2_status[0] >> 6) & 0x03;
 
-	sense_data[0] = 0x70;
+	if (sfmt == 2 || sfmt == 3) {
+		/*
+		 * Reserved for future standardization (2) or
+		 * Status block format vendor-dependent (3)
+		 */
+		return DID_ERROR << 16;
+	}
+
+	sense_data[0] = 0x70 | sfmt | (sbp2_status[1] & 0x80);
 	sense_data[1] = 0x0;
-	sense_data[2] = sbp2_status[1];
+	sense_data[2] = ((sbp2_status[1] << 1) & 0xe0) | (sbp2_status[1] & 0x0f);
 	sense_data[3] = sbp2_status[4];
 	sense_data[4] = sbp2_status[5];
 	sense_data[5] = sbp2_status[6];
@@ -1599,7 +1622,7 @@ static struct device_attribute *sbp2_scsi_sysfs_attrs[] = {
 static struct scsi_host_template scsi_driver_template = {
 	.module			= THIS_MODULE,
 	.name			= "SBP-2 IEEE-1394",
-	.proc_name		= sbp2_driver_name,
+	.proc_name		= "sbp2",
 	.queuecommand		= sbp2_scsi_queuecommand,
 	.slave_alloc		= sbp2_scsi_slave_alloc,
 	.slave_configure	= sbp2_scsi_slave_configure,
