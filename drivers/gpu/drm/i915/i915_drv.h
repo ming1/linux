@@ -135,6 +135,7 @@ struct drm_i915_fence_reg {
 	struct list_head lru_list;
 	struct drm_i915_gem_object *obj;
 	uint32_t setup_seqno;
+	int pin_count;
 };
 
 struct sdvo_device_mapping {
@@ -152,26 +153,21 @@ struct drm_i915_error_state {
 	u32 eir;
 	u32 pgtbl_er;
 	u32 pipestat[I915_MAX_PIPES];
-	u32 ipeir;
-	u32 ipehr;
-	u32 instdone;
-	u32 acthd;
+	u32 tail[I915_NUM_RINGS];
+	u32 head[I915_NUM_RINGS];
+	u32 ipeir[I915_NUM_RINGS];
+	u32 ipehr[I915_NUM_RINGS];
+	u32 instdone[I915_NUM_RINGS];
+	u32 acthd[I915_NUM_RINGS];
 	u32 error; /* gen6+ */
-	u32 bcs_acthd; /* gen6+ blt engine */
-	u32 bcs_ipehr;
-	u32 bcs_ipeir;
-	u32 bcs_instdone;
-	u32 bcs_seqno;
-	u32 vcs_acthd; /* gen6+ bsd engine */
-	u32 vcs_ipehr;
-	u32 vcs_ipeir;
-	u32 vcs_instdone;
-	u32 vcs_seqno;
-	u32 instpm;
-	u32 instps;
+	u32 instpm[I915_NUM_RINGS];
+	u32 instps[I915_NUM_RINGS];
 	u32 instdone1;
-	u32 seqno;
+	u32 seqno[I915_NUM_RINGS];
 	u64 bbaddr;
+	u32 fault_reg[I915_NUM_RINGS];
+	u32 done_reg;
+	u32 faddr[I915_NUM_RINGS];
 	u64 fence[I915_MAX_NUM_FENCES];
 	struct timeval time;
 	struct drm_i915_error_object {
@@ -255,6 +251,7 @@ struct intel_device_info {
 	u8 supports_tv:1;
 	u8 has_bsd_ring:1;
 	u8 has_blt_ring:1;
+	u8 has_llc:1;
 };
 
 enum no_fbc_reason {
@@ -335,7 +332,6 @@ typedef struct drm_i915_private {
 
 	int tex_lru_log_granularity;
 	int allow_batchbuffer;
-	struct mem_block *agp_heap;
 	unsigned int sr01, adpa, ppcr, dvob, dvoc, lvds;
 	int vblank_pipe;
 	int num_pipe;
@@ -974,6 +970,7 @@ struct drm_i915_file_private {
 
 #define HAS_BSD(dev)            (INTEL_INFO(dev)->has_bsd_ring)
 #define HAS_BLT(dev)            (INTEL_INFO(dev)->has_blt_ring)
+#define HAS_LLC(dev)            (INTEL_INFO(dev)->has_llc)
 #define I915_NEED_GFX_HWS(dev)	(INTEL_INFO(dev)->need_gfx_hws)
 
 #define HAS_OVERLAY(dev)		(INTEL_INFO(dev)->has_overlay)
@@ -1079,18 +1076,6 @@ extern void i915_destroy_error_state(struct drm_device *dev);
 #endif
 
 
-/* i915_mem.c */
-extern int i915_mem_alloc(struct drm_device *dev, void *data,
-			  struct drm_file *file_priv);
-extern int i915_mem_free(struct drm_device *dev, void *data,
-			 struct drm_file *file_priv);
-extern int i915_mem_init_heap(struct drm_device *dev, void *data,
-			      struct drm_file *file_priv);
-extern int i915_mem_destroy_heap(struct drm_device *dev, void *data,
-				 struct drm_file *file_priv);
-extern void i915_mem_takedown(struct mem_block **heap);
-extern void i915_mem_release(struct drm_device * dev,
-			     struct drm_file *file_priv, struct mem_block *heap);
 /* i915_gem.c */
 int i915_gem_init_ioctl(struct drm_device *dev, void *data,
 			struct drm_file *file_priv);
@@ -1181,6 +1166,24 @@ int __must_check i915_gem_object_get_fence(struct drm_i915_gem_object *obj,
 					   struct intel_ring_buffer *pipelined);
 int __must_check i915_gem_object_put_fence(struct drm_i915_gem_object *obj);
 
+static inline void
+i915_gem_object_pin_fence(struct drm_i915_gem_object *obj)
+{
+	if (obj->fence_reg != I915_FENCE_REG_NONE) {
+		struct drm_i915_private *dev_priv = obj->base.dev->dev_private;
+		dev_priv->fence_regs[obj->fence_reg].pin_count++;
+	}
+}
+
+static inline void
+i915_gem_object_unpin_fence(struct drm_i915_gem_object *obj)
+{
+	if (obj->fence_reg != I915_FENCE_REG_NONE) {
+		struct drm_i915_private *dev_priv = obj->base.dev->dev_private;
+		dev_priv->fence_regs[obj->fence_reg].pin_count--;
+	}
+}
+
 void i915_gem_retire_requests(struct drm_device *dev);
 void i915_gem_reset(struct drm_device *dev);
 void i915_gem_clflush_object(struct drm_i915_gem_object *obj);
@@ -1194,13 +1197,14 @@ void i915_gem_do_init(struct drm_device *dev,
 		      unsigned long start,
 		      unsigned long mappable_end,
 		      unsigned long end);
-int __must_check i915_gpu_idle(struct drm_device *dev);
+int __must_check i915_gpu_idle(struct drm_device *dev, bool do_retire);
 int __must_check i915_gem_idle(struct drm_device *dev);
 int __must_check i915_add_request(struct intel_ring_buffer *ring,
 				  struct drm_file *file,
 				  struct drm_i915_gem_request *request);
 int __must_check i915_wait_request(struct intel_ring_buffer *ring,
-				   uint32_t seqno);
+				   uint32_t seqno,
+				   bool do_retire);
 int i915_gem_fault(struct vm_area_struct *vma, struct vm_fault *vmf);
 int __must_check
 i915_gem_object_set_to_gtt_domain(struct drm_i915_gem_object *obj,
