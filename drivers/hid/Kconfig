@@ -487,6 +487,15 @@ config HID_ROCCAT
 	Say Y here if you have a Roccat mouse or keyboard and want
 	support for its special functionalities.
 
+config HID_SAITEK
+	tristate "Saitek non-fully HID-compliant devices"
+	depends on USB_HID
+	---help---
+	Support for Saitek devices that are not fully compliant with the
+	HID standard.
+
+	Currently only supports the PS1000 controller.
+
 config HID_SAMSUNG
 	tristate "Samsung InfraRed remote control or keyboards"
 	depends on USB_HID
