@@ -722,7 +722,7 @@ int __jbd2_journal_remove_checkpoint(struct journal_head *jh)
 				    transaction->t_tid, stats);
 
 	__jbd2_journal_drop_transaction(journal, transaction);
-	kfree(transaction);
+	jbd2_journal_free_transaction(transaction);
 
 	/* Just in case anybody was waiting for more transactions to be
            checkpointed... */
@@ -796,6 +796,8 @@ void __jbd2_journal_drop_transaction(journal_t *journal, transaction_t *transact
 	J_ASSERT(atomic_read(&transaction->t_updates) == 0);
 	J_ASSERT(journal->j_committing_transaction != transaction);
 	J_ASSERT(journal->j_running_transaction != transaction);
+
+	trace_jbd2_drop_transaction(journal, transaction);
 
 	jbd_debug(1, "Dropping transaction %d, all done\n", transaction->t_tid);
 }
