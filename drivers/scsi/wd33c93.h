@@ -337,7 +337,6 @@ struct WD33C93_hostdata {
 #define PR_INPUTQ    1<<4
 #define PR_DISCQ     1<<5
 #define PR_TEST      1<<6
-#define PR_STOP      1<<7
 
 
 void wd33c93_init (struct Scsi_Host *instance, const wd33c93_regs regs,
@@ -345,7 +344,7 @@ void wd33c93_init (struct Scsi_Host *instance, const wd33c93_regs regs,
 int wd33c93_abort (struct scsi_cmnd *cmd);
 int wd33c93_queuecommand (struct Scsi_Host *h, struct scsi_cmnd *cmd);
 void wd33c93_intr (struct Scsi_Host *instance);
-int wd33c93_proc_info(struct Scsi_Host *, char *, char **, off_t, int, int);
+extern const struct file_operations wd33c93_proc_ops;
 int wd33c93_host_reset (struct scsi_cmnd *);
 
 #endif /* WD33C93_H */

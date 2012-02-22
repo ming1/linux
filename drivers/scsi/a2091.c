@@ -166,7 +166,7 @@ static int a2091_bus_reset(struct scsi_cmnd *cmd)
 static struct scsi_host_template a2091_scsi_template = {
 	.module			= THIS_MODULE,
 	.name			= "Commodore A2091/A590 SCSI",
-	.proc_info		= wd33c93_proc_info,
+	.proc_ops		= &wd33c93_proc_ops,
 	.proc_name		= "A2901",
 	.queuecommand		= wd33c93_queuecommand,
 	.eh_abort_handler	= wd33c93_abort,

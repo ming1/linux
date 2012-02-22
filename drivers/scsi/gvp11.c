@@ -191,7 +191,7 @@ static int gvp11_bus_reset(struct scsi_cmnd *cmd)
 static struct scsi_host_template gvp11_scsi_template = {
 	.module			= THIS_MODULE,
 	.name			= "GVP Series II SCSI",
-	.proc_info		= wd33c93_proc_info,
+	.proc_ops		= &wd33c93_proc_ops,
 	.proc_name		= "GVP11",
 	.queuecommand		= wd33c93_queuecommand,
 	.eh_abort_handler	= wd33c93_abort,
