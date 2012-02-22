@@ -66,6 +66,8 @@
 #include <linux/pci.h>
 #include <linux/interrupt.h>
 #include <linux/module.h>
+#include <linux/proc_fs.h>
+#include <linux/seq_file.h>
 #include <linux/slab.h>
 #include <asm/byteorder.h>
 #include <asm/io.h>
@@ -383,14 +385,6 @@ void ahc_insb(struct ahc_softc * ahc, long port,
 int		ahc_linux_register_host(struct ahc_softc *,
 					struct scsi_host_template *);
 
-/*************************** Pretty Printing **********************************/
-struct info_str {
-	char *buffer;
-	int length;
-	off_t offset;
-	int pos;
-};
-
 /******************************** Locking *************************************/
 /* Lock protecting internal data structures */
 
@@ -523,8 +517,7 @@ ahc_flush_device_writes(struct ahc_softc *ahc)
 }
 
 /**************************** Proc FS Support *********************************/
-int	ahc_linux_proc_info(struct Scsi_Host *, char *, char **,
-			    off_t, int, int);
+extern const struct file_operations ahc_linux_proc_ops;
 
 /*************************** Domain Validation ********************************/
 /*********************** Transaction Access Wrappers *************************/
