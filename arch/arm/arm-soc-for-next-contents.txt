@@ -31,3 +31,5 @@ mxs/boards		git://git.linaro.org/people/shawnguo/linux-2.6.git mxs/boards
 next/soc2:
 depends/driver-core	git://git.kernel.org/pub/scm/linux/kernel/git/gregkh/driver-core.git driver-core-next
 ux500/soc		patches from Lee Jones, depends on depends/driver-core
+
+next/rpmsg:		git://git.kernel.org/pub/scm/linux/kernel/git/ohad/remoteproc.git rpmsg-for-3.4
