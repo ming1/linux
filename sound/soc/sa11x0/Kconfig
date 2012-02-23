@@ -1,0 +1,14 @@
+config SND_SOC_SA11X0_SSP
+	tristate
+	depends on DMA_SA11X0
+	select SND_SOC_DMAENGINE
+
+config SND_SA11X0_ASSABET
+	tristate "SoC Audio support for the Intel Assabet board"
+	depends on SA1100_ASSABET && DMA_SA11X0
+	select SND_SOC_L3
+	select SND_SOC_UDA134X
+	select SND_SOC_SA11X0_SSP
+	help
+	  Enable support for the audio UDA1341 codec found on the Intel
+	  Assabet SA-1110 development board.
