@@ -3444,6 +3444,7 @@ void ata_scsi_scan_host(struct ata_port *ap, int sync)
 			if (!IS_ERR(sdev)) {
 				dev->sdev = sdev;
 				scsi_device_put(sdev);
+				ata_acpi_bind_dock(dev);
 			} else {
 				dev->sdev = NULL;
 			}
@@ -3543,6 +3544,8 @@ static void ata_scsi_remove_dev(struct ata_device *dev)
 	/* clearing dev->sdev is protected by host lock */
 	sdev = dev->sdev;
 	dev->sdev = NULL;
+
+	ata_acpi_unbind_dock(dev);
 
 	if (sdev) {
 		/* If user initiated unplug races with us, sdev can go
