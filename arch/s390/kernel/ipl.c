@@ -26,6 +26,7 @@
 #include <asm/reset.h>
 #include <asm/sclp.h>
 #include <asm/checksum.h>
+#include <asm/debug.h>
 #include "entry.h"
 
 #define IPL_PARM_BLOCK_VERSION 0
@@ -1692,6 +1693,7 @@ static struct kobj_attribute on_panic_attr =
 
 static void do_panic(void)
 {
+	lgr_info_log();
 	on_panic_trigger.action->fn(&on_panic_trigger);
 	stop_run(&on_panic_trigger);
 }
@@ -1729,6 +1731,7 @@ static void __do_restart(void *ignore)
 
 void do_restart(void)
 {
+	lgr_info_log();
 	smp_call_online_cpu(__do_restart, NULL);
 }
 
