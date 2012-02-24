@@ -48,18 +48,37 @@ struct sas_task *sas_alloc_task(gfp_t flags)
 		INIT_LIST_HEAD(&task->list);
 		spin_lock_init(&task->task_state_lock);
 		task->task_state_flags = SAS_TASK_STATE_PENDING;
-		init_timer(&task->timer);
-		init_completion(&task->completion);
 	}
 
 	return task;
 }
 EXPORT_SYMBOL_GPL(sas_alloc_task);
 
+struct sas_task *sas_alloc_slow_task(gfp_t flags)
+{
+	struct sas_task *task = sas_alloc_task(flags);
+	struct sas_task_slow *slow = kmalloc(sizeof(*slow), flags);
+
+	if (!task || !slow) {
+		if (task)
+			kmem_cache_free(sas_task_cache, task);
+		kfree(slow);
+		return NULL;
+	}
+
+	task->slow_task = slow;
+	init_timer(&slow->timer);
+	init_completion(&slow->completion);
+
+	return task;
+}
+EXPORT_SYMBOL_GPL(sas_alloc_slow_task);
+
 void sas_free_task(struct sas_task *task)
 {
 	if (task) {
 		BUG_ON(!list_empty(&task->list));
+		kfree(task->slow_task);
 		kmem_cache_free(sas_task_cache, task);
 	}
 }
@@ -160,18 +179,22 @@ Undo_phys:
 
 int sas_unregister_ha(struct sas_ha_struct *sas_ha)
 {
-	unsigned long flags;
-
 	/* Set the state to unregistered to avoid further unchained
-	 * events to be queued
+	 * events to be queued, and flush any in-progress drainers
 	 */
-	spin_lock_irqsave(&sas_ha->state_lock, flags);
+	mutex_lock(&sas_ha->drain_mutex);
+	spin_lock_irq(&sas_ha->state_lock);
 	clear_bit(SAS_HA_REGISTERED, &sas_ha->state);
-	spin_unlock_irqrestore(&sas_ha->state_lock, flags);
-	sas_drain_work(sas_ha);
+	spin_unlock_irq(&sas_ha->state_lock);
+	__sas_drain_work(sas_ha);
+	mutex_unlock(&sas_ha->drain_mutex);
 
 	sas_unregister_ports(sas_ha);
-	sas_drain_work(sas_ha);
+
+	/* flush unregistration work */
+	mutex_lock(&sas_ha->drain_mutex);
+	__sas_drain_work(sas_ha);
+	mutex_unlock(&sas_ha->drain_mutex);
 
 	if (sas_ha->lldd_max_execute_num > 1) {
 		sas_shutdown_queue(sas_ha);
@@ -196,6 +219,27 @@ static int sas_get_linkerrors(struct sas_phy *phy)
 	return sas_smp_get_phy_events(phy);
 }
 
+int sas_try_ata_reset(struct asd_sas_phy *asd_phy)
+{
+	struct domain_device *dev = NULL;
+
+	/* try to route user requested link resets through libata */
+	if (asd_phy->port)
+		dev = asd_phy->port->port_dev;
+
+	/* validate that dev has been probed */
+	if (dev)
+		dev = sas_find_dev_by_rphy(dev->rphy);
+
+	if (dev && dev_is_sata(dev)) {
+		sas_ata_schedule_reset(dev);
+		sas_ata_wait_eh(dev);
+		return 0;
+	}
+
+	return -ENODEV;
+}
+
 /**
  * transport_sas_phy_reset - reset a phy and permit libata to manage the link
  *
@@ -204,7 +248,6 @@ static int sas_get_linkerrors(struct sas_phy *phy)
  */
 static int transport_sas_phy_reset(struct sas_phy *phy, int hard_reset)
 {
-	int ret;
 	enum phy_func reset_type;
 
 	if (hard_reset)
@@ -218,21 +261,10 @@ static int transport_sas_phy_reset(struct sas_phy *phy, int hard_reset)
 		struct asd_sas_phy *asd_phy = sas_ha->sas_phy[phy->number];
 		struct sas_internal *i =
 			to_sas_internal(sas_ha->core.shost->transportt);
-		struct domain_device *dev = NULL;
 
-		if (asd_phy->port)
-			dev = asd_phy->port->port_dev;
-
-		/* validate that dev has been probed */
-		if (dev)
-			dev = sas_find_dev_by_rphy(dev->rphy);
-
-		if (dev && dev_is_sata(dev) && !hard_reset) {
-			sas_ata_schedule_reset(dev);
-			sas_ata_wait_eh(dev);
-			ret = 0;
-		} else
-			ret = i->dft->lldd_control_phy(asd_phy, reset_type, NULL);
+		if (!hard_reset && sas_try_ata_reset(asd_phy) == 0)
+			return 0;
+		return i->dft->lldd_control_phy(asd_phy, reset_type, NULL);
 	} else {
 		struct sas_rphy *rphy = dev_to_rphy(phy->dev.parent);
 		struct domain_device *ddev = sas_find_dev_by_rphy(rphy);
@@ -241,12 +273,10 @@ static int transport_sas_phy_reset(struct sas_phy *phy, int hard_reset)
 		if (ata_dev && !hard_reset) {
 			sas_ata_schedule_reset(ata_dev);
 			sas_ata_wait_eh(ata_dev);
-			ret = 0;
+			return 0;
 		} else
-			ret = sas_smp_phy_control(ddev, phy->number, reset_type, NULL);
+			return sas_smp_phy_control(ddev, phy->number, reset_type, NULL);
 	}
-
-	return ret;
 }
 
 static int sas_phy_enable(struct sas_phy *phy, int enable)
@@ -282,12 +312,19 @@ static int sas_phy_enable(struct sas_phy *phy, int enable)
 	return ret;
 }
 
+static bool force_hard_reset;
+module_param(force_hard_reset, bool, S_IRUGO|S_IWUSR);
+MODULE_PARM_DESC(force_hard_reset, "clear sata affiliations on every reset");
+
 int sas_phy_reset(struct sas_phy *phy, int hard_reset)
 {
 	int ret;
 	enum phy_func reset_type;
 
-	if (hard_reset)
+	if (!phy->enabled)
+		return -ENODEV;
+
+	if (hard_reset || force_hard_reset)
 		reset_type = PHY_FUNC_HARD_RESET;
 	else
 		reset_type = PHY_FUNC_LINK_RESET;

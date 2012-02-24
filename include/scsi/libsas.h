@@ -192,6 +192,7 @@ struct domain_device {
         struct domain_device *parent;
         struct list_head siblings; /* devices on the same level */
         struct asd_sas_port *port;        /* shortcut to root of the tree */
+	struct sas_phy *phy;
 
         struct list_head dev_list_node;
 	struct list_head disco_list_node; /* awaiting probe or destruct */
@@ -243,7 +244,6 @@ struct asd_sas_port {
 	struct list_head destroy_list;
 	enum   sas_linkrate linkrate;
 
-	struct sas_phy *phy;
 	struct work_struct work;
 
 /* public: */
@@ -429,6 +429,11 @@ static inline unsigned int to_sas_gpio_od(int device, int bit)
 	return 3 * device + bit;
 }
 
+static inline void sas_put_local_phy(struct sas_phy *phy)
+{
+	put_device(&phy->dev);
+}
+
 #ifdef CONFIG_SCSI_SAS_HOST_SMP
 int try_test_sas_gpio_gp_bit(unsigned int od, u8 *data, u8 index, u8 count);
 #else
@@ -563,10 +568,6 @@ struct sas_task {
 
 	enum   sas_protocol      task_proto;
 
-	/* Used by the discovery code. */
-	struct timer_list     timer;
-	struct completion     completion;
-
 	union {
 		struct sas_ata_task ata_task;
 		struct sas_smp_task smp_task;
@@ -583,8 +584,15 @@ struct sas_task {
 
 	void   *lldd_task;	  /* for use by LLDDs */
 	void   *uldd_task;
+	struct sas_task_slow *slow_task;
+};
 
-	struct work_struct abort_work;
+struct sas_task_slow {
+	/* standard/extra infrastructure for slow path commands (SMP and
+	 * internal lldd commands
+	 */
+	struct timer_list     timer;
+	struct completion     completion;
 };
 
 #define SAS_TASK_STATE_PENDING      1
@@ -594,6 +602,7 @@ struct sas_task {
 #define SAS_TASK_AT_INITIATOR       16
 
 extern struct sas_task *sas_alloc_task(gfp_t flags);
+extern struct sas_task *sas_alloc_slow_task(gfp_t flags);
 extern void sas_free_task(struct sas_task *task);
 
 struct sas_domain_function_template {
@@ -614,7 +623,7 @@ struct sas_domain_function_template {
 	int (*lldd_clear_aca)(struct domain_device *, u8 *lun);
 	int (*lldd_clear_task_set)(struct domain_device *, u8 *lun);
 	int (*lldd_I_T_nexus_reset)(struct domain_device *);
-	int (*lldd_ata_soft_reset)(struct domain_device *);
+	int (*lldd_ata_check_ready)(struct domain_device *);
 	void (*lldd_ata_set_dmamode)(struct domain_device *);
 	int (*lldd_lu_reset)(struct domain_device *, u8 *lun);
 	int (*lldd_query_task)(struct sas_task *);
@@ -640,7 +649,6 @@ int sas_phy_reset(struct sas_phy *phy, int hard_reset);
 int sas_queue_up(struct sas_task *task);
 extern int sas_queuecommand(struct Scsi_Host * ,struct scsi_cmnd *);
 extern int sas_target_alloc(struct scsi_target *);
-extern int sas_slave_alloc(struct scsi_device *);
 extern int sas_slave_configure(struct scsi_device *);
 extern int sas_change_queue_depth(struct scsi_device *, int new_depth,
 				  int reason);
@@ -658,7 +666,7 @@ void sas_init_ex_attr(void);
 
 int  sas_ex_revalidate_domain(struct domain_device *);
 
-void sas_unregister_domain_devices(struct asd_sas_port *port);
+void sas_unregister_domain_devices(struct asd_sas_port *port, int gone);
 void sas_init_disc(struct sas_discovery *disc, struct asd_sas_port *);
 int  sas_discover_event(struct asd_sas_port *, enum discover_event ev);
 
@@ -670,6 +678,7 @@ void sas_unregister_dev(struct asd_sas_port *port, struct domain_device *);
 void sas_init_dev(struct domain_device *);
 
 void sas_task_abort(struct sas_task *);
+int sas_eh_abort_handler(struct scsi_cmnd *cmd);
 int sas_eh_device_reset_handler(struct scsi_cmnd *cmd);
 int sas_eh_bus_reset_handler(struct scsi_cmnd *cmd);
 
@@ -683,7 +692,7 @@ extern int sas_smp_handler(struct Scsi_Host *shost, struct sas_rphy *rphy,
 
 extern void sas_ssp_task_response(struct device *dev, struct sas_task *task,
 				  struct ssp_response_iu *iu);
-struct sas_phy *sas_find_local_phy(struct domain_device *dev);
+struct sas_phy *sas_get_local_phy(struct domain_device *dev);
 
 int sas_request_addr(struct Scsi_Host *shost, u8 *addr);
 
