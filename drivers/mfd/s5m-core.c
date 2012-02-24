@@ -26,7 +26,27 @@
 #include <linux/mfd/s5m87xx/s5m-rtc.h>
 #include <linux/regmap.h>
 
-static struct mfd_cell s5m87xx_devs[] = {
+static struct mfd_cell s5m8751_devs[] = {
+	{
+		.name = "s5m8751-pmic",
+	}, {
+		.name = "s5m-charger",
+	}, {
+		.name = "s5m8751-codec",
+	},
+};
+
+static struct mfd_cell s5m8763_devs[] = {
+	{
+		.name = "s5m8763-pmic",
+	}, {
+		.name = "s5m-rtc",
+	}, {
+		.name = "s5m-charger",
+	},
+};
+
+static struct mfd_cell s5m8767_devs[] = {
 	{
 		.name = "s5m8767-pmic",
 	}, {
@@ -54,7 +74,7 @@ EXPORT_SYMBOL_GPL(s5m_reg_write);
 
 int s5m_bulk_write(struct s5m87xx_dev *s5m87xx, u8 reg, int count, u8 *buf)
 {
-	return regmap_raw_write(s5m87xx->regmap, reg, buf, count * sizeof(u16));
+	return regmap_raw_write(s5m87xx->regmap, reg, buf, count);
 }
 EXPORT_SYMBOL_GPL(s5m_bulk_write);
 
@@ -77,7 +97,8 @@ static int s5m87xx_i2c_probe(struct i2c_client *i2c,
 	int ret = 0;
 	int error;
 
-	s5m87xx = kzalloc(sizeof(struct s5m87xx_dev), GFP_KERNEL);
+	s5m87xx = devm_kzalloc(&i2c->dev, sizeof(struct s5m87xx_dev),
+				GFP_KERNEL);
 	if (s5m87xx == NULL)
 		return -ENOMEM;
 
@@ -105,16 +126,30 @@ static int s5m87xx_i2c_probe(struct i2c_client *i2c,
 	s5m87xx->rtc = i2c_new_dummy(i2c->adapter, RTC_I2C_ADDR);
 	i2c_set_clientdata(s5m87xx->rtc, s5m87xx);
 
-	if (pdata->cfg_pmic_irq)
+	if (pdata && pdata->cfg_pmic_irq)
 		pdata->cfg_pmic_irq();
 
 	s5m_irq_init(s5m87xx);
 
 	pm_runtime_set_active(s5m87xx->dev);
 
-	ret = mfd_add_devices(s5m87xx->dev, -1,
-				s5m87xx_devs, ARRAY_SIZE(s5m87xx_devs),
-				NULL, 0);
+	switch (s5m87xx->device_type) {
+	case S5M8751X:
+		ret = mfd_add_devices(s5m87xx->dev, -1, s5m8751_devs,
+					ARRAY_SIZE(s5m8751_devs), NULL, 0);
+		break;
+	case S5M8763X:
+		ret = mfd_add_devices(s5m87xx->dev, -1, s5m8763_devs,
+					ARRAY_SIZE(s5m8763_devs), NULL, 0);
+		break;
+	case S5M8767X:
+		ret = mfd_add_devices(s5m87xx->dev, -1, s5m8767_devs,
+					ARRAY_SIZE(s5m8767_devs), NULL, 0);
+		break;
+	default:
+		/* If this happens the probe function is problem */
+		BUG();
+	}
 
 	if (ret < 0)
 		goto err;
@@ -126,7 +161,6 @@ err:
 	s5m_irq_exit(s5m87xx);
 	i2c_unregister_device(s5m87xx->rtc);
 	regmap_exit(s5m87xx->regmap);
-	kfree(s5m87xx);
 	return ret;
 }
 
@@ -138,7 +172,6 @@ static int s5m87xx_i2c_remove(struct i2c_client *i2c)
 	s5m_irq_exit(s5m87xx);
 	i2c_unregister_device(s5m87xx->rtc);
 	regmap_exit(s5m87xx->regmap);
-	kfree(s5m87xx);
 	return 0;
 }
 
