@@ -438,14 +438,17 @@ struct sk_buff {
 #endif
 
 	int			skb_iif;
+
+	__u32			rxhash;
+
+	__u16			vlan_tci;
+
 #ifdef CONFIG_NET_SCHED
 	__u16			tc_index;	/* traffic control index */
 #ifdef CONFIG_NET_CLS_ACT
 	__u16			tc_verd;	/* traffic control verdict */
 #endif
 #endif
-
-	__u32			rxhash;
 
 	__u16			queue_mapping;
 	kmemcheck_bitfield_begin(flags2);
@@ -469,8 +472,6 @@ struct sk_buff {
 		__u32		mark;
 		__u32		dropcount;
 	};
-
-	__u16			vlan_tci;
 
 	sk_buff_data_t		transport_header;
 	sk_buff_data_t		network_header;
@@ -873,6 +874,24 @@ static inline struct sk_buff *skb_peek(const struct sk_buff_head *list_)
 	if (list == (struct sk_buff *)list_)
 		list = NULL;
 	return list;
+}
+
+/**
+ *	skb_peek_next - peek skb following the given one from a queue
+ *	@skb: skb to start from
+ *	@list_: list to peek at
+ *
+ *	Returns %NULL when the end of the list is met or a pointer to the
+ *	next element. The reference count is not incremented and the
+ *	reference is therefore volatile. Use with caution.
+ */
+static inline struct sk_buff *skb_peek_next(struct sk_buff *skb,
+		const struct sk_buff_head *list_)
+{
+	struct sk_buff *next = skb->next;
+	if (next == (struct sk_buff *)list_)
+		next = NULL;
+	return next;
 }
 
 /**
@@ -2055,7 +2074,7 @@ static inline void skb_frag_add_head(struct sk_buff *skb, struct sk_buff *frag)
 	for (iter = skb_shinfo(skb)->frag_list; iter; iter = iter->next)
 
 extern struct sk_buff *__skb_recv_datagram(struct sock *sk, unsigned flags,
-					   int *peeked, int *err);
+					   int *peeked, int *off, int *err);
 extern struct sk_buff *skb_recv_datagram(struct sock *sk, unsigned flags,
 					 int noblock, int *err);
 extern unsigned int    datagram_poll(struct file *file, struct socket *sock,
