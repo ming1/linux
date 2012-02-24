@@ -1,0 +1,12 @@
+Importing hexagon based on v3.2-rc2
+Unchanged quilt series hexagon
+Importing i2c based on ce5afed937f0a823d3b00c9459409c3f5f2fbd5d
+Unchanged quilt series i2c
+Importing jdelvare-hwmon based on 3.3-rc4
+Unchanged quilt series jdelvare-hwmon
+Importing kernel-doc based on 3.3-rc2
+Unchanged quilt series kernel-doc
+Importing rr based on v3.3-rc3-273-gc38e234
+Unchanged quilt series rr
+Importing device-mapper based on v3.3-rc3
+Unchanged quilt series device-mapper
