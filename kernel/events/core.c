@@ -3238,10 +3238,6 @@ int perf_event_task_disable(void)
 	return 0;
 }
 
-#ifndef PERF_EVENT_INDEX_OFFSET
-# define PERF_EVENT_INDEX_OFFSET 0
-#endif
-
 static int perf_event_index(struct perf_event *event)
 {
 	if (event->hw.state & PERF_HES_STOPPED)
@@ -3250,19 +3246,24 @@ static int perf_event_index(struct perf_event *event)
 	if (event->state != PERF_EVENT_STATE_ACTIVE)
 		return 0;
 
-	return event->hw.idx + 1 - PERF_EVENT_INDEX_OFFSET;
+	return event->pmu->event_idx(event);
 }
 
 static void calc_timer_values(struct perf_event *event,
+				u64 *now,
 				u64 *enabled,
 				u64 *running)
 {
-	u64 now, ctx_time;
+	u64 ctx_time;
 
-	now = perf_clock();
-	ctx_time = event->shadow_ctx_time + now;
+	*now = perf_clock();
+	ctx_time = event->shadow_ctx_time + *now;
 	*enabled = ctx_time - event->tstamp_enabled;
 	*running = ctx_time - event->tstamp_running;
+}
+
+void __weak perf_update_user_clock(struct perf_event_mmap_page *userpg, u64 now)
+{
 }
 
 /*
@@ -3274,7 +3275,7 @@ void perf_event_update_userpage(struct perf_event *event)
 {
 	struct perf_event_mmap_page *userpg;
 	struct ring_buffer *rb;
-	u64 enabled, running;
+	u64 enabled, running, now;
 
 	rcu_read_lock();
 	/*
@@ -3286,7 +3287,7 @@ void perf_event_update_userpage(struct perf_event *event)
 	 * because of locking issue as we can be called in
 	 * NMI context
 	 */
-	calc_timer_values(event, &enabled, &running);
+	calc_timer_values(event, &now, &enabled, &running);
 	rb = rcu_dereference(event->rb);
 	if (!rb)
 		goto unlock;
@@ -3302,7 +3303,7 @@ void perf_event_update_userpage(struct perf_event *event)
 	barrier();
 	userpg->index = perf_event_index(event);
 	userpg->offset = perf_event_count(event);
-	if (event->state == PERF_EVENT_STATE_ACTIVE)
+	if (userpg->index)
 		userpg->offset -= local64_read(&event->hw.prev_count);
 
 	userpg->time_enabled = enabled +
@@ -3310,6 +3311,8 @@ void perf_event_update_userpage(struct perf_event *event)
 
 	userpg->time_running = running +
 			atomic64_read(&event->child_total_time_running);
+
+	perf_update_user_clock(userpg, now);
 
 	barrier();
 	++userpg->lock;
@@ -3568,6 +3571,8 @@ static int perf_mmap(struct file *file, struct vm_area_struct *vma)
 	event->mmap_user = get_current_user();
 	vma->vm_mm->pinned_vm += event->mmap_locked;
 
+	perf_event_update_userpage(event);
+
 unlock:
 	if (!ret)
 		atomic_inc(&event->mmap_count);
@@ -3799,7 +3804,7 @@ static void perf_output_read_group(struct perf_output_handle *handle,
 static void perf_output_read(struct perf_output_handle *handle,
 			     struct perf_event *event)
 {
-	u64 enabled = 0, running = 0;
+	u64 enabled = 0, running = 0, now;
 	u64 read_format = event->attr.read_format;
 
 	/*
@@ -3812,7 +3817,7 @@ static void perf_output_read(struct perf_output_handle *handle,
 	 * NMI context
 	 */
 	if (read_format & PERF_FORMAT_TOTAL_TIMES)
-		calc_timer_values(event, &enabled, &running);
+		calc_timer_values(event, &now, &enabled, &running);
 
 	if (event->attr.read_format & PERF_FORMAT_GROUP)
 		perf_output_read_group(handle, event, enabled, running);
@@ -5031,6 +5036,11 @@ static int perf_swevent_init(struct perf_event *event)
 	return 0;
 }
 
+static int perf_swevent_event_idx(struct perf_event *event)
+{
+	return 0;
+}
+
 static struct pmu perf_swevent = {
 	.task_ctx_nr	= perf_sw_context,
 
@@ -5040,6 +5050,8 @@ static struct pmu perf_swevent = {
 	.start		= perf_swevent_start,
 	.stop		= perf_swevent_stop,
 	.read		= perf_swevent_read,
+
+	.event_idx	= perf_swevent_event_idx,
 };
 
 #ifdef CONFIG_EVENT_TRACING
@@ -5126,6 +5138,8 @@ static struct pmu perf_tracepoint = {
 	.start		= perf_swevent_start,
 	.stop		= perf_swevent_stop,
 	.read		= perf_swevent_read,
+
+	.event_idx	= perf_swevent_event_idx,
 };
 
 static inline void perf_tp_register(void)
@@ -5345,6 +5359,8 @@ static struct pmu perf_cpu_clock = {
 	.start		= cpu_clock_event_start,
 	.stop		= cpu_clock_event_stop,
 	.read		= cpu_clock_event_read,
+
+	.event_idx	= perf_swevent_event_idx,
 };
 
 /*
@@ -5417,6 +5433,8 @@ static struct pmu perf_task_clock = {
 	.start		= task_clock_event_start,
 	.stop		= task_clock_event_stop,
 	.read		= task_clock_event_read,
+
+	.event_idx	= perf_swevent_event_idx,
 };
 
 static void perf_pmu_nop_void(struct pmu *pmu)
@@ -5442,6 +5460,11 @@ static int perf_pmu_commit_txn(struct pmu *pmu)
 static void perf_pmu_cancel_txn(struct pmu *pmu)
 {
 	perf_pmu_enable(pmu);
+}
+
+static int perf_event_idx_default(struct perf_event *event)
+{
+	return event->hw.idx + 1;
 }
 
 /*
@@ -5530,6 +5553,7 @@ static int pmu_dev_alloc(struct pmu *pmu)
 	if (!pmu->dev)
 		goto out;
 
+	pmu->dev->groups = pmu->attr_groups;
 	device_initialize(pmu->dev);
 	ret = dev_set_name(pmu->dev, "%s", pmu->name);
 	if (ret)
@@ -5632,6 +5656,9 @@ got_cpu_context:
 		pmu->pmu_enable  = perf_pmu_nop_void;
 		pmu->pmu_disable = perf_pmu_nop_void;
 	}
+
+	if (!pmu->event_idx)
+		pmu->event_idx = perf_event_idx_default;
 
 	list_add_rcu(&pmu->entry, &pmus);
 	ret = 0;
