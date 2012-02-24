@@ -28,6 +28,7 @@
 #include <linux/init.h>
 #include <linux/device.h>
 #include <linux/spinlock.h>
+#include <scsi/sas_ata.h>
 #include <scsi/scsi_host.h>
 #include <scsi/scsi_device.h>
 #include <scsi/scsi_transport.h>
@@ -97,14 +98,14 @@ void sas_hae_reset(struct work_struct *work)
 		container_of(work, struct sas_ha_event, work);
 	struct sas_ha_struct *ha = ev->ha;
 
-	sas_begin_event(HAE_RESET, &ha->event_lock,
-			&ha->pending);
+	clear_bit(HAE_RESET, &ha->pending);
 }
 
 int sas_register_ha(struct sas_ha_struct *sas_ha)
 {
 	int error = 0;
 
+	mutex_init(&sas_ha->disco_mutex);
 	spin_lock_init(&sas_ha->phy_port_lock);
 	sas_hash_addr(sas_ha->hashed_sas_addr, sas_ha->sas_addr);
 
@@ -113,8 +114,10 @@ int sas_register_ha(struct sas_ha_struct *sas_ha)
 	else if (sas_ha->lldd_queue_size == -1)
 		sas_ha->lldd_queue_size = 128; /* Sanity */
 
-	sas_ha->state = SAS_HA_REGISTERED;
+	set_bit(SAS_HA_REGISTERED, &sas_ha->state);
 	spin_lock_init(&sas_ha->state_lock);
+	mutex_init(&sas_ha->drain_mutex);
+	INIT_LIST_HEAD(&sas_ha->defer_q);
 
 	error = sas_register_phys(sas_ha);
 	if (error) {
@@ -144,6 +147,7 @@ int sas_register_ha(struct sas_ha_struct *sas_ha)
 	}
 
 	INIT_LIST_HEAD(&sas_ha->eh_done_q);
+	INIT_LIST_HEAD(&sas_ha->eh_ata_q);
 
 	return 0;
 
@@ -158,14 +162,16 @@ int sas_unregister_ha(struct sas_ha_struct *sas_ha)
 {
 	unsigned long flags;
 
-	/* Set the state to unregistered to avoid further
-	 * events to be queued */
+	/* Set the state to unregistered to avoid further unchained
+	 * events to be queued
+	 */
 	spin_lock_irqsave(&sas_ha->state_lock, flags);
-	sas_ha->state = SAS_HA_UNREGISTERED;
+	clear_bit(SAS_HA_REGISTERED, &sas_ha->state);
 	spin_unlock_irqrestore(&sas_ha->state_lock, flags);
-	scsi_flush_work(sas_ha->core.shost);
+	sas_drain_work(sas_ha);
 
 	sas_unregister_ports(sas_ha);
+	sas_drain_work(sas_ha);
 
 	if (sas_ha->lldd_max_execute_num > 1) {
 		sas_shutdown_queue(sas_ha);
@@ -190,15 +196,68 @@ static int sas_get_linkerrors(struct sas_phy *phy)
 	return sas_smp_get_phy_events(phy);
 }
 
-int sas_phy_enable(struct sas_phy *phy, int enable)
+/**
+ * transport_sas_phy_reset - reset a phy and permit libata to manage the link
+ *
+ * phy reset request via sysfs in host workqueue context so we know we
+ * can block on eh and safely traverse the domain_device topology
+ */
+static int transport_sas_phy_reset(struct sas_phy *phy, int hard_reset)
 {
 	int ret;
-	enum phy_func command;
+	enum phy_func reset_type;
+
+	if (hard_reset)
+		reset_type = PHY_FUNC_HARD_RESET;
+	else
+		reset_type = PHY_FUNC_LINK_RESET;
+
+	if (scsi_is_sas_phy_local(phy)) {
+		struct Scsi_Host *shost = dev_to_shost(phy->dev.parent);
+		struct sas_ha_struct *sas_ha = SHOST_TO_SAS_HA(shost);
+		struct asd_sas_phy *asd_phy = sas_ha->sas_phy[phy->number];
+		struct sas_internal *i =
+			to_sas_internal(sas_ha->core.shost->transportt);
+		struct domain_device *dev = NULL;
+
+		if (asd_phy->port)
+			dev = asd_phy->port->port_dev;
+
+		/* validate that dev has been probed */
+		if (dev)
+			dev = sas_find_dev_by_rphy(dev->rphy);
+
+		if (dev && dev_is_sata(dev) && !hard_reset) {
+			sas_ata_schedule_reset(dev);
+			sas_ata_wait_eh(dev);
+			ret = 0;
+		} else
+			ret = i->dft->lldd_control_phy(asd_phy, reset_type, NULL);
+	} else {
+		struct sas_rphy *rphy = dev_to_rphy(phy->dev.parent);
+		struct domain_device *ddev = sas_find_dev_by_rphy(rphy);
+		struct domain_device *ata_dev = sas_ex_to_ata(ddev, phy->number);
+
+		if (ata_dev && !hard_reset) {
+			sas_ata_schedule_reset(ata_dev);
+			sas_ata_wait_eh(ata_dev);
+			ret = 0;
+		} else
+			ret = sas_smp_phy_control(ddev, phy->number, reset_type, NULL);
+	}
+
+	return ret;
+}
+
+static int sas_phy_enable(struct sas_phy *phy, int enable)
+{
+	int ret;
+	enum phy_func cmd;
 
 	if (enable)
-		command = PHY_FUNC_LINK_RESET;
+		cmd = PHY_FUNC_LINK_RESET;
 	else
-		command = PHY_FUNC_DISABLE;
+		cmd = PHY_FUNC_DISABLE;
 
 	if (scsi_is_sas_phy_local(phy)) {
 		struct Scsi_Host *shost = dev_to_shost(phy->dev.parent);
@@ -207,15 +266,18 @@ int sas_phy_enable(struct sas_phy *phy, int enable)
 		struct sas_internal *i =
 			to_sas_internal(sas_ha->core.shost->transportt);
 
-		if (!enable) {
-			sas_phy_disconnected(asd_phy);
-			sas_ha->notify_phy_event(asd_phy, PHYE_LOSS_OF_SIGNAL);
-		}
-		ret = i->dft->lldd_control_phy(asd_phy, command, NULL);
+		if (enable)
+			ret = transport_sas_phy_reset(phy, 0);
+		else
+			ret = i->dft->lldd_control_phy(asd_phy, cmd, NULL);
 	} else {
 		struct sas_rphy *rphy = dev_to_rphy(phy->dev.parent);
 		struct domain_device *ddev = sas_find_dev_by_rphy(rphy);
-		ret = sas_smp_phy_control(ddev, phy->number, command, NULL);
+
+		if (enable)
+			ret = transport_sas_phy_reset(phy, 0);
+		else
+			ret = sas_smp_phy_control(ddev, phy->number, cmd, NULL);
 	}
 	return ret;
 }
@@ -285,9 +347,101 @@ int sas_set_phy_speed(struct sas_phy *phy,
 	return ret;
 }
 
+static void sas_phy_release(struct sas_phy *phy)
+{
+	kfree(phy->hostdata);
+	phy->hostdata = NULL;
+}
+
+static void phy_reset_work(struct work_struct *work)
+{
+	struct sas_phy_data *d = container_of(work, typeof(*d), reset_work);
+
+	d->reset_result = transport_sas_phy_reset(d->phy, d->hard_reset);
+}
+
+static void phy_enable_work(struct work_struct *work)
+{
+	struct sas_phy_data *d = container_of(work, typeof(*d), enable_work);
+
+	d->enable_result = sas_phy_enable(d->phy, d->enable);
+}
+
+static int sas_phy_setup(struct sas_phy *phy)
+{
+	struct sas_phy_data *d = kzalloc(sizeof(*d), GFP_KERNEL);
+
+	if (!d)
+		return -ENOMEM;
+
+	mutex_init(&d->event_lock);
+	INIT_WORK(&d->reset_work, phy_reset_work);
+	INIT_WORK(&d->enable_work, phy_enable_work);
+	d->phy = phy;
+	phy->hostdata = d;
+
+	return 0;
+}
+
+static int queue_phy_reset(struct sas_phy *phy, int hard_reset)
+{
+	struct Scsi_Host *shost = dev_to_shost(phy->dev.parent);
+	struct sas_ha_struct *ha = SHOST_TO_SAS_HA(shost);
+	struct sas_phy_data *d = phy->hostdata;
+	int rc;
+
+	if (!d)
+		return -ENOMEM;
+
+	/* libsas workqueue coordinates ata-eh reset with discovery */
+	mutex_lock(&d->event_lock);
+	d->reset_result = 0;
+	d->hard_reset = hard_reset;
+
+	spin_lock_irq(&ha->state_lock);
+	sas_queue_work(ha, &d->reset_work);
+	spin_unlock_irq(&ha->state_lock);
+
+	rc = sas_drain_work(ha);
+	if (rc == 0)
+		rc = d->reset_result;
+	mutex_unlock(&d->event_lock);
+
+	return rc;
+}
+
+static int queue_phy_enable(struct sas_phy *phy, int enable)
+{
+	struct Scsi_Host *shost = dev_to_shost(phy->dev.parent);
+	struct sas_ha_struct *ha = SHOST_TO_SAS_HA(shost);
+	struct sas_phy_data *d = phy->hostdata;
+	int rc;
+
+	if (!d)
+		return -ENOMEM;
+
+	/* libsas workqueue coordinates ata-eh reset with discovery */
+	mutex_lock(&d->event_lock);
+	d->enable_result = 0;
+	d->enable = enable;
+
+	spin_lock_irq(&ha->state_lock);
+	sas_queue_work(ha, &d->enable_work);
+	spin_unlock_irq(&ha->state_lock);
+
+	rc = sas_drain_work(ha);
+	if (rc == 0)
+		rc = d->enable_result;
+	mutex_unlock(&d->event_lock);
+
+	return rc;
+}
+
 static struct sas_function_template sft = {
-	.phy_enable = sas_phy_enable,
-	.phy_reset = sas_phy_reset,
+	.phy_enable = queue_phy_enable,
+	.phy_reset = queue_phy_reset,
+	.phy_setup = sas_phy_setup,
+	.phy_release = sas_phy_release,
 	.set_phy_speed = sas_set_phy_speed,
 	.get_linkerrors = sas_get_linkerrors,
 	.smp_handler = sas_smp_handler,

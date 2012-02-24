@@ -154,7 +154,6 @@ static struct scsi_host_template isci_sht = {
 	.queuecommand			= sas_queuecommand,
 	.target_alloc			= sas_target_alloc,
 	.slave_configure		= sas_slave_configure,
-	.slave_destroy			= sas_slave_destroy,
 	.scan_finished			= isci_host_scan_finished,
 	.scan_start			= isci_host_scan_start,
 	.change_queue_depth		= sas_change_queue_depth,
@@ -528,6 +527,13 @@ static int __devinit isci_pci_probe(struct pci_dev *pdev, const struct pci_devic
 			goto err_host_alloc;
 		}
 		pci_info->hosts[i] = h;
+
+		/* turn on DIF support */
+		scsi_host_set_prot(h->shost,
+				   SHOST_DIF_TYPE1_PROTECTION |
+				   SHOST_DIF_TYPE2_PROTECTION |
+				   SHOST_DIF_TYPE3_PROTECTION);
+		scsi_host_set_guard(h->shost, SHOST_DIX_GUARD_CRC);
 	}
 
 	err = isci_setup_interrupts(pdev);

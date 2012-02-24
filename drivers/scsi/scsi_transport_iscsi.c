@@ -1476,6 +1476,66 @@ void iscsi_conn_login_event(struct iscsi_cls_conn *conn,
 }
 EXPORT_SYMBOL_GPL(iscsi_conn_login_event);
 
+void iscsi_post_host_event(uint32_t host_no, struct iscsi_transport *transport,
+			   enum iscsi_host_event_code code, uint32_t data_size,
+			   uint8_t *data)
+{
+	struct nlmsghdr *nlh;
+	struct sk_buff *skb;
+	struct iscsi_uevent *ev;
+	int len = NLMSG_SPACE(sizeof(*ev) + data_size);
+
+	skb = alloc_skb(len, GFP_KERNEL);
+	if (!skb) {
+		printk(KERN_ERR "gracefully ignored host event (%d):%d OOM\n",
+		       host_no, code);
+		return;
+	}
+
+	nlh = __nlmsg_put(skb, 0, 0, 0, (len - sizeof(*nlh)), 0);
+	ev = NLMSG_DATA(nlh);
+	ev->transport_handle = iscsi_handle(transport);
+	ev->type = ISCSI_KEVENT_HOST_EVENT;
+	ev->r.host_event.host_no = host_no;
+	ev->r.host_event.code = code;
+	ev->r.host_event.data_size = data_size;
+
+	if (data_size)
+		memcpy((char *)ev + sizeof(*ev), data, data_size);
+
+	iscsi_multicast_skb(skb, ISCSI_NL_GRP_ISCSID, GFP_KERNEL);
+}
+EXPORT_SYMBOL_GPL(iscsi_post_host_event);
+
+void iscsi_ping_comp_event(uint32_t host_no, struct iscsi_transport *transport,
+			   uint32_t status, uint32_t pid, uint32_t data_size,
+			   uint8_t *data)
+{
+	struct nlmsghdr *nlh;
+	struct sk_buff *skb;
+	struct iscsi_uevent *ev;
+	int len = NLMSG_SPACE(sizeof(*ev) + data_size);
+
+	skb = alloc_skb(len, GFP_KERNEL);
+	if (!skb) {
+		printk(KERN_ERR "gracefully ignored ping comp: OOM\n");
+		return;
+	}
+
+	nlh = __nlmsg_put(skb, 0, 0, 0, (len - sizeof(*nlh)), 0);
+	ev = NLMSG_DATA(nlh);
+	ev->transport_handle = iscsi_handle(transport);
+	ev->type = ISCSI_KEVENT_PING_COMP;
+	ev->r.ping_comp.host_no = host_no;
+	ev->r.ping_comp.status = status;
+	ev->r.ping_comp.pid = pid;
+	ev->r.ping_comp.data_size = data_size;
+	memcpy((char *)ev + sizeof(*ev), data, data_size);
+
+	iscsi_multicast_skb(skb, ISCSI_NL_GRP_ISCSID, GFP_KERNEL);
+}
+EXPORT_SYMBOL_GPL(iscsi_ping_comp_event);
+
 static int
 iscsi_if_send_reply(uint32_t group, int seq, int type, int done, int multi,
 		    void *payload, int size)
@@ -1915,6 +1975,33 @@ iscsi_set_iface_params(struct iscsi_transport *transport,
 }
 
 static int
+iscsi_send_ping(struct iscsi_transport *transport, struct iscsi_uevent *ev)
+{
+	struct Scsi_Host *shost;
+	struct sockaddr *dst_addr;
+	int err;
+
+	if (!transport->send_ping)
+		return -ENOSYS;
+
+	shost = scsi_host_lookup(ev->u.iscsi_ping.host_no);
+	if (!shost) {
+		printk(KERN_ERR "iscsi_ping could not find host no %u\n",
+		       ev->u.iscsi_ping.host_no);
+		return -ENODEV;
+	}
+
+	dst_addr = (struct sockaddr *)((char *)ev + sizeof(*ev));
+	err = transport->send_ping(shost, ev->u.iscsi_ping.iface_num,
+				   ev->u.iscsi_ping.iface_type,
+				   ev->u.iscsi_ping.payload_size,
+				   ev->u.iscsi_ping.pid,
+				   dst_addr);
+	scsi_host_put(shost);
+	return err;
+}
+
+static int
 iscsi_if_recv_msg(struct sk_buff *skb, struct nlmsghdr *nlh, uint32_t *group)
 {
 	int err = 0;
@@ -1941,7 +2028,7 @@ iscsi_if_recv_msg(struct sk_buff *skb, struct nlmsghdr *nlh, uint32_t *group)
 	switch (nlh->nlmsg_type) {
 	case ISCSI_UEVENT_CREATE_SESSION:
 		err = iscsi_if_create_session(priv, ep, ev,
-					      NETLINK_CREDS(skb)->pid,
+					      NETLINK_CB(skb).pid,
 					      ev->u.c_session.initial_cmdsn,
 					      ev->u.c_session.cmds_max,
 					      ev->u.c_session.queue_depth);
@@ -1954,7 +2041,7 @@ iscsi_if_recv_msg(struct sk_buff *skb, struct nlmsghdr *nlh, uint32_t *group)
 		}
 
 		err = iscsi_if_create_session(priv, ep, ev,
-					NETLINK_CREDS(skb)->pid,
+					NETLINK_CB(skb).pid,
 					ev->u.c_bound_session.initial_cmdsn,
 					ev->u.c_bound_session.cmds_max,
 					ev->u.c_bound_session.queue_depth);
@@ -2059,6 +2146,9 @@ iscsi_if_recv_msg(struct sk_buff *skb, struct nlmsghdr *nlh, uint32_t *group)
 		err = iscsi_set_iface_params(transport, ev,
 					     nlmsg_attrlen(nlh, sizeof(*ev)));
 		break;
+	case ISCSI_UEVENT_PING:
+		err = iscsi_send_ping(transport, ev);
+		break;
 	default:
 		err = -ENOSYS;
 		break;
@@ -2110,7 +2200,7 @@ iscsi_if_rx(struct sk_buff *skb)
 				break;
 			err = iscsi_if_send_reply(group, nlh->nlmsg_seq,
 				nlh->nlmsg_type, 0, 0, ev, sizeof(*ev));
-		} while (err < 0 && err != -ECONNREFUSED);
+		} while (err < 0 && err != -ECONNREFUSED && err != -ESRCH);
 		skb_pull(skb, rlen);
 	}
 	mutex_unlock(&rx_queue_mutex);
@@ -2476,12 +2566,16 @@ iscsi_host_attr(netdev, ISCSI_HOST_PARAM_NETDEV_NAME);
 iscsi_host_attr(hwaddress, ISCSI_HOST_PARAM_HWADDRESS);
 iscsi_host_attr(ipaddress, ISCSI_HOST_PARAM_IPADDRESS);
 iscsi_host_attr(initiatorname, ISCSI_HOST_PARAM_INITIATOR_NAME);
+iscsi_host_attr(port_state, ISCSI_HOST_PARAM_PORT_STATE);
+iscsi_host_attr(port_speed, ISCSI_HOST_PARAM_PORT_SPEED);
 
 static struct attribute *iscsi_host_attrs[] = {
 	&dev_attr_host_netdev.attr,
 	&dev_attr_host_hwaddress.attr,
 	&dev_attr_host_ipaddress.attr,
 	&dev_attr_host_initiatorname.attr,
+	&dev_attr_host_port_state.attr,
+	&dev_attr_host_port_speed.attr,
 	NULL,
 };
 
@@ -2501,6 +2595,10 @@ static umode_t iscsi_host_attr_is_visible(struct kobject *kobj,
 		param = ISCSI_HOST_PARAM_IPADDRESS;
 	else if (attr == &dev_attr_host_initiatorname.attr)
 		param = ISCSI_HOST_PARAM_INITIATOR_NAME;
+	else if (attr == &dev_attr_host_port_state.attr)
+		param = ISCSI_HOST_PARAM_PORT_STATE;
+	else if (attr == &dev_attr_host_port_speed.attr)
+		param = ISCSI_HOST_PARAM_PORT_SPEED;
 	else {
 		WARN_ONCE(1, "Invalid host attr");
 		return 0;
@@ -2513,6 +2611,61 @@ static struct attribute_group iscsi_host_group = {
 	.attrs = iscsi_host_attrs,
 	.is_visible = iscsi_host_attr_is_visible,
 };
+
+/* convert iscsi_port_speed values to ascii string name */
+static const struct {
+	enum iscsi_port_speed	value;
+	char			*name;
+} iscsi_port_speed_names[] = {
+	{ISCSI_PORT_SPEED_UNKNOWN,	"Unknown" },
+	{ISCSI_PORT_SPEED_10MBPS,	"10 Mbps" },
+	{ISCSI_PORT_SPEED_100MBPS,	"100 Mbps" },
+	{ISCSI_PORT_SPEED_1GBPS,	"1 Gbps" },
+	{ISCSI_PORT_SPEED_10GBPS,	"10 Gbps" },
+};
+
+char *iscsi_get_port_speed_name(struct Scsi_Host *shost)
+{
+	int i;
+	char *speed = "Unknown!";
+	struct iscsi_cls_host *ihost = shost->shost_data;
+	uint32_t port_speed = ihost->port_speed;
+
+	for (i = 0; i < ARRAY_SIZE(iscsi_port_speed_names); i++) {
+		if (iscsi_port_speed_names[i].value & port_speed) {
+			speed = iscsi_port_speed_names[i].name;
+			break;
+		}
+	}
+	return speed;
+}
+EXPORT_SYMBOL_GPL(iscsi_get_port_speed_name);
+
+/* convert iscsi_port_state values to ascii string name */
+static const struct {
+	enum iscsi_port_state	value;
+	char			*name;
+} iscsi_port_state_names[] = {
+	{ISCSI_PORT_STATE_DOWN,		"LINK DOWN" },
+	{ISCSI_PORT_STATE_UP,		"LINK UP" },
+};
+
+char *iscsi_get_port_state_name(struct Scsi_Host *shost)
+{
+	int i;
+	char *state = "Unknown!";
+	struct iscsi_cls_host *ihost = shost->shost_data;
+	uint32_t port_state = ihost->port_state;
+
+	for (i = 0; i < ARRAY_SIZE(iscsi_port_state_names); i++) {
+		if (iscsi_port_state_names[i].value & port_state) {
+			state = iscsi_port_state_names[i].name;
+			break;
+		}
+	}
+	return state;
+}
+EXPORT_SYMBOL_GPL(iscsi_get_port_state_name);
 
 static int iscsi_session_match(struct attribute_container *cont,
 			   struct device *dev)
