@@ -58,11 +58,15 @@ static const stateid_t one_stateid = {
 static const stateid_t zero_stateid = {
 	/* all fields zero */
 };
+static const stateid_t currentstateid = {
+	.si_generation = 1,
+};
 
 static u64 current_sessionid = 1;
 
 #define ZERO_STATEID(stateid) (!memcmp((stateid), &zero_stateid, sizeof(stateid_t)))
 #define ONE_STATEID(stateid)  (!memcmp((stateid), &one_stateid, sizeof(stateid_t)))
+#define CURRENT_STATEID(stateid) (!memcmp((stateid), &currentstateid, sizeof(stateid_t)))
 
 /* forward declarations */
 static int check_for_locks(struct nfs4_file *filp, struct nfs4_lockowner *lowner);
@@ -1347,6 +1351,7 @@ nfsd4_store_cache_entry(struct nfsd4_compoundres *resp)
 	slot->sl_opcnt = resp->opcnt;
 	slot->sl_status = resp->cstate.status;
 
+	slot->sl_flags |= NFSD4_SLOT_INITIALIZED;
 	if (nfsd4_not_cached(resp)) {
 		slot->sl_datalen = 0;
 		return;
@@ -1374,15 +1379,12 @@ nfsd4_enc_sequence_replay(struct nfsd4_compoundargs *args,
 	struct nfsd4_op *op;
 	struct nfsd4_slot *slot = resp->cstate.slot;
 
-	dprintk("--> %s resp->opcnt %d cachethis %u \n", __func__,
-		resp->opcnt, resp->cstate.slot->sl_cachethis);
-
 	/* Encode the replayed sequence operation */
 	op = &args->ops[resp->opcnt - 1];
 	nfsd4_encode_operation(resp, op);
 
 	/* Return nfserr_retry_uncached_rep in next operation. */
-	if (args->opcnt > 1 && slot->sl_cachethis == 0) {
+	if (args->opcnt > 1 && !(slot->sl_flags & NFSD4_SLOT_CACHETHIS)) {
 		op = &args->ops[resp->opcnt++];
 		op->status = nfserr_retry_uncached_rep;
 		nfsd4_encode_operation(resp, op);
@@ -1575,16 +1577,11 @@ check_slot_seqid(u32 seqid, u32 slot_seqid, int slot_inuse)
 		else
 			return nfserr_seq_misordered;
 	}
-	/* Normal */
+	/* Note unsigned 32-bit arithmetic handles wraparound: */
 	if (likely(seqid == slot_seqid + 1))
 		return nfs_ok;
-	/* Replay */
 	if (seqid == slot_seqid)
 		return nfserr_replay_cache;
-	/* Wraparound */
-	if (seqid == 1 && (slot_seqid + 1) == 0)
-		return nfs_ok;
-	/* Misordered replay or misordered new request */
 	return nfserr_seq_misordered;
 }
 
@@ -1921,8 +1918,12 @@ nfsd4_sequence(struct svc_rqst *rqstp,
 	 * sr_highest_slotid and the sr_target_slot id to maxslots */
 	seq->maxslots = session->se_fchannel.maxreqs;
 
-	status = check_slot_seqid(seq->seqid, slot->sl_seqid, slot->sl_inuse);
+	status = check_slot_seqid(seq->seqid, slot->sl_seqid,
+					slot->sl_flags & NFSD4_SLOT_INUSE);
 	if (status == nfserr_replay_cache) {
+		status = nfserr_seq_misordered;
+		if (!(slot->sl_flags & NFSD4_SLOT_INITIALIZED))
+			goto out;
 		cstate->slot = slot;
 		cstate->session = session;
 		/* Return the cached reply status and set cstate->status
@@ -1938,9 +1939,12 @@ nfsd4_sequence(struct svc_rqst *rqstp,
 	conn = NULL;
 
 	/* Success! bump slot seqid */
-	slot->sl_inuse = true;
 	slot->sl_seqid = seq->seqid;
-	slot->sl_cachethis = seq->cachethis;
+	slot->sl_flags |= NFSD4_SLOT_INUSE;
+	if (seq->cachethis)
+		slot->sl_flags |= NFSD4_SLOT_CACHETHIS;
+	else
+		slot->sl_flags &= ~NFSD4_SLOT_CACHETHIS;
 
 	cstate->slot = slot;
 	cstate->session = session;
@@ -2633,8 +2637,6 @@ nfs4_check_delegmode(struct nfs4_delegation *dp, int flags)
 
 static int share_access_to_flags(u32 share_access)
 {
-	share_access &= ~NFS4_SHARE_WANT_MASK;
-
 	return share_access == NFS4_SHARE_ACCESS_READ ? RD_STATE : WR_STATE;
 }
 
@@ -3400,7 +3402,14 @@ __be32
 nfsd4_test_stateid(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 		   struct nfsd4_test_stateid *test_stateid)
 {
-	/* real work is done during encoding */
+	struct nfsd4_test_stateid_id *stateid;
+	struct nfs4_client *cl = cstate->session->se_client;
+
+	nfs4_lock_state();
+	list_for_each_entry(stateid, &test_stateid->ts_stateid_list, ts_id_list)
+		stateid->ts_id_status = nfs4_validate_stateid(cl, &stateid->ts_id_stateid);
+	nfs4_unlock_state();
+
 	return nfs_ok;
 }
 
@@ -3596,7 +3605,9 @@ nfsd4_open_downgrade(struct svc_rqst *rqstp,
 			cstate->current_fh.fh_dentry->d_name.name);
 
 	/* We don't yet support WANT bits: */
-	od->od_share_access &= NFS4_SHARE_ACCESS_MASK;
+	if (od->od_deleg_want)
+		dprintk("NFSD: %s: od_deleg_want=0x%x ignored\n", __func__,
+			od->od_deleg_want);
 
 	nfs4_lock_state();
 	status = nfs4_preprocess_confirmed_seqid_op(cstate, od->od_seqid,
@@ -4690,4 +4701,105 @@ nfs4_state_shutdown(void)
 	__nfs4_state_shutdown();
 	nfs4_unlock_state();
 	nfsd4_destroy_callback_queue();
+}
+
+static void
+get_stateid(struct nfsd4_compound_state *cstate, stateid_t *stateid)
+{
+	if (HAS_STATE_ID(cstate, CURRENT_STATE_ID_FLAG) && CURRENT_STATEID(stateid))
+		memcpy(stateid, &cstate->current_stateid, sizeof(stateid_t));
+}
+
+static void
+put_stateid(struct nfsd4_compound_state *cstate, stateid_t *stateid)
+{
+	if (cstate->minorversion) {
+		memcpy(&cstate->current_stateid, stateid, sizeof(stateid_t));
+		SET_STATE_ID(cstate, CURRENT_STATE_ID_FLAG);
+	}
+}
+
+void
+clear_current_stateid(struct nfsd4_compound_state *cstate)
+{
+	CLEAR_STATE_ID(cstate, CURRENT_STATE_ID_FLAG);
+}
+
+/*
+ * functions to set current state id
+ */
+void
+nfsd4_set_opendowngradestateid(struct nfsd4_compound_state *cstate, struct nfsd4_open_downgrade *odp)
+{
+	put_stateid(cstate, &odp->od_stateid);
+}
+
+void
+nfsd4_set_openstateid(struct nfsd4_compound_state *cstate, struct nfsd4_open *open)
+{
+	put_stateid(cstate, &open->op_stateid);
+}
+
+void
+nfsd4_set_closestateid(struct nfsd4_compound_state *cstate, struct nfsd4_close *close)
+{
+	put_stateid(cstate, &close->cl_stateid);
+}
+
+void
+nfsd4_set_lockstateid(struct nfsd4_compound_state *cstate, struct nfsd4_lock *lock)
+{
+	put_stateid(cstate, &lock->lk_resp_stateid);
+}
+
+/*
+ * functions to consume current state id
+ */
+
+void
+nfsd4_get_opendowngradestateid(struct nfsd4_compound_state *cstate, struct nfsd4_open_downgrade *odp)
+{
+	get_stateid(cstate, &odp->od_stateid);
+}
+
+void
+nfsd4_get_delegreturnstateid(struct nfsd4_compound_state *cstate, struct nfsd4_delegreturn *drp)
+{
+	get_stateid(cstate, &drp->dr_stateid);
+}
+
+void
+nfsd4_get_freestateid(struct nfsd4_compound_state *cstate, struct nfsd4_free_stateid *fsp)
+{
+	get_stateid(cstate, &fsp->fr_stateid);
+}
+
+void
+nfsd4_get_setattrstateid(struct nfsd4_compound_state *cstate, struct nfsd4_setattr *setattr)
+{
+	get_stateid(cstate, &setattr->sa_stateid);
+}
+
+void
+nfsd4_get_closestateid(struct nfsd4_compound_state *cstate, struct nfsd4_close *close)
+{
+	get_stateid(cstate, &close->cl_stateid);
+}
+
+void
+nfsd4_get_lockustateid(struct nfsd4_compound_state *cstate, struct nfsd4_locku *locku)
+{
+	get_stateid(cstate, &locku->lu_stateid);
+}
+
+void
+nfsd4_get_readstateid(struct nfsd4_compound_state *cstate, struct nfsd4_read *read)
+{
+	get_stateid(cstate, &read->rd_stateid);
+}
+
+void
+nfsd4_get_writestateid(struct nfsd4_compound_state *cstate, struct nfsd4_write *write)
+{
+	get_stateid(cstate, &write->wr_stateid);
 }
