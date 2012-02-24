@@ -825,6 +825,19 @@ EXPORT_SYMBOL(pci_choose_state);
 #define pcie_cap_has_sltctl2(type, flags)		\
 		((flags & PCI_EXP_FLAGS_VERS) > 1)
 
+static struct pci_cap_saved_state *pci_find_saved_cap(
+	struct pci_dev *pci_dev, char cap)
+{
+	struct pci_cap_saved_state *tmp;
+	struct hlist_node *pos;
+
+	hlist_for_each_entry(tmp, pos, &pci_dev->saved_cap_space, next) {
+		if (tmp->cap.cap_nr == cap)
+			return tmp;
+	}
+	return NULL;
+}
+
 static int pci_save_pcie_state(struct pci_dev *dev)
 {
 	int pos, i = 0;
@@ -959,6 +972,7 @@ void pci_restore_state(struct pci_dev *dev)
 {
 	int i;
 	u32 val;
+	int tries;
 
 	if (!dev->state_saved)
 		return;
@@ -973,12 +987,16 @@ void pci_restore_state(struct pci_dev *dev)
 	 */
 	for (i = 15; i >= 0; i--) {
 		pci_read_config_dword(dev, i * 4, &val);
-		if (val != dev->saved_config_space[i]) {
+		tries = 10;		
+		while (tries && val != dev->saved_config_space[i]) {
 			dev_dbg(&dev->dev, "restoring config "
 				"space at offset %#x (was %#x, writing %#x)\n",
 				i, val, (int)dev->saved_config_space[i]);
 			pci_write_config_dword(dev,i * 4,
 				dev->saved_config_space[i]);
+			pci_read_config_dword(dev, i * 4, &val);
+			mdelay(10);
+			tries--;
 		}
 	}
 	pci_restore_pcix_state(dev);
@@ -1864,6 +1882,12 @@ void platform_pci_wakeup_init(struct pci_dev *dev)
 	platform_pci_sleep_wake(dev, false);
 }
 
+static void pci_add_saved_cap(struct pci_dev *pci_dev,
+	struct pci_cap_saved_state *new_cap)
+{
+	hlist_add_head(&new_cap->next, &pci_dev->saved_cap_space);
+}
+
 /**
  * pci_add_save_buffer - allocate buffer for saving given capability registers
  * @dev: the PCI device
@@ -1909,6 +1933,15 @@ void pci_allocate_cap_save_buffers(struct pci_dev *dev)
 	if (error)
 		dev_err(&dev->dev,
 			"unable to preallocate PCI-X save buffer\n");
+}
+
+void pci_free_cap_save_buffers(struct pci_dev *dev)
+{
+	struct pci_cap_saved_state *tmp;
+	struct hlist_node *pos, *n;
+
+	hlist_for_each_entry_safe(tmp, pos, n, &dev->saved_cap_space, next)
+		kfree(tmp);
 }
 
 /**
@@ -3161,6 +3194,31 @@ int __pci_reset_function(struct pci_dev *dev)
 	return pci_dev_reset(dev, 0);
 }
 EXPORT_SYMBOL_GPL(__pci_reset_function);
+
+/**
+ * __pci_reset_function_locked - reset a PCI device function while holding
+ * the @dev mutex lock.
+ * @dev: PCI device to reset
+ *
+ * Some devices allow an individual function to be reset without affecting
+ * other functions in the same device.  The PCI device must be responsive
+ * to PCI config space in order to use this function.
+ *
+ * The device function is presumed to be unused and the caller is holding
+ * the device mutex lock when this function is called.
+ * Resetting the device will make the contents of PCI configuration space
+ * random, so any caller of this must be prepared to reinitialise the
+ * device including MSI, bus mastering, BARs, decoding IO and memory spaces,
+ * etc.
+ *
+ * Returns 0 if the device function was successfully reset or negative if the
+ * device doesn't support resetting a single function.
+ */
+int __pci_reset_function_locked(struct pci_dev *dev)
+{
+	return pci_dev_reset(dev, 1);
+}
+EXPORT_SYMBOL_GPL(__pci_reset_function_locked);
 
 /**
  * pci_probe_reset_function - check whether the device can be safely reset
