@@ -162,6 +162,10 @@ static inline int up_smp_call_function(smp_call_func_t func, void *info)
 			local_irq_enable();		\
 		}					\
 	} while (0)
+/*
+ * Preemption is disabled here to make sure the cond_func is called under the
+ * same condtions in UP and SMP.
+ */
 #define on_each_cpu_cond(cond_func, func, info, wait, gfp_flags)\
 	do {							\
 		preempt_disable();				\
