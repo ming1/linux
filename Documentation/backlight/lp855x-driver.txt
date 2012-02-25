@@ -35,7 +35,6 @@ For supporting platform specific data, the lp855x platform data can be used.
 * mode : Brightness control mode. PWM or register based.
 * device_control : Value of DEVICE CONTROL register.
 * initial_brightness : Initial value of backlight brightness.
-* max_brightness : Maximum value of backlight brightness.
 * pwm_data : Platform specific pwm generation functions.
 	     Only valid when brightness is pwm input mode.
 	     Functions should be implemented by PWM driver.
@@ -61,7 +60,6 @@ static struct lp855x_platform_data lp8552_pdata = {
 	.mode = REGISTER_BASED,
 	.device_control = I2C_CONFIG(LP8552),
 	.initial_brightness = INITIAL_BRT,
-	.max_brightness = MAX_BRT,
 	.load_new_rom_data = 1,
 	.size_program = ARRAY_SIZE(lp8552_eeprom_arr),
 	.rom_data = lp8552_eeprom_arr,
@@ -73,7 +71,6 @@ static struct lp855x_platform_data lp8556_pdata = {
 	.mode = PWM_BASED,
 	.device_control = PWM_CONFIG(LP8556),
 	.initial_brightness = INITIAL_BRT,
-	.max_brightness = MAX_BRT,
 	.pwm_data = {
 		     .pwm_set_intensity = platform_pwm_set_intensity,
 		     .pwm_get_intensity = platform_pwm_get_intensity,
