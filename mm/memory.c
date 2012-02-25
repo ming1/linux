@@ -3891,6 +3891,28 @@ void print_vma_addr(char *prefix, unsigned long ip)
 	up_read(&current->mm->mmap_sem);
 }
 
+/*
+ * Check if the vma is being used as a stack.
+ * If is_group is non-zero, check in the entire thread group or else
+ * just check in the current task.
+ */
+int vm_is_stack(struct task_struct *task,
+			      struct vm_area_struct *vma, int in_group)
+{
+	if (vm_is_stack_for_task(task, vma))
+		return 1;
+
+	if (in_group) {
+		struct task_struct *t = task;
+		while_each_thread(task, t) {
+			if (vm_is_stack_for_task(t, vma))
+				return 1;
+		}
+	}
+
+	return 0;
+}
+
 #ifdef CONFIG_PROVE_LOCKING
 void might_fault(void)
 {
