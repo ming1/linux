@@ -56,7 +56,7 @@ struct lglock {
 #ifdef CONFIG_DEBUG_LOCK_ALLOC
 	struct lock_class_key lock_key;
 	struct lockdep_map    lock_dep_map;
-#endif 
+#endif
 };
 
 #define DEFINE_LGLOCK(name) \
