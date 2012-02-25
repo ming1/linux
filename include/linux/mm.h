@@ -1041,13 +1041,6 @@ static inline int stack_guard_page_end(struct vm_area_struct *vma,
 		!vma_growsup(vma->vm_next, addr);
 }
 
-/* Check if the vma is being used as a stack by this task */
-static inline int vm_is_stack_for_task(struct task_struct *t,
-				       struct vm_area_struct *vma)
-{
-	return (vma->vm_start <= KSTK_ESP(t) && vma->vm_end >= KSTK_ESP(t));
-}
-
 extern int
 vm_is_stack(struct task_struct *task, struct vm_area_struct *vma, int in_group);
 
