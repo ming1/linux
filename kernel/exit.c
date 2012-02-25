@@ -688,10 +688,9 @@ static void exit_mm(struct task_struct * tsk)
 
 /*
  * When we die, we re-parent all our children, and try to:
- * 1. give them to another thread in our thread group, if such a
- *    member exists
- * 2. give it to the first anchestor process which prctl'd itself
- *    as a child_subreaper for its children (like a service manager)
+ * 1. give them to another thread in our thread group, if such a member exists
+ * 2. give it to the first ancestor process which prctl'd itself as a
+ *    child_subreaper for its children (like a service manager)
  * 3. give it to the init process (PID 1) in our pid namespace
  */
 static struct task_struct *find_new_reaper(struct task_struct *father)
