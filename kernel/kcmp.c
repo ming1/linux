@@ -151,7 +151,7 @@ SYSCALL_DEFINE5(kcmp, pid_t, pid1, pid_t, pid2, int, type,
 			       task2->sysvsem.undo_list,
 			       KCMP_SYSVSEM);
 #else
-		ret = -EOPNOTSUP;
+		ret = -EOPNOTSUPP;
 #endif
 		break;
 	default:
