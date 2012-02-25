@@ -623,16 +623,16 @@ static inline void put_link(struct nameidata *nd, struct path *link, void *cooki
 	path_put(link);
 }
 
-#ifdef CONFIG_PROTECTED_STICKY_SYMLINKS
-int sysctl_protected_sticky_symlinks __read_mostly =
-	CONFIG_PROTECTED_STICKY_SYMLINKS_ENABLED_SYSCTL;
+#ifdef CONFIG_PROTECTED_SYMLINKS
+int sysctl_protected_symlinks __read_mostly =
+	CONFIG_PROTECTED_SYMLINKS_ENABLED_SYSCTL;
 
 /**
  * may_follow_link - Check symlink following for unsafe situations
  * @dentry: The inode/dentry of the symlink
  * @nameidata: The path data of the symlink
  *
- * In the case of the protected_sticky_symlinks sysctl being enabled,
+ * In the case of the protected_symlinks sysctl being enabled,
  * CAP_DAC_OVERRIDE needs to be specifically ignored if the symlink is
  * in a sticky world-writable directory. This is to protect privileged
  * processes from failing races against path names that may change out
@@ -651,7 +651,7 @@ may_follow_link(struct dentry *dentry, struct nameidata *nameidata)
 	const struct inode *inode;
 	const struct cred *cred;
 
-	if (!sysctl_protected_sticky_symlinks)
+	if (!sysctl_protected_symlinks)
 		return 0;
 
 	/* Allowed if owner and follower match. */
