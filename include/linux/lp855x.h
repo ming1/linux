@@ -109,7 +109,6 @@ struct lp855x_rom_data {
  * @mode : brightness control by pwm or lp855x register
  * @device_control : value of DEVICE CONTROL register
  * @initial_brightness : initial value of backlight brightness
- * @max_brightness : maximum value of backlight brightness
  * @pwm_data : platform specific pwm generation functions.
 		Only valid when mode is PWM_BASED.
  * @load_new_rom_data :
@@ -123,7 +122,6 @@ struct lp855x_platform_data {
 	enum lp855x_brightness_ctrl_mode mode;
 	u8 device_control;
 	int initial_brightness;
-	int max_brightness;
 	struct lp855x_pwm_data pwm_data;
 	u8 load_new_rom_data;
 	int size_program;
