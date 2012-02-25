@@ -1497,6 +1497,17 @@ static struct ctl_table fs_table[] = {
 	},
 #endif
 #endif
+#ifdef CONFIG_PROTECTED_STICKY_SYMLINKS
+	{
+		.procname	= "protected_sticky_symlinks",
+		.data		= &sysctl_protected_sticky_symlinks,
+		.maxlen		= sizeof(int),
+		.mode		= 0600,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= &zero,
+		.extra2		= &one,
+	},
+#endif
 	{
 		.procname	= "suid_dumpable",
 		.data		= &suid_dumpable,
