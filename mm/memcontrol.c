@@ -1256,6 +1256,7 @@ int mem_cgroup_swappiness(struct mem_cgroup *memcg)
 
 	return memcg->swappiness;
 }
+
 /*
  * memcg->moving_account is used for checking possibility that some thread is
  * calling move_account(). When a thread on CPU-A starts moving pages under
@@ -1270,7 +1271,6 @@ int mem_cgroup_swappiness(struct mem_cgroup *memcg)
  *                                              rcu_read_unlock()
  *         start move here.
  */
-
 static void mem_cgroup_start_move(struct mem_cgroup *memcg)
 {
 	atomic_inc(&memcg->moving_account);
