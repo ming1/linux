@@ -1048,7 +1048,8 @@ static inline int vm_is_stack_for_task(struct task_struct *t,
 	return (vma->vm_start <= KSTK_ESP(t) && vma->vm_end >= KSTK_ESP(t));
 }
 
-extern int vm_is_stack(struct task_struct *task, struct vm_area_struct *vma, int in_group);
+extern int
+vm_is_stack(struct task_struct *task, struct vm_area_struct *vma, int in_group);
 
 extern unsigned long move_page_tables(struct vm_area_struct *vma,
 		unsigned long old_addr, struct vm_area_struct *new_vma,
