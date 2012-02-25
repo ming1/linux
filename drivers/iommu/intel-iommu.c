@@ -2413,11 +2413,11 @@ static int __init init_dmars(void)
 		 * threaded kernel __init code path all other access are read
 		 * only
 		 */
-		if (g_num_of_iommus < IOMMU_UNITS_SUPPORTED)
+		if (g_num_of_iommus < IOMMU_UNITS_SUPPORTED) {
 			g_num_of_iommus++;
-		else
-			printk_once(KERN_ERR,
-			  "MAX number (%d) of IOMMUs supported exceeded\n",
+			continue;
+		}
+		printk_once(KERN_ERR "intel-iommu: exceeded %d IOMMUs\n",
 			  IOMMU_UNITS_SUPPORTED);
 	}
 
