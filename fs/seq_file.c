@@ -15,9 +15,9 @@
 
 
 /*
- * seq file has a buffer but it may overflow. At overflow, larger buffer
- * is re-allocated and all data will be printed, again.
- * Now, overflow check is done by m->count == m->size.
+ * seq_files have a buffer which can may overflow. When this happens a larger
+ * buffer is reallocated and all the data will be printed again.
+ * The overflow state is true when m->count == m->size.
  */
 static bool seq_overflow(struct seq_file *m)
 {
