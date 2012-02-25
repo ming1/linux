@@ -14,8 +14,6 @@
 #include <linux/i2c.h>
 #include <linux/backlight.h>
 #include <linux/err.h>
-#include <linux/debugfs.h>
-#include <linux/uaccess.h>
 #include <linux/lp855x.h>
 
 /* Registers */
