@@ -51,6 +51,7 @@
 #include "fscache.h"
 #include "dns_resolve.h"
 #include "pnfs.h"
+#include "netns.h"
 
 #define NFSDBG_FACILITY		NFSDBG_VFS
 
@@ -401,7 +402,7 @@ out_no_inode:
 	goto out;
 }
 
-#define NFS_VALID_ATTRS (ATTR_MODE|ATTR_UID|ATTR_GID|ATTR_SIZE|ATTR_ATIME|ATTR_ATIME_SET|ATTR_MTIME|ATTR_MTIME_SET|ATTR_FILE)
+#define NFS_VALID_ATTRS (ATTR_MODE|ATTR_UID|ATTR_GID|ATTR_SIZE|ATTR_ATIME|ATTR_ATIME_SET|ATTR_MTIME|ATTR_MTIME_SET|ATTR_FILE|ATTR_OPEN)
 
 int
 nfs_setattr(struct dentry *dentry, struct iattr *attr)
@@ -423,7 +424,7 @@ nfs_setattr(struct dentry *dentry, struct iattr *attr)
 
 	/* Optimization: if the end result is no change, don't RPC */
 	attr->ia_valid &= NFS_VALID_ATTRS;
-	if ((attr->ia_valid & ~ATTR_FILE) == 0)
+	if ((attr->ia_valid & ~(ATTR_FILE|ATTR_OPEN)) == 0)
 		return 0;
 
 	/* Write all dirty data */
@@ -1406,7 +1407,7 @@ static int nfs_update_inode(struct inode *inode, struct nfs_fattr *fattr)
 	/*
 	 * Big trouble! The inode has become a different object.
 	 */
-	printk(KERN_DEBUG "%s: inode %ld mode changed, %07o to %07o\n",
+	printk(KERN_DEBUG "NFS: %s: inode %ld mode changed, %07o to %07o\n",
 			__func__, inode->i_ino, inode->i_mode, fattr->mode);
  out_err:
 	/*
@@ -1552,6 +1553,28 @@ static void nfsiod_stop(void)
 	destroy_workqueue(wq);
 }
 
+int nfs_net_id;
+EXPORT_SYMBOL_GPL(nfs_net_id);
+
+static int nfs_net_init(struct net *net)
+{
+	nfs_clients_init(net);
+	return nfs_dns_resolver_cache_init(net);
+}
+
+static void nfs_net_exit(struct net *net)
+{
+	nfs_dns_resolver_cache_destroy(net);
+	nfs_cleanup_cb_ident_idr(net);
+}
+
+static struct pernet_operations nfs_net_ops = {
+	.init = nfs_net_init,
+	.exit = nfs_net_exit,
+	.id   = &nfs_net_id,
+	.size = sizeof(struct nfs_net),
+};
+
 /*
  * Initialize NFS
  */
@@ -1561,9 +1584,13 @@ static int __init init_nfs_fs(void)
 
 	err = nfs_idmap_init();
 	if (err < 0)
-		goto out9;
+		goto out10;
 
 	err = nfs_dns_resolver_init();
+	if (err < 0)
+		goto out9;
+
+	err = register_pernet_subsys(&nfs_net_ops);
 	if (err < 0)
 		goto out8;
 
@@ -1600,14 +1627,14 @@ static int __init init_nfs_fs(void)
 		goto out0;
 
 #ifdef CONFIG_PROC_FS
-	rpc_proc_register(&nfs_rpcstat);
+	rpc_proc_register(&init_net, &nfs_rpcstat);
 #endif
 	if ((err = register_nfs_fs()) != 0)
 		goto out;
 	return 0;
 out:
 #ifdef CONFIG_PROC_FS
-	rpc_proc_unregister("nfs");
+	rpc_proc_unregister(&init_net, "nfs");
 #endif
 	nfs_destroy_directcache();
 out0:
@@ -1625,10 +1652,12 @@ out5:
 out6:
 	nfs_fscache_unregister();
 out7:
-	nfs_dns_resolver_destroy();
+	unregister_pernet_subsys(&nfs_net_ops);
 out8:
-	nfs_idmap_quit();
+	nfs_dns_resolver_destroy();
 out9:
+	nfs_idmap_quit();
+out10:
 	return err;
 }
 
@@ -1640,12 +1669,12 @@ static void __exit exit_nfs_fs(void)
 	nfs_destroy_inodecache();
 	nfs_destroy_nfspagecache();
 	nfs_fscache_unregister();
+	unregister_pernet_subsys(&nfs_net_ops);
 	nfs_dns_resolver_destroy();
 	nfs_idmap_quit();
 #ifdef CONFIG_PROC_FS
-	rpc_proc_unregister("nfs");
+	rpc_proc_unregister(&init_net, "nfs");
 #endif
-	nfs_cleanup_cb_ident_idr();
 	unregister_nfs_fs();
 	nfs_fs_proc_exit();
 	nfsiod_stop();
