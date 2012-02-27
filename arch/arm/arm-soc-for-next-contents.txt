@@ -45,6 +45,5 @@ next/soc2:
 depends/driver-core	git://git.kernel.org/pub/scm/linux/kernel/git/gregkh/driver-core.git driver-core-next
 ux500/soc		patches from Lee Jones, depends on depends/driver-core
 
-next/devel:
-imx/devel:		git://git.pengutronix.de/git/imx/linux-2.6.git features/assorted
-
+staging/cleanup:
+at91/staging/base2+cleanup git://github.com/at91linux/linux-at91.git at91-3.4-base2+cleanup
