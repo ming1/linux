@@ -1,0 +1,38 @@
+Importing hexagon based on v3.2-rc2
+Unchanged quilt series hexagon
+Importing i2c based on ce5afed937f0a823d3b00c9459409c3f5f2fbd5d
+Unchanged quilt series i2c
+Importing jdelvare-hwmon based on 3.3-rc4
+Unchanged quilt series jdelvare-hwmon
+Importing kernel-doc based on 3.3-rc2
+Unchanged quilt series kernel-doc
+Importing rr based on v3.3-rc4-91-gbb4c7e9
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard bb4c7e9a9908548b458f34afb2fee74dc0d49f90
+HEAD is now at bb4c7e9 Merge branch 'for-linus' of git://oss.sgi.com/xfs/xfs
+$ git am ../quilt/rr/module:add_kernel_param_to_force_disable_load.patch
+Applying: add kernel param to force disable module load
+$ git am ../quilt/rr/module-param-remove-bool.patch
+Applying: module_param: remove support for bool parameters which are really int.
+$ git am ../quilt/rr/misc:params_level_initcall_like_kernel_parameters.patch
+Applying: params: <level>_initcall-like kernel parameters
+$ git am ../quilt/rr/misc:params_fix_parse_args_use_in_powerpc_s_reserve_hugetlb_gpages.patch
+Applying: params: Fix parse_args() use in PowerPC's reserve_hugetlb_gpages()
+$ git am ../quilt/rr/misc:params_add_missing_init_level_name.patch
+Applying: params: Add missing init level name
+$ git am ../quilt/rr/module-out-of-line-get.patch
+Applying: module: move __module_get and try_module_get() out of line.
+$ git am ../quilt/rr/module:remove_size_limit.patch
+Applying: module: Remove module size limit
+$ git am ../quilt/rr/virtio-spec-update.patch
+Applying: virtio: update documentation to v0.9.4 of spec
+/home/sfr/kernels/next/quilt-tmp/.git/rebase-apply/patch:1171: new blank line at EOF.
++
+warning: 1 line adds whitespace errors.
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/rr
+From ../quilt-tmp
+ + 42d5bdd...e94439f master     -> quilt/rr  (forced update)
+Importing device-mapper based on v3.3-rc3
+Unchanged quilt series device-mapper
