@@ -650,9 +650,9 @@ int pm8001_dev_found(struct domain_device *dev)
 
 static void pm8001_task_done(struct sas_task *task)
 {
-	if (!del_timer(&task->timer))
+	if (!del_timer(&task->slow_task->timer))
 		return;
-	complete(&task->completion);
+	complete(&task->slow_task->completion);
 }
 
 static void pm8001_tmf_timedout(unsigned long data)
@@ -660,7 +660,7 @@ static void pm8001_tmf_timedout(unsigned long data)
 	struct sas_task *task = (struct sas_task *)data;
 
 	task->task_state_flags |= SAS_TASK_STATE_ABORTED;
-	complete(&task->completion);
+	complete(&task->slow_task->completion);
 }
 
 #define PM8001_TASK_TIMEOUT 20
@@ -691,21 +691,21 @@ static int pm8001_exec_internal_tmf_task(struct domain_device *dev,
 		task->task_proto = dev->tproto;
 		memcpy(&task->ssp_task, parameter, para_len);
 		task->task_done = pm8001_task_done;
-		task->timer.data = (unsigned long)task;
-		task->timer.function = pm8001_tmf_timedout;
-		task->timer.expires = jiffies + PM8001_TASK_TIMEOUT*HZ;
-		add_timer(&task->timer);
+		task->slow_task->timer.data = (unsigned long)task;
+		task->slow_task->timer.function = pm8001_tmf_timedout;
+		task->slow_task->timer.expires = jiffies + PM8001_TASK_TIMEOUT*HZ;
+		add_timer(&task->slow_task->timer);
 
 		res = pm8001_task_exec(task, 1, GFP_KERNEL, 1, tmf);
 
 		if (res) {
-			del_timer(&task->timer);
+			del_timer(&task->slow_task->timer);
 			PM8001_FAIL_DBG(pm8001_ha,
 				pm8001_printk("Executing internal task "
 				"failed\n"));
 			goto ex_err;
 		}
-		wait_for_completion(&task->completion);
+		wait_for_completion(&task->slow_task->completion);
 		res = -TMF_RESP_FUNC_FAILED;
 		/* Even TMF timed out, return direct. */
 		if ((task->task_state_flags & SAS_TASK_STATE_ABORTED)) {
@@ -772,10 +772,10 @@ pm8001_exec_internal_task_abort(struct pm8001_hba_info *pm8001_ha,
 		task->dev = dev;
 		task->task_proto = dev->tproto;
 		task->task_done = pm8001_task_done;
-		task->timer.data = (unsigned long)task;
-		task->timer.function = pm8001_tmf_timedout;
-		task->timer.expires = jiffies + PM8001_TASK_TIMEOUT * HZ;
-		add_timer(&task->timer);
+		task->slow_task->timer.data = (unsigned long)task;
+		task->slow_task->timer.function = pm8001_tmf_timedout;
+		task->slow_task->timer.expires = jiffies + PM8001_TASK_TIMEOUT * HZ;
+		add_timer(&task->slow_task->timer);
 
 		res = pm8001_tag_alloc(pm8001_ha, &ccb_tag);
 		if (res)
@@ -789,13 +789,13 @@ pm8001_exec_internal_task_abort(struct pm8001_hba_info *pm8001_ha,
 			pm8001_dev, flag, task_tag, ccb_tag);
 
 		if (res) {
-			del_timer(&task->timer);
+			del_timer(&task->slow_task->timer);
 			PM8001_FAIL_DBG(pm8001_ha,
 				pm8001_printk("Executing internal task "
 				"failed\n"));
 			goto ex_err;
 		}
-		wait_for_completion(&task->completion);
+		wait_for_completion(&task->slow_task->completion);
 		res = TMF_RESP_FUNC_FAILED;
 		/* Even TMF timed out, return direct. */
 		if ((task->task_state_flags & SAS_TASK_STATE_ABORTED)) {
@@ -967,12 +967,14 @@ int pm8001_I_T_nexus_reset(struct domain_device *dev)
 
 	pm8001_dev = dev->lldd_dev;
 	pm8001_ha = pm8001_find_ha_by_dev(dev);
-	phy = sas_find_local_phy(dev);
+	phy = sas_get_local_phy(dev);
 
 	if (dev_is_sata(dev)) {
 		DECLARE_COMPLETION_ONSTACK(completion_setstate);
-		if (scsi_is_sas_phy_local(phy))
-			return 0;
+		if (scsi_is_sas_phy_local(phy)) {
+			rc = 0;
+			goto out;
+		}
 		rc = sas_phy_reset(phy, 1);
 		msleep(2000);
 		rc = pm8001_exec_internal_task_abort(pm8001_ha, pm8001_dev ,
@@ -981,12 +983,14 @@ int pm8001_I_T_nexus_reset(struct domain_device *dev)
 		rc = PM8001_CHIP_DISP->set_dev_state_req(pm8001_ha,
 			pm8001_dev, 0x01);
 		wait_for_completion(&completion_setstate);
-	} else{
-	rc = sas_phy_reset(phy, 1);
-	msleep(2000);
+	} else {
+		rc = sas_phy_reset(phy, 1);
+		msleep(2000);
 	}
 	PM8001_EH_DBG(pm8001_ha, pm8001_printk(" for device[%x]:rc=%d\n",
 		pm8001_dev->device_id, rc));
+ out:
+	sas_put_local_phy(phy);
 	return rc;
 }
 
@@ -998,10 +1002,11 @@ int pm8001_lu_reset(struct domain_device *dev, u8 *lun)
 	struct pm8001_device *pm8001_dev = dev->lldd_dev;
 	struct pm8001_hba_info *pm8001_ha = pm8001_find_ha_by_dev(dev);
 	if (dev_is_sata(dev)) {
-		struct sas_phy *phy = sas_find_local_phy(dev);
+		struct sas_phy *phy = sas_get_local_phy(dev);
 		rc = pm8001_exec_internal_task_abort(pm8001_ha, pm8001_dev ,
 			dev, 1, 0);
 		rc = sas_phy_reset(phy, 1);
+		sas_put_local_phy(phy);
 		rc = PM8001_CHIP_DISP->set_dev_state_req(pm8001_ha,
 			pm8001_dev, 0x01);
 		msleep(2000);
