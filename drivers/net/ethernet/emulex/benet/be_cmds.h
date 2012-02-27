@@ -592,8 +592,8 @@ struct be_port_rxf_stats_v0 {
 	u32 rx_in_range_errors;	/* dword 10*/
 	u32 rx_out_range_errors;	/* dword 11*/
 	u32 rx_frame_too_long;	/* dword 12*/
-	u32 rx_address_match_errors;	/* dword 13*/
-	u32 rx_vlan_mismatch;	/* dword 14*/
+	u32 rx_address_mismatch_drops;	/* dword 13*/
+	u32 rx_vlan_mismatch_drops;	/* dword 14*/
 	u32 rx_dropped_too_small;	/* dword 15*/
 	u32 rx_dropped_too_short;	/* dword 16*/
 	u32 rx_dropped_header_too_small;	/* dword 17*/
@@ -799,8 +799,8 @@ struct lancer_pport_stats {
 	u32 rx_control_frames_unknown_opcode_hi;
 	u32 rx_in_range_errors;
 	u32 rx_out_of_range_errors;
-	u32 rx_address_match_errors;
-	u32 rx_vlan_mismatch_errors;
+	u32 rx_address_mismatch_drops;
+	u32 rx_vlan_mismatch_drops;
 	u32 rx_dropped_too_small;
 	u32 rx_dropped_too_short;
 	u32 rx_dropped_header_too_small;
@@ -1346,22 +1346,36 @@ struct be_cmd_resp_set_func_cap {
 
 /******************** GET/SET_MACLIST  **************************/
 #define BE_MAX_MAC			64
-struct amap_get_mac_list_context {
-	u8 macid[31];
-	u8 act;
-} __packed;
-
 struct be_cmd_req_get_mac_list {
 	struct be_cmd_req_hdr hdr;
-	u32 rsvd;
+	u8 mac_type;
+	u8 perm_override;
+	u16 iface_id;
+	u32 mac_id;
+	u32 rsvd[3];
+} __packed;
+
+struct get_list_macaddr {
+	u16 mac_addr_size;
+	union {
+		u8 macaddr[6];
+		struct {
+			u8 rsvd[2];
+			u32 mac_id;
+		} __packed s_mac_id;
+	} __packed mac_addr_id;
 } __packed;
 
 struct be_cmd_resp_get_mac_list {
 	struct be_cmd_resp_hdr hdr;
-	u8 mac_count;
-	u8 rsvd1;
-	u16 rsvd2;
-	u8 context[sizeof(struct amap_get_mac_list_context) / 8][BE_MAX_MAC];
+	struct get_list_macaddr fd_macaddr; /* Factory default mac */
+	struct get_list_macaddr macid_macaddr; /* soft mac */
+	u8 true_mac_count;
+	u8 pseudo_mac_count;
+	u8 mac_list_size;
+	u8 rsvd;
+	/* perm override mac */
+	struct get_list_macaddr macaddr_list[BE_MAX_MAC];
 } __packed;
 
 struct be_cmd_req_set_mac_list {
@@ -1384,7 +1398,7 @@ struct be_port_rxf_stats_v1 {
 	u32 rx_in_range_errors;
 	u32 rx_out_range_errors;
 	u32 rx_frame_too_long;
-	u32 rx_address_match_errors;
+	u32 rx_address_mismatch_drops;
 	u32 rx_dropped_too_small;
 	u32 rx_dropped_too_short;
 	u32 rx_dropped_header_too_small;
@@ -1492,8 +1506,7 @@ extern int be_cmd_eq_create(struct be_adapter *adapter,
 			struct be_queue_info *eq, int eq_delay);
 extern int be_cmd_cq_create(struct be_adapter *adapter,
 			struct be_queue_info *cq, struct be_queue_info *eq,
-			bool sol_evts, bool no_delay,
-			int num_cqe_dma_coalesce);
+			bool no_delay, int num_cqe_dma_coalesce);
 extern int be_cmd_mccq_create(struct be_adapter *adapter,
 			struct be_queue_info *mccq,
 			struct be_queue_info *cq);
@@ -1502,8 +1515,7 @@ extern int be_cmd_txq_create(struct be_adapter *adapter,
 			struct be_queue_info *cq);
 extern int be_cmd_rxq_create(struct be_adapter *adapter,
 			struct be_queue_info *rxq, u16 cq_id,
-			u16 frag_size, u16 max_frame_size, u32 if_id,
-			u32 rss, u8 *rss_id);
+			u16 frag_size, u32 if_id, u32 rss, u8 *rss_id);
 extern int be_cmd_q_destroy(struct be_adapter *adapter, struct be_queue_info *q,
 			int type);
 extern int be_cmd_rxq_destroy(struct be_adapter *adapter,
@@ -1532,7 +1544,7 @@ extern int be_cmd_query_fw_cfg(struct be_adapter *adapter,
 extern int be_cmd_reset_function(struct be_adapter *adapter);
 extern int be_cmd_rss_config(struct be_adapter *adapter, u8 *rsstable,
 			u16 table_size);
-extern int be_process_mcc(struct be_adapter *adapter, int *status);
+extern int be_process_mcc(struct be_adapter *adapter);
 extern int be_cmd_set_beacon_state(struct be_adapter *adapter,
 			u8 port_num, u8 beacon, u8 status, u8 state);
 extern int be_cmd_get_beacon_state(struct be_adapter *adapter,
@@ -1575,7 +1587,7 @@ extern int be_cmd_req_native_mode(struct be_adapter *adapter);
 extern int be_cmd_get_reg_len(struct be_adapter *adapter, u32 *log_size);
 extern void be_cmd_get_regs(struct be_adapter *adapter, u32 buf_len, void *buf);
 extern int be_cmd_get_mac_from_list(struct be_adapter *adapter, u32 domain,
-							u32 *pmac_id);
+				bool *pmac_id_active, u32 *pmac_id, u8 *mac);
 extern int be_cmd_set_mac_list(struct be_adapter *adapter, u8 *mac_array,
 						u8 mac_count, u32 domain);
 
