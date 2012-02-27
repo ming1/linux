@@ -1517,7 +1517,7 @@ static void __devinit pcibios_setup_phb_resources(struct pci_controller *hose, s
 		 (unsigned long long)res->end,
 		 (unsigned long)res->flags);
 	pci_add_resource_offset(resources, res,
-			(resource_size_t) hose->io_base_virt - _IO_BASE);
+			(resource_size_t)(unsigned long)hose->io_base_virt - _IO_BASE);
 
 	/* Hookup PHB Memory resources */
 	for (i = 0; i < 3; ++i) {
