@@ -14,13 +14,13 @@ imx/fixes-non-critical	git://git.pengutronix.de/git/imx/linux-2.6.git imx-fixes
 next/cleanup:
 at91/base		git://github.com/at91linux/linux-at91.git at91-3.4-base
 at91/pm_cleanup		git://github.com/at91linux/linux-at91.git at91-3.4-base+pm_cleanup
-davinci/cleanup		git://gitorious.org/linux-davinci/linux-davinci.git v3.4/cleanup
+davinci/cleanups	git://gitorious.org/linux-davinci/linux-davinci.git v3.4/cleanup
 imx/cleanup		git://git.pengutronix.de/git/imx/linux-2.6.git imx-cleanup
 
 next/soc:
 ux500/timers		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git ux500-timers
 mxs/clk			git://git.linaro.org/people/shawnguo/linux-2.6.git mxs/clk
-mxs/soc			git://git.linaro.org/people/shawnguo/linux-2.6.git mxs/defconfig
+mxs/defconfig		git://git.linaro.org/people/shawnguo/linux-2.6.git mxs/defconfig
 at91/9x5		git://github.com/at91linux/linux-at91.git at91-3.4-base+9x5
 highbank/devel		git://sources.calxeda.com/kernel/linux.git for-arm-soc
 
@@ -30,6 +30,7 @@ imx/clk-prepare		git://git.pengutronix.de/git/imx/linux-2.6.git features/imx-clk
 samsung/rtc		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git v3.4-next/devel-samsung-rtc
 imx/cs89x0		git://git.pengutronix.de/git/imx/linux-2.6.git features/cs89x0
 imx/drivers		git://git.pengutronix.de/git/imx/linux-2.6.git imx-drivers
+lpc32xx/drivers		patches from Roland Stigge
 
 next/boards:
 mxs/boards		git://git.linaro.org/people/shawnguo/linux-2.6.git mxs/boards
