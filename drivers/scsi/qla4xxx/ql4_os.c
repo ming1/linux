@@ -118,6 +118,10 @@ static void qla4xxx_task_cleanup(struct iscsi_task *);
 static void qla4xxx_fail_session(struct iscsi_cls_session *cls_session);
 static void qla4xxx_conn_get_stats(struct iscsi_cls_conn *cls_conn,
 				   struct iscsi_stats *stats);
+static int qla4xxx_send_ping(struct Scsi_Host *shost, uint32_t iface_num,
+			     uint32_t iface_type, uint32_t payload_size,
+			     uint32_t pid, struct sockaddr *dst_addr);
+
 /*
  * SCSI host template entry points
  */
@@ -194,9 +198,90 @@ static struct iscsi_transport qla4xxx_iscsi_transport = {
 	.set_iface_param	= qla4xxx_iface_set_param,
 	.get_iface_param	= qla4xxx_get_iface_param,
 	.bsg_request		= qla4xxx_bsg_request,
+	.send_ping		= qla4xxx_send_ping,
 };
 
 static struct scsi_transport_template *qla4xxx_scsi_transport;
+
+static int qla4xxx_send_ping(struct Scsi_Host *shost, uint32_t iface_num,
+			     uint32_t iface_type, uint32_t payload_size,
+			     uint32_t pid, struct sockaddr *dst_addr)
+{
+	struct scsi_qla_host *ha = to_qla_host(shost);
+	struct sockaddr_in *addr;
+	struct sockaddr_in6 *addr6;
+	uint32_t options = 0;
+	uint8_t ipaddr[IPv6_ADDR_LEN];
+	int rval;
+
+	memset(ipaddr, 0, IPv6_ADDR_LEN);
+	/* IPv4 to IPv4 */
+	if ((iface_type == ISCSI_IFACE_TYPE_IPV4) &&
+	    (dst_addr->sa_family == AF_INET)) {
+		addr = (struct sockaddr_in *)dst_addr;
+		memcpy(ipaddr, &addr->sin_addr.s_addr, IP_ADDR_LEN);
+		DEBUG2(ql4_printk(KERN_INFO, ha, "%s: IPv4 Ping src: %pI4 "
+				  "dest: %pI4\n", __func__,
+				  &ha->ip_config.ip_address, ipaddr));
+		rval = qla4xxx_ping_iocb(ha, options, payload_size, pid,
+					 ipaddr);
+		if (rval)
+			rval = -EINVAL;
+	} else if ((iface_type == ISCSI_IFACE_TYPE_IPV6) &&
+		   (dst_addr->sa_family == AF_INET6)) {
+		/* IPv6 to IPv6 */
+		addr6 = (struct sockaddr_in6 *)dst_addr;
+		memcpy(ipaddr, &addr6->sin6_addr.in6_u.u6_addr8, IPv6_ADDR_LEN);
+
+		options |= PING_IPV6_PROTOCOL_ENABLE;
+
+		/* Ping using LinkLocal address */
+		if ((iface_num == 0) || (iface_num == 1)) {
+			DEBUG2(ql4_printk(KERN_INFO, ha, "%s: LinkLocal Ping "
+					  "src: %pI6 dest: %pI6\n", __func__,
+					  &ha->ip_config.ipv6_link_local_addr,
+					  ipaddr));
+			options |= PING_IPV6_LINKLOCAL_ADDR;
+			rval = qla4xxx_ping_iocb(ha, options, payload_size,
+						 pid, ipaddr);
+		} else {
+			ql4_printk(KERN_WARNING, ha, "%s: iface num = %d "
+				   "not supported\n", __func__, iface_num);
+			rval = -ENOSYS;
+			goto exit_send_ping;
+		}
+
+		/*
+		 * If ping using LinkLocal address fails, try ping using
+		 * IPv6 address
+		 */
+		if (rval != QLA_SUCCESS) {
+			options &= ~PING_IPV6_LINKLOCAL_ADDR;
+			if (iface_num == 0) {
+				options |= PING_IPV6_ADDR0;
+				DEBUG2(ql4_printk(KERN_INFO, ha, "%s: IPv6 "
+						  "Ping src: %pI6 "
+						  "dest: %pI6\n", __func__,
+						  &ha->ip_config.ipv6_addr0,
+						  ipaddr));
+			} else if (iface_num == 1) {
+				options |= PING_IPV6_ADDR1;
+				DEBUG2(ql4_printk(KERN_INFO, ha, "%s: IPv6 "
+						  "Ping src: %pI6 "
+						  "dest: %pI6\n", __func__,
+						  &ha->ip_config.ipv6_addr1,
+						  ipaddr));
+			}
+			rval = qla4xxx_ping_iocb(ha, options, payload_size,
+						 pid, ipaddr);
+			if (rval)
+				rval = -EINVAL;
+		}
+	} else
+		rval = -ENOSYS;
+exit_send_ping:
+	return rval;
+}
 
 static umode_t ql4_attr_is_visible(int param_type, int param)
 {
@@ -206,6 +291,8 @@ static umode_t ql4_attr_is_visible(int param_type, int param)
 		case ISCSI_HOST_PARAM_HWADDRESS:
 		case ISCSI_HOST_PARAM_IPADDRESS:
 		case ISCSI_HOST_PARAM_INITIATOR_NAME:
+		case ISCSI_HOST_PARAM_PORT_STATE:
+		case ISCSI_HOST_PARAM_PORT_SPEED:
 			return S_IRUGO;
 		default:
 			return 0;
@@ -548,6 +635,43 @@ static enum blk_eh_timer_return qla4xxx_eh_cmd_timed_out(struct scsi_cmnd *sc)
 	return ret;
 }
 
+static void qla4xxx_set_port_speed(struct Scsi_Host *shost)
+{
+	struct scsi_qla_host *ha = to_qla_host(shost);
+	struct iscsi_cls_host *ihost = shost_priv(shost);
+	uint32_t speed = ISCSI_PORT_SPEED_UNKNOWN;
+
+	qla4xxx_get_firmware_state(ha);
+
+	switch (ha->addl_fw_state & 0x0F00) {
+	case FW_ADDSTATE_LINK_SPEED_10MBPS:
+		speed = ISCSI_PORT_SPEED_10MBPS;
+		break;
+	case FW_ADDSTATE_LINK_SPEED_100MBPS:
+		speed = ISCSI_PORT_SPEED_100MBPS;
+		break;
+	case FW_ADDSTATE_LINK_SPEED_1GBPS:
+		speed = ISCSI_PORT_SPEED_1GBPS;
+		break;
+	case FW_ADDSTATE_LINK_SPEED_10GBPS:
+		speed = ISCSI_PORT_SPEED_10GBPS;
+		break;
+	}
+	ihost->port_speed = speed;
+}
+
+static void qla4xxx_set_port_state(struct Scsi_Host *shost)
+{
+	struct scsi_qla_host *ha = to_qla_host(shost);
+	struct iscsi_cls_host *ihost = shost_priv(shost);
+	uint32_t state = ISCSI_PORT_STATE_DOWN;
+
+	if (test_bit(AF_LINK_UP, &ha->flags))
+		state = ISCSI_PORT_STATE_UP;
+
+	ihost->port_state = state;
+}
+
 static int qla4xxx_host_get_param(struct Scsi_Host *shost,
 				  enum iscsi_host_param param, char *buf)
 {
@@ -563,6 +687,14 @@ static int qla4xxx_host_get_param(struct Scsi_Host *shost,
 		break;
 	case ISCSI_HOST_PARAM_INITIATOR_NAME:
 		len = sprintf(buf, "%s\n", ha->name_string);
+		break;
+	case ISCSI_HOST_PARAM_PORT_STATE:
+		qla4xxx_set_port_state(shost);
+		len = sprintf(buf, "%s\n", iscsi_get_port_state_name(shost));
+		break;
+	case ISCSI_HOST_PARAM_PORT_SPEED:
+		qla4xxx_set_port_speed(shost);
+		len = sprintf(buf, "%s\n", iscsi_get_port_speed_name(shost));
 		break;
 	default:
 		return -ENOSYS;
@@ -1552,6 +1684,8 @@ static void qla4xxx_copy_fwddb_param(struct scsi_qla_host *ha,
 			(char *)ha->name_string, buflen);
 	iscsi_set_param(cls_conn, ISCSI_PARAM_PERSISTENT_ADDRESS,
 			(char *)ip_addr, buflen);
+	iscsi_set_param(cls_conn, ISCSI_PARAM_TARGET_ALIAS,
+			(char *)fw_ddb_entry->iscsi_alias, buflen);
 }
 
 void qla4xxx_update_session_conn_fwddb_param(struct scsi_qla_host *ha,
@@ -1665,6 +1799,9 @@ void qla4xxx_update_session_conn_param(struct scsi_qla_host *ha,
 
 	memcpy(sess->initiatorname, ha->name_string,
 	       min(sizeof(ha->name_string), sizeof(sess->initiatorname)));
+
+	iscsi_set_param(cls_conn, ISCSI_PARAM_TARGET_ALIAS,
+			(char *)fw_ddb_entry->iscsi_alias, 0);
 
 exit_session_conn_param:
 	if (fw_ddb_entry)
@@ -2113,7 +2250,7 @@ void qla4_8xxx_watchdog(struct scsi_qla_host *ha)
 				halt_status = qla4_8xxx_rd_32(ha,
 						QLA82XX_PEG_HALT_STATUS1);
 
-				if (LSW(MSB(halt_status)) == 0x67)
+				if (QLA82XX_FWERROR_CODE(halt_status) == 0x67)
 					ql4_printk(KERN_ERR, ha, "%s:"
 						   " Firmware aborted with"
 						   " error code 0x00006700."
@@ -2229,6 +2366,10 @@ static void qla4xxx_timer(struct scsi_qla_host *ha)
 				set_bit(DPC_RESET_HA, &ha->dpc_flags);
 		}
 	}
+
+	/* Process any deferred work. */
+	if (!list_empty(&ha->work_list))
+		start_dpc++;
 
 	/* Wakeup the dpc routine for this adapter, if needed. */
 	if (start_dpc ||
@@ -2795,6 +2936,109 @@ void qla4xxx_wake_dpc(struct scsi_qla_host *ha)
 		queue_work(ha->dpc_thread, &ha->dpc_work);
 }
 
+static struct qla4_work_evt *
+qla4xxx_alloc_work(struct scsi_qla_host *ha, uint32_t data_size,
+		   enum qla4_work_type type)
+{
+	struct qla4_work_evt *e;
+	uint32_t size = sizeof(struct qla4_work_evt) + data_size;
+
+	e = kzalloc(size, GFP_ATOMIC);
+	if (!e)
+		return NULL;
+
+	INIT_LIST_HEAD(&e->list);
+	e->type = type;
+	return e;
+}
+
+static void qla4xxx_post_work(struct scsi_qla_host *ha,
+			     struct qla4_work_evt *e)
+{
+	unsigned long flags;
+
+	spin_lock_irqsave(&ha->work_lock, flags);
+	list_add_tail(&e->list, &ha->work_list);
+	spin_unlock_irqrestore(&ha->work_lock, flags);
+	qla4xxx_wake_dpc(ha);
+}
+
+int qla4xxx_post_aen_work(struct scsi_qla_host *ha,
+			  enum iscsi_host_event_code aen_code,
+			  uint32_t data_size, uint8_t *data)
+{
+	struct qla4_work_evt *e;
+
+	e = qla4xxx_alloc_work(ha, data_size, QLA4_EVENT_AEN);
+	if (!e)
+		return QLA_ERROR;
+
+	e->u.aen.code = aen_code;
+	e->u.aen.data_size = data_size;
+	memcpy(e->u.aen.data, data, data_size);
+
+	qla4xxx_post_work(ha, e);
+
+	return QLA_SUCCESS;
+}
+
+int qla4xxx_post_ping_evt_work(struct scsi_qla_host *ha,
+			       uint32_t status, uint32_t pid,
+			       uint32_t data_size, uint8_t *data)
+{
+	struct qla4_work_evt *e;
+
+	e = qla4xxx_alloc_work(ha, data_size, QLA4_EVENT_PING_STATUS);
+	if (!e)
+		return QLA_ERROR;
+
+	e->u.ping.status = status;
+	e->u.ping.pid = pid;
+	e->u.ping.data_size = data_size;
+	memcpy(e->u.ping.data, data, data_size);
+
+	qla4xxx_post_work(ha, e);
+
+	return QLA_SUCCESS;
+}
+
+void qla4xxx_do_work(struct scsi_qla_host *ha)
+{
+	struct qla4_work_evt *e, *tmp;
+	unsigned long flags;
+	LIST_HEAD(work);
+
+	spin_lock_irqsave(&ha->work_lock, flags);
+	list_splice_init(&ha->work_list, &work);
+	spin_unlock_irqrestore(&ha->work_lock, flags);
+
+	list_for_each_entry_safe(e, tmp, &work, list) {
+		list_del_init(&e->list);
+
+		switch (e->type) {
+		case QLA4_EVENT_AEN:
+			iscsi_post_host_event(ha->host_no,
+					      &qla4xxx_iscsi_transport,
+					      e->u.aen.code,
+					      e->u.aen.data_size,
+					      e->u.aen.data);
+			break;
+		case QLA4_EVENT_PING_STATUS:
+			iscsi_ping_comp_event(ha->host_no,
+					      &qla4xxx_iscsi_transport,
+					      e->u.ping.status,
+					      e->u.ping.pid,
+					      e->u.ping.data_size,
+					      e->u.ping.data);
+			break;
+		default:
+			ql4_printk(KERN_WARNING, ha, "event type: 0x%x not "
+				   "supported", e->type);
+		}
+		kfree(e);
+	}
+}
+
 /**
  * qla4xxx_do_dpc - dpc routine
  * @data: in our case pointer to adapter structure
@@ -2825,6 +3069,9 @@ static void qla4xxx_do_dpc(struct work_struct *work)
 		    ha->host_no, __func__, ha->flags));
 		return;
 	}
+
+	/* post events to application */
+	qla4xxx_do_work(ha);
 
 	if (is_qla8022(ha)) {
 		if (test_bit(DPC_HA_UNRECOVERABLE, &ha->dpc_flags)) {
@@ -3341,9 +3588,8 @@ static int get_fw_boot_info(struct scsi_qla_host *ha, uint16_t ddb_index[])
 		/* Check Boot Mode */
 		val = rd_nvram_byte(ha, addr);
 		if (!(val & 0x07)) {
-			DEBUG2(ql4_printk(KERN_ERR, ha,
-					  "%s: Failed Boot options : 0x%x\n",
-					  __func__, val));
+			DEBUG2(ql4_printk(KERN_INFO, ha, "%s: Adapter boot "
+					  "options : 0x%x\n", __func__, val));
 			ret = QLA_ERROR;
 			goto exit_boot_info;
 		}
@@ -3388,9 +3634,8 @@ static int get_fw_boot_info(struct scsi_qla_host *ha, uint16_t ddb_index[])
 		}
 		/* Check Boot Mode */
 		if (!(buf[1] & 0x07)) {
-			DEBUG2(ql4_printk(KERN_INFO, ha,
-					  "Failed: Boot options : 0x%x\n",
-					  buf[1]));
+			DEBUG2(ql4_printk(KERN_INFO, ha, "Firmware boot options"
+					  " : 0x%x\n", buf[1]));
 			ret = QLA_ERROR;
 			goto exit_boot_info_free;
 		}
@@ -3411,12 +3656,11 @@ static int get_fw_boot_info(struct scsi_qla_host *ha, uint16_t ddb_index[])
 			  " target ID %d\n", __func__, ddb_index[0],
 			  ddb_index[1]));
 
-	ha->pri_ddb_idx = ddb_index[0];
-	ha->sec_ddb_idx = ddb_index[1];
-
 exit_boot_info_free:
 	dma_free_coherent(&ha->pdev->dev, size, buf, buf_dma);
 exit_boot_info:
+	ha->pri_ddb_idx = ddb_index[0];
+	ha->sec_ddb_idx = ddb_index[1];
 	return ret;
 }
 
@@ -3497,8 +3741,8 @@ static int qla4xxx_get_boot_target(struct scsi_qla_host *ha,
 
 	if (qla4xxx_bootdb_by_index(ha, fw_ddb_entry,
 				   fw_ddb_entry_dma, ddb_index)) {
-		DEBUG2(ql4_printk(KERN_ERR, ha,
-				  "%s: Flash DDB read Failed\n", __func__));
+		DEBUG2(ql4_printk(KERN_INFO, ha, "%s: No Flash DDB found at "
+				  "index [%d]\n", __func__, ddb_index));
 		ret = QLA_ERROR;
 		goto exit_boot_target;
 	}
@@ -3576,8 +3820,8 @@ static int qla4xxx_get_boot_info(struct scsi_qla_host *ha)
 	ddb_index[1] = 0xffff;
 	ret = get_fw_boot_info(ha, ddb_index);
 	if (ret != QLA_SUCCESS) {
-		DEBUG2(ql4_printk(KERN_ERR, ha,
-				  "%s: Failed to set boot info.\n", __func__));
+		DEBUG2(ql4_printk(KERN_INFO, ha,
+				"%s: No boot target configured.\n", __func__));
 		return ret;
 	}
 
@@ -3590,8 +3834,8 @@ static int qla4xxx_get_boot_info(struct scsi_qla_host *ha)
 	rval = qla4xxx_get_boot_target(ha, &(ha->boot_tgt.boot_pri_sess),
 				      ddb_index[0]);
 	if (rval != QLA_SUCCESS) {
-		DEBUG2(ql4_printk(KERN_ERR, ha, "%s: Failed to get "
-				  "primary target\n", __func__));
+		DEBUG2(ql4_printk(KERN_INFO, ha, "%s: Primary boot target not "
+				  "configured\n", __func__));
 	} else
 		ret = QLA_SUCCESS;
 
@@ -3602,8 +3846,8 @@ sec_target:
 	rval = qla4xxx_get_boot_target(ha, &(ha->boot_tgt.boot_sec_sess),
 				      ddb_index[1]);
 	if (rval != QLA_SUCCESS) {
-		DEBUG2(ql4_printk(KERN_ERR, ha, "%s: Failed to get "
-				  "secondary target\n", __func__));
+		DEBUG2(ql4_printk(KERN_INFO, ha, "%s: Secondary boot target not"
+				  " configured\n", __func__));
 	} else
 		ret = QLA_SUCCESS;
 
@@ -4038,6 +4282,10 @@ static void qla4xxx_build_st_list(struct scsi_qla_host *ha,
 		if (ret == QLA_ERROR)
 			break;
 
+		/* Ignore DDB if invalid state (unassigned) */
+		if (state == DDB_DS_UNASSIGNED)
+			goto continue_next_st;
+
 		/* Check if ST, add to the list_st */
 		if (strlen((char *) fw_ddb_entry->iscsi_name) != 0)
 			goto continue_next_st;
@@ -4396,6 +4644,9 @@ static int __devinit qla4xxx_probe_adapter(struct pci_dev *pdev,
 	init_completion(&ha->disable_acb_comp);
 
 	spin_lock_init(&ha->hardware_lock);
+
+	/* Initialize work list */
+	INIT_LIST_HEAD(&ha->work_list);
 
 	/* Allocate dma buffers */
 	if (qla4xxx_mem_alloc(ha)) {
