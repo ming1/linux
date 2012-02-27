@@ -15,6 +15,7 @@
 #include <linux/ata_platform.h>
 #include <linux/mtd/nand.h>
 #include <linux/dma-mapping.h>
+#include <linux/of.h>
 #include <net/dsa.h>
 #include <asm/page.h>
 #include <asm/timex.h>
@@ -481,6 +482,9 @@ static int __init kirkwood_clock_gate(void)
 {
 	unsigned int curr = readl(CLOCK_GATING_CTRL);
 	u32 dev, rev;
+#ifdef CONFIG_OF
+	struct device_node *dp;
+#endif
 
 	kirkwood_pcie_id(&dev, &rev);
 	printk(KERN_DEBUG "Gating clock of unused units\n");
@@ -523,6 +527,13 @@ static int __init kirkwood_clock_gate(void)
 		}
 	} else  /* keep this bit set for devices that don't have PCIe1 */
 		kirkwood_clk_ctrl |= CGC_PEX1;
+
+#ifdef CONFIG_OF
+	dp = of_find_node_by_path("/");
+	if (dp && of_device_is_available(of_find_compatible_node(dp, NULL,
+							  "marvell,orion-spi")))
+		kirkwood_clk_ctrl |= CGC_RUNIT;
+#endif
 
 	/* Now gate clock the required units */
 	writel(kirkwood_clk_ctrl, CLOCK_GATING_CTRL);
