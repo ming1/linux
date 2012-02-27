@@ -85,8 +85,7 @@ static bool filter(struct dma_chan *chan, void *param)
 	return true;
 }
 
-static int mxs_dma_alloc(struct snd_pcm_substream *substream,
-				struct snd_pcm_hw_params *params)
+static int mxs_dma_alloc(struct snd_pcm_substream *substream)
 {
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
 	struct snd_pcm_runtime *runtime = substream->runtime;
@@ -112,25 +111,16 @@ static int snd_mxs_pcm_hw_params(struct snd_pcm_substream *substream,
 	struct mxs_pcm_runtime_data *iprtd = runtime->private_data;
 	unsigned long dma_addr;
 	struct dma_chan *chan;
-	int ret;
 
-	ret = mxs_dma_alloc(substream, params);
-	if (ret)
-		return ret;
 	chan = iprtd->dma_chan;
 
-	iprtd->size = params_buffer_bytes(params);
 	iprtd->periods = params_periods(params);
 	iprtd->period_bytes = params_period_bytes(params);
 	iprtd->offset = 0;
-	iprtd->period_time = HZ / (params_rate(params) /
-			params_period_size(params));
 
 	snd_pcm_set_runtime_buffer(substream, &substream->dma_buffer);
 
 	dma_addr = runtime->dma_addr;
-
-	iprtd->buf = substream->dma_buffer.area;
 
 	iprtd->desc = chan->device->device_prep_dma_cyclic(chan, dma_addr,
 			iprtd->period_bytes * iprtd->periods,
@@ -144,19 +134,6 @@ static int snd_mxs_pcm_hw_params(struct snd_pcm_substream *substream,
 
 	iprtd->desc->callback = audio_dma_irq;
 	iprtd->desc->callback_param = substream;
-
-	return 0;
-}
-
-static int snd_mxs_pcm_hw_free(struct snd_pcm_substream *substream)
-{
-	struct snd_pcm_runtime *runtime = substream->runtime;
-	struct mxs_pcm_runtime_data *iprtd = runtime->private_data;
-
-	if (iprtd->dma_chan) {
-		dma_release_channel(iprtd->dma_chan);
-		iprtd->dma_chan = NULL;
-	}
 
 	return 0;
 }
@@ -213,6 +190,12 @@ static int snd_mxs_open(struct snd_pcm_substream *substream)
 		return ret;
 	}
 
+	ret = mxs_dma_alloc(substream);
+	if (ret) {
+		kfree(iprtd);
+		return ret;
+	}
+
 	snd_soc_set_runtime_hwparams(substream, &snd_mxs_hardware);
 
 	return 0;
@@ -223,6 +206,7 @@ static int snd_mxs_close(struct snd_pcm_substream *substream)
 	struct snd_pcm_runtime *runtime = substream->runtime;
 	struct mxs_pcm_runtime_data *iprtd = runtime->private_data;
 
+	dma_release_channel(iprtd->dma_chan);
 	kfree(iprtd);
 
 	return 0;
@@ -244,7 +228,6 @@ static struct snd_pcm_ops mxs_pcm_ops = {
 	.close		= snd_mxs_close,
 	.ioctl		= snd_pcm_lib_ioctl,
 	.hw_params	= snd_mxs_pcm_hw_params,
-	.hw_free	= snd_mxs_pcm_hw_free,
 	.trigger	= snd_mxs_pcm_trigger,
 	.pointer	= snd_mxs_pcm_pointer,
 	.mmap		= snd_mxs_pcm_mmap,
