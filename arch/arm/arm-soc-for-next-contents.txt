@@ -10,6 +10,7 @@ lpc32xx/fixup		applied from series: http://marc.info/?l=linux-arm-kernel&m=13287
 			+ http://marc.info/?l=linux-arm-kernel&m=132940396030585
 davinci/fixes-non-critical git://gitorious.org/linux-davinci/linux-davinci.git v3.4/fixes
 imx/fixes-non-critical	git://git.pengutronix.de/git/imx/linux-2.6.git imx-fixes
+lpc32xx/fixup2		git://git.antcom.de/linux-2.6.git lpc32xx/fixes-non-critical
 
 next/cleanup:
 at91/base		git://github.com/at91linux/linux-at91.git at91-3.4-base
