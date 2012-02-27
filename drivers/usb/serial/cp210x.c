@@ -154,7 +154,6 @@ static struct usb_driver cp210x_driver = {
 	.probe		= usb_serial_probe,
 	.disconnect	= usb_serial_disconnect,
 	.id_table	= id_table,
-	.no_dynamic_id	= 	1,
 };
 
 static struct usb_serial_driver cp210x_device = {
@@ -162,7 +161,6 @@ static struct usb_serial_driver cp210x_device = {
 		.owner =	THIS_MODULE,
 		.name = 	"cp210x",
 	},
-	.usb_driver		= &cp210x_driver,
 	.id_table		= id_table,
 	.num_ports		= 1,
 	.bulk_in_size		= 256,
@@ -175,6 +173,10 @@ static struct usb_serial_driver cp210x_device = {
 	.tiocmset		= cp210x_tiocmset,
 	.attach			= cp210x_startup,
 	.dtr_rts		= cp210x_dtr_rts
+};
+
+static struct usb_serial_driver * const serial_drivers[] = {
+	&cp210x_device, NULL
 };
 
 /* Config request types */
@@ -286,7 +288,7 @@ static int cp210x_get_config(struct usb_serial_port *port, u8 request,
 
 	if (result != size) {
 		dbg("%s - Unable to send config request, "
-				"request=0x%x size=%d result=%d\n",
+				"request=0x%x size=%d result=%d",
 				__func__, request, size, result);
 		if (result > 0)
 			result = -EPROTO;
@@ -340,7 +342,7 @@ static int cp210x_set_config(struct usb_serial_port *port, u8 request,
 
 	if ((size > 2 && result != size) || result < 0) {
 		dbg("%s - Unable to send request, "
-				"request=0x%x size=%d result=%d\n",
+				"request=0x%x size=%d result=%d",
 				__func__, request, size, result);
 		if (result > 0)
 			result = -EPROTO;
@@ -683,13 +685,13 @@ static void cp210x_set_termios(struct tty_struct *tty,
 		default:
 			dbg("cp210x driver does not "
 					"support the number of bits requested,"
-					" using 8 bit mode\n");
+					" using 8 bit mode");
 				bits |= BITS_DATA_8;
 				break;
 		}
 		if (cp210x_set_config(port, CP210X_SET_LINE_CTL, &bits, 2))
 			dbg("Number of data bits requested "
-					"not supported by device\n");
+					"not supported by device");
 	}
 
 	if ((cflag     & (PARENB|PARODD|CMSPAR)) !=
@@ -716,8 +718,7 @@ static void cp210x_set_termios(struct tty_struct *tty,
 			}
 		}
 		if (cp210x_set_config(port, CP210X_SET_LINE_CTL, &bits, 2))
-			dbg("Parity mode not supported "
-					"by device\n");
+			dbg("Parity mode not supported by device");
 	}
 
 	if ((cflag & CSTOPB) != (old_cflag & CSTOPB)) {
@@ -732,7 +733,7 @@ static void cp210x_set_termios(struct tty_struct *tty,
 		}
 		if (cp210x_set_config(port, CP210X_SET_LINE_CTL, &bits, 2))
 			dbg("Number of stop bits requested "
-					"not supported by device\n");
+					"not supported by device");
 	}
 
 	if ((cflag & CRTSCTS) != (old_cflag & CRTSCTS)) {
@@ -853,27 +854,16 @@ static int __init cp210x_init(void)
 {
 	int retval;
 
-	retval = usb_serial_register(&cp210x_device);
-	if (retval)
-		return retval; /* Failed to register */
-
-	retval = usb_register(&cp210x_driver);
-	if (retval) {
-		/* Failed to register */
-		usb_serial_deregister(&cp210x_device);
-		return retval;
-	}
-
-	/* Success */
-	printk(KERN_INFO KBUILD_MODNAME ": " DRIVER_VERSION ":"
-	       DRIVER_DESC "\n");
-	return 0;
+	retval = usb_serial_register_drivers(&cp210x_driver, serial_drivers);
+	if (retval == 0)
+		printk(KERN_INFO KBUILD_MODNAME ": " DRIVER_VERSION ":"
+			       DRIVER_DESC "\n");
+	return retval;
 }
 
 static void __exit cp210x_exit(void)
 {
-	usb_deregister(&cp210x_driver);
-	usb_serial_deregister(&cp210x_device);
+	usb_serial_deregister_drivers(&cp210x_driver, serial_drivers);
 }
 
 module_init(cp210x_init);
