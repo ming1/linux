@@ -297,7 +297,7 @@ void irq_enter(void)
 	int cpu = smp_processor_id();
 
 	rcu_irq_enter();
-	if (idle_cpu(cpu) && !in_interrupt()) {
+	if (is_idle_task(current) && !in_interrupt()) {
 		/*
 		 * Prevent raise_softirq from needlessly waking up ksoftirqd
 		 * here, as softirq will be serviced on return from interrupt.
@@ -383,6 +383,12 @@ void raise_softirq(unsigned int nr)
 	local_irq_save(flags);
 	raise_softirq_irqoff(nr);
 	local_irq_restore(flags);
+}
+
+void __raise_softirq_irqoff(unsigned int nr)
+{
+	trace_softirq_raise(nr);
+	or_softirq_pending(1UL << nr);
 }
 
 void open_softirq(int nr, void (*action)(struct softirq_action *))
