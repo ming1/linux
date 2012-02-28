@@ -408,16 +408,11 @@ static int tpo_td043_probe(struct omap_dss_device *dssdev)
 	}
 
 	if (gpio_is_valid(nreset_gpio)) {
-		ret = gpio_request(nreset_gpio, "lcd reset");
+		ret = gpio_request_one(nreset_gpio, GPIOF_OUT_INIT_LOW,
+					"lcd reset");
 		if (ret < 0) {
 			dev_err(&dssdev->dev, "couldn't request reset GPIO\n");
 			goto fail_gpio_req;
-		}
-
-		ret = gpio_direction_output(nreset_gpio, 0);
-		if (ret < 0) {
-			dev_err(&dssdev->dev, "couldn't set GPIO direction\n");
-			goto fail_gpio_direction;
 		}
 	}
 
@@ -427,8 +422,6 @@ static int tpo_td043_probe(struct omap_dss_device *dssdev)
 
 	return 0;
 
-fail_gpio_direction:
-	gpio_free(nreset_gpio);
 fail_gpio_req:
 	regulator_put(tpo_td043->vcc_reg);
 fail_regulator:
@@ -518,18 +511,7 @@ static struct spi_driver tpo_td043_spi_driver = {
 	.remove	= __devexit_p(tpo_td043_spi_remove),
 };
 
-static int __init tpo_td043_init(void)
-{
-	return spi_register_driver(&tpo_td043_spi_driver);
-}
-
-static void __exit tpo_td043_exit(void)
-{
-	spi_unregister_driver(&tpo_td043_spi_driver);
-}
-
-module_init(tpo_td043_init);
-module_exit(tpo_td043_exit);
+module_spi_driver(tpo_td043_spi_driver);
 
 MODULE_AUTHOR("Gražvydas Ignotas <notasas@gmail.com>");
 MODULE_DESCRIPTION("TPO TD043MTEA1 LCD Driver");
