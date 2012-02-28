@@ -497,6 +497,7 @@ struct l2cap_chan {
 
 	void		*data;
 	struct l2cap_ops *ops;
+	struct mutex		lock;
 };
 
 struct l2cap_ops {
@@ -506,6 +507,9 @@ struct l2cap_ops {
 	int			(*recv) (void *data, struct sk_buff *skb);
 	void			(*close) (void *data);
 	void			(*state_change) (void *data, int state);
+	struct sk_buff		*(*alloc_skb) (struct l2cap_chan *chan,
+					unsigned long len, int nb, int *err);
+
 };
 
 struct l2cap_conn {
@@ -606,21 +610,37 @@ static inline void l2cap_chan_put(struct l2cap_chan *c)
 		kfree(c);
 }
 
+static inline void l2cap_chan_lock(struct l2cap_chan *chan)
+{
+	mutex_lock(&chan->lock);
+}
+
+static inline void l2cap_chan_unlock(struct l2cap_chan *chan)
+{
+	mutex_unlock(&chan->lock);
+}
+
 static inline void l2cap_set_timer(struct l2cap_chan *chan,
 					struct delayed_work *work, long timeout)
 {
-	BT_DBG("chan %p state %d timeout %ld", chan, chan->state, timeout);
+	BT_DBG("chan %p state %s timeout %ld", chan,
+					state_to_string(chan->state), timeout);
 
 	if (!cancel_delayed_work(work))
 		l2cap_chan_hold(chan);
 	schedule_delayed_work(work, timeout);
 }
 
-static inline void l2cap_clear_timer(struct l2cap_chan *chan,
+static inline bool l2cap_clear_timer(struct l2cap_chan *chan,
 					struct delayed_work *work)
 {
-	if (cancel_delayed_work(work))
+	bool ret;
+
+	ret = cancel_delayed_work(work);
+	if (ret)
 		l2cap_chan_put(chan);
+
+	return ret;
 }
 
 #define __set_chan_timer(c, t) l2cap_set_timer(c, &c->chan_timer, (t))
