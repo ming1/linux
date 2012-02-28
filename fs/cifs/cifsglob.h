@@ -547,7 +547,7 @@ struct cifsLockInfo {
 	__u64 offset;
 	__u64 length;
 	__u32 pid;
-	__u8 type;
+	__u32 type;
 };
 
 /*
