@@ -669,6 +669,30 @@ cifs_del_lock_waiters(struct cifsLockInfo *lock)
 	}
 }
 
+static inline __u32
+large_lock_type(void)
+{
+	return LOCKING_ANDX_LARGE_FILES;
+}
+
+static inline __u32
+exclusive_lock_type(void)
+{
+	return 0;
+}
+
+static inline __u32
+shared_lock_type(void)
+{
+	return LOCKING_ANDX_SHARED_LOCK;
+}
+
+static inline __u32
+unlock_lock_type(void)
+{
+	return 0;
+}
+
 static bool
 cifs_find_fid_lock_conflict(struct cifsFileInfo *cfile, __u64 offset,
 			    __u64 length, __u8 type, __u16 netfid,
@@ -680,7 +704,7 @@ cifs_find_fid_lock_conflict(struct cifsFileInfo *cfile, __u64 offset,
 		if (offset + length <= li->offset ||
 		    offset >= li->offset + li->length)
 			continue;
-		else if ((type & LOCKING_ANDX_SHARED_LOCK) &&
+		else if ((type & shared_lock_type()) &&
 			 ((netfid == cfile->netfid && current->tgid == li->pid)
 			 || type == li->type))
 			continue;
@@ -736,7 +760,7 @@ cifs_lock_test(struct cifsFileInfo *cfile, __u64 offset, __u64 length,
 		flock->fl_start = conf_lock->offset;
 		flock->fl_end = conf_lock->offset + conf_lock->length - 1;
 		flock->fl_pid = conf_lock->pid;
-		if (conf_lock->type & LOCKING_ANDX_SHARED_LOCK)
+		if (conf_lock->type & shared_lock_type())
 			flock->fl_type = F_RDLCK;
 		else
 			flock->fl_type = F_WRLCK;
@@ -1088,24 +1112,27 @@ cifs_read_flock(struct file_lock *flock, __u32 *type, int *lock, int *unlock,
 	    (~(FL_POSIX | FL_FLOCK | FL_SLEEP | FL_ACCESS | FL_LEASE)))
 		cFYI(1, "Unknown lock flags 0x%x", flock->fl_flags);
 
-	*type = LOCKING_ANDX_LARGE_FILES;
+	*type = large_lock_type();
 	if (flock->fl_type == F_WRLCK) {
 		cFYI(1, "F_WRLCK ");
+		*type |= exclusive_lock_type();
 		*lock = 1;
 	} else if (flock->fl_type == F_UNLCK) {
 		cFYI(1, "F_UNLCK");
+		*type |= unlock_lock_type();
 		*unlock = 1;
 		/* Check if unlock includes more than one lock range */
 	} else if (flock->fl_type == F_RDLCK) {
 		cFYI(1, "F_RDLCK");
-		*type |= LOCKING_ANDX_SHARED_LOCK;
+		*type |= shared_lock_type();
 		*lock = 1;
 	} else if (flock->fl_type == F_EXLCK) {
 		cFYI(1, "F_EXLCK");
+		*type |= exclusive_lock_type();
 		*lock = 1;
 	} else if (flock->fl_type == F_SHLCK) {
 		cFYI(1, "F_SHLCK");
-		*type |= LOCKING_ANDX_SHARED_LOCK;
+		*type |= shared_lock_type();
 		*lock = 1;
 	} else
 		cFYI(1, "Unknown type of lock");
@@ -1128,7 +1155,7 @@ cifs_getlk(struct file *file, struct file_lock *flock, __u32 type,
 		if (!rc)
 			return rc;
 
-		if (type & LOCKING_ANDX_SHARED_LOCK)
+		if (type & shared_lock_type())
 			posix_lock_type = CIFS_RDLCK;
 		else
 			posix_lock_type = CIFS_WRLCK;
@@ -1156,19 +1183,18 @@ cifs_getlk(struct file *file, struct file_lock *flock, __u32 type,
 		return 0;
 	}
 
-	if (type & LOCKING_ANDX_SHARED_LOCK) {
+	if (type & shared_lock_type()) {
 		flock->fl_type = F_WRLCK;
 		return 0;
 	}
 
 	rc = CIFSSMBLock(xid, tcon, netfid, current->tgid, length,
 			 flock->fl_start, 0, 1,
-			 type | LOCKING_ANDX_SHARED_LOCK, 0, 0);
+			 type | shared_lock_type(), 0, 0);
 	if (rc == 0) {
 		rc = CIFSSMBLock(xid, tcon, netfid, current->tgid,
 				 length, flock->fl_start, 1, 0,
-				 type | LOCKING_ANDX_SHARED_LOCK,
-				 0, 0);
+				 type | shared_lock_type(), 0, 0);
 		flock->fl_type = F_RDLCK;
 		if (rc != 0)
 			cERROR(1, "Error unlocking previously locked "
@@ -1316,7 +1342,7 @@ cifs_setlk(struct file *file,  struct file_lock *flock, __u32 type,
 		if (!rc || rc < 0)
 			return rc;
 
-		if (type & LOCKING_ANDX_SHARED_LOCK)
+		if (type & shared_lock_type())
 			posix_lock_type = CIFS_RDLCK;
 		else
 			posix_lock_type = CIFS_WRLCK;
