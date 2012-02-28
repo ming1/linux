@@ -143,6 +143,21 @@ config TPS6507X
 	  This driver can also be built as a module.  If so, the module
 	  will be called tps6507x.
 
+config MFD_TPS65217
+	tristate "TPS65217 Power Management / White LED chips"
+	depends on I2C
+	select MFD_CORE
+	select REGMAP_I2C
+	help
+	  If you say yes here you get support for the TPS65217 series of
+	  Power Management / White LED chips.
+	  These include voltage regulators, lithium ion/polymer battery
+	  charger, wled and other features that are often used in portable
+	  devices.
+
+	  This driver can also be built as a module.  If so, the module
+	  will be called tps65217.
+
 config MFD_TPS6586X
 	bool "TPS6586x Power Management chips"
 	depends on I2C=y && GPIOLIB && GENERIC_HARDIRQS
@@ -162,6 +177,7 @@ config MFD_TPS65910
 	depends on I2C=y && GPIOLIB
 	select MFD_CORE
 	select GPIO_TPS65910
+	select REGMAP_I2C
 	help
 	  if you say yes here you get support for the TPS65910 series of
 	  Power Management chips.
@@ -171,7 +187,7 @@ config MFD_TPS65912
 	depends on GPIOLIB
 
 config MFD_TPS65912_I2C
-	bool "TPS95612 Power Management chip with I2C"
+	bool "TPS65912 Power Management chip with I2C"
 	select MFD_CORE
 	select MFD_TPS65912
 	depends on I2C=y && GPIOLIB
@@ -251,10 +267,17 @@ config TWL6030_PWM
 	  This is used to control charging LED brightness.
 
 config TWL6040_CORE
-	bool
-	depends on TWL4030_CORE && GENERIC_HARDIRQS
+	bool "Support for TWL6040 audio codec"
+	depends on I2C=y && GENERIC_HARDIRQS
 	select MFD_CORE
+	select REGMAP_I2C
 	default n
+	help
+	  Say yes here if you want support for Texas Instruments TWL6040 audio
+	  codec.
+	  This driver provides common support for accessing the device,
+	  additional drivers must be enabled in order to use the
+	  functionality of the device (audio, vibra).
 
 config MFD_STMPE
 	bool "Support STMicroelectronics STMPE"
