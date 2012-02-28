@@ -28,7 +28,8 @@
 #include <linux/delay.h>
 #include "pmbus.h"
 
-enum chips { zl2004, zl2005, zl2006, zl2008, zl2105, zl2106, zl6100, zl6105 };
+enum chips { zl2004, zl2005, zl2006, zl2008, zl2105, zl2106, zl6100, zl6105,
+	     zl9101, zl9117 };
 
 struct zl6100_data {
 	int id;
@@ -152,6 +153,8 @@ static const struct i2c_device_id zl6100_id[] = {
 	{"zl2106", zl2106},
 	{"zl6100", zl6100},
 	{"zl6105", zl6105},
+	{"zl9101", zl9101},
+	{"zl9117", zl9117},
 	{ }
 };
 MODULE_DEVICE_TABLE(i2c, zl6100_id);
@@ -201,9 +204,9 @@ static int zl6100_probe(struct i2c_client *client,
 	data->id = mid->driver_data;
 
 	/*
-	 * ZL2005, ZL2008, ZL2105, and ZL6100 are known to require a wait time
-	 * between I2C accesses. ZL2004 and ZL6105 are known to be safe.
-	 * Other chips have not yet been tested.
+	 * ZL2005, ZL2008, ZL2105, ZL6100, ZL9101M, and ZL9117M are known to
+	 * require a wait time between I2C accesses. ZL2004 and ZL6105 are known
+	 * to be safe. Other chips have not yet been tested.
 	 *
 	 * Only clear the wait time for chips known to be safe. The wait time
 	 * can be cleared later for additional chips if tests show that it
