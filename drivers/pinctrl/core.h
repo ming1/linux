@@ -20,7 +20,6 @@ struct pinctrl_gpio_range;
  *	controller
  * @pin_desc_tree: each pin descriptor for this pin controller is stored in
  *	this radix tree
- * @pin_desc_tree_lock: lock for the descriptor tree
  * @gpio_ranges: a list of GPIO ranges that is handled by this pin controller,
  *	ranges are added to this list at runtime
  * @gpio_ranges_lock: lock for the GPIO ranges list
@@ -28,25 +27,48 @@ struct pinctrl_gpio_range;
  * @owner: module providing the pin controller, used for refcounting
  * @driver_data: driver data for drivers registering to the pin controller
  *	subsystem
- * @pinmux_hogs_lock: lock for the pinmux hog list
- * @pinmux_hogs: list of pinmux maps hogged by this device
+ * @pinctrl_hogs: list of pin control maps hogged by this device
+ * @device_root: debugfs root for this device
  */
 struct pinctrl_dev {
 	struct list_head node;
 	struct pinctrl_desc *desc;
 	struct radix_tree_root pin_desc_tree;
-	spinlock_t pin_desc_tree_lock;
 	struct list_head gpio_ranges;
 	struct mutex gpio_ranges_lock;
 	struct device *dev;
 	struct module *owner;
 	void *driver_data;
+	struct list_head pinctrl_hogs;
 #ifdef CONFIG_DEBUG_FS
 	struct dentry *device_root;
 #endif
+};
+
+/**
+ * struct pinctrl - per-device pin control state holder
+ * @node: global list node
+ * @dev: the device using this pin control handle
+ * @usecount: the number of active users of this pin controller setting, used
+ *	to keep track of nested use cases
+ * @pctldev: pin control device handling this pin control handle
+ * @mutex: a lock for the pin control state holder
+ * @func_selector: the function selector for the pinmux device handling
+ *	this pinmux
+ * @groups: the group selectors for the pinmux device and
+ *	selector combination handling this pinmux, this is a list that
+ *	will be traversed on all pinmux operations such as
+ *	get/put/enable/disable
+ */
+struct pinctrl {
+	struct list_head node;
+	struct device *dev;
+	unsigned usecount;
+	struct pinctrl_dev *pctldev;
+	struct mutex mutex;
 #ifdef CONFIG_PINMUX
-	struct mutex pinmux_hogs_lock;
-	struct list_head pinmux_hogs;
+	unsigned func_selector;
+	struct list_head groups;
 #endif
 };
 
@@ -68,16 +90,17 @@ struct pin_desc {
 	spinlock_t lock;
 	/* These fields only added when supporting pinmux drivers */
 #ifdef CONFIG_PINMUX
-	const char *mux_function;
+	const char *owner;
 #endif
 };
 
-struct pinctrl_dev *get_pinctrl_dev_from_dev(struct device *dev,
-					     const char *dev_name);
-struct pin_desc *pin_desc_get(struct pinctrl_dev *pctldev, unsigned int pin);
+struct pinctrl_dev *get_pinctrl_dev_from_devname(const char *dev_name);
 int pin_get_from_name(struct pinctrl_dev *pctldev, const char *name);
-int pinctrl_get_device_gpio_range(unsigned gpio,
-				  struct pinctrl_dev **outdev,
-				  struct pinctrl_gpio_range **outrange);
 int pinctrl_get_group_selector(struct pinctrl_dev *pctldev,
 			       const char *pin_group);
+
+static inline struct pin_desc *pin_desc_get(struct pinctrl_dev *pctldev,
+					    unsigned int pin)
+{
+	return radix_tree_lookup(&pctldev->pin_desc_tree, pin);
+}
