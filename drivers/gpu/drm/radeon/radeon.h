@@ -242,6 +242,9 @@ extern int rv6xx_get_temp(struct radeon_device *rdev);
 extern int rv770_get_temp(struct radeon_device *rdev);
 extern int evergreen_get_temp(struct radeon_device *rdev);
 extern int sumo_get_temp(struct radeon_device *rdev);
+extern void evergreen_tiling_fields(unsigned tiling_flags, unsigned *bankw,
+				    unsigned *bankh, unsigned *mtaspect,
+				    unsigned *tile_split);
 
 /*
  * Fences.
@@ -1179,10 +1182,14 @@ struct radeon_asic {
 			       uint32_t offset, uint32_t obj_size);
 	void (*clear_surface_reg)(struct radeon_device *rdev, int reg);
 	void (*bandwidth_update)(struct radeon_device *rdev);
-	void (*hpd_init)(struct radeon_device *rdev);
-	void (*hpd_fini)(struct radeon_device *rdev);
-	bool (*hpd_sense)(struct radeon_device *rdev, enum radeon_hpd_id hpd);
-	void (*hpd_set_polarity)(struct radeon_device *rdev, enum radeon_hpd_id hpd);
+
+	struct {
+		void (*init)(struct radeon_device *rdev);
+		void (*fini)(struct radeon_device *rdev);
+		bool (*sense)(struct radeon_device *rdev, enum radeon_hpd_id hpd);
+		void (*set_polarity)(struct radeon_device *rdev, enum radeon_hpd_id hpd);
+	} hpd;
+
 	/* ioctl hw specific callback. Some hw might want to perform special
 	 * operation on specific ioctl. For instance on wait idle some hw
 	 * might want to perform and HDP flush through MMIO as it seems that
@@ -1192,15 +1199,23 @@ struct radeon_asic {
 	void (*ioctl_wait_idle)(struct radeon_device *rdev, struct radeon_bo *bo);
 	bool (*gui_idle)(struct radeon_device *rdev);
 	/* power management */
-	void (*pm_misc)(struct radeon_device *rdev);
-	void (*pm_prepare)(struct radeon_device *rdev);
-	void (*pm_finish)(struct radeon_device *rdev);
-	void (*pm_init_profile)(struct radeon_device *rdev);
-	void (*pm_get_dynpm_state)(struct radeon_device *rdev);
+	struct {
+		void (*misc)(struct radeon_device *rdev);
+		void (*prepare)(struct radeon_device *rdev);
+		void (*finish)(struct radeon_device *rdev);
+		void (*init_profile)(struct radeon_device *rdev);
+		void (*get_dynpm_state)(struct radeon_device *rdev);
+	} pm;
 	/* pageflipping */
-	void (*pre_page_flip)(struct radeon_device *rdev, int crtc);
-	u32 (*page_flip)(struct radeon_device *rdev, int crtc, u64 crtc_base);
-	void (*post_page_flip)(struct radeon_device *rdev, int crtc);
+	struct {
+		void (*pre_page_flip)(struct radeon_device *rdev, int crtc);
+		u32 (*page_flip)(struct radeon_device *rdev, int crtc, u64 crtc_base);
+		void (*post_page_flip)(struct radeon_device *rdev, int crtc);
+	} pflip;
+	/* wait for vblank */
+	void (*wait_for_vblank)(struct radeon_device *rdev, int crtc);
+	/* wait for mc_idle */
+	int (*mc_wait_for_idle)(struct radeon_device *rdev);
 };
 
 /*
@@ -1676,19 +1691,21 @@ void radeon_ring_write(struct radeon_ring *ring, uint32_t v);
 #define radeon_set_surface_reg(rdev, r, f, p, o, s) ((rdev)->asic->set_surface_reg((rdev), (r), (f), (p), (o), (s)))
 #define radeon_clear_surface_reg(rdev, r) ((rdev)->asic->clear_surface_reg((rdev), (r)))
 #define radeon_bandwidth_update(rdev) (rdev)->asic->bandwidth_update((rdev))
-#define radeon_hpd_init(rdev) (rdev)->asic->hpd_init((rdev))
-#define radeon_hpd_fini(rdev) (rdev)->asic->hpd_fini((rdev))
-#define radeon_hpd_sense(rdev, hpd) (rdev)->asic->hpd_sense((rdev), (hpd))
-#define radeon_hpd_set_polarity(rdev, hpd) (rdev)->asic->hpd_set_polarity((rdev), (hpd))
+#define radeon_hpd_init(rdev) (rdev)->asic->hpd.init((rdev))
+#define radeon_hpd_fini(rdev) (rdev)->asic->hpd.fini((rdev))
+#define radeon_hpd_sense(rdev, h) (rdev)->asic->hpd.sense((rdev), (h))
+#define radeon_hpd_set_polarity(rdev, h) (rdev)->asic->hpd.set_polarity((rdev), (h))
 #define radeon_gui_idle(rdev) (rdev)->asic->gui_idle((rdev))
-#define radeon_pm_misc(rdev) (rdev)->asic->pm_misc((rdev))
-#define radeon_pm_prepare(rdev) (rdev)->asic->pm_prepare((rdev))
-#define radeon_pm_finish(rdev) (rdev)->asic->pm_finish((rdev))
-#define radeon_pm_init_profile(rdev) (rdev)->asic->pm_init_profile((rdev))
-#define radeon_pm_get_dynpm_state(rdev) (rdev)->asic->pm_get_dynpm_state((rdev))
-#define radeon_pre_page_flip(rdev, crtc) rdev->asic->pre_page_flip((rdev), (crtc))
-#define radeon_page_flip(rdev, crtc, base) rdev->asic->page_flip((rdev), (crtc), (base))
-#define radeon_post_page_flip(rdev, crtc) rdev->asic->post_page_flip((rdev), (crtc))
+#define radeon_pm_misc(rdev) (rdev)->asic->pm.misc((rdev))
+#define radeon_pm_prepare(rdev) (rdev)->asic->pm.prepare((rdev))
+#define radeon_pm_finish(rdev) (rdev)->asic->pm.finish((rdev))
+#define radeon_pm_init_profile(rdev) (rdev)->asic->pm.init_profile((rdev))
+#define radeon_pm_get_dynpm_state(rdev) (rdev)->asic->pm.get_dynpm_state((rdev))
+#define radeon_pre_page_flip(rdev, crtc) rdev->asic->pflip.pre_page_flip((rdev), (crtc))
+#define radeon_page_flip(rdev, crtc, base) rdev->asic->pflip.page_flip((rdev), (crtc), (base))
+#define radeon_post_page_flip(rdev, crtc) rdev->asic->pflip.post_page_flip((rdev), (crtc))
+#define radeon_wait_for_vblank(rdev, crtc) rdev->asic->wait_for_vblank((rdev), (crtc))
+#define radeon_mc_wait_for_idle(rdev) rdev->asic->mc_wait_for_idle((rdev))
 
 /* Common functions */
 /* AGP */
@@ -1748,6 +1765,16 @@ int radeon_vm_bo_rmv(struct radeon_device *rdev,
  */
 int r600_vram_scratch_init(struct radeon_device *rdev);
 void r600_vram_scratch_fini(struct radeon_device *rdev);
+
+/*
+ * r600 cs checking helper
+ */
+unsigned r600_mip_minify(unsigned size, unsigned level);
+bool r600_fmt_is_valid_color(u32 format);
+bool r600_fmt_is_valid_texture(u32 format, enum radeon_family family);
+int r600_fmt_get_blocksize(u32 format);
+int r600_fmt_get_nblocksx(u32 format, u32 w);
+int r600_fmt_get_nblocksy(u32 format, u32 h);
 
 /*
  * r600 functions used by radeon_encoder.c
