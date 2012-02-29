@@ -754,10 +754,9 @@ static __devinit struct net_device * rtl8139_init_board (struct pci_dev *pdev)
 
 	/* dev and priv zeroed in alloc_etherdev */
 	dev = alloc_etherdev (sizeof (*tp));
-	if (dev == NULL) {
-		dev_err(&pdev->dev, "Unable to alloc new net device\n");
+	if (dev == NULL)
 		return ERR_PTR(-ENOMEM);
-	}
+
 	SET_NETDEV_DEV(dev, &pdev->dev);
 
 	tp = netdev_priv(dev);
@@ -908,6 +907,33 @@ err_out:
 	return ERR_PTR(rc);
 }
 
+static int rtl8139_set_features(struct net_device *dev, netdev_features_t features)
+{
+	struct rtl8139_private *tp = netdev_priv(dev);
+	unsigned long flags;
+	netdev_features_t changed = features ^ dev->features;
+	void __iomem *ioaddr = tp->mmio_addr;
+
+	if (!(changed & (NETIF_F_RXALL)))
+		return 0;
+
+	spin_lock_irqsave(&tp->lock, flags);
+
+	if (changed & NETIF_F_RXALL) {
+		int rx_mode = tp->rx_config;
+		if (features & NETIF_F_RXALL)
+			rx_mode |= (AcceptErr | AcceptRunt);
+		else
+			rx_mode &= ~(AcceptErr | AcceptRunt);
+		tp->rx_config = rtl8139_rx_config | rx_mode;
+		RTL_W32_F(RxConfig, tp->rx_config);
+	}
+
+	spin_unlock_irqrestore(&tp->lock, flags);
+
+	return 0;
+}
+
 static const struct net_device_ops rtl8139_netdev_ops = {
 	.ndo_open		= rtl8139_open,
 	.ndo_stop		= rtl8139_close,
@@ -922,6 +948,7 @@ static const struct net_device_ops rtl8139_netdev_ops = {
 #ifdef CONFIG_NET_POLL_CONTROLLER
 	.ndo_poll_controller	= rtl8139_poll_controller,
 #endif
+	.ndo_set_features	= rtl8139_set_features,
 };
 
 static int __devinit rtl8139_init_one (struct pci_dev *pdev,
@@ -994,6 +1021,9 @@ static int __devinit rtl8139_init_one (struct pci_dev *pdev,
 	 */
 	dev->features |= NETIF_F_SG | NETIF_F_HW_CSUM | NETIF_F_HIGHDMA;
 	dev->vlan_features = dev->features;
+
+	dev->hw_features |= NETIF_F_RXALL;
+	dev->hw_features |= NETIF_F_RXFCS;
 
 	dev->irq = pdev->irq;
 
@@ -1941,7 +1971,10 @@ static int rtl8139_rx(struct net_device *dev, struct rtl8139_private *tp,
 		/* read size+status of next frame from DMA ring buffer */
 		rx_status = le32_to_cpu (*(__le32 *) (rx_ring + ring_offset));
 		rx_size = rx_status >> 16;
-		pkt_size = rx_size - 4;
+		if (likely(!(dev->features & NETIF_F_RXFCS)))
+			pkt_size = rx_size - 4;
+		else
+			pkt_size = rx_size;
 
 		netif_dbg(tp, rx_status, dev, "%s() status %04x, size %04x, cur %04x\n",
 			  __func__, rx_status, rx_size, cur_rx);
@@ -1979,11 +2012,30 @@ no_early_rx:
 		if (unlikely((rx_size > (MAX_ETH_FRAME_SIZE+4)) ||
 			     (rx_size < 8) ||
 			     (!(rx_status & RxStatusOK)))) {
+			if ((dev->features & NETIF_F_RXALL) &&
+			    (rx_size <= (MAX_ETH_FRAME_SIZE + 4)) &&
+			    (rx_size >= 8) &&
+			    (!(rx_status & RxStatusOK))) {
+				/* Length is at least mostly OK, but pkt has
+				 * error.  I'm hoping we can handle some of these
+				 * errors without resetting the chip. --Ben
+				 */
+				dev->stats.rx_errors++;
+				if (rx_status & RxCRCErr) {
+					dev->stats.rx_crc_errors++;
+					goto keep_pkt;
+				}
+				if (rx_status & RxRunt) {
+					dev->stats.rx_length_errors++;
+					goto keep_pkt;
+				}
+			}
 			rtl8139_rx_err (rx_status, dev, tp, ioaddr);
 			received = -1;
 			goto out;
 		}
 
+keep_pkt:
 		/* Malloc up new buffer, compatible with net-2e. */
 		/* Omit the four octet CRC from the length. */
 
@@ -2515,6 +2567,9 @@ static void __set_rx_mode (struct net_device *dev)
 			rx_mode |= AcceptMulticast;
 		}
 	}
+
+	if (dev->features & NETIF_F_RXALL)
+		rx_mode |= (AcceptErr | AcceptRunt);
 
 	/* We can safely update without stopping the chip. */
 	tmp = rtl8139_rx_config | rx_mode;
