@@ -131,7 +131,6 @@ comment "OMAP Board Type"
 
 config MACH_OMAP_GENERIC
 	bool "Generic OMAP2+ board"
-	select USE_OF
 	default y
 	help
 	  Support for generic TI OMAP2+ boards using Flattened Device Tree.
