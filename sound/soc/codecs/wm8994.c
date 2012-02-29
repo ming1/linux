@@ -3170,9 +3170,6 @@ static void wm8958_default_micdet(u16 status, void *data)
 			snd_soc_update_bits(codec, WM8958_MIC_DETECT_1,
 					    WM8958_MICD_ENA, 0);
 
-			wm1811_jackdet_set_mode(codec,
-						WM1811_JACKDET_MODE_JACK);
-
 			if (wm8994->pdata->jd_ext_cap) {
 				mutex_lock(&codec->mutex);
 				snd_soc_dapm_disable_pin(&codec->dapm,
@@ -3180,6 +3177,9 @@ static void wm8958_default_micdet(u16 status, void *data)
 				snd_soc_dapm_sync(&codec->dapm);
 				mutex_unlock(&codec->mutex);
 			}
+
+			wm1811_jackdet_set_mode(codec,
+						WM1811_JACKDET_MODE_JACK);
 		}
 	}
 
@@ -3235,6 +3235,16 @@ static irqreturn_t wm1811_jackdet_irq(int irq, void *data)
 		snd_soc_update_bits(codec, WM8958_MICBIAS2,
 				    WM8958_MICB2_DISCH, 0);
 
+		/*
+		 * Start off measument of microphone impedence to find
+		 * out what's actually there.
+		 */
+		wm8994->mic_detecting = true;
+		wm1811_jackdet_set_mode(codec, WM1811_JACKDET_MODE_MIC);
+
+		snd_soc_update_bits(codec, WM8958_MIC_DETECT_1,
+				    WM8958_MICD_ENA, WM8958_MICD_ENA);
+
 		/* If required for an external cap force MICBIAS on */
 		if (wm8994->pdata->jd_ext_cap) {
 			mutex_lock(&codec->mutex);
@@ -3243,15 +3253,6 @@ static irqreturn_t wm1811_jackdet_irq(int irq, void *data)
 			snd_soc_dapm_sync(&codec->dapm);
 			mutex_unlock(&codec->mutex);
 		}
-
-		/*
-		 * Start off measument of microphone impedence to find
-		 * out what's actually there.
-		 */
-		wm8994->mic_detecting = true;
-		wm1811_jackdet_set_mode(codec, WM1811_JACKDET_MODE_MIC);
-		snd_soc_update_bits(codec, WM8958_MIC_DETECT_1,
-				    WM8958_MICD_ENA, WM8958_MICD_ENA);
 	} else {
 		dev_dbg(codec->dev, "Jack not detected\n");
 
@@ -3934,20 +3935,12 @@ static int  wm8994_codec_remove(struct snd_soc_codec *codec)
 	return 0;
 }
 
-static int wm8994_soc_volatile(struct snd_soc_codec *codec,
-			       unsigned int reg)
-{
-	return true;
-}
-
 static struct snd_soc_codec_driver soc_codec_dev_wm8994 = {
 	.probe =	wm8994_codec_probe,
 	.remove =	wm8994_codec_remove,
 	.suspend =	wm8994_suspend,
 	.resume =	wm8994_resume,
 	.set_bias_level = wm8994_set_bias_level,
-	.reg_cache_size	= WM8994_MAX_REGISTER,
-	.volatile_register = wm8994_soc_volatile,
 };
 
 static int __devinit wm8994_probe(struct platform_device *pdev)
