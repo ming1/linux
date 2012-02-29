@@ -1,0 +1,85 @@
+Importing hexagon based on v3.2-rc2
+Unchanged quilt series hexagon
+Importing i2c based on ce5afed937f0a823d3b00c9459409c3f5f2fbd5d
+Unchanged quilt series i2c
+Importing jdelvare-hwmon based on 3.3-rc4
+Unchanged quilt series jdelvare-hwmon
+Importing kernel-doc based on 3.3-rc2
+Unchanged quilt series kernel-doc
+Importing rr based on v3.3-rc5-86-g5ffca28
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard 5ffca28a4ac7abb8a254fafe6bd03b2f83667df7
+HEAD is now at 5ffca28 Merge git://git.kernel.org/pub/scm/linux/kernel/git/aia21/ntfs
+$ git am ../quilt/rr/module:add_kernel_param_to_force_disable_load.patch
+Applying: add kernel param to force disable module load
+$ git am ../quilt/rr/module-param-remove-bool.patch
+Applying: module_param: remove support for bool parameters which are really int.
+$ git am ../quilt/rr/misc:params_level_initcall_like_kernel_parameters.patch
+Applying: params: <level>_initcall-like kernel parameters
+$ git am ../quilt/rr/misc:params_fix_parse_args_use_in_powerpc_s_reserve_hugetlb_gpages.patch
+Applying: params: Fix parse_args() use in PowerPC's reserve_hugetlb_gpages()
+$ git am ../quilt/rr/misc:params_add_missing_init_level_name.patch
+Applying: params: Add missing init level name
+$ git am ../quilt/rr/module-out-of-line-get.patch
+Applying: module: move __module_get and try_module_get() out of line.
+$ git am ../quilt/rr/module:remove_size_limit.patch
+Applying: module: Remove module size limit
+$ git am ../quilt/rr/virtio-spec-update.patch
+Applying: virtio: update documentation to v0.9.4 of spec
+/home/sfr/kernels/next/quilt-tmp/.git/rebase-apply/patch:1171: new blank line at EOF.
++
+warning: 1 line adds whitespace errors.
+$ git am ../quilt/rr/cpu_xxx_map-arch-remove.patch
+Applying: remove references to cpu_*_map in arch/
+$ git am ../quilt/rr/db8500-cpufreq-present-map.patch
+Applying: drivers/cpufreq/db8500-cpufreq: remove references to cpu_*_map.
+$ git am ../quilt/rr/cpumasks-update-documentation-and-comments.patch
+Applying: documentation: remove references to cpu_*_map.
+/home/sfr/kernels/next/quilt-tmp/.git/rebase-apply/patch:35: space before tab in indent.
+  			cpu_possible_mask = cpu_present_mask + additional_cpus
+warning: 1 line adds whitespace errors.
+$ git am ../quilt/rr/remove-obsolete-cpu-maps.patch
+Applying: cpumask: remove old cpu_*_map.
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/rr
+From ../quilt-tmp
+ + e94439f...f118fa8 master     -> quilt/rr  (forced update)
+Importing device-mapper based on v3.3-rc3
+$ cd ../quilt-tmp
+$ git reset --hard d65b4e98d7ea3038b767b70fe8be959b2913f16d
+HEAD is now at d65b4e9 Linux 3.3-rc3
+$ git am ../quilt/device-mapper/dm-ioctl-do-not-leak-argv-if-target-message-only-contains-whitespace.patch
+Applying: If 'argc' is zero we jump to the 'out:' label, but this leaks the
+$ git am ../quilt/device-mapper/dm-io-fix-discard-support.patch
+Applying: This patch adds support for discard request to dm_io interface.
+$ git am ../quilt/device-mapper/dm-raid-set-MD_CHANGE_DEVS-when-rebuilding.patch
+Applying: The 'rebuild' parameter is used to rebuild individual devices in an
+$ git am ../quilt/device-mapper/dm-raid-handle-failed-devices-during-start-up.patch
+Applying: The code fails to create a RAID array if any of the superblocks cannot be read.
+$ git am ../quilt/device-mapper/dm-raid-support-flush.patch
+Applying: Add flush support to dm-raid.
+$ git am ../quilt/device-mapper/dm-thin-metadata-remove-incorrect-close_device-on-creation-error-paths.patch
+Applying: The __open_device() error paths in __create_thin() and __create_snap()
+$ git am ../quilt/device-mapper/dm-thin-metadata-unlock-superblock-in-init_pmd-error-path.patch
+Applying: If dm_sm_disk_create() fails the superblock must be unlocked.
+$ git am ../quilt/device-mapper/dm-thin-metadata-decrement-counter-after-removing-mapped-block.patch
+Applying: Correct the number of mapped sectors shown on a thin device's
+$ git am ../quilt/device-mapper/dm-crypt-remove-unused-kmap_atomic-arg.patch
+Applying: The second argument of k[un]map_atomic() is unused.
+$ git am ../quilt/device-mapper/dm-reject-trailing-characters-in-sccanf-input.patch
+Applying: Device mapper uses sscanf to convert arguments to numbers. The problem is that
+$ git am ../quilt/device-mapper/dm-document-sysfs-entries.patch
+Applying: Describe attributes provided by device-mapper in /sys/block.
+$ git am ../quilt/device-mapper/dm-mpath-clear-map_context-when-requeueing.patch
+Applying: When requeuing a request,  clear the map_context pointer to ensure we
+$ git am ../quilt/device-mapper/dm-persistent-data-remove-redundant-value_size-arg-from-value_ptr.patch
+Applying: Now that the value_size is held within every node of the btrees we can
+$ git am ../quilt/device-mapper/dm-bufio-remove-version-header.patch
+Applying: As 'make versioncheck' points out, drivers/md/dm-bufio.c has no need
+$ git am ../quilt/device-mapper/dm-thin-commit-outstanding-date-every-second.patch
+Applying: Commit unwritten data every second to prevent too much building up.
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/device-mapper
+From ../quilt-tmp
+ + 6aed107...a451be7 master     -> quilt/device-mapper  (forced update)
