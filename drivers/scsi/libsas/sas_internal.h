@@ -30,6 +30,7 @@
 #include <scsi/scsi_host.h>
 #include <scsi/scsi_transport_sas.h>
 #include <scsi/libsas.h>
+#include <scsi/sas_ata.h>
 
 #define sas_printk(fmt, ...) printk(KERN_NOTICE "sas: " fmt, ## __VA_ARGS__)
 
@@ -70,6 +71,7 @@ int  sas_init_events(struct sas_ha_struct *sas_ha);
 void sas_shutdown_queue(struct sas_ha_struct *sas_ha);
 void sas_disable_revalidation(struct sas_ha_struct *ha);
 void sas_enable_revalidation(struct sas_ha_struct *ha);
+void __sas_drain_work(struct sas_ha_struct *ha);
 
 void sas_deform_port(struct asd_sas_phy *phy, int gone);
 
@@ -87,9 +89,13 @@ int sas_smp_phy_control(struct domain_device *dev, int phy_id,
 			enum phy_func phy_func, struct sas_phy_linkrates *);
 int sas_smp_get_phy_events(struct sas_phy *phy);
 
+void sas_device_set_phy(struct domain_device *dev, struct sas_port *port);
 struct domain_device *sas_find_dev_by_rphy(struct sas_rphy *rphy);
 struct domain_device *sas_ex_to_ata(struct domain_device *ex_dev, int phy_id);
-
+int sas_ex_phy_discover(struct domain_device *dev, int single);
+int sas_get_report_phy_sata(struct domain_device *dev, int phy_id,
+			    struct smp_resp *rps_resp);
+int sas_try_ata_reset(struct asd_sas_phy *phy);
 void sas_hae_reset(struct work_struct *work);
 
 void sas_free_device(struct kref *kref);
@@ -108,6 +114,15 @@ static inline int sas_smp_host_handler(struct Scsi_Host *shost,
 }
 #endif
 
+static inline void sas_fail_probe(struct domain_device *dev, const char *func, int err)
+{
+	SAS_DPRINTK("%s: for %s device %16llx returned %d\n",
+		    func, dev->parent ? "exp-attached" :
+					    "direct-attached",
+		    SAS_ADDR(dev->sas_addr), err);
+	sas_unregister_dev(dev->port, dev);
+}
+
 static inline void sas_fill_in_rphy(struct domain_device *dev,
 				    struct sas_rphy *rphy)
 {
@@ -118,6 +133,7 @@ static inline void sas_fill_in_rphy(struct domain_device *dev,
 	case SATA_DEV:
 		/* FIXME: need sata device type */
 	case SAS_END_DEV:
+	case SATA_PENDING:
 		rphy->identify.device_type = SAS_END_DEVICE;
 		break;
 	case EDGE_DEV:
@@ -129,6 +145,22 @@ static inline void sas_fill_in_rphy(struct domain_device *dev,
 	default:
 		rphy->identify.device_type = SAS_PHY_UNUSED;
 		break;
+	}
+}
+
+static inline void sas_phy_set_target(struct asd_sas_phy *p, struct domain_device *dev)
+{
+	struct sas_phy *phy = p->phy;
+
+	if (dev) {
+		if (dev_is_sata(dev))
+			phy->identify.device_type = SAS_END_DEVICE;
+		else
+			phy->identify.device_type = dev->dev_type;
+		phy->identify.target_port_protocols = dev->tproto;
+	} else {
+		phy->identify.device_type = SAS_PHY_UNUSED;
+		phy->identify.target_port_protocols = 0;
 	}
 }
 
