@@ -86,6 +86,8 @@
 #define DA_UNMAP_GRANULARITY_DEFAULT		0
 /* Default unmap_granularity_alignment */
 #define DA_UNMAP_GRANULARITY_ALIGNMENT_DEFAULT	0
+/* Default max transfer length */
+#define DA_FABRIC_MAX_SECTORS			8192
 /* Emulation for Direct Page Out */
 #define DA_EMULATE_DPO				0
 /* Emulation for Forced Unit Access WRITEs */
@@ -118,8 +120,8 @@
 /* Queue Algorithm Modifier default for restricted reordering in control mode page */
 #define DA_EMULATE_REST_REORD			0
 
+#define SE_INQUIRY_BUF				512
 #define SE_MODE_PAGE_BUF			512
-
 
 /* struct se_hba->hba_flags */
 enum hba_flags_table {
@@ -169,7 +171,8 @@ enum se_cmd_flags_table {
 	SCF_EMULATED_TASK_SENSE		= 0x00000004,
 	SCF_SCSI_DATA_SG_IO_CDB		= 0x00000008,
 	SCF_SCSI_CONTROL_SG_IO_CDB	= 0x00000010,
-	SCF_SCSI_NON_DATA_CDB		= 0x00000040,
+	SCF_SCSI_NON_DATA_CDB		= 0x00000020,
+	SCF_SCSI_TMR_CDB		= 0x00000040,
 	SCF_SCSI_CDB_EXCEPTION		= 0x00000080,
 	SCF_SCSI_RESERVATION_CONFLICT	= 0x00000100,
 	SCF_FUA				= 0x00000200,
@@ -183,7 +186,8 @@ enum se_cmd_flags_table {
 	SCF_ALUA_NON_OPTIMIZED		= 0x00040000,
 	SCF_DELAYED_CMD_FROM_SAM_ATTR	= 0x00080000,
 	SCF_UNUSED			= 0x00100000,
-	SCF_PASSTHROUGH_SG_TO_MEM_NOALLOC = 0x00400000,
+	SCF_PASSTHROUGH_SG_TO_MEM_NOALLOC = 0x00200000,
+	SCF_ACK_KREF			= 0x00400000,
 };
 
 /* struct se_dev_entry->lun_flags and struct se_lun->lun_access */
@@ -474,12 +478,6 @@ struct t10_reservation {
 	struct t10_reservation_ops pr_ops;
 };
 
-struct se_queue_req {
-	int			state;
-	struct se_cmd		*cmd;
-	struct list_head	qr_list;
-};
-
 struct se_queue_obj {
 	atomic_t		queue_cnt;
 	spinlock_t		cmd_queue_lock;
@@ -502,6 +500,24 @@ struct se_task {
 	struct list_head	t_state_list;
 	bool			t_state_active;
 	struct completion	task_stop_comp;
+};
+
+struct se_tmr_req {
+	/* Task Management function to be performed */
+	u8			function;
+	/* Task Management response to send */
+	u8			response;
+	int			call_transport;
+	/* Reference to ITT that Task Mgmt should be performed */
+	u32			ref_task_tag;
+	/* 64-bit encoded SAM LUN from $FABRIC_MOD TMR header */
+	u64			ref_task_lun;
+	void 			*fabric_tmr_ptr;
+	struct se_cmd		*task_cmd;
+	struct se_cmd		*ref_cmd;
+	struct se_device	*tmr_dev;
+	struct se_lun		*tmr_lun;
+	struct list_head	tmr_list;
 };
 
 struct se_cmd {
@@ -555,23 +571,23 @@ struct se_cmd {
 	unsigned char		*t_task_cdb;
 	unsigned char		__t_task_cdb[TCM_MAX_COMMAND_SIZE];
 	unsigned long long	t_task_lba;
-	int			t_tasks_failed;
 	u32			t_tasks_sg_chained_no;
 	atomic_t		t_fe_count;
 	atomic_t		t_se_count;
 	atomic_t		t_task_cdbs_left;
 	atomic_t		t_task_cdbs_ex_left;
 	atomic_t		t_task_cdbs_sent;
-	atomic_t		t_transport_aborted;
-	atomic_t		t_transport_active;
-	atomic_t		t_transport_complete;
-	atomic_t		t_transport_queue_active;
-	atomic_t		t_transport_sent;
-	atomic_t		t_transport_stop;
-	atomic_t		transport_dev_active;
-	atomic_t		transport_lun_active;
-	atomic_t		transport_lun_fe_stop;
-	atomic_t		transport_lun_stop;
+	unsigned int		transport_state;
+#define CMD_T_ABORTED		(1 << 0)
+#define CMD_T_ACTIVE		(1 << 1)
+#define CMD_T_COMPLETE		(1 << 2)
+#define CMD_T_QUEUED		(1 << 3)
+#define CMD_T_SENT		(1 << 4)
+#define CMD_T_STOP		(1 << 5)
+#define CMD_T_FAILED		(1 << 6)
+#define CMD_T_LUN_STOP		(1 << 7)
+#define CMD_T_LUN_FE_STOP	(1 << 8)
+#define CMD_T_DEV_ACTIVE	(1 << 9)
 	spinlock_t		t_state_lock;
 	struct completion	t_transport_stop_comp;
 	struct completion	transport_lun_fe_stop_comp;
@@ -590,24 +606,6 @@ struct se_cmd {
 	struct list_head	t_task_list;
 	u32			t_task_list_num;
 
-};
-
-struct se_tmr_req {
-	/* Task Management function to be preformed */
-	u8			function;
-	/* Task Management response to send */
-	u8			response;
-	int			call_transport;
-	/* Reference to ITT that Task Mgmt should be preformed */
-	u32			ref_task_tag;
-	/* 64-bit encoded SAM LUN from $FABRIC_MOD TMR header */
-	u64			ref_task_lun;
-	void 			*fabric_tmr_ptr;
-	struct se_cmd		*task_cmd;
-	struct se_cmd		*ref_cmd;
-	struct se_device	*tmr_dev;
-	struct se_lun		*tmr_lun;
-	struct list_head	tmr_list;
 };
 
 struct se_ua {
@@ -730,6 +728,7 @@ struct se_dev_attrib {
 	u32		block_size;
 	u32		hw_max_sectors;
 	u32		max_sectors;
+	u32		fabric_max_sectors;
 	u32		optimal_sectors;
 	u32		hw_queue_depth;
 	u32		queue_depth;

@@ -159,13 +159,8 @@ int transport_lookup_cmd_lun(struct se_cmd *se_cmd, u32 unpacked_lun)
 		dev->read_bytes += se_cmd->data_length;
 	spin_unlock_irqrestore(&dev->stats_lock, flags);
 
-	/*
-	 * Add the iscsi_cmd_t to the struct se_lun's cmd list.  This list is used
-	 * for tracking state of struct se_cmds during LUN shutdown events.
-	 */
 	spin_lock_irqsave(&se_lun->lun_cmd_lock, flags);
 	list_add_tail(&se_cmd->se_lun_node, &se_lun->lun_cmd_list);
-	atomic_set(&se_cmd->transport_lun_active, 1);
 	spin_unlock_irqrestore(&se_lun->lun_cmd_lock, flags);
 
 	return 0;
@@ -655,9 +650,11 @@ int target_report_luns(struct se_task *se_task)
 	struct se_lun *se_lun;
 	struct se_session *se_sess = se_cmd->se_sess;
 	unsigned char *buf;
-	u32 cdb_offset = 0, lun_count = 0, offset = 8, i;
+	u32 lun_count = 0, offset = 8, i;
 
-	buf = (unsigned char *) transport_kmap_data_sg(se_cmd);
+	buf = transport_kmap_data_sg(se_cmd);
+	if (!buf)
+		return -ENOMEM;
 
 	/*
 	 * If no struct se_session pointer is present, this struct se_cmd is
@@ -682,12 +679,11 @@ int target_report_luns(struct se_task *se_task)
 		 * See SPC2-R20 7.19.
 		 */
 		lun_count++;
-		if ((cdb_offset + 8) >= se_cmd->data_length)
+		if ((offset + 8) > se_cmd->data_length)
 			continue;
 
 		int_to_scsilun(deve->mapped_lun, (struct scsi_lun *)&buf[offset]);
 		offset += 8;
-		cdb_offset += 8;
 	}
 	spin_unlock_irq(&se_sess->se_node_acl->device_list_lock);
 
@@ -695,12 +691,12 @@ int target_report_luns(struct se_task *se_task)
 	 * See SPC3 r07, page 159.
 	 */
 done:
-	transport_kunmap_data_sg(se_cmd);
 	lun_count *= 8;
 	buf[0] = ((lun_count >> 24) & 0xff);
 	buf[1] = ((lun_count >> 16) & 0xff);
 	buf[2] = ((lun_count >> 8) & 0xff);
 	buf[3] = (lun_count & 0xff);
+	transport_kunmap_data_sg(se_cmd);
 
 	se_task->task_scsi_status = GOOD;
 	transport_complete_task(se_task, 1);
@@ -894,10 +890,15 @@ void se_dev_set_default_attribs(
 						limits->logical_block_size);
 	dev->se_sub_dev->se_dev_attrib.max_sectors = limits->max_sectors;
 	/*
-	 * Set optimal_sectors from max_sectors, which can be lowered via
-	 * configfs.
+	 * Set fabric_max_sectors, which is reported in block limits
+	 * VPD page (B0h).
 	 */
-	dev->se_sub_dev->se_dev_attrib.optimal_sectors = limits->max_sectors;
+	dev->se_sub_dev->se_dev_attrib.fabric_max_sectors = DA_FABRIC_MAX_SECTORS;
+	/*
+	 * Set optimal_sectors from fabric_max_sectors, which can be
+	 * lowered via configfs.
+	 */
+	dev->se_sub_dev->se_dev_attrib.optimal_sectors = DA_FABRIC_MAX_SECTORS;
 	/*
 	 * queue_depth is based on subsystem plugin dependent requirements.
 	 */
@@ -1229,6 +1230,54 @@ int se_dev_set_max_sectors(struct se_device *dev, u32 max_sectors)
 	return 0;
 }
 
+int se_dev_set_fabric_max_sectors(struct se_device *dev, u32 fabric_max_sectors)
+{
+	if (atomic_read(&dev->dev_export_obj.obj_access_count)) {
+		pr_err("dev[%p]: Unable to change SE Device"
+			" fabric_max_sectors while dev_export_obj: %d count exists\n",
+			dev, atomic_read(&dev->dev_export_obj.obj_access_count));
+		return -EINVAL;
+	}
+	if (!fabric_max_sectors) {
+		pr_err("dev[%p]: Illegal ZERO value for"
+			" fabric_max_sectors\n", dev);
+		return -EINVAL;
+	}
+	if (fabric_max_sectors < DA_STATUS_MAX_SECTORS_MIN) {
+		pr_err("dev[%p]: Passed fabric_max_sectors: %u less than"
+			" DA_STATUS_MAX_SECTORS_MIN: %u\n", dev, fabric_max_sectors,
+				DA_STATUS_MAX_SECTORS_MIN);
+		return -EINVAL;
+	}
+	if (dev->transport->transport_type == TRANSPORT_PLUGIN_PHBA_PDEV) {
+		if (fabric_max_sectors > dev->se_sub_dev->se_dev_attrib.hw_max_sectors) {
+			pr_err("dev[%p]: Passed fabric_max_sectors: %u"
+				" greater than TCM/SE_Device max_sectors:"
+				" %u\n", dev, fabric_max_sectors,
+				dev->se_sub_dev->se_dev_attrib.hw_max_sectors);
+			 return -EINVAL;
+		}
+	} else {
+		if (fabric_max_sectors > DA_STATUS_MAX_SECTORS_MAX) {
+			pr_err("dev[%p]: Passed fabric_max_sectors: %u"
+				" greater than DA_STATUS_MAX_SECTORS_MAX:"
+				" %u\n", dev, fabric_max_sectors,
+				DA_STATUS_MAX_SECTORS_MAX);
+			return -EINVAL;
+		}
+	}
+	/*
+	 * Align max_sectors down to PAGE_SIZE to follow transport_allocate_data_tasks()
+	 */
+	fabric_max_sectors = se_dev_align_max_sectors(fabric_max_sectors,
+						      dev->se_sub_dev->se_dev_attrib.block_size);
+
+	dev->se_sub_dev->se_dev_attrib.fabric_max_sectors = fabric_max_sectors;
+	pr_debug("dev[%p]: SE Device max_sectors changed to %u\n",
+			dev, fabric_max_sectors);
+	return 0;
+}
+
 int se_dev_set_optimal_sectors(struct se_device *dev, u32 optimal_sectors)
 {
 	if (atomic_read(&dev->dev_export_obj.obj_access_count)) {
@@ -1242,10 +1291,10 @@ int se_dev_set_optimal_sectors(struct se_device *dev, u32 optimal_sectors)
 				" changed for TCM/pSCSI\n", dev);
 		return -EINVAL;
 	}
-	if (optimal_sectors > dev->se_sub_dev->se_dev_attrib.max_sectors) {
+	if (optimal_sectors > dev->se_sub_dev->se_dev_attrib.fabric_max_sectors) {
 		pr_err("dev[%p]: Passed optimal_sectors %u cannot be"
-			" greater than max_sectors: %u\n", dev,
-			optimal_sectors, dev->se_sub_dev->se_dev_attrib.max_sectors);
+			" greater than fabric_max_sectors: %u\n", dev,
+			optimal_sectors, dev->se_sub_dev->se_dev_attrib.fabric_max_sectors);
 		return -EINVAL;
 	}
 
