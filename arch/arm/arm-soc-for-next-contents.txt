@@ -30,6 +30,7 @@ mxs/defconfig		git://git.linaro.org/people/shawnguo/linux-2.6.git mxs/defconfig
 at91/9x5		git://github.com/at91linux/linux-at91.git at91-3.4-base+9x5
 highbank/devel		git://sources.calxeda.com/kernel/linux.git for-arm-soc
 imx/defconfig		git://git.linaro.org/people/shawnguo/linux-2.6.git imx/defconfig
+omap/soc		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap soc
 
 next/drivers:
 at91/device-board	git://github.com/at91linux/linux-at91.git at91-3.4-base+device_board
