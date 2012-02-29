@@ -17,6 +17,7 @@
 #include <linux/fs.h>
 #include <linux/miscdevice.h>
 #include <linux/platform_device.h>
+#include <linux/of.h>
 #include <linux/watchdog.h>
 #include <linux/init.h>
 #include <linux/uaccess.h>
@@ -28,9 +29,9 @@
 /*
  * Watchdog timer block registers.
  */
-#define TIMER_CTRL		(TIMER_VIRT_BASE + 0x0000)
+#define TIMER_CTRL		0x0000
 #define  WDT_EN			0x0010
-#define WDT_VAL			(TIMER_VIRT_BASE + 0x0024)
+#define WDT_VAL			0x0024
 
 #define WDT_MAX_CYCLE_COUNT	0xffffffff
 #define WDT_IN_USE		0
@@ -40,6 +41,7 @@ static int nowayout = WATCHDOG_NOWAYOUT;
 static int heartbeat = -1;		/* module parameter (seconds) */
 static unsigned int wdt_max_duration;	/* (seconds) */
 static unsigned int wdt_tclk;
+static void __iomem *wdt_reg;
 static unsigned long wdt_status;
 static DEFINE_SPINLOCK(wdt_lock);
 
@@ -48,7 +50,7 @@ static void orion_wdt_ping(void)
 	spin_lock(&wdt_lock);
 
 	/* Reload watchdog duration */
-	writel(wdt_tclk * heartbeat, WDT_VAL);
+	writel(wdt_tclk * heartbeat, wdt_reg + WDT_VAL);
 
 	spin_unlock(&wdt_lock);
 }
@@ -60,7 +62,7 @@ static void orion_wdt_enable(void)
 	spin_lock(&wdt_lock);
 
 	/* Set watchdog duration */
-	writel(wdt_tclk * heartbeat, WDT_VAL);
+	writel(wdt_tclk * heartbeat, wdt_reg + WDT_VAL);
 
 	/* Clear watchdog timer interrupt */
 	reg = readl(BRIDGE_CAUSE);
@@ -68,9 +70,9 @@ static void orion_wdt_enable(void)
 	writel(reg, BRIDGE_CAUSE);
 
 	/* Enable watchdog timer */
-	reg = readl(TIMER_CTRL);
+	reg = readl(wdt_reg + TIMER_CTRL);
 	reg |= WDT_EN;
-	writel(reg, TIMER_CTRL);
+	writel(reg, wdt_reg + TIMER_CTRL);
 
 	/* Enable reset on watchdog */
 	reg = readl(RSTOUTn_MASK);
@@ -92,9 +94,9 @@ static void orion_wdt_disable(void)
 	writel(reg, RSTOUTn_MASK);
 
 	/* Disable watchdog timer */
-	reg = readl(TIMER_CTRL);
+	reg = readl(wdt_reg + TIMER_CTRL);
 	reg &= ~WDT_EN;
-	writel(reg, TIMER_CTRL);
+	writel(reg, wdt_reg + TIMER_CTRL);
 
 	spin_unlock(&wdt_lock);
 }
@@ -102,7 +104,7 @@ static void orion_wdt_disable(void)
 static int orion_wdt_get_timeleft(int *time_left)
 {
 	spin_lock(&wdt_lock);
-	*time_left = readl(WDT_VAL) / wdt_tclk;
+	*time_left = readl(wdt_reg + WDT_VAL) / wdt_tclk;
 	spin_unlock(&wdt_lock);
 	return 0;
 }
@@ -236,14 +238,28 @@ static struct miscdevice orion_wdt_miscdev = {
 static int __devinit orion_wdt_probe(struct platform_device *pdev)
 {
 	struct orion_wdt_platform_data *pdata = pdev->dev.platform_data;
+	struct device_node *np = pdev->dev.of_node;
+	struct resource *res;
 	int ret;
 
-	if (pdata) {
+	if (pdata)
 		wdt_tclk = pdata->tclk;
-	} else {
-		printk(KERN_ERR "Orion Watchdog misses platform data\n");
+
+	of_property_read_u32(np, "clock-frequency", &wdt_tclk);
+
+	if (!wdt_tclk) {
+		printk(KERN_ERR "Orion Watchdog can't get clock freq\n");
 		return -ENODEV;
 	}
+
+	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+
+	if (!res) {
+		printk(KERN_ERR "invalid address\n");
+		return -EINVAL;
+	}
+
+	wdt_reg = ioremap(res->start, res->end - res->start);
 
 	if (orion_wdt_miscdev.parent)
 		return -EBUSY;
@@ -284,6 +300,11 @@ static void orion_wdt_shutdown(struct platform_device *pdev)
 		orion_wdt_disable();
 }
 
+static struct of_device_id orion_wdt_of_match_table[] = {
+	{ .compatible = "marvell,orion-wdt", },
+	{},
+};
+
 static struct platform_driver orion_wdt_driver = {
 	.probe		= orion_wdt_probe,
 	.remove		= __devexit_p(orion_wdt_remove),
@@ -291,6 +312,7 @@ static struct platform_driver orion_wdt_driver = {
 	.driver		= {
 		.owner	= THIS_MODULE,
 		.name	= "orion_wdt",
+		.of_match_table = of_match_ptr(orion_wdt_of_match_table),
 	},
 };
 
