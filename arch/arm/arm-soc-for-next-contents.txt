@@ -22,6 +22,7 @@ at91/pm_cleanup		git://github.com/at91linux/linux-at91.git at91-3.4-base+pm_clea
 davinci/cleanups	git://gitorious.org/linux-davinci/linux-davinci.git v3.4/cleanup
 imx/cleanup		git://git.pengutronix.de/git/imx/linux-2.6.git imx-cleanup
 pxa/cleanup		git://github.com/hzhuang1/linux.git cleanup-3.4
+omap/cleanup		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap cleanup
 
 next/soc:
 ux500/timers		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git ux500-timers
