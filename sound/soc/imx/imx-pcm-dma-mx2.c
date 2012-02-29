@@ -21,6 +21,7 @@
 #include <linux/platform_device.h>
 #include <linux/slab.h>
 #include <linux/dmaengine.h>
+#include <linux/types.h>
 
 #include <sound/core.h>
 #include <sound/initval.h>
@@ -107,6 +108,8 @@ static int imx_ssi_dma_alloc(struct snd_pcm_substream *substream,
 	default:
 		return 0;
 	}
+
+	slave_config.device_fc = false;
 
 	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
 		slave_config.direction = DMA_MEM_TO_DEV;
@@ -206,6 +209,7 @@ static int snd_imx_pcm_trigger(struct snd_pcm_substream *substream, int cmd)
 	case SNDRV_PCM_TRIGGER_RESUME:
 	case SNDRV_PCM_TRIGGER_PAUSE_RELEASE:
 		dmaengine_submit(iprtd->desc);
+		dma_async_issue_pending(iprtd->dma_chan);
 
 		break;
 
