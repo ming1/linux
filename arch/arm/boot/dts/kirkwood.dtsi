@@ -2,5 +2,11 @@
 
 / {
 	compatible = "marvell,kirkwood";
+
+	rtc@f1010300 {
+		compatible = "marvell,rtc";
+		reg = <0xf1010300 0x1f>;
+		interrupts = <53>;
+	};
 };
 
