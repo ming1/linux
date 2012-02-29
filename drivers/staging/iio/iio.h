@@ -88,6 +88,25 @@ enum iio_endian {
 	IIO_LE,
 };
 
+struct iio_chan_spec;
+struct iio_dev;
+
+/**
+ * struct iio_chan_spec_ext_info - Extended channel info attribute
+ * @name:	Info attribute name
+ * @shared:	Whether this attribute is shared between all channels.
+ * @read:	Read callback for this info attribute, may be NULL.
+ * @write:	Write callback for this info attribute, may be NULL.
+ */
+struct iio_chan_spec_ext_info {
+	const char *name;
+	bool shared;
+	ssize_t (*read)(struct iio_dev *, struct iio_chan_spec const *,
+			char *buf);
+	ssize_t (*write)(struct iio_dev *, struct iio_chan_spec const *,
+			const char *buf, size_t len);
+};
+
 /**
  * struct iio_chan_spec - specification of a single channel
  * @type:		What type of measurement is the channel making.
@@ -107,6 +126,9 @@ enum iio_endian {
  * @info_mask:		What information is to be exported about this channel.
  *			This includes calibbias, scale etc.
  * @event_mask:	What events can this channel produce.
+ * @ext_info:		Array of extended info attributes for this channel.
+ *			The array is NULL terminated, the last element should
+ *			have it's name field set to NULL.
  * @extend_name:	Allows labeling of channel attributes with an
  *			informative name. Note this has no effect codes etc,
  *			unlike modifiers.
@@ -141,6 +163,7 @@ struct iio_chan_spec {
 	} scan_type;
 	long			info_mask;
 	long			event_mask;
+	const struct iio_chan_spec_ext_info *ext_info;
 	char			*extend_name;
 	const char		*datasheet_name;
 	unsigned		processed_val:1;
@@ -196,12 +219,6 @@ static inline s64 iio_get_time_ns(void)
 
 #define INDIO_ALL_BUFFER_MODES					\
 	(INDIO_BUFFER_TRIGGERED | INDIO_BUFFER_HARDWARE)
-
-/* Vast majority of this is set by the industrialio subsystem on a
- * call to iio_device_register. */
-#define IIO_VAL_INT 1
-#define IIO_VAL_INT_PLUS_MICRO 2
-#define IIO_VAL_INT_PLUS_NANO 3
 
 struct iio_trigger; /* forward declaration */
 struct iio_dev;
@@ -310,6 +327,7 @@ struct iio_buffer_setup_ops {
  * @chan_attr_group:	[INTERN] group for all attrs in base directory
  * @name:		[DRIVER] name of the device.
  * @info:		[DRIVER] callbacks and constant info from driver
+ * @info_exist_lock:	[INTERN] lock to prevent use during removal
  * @chrdev:		[INTERN] associated character device
  * @groups:		[INTERN] attribute groups
  * @groupcounter:	[INTERN] index of next attribute group
@@ -327,9 +345,9 @@ struct iio_dev {
 	struct iio_buffer		*buffer;
 	struct mutex			mlock;
 
-	unsigned long			*available_scan_masks;
+	const unsigned long		*available_scan_masks;
 	unsigned			masklength;
-	unsigned long			*active_scan_mask;
+	const unsigned long		*active_scan_mask;
 	struct iio_trigger		*trig;
 	struct iio_poll_func		*pollfunc;
 
@@ -340,6 +358,7 @@ struct iio_dev {
 	struct attribute_group		chan_attr_group;
 	const char			*name;
 	const struct iio_info		*info;
+	struct mutex			info_exist_lock;
 	const struct iio_buffer_setup_ops	*setup_ops;
 	struct cdev			chrdev;
 #define IIO_MAX_GROUPS 6
