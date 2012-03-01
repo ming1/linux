@@ -1023,7 +1023,7 @@ static void encode_attrs(struct xdr_stream *xdr, const struct iattr *iap, const 
 	 * Now we backfill the bitmap and the attribute buffer length.
 	 */
 	if (len != ((char *)p - (char *)q) + 4) {
-		printk(KERN_ERR "nfs: Attr length error, %u != %Zu\n",
+		printk(KERN_ERR "NFS: Attr length error, %u != %Zu\n",
 				len, ((char *)p - (char *)q) + 4);
 		BUG();
 	}
@@ -3560,6 +3560,10 @@ static int decode_attr_fs_locations(struct xdr_stream *xdr, uint32_t *bitmap, st
 	status = 0;
 	if (unlikely(!(bitmap[0] & FATTR4_WORD0_FS_LOCATIONS)))
 		goto out;
+	status = -EIO;
+	/* Ignore borken servers that return unrequested attrs */
+	if (unlikely(res == NULL))
+		goto out;
 	dprintk("%s: fsroot ", __func__);
 	status = decode_pathname(xdr, &res->fs_path);
 	if (unlikely(status != 0))
@@ -4294,6 +4298,7 @@ xdr_error:
 
 static int decode_getfattr_attrs(struct xdr_stream *xdr, uint32_t *bitmap,
 		struct nfs_fattr *fattr, struct nfs_fh *fh,
+		struct nfs4_fs_locations *fs_loc,
 		const struct nfs_server *server)
 {
 	int status;
@@ -4341,9 +4346,7 @@ static int decode_getfattr_attrs(struct xdr_stream *xdr, uint32_t *bitmap,
 		goto xdr_error;
 	fattr->valid |= status;
 
-	status = decode_attr_fs_locations(xdr, bitmap, container_of(fattr,
-						struct nfs4_fs_locations,
-						fattr));
+	status = decode_attr_fs_locations(xdr, bitmap, fs_loc);
 	if (status < 0)
 		goto xdr_error;
 	fattr->valid |= status;
@@ -4407,7 +4410,8 @@ xdr_error:
 }
 
 static int decode_getfattr_generic(struct xdr_stream *xdr, struct nfs_fattr *fattr,
-		struct nfs_fh *fh, const struct nfs_server *server)
+		struct nfs_fh *fh, struct nfs4_fs_locations *fs_loc,
+		const struct nfs_server *server)
 {
 	__be32 *savep;
 	uint32_t attrlen,
@@ -4426,7 +4430,7 @@ static int decode_getfattr_generic(struct xdr_stream *xdr, struct nfs_fattr *fat
 	if (status < 0)
 		goto xdr_error;
 
-	status = decode_getfattr_attrs(xdr, bitmap, fattr, fh, server);
+	status = decode_getfattr_attrs(xdr, bitmap, fattr, fh, fs_loc, server);
 	if (status < 0)
 		goto xdr_error;
 
@@ -4439,7 +4443,7 @@ xdr_error:
 static int decode_getfattr(struct xdr_stream *xdr, struct nfs_fattr *fattr,
 		const struct nfs_server *server)
 {
-	return decode_getfattr_generic(xdr, fattr, NULL, server);
+	return decode_getfattr_generic(xdr, fattr, NULL, NULL, server);
 }
 
 /*
@@ -4463,8 +4467,8 @@ static int decode_first_pnfs_layout_type(struct xdr_stream *xdr,
 		return 0;
 	}
 	if (num > 1)
-		printk(KERN_INFO "%s: Warning: Multiple pNFS layout drivers "
-			"per filesystem not supported\n", __func__);
+		printk(KERN_INFO "NFS: %s: Warning: Multiple pNFS layout "
+			"drivers per filesystem not supported\n", __func__);
 
 	/* Decode and set first layout type, move xdr->p past unused types */
 	p = xdr_inline_decode(xdr, num * 4);
@@ -5285,8 +5289,8 @@ static int decode_chan_attrs(struct xdr_stream *xdr,
 	attrs->max_reqs = be32_to_cpup(p++);
 	nr_attrs = be32_to_cpup(p);
 	if (unlikely(nr_attrs > 1)) {
-		printk(KERN_WARNING "%s: Invalid rdma channel attrs count %u\n",
-			__func__, nr_attrs);
+		printk(KERN_WARNING "NFS: %s: Invalid rdma channel attrs "
+			"count %u\n", __func__, nr_attrs);
 		return -EINVAL;
 	}
 	if (nr_attrs == 1) {
@@ -5443,7 +5447,7 @@ static int decode_getdevicelist(struct xdr_stream *xdr,
 	dprintk("%s: num_dev %d\n", __func__, res->num_devs);
 
 	if (res->num_devs > NFS4_PNFS_GETDEVLIST_MAXNUM) {
-		printk(KERN_ERR "%s too many result dev_num %u\n",
+		printk(KERN_ERR "NFS: %s too many result dev_num %u\n",
 				__func__, res->num_devs);
 		return -EIO;
 	}
@@ -5666,7 +5670,8 @@ static int decode_test_stateid(struct xdr_stream *xdr,
 	if (unlikely(!p))
 		goto out_overflow;
 	res->status = be32_to_cpup(p++);
-	return res->status;
+
+	return status;
 out_overflow:
 	print_overflow_msg(__func__, xdr);
 out:
@@ -6583,8 +6588,9 @@ static int nfs4_xdr_dec_fs_locations(struct rpc_rqst *req,
 	if (status)
 		goto out;
 	xdr_enter_page(xdr, PAGE_SIZE);
-	status = decode_getfattr(xdr, &res->fs_locations->fattr,
-				 res->fs_locations->server);
+	status = decode_getfattr_generic(xdr, &res->fs_locations->fattr,
+					 NULL, res->fs_locations,
+					 res->fs_locations->server);
 out:
 	return status;
 }
@@ -6964,7 +6970,7 @@ int nfs4_decode_dirent(struct xdr_stream *xdr, struct nfs_entry *entry,
 		goto out_overflow;
 
 	if (decode_getfattr_attrs(xdr, bitmap, entry->fattr, entry->fh,
-					entry->server) < 0)
+				  NULL, entry->server) < 0)
 		goto out_overflow;
 	if (entry->fattr->valid & NFS_ATTR_FATTR_MOUNTED_ON_FILEID)
 		entry->ino = entry->fattr->mounted_on_fileid;
@@ -7112,7 +7118,7 @@ struct rpc_procinfo	nfs4_procedures[] = {
 #endif /* CONFIG_NFS_V4_1 */
 };
 
-struct rpc_version		nfs_version4 = {
+const struct rpc_version nfs_version4 = {
 	.number			= 4,
 	.nrprocs		= ARRAY_SIZE(nfs4_procedures),
 	.procs			= nfs4_procedures
