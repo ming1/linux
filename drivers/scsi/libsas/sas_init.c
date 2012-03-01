@@ -48,18 +48,37 @@ struct sas_task *sas_alloc_task(gfp_t flags)
 		INIT_LIST_HEAD(&task->list);
 		spin_lock_init(&task->task_state_lock);
 		task->task_state_flags = SAS_TASK_STATE_PENDING;
-		init_timer(&task->timer);
-		init_completion(&task->completion);
 	}
 
 	return task;
 }
 EXPORT_SYMBOL_GPL(sas_alloc_task);
 
+struct sas_task *sas_alloc_slow_task(gfp_t flags)
+{
+	struct sas_task *task = sas_alloc_task(flags);
+	struct sas_task_slow *slow = kmalloc(sizeof(*slow), flags);
+
+	if (!task || !slow) {
+		if (task)
+			kmem_cache_free(sas_task_cache, task);
+		kfree(slow);
+		return NULL;
+	}
+
+	task->slow_task = slow;
+	init_timer(&slow->timer);
+	init_completion(&slow->completion);
+
+	return task;
+}
+EXPORT_SYMBOL_GPL(sas_alloc_slow_task);
+
 void sas_free_task(struct sas_task *task)
 {
 	if (task) {
 		BUG_ON(!list_empty(&task->list));
+		kfree(task->slow_task);
 		kmem_cache_free(sas_task_cache, task);
 	}
 }
@@ -293,6 +312,10 @@ static int sas_phy_enable(struct sas_phy *phy, int enable)
 	return ret;
 }
 
+static bool force_hard_reset;
+module_param(force_hard_reset, bool, S_IRUGO|S_IWUSR);
+MODULE_PARM_DESC(force_hard_reset, "clear sata affiliations on every reset");
+
 int sas_phy_reset(struct sas_phy *phy, int hard_reset)
 {
 	int ret;
@@ -301,7 +324,7 @@ int sas_phy_reset(struct sas_phy *phy, int hard_reset)
 	if (!phy->enabled)
 		return -ENODEV;
 
-	if (hard_reset)
+	if (hard_reset || force_hard_reset)
 		reset_type = PHY_FUNC_HARD_RESET;
 	else
 		reset_type = PHY_FUNC_LINK_RESET;
