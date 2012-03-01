@@ -1,7 +1,7 @@
 /*
  *
  * Intel Management Engine Interface (Intel MEI) Linux driver
- * Copyright (c) 2003-2011, Intel Corporation.
+ * Copyright (c) 2003-2012, Intel Corporation.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -215,26 +215,17 @@ int mei_count_full_read_slots(struct mei_device *dev)
  * @buffer: message buffer will be written
  * @buffer_length: message size will be read
  */
-void mei_read_slots(struct mei_device *dev,
-		    unsigned char *buffer, unsigned long buffer_length)
+void mei_read_slots(struct mei_device *dev, unsigned char *buffer,
+		    unsigned long buffer_length)
 {
-	u32 i = 0;
-	unsigned char temp_buf[sizeof(u32)];
+	u32 *reg_buf = (u32 *)buffer;
 
-	while (buffer_length >= sizeof(u32)) {
-		((u32 *) buffer)[i] = mei_mecbrw_read(dev);
-
-		dev_dbg(&dev->pdev->dev,
-				"buffer[%d]= %d\n",
-				i, ((u32 *) buffer)[i]);
-
-		i++;
-		buffer_length -= sizeof(u32);
-	}
+	for (; buffer_length >= sizeof(u32); buffer_length -= sizeof(u32))
+		*reg_buf++ = mei_mecbrw_read(dev);
 
 	if (buffer_length > 0) {
-		*((u32 *) &temp_buf) = mei_mecbrw_read(dev);
-		memcpy(&buffer[i * 4], temp_buf, buffer_length);
+		u32 reg = mei_mecbrw_read(dev);
+		memcpy(reg_buf, &reg, buffer_length);
 	}
 
 	dev->host_hw_state |= H_IG;
@@ -335,7 +326,7 @@ int mei_send_flow_control(struct mei_device *dev, struct mei_cl *cl)
 	memset(mei_flow_control, 0, sizeof(*mei_flow_control));
 	mei_flow_control->host_addr = cl->host_client_id;
 	mei_flow_control->me_addr = cl->me_client_id;
-	mei_flow_control->cmd.cmd = MEI_FLOW_CONTROL_CMD;
+	mei_flow_control->hbm_cmd = MEI_FLOW_CONTROL_CMD;
 	memset(mei_flow_control->reserved, 0,
 			sizeof(mei_flow_control->reserved));
 	dev_dbg(&dev->pdev->dev, "sending flow control host client = %d, ME client = %d\n",
@@ -399,7 +390,7 @@ int mei_disconnect(struct mei_device *dev, struct mei_cl *cl)
 	memset(mei_cli_disconnect, 0, sizeof(*mei_cli_disconnect));
 	mei_cli_disconnect->host_addr = cl->host_client_id;
 	mei_cli_disconnect->me_addr = cl->me_client_id;
-	mei_cli_disconnect->cmd.cmd = CLIENT_DISCONNECT_REQ_CMD;
+	mei_cli_disconnect->hbm_cmd = CLIENT_DISCONNECT_REQ_CMD;
 	mei_cli_disconnect->reserved[0] = 0;
 
 	if (!mei_write_message(dev, mei_hdr,
@@ -434,7 +425,7 @@ int mei_connect(struct mei_device *dev, struct mei_cl *cl)
 	    (struct hbm_client_connect_request *) &dev->wr_msg_buf[1];
 	mei_cli_connect->host_addr = cl->host_client_id;
 	mei_cli_connect->me_addr = cl->me_client_id;
-	mei_cli_connect->cmd.cmd = CLIENT_CONNECT_REQ_CMD;
+	mei_cli_connect->hbm_cmd = CLIENT_CONNECT_REQ_CMD;
 	mei_cli_connect->reserved = 0;
 
 	if (!mei_write_message(dev, mei_hdr,
