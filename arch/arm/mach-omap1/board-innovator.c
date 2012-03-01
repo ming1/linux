@@ -26,7 +26,6 @@
 #include <linux/input.h>
 #include <linux/smc91x.h>
 
-#include <mach/hardware.h>
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
@@ -37,8 +36,12 @@
 #include <plat/tc.h>
 #include <plat/usb.h>
 #include <plat/keypad.h>
-#include "common.h"
 #include <plat/mmc.h>
+
+#include <mach/hardware.h>
+
+#include "iomap.h"
+#include "common.h"
 
 /* At OMAP1610 Innovator the Ethernet is directly connected to CS1 */
 #define INNOVATOR1610_ETHR_START	0x04000300
@@ -416,13 +419,13 @@ static void __init innovator_init(void)
 #ifdef CONFIG_ARCH_OMAP15XX
 	if (cpu_is_omap1510()) {
 		omap1_usb_init(&innovator1510_usb_config);
-		innovator_config[1].data = &innovator1510_lcd_config;
+		innovator_config[0].data = &innovator1510_lcd_config;
 	}
 #endif
 #ifdef CONFIG_ARCH_OMAP16XX
 	if (cpu_is_omap1610()) {
 		omap1_usb_init(&h2_usb_config);
-		innovator_config[1].data = &innovator1610_lcd_config;
+		innovator_config[0].data = &innovator1610_lcd_config;
 	}
 #endif
 	omap_board_config = innovator_config;

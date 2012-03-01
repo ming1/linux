@@ -137,7 +137,6 @@ static void __init n8x0_usb_init(void) {}
 
 static struct omap2_mcspi_device_config p54spi_mcspi_config = {
 	.turbo_mode	= 0,
-	.single_channel = 1,
 };
 
 static struct spi_board_info n800_spi_board_info[] __initdata = {
@@ -371,7 +370,11 @@ static void n8x0_mmc_callback(void *data, u8 card_mask)
 	else
 		*openp = 0;
 
+#ifdef CONFIG_MMC_OMAP
 	omap_mmc_notify_cover_event(mmc_device, index, *openp);
+#else
+	pr_warn("MMC: notify cover event not available\n");
+#endif
 }
 
 static int n8x0_mmc_late_init(struct device *dev)
