@@ -2236,6 +2236,12 @@ bytes respectively. Such letter suffixes can also be entirely omitted.
 
 			default: off.
 
+	printk.always_kmsg_dump=
+			Trigger kmsg_dump for cases other than kernel oops or
+			panics
+			Format: <bool>  (1/Y/y=enable, 0/N/n=disable)
+			default: disabled
+
 	printk.time=	Show timing data prefixed to each printk message line
 			Format: <bool>  (1/Y/y=enable, 0/N/n=disable)
 
@@ -2653,6 +2659,13 @@ bytes respectively. Such letter suffixes can also be entirely omitted.
 			[FTRACE] Set and start specified trace events in order
 			to facilitate early boot debugging.
 			See also Documentation/trace/events.txt
+
+	transparent_hugepage=
+			[KNL]
+			Format: [always|madvise|never]
+			Can be used to control the default behavior of the system
+			with respect to transparent hugepages.
+			See Documentation/vm/transhuge.txt for more details.
 
 	tsc=		Disable clocksource stability checks for TSC.
 			Format: <string>
