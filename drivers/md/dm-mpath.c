@@ -920,8 +920,10 @@ static int multipath_map(struct dm_target *ti, struct request *clone,
 	map_context->ptr = mpio;
 	clone->cmd_flags |= REQ_FAILFAST_TRANSPORT;
 	r = map_io(m, clone, mpio, 0);
-	if (r < 0 || r == DM_MAPIO_REQUEUE)
+	if (r < 0 || r == DM_MAPIO_REQUEUE) {
 		mempool_free(mpio, m->mpio_pool);
+		map_context->ptr = NULL;
+	}
 
 	return r;
 }
