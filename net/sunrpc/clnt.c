@@ -36,8 +36,10 @@
 #include <linux/sunrpc/rpc_pipe_fs.h>
 #include <linux/sunrpc/metrics.h>
 #include <linux/sunrpc/bc_xprt.h>
+#include <trace/events/sunrpc.h>
 
 #include "sunrpc.h"
+#include "netns.h"
 
 #ifdef RPC_DEBUG
 # define RPCDBG_FACILITY	RPCDBG_CALL
@@ -50,8 +52,6 @@
 /*
  * All RPC clients are linked into this list
  */
-static LIST_HEAD(all_clients);
-static DEFINE_SPINLOCK(rpc_client_lock);
 
 static DECLARE_WAIT_QUEUE_HEAD(destroy_wait);
 
@@ -81,70 +81,182 @@ static int	rpc_ping(struct rpc_clnt *clnt);
 
 static void rpc_register_client(struct rpc_clnt *clnt)
 {
-	spin_lock(&rpc_client_lock);
-	list_add(&clnt->cl_clients, &all_clients);
-	spin_unlock(&rpc_client_lock);
+	struct sunrpc_net *sn = net_generic(clnt->cl_xprt->xprt_net, sunrpc_net_id);
+
+	spin_lock(&sn->rpc_client_lock);
+	list_add(&clnt->cl_clients, &sn->all_clients);
+	spin_unlock(&sn->rpc_client_lock);
 }
 
 static void rpc_unregister_client(struct rpc_clnt *clnt)
 {
-	spin_lock(&rpc_client_lock);
+	struct sunrpc_net *sn = net_generic(clnt->cl_xprt->xprt_net, sunrpc_net_id);
+
+	spin_lock(&sn->rpc_client_lock);
 	list_del(&clnt->cl_clients);
-	spin_unlock(&rpc_client_lock);
+	spin_unlock(&sn->rpc_client_lock);
 }
 
-static int
-rpc_setup_pipedir(struct rpc_clnt *clnt, char *dir_name)
+static void __rpc_clnt_remove_pipedir(struct rpc_clnt *clnt)
+{
+	if (clnt->cl_dentry) {
+		if (clnt->cl_auth && clnt->cl_auth->au_ops->pipes_destroy)
+			clnt->cl_auth->au_ops->pipes_destroy(clnt->cl_auth);
+		rpc_remove_client_dir(clnt->cl_dentry);
+	}
+	clnt->cl_dentry = NULL;
+}
+
+static void rpc_clnt_remove_pipedir(struct rpc_clnt *clnt)
+{
+	struct super_block *pipefs_sb;
+
+	pipefs_sb = rpc_get_sb_net(clnt->cl_xprt->xprt_net);
+	if (pipefs_sb) {
+		__rpc_clnt_remove_pipedir(clnt);
+		rpc_put_sb_net(clnt->cl_xprt->xprt_net);
+	}
+}
+
+static struct dentry *rpc_setup_pipedir_sb(struct super_block *sb,
+				    struct rpc_clnt *clnt,
+				    const char *dir_name)
 {
 	static uint32_t clntid;
-	struct path path, dir;
 	char name[15];
 	struct qstr q = {
 		.name = name,
 	};
+	struct dentry *dir, *dentry;
 	int error;
 
-	clnt->cl_path.mnt = ERR_PTR(-ENOENT);
-	clnt->cl_path.dentry = ERR_PTR(-ENOENT);
-	if (dir_name == NULL)
-		return 0;
-
-	path.mnt = rpc_get_mount();
-	if (IS_ERR(path.mnt))
-		return PTR_ERR(path.mnt);
-	error = vfs_path_lookup(path.mnt->mnt_root, path.mnt, dir_name, 0, &dir);
-	if (error)
-		goto err;
-
+	dir = rpc_d_lookup_sb(sb, dir_name);
+	if (dir == NULL)
+		return dir;
 	for (;;) {
 		q.len = snprintf(name, sizeof(name), "clnt%x", (unsigned int)clntid++);
 		name[sizeof(name) - 1] = '\0';
 		q.hash = full_name_hash(q.name, q.len);
-		path.dentry = rpc_create_client_dir(dir.dentry, &q, clnt);
-		if (!IS_ERR(path.dentry))
+		dentry = rpc_create_client_dir(dir, &q, clnt);
+		if (!IS_ERR(dentry))
 			break;
-		error = PTR_ERR(path.dentry);
+		error = PTR_ERR(dentry);
 		if (error != -EEXIST) {
 			printk(KERN_INFO "RPC: Couldn't create pipefs entry"
 					" %s/%s, error %d\n",
 					dir_name, name, error);
-			goto err_path_put;
+			break;
 		}
 	}
-	path_put(&dir);
-	clnt->cl_path = path;
+	dput(dir);
+	return dentry;
+}
+
+static int
+rpc_setup_pipedir(struct rpc_clnt *clnt, const char *dir_name)
+{
+	struct super_block *pipefs_sb;
+	struct dentry *dentry;
+
+	clnt->cl_dentry = NULL;
+	if (dir_name == NULL)
+		return 0;
+	pipefs_sb = rpc_get_sb_net(clnt->cl_xprt->xprt_net);
+	if (!pipefs_sb)
+		return 0;
+	dentry = rpc_setup_pipedir_sb(pipefs_sb, clnt, dir_name);
+	rpc_put_sb_net(clnt->cl_xprt->xprt_net);
+	if (IS_ERR(dentry))
+		return PTR_ERR(dentry);
+	clnt->cl_dentry = dentry;
 	return 0;
-err_path_put:
-	path_put(&dir);
-err:
-	rpc_put_mount();
+}
+
+static int __rpc_pipefs_event(struct rpc_clnt *clnt, unsigned long event,
+				struct super_block *sb)
+{
+	struct dentry *dentry;
+	int err = 0;
+
+	switch (event) {
+	case RPC_PIPEFS_MOUNT:
+		if (clnt->cl_program->pipe_dir_name == NULL)
+			break;
+		dentry = rpc_setup_pipedir_sb(sb, clnt,
+					      clnt->cl_program->pipe_dir_name);
+		BUG_ON(dentry == NULL);
+		if (IS_ERR(dentry))
+			return PTR_ERR(dentry);
+		clnt->cl_dentry = dentry;
+		if (clnt->cl_auth->au_ops->pipes_create) {
+			err = clnt->cl_auth->au_ops->pipes_create(clnt->cl_auth);
+			if (err)
+				__rpc_clnt_remove_pipedir(clnt);
+		}
+		break;
+	case RPC_PIPEFS_UMOUNT:
+		__rpc_clnt_remove_pipedir(clnt);
+		break;
+	default:
+		printk(KERN_ERR "%s: unknown event: %ld\n", __func__, event);
+		return -ENOTSUPP;
+	}
+	return err;
+}
+
+static struct rpc_clnt *rpc_get_client_for_event(struct net *net, int event)
+{
+	struct sunrpc_net *sn = net_generic(net, sunrpc_net_id);
+	struct rpc_clnt *clnt;
+
+	spin_lock(&sn->rpc_client_lock);
+	list_for_each_entry(clnt, &sn->all_clients, cl_clients) {
+		if (((event == RPC_PIPEFS_MOUNT) && clnt->cl_dentry) ||
+		    ((event == RPC_PIPEFS_UMOUNT) && !clnt->cl_dentry))
+			continue;
+		atomic_inc(&clnt->cl_count);
+		spin_unlock(&sn->rpc_client_lock);
+		return clnt;
+	}
+	spin_unlock(&sn->rpc_client_lock);
+	return NULL;
+}
+
+static int rpc_pipefs_event(struct notifier_block *nb, unsigned long event,
+			    void *ptr)
+{
+	struct super_block *sb = ptr;
+	struct rpc_clnt *clnt;
+	int error = 0;
+
+	while ((clnt = rpc_get_client_for_event(sb->s_fs_info, event))) {
+		error = __rpc_pipefs_event(clnt, event, sb);
+		rpc_release_client(clnt);
+		if (error)
+			break;
+	}
 	return error;
+}
+
+static struct notifier_block rpc_clients_block = {
+	.notifier_call	= rpc_pipefs_event,
+	.priority	= SUNRPC_PIPEFS_RPC_PRIO,
+};
+
+int rpc_clients_notifier_register(void)
+{
+	return rpc_pipefs_notifier_register(&rpc_clients_block);
+}
+
+void rpc_clients_notifier_unregister(void)
+{
+	return rpc_pipefs_notifier_unregister(&rpc_clients_block);
 }
 
 static struct rpc_clnt * rpc_new_client(const struct rpc_create_args *args, struct rpc_xprt *xprt)
 {
-	struct rpc_program	*program = args->program;
-	struct rpc_version	*version;
+	const struct rpc_program *program = args->program;
+	const struct rpc_version *version;
 	struct rpc_clnt		*clnt = NULL;
 	struct rpc_auth		*auth;
 	int err;
@@ -179,15 +291,9 @@ static struct rpc_clnt * rpc_new_client(const struct rpc_create_args *args, stru
 		goto out_err;
 	clnt->cl_parent = clnt;
 
-	clnt->cl_server = clnt->cl_inline_name;
-	if (len > sizeof(clnt->cl_inline_name)) {
-		char *buf = kmalloc(len, GFP_KERNEL);
-		if (buf != NULL)
-			clnt->cl_server = buf;
-		else
-			len = sizeof(clnt->cl_inline_name);
-	}
-	strlcpy(clnt->cl_server, args->servername, len);
+	clnt->cl_server = kstrdup(args->servername, GFP_KERNEL);
+	if (clnt->cl_server == NULL)
+		goto out_no_server;
 
 	clnt->cl_xprt     = xprt;
 	clnt->cl_procinfo = version->procs;
@@ -246,17 +352,14 @@ static struct rpc_clnt * rpc_new_client(const struct rpc_create_args *args, stru
 	return clnt;
 
 out_no_auth:
-	if (!IS_ERR(clnt->cl_path.dentry)) {
-		rpc_remove_client_dir(clnt->cl_path.dentry);
-		rpc_put_mount();
-	}
+	rpc_clnt_remove_pipedir(clnt);
 out_no_path:
 	kfree(clnt->cl_principal);
 out_no_principal:
 	rpc_free_iostats(clnt->cl_metrics);
 out_no_stats:
-	if (clnt->cl_server != clnt->cl_inline_name)
-		kfree(clnt->cl_server);
+	kfree(clnt->cl_server);
+out_no_server:
 	kfree(clnt);
 out_err:
 	xprt_put(xprt);
@@ -379,6 +482,9 @@ rpc_clone_client(struct rpc_clnt *clnt)
 	new = kmemdup(clnt, sizeof(*new), GFP_KERNEL);
 	if (!new)
 		goto out_no_clnt;
+	new->cl_server = kstrdup(clnt->cl_server, GFP_KERNEL);
+	if (new->cl_server == NULL)
+		goto out_no_server;
 	new->cl_parent = clnt;
 	/* Turn off autobind on clones */
 	new->cl_autobind = 0;
@@ -409,6 +515,8 @@ out_no_path:
 out_no_principal:
 	rpc_free_iostats(new->cl_metrics);
 out_no_stats:
+	kfree(new->cl_server);
+out_no_server:
 	kfree(new);
 out_no_clnt:
 	dprintk("RPC:       %s: returned error %d\n", __func__, err);
@@ -474,18 +582,11 @@ rpc_free_client(struct rpc_clnt *clnt)
 {
 	dprintk("RPC:       destroying %s client for %s\n",
 			clnt->cl_protname, clnt->cl_server);
-	if (!IS_ERR(clnt->cl_path.dentry)) {
-		rpc_remove_client_dir(clnt->cl_path.dentry);
-		rpc_put_mount();
-	}
-	if (clnt->cl_parent != clnt) {
+	if (clnt->cl_parent != clnt)
 		rpc_release_client(clnt->cl_parent);
-		goto out_free;
-	}
-	if (clnt->cl_server != clnt->cl_inline_name)
-		kfree(clnt->cl_server);
-out_free:
+	kfree(clnt->cl_server);
 	rpc_unregister_client(clnt);
+	rpc_clnt_remove_pipedir(clnt);
 	rpc_free_iostats(clnt->cl_metrics);
 	kfree(clnt->cl_principal);
 	clnt->cl_metrics = NULL;
@@ -542,11 +643,11 @@ rpc_release_client(struct rpc_clnt *clnt)
  * The Sun NFSv2/v3 ACL protocol can do this.
  */
 struct rpc_clnt *rpc_bind_new_program(struct rpc_clnt *old,
-				      struct rpc_program *program,
+				      const struct rpc_program *program,
 				      u32 vers)
 {
 	struct rpc_clnt *clnt;
-	struct rpc_version *version;
+	const struct rpc_version *version;
 	int err;
 
 	BUG_ON(vers >= program->nrvers || !program->version[vers]);
@@ -1163,6 +1264,7 @@ call_bind_status(struct rpc_task *task)
 		return;
 	}
 
+	trace_rpc_bind_status(task);
 	switch (task->tk_status) {
 	case -ENOMEM:
 		dprintk("RPC: %5u rpcbind out of memory\n", task->tk_pid);
@@ -1262,6 +1364,7 @@ call_connect_status(struct rpc_task *task)
 		return;
 	}
 
+	trace_rpc_connect_status(task, status);
 	switch (status) {
 		/* if soft mounted, test if we've timed out */
 	case -ETIMEDOUT:
@@ -1450,6 +1553,7 @@ call_status(struct rpc_task *task)
 		return;
 	}
 
+	trace_rpc_call_status(task);
 	task->tk_status = 0;
 	switch(status) {
 	case -EHOSTDOWN:
@@ -1852,14 +1956,15 @@ static void rpc_show_task(const struct rpc_clnt *clnt,
 		task->tk_action, rpc_waitq);
 }
 
-void rpc_show_tasks(void)
+void rpc_show_tasks(struct net *net)
 {
 	struct rpc_clnt *clnt;
 	struct rpc_task *task;
 	int header = 0;
+	struct sunrpc_net *sn = net_generic(net, sunrpc_net_id);
 
-	spin_lock(&rpc_client_lock);
-	list_for_each_entry(clnt, &all_clients, cl_clients) {
+	spin_lock(&sn->rpc_client_lock);
+	list_for_each_entry(clnt, &sn->all_clients, cl_clients) {
 		spin_lock(&clnt->cl_lock);
 		list_for_each_entry(task, &clnt->cl_tasks, tk_task) {
 			if (!header) {
@@ -1870,6 +1975,6 @@ void rpc_show_tasks(void)
 		}
 		spin_unlock(&clnt->cl_lock);
 	}
-	spin_unlock(&rpc_client_lock);
+	spin_unlock(&sn->rpc_client_lock);
 }
 #endif
