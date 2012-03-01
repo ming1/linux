@@ -59,7 +59,7 @@ typedef struct debug_info {
 	struct debug_info* next;
 	struct debug_info* prev;
 	atomic_t ref_count;
-	spinlock_t lock;			
+	raw_spinlock_t lock;
 	int level;
 	int nr_areas;
 	int pages_per_area;
@@ -131,6 +131,7 @@ void debug_unregister(debug_info_t* id);
 
 void debug_set_level(debug_info_t* id, int new_level);
 
+void debug_set_critical(void);
 void debug_stop_all(void);
 
 static inline debug_entry_t*
