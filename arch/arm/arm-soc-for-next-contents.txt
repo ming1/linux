@@ -1,0 +1,68 @@
+This file lists all branches that are pulled into the for-next branch
+of git://git.kernel.org/pub/scm/linux/kernel/git/arm/arm-soc.git
+and their external dependencies.
+
+It also includes a couple of directly applied patches for build breaks with subject
+The next/* branches are kept in the order in which they get applied.
+
+next/fixes-non-critical:
+lpc32xx/fixup		applied from series: http://marc.info/?l=linux-arm-kernel&m=132873369523839
+			+ http://marc.info/?l=linux-arm-kernel&m=132940396030585
+davinci/fixes-non-critical git://gitorious.org/linux-davinci/linux-davinci.git v3.4/fixes
+imx/fixes-non-critical	git://git.pengutronix.de/git/imx/linux-2.6.git imx-fixes
+lpc32xx/fixup2		git://git.antcom.de/linux-2.6.git lpc32xx/fixes-non-critical
+omap/fixes-non-critical git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap fixes-non-critical
+
+next/maintainers:
+imx/maintainers		git://git.linaro.org/people/shawnguo/linux-2.6.git imx/maintainers
+
+next/cleanup:
+at91/base		git://github.com/at91linux/linux-at91.git at91-3.4-base
+at91/pm_cleanup		git://github.com/at91linux/linux-at91.git at91-3.4-base+pm_cleanup
+davinci/cleanups	git://gitorious.org/linux-davinci/linux-davinci.git v3.4/cleanup
+imx/cleanup		git://git.pengutronix.de/git/imx/linux-2.6.git imx-cleanup
+pxa/cleanup		git://github.com/hzhuang1/linux.git cleanup-3.4
+omap/cleanup		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap cleanup
+
+next/soc:
+ux500/timers		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git ux500-timers
+mxs/clk			git://git.linaro.org/people/shawnguo/linux-2.6.git mxs/clk
+mxs/defconfig		git://git.linaro.org/people/shawnguo/linux-2.6.git mxs/defconfig
+at91/9x5		git://github.com/at91linux/linux-at91.git at91-3.4-base+9x5
+highbank/devel		git://sources.calxeda.com/kernel/linux.git for-arm-soc
+imx/defconfig		git://git.linaro.org/people/shawnguo/linux-2.6.git imx/defconfig
+omap/soc		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap soc
+
+next/drivers:
+at91/device-board	git://github.com/at91linux/linux-at91.git at91-3.4-base+device_board
+imx/clk-prepare		git://git.pengutronix.de/git/imx/linux-2.6.git features/imx-clk-prepare
+samsung/rtc		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git v3.4-next/devel-samsung-rtc
+imx/cs89x0		git://git.pengutronix.de/git/imx/linux-2.6.git features/cs89x0
+imx/drivers		git://git.pengutronix.de/git/imx/linux-2.6.git imx-drivers
+			git://git.linaro.org/people/shawnguo/linux-2.6.git imx/driver
+mxs/gpmi		git://git.linaro.org/people/shawnguo/linux-2.6.git mxs/gpmi
+lpc32xx/drivers		patches from Roland Stigge
+pxa/rtc			git://github.com/hzhuang1/linux.git rtc-sa1100
+				(depends on pxa/cleanups)
+
+next/cleanup2:
+at91/base2+cleanup	git://github.com/at91linux/linux-at91.git at91-3.4-base2+cleanup
+				depends on at91/base, at91/pm_cleanup, at91/device-board and at91/9x5
+
+next/boards:
+mxs/boards		git://git.linaro.org/people/shawnguo/linux-2.6.git mxs/boards
+kirkwood/board		patches from Jason Cooper
+pxa/board		git://github.com/hzhuang1/linux.git board-specific
+omap/omap1		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap omap1
+
+next/dt:
+vexpress/dt		git://git.linaro.org/people/pawelmoll/linux.git vexpress-dt-v3.3-rc4
+imx/dt			git://git.linaro.org/people/shawnguo/linux-2.6.git imx/dt
+omap/dt			git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap dt
+
+next/rpmsg:		git://git.kernel.org/pub/scm/linux/kernel/git/ohad/remoteproc.git rpmsg-for-3.4
+
+next/soc2:
+depends/driver-core	git://git.kernel.org/pub/scm/linux/kernel/git/gregkh/driver-core.git driver-core-next
+ux500/soc		patches from Lee Jones, depends on depends/driver-core
+
