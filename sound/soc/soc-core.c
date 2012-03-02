@@ -1880,22 +1880,27 @@ EXPORT_SYMBOL_GPL(snd_soc_bulk_write_raw);
 int snd_soc_update_bits(struct snd_soc_codec *codec, unsigned short reg,
 				unsigned int mask, unsigned int value)
 {
-	int change;
+	bool change;
 	unsigned int old, new;
 	int ret;
 
-	ret = snd_soc_read(codec, reg);
-	if (ret < 0)
-		return ret;
-
-	old = ret;
-	new = (old & ~mask) | (value & mask);
-	change = old != new;
-	if (change) {
-		ret = snd_soc_write(codec, reg, new);
+	if (codec->using_regmap) {
+		ret = regmap_update_bits_check(codec->control_data, reg,
+					       mask, value, &change);
+	} else {
+		ret = snd_soc_read(codec, reg);
 		if (ret < 0)
 			return ret;
+
+		old = ret;
+		new = (old & ~mask) | (value & mask);
+		change = old != new;
+		if (change)
+			ret = snd_soc_write(codec, reg, new);
 	}
+
+	if (ret < 0)
+		return ret;
 
 	return change;
 }
@@ -2875,7 +2880,8 @@ int snd_soc_register_card(struct snd_soc_card *card)
 		 */
 		if (!!link->codec_name == !!link->codec_of_node) {
 			dev_err(card->dev,
-				"Neither/both codec name/of_node are set\n");
+				"Neither/both codec name/of_node are set for %s\n",
+				link->name);
 			return -EINVAL;
 		}
 
@@ -2885,7 +2891,7 @@ int snd_soc_register_card(struct snd_soc_card *card)
 		 */
 		if (link->platform_name && link->platform_of_node) {
 			dev_err(card->dev,
-				"Both platform name/of_node are set\n");
+				"Both platform name/of_node are set for %s\n", link->name);
 			return -EINVAL;
 		}
 
@@ -2895,7 +2901,8 @@ int snd_soc_register_card(struct snd_soc_card *card)
 		 */
 		if (!!link->cpu_dai_name == !!link->cpu_dai_of_node) {
 			dev_err(card->dev,
-				"Neither/both cpu_dai name/of_node are set\n");
+				"Neither/both cpu_dai name/of_node are set for %s\n",
+				link->name);
 			return -EINVAL;
 		}
 	}
