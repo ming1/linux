@@ -146,7 +146,7 @@ mwifiex_cfg80211_set_default_key(struct wiphy *wiphy, struct net_device *netdev,
 	struct mwifiex_private *priv = mwifiex_netdev_get_priv(netdev);
 
 	/* Return if WEP key not configured */
-	if (priv->sec_info.wep_status == MWIFIEX_802_11_WEP_DISABLED)
+	if (!priv->sec_info.wep_enabled)
 		return 0;
 
 	if (mwifiex_set_encode(priv, NULL, 0, key_index, 0)) {
@@ -924,12 +924,6 @@ mwifiex_cfg80211_assoc(struct mwifiex_private *priv, size_t ssid_len, u8 *ssid,
 		}
 	}
 done:
-	/* Do specific SSID scanning */
-	if (mwifiex_request_scan(priv, &req_ssid)) {
-		dev_err(priv->adapter->dev, "scan error\n");
-		return -EFAULT;
-	}
-
 	/*
 	 * Scan entries are valid for some time (15 sec). So we can save one
 	 * active scan time if we just try cfg80211_get_bss first. If it fails
