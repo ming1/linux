@@ -999,6 +999,73 @@ done:
 	return ret;
 }
 
+#define EVENT_SOURCE_DEVICE_PATH "/sys/bus/event_source/devices/"
+
+/*
+ * File format:
+ *
+ * struct pmu_mappings {
+ *	u32	pmu_num;
+ *	struct pmu_map {
+ *		u32	type;
+ *		char	name[];
+ *	}[pmu_num];
+ * };
+ */
+
+static int write_pmu_mappings(int fd, struct perf_header *h __used,
+			      struct perf_evlist *evlist __used)
+{
+	char path[MAXPATHLEN];
+	DIR *dir;
+	struct dirent *dent;
+	FILE *fp;
+	char *line = NULL;
+	off_t offset = lseek(fd, 0, SEEK_CUR);
+	size_t ignore;
+	u32 pmu_num = 0;
+	u32 type;
+
+	dir = opendir(EVENT_SOURCE_DEVICE_PATH);
+	if (!dir)
+		return -1;
+
+	/* write real pmu_num later */
+	do_write(fd, &pmu_num, sizeof(pmu_num));
+
+	while ((dent = readdir(dir))) {
+		if (!strcmp(dent->d_name, ".") || !strcmp(dent->d_name, ".."))
+			continue;
+		snprintf(path, sizeof(path), "%s%s/type",
+			 EVENT_SOURCE_DEVICE_PATH, dent->d_name);
+		fp = fopen(path, "r");
+		if (!fp)
+			continue;
+		if (getline(&line, &ignore, fp) < 0) {
+			fclose(fp);
+			continue;
+		}
+		fclose(fp);
+		type = atoi(line);
+		if (!type)
+			continue;
+		pmu_num++;
+		do_write(fd, &type, sizeof(type));
+		do_write_string(fd, dent->d_name);
+	}
+
+	free(line);
+	closedir(dir);
+
+	if (pwrite(fd, &pmu_num, sizeof(pmu_num), offset) != sizeof(pmu_num)) {
+		/* discard all */
+		lseek(fd, offset, SEEK_SET);
+		return -1;
+	}
+
+	return 0;
+}
+
 /*
  * default get_cpuid(): nothing gets recorded
  * actual implementation must be in arch/$(ARCH)/util/header.c
@@ -1316,6 +1383,37 @@ static void print_cpuid(struct perf_header *ph, int fd, FILE *fp)
 	free(str);
 }
 
+static void print_pmu_mappings(struct perf_header *ph, int fd, FILE *fp)
+{
+	const char *delimiter = "# pmu mappings: ";
+	char *name;
+	int ret;
+	u32 pmu_num;
+	u32 type;
+
+	ret = read(fd, &pmu_num, sizeof(pmu_num));
+	if (ret != sizeof(pmu_num))
+		goto error;
+
+	if (!pmu_num)
+		goto error;
+
+	while (pmu_num--) {
+		if (read(fd, &type, sizeof(type)) != sizeof(type))
+			goto error;
+		name = do_read_string(fd, ph);
+		fprintf(fp, "%s%s = %" PRIu32, delimiter, name, type);
+		free(name);
+		delimiter = ", ";
+	}
+
+	fprintf(fp, "\n");
+
+	return;
+error:
+	fprintf(fp, "# pmu mappings: not available\n");
+}
+
 static int __event_process_build_id(struct build_id_event *bev,
 				    char *filename,
 				    struct perf_session *session)
@@ -1520,6 +1618,7 @@ static const struct feature_ops feat_ops[HEADER_LAST_FEATURE] = {
 	FEAT_OPA(HEADER_CMDLINE,	cmdline),
 	FEAT_OPF(HEADER_CPU_TOPOLOGY,	cpu_topology),
 	FEAT_OPF(HEADER_NUMA_TOPOLOGY,	numa_topology),
+	FEAT_OPA(HEADER_PMU_MAPPINGS,	pmu_mappings),
 };
 
 struct header_print_data {
