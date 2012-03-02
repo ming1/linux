@@ -33,6 +33,8 @@ at91/9x5		git://github.com/at91linux/linux-at91.git at91-3.4-base+9x5
 highbank/devel		git://sources.calxeda.com/kernel/linux.git for-arm-soc
 imx/defconfig		git://git.linaro.org/people/shawnguo/linux-2.6.git imx/defconfig
 omap/soc		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap soc
+imx/soc			git://git.pengutronix.de/git/imx/linux-2.6.git features/imx3
+				depends on imx/cleanup
 
 next/drivers:
 at91/device-board	git://github.com/at91linux/linux-at91.git at91-3.4-base+device_board
@@ -44,7 +46,7 @@ imx/drivers		git://git.pengutronix.de/git/imx/linux-2.6.git imx-drivers
 mxs/gpmi		git://git.linaro.org/people/shawnguo/linux-2.6.git mxs/gpmi
 lpc32xx/drivers		patches from Roland Stigge
 pxa/rtc			git://github.com/hzhuang1/linux.git rtc-sa1100
-				(depends on pxa/cleanups)
+				depends on pxa/cleanups
 
 next/cleanup2:
 at91/base2+cleanup	git://github.com/at91linux/linux-at91.git at91-3.4-base2+cleanup
