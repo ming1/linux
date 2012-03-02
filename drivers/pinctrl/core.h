@@ -12,6 +12,7 @@
 #include <linux/pinctrl/pinconf.h>
 
 struct pinctrl_gpio_range;
+struct pinmux_group;
 
 /**
  * struct pinctrl_dev - pin control class device
@@ -77,6 +78,8 @@ struct pinctrl {
  * @dynamic_name: if the name of this pin was dynamically allocated
  * @lock: a lock to protect the descriptor structure
  * @owner: the device holding this pin or NULL of no device has claimed it
+ * @grp: the pinmux group used for this pin if it is used by a pin group
+ *	or NULL
  */
 struct pin_desc {
 	struct pinctrl_dev *pctldev;
@@ -86,6 +89,7 @@ struct pin_desc {
 	/* These fields only added when supporting pinmux drivers */
 #ifdef CONFIG_PINMUX
 	const char *owner;
+	struct pinmux_group *grp;
 #endif
 };
 
