@@ -29,7 +29,9 @@
 #include <linux/spi/orion_spi.h>
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
+#include <asm/mach/map.h>
 #include <mach/kirkwood.h>
+#include <mach/bridge-regs.h>
 #include <plat/mvsdio.h>
 #include "common.h"
 #include "mpp.h"
@@ -37,42 +39,6 @@
 static struct of_device_id kirkwood_dt_match_table[] __initdata = {
 	{ .compatible = "simple-bus", },
 	{ }
-};
-
-struct mtd_partition dreamplug_partitions[] = {
-	{
-		.name	= "u-boot",
-		.size	= SZ_512K,
-		.offset = 0,
-	},
-	{
-		.name	= "u-boot env",
-		.size	= SZ_64K,
-		.offset = SZ_512K + SZ_512K,
-	},
-	{
-		.name	= "dtb",
-		.size	= SZ_64K,
-		.offset = SZ_512K + SZ_512K + SZ_512K,
-	},
-};
-
-static const struct flash_platform_data dreamplug_spi_slave_data = {
-	.type		= "mx25l1606e",
-	.name		= "spi_flash",
-	.parts		= dreamplug_partitions,
-	.nr_parts	= ARRAY_SIZE(dreamplug_partitions),
-};
-
-static struct spi_board_info __initdata dreamplug_spi_slave_info[] = {
-	{
-		.modalias	= "m25p80",
-		.platform_data	= &dreamplug_spi_slave_data,
-		.irq		= -1,
-		.max_speed_hz	= 50000000,
-		.bus_num	= 0,
-		.chip_select	= 0,
-	},
 };
 
 static struct mv643xx_eth_platform_data dreamplug_ge00_data = {
@@ -140,10 +106,6 @@ static void __init dreamplug_init(void)
 	 */
 	kirkwood_mpp_conf(dreamplug_mpp_config);
 
-	spi_register_board_info(dreamplug_spi_slave_info,
-				ARRAY_SIZE(dreamplug_spi_slave_info));
-	kirkwood_spi_init();
-
 	kirkwood_ehci_init();
 	kirkwood_ge00_init(&dreamplug_ge00_data);
 	kirkwood_ge01_init(&dreamplug_ge01_data);
@@ -155,7 +117,30 @@ static void __init dreamplug_init(void)
 
 static void __init kirkwood_dt_init(void)
 {
-	kirkwood_init();
+	pr_info("Kirkwood: %s, TCLK=%d.\n", kirkwood_id(), kirkwood_tclk);
+
+	/*
+	 * Disable propagation of mbus errors to the CPU local bus,
+	 * as this causes mbus errors (which can occur for example
+	 * for PCI aborts) to throw CPU aborts, which we're not set
+	 * up to deal with.
+	 */
+	writel(readl(CPU_CONFIG) & ~CPU_CONFIG_ERROR_PROP, CPU_CONFIG);
+
+	kirkwood_setup_cpu_mbus();
+
+#ifdef CONFIG_CACHE_FEROCEON_L2
+	kirkwood_l2_init();
+#endif
+
+	/* internal devices that every board has */
+	kirkwood_xor0_init();
+	kirkwood_xor1_init();
+	kirkwood_crypto_init();
+
+#ifdef CONFIG_KEXEC
+	kexec_reinit = kirkwood_enable_pcie;
+#endif
 
 	if (of_machine_is_compatible("globalscale,dreamplug"))
 		dreamplug_init();

@@ -22,4 +22,38 @@
 		interrupts = <33>;
 		clock-frequency = <200000000>;
 	};
+
+	spi@f1010600 {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		compatible = "marvell,orion-spi";
+		reg = <0xf1010600 0x1ff>;
+		clock-frequency = <200000000>;
+
+		flash@0 {
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			compatible = "macronix,mx25l1606e", "jedec-flash";
+
+			spi-max-frequency = <50000000>;
+			reg = <0>;
+
+			partition@0 {
+				label = "U-Boot";
+				reg = <0x0 0x100000>;
+			};
+
+			partition@100000 {
+				label = "U-Boot Environment";
+				reg = <0x100000 0x080000>;
+			};
+
+			partition@180000 {
+				label = "Flattened Device Tree";
+				reg = <0x180000 0x080000>;
+			};
+		};
+	};
 };
