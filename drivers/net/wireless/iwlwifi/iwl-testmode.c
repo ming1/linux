@@ -5,7 +5,7 @@
  *
  * GPL LICENSE SUMMARY
  *
- * Copyright(c) 2010 - 2011 Intel Corporation. All rights reserved.
+ * Copyright(c) 2010 - 2012 Intel Corporation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of version 2 of the GNU General Public License as
@@ -30,7 +30,7 @@
  *
  * BSD LICENSE
  *
- * Copyright(c) 2010 - 2011 Intel Corporation. All rights reserved.
+ * Copyright(c) 2010 - 2012 Intel Corporation. All rights reserved.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -79,6 +79,7 @@
 #include "iwl-testmode.h"
 #include "iwl-trans.h"
 #include "iwl-bus.h"
+#include "iwl-fh.h"
 
 /* The TLVs used in the gnl message policy between the kernel module and
  * user space application. iwl_testmode_gnl_msg_policy is to be carried
@@ -115,6 +116,9 @@ struct nla_policy iwl_testmode_gnl_msg_policy[IWL_TM_ATTR_MAX] = {
 
 	[IWL_TM_ATTR_FW_VERSION] = { .type = NLA_U32, },
 	[IWL_TM_ATTR_DEVICE_ID] = { .type = NLA_U32, },
+	[IWL_TM_ATTR_FW_TYPE] = { .type = NLA_U32, },
+	[IWL_TM_ATTR_FW_INST_SIZE] = { .type = NLA_U32, },
+	[IWL_TM_ATTR_FW_DATA_SIZE] = { .type = NLA_U32, },
 };
 
 /*
@@ -205,7 +209,7 @@ static void iwl_trace_cleanup(struct iwl_priv *priv)
 	if (priv->testmode_trace.trace_enabled) {
 		if (priv->testmode_trace.cpu_addr &&
 		    priv->testmode_trace.dma_addr)
-			dma_free_coherent(bus(priv)->dev,
+			dma_free_coherent(trans(priv)->dev,
 					priv->testmode_trace.total_size,
 					priv->testmode_trace.cpu_addr,
 					priv->testmode_trace.dma_addr);
@@ -285,7 +289,7 @@ static int iwl_testmode_ucode(struct ieee80211_hw *hw, struct nlattr **tb)
 static int iwl_testmode_reg(struct ieee80211_hw *hw, struct nlattr **tb)
 {
 	struct iwl_priv *priv = hw->priv;
-	u32 ofs, val32;
+	u32 ofs, val32, cmd;
 	u8 val8;
 	struct sk_buff *skb;
 	int status = 0;
@@ -297,9 +301,22 @@ static int iwl_testmode_reg(struct ieee80211_hw *hw, struct nlattr **tb)
 	ofs = nla_get_u32(tb[IWL_TM_ATTR_REG_OFFSET]);
 	IWL_INFO(priv, "testmode register access command offset 0x%x\n", ofs);
 
-	switch (nla_get_u32(tb[IWL_TM_ATTR_COMMAND])) {
+	/* Allow access only to FH/CSR/HBUS in direct mode.
+	Since we don't have the upper bounds for the CSR and HBUS segments,
+	we will use only the upper bound of FH for sanity check. */
+	cmd = nla_get_u32(tb[IWL_TM_ATTR_COMMAND]);
+	if ((cmd == IWL_TM_CMD_APP2DEV_DIRECT_REG_READ32 ||
+		cmd == IWL_TM_CMD_APP2DEV_DIRECT_REG_WRITE32 ||
+		cmd == IWL_TM_CMD_APP2DEV_DIRECT_REG_WRITE8) &&
+		(ofs >= FH_MEM_UPPER_BOUND)) {
+		IWL_DEBUG_INFO(priv, "offset out of segment (0x0 - 0x%x)\n",
+			FH_MEM_UPPER_BOUND);
+		return -EINVAL;
+	}
+
+	switch (cmd) {
 	case IWL_TM_CMD_APP2DEV_DIRECT_REG_READ32:
-		val32 = iwl_read32(bus(priv), ofs);
+		val32 = iwl_read_direct32(trans(priv), ofs);
 		IWL_INFO(priv, "32bit value to read 0x%x\n", val32);
 
 		skb = cfg80211_testmode_alloc_reply_skb(hw->wiphy, 20);
@@ -321,7 +338,7 @@ static int iwl_testmode_reg(struct ieee80211_hw *hw, struct nlattr **tb)
 		} else {
 			val32 = nla_get_u32(tb[IWL_TM_ATTR_REG_VALUE32]);
 			IWL_INFO(priv, "32bit value to write 0x%x\n", val32);
-			iwl_write32(bus(priv), ofs, val32);
+			iwl_write_direct32(trans(priv), ofs, val32);
 		}
 		break;
 	case IWL_TM_CMD_APP2DEV_DIRECT_REG_WRITE8:
@@ -331,11 +348,11 @@ static int iwl_testmode_reg(struct ieee80211_hw *hw, struct nlattr **tb)
 		} else {
 			val8 = nla_get_u8(tb[IWL_TM_ATTR_REG_VALUE8]);
 			IWL_INFO(priv, "8bit value to write 0x%x\n", val8);
-			iwl_write8(bus(priv), ofs, val8);
+			iwl_write8(trans(priv), ofs, val8);
 		}
 		break;
 	case IWL_TM_CMD_APP2DEV_INDIRECT_REG_READ32:
-		val32 = iwl_read_prph(bus(priv), ofs);
+		val32 = iwl_read_prph(trans(priv), ofs);
 		IWL_INFO(priv, "32bit value to read 0x%x\n", val32);
 
 		skb = cfg80211_testmode_alloc_reply_skb(hw->wiphy, 20);
@@ -357,7 +374,7 @@ static int iwl_testmode_reg(struct ieee80211_hw *hw, struct nlattr **tb)
 		} else {
 			val32 = nla_get_u32(tb[IWL_TM_ATTR_REG_VALUE32]);
 			IWL_INFO(priv, "32bit value to write 0x%x\n", val32);
-			iwl_write_prph(bus(priv), ofs, val32);
+			iwl_write_prph(trans(priv), ofs, val32);
 		}
 		break;
 	default:
@@ -422,7 +439,7 @@ static int iwl_testmode_driver(struct ieee80211_hw *hw, struct nlattr **tb)
 	struct sk_buff *skb;
 	unsigned char *rsp_data_ptr = NULL;
 	int status = 0, rsp_data_len = 0;
-	u32 devid;
+	u32 devid, inst_size = 0, data_size = 0;
 
 	switch (nla_get_u32(tb[IWL_TM_ATTR_COMMAND])) {
 	case IWL_TM_CMD_APP2DEV_GET_DEVICENAME:
@@ -533,7 +550,7 @@ static int iwl_testmode_driver(struct ieee80211_hw *hw, struct nlattr **tb)
 		break;
 
 	case IWL_TM_CMD_APP2DEV_GET_DEVICE_ID:
-		devid = bus_get_hw_id(bus(priv));
+		devid = trans(priv)->hw_id;
 		IWL_INFO(priv, "hw version: 0x%x\n", devid);
 
 		skb = cfg80211_testmode_alloc_reply_skb(hw->wiphy, 20);
@@ -542,6 +559,41 @@ static int iwl_testmode_driver(struct ieee80211_hw *hw, struct nlattr **tb)
 			return -ENOMEM;
 		}
 		NLA_PUT_U32(skb, IWL_TM_ATTR_DEVICE_ID, devid);
+		status = cfg80211_testmode_reply(skb);
+		if (status < 0)
+			IWL_DEBUG_INFO(priv,
+					"Error sending msg : %d\n", status);
+		break;
+
+	case IWL_TM_CMD_APP2DEV_GET_FW_INFO:
+		skb = cfg80211_testmode_alloc_reply_skb(hw->wiphy, 20 + 8);
+		if (!skb) {
+			IWL_DEBUG_INFO(priv, "Error allocating memory\n");
+			return -ENOMEM;
+		}
+		switch (priv->shrd->ucode_type) {
+		case IWL_UCODE_REGULAR:
+			inst_size = trans(priv)->ucode_rt.code.len;
+			data_size = trans(priv)->ucode_rt.data.len;
+			break;
+		case IWL_UCODE_INIT:
+			inst_size = trans(priv)->ucode_init.code.len;
+			data_size = trans(priv)->ucode_init.data.len;
+			break;
+		case IWL_UCODE_WOWLAN:
+			inst_size = trans(priv)->ucode_wowlan.code.len;
+			data_size = trans(priv)->ucode_wowlan.data.len;
+			break;
+		case IWL_UCODE_NONE:
+			IWL_DEBUG_INFO(priv, "The uCode has not been loaded\n");
+			break;
+		default:
+			IWL_DEBUG_INFO(priv, "Unsupported uCode type\n");
+			break;
+		}
+		NLA_PUT_U32(skb, IWL_TM_ATTR_FW_TYPE, priv->shrd->ucode_type);
+		NLA_PUT_U32(skb, IWL_TM_ATTR_FW_INST_SIZE, inst_size);
+		NLA_PUT_U32(skb, IWL_TM_ATTR_FW_DATA_SIZE, data_size);
 		status = cfg80211_testmode_reply(skb);
 		if (status < 0)
 			IWL_DEBUG_INFO(priv,
@@ -577,7 +629,7 @@ static int iwl_testmode_trace(struct ieee80211_hw *hw, struct nlattr **tb)
 	struct iwl_priv *priv = hw->priv;
 	struct sk_buff *skb;
 	int status = 0;
-	struct device *dev = bus(priv)->dev;
+	struct device *dev = trans(priv)->dev;
 
 	switch (nla_get_u32(tb[IWL_TM_ATTR_COMMAND])) {
 	case IWL_TM_CMD_APP2DEV_BEGIN_TRACE:
@@ -733,7 +785,7 @@ static int iwl_testmode_ownership(struct ieee80211_hw *hw, struct nlattr **tb)
 static int iwl_testmode_sram(struct ieee80211_hw *hw, struct nlattr **tb)
 {
 	struct iwl_priv *priv = hw->priv;
-	u32 base, ofs, size, maxsize;
+	u32 ofs, size, maxsize;
 
 	if (priv->testmode_sram.sram_readed)
 		return -EBUSY;
@@ -759,25 +811,24 @@ static int iwl_testmode_sram(struct ieee80211_hw *hw, struct nlattr **tb)
 		maxsize = trans(priv)->ucode_wowlan.data.len;
 		break;
 	case IWL_UCODE_NONE:
-		IWL_DEBUG_INFO(priv, "Error, uCode does not been loaded\n");
+		IWL_ERR(priv, "Error, uCode does not been loaded\n");
 		return -ENOSYS;
 	default:
-		IWL_DEBUG_INFO(priv, "Error, unsupported uCode type\n");
+		IWL_ERR(priv, "Error, unsupported uCode type\n");
 		return -ENOSYS;
 	}
-	if ((ofs + size) > maxsize) {
-		IWL_DEBUG_INFO(priv, "Invalid offset/size: out of range\n");
+	if ((ofs + size) > (maxsize + SRAM_DATA_SEG_OFFSET)) {
+		IWL_ERR(priv, "Invalid offset/size: out of range\n");
 		return -EINVAL;
 	}
 	priv->testmode_sram.buff_size = (size / 4) * 4;
 	priv->testmode_sram.buff_addr =
 		kmalloc(priv->testmode_sram.buff_size, GFP_KERNEL);
 	if (priv->testmode_sram.buff_addr == NULL) {
-		IWL_DEBUG_INFO(priv, "Error allocating memory\n");
+		IWL_ERR(priv, "Error allocating memory\n");
 		return -ENOMEM;
 	}
-	base = 0x800000;
-	_iwl_read_targ_mem_words(bus(priv), base + ofs,
+	_iwl_read_targ_mem_words(trans(priv), ofs,
 					priv->testmode_sram.buff_addr,
 					priv->testmode_sram.buff_size / 4);
 	priv->testmode_sram.num_chunks =
@@ -882,6 +933,7 @@ int iwlagn_mac_testmode_cmd(struct ieee80211_hw *hw, void *data, int len)
 	case IWL_TM_CMD_APP2DEV_LOAD_WOWLAN_FW:
 	case IWL_TM_CMD_APP2DEV_GET_FW_VERSION:
 	case IWL_TM_CMD_APP2DEV_GET_DEVICE_ID:
+	case IWL_TM_CMD_APP2DEV_GET_FW_INFO:
 		IWL_DEBUG_INFO(priv, "testmode cmd to driver\n");
 		result = iwl_testmode_driver(hw, tb);
 		break;
