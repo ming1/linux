@@ -178,6 +178,16 @@ static inline void f75375_write16(struct i2c_client *client, u8 reg,
 	i2c_smbus_write_byte_data(client, reg + 1, (value & 0xFF));
 }
 
+static void f75375_write_pwm(struct i2c_client *client, int nr)
+{
+	struct f75375_data *data = i2c_get_clientdata(client);
+	if (data->kind == f75387)
+		f75375_write16(client, F75375_REG_FAN_EXP(nr), data->pwm[nr]);
+	else
+		f75375_write8(client, F75375_REG_FAN_PWM_DUTY(nr),
+			      data->pwm[nr]);
+}
+
 static struct f75375_data *f75375_update_device(struct device *dev)
 {
 	struct i2c_client *client = to_i2c_client(dev);
@@ -309,7 +319,7 @@ static ssize_t set_pwm(struct device *dev, struct device_attribute *attr,
 
 	mutex_lock(&data->update_lock);
 	data->pwm[nr] = SENSORS_LIMIT(val, 0, 255);
-	f75375_write8(client, F75375_REG_FAN_PWM_DUTY(nr), data->pwm[nr]);
+	f75375_write_pwm(client, nr);
 	mutex_unlock(&data->update_lock);
 	return count;
 }
@@ -374,8 +384,7 @@ static int set_pwm_enable_direct(struct i2c_client *client, int nr, int val)
 	f75375_write8(client, F75375_REG_FAN_TIMER, fanmode);
 	data->pwm_enable[nr] = val;
 	if (val == 0)
-		f75375_write8(client, F75375_REG_FAN_PWM_DUTY(nr),
-				data->pwm[nr]);
+		f75375_write_pwm(client, nr);
 	return 0;
 }
 
@@ -759,8 +768,7 @@ static void f75375_init(struct i2c_client *client, struct f75375_data *data,
 	set_pwm_enable_direct(client, 1, f75375s_pdata->pwm_enable[1]);
 	for (nr = 0; nr < 2; nr++) {
 		data->pwm[nr] = SENSORS_LIMIT(f75375s_pdata->pwm[nr], 0, 255);
-		f75375_write8(client, F75375_REG_FAN_PWM_DUTY(nr),
-			data->pwm[nr]);
+		f75375_write_pwm(client, nr);
 	}
 
 }
@@ -787,7 +795,7 @@ static int f75375_probe(struct i2c_client *client,
 	if (err)
 		goto exit_free;
 
-	if (data->kind == f75375) {
+	if (data->kind != f75373) {
 		err = sysfs_chmod_file(&client->dev.kobj,
 			&sensor_dev_attr_pwm1_mode.dev_attr.attr,
 			S_IRUGO | S_IWUSR);
@@ -856,19 +864,8 @@ static int f75375_detect(struct i2c_client *client,
 	return 0;
 }
 
-static int __init sensors_f75375_init(void)
-{
-	return i2c_add_driver(&f75375_driver);
-}
-
-static void __exit sensors_f75375_exit(void)
-{
-	i2c_del_driver(&f75375_driver);
-}
+module_i2c_driver(f75375_driver);
 
 MODULE_AUTHOR("Riku Voipio");
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("F75373/F75375/F75387 hardware monitoring driver");
-
-module_init(sensors_f75375_init);
-module_exit(sensors_f75375_exit);
