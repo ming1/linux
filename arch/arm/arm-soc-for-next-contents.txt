@@ -64,6 +64,7 @@ kirkwood/board		patches from Jason Cooper
 pxa/board		git://github.com/hzhuang1/linux.git board-specific
 omap/omap1		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap omap1
 imx/vistrim		git://git.pengutronix.de/git/imx/linux-2.6.git features/imx27-visstrim
+imx/moboard		git://git.pengutronix.de/git/imx/linux-2.6.git features/imx31-moboard
 
 next/rpmsg:		git://git.kernel.org/pub/scm/linux/kernel/git/ohad/remoteproc.git rpmsg-for-3.4
 
