@@ -414,6 +414,12 @@ struct rq {
 
 	struct list_head cfs_tasks;
 
+#ifdef CONFIG_NUMA
+	unsigned long    offnode_running;
+	unsigned long	 offnode_weight;
+	struct list_head offnode_tasks;
+#endif
+
 	u64 rt_avg;
 	u64 age_stamp;
 	u64 idle_stamp;
@@ -464,6 +470,15 @@ struct rq {
 	struct llist_head wake_list;
 #endif
 };
+
+static inline struct list_head *offnode_tasks(struct rq *rq)
+{
+#ifdef CONFIG_NUMA
+	return &rq->offnode_tasks;
+#else
+	return NULL;
+#endif
+}
 
 static inline int cpu_of(struct rq *rq)
 {
@@ -525,6 +540,7 @@ static inline struct sched_domain *highest_flag_domain(int cpu, int flag)
 
 DECLARE_PER_CPU(struct sched_domain *, sd_llc);
 DECLARE_PER_CPU(int, sd_llc_id);
+DECLARE_PER_CPU(struct sched_domain *, sd_node);
 
 #endif /* CONFIG_SMP */
 
@@ -1167,3 +1183,5 @@ enum rq_nohz_flag_bits {
  * Macro to avoid argument evaluation
  */
 #define select_task_node(p, mm, sd_flags) do { } while (0)
+static inline bool account_numa_enqueue(struct task_struct *p) { return false; }
+static inline void account_numa_dequeue(struct task_struct *p) { }
