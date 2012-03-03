@@ -1506,8 +1506,6 @@ static int do_execve_common(const char *filename,
 	if (IS_ERR(file))
 		goto out_unmark;
 
-	sched_exec();
-
 	bprm->file = file;
 	bprm->filename = filename;
 	bprm->interp = filename;
@@ -1515,6 +1513,8 @@ static int do_execve_common(const char *filename,
 	retval = bprm_mm_init(bprm);
 	if (retval)
 		goto out_file;
+
+	sched_exec(bprm->mm);
 
 	bprm->argc = count(argv, MAX_ARG_STRINGS);
 	if ((retval = bprm->argc) < 0)

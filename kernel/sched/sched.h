@@ -1156,3 +1156,8 @@ enum rq_nohz_flag_bits {
 
 #define nohz_flags(cpu)	(&cpu_rq(cpu)->nohz_flags)
 #endif
+
+/*
+ * Macro to avoid argument evaluation
+ */
+#define select_task_node(p, mm, sd_flags) do { } while (0)

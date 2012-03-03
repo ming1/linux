@@ -1798,8 +1798,9 @@ void sched_fork(struct task_struct *p)
 #ifdef CONFIG_SMP
 	plist_node_init(&p->pushable_tasks, MAX_PRIO);
 #endif
-
 	put_cpu();
+
+	select_task_node(p, p->mm, SD_BALANCE_FORK);
 }
 
 /*
@@ -2565,11 +2566,13 @@ static void update_cpu_load_active(struct rq *this_rq)
  * sched_exec - execve() is a valuable balancing opportunity, because at
  * this point the task has the smallest effective memory and cache footprint.
  */
-void sched_exec(void)
+void sched_exec(struct mm_struct *mm)
 {
 	struct task_struct *p = current;
 	unsigned long flags;
 	int dest_cpu;
+
+	select_task_node(p, mm, SD_BALANCE_EXEC);
 
 	raw_spin_lock_irqsave(&p->pi_lock, flags);
 	dest_cpu = p->sched_class->select_task_rq(p, SD_BALANCE_EXEC, 0);

@@ -1302,9 +1302,6 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 	p->memcg_batch.memcg = NULL;
 #endif
 
-	/* Perform scheduler related setup. Assign this task to a CPU. */
-	sched_fork(p);
-
 	retval = perf_event_init_task(p);
 	if (retval)
 		goto bad_fork_cleanup_policy;
@@ -1357,6 +1354,11 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 	 * Clear TID on mm_release()?
 	 */
 	p->clear_child_tid = (clone_flags & CLONE_CHILD_CLEARTID) ? child_tidptr : NULL;
+
+	INIT_LIST_HEAD(&p->thread_group);
+	/* Perform scheduler related setup. Assign this task to a CPU. */
+	sched_fork(p);
+
 #ifdef CONFIG_BLOCK
 	p->plug = NULL;
 #endif
@@ -1405,7 +1407,6 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 	 * We dont wake it up yet.
 	 */
 	p->group_leader = p;
-	INIT_LIST_HEAD(&p->thread_group);
 
 	/* Now that the task is set up, run cgroup callbacks if
 	 * necessary. We need to run them before the task is visible
