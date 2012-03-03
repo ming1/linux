@@ -1505,6 +1505,7 @@ struct task_struct {
 	struct mempolicy *mempolicy;	/* Protected by alloc_lock */
 	short il_next;
 	short pref_node_fork;
+	int node;
 #endif
 	struct rcu_head rcu;
 
@@ -1574,6 +1575,15 @@ struct task_struct {
 
 /* Future-safe accessor for struct task_struct's cpus_allowed. */
 #define tsk_cpus_allowed(tsk) (&(tsk)->cpus_allowed)
+
+static inline int tsk_home_node(struct task_struct *p)
+{
+#ifdef CONFIG_NUMA
+	return p->node;
+#else
+	return -1;
+#endif
+}
 
 /*
  * Priority of a process goes from 0..MAX_PRIO-1, valid RT
