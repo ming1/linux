@@ -285,6 +285,13 @@ struct mm_rss_stat {
 	atomic_long_t count[NR_MM_COUNTERS];
 };
 
+struct numa_entity {
+#ifdef CONFIG_NUMA
+	int		 node;		/* home node */
+	struct list_head numa_entry;	/* balance list */
+#endif
+};
+
 struct mm_struct {
 	struct vm_area_struct * mmap;		/* list of VMAs */
 	struct rb_root mm_rb;
@@ -388,6 +395,7 @@ struct mm_struct {
 #ifdef CONFIG_CPUMASK_OFFSTACK
 	struct cpumask cpumask_allocation;
 #endif
+	struct numa_entity numa;
 };
 
 static inline void mm_init_cpumask(struct mm_struct *mm)

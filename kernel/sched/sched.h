@@ -1179,9 +1179,25 @@ enum rq_nohz_flag_bits {
 #define nohz_flags(cpu)	(&cpu_rq(cpu)->nohz_flags)
 #endif
 
+unsigned long task_h_load(struct task_struct *p);
+
+#ifdef CONFIG_NUMA
+
+void sched_setnode(struct task_struct *p, int node);
+void select_task_node(struct task_struct *p, struct mm_struct *mm, int sd_flags);
+bool account_numa_enqueue(struct task_struct *p);
+void account_numa_dequeue(struct task_struct *p);
+void init_sched_numa(void);
+
+#else /* CONFIG_NUMA */
+
 /*
  * Macro to avoid argument evaluation
  */
 #define select_task_node(p, mm, sd_flags) do { } while (0)
 static inline bool account_numa_enqueue(struct task_struct *p) { return false; }
 static inline void account_numa_dequeue(struct task_struct *p) { }
+static inline void init_sched_numa(void) { }
+
+#endif /* CONFIG_NUMA */
+

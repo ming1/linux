@@ -3279,8 +3279,6 @@ static int move_one_task(struct lb_env *env)
 	return 0;
 }
 
-static unsigned long task_h_load(struct task_struct *p);
-
 static const unsigned int sched_nr_migrate_break = 32;
 
 /*
@@ -3454,7 +3452,7 @@ static void update_h_load(long cpu)
 	rcu_read_unlock();
 }
 
-static unsigned long task_h_load(struct task_struct *p)
+unsigned long task_h_load(struct task_struct *p)
 {
 	struct cfs_rq *cfs_rq = task_cfs_rq(p);
 	unsigned long load;
@@ -3473,7 +3471,7 @@ static inline void update_h_load(long cpu)
 {
 }
 
-static unsigned long task_h_load(struct task_struct *p)
+unsigned long task_h_load(struct task_struct *p)
 {
 	return p->se.load.weight;
 }
