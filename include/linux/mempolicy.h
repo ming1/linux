@@ -262,6 +262,9 @@ extern int vma_migratable(struct vm_area_struct *);
 
 extern int mpol_misplaced(struct page *, struct vm_area_struct *, unsigned long);
 
+extern void lazy_migrate_vma(struct vm_area_struct *vma, int node);
+extern void lazy_migrate_process(struct mm_struct *mm, int node);
+
 #else
 
 struct mempolicy {};

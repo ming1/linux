@@ -1193,6 +1193,90 @@ static long do_mbind(unsigned long start, unsigned long len,
 	return err;
 }
 
+static nodemask_t mpol_node_mask(struct mempolicy *pol, int node)
+{
+	if (pol->mode == MPOL_PREFERRED) {
+		if (pol->flags & MPOL_F_LOCAL)
+			return nodemask_of_node(node);
+
+		return nodemask_of_node(pol->v.preferred_node);
+	}
+
+	return pol->v.nodes;
+}
+
+void lazy_migrate_vma(struct vm_area_struct *vma, int node)
+{
+	struct mempolicy *pol = NULL;
+	struct mempol_walk_data data;
+	struct mm_walk walk;
+	LIST_HEAD(pagelist);
+	nodemask_t nmask;
+
+	if (vma->vm_file)
+		return;
+
+	if (!vma_migratable(vma))
+		return;
+
+	/*
+	 * Obtain a more-or-less correct nodemask to find which pages we need
+	 * to unmap so that MoF can put them right again.
+	 *
+	 * Not quite correct for INTERLEAVE, that would need us doing
+	 * offset_il_node() from check_pte_entry().
+	 *
+	 * Also not quite correct for task policies since we don't have a task,
+	 * approximate by having @node function as local / task-home-node.
+	 */
+
+	if (vma->vm_ops && vma->vm_ops->get_policy)
+	        pol = vma->vm_ops->get_policy(vma, vma->vm_start);
+	else if (vma->vm_policy)
+		pol = vma->vm_policy;
+
+	if (pol) {
+		nmask = mpol_node_mask(pol, node);
+		mpol_cond_put(pol);
+
+		/*
+		 * If there's an explicit policy that doesn't support MoF, skip
+		 * this vma, there's nothing we can do about that.
+		 */
+		if (!(pol->flags & MPOL_F_MOF))
+			return;
+	} else
+		nmask = nodemask_of_node(node);
+
+	data = (struct mempol_walk_data){
+		.nodes = &nmask,
+		.flags = MPOL_MF_MOVE | MPOL_MF_INVERT, /* move all pages not in set */
+		.private = &pagelist,
+		.vma = vma,
+	};
+
+	walk = (struct mm_walk){
+		.pte_entry = check_pte_entry,
+		.mm = vma->vm_mm,
+		.private = &data,
+	};
+
+	if (!walk_page_range(vma->vm_start, vma->vm_end, &walk))
+		migrate_pages_unmap_only(&pagelist);
+
+	putback_lru_pages(&pagelist);
+}
+
+void lazy_migrate_process(struct mm_struct *mm, int node)
+{
+	struct vm_area_struct *vma;
+
+	down_read(&mm->mmap_sem);
+	for (vma = mm->mmap; vma; vma = vma->vm_next)
+		lazy_migrate_vma(vma, node);
+	up_read(&mm->mmap_sem);
+}
+
 /*
  * User space interface with variable sized bitmaps for nodelists.
  */
