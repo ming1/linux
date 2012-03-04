@@ -72,10 +72,12 @@ pxa/board		git://github.com/hzhuang1/linux.git board-specific
 omap/omap1		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap omap1
 imx/vistrim		git://git.pengutronix.de/git/imx/linux-2.6.git features/imx27-visstrim
 imx/moboard		git://git.pengutronix.de/git/imx/linux-2.6.git features/imx31-moboard
+tegra/boards		git://git.kernel.org/pub/scm/linux/kernel/git/olof/tegra.git tags/tegra-boards
 
 next/rpmsg:		git://git.kernel.org/pub/scm/linux/kernel/git/ohad/remoteproc.git rpmsg-for-3.4
 
 next/soc2:
 depends/driver-core	git://git.kernel.org/pub/scm/linux/kernel/git/gregkh/driver-core.git driver-core-next
 ux500/soc		patches from Lee Jones, depends on depends/driver-core
-
+tegra/soc2		git://git.kernel.org/pub/scm/linux/kernel/git/olof/tegra.git tags/tegra-soc2
+				depends on tegra/soc and tegra/soc-drivers
