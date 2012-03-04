@@ -1215,8 +1215,8 @@ restart:
 				 * Open state on this file cannot be recovered
 				 * All we can do is revert to using the zero stateid.
 				 */
-				memset(state->stateid.data, 0,
-					sizeof(state->stateid.data));
+				memset(&state->stateid, 0,
+					sizeof(state->stateid));
 				/* Mark the file as being 'closed' */
 				state->state = 0;
 				break;
