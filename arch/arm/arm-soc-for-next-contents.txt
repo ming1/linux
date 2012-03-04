@@ -81,3 +81,6 @@ depends/driver-core	git://git.kernel.org/pub/scm/linux/kernel/git/gregkh/driver-
 ux500/soc		patches from Lee Jones, depends on depends/driver-core
 tegra/soc2		git://git.kernel.org/pub/scm/linux/kernel/git/olof/tegra.git tags/tegra-soc2
 				depends on tegra/soc and tegra/soc-drivers
+
+staging branches:
+staging/kirkwood/dt	git://git.infradead.org/users/jcooper/linux-kirkwood kirkwood_dt_test
