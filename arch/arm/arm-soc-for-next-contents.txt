@@ -24,6 +24,7 @@ imx/cleanup		git://git.pengutronix.de/git/imx/linux-2.6.git imx-cleanup
 pxa/cleanup		git://github.com/hzhuang1/linux.git cleanup-3.4
 omap/cleanup		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap cleanup
 				depends on depends/omap/gpio/runtime-pm-cleanup
+tegra/cleanup		git://git.kernel.org/pub/scm/linux/kernel/git/olof/tegra.git tags/tegra-cleanups
 
 next/soc:
 ux500/timers		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git ux500-timers
