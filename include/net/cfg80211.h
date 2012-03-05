@@ -120,6 +120,7 @@ enum ieee80211_channel_flags {
  * @band: band this channel belongs to.
  * @max_antenna_gain: maximum antenna gain in dBi
  * @max_power: maximum transmission power (in dBm)
+ * @max_reg_power: maximum regulatory transmission power (in dBm)
  * @beacon_found: helper to regulatory code to indicate when a beacon
  *	has been found on this channel. Use regulatory_hint_found_beacon()
  *	to enable this, this is useful only on 5 GHz band.
@@ -133,6 +134,7 @@ struct ieee80211_channel {
 	u32 flags;
 	int max_antenna_gain;
 	int max_power;
+	int max_reg_power;
 	bool beacon_found;
 	u32 orig_flags;
 	int orig_mag, orig_mpwr;
@@ -796,6 +798,7 @@ struct mesh_config {
 	 * mesh gate, but not necessarily using the gate announcement protocol.
 	 * Still keeping the same nomenclature to be in sync with the spec. */
 	bool  dot11MeshGateAnnouncementProtocol;
+	bool dot11MeshForwarding;
 };
 
 /**
@@ -1036,10 +1039,6 @@ const u8 *ieee80211_bss_get_ie(struct cfg80211_bss *bss, u8 ie);
  * @key_len: length of WEP key for shared key authentication
  * @key_idx: index of WEP key for shared key authentication
  * @key: WEP key for shared key authentication
- * @local_state_change: This is a request for a local state only, i.e., no
- *	Authentication frame is to be transmitted and authentication state is
- *	to be changed without having to wait for a response from the peer STA
- *	(AP).
  */
 struct cfg80211_auth_request {
 	struct cfg80211_bss *bss;
@@ -1048,7 +1047,6 @@ struct cfg80211_auth_request {
 	enum nl80211_auth_type auth_type;
 	const u8 *key;
 	u8 key_len, key_idx;
-	bool local_state_change;
 };
 
 /**
@@ -1065,7 +1063,11 @@ enum cfg80211_assoc_req_flags {
  *
  * This structure provides information needed to complete IEEE 802.11
  * (re)association.
- * @bss: The BSS to associate with.
+ * @bss: The BSS to associate with. If the call is successful the driver
+ *	is given a reference that it must release, normally via a call to
+ *	cfg80211_send_rx_assoc(), or, if association timed out, with a
+ *	call to cfg80211_put_bss() (in addition to calling
+ *	cfg80211_send_assoc_timeout())
  * @ie: Extra IEs to add to (Re)Association Request frame or %NULL
  * @ie_len: Length of ie buffer in octets
  * @use_mfp: Use management frame protection (IEEE 802.11w) in this association
@@ -1093,19 +1095,16 @@ struct cfg80211_assoc_request {
  * This structure provides information needed to complete IEEE 802.11
  * deauthentication.
  *
- * @bss: the BSS to deauthenticate from
+ * @bssid: the BSSID of the BSS to deauthenticate from
  * @ie: Extra IEs to add to Deauthentication frame or %NULL
  * @ie_len: Length of ie buffer in octets
  * @reason_code: The reason code for the deauthentication
- * @local_state_change: This is a request for a local state only, i.e., no
- *	Deauthentication frame is to be transmitted.
  */
 struct cfg80211_deauth_request {
-	struct cfg80211_bss *bss;
+	const u8 *bssid;
 	const u8 *ie;
 	size_t ie_len;
 	u16 reason_code;
-	bool local_state_change;
 };
 
 /**
@@ -1148,6 +1147,10 @@ struct cfg80211_disassoc_request {
  * @beacon_interval: beacon interval to use
  * @privacy: this is a protected network, keys will be configured
  *	after joining
+ * @control_port: whether user space controls IEEE 802.1X port, i.e.,
+ *	sets/clears %NL80211_STA_FLAG_AUTHORIZED. If true, the driver is
+ *	required to assume that the port is unauthorized until authorized by
+ *	user space. Otherwise, port is marked authorized by default.
  * @basic_rates: bitmap of basic rates to use when creating the IBSS
  * @mcast_rate: per-band multicast rate index + 1 (0: disabled)
  */
@@ -1162,6 +1165,7 @@ struct cfg80211_ibss_params {
 	u32 basic_rates;
 	bool channel_fixed;
 	bool privacy;
+	bool control_port;
 	int mcast_rate[IEEE80211_NUM_BANDS];
 };
 
@@ -1229,8 +1233,7 @@ enum wiphy_params_flags {
 struct cfg80211_bitrate_mask {
 	struct {
 		u32 legacy;
-		/* TODO: add support for masking MCS rates; e.g.: */
-		/* u8 mcs[IEEE80211_HT_MCS_MASK_LEN]; */
+		u8 mcs[IEEE80211_HT_MCS_MASK_LEN];
 	} control[IEEE80211_NUM_BANDS];
 };
 /**
@@ -2204,8 +2207,6 @@ struct cfg80211_conn;
 struct cfg80211_internal_bss;
 struct cfg80211_cached_keys;
 
-#define MAX_AUTH_BSSES		4
-
 /**
  * struct wireless_dev - wireless per-netdev state
  *
@@ -2269,8 +2270,6 @@ struct wireless_dev {
 	struct list_head event_list;
 	spinlock_t event_lock;
 
-	struct cfg80211_internal_bss *authtry_bsses[MAX_AUTH_BSSES];
-	struct cfg80211_internal_bss *auth_bsses[MAX_AUTH_BSSES];
 	struct cfg80211_internal_bss *current_bss; /* associated / joined */
 	struct ieee80211_channel *channel;
 
@@ -2725,6 +2724,20 @@ struct cfg80211_bss *cfg80211_get_mesh(struct wiphy *wiphy,
 				       struct ieee80211_channel *channel,
 				       const u8 *meshid, size_t meshidlen,
 				       const u8 *meshcfg);
+/**
+ * cfg80211_ref_bss - reference BSS struct
+ * @bss: the BSS struct to reference
+ *
+ * Increments the refcount of the given BSS struct.
+ */
+void cfg80211_ref_bss(struct cfg80211_bss *bss);
+
+/**
+ * cfg80211_put_bss - unref BSS struct
+ * @bss: the BSS struct
+ *
+ * Decrements the refcount of the given BSS struct.
+ */
 void cfg80211_put_bss(struct cfg80211_bss *bss);
 
 /**
@@ -2762,20 +2775,10 @@ void cfg80211_send_rx_auth(struct net_device *dev, const u8 *buf, size_t len);
 void cfg80211_send_auth_timeout(struct net_device *dev, const u8 *addr);
 
 /**
- * __cfg80211_auth_canceled - notify cfg80211 that authentication was canceled
- * @dev: network device
- * @addr: The MAC address of the device with which the authentication timed out
- *
- * When a pending authentication had no action yet, the driver may decide
- * to not send a deauth frame, but in that case must calls this function
- * to tell cfg80211 about this decision. It is only valid to call this
- * function within the deauth() callback.
- */
-void __cfg80211_auth_canceled(struct net_device *dev, const u8 *addr);
-
-/**
  * cfg80211_send_rx_assoc - notification of processed association
  * @dev: network device
+ * @bss: the BSS struct association was requested for, the struct reference
+ *	is owned by cfg80211 after this call
  * @buf: (re)association response frame (header + body)
  * @len: length of the frame data
  *
@@ -2784,7 +2787,8 @@ void __cfg80211_auth_canceled(struct net_device *dev, const u8 *addr);
  * function or cfg80211_send_assoc_timeout() to indicate the result of
  * cfg80211_ops::assoc() call. This function may sleep.
  */
-void cfg80211_send_rx_assoc(struct net_device *dev, const u8 *buf, size_t len);
+void cfg80211_send_rx_assoc(struct net_device *dev, struct cfg80211_bss *bss,
+			    const u8 *buf, size_t len);
 
 /**
  * cfg80211_send_assoc_timeout - notification of timed out association

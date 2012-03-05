@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- * Copyright(c) 2003 - 2011 Intel Corporation. All rights reserved.
+ * Copyright(c) 2003 - 2012 Intel Corporation. All rights reserved.
  *
  * Portions of this file are derived from the ipw3945 project, as well
  * as portionhelp of the ieee80211 subsystem header files.
@@ -628,16 +628,16 @@ static int iwlagn_rx_card_state_notif(struct iwl_priv *priv,
 	if (flags & (SW_CARD_DISABLED | HW_CARD_DISABLED |
 		     CT_CARD_DISABLED)) {
 
-		iwl_write32(bus(priv), CSR_UCODE_DRV_GP1_SET,
+		iwl_write32(trans(priv), CSR_UCODE_DRV_GP1_SET,
 			    CSR_UCODE_DRV_GP1_BIT_CMD_BLOCKED);
 
-		iwl_write_direct32(bus(priv), HBUS_TARG_MBX_C,
+		iwl_write_direct32(trans(priv), HBUS_TARG_MBX_C,
 					HBUS_TARG_MBX_C_REG_BIT_CMD_BLOCKED);
 
 		if (!(flags & RXON_CARD_DISABLED)) {
-			iwl_write32(bus(priv), CSR_UCODE_DRV_GP1_CLR,
+			iwl_write32(trans(priv), CSR_UCODE_DRV_GP1_CLR,
 				    CSR_UCODE_DRV_GP1_BIT_CMD_BLOCKED);
-			iwl_write_direct32(bus(priv), HBUS_TARG_MBX_C,
+			iwl_write_direct32(trans(priv), HBUS_TARG_MBX_C,
 					HBUS_TARG_MBX_C_REG_BIT_CMD_BLOCKED);
 		}
 		if (flags & CT_CARD_DISABLED)
@@ -1172,20 +1172,22 @@ int iwl_rx_dispatch(struct iwl_priv *priv, struct iwl_rx_mem_buffer *rxb,
 		wake_up_all(&priv->shrd->notif_waitq);
 	}
 
-	if (priv->pre_rx_handler)
+	if (priv->pre_rx_handler &&
+	    priv->shrd->ucode_owner == IWL_OWNERSHIP_TM)
 		priv->pre_rx_handler(priv, rxb);
-
-	/* Based on type of command response or notification,
-	 *   handle those that need handling via function in
-	 *   rx_handlers table.  See iwl_setup_rx_handlers() */
-	if (priv->rx_handlers[pkt->hdr.cmd]) {
-		priv->rx_handlers_stats[pkt->hdr.cmd]++;
-		err = priv->rx_handlers[pkt->hdr.cmd] (priv, rxb, cmd);
-	} else {
-		/* No handling needed */
-		IWL_DEBUG_RX(priv,
-			"No handler needed for %s, 0x%02x\n",
-			get_cmd_string(pkt->hdr.cmd), pkt->hdr.cmd);
+	else {
+		/* Based on type of command response or notification,
+		 *   handle those that need handling via function in
+		 *   rx_handlers table.  See iwl_setup_rx_handlers() */
+		if (priv->rx_handlers[pkt->hdr.cmd]) {
+			priv->rx_handlers_stats[pkt->hdr.cmd]++;
+			err = priv->rx_handlers[pkt->hdr.cmd] (priv, rxb, cmd);
+		} else {
+			/* No handling needed */
+			IWL_DEBUG_RX(priv,
+				"No handler needed for %s, 0x%02x\n",
+				get_cmd_string(pkt->hdr.cmd), pkt->hdr.cmd);
+		}
 	}
 	return err;
 }

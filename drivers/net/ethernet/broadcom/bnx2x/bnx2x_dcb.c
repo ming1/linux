@@ -1,6 +1,6 @@
 /* bnx2x_dcb.c: Broadcom Everest network driver.
  *
- * Copyright 2009-2011 Broadcom Corporation
+ * Copyright 2009-2012 Broadcom Corporation
  *
  * Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -2142,7 +2142,7 @@ static u8 bnx2x_dcbnl_get_cap(struct net_device *netdev, int capid, u8 *cap)
 	return rval;
 }
 
-static u8 bnx2x_dcbnl_get_numtcs(struct net_device *netdev, int tcid, u8 *num)
+static int bnx2x_dcbnl_get_numtcs(struct net_device *netdev, int tcid, u8 *num)
 {
 	struct bnx2x *bp = netdev_priv(netdev);
 	u8 rval = 0;
@@ -2169,7 +2169,7 @@ static u8 bnx2x_dcbnl_get_numtcs(struct net_device *netdev, int tcid, u8 *num)
 	return rval;
 }
 
-static u8 bnx2x_dcbnl_set_numtcs(struct net_device *netdev, int tcid, u8 num)
+static int bnx2x_dcbnl_set_numtcs(struct net_device *netdev, int tcid, u8 num)
 {
 	struct bnx2x *bp = netdev_priv(netdev);
 	DP(NETIF_MSG_LINK, "num tcs = %d; Not supported\n", num);

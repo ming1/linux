@@ -14,6 +14,8 @@
  * CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
 #include <linux/kernel.h>
 #include <linux/delay.h>
 #include <linux/cordic.h>
@@ -21462,7 +21464,7 @@ void wlc_phy_antsel_init(struct brcms_phy_pub *ppi, bool lut_init)
 	if (NREV_GE(pi->pubpi.phy_rev, 3)) {
 		u16 v0 = 0x211, v1 = 0x222, v2 = 0x144, v3 = 0x188;
 
-		if (lut_init == false)
+		if (!lut_init)
 			return;
 
 		if (pi->srom_fem2g.antswctrllut == 0) {
@@ -26434,8 +26436,7 @@ cal_try:
 	}
 
 	if (bcmerror != 0) {
-		printk(KERN_DEBUG "%s: Failed, cnt = %d\n", __func__,
-		       cal_retry);
+		pr_debug("%s: Failed, cnt = %d\n", __func__, cal_retry);
 
 		if (cal_retry < CAL_RETRY_CNT) {
 			cal_retry++;
