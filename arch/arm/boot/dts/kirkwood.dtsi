@@ -1,0 +1,18 @@
+/include/ "skeleton.dtsi"
+
+/ {
+	compatible = "marvell,kirkwood";
+
+	rtc@f1010300 {
+		compatible = "marvell,rtc";
+		reg = <0xf1010300 0x1f>;
+		interrupts = <53>;
+	};
+
+	wdt@fed20300 {
+		compatible = "marvell,orion-wdt";
+		reg = <0xfed20300 0x28>;
+		clock-frequency = <200000000>;
+	};
+};
+

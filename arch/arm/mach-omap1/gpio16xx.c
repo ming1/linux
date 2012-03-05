@@ -225,6 +225,13 @@ static int __init omap16xx_gpio_init(void)
 	if (!cpu_is_omap16xx())
 		return -EINVAL;
 
+	/*
+	 * Enable system clock for GPIO module.
+	 * The CAM_CLK_CTRL *is* really the right place.
+	 */
+	omap_writel(omap_readl(ULPD_CAM_CLK_CTRL) | 0x04,
+					ULPD_CAM_CLK_CTRL);
+
 	for (i = 0; i < ARRAY_SIZE(omap16xx_gpio_dev); i++) {
 		pdev = omap16xx_gpio_dev[i];
 		pdata = pdev->dev.platform_data;
@@ -243,13 +250,6 @@ static int __init omap16xx_gpio_init(void)
 
 		__raw_writel(SYSCONFIG_WORD, base + OMAP1610_GPIO_SYSCONFIG);
 		iounmap(base);
-
-		/*
-		 * Enable system clock for GPIO module.
-		 * The CAM_CLK_CTRL *is* really the right place.
-		 */
-		omap_writel(omap_readl(ULPD_CAM_CLK_CTRL) | 0x04,
-					ULPD_CAM_CLK_CTRL);
 
 		platform_device_register(omap16xx_gpio_dev[i]);
 	}

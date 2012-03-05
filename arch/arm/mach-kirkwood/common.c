@@ -15,6 +15,7 @@
 #include <linux/ata_platform.h>
 #include <linux/mtd/nand.h>
 #include <linux/dma-mapping.h>
+#include <linux/of.h>
 #include <net/dsa.h>
 #include <asm/page.h>
 #include <asm/timex.h>
@@ -279,7 +280,7 @@ void __init kirkwood_crypto_init(void)
 /*****************************************************************************
  * XOR0
  ****************************************************************************/
-static void __init kirkwood_xor0_init(void)
+void __init kirkwood_xor0_init(void)
 {
 	kirkwood_clk_ctrl |= CGC_XOR0;
 
@@ -291,7 +292,7 @@ static void __init kirkwood_xor0_init(void)
 /*****************************************************************************
  * XOR1
  ****************************************************************************/
-static void __init kirkwood_xor1_init(void)
+void __init kirkwood_xor1_init(void)
 {
 	kirkwood_clk_ctrl |= CGC_XOR1;
 
@@ -382,6 +383,7 @@ static struct platform_device kirkwood_pcm_device = {
 void __init kirkwood_audio_init(void)
 {
 	kirkwood_clk_ctrl |= CGC_AUDIO;
+	kirkwood_i2s_data.tclk = kirkwood_tclk;
 	platform_device_register(&kirkwood_i2s_device);
 	platform_device_register(&kirkwood_pcm_device);
 }
@@ -392,7 +394,7 @@ void __init kirkwood_audio_init(void)
 /*
  * Identify device ID and revision.
  */
-static char * __init kirkwood_id(void)
+char * __init kirkwood_id(void)
 {
 	u32 dev, rev;
 
@@ -435,7 +437,7 @@ static char * __init kirkwood_id(void)
 	}
 }
 
-static void __init kirkwood_l2_init(void)
+void __init kirkwood_l2_init(void)
 {
 #ifdef CONFIG_CACHE_FEROCEON_L2_WRITETHROUGH
 	writel(readl(L2_CONFIG_REG) | L2_WRITETHROUGH, L2_CONFIG_REG);
@@ -450,7 +452,6 @@ void __init kirkwood_init(void)
 {
 	printk(KERN_INFO "Kirkwood: %s, TCLK=%d.\n",
 		kirkwood_id(), kirkwood_tclk);
-	kirkwood_i2s_data.tclk = kirkwood_tclk;
 
 	/*
 	 * Disable propagation of mbus errors to the CPU local bus,
@@ -482,6 +483,9 @@ static int __init kirkwood_clock_gate(void)
 {
 	unsigned int curr = readl(CLOCK_GATING_CTRL);
 	u32 dev, rev;
+#ifdef CONFIG_OF
+	struct device_node *dp;
+#endif
 
 	kirkwood_pcie_id(&dev, &rev);
 	printk(KERN_DEBUG "Gating clock of unused units\n");
@@ -524,6 +528,13 @@ static int __init kirkwood_clock_gate(void)
 		}
 	} else  /* keep this bit set for devices that don't have PCIe1 */
 		kirkwood_clk_ctrl |= CGC_PEX1;
+
+#ifdef CONFIG_OF
+	dp = of_find_node_by_path("/");
+	if (dp && of_device_is_available(of_find_compatible_node(dp, NULL,
+							  "marvell,orion-spi")))
+		kirkwood_clk_ctrl |= CGC_RUNIT;
+#endif
 
 	/* Now gate clock the required units */
 	writel(kirkwood_clk_ctrl, CLOCK_GATING_CTRL);
