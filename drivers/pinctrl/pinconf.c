@@ -23,7 +23,20 @@
 #include "core.h"
 #include "pinconf.h"
 
-int pin_config_get_for_pin(struct pinctrl_dev *pctldev, unsigned pin,
+int pinconf_check_ops(struct pinctrl_dev *pctldev)
+{
+	const struct pinconf_ops *ops = pctldev->desc->confops;
+
+	/* We must be able to read out pin status */
+	if (!ops->pin_config_get && !ops->pin_config_group_get)
+		return -EINVAL;
+	/* We have to be able to config the pins in SOME way */
+	if (!ops->pin_config_set && !ops->pin_config_group_set)
+		return -EINVAL;
+	return 0;
+}
+
+static int pin_config_get_for_pin(struct pinctrl_dev *pctldev, unsigned pin,
 			   unsigned long *config)
 {
 	const struct pinconf_ops *ops = pctldev->desc->confops;
@@ -51,7 +64,7 @@ int pin_config_get(const char *dev_name, const char *name,
 	struct pinctrl_dev *pctldev;
 	int pin;
 
-	pctldev = get_pinctrl_dev_from_dev(NULL, dev_name);
+	pctldev = get_pinctrl_dev_from_devname(dev_name);
 	if (!pctldev)
 		return -EINVAL;
 
@@ -63,7 +76,7 @@ int pin_config_get(const char *dev_name, const char *name,
 }
 EXPORT_SYMBOL(pin_config_get);
 
-int pin_config_set_for_pin(struct pinctrl_dev *pctldev, unsigned pin,
+static int pin_config_set_for_pin(struct pinctrl_dev *pctldev, unsigned pin,
 			   unsigned long config)
 {
 	const struct pinconf_ops *ops = pctldev->desc->confops;
@@ -99,7 +112,7 @@ int pin_config_set(const char *dev_name, const char *name,
 	struct pinctrl_dev *pctldev;
 	int pin;
 
-	pctldev = get_pinctrl_dev_from_dev(NULL, dev_name);
+	pctldev = get_pinctrl_dev_from_devname(dev_name);
 	if (!pctldev)
 		return -EINVAL;
 
@@ -118,7 +131,7 @@ int pin_config_group_get(const char *dev_name, const char *pin_group,
 	const struct pinconf_ops *ops;
 	int selector;
 
-	pctldev = get_pinctrl_dev_from_dev(NULL, dev_name);
+	pctldev = get_pinctrl_dev_from_devname(dev_name);
 	if (!pctldev)
 		return -EINVAL;
 	ops = pctldev->desc->confops;
@@ -138,7 +151,6 @@ int pin_config_group_get(const char *dev_name, const char *pin_group,
 }
 EXPORT_SYMBOL(pin_config_group_get);
 
-
 int pin_config_group_set(const char *dev_name, const char *pin_group,
 			 unsigned long config)
 {
@@ -151,7 +163,7 @@ int pin_config_group_set(const char *dev_name, const char *pin_group,
 	int ret;
 	int i;
 
-	pctldev = get_pinctrl_dev_from_dev(NULL, dev_name);
+	pctldev = get_pinctrl_dev_from_devname(dev_name);
 	if (!pctldev)
 		return -EINVAL;
 	ops = pctldev->desc->confops;
@@ -204,19 +216,6 @@ int pin_config_group_set(const char *dev_name, const char *pin_group,
 	return 0;
 }
 EXPORT_SYMBOL(pin_config_group_set);
-
-int pinconf_check_ops(struct pinctrl_dev *pctldev)
-{
-	const struct pinconf_ops *ops = pctldev->desc->confops;
-
-	/* We must be able to read out pin status */
-	if (!ops->pin_config_get && !ops->pin_config_group_get)
-		return -EINVAL;
-	/* We have to be able to config the pins in SOME way */
-	if (!ops->pin_config_set && !ops->pin_config_group_set)
-		return -EINVAL;
-	return 0;
-}
 
 #ifdef CONFIG_DEBUG_FS
 
@@ -286,6 +285,8 @@ static int pinconf_groups_show(struct seq_file *s, void *what)
 
 		seq_printf(s, "%u (%s):", selector, gname);
 		pinconf_dump_group(pctldev, s, selector, gname);
+		seq_printf(s, "\n");
+
 		selector++;
 	}
 
