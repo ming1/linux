@@ -184,7 +184,6 @@ static void __init kirkwood_dt_init(void)
 	kirkwood_wdt_init();
 	kirkwood_xor0_init();
 	kirkwood_xor1_init();
-	kirkwood_crypto_init();
 
 #ifdef CONFIG_KEXEC
 	kexec_reinit = kirkwood_enable_pcie;
