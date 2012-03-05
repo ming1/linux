@@ -20,6 +20,17 @@
 
 static const int numa_balance_interval = 2 * HZ; /* 2 seconds */
 
+struct numa_ops {
+	unsigned long	(*mem_load)(struct numa_entity *ne);
+	unsigned long	(*cpu_load)(struct numa_entity *ne);
+
+	void		(*mem_migrate)(struct numa_entity *ne, int node);
+	void		(*cpu_migrate)(struct numa_entity *ne, int node);
+
+	bool		(*tryget)(struct numa_entity *ne);
+	void		(*put)(struct numa_entity *ne);
+};
+
 struct numa_cpu_load {
 	unsigned long	remote; /* load of tasks running away from their home node */
 	unsigned long	all;	/* load of tasks that should be running on this node */
@@ -160,6 +171,26 @@ static inline struct task_struct *ne_owner(struct numa_entity *ne)
 	return rcu_dereference(ne_mm(ne)->owner);
 }
 
+static unsigned long process_cpu_load(struct numa_entity *ne)
+{
+	unsigned long load = 0;
+	struct task_struct *t, *p;
+
+	rcu_read_lock();
+	t = p = ne_owner(ne);
+	if (p) do {
+		load += t->numa_contrib;
+	} while ((t = next_thread(t)) != p);
+	rcu_read_unlock();
+
+	return load;
+}
+
+static unsigned long process_mem_load(struct numa_entity *ne)
+{
+	return get_mm_counter(ne_mm(ne), MM_ANONPAGES);
+}
+
 static void process_cpu_migrate(struct numa_entity *ne, int node)
 {
 	struct task_struct *p, *t;
@@ -177,7 +208,7 @@ static void process_mem_migrate(struct numa_entity *ne, int node)
 	lazy_migrate_process(ne_mm(ne), node);
 }
 
-static int process_tryget(struct numa_entity *ne)
+static bool process_tryget(struct numa_entity *ne)
 {
 	/*
 	 * This is possible when we hold &nq_of(ne->node)->lock since then
@@ -192,6 +223,17 @@ static void process_put(struct numa_entity *ne)
 {
 	mmput(ne_mm(ne));
 }
+
+static const struct numa_ops process_numa_ops = {
+	.mem_load	= process_mem_load,
+	.cpu_load	= process_cpu_load,
+
+	.mem_migrate	= process_mem_migrate,
+	.cpu_migrate	= process_cpu_migrate,
+
+	.tryget		= process_tryget,
+	.put		= process_put,
+};
 
 static struct node_queue *lock_ne_nq(struct numa_entity *ne)
 {
@@ -258,8 +300,8 @@ static void enqueue_ne(struct numa_entity *ne, int node)
 
 	BUG_ON(ne->node != -1);
 
-	process_cpu_migrate(ne, node);
-	process_mem_migrate(ne, node);
+	ne->nops->cpu_migrate(ne, node);
+	ne->nops->mem_migrate(ne, node);
 
 	spin_lock(&nq->lock);
 	__enqueue_ne(nq, ne);
@@ -283,14 +325,15 @@ static void dequeue_ne(struct numa_entity *ne)
 	}
 }
 
-static void init_ne(struct numa_entity *ne)
+static void init_ne(struct numa_entity *ne, const struct numa_ops *nops)
 {
 	ne->node = -1;
+	ne->nops = nops;
 }
 
 void mm_init_numa(struct mm_struct *mm)
 {
-	init_ne(&mm->numa);
+	init_ne(&mm->numa, &process_numa_ops);
 }
 
 void exit_numa(struct mm_struct *mm)
@@ -477,26 +520,6 @@ struct numa_imbalance {
 	enum numa_balance_type type;
 };
 
-static unsigned long process_cpu_load(struct numa_entity *ne)
-{
-	unsigned long load = 0;
-	struct task_struct *t, *p;
-
-	rcu_read_lock();
-	t = p = ne_owner(ne);
-	if (p) do {
-		load += t->numa_contrib;
-	} while ((t = next_thread(t)) != p);
-	rcu_read_unlock();
-
-	return load;
-}
-
-static unsigned long process_mem_load(struct numa_entity *ne)
-{
-	return get_mm_counter(ne_mm(ne), MM_ANONPAGES);
-}
-
 static int find_busiest_node(int this_node, struct numa_imbalance *imb)
 {
 	unsigned long cpu_load, mem_load;
@@ -618,8 +641,8 @@ static void move_processes(struct node_queue *busiest_nq,
 				     struct numa_entity,
 				     numa_entry);
 
-		ne_cpu = process_cpu_load(ne);
-		ne_mem = process_mem_load(ne);
+		ne_cpu = ne->nops->cpu_load(ne);
+		ne_mem = ne->nops->mem_load(ne);
 
 		if (sched_feat(NUMA_BALANCE_FILTER)) {
 			/*
@@ -644,13 +667,13 @@ static void move_processes(struct node_queue *busiest_nq,
 
 		__dequeue_ne(busiest_nq, ne);
 		__enqueue_ne(this_nq, ne);
-		if (process_tryget(ne)) {
+		if (ne->nops->tryget(ne)) {
 			double_unlock_nq(this_nq, busiest_nq);
 
-			process_cpu_migrate(ne, this_nq->node);
-			process_mem_migrate(ne, this_nq->node);
+			ne->nops->cpu_migrate(ne, this_nq->node);
+			ne->nops->mem_migrate(ne, this_nq->node);
+			ne->nops->put(ne);
 
-			process_put(ne);
 			double_lock_nq(this_nq, busiest_nq);
 		}
 

@@ -287,8 +287,9 @@ struct mm_rss_stat {
 
 struct numa_entity {
 #ifdef CONFIG_NUMA
-	int		 node;		/* home node */
-	struct list_head numa_entry;	/* balance list */
+	int			node;		/* home node */
+	struct list_head	numa_entry;	/* balance list */
+	const struct numa_ops	*nops;
 #endif
 };
 
