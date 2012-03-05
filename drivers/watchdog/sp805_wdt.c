@@ -79,7 +79,7 @@ struct sp805_wdt {
 
 /* local variables */
 static struct sp805_wdt *wdt;
-static int nowayout = WATCHDOG_NOWAYOUT;
+static bool nowayout = WATCHDOG_NOWAYOUT;
 
 /* This routine finds load value that will reset system in required timout */
 static void wdt_setload(unsigned int timeout)
@@ -415,7 +415,7 @@ static void __exit sp805_wdt_exit(void)
 }
 module_exit(sp805_wdt_exit);
 
-module_param(nowayout, int, 0);
+module_param(nowayout, bool, 0);
 MODULE_PARM_DESC(nowayout,
 		"Set to 1 to keep watchdog running after device release");
 
