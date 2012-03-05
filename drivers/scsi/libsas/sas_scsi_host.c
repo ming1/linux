@@ -992,10 +992,6 @@ void sas_task_abort(struct sas_task *task)
 			return;
 		task->timer.function(task->timer.data);
 		return;
-	}
-
-	if (dev_is_sata(task->dev)) {
-		sas_ata_task_abort(task);
 	} else {
 		struct request_queue *q = sc->device->request_queue;
 		unsigned long flags;
@@ -1003,7 +999,6 @@ void sas_task_abort(struct sas_task *task)
 		spin_lock_irqsave(q->queue_lock, flags);
 		blk_abort_request(sc->request);
 		spin_unlock_irqrestore(q->queue_lock, flags);
-		scsi_schedule_eh(sc->device->host);
 	}
 }
 
