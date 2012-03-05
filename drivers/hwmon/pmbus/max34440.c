@@ -30,6 +30,7 @@ enum chips { max34440, max34441 };
 #define MAX34440_MFR_VOUT_PEAK		0xd4
 #define MAX34440_MFR_IOUT_PEAK		0xd5
 #define MAX34440_MFR_TEMPERATURE_PEAK	0xd6
+#define MAX34440_MFR_VOUT_MIN		0xd7
 
 #define MAX34440_STATUS_OC_WARN		(1 << 0)
 #define MAX34440_STATUS_OC_FAULT	(1 << 1)
@@ -41,6 +42,10 @@ static int max34440_read_word_data(struct i2c_client *client, int page, int reg)
 	int ret;
 
 	switch (reg) {
+	case PMBUS_VIRT_READ_VOUT_MIN:
+		ret = pmbus_read_word_data(client, page,
+					   MAX34440_MFR_VOUT_MIN);
+		break;
 	case PMBUS_VIRT_READ_VOUT_MAX:
 		ret = pmbus_read_word_data(client, page,
 					   MAX34440_MFR_VOUT_PEAK);
@@ -72,6 +77,10 @@ static int max34440_write_word_data(struct i2c_client *client, int page,
 
 	switch (reg) {
 	case PMBUS_VIRT_RESET_VOUT_HISTORY:
+		ret = pmbus_write_word_data(client, page,
+					    MAX34440_MFR_VOUT_MIN, 0x7fff);
+		if (ret)
+			break;
 		ret = pmbus_write_word_data(client, page,
 					    MAX34440_MFR_VOUT_PEAK, 0);
 		break;
@@ -224,12 +233,6 @@ static int max34440_probe(struct i2c_client *client,
 	return pmbus_do_probe(client, id, &max34440_info[id->driver_data]);
 }
 
-static int max34440_remove(struct i2c_client *client)
-{
-	pmbus_do_remove(client);
-	return 0;
-}
-
 static const struct i2c_device_id max34440_id[] = {
 	{"max34440", max34440},
 	{"max34441", max34441},
@@ -244,22 +247,12 @@ static struct i2c_driver max34440_driver = {
 		   .name = "max34440",
 		   },
 	.probe = max34440_probe,
-	.remove = max34440_remove,
+	.remove = pmbus_do_remove,
 	.id_table = max34440_id,
 };
 
-static int __init max34440_init(void)
-{
-	return i2c_add_driver(&max34440_driver);
-}
-
-static void __exit max34440_exit(void)
-{
-	i2c_del_driver(&max34440_driver);
-}
+module_i2c_driver(max34440_driver);
 
 MODULE_AUTHOR("Guenter Roeck");
 MODULE_DESCRIPTION("PMBus driver for Maxim MAX34440/MAX34441");
 MODULE_LICENSE("GPL");
-module_init(max34440_init);
-module_exit(max34440_exit);
