@@ -145,6 +145,8 @@ int regmap_reinit_cache(struct regmap *map,
 int regmap_write(struct regmap *map, unsigned int reg, unsigned int val);
 int regmap_raw_write(struct regmap *map, unsigned int reg,
 		     const void *val, size_t val_len);
+int regmap_bulk_write(struct regmap *map, unsigned int reg, const void *val,
+			size_t val_count);
 int regmap_read(struct regmap *map, unsigned int reg, unsigned int *val);
 int regmap_raw_read(struct regmap *map, unsigned int reg,
 		    void *val, size_t val_len);
@@ -158,6 +160,8 @@ int regmap_update_bits_check(struct regmap *map, unsigned int reg,
 int regmap_get_val_bytes(struct regmap *map);
 
 int regcache_sync(struct regmap *map);
+int regcache_sync_region(struct regmap *map, unsigned int min,
+			 unsigned int max);
 void regcache_cache_only(struct regmap *map, bool enable);
 void regcache_cache_bypass(struct regmap *map, bool enable);
 void regcache_mark_dirty(struct regmap *map);
