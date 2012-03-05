@@ -574,31 +574,6 @@ int sas_ata_init_host_and_port(struct domain_device *found_dev)
 	return 0;
 }
 
-void sas_ata_task_abort(struct sas_task *task)
-{
-	struct ata_queued_cmd *qc = task->uldd_task;
-	struct completion *waiting;
-
-	/* Bounce SCSI-initiated commands to the SCSI EH */
-	if (qc->scsicmd) {
-		struct request_queue *q = qc->scsicmd->device->request_queue;
-		unsigned long flags;
-
-		spin_lock_irqsave(q->queue_lock, flags);
-		blk_abort_request(qc->scsicmd->request);
-		spin_unlock_irqrestore(q->queue_lock, flags);
-		scsi_schedule_eh(qc->scsicmd->device->host);
-		return;
-	}
-
-	/* Internal command, fake a timeout and complete. */
-	qc->flags &= ~ATA_QCFLAG_ACTIVE;
-	qc->flags |= ATA_QCFLAG_FAILED;
-	qc->err_mask |= AC_ERR_TIMEOUT;
-	waiting = qc->private_data;
-	complete(waiting);
-}
-
 static void sas_get_ata_command_set(struct domain_device *dev)
 {
 	struct dev_to_host_fis *fis =
