@@ -16,55 +16,6 @@
 #include <asm/machdep.h>
 #include <asm/coldfire.h>
 #include <asm/mcfsim.h>
-#include <asm/mcfuart.h>
-
-/***************************************************************************/
-
-static struct mcf_platform_uart m5206_uart_platform[] = {
-	{
-		.mapbase	= MCF_MBAR + MCFUART_BASE1,
-		.irq		= 73,
-	},
-	{
-		.mapbase 	= MCF_MBAR + MCFUART_BASE2,
-		.irq		= 74,
-	},
-	{ },
-};
-
-static struct platform_device m5206_uart = {
-	.name			= "mcfuart",
-	.id			= 0,
-	.dev.platform_data	= m5206_uart_platform,
-};
-
-static struct platform_device *m5206_devices[] __initdata = {
-	&m5206_uart,
-};
-
-/***************************************************************************/
-
-static void __init m5206_uart_init_line(int line, int irq)
-{
-	if (line == 0) {
-		writel(MCFSIM_ICR_LEVEL6 | MCFSIM_ICR_PRI1, MCF_MBAR + MCFSIM_UART1ICR);
-		writeb(irq, MCFUART_BASE1 + MCFUART_UIVR);
-		mcf_mapirq2imr(irq, MCFINTC_UART0);
-	} else if (line == 1) {
-		writel(MCFSIM_ICR_LEVEL6 | MCFSIM_ICR_PRI2, MCF_MBAR + MCFSIM_UART2ICR);
-		writeb(irq, MCFUART_BASE2 + MCFUART_UIVR);
-		mcf_mapirq2imr(irq, MCFINTC_UART1);
-	}
-}
-
-static void __init m5206_uarts_init(void)
-{
-	const int nrlines = ARRAY_SIZE(m5206_uart_platform);
-	int line;
-
-	for (line = 0; (line < nrlines); line++)
-		m5206_uart_init_line(line, m5206_uart_platform[line].irq);
-}
 
 /***************************************************************************/
 
@@ -105,23 +56,13 @@ void __init config_BSP(char *commandp, int size)
 #endif /* CONFIG_NETtel */
 
 	mach_reset = m5206_cpu_reset;
+	mach_sched_init = hw_timer_init;
 	m5206_timers_init();
-	m5206_uarts_init();
 
 	/* Only support the external interrupts on their primary level */
 	mcf_mapirq2imr(25, MCFINTC_EINT1);
 	mcf_mapirq2imr(28, MCFINTC_EINT4);
 	mcf_mapirq2imr(31, MCFINTC_EINT7);
 }
-
-/***************************************************************************/
-
-static int __init init_BSP(void)
-{
-	platform_add_devices(m5206_devices, ARRAY_SIZE(m5206_devices));
-	return 0;
-}
-
-arch_initcall(init_BSP);
 
 /***************************************************************************/
