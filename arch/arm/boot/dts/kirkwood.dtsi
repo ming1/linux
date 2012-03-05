@@ -2,5 +2,12 @@
 
 / {
 	compatible = "mrvl,kirkwood";
-};
+	interrupt-parent = <&intc>;
 
+	intc: interrupt-controller@fed20200 {
+		compatible = "mrvl,orion-intc";
+		interrupt-controller;
+		#interrupt-cells = <1>;
+		reg = <0xfed20200 0x20>;
+	};
+};

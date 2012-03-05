@@ -13,6 +13,7 @@
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/platform_device.h>
+#include <linux/irqdomain.h>
 #include <linux/mtd/partitions.h>
 #include <linux/ata_platform.h>
 #include <linux/mv643xx_eth.h>
@@ -157,6 +158,8 @@ static void __init dreamplug_init(void)
 
 static void __init kirkwood_dt_init(void)
 {
+	struct device_node *node;
+
 	pr_info("Kirkwood: %s, TCLK=%d.\n", kirkwood_id(), kirkwood_tclk);
 
 	/*
@@ -172,6 +175,10 @@ static void __init kirkwood_dt_init(void)
 #ifdef CONFIG_CACHE_FEROCEON_L2
 	kirkwood_l2_init();
 #endif
+
+	node = of_find_compatible_node(NULL, NULL, "mrvl,orion-intc");
+	if (node)
+		irq_domain_add_simple(node, 0);
 
 	/* internal devices that every board has */
 	kirkwood_rtc_init();
