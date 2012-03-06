@@ -623,16 +623,33 @@ static inline void put_link(struct nameidata *nd, struct path *link, void *cooki
 	path_put(link);
 }
 
-#ifdef CONFIG_PROTECTED_SYMLINKS
+#ifdef CONFIG_PROTECTED_LINKS
 int sysctl_protected_symlinks __read_mostly =
-	CONFIG_PROTECTED_SYMLINKS_ENABLED_SYSCTL;
+	CONFIG_PROTECTED_SYMLINKS_SYSCTL;
+int sysctl_protected_hardlinks __read_mostly =
+	CONFIG_PROTECTED_HARDLINKS_SYSCTL;
+
+static inline void
+audit_log_link_denied(const char *operation, struct path *link)
+{
+	struct audit_buffer *ab;
+
+	ab = audit_log_start(current->audit_context, GFP_KERNEL, AUDIT_AVC);
+	audit_log_format(ab, "op=%s action=denied", operation);
+	audit_log_format(ab, " pid=%d comm=", current->pid);
+	audit_log_untrustedstring(ab, current->comm);
+	audit_log_d_path(ab, " path=", link);
+	audit_log_format(ab, " dev=");
+	audit_log_untrustedstring(ab, link->dentry->d_inode->i_sb->s_id);
+	audit_log_format(ab, " ino=%lu", link->dentry->d_inode->i_ino);
+	audit_log_end(ab);
+}
 
 /**
  * may_follow_link - Check symlink following for unsafe situations
- * @dentry: The inode/dentry of the symlink
- * @nameidata: The path data of the symlink
+ * @link: The path of the symlink
  *
- * In the case of the protected_symlinks sysctl being enabled,
+ * In the case of the sysctl_protected_symlinks sysctl being enabled,
  * CAP_DAC_OVERRIDE needs to be specifically ignored if the symlink is
  * in a sticky world-writable directory. This is to protect privileged
  * processes from failing races against path names that may change out
@@ -643,19 +660,20 @@ int sysctl_protected_symlinks __read_mostly =
  *
  * Returns 0 if following the symlink is allowed, -ve on error.
  */
-static inline int
-may_follow_link(struct dentry *dentry, struct nameidata *nameidata)
+static inline int may_follow_link(struct path *link)
 {
 	int error = 0;
 	const struct inode *parent;
 	const struct inode *inode;
 	const struct cred *cred;
+	struct dentry *dentry;
 
 	if (!sysctl_protected_symlinks)
 		return 0;
 
 	/* Allowed if owner and follower match. */
 	cred = current_cred();
+	dentry = link->dentry;
 	inode = dentry->d_inode;
 	if (cred->fsuid == inode->i_uid)
 		return 0;
@@ -669,29 +687,61 @@ may_follow_link(struct dentry *dentry, struct nameidata *nameidata)
 	}
 	spin_unlock(&dentry->d_lock);
 
-#ifdef CONFIG_AUDIT
-	if (error) {
-		struct audit_buffer *ab;
+	if (error)
+		audit_log_link_denied("follow_link", link);
 
-		ab = audit_log_start(current->audit_context,
-				     GFP_KERNEL, AUDIT_AVC);
-		audit_log_format(ab, "op=follow_link action=denied");
-		audit_log_format(ab, " pid=%d comm=", current->pid);
-		audit_log_untrustedstring(ab, current->comm);
-		audit_log_d_path(ab, " path=", &nameidata->path);
-		audit_log_format(ab, " name=");
-		audit_log_untrustedstring(ab, dentry->d_name.name);
-		audit_log_format(ab, " dev=");
-		audit_log_untrustedstring(ab, inode->i_sb->s_id);
-		audit_log_format(ab, " ino=%lu", inode->i_ino);
-		audit_log_end(ab);
-	}
-#endif
+	return error;
+}
+
+/**
+ * may_linkat - Check permissions for creating a hardlink
+ * @link: the source to hardlink from
+ *
+ * Block hardlink when all of:
+ *  - sysctl_protected_hardlinks enabled
+ *  - fsuid does not match inode
+ *  - at least one of:
+ *    - inode is not a regular file
+ *    - inode is setuid
+ *    - inode is setgid and group-exec
+ *    - access failure for read and write
+ *  - not CAP_FOWNER
+ *
+ * Returns 0 if successful, -ve on error.
+ */
+static inline int may_linkat(struct path *link)
+{
+	int error = 0;
+	const struct cred *cred;
+	struct inode *inode;
+	int mode;
+
+	if (!sysctl_protected_hardlinks)
+		return 0;
+
+	cred = current_cred();
+	inode = link->dentry->d_inode;
+	mode = inode->i_mode;
+
+	if (cred->fsuid != inode->i_uid &&
+	    (!S_ISREG(mode) || (mode & S_ISUID) ||
+	     ((mode & (S_ISGID | S_IXGRP)) == (S_ISGID | S_IXGRP)) ||
+	     (inode_permission(inode, MAY_READ | MAY_WRITE))) &&
+	    !capable(CAP_FOWNER))
+		error = -EPERM;
+
+	if (error)
+		audit_log_link_denied("linkat", link);
+
 	return error;
 }
 #else
-static inline int
-may_follow_link(struct dentry *dentry, struct nameidata *nameidata)
+static inline int may_follow_link(struct path *link)
+{
+	return 0;
+}
+
+static inline int may_linkat(struct path *link)
 {
 	return 0;
 }
@@ -720,7 +770,7 @@ follow_link(struct path *link, struct nameidata *nd, void **p, bool sensitive)
 	nd_set_link(nd, NULL);
 
 	if (sensitive)
-		error = may_follow_link(link->dentry, nd);
+		error = may_follow_link(link);
 	if (!error)
 		error = security_inode_follow_link(link->dentry, nd);
 	if (error) {
@@ -3079,6 +3129,9 @@ SYSCALL_DEFINE5(linkat, int, olddfd, const char __user *, oldname,
 
 	error = -EXDEV;
 	if (old_path.mnt != new_path.mnt)
+		goto out_dput;
+	error = may_linkat(&old_path);
+	if (error)
 		goto out_dput;
 	error = mnt_want_write(new_path.mnt);
 	if (error)
