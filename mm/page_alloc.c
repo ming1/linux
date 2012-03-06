@@ -1188,7 +1188,8 @@ void drain_all_pages(void)
 	struct per_cpu_pageset *pcp;
 	struct zone *zone;
 
-	/* Allocate in the BSS so we wont require allocation in
+	/*
+	 * Allocate in the BSS so we wont require allocation in
 	 * direct reclaim path for CONFIG_CPUMASK_OFFSTACK=y
 	 */
 	static cpumask_t cpus_with_pcps;
