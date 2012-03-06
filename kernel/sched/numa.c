@@ -200,9 +200,15 @@ static struct node_queue *lock_ne_nq(struct numa_entity *ne)
 
 	for (;;) {
 		node = ACCESS_ONCE(ne->node);
-		BUG_ON(node == -1);
-		nq = nq_of(node);
+		/*
+		 * Make sure any dequeue is properly done before
+		 * we can observe node == -1, see dequeue_ne().
+		 */
+		smp_rmb();
+		if (node == -1)
+			return NULL;
 
+		nq = nq_of(node);
 		spin_lock(&nq->lock);
 		if (likely(ne->node == node))
 			break;
@@ -264,13 +270,17 @@ static void dequeue_ne(struct numa_entity *ne)
 {
 	struct node_queue *nq;
 
-	if (ne->node == -1) // XXX serialization
-		return;
-
 	nq = lock_ne_nq(ne);
-	ne->node = -1;
-	__dequeue_ne(nq, ne);
-	spin_unlock(&nq->lock);
+	if (nq) {
+		__dequeue_ne(nq, ne);
+		/*
+		 * ensure the dequeue is complete before lock_ne_nq()
+		 * can observe the ne->node == -1.
+		 */
+		smp_wmb();
+		ne->node = -1;
+		spin_unlock(&nq->lock);
+	}
 }
 
 static void init_ne(struct numa_entity *ne)
@@ -710,21 +720,62 @@ static int numad_thread(void *data)
 	return 0;
 }
 
+static int __cpuinit
+numa_hotplug(struct notifier_block *nb, unsigned long action, void *hcpu)
+{
+	int cpu = (long)hcpu;
+	int node = cpu_to_node(cpu);
+	struct node_queue *nq = nq_of(node);
+	struct task_struct *numad;
+	int err = 0;
+
+	switch (action & ~CPU_TASKS_FROZEN) {
+	case CPU_UP_PREPARE:
+		if (nq->numad)
+			break;
+
+		numad = kthread_create_on_node(numad_thread,
+				nq, node, "numad/%d", node);
+		if (IS_ERR(numad)) {
+			err = PTR_ERR(numad);
+			break;
+		}
+
+		nq->numad = numad;
+		nq->next_schedule = jiffies + HZ; // XXX sync-up?
+		break;
+
+	case CPU_ONLINE:
+		wake_up_process(nq->numad);
+		break;
+
+	case CPU_DEAD:
+	case CPU_UP_CANCELED:
+		if (!nq->numad)
+			break;
+
+		if (cpumask_any_and(cpu_online_mask,
+				    cpumask_of_node(node)) >= nr_cpu_ids) {
+			kthread_stop(nq->numad);
+			nq->numad = NULL;
+		}
+		break;
+	}
+
+	return notifier_from_errno(err);
+}
+
 static __init int numa_init(void)
 {
-	int node;
+	int node, cpu, err;
 
 	nqs = kzalloc(sizeof(struct node_queue*) * nr_node_ids, GFP_KERNEL);
 	BUG_ON(!nqs);
 
-	for_each_node(node) { // XXX hotplug
+	for_each_node(node) {
 		struct node_queue *nq = kmalloc_node(sizeof(*nq),
 				GFP_KERNEL | __GFP_ZERO, node);
 		BUG_ON(!nq);
-
-		nq->numad = kthread_create_on_node(numad_thread,
-				nq, node, "numad/%d", node);
-		BUG_ON(IS_ERR(nq->numad));
 
 		spin_lock_init(&nq->lock);
 		INIT_LIST_HEAD(&nq->entity_list);
@@ -732,9 +783,16 @@ static __init int numa_init(void)
 		nq->next_schedule = jiffies + HZ;
 		nq->node = node;
 		nqs[node] = nq;
-
-		wake_up_process(nq->numad);
 	}
+
+	get_online_cpus();
+	cpu_notifier(numa_hotplug, 0);
+	for_each_online_cpu(cpu) {
+		err = numa_hotplug(NULL, CPU_UP_PREPARE, (void *)(long)cpu);
+		BUG_ON(notifier_to_errno(err));
+		numa_hotplug(NULL, CPU_ONLINE, (void *)(long)cpu);
+	}
+	put_online_cpus();
 
 	return 0;
 }
