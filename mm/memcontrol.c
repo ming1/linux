@@ -3279,7 +3279,7 @@ void mem_cgroup_end_migration(struct mem_cgroup *memcg,
 	anon = PageAnon(used);
 	__mem_cgroup_uncharge_common(unused,
 		anon ? MEM_CGROUP_CHARGE_TYPE_MAPPED
-                     : MEM_CGROUP_CHARGE_TYPE_CACHE);
+		     : MEM_CGROUP_CHARGE_TYPE_CACHE);
 
 	/*
 	 * If a page is a file cache, radix-tree replacement is very atomic
