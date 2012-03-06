@@ -344,7 +344,7 @@ typedef struct { int preload; } fpu_switch_t;
  */
 static inline int fpu_lazy_restore(struct task_struct *new, unsigned int cpu)
 {
-	return new == percpu_read_stable(fpu_owner_task) &&
+	return new == this_cpu_read_stable(fpu_owner_task) &&
 		cpu == new->thread.fpu.last_cpu;
 }
 
