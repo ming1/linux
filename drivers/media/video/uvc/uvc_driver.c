@@ -27,12 +27,12 @@
 #include <linux/list.h>
 #include <linux/module.h>
 #include <linux/slab.h>
+#include <linux/atomic.h>
 #include <linux/usb.h>
 #include <linux/videodev2.h>
 #include <linux/vmalloc.h>
 #include <linux/wait.h>
 #include <linux/version.h>
-#include <asm/atomic.h>
 #include <asm/unaligned.h>
 
 #include <media/v4l2-common.h>
