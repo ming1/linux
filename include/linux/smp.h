@@ -168,10 +168,11 @@ static inline int up_smp_call_function(smp_call_func_t func, void *info)
  */
 #define on_each_cpu_cond(cond_func, func, info, wait, gfp_flags)\
 	do {							\
+		void *__info = (info);				\
 		preempt_disable();				\
-		if (cond_func(0, info)) {			\
+		if ((cond_func)(0, __info)) {			\
 			local_irq_disable();			\
-			(func)(info);				\
+			(func)(__info);				\
 			local_irq_enable();			\
 		}						\
 		preempt_enable();				\
