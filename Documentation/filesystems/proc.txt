@@ -290,7 +290,7 @@ Table 1-4: Contents of the stat files (as of 2.6.30-rc7)
   rsslim        current limit in bytes on the rss
   start_code    address above which program text can run
   end_code      address below which program text can run
-  start_stack   address of the start of the stack
+  start_stack   address of the start of the main process stack
   esp           current value of ESP
   eip           current value of EIP
   pending       bitmap of pending signals
@@ -337,7 +337,7 @@ a8024000-a8027000 rw-p 00000000 00:00 0
 a8027000-a8043000 r-xp 00000000 03:00 8317       /lib/ld-linux.so.2
 a8043000-a8044000 r--p 0001b000 03:00 8317       /lib/ld-linux.so.2
 a8044000-a8045000 rw-p 0001c000 03:00 8317       /lib/ld-linux.so.2
-aff35000-aff4a000 rw-p 00000000 00:00 0          [stack]
+aff35000-aff4a000 rw-p 00000000 00:00 0          [stack:1001]
 ffffe000-fffff000 r-xp 00000000 00:00 0          [vdso]
 
 where "address" is the address space in the process that it occupies, "perms"
@@ -356,12 +356,18 @@ The "pathname" shows the name associated file for this mapping.  If the mapping
 is not associated with a file:
 
  [heap]                   = the heap of the program
- [stack]                  = the stack of the main process
+ [stack:1001]             = the mapping is used as a stack by the thread
+                            with tid 1001
  [vdso]                   = the "virtual dynamic shared object",
                             the kernel system call handler
 
  or if empty, the mapping is anonymous.
 
+The /proc/PID/task/TID/maps is a view of the virtual memory from the viewpoint
+of the individual tasks of a process. In this file you will see a mapping marked
+as [stack:TID] only if that task sees it as a stack. This is a key difference
+from the content of /proc/PID/maps, where you will see all mappings that are
+being used as stack by all of those tasks.
 
 The /proc/PID/smaps is an extension based on maps, showing the memory
 consumption for each of the process's mappings. For each of mappings there
