@@ -22,8 +22,9 @@
 #define BRIGHTNESS_CTRL		(0x00)
 #define DEVICE_CTRL		(0x01)
 
-#define BUF_SIZE		(20)
+#define BUF_SIZE		20
 #define DEFAULT_BL_NAME		"lcd-backlight"
+#define MAX_BRIGHTNESS		255
 
 struct lp855x {
 	const char *chipid;
@@ -171,10 +172,12 @@ static int lp855x_backlight_register(struct lp855x *lp)
 	char *name = pdata->name ? : DEFAULT_BL_NAME;
 
 	props.type = BACKLIGHT_PLATFORM;
+	props.max_brightness = MAX_BRIGHTNESS;
+
+	if (pdata->initial_brightness > props.max_brightness)
+		pdata->initial_brightness = props.max_brightness;
+
 	props.brightness = pdata->initial_brightness;
-	props.max_brightness =
-		(pdata->max_brightness < pdata->initial_brightness) ?
-		255 : pdata->max_brightness;
 
 	bl = backlight_device_register(name, lp->dev, lp,
 				       &lp855x_bl_ops, &props);
