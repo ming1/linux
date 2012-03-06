@@ -309,9 +309,8 @@ static unsigned long hugetlb_get_unmapped_area_topdown(struct file *file,
 	struct hstate *h = hstate_file(file);
 	struct mm_struct *mm = current->mm;
 	struct vm_area_struct *vma;
-	unsigned long base = mm->mmap_base, addr = addr0;
+	unsigned long base = mm->mmap_base, addr = addr0, start_addr;
 	unsigned long largest_hole = mm->cached_hole_size;
-	int first_time = 1;
 
 	/* don't allow allocations above current base */
 	if (mm->free_area_cache > base)
@@ -322,6 +321,8 @@ static unsigned long hugetlb_get_unmapped_area_topdown(struct file *file,
 		mm->free_area_cache  = base;
 	}
 try_again:
+	start_addr = mm->free_area_cache;
+
 	/* make sure it can fit in the remaining address space */
 	if (mm->free_area_cache < len)
 		goto fail;
@@ -360,10 +361,9 @@ fail:
 	 * if hint left us with no space for the requested
 	 * mapping then try again:
 	 */
-	if (first_time) {
+	if (start_addr != base) {
 		mm->free_area_cache = base;
 		largest_hole = 0;
-		first_time = 0;
 		goto try_again;
 	}
 	/*
