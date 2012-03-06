@@ -674,8 +674,9 @@ static int tps65911_get_voltage(struct regulator_dev *dev)
 		step_mv = 100;
 		break;
 	case TPS65910_REG_VIO:
+		value &= LDO_SEL_MASK;
+		value >>= LDO_SEL_SHIFT;
 		return pmic->info[id]->voltage_table[value] * 1000;
-		break;
 	default:
 		return -EINVAL;
 	}
@@ -767,9 +768,11 @@ static int tps65911_set_voltage(struct regulator_dev *dev, unsigned selector)
 	case TPS65911_REG_LDO6:
 	case TPS65911_REG_LDO7:
 	case TPS65911_REG_LDO8:
-	case TPS65910_REG_VIO:
 		return tps65910_modify_bits(pmic, reg,
 				(selector << LDO_SEL_SHIFT), LDO3_SEL_MASK);
+	case TPS65910_REG_VIO:
+		return tps65910_modify_bits(pmic, reg,
+				(selector << LDO_SEL_SHIFT), LDO_SEL_MASK);
 	}
 
 	return -EINVAL;
@@ -1232,6 +1235,6 @@ static void __exit tps65910_cleanup(void)
 module_exit(tps65910_cleanup);
 
 MODULE_AUTHOR("Graeme Gregory <gg@slimlogic.co.uk>");
-MODULE_DESCRIPTION("TPS6507x voltage regulator driver");
+MODULE_DESCRIPTION("TPS65910/TPS65911 voltage regulator driver");
 MODULE_LICENSE("GPL v2");
 MODULE_ALIAS("platform:tps65910-pmic");
