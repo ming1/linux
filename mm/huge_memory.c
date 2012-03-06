@@ -1031,7 +1031,7 @@ int zap_huge_pmd(struct mmu_gather *tlb, struct vm_area_struct *vma,
 {
 	int ret = 0;
 
-	if (__pmd_trans_huge_lock(pmd, vma)) {
+	if (__pmd_trans_huge_lock(pmd, vma) == 1) {
 		struct page *page;
 		pgtable_t pgtable;
 		pgtable = get_pmd_huge_pte(tlb->mm);
@@ -1057,7 +1057,7 @@ int mincore_huge_pmd(struct vm_area_struct *vma, pmd_t *pmd,
 {
 	int ret = 0;
 
-	if (__pmd_trans_huge_lock(pmd, vma)) {
+	if (__pmd_trans_huge_lock(pmd, vma) == 1) {
 		/*
 		 * All logical pages in the range are present
 		 * if backed by a huge page.
@@ -1095,12 +1095,11 @@ int move_huge_pmd(struct vm_area_struct *vma, struct vm_area_struct *new_vma,
 		goto out;
 	}
 
-	if (__pmd_trans_huge_lock(old_pmd, vma)) {
+	if ((ret = __pmd_trans_huge_lock(old_pmd, vma)) == 1) {
 		pmd = pmdp_get_and_clear(mm, old_addr, old_pmd);
 		VM_BUG_ON(!pmd_none(*new_pmd));
 		set_pmd_at(mm, new_addr, new_pmd, pmd);
 		spin_unlock(&mm->page_table_lock);
-		ret = 1;
 	}
 out:
 	return ret;
@@ -1112,7 +1111,7 @@ int change_huge_pmd(struct vm_area_struct *vma, pmd_t *pmd,
 	struct mm_struct *mm = vma->vm_mm;
 	int ret = 0;
 
-	if (__pmd_trans_huge_lock(pmd, vma)) {
+	if (__pmd_trans_huge_lock(pmd, vma) == 1) {
 		pmd_t entry;
 		entry = pmdp_get_and_clear(mm, addr, pmd);
 		entry = pmd_modify(entry, newprot);
@@ -1126,7 +1125,7 @@ int change_huge_pmd(struct vm_area_struct *vma, pmd_t *pmd,
 
 /*
  * Returns 1 if a given pmd maps a stable (not under splitting) thp.
- * Returns 0 otherwise.
+ * Returns -1 if it maps a thp under splitting. Returns 0 otherwise.
  *
  * Note that if it returns 1, this routine returns without unlocking page
  * table locks. So callers must unlock them.
@@ -1138,7 +1137,7 @@ int __pmd_trans_huge_lock(pmd_t *pmd, struct vm_area_struct *vma)
 		if (unlikely(pmd_trans_splitting(*pmd))) {
 			spin_unlock(&vma->vm_mm->page_table_lock);
 			wait_split_huge_page(vma->anon_vma, pmd);
-			return 0;
+			return -1;
 		} else {
 			/* Thp mapped by 'pmd' is stable, so we can
 			 * handle it as it is. */
