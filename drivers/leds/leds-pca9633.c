@@ -110,7 +110,7 @@ static int __devinit pca9633_probe(struct i2c_client *client,
 		}
 	}
 
-	pca9633 = kcalloc(sizeof(*pca9633), 4, GFP_KERNEL);
+	pca9633 = kcalloc(4, sizeof(*pca9633), GFP_KERNEL);
 	if (!pca9633)
 		return -ENOMEM;
 
