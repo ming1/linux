@@ -106,6 +106,7 @@ static int spear_thermal_probe(struct platform_device *pdev)
 	struct spear_thermal_pdata *pdata;
 	int ret = 0;
 	struct resource *stres = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+
 	if (!stres) {
 		dev_err(&pdev->dev, "memory resource missing\n");
 		return -ENODEV;
