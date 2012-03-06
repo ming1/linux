@@ -1147,10 +1147,15 @@ void page_add_new_anon_rmap(struct page *page,
  */
 void page_add_file_rmap(struct page *page)
 {
+	bool locked;
+	unsigned long flags;
+
+	mem_cgroup_begin_update_page_stat(page, &locked, &flags);
 	if (atomic_inc_and_test(&page->_mapcount)) {
 		__inc_zone_page_state(page, NR_FILE_MAPPED);
 		mem_cgroup_inc_page_stat(page, MEMCG_NR_FILE_MAPPED);
 	}
+	mem_cgroup_end_update_page_stat(page, &locked, &flags);
 }
 
 /**
@@ -1161,9 +1166,13 @@ void page_add_file_rmap(struct page *page)
  */
 void page_remove_rmap(struct page *page)
 {
+	bool locked;
+	unsigned long flags;
+
+	mem_cgroup_begin_update_page_stat(page, &locked, &flags);
 	/* page still mapped by someone else? */
 	if (!atomic_add_negative(-1, &page->_mapcount))
-		return;
+		goto out;
 
 	/*
 	 * Now that the last pte has gone, s390 must transfer dirty
@@ -1180,7 +1189,7 @@ void page_remove_rmap(struct page *page)
 	 * and not charged by memcg for now.
 	 */
 	if (unlikely(PageHuge(page)))
-		return;
+		goto out;
 	if (PageAnon(page)) {
 		mem_cgroup_uncharge_page(page);
 		if (!PageTransHuge(page))
@@ -1201,6 +1210,8 @@ void page_remove_rmap(struct page *page)
 	 * Leaving it set also helps swapoff to reinstate ptes
 	 * faster for those pages still in swapcache.
 	 */
+out:
+	mem_cgroup_end_update_page_stat(page, &locked, &flags);
 }
 
 /*
