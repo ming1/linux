@@ -1095,7 +1095,8 @@ int move_huge_pmd(struct vm_area_struct *vma, struct vm_area_struct *new_vma,
 		goto out;
 	}
 
-	if ((ret = __pmd_trans_huge_lock(old_pmd, vma)) == 1) {
+	ret = __pmd_trans_huge_lock(old_pmd, vma);
+	if (ret == 1) {
 		pmd = pmdp_get_and_clear(mm, old_addr, old_pmd);
 		VM_BUG_ON(!pmd_none(*new_pmd));
 		set_pmd_at(mm, new_addr, new_pmd, pmd);
