@@ -19,15 +19,15 @@
 static struct cs5535_mfgpt_timer *pwm_timer;
 
 /* this array defines the mapping of brightness in % to pwm frequency */
-static const  u8 dim_table[101] = {0, 0, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2,
-				   2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4,
-				   4, 5, 5, 5, 5, 6, 6, 6, 7, 7, 7, 8, 8, 9, 9,
-				   10, 10, 11, 11, 12, 12, 13, 14, 15, 15, 16,
-				   17, 18, 19, 20, 21, 22, 23, 24, 26, 27, 28,
-				   30, 31, 33, 35, 37, 39, 41, 43, 45, 47, 50,
-				   53, 55, 58, 61, 65, 68, 72, 75, 79, 84, 88,
-				   93, 97, 103, 108, 114, 120, 126, 133, 140,
-				   147, 155, 163};
+static const u8 dim_table[101] = {0, 0, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2,
+				  2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4,
+				  4, 5, 5, 5, 5, 6, 6, 6, 7, 7, 7, 8, 8, 9, 9,
+				  10, 10, 11, 11, 12, 12, 13, 14, 15, 15, 16,
+				  17, 18, 19, 20, 21, 22, 23, 24, 26, 27, 28,
+				  30, 31, 33, 35, 37, 39, 41, 43, 45, 47, 50,
+				  53, 55, 58, 61, 65, 68, 72, 75, 79, 84, 88,
+				  93, 97, 103, 108, 114, 120, 126, 133, 140,
+				  147, 155, 163};
 
 struct ot200_backlight_data {
 	int current_brightness;
@@ -51,7 +51,7 @@ static int ot200_backlight_update_status(struct backlight_device *bl)
 	/* enable or disable PWM timer */
 	if (brightness == 0)
 		cs5535_mfgpt_write(pwm_timer, MFGPT_REG_SETUP, 0);
-	else if (brightness != 0 && data->current_brightness == 0) {
+	else if (data->current_brightness == 0) {
 		cs5535_mfgpt_write(pwm_timer, MFGPT_REG_COUNTER, 0);
 		cs5535_mfgpt_write(pwm_timer, MFGPT_REG_SETUP,
 			MFGPT_SETUP_CNTEN);
