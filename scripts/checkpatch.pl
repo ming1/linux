@@ -1860,6 +1860,12 @@ sub process {
 			    "Don't begin block comments with only a /* line, use /* comment...\n" . $hereprev);
 		}
 
+		if ($prevline =~ /^\+.*"[ \t]*$/ &&
+		    $line =~ /^\+[ \t]*"/) {
+			CHK("COALESCE_STRING",
+			    "Coalesced strings are easier to grep and less error prone\n" . $hereprev);
+		}
+
 # check for spaces at the beginning of a line.
 # Exceptions:
 #  1) within comments
