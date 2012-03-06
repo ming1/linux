@@ -1911,7 +1911,7 @@ bool mem_cgroup_handle_oom(struct mem_cgroup *memcg, gfp_t mask)
  */
 
 void __mem_cgroup_begin_update_page_stat(struct page *page,
-				bool *lock, unsigned long *flags)
+				bool *locked, unsigned long *flags)
 {
 	struct mem_cgroup *memcg;
 	struct page_cgroup *pc;
@@ -1935,11 +1935,10 @@ again:
 		move_unlock_mem_cgroup(memcg, flags);
 		goto again;
 	}
-	*lock = true;
+	*locked = true;
 }
 
-void __mem_cgroup_end_update_page_stat(struct page *page,
-				unsigned long *flags)
+void __mem_cgroup_end_update_page_stat(struct page *page, unsigned long *flags)
 {
 	struct page_cgroup *pc = lookup_page_cgroup(page);
 
@@ -1950,7 +1949,6 @@ void __mem_cgroup_end_update_page_stat(struct page *page,
 	 */
 	move_unlock_mem_cgroup(pc->mem_cgroup, flags);
 }
-
 
 void mem_cgroup_update_page_stat(struct page *page,
 				 enum mem_cgroup_page_stat_item idx, int val)
