@@ -140,27 +140,27 @@ static inline bool mem_cgroup_disabled(void)
 	return false;
 }
 
-void __mem_cgroup_begin_update_page_stat(struct page *page,
-					bool *lock, unsigned long *flags);
+void __mem_cgroup_begin_update_page_stat(struct page *page, bool *locked,
+					 unsigned long *flags);
 
 static inline void mem_cgroup_begin_update_page_stat(struct page *page,
-					bool *lock, unsigned long *flags)
+					bool *locked, unsigned long *flags)
 {
 	if (mem_cgroup_disabled())
 		return;
 	rcu_read_lock();
-	*lock = false;
-	return __mem_cgroup_begin_update_page_stat(page, lock, flags);
+	*locked = false;
+	return __mem_cgroup_begin_update_page_stat(page, locked, flags);
 }
 
 void __mem_cgroup_end_update_page_stat(struct page *page,
 				unsigned long *flags);
 static inline void mem_cgroup_end_update_page_stat(struct page *page,
-					bool *lock, unsigned long *flags)
+					bool *locked, unsigned long *flags)
 {
 	if (mem_cgroup_disabled())
 		return;
-	if (*lock)
+	if (*locked)
 		__mem_cgroup_end_update_page_stat(page, flags);
 	rcu_read_unlock();
 }
@@ -366,12 +366,12 @@ mem_cgroup_print_oom_info(struct mem_cgroup *memcg, struct task_struct *p)
 }
 
 static inline void mem_cgroup_begin_update_page_stat(struct page *page,
-					bool *lock, unsigned long *flags)
+					bool *locked, unsigned long *flags)
 {
 }
 
 static inline void mem_cgroup_end_update_page_stat(struct page *page,
-					bool *lock, unsigned long *flags)
+					bool *locked, unsigned long *flags)
 {
 }
 
