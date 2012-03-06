@@ -7,7 +7,7 @@ all: hugepage-mmap hugepage-shm  map_hugetlb
 %: %.c
 	$(CC) $(CFLAGS) -o $@ $^
 
-run_tests:
+run_tests: all
 	/bin/sh ./run_vmtests
 
 clean:
