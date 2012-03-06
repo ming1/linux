@@ -330,11 +330,15 @@ sub build_types {
 }
 build_types();
 
-our $balanced_parens = qr/(\((?:[^\(\)]++|(?-1))*\))/;
-our $lval_parens = qr/(\((?:[^\(\)]+|(-1))*\))/;
 
 our $Typecast	= qr{\s*(\(\s*$NonptrType\s*\)){0,1}\s*};
-our $LvalOrFunc	= qr{($Lval)\s*($lval_parens{0,1})\s*};
+
+# Using $balanced_parens, $LvalOrFunc, or $FuncArg
+# requires at least perl version v5.10.0
+# Any use must be runtime checked with $^V
+
+our $balanced_parens = qr/(\((?:[^\(\)]++|(?-1))*\))/;
+our $LvalOrFunc	= qr{($Lval)\s*($balanced_parens{0,1})\s*};
 our $FuncArg = qr{$Typecast{0,1}($LvalOrFunc|$Constant)};
 
 sub deparenthesize {
@@ -1350,11 +1354,11 @@ sub pos_last_openparen {
 	for ($pos = 0; $pos < $len; $pos++) {
 		my $string = substr($line, $pos);
 		if ($string =~ /^($FuncArg|$balanced_parens)/) {
-			$pos += length($1);
-		}
-
-		if (substr($line, $pos, 1) eq '(') {
+			$pos += length($1) - 1;
+		} elsif (substr($line, $pos, 1) eq '(') {
 			$last_openparen = $pos;
+		} elsif (index($string, '(') == -1) {
+			last;
 		}
 	}
 
@@ -1821,7 +1825,8 @@ sub process {
 		}
 
 # check multi-line statement indentation matches previous line
-		if ($prevline =~ /^\+(\t*)(if \(|$Ident\().*(\&\&|\|\||,)\s*$/) {
+		if ($^V && $^V ge 5.10.0 &&
+		    $prevline =~ /^\+(\t*)(if \(|$Ident\().*(\&\&|\|\||,)\s*$/) {
 			$prevline =~ /^\+(\t*)(.*)$/;
 			my $oldindent = $1;
 			my $rest = $2;
@@ -3203,12 +3208,13 @@ sub process {
 		}
 
 # Check for misused memsets
-		if (defined $stat &&
+		if ($^V && $^V ge 5.10.0 &&
+		    defined $stat &&
 		    $stat =~ /^\+(?:.*?)\bmemset\s*\(\s*$FuncArg\s*,\s*$FuncArg\s*\,\s*$FuncArg\s*\)/s) {
 
 			my $ms_addr = $2;
-			my $ms_val = $8;
-			my $ms_size = $14;
+			my $ms_val = $7;
+			my $ms_size = $12;
 
 			if ($ms_size =~ /^(0x|)0$/i) {
 				ERROR("MEMSET",
@@ -3220,17 +3226,18 @@ sub process {
 		}
 
 # typecasts on min/max could be min_t/max_t
-		if (defined $stat &&
+		if ($^V && $^V ge 5.10.0 &&
+		    defined $stat &&
 		    $stat =~ /^\+(?:.*?)\b(min|max)\s*\(\s*$FuncArg\s*,\s*$FuncArg\s*\)/) {
-			if (defined $2 || defined $8) {
+			if (defined $2 || defined $7) {
 				my $call = $1;
 				my $cast1 = deparenthesize($2);
 				my $arg1 = $3;
-				my $cast2 = deparenthesize($8);
-				my $arg2 = $9;
+				my $cast2 = deparenthesize($7);
+				my $arg2 = $8;
 				my $cast;
 
-				if ($cast1 ne "" && $cast2 ne "") {
+				if ($cast1 ne "" && $cast2 ne "" && $cast1 ne $cast2) {
 					$cast = "$cast1 or $cast2";
 				} elsif ($cast1 ne "") {
 					$cast = $cast1;
@@ -3452,6 +3459,12 @@ sub process {
 	}
 
 	if ($quiet == 0) {
+
+		if ($^V lt 5.10.0) {
+			print("NOTE: perl $^V is not modern enough to detect all possible issues.\n");
+			print("An upgrade to at least perl v5.10.0 is suggested.\n\n");
+		}
+
 		# If there were whitespace errors which cleanpatch can fix
 		# then suggest that.
 		if ($rpt_cleaners) {
