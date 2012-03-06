@@ -10,4 +10,10 @@
 		#interrupt-cells = <1>;
 		reg = <0xfed20200 0x20>;
 	};
+
+	rtc@f1010300 {
+		compatible = "mrvl,kirkwood-rtc", "mrvl,orion-rtc";
+		reg = <0xf1010300 0x20>;
+		interrupts = <53>;
+	};
 };
