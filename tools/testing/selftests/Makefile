@@ -1,4 +1,4 @@
-TARGETS = breakpoints vm
+TARGETS = breakpoints vm kcmp
 
 all:
 	for TARGET in $(TARGETS); do \
