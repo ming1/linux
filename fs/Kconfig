@@ -272,27 +272,29 @@ endif # NETWORK_FILESYSTEMS
 source "fs/nls/Kconfig"
 source "fs/dlm/Kconfig"
 
-config PROTECTED_SYMLINKS
-	bool "Evaluate vulnerable symlink conditions"
+config PROTECTED_LINKS
+	bool "Evaluate vulnerable link conditions"
 	default y
 	help
-	  A long-standing class of security issues is the symlink-based
+	  A long-standing class of security issues is the link-based
 	  time-of-check-time-of-use race, most commonly seen in
 	  world-writable directories like /tmp. The common method of
 	  exploitation of this flaw is to cross privilege boundaries
-	  when following a given symlink (i.e. a root process follows
-	  a malicious symlink belonging to another user).
+	  when following a given link (i.e. a root process follows
+	  a malicious symlink belonging to another user, or a hardlink
+	  created to a root-owned file).
 
-	  Enabling this adds the logic to examine these dangerous symlink
-	  conditions. Whether or not the dangerous symlink situations are
-	  allowed is controlled by PROTECTED_SYMLINKS_ENABLED.
+	  Enabling this adds the logic to examine these dangerous link
+	  conditions. Whether or not the dangerous link situations are
+	  allowed is controlled by PROTECTED_HARDLINKS_ENABLED and
+	  PROTECTED_SYMLINKS_ENABLED.
 
-config PROTECTED_SYMLINKS_ENABLED
-	depends on PROTECTED_SYMLINKS
+config PROTECTED_SYMLINKS
+	depends on PROTECTED_LINKS
 	bool "Disallow symlink following in sticky world-writable dirs"
 	default y
 	help
-	  Solve ToCToU symlink race vulnerablities by permitting symlinks
+	  Solve ToCToU symlink race vulnerabilities by permitting symlinks
 	  to be followed only when outside a sticky world-writable directory,
 	  or when the uid of the symlink and follower match, or when the
 	  directory and symlink owners match.
@@ -300,10 +302,34 @@ config PROTECTED_SYMLINKS_ENABLED
 	  When PROC_SYSCTL is enabled, this setting can also be controlled
 	  via /proc/sys/kernel/protected_symlinks.
 
-config PROTECTED_SYMLINKS_ENABLED_SYSCTL
-	depends on PROTECTED_SYMLINKS
+	  See Documentation/sysctl/fs.txt for details.
+
+config PROTECTED_SYMLINKS_SYSCTL
+	depends on PROTECTED_LINKS
 	int
-	default "1" if PROTECTED_SYMLINKS_ENABLED
+	default "1" if PROTECTED_SYMLINKS
+	default "0"
+
+config PROTECTED_HARDLINKS
+	depends on PROTECTED_LINKS
+	bool "Disallow hardlink creation to non-accessible files"
+	default y
+	help
+	  Solve ToCToU hardlink race vulnerabilities by permitting hardlinks
+	  to be created only when to a regular file that is owned by the user,
+	  or is readable and writable by the user. Also blocks users from
+	  "pinning" vulnerable setuid/setgid programs from being upgraded by
+	  the administrator.
+
+	  When PROC_SYSCTL is enabled, this setting can also be controlled
+	  via /proc/sys/kernel/protected_hardlinks.
+
+	  See Documentation/sysctl/fs.txt for details.
+
+config PROTECTED_HARDLINKS_SYSCTL
+	depends on PROTECTED_LINKS
+	int
+	default "1" if PROTECTED_HARDLINKS
 	default "0"
 
 endmenu
