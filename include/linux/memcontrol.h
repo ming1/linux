@@ -153,8 +153,7 @@ static inline void mem_cgroup_begin_update_page_stat(struct page *page,
 	rcu_read_lock();
 	*locked = false;
 	if (atomic_read(&memcg_moving))
-		return __mem_cgroup_begin_update_page_stat(page, locked,
-								flags);
+		__mem_cgroup_begin_update_page_stat(page, locked, flags);
 }
 
 void __mem_cgroup_end_update_page_stat(struct page *page,
