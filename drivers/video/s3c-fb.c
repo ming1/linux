@@ -48,7 +48,8 @@
 #undef writel
 #define writel(v, r) do { \
 	printk(KERN_DEBUG "%s: %08x => %p\n", __func__, (unsigned int)v, r); \
-	__raw_writel(v, r); } while (0)
+	__raw_writel(v, r); \
+} while (0)
 #endif /* FB_S3C_DEBUG_REGWRITE */
 
 /* irq_flags bits */
@@ -81,7 +82,9 @@ struct s3c_fb;
  * @palette: Address of palette memory, or 0 if none.
  * @has_prtcon: Set if has PRTCON register.
  * @has_shadowcon: Set if has SHADOWCON register.
+ * @has_blendcon: Set if has BLENDCON register.
  * @has_clksel: Set if VIDCON0 register has CLKSEL bit.
+ * @has_fixvclk: Set if VIDCON1 register has FIXVCLK bits.
  */
 struct s3c_fb_variant {
 	unsigned int	is_2443:1;
@@ -99,7 +102,9 @@ struct s3c_fb_variant {
 
 	unsigned int	has_prtcon:1;
 	unsigned int	has_shadowcon:1;
+	unsigned int	has_blendcon:1;
 	unsigned int	has_clksel:1;
+	unsigned int	has_fixvclk:1;
 };
 
 /**
@@ -186,7 +191,6 @@ struct s3c_fb_vsync {
  * struct s3c_fb - overall hardware state of the hardware
  * @slock: The spinlock protection for this data sturcture.
  * @dev: The device that we bound to, for printing, etc.
- * @regs_res: The resource we claimed for the IO registers.
  * @bus_clk: The clk (hclk) feeding our interface and possibly pixclk.
  * @lcd_clk: The clk (sclk) feeding pixclk.
  * @regs: The mapped hardware registers.
@@ -202,7 +206,6 @@ struct s3c_fb_vsync {
 struct s3c_fb {
 	spinlock_t		slock;
 	struct device		*dev;
-	struct resource		*regs_res;
 	struct clk		*bus_clk;
 	struct clk		*lcd_clk;
 	void __iomem		*regs;
@@ -691,6 +694,17 @@ static int s3c_fb_set_par(struct fb_info *info)
 
 	writel(data, regs + sfb->variant.wincon + (win_no * 4));
 	writel(0x0, regs + sfb->variant.winmap + (win_no * 4));
+
+	/* Set alpha value width */
+	if (sfb->variant.has_blendcon) {
+		data = readl(sfb->regs + BLENDCON);
+		data &= ~BLENDCON_NEW_MASK;
+		if (var->transp.length > 4)
+			data |= BLENDCON_NEW_8BIT_ALPHA_VALUE;
+		else
+			data |= BLENDCON_NEW_4BIT_ALPHA_VALUE;
+		writel(data, sfb->regs + BLENDCON);
+	}
 
 	shadow_protect_win(win, 0);
 
@@ -1346,6 +1360,7 @@ static int __devinit s3c_fb_probe(struct platform_device *pdev)
 	struct resource *res;
 	int win;
 	int ret = 0;
+	u32 reg;
 
 	platid = platform_get_device_id(pdev);
 	fbdrv = (struct s3c_fb_driverdata *)platid->driver_data;
@@ -1361,7 +1376,7 @@ static int __devinit s3c_fb_probe(struct platform_device *pdev)
 		return -EINVAL;
 	}
 
-	sfb = kzalloc(sizeof(struct s3c_fb), GFP_KERNEL);
+	sfb = devm_kzalloc(dev, sizeof(struct s3c_fb), GFP_KERNEL);
 	if (!sfb) {
 		dev_err(dev, "no memory for framebuffers\n");
 		return -ENOMEM;
@@ -1404,33 +1419,25 @@ static int __devinit s3c_fb_probe(struct platform_device *pdev)
 		goto err_lcd_clk;
 	}
 
-	sfb->regs_res = request_mem_region(res->start, resource_size(res),
-					   dev_name(dev));
-	if (!sfb->regs_res) {
-		dev_err(dev, "failed to claim register region\n");
-		ret = -ENOENT;
-		goto err_lcd_clk;
-	}
-
-	sfb->regs = ioremap(res->start, resource_size(res));
+	sfb->regs = devm_request_and_ioremap(dev, res);
 	if (!sfb->regs) {
 		dev_err(dev, "failed to map registers\n");
 		ret = -ENXIO;
-		goto err_req_region;
+		goto err_lcd_clk;
 	}
 
 	res = platform_get_resource(pdev, IORESOURCE_IRQ, 0);
 	if (!res) {
 		dev_err(dev, "failed to acquire irq resource\n");
 		ret = -ENOENT;
-		goto err_ioremap;
+		goto err_lcd_clk;
 	}
 	sfb->irq_no = res->start;
-	ret = request_irq(sfb->irq_no, s3c_fb_irq,
+	ret = devm_request_irq(dev, sfb->irq_no, s3c_fb_irq,
 			  0, "s3c_fb", sfb);
 	if (ret) {
 		dev_err(dev, "irq request failed\n");
-		goto err_ioremap;
+		goto err_lcd_clk;
 	}
 
 	dev_dbg(dev, "got resources (regs %p), probing windows\n", sfb->regs);
@@ -1443,6 +1450,14 @@ static int __devinit s3c_fb_probe(struct platform_device *pdev)
 	pd->setup_gpio();
 
 	writel(pd->vidcon1, sfb->regs + VIDCON1);
+
+	/* set video clock running at under-run */
+	if (sfb->variant.has_fixvclk) {
+		reg = readl(sfb->regs + VIDCON1);
+		reg &= ~VIDCON1_VCLK_MASK;
+		reg |= VIDCON1_VCLK_RUN;
+		writel(reg, sfb->regs + VIDCON1);
+	}
 
 	/* zero all windows before we do anything */
 
@@ -1484,13 +1499,6 @@ static int __devinit s3c_fb_probe(struct platform_device *pdev)
 
 err_pm_runtime:
 	pm_runtime_put_sync(sfb->dev);
-	free_irq(sfb->irq_no, sfb);
-
-err_ioremap:
-	iounmap(sfb->regs);
-
-err_req_region:
-	release_mem_region(sfb->regs_res->start, resource_size(sfb->regs_res));
 
 err_lcd_clk:
 	pm_runtime_disable(sfb->dev);
@@ -1505,7 +1513,6 @@ err_bus_clk:
 	clk_put(sfb->bus_clk);
 
 err_sfb:
-	kfree(sfb);
 	return ret;
 }
 
@@ -1527,10 +1534,6 @@ static int __devexit s3c_fb_remove(struct platform_device *pdev)
 		if (sfb->windows[win])
 			s3c_fb_release_win(sfb, sfb->windows[win]);
 
-	free_irq(sfb->irq_no, sfb);
-
-	iounmap(sfb->regs);
-
 	if (!sfb->variant.has_clksel) {
 		clk_disable(sfb->lcd_clk);
 		clk_put(sfb->lcd_clk);
@@ -1539,12 +1542,9 @@ static int __devexit s3c_fb_remove(struct platform_device *pdev)
 	clk_disable(sfb->bus_clk);
 	clk_put(sfb->bus_clk);
 
-	release_mem_region(sfb->regs_res->start, resource_size(sfb->regs_res));
-
 	pm_runtime_put_sync(sfb->dev);
 	pm_runtime_disable(sfb->dev);
 
-	kfree(sfb);
 	return 0;
 }
 
@@ -1579,6 +1579,7 @@ static int s3c_fb_resume(struct device *dev)
 	struct s3c_fb_platdata *pd = sfb->pdata;
 	struct s3c_fb_win *win;
 	int win_no;
+	u32 reg;
 
 	clk_enable(sfb->bus_clk);
 
@@ -1588,6 +1589,14 @@ static int s3c_fb_resume(struct device *dev)
 	/* setup gpio and output polarity controls */
 	pd->setup_gpio();
 	writel(pd->vidcon1, sfb->regs + VIDCON1);
+
+	/* set video clock running at under-run */
+	if (sfb->variant.has_fixvclk) {
+		reg = readl(sfb->regs + VIDCON1);
+		reg &= ~VIDCON1_VCLK_MASK;
+		reg |= VIDCON1_VCLK_RUN;
+		writel(reg, sfb->regs + VIDCON1);
+	}
 
 	/* zero all windows before we do anything */
 	for (win_no = 0; win_no < sfb->variant.nr_windows; win_no++)
@@ -1819,6 +1828,7 @@ static struct s3c_fb_driverdata s3c_fb_data_s5pc100 = {
 		},
 
 		.has_prtcon	= 1,
+		.has_blendcon	= 1,
 		.has_clksel	= 1,
 	},
 	.win[0]	= &s3c_fb_data_s5p_wins[0],
@@ -1850,7 +1860,9 @@ static struct s3c_fb_driverdata s3c_fb_data_s5pv210 = {
 		},
 
 		.has_shadowcon	= 1,
+		.has_blendcon	= 1,
 		.has_clksel	= 1,
+		.has_fixvclk	= 1,
 	},
 	.win[0]	= &s3c_fb_data_s5p_wins[0],
 	.win[1]	= &s3c_fb_data_s5p_wins[1],
@@ -1881,6 +1893,8 @@ static struct s3c_fb_driverdata s3c_fb_data_exynos4 = {
 		},
 
 		.has_shadowcon	= 1,
+		.has_blendcon	= 1,
+		.has_fixvclk	= 1,
 	},
 	.win[0]	= &s3c_fb_data_s5p_wins[0],
 	.win[1]	= &s3c_fb_data_s5p_wins[1],
@@ -1944,6 +1958,9 @@ static struct s3c_fb_driverdata s3c_fb_data_s5p64x0 = {
 			[1] = 0x2800,
 			[2] = 0x2c00,
 		},
+
+		.has_blendcon	= 1,
+		.has_fixvclk	= 1,
 	},
 	.win[0] = &s3c_fb_data_s5p_wins[0],
 	.win[1] = &s3c_fb_data_s5p_wins[1],
