@@ -374,11 +374,24 @@ static int break_ksm(struct vm_area_struct *vma, unsigned long addr)
 	return (ret & VM_FAULT_OOM) ? -ENOMEM : 0;
 }
 
+static int ksm_check_mm(struct mm_struct *mm, struct vm_area_struct *vma,
+		unsigned long addr)
+{
+	if (ksm_test_exit(mm))
+		return 0;
+	vma = find_vma(mm, addr);
+	if (!vma || vma->vm_start > addr)
+		return 0;
+	if (!(vma->vm_flags & VM_MERGEABLE) || !vma->anon_vma)
+		return 0;
+	return 1;
+}
+
 static void break_cow(struct rmap_item *rmap_item)
 {
 	struct mm_struct *mm = rmap_item->mm;
 	unsigned long addr = rmap_item->address;
-	struct vm_area_struct *vma;
+	struct vm_area_struct *vma = NULL;
 
 	/*
 	 * It is not an accident that whenever we want to break COW
@@ -387,15 +400,8 @@ static void break_cow(struct rmap_item *rmap_item)
 	put_anon_vma(rmap_item->anon_vma);
 
 	down_read(&mm->mmap_sem);
-	if (ksm_test_exit(mm))
-		goto out;
-	vma = find_vma(mm, addr);
-	if (!vma || vma->vm_start > addr)
-		goto out;
-	if (!(vma->vm_flags & VM_MERGEABLE) || !vma->anon_vma)
-		goto out;
-	break_ksm(vma, addr);
-out:
+	if (ksm_check_mm(mm, vma, addr))
+		break_ksm(vma, addr);
 	up_read(&mm->mmap_sem);
 }
 
@@ -417,16 +423,11 @@ static struct page *get_mergeable_page(struct rmap_item *rmap_item)
 {
 	struct mm_struct *mm = rmap_item->mm;
 	unsigned long addr = rmap_item->address;
-	struct vm_area_struct *vma;
+	struct vm_area_struct *vma = NULL;
 	struct page *page;
 
 	down_read(&mm->mmap_sem);
-	if (ksm_test_exit(mm))
-		goto out;
-	vma = find_vma(mm, addr);
-	if (!vma || vma->vm_start > addr)
-		goto out;
-	if (!(vma->vm_flags & VM_MERGEABLE) || !vma->anon_vma)
+	if (!ksm_check_mm(mm, vma, addr))
 		goto out;
 
 	page = follow_page(vma, addr, FOLL_GET);
