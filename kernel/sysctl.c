@@ -1497,10 +1497,10 @@ static struct ctl_table fs_table[] = {
 	},
 #endif
 #endif
-#ifdef CONFIG_PROTECTED_STICKY_SYMLINKS
+#ifdef CONFIG_PROTECTED_SYMLINKS
 	{
-		.procname	= "protected_sticky_symlinks",
-		.data		= &sysctl_protected_sticky_symlinks,
+		.procname	= "protected_symlinks",
+		.data		= &sysctl_protected_symlinks,
 		.maxlen		= sizeof(int),
 		.mode		= 0600,
 		.proc_handler	= proc_dointvec_minmax,
