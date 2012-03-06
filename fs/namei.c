@@ -623,10 +623,84 @@ static inline void put_link(struct nameidata *nd, struct path *link, void *cooki
 	path_put(link);
 }
 
-static __always_inline int
-follow_link(struct path *link, struct nameidata *nd, void **p)
+#ifdef CONFIG_PROTECTED_STICKY_SYMLINKS
+int sysctl_protected_sticky_symlinks __read_mostly =
+	CONFIG_PROTECTED_STICKY_SYMLINKS_ENABLED_SYSCTL;
+
+/**
+ * may_follow_link - Check symlink following for unsafe situations
+ * @dentry: The inode/dentry of the symlink
+ * @nameidata: The path data of the symlink
+ *
+ * In the case of the protected_sticky_symlinks sysctl being enabled,
+ * CAP_DAC_OVERRIDE needs to be specifically ignored if the symlink is
+ * in a sticky world-writable directory. This is to protect privileged
+ * processes from failing races against path names that may change out
+ * from under them by way of other users creating malicious symlinks.
+ * It will permit symlinks to be followed only when outside a sticky
+ * world-writable directory, or when the uid of the symlink and follower
+ * match, or when the directory owner matches the symlink's owner.
+ *
+ * Returns 0 if following the symlink is allowed, -ve on error.
+ */
+static inline int
+may_follow_link(struct dentry *dentry, struct nameidata *nameidata)
 {
-	int error;
+	int error = 0;
+	const struct inode *parent;
+	const struct inode *inode;
+	const struct cred *cred;
+
+	if (!sysctl_protected_sticky_symlinks)
+		return 0;
+
+	/* Allowed if owner and follower match. */
+	cred = current_cred();
+	inode = dentry->d_inode;
+	if (cred->fsuid == inode->i_uid)
+		return 0;
+
+	/* Check parent directory mode and owner. */
+	spin_lock(&dentry->d_lock);
+	parent = dentry->d_parent->d_inode;
+	if ((parent->i_mode & (S_ISVTX|S_IWOTH)) == (S_ISVTX|S_IWOTH) &&
+	    parent->i_uid != inode->i_uid) {
+		error = -EACCES;
+	}
+	spin_unlock(&dentry->d_lock);
+
+#ifdef CONFIG_AUDIT
+	if (error) {
+		struct audit_buffer *ab;
+
+		ab = audit_log_start(current->audit_context,
+				     GFP_KERNEL, AUDIT_AVC);
+		audit_log_format(ab, "op=follow_link action=denied");
+		audit_log_format(ab, " pid=%d comm=", current->pid);
+		audit_log_untrustedstring(ab, current->comm);
+		audit_log_d_path(ab, " path=", &nameidata->path);
+		audit_log_format(ab, " name=");
+		audit_log_untrustedstring(ab, dentry->d_name.name);
+		audit_log_format(ab, " dev=");
+		audit_log_untrustedstring(ab, inode->i_sb->s_id);
+		audit_log_format(ab, " ino=%lu", inode->i_ino);
+		audit_log_end(ab);
+	}
+#endif
+	return error;
+}
+#else
+static inline int
+may_follow_link(struct dentry *dentry, struct nameidata *nameidata)
+{
+	return 0;
+}
+#endif
+
+static __always_inline int
+follow_link(struct path *link, struct nameidata *nd, void **p, bool sensitive)
+{
+	int error = 0;
 	struct dentry *dentry = link->dentry;
 
 	BUG_ON(nd->flags & LOOKUP_RCU);
@@ -645,7 +719,10 @@ follow_link(struct path *link, struct nameidata *nd, void **p)
 	touch_atime(link->mnt, dentry);
 	nd_set_link(nd, NULL);
 
-	error = security_inode_follow_link(link->dentry, nd);
+	if (sensitive)
+		error = may_follow_link(link->dentry, nd);
+	if (!error)
+		error = security_inode_follow_link(link->dentry, nd);
 	if (error) {
 		*p = ERR_PTR(error); /* no ->put_link(), please */
 		path_put(&nd->path);
@@ -1342,7 +1419,7 @@ static inline int nested_symlink(struct path *path, struct nameidata *nd)
 		struct path link = *path;
 		void *cookie;
 
-		res = follow_link(&link, nd, &cookie);
+		res = follow_link(&link, nd, &cookie, false);
 		if (!res)
 			res = walk_component(nd, path, &nd->last,
 					     nd->last_type, LOOKUP_FOLLOW);
@@ -1640,7 +1717,8 @@ static int path_lookupat(int dfd, const char *name,
 			void *cookie;
 			struct path link = path;
 			nd->flags |= LOOKUP_PARENT;
-			err = follow_link(&link, nd, &cookie);
+
+			err = follow_link(&link, nd, &cookie, true);
 			if (!err)
 				err = lookup_last(nd, &path);
 			put_link(nd, &link, cookie);
@@ -2349,7 +2427,8 @@ static struct file *path_openat(int dfd, const char *pathname,
 		}
 		nd->flags |= LOOKUP_PARENT;
 		nd->flags &= ~(LOOKUP_OPEN|LOOKUP_CREATE|LOOKUP_EXCL);
-		error = follow_link(&link, nd, &cookie);
+
+		error = follow_link(&link, nd, &cookie, true);
 		if (unlikely(error))
 			filp = ERR_PTR(error);
 		else
