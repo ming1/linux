@@ -272,7 +272,7 @@ endif # NETWORK_FILESYSTEMS
 source "fs/nls/Kconfig"
 source "fs/dlm/Kconfig"
 
-config PROTECTED_STICKY_SYMLINKS
+config PROTECTED_SYMLINKS
 	bool "Evaluate vulnerable symlink conditions"
 	default y
 	help
@@ -285,10 +285,10 @@ config PROTECTED_STICKY_SYMLINKS
 
 	  Enabling this adds the logic to examine these dangerous symlink
 	  conditions. Whether or not the dangerous symlink situations are
-	  allowed is controlled by PROTECTED_STICKY_SYMLINKS_ENABLED.
+	  allowed is controlled by PROTECTED_SYMLINKS_ENABLED.
 
-config PROTECTED_STICKY_SYMLINKS_ENABLED
-	depends on PROTECTED_STICKY_SYMLINKS
+config PROTECTED_SYMLINKS_ENABLED
+	depends on PROTECTED_SYMLINKS
 	bool "Disallow symlink following in sticky world-writable dirs"
 	default y
 	help
@@ -298,12 +298,12 @@ config PROTECTED_STICKY_SYMLINKS_ENABLED
 	  directory and symlink owners match.
 
 	  When PROC_SYSCTL is enabled, this setting can also be controlled
-	  via /proc/sys/kernel/protected_sticky_symlinks.
+	  via /proc/sys/kernel/protected_symlinks.
 
-config PROTECTED_STICKY_SYMLINKS_ENABLED_SYSCTL
-	depends on PROTECTED_STICKY_SYMLINKS
+config PROTECTED_SYMLINKS_ENABLED_SYSCTL
+	depends on PROTECTED_SYMLINKS
 	int
-	default "1" if PROTECTED_STICKY_SYMLINKS_ENABLED
+	default "1" if PROTECTED_SYMLINKS_ENABLED
 	default "0"
 
 endmenu
