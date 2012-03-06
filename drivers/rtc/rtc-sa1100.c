@@ -109,14 +109,14 @@ static int sa1100_rtc_open(struct device *dev)
 	ret = clk_prepare_enable(info->clk);
 	if (ret)
 		goto fail_clk;
-	ret = request_irq(info->irq_1hz, sa1100_rtc_interrupt, IRQF_DISABLED,
-		"rtc 1Hz", dev);
+	ret = request_irq(info->irq_1hz, sa1100_rtc_interrupt, 0, "rtc 1Hz",
+			  dev);
 	if (ret) {
 		dev_err(dev, "IRQ %d already in use.\n", info->irq_1hz);
 		goto fail_ui;
 	}
-	ret = request_irq(info->irq_alarm, sa1100_rtc_interrupt, IRQF_DISABLED,
-		"rtc Alrm", dev);
+	ret = request_irq(info->irq_alarm, sa1100_rtc_interrupt, 0, "rtc Alrm",
+			  dev);
 	if (ret) {
 		dev_err(dev, "IRQ %d already in use.\n", info->irq_alarm);
 		goto fail_ai;
