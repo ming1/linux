@@ -300,12 +300,6 @@ extern long long simple_strtoll(const char *,char **,unsigned int);
 #define strict_strtoull	kstrtoull
 #define strict_strtoll	kstrtoll
 
-/*
- * Convert passed number to decimal string.
- * returns returns the length of string. at buffer overflow, returns 0.
- *
- * If speed is not important, use snprintf(). It's easy to read the code.
- */
 extern int num_to_str(char *buf, int size, unsigned long long num);
 
 /* lib/printf utilities */
