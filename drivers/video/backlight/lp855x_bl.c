@@ -41,6 +41,7 @@ static int lp855x_read_byte(struct lp855x *lp, u8 reg, u8 *data)
 	mutex_lock(&lp->xfer_lock);
 	ret = i2c_smbus_read_byte_data(lp->client, reg);
 	if (ret < 0) {
+		mutex_unlock(&lp->xfer_lock);
 		dev_err(lp->dev, "failed to read 0x%.2x\n", reg);
 		return ret;
 	}
