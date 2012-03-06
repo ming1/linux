@@ -1642,18 +1642,6 @@ static void move_active_pages_to_lru(struct zone *zone,
 	unsigned long pgmoved = 0;
 	struct page *page;
 
-	if (buffer_heads_over_limit) {
-		spin_unlock_irq(&zone->lru_lock);
-		list_for_each_entry(page, list, lru) {
-			if (page_has_private(page) && trylock_page(page)) {
-				if (page_has_private(page))
-					try_to_release_page(page, 0);
-				unlock_page(page);
-			}
-		}
-		spin_lock_irq(&zone->lru_lock);
-	}
-
 	while (!list_empty(list)) {
 		struct lruvec *lruvec;
 
@@ -1733,6 +1721,13 @@ static void shrink_active_list(unsigned long nr_to_scan,
 		if (unlikely(!page_evictable(page, NULL))) {
 			putback_lru_page(page);
 			continue;
+		}
+
+		if (buffer_heads_over_limit &&
+		    page_has_private(page) && trylock_page(page)) {
+			if (page_has_private(page))
+				try_to_release_page(page, 0);
+			unlock_page(page);
 		}
 
 		if (page_referenced(page, 0, mz->mem_cgroup, &vm_flags)) {
