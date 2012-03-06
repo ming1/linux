@@ -912,7 +912,7 @@ read_rtc:
 			goto exit_nvram;
 		}
 		set_bit(HAS_NVRAM, &ds1307->flags);
-		dev_info(&client->dev, "%d bytes nvram\n", ds1307->nvram->size);
+		dev_info(&client->dev, "%zu bytes nvram\n", ds1307->nvram->size);
 	}
 
 	return 0;
