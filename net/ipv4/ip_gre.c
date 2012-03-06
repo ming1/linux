@@ -730,15 +730,16 @@ static netdev_tx_t ipgre_tunnel_xmit(struct sk_buff *skb, struct net_device *dev
 
 		if (skb->protocol == htons(ETH_P_IP)) {
 			rt = skb_rtable(skb);
-			if ((dst = rt->rt_gateway) == 0)
-				goto tx_error_icmp;
+			dst = rt->rt_gateway;
 		}
 #if IS_ENABLED(CONFIG_IPV6)
 		else if (skb->protocol == htons(ETH_P_IPV6)) {
-			struct neighbour *neigh = dst_get_neighbour_noref(skb_dst(skb));
 			const struct in6_addr *addr6;
+			struct neighbour *neigh;
+			bool do_tx_error_icmp;
 			int addr_type;
 
+			neigh = dst_neigh_lookup(skb_dst(skb), &ipv6_hdr(skb)->daddr);
 			if (neigh == NULL)
 				goto tx_error;
 
@@ -751,9 +752,14 @@ static netdev_tx_t ipgre_tunnel_xmit(struct sk_buff *skb, struct net_device *dev
 			}
 
 			if ((addr_type & IPV6_ADDR_COMPATv4) == 0)
+				do_tx_error_icmp = true;
+			else {
+				do_tx_error_icmp = false;
+				dst = addr6->s6_addr32[3];
+			}
+			neigh_release(neigh);
+			if (do_tx_error_icmp)
 				goto tx_error_icmp;
-
-			dst = addr6->s6_addr32[3];
 		}
 #endif
 		else
@@ -914,9 +920,10 @@ static netdev_tx_t ipgre_tunnel_xmit(struct sk_buff *skb, struct net_device *dev
 	__IPTUNNEL_XMIT(tstats, &dev->stats);
 	return NETDEV_TX_OK;
 
+#if IS_ENABLED(CONFIG_IPV6)
 tx_error_icmp:
 	dst_link_failure(skb);
-
+#endif
 tx_error:
 	dev->stats.tx_errors++;
 	dev_kfree_skb(skb);
@@ -1529,7 +1536,7 @@ static int ipgre_newlink(struct net *src_net, struct net_device *dev, struct nla
 		return -EEXIST;
 
 	if (dev->type == ARPHRD_ETHER && !tb[IFLA_ADDRESS])
-		random_ether_addr(dev->dev_addr);
+		eth_hw_addr_random(dev);
 
 	mtu = ipgre_tunnel_bind_dev(dev);
 	if (!tb[IFLA_MTU])
