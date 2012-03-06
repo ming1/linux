@@ -32,7 +32,7 @@
 
 #include <mach/dma.h>
 
-#include "imx-ssi.h"
+#include "imx-pcm.h"
 
 static bool filter(struct dma_chan *chan, void *param)
 {
