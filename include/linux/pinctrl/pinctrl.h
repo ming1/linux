@@ -15,9 +15,10 @@
 #ifdef CONFIG_PINCTRL
 
 #include <linux/radix-tree.h>
-#include <linux/spinlock.h>
 #include <linux/list.h>
 #include <linux/seq_file.h>
+
+#define PINCTRL_STATE_DEFAULT "default"
 
 struct pinctrl_dev;
 struct pinmux_ops;
