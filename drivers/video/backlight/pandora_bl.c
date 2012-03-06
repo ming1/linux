@@ -52,7 +52,10 @@ static int pandora_backlight_update_status(struct backlight_device *bl)
 	if ((unsigned int)brightness > MAX_USER_VALUE)
 		brightness = MAX_USER_VALUE;
 
-	if (brightness == 0 && !(bl->props.state & PANDORABL_WAS_OFF)) {
+	if (brightness == 0) {
+		if (bl->props.state & PANDORABL_WAS_OFF)
+			goto done;
+
 		/* first disable PWM0 output, then clock */
 		twl_i2c_read_u8(TWL4030_MODULE_INTBR, &r, TWL_INTBR_GPBR1);
 		r &= ~PWM0_ENABLE;
