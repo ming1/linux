@@ -444,9 +444,10 @@ SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,
 	                magic2 != LINUX_REBOOT_MAGIC2C))
 		return -EINVAL;
 
-	/* In case the pid namespaces are enabled, the current task is in a
-	 * child pid_namespace and the command is handled by 'reboot_pid_ns',
-	 * this one will invoke 'do_exit'.
+	/*
+	 * If pid namespaces are enabled and the current task is in a child
+	 * pid_namespace, the command is handled by reboot_pid_ns() which will
+	 * call do_exit().
 	 */
 	ret = reboot_pid_ns(task_active_pid_ns(current), cmd);
 	if (ret)
