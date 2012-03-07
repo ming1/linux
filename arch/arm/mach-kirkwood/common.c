@@ -504,6 +504,16 @@ static int __init kirkwood_clock_gate(void)
 		kirkwood_clk_ctrl |= CGC_USB0;
 		of_node_put(np);
 	}
+
+	np = of_find_compatible_node(NULL, NULL, "mrvl,orion-sata");
+	if (np && of_device_is_available(np)) {
+		int nr_ports;
+		kirkwood_clk_ctrl |= CGC_SATA0;
+		of_property_read_u32(np, "nr-ports", &nr_ports);
+		if (nr_ports > 1)
+			kirkwood_clk_ctrl |= CGC_SATA1;
+		of_node_put(np);
+	}
 #endif
 
 	/* For SATA: first shutdown the phy */

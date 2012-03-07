@@ -23,6 +23,14 @@
 		clock-frequency = <200000000>;
 	};
 
+	sata@f1080000 {
+		compatible = "mrvl,orion-sata";
+		reg = <0xf1080000 0x5000>;
+		interrupts = <21>;
+		dma-mask = <0xffffffff>;
+		nr-ports = <1>;
+	};
+
 	ehci@f1050000 {
 		compatible = "mrvl,orion-ehci";
 		reg = <0xf1050000 0x1000>;
