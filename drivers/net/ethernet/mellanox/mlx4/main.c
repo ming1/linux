@@ -394,7 +394,7 @@ static int mlx4_how_many_lives_vf(struct mlx4_dev *dev)
 	return ret;
 }
 
-static int mlx4_is_slave_active(struct mlx4_dev *dev, int slave)
+int mlx4_is_slave_active(struct mlx4_dev *dev, int slave)
 {
 	struct mlx4_priv *priv = mlx4_priv(dev);
 	struct mlx4_slave_state *s_slave;
@@ -1130,6 +1130,8 @@ static int mlx4_init_hca(struct mlx4_dev *dev)
 			err = icm_size;
 			goto err_stop_fw;
 		}
+
+		dev->caps.max_fmr_maps = (1 << (32 - ilog2(dev->caps.num_mpts))) - 1;
 
 		init_hca.log_uar_sz = ilog2(dev->caps.num_uars);
 		init_hca.uar_page_sz = PAGE_SHIFT - 12;
