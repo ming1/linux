@@ -12,6 +12,7 @@ davinci/fixes-non-critical git://gitorious.org/linux-davinci/linux-davinci.git v
 imx/fixes-non-critical	git://git.pengutronix.de/git/imx/linux-2.6.git imx-fixes
 lpc32xx/fixup2		git://git.antcom.de/linux-2.6.git lpc32xx/fixes-non-critical
 omap/fixes-non-critical git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap fixes-non-critical
+				pulled twice
 ux500/fixes-non-critical git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git/ ux500-fixes-20120301
 
 next/maintainers:
@@ -25,6 +26,7 @@ imx/cleanup		git://git.pengutronix.de/git/imx/linux-2.6.git imx-cleanup
 pxa/cleanup		git://github.com/hzhuang1/linux.git cleanup-3.4
 omap/cleanup		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap cleanup
 				depends on depends/omap/gpio/runtime-pm-cleanup
+				pulled twice
 tegra/cleanup		git://git.kernel.org/pub/scm/linux/kernel/git/olof/tegra.git tags/tegra-cleanups
 
 next/soc:
