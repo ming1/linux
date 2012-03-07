@@ -81,7 +81,9 @@ imx/vistrim		git://git.pengutronix.de/git/imx/linux-2.6.git features/imx27-visst
 imx/moboard		git://git.pengutronix.de/git/imx/linux-2.6.git features/imx31-moboard
 tegra/boards		git://git.kernel.org/pub/scm/linux/kernel/git/olof/tegra.git tags/tegra-boards
 
-next/rpmsg:		git://git.kernel.org/pub/scm/linux/kernel/git/ohad/remoteproc.git rpmsg-for-3.4
+next/rpmsg:
+rpmsg/base		git://git.kernel.org/pub/scm/linux/kernel/git/ohad/remoteproc.git rpmsg-for-3.4
+rpmsg/updates		git://git.kernel.org/pub/scm/linux/kernel/git/ohad/remoteproc.git rpmsg-fixes-and-more-for-3.4
 
 next/soc2:
 depends/driver-core	git://git.kernel.org/pub/scm/linux/kernel/git/gregkh/driver-core.git driver-core-next
