@@ -147,7 +147,6 @@ static void __init dreamplug_init(void)
 				ARRAY_SIZE(dreamplug_spi_slave_info));
 	kirkwood_spi_init();
 
-	kirkwood_ehci_init();
 	kirkwood_ge00_init(&dreamplug_ge00_data);
 	kirkwood_ge01_init(&dreamplug_ge01_data);
 	kirkwood_sata_init(&dreamplug_sata_data);

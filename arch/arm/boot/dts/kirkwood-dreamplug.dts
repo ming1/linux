@@ -22,4 +22,12 @@
 		interrupts = <33>;
 		clock-frequency = <200000000>;
 	};
+
+	ehci@f1050000 {
+		compatible = "mrvl,orion-ehci";
+		reg = <0xf1050000 0x1000>;
+		interrupts = <19>;
+		dma-mask = <0xffffffff>;
+		phy-version = "orion";
+	};
 };

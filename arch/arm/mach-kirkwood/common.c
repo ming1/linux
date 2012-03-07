@@ -498,6 +498,12 @@ static int __init kirkwood_clock_gate(void)
 		kirkwood_clk_ctrl |= CGC_CRYPTO;
 		of_node_put(np);
 	}
+
+	np = of_find_compatible_node(NULL, NULL, "mrvl,orion-ehci");
+	if (np && of_device_is_available(np)) {
+		kirkwood_clk_ctrl |= CGC_USB0;
+		of_node_put(np);
+	}
 #endif
 
 	/* For SATA: first shutdown the phy */
