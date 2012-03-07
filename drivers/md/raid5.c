@@ -1738,7 +1738,7 @@ static void raid5_end_read_request(struct bio * bi, int error)
 		else {
 			clear_bit(R5_ReadError, &sh->dev[i].flags);
 			clear_bit(R5_ReWrite, &sh->dev[i].flags);
-			md_error(conf->mddev, rdev);
+			md_error(conf->mddev, rdev, 0);
 		}
 	}
 	rdev_dec_pending(rdev, conf->mddev);
@@ -1786,7 +1786,7 @@ static void raid5_end_write_request(struct bio *bi, int error)
 
 	if (replacement) {
 		if (!uptodate)
-			md_error(conf->mddev, rdev);
+			md_error(conf->mddev, rdev, 0);
 		else if (is_badblock(rdev, sh->sector,
 				     STRIPE_SECTORS,
 				     &first_bad, &bad_sectors))
@@ -1835,7 +1835,7 @@ static void raid5_build_block(struct stripe_head *sh, int i, int previous)
 	dev->sector = compute_blocknr(sh, i, previous);
 }
 
-static void error(struct mddev *mddev, struct md_rdev *rdev)
+static void error(struct mddev *mddev, struct md_rdev *rdev, int force)
 {
 	char b[BDEVNAME_SIZE];
 	struct r5conf *conf = mddev->private;
@@ -2383,7 +2383,7 @@ handle_failed_stripe(struct r5conf *conf, struct stripe_head *sh,
 					    rdev,
 					    sh->sector,
 					    STRIPE_SECTORS, 0))
-					md_error(conf->mddev, rdev);
+					md_error(conf->mddev, rdev, 0);
 				rdev_dec_pending(rdev, conf->mddev);
 			}
 		}
@@ -3550,7 +3550,7 @@ finish:
 				rdev = conf->disks[i].rdev;
 				if (!rdev_set_badblocks(rdev, sh->sector,
 							STRIPE_SECTORS, 0))
-					md_error(conf->mddev, rdev);
+					md_error(conf->mddev, rdev, 0);
 				rdev_dec_pending(rdev, conf->mddev);
 			}
 			if (test_and_clear_bit(R5_MadeGood, &dev->flags)) {
