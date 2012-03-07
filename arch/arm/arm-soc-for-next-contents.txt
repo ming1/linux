@@ -14,6 +14,7 @@ lpc32xx/fixup2		git://git.antcom.de/linux-2.6.git lpc32xx/fixes-non-critical
 omap/fixes-non-critical git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap fixes-non-critical
 				pulled twice
 ux500/fixes-non-critical git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git/ ux500-fixes-20120301
+omap/fixes-non-critical2 git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap fixes-non-critical-part2
 
 next/maintainers:
 imx/maintainers		git://git.linaro.org/people/shawnguo/linux-2.6.git imx/maintainers
