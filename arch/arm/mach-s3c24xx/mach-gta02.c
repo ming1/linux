@@ -38,6 +38,7 @@
 #include <linux/platform_device.h>
 #include <linux/serial_core.h>
 #include <linux/spi/spi.h>
+#include <linux/spi/s3c24xx.h>
 
 #include <linux/mmc/host.h>
 
@@ -73,7 +74,6 @@
 #include <mach/regs-gpioj.h>
 #include <mach/fb.h>
 
-#include <mach/spi.h>
 #include <plat/usb-control.h>
 #include <mach/regs-mem.h>
 #include <mach/hardware.h>
@@ -258,7 +258,7 @@ static struct pcf50633_bl_platform_data gta02_backlight_data = {
 	.ramp_time = 5,
 };
 
-struct pcf50633_platform_data gta02_pcf_pdata = {
+static struct pcf50633_platform_data gta02_pcf_pdata = {
 	.resumers = {
 		[0] =	PCF50633_INT1_USBINS |
 			PCF50633_INT1_USBREM |
@@ -404,7 +404,7 @@ static struct platform_device gta02_nor_flash = {
 };
 
 
-struct platform_device s3c24xx_pwm_device = {
+static struct platform_device s3c24xx_pwm_device = {
 	.name		= "s3c24xx_pwm",
 	.num_resources	= 0,
 };
