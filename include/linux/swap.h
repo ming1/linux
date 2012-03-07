@@ -212,6 +212,8 @@ struct swap_list_t {
 extern unsigned long totalram_pages;
 extern unsigned long totalreserve_pages;
 extern unsigned long dirty_balance_reserve;
+extern int min_free_kbytes;
+extern int extra_free_kbytes;
 extern unsigned int nr_free_buffer_pages(void);
 extern unsigned int nr_free_pagecache_pages(void);
 
@@ -227,6 +229,7 @@ extern void lru_add_page_tail(struct zone* zone,
 extern void activate_page(struct page *);
 extern void mark_page_accessed(struct page *);
 extern void lru_add_drain(void);
+extern void lru_add_drain_cpu(int cpu);
 extern int lru_add_drain_all(void);
 extern void rotate_reclaimable_page(struct page *page);
 extern void deactivate_page(struct page *page);
@@ -333,7 +336,6 @@ extern long total_swap_pages;
 extern void si_swapinfo(struct sysinfo *);
 extern swp_entry_t get_swap_page(void);
 extern swp_entry_t get_swap_page_of_type(int);
-extern int valid_swaphandles(swp_entry_t, unsigned long *);
 extern int add_swap_count_continuation(swp_entry_t, gfp_t);
 extern void swap_shmem_alloc(swp_entry_t);
 extern int swap_duplicate(swp_entry_t);
@@ -364,6 +366,26 @@ static inline void put_swap_token(struct mm_struct *mm)
 {
 	if (has_swap_token(mm))
 		__put_swap_token(mm);
+}
+
+static inline bool has_active_swap_token(struct mm_struct *mm)
+{
+	return has_swap_token(mm) && atomic_read(&mm->active_swap_token);
+}
+
+static inline bool activate_swap_token(struct mm_struct *mm)
+{
+	if (has_swap_token(mm)) {
+		atomic_inc(&mm->active_swap_token);
+		return true;
+	}
+	return false;
+}
+
+static inline void deactivate_swap_token(struct mm_struct *mm, bool swap_token)
+{
+	if (swap_token)
+		atomic_dec(&mm->active_swap_token);
 }
 
 #ifdef CONFIG_CGROUP_MEM_RES_CTLR
@@ -489,6 +511,20 @@ static inline void grab_swap_token(struct mm_struct *mm)
 static inline int has_swap_token(struct mm_struct *mm)
 {
 	return 0;
+}
+
+static inline bool has_active_swap_token(struct mm_struct *mm)
+{
+	return false;
+}
+
+static inline bool activate_swap_token(struct mm_struct *mm)
+{
+	return false;
+}
+
+static inline void deactivate_swap_token(struct mm_struct *mm, bool swap_token)
+{
 }
 
 static inline void disable_swap_token(struct mem_cgroup *memcg)

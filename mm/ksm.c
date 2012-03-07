@@ -374,11 +374,24 @@ static int break_ksm(struct vm_area_struct *vma, unsigned long addr)
 	return (ret & VM_FAULT_OOM) ? -ENOMEM : 0;
 }
 
+static bool in_mergeable_anon_vma(struct mm_struct *mm,
+				 struct vm_area_struct *vma, unsigned long addr)
+{
+	if (ksm_test_exit(mm))
+		return false;
+	vma = find_vma(mm, addr);
+	if (!vma || vma->vm_start > addr)
+		return false;
+	if (!(vma->vm_flags & VM_MERGEABLE) || !vma->anon_vma)
+		return false;
+	return true;
+}
+
 static void break_cow(struct rmap_item *rmap_item)
 {
 	struct mm_struct *mm = rmap_item->mm;
 	unsigned long addr = rmap_item->address;
-	struct vm_area_struct *vma;
+	struct vm_area_struct *vma = NULL;
 
 	/*
 	 * It is not an accident that whenever we want to break COW
@@ -387,15 +400,8 @@ static void break_cow(struct rmap_item *rmap_item)
 	put_anon_vma(rmap_item->anon_vma);
 
 	down_read(&mm->mmap_sem);
-	if (ksm_test_exit(mm))
-		goto out;
-	vma = find_vma(mm, addr);
-	if (!vma || vma->vm_start > addr)
-		goto out;
-	if (!(vma->vm_flags & VM_MERGEABLE) || !vma->anon_vma)
-		goto out;
-	break_ksm(vma, addr);
-out:
+	if (in_mergeable_anon_vma(mm, vma, addr))
+		break_ksm(vma, addr);
 	up_read(&mm->mmap_sem);
 }
 
@@ -417,16 +423,11 @@ static struct page *get_mergeable_page(struct rmap_item *rmap_item)
 {
 	struct mm_struct *mm = rmap_item->mm;
 	unsigned long addr = rmap_item->address;
-	struct vm_area_struct *vma;
+	struct vm_area_struct *vma = NULL;
 	struct page *page;
 
 	down_read(&mm->mmap_sem);
-	if (ksm_test_exit(mm))
-		goto out;
-	vma = find_vma(mm, addr);
-	if (!vma || vma->vm_start > addr)
-		goto out;
-	if (!(vma->vm_flags & VM_MERGEABLE) || !vma->anon_vma)
+	if (!in_mergeable_anon_vma(mm, vma, addr))
 		goto out;
 
 	page = follow_page(vma, addr, FOLL_GET);
@@ -816,7 +817,7 @@ out:
 
 static int page_trans_compound_anon_split(struct page *page)
 {
-	int ret = 0;
+	int ret = 1;
 	struct page *transhuge_head = page_trans_compound_anon(page);
 	if (transhuge_head) {
 		/* Get the reference on the head to split it. */
@@ -827,16 +828,8 @@ static int page_trans_compound_anon_split(struct page *page)
 			 */
 			if (PageAnon(transhuge_head))
 				ret = split_huge_page(transhuge_head);
-			else
-				/*
-				 * Retry later if split_huge_page run
-				 * from under us.
-				 */
-				ret = 1;
 			put_page(transhuge_head);
-		} else
-			/* Retry later if split_huge_page run from under us. */
-			ret = 1;
+		}
 	}
 	return ret;
 }
