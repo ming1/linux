@@ -782,12 +782,12 @@ DECLARE_EVENT_CLASS(xfs_loggrant_class,
 		__entry->curr_res = tic->t_curr_res;
 		__entry->unit_res = tic->t_unit_res;
 		__entry->flags = tic->t_flags;
-		__entry->reserveq = list_empty(&log->l_reserveq);
-		__entry->writeq = list_empty(&log->l_writeq);
-		xlog_crack_grant_head(&log->l_grant_reserve_head,
+		__entry->reserveq = list_empty(&log->l_reserve_head.waiters);
+		__entry->writeq = list_empty(&log->l_write_head.waiters);
+		xlog_crack_grant_head(&log->l_reserve_head.grant,
 				&__entry->grant_reserve_cycle,
 				&__entry->grant_reserve_bytes);
-		xlog_crack_grant_head(&log->l_grant_write_head,
+		xlog_crack_grant_head(&log->l_write_head.grant,
 				&__entry->grant_write_cycle,
 				&__entry->grant_write_bytes);
 		__entry->curr_cycle = log->l_curr_cycle;
@@ -826,20 +826,14 @@ DEFINE_EVENT(xfs_loggrant_class, name, \
 	TP_ARGS(log, tic))
 DEFINE_LOGGRANT_EVENT(xfs_log_done_nonperm);
 DEFINE_LOGGRANT_EVENT(xfs_log_done_perm);
-DEFINE_LOGGRANT_EVENT(xfs_log_reserve);
 DEFINE_LOGGRANT_EVENT(xfs_log_umount_write);
-DEFINE_LOGGRANT_EVENT(xfs_log_grant_enter);
-DEFINE_LOGGRANT_EVENT(xfs_log_grant_exit);
-DEFINE_LOGGRANT_EVENT(xfs_log_grant_error);
 DEFINE_LOGGRANT_EVENT(xfs_log_grant_sleep);
 DEFINE_LOGGRANT_EVENT(xfs_log_grant_wake);
 DEFINE_LOGGRANT_EVENT(xfs_log_grant_wake_up);
-DEFINE_LOGGRANT_EVENT(xfs_log_regrant_write_enter);
-DEFINE_LOGGRANT_EVENT(xfs_log_regrant_write_exit);
-DEFINE_LOGGRANT_EVENT(xfs_log_regrant_write_error);
-DEFINE_LOGGRANT_EVENT(xfs_log_regrant_write_sleep);
-DEFINE_LOGGRANT_EVENT(xfs_log_regrant_write_wake);
-DEFINE_LOGGRANT_EVENT(xfs_log_regrant_write_wake_up);
+DEFINE_LOGGRANT_EVENT(xfs_log_reserve);
+DEFINE_LOGGRANT_EVENT(xfs_log_reserve_exit);
+DEFINE_LOGGRANT_EVENT(xfs_log_regrant);
+DEFINE_LOGGRANT_EVENT(xfs_log_regrant_exit);
 DEFINE_LOGGRANT_EVENT(xfs_log_regrant_reserve_enter);
 DEFINE_LOGGRANT_EVENT(xfs_log_regrant_reserve_exit);
 DEFINE_LOGGRANT_EVENT(xfs_log_regrant_reserve_sub);
