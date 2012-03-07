@@ -323,6 +323,17 @@ config MACH_ORIGEN
 	help
 	  Machine support for ORIGEN based on Samsung EXYNOS4210
 
+config MACH_TRATS
+	bool "Mobile TRATS Board"
+	select CPU_EXYNOS4210
+	select S3C_DEV_WDT
+	select S3C_DEV_HSMMC
+	select S3C_DEV_I2C5
+	select EXYNOS4_SETUP_I2C5
+	select EXYNOS4_SETUP_SDHCI
+	help
+	  Machine support for Samsung Mobile TRATS Board.
+
 comment "EXYNOS4212 Boards"
 
 config MACH_SMDK4212
