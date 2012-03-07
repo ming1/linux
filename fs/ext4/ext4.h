@@ -184,6 +184,7 @@ struct mpage_da_data {
 #define	EXT4_IO_END_UNWRITTEN	0x0001
 #define EXT4_IO_END_ERROR	0x0002
 #define EXT4_IO_END_QUEUED	0x0004
+#define EXT4_IO_END_DIRECT	0x0008
 
 struct ext4_io_page {
 	struct page	*p_page;
@@ -1420,8 +1421,9 @@ static inline void ext4_clear_state_flags(struct ext4_inode_info *ei)
 #define EXT4_FEATURE_INCOMPAT_FLEX_BG		0x0200
 #define EXT4_FEATURE_INCOMPAT_EA_INODE		0x0400 /* EA in inode */
 #define EXT4_FEATURE_INCOMPAT_DIRDATA		0x1000 /* data in dirent */
-#define EXT4_FEATURE_INCOMPAT_INLINEDATA	0x2000 /* data in inode */
+#define EXT4_FEATURE_INCOMPAT_BG_USE_META_CSUM	0x2000 /* use crc32c for bg */
 #define EXT4_FEATURE_INCOMPAT_LARGEDIR		0x4000 /* >2GB or 3-lvl htree */
+#define EXT4_FEATURE_INCOMPAT_INLINEDATA	0x8000 /* data in inode */
 
 #define EXT2_FEATURE_COMPAT_SUPP	EXT4_FEATURE_COMPAT_EXT_ATTR
 #define EXT2_FEATURE_INCOMPAT_SUPP	(EXT4_FEATURE_INCOMPAT_FILETYPE| \
@@ -1794,8 +1796,14 @@ extern struct ext4_group_desc * ext4_get_group_desc(struct super_block * sb,
 						    ext4_group_t block_group,
 						    struct buffer_head ** bh);
 extern int ext4_should_retry_alloc(struct super_block *sb, int *retries);
-struct buffer_head *ext4_read_block_bitmap(struct super_block *sb,
-				      ext4_group_t block_group);
+
+extern struct buffer_head *ext4_read_block_bitmap_nowait(struct super_block *sb,
+						ext4_group_t block_group);
+extern int ext4_wait_block_bitmap(struct super_block *sb,
+				  ext4_group_t block_group,
+				  struct buffer_head *bh);
+extern struct buffer_head *ext4_read_block_bitmap(struct super_block *sb,
+						  ext4_group_t block_group);
 extern void ext4_init_block_bitmap(struct super_block *sb,
 				   struct buffer_head *bh,
 				   ext4_group_t group,
@@ -1841,6 +1849,7 @@ extern void ext4_check_inodes_bitmap(struct super_block *);
 extern void ext4_mark_bitmap_end(int start_bit, int end_bit, char *bitmap);
 extern int ext4_init_inode_table(struct super_block *sb,
 				 ext4_group_t group, int barrier);
+extern void ext4_end_bitmap_read(struct buffer_head *bh, int uptodate);
 
 /* mballoc.c */
 extern long ext4_mb_stats;
