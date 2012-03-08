@@ -825,7 +825,7 @@ static void super_written(struct bio *bio, int error)
 		printk("md: super_written gets error=%d, uptodate=%d\n",
 		       error, test_bit(BIO_UPTODATE, &bio->bi_flags));
 		WARN_ON(test_bit(BIO_UPTODATE, &bio->bi_flags));
-		md_error(mddev, rdev);
+		md_error(mddev, rdev, 1);
 	}
 
 	if (atomic_dec_and_test(&mddev->pending_writes))
@@ -1785,7 +1785,7 @@ static void super_1_sync(struct mddev *mddev, struct md_rdev *rdev)
 		/* Nothing to do for bad blocks*/ ;
 	else if (sb->bblog_offset == 0)
 		/* Cannot record bad blocks on this device */
-		md_error(mddev, rdev);
+		md_error(mddev, rdev, 0);
 	else {
 		struct badblocks *bb = &rdev->badblocks;
 		u64 *bbp = (u64 *)page_address(rdev->bb_page);
@@ -2367,7 +2367,7 @@ repeat:
 			list_for_each_entry(rdev, &mddev->disks, same_set) {
 				if (rdev->badblocks.changed) {
 					md_ack_all_badblocks(&rdev->badblocks);
-					md_error(mddev, rdev);
+					md_error(mddev, rdev, 0);
 				}
 				clear_bit(Blocked, &rdev->flags);
 				clear_bit(BlockedBadBlocks, &rdev->flags);
@@ -2592,7 +2592,7 @@ state_store(struct md_rdev *rdev, const char *buf, size_t len)
 	 */
 	int err = -EINVAL;
 	if (cmd_match(buf, "faulty") && rdev->mddev->pers) {
-		md_error(rdev->mddev, rdev);
+		md_error(rdev->mddev, rdev, 1);
 		if (test_bit(Faulty, &rdev->flags))
 			err = 0;
 		else
@@ -2623,7 +2623,7 @@ state_store(struct md_rdev *rdev, const char *buf, size_t len)
 			/* metadata handler doesn't understand badblocks,
 			 * so we need to fail the device
 			 */
-			md_error(rdev->mddev, rdev);
+			md_error(rdev->mddev, rdev, 1);
 		}
 		clear_bit(Blocked, &rdev->flags);
 		clear_bit(BlockedBadBlocks, &rdev->flags);
@@ -6069,7 +6069,7 @@ static int set_disk_faulty(struct mddev *mddev, dev_t dev)
 	if (!rdev)
 		return -ENODEV;
 
-	md_error(mddev, rdev);
+	md_error(mddev, rdev, 1);
 	if (!test_bit(Faulty, &rdev->flags))
 		return -EBUSY;
 	return 0;
@@ -6524,7 +6524,7 @@ void md_unregister_thread(struct md_thread **threadp)
 	kfree(thread);
 }
 
-void md_error(struct mddev *mddev, struct md_rdev *rdev)
+void md_error(struct mddev *mddev, struct md_rdev *rdev, int force)
 {
 	if (!mddev) {
 		MD_BUG();
@@ -6536,7 +6536,7 @@ void md_error(struct mddev *mddev, struct md_rdev *rdev)
 
 	if (!mddev->pers || !mddev->pers->error_handler)
 		return;
-	mddev->pers->error_handler(mddev,rdev);
+	mddev->pers->error_handler(mddev, rdev, force);
 	if (mddev->degraded)
 		set_bit(MD_RECOVERY_RECOVER, &mddev->recovery);
 	sysfs_notify_dirent_safe(rdev->sysfs_state);
@@ -8157,30 +8157,23 @@ static int md_notify_reboot(struct notifier_block *this,
 	struct mddev *mddev;
 	int need_delay = 0;
 
-	if ((code == SYS_DOWN) || (code == SYS_HALT) || (code == SYS_POWER_OFF)) {
-
-		printk(KERN_INFO "md: stopping all md devices.\n");
-
-		for_each_mddev(mddev, tmp) {
-			if (mddev_trylock(mddev)) {
-				/* Force a switch to readonly even array
-				 * appears to still be in use.  Hence
-				 * the '100'.
-				 */
-				md_set_readonly(mddev, 100);
-				mddev_unlock(mddev);
-			}
-			need_delay = 1;
+	for_each_mddev(mddev, tmp) {
+		if (mddev_trylock(mddev)) {
+			__md_stop_writes(mddev);
+			mddev->safemode = 2;
+			mddev_unlock(mddev);
 		}
-		/*
-		 * certain more exotic SCSI devices are known to be
-		 * volatile wrt too early system reboots. While the
-		 * right place to handle this issue is the given
-		 * driver, we do want to have a safe RAID driver ...
-		 */
-		if (need_delay)
-			mdelay(1000*1);
+		need_delay = 1;
 	}
+	/*
+	 * certain more exotic SCSI devices are known to be
+	 * volatile wrt too early system reboots. While the
+	 * right place to handle this issue is the given
+	 * driver, we do want to have a safe RAID driver ...
+	 */
+	if (need_delay)
+		mdelay(1000*1);
+
 	return NOTIFY_DONE;
 }
 
