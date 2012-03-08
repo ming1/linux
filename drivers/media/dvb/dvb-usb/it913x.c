@@ -64,6 +64,7 @@ DVB_DEFINE_MOD_OPT_ADAPTER_NR(adapter_nr);
 struct it913x_state {
 	u8 id;
 	struct ite_config it913x_config;
+	u8 pid_filter_onoff;
 };
 
 struct ite_config it913x_config;
@@ -259,15 +260,16 @@ static u32 it913x_query(struct usb_device *udev, u8 pro)
 
 static int it913x_pid_filter_ctrl(struct dvb_usb_adapter *adap, int onoff)
 {
+	struct it913x_state *st = adap->dev->priv;
 	struct usb_device *udev = adap->dev->udev;
 	int ret;
 	u8 pro = (adap->id == 0) ? DEV_0_DMOD : DEV_1_DMOD;
 
-	if (mutex_lock_interruptible(&adap->dev->i2c_mutex) < 0)
-			return -EAGAIN;
+	mutex_lock(&adap->dev->i2c_mutex);
+
 	deb_info(1, "PID_C  (%02x)", onoff);
 
-	ret = it913x_wr_reg(udev, pro, PID_EN, onoff);
+	ret = it913x_wr_reg(udev, pro, PID_EN, st->pid_filter_onoff);
 
 	mutex_unlock(&adap->dev->i2c_mutex);
 	return ret;
@@ -276,12 +278,13 @@ static int it913x_pid_filter_ctrl(struct dvb_usb_adapter *adap, int onoff)
 static int it913x_pid_filter(struct dvb_usb_adapter *adap,
 		int index, u16 pid, int onoff)
 {
+	struct it913x_state *st = adap->dev->priv;
 	struct usb_device *udev = adap->dev->udev;
 	int ret;
 	u8 pro = (adap->id == 0) ? DEV_0_DMOD : DEV_1_DMOD;
 
-	if (mutex_lock_interruptible(&adap->dev->i2c_mutex) < 0)
-			return -EAGAIN;
+	mutex_lock(&adap->dev->i2c_mutex);
+
 	deb_info(1, "PID_F  (%02x)", onoff);
 
 	ret = it913x_wr_reg(udev, pro, PID_LSB, (u8)(pid & 0xff));
@@ -291,6 +294,13 @@ static int it913x_pid_filter(struct dvb_usb_adapter *adap,
 	ret |= it913x_wr_reg(udev, pro, PID_INX_EN, (u8)onoff);
 
 	ret |= it913x_wr_reg(udev, pro, PID_INX, (u8)(index & 0x1f));
+
+	if (udev->speed == USB_SPEED_HIGH && pid == 0x2000) {
+			ret |= it913x_wr_reg(udev, pro, PID_EN, !onoff);
+			st->pid_filter_onoff = !onoff;
+	} else
+		st->pid_filter_onoff =
+			adap->fe_adap[adap->active_fe].pid_filtering;
 
 	mutex_unlock(&adap->dev->i2c_mutex);
 	return 0;
@@ -316,8 +326,8 @@ static int it913x_i2c_xfer(struct i2c_adapter *adap, struct i2c_msg msg[],
 	int ret;
 	u32 reg;
 	u8 pro;
-	if (mutex_lock_interruptible(&d->i2c_mutex) < 0)
-			return -EAGAIN;
+
+	mutex_lock(&d->i2c_mutex);
 
 	debug_data_snipet(1, "Message out", msg[0].buf);
 	deb_info(2, "num of messages %d address %02x", num, msg[0].addr);
@@ -358,8 +368,7 @@ static int it913x_rc_query(struct dvb_usb_device *d)
 	int ret;
 	u32 key;
 	/* Avoid conflict with frontends*/
-	if (mutex_lock_interruptible(&d->i2c_mutex) < 0)
-			return -EAGAIN;
+	mutex_lock(&d->i2c_mutex);
 
 	ret = it913x_io(d->udev, READ_LONG, PRO_LINK, CMD_IR_GET,
 		0, 0, &ibuf[0], sizeof(ibuf));
@@ -403,11 +412,13 @@ static int ite_firmware_select(struct usb_device *udev,
 	case IT9135_V1_FW:
 		it913x_config.firmware_ver = 1;
 		it913x_config.adc_x2 = 1;
+		it913x_config.read_slevel = false;
 		props->firmware = fw_it9135_v1;
 		break;
 	case IT9135_V2_FW:
 		it913x_config.firmware_ver = 1;
 		it913x_config.adc_x2 = 1;
+		it913x_config.read_slevel = false;
 		props->firmware = fw_it9135_v2;
 		switch (it913x_config.tuner_id_0) {
 		case IT9135_61:
@@ -423,6 +434,7 @@ static int ite_firmware_select(struct usb_device *udev,
 	default:
 		it913x_config.firmware_ver = 0;
 		it913x_config.adc_x2 = 0;
+		it913x_config.read_slevel = true;
 		props->firmware = fw_it9137;
 	}
 
@@ -600,18 +612,22 @@ static int it913x_identify_state(struct usb_device *udev,
 
 static int it913x_streaming_ctrl(struct dvb_usb_adapter *adap, int onoff)
 {
+	struct it913x_state *st = adap->dev->priv;
 	int ret = 0;
 	u8 pro = (adap->id == 0) ? DEV_0_DMOD : DEV_1_DMOD;
 
-	if (mutex_lock_interruptible(&adap->dev->i2c_mutex) < 0)
-			return -EAGAIN;
 	deb_info(1, "STM  (%02x)", onoff);
 
-	if (!onoff)
+	if (!onoff) {
+		mutex_lock(&adap->dev->i2c_mutex);
+
 		ret = it913x_wr_reg(adap->dev->udev, pro, PID_RST, 0x1);
 
+		mutex_unlock(&adap->dev->i2c_mutex);
+		st->pid_filter_onoff =
+			adap->fe_adap[adap->active_fe].pid_filtering;
 
-	mutex_unlock(&adap->dev->i2c_mutex);
+	}
 
 	return ret;
 }
@@ -885,5 +901,5 @@ module_usb_driver(it913x_driver);
 
 MODULE_AUTHOR("Malcolm Priestley <tvboxspy@gmail.com>");
 MODULE_DESCRIPTION("it913x USB 2 Driver");
-MODULE_VERSION("1.25");
+MODULE_VERSION("1.27");
 MODULE_LICENSE("GPL");

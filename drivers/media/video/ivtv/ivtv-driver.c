@@ -55,7 +55,7 @@
 #include "ivtv-routing.h"
 #include "ivtv-controls.h"
 #include "ivtv-gpio.h"
-
+#include <linux/dma-mapping.h>
 #include <media/tveeprom.h>
 #include <media/saa7115.h>
 #include <media/v4l2-chip-ident.h>
@@ -99,7 +99,7 @@ static int i2c_clock_period[IVTV_MAX_CARDS] = { -1, -1, -1, -1, -1, -1, -1, -1,
 
 static unsigned int cardtype_c = 1;
 static unsigned int tuner_c = 1;
-static bool radio_c = 1;
+static int radio_c = 1;
 static unsigned int i2c_clock_period_c = 1;
 static char pal[] = "---";
 static char secam[] = "--";
@@ -139,7 +139,7 @@ static int tunertype = -1;
 static int newi2c = -1;
 
 module_param_array(tuner, int, &tuner_c, 0644);
-module_param_array(radio, bool, &radio_c, 0644);
+module_param_array(radio, int, &radio_c, 0644);
 module_param_array(cardtype, int, &cardtype_c, 0644);
 module_param_string(pal, pal, sizeof(pal), 0644);
 module_param_string(secam, secam, sizeof(secam), 0644);
@@ -813,7 +813,7 @@ static int ivtv_setup_pci(struct ivtv *itv, struct pci_dev *pdev,
 		IVTV_ERR("Can't enable device!\n");
 		return -EIO;
 	}
-	if (pci_set_dma_mask(pdev, 0xffffffff)) {
+	if (pci_set_dma_mask(pdev, DMA_BIT_MASK(32))) {
 		IVTV_ERR("No suitable DMA available.\n");
 		return -EIO;
 	}
@@ -1198,28 +1198,28 @@ static int __devinit ivtv_probe(struct pci_dev *pdev,
 	itv->tuner_std = itv->std;
 
 	if (itv->v4l2_cap & V4L2_CAP_VIDEO_OUTPUT) {
-		v4l2_ctrl_handler_init(&itv->hdl_out, 50);
-		itv->ctrl_pts = v4l2_ctrl_new_std(&itv->hdl_out, &ivtv_hdl_out_ops,
+		struct v4l2_ctrl_handler *hdl = itv->v4l2_dev.ctrl_handler;
+
+		itv->ctrl_pts = v4l2_ctrl_new_std(hdl, &ivtv_hdl_out_ops,
 				V4L2_CID_MPEG_VIDEO_DEC_PTS, 0, 0, 1, 0);
-		itv->ctrl_frame = v4l2_ctrl_new_std(&itv->hdl_out, &ivtv_hdl_out_ops,
+		itv->ctrl_frame = v4l2_ctrl_new_std(hdl, &ivtv_hdl_out_ops,
 				V4L2_CID_MPEG_VIDEO_DEC_FRAME, 0, 0x7fffffff, 1, 0);
 		/* Note: V4L2_MPEG_AUDIO_DEC_PLAYBACK_AUTO is not supported,
 		   mask that menu item. */
 		itv->ctrl_audio_playback =
-			v4l2_ctrl_new_std_menu(&itv->hdl_out, &ivtv_hdl_out_ops,
+			v4l2_ctrl_new_std_menu(hdl, &ivtv_hdl_out_ops,
 				V4L2_CID_MPEG_AUDIO_DEC_PLAYBACK,
 				V4L2_MPEG_AUDIO_DEC_PLAYBACK_SWAPPED_STEREO,
 				1 << V4L2_MPEG_AUDIO_DEC_PLAYBACK_AUTO,
 				V4L2_MPEG_AUDIO_DEC_PLAYBACK_STEREO);
 		itv->ctrl_audio_multilingual_playback =
-			v4l2_ctrl_new_std_menu(&itv->hdl_out, &ivtv_hdl_out_ops,
+			v4l2_ctrl_new_std_menu(hdl, &ivtv_hdl_out_ops,
 				V4L2_CID_MPEG_AUDIO_DEC_MULTILINGUAL_PLAYBACK,
 				V4L2_MPEG_AUDIO_DEC_PLAYBACK_SWAPPED_STEREO,
 				1 << V4L2_MPEG_AUDIO_DEC_PLAYBACK_AUTO,
 				V4L2_MPEG_AUDIO_DEC_PLAYBACK_LEFT);
-		v4l2_ctrl_add_handler(&itv->hdl_out, &itv->cxhdl.hdl);
-		if (itv->hdl_out.error) {
-			retval = itv->hdl_out.error;
+		if (hdl->error) {
+			retval = hdl->error;
 			goto free_i2c;
 		}
 		v4l2_ctrl_cluster(2, &itv->ctrl_pts);
@@ -1260,8 +1260,6 @@ free_streams:
 free_irq:
 	free_irq(itv->pdev->irq, (void *)itv);
 free_i2c:
-	if (itv->v4l2_cap & V4L2_CAP_VIDEO_OUTPUT)
-		v4l2_ctrl_handler_free(&itv->hdl_out);
 	v4l2_ctrl_handler_free(&itv->cxhdl.hdl);
 	exit_ivtv_i2c(itv);
 free_io:
@@ -1418,8 +1416,6 @@ static void ivtv_remove(struct pci_dev *pdev)
 	ivtv_streams_cleanup(itv, 1);
 	ivtv_udma_free(itv);
 
-	if (itv->v4l2_cap & V4L2_CAP_VIDEO_OUTPUT)
-		v4l2_ctrl_handler_free(&itv->hdl_out);
 	v4l2_ctrl_handler_free(&itv->cxhdl.hdl);
 
 	exit_ivtv_i2c(itv);
