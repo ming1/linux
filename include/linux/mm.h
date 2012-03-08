@@ -1076,19 +1076,19 @@ static inline unsigned long get_mm_counter(struct mm_struct *mm, int member)
 	return (unsigned long)val;
 }
 
-static inline void add_mm_counter(struct mm_struct *mm, int member, long value)
+static inline void add_rss_counter(struct vm_area_struct *vma, int member, long value)
 {
-	atomic_long_add(value, &mm->rss_stat.count[member]);
+	atomic_long_add(value, &vma->vm_mm->rss_stat.count[member]);
 }
 
-static inline void inc_mm_counter(struct mm_struct *mm, int member)
+static inline void inc_rss_counter(struct vm_area_struct *vma, int member)
 {
-	atomic_long_inc(&mm->rss_stat.count[member]);
+	atomic_long_inc(&vma->vm_mm->rss_stat.count[member]);
 }
 
-static inline void dec_mm_counter(struct mm_struct *mm, int member)
+static inline void dec_rss_counter(struct vm_area_struct *vma, int member)
 {
-	atomic_long_dec(&mm->rss_stat.count[member]);
+	atomic_long_dec(&vma->vm_mm->rss_stat.count[member]);
 }
 
 static inline unsigned long get_mm_rss(struct mm_struct *mm)
