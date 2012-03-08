@@ -1,0 +1,51 @@
+Importing hexagon based on v3.2-rc2
+Unchanged quilt series hexagon
+Importing i2c based on ce5afed937f0a823d3b00c9459409c3f5f2fbd5d
+Unchanged quilt series i2c
+Importing jdelvare-hwmon based on 3.3-rc5
+Unchanged quilt series jdelvare-hwmon
+Importing kernel-doc based on 3.3-rc2
+Unchanged quilt series kernel-doc
+Importing rr based on v3.3-rc5-86-g5ffca28
+Unchanged quilt series rr
+Importing device-mapper based on v3.3-rc6
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard 192cfd58774b4d17b2fe8bdc77d89c2ef4e0591d
+HEAD is now at 192cfd5 Linux 3.3-rc6
+$ git am ../quilt/device-mapper/dm-ioctl-do-not-leak-argv-if-target-message-only-contains-whitespace.patch
+Applying: If 'argc' is zero we jump to the 'out:' label, but this leaks the
+$ git am ../quilt/device-mapper/dm-io-fix-discard-support.patch
+Applying: This patch fixes a crash by recognising discards in dm_io.
+$ git am ../quilt/device-mapper/dm-flakey-fix-crash-on-read-when-corrupt_bio_byte-not-set.patch
+Applying: The following BUG is hit on the first read that is submitted to a dm
+$ git am ../quilt/device-mapper/dm-thin-metadata-remove-incorrect-close_device-on-creation-error-paths.patch
+Applying: The __open_device() error paths in __create_thin() and __create_snap()
+$ git am ../quilt/device-mapper/dm-thin-metadata-unlock-superblock-in-init_pmd-error-path.patch
+Applying: If dm_sm_disk_create() fails the superblock must be unlocked.
+$ git am ../quilt/device-mapper/dm-thin-metadata-decrement-counter-after-removing-mapped-block.patch
+Applying: Correct the number of mapped sectors shown on a thin device's
+$ git am ../quilt/device-mapper/dm-raid-set-MD_CHANGE_DEVS-when-rebuilding.patch
+Applying: The 'rebuild' parameter is used to rebuild individual devices in an
+$ git am ../quilt/device-mapper/dm-raid-fix-flush-support.patch
+Applying: Fix dm-raid flush support.
+$ git am ../quilt/device-mapper/dm-raid-handle-failed-devices-during-start-up.patch
+Applying: The dm-raid code currently fails to create a RAID array if any of the
+$ git am ../quilt/device-mapper/dm-crypt-remove-unused-kmap_atomic-arg.patch
+Applying: The second argument of k[un]map_atomic() is unused.
+$ git am ../quilt/device-mapper/dm-reject-trailing-characters-in-sccanf-input.patch
+Applying: Device mapper uses sscanf to convert arguments to numbers. The problem is that
+$ git am ../quilt/device-mapper/dm-document-sysfs-entries.patch
+Applying: Describe attributes provided by device-mapper in /sys/block.
+$ git am ../quilt/device-mapper/dm-mpath-clear-map_context-when-requeueing.patch
+Applying: When requeuing a request,  clear the map_context pointer to ensure we
+$ git am ../quilt/device-mapper/dm-persistent-data-remove-redundant-value_size-arg-from-value_ptr.patch
+Applying: Now that the value_size is held within every node of the btrees we can
+$ git am ../quilt/device-mapper/dm-bufio-remove-version-header.patch
+Applying: As 'make versioncheck' points out, drivers/md/dm-bufio.c has no need
+$ git am ../quilt/device-mapper/dm-thin-commit-outstanding-date-every-second.patch
+Applying: Commit unwritten data every second to prevent too much building up.
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/device-mapper
+From ../quilt-tmp
+ + 290f6a2...66d09ce master     -> quilt/device-mapper  (forced update)
