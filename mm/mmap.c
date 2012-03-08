@@ -235,7 +235,7 @@ static struct vm_area_struct *remove_vma(struct vm_area_struct *vma)
 		if (vma->vm_flags & VM_EXECUTABLE)
 			removed_exe_file_vma(vma->vm_mm);
 	}
-	mpol_put(vma_policy(vma));
+	vma_put_policy(vma);
 	kmem_cache_free(vm_area_cachep, vma);
 	return next;
 }
@@ -626,7 +626,7 @@ again:			remove_next = 1 + (end > next->vm_end);
 		if (next->anon_vma)
 			anon_vma_merge(vma, next);
 		mm->map_count--;
-		mpol_put(vma_policy(next));
+		vma_put_policy(next);
 		kmem_cache_free(vm_area_cachep, next);
 		/*
 		 * In mprotect's case 6 (see comments on vma_merge),
@@ -2022,7 +2022,7 @@ static int __split_vma(struct mm_struct * mm, struct vm_area_struct * vma,
 	}
 	unlink_anon_vmas(new);
  out_free_mpol:
-	mpol_put(new->vm_policy);
+	vma_put_policy(new);
  out_free_vma:
 	kmem_cache_free(vm_area_cachep, new);
  out_err:
@@ -2425,7 +2425,7 @@ struct vm_area_struct *copy_vma(struct vm_area_struct **vmap,
 	return new_vma;
 
  out_free_mempol:
-	mpol_put(new_vma->vm_policy);
+	vma_put_policy(new_vma);
  out_free_vma:
 	kmem_cache_free(vm_area_cachep, new_vma);
 	return NULL;

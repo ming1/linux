@@ -1951,6 +1951,11 @@ int vma_dup_policy(struct vm_area_struct *new, struct vm_area_struct *old)
 	return 0;
 }
 
+void vma_put_policy(struct vm_area_struct *vma)
+{
+	mpol_put(vma_policy(vma));
+}
+
 /*
  * If *frompol needs [has] an extra ref, copy *frompol to *tompol ,
  * eliminate the * MPOL_F_* flags that require conditional ref and
