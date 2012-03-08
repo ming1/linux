@@ -1224,7 +1224,7 @@ static irqreturn_t pch_gbe_intr(int irq, void *data)
 
 	/* When request status is Receive interruption */
 	if ((int_st & (PCH_GBE_INT_RX_DMA_CMPLT | PCH_GBE_INT_TX_CMPLT)) ||
-	    (adapter->rx_stop_flag == true)) {
+	    (adapter->rx_stop_flag)) {
 		if (likely(napi_schedule_prep(&adapter->napi))) {
 			/* Enable only Rx Descriptor empty */
 			atomic_inc(&adapter->irq_sem);
@@ -1587,10 +1587,8 @@ int pch_gbe_setup_tx_resources(struct pch_gbe_adapter *adapter,
 
 	size = (int)sizeof(struct pch_gbe_buffer) * tx_ring->count;
 	tx_ring->buffer_info = vzalloc(size);
-	if (!tx_ring->buffer_info) {
-		pr_err("Unable to allocate memory for the buffer information\n");
+	if (!tx_ring->buffer_info)
 		return -ENOMEM;
-	}
 
 	tx_ring->size = tx_ring->count * (int)sizeof(struct pch_gbe_tx_desc);
 
@@ -1636,10 +1634,9 @@ int pch_gbe_setup_rx_resources(struct pch_gbe_adapter *adapter,
 
 	size = (int)sizeof(struct pch_gbe_buffer) * rx_ring->count;
 	rx_ring->buffer_info = vzalloc(size);
-	if (!rx_ring->buffer_info) {
-		pr_err("Unable to allocate memory for the receive descriptor ring\n");
+	if (!rx_ring->buffer_info)
 		return -ENOMEM;
-	}
+
 	rx_ring->size = rx_ring->count * (int)sizeof(struct pch_gbe_rx_desc);
 	rx_ring->desc =	dma_alloc_coherent(&pdev->dev, rx_ring->size,
 					   &rx_ring->dma, GFP_KERNEL);
@@ -2422,8 +2419,6 @@ static int pch_gbe_probe(struct pci_dev *pdev,
 	netdev = alloc_etherdev((int)sizeof(struct pch_gbe_adapter));
 	if (!netdev) {
 		ret = -ENOMEM;
-		dev_err(&pdev->dev,
-			"ERR: Can't allocate and set up an Ethernet device\n");
 		goto err_release_pci;
 	}
 	SET_NETDEV_DEV(netdev, &pdev->dev);
