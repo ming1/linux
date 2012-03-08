@@ -13,6 +13,7 @@
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/platform_device.h>
+#include <linux/irqdomain.h>
 #include <linux/mtd/partitions.h>
 #include <linux/ata_platform.h>
 #include <linux/mv643xx_eth.h>
@@ -29,7 +30,9 @@
 #include <linux/spi/orion_spi.h>
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
+#include <asm/mach/map.h>
 #include <mach/kirkwood.h>
+#include <mach/bridge-regs.h>
 #include <plat/mvsdio.h>
 #include "common.h"
 #include "mpp.h"
@@ -81,10 +84,6 @@ static struct mv643xx_eth_platform_data dreamplug_ge00_data = {
 
 static struct mv643xx_eth_platform_data dreamplug_ge01_data = {
 	.phy_addr	= MV643XX_ETH_PHY_ADDR(1),
-};
-
-static struct mv_sata_platform_data dreamplug_sata_data = {
-	.n_ports	= 1,
 };
 
 static struct mvsdio_platform_data dreamplug_mvsdio_data = {
@@ -144,10 +143,8 @@ static void __init dreamplug_init(void)
 				ARRAY_SIZE(dreamplug_spi_slave_info));
 	kirkwood_spi_init();
 
-	kirkwood_ehci_init();
 	kirkwood_ge00_init(&dreamplug_ge00_data);
 	kirkwood_ge01_init(&dreamplug_ge01_data);
-	kirkwood_sata_init(&dreamplug_sata_data);
 	kirkwood_sdio_init(&dreamplug_mvsdio_data);
 
 	platform_device_register(&dreamplug_leds);
@@ -155,7 +152,36 @@ static void __init dreamplug_init(void)
 
 static void __init kirkwood_dt_init(void)
 {
-	kirkwood_init();
+	struct device_node *node;
+
+	pr_info("Kirkwood: %s, TCLK=%d.\n", kirkwood_id(), kirkwood_tclk);
+
+	/*
+	 * Disable propagation of mbus errors to the CPU local bus,
+	 * as this causes mbus errors (which can occur for example
+	 * for PCI aborts) to throw CPU aborts, which we're not set
+	 * up to deal with.
+	 */
+	writel(readl(CPU_CONFIG) & ~CPU_CONFIG_ERROR_PROP, CPU_CONFIG);
+
+	kirkwood_setup_cpu_mbus();
+
+#ifdef CONFIG_CACHE_FEROCEON_L2
+	kirkwood_l2_init();
+#endif
+
+	node = of_find_compatible_node(NULL, NULL, "mrvl,orion-intc");
+	if (node)
+		irq_domain_add_simple(node, 0);
+
+	/* internal devices that every board has */
+	kirkwood_wdt_init();
+	kirkwood_xor0_init();
+	kirkwood_xor1_init();
+
+#ifdef CONFIG_KEXEC
+	kexec_reinit = kirkwood_enable_pcie;
+#endif
 
 	if (of_machine_is_compatible("globalscale,dreamplug"))
 		dreamplug_init();

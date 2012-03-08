@@ -1,6 +1,26 @@
 /include/ "skeleton.dtsi"
 
 / {
-	compatible = "marvell,kirkwood";
-};
+	compatible = "mrvl,kirkwood";
+	interrupt-parent = <&intc>;
 
+	intc: interrupt-controller@fed20200 {
+		compatible = "mrvl,orion-intc";
+		interrupt-controller;
+		#interrupt-cells = <1>;
+		reg = <0xfed20200 0x20>;
+	};
+
+	rtc@f1010300 {
+		compatible = "mrvl,kirkwood-rtc", "mrvl,orion-rtc";
+		reg = <0xf1010300 0x20>;
+		interrupts = <53>;
+	};
+
+	crypto@f1030000 {
+		compatible = "mrvl,kirkwood-crypto", "mrvl,orion-crypto";
+		reg = <0xf1030000 0x10000>,
+		      <0xf5000000 0x800>;
+		interrupts = <22>;
+	};
+};
