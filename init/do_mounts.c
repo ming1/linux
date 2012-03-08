@@ -352,6 +352,9 @@ void __init mount_block_root(char *name, int flags)
 	const char *b = name;
 #endif
 
+	if (sys_access((const char __user *) "/root", 0) != 0)
+		sys_mkdir((const char __user *) "/root", 0700);
+
 	get_fs_names(fs_names);
 retry:
 	for (p = fs_names; *p; p += strlen(p)+1) {
