@@ -291,12 +291,13 @@ struct mempolicy *mpol_new(unsigned short mode, unsigned short flags,
 		mode = MPOL_PREFERRED;
 	} else if (nodes_empty(*nodes))
 		return ERR_PTR(-EINVAL);
-	policy = kmem_cache_alloc(policy_cache, GFP_KERNEL);
+	policy = kmem_cache_alloc(policy_cache, GFP_KERNEL | __GFP_ZERO);
 	if (!policy)
 		return ERR_PTR(-ENOMEM);
 	atomic_set(&policy->refcnt, 1);
 	policy->mode = mode;
 	policy->flags = flags;
+	INIT_LIST_HEAD(&policy->ng_entry);
 
 	return policy;
 }
@@ -611,6 +612,9 @@ static int policy_vma(struct vm_area_struct *vma, struct mempolicy *new)
 	if (!err) {
 		mpol_get(new);
 		vma->vm_policy = new;
+		numa_vma_link(vma, NULL);
+		if (old)
+			numa_vma_unlink(old->vma);
 		mpol_put(old);
 	}
 	return err;
@@ -2063,11 +2067,13 @@ int vma_dup_policy(struct vm_area_struct *new, struct vm_area_struct *old)
 	if (IS_ERR(mpol))
 		return PTR_ERR(mpol);
 	vma_set_policy(new, mpol);
+	numa_vma_link(new, old);
 	return 0;
 }
 
 void vma_put_policy(struct vm_area_struct *vma)
 {
+	numa_vma_unlink(vma);
 	mpol_put(vma_policy(vma));
 }
 

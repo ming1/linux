@@ -1512,6 +1512,8 @@ struct task_struct {
 	short il_next;
 	short pref_node_fork;
 	int node;
+	struct numa_group *numa_group;
+	struct list_head ng_entry;
 #endif
 	struct rcu_head rcu;
 

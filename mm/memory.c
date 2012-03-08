@@ -144,9 +144,10 @@ static void add_rss_counter_fast(struct vm_area_struct *vma, int member, int val
 {
 	struct task_struct *task = current;
 
-	if (likely(task->mm == vma->vm_mm))
+	if (likely(task->mm == vma->vm_mm)) {
 		task->rss_stat.count[member] += val;
-	else
+		numa_add_rss_counter(vma, member, val);
+	} else
 		add_rss_counter(vma, member, val);
 }
 #define inc_rss_counter_fast(vma, member) add_rss_counter_fast(vma, member, 1)

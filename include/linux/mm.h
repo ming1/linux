@@ -1076,19 +1076,35 @@ static inline unsigned long get_mm_counter(struct mm_struct *mm, int member)
 	return (unsigned long)val;
 }
 
+#ifdef CONFIG_NUMA
+extern void __numa_add_rss_counter(struct vm_area_struct *, int, long);
+
+static inline
+void numa_add_rss_counter(struct vm_area_struct *vma, int member, long value)
+{
+	if (vma->vm_policy) /* XXX sodding include dependecies */
+		__numa_add_rss_counter(vma, member, value);
+}
+#else /* !CONFIG_NUMA */
+static inline void numa_add_rss_counter(struct vm_area_struct *vma, int member, long value) { }
+#endif /* CONFIG_NUMA */
+
 static inline void add_rss_counter(struct vm_area_struct *vma, int member, long value)
 {
 	atomic_long_add(value, &vma->vm_mm->rss_stat.count[member]);
+	numa_add_rss_counter(vma, member, value);
 }
 
 static inline void inc_rss_counter(struct vm_area_struct *vma, int member)
 {
 	atomic_long_inc(&vma->vm_mm->rss_stat.count[member]);
+	numa_add_rss_counter(vma, member, 1);
 }
 
 static inline void dec_rss_counter(struct vm_area_struct *vma, int member)
 {
 	atomic_long_dec(&vma->vm_mm->rss_stat.count[member]);
+	numa_add_rss_counter(vma, member, -1);
 }
 
 static inline unsigned long get_mm_rss(struct mm_struct *mm)

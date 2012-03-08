@@ -79,6 +79,8 @@ enum mpol_rebind_step {
 #include <linux/nodemask.h>
 #include <linux/pagemap.h>
 #include <linux/migrate.h>
+#include <linux/list.h>
+#include <linux/sched.h>
 
 struct mm_struct;
 
@@ -110,6 +112,10 @@ struct mempolicy {
 	atomic_t refcnt;
 	unsigned short mode; 	/* See MPOL_* above */
 	unsigned short flags;	/* See set_mempolicy() MPOL_F_* above */
+	struct numa_group *numa_group;
+	struct list_head ng_entry;
+	struct vm_area_struct *vma;
+	struct rcu_head rcu;
 	union {
 		short 		 preferred_node; /* preferred */
 		nodemask_t	 nodes;		/* interleave/bind */
@@ -397,6 +403,27 @@ static inline int mpol_to_str(char *buffer, int maxlen, struct mempolicy *pol,
 }
 
 #endif /* CONFIG_NUMA */
+
+#ifdef CONFIG_NUMA
+
+extern void __numa_task_exit(struct task_struct *);
+extern void numa_vma_link(struct vm_area_struct *, struct vm_area_struct *);
+extern void numa_vma_unlink(struct vm_area_struct *);
+
+static inline void numa_task_exit(struct task_struct *p)
+{
+	if (p->numa_group)
+		__numa_task_exit(p);
+}
+
+#else /* CONFIG_NUMA */
+
+static inline void numa_task_exit(struct task_struct *p) { }
+static inline void numa_vma_link(struct vm_area_struct *new, struct vm_area_struct *old) { }
+static inline void numa_vma_unlink(struct vm_area_struct *vma) { }
+
+#endif /* CONFIG_NUMA */
+
 #endif /* __KERNEL__ */
 
 #endif
