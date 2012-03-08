@@ -58,11 +58,15 @@ static const stateid_t one_stateid = {
 static const stateid_t zero_stateid = {
 	/* all fields zero */
 };
+static const stateid_t currentstateid = {
+	.si_generation = 1,
+};
 
 static u64 current_sessionid = 1;
 
 #define ZERO_STATEID(stateid) (!memcmp((stateid), &zero_stateid, sizeof(stateid_t)))
 #define ONE_STATEID(stateid)  (!memcmp((stateid), &one_stateid, sizeof(stateid_t)))
+#define CURRENT_STATEID(stateid) (!memcmp((stateid), &currentstateid, sizeof(stateid_t)))
 
 /* forward declarations */
 static int check_for_locks(struct nfs4_file *filp, struct nfs4_lockowner *lowner);
@@ -89,6 +93,19 @@ void
 nfs4_lock_state(void)
 {
 	mutex_lock(&client_mutex);
+}
+
+static void free_session(struct kref *);
+
+/* Must be called under the client_lock */
+static void nfsd4_put_session_locked(struct nfsd4_session *ses)
+{
+	kref_put(&ses->se_ref, free_session);
+}
+
+static void nfsd4_get_session(struct nfsd4_session *ses)
+{
+	kref_get(&ses->se_ref);
 }
 
 void
@@ -832,11 +849,12 @@ static void nfsd4_del_conns(struct nfsd4_session *s)
 	spin_unlock(&clp->cl_lock);
 }
 
-void free_session(struct kref *kref)
+static void free_session(struct kref *kref)
 {
 	struct nfsd4_session *ses;
 	int mem;
 
+	BUG_ON(!spin_is_locked(&client_lock));
 	ses = container_of(kref, struct nfsd4_session, se_ref);
 	nfsd4_del_conns(ses);
 	spin_lock(&nfsd_drc_lock);
@@ -845,6 +863,13 @@ void free_session(struct kref *kref)
 	spin_unlock(&nfsd_drc_lock);
 	free_session_slots(ses);
 	kfree(ses);
+}
+
+void nfsd4_put_session(struct nfsd4_session *ses)
+{
+	spin_lock(&client_lock);
+	nfsd4_put_session_locked(ses);
+	spin_unlock(&client_lock);
 }
 
 static struct nfsd4_session *alloc_init_session(struct svc_rqst *rqstp, struct nfs4_client *clp, struct nfsd4_create_session *cses)
@@ -894,7 +919,9 @@ static struct nfsd4_session *alloc_init_session(struct svc_rqst *rqstp, struct n
 	status = nfsd4_new_conn_from_crses(rqstp, new);
 	/* whoops: benny points out, status is ignored! (err, or bogus) */
 	if (status) {
+		spin_lock(&client_lock);
 		free_session(&new->se_ref);
+		spin_unlock(&client_lock);
 		return NULL;
 	}
 	if (cses->flags & SESSION4_BACK_CHAN) {
@@ -1006,12 +1033,13 @@ static struct nfs4_client *alloc_client(struct xdr_netobj name)
 static inline void
 free_client(struct nfs4_client *clp)
 {
+	BUG_ON(!spin_is_locked(&client_lock));
 	while (!list_empty(&clp->cl_sessions)) {
 		struct nfsd4_session *ses;
 		ses = list_entry(clp->cl_sessions.next, struct nfsd4_session,
 				se_perclnt);
 		list_del(&ses->se_perclnt);
-		nfsd4_put_session(ses);
+		nfsd4_put_session_locked(ses);
 	}
 	if (clp->cl_cred.cr_group_info)
 		put_group_info(clp->cl_cred.cr_group_info);
@@ -1180,7 +1208,9 @@ static struct nfs4_client *create_client(struct xdr_netobj name, char *recdir,
 	if (princ) {
 		clp->cl_principal = kstrdup(princ, GFP_KERNEL);
 		if (clp->cl_principal == NULL) {
+			spin_lock(&client_lock);
 			free_client(clp);
+			spin_unlock(&client_lock);
 			return NULL;
 		}
 	}
@@ -1347,6 +1377,7 @@ nfsd4_store_cache_entry(struct nfsd4_compoundres *resp)
 	slot->sl_opcnt = resp->opcnt;
 	slot->sl_status = resp->cstate.status;
 
+	slot->sl_flags |= NFSD4_SLOT_INITIALIZED;
 	if (nfsd4_not_cached(resp)) {
 		slot->sl_datalen = 0;
 		return;
@@ -1374,15 +1405,12 @@ nfsd4_enc_sequence_replay(struct nfsd4_compoundargs *args,
 	struct nfsd4_op *op;
 	struct nfsd4_slot *slot = resp->cstate.slot;
 
-	dprintk("--> %s resp->opcnt %d cachethis %u \n", __func__,
-		resp->opcnt, resp->cstate.slot->sl_cachethis);
-
 	/* Encode the replayed sequence operation */
 	op = &args->ops[resp->opcnt - 1];
 	nfsd4_encode_operation(resp, op);
 
 	/* Return nfserr_retry_uncached_rep in next operation. */
-	if (args->opcnt > 1 && slot->sl_cachethis == 0) {
+	if (args->opcnt > 1 && !(slot->sl_flags & NFSD4_SLOT_CACHETHIS)) {
 		op = &args->ops[resp->opcnt++];
 		op->status = nfserr_retry_uncached_rep;
 		nfsd4_encode_operation(resp, op);
@@ -1575,16 +1603,11 @@ check_slot_seqid(u32 seqid, u32 slot_seqid, int slot_inuse)
 		else
 			return nfserr_seq_misordered;
 	}
-	/* Normal */
+	/* Note unsigned 32-bit arithmetic handles wraparound: */
 	if (likely(seqid == slot_seqid + 1))
 		return nfs_ok;
-	/* Replay */
 	if (seqid == slot_seqid)
 		return nfserr_replay_cache;
-	/* Wraparound */
-	if (seqid == 1 && (slot_seqid + 1) == 0)
-		return nfs_ok;
-	/* Misordered replay or misordered new request */
 	return nfserr_seq_misordered;
 }
 
@@ -1815,9 +1838,10 @@ nfsd4_destroy_session(struct svc_rqst *r,
 	nfsd4_probe_callback_sync(ses->se_client);
 	nfs4_unlock_state();
 
+	spin_lock(&client_lock);
 	nfsd4_del_conns(ses);
-
-	nfsd4_put_session(ses);
+	nfsd4_put_session_locked(ses);
+	spin_unlock(&client_lock);
 	status = nfs_ok;
 out:
 	dprintk("%s returns %d\n", __func__, ntohl(status));
@@ -1921,8 +1945,12 @@ nfsd4_sequence(struct svc_rqst *rqstp,
 	 * sr_highest_slotid and the sr_target_slot id to maxslots */
 	seq->maxslots = session->se_fchannel.maxreqs;
 
-	status = check_slot_seqid(seq->seqid, slot->sl_seqid, slot->sl_inuse);
+	status = check_slot_seqid(seq->seqid, slot->sl_seqid,
+					slot->sl_flags & NFSD4_SLOT_INUSE);
 	if (status == nfserr_replay_cache) {
+		status = nfserr_seq_misordered;
+		if (!(slot->sl_flags & NFSD4_SLOT_INITIALIZED))
+			goto out;
 		cstate->slot = slot;
 		cstate->session = session;
 		/* Return the cached reply status and set cstate->status
@@ -1938,9 +1966,12 @@ nfsd4_sequence(struct svc_rqst *rqstp,
 	conn = NULL;
 
 	/* Success! bump slot seqid */
-	slot->sl_inuse = true;
 	slot->sl_seqid = seq->seqid;
-	slot->sl_cachethis = seq->cachethis;
+	slot->sl_flags |= NFSD4_SLOT_INUSE;
+	if (seq->cachethis)
+		slot->sl_flags |= NFSD4_SLOT_CACHETHIS;
+	else
+		slot->sl_flags &= ~NFSD4_SLOT_CACHETHIS;
 
 	cstate->slot = slot;
 	cstate->session = session;
@@ -2633,8 +2664,6 @@ nfs4_check_delegmode(struct nfs4_delegation *dp, int flags)
 
 static int share_access_to_flags(u32 share_access)
 {
-	share_access &= ~NFS4_SHARE_WANT_MASK;
-
 	return share_access == NFS4_SHARE_ACCESS_READ ? RD_STATE : WR_STATE;
 }
 
@@ -2776,10 +2805,15 @@ nfs4_upgrade_open(struct svc_rqst *rqstp, struct nfs4_file *fp, struct svc_fh *c
 
 
 static void
-nfs4_set_claim_prev(struct nfsd4_open *open)
+nfs4_set_claim_prev(struct nfsd4_open *open, bool has_session)
 {
 	open->op_openowner->oo_flags |= NFS4_OO_CONFIRMED;
-	open->op_openowner->oo_owner.so_client->cl_firststate = 1;
+	/*
+	 * On a 4.1+ client, we don't create a state record for a client
+	 * until it performs RECLAIM_COMPLETE:
+	 */
+	if (!has_session)
+		open->op_openowner->oo_owner.so_client->cl_firststate = 1;
 }
 
 /* Should we give out recallable state?: */
@@ -2855,6 +2889,27 @@ static int nfs4_set_delegation(struct nfs4_delegation *dp, int flag)
 	return 0;
 }
 
+static void nfsd4_open_deleg_none_ext(struct nfsd4_open *open, int status)
+{
+	open->op_delegate_type = NFS4_OPEN_DELEGATE_NONE_EXT;
+	if (status == -EAGAIN)
+		open->op_why_no_deleg = WND4_CONTENTION;
+	else {
+		open->op_why_no_deleg = WND4_RESOURCE;
+		switch (open->op_deleg_want) {
+		case NFS4_SHARE_WANT_READ_DELEG:
+		case NFS4_SHARE_WANT_WRITE_DELEG:
+		case NFS4_SHARE_WANT_ANY_DELEG:
+			break;
+		case NFS4_SHARE_WANT_CANCEL:
+			open->op_why_no_deleg = WND4_CANCELLED;
+			break;
+		case NFS4_SHARE_WANT_NO_DELEG:
+			BUG();	/* not supposed to get here */
+		}
+	}
+}
+
 /*
  * Attempt to hand out a delegation.
  */
@@ -2864,7 +2919,7 @@ nfs4_open_delegation(struct svc_fh *fh, struct nfsd4_open *open, struct nfs4_ol_
 	struct nfs4_delegation *dp;
 	struct nfs4_openowner *oo = container_of(stp->st_stateowner, struct nfs4_openowner, oo_owner);
 	int cb_up;
-	int status, flag = 0;
+	int status = 0, flag = 0;
 
 	cb_up = nfsd4_cb_channel_good(oo->oo_owner.so_client);
 	flag = NFS4_OPEN_DELEGATE_NONE;
@@ -2905,17 +2960,40 @@ nfs4_open_delegation(struct svc_fh *fh, struct nfsd4_open *open, struct nfs4_ol_
 	dprintk("NFSD: delegation stateid=" STATEID_FMT "\n",
 		STATEID_VAL(&dp->dl_stid.sc_stateid));
 out:
-	if (open->op_claim_type == NFS4_OPEN_CLAIM_PREVIOUS
-			&& flag == NFS4_OPEN_DELEGATE_NONE
-			&& open->op_delegate_type != NFS4_OPEN_DELEGATE_NONE)
-		dprintk("NFSD: WARNING: refusing delegation reclaim\n");
 	open->op_delegate_type = flag;
+	if (flag == NFS4_OPEN_DELEGATE_NONE) {
+		if (open->op_claim_type == NFS4_OPEN_CLAIM_PREVIOUS &&
+		    open->op_delegate_type != NFS4_OPEN_DELEGATE_NONE)
+			dprintk("NFSD: WARNING: refusing delegation reclaim\n");
+
+		/* 4.1 client asking for a delegation? */
+		if (open->op_deleg_want)
+			nfsd4_open_deleg_none_ext(open, status);
+	}
 	return;
 out_free:
 	nfs4_put_delegation(dp);
 out_no_deleg:
 	flag = NFS4_OPEN_DELEGATE_NONE;
 	goto out;
+}
+
+static void nfsd4_deleg_xgrade_none_ext(struct nfsd4_open *open,
+					struct nfs4_delegation *dp)
+{
+	if (open->op_deleg_want == NFS4_SHARE_WANT_READ_DELEG &&
+	    dp->dl_type == NFS4_OPEN_DELEGATE_WRITE) {
+		open->op_delegate_type = NFS4_OPEN_DELEGATE_NONE_EXT;
+		open->op_why_no_deleg = WND4_NOT_SUPP_DOWNGRADE;
+	} else if (open->op_deleg_want == NFS4_SHARE_WANT_WRITE_DELEG &&
+		   dp->dl_type == NFS4_OPEN_DELEGATE_WRITE) {
+		open->op_delegate_type = NFS4_OPEN_DELEGATE_NONE_EXT;
+		open->op_why_no_deleg = WND4_NOT_SUPP_UPGRADE;
+	}
+	/* Otherwise the client must be confused wanting a delegation
+	 * it already has, therefore we don't return
+	 * NFS4_OPEN_DELEGATE_NONE_EXT and reason.
+	 */
 }
 
 /*
@@ -2979,24 +3057,36 @@ nfsd4_process_open2(struct svc_rqst *rqstp, struct svc_fh *current_fh, struct nf
 	update_stateid(&stp->st_stid.sc_stateid);
 	memcpy(&open->op_stateid, &stp->st_stid.sc_stateid, sizeof(stateid_t));
 
-	if (nfsd4_has_session(&resp->cstate))
+	if (nfsd4_has_session(&resp->cstate)) {
 		open->op_openowner->oo_flags |= NFS4_OO_CONFIRMED;
+
+		if (open->op_deleg_want & NFS4_SHARE_WANT_NO_DELEG) {
+			open->op_delegate_type = NFS4_OPEN_DELEGATE_NONE_EXT;
+			open->op_why_no_deleg = WND4_NOT_WANTED;
+			goto nodeleg;
+		}
+	}
 
 	/*
 	* Attempt to hand out a delegation. No error return, because the
 	* OPEN succeeds even if we fail.
 	*/
 	nfs4_open_delegation(current_fh, open, stp);
-
+nodeleg:
 	status = nfs_ok;
 
 	dprintk("%s: stateid=" STATEID_FMT "\n", __func__,
 		STATEID_VAL(&stp->st_stid.sc_stateid));
 out:
+	/* 4.1 client trying to upgrade/downgrade delegation? */
+	if (open->op_delegate_type == NFS4_OPEN_DELEGATE_NONE && dp &&
+	    open->op_deleg_want)
+		nfsd4_deleg_xgrade_none_ext(open, dp);
+
 	if (fp)
 		put_nfs4_file(fp);
 	if (status == 0 && open->op_claim_type == NFS4_OPEN_CLAIM_PREVIOUS)
-		nfs4_set_claim_prev(open);
+		nfs4_set_claim_prev(open, nfsd4_has_session(&resp->cstate));
 	/*
 	* To finish the open response, we just need to set the rflags.
 	*/
@@ -3400,7 +3490,14 @@ __be32
 nfsd4_test_stateid(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 		   struct nfsd4_test_stateid *test_stateid)
 {
-	/* real work is done during encoding */
+	struct nfsd4_test_stateid_id *stateid;
+	struct nfs4_client *cl = cstate->session->se_client;
+
+	nfs4_lock_state();
+	list_for_each_entry(stateid, &test_stateid->ts_stateid_list, ts_id_list)
+		stateid->ts_id_status = nfs4_validate_stateid(cl, &stateid->ts_id_stateid);
+	nfs4_unlock_state();
+
 	return nfs_ok;
 }
 
@@ -3596,7 +3693,9 @@ nfsd4_open_downgrade(struct svc_rqst *rqstp,
 			cstate->current_fh.fh_dentry->d_name.name);
 
 	/* We don't yet support WANT bits: */
-	od->od_share_access &= NFS4_SHARE_ACCESS_MASK;
+	if (od->od_deleg_want)
+		dprintk("NFSD: %s: od_deleg_want=0x%x ignored\n", __func__,
+			od->od_deleg_want);
 
 	nfs4_lock_state();
 	status = nfs4_preprocess_confirmed_seqid_op(cstate, od->od_seqid,
@@ -4353,7 +4452,9 @@ nfs4_has_reclaimed_state(const char *name, bool use_exchange_id)
 	struct nfs4_client *clp;
 
 	clp = find_confirmed_client_by_str(name, strhashval);
-	return clp ? 1 : 0;
+	if (!clp)
+		return 0;
+	return clp->cl_firststate;
 }
 
 /*
@@ -4613,21 +4714,26 @@ set_max_delegations(void)
 
 /* initialization to perform when the nfsd service is started: */
 
-static int
-__nfs4_state_start(void)
+int
+nfs4_state_start(void)
 {
 	int ret;
 
+	nfsd4_load_reboot_recovery_data();
 	boot_time = get_seconds();
 	locks_start_grace(&nfsd4_manager);
 	printk(KERN_INFO "NFSD: starting %ld-second grace period\n",
 	       nfsd4_grace);
 	ret = set_callback_cred();
-	if (ret)
-		return -ENOMEM;
+	if (ret) {
+		ret = -ENOMEM;
+		goto out_recovery;
+	}
 	laundry_wq = create_singlethread_workqueue("nfsd4");
-	if (laundry_wq == NULL)
-		return -ENOMEM;
+	if (laundry_wq == NULL) {
+		ret = -ENOMEM;
+		goto out_recovery;
+	}
 	ret = nfsd4_create_callback_queue();
 	if (ret)
 		goto out_free_laundry;
@@ -4636,14 +4742,10 @@ __nfs4_state_start(void)
 	return 0;
 out_free_laundry:
 	destroy_workqueue(laundry_wq);
+out_recovery:
+	nfs4_release_reclaim();
+	nfsd4_shutdown_recdir();
 	return ret;
-}
-
-int
-nfs4_state_start(void)
-{
-	nfsd4_load_reboot_recovery_data();
-	return __nfs4_state_start();
 }
 
 static void
@@ -4690,4 +4792,105 @@ nfs4_state_shutdown(void)
 	__nfs4_state_shutdown();
 	nfs4_unlock_state();
 	nfsd4_destroy_callback_queue();
+}
+
+static void
+get_stateid(struct nfsd4_compound_state *cstate, stateid_t *stateid)
+{
+	if (HAS_STATE_ID(cstate, CURRENT_STATE_ID_FLAG) && CURRENT_STATEID(stateid))
+		memcpy(stateid, &cstate->current_stateid, sizeof(stateid_t));
+}
+
+static void
+put_stateid(struct nfsd4_compound_state *cstate, stateid_t *stateid)
+{
+	if (cstate->minorversion) {
+		memcpy(&cstate->current_stateid, stateid, sizeof(stateid_t));
+		SET_STATE_ID(cstate, CURRENT_STATE_ID_FLAG);
+	}
+}
+
+void
+clear_current_stateid(struct nfsd4_compound_state *cstate)
+{
+	CLEAR_STATE_ID(cstate, CURRENT_STATE_ID_FLAG);
+}
+
+/*
+ * functions to set current state id
+ */
+void
+nfsd4_set_opendowngradestateid(struct nfsd4_compound_state *cstate, struct nfsd4_open_downgrade *odp)
+{
+	put_stateid(cstate, &odp->od_stateid);
+}
+
+void
+nfsd4_set_openstateid(struct nfsd4_compound_state *cstate, struct nfsd4_open *open)
+{
+	put_stateid(cstate, &open->op_stateid);
+}
+
+void
+nfsd4_set_closestateid(struct nfsd4_compound_state *cstate, struct nfsd4_close *close)
+{
+	put_stateid(cstate, &close->cl_stateid);
+}
+
+void
+nfsd4_set_lockstateid(struct nfsd4_compound_state *cstate, struct nfsd4_lock *lock)
+{
+	put_stateid(cstate, &lock->lk_resp_stateid);
+}
+
+/*
+ * functions to consume current state id
+ */
+
+void
+nfsd4_get_opendowngradestateid(struct nfsd4_compound_state *cstate, struct nfsd4_open_downgrade *odp)
+{
+	get_stateid(cstate, &odp->od_stateid);
+}
+
+void
+nfsd4_get_delegreturnstateid(struct nfsd4_compound_state *cstate, struct nfsd4_delegreturn *drp)
+{
+	get_stateid(cstate, &drp->dr_stateid);
+}
+
+void
+nfsd4_get_freestateid(struct nfsd4_compound_state *cstate, struct nfsd4_free_stateid *fsp)
+{
+	get_stateid(cstate, &fsp->fr_stateid);
+}
+
+void
+nfsd4_get_setattrstateid(struct nfsd4_compound_state *cstate, struct nfsd4_setattr *setattr)
+{
+	get_stateid(cstate, &setattr->sa_stateid);
+}
+
+void
+nfsd4_get_closestateid(struct nfsd4_compound_state *cstate, struct nfsd4_close *close)
+{
+	get_stateid(cstate, &close->cl_stateid);
+}
+
+void
+nfsd4_get_lockustateid(struct nfsd4_compound_state *cstate, struct nfsd4_locku *locku)
+{
+	get_stateid(cstate, &locku->lu_stateid);
+}
+
+void
+nfsd4_get_readstateid(struct nfsd4_compound_state *cstate, struct nfsd4_read *read)
+{
+	get_stateid(cstate, &read->rd_stateid);
+}
+
+void
+nfsd4_get_writestateid(struct nfsd4_compound_state *cstate, struct nfsd4_write *write)
+{
+	get_stateid(cstate, &write->wr_stateid);
 }
