@@ -21,6 +21,7 @@ config ARM
 	select HAVE_KERNEL_GZIP
 	select HAVE_KERNEL_LZO
 	select HAVE_KERNEL_LZMA
+	select HAVE_KERNEL_XZ
 	select HAVE_IRQ_WORK
 	select HAVE_PERF_EVENTS
 	select PERF_USE_VMALLOC
@@ -28,7 +29,6 @@ config ARM
 	select HAVE_HW_BREAKPOINT if (PERF_EVENTS && (CPU_V6 || CPU_V6K || CPU_V7))
 	select HAVE_C_RECORDMCOUNT
 	select HAVE_GENERIC_HARDIRQS
-	select HAVE_SPARSE_IRQ
 	select GENERIC_IRQ_SHOW
 	select CPU_PM if (SUSPEND || CPU_IDLE)
 	select GENERIC_PCI_IOMAP
@@ -50,9 +50,6 @@ config MIGHT_HAVE_PCI
 	bool
 
 config SYS_SUPPORTS_APM_EMULATION
-	bool
-
-config HAVE_SCHED_CLOCK
 	bool
 
 config GENERIC_GPIO
@@ -186,6 +183,9 @@ config GENERIC_ISA_DMA
 config FIQ
 	bool
 
+config NEED_RET_TO_USER
+	bool
+
 config ARCH_MTD_XIP
 	bool
 
@@ -312,6 +312,7 @@ config ARCH_VEXPRESS
 	select HAVE_CLK
 	select HAVE_PATA_PLATFORM
 	select ICST
+	select NO_IOPORT
 	select PLAT_VERSATILE
 	select PLAT_VERSATILE_CLCD
 	help
@@ -350,6 +351,7 @@ config ARCH_HIGHBANK
 	select GENERIC_CLOCKEVENTS
 	select HAVE_ARM_SCU
 	select HAVE_SMP
+	select SPARSE_IRQ
 	select USE_OF
 	help
 	  Support for the Calxeda Highbank SoC based boards.
@@ -438,7 +440,6 @@ config ARCH_MXC
 	select CLKDEV_LOOKUP
 	select CLKSRC_MMIO
 	select GENERIC_IRQ_CHIP
-	select HAVE_SCHED_CLOCK
 	select MULTI_IRQ_HANDLER
 	help
 	  Support for Freescale MXC/iMX-based family of processors
@@ -479,6 +480,7 @@ config ARCH_IOP13XX
 	select ARCH_SUPPORTS_MSI
 	select VMSPLIT_1G
 	select NEED_MACH_MEMORY_H
+	select NEED_RET_TO_USER
 	help
 	  Support for Intel's IOP13XX (XScale) family of processors.
 
@@ -486,6 +488,7 @@ config ARCH_IOP32X
 	bool "IOP32x-based"
 	depends on MMU
 	select CPU_XSCALE
+	select NEED_RET_TO_USER
 	select PLAT_IOP
 	select PCI
 	select ARCH_REQUIRE_GPIOLIB
@@ -497,6 +500,7 @@ config ARCH_IOP33X
 	bool "IOP33x-based"
 	depends on MMU
 	select CPU_XSCALE
+	select NEED_RET_TO_USER
 	select PLAT_IOP
 	select PCI
 	select ARCH_REQUIRE_GPIOLIB
@@ -530,7 +534,6 @@ config ARCH_IXP4XX
 	select CPU_XSCALE
 	select GENERIC_GPIO
 	select GENERIC_CLOCKEVENTS
-	select HAVE_SCHED_CLOCK
 	select MIGHT_HAVE_PCI
 	select DMABOUNCE if PCI
 	help
@@ -601,7 +604,6 @@ config ARCH_MMP
 	select CLKDEV_LOOKUP
 	select GENERIC_CLOCKEVENTS
 	select GPIO_PXA
-	select HAVE_SCHED_CLOCK
 	select TICK_ONESHOT
 	select PLAT_PXA
 	select SPARSE_IRQ
@@ -642,7 +644,6 @@ config ARCH_TEGRA
 	select GENERIC_CLOCKEVENTS
 	select GENERIC_GPIO
 	select HAVE_CLK
-	select HAVE_SCHED_CLOCK
 	select HAVE_SMP
 	select MIGHT_HAVE_CACHE_L2X0
 	select ARCH_HAS_CPUFREQ
@@ -659,7 +660,6 @@ config ARCH_PICOXCELL
 	select DW_APB_TIMER
 	select GENERIC_CLOCKEVENTS
 	select GENERIC_GPIO
-	select HAVE_SCHED_CLOCK
 	select HAVE_TCM
 	select NO_IOPORT
 	select SPARSE_IRQ
@@ -687,7 +687,6 @@ config ARCH_PXA
 	select ARCH_REQUIRE_GPIOLIB
 	select GENERIC_CLOCKEVENTS
 	select GPIO_PXA
-	select HAVE_SCHED_CLOCK
 	select TICK_ONESHOT
 	select PLAT_PXA
 	select SPARSE_IRQ
@@ -731,7 +730,6 @@ config ARCH_RPC
 	bool "RiscPC"
 	select ARCH_ACORN
 	select FIQ
-	select TIMER_ACORN
 	select ARCH_MAY_HAVE_PC_FDC
 	select HAVE_PATA_PLATFORM
 	select ISA_DMA_API
@@ -755,11 +753,11 @@ config ARCH_SA1100
 	select CPU_FREQ
 	select GENERIC_CLOCKEVENTS
 	select HAVE_CLK
-	select HAVE_SCHED_CLOCK
 	select TICK_ONESHOT
 	select ARCH_REQUIRE_GPIOLIB
 	select HAVE_IDE
 	select NEED_MACH_MEMORY_H
+	select SPARSE_IRQ
 	help
 	  Support for StrongARM 11x0 based boards.
 
@@ -812,7 +810,6 @@ config ARCH_S5P64X0
 	select CLKSRC_MMIO
 	select HAVE_S3C2410_WATCHDOG if WATCHDOG
 	select GENERIC_CLOCKEVENTS
-	select HAVE_SCHED_CLOCK
 	select HAVE_S3C2410_I2C if I2C
 	select HAVE_S3C_RTC if RTC_CLASS
 	help
@@ -843,7 +840,6 @@ config ARCH_S5PV210
 	select CLKSRC_MMIO
 	select ARCH_HAS_CPUFREQ
 	select GENERIC_CLOCKEVENTS
-	select HAVE_SCHED_CLOCK
 	select HAVE_S3C2410_I2C if I2C
 	select HAVE_S3C_RTC if RTC_CLASS
 	select HAVE_S3C2410_WATCHDOG if WATCHDOG
@@ -886,7 +882,6 @@ config ARCH_U300
 	depends on MMU
 	select CLKSRC_MMIO
 	select CPU_ARM926T
-	select HAVE_SCHED_CLOCK
 	select HAVE_TCM
 	select ARM_AMBA
 	select ARM_PATCH_PHYS_VIRT
@@ -944,7 +939,6 @@ config ARCH_OMAP
 	select ARCH_HAS_CPUFREQ
 	select CLKSRC_MMIO
 	select GENERIC_CLOCKEVENTS
-	select HAVE_SCHED_CLOCK
 	select ARCH_HAS_HOLES_MEMORYMODEL
 	help
 	  Support for TI's OMAP platform (OMAP1/2/3/4).
@@ -1110,13 +1104,11 @@ config ARCH_ACORN
 config PLAT_IOP
 	bool
 	select GENERIC_CLOCKEVENTS
-	select HAVE_SCHED_CLOCK
 
 config PLAT_ORION
 	bool
 	select CLKSRC_MMIO
 	select GENERIC_IRQ_CHIP
-	select HAVE_SCHED_CLOCK
 
 config PLAT_PXA
 	bool
