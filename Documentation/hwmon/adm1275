@@ -62,7 +62,7 @@ in1_label		"vin1" or "vout1" depending on chip variant and
 			configuration. On ADM1075, vout1 reports the voltage on
 			the VAUX pin.
 in1_input		Measured voltage.
-in1_min			Minumum Voltage.
+in1_min			Minimum Voltage.
 in1_max			Maximum voltage.
 in1_min_alarm		Voltage low alarm.
 in1_max_alarm		Voltage high alarm.
