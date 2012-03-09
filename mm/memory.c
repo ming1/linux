@@ -112,6 +112,13 @@ __setup("norandmaps", disable_randmaps);
 unsigned long zero_pfn __read_mostly;
 unsigned long highest_memmap_pfn __read_mostly;
 
+/* Check if the vma is being used as a stack by this task */
+static int vm_is_stack_for_task(struct task_struct *t,
+				struct vm_area_struct *vma)
+{
+	return (vma->vm_start <= KSTK_ESP(t) && vma->vm_end >= KSTK_ESP(t));
+}
+
 /*
  * CONFIG_MMU architectures set up ZERO_PAGE in their paging_init()
  */
@@ -158,24 +165,6 @@ static void check_sync_rss_stat(struct task_struct *task)
 		return;
 	if (unlikely(task->rss_stat.events++ > TASK_RSS_EVENTS_THRESH))
 		__sync_task_rss_stat(task, task->mm);
-}
-
-unsigned long get_mm_counter(struct mm_struct *mm, int member)
-{
-	long val = 0;
-
-	/*
-	 * Don't use task->mm here...for avoiding to use task_get_mm()..
-	 * The caller must guarantee task->mm is not invalid.
-	 */
-	val = atomic_long_read(&mm->rss_stat.count[member]);
-	/*
-	 * counter is updated in asynchronous manner and may go to minus.
-	 * But it's never be expected number for users.
-	 */
-	if (val < 0)
-		return 0;
-	return (unsigned long)val;
 }
 
 void sync_mm_rss(struct task_struct *task, struct mm_struct *mm)
@@ -2880,6 +2869,7 @@ static int do_swap_page(struct mm_struct *mm, struct vm_area_struct *vma,
 	struct mem_cgroup *ptr;
 	int exclusive = 0;
 	int ret = 0;
+	bool swap_token;
 
 	if (!pte_unmap_same(mm, pmd, page_table, orig_pte))
 		goto out;
@@ -2928,7 +2918,12 @@ static int do_swap_page(struct mm_struct *mm, struct vm_area_struct *vma,
 		goto out_release;
 	}
 
+	swap_token = activate_swap_token(mm);
+
 	locked = lock_page_or_retry(page, mm, flags);
+
+	deactivate_swap_token(mm, swap_token);
+
 	delayacct_clear_flag(DELAYACCT_PF_SWAPIN);
 	if (!locked) {
 		ret |= VM_FAULT_RETRY;
@@ -3175,6 +3170,7 @@ static int __do_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 	struct vm_fault vmf;
 	int ret;
 	int page_mkwrite = 0;
+	bool swap_token;
 
 	/*
 	 * If we do COW later, allocate page befor taking lock_page()
@@ -3195,6 +3191,8 @@ static int __do_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 		}
 	} else
 		cow_page = NULL;
+
+	swap_token = activate_swap_token(mm);
 
 	vmf.virtual_address = (void __user *)(address & PAGE_MASK);
 	vmf.pgoff = pgoff;
@@ -3263,6 +3261,8 @@ static int __do_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 		}
 
 	}
+
+	deactivate_swap_token(mm, swap_token);
 
 	page_table = pte_offset_map_lock(mm, pmd, address, &ptl);
 
@@ -3335,9 +3335,11 @@ static int __do_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 	return ret;
 
 unwritable_page:
+	deactivate_swap_token(mm, swap_token);
 	page_cache_release(page);
 	return ret;
 uncharge_out:
+	deactivate_swap_token(mm, swap_token);
 	/* fs's fault handler get error */
 	if (cow_page) {
 		mem_cgroup_uncharge_page(cow_page);
@@ -3907,6 +3909,36 @@ void print_vma_addr(char *prefix, unsigned long ip)
 		}
 	}
 	up_read(&current->mm->mmap_sem);
+}
+
+/*
+ * Check if the vma is being used as a stack.
+ * If is_group is non-zero, check in the entire thread group or else
+ * just check in the current task. Returns the pid of the task that
+ * the vma is stack for.
+ */
+pid_t vm_is_stack(struct task_struct *task,
+		  struct vm_area_struct *vma, int in_group)
+{
+	pid_t ret = 0;
+
+	if (vm_is_stack_for_task(task, vma))
+		return task->pid;
+
+	if (in_group) {
+		struct task_struct *t = task;
+		rcu_read_lock();
+		while_each_thread(task, t) {
+			if (vm_is_stack_for_task(t, vma)) {
+				ret = t->pid;
+				goto done;
+			}
+		}
+	}
+
+done:
+	rcu_read_unlock();
+	return ret;
 }
 
 #ifdef CONFIG_PROVE_LOCKING
