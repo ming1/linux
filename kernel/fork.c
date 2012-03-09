@@ -67,6 +67,7 @@
 #include <linux/oom.h>
 #include <linux/khugepaged.h>
 #include <linux/signalfd.h>
+#include <linux/uprobes.h>
 
 #include <asm/pgtable.h>
 #include <asm/pgalloc.h>
@@ -732,6 +733,8 @@ void mm_release(struct task_struct *tsk, struct mm_struct *mm)
 		exit_pi_state_list(tsk);
 #endif
 
+	uprobe_free_utask(tsk);
+
 	/* Get rid of any cached register state */
 	deactivate_mm(tsk, mm);
 
@@ -1321,6 +1324,10 @@ static struct task_struct *copy_process(unsigned long clone_flags,
 #endif
 	INIT_LIST_HEAD(&p->pi_state_list);
 	p->pi_state_cache = NULL;
+#endif
+#ifdef CONFIG_UPROBES
+	p->utask = NULL;
+	p->uprobes_srcu_id = -1;
 #endif
 	/*
 	 * sigaltstack should be cleared when sharing the same VM
