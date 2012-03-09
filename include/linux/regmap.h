@@ -13,12 +13,12 @@
  * published by the Free Software Foundation.
  */
 
-#include <linux/device.h>
 #include <linux/list.h>
 
 #ifdef CONFIG_REGMAP
 
 struct module;
+struct device;
 struct i2c_client;
 struct spi_device;
 
