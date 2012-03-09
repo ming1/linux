@@ -33,7 +33,10 @@
 #include <linux/nfs_page.h>
 #include <linux/module.h>
 
+#include <linux/sunrpc/metrics.h>
+
 #include "internal.h"
+#include "delegation.h"
 #include "nfs4filelayout.h"
 
 #define NFSDBG_FACILITY         NFSDBG_PNFS_LD
@@ -84,12 +87,27 @@ static int filelayout_async_handle_error(struct rpc_task *task,
 					 struct nfs_client *clp,
 					 int *reset)
 {
+	struct nfs_server *mds_server = NFS_SERVER(state->inode);
+	struct nfs_client *mds_client = mds_server->nfs_client;
+
 	if (task->tk_status >= 0)
 		return 0;
-
 	*reset = 0;
 
 	switch (task->tk_status) {
+	/* MDS state errors */
+	case -NFS4ERR_DELEG_REVOKED:
+	case -NFS4ERR_ADMIN_REVOKED:
+	case -NFS4ERR_BAD_STATEID:
+		nfs_remove_bad_delegation(state->inode);
+	case -NFS4ERR_OPENMODE:
+		nfs4_schedule_stateid_recovery(mds_server, state);
+		goto wait_on_recovery;
+	case -NFS4ERR_EXPIRED:
+		nfs4_schedule_stateid_recovery(mds_server, state);
+		nfs4_schedule_lease_recovery(mds_client);
+		goto wait_on_recovery;
+	/* DS session errors */
 	case -NFS4ERR_BADSESSION:
 	case -NFS4ERR_BADSLOT:
 	case -NFS4ERR_BAD_HIGH_SLOT:
@@ -115,8 +133,14 @@ static int filelayout_async_handle_error(struct rpc_task *task,
 		*reset = 1;
 		break;
 	}
+out:
 	task->tk_status = 0;
 	return -EAGAIN;
+wait_on_recovery:
+	rpc_sleep_on(&mds_client->cl_rpcwaitq, task, NULL);
+	if (test_bit(NFS4CLNT_MANAGER_RUNNING, &mds_client->cl_state) == 0)
+		rpc_wake_up_queued_task(&mds_client->cl_rpcwaitq, task);
+	goto out;
 }
 
 /* NFS_PROTO call done callback routines */
@@ -173,7 +197,7 @@ static void filelayout_read_prepare(struct rpc_task *task, void *data)
 
 	if (nfs41_setup_sequence(rdata->ds_clp->cl_session,
 				&rdata->args.seq_args, &rdata->res.seq_res,
-				0, task))
+				task))
 		return;
 
 	rpc_call_start(task);
@@ -187,6 +211,13 @@ static void filelayout_read_call_done(struct rpc_task *task, void *data)
 
 	/* Note this may cause RPC to be resent */
 	rdata->mds_ops->rpc_call_done(task, data);
+}
+
+static void filelayout_read_count_stats(struct rpc_task *task, void *data)
+{
+	struct nfs_read_data *rdata = (struct nfs_read_data *)data;
+
+	rpc_count_iostats(task, NFS_SERVER(rdata->inode)->client->cl_metrics);
 }
 
 static void filelayout_read_release(void *data)
@@ -254,7 +285,7 @@ static void filelayout_write_prepare(struct rpc_task *task, void *data)
 
 	if (nfs41_setup_sequence(wdata->ds_clp->cl_session,
 				&wdata->args.seq_args, &wdata->res.seq_res,
-				0, task))
+				task))
 		return;
 
 	rpc_call_start(task);
@@ -266,6 +297,13 @@ static void filelayout_write_call_done(struct rpc_task *task, void *data)
 
 	/* Note this may cause RPC to be resent */
 	wdata->mds_ops->rpc_call_done(task, data);
+}
+
+static void filelayout_write_count_stats(struct rpc_task *task, void *data)
+{
+	struct nfs_write_data *wdata = (struct nfs_write_data *)data;
+
+	rpc_count_iostats(task, NFS_SERVER(wdata->inode)->client->cl_metrics);
 }
 
 static void filelayout_write_release(void *data)
@@ -288,18 +326,21 @@ static void filelayout_commit_release(void *data)
 struct rpc_call_ops filelayout_read_call_ops = {
 	.rpc_call_prepare = filelayout_read_prepare,
 	.rpc_call_done = filelayout_read_call_done,
+	.rpc_count_stats = filelayout_read_count_stats,
 	.rpc_release = filelayout_read_release,
 };
 
 struct rpc_call_ops filelayout_write_call_ops = {
 	.rpc_call_prepare = filelayout_write_prepare,
 	.rpc_call_done = filelayout_write_call_done,
+	.rpc_count_stats = filelayout_write_count_stats,
 	.rpc_release = filelayout_write_release,
 };
 
 struct rpc_call_ops filelayout_commit_call_ops = {
 	.rpc_call_prepare = filelayout_write_prepare,
 	.rpc_call_done = filelayout_write_call_done,
+	.rpc_count_stats = filelayout_write_count_stats,
 	.rpc_release = filelayout_commit_release,
 };
 
@@ -367,7 +408,8 @@ filelayout_write_pagelist(struct nfs_write_data *data, int sync)
 	idx = nfs4_fl_calc_ds_index(lseg, j);
 	ds = nfs4_fl_prepare_ds(lseg, idx);
 	if (!ds) {
-		printk(KERN_ERR "%s: prepare_ds failed, use MDS\n", __func__);
+		printk(KERN_ERR "NFS: %s: prepare_ds failed, use MDS\n",
+			__func__);
 		set_bit(lo_fail_bit(IOMODE_RW), &lseg->pls_layout->plh_flags);
 		set_bit(lo_fail_bit(IOMODE_READ), &lseg->pls_layout->plh_flags);
 		return PNFS_NOT_ATTEMPTED;
@@ -575,7 +617,7 @@ filelayout_decode_layout(struct pnfs_layout_hdr *flo,
 			goto out_err_free;
 		fl->fh_array[i]->size = be32_to_cpup(p++);
 		if (sizeof(struct nfs_fh) < fl->fh_array[i]->size) {
-			printk(KERN_ERR "Too big fh %d received %d\n",
+			printk(KERN_ERR "NFS: Too big fh %d received %d\n",
 			       i, fl->fh_array[i]->size);
 			goto out_err_free;
 		}
@@ -797,7 +839,8 @@ static int filelayout_initiate_commit(struct nfs_write_data *data, int how)
 	idx = calc_ds_index_from_commit(lseg, data->ds_commit_index);
 	ds = nfs4_fl_prepare_ds(lseg, idx);
 	if (!ds) {
-		printk(KERN_ERR "%s: prepare_ds failed, use MDS\n", __func__);
+		printk(KERN_ERR "NFS: %s: prepare_ds failed, use MDS\n",
+			__func__);
 		set_bit(lo_fail_bit(IOMODE_RW), &lseg->pls_layout->plh_flags);
 		set_bit(lo_fail_bit(IOMODE_READ), &lseg->pls_layout->plh_flags);
 		prepare_to_resend_writes(data);
