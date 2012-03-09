@@ -203,7 +203,6 @@ struct isci_host {
 	struct Scsi_Host *shost;
 	struct tasklet_struct completion_tasklet;
 	struct list_head requests_to_complete;
-	struct list_head requests_to_errorback;
 	spinlock_t scic_lock;
 	struct isci_request *reqs[SCI_MAX_IO_REQUESTS];
 	struct isci_remote_device devices[SCI_MAX_REMOTE_DEVICES];
