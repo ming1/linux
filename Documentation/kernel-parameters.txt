@@ -1311,6 +1311,12 @@ bytes respectively. Such letter suffixes can also be entirely omitted.
 			If there are multiple matching configurations changing
 			the same attribute, the last one is used.
 
+	libsas.force_hard_reset=
+			[LIBSAS] Clear SATA affiliations with every reset, for
+			cases where affiliation errors are causing boot
+			failures, otherwise use sysfs hard_reset interface to
+			clear individual phys.
+
 	memblock=debug	[KNL] Enable memblock debug messages.
 
 	load_ramdisk=	[RAM] List of ramdisks to load from floppy
