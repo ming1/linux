@@ -52,8 +52,8 @@
 
 extern struct t10_alua_lu_gp *default_lu_gp;
 
-static struct list_head g_tf_list;
-static struct mutex g_tf_lock;
+static LIST_HEAD(g_tf_list);
+static DEFINE_MUTEX(g_tf_lock);
 
 struct target_core_configfs_attribute {
 	struct configfs_attribute attr;
@@ -702,6 +702,9 @@ SE_DEV_ATTR_RO(hw_max_sectors);
 DEF_DEV_ATTRIB(max_sectors);
 SE_DEV_ATTR(max_sectors, S_IRUGO | S_IWUSR);
 
+DEF_DEV_ATTRIB(fabric_max_sectors);
+SE_DEV_ATTR(fabric_max_sectors, S_IRUGO | S_IWUSR);
+
 DEF_DEV_ATTRIB(optimal_sectors);
 SE_DEV_ATTR(optimal_sectors, S_IRUGO | S_IWUSR);
 
@@ -741,6 +744,7 @@ static struct configfs_attribute *target_core_dev_attrib_attrs[] = {
 	&target_core_dev_attrib_block_size.attr,
 	&target_core_dev_attrib_hw_max_sectors.attr,
 	&target_core_dev_attrib_max_sectors.attr,
+	&target_core_dev_attrib_fabric_max_sectors.attr,
 	&target_core_dev_attrib_optimal_sectors.attr,
 	&target_core_dev_attrib_hw_queue_depth.attr,
 	&target_core_dev_attrib_queue_depth.attr,
@@ -3117,8 +3121,6 @@ static int __init target_core_init_configfs(void)
 	config_group_init(&subsys->su_group);
 	mutex_init(&subsys->su_mutex);
 
-	INIT_LIST_HEAD(&g_tf_list);
-	mutex_init(&g_tf_lock);
 	ret = init_se_kmem_caches();
 	if (ret < 0)
 		return ret;
