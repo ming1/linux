@@ -437,7 +437,7 @@ struct md_personality
 	/* error_handler must set ->faulty and clear ->in_sync
 	 * if appropriate, and should abort recovery if needed 
 	 */
-	void (*error_handler)(struct mddev *mddev, struct md_rdev *rdev);
+	void (*error_handler)(struct mddev *mddev, struct md_rdev *rdev, int force);
 	int (*hot_add_disk) (struct mddev *mddev, struct md_rdev *rdev);
 	int (*hot_remove_disk) (struct mddev *mddev, struct md_rdev *rdev);
 	int (*spare_active) (struct mddev *mddev);
@@ -579,7 +579,7 @@ extern void md_check_recovery(struct mddev *mddev);
 extern void md_write_start(struct mddev *mddev, struct bio *bi);
 extern void md_write_end(struct mddev *mddev);
 extern void md_done_sync(struct mddev *mddev, int blocks, int ok);
-extern void md_error(struct mddev *mddev, struct md_rdev *rdev);
+extern void md_error(struct mddev *mddev, struct md_rdev *rdev, int force);
 
 extern int mddev_congested(struct mddev *mddev, int bits);
 extern void md_flush_request(struct mddev *mddev, struct bio *bio);

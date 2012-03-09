@@ -1907,7 +1907,8 @@ location_store(struct mddev *mddev, const char *buf, size_t len)
 				if (rv) {
 					bitmap_destroy(mddev);
 					mddev->bitmap_info.offset = 0;
-				}
+				} else
+					bitmap_load(mddev);
 				mddev->pers->quiesce(mddev, 0);
 				if (rv)
 					return rv;
