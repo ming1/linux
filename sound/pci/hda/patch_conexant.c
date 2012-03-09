@@ -465,21 +465,8 @@ static const struct snd_kcontrol_new cxt_beep_mixer[] = {
 };
 #endif
 
-static const char * const slave_vols[] = {
-	"Headphone Playback Volume",
-	"Speaker Playback Volume",
-	"Front Playback Volume",
-	"Surround Playback Volume",
-	"CLFE Playback Volume",
-	NULL
-};
-
-static const char * const slave_sws[] = {
-	"Headphone Playback Switch",
-	"Speaker Playback Switch",
-	"Front Playback Switch",
-	"Surround Playback Switch",
-	"CLFE Playback Switch",
+static const char * const slave_pfxs[] = {
+	"Headphone", "Speaker", "Front", "Surround", "CLFE",
 	NULL
 };
 
@@ -519,14 +506,16 @@ static int conexant_build_controls(struct hda_codec *codec)
 		snd_hda_set_vmaster_tlv(codec, spec->vmaster_nid,
 					HDA_OUTPUT, vmaster_tlv);
 		err = snd_hda_add_vmaster(codec, "Master Playback Volume",
-					  vmaster_tlv, slave_vols);
+					  vmaster_tlv, slave_pfxs,
+					  "Playback Volume");
 		if (err < 0)
 			return err;
 	}
 	if (spec->vmaster_nid &&
 	    !snd_hda_find_mixer_ctl(codec, "Master Playback Switch")) {
 		err = snd_hda_add_vmaster(codec, "Master Playback Switch",
-					  NULL, slave_sws);
+					  NULL, slave_pfxs,
+					  "Playback Switch");
 		if (err < 0)
 			return err;
 	}
@@ -3034,7 +3023,6 @@ static const struct snd_pci_quirk cxt5066_cfg_tbl[] = {
 	SND_PCI_QUIRK(0x17aa, 0x3a0d, "Lenovo U350", CXT5066_ASUS),
 	SND_PCI_QUIRK(0x17aa, 0x38af, "Lenovo G560", CXT5066_ASUS),
 	SND_PCI_QUIRK(0x17aa, 0x3938, "Lenovo G565", CXT5066_AUTO),
-	SND_PCI_QUIRK_VENDOR(0x17aa, "Lenovo", CXT5066_IDEAPAD), /* Fallback for Lenovos without dock mic */
 	SND_PCI_QUIRK(0x1b0a, 0x2092, "CyberpowerPC Gamer Xplorer N57001", CXT5066_AUTO),
 	{}
 };
@@ -3943,6 +3931,50 @@ static void enable_unsol_pins(struct hda_codec *codec, int num_pins,
 		snd_hda_jack_detect_enable(codec, pins[i], action);
 }
 
+static bool found_in_nid_list(hda_nid_t nid, const hda_nid_t *list, int nums)
+{
+	int i;
+	for (i = 0; i < nums; i++)
+		if (list[i] == nid)
+			return true;
+	return false;
+}
+
+/* is the given NID found in any of autocfg items? */
+static bool found_in_autocfg(struct auto_pin_cfg *cfg, hda_nid_t nid)
+{
+	int i;
+
+	if (found_in_nid_list(nid, cfg->line_out_pins, cfg->line_outs) ||
+	    found_in_nid_list(nid, cfg->hp_pins, cfg->hp_outs) ||
+	    found_in_nid_list(nid, cfg->speaker_pins, cfg->speaker_outs) ||
+	    found_in_nid_list(nid, cfg->dig_out_pins, cfg->dig_outs))
+		return true;
+	for (i = 0; i < cfg->num_inputs; i++)
+		if (cfg->inputs[i].pin == nid)
+			return true;
+	if (cfg->dig_in_pin == nid)
+		return true;
+	return false;
+}
+
+/* clear unsol-event tags on unused pins; Conexant codecs seem to leave
+ * invalid unsol tags by some reason
+ */
+static void clear_unsol_on_unused_pins(struct hda_codec *codec)
+{
+	struct conexant_spec *spec = codec->spec;
+	struct auto_pin_cfg *cfg = &spec->autocfg;
+	int i;
+
+	for (i = 0; i < codec->init_pins.used; i++) {
+		struct hda_pincfg *pin = snd_array_elem(&codec->init_pins, i);
+		if (!found_in_autocfg(cfg, pin->nid))
+			snd_hda_codec_write(codec, pin->nid, 0,
+					    AC_VERB_SET_UNSOLICITED_ENABLE, 0);
+	}
+}
+
 static void cx_auto_init_output(struct hda_codec *codec)
 {
 	struct conexant_spec *spec = codec->spec;
@@ -3983,6 +4015,7 @@ static void cx_auto_init_output(struct hda_codec *codec)
 	/* turn on all EAPDs if no individual EAPD control is available */
 	if (!spec->pin_eapd_ctrls)
 		cx_auto_turn_eapd(codec, spec->num_eapds, spec->eapds, true);
+	clear_unsol_on_unused_pins(codec);
 }
 
 static void cx_auto_init_input(struct hda_codec *codec)
@@ -4368,6 +4401,7 @@ static const struct cxt_pincfg cxt_pincfg_lenovo_x200[] = {
 	{ 0x16, 0x042140ff }, /* HP (seq# overridden) */
 	{ 0x17, 0x21a11000 }, /* dock-mic */
 	{ 0x19, 0x2121103f }, /* dock-HP */
+	{ 0x1c, 0x21440100 }, /* dock SPDIF out */
 	{}
 };
 
@@ -4434,6 +4468,18 @@ static int patch_conexant_auto(struct hda_codec *codec)
 	codec->patch_ops = cx_auto_patch_ops;
 	if (spec->beep_amp)
 		snd_hda_attach_beep_device(codec, spec->beep_amp);
+
+	/* Some laptops with Conexant chips show stalls in S3 resume,
+	 * which falls into the single-cmd mode.
+	 * Better to make reset, then.
+	 */
+	if (!codec->bus->sync_write) {
+		snd_printd("hda_codec: "
+			   "Enable sync_write for stable communication\n");
+		codec->bus->sync_write = 1;
+		codec->bus->allow_bus_reset = 1;
+	}
+
 	return 0;
 }
 
