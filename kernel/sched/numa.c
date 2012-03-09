@@ -27,6 +27,8 @@ struct numa_ops {
 	void		(*mem_migrate)(struct numa_entity *ne, int node);
 	void		(*cpu_migrate)(struct numa_entity *ne, int node);
 
+	u64		(*cpu_runtime)(struct numa_entity *ne);
+
 	bool		(*tryget)(struct numa_entity *ne);
 	void		(*put)(struct numa_entity *ne);
 };
@@ -208,6 +210,21 @@ static void process_mem_migrate(struct numa_entity *ne, int node)
 	lazy_migrate_process(ne_mm(ne), node);
 }
 
+static u64 process_cpu_runtime(struct numa_entity *ne)
+{
+	struct task_struct *p, *t;
+	u64 runtime = 0;
+
+	rcu_read_lock();
+	t = p = ne_owner(ne);
+	if (p) do {
+		runtime += t->se.sum_exec_runtime; // @#$#@ 32bit
+	} while ((t = next_thread(t)) != p);
+	rcu_read_unlock();
+
+	return runtime;
+}
+
 static bool process_tryget(struct numa_entity *ne)
 {
 	/*
@@ -230,6 +247,8 @@ static const struct numa_ops process_numa_ops = {
 
 	.mem_migrate	= process_mem_migrate,
 	.cpu_migrate	= process_cpu_migrate,
+
+	.cpu_runtime	= process_cpu_runtime,
 
 	.tryget		= process_tryget,
 	.put		= process_put,
@@ -621,6 +640,14 @@ static bool can_move_ne(struct numa_entity *ne)
 	 * XXX: consider mems_allowed, stinking cpusets has mems_allowed
 	 * per task and it can actually differ over a whole process, la-la-la.
 	 */
+
+	/*
+	 * Don't bother migrating memory if there's less than 1 second
+	 * of runtime on the tasks.
+	 */
+	if (ne->nops->cpu_runtime(ne) < NSEC_PER_SEC)
+		return false;
+
 	return true;
 }
 
