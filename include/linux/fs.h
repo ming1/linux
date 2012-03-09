@@ -1464,6 +1464,7 @@ struct super_block {
 	u8 s_uuid[16];				/* UUID */
 
 	void 			*s_fs_info;	/* Filesystem private info */
+	unsigned int		s_max_links;
 	fmode_t			s_mode;
 
 	/* Granularity of c/m/atime in ns.
@@ -2309,7 +2310,10 @@ extern struct inode * igrab(struct inode *);
 extern ino_t iunique(struct super_block *, ino_t);
 extern int inode_needs_sync(struct inode *inode);
 extern int generic_delete_inode(struct inode *inode);
-extern int generic_drop_inode(struct inode *inode);
+static inline int generic_drop_inode(struct inode *inode)
+{
+	return !inode->i_nlink || inode_unhashed(inode);
+}
 
 extern struct inode *ilookup5_nowait(struct super_block *sb,
 		unsigned long hashval, int (*test)(struct inode *, void *),

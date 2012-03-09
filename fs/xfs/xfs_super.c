@@ -1340,6 +1340,7 @@ xfs_fs_fill_super(
 	sb->s_blocksize = mp->m_sb.sb_blocksize;
 	sb->s_blocksize_bits = ffs(sb->s_blocksize) - 1;
 	sb->s_maxbytes = xfs_max_file_offset(sb->s_blocksize_bits);
+	sb->s_max_links = XFS_MAXLINK;
 	sb->s_time_gran = 1;
 	set_posix_acl_flag(sb);
 
@@ -1360,10 +1361,10 @@ xfs_fs_fill_super(
 		error = EINVAL;
 		goto out_syncd_stop;
 	}
-	sb->s_root = d_alloc_root(root);
+	sb->s_root = d_make_root(root);
 	if (!sb->s_root) {
 		error = ENOMEM;
-		goto out_iput;
+		goto out_syncd_stop;
 	}
 
 	return 0;
@@ -1382,8 +1383,6 @@ xfs_fs_fill_super(
  out:
 	return -error;
 
- out_iput:
-	iput(root);
  out_syncd_stop:
 	xfs_syncd_stop(mp);
  out_unmount:
