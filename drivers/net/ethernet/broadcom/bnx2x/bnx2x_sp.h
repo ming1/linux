@@ -1,6 +1,6 @@
 /* bnx2x_sp.h: Broadcom Everest network driver.
  *
- * Copyright 2011 Broadcom Corporation
+ * Copyright (c) 2011-2012 Broadcom Corporation
  *
  * Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -774,6 +774,7 @@ enum bnx2x_queue_cmd {
 enum {
 	BNX2X_Q_FLG_TPA,
 	BNX2X_Q_FLG_TPA_IPV6,
+	BNX2X_Q_FLG_TPA_GRO,
 	BNX2X_Q_FLG_STATS,
 	BNX2X_Q_FLG_ZERO_STATS,
 	BNX2X_Q_FLG_ACTIVE,
@@ -803,10 +804,10 @@ enum bnx2x_q_type {
 };
 
 #define BNX2X_PRIMARY_CID_INDEX			0
-#define BNX2X_MULTI_TX_COS_E1X			1
+#define BNX2X_MULTI_TX_COS_E1X			3 /* QM only */
 #define BNX2X_MULTI_TX_COS_E2_E3A0		2
 #define BNX2X_MULTI_TX_COS_E3B0			3
-#define BNX2X_MULTI_TX_COS			BNX2X_MULTI_TX_COS_E3B0
+#define BNX2X_MULTI_TX_COS			3 /* Maximum possible */
 
 
 struct bnx2x_queue_init_params {

@@ -1082,7 +1082,8 @@ struct net_device {
 	const struct header_ops *header_ops;
 
 	unsigned int		flags;	/* interface flags (a la BSD)	*/
-	unsigned int		priv_flags; /* Like 'flags' but invisible to userspace. */
+	unsigned int		priv_flags; /* Like 'flags' but invisible to userspace.
+					     * See if.h for definitions. */
 	unsigned short		gflags;
 	unsigned short		padded;	/* How much padding added by alloc_netdev() */
 
@@ -2121,7 +2122,7 @@ extern int netdev_rx_handler_register(struct net_device *dev,
 				      void *rx_handler_data);
 extern void netdev_rx_handler_unregister(struct net_device *dev);
 
-extern int		dev_valid_name(const char *name);
+extern bool		dev_valid_name(const char *name);
 extern int		dev_ioctl(struct net *net, unsigned int cmd, void __user *);
 extern int		dev_ethtool(struct net *net, struct ifreq *);
 extern unsigned		dev_get_flags(const struct net_device *);
@@ -2556,6 +2557,8 @@ extern void		dev_load(struct net *net, const char *name);
 extern void		dev_mcast_init(void);
 extern struct rtnl_link_stats64 *dev_get_stats(struct net_device *dev,
 					       struct rtnl_link_stats64 *storage);
+extern void netdev_stats_to_stats64(struct rtnl_link_stats64 *stats64,
+				    const struct net_device_stats *netdev_stats);
 
 extern int		netdev_max_backlog;
 extern int		netdev_tstamp_prequeue;
@@ -2648,6 +2651,11 @@ static inline void netif_set_gso_max_size(struct net_device *dev,
 static inline int netif_is_bond_slave(struct net_device *dev)
 {
 	return dev->flags & IFF_SLAVE && dev->priv_flags & IFF_BONDING;
+}
+
+static inline bool netif_supports_nofcs(struct net_device *dev)
+{
+	return dev->priv_flags & IFF_SUPP_NOFCS;
 }
 
 extern struct pernet_operations __net_initdata loopback_net_ops;

@@ -8,6 +8,7 @@
  */
 
 #include <linux/slab.h>
+#include <asm/unaligned.h>
 #include "wme.h"
 #include "mesh.h"
 
@@ -575,7 +576,7 @@ static void hwmp_preq_frame_process(struct ieee80211_sub_if_data *sdata,
 			ifmsh->mshstats.dropped_frames_ttl++;
 	}
 
-	if (forward) {
+	if (forward && ifmsh->mshcfg.dot11MeshForwarding) {
 		u32 preq_id;
 		u8 hopcount, flags;
 
