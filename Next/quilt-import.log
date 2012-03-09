@@ -1,0 +1,33 @@
+Importing hexagon based on v3.2-rc2
+Unchanged quilt series hexagon
+Importing i2c based on 4f262acfde22b63498b5e4f165e53d3bb4e96400
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard 4f262acfde22b63498b5e4f165e53d3bb4e96400
+HEAD is now at 4f262ac Merge branch 'fixes' of git://git.linaro.org/people/rmk/linux-arm
+$ git am ../quilt/i2c/i2c-core-comment-says-transmitted-but-means-received.patch
+Applying: i2c-core: Comment says "transmitted" but means "received"
+$ git am ../quilt/i2c/i2c-gpio-use-linux-gpio.h-rather-than-asm-gpio.h.patch
+Applying: i2c-gpio: Use linux/gpio.h rather than asm/gpio.h
+$ git am ../quilt/i2c/i2c-isch-decrease-delay-in-command-completion-check-loop.patch
+Applying: i2c-isch: Decrease delay in command completion check loop
+$ git am ../quilt/i2c/i2c-i801-01-add-device-ids-for-intel-lynx-point.patch
+Applying: i2c-i801: Add device IDs for Intel Lynx Point
+$ git am ../quilt/i2c/i2c-i801-02-use-usleep_range.patch
+Applying: i2c-i801: Use usleep_range to wait for command completion
+$ git am ../quilt/i2c/i2c-convert-mux-drivers-to-use-module_i2c_driver.patch
+Applying: i2c: Convert drivers/i2c/muxes/* to use module_i2c_driver()
+$ git am ../quilt/i2c/i2c-update-FSF-address.patch
+Applying: i2c: Update the FSF address
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/i2c
+From ../quilt-tmp
+ + c3632e0...b750167 master     -> quilt/i2c  (forced update)
+Importing jdelvare-hwmon based on 3.3-rc5
+Unchanged quilt series jdelvare-hwmon
+Importing kernel-doc based on 3.3-rc2
+Unchanged quilt series kernel-doc
+Importing rr based on v3.3-rc5-86-g5ffca28
+Unchanged quilt series rr
+Importing device-mapper based on v3.3-rc6
+Unchanged quilt series device-mapper
