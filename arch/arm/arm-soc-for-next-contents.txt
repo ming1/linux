@@ -35,6 +35,8 @@ omap/cleanup		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap cl
 tegra/cleanup		git://git.kernel.org/pub/scm/linux/kernel/git/olof/tegra.git tags/tegra-cleanups
 samsung/cleanup-use-static http://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/cleanup-use-static
 samsung/cleanup-s3c24xx	git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/cleanup-s3c24xx
+omap/cleanup-pm		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap cleanup-pm
+omap/uart		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap uart
 
 next/soc:
 ux500/timers		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git ux500-timers
