@@ -67,6 +67,7 @@ pxa/rtc			git://github.com/hzhuang1/linux.git rtc-sa1100
 tegra/soc-drivers	git://git.kernel.org/pub/scm/linux/kernel/git/olof/tegra.git tags/tegra-soc-drivers
 				depends on depends/irqdomain
 pxa/regulator		git://github.com/hzhuang1/linux.git regulator
+omap/sr			git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap sr
 
 next/cleanup2:
 at91/base2+cleanup	git://github.com/at91linux/linux-at91.git at91-3.4-base2+cleanup
