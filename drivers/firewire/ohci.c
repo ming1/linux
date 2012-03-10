@@ -338,8 +338,6 @@ MODULE_PARM_DESC(quirks, "Chip quirks (default = 0"
 #define OHCI_PARAM_DEBUG_IRQS		4
 #define OHCI_PARAM_DEBUG_BUSRESETS	8 /* only effective before chip init */
 
-#ifdef CONFIG_FIREWIRE_OHCI_DEBUG
-
 static int param_debug;
 module_param_named(debug, param_debug, int, 0644);
 MODULE_PARM_DESC(debug, "Verbose logging (default = 0"
@@ -519,15 +517,6 @@ static void log_ar_at_event(struct fw_ohci *ohci,
 			   tcodes[tcode], specific);
 	}
 }
-
-#else
-
-#define param_debug 0
-static inline void log_irqs(struct fw_ohci *ohci, u32 evt) {}
-static inline void log_selfids(struct fw_ohci *ohci, int generation, int self_id_count) {}
-static inline void log_ar_at_event(struct fw_ohci *ohci, char dir, int speed, u32 *header, int evt) {}
-
-#endif /* CONFIG_FIREWIRE_OHCI_DEBUG */
 
 static inline void reg_write(const struct fw_ohci *ohci, int offset, u32 data)
 {
@@ -1640,17 +1629,10 @@ static void detect_dead_context(struct fw_ohci *ohci,
 	u32 ctl;
 
 	ctl = reg_read(ohci, CONTROL_SET(regs));
-	if (ctl & CONTEXT_DEAD) {
-#ifdef CONFIG_FIREWIRE_OHCI_DEBUG
+	if (ctl & CONTEXT_DEAD)
 		dev_err(ohci->card.device,
 			"DMA context %s has stopped, error code: %s\n",
 			name, evts[ctl & 0x1f]);
-#else
-		dev_err(ohci->card.device,
-			"DMA context %s has stopped, error code: %#x\n",
-			name, ctl & 0x1f);
-#endif
-	}
 }
 
 static void handle_dead_contexts(struct fw_ohci *ohci)
@@ -2080,8 +2062,7 @@ static irqreturn_t irq_handler(int irq, void *data)
 	}
 
 	if (unlikely(event & OHCI1394_regAccessFail))
-		dev_err(ohci->card.device,
-			"register access failure - please notify linux1394-devel@lists.sf.net\n");
+		dev_err(ohci->card.device, "register access failure\n");
 
 	if (unlikely(event & OHCI1394_postedWriteErr)) {
 		reg_read(ohci, OHCI1394_PostedWriteAddressHi);
