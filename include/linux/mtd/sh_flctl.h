@@ -149,6 +149,7 @@ struct sh_flctl {
 	unsigned page_size:1;	/* NAND page size (0 = 512, 1 = 2048) */
 	unsigned hwecc:1;	/* Hardware ECC (0 = disabled, 1 = enabled) */
 	unsigned holden:1;	/* Hardware has FLHOLDCR and HOLDEN is set */
+	unsigned power:1;	/* RTPM flag */
 };
 
 struct sh_flctl_platform_data {
