@@ -16,6 +16,7 @@
  * published by the Free Software Foundation.
  */
 
+#include <mach/io.h>
 
 /* SDRC register offsets - read/write with sdrc_{read,write}_reg() */
 

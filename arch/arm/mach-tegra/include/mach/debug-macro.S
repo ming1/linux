@@ -25,6 +25,7 @@
  */
 
 #include <linux/serial_reg.h>
+#include <mach/io.h>
 #include <mach/iomap.h>
 #include <mach/irammap.h>
 

@@ -26,7 +26,6 @@
 
 #include <asm/page.h>
 #include <asm/mach/map.h>
-#include <mach/iomap.h>
 
 #include "board.h"
 

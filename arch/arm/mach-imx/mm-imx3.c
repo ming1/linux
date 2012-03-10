@@ -61,8 +61,8 @@ static void imx3_idle(void)
 		: "=r" (reg));
 }
 
-static void __iomem *imx3_ioremap_caller(unsigned long phys_addr, size_t size,
-					 unsigned int mtype, void *caller)
+static void __iomem *imx3_ioremap(unsigned long phys_addr, size_t size,
+				  unsigned int mtype)
 {
 	if (mtype == MT_DEVICE) {
 		/*
@@ -75,7 +75,7 @@ static void __iomem *imx3_ioremap_caller(unsigned long phys_addr, size_t size,
 			mtype = MT_DEVICE_NONSHARED;
 	}
 
-	return __arm_ioremap_caller(phys_addr, size, mtype, caller);
+	return __arm_ioremap(phys_addr, size, mtype);
 }
 
 void __init imx3_init_l2x0(void)
@@ -134,7 +134,7 @@ void __init imx31_init_early(void)
 {
 	mxc_set_cpu_type(MXC_CPU_MX31);
 	mxc_arch_reset_init(MX31_IO_ADDRESS(MX31_WDOG_BASE_ADDR));
-	arch_ioremap_caller = imx3_ioremap_caller;
+	imx_ioremap = imx3_ioremap;
 	arm_pm_idle = imx3_idle;
 }
 
@@ -201,7 +201,7 @@ void __init imx35_init_early(void)
 	mxc_iomux_v3_init(MX35_IO_ADDRESS(MX35_IOMUXC_BASE_ADDR));
 	mxc_arch_reset_init(MX35_IO_ADDRESS(MX35_WDOG_BASE_ADDR));
 	arm_pm_idle = imx3_idle;
-	arch_ioremap_caller = imx3_ioremap_caller;
+	imx_ioremap = imx3_ioremap;
 }
 
 void __init mx35_init_irq(void)

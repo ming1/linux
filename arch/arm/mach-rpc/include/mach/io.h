@@ -28,4 +28,9 @@
  */
 #define __io(a)		(PCIO_BASE + ((a) << 2))
 
+/*
+ * 1:1 mapping for ioremapped regions.
+ */
+#define __mem_pci(x)	(x)
+
 #endif

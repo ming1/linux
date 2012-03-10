@@ -243,7 +243,6 @@ static void __init omixp_init(void)
 MACHINE_START(DEVIXP, "Omicron DEVIXP")
 	.atag_offset    = 0x100,
 	.map_io		= ixp4xx_map_io,
-	.init_early	= ixp4xx_init_early,
 	.init_irq	= ixp4xx_init_irq,
 	.timer          = &ixp4xx_timer,
 	.init_machine	= omixp_init,
@@ -255,7 +254,6 @@ MACHINE_END
 MACHINE_START(MICCPT, "Omicron MICCPT")
 	.atag_offset    = 0x100,
 	.map_io		= ixp4xx_map_io,
-	.init_early	= ixp4xx_init_early,
 	.init_irq	= ixp4xx_init_irq,
 	.timer          = &ixp4xx_timer,
 	.init_machine	= omixp_init,
@@ -270,7 +268,6 @@ MACHINE_END
 MACHINE_START(MIC256, "Omicron MIC256")
 	.atag_offset    = 0x100,
 	.map_io		= ixp4xx_map_io,
-	.init_early	= ixp4xx_init_early,
 	.init_irq	= ixp4xx_init_irq,
 	.timer          = &ixp4xx_timer,
 	.init_machine	= omixp_init,

@@ -36,6 +36,8 @@
 
 #include <asm/assembler.h>
 
+#include <mach/io.h>
+
 #include "iomap.h"
 #include "pm.h"
 

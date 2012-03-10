@@ -28,6 +28,7 @@
 #include <linux/clk.h>
 #include <linux/slab.h>
 
+#include <mach/io.h>
 #include <mach/cputype.h>
 #include <mach/hardware.h>
 
