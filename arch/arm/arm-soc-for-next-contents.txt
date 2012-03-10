@@ -72,6 +72,7 @@ omap/sr			git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap sr
 next/cleanup2:
 at91/base2+cleanup	git://github.com/at91linux/linux-at91.git at91-3.4-base2+cleanup
 				depends on at91/base, at91/pm_cleanup, at91/device-board and at91/9x5
+devel/io-cleanup	git://sources.calxeda.com/kernel/linux.git io-cleanup-for-3.4
 
 next/dt:
 vexpress/dt		git://git.linaro.org/people/pawelmoll/linux.git vexpress-dt-v3.3-rc4
