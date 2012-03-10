@@ -93,6 +93,8 @@ omap/omap1		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap omap
 imx/vistrim		git://git.pengutronix.de/git/imx/linux-2.6.git features/imx27-visstrim
 imx/moboard		git://git.pengutronix.de/git/imx/linux-2.6.git features/imx31-moboard
 tegra/boards		git://git.kernel.org/pub/scm/linux/kernel/git/olof/tegra.git tags/tegra-boards
+omap/ams-delta		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap ams-delta
+omap/board		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap board
 
 next/rpmsg:
 rpmsg/base		git://git.kernel.org/pub/scm/linux/kernel/git/ohad/remoteproc.git rpmsg-for-3.4
