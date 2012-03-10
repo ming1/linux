@@ -16,6 +16,7 @@ omap/fixes-non-critical git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/lin
 ux500/fixes-non-critical git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git/ ux500-fixes-20120301
 omap/fixes-non-critical2 git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap fixes-non-critical-part2
 [patch]			http://marc.info/?l=linux-arm-kernel&m=133117015313463&w=2
+omap/fixes-non-critical-part3	git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap fixes-non-critical-part3
 
 next/maintainers:
 imx/maintainers		git://git.linaro.org/people/shawnguo/linux-2.6.git imx/maintainers
