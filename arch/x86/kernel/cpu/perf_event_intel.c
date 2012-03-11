@@ -727,6 +727,19 @@ static __initconst const u64 atom_hw_cache_event_ids
  },
 };
 
+static inline bool intel_pmu_needs_lbr_smpl(struct perf_event *event)
+{
+	/* user explicitly requested branch sampling */
+	if (has_branch_stack(event))
+		return true;
+
+	/* implicit branch sampling to correct PEBS skid */
+	if (x86_pmu.intel_cap.pebs_trap && event->attr.precise_ip > 1)
+		return true;
+
+	return false;
+}
+
 static void intel_pmu_disable_all(void)
 {
 	struct cpu_hw_events *cpuc = &__get_cpu_var(cpu_hw_events);
@@ -881,6 +894,13 @@ static void intel_pmu_disable_event(struct perf_event *event)
 	cpuc->intel_ctrl_guest_mask &= ~(1ull << hwc->idx);
 	cpuc->intel_ctrl_host_mask &= ~(1ull << hwc->idx);
 
+	/*
+	 * must disable before any actual event
+	 * because any event may be combined with LBR
+	 */
+	if (intel_pmu_needs_lbr_smpl(event))
+		intel_pmu_lbr_disable(event);
+
 	if (unlikely(hwc->config_base == MSR_ARCH_PERFMON_FIXED_CTR_CTRL)) {
 		intel_pmu_disable_fixed(hwc);
 		return;
@@ -935,6 +955,12 @@ static void intel_pmu_enable_event(struct perf_event *event)
 		intel_pmu_enable_bts(hwc->config);
 		return;
 	}
+	/*
+	 * must enabled before any actual event
+	 * because any event may be combined with LBR
+	 */
+	if (intel_pmu_needs_lbr_smpl(event))
+		intel_pmu_lbr_enable(event);
 
 	if (event->attr.exclude_host)
 		cpuc->intel_ctrl_guest_mask |= (1ull << hwc->idx);
@@ -1057,6 +1083,9 @@ again:
 
 		data.period = event->hw.last_period;
 
+		if (has_branch_stack(event))
+			data.br_stack = &cpuc->lbr_stack;
+
 		if (perf_event_overflow(event, &data, regs))
 			x86_pmu_stop(event, 0);
 	}
@@ -1123,17 +1152,17 @@ static bool intel_try_alt_er(struct perf_event *event, int orig_idx)
  */
 static struct event_constraint *
 __intel_shared_reg_get_constraints(struct cpu_hw_events *cpuc,
-				   struct perf_event *event)
+				   struct perf_event *event,
+				   struct hw_perf_event_extra *reg)
 {
 	struct event_constraint *c = &emptyconstraint;
-	struct hw_perf_event_extra *reg = &event->hw.extra_reg;
 	struct er_account *era;
 	unsigned long flags;
 	int orig_idx = reg->idx;
 
 	/* already allocated shared msr */
 	if (reg->alloc)
-		return &unconstrained;
+		return NULL; /* call x86_get_event_constraint() */
 
 again:
 	era = &cpuc->shared_regs->regs[reg->idx];
@@ -1156,14 +1185,10 @@ again:
 		reg->alloc = 1;
 
 		/*
-		 * All events using extra_reg are unconstrained.
-		 * Avoids calling x86_get_event_constraints()
-		 *
-		 * Must revisit if extra_reg controlling events
-		 * ever have constraints. Worst case we go through
-		 * the regular event constraint table.
+		 * need to call x86_get_event_constraint()
+		 * to check if associated event has constraints
 		 */
-		c = &unconstrained;
+		c = NULL;
 	} else if (intel_try_alt_er(event, orig_idx)) {
 		raw_spin_unlock_irqrestore(&era->lock, flags);
 		goto again;
@@ -1200,11 +1225,23 @@ static struct event_constraint *
 intel_shared_regs_constraints(struct cpu_hw_events *cpuc,
 			      struct perf_event *event)
 {
-	struct event_constraint *c = NULL;
+	struct event_constraint *c = NULL, *d;
+	struct hw_perf_event_extra *xreg, *breg;
 
-	if (event->hw.extra_reg.idx != EXTRA_REG_NONE)
-		c = __intel_shared_reg_get_constraints(cpuc, event);
-
+	xreg = &event->hw.extra_reg;
+	if (xreg->idx != EXTRA_REG_NONE) {
+		c = __intel_shared_reg_get_constraints(cpuc, event, xreg);
+		if (c == &emptyconstraint)
+			return c;
+	}
+	breg = &event->hw.branch_reg;
+	if (breg->idx != EXTRA_REG_NONE) {
+		d = __intel_shared_reg_get_constraints(cpuc, event, breg);
+		if (d == &emptyconstraint) {
+			__intel_shared_reg_put_constraints(cpuc, xreg);
+			c = d;
+		}
+	}
 	return c;
 }
 
@@ -1252,6 +1289,10 @@ intel_put_shared_regs_event_constraints(struct cpu_hw_events *cpuc,
 	reg = &event->hw.extra_reg;
 	if (reg->idx != EXTRA_REG_NONE)
 		__intel_shared_reg_put_constraints(cpuc, reg);
+
+	reg = &event->hw.branch_reg;
+	if (reg->idx != EXTRA_REG_NONE)
+		__intel_shared_reg_put_constraints(cpuc, reg);
 }
 
 static void intel_put_event_constraints(struct cpu_hw_events *cpuc,
@@ -1291,6 +1332,12 @@ static int intel_pmu_hw_config(struct perf_event *event)
 
 		alt_config |= (event->hw.config & ~X86_RAW_EVENT_MASK);
 		event->hw.config = alt_config;
+	}
+
+	if (intel_pmu_needs_lbr_smpl(event)) {
+		ret = intel_pmu_setup_lbr_filter(event);
+		if (ret)
+			return ret;
 	}
 
 	if (event->attr.type != PERF_TYPE_RAW)
@@ -1431,7 +1478,7 @@ static int intel_pmu_cpu_prepare(int cpu)
 {
 	struct cpu_hw_events *cpuc = &per_cpu(cpu_hw_events, cpu);
 
-	if (!x86_pmu.extra_regs)
+	if (!(x86_pmu.extra_regs || x86_pmu.lbr_sel_map))
 		return NOTIFY_OK;
 
 	cpuc->shared_regs = allocate_shared_regs(cpu);
@@ -1453,22 +1500,28 @@ static void intel_pmu_cpu_starting(int cpu)
 	 */
 	intel_pmu_lbr_reset();
 
-	if (!cpuc->shared_regs || (x86_pmu.er_flags & ERF_NO_HT_SHARING))
+	cpuc->lbr_sel = NULL;
+
+	if (!cpuc->shared_regs)
 		return;
 
-	for_each_cpu(i, topology_thread_cpumask(cpu)) {
-		struct intel_shared_regs *pc;
+	if (!(x86_pmu.er_flags & ERF_NO_HT_SHARING)) {
+		for_each_cpu(i, topology_thread_cpumask(cpu)) {
+			struct intel_shared_regs *pc;
 
-		pc = per_cpu(cpu_hw_events, i).shared_regs;
-		if (pc && pc->core_id == core_id) {
-			cpuc->kfree_on_online = cpuc->shared_regs;
-			cpuc->shared_regs = pc;
-			break;
+			pc = per_cpu(cpu_hw_events, i).shared_regs;
+			if (pc && pc->core_id == core_id) {
+				cpuc->kfree_on_online = cpuc->shared_regs;
+				cpuc->shared_regs = pc;
+				break;
+			}
 		}
+		cpuc->shared_regs->core_id = core_id;
+		cpuc->shared_regs->refcnt++;
 	}
 
-	cpuc->shared_regs->core_id = core_id;
-	cpuc->shared_regs->refcnt++;
+	if (x86_pmu.lbr_sel_map)
+		cpuc->lbr_sel = &cpuc->shared_regs->regs[EXTRA_REG_LBR];
 }
 
 static void intel_pmu_cpu_dying(int cpu)
@@ -1484,6 +1537,18 @@ static void intel_pmu_cpu_dying(int cpu)
 	}
 
 	fini_debug_store_on_cpu(cpu);
+}
+
+static void intel_pmu_flush_branch_stack(void)
+{
+	/*
+	 * Intel LBR does not tag entries with the
+	 * PID of the current task, then we need to
+	 * flush it on ctxsw
+	 * For now, we simply reset it
+	 */
+	if (x86_pmu.lbr_nr)
+		intel_pmu_lbr_reset();
 }
 
 static __initconst const struct x86_pmu intel_pmu = {
@@ -1513,6 +1578,7 @@ static __initconst const struct x86_pmu intel_pmu = {
 	.cpu_starting		= intel_pmu_cpu_starting,
 	.cpu_dying		= intel_pmu_cpu_dying,
 	.guest_get_msrs		= intel_guest_get_msrs,
+	.flush_branch_stack	= intel_pmu_flush_branch_stack,
 };
 
 static __init void intel_clovertown_quirk(void)
@@ -1739,7 +1805,7 @@ __init int intel_pmu_init(void)
 		memcpy(hw_cache_event_ids, snb_hw_cache_event_ids,
 		       sizeof(hw_cache_event_ids));
 
-		intel_pmu_lbr_init_nhm();
+		intel_pmu_lbr_init_snb();
 
 		x86_pmu.event_constraints = intel_snb_event_constraints;
 		x86_pmu.pebs_constraints = intel_snb_pebs_event_constraints;
