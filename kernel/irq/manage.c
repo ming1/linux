@@ -773,14 +773,14 @@ static int irq_thread(void *data)
 			struct irqaction *action);
 	int wake;
 
-	if (force_irqthreads & test_bit(IRQTF_FORCED_THREAD,
+	if (force_irqthreads && test_bit(IRQTF_FORCED_THREAD,
 					&action->thread_flags))
 		handler_fn = irq_forced_thread_fn;
 	else
 		handler_fn = irq_thread_fn;
 
 	sched_setscheduler(current, SCHED_FIFO, &param);
-	current->irqaction = action;
+	current->irq_thread = 1;
 
 	while (!irq_wait_for_interrupt(action)) {
 
@@ -818,10 +818,10 @@ static int irq_thread(void *data)
 	irq_finalize_oneshot(desc, action, true);
 
 	/*
-	 * Clear irqaction. Otherwise exit_irq_thread() would make
+	 * Clear irq_thread. Otherwise exit_irq_thread() would make
 	 * fuzz about an active irq thread going into nirvana.
 	 */
-	current->irqaction = NULL;
+	current->irq_thread = 0;
 	return 0;
 }
 
@@ -832,27 +832,21 @@ void exit_irq_thread(void)
 {
 	struct task_struct *tsk = current;
 	struct irq_desc *desc;
+	struct irqaction *action;
 
-	if (!tsk->irqaction)
+	if (!tsk->irq_thread)
 		return;
+
+	action = kthread_data(tsk);
 
 	printk(KERN_ERR
 	       "exiting task \"%s\" (%d) is an active IRQ thread (irq %d)\n",
-	       tsk->comm ? tsk->comm : "", tsk->pid, tsk->irqaction->irq);
+	       tsk->comm ? tsk->comm : "", tsk->pid, action->irq);
 
-	desc = irq_to_desc(tsk->irqaction->irq);
+	desc = irq_to_desc(action->irq);
 
-	/*
-	 * Prevent a stale desc->threads_oneshot. Must be called
-	 * before setting the IRQTF_DIED flag.
-	 */
-	irq_finalize_oneshot(desc, tsk->irqaction, true);
-
-	/*
-	 * Set the THREAD DIED flag to prevent further wakeups of the
-	 * soon to be gone threaded handler.
-	 */
-	set_bit(IRQTF_DIED, &tsk->irqaction->flags);
+	/* Prevent a stale desc->threads_oneshot */
+	irq_finalize_oneshot(desc, action, true);
 }
 
 static void irq_setup_forced_threading(struct irqaction *new)
@@ -1135,8 +1129,7 @@ out_thread:
 		struct task_struct *t = new->thread;
 
 		new->thread = NULL;
-		if (likely(!test_bit(IRQTF_DIED, &new->thread_flags)))
-			kthread_stop(t);
+		kthread_stop(t);
 		put_task_struct(t);
 	}
 out_mput:
@@ -1246,8 +1239,7 @@ static struct irqaction *__free_irq(unsigned int irq, void *dev_id)
 #endif
 
 	if (action->thread) {
-		if (!test_bit(IRQTF_DIED, &action->thread_flags))
-			kthread_stop(action->thread);
+		kthread_stop(action->thread);
 		put_task_struct(action->thread);
 	}
 
