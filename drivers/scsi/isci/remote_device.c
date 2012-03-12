@@ -53,6 +53,7 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 #include <scsi/sas.h>
+#include <linux/bitops.h>
 #include "isci.h"
 #include "port.h"
 #include "remote_device.h"
@@ -60,6 +61,16 @@
 #include "remote_node_context.h"
 #include "scu_event_codes.h"
 #include "task.h"
+
+#undef C
+#define C(a) (#a)
+const char *dev_state_name(enum sci_remote_device_states state)
+{
+	static const char * const strings[] = REMOTE_DEV_STATES;
+
+	return strings[state];
+}
+#undef C
 
 /**
  * isci_remote_device_not_ready() - This function is called by the ihost when
@@ -166,8 +177,8 @@ enum sci_status sci_remote_device_stop(struct isci_remote_device *idev,
 	case SCI_DEV_FAILED:
 	case SCI_DEV_FINAL:
 	default:
-		dev_warn(scirdev_to_dev(idev), "%s: in wrong state: %d\n",
-			 __func__, state);
+		dev_warn(scirdev_to_dev(idev), "%s: in wrong state: %s\n",
+			 __func__, dev_state_name(state));
 		return SCI_FAILURE_INVALID_STATE;
 	case SCI_DEV_STOPPED:
 		return SCI_SUCCESS;
@@ -225,8 +236,8 @@ enum sci_status sci_remote_device_reset(struct isci_remote_device *idev)
 	case SCI_DEV_RESETTING:
 	case SCI_DEV_FINAL:
 	default:
-		dev_warn(scirdev_to_dev(idev), "%s: in wrong state: %d\n",
-			 __func__, state);
+		dev_warn(scirdev_to_dev(idev), "%s: in wrong state: %s\n",
+			 __func__, dev_state_name(state));
 		return SCI_FAILURE_INVALID_STATE;
 	case SCI_DEV_READY:
 	case SCI_STP_DEV_IDLE:
@@ -245,8 +256,8 @@ enum sci_status sci_remote_device_reset_complete(struct isci_remote_device *idev
 	enum sci_remote_device_states state = sm->current_state_id;
 
 	if (state != SCI_DEV_RESETTING) {
-		dev_warn(scirdev_to_dev(idev), "%s: in wrong state: %d\n",
-			 __func__, state);
+		dev_warn(scirdev_to_dev(idev), "%s: in wrong state: %s\n",
+			 __func__, dev_state_name(state));
 		return SCI_FAILURE_INVALID_STATE;
 	}
 
@@ -261,8 +272,8 @@ enum sci_status sci_remote_device_suspend(struct isci_remote_device *idev,
 	enum sci_remote_device_states state = sm->current_state_id;
 
 	if (state != SCI_STP_DEV_CMD) {
-		dev_warn(scirdev_to_dev(idev), "%s: in wrong state: %d\n",
-			 __func__, state);
+		dev_warn(scirdev_to_dev(idev), "%s: in wrong state: %s\n",
+			 __func__, dev_state_name(state));
 		return SCI_FAILURE_INVALID_STATE;
 	}
 
@@ -286,8 +297,8 @@ enum sci_status sci_remote_device_frame_handler(struct isci_remote_device *idev,
 	case SCI_SMP_DEV_IDLE:
 	case SCI_DEV_FINAL:
 	default:
-		dev_warn(scirdev_to_dev(idev), "%s: in wrong state: %d\n",
-			 __func__, state);
+		dev_warn(scirdev_to_dev(idev), "%s: in wrong state: %s\n",
+			 __func__, dev_state_name(state));
 		/* Return the frame back to the controller */
 		sci_controller_release_frame(ihost, frame_index);
 		return SCI_FAILURE_INVALID_STATE;
@@ -501,8 +512,8 @@ enum sci_status sci_remote_device_start_io(struct isci_host *ihost,
 	case SCI_DEV_RESETTING:
 	case SCI_DEV_FINAL:
 	default:
-		dev_warn(scirdev_to_dev(idev), "%s: in wrong state: %d\n",
-			 __func__, state);
+		dev_warn(scirdev_to_dev(idev), "%s: in wrong state: %s\n",
+			 __func__, dev_state_name(state));
 		return SCI_FAILURE_INVALID_STATE;
 	case SCI_DEV_READY:
 		/* attempt to start an io request for this device object. The remote
@@ -636,8 +647,8 @@ enum sci_status sci_remote_device_complete_io(struct isci_host *ihost,
 	case SCI_DEV_FAILED:
 	case SCI_DEV_FINAL:
 	default:
-		dev_warn(scirdev_to_dev(idev), "%s: in wrong state: %d\n",
-			 __func__, state);
+		dev_warn(scirdev_to_dev(idev), "%s: in wrong state: %s\n",
+			 __func__, dev_state_name(state));
 		return SCI_FAILURE_INVALID_STATE;
 	case SCI_DEV_READY:
 	case SCI_STP_DEV_AWAIT_RESET:
@@ -720,8 +731,8 @@ enum sci_status sci_remote_device_start_task(struct isci_host *ihost,
 	case SCI_DEV_RESETTING:
 	case SCI_DEV_FINAL:
 	default:
-		dev_warn(scirdev_to_dev(idev), "%s: in wrong state: %d\n",
-			 __func__, state);
+		dev_warn(scirdev_to_dev(idev), "%s: in wrong state: %s\n",
+			 __func__, dev_state_name(state));
 		return SCI_FAILURE_INVALID_STATE;
 	case SCI_STP_DEV_IDLE:
 	case SCI_STP_DEV_CMD:
@@ -852,8 +863,8 @@ static enum sci_status sci_remote_device_destruct(struct isci_remote_device *ide
 	struct isci_host *ihost;
 
 	if (state != SCI_DEV_STOPPED) {
-		dev_warn(scirdev_to_dev(idev), "%s: in wrong state: %d\n",
-			 __func__, state);
+		dev_warn(scirdev_to_dev(idev), "%s: in wrong state: %s\n",
+			 __func__, dev_state_name(state));
 		return SCI_FAILURE_INVALID_STATE;
 	}
 
@@ -1101,32 +1112,22 @@ static enum sci_status sci_remote_device_da_construct(struct isci_port *iport,
 						       struct isci_remote_device *idev)
 {
 	enum sci_status status;
-	struct domain_device *dev = idev->domain_dev;
+	struct sci_port_properties properties;
 
 	sci_remote_device_construct(iport, idev);
 
-	/*
-	 * This information is request to determine how many remote node context
-	 * entries will be needed to store the remote node.
-	 */
-	idev->is_direct_attached = true;
+	sci_port_get_properties(iport, &properties);
+	/* Get accurate port width from port's phy mask for a DA device. */
+	idev->device_port_width = hweight32(properties.phy_mask);
+
 	status = sci_controller_allocate_remote_node_context(iport->owning_controller,
-								  idev,
-								  &idev->rnc.remote_node_index);
+							     idev,
+							     &idev->rnc.remote_node_index);
 
 	if (status != SCI_SUCCESS)
 		return status;
 
-	if (dev->dev_type == SAS_END_DEV || dev->dev_type == SATA_DEV ||
-	    (dev->tproto & SAS_PROTOCOL_STP) || dev_is_expander(dev))
-		/* pass */;
-	else
-		return SCI_FAILURE_UNSUPPORTED_PROTOCOL;
-
 	idev->connection_rate = sci_port_get_max_allowed_speed(iport);
-
-	/* / @todo Should I assign the port width by reading all of the phys on the port? */
-	idev->device_port_width = 1;
 
 	return SCI_SUCCESS;
 }
@@ -1157,19 +1158,13 @@ static enum sci_status sci_remote_device_ea_construct(struct isci_port *iport,
 	if (status != SCI_SUCCESS)
 		return status;
 
-	if (dev->dev_type == SAS_END_DEV || dev->dev_type == SATA_DEV ||
-	    (dev->tproto & SAS_PROTOCOL_STP) || dev_is_expander(dev))
-		/* pass */;
-	else
-		return SCI_FAILURE_UNSUPPORTED_PROTOCOL;
-
-	/*
-	 * For SAS-2 the physical link rate is actually a logical link
+	/* For SAS-2 the physical link rate is actually a logical link
 	 * rate that incorporates multiplexing.  The SCU doesn't
 	 * incorporate multiplexing and for the purposes of the
 	 * connection the logical link rate is that same as the
 	 * physical.  Furthermore, the SAS-2 and SAS-1.1 fields overlay
-	 * one another, so this code works for both situations. */
+	 * one another, so this code works for both situations.
+	 */
 	idev->connection_rate = min_t(u16, sci_port_get_max_allowed_speed(iport),
 					 dev->linkrate);
 
@@ -1200,8 +1195,8 @@ static enum sci_status sci_remote_device_start(struct isci_remote_device *idev,
 	enum sci_status status;
 
 	if (state != SCI_DEV_STOPPED) {
-		dev_warn(scirdev_to_dev(idev), "%s: in wrong state: %d\n",
-			 __func__, state);
+		dev_warn(scirdev_to_dev(idev), "%s: in wrong state: %s\n",
+			 __func__, dev_state_name(state));
 		return SCI_FAILURE_INVALID_STATE;
 	}
 

@@ -3381,6 +3381,7 @@ int ata_scsi_add_hosts(struct ata_host *host, struct scsi_host_template *sht)
 		if (!shost)
 			goto err_alloc;
 
+		shost->eh_noresume = 1;
 		*(struct ata_port **)&shost->hostdata[0] = ap;
 		ap->scsi_host = shost;
 
@@ -3398,7 +3399,7 @@ int ata_scsi_add_hosts(struct ata_host *host, struct scsi_host_template *sht)
 		 */
 		shost->max_host_blocked = 1;
 
-		rc = scsi_add_host(ap->scsi_host, ap->host->dev);
+		rc = scsi_add_host(ap->scsi_host, &ap->tdev);
 		if (rc)
 			goto err_add;
 	}
@@ -3842,7 +3843,7 @@ int ata_sas_async_port_init(struct ata_port *ap)
 	int rc = ap->ops->port_start(ap);
 
 	if (!rc) {
-		ap->print_id = ata_print_id++;
+		ap->print_id = atomic_inc_return(&ata_print_id);
 		__ata_port_probe(ap);
 	}
 
@@ -3866,7 +3867,7 @@ int ata_sas_port_init(struct ata_port *ap)
 	int rc = ap->ops->port_start(ap);
 
 	if (!rc) {
-		ap->print_id = ata_print_id++;
+		ap->print_id = atomic_inc_return(&ata_print_id);
 		rc = ata_port_probe(ap);
 	}
 
