@@ -3254,7 +3254,7 @@ static int run(struct mddev *mddev)
 		blk_queue_io_opt(mddev->queue, chunk_size *
 				 (conf->raid_disks / conf->near_copies));
 
-	list_for_each_entry(rdev, &mddev->disks, same_set) {
+	rdev_for_each(rdev, mddev) {
 
 		disk_idx = rdev->raid_disk;
 		if (disk_idx >= conf->raid_disks
@@ -3420,7 +3420,7 @@ static void *raid10_takeover_raid0(struct mddev *mddev)
 
 	conf = setup_conf(mddev);
 	if (!IS_ERR(conf)) {
-		list_for_each_entry(rdev, &mddev->disks, same_set)
+		rdev_for_each(rdev, mddev)
 			if (rdev->raid_disk >= 0)
 				rdev->new_raid_disk = rdev->raid_disk * 2;
 		conf->barrier = 1;
