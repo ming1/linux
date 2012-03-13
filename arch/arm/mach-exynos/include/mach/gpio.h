@@ -146,4 +146,33 @@ enum s5p_gpio_number {
 #define ARCH_NR_GPIOS		(EXYNOS4_GPZ(EXYNOS4_GPIO_Z_NR) +	\
 				 CONFIG_SAMSUNG_GPIO_EXTRA + 1)
 
+#include <linux/types.h>
+#include <linux/err.h>
+#include <mach/irqs.h>
+#include <plat/cpu.h>
+
+static inline int irq_to_gpio(unsigned int irq)
+{
+	if (irq < IRQ_EINT(0))
+		return -EINVAL;
+
+	irq -= IRQ_EINT(0);
+	if (irq < 8)
+		return soc_is_exynos5250() ?  EXYNOS5_GPX0(irq) :
+					 EXYNOS4_GPX0(irq);
+	irq -= 8;
+	if (irq < 8)
+		return soc_is_exynos5250() ?  EXYNOS5_GPX1(irq) :
+					 EXYNOS4_GPX1(irq);
+	irq -= 8;
+	if (irq < 8)
+		return soc_is_exynos5250() ?  EXYNOS5_GPX2(irq) :
+					 EXYNOS4_GPX2(irq);
+	irq -= 8;
+	if (irq < 8)
+		return soc_is_exynos5250() ?  EXYNOS5_GPX3(irq) :
+					 EXYNOS4_GPX3(irq);
+	return -EINVAL;
+}
+
 #endif /* __ASM_ARCH_GPIO_H */
