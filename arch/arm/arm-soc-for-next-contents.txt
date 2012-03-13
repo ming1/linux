@@ -69,6 +69,10 @@ tegra/soc-drivers	git://git.kernel.org/pub/scm/linux/kernel/git/olof/tegra.git t
 				depends on depends/irqdomain
 pxa/regulator		git://github.com/hzhuang1/linux.git regulator
 omap/sr			git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap sr
+samsung/devel-samsung-mmc	git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/devel-samsung-mmc
+samsung/devel-samsung-dma	git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/devel-samsung-dma
+				depends on samsung/cleanup-exynos-clock
+
 
 next/cleanup2:
 at91/base2+cleanup	git://github.com/at91linux/linux-at91.git at91-3.4-base2+cleanup
