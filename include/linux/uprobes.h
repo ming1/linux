@@ -39,6 +39,8 @@ struct vm_area_struct;
 
 /* Dont run handlers when first register/ last unregister in progress*/
 #define UPROBES_RUN_HANDLER	0x2
+/* Can skip singlestep */
+#define UPROBES_SKIP_SSTEP	0x4
 
 struct uprobe_consumer {
 	int (*handler)(struct uprobe_consumer *self, struct pt_regs *regs);
@@ -52,12 +54,40 @@ struct uprobe_consumer {
 };
 
 #ifdef CONFIG_UPROBES
+enum uprobe_task_state {
+	UTASK_RUNNING,
+	UTASK_BP_HIT,
+	UTASK_SSTEP,
+	UTASK_SSTEP_ACK,
+	UTASK_SSTEP_TRAPPED,
+};
+
+/*
+ * uprobe_task: Metadata of a task while it singlesteps.
+ */
+struct uprobe_task {
+	unsigned long xol_vaddr;
+	unsigned long vaddr;
+
+	enum uprobe_task_state state;
+	struct arch_uprobe_task tskinfo;
+
+	struct uprobe *active_uprobe;
+};
+
 extern int __weak set_bkpt(struct mm_struct *mm, struct arch_uprobe *auprobe, unsigned long vaddr);
 extern int __weak set_orig_insn(struct mm_struct *mm, struct arch_uprobe *auprobe, unsigned long vaddr, bool verify);
 extern bool __weak is_bkpt_insn(uprobe_opcode_t *insn);
 extern int uprobe_register(struct inode *inode, loff_t offset, struct uprobe_consumer *consumer);
 extern void uprobe_unregister(struct inode *inode, loff_t offset, struct uprobe_consumer *consumer);
 extern int uprobe_mmap(struct vm_area_struct *vma);
+extern void uprobe_free_utask(struct task_struct *tsk);
+extern unsigned long __weak get_uprobe_bkpt_addr(struct pt_regs *regs);
+extern int uprobe_post_notifier(struct pt_regs *regs);
+extern int uprobe_bkpt_notifier(struct pt_regs *regs);
+extern void uprobe_notify_resume(struct pt_regs *regs);
+extern bool uprobe_deny_signal(void);
+extern bool __weak arch_uprobe_skip_sstep(struct pt_regs *regs, struct arch_uprobe *auprobe);
 #else /* CONFIG_UPROBES is not defined */
 static inline int
 uprobe_register(struct inode *inode, loff_t offset, struct uprobe_consumer *consumer)
@@ -71,6 +101,20 @@ uprobe_unregister(struct inode *inode, loff_t offset, struct uprobe_consumer *co
 static inline int uprobe_mmap(struct vm_area_struct *vma)
 {
 	return 0;
+}
+static inline void uprobe_notify_resume(struct pt_regs *regs)
+{
+}
+static inline bool uprobe_deny_signal(void)
+{
+	return false;
+}
+static inline unsigned long get_uprobe_bkpt_addr(struct pt_regs *regs)
+{
+	return 0;
+}
+static inline void uprobe_free_utask(struct task_struct *tsk)
+{
 }
 #endif /* CONFIG_UPROBES */
 #endif	/* _LINUX_UPROBES_H */
