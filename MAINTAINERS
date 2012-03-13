@@ -2877,6 +2877,12 @@ S:	Maintained
 F:	drivers/media/video/m5mols/
 F:	include/media/m5mols.h
 
+FUJITSU TABLET EXTRAS
+M:	Robert Gerlach <khnz@gmx.de>
+L:	platform-driver-x86@vger.kernel.org
+S:	Maintained
+F:	drivers/platform/x86/fujitsu-tablet.c
+
 FUSE: FILESYSTEM IN USERSPACE
 M:	Miklos Szeredi <miklos@szeredi.hu>
 L:	fuse-devel@lists.sourceforge.net
@@ -5733,6 +5739,12 @@ S:	Maintained
 F:	drivers/media/common/saa7146*
 F:	drivers/media/video/*7146*
 F:	include/media/*7146*
+
+SAMSUNG LAPTOP DRIVER
+M:	Corentin Chary <corentincj@iksaif.net>
+L:	platform-driver-x86@vger.kernel.org
+S:	Maintained
+F:	drivers/platform/x86/samsung-laptop.c
 
 SAMSUNG AUDIO (ASoC) DRIVERS
 M:	Sangbeom Kim <sbkim73@samsung.com>
