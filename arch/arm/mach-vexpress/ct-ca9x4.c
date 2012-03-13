@@ -53,16 +53,27 @@ static struct map_desc ct_ca9x4_io_desc[] __initdata = {
 
 static void __init ct_ca9x4_map_io(void)
 {
-#ifdef CONFIG_LOCAL_TIMERS
-	twd_base = MMIO_P2V(A9_MPCORE_TWD);
-#endif
 	iotable_init(ct_ca9x4_io_desc, ARRAY_SIZE(ct_ca9x4_io_desc));
 }
+
+#ifdef CONFIG_HAVE_ARM_TWD
+static DEFINE_TWD_LOCAL_TIMER(twd_local_timer, A9_MPCORE_TWD, IRQ_LOCALTIMER);
+
+static void __init ca9x4_twd_init(void)
+{
+	int err = twd_local_timer_register(&twd_local_timer);
+	if (err)
+		pr_err("twd_local_timer_register failed %d\n", err);
+}
+#else
+#define ca9x4_twd_init()	do {} while(0)
+#endif
 
 static void __init ct_ca9x4_init_irq(void)
 {
 	gic_init(0, 29, MMIO_P2V(A9_MPCORE_GIC_DIST),
 		 MMIO_P2V(A9_MPCORE_GIC_CPU));
+	ca9x4_twd_init();
 }
 
 #if 0
@@ -109,10 +120,10 @@ static struct clcd_board ct_ca9x4_clcd_data = {
 	.remove		= versatile_clcd_remove_dma,
 };
 
-static AMBA_DEVICE(clcd, "ct:clcd", CT_CA9X4_CLCDC, &ct_ca9x4_clcd_data);
-static AMBA_DEVICE(dmc, "ct:dmc", CT_CA9X4_DMC, NULL);
-static AMBA_DEVICE(smc, "ct:smc", CT_CA9X4_SMC, NULL);
-static AMBA_DEVICE(gpio, "ct:gpio", CT_CA9X4_GPIO, NULL);
+static AMBA_AHB_DEVICE(clcd, "ct:clcd", 0, CT_CA9X4_CLCDC, IRQ_CT_CA9X4_CLCDC, &ct_ca9x4_clcd_data);
+static AMBA_APB_DEVICE(dmc, "ct:dmc", 0, CT_CA9X4_DMC, IRQ_CT_CA9X4_DMC, NULL);
+static AMBA_APB_DEVICE(smc, "ct:smc", 0, CT_CA9X4_SMC, IRQ_CT_CA9X4_SMC, NULL);
+static AMBA_APB_DEVICE(gpio, "ct:gpio", 0, CT_CA9X4_GPIO, IRQ_CT_CA9X4_GPIO, NULL);
 
 static struct amba_device *ct_ca9x4_amba_devs[] __initdata = {
 	&clcd_device,
