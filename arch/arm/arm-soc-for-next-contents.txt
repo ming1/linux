@@ -95,6 +95,7 @@ imx/moboard		git://git.pengutronix.de/git/imx/linux-2.6.git features/imx31-moboa
 tegra/boards		git://git.kernel.org/pub/scm/linux/kernel/git/olof/tegra.git tags/tegra-boards
 omap/ams-delta		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap ams-delta
 omap/board		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap board
+samsung/board-samsung	git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung next/board-samsung
 
 next/rpmsg:
 rpmsg/base		git://git.kernel.org/pub/scm/linux/kernel/git/ohad/remoteproc.git rpmsg-for-3.4
