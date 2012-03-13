@@ -376,13 +376,16 @@ config CRASH_DUMP
 	  The same kernel binary can be used as production kernel and dump
 	  capture kernel.
 
-config PHYP_DUMP
-	bool "Hypervisor-assisted dump (EXPERIMENTAL)"
-	depends on PPC_PSERIES && EXPERIMENTAL
+config FA_DUMP
+	bool "Firmware-assisted dump"
+	depends on PPC64 && PPC_RTAS && CRASH_DUMP
 	help
-	  Hypervisor-assisted dump is meant to be a kdump replacement
-	  offering robustness and speed not possible without system
-	  hypervisor assistance.
+	  A robust mechanism to get reliable kernel crash dump with
+	  assistance from firmware. This approach does not use kexec,
+	  instead firmware assists in booting the kdump kernel
+	  while preserving memory contents. Firmware-assisted dump
+	  is meant to be a kdump replacement offering robustness and
+	  speed not possible without system firmware assistance.
 
 	  If unsure, say "N"
 
