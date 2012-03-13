@@ -274,6 +274,8 @@ struct se_node_acl *core_tpg_check_initiator_node_acl(
 
 	INIT_LIST_HEAD(&acl->acl_list);
 	INIT_LIST_HEAD(&acl->acl_sess_list);
+	kref_init(&acl->acl_kref);
+	init_completion(&acl->acl_free_comp);
 	spin_lock_init(&acl->device_list_lock);
 	spin_lock_init(&acl->nacl_sess_lock);
 	atomic_set(&acl->acl_pr_ref_count, 0);
@@ -402,6 +404,8 @@ struct se_node_acl *core_tpg_add_initiator_node_acl(
 
 	INIT_LIST_HEAD(&acl->acl_list);
 	INIT_LIST_HEAD(&acl->acl_sess_list);
+	kref_init(&acl->acl_kref);
+	init_completion(&acl->acl_free_comp);
 	spin_lock_init(&acl->device_list_lock);
 	spin_lock_init(&acl->nacl_sess_lock);
 	atomic_set(&acl->acl_pr_ref_count, 0);
@@ -448,8 +452,10 @@ int core_tpg_del_initiator_node_acl(
 	struct se_node_acl *acl,
 	int force)
 {
+	LIST_HEAD(sess_list);
 	struct se_session *sess, *sess_tmp;
-	int dynamic_acl = 0;
+	unsigned long flags;
+	int dynamic_acl = 0, rc;
 
 	spin_lock_irq(&tpg->acl_node_lock);
 	if (acl->dynamic_node_acl) {
@@ -460,27 +466,34 @@ int core_tpg_del_initiator_node_acl(
 	tpg->num_node_acls--;
 	spin_unlock_irq(&tpg->acl_node_lock);
 
-	spin_lock_bh(&tpg->session_lock);
-	list_for_each_entry_safe(sess, sess_tmp,
-				&tpg->tpg_sess_list, sess_list) {
-		if (sess->se_node_acl != acl)
-			continue;
-		/*
-		 * Determine if the session needs to be closed by our context.
-		 */
-		if (!tpg->se_tpg_tfo->shutdown_session(sess))
+	spin_lock_irqsave(&acl->nacl_sess_lock, flags);
+	acl->acl_stop = 1;
+
+	list_for_each_entry_safe(sess, sess_tmp, &acl->acl_sess_list,
+				sess_acl_list) {
+		if (sess->sess_tearing_down != 0)
 			continue;
 
-		spin_unlock_bh(&tpg->session_lock);
-		/*
-		 * If the $FABRIC_MOD session for the Initiator Node ACL exists,
-		 * forcefully shutdown the $FABRIC_MOD session/nexus.
-		 */
-		tpg->se_tpg_tfo->close_session(sess);
-
-		spin_lock_bh(&tpg->session_lock);
+		target_get_session(sess);
+		list_move(&sess->sess_acl_list, &sess_list);
 	}
-	spin_unlock_bh(&tpg->session_lock);
+	spin_unlock_irqrestore(&acl->nacl_sess_lock, flags);
+
+	list_for_each_entry_safe(sess, sess_tmp, &sess_list, sess_acl_list) {
+		list_del(&sess->sess_acl_list);
+
+		rc = tpg->se_tpg_tfo->shutdown_session(sess);
+		target_put_session(sess);
+		if (!rc)
+			continue;
+		target_put_session(sess);
+	}
+	target_put_nacl(acl);
+	/*
+	 * Wait for last target_put_nacl() to complete in target_complete_nacl()
+	 * for active fabric session transport_deregister_session() callbacks.
+	 */
+	wait_for_completion(&acl->acl_free_comp);
 
 	core_tpg_wait_for_nacl_pr_ref(acl);
 	core_clear_initiator_node_from_tpg(acl, tpg);
@@ -507,6 +520,7 @@ int core_tpg_set_initiator_node_queue_depth(
 {
 	struct se_session *sess, *init_sess = NULL;
 	struct se_node_acl *acl;
+	unsigned long flags;
 	int dynamic_acl = 0;
 
 	spin_lock_irq(&tpg->acl_node_lock);
@@ -525,7 +539,7 @@ int core_tpg_set_initiator_node_queue_depth(
 	}
 	spin_unlock_irq(&tpg->acl_node_lock);
 
-	spin_lock_bh(&tpg->session_lock);
+	spin_lock_irqsave(&tpg->session_lock, flags);
 	list_for_each_entry(sess, &tpg->tpg_sess_list, sess_list) {
 		if (sess->se_node_acl != acl)
 			continue;
@@ -537,7 +551,7 @@ int core_tpg_set_initiator_node_queue_depth(
 				" depth and force session reinstatement"
 				" use the \"force=1\" parameter.\n",
 				tpg->se_tpg_tfo->get_fabric_name(), initiatorname);
-			spin_unlock_bh(&tpg->session_lock);
+			spin_unlock_irqrestore(&tpg->session_lock, flags);
 
 			spin_lock_irq(&tpg->acl_node_lock);
 			if (dynamic_acl)
@@ -567,7 +581,7 @@ int core_tpg_set_initiator_node_queue_depth(
 	acl->queue_depth = queue_depth;
 
 	if (core_set_queue_depth_for_node(tpg, acl) < 0) {
-		spin_unlock_bh(&tpg->session_lock);
+		spin_unlock_irqrestore(&tpg->session_lock, flags);
 		/*
 		 * Force session reinstatement if
 		 * core_set_queue_depth_for_node() failed, because we assume
@@ -583,7 +597,7 @@ int core_tpg_set_initiator_node_queue_depth(
 		spin_unlock_irq(&tpg->acl_node_lock);
 		return -EINVAL;
 	}
-	spin_unlock_bh(&tpg->session_lock);
+	spin_unlock_irqrestore(&tpg->session_lock, flags);
 	/*
 	 * If the $FABRIC_MOD session for the Initiator Node ACL exists,
 	 * forcefully shutdown the $FABRIC_MOD session/nexus.
