@@ -26,10 +26,10 @@
 typedef u8 uprobe_opcode_t;
 
 #define MAX_UINSN_BYTES			  16
-#define UPROBES_XOL_SLOT_BYTES		 128	/* to keep it cache aligned */
+#define UPROBE_XOL_SLOT_BYTES		 128	/* to keep it cache aligned */
 
-#define UPROBES_BKPT_INSN		0xcc
-#define UPROBES_BKPT_INSN_SIZE		   1
+#define UPROBE_SWBP_INSN		0xcc
+#define UPROBE_SWBP_INSN_SIZE		   1
 
 struct arch_uprobe {
 	u16				fixups;
@@ -39,5 +39,5 @@ struct arch_uprobe {
 #endif
 };
 
-extern int arch_uprobes_analyze_insn(struct mm_struct *mm, struct arch_uprobe *arch_uprobe);
+extern int arch_uprobes_analyze_insn(struct arch_uprobe *aup, struct mm_struct *mm);
 #endif	/* _ASM_UPROBES_H */

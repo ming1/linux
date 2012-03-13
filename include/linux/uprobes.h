@@ -35,10 +35,10 @@ struct vm_area_struct;
 /* flags that denote/change uprobes behaviour */
 
 /* Have a copy of original instruction */
-#define UPROBES_COPY_INSN	0x1
+#define UPROBE_COPY_INSN	0x1
 
 /* Dont run handlers when first register/ last unregister in progress*/
-#define UPROBES_RUN_HANDLER	0x2
+#define UPROBE_RUN_HANDLER	0x2
 
 struct uprobe_consumer {
 	int (*handler)(struct uprobe_consumer *self, struct pt_regs *regs);
@@ -52,20 +52,20 @@ struct uprobe_consumer {
 };
 
 #ifdef CONFIG_UPROBES
-extern int __weak set_bkpt(struct mm_struct *mm, struct arch_uprobe *auprobe, unsigned long vaddr);
-extern int __weak set_orig_insn(struct mm_struct *mm, struct arch_uprobe *auprobe, unsigned long vaddr, bool verify);
-extern bool __weak is_bkpt_insn(uprobe_opcode_t *insn);
-extern int uprobe_register(struct inode *inode, loff_t offset, struct uprobe_consumer *consumer);
-extern void uprobe_unregister(struct inode *inode, loff_t offset, struct uprobe_consumer *consumer);
+extern int __weak set_swbp(struct arch_uprobe *aup, struct mm_struct *mm, unsigned long vaddr);
+extern int __weak set_orig_insn(struct arch_uprobe *aup, struct mm_struct *mm,  unsigned long vaddr, bool verify);
+extern bool __weak is_swbp_insn(uprobe_opcode_t *insn);
+extern int uprobe_register(struct inode *inode, loff_t offset, struct uprobe_consumer *uc);
+extern void uprobe_unregister(struct inode *inode, loff_t offset, struct uprobe_consumer *uc);
 extern int uprobe_mmap(struct vm_area_struct *vma);
 #else /* CONFIG_UPROBES is not defined */
 static inline int
-uprobe_register(struct inode *inode, loff_t offset, struct uprobe_consumer *consumer)
+uprobe_register(struct inode *inode, loff_t offset, struct uprobe_consumer *uc)
 {
 	return -ENOSYS;
 }
 static inline void
-uprobe_unregister(struct inode *inode, loff_t offset, struct uprobe_consumer *consumer)
+uprobe_unregister(struct inode *inode, loff_t offset, struct uprobe_consumer *uc)
 {
 }
 static inline int uprobe_mmap(struct vm_area_struct *vma)
