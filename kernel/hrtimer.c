@@ -1568,6 +1568,14 @@ long hrtimer_nanosleep(struct timespec *rqtp, struct timespec __user *rmtp,
 	if (rt_task(current))
 		slack = 0;
 
+	/*
+	 * Applications will often sleep(0) to indicate that they wish to
+	 * be scheduled. Special case that to avoid actually putting them
+	 * to sleep for the duration of the slack.
+	 */
+	if (rqtp->tv_sec == 0 && rqtp->tv_nsec == 0)
+		slack = 0;
+
 	hrtimer_init_on_stack(&t.timer, clockid, mode);
 	hrtimer_set_expires_range_ns(&t.timer, timespec_to_ktime(*rqtp), slack);
 	if (do_nanosleep(&t, mode))
