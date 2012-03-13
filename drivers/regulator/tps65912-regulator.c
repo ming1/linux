@@ -114,10 +114,7 @@ struct tps65912_reg {
 	struct mutex io_lock;
 	int mode;
 	int (*get_ctrl_reg)(int);
-	int dcdc1_range;
-	int dcdc2_range;
-	int dcdc3_range;
-	int dcdc4_range;
+	int dcdc_range[TPS65912_NUM_DCDC];
 	int pwm_mode_reg;
 	int eco_reg;
 };
@@ -125,46 +122,31 @@ struct tps65912_reg {
 static int tps65912_get_range(struct tps65912_reg *pmic, int id)
 {
 	struct tps65912 *mfd = pmic->mfd;
-
-	if (id > TPS65912_REG_DCDC4)
-		return 0;
+	int range;
 
 	switch (id) {
 	case TPS65912_REG_DCDC1:
-		pmic->dcdc1_range = tps65912_reg_read(mfd,
-							TPS65912_DCDC1_LIMIT);
-		if (pmic->dcdc1_range < 0)
-			return pmic->dcdc1_range;
-		pmic->dcdc1_range = (pmic->dcdc1_range &
-			DCDC_LIMIT_RANGE_MASK) >> DCDC_LIMIT_RANGE_SHIFT;
-		return pmic->dcdc1_range;
+		range = tps65912_reg_read(mfd, TPS65912_DCDC1_LIMIT);
+		break;
 	case TPS65912_REG_DCDC2:
-		pmic->dcdc2_range = tps65912_reg_read(mfd,
-							TPS65912_DCDC2_LIMIT);
-		if (pmic->dcdc2_range < 0)
-			return pmic->dcdc2_range;
-		pmic->dcdc2_range = (pmic->dcdc2_range &
-			DCDC_LIMIT_RANGE_MASK) >> DCDC_LIMIT_RANGE_SHIFT;
-		return pmic->dcdc2_range;
+		range = tps65912_reg_read(mfd, TPS65912_DCDC2_LIMIT);
+		break;
 	case TPS65912_REG_DCDC3:
-		pmic->dcdc3_range = tps65912_reg_read(mfd,
-							TPS65912_DCDC3_LIMIT);
-		if (pmic->dcdc3_range < 0)
-			return pmic->dcdc3_range;
-		pmic->dcdc3_range = (pmic->dcdc3_range &
-			DCDC_LIMIT_RANGE_MASK) >> DCDC_LIMIT_RANGE_SHIFT;
-		return pmic->dcdc3_range;
+		range = tps65912_reg_read(mfd, TPS65912_DCDC3_LIMIT);
+		break;
 	case TPS65912_REG_DCDC4:
-		pmic->dcdc4_range = tps65912_reg_read(mfd,
-							TPS65912_DCDC4_LIMIT);
-		if (pmic->dcdc4_range < 0)
-			return pmic->dcdc4_range;
-		pmic->dcdc4_range = (pmic->dcdc4_range &
-			DCDC_LIMIT_RANGE_MASK) >> DCDC_LIMIT_RANGE_SHIFT;
-		return pmic->dcdc4_range;
+		range = tps65912_reg_read(mfd, TPS65912_DCDC4_LIMIT);
+		break;
 	default:
 		return 0;
 	}
+
+	if (range >= 0)
+		range = (range & DCDC_LIMIT_RANGE_MASK)
+			>> DCDC_LIMIT_RANGE_SHIFT;
+
+	pmic->dcdc_range[id] = range;
+	return range;
 }
 
 static unsigned long tps65912_vsel_to_uv_range0(u8 vsel)
@@ -506,33 +488,61 @@ static unsigned int tps65912_get_mode(struct regulator_dev *dev)
 	return mode;
 }
 
+static int tps65912_list_voltage_dcdc(struct regulator_dev *dev,
+					unsigned selector)
+{
+	struct tps65912_reg *pmic = rdev_get_drvdata(dev);
+	int range, voltage = 0, id = rdev_get_id(dev);
+
+	if (id > TPS65912_REG_DCDC4)
+		return -EINVAL;
+
+	range = pmic->dcdc_range[id];
+
+	switch (range) {
+	case 0:
+		/* 0.5 - 1.2875V in 12.5mV steps */
+		voltage = tps65912_vsel_to_uv_range0(selector);
+		break;
+	case 1:
+		/* 0.7 - 1.4875V in 12.5mV steps */
+		voltage = tps65912_vsel_to_uv_range1(selector);
+		break;
+	case 2:
+		/* 0.5 - 2.075V in 25mV steps */
+		voltage = tps65912_vsel_to_uv_range2(selector);
+		break;
+	case 3:
+		/* 0.5 - 3.8V in 50mV steps */
+		voltage = tps65912_vsel_to_uv_range3(selector);
+		break;
+	}
+	return voltage;
+}
+
 static int tps65912_get_voltage_dcdc(struct regulator_dev *dev)
 {
 	struct tps65912_reg *pmic = rdev_get_drvdata(dev);
 	struct tps65912 *mfd = pmic->mfd;
-	int id = rdev_get_id(dev), voltage = 0, range;
+	int id = rdev_get_id(dev);
 	int opvsel = 0, avsel = 0, sr, vsel;
 
 	switch (id) {
 	case TPS65912_REG_DCDC1:
 		opvsel = tps65912_reg_read(mfd, TPS65912_DCDC1_OP);
 		avsel = tps65912_reg_read(mfd, TPS65912_DCDC1_AVS);
-		range = pmic->dcdc1_range;
 		break;
 	case TPS65912_REG_DCDC2:
 		opvsel = tps65912_reg_read(mfd, TPS65912_DCDC2_OP);
 		avsel = tps65912_reg_read(mfd, TPS65912_DCDC2_AVS);
-		range = pmic->dcdc2_range;
 		break;
 	case TPS65912_REG_DCDC3:
 		opvsel = tps65912_reg_read(mfd, TPS65912_DCDC3_OP);
 		avsel = tps65912_reg_read(mfd, TPS65912_DCDC3_AVS);
-		range = pmic->dcdc3_range;
 		break;
 	case TPS65912_REG_DCDC4:
 		opvsel = tps65912_reg_read(mfd, TPS65912_DCDC4_OP);
 		avsel = tps65912_reg_read(mfd, TPS65912_DCDC4_AVS);
-		range = pmic->dcdc4_range;
 		break;
 	default:
 		return -EINVAL;
@@ -545,29 +555,11 @@ static int tps65912_get_voltage_dcdc(struct regulator_dev *dev)
 		vsel = opvsel;
 	vsel &= 0x3F;
 
-	switch (range) {
-	case 0:
-		/* 0.5 - 1.2875V in 12.5mV steps */
-		voltage = tps65912_vsel_to_uv_range0(vsel);
-		break;
-	case 1:
-		/* 0.7 - 1.4875V in 12.5mV steps */
-		voltage = tps65912_vsel_to_uv_range1(vsel);
-		break;
-	case 2:
-		/* 0.5 - 2.075V in 25mV steps */
-		voltage = tps65912_vsel_to_uv_range2(vsel);
-		break;
-	case 3:
-		/* 0.5 - 3.8V in 50mV steps */
-		voltage = tps65912_vsel_to_uv_range3(vsel);
-		break;
-	}
-	return voltage;
+	return tps65912_list_voltage_dcdc(dev, vsel);
 }
 
-static int tps65912_set_voltage_dcdc(struct regulator_dev *dev,
-						unsigned selector)
+static int tps65912_set_voltage_dcdc_sel(struct regulator_dev *dev,
+					 unsigned selector)
 {
 	struct tps65912_reg *pmic = rdev_get_drvdata(dev);
 	struct tps65912 *mfd = pmic->mfd;
@@ -596,8 +588,8 @@ static int tps65912_get_voltage_ldo(struct regulator_dev *dev)
 	return tps65912_vsel_to_uv_ldo(vsel);
 }
 
-static int tps65912_set_voltage_ldo(struct regulator_dev *dev,
-						unsigned selector)
+static int tps65912_set_voltage_ldo_sel(struct regulator_dev *dev,
+					unsigned selector)
 {
 	struct tps65912_reg *pmic = rdev_get_drvdata(dev);
 	struct tps65912 *mfd = pmic->mfd;
@@ -607,50 +599,6 @@ static int tps65912_set_voltage_ldo(struct regulator_dev *dev,
 	value = tps65912_reg_read(mfd, reg);
 	value &= 0xC0;
 	return tps65912_reg_write(mfd, reg, selector | value);
-}
-
-static int tps65912_list_voltage_dcdc(struct regulator_dev *dev,
-					unsigned selector)
-{
-	struct tps65912_reg *pmic = rdev_get_drvdata(dev);
-	int range, voltage = 0, id = rdev_get_id(dev);
-
-	switch (id) {
-	case TPS65912_REG_DCDC1:
-		range = pmic->dcdc1_range;
-		break;
-	case TPS65912_REG_DCDC2:
-		range = pmic->dcdc2_range;
-		break;
-	case TPS65912_REG_DCDC3:
-		range = pmic->dcdc3_range;
-		break;
-	case TPS65912_REG_DCDC4:
-		range = pmic->dcdc4_range;
-		break;
-	default:
-		return -EINVAL;
-	}
-
-	switch (range) {
-	case 0:
-		/* 0.5 - 1.2875V in 12.5mV steps */
-		voltage = tps65912_vsel_to_uv_range0(selector);
-		break;
-	case 1:
-		/* 0.7 - 1.4875V in 12.5mV steps */
-		voltage = tps65912_vsel_to_uv_range1(selector);
-		break;
-	case 2:
-		/* 0.5 - 2.075V in 25mV steps */
-		voltage = tps65912_vsel_to_uv_range2(selector);
-		break;
-	case 3:
-		/* 0.5 - 3.8V in 50mV steps */
-		voltage = tps65912_vsel_to_uv_range3(selector);
-		break;
-	}
-	return voltage;
 }
 
 static int tps65912_list_voltage_ldo(struct regulator_dev *dev,
@@ -672,7 +620,7 @@ static struct regulator_ops tps65912_ops_dcdc = {
 	.set_mode = tps65912_set_mode,
 	.get_mode = tps65912_get_mode,
 	.get_voltage = tps65912_get_voltage_dcdc,
-	.set_voltage_sel = tps65912_set_voltage_dcdc,
+	.set_voltage_sel = tps65912_set_voltage_dcdc_sel,
 	.list_voltage = tps65912_list_voltage_dcdc,
 };
 
@@ -682,7 +630,7 @@ static struct regulator_ops tps65912_ops_ldo = {
 	.enable = tps65912_reg_enable,
 	.disable = tps65912_reg_disable,
 	.get_voltage = tps65912_get_voltage_ldo,
-	.set_voltage_sel = tps65912_set_voltage_ldo,
+	.set_voltage_sel = tps65912_set_voltage_ldo_sel,
 	.list_voltage = tps65912_list_voltage_ldo,
 };
 
