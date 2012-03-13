@@ -1,6 +1,6 @@
 /* bnx2x_cmn.h: Broadcom Everest network driver.
  *
- * Copyright (c) 2007-2011 Broadcom Corporation
+ * Copyright (c) 2007-2012 Broadcom Corporation
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -379,8 +379,8 @@ void bnx2x_set_q_rx_mode(struct bnx2x *bp, u8 cl_id,
 			 unsigned long ramrod_flags);
 
 /* Parity errors related */
-void bnx2x_inc_load_cnt(struct bnx2x *bp);
-u32 bnx2x_dec_load_cnt(struct bnx2x *bp);
+void bnx2x_set_pf_load(struct bnx2x *bp);
+bool bnx2x_clear_pf_load(struct bnx2x *bp);
 bool bnx2x_chk_parity_attn(struct bnx2x *bp, bool *global, bool print);
 bool bnx2x_reset_is_done(struct bnx2x *bp, int engine);
 void bnx2x_set_reset_in_progress(struct bnx2x *bp);
@@ -534,8 +534,9 @@ int bnx2x_change_mtu(struct net_device *dev, int new_mtu);
  */
 int bnx2x_fcoe_get_wwn(struct net_device *dev, u64 *wwn, int type);
 #endif
+
 netdev_features_t bnx2x_fix_features(struct net_device *dev,
-	netdev_features_t features);
+				     netdev_features_t features);
 int bnx2x_set_features(struct net_device *dev, netdev_features_t features);
 
 /**
@@ -614,8 +615,7 @@ static inline void bnx2x_igu_clear_sb_gen(struct bnx2x *bp, u8 func,
 	u32 igu_addr_ctl = IGU_REG_COMMAND_REG_CTRL;
 	u32 igu_addr_ack = IGU_REG_CSTORM_TYPE_0_SB_CLEANUP + (idu_sb_id/32)*4;
 	u32 sb_bit =  1 << (idu_sb_id%32);
-	u32 func_encode = func |
-			((is_Pf == true ? 1 : 0) << IGU_FID_ENCODE_IS_PF_SHIFT);
+	u32 func_encode = func | (is_Pf ? 1 : 0) << IGU_FID_ENCODE_IS_PF_SHIFT;
 	u32 addr_encode = IGU_CMD_E2_PROD_UPD_BASE + idu_sb_id;
 
 	/* Not supported in BC mode */
@@ -984,10 +984,11 @@ static inline int bnx2x_func_start(struct bnx2x *bp)
 	/* Function parameters */
 	start_params->mf_mode = bp->mf_mode;
 	start_params->sd_vlan_tag = bp->mf_ov;
-	if (CHIP_IS_E1x(bp))
-		start_params->network_cos_mode = OVERRIDE_COS;
-	else
+
+	if (CHIP_IS_E2(bp) || CHIP_IS_E3(bp))
 		start_params->network_cos_mode = STATIC_COS;
+	else /* CHIP_IS_E1X */
+		start_params->network_cos_mode = FW_WRR;
 
 	return bnx2x_func_state_change(bp, &func_params);
 }
@@ -1491,6 +1492,105 @@ static inline u16 bnx2x_extract_max_cfg(struct bnx2x *bp, u32 mf_cfg)
 	return max_cfg;
 }
 
+/* checks if HW supports GRO for given MTU */
+static inline bool bnx2x_mtu_allows_gro(int mtu)
+{
+	/* gro frags per page */
+	int fpp = SGE_PAGE_SIZE / (mtu - ETH_MAX_TPA_HEADER_SIZE);
+
+	/*
+	 * 1. number of frags should not grow above MAX_SKB_FRAGS
+	 * 2. frag must fit the page
+	 */
+	return mtu <= SGE_PAGE_SIZE && (U_ETH_SGL_SIZE * fpp) <= MAX_SKB_FRAGS;
+}
+
+static inline bool bnx2x_need_gro_check(int mtu)
+{
+	return (SGE_PAGES / (mtu - ETH_MAX_TPA_HEADER_SIZE - 1)) !=
+		(SGE_PAGES / (mtu - ETH_MIN_TPA_HEADER_SIZE + 1));
+}
+
+/**
+ * bnx2x_bz_fp - zero content of the fastpath structure.
+ *
+ * @bp:		driver handle
+ * @index:	fastpath index to be zeroed
+ *
+ * Makes sure the contents of the bp->fp[index].napi is kept
+ * intact.
+ */
+static inline void bnx2x_bz_fp(struct bnx2x *bp, int index)
+{
+	struct bnx2x_fastpath *fp = &bp->fp[index];
+	struct napi_struct orig_napi = fp->napi;
+	/* bzero bnx2x_fastpath contents */
+	if (bp->stats_init)
+		memset(fp, 0, sizeof(*fp));
+	else {
+		/* Keep Queue statistics */
+		struct bnx2x_eth_q_stats *tmp_eth_q_stats;
+		struct bnx2x_eth_q_stats_old *tmp_eth_q_stats_old;
+
+		tmp_eth_q_stats = kzalloc(sizeof(struct bnx2x_eth_q_stats),
+					  GFP_KERNEL);
+		if (tmp_eth_q_stats)
+			memcpy(tmp_eth_q_stats, &fp->eth_q_stats,
+			       sizeof(struct bnx2x_eth_q_stats));
+
+		tmp_eth_q_stats_old =
+			kzalloc(sizeof(struct bnx2x_eth_q_stats_old),
+				GFP_KERNEL);
+		if (tmp_eth_q_stats_old)
+			memcpy(tmp_eth_q_stats_old, &fp->eth_q_stats_old,
+			       sizeof(struct bnx2x_eth_q_stats_old));
+
+		memset(fp, 0, sizeof(*fp));
+
+		if (tmp_eth_q_stats) {
+			memcpy(&fp->eth_q_stats, tmp_eth_q_stats,
+				   sizeof(struct bnx2x_eth_q_stats));
+			kfree(tmp_eth_q_stats);
+		}
+
+		if (tmp_eth_q_stats_old) {
+			memcpy(&fp->eth_q_stats_old, tmp_eth_q_stats_old,
+			       sizeof(struct bnx2x_eth_q_stats_old));
+			kfree(tmp_eth_q_stats_old);
+		}
+
+	}
+
+	/* Restore the NAPI object as it has been already initialized */
+	fp->napi = orig_napi;
+
+	fp->bp = bp;
+	fp->index = index;
+	if (IS_ETH_FP(fp))
+		fp->max_cos = bp->max_cos;
+	else
+		/* Special queues support only one CoS */
+		fp->max_cos = 1;
+
+	/*
+	 * set the tpa flag for each queue. The tpa flag determines the queue
+	 * minimal size so it must be set prior to queue memory allocation
+	 */
+	fp->disable_tpa = !(bp->flags & TPA_ENABLE_FLAG ||
+				  (bp->flags & GRO_ENABLE_FLAG &&
+				   bnx2x_mtu_allows_gro(bp->dev->mtu)));
+	if (bp->flags & TPA_ENABLE_FLAG)
+		fp->mode = TPA_MODE_LRO;
+	else if (bp->flags & GRO_ENABLE_FLAG)
+		fp->mode = TPA_MODE_GRO;
+
+#ifdef BCM_CNIC
+	/* We don't want TPA on an FCoE L2 ring */
+	if (IS_FCOE_FP(fp))
+		fp->disable_tpa = 1;
+#endif
+}
+
 /**
  * bnx2x_get_iscsi_info - update iSCSI params according to licensing info.
  *
@@ -1539,7 +1639,7 @@ static inline void bnx2x_update_drv_flags(struct bnx2x *bp, u32 flags, u32 set)
 {
 	if (SHMEM2_HAS(bp, drv_flags)) {
 		u32 drv_flags;
-		bnx2x_acquire_hw_lock(bp, HW_LOCK_DRV_FLAGS);
+		bnx2x_acquire_hw_lock(bp, HW_LOCK_RESOURCE_DRV_FLAGS);
 		drv_flags = SHMEM2_RD(bp, drv_flags);
 
 		if (set)
@@ -1549,7 +1649,7 @@ static inline void bnx2x_update_drv_flags(struct bnx2x *bp, u32 flags, u32 set)
 
 		SHMEM2_WR(bp, drv_flags, drv_flags);
 		DP(NETIF_MSG_HW, "drv_flags 0x%08x\n", drv_flags);
-		bnx2x_release_hw_lock(bp, HW_LOCK_DRV_FLAGS);
+		bnx2x_release_hw_lock(bp, HW_LOCK_RESOURCE_DRV_FLAGS);
 	}
 }
 
