@@ -10,6 +10,9 @@
  * Caveat: PnP must be enabled in BIOS to allow full access to watchdog
  * control registers. If not, the watchdog must be configured in BIOS manually.
  */
+
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
 #include <linux/device.h>
 #include <linux/io.h>
 #include <linux/jiffies.h>
@@ -55,8 +58,8 @@ module_param(timeout, int, 0);
 MODULE_PARM_DESC(timeout, "Watchdog timeout in seconds, between 1 and 1023 "
 	"(default = " __MODULE_STRING(WDT_TIMEOUT) ")");
 
-static int nowayout = WATCHDOG_NOWAYOUT;
-module_param(nowayout, int, 0);
+static bool nowayout = WATCHDOG_NOWAYOUT;
+module_param(nowayout, bool, 0);
 MODULE_PARM_DESC(nowayout, "Watchdog cannot be stopped once started "
 	"(default = " __MODULE_STRING(WATCHDOG_NOWAYOUT) ")");
 
