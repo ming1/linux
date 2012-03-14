@@ -780,7 +780,7 @@ static int iscsit_alloc_buffs(struct iscsi_cmd *cmd)
 	struct scatterlist *sgl;
 	u32 length = cmd->se_cmd.data_length;
 	int nents = DIV_ROUND_UP(length, PAGE_SIZE);
-	int i = 0, ret;
+	int i = 0, j = 0, ret;
 	/*
 	 * If no SCSI payload is present, allocate the default iovecs used for
 	 * iSCSI PDU Header
@@ -821,17 +821,15 @@ static int iscsit_alloc_buffs(struct iscsi_cmd *cmd)
 	 */
         ret = iscsit_allocate_iovecs(cmd);
         if (ret < 0)
-		goto page_alloc_failed;
+		return -ENOMEM;
 
 	return 0;
 
 page_alloc_failed:
-	while (i >= 0) {
-		__free_page(sg_page(&sgl[i]));
-		i--;
-	}
-	kfree(cmd->t_mem_sg);
-	cmd->t_mem_sg = NULL;
+	while (j < i)
+		__free_page(sg_page(&sgl[j++]));
+
+	kfree(sgl);
 	return -ENOMEM;
 }
 
@@ -1006,8 +1004,8 @@ done:
 	/*
 	 * The CDB is going to an se_device_t.
 	 */
-	ret = iscsit_get_lun_for_cmd(cmd, hdr->cdb,
-				get_unaligned_le64(&hdr->lun));
+	ret = transport_lookup_cmd_lun(&cmd->se_cmd,
+				       scsilun_to_int(&hdr->lun));
 	if (ret < 0) {
 		if (cmd->se_cmd.scsi_sense_reason == TCM_NON_EXISTENT_LUN) {
 			pr_debug("Responding to non-acl'ed,"
@@ -1363,7 +1361,7 @@ static int iscsit_handle_data_out(struct iscsi_conn *conn, unsigned char *buf)
 		 * outstanding_r2ts reaches zero, go ahead and send the delayed
 		 * TASK_ABORTED status.
 		 */
-		if (atomic_read(&se_cmd->t_transport_aborted) != 0) {
+		if (se_cmd->transport_state & CMD_T_ABORTED) {
 			if (hdr->flags & ISCSI_FLAG_CMD_FINAL)
 				if (--cmd->outstanding_r2ts < 1) {
 					iscsit_stop_dataout_timer(cmd);
@@ -1746,8 +1744,8 @@ static int iscsit_handle_task_mgt_cmd(
 	 * Locate the struct se_lun for all TMRs not related to ERL=2 TASK_REASSIGN
 	 */
 	if (function != ISCSI_TM_FUNC_TASK_REASSIGN) {
-		ret = iscsit_get_lun_for_tmr(cmd,
-				get_unaligned_le64(&hdr->lun));
+		ret = transport_lookup_tmr_lun(&cmd->se_cmd,
+					       scsilun_to_int(&hdr->lun));
 		if (ret < 0) {
 			cmd->se_cmd.se_cmd_flags |= SCF_SCSI_CDB_EXCEPTION;
 			se_tmr->response = ISCSI_TMF_RSP_NO_LUN;
@@ -4170,7 +4168,7 @@ int iscsit_close_connection(
 	if (!atomic_read(&sess->session_reinstatement) &&
 	     atomic_read(&sess->session_fall_back_to_erl0)) {
 		spin_unlock_bh(&sess->conn_lock);
-		iscsit_close_session(sess);
+		target_put_session(sess->se_sess);
 
 		return 0;
 	} else if (atomic_read(&sess->session_logout)) {
@@ -4291,7 +4289,7 @@ static void iscsit_logout_post_handler_closesession(
 	iscsit_dec_conn_usage_count(conn);
 	iscsit_stop_session(sess, 1, 1);
 	iscsit_dec_session_usage_count(sess);
-	iscsit_close_session(sess);
+	target_put_session(sess->se_sess);
 }
 
 static void iscsit_logout_post_handler_samecid(
@@ -4457,7 +4455,7 @@ int iscsit_free_session(struct iscsi_session *sess)
 	} else
 		spin_unlock_bh(&sess->conn_lock);
 
-	iscsit_close_session(sess);
+	target_put_session(sess->se_sess);
 	return 0;
 }
 
