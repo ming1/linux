@@ -80,6 +80,8 @@ const struct ata_port_operations ata_base_port_ops = {
 	.prereset		= ata_std_prereset,
 	.postreset		= ata_std_postreset,
 	.error_handler		= ata_std_error_handler,
+	.sched_eh		= ata_std_sched_eh,
+	.end_eh			= ata_std_end_eh,
 };
 
 const struct ata_port_operations sata_port_ops = {
@@ -95,7 +97,7 @@ static unsigned int ata_dev_set_xfermode(struct ata_device *dev);
 static void ata_dev_xfermask(struct ata_device *dev);
 static unsigned long ata_dev_blacklisted(const struct ata_device *dev);
 
-unsigned int ata_print_id = 1;
+atomic_t ata_print_id = ATOMIC_INIT(1);
 
 struct ata_force_param {
 	const char	*name;
@@ -5239,16 +5241,20 @@ bool ata_link_offline(struct ata_link *link)
 #ifdef CONFIG_PM
 static int ata_port_request_pm(struct ata_port *ap, pm_message_t mesg,
 			       unsigned int action, unsigned int ehi_flags,
-			       int wait)
+			       int *async)
 {
 	struct ata_link *link;
 	unsigned long flags;
-	int rc;
+	int rc = 0;
 
 	/* Previous resume operation might still be in
 	 * progress.  Wait for PM_PENDING to clear.
 	 */
 	if (ap->pflags & ATA_PFLAG_PM_PENDING) {
+		if (async) {
+			*async = -EAGAIN;
+			return 0;
+		}
 		ata_port_wait_eh(ap);
 		WARN_ON(ap->pflags & ATA_PFLAG_PM_PENDING);
 	}
@@ -5257,10 +5263,10 @@ static int ata_port_request_pm(struct ata_port *ap, pm_message_t mesg,
 	spin_lock_irqsave(ap->lock, flags);
 
 	ap->pm_mesg = mesg;
-	if (wait) {
-		rc = 0;
+	if (async)
+		ap->pm_result = async;
+	else
 		ap->pm_result = &rc;
-	}
 
 	ap->pflags |= ATA_PFLAG_PM_PENDING;
 	ata_for_each_link(link, ap, HOST_FIRST) {
@@ -5273,7 +5279,7 @@ static int ata_port_request_pm(struct ata_port *ap, pm_message_t mesg,
 	spin_unlock_irqrestore(ap->lock, flags);
 
 	/* wait and check result */
-	if (wait) {
+	if (!async) {
 		ata_port_wait_eh(ap);
 		WARN_ON(ap->pflags & ATA_PFLAG_PM_PENDING);
 	}
@@ -5283,9 +5289,8 @@ static int ata_port_request_pm(struct ata_port *ap, pm_message_t mesg,
 
 #define to_ata_port(d) container_of(d, struct ata_port, tdev)
 
-static int ata_port_suspend_common(struct device *dev, pm_message_t mesg)
+static int __ata_port_suspend_common(struct ata_port *ap, pm_message_t mesg, int *async)
 {
-	struct ata_port *ap = to_ata_port(dev);
 	unsigned int ehi_flags = ATA_EHI_QUIET;
 	int rc;
 
@@ -5300,8 +5305,15 @@ static int ata_port_suspend_common(struct device *dev, pm_message_t mesg)
 	if (mesg.event == PM_EVENT_SUSPEND)
 		ehi_flags |= ATA_EHI_NO_AUTOPSY | ATA_EHI_NO_RECOVERY;
 
-	rc = ata_port_request_pm(ap, mesg, 0, ehi_flags, 1);
+	rc = ata_port_request_pm(ap, mesg, 0, ehi_flags, async);
 	return rc;
+}
+
+static int ata_port_suspend_common(struct device *dev, pm_message_t mesg)
+{
+	struct ata_port *ap = to_ata_port(dev);
+
+	return __ata_port_suspend_common(ap, mesg, NULL);
 }
 
 static int ata_port_suspend(struct device *dev)
@@ -5328,14 +5340,20 @@ static int ata_port_poweroff(struct device *dev)
 	return ata_port_suspend_common(dev, PMSG_HIBERNATE);
 }
 
-static int ata_port_resume_common(struct device *dev)
+static int __ata_port_resume_common(struct ata_port *ap, int *async)
 {
-	struct ata_port *ap = to_ata_port(dev);
 	int rc;
 
 	rc = ata_port_request_pm(ap, PMSG_ON, ATA_EH_RESET,
-		ATA_EHI_NO_AUTOPSY | ATA_EHI_QUIET, 1);
+		ATA_EHI_NO_AUTOPSY | ATA_EHI_QUIET, async);
 	return rc;
+}
+
+static int ata_port_resume_common(struct device *dev)
+{
+	struct ata_port *ap = to_ata_port(dev);
+
+	return __ata_port_resume_common(ap, NULL);
 }
 
 static int ata_port_resume(struct device *dev)
@@ -5369,6 +5387,24 @@ static const struct dev_pm_ops ata_port_pm_ops = {
 	.runtime_resume = ata_port_resume_common,
 	.runtime_idle = ata_port_runtime_idle,
 };
+
+/* sas ports don't participate in pm runtime management of ata_ports,
+ * and need to resume ata devices at the domain level, not the per-port
+ * level. sas suspend/resume is async to allow parallel port recovery
+ * since sas has multiple ata_port instances per Scsi_Host.
+ */
+int ata_sas_port_async_suspend(struct ata_port *ap, int *async)
+{
+	return __ata_port_suspend_common(ap, PMSG_SUSPEND, async);
+}
+EXPORT_SYMBOL_GPL(ata_sas_port_async_suspend);
+
+int ata_sas_port_async_resume(struct ata_port *ap, int *async)
+{
+	return __ata_port_resume_common(ap, async);
+}
+EXPORT_SYMBOL_GPL(ata_sas_port_async_resume);
+
 
 /**
  *	ata_host_suspend - suspend host
@@ -6029,7 +6065,7 @@ int ata_host_register(struct ata_host *host, struct scsi_host_template *sht)
 
 	/* give ports names and add SCSI hosts */
 	for (i = 0; i < host->n_ports; i++)
-		host->ports[i]->print_id = ata_print_id++;
+		host->ports[i]->print_id = atomic_inc_return(&ata_print_id);
 
 
 	/* Create associated sysfs transport objects  */
@@ -6635,6 +6671,8 @@ struct ata_port_operations ata_dummy_port_ops = {
 	.qc_prep		= ata_noop_qc_prep,
 	.qc_issue		= ata_dummy_qc_issue,
 	.error_handler		= ata_dummy_error_handler,
+	.sched_eh		= ata_std_sched_eh,
+	.end_eh			= ata_std_end_eh,
 };
 
 const struct ata_port_info ata_dummy_port_info = {
