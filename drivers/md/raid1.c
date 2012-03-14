@@ -737,9 +737,22 @@ static void wait_barrier(struct r1conf *conf)
 	spin_lock_irq(&conf->resync_lock);
 	if (conf->barrier) {
 		conf->nr_waiting++;
-		wait_event_lock_irq(conf->wait_barrier, !conf->barrier,
+		/* Wait for the barrier to drop.
+		 * However if there are already pending
+		 * requests (preventing the barrier from
+		 * rising completely), and the
+		 * pre-process bio queue isn't empty,
+		 * then don't wait, as we need to empty
+		 * that queue to get the nr_pending
+		 * count down.
+		 */
+		wait_event_lock_irq(conf->wait_barrier,
+				    !conf->barrier ||
+				    (conf->nr_pending &&
+				     current->bio_list &&
+				     !bio_list_empty(current->bio_list)),
 				    conf->resync_lock,
-				    );
+			);
 		conf->nr_waiting--;
 	}
 	conf->nr_pending++;
@@ -1188,7 +1201,7 @@ static void status(struct seq_file *seq, struct mddev *mddev)
 }
 
 
-static void error(struct mddev *mddev, struct md_rdev *rdev)
+static void error(struct mddev *mddev, struct md_rdev *rdev, int force)
 {
 	char b[BDEVNAME_SIZE];
 	struct r1conf *conf = mddev->private;
@@ -1200,6 +1213,7 @@ static void error(struct mddev *mddev, struct md_rdev *rdev)
 	 * else mark the drive as failed
 	 */
 	if (test_bit(In_sync, &rdev->flags)
+	    && !force
 	    && (conf->raid_disks - mddev->degraded) == 1) {
 		/*
 		 * Don't fail the drive, act as though we were just a
@@ -1518,7 +1532,7 @@ static int r1_sync_page_io(struct md_rdev *rdev, sector_t sector,
 	}
 	/* need to record an error - either for the block or the device */
 	if (!rdev_set_badblocks(rdev, sector, sectors, 0))
-		md_error(rdev->mddev, rdev);
+		md_error(rdev->mddev, rdev, 0);
 	return 0;
 }
 
@@ -1819,7 +1833,7 @@ static void fix_read_error(struct r1conf *conf, int read_disk,
 			/* Cannot read from anywhere - mark it bad */
 			struct md_rdev *rdev = conf->mirrors[read_disk].rdev;
 			if (!rdev_set_badblocks(rdev, sect, s, 0))
-				md_error(mddev, rdev);
+				md_error(mddev, rdev, 0);
 			break;
 		}
 		/* write it back and re-read */
@@ -1972,7 +1986,7 @@ static void handle_sync_write_finished(struct r1conf *conf, struct r1bio *r1_bio
 		if (!test_bit(BIO_UPTODATE, &bio->bi_flags) &&
 		    test_bit(R1BIO_WriteError, &r1_bio->state)) {
 			if (!rdev_set_badblocks(rdev, r1_bio->sector, s, 0))
-				md_error(conf->mddev, rdev);
+				md_error(conf->mddev, rdev, 0);
 		}
 	}
 	put_buf(r1_bio);
@@ -1996,7 +2010,7 @@ static void handle_write_finished(struct r1conf *conf, struct r1bio *r1_bio)
 			 */
 			if (!narrow_write_error(r1_bio, m)) {
 				md_error(conf->mddev,
-					 conf->mirrors[m].rdev);
+					 conf->mirrors[m].rdev, 0);
 				/* an I/O failed, we can't clear the bitmap */
 				set_bit(R1BIO_Degraded, &r1_bio->state);
 			}
@@ -2032,7 +2046,7 @@ static void handle_read_error(struct r1conf *conf, struct r1bio *r1_bio)
 			       r1_bio->sector, r1_bio->sectors);
 		unfreeze_array(conf);
 	} else
-		md_error(mddev, conf->mirrors[r1_bio->read_disk].rdev);
+		md_error(mddev, conf->mirrors[r1_bio->read_disk].rdev, 0);
 
 	bio = r1_bio->bios[r1_bio->read_disk];
 	bdevname(bio->bi_bdev, b);

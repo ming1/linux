@@ -430,7 +430,7 @@ static void raid10_end_write_request(struct bio *bio, int error)
 			/* Never record new bad blocks to replacement,
 			 * just fail it.
 			 */
-			md_error(rdev->mddev, rdev);
+			md_error(rdev->mddev, rdev, 1);
 		else {
 			set_bit(WriteErrorSeen,	&rdev->flags);
 			if (!test_and_set_bit(WantReplacement, &rdev->flags))
@@ -863,9 +863,22 @@ static void wait_barrier(struct r10conf *conf)
 	spin_lock_irq(&conf->resync_lock);
 	if (conf->barrier) {
 		conf->nr_waiting++;
-		wait_event_lock_irq(conf->wait_barrier, !conf->barrier,
+		/* Wait for the barrier to drop.
+		 * However if there are already pending
+		 * requests (preventing the barrier from
+		 * rising completely), and the
+		 * pre-process bio queue isn't empty,
+		 * then don't wait, as we need to empty
+		 * that queue to get the nr_pending
+		 * count down.
+		 */
+		wait_event_lock_irq(conf->wait_barrier,
+				    !conf->barrier ||
+				    (conf->nr_pending &&
+				     current->bio_list &&
+				     !bio_list_empty(current->bio_list)),
 				    conf->resync_lock,
-				    );
+			);
 		conf->nr_waiting--;
 	}
 	conf->nr_pending++;
@@ -1352,7 +1365,7 @@ static int enough(struct r10conf *conf, int ignore)
 	return 1;
 }
 
-static void error(struct mddev *mddev, struct md_rdev *rdev)
+static void error(struct mddev *mddev, struct md_rdev *rdev, int force)
 {
 	char b[BDEVNAME_SIZE];
 	struct r10conf *conf = mddev->private;
@@ -1364,6 +1377,7 @@ static void error(struct mddev *mddev, struct md_rdev *rdev)
 	 * else mark the drive as failed
 	 */
 	if (test_bit(In_sync, &rdev->flags)
+	    && !force
 	    && !enough(conf, rdev->raid_disk))
 		/*
 		 * Don't fail the drive, just return an IO error.
@@ -1483,7 +1497,7 @@ static int raid10_add_disk(struct mddev *mddev, struct md_rdev *rdev)
 		 * very different from resync
 		 */
 		return -EBUSY;
-	if (!enough(conf, -1))
+	if (rdev->saved_raid_disk < 0 && !enough(conf, -1))
 		return -EINVAL;
 
 	if (rdev->raid_disk >= 0)
@@ -1682,14 +1696,12 @@ static void end_sync_write(struct bio *bio, int error)
 	d = find_bio_disk(conf, r10_bio, bio, &slot, &repl);
 	if (repl)
 		rdev = conf->mirrors[d].replacement;
-	if (!rdev) {
-		smp_mb();
+	else
 		rdev = conf->mirrors[d].rdev;
-	}
 
 	if (!uptodate) {
 		if (repl)
-			md_error(mddev, rdev);
+			md_error(mddev, rdev, 1);
 		else {
 			set_bit(WriteErrorSeen, &rdev->flags);
 			if (!test_and_set_bit(WantReplacement, &rdev->flags))
@@ -2021,7 +2033,7 @@ static int r10_sync_page_io(struct md_rdev *rdev, sector_t sector,
 	}
 	/* need to record an error - either for the block or the device */
 	if (!rdev_set_badblocks(rdev, sector, sectors, 0))
-		md_error(rdev->mddev, rdev);
+		md_error(rdev->mddev, rdev, 0);
 	return 0;
 }
 
@@ -2065,7 +2077,7 @@ static void fix_read_error(struct r10conf *conf, struct mddev *mddev, struct r10
 		printk(KERN_NOTICE
 		       "md/raid10:%s: %s: Failing raid device\n",
 		       mdname(mddev), b);
-		md_error(mddev, conf->mirrors[d].rdev);
+		md_error(mddev, conf->mirrors[d].rdev, 0);
 		r10_bio->devs[r10_bio->read_slot].bio = IO_BLOCKED;
 		return;
 	}
@@ -2121,7 +2133,7 @@ static void fix_read_error(struct r10conf *conf, struct mddev *mddev, struct r10
 				    r10_bio->devs[r10_bio->read_slot].addr
 				    + sect,
 				    s, 0)) {
-				md_error(mddev, rdev);
+				md_error(mddev, rdev, 0);
 				r10_bio->devs[r10_bio->read_slot].bio
 					= IO_BLOCKED;
 			}
@@ -2425,7 +2437,7 @@ static void handle_write_completed(struct r10conf *conf, struct r10bio *r10_bio)
 					    rdev,
 					    r10_bio->devs[m].addr,
 					    r10_bio->sectors, 0))
-					md_error(conf->mddev, rdev);
+					md_error(conf->mddev, rdev, 0);
 			}
 			rdev = conf->mirrors[dev].replacement;
 			if (r10_bio->devs[m].repl_bio == NULL)
@@ -2441,7 +2453,7 @@ static void handle_write_completed(struct r10conf *conf, struct r10bio *r10_bio)
 					    rdev,
 					    r10_bio->devs[m].addr,
 					    r10_bio->sectors, 0))
-					md_error(conf->mddev, rdev);
+					md_error(conf->mddev, rdev, 0);
 			}
 		}
 		put_buf(r10_bio);
@@ -2459,7 +2471,7 @@ static void handle_write_completed(struct r10conf *conf, struct r10bio *r10_bio)
 			} else if (bio != NULL &&
 				   !test_bit(BIO_UPTODATE, &bio->bi_flags)) {
 				if (!narrow_write_error(r10_bio, m)) {
-					md_error(conf->mddev, rdev);
+					md_error(conf->mddev, rdev, 0);
 					set_bit(R10BIO_Degraded,
 						&r10_bio->state);
 				}

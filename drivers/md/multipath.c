@@ -97,7 +97,7 @@ static void multipath_end_request(struct bio *bio, int error)
 		 * oops, IO error:
 		 */
 		char b[BDEVNAME_SIZE];
-		md_error (mp_bh->mddev, rdev);
+		md_error (mp_bh->mddev, rdev, 0);
 		printk(KERN_ERR "multipath: %s: rescheduling sector %llu\n", 
 		       bdevname(rdev->bdev,b), 
 		       (unsigned long long)bio->bi_sector);
@@ -184,12 +184,12 @@ static int multipath_congested(void *data, int bits)
 /*
  * Careful, this can execute in IRQ contexts as well!
  */
-static void multipath_error (struct mddev *mddev, struct md_rdev *rdev)
+static void multipath_error(struct mddev *mddev, struct md_rdev *rdev, int force)
 {
 	struct mpconf *conf = mddev->private;
 	char b[BDEVNAME_SIZE];
 
-	if (conf->raid_disks - mddev->degraded <= 1) {
+	if (conf->raid_disks - mddev->degraded <= 1 && !force) {
 		/*
 		 * Uh oh, we can do nothing if this is our last path, but
 		 * first check if this is a queued request for a device
