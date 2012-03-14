@@ -13,6 +13,7 @@
 #include <linux/usb.h>
 #include <linux/usb/cdc.h>
 #include <linux/usb/usbnet.h>
+#include <linux/usb/cdc-wdm.h>
 
 /* The name of the CDC Device Management driver */
 #define DM_DRIVER "cdc_wdm"
@@ -64,6 +65,9 @@ static int qmi_wwan_bind(struct usbnet *dev, struct usb_interface *intf)
 	struct usb_cdc_ether_desc *cdc_ether = NULL;
 	u32 required = 1 << USB_CDC_HEADER_TYPE | 1 << USB_CDC_UNION_TYPE;
 	u32 found = 0;
+	atomic_t *pmcount = (void *)&dev->data[1];
+
+	atomic_set(pmcount, 0);
 
 	/*
 	 * assume a data interface has no additional descriptors and
@@ -170,12 +174,149 @@ err:
 	return status;
 }
 
-/* stolen from cdc_ether.c */
+/* using a counter to merge subdriver requests with our own into a combined state */
 static int qmi_wwan_manage_power(struct usbnet *dev, int on)
 {
-	dev->intf->needs_remote_wakeup = on;
-	return 0;
+	atomic_t *pmcount = (void *)&dev->data[1];
+	int rv = 0;
+
+	dev_dbg(&dev->intf->dev, "%s() pmcount=%d, on=%d\n", __func__, atomic_read(pmcount), on);
+
+	if ((on && atomic_add_return(1, pmcount) == 1) || (!on && atomic_dec_and_test(pmcount))) {
+		/* need autopm_get/put here to ensure the usbcore sees the new value */
+		rv = usb_autopm_get_interface(dev->intf);
+		if (rv < 0)
+			goto err;
+		dev->intf->needs_remote_wakeup = on;
+		usb_autopm_put_interface(dev->intf);
+	}
+err:
+	return rv;
 }
+
+static int qmi_wwan_cdc_wdm_manage_power(struct usb_interface *intf, int on)
+{
+	struct usbnet *dev = usb_get_intfdata(intf);
+	return qmi_wwan_manage_power(dev, on);
+}
+
+/* Some devices combine the "control" and "data" functions into a
+ * single interface with all three endpoints: interrupt + bulk in and
+ * out
+ *
+ * Setting up cdc-wdm as a subdriver owning the interrupt endpoint
+ * will let it provide userspace access to the encapsulated QMI
+ * protocol without interfering with the usbnet operations.
+  */
+static int qmi_wwan_bind_shared(struct usbnet *dev, struct usb_interface *intf)
+{
+	int rv;
+	struct usb_driver *subdriver = NULL;
+	atomic_t *pmcount = (void *)&dev->data[1];
+
+	atomic_set(pmcount, 0);
+
+	/* collect all three endpoints */
+	rv = usbnet_get_endpoints(dev, intf);
+	if (rv < 0)
+		goto err;
+
+	/* require interrupt endpoint for subdriver */
+	if (!dev->status) {
+		rv = -EINVAL;
+		goto err;
+	}
+
+	subdriver = usb_cdc_wdm_register(intf, &dev->status->desc, 512, &qmi_wwan_cdc_wdm_manage_power);
+	if (IS_ERR(subdriver)) {
+		rv = PTR_ERR(subdriver);
+		goto err;
+	}
+
+	/* can't let usbnet use the interrupt endpoint */
+	dev->status = NULL;
+
+	/* save subdriver struct for suspend/resume wrappers */
+	dev->data[0] = (unsigned long)subdriver;
+
+err:
+	return rv;
+}
+
+/* Gobi devices uses identical class/protocol codes for all interfaces regardless
+ * of function. Some of these are CDC ACM like and have the exact same endpoints
+ * we are looking for. This leaves two possible strategies for identifying the
+ * correct interface:
+ *   a) hardcoding interface number, or
+ *   b) use the fact that the wwan interface is the only one lacking additional
+ *      (CDC functional) descriptors
+ *
+ * Let's see if we can get away with the generic b) solution.
+ */
+static int qmi_wwan_bind_gobi(struct usbnet *dev, struct usb_interface *intf)
+{
+	int rv = -EINVAL;
+
+	/* ignore any interface with additional descriptors */
+	if (intf->cur_altsetting->extralen)
+		goto err;
+
+	rv = qmi_wwan_bind_shared(dev, intf);
+err:
+	return rv;
+}
+
+static void qmi_wwan_unbind_shared(struct usbnet *dev, struct usb_interface *intf)
+{
+	struct usb_driver *subdriver = (void *)dev->data[0];
+
+	if (subdriver && subdriver->disconnect)
+		subdriver->disconnect(intf);
+
+	dev->data[0] = (unsigned long)NULL;
+}
+
+/* suspend/resume wrappers calling both usbnet and the cdc-wdm
+ * subdriver if present.
+ *
+ * NOTE: cdc-wdm also supports pre/post_reset, but we cannot provide
+ * wrappers for those without adding usbnet reset support first.
+ */
+static int qmi_wwan_suspend(struct usb_interface *intf, pm_message_t message)
+{
+	struct usbnet *dev = usb_get_intfdata(intf);
+	struct usb_driver *subdriver = (void *)dev->data[0];
+	int ret;
+
+	ret = usbnet_suspend(intf, message);
+	if (ret < 0)
+		goto err;
+
+	if (subdriver && subdriver->suspend)
+		ret = subdriver->suspend(intf, message);
+	if (ret < 0)
+		usbnet_resume(intf);
+err:
+	return ret;
+}
+
+static int qmi_wwan_resume(struct usb_interface *intf)
+{
+	struct usbnet *dev = usb_get_intfdata(intf);
+	struct usb_driver *subdriver = (void *)dev->data[0];
+	int ret = 0;
+
+	if (subdriver && subdriver->resume)
+		ret = subdriver->resume(intf);
+	if (ret < 0)
+		goto err;
+	ret = usbnet_resume(intf);
+	if (ret < 0 && subdriver && subdriver->resume && subdriver->suspend)
+		subdriver->suspend(intf, PMSG_SUSPEND);
+err:
+	return ret;
+}
+
 
 static const struct driver_info	qmi_wwan_info = {
 	.description	= "QMI speaking wwan device",
@@ -184,19 +325,94 @@ static const struct driver_info	qmi_wwan_info = {
 	.manage_power	= qmi_wwan_manage_power,
 };
 
+static const struct driver_info	qmi_wwan_shared = {
+	.description	= "QMI speaking wwan device with combined interface",
+	.flags		= FLAG_WWAN,
+	.bind		= qmi_wwan_bind_shared,
+	.unbind		= qmi_wwan_unbind_shared,
+	.manage_power	= qmi_wwan_manage_power,
+};
+
+static const struct driver_info	qmi_wwan_gobi = {
+	.description	= "Qualcomm Gobi wwan/QMI device",
+	.flags		= FLAG_WWAN,
+	.bind		= qmi_wwan_bind_gobi,
+	.unbind		= qmi_wwan_unbind_shared,
+	.manage_power	= qmi_wwan_manage_power,
+};
+
 #define HUAWEI_VENDOR_ID	0x12D1
+#define QMI_GOBI_DEVICE(vend, prod) \
+	USB_DEVICE(vend, prod), \
+	.driver_info = (unsigned long)&qmi_wwan_gobi
 
 static const struct usb_device_id products[] = {
-{
-	/* Huawei E392, E398 and possibly others sharing both device id and more... */
-	.match_flags        = USB_DEVICE_ID_MATCH_VENDOR | USB_DEVICE_ID_MATCH_INT_INFO,
-	.idVendor           = HUAWEI_VENDOR_ID,
-	.bInterfaceClass    = USB_CLASS_VENDOR_SPEC,
-	.bInterfaceSubClass = 1,
-	.bInterfaceProtocol = 8, /* NOTE: This is the *slave* interface of the CDC Union! */
-	.driver_info        = (unsigned long)&qmi_wwan_info,
-}, {
-},	/* END */
+	{	/* Huawei E392, E398 and possibly others sharing both device id and more... */
+		.match_flags        = USB_DEVICE_ID_MATCH_VENDOR | USB_DEVICE_ID_MATCH_INT_INFO,
+		.idVendor           = HUAWEI_VENDOR_ID,
+		.bInterfaceClass    = USB_CLASS_VENDOR_SPEC,
+		.bInterfaceSubClass = 1,
+		.bInterfaceProtocol = 8, /* NOTE: This is the *slave* interface of the CDC Union! */
+		.driver_info        = (unsigned long)&qmi_wwan_info,
+	},
+	{	/* Huawei E392, E398 and possibly others in "Windows mode"
+		 * using a combined control and data interface without any CDC
+		 * functional descriptors
+		 */
+		.match_flags        = USB_DEVICE_ID_MATCH_VENDOR | USB_DEVICE_ID_MATCH_INT_INFO,
+		.idVendor           = HUAWEI_VENDOR_ID,
+		.bInterfaceClass    = USB_CLASS_VENDOR_SPEC,
+		.bInterfaceSubClass = 1,
+		.bInterfaceProtocol = 17,
+		.driver_info        = (unsigned long)&qmi_wwan_shared,
+	},
+	{	/* Pantech UML290 */
+		.match_flags	    = USB_DEVICE_ID_MATCH_DEVICE | USB_DEVICE_ID_MATCH_INT_INFO,
+		.idVendor           = 0x106c,
+		.idProduct          = 0x3718,
+		.bInterfaceClass    = 0xff,
+		.bInterfaceSubClass = 0xf0,
+		.bInterfaceProtocol = 0xff,
+		.driver_info        = (unsigned long)&qmi_wwan_shared,
+	},
+	{QMI_GOBI_DEVICE(0x05c6, 0x9212)},	/* Acer Gobi Modem Device */
+	{QMI_GOBI_DEVICE(0x03f0, 0x1f1d)},	/* HP un2400 Gobi Modem Device */
+	{QMI_GOBI_DEVICE(0x03f0, 0x371d)},	/* HP un2430 Mobile Broadband Module */
+	{QMI_GOBI_DEVICE(0x04da, 0x250d)},	/* Panasonic Gobi Modem device */
+	{QMI_GOBI_DEVICE(0x413c, 0x8172)},	/* Dell Gobi Modem device */
+	{QMI_GOBI_DEVICE(0x1410, 0xa001)},	/* Novatel Gobi Modem device */
+	{QMI_GOBI_DEVICE(0x0b05, 0x1776)},	/* Asus Gobi Modem device */
+	{QMI_GOBI_DEVICE(0x19d2, 0xfff3)},	/* ONDA Gobi Modem device */
+	{QMI_GOBI_DEVICE(0x05c6, 0x9001)},	/* Generic Gobi Modem device */
+	{QMI_GOBI_DEVICE(0x05c6, 0x9002)},	/* Generic Gobi Modem device */
+	{QMI_GOBI_DEVICE(0x05c6, 0x9202)},	/* Generic Gobi Modem device */
+	{QMI_GOBI_DEVICE(0x05c6, 0x9203)},	/* Generic Gobi Modem device */
+	{QMI_GOBI_DEVICE(0x05c6, 0x9222)},	/* Generic Gobi Modem device */
+	{QMI_GOBI_DEVICE(0x05c6, 0x9009)},	/* Generic Gobi Modem device */
+	{QMI_GOBI_DEVICE(0x413c, 0x8186)},	/* Dell Gobi 2000 Modem device (N0218, VU936) */
+	{QMI_GOBI_DEVICE(0x05c6, 0x920b)},	/* Generic Gobi 2000 Modem device */
+	{QMI_GOBI_DEVICE(0x05c6, 0x9225)},	/* Sony Gobi 2000 Modem device (N0279, VU730) */
+	{QMI_GOBI_DEVICE(0x05c6, 0x9245)},	/* Samsung Gobi 2000 Modem device (VL176) */
+	{QMI_GOBI_DEVICE(0x03f0, 0x251d)},	/* HP Gobi 2000 Modem device (VP412) */
+	{QMI_GOBI_DEVICE(0x05c6, 0x9215)},	/* Acer Gobi 2000 Modem device (VP413) */
+	{QMI_GOBI_DEVICE(0x05c6, 0x9265)},	/* Asus Gobi 2000 Modem device (VR305) */
+	{QMI_GOBI_DEVICE(0x05c6, 0x9235)},	/* Top Global Gobi 2000 Modem device (VR306) */
+	{QMI_GOBI_DEVICE(0x05c6, 0x9275)},	/* iRex Technologies Gobi 2000 Modem device (VR307) */
+	{QMI_GOBI_DEVICE(0x1199, 0x9001)},	/* Sierra Wireless Gobi 2000 Modem device (VT773) */
+	{QMI_GOBI_DEVICE(0x1199, 0x9002)},	/* Sierra Wireless Gobi 2000 Modem device (VT773) */
+	{QMI_GOBI_DEVICE(0x1199, 0x9003)},	/* Sierra Wireless Gobi 2000 Modem device (VT773) */
+	{QMI_GOBI_DEVICE(0x1199, 0x9004)},	/* Sierra Wireless Gobi 2000 Modem device (VT773) */
+	{QMI_GOBI_DEVICE(0x1199, 0x9005)},	/* Sierra Wireless Gobi 2000 Modem device (VT773) */
+	{QMI_GOBI_DEVICE(0x1199, 0x9006)},	/* Sierra Wireless Gobi 2000 Modem device (VT773) */
+	{QMI_GOBI_DEVICE(0x1199, 0x9007)},	/* Sierra Wireless Gobi 2000 Modem device (VT773) */
+	{QMI_GOBI_DEVICE(0x1199, 0x9008)},	/* Sierra Wireless Gobi 2000 Modem device (VT773) */
+	{QMI_GOBI_DEVICE(0x1199, 0x9009)},	/* Sierra Wireless Gobi 2000 Modem device (VT773) */
+	{QMI_GOBI_DEVICE(0x1199, 0x900a)},	/* Sierra Wireless Gobi 2000 Modem device (VT773) */
+	{QMI_GOBI_DEVICE(0x1199, 0x9011)},	/* Sierra Wireless Gobi 2000 Modem device (MC8305) */
+	{QMI_GOBI_DEVICE(0x16d8, 0x8002)},	/* CMDTech Gobi 2000 Modem device (VU922) */
+	{QMI_GOBI_DEVICE(0x05c6, 0x9205)},	/* Gobi 2000 Modem device */
+	{QMI_GOBI_DEVICE(0x1199, 0x9013)},	/* Sierra Wireless Gobi 3000 Modem device (MC8355) */
+	{ }					/* END */
 };
 MODULE_DEVICE_TABLE(usb, products);
 
@@ -205,9 +421,9 @@ static struct usb_driver qmi_wwan_driver = {
 	.id_table	      = products,
 	.probe		      =	usbnet_probe,
 	.disconnect	      = usbnet_disconnect,
-	.suspend	      = usbnet_suspend,
-	.resume		      =	usbnet_resume,
-	.reset_resume         = usbnet_resume,
+	.suspend	      = qmi_wwan_suspend,
+	.resume		      =	qmi_wwan_resume,
+	.reset_resume         = qmi_wwan_resume,
 	.supports_autosuspend = 1,
 };
 
