@@ -581,7 +581,7 @@ mwifiex_sdio_poll_card_status(struct mwifiex_adapter *adapter, u8 bits)
 		else if ((cs & bits) == bits)
 			return 0;
 
-		udelay(10);
+		usleep_range(10, 20);
 	}
 
 	dev_err(adapter->dev, "poll card status failed, tries = %d\n",
@@ -759,7 +759,7 @@ static int mwifiex_prog_fw_w_helper(struct mwifiex_adapter *adapter,
 			if (len)
 				break;
 
-			udelay(10);
+			usleep_range(10, 20);
 		}
 
 		if (!len) {
