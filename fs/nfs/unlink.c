@@ -108,13 +108,13 @@ static void nfs_async_unlink_release(void *calldata)
 }
 
 #if defined(CONFIG_NFS_V4_1)
-void nfs_unlink_prepare(struct rpc_task *task, void *calldata)
+static void nfs_unlink_prepare(struct rpc_task *task, void *calldata)
 {
 	struct nfs_unlinkdata *data = calldata;
 	struct nfs_server *server = NFS_SERVER(data->dir);
 
 	if (nfs4_setup_sequence(server, &data->args.seq_args,
-				&data->res.seq_res, 1, task))
+				&data->res.seq_res, task))
 		return;
 	rpc_call_start(task);
 }
@@ -410,7 +410,7 @@ static void nfs_rename_prepare(struct rpc_task *task, void *calldata)
 	struct nfs_server *server = NFS_SERVER(data->old_dir);
 
 	if (nfs4_setup_sequence(server, &data->args.seq_args,
-				&data->res.seq_res, 1, task))
+				&data->res.seq_res, task))
 		return;
 	rpc_call_start(task);
 }
