@@ -1,0 +1,93 @@
+Importing hexagon based on v3.2-rc2
+Unchanged quilt series hexagon
+Importing i2c based on 3.3-rc7
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard fde7d9049e55ab85a390be7f415d74c9f62dd0f9
+HEAD is now at fde7d90 Linux 3.3-rc7
+$ git am ../quilt/i2c/i2c-core-comment-says-transmitted-but-means-received.patch
+Applying: i2c-core: Comment says "transmitted" but means "received"
+$ git am ../quilt/i2c/i2c-gpio-use-linux-gpio.h-rather-than-asm-gpio.h.patch
+Applying: i2c-gpio: Use linux/gpio.h rather than asm/gpio.h
+$ git am ../quilt/i2c/i2c-isch-decrease-delay-in-command-completion-check-loop.patch
+Applying: i2c-isch: Decrease delay in command completion check loop
+$ git am ../quilt/i2c/i2c-i801-01-add-device-ids-for-intel-lynx-point.patch
+Applying: i2c-i801: Add device IDs for Intel Lynx Point
+$ git am ../quilt/i2c/i2c-i801-02-use-usleep_range.patch
+Applying: i2c-i801: Use usleep_range to wait for command completion
+$ git am ../quilt/i2c/i2c-convert-mux-drivers-to-use-module_i2c_driver.patch
+Applying: i2c: Convert drivers/i2c/muxes/* to use module_i2c_driver()
+$ git am ../quilt/i2c/i2c-update-FSF-address.patch
+Applying: i2c: Update the FSF address
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/i2c
+From ../quilt-tmp
+ + b750167...49d4384 master     -> quilt/i2c  (forced update)
+Importing jdelvare-hwmon based on 3.3-rc7
+$ cd ../quilt-tmp
+$ git reset --hard fde7d9049e55ab85a390be7f415d74c9f62dd0f9
+HEAD is now at fde7d90 Linux 3.3-rc7
+$ git am ../quilt/jdelvare-hwmon/hwmon-fam15h_power-01-correct-sign-extension-of-running_avg_capture.patch
+Applying: hwmon: (fam15h_power) Correct sign extension of running_avg_capture
+$ git am ../quilt/jdelvare-hwmon/hwmon-fam15h_power-02-increase-output-resolution.patch
+Applying: hwmon: (fam15h_power) Increase output resolution
+$ git am ../quilt/jdelvare-hwmon/hwmon-w83795-01-show-standard-pwm-attr.patch
+Applying: hwmon: (w83795) Unconditionally support manual fan speed control
+$ git am ../quilt/jdelvare-hwmon/hwmon-w83795-02-fix-multi-line-comments.patch
+Applying: hwmon: (w83795) Fix multi-line comments
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm90-01-fix-multi-line-comments.patch
+Applying: hwmon: (lm90) Fix multi-line comments
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm90-02-add-support-for-GMT-G781.patch
+Applying: hwmon: (lm90) Add support for GMT G781
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm90-03-restore-original-configuration-if-probe-function-fails.patch
+Applying: hwmon: (lm90) Restore original configuration if probe function fails
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm63-01-rename-new_client.patch
+Applying: hwmon: (lm63) Reorganize the code
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm63-02-make-fan-speed-control-strategy-changeable.patch
+Applying: hwmon: (lm63) Make fan speed control strategy changeable
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm63-03-allow-editing-lut.patch
+Applying: hwmon: (lm63) Let the user adjust the lookup table
+$ git am ../quilt/jdelvare-hwmon/hwmon-mc13783-adc-01-remove-space-before-tab.patch
+Applying: hwmon: (mc13783-adc) Remove space before tab
+$ git am ../quilt/jdelvare-hwmon/hwmon-mc13783-adc-02-add-support-for-the-mc13892-pmic.patch
+Applying: hwmon: (mc13xxx-adc) Add support for the MC13892 PMIC
+$ git am ../quilt/jdelvare-hwmon/hwmon-add-mcp3021-adc-driver.patch
+Applying: hwmon: Add MCP3021 ADC driver
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/jdelvare-hwmon
+From ../quilt-tmp
+ + 064628b...23bbf12 master     -> quilt/jdelvare-hwmon  (forced update)
+Importing kernel-doc based on 3.3-rc2
+Unchanged quilt series kernel-doc
+Importing rr based on v3.3-rc5-86-g5ffca28
+Unchanged quilt series rr
+Importing device-mapper based on v3.3-rc7-17-g2f1c2b8
+$ cd ../quilt-tmp
+$ git reset --hard 2f1c2b8155865ba3c2909f468ac8be60f52ed56b
+HEAD is now at 2f1c2b8 Merge branch 'for_linus' of git://cavan.codon.org.uk/platform-drivers-x86
+$ git am ../quilt/device-mapper/dm-exception_store-fix-init-error-path.patch
+Applying: Call the correct exit function on failure in dm_exception_store_init.
+$ git am ../quilt/device-mapper/dm-raid-handle-failed-devices-during-start-up.patch
+Applying: The dm-raid code currently fails to create a RAID array if any of the
+$ git am ../quilt/device-mapper/dm-crypt-remove-unused-kmap_atomic-arg.patch
+Applying: The second argument of k[un]map_atomic() is unused.
+$ git am ../quilt/device-mapper/dm-reject-trailing-characters-in-sccanf-input.patch
+Applying: Device mapper uses sscanf to convert arguments to numbers. The problem is that
+$ git am ../quilt/device-mapper/dm-document-sysfs-entries.patch
+Applying: Describe attributes provided by device-mapper in /sys/block.
+$ git am ../quilt/device-mapper/dm-mpath-clear-map_context-when-requeueing.patch
+Applying: When requeuing a request,  clear the map_context pointer to ensure we
+$ git am ../quilt/device-mapper/dm-persistent-data-remove-redundant-value_size-arg-from-value_ptr.patch
+Applying: Now that the value_size is held within every node of the btrees we can
+$ git am ../quilt/device-mapper/dm-bufio-remove-version-header.patch
+Applying: As 'make versioncheck' points out, drivers/md/dm-bufio.c has no need
+$ git am ../quilt/device-mapper/dm-thin-commit-outstanding-date-every-second.patch
+Applying: Commit unwritten data every second to prevent too much building up.
+$ git am ../quilt/device-mapper/dm-thin-relax-hard-limit-on-the-maximum-size-of-a-metadata-device.patch
+Applying: The thin metadata format can only make use of a device that is <=
+$ git am ../quilt/device-mapper/dm-bufio-prefetch.patch
+Applying: This patch introduces a new function dm_bufio_prefetch. It prefetches
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/device-mapper
+From ../quilt-tmp
+ + 7714fd2...b8c84fe master     -> quilt/device-mapper  (forced update)
