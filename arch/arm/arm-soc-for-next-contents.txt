@@ -52,6 +52,7 @@ imx/soc			git://git.pengutronix.de/git/imx/linux-2.6.git features/imx3
 tegra/soc		git://git.kernel.org/pub/scm/linux/kernel/git/olof/tegra.git tags/tegra-soc
 imx/imx35-imx5-aips-setup	git://git.pengutronix.de/git/imx/linux-2.6.git tags/imx35-imx5-aips-setup
 samsung/devel		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/devel-samsung
+renesas/soc		git://git.kernel.org/pub/scm/linux/kernel/git/rafael/renesas.git soc
 
 next/drivers:
 at91/device-board	git://github.com/at91linux/linux-at91.git at91-3.4-base+device_board
