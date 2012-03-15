@@ -64,6 +64,9 @@ imx/drivers		git://git.pengutronix.de/git/imx/linux-2.6.git imx-drivers
 			git://git.linaro.org/people/shawnguo/linux-2.6.git imx/driver
 mxs/gpmi		git://git.linaro.org/people/shawnguo/linux-2.6.git mxs/gpmi
 lpc32xx/drivers		patches from Roland Stigge
+lpc32xx/drivers		git://git.antcom.de/linux-2.6.git lpc32xx/mach-lpc32xx-usb
+lpc32xx/drivers		git://git.antcom.de/linux-2.6.git lpc32xx/mach-lpc32xx-eth
+				depends on lpc32xx/fixup and lpc32xx/fixup2
 pxa/rtc			git://github.com/hzhuang1/linux.git rtc-sa1100
 				depends on pxa/cleanups
 				pulled twice
