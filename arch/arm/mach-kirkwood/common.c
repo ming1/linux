@@ -15,7 +15,6 @@
 #include <linux/ata_platform.h>
 #include <linux/mtd/nand.h>
 #include <linux/dma-mapping.h>
-#include <linux/of.h>
 #include <net/dsa.h>
 #include <asm/page.h>
 #include <asm/timex.h>
@@ -269,7 +268,7 @@ void __init kirkwood_uart1_init(void)
 /*****************************************************************************
  * Cryptographic Engines and Security Accelerator (CESA)
  ****************************************************************************/
-static void __init kirkwood_crypto_init(void)
+void __init kirkwood_crypto_init(void)
 {
 	kirkwood_clk_ctrl |= CGC_CRYPTO;
 	orion_crypto_init(CRYPTO_PHYS_BASE, KIRKWOOD_SRAM_PHYS_BASE,
@@ -280,7 +279,7 @@ static void __init kirkwood_crypto_init(void)
 /*****************************************************************************
  * XOR0
  ****************************************************************************/
-void __init kirkwood_xor0_init(void)
+static void __init kirkwood_xor0_init(void)
 {
 	kirkwood_clk_ctrl |= CGC_XOR0;
 
@@ -292,7 +291,7 @@ void __init kirkwood_xor0_init(void)
 /*****************************************************************************
  * XOR1
  ****************************************************************************/
-void __init kirkwood_xor1_init(void)
+static void __init kirkwood_xor1_init(void)
 {
 	kirkwood_clk_ctrl |= CGC_XOR1;
 
@@ -304,7 +303,7 @@ void __init kirkwood_xor1_init(void)
 /*****************************************************************************
  * Watchdog
  ****************************************************************************/
-void __init kirkwood_wdt_init(void)
+static void __init kirkwood_wdt_init(void)
 {
 	orion_wdt_init(kirkwood_tclk);
 }
@@ -393,7 +392,7 @@ void __init kirkwood_audio_init(void)
 /*
  * Identify device ID and revision.
  */
-char * __init kirkwood_id(void)
+static char * __init kirkwood_id(void)
 {
 	u32 dev, rev;
 
@@ -436,7 +435,7 @@ char * __init kirkwood_id(void)
 	}
 }
 
-void __init kirkwood_l2_init(void)
+static void __init kirkwood_l2_init(void)
 {
 #ifdef CONFIG_CACHE_FEROCEON_L2_WRITETHROUGH
 	writel(readl(L2_CONFIG_REG) | L2_WRITETHROUGH, L2_CONFIG_REG);
@@ -451,6 +450,7 @@ void __init kirkwood_init(void)
 {
 	printk(KERN_INFO "Kirkwood: %s, TCLK=%d.\n",
 		kirkwood_id(), kirkwood_tclk);
+	kirkwood_i2s_data.tclk = kirkwood_tclk;
 
 	/*
 	 * Disable propagation of mbus errors to the CPU local bus,
@@ -482,9 +482,6 @@ static int __init kirkwood_clock_gate(void)
 {
 	unsigned int curr = readl(CLOCK_GATING_CTRL);
 	u32 dev, rev;
-#ifdef CONFIG_OF
-	struct device_node *np;
-#endif
 
 	kirkwood_pcie_id(&dev, &rev);
 	printk(KERN_DEBUG "Gating clock of unused units\n");
@@ -492,30 +489,6 @@ static int __init kirkwood_clock_gate(void)
 
 	/* Make sure those units are accessible */
 	writel(curr | CGC_SATA0 | CGC_SATA1 | CGC_PEX0 | CGC_PEX1, CLOCK_GATING_CTRL);
-
-#ifdef CONFIG_OF
-	np = of_find_compatible_node(NULL, NULL, "mrvl,orion-crypto");
-	if (np && of_device_is_available(np)) {
-		kirkwood_clk_ctrl |= CGC_CRYPTO;
-		of_node_put(np);
-	}
-
-	np = of_find_compatible_node(NULL, NULL, "mrvl,orion-ehci");
-	if (np && of_device_is_available(np)) {
-		kirkwood_clk_ctrl |= CGC_USB0;
-		of_node_put(np);
-	}
-
-	np = of_find_compatible_node(NULL, NULL, "mrvl,orion-sata");
-	if (np && of_device_is_available(np)) {
-		int nr_ports;
-		kirkwood_clk_ctrl |= CGC_SATA0;
-		of_property_read_u32(np, "nr-ports", &nr_ports);
-		if (nr_ports > 1)
-			kirkwood_clk_ctrl |= CGC_SATA1;
-		of_node_put(np);
-	}
-#endif
 
 	/* For SATA: first shutdown the phy */
 	if (!(kirkwood_clk_ctrl & CGC_SATA0)) {

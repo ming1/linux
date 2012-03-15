@@ -4,7 +4,7 @@
 
 / {
 	model = "Globalscale Technologies Dreamplug";
-	compatible = "globalscale,dreamplug-003-ds2001", "globalscale,dreamplug", "mrvl,kirkwood-88f6281", "mrvl,kirkwood";
+	compatible = "globalscale,dreamplug-003-ds2001", "globalscale,dreamplug", "marvell,kirkwood-88f6281", "marvell,kirkwood";
 
 	memory {
 		device_type = "memory";
@@ -17,25 +17,9 @@
 
 	serial@f1012000 {
 		compatible = "ns16550a";
-		reg = <0xf1012000 0x100>;
+		reg = <0xf1012000 0xff>;
 		reg-shift = <2>;
 		interrupts = <33>;
 		clock-frequency = <200000000>;
-	};
-
-	sata@f1080000 {
-		compatible = "mrvl,orion-sata";
-		reg = <0xf1080000 0x5000>;
-		interrupts = <21>;
-		dma-mask = <0xffffffff>;
-		nr-ports = <1>;
-	};
-
-	ehci@f1050000 {
-		compatible = "mrvl,orion-ehci";
-		reg = <0xf1050000 0x1000>;
-		interrupts = <19>;
-		dma-mask = <0xffffffff>;
-		phy-version = "orion";
 	};
 };

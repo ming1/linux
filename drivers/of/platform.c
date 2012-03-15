@@ -121,26 +121,6 @@ void of_device_make_bus_id(struct device *dev)
 	dev_set_name(dev, "%s.%d", node->name, magic - 1);
 }
 
-static u64* of_get_dma_mask(struct device_node *np)
-{
-	const __be32 *prop;
-	int len;
-	u64 *dma_mask;
-
-	prop = of_get_property(np, "dma-mask", &len);
-
-	if (!prop)
-		return NULL;
-
-	dma_mask = kzalloc(sizeof(u64), GFP_KERNEL);
-	if (!dma_mask)
-		return NULL;
-
-	*dma_mask = of_read_number(prop, len / 4);
-
-	return dma_mask;
-}
-
 /**
  * of_device_alloc - Allocate and initialize an of_device
  * @np: device node to assign to device
@@ -181,14 +161,10 @@ struct platform_device *of_device_alloc(struct device_node *np,
 		WARN_ON(of_irq_to_resource_table(np, res, num_irq) != num_irq);
 	}
 
-	dev->dev.dma_mask = of_get_dma_mask(np);
 	dev->dev.of_node = of_node_get(np);
-
 #if defined(CONFIG_MICROBLAZE)
-	if (!dev->dev.dma_mask)
-		dev->dev.dma_mask = &dev->archdata.dma_mask;
+	dev->dev.dma_mask = &dev->archdata.dma_mask;
 #endif
-
 	dev->dev.parent = parent;
 
 	if (bus_id)

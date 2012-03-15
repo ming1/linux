@@ -18,7 +18,6 @@
 #include <linux/module.h>
 #include <crypto/internal/hash.h>
 #include <crypto/sha.h>
-#include <linux/of_platform.h>
 
 #include "mv_cesa.h"
 
@@ -1002,8 +1001,6 @@ static int mv_probe(struct platform_device *pdev)
 
 	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "regs");
 	if (!res)
-		res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	if (!res)
 		return -ENXIO;
 
 	cp = kzalloc(sizeof(*cp), GFP_KERNEL);
@@ -1019,8 +1016,6 @@ static int mv_probe(struct platform_device *pdev)
 	}
 
 	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "sram");
-	if (!res)
-		res = platform_get_resource(pdev, IORESOURCE_MEM, 1);
 	if (!res) {
 		ret = -ENXIO;
 		goto err_unmap_reg;
@@ -1124,20 +1119,12 @@ static int mv_remove(struct platform_device *pdev)
 	return 0;
 }
 
-#ifdef CONFIG_OF
-static const struct of_device_id mv_cesa_dt_ids[] = {
-	{ .compatible = "mrvl,orion-crypto", },
-	{},
-};
-#endif
-
 static struct platform_driver marvell_crypto = {
 	.probe		= mv_probe,
 	.remove		= mv_remove,
 	.driver		= {
 		.owner	= THIS_MODULE,
 		.name	= "mv_crypto",
-		.of_match_table = of_match_ptr(mv_cesa_dt_ids),
 	},
 };
 MODULE_ALIAS("platform:mv_crypto");

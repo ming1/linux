@@ -65,7 +65,6 @@
 #include <linux/mbus.h>
 #include <linux/bitops.h>
 #include <linux/gfp.h>
-#include <linux/of.h>
 #include <scsi/scsi_host.h>
 #include <scsi/scsi_cmnd.h>
 #include <scsi/scsi_device.h>
@@ -4046,12 +4045,8 @@ static int mv_platform_probe(struct platform_device *pdev)
 		return -EINVAL;
 
 	/* allocate host */
-	if (pdev->dev.of_node)
-		of_property_read_u32(pdev->dev.of_node, "nr-ports", &n_ports);
-	else {
-		mv_platform_data = pdev->dev.platform_data;
-		n_ports = mv_platform_data->n_ports;
-	}
+	mv_platform_data = pdev->dev.platform_data;
+	n_ports = mv_platform_data->n_ports;
 
 	host = ata_host_alloc_pinfo(&pdev->dev, ppi, n_ports);
 	hpriv = devm_kzalloc(&pdev->dev, sizeof(*hpriv), GFP_KERNEL);
@@ -4177,14 +4172,6 @@ static int mv_platform_resume(struct platform_device *pdev)
 #define mv_platform_resume NULL
 #endif
 
-#ifdef CONFIG_OF
-static struct of_device_id mv_sata_dt_ids[] __devinitdata = {
-	{ .compatible = "mrvl,orion-sata", },
-	{},
-};
-MODULE_DEVICE_TABLE(of, mvsdio_dt_ids);
-#endif
-
 static struct platform_driver mv_platform_driver = {
 	.probe			= mv_platform_probe,
 	.remove			= __devexit_p(mv_platform_remove),
@@ -4193,7 +4180,6 @@ static struct platform_driver mv_platform_driver = {
 	.driver			= {
 				   .name = DRV_NAME,
 				   .owner = THIS_MODULE,
-				   .of_match_table = of_match_ptr(mv_sata_dt_ids),
 				  },
 };
 
