@@ -27,6 +27,10 @@ config USB_XHCI_HCD
 	  To compile this driver as a module, choose M here: the
 	  module will be called xhci-hcd.
 
+config USB_XHCI_PLATFORM
+	tristate
+	depends on USB_XHCI_HCD
+
 config USB_XHCI_HCD_DEBUGGING
 	bool "Debugging for the xHCI host controller"
 	depends on USB_XHCI_HCD
@@ -196,7 +200,7 @@ config USB_EHCI_S5P
 
 config USB_EHCI_MV
 	bool "EHCI support for Marvell on-chip controller"
-	depends on USB_EHCI_HCD
+	depends on USB_EHCI_HCD && (ARCH_PXA || ARCH_MMP)
 	select USB_EHCI_ROOT_HUB_TT
 	---help---
 	  Enables support for Marvell (including PXA and MMP series) on-chip
@@ -606,10 +610,3 @@ config USB_OCTEON_OHCI
 config USB_OCTEON2_COMMON
 	bool
 	default y if USB_OCTEON_EHCI || USB_OCTEON_OHCI
-
-config USB_PXA168_EHCI
-	bool "Marvell PXA168 on-chip EHCI HCD support"
-	depends on USB_EHCI_HCD && ARCH_MMP
-	help
-	  Enable support for Marvell PXA168 SoC's on-chip EHCI
-	  host controller
