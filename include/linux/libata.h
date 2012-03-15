@@ -845,6 +845,8 @@ struct ata_port_operations {
 	void (*error_handler)(struct ata_port *ap);
 	void (*lost_interrupt)(struct ata_port *ap);
 	void (*post_internal_cmd)(struct ata_queued_cmd *qc);
+	void (*sched_eh)(struct ata_port *ap);
+	void (*end_eh)(struct ata_port *ap);
 
 	/*
 	 * Optional features
@@ -1011,6 +1013,17 @@ extern bool ata_link_offline(struct ata_link *link);
 #ifdef CONFIG_PM
 extern int ata_host_suspend(struct ata_host *host, pm_message_t mesg);
 extern void ata_host_resume(struct ata_host *host);
+extern int ata_sas_port_async_suspend(struct ata_port *ap, int *async);
+extern int ata_sas_port_async_resume(struct ata_port *ap, int *async);
+#else
+static inline int ata_sas_port_async_suspend(struct ata_port *ap, int *async)
+{
+	return 0;
+}
+static inline int ata_sas_port_async_resume(struct ata_port *ap, int *async)
+{
+	return 0;
+}
 #endif
 extern int ata_ratelimit(void);
 extern void ata_msleep(struct ata_port *ap, unsigned int msecs);
@@ -1165,6 +1178,8 @@ extern void ata_do_eh(struct ata_port *ap, ata_prereset_fn_t prereset,
 		      ata_reset_fn_t softreset, ata_reset_fn_t hardreset,
 		      ata_postreset_fn_t postreset);
 extern void ata_std_error_handler(struct ata_port *ap);
+extern void ata_std_sched_eh(struct ata_port *ap);
+extern void ata_std_end_eh(struct ata_port *ap);
 extern int ata_link_nr_enabled(struct ata_link *link);
 
 /*
