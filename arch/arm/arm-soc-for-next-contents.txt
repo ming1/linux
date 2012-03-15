@@ -115,6 +115,7 @@ omap/ams-delta		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap 
 omap/board		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap board
 samsung/board-samsung	git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung next/board-samsung
 pxa/board2		git://github.com/hzhuang1/linux.git board-specific
+imx35/cam-fb		git://git.pengutronix.de/git/imx/linux-2.6.git tags/imx35-cam-fb
 
 next/rpmsg:
 rpmsg/base		git://git.kernel.org/pub/scm/linux/kernel/git/ohad/remoteproc.git rpmsg-for-3.4
