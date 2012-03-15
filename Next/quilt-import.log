@@ -1,0 +1,41 @@
+Importing hexagon based on v3.2-rc2
+Unchanged quilt series hexagon
+Importing i2c based on 3.3-rc7
+Unchanged quilt series i2c
+Importing jdelvare-hwmon based on 3.3-rc7
+Unchanged quilt series jdelvare-hwmon
+Importing kernel-doc based on 3.3-rc2
+Unchanged quilt series kernel-doc
+Importing rr based on v3.3-rc5-86-g5ffca28
+Unchanged quilt series rr
+Importing device-mapper based on v3.3-rc7-17-g2f1c2b8
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard 2f1c2b8155865ba3c2909f468ac8be60f52ed56b
+HEAD is now at 2f1c2b8 Merge branch 'for_linus' of git://cavan.codon.org.uk/platform-drivers-x86
+$ git am ../quilt/device-mapper/dm-exception_store-fix-init-error-path.patch
+Applying: Call the correct exit function on failure in dm_exception_store_init.
+$ git am ../quilt/device-mapper/dm-raid-handle-failed-devices-during-start-up.patch
+Applying: The dm-raid code currently fails to create a RAID array if any of the
+$ git am ../quilt/device-mapper/dm-crypt-remove-unused-kmap_atomic-arg.patch
+Applying: The second argument of k[un]map_atomic() is unused.
+$ git am ../quilt/device-mapper/dm-reject-trailing-characters-in-sccanf-input.patch
+Applying: Device mapper uses sscanf to convert arguments to numbers. The problem is that
+$ git am ../quilt/device-mapper/dm-document-sysfs-entries.patch
+Applying: Describe attributes provided by device-mapper in /sys/block.
+$ git am ../quilt/device-mapper/dm-mpath-clear-map_context-when-requeueing.patch
+Applying: When requeuing a request,  clear the map_context pointer to ensure we
+$ git am ../quilt/device-mapper/dm-persistent-data-remove-redundant-value_size-arg-from-value_ptr.patch
+Applying: Now that the value_size is held within every node of the btrees we can
+$ git am ../quilt/device-mapper/dm-bufio-remove-version-header.patch
+Applying: As 'make versioncheck' points out, drivers/md/dm-bufio.c has no need
+$ git am ../quilt/device-mapper/dm-thin-commit-outstanding-date-every-second.patch
+Applying: Commit unwritten data every second to prevent too much building up.
+$ git am ../quilt/device-mapper/dm-thin-relax-hard-limit-on-the-maximum-size-of-a-metadata-device.patch
+Applying: The thin metadata format can only make use of a device that is <=
+$ git am ../quilt/device-mapper/dm-bufio-prefetch.patch
+Applying: This patch introduces a new function dm_bufio_prefetch. It prefetches
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/device-mapper
+From ../quilt-tmp
+ + b8c84fe...b08653a master     -> quilt/device-mapper  (forced update)
