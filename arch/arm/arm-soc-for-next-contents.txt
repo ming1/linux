@@ -81,6 +81,8 @@ samsung/devel-samsung-dma	git://git.kernel.org/pub/scm/linux/kernel/git/kgene/li
 				depends on samsung/cleanup-exynos-clock
 samsung/devel-pd	git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/devel-samsung-pd
 				depends on depends/linux-pm/pm-domains
+davinci/drivers		git://gitorious.org/linux-davinci/linux-davinci.git v3.4/features
+samsung/soc-exynos5250-gpio  git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/soc-exynos5250-gpio
 
 next/cleanup2:
 at91/base2+cleanup	git://github.com/at91linux/linux-at91.git at91-3.4-base2+cleanup
