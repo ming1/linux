@@ -83,7 +83,7 @@ config X86
 	select GENERIC_IOMAP
 
 config INSTRUCTION_DECODER
-	def_bool (KPROBES || PERF_EVENTS)
+	def_bool (KPROBES || PERF_EVENTS || UPROBES)
 
 config OUTPUT_FORMAT
 	string
@@ -238,6 +238,9 @@ config KTIME_SCALAR
 config ARCH_CPU_PROBE_RELEASE
 	def_bool y
 	depends on HOTPLUG_CPU
+
+config ARCH_SUPPORTS_UPROBES
+	def_bool y
 
 source "init/Kconfig"
 source "kernel/Kconfig.freezer"
@@ -416,27 +419,6 @@ if X86_WANT_INTEL_MID
 config X86_INTEL_MID
 	bool
 
-config X86_MRST
-       bool "Moorestown MID platform"
-	depends on PCI
-	depends on PCI_GOANY
-	depends on X86_IO_APIC
-	select X86_INTEL_MID
-	select SFI
-	select DW_APB_TIMER
-	select APB_TIMER
-	select I2C
-	select SPI
-	select INTEL_SCU_IPC
-	select X86_PLATFORM_DEVICES
-	---help---
-	  Moorestown is Intel's Low Power Intel Architecture (LPIA) based Moblin
-	  Internet Device(MID) platform. Moorestown consists of two chips:
-	  Lincroft (CPU core, graphics, and memory controller) and Langwell IOH.
-	  Unlike standard x86 PCs, Moorestown does not have many legacy devices
-	  nor standard legacy replacement devices/features. e.g. Moorestown does
-	  not contain i8259, i8254, HPET, legacy BIOS, most of the io ports.
-
 config X86_MDFLD
        bool "Medfield MID platform"
 	depends on PCI
@@ -450,6 +432,7 @@ config X86_MDFLD
 	select SPI
 	select INTEL_SCU_IPC
 	select X86_PLATFORM_DEVICES
+	select MFD_INTEL_MSIC
 	---help---
 	  Medfield is Intel's Low Power Intel Architecture (LPIA) based Moblin
 	  Internet Device(MID) platform. 
@@ -556,6 +539,37 @@ config SCHED_OMIT_FRAME_POINTER
 	  at the expense of slightly more scheduling overhead.
 
 	  If in doubt, say "Y".
+
+config KVMTOOL_TEST_ENABLE
+	bool "Enable options to create a bootable tools/kvm/ kernel"
+	select NET
+	select NETDEVICES
+	select PCI
+	select BLOCK
+	select BLK_DEV
+	select NETWORK_FILESYSTEMS
+	select INET
+	select EXPERIMENTAL
+	select SERIAL_8250
+	select SERIAL_8250_CONSOLE
+	select IP_PNP
+	select IP_PNP_DHCP
+	select BINFMT_ELF
+	select PCI_MSI
+	select HAVE_ARCH_KGDB
+	select DEBUG_KERNEL
+	select KGDB
+	select KGDB_SERIAL_CONSOLE
+	select VIRTUALIZATION
+	select VIRTIO
+	select VIRTIO_RING
+	select VIRTIO_PCI
+	select VIRTIO_BLK
+	select VIRTIO_CONSOLE
+	select VIRTIO_NET
+	select 9P_FS
+	select NET_9P
+	select NET_9P_VIRTIO
 
 menuconfig PARAVIRT_GUEST
 	bool "Paravirtualized guest support"
@@ -2132,6 +2146,12 @@ config ALIX
 
 	  Note: You have to set alix.force=1 for boards with Award BIOS.
 
+config NET5501
+	bool "Soekris Engineering net5501 System Support (LEDS, GPIO, etc)"
+	select GPIOLIB
+	---help---
+	  This option enables system support for the Soekris Engineering net5501.
+
 endif # X86_32
 
 config AMD_NB
@@ -2164,9 +2184,9 @@ config IA32_EMULATION
 	depends on X86_64
 	select COMPAT_BINFMT_ELF
 	---help---
-	  Include code to run 32-bit programs under a 64-bit kernel. You should
-	  likely turn this on, unless you're 100% sure that you don't have any
-	  32-bit programs left.
+	  Include code to run legacy 32-bit programs under a
+	  64-bit kernel. You should likely turn this on, unless you're
+	  100% sure that you don't have any 32-bit programs left.
 
 config IA32_AOUT
 	tristate "IA32 a.out support"
@@ -2174,9 +2194,22 @@ config IA32_AOUT
 	---help---
 	  Support old a.out binaries in the 32bit emulation.
 
+config X86_X32
+	bool "x32 ABI for 64-bit mode (EXPERIMENTAL)"
+	depends on X86_64 && IA32_EMULATION && EXPERIMENTAL
+	---help---
+	  Include code to run binaries for the x32 native 32-bit ABI
+	  for 64-bit processors.  An x32 process gets access to the
+	  full 64-bit register file and wide data path while leaving
+	  pointers at 32 bits for smaller memory footprint.
+
+	  You will need a recent binutils (2.22 or later) with
+	  elf32_x86_64 support enabled to compile a kernel with this
+	  option set.
+
 config COMPAT
 	def_bool y
-	depends on IA32_EMULATION
+	depends on IA32_EMULATION || X86_X32
 	select ARCH_WANT_OLD_COMPAT_IPC
 
 config COMPAT_FOR_U64_ALIGNMENT
