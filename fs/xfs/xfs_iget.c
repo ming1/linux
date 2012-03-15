@@ -91,7 +91,6 @@ xfs_inode_alloc(
 	ip->i_afp = NULL;
 	memset(&ip->i_df, 0, sizeof(xfs_ifork_t));
 	ip->i_flags = 0;
-	ip->i_update_core = 0;
 	ip->i_delayed_blks = 0;
 	memset(&ip->i_d, 0, sizeof(xfs_icdinode_t));
 
@@ -418,6 +417,15 @@ xfs_iget(
 	xfs_perag_t	*pag;
 	xfs_agino_t	agino;
 
+	/*
+	 * xfs_reclaim_inode() uses the ILOCK to ensure an inode
+	 * doesn't get freed while it's being referenced during a
+	 * radix tree traversal here.  It assumes this function
+	 * aqcuires only the ILOCK (and therefore it has no need to
+	 * involve the IOLOCK in this synchronization).
+	 */
+	ASSERT((lock_flags & (XFS_IOLOCK_EXCL | XFS_IOLOCK_SHARED)) == 0);
+
 	/* reject inode numbers outside existing AGs */
 	if (!ino || XFS_INO_TO_AGNO(mp, ino) >= mp->m_sb.sb_agcount)
 		return EINVAL;
@@ -642,8 +650,7 @@ xfs_iunlock(
 	       (XFS_IOLOCK_SHARED | XFS_IOLOCK_EXCL));
 	ASSERT((lock_flags & (XFS_ILOCK_SHARED | XFS_ILOCK_EXCL)) !=
 	       (XFS_ILOCK_SHARED | XFS_ILOCK_EXCL));
-	ASSERT((lock_flags & ~(XFS_LOCK_MASK | XFS_IUNLOCK_NONOTIFY |
-			XFS_LOCK_DEP_MASK)) == 0);
+	ASSERT((lock_flags & ~(XFS_LOCK_MASK | XFS_LOCK_DEP_MASK)) == 0);
 	ASSERT(lock_flags != 0);
 
 	if (lock_flags & XFS_IOLOCK_EXCL)
@@ -656,16 +663,6 @@ xfs_iunlock(
 	else if (lock_flags & XFS_ILOCK_SHARED)
 		mrunlock_shared(&ip->i_lock);
 
-	if ((lock_flags & (XFS_ILOCK_SHARED | XFS_ILOCK_EXCL)) &&
-	    !(lock_flags & XFS_IUNLOCK_NONOTIFY) && ip->i_itemp) {
-		/*
-		 * Let the AIL know that this item has been unlocked in case
-		 * it is in the AIL and anyone is waiting on it.  Don't do
-		 * this if the caller has asked us not to.
-		 */
-		xfs_trans_unlocked_item(ip->i_itemp->ili_item.li_ailp,
-					(xfs_log_item_t*)(ip->i_itemp));
-	}
 	trace_xfs_iunlock(ip, lock_flags, _RET_IP_);
 }
 
