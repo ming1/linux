@@ -128,6 +128,8 @@ depends/driver-core	git://git.kernel.org/pub/scm/linux/kernel/git/gregkh/driver-
 ux500/soc		patches from Lee Jones, depends on depends/driver-core
 tegra/soc2		git://git.kernel.org/pub/scm/linux/kernel/git/olof/tegra.git tags/tegra-soc2
 				depends on tegra/soc and tegra/soc-drivers
+samsung/exynos5		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/soc-exynos5250-arch
+				depends on samsung/devel and samsung/devel-samsung-dma
 
 staging branches:
 staging/kirkwood/dt	git://git.infradead.org/users/jcooper/linux-kirkwood.git kirkwood_dt
