@@ -105,13 +105,19 @@ static const struct key_entry acer_wmi_keymap[] = {
 	{KE_KEY, 0x22, {KEY_PROG2} },    /* Arcade */
 	{KE_KEY, 0x23, {KEY_PROG3} },    /* P_Key */
 	{KE_KEY, 0x24, {KEY_PROG4} },    /* Social networking_Key */
+	{KE_KEY, 0x29, {KEY_PROG3} },    /* P_Key for TM8372 */
 	{KE_IGNORE, 0x41, {KEY_MUTE} },
 	{KE_IGNORE, 0x42, {KEY_PREVIOUSSONG} },
+	{KE_IGNORE, 0x4d, {KEY_PREVIOUSSONG} },
 	{KE_IGNORE, 0x43, {KEY_NEXTSONG} },
+	{KE_IGNORE, 0x4e, {KEY_NEXTSONG} },
 	{KE_IGNORE, 0x44, {KEY_PLAYPAUSE} },
+	{KE_IGNORE, 0x4f, {KEY_PLAYPAUSE} },
 	{KE_IGNORE, 0x45, {KEY_STOP} },
+	{KE_IGNORE, 0x50, {KEY_STOP} },
 	{KE_IGNORE, 0x48, {KEY_VOLUMEUP} },
 	{KE_IGNORE, 0x49, {KEY_VOLUMEDOWN} },
+	{KE_IGNORE, 0x4a, {KEY_VOLUMEDOWN} },
 	{KE_IGNORE, 0x61, {KEY_SWITCHVIDEOMODE} },
 	{KE_IGNORE, 0x62, {KEY_BRIGHTNESSUP} },
 	{KE_IGNORE, 0x63, {KEY_BRIGHTNESSDOWN} },
@@ -536,8 +542,7 @@ struct acpi_buffer *result)
 	return status;
 }
 
-static acpi_status AMW0_get_u32(u32 *value, u32 cap,
-struct wmi_interface *iface)
+static acpi_status AMW0_get_u32(u32 *value, u32 cap)
 {
 	int err;
 	u8 result;
@@ -607,7 +612,7 @@ struct wmi_interface *iface)
 	return AE_OK;
 }
 
-static acpi_status AMW0_set_u32(u32 value, u32 cap, struct wmi_interface *iface)
+static acpi_status AMW0_set_u32(u32 value, u32 cap)
 {
 	struct wmab_args args;
 
@@ -827,8 +832,7 @@ WMI_execute_u32(u32 method_id, u32 in, u32 *out)
 	return status;
 }
 
-static acpi_status WMID_get_u32(u32 *value, u32 cap,
-struct wmi_interface *iface)
+static acpi_status WMID_get_u32(u32 *value, u32 cap)
 {
 	acpi_status status;
 	u8 tmp;
@@ -864,7 +868,7 @@ struct wmi_interface *iface)
 	return status;
 }
 
-static acpi_status WMID_set_u32(u32 value, u32 cap, struct wmi_interface *iface)
+static acpi_status WMID_set_u32(u32 value, u32 cap)
 {
 	u32 method_id = 0;
 	char param;
@@ -1006,7 +1010,7 @@ static acpi_status wmid3_set_device_status(u32 value, u16 device)
 		return AE_ERROR;
 	}
 	if (obj->buffer.length != 8) {
-		pr_warning("Unknown buffer length %d\n", obj->buffer.length);
+		pr_warn("Unknown buffer length %d\n", obj->buffer.length);
 		kfree(obj);
 		return AE_ERROR;
 	}
@@ -1015,8 +1019,8 @@ static acpi_status wmid3_set_device_status(u32 value, u16 device)
 	kfree(obj);
 
 	if (return_value.error_code || return_value.ec_return_value) {
-		pr_warning("Get Current Device Status failed: "
-			"0x%x - 0x%x\n", return_value.error_code,
+		pr_warn("Get Current Device Status failed: 0x%x - 0x%x\n",
+			return_value.error_code,
 			return_value.ec_return_value);
 		return status;
 	}
@@ -1039,7 +1043,7 @@ static acpi_status wmid3_set_device_status(u32 value, u16 device)
 		return AE_ERROR;
 	}
 	if (obj->buffer.length != 4) {
-		pr_warning("Unknown buffer length %d\n", obj->buffer.length);
+		pr_warn("Unknown buffer length %d\n", obj->buffer.length);
 		kfree(obj);
 		return AE_ERROR;
 	}
@@ -1048,8 +1052,8 @@ static acpi_status wmid3_set_device_status(u32 value, u16 device)
 	kfree(obj);
 
 	if (return_value.error_code || return_value.ec_return_value)
-		pr_warning("Set Device Status failed: "
-			"0x%x - 0x%x\n", return_value.error_code,
+		pr_warn("Set Device Status failed: 0x%x - 0x%x\n",
+			return_value.error_code,
 			return_value.ec_return_value);
 
 	return status;
@@ -1154,15 +1158,15 @@ static acpi_status get_u32(u32 *value, u32 cap)
 
 	switch (interface->type) {
 	case ACER_AMW0:
-		status = AMW0_get_u32(value, cap, interface);
+		status = AMW0_get_u32(value, cap);
 		break;
 	case ACER_AMW0_V2:
 		if (cap == ACER_CAP_MAILLED) {
-			status = AMW0_get_u32(value, cap, interface);
+			status = AMW0_get_u32(value, cap);
 			break;
 		}
 	case ACER_WMID:
-		status = WMID_get_u32(value, cap, interface);
+		status = WMID_get_u32(value, cap);
 		break;
 	case ACER_WMID_v2:
 		if (cap & (ACER_CAP_WIRELESS |
@@ -1170,7 +1174,7 @@ static acpi_status get_u32(u32 *value, u32 cap)
 			   ACER_CAP_THREEG))
 			status = wmid_v2_get_u32(value, cap);
 		else if (wmi_has_guid(WMID_GUID2))
-			status = WMID_get_u32(value, cap, interface);
+			status = WMID_get_u32(value, cap);
 		break;
 	}
 
@@ -1184,10 +1188,10 @@ static acpi_status set_u32(u32 value, u32 cap)
 	if (interface->capability & cap) {
 		switch (interface->type) {
 		case ACER_AMW0:
-			return AMW0_set_u32(value, cap, interface);
+			return AMW0_set_u32(value, cap);
 		case ACER_AMW0_V2:
 			if (cap == ACER_CAP_MAILLED)
-				return AMW0_set_u32(value, cap, interface);
+				return AMW0_set_u32(value, cap);
 
 			/*
 			 * On some models, some WMID methods don't toggle
@@ -1197,21 +1201,21 @@ static acpi_status set_u32(u32 value, u32 cap)
 			 */
 			if (cap == ACER_CAP_WIRELESS ||
 				cap == ACER_CAP_BLUETOOTH) {
-				status = WMID_set_u32(value, cap, interface);
+				status = WMID_set_u32(value, cap);
 				if (ACPI_FAILURE(status))
 					return status;
 
-				return AMW0_set_u32(value, cap, interface);
+				return AMW0_set_u32(value, cap);
 			}
 		case ACER_WMID:
-			return WMID_set_u32(value, cap, interface);
+			return WMID_set_u32(value, cap);
 		case ACER_WMID_v2:
 			if (cap & (ACER_CAP_WIRELESS |
 				   ACER_CAP_BLUETOOTH |
 				   ACER_CAP_THREEG))
 				return wmid_v2_set_u32(value, cap);
 			else if (wmi_has_guid(WMID_GUID2))
-				return WMID_set_u32(value, cap, interface);
+				return WMID_set_u32(value, cap);
 		default:
 			return AE_BAD_PARAMETER;
 		}
@@ -1488,8 +1492,8 @@ static ssize_t show_bool_threeg(struct device *dev,
 	u32 result; \
 	acpi_status status;
 
-	pr_info("This threeg sysfs will be removed in 2012"
-		" - used by: %s\n", current->comm);
+	pr_info("This threeg sysfs will be removed in 2012 - used by: %s\n",
+		current->comm);
 	status = get_u32(&result, ACER_CAP_THREEG);
 	if (ACPI_SUCCESS(status))
 		return sprintf(buf, "%u\n", result);
@@ -1501,8 +1505,8 @@ static ssize_t set_bool_threeg(struct device *dev,
 {
 	u32 tmp = simple_strtoul(buf, NULL, 10);
 	acpi_status status = set_u32(tmp, ACER_CAP_THREEG);
-	pr_info("This threeg sysfs will be removed in 2012"
-		" - used by: %s\n", current->comm);
+	pr_info("This threeg sysfs will be removed in 2012 - used by: %s\n",
+		current->comm);
 	if (ACPI_FAILURE(status))
 		return -EINVAL;
 	return count;
@@ -1513,8 +1517,8 @@ static DEVICE_ATTR(threeg, S_IRUGO | S_IWUSR, show_bool_threeg,
 static ssize_t show_interface(struct device *dev, struct device_attribute *attr,
 	char *buf)
 {
-	pr_info("This interface sysfs will be removed in 2012"
-		" - used by: %s\n", current->comm);
+	pr_info("This interface sysfs will be removed in 2012 - used by: %s\n",
+		current->comm);
 	switch (interface->type) {
 	case ACER_AMW0:
 		return sprintf(buf, "AMW0\n");
@@ -1982,8 +1986,7 @@ static int __init acer_wmi_init(void)
 
 	if (acpi_video_backlight_support()) {
 		interface->capability &= ~ACER_CAP_BRIGHTNESS;
-		pr_info("Brightness must be controlled by "
-		       "generic video driver\n");
+		pr_info("Brightness must be controlled by generic video driver\n");
 	}
 
 	if (wmi_has_guid(WMID_GUID3)) {
@@ -2008,7 +2011,7 @@ static int __init acer_wmi_init(void)
 
 	err = platform_driver_register(&acer_platform_driver);
 	if (err) {
-		pr_err("Unable to register platform driver.\n");
+		pr_err("Unable to register platform driver\n");
 		goto error_platform_register;
 	}
 
