@@ -22,6 +22,8 @@
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/of_gpio.h>
+#include <linux/pm.h>
+#include <linux/pm_runtime.h>
 
 #include <linux/mmc/host.h>
 
@@ -550,12 +552,6 @@ static int __devinit sdhci_s3c_probe(struct platform_device *pdev)
 		return irq;
 	}
 
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	if (!res) {
-		dev_err(dev, "no memory specified\n");
-		return -ENOENT;
-	}
-
 	host = sdhci_alloc_host(dev, sizeof(struct sdhci_s3c));
 	if (IS_ERR(host)) {
 		dev_err(dev, "sdhci_alloc_host() failed\n");
@@ -627,15 +623,8 @@ static int __devinit sdhci_s3c_probe(struct platform_device *pdev)
 		goto err_no_busclks;
 	}
 
-	sc->ioarea = request_mem_region(res->start, resource_size(res),
-					mmc_hostname(host->mmc));
-	if (!sc->ioarea) {
-		dev_err(dev, "failed to reserve register area\n");
-		ret = -ENXIO;
-		goto err_req_regs;
-	}
-
-	host->ioaddr = ioremap_nocache(res->start, resource_size(res));
+	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	host->ioaddr = devm_request_and_ioremap(&pdev->dev, res);
 	if (!host->ioaddr) {
 		dev_err(dev, "failed to map registers\n");
 		ret = -ENXIO;
@@ -717,10 +706,17 @@ static int __devinit sdhci_s3c_probe(struct platform_device *pdev)
 	if (pdata->host_caps2)
 		host->mmc->caps2 |= pdata->host_caps2;
 
+	pm_runtime_enable(&pdev->dev);
+	pm_runtime_set_autosuspend_delay(&pdev->dev, 50);
+	pm_runtime_use_autosuspend(&pdev->dev);
+	pm_suspend_ignore_children(&pdev->dev, 1);
+
 	ret = sdhci_add_host(host);
 	if (ret) {
 		dev_err(dev, "sdhci_add_host() failed\n");
-		goto err_add_host;
+		pm_runtime_forbid(&pdev->dev);
+		pm_runtime_get_noresume(&pdev->dev);
+		goto err_req_regs;
 	}
 
 	/* The following two methods of card detection might call
@@ -733,10 +729,6 @@ static int __devinit sdhci_s3c_probe(struct platform_device *pdev)
 		sdhci_s3c_setup_card_detect_gpio(sc);
 
 	return 0;
-
- err_add_host:
-	release_resource(sc->ioarea);
-	kfree(sc->ioarea);
 
  err_req_regs:
 	for (ptr = 0; ptr < MAX_BUS_CLK; ptr++) {
@@ -780,6 +772,8 @@ static int __devexit sdhci_s3c_remove(struct platform_device *pdev)
 
 	sdhci_remove_host(host, 1);
 
+	pm_runtime_disable(&pdev->dev);
+
 	for (ptr = 0; ptr < 3; ptr++) {
 		if (sc->clk_bus[ptr]) {
 			clk_disable(sc->clk_bus[ptr]);
@@ -788,10 +782,6 @@ static int __devexit sdhci_s3c_remove(struct platform_device *pdev)
 	}
 	clk_disable(sc->clk_io);
 	clk_put(sc->clk_io);
-
-	iounmap(host->ioaddr);
-	release_resource(sc->ioarea);
-	kfree(sc->ioarea);
 
 	if (pdev->dev.of_node) {
 		for (ptr = 0; ptr < NUM_GPIOS(sc->pdata->max_width); ptr++)
@@ -804,8 +794,7 @@ static int __devexit sdhci_s3c_remove(struct platform_device *pdev)
 	return 0;
 }
 
-#ifdef CONFIG_PM
-
+#ifdef CONFIG_PM_SLEEP
 static int sdhci_s3c_suspend(struct device *dev)
 {
 	struct sdhci_host *host = dev_get_drvdata(dev);
@@ -819,10 +808,29 @@ static int sdhci_s3c_resume(struct device *dev)
 
 	return sdhci_resume_host(host);
 }
+#endif
 
+#ifdef CONFIG_PM_RUNTIME
+static int sdhci_s3c_runtime_suspend(struct device *dev)
+{
+	struct sdhci_host *host = dev_get_drvdata(dev);
+
+	return sdhci_runtime_suspend_host(host);
+}
+
+static int sdhci_s3c_runtime_resume(struct device *dev)
+{
+	struct sdhci_host *host = dev_get_drvdata(dev);
+
+	return sdhci_runtime_resume_host(host);
+}
+#endif
+
+#ifdef CONFIG_PM
 static const struct dev_pm_ops sdhci_s3c_pmops = {
-	.suspend	= sdhci_s3c_suspend,
-	.resume		= sdhci_s3c_resume,
+	SET_SYSTEM_SLEEP_PM_OPS(sdhci_s3c_suspend, sdhci_s3c_resume)
+	SET_RUNTIME_PM_OPS(sdhci_s3c_runtime_suspend, sdhci_s3c_runtime_resume,
+			   NULL)
 };
 
 #define SDHCI_S3C_PMOPS (&sdhci_s3c_pmops)
