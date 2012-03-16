@@ -9,7 +9,6 @@
 #define LINUX_MMC_CORE_H
 
 #include <linux/interrupt.h>
-#include <linux/device.h>
 
 struct request;
 struct mmc_data;
