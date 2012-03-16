@@ -226,7 +226,6 @@ static long watchdog_ioctl(struct file *file, unsigned int cmd,
 		err = wdd->ops->set_timeout(wdd, val);
 		if (err < 0)
 			return err;
-		wdd->timeout = val;
 		/* If the watchdog is active then we send a keepalive ping
 		 * to make sure that the watchdog keep's running (and if
 		 * possible that it takes the new timeout) */
@@ -347,7 +346,7 @@ int watchdog_dev_register(struct watchdog_device *watchdog)
 
 	/* Only one device can register for /dev/watchdog */
 	if (test_and_set_bit(0, &watchdog_dev_busy)) {
-		pr_err("only one watchdog can use /dev/watchdog.\n");
+		pr_err("only one watchdog can use /dev/watchdog\n");
 		return -EBUSY;
 	}
 
@@ -355,8 +354,8 @@ int watchdog_dev_register(struct watchdog_device *watchdog)
 
 	err = misc_register(&watchdog_miscdev);
 	if (err != 0) {
-		pr_err("%s: cannot register miscdev on minor=%d (err=%d).\n",
-			watchdog->info->identity, WATCHDOG_MINOR, err);
+		pr_err("%s: cannot register miscdev on minor=%d (err=%d)\n",
+		       watchdog->info->identity, WATCHDOG_MINOR, err);
 		goto out;
 	}
 
@@ -383,8 +382,8 @@ int watchdog_dev_unregister(struct watchdog_device *watchdog)
 
 	/* We can only unregister the watchdog device that was registered */
 	if (watchdog != wdd) {
-		pr_err("%s: watchdog was not registered as /dev/watchdog.\n",
-			watchdog->info->identity);
+		pr_err("%s: watchdog was not registered as /dev/watchdog\n",
+		       watchdog->info->identity);
 		return -ENODEV;
 	}
 
