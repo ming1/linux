@@ -1099,7 +1099,8 @@ static void hci_cc_le_set_scan_enable(struct hci_dev *hdev,
 
 		schedule_delayed_work(&hdev->adv_work, ADV_CLEAR_TIMEOUT);
 
-		if (hdev->discovery.type == DISCOV_TYPE_INTERLEAVED) {
+		if (hdev->discovery.type == DISCOV_TYPE_INTERLEAVED &&
+				hdev->discovery.state == DISCOVERY_FINDING) {
 			mgmt_interleaved_discovery(hdev);
 		} else {
 			hci_dev_lock(hdev);
@@ -3334,7 +3335,7 @@ static inline void hci_le_ltk_request_evt(struct hci_dev *hdev,
 	struct hci_conn *conn;
 	struct smp_ltk *ltk;
 
-	BT_DBG("%s handle %d", hdev->name, cpu_to_le16(ev->handle));
+	BT_DBG("%s handle %d", hdev->name, __le16_to_cpu(ev->handle));
 
 	hci_dev_lock(hdev);
 
