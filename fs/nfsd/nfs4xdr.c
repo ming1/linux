@@ -133,22 +133,6 @@ xdr_error:					\
 	}					\
 } while (0)
 
-static void save_buf(struct nfsd4_compoundargs *argp, struct nfsd4_saved_compoundargs *savep)
-{
-	savep->p        = argp->p;
-	savep->end      = argp->end;
-	savep->pagelen  = argp->pagelen;
-	savep->pagelist = argp->pagelist;
-}
-
-static void restore_buf(struct nfsd4_compoundargs *argp, struct nfsd4_saved_compoundargs *savep)
-{
-	argp->p        = savep->p;
-	argp->end      = savep->end;
-	argp->pagelen  = savep->pagelen;
-	argp->pagelist = savep->pagelist;
-}
-
 static __be32 *read_buf(struct nfsd4_compoundargs *argp, u32 nbytes)
 {
 	/* We want more bytes than seem to be available.
@@ -638,14 +622,18 @@ nfsd4_decode_lookup(struct nfsd4_compoundargs *argp, struct nfsd4_lookup *lookup
 	DECODE_TAIL;
 }
 
-static __be32 nfsd4_decode_share_access(struct nfsd4_compoundargs *argp, u32 *x)
+static __be32 nfsd4_decode_share_access(struct nfsd4_compoundargs *argp, u32 *share_access, u32 *deleg_want, u32 *deleg_when)
 {
 	__be32 *p;
 	u32 w;
 
 	READ_BUF(4);
 	READ32(w);
-	*x = w;
+	*share_access = w & NFS4_SHARE_ACCESS_MASK;
+	*deleg_want = w & NFS4_SHARE_WANT_MASK;
+	if (deleg_when)
+		*deleg_when = w & NFS4_SHARE_WHEN_MASK;
+
 	switch (w & NFS4_SHARE_ACCESS_MASK) {
 	case NFS4_SHARE_ACCESS_READ:
 	case NFS4_SHARE_ACCESS_WRITE:
@@ -673,6 +661,9 @@ static __be32 nfsd4_decode_share_access(struct nfsd4_compoundargs *argp, u32 *x)
 	w &= ~NFS4_SHARE_WANT_MASK;
 	if (!w)
 		return nfs_ok;
+
+	if (!deleg_when)	/* open_downgrade */
+		return nfserr_inval;
 	switch (w) {
 	case NFS4_SHARE_SIGNAL_DELEG_WHEN_RESRC_AVAIL:
 	case NFS4_SHARE_PUSH_DELEG_WHEN_UNCONTENDED:
@@ -719,6 +710,7 @@ static __be32
 nfsd4_decode_open(struct nfsd4_compoundargs *argp, struct nfsd4_open *open)
 {
 	DECODE_HEAD;
+	u32 dummy;
 
 	memset(open->op_bmval, 0, sizeof(open->op_bmval));
 	open->op_iattr.ia_valid = 0;
@@ -727,7 +719,9 @@ nfsd4_decode_open(struct nfsd4_compoundargs *argp, struct nfsd4_open *open)
 	/* seqid, share_access, share_deny, clientid, ownerlen */
 	READ_BUF(4);
 	READ32(open->op_seqid);
-	status = nfsd4_decode_share_access(argp, &open->op_share_access);
+	/* decode, yet ignore deleg_when until supported */
+	status = nfsd4_decode_share_access(argp, &open->op_share_access,
+					   &open->op_deleg_want, &dummy);
 	if (status)
 		goto xdr_error;
 	status = nfsd4_decode_share_deny(argp, &open->op_share_deny);
@@ -848,7 +842,8 @@ nfsd4_decode_open_downgrade(struct nfsd4_compoundargs *argp, struct nfsd4_open_d
 		return status;
 	READ_BUF(4);
 	READ32(open_down->od_seqid);
-	status = nfsd4_decode_share_access(argp, &open_down->od_share_access);
+	status = nfsd4_decode_share_access(argp, &open_down->od_share_access,
+					   &open_down->od_deleg_want, NULL);
 	if (status)
 		return status;
 	status = nfsd4_decode_share_deny(argp, &open_down->od_share_deny);
@@ -1385,26 +1380,29 @@ nfsd4_decode_sequence(struct nfsd4_compoundargs *argp,
 static __be32
 nfsd4_decode_test_stateid(struct nfsd4_compoundargs *argp, struct nfsd4_test_stateid *test_stateid)
 {
-	unsigned int nbytes;
-	stateid_t si;
 	int i;
-	__be32 *p;
-	__be32 status;
+	__be32 *p, status;
+	struct nfsd4_test_stateid_id *stateid;
 
 	READ_BUF(4);
 	test_stateid->ts_num_ids = ntohl(*p++);
 
-	nbytes = test_stateid->ts_num_ids * sizeof(stateid_t);
-	if (nbytes > (u32)((char *)argp->end - (char *)argp->p))
-		goto xdr_error;
-
-	test_stateid->ts_saved_args = argp;
-	save_buf(argp, &test_stateid->ts_savedp);
+	INIT_LIST_HEAD(&test_stateid->ts_stateid_list);
 
 	for (i = 0; i < test_stateid->ts_num_ids; i++) {
-		status = nfsd4_decode_stateid(argp, &si);
+		stateid = kmalloc(sizeof(struct nfsd4_test_stateid_id), GFP_KERNEL);
+		if (!stateid) {
+			status = PTR_ERR(stateid);
+			goto out;
+		}
+
+		defer_free(argp, kfree, stateid);
+		INIT_LIST_HEAD(&stateid->ts_id_list);
+		list_add_tail(&stateid->ts_id_list, &test_stateid->ts_stateid_list);
+
+		status = nfsd4_decode_stateid(argp, &stateid->ts_id_stateid);
 		if (status)
-			return status;
+			goto out;
 	}
 
 	status = 0;
@@ -2851,6 +2849,20 @@ nfsd4_encode_open(struct nfsd4_compoundres *resp, __be32 nfserr, struct nfsd4_op
 		WRITE32(0);   /* XXX: is NULL principal ok? */
 		ADJUST_ARGS();
 		break;
+	case NFS4_OPEN_DELEGATE_NONE_EXT: /* 4.1 */
+		switch (open->op_why_no_deleg) {
+		case WND4_CONTENTION:
+		case WND4_RESOURCE:
+			RESERVE_SPACE(8);
+			WRITE32(open->op_why_no_deleg);
+			WRITE32(0);	/* deleg signaling not supported yet */
+			break;
+		default:
+			RESERVE_SPACE(4);
+			WRITE32(open->op_why_no_deleg);
+		}
+		ADJUST_ARGS();
+		break;
 	default:
 		BUG();
 	}
@@ -3391,30 +3403,17 @@ __be32
 nfsd4_encode_test_stateid(struct nfsd4_compoundres *resp, int nfserr,
 			  struct nfsd4_test_stateid *test_stateid)
 {
-	struct nfsd4_compoundargs *argp;
-	struct nfs4_client *cl = resp->cstate.session->se_client;
-	stateid_t si;
+	struct nfsd4_test_stateid_id *stateid, *next;
 	__be32 *p;
-	int i;
-	int valid;
 
-	restore_buf(test_stateid->ts_saved_args, &test_stateid->ts_savedp);
-	argp = test_stateid->ts_saved_args;
-
-	RESERVE_SPACE(4);
+	RESERVE_SPACE(4 + (4 * test_stateid->ts_num_ids));
 	*p++ = htonl(test_stateid->ts_num_ids);
-	resp->p = p;
 
-	nfs4_lock_state();
-	for (i = 0; i < test_stateid->ts_num_ids; i++) {
-		nfsd4_decode_stateid(argp, &si);
-		valid = nfs4_validate_stateid(cl, &si);
-		RESERVE_SPACE(4);
-		*p++ = htonl(valid);
-		resp->p = p;
+	list_for_each_entry_safe(stateid, next, &test_stateid->ts_stateid_list, ts_id_list) {
+		*p++ = htonl(stateid->ts_id_status);
 	}
-	nfs4_unlock_state();
 
+	ADJUST_ARGS();
 	return nfserr;
 }
 
@@ -3532,7 +3531,7 @@ int nfsd4_check_resp_size(struct nfsd4_compoundres *resp, u32 pad)
 	if (length > session->se_fchannel.maxresp_sz)
 		return nfserr_rep_too_big;
 
-	if (slot->sl_cachethis == 1 &&
+	if ((slot->sl_flags & NFSD4_SLOT_CACHETHIS) &&
 	    length > session->se_fchannel.maxresp_cached)
 		return nfserr_rep_too_big_to_cache;
 
@@ -3656,8 +3655,7 @@ nfs4svc_encode_compoundres(struct svc_rqst *rqstp, __be32 *p, struct nfsd4_compo
 	if (nfsd4_has_session(cs)) {
 		if (cs->status != nfserr_replay_cache) {
 			nfsd4_store_cache_entry(resp);
-			dprintk("%s: SET SLOT STATE TO AVAILABLE\n", __func__);
-			cs->slot->sl_inuse = false;
+			cs->slot->sl_flags &= ~NFSD4_SLOT_INUSE;
 		}
 		/* Renew the clientid on success and on replay */
 		release_session_client(cs->session);
