@@ -534,7 +534,7 @@ static int __init xen_hvc_init(void)
 		info->irq = bind_evtchn_to_irq(info->evtchn);
 	}
 	if (info->irq < 0)
-		info->irq = 0; /* NO_IRQ */
+		info->irq = 0;
 	else
 		irq_set_noprobe(info->irq);
 
