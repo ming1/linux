@@ -52,8 +52,8 @@
 
 extern struct t10_alua_lu_gp *default_lu_gp;
 
-static struct list_head g_tf_list;
-static struct mutex g_tf_lock;
+static LIST_HEAD(g_tf_list);
+static DEFINE_MUTEX(g_tf_lock);
 
 struct target_core_configfs_attribute {
 	struct configfs_attribute attr;
@@ -421,18 +421,6 @@ static int target_fabric_tf_ops_check(
 		pr_err("Missing tfo->close_session()\n");
 		return -EINVAL;
 	}
-	if (!tfo->stop_session) {
-		pr_err("Missing tfo->stop_session()\n");
-		return -EINVAL;
-	}
-	if (!tfo->fall_back_to_erl0) {
-		pr_err("Missing tfo->fall_back_to_erl0()\n");
-		return -EINVAL;
-	}
-	if (!tfo->sess_logged_in) {
-		pr_err("Missing tfo->sess_logged_in()\n");
-		return -EINVAL;
-	}
 	if (!tfo->sess_get_index) {
 		pr_err("Missing tfo->sess_get_index()\n");
 		return -EINVAL;
@@ -475,10 +463,6 @@ static int target_fabric_tf_ops_check(
 	}
 	if (!tfo->get_fabric_sense_len) {
 		pr_err("Missing tfo->get_fabric_sense_len()\n");
-		return -EINVAL;
-	}
-	if (!tfo->is_state_remove) {
-		pr_err("Missing tfo->is_state_remove()\n");
 		return -EINVAL;
 	}
 	/*
@@ -702,6 +686,9 @@ SE_DEV_ATTR_RO(hw_max_sectors);
 DEF_DEV_ATTRIB(max_sectors);
 SE_DEV_ATTR(max_sectors, S_IRUGO | S_IWUSR);
 
+DEF_DEV_ATTRIB(fabric_max_sectors);
+SE_DEV_ATTR(fabric_max_sectors, S_IRUGO | S_IWUSR);
+
 DEF_DEV_ATTRIB(optimal_sectors);
 SE_DEV_ATTR(optimal_sectors, S_IRUGO | S_IWUSR);
 
@@ -741,6 +728,7 @@ static struct configfs_attribute *target_core_dev_attrib_attrs[] = {
 	&target_core_dev_attrib_block_size.attr,
 	&target_core_dev_attrib_hw_max_sectors.attr,
 	&target_core_dev_attrib_max_sectors.attr,
+	&target_core_dev_attrib_fabric_max_sectors.attr,
 	&target_core_dev_attrib_optimal_sectors.attr,
 	&target_core_dev_attrib_hw_queue_depth.attr,
 	&target_core_dev_attrib_queue_depth.attr,
@@ -2304,7 +2292,7 @@ static ssize_t target_core_alua_tg_pt_gp_store_attr_alua_access_state(
 
 	if (!(tg_pt_gp->tg_pt_gp_alua_access_type & TPGS_IMPLICT_ALUA)) {
 		pr_err("Unable to process implict configfs ALUA"
-			" transition while TPGS_IMPLICT_ALUA is diabled\n");
+			" transition while TPGS_IMPLICT_ALUA is disabled\n");
 		return -EINVAL;
 	}
 
@@ -3117,8 +3105,6 @@ static int __init target_core_init_configfs(void)
 	config_group_init(&subsys->su_group);
 	mutex_init(&subsys->su_mutex);
 
-	INIT_LIST_HEAD(&g_tf_list);
-	mutex_init(&g_tf_lock);
 	ret = init_se_kmem_caches();
 	if (ret < 0)
 		return ret;
