@@ -173,7 +173,9 @@ static int igb_check_vf_assignment(struct igb_adapter *adapter);
 #endif
 
 #ifdef CONFIG_PM
+#ifdef CONFIG_PM_SLEEP
 static int igb_suspend(struct device *);
+#endif
 static int igb_resume(struct device *);
 #ifdef CONFIG_PM_RUNTIME
 static int igb_runtime_suspend(struct device *dev);
@@ -2750,6 +2752,8 @@ void igb_configure_tx_ring(struct igb_adapter *adapter,
 
 	txdctl |= E1000_TXDCTL_QUEUE_ENABLE;
 	wr32(E1000_TXDCTL(reg_idx), txdctl);
+
+	netdev_tx_reset_queue(txring_txq(ring));
 }
 
 /**
@@ -3242,7 +3246,6 @@ static void igb_clean_tx_ring(struct igb_ring *tx_ring)
 		buffer_info = &tx_ring->tx_buffer_info[i];
 		igb_unmap_and_free_tx_resource(tx_ring, buffer_info);
 	}
-	netdev_tx_reset_queue(txring_txq(tx_ring));
 
 	size = sizeof(struct igb_tx_buffer) * tx_ring->count;
 	memset(tx_ring->tx_buffer_info, 0, size);
@@ -6710,6 +6713,7 @@ static int __igb_shutdown(struct pci_dev *pdev, bool *enable_wake,
 }
 
 #ifdef CONFIG_PM
+#ifdef CONFIG_PM_SLEEP
 static int igb_suspend(struct device *dev)
 {
 	int retval;
@@ -6729,6 +6733,7 @@ static int igb_suspend(struct device *dev)
 
 	return 0;
 }
+#endif /* CONFIG_PM_SLEEP */
 
 static int igb_resume(struct device *dev)
 {
