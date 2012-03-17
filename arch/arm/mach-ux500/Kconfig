@@ -44,6 +44,11 @@ config MACH_SNOWBALL
 	help
 	  Include support for the snowball development platform.
 
+config MACH_UX500_DT
+	bool "Generic U8500 support using device tree"
+	select MACH_MOP500
+	select USE_OF
+
 config MACH_U5500
 	bool "U5500 Development platform"
 	select UX500_SOC_DB5500
