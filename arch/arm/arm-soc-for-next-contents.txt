@@ -5,6 +5,8 @@ and their external dependencies.
 It also includes a couple of directly applied patches for build breaks with subject
 The next/* branches are kept in the order in which they get applied.
 
+=== No dependencies ===
+
 next/fixes-non-critical:
 lpc32xx/fixup		applied from series: http://marc.info/?l=linux-arm-kernel&m=132873369523839
 			+ http://marc.info/?l=linux-arm-kernel&m=132940396030585
@@ -25,6 +27,8 @@ imx/maintainers		git://git.linaro.org/people/shawnguo/linux-2.6.git imx/maintain
 davinci/maintainers	git://gitorious.org/linux-davinci/linux-davinci maintainers
 [patch]			http://marc.info/?l=linux-arm-kernel&m=133099559011243&w=2
 pxa/maintainers		git://github.com/hzhuang1/linux.git fixes-non-critical
+
+=== Depends on rmk/for-arm-soc ===
 
 next/cleanup:
 at91/base		git://github.com/at91linux/linux-at91.git at91-3.4-base
@@ -80,9 +84,7 @@ next/rpmsg:
 rpmsg/base		git://git.kernel.org/pub/scm/linux/kernel/git/ohad/remoteproc.git rpmsg-for-3.4
 rpmsg/updates		git://git.kernel.org/pub/scm/linux/kernel/git/ohad/remoteproc.git rpmsg-fixes-and-more-for-3.4
 
-
-
-
+=== depends on irqdomain ===
 
 next/drivers:
 at91/device-board	git://github.com/at91linux/linux-at91.git at91-3.4-base+device_board
@@ -131,6 +133,8 @@ omap/dt_irq_domain	git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-om
 
 next/clk:
 			patches from Mike Turquette
+
+=== depends on driver-core ===
 
 next/soc2:
 depends/driver-core	git://git.kernel.org/pub/scm/linux/kernel/git/gregkh/driver-core.git driver-core-next
