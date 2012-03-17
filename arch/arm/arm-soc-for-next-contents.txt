@@ -108,15 +108,6 @@ omap/sr			git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap sr
 samsung/devel-samsung-mmc	git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/devel-samsung-mmc
 samsung/devel-samsung-dma	git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/devel-samsung-dma
 				depends on samsung/cleanup-exynos-clock
-samsung/devel-pd	git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/devel-samsung-pd
-				depends on depends/linux-pm/pm-domains
-davinci/drivers		git://gitorious.org/linux-davinci/linux-davinci.git v3.4/features
-samsung/soc-exynos5250-gpio  git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/soc-exynos5250-gpio
-
-next/cleanup2:
-at91/base2+cleanup	git://github.com/at91linux/linux-at91.git at91-3.4-base2+cleanup
-				depends on at91/base, at91/pm_cleanup, at91/device-board and at91/9x5
-devel/io-cleanup	git://sources.calxeda.com/kernel/linux.git io-cleanup-for-3.4
 
 next/dt:
 vexpress/dt		git://git.linaro.org/people/pawelmoll/linux.git vexpress-dt-v3.3-rc4
@@ -129,7 +120,20 @@ tegra/dt		git://git.kernel.org/pub/scm/linux/kernel/git/olof/tegra.git tags/tegr
 pxa/dt			git://github.com/hzhuang1/linux.git dt
 omap/dt_irq_domain	git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap dt-part2
 
-==== Late patches, not for initial merge ====
+next/cleanup2:
+at91/base2+cleanup	git://github.com/at91linux/linux-at91.git at91-3.4-base2+cleanup
+				depends on at91/base, at91/pm_cleanup, at91/device-board and at91/9x5
+devel/io-cleanup	git://sources.calxeda.com/kernel/linux.git io-cleanup-for-3.4
+
+
+=== depends on linux-pm/pm-domains ==
+next/drivers2:
+samsung/devel-pd	git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/devel-samsung-pd
+				depends on depends/linux-pm/pm-domains
+davinci/drivers		git://gitorious.org/linux-davinci/linux-davinci.git v3.4/features
+samsung/soc-exynos5250-gpio  git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/soc-exynos5250-gpio
+
+=== Late patches, not for initial merge ===
 
 next/clk:
 			patches from Mike Turquette
