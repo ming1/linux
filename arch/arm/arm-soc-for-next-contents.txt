@@ -42,6 +42,11 @@ omap/cleanup-pm		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap
 omap/uart		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap uart
 samsung/board-samsung	git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung next/board-samsung
 
+next/timer:
+ux500/timers		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git ux500-timers
+[no local tree?]	git://git.kernel.org/pub/scm/linux/kernel/git/maz/arm-platforms.git local_timers-for-arm-soc
+				depends on ux500/timer and first patch in vexpress/dt
+
 next/soc:
 ux500/timers		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git ux500-timers
 mxs/clk			git://git.linaro.org/people/shawnguo/linux-2.6.git mxs/clk
@@ -99,10 +104,6 @@ imx27/dt		git://git.pengutronix.de/git/imx/linux-2.6.git features/imx27-dt
 tegra/dt		git://git.kernel.org/pub/scm/linux/kernel/git/olof/tegra.git tags/tegra-dt
 pxa/dt			git://github.com/hzhuang1/linux.git dt
 omap/dt_irq_domain	git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap dt-part2
-
-next/timer:
-[no local tree?]	git://git.kernel.org/pub/scm/linux/kernel/git/maz/arm-platforms.git local_timers-for-arm-soc
-				depends on ux500/timer and first patch in vexpress/dt
 
 next/boards:
 mxs/boards		git://git.linaro.org/people/shawnguo/linux-2.6.git mxs/boards
