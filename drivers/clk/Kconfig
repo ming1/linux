@@ -10,18 +10,14 @@ config HAVE_MACH_CLKDEV
 	bool
 
 menuconfig COMMON_CLK
-	bool "Common Clock Framework"
+	bool
 	select HAVE_CLK_PREPARE
 	---help---
 	  The common clock framework is a single definition of struct
 	  clk, useful across many platforms, as well as an
 	  implementation of the clock API in include/linux/clk.h.
 	  Architectures utilizing the common struct clk should select
-	  this automatically, but it may be necessary to manually select
-	  this option for loadable modules requiring the common clock
-	  framework.
-
-	  If in doubt, say "N".
+	  this option.
 
 if COMMON_CLK
 
