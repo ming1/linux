@@ -132,6 +132,14 @@ struct regmap *regmap_init_i2c(struct i2c_client *i2c,
 struct regmap *regmap_init_spi(struct spi_device *dev,
 			       const struct regmap_config *config);
 
+struct regmap *devm_regmap_init(struct device *dev,
+				const struct regmap_bus *bus,
+				const struct regmap_config *config);
+struct regmap *devm_regmap_init_i2c(struct i2c_client *i2c,
+				    const struct regmap_config *config);
+struct regmap *devm_regmap_init_spi(struct spi_device *dev,
+				    const struct regmap_config *config);
+
 void regmap_exit(struct regmap *map);
 int regmap_reinit_cache(struct regmap *map,
 			const struct regmap_config *config);
@@ -153,6 +161,9 @@ int regcache_sync(struct regmap *map);
 void regcache_cache_only(struct regmap *map, bool enable);
 void regcache_cache_bypass(struct regmap *map, bool enable);
 void regcache_mark_dirty(struct regmap *map);
+
+int regmap_register_patch(struct regmap *map, const struct reg_default *regs,
+			  int num_regs);
 
 /**
  * Description of an IRQ for the generic regmap irq_chip.

@@ -332,6 +332,45 @@ err:
 }
 EXPORT_SYMBOL_GPL(regmap_init);
 
+static void devm_regmap_release(struct device *dev, void *res)
+{
+	regmap_exit(*(struct regmap **)res);
+}
+
+/**
+ * devm_regmap_init(): Initialise managed register map
+ *
+ * @dev: Device that will be interacted with
+ * @bus: Bus-specific callbacks to use with device
+ * @config: Configuration for register map
+ *
+ * The return value will be an ERR_PTR() on error or a valid pointer
+ * to a struct regmap.  This function should generally not be called
+ * directly, it should be called by bus-specific init functions.  The
+ * map will be automatically freed by the device management code.
+ */
+struct regmap *devm_regmap_init(struct device *dev,
+				const struct regmap_bus *bus,
+				const struct regmap_config *config)
+{
+	struct regmap **ptr, *regmap;
+
+	ptr = devres_alloc(devm_regmap_release, sizeof(*ptr), GFP_KERNEL);
+	if (!ptr)
+		return ERR_PTR(-ENOMEM);
+
+	regmap = regmap_init(dev, bus, config);
+	if (!IS_ERR(regmap)) {
+		*ptr = regmap;
+		devres_add(dev, ptr);
+	} else {
+		devres_free(ptr);
+	}
+
+	return regmap;
+}
+EXPORT_SYMBOL_GPL(devm_regmap_init);
+
 /**
  * regmap_reinit_cache(): Reinitialise the current register cache
  *
@@ -360,6 +399,9 @@ int regmap_reinit_cache(struct regmap *map, const struct regmap_config *config)
 	map->cache_type = config->cache_type;
 
 	regmap_debugfs_init(map);
+
+	map->cache_bypass = false;
+	map->cache_only = false;
 
 	ret = regcache_init(map, config);
 
@@ -769,6 +811,64 @@ int regmap_update_bits_check(struct regmap *map, unsigned int reg,
 	return _regmap_update_bits(map, reg, mask, val, change);
 }
 EXPORT_SYMBOL_GPL(regmap_update_bits_check);
+
+/**
+ * regmap_register_patch: Register and apply register updates to be applied
+ *                        on device initialistion
+ *
+ * @map: Register map to apply updates to.
+ * @regs: Values to update.
+ * @num_regs: Number of entries in regs.
+ *
+ * Register a set of register updates to be applied to the device
+ * whenever the device registers are synchronised with the cache and
+ * apply them immediately.  Typically this is used to apply
+ * corrections to be applied to the device defaults on startup, such
+ * as the updates some vendors provide to undocumented registers.
+ */
+int regmap_register_patch(struct regmap *map, const struct reg_default *regs,
+			  int num_regs)
+{
+	int i, ret;
+	bool bypass;
+
+	/* If needed the implementation can be extended to support this */
+	if (map->patch)
+		return -EBUSY;
+
+	mutex_lock(&map->lock);
+
+	bypass = map->cache_bypass;
+
+	map->cache_bypass = true;
+
+	/* Write out first; it's useful to apply even if we fail later. */
+	for (i = 0; i < num_regs; i++) {
+		ret = _regmap_write(map, regs[i].reg, regs[i].def);
+		if (ret != 0) {
+			dev_err(map->dev, "Failed to write %x = %x: %d\n",
+				regs[i].reg, regs[i].def, ret);
+			goto out;
+		}
+	}
+
+	map->patch = kcalloc(num_regs, sizeof(struct reg_default), GFP_KERNEL);
+	if (map->patch != NULL) {
+		memcpy(map->patch, regs,
+		       num_regs * sizeof(struct reg_default));
+		map->patch_regs = num_regs;
+	} else {
+		ret = -ENOMEM;
+	}
+
+out:
+	map->cache_bypass = bypass;
+
+	mutex_unlock(&map->lock);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(regmap_register_patch);
 
 static int __init regmap_initcall(void)
 {
