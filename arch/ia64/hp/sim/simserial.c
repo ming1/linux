@@ -34,8 +34,11 @@
 #include <linux/sysrq.h>
 
 #include <asm/irq.h>
+#include <asm/hpsim.h>
 #include <asm/hw_irq.h>
 #include <asm/uaccess.h>
+
+#include "hpsim_ssc.h"
 
 #undef SIMSERIAL_DEBUG	/* define this to get some debug information */
 
@@ -44,11 +47,6 @@
 #define NR_PORTS	1	/* only one port for now */
 
 #define IRQ_T(info) ((info->flags & ASYNC_SHARE_IRQ) ? IRQF_SHARED : IRQF_DISABLED)
-
-#define SSC_GETCHAR	21
-
-extern long ia64_ssc (long, long, long, long, int);
-extern void ia64_ssc_connect_irq (long intr, long irq);
 
 static char *serial_name = "SimSerial driver";
 static char *serial_version = "0.6";
@@ -704,15 +702,8 @@ startup(struct async_struct *info)
 			handler = rs_interrupt_single;
 
 		retval = request_irq(state->irq, handler, IRQ_T(info), "simserial", NULL);
-		if (retval) {
-			if (capable(CAP_SYS_ADMIN)) {
-				if (info->tty)
-					set_bit(TTY_IO_ERROR,
-						&info->tty->flags);
-				retval = 0;
-			}
+		if (retval)
 			goto errout;
-		}
 	}
 
 	/*
@@ -949,11 +940,10 @@ simrs_init (void)
 		if (state->type == PORT_UNKNOWN) continue;
 
 		if (!state->irq) {
-			if ((rc = assign_irq_vector(AUTO_ASSIGN)) < 0)
+			if ((rc = hpsim_get_irq(KEYBOARD_INTR)) < 0)
 				panic("%s: out of interrupt vectors!\n",
 				      __func__);
 			state->irq = rc;
-			ia64_ssc_connect_irq(KEYBOARD_INTR, state->irq);
 		}
 
 		printk(KERN_INFO "ttyS%d at 0x%04lx (irq = %d) is a %s\n",
