@@ -170,10 +170,12 @@ struct context {
 struct iso_context {
 	struct fw_iso_context base;
 	struct context context;
-	int excess_bytes;
 	void *header;
 	size_t header_length;
-
+	unsigned long flushing_completions;
+	u32 mc_buffer_bus;
+	u16 mc_completed;
+	u16 last_timestamp;
 	u8 sync;
 	u8 tags;
 };
@@ -2681,25 +2683,35 @@ static void ohci_write_csr(struct fw_card *card, int csr_offset, u32 value)
 	}
 }
 
-static void copy_iso_headers(struct iso_context *ctx, void *p)
+static void flush_iso_completions(struct iso_context *ctx)
 {
-	int i = ctx->header_length;
+	ctx->base.callback.sc(&ctx->base, ctx->last_timestamp,
+			      ctx->header_length, ctx->header,
+			      ctx->base.callback_data);
+	ctx->header_length = 0;
+}
 
-	if (i + ctx->base.header_size > PAGE_SIZE)
-		return;
+static void copy_iso_headers(struct iso_context *ctx, const u32 *dma_hdr)
+{
+	u32 *ctx_hdr;
+
+	if (ctx->header_length + ctx->base.header_size > PAGE_SIZE)
+		flush_iso_completions(ctx);
+
+	ctx_hdr = ctx->header + ctx->header_length;
+	ctx->last_timestamp = (u16)le32_to_cpu((__force __le32)dma_hdr[0]);
 
 	/*
-	 * The iso header is byteswapped to little endian by
-	 * the controller, but the remaining header quadlets
-	 * are big endian.  We want to present all the headers
-	 * as big endian, so we have to swap the first quadlet.
+	 * The two iso header quadlets are byteswapped to little
+	 * endian by the controller, but we want to present them
+	 * as big endian for consistency with the bus endianness.
 	 */
 	if (ctx->base.header_size > 0)
-		*(u32 *) (ctx->header + i) = __swab32(*(u32 *) (p + 4));
+		ctx_hdr[0] = swab32(dma_hdr[1]); /* iso packet header */
 	if (ctx->base.header_size > 4)
-		*(u32 *) (ctx->header + i + 4) = __swab32(*(u32 *) p);
+		ctx_hdr[1] = swab32(dma_hdr[0]); /* timestamp */
 	if (ctx->base.header_size > 8)
-		memcpy(ctx->header + i + 8, p + 8, ctx->base.header_size - 8);
+		memcpy(&ctx_hdr[2], &dma_hdr[2], ctx->base.header_size - 8);
 	ctx->header_length += ctx->base.header_size;
 }
 
@@ -2711,8 +2723,6 @@ static int handle_ir_packet_per_buffer(struct context *context,
 		container_of(context, struct iso_context, context);
 	struct descriptor *pd;
 	u32 buffer_dma;
-	__le32 *ir_header;
-	void *p;
 
 	for (pd = d; pd <= last; pd++)
 		if (pd->transfer_status)
@@ -2731,17 +2741,10 @@ static int handle_ir_packet_per_buffer(struct context *context,
 					      DMA_FROM_DEVICE);
 	}
 
-	p = last + 1;
-	copy_iso_headers(ctx, p);
+	copy_iso_headers(ctx, (u32 *) (last + 1));
 
-	if (le16_to_cpu(last->control) & DESCRIPTOR_IRQ_ALWAYS) {
-		ir_header = (__le32 *) p;
-		ctx->base.callback.sc(&ctx->base,
-				      le32_to_cpu(ir_header[0]) & 0xffff,
-				      ctx->header_length, ctx->header,
-				      ctx->base.callback_data);
-		ctx->header_length = 0;
-	}
+	if (last->control & cpu_to_le16(DESCRIPTOR_IRQ_ALWAYS))
+		flush_iso_completions(ctx);
 
 	return 1;
 }
@@ -2753,26 +2756,49 @@ static int handle_ir_buffer_fill(struct context *context,
 {
 	struct iso_context *ctx =
 		container_of(context, struct iso_context, context);
+	unsigned int req_count, res_count, completed;
 	u32 buffer_dma;
 
-	if (last->res_count != 0)
+	req_count = le16_to_cpu(last->req_count);
+	res_count = le16_to_cpu(ACCESS_ONCE(last->res_count));
+	completed = req_count - res_count;
+	buffer_dma = le32_to_cpu(last->data_address);
+
+	if (completed > 0) {
+		ctx->mc_buffer_bus = buffer_dma;
+		ctx->mc_completed = completed;
+	}
+
+	if (res_count != 0)
 		/* Descriptor(s) not done yet, stop iteration */
 		return 0;
 
-	buffer_dma = le32_to_cpu(last->data_address);
 	dma_sync_single_range_for_cpu(context->ohci->card.device,
 				      buffer_dma & PAGE_MASK,
 				      buffer_dma & ~PAGE_MASK,
-				      le16_to_cpu(last->req_count),
-				      DMA_FROM_DEVICE);
+				      completed, DMA_FROM_DEVICE);
 
-	if (le16_to_cpu(last->control) & DESCRIPTOR_IRQ_ALWAYS)
+	if (last->control & cpu_to_le16(DESCRIPTOR_IRQ_ALWAYS)) {
 		ctx->base.callback.mc(&ctx->base,
-				      le32_to_cpu(last->data_address) +
-				      le16_to_cpu(last->req_count),
+				      buffer_dma + completed,
 				      ctx->base.callback_data);
+		ctx->mc_completed = 0;
+	}
 
 	return 1;
+}
+
+static void flush_ir_buffer_fill(struct iso_context *ctx)
+{
+	dma_sync_single_range_for_cpu(ctx->context.ohci->card.device,
+				      ctx->mc_buffer_bus & PAGE_MASK,
+				      ctx->mc_buffer_bus & ~PAGE_MASK,
+				      ctx->mc_completed, DMA_FROM_DEVICE);
+
+	ctx->base.callback.mc(&ctx->base,
+			      ctx->mc_buffer_bus + ctx->mc_completed,
+			      ctx->base.callback_data);
+	ctx->mc_completed = 0;
 }
 
 static inline void sync_it_packet_for_cpu(struct context *context,
@@ -2818,8 +2844,8 @@ static int handle_it_packet(struct context *context,
 {
 	struct iso_context *ctx =
 		container_of(context, struct iso_context, context);
-	int i;
 	struct descriptor *pd;
+	__be32 *ctx_hdr;
 
 	for (pd = d; pd <= last; pd++)
 		if (pd->transfer_status)
@@ -2830,20 +2856,19 @@ static int handle_it_packet(struct context *context,
 
 	sync_it_packet_for_cpu(context, d);
 
-	i = ctx->header_length;
-	if (i + 4 < PAGE_SIZE) {
-		/* Present this value as big-endian to match the receive code */
-		*(__be32 *)(ctx->header + i) = cpu_to_be32(
-				((u32)le16_to_cpu(pd->transfer_status) << 16) |
-				le16_to_cpu(pd->res_count));
-		ctx->header_length += 4;
-	}
-	if (le16_to_cpu(last->control) & DESCRIPTOR_IRQ_ALWAYS) {
-		ctx->base.callback.sc(&ctx->base, le16_to_cpu(last->res_count),
-				      ctx->header_length, ctx->header,
-				      ctx->base.callback_data);
-		ctx->header_length = 0;
-	}
+	if (ctx->header_length + 4 > PAGE_SIZE)
+		flush_iso_completions(ctx);
+
+	ctx_hdr = ctx->header + ctx->header_length;
+	ctx->last_timestamp = le16_to_cpu(last->res_count);
+	/* Present this value as big-endian to match the receive code */
+	*ctx_hdr = cpu_to_be32((le16_to_cpu(pd->transfer_status) << 16) |
+			       le16_to_cpu(pd->res_count));
+	ctx->header_length += 4;
+
+	if (last->control & cpu_to_le16(DESCRIPTOR_IRQ_ALWAYS))
+		flush_iso_completions(ctx);
+
 	return 1;
 }
 
@@ -2930,8 +2955,10 @@ static struct fw_iso_context *ohci_allocate_iso_context(struct fw_card *card,
 	if (ret < 0)
 		goto out_with_header;
 
-	if (type == FW_ISO_CONTEXT_RECEIVE_MULTICHANNEL)
+	if (type == FW_ISO_CONTEXT_RECEIVE_MULTICHANNEL) {
 		set_multichannel_mask(ohci, 0);
+		ctx->mc_completed = 0;
+	}
 
 	return &ctx->base;
 
@@ -3393,6 +3420,39 @@ static void ohci_flush_queue_iso(struct fw_iso_context *base)
 	reg_write(ctx->ohci, CONTROL_SET(ctx->regs), CONTEXT_WAKE);
 }
 
+static int ohci_flush_iso_completions(struct fw_iso_context *base)
+{
+	struct iso_context *ctx = container_of(base, struct iso_context, base);
+	int ret = 0;
+
+	tasklet_disable(&ctx->context.tasklet);
+
+	if (!test_and_set_bit_lock(0, &ctx->flushing_completions)) {
+		context_tasklet((unsigned long)&ctx->context);
+
+		switch (base->type) {
+		case FW_ISO_CONTEXT_TRANSMIT:
+		case FW_ISO_CONTEXT_RECEIVE:
+			if (ctx->header_length != 0)
+				flush_iso_completions(ctx);
+			break;
+		case FW_ISO_CONTEXT_RECEIVE_MULTICHANNEL:
+			if (ctx->mc_completed != 0)
+				flush_ir_buffer_fill(ctx);
+			break;
+		default:
+			ret = -ENOSYS;
+		}
+
+		clear_bit_unlock(0, &ctx->flushing_completions);
+		smp_mb__after_clear_bit();
+	}
+
+	tasklet_enable(&ctx->context.tasklet);
+
+	return ret;
+}
+
 static const struct fw_card_driver ohci_driver = {
 	.enable			= ohci_enable,
 	.read_phy_reg		= ohci_read_phy_reg,
@@ -3410,6 +3470,7 @@ static const struct fw_card_driver ohci_driver = {
 	.set_iso_channels	= ohci_set_iso_channels,
 	.queue_iso		= ohci_queue_iso,
 	.flush_queue_iso	= ohci_flush_queue_iso,
+	.flush_iso_completions	= ohci_flush_iso_completions,
 	.start_iso		= ohci_start_iso,
 	.stop_iso		= ohci_stop_iso,
 };
