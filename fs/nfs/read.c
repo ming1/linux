@@ -66,7 +66,6 @@ void nfs_readdata_free(struct nfs_read_data *p)
 
 void nfs_readdata_release(struct nfs_read_data *rdata)
 {
-	put_lseg(rdata->lseg);
 	put_nfs_open_context(rdata->args.context);
 	nfs_readdata_free(rdata);
 }
@@ -472,7 +471,7 @@ void nfs_read_prepare(struct rpc_task *task, void *calldata)
 
 	if (nfs4_setup_sequence(NFS_SERVER(data->inode),
 				&data->args.seq_args, &data->res.seq_res,
-				0, task))
+				task))
 		return;
 	rpc_call_start(task);
 }
