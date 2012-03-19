@@ -1,6 +1,6 @@
 /* bnx2x_sp.c: Broadcom Everest network driver.
  *
- * Copyright 2011 Broadcom Corporation
+ * Copyright (c) 2011-2012 Broadcom Corporation
  *
  * Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -611,12 +611,6 @@ static inline u8 bnx2x_vlan_mac_get_rx_tx_flag(struct bnx2x_vlan_mac_obj *o)
 	return rx_tx_flag;
 }
 
-/* LLH CAM line allocations */
-enum {
-	LLH_CAM_ISCSI_ETH_LINE = 0,
-	LLH_CAM_ETH_LINE,
-	LLH_CAM_MAX_PF_LINE = NIG_REG_LLH1_FUNC_MEM_SIZE / 2
-};
 
 static inline void bnx2x_set_mac_in_nig(struct bnx2x *bp,
 				 bool add, unsigned char *dev_addr, int index)
@@ -625,7 +619,7 @@ static inline void bnx2x_set_mac_in_nig(struct bnx2x *bp,
 	u32 reg_offset = BP_PORT(bp) ? NIG_REG_LLH1_FUNC_MEM :
 			 NIG_REG_LLH0_FUNC_MEM;
 
-	if (!IS_MF_SI(bp) || index > LLH_CAM_MAX_PF_LINE)
+	if (!IS_MF_SI(bp) || index > BNX2X_LLH_CAM_MAX_PF_LINE)
 		return;
 
 	DP(BNX2X_MSG_SP, "Going to %s LLH configuration at entry %d\n",
@@ -731,9 +725,10 @@ static void bnx2x_set_one_mac_e2(struct bnx2x *bp,
 	if (cmd != BNX2X_VLAN_MAC_MOVE) {
 		if (test_bit(BNX2X_ISCSI_ETH_MAC, vlan_mac_flags))
 			bnx2x_set_mac_in_nig(bp, add, mac,
-					     LLH_CAM_ISCSI_ETH_LINE);
+					     BNX2X_LLH_CAM_ISCSI_ETH_LINE);
 		else if (test_bit(BNX2X_ETH_MAC, vlan_mac_flags))
-			bnx2x_set_mac_in_nig(bp, add, mac, LLH_CAM_ETH_LINE);
+			bnx2x_set_mac_in_nig(bp, add, mac,
+					     BNX2X_LLH_CAM_ETH_LINE);
 	}
 
 	/* Reset the ramrod data buffer for the first rule */
@@ -869,7 +864,7 @@ static void bnx2x_set_one_mac_e1x(struct bnx2x *bp,
 	/* Reset the ramrod data buffer */
 	memset(config, 0, sizeof(*config));
 
-	bnx2x_vlan_mac_set_rdata_e1x(bp, o, BNX2X_FILTER_MAC_PENDING,
+	bnx2x_vlan_mac_set_rdata_e1x(bp, o, raw->state,
 				     cam_offset, add,
 				     elem->cmd_data.vlan_mac.u.mac.mac, 0,
 				     ETH_VLAN_FILTER_ANY_VLAN, config);
@@ -1836,6 +1831,7 @@ static int bnx2x_vlan_mac_del_all(struct bnx2x *bp,
 			rc = exeq->remove(bp, exeq->owner, exeq_pos);
 			if (rc) {
 				BNX2X_ERR("Failed to remove command\n");
+				spin_unlock_bh(&exeq->lock);
 				return rc;
 			}
 			list_del(&exeq_pos->link);
@@ -4430,9 +4426,10 @@ static void bnx2x_q_fill_init_rx_data(struct bnx2x_queue_sp_obj *o,
 				struct client_init_rx_data *rx_data,
 				unsigned long *flags)
 {
-		/* Rx data */
 	rx_data->tpa_en = test_bit(BNX2X_Q_FLG_TPA, flags) *
 				CLIENT_INIT_RX_DATA_TPA_EN_IPV4;
+	rx_data->tpa_en |= test_bit(BNX2X_Q_FLG_TPA_GRO, flags) *
+				CLIENT_INIT_RX_DATA_TPA_MODE;
 	rx_data->vmqueue_mode_en_flg = 0;
 
 	rx_data->cache_line_alignment_log_size =
@@ -4476,7 +4473,7 @@ static void bnx2x_q_fill_init_rx_data(struct bnx2x_queue_sp_obj *o,
 	rx_data->is_leading_rss = test_bit(BNX2X_Q_FLG_LEADING_RSS, flags);
 
 	if (test_bit(BNX2X_Q_FLG_MCAST, flags)) {
-		rx_data->approx_mcast_engine_id = o->func_id;
+		rx_data->approx_mcast_engine_id = params->mcast_engine_id;
 		rx_data->is_approx_mcast = 1;
 	}
 
@@ -5182,13 +5179,6 @@ void bnx2x_init_queue_obj(struct bnx2x *bp,
 	obj->complete_cmd = bnx2x_queue_comp_cmd;
 	obj->wait_comp = bnx2x_queue_wait_comp;
 	obj->set_pending = bnx2x_queue_set_pending;
-}
-
-void bnx2x_queue_set_cos_cid(struct bnx2x *bp,
-			     struct bnx2x_queue_sp_obj *obj,
-			     u32 cid, u8 index)
-{
-	obj->cids[index] = cid;
 }
 
 /********************** Function state object *********************************/

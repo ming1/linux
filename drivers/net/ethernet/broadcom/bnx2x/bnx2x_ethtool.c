@@ -1,6 +1,6 @@
 /* bnx2x_ethtool.c: Broadcom Everest network driver.
  *
- * Copyright (c) 2007-2011 Broadcom Corporation
+ * Copyright (c) 2007-2012 Broadcom Corporation
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -175,7 +175,11 @@ static const struct {
 	{ STATS_OFFSET32(total_tpa_aggregated_frames_hi),
 			8, STATS_FLAGS_FUNC, "tpa_aggregated_frames"},
 	{ STATS_OFFSET32(total_tpa_bytes_hi),
-			8, STATS_FLAGS_FUNC, "tpa_bytes"}
+			8, STATS_FLAGS_FUNC, "tpa_bytes"},
+	{ STATS_OFFSET32(recoverable_error),
+			4, STATS_FLAGS_FUNC, "recoverable_errors" },
+	{ STATS_OFFSET32(unrecoverable_error),
+			4, STATS_FLAGS_FUNC, "unrecoverable_errors" },
 };
 
 #define BNX2X_NUM_STATS		ARRAY_SIZE(bnx2x_stats_arr)
@@ -218,19 +222,22 @@ static int bnx2x_get_settings(struct net_device *dev, struct ethtool_cmd *cmd)
 		 (SUPPORTED_TP | SUPPORTED_FIBRE));
 	cmd->advertising = bp->port.advertising[cfg_idx];
 
-	if ((bp->state == BNX2X_STATE_OPEN) &&
-	    !(bp->flags & MF_FUNC_DIS) &&
-	    (bp->link_vars.link_up)) {
-		ethtool_cmd_speed_set(cmd, bp->link_vars.line_speed);
-		cmd->duplex = bp->link_vars.duplex;
-	} else {
-		ethtool_cmd_speed_set(
-			cmd, bp->link_params.req_line_speed[cfg_idx]);
-		cmd->duplex = bp->link_params.req_duplex[cfg_idx];
-	}
+	if ((bp->state == BNX2X_STATE_OPEN) && (bp->link_vars.link_up)) {
+		if (!(bp->flags & MF_FUNC_DIS)) {
+			ethtool_cmd_speed_set(cmd, bp->link_vars.line_speed);
+			cmd->duplex = bp->link_vars.duplex;
+		} else {
+			ethtool_cmd_speed_set(
+				cmd, bp->link_params.req_line_speed[cfg_idx]);
+			cmd->duplex = bp->link_params.req_duplex[cfg_idx];
+		}
 
-	if (IS_MF(bp))
-		ethtool_cmd_speed_set(cmd, bnx2x_get_mf_speed(bp));
+		if (IS_MF(bp) && !BP_NOMCP(bp))
+			ethtool_cmd_speed_set(cmd, bnx2x_get_mf_speed(bp));
+	} else {
+		cmd->duplex = DUPLEX_UNKNOWN;
+		ethtool_cmd_speed_set(cmd, SPEED_UNKNOWN);
+	}
 
 	cmd->port = bnx2x_get_port_type(bp);
 
@@ -241,6 +248,34 @@ static int bnx2x_get_settings(struct net_device *dev, struct ethtool_cmd *cmd)
 		cmd->autoneg = AUTONEG_ENABLE;
 	else
 		cmd->autoneg = AUTONEG_DISABLE;
+
+	/* Publish LP advertised speeds and FC */
+	if (bp->link_vars.link_status & LINK_STATUS_AUTO_NEGOTIATE_COMPLETE) {
+		u32 status = bp->link_vars.link_status;
+
+		cmd->lp_advertising |= ADVERTISED_Autoneg;
+		if (status & LINK_STATUS_LINK_PARTNER_SYMMETRIC_PAUSE)
+			cmd->lp_advertising |= ADVERTISED_Pause;
+		if (status & LINK_STATUS_LINK_PARTNER_ASYMMETRIC_PAUSE)
+			cmd->lp_advertising |= ADVERTISED_Asym_Pause;
+
+		if (status & LINK_STATUS_LINK_PARTNER_10THD_CAPABLE)
+			cmd->lp_advertising |= ADVERTISED_10baseT_Half;
+		if (status & LINK_STATUS_LINK_PARTNER_10TFD_CAPABLE)
+			cmd->lp_advertising |= ADVERTISED_10baseT_Full;
+		if (status & LINK_STATUS_LINK_PARTNER_100TXHD_CAPABLE)
+			cmd->lp_advertising |= ADVERTISED_100baseT_Half;
+		if (status & LINK_STATUS_LINK_PARTNER_100TXFD_CAPABLE)
+			cmd->lp_advertising |= ADVERTISED_100baseT_Full;
+		if (status & LINK_STATUS_LINK_PARTNER_1000THD_CAPABLE)
+			cmd->lp_advertising |= ADVERTISED_1000baseT_Half;
+		if (status & LINK_STATUS_LINK_PARTNER_1000TFD_CAPABLE)
+			cmd->lp_advertising |= ADVERTISED_1000baseT_Full;
+		if (status & LINK_STATUS_LINK_PARTNER_2500XFD_CAPABLE)
+			cmd->lp_advertising |= ADVERTISED_2500baseX_Full;
+		if (status & LINK_STATUS_LINK_PARTNER_10GXFD_CAPABLE)
+			cmd->lp_advertising |= ADVERTISED_10000baseT_Full;
+	}
 
 	cmd->maxtxpkt = 0;
 	cmd->maxrxpkt = 0;
@@ -276,6 +311,10 @@ static int bnx2x_set_settings(struct net_device *dev, struct ethtool_cmd *cmd)
 	   cmd->autoneg, cmd->maxtxpkt, cmd->maxrxpkt);
 
 	speed = ethtool_cmd_speed(cmd);
+
+	/* If recieved a request for an unknown duplex, assume full*/
+	if (cmd->duplex == DUPLEX_UNKNOWN)
+		cmd->duplex = DUPLEX_FULL;
 
 	if (IS_MF_SI(bp)) {
 		u32 part;
@@ -774,14 +813,8 @@ static void bnx2x_get_drvinfo(struct net_device *dev,
 	strlcpy(info->version, DRV_MODULE_VERSION, sizeof(info->version));
 
 	phy_fw_ver[0] = '\0';
-	if (bp->port.pmf) {
-		bnx2x_acquire_phy_lock(bp);
-		bnx2x_get_ext_phy_fw_version(&bp->link_params,
-					     (bp->state != BNX2X_STATE_CLOSED),
-					     phy_fw_ver, PHY_FW_VER_LEN);
-		bnx2x_release_phy_lock(bp);
-	}
-
+	bnx2x_get_ext_phy_fw_version(&bp->link_params,
+				     phy_fw_ver, PHY_FW_VER_LEN);
 	strlcpy(info->fw_version, bp->fw_ver, sizeof(info->fw_version));
 	snprintf(info->fw_version + strlen(bp->fw_ver), 32 - strlen(bp->fw_ver),
 		 "bc %d.%d.%d%s%s",
@@ -882,11 +915,27 @@ static int bnx2x_get_eeprom_len(struct net_device *dev)
 	return bp->common.flash_size;
 }
 
+/* Per pf misc lock must be aquired before the per port mcp lock. Otherwise, had
+ * we done things the other way around, if two pfs from the same port would
+ * attempt to access nvram at the same time, we could run into a scenario such
+ * as:
+ * pf A takes the port lock.
+ * pf B succeeds in taking the same lock since they are from the same port.
+ * pf A takes the per pf misc lock. Performs eeprom access.
+ * pf A finishes. Unlocks the per pf misc lock.
+ * Pf B takes the lock and proceeds to perform it's own access.
+ * pf A unlocks the per port lock, while pf B is still working (!).
+ * mcp takes the per port lock and corrupts pf B's access (and/or has it's own
+ * acess corrupted by pf B).*
+ */
 static int bnx2x_acquire_nvram_lock(struct bnx2x *bp)
 {
 	int port = BP_PORT(bp);
 	int count, i;
-	u32 val = 0;
+	u32 val;
+
+	/* acquire HW lock: protect against other PFs in PF Direct Assignment */
+	bnx2x_acquire_hw_lock(bp, HW_LOCK_RESOURCE_NVRAM);
 
 	/* adjust timeout for emulation/FPGA */
 	count = BNX2X_NVRAM_TIMEOUT_COUNT;
@@ -917,7 +966,7 @@ static int bnx2x_release_nvram_lock(struct bnx2x *bp)
 {
 	int port = BP_PORT(bp);
 	int count, i;
-	u32 val = 0;
+	u32 val;
 
 	/* adjust timeout for emulation/FPGA */
 	count = BNX2X_NVRAM_TIMEOUT_COUNT;
@@ -941,6 +990,8 @@ static int bnx2x_release_nvram_lock(struct bnx2x *bp)
 		return -EBUSY;
 	}
 
+	/* release HW lock: protect against other PFs in PF Direct Assignment */
+	bnx2x_release_hw_lock(bp, HW_LOCK_RESOURCE_NVRAM);
 	return 0;
 }
 
@@ -1370,7 +1421,8 @@ static int bnx2x_set_ringparam(struct net_device *dev,
 	struct bnx2x *bp = netdev_priv(dev);
 
 	if (bp->recovery_state != BNX2X_RECOVERY_DONE) {
-		pr_err("Handling parity error recovery. Try again later\n");
+		netdev_err(dev, "Handling parity error recovery. "
+				"Try again later\n");
 		return -EAGAIN;
 	}
 
@@ -1392,12 +1444,19 @@ static void bnx2x_get_pauseparam(struct net_device *dev,
 {
 	struct bnx2x *bp = netdev_priv(dev);
 	int cfg_idx = bnx2x_get_link_cfg_idx(bp);
+	int cfg_reg;
+
 	epause->autoneg = (bp->link_params.req_flow_ctrl[cfg_idx] ==
 			   BNX2X_FLOW_CTRL_AUTO);
 
-	epause->rx_pause = ((bp->link_vars.flow_ctrl & BNX2X_FLOW_CTRL_RX) ==
+	if (!epause->autoneg)
+		cfg_reg = bp->link_params.req_flow_ctrl[cfg_idx];
+	else
+		cfg_reg = bp->link_params.req_fc_auto_adv;
+
+	epause->rx_pause = ((cfg_reg & BNX2X_FLOW_CTRL_RX) ==
 			    BNX2X_FLOW_CTRL_RX);
-	epause->tx_pause = ((bp->link_vars.flow_ctrl & BNX2X_FLOW_CTRL_TX) ==
+	epause->tx_pause = ((cfg_reg & BNX2X_FLOW_CTRL_TX) ==
 			    BNX2X_FLOW_CTRL_TX);
 
 	DP(NETIF_MSG_LINK, "ethtool_pauseparam: cmd %d\n"
@@ -1879,7 +1938,7 @@ static int bnx2x_run_loopback(struct bnx2x *bp, int loopback_mode)
 	if (!CQE_TYPE_FAST(cqe_fp_type) || (cqe_fp_flags & ETH_RX_ERROR_FALGS))
 		goto test_loopback_rx_exit;
 
-	len = le16_to_cpu(cqe->fast_path_cqe.pkt_len);
+	len = le16_to_cpu(cqe->fast_path_cqe.pkt_len_or_gro_seg_len);
 	if (len != pkt_size)
 		goto test_loopback_rx_exit;
 
@@ -1958,13 +2017,21 @@ static int bnx2x_test_nvram(struct bnx2x *bp)
 		{ 0x708,  0x70 }, /* manuf_key_info */
 		{     0,     0 }
 	};
-	__be32 buf[0x350 / 4];
-	u8 *data = (u8 *)buf;
+	__be32 *buf;
+	u8 *data;
 	int i, rc;
 	u32 magic, crc;
 
 	if (BP_NOMCP(bp))
 		return 0;
+
+	buf = kmalloc(0x350, GFP_KERNEL);
+	if (!buf) {
+		DP(NETIF_MSG_PROBE, "kmalloc failed\n");
+		rc = -ENOMEM;
+		goto test_nvram_exit;
+	}
+	data = (u8 *)buf;
 
 	rc = bnx2x_nvram_read(bp, 0, data, 4);
 	if (rc) {
@@ -1999,6 +2066,7 @@ static int bnx2x_test_nvram(struct bnx2x *bp)
 	}
 
 test_nvram_exit:
+	kfree(buf);
 	return rc;
 }
 
@@ -2024,7 +2092,8 @@ static void bnx2x_self_test(struct net_device *dev,
 	struct bnx2x *bp = netdev_priv(dev);
 	u8 is_serdes;
 	if (bp->recovery_state != BNX2X_RECOVERY_DONE) {
-		pr_err("Handling parity error recovery. Try again later\n");
+		netdev_err(bp->dev, "Handling parity error recovery. "
+				    "Try again later\n");
 		etest->flags |= ETH_TEST_FL_FAILED;
 		return;
 	}

@@ -1,6 +1,6 @@
 /* bnx2x_cmn.c: Broadcom Everest network driver.
  *
- * Copyright (c) 2007-2011 Broadcom Corporation
+ * Copyright (c) 2007-2012 Broadcom Corporation
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,46 +30,6 @@
 #include "bnx2x_sp.h"
 
 
-
-/**
- * bnx2x_bz_fp - zero content of the fastpath structure.
- *
- * @bp:		driver handle
- * @index:	fastpath index to be zeroed
- *
- * Makes sure the contents of the bp->fp[index].napi is kept
- * intact.
- */
-static inline void bnx2x_bz_fp(struct bnx2x *bp, int index)
-{
-	struct bnx2x_fastpath *fp = &bp->fp[index];
-	struct napi_struct orig_napi = fp->napi;
-	/* bzero bnx2x_fastpath contents */
-	memset(fp, 0, sizeof(*fp));
-
-	/* Restore the NAPI object as it has been already initialized */
-	fp->napi = orig_napi;
-
-	fp->bp = bp;
-	fp->index = index;
-	if (IS_ETH_FP(fp))
-		fp->max_cos = bp->max_cos;
-	else
-		/* Special queues support only one CoS */
-		fp->max_cos = 1;
-
-	/*
-	 * set the tpa flag for each queue. The tpa flag determines the queue
-	 * minimal size so it must be set prior to queue memory allocation
-	 */
-	fp->disable_tpa = ((bp->flags & TPA_ENABLE_FLAG) == 0);
-
-#ifdef BCM_CNIC
-	/* We don't want TPA on an FCoE L2 ring */
-	if (IS_FCOE_FP(fp))
-		fp->disable_tpa = 1;
-#endif
-}
 
 /**
  * bnx2x_move_fp - move content of the fastpath structure.
@@ -249,13 +209,11 @@ static inline void bnx2x_update_last_max_sge(struct bnx2x_fastpath *fp,
 		fp->last_max_sge = idx;
 }
 
-static void bnx2x_update_sge_prod(struct bnx2x_fastpath *fp,
-				  struct eth_fast_path_rx_cqe *fp_cqe)
+static inline void bnx2x_update_sge_prod(struct bnx2x_fastpath *fp,
+					 u16 sge_len,
+					 struct eth_end_agg_rx_cqe *cqe)
 {
 	struct bnx2x *bp = fp->bp;
-	u16 sge_len = SGE_PAGE_ALIGN(le16_to_cpu(fp_cqe->pkt_len) -
-				     le16_to_cpu(fp_cqe->len_on_bd)) >>
-		      SGE_PAGE_SHIFT;
 	u16 last_max, last_elem, first_elem;
 	u16 delta = 0;
 	u16 i;
@@ -266,15 +224,15 @@ static void bnx2x_update_sge_prod(struct bnx2x_fastpath *fp,
 	/* First mark all used pages */
 	for (i = 0; i < sge_len; i++)
 		BIT_VEC64_CLEAR_BIT(fp->sge_mask,
-			RX_SGE(le16_to_cpu(fp_cqe->sgl_or_raw_data.sgl[i])));
+			RX_SGE(le16_to_cpu(cqe->sgl_or_raw_data.sgl[i])));
 
 	DP(NETIF_MSG_RX_STATUS, "fp_cqe->sgl[%d] = %d\n",
-	   sge_len - 1, le16_to_cpu(fp_cqe->sgl_or_raw_data.sgl[sge_len - 1]));
+	   sge_len - 1, le16_to_cpu(cqe->sgl_or_raw_data.sgl[sge_len - 1]));
 
 	/* Here we assume that the last SGE index is the biggest */
 	prefetch((void *)(fp->sge_mask));
 	bnx2x_update_last_max_sge(fp,
-		le16_to_cpu(fp_cqe->sgl_or_raw_data.sgl[sge_len - 1]));
+		le16_to_cpu(cqe->sgl_or_raw_data.sgl[sge_len - 1]));
 
 	last_max = RX_SGE(fp->last_max_sge);
 	last_elem = last_max >> BIT_VEC64_ELEM_SHIFT;
@@ -368,6 +326,22 @@ static void bnx2x_tpa_start(struct bnx2x_fastpath *fp, u16 queue,
 	tpa_info->len_on_bd = le16_to_cpu(cqe->len_on_bd);
 	tpa_info->placement_offset = cqe->placement_offset;
 	tpa_info->rxhash = bnx2x_get_rxhash(bp, cqe);
+	if (fp->mode == TPA_MODE_GRO) {
+		u16 gro_size = le16_to_cpu(cqe->pkt_len_or_gro_seg_len);
+		tpa_info->full_page =
+			SGE_PAGE_SIZE * PAGES_PER_SGE / gro_size * gro_size;
+		/*
+		 * FW 7.2.16 BUG workaround:
+		 * if SGE size is (exactly) multiple gro_size
+		 * fw will place one less frag on SGE.
+		 * the calculation is done only for potentially
+		 * dangerous MTUs.
+		 */
+		if (unlikely(bp->gro_check))
+			if (!(SGE_PAGE_SIZE * PAGES_PER_SGE % gro_size))
+				tpa_info->full_page -= gro_size;
+		tpa_info->gro_size = gro_size;
+	}
 
 #ifdef BNX2X_STOP_ON_ERROR
 	fp->tpa_queue_used |= (1 << queue);
@@ -424,24 +398,39 @@ static inline u16 bnx2x_set_lro_mss(struct bnx2x *bp, u16 parsing_flags,
 }
 
 static int bnx2x_fill_frag_skb(struct bnx2x *bp, struct bnx2x_fastpath *fp,
-			       u16 queue, struct sk_buff *skb,
+			       struct bnx2x_agg_info *tpa_info,
+			       u16 pages,
+			       struct sk_buff *skb,
 			       struct eth_end_agg_rx_cqe *cqe,
 			       u16 cqe_idx)
 {
 	struct sw_rx_page *rx_pg, old_rx_pg;
-	u32 i, frag_len, frag_size, pages;
-	int err;
-	int j;
-	struct bnx2x_agg_info *tpa_info = &fp->tpa_info[queue];
+	u32 i, frag_len, frag_size;
+	int err, j, frag_id = 0;
 	u16 len_on_bd = tpa_info->len_on_bd;
+	u16 full_page = 0, gro_size = 0;
 
 	frag_size = le16_to_cpu(cqe->pkt_len) - len_on_bd;
-	pages = SGE_PAGE_ALIGN(frag_size) >> SGE_PAGE_SHIFT;
+
+	if (fp->mode == TPA_MODE_GRO) {
+		gro_size = tpa_info->gro_size;
+		full_page = tpa_info->full_page;
+	}
 
 	/* This is needed in order to enable forwarding support */
-	if (frag_size)
+	if (frag_size) {
 		skb_shinfo(skb)->gso_size = bnx2x_set_lro_mss(bp,
 					tpa_info->parsing_flags, len_on_bd);
+
+		/* set for GRO */
+		if (fp->mode == TPA_MODE_GRO)
+			skb_shinfo(skb)->gso_type =
+			    (GET_FLAG(tpa_info->parsing_flags,
+				      PARSING_FLAGS_OVER_ETHERNET_PROTOCOL) ==
+						PRS_FLAG_OVERETH_IPV6) ?
+				SKB_GSO_TCPV6 : SKB_GSO_TCPV4;
+	}
+
 
 #ifdef BNX2X_STOP_ON_ERROR
 	if (pages > min_t(u32, 8, MAX_SKB_FRAGS)*SGE_PAGE_SIZE*PAGES_PER_SGE) {
@@ -459,7 +448,12 @@ static int bnx2x_fill_frag_skb(struct bnx2x *bp, struct bnx2x_fastpath *fp,
 
 		/* FW gives the indices of the SGE as if the ring is an array
 		   (meaning that "next" element will consume 2 indices) */
-		frag_len = min(frag_size, (u32)(SGE_PAGE_SIZE*PAGES_PER_SGE));
+		if (fp->mode == TPA_MODE_GRO)
+			frag_len = min_t(u32, frag_size, (u32)full_page);
+		else /* LRO */
+			frag_len = min_t(u32, frag_size,
+					 (u32)(SGE_PAGE_SIZE * PAGES_PER_SGE));
+
 		rx_pg = &fp->rx_page_ring[sge_idx];
 		old_rx_pg = *rx_pg;
 
@@ -475,9 +469,21 @@ static int bnx2x_fill_frag_skb(struct bnx2x *bp, struct bnx2x_fastpath *fp,
 		dma_unmap_page(&bp->pdev->dev,
 			       dma_unmap_addr(&old_rx_pg, mapping),
 			       SGE_PAGE_SIZE*PAGES_PER_SGE, DMA_FROM_DEVICE);
-
 		/* Add one frag and update the appropriate fields in the skb */
-		skb_fill_page_desc(skb, j, old_rx_pg.page, 0, frag_len);
+		if (fp->mode == TPA_MODE_LRO)
+			skb_fill_page_desc(skb, j, old_rx_pg.page, 0, frag_len);
+		else { /* GRO */
+			int rem;
+			int offset = 0;
+			for (rem = frag_len; rem > 0; rem -= gro_size) {
+				int len = rem > gro_size ? gro_size : rem;
+				skb_fill_page_desc(skb, frag_id++,
+						   old_rx_pg.page, offset, len);
+				if (offset)
+					get_page(old_rx_pg.page);
+				offset += len;
+			}
+		}
 
 		skb->data_len += frag_len;
 		skb->truesize += SGE_PAGE_SIZE * PAGES_PER_SGE;
@@ -489,18 +495,17 @@ static int bnx2x_fill_frag_skb(struct bnx2x *bp, struct bnx2x_fastpath *fp,
 	return 0;
 }
 
-static void bnx2x_tpa_stop(struct bnx2x *bp, struct bnx2x_fastpath *fp,
-			   u16 queue, struct eth_end_agg_rx_cqe *cqe,
-			   u16 cqe_idx)
+static inline void bnx2x_tpa_stop(struct bnx2x *bp, struct bnx2x_fastpath *fp,
+				  struct bnx2x_agg_info *tpa_info,
+				  u16 pages,
+				  struct eth_end_agg_rx_cqe *cqe,
+				  u16 cqe_idx)
 {
-	struct bnx2x_agg_info *tpa_info = &fp->tpa_info[queue];
 	struct sw_rx_bd *rx_buf = &tpa_info->first_buf;
-	u32 pad = tpa_info->placement_offset;
+	u8 pad = tpa_info->placement_offset;
 	u16 len = tpa_info->len_on_bd;
 	struct sk_buff *skb = NULL;
-	u8 *data = rx_buf->data;
-	/* alloc new skb */
-	u8 *new_data;
+	u8 *new_data, *data = rx_buf->data;
 	u8 old_tpa_state = tpa_info->tpa_state;
 
 	tpa_info->tpa_state = BNX2X_TPA_STOP;
@@ -540,7 +545,8 @@ static void bnx2x_tpa_stop(struct bnx2x *bp, struct bnx2x_fastpath *fp,
 		skb->protocol = eth_type_trans(skb, bp->dev);
 		skb->ip_summed = CHECKSUM_UNNECESSARY;
 
-		if (!bnx2x_fill_frag_skb(bp, fp, queue, skb, cqe, cqe_idx)) {
+		if (!bnx2x_fill_frag_skb(bp, fp, tpa_info, pages,
+					 skb, cqe, cqe_idx)) {
 			if (tpa_info->parsing_flags & PARSING_FLAGS_VLAN)
 				__vlan_hwaccel_put_tag(skb, tpa_info->vlan_tag);
 			napi_gro_receive(&fp->napi, skb);
@@ -605,7 +611,7 @@ int bnx2x_rx_int(struct bnx2x_fastpath *fp, int budget)
 		struct eth_fast_path_rx_cqe *cqe_fp;
 		u8 cqe_fp_flags;
 		enum eth_rx_cqe_type cqe_fp_type;
-		u16 len, pad;
+		u16 len, pad, queue;
 		u8 *data;
 
 #ifdef BNX2X_STOP_ON_ERROR
@@ -626,17 +632,21 @@ int bnx2x_rx_int(struct bnx2x_fastpath *fp, int budget)
 		   "  queue %x  vlan %x  len %u\n", CQE_TYPE(cqe_fp_flags),
 		   cqe_fp_flags, cqe_fp->status_flags,
 		   le32_to_cpu(cqe_fp->rss_hash_result),
-		   le16_to_cpu(cqe_fp->vlan_tag), le16_to_cpu(cqe_fp->pkt_len));
+		   le16_to_cpu(cqe_fp->vlan_tag),
+		   le16_to_cpu(cqe_fp->pkt_len_or_gro_seg_len));
 
 		/* is this a slowpath msg? */
 		if (unlikely(CQE_TYPE_SLOW(cqe_fp_type))) {
 			bnx2x_sp_event(fp, cqe);
 			goto next_cqe;
 		}
+
 		rx_buf = &fp->rx_buf_ring[bd_cons];
 		data = rx_buf->data;
 
 		if (!CQE_TYPE_FAST(cqe_fp_type)) {
+			struct bnx2x_agg_info *tpa_info;
+			u16 frag_size, pages;
 #ifdef BNX2X_STOP_ON_ERROR
 			/* sanity check */
 			if (fp->disable_tpa &&
@@ -656,28 +666,38 @@ int bnx2x_rx_int(struct bnx2x_fastpath *fp, int budget)
 				bnx2x_tpa_start(fp, queue,
 						bd_cons, bd_prod,
 						cqe_fp);
-				goto next_rx;
-			} else {
-				u16 queue =
-					cqe->end_agg_cqe.queue_index;
-				DP(NETIF_MSG_RX_STATUS,
-				   "calling tpa_stop on queue %d\n",
-				   queue);
 
-				bnx2x_tpa_stop(bp, fp, queue,
-					       &cqe->end_agg_cqe,
-					       comp_ring_cons);
+				goto next_rx;
+
+			}
+			queue = cqe->end_agg_cqe.queue_index;
+			tpa_info = &fp->tpa_info[queue];
+			DP(NETIF_MSG_RX_STATUS,
+			   "calling tpa_stop on queue %d\n",
+			   queue);
+
+			frag_size = le16_to_cpu(cqe->end_agg_cqe.pkt_len) -
+				    tpa_info->len_on_bd;
+
+			if (fp->mode == TPA_MODE_GRO)
+				pages = (frag_size + tpa_info->full_page - 1) /
+					 tpa_info->full_page;
+			else
+				pages = SGE_PAGE_ALIGN(frag_size) >>
+					SGE_PAGE_SHIFT;
+
+			bnx2x_tpa_stop(bp, fp, tpa_info, pages,
+				       &cqe->end_agg_cqe, comp_ring_cons);
 #ifdef BNX2X_STOP_ON_ERROR
-				if (bp->panic)
-					return 0;
+			if (bp->panic)
+				return 0;
 #endif
 
-				bnx2x_update_sge_prod(fp, cqe_fp);
-				goto next_cqe;
-			}
+			bnx2x_update_sge_prod(fp, pages, &cqe->end_agg_cqe);
+			goto next_cqe;
 		}
 		/* non TPA */
-		len = le16_to_cpu(cqe_fp->pkt_len);
+		len = le16_to_cpu(cqe_fp->pkt_len_or_gro_seg_len);
 		pad = cqe_fp->placement_offset;
 		dma_sync_single_for_cpu(&bp->pdev->dev,
 					dma_unmap_addr(rx_buf, mapping),
@@ -1766,12 +1786,27 @@ int bnx2x_nic_load(struct bnx2x *bp, int load_mode)
 
 	bnx2x_napi_enable(bp);
 
+	/* set pf load just before approaching the MCP */
+	bnx2x_set_pf_load(bp);
+
 	/* Send LOAD_REQUEST command to MCP
 	 * Returns the type of LOAD command:
 	 * if it is the first port to be initialized
 	 * common blocks should be initialized, otherwise - not
 	 */
 	if (!BP_NOMCP(bp)) {
+		/* init fw_seq */
+		bp->fw_seq =
+			(SHMEM_RD(bp, func_mb[BP_FW_MB_IDX(bp)].drv_mb_header) &
+			 DRV_MSG_SEQ_NUMBER_MASK);
+		BNX2X_DEV_INFO("fw_seq 0x%08x\n", bp->fw_seq);
+
+		/* Get current FW pulse sequence */
+		bp->fw_drv_pulse_wr_seq =
+			(SHMEM_RD(bp, func_mb[BP_FW_MB_IDX(bp)].drv_pulse_mb) &
+			 DRV_PULSE_SEQ_MASK);
+		BNX2X_DEV_INFO("drv_pulse 0x%x\n", bp->fw_drv_pulse_wr_seq);
+
 		load_code = bnx2x_fw_command(bp, DRV_MSG_CODE_LOAD_REQ, 0);
 		if (!load_code) {
 			BNX2X_ERR("MCP response failure, aborting\n");
@@ -1781,6 +1816,29 @@ int bnx2x_nic_load(struct bnx2x *bp, int load_mode)
 		if (load_code == FW_MSG_CODE_DRV_LOAD_REFUSED) {
 			rc = -EBUSY; /* other port in diagnostic mode */
 			LOAD_ERROR_EXIT(bp, load_error1);
+		}
+		if (load_code != FW_MSG_CODE_DRV_LOAD_COMMON_CHIP &&
+		    load_code != FW_MSG_CODE_DRV_LOAD_COMMON) {
+			/* build FW version dword */
+			u32 my_fw = (BCM_5710_FW_MAJOR_VERSION) +
+					(BCM_5710_FW_MINOR_VERSION << 8) +
+					(BCM_5710_FW_REVISION_VERSION << 16) +
+					(BCM_5710_FW_ENGINEERING_VERSION << 24);
+
+			/* read loaded FW from chip */
+			u32 loaded_fw = REG_RD(bp, XSEM_REG_PRAM);
+
+			DP(BNX2X_MSG_SP, "loaded fw %x, my fw %x",
+			   loaded_fw, my_fw);
+
+			/* abort nic load if version mismatch */
+			if (my_fw != loaded_fw) {
+				BNX2X_ERR("bnx2x with FW %x already loaded, "
+					  "which mismatches my %x FW. aborting",
+					  loaded_fw, my_fw);
+				rc = -EBUSY;
+				LOAD_ERROR_EXIT(bp, load_error2);
+			}
 		}
 
 	} else {
@@ -1948,7 +2006,15 @@ int bnx2x_nic_load(struct bnx2x *bp, int load_mode)
 	if (bp->state == BNX2X_STATE_OPEN)
 		bnx2x_cnic_notify(bp, CNIC_CTL_START_CMD);
 #endif
-	bnx2x_inc_load_cnt(bp);
+
+	/* mark driver is loaded in shmem2 */
+	if (SHMEM2_HAS(bp, drv_capabilities_flag)) {
+		u32 val;
+		val = SHMEM2_RD(bp, drv_capabilities_flag[BP_FW_MB_IDX(bp)]);
+		SHMEM2_WR(bp, drv_capabilities_flag[BP_FW_MB_IDX(bp)],
+			  val | DRV_FLAGS_CAPABILITIES_LOADED_SUPPORTED |
+			  DRV_FLAGS_CAPABILITIES_LOADED_L2);
+	}
 
 	/* Wait for all pending SP commands to complete */
 	if (!bnx2x_wait_sp_comp(bp, ~0x0UL)) {
@@ -1988,6 +2054,8 @@ load_error2:
 	bp->port.pmf = 0;
 load_error1:
 	bnx2x_napi_disable(bp);
+	/* clear pf_load status, as it was already set */
+	bnx2x_clear_pf_load(bp);
 load_error0:
 	bnx2x_free_mem(bp);
 
@@ -2000,6 +2068,14 @@ int bnx2x_nic_unload(struct bnx2x *bp, int unload_mode)
 {
 	int i;
 	bool global = false;
+
+	/* mark driver is unloaded in shmem2 */
+	if (SHMEM2_HAS(bp, drv_capabilities_flag)) {
+		u32 val;
+		val = SHMEM2_RD(bp, drv_capabilities_flag[BP_FW_MB_IDX(bp)]);
+		SHMEM2_WR(bp, drv_capabilities_flag[BP_FW_MB_IDX(bp)],
+			  val & ~DRV_FLAGS_CAPABILITIES_LOADED_L2);
+	}
 
 	if ((bp->state == BNX2X_STATE_CLOSED) ||
 	    (bp->state == BNX2X_STATE_ERROR)) {
@@ -2045,6 +2121,7 @@ int bnx2x_nic_unload(struct bnx2x *bp, int unload_mode)
 	bnx2x_drv_pulse(bp);
 
 	bnx2x_stats_handle(bp, STATS_EVENT_STOP);
+	bnx2x_save_statistics(bp);
 
 	/* Cleanup the chip if needed */
 	if (unload_mode != UNLOAD_RECOVERY)
@@ -2108,7 +2185,7 @@ int bnx2x_nic_unload(struct bnx2x *bp, int unload_mode)
 	/* The last driver must disable a "close the gate" if there is no
 	 * parity attention or "process kill" pending.
 	 */
-	if (!bnx2x_dec_load_cnt(bp) && bnx2x_reset_is_done(bp, BP_PATH(bp)))
+	if (!bnx2x_clear_pf_load(bp) && bnx2x_reset_is_done(bp, BP_PATH(bp)))
 		bnx2x_disable_close_the_gate(bp);
 
 	return 0;
@@ -3007,6 +3084,7 @@ int bnx2x_change_mac_addr(struct net_device *dev, void *p)
 			return rc;
 	}
 
+	dev->addr_assign_type &= ~NET_ADDR_RANDOM;
 	memcpy(dev->dev_addr, addr->sa_data, dev->addr_len);
 
 	if (netif_running(dev))
@@ -3122,8 +3200,15 @@ static int bnx2x_alloc_fp_mem_at(struct bnx2x *bp, int index)
 	} else
 #endif
 	if (!bp->rx_ring_size) {
+		u32 cfg = SHMEM_RD(bp,
+			     dev_info.port_hw_config[BP_PORT(bp)].default_cfg);
 
 		rx_ring_size = MAX_RX_AVAIL/BNX2X_NUM_RX_QUEUES(bp);
+
+		/* Dercease ring size for 1G functions */
+		if ((cfg & PORT_HW_CFG_NET_SERDES_IF_MASK) ==
+		    PORT_HW_CFG_NET_SERDES_IF_SGMII)
+			rx_ring_size /= 10;
 
 		/* allocate at least number of buffers required by FW */
 		rx_ring_size = max_t(int, bp->disable_tpa ? MIN_RX_SIZE_NONTPA :
@@ -3414,7 +3499,7 @@ int bnx2x_change_mtu(struct net_device *dev, int new_mtu)
 	struct bnx2x *bp = netdev_priv(dev);
 
 	if (bp->recovery_state != BNX2X_RECOVERY_DONE) {
-		pr_err("Handling parity error recovery. Try again later\n");
+		netdev_err(dev, "Handling parity error recovery. Try again later\n");
 		return -EAGAIN;
 	}
 
@@ -3428,17 +3513,21 @@ int bnx2x_change_mtu(struct net_device *dev, int new_mtu)
 	 */
 	dev->mtu = new_mtu;
 
+	bp->gro_check = bnx2x_need_gro_check(new_mtu);
+
 	return bnx2x_reload_if_running(dev);
 }
 
 netdev_features_t bnx2x_fix_features(struct net_device *dev,
-	netdev_features_t features)
+				     netdev_features_t features)
 {
 	struct bnx2x *bp = netdev_priv(dev);
 
 	/* TPA requires Rx CSUM offloading */
-	if (!(features & NETIF_F_RXCSUM) || bp->disable_tpa)
+	if (!(features & NETIF_F_RXCSUM) || bp->disable_tpa) {
 		features &= ~NETIF_F_LRO;
+		features &= ~NETIF_F_GRO;
+	}
 
 	return features;
 }
@@ -3453,6 +3542,11 @@ int bnx2x_set_features(struct net_device *dev, netdev_features_t features)
 		flags |= TPA_ENABLE_FLAG;
 	else
 		flags &= ~TPA_ENABLE_FLAG;
+
+	if (features & NETIF_F_GRO)
+		flags |= GRO_ENABLE_FLAG;
+	else
+		flags &= ~GRO_ENABLE_FLAG;
 
 	if (features & NETIF_F_LOOPBACK) {
 		if (bp->link_params.loopback_mode != LOOPBACK_BMAC) {
@@ -3541,7 +3635,7 @@ int bnx2x_resume(struct pci_dev *pdev)
 	bp = netdev_priv(dev);
 
 	if (bp->recovery_state != BNX2X_RECOVERY_DONE) {
-		pr_err("Handling parity error recovery. Try again later\n");
+		netdev_err(dev, "Handling parity error recovery. Try again later\n");
 		return -EAGAIN;
 	}
 
@@ -3557,8 +3651,6 @@ int bnx2x_resume(struct pci_dev *pdev)
 	bnx2x_set_power_state(bp, PCI_D0);
 	netif_device_attach(dev);
 
-	/* Since the chip was reset, clear the FW sequence number */
-	bp->fw_seq = 0;
 	rc = bnx2x_nic_load(bp, LOAD_OPEN);
 
 	rtnl_unlock();
