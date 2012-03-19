@@ -128,6 +128,10 @@ struct md_rdev {
 enum flag_bits {
 	Faulty,			/* device is known to have a fault */
 	In_sync,		/* device is in_sync with rest of array */
+	Unmerged,		/* device is being added to array and should
+				 * be considerred for bvec_merge_fn but not
+				 * yet for actual IO
+				 */
 	WriteMostly,		/* Avoid reading if at all possible */
 	AutoDetected,		/* added by auto-detect */
 	Blocked,		/* An error occurred but has not yet
@@ -345,6 +349,10 @@ struct mddev {
 	int				degraded;	/* whether md should consider
 							 * adding a spare
 							 */
+	int				merge_check_needed; /* at least one
+							     * member device
+							     * has a
+							     * merge_bvec_fn */
 
 	atomic_t			recovery_active; /* blocks scheduled, but not written */
 	wait_queue_head_t		recovery_wait;
@@ -437,7 +445,7 @@ struct md_personality
 	/* error_handler must set ->faulty and clear ->in_sync
 	 * if appropriate, and should abort recovery if needed 
 	 */
-	void (*error_handler)(struct mddev *mddev, struct md_rdev *rdev);
+	void (*error_handler)(struct mddev *mddev, struct md_rdev *rdev, int force);
 	int (*hot_add_disk) (struct mddev *mddev, struct md_rdev *rdev);
 	int (*hot_remove_disk) (struct mddev *mddev, struct md_rdev *rdev);
 	int (*spare_active) (struct mddev *mddev);
@@ -519,7 +527,10 @@ static inline void sysfs_unlink_rdev(struct mddev *mddev, struct md_rdev *rdev)
 /*
  * iterates through the 'same array disks' ringlist
  */
-#define rdev_for_each(rdev, tmp, mddev)				\
+#define rdev_for_each(rdev, mddev)				\
+	list_for_each_entry(rdev, &((mddev)->disks), same_set)
+
+#define rdev_for_each_safe(rdev, tmp, mddev)				\
 	list_for_each_entry_safe(rdev, tmp, &((mddev)->disks), same_set)
 
 #define rdev_for_each_rcu(rdev, mddev)				\
@@ -579,7 +590,7 @@ extern void md_check_recovery(struct mddev *mddev);
 extern void md_write_start(struct mddev *mddev, struct bio *bi);
 extern void md_write_end(struct mddev *mddev);
 extern void md_done_sync(struct mddev *mddev, int blocks, int ok);
-extern void md_error(struct mddev *mddev, struct md_rdev *rdev);
+extern void md_error(struct mddev *mddev, struct md_rdev *rdev, int force);
 
 extern int mddev_congested(struct mddev *mddev, int bits);
 extern void md_flush_request(struct mddev *mddev, struct bio *bio);
