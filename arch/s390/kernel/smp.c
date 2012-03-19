@@ -714,12 +714,6 @@ static void __cpuinit smp_start_secondary(void *cpuvoid)
 	ipi_call_lock();
 	set_cpu_online(smp_processor_id(), true);
 	ipi_call_unlock();
-	/*
-	 * Wait until the cpu which brought this one up marked it
-	 * active before enabling interrupts.
-	 */
-	while (!cpumask_test_cpu(smp_processor_id(), cpu_active_mask))
-		cpu_relax();
 	local_irq_enable();
 	/* cpu_idle will call schedule for us */
 	cpu_idle();

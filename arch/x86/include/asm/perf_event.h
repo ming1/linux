@@ -177,6 +177,8 @@ struct x86_pmu_capability {
 #define IBS_FETCH_MAX_CNT	0x0000FFFFULL
 
 /* IbsOpCtl bits */
+/* lower 4 bits of the current count are ignored: */
+#define IBS_OP_CUR_CNT		(0xFFFF0ULL<<32)
 #define IBS_OP_CNT_CTL		(1ULL<<19)
 #define IBS_OP_VAL		(1ULL<<18)
 #define IBS_OP_ENABLE		(1ULL<<17)
@@ -187,8 +189,6 @@ extern u32 get_ibs_caps(void);
 
 #ifdef CONFIG_PERF_EVENTS
 extern void perf_events_lapic_init(void);
-
-#define PERF_EVENT_INDEX_OFFSET			0
 
 /*
  * Abuse bit 3 of the cpu eflags register to indicate proper PEBS IP fixups.
