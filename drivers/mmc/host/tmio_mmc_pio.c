@@ -40,6 +40,7 @@
 #include <linux/module.h>
 #include <linux/pagemap.h>
 #include <linux/platform_device.h>
+#include <linux/pm_qos.h>
 #include <linux/pm_runtime.h>
 #include <linux/scatterlist.h>
 #include <linux/spinlock.h>
@@ -961,6 +962,8 @@ int __devinit tmio_mmc_host_probe(struct tmio_mmc_host **host,
 
 	mmc_add_host(mmc);
 
+	dev_pm_qos_expose_latency_limit(&pdev->dev, 100);
+
 	/* Unmask the IRQs we want to know about */
 	if (!_host->chan_rx)
 		irq_mask |= TMIO_MASK_READOP;
@@ -1008,6 +1011,8 @@ void tmio_mmc_host_remove(struct tmio_mmc_host *host)
 
 	if (!host->native_hotplug)
 		pm_runtime_get_sync(&pdev->dev);
+
+	dev_pm_qos_hide_latency_limit(&pdev->dev);
 
 	mmc_remove_host(mmc);
 	cancel_work_sync(&host->done);
