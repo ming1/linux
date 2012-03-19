@@ -1,0 +1,6 @@
+#! /bin/bash
+
+# description: collect and display AMD IBS samples
+# args: [ibs_op|ibs_fetch] [-c period]
+
+perf script -s "$PERF_EXEC_PATH"/scripts/perl/ibs.pl "$@"
