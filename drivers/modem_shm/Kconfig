@@ -1,0 +1,62 @@
+#
+# MODEM_SHM Framework
+#
+
+config MODEM_SHM
+	tristate
+	default n
+	depends on EXPERIMENTAL
+
+if MODEM_SHM && NET
+
+menu "Modem Shared Memory"
+
+config DUMMY_C2C
+	tristate "Dummy C2C GENIO driver"
+	depends on !C2C
+	default MODEM_SHM
+	---help---
+	Say "Y" or "M" if you want to compile a dummy C2C driver.
+	Use this if you want to compile without the real
+	C2C driver available.
+	If unsure say N.
+
+config MODEM_SHM_BUS
+	tristate
+	default MODEM_SHM_DEV
+
+config MODEM_SHM_BOOT
+	tristate
+	depends on MODEM_SHM_DEV
+	default MODEM_SHM_DEV
+
+config MODEM_SHM_DEV
+	tristate "SHM Channels for Modem Shared Memory"
+	depends on DUMMY_C2C || C2C
+	select MODEM_SHM_BUS
+	select MODEM_SHM_BOOT
+	default MODEM_SHM
+	---help---
+	Say "Y" to use Modem Shared Memory IPC mechanism.
+	SHM is an IPC protocol used to talk to external device such
+	as modem over a shared memory (e.g. Chip to Chip).
+	Only say "M" here if you want to test MODEM_SHM and need to load
+	and unload its module.
+	If unsure say N.
+
+config MODEM_SHM_CHR
+	tristate "Character device for Modem Shared Memory"
+	depends on MODEM_SHM_DEV
+	default MODEM_SHM_DEV
+	---help---
+	Say "Y" to use a character device for the Modem Shared
+	Memory IPC mechanism. MODEM_SHM is an IPC protocol used to
+	talk to external device such as modem over a shared memory
+	(e.g. Chip to Chip).
+	Only say "M" here if you want to test MODEM_SHM and need to load
+	and unload its module.
+	If unsure say N.
+
+endmenu
+
+endif
