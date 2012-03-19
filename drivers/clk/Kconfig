@@ -9,7 +9,7 @@ config HAVE_CLK_PREPARE
 config HAVE_MACH_CLKDEV
 	bool
 
-menuconfig COMMON_CLK
+config COMMON_CLK
 	bool
 	select HAVE_CLK_PREPARE
 	---help---
@@ -19,7 +19,8 @@ menuconfig COMMON_CLK
 	  Architectures utilizing the common struct clk should select
 	  this option.
 
-if COMMON_CLK
+menu "Common Clock Framework"
+	depends on COMMON_CLK
 
 config COMMON_CLK_DISABLE_UNUSED
 	bool "Disabled unused clocks at boot"
@@ -43,4 +44,4 @@ config COMMON_CLK_DEBUG
 	  clk_flags, clk_prepare_count, clk_enable_count &
 	  clk_notifier_count.
 
-endif
+endmenu
