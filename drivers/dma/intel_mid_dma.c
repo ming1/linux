@@ -832,7 +832,6 @@ static void intel_mid_dma_free_chan_resources(struct dma_chan *chan)
 		/*trying to free ch in use!!!!!*/
 		pr_err("ERR_MDMA: trying to free ch in use\n");
 	}
-	pm_runtime_put(&mid->pdev->dev);
 	spin_lock_bh(&midc->lock);
 	midc->descs_allocated = 0;
 	list_for_each_entry_safe(desc, _desc, &midc->active_list, desc_node) {
@@ -853,6 +852,7 @@ static void intel_mid_dma_free_chan_resources(struct dma_chan *chan)
 	/* Disable CH interrupts */
 	iowrite32(MASK_INTR_REG(midc->ch_id), mid->dma_base + MASK_BLOCK);
 	iowrite32(MASK_INTR_REG(midc->ch_id), mid->dma_base + MASK_ERR);
+	pm_runtime_put(&mid->pdev->dev);
 }
 
 /**
@@ -1056,7 +1056,8 @@ static irqreturn_t intel_mid_dma_interrupt(int irq, void *data)
 	}
 	err_status &= mid->intr_mask;
 	if (err_status) {
-		iowrite32(MASK_INTR_REG(err_status), mid->dma_base + MASK_ERR);
+		iowrite32((err_status << INT_MASK_WE),
+			  mid->dma_base + MASK_ERR);
 		call_tasklet = 1;
 	}
 	if (call_tasklet)
