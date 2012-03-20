@@ -73,6 +73,8 @@ static int lp855x_is_valid_rom_area(struct lp855x *lp, u8 addr)
 	} else if (strstr(id, "lp8556")) {
 		start = EPROM_START;
 		end = EPROM_END;
+	} else {
+		return 0;
 	}
 
 	return (addr >= start && addr <= end) ? 1 : 0;
