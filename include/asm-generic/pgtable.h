@@ -426,6 +426,8 @@ extern void untrack_pfn_vma(struct vm_area_struct *vma, unsigned long pfn,
 				unsigned long size);
 #endif
 
+#ifdef CONFIG_MMU
+
 #ifndef CONFIG_TRANSPARENT_HUGEPAGE
 static inline int pmd_trans_huge(pmd_t pmd)
 {
@@ -442,7 +444,7 @@ static inline int pmd_write(pmd_t pmd)
 	return 0;
 }
 #endif /* __HAVE_ARCH_PMD_WRITE */
-#endif
+#endif /* CONFIG_TRANSPARENT_HUGEPAGE */
 
 /*
  * This function is meant to be used by sites walking pagetables with
@@ -500,6 +502,8 @@ static inline int pmd_trans_unstable(pmd_t *pmd)
 	return 0;
 #endif
 }
+
+#endif /* CONFIG_MMU */
 
 #endif /* !__ASSEMBLY__ */
 
