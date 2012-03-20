@@ -276,7 +276,7 @@ show_map_vma(struct seq_file *m, struct vm_area_struct *vma, int is_pid)
 
 		tid = vm_is_stack(task, vma, is_pid);
 
-		if (tid !=0) {
+		if (tid != 0) {
 			/*
 			 * Thread stack in /proc/PID/task/TID/maps or
 			 * the main process stack.
@@ -1161,7 +1161,7 @@ static int show_numa_map(struct seq_file *m, void *v, int is_pid)
 		seq_printf(m, " heap");
 	} else {
 		pid_t tid = vm_is_stack(proc_priv->task, vma, is_pid);
-		if (tid !=0) {
+		if (tid != 0) {
 			/*
 			 * Thread stack in /proc/PID/task/TID/maps or
 			 * the main process stack.
