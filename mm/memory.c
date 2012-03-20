@@ -57,6 +57,7 @@
 #include <linux/swapops.h>
 #include <linux/elf.h>
 #include <linux/gfp.h>
+#include <linux/sched.h>
 
 #include <asm/io.h>
 #include <asm/pgalloc.h>
