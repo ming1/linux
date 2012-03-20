@@ -629,8 +629,7 @@ int sysctl_protected_symlinks __read_mostly =
 int sysctl_protected_hardlinks __read_mostly =
 	CONFIG_PROTECTED_HARDLINKS_SYSCTL;
 
-static inline void
-audit_log_link_denied(const char *operation, struct path *link)
+static void audit_log_link_denied(const char *operation, struct path *link)
 {
 	struct audit_buffer *ab;
 
@@ -709,7 +708,7 @@ static inline int may_follow_link(struct path *link)
  *
  * Returns 0 if successful, -ve on error.
  */
-static inline int may_linkat(struct path *link)
+static int may_linkat(struct path *link)
 {
 	int error = 0;
 	const struct cred *cred;
