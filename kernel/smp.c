@@ -746,7 +746,7 @@ EXPORT_SYMBOL(on_each_cpu_mask);
  * @info:	An arbitrary pointer to pass to both functions.
  * @wait:	If true, wait (atomically) until function has
  *		completed on other CPUs.
- * @gfpflags:	GFP flags to use when allocating the cpumask
+ * @gfp_flags:	GFP flags to use when allocating the cpumask
  *		used internally by the function.
  *
  * The function might sleep if the GFP flags indicates a non
@@ -757,14 +757,14 @@ EXPORT_SYMBOL(on_each_cpu_mask);
  */
 void on_each_cpu_cond(bool (*cond_func)(int cpu, void *info),
 			smp_call_func_t func, void *info, bool wait,
-			gfp_t gfpflags)
+			gfp_t gfp_flags)
 {
 	cpumask_var_t cpus;
 	int cpu, ret;
 
-	might_sleep_if(gfpflags & __GFP_WAIT);
+	might_sleep_if(gfp_flags & __GFP_WAIT);
 
-	if (likely(zalloc_cpumask_var(&cpus, (gfpflags|__GFP_NOWARN)))) {
+	if (likely(zalloc_cpumask_var(&cpus, (gfp_flags|__GFP_NOWARN)))) {
 		preempt_disable();
 		for_each_online_cpu(cpu)
 			if (cond_func(cpu, info))
