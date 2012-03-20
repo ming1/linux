@@ -222,7 +222,7 @@ show_map_vma(struct seq_file *m, struct vm_area_struct *vma, int is_pid)
 	unsigned long start, end;
 	dev_t dev = 0;
 	int len;
-	const char *name;
+	const char *name = NULL;
 
 	if (file) {
 		struct inode *inode = vma->vm_file->f_path.dentry->d_inode;
@@ -256,33 +256,47 @@ show_map_vma(struct seq_file *m, struct vm_area_struct *vma, int is_pid)
 	if (file) {
 		pad_len_spaces(m, len);
 		seq_path(m, &file->f_path, "\n");
-		goto out;
+		goto done;
 	}
 
 	name = arch_vma_name(vma);
 	if (!name) {
-		if (mm) {
-			if (vma->vm_start <= mm->brk &&
-					vma->vm_end >= mm->start_brk) {
-				name = "[heap]";
-			} else {
-				pid_t tid;
+		pid_t tid;
 
-				tid = vm_is_stack(task, vma, is_pid);
-				if (tid != 0) {
-					pad_len_spaces(m, len);
-					seq_printf(m, "[stack:%d]", tid);
-				}
-			}
-		} else {
+		if (!mm) {
 			name = "[vdso]";
+			goto done;
+		}
+
+		if (vma->vm_start <= mm->brk &&
+		    vma->vm_end >= mm->start_brk) {
+			name = "[heap]";
+			goto done;
+		}
+
+		tid = vm_is_stack(task, vma, is_pid);
+
+		if (tid !=0) {
+			/*
+			 * Thread stack in /proc/PID/task/TID/maps or
+			 * the main process stack.
+			 */
+			if (!is_pid || (vma->vm_start <= mm->start_stack &&
+			    vma->vm_end >= mm->start_stack)) {
+				name = "[stack]";
+			} else {
+				/* Thread stack in /proc/PID/maps */
+				pad_len_spaces(m, len);
+				seq_printf(m, "[stack:%d]", tid);
+			}
 		}
 	}
+
+done:
 	if (name) {
 		pad_len_spaces(m, len);
 		seq_puts(m, name);
 	}
-out:
 	seq_putc(m, '\n');
 }
 
@@ -1147,8 +1161,17 @@ static int show_numa_map(struct seq_file *m, void *v, int is_pid)
 		seq_printf(m, " heap");
 	} else {
 		pid_t tid = vm_is_stack(proc_priv->task, vma, is_pid);
-		if (tid != 0)
-			seq_printf(m, " stack:%d", tid);
+		if (tid !=0) {
+			/*
+			 * Thread stack in /proc/PID/task/TID/maps or
+			 * the main process stack.
+			 */
+			if (!is_pid || (vma->vm_start <= mm->start_stack &&
+			    vma->vm_end >= mm->start_stack))
+				seq_printf(m, " stack");
+			else
+				seq_printf(m, " stack:%d", tid);
+		}
 	}
 
 	if (is_vm_hugetlb_page(vma))
