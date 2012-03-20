@@ -23,6 +23,7 @@
 #include <linux/swap.h>
 #include <linux/slab.h>
 #include <linux/sysctl.h>
+#include <linux/bitmap.h>
 #include <linux/signal.h>
 #include <linux/printk.h>
 #include <linux/proc_fs.h>
@@ -2420,9 +2421,7 @@ int proc_do_large_bitmap(struct ctl_table *table, int write,
 				}
 			}
 
-			while (val_a <= val_b)
-				set_bit(val_a++, tmp_bitmap);
-
+			bitmap_set(tmp_bitmap, val_a, val_b - val_a + 1);
 			first = 0;
 			proc_skip_char(&kbuf, &left, '\n');
 		}
@@ -2465,8 +2464,7 @@ int proc_do_large_bitmap(struct ctl_table *table, int write,
 			if (*ppos)
 				bitmap_or(bitmap, bitmap, tmp_bitmap, bitmap_len);
 			else
-				memcpy(bitmap, tmp_bitmap,
-					BITS_TO_LONGS(bitmap_len) * sizeof(unsigned long));
+				bitmap_copy(bitmap, tmp_bitmap, bitmap_len);
 		}
 		kfree(tmp_bitmap);
 		*lenp -= left;
