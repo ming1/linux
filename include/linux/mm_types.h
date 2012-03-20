@@ -354,6 +354,7 @@ struct mm_struct {
 	unsigned int faultstamp;
 	unsigned int token_priority;
 	unsigned int last_interval;
+	atomic_t active_swap_token;
 
 	unsigned long flags; /* Must use atomic bitops to access the bits */
 
