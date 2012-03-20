@@ -265,11 +265,12 @@ static inline void radix_tree_preload_end(void)
  * @next_index:	next-to-last index for this chunk
  * @tags:	bit-mask for tag-iterating
  *
- * Radix tree iterator works in terms of "chunks" of slots.
- * Chunk is sub-interval of slots contained in one radix tree leaf node.
- * It described by pointer to its first slot and struct radix_tree_iter
- * which holds chunk position in tree and its size. For tagged iterating
- * radix_tree_iter also holds slots' bit-mask for one chosen radix tree tag.
+ * This radix tree iterator works in terms of "chunks" of slots.  A chunk is a
+ * subinterval of slots contained within one radix tree leaf node.  It is
+ * described by a pointer to its first slot and a struct radix_tree_iter
+ * which holds the chunk's position in the tree and its size.  For tagged
+ * iteration radix_tree_iter also holds the slots' bit-mask for one chosen
+ * radix tree tag.
  */
 struct radix_tree_iter {
 	unsigned long	index;
@@ -292,12 +293,12 @@ static __always_inline void **
 radix_tree_iter_init(struct radix_tree_iter *iter, unsigned long start)
 {
 	/*
-	 * Leave iter->tags unitialized. radix_tree_next_chunk()
-	 * anyway fill it in case successful tagged chunk lookup.
-	 * At unsuccessful or non-tagged lookup nobody cares about it.
+	 * Leave iter->tags uninitialized. radix_tree_next_chunk() will fill it
+	 * in the case of a successful tagged chunk lookup.  If the lookup was
+	 * unsuccessful or non-tagged then nobody cares about ->tags.
 	 *
 	 * Set index to zero to bypass next_index overflow protection.
-	 * See comment inside radix_tree_next_chunk() for details.
+	 * See the comment in radix_tree_next_chunk() for details.
 	 */
 	iter->index = 0;
 	iter->next_index = start;
@@ -312,10 +313,10 @@ radix_tree_iter_init(struct radix_tree_iter *iter, unsigned long start)
  * @flags:	RADIX_TREE_ITER_* flags and tag index
  * Returns:	pointer to chunk first slot, or NULL if there no more left
  *
- * This function lookup next chunk in the radix tree starting from
- * @iter->next_index, it returns pointer to chunk first slot.
+ * This function looks up the next chunk in the radix tree starting from
+ * @iter->next_index.  It returns a pointer to the chunk's first slot.
  * Also it fills @iter with data about chunk: position in the tree (index),
- * its end (next_index), and construct bit mask for tagged iterating (tags).
+ * its end (next_index), and constructs a bit mask for tagged iterating (tags).
  */
 void **radix_tree_next_chunk(struct radix_tree_root *root,
 			     struct radix_tree_iter *iter, unsigned flags);
@@ -340,7 +341,7 @@ radix_tree_chunk_size(struct radix_tree_iter *iter)
  * @flags:	RADIX_TREE_ITER_*, should be constant
  * Returns:	pointer to next slot, or NULL if there no more left
  *
- * This function updates @iter->index in case successful lookup.
+ * This function updates @iter->index in the case of a successful lookup.
  * For tagged lookup it also eats @iter->tags.
  */
 static __always_inline void **
@@ -396,8 +397,8 @@ radix_tree_next_slot(void **slot, struct radix_tree_iter *iter, unsigned flags)
  * @iter:	the struct radix_tree_iter pointer
  * @flags:	RADIX_TREE_ITER_*, should be constant
  *
- * This macro supposed to be nested inside radix_tree_for_each_chunk().
- * @slot points to radix tree slot, @iter->index contains its index.
+ * This macro is designed to be nested inside radix_tree_for_each_chunk().
+ * @slot points to the radix tree slot, @iter->index contains its index.
  */
 #define radix_tree_for_each_chunk_slot(slot, iter, flags)		\
 	for (; slot ; slot = radix_tree_next_slot(slot, iter, flags))

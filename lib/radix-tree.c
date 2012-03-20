@@ -670,8 +670,8 @@ void **radix_tree_next_chunk(struct radix_tree_root *root,
 
 	/*
 	 * Catch next_index overflow after ~0UL. iter->index never overflows
-	 * during iterating, it can be zero only at the beginning.
-	 * And we cannot overflow iter->next_index in single step,
+	 * during iterating; it can be zero only at the beginning.
+	 * And we cannot overflow iter->next_index in a single step,
 	 * because RADIX_TREE_MAP_SHIFT < BITS_PER_LONG.
 	 */
 	index = iter->next_index;
