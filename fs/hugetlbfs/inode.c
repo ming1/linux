@@ -1035,8 +1035,7 @@ static int __init init_hugetlbfs_fs(void)
 	unregister_filesystem(&hugetlbfs_fs_type);
 
  out:
-	if (error)
-		kmem_cache_destroy(hugetlbfs_inode_cachep);
+	kmem_cache_destroy(hugetlbfs_inode_cachep);
  out2:
 	bdi_destroy(&hugetlbfs_backing_dev_info);
 	return error;
