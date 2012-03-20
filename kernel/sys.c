@@ -1719,9 +1719,8 @@ static int prctl_set_mm_exe_file(struct mm_struct *mm, unsigned int fd)
 	int err;
 
 	/*
-	 * Setting new mm::exe_file is only allowed
-	 * when no VM_EXECUTABLE vma's left. So make
-	 * a fast test first.
+	 * Setting new mm::exe_file is only allowed when no VM_EXECUTABLE vma's
+	 * remain. So perform a quick test first.
 	 */
 	if (mm->num_exe_file_vmas)
 		return -EBUSY;
@@ -1733,10 +1732,9 @@ static int prctl_set_mm_exe_file(struct mm_struct *mm, unsigned int fd)
 	dentry = exe_file->f_path.dentry;
 
 	/*
-	 * Because the original mm->exe_file
-	 * points to executable file, make sure
-	 * this one is executable as well to not
-	 * break an overall picture.
+	 * Because the original mm->exe_file points to executable file, make
+	 * sure that this one is executable as well, to avoid breaking an
+	 * overall picture.
 	 */
 	err = -EACCES;
 	if (!S_ISREG(dentry->d_inode->i_mode)	||
@@ -1748,8 +1746,10 @@ static int prctl_set_mm_exe_file(struct mm_struct *mm, unsigned int fd)
 		goto exit;
 
 	/*
-	 * For security reason changing mm->exe_file
-	 * is one-shot action.
+	 * The symlink can be changed only once, just to disallow arbitrary
+	 * transitions malicious software might bring in. This means one
+	 * could make a snapshot over all processes running and monitor
+	 * /proc/pid/exe changes to notice unusual activity if needed.
 	 */
 	down_write(&mm->mmap_sem);
 	if (likely(!mm->exe_file))
