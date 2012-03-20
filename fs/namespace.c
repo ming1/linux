@@ -2250,6 +2250,7 @@ static struct mnt_namespace *dup_mnt_ns(struct mnt_namespace *mnt_ns,
 		kfree(new_ns);
 		return ERR_PTR(-ENOMEM);
 	}
+	new_ns->root = new;
 	br_write_lock(&vfsmount_lock);
 	list_add_tail(&new_ns->list, &new->mnt_list);
 	br_write_unlock(&vfsmount_lock);
