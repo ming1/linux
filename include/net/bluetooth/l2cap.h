@@ -621,27 +621,28 @@ static inline void l2cap_chan_unlock(struct l2cap_chan *chan)
 	mutex_unlock(&chan->lock);
 }
 
-static inline void l2cap_set_timer(struct l2cap_chan *chan,
-					struct delayed_work *work, long timeout)
-{
-	BT_DBG("chan %p state %s timeout %ld", chan,
-					state_to_string(chan->state), timeout);
-
-	if (!cancel_delayed_work(work))
-		l2cap_chan_hold(chan);
-	schedule_delayed_work(work, timeout);
-}
-
 static inline bool l2cap_clear_timer(struct l2cap_chan *chan,
-					struct delayed_work *work)
+				     struct delayed_work *work)
 {
 	bool ret;
 
-	ret = cancel_delayed_work(work);
+	ret = (delayed_work_pending(work) && cancel_delayed_work(work));
 	if (ret)
 		l2cap_chan_put(chan);
 
 	return ret;
+}
+
+static inline void l2cap_set_timer(struct l2cap_chan *chan,
+				   struct delayed_work *work, long timeout)
+{
+	BT_DBG("chan %p state %s timeout %ld", chan,
+	       state_to_string(chan->state), timeout);
+
+	l2cap_clear_timer(chan, work);
+
+	l2cap_chan_hold(chan);
+	schedule_delayed_work(work, timeout);
 }
 
 #define __set_chan_timer(c, t) l2cap_set_timer(c, &c->chan_timer, (t))
