@@ -25,6 +25,7 @@
 #include <linux/miscdevice.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
+#include <linux/pm.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 #include <linux/types.h>
@@ -78,7 +79,7 @@ struct sp805_wdt {
 
 /* local variables */
 static struct sp805_wdt *wdt;
-static int nowayout = WATCHDOG_NOWAYOUT;
+static bool nowayout = WATCHDOG_NOWAYOUT;
 
 /* This routine finds load value that will reset system in required timout */
 static void wdt_setload(unsigned int timeout)
@@ -351,6 +352,37 @@ static int __devexit sp805_wdt_remove(struct amba_device *adev)
 	return 0;
 }
 
+#ifdef CONFIG_PM
+static int sp805_wdt_suspend(struct device *dev)
+{
+	if (test_bit(WDT_BUSY, &wdt->status)) {
+		wdt_disable();
+		clk_disable(wdt->clk);
+	}
+
+	return 0;
+}
+
+static int sp805_wdt_resume(struct device *dev)
+{
+	int ret = 0;
+
+	if (test_bit(WDT_BUSY, &wdt->status)) {
+		ret = clk_enable(wdt->clk);
+		if (ret) {
+			dev_err(dev, "clock enable fail");
+			return ret;
+		}
+		wdt_enable();
+	}
+
+	return ret;
+}
+#endif /* CONFIG_PM */
+
+static SIMPLE_DEV_PM_OPS(sp805_wdt_dev_pm_ops, sp805_wdt_suspend,
+		sp805_wdt_resume);
+
 static struct amba_id sp805_wdt_ids[] = {
 	{
 		.id	= 0x00141805,
@@ -364,6 +396,7 @@ MODULE_DEVICE_TABLE(amba, sp805_wdt_ids);
 static struct amba_driver sp805_wdt_driver = {
 	.drv = {
 		.name	= MODULE_NAME,
+		.pm	= &sp805_wdt_dev_pm_ops,
 	},
 	.id_table	= sp805_wdt_ids,
 	.probe		= sp805_wdt_probe,
@@ -382,7 +415,7 @@ static void __exit sp805_wdt_exit(void)
 }
 module_exit(sp805_wdt_exit);
 
-module_param(nowayout, int, 0);
+module_param(nowayout, bool, 0);
 MODULE_PARM_DESC(nowayout,
 		"Set to 1 to keep watchdog running after device release");
 
