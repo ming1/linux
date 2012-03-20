@@ -33,7 +33,7 @@ struct pid_namespace {
 #endif
 	gid_t pid_gid;
 	int hide_pid;
-	int reboot;
+	int reboot;	/* group exit code if this pidns was rebooted */
 };
 
 extern struct pid_namespace init_pid_ns;
