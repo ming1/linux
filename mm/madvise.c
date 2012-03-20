@@ -65,10 +65,10 @@ static long madvise_behavior(struct vm_area_struct * vma,
 		}
 		new_flags &= ~VM_DONTCOPY;
 		break;
-	case MADV_NODUMP:
+	case MADV_DONTDUMP:
 		new_flags |= VM_NODUMP;
 		break;
-	case MADV_CLEAR_NODUMP:
+	case MADV_DODUMP:
 		new_flags &= ~VM_NODUMP;
 		break;
 	case MADV_MERGEABLE:
@@ -299,8 +299,8 @@ madvise_behavior_valid(int behavior)
 	case MADV_HUGEPAGE:
 	case MADV_NOHUGEPAGE:
 #endif
-	case MADV_NODUMP:
-	case MADV_CLEAR_NODUMP:
+	case MADV_DONTDUMP:
+	case MADV_DODUMP:
 		return 1;
 
 	default:
