@@ -2,6 +2,7 @@
  * Copyright (C) 2001 Momchil Velikov
  * Portions Copyright (C) 2001 Christoph Hellwig
  * Copyright (C) 2006 Nick Piggin
+ * Copyright (C) 2012 Konstantin Khlebnikov
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -256,5 +257,143 @@ static inline void radix_tree_preload_end(void)
 {
 	preempt_enable();
 }
+
+struct radix_tree_iter {
+	unsigned long	index;		/* current index, do not overflow it */
+	unsigned long	next_index;	/* next-to-last index for this chunk */
+	unsigned long	tags;		/* bitmask for tag-iterating */
+};
+
+#define RADIX_TREE_ITER_TAG_MASK	0x00FF	/* tag index in lower byte */
+#define RADIX_TREE_ITER_TAGGED		0x0100	/* lookup tagged slots */
+#define RADIX_TREE_ITER_CONTIG		0x0200	/* stop at first hole */
+
+void **radix_tree_next_chunk(struct radix_tree_root *root,
+			     struct radix_tree_iter *iter, unsigned flags);
+
+static inline
+void **radix_tree_iter_init(struct radix_tree_iter *iter, unsigned long start)
+{
+	iter->index = 0; /* to bypass next_index overflow protection */
+	iter->next_index = start;
+	return NULL;
+}
+
+static inline unsigned long radix_tree_chunk_size(struct radix_tree_iter *iter)
+{
+	return iter->next_index - iter->index;
+}
+
+/**
+ * radix_tree_next_slot - find next slot in chunk
+ *
+ * @slot	pointer to slot
+ * @iter	iterator state
+ * @flags	RADIX_TREE_ITER_*
+ *
+ * Returns pointer to next slot, or NULL if no more left.
+ */
+static __always_inline
+void **radix_tree_next_slot(void **slot, struct radix_tree_iter *iter,
+			    unsigned flags)
+{
+	unsigned size, offset;
+
+	size = radix_tree_chunk_size(iter) - 1;
+	if (flags & RADIX_TREE_ITER_TAGGED) {
+		iter->tags >>= 1;
+		if (likely(iter->tags & 1ul)) {
+			iter->index++;
+			return slot + 1;
+		}
+		if ((flags & RADIX_TREE_ITER_CONTIG) && size)
+			return NULL;
+		if (likely(iter->tags)) {
+			offset = __ffs(iter->tags);
+			iter->tags >>= offset;
+			iter->index += offset + 1;
+			return slot + offset + 1;
+		}
+	} else {
+		while (size--) {
+			slot++;
+			iter->index++;
+			if (likely(*slot))
+				return slot;
+			if (flags & RADIX_TREE_ITER_CONTIG)
+				return NULL;
+		}
+	}
+	return NULL;
+}
+
+/**
+ * radix_tree_for_each_chunk - iterate over chunks
+ *
+ * @slot:	the void** for pointer to chunk first slot
+ * @root	the struct radix_tree_root pointer
+ * @iter	the struct radix_tree_iter pointer
+ * @start	starting index
+ * @flags	RADIX_TREE_ITER_* and tag index
+ *
+ * Locks can be released and reasquired between iterations.
+ */
+#define radix_tree_for_each_chunk(slot, root, iter, start, flags)	\
+	for ( slot = radix_tree_iter_init(iter, start) ;		\
+	      (slot = radix_tree_next_chunk(root, iter, flags)) ; )
+
+/**
+ * radix_tree_for_each_chunk_slot - iterate over slots in one chunk
+ *
+ * @slot:	the void** for pointer to slot
+ * @iter	the struct radix_tree_iter pointer
+ * @flags	RADIX_TREE_ITER_*
+ */
+#define radix_tree_for_each_chunk_slot(slot, iter, flags)	\
+	for ( ; slot ; slot = radix_tree_next_slot(slot, iter, flags) )
+
+/**
+ * radix_tree_for_each_slot - iterate over all slots
+ *
+ * @slot:	the void** for pointer to slot
+ * @root	the struct radix_tree_root pointer
+ * @iter	the struct radix_tree_iter pointer
+ * @start	starting index
+ */
+#define radix_tree_for_each_slot(slot, root, iter, start)	\
+	for ( slot = radix_tree_iter_init(iter, start) ;	\
+	      slot || (slot = radix_tree_next_chunk(root, iter, 0)) ; \
+	      slot = radix_tree_next_slot(slot, iter, 0) )
+
+/**
+ * radix_tree_for_each_contig - iterate over all contiguous slots
+ *
+ * @slot:	the void** for pointer to slot
+ * @root	the struct radix_tree_root pointer
+ * @iter	the struct radix_tree_iter pointer
+ * @start	starting index
+ */
+#define radix_tree_for_each_contig(slot, root, iter, start)		\
+	for ( slot = radix_tree_iter_init(iter, start) ;		\
+	      slot || (slot = radix_tree_next_chunk(root, iter,		\
+				RADIX_TREE_ITER_CONTIG)) ;		\
+	      slot = radix_tree_next_slot(slot, iter,			\
+				RADIX_TREE_ITER_CONTIG) )
+
+/**
+ * radix_tree_for_each_tagged - iterate over all tagged slots
+ *
+ * @slot:	the void** for pointer to slot
+ * @root	the struct radix_tree_root pointer
+ * @iter	the struct radix_tree_iter pointer
+ * @start	starting index
+ * @tag		tag index
+ */
+#define radix_tree_for_each_tagged(slot, root, iter, start, tag)	\
+	for ( slot = radix_tree_iter_init(iter, start) ;		\
+	      slot || (slot = radix_tree_next_chunk(root, iter,		\
+			      RADIX_TREE_ITER_TAGGED | tag)) ;		\
+	      slot = radix_tree_next_slot(slot, iter,			\
+				RADIX_TREE_ITER_TAGGED) )
 
 #endif /* _LINUX_RADIX_TREE_H */
