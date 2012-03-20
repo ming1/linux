@@ -360,7 +360,7 @@ __switch_to(struct task_struct *prev_p, struct task_struct *next_p)
 
 	switch_fpu_finish(next_p, fpu);
 
-	percpu_write(current_task, next_p);
+	__this_cpu_write(current_task, next_p);
 
 	return prev_p;
 }
