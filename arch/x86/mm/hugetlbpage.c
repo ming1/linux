@@ -309,7 +309,8 @@ static unsigned long hugetlb_get_unmapped_area_topdown(struct file *file,
 	struct hstate *h = hstate_file(file);
 	struct mm_struct *mm = current->mm;
 	struct vm_area_struct *vma, *prev_vma;
-	unsigned long base = mm->mmap_base, addr = addr0, start_addr;
+	unsigned long base = mm->mmap_base;
+	unsigned long addr = addr0;
 	unsigned long largest_hole = mm->cached_hole_size;
 	unsigned long start_addr;
 
