@@ -238,9 +238,12 @@ static ssize_t store_state_##_name(struct cpuidle_state *state, \
 		const char *buf, size_t size) \
 { \
 	long value; \
+	int err; \
 	if (!capable(CAP_SYS_ADMIN)) \
 		return -EPERM; \
-	kstrtol(buf, 0, &value); \
+	err = kstrtol(buf, 0, &value); \
+	if (err) \
+		return err; \
 	if (value) \
 		state->disable = 1; \
 	else \
