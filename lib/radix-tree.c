@@ -150,6 +150,7 @@ static inline int any_tag_set(struct radix_tree_node *node, unsigned int tag)
 
 /**
  * radix_tree_find_next_bit - find the next set bit in a memory region
+ *
  * @addr: The address to base the search on
  * @size: The bitmap size in bits
  * @offset: The bitnumber to start searching at
@@ -158,8 +159,9 @@ static inline int any_tag_set(struct radix_tree_node *node, unsigned int tag)
  * Tail bits starting from size to roundup(size, BITS_PER_LONG) must be zero.
  * Returns next bit offset, or size if nothing found.
  */
-static inline unsigned long radix_tree_find_next_bit(const unsigned long *addr,
-		unsigned long size, unsigned long offset)
+static __always_inline unsigned long
+radix_tree_find_next_bit(const unsigned long *addr,
+			 unsigned long size, unsigned long offset)
 {
 	if (!__builtin_constant_p(size))
 		return find_next_bit(addr, size, offset);
@@ -651,27 +653,26 @@ EXPORT_SYMBOL(radix_tree_tag_get);
 /**
  * radix_tree_next_chunk - find next chunk of slots for iteration
  *
- * @root:		radix tree root
- * @iter:		iterator state
- * @flags		RADIX_TREE_ITER_* flags and tag index
- *
- * Returns pointer to first slots in chunk, or NULL if there no more left
+ * @root:	radix tree root
+ * @iter:	iterator state
+ * @flags:	RADIX_TREE_ITER_* flags and tag index
+ * Returns:	pointer to chunk first slot, or NULL if iteration is over
  */
 void **radix_tree_next_chunk(struct radix_tree_root *root,
 			     struct radix_tree_iter *iter, unsigned flags)
 {
 	unsigned shift, tag = flags & RADIX_TREE_ITER_TAG_MASK;
 	struct radix_tree_node *rnode, *node;
-	unsigned long i, index;
+	unsigned long index, offset;
 
 	if ((flags & RADIX_TREE_ITER_TAGGED) && !root_tag_get(root, tag))
 		return NULL;
 
 	/*
-	 * Catch next_index overflow after ~0UL.
-	 * iter->index can be zero only at the beginning.
-	 * Because RADIX_TREE_MAP_SHIFT < BITS_PER_LONG we cannot
-	 * oveflow iter->next_index in single step.
+	 * Catch next_index overflow after ~0UL. iter->index never overflows
+	 * during iterating, it can be zero only at the beginning.
+	 * And we cannot overflow iter->next_index in single step,
+	 * because RADIX_TREE_MAP_SHIFT < BITS_PER_LONG.
 	 */
 	index = iter->next_index;
 	if (!index && iter->index)
@@ -691,34 +692,37 @@ void **radix_tree_next_chunk(struct radix_tree_root *root,
 
 restart:
 	shift = (rnode->height - 1) * RADIX_TREE_MAP_SHIFT;
-	i = index >> shift;
+	offset = index >> shift;
 
-	/* Index ouside of the tree */
-	if (i >= RADIX_TREE_MAP_SIZE)
+	/* Index outside of the tree */
+	if (offset >= RADIX_TREE_MAP_SIZE)
 		return NULL;
 
 	node = rnode;
 	while (1) {
 		if ((flags & RADIX_TREE_ITER_TAGGED) ?
-				!test_bit(i, node->tags[tag]) :
-				!node->slots[i]) {
+				!test_bit(offset, node->tags[tag]) :
+				!node->slots[offset]) {
 			/* Hole detected */
 			if (flags & RADIX_TREE_ITER_CONTIG)
 				return NULL;
 
 			if (flags & RADIX_TREE_ITER_TAGGED)
-				i = radix_tree_find_next_bit(node->tags[tag],
-						RADIX_TREE_MAP_SIZE, i + 1);
+				offset = radix_tree_find_next_bit(
+						node->tags[tag],
+						RADIX_TREE_MAP_SIZE,
+						offset + 1);
 			else
-				while (++i < RADIX_TREE_MAP_SIZE &&
-						!node->slots[i]);
-
+				while (++offset	< RADIX_TREE_MAP_SIZE) {
+					if (node->slots[offset])
+						break;
+				}
 			index &= ~((RADIX_TREE_MAP_SIZE << shift) - 1);
-			index += i << shift;
+			index += offset << shift;
 			/* Overflow after ~0UL */
 			if (!index)
 				return NULL;
-			if (i == RADIX_TREE_MAP_SIZE)
+			if (offset == RADIX_TREE_MAP_SIZE)
 				goto restart;
 		}
 
@@ -726,23 +730,23 @@ restart:
 		if (!shift)
 			break;
 
-		node = rcu_dereference_raw(node->slots[i]);
+		node = rcu_dereference_raw(node->slots[offset]);
 		if (node == NULL)
 			goto restart;
 		shift -= RADIX_TREE_MAP_SHIFT;
-		i = (index >> shift) & RADIX_TREE_MAP_MASK;
+		offset = (index >> shift) & RADIX_TREE_MAP_MASK;
 	}
 
 	/* Update the iterator state */
 	iter->index = index;
 	iter->next_index = (index | RADIX_TREE_MAP_MASK) + 1;
 
-	/* Construct iter->tags bitmask from node->tags[tag] array */
+	/* Construct iter->tags bit-mask from node->tags[tag] array */
 	if (flags & RADIX_TREE_ITER_TAGGED) {
 		unsigned tag_long, tag_bit;
 
-		tag_long = i / BITS_PER_LONG;
-		tag_bit  = i % BITS_PER_LONG;
+		tag_long = offset / BITS_PER_LONG;
+		tag_bit  = offset % BITS_PER_LONG;
 		iter->tags = node->tags[tag][tag_long] >> tag_bit;
 		/* This never happens if RADIX_TREE_TAG_LONGS == 1 */
 		if (tag_long < RADIX_TREE_TAG_LONGS - 1) {
@@ -755,7 +759,7 @@ restart:
 		}
 	}
 
-	return node->slots + i;
+	return node->slots + offset;
 }
 EXPORT_SYMBOL(radix_tree_next_chunk);
 
