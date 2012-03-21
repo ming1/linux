@@ -84,6 +84,7 @@ void hci_req_complete(struct hci_dev *hdev, __u16 cmd, int result)
 	 */
 	if (test_bit(HCI_INIT, &hdev->flags) && hdev->init_last_cmd != cmd) {
 		struct hci_command_hdr *sent = (void *) hdev->sent_cmd->data;
+		u16 opcode = __le16_to_cpu(sent->opcode);
 		struct sk_buff *skb;
 
 		/* Some CSR based controllers generate a spontaneous
@@ -93,7 +94,7 @@ void hci_req_complete(struct hci_dev *hdev, __u16 cmd, int result)
 		 * command.
 		 */
 
-		if (cmd != HCI_OP_RESET || sent->opcode == HCI_OP_RESET)
+		if (cmd != HCI_OP_RESET || opcode == HCI_OP_RESET)
 			return;
 
 		skb = skb_clone(hdev->sent_cmd, GFP_ATOMIC);
@@ -665,6 +666,11 @@ int hci_dev_open(__u16 dev)
 	BT_DBG("%s %p", hdev->name, hdev);
 
 	hci_req_lock(hdev);
+
+	if (test_bit(HCI_UNREGISTER, &hdev->dev_flags)) {
+		ret = -ENODEV;
+		goto done;
+	}
 
 	if (hdev->rfkill && rfkill_blocked(hdev->rfkill)) {
 		ret = -ERFKILL;
@@ -1333,7 +1339,7 @@ int hci_add_link_key(struct hci_dev *hdev, struct hci_conn *conn, int new_key,
 }
 
 int hci_add_ltk(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 addr_type, u8 type,
-		int new_key, u8 authenticated, u8 tk[16], u8 enc_size, u16
+		int new_key, u8 authenticated, u8 tk[16], u8 enc_size, __le16
 		ediv, u8 rand[8])
 {
 	struct smp_ltk *key, *old_key;
@@ -1667,6 +1673,24 @@ static int hci_do_le_scan(struct hci_dev *hdev, u8 type, u16 interval,
 	return 0;
 }
 
+int hci_cancel_le_scan(struct hci_dev *hdev)
+{
+	BT_DBG("%s", hdev->name);
+
+	if (!test_bit(HCI_LE_SCAN, &hdev->dev_flags))
+		return -EALREADY;
+
+	if (cancel_delayed_work(&hdev->le_scan_disable)) {
+		struct hci_cp_le_set_scan_enable cp;
+
+		/* Send HCI command to disable LE Scan */
+		memset(&cp, 0, sizeof(cp));
+		hci_send_cmd(hdev, HCI_OP_LE_SET_SCAN_ENABLE, sizeof(cp), &cp);
+	}
+
+	return 0;
+}
+
 static void le_scan_disable_work(struct work_struct *work)
 {
 	struct hci_dev *hdev = container_of(work, struct hci_dev,
@@ -1849,6 +1873,8 @@ void hci_unregister_dev(struct hci_dev *hdev)
 	int i;
 
 	BT_DBG("%p name %s bus %d", hdev, hdev->name, hdev->bus);
+
+	set_bit(HCI_UNREGISTER, &hdev->dev_flags);
 
 	write_lock(&hci_dev_list_lock);
 	list_del(&hdev->list);
@@ -2932,7 +2958,7 @@ int hci_cancel_inquiry(struct hci_dev *hdev)
 	BT_DBG("%s", hdev->name);
 
 	if (!test_bit(HCI_INQUIRY, &hdev->flags))
-		return -EPERM;
+		return -EALREADY;
 
 	return hci_send_cmd(hdev, HCI_OP_INQUIRY_CANCEL, 0, NULL);
 }
