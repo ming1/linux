@@ -1512,16 +1512,17 @@ int ext4_group_extend(struct super_block *sb, struct ext4_super_block *es,
 	o_blocks_count = ext4_blocks_count(es);
 
 	if (test_opt(sb, DEBUG))
-		printk(KERN_DEBUG "EXT4-fs: extending last group from %llu to %llu blocks\n",
-		       o_blocks_count, n_blocks_count);
+		ext4_msg(sb, KERN_DEBUG,
+			 "extending last group from %llu to %llu blocks",
+			 o_blocks_count, n_blocks_count);
 
 	if (n_blocks_count == 0 || n_blocks_count == o_blocks_count)
 		return 0;
 
 	if (n_blocks_count > (sector_t)(~0ULL) >> (sb->s_blocksize_bits - 9)) {
-		printk(KERN_ERR "EXT4-fs: filesystem on %s:"
-			" too large to resize to %llu blocks safely\n",
-			sb->s_id, n_blocks_count);
+		ext4_msg(sb, KERN_ERR,
+			 "filesystem too large to resize to %llu blocks safely",
+			 n_blocks_count);
 		if (sizeof(sector_t) < 8)
 			ext4_warning(sb, "CONFIG_LBDAF not enabled");
 		return -EINVAL;
@@ -1582,7 +1583,7 @@ int ext4_resize_fs(struct super_block *sb, ext4_fsblk_t n_blocks_count)
 	ext4_fsblk_t o_blocks_count;
 	ext4_group_t o_group;
 	ext4_group_t n_group;
-	ext4_grpblk_t offset;
+	ext4_grpblk_t offset, add;
 	unsigned long n_desc_blocks;
 	unsigned long o_desc_blocks;
 	unsigned long desc_blocks;
@@ -1591,8 +1592,8 @@ int ext4_resize_fs(struct super_block *sb, ext4_fsblk_t n_blocks_count)
 	o_blocks_count = ext4_blocks_count(es);
 
 	if (test_opt(sb, DEBUG))
-		printk(KERN_DEBUG "EXT4-fs: resizing filesystem from %llu "
-		       "upto %llu blocks\n", o_blocks_count, n_blocks_count);
+		ext4_msg(sb, KERN_DEBUG, "resizing filesystem from %llu "
+		       "to %llu blocks", o_blocks_count, n_blocks_count);
 
 	if (n_blocks_count < o_blocks_count) {
 		/* On-line shrinking not supported */
@@ -1605,7 +1606,7 @@ int ext4_resize_fs(struct super_block *sb, ext4_fsblk_t n_blocks_count)
 		return 0;
 
 	ext4_get_group_no_and_offset(sb, n_blocks_count - 1, &n_group, &offset);
-	ext4_get_group_no_and_offset(sb, o_blocks_count, &o_group, &offset);
+	ext4_get_group_no_and_offset(sb, o_blocks_count - 1, &o_group, &offset);
 
 	n_desc_blocks = (n_group + EXT4_DESC_PER_BLOCK(sb)) /
 			EXT4_DESC_PER_BLOCK(sb);
@@ -1634,10 +1635,12 @@ int ext4_resize_fs(struct super_block *sb, ext4_fsblk_t n_blocks_count)
 	}
 	brelse(bh);
 
-	if (offset != 0) {
-		/* extend the last group */
-		ext4_grpblk_t add;
-		add = EXT4_BLOCKS_PER_GROUP(sb) - offset;
+	/* extend the last group */
+	if (n_group == o_group)
+		add = n_blocks_count - o_blocks_count;
+	else
+		add = EXT4_BLOCKS_PER_GROUP(sb) - (offset + 1);
+	if (add > 0) {
 		err = ext4_group_extend_no_check(sb, o_blocks_count, add);
 		if (err)
 			goto out;
@@ -1674,7 +1677,7 @@ out:
 
 	iput(resize_inode);
 	if (test_opt(sb, DEBUG))
-		printk(KERN_DEBUG "EXT4-fs: resized filesystem from %llu "
-		       "upto %llu blocks\n", o_blocks_count, n_blocks_count);
+		ext4_msg(sb, KERN_DEBUG, "resized filesystem from %llu "
+		       "upto %llu blocks", o_blocks_count, n_blocks_count);
 	return err;
 }
