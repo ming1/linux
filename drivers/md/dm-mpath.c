@@ -440,11 +440,13 @@ static void dispatch_queued_ios(struct multipath *m)
 
 		r = map_io(m, clone, mpio, 1);
 		if (r < 0) {
+			info->ptr = NULL;
 			mempool_free(mpio, m->mpio_pool);
 			dm_kill_unmapped_request(clone, r);
 		} else if (r == DM_MAPIO_REMAPPED)
 			dm_dispatch_request(clone);
 		else if (r == DM_MAPIO_REQUEUE) {
+			info->ptr = NULL;
 			mempool_free(mpio, m->mpio_pool);
 			dm_requeue_unmapped_request(clone);
 		}
@@ -920,8 +922,10 @@ static int multipath_map(struct dm_target *ti, struct request *clone,
 	map_context->ptr = mpio;
 	clone->cmd_flags |= REQ_FAILFAST_TRANSPORT;
 	r = map_io(m, clone, mpio, 0);
-	if (r < 0 || r == DM_MAPIO_REQUEUE)
+	if (r < 0 || r == DM_MAPIO_REQUEUE) {
+		map_context->ptr = NULL;
 		mempool_free(mpio, m->mpio_pool);
+	}
 
 	return r;
 }
@@ -1261,12 +1265,15 @@ static int multipath_end_io(struct dm_target *ti, struct request *clone,
 	struct path_selector *ps;
 	int r;
 
+	BUG_ON(!mpio);
+
 	r  = do_end_io(m, clone, error, mpio);
 	if (pgpath) {
 		ps = &pgpath->pg->ps;
 		if (ps->type->end_io)
 			ps->type->end_io(ps, &pgpath->path, mpio->nr_bytes);
 	}
+	map_context->ptr = NULL;
 	mempool_free(mpio, m->mpio_pool);
 
 	return r;
