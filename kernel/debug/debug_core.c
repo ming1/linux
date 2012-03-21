@@ -49,6 +49,7 @@
 #include <linux/smp.h>
 #include <linux/mm.h>
 #include <linux/rcupdate.h>
+#include <linux/kprobes.h>
 
 #include <asm/cacheflush.h>
 #include <asm/byteorder.h>
@@ -108,6 +109,13 @@ module_param(kgdbreboot, int, 0644);
 static struct kgdb_bkpt		kgdb_break[KGDB_MAX_BREAKPOINTS] = {
 	[0 ... KGDB_MAX_BREAKPOINTS-1] = { .state = BP_UNDEFINED }
 };
+/*
+ * probe_write_tmp is used to r/w breakpoints with the kprobe
+ * interface, it is not protected for reentrancy
+ */
+#if defined(CONFIG_KPROBES) && defined(CONFIG_DEBUG_RODATA)
+static struct kprobe probe_write_tmp;
+#endif /* CONFIG_KPROBES && CONFIG_DEBUG_RODATA */
 
 /*
  * The CPU# of the active CPU, or -1 if none:
@@ -165,17 +173,48 @@ int __weak kgdb_arch_set_breakpoint(struct kgdb_bkpt *bpt)
 {
 	int err;
 
+	bpt->type = BP_BREAKPOINT;
 	err = probe_kernel_read(bpt->saved_instr, (char *)bpt->bpt_addr,
 				BREAK_INSTR_SIZE);
 	if (err)
 		return err;
 	err = probe_kernel_write((char *)bpt->bpt_addr,
 				 arch_kgdb_ops.gdb_bpt_instr, BREAK_INSTR_SIZE);
+#if defined(CONFIG_KPROBES) && defined(CONFIG_DEBUG_RODATA)
+	if (!err)
+		return err;
+	probe_write_tmp.addr = (kprobe_opcode_t *)bpt->bpt_addr;
+	arch_arm_kprobe(&probe_write_tmp);
+	err = probe_kernel_read(&probe_write_tmp.opcode, (char *)bpt->bpt_addr,
+				BREAK_INSTR_SIZE);
+	if (err)
+		return err;
+	if (memcmp(&probe_write_tmp.opcode, arch_kgdb_ops.gdb_bpt_instr,
+		   BREAK_INSTR_SIZE))
+		return -EINVAL;
+	bpt->type = BP_KPROBE_BREAKPOINT;
+#endif /* CONFIG_KPROBES && CONFIG_DEBUG_RODATA */
 	return err;
 }
 
 int __weak kgdb_arch_remove_breakpoint(struct kgdb_bkpt *bpt)
 {
+#if defined(CONFIG_KPROBES) && defined(CONFIG_DEBUG_RODATA)
+	int err;
+
+	if (bpt->type != BP_KPROBE_BREAKPOINT)
+		goto knl_write;
+	probe_write_tmp.addr = (kprobe_opcode_t *)bpt->bpt_addr;
+	memcpy(&probe_write_tmp.opcode, bpt->saved_instr, BREAK_INSTR_SIZE);
+	arch_disarm_kprobe(&probe_write_tmp);
+	err = probe_kernel_read(&probe_write_tmp.opcode, (char *)bpt->bpt_addr,
+				BREAK_INSTR_SIZE);
+	if (err ||
+	    memcmp(&probe_write_tmp.opcode, bpt->saved_instr, BREAK_INSTR_SIZE))
+		goto knl_write;
+	return err;
+knl_write:
+#endif /* CONFIG_KPROBES && CONFIG_DEBUG_RODATA */
 	return probe_kernel_write((char *)bpt->bpt_addr,
 				  (char *)bpt->saved_instr, BREAK_INSTR_SIZE);
 }
@@ -294,7 +333,6 @@ int dbg_set_sw_break(unsigned long addr)
 		return -E2BIG;
 
 	kgdb_break[breakno].state = BP_SET;
-	kgdb_break[breakno].type = BP_BREAKPOINT;
 	kgdb_break[breakno].bpt_addr = addr;
 
 	return 0;
