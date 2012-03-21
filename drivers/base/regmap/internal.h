@@ -22,11 +22,12 @@ struct regcache_ops;
 struct regmap_format {
 	size_t buf_size;
 	size_t reg_bytes;
+	size_t pad_bytes;
 	size_t val_bytes;
 	void (*format_write)(struct regmap *map,
 			     unsigned int reg, unsigned int val);
-	void (*format_reg)(void *buf, unsigned int reg);
-	void (*format_val)(void *buf, unsigned int val);
+	void (*format_reg)(void *buf, unsigned int reg, unsigned int shift);
+	void (*format_val)(void *buf, unsigned int val, unsigned int shift);
 	unsigned int (*parse_val)(void *buf);
 };
 
@@ -51,6 +52,9 @@ struct regmap {
 	u8 read_flag_mask;
 	u8 write_flag_mask;
 
+	/* number of bits to (left) shift the reg value when formatting*/
+	int reg_shift;
+
 	/* regcache specific members */
 	const struct regcache_ops *cache_ops;
 	enum regcache_type cache_type;
@@ -65,16 +69,16 @@ struct regmap {
 	unsigned int num_reg_defaults_raw;
 
 	/* if set, only the cache is modified not the HW */
-	unsigned int cache_only:1;
+	u32 cache_only;
 	/* if set, only the HW is modified not the cache */
-	unsigned int cache_bypass:1;
+	u32 cache_bypass;
 	/* if set, remember to free reg_defaults_raw */
-	unsigned int cache_free:1;
+	bool cache_free;
 
 	struct reg_default *reg_defaults;
 	const void *reg_defaults_raw;
 	void *cache;
-	bool cache_dirty;
+	u32 cache_dirty;
 
 	struct reg_default *patch;
 	int patch_regs;
@@ -87,7 +91,7 @@ struct regcache_ops {
 	int (*exit)(struct regmap *map);
 	int (*read)(struct regmap *map, unsigned int reg, unsigned int *value);
 	int (*write)(struct regmap *map, unsigned int reg, unsigned int value);
-	int (*sync)(struct regmap *map);
+	int (*sync)(struct regmap *map, unsigned int min, unsigned int max);
 };
 
 bool regmap_writeable(struct regmap *map, unsigned int reg);
