@@ -79,6 +79,12 @@ struct drm_exynos_plane_set_zpos {
 	__s32 zpos;
 };
 
+/* memory type definitions. */
+enum e_drm_exynos_gem_mem_type {
+	/* Physically Non-Continuous memory. */
+	EXYNOS_BO_NONCONTIG	= 1 << 0
+};
+
 #define DRM_EXYNOS_GEM_CREATE		0x00
 #define DRM_EXYNOS_GEM_MAP_OFFSET	0x01
 #define DRM_EXYNOS_GEM_MMAP		0x02
@@ -147,11 +153,13 @@ struct exynos_drm_common_hdmi_pd {
  * @timing: default video mode for initializing
  * @default_win: default window layer number to be used for UI.
  * @bpp: default bit per pixel.
+ * @is_v13: set if hdmi version 13 is.
  */
 struct exynos_drm_hdmi_pdata {
 	struct fb_videomode		timing;
 	unsigned int			default_win;
 	unsigned int			bpp;
+	unsigned int			is_v13:1;
 };
 
 #endif	/* __KERNEL__ */

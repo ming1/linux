@@ -144,11 +144,34 @@ static int exynos_drm_unload(struct drm_device *dev)
 	return 0;
 }
 
-static void exynos_drm_preclose(struct drm_device *dev,
-					struct drm_file *file)
+static int exynos_drm_open(struct drm_device *dev, struct drm_file *file)
 {
 	DRM_DEBUG_DRIVER("%s\n", __FILE__);
 
+	return exynos_drm_subdrv_open(dev, file);
+}
+
+static void exynos_drm_preclose(struct drm_device *dev,
+					struct drm_file *file)
+{
+	struct exynos_drm_private *private = dev->dev_private;
+	struct drm_pending_vblank_event *e, *t;
+	unsigned long flags;
+
+	DRM_DEBUG_DRIVER("%s\n", __FILE__);
+
+	/* release events of current file */
+	spin_lock_irqsave(&dev->event_lock, flags);
+	list_for_each_entry_safe(e, t, &private->pageflip_event_list,
+			base.link) {
+		if (e->base.file_priv == file) {
+			list_del(&e->base.link);
+			e->base.destroy(&e->base);
+		}
+	}
+	spin_unlock_irqrestore(&dev->event_lock, flags);
+
+	exynos_drm_subdrv_close(dev, file);
 }
 
 static void exynos_drm_postclose(struct drm_device *dev, struct drm_file *file)
@@ -202,6 +225,7 @@ static struct drm_driver exynos_drm_driver = {
 				  DRIVER_MODESET | DRIVER_GEM,
 	.load			= exynos_drm_load,
 	.unload			= exynos_drm_unload,
+	.open			= exynos_drm_open,
 	.preclose		= exynos_drm_preclose,
 	.lastclose		= exynos_drm_lastclose,
 	.postclose		= exynos_drm_postclose,
@@ -252,9 +276,49 @@ static struct platform_driver exynos_drm_platform_driver = {
 
 static int __init exynos_drm_init(void)
 {
+	int ret;
+
 	DRM_DEBUG_DRIVER("%s\n", __FILE__);
 
-	return platform_driver_register(&exynos_drm_platform_driver);
+#ifdef CONFIG_DRM_EXYNOS_FIMD
+	ret = platform_driver_register(&fimd_driver);
+	if (ret < 0)
+		goto out_fimd;
+#endif
+
+#ifdef CONFIG_DRM_EXYNOS_HDMI
+	ret = platform_driver_register(&hdmi_driver);
+	if (ret < 0)
+		goto out_hdmi;
+	ret = platform_driver_register(&mixer_driver);
+	if (ret < 0)
+		goto out_mixer;
+	ret = platform_driver_register(&exynos_drm_common_hdmi_driver);
+	if (ret < 0)
+		goto out_common_hdmi;
+#endif
+
+	ret = platform_driver_register(&exynos_drm_platform_driver);
+	if (ret < 0)
+		goto out;
+
+	return 0;
+
+out:
+#ifdef CONFIG_DRM_EXYNOS_HDMI
+	platform_driver_unregister(&exynos_drm_common_hdmi_driver);
+out_common_hdmi:
+	platform_driver_unregister(&mixer_driver);
+out_mixer:
+	platform_driver_unregister(&hdmi_driver);
+out_hdmi:
+#endif
+
+#ifdef CONFIG_DRM_EXYNOS_FIMD
+	platform_driver_unregister(&fimd_driver);
+out_fimd:
+#endif
+	return ret;
 }
 
 static void __exit exynos_drm_exit(void)
@@ -262,6 +326,16 @@ static void __exit exynos_drm_exit(void)
 	DRM_DEBUG_DRIVER("%s\n", __FILE__);
 
 	platform_driver_unregister(&exynos_drm_platform_driver);
+
+#ifdef CONFIG_DRM_EXYNOS_HDMI
+	platform_driver_unregister(&exynos_drm_common_hdmi_driver);
+	platform_driver_unregister(&mixer_driver);
+	platform_driver_unregister(&hdmi_driver);
+#endif
+
+#ifdef CONFIG_DRM_EXYNOS_FIMD
+	platform_driver_unregister(&fimd_driver);
+#endif
 }
 
 module_init(exynos_drm_init);
