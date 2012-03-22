@@ -7,6 +7,9 @@
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
  */
+
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
 #include <linux/module.h>
 #include <linux/moduleparam.h>
 #include <linux/types.h>
@@ -30,8 +33,8 @@ MODULE_PARM_DESC(timeout,
 	"(0<timeout<((2^" __MODULE_STRING(TXX9_TIMER_BITS) ")/(IMCLK/256)), "
 	"default=" __MODULE_STRING(TIMER_MARGIN) ")");
 
-static int nowayout = WATCHDOG_NOWAYOUT;
-module_param(nowayout, int, 0);
+static bool nowayout = WATCHDOG_NOWAYOUT;
+module_param(nowayout, bool, 0);
 MODULE_PARM_DESC(nowayout,
 	"Watchdog cannot be stopped once started "
 	"(default=" __MODULE_STRING(WATCHDOG_NOWAYOUT) ")");
@@ -96,8 +99,7 @@ static int txx9wdt_release(struct inode *inode, struct file *file)
 	if (expect_close)
 		txx9wdt_stop();
 	else {
-		printk(KERN_CRIT "txx9wdt: "
-		       "Unexpected close, not stopping watchdog!\n");
+		pr_crit("Unexpected close, not stopping watchdog!\n");
 		txx9wdt_ping();
 	}
 	clear_bit(0, &txx9wdt_alive);
@@ -213,9 +215,8 @@ static int __init txx9wdt_probe(struct platform_device *dev)
 		goto exit;
 	}
 
-	printk(KERN_INFO "Hardware Watchdog Timer for TXx9: "
-	       "timeout=%d sec (max %ld) (nowayout= %d)\n",
-	       timeout, WD_MAX_TIMEOUT, nowayout);
+	pr_info("Hardware Watchdog Timer: timeout=%d sec (max %ld) (nowayout= %d)\n",
+		timeout, WD_MAX_TIMEOUT, nowayout);
 
 	return 0;
 exit_busy:
