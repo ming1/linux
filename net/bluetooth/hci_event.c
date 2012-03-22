@@ -616,6 +616,7 @@ done:
 
 static void hci_setup_link_policy(struct hci_dev *hdev)
 {
+	struct hci_cp_write_def_link_policy cp;
 	u16 link_policy = 0;
 
 	if (hdev->features[0] & LMP_RSWITCH)
@@ -627,9 +628,8 @@ static void hci_setup_link_policy(struct hci_dev *hdev)
 	if (hdev->features[1] & LMP_PARK)
 		link_policy |= HCI_LP_PARK;
 
-	link_policy = cpu_to_le16(link_policy);
-	hci_send_cmd(hdev, HCI_OP_WRITE_DEF_LINK_POLICY, sizeof(link_policy),
-		     &link_policy);
+	cp.policy = cpu_to_le16(link_policy);
+	hci_send_cmd(hdev, HCI_OP_WRITE_DEF_LINK_POLICY, sizeof(cp), &cp);
 }
 
 static void hci_cc_read_local_commands(struct hci_dev *hdev, struct sk_buff *skb)
@@ -888,11 +888,14 @@ static void hci_cc_write_inquiry_mode(struct hci_dev *hdev,
 static void hci_cc_read_inq_rsp_tx_power(struct hci_dev *hdev,
 							struct sk_buff *skb)
 {
-	__u8 status = *((__u8 *) skb->data);
+	struct hci_rp_read_inq_rsp_tx_power *rp = (void *) skb->data;
 
-	BT_DBG("%s status 0x%x", hdev->name, status);
+	BT_DBG("%s status 0x%x", hdev->name, rp->status);
 
-	hci_req_complete(hdev, HCI_OP_READ_INQ_RSP_TX_POWER, status);
+	if (!rp->status)
+		hdev->inq_tx_power = rp->tx_power;
+
+	hci_req_complete(hdev, HCI_OP_READ_INQ_RSP_TX_POWER, rp->status);
 }
 
 static void hci_cc_set_event_flt(struct hci_dev *hdev, struct sk_buff *skb)
@@ -1092,14 +1095,19 @@ static void hci_cc_le_set_scan_enable(struct hci_dev *hdev,
 		break;
 
 	case LE_SCANNING_DISABLED:
-		if (status)
+		if (status) {
+			hci_dev_lock(hdev);
+			mgmt_stop_discovery_failed(hdev, status);
+			hci_dev_unlock(hdev);
 			return;
+		}
 
 		clear_bit(HCI_LE_SCAN, &hdev->dev_flags);
 
 		schedule_delayed_work(&hdev->adv_work, ADV_CLEAR_TIMEOUT);
 
-		if (hdev->discovery.type == DISCOV_TYPE_INTERLEAVED) {
+		if (hdev->discovery.type == DISCOV_TYPE_INTERLEAVED &&
+				hdev->discovery.state == DISCOVERY_FINDING) {
 			mgmt_interleaved_discovery(hdev);
 		} else {
 			hci_dev_lock(hdev);
@@ -3334,7 +3342,7 @@ static inline void hci_le_ltk_request_evt(struct hci_dev *hdev,
 	struct hci_conn *conn;
 	struct smp_ltk *ltk;
 
-	BT_DBG("%s handle %d", hdev->name, cpu_to_le16(ev->handle));
+	BT_DBG("%s handle %d", hdev->name, __le16_to_cpu(ev->handle));
 
 	hci_dev_lock(hdev);
 
