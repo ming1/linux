@@ -940,19 +940,6 @@ static void kgdbts_run_tests(void)
 		run_nmi_sleep_test(nmi_sleep);
 	}
 
-#ifdef CONFIG_DEBUG_RODATA
-	/* Until there is an api to write to read-only text segments, use
-	 * HW breakpoints for the remainder of any tests, else print a
-	 * failure message if hw breakpoints do not work.
-	 */
-	if (!(arch_kgdb_ops.flags & KGDB_HW_BREAKPOINT && hwbreaks_ok)) {
-		eprintk("kgdbts: HW breakpoints do not work,"
-			"skipping remaining tests\n");
-		return;
-	}
-	force_hwbrks = 1;
-#endif /* CONFIG_DEBUG_RODATA */
-
 	/* If the do_fork test is run it will be the last test that is
 	 * executed because a kernel thread will be spawned at the very
 	 * end to unregister the debug hooks.
