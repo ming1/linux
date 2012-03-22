@@ -23,6 +23,7 @@
 #define DEFERRED_SET_SIZE 64
 #define MAPPING_POOL_SIZE 1024
 #define PRISON_CELLS 1024
+#define COMMIT_PERIOD HZ
 
 /*
  * The block size of the device holding pool data must be
@@ -30,16 +31,6 @@
  */
 #define DATA_DEV_BLOCK_SIZE_MIN_SECTORS (64 * 1024 >> SECTOR_SHIFT)
 #define DATA_DEV_BLOCK_SIZE_MAX_SECTORS (1024 * 1024 * 1024 >> SECTOR_SHIFT)
-
-/*
- * The metadata device is currently limited in size.  The limitation is
- * checked lower down in dm-space-map-metadata, but we also check it here
- * so we can fail early.
- *
- * We have one block of index, which can hold 255 index entries.  Each
- * index entry contains allocation info about 16k metadata blocks.
- */
-#define METADATA_DEV_MAX_SECTORS (255 * (1 << 14) * (THIN_METADATA_BLOCK_SIZE / (1 << SECTOR_SHIFT)))
 
 /*
  * Device id is restricted to 24 bits.
@@ -72,7 +63,7 @@
  * missed out if the io covers the block. (schedule_copy).
  *
  * iv) insert the new mapping into the origin's btree
- * (process_prepared_mappings).  This act of inserting breaks some
+ * (process_prepared_mapping).  This act of inserting breaks some
  * sharing of btree nodes between the two devices.  Breaking sharing only
  * effects the btree of that specific device.  Btrees for the other
  * devices that share the block never change.  The btree for the origin
@@ -124,7 +115,7 @@ struct cell {
 	struct hlist_node list;
 	struct bio_prison *prison;
 	struct cell_key key;
-	unsigned count;
+	struct bio *holder;
 	struct bio_list bios;
 };
 
@@ -220,54 +211,59 @@ static struct cell *__search_bucket(struct hlist_head *bucket,
  * This may block if a new cell needs allocating.  You must ensure that
  * cells will be unlocked even if the calling thread is blocked.
  *
- * Returns the number of entries in the cell prior to the new addition
- * or < 0 on failure.
+ * Returns 1 if the cell was already held, 0 if @inmate is the new holder.
  */
 static int bio_detain(struct bio_prison *prison, struct cell_key *key,
 		      struct bio *inmate, struct cell **ref)
 {
-	int r;
+	int r = 1;
 	unsigned long flags;
 	uint32_t hash = hash_key(prison, key);
-	struct cell *uninitialized_var(cell), *cell2 = NULL;
+	struct cell *cell, *cell2;
 
 	BUG_ON(hash > prison->nr_buckets);
 
 	spin_lock_irqsave(&prison->lock, flags);
+
 	cell = __search_bucket(prison->cells + hash, key);
-
-	if (!cell) {
-		/*
-		 * Allocate a new cell
-		 */
-		spin_unlock_irqrestore(&prison->lock, flags);
-		cell2 = mempool_alloc(prison->cell_pool, GFP_NOIO);
-		spin_lock_irqsave(&prison->lock, flags);
-
-		/*
-		 * We've been unlocked, so we have to double check that
-		 * nobody else has inserted this cell in the meantime.
-		 */
-		cell = __search_bucket(prison->cells + hash, key);
-
-		if (!cell) {
-			cell = cell2;
-			cell2 = NULL;
-
-			cell->prison = prison;
-			memcpy(&cell->key, key, sizeof(cell->key));
-			cell->count = 0;
-			bio_list_init(&cell->bios);
-			hlist_add_head(&cell->list, prison->cells + hash);
-		}
+	if (cell) {
+		bio_list_add(&cell->bios, inmate);
+		goto out;
 	}
 
-	r = cell->count++;
-	bio_list_add(&cell->bios, inmate);
+	/*
+	 * Allocate a new cell
+	 */
 	spin_unlock_irqrestore(&prison->lock, flags);
+	cell2 = mempool_alloc(prison->cell_pool, GFP_NOIO);
+	spin_lock_irqsave(&prison->lock, flags);
 
-	if (cell2)
+	/*
+	 * We've been unlocked, so we have to double check that
+	 * nobody else has inserted this cell in the meantime.
+	 */
+	cell = __search_bucket(prison->cells + hash, key);
+	if (cell) {
 		mempool_free(cell2, prison->cell_pool);
+		bio_list_add(&cell->bios, inmate);
+		goto out;
+	}
+
+	/*
+	 * Use new cell.
+	 */
+	cell = cell2;
+
+	cell->prison = prison;
+	memcpy(&cell->key, key, sizeof(cell->key));
+	cell->holder = inmate;
+	bio_list_init(&cell->bios);
+	hlist_add_head(&cell->list, prison->cells + hash);
+
+	r = 0;
+
+out:
+	spin_unlock_irqrestore(&prison->lock, flags);
 
 	*ref = cell;
 
@@ -283,8 +279,8 @@ static void __cell_release(struct cell *cell, struct bio_list *inmates)
 
 	hlist_del(&cell->list);
 
-	if (inmates)
-		bio_list_merge(inmates, &cell->bios);
+	bio_list_add(inmates, cell->holder);
+	bio_list_merge(inmates, &cell->bios);
 
 	mempool_free(cell, prison->cell_pool);
 }
@@ -305,22 +301,44 @@ static void cell_release(struct cell *cell, struct bio_list *bios)
  * bio may be in the cell.  This function releases the cell, and also does
  * a sanity check.
  */
+static void __cell_release_singleton(struct cell *cell, struct bio *bio)
+{
+	hlist_del(&cell->list);
+	BUG_ON(cell->holder != bio);
+	BUG_ON(!bio_list_empty(&cell->bios));
+}
+
 static void cell_release_singleton(struct cell *cell, struct bio *bio)
 {
-	struct bio_prison *prison = cell->prison;
-	struct bio_list bios;
-	struct bio *b;
 	unsigned long flags;
-
-	bio_list_init(&bios);
+	struct bio_prison *prison = cell->prison;
 
 	spin_lock_irqsave(&prison->lock, flags);
-	__cell_release(cell, &bios);
+	__cell_release_singleton(cell, bio);
 	spin_unlock_irqrestore(&prison->lock, flags);
+}
 
-	b = bio_list_pop(&bios);
-	BUG_ON(b != bio);
-	BUG_ON(!bio_list_empty(&bios));
+/*
+ * Sometimes we don't want the holder, just the additional bios.
+ */
+static void __cell_release_no_holder(struct cell *cell, struct bio_list *inmates)
+{
+	struct bio_prison *prison = cell->prison;
+
+	hlist_del(&cell->list);
+	bio_list_merge(inmates, &cell->bios);
+
+	mempool_free(cell, prison->cell_pool);
+}
+
+static void cell_release_no_holder(struct cell *cell, struct bio_list *inmates)
+{
+	unsigned long flags;
+	struct bio_prison *prison = cell->prison;
+
+	spin_lock_irqsave(&prison->lock, flags);
+	__cell_release_no_holder(cell, inmates);
+	spin_unlock_irqrestore(&prison->lock, flags);
 }
 
 static void cell_error(struct cell *cell)
@@ -493,8 +511,10 @@ struct pool {
 
 	struct workqueue_struct *wq;
 	struct work_struct worker;
+	struct delayed_work waker;
 
 	unsigned ref_count;
+	unsigned long last_commit_jiffies;
 
 	spinlock_t lock;
 	struct bio_list deferred_bios;
@@ -529,6 +549,7 @@ struct pool_c {
  */
 struct thin_c {
 	struct dm_dev *pool_dev;
+	struct dm_dev *origin_dev;
 	dm_thin_id dev_id;
 
 	struct pool *pool;
@@ -646,13 +667,15 @@ static void remap(struct thin_c *tc, struct bio *bio, dm_block_t block)
 		(bio->bi_sector & pool->offset_mask);
 }
 
-static void remap_and_issue(struct thin_c *tc, struct bio *bio,
-			    dm_block_t block)
+static void remap_to_origin(struct thin_c *tc, struct bio *bio)
+{
+	bio->bi_bdev = tc->origin_dev->bdev;
+}
+
+static void issue(struct thin_c *tc, struct bio *bio)
 {
 	struct pool *pool = tc->pool;
 	unsigned long flags;
-
-	remap(tc, bio, block);
 
 	/*
 	 * Batch together any FUA/FLUSH bios we find and then issue
@@ -664,6 +687,19 @@ static void remap_and_issue(struct thin_c *tc, struct bio *bio,
 		spin_unlock_irqrestore(&pool->lock, flags);
 	} else
 		generic_make_request(bio);
+}
+
+static void remap_to_origin_and_issue(struct thin_c *tc, struct bio *bio)
+{
+	remap_to_origin(tc, bio);
+	issue(tc, bio);
+}
+
+static void remap_and_issue(struct thin_c *tc, struct bio *bio,
+			    dm_block_t block)
+{
+	remap(tc, bio, block);
+	issue(tc, bio);
 }
 
 /*
@@ -800,21 +836,16 @@ static void cell_defer(struct thin_c *tc, struct cell *cell,
  * Same as cell_defer above, except it omits one particular detainee,
  * a write bio that covers the block and has already been processed.
  */
-static void cell_defer_except(struct thin_c *tc, struct cell *cell,
-			      struct bio *exception)
+static void cell_defer_except(struct thin_c *tc, struct cell *cell)
 {
 	struct bio_list bios;
-	struct bio *bio;
 	struct pool *pool = tc->pool;
 	unsigned long flags;
 
 	bio_list_init(&bios);
-	cell_release(cell, &bios);
 
 	spin_lock_irqsave(&pool->lock, flags);
-	while ((bio = bio_list_pop(&bios)))
-		if (bio != exception)
-			bio_list_add(&pool->deferred_bios, bio);
+	cell_release_no_holder(cell, &pool->deferred_bios);
 	spin_unlock_irqrestore(&pool->lock, flags);
 
 	wake_worker(pool);
@@ -854,7 +885,7 @@ static void process_prepared_mapping(struct new_mapping *m)
 	 * the bios in the cell.
 	 */
 	if (bio) {
-		cell_defer_except(tc, m->cell, bio);
+		cell_defer_except(tc, m->cell);
 		bio_endio(bio, 0);
 	} else
 		cell_defer(tc, m->cell, m->data_block);
@@ -917,7 +948,8 @@ static struct new_mapping *get_next_mapping(struct pool *pool)
 }
 
 static void schedule_copy(struct thin_c *tc, dm_block_t virt_block,
-			  dm_block_t data_origin, dm_block_t data_dest,
+			  struct dm_dev *origin, dm_block_t data_origin,
+			  dm_block_t data_dest,
 			  struct cell *cell, struct bio *bio)
 {
 	int r;
@@ -949,7 +981,7 @@ static void schedule_copy(struct thin_c *tc, dm_block_t virt_block,
 	} else {
 		struct dm_io_region from, to;
 
-		from.bdev = tc->pool_dev->bdev;
+		from.bdev = origin->bdev;
 		from.sector = data_origin * pool->sectors_per_block;
 		from.count = pool->sectors_per_block;
 
@@ -965,6 +997,22 @@ static void schedule_copy(struct thin_c *tc, dm_block_t virt_block,
 			cell_error(cell);
 		}
 	}
+}
+
+static void schedule_internal_copy(struct thin_c *tc, dm_block_t virt_block,
+				   dm_block_t data_origin, dm_block_t data_dest,
+				   struct cell *cell, struct bio *bio)
+{
+	schedule_copy(tc, virt_block, tc->pool_dev,
+		      data_origin, data_dest, cell, bio);
+}
+
+static void schedule_external_copy(struct thin_c *tc, dm_block_t virt_block,
+				   dm_block_t data_dest,
+				   struct cell *cell, struct bio *bio)
+{
+	schedule_copy(tc, virt_block, tc->origin_dev,
+		      virt_block, data_dest, cell, bio);
 }
 
 static void schedule_zero(struct thin_c *tc, dm_block_t virt_block,
@@ -1113,8 +1161,8 @@ static void break_sharing(struct thin_c *tc, struct bio *bio, dm_block_t block,
 	r = alloc_data_block(tc, &data_block);
 	switch (r) {
 	case 0:
-		schedule_copy(tc, block, lookup_result->block,
-			      data_block, cell, bio);
+		schedule_internal_copy(tc, block, lookup_result->block,
+				       data_block, cell, bio);
 		break;
 
 	case -ENOSPC:
@@ -1188,7 +1236,10 @@ static void provision_block(struct thin_c *tc, struct bio *bio, dm_block_t block
 	r = alloc_data_block(tc, &data_block);
 	switch (r) {
 	case 0:
-		schedule_zero(tc, block, data_block, cell, bio);
+		if (tc->origin_dev)
+			schedule_external_copy(tc, block, data_block, cell, bio);
+		else
+			schedule_zero(tc, block, data_block, cell, bio);
 		break;
 
 	case -ENOSPC:
@@ -1239,7 +1290,11 @@ static void process_bio(struct thin_c *tc, struct bio *bio)
 		break;
 
 	case -ENODATA:
-		provision_block(tc, bio, block, cell);
+		if (bio_data_dir(bio) == READ && tc->origin_dev) {
+			cell_release_singleton(cell, bio);
+			remap_to_origin_and_issue(tc, bio);
+		} else
+			provision_block(tc, bio, block, cell);
 		break;
 
 	default:
@@ -1247,6 +1302,12 @@ static void process_bio(struct thin_c *tc, struct bio *bio)
 		bio_io_error(bio);
 		break;
 	}
+}
+
+static int need_commit_due_to_time(struct pool *pool)
+{
+	return jiffies < pool->last_commit_jiffies ||
+	       jiffies > pool->last_commit_jiffies + COMMIT_PERIOD;
 }
 
 static void process_deferred_bios(struct pool *pool)
@@ -1290,7 +1351,7 @@ static void process_deferred_bios(struct pool *pool)
 	bio_list_init(&pool->deferred_flush_bios);
 	spin_unlock_irqrestore(&pool->lock, flags);
 
-	if (bio_list_empty(&bios))
+	if (bio_list_empty(&bios) && !need_commit_due_to_time(pool))
 		return;
 
 	r = dm_pool_commit_metadata(pool->pmd);
@@ -1301,6 +1362,7 @@ static void process_deferred_bios(struct pool *pool)
 			bio_io_error(bio);
 		return;
 	}
+	pool->last_commit_jiffies = jiffies;
 
 	while ((bio = bio_list_pop(&bios)))
 		generic_make_request(bio);
@@ -1312,6 +1374,17 @@ static void do_worker(struct work_struct *ws)
 
 	process_prepared_mappings(pool);
 	process_deferred_bios(pool);
+}
+
+/*
+ * We want to commit periodically so that not too much
+ * unwritten data builds up.
+ */
+static void do_waker(struct work_struct *ws)
+{
+	struct pool *pool = container_of(to_delayed_work(ws), struct pool, waker);
+	wake_worker(pool);
+	queue_delayed_work(pool->wq, &pool->waker, COMMIT_PERIOD);
 }
 
 /*----------------------------------------------------------------*/
@@ -1523,6 +1596,7 @@ static struct pool *pool_create(struct mapped_device *pool_md,
 	}
 
 	INIT_WORK(&pool->worker, do_worker);
+	INIT_DELAYED_WORK(&pool->waker, do_waker);
 	spin_lock_init(&pool->lock);
 	bio_list_init(&pool->deferred_bios);
 	bio_list_init(&pool->deferred_flush_bios);
@@ -1549,6 +1623,7 @@ static struct pool *pool_create(struct mapped_device *pool_md,
 		goto bad_endio_hook_pool;
 	}
 	pool->ref_count = 1;
+	pool->last_commit_jiffies = jiffies;
 	pool->pool_md = pool_md;
 	pool->md_dev = metadata_dev;
 	__pool_table_insert(pool);
@@ -1691,6 +1766,7 @@ static int pool_ctr(struct dm_target *ti, unsigned argc, char **argv)
 	dm_block_t low_water_blocks;
 	struct dm_dev *metadata_dev;
 	sector_t metadata_dev_size;
+	char b[BDEVNAME_SIZE];
 
 	/*
 	 * FIXME Remove validation from scope of lock.
@@ -1712,11 +1788,9 @@ static int pool_ctr(struct dm_target *ti, unsigned argc, char **argv)
 	}
 
 	metadata_dev_size = i_size_read(metadata_dev->bdev->bd_inode) >> SECTOR_SHIFT;
-	if (metadata_dev_size > METADATA_DEV_MAX_SECTORS) {
-		ti->error = "Metadata device is too large";
-		r = -EINVAL;
-		goto out_metadata;
-	}
+	if (metadata_dev_size > THIN_METADATA_MAX_SECTORS_WARNING)
+		DMWARN("Metadata device %s is larger than %u sectors: excess space will not be used.",
+		       bdevname(metadata_dev->bdev, b), THIN_METADATA_MAX_SECTORS);
 
 	r = dm_get_device(ti, argv[1], FMODE_READ | FMODE_WRITE, &data_dev);
 	if (r) {
@@ -1878,7 +1952,7 @@ static void pool_resume(struct dm_target *ti)
 	__requeue_bios(pool);
 	spin_unlock_irqrestore(&pool->lock, flags);
 
-	wake_worker(pool);
+	do_waker(&pool->waker.work);
 }
 
 static void pool_postsuspend(struct dm_target *ti)
@@ -1887,6 +1961,7 @@ static void pool_postsuspend(struct dm_target *ti)
 	struct pool_c *pt = ti->private;
 	struct pool *pool = pt->pool;
 
+	cancel_delayed_work(&pool->waker);
 	flush_workqueue(pool->wq);
 
 	r = dm_pool_commit_metadata(pool->pmd);
@@ -2202,6 +2277,8 @@ static void thin_dtr(struct dm_target *ti)
 	__pool_dec(tc->pool);
 	dm_pool_close_thin_device(tc->td);
 	dm_put_device(ti, tc->pool_dev);
+	if (tc->origin_dev)
+		dm_put_device(ti, tc->origin_dev);
 	kfree(tc);
 
 	mutex_unlock(&dm_thin_pool_table.mutex);
@@ -2210,21 +2287,22 @@ static void thin_dtr(struct dm_target *ti)
 /*
  * Thin target parameters:
  *
- * <pool_dev> <dev_id>
+ * <pool_dev> <dev_id> [origin_dev]
  *
  * pool_dev: the path to the pool (eg, /dev/mapper/my_pool)
  * dev_id: the internal device identifier
+ * origin_dev: a device external to the pool that should act as the origin
  */
 static int thin_ctr(struct dm_target *ti, unsigned argc, char **argv)
 {
 	int r;
 	struct thin_c *tc;
-	struct dm_dev *pool_dev;
+	struct dm_dev *pool_dev, *origin_dev;
 	struct mapped_device *pool_md;
 
 	mutex_lock(&dm_thin_pool_table.mutex);
 
-	if (argc != 2) {
+	if (argc != 2 && argc != 3) {
 		ti->error = "Invalid argument count";
 		r = -EINVAL;
 		goto out_unlock;
@@ -2235,6 +2313,15 @@ static int thin_ctr(struct dm_target *ti, unsigned argc, char **argv)
 		ti->error = "Out of memory";
 		r = -ENOMEM;
 		goto out_unlock;
+	}
+
+	if (argc == 3) {
+		r = dm_get_device(ti, argv[2], FMODE_READ, &origin_dev);
+		if (r) {
+			ti->error = "Error opening origin device";
+			goto bad_origin_dev;
+		}
+		tc->origin_dev = origin_dev;
 	}
 
 	r = dm_get_device(ti, argv[0], dm_table_get_mode(ti->table), &pool_dev);
@@ -2289,6 +2376,9 @@ bad_pool_lookup:
 bad_common:
 	dm_put_device(ti, tc->pool_dev);
 bad_pool_dev:
+	if (tc->origin_dev)
+		dm_put_device(ti, tc->origin_dev);
+bad_origin_dev:
 	kfree(tc);
 out_unlock:
 	mutex_unlock(&dm_thin_pool_table.mutex);
@@ -2299,7 +2389,7 @@ out_unlock:
 static int thin_map(struct dm_target *ti, struct bio *bio,
 		    union map_info *map_context)
 {
-	bio->bi_sector -= ti->begin;
+	bio->bi_sector = dm_target_offset(ti, bio->bi_sector);
 
 	return thin_bio_map(ti, bio, map_context);
 }
@@ -2347,6 +2437,8 @@ static int thin_status(struct dm_target *ti, status_type_t type,
 			DMEMIT("%s %lu",
 			       format_dev_t(buf, tc->pool_dev->bdev->bd_dev),
 			       (unsigned long) tc->dev_id);
+			if (tc->origin_dev)
+				DMEMIT(" %s", format_dev_t(buf, tc->origin_dev->bdev->bd_dev));
 			break;
 		}
 	}
@@ -2384,7 +2476,7 @@ static void thin_io_hints(struct dm_target *ti, struct queue_limits *limits)
 
 static struct target_type thin_target = {
 	.name = "thin",
-	.version = {1, 0, 0},
+	.version = {1, 1, 0},
 	.module	= THIS_MODULE,
 	.ctr = thin_ctr,
 	.dtr = thin_dtr,
