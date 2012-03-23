@@ -180,6 +180,9 @@ config ARCH_HAS_DEFAULT_IDLE
 config ARCH_HAS_CACHE_LINE_SIZE
 	def_bool y
 
+config ARCH_HAS_CPU_AUTOPROBE
+	def_bool y
+
 config HAVE_SETUP_PER_CPU_AREA
 	def_bool y
 
@@ -402,6 +405,7 @@ config X86_INTEL_CE
 	select X86_REBOOTFIXUPS
 	select OF
 	select OF_EARLY_FLATTREE
+	select IRQ_DOMAIN
 	---help---
 	  Select for the Intel CE media processor (CE4100) SOC.
 	  This option compiles in support for the CE4100 SOC for settop
@@ -2091,6 +2095,7 @@ config OLPC
 	select GPIOLIB
 	select OF
 	select OF_PROMTREE
+	select IRQ_DOMAIN
 	---help---
 	  Add support for detecting the unique features of the OLPC
 	  XO hardware.

@@ -662,6 +662,13 @@ config VMWARE_PVSCSI
 	  To compile this driver as a module, choose M here: the
 	  module will be called vmw_pvscsi.
 
+config HYPERV_STORAGE
+	tristate "Microsoft Hyper-V virtual storage driver"
+	depends on SCSI && HYPERV
+	default HYPERV
+	help
+	  Select this option to enable the Hyper-V virtual storage driver.
+
 config LIBFC
 	tristate "LibFC module"
 	select SCSI_FC_ATTRS
@@ -967,9 +974,8 @@ config SCSI_IPS
 
 config SCSI_IBMVSCSI
 	tristate "IBM Virtual SCSI support"
-	depends on PPC_PSERIES || PPC_ISERIES
+	depends on PPC_PSERIES
 	select SCSI_SRP_ATTRS
-	select VIOPATH if PPC_ISERIES
 	help
 	  This is the IBM POWER Virtual SCSI Client
 
