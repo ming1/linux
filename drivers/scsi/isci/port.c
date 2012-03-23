@@ -251,10 +251,10 @@ static void isci_port_link_down(struct isci_host *isci_host,
 		if (isci_phy->sas_phy.port &&
 		    isci_phy->sas_phy.port->num_phys == 1) {
 			/* change the state for all devices on this port.  The
-			 * next task sent to this device will be returned as
-			 * SAS_TASK_UNDELIVERED, and the scsi mid layer will
-			 * remove the target
-			 */
+			* next task sent to this device will be returned as
+			* SAS_TASK_UNDELIVERED, and the scsi mid layer will
+			* remove the target
+			*/
 			list_for_each_entry(isci_device,
 					    &isci_port->remote_dev_list,
 					    node) {
@@ -1548,6 +1548,29 @@ static void sci_port_failed_state_enter(struct sci_base_state_machine *sm)
 	isci_port_hard_reset_complete(iport, SCI_FAILURE_TIMEOUT);
 }
 
+void sci_port_set_hang_detection_timeout(struct isci_port *iport, u32 timeout)
+{
+	int phy_index;
+	u32 phy_mask = iport->active_phy_mask;
+
+	if (timeout)
+		++iport->hang_detect_users;
+	else if (iport->hang_detect_users > 1)
+		--iport->hang_detect_users;
+	else
+		iport->hang_detect_users = 0;
+
+	if (timeout || (iport->hang_detect_users == 0)) {
+		for (phy_index = 0; phy_index < SCI_MAX_PHYS; phy_index++) {
+			if ((phy_mask >> phy_index) & 1) {
+				writel(timeout,
+				       &iport->phy_table[phy_index]
+					  ->link_layer_registers
+					  ->link_layer_hang_detection_timeout);
+			}
+		}
+	}
+}
 /* --------------------------------------------------------------------------- */
 
 static const struct sci_base_state sci_port_state_table[] = {
@@ -1596,6 +1619,7 @@ void sci_port_construct(struct isci_port *iport, u8 index,
 
 	iport->started_request_count = 0;
 	iport->assigned_device_count = 0;
+	iport->hang_detect_users = 0;
 
 	iport->reserved_rni = SCU_DUMMY_INDEX;
 	iport->reserved_tag = SCI_CONTROLLER_INVALID_IO_TAG;
@@ -1664,17 +1688,6 @@ int isci_port_perform_hard_reset(struct isci_host *ihost, struct isci_port *ipor
 			__func__, iport, status);
 
 	}
-
-	/* If the hard reset for the port has failed, consider this
-	 * the same as link failures on all phys in the port.
-	 */
-	if (ret != TMF_RESP_FUNC_COMPLETE) {
-
-		dev_err(&ihost->pdev->dev,
-			"%s: iport = %p; hard reset failed "
-			"(0x%x) - driving explicit link fail for all phys\n",
-			__func__, iport, iport->hard_reset_status);
-	}
 	return ret;
 }
 
@@ -1733,7 +1746,7 @@ void isci_port_formed(struct asd_sas_phy *phy)
 	struct isci_host *ihost = phy->ha->lldd_ha;
 	struct isci_phy *iphy = to_iphy(phy);
 	struct asd_sas_port *port = phy->port;
-	struct isci_port *iport;
+	struct isci_port *iport = NULL;
 	unsigned long flags;
 	int i;
 
