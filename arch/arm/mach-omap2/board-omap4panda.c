@@ -114,12 +114,18 @@ static struct platform_device panda_abe_audio = {
 	.dev = {
 		.platform_data = &panda_abe_audio_data,
 	},
+}
+
+static struct platform_device btwilink_device = {
+	.name	= "btwilink",
+	.id	= -1,
 };
 
 static struct platform_device *panda_devices[] __initdata = {
 	&leds_gpio,
 	&wl1271_device,
 	&panda_abe_audio,
+	&btwilink_device,
 };
 
 static const struct usbhs_omap_board_data usbhs_bdata __initconst = {
