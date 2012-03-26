@@ -340,7 +340,7 @@ struct scsi_host_template {
 	 *
 	 * Status: OBSOLETE
 	 */
-	int (*proc_info)(struct Scsi_Host *, char *, char **, off_t, int, int);
+	const struct file_operations *proc_ops;
 
 	/*
 	 * This is an optional routine that allows the transport to become

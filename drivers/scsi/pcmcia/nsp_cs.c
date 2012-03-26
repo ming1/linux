@@ -36,6 +36,8 @@
 #include <linux/interrupt.h>
 #include <linux/major.h>
 #include <linux/blkdev.h>
+#include <linux/proc_fs.h>
+#include <linux/seq_file.h>
 #include <linux/stat.h>
 
 #include <asm/io.h>
@@ -76,7 +78,7 @@ MODULE_PARM_DESC(free_ports, "Release IO ports after configuration? (default: 0 
 
 static struct scsi_host_template nsp_driver_template = {
 	.proc_name	         = "nsp_cs",
-	.proc_info		 = nsp_proc_info,
+	.proc_ops		 = &nsp_proc_ops,
 	.name			 = "WorkBit NinjaSCSI-3/32Bi(16bit)",
 	.info			 = nsp_info,
 	.queuecommand		 = nsp_queuecommand,
@@ -1366,27 +1368,16 @@ static const char *nsp_info(struct Scsi_Host *shpnt)
 
 #undef SPRINTF
 #define SPRINTF(args...) \
-        do { \
-		if(length > (pos - buffer)) { \
-			pos += snprintf(pos, length - (pos - buffer) + 1, ## args); \
-			nsp_dbg(NSP_DEBUG_PROC, "buffer=0x%p pos=0x%p length=%d %d\n", buffer, pos, length,  length - (pos - buffer));\
-		} \
-	} while(0)
+	seq_printf(m, ## args)
 
-static int nsp_proc_info(struct Scsi_Host *host, char *buffer, char **start,
-			 off_t offset, int length, int inout)
+static int nsp_proc_show(struct seq_file *m, void *v)
 {
+	struct Scsi_Host *host = m->private;
 	int id;
-	char *pos = buffer;
-	int thislength;
 	int speed;
 	unsigned long flags;
 	nsp_hw_data *data;
 	int hostno;
-
-	if (inout) {
-		return -EINVAL;
-	}
 
 	hostno = host->host_no;
 	data = (nsp_hw_data *)host->hostdata;
@@ -1459,20 +1450,21 @@ static int nsp_proc_info(struct Scsi_Host *host, char *buffer, char **start,
 		SPRINTF("\n");
 	}
 
-	thislength = pos - (buffer + offset);
-
-	if(thislength < 0) {
-		*start = NULL;
-                return 0;
-        }
-
-
-	thislength = min(thislength, length);
-	*start = buffer + offset;
-
-	return thislength;
+	return 0;
 }
 #undef SPRINTF
+
+static int nsp_proc_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, nsp_proc_show, PDE(inode)->data);
+}
+
+static const struct file_operations nsp_proc_ops = {
+	.open		= nsp_proc_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
 
 /*---------------------------------------------------------------*/
 /* error handler                                                 */

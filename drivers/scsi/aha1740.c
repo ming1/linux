@@ -45,6 +45,7 @@
 #include <linux/string.h>
 #include <linux/ioport.h>
 #include <linux/proc_fs.h>
+#include <linux/seq_file.h>
 #include <linux/stat.h>
 #include <linux/init.h>
 #include <linux/device.h>
@@ -107,34 +108,31 @@ static inline dma_addr_t ecb_cpu_to_dma (struct Scsi_Host *host, void *cpu)
 	return hdata->ecb_dma_addr + offset;
 }
 
-static int aha1740_proc_info(struct Scsi_Host *shpnt, char *buffer,
-			     char **start, off_t offset,
-			     int length, int inout)
+static int aha1740_proc_show(struct seq_file *m, void *v)
 {
-	int len;
+	struct Scsi_Host *shpnt = m->private;
 	struct aha1740_hostdata *host;
-
-	if (inout)
-		return-ENOSYS;
 
 	host = HOSTDATA(shpnt);
 
-	len = sprintf(buffer, "aha174x at IO:%lx, IRQ %d, SLOT %d.\n"
+	seq_printf(m, "aha174x at IO:%lx, IRQ %d, SLOT %d.\n"
 		      "Extended translation %sabled.\n",
 		      shpnt->io_port, shpnt->irq, host->edev->slot,
 		      host->translation ? "en" : "dis");
-
-	if (offset > len) {
-		*start = buffer;
-		return 0;
-	}
-
-	*start = buffer + offset;
-	len -= offset;
-	if (len > length)
-		len = length;
-	return len;
+	return 0;
 }
+
+static int aha1740_proc_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, aha1740_proc_show, PDE(inode)->data);
+}
+
+static const struct file_operations aha1740_proc_ops = {
+	.open		= aha1740_proc_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
 
 static int aha1740_makecode(unchar *sense, unchar *status)
 {
@@ -557,7 +555,7 @@ static int aha1740_eh_abort_handler (Scsi_Cmnd *dummy)
 static struct scsi_host_template aha1740_template = {
 	.module           = THIS_MODULE,
 	.proc_name        = "aha1740",
-	.proc_info        = aha1740_proc_info,
+	.proc_ops         = &aha1740_proc_ops,
 	.name             = "Adaptec 174x (EISA)",
 	.queuecommand     = aha1740_queuecommand,
 	.bios_param       = aha1740_biosparam,
