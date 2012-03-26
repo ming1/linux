@@ -13,9 +13,11 @@
 #define _LINUX_EDAC_H_
 
 #include <linux/atomic.h>
+#include <linux/device.h>
 #include <linux/kobject.h>
 #include <linux/completion.h>
 #include <linux/workqueue.h>
+#include <linux/debugfs.h>
 
 struct device;
 
@@ -633,6 +635,12 @@ struct mem_ctl_info {
 
 	/* the internal state of this controller instance */
 	int op_state;
+
+#ifdef CONFIG_EDAC_DEBUG
+	struct dentry *debugfs;
+	u8 fake_inject_layer[EDAC_MAX_LAYERS];
+	u32 fake_inject_ue;
+#endif
 };
 
 #endif
