@@ -82,7 +82,7 @@ static int l2cap_sock_bind(struct socket *sock, struct sockaddr *addr, int alen)
 	}
 
 	if (la.l2_cid)
-		err = l2cap_add_scid(chan, la.l2_cid);
+		err = l2cap_add_scid(chan, __le16_to_cpu(la.l2_cid));
 	else
 		err = l2cap_add_psm(chan, &la.l2_bdaddr, la.l2_psm);
 
@@ -123,7 +123,8 @@ static int l2cap_sock_connect(struct socket *sock, struct sockaddr *addr, int al
 	if (la.l2_cid && la.l2_psm)
 		return -EINVAL;
 
-	err = l2cap_chan_connect(chan, la.l2_psm, la.l2_cid, &la.l2_bdaddr);
+	err = l2cap_chan_connect(chan, la.l2_psm, __le16_to_cpu(la.l2_cid),
+				&la.l2_bdaddr);
 	if (err)
 		return err;
 
@@ -1047,11 +1048,13 @@ static struct sock *l2cap_sock_alloc(struct net *net, struct socket *sock, int p
 	sk->sk_protocol = proto;
 	sk->sk_state = BT_OPEN;
 
-	chan = l2cap_chan_create(sk);
+	chan = l2cap_chan_create();
 	if (!chan) {
 		l2cap_sock_kill(sk);
 		return NULL;
 	}
+
+	chan->sk = sk;
 
 	l2cap_pi(sk)->chan = chan;
 
