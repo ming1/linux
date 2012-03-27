@@ -163,6 +163,10 @@ static inline int scsi_autopm_get_host(struct Scsi_Host *h) { return 0; }
 static inline void scsi_autopm_put_host(struct Scsi_Host *h) {}
 #endif /* CONFIG_PM_RUNTIME */
 
+#if IS_ENABLED(CONFIG_PM) || IS_ENABLED(CONFIG_BLK_DEV_SD)
+extern struct list_head scsi_sd_probe_domain;
+#endif
+
 /* 
  * internal scsi timeout functions: for use by mid-layer and transport
  * classes.
