@@ -163,7 +163,7 @@ static int pas16_bus_reset(Scsi_Cmnd *);
 #define NCR5380_queue_command pas16_queue_command
 #define NCR5380_abort pas16_abort
 #define NCR5380_bus_reset pas16_bus_reset
-#define NCR5380_proc_info pas16_proc_info
+#define NCR5380_proc_ops pas16_proc_ops
 
 /* 15 14 12 10 7 5 3 
    1101 0100 1010 1000 */

@@ -85,6 +85,7 @@
 #include <linux/string.h>
 #include <linux/ioport.h>
 #include <linux/proc_fs.h>
+#include <linux/seq_file.h>
 #include <linux/delay.h>
 #include <linux/mca.h>
 #include <linux/spinlock.h>
@@ -529,36 +530,28 @@ static const char *fd_mcs_info(struct Scsi_Host *shpnt)
 
 static int TOTAL_INTR = 0;
 
-/*
- * inout : decides on the direction of the dataflow and the meaning of the 
- *         variables
- * buffer: If inout==FALSE data is being written to it else read from it
- * *start: If inout==FALSE start of the valid data in the buffer
- * offset: If inout==FALSE offset from the beginning of the imaginary file 
- *         from which we start writing into the buffer
- * length: If inout==FALSE max number of bytes to be written into the buffer 
- *         else number of bytes in the buffer
- */
-static int fd_mcs_proc_info(struct Scsi_Host *shpnt, char *buffer, char **start, off_t offset, int length, int inout)
+static int fd_mcs_proc_show(struct seq_file *m, void *v)
 {
-	int len = 0;
+	struct Scsi_Host *shpnt = m->private;
 
-	if (inout)
-		return (-ENOSYS);
-
-	*start = buffer + offset;
-
-	len += sprintf(buffer + len, "Future Domain MCS-600/700 Driver %s\n", DRIVER_VERSION);
-	len += sprintf(buffer + len, "HOST #%d: %s\n", shpnt->host_no, adapter_name);
-	len += sprintf(buffer + len, "FIFO Size=0x%x, FIFO Count=%d\n", FIFO_Size, FIFO_COUNT);
-	len += sprintf(buffer + len, "DriverCalls=%d, Interrupts=%d, BytesRead=%d, BytesWrite=%d\n\n", TOTAL_INTR, INTR_Processed, Bytes_Read, Bytes_Written);
-
-	if ((len -= offset) <= 0)
-		return 0;
-	if (len > length)
-		len = length;
-	return len;
+	seq_printf(m, "Future Domain MCS-600/700 Driver %s\n", DRIVER_VERSION);
+	seq_printf(m, "HOST #%d: %s\n", shpnt->host_no, adapter_name);
+	seq_printf(m, "FIFO Size=0x%x, FIFO Count=%d\n", FIFO_Size, FIFO_COUNT);
+	seq_printf(m, "DriverCalls=%d, Interrupts=%d, BytesRead=%d, BytesWrite=%d\n\n", TOTAL_INTR, INTR_Processed, Bytes_Read, Bytes_Written);
+	return 0;
 }
+
+static int fd_mcs_proc_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, fd_mcs_proc_show, PDE(inode)->data);
+}
+
+static const struct file_operations fd_mcs_proc_ops = {
+	.open		= fd_mcs_proc_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
 
 static int fd_mcs_select(struct Scsi_Host *shpnt, int target)
 {
@@ -1336,7 +1329,7 @@ static int fd_mcs_biosparam(struct scsi_device * disk, struct block_device *bdev
 
 static struct scsi_host_template driver_template = {
 	.proc_name			= "fd_mcs",
-	.proc_info			= fd_mcs_proc_info,
+	.proc_ops			= &fd_mcs_proc_ops,
 	.detect				= fd_mcs_detect,
 	.release			= fd_mcs_release,
 	.info				= fd_mcs_info,

@@ -79,13 +79,6 @@ static void tcm_loop_release_cmd(struct se_cmd *se_cmd)
 	kmem_cache_free(tcm_loop_cmd_cache, tl_cmd);
 }
 
-static int tcm_loop_proc_info(struct Scsi_Host *host, char *buffer,
-				char **start, off_t offset,
-				int length, int inout)
-{
-	return sprintf(buffer, "tcm_loop_proc_info()\n");
-}
-
 static int tcm_loop_driver_probe(struct device *);
 static int tcm_loop_driver_remove(struct device *);
 
@@ -383,8 +376,6 @@ static int tcm_loop_slave_configure(struct scsi_device *sd)
 }
 
 static struct scsi_host_template tcm_loop_driver_template = {
-	.proc_info		= tcm_loop_proc_info,
-	.proc_name		= "tcm_loopback",
 	.name			= "TCM_Loopback",
 	.queuecommand		= tcm_loop_queuecommand,
 	.change_queue_depth	= tcm_loop_change_queue_depth,

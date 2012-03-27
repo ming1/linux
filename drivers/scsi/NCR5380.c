@@ -86,6 +86,8 @@
  * 5.  Test linked command handling code after Eric is ready with 
  *      the high level code.
  */
+#include <linux/proc_fs.h>
+#include <linux/seq_file.h>
 #include <scsi/scsi_dbg.h>
 #include <scsi/scsi_transport_spi.h>
 
@@ -696,32 +698,36 @@ static void NCR5380_print_status(struct Scsi_Host *instance)
  */
 
 #undef SPRINTF
-#define SPRINTF(args...) do { if(pos < buffer + length-80) pos += sprintf(pos, ## args); } while(0)
-static
-char *lprint_Scsi_Cmnd(Scsi_Cmnd * cmd, char *pos, char *buffer, int length);
-static
-char *lprint_command(unsigned char *cmd, char *pos, char *buffer, int len);
-static
-char *lprint_opcode(int opcode, char *pos, char *buffer, int length);
+#define SPRINTF(args...) seq_printf(m, ## args)
 
-static int __maybe_unused NCR5380_proc_info(struct Scsi_Host *instance,
-	char *buffer, char **start, off_t offset, int length, int inout)
+static void lprint_opcode(struct seq_file *m, int opcode)
 {
-	char *pos = buffer;
-	struct NCR5380_hostdata *hostdata;
+	SPRINTF("%2d (0x%02x)", opcode, opcode);
+}
+
+static void lprint_command(struct seq_file *m, unsigned char *command)
+{
+	int i, s;
+
+	lprint_opcode(m, command[0]);
+	for (i = 1, s = COMMAND_SIZE(command[0]); i < s; ++i)
+		SPRINTF("%02x ", command[i]);
+	SPRINTF("\n");
+}
+
+static void lprint_Scsi_Cmnd(struct seq_file *m, Scsi_Cmnd *cmd)
+{
+	SPRINTF("scsi%d : destination target %d, lun %d\n", cmd->device->host->host_no, cmd->device->id, cmd->device->lun);
+	SPRINTF("        command = ");
+	lprint_command(m, cmd->cmnd);
+}
+
+static int NCR5380_proc_show(struct seq_file *m, void *v)
+{
+	struct Scsi_Host *instance = m->private;
+	struct NCR5380_hostdata *hostdata = (struct NCR5380_hostdata *)instance->hostdata;
 	Scsi_Cmnd *ptr;
 
-	hostdata = (struct NCR5380_hostdata *) instance->hostdata;
-
-	if (inout) {		/* Has data been written to the file ? */
-#ifdef DTC_PUBLIC_RELEASE
-		dtc_wmaxi = dtc_maxi = 0;
-#endif
-#ifdef PAS16_PUBLIC_RELEASE
-		pas_wmaxi = pas_maxi = 0;
-#endif
-		return (-ENOSYS);	/* Currently this is a no-op */
-	}
 	SPRINTF("NCR5380 core release=%d.   ", NCR5380_PUBLIC_RELEASE);
 	if (((struct NCR5380_hostdata *) instance->hostdata)->flags & FLAG_NCR53C400)
 		SPRINTF("ncr53c400 release=%d.  ", NCR53C400_PUBLIC_RELEASE);
@@ -755,48 +761,42 @@ static int __maybe_unused NCR5380_proc_info(struct Scsi_Host *instance,
 	if (!hostdata->connected)
 		SPRINTF("scsi%d: no currently connected command\n", instance->host_no);
 	else
-		pos = lprint_Scsi_Cmnd((Scsi_Cmnd *) hostdata->connected, pos, buffer, length);
+		lprint_Scsi_Cmnd(m, (Scsi_Cmnd *) hostdata->connected);
 	SPRINTF("scsi%d: issue_queue\n", instance->host_no);
 	for (ptr = (Scsi_Cmnd *) hostdata->issue_queue; ptr; ptr = (Scsi_Cmnd *) ptr->host_scribble)
-		pos = lprint_Scsi_Cmnd(ptr, pos, buffer, length);
+		lprint_Scsi_Cmnd(m, ptr);
 
 	SPRINTF("scsi%d: disconnected_queue\n", instance->host_no);
 	for (ptr = (Scsi_Cmnd *) hostdata->disconnected_queue; ptr; ptr = (Scsi_Cmnd *) ptr->host_scribble)
-		pos = lprint_Scsi_Cmnd(ptr, pos, buffer, length);
+		lprint_Scsi_Cmnd(m, ptr);
 	spin_unlock_irq(instance->host_lock);
 	
-	*start = buffer;
-	if (pos - buffer < offset)
-		return 0;
-	else if (pos - buffer - offset < length)
-		return pos - buffer - offset;
-	return length;
+	return 0;
 }
 
-static char *lprint_Scsi_Cmnd(Scsi_Cmnd * cmd, char *pos, char *buffer, int length)
+static int NCR5380_proc_open(struct inode *inode, struct file *file)
 {
-	SPRINTF("scsi%d : destination target %d, lun %d\n", cmd->device->host->host_no, cmd->device->id, cmd->device->lun);
-	SPRINTF("        command = ");
-	pos = lprint_command(cmd->cmnd, pos, buffer, length);
-	return (pos);
+	return single_open(file, NCR5380_proc_show, PDE(inode)->data);
 }
 
-static char *lprint_command(unsigned char *command, char *pos, char *buffer, int length)
+static ssize_t NCR5380_proc_write(struct file *file, const char __user *buf, size_t count, loff_t *pos)
 {
-	int i, s;
-	pos = lprint_opcode(command[0], pos, buffer, length);
-	for (i = 1, s = COMMAND_SIZE(command[0]); i < s; ++i)
-		SPRINTF("%02x ", command[i]);
-	SPRINTF("\n");
-	return (pos);
+#ifdef DTC_PUBLIC_RELEASE
+	dtc_wmaxi = dtc_maxi = 0;
+#endif
+#ifdef PAS16_PUBLIC_RELEASE
+	pas_wmaxi = pas_maxi = 0;
+#endif
+	return -ENOSYS;
 }
 
-static char *lprint_opcode(int opcode, char *pos, char *buffer, int length)
-{
-	SPRINTF("%2d (0x%02x)", opcode, opcode);
-	return (pos);
-}
-
+static const struct file_operations __maybe_unused NCR5380_proc_ops = {
+	.open		= NCR5380_proc_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+	.write		= NCR5380_proc_write,
+};
 
 /**
  *	NCR5380_init	-	initialise an NCR5380

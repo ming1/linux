@@ -389,7 +389,7 @@ int __init pas16_detect(struct scsi_host_template * tpnt)
     int  count;
 
     tpnt->proc_name = "pas16";
-    tpnt->proc_info = &pas16_proc_info;
+    tpnt->proc_ops = &pas16_proc_ops;
 
     if (pas16_addr != 0) {
 	overrides[0].io_port = pas16_addr;

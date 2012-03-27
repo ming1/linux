@@ -72,7 +72,7 @@
 #define NCR5380_queue_command macscsi_queue_command
 #define NCR5380_abort macscsi_abort
 #define NCR5380_bus_reset macscsi_bus_reset
-#define NCR5380_proc_info macscsi_proc_info
+#define NCR5380_proc_ops macscsi_proc_ops
 
 #define BOARD_NORMAL	0
 #define BOARD_NCR53C400	1
