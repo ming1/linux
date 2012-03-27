@@ -1,0 +1,113 @@
+Importing hexagon based on v3.2-rc2
+Unchanged quilt series hexagon
+Importing i2c based on e22057c8599373e5caef0bc42bdb95d2a361ab0d
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard e22057c8599373e5caef0bc42bdb95d2a361ab0d
+HEAD is now at e22057c Merge tag 'stable/for-linus-3.4-tag-two' of git://git.kernel.org/pub/scm/linux/kernel/git/konrad/xen
+$ git am ../quilt/i2c/i2c-gpio-use-linux-gpio.h-rather-than-asm-gpio.h.patch
+Applying: i2c-gpio: Use linux/gpio.h rather than asm/gpio.h
+$ git am ../quilt/i2c/i2c-isch-decrease-delay-in-command-completion-check-loop.patch
+Applying: i2c-isch: Decrease delay in command completion check loop
+$ git am ../quilt/i2c/i2c-i801-01-add-device-ids-for-intel-lynx-point.patch
+Applying: i2c-i801: Add device IDs for Intel Lynx Point
+$ git am ../quilt/i2c/i2c-i801-02-use-usleep_range.patch
+Applying: i2c-i801: Use usleep_range to wait for command completion
+$ git am ../quilt/i2c/i2c-convert-mux-drivers-to-use-module_i2c_driver.patch
+Applying: i2c: Convert drivers/i2c/muxes/* to use module_i2c_driver()
+$ git am ../quilt/i2c/i2c-update-FSF-address.patch
+Applying: i2c: Update the FSF address
+$ git am ../quilt/i2c/i2c-algo-bit-dont-resched-on-clock-stretching.patch
+Applying: i2c-algo-bit: Don't resched on clock stretching
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/i2c
+From ../quilt-tmp
+ + 6e5318e...81b2104 master     -> quilt/i2c  (forced update)
+Importing jdelvare-hwmon based on 437538267b672f9320833907f1b5acbb2605f4be
+Unchanged quilt series jdelvare-hwmon
+Importing kernel-doc based on 3.3
+$ cd ../quilt-tmp
+$ git reset --hard c16fa4f2ad19908a47c63d8fa436a1178438c7e7
+HEAD is now at c16fa4f Linux 3.3
+$ git am ../quilt/kernel-doc/docum-remove-mach-from-dontdiff.patch
+Applying: Documentation: remove mach from dontdiff file
+$ git am ../quilt/kernel-doc/docum-kconfig-diffconfig.patch
+Applying: Documentation: Mention scripts/diffconfig as a tool to compare config files
+$ git am ../quilt/kernel-doc/docum-sysrq-crutcher-missing.patch
+Applying: sysrq.txt: Crutcher Dunnavant is unavailable
+$ git am ../quilt/kernel-doc/docum-codestyle-inline-asm.patch
+Applying: Documentation/CodingStyle: Add guidelines for inline assembly
+$ git am ../quilt/kernel-doc/docum-input-clarify-mousedev.patch
+Applying: Clarify that the 'cat' command does not include the (c, 13, 32)
+$ git am ../quilt/kernel-doc/docum-remove-refs-modprobe-conf.patch
+Applying: Remove references to /etc/modprobe.conf
+$ git am ../quilt/kernel-doc/docum-replace-install-softdeps.patch
+Applying: Documentation: replace install commands with softdeps
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/kernel-doc
+From ../quilt-tmp
+ + 719a4df...abf3232 master     -> quilt/kernel-doc  (forced update)
+Importing rr based on v3.3-rc5-86-g5ffca28
+Unchanged quilt series rr
+Importing device-mapper based on v3.3-5825-g4375382
+$ cd ../quilt-tmp
+$ git reset --hard 437538267b672f9320833907f1b5acbb2605f4be
+HEAD is now at 4375382 Merge tag 'fbdev-updates-for-3.4' of git://github.com/schandinat/linux-2.6
+$ git am ../quilt/device-mapper/dm-exception_store-fix-init-error-path.patch
+Applying: Call the correct exit function on failure in dm_exception_store_init.
+$ git am ../quilt/device-mapper/dm-crypt-fix-mempool-deadlock.patch
+Applying: This patch fixes a possible deadlock in dm-crypt's mempool use.
+$ git am ../quilt/device-mapper/dm-crypt-add-missing-error-handling.patch
+Applying: Always set io->error to -EIO when an error is detected.
+$ git am ../quilt/device-mapper/dm-thin-fix-stacked-bi_next-usage.patch
+Applying: Avoid using the bi_next field for the holder of a cell when deferring
+$ git am ../quilt/device-mapper/dm-persistent-data-fix-btree-rebalancing-after-remove.patch
+Applying: When we remove an entry from a node we sometimes rebalance with it's
+$ git am ../quilt/device-mapper/dm-document-sysfs-entries.patch
+Applying: Describe attributes provided by device-mapper in /sys/block.
+$ git am ../quilt/device-mapper/dm-add-persistent-data-to-MAINTAINERS.patch
+Applying: Update device-mapper MAINTAINERS entry to mention quilt working tree location
+$ git am ../quilt/device-mapper/dm-uevent-no-longer-experimental.patch
+Applying: Drop EXPERIMENTAL tag from dm-uevent.
+$ git am ../quilt/device-mapper/dm-raid-no-longer-experimental.patch
+Applying: The dm raid module (using md) is becoming the preferred way of creating long-lived
+$ git am ../quilt/device-mapper/dm-thin-correct-comments.patch
+Applying: Remove documentation for unimplemented 'trim' message.
+$ git am ../quilt/device-mapper/dm-table-simplify-call-to-free_devices.patch
+Applying: free_devices already uses list_for_each(), so we don't need to
+$ git am ../quilt/device-mapper/dm-clear-bi_end_io-on-remapping-failure.patch
+Applying: As a precaution, set bi_end_io to NULL when failing to remap.
+$ git am ../quilt/device-mapper/dm-mpath-detect-invalid-map_context.patch
+Applying: The map_context pointer should always be set. However, we have reports
+$ git am ../quilt/device-mapper/dm-persistent-data-remove-redundant-value_size-arg-from-value_ptr.patch
+Applying: Now that the value_size is held within every node of the btrees we can
+$ git am ../quilt/device-mapper/dm-thin-metadata-pass-correct-space-map-to-dm_sm_root_size.patch
+Applying: Fix a harmless typo.
+$ git am ../quilt/device-mapper/dm-raid-handle-failed-devices-during-start-up.patch
+Applying: The dm-raid code currently fails to create a RAID array if any of the
+$ git am ../quilt/device-mapper/dm-reject-trailing-characters-in-sccanf-input.patch
+Applying: Device mapper uses sscanf to convert arguments to numbers. The problem is that
+$ git am ../quilt/device-mapper/dm-thin-commit-outstanding-data-every-second.patch
+Applying: Commit unwritten data every second to prevent too much building up.
+$ git am ../quilt/device-mapper/dm-persistent-data-remove-space-map-ref_count-entries-if-redundant.patch
+Applying: Save space by removing entries from the space map ref_count tree if
+$ git am ../quilt/device-mapper/dm-thin-relax-hard-limit-on-the-maximum-size-of-a-metadata-device.patch
+Applying: The thin metadata format can only make use of a device that is <=
+$ git am ../quilt/device-mapper/dm-thin-support-read-only-external-snapshot-origins.patch
+Applying: Support the use of an external _read only_ device as an origin for a thin
+$ git am ../quilt/device-mapper/dm-thin-use-dm_target_offset.patch
+Applying: Use dm_target_offset wrapper instead of referencing the awkward ti->begin
+$ git am ../quilt/device-mapper/dm-thin-prepare-to-support-discard.patch
+Applying: This patch contains the ground work needed for dm-thin to support discard.
+$ git am ../quilt/device-mapper/dm-thin-support-discards.patch
+Applying: Support discards in the thin target.
+$ git am ../quilt/device-mapper/dm_thin-add-pool-target-flags-to-control-discard.patch
+Applying: Add dm thin target arguments to control discard support.
+$ git am ../quilt/device-mapper/dm-bufio-prefetch.patch
+Applying: This patch introduces a new function dm_bufio_prefetch. It prefetches
+$ git am ../quilt/device-mapper/dm-add-verity-target.patch
+Applying: This device-mapper target creates a read-only device that transparently
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/device-mapper
+From ../quilt-tmp
+ + b911e14...b4a9c5b master     -> quilt/device-mapper  (forced update)
