@@ -114,7 +114,7 @@ static struct platform_device panda_abe_audio = {
 	.dev = {
 		.platform_data = &panda_abe_audio_data,
 	},
-}
+};
 
 static struct platform_device btwilink_device = {
 	.name	= "btwilink",
