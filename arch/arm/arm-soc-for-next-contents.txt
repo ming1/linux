@@ -125,6 +125,8 @@ next/cleanup2:
 at91/base2+cleanup	git://github.com/at91linux/linux-at91.git at91-3.4-base2+cleanup
 				depends on at91/base, at91/pm_cleanup, at91/device-board and at91/9x5
 devel/io-cleanup	git://sources.calxeda.com/kernel/linux.git io-cleanup-for-3.4
+				pulled twice
+tegra/fixes-for-io-cleanup	git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git for-3.4/fixes-for-io-cleanup
 
 
 === depends on linux-pm/pm-domains ==
