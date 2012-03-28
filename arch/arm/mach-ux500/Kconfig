@@ -27,6 +27,7 @@ config MACH_MOP500
 	select UX500_SOC_DB8500
 	select I2C
 	select I2C_NOMADIK
+	select SOC_BUS
 	help
 	  Include support for the MOP500 development platform.
 
@@ -42,6 +43,11 @@ config MACH_SNOWBALL
 	select MACH_MOP500
 	help
 	  Include support for the snowball development platform.
+
+config MACH_UX500_DT
+	bool "Generic U8500 support using device tree"
+	select MACH_MOP500
+	select USE_OF
 
 config MACH_U5500
 	bool "U5500 Development platform"
