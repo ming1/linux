@@ -558,8 +558,6 @@ static struct isci_host *isci_host_alloc(struct pci_dev *pdev, int id)
 		return NULL;
 	}
 
-	INIT_LIST_HEAD(&ihost->requests_to_complete);
-	INIT_LIST_HEAD(&ihost->requests_to_errorback);
 	for (i = 0; i < SCI_MAX_PORTS; i++) {
 		struct isci_port *iport = &ihost->ports[i];
 
@@ -573,7 +571,6 @@ static struct isci_host *isci_host_alloc(struct pci_dev *pdev, int id)
 	for (i = 0; i < SCI_MAX_REMOTE_DEVICES; i++) {
 		struct isci_remote_device *idev = &ihost->devices[i];
 
-		INIT_LIST_HEAD(&idev->reqs_in_process);
 		INIT_LIST_HEAD(&idev->node);
 	}
 

@@ -1077,6 +1077,32 @@ static void sci_controller_completion_handler(struct isci_host *ihost)
 	writel(0, &ihost->smu_registers->interrupt_mask);
 }
 
+void ireq_done(struct isci_host *ihost, struct isci_request *ireq, struct sas_task *task)
+{
+	task->lldd_task = NULL;
+	if (!test_bit(IREQ_ABORT_PATH_ACTIVE, &ireq->flags) &&
+	    !(task->task_state_flags & SAS_TASK_STATE_ABORTED)) {
+		if (test_bit(IREQ_COMPLETE_IN_TARGET, &ireq->flags)) {
+			/* Normal notification (task_done) */
+			dev_dbg(&ihost->pdev->dev,
+				"%s: Normal - ireq/task = %p/%p\n",
+				__func__, ireq, task);
+
+			task->task_done(task);
+		} else {
+			dev_dbg(&ihost->pdev->dev,
+				"%s: Error - ireq/task = %p/%p\n",
+				__func__, ireq, task);
+
+			sas_task_abort(task);
+		}
+	}
+	if (test_and_clear_bit(IREQ_ABORT_PATH_ACTIVE, &ireq->flags))
+		wake_up_all(&ihost->eventq);
+
+	if (!test_bit(IREQ_NO_AUTO_FREE_TAG, &ireq->flags))
+		isci_free_tag(ihost, ireq->io_tag);
+}
 /**
  * isci_host_completion_routine() - This function is the delayed service
  *    routine that calls the sci core library's completion handler. It's
@@ -1088,103 +1114,11 @@ static void sci_controller_completion_handler(struct isci_host *ihost)
 void isci_host_completion_routine(unsigned long data)
 {
 	struct isci_host *ihost = (struct isci_host *)data;
-	struct list_head    completed_request_list;
-	struct list_head    errored_request_list;
-	struct list_head    *current_position;
-	struct list_head    *next_position;
-	struct isci_request *request;
-	struct isci_request *next_request;
-	struct sas_task     *task;
 	u16 active;
 
-	INIT_LIST_HEAD(&completed_request_list);
-	INIT_LIST_HEAD(&errored_request_list);
-
 	spin_lock_irq(&ihost->scic_lock);
-
 	sci_controller_completion_handler(ihost);
-
-	/* Take the lists of completed I/Os from the host. */
-
-	list_splice_init(&ihost->requests_to_complete,
-			 &completed_request_list);
-
-	/* Take the list of errored I/Os from the host. */
-	list_splice_init(&ihost->requests_to_errorback,
-			 &errored_request_list);
-
 	spin_unlock_irq(&ihost->scic_lock);
-
-	/* Process any completions in the lists. */
-	list_for_each_safe(current_position, next_position,
-			   &completed_request_list) {
-
-		request = list_entry(current_position, struct isci_request,
-				     completed_node);
-		task = isci_request_access_task(request);
-
-		/* Normal notification (task_done) */
-		dev_dbg(&ihost->pdev->dev,
-			"%s: Normal - request/task = %p/%p\n",
-			__func__,
-			request,
-			task);
-
-		/* Return the task to libsas */
-		if (task != NULL) {
-
-			task->lldd_task = NULL;
-			if (!(task->task_state_flags & SAS_TASK_STATE_ABORTED)) {
-
-				/* If the task is already in the abort path,
-				* the task_done callback cannot be called.
-				*/
-				task->task_done(task);
-			}
-		}
-
-		spin_lock_irq(&ihost->scic_lock);
-		isci_free_tag(ihost, request->io_tag);
-		spin_unlock_irq(&ihost->scic_lock);
-	}
-	list_for_each_entry_safe(request, next_request, &errored_request_list,
-				 completed_node) {
-
-		task = isci_request_access_task(request);
-
-		/* Use sas_task_abort */
-		dev_warn(&ihost->pdev->dev,
-			 "%s: Error - request/task = %p/%p\n",
-			 __func__,
-			 request,
-			 task);
-
-		if (task != NULL) {
-
-			/* Put the task into the abort path if it's not there
-			 * already.
-			 */
-			if (!(task->task_state_flags & SAS_TASK_STATE_ABORTED))
-				sas_task_abort(task);
-
-		} else {
-			/* This is a case where the request has completed with a
-			 * status such that it needed further target servicing,
-			 * but the sas_task reference has already been removed
-			 * from the request.  Since it was errored, it was not
-			 * being aborted, so there is nothing to do except free
-			 * it.
-			 */
-
-			spin_lock_irq(&ihost->scic_lock);
-			/* Remove the request from the remote device's list
-			* of pending requests.
-			*/
-			list_del_init(&request->dev_node);
-			isci_free_tag(ihost, request->io_tag);
-			spin_unlock_irq(&ihost->scic_lock);
-		}
-	}
 
 	/* the coalesence timeout doubles at each encoding step, so
 	 * update it based on the ilog2 value of the outstanding requests
@@ -2345,7 +2279,6 @@ static int sci_controller_dma_alloc(struct isci_host *ihost)
 
 		ireq->tc = &ihost->task_context_table[i];
 		ireq->owning_controller = ihost;
-		spin_lock_init(&ireq->state_lock);
 		ireq->request_daddr = dma;
 		ireq->isci_host = ihost;
 		ihost->reqs[i] = ireq;
@@ -2696,18 +2629,22 @@ enum sci_status sci_controller_terminate_request(struct isci_host *ihost,
 			 __func__, ihost->sm.current_state_id);
 		return SCI_FAILURE_INVALID_STATE;
 	}
-
 	status = sci_io_request_terminate(ireq);
-	if (status != SCI_SUCCESS)
-		return status;
 
-	/*
-	 * Utilize the original post context command and or in the POST_TC_ABORT
-	 * request sub-type.
-	 */
-	sci_controller_post_request(ihost,
-				    ireq->post_context | SCU_CONTEXT_COMMAND_REQUEST_POST_TC_ABORT);
-	return SCI_SUCCESS;
+	dev_dbg(&ihost->pdev->dev, "%s: status=%d; ireq=%p; flags=%lx\n",
+		__func__, status, ireq, ireq->flags);
+
+	if ((status == SCI_SUCCESS) &&
+	    !test_bit(IREQ_PENDING_ABORT, &ireq->flags) &&
+	    !test_and_set_bit(IREQ_TC_ABORT_POSTED, &ireq->flags)) {
+		/* Utilize the original post context command and or in the
+		 * POST_TC_ABORT request sub-type.
+		 */
+		sci_controller_post_request(
+			ihost, ireq->post_context |
+				SCU_CONTEXT_COMMAND_REQUEST_POST_TC_ABORT);
+	}
+	return status;
 }
 
 /**
