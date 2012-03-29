@@ -56,12 +56,12 @@ static int valid_address(struct KBacktraceIterator *kbt, unsigned long address)
 	if (l1_pgtable == NULL)
 		return 0;	/* can't read user space in other tasks */
 
+	pte = l1_pgtable[PGD_INDEX(address)];
 #ifdef CONFIG_64BIT
 	/* Find the real l1_pgtable by looking in the l0_pgtable. */
-	pte = l1_pgtable[HV_L0_INDEX(address)];
 	if (!hv_pte_get_present(pte))
 		return 0;
-	pfn = hv_pte_get_pfn(pte);
+	pfn = pte_pfn(pte);
 	if (pte_huge(pte)) {
 		if (!pfn_valid(pfn)) {
 			pr_err("L0 huge page has bad pfn %#lx\n", pfn);
@@ -72,11 +72,11 @@ static int valid_address(struct KBacktraceIterator *kbt, unsigned long address)
 	page = pfn_to_page(pfn);
 	BUG_ON(PageHighMem(page));  /* No HIGHMEM on 64-bit. */
 	l1_pgtable = (HV_PTE *)pfn_to_kaddr(pfn);
+	pte = l1_pgtable[PMD_INDEX(address)];
 #endif
-	pte = l1_pgtable[HV_L1_INDEX(address)];
 	if (!hv_pte_get_present(pte))
 		return 0;
-	pfn = hv_pte_get_pfn(pte);
+	pfn = pte_pfn(pte);
 	if (pte_huge(pte)) {
 		if (!pfn_valid(pfn)) {
 			pr_err("huge page has bad pfn %#lx\n", pfn);
@@ -87,12 +87,11 @@ static int valid_address(struct KBacktraceIterator *kbt, unsigned long address)
 
 	page = pfn_to_page(pfn);
 	if (PageHighMem(page)) {
-		pr_err("L2 page table not in LOWMEM (%#llx)\n",
-		       HV_PFN_TO_CPA(pfn));
+		pr_err("L2 page table not in LOWMEM (%#llx)\n", PFN_PHYS(pfn));
 		return 0;
 	}
 	l2_pgtable = (HV_PTE *)pfn_to_kaddr(pfn);
-	pte = l2_pgtable[HV_L2_INDEX(address)];
+	pte = l2_pgtable[PTE_INDEX(address)];
 	return hv_pte_get_present(pte) && hv_pte_get_readable(pte);
 }
 
