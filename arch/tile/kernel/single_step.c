@@ -152,9 +152,6 @@ static tile_bundle_bits rewrite_load_store_unaligned(
 	if (((unsigned long)addr % size) == 0)
 		return bundle;
 
-#ifndef __LITTLE_ENDIAN
-# error We assume little-endian representation with copy_xx_user size 2 here
-#endif
 	/* Handle unaligned load/store */
 	if (mem_op == MEMOP_LOAD || mem_op == MEMOP_LOAD_POSTINCR) {
 		unsigned short val_16;
@@ -175,8 +172,19 @@ static tile_bundle_bits rewrite_load_store_unaligned(
 			state->update = 1;
 		}
 	} else {
+		unsigned short val_16;
 		val = (val_reg == TREG_ZERO) ? 0 : regs->regs[val_reg];
-		err = copy_to_user(addr, &val, size);
+		switch (size) {
+		case 2:
+			val_16 = val;
+			err = copy_to_user(addr, &val_16, sizeof(val_16));
+			break;
+		case 4:
+			err = copy_to_user(addr, &val, sizeof(val));
+			break;
+		default:
+			BUG();
+		}
 	}
 
 	if (err) {
