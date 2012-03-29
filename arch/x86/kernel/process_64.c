@@ -37,7 +37,6 @@
 #include <linux/ftrace.h>
 
 #include <asm/pgtable.h>
-#include <asm/system.h>
 #include <asm/processor.h>
 #include <asm/i387.h>
 #include <asm/fpu-internal.h>
@@ -49,6 +48,7 @@
 #include <asm/idle.h>
 #include <asm/syscalls.h>
 #include <asm/debugreg.h>
+#include <asm/switch_to.h>
 
 asmlinkage extern void ret_from_fork(void);
 
