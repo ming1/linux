@@ -803,9 +803,6 @@ static int i7300_init_csrows(struct mem_ctl_info *mci)
 				mtr = decode_mtr(pvt, slot, ch, branch,
 						 dinfo, dimm);
 
-				mci->tot_dimms++;
-				dimm++;
-
 				/* if no DIMMS on this row, continue */
 				if (!MTR_DIMMS_PRESENT(mtr))
 					continue;
