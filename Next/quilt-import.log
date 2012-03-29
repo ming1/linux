@@ -1,0 +1,73 @@
+Importing hexagon based on v3.2-rc2
+Unchanged quilt series hexagon
+Importing i2c based on e22057c8599373e5caef0bc42bdb95d2a361ab0d
+Unchanged quilt series i2c
+Importing jdelvare-hwmon based on 437538267b672f9320833907f1b5acbb2605f4be
+Unchanged quilt series jdelvare-hwmon
+Importing kernel-doc based on 3.3
+Unchanged quilt series kernel-doc
+Importing rr based on v3.3-rc5-86-g5ffca28
+Unchanged quilt series rr
+Importing device-mapper based on v3.3-5825-g4375382
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard 437538267b672f9320833907f1b5acbb2605f4be
+HEAD is now at 4375382 Merge tag 'fbdev-updates-for-3.4' of git://github.com/schandinat/linux-2.6
+$ git am ../quilt/device-mapper/dm-exception_store-fix-init-error-path.patch
+Applying: Call the correct exit function on failure in dm_exception_store_init.
+$ git am ../quilt/device-mapper/dm-crypt-fix-mempool-deadlock.patch
+Applying: This patch fixes a possible deadlock in dm-crypt's mempool use.
+$ git am ../quilt/device-mapper/dm-crypt-add-missing-error-handling.patch
+Applying: Always set io->error to -EIO when an error is detected in dm-crypt.
+$ git am ../quilt/device-mapper/dm-thin-fix-stacked-bi_next-usage.patch
+Applying: Avoid using the bi_next field for the holder of a cell when deferring
+$ git am ../quilt/device-mapper/dm-persistent-data-fix-btree-rebalancing-after-remove.patch
+Applying: When we remove an entry from a node we sometimes rebalance with it's
+$ git am ../quilt/device-mapper/dm-document-sysfs-entries.patch
+Applying: Describe attributes provided by device-mapper in /sys/block.
+$ git am ../quilt/device-mapper/dm-add-persistent-data-to-MAINTAINERS.patch
+Applying: Update device-mapper MAINTAINERS entry to mention quilt working tree location
+$ git am ../quilt/device-mapper/dm-uevent-no-longer-experimental.patch
+Applying: Drop EXPERIMENTAL tag from dm-uevent.
+$ git am ../quilt/device-mapper/dm-raid-no-longer-experimental.patch
+Applying: The dm raid module (using md) is becoming the preferred way of creating long-lived
+$ git am ../quilt/device-mapper/dm-thin-correct-comments.patch
+Applying: Remove documentation for unimplemented 'trim' message.
+$ git am ../quilt/device-mapper/dm-table-simplify-call-to-free_devices.patch
+Applying: free_devices in dm_table.c already uses list_for_each(), so we don't
+$ git am ../quilt/device-mapper/dm-clear-bi_end_io-on-remapping-failure.patch
+Applying: As a precaution, set bi_end_io to NULL when failing to remap.
+$ git am ../quilt/device-mapper/dm-mpath-detect-invalid-map_context.patch
+Applying: The map_context pointer should always be set. However, we have reports
+$ git am ../quilt/device-mapper/dm-persistent-data-remove-redundant-value_size-arg-from-value_ptr.patch
+Applying: Now that the value_size is held within every node of the btrees we can
+$ git am ../quilt/device-mapper/dm-thin-metadata-pass-correct-space-map-to-dm_sm_root_size.patch
+Applying: Fix a harmless typo.
+$ git am ../quilt/device-mapper/dm-raid-handle-failed-devices-during-start-up.patch
+Applying: The dm-raid code currently fails to create a RAID array if any of the
+$ git am ../quilt/device-mapper/dm-reject-trailing-characters-in-sccanf-input.patch
+Applying: Device mapper uses sscanf to convert arguments to numbers. The problem is that
+$ git am ../quilt/device-mapper/dm-thin-commit-outstanding-data-every-second.patch
+Applying: Commit unwritten data every second to prevent too much building up.
+$ git am ../quilt/device-mapper/dm-persistent-data-remove-space-map-ref_count-entries-if-redundant.patch
+Applying: Save space by removing entries from the space map ref_count tree if
+$ git am ../quilt/device-mapper/dm-thin-relax-hard-limit-on-the-maximum-size-of-a-metadata-device.patch
+Applying: The thin metadata format can only make use of a device that is <=
+$ git am ../quilt/device-mapper/dm-thin-support-read-only-external-snapshot-origins.patch
+Applying: Support the use of an external _read only_ device as an origin for a thin
+$ git am ../quilt/device-mapper/dm-thin-use-dm_target_offset.patch
+Applying: Use dm_target_offset wrapper instead of referencing the awkward ti->begin
+$ git am ../quilt/device-mapper/dm-thin-prepare-to-support-discard.patch
+Applying: This patch contains the ground work needed for dm-thin to support discard.
+$ git am ../quilt/device-mapper/dm-thin-support-discards.patch
+Applying: Support discards in the thin target.
+$ git am ../quilt/device-mapper/dm_thin-add-pool-target-flags-to-control-discard.patch
+Applying: Add dm thin target arguments to control discard support.
+$ git am ../quilt/device-mapper/dm-bufio-prefetch.patch
+Applying: This patch introduces a new function dm_bufio_prefetch. It prefetches
+$ git am ../quilt/device-mapper/dm-add-verity-target.patch
+Applying: This device-mapper target creates a read-only device that transparently
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/device-mapper
+From ../quilt-tmp
+ + b5af0b2...4b63eba master     -> quilt/device-mapper  (forced update)
