@@ -22,9 +22,9 @@
 #include <linux/types.h>
 #include <linux/string.h>
 #include <linux/ctype.h>
+#include <linux/bug.h>
 #include <linux/kernel.h>
 #include <linux/export.h>
-#include <linux/bug.h>
 #include <linux/errno.h>
 
 #ifndef __HAVE_ARCH_STRNICMP
