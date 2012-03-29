@@ -4543,6 +4543,14 @@ L:	alsa-devel@alsa-project.org
 W:	http://www.native-instruments.com
 F:	sound/usb/caiaq/
 
+NATIVE LINUX KVM TOOL
+M:	Pekka Enberg <penberg@kernel.org>
+M:	Sasha Levin <levinsasha928@gmail.com>
+M:	Asias He <asias.hejun@gmail.com>
+L:	kvm@vger.kernel.org
+S:	Maintained
+F:	tools/kvm/
+
 NCP FILESYSTEM
 M:	Petr Vandrovec <petr@vandrovec.name>
 S:	Odd Fixes
@@ -5180,7 +5188,7 @@ F:	kernel/delayacct.c
 PERFORMANCE EVENTS SUBSYSTEM
 M:	Peter Zijlstra <a.p.zijlstra@chello.nl>
 M:	Paul Mackerras <paulus@samba.org>
-M:	Ingo Molnar <mingo@elte.hu>
+M:	Ingo Molnar <mingo@redhat.com>
 M:	Arnaldo Carvalho de Melo <acme@ghostprotocols.net>
 T:	git git://git.kernel.org/pub/scm/linux/kernel/git/tip/tip.git perf/core
 S:	Supported
@@ -5828,7 +5836,7 @@ S:	Maintained
 F:	drivers/watchdog/sc1200wdt.c
 
 SCHEDULER
-M:	Ingo Molnar <mingo@elte.hu>
+M:	Ingo Molnar <mingo@redhat.com>
 M:	Peter Zijlstra <peterz@infradead.org>
 T:	git git://git.kernel.org/pub/scm/linux/kernel/git/tip/tip.git sched/core
 S:	Maintained
