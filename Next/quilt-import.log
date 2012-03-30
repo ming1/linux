@@ -1,0 +1,35 @@
+Importing hexagon based on v3.2-rc2
+Unchanged quilt series hexagon
+Importing i2c based on e22057c8599373e5caef0bc42bdb95d2a361ab0d
+Unchanged quilt series i2c
+Importing jdelvare-hwmon based on 437538267b672f9320833907f1b5acbb2605f4be
+Unchanged quilt series jdelvare-hwmon
+Importing kernel-doc based on 3.3
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard c16fa4f2ad19908a47c63d8fa436a1178438c7e7
+HEAD is now at c16fa4f Linux 3.3
+$ git am ../quilt/kernel-doc/docum-remove-mach-from-dontdiff.patch
+Applying: Documentation: remove mach from dontdiff file
+$ git am ../quilt/kernel-doc/docum-kconfig-diffconfig.patch
+Applying: Documentation: Mention scripts/diffconfig as a tool to compare config files
+$ git am ../quilt/kernel-doc/docum-sysrq-crutcher-missing.patch
+Applying: sysrq.txt: Crutcher Dunnavant is unavailable
+$ git am ../quilt/kernel-doc/docum-codestyle-inline-asm.patch
+Applying: Documentation/CodingStyle: Add guidelines for inline assembly
+$ git am ../quilt/kernel-doc/docum-input-clarify-mousedev.patch
+Applying: Clarify that the 'cat' command does not include the (c, 13, 32)
+$ git am ../quilt/kernel-doc/docum-remove-refs-modprobe-conf.patch
+Applying: Remove references to /etc/modprobe.conf
+$ git am ../quilt/kernel-doc/docum-replace-install-softdeps.patch
+Applying: Documentation: replace install commands with softdeps
+$ git am ../quilt/kernel-doc/docum-abi-usbtmc-typo.patch
+Applying: Documentation:"the the" in ABI/stable/sysfs-driver-usb-usbtmc Documentation misspelling
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/kernel-doc
+From ../quilt-tmp
+ + 28ebb24...ee53a90 master     -> quilt/kernel-doc  (forced update)
+Importing rr based on v3.3-rc5-86-g5ffca28
+Unchanged quilt series rr
+Importing device-mapper based on v3.3-5825-g4375382
+Unchanged quilt series device-mapper
