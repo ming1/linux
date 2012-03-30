@@ -112,25 +112,36 @@ static void regmap_format_10_14_write(struct regmap *map,
 	out[0] = reg >> 2;
 }
 
-static void regmap_format_8(void *buf, unsigned int val)
+static void regmap_format_8(void *buf, unsigned int val, unsigned int shift)
 {
 	u8 *b = buf;
 
-	b[0] = val;
+	b[0] = val << shift;
 }
 
-static void regmap_format_16(void *buf, unsigned int val)
+static void regmap_format_16(void *buf, unsigned int val, unsigned int shift)
 {
 	__be16 *b = buf;
 
-	b[0] = cpu_to_be16(val);
+	b[0] = cpu_to_be16(val << shift);
 }
 
-static void regmap_format_32(void *buf, unsigned int val)
+static void regmap_format_24(void *buf, unsigned int val, unsigned int shift)
+{
+	u8 *b = buf;
+
+	val <<= shift;
+
+	b[0] = val >> 16;
+	b[1] = val >> 8;
+	b[2] = val;
+}
+
+static void regmap_format_32(void *buf, unsigned int val, unsigned int shift)
 {
 	__be32 *b = buf;
 
-	b[0] = cpu_to_be32(val);
+	b[0] = cpu_to_be32(val << shift);
 }
 
 static unsigned int regmap_parse_8(void *buf)
@@ -147,6 +158,16 @@ static unsigned int regmap_parse_16(void *buf)
 	b[0] = be16_to_cpu(b[0]);
 
 	return b[0];
+}
+
+static unsigned int regmap_parse_24(void *buf)
+{
+	u8 *b = buf;
+	unsigned int ret = b[2];
+	ret |= ((unsigned int)b[1]) << 8;
+	ret |= ((unsigned int)b[0]) << 16;
+
+	return ret;
 }
 
 static unsigned int regmap_parse_32(void *buf)
@@ -191,6 +212,7 @@ struct regmap *regmap_init(struct device *dev,
 	map->format.pad_bytes = config->pad_bits / 8;
 	map->format.val_bytes = DIV_ROUND_UP(config->val_bits, 8);
 	map->format.buf_size += map->format.pad_bytes;
+	map->reg_shift = config->pad_bits % 8;
 	map->dev = dev;
 	map->bus = bus;
 	map->max_register = config->max_register;
@@ -207,7 +229,7 @@ struct regmap *regmap_init(struct device *dev,
 		map->read_flag_mask = bus->read_flag_mask;
 	}
 
-	switch (config->reg_bits) {
+	switch (config->reg_bits + map->reg_shift) {
 	case 2:
 		switch (config->val_bits) {
 		case 6:
@@ -272,6 +294,10 @@ struct regmap *regmap_init(struct device *dev,
 	case 16:
 		map->format.format_val = regmap_format_16;
 		map->format.parse_val = regmap_parse_16;
+		break;
+	case 24:
+		map->format.format_val = regmap_format_24;
+		map->format.parse_val = regmap_parse_24;
 		break;
 	case 32:
 		map->format.format_val = regmap_format_32;
@@ -431,7 +457,7 @@ static int _regmap_raw_write(struct regmap *map, unsigned int reg,
 		}
 	}
 
-	map->format.format_reg(map->work_buf, reg);
+	map->format.format_reg(map->work_buf, reg, map->reg_shift);
 
 	u8[0] |= map->write_flag_mask;
 
@@ -506,7 +532,7 @@ int _regmap_write(struct regmap *map, unsigned int reg,
 		return ret;
 	} else {
 		map->format.format_val(map->work_buf + map->format.reg_bytes
-				       + map->format.pad_bytes, val);
+				       + map->format.pad_bytes, val, 0);
 		return _regmap_raw_write(map, reg,
 					 map->work_buf +
 					 map->format.reg_bytes +
@@ -626,7 +652,7 @@ static int _regmap_raw_read(struct regmap *map, unsigned int reg, void *val,
 	u8 *u8 = map->work_buf;
 	int ret;
 
-	map->format.format_reg(map->work_buf, reg);
+	map->format.format_reg(map->work_buf, reg, map->reg_shift);
 
 	/*
 	 * Some buses or devices flag reads by setting the high bits in the
@@ -734,7 +760,7 @@ int regmap_raw_read(struct regmap *map, unsigned int reg, void *val,
 			if (ret != 0)
 				goto out;
 
-			map->format.format_val(val + (i * val_bytes), v);
+			map->format.format_val(val + (i * val_bytes), v, 0);
 		}
 	}
 
