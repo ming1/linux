@@ -160,5 +160,10 @@ kirkwood/dt		git://git.infradead.org/users/jcooper/linux-kirkwood.git kirkwood_d
 				depends on next/boards
 spear/dt		patch from Stefan Roese
 
+=== late or for v3.5 ===
+
 next/dt3:
 late/omap-dt:		git://git.kernel.org/pub/scm/linux/kernel/git/bcousson/linux-omap-dt.git for_3.4/dts/all
+
+next/cleanup3
+at91/dt2+at91-kconfig	  git://github.com/at91linux/linux-at91.git armsoc-next-dt2+at91-kconfig
