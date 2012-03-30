@@ -159,3 +159,6 @@ ux500/dt		patches from Lee Jones,
 kirkwood/dt		git://git.infradead.org/users/jcooper/linux-kirkwood.git kirkwood_dt_for_3.4
 				depends on next/boards
 spear/dt		patch from Stefan Roese
+
+next/dt3:
+late/omap-dt:		git://git.kernel.org/pub/scm/linux/kernel/git/bcousson/linux-omap-dt.git for_3.4/dts/all
