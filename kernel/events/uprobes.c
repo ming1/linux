@@ -35,6 +35,9 @@
 
 #include <linux/uprobes.h>
 
+#define UINSNS_PER_PAGE			(PAGE_SIZE/UPROBE_XOL_SLOT_BYTES)
+#define MAX_UPROBE_XOL_SLOTS		UINSNS_PER_PAGE
+
 static struct srcu_struct uprobes_srcu;
 static struct rb_root uprobes_tree = RB_ROOT;
 
@@ -639,6 +642,29 @@ copy_insn(struct uprobe *uprobe, struct vm_area_struct *vma, unsigned long addr)
 	return __copy_insn(mapping, vma, uprobe->arch.insn, bytes, uprobe->offset);
 }
 
+/*
+ * How mm->uprobes_state.count gets updated
+ * uprobe_mmap() increments the count if
+ * 	- it successfully adds a breakpoint.
+ * 	- it cannot add a breakpoint, but sees that there is a underlying
+ * 	  breakpoint (via a is_swbp_at_addr()).
+ *
+ * uprobe_munmap() decrements the count if
+ * 	- it sees a underlying breakpoint, (via is_swbp_at_addr)
+ * 	  (Subsequent uprobe_unregister wouldnt find the breakpoint
+ * 	  unless a uprobe_mmap kicks in, since the old vma would be
+ * 	  dropped just after uprobe_munmap.)
+ *
+ * uprobe_register increments the count if:
+ * 	- it successfully adds a breakpoint.
+ *
+ * uprobe_unregister decrements the count if:
+ * 	- it sees a underlying breakpoint and removes successfully.
+ * 	  (via is_swbp_at_addr)
+ * 	  (Subsequent uprobe_munmap wouldnt find the breakpoint
+ * 	  since there is no underlying breakpoint after the
+ * 	  breakpoint removal.)
+ */
 static int
 install_breakpoint(struct uprobe *uprobe, struct mm_struct *mm,
 			struct vm_area_struct *vma, loff_t vaddr)
@@ -672,7 +698,19 @@ install_breakpoint(struct uprobe *uprobe, struct mm_struct *mm,
 
 		uprobe->flags |= UPROBE_COPY_INSN;
 	}
+
+	/*
+	 * Ideally, should be updating the probe count after the breakpoint
+	 * has been successfully inserted. However a thread could hit the
+	 * breakpoint we just inserted even before the probe count is
+	 * incremented. If this is the first breakpoint placed, breakpoint
+	 * notifier might ignore uprobes and pass the trap to the thread.
+	 * Hence increment before and decrement on failure.
+	 */
+	atomic_inc(&mm->uprobes_state.count);
 	ret = set_swbp(&uprobe->arch, mm, addr);
+	if (ret)
+		atomic_dec(&mm->uprobes_state.count);
 
 	return ret;
 }
@@ -680,7 +718,8 @@ install_breakpoint(struct uprobe *uprobe, struct mm_struct *mm,
 static void
 remove_breakpoint(struct uprobe *uprobe, struct mm_struct *mm, loff_t vaddr)
 {
-	set_orig_insn(&uprobe->arch, mm, (unsigned long)vaddr, true);
+	if (!set_orig_insn(&uprobe->arch, mm, (unsigned long)vaddr, true))
+		atomic_dec(&mm->uprobes_state.count);
 }
 
 /*
@@ -1006,7 +1045,7 @@ int uprobe_mmap(struct vm_area_struct *vma)
 	struct list_head tmp_list;
 	struct uprobe *uprobe, *u;
 	struct inode *inode;
-	int ret;
+	int ret, count;
 
 	if (!atomic_read(&uprobe_events) || !valid_vma(vma, true))
 		return 0;
@@ -1020,6 +1059,7 @@ int uprobe_mmap(struct vm_area_struct *vma)
 	build_probe_list(inode, &tmp_list);
 
 	ret = 0;
+	count = 0;
 
 	list_for_each_entry_safe(uprobe, u, &tmp_list, pending_list) {
 		loff_t vaddr;
@@ -1027,19 +1067,291 @@ int uprobe_mmap(struct vm_area_struct *vma)
 		list_del(&uprobe->pending_list);
 		if (!ret) {
 			vaddr = vma_address(vma, uprobe->offset);
-			if (vaddr >= vma->vm_start && vaddr < vma->vm_end) {
-				ret = install_breakpoint(uprobe, vma->vm_mm, vma, vaddr);
-				/* Ignore double add: */
-				if (ret == -EEXIST)
-					ret = 0;
+
+			if (vaddr < vma->vm_start || vaddr >= vma->vm_end) {
+				put_uprobe(uprobe);
+				continue;
 			}
+
+			ret = install_breakpoint(uprobe, vma->vm_mm, vma, vaddr);
+
+			/* Ignore double add: */
+			if (ret == -EEXIST) {
+				ret = 0;
+
+				if (!is_swbp_at_addr(vma->vm_mm, vaddr))
+					continue;
+
+				/*
+				 * Unable to insert a breakpoint, but
+				 * breakpoint lies underneath. Increment the
+				 * probe count.
+				 */
+				atomic_inc(&vma->vm_mm->uprobes_state.count);
+			}
+
+			if (!ret)
+				count++;
 		}
 		put_uprobe(uprobe);
 	}
 
 	mutex_unlock(uprobes_mmap_hash(inode));
 
+	if (ret)
+		atomic_sub(count, &vma->vm_mm->uprobes_state.count);
+
 	return ret;
+}
+
+/*
+ * Called in context of a munmap of a vma.
+ */
+void uprobe_munmap(struct vm_area_struct *vma)
+{
+	struct list_head tmp_list;
+	struct uprobe *uprobe, *u;
+	struct inode *inode;
+
+	if (!atomic_read(&uprobe_events) || !valid_vma(vma, false))
+		return;
+
+	if (!atomic_read(&vma->vm_mm->uprobes_state.count))
+		return;
+
+	inode = vma->vm_file->f_mapping->host;
+	if (!inode)
+		return;
+
+	INIT_LIST_HEAD(&tmp_list);
+	mutex_lock(uprobes_mmap_hash(inode));
+	build_probe_list(inode, &tmp_list);
+
+	list_for_each_entry_safe(uprobe, u, &tmp_list, pending_list) {
+		loff_t vaddr;
+
+		list_del(&uprobe->pending_list);
+		vaddr = vma_address(vma, uprobe->offset);
+
+		if (vaddr >= vma->vm_start && vaddr < vma->vm_end) {
+			/*
+			 * An unregister could have removed the probe before
+			 * unmap. So check before we decrement the count.
+			 */
+			if (is_swbp_at_addr(vma->vm_mm, vaddr) == 1)
+				atomic_dec(&vma->vm_mm->uprobes_state.count);
+		}
+		put_uprobe(uprobe);
+	}
+	mutex_unlock(uprobes_mmap_hash(inode));
+}
+
+/* Slot allocation for XOL */
+static int xol_add_vma(struct xol_area *area)
+{
+	struct mm_struct *mm;
+	int ret;
+
+	area->page = alloc_page(GFP_HIGHUSER);
+	if (!area->page)
+		return -ENOMEM;
+
+	ret = -EALREADY;
+	mm = current->mm;
+
+	down_write(&mm->mmap_sem);
+	if (mm->uprobes_state.xol_area)
+		goto fail;
+
+	ret = -ENOMEM;
+
+	/* Try to map as high as possible, this is only a hint. */
+	area->vaddr = get_unmapped_area(NULL, TASK_SIZE - PAGE_SIZE, PAGE_SIZE, 0, 0);
+	if (area->vaddr & ~PAGE_MASK) {
+		ret = area->vaddr;
+		goto fail;
+	}
+
+	ret = install_special_mapping(mm, area->vaddr, PAGE_SIZE,
+				VM_EXEC|VM_MAYEXEC|VM_DONTCOPY|VM_IO, &area->page);
+	if (ret)
+		goto fail;
+
+	smp_wmb();	/* pairs with get_xol_area() */
+	mm->uprobes_state.xol_area = area;
+	ret = 0;
+
+fail:
+	up_write(&mm->mmap_sem);
+	if (ret)
+		__free_page(area->page);
+
+	return ret;
+}
+
+static struct xol_area *get_xol_area(struct mm_struct *mm)
+{
+	struct xol_area *area;
+
+	area = mm->uprobes_state.xol_area;
+	smp_read_barrier_depends();	/* pairs with wmb in xol_add_vma() */
+
+	return area;
+}
+
+/*
+ * xol_alloc_area - Allocate process's xol_area.
+ * This area will be used for storing instructions for execution out of
+ * line.
+ *
+ * Returns the allocated area or NULL.
+ */
+static struct xol_area *xol_alloc_area(void)
+{
+	struct xol_area *area;
+
+	area = kzalloc(sizeof(*area), GFP_KERNEL);
+	if (unlikely(!area))
+		return NULL;
+
+	area->bitmap = kzalloc(BITS_TO_LONGS(UINSNS_PER_PAGE) * sizeof(long), GFP_KERNEL);
+
+	if (!area->bitmap)
+		goto fail;
+
+	init_waitqueue_head(&area->wq);
+	if (!xol_add_vma(area))
+		return area;
+
+fail:
+	kfree(area->bitmap);
+	kfree(area);
+
+	return get_xol_area(current->mm);
+}
+
+/*
+ * uprobe_clear_state - Free the area allocated for slots.
+ */
+void uprobe_clear_state(struct mm_struct *mm)
+{
+	struct xol_area *area = mm->uprobes_state.xol_area;
+
+	if (!area)
+		return;
+
+	put_page(area->page);
+	kfree(area->bitmap);
+	kfree(area);
+}
+
+/*
+ * uprobe_reset_state - Free the area allocated for slots.
+ */
+void uprobe_reset_state(struct mm_struct *mm)
+{
+	mm->uprobes_state.xol_area = NULL;
+	atomic_set(&mm->uprobes_state.count, 0);
+}
+
+/*
+ *  - search for a free slot.
+ */
+static unsigned long xol_take_insn_slot(struct xol_area *area)
+{
+	unsigned long slot_addr;
+	int slot_nr;
+
+	do {
+		slot_nr = find_first_zero_bit(area->bitmap, UINSNS_PER_PAGE);
+		if (slot_nr < UINSNS_PER_PAGE) {
+			if (!test_and_set_bit(slot_nr, area->bitmap))
+				break;
+
+			slot_nr = UINSNS_PER_PAGE;
+			continue;
+		}
+		wait_event(area->wq, (atomic_read(&area->slot_count) < UINSNS_PER_PAGE));
+	} while (slot_nr >= UINSNS_PER_PAGE);
+
+	slot_addr = area->vaddr + (slot_nr * UPROBE_XOL_SLOT_BYTES);
+	atomic_inc(&area->slot_count);
+
+	return slot_addr;
+}
+
+/*
+ * xol_get_insn_slot - If was not allocated a slot, then
+ * allocate a slot.
+ * Returns the allocated slot address or 0.
+ */
+static unsigned long xol_get_insn_slot(struct uprobe *uprobe, unsigned long slot_addr)
+{
+	struct xol_area *area;
+	unsigned long offset;
+	void *vaddr;
+
+	area = get_xol_area(current->mm);
+	if (!area) {
+		area = xol_alloc_area();
+		if (!area)
+			return 0;
+	}
+	current->utask->xol_vaddr = xol_take_insn_slot(area);
+
+	/*
+	 * Initialize the slot if xol_vaddr points to valid
+	 * instruction slot.
+	 */
+	if (unlikely(!current->utask->xol_vaddr))
+		return 0;
+
+	current->utask->vaddr = slot_addr;
+	offset = current->utask->xol_vaddr & ~PAGE_MASK;
+	vaddr = kmap_atomic(area->page);
+	memcpy(vaddr + offset, uprobe->arch.insn, MAX_UINSN_BYTES);
+	kunmap_atomic(vaddr);
+
+	return current->utask->xol_vaddr;
+}
+
+/*
+ * xol_free_insn_slot - If slot was earlier allocated by
+ * @xol_get_insn_slot(), make the slot available for
+ * subsequent requests.
+ */
+static void xol_free_insn_slot(struct task_struct *tsk)
+{
+	struct xol_area *area;
+	unsigned long vma_end;
+	unsigned long slot_addr;
+
+	if (!tsk->mm || !tsk->mm->uprobes_state.xol_area || !tsk->utask)
+		return;
+
+	slot_addr = tsk->utask->xol_vaddr;
+
+	if (unlikely(!slot_addr || IS_ERR_VALUE(slot_addr)))
+		return;
+
+	area = tsk->mm->uprobes_state.xol_area;
+	vma_end = area->vaddr + PAGE_SIZE;
+	if (area->vaddr <= slot_addr && slot_addr < vma_end) {
+		unsigned long offset;
+		int slot_nr;
+
+		offset = slot_addr - area->vaddr;
+		slot_nr = offset / UPROBE_XOL_SLOT_BYTES;
+		if (slot_nr >= UINSNS_PER_PAGE)
+			return;
+
+		clear_bit(slot_nr, area->bitmap);
+		atomic_dec(&area->slot_count);
+		if (waitqueue_active(&area->wq))
+			wake_up(&area->wq);
+
+		tsk->utask->xol_vaddr = 0;
+	}
 }
 
 /**
@@ -1070,6 +1382,7 @@ void uprobe_free_utask(struct task_struct *t)
 	if (utask->active_uprobe)
 		put_uprobe(utask->active_uprobe);
 
+	xol_free_insn_slot(t);
 	kfree(utask);
 	t->utask = NULL;
 }
@@ -1108,6 +1421,9 @@ static struct uprobe_task *add_utask(void)
 static int
 pre_ssout(struct uprobe *uprobe, struct pt_regs *regs, unsigned long vaddr)
 {
+	if (xol_get_insn_slot(uprobe, vaddr) && !arch_uprobe_pre_xol(&uprobe->arch, regs))
+		return 0;
+
 	return -EFAULT;
 }
 
@@ -1252,6 +1568,7 @@ static void handle_singlestep(struct uprobe_task *utask, struct pt_regs *regs)
 	utask->active_uprobe = NULL;
 	utask->state = UTASK_RUNNING;
 	user_disable_single_step(current);
+	xol_free_insn_slot(current);
 
 	spin_lock_irq(&current->sighand->siglock);
 	recalc_sigpending(); /* see uprobe_deny_signal() */
@@ -1289,7 +1606,8 @@ int uprobe_pre_sstep_notifier(struct pt_regs *regs)
 {
 	struct uprobe_task *utask;
 
-	if (!current->mm)
+	if (!current->mm || !atomic_read(&current->mm->uprobes_state.count))
+		/* task is currently not uprobed */
 		return 0;
 
 	utask = current->utask;

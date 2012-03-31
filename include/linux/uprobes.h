@@ -28,6 +28,8 @@
 #include <linux/rbtree.h>
 
 struct vm_area_struct;
+struct mm_struct;
+struct inode;
 
 #ifdef CONFIG_ARCH_SUPPORTS_UPROBES
 # include <asm/uprobes.h>
@@ -76,12 +78,36 @@ struct uprobe_task {
 	unsigned long			vaddr;
 };
 
+/*
+ * On a breakpoint hit, thread contests for a slot.  It frees the
+ * slot after singlestep. Currently a fixed number of slots are
+ * allocated.
+ */
+struct xol_area {
+	wait_queue_head_t 	wq;		/* if all slots are busy */
+	atomic_t 		slot_count;	/* number of in-use slots */
+	unsigned long 		*bitmap;	/* 0 = free slot */
+	struct page 		*page;
+
+	/*
+	 * We keep the vma's vm_start rather than a pointer to the vma
+	 * itself.  The probed process or a naughty kernel module could make
+	 * the vma go away, and we must handle that reasonably gracefully.
+	 */
+	unsigned long 		vaddr;		/* Page(s) of instruction slots */
+};
+
+struct uprobes_state {
+	struct xol_area		*xol_area;
+	atomic_t		count;
+};
 extern int __weak set_swbp(struct arch_uprobe *aup, struct mm_struct *mm, unsigned long vaddr);
 extern int __weak set_orig_insn(struct arch_uprobe *aup, struct mm_struct *mm,  unsigned long vaddr, bool verify);
 extern bool __weak is_swbp_insn(uprobe_opcode_t *insn);
 extern int uprobe_register(struct inode *inode, loff_t offset, struct uprobe_consumer *uc);
 extern void uprobe_unregister(struct inode *inode, loff_t offset, struct uprobe_consumer *uc);
 extern int uprobe_mmap(struct vm_area_struct *vma);
+extern void uprobe_munmap(struct vm_area_struct *vma);
 extern void uprobe_free_utask(struct task_struct *t);
 extern void uprobe_copy_process(struct task_struct *t);
 extern unsigned long __weak uprobe_get_swbp_addr(struct pt_regs *regs);
@@ -90,7 +116,11 @@ extern int uprobe_pre_sstep_notifier(struct pt_regs *regs);
 extern void uprobe_notify_resume(struct pt_regs *regs);
 extern bool uprobe_deny_signal(void);
 extern bool __weak arch_uprobe_skip_sstep(struct arch_uprobe *aup, struct pt_regs *regs);
+extern void uprobe_clear_state(struct mm_struct *mm);
+extern void uprobe_reset_state(struct mm_struct *mm);
 #else /* !CONFIG_UPROBES */
+struct uprobes_state {
+};
 static inline int
 uprobe_register(struct inode *inode, loff_t offset, struct uprobe_consumer *uc)
 {
@@ -103,6 +133,9 @@ uprobe_unregister(struct inode *inode, loff_t offset, struct uprobe_consumer *uc
 static inline int uprobe_mmap(struct vm_area_struct *vma)
 {
 	return 0;
+}
+static inline void uprobe_munmap(struct vm_area_struct *vma)
+{
 }
 static inline void uprobe_notify_resume(struct pt_regs *regs)
 {
@@ -119,6 +152,12 @@ static inline void uprobe_free_utask(struct task_struct *t)
 {
 }
 static inline void uprobe_copy_process(struct task_struct *t)
+{
+}
+static inline void uprobe_clear_state(struct mm_struct *mm)
+{
+}
+static inline void uprobe_reset_state(struct mm_struct *mm)
 {
 }
 #endif /* !CONFIG_UPROBES */
