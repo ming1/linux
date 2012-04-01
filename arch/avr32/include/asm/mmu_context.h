@@ -14,6 +14,7 @@
 
 #include <asm/tlbflush.h>
 #include <asm/sysreg.h>
+#include <asm/special_insns.h>
 #include <asm-generic/mm_hooks.h>
 
 /*
