@@ -15,6 +15,7 @@
 #include <linux/io.h>
 #include <cpu/fpu.h>
 #include <asm/processor.h>
+#include <asm/traps.h>
 #include <asm/fpu.h>
 
 /* The PR (precision) bit in the FP Status Register must be clear when
