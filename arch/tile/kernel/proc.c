@@ -22,6 +22,7 @@
 #include <linux/proc_fs.h>
 #include <linux/sysctl.h>
 #include <linux/hardirq.h>
+#include <linux/hugetlb.h>
 #include <linux/mman.h>
 #include <asm/pgtable.h>
 #include <asm/processor.h>
