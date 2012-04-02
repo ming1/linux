@@ -1,6 +1,7 @@
 #include <linux/sched.h>
 #include <linux/slab.h>
 #include <asm/processor.h>
+#include <asm/traps.h>
 #include <asm/fpu.h>
 
 int init_fpu(struct task_struct *tsk)

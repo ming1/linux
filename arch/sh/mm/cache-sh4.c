@@ -19,6 +19,7 @@
 #include <asm/pgtable.h>
 #include <asm/mmu_context.h>
 #include <asm/cacheflush.h>
+#include <asm/cache_insns.h>
 
 /*
  * The maximum number of pages we support up to when doing ranged dcache
