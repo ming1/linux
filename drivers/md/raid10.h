@@ -14,6 +14,7 @@ struct mirror_info {
 struct r10conf {
 	struct mddev		*mddev;
 	struct mirror_info	*mirrors;
+	struct mirror_info	*mirrors_new, *mirrors_old;
 	spinlock_t		device_lock;
 
 	/* geometry */
@@ -34,6 +35,7 @@ struct r10conf {
 					       */
 		int		chunk_shift; /* shift from chunks to sectors */
 		sector_t	chunk_mask;
+		long		stripe_size, stripe_length;
 	} prev, geo;
 	int			copies;	      /* near_copies * far_copies.
 					       * must be <= raid_disks
@@ -42,6 +44,9 @@ struct r10conf {
 	sector_t		dev_sectors;  /* temp copy of
 					       * mddev->dev_sectors */
 	sector_t		reshape_progress;
+	sector_t		reshape_safe;
+	unsigned long		reshape_checkpoint;
+	sector_t		offset_diff;
 
 	struct list_head	retry_list;
 	/* queue pending writes and submit them on unplug */
@@ -138,6 +143,7 @@ enum r10bio_state {
 	R10BIO_Uptodate,
 	R10BIO_IsSync,
 	R10BIO_IsRecover,
+	R10BIO_IsReshape,
 	R10BIO_Degraded,
 /* Set ReadError on bios that experience a read error
  * so that raid10d knows what to do with them.
