@@ -2,7 +2,7 @@
  * tegra_i2s.c - Tegra I2S driver
  *
  * Author: Stephen Warren <swarren@nvidia.com>
- * Copyright (C) 2010 - NVIDIA, Inc.
+ * Copyright (C) 2010,2012 - NVIDIA, Inc.
  *
  * Based on code copyright/by:
  *
@@ -148,7 +148,7 @@ static int tegra_i2s_set_fmt(struct snd_soc_dai *dai,
 		return -EINVAL;
 	}
 
-	i2s->reg_ctrl &= ~(TEGRA_I2S_CTRL_BIT_FORMAT_MASK | 
+	i2s->reg_ctrl &= ~(TEGRA_I2S_CTRL_BIT_FORMAT_MASK |
 				TEGRA_I2S_CTRL_LRCK_MASK);
 	switch (fmt & SND_SOC_DAIFMT_FORMAT_MASK) {
 	case SND_SOC_DAIFMT_DSP_A:
@@ -182,7 +182,7 @@ static int tegra_i2s_hw_params(struct snd_pcm_substream *substream,
 				struct snd_pcm_hw_params *params,
 				struct snd_soc_dai *dai)
 {
-        struct device *dev = substream->pcm->card->dev;
+	struct device *dev = substream->pcm->card->dev;
 	struct tegra_i2s *i2s = snd_soc_dai_get_drvdata(dai);
 	u32 reg;
 	int ret, sample_size, srate, i2sclock, bitcnt;
@@ -224,8 +224,7 @@ static int tegra_i2s_hw_params(struct snd_pcm_substream *substream,
 	if (i2sclock % (2 * srate))
 		reg |= TEGRA_I2S_TIMING_NON_SYM_ENABLE;
 
-	if (!i2s->clk_refs)
-		clk_enable(i2s->clk_i2s);
+	clk_enable(i2s->clk_i2s);
 
 	tegra_i2s_write(i2s, TEGRA_I2S_TIMING, reg);
 
@@ -233,8 +232,7 @@ static int tegra_i2s_hw_params(struct snd_pcm_substream *substream,
 		TEGRA_I2S_FIFO_SCR_FIFO2_ATN_LVL_FOUR_SLOTS |
 		TEGRA_I2S_FIFO_SCR_FIFO1_ATN_LVL_FOUR_SLOTS);
 
-	if (!i2s->clk_refs)
-		clk_disable(i2s->clk_i2s);
+	clk_disable(i2s->clk_i2s);
 
 	return 0;
 }
@@ -272,9 +270,7 @@ static int tegra_i2s_trigger(struct snd_pcm_substream *substream, int cmd,
 	case SNDRV_PCM_TRIGGER_START:
 	case SNDRV_PCM_TRIGGER_PAUSE_RELEASE:
 	case SNDRV_PCM_TRIGGER_RESUME:
-		if (!i2s->clk_refs)
-			clk_enable(i2s->clk_i2s);
-		i2s->clk_refs++;
+		clk_enable(i2s->clk_i2s);
 		if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
 			tegra_i2s_start_playback(i2s);
 		else
@@ -287,9 +283,7 @@ static int tegra_i2s_trigger(struct snd_pcm_substream *substream, int cmd,
 			tegra_i2s_stop_playback(i2s);
 		else
 			tegra_i2s_stop_capture(i2s);
-		i2s->clk_refs--;
-		if (!i2s->clk_refs)
-			clk_disable(i2s->clk_i2s);
+		clk_disable(i2s->clk_i2s);
 		break;
 	default:
 		return -EINVAL;
@@ -300,7 +294,7 @@ static int tegra_i2s_trigger(struct snd_pcm_substream *substream, int cmd,
 
 static int tegra_i2s_probe(struct snd_soc_dai *dai)
 {
-	struct tegra_i2s * i2s = snd_soc_dai_get_drvdata(dai);
+	struct tegra_i2s *i2s = snd_soc_dai_get_drvdata(dai);
 
 	dai->capture_dma_data = &i2s->capture_dma_data;
 	dai->playback_dma_data = &i2s->playback_dma_data;
@@ -334,7 +328,7 @@ static const struct snd_soc_dai_driver tegra_i2s_dai_template = {
 
 static __devinit int tegra_i2s_platform_probe(struct platform_device *pdev)
 {
-	struct tegra_i2s * i2s;
+	struct tegra_i2s *i2s;
 	struct resource *mem, *memregion, *dmareq;
 	u32 of_dma[2];
 	u32 dma_ch;
@@ -413,10 +407,18 @@ static __devinit int tegra_i2s_platform_probe(struct platform_device *pdev)
 		goto err_clk_put;
 	}
 
+	ret = tegra_pcm_platform_register(&pdev->dev);
+	if (ret) {
+		dev_err(&pdev->dev, "Could not register PCM: %d\n", ret);
+		goto err_unregister_dai;
+	}
+
 	tegra_i2s_debug_add(i2s);
 
 	return 0;
 
+err_unregister_dai:
+	snd_soc_unregister_dai(&pdev->dev);
 err_clk_put:
 	clk_put(i2s->clk_i2s);
 err:
@@ -427,6 +429,7 @@ static int __devexit tegra_i2s_platform_remove(struct platform_device *pdev)
 {
 	struct tegra_i2s *i2s = dev_get_drvdata(&pdev->dev);
 
+	tegra_pcm_platform_unregister(&pdev->dev);
 	snd_soc_unregister_dai(&pdev->dev);
 
 	tegra_i2s_debug_remove(i2s);
