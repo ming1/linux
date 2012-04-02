@@ -144,10 +144,10 @@ void free_thread_info(struct thread_info *info)
 	 * Calling deactivate here just frees up the data structures.
 	 * If the task we're freeing held the last reference to a
 	 * hardwall fd, it would have been released prior to this point
-	 * anyway via exit_files(), and "hardwall" would be NULL by now.
+	 * anyway via exit_files(), and the hardwall_task.info pointers
+	 * would be NULL by now.
 	 */
-	if (info->task->thread.hardwall)
-		hardwall_deactivate(info->task);
+	hardwall_deactivate_all(info->task);
 #endif
 
 	if (step_state) {
@@ -263,7 +263,8 @@ int copy_thread(unsigned long clone_flags, unsigned long sp,
 
 #ifdef CONFIG_HARDWALL
 	/* New thread does not own any networks. */
-	p->thread.hardwall = NULL;
+	memset(&p->thread.hardwall[0], 0,
+	       sizeof(struct hardwall_task) * HARDWALL_TYPES);
 #endif
 
 
@@ -285,7 +286,7 @@ struct task_struct *validate_current(void)
 	static struct task_struct corrupt = { .comm = "<corrupt>" };
 	struct task_struct *tsk = current;
 	if (unlikely((unsigned long)tsk < PAGE_OFFSET ||
-		     (void *)tsk > high_memory ||
+		     (high_memory && (void *)tsk > high_memory) ||
 		     ((unsigned long)tsk & (__alignof__(*tsk) - 1)) != 0)) {
 		pr_err("Corrupt 'current' %p (sp %#lx)\n", tsk, stack_pointer);
 		tsk = &corrupt;
@@ -533,12 +534,7 @@ struct task_struct *__sched _switch_to(struct task_struct *prev,
 
 #ifdef CONFIG_HARDWALL
 	/* Enable or disable access to the network registers appropriately. */
-	if (prev->thread.hardwall != NULL) {
-		if (next->thread.hardwall == NULL)
-			restrict_network_mpls();
-	} else if (next->thread.hardwall != NULL) {
-		grant_network_mpls();
-	}
+	hardwall_switch_tasks(prev, next);
 #endif
 
 	/*
