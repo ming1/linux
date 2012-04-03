@@ -182,6 +182,7 @@ enum {
 	ATA_LFLAG_DISABLED	= (1 << 6), /* link is disabled */
 	ATA_LFLAG_SW_ACTIVITY	= (1 << 7), /* keep activity stats */
 	ATA_LFLAG_NO_LPM	= (1 << 8), /* disable LPM on this link */
+	ATA_LFLAG_RST_ONCE	= (1 << 9), /* limit recovery to one reset */
 
 	/* struct ata_port flags */
 	ATA_FLAG_SLAVE_POSS	= (1 << 0), /* host supports slave dev */
@@ -845,6 +846,8 @@ struct ata_port_operations {
 	void (*error_handler)(struct ata_port *ap);
 	void (*lost_interrupt)(struct ata_port *ap);
 	void (*post_internal_cmd)(struct ata_queued_cmd *qc);
+	void (*sched_eh)(struct ata_port *ap);
+	void (*end_eh)(struct ata_port *ap);
 
 	/*
 	 * Optional features
@@ -996,7 +999,8 @@ extern int ata_sas_scsi_ioctl(struct ata_port *ap, struct scsi_device *dev,
 extern void ata_sas_port_destroy(struct ata_port *);
 extern struct ata_port *ata_sas_port_alloc(struct ata_host *,
 					   struct ata_port_info *, struct Scsi_Host *);
-extern int ata_sas_async_port_init(struct ata_port *);
+extern void ata_sas_async_probe(struct ata_port *ap);
+extern int ata_sas_sync_probe(struct ata_port *ap);
 extern int ata_sas_port_init(struct ata_port *);
 extern int ata_sas_port_start(struct ata_port *ap);
 extern void ata_sas_port_stop(struct ata_port *ap);
@@ -1011,6 +1015,17 @@ extern bool ata_link_offline(struct ata_link *link);
 #ifdef CONFIG_PM
 extern int ata_host_suspend(struct ata_host *host, pm_message_t mesg);
 extern void ata_host_resume(struct ata_host *host);
+extern int ata_sas_port_async_suspend(struct ata_port *ap, int *async);
+extern int ata_sas_port_async_resume(struct ata_port *ap, int *async);
+#else
+static inline int ata_sas_port_async_suspend(struct ata_port *ap, int *async)
+{
+	return 0;
+}
+static inline int ata_sas_port_async_resume(struct ata_port *ap, int *async)
+{
+	return 0;
+}
 #endif
 extern int ata_ratelimit(void);
 extern void ata_msleep(struct ata_port *ap, unsigned int msecs);
@@ -1165,6 +1180,8 @@ extern void ata_do_eh(struct ata_port *ap, ata_prereset_fn_t prereset,
 		      ata_reset_fn_t softreset, ata_reset_fn_t hardreset,
 		      ata_postreset_fn_t postreset);
 extern void ata_std_error_handler(struct ata_port *ap);
+extern void ata_std_sched_eh(struct ata_port *ap);
+extern void ata_std_end_eh(struct ata_port *ap);
 extern int ata_link_nr_enabled(struct ata_link *link);
 
 /*
