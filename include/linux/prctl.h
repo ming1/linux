@@ -130,6 +130,6 @@
 #define PR_SET_CHILD_SUBREAPER 36
 #define PR_GET_CHILD_SUBREAPER 37
 
-#define PR_GET_TID_ADDRESS		36
+#define PR_GET_TID_ADDRESS     38
 
 #endif /* _LINUX_PRCTL_H */
