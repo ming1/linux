@@ -116,7 +116,7 @@ int skip_atoi(const char **s)
  * (with permission from the author, Douglas W. Jones).
  */
 
-#if BITS_PER_LONG != 32 || (~(0ULL)>>1) != ((1ULL<<63)-1)
+#if BITS_PER_LONG != 32 || BITS_PER_LONG_LONG != 64
 /* Formats correctly any integer in [0, 999999999] */
 static noinline_for_stack
 char *put_dec_full9(char *buf, unsigned q)
@@ -215,7 +215,7 @@ char *put_dec_trunc8(char *buf, unsigned r)
  * Else (if long is 32 bits and long long is 64 bits) we use second one.
  */
 
-#if BITS_PER_LONG != 32 || ((~0ULL)>>1) != ((1ULL<<63)-1)
+#if BITS_PER_LONG != 32 || BITS_PER_LONG_LONG != 64
 
 /* First algorithm: generic */
 
@@ -233,7 +233,7 @@ char *put_dec(char *buf, unsigned long long n)
 
 #else
 
-/* Second algorithm: valid only for 32-bit longs, 64-bit long longs */
+/* Second algorithm: valid only for 64-bit long longs */
 
 static noinline_for_stack
 char *put_dec_full4(char *buf, unsigned q)
@@ -296,6 +296,7 @@ char *put_dec(char *buf, unsigned long long n)
 }
 
 #endif
+
 /*
  * Convert passed number to decimal string.
  * Returns the length of string.  On buffer overflow, returns 0.
@@ -307,7 +308,13 @@ int num_to_str(char *buf, int size, unsigned long long num)
 	char tmp[sizeof(num) * 3];
 	int idx, len;
 
-	len = put_dec(tmp, num) - tmp;
+	/* put_dec() may work incorrectly for num = 0 (generate "", not "0") */
+	if (num <= 9) {
+		tmp[0] = '0' + num;
+		len = 1;
+	} else {
+		len = put_dec(tmp, num) - tmp;
+	}
 
 	if (len > size)
 		return 0;
