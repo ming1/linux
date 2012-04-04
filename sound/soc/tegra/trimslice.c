@@ -38,9 +38,6 @@
 
 #include "../codecs/tlv320aic23.h"
 
-#include "tegra_das.h"
-#include "tegra_i2s.h"
-#include "tegra_pcm.h"
 #include "tegra_asoc_utils.h"
 
 #define DRV_NAME "tegra-snd-trimslice"
@@ -119,7 +116,7 @@ static struct snd_soc_dai_link trimslice_tlv320aic23_dai = {
 	.name = "TLV320AIC23",
 	.stream_name = "AIC23",
 	.codec_name = "tlv320aic23-codec.2-001a",
-	.platform_name = "tegra-pcm-audio",
+	.platform_name = "tegra-i2s.0",
 	.cpu_dai_name = "tegra-i2s.0",
 	.codec_dai_name = "tlv320aic23-hifi",
 	.ops = &trimslice_asoc_ops,
