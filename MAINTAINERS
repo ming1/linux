@@ -4802,6 +4802,7 @@ F:	arch/arm/mach-omap2/clockdomain2xxx_3xxx.c
 F:	arch/arm/mach-omap2/clockdomain44xx.c
 
 OMAP AUDIO SUPPORT
+M:	Peter Ujfalusi <peter.ujfalusi@ti.com>
 M:	Jarkko Nikula <jarkko.nikula@bitmer.com>
 L:	alsa-devel@alsa-project.org (subscribers-only)
 L:	linux-omap@vger.kernel.org
@@ -6658,6 +6659,12 @@ S:	Maintained
 F:	drivers/misc/tifm*
 F:	drivers/mmc/host/tifm_sd.c
 F:	include/linux/tifm.h
+
+TI LM49xxx FAMILY ASoC CODEC DRIVERS
+M:	M R Swami Reddy <mr.swami.reddy@ti.com>
+L:	alsa-devel@alsa-project.org (moderated for non-subscribers)
+S:	Maintained
+F:	sound/soc/codecs/lm49453*
 
 TI TWL4030 SERIES SOC CODEC DRIVER
 M:	Peter Ujfalusi <peter.ujfalusi@ti.com>
