@@ -105,7 +105,7 @@ static int wm831x_gp_ldo_list_voltage(struct regulator_dev *rdev,
 	/* 0.9-1.6V in 50mV steps */
 	if (selector <= WM831X_GP_LDO_SELECTOR_LOW)
 		return 900000 + (selector * 50000);
-	/* 1.7-3.3V in 50mV steps */
+	/* 1.7-3.3V in 100mV steps */
 	if (selector <= WM831X_GP_LDO_MAX_SELECTOR)
 		return 1600000 + ((selector - WM831X_GP_LDO_SELECTOR_LOW)
 				  * 100000);
@@ -414,7 +414,7 @@ static int wm831x_aldo_list_voltage(struct regulator_dev *rdev,
 	/* 1-1.6V in 50mV steps */
 	if (selector <= WM831X_ALDO_SELECTOR_LOW)
 		return 1000000 + (selector * 50000);
-	/* 1.7-3.5V in 50mV steps */
+	/* 1.7-3.5V in 100mV steps */
 	if (selector <= WM831X_ALDO_MAX_SELECTOR)
 		return 1600000 + ((selector - WM831X_ALDO_SELECTOR_LOW)
 				  * 100000);
@@ -506,22 +506,19 @@ static int wm831x_aldo_set_mode(struct regulator_dev *rdev,
 {
 	struct wm831x_ldo *ldo = rdev_get_drvdata(rdev);
 	struct wm831x *wm831x = ldo->wm831x;
-	int ctrl_reg = ldo->base + WM831X_LDO_CONTROL;
 	int on_reg = ldo->base + WM831X_LDO_ON_CONTROL;
 	int ret;
 
 
 	switch (mode) {
 	case REGULATOR_MODE_NORMAL:
-		ret = wm831x_set_bits(wm831x, on_reg,
-				      WM831X_LDO7_ON_MODE, 0);
+		ret = wm831x_set_bits(wm831x, on_reg, WM831X_LDO7_ON_MODE, 0);
 		if (ret < 0)
 			return ret;
 		break;
 
 	case REGULATOR_MODE_IDLE:
-		ret = wm831x_set_bits(wm831x, ctrl_reg,
-				      WM831X_LDO7_ON_MODE,
+		ret = wm831x_set_bits(wm831x, on_reg, WM831X_LDO7_ON_MODE,
 				      WM831X_LDO7_ON_MODE);
 		if (ret < 0)
 			return ret;
