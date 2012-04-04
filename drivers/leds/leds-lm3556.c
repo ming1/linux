@@ -141,7 +141,7 @@ static struct indicator indicator_pattern[INDIC_PATTERN_SIZE] = {
 };
 
 /* i2c access*/
-int lm3556_read_reg(struct i2c_client *client, u8 reg, u8 * val)
+int lm3556_read_reg(struct i2c_client *client, u8 reg, u8 *val)
 {
 	int ret;
 	struct lm3556_chip_data *chip = i2c_get_clientdata(client);
@@ -317,12 +317,15 @@ static ssize_t lm3556_indicator_pattern_store(struct device *dev,
 					      const char *buf, size_t size)
 {
 	char *after;
-	ssize_t ret = -EINVAL;
+	ssize_t ret;
 	struct i2c_client *client = container_of(dev->parent,
 						 struct i2c_client, dev);
-	unsigned long state = simple_strtoul(buf, &after, 10);
+	unsigned long state;
 	size_t count = after - buf;
 
+	ret = kstrtoul(buf, 10, &state);
+	if (ret)
+		goto out;
 	if (isspace(*after))
 		count++;
 
@@ -336,6 +339,7 @@ static ssize_t lm3556_indicator_pattern_store(struct device *dev,
 		lm3556_write_reg(client, REG_INDIC_PERIOD,
 				 indicator_pattern[state].period_cnt);
 	}
+out:
 	return ret;
 }
 
