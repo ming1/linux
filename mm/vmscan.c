@@ -1147,7 +1147,7 @@ static unsigned long isolate_lru_pages(unsigned long nr_to_scan,
 
 		switch (__isolate_lru_page(page, mode)) {
 		case 0:
-			mem_cgroup_lru_del(page);
+			mem_cgroup_lru_del_list(page, lru);
 			list_move(&page->lru, dst);
 			nr_taken += hpage_nr_pages(page);
 			break;
@@ -1205,8 +1205,11 @@ static unsigned long isolate_lru_pages(unsigned long nr_to_scan,
 
 			if (__isolate_lru_page(cursor_page, mode) == 0) {
 				unsigned int isolated_pages;
+				enum lru_list cursor_lru;
 
-				mem_cgroup_lru_del(cursor_page);
+				cursor_lru = page_lru(cursor_page);
+				mem_cgroup_lru_del_list(cursor_page,
+							cursor_lru);
 				list_move(&cursor_page->lru, dst);
 				isolated_pages = hpage_nr_pages(cursor_page);
 				nr_taken += isolated_pages;
