@@ -1,0 +1,7 @@
+config TILE_GXIO
+	bool "Tilera Gx I/O support"
+	depends on TILEGX
+	---help---
+	  This option supports direct access to TILE-Gx hardware from
+	  user space, via the gxio library, or from kernel space, via
+	  kernel IORPC support.
