@@ -84,7 +84,7 @@ config X86
 	select DCACHE_WORD_ACCESS if !DEBUG_PAGEALLOC
 
 config INSTRUCTION_DECODER
-	def_bool (KPROBES || PERF_EVENTS)
+	def_bool (KPROBES || PERF_EVENTS || UPROBES)
 
 config OUTPUT_FORMAT
 	string
@@ -242,6 +242,9 @@ config KTIME_SCALAR
 config ARCH_CPU_PROBE_RELEASE
 	def_bool y
 	depends on HOTPLUG_CPU
+
+config ARCH_SUPPORTS_UPROBES
+	def_bool y
 
 source "init/Kconfig"
 source "kernel/Kconfig.freezer"
@@ -541,6 +544,37 @@ config SCHED_OMIT_FRAME_POINTER
 	  at the expense of slightly more scheduling overhead.
 
 	  If in doubt, say "Y".
+
+config KVMTOOL_TEST_ENABLE
+	bool "Enable options to create a bootable tools/kvm/ kernel"
+	select NET
+	select NETDEVICES
+	select PCI
+	select BLOCK
+	select BLK_DEV
+	select NETWORK_FILESYSTEMS
+	select INET
+	select EXPERIMENTAL
+	select SERIAL_8250
+	select SERIAL_8250_CONSOLE
+	select IP_PNP
+	select IP_PNP_DHCP
+	select BINFMT_ELF
+	select PCI_MSI
+	select HAVE_ARCH_KGDB
+	select DEBUG_KERNEL
+	select KGDB
+	select KGDB_SERIAL_CONSOLE
+	select VIRTUALIZATION
+	select VIRTIO
+	select VIRTIO_RING
+	select VIRTIO_PCI
+	select VIRTIO_BLK
+	select VIRTIO_CONSOLE
+	select VIRTIO_NET
+	select 9P_FS
+	select NET_9P
+	select NET_9P_VIRTIO
 
 menuconfig PARAVIRT_GUEST
 	bool "Paravirtualized guest support"
