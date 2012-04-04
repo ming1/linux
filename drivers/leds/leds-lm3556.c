@@ -351,7 +351,6 @@ static int lm3556_probe(struct i2c_client *client,
 {
 	struct lm3556_platform_data *pdata = client->dev.platform_data;
 	struct lm3556_chip_data *chip;
-
 	int err = -ENODEV;
 
 	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C)) {
@@ -365,6 +364,8 @@ static int lm3556_probe(struct i2c_client *client,
 	}
 
 	chip = kzalloc(sizeof(struct lm3556_chip_data), GFP_KERNEL);
+	if (!chip)
+		return -ENOMEM;
 	chip->client = client;
 	chip->pdata = pdata;
 
