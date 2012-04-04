@@ -19,8 +19,9 @@
 #include <linux/export.h>
 #include <linux/fsnotify.h>
 #include <linux/audit.h>
-#include <asm/uaccess.h>
+#include <linux/vmalloc.h>
 
+#include <asm/uaccess.h>
 
 /*
  * Check permissions for extended attribute access.  This is a bit complicated
