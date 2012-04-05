@@ -22,13 +22,10 @@
 #include <linux/types.h>
 #include <linux/sched.h>
 #include <linux/crc32.h>
-
-
 #include "bnx2x.h"
 #include "bnx2x_cmn.h"
 #include "bnx2x_dump.h"
 #include "bnx2x_init.h"
-#include "bnx2x_sp.h"
 
 /* Note: in the format strings below %s is replaced by the queue-name which is
  * either its index or 'fcoe' for the fcoe queue. Make sure the format string
@@ -2396,10 +2393,7 @@ static int bnx2x_get_rxnfc(struct net_device *dev, struct ethtool_rxnfc *info,
 
 static u32 bnx2x_get_rxfh_indir_size(struct net_device *dev)
 {
-	struct bnx2x *bp = netdev_priv(dev);
-
-	return (bp->multi_mode == ETH_RSS_MODE_DISABLED ?
-		0 : T_ETH_INDIRECTION_TABLE_SIZE);
+	return T_ETH_INDIRECTION_TABLE_SIZE;
 }
 
 static int bnx2x_get_rxfh_indir(struct net_device *dev, u32 *indir)
@@ -2445,7 +2439,7 @@ static int bnx2x_set_rxfh_indir(struct net_device *dev, const u32 *indir)
 		ind_table[i] = indir[i] + bp->fp->cl_id;
 	}
 
-	return bnx2x_config_rss_pf(bp, ind_table, false);
+	return bnx2x_config_rss_eth(bp, ind_table, false);
 }
 
 static const struct ethtool_ops bnx2x_ethtool_ops = {

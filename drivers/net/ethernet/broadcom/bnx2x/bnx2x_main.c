@@ -39,7 +39,6 @@
 #include <linux/time.h>
 #include <linux/ethtool.h>
 #include <linux/mii.h>
-#include <linux/if.h>
 #include <linux/if_vlan.h>
 #include <net/ip.h>
 #include <net/ipv6.h>
@@ -93,15 +92,11 @@ MODULE_FIRMWARE(FW_FILE_NAME_E1);
 MODULE_FIRMWARE(FW_FILE_NAME_E1H);
 MODULE_FIRMWARE(FW_FILE_NAME_E2);
 
-static int multi_mode = 1;
-module_param(multi_mode, int, 0);
-MODULE_PARM_DESC(multi_mode, " Multi queue mode "
-			     "(0 Disable; 1 Enable (default))");
 
 int num_queues;
 module_param(num_queues, int, 0);
-MODULE_PARM_DESC(num_queues, " Number of queues for multi_mode=1"
-				" (default is as a number of CPUs)");
+MODULE_PARM_DESC(num_queues,
+		 " Set number of queues (default is as a number of CPUs)");
 
 static int disable_tpa;
 module_param(disable_tpa, int, 0);
@@ -141,7 +136,9 @@ enum bnx2x_board_type {
 	BCM57810,
 	BCM57810_MF,
 	BCM57840,
-	BCM57840_MF
+	BCM57840_MF,
+	BCM57811,
+	BCM57811_MF
 };
 
 /* indexed by board_type, above */
@@ -158,8 +155,9 @@ static struct {
 	{ "Broadcom NetXtreme II BCM57810 10 Gigabit Ethernet" },
 	{ "Broadcom NetXtreme II BCM57810 10 Gigabit Ethernet Multi Function" },
 	{ "Broadcom NetXtreme II BCM57840 10/20 Gigabit Ethernet" },
-	{ "Broadcom NetXtreme II BCM57840 10/20 Gigabit "
-						"Ethernet Multi Function"}
+	{ "Broadcom NetXtreme II BCM57840 10/20 Gigabit Ethernet Multi Function"},
+	{ "Broadcom NetXtreme II BCM57811 10 Gigabit Ethernet"},
+	{ "Broadcom NetXtreme II BCM57811 10 Gigabit Ethernet Multi Function"},
 };
 
 #ifndef PCI_DEVICE_ID_NX2_57710
@@ -195,6 +193,12 @@ static struct {
 #ifndef PCI_DEVICE_ID_NX2_57840_MF
 #define PCI_DEVICE_ID_NX2_57840_MF	CHIP_NUM_57840_MF
 #endif
+#ifndef PCI_DEVICE_ID_NX2_57811
+#define PCI_DEVICE_ID_NX2_57811		CHIP_NUM_57811
+#endif
+#ifndef PCI_DEVICE_ID_NX2_57811_MF
+#define PCI_DEVICE_ID_NX2_57811_MF	CHIP_NUM_57811_MF
+#endif
 static DEFINE_PCI_DEVICE_TABLE(bnx2x_pci_tbl) = {
 	{ PCI_VDEVICE(BROADCOM, PCI_DEVICE_ID_NX2_57710), BCM57710 },
 	{ PCI_VDEVICE(BROADCOM, PCI_DEVICE_ID_NX2_57711), BCM57711 },
@@ -207,6 +211,8 @@ static DEFINE_PCI_DEVICE_TABLE(bnx2x_pci_tbl) = {
 	{ PCI_VDEVICE(BROADCOM, PCI_DEVICE_ID_NX2_57810_MF), BCM57810_MF },
 	{ PCI_VDEVICE(BROADCOM, PCI_DEVICE_ID_NX2_57840), BCM57840 },
 	{ PCI_VDEVICE(BROADCOM, PCI_DEVICE_ID_NX2_57840_MF), BCM57840_MF },
+	{ PCI_VDEVICE(BROADCOM, PCI_DEVICE_ID_NX2_57811), BCM57811 },
+	{ PCI_VDEVICE(BROADCOM, PCI_DEVICE_ID_NX2_57811_MF), BCM57811_MF },
 	{ 0 }
 };
 
@@ -309,67 +315,6 @@ static u32 bnx2x_reg_rd_ind(struct bnx2x *bp, u32 addr)
 #define DMAE_DP_DST_PCI		"pci dst_addr [%x:%08x]"
 #define DMAE_DP_DST_NONE	"dst_addr [none]"
 
-static void bnx2x_dp_dmae(struct bnx2x *bp, struct dmae_command *dmae,
-			  int msglvl)
-{
-	u32 src_type = dmae->opcode & DMAE_COMMAND_SRC;
-
-	switch (dmae->opcode & DMAE_COMMAND_DST) {
-	case DMAE_CMD_DST_PCI:
-		if (src_type == DMAE_CMD_SRC_PCI)
-			DP(msglvl, "DMAE: opcode 0x%08x\n"
-			   "src [%x:%08x], len [%d*4], dst [%x:%08x]\n"
-			   "comp_addr [%x:%08x], comp_val 0x%08x\n",
-			   dmae->opcode, dmae->src_addr_hi, dmae->src_addr_lo,
-			   dmae->len, dmae->dst_addr_hi, dmae->dst_addr_lo,
-			   dmae->comp_addr_hi, dmae->comp_addr_lo,
-			   dmae->comp_val);
-		else
-			DP(msglvl, "DMAE: opcode 0x%08x\n"
-			   "src [%08x], len [%d*4], dst [%x:%08x]\n"
-			   "comp_addr [%x:%08x], comp_val 0x%08x\n",
-			   dmae->opcode, dmae->src_addr_lo >> 2,
-			   dmae->len, dmae->dst_addr_hi, dmae->dst_addr_lo,
-			   dmae->comp_addr_hi, dmae->comp_addr_lo,
-			   dmae->comp_val);
-		break;
-	case DMAE_CMD_DST_GRC:
-		if (src_type == DMAE_CMD_SRC_PCI)
-			DP(msglvl, "DMAE: opcode 0x%08x\n"
-			   "src [%x:%08x], len [%d*4], dst_addr [%08x]\n"
-			   "comp_addr [%x:%08x], comp_val 0x%08x\n",
-			   dmae->opcode, dmae->src_addr_hi, dmae->src_addr_lo,
-			   dmae->len, dmae->dst_addr_lo >> 2,
-			   dmae->comp_addr_hi, dmae->comp_addr_lo,
-			   dmae->comp_val);
-		else
-			DP(msglvl, "DMAE: opcode 0x%08x\n"
-			   "src [%08x], len [%d*4], dst [%08x]\n"
-			   "comp_addr [%x:%08x], comp_val 0x%08x\n",
-			   dmae->opcode, dmae->src_addr_lo >> 2,
-			   dmae->len, dmae->dst_addr_lo >> 2,
-			   dmae->comp_addr_hi, dmae->comp_addr_lo,
-			   dmae->comp_val);
-		break;
-	default:
-		if (src_type == DMAE_CMD_SRC_PCI)
-			DP(msglvl, "DMAE: opcode 0x%08x\n"
-			   "src_addr [%x:%08x]  len [%d * 4]  dst_addr [none]\n"
-			   "comp_addr [%x:%08x]  comp_val 0x%08x\n",
-			   dmae->opcode, dmae->src_addr_hi, dmae->src_addr_lo,
-			   dmae->len, dmae->comp_addr_hi, dmae->comp_addr_lo,
-			   dmae->comp_val);
-		else
-			DP(msglvl, "DMAE: opcode 0x%08x\n"
-			   "src_addr [%08x]  len [%d * 4]  dst_addr [none]\n"
-			   "comp_addr [%x:%08x]  comp_val 0x%08x\n",
-			   dmae->opcode, dmae->src_addr_lo >> 2,
-			   dmae->len, dmae->comp_addr_hi, dmae->comp_addr_lo,
-			   dmae->comp_val);
-		break;
-	}
-
-}
 
 /* copy command into DMAE command memory and set DMAE command go */
 void bnx2x_post_dmae(struct bnx2x *bp, struct dmae_command *dmae, int idx)
@@ -506,8 +451,6 @@ void bnx2x_write_dmae(struct bnx2x *bp, dma_addr_t dma_addr, u32 dst_addr,
 	dmae.dst_addr_hi = 0;
 	dmae.len = len32;
 
-	bnx2x_dp_dmae(bp, &dmae, BNX2X_MSG_OFF);
-
 	/* issue the command and wait for completion */
 	bnx2x_issue_dmae_with_comp(bp, &dmae);
 }
@@ -540,8 +483,6 @@ void bnx2x_read_dmae(struct bnx2x *bp, u32 src_addr, u32 len32)
 	dmae.dst_addr_hi = U64_HI(bnx2x_sp_mapping(bp, wb_data));
 	dmae.len = len32;
 
-	bnx2x_dp_dmae(bp, &dmae, BNX2X_MSG_OFF);
-
 	/* issue the command and wait for completion */
 	bnx2x_issue_dmae_with_comp(bp, &dmae);
 }
@@ -561,27 +502,6 @@ static void bnx2x_write_dmae_phys_len(struct bnx2x *bp, dma_addr_t phys_addr,
 
 	bnx2x_write_dmae(bp, phys_addr + offset, addr + offset, len);
 }
-
-/* used only for slowpath so not inlined */
-static void bnx2x_wb_wr(struct bnx2x *bp, int reg, u32 val_hi, u32 val_lo)
-{
-	u32 wb_write[2];
-
-	wb_write[0] = val_hi;
-	wb_write[1] = val_lo;
-	REG_WR_DMAE(bp, reg, wb_write, 2);
-}
-
-#ifdef USE_WB_RD
-static u64 bnx2x_wb_rd(struct bnx2x *bp, int reg)
-{
-	u32 wb_data[2];
-
-	REG_RD_DMAE(bp, reg, wb_data, 2);
-
-	return HILO_U64(wb_data[0], wb_data[1]);
-}
-#endif
 
 static int bnx2x_mc_assert(struct bnx2x *bp)
 {
@@ -1425,8 +1345,9 @@ static void bnx2x_hc_int_enable(struct bnx2x *bp)
 static void bnx2x_igu_int_enable(struct bnx2x *bp)
 {
 	u32 val;
-	int msix = (bp->flags & USING_MSIX_FLAG) ? 1 : 0;
-	int msi = (bp->flags & USING_MSI_FLAG) ? 1 : 0;
+	bool msix = (bp->flags & USING_MSIX_FLAG) ? true : false;
+	bool single_msix = (bp->flags & USING_SINGLE_MSIX_FLAG) ? true : false;
+	bool msi = (bp->flags & USING_MSI_FLAG) ? true : false;
 
 	val = REG_RD(bp, IGU_REG_PF_CONFIGURATION);
 
@@ -1436,6 +1357,9 @@ static void bnx2x_igu_int_enable(struct bnx2x *bp)
 		val |= (IGU_PF_CONF_FUNC_EN |
 			IGU_PF_CONF_MSI_MSIX_EN |
 			IGU_PF_CONF_ATTN_BIT_EN);
+
+		if (single_msix)
+			val |= IGU_PF_CONF_SINGLE_ISR_EN;
 	} else if (msi) {
 		val &= ~IGU_PF_CONF_INT_LINE_EN;
 		val |= (IGU_PF_CONF_FUNC_EN |
@@ -1454,6 +1378,9 @@ static void bnx2x_igu_int_enable(struct bnx2x *bp)
 	   val, (msix ? "MSI-X" : (msi ? "MSI" : "INTx")));
 
 	REG_WR(bp, IGU_REG_PF_CONFIGURATION, val);
+
+	if (val & IGU_PF_CONF_INT_LINE_EN)
+		pci_intx(bp->pdev, true);
 
 	barrier();
 
@@ -2229,40 +2156,6 @@ u8 bnx2x_link_test(struct bnx2x *bp, u8 is_serdes)
 	return rc;
 }
 
-static void bnx2x_init_port_minmax(struct bnx2x *bp)
-{
-	u32 r_param = bp->link_vars.line_speed / 8;
-	u32 fair_periodic_timeout_usec;
-	u32 t_fair;
-
-	memset(&(bp->cmng.rs_vars), 0,
-	       sizeof(struct rate_shaping_vars_per_port));
-	memset(&(bp->cmng.fair_vars), 0, sizeof(struct fairness_vars_per_port));
-
-	/* 100 usec in SDM ticks = 25 since each tick is 4 usec */
-	bp->cmng.rs_vars.rs_periodic_timeout = RS_PERIODIC_TIMEOUT_USEC / 4;
-
-	/* this is the threshold below which no timer arming will occur
-	   1.25 coefficient is for the threshold to be a little bigger
-	   than the real time, to compensate for timer in-accuracy */
-	bp->cmng.rs_vars.rs_threshold =
-				(RS_PERIODIC_TIMEOUT_USEC * r_param * 5) / 4;
-
-	/* resolution of fairness timer */
-	fair_periodic_timeout_usec = QM_ARB_BYTES / r_param;
-	/* for 10G it is 1000usec. for 1G it is 10000usec. */
-	t_fair = T_FAIR_COEF / bp->link_vars.line_speed;
-
-	/* this is the threshold below which we won't arm the timer anymore */
-	bp->cmng.fair_vars.fair_threshold = QM_ARB_BYTES;
-
-	/* we multiply by 1e3/8 to get bytes/msec.
-	   We don't want the credits to pass a credit
-	   of the t_fair*FAIR_MEM (algorithm resolution) */
-	bp->cmng.fair_vars.upper_bound = r_param * t_fair * FAIR_MEM;
-	/* since each tick is 4 usec */
-	bp->cmng.fair_vars.fairness_timeout = fair_periodic_timeout_usec / 4;
-}
 
 /* Calculates the sum of vn_min_rates.
    It's needed for further normalizing of the min_rates.
@@ -2273,12 +2166,12 @@ static void bnx2x_init_port_minmax(struct bnx2x *bp)
      In the later case fainess algorithm should be deactivated.
      If not all min_rates are zero then those that are zeroes will be set to 1.
  */
-static void bnx2x_calc_vn_weight_sum(struct bnx2x *bp)
+static void bnx2x_calc_vn_min(struct bnx2x *bp,
+				      struct cmng_init_input *input)
 {
 	int all_zero = 1;
 	int vn;
 
-	bp->vn_weight_sum = 0;
 	for (vn = VN_0; vn < BP_MAX_VN_NUM(bp); vn++) {
 		u32 vn_cfg = bp->mf_config[vn];
 		u32 vn_min_rate = ((vn_cfg & FUNC_MF_CFG_MIN_BW_MASK) >>
@@ -2286,105 +2179,55 @@ static void bnx2x_calc_vn_weight_sum(struct bnx2x *bp)
 
 		/* Skip hidden vns */
 		if (vn_cfg & FUNC_MF_CFG_FUNC_HIDE)
-			continue;
-
+			vn_min_rate = 0;
 		/* If min rate is zero - set it to 1 */
-		if (!vn_min_rate)
+		else if (!vn_min_rate)
 			vn_min_rate = DEF_MIN_RATE;
 		else
 			all_zero = 0;
 
-		bp->vn_weight_sum += vn_min_rate;
+		input->vnic_min_rate[vn] = vn_min_rate;
 	}
 
 	/* if ETS or all min rates are zeros - disable fairness */
 	if (BNX2X_IS_ETS_ENABLED(bp)) {
-		bp->cmng.flags.cmng_enables &=
+		input->flags.cmng_enables &=
 					~CMNG_FLAGS_PER_PORT_FAIRNESS_VN;
 		DP(NETIF_MSG_IFUP, "Fairness will be disabled due to ETS\n");
 	} else if (all_zero) {
-		bp->cmng.flags.cmng_enables &=
+		input->flags.cmng_enables &=
 					~CMNG_FLAGS_PER_PORT_FAIRNESS_VN;
-		DP(NETIF_MSG_IFUP, "All MIN values are zeroes"
-		   "  fairness will be disabled\n");
+		DP(NETIF_MSG_IFUP,
+		   "All MIN values are zeroes fairness will be disabled\n");
 	} else
-		bp->cmng.flags.cmng_enables |=
+		input->flags.cmng_enables |=
 					CMNG_FLAGS_PER_PORT_FAIRNESS_VN;
 }
 
-static void bnx2x_init_vn_minmax(struct bnx2x *bp, int vn)
+static void bnx2x_calc_vn_max(struct bnx2x *bp, int vn,
+				    struct cmng_init_input *input)
 {
-	struct rate_shaping_vars_per_vn m_rs_vn;
-	struct fairness_vars_per_vn m_fair_vn;
+	u16 vn_max_rate;
 	u32 vn_cfg = bp->mf_config[vn];
-	int func = func_by_vn(bp, vn);
-	u16 vn_min_rate, vn_max_rate;
-	int i;
 
-	/* If function is hidden - set min and max to zeroes */
-	if (vn_cfg & FUNC_MF_CFG_FUNC_HIDE) {
-		vn_min_rate = 0;
+	if (vn_cfg & FUNC_MF_CFG_FUNC_HIDE)
 		vn_max_rate = 0;
-
-	} else {
+	else {
 		u32 maxCfg = bnx2x_extract_max_cfg(bp, vn_cfg);
 
-		vn_min_rate = ((vn_cfg & FUNC_MF_CFG_MIN_BW_MASK) >>
-				FUNC_MF_CFG_MIN_BW_SHIFT) * 100;
-		/* If fairness is enabled (not all min rates are zeroes) and
-		   if current min rate is zero - set it to 1.
-		   This is a requirement of the algorithm. */
-		if (bp->vn_weight_sum && (vn_min_rate == 0))
-			vn_min_rate = DEF_MIN_RATE;
-
-		if (IS_MF_SI(bp))
+		if (IS_MF_SI(bp)) {
 			/* maxCfg in percents of linkspeed */
 			vn_max_rate = (bp->link_vars.line_speed * maxCfg) / 100;
-		else
+		} else /* SD modes */
 			/* maxCfg is absolute in 100Mb units */
 			vn_max_rate = maxCfg * 100;
 	}
 
-	DP(NETIF_MSG_IFUP,
-	   "func %d: vn_min_rate %d  vn_max_rate %d  vn_weight_sum %d\n",
-	   func, vn_min_rate, vn_max_rate, bp->vn_weight_sum);
+	DP(NETIF_MSG_IFUP, "vn %d: vn_max_rate %d\n", vn, vn_max_rate);
 
-	memset(&m_rs_vn, 0, sizeof(struct rate_shaping_vars_per_vn));
-	memset(&m_fair_vn, 0, sizeof(struct fairness_vars_per_vn));
-
-	/* global vn counter - maximal Mbps for this vn */
-	m_rs_vn.vn_counter.rate = vn_max_rate;
-
-	/* quota - number of bytes transmitted in this period */
-	m_rs_vn.vn_counter.quota =
-				(vn_max_rate * RS_PERIODIC_TIMEOUT_USEC) / 8;
-
-	if (bp->vn_weight_sum) {
-		/* credit for each period of the fairness algorithm:
-		   number of bytes in T_FAIR (the vn share the port rate).
-		   vn_weight_sum should not be larger than 10000, thus
-		   T_FAIR_COEF / (8 * vn_weight_sum) will always be greater
-		   than zero */
-		m_fair_vn.vn_credit_delta =
-			max_t(u32, (vn_min_rate * (T_FAIR_COEF /
-						   (8 * bp->vn_weight_sum))),
-			      (bp->cmng.fair_vars.fair_threshold +
-							MIN_ABOVE_THRESH));
-		DP(NETIF_MSG_IFUP, "m_fair_vn.vn_credit_delta %d\n",
-		   m_fair_vn.vn_credit_delta);
-	}
-
-	/* Store it to internal memory */
-	for (i = 0; i < sizeof(struct rate_shaping_vars_per_vn)/4; i++)
-		REG_WR(bp, BAR_XSTRORM_INTMEM +
-		       XSTORM_RATE_SHAPING_PER_VN_VARS_OFFSET(func) + i * 4,
-		       ((u32 *)(&m_rs_vn))[i]);
-
-	for (i = 0; i < sizeof(struct fairness_vars_per_vn)/4; i++)
-		REG_WR(bp, BAR_XSTRORM_INTMEM +
-		       XSTORM_FAIRNESS_PER_VN_VARS_OFFSET(func) + i * 4,
-		       ((u32 *)(&m_fair_vn))[i]);
+	input->vnic_max_rate[vn] = vn_max_rate;
 }
+
 
 static int bnx2x_get_cmng_fns_mode(struct bnx2x *bp)
 {
@@ -2427,34 +2270,31 @@ void bnx2x_read_mf_cfg(struct bnx2x *bp)
 
 static void bnx2x_cmng_fns_init(struct bnx2x *bp, u8 read_cfg, u8 cmng_type)
 {
+	struct cmng_init_input input;
+	memset(&input, 0, sizeof(struct cmng_init_input));
+
+	input.port_rate = bp->link_vars.line_speed;
 
 	if (cmng_type == CMNG_FNS_MINMAX) {
 		int vn;
-
-		/* clear cmng_enables */
-		bp->cmng.flags.cmng_enables = 0;
 
 		/* read mf conf from shmem */
 		if (read_cfg)
 			bnx2x_read_mf_cfg(bp);
 
-		/* Init rate shaping and fairness contexts */
-		bnx2x_init_port_minmax(bp);
-
 		/* vn_weight_sum and enable fairness if not 0 */
-		bnx2x_calc_vn_weight_sum(bp);
+		bnx2x_calc_vn_min(bp, &input);
 
 		/* calculate and set min-max rate for each vn */
 		if (bp->port.pmf)
 			for (vn = VN_0; vn < BP_MAX_VN_NUM(bp); vn++)
-				bnx2x_init_vn_minmax(bp, vn);
+				bnx2x_calc_vn_max(bp, vn, &input);
 
 		/* always enable rate shaping and fairness */
-		bp->cmng.flags.cmng_enables |=
+		input.flags.cmng_enables |=
 					CMNG_FLAGS_PER_PORT_RATE_SHAPING_VN;
-		if (!bp->vn_weight_sum)
-			DP(NETIF_MSG_IFUP, "All MIN values are zeroes"
-				   "  fairness will be disabled\n");
+
+		bnx2x_init_cmng(&input, &bp->cmng);
 		return;
 	}
 
@@ -6640,13 +6480,16 @@ static int bnx2x_init_hw_port(struct bnx2x *bp)
 static void bnx2x_ilt_wr(struct bnx2x *bp, u32 index, dma_addr_t addr)
 {
 	int reg;
+	u32 wb_write[2];
 
 	if (CHIP_IS_E1(bp))
 		reg = PXP2_REG_RQ_ONCHIP_AT + index*8;
 	else
 		reg = PXP2_REG_RQ_ONCHIP_AT_B0 + index*8;
 
-	bnx2x_wb_wr(bp, reg, ONCHIP_ADDR1(addr), ONCHIP_ADDR2(addr));
+	wb_write[0] = ONCHIP_ADDR1(addr);
+	wb_write[1] = ONCHIP_ADDR2(addr);
+	REG_WR_DMAE(bp, reg, wb_write, 2);
 }
 
 static inline void bnx2x_igu_clear_sb(struct bnx2x *bp, u8 idu_sb_id)
@@ -7230,7 +7073,7 @@ static void __devinit bnx2x_set_int_mode(struct bnx2x *bp)
 		BNX2X_DEV_INFO("set number of queues to 1\n");
 		break;
 	default:
-		/* Set number of queues according to bp->multi_mode value */
+		/* Set number of queues for MSI-X mode */
 		bnx2x_set_num_queues(bp);
 
 		BNX2X_DEV_INFO("set number of queues to %d\n", bp->num_queues);
@@ -7239,15 +7082,17 @@ static void __devinit bnx2x_set_int_mode(struct bnx2x *bp)
 		 * so try to enable MSI-X with the requested number of fp's
 		 * and fallback to MSI or legacy INTx with one fp
 		 */
-		if (bnx2x_enable_msix(bp)) {
-			/* failed to enable MSI-X */
-			BNX2X_DEV_INFO("Failed to enable MSI-X (%d), set number of queues to %d\n",
+		if (bnx2x_enable_msix(bp) ||
+		    bp->flags & USING_SINGLE_MSIX_FLAG) {
+			/* failed to enable multiple MSI-X */
+			BNX2X_DEV_INFO("Failed to enable multiple MSI-X (%d), set number of queues to %d\n",
 				       bp->num_queues, 1 + NON_ETH_CONTEXT_USE);
 
 			bp->num_queues = 1 + NON_ETH_CONTEXT_USE;
 
 			/* Try to enable MSI */
-			if (!(bp->flags & DISABLE_MSI_FLAG))
+			if (!(bp->flags & USING_SINGLE_MSIX_FLAG) &&
+			    !(bp->flags & DISABLE_MSI_FLAG))
 				bnx2x_enable_msi(bp);
 		}
 		break;
@@ -9201,6 +9046,17 @@ static void __devinit bnx2x_get_common_hwinfo(struct bnx2x *bp)
 	id |= (val & 0xf);
 	bp->common.chip_id = id;
 
+	/* force 57811 according to MISC register */
+	if (REG_RD(bp, MISC_REG_CHIP_TYPE) & MISC_REG_CHIP_TYPE_57811_MASK) {
+		if (CHIP_IS_57810(bp))
+			bp->common.chip_id = (CHIP_NUM_57811 << 16) |
+				(bp->common.chip_id & 0x0000FFFF);
+		else if (CHIP_IS_57810_MF(bp))
+			bp->common.chip_id = (CHIP_NUM_57811_MF << 16) |
+				(bp->common.chip_id & 0x0000FFFF);
+		bp->common.chip_id |= 0x1;
+	}
+
 	/* Set doorbell size */
 	bp->db_size = (1 << BNX2X_DB_SHIFT);
 
@@ -10384,8 +10240,6 @@ static int __devinit bnx2x_init_bp(struct bnx2x *bp)
 	if (BP_NOMCP(bp) && (func == 0))
 		dev_err(&bp->pdev->dev, "MCP disabled, must load devices in order!\n");
 
-	bp->multi_mode = multi_mode;
-
 	bp->disable_tpa = disable_tpa;
 
 #ifdef BCM_CNIC
@@ -11325,6 +11179,8 @@ static int __devinit bnx2x_init_one(struct pci_dev *pdev,
 	case BCM57810_MF:
 	case BCM57840:
 	case BCM57840_MF:
+	case BCM57811:
+	case BCM57811_MF:
 		max_cos_est = BNX2X_MULTI_TX_COS_E3B0;
 		break;
 
