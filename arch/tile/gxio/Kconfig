@@ -14,3 +14,12 @@ config TILE_GXIO_DMA
 	  within the TILE-Gx mPIPE and Trio hardware.  It is not required
 	  in order to use the gxio library to access mPIPE or Trio from
 	  user space.
+
+config TILE_GXIO_MPIPE
+	bool "Tilera Gx mPIPE I/O support"
+	select TILE_GXIO
+	select TILE_GXIO_DMA
+	---help---
+	  This option supports direct access to the TILE-Gx mPIPE hardware
+	  from kernel space.  It is not required in order to use the gxio
+	  library to access mPIPE from user space.
