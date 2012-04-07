@@ -35,10 +35,7 @@ static int regmap_mmio_gather_write(void *context,
 	struct regmap_mmio_context *ctx = context;
 	u32 offset;
 
-	if (reg_size != 4)
-		return -EIO;
-	if (val_size % ctx->val_bytes)
-		return -EIO;
+	BUG_ON(reg_size != 4);
 
 	offset = be32_to_cpup(reg);
 
@@ -60,7 +57,7 @@ static int regmap_mmio_gather_write(void *context,
 #endif
 		default:
 			/* Should be caught by regmap_mmio_check_config */
-			return -EIO;
+			BUG();
 		}
 		val_size -= ctx->val_bytes;
 		val += ctx->val_bytes;
@@ -72,8 +69,8 @@ static int regmap_mmio_gather_write(void *context,
 
 static int regmap_mmio_write(void *context, const void *data, size_t count)
 {
-	if (count < 4)
-		return -EIO;
+	BUG_ON(count < 4);
+
 	return regmap_mmio_gather_write(context, data, 4, data + 4, count - 4);
 }
 
@@ -84,10 +81,7 @@ static int regmap_mmio_read(void *context,
 	struct regmap_mmio_context *ctx = context;
 	u32 offset;
 
-	if (reg_size != 4)
-		return -EIO;
-	if (val_size % ctx->val_bytes)
-		return -EIO;
+	BUG_ON(reg_size != 4);
 
 	offset = be32_to_cpup(reg);
 
@@ -109,7 +103,7 @@ static int regmap_mmio_read(void *context,
 #endif
 		default:
 			/* Should be caught by regmap_mmio_check_config */
-			return -EIO;
+			BUG();
 		}
 		val_size -= ctx->val_bytes;
 		val += ctx->val_bytes;
