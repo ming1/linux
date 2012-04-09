@@ -689,6 +689,9 @@ static void wm1811_jackdet_set_mode(struct snd_soc_codec *codec, u16 mode)
 	if (!wm8994->jackdet || !wm8994->jack_cb)
 		return;
 
+	if (!wm8994->jackdet || !wm8994->jack_cb)
+		return;
+
 	if (wm8994->active_refcount)
 		mode = WM1811_JACKDET_MODE_AUDIO;
 
@@ -1900,24 +1903,20 @@ static int _wm8994_set_fll(struct snd_soc_codec *codec, int id, int src,
 	struct wm8994 *control = wm8994->wm8994;
 	int reg_offset, ret;
 	struct fll_div fll;
-	u16 reg, aif1, aif2;
+	u16 reg, clk1, aif_reg, aif_src;
 	unsigned long timeout;
 	bool was_enabled;
-
-	aif1 = snd_soc_read(codec, WM8994_AIF1_CLOCKING_1)
-		& WM8994_AIF1CLK_ENA;
-
-	aif2 = snd_soc_read(codec, WM8994_AIF2_CLOCKING_1)
-		& WM8994_AIF2CLK_ENA;
 
 	switch (id) {
 	case WM8994_FLL1:
 		reg_offset = 0;
 		id = 0;
+		aif_src = 0x10;
 		break;
 	case WM8994_FLL2:
 		reg_offset = 0x20;
 		id = 1;
+		aif_src = 0x18;
 		break;
 	default:
 		return -EINVAL;
@@ -1959,11 +1958,20 @@ static int _wm8994_set_fll(struct snd_soc_codec *codec, int id, int src,
 	if (ret < 0)
 		return ret;
 
-	/* Gate the AIF clocks while we reclock */
-	snd_soc_update_bits(codec, WM8994_AIF1_CLOCKING_1,
-			    WM8994_AIF1CLK_ENA, 0);
-	snd_soc_update_bits(codec, WM8994_AIF2_CLOCKING_1,
-			    WM8994_AIF2CLK_ENA, 0);
+	/* Make sure that we're not providing SYSCLK right now */
+	clk1 = snd_soc_read(codec, WM8994_CLOCKING_1);
+	if (clk1 & WM8994_SYSCLK_SRC)
+		aif_reg = WM8994_AIF2_CLOCKING_1;
+	else
+		aif_reg = WM8994_AIF1_CLOCKING_1;
+	reg = snd_soc_read(codec, aif_reg);
+
+	if ((reg & WM8994_AIF1CLK_ENA) &&
+	    (reg & WM8994_AIF1CLK_SRC_MASK) == aif_src) {
+		dev_err(codec->dev, "FLL%d is currently providing SYSCLK\n",
+			id + 1);
+		return -EBUSY;
+	}
 
 	/* We always need to disable the FLL while reconfiguring */
 	snd_soc_update_bits(codec, WM8994_FLL1_CONTROL_1 + reg_offset,
@@ -2048,12 +2056,6 @@ static int _wm8994_set_fll(struct snd_soc_codec *codec, int id, int src,
 	wm8994->fll[id].in = freq_in;
 	wm8994->fll[id].out = freq_out;
 	wm8994->fll[id].src = src;
-
-	/* Enable any gated AIF clocks */
-	snd_soc_update_bits(codec, WM8994_AIF1_CLOCKING_1,
-			    WM8994_AIF1CLK_ENA, aif1);
-	snd_soc_update_bits(codec, WM8994_AIF2_CLOCKING_1,
-			    WM8994_AIF2CLK_ENA, aif2);
 
 	configure_clock(codec);
 
@@ -2624,33 +2626,6 @@ static int wm8994_aif3_hw_params(struct snd_pcm_substream *substream,
 	return snd_soc_update_bits(codec, aif1_reg, WM8994_AIF1_WL_MASK, aif1);
 }
 
-static void wm8994_aif_shutdown(struct snd_pcm_substream *substream,
-				struct snd_soc_dai *dai)
-{
-	struct snd_soc_codec *codec = dai->codec;
-	int rate_reg = 0;
-
-	switch (dai->id) {
-	case 1:
-		rate_reg = WM8994_AIF1_RATE;
-		break;
-	case 2:
-		rate_reg = WM8994_AIF2_RATE;
-		break;
-	default:
-		break;
-	}
-
-	/* If the DAI is idle then configure the divider tree for the
-	 * lowest output rate to save a little power if the clock is
-	 * still active (eg, because it is system clock).
-	 */
-	if (rate_reg && !dai->playback_active && !dai->capture_active)
-		snd_soc_update_bits(codec, rate_reg,
-				    WM8994_AIF1_SR_MASK |
-				    WM8994_AIF1CLK_RATE_MASK, 0x9);
-}
-
 static int wm8994_aif_mute(struct snd_soc_dai *codec_dai, int mute)
 {
 	struct snd_soc_codec *codec = codec_dai->codec;
@@ -2732,7 +2707,6 @@ static const struct snd_soc_dai_ops wm8994_aif1_dai_ops = {
 	.set_sysclk	= wm8994_set_dai_sysclk,
 	.set_fmt	= wm8994_set_dai_fmt,
 	.hw_params	= wm8994_hw_params,
-	.shutdown	= wm8994_aif_shutdown,
 	.digital_mute	= wm8994_aif_mute,
 	.set_pll	= wm8994_set_fll,
 	.set_tristate	= wm8994_set_tristate,
@@ -2742,7 +2716,6 @@ static const struct snd_soc_dai_ops wm8994_aif2_dai_ops = {
 	.set_sysclk	= wm8994_set_dai_sysclk,
 	.set_fmt	= wm8994_set_dai_fmt,
 	.hw_params	= wm8994_hw_params,
-	.shutdown	= wm8994_aif_shutdown,
 	.digital_mute   = wm8994_aif_mute,
 	.set_pll	= wm8994_set_fll,
 	.set_tristate	= wm8994_set_tristate,
@@ -3247,9 +3220,6 @@ static void wm8958_default_micdet(u16 status, void *data)
 
 		wm8958_micd_set_rate(codec);
 
-		snd_soc_jack_report(wm8994->micdet[0].jack, SND_JACK_HEADPHONE,
-				    SND_JACK_HEADSET);
-
 		/* If we have jackdet that will detect removal */
 		if (wm8994->jackdet) {
 			mutex_lock(&wm8994->accdet_lock);
@@ -3262,14 +3232,13 @@ static void wm8958_default_micdet(u16 status, void *data)
 
 			mutex_unlock(&wm8994->accdet_lock);
 
-			if (wm8994->pdata->jd_ext_cap) {
-				mutex_lock(&codec->mutex);
+			if (wm8994->pdata->jd_ext_cap)
 				snd_soc_dapm_disable_pin(&codec->dapm,
 							 "MICBIAS2");
-				snd_soc_dapm_sync(&codec->dapm);
-				mutex_unlock(&codec->mutex);
-			}
 		}
+
+		snd_soc_jack_report(wm8994->micdet[0].jack, SND_JACK_HEADPHONE,
+				    SND_JACK_HEADSET);
 	}
 
 	/* Report short circuit as a button */
@@ -3358,16 +3327,11 @@ static irqreturn_t wm1811_jackdet_irq(int irq, void *data)
 
 	/* If required for an external cap force MICBIAS on */
 	if (wm8994->pdata->jd_ext_cap) {
-		mutex_lock(&codec->mutex);
-
 		if (present)
 			snd_soc_dapm_force_enable_pin(&codec->dapm,
 						      "MICBIAS2");
 		else
 			snd_soc_dapm_disable_pin(&codec->dapm, "MICBIAS2");
-
-		snd_soc_dapm_sync(&codec->dapm);
-		mutex_unlock(&codec->mutex);
 	}
 
 	if (present)
