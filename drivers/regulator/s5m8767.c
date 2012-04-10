@@ -355,51 +355,6 @@ static int s5m8767_convert_voltage_to_sel(
 	return selector;
 }
 
-static int s5m8767_set_voltage(struct regulator_dev *rdev,
-				int min_uV, int max_uV, unsigned *selector)
-{
-	struct s5m8767_info *s5m8767 = rdev_get_drvdata(rdev);
-	const struct s5m_voltage_desc *desc;
-	int reg_id = rdev_get_id(rdev);
-	int sel, reg, mask, ret;
-	u8 val;
-
-	switch (reg_id) {
-	case S5M8767_LDO1 ... S5M8767_LDO28:
-		mask = 0x3f;
-		break;
-	case S5M8767_BUCK1 ... S5M8767_BUCK6:
-		mask = 0xff;
-		break;
-	case S5M8767_BUCK7 ... S5M8767_BUCK8:
-		return -EINVAL;
-	case S5M8767_BUCK9:
-		mask = 0xff;
-		break;
-	default:
-		return -EINVAL;
-	}
-
-	desc = reg_voltage_map[reg_id];
-
-	sel = s5m8767_convert_voltage_to_sel(desc, min_uV, max_uV);
-	if (sel < 0)
-		return sel;
-
-	ret = s5m8767_get_voltage_register(rdev, &reg);
-	if (ret)
-		return ret;
-
-	s5m_reg_read(s5m8767->iodev, reg, &val);
-	val &= ~mask;
-	val |= sel;
-
-	ret = s5m_reg_write(s5m8767->iodev, reg, val);
-	*selector = sel;
-
-	return ret;
-}
-
 static inline void s5m8767_set_high(struct s5m8767_info *s5m8767)
 {
 	int temp_index = s5m8767->buck_gpioindex;
@@ -418,70 +373,70 @@ static inline void s5m8767_set_low(struct s5m8767_info *s5m8767)
 	gpio_set_value(s5m8767->buck_gpios[0], (temp_index >> 2) & 0x1);
 }
 
-static int s5m8767_set_voltage_buck(struct regulator_dev *rdev,
-				    int min_uV, int max_uV, unsigned *selector)
+static int s5m8767_set_voltage(struct regulator_dev *rdev,
+				int min_uV, int max_uV, unsigned *selector)
 {
 	struct s5m8767_info *s5m8767 = rdev_get_drvdata(rdev);
-	int reg_id = rdev_get_id(rdev);
 	const struct s5m_voltage_desc *desc;
-	int new_val, old_val, i = 0;
-
-	if (reg_id < S5M8767_BUCK1 || reg_id > S5M8767_BUCK6)
-		return -EINVAL;
+	int reg_id = rdev_get_id(rdev);
+	int sel, reg, mask, ret = 0, old_index, index = 0;
+	u8 val;
+	u8 *buck234_vol = NULL;
 
 	switch (reg_id) {
-	case S5M8767_BUCK1:
-		return s5m8767_set_voltage(rdev, min_uV, max_uV, selector);
-	case S5M8767_BUCK2 ... S5M8767_BUCK4:
+	case S5M8767_LDO1 ... S5M8767_LDO28:
+		mask = 0x3f;
 		break;
-	case S5M8767_BUCK5 ... S5M8767_BUCK6:
-		return s5m8767_set_voltage(rdev, min_uV, max_uV, selector);
+	case S5M8767_BUCK1 ... S5M8767_BUCK6:
+		mask = 0xff;
+		if (reg_id == S5M8767_BUCK2 && s5m8767->buck2_gpiodvs)
+			buck234_vol = &s5m8767->buck2_vol[0];
+		else if (reg_id == S5M8767_BUCK3 && s5m8767->buck3_gpiodvs)
+			buck234_vol = &s5m8767->buck3_vol[0];
+		else if (reg_id == S5M8767_BUCK4 && s5m8767->buck4_gpiodvs)
+			buck234_vol = &s5m8767->buck4_vol[0];
+		break;
+	case S5M8767_BUCK7 ... S5M8767_BUCK8:
+		return -EINVAL;
 	case S5M8767_BUCK9:
-		return s5m8767_set_voltage(rdev, min_uV, max_uV, selector);
+		mask = 0xff;
+		break;
+	default:
+		return -EINVAL;
 	}
 
 	desc = reg_voltage_map[reg_id];
-	new_val = s5m8767_convert_voltage_to_sel(desc, min_uV, max_uV);
-	if (new_val < 0)
-		return new_val;
 
-	switch (reg_id) {
-	case S5M8767_BUCK2:
-		if (s5m8767->buck2_gpiodvs) {
-			while (s5m8767->buck2_vol[i] != new_val)
-				i++;
-		} else
-			return s5m8767_set_voltage(rdev, min_uV,
-						   max_uV, selector);
-		break;
-	case S5M8767_BUCK3:
-		if (s5m8767->buck3_gpiodvs) {
-			while (s5m8767->buck3_vol[i] != new_val)
-				i++;
-		} else
-			return s5m8767_set_voltage(rdev, min_uV,
-						   max_uV, selector);
-		break;
-	case S5M8767_BUCK4:
-		if (s5m8767->buck3_gpiodvs) {
-			while (s5m8767->buck4_vol[i] != new_val)
-				i++;
-		} else
-			return s5m8767_set_voltage(rdev, min_uV,
-						   max_uV, selector);
-		break;
+	sel = s5m8767_convert_voltage_to_sel(desc, min_uV, max_uV);
+	if (sel < 0)
+		return sel;
+
+	/* buck234_vol != NULL means to control buck234 voltage via DVS GPIO */
+	if (buck234_vol) {
+		while (*buck234_vol != sel) {
+			buck234_vol++;
+			index++;
+		}
+		old_index = s5m8767->buck_gpioindex;
+		s5m8767->buck_gpioindex = index;
+
+		if (index > old_index)
+			s5m8767_set_high(s5m8767);
+		else
+			s5m8767_set_low(s5m8767);
+	} else {
+		ret = s5m8767_get_voltage_register(rdev, &reg);
+		if (ret)
+			return ret;
+
+		s5m_reg_read(s5m8767->iodev, reg, &val);
+		val = (val & ~mask) | sel;
+
+		ret = s5m_reg_write(s5m8767->iodev, reg, val);
 	}
 
-	old_val = s5m8767->buck_gpioindex;
-	s5m8767->buck_gpioindex = i;
-
-	if (i > old_val)
-		s5m8767_set_high(s5m8767);
-	else
-		s5m8767_set_low(s5m8767);
-
-	*selector = new_val;
-	return 0;
+	*selector = sel;
+	return ret;
 }
 
 static int s5m8767_set_voltage_time_sel(struct regulator_dev *rdev,
@@ -500,7 +455,7 @@ static int s5m8767_set_voltage_time_sel(struct regulator_dev *rdev,
 	return 0;
 }
 
-static struct regulator_ops s5m8767_ldo_ops = {
+static struct regulator_ops s5m8767_ops = {
 	.list_voltage		= s5m8767_list_voltage,
 	.is_enabled		= s5m8767_reg_is_enabled,
 	.enable			= s5m8767_reg_enable,
@@ -510,69 +465,52 @@ static struct regulator_ops s5m8767_ldo_ops = {
 	.set_voltage_time_sel	= s5m8767_set_voltage_time_sel,
 };
 
-static struct regulator_ops s5m8767_buck_ops = {
-	.list_voltage		= s5m8767_list_voltage,
-	.is_enabled		= s5m8767_reg_is_enabled,
-	.enable			= s5m8767_reg_enable,
-	.disable		= s5m8767_reg_disable,
-	.get_voltage_sel	= s5m8767_get_voltage_sel,
-	.set_voltage		= s5m8767_set_voltage_buck,
-	.set_voltage_time_sel	= s5m8767_set_voltage_time_sel,
-};
-
-#define regulator_desc_ldo(num)		{	\
-	.name		= "LDO"#num,		\
-	.id		= S5M8767_LDO##num,	\
-	.ops		= &s5m8767_ldo_ops,	\
-	.type		= REGULATOR_VOLTAGE,	\
-	.owner		= THIS_MODULE,		\
-}
-#define regulator_desc_buck(num)	{	\
-	.name		= "BUCK"#num,		\
-	.id		= S5M8767_BUCK##num,	\
-	.ops		= &s5m8767_buck_ops,	\
+#define s5m8767_regulator_desc(_name) {		\
+	.name		= #_name,		\
+	.id		= S5M8767_##_name,	\
+	.ops		= &s5m8767_ops,		\
 	.type		= REGULATOR_VOLTAGE,	\
 	.owner		= THIS_MODULE,		\
 }
 
 static struct regulator_desc regulators[] = {
-	regulator_desc_ldo(1),
-	regulator_desc_ldo(2),
-	regulator_desc_ldo(3),
-	regulator_desc_ldo(4),
-	regulator_desc_ldo(5),
-	regulator_desc_ldo(6),
-	regulator_desc_ldo(7),
-	regulator_desc_ldo(8),
-	regulator_desc_ldo(9),
-	regulator_desc_ldo(10),
-	regulator_desc_ldo(11),
-	regulator_desc_ldo(12),
-	regulator_desc_ldo(13),
-	regulator_desc_ldo(14),
-	regulator_desc_ldo(15),
-	regulator_desc_ldo(16),
-	regulator_desc_ldo(17),
-	regulator_desc_ldo(18),
-	regulator_desc_ldo(19),
-	regulator_desc_ldo(20),
-	regulator_desc_ldo(21),
-	regulator_desc_ldo(22),
-	regulator_desc_ldo(23),
-	regulator_desc_ldo(24),
-	regulator_desc_ldo(25),
-	regulator_desc_ldo(26),
-	regulator_desc_ldo(27),
-	regulator_desc_ldo(28),
-	regulator_desc_buck(1),
-	regulator_desc_buck(2),
-	regulator_desc_buck(3),
-	regulator_desc_buck(4),
-	regulator_desc_buck(5),
-	regulator_desc_buck(6),
-	regulator_desc_buck(7),
-	regulator_desc_buck(8),
-	regulator_desc_buck(9),
+	s5m8767_regulator_desc(LDO1),
+	s5m8767_regulator_desc(LDO2),
+	s5m8767_regulator_desc(LDO3),
+	s5m8767_regulator_desc(LDO4),
+	s5m8767_regulator_desc(LDO5),
+	s5m8767_regulator_desc(LDO6),
+	s5m8767_regulator_desc(LDO7),
+	s5m8767_regulator_desc(LDO8),
+	s5m8767_regulator_desc(LDO9),
+	s5m8767_regulator_desc(LDO10),
+	s5m8767_regulator_desc(LDO11),
+	s5m8767_regulator_desc(LDO12),
+	s5m8767_regulator_desc(LDO13),
+	s5m8767_regulator_desc(LDO14),
+	s5m8767_regulator_desc(LDO15),
+	s5m8767_regulator_desc(LDO16),
+	s5m8767_regulator_desc(LDO17),
+	s5m8767_regulator_desc(LDO18),
+	s5m8767_regulator_desc(LDO19),
+	s5m8767_regulator_desc(LDO20),
+	s5m8767_regulator_desc(LDO21),
+	s5m8767_regulator_desc(LDO22),
+	s5m8767_regulator_desc(LDO23),
+	s5m8767_regulator_desc(LDO24),
+	s5m8767_regulator_desc(LDO25),
+	s5m8767_regulator_desc(LDO26),
+	s5m8767_regulator_desc(LDO27),
+	s5m8767_regulator_desc(LDO28),
+	s5m8767_regulator_desc(BUCK1),
+	s5m8767_regulator_desc(BUCK2),
+	s5m8767_regulator_desc(BUCK3),
+	s5m8767_regulator_desc(BUCK4),
+	s5m8767_regulator_desc(BUCK5),
+	s5m8767_regulator_desc(BUCK6),
+	s5m8767_regulator_desc(BUCK7),
+	s5m8767_regulator_desc(BUCK8),
+	s5m8767_regulator_desc(BUCK9),
 };
 
 static __devinit int s5m8767_pmic_probe(struct platform_device *pdev)
