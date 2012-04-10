@@ -1169,25 +1169,51 @@ static int _regulator_get_enable_time(struct regulator_dev *rdev)
 }
 
 static struct regulator_dev *regulator_dev_lookup(struct device *dev,
-							 const char *supply)
+						  const char *supply,
+						  int *ret)
 {
 	struct regulator_dev *r;
 	struct device_node *node;
+	struct regulator_map *map;
+	const char *devname = NULL;
 
 	/* first do a dt based lookup */
 	if (dev && dev->of_node) {
 		node = of_get_regulator(dev, supply);
-		if (node)
+		if (node) {
 			list_for_each_entry(r, &regulator_list, list)
 				if (r->dev.parent &&
 					node == r->dev.of_node)
 					return r;
+		} else {
+			/*
+			 * If we couldn't even get the node then it's
+			 * not just that the device didn't register
+			 * yet, there's no node and we'll never
+			 * succeed.
+			 */
+			*ret = -ENODEV;
+		}
 	}
 
 	/* if not found, try doing it non-dt way */
+	if (dev)
+		devname = dev_name(dev);
+
 	list_for_each_entry(r, &regulator_list, list)
 		if (strcmp(rdev_get_name(r), supply) == 0)
 			return r;
+
+	list_for_each_entry(map, &regulator_map_list, list) {
+		/* If the mapping has a device set up it must match */
+		if (map->dev_name &&
+		    (!devname || strcmp(map->dev_name, devname)))
+			continue;
+
+		if (strcmp(map->supply, supply) == 0)
+			return map->regulator;
+	}
+
 
 	return NULL;
 }
@@ -1197,7 +1223,6 @@ static struct regulator *_regulator_get(struct device *dev, const char *id,
 					int exclusive)
 {
 	struct regulator_dev *rdev;
-	struct regulator_map *map;
 	struct regulator *regulator = ERR_PTR(-EPROBE_DEFER);
 	const char *devname = NULL;
 	int ret;
@@ -1212,21 +1237,9 @@ static struct regulator *_regulator_get(struct device *dev, const char *id,
 
 	mutex_lock(&regulator_list_mutex);
 
-	rdev = regulator_dev_lookup(dev, id);
+	rdev = regulator_dev_lookup(dev, id, &ret);
 	if (rdev)
 		goto found;
-
-	list_for_each_entry(map, &regulator_map_list, list) {
-		/* If the mapping has a device set up it must match */
-		if (map->dev_name &&
-		    (!devname || strcmp(map->dev_name, devname)))
-			continue;
-
-		if (strcmp(map->supply, id) == 0) {
-			rdev = map->regulator;
-			goto found;
-		}
-	}
 
 	if (board_wants_dummy_regulator) {
 		rdev = dummy_regulator_rdev;
@@ -2566,7 +2579,7 @@ int regulator_bulk_disable(int num_consumers,
 			   struct regulator_bulk_data *consumers)
 {
 	int i;
-	int ret;
+	int ret, r;
 
 	for (i = num_consumers - 1; i >= 0; --i) {
 		ret = regulator_disable(consumers[i].consumer);
@@ -2578,8 +2591,12 @@ int regulator_bulk_disable(int num_consumers,
 
 err:
 	pr_err("Failed to disable %s: %d\n", consumers[i].supply, ret);
-	for (++i; i < num_consumers; ++i)
-		regulator_enable(consumers[i].consumer);
+	for (++i; i < num_consumers; ++i) {
+		r = regulator_enable(consumers[i].consumer);
+		if (r != 0)
+			pr_err("Failed to reename %s: %d\n",
+			       consumers[i].supply, r);
+	}
 
 	return ret;
 }
@@ -2829,7 +2846,8 @@ static void rdev_init_debugfs(struct regulator_dev *rdev)
  * Called by regulator drivers to register a regulator.
  * Returns 0 on success.
  */
-struct regulator_dev *regulator_register(struct regulator_desc *regulator_desc,
+struct regulator_dev *
+regulator_register(const struct regulator_desc *regulator_desc,
 	struct device *dev, const struct regulator_init_data *init_data,
 	void *driver_data, struct device_node *of_node)
 {
@@ -2922,7 +2940,7 @@ struct regulator_dev *regulator_register(struct regulator_desc *regulator_desc,
 	if (supply) {
 		struct regulator_dev *r;
 
-		r = regulator_dev_lookup(dev, supply);
+		r = regulator_dev_lookup(dev, supply, &ret);
 
 		if (!r) {
 			dev_err(dev, "Failed to find supply %s\n", supply);

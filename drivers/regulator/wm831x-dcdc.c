@@ -851,7 +851,7 @@ static __devinit int wm831x_boostp_probe(struct platform_device *pdev)
 	if (pdata == NULL || pdata->dcdc[id] == NULL)
 		return -ENODEV;
 
-	dcdc = kzalloc(sizeof(struct wm831x_dcdc), GFP_KERNEL);
+	dcdc = devm_kzalloc(&pdev->dev, sizeof(struct wm831x_dcdc), GFP_KERNEL);
 	if (dcdc == NULL) {
 		dev_err(&pdev->dev, "Unable to allocate private data\n");
 		return -ENOMEM;
@@ -900,7 +900,6 @@ static __devinit int wm831x_boostp_probe(struct platform_device *pdev)
 err_regulator:
 	regulator_unregister(dcdc->regulator);
 err:
-	kfree(dcdc);
 	return ret;
 }
 
@@ -912,7 +911,6 @@ static __devexit int wm831x_boostp_remove(struct platform_device *pdev)
 
 	free_irq(platform_get_irq_byname(pdev, "UV"), dcdc);
 	regulator_unregister(dcdc->regulator);
-	kfree(dcdc);
 
 	return 0;
 }
@@ -955,7 +953,7 @@ static __devinit int wm831x_epe_probe(struct platform_device *pdev)
 	if (pdata == NULL || pdata->epe[id] == NULL)
 		return -ENODEV;
 
-	dcdc = kzalloc(sizeof(struct wm831x_dcdc), GFP_KERNEL);
+	dcdc = devm_kzalloc(&pdev->dev, sizeof(struct wm831x_dcdc), GFP_KERNEL);
 	if (dcdc == NULL) {
 		dev_err(&pdev->dev, "Unable to allocate private data\n");
 		return -ENOMEM;
@@ -987,7 +985,6 @@ static __devinit int wm831x_epe_probe(struct platform_device *pdev)
 	return 0;
 
 err:
-	kfree(dcdc);
 	return ret;
 }
 
@@ -996,9 +993,7 @@ static __devexit int wm831x_epe_remove(struct platform_device *pdev)
 	struct wm831x_dcdc *dcdc = platform_get_drvdata(pdev);
 
 	platform_set_drvdata(pdev, NULL);
-
 	regulator_unregister(dcdc->regulator);
-	kfree(dcdc);
 
 	return 0;
 }
