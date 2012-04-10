@@ -643,7 +643,7 @@ static int virq_debug_show(struct seq_file *m, void *private)
 	void *data;
 	int i;
 
-	seq_printf(m, "%-5s  %-7s  %-15s  %-18s  %s\n", "virq", "hwirq",
+	seq_printf(m, "%-5s  %-7s  %-15s  %-18s  %s\n", "irq", "hwirq",
 		      "chip name", "chip data", "domain name");
 
 	for (i = 1; i < nr_irqs; i++) {
