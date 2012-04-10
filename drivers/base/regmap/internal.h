@@ -31,16 +31,24 @@ struct regmap_format {
 	unsigned int (*parse_val)(void *buf);
 };
 
+typedef void (*regmap_lock)(struct regmap *map);
+typedef void (*regmap_unlock)(struct regmap *map);
+
 struct regmap {
-	struct mutex lock;
+	struct mutex mutex;
+	spinlock_t spinlock;
+	regmap_lock lock;
+	regmap_unlock unlock;
 
 	struct device *dev; /* Device we do I/O on */
 	void *work_buf;     /* Scratch buffer used to format I/O */
 	struct regmap_format format;  /* Buffer format */
 	const struct regmap_bus *bus;
+	void *bus_context;
 
 #ifdef CONFIG_DEBUG_FS
 	struct dentry *debugfs;
+	const char *debugfs_name;
 #endif
 
 	unsigned int max_register;
@@ -104,11 +112,11 @@ int _regmap_write(struct regmap *map, unsigned int reg,
 
 #ifdef CONFIG_DEBUG_FS
 extern void regmap_debugfs_initcall(void);
-extern void regmap_debugfs_init(struct regmap *map);
+extern void regmap_debugfs_init(struct regmap *map, const char *name);
 extern void regmap_debugfs_exit(struct regmap *map);
 #else
 static inline void regmap_debugfs_initcall(void) { }
-static inline void regmap_debugfs_init(struct regmap *map) { }
+static inline void regmap_debugfs_init(struct regmap *map, const char *name) { }
 static inline void regmap_debugfs_exit(struct regmap *map) { }
 #endif
 
