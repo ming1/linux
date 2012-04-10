@@ -1,0 +1,19 @@
+Importing hexagon based on v3.2-rc2
+Unchanged quilt series hexagon
+Importing i2c based on 3.4-rc1
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard dd775ae2549217d3ae09363e3edb305d0fa19928
+HEAD is now at dd775ae Linux 3.4-rc1
+$ git am ../quilt/i2c/i2c-dev-accept-RECV_LEN.patch
+Applying: i2c-dev: Add support for I2C_M_RECV_LEN
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/i2c
+From ../quilt-tmp
+   48a4675..85bb1a8  master     -> quilt/i2c
+Importing jdelvare-hwmon based on 437538267b672f9320833907f1b5acbb2605f4be
+Unchanged quilt series jdelvare-hwmon
+Importing rr based on v3.3-rc5-86-g5ffca28
+Unchanged quilt series rr
+Importing device-mapper based on v3.3-5825-g4375382
+Unchanged quilt series device-mapper
