@@ -17,6 +17,11 @@ config PINMUX
 config PINCONF
 	bool "Support pin configuration controllers"
 
+config PINCTRL_OF
+	bool
+	depends on OF
+	default y if OF
+
 config GENERIC_PINCONF
 	bool
 	select PINCONF
