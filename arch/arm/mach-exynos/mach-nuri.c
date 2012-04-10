@@ -112,12 +112,13 @@ static struct s3c_sdhci_platdata nuri_hsmmc0_data __initdata = {
 	.host_caps		= (MMC_CAP_8_BIT_DATA | MMC_CAP_4_BIT_DATA |
 				MMC_CAP_MMC_HIGHSPEED | MMC_CAP_SD_HIGHSPEED |
 				MMC_CAP_ERASE),
+	.host_caps2		= MMC_CAP2_BROKEN_VOLTAGE,
 	.cd_type		= S3C_SDHCI_CD_PERMANENT,
 	.clk_type		= S3C_SDHCI_CLK_DIV_EXTERNAL,
 };
 
 static struct regulator_consumer_supply emmc_supplies[] = {
-	REGULATOR_SUPPLY("vmmc", "exynos4-sdhci.0"),
+	REGULATOR_SUPPLY("vmmc", "s3c-sdhci.0"),
 	REGULATOR_SUPPLY("vmmc", "dw_mmc"),
 };
 
@@ -417,7 +418,7 @@ static struct regulator_consumer_supply __initdata max8997_ldo12_[] = {
 	REGULATOR_SUPPLY("vddio", "6-003c"), /* HDC802 */
 };
 static struct regulator_consumer_supply __initdata max8997_ldo13_[] = {
-	REGULATOR_SUPPLY("vmmc", "exynos4-sdhci.2"), /* TFLASH */
+	REGULATOR_SUPPLY("vmmc", "s3c-sdhci.2"), /* TFLASH */
 };
 static struct regulator_consumer_supply __initdata max8997_ldo14_[] = {
 	REGULATOR_SUPPLY("inmotor", "max8997-haptic"),

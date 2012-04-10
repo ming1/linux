@@ -746,12 +746,13 @@ static struct s3c_sdhci_platdata universal_hsmmc0_data __initdata = {
 	.max_width		= 8,
 	.host_caps		= (MMC_CAP_8_BIT_DATA | MMC_CAP_4_BIT_DATA |
 				MMC_CAP_MMC_HIGHSPEED | MMC_CAP_SD_HIGHSPEED),
+	.host_caps2		= MMC_CAP2_BROKEN_VOLTAGE,
 	.cd_type		= S3C_SDHCI_CD_PERMANENT,
 	.clk_type		= S3C_SDHCI_CLK_DIV_EXTERNAL,
 };
 
 static struct regulator_consumer_supply mmc0_supplies[] = {
-	REGULATOR_SUPPLY("vmmc", "exynos4-sdhci.0"),
+	REGULATOR_SUPPLY("vmmc", "s3c-sdhci.0"),
 };
 
 static struct regulator_init_data mmc0_fixed_voltage_init_data = {
