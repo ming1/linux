@@ -105,7 +105,7 @@ static int wm831x_gp_ldo_list_voltage(struct regulator_dev *rdev,
 	/* 0.9-1.6V in 50mV steps */
 	if (selector <= WM831X_GP_LDO_SELECTOR_LOW)
 		return 900000 + (selector * 50000);
-	/* 1.7-3.3V in 50mV steps */
+	/* 1.7-3.3V in 100mV steps */
 	if (selector <= WM831X_GP_LDO_MAX_SELECTOR)
 		return 1600000 + ((selector - WM831X_GP_LDO_SELECTOR_LOW)
 				  * 100000);
@@ -310,6 +310,7 @@ static __devinit int wm831x_gp_ldo_probe(struct platform_device *pdev)
 {
 	struct wm831x *wm831x = dev_get_drvdata(pdev->dev.parent);
 	struct wm831x_pdata *pdata = wm831x->dev->platform_data;
+	struct regulator_config config = { };
 	int id;
 	struct wm831x_ldo *ldo;
 	struct resource *res;
@@ -350,8 +351,11 @@ static __devinit int wm831x_gp_ldo_probe(struct platform_device *pdev)
 	ldo->desc.ops = &wm831x_gp_ldo_ops;
 	ldo->desc.owner = THIS_MODULE;
 
-	ldo->regulator = regulator_register(&ldo->desc, &pdev->dev,
-					     pdata->ldo[id], ldo, NULL);
+	config.dev = pdev->dev.parent;
+	config.init_data = pdata->ldo[id];
+	config.driver_data = ldo;
+
+	ldo->regulator = regulator_register(&ldo->desc, &config);
 	if (IS_ERR(ldo->regulator)) {
 		ret = PTR_ERR(ldo->regulator);
 		dev_err(wm831x->dev, "Failed to register LDO%d: %d\n",
@@ -414,7 +418,7 @@ static int wm831x_aldo_list_voltage(struct regulator_dev *rdev,
 	/* 1-1.6V in 50mV steps */
 	if (selector <= WM831X_ALDO_SELECTOR_LOW)
 		return 1000000 + (selector * 50000);
-	/* 1.7-3.5V in 50mV steps */
+	/* 1.7-3.5V in 100mV steps */
 	if (selector <= WM831X_ALDO_MAX_SELECTOR)
 		return 1600000 + ((selector - WM831X_ALDO_SELECTOR_LOW)
 				  * 100000);
@@ -575,6 +579,7 @@ static __devinit int wm831x_aldo_probe(struct platform_device *pdev)
 {
 	struct wm831x *wm831x = dev_get_drvdata(pdev->dev.parent);
 	struct wm831x_pdata *pdata = wm831x->dev->platform_data;
+	struct regulator_config config = { };
 	int id;
 	struct wm831x_ldo *ldo;
 	struct resource *res;
@@ -615,8 +620,11 @@ static __devinit int wm831x_aldo_probe(struct platform_device *pdev)
 	ldo->desc.ops = &wm831x_aldo_ops;
 	ldo->desc.owner = THIS_MODULE;
 
-	ldo->regulator = regulator_register(&ldo->desc, &pdev->dev,
-					     pdata->ldo[id], ldo, NULL);
+	config.dev = pdev->dev.parent;
+	config.init_data = pdata->ldo[id];
+	config.driver_data = ldo;
+
+	ldo->regulator = regulator_register(&ldo->desc, &config);
 	if (IS_ERR(ldo->regulator)) {
 		ret = PTR_ERR(ldo->regulator);
 		dev_err(wm831x->dev, "Failed to register LDO%d: %d\n",
@@ -769,6 +777,7 @@ static __devinit int wm831x_alive_ldo_probe(struct platform_device *pdev)
 {
 	struct wm831x *wm831x = dev_get_drvdata(pdev->dev.parent);
 	struct wm831x_pdata *pdata = wm831x->dev->platform_data;
+	struct regulator_config config = { };
 	int id;
 	struct wm831x_ldo *ldo;
 	struct resource *res;
@@ -810,8 +819,11 @@ static __devinit int wm831x_alive_ldo_probe(struct platform_device *pdev)
 	ldo->desc.ops = &wm831x_alive_ldo_ops;
 	ldo->desc.owner = THIS_MODULE;
 
-	ldo->regulator = regulator_register(&ldo->desc, &pdev->dev,
-					     pdata->ldo[id], ldo, NULL);
+	config.dev = pdev->dev.parent;
+	config.init_data = pdata->ldo[id];
+	config.driver_data = ldo;
+
+	ldo->regulator = regulator_register(&ldo->desc, &config);
 	if (IS_ERR(ldo->regulator)) {
 		ret = PTR_ERR(ldo->regulator);
 		dev_err(wm831x->dev, "Failed to register LDO%d: %d\n",
