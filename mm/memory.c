@@ -2892,6 +2892,7 @@ static int do_swap_page(struct mm_struct *mm, struct vm_area_struct *vma,
 	struct mem_cgroup *ptr;
 	int exclusive = 0;
 	int ret = 0;
+	bool swap_token;
 
 	if (!pte_unmap_same(mm, pmd, page_table, orig_pte))
 		goto out;
@@ -2940,7 +2941,12 @@ static int do_swap_page(struct mm_struct *mm, struct vm_area_struct *vma,
 		goto out_release;
 	}
 
+	swap_token = activate_swap_token(mm);
+
 	locked = lock_page_or_retry(page, mm, flags);
+
+	deactivate_swap_token(mm, swap_token);
+
 	delayacct_clear_flag(DELAYACCT_PF_SWAPIN);
 	if (!locked) {
 		ret |= VM_FAULT_RETRY;
@@ -3187,6 +3193,7 @@ static int __do_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 	struct vm_fault vmf;
 	int ret;
 	int page_mkwrite = 0;
+	bool swap_token;
 
 	/*
 	 * If we do COW later, allocate page befor taking lock_page()
@@ -3207,6 +3214,8 @@ static int __do_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 		}
 	} else
 		cow_page = NULL;
+
+	swap_token = activate_swap_token(mm);
 
 	vmf.virtual_address = (void __user *)(address & PAGE_MASK);
 	vmf.pgoff = pgoff;
@@ -3275,6 +3284,8 @@ static int __do_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 		}
 
 	}
+
+	deactivate_swap_token(mm, swap_token);
 
 	page_table = pte_offset_map_lock(mm, pmd, address, &ptl);
 
@@ -3347,9 +3358,11 @@ static int __do_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 	return ret;
 
 unwritable_page:
+	deactivate_swap_token(mm, swap_token);
 	page_cache_release(page);
 	return ret;
 uncharge_out:
+	deactivate_swap_token(mm, swap_token);
 	/* fs's fault handler get error */
 	if (cow_page) {
 		mem_cgroup_uncharge_page(cow_page);
