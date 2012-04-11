@@ -119,8 +119,6 @@ enum fimc_color_fmt {
 
 /* The hardware context state. */
 #define	FIMC_PARAMS		(1 << 0)
-#define	FIMC_SRC_ADDR		(1 << 1)
-#define	FIMC_DST_ADDR		(1 << 2)
 #define	FIMC_SRC_FMT		(1 << 3)
 #define	FIMC_DST_FMT		(1 << 4)
 #define	FIMC_DST_CROP		(1 << 5)
@@ -431,10 +429,8 @@ struct fimc_ctx;
  * @pdata:	pointer to the device platform data
  * @variant:	the IP variant information
  * @id:		FIMC device index (0..FIMC_MAX_DEVS)
- * @num_clocks: the number of clocks managed by this device instance
  * @clock:	clocks required for FIMC operation
  * @regs:	the mapped hardware registers
- * @irq:	FIMC interrupt number
  * @irq_queue:	interrupt handler waitqueue
  * @v4l2_dev:	root v4l2_device
  * @m2m:	memory-to-memory V4L2 device information
@@ -450,10 +446,8 @@ struct fimc_dev {
 	struct s5p_platform_fimc	*pdata;
 	struct samsung_fimc_variant	*variant;
 	u16				id;
-	u16				num_clocks;
 	struct clk			*clock[MAX_FIMC_CLOCKS];
 	void __iomem			*regs;
-	int				irq;
 	wait_queue_head_t		irq_queue;
 	struct v4l2_device		*v4l2_dev;
 	struct fimc_m2m_device		m2m;
@@ -465,7 +459,6 @@ struct fimc_dev {
 
 /**
  * fimc_ctx - the device context data
- * @slock:		spinlock protecting this data structure
  * @s_frame:		source frame properties
  * @d_frame:		destination frame properties
  * @out_order_1p:	output 1-plane YCBCR order
@@ -492,7 +485,6 @@ struct fimc_dev {
  * @ctrls_rdy:		true if the control handler is initialized
  */
 struct fimc_ctx {
-	spinlock_t		slock;
 	struct fimc_frame	s_frame;
 	struct fimc_frame	d_frame;
 	u32			out_order_1p;
@@ -560,13 +552,13 @@ static inline bool fimc_capture_active(struct fimc_dev *fimc)
 	return ret;
 }
 
-static inline void fimc_ctx_state_lock_set(u32 state, struct fimc_ctx *ctx)
+static inline void fimc_ctx_state_set(u32 state, struct fimc_ctx *ctx)
 {
 	unsigned long flags;
 
-	spin_lock_irqsave(&ctx->slock, flags);
+	spin_lock_irqsave(&ctx->fimc_dev->slock, flags);
 	ctx->state |= state;
-	spin_unlock_irqrestore(&ctx->slock, flags);
+	spin_unlock_irqrestore(&ctx->fimc_dev->slock, flags);
 }
 
 static inline bool fimc_ctx_state_is_set(u32 mask, struct fimc_ctx *ctx)
@@ -574,9 +566,9 @@ static inline bool fimc_ctx_state_is_set(u32 mask, struct fimc_ctx *ctx)
 	unsigned long flags;
 	bool ret;
 
-	spin_lock_irqsave(&ctx->slock, flags);
+	spin_lock_irqsave(&ctx->fimc_dev->slock, flags);
 	ret = (ctx->state & mask) == mask;
-	spin_unlock_irqrestore(&ctx->slock, flags);
+	spin_unlock_irqrestore(&ctx->fimc_dev->slock, flags);
 	return ret;
 }
 
