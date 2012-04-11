@@ -276,6 +276,9 @@ static void __ieee80211_wake_queue(struct ieee80211_hw *hw, int queue,
 	if (WARN_ON(queue >= hw->queues))
 		return;
 
+	if (!test_bit(reason, &local->queue_stop_reasons[queue]))
+		return;
+
 	__clear_bit(reason, &local->queue_stop_reasons[queue]);
 
 	if (local->queue_stop_reasons[queue] != 0)
@@ -321,6 +324,9 @@ static void __ieee80211_stop_queue(struct ieee80211_hw *hw, int queue,
 	trace_stop_queue(local, queue, reason);
 
 	if (WARN_ON(queue >= hw->queues))
+		return;
+
+	if (test_bit(reason, &local->queue_stop_reasons[queue]))
 		return;
 
 	__set_bit(reason, &local->queue_stop_reasons[queue]);
@@ -379,10 +385,6 @@ void ieee80211_add_pending_skbs_fn(struct ieee80211_local *local,
 	int queue, i;
 
 	spin_lock_irqsave(&local->queue_stop_reason_lock, flags);
-	for (i = 0; i < hw->queues; i++)
-		__ieee80211_stop_queue(hw, i,
-			IEEE80211_QUEUE_STOP_REASON_SKB_ADD);
-
 	while ((skb = skb_dequeue(skbs))) {
 		struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 
@@ -392,6 +394,10 @@ void ieee80211_add_pending_skbs_fn(struct ieee80211_local *local,
 		}
 
 		queue = skb_get_queue_mapping(skb);
+
+		__ieee80211_stop_queue(hw, queue,
+				IEEE80211_QUEUE_STOP_REASON_SKB_ADD);
+
 		__skb_queue_tail(&local->pending[queue], skb);
 	}
 
@@ -402,12 +408,6 @@ void ieee80211_add_pending_skbs_fn(struct ieee80211_local *local,
 		__ieee80211_wake_queue(hw, i,
 			IEEE80211_QUEUE_STOP_REASON_SKB_ADD);
 	spin_unlock_irqrestore(&local->queue_stop_reason_lock, flags);
-}
-
-void ieee80211_add_pending_skbs(struct ieee80211_local *local,
-				struct sk_buff_head *skbs)
-{
-	ieee80211_add_pending_skbs_fn(local, skbs, NULL, NULL);
 }
 
 void ieee80211_stop_queues_by_reason(struct ieee80211_hw *hw,
@@ -684,9 +684,9 @@ u32 ieee802_11_parse_elems_crc(u8 *start, size_t len,
 			else
 				elem_parse_failed = true;
 			break;
-		case WLAN_EID_HT_INFORMATION:
-			if (elen >= sizeof(struct ieee80211_ht_info))
-				elems->ht_info_elem = (void *)pos;
+		case WLAN_EID_HT_OPERATION:
+			if (elen >= sizeof(struct ieee80211_ht_operation))
+				elems->ht_operation = (void *)pos;
 			else
 				elem_parse_failed = true;
 			break;
@@ -775,11 +775,14 @@ void ieee80211_set_wmm_default(struct ieee80211_sub_if_data *sdata,
 {
 	struct ieee80211_local *local = sdata->local;
 	struct ieee80211_tx_queue_params qparam;
-	int queue;
+	int ac;
 	bool use_11b;
 	int aCWmin, aCWmax;
 
 	if (!local->ops->conf_tx)
+		return;
+
+	if (local->hw.queues < IEEE80211_NUM_ACS)
 		return;
 
 	memset(&qparam, 0, sizeof(qparam));
@@ -787,7 +790,7 @@ void ieee80211_set_wmm_default(struct ieee80211_sub_if_data *sdata,
 	use_11b = (local->hw.conf.channel->band == IEEE80211_BAND_2GHZ) &&
 		 !(sdata->flags & IEEE80211_SDATA_OPERATING_GMODE);
 
-	for (queue = 0; queue < local->hw.queues; queue++) {
+	for (ac = 0; ac < IEEE80211_NUM_ACS; ac++) {
 		/* Set defaults according to 802.11-2007 Table 7-37 */
 		aCWmax = 1023;
 		if (use_11b)
@@ -795,21 +798,21 @@ void ieee80211_set_wmm_default(struct ieee80211_sub_if_data *sdata,
 		else
 			aCWmin = 15;
 
-		switch (queue) {
-		case 3: /* AC_BK */
+		switch (ac) {
+		case IEEE80211_AC_BK:
 			qparam.cw_max = aCWmax;
 			qparam.cw_min = aCWmin;
 			qparam.txop = 0;
 			qparam.aifs = 7;
 			break;
 		default: /* never happens but let's not leave undefined */
-		case 2: /* AC_BE */
+		case IEEE80211_AC_BE:
 			qparam.cw_max = aCWmax;
 			qparam.cw_min = aCWmin;
 			qparam.txop = 0;
 			qparam.aifs = 3;
 			break;
-		case 1: /* AC_VI */
+		case IEEE80211_AC_VI:
 			qparam.cw_max = aCWmin;
 			qparam.cw_min = (aCWmin + 1) / 2 - 1;
 			if (use_11b)
@@ -818,7 +821,7 @@ void ieee80211_set_wmm_default(struct ieee80211_sub_if_data *sdata,
 				qparam.txop = 3008/32;
 			qparam.aifs = 2;
 			break;
-		case 0: /* AC_VO */
+		case IEEE80211_AC_VO:
 			qparam.cw_max = (aCWmin + 1) / 2 - 1;
 			qparam.cw_min = (aCWmin + 1) / 4 - 1;
 			if (use_11b)
@@ -831,8 +834,8 @@ void ieee80211_set_wmm_default(struct ieee80211_sub_if_data *sdata,
 
 		qparam.uapsd = false;
 
-		sdata->tx_conf[queue] = qparam;
-		drv_conf_tx(local, sdata, queue, &qparam);
+		sdata->tx_conf[ac] = qparam;
+		drv_conf_tx(local, sdata, ac, &qparam);
 	}
 
 	/* after reinitialize QoS TX queues setting to default,
@@ -1232,14 +1235,17 @@ int ieee80211_reconfig(struct ieee80211_local *local)
 	mutex_unlock(&local->sta_mtx);
 
 	/* reconfigure tx conf */
-	list_for_each_entry(sdata, &local->interfaces, list) {
-		if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN ||
-		    sdata->vif.type == NL80211_IFTYPE_MONITOR ||
-		    !ieee80211_sdata_running(sdata))
-			continue;
+	if (hw->queues >= IEEE80211_NUM_ACS) {
+		list_for_each_entry(sdata, &local->interfaces, list) {
+			if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN ||
+			    sdata->vif.type == NL80211_IFTYPE_MONITOR ||
+			    !ieee80211_sdata_running(sdata))
+				continue;
 
-		for (i = 0; i < hw->queues; i++)
-			drv_conf_tx(local, sdata, i, &sdata->tx_conf[i]);
+			for (i = 0; i < IEEE80211_NUM_ACS; i++)
+				drv_conf_tx(local, sdata, i,
+					    &sdata->tx_conf[i]);
+		}
 	}
 
 	/* reconfigure hardware */
@@ -1611,57 +1617,56 @@ u8 *ieee80211_ie_build_ht_cap(u8 *pos, struct ieee80211_sta_ht_cap *ht_cap,
 	return pos;
 }
 
-u8 *ieee80211_ie_build_ht_info(u8 *pos,
-			       struct ieee80211_sta_ht_cap *ht_cap,
+u8 *ieee80211_ie_build_ht_oper(u8 *pos, struct ieee80211_sta_ht_cap *ht_cap,
 			       struct ieee80211_channel *channel,
 			       enum nl80211_channel_type channel_type)
 {
-	struct ieee80211_ht_info *ht_info;
+	struct ieee80211_ht_operation *ht_oper;
 	/* Build HT Information */
-	*pos++ = WLAN_EID_HT_INFORMATION;
-	*pos++ = sizeof(struct ieee80211_ht_info);
-	ht_info = (struct ieee80211_ht_info *)pos;
-	ht_info->control_chan =
+	*pos++ = WLAN_EID_HT_OPERATION;
+	*pos++ = sizeof(struct ieee80211_ht_operation);
+	ht_oper = (struct ieee80211_ht_operation *)pos;
+	ht_oper->primary_chan =
 			ieee80211_frequency_to_channel(channel->center_freq);
 	switch (channel_type) {
 	case NL80211_CHAN_HT40MINUS:
-		ht_info->ht_param = IEEE80211_HT_PARAM_CHA_SEC_BELOW;
+		ht_oper->ht_param = IEEE80211_HT_PARAM_CHA_SEC_BELOW;
 		break;
 	case NL80211_CHAN_HT40PLUS:
-		ht_info->ht_param = IEEE80211_HT_PARAM_CHA_SEC_ABOVE;
+		ht_oper->ht_param = IEEE80211_HT_PARAM_CHA_SEC_ABOVE;
 		break;
 	case NL80211_CHAN_HT20:
 	default:
-		ht_info->ht_param = IEEE80211_HT_PARAM_CHA_SEC_NONE;
+		ht_oper->ht_param = IEEE80211_HT_PARAM_CHA_SEC_NONE;
 		break;
 	}
 	if (ht_cap->cap & IEEE80211_HT_CAP_SUP_WIDTH_20_40)
-		ht_info->ht_param |= IEEE80211_HT_PARAM_CHAN_WIDTH_ANY;
+		ht_oper->ht_param |= IEEE80211_HT_PARAM_CHAN_WIDTH_ANY;
 
 	/*
 	 * Note: According to 802.11n-2009 9.13.3.1, HT Protection field and
 	 * RIFS Mode are reserved in IBSS mode, therefore keep them at 0
 	 */
-	ht_info->operation_mode = 0x0000;
-	ht_info->stbc_param = 0x0000;
+	ht_oper->operation_mode = 0x0000;
+	ht_oper->stbc_param = 0x0000;
 
 	/* It seems that Basic MCS set and Supported MCS set
 	   are identical for the first 10 bytes */
-	memset(&ht_info->basic_set, 0, 16);
-	memcpy(&ht_info->basic_set, &ht_cap->mcs, 10);
+	memset(&ht_oper->basic_set, 0, 16);
+	memcpy(&ht_oper->basic_set, &ht_cap->mcs, 10);
 
-	return pos + sizeof(struct ieee80211_ht_info);
+	return pos + sizeof(struct ieee80211_ht_operation);
 }
 
 enum nl80211_channel_type
-ieee80211_ht_info_to_channel_type(struct ieee80211_ht_info *ht_info)
+ieee80211_ht_oper_to_channel_type(struct ieee80211_ht_operation *ht_oper)
 {
 	enum nl80211_channel_type channel_type;
 
-	if (!ht_info)
+	if (!ht_oper)
 		return NL80211_CHAN_NO_HT;
 
-	switch (ht_info->ht_param & IEEE80211_HT_PARAM_CHA_SEC_OFFSET) {
+	switch (ht_oper->ht_param & IEEE80211_HT_PARAM_CHA_SEC_OFFSET) {
 	case IEEE80211_HT_PARAM_CHA_SEC_NONE:
 		channel_type = NL80211_CHAN_HT20;
 		break;
