@@ -290,14 +290,14 @@ static inline int __thread_has_fpu(struct task_struct *tsk)
 static inline void __thread_clear_has_fpu(struct task_struct *tsk)
 {
 	tsk->thread.fpu.has_fpu = 0;
-	percpu_write(fpu_owner_task, NULL);
+	__this_cpu_write(fpu_owner_task, NULL);
 }
 
 /* Must be paired with a 'clts' before! */
 static inline void __thread_set_has_fpu(struct task_struct *tsk)
 {
 	tsk->thread.fpu.has_fpu = 1;
-	percpu_write(fpu_owner_task, tsk);
+	__this_cpu_write(fpu_owner_task, tsk);
 }
 
 /*
