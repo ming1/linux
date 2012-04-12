@@ -350,7 +350,8 @@ unsigned int irq_create_direct_mapping(struct irq_domain *domain)
 unsigned int irq_create_mapping(struct irq_domain *domain,
 				irq_hw_number_t hwirq)
 {
-	unsigned int virq, hint;
+	unsigned int hint;
+	int virq;
 
 	pr_debug("irq: irq_create_mapping(0x%p, 0x%lx)\n", domain, hwirq);
 
@@ -381,9 +382,9 @@ unsigned int irq_create_mapping(struct irq_domain *domain,
 	if (hint == 0)
 		hint++;
 	virq = irq_alloc_desc_from(hint, 0);
-	if (!virq)
+	if (virq <= 0)
 		virq = irq_alloc_desc_from(1, 0);
-	if (!virq) {
+	if (virq <= 0) {
 		pr_debug("irq: -> virq allocation failed\n");
 		return 0;
 	}
@@ -642,8 +643,8 @@ static int virq_debug_show(struct seq_file *m, void *private)
 	void *data;
 	int i;
 
-	seq_printf(m, "%-5s  %-7s  %-15s  %-18s  %s\n", "virq", "hwirq",
-		      "chip name", "chip data", "domain name");
+	seq_printf(m, "%-5s  %-7s  %-15s  %-*s  %s\n", "irq", "hwirq",
+		      "chip name", 2 * sizeof(void *) + 2, "chip data", "domain name");
 
 	for (i = 1; i < nr_irqs; i++) {
 		desc = irq_to_desc(i);
@@ -666,7 +667,7 @@ static int virq_debug_show(struct seq_file *m, void *private)
 			seq_printf(m, "%-15s  ", p);
 
 			data = irq_desc_get_chip_data(desc);
-			seq_printf(m, "0x%16p  ", data);
+			seq_printf(m, data ? "0x%p  " : "  %p  ", data);
 
 			if (desc->irq_data.domain && desc->irq_data.domain->of_node)
 				p = desc->irq_data.domain->of_node->full_name;
