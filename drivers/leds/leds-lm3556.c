@@ -139,7 +139,7 @@ static struct indicator indicator_pattern[INDIC_PATTERN_SIZE] = {
 };
 
 /* i2c access*/
-static int lm3556_read_reg(struct i2c_client *client, u8 reg, u8 * val)
+static int lm3556_read_reg(struct i2c_client *client, u8 reg, u8 *val)
 {
 	int ret;
 
