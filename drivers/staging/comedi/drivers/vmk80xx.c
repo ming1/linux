@@ -247,6 +247,8 @@ static struct vmk80xx_usb vmb[VMK80XX_MAX_BOARDS];
 
 static DEFINE_MUTEX(glb_mutex);
 
+static struct comedi_driver driver_vmk80xx;	/* see below for initializer */
+
 static void vmk80xx_tx_callback(struct urb *urb)
 {
 	struct vmk80xx_usb *dev = urb->context;
@@ -1482,7 +1484,7 @@ static int vmk80xx_probe(struct usb_interface *intf,
 
 	mutex_unlock(&glb_mutex);
 
-	comedi_usb_auto_config(dev->udev, BOARDNAME);
+	comedi_usb_auto_config(intf, &driver_vmk80xx);
 
 	return 0;
 error:
@@ -1500,7 +1502,7 @@ static void vmk80xx_disconnect(struct usb_interface *intf)
 	if (!dev)
 		return;
 
-	comedi_usb_auto_unconfig(dev->udev);
+	comedi_usb_auto_unconfig(intf);
 
 	mutex_lock(&glb_mutex);
 	down(&dev->limit_sem);
