@@ -757,8 +757,7 @@ int page_referenced_one(struct page *page, struct vm_area_struct *vma,
 
 	/* Pretend the page is referenced if the task has the
 	   swap token and is in the middle of a page fault. */
-	if (mm != current->mm && has_swap_token(mm) &&
-			rwsem_is_locked(&mm->mmap_sem))
+	if (mm != current->mm && has_active_swap_token(mm))
 		referenced++;
 
 	(*mapcount)--;
