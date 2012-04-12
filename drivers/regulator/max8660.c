@@ -313,7 +313,7 @@ static struct regulator_ops max8660_ldo67_ops = {
 	.set_voltage = max8660_ldo67_set,
 };
 
-static struct regulator_desc max8660_reg[] = {
+static const struct regulator_desc max8660_reg[] = {
 	{
 		.name = "V3(DCDC)",
 		.id = MAX8660_V3,
@@ -361,6 +361,7 @@ static int __devinit max8660_probe(struct i2c_client *client,
 {
 	struct regulator_dev **rdev;
 	struct max8660_platform_data *pdata = client->dev.platform_data;
+	struct regulator_config config = { };
 	struct max8660 *max8660;
 	int boot_on, i, id, ret = -EINVAL;
 
@@ -449,9 +450,11 @@ static int __devinit max8660_probe(struct i2c_client *client,
 
 		id = pdata->subdevs[i].id;
 
-		rdev[i] = regulator_register(&max8660_reg[id], &client->dev,
-					     pdata->subdevs[i].platform_data,
-					     max8660, NULL);
+		config.dev = &client->dev;
+		config.init_data = pdata->subdevs[i].platform_data;
+		config.driver_data = max8660;
+
+		rdev[i] = regulator_register(&max8660_reg[id], &config);
 		if (IS_ERR(rdev[i])) {
 			ret = PTR_ERR(rdev[i]);
 			dev_err(&client->dev, "failed to register %s\n",
@@ -461,7 +464,6 @@ static int __devinit max8660_probe(struct i2c_client *client,
 	}
 
 	i2c_set_clientdata(client, max8660);
-	dev_info(&client->dev, "Maxim 8660/8661 regulator driver loaded\n");
 	return 0;
 
 err_unregister:

@@ -161,7 +161,7 @@ static struct regulator_ops max1586_v6_ops = {
 	.list_voltage = max1586_v6_list,
 };
 
-static struct regulator_desc max1586_reg[] = {
+static const struct regulator_desc max1586_reg[] = {
 	{
 		.name = "Output_V3",
 		.id = MAX1586_V3,
@@ -185,6 +185,7 @@ static int __devinit max1586_pmic_probe(struct i2c_client *client,
 {
 	struct regulator_dev **rdev;
 	struct max1586_platform_data *pdata = client->dev.platform_data;
+	struct regulator_config config = { };
 	struct max1586_data *max1586;
 	int i, id, ret = -ENOMEM;
 
@@ -212,9 +213,12 @@ static int __devinit max1586_pmic_probe(struct i2c_client *client,
 			dev_err(&client->dev, "invalid regulator id %d\n", id);
 			goto err;
 		}
-		rdev[i] = regulator_register(&max1586_reg[id], &client->dev,
-					     pdata->subdevs[i].platform_data,
-					     max1586, NULL);
+
+		config.dev = &client->dev;
+		config.init_data = pdata->subdevs[i].platform_data;
+		config.driver_data = max1586;
+
+		rdev[i] = regulator_register(&max1586_reg[id], &config);
 		if (IS_ERR(rdev[i])) {
 			ret = PTR_ERR(rdev[i]);
 			dev_err(&client->dev, "failed to register %s\n",

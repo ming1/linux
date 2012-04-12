@@ -473,31 +473,12 @@ static int twl4030ldo_list_voltage(struct regulator_dev *rdev, unsigned index)
 }
 
 static int
-twl4030ldo_set_voltage(struct regulator_dev *rdev, int min_uV, int max_uV,
-		       unsigned *selector)
+twl4030ldo_set_voltage_sel(struct regulator_dev *rdev, unsigned selector)
 {
 	struct twlreg_info	*info = rdev_get_drvdata(rdev);
-	int			vsel;
 
-	for (vsel = 0; vsel < info->table_len; vsel++) {
-		int mV = info->table[vsel];
-		int uV;
-
-		if (IS_UNSUP(mV))
-			continue;
-		uV = LDO_MV(mV) * 1000;
-
-		/* REVISIT for VAUX2, first match may not be best/lowest */
-
-		/* use the first in-range value */
-		if (min_uV <= uV && uV <= max_uV) {
-			*selector = vsel;
-			return twlreg_write(info, TWL_MODULE_PM_RECEIVER,
-							VREG_VOLTAGE, vsel);
-		}
-	}
-
-	return -EDOM;
+	return twlreg_write(info, TWL_MODULE_PM_RECEIVER, VREG_VOLTAGE,
+			    selector);
 }
 
 static int twl4030ldo_get_voltage(struct regulator_dev *rdev)
@@ -516,7 +497,7 @@ static int twl4030ldo_get_voltage(struct regulator_dev *rdev)
 static struct regulator_ops twl4030ldo_ops = {
 	.list_voltage	= twl4030ldo_list_voltage,
 
-	.set_voltage	= twl4030ldo_set_voltage,
+	.set_voltage_sel = twl4030ldo_set_voltage_sel,
 	.get_voltage	= twl4030ldo_get_voltage,
 
 	.enable		= twl4030reg_enable,
@@ -806,10 +787,7 @@ twl6030smps_set_voltage(struct regulator_dev *rdev, int min_uV, int max_uV,
 			vsel = 0;
 		else if ((min_uV >= 600000) && (min_uV <= 1300000)) {
 			int calc_uV;
-			vsel = (min_uV - 600000) / 125;
-			if (vsel % 100)
-				vsel += 100;
-			vsel /= 100;
+			vsel = DIV_ROUND_UP(min_uV - 600000, 12500);
 			vsel++;
 			calc_uV = twl6030smps_list_voltage(rdev, vsel);
 			if (calc_uV > max_uV)
@@ -836,10 +814,7 @@ twl6030smps_set_voltage(struct regulator_dev *rdev, int min_uV, int max_uV,
 			vsel = 0;
 		else if ((min_uV >= 700000) && (min_uV <= 1420000)) {
 			int calc_uV;
-			vsel = (min_uV - 700000) / 125;
-			if (vsel % 100)
-				vsel += 100;
-			vsel /= 100;
+			vsel = DIV_ROUND_UP(min_uV - 700000, 12500);
 			vsel++;
 			calc_uV = twl6030smps_list_voltage(rdev, vsel);
 			if (calc_uV > max_uV)
@@ -862,24 +837,18 @@ twl6030smps_set_voltage(struct regulator_dev *rdev, int min_uV, int max_uV,
 			return -EINVAL;
 		break;
 	case SMPS_EXTENDED_EN:
-		if (min_uV == 0)
+		if (min_uV == 0) {
 			vsel = 0;
-		else if ((min_uV >= 1852000) && (max_uV <= 4013600)) {
-			vsel = (min_uV - 1852000) / 386;
-			if (vsel % 100)
-				vsel += 100;
-			vsel /= 100;
+		} else if ((min_uV >= 1852000) && (max_uV <= 4013600)) {
+			vsel = DIV_ROUND_UP(min_uV - 1852000, 38600);
 			vsel++;
 		}
 		break;
 	case SMPS_OFFSET_EN|SMPS_EXTENDED_EN:
-		if (min_uV == 0)
+		if (min_uV == 0) {
 			vsel = 0;
-		else if ((min_uV >= 2161000) && (max_uV <= 4321000)) {
-			vsel = (min_uV - 2161000) / 386;
-			if (vsel % 100)
-				vsel += 100;
-			vsel /= 100;
+		} else if ((min_uV >= 2161000) && (max_uV <= 4321000)) {
+			vsel = DIV_ROUND_UP(min_uV - 2161000, 38600);
 			vsel++;
 		}
 		break;
@@ -1194,6 +1163,7 @@ static int __devinit twlreg_probe(struct platform_device *pdev)
 	struct regulator_dev		*rdev;
 	struct twl_regulator_driver_data	*drvdata;
 	const struct of_device_id	*match;
+	struct regulator_config		config = { };
 
 	match = of_match_device(twl_of_match, &pdev->dev);
 	if (match) {
@@ -1207,10 +1177,12 @@ static int __devinit twlreg_probe(struct platform_device *pdev)
 		initdata = pdev->dev.platform_data;
 		for (i = 0, info = NULL; i < ARRAY_SIZE(twl_of_match); i++) {
 			info = twl_of_match[i].data;
-			if (!info || info->desc.id != id)
-				continue;
-			break;
+			if (info && info->desc.id == id)
+				break;
 		}
+		if (i == ARRAY_SIZE(twl_of_match))
+			return -ENODEV;
+
 		drvdata = initdata->driver_data;
 		if (!drvdata)
 			return -EINVAL;
@@ -1273,8 +1245,12 @@ static int __devinit twlreg_probe(struct platform_device *pdev)
 		break;
 	}
 
-	rdev = regulator_register(&info->desc, &pdev->dev, initdata, info,
-							pdev->dev.of_node);
+	config.dev = &pdev->dev;
+	config.init_data = initdata;
+	config.driver_data = info;
+	config.of_node = pdev->dev.of_node;
+
+	rdev = regulator_register(&info->desc, &config);
 	if (IS_ERR(rdev)) {
 		dev_err(&pdev->dev, "can't register %s, %ld\n",
 				info->desc.name, PTR_ERR(rdev));
