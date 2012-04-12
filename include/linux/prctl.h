@@ -145,4 +145,6 @@
 #define PR_SET_NO_NEW_PRIVS 38
 #define PR_GET_NO_NEW_PRIVS 39
 
+#define PR_GET_TID_ADDRESS     40
+
 #endif /* _LINUX_PRCTL_H */
