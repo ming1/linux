@@ -1006,13 +1006,8 @@ static void l2cap_sock_init(struct sock *sk, struct sock *parent)
 		} else {
 			chan->mode = L2CAP_MODE_BASIC;
 		}
-		chan->max_tx = L2CAP_DEFAULT_MAX_TX;
-		chan->fcs  = L2CAP_FCS_CRC16;
-		chan->tx_win = L2CAP_DEFAULT_TX_WINDOW;
-		chan->tx_win_max = L2CAP_DEFAULT_TX_WINDOW;
-		chan->sec_level = BT_SECURITY_LOW;
-		chan->flags = 0;
-		set_bit(FLAG_FORCE_ACTIVE, &chan->flags);
+
+		l2cap_chan_set_defaults(chan);
 	}
 
 	/* Default config options */
@@ -1048,11 +1043,13 @@ static struct sock *l2cap_sock_alloc(struct net *net, struct socket *sock, int p
 	sk->sk_protocol = proto;
 	sk->sk_state = BT_OPEN;
 
-	chan = l2cap_chan_create(sk);
+	chan = l2cap_chan_create();
 	if (!chan) {
 		l2cap_sock_kill(sk);
 		return NULL;
 	}
+
+	chan->sk = sk;
 
 	l2cap_pi(sk)->chan = chan;
 
