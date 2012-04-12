@@ -1712,6 +1712,7 @@ static int process_checks(struct r1bio *r1_bio)
 	struct r1conf *conf = mddev->private;
 	int primary;
 	int i;
+	int vcnt;
 
 	for (primary = 0; primary < conf->raid_disks * 2; primary++)
 		if (r1_bio->bios[primary]->bi_end_io == end_sync_read &&
@@ -1721,9 +1722,9 @@ static int process_checks(struct r1bio *r1_bio)
 			break;
 		}
 	r1_bio->read_disk = primary;
+	vcnt = (r1_bio->sectors + PAGE_SIZE / 512 - 1) >> (PAGE_SHIFT - 9);
 	for (i = 0; i < conf->raid_disks * 2; i++) {
 		int j;
-		int vcnt = r1_bio->sectors >> (PAGE_SHIFT- 9);
 		struct bio *pbio = r1_bio->bios[primary];
 		struct bio *sbio = r1_bio->bios[i];
 		int size;
@@ -2023,7 +2024,7 @@ static void handle_sync_write_finished(struct r1conf *conf, struct r1bio *r1_bio
 			continue;
 		if (test_bit(BIO_UPTODATE, &bio->bi_flags) &&
 		    test_bit(R1BIO_MadeGood, &r1_bio->state)) {
-			rdev_clear_badblocks(rdev, r1_bio->sector, s);
+			rdev_clear_badblocks(rdev, r1_bio->sector, s, 0);
 		}
 		if (!test_bit(BIO_UPTODATE, &bio->bi_flags) &&
 		    test_bit(R1BIO_WriteError, &r1_bio->state)) {
@@ -2043,7 +2044,7 @@ static void handle_write_finished(struct r1conf *conf, struct r1bio *r1_bio)
 			struct md_rdev *rdev = conf->mirrors[m].rdev;
 			rdev_clear_badblocks(rdev,
 					     r1_bio->sector,
-					     r1_bio->sectors);
+					     r1_bio->sectors, 0);
 			rdev_dec_pending(rdev, conf->mddev);
 		} else if (r1_bio->bios[m] != NULL) {
 			/* This drive got a write error.  We need to
