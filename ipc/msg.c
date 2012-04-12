@@ -752,6 +752,33 @@ static inline int convert_mode(long *msgtyp, int msgflg)
 	return SEARCH_EQUAL;
 }
 
+static long do_msg_steal(void __user *dest, struct msg_msg *msg, size_t bufsz)
+{
+	struct msgbuf_a __user *msgp = dest;
+	size_t msgsz;
+
+	/*
+	 * Message size have to be aligned.
+	 */
+	msgsz = roundup(sizeof(struct msgbuf_a) + msg->m_ts,
+			__alignof__(struct msgbuf_a));
+
+	/*
+	 * No need to support MSG_NOERROR flag because truncated message array
+	 * is useless.
+	 */
+	if (bufsz < msgsz)
+		return -E2BIG;
+
+	if (put_user(msg->m_type, &msgp->mtype))
+		return -EFAULT;
+	if (put_user(msg->m_ts, &msgp->msize))
+		return -EFAULT;
+	if (store_msg(msgp->mtext, msg, msg->m_ts))
+		return -EFAULT;
+	return msgsz;
+}
+
 static long do_msg_fill(void __user *dest, struct msg_msg *msg, size_t bufsz)
 {
 	struct msgbuf __user *msgp = dest;
@@ -774,6 +801,7 @@ long do_msgrcv(int msqid, void __user *buf, size_t bufsz, long msgtyp,
 	struct msg_msg *msg;
 	int mode;
 	struct ipc_namespace *ns;
+	size_t arrsz = bufsz;
 
 	if (msqid < 0 || (long) bufsz < 0)
 		return -EINVAL;
@@ -807,6 +835,16 @@ long do_msgrcv(int msqid, void __user *buf, size_t bufsz, long msgtyp,
 						walk_msg->m_type != 1) {
 					msg = walk_msg;
 					msgtyp = walk_msg->m_type - 1;
+				} else if (msgflg & MSG_STEAL) {
+					long ret;
+
+					ret = msg_fill(buf, msg, arrsz);
+					if (ret < 0) {
+						msg = ERR_PTR(ret);
+						goto out_unlock;
+					}
+					buf += ret;
+					arrsz -= ret;
 				} else {
 					msg = walk_msg;
 					break;
@@ -815,6 +853,8 @@ long do_msgrcv(int msqid, void __user *buf, size_t bufsz, long msgtyp,
 			tmp = tmp->next;
 		}
 		if (!IS_ERR(msg)) {
+			if (msgflg & MSG_STEAL)
+				goto out_unlock;
 			/*
 			 * Found a suitable message.
 			 * Unlink it from the queue.
@@ -909,6 +949,9 @@ out_unlock:
 	if (IS_ERR(msg))
 		return PTR_ERR(msg);
 
+	if (msgflg & MSG_STEAL)
+		return bufsz - arrsz;
+
 	bufsz = msg_fill(buf, msg, bufsz);
 	free_msg(msg);
 
@@ -918,7 +961,8 @@ out_unlock:
 SYSCALL_DEFINE5(msgrcv, int, msqid, struct msgbuf __user *, msgp, size_t, msgsz,
 		long, msgtyp, int, msgflg)
 {
-	return do_msgrcv(msqid, msgp, msgsz, msgtyp, msgflg, do_msg_fill);
+	return do_msgrcv(msqid, msgp, msgsz, msgtyp, msgflg,
+			 (msgflg & MSG_STEAL) ? do_msg_steal : do_msg_fill);
 }
 
 #ifdef CONFIG_PROC_FS
