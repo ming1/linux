@@ -8,7 +8,6 @@
 #include "kvm/irq.h"
 #include "kvm/uip.h"
 #include "kvm/guest_compat.h"
-#include "kvm/virtio-trans.h"
 
 #include <linux/vhost.h>
 #include <linux/virtio_net.h>
@@ -27,7 +26,7 @@
 #include <sys/wait.h>
 #include <sys/eventfd.h>
 
-#define VIRTIO_NET_QUEUE_SIZE		128
+#define VIRTIO_NET_QUEUE_SIZE		256
 #define VIRTIO_NET_NUM_QUEUES		2
 #define VIRTIO_NET_RX_QUEUE		0
 #define VIRTIO_NET_TX_QUEUE		1
@@ -43,7 +42,7 @@ struct net_dev_operations {
 
 struct net_dev {
 	pthread_mutex_t			mutex;
-	struct virtio_trans		vtrans;
+	struct virtio_device		vdev;
 	struct list_head		list;
 
 	struct virt_queue		vqs[VIRTIO_NET_NUM_QUEUES];
@@ -98,8 +97,8 @@ static void *virtio_net_rx_thread(void *p)
 
 			/* We should interrupt guest right now, otherwise latency is huge. */
 			if (virtio_queue__should_signal(&ndev->vqs[VIRTIO_NET_RX_QUEUE]))
-				ndev->vtrans.trans_ops->signal_vq(kvm, &ndev->vtrans,
-								VIRTIO_NET_RX_QUEUE);
+				ndev->vdev.ops->signal_vq(kvm, &ndev->vdev,
+							   VIRTIO_NET_RX_QUEUE);
 		}
 	}
 
@@ -134,7 +133,7 @@ static void *virtio_net_tx_thread(void *p)
 		}
 
 		if (virtio_queue__should_signal(&ndev->vqs[VIRTIO_NET_TX_QUEUE]))
-			ndev->vtrans.trans_ops->signal_vq(kvm, &ndev->vtrans, VIRTIO_NET_TX_QUEUE);
+			ndev->vdev.ops->signal_vq(kvm, &ndev->vdev, VIRTIO_NET_TX_QUEUE);
 	}
 
 	pthread_exit(NULL);
@@ -341,6 +340,7 @@ static int init_vq(struct kvm *kvm, void *dev, u32 vq, u32 pfn)
 	queue->pfn	= pfn;
 	p		= guest_pfn_to_host(kvm, queue->pfn);
 
+	/* FIXME: respect pci and mmio vring alignment */
 	vring_init(&queue->vring, VIRTIO_NET_QUEUE_SIZE, p, VIRTIO_PCI_VRING_ALIGN);
 
 	if (ndev->vhost_fd == 0)
@@ -437,7 +437,14 @@ static int get_pfn_vq(struct kvm *kvm, void *dev, u32 vq)
 
 static int get_size_vq(struct kvm *kvm, void *dev, u32 vq)
 {
+	/* FIXME: dynamic */
 	return VIRTIO_NET_QUEUE_SIZE;
+}
+
+static int set_size_vq(struct kvm *kvm, void *dev, u32 vq, int size)
+{
+	/* FIXME: dynamic */
+	return size;
 }
 
 static struct virtio_ops net_dev_virtio_ops = (struct virtio_ops) {
@@ -446,9 +453,10 @@ static struct virtio_ops net_dev_virtio_ops = (struct virtio_ops) {
 	.get_host_features	= get_host_features,
 	.set_guest_features	= set_guest_features,
 	.init_vq		= init_vq,
-	.notify_vq		= notify_vq,
 	.get_pfn_vq		= get_pfn_vq,
 	.get_size_vq		= get_size_vq,
+	.set_size_vq		= set_size_vq,
+	.notify_vq		= notify_vq,
 	.notify_vq_gsi		= notify_vq_gsi,
 	.notify_vq_eventfd	= notify_vq_eventfd,
 };
@@ -527,10 +535,12 @@ void virtio_net__init(const struct virtio_net_params *params)
 		ndev->ops = &uip_ops;
 	}
 
-	virtio_trans_init(&ndev->vtrans, VIRTIO_PCI);
-	ndev->vtrans.trans_ops->init(kvm, &ndev->vtrans, ndev, PCI_DEVICE_ID_VIRTIO_NET,
-					VIRTIO_ID_NET, PCI_CLASS_NET);
-	ndev->vtrans.virtio_ops = &net_dev_virtio_ops;
+	if (params->trans && strcmp(params->trans, "mmio") == 0)
+		virtio_init(kvm, ndev, &ndev->vdev, &net_dev_virtio_ops,
+			    VIRTIO_MMIO, PCI_DEVICE_ID_VIRTIO_NET, VIRTIO_ID_NET, PCI_CLASS_NET);
+	else
+		virtio_init(kvm, ndev, &ndev->vdev, &net_dev_virtio_ops,
+			    VIRTIO_PCI, PCI_DEVICE_ID_VIRTIO_NET, VIRTIO_ID_NET, PCI_CLASS_NET);
 
 	if (params->vhost)
 		virtio_net__vhost_init(params->kvm, ndev);
