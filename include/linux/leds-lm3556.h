@@ -1,0 +1,242 @@
+/*
+ * Simple driver for Texas Instruments LM3556 LED Flash driver chip (Rev0x03)
+ * Copyright (C) 2012 Texas Instruments
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ */
+
+#ifndef __LINUX_LM3556_H
+#define __LINUX_LM3556_H
+
+#define LM3556_NAME "leds-lm3556"
+
+enum lm3556_ivfm_filter_time {
+	IVFM_FILTER_TIME_HALF_CURRENT_STEP = 0,
+	IVFM_FILTER_TIME_256_USEC,
+	IVFM_FILTER_TIME_512_USEC,
+	IVFM_FILTER_TIME_1024_USEC
+};
+
+enum lm3556_ivfm_adj_mode {
+	IVFM_ADJ_MODE_REPORT = 0,
+	IVFM_ADJ_MODESTOP_HOLD,
+	IVFM_ADJ_MODE_DOWN,
+	IVFM_ADJ_MODE_UP_DOWN,
+};
+
+enum lm3556_ivfm_down_threshold {
+	IVFM_DN_TH_2_7_V = 0,
+	IVFM_DN_TH_2_8_V,
+	IVFM_DN_TH_2_9_V,
+	IVFM_DN_TH_3_0_V,
+	IVFM_DN_TH_3_1_V,
+	IVFM_DN_TH_3_2_V,
+	IVFM_DN_TH_3_3_V,
+	IVFM_DN_TH_3_4_V,
+};
+
+enum lm3556_ivfm_hyst {
+	IVFM_HYST_50_MV = 0,
+	IVFM_HYST_100_MV,
+	IVFM_HYST_150_MV,
+	IVFM_HYST_DIS
+};
+
+enum lm3556_ntc_curr_lvl {
+	NTC_CURR_LVL_25_UA = 0,
+	NTC_CURR_LVL_50_UA,
+	NTC_CURR_LVL_75_UA,
+	NTC_CURR_LVL_100_UA
+};
+
+enum lm3556_ntc_trip_threshold {
+	NTC_TRIP_THRESHOLD_200_MV = 0,
+	NTC_TRIP_THRESHOLD_300_MV,
+	NTC_TRIP_THRESHOLD_400_MV,
+	NTC_TRIP_THRESHOLD_500_MV,
+	NTC_TRIP_THRESHOLD_600_MV,
+	NTC_TRIP_THRESHOLD_700_MV,
+	NTC_TRIP_THRESHOLD_800_MV,
+	NTC_TRIP_THRESHOLD_900_MV
+};
+
+enum lm3556_ntc_event_lvl {
+	NTC_EVENT_LVL_STANDBY = 0,
+	NTC_EVENT_LVL_REDUCE_MIN_TORCH
+};
+
+enum lm3556_torch_indic_ramp_time {
+	TORCH_INDIC_RAMP_TIME_16_MS = 0,
+	TORCH_INDIC_RAMP_TIME_32_MS,
+	TORCH_INDIC_RAMP_TIME_64_MS,
+	TORCH_INDIC_RAMP_TIME_128_MS,
+	TORCH_INDIC_RAMP_TIME_256_MS,
+	TORCH_INDIC_RAMP_TIME_512_MS,
+	TORCH_INDIC_RAMP_TIME_1024_MS,
+	TORCH_INDIC_RAMP_TIME_2048_MS,
+};
+
+enum lm3556_indic_pulse_time {
+	PULSE_TIME_0_MS = 0,
+	PULSE_TIME_32_MS,
+	PULSE_TIME_64_MS,
+	PULSE_TIME_92_MS,
+	PULSE_TIME_128_MS,
+	PULSE_TIME_160_MS,
+	PULSE_TIME_196_MS,
+	PULSE_TIME_224_MS,
+	PULSE_TIME_256_MS,
+	PULSE_TIME_288_MS,
+	PULSE_TIME_320_MS,
+	PULSE_TIME_352_MS,
+	PULSE_TIME_384_MS,
+	PULSE_TIME_416_MS,
+	PULSE_TIME_448_MS,
+	PULSE_TIME_480_MS,
+};
+
+enum lm3556_indic_n_blank {
+	INDIC_N_BLANK_0 = 0,
+	INDIC_N_BLANK_1,
+	INDIC_N_BLANK_2,
+	INDIC_N_BLANK_3,
+	INDIC_N_BLANK_4,
+	INDIC_N_BLANK_5,
+	INDIC_N_BLANK_6,
+	INDIC_N_BLANK_7,
+	INDIC_N_BLANK_8,
+	INDIC_N_BLANK_9,
+	INDIC_N_BLANK_10,
+	INDIC_N_BLANK_11,
+	INDIC_N_BLANK_12,
+	INDIC_N_BLANK_13,
+	INDIC_N_BLANK_14,
+	INDIC_N_BLANK_15,
+};
+
+enum lm3556_indic_period {
+	INDIC_PERIOD_0 = 0,
+	INDIC_PERIOD_1,
+	INDIC_PERIOD_2,
+	INDIC_PERIOD_3,
+	INDIC_PERIOD_4,
+	INDIC_PERIOD_5,
+	INDIC_PERIOD_6,
+	INDIC_PERIOD_7,
+};
+
+enum lm3556_indic_mode {
+	INDIC_MODE_INTERNAL = 0,
+	INDIC_MODE_EXTERNAL,
+};
+
+enum lm3556_flash_timeout {
+	FLASH_TIMEOUT_50_MS = 0,
+	FLASH_TIMEOUT_100_MS,
+	FLASH_TIMEOUT_150_MS,
+	FLASH_TIMEOUT_200_MS,
+	FLASH_TIMEOUT_250_MS,
+	FLASH_TIMEOUT_300_MS,
+	FLASH_TIMEOUT_350_MS,
+	FLASH_TIMEOUT_400_MS,
+};
+
+enum lm3556_flash_ramp_time {
+	FLASH_RAMP_TIME_256_US = 0,
+	FLASH_RAMP_TIME_512_US,
+	FLASH_RAMP_TIME_1024_US,
+	FLASH_RAMP_TIME_2048_US,
+	FLASH_RAMP_TIME_4096_US,
+	FLASH_RAMP_TIME_8192_US,
+	FLASH_RAMP_TIME_16384_US,
+	FLASH_RAMP_TIME_32768_US,
+};
+
+enum lm3556_inductor_current_limit {
+	INDIC_I_LIMIT_1500_MA = 0,
+	INDIC_I_LIMIT_2000_MA,
+	INDIC_I_LIMIT_2500_MA,
+	INDIC_I_LIMIT_3000_MA
+};
+
+enum lm3556_flash_current {
+	FLASH_I_93750_UA = 0,
+	FLASH_I_187500_UA,
+	FLASH_I_281250_UA,
+	FLASH_I_375000_UA,
+	FLASH_I_468750_UA,
+	FLASH_I_562500_UA,
+	FLASH_I_656250_UA,
+	FLASH_I_750000_UA,
+	FLASH_I_843750_UA,
+	FLASH_I_937500_UA,
+	FLASH_I_1031250_UA,
+	FLASH_I_1125000_UA,
+	FLASH_I_1218750_UA,
+	FLASH_I_1312500_UA,
+	FLASH_I_1406250_UA,
+	FLASH_I_1500000_UA,
+
+};
+
+enum lm3556_torch_current {
+	TORCH_I_46880_UA = 0,
+	TORCH_I_93750_UA,
+	TORCH_I_1406300_UA,
+	TORCH_I_187500_UA,
+	TORCH_I_234380_UA,
+	TORCH_I_281250_UA,
+	TORCH_I_328130_UA,
+	TORCH_I_375000_UA,
+};
+
+enum lm3556_mode {
+	MODES_STASNDBY = 0,
+	MODES_INDIC,
+	MODES_TORCH,
+	MODES_FLASH
+};
+
+enum lm3556_pass_mode {
+	PASS_MODE_NORMAL = 0,
+	PASS_MODE_PASS_ONLY
+};
+
+enum lm3556_prechg_mode {
+	PRE_CHARGE_MODE_NORMAL = 0,
+	PRE_CHARGE_MODE_PRE_CHARGE
+};
+
+enum lm3556_pin_polarity {
+	PIN_LOW_ACTIVE = 0,
+	PIN_HIGH_ACTIVE,
+};
+
+enum lm3556_pin_enable {
+	PIN_DISABLED = 0,
+	PIN_ENABLED,
+};
+
+enum lm3556_strobe_usuage {
+	STROBE_EDGE_DETECT = 0,
+	STROBE_LEVEL_DETECT,
+};
+
+struct lm3556_platform_data {
+	enum lm3556_pin_enable torch_pin_en;
+	enum lm3556_pin_polarity torch_pin_polarity;
+
+	enum lm3556_strobe_usuage strobe_usuage;
+	enum lm3556_pin_enable strobe_pin_en;
+	enum lm3556_pin_polarity strobe_pin_polarity;
+
+	enum lm3556_pin_enable tx_pin_en;
+	enum lm3556_pin_polarity tx_pin_polarity;
+
+	enum lm3556_indic_mode indicator_mode;
+};
+
+#endif /* __LINUX_LM3556_H */
