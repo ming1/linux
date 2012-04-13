@@ -27,9 +27,12 @@ static int ui_browser__percent_color(struct ui_browser *browser,
 	return HE_COLORSET_NORMAL;
 }
 
-void ui_browser__set_color(struct ui_browser *self __used, int color)
+int ui_browser__set_color(struct ui_browser *browser, int color)
 {
+	int ret = browser->current_color;
+	browser->current_color = color;
 	SLsmg_set_color(color);
+	return ret;
 }
 
 void ui_browser__set_percent_color(struct ui_browser *self,
@@ -500,6 +503,12 @@ static struct ui_browser__colorset {
 		.colorset = HE_COLORSET_CODE,
 		.name	  = "code",
 		.fg	  = "blue",
+		.bg	  = "default",
+	},
+	{
+		.colorset = HE_COLORSET_ADDR,
+		.name	  = "addr",
+		.fg	  = "magenta",
 		.bg	  = "default",
 	},
 	{

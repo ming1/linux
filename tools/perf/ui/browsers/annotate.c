@@ -1,13 +1,13 @@
-#include "../../util.h"
+#include "../../util/util.h"
 #include "../browser.h"
 #include "../helpline.h"
 #include "../libslang.h"
 #include "../ui.h"
 #include "../util.h"
-#include "../../annotate.h"
-#include "../../hist.h"
-#include "../../sort.h"
-#include "../../symbol.h"
+#include "../../util/annotate.h"
+#include "../../util/hist.h"
+#include "../../util/sort.h"
+#include "../../util/symbol.h"
 #include <pthread.h>
 #include <newt.h>
 
@@ -16,9 +16,13 @@ struct annotate_browser {
 	struct rb_root	  entries;
 	struct rb_node	  *curr_hot;
 	struct objdump_line *selection;
+	u64		    start;
 	int		    nr_asm_entries;
 	int		    nr_entries;
 	bool		    hide_src_code;
+	bool		    use_offset;
+	bool		    searching_backwards;
+	char		    search_bf[128];
 };
 
 struct objdump_line_rb_node {
@@ -51,6 +55,9 @@ static void annotate_browser__write(struct ui_browser *self, void *entry, int ro
 	struct annotate_browser *ab = container_of(self, struct annotate_browser, b);
 	struct objdump_line *ol = list_entry(entry, struct objdump_line, node);
 	bool current_entry = ui_browser__is_current_entry(self, row);
+	bool change_color = (!ab->hide_src_code &&
+			     (!current_entry || (self->use_navkeypressed &&
+					         !self->navkeypressed)));
 	int width = self->width;
 
 	if (ol->offset != -1) {
@@ -69,15 +76,29 @@ static void annotate_browser__write(struct ui_browser *self, void *entry, int ro
 	if (!self->navkeypressed)
 		width += 1;
 
-	if (!ab->hide_src_code && ol->offset != -1)
-		if (!current_entry || (self->use_navkeypressed &&
-				       !self->navkeypressed))
-			ui_browser__set_color(self, HE_COLORSET_CODE);
+	if (ol->offset != -1 && change_color)
+		ui_browser__set_color(self, HE_COLORSET_CODE);
 
 	if (!*ol->line)
 		slsmg_write_nstring(" ", width - 18);
-	else
+	else if (ol->offset == -1)
 		slsmg_write_nstring(ol->line, width - 18);
+	else {
+		char bf[64];
+		u64 addr = ol->offset;
+		int printed, color = -1;
+
+		if (!ab->use_offset)
+			addr += ab->start;
+
+		printed = scnprintf(bf, sizeof(bf), " %" PRIx64 ":", addr);
+		if (change_color)
+			color = ui_browser__set_color(self, HE_COLORSET_ADDR);
+		slsmg_write_nstring(bf, printed);
+		if (change_color)
+			ui_browser__set_color(self, color);
+		slsmg_write_nstring(ol->line, width - 18 - printed);
+	}
 
 	if (current_entry)
 		ab->selection = ol;
@@ -138,27 +159,38 @@ static void objdump__insert_line(struct rb_root *self,
 }
 
 static void annotate_browser__set_top(struct annotate_browser *self,
-				      struct rb_node *nd)
+				      struct objdump_line *pos, u32 idx)
 {
-	struct objdump_line_rb_node *rbpos;
-	struct objdump_line *pos;
 	unsigned back;
 
 	ui_browser__refresh_dimensions(&self->b);
 	back = self->b.height / 2;
-	rbpos = rb_entry(nd, struct objdump_line_rb_node, rb_node);
-	pos = ((struct objdump_line *)rbpos) - 1;
-	self->b.top_idx = self->b.index = rbpos->idx;
+	self->b.top_idx = self->b.index = idx;
 
 	while (self->b.top_idx != 0 && back != 0) {
 		pos = list_entry(pos->node.prev, struct objdump_line, node);
+
+		if (objdump_line__filter(&self->b, &pos->node))
+			continue;
 
 		--self->b.top_idx;
 		--back;
 	}
 
 	self->b.top = pos;
-	self->curr_hot = nd;
+	self->b.navkeypressed = true;
+}
+
+static void annotate_browser__set_rb_top(struct annotate_browser *browser,
+					 struct rb_node *nd)
+{
+	struct objdump_line_rb_node *rbpos;
+	struct objdump_line *pos;
+
+	rbpos = rb_entry(nd, struct objdump_line_rb_node, rb_node);
+	pos = ((struct objdump_line *)rbpos) - 1;
+	annotate_browser__set_top(browser, pos, rbpos->idx);
+	browser->curr_hot = nd;
 }
 
 static void annotate_browser__calc_percent(struct annotate_browser *browser,
@@ -226,6 +258,231 @@ static bool annotate_browser__toggle_source(struct annotate_browser *browser)
 	return true;
 }
 
+static bool annotate_browser__callq(struct annotate_browser *browser,
+				    int evidx, void (*timer)(void *arg),
+				    void *arg, int delay_secs)
+{
+	struct map_symbol *ms = browser->b.priv;
+	struct symbol *sym = ms->sym;
+	struct annotation *notes;
+	struct symbol *target;
+	char *s = strstr(browser->selection->line, "callq ");
+	u64 ip;
+
+	if (s == NULL)
+		return false;
+
+	s = strchr(s, ' ');
+	if (s++ == NULL) {
+		ui_helpline__puts("Invallid callq instruction.");
+		return true;
+	}
+
+	ip = strtoull(s, NULL, 16);
+	ip = ms->map->map_ip(ms->map, ip);
+	target = map__find_symbol(ms->map, ip, NULL);
+	if (target == NULL) {
+		ui_helpline__puts("The called function was not found.");
+		return true;
+	}
+
+	notes = symbol__annotation(target);
+	pthread_mutex_lock(&notes->lock);
+
+	if (notes->src == NULL && symbol__alloc_hist(target) < 0) {
+		pthread_mutex_unlock(&notes->lock);
+		ui__warning("Not enough memory for annotating '%s' symbol!\n",
+			    target->name);
+		return true;
+	}
+
+	pthread_mutex_unlock(&notes->lock);
+	symbol__tui_annotate(target, ms->map, evidx, timer, arg, delay_secs);
+	ui_browser__show_title(&browser->b, sym->name);
+	return true;
+}
+
+static struct objdump_line *
+	annotate_browser__find_offset(struct annotate_browser *browser,
+				      s64 offset, s64 *idx)
+{
+	struct map_symbol *ms = browser->b.priv;
+	struct symbol *sym = ms->sym;
+	struct annotation *notes = symbol__annotation(sym);
+	struct objdump_line *pos;
+
+	*idx = 0;
+	list_for_each_entry(pos, &notes->src->source, node) {
+		if (pos->offset == offset)
+			return pos;
+		if (!objdump_line__filter(&browser->b, &pos->node))
+			++*idx;
+	}
+
+	return NULL;
+}
+
+static bool annotate_browser__jump(struct annotate_browser *browser)
+{
+	const char *jumps[] = { "je ", "jne ", "ja ", "jmpq ", "js ", "jmp ", NULL };
+	struct objdump_line *line;
+	s64 idx, offset;
+	char *s = NULL;
+	int i = 0;
+
+	while (jumps[i]) {
+		s = strstr(browser->selection->line, jumps[i++]);
+		if (s)
+			break;
+	}
+
+	if (s == NULL)
+		return false;
+
+	s = strchr(s, '+');
+	if (s++ == NULL) {
+		ui_helpline__puts("Invallid jump instruction.");
+		return true;
+	}
+
+	offset = strtoll(s, NULL, 16);
+	line = annotate_browser__find_offset(browser, offset, &idx);
+	if (line == NULL) {
+		ui_helpline__puts("Invallid jump offset");
+		return true;
+	}
+
+	annotate_browser__set_top(browser, line, idx);
+	
+	return true;
+}
+
+static struct objdump_line *
+	annotate_browser__find_string(struct annotate_browser *browser,
+				      char *s, s64 *idx)
+{
+	struct map_symbol *ms = browser->b.priv;
+	struct symbol *sym = ms->sym;
+	struct annotation *notes = symbol__annotation(sym);
+	struct objdump_line *pos = browser->selection;
+
+	*idx = browser->b.index;
+	list_for_each_entry_continue(pos, &notes->src->source, node) {
+		if (objdump_line__filter(&browser->b, &pos->node))
+			continue;
+
+		++*idx;
+
+		if (pos->line && strstr(pos->line, s) != NULL)
+			return pos;
+	}
+
+	return NULL;
+}
+
+static bool __annotate_browser__search(struct annotate_browser *browser)
+{
+	struct objdump_line *line;
+	s64 idx;
+
+	line = annotate_browser__find_string(browser, browser->search_bf, &idx);
+	if (line == NULL) {
+		ui_helpline__puts("String not found!");
+		return false;
+	}
+
+	annotate_browser__set_top(browser, line, idx);
+	browser->searching_backwards = false;
+	return true;
+}
+
+static struct objdump_line *
+	annotate_browser__find_string_reverse(struct annotate_browser *browser,
+					      char *s, s64 *idx)
+{
+	struct map_symbol *ms = browser->b.priv;
+	struct symbol *sym = ms->sym;
+	struct annotation *notes = symbol__annotation(sym);
+	struct objdump_line *pos = browser->selection;
+
+	*idx = browser->b.index;
+	list_for_each_entry_continue_reverse(pos, &notes->src->source, node) {
+		if (objdump_line__filter(&browser->b, &pos->node))
+			continue;
+
+		--*idx;
+
+		if (pos->line && strstr(pos->line, s) != NULL)
+			return pos;
+	}
+
+	return NULL;
+}
+
+static bool __annotate_browser__search_reverse(struct annotate_browser *browser)
+{
+	struct objdump_line *line;
+	s64 idx;
+
+	line = annotate_browser__find_string_reverse(browser, browser->search_bf, &idx);
+	if (line == NULL) {
+		ui_helpline__puts("String not found!");
+		return false;
+	}
+
+	annotate_browser__set_top(browser, line, idx);
+	browser->searching_backwards = true;
+	return true;
+}
+
+static bool annotate_browser__search_window(struct annotate_browser *browser,
+					    int delay_secs)
+{
+	if (ui_browser__input_window("Search", "String: ", browser->search_bf,
+				     "ENTER: OK, ESC: Cancel",
+				     delay_secs * 2) != K_ENTER ||
+	    !*browser->search_bf)
+		return false;
+
+	return true;
+}
+
+static bool annotate_browser__search(struct annotate_browser *browser, int delay_secs)
+{
+	if (annotate_browser__search_window(browser, delay_secs))
+		return __annotate_browser__search(browser);
+
+	return false;
+}
+
+static bool annotate_browser__continue_search(struct annotate_browser *browser,
+					      int delay_secs)
+{
+	if (!*browser->search_bf)
+		return annotate_browser__search(browser, delay_secs);
+
+	return __annotate_browser__search(browser);
+}
+
+static bool annotate_browser__search_reverse(struct annotate_browser *browser,
+					   int delay_secs)
+{
+	if (annotate_browser__search_window(browser, delay_secs))
+		return __annotate_browser__search_reverse(browser);
+
+	return false;
+}
+
+static
+bool annotate_browser__continue_search_reverse(struct annotate_browser *browser,
+					       int delay_secs)
+{
+	if (!*browser->search_bf)
+		return annotate_browser__search_reverse(browser, delay_secs);
+
+	return __annotate_browser__search_reverse(browser);
+}
+
 static int annotate_browser__run(struct annotate_browser *self, int evidx,
 				 void(*timer)(void *arg),
 				 void *arg, int delay_secs)
@@ -235,6 +492,7 @@ static int annotate_browser__run(struct annotate_browser *self, int evidx,
 	struct symbol *sym = ms->sym;
 	const char *help = "<-/ESC: Exit, TAB/shift+TAB: Cycle hot lines, "
 			   "H: Go to hottest line, ->/ENTER: Line action, "
+			   "O: Toggle offset view, "
 			   "S: Toggle source code view";
 	int key;
 
@@ -243,8 +501,10 @@ static int annotate_browser__run(struct annotate_browser *self, int evidx,
 
 	annotate_browser__calc_percent(self, evidx);
 
-	if (self->curr_hot)
-		annotate_browser__set_top(self, self->curr_hot);
+	if (self->curr_hot) {
+		annotate_browser__set_rb_top(self, self->curr_hot);
+		self->b.navkeypressed = false;
+	}
 
 	nd = self->curr_hot;
 
@@ -295,56 +555,35 @@ static int annotate_browser__run(struct annotate_browser *self, int evidx,
 			if (annotate_browser__toggle_source(self))
 				ui_helpline__puts(help);
 			continue;
+		case 'O':
+		case 'o':
+			self->use_offset = !self->use_offset;
+			continue;
+		case '/':
+			if (annotate_browser__search(self, delay_secs)) {
+show_help:
+				ui_helpline__puts(help);
+			}
+			continue;
+		case 'n':
+			if (self->searching_backwards ?
+			    annotate_browser__continue_search_reverse(self, delay_secs) :
+			    annotate_browser__continue_search(self, delay_secs))
+				goto show_help;
+			continue;
+		case '?':
+			if (annotate_browser__search_reverse(self, delay_secs))
+				goto show_help;
+			continue;
 		case K_ENTER:
 		case K_RIGHT:
-			if (self->selection == NULL) {
+			if (self->selection == NULL)
 				ui_helpline__puts("Huh? No selection. Report to linux-kernel@vger.kernel.org");
-				continue;
-			}
-
-			if (self->selection->offset == -1) {
+			else if (self->selection->offset == -1)
 				ui_helpline__puts("Actions are only available for assembly lines.");
-				continue;
-			} else {
-				char *s = strstr(self->selection->line, "callq ");
-				struct annotation *notes;
-				struct symbol *target;
-				u64 ip;
-
-				if (s == NULL) {
-					ui_helpline__puts("Actions are only available for the 'callq' instruction.");
-					continue;
-				}
-
-				s = strchr(s, ' ');
-				if (s++ == NULL) {
-					ui_helpline__puts("Invallid callq instruction.");
-					continue;
-				}
-
-				ip = strtoull(s, NULL, 16);
-				ip = ms->map->map_ip(ms->map, ip);
-				target = map__find_symbol(ms->map, ip, NULL);
-				if (target == NULL) {
-					ui_helpline__puts("The called function was not found.");
-					continue;
-				}
-
-				notes = symbol__annotation(target);
-				pthread_mutex_lock(&notes->lock);
-
-				if (notes->src == NULL && symbol__alloc_hist(target) < 0) {
-					pthread_mutex_unlock(&notes->lock);
-					ui__warning("Not enough memory for annotating '%s' symbol!\n",
-						    target->name);
-					continue;
-				}
-
-				pthread_mutex_unlock(&notes->lock);
-				symbol__tui_annotate(target, ms->map, evidx,
-						     timer, arg, delay_secs);
-				ui_browser__show_title(&self->b, sym->name);
-			}
+			else if (!(annotate_browser__jump(self) ||
+				   annotate_browser__callq(self, evidx, timer, arg, delay_secs)))
+				ui_helpline__puts("Actions are only available for the 'callq' and jump instructions.");
 			continue;
 		case K_LEFT:
 		case K_ESC:
@@ -356,7 +595,7 @@ static int annotate_browser__run(struct annotate_browser *self, int evidx,
 		}
 
 		if (nd != NULL)
-			annotate_browser__set_top(self, nd);
+			annotate_browser__set_rb_top(self, nd);
 	}
 out:
 	ui_browser__hide(&self->b);
@@ -406,6 +645,7 @@ int symbol__tui_annotate(struct symbol *sym, struct map *map, int evidx,
 	ui_helpline__push("Press <- or ESC to exit");
 
 	notes = symbol__annotation(sym);
+	browser.start = map__rip_2objdump(map, sym->start);
 
 	list_for_each_entry(pos, &notes->src->source, node) {
 		struct objdump_line_rb_node *rbpos;
