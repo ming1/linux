@@ -423,10 +423,13 @@ nla_put_failure:
 static int iwl_testmode_cfg_init_calib(struct iwl_priv *priv)
 {
 	struct iwl_notification_wait calib_wait;
+	static const u8 calib_complete[] = {
+		CALIBRATION_COMPLETE_NOTIFICATION
+	};
 	int ret;
 
 	iwl_init_notification_wait(&priv->notif_wait, &calib_wait,
-				   CALIBRATION_COMPLETE_NOTIFICATION,
+				   calib_complete, ARRAY_SIZE(calib_complete),
 				   NULL, NULL);
 	ret = iwl_init_alive_start(priv);
 	if (ret) {
@@ -533,7 +536,7 @@ static int iwl_testmode_driver(struct ieee80211_hw *hw, struct nlattr **tb)
 		break;
 
 	case IWL_TM_CMD_APP2DEV_GET_EEPROM:
-		if (priv->shrd->eeprom) {
+		if (priv->eeprom) {
 			skb = cfg80211_testmode_alloc_reply_skb(hw->wiphy,
 				cfg(priv)->base_params->eeprom_size + 20);
 			if (!skb) {
@@ -544,7 +547,7 @@ static int iwl_testmode_driver(struct ieee80211_hw *hw, struct nlattr **tb)
 					IWL_TM_CMD_DEV2APP_EEPROM_RSP) ||
 			    nla_put(skb, IWL_TM_ATTR_EEPROM,
 				    cfg(priv)->base_params->eeprom_size,
-				    priv->shrd->eeprom))
+				    priv->eeprom))
 				goto nla_put_failure;
 			status = cfg80211_testmode_reply(skb);
 			if (status < 0)
@@ -605,11 +608,11 @@ static int iwl_testmode_driver(struct ieee80211_hw *hw, struct nlattr **tb)
 			IWL_ERR(priv, "No uCode has not been loaded\n");
 			return -EINVAL;
 		} else {
-			img = &priv->fw->img[priv->shrd->ucode_type];
+			img = &priv->fw->img[priv->cur_ucode];
 			inst_size = img->sec[IWL_UCODE_SECTION_INST].len;
 			data_size = img->sec[IWL_UCODE_SECTION_DATA].len;
 		}
-		if (nla_put_u32(skb, IWL_TM_ATTR_FW_TYPE, priv->shrd->ucode_type) ||
+		if (nla_put_u32(skb, IWL_TM_ATTR_FW_TYPE, priv->cur_ucode) ||
 		    nla_put_u32(skb, IWL_TM_ATTR_FW_INST_SIZE, inst_size) ||
 		    nla_put_u32(skb, IWL_TM_ATTR_FW_DATA_SIZE, data_size))
 			goto nla_put_failure;

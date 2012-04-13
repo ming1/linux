@@ -225,6 +225,48 @@ mwifiex_setup_rates_from_bssdesc(struct mwifiex_private *priv,
 }
 
 /*
+ * This function appends a WPS IE. It is called from the network join command
+ * preparation routine.
+ *
+ * If the IE buffer has been setup by the application, this routine appends
+ * the buffer as a WPS TLV type to the request.
+ */
+static int
+mwifiex_cmd_append_wps_ie(struct mwifiex_private *priv, u8 **buffer)
+{
+	int retLen = 0;
+	struct mwifiex_ie_types_header ie_header;
+
+	if (!buffer || !*buffer)
+		return 0;
+
+	/*
+	 * If there is a wps ie buffer setup, append it to the return
+	 * parameter buffer pointer.
+	 */
+	if (priv->wps_ie_len) {
+		dev_dbg(priv->adapter->dev, "cmd: append wps ie %d to %p\n",
+			priv->wps_ie_len, *buffer);
+
+		/* Wrap the generic IE buffer with a pass through TLV type */
+		ie_header.type = cpu_to_le16(TLV_TYPE_MGMT_IE);
+		ie_header.len = cpu_to_le16(priv->wps_ie_len);
+		memcpy(*buffer, &ie_header, sizeof(ie_header));
+		*buffer += sizeof(ie_header);
+		retLen += sizeof(ie_header);
+
+		memcpy(*buffer, priv->wps_ie, priv->wps_ie_len);
+		*buffer += priv->wps_ie_len;
+		retLen += priv->wps_ie_len;
+
+	}
+
+	kfree(priv->wps_ie);
+	priv->wps_ie_len = 0;
+	return retLen;
+}
+
+/*
  * This function appends a WAPI IE.
  *
  * This function is called from the network join command preparation routine.
@@ -480,6 +522,8 @@ int mwifiex_cmd_802_11_associate(struct mwifiex_private *priv,
 	if (priv->sec_info.wapi_enabled && priv->wapi_ie_len)
 		mwifiex_cmd_append_wapi_ie(priv, &pos);
 
+	if (priv->wps.session_enable && priv->wps_ie_len)
+		mwifiex_cmd_append_wps_ie(priv, &pos);
 
 	mwifiex_cmd_append_generic_ie(priv, &pos);
 
@@ -932,20 +976,20 @@ mwifiex_cmd_802_11_ad_hoc_start(struct mwifiex_private *priv,
 		/* Fill HT INFORMATION */
 		ht_info = (struct mwifiex_ie_types_htinfo *) pos;
 		memset(ht_info, 0, sizeof(struct mwifiex_ie_types_htinfo));
-		ht_info->header.type = cpu_to_le16(WLAN_EID_HT_INFORMATION);
+		ht_info->header.type = cpu_to_le16(WLAN_EID_HT_OPERATION);
 		ht_info->header.len =
-				cpu_to_le16(sizeof(struct ieee80211_ht_info));
+			cpu_to_le16(sizeof(struct ieee80211_ht_operation));
 
-		ht_info->ht_info.control_chan =
+		ht_info->ht_oper.primary_chan =
 			(u8) priv->curr_bss_params.bss_descriptor.channel;
 		if (adapter->sec_chan_offset) {
-			ht_info->ht_info.ht_param = adapter->sec_chan_offset;
-			ht_info->ht_info.ht_param |=
+			ht_info->ht_oper.ht_param = adapter->sec_chan_offset;
+			ht_info->ht_oper.ht_param |=
 					IEEE80211_HT_PARAM_CHAN_WIDTH_ANY;
 		}
-		ht_info->ht_info.operation_mode =
+		ht_info->ht_oper.operation_mode =
 		     cpu_to_le16(IEEE80211_HT_OP_MODE_NON_GF_STA_PRSNT);
-		ht_info->ht_info.basic_set[0] = 0xff;
+		ht_info->ht_oper.basic_set[0] = 0xff;
 		pos += sizeof(struct mwifiex_ie_types_htinfo);
 		cmd_append_size +=
 				sizeof(struct mwifiex_ie_types_htinfo);
