@@ -932,6 +932,13 @@ void nfs4_select_rw_stateid(nfs4_stateid *dst, struct nfs4_state *state,
 {
 	if (nfs4_copy_delegation_stateid(dst, state->inode, fmode))
 		return;
+
+	fmode &= FMODE_READ|FMODE_WRITE;
+	if ((state->state & fmode) != fmode) {
+		nfs4_stateid_copy(dst, &zero_stateid);
+		return;
+	}
+
 	if (nfs4_copy_lock_stateid(dst, state, fl_owner, fl_pid))
 		return;
 	nfs4_copy_open_stateid(dst, state);
