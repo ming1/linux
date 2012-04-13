@@ -19,7 +19,6 @@
 #include <linux/mod_devicetable.h>
 #include <linux/err.h>
 #include <linux/resource.h>
-#include <linux/regulator/consumer.h>
 
 #define AMBA_NR_IRQS	2
 #define AMBA_CID	0xb105f00d
@@ -30,7 +29,6 @@ struct amba_device {
 	struct device		dev;
 	struct resource		res;
 	struct clk		*pclk;
-	struct regulator	*vcore;
 	u64			dma_mask;
 	unsigned int		periphid;
 	unsigned int		irq[AMBA_NR_IRQS];
@@ -74,12 +72,6 @@ void amba_release_regions(struct amba_device *);
 
 #define amba_pclk_disable(d)	\
 	do { if (!IS_ERR((d)->pclk)) clk_disable((d)->pclk); } while (0)
-
-#define amba_vcore_enable(d)	\
-	(IS_ERR((d)->vcore) ? 0 : regulator_enable((d)->vcore))
-
-#define amba_vcore_disable(d)	\
-	do { if (!IS_ERR((d)->vcore)) regulator_disable((d)->vcore); } while (0)
 
 /* Some drivers don't use the struct amba_device */
 #define AMBA_CONFIG_BITS(a) (((a) >> 24) & 0xff)
