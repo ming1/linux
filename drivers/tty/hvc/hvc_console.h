@@ -49,6 +49,7 @@ struct hvc_struct {
 	struct tty_port port;
 	spinlock_t lock;
 	int index;
+	struct tty_struct *tty;
 	int count;
 	int do_wakeup;
 	char *outbuf;

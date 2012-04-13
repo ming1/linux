@@ -377,7 +377,7 @@ int hvsilib_open(struct hvsi_priv *pv, struct hvc_struct *hp)
 	pr_devel("HVSI@%x: open !\n", pv->termno);
 
 	/* Keep track of the tty data structure */
-	pv->tty = tty_port_tty_get(&hp->port);
+	pv->tty = tty_kref_get(hp->tty);
 
 	hvsilib_establish(pv);
 
