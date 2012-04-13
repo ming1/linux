@@ -669,7 +669,12 @@ struct irq_chip_generic {
 	raw_spinlock_t		lock;
 	void __iomem		*reg_base;
 	unsigned int		irq_base;
+	unsigned int		hwirq_base;
 	unsigned int		irq_cnt;
+	struct irq_domain	*domain;
+	unsigned int		flags;
+	unsigned int		irq_set;
+	unsigned int		irq_clr;
 	u32			mask_cache;
 	u32			type_cache;
 	u32			polarity_cache;
@@ -712,6 +717,16 @@ irq_alloc_generic_chip(const char *name, int nr_ct, unsigned int irq_base,
 void irq_setup_generic_chip(struct irq_chip_generic *gc, u32 msk,
 			    enum irq_gc_flags flags, unsigned int clr,
 			    unsigned int set);
+
+struct device_node;
+int irq_setup_generic_chip_domain(const char *name, struct device_node *node,
+				  int num_ct, unsigned int irq_base,
+				  void __iomem *reg_base,
+				  irq_flow_handler_t handler, u32 hwirq_cnt,
+				  enum irq_gc_flags flags,
+				  unsigned int clr, unsigned int set,
+				  void (*gc_init_cb)(struct irq_chip_generic *),
+				  void *private);
 int irq_setup_alt_chip(struct irq_data *d, unsigned int type);
 void irq_remove_generic_chip(struct irq_chip_generic *gc, u32 msk,
 			     unsigned int clr, unsigned int set);
