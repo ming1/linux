@@ -665,7 +665,7 @@ static void sd_unprep_fn(struct request_queue *q, struct request *rq)
 }
 
 /**
- *	sd_init_command - build a scsi (read or write) command from
+ *	sd_prep_fn - build a scsi (read or write) command from
  *	information in the request structure.
  *	@SCpnt: pointer to mid-level's per scsi command structure that
  *	contains request and into which the scsi command is written
@@ -712,7 +712,7 @@ static int sd_prep_fn(struct request_queue *q, struct request *rq)
 	ret = BLKPREP_KILL;
 
 	SCSI_LOG_HLQUEUE(1, scmd_printk(KERN_INFO, SCpnt,
-					"sd_init_command: block=%llu, "
+					"sd_prep_fn: block=%llu, "
 					"count=%d\n",
 					(unsigned long long)block,
 					this_count));
@@ -1213,9 +1213,14 @@ static unsigned int sd_check_events(struct gendisk *disk, unsigned int clearing)
 	retval = -ENODEV;
 
 	if (scsi_block_when_processing_errors(sdp)) {
+		retval = scsi_autopm_get_device(sdp);
+		if (retval)
+			goto out;
+
 		sshdr  = kzalloc(sizeof(*sshdr), GFP_KERNEL);
 		retval = scsi_test_unit_ready(sdp, SD_TIMEOUT, SD_MAX_RETRIES,
 					      sshdr);
+		scsi_autopm_put_device(sdp);
 	}
 
 	/* failed to execute TUR, assume media not present */
@@ -2431,7 +2436,7 @@ static int sd_try_extended_inquiry(struct scsi_device *sdp)
 	 * some USB ones crash on receiving them, and the pages
 	 * we currently ask for are for SPC-3 and beyond
 	 */
-	if (sdp->scsi_level > SCSI_SPC_2)
+	if (sdp->scsi_level > SCSI_SPC_2 && !sdp->skip_vpd_pages)
 		return 1;
 	return 0;
 }
@@ -2645,8 +2650,8 @@ static void sd_probe_async(void *data, async_cookie_t cookie)
  *	(e.g. /dev/sda). More precisely it is the block device major 
  *	and minor number that is chosen here.
  *
- *	Assume sd_attach is not re-entrant (for time being)
- *	Also think about sd_attach() and sd_remove() running coincidentally.
+ *	Assume sd_probe is not re-entrant (for time being)
+ *	Also think about sd_probe() and sd_remove() running coincidentally.
  **/
 static int sd_probe(struct device *dev)
 {
@@ -2661,7 +2666,7 @@ static int sd_probe(struct device *dev)
 		goto out;
 
 	SCSI_LOG_HLQUEUE(3, sdev_printk(KERN_INFO, sdp,
-					"sd_attach\n"));
+					"sd_probe\n"));
 
 	error = -ENOMEM;
 	sdkp = kzalloc(sizeof(*sdkp), GFP_KERNEL);
