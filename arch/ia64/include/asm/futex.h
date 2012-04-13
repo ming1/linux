@@ -107,10 +107,11 @@ futex_atomic_cmpxchg_inatomic(u32 *uval, u32 __user *uaddr,
 		return -EFAULT;
 
 	{
-		register unsigned long r8 __asm ("r8") = 0;
+		register unsigned long r8 __asm ("r8");
 		unsigned long prev;
 		__asm__ __volatile__(
 			"	mf;;					\n"
+			"	mov r8=r0				\n"
 			"	mov ar.ccv=%3;;				\n"
 			"[1:]	cmpxchg4.acq %0=[%1],%2,ar.ccv		\n"
 			"	.xdata4 \"__ex_table\", 1b-., 2f-.	\n"
