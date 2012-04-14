@@ -160,6 +160,11 @@ static int __replace_page(struct vm_area_struct *vma, struct page *page, struct 
 	get_page(kpage);
 	page_add_new_anon_rmap(kpage, vma, addr);
 
+	if (!PageAnon(page)) {
+		dec_mm_counter(mm, MM_FILEPAGES);
+		inc_mm_counter(mm, MM_ANONPAGES);
+	}
+
 	flush_cache_page(vma, addr, pte_pfn(*ptep));
 	ptep_clear_flush(vma, addr, ptep);
 	set_pte_at_notify(mm, addr, ptep, mk_pte(kpage, vma->vm_page_prot));
@@ -1107,7 +1112,7 @@ int uprobe_mmap(struct vm_area_struct *vma)
 /*
  * Called in context of a munmap of a vma.
  */
-void uprobe_munmap(struct vm_area_struct *vma)
+void uprobe_munmap(struct vm_area_struct *vma, unsigned long start, unsigned long end)
 {
 	struct list_head tmp_list;
 	struct uprobe *uprobe, *u;
@@ -1133,7 +1138,7 @@ void uprobe_munmap(struct vm_area_struct *vma)
 		list_del(&uprobe->pending_list);
 		vaddr = vma_address(vma, uprobe->offset);
 
-		if (vaddr >= vma->vm_start && vaddr < vma->vm_end) {
+		if (vaddr >= start && vaddr < end) {
 			/*
 			 * An unregister could have removed the probe before
 			 * unmap. So check before we decrement the count.
