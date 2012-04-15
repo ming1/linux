@@ -1191,14 +1191,15 @@ static int soc_probe_dai_link(struct snd_soc_card *card, int num, int order)
 	struct snd_soc_pcm_runtime *rtd = &card->rtd[num];
 	struct snd_soc_codec *codec = rtd->codec;
 	struct snd_soc_platform *platform = rtd->platform;
-	struct snd_soc_dai *codec_dai = rtd->codec_dai, *cpu_dai = rtd->cpu_dai;
+	struct snd_soc_dai *codec_dai = rtd->codec_dai;
+	struct snd_soc_dai *cpu_dai = rtd->cpu_dai;
+	struct snd_soc_dapm_widget *play_w, *capture_w;
 	int ret;
 
 	dev_dbg(card->dev, "probe %s dai link %d late %d\n",
 			card->name, num, order);
 
 	/* config components */
-	codec_dai->codec = codec;
 	cpu_dai->platform = platform;
 	codec_dai->card = card;
 	cpu_dai->card = card;
@@ -1273,12 +1274,39 @@ static int soc_probe_dai_link(struct snd_soc_card *card, int num, int order)
 	if (ret < 0)
 		pr_warn("asoc: failed to add pmdown_time sysfs:%d\n", ret);
 
-	/* create the pcm */
-	ret = soc_new_pcm(rtd, num);
-	if (ret < 0) {
-		pr_err("asoc: can't create pcm %s :%d\n",
-				dai_link->stream_name, ret);
-		return ret;
+	if (!dai_link->params) {
+		/* create the pcm */
+		ret = soc_new_pcm(rtd, num);
+		if (ret < 0) {
+			pr_err("asoc: can't create pcm %s :%d\n",
+			       dai_link->stream_name, ret);
+			return ret;
+		}
+	} else {
+		/* link the DAI widgets */
+		play_w = codec_dai->playback_widget;
+		capture_w = cpu_dai->capture_widget;
+		if (play_w && capture_w) {
+			ret = snd_soc_dapm_new_pcm(card, dai_link->params,
+						   capture_w, play_w);
+			if (ret != 0) {
+				dev_err(card->dev, "Can't link %s to %s: %d\n",
+					play_w->name, capture_w->name, ret);
+				return ret;
+			}
+		}
+
+		play_w = cpu_dai->playback_widget;
+		capture_w = codec_dai->capture_widget;
+		if (play_w && capture_w) {
+			ret = snd_soc_dapm_new_pcm(card, dai_link->params,
+						   capture_w, play_w);
+			if (ret != 0) {
+				dev_err(card->dev, "Can't link %s to %s: %d\n",
+					play_w->name, capture_w->name, ret);
+				return ret;
+			}
+		}
 	}
 
 	/* add platform data for AC97 devices */
@@ -1418,7 +1446,7 @@ static int snd_soc_instantiate_card(struct snd_soc_card *card)
 	struct snd_soc_codec_conf *codec_conf;
 	enum snd_soc_compress_type compress_type;
 	struct snd_soc_dai_link *dai_link;
-	int ret, i, order;
+	int ret, i, order, dai_fmt;
 
 	mutex_lock_nested(&card->mutex, SND_SOC_CARD_CLASS_INIT);
 
@@ -1527,17 +1555,46 @@ static int snd_soc_instantiate_card(struct snd_soc_card *card)
 
 	for (i = 0; i < card->num_links; i++) {
 		dai_link = &card->dai_link[i];
+		dai_fmt = dai_link->dai_fmt;
 
-		if (dai_link->dai_fmt) {
+		if (dai_fmt) {
 			ret = snd_soc_dai_set_fmt(card->rtd[i].codec_dai,
-						  dai_link->dai_fmt);
+						  dai_fmt);
 			if (ret != 0 && ret != -ENOTSUPP)
 				dev_warn(card->rtd[i].codec_dai->dev,
 					 "Failed to set DAI format: %d\n",
 					 ret);
+		}
+
+		/* If this is a regular CPU link there will be a platform */
+		if (dai_fmt && dai_link->platform_name) {
+			ret = snd_soc_dai_set_fmt(card->rtd[i].cpu_dai,
+						  dai_fmt);
+			if (ret != 0 && ret != -ENOTSUPP)
+				dev_warn(card->rtd[i].cpu_dai->dev,
+					 "Failed to set DAI format: %d\n",
+					 ret);
+		} else if (dai_fmt) {
+			/* Flip the polarity for the "CPU" end */
+			dai_fmt &= ~SND_SOC_DAIFMT_MASTER_MASK;
+			switch (dai_link->dai_fmt &
+				SND_SOC_DAIFMT_MASTER_MASK) {
+			case SND_SOC_DAIFMT_CBM_CFM:
+				dai_fmt |= SND_SOC_DAIFMT_CBS_CFS;
+				break;
+			case SND_SOC_DAIFMT_CBM_CFS:
+				dai_fmt |= SND_SOC_DAIFMT_CBS_CFM;
+				break;
+			case SND_SOC_DAIFMT_CBS_CFM:
+				dai_fmt |= SND_SOC_DAIFMT_CBM_CFS;
+				break;
+			case SND_SOC_DAIFMT_CBS_CFS:
+				dai_fmt |= SND_SOC_DAIFMT_CBM_CFM;
+				break;
+			}
 
 			ret = snd_soc_dai_set_fmt(card->rtd[i].cpu_dai,
-						  dai_link->dai_fmt);
+						  dai_fmt);
 			if (ret != 0 && ret != -ENOTSUPP)
 				dev_warn(card->rtd[i].cpu_dai->dev,
 					 "Failed to set DAI format: %d\n",
@@ -3033,7 +3090,7 @@ int snd_soc_dai_digital_mute(struct snd_soc_dai *dai, int mute)
 	if (dai->driver && dai->driver->ops->digital_mute)
 		return dai->driver->ops->digital_mute(dai, mute);
 	else
-		return -EINVAL;
+		return -ENOTSUPP;
 }
 EXPORT_SYMBOL_GPL(snd_soc_dai_digital_mute);
 
@@ -3200,6 +3257,7 @@ static inline char *fmt_multiple_name(struct device *dev,
 int snd_soc_register_dai(struct device *dev,
 		struct snd_soc_dai_driver *dai_drv)
 {
+	struct snd_soc_codec *codec;
 	struct snd_soc_dai *dai;
 
 	dev_dbg(dev, "dai register %s\n", dev_name(dev));
@@ -3222,7 +3280,18 @@ int snd_soc_register_dai(struct device *dev,
 		dai->driver->ops = &null_dai_ops;
 
 	mutex_lock(&client_mutex);
+
+	list_for_each_entry(codec, &codec_list, list) {
+		if (codec->dev == dev) {
+			dev_dbg(dev, "Mapped DAI %s to CODEC %s\n",
+				dai->name, codec->name);
+			dai->codec = codec;
+			break;
+		}
+	}
+
 	list_add(&dai->list, &dai_list);
+
 	mutex_unlock(&client_mutex);
 
 	pr_debug("Registered DAI '%s'\n", dai->name);
@@ -3266,6 +3335,7 @@ EXPORT_SYMBOL_GPL(snd_soc_unregister_dai);
 int snd_soc_register_dais(struct device *dev,
 		struct snd_soc_dai_driver *dai_drv, size_t count)
 {
+	struct snd_soc_codec *codec;
 	struct snd_soc_dai *dai;
 	int i, ret = 0;
 
@@ -3298,7 +3368,18 @@ int snd_soc_register_dais(struct device *dev,
 			dai->driver->ops = &null_dai_ops;
 
 		mutex_lock(&client_mutex);
+
+		list_for_each_entry(codec, &codec_list, list) {
+			if (codec->dev == dev) {
+				dev_dbg(dev, "Mapped DAI %s to CODEC %s\n",
+					dai->name, codec->name);
+				dai->codec = codec;
+				break;
+			}
+		}
+
 		list_add(&dai->list, &dai_list);
+
 		mutex_unlock(&client_mutex);
 
 		pr_debug("Registered DAI '%s'\n", dai->name);
@@ -3510,16 +3591,17 @@ int snd_soc_register_codec(struct device *dev,
 		fixup_codec_formats(&dai_drv[i].capture);
 	}
 
+	mutex_lock(&client_mutex);
+	list_add(&codec->list, &codec_list);
+	mutex_unlock(&client_mutex);
+
 	/* register any DAIs */
 	if (num_dai) {
 		ret = snd_soc_register_dais(dev, dai_drv, num_dai);
 		if (ret < 0)
-			goto fail;
+			dev_err(codec->dev, "Failed to regster DAIs: %d\n",
+				ret);
 	}
-
-	mutex_lock(&client_mutex);
-	list_add(&codec->list, &codec_list);
-	mutex_unlock(&client_mutex);
 
 	pr_debug("Registered codec '%s'\n", codec->name);
 	return 0;
