@@ -605,6 +605,7 @@ void mddev_init(struct mddev *mddev)
 	init_waitqueue_head(&mddev->sb_wait);
 	init_waitqueue_head(&mddev->recovery_wait);
 	mddev->reshape_position = MaxSector;
+	mddev->reshape_backwards = 0;
 	mddev->resync_min = 0;
 	mddev->resync_max = MaxSector;
 	mddev->level = LEVEL_NONE;
@@ -885,6 +886,10 @@ int sync_page_io(struct md_rdev *rdev, sector_t sector, int size,
 		rdev->meta_bdev : rdev->bdev;
 	if (metadata_op)
 		bio->bi_sector = sector + rdev->sb_start;
+	else if (rdev->mddev->reshape_position != MaxSector &&
+		 (rdev->mddev->reshape_backwards ==
+		  (sector >= rdev->mddev->reshape_position)))
+		bio->bi_sector = sector + rdev->new_data_offset;
 	else
 		bio->bi_sector = sector + rdev->data_offset;
 	bio_add_page(bio, page, size, 0);
@@ -1032,12 +1037,17 @@ static unsigned int calc_sb_csum(mdp_super_t * sb)
 struct super_type  {
 	char		    *name;
 	struct module	    *owner;
-	int		    (*load_super)(struct md_rdev *rdev, struct md_rdev *refdev,
+	int		    (*load_super)(struct md_rdev *rdev,
+					  struct md_rdev *refdev,
 					  int minor_version);
-	int		    (*validate_super)(struct mddev *mddev, struct md_rdev *rdev);
-	void		    (*sync_super)(struct mddev *mddev, struct md_rdev *rdev);
+	int		    (*validate_super)(struct mddev *mddev,
+					      struct md_rdev *rdev);
+	void		    (*sync_super)(struct mddev *mddev,
+					  struct md_rdev *rdev);
 	unsigned long long  (*rdev_size_change)(struct md_rdev *rdev,
 						sector_t num_sectors);
+	int		    (*allow_new_offset)(struct md_rdev *rdev,
+						unsigned long long new_offset);
 };
 
 /*
@@ -1109,6 +1119,7 @@ static int super_90_load(struct md_rdev *rdev, struct md_rdev *refdev, int minor
 
 	rdev->preferred_minor = sb->md_minor;
 	rdev->data_offset = 0;
+	rdev->new_data_offset = 0;
 	rdev->sb_size = MD_SB_BYTES;
 	rdev->badblocks.shift = -1;
 
@@ -1183,6 +1194,7 @@ static int super_90_validate(struct mddev *mddev, struct md_rdev *rdev)
 		mddev->events = ev1;
 		mddev->bitmap_info.offset = 0;
 		mddev->bitmap_info.default_offset = MD_SB_BYTES >> 9;
+		mddev->reshape_backwards = 0;
 
 		if (mddev->minor_version >= 91) {
 			mddev->reshape_position = sb->reshape_position;
@@ -1190,6 +1202,8 @@ static int super_90_validate(struct mddev *mddev, struct md_rdev *rdev)
 			mddev->new_level = sb->new_level;
 			mddev->new_layout = sb->new_layout;
 			mddev->new_chunk_sectors = sb->new_chunk >> 9;
+			if (mddev->delta_disks < 0)
+				mddev->reshape_backwards = 1;
 		} else {
 			mddev->reshape_position = MaxSector;
 			mddev->delta_disks = 0;
@@ -1432,6 +1446,12 @@ super_90_rdev_size_change(struct md_rdev *rdev, sector_t num_sectors)
 	return num_sectors;
 }
 
+static int
+super_90_allow_new_offset(struct md_rdev *rdev, unsigned long long new_offset)
+{
+	/* non-zero offset changes not possible with v0.90 */
+	return new_offset == 0;
+}
 
 /*
  * version 1 superblock
@@ -1467,6 +1487,7 @@ static int super_1_load(struct md_rdev *rdev, struct md_rdev *refdev, int minor_
 	struct mdp_superblock_1 *sb;
 	int ret;
 	sector_t sb_start;
+	sector_t sectors;
 	char b[BDEVNAME_SIZE], b2[BDEVNAME_SIZE];
 	int bmask;
 
@@ -1521,9 +1542,18 @@ static int super_1_load(struct md_rdev *rdev, struct md_rdev *refdev, int minor_
 		       bdevname(rdev->bdev,b));
 		return -EINVAL;
 	}
+	if (sb->pad0 ||
+	    sb->pad3[0] ||
+	    memcmp(sb->pad3, sb->pad3+1, sizeof(sb->pad3) - sizeof(sb->pad3[1])))
+		/* Some padding is non-zero, might be a new feature */
+		return -EINVAL;
 
 	rdev->preferred_minor = 0xffff;
 	rdev->data_offset = le64_to_cpu(sb->data_offset);
+	rdev->new_data_offset = rdev->data_offset;
+	if ((le32_to_cpu(sb->feature_map) & MD_FEATURE_RESHAPE_ACTIVE) &&
+	    (le32_to_cpu(sb->feature_map) & MD_FEATURE_NEW_OFFSET))
+		rdev->new_data_offset += (s32)le32_to_cpu(sb->new_offset);
 	atomic_set(&rdev->corrected_errors, le32_to_cpu(sb->cnt_corrected_read));
 
 	rdev->sb_size = le32_to_cpu(sb->max_dev) * 2 + 256;
@@ -1533,6 +1563,9 @@ static int super_1_load(struct md_rdev *rdev, struct md_rdev *refdev, int minor_
 
 	if (minor_version
 	    && rdev->data_offset < sb_start + (rdev->sb_size/512))
+		return -EINVAL;
+	if (minor_version
+	    && rdev->new_data_offset < sb_start + (rdev->sb_size/512))
 		return -EINVAL;
 
 	if (sb->level == cpu_to_le32(LEVEL_MULTIPATH))
@@ -1605,16 +1638,14 @@ static int super_1_load(struct md_rdev *rdev, struct md_rdev *refdev, int minor_
 		else
 			ret = 0;
 	}
-	if (minor_version)
-		rdev->sectors = (i_size_read(rdev->bdev->bd_inode) >> 9) -
-			le64_to_cpu(sb->data_offset);
-	else
-		rdev->sectors = rdev->sb_start;
-	if (rdev->sectors < le64_to_cpu(sb->data_size))
+	if (minor_version) {
+		sectors = (i_size_read(rdev->bdev->bd_inode) >> 9);
+		sectors -= rdev->data_offset;
+	} else
+		sectors = rdev->sb_start;
+	if (sectors < le64_to_cpu(sb->data_size))
 		return -EINVAL;
 	rdev->sectors = le64_to_cpu(sb->data_size);
-	if (le64_to_cpu(sb->size) > rdev->sectors)
-		return -EINVAL;
 	return ret;
 }
 
@@ -1643,7 +1674,8 @@ static int super_1_validate(struct mddev *mddev, struct md_rdev *rdev)
 		mddev->events = ev1;
 		mddev->bitmap_info.offset = 0;
 		mddev->bitmap_info.default_offset = 1024 >> 9;
-		
+		mddev->reshape_backwards = 0;
+
 		mddev->recovery_cp = le64_to_cpu(sb->resync_offset);
 		memcpy(mddev->uuid, sb->set_uuid, 16);
 
@@ -1660,6 +1692,11 @@ static int super_1_validate(struct mddev *mddev, struct md_rdev *rdev)
 			mddev->new_level = le32_to_cpu(sb->new_level);
 			mddev->new_layout = le32_to_cpu(sb->new_layout);
 			mddev->new_chunk_sectors = le32_to_cpu(sb->new_chunk);
+			if (mddev->delta_disks < 0 ||
+			    (mddev->delta_disks == 0 &&
+			     (le32_to_cpu(sb->feature_map)
+			      & MD_FEATURE_RESHAPE_BACKWARDS)))
+				mddev->reshape_backwards = 1;
 		} else {
 			mddev->reshape_position = MaxSector;
 			mddev->delta_disks = 0;
@@ -1733,7 +1770,6 @@ static void super_1_sync(struct mddev *mddev, struct md_rdev *rdev)
 	sb->feature_map = 0;
 	sb->pad0 = 0;
 	sb->recovery_offset = cpu_to_le64(0);
-	memset(sb->pad1, 0, sizeof(sb->pad1));
 	memset(sb->pad3, 0, sizeof(sb->pad3));
 
 	sb->utime = cpu_to_le64((__u64)mddev->utime);
@@ -1755,6 +1791,8 @@ static void super_1_sync(struct mddev *mddev, struct md_rdev *rdev)
 		sb->devflags |= WriteMostly1;
 	else
 		sb->devflags &= ~WriteMostly1;
+	sb->data_offset = cpu_to_le64(rdev->data_offset);
+	sb->data_size = cpu_to_le64(rdev->sectors);
 
 	if (mddev->bitmap && mddev->bitmap_info.file == NULL) {
 		sb->bitmap_offset = cpu_to_le32((__u32)mddev->bitmap_info.offset);
@@ -1779,6 +1817,16 @@ static void super_1_sync(struct mddev *mddev, struct md_rdev *rdev)
 		sb->delta_disks = cpu_to_le32(mddev->delta_disks);
 		sb->new_level = cpu_to_le32(mddev->new_level);
 		sb->new_chunk = cpu_to_le32(mddev->new_chunk_sectors);
+		if (mddev->delta_disks == 0 &&
+		    mddev->reshape_backwards)
+			sb->feature_map
+				|= cpu_to_le32(MD_FEATURE_RESHAPE_BACKWARDS);
+		if (rdev->new_data_offset != rdev->data_offset) {
+			sb->feature_map
+				|= cpu_to_le32(MD_FEATURE_NEW_OFFSET);
+			sb->new_offset = cpu_to_le32((__u32)(rdev->new_data_offset
+							     - rdev->data_offset));
+		}
 	}
 
 	if (rdev->badblocks.count == 0)
@@ -1855,6 +1903,8 @@ super_1_rdev_size_change(struct md_rdev *rdev, sector_t num_sectors)
 	sector_t max_sectors;
 	if (num_sectors && num_sectors < rdev->mddev->dev_sectors)
 		return 0; /* component must fit device */
+	if (rdev->data_offset != rdev->new_data_offset)
+		return 0; /* too confusing */
 	if (rdev->sb_start < rdev->data_offset) {
 		/* minor versions 1 and 2; superblock before data */
 		max_sectors = i_size_read(rdev->bdev->bd_inode) >> 9;
@@ -1882,6 +1932,40 @@ super_1_rdev_size_change(struct md_rdev *rdev, sector_t num_sectors)
 		       rdev->sb_page);
 	md_super_wait(rdev->mddev);
 	return num_sectors;
+
+}
+
+static int
+super_1_allow_new_offset(struct md_rdev *rdev,
+			 unsigned long long new_offset)
+{
+	/* All necessary checks on new >= old have been done */
+	struct bitmap *bitmap;
+	if (new_offset >= rdev->data_offset)
+		return 1;
+
+	/* with 1.0 metadata, there is no metadata to tread on
+	 * so we can always move back */
+	if (rdev->mddev->minor_version == 0)
+		return 1;
+
+	/* otherwise we must be sure not to step on
+	 * any metadata, so stay:
+	 * 36K beyond start of superblock
+	 * beyond end of badblocks
+	 * beyond write-intent bitmap
+	 */
+	if (rdev->sb_start + (32+4)*2 > new_offset)
+		return 0;
+	bitmap = rdev->mddev->bitmap;
+	if (bitmap && !rdev->mddev->bitmap_info.file &&
+	    rdev->sb_start + rdev->mddev->bitmap_info.offset +
+	    bitmap->file_pages * (PAGE_SIZE>>9) > new_offset)
+		return 0;
+	if (rdev->badblocks.sector + rdev->badblocks.size > new_offset)
+		return 0;
+
+	return 1;
 }
 
 static struct super_type super_types[] = {
@@ -1892,6 +1976,7 @@ static struct super_type super_types[] = {
 		.validate_super	    = super_90_validate,
 		.sync_super	    = super_90_sync,
 		.rdev_size_change   = super_90_rdev_size_change,
+		.allow_new_offset   = super_90_allow_new_offset,
 	},
 	[1] = {
 		.name	= "md-1",
@@ -1900,6 +1985,7 @@ static struct super_type super_types[] = {
 		.validate_super	    = super_1_validate,
 		.sync_super	    = super_1_sync,
 		.rdev_size_change   = super_1_rdev_size_change,
+		.allow_new_offset   = super_1_allow_new_offset,
 	},
 };
 
@@ -2807,9 +2893,8 @@ offset_show(struct md_rdev *rdev, char *page)
 static ssize_t
 offset_store(struct md_rdev *rdev, const char *buf, size_t len)
 {
-	char *e;
-	unsigned long long offset = simple_strtoull(buf, &e, 10);
-	if (e==buf || (*e && *e != '\n'))
+	unsigned long long offset;
+	if (strict_strtoull(buf, 10, &offset) < 0)
 		return -EINVAL;
 	if (rdev->mddev->pers && rdev->raid_disk >= 0)
 		return -EBUSY;
@@ -2823,6 +2908,63 @@ offset_store(struct md_rdev *rdev, const char *buf, size_t len)
 
 static struct rdev_sysfs_entry rdev_offset =
 __ATTR(offset, S_IRUGO|S_IWUSR, offset_show, offset_store);
+
+static ssize_t new_offset_show(struct md_rdev *rdev, char *page)
+{
+	return sprintf(page, "%llu\n",
+		       (unsigned long long)rdev->new_data_offset);
+}
+
+static ssize_t new_offset_store(struct md_rdev *rdev,
+				const char *buf, size_t len)
+{
+	unsigned long long new_offset;
+	struct mddev *mddev = rdev->mddev;
+
+	if (strict_strtoull(buf, 10, &new_offset) < 0)
+		return -EINVAL;
+
+	if (mddev->sync_thread)
+		return -EBUSY;
+	if (new_offset == rdev->data_offset)
+		/* reset is always permitted */
+		;
+	else if (new_offset > rdev->data_offset) {
+		/* must not push array size beyond rdev_sectors */
+		if (new_offset - rdev->data_offset
+		    + mddev->dev_sectors > rdev->sectors)
+				return -E2BIG;
+	}
+	/* Metadata worries about other space details. */
+
+	/* decreasing the offset is inconsistent with a backwards
+	 * reshape.
+	 */
+	if (new_offset < rdev->data_offset &&
+	    mddev->reshape_backwards)
+		return -EINVAL;
+	/* Increasing offset is inconsistent with forwards
+	 * reshape.  reshape_direction should be set to
+	 * 'backwards' first.
+	 */
+	if (new_offset > rdev->data_offset &&
+	    !mddev->reshape_backwards)
+		return -EINVAL;
+
+	if (mddev->pers && mddev->persistent &&
+	    !super_types[mddev->major_version]
+	    .allow_new_offset(rdev, new_offset))
+		return -E2BIG;
+	rdev->new_data_offset = new_offset;
+	if (new_offset > rdev->data_offset)
+		mddev->reshape_backwards = 1;
+	else if (new_offset < rdev->data_offset)
+		mddev->reshape_backwards = 0;
+
+	return len;
+}
+static struct rdev_sysfs_entry rdev_new_offset =
+__ATTR(new_offset, S_IRUGO|S_IWUSR, new_offset_show, new_offset_store);
 
 static ssize_t
 rdev_size_show(struct md_rdev *rdev, char *page)
@@ -2868,6 +3010,8 @@ rdev_size_store(struct md_rdev *rdev, const char *buf, size_t len)
 
 	if (strict_blocks_to_sectors(buf, &sectors) < 0)
 		return -EINVAL;
+	if (rdev->data_offset != rdev->new_data_offset)
+		return -EINVAL; /* too confusing */
 	if (my_mddev->pers && rdev->raid_disk >= 0) {
 		if (my_mddev->persistent) {
 			sectors = super_types[my_mddev->major_version].
@@ -3004,6 +3148,7 @@ static struct attribute *rdev_default_attrs[] = {
 	&rdev_errors.attr,
 	&rdev_slot.attr,
 	&rdev_offset.attr,
+	&rdev_new_offset.attr,
 	&rdev_size.attr,
 	&rdev_recovery_start.attr,
 	&rdev_bad_blocks.attr,
@@ -3078,6 +3223,7 @@ int md_rdev_init(struct md_rdev *rdev)
 	rdev->raid_disk = -1;
 	rdev->flags = 0;
 	rdev->data_offset = 0;
+	rdev->new_data_offset = 0;
 	rdev->sb_events = 0;
 	rdev->last_read_error.tv_sec  = 0;
 	rdev->last_read_error.tv_nsec = 0;
@@ -3417,6 +3563,7 @@ level_store(struct mddev *mddev, const char *buf, size_t len)
 		mddev->new_chunk_sectors = mddev->chunk_sectors;
 		mddev->raid_disks -= mddev->delta_disks;
 		mddev->delta_disks = 0;
+		mddev->reshape_backwards = 0;
 		module_put(pers->owner);
 		printk(KERN_WARNING "md: %s: %s would not accept array\n",
 		       mdname(mddev), clevel);
@@ -3490,6 +3637,7 @@ level_store(struct mddev *mddev, const char *buf, size_t len)
 	mddev->layout = mddev->new_layout;
 	mddev->chunk_sectors = mddev->new_chunk_sectors;
 	mddev->delta_disks = 0;
+	mddev->reshape_backwards = 0;
 	mddev->degraded = 0;
 	if (mddev->pers->sync_request == NULL) {
 		/* this is now an array without redundancy, so
@@ -3580,9 +3728,20 @@ raid_disks_store(struct mddev *mddev, const char *buf, size_t len)
 	if (mddev->pers)
 		rv = update_raid_disks(mddev, n);
 	else if (mddev->reshape_position != MaxSector) {
+		struct md_rdev *rdev;
 		int olddisks = mddev->raid_disks - mddev->delta_disks;
+
+		rdev_for_each(rdev, mddev) {
+			if (olddisks < n &&
+			    rdev->data_offset < rdev->new_data_offset)
+				return -EINVAL;
+			if (olddisks > n &&
+			    rdev->data_offset > rdev->new_data_offset)
+				return -EINVAL;
+		}
 		mddev->delta_disks = n - olddisks;
 		mddev->raid_disks = n;
+		mddev->reshape_backwards = (mddev->delta_disks < 0);
 	} else
 		mddev->raid_disks = n;
 	return rv ? rv : len;
@@ -4264,7 +4423,8 @@ sync_completed_show(struct mddev *mddev, char *page)
 	if (!test_bit(MD_RECOVERY_RUNNING, &mddev->recovery))
 		return sprintf(page, "none\n");
 
-	if (test_bit(MD_RECOVERY_SYNC, &mddev->recovery))
+	if (test_bit(MD_RECOVERY_SYNC, &mddev->recovery) ||
+	    test_bit(MD_RECOVERY_RESHAPE, &mddev->recovery))
 		max_sectors = mddev->resync_max_sectors;
 	else
 		max_sectors = mddev->dev_sectors;
@@ -4426,6 +4586,7 @@ reshape_position_show(struct mddev *mddev, char *page)
 static ssize_t
 reshape_position_store(struct mddev *mddev, const char *buf, size_t len)
 {
+	struct md_rdev *rdev;
 	char *e;
 	unsigned long long new = simple_strtoull(buf, &e, 10);
 	if (mddev->pers)
@@ -4434,15 +4595,54 @@ reshape_position_store(struct mddev *mddev, const char *buf, size_t len)
 		return -EINVAL;
 	mddev->reshape_position = new;
 	mddev->delta_disks = 0;
+	mddev->reshape_backwards = 0;
 	mddev->new_level = mddev->level;
 	mddev->new_layout = mddev->layout;
 	mddev->new_chunk_sectors = mddev->chunk_sectors;
+	rdev_for_each(rdev, mddev)
+		rdev->new_data_offset = rdev->data_offset;
 	return len;
 }
 
 static struct md_sysfs_entry md_reshape_position =
 __ATTR(reshape_position, S_IRUGO|S_IWUSR, reshape_position_show,
        reshape_position_store);
+
+static ssize_t
+reshape_direction_show(struct mddev *mddev, char *page)
+{
+	return sprintf(page, "%s\n",
+		       mddev->reshape_backwards ? "backwards" : "forwards");
+}
+
+static ssize_t
+reshape_direction_store(struct mddev *mddev, const char *buf, size_t len)
+{
+	int backwards = 0;
+	if (cmd_match(buf, "forwards"))
+		backwards = 0;
+	else if (cmd_match(buf, "backwards"))
+		backwards = 1;
+	else
+		return -EINVAL;
+	if (mddev->reshape_backwards == backwards)
+		return len;
+
+	/* check if we are allowed to change */
+	if (mddev->delta_disks)
+		return -EBUSY;
+
+	if (mddev->persistent &&
+	    mddev->major_version == 0)
+		return -EINVAL;
+
+	mddev->reshape_backwards = backwards;
+	return len;
+}
+
+static struct md_sysfs_entry md_reshape_direction =
+__ATTR(reshape_direction, S_IRUGO|S_IWUSR, reshape_direction_show,
+       reshape_direction_store);
 
 static ssize_t
 array_size_show(struct mddev *mddev, char *page)
@@ -4499,6 +4699,7 @@ static struct attribute *md_default_attrs[] = {
 	&md_safe_delay.attr,
 	&md_array_state.attr,
 	&md_reshape_position.attr,
+	&md_reshape_direction.attr,
 	&md_array_size.attr,
 	&max_corr_read_errors.attr,
 	NULL,
@@ -5062,6 +5263,7 @@ static void md_clean(struct mddev *mddev)
 	mddev->events = 0;
 	mddev->can_decrease_events = 0;
 	mddev->delta_disks = 0;
+	mddev->reshape_backwards = 0;
 	mddev->new_level = LEVEL_NONE;
 	mddev->new_layout = 0;
 	mddev->new_chunk_sectors = 0;
@@ -5886,6 +6088,7 @@ static int set_array_info(struct mddev * mddev, mdu_array_info_t *info)
 	mddev->new_chunk_sectors = mddev->chunk_sectors;
 	mddev->new_layout = mddev->layout;
 	mddev->delta_disks = 0;
+	mddev->reshape_backwards = 0;
 
 	return 0;
 }
@@ -5942,6 +6145,7 @@ static int update_size(struct mddev *mddev, sector_t num_sectors)
 static int update_raid_disks(struct mddev *mddev, int raid_disks)
 {
 	int rv;
+	struct md_rdev *rdev;
 	/* change the number of raid disks */
 	if (mddev->pers->check_reshape == NULL)
 		return -EINVAL;
@@ -5950,11 +6154,27 @@ static int update_raid_disks(struct mddev *mddev, int raid_disks)
 		return -EINVAL;
 	if (mddev->sync_thread || mddev->reshape_position != MaxSector)
 		return -EBUSY;
+
+	rdev_for_each(rdev, mddev) {
+		if (mddev->raid_disks < raid_disks &&
+		    rdev->data_offset < rdev->new_data_offset)
+			return -EINVAL;
+		if (mddev->raid_disks > raid_disks &&
+		    rdev->data_offset > rdev->new_data_offset)
+			return -EINVAL;
+	}
+
 	mddev->delta_disks = raid_disks - mddev->raid_disks;
+	if (mddev->delta_disks < 0)
+		mddev->reshape_backwards = 1;
+	else if (mddev->delta_disks > 0)
+		mddev->reshape_backwards = 0;
 
 	rv = mddev->pers->check_reshape(mddev);
-	if (rv < 0)
+	if (rv < 0) {
 		mddev->delta_disks = 0;
+		mddev->reshape_backwards = 0;
+	}
 	return rv;
 }
 
@@ -6582,7 +6802,8 @@ static void status_resync(struct seq_file *seq, struct mddev * mddev)
 
 	resync = mddev->curr_resync - atomic_read(&mddev->recovery_active);
 
-	if (test_bit(MD_RECOVERY_SYNC, &mddev->recovery))
+	if (test_bit(MD_RECOVERY_SYNC, &mddev->recovery) ||
+	    test_bit(MD_RECOVERY_RESHAPE, &mddev->recovery))
 		max_sectors = mddev->resync_max_sectors;
 	else
 		max_sectors = mddev->dev_sectors;
@@ -7145,7 +7366,7 @@ void md_do_sync(struct mddev *mddev)
 			j = mddev->recovery_cp;
 
 	} else if (test_bit(MD_RECOVERY_RESHAPE, &mddev->recovery))
-		max_sectors = mddev->dev_sectors;
+		max_sectors = mddev->resync_max_sectors;
 	else {
 		/* recovery follows the physical size of devices */
 		max_sectors = mddev->dev_sectors;
@@ -7644,6 +7865,20 @@ void md_wait_for_blocked_rdev(struct md_rdev *rdev, struct mddev *mddev)
 }
 EXPORT_SYMBOL(md_wait_for_blocked_rdev);
 
+void md_finish_reshape(struct mddev *mddev)
+{
+	/* called be personality module when reshape completes. */
+	struct md_rdev *rdev;
+
+	rdev_for_each(rdev, mddev) {
+		if (rdev->data_offset > rdev->new_data_offset)
+			rdev->sectors += rdev->data_offset - rdev->new_data_offset;
+		else
+			rdev->sectors -= rdev->new_data_offset - rdev->data_offset;
+		rdev->data_offset = rdev->new_data_offset;
+	}
+}
+EXPORT_SYMBOL(md_finish_reshape);
 
 /* Bad block management.
  * We can record which blocks on each device are 'bad' and so just
@@ -7892,10 +8127,15 @@ static int md_set_badblocks(struct badblocks *bb, sector_t s, int sectors,
 }
 
 int rdev_set_badblocks(struct md_rdev *rdev, sector_t s, int sectors,
-		       int acknowledged)
+		       int is_new)
 {
-	int rv = md_set_badblocks(&rdev->badblocks,
-				  s + rdev->data_offset, sectors, acknowledged);
+	int rv;
+	if (is_new)
+		s += rdev->new_data_offset;
+	else
+		s += rdev->data_offset;
+	rv = md_set_badblocks(&rdev->badblocks,
+			      s, sectors, 0);
 	if (rv) {
 		/* Make sure they get written out promptly */
 		sysfs_notify_dirent_safe(rdev->sysfs_state);
@@ -8001,11 +8241,15 @@ out:
 	return rv;
 }
 
-int rdev_clear_badblocks(struct md_rdev *rdev, sector_t s, int sectors)
+int rdev_clear_badblocks(struct md_rdev *rdev, sector_t s, int sectors,
+			 int is_new)
 {
+	if (is_new)
+		s += rdev->new_data_offset;
+	else
+		s += rdev->data_offset;
 	return md_clear_badblocks(&rdev->badblocks,
-				  s + rdev->data_offset,
-				  sectors);
+				  s, sectors);
 }
 EXPORT_SYMBOL_GPL(rdev_clear_badblocks);
 
