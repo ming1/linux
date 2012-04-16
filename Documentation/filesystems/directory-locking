@@ -12,8 +12,8 @@ kinds of locks - per-inode (->i_mutex) and per-filesystem
 locks victim and calls the method.
 
 4) rename() that is _not_ cross-directory.  Locking rules: caller locks
-the parent, finds source and target, if target already exists - locks it
-and then calls the method.
+the parent, finds source and target, locks source, also locks target if
+it already exists, and then calls the method.
 
 5) link creation.  Locking rules:
 	* lock parent
@@ -30,6 +30,7 @@ rules:
 		fail with -ENOTEMPTY
 	* if new parent is equal to or is a descendent of source
 		fail with -ELOOP
+	* lock source if it is not a directory.
 	* if target exists - lock it.
 	* call the method.
 
@@ -56,9 +57,9 @@ objects - A < B iff A is an ancestor of B.
     renames will be blocked on filesystem lock and we don't start changing
     the order until we had acquired all locks).
 
-(3) any operation holds at most one lock on non-directory object and
-    that lock is acquired after all other locks.  (Proof: see descriptions
-    of operations).
+(3) locks on non-directory objects are acquired only after taking locks
+    on their parents (which remain their parents until all locks are
+    acquired, by (1) and (2)).  (Proof: see descriptions of operations).
 
 	Now consider the minimal deadlock.  Each process is blocked on
 attempt to acquire some lock and already holds at least one lock.  Let's

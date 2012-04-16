@@ -860,10 +860,12 @@ static inline int inode_unhashed(struct inode *inode)
  * 0: the object of the current VFS operation
  * 1: parent
  * 2: child/target
- * 3: quota file
+ * 3: xattr
+ * 4: quota file
+ * 5: the file being renamed (used only in rename of a non-directory)
  *
  * The locking order between these classes is
- * parent -> child -> normal -> xattr -> quota
+ * parent -> child -> rename_source -> normal -> xattr -> quota
  */
 enum inode_i_mutex_lock_class
 {
@@ -871,7 +873,8 @@ enum inode_i_mutex_lock_class
 	I_MUTEX_PARENT,
 	I_MUTEX_CHILD,
 	I_MUTEX_XATTR,
-	I_MUTEX_QUOTA
+	I_MUTEX_QUOTA,
+	I_MUTEX_RENAME_SOURCE
 };
 
 /*
