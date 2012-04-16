@@ -71,9 +71,9 @@ static int expkey_upcall(struct cache_detail *cd, struct cache_head *h)
 	return sunrpc_cache_pipe_upcall(cd, h, expkey_request);
 }
 
-static struct svc_expkey *svc_expkey_update(struct svc_expkey *new, struct svc_expkey *old);
-static struct svc_expkey *svc_expkey_lookup(struct svc_expkey *);
-static struct cache_detail svc_expkey_cache;
+static struct svc_expkey *svc_expkey_update(struct cache_detail *cd, struct svc_expkey *new,
+					    struct svc_expkey *old);
+static struct svc_expkey *svc_expkey_lookup(struct cache_detail *cd, struct svc_expkey *);
 
 static int expkey_parse(struct cache_detail *cd, char *mesg, int mlen)
 {
@@ -131,7 +131,7 @@ static int expkey_parse(struct cache_detail *cd, char *mesg, int mlen)
 	key.ek_fsidtype = fsidtype;
 	memcpy(key.ek_fsid, buf, len);
 
-	ek = svc_expkey_lookup(&key);
+	ek = svc_expkey_lookup(cd, &key);
 	err = -ENOMEM;
 	if (!ek)
 		goto out;
@@ -145,7 +145,7 @@ static int expkey_parse(struct cache_detail *cd, char *mesg, int mlen)
 	err = 0;
 	if (len == 0) {
 		set_bit(CACHE_NEGATIVE, &key.h.flags);
-		ek = svc_expkey_update(&key, ek);
+		ek = svc_expkey_update(cd, &key, ek);
 		if (!ek)
 			err = -ENOMEM;
 	} else {
@@ -155,7 +155,7 @@ static int expkey_parse(struct cache_detail *cd, char *mesg, int mlen)
 
 		dprintk("Found the path %s\n", buf);
 
-		ek = svc_expkey_update(&key, ek);
+		ek = svc_expkey_update(cd, &key, ek);
 		if (!ek)
 			err = -ENOMEM;
 		path_put(&key.ek_path);
@@ -163,7 +163,7 @@ static int expkey_parse(struct cache_detail *cd, char *mesg, int mlen)
 	cache_flush();
  out:
 	if (ek)
-		cache_put(&ek->h, &svc_expkey_cache);
+		cache_put(&ek->h, cd);
 	if (dom)
 		auth_domain_put(dom);
 	kfree(buf);
@@ -268,13 +268,12 @@ svc_expkey_hash(struct svc_expkey *item)
 }
 
 static struct svc_expkey *
-svc_expkey_lookup(struct svc_expkey *item)
+svc_expkey_lookup(struct cache_detail *cd, struct svc_expkey *item)
 {
 	struct cache_head *ch;
 	int hash = svc_expkey_hash(item);
 
-	ch = sunrpc_cache_lookup(&svc_expkey_cache, &item->h,
-				 hash);
+	ch = sunrpc_cache_lookup(cd, &item->h, hash);
 	if (ch)
 		return container_of(ch, struct svc_expkey, h);
 	else
@@ -282,13 +281,13 @@ svc_expkey_lookup(struct svc_expkey *item)
 }
 
 static struct svc_expkey *
-svc_expkey_update(struct svc_expkey *new, struct svc_expkey *old)
+svc_expkey_update(struct cache_detail *cd, struct svc_expkey *new,
+		  struct svc_expkey *old)
 {
 	struct cache_head *ch;
 	int hash = svc_expkey_hash(new);
 
-	ch = sunrpc_cache_update(&svc_expkey_cache, &new->h,
-				 &old->h, hash);
+	ch = sunrpc_cache_update(cd, &new->h, &old->h, hash);
 	if (ch)
 		return container_of(ch, struct svc_expkey, h);
 	else
@@ -525,6 +524,7 @@ static int svc_export_parse(struct cache_detail *cd, char *mesg, int mlen)
 		goto out1;
 
 	exp.ex_client = dom;
+	exp.cd = cd;
 
 	/* expiry */
 	err = -EINVAL;
@@ -672,6 +672,7 @@ static void svc_export_init(struct cache_head *cnew, struct cache_head *citem)
 	new->ex_fslocs.locations = NULL;
 	new->ex_fslocs.locations_count = 0;
 	new->ex_fslocs.migrated = 0;
+	new->cd = item->cd;
 }
 
 static void export_update(struct cache_head *cnew, struct cache_head *citem)
@@ -739,8 +740,7 @@ svc_export_lookup(struct svc_export *exp)
 	struct cache_head *ch;
 	int hash = svc_export_hash(exp);
 
-	ch = sunrpc_cache_lookup(&svc_export_cache, &exp->h,
-				 hash);
+	ch = sunrpc_cache_lookup(exp->cd, &exp->h, hash);
 	if (ch)
 		return container_of(ch, struct svc_export, h);
 	else
@@ -753,9 +753,7 @@ svc_export_update(struct svc_export *new, struct svc_export *old)
 	struct cache_head *ch;
 	int hash = svc_export_hash(old);
 
-	ch = sunrpc_cache_update(&svc_export_cache, &new->h,
-				 &old->h,
-				 hash);
+	ch = sunrpc_cache_update(old->cd, &new->h, &old->h, hash);
 	if (ch)
 		return container_of(ch, struct svc_export, h);
 	else
@@ -764,7 +762,8 @@ svc_export_update(struct svc_export *new, struct svc_export *old)
 
 
 static struct svc_expkey *
-exp_find_key(svc_client *clp, int fsid_type, u32 *fsidv, struct cache_req *reqp)
+exp_find_key(struct cache_detail *cd, svc_client *clp, int fsid_type,
+	     u32 *fsidv, struct cache_req *reqp)
 {
 	struct svc_expkey key, *ek;
 	int err;
@@ -776,10 +775,10 @@ exp_find_key(svc_client *clp, int fsid_type, u32 *fsidv, struct cache_req *reqp)
 	key.ek_fsidtype = fsid_type;
 	memcpy(key.ek_fsid, fsidv, key_len(fsid_type));
 
-	ek = svc_expkey_lookup(&key);
+	ek = svc_expkey_lookup(cd, &key);
 	if (ek == NULL)
 		return ERR_PTR(-ENOMEM);
-	err = cache_check(&svc_expkey_cache, &ek->h, reqp);
+	err = cache_check(cd, &ek->h, reqp);
 	if (err)
 		return ERR_PTR(err);
 	return ek;
@@ -797,6 +796,7 @@ static svc_export *exp_get_by_name(svc_client *clp, const struct path *path,
 
 	key.ex_client = clp;
 	key.ex_path = *path;
+	key.cd = &svc_export_cache;
 
 	exp = svc_export_lookup(&key);
 	if (exp == NULL)
@@ -879,7 +879,7 @@ static struct svc_export *exp_find(struct auth_domain *clp, int fsid_type,
 				   u32 *fsidv, struct cache_req *reqp)
 {
 	struct svc_export *exp;
-	struct svc_expkey *ek = exp_find_key(clp, fsid_type, fsidv, reqp);
+	struct svc_expkey *ek = exp_find_key(&svc_expkey_cache, clp, fsid_type, fsidv, reqp);
 	if (IS_ERR(ek))
 		return ERR_CAST(ek);
 
@@ -1029,13 +1029,15 @@ exp_pseudoroot(struct svc_rqst *rqstp, struct svc_fh *fhp)
 /* Iterator */
 
 static void *e_start(struct seq_file *m, loff_t *pos)
-	__acquires(svc_export_cache.hash_lock)
+	__acquires(((struct cache_detail *)m->private)->hash_lock)
 {
 	loff_t n = *pos;
 	unsigned hash, export;
 	struct cache_head *ch;
-	
-	read_lock(&svc_export_cache.hash_lock);
+	struct cache_detail *cd = m->private;
+	struct cache_head **export_table = cd->hash_table;
+
+	read_lock(&cd->hash_lock);
 	if (!n--)
 		return SEQ_START_TOKEN;
 	hash = n >> 32;
@@ -1060,6 +1062,8 @@ static void *e_next(struct seq_file *m, void *p, loff_t *pos)
 {
 	struct cache_head *ch = p;
 	int hash = (*pos >> 32);
+	struct cache_detail *cd = m->private;
+	struct cache_head **export_table = cd->hash_table;
 
 	if (p == SEQ_START_TOKEN)
 		hash = 0;
@@ -1082,9 +1086,11 @@ static void *e_next(struct seq_file *m, void *p, loff_t *pos)
 }
 
 static void e_stop(struct seq_file *m, void *p)
-	__releases(svc_export_cache.hash_lock)
+	__releases(((struct cache_detail *)m->private)->hash_lock)
 {
-	read_unlock(&svc_export_cache.hash_lock);
+	struct cache_detail *cd = m->private;
+
+	read_unlock(&cd->hash_lock);
 }
 
 static struct flags {
@@ -1195,6 +1201,7 @@ static int e_show(struct seq_file *m, void *p)
 {
 	struct cache_head *cp = p;
 	struct svc_export *exp = container_of(cp, struct svc_export, h);
+	struct cache_detail *cd = m->private;
 
 	if (p == SEQ_START_TOKEN) {
 		seq_puts(m, "# Version 1.1\n");
@@ -1203,10 +1210,10 @@ static int e_show(struct seq_file *m, void *p)
 	}
 
 	cache_get(&exp->h);
-	if (cache_check(&svc_export_cache, &exp->h, NULL))
+	if (cache_check(cd, &exp->h, NULL))
 		return 0;
-	cache_put(&exp->h, &svc_export_cache);
-	return svc_export_show(m, &svc_export_cache, cp);
+	exp_put(exp);
+	return svc_export_show(m, cd, cp);
 }
 
 const struct seq_operations nfs_exports_op = {
