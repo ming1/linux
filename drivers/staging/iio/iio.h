@@ -36,6 +36,7 @@ enum iio_chan_info_enum {
 	IIO_CHAN_INFO_QUADRATURE_CORRECTION_RAW,
 	IIO_CHAN_INFO_AVERAGE_RAW,
 	IIO_CHAN_INFO_LOW_PASS_FILTER_3DB_FREQUENCY,
+	IIO_CHAN_INFO_SAMP_FREQ,
 };
 
 #define IIO_CHAN_INFO_SHARED_BIT(type) BIT(type*2)
@@ -81,6 +82,10 @@ enum iio_chan_info_enum {
 #define IIO_CHAN_INFO_LOW_PASS_FILTER_3DB_FREQUENCY_SEPARATE_BIT \
 	IIO_CHAN_INFO_SEPARATE_BIT(			       \
 		IIO_CHAN_INFO_LOW_PASS_FILTER_3DB_FREQUENCY)
+#define IIO_CHAN_INFO_SAMP_FREQ_SEPARATE_BIT		\
+	IIO_CHAN_INFO_SEPARATE_BIT(IIO_CHAN_INFO_SAMP_FREQ)
+#define IIO_CHAN_INFO_SAMP_FREQ_SHARED_BIT			\
+	IIO_CHAN_INFO_SHARED_BIT(IIO_CHAN_INFO_SAMP_FREQ)
 
 enum iio_endian {
 	IIO_CPU,
@@ -164,7 +169,7 @@ struct iio_chan_spec {
 	long			info_mask;
 	long			event_mask;
 	const struct iio_chan_spec_ext_info *ext_info;
-	char			*extend_name;
+	const char		*extend_name;
 	const char		*datasheet_name;
 	unsigned		processed_val:1;
 	unsigned		modified:1;
@@ -175,23 +180,6 @@ struct iio_chan_spec {
 
 #define IIO_ST(si, rb, sb, sh)						\
 	{ .sign = si, .realbits = rb, .storagebits = sb, .shift = sh }
-
-/* Macro assumes input channels */
-#define IIO_CHAN(_type, _mod, _indexed, _proc, _name, _chan, _chan2, \
-		 _inf_mask, _address, _si, _stype, _event_mask)		\
-	{ .type = _type,						\
-	  .output = 0,							\
-	  .modified = _mod,						\
-	  .indexed = _indexed,						\
-	  .processed_val = _proc,					\
-	  .extend_name = _name,						\
-	  .channel = _chan,						\
-	  .channel2 = _chan2,						\
-	  .info_mask = _inf_mask,					\
-	  .address = _address,						\
-	  .scan_index = _si,						\
-	  .scan_type = _stype,						\
-	  .event_mask = _event_mask }
 
 #define IIO_CHAN_SOFT_TIMESTAMP(_si)					\
 	{ .type = IIO_TIMESTAMP, .channel = -1,				\
@@ -331,6 +319,8 @@ struct iio_buffer_setup_ops {
  * @name:		[DRIVER] name of the device.
  * @info:		[DRIVER] callbacks and constant info from driver
  * @info_exist_lock:	[INTERN] lock to prevent use during removal
+ * @setup_ops:		[DRIVER] callbacks to call before and after buffer
+ *			enable/disable
  * @chrdev:		[INTERN] associated character device
  * @groups:		[INTERN] attribute groups
  * @groupcounter:	[INTERN] index of next attribute group

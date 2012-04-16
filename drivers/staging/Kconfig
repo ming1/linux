@@ -24,8 +24,6 @@ menuconfig STAGING
 
 if STAGING
 
-source "drivers/staging/serial/Kconfig"
-
 source "drivers/staging/et131x/Kconfig"
 
 source "drivers/staging/slicoss/Kconfig"
@@ -121,6 +119,8 @@ source "drivers/staging/mei/Kconfig"
 source "drivers/staging/nvec/Kconfig"
 
 source "drivers/staging/media/Kconfig"
+
+source "drivers/staging/net/Kconfig"
 
 source "drivers/staging/omapdrm/Kconfig"
 
