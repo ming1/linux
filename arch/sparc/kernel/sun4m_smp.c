@@ -4,7 +4,6 @@
  * Copyright (C) 1996 David S. Miller (davem@caip.rutgers.edu)
  */
 
-#include <linux/clockchips.h>
 #include <linux/interrupt.h>
 #include <linux/profile.h>
 #include <linux/delay.h>
@@ -13,7 +12,6 @@
 #include <asm/cacheflush.h>
 #include <asm/switch_to.h>
 #include <asm/tlbflush.h>
-#include <asm/timer.h>
 
 #include "irq.h"
 #include "kernel.h"
@@ -33,6 +31,7 @@ swap_ulong(volatile unsigned long *ptr, unsigned long val)
 }
 
 static void smp4m_ipi_init(void);
+static void smp_setup_percpu_timer(void);
 
 void __cpuinit smp4m_callin(void)
 {
@@ -43,7 +42,8 @@ void __cpuinit smp4m_callin(void)
 
 	notify_cpu_starting(cpuid);
 
-	register_percpu_ce(cpuid);
+	/* Get our local ticker going. */
+	smp_setup_percpu_timer();
 
 	calibrate_delay();
 	smp_store_cpu_info(cpuid);
@@ -87,7 +87,7 @@ void __cpuinit smp4m_callin(void)
 void __init smp4m_boot_cpus(void)
 {
 	smp4m_ipi_init();
-	sun4m_unmask_profile_irq();
+	smp_setup_percpu_timer();
 	local_flush_cache_all();
 }
 
@@ -260,23 +260,35 @@ void smp4m_cross_call_irq(void)
 void smp4m_percpu_timer_interrupt(struct pt_regs *regs)
 {
 	struct pt_regs *old_regs;
-	struct clock_event_device *ce;
 	int cpu = smp_processor_id();
 
 	old_regs = set_irq_regs(regs);
 
-	ce = &per_cpu(sparc32_clockevent, cpu);
+	sun4m_clear_profile_irq(cpu);
 
-	if (ce->mode & CLOCK_EVT_MODE_PERIODIC)
-		sun4m_clear_profile_irq(cpu);
-	else
-		load_profile_irq(cpu, 0); /* Is this needless? */
+	profile_tick(CPU_PROFILING);
 
-	irq_enter();
-	ce->event_handler(ce);
-	irq_exit();
+	if (!--prof_counter(cpu)) {
+		int user = user_mode(regs);
 
+		irq_enter();
+		update_process_times(user);
+		irq_exit();
+
+		prof_counter(cpu) = prof_multiplier(cpu);
+	}
 	set_irq_regs(old_regs);
+}
+
+static void __cpuinit smp_setup_percpu_timer(void)
+{
+	int cpu = smp_processor_id();
+
+	prof_counter(cpu) = prof_multiplier(cpu) = 1;
+	load_profile_irq(cpu, lvl14_resolution);
+
+	if (cpu == boot_cpu_id)
+		sun4m_unmask_profile_irq();
 }
 
 static void __init smp4m_blackbox_id(unsigned *addr)

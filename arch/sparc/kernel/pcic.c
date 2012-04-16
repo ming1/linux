@@ -703,28 +703,31 @@ static void pcic_clear_clock_irq(void)
 	pcic_timer_dummy = readl(pcic0.pcic_regs+PCI_SYS_LIMIT);
 }
 
-/* CPU frequency is 100 MHz, timer increments every 4 CPU clocks */
-#define USECS_PER_JIFFY  (1000000 / HZ)
-#define TICK_TIMER_LIMIT ((100 * 1000000 / 4) / HZ)
-
-static unsigned int pcic_cycles_offset(void)
+static irqreturn_t pcic_timer_handler (int irq, void *h)
 {
-	u32 value, count;
+	pcic_clear_clock_irq();
+	xtime_update(1);
+#ifndef CONFIG_SMP
+	update_process_times(user_mode(get_irq_regs()));
+#endif
+	return IRQ_HANDLED;
+}
 
-	value = readl(pcic0.pcic_regs + PCI_SYS_COUNTER);
-	count = value & ~PCI_SYS_COUNTER_OVERFLOW;
+#define USECS_PER_JIFFY  10000  /* We have 100HZ "standard" timer for sparc */
+#define TICK_TIMER_LIMIT ((100*1000000/4)/100)
 
-	if (value & PCI_SYS_COUNTER_OVERFLOW)
-		count += TICK_TIMER_LIMIT;
+u32 pci_gettimeoffset(void)
+{
 	/*
-	 * We divide all by HZ
+	 * We divide all by 100
 	 * to have microsecond resolution and to avoid overflow
 	 */
-	count = ((count / HZ) * USECS_PER_JIFFY) / (TICK_TIMER_LIMIT / HZ);
-
-	/* Coordinate with the fact that timer_cs rate is 2MHz */
-	return count * 2;
+	unsigned long count =
+	    readl(pcic0.pcic_regs+PCI_SYS_COUNTER) & ~PCI_SYS_COUNTER_OVERFLOW;
+	count = ((count/100)*USECS_PER_JIFFY) / (TICK_TIMER_LIMIT/100);
+	return count * 1000;
 }
+
 
 void __init pci_time_init(void)
 {
@@ -733,16 +736,9 @@ void __init pci_time_init(void)
 	int timer_irq, irq;
 	int err;
 
-#ifndef CONFIG_SMP
-	/*
-	 * It's in SBUS dimension, because timer_cs is in this dimension.
-	 * We take into account this in pcic_cycles_offset()
-	 */
-	timer_cs_period = SBUS_CLOCK_RATE / HZ;
-	sparc_config.features |= FEAT_L10_CLOCKEVENT;
-#endif
-	sparc_config.features |= FEAT_L10_CLOCKSOURCE;
-	sparc_config.get_cycles_offset = pcic_cycles_offset;
+	do_arch_gettimeoffset = pci_gettimeoffset;
+
+	btfixup();
 
 	writel (TICK_TIMER_LIMIT, pcic->pcic_regs+PCI_SYS_LIMIT);
 	/* PROM should set appropriate irq */
@@ -751,7 +747,7 @@ void __init pci_time_init(void)
 	writel (PCI_COUNTER_IRQ_SET(timer_irq, 0),
 		pcic->pcic_regs+PCI_COUNTER_IRQ);
 	irq = pcic_build_device_irq(NULL, timer_irq);
-	err = request_irq(irq, timer_interrupt,
+	err = request_irq(irq, pcic_timer_handler,
 			  IRQF_TIMER, "timer", NULL);
 	if (err) {
 		prom_printf("time_init: unable to attach IRQ%d\n", timer_irq);

@@ -282,8 +282,7 @@ static void sun4d_clear_clock_irq(void)
 
 static void sun4d_load_profile_irq(int cpu, unsigned int limit)
 {
-	unsigned int value = limit ? timer_value(limit) : 0;
-	bw_set_prof_limit(cpu, value);
+	bw_set_prof_limit(cpu, limit);
 }
 
 static void __init sun4d_load_profile_irqs(void)
@@ -424,7 +423,7 @@ static void __init sun4d_fixup_trap_table(void)
 #endif
 }
 
-static void __init sun4d_init_timers(void)
+static void __init sun4d_init_timers(irq_handler_t counter_fn)
 {
 	struct device_node *dp;
 	struct resource res;
@@ -467,20 +466,12 @@ static void __init sun4d_init_timers(void)
 		prom_halt();
 	}
 
-#ifdef CONFIG_SMP
-	sparc_config.cs_period = SBUS_CLOCK_RATE * 2;  /* 2 seconds */
-#else
-	sparc_config.cs_period = SBUS_CLOCK_RATE / HZ; /* 1/HZ sec  */
-	sparc_config.features |= FEAT_L10_CLOCKEVENT;
-#endif
-	sparc_config.features |= FEAT_L10_CLOCKSOURCE;
-	sbus_writel(timer_value(sparc_config.cs_period),
-		    &sun4d_timers->l10_timer_limit);
+	sbus_writel((((1000000/HZ) + 1) << 10), &sun4d_timers->l10_timer_limit);
 
 	master_l10_counter = &sun4d_timers->l10_cur_count;
 
 	irq = sun4d_build_timer_irq(board, SUN4D_TIMER_IRQ);
-	err = request_irq(irq, timer_interrupt, IRQF_TIMER, "timer", NULL);
+	err = request_irq(irq, counter_fn, IRQF_TIMER, "timer", NULL);
 	if (err) {
 		prom_printf("sun4d_init_timers: request_irq() failed with %d\n",
 		             err);
@@ -523,7 +514,6 @@ void __init sun4d_init_IRQ(void)
 
 	sparc_config.init_timers      = sun4d_init_timers;
 	sparc_config.build_device_irq = sun4d_build_device_irq;
-	sparc_config.clock_rate       = SBUS_CLOCK_RATE;
 
 #ifdef CONFIG_SMP
 	BTFIXUPSET_CALL(set_cpu_int, sun4d_set_cpu_int, BTFIXUPCALL_NORM);

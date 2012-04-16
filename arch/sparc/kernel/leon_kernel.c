@@ -10,8 +10,6 @@
 #include <linux/of_platform.h>
 #include <linux/interrupt.h>
 #include <linux/of_device.h>
-#include <linux/clocksource.h>
-#include <linux/clockchips.h>
 
 #include <asm/oplib.h>
 #include <asm/timer.h>
@@ -252,38 +250,7 @@ void leon_update_virq_handling(unsigned int virq,
 	irq_set_chip_data(virq, (void *)mask);
 }
 
-static u32 leon_cycles_offset(void)
-{
-	u32 rld, val, off;
-	rld = LEON3_BYPASS_LOAD_PA(&leon3_gptimer_regs->e[leon3_gptimer_idx].rld);
-	val = LEON3_BYPASS_LOAD_PA(&leon3_gptimer_regs->e[leon3_gptimer_idx].val);
-	off = rld - val;
-	return rld - val;
-}
-
-#ifdef CONFIG_SMP
-
-/* smp clockevent irq */
-irqreturn_t leon_percpu_timer_ce_interrupt(int irq, void *unused)
-{
-	struct clock_event_device *ce;
-	int cpu = smp_processor_id();
-
-	leon_clear_profile_irq(cpu);
-
-	ce = &per_cpu(sparc32_clockevent, cpu);
-
-	irq_enter();
-	if (ce->event_handler)
-		ce->event_handler(ce);
-	irq_exit();
-
-	return IRQ_HANDLED;
-}
-
-#endif /* CONFIG_SMP */
-
-void __init leon_init_timers(void)
+void __init leon_init_timers(irq_handler_t counter_fn)
 {
 	int irq, eirq;
 	struct device_node *rootnp, *np, *nnp;
@@ -292,14 +259,6 @@ void __init leon_init_timers(void)
 	int icsel;
 	int ampopts;
 	int err;
-
-	sparc_config.get_cycles_offset = leon_cycles_offset;
-	sparc_config.cs_period = 1000000 / HZ;
-	sparc_config.features |= FEAT_L10_CLOCKSOURCE;
-
-#ifndef CONFIG_SMP
-	sparc_config.features |= FEAT_L10_CLOCKEVENT;
-#endif
 
 	leondebug_irq_disable = 0;
 	leon_debug_irqout = 0;
@@ -410,7 +369,7 @@ void __init leon_init_timers(void)
 		leon_eirq_setup(eirq);
 
 	irq = _leon_build_device_irq(NULL, leon3_gptimer_irq+leon3_gptimer_idx);
-	err = request_irq(irq, timer_interrupt, IRQF_TIMER, "timer", NULL);
+	err = request_irq(irq, counter_fn, IRQF_TIMER, "timer", NULL);
 	if (err) {
 		printk(KERN_ERR "unable to attach timer IRQ%d\n", irq);
 		prom_halt();
@@ -442,7 +401,7 @@ void __init leon_init_timers(void)
 	/* Install per-cpu IRQ handler for broadcasted ticker */
 	irq = leon_build_device_irq(leon3_ticker_irq, handle_percpu_irq,
 				    "per-cpu", 0);
-	err = request_irq(irq, leon_percpu_timer_ce_interrupt,
+	err = request_irq(irq, leon_percpu_timer_interrupt,
 			  IRQF_PERCPU | IRQF_TIMER, "ticker",
 			  NULL);
 	if (err) {
@@ -469,6 +428,7 @@ void leon_clear_clock_irq(void)
 
 void leon_load_profile_irq(int cpu, unsigned int limit)
 {
+	BUG();
 }
 
 void __init leon_trans_init(struct device_node *dp)
@@ -536,7 +496,6 @@ void __init leon_init_IRQ(void)
 {
 	sparc_config.init_timers      = leon_init_timers;
 	sparc_config.build_device_irq = _leon_build_device_irq;
-	sparc_config.clock_rate = 1000000;
 
 	BTFIXUPSET_CALL(clear_clock_irq, leon_clear_clock_irq,
 			BTFIXUPCALL_NORM);
