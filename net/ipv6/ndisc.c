@@ -15,6 +15,7 @@
 /*
  *	Changes:
  *
+ *	Alexey I. Froloff		:	RFC6106 (DNSSL) support
  *	Pierre Ynard			:	export userland ND options
  *						through netlink (RDNSS support)
  *	Lars Fenneberg			:	fixed MTU setting on receipt
@@ -228,7 +229,8 @@ static struct nd_opt_hdr *ndisc_next_option(struct nd_opt_hdr *cur,
 
 static inline int ndisc_is_useropt(struct nd_opt_hdr *opt)
 {
-	return opt->nd_opt_type == ND_OPT_RDNSS;
+	return opt->nd_opt_type == ND_OPT_RDNSS ||
+		opt->nd_opt_type == ND_OPT_DNSSL;
 }
 
 static struct nd_opt_hdr *ndisc_next_useropt(struct nd_opt_hdr *cur,
@@ -1099,8 +1101,9 @@ static void ndisc_ra_useropt(struct sk_buff *ra, struct nd_opt_hdr *opt)
 
 	memcpy(ndmsg + 1, opt, opt->nd_opt_len << 3);
 
-	NLA_PUT(skb, NDUSEROPT_SRCADDR, sizeof(struct in6_addr),
-		&ipv6_hdr(ra)->saddr);
+	if (nla_put(skb, NDUSEROPT_SRCADDR, sizeof(struct in6_addr),
+		    &ipv6_hdr(ra)->saddr))
+		goto nla_put_failure;
 	nlmsg_end(skb, nlh);
 
 	rtnl_notify(skb, net, 0, RTNLGRP_ND_USEROPT, NULL, GFP_ATOMIC);
