@@ -206,5 +206,11 @@
 		interrupts = < 0 97 0x04 >;
 		phy_type = "utmi";
 	};
+
+	gart: gart@7000f000 {
+		compatible = "nvidia,tegra20-gart";
+		reg = < 0x7000f000 0x00000100    /* controller registers */
+		        0x58000000 0x02000000 >; /* GART aperture */
+	};
 };
 
