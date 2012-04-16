@@ -25,9 +25,7 @@
 #include <linux/hid.h>
 #include <linux/module.h>
 #include <linux/slab.h>
-#ifdef CONFIG_HID_WACOM_POWER_SUPPLY
 #include <linux/power_supply.h>
-#endif
 
 #include "hid-ids.h"
 
@@ -41,16 +39,18 @@ struct wacom_data {
 	__u32 id;
 	__u32 serial;
 	unsigned char high_speed;
-#ifdef CONFIG_HID_WACOM_POWER_SUPPLY
-	int battery_capacity;
+	__u8 battery_capacity;
+	__u8 power_raw;
+	__u8 ps_connected;
 	struct power_supply battery;
 	struct power_supply ac;
-#endif
 };
 
-#ifdef CONFIG_HID_WACOM_POWER_SUPPLY
-/*percent of battery capacity, 0 means AC online*/
-static unsigned short batcap[8] = { 1, 15, 25, 35, 50, 70, 100, 0 };
+/*percent of battery capacity for Graphire
+  8th value means AC online and show 100% capacity */
+static unsigned short batcap_gr[8] = { 1, 15, 25, 35, 50, 70, 100, 100 };
+/*percent of battery capacity for Intuos4 WL, AC has a separate bit*/
+static unsigned short batcap_i4[8] = { 1, 15, 30, 45, 60, 70, 85, 100 };
 
 static enum power_supply_property wacom_battery_props[] = {
 	POWER_SUPPLY_PROP_PRESENT,
@@ -70,7 +70,6 @@ static int wacom_battery_get_property(struct power_supply *psy,
 {
 	struct wacom_data *wdata = container_of(psy,
 					struct wacom_data, battery);
-	int power_state = batcap[wdata->battery_capacity];
 	int ret = 0;
 
 	switch (psp) {
@@ -81,11 +80,7 @@ static int wacom_battery_get_property(struct power_supply *psy,
 		val->intval = POWER_SUPPLY_SCOPE_DEVICE;
 		break;
 	case POWER_SUPPLY_PROP_CAPACITY:
-		/* show 100% battery capacity when charging */
-		if (power_state == 0)
-			val->intval = 100;
-		else
-			val->intval = power_state;
+		val->intval = wdata->battery_capacity;
 		break;
 	default:
 		ret = -EINVAL;
@@ -99,17 +94,13 @@ static int wacom_ac_get_property(struct power_supply *psy,
 				union power_supply_propval *val)
 {
 	struct wacom_data *wdata = container_of(psy, struct wacom_data, ac);
-	int power_state = batcap[wdata->battery_capacity];
 	int ret = 0;
 
 	switch (psp) {
 	case POWER_SUPPLY_PROP_PRESENT:
 		/* fall through */
 	case POWER_SUPPLY_PROP_ONLINE:
-		if (power_state == 0)
-			val->intval = 1;
-		else
-			val->intval = 0;
+		val->intval = wdata->ps_connected;
 		break;
 	case POWER_SUPPLY_PROP_SCOPE:
 		val->intval = POWER_SUPPLY_SCOPE_DEVICE;
@@ -120,7 +111,6 @@ static int wacom_ac_get_property(struct power_supply *psy,
 	}
 	return ret;
 }
-#endif
 
 static void wacom_set_features(struct hid_device *hdev)
 {
@@ -310,12 +300,16 @@ static int wacom_gr_parse_report(struct hid_device *hdev,
 		input_sync(input);
 	}
 
-#ifdef CONFIG_HID_WACOM_POWER_SUPPLY
-	/* Store current battery capacity */
+	/* Store current battery capacity and power supply state*/
 	rw = (data[7] >> 2 & 0x07);
-	if (rw != wdata->battery_capacity)
-		wdata->battery_capacity = rw;
-#endif
+	if (rw != wdata->power_raw) {
+		wdata->power_raw = rw;
+		wdata->battery_capacity = batcap_gr[rw];
+		if (rw == 7)
+			wdata->ps_connected = 1;
+		else
+			wdata->ps_connected = 0;
+	}
 	return 1;
 }
 
@@ -455,6 +449,7 @@ static int wacom_raw_event(struct hid_device *hdev, struct hid_report *report,
 	struct input_dev *input;
 	unsigned char *data = (unsigned char *) raw_data;
 	int i;
+	__u8 power_raw;
 
 	if (!(hdev->claimed & HID_CLAIMED_INPUT))
 		return 0;
@@ -482,6 +477,13 @@ static int wacom_raw_event(struct hid_device *hdev, struct hid_report *report,
 			wacom_i4_parse_report(hdev, wdata, input, data + i);
 			i += 10;
 			wacom_i4_parse_report(hdev, wdata, input, data + i);
+			power_raw = data[i+10];
+			if (power_raw != wdata->power_raw) {
+				wdata->power_raw = power_raw;
+				wdata->battery_capacity = batcap_i4[power_raw & 0x07];
+				wdata->ps_connected = power_raw & 0x08;
+			}
+
 			break;
 		default:
 			hid_err(hdev, "Unknown report: %d,%d size:%d\n",
@@ -596,7 +598,6 @@ static int wacom_probe(struct hid_device *hdev,
 		break;
 	}
 
-#ifdef CONFIG_HID_WACOM_POWER_SUPPLY
 	wdata->battery.properties = wacom_battery_props;
 	wdata->battery.num_properties = ARRAY_SIZE(wacom_battery_props);
 	wdata->battery.get_property = wacom_battery_get_property;
@@ -629,16 +630,13 @@ static int wacom_probe(struct hid_device *hdev,
 	}
 
 	power_supply_powers(&wdata->ac, &hdev->dev);
-#endif
 	return 0;
 
-#ifdef CONFIG_HID_WACOM_POWER_SUPPLY
 err_ac:
 	power_supply_unregister(&wdata->battery);
 err_battery:
 	device_remove_file(&hdev->dev, &dev_attr_speed);
 	hid_hw_stop(hdev);
-#endif
 err_free:
 	kfree(wdata);
 	return ret;
@@ -646,16 +644,12 @@ err_free:
 
 static void wacom_remove(struct hid_device *hdev)
 {
-#ifdef CONFIG_HID_WACOM_POWER_SUPPLY
 	struct wacom_data *wdata = hid_get_drvdata(hdev);
-#endif
 	device_remove_file(&hdev->dev, &dev_attr_speed);
 	hid_hw_stop(hdev);
 
-#ifdef CONFIG_HID_WACOM_POWER_SUPPLY
 	power_supply_unregister(&wdata->battery);
 	power_supply_unregister(&wdata->ac);
-#endif
 	kfree(hid_get_drvdata(hdev));
 }
 
@@ -693,5 +687,5 @@ static void __exit wacom_exit(void)
 
 module_init(wacom_init);
 module_exit(wacom_exit);
+MODULE_DESCRIPTION("Driver for Wacom Graphire Bluetooth and Wacom Intuos4 WL");
 MODULE_LICENSE("GPL");
-
