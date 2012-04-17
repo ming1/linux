@@ -3165,6 +3165,7 @@ static int vfs_rename_other(struct inode *old_dir, struct dentry *old_dentry,
 			    struct inode *new_dir, struct dentry *new_dentry)
 {
 	struct inode *target = new_dentry->d_inode;
+	struct inode *source = old_dentry->d_inode;
 	int error;
 
 	error = security_inode_rename(old_dir, old_dentry, new_dir, new_dentry);
@@ -3172,6 +3173,7 @@ static int vfs_rename_other(struct inode *old_dir, struct dentry *old_dentry,
 		return error;
 
 	dget(new_dentry);
+	mutex_lock_nested(&source->i_mutex, I_MUTEX_RENAME_SOURCE);
 	if (target)
 		mutex_lock(&target->i_mutex);
 
@@ -3190,6 +3192,7 @@ static int vfs_rename_other(struct inode *old_dir, struct dentry *old_dentry,
 out:
 	if (target)
 		mutex_unlock(&target->i_mutex);
+	mutex_unlock(&source->i_mutex);
 	dput(new_dentry);
 	return error;
 }
