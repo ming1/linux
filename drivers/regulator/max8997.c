@@ -382,7 +382,7 @@ static int max8997_get_voltage_register(struct regulator_dev *rdev,
 	return 0;
 }
 
-static int max8997_get_voltage(struct regulator_dev *rdev)
+static int max8997_get_voltage_sel(struct regulator_dev *rdev)
 {
 	struct max8997_data *max8997 = rdev_get_drvdata(rdev);
 	struct i2c_client *i2c = max8997->iodev->i2c;
@@ -400,15 +400,7 @@ static int max8997_get_voltage(struct regulator_dev *rdev)
 	val >>= shift;
 	val &= mask;
 
-	if (rdev->desc && rdev->desc->ops && rdev->desc->ops->list_voltage)
-		return rdev->desc->ops->list_voltage(rdev, val);
-
-	/*
-	 * max8997_list_voltage returns value for any rdev with voltage_map,
-	 * which works for "CHARGER" and "CHARGER TOPOFF" that do not have
-	 * list_voltage ops (they are current regulators).
-	 */
-	return max8997_list_voltage(rdev, val);
+	return val;
 }
 
 static inline int max8997_get_voltage_proper_val(
@@ -497,9 +489,7 @@ static int max8997_set_voltage_ldobuck(struct regulator_dev *rdev,
 	int min_vol = min_uV / 1000, max_vol = max_uV / 1000;
 	const struct voltage_map_desc *desc;
 	int rid = rdev_get_id(rdev);
-	int reg, shift = 0, mask, ret;
-	int i;
-	u8 org;
+	int i, reg, shift, mask, ret;
 
 	switch (rid) {
 	case MAX8997_LDO1 ... MAX8997_LDO21:
@@ -528,21 +518,50 @@ static int max8997_set_voltage_ldobuck(struct regulator_dev *rdev,
 	if (ret)
 		return ret;
 
-	max8997_read_reg(i2c, reg, &org);
-	org = (org & mask) >> shift;
-
 	ret = max8997_update_reg(i2c, reg, i << shift, mask << shift);
 	*selector = i;
 
-	if (rid == MAX8997_BUCK1 || rid == MAX8997_BUCK2 ||
-			rid == MAX8997_BUCK4 || rid == MAX8997_BUCK5) {
-		/* If the voltage is increasing */
-		if (org < i)
-			udelay(DIV_ROUND_UP(desc->step * (i - org),
-						max8997->ramp_delay));
+	return ret;
+}
+
+static int max8997_set_voltage_ldobuck_time_sel(struct regulator_dev *rdev,
+						unsigned int old_selector,
+						unsigned int new_selector)
+{
+	struct max8997_data *max8997 = rdev_get_drvdata(rdev);
+	int rid = rdev_get_id(rdev);
+	const struct voltage_map_desc *desc = reg_voltage_map[rid];
+
+	/* Delay is required only if the voltage is increasing */
+	if (old_selector >= new_selector)
+		return 0;
+
+	/* No need to delay if gpio_dvs_mode */
+	switch (rid) {
+	case MAX8997_BUCK1:
+		if (max8997->buck1_gpiodvs)
+			return 0;
+		break;
+	case MAX8997_BUCK2:
+		if (max8997->buck2_gpiodvs)
+			return 0;
+		break;
+	case MAX8997_BUCK5:
+		if (max8997->buck5_gpiodvs)
+			return 0;
+		break;
 	}
 
-	return ret;
+	switch (rid) {
+	case MAX8997_BUCK1:
+	case MAX8997_BUCK2:
+	case MAX8997_BUCK4:
+	case MAX8997_BUCK5:
+		return DIV_ROUND_UP(desc->step * (new_selector - old_selector),
+				    max8997->ramp_delay);
+	}
+
+	return 0;
 }
 
 /*
@@ -682,7 +701,7 @@ static int max8997_set_voltage_buck(struct regulator_dev *rdev,
 		}
 
 		new_val++;
-	} while (desc->min + desc->step + new_val <= desc->max);
+	} while (desc->min + desc->step * new_val <= desc->max);
 
 	new_idx = tmp_idx;
 	new_val = tmp_val;
@@ -786,8 +805,9 @@ static struct regulator_ops max8997_ldo_ops = {
 	.is_enabled		= max8997_reg_is_enabled,
 	.enable			= max8997_reg_enable,
 	.disable		= max8997_reg_disable,
-	.get_voltage		= max8997_get_voltage,
+	.get_voltage_sel	= max8997_get_voltage_sel,
 	.set_voltage		= max8997_set_voltage_ldobuck,
+	.set_voltage_time_sel	= max8997_set_voltage_ldobuck_time_sel,
 	.set_suspend_enable	= max8997_reg_enable_suspend,
 	.set_suspend_disable	= max8997_reg_disable_suspend,
 };
@@ -797,8 +817,9 @@ static struct regulator_ops max8997_buck_ops = {
 	.is_enabled		= max8997_reg_is_enabled,
 	.enable			= max8997_reg_enable,
 	.disable		= max8997_reg_disable,
-	.get_voltage		= max8997_get_voltage,
+	.get_voltage_sel	= max8997_get_voltage_sel,
 	.set_voltage		= max8997_set_voltage_buck,
+	.set_voltage_time_sel	= max8997_set_voltage_ldobuck_time_sel,
 	.set_suspend_enable	= max8997_reg_enable_suspend,
 	.set_suspend_disable	= max8997_reg_disable_suspend,
 };
@@ -817,7 +838,7 @@ static struct regulator_ops max8997_safeout_ops = {
 	.is_enabled		= max8997_reg_is_enabled,
 	.enable			= max8997_reg_enable,
 	.disable		= max8997_reg_disable,
-	.get_voltage		= max8997_get_voltage,
+	.get_voltage_sel	= max8997_get_voltage_sel,
 	.set_voltage		= max8997_set_voltage_safeout,
 	.set_suspend_enable	= max8997_reg_enable_suspend,
 	.set_suspend_disable	= max8997_reg_disable_suspend,
@@ -825,31 +846,50 @@ static struct regulator_ops max8997_safeout_ops = {
 
 static struct regulator_ops max8997_fixedstate_ops = {
 	.list_voltage		= max8997_list_voltage_charger_cv,
-	.get_voltage		= max8997_get_voltage,
+	.get_voltage_sel	= max8997_get_voltage_sel,
 	.set_voltage		= max8997_set_voltage_charger_cv,
 };
 
-static int max8997_set_voltage_ldobuck_wrap(struct regulator_dev *rdev,
-		int min_uV, int max_uV)
+static int max8997_set_current_limit(struct regulator_dev *rdev,
+				     int min_uA, int max_uA)
 {
 	unsigned dummy;
+	int rid = rdev_get_id(rdev);
 
-	return max8997_set_voltage_ldobuck(rdev, min_uV, max_uV, &dummy);
+	if (rid != MAX8997_CHARGER && rid != MAX8997_CHARGER_TOPOFF)
+		return -EINVAL;
+
+	/* Reuse max8997_set_voltage_ldobuck to set current_limit. */
+	return max8997_set_voltage_ldobuck(rdev, min_uA, max_uA, &dummy);
 }
 
+static int max8997_get_current_limit(struct regulator_dev *rdev)
+{
+	int sel, rid = rdev_get_id(rdev);
+
+	if (rid != MAX8997_CHARGER && rid != MAX8997_CHARGER_TOPOFF)
+		return -EINVAL;
+
+	sel = max8997_get_voltage_sel(rdev);
+	if (sel < 0)
+		return sel;
+
+	/* Reuse max8997_list_voltage to get current_limit. */
+	return max8997_list_voltage(rdev, sel);
+}
 
 static struct regulator_ops max8997_charger_ops = {
 	.is_enabled		= max8997_reg_is_enabled,
 	.enable			= max8997_reg_enable,
 	.disable		= max8997_reg_disable,
-	.get_current_limit	= max8997_get_voltage,
-	.set_current_limit	= max8997_set_voltage_ldobuck_wrap,
+	.get_current_limit	= max8997_get_current_limit,
+	.set_current_limit	= max8997_set_current_limit,
 };
 
 static struct regulator_ops max8997_charger_fixedstate_ops = {
 	.is_enabled		= max8997_reg_is_enabled,
-	.get_current_limit	= max8997_get_voltage,
-	.set_current_limit	= max8997_set_voltage_ldobuck_wrap,
+	.get_current_limit	= max8997_get_current_limit,
+	.set_current_limit	= max8997_set_current_limit,
 };
 
 #define MAX8997_VOLTAGE_REGULATOR(_name, _ops) {\
