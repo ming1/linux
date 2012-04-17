@@ -29,6 +29,10 @@
 #include "originator.h"
 #include "vis.h"
 #include "unicast.h"
+#include "bridge_loop_avoidance.h"
+
+static int route_unicast_packet(struct sk_buff *skb,
+				struct hard_iface *recv_if);
 
 void slide_own_bcast_window(struct hard_iface *hard_iface)
 {
@@ -52,7 +56,7 @@ void slide_own_bcast_window(struct hard_iface *hard_iface)
 
 			bit_get_packet(bat_priv, word, 1, 0);
 			orig_node->bcast_own_sum[hard_iface->if_num] =
-				bit_packet_count(word);
+				bitmap_weight(word, TQ_LOCAL_WINDOW_SIZE);
 			spin_unlock_bh(&orig_node->ogm_cnt_lock);
 		}
 		rcu_read_unlock();
@@ -669,6 +673,13 @@ int recv_roam_adv(struct sk_buff *skb, struct hard_iface *recv_if)
 	if (!is_my_mac(roam_adv_packet->dst))
 		return route_unicast_packet(skb, recv_if);
 
+	/* check if it is a backbone gateway. we don't accept
+	 * roaming advertisement from it, as it has the same
+	 * entries as we have.
+	 */
+	if (bla_is_backbone_gw_orig(bat_priv, roam_adv_packet->src))
+		goto out;
+
 	orig_node = orig_hash_find(bat_priv, roam_adv_packet->src);
 	if (!orig_node)
 		goto out;
@@ -798,7 +809,7 @@ static int check_unicast_packet(struct sk_buff *skb, int hdr_size)
 	return 0;
 }
 
-int route_unicast_packet(struct sk_buff *skb, struct hard_iface *recv_if)
+static int route_unicast_packet(struct sk_buff *skb, struct hard_iface *recv_if)
 {
 	struct bat_priv *bat_priv = netdev_priv(recv_if->soft_iface);
 	struct orig_node *orig_node = NULL;
@@ -1047,8 +1058,8 @@ int recv_bcast_packet(struct sk_buff *skb, struct hard_iface *recv_if)
 	spin_lock_bh(&orig_node->bcast_seqno_lock);
 
 	/* check whether the packet is a duplicate */
-	if (get_bit_status(orig_node->bcast_bits, orig_node->last_bcast_seqno,
-			   ntohl(bcast_packet->seqno)))
+	if (bat_test_bit(orig_node->bcast_bits, orig_node->last_bcast_seqno,
+			 ntohl(bcast_packet->seqno)))
 		goto spin_unlock;
 
 	seq_diff = ntohl(bcast_packet->seqno) - orig_node->last_bcast_seqno;
@@ -1065,8 +1076,18 @@ int recv_bcast_packet(struct sk_buff *skb, struct hard_iface *recv_if)
 
 	spin_unlock_bh(&orig_node->bcast_seqno_lock);
 
+	/* check whether this has been sent by another originator before */
+	if (bla_check_bcast_duplist(bat_priv, bcast_packet, hdr_size))
+		goto out;
+
 	/* rebroadcast packet */
 	add_bcast_packet_to_list(bat_priv, skb, 1);
+
+	/* don't hand the broadcast up if it is from an originator
+	 * from the same backbone.
+	 */
+	if (bla_is_backbone_gw(skb, orig_node, hdr_size))
+		goto out;
 
 	/* broadcast for me */
 	interface_rx(recv_if->soft_iface, skb, recv_if, hdr_size);

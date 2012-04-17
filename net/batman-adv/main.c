@@ -30,6 +30,7 @@
 #include "translation-table.h"
 #include "hard-interface.h"
 #include "gateway_client.h"
+#include "bridge_loop_avoidance.h"
 #include "vis.h"
 #include "hash.h"
 #include "bat_algo.h"
@@ -96,13 +97,10 @@ int mesh_init(struct net_device *soft_iface)
 	spin_lock_init(&bat_priv->gw_list_lock);
 	spin_lock_init(&bat_priv->vis_hash_lock);
 	spin_lock_init(&bat_priv->vis_list_lock);
-	spin_lock_init(&bat_priv->softif_neigh_lock);
-	spin_lock_init(&bat_priv->softif_neigh_vid_lock);
 
 	INIT_HLIST_HEAD(&bat_priv->forw_bat_list);
 	INIT_HLIST_HEAD(&bat_priv->forw_bcast_list);
 	INIT_HLIST_HEAD(&bat_priv->gw_list);
-	INIT_HLIST_HEAD(&bat_priv->softif_neigh_vids);
 	INIT_LIST_HEAD(&bat_priv->tt_changes_list);
 	INIT_LIST_HEAD(&bat_priv->tt_req_list);
 	INIT_LIST_HEAD(&bat_priv->tt_roam_list);
@@ -116,6 +114,9 @@ int mesh_init(struct net_device *soft_iface)
 	tt_local_add(soft_iface, soft_iface->dev_addr, NULL_IFINDEX);
 
 	if (vis_init(bat_priv) < 1)
+		goto err;
+
+	if (bla_init(bat_priv) < 1)
 		goto err;
 
 	atomic_set(&bat_priv->gw_reselect, 0);
@@ -145,7 +146,7 @@ void mesh_free(struct net_device *soft_iface)
 
 	tt_free(bat_priv);
 
-	softif_neigh_purge(bat_priv);
+	bla_free(bat_priv);
 
 	atomic_set(&bat_priv->mesh_state, MESH_INACTIVE);
 }
