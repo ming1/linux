@@ -152,7 +152,6 @@ static int ar9003_hw_set_channel(struct ath_hw *ah, struct ath9k_channel *chan)
 	REG_WRITE(ah, AR_PHY_65NM_CH0_SYNTH7, reg32);
 
 	ah->curchan = chan;
-	ah->curchan_rad_index = -1;
 
 	return 0;
 }
@@ -683,9 +682,6 @@ static int ar9003_hw_process_ini(struct ath_hw *ah,
 				modesIndex, regWrites);
 
 	REG_WRITE_ARRAY(&ah->iniAdditional, 1, regWrites);
-
-	if (AR_SREV_9462(ah))
-		ar9003_hw_prog_ini(ah, &ah->ini_BTCOEX_MAX_TXPWR, 1);
 
 	if (chan->channel == 2484)
 		ar9003_hw_prog_ini(ah, &ah->ini_japan2484, 1);

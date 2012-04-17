@@ -246,69 +246,6 @@ static int iwlagn_rx_beacon_notif(struct iwl_priv *priv,
 	return 0;
 }
 
-/* the threshold ratio of actual_ack_cnt to expected_ack_cnt in percent */
-#define ACK_CNT_RATIO (50)
-#define BA_TIMEOUT_CNT (5)
-#define BA_TIMEOUT_MAX (16)
-
-/**
- * iwl_good_ack_health - checks for ACK count ratios, BA timeout retries.
- *
- * When the ACK count ratio is low and aggregated BA timeout retries exceeding
- * the BA_TIMEOUT_MAX, reload firmware and bring system back to normal
- * operation state.
- */
-static bool iwlagn_good_ack_health(struct iwl_priv *priv,
-				struct statistics_tx *cur)
-{
-	int actual_delta, expected_delta, ba_timeout_delta;
-	struct statistics_tx *old;
-
-	if (priv->agg_tids_count)
-		return true;
-
-	lockdep_assert_held(&priv->statistics.lock);
-
-	old = &priv->statistics.tx;
-
-	actual_delta = le32_to_cpu(cur->actual_ack_cnt) -
-		       le32_to_cpu(old->actual_ack_cnt);
-	expected_delta = le32_to_cpu(cur->expected_ack_cnt) -
-			 le32_to_cpu(old->expected_ack_cnt);
-
-	/* Values should not be negative, but we do not trust the firmware */
-	if (actual_delta <= 0 || expected_delta <= 0)
-		return true;
-
-	ba_timeout_delta = le32_to_cpu(cur->agg.ba_timeout) -
-			   le32_to_cpu(old->agg.ba_timeout);
-
-	if ((actual_delta * 100 / expected_delta) < ACK_CNT_RATIO &&
-	    ba_timeout_delta > BA_TIMEOUT_CNT) {
-		IWL_DEBUG_RADIO(priv,
-			"deltas: actual %d expected %d ba_timeout %d\n",
-			actual_delta, expected_delta, ba_timeout_delta);
-
-#ifdef CONFIG_IWLWIFI_DEBUGFS
-		/*
-		 * This is ifdef'ed on DEBUGFS because otherwise the
-		 * statistics aren't available. If DEBUGFS is set but
-		 * DEBUG is not, these will just compile out.
-		 */
-		IWL_DEBUG_RADIO(priv, "rx_detected_cnt delta %d\n",
-				priv->delta_stats.tx.rx_detected_cnt);
-		IWL_DEBUG_RADIO(priv,
-				"ack_or_ba_timeout_collision delta %d\n",
-				priv->delta_stats.tx.ack_or_ba_timeout_collision);
-#endif
-
-		if (ba_timeout_delta >= BA_TIMEOUT_MAX)
-			return false;
-	}
-
-	return true;
-}
-
 /**
  * iwl_good_plcp_health - checks for plcp error.
  *
@@ -347,6 +284,45 @@ static bool iwlagn_good_plcp_health(struct iwl_priv *priv,
 	return true;
 }
 
+int iwl_force_rf_reset(struct iwl_priv *priv, bool external)
+{
+	struct iwl_rf_reset *rf_reset;
+
+	if (test_bit(STATUS_EXIT_PENDING, &priv->status))
+		return -EAGAIN;
+
+	if (!iwl_is_any_associated(priv)) {
+		IWL_DEBUG_SCAN(priv, "force reset rejected: not associated\n");
+		return -ENOLINK;
+	}
+
+	rf_reset = &priv->rf_reset;
+	rf_reset->reset_request_count++;
+	if (!external && rf_reset->last_reset_jiffies &&
+	    time_after(rf_reset->last_reset_jiffies +
+		       IWL_DELAY_NEXT_FORCE_RF_RESET, jiffies)) {
+		IWL_DEBUG_INFO(priv, "RF reset rejected\n");
+		rf_reset->reset_reject_count++;
+		return -EAGAIN;
+	}
+	rf_reset->reset_success_count++;
+	rf_reset->last_reset_jiffies = jiffies;
+
+	/*
+	 * There is no easy and better way to force reset the radio,
+	 * the only known method is switching channel which will force to
+	 * reset and tune the radio.
+	 * Use internal short scan (single channel) operation to should
+	 * achieve this objective.
+	 * Driver should reset the radio when number of consecutive missed
+	 * beacon, or any other uCode error condition detected.
+	 */
+	IWL_DEBUG_INFO(priv, "perform radio reset.\n");
+	iwl_internal_short_hw_scan(priv);
+	return 0;
+}
+
+
 static void iwlagn_recover_from_statistics(struct iwl_priv *priv,
 				struct statistics_rx_phy *cur_ofdm,
 				struct statistics_rx_ht_phy *cur_ofdm_ht,
@@ -368,15 +344,9 @@ static void iwlagn_recover_from_statistics(struct iwl_priv *priv,
 	if (msecs < 99)
 		return;
 
-	if (iwlagn_mod_params.ack_check && !iwlagn_good_ack_health(priv, tx)) {
-		IWL_ERR(priv, "low ack count detected, restart firmware\n");
-		if (!iwl_force_reset(priv, IWL_FW_RESET, false))
-			return;
-	}
-
 	if (iwlagn_mod_params.plcp_check &&
 	    !iwlagn_good_plcp_health(priv, cur_ofdm, cur_ofdm_ht, msecs))
-		iwl_force_reset(priv, IWL_RF_RESET, false);
+		iwl_force_rf_reset(priv, false);
 }
 
 /* Calculate noise level, based on measurements during network silence just
@@ -589,8 +559,8 @@ static int iwlagn_rx_statistics(struct iwl_priv *priv,
 		iwlagn_rx_calc_noise(priv);
 		queue_work(priv->workqueue, &priv->run_time_calib_work);
 	}
-	if (cfg(priv)->lib->temperature && change)
-		cfg(priv)->lib->temperature(priv);
+	if (priv->lib->temperature && change)
+		priv->lib->temperature(priv);
 
 	spin_unlock(&priv->statistics.lock);
 
