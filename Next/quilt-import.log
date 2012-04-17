@@ -1,0 +1,8 @@
+Importing i2c based on 3.4-rc1
+Unchanged quilt series i2c
+Importing jdelvare-hwmon based on 437538267b672f9320833907f1b5acbb2605f4be
+Unchanged quilt series jdelvare-hwmon
+Importing rr based on v3.3-rc5-86-g5ffca28
+Unchanged quilt series rr
+Importing device-mapper based on v3.4-rc2
+Unchanged quilt series device-mapper
