@@ -3,8 +3,8 @@
 # fix for build system bug...
 obj-$(CONFIG_STAGING)		+= staging.o
 
-obj-y				+= serial/
 obj-y				+= media/
+obj-y				+= net/
 obj-$(CONFIG_ET131X)		+= et131x/
 obj-$(CONFIG_SLICOSS)		+= slicoss/
 obj-$(CONFIG_USBIP_CORE)	+= usbip/
