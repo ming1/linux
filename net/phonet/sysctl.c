@@ -27,6 +27,10 @@
 #include <linux/errno.h>
 #include <linux/init.h>
 
+#include <net/sock.h>
+#include <linux/phonet.h>
+#include <net/phonet/phonet.h>
+
 #define DYNAMIC_PORT_MIN	0x40
 #define DYNAMIC_PORT_MAX	0x7f
 
@@ -46,7 +50,8 @@ static void set_local_port_range(int range[2])
 
 void phonet_get_local_port_range(int *min, int *max)
 {
-	unsigned seq;
+	unsigned int seq;
+
 	do {
 		seq = read_seqbegin(&local_port_range_lock);
 		if (min)
