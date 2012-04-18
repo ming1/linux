@@ -1859,7 +1859,9 @@ static void fix_read_error(struct r1conf *conf, int read_disk,
 
 			rdev = conf->mirrors[d].rdev;
 			if (rdev &&
-			    test_bit(In_sync, &rdev->flags) &&
+			    (test_bit(In_sync, &rdev->flags) ||
+			     (!test_bit(Faulty, &rdev->flags) &&
+			      rdev->recovery_offset >= sect + s)) &&
 			    is_badblock(rdev, sect, s,
 					&first_bad, &bad_sectors) == 0 &&
 			    sync_page_io(rdev, sect, s<<9,
@@ -2024,7 +2026,7 @@ static void handle_sync_write_finished(struct r1conf *conf, struct r1bio *r1_bio
 			continue;
 		if (test_bit(BIO_UPTODATE, &bio->bi_flags) &&
 		    test_bit(R1BIO_MadeGood, &r1_bio->state)) {
-			rdev_clear_badblocks(rdev, r1_bio->sector, s);
+			rdev_clear_badblocks(rdev, r1_bio->sector, s, 0);
 		}
 		if (!test_bit(BIO_UPTODATE, &bio->bi_flags) &&
 		    test_bit(R1BIO_WriteError, &r1_bio->state)) {
@@ -2044,7 +2046,7 @@ static void handle_write_finished(struct r1conf *conf, struct r1bio *r1_bio)
 			struct md_rdev *rdev = conf->mirrors[m].rdev;
 			rdev_clear_badblocks(rdev,
 					     r1_bio->sector,
-					     r1_bio->sectors);
+					     r1_bio->sectors, 0);
 			rdev_dec_pending(rdev, conf->mddev);
 		} else if (r1_bio->bios[m] != NULL) {
 			/* This drive got a write error.  We need to
