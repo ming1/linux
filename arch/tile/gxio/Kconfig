@@ -1,0 +1,34 @@
+config TILE_GXIO
+	bool "Tilera Gx I/O support"
+	depends on TILEGX
+	---help---
+	  This option supports direct access to TILE-Gx hardware from
+	  user space, via the gxio library, or from kernel space, via
+	  kernel IORPC support.
+
+config TILE_GXIO_DMA
+	bool "Tilera Gx I/O DMA support"
+	depends on TILE_GXIO
+	---help---
+	  This option supports direct access to the common I/O DMA facility
+	  within the TILE-Gx mPIPE and Trio hardware.  It is not required
+	  in order to use the gxio library to access mPIPE or Trio from
+	  user space.
+
+config TILE_GXIO_MPIPE
+	bool "Tilera Gx mPIPE I/O support"
+	select TILE_GXIO
+	select TILE_GXIO_DMA
+	---help---
+	  This option supports direct access to the TILE-Gx mPIPE hardware
+	  from kernel space.  It is not required in order to use the gxio
+	  library to access mPIPE from user space.
+
+config TILE_GXIO_TRIO
+	bool "Tilera Gx TRIO I/O support"
+	select TILE_GXIO
+	select TILE_GXIO_DMA
+	---help---
+	  This option supports direct access to the TILE-Gx TRIO hardware
+	  from kernel space.  It is not required in order to use the gxio
+	  library to access TRIO from user space.
