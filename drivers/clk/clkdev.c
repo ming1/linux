@@ -166,8 +166,9 @@ struct clk_lookup_alloc {
 	char	con_id[MAX_CON_ID];
 };
 
-struct clk_lookup * __init_refok
-clkdev_alloc(struct clk *clk, const char *con_id, const char *dev_fmt, ...)
+static struct clk_lookup * __init_refok
+__clkdev_alloc_valist(struct clk *clk, const char *con_id, const char *dev_fmt,
+		va_list ap)
 {
 	struct clk_lookup_alloc *cla;
 
@@ -182,15 +183,34 @@ clkdev_alloc(struct clk *clk, const char *con_id, const char *dev_fmt, ...)
 	}
 
 	if (dev_fmt) {
-		va_list ap;
-
-		va_start(ap, dev_fmt);
 		vscnprintf(cla->dev_id, sizeof(cla->dev_id), dev_fmt, ap);
 		cla->cl.dev_id = cla->dev_id;
-		va_end(ap);
 	}
 
 	return &cla->cl;
+}
+
+#define clkdev_alloc_valist(_cl, _clk, _con_id, _dev_fmt, _ap)		\
+	do {								\
+		if (_dev_fmt)						\
+			va_start(_ap, _dev_fmt);			\
+									\
+		_cl = __clkdev_alloc_valist(_clk, _con_id, _dev_fmt,	\
+				_ap);					\
+									\
+		if (_dev_fmt)						\
+			va_end(ap);					\
+	} while (0);
+
+struct clk_lookup * __init_refok
+clkdev_alloc(struct clk *clk, const char *con_id, const char *dev_fmt, ...)
+{
+	struct clk_lookup *cl;
+	va_list ap;
+
+	clkdev_alloc_valist(cl, clk, con_id, dev_fmt, ap);
+
+	return cl;
 }
 EXPORT_SYMBOL(clkdev_alloc);
 
@@ -223,3 +243,35 @@ void clkdev_drop(struct clk_lookup *cl)
 	kfree(cl);
 }
 EXPORT_SYMBOL(clkdev_drop);
+
+int clk_register_clkdev(struct clk *clk, const char *con_id,
+		const char *dev_fmt, ...)
+{
+	struct clk_lookup *cl;
+	va_list ap;
+
+	clkdev_alloc_valist(cl, clk, con_id, dev_fmt, ap);
+
+	if (!cl)
+		return -ENOMEM;
+
+	clkdev_add(cl);
+	return 0;
+}
+EXPORT_SYMBOL(clk_register_clkdev);
+
+int clk_register_clkdevs(struct clk *clk, struct clk_lookup *cl, size_t num)
+{
+	unsigned i;
+
+	if (!clk)
+		return -ENOMEM;
+
+	for (i = 0; i < num; i++, cl++) {
+		cl->clk = clk;
+		clkdev_add(cl);
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(clk_register_clkdevs);
