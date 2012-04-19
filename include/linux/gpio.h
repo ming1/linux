@@ -20,6 +20,11 @@
 /* Gpio pin is open source */
 #define GPIOF_OPEN_SOURCE	(1 << 3)
 
+#define GPIOF_EXPORT		(1 << 2)
+#define GPIOF_EXPORT_CHANGEABLE	(1 << 3)
+#define GPIOF_EXPORT_DIR_FIXED	(GPIOF_EXPORT)
+#define GPIOF_EXPORT_DIR_CHANGEABLE (GPIOF_EXPORT | GPIOF_EXPORT_CHANGEABLE)
+
 /**
  * struct gpio - a structure describing a GPIO with configuration
  * @gpio:	the GPIO number
@@ -55,6 +60,12 @@ static inline int gpio_request(unsigned gpio, const char *label)
 	return -ENOSYS;
 }
 
+static inline int devm_gpio_request(struct device *dev, unsigned gpio,
+				    const char *label)
+{
+	return -ENOSYS;
+}
+
 static inline int gpio_request_one(unsigned gpio,
 					unsigned long flags, const char *label)
 {
@@ -67,6 +78,14 @@ static inline int gpio_request_array(const struct gpio *array, size_t num)
 }
 
 static inline void gpio_free(unsigned gpio)
+{
+	might_sleep();
+
+	/* GPIO can never have been requested */
+	WARN_ON(1);
+}
+
+static inline void devm_gpio_free(struct device *dev, unsigned gpio)
 {
 	might_sleep();
 
