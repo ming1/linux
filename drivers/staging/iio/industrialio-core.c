@@ -42,11 +42,6 @@ EXPORT_SYMBOL(iio_bus_type);
 
 static struct dentry *iio_debugfs_dentry;
 
-static const char * const iio_data_type_name[] = {
-	[IIO_RAW] = "raw",
-	[IIO_PROCESSED] = "input",
-};
-
 static const char * const iio_direction[] = {
 	[0] = "in",
 	[1] = "out",
@@ -80,6 +75,8 @@ static const char * const iio_modifier_names[] = {
 
 /* relies on pairs of these shared then separate */
 static const char * const iio_chan_info_postfix[] = {
+	[IIO_CHAN_INFO_RAW] = "raw",
+	[IIO_CHAN_INFO_PROCESSED] = "input",
 	[IIO_CHAN_INFO_SCALE] = "scale",
 	[IIO_CHAN_INFO_OFFSET] = "offset",
 	[IIO_CHAN_INFO_CALIBSCALE] = "calibscale",
@@ -90,6 +87,7 @@ static const char * const iio_chan_info_postfix[] = {
 	[IIO_CHAN_INFO_AVERAGE_RAW] = "mean_raw",
 	[IIO_CHAN_INFO_LOW_PASS_FILTER_3DB_FREQUENCY]
 	= "filter_low_pass_3db_frequency",
+	[IIO_CHAN_INFO_SAMP_FREQ] = "sampling_frequency",
 };
 
 const struct iio_chan_spec
@@ -575,25 +573,12 @@ error_ret:
 static int iio_device_add_channel_sysfs(struct iio_dev *indio_dev,
 					struct iio_chan_spec const *chan)
 {
-	int ret, i, attrcount = 0;
+	int ret, attrcount = 0;
+	int i;
 	const struct iio_chan_spec_ext_info *ext_info;
 
 	if (chan->channel < 0)
 		return 0;
-
-	ret = __iio_add_chan_devattr(iio_data_type_name[chan->processed_val],
-				     chan,
-				     &iio_read_channel_info,
-				     (chan->output ?
-				      &iio_write_channel_info : NULL),
-				     0,
-				     0,
-				     &indio_dev->dev,
-				     &indio_dev->channel_attr_list);
-	if (ret)
-		goto error_ret;
-	attrcount++;
-
 	for_each_set_bit(i, &chan->info_mask, sizeof(long)*8) {
 		ret = __iio_add_chan_devattr(iio_chan_info_postfix[i/2],
 					     chan,

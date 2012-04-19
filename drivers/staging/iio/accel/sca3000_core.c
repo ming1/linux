@@ -429,17 +429,31 @@ static IIO_DEVICE_ATTR(measurement_mode, S_IRUGO | S_IWUSR,
 static IIO_DEVICE_ATTR(revision, S_IRUGO, sca3000_show_rev, NULL, 0);
 
 #define SCA3000_INFO_MASK			\
-	IIO_CHAN_INFO_SCALE_SHARED_BIT
+	IIO_CHAN_INFO_RAW_SEPARATE_BIT | IIO_CHAN_INFO_SCALE_SHARED_BIT
 #define SCA3000_EVENT_MASK					\
 	(IIO_EV_BIT(IIO_EV_TYPE_MAG, IIO_EV_DIR_RISING))
 
+#define SCA3000_CHAN(index, mod)				\
+	{							\
+		.type = IIO_ACCEL,				\
+		.modified = 1,					\
+		.channel2 = mod,				\
+		.info_mask = SCA3000_INFO_MASK,			\
+		.address = index,				\
+		.scan_index = index,				\
+		.scan_type = {					\
+			.sign = 's',				\
+			.realbits = 11,				\
+			.storagebits = 16,			\
+			.shift = 5,				\
+		},						\
+		.event_mask = SCA3000_EVENT_MASK,		\
+	 }
+
 static struct iio_chan_spec sca3000_channels[] = {
-	IIO_CHAN(IIO_ACCEL, 1, 0, 0, NULL, 0, IIO_MOD_X, SCA3000_INFO_MASK,
-		 0, 0, IIO_ST('s', 11, 16, 5), SCA3000_EVENT_MASK),
-	IIO_CHAN(IIO_ACCEL, 1, 0, 0, NULL, 0, IIO_MOD_Y, SCA3000_INFO_MASK,
-		 1, 1, IIO_ST('s', 11, 16, 5), SCA3000_EVENT_MASK),
-	IIO_CHAN(IIO_ACCEL, 1, 0, 0, NULL, 0, IIO_MOD_Z, SCA3000_INFO_MASK,
-		 2, 2, IIO_ST('s', 11, 16, 5), SCA3000_EVENT_MASK),
+	SCA3000_CHAN(0, IIO_MOD_X),
+	SCA3000_CHAN(1, IIO_MOD_Y),
+	SCA3000_CHAN(2, IIO_MOD_Z),
 };
 
 static u8 sca3000_addresses[3][3] = {
@@ -462,7 +476,7 @@ static int sca3000_read_raw(struct iio_dev *indio_dev,
 	u8 address;
 
 	switch (mask) {
-	case 0:
+	case IIO_CHAN_INFO_RAW:
 		mutex_lock(&st->lock);
 		if (st->mo_det_use_count) {
 			mutex_unlock(&st->lock);

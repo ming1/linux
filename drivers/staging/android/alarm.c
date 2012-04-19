@@ -57,7 +57,7 @@ module_param_named(debug_mask, debug_mask, int, S_IRUGO | S_IWUSR | S_IWGRP);
 	ANDROID_ALARM_RTC_WAKEUP_MASK | \
 	ANDROID_ALARM_ELAPSED_REALTIME_WAKEUP_MASK)
 
-/* support old usespace code */
+/* support old userspace code */
 #define ANDROID_ALARM_SET_OLD               _IOW('a', 2, time_t) /* set alarm */
 #define ANDROID_ALARM_SET_AND_WAIT_OLD      _IOW('a', 3, time_t)
 
@@ -341,7 +341,7 @@ static enum hrtimer_restart alarm_timer_triggered(struct hrtimer *timer)
 	now = base->stopped ? base->stopped_time : hrtimer_cb_get_time(timer);
 	now = ktime_sub(now, base->delta);
 
-	pr_alarm(INT, "alarm_timer_triggered type %ld at %lld\n",
+	pr_alarm(INT, "alarm_timer_triggered type %td at %lld\n",
 		base - alarms, ktime_to_ns(now));
 
 	while (base->first) {
@@ -364,7 +364,7 @@ static enum hrtimer_restart alarm_timer_triggered(struct hrtimer *timer)
 		spin_lock_irqsave(&alarm_slock, flags);
 	}
 	if (!base->first)
-		pr_alarm(FLOW, "no more alarms of type %ld\n", base - alarms);
+		pr_alarm(FLOW, "no more alarms of type %td\n", base - alarms);
 	update_timer_locked(base, true);
 	spin_unlock_irqrestore(&alarm_slock, flags);
 	return HRTIMER_NORESTART;
@@ -543,7 +543,7 @@ static int __init alarm_late_init(void)
 
 	/* this needs to run after the rtc is read at boot */
 	spin_lock_irqsave(&alarm_slock, flags);
-	/* We read the current rtc and system time so we can later calulate
+	/* We read the current rtc and system time so we can later calculate
 	 * elasped realtime to be (boot_systemtime + rtc - boot_rtc) ==
 	 * (rtc - (boot_rtc - boot_systemtime))
 	 */
