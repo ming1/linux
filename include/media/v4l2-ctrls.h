@@ -22,7 +22,6 @@
 #define _V4L2_CTRLS_H
 
 #include <linux/list.h>
-#include <linux/device.h>
 #include <linux/videodev2.h>
 
 /* forward references */
@@ -497,6 +496,7 @@ void v4l2_ctrl_add_event(struct v4l2_ctrl *ctrl,
 void v4l2_ctrl_del_event(struct v4l2_ctrl *ctrl,
 		struct v4l2_subscribed_event *sev);
 
+struct file;
 /* Can be used as a vidioc_log_status function that just dumps all controls
    associated with the filehandle. */
 int v4l2_ctrl_log_status(struct file *file, void *fh);

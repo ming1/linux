@@ -770,6 +770,7 @@ void v4l2_ctrl_fill(u32 id, const char **name, enum v4l2_ctrl_type *type,
 	case V4L2_CID_MPEG_VIDEO_DEC_PTS:
 		*type = V4L2_CTRL_TYPE_INTEGER64;
 		*flags |= V4L2_CTRL_FLAG_READ_ONLY | V4L2_CTRL_FLAG_VOLATILE;
+		*min = *max = *step = *def = 0;
 		break;
 	default:
 		*type = V4L2_CTRL_TYPE_INTEGER;
@@ -2036,7 +2037,8 @@ int v4l2_g_ext_ctrls(struct v4l2_ctrl_handler *hdl, struct v4l2_ext_controls *cs
 		return class_check(hdl, cs->ctrl_class);
 
 	if (cs->count > ARRAY_SIZE(helper)) {
-		helpers = kmalloc(sizeof(helper[0]) * cs->count, GFP_KERNEL);
+		helpers = kmalloc_array(cs->count, sizeof(helper[0]),
+					GFP_KERNEL);
 		if (helpers == NULL)
 			return -ENOMEM;
 	}
@@ -2258,7 +2260,8 @@ static int try_set_ext_ctrls(struct v4l2_fh *fh, struct v4l2_ctrl_handler *hdl,
 		return class_check(hdl, cs->ctrl_class);
 
 	if (cs->count > ARRAY_SIZE(helper)) {
-		helpers = kmalloc(sizeof(helper[0]) * cs->count, GFP_KERNEL);
+		helpers = kmalloc_array(cs->count, sizeof(helper[0]),
+					GFP_KERNEL);
 		if (!helpers)
 			return -ENOMEM;
 	}
