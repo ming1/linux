@@ -147,7 +147,7 @@ static void sdhci_set_card_detection(struct sdhci_host *host, bool enable)
 	u32 present, irqs;
 
 	if ((host->quirks & SDHCI_QUIRK_BROKEN_CARD_DETECTION) ||
-	    !mmc_card_is_removable(host->mmc))
+	    (host->mmc->caps & MMC_CAP_NONREMOVABLE))
 		return;
 
 	present = sdhci_readl(host, SDHCI_PRESENT_STATE) &
@@ -680,8 +680,8 @@ static u8 sdhci_calc_timeout(struct sdhci_host *host, struct mmc_command *cmd)
 	}
 
 	if (count >= 0xF) {
-		pr_warning("%s: Too large timeout requested for CMD%d!\n",
-		       mmc_hostname(host->mmc), cmd->opcode);
+		pr_warning("%s: Too large timeout 0x%x requested for CMD%d!\n",
+			   mmc_hostname(host->mmc), count, cmd->opcode);
 		count = 0xE;
 	}
 
