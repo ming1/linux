@@ -54,8 +54,9 @@ static DEFINE_PCI_DEVICE_TABLE(atl1c_pci_tbl) = {
 };
 MODULE_DEVICE_TABLE(pci, atl1c_pci_tbl);
 
-MODULE_AUTHOR("Jie Yang <jie.yang@atheros.com>");
-MODULE_DESCRIPTION("Atheros 1000M Ethernet Network Driver");
+MODULE_AUTHOR("Jie Yang");
+MODULE_AUTHOR("Qualcomm Atheros Inc., <nic-devel@qualcomm.com>");
+MODULE_DESCRIPTION("Qualcom Atheros 100/1000M Ethernet Network Driver");
 MODULE_LICENSE("GPL");
 MODULE_VERSION(ATL1C_DRV_VERSION);
 
@@ -65,7 +66,7 @@ static void atl1c_enable_tx_ctrl(struct atl1c_hw *hw);
 static void atl1c_disable_l0s_l1(struct atl1c_hw *hw);
 static void atl1c_set_aspm(struct atl1c_hw *hw, bool linkup);
 static void atl1c_setup_mac_ctrl(struct atl1c_adapter *adapter);
-static void atl1c_clean_rx_irq(struct atl1c_adapter *adapter, u8 que,
+static void atl1c_clean_rx_irq(struct atl1c_adapter *adapter,
 		   int *work_done, int work_to_do);
 static int atl1c_up(struct atl1c_adapter *adapter);
 static void atl1c_down(struct atl1c_adapter *adapter);
@@ -74,29 +75,6 @@ static const u16 atl1c_pay_load_size[] = {
 	128, 256, 512, 1024, 2048, 4096,
 };
 
-static const u16 atl1c_rfd_prod_idx_regs[AT_MAX_RECEIVE_QUEUE] =
-{
-	REG_MB_RFD0_PROD_IDX,
-	REG_MB_RFD1_PROD_IDX,
-	REG_MB_RFD2_PROD_IDX,
-	REG_MB_RFD3_PROD_IDX
-};
-
-static const u16 atl1c_rfd_addr_lo_regs[AT_MAX_RECEIVE_QUEUE] =
-{
-	REG_RFD0_HEAD_ADDR_LO,
-	REG_RFD1_HEAD_ADDR_LO,
-	REG_RFD2_HEAD_ADDR_LO,
-	REG_RFD3_HEAD_ADDR_LO
-};
-
-static const u16 atl1c_rrd_addr_lo_regs[AT_MAX_RECEIVE_QUEUE] =
-{
-	REG_RRD0_HEAD_ADDR_LO,
-	REG_RRD1_HEAD_ADDR_LO,
-	REG_RRD2_HEAD_ADDR_LO,
-	REG_RRD3_HEAD_ADDR_LO
-};
 
 static const u32 atl1c_default_msg = NETIF_MSG_DRV | NETIF_MSG_PROBE |
 	NETIF_MSG_LINK | NETIF_MSG_TIMER | NETIF_MSG_IFDOWN | NETIF_MSG_IFUP;
@@ -729,9 +707,8 @@ static int __devinit atl1c_sw_init(struct atl1c_adapter *adapter)
 	device_set_wakeup_enable(&pdev->dev, false);
 	adapter->link_speed = SPEED_0;
 	adapter->link_duplex = FULL_DUPLEX;
-	adapter->num_rx_queues = AT_DEF_RECEIVE_QUEUE;
 	adapter->tpd_ring[0].count = 1024;
-	adapter->rfd_ring[0].count = 512;
+	adapter->rfd_ring.count = 512;
 
 	hw->vendor_id = pdev->vendor;
 	hw->device_id = pdev->device;
@@ -750,22 +727,12 @@ static int __devinit atl1c_sw_init(struct atl1c_adapter *adapter)
 	hw->phy_configured = false;
 	hw->preamble_len = 7;
 	hw->max_frame_size = adapter->netdev->mtu;
-	if (adapter->num_rx_queues < 2) {
-		hw->rss_type = atl1c_rss_disable;
-		hw->rss_mode = atl1c_rss_mode_disable;
-	} else {
-		hw->rss_type = atl1c_rss_ipv4;
-		hw->rss_mode = atl1c_rss_mul_que_mul_int;
-		hw->rss_hash_bits = 16;
-	}
 	hw->autoneg_advertised = ADVERTISED_Autoneg;
 	hw->indirect_tab = 0xE4E4E4E4;
 	hw->base_cpu = 0;
 
 	hw->ict = 50000;		/* 100ms */
 	hw->smb_timer = 200000;	  	/* 400ms */
-	hw->cmb_tpd = 4;
-	hw->cmb_tx_timer = 1;		/* 2 us  */
 	hw->rx_imt = 200;
 	hw->tx_imt = 1000;
 
@@ -773,7 +740,6 @@ static int __devinit atl1c_sw_init(struct atl1c_adapter *adapter)
 	hw->rfd_burst = 8;
 	hw->dma_order = atl1c_dma_ord_out;
 	hw->dmar_block = atl1c_dma_req_1024;
-	hw->dmaw_block = atl1c_dma_req_1024;
 	hw->dmar_dly_cnt = 15;
 	hw->dmaw_dly_cnt = 4;
 
@@ -851,24 +817,22 @@ static void atl1c_clean_tx_ring(struct atl1c_adapter *adapter,
  */
 static void atl1c_clean_rx_ring(struct atl1c_adapter *adapter)
 {
-	struct atl1c_rfd_ring *rfd_ring = adapter->rfd_ring;
-	struct atl1c_rrd_ring *rrd_ring = adapter->rrd_ring;
+	struct atl1c_rfd_ring *rfd_ring = &adapter->rfd_ring;
+	struct atl1c_rrd_ring *rrd_ring = &adapter->rrd_ring;
 	struct atl1c_buffer *buffer_info;
 	struct pci_dev *pdev = adapter->pdev;
-	int i, j;
+	int j;
 
-	for (i = 0; i < adapter->num_rx_queues; i++) {
-		for (j = 0; j < rfd_ring[i].count; j++) {
-			buffer_info = &rfd_ring[i].buffer_info[j];
-			atl1c_clean_buffer(pdev, buffer_info, 0);
-		}
-		/* zero out the descriptor ring */
-		memset(rfd_ring[i].desc, 0, rfd_ring[i].size);
-		rfd_ring[i].next_to_clean = 0;
-		rfd_ring[i].next_to_use = 0;
-		rrd_ring[i].next_to_use = 0;
-		rrd_ring[i].next_to_clean = 0;
+	for (j = 0; j < rfd_ring->count; j++) {
+		buffer_info = &rfd_ring->buffer_info[j];
+		atl1c_clean_buffer(pdev, buffer_info, 0);
 	}
+	/* zero out the descriptor ring */
+	memset(rfd_ring->desc, 0, rfd_ring->size);
+	rfd_ring->next_to_clean = 0;
+	rfd_ring->next_to_use = 0;
+	rrd_ring->next_to_use = 0;
+	rrd_ring->next_to_clean = 0;
 }
 
 /*
@@ -877,8 +841,8 @@ static void atl1c_clean_rx_ring(struct atl1c_adapter *adapter)
 static void atl1c_init_ring_ptrs(struct atl1c_adapter *adapter)
 {
 	struct atl1c_tpd_ring *tpd_ring = adapter->tpd_ring;
-	struct atl1c_rfd_ring *rfd_ring = adapter->rfd_ring;
-	struct atl1c_rrd_ring *rrd_ring = adapter->rrd_ring;
+	struct atl1c_rfd_ring *rfd_ring = &adapter->rfd_ring;
+	struct atl1c_rrd_ring *rrd_ring = &adapter->rrd_ring;
 	struct atl1c_buffer *buffer_info;
 	int i, j;
 
@@ -890,15 +854,13 @@ static void atl1c_init_ring_ptrs(struct atl1c_adapter *adapter)
 			ATL1C_SET_BUFFER_STATE(&buffer_info[i],
 					ATL1C_BUFFER_FREE);
 	}
-	for (i = 0; i < adapter->num_rx_queues; i++) {
-		rfd_ring[i].next_to_use = 0;
-		rfd_ring[i].next_to_clean = 0;
-		rrd_ring[i].next_to_use = 0;
-		rrd_ring[i].next_to_clean = 0;
-		for (j = 0; j < rfd_ring[i].count; j++) {
-			buffer_info = &rfd_ring[i].buffer_info[j];
-			ATL1C_SET_BUFFER_STATE(buffer_info, ATL1C_BUFFER_FREE);
-		}
+	rfd_ring->next_to_use = 0;
+	rfd_ring->next_to_clean = 0;
+	rrd_ring->next_to_use = 0;
+	rrd_ring->next_to_clean = 0;
+	for (j = 0; j < rfd_ring->count; j++) {
+		buffer_info = &rfd_ring->buffer_info[j];
+		ATL1C_SET_BUFFER_STATE(buffer_info, ATL1C_BUFFER_FREE);
 	}
 }
 
@@ -935,27 +897,23 @@ static int atl1c_setup_ring_resources(struct atl1c_adapter *adapter)
 {
 	struct pci_dev *pdev = adapter->pdev;
 	struct atl1c_tpd_ring *tpd_ring = adapter->tpd_ring;
-	struct atl1c_rfd_ring *rfd_ring = adapter->rfd_ring;
-	struct atl1c_rrd_ring *rrd_ring = adapter->rrd_ring;
+	struct atl1c_rfd_ring *rfd_ring = &adapter->rfd_ring;
+	struct atl1c_rrd_ring *rrd_ring = &adapter->rrd_ring;
 	struct atl1c_ring_header *ring_header = &adapter->ring_header;
-	int num_rx_queues = adapter->num_rx_queues;
 	int size;
 	int i;
 	int count = 0;
 	int rx_desc_count = 0;
 	u32 offset = 0;
 
-	rrd_ring[0].count = rfd_ring[0].count;
+	rrd_ring->count = rfd_ring->count;
 	for (i = 1; i < AT_MAX_TRANSMIT_QUEUE; i++)
 		tpd_ring[i].count = tpd_ring[0].count;
-
-	for (i = 1; i < adapter->num_rx_queues; i++)
-		rfd_ring[i].count = rrd_ring[i].count = rfd_ring[0].count;
 
 	/* 2 tpd queue, one high priority queue,
 	 * another normal priority queue */
 	size = sizeof(struct atl1c_buffer) * (tpd_ring->count * 2 +
-		rfd_ring->count * num_rx_queues);
+		rfd_ring->count);
 	tpd_ring->buffer_info = kzalloc(size, GFP_KERNEL);
 	if (unlikely(!tpd_ring->buffer_info)) {
 		dev_err(&pdev->dev, "kzalloc failed, size = %d\n",
@@ -968,12 +926,11 @@ static int atl1c_setup_ring_resources(struct atl1c_adapter *adapter)
 		count += tpd_ring[i].count;
 	}
 
-	for (i = 0; i < num_rx_queues; i++) {
-		rfd_ring[i].buffer_info =
-			(struct atl1c_buffer *) (tpd_ring->buffer_info + count);
-		count += rfd_ring[i].count;
-		rx_desc_count += rfd_ring[i].count;
-	}
+	rfd_ring->buffer_info =
+		(struct atl1c_buffer *) (tpd_ring->buffer_info + count);
+	count += rfd_ring->count;
+	rx_desc_count += rfd_ring->count;
+
 	/*
 	 * real ring DMA buffer
 	 * each ring/block may need up to 8 bytes for alignment, hence the
@@ -983,8 +940,7 @@ static int atl1c_setup_ring_resources(struct atl1c_adapter *adapter)
 		sizeof(struct atl1c_tpd_desc) * tpd_ring->count * 2 +
 		sizeof(struct atl1c_rx_free_desc) * rx_desc_count +
 		sizeof(struct atl1c_recv_ret_status) * rx_desc_count +
-		sizeof(struct atl1c_hw_stats) +
-		8 * 4 + 8 * 2 * num_rx_queues;
+		8 * 4;
 
 	ring_header->desc = pci_alloc_consistent(pdev, ring_header->size,
 				&ring_header->dma);
@@ -1005,25 +961,18 @@ static int atl1c_setup_ring_resources(struct atl1c_adapter *adapter)
 		offset += roundup(tpd_ring[i].size, 8);
 	}
 	/* init RFD ring */
-	for (i = 0; i < num_rx_queues; i++) {
-		rfd_ring[i].dma = ring_header->dma + offset;
-		rfd_ring[i].desc = (u8 *) ring_header->desc + offset;
-		rfd_ring[i].size = sizeof(struct atl1c_rx_free_desc) *
-				rfd_ring[i].count;
-		offset += roundup(rfd_ring[i].size, 8);
-	}
+	rfd_ring->dma = ring_header->dma + offset;
+	rfd_ring->desc = (u8 *) ring_header->desc + offset;
+	rfd_ring->size = sizeof(struct atl1c_rx_free_desc) * rfd_ring->count;
+	offset += roundup(rfd_ring->size, 8);
 
 	/* init RRD ring */
-	for (i = 0; i < num_rx_queues; i++) {
-		rrd_ring[i].dma = ring_header->dma + offset;
-		rrd_ring[i].desc = (u8 *) ring_header->desc + offset;
-		rrd_ring[i].size = sizeof(struct atl1c_recv_ret_status) *
-				rrd_ring[i].count;
-		offset += roundup(rrd_ring[i].size, 8);
-	}
+	rrd_ring->dma = ring_header->dma + offset;
+	rrd_ring->desc = (u8 *) ring_header->desc + offset;
+	rrd_ring->size = sizeof(struct atl1c_recv_ret_status) *
+		rrd_ring->count;
+	offset += roundup(rrd_ring->size, 8);
 
-	adapter->smb.dma = ring_header->dma + offset;
-	adapter->smb.smb = (u8 *)ring_header->desc + offset;
 	return 0;
 
 err_nomem:
@@ -1034,15 +983,10 @@ err_nomem:
 static void atl1c_configure_des_ring(struct atl1c_adapter *adapter)
 {
 	struct atl1c_hw *hw = &adapter->hw;
-	struct atl1c_rfd_ring *rfd_ring = (struct atl1c_rfd_ring *)
-				adapter->rfd_ring;
-	struct atl1c_rrd_ring *rrd_ring = (struct atl1c_rrd_ring *)
-				adapter->rrd_ring;
+	struct atl1c_rfd_ring *rfd_ring = &adapter->rfd_ring;
+	struct atl1c_rrd_ring *rrd_ring = &adapter->rrd_ring;
 	struct atl1c_tpd_ring *tpd_ring = (struct atl1c_tpd_ring *)
 				adapter->tpd_ring;
-	struct atl1c_cmb *cmb = (struct atl1c_cmb *) &adapter->cmb;
-	struct atl1c_smb *smb = (struct atl1c_smb *) &adapter->smb;
-	int i;
 	u32 data;
 
 	/* TPD */
@@ -1050,10 +994,10 @@ static void atl1c_configure_des_ring(struct atl1c_adapter *adapter)
 			(u32)((tpd_ring[atl1c_trans_normal].dma &
 				AT_DMA_HI_ADDR_MASK) >> 32));
 	/* just enable normal priority TX queue */
-	AT_WRITE_REG(hw, REG_NTPD_HEAD_ADDR_LO,
+	AT_WRITE_REG(hw, REG_TPD_PRI0_ADDR_LO,
 			(u32)(tpd_ring[atl1c_trans_normal].dma &
 				AT_DMA_LO_ADDR_MASK));
-	AT_WRITE_REG(hw, REG_HTPD_HEAD_ADDR_LO,
+	AT_WRITE_REG(hw, REG_TPD_PRI1_ADDR_LO,
 			(u32)(tpd_ring[atl1c_trans_high].dma &
 				AT_DMA_LO_ADDR_MASK));
 	AT_WRITE_REG(hw, REG_TPD_RING_SIZE,
@@ -1062,31 +1006,21 @@ static void atl1c_configure_des_ring(struct atl1c_adapter *adapter)
 
 	/* RFD */
 	AT_WRITE_REG(hw, REG_RX_BASE_ADDR_HI,
-			(u32)((rfd_ring[0].dma & AT_DMA_HI_ADDR_MASK) >> 32));
-	for (i = 0; i < adapter->num_rx_queues; i++)
-		AT_WRITE_REG(hw, atl1c_rfd_addr_lo_regs[i],
-			(u32)(rfd_ring[i].dma & AT_DMA_LO_ADDR_MASK));
+			(u32)((rfd_ring->dma & AT_DMA_HI_ADDR_MASK) >> 32));
+	AT_WRITE_REG(hw, REG_RFD0_HEAD_ADDR_LO,
+			(u32)(rfd_ring->dma & AT_DMA_LO_ADDR_MASK));
 
 	AT_WRITE_REG(hw, REG_RFD_RING_SIZE,
-			rfd_ring[0].count & RFD_RING_SIZE_MASK);
+			rfd_ring->count & RFD_RING_SIZE_MASK);
 	AT_WRITE_REG(hw, REG_RX_BUF_SIZE,
 			adapter->rx_buffer_len & RX_BUF_SIZE_MASK);
 
 	/* RRD */
-	for (i = 0; i < adapter->num_rx_queues; i++)
-		AT_WRITE_REG(hw, atl1c_rrd_addr_lo_regs[i],
-			(u32)(rrd_ring[i].dma & AT_DMA_LO_ADDR_MASK));
+	AT_WRITE_REG(hw, REG_RRD0_HEAD_ADDR_LO,
+			(u32)(rrd_ring->dma & AT_DMA_LO_ADDR_MASK));
 	AT_WRITE_REG(hw, REG_RRD_RING_SIZE,
-			(rrd_ring[0].count & RRD_RING_SIZE_MASK));
+			(rrd_ring->count & RRD_RING_SIZE_MASK));
 
-	/* CMB */
-	AT_WRITE_REG(hw, REG_CMB_BASE_ADDR_LO, cmb->dma & AT_DMA_LO_ADDR_MASK);
-
-	/* SMB */
-	AT_WRITE_REG(hw, REG_SMB_BASE_ADDR_HI,
-			(u32)((smb->dma & AT_DMA_HI_ADDR_MASK) >> 32));
-	AT_WRITE_REG(hw, REG_SMB_BASE_ADDR_LO,
-			(u32)(smb->dma & AT_DMA_LO_ADDR_MASK));
 	if (hw->nic_type == athr_l2c_b) {
 		AT_WRITE_REG(hw, REG_SRAM_RXF_LEN, 0x02a0L);
 		AT_WRITE_REG(hw, REG_SRAM_TXF_LEN, 0x0100L);
@@ -1111,32 +1045,26 @@ static void atl1c_configure_des_ring(struct atl1c_adapter *adapter)
 static void atl1c_configure_tx(struct atl1c_adapter *adapter)
 {
 	struct atl1c_hw *hw = &adapter->hw;
-	u32 dev_ctrl_data;
-	u32 max_pay_load;
+	int max_pay_load;
 	u16 tx_offload_thresh;
 	u32 txq_ctrl_data;
-	u32 max_pay_load_data;
 
 	tx_offload_thresh = MAX_TX_OFFLOAD_THRESH;
 	AT_WRITE_REG(hw, REG_TX_TSO_OFFLOAD_THRESH,
 		(tx_offload_thresh >> 3) & TX_TSO_OFFLOAD_THRESH_MASK);
-	AT_READ_REG(hw, REG_DEVICE_CTRL, &dev_ctrl_data);
-	max_pay_load  = (dev_ctrl_data >> DEVICE_CTRL_MAX_PAYLOAD_SHIFT) &
-			DEVICE_CTRL_MAX_PAYLOAD_MASK;
-	hw->dmaw_block = min_t(u32, max_pay_load, hw->dmaw_block);
-	max_pay_load  = (dev_ctrl_data >> DEVICE_CTRL_MAX_RREQ_SZ_SHIFT) &
-			DEVICE_CTRL_MAX_RREQ_SZ_MASK;
+	max_pay_load = pcie_get_readrq(adapter->pdev) >> 8;
 	hw->dmar_block = min_t(u32, max_pay_load, hw->dmar_block);
-
-	txq_ctrl_data = (hw->tpd_burst & TXQ_NUM_TPD_BURST_MASK) <<
-			TXQ_NUM_TPD_BURST_SHIFT;
-	if (hw->ctrl_flags & ATL1C_TXQ_MODE_ENHANCE)
-		txq_ctrl_data |= TXQ_CTRL_ENH_MODE;
-	max_pay_load_data = (atl1c_pay_load_size[hw->dmar_block] &
-			TXQ_TXF_BURST_NUM_MASK) << TXQ_TXF_BURST_NUM_SHIFT;
-	if (hw->nic_type == athr_l2c_b || hw->nic_type == athr_l2c_b2)
-		max_pay_load_data >>= 1;
-	txq_ctrl_data |= max_pay_load_data;
+	/*
+	 * if BIOS had changed the dam-read-max-length to an invalid value,
+	 * restore it to default value
+	 */
+	if (hw->dmar_block < DEVICE_CTRL_MAXRRS_MIN) {
+		pcie_set_readrq(adapter->pdev, 128 << DEVICE_CTRL_MAXRRS_MIN);
+		hw->dmar_block = DEVICE_CTRL_MAXRRS_MIN;
+	}
+	txq_ctrl_data =
+		hw->nic_type == athr_l2c_b || hw->nic_type == athr_l2c_b2 ?
+		L2CB_TXQ_CFGV : L1C_TXQ_CFGV;
 
 	AT_WRITE_REG(hw, REG_TXQ_CTRL, txq_ctrl_data);
 }
@@ -1151,21 +1079,7 @@ static void atl1c_configure_rx(struct atl1c_adapter *adapter)
 
 	if (hw->ctrl_flags & ATL1C_RX_IPV6_CHKSUM)
 		rxq_ctrl_data |= IPV6_CHKSUM_CTRL_EN;
-	if (hw->rss_type == atl1c_rss_ipv4)
-		rxq_ctrl_data |= RSS_HASH_IPV4;
-	if (hw->rss_type == atl1c_rss_ipv4_tcp)
-		rxq_ctrl_data |= RSS_HASH_IPV4_TCP;
-	if (hw->rss_type == atl1c_rss_ipv6)
-		rxq_ctrl_data |= RSS_HASH_IPV6;
-	if (hw->rss_type == atl1c_rss_ipv6_tcp)
-		rxq_ctrl_data |= RSS_HASH_IPV6_TCP;
-	if (hw->rss_type != atl1c_rss_disable)
-		rxq_ctrl_data |= RRS_HASH_CTRL_EN;
 
-	rxq_ctrl_data |= (hw->rss_mode & RSS_MODE_MASK) <<
-			RSS_MODE_SHIFT;
-	rxq_ctrl_data |= (hw->rss_hash_bits & RSS_HASH_BITS_MASK) <<
-			RSS_HASH_BITS_SHIFT;
 	if (hw->ctrl_flags & ATL1C_ASPM_CTRL_MON)
 		rxq_ctrl_data |= (ASPM_THRUPUT_LIMIT_1M &
 			ASPM_THRUPUT_LIMIT_MASK) << ASPM_THRUPUT_LIMIT_SHIFT;
@@ -1173,49 +1087,16 @@ static void atl1c_configure_rx(struct atl1c_adapter *adapter)
 	AT_WRITE_REG(hw, REG_RXQ_CTRL, rxq_ctrl_data);
 }
 
-static void atl1c_configure_rss(struct atl1c_adapter *adapter)
-{
-	struct atl1c_hw *hw = &adapter->hw;
-
-	AT_WRITE_REG(hw, REG_IDT_TABLE, hw->indirect_tab);
-	AT_WRITE_REG(hw, REG_BASE_CPU_NUMBER, hw->base_cpu);
-}
-
 static void atl1c_configure_dma(struct atl1c_adapter *adapter)
 {
 	struct atl1c_hw *hw = &adapter->hw;
 	u32 dma_ctrl_data;
 
-	dma_ctrl_data = DMA_CTRL_DMAR_REQ_PRI;
-	if (hw->ctrl_flags & ATL1C_CMB_ENABLE)
-		dma_ctrl_data |= DMA_CTRL_CMB_EN;
-	if (hw->ctrl_flags & ATL1C_SMB_ENABLE)
-		dma_ctrl_data |= DMA_CTRL_SMB_EN;
-	else
-		dma_ctrl_data |= MAC_CTRL_SMB_DIS;
-
-	switch (hw->dma_order) {
-	case atl1c_dma_ord_in:
-		dma_ctrl_data |= DMA_CTRL_DMAR_IN_ORDER;
-		break;
-	case atl1c_dma_ord_enh:
-		dma_ctrl_data |= DMA_CTRL_DMAR_ENH_ORDER;
-		break;
-	case atl1c_dma_ord_out:
-		dma_ctrl_data |= DMA_CTRL_DMAR_OUT_ORDER;
-		break;
-	default:
-		break;
-	}
-
-	dma_ctrl_data |= (((u32)hw->dmar_block) & DMA_CTRL_DMAR_BURST_LEN_MASK)
-		<< DMA_CTRL_DMAR_BURST_LEN_SHIFT;
-	dma_ctrl_data |= (((u32)hw->dmaw_block) & DMA_CTRL_DMAW_BURST_LEN_MASK)
-		<< DMA_CTRL_DMAW_BURST_LEN_SHIFT;
-	dma_ctrl_data |= (((u32)hw->dmar_dly_cnt) & DMA_CTRL_DMAR_DLY_CNT_MASK)
-		<< DMA_CTRL_DMAR_DLY_CNT_SHIFT;
-	dma_ctrl_data |= (((u32)hw->dmaw_dly_cnt) & DMA_CTRL_DMAW_DLY_CNT_MASK)
-		<< DMA_CTRL_DMAW_DLY_CNT_SHIFT;
+	dma_ctrl_data = FIELDX(DMA_CTRL_RORDER_MODE, DMA_CTRL_RORDER_MODE_OUT) |
+		DMA_CTRL_RREQ_PRI_DATA |
+		FIELDX(DMA_CTRL_RREQ_BLEN, hw->dmar_block) |
+		FIELDX(DMA_CTRL_WDLY_CNT, DMA_CTRL_WDLY_CNT_DEF) |
+		FIELDX(DMA_CTRL_RDLY_CNT, DMA_CTRL_RDLY_CNT_DEF);
 
 	AT_WRITE_REG(hw, REG_DMA_CTRL, dma_ctrl_data);
 }
@@ -1230,13 +1111,12 @@ static int atl1c_stop_mac(struct atl1c_hw *hw)
 	u32 data;
 
 	AT_READ_REG(hw, REG_RXQ_CTRL, &data);
-	data &= ~(RXQ1_CTRL_EN | RXQ2_CTRL_EN |
-		  RXQ3_CTRL_EN | RXQ_CTRL_EN);
+	data &= ~RXQ_CTRL_EN;
 	AT_WRITE_REG(hw, REG_RXQ_CTRL, data);
 
 	AT_READ_REG(hw, REG_TXQ_CTRL, &data);
 	data &= ~TXQ_CTRL_EN;
-	AT_WRITE_REG(hw, REG_TWSI_CTRL, data);
+	AT_WRITE_REG(hw, REG_TXQ_CTRL, data);
 
 	atl1c_wait_until_idle(hw);
 
@@ -1252,19 +1132,6 @@ static void atl1c_enable_rx_ctrl(struct atl1c_hw *hw)
 	u32 data;
 
 	AT_READ_REG(hw, REG_RXQ_CTRL, &data);
-	switch (hw->adapter->num_rx_queues) {
-	case 4:
-		data |= (RXQ3_CTRL_EN | RXQ2_CTRL_EN | RXQ1_CTRL_EN);
-		break;
-	case 3:
-		data |= (RXQ2_CTRL_EN | RXQ1_CTRL_EN);
-		break;
-	case 2:
-		data |= RXQ1_CTRL_EN;
-		break;
-	default:
-		break;
-	}
 	data |= RXQ_CTRL_EN;
 	AT_WRITE_REG(hw, REG_RXQ_CTRL, data);
 }
@@ -1525,25 +1392,15 @@ static int atl1c_configure(struct atl1c_adapter *adapter)
 	master_ctrl_data |= MASTER_CTRL_SA_TIMER_EN;
 	AT_WRITE_REG(hw, REG_MASTER_CTRL, master_ctrl_data);
 
-	if (hw->ctrl_flags & ATL1C_CMB_ENABLE) {
-		AT_WRITE_REG(hw, REG_CMB_TPD_THRESH,
-			hw->cmb_tpd & CMB_TPD_THRESH_MASK);
-		AT_WRITE_REG(hw, REG_CMB_TX_TIMER,
-			hw->cmb_tx_timer & CMB_TX_TIMER_MASK);
-	}
+	AT_WRITE_REG(hw, REG_SMB_STAT_TIMER,
+		hw->smb_timer & SMB_STAT_TIMER_MASK);
 
-	if (hw->ctrl_flags & ATL1C_SMB_ENABLE)
-		AT_WRITE_REG(hw, REG_SMB_STAT_TIMER,
-			hw->smb_timer & SMB_STAT_TIMER_MASK);
 	/* set MTU */
 	AT_WRITE_REG(hw, REG_MTU, hw->max_frame_size + ETH_HLEN +
 			VLAN_HLEN + ETH_FCS_LEN);
-	/* HDS, disable */
-	AT_WRITE_REG(hw, REG_HDS_CTRL, 0);
 
 	atl1c_configure_tx(adapter);
 	atl1c_configure_rx(adapter);
-	atl1c_configure_rss(adapter);
 	atl1c_configure_dma(adapter);
 
 	return 0;
@@ -1635,16 +1492,11 @@ static bool atl1c_clean_tx_irq(struct atl1c_adapter *adapter,
 	struct pci_dev *pdev = adapter->pdev;
 	u16 next_to_clean = atomic_read(&tpd_ring->next_to_clean);
 	u16 hw_next_to_clean;
-	u16 shift;
-	u32 data;
+	u16 reg;
 
-	if (type == atl1c_trans_high)
-		shift = MB_HTPD_CONS_IDX_SHIFT;
-	else
-		shift = MB_NTPD_CONS_IDX_SHIFT;
+	reg = type == atl1c_trans_high ? REG_TPD_PRI1_CIDX : REG_TPD_PRI0_CIDX;
 
-	AT_READ_REG(&adapter->hw, REG_MB_PRIO_CONS_IDX, &data);
-	hw_next_to_clean = (data >> shift) & MB_PRIO_PROD_IDX_MASK;
+	AT_READ_REGW(&adapter->hw, reg, &hw_next_to_clean);
 
 	while (next_to_clean != hw_next_to_clean) {
 		buffer_info = &tpd_ring->buffer_info[next_to_clean];
@@ -1746,9 +1598,9 @@ static inline void atl1c_rx_checksum(struct atl1c_adapter *adapter,
 	skb_checksum_none_assert(skb);
 }
 
-static int atl1c_alloc_rx_buffer(struct atl1c_adapter *adapter, const int ringid)
+static int atl1c_alloc_rx_buffer(struct atl1c_adapter *adapter)
 {
-	struct atl1c_rfd_ring *rfd_ring = &adapter->rfd_ring[ringid];
+	struct atl1c_rfd_ring *rfd_ring = &adapter->rfd_ring;
 	struct pci_dev *pdev = adapter->pdev;
 	struct atl1c_buffer *buffer_info, *next_info;
 	struct sk_buff *skb;
@@ -1800,7 +1652,7 @@ static int atl1c_alloc_rx_buffer(struct atl1c_adapter *adapter, const int ringid
 		/* TODO: update mailbox here */
 		wmb();
 		rfd_ring->next_to_use = rfd_next_to_use;
-		AT_WRITE_REG(&adapter->hw, atl1c_rfd_prod_idx_regs[ringid],
+		AT_WRITE_REG(&adapter->hw, REG_MB_RFD0_PROD_IDX,
 			rfd_ring->next_to_use & MB_RFDX_PROD_IDX_MASK);
 	}
 
@@ -1839,7 +1691,7 @@ static void atl1c_clean_rfd(struct atl1c_rfd_ring *rfd_ring,
 	rfd_ring->next_to_clean = rfd_index;
 }
 
-static void atl1c_clean_rx_irq(struct atl1c_adapter *adapter, u8 que,
+static void atl1c_clean_rx_irq(struct atl1c_adapter *adapter,
 		   int *work_done, int work_to_do)
 {
 	u16 rfd_num, rfd_index;
@@ -1847,8 +1699,8 @@ static void atl1c_clean_rx_irq(struct atl1c_adapter *adapter, u8 que,
 	u16 length;
 	struct pci_dev *pdev = adapter->pdev;
 	struct net_device *netdev  = adapter->netdev;
-	struct atl1c_rfd_ring *rfd_ring = &adapter->rfd_ring[que];
-	struct atl1c_rrd_ring *rrd_ring = &adapter->rrd_ring[que];
+	struct atl1c_rfd_ring *rfd_ring = &adapter->rfd_ring;
+	struct atl1c_rrd_ring *rrd_ring = &adapter->rrd_ring;
 	struct sk_buff *skb;
 	struct atl1c_recv_ret_status *rrs;
 	struct atl1c_buffer *buffer_info;
@@ -1914,7 +1766,7 @@ rrs_checked:
 		count++;
 	}
 	if (count)
-		atl1c_alloc_rx_buffer(adapter, que);
+		atl1c_alloc_rx_buffer(adapter);
 }
 
 /*
@@ -1931,7 +1783,7 @@ static int atl1c_clean(struct napi_struct *napi, int budget)
 	if (!netif_carrier_ok(adapter->netdev))
 		goto quit_polling;
 	/* just enable one RXQ */
-	atl1c_clean_rx_irq(adapter, 0, &work_done, budget);
+	atl1c_clean_rx_irq(adapter, &work_done, budget);
 
 	if (work_done < budget) {
 quit_polling:
@@ -2206,23 +2058,10 @@ static void atl1c_tx_queue(struct atl1c_adapter *adapter, struct sk_buff *skb,
 			   struct atl1c_tpd_desc *tpd, enum atl1c_trans_queue type)
 {
 	struct atl1c_tpd_ring *tpd_ring = &adapter->tpd_ring[type];
-	u32 prod_data;
+	u16 reg;
 
-	AT_READ_REG(&adapter->hw, REG_MB_PRIO_PROD_IDX, &prod_data);
-	switch (type) {
-	case atl1c_trans_high:
-		prod_data &= 0xFFFF0000;
-		prod_data |= tpd_ring->next_to_use & 0xFFFF;
-		break;
-	case atl1c_trans_normal:
-		prod_data &= 0x0000FFFF;
-		prod_data |= (tpd_ring->next_to_use & 0xFFFF) << 16;
-		break;
-	default:
-		break;
-	}
-	wmb();
-	AT_WRITE_REG(&adapter->hw, REG_MB_PRIO_PROD_IDX, prod_data);
+	reg = type == atl1c_trans_high ? REG_TPD_PRI1_PIDX : REG_TPD_PRI0_PIDX;
+	AT_WRITE_REGW(&adapter->hw, reg, tpd_ring->next_to_use);
 }
 
 static netdev_tx_t atl1c_xmit_frame(struct sk_buff *skb,
@@ -2307,8 +2146,7 @@ static int atl1c_request_irq(struct atl1c_adapter *adapter)
 				"Unable to allocate MSI interrupt Error: %d\n",
 				err);
 		adapter->have_msi = false;
-	} else
-		netdev->irq = pdev->irq;
+	}
 
 	if (!adapter->have_msi)
 		flags |= IRQF_SHARED;
@@ -2333,19 +2171,16 @@ static int atl1c_up(struct atl1c_adapter *adapter)
 	struct net_device *netdev = adapter->netdev;
 	int num;
 	int err;
-	int i;
 
 	netif_carrier_off(netdev);
 	atl1c_init_ring_ptrs(adapter);
 	atl1c_set_multi(netdev);
 	atl1c_restore_vlan(adapter);
 
-	for (i = 0; i < adapter->num_rx_queues; i++) {
-		num = atl1c_alloc_rx_buffer(adapter, i);
-		if (unlikely(num == 0)) {
-			err = -ENOMEM;
-			goto err_alloc_rx;
-		}
+	num = atl1c_alloc_rx_buffer(adapter);
+	if (unlikely(num == 0)) {
+		err = -ENOMEM;
+		goto err_alloc_rx;
 	}
 
 	if (atl1c_configure(adapter)) {
@@ -2616,7 +2451,6 @@ static int atl1c_init_netdev(struct net_device *netdev, struct pci_dev *pdev)
 	SET_NETDEV_DEV(netdev, &pdev->dev);
 	pci_set_drvdata(pdev, netdev);
 
-	netdev->irq  = pdev->irq;
 	netdev->netdev_ops = &atl1c_netdev_ops;
 	netdev->watchdog_timeo = AT_TX_WATCHDOG;
 	atl1c_set_ethtool_ops(netdev);
@@ -2706,7 +2540,6 @@ static int __devinit atl1c_probe(struct pci_dev *pdev,
 		dev_err(&pdev->dev, "cannot map device registers\n");
 		goto err_ioremap;
 	}
-	netdev->base_addr = (unsigned long)adapter->hw.hw_addr;
 
 	/* init mii data */
 	adapter->mii.dev = netdev;

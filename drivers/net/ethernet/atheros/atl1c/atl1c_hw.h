@@ -25,6 +25,12 @@
 #include <linux/types.h>
 #include <linux/mii.h>
 
+#define FIELD_GETX(_x, _name)   ((_x) >> (_name##_SHIFT) & (_name##_MASK))
+#define FIELD_SETX(_x, _name, _v) \
+(((_x) & ~((_name##_MASK) << (_name##_SHIFT))) |\
+(((_v) & (_name##_MASK)) << (_name##_SHIFT)))
+#define FIELDX(_name, _v) (((_v) & (_name##_MASK)) << (_name##_SHIFT))
+
 struct atl1c_adapter;
 struct atl1c_hw;
 
@@ -48,27 +54,12 @@ int atl1c_phy_power_saving(struct atl1c_hw *hw);
 #define DEVICE_CAP_MAX_PAYLOAD_MASK     0x7
 #define DEVICE_CAP_MAX_PAYLOAD_SHIFT    0
 
-#define REG_DEVICE_CTRL			0x60
-#define DEVICE_CTRL_MAX_PAYLOAD_MASK    0x7
-#define DEVICE_CTRL_MAX_PAYLOAD_SHIFT   5
-#define DEVICE_CTRL_MAX_RREQ_SZ_MASK    0x7
-#define DEVICE_CTRL_MAX_RREQ_SZ_SHIFT   12
+#define DEVICE_CTRL_MAXRRS_MIN		2
 
 #define REG_LINK_CTRL			0x68
 #define LINK_CTRL_L0S_EN		0x01
 #define LINK_CTRL_L1_EN			0x02
 #define LINK_CTRL_EXT_SYNC		0x80
-
-#define REG_VPD_CAP			0x6C
-#define VPD_CAP_ID_MASK                 0xff
-#define VPD_CAP_ID_SHIFT                0
-#define VPD_CAP_NEXT_PTR_MASK           0xFF
-#define VPD_CAP_NEXT_PTR_SHIFT          8
-#define VPD_CAP_VPD_ADDR_MASK           0x7FFF
-#define VPD_CAP_VPD_ADDR_SHIFT          16
-#define VPD_CAP_VPD_FLAG                0x80000000
-
-#define REG_VPD_DATA                	0x70
 
 #define REG_PCIE_UC_SEVERITY		0x10C
 #define PCIE_UC_SERVRITY_TRN		0x00000001
@@ -458,62 +449,45 @@ int atl1c_phy_power_saving(struct atl1c_hw *hw);
  */
 #define REG_RX_BASE_ADDR_HI		0x1540
 #define REG_TX_BASE_ADDR_HI		0x1544
-#define REG_SMB_BASE_ADDR_HI		0x1548
-#define REG_SMB_BASE_ADDR_LO		0x154C
 #define REG_RFD0_HEAD_ADDR_LO		0x1550
-#define REG_RFD1_HEAD_ADDR_LO		0x1554
-#define REG_RFD2_HEAD_ADDR_LO		0x1558
-#define REG_RFD3_HEAD_ADDR_LO		0x155C
 #define REG_RFD_RING_SIZE		0x1560
 #define RFD_RING_SIZE_MASK		0x0FFF
 #define REG_RX_BUF_SIZE			0x1564
 #define RX_BUF_SIZE_MASK		0xFFFF
 #define REG_RRD0_HEAD_ADDR_LO		0x1568
-#define REG_RRD1_HEAD_ADDR_LO		0x156C
-#define REG_RRD2_HEAD_ADDR_LO		0x1570
-#define REG_RRD3_HEAD_ADDR_LO		0x1574
 #define REG_RRD_RING_SIZE		0x1578
 #define RRD_RING_SIZE_MASK		0x0FFF
-#define REG_HTPD_HEAD_ADDR_LO		0x157C
-#define REG_NTPD_HEAD_ADDR_LO		0x1580
+#define REG_TPD_PRI1_ADDR_LO		0x157C
+#define REG_TPD_PRI0_ADDR_LO		0x1580
 #define REG_TPD_RING_SIZE		0x1584
 #define TPD_RING_SIZE_MASK		0xFFFF
-#define REG_CMB_BASE_ADDR_LO		0x1588
-
-/* RSS about */
-#define REG_RSS_KEY0                    0x14B0
-#define REG_RSS_KEY1                    0x14B4
-#define REG_RSS_KEY2                    0x14B8
-#define REG_RSS_KEY3                    0x14BC
-#define REG_RSS_KEY4                    0x14C0
-#define REG_RSS_KEY5                    0x14C4
-#define REG_RSS_KEY6                    0x14C8
-#define REG_RSS_KEY7                    0x14CC
-#define REG_RSS_KEY8                    0x14D0
-#define REG_RSS_KEY9                    0x14D4
-#define REG_IDT_TABLE0                	0x14E0
-#define REG_IDT_TABLE1                  0x14E4
-#define REG_IDT_TABLE2                  0x14E8
-#define REG_IDT_TABLE3                  0x14EC
-#define REG_IDT_TABLE4                  0x14F0
-#define REG_IDT_TABLE5                  0x14F4
-#define REG_IDT_TABLE6                  0x14F8
-#define REG_IDT_TABLE7                  0x14FC
-#define REG_IDT_TABLE                   REG_IDT_TABLE0
-#define REG_RSS_HASH_VALUE              0x15B0
-#define REG_RSS_HASH_FLAG               0x15B4
-#define REG_BASE_CPU_NUMBER             0x15B8
 
 /* TXQ Control Register */
-#define REG_TXQ_CTRL                	0x1590
-#define	TXQ_NUM_TPD_BURST_MASK     	0xF
-#define TXQ_NUM_TPD_BURST_SHIFT    	0
-#define TXQ_CTRL_IP_OPTION_EN		0x10
-#define TXQ_CTRL_EN                     0x20
-#define TXQ_CTRL_ENH_MODE               0x40
-#define TXQ_CTRL_LS_8023_EN		0x80
-#define TXQ_TXF_BURST_NUM_SHIFT    	16
-#define TXQ_TXF_BURST_NUM_MASK     	0xFFFF
+#define REG_TXQ_CTRL			0x1590
+#define TXQ_TXF_BURST_NUM_MASK          0xFFFFUL
+#define TXQ_TXF_BURST_NUM_SHIFT		16
+#define L1C_TXQ_TXF_BURST_PREF          0x200
+#define L2CB_TXQ_TXF_BURST_PREF         0x40
+#define TXQ_CTRL_PEDING_CLR             BIT(8)
+#define TXQ_CTRL_LS_8023_EN             BIT(7)
+#define TXQ_CTRL_ENH_MODE               BIT(6)
+#define TXQ_CTRL_EN                     BIT(5)
+#define TXQ_CTRL_IP_OPTION_EN           BIT(4)
+#define TXQ_NUM_TPD_BURST_MASK          0xFUL
+#define TXQ_NUM_TPD_BURST_SHIFT         0
+#define TXQ_NUM_TPD_BURST_DEF           5
+#define TXQ_CFGV			(\
+	FIELDX(TXQ_NUM_TPD_BURST, TXQ_NUM_TPD_BURST_DEF) |\
+	TXQ_CTRL_ENH_MODE |\
+	TXQ_CTRL_LS_8023_EN |\
+	TXQ_CTRL_IP_OPTION_EN)
+#define L1C_TXQ_CFGV			(\
+	TXQ_CFGV |\
+	FIELDX(TXQ_TXF_BURST_NUM, L1C_TXQ_TXF_BURST_PREF))
+#define L2CB_TXQ_CFGV			(\
+	TXQ_CFGV |\
+	FIELDX(TXQ_TXF_BURST_NUM, L2CB_TXQ_TXF_BURST_PREF))
+
 
 /* Jumbo packet Threshold for task offload */
 #define REG_TX_TSO_OFFLOAD_THRESH	0x1594 /* In 8-bytes */
@@ -537,26 +511,21 @@ int atl1c_phy_power_saving(struct atl1c_hw *hw);
 #define ASPM_THRUPUT_LIMIT_NO		0x00
 #define ASPM_THRUPUT_LIMIT_1M		0x01
 #define ASPM_THRUPUT_LIMIT_10M		0x02
-#define ASPM_THRUPUT_LIMIT_100M		0x04
-#define RXQ1_CTRL_EN			0x10
-#define RXQ2_CTRL_EN			0x20
-#define RXQ3_CTRL_EN			0x40
-#define IPV6_CHKSUM_CTRL_EN		0x80
-#define RSS_HASH_BITS_MASK		0x00FF
-#define RSS_HASH_BITS_SHIFT		8
-#define RSS_HASH_IPV4			0x10000
-#define RSS_HASH_IPV4_TCP		0x20000
-#define RSS_HASH_IPV6			0x40000
-#define RSS_HASH_IPV6_TCP		0x80000
+#define ASPM_THRUPUT_LIMIT_100M		0x03
+#define IPV6_CHKSUM_CTRL_EN		BIT(7)
 #define RXQ_RFD_BURST_NUM_MASK		0x003F
 #define RXQ_RFD_BURST_NUM_SHIFT		20
-#define RSS_MODE_MASK			0x0003
+#define RXQ_NUM_RFD_PREF_DEF		8
+#define RSS_MODE_MASK			3UL
 #define RSS_MODE_SHIFT			26
-#define RSS_NIP_QUEUE_SEL_MASK		0x1
-#define RSS_NIP_QUEUE_SEL_SHIFT		28
-#define RRS_HASH_CTRL_EN		0x20000000
-#define RX_CUT_THRU_EN			0x40000000
-#define RXQ_CTRL_EN			0x80000000
+#define RSS_MODE_DIS			0
+#define RSS_MODE_SQSI			1
+#define RSS_MODE_MQSI			2
+#define RSS_MODE_MQMI			3
+#define RSS_NIP_QUEUE_SEL		BIT(28) /* 0:q0, 1:table */
+#define RRS_HASH_CTRL_EN		BIT(29)
+#define RX_CUT_THRU_EN			BIT(30)
+#define RXQ_CTRL_EN			BIT(31)
 
 #define REG_RFD_FREE_THRESH		0x15A4
 #define RFD_FREE_THRESH_MASK		0x003F
@@ -577,57 +546,45 @@ int atl1c_phy_power_saving(struct atl1c_hw *hw);
 #define RXD_DMA_DOWN_TIMER_SHIFT	16
 
 /* DMA Engine Control Register */
-#define REG_DMA_CTRL                	0x15C0
-#define DMA_CTRL_DMAR_IN_ORDER          0x1
-#define DMA_CTRL_DMAR_ENH_ORDER         0x2
-#define DMA_CTRL_DMAR_OUT_ORDER         0x4
-#define DMA_CTRL_RCB_VALUE              0x8
-#define DMA_CTRL_DMAR_BURST_LEN_MASK    0x0007
-#define DMA_CTRL_DMAR_BURST_LEN_SHIFT   4
-#define DMA_CTRL_DMAW_BURST_LEN_MASK    0x0007
-#define DMA_CTRL_DMAW_BURST_LEN_SHIFT   7
-#define DMA_CTRL_DMAR_REQ_PRI           0x400
-#define DMA_CTRL_DMAR_DLY_CNT_MASK      0x001F
-#define DMA_CTRL_DMAR_DLY_CNT_SHIFT     11
-#define DMA_CTRL_DMAW_DLY_CNT_MASK      0x000F
-#define DMA_CTRL_DMAW_DLY_CNT_SHIFT     16
-#define DMA_CTRL_CMB_EN               	0x100000
-#define DMA_CTRL_SMB_EN			0x200000
-#define DMA_CTRL_CMB_NOW		0x400000
-#define MAC_CTRL_SMB_DIS		0x1000000
-#define DMA_CTRL_SMB_NOW		0x80000000
+#define REG_DMA_CTRL			0x15C0
+#define DMA_CTRL_SMB_NOW                BIT(31)
+#define DMA_CTRL_WPEND_CLR              BIT(30)
+#define DMA_CTRL_RPEND_CLR              BIT(29)
+#define DMA_CTRL_WDLY_CNT_MASK          0xFUL
+#define DMA_CTRL_WDLY_CNT_SHIFT         16
+#define DMA_CTRL_WDLY_CNT_DEF           4
+#define DMA_CTRL_RDLY_CNT_MASK          0x1FUL
+#define DMA_CTRL_RDLY_CNT_SHIFT         11
+#define DMA_CTRL_RDLY_CNT_DEF           15
+#define DMA_CTRL_RREQ_PRI_DATA          BIT(10)      /* 0:tpd, 1:data */
+#define DMA_CTRL_WREQ_BLEN_MASK         7UL
+#define DMA_CTRL_WREQ_BLEN_SHIFT        7
+#define DMA_CTRL_RREQ_BLEN_MASK         7UL
+#define DMA_CTRL_RREQ_BLEN_SHIFT        4
+#define L1C_CTRL_DMA_RCB_LEN128         BIT(3)   /* 0:64bytes,1:128bytes */
+#define DMA_CTRL_RORDER_MODE_MASK       7UL
+#define DMA_CTRL_RORDER_MODE_SHIFT      0
+#define DMA_CTRL_RORDER_MODE_OUT        4
+#define DMA_CTRL_RORDER_MODE_ENHANCE    2
+#define DMA_CTRL_RORDER_MODE_IN         1
 
-/* CMB/SMB Control Register */
+/* INT-triggle/SMB Control Register */
 #define REG_SMB_STAT_TIMER		0x15C4	/* 2us resolution */
 #define SMB_STAT_TIMER_MASK		0xFFFFFF
-#define REG_CMB_TPD_THRESH		0x15C8
-#define CMB_TPD_THRESH_MASK		0xFFFF
-#define REG_CMB_TX_TIMER		0x15CC	/* 2us resolution */
-#define CMB_TX_TIMER_MASK		0xFFFF
+#define REG_TINT_TPD_THRESH             0x15C8 /* tpd th to trig intrrupt */
 
 /* Mail box */
 #define MB_RFDX_PROD_IDX_MASK		0xFFFF
 #define REG_MB_RFD0_PROD_IDX		0x15E0
-#define REG_MB_RFD1_PROD_IDX		0x15E4
-#define REG_MB_RFD2_PROD_IDX		0x15E8
-#define REG_MB_RFD3_PROD_IDX		0x15EC
 
-#define MB_PRIO_PROD_IDX_MASK		0xFFFF
-#define REG_MB_PRIO_PROD_IDX		0x15F0
-#define MB_HTPD_PROD_IDX_SHIFT		0
-#define MB_NTPD_PROD_IDX_SHIFT		16
-
-#define MB_PRIO_CONS_IDX_MASK		0xFFFF
-#define REG_MB_PRIO_CONS_IDX		0x15F4
-#define MB_HTPD_CONS_IDX_SHIFT		0
-#define MB_NTPD_CONS_IDX_SHIFT		16
+#define REG_TPD_PRI1_PIDX               0x15F0	/* 16bit,hi-tpd producer idx */
+#define REG_TPD_PRI0_PIDX		0x15F2	/* 16bit,lo-tpd producer idx */
+#define REG_TPD_PRI1_CIDX		0x15F4	/* 16bit,hi-tpd consumer idx */
+#define REG_TPD_PRI0_CIDX		0x15F6	/* 16bit,lo-tpd consumer idx */
 
 #define REG_MB_RFD01_CONS_IDX		0x15F8
 #define MB_RFD0_CONS_IDX_MASK		0x0000FFFF
 #define MB_RFD1_CONS_IDX_MASK		0xFFFF0000
-#define REG_MB_RFD23_CONS_IDX		0x15FC
-#define MB_RFD2_CONS_IDX_MASK		0x0000FFFF
-#define MB_RFD3_CONS_IDX_MASK		0xFFFF0000
 
 /* Interrupt Status Register */
 #define REG_ISR    			0x1600
@@ -704,13 +661,6 @@ int atl1c_phy_power_saving(struct atl1c_hw *hw);
 
 #define REG_INT_RETRIG_TIMER		0x1608
 #define INT_RETRIG_TIMER_MASK		0xFFFF
-
-#define REG_HDS_CTRL			0x160C
-#define HDS_CTRL_EN			0x0001
-#define HDS_CTRL_BACKFILLSIZE_SHIFT	8
-#define HDS_CTRL_BACKFILLSIZE_MASK	0x0FFF
-#define HDS_CTRL_MAX_HDRSIZE_SHIFT	20
-#define HDS_CTRL_MAC_HDRSIZE_MASK	0x0FFF
 
 #define REG_MAC_RX_STATUS_BIN 		0x1700
 #define REG_MAC_RX_STATUS_END 		0x175c

@@ -100,7 +100,7 @@
 #define ATL1C_ASPM_L0s_ENABLE		0x0001
 #define ATL1C_ASPM_L1_ENABLE		0x0002
 
-#define AT_REGS_LEN	(75 * sizeof(u32))
+#define AT_REGS_LEN	(74 * sizeof(u32))
 #define AT_EEPROM_LEN 	512
 
 #define ATL1C_GET_DESC(R, i, type)	(&(((type *)((R)->desc))[i]))
@@ -297,20 +297,6 @@ enum atl1c_dma_req_block {
 	atl1c_dma_req_4096 = 5
 };
 
-enum atl1c_rss_mode {
-	atl1c_rss_mode_disable = 0,
-	atl1c_rss_sig_que = 1,
-	atl1c_rss_mul_que_sig_int = 2,
-	atl1c_rss_mul_que_mul_int = 4,
-};
-
-enum atl1c_rss_type {
-	atl1c_rss_disable = 0,
-	atl1c_rss_ipv4 = 1,
-	atl1c_rss_ipv4_tcp = 2,
-	atl1c_rss_ipv6 = 4,
-	atl1c_rss_ipv6_tcp = 8
-};
 
 enum atl1c_nic_type {
 	athr_l1c = 0,
@@ -388,7 +374,6 @@ struct atl1c_hw {
 	enum atl1c_dma_order dma_order;
 	enum atl1c_dma_rcb   rcb_value;
 	enum atl1c_dma_req_block dmar_block;
-	enum atl1c_dma_req_block dmaw_block;
 
 	u16 device_id;
 	u16 vendor_id;
@@ -440,10 +425,6 @@ struct atl1c_hw {
 #define ATL1C_FPGA_VERSION              0x8000
 	u16 link_cap_flags;
 #define ATL1C_LINK_CAP_1000M		0x0001
-	u16 cmb_tpd;
-	u16 cmb_rrd;
-	u16 cmb_rx_timer; /* 2us resolution */
-	u16 cmb_tx_timer;
 	u32 smb_timer;
 
 	u16 rrd_thresh; /* Threshold of number of RRD produced to trigger
@@ -451,9 +432,6 @@ struct atl1c_hw {
 	u16 tpd_thresh;
 	u8 tpd_burst;   /* Number of TPD to prefetch in cache-aligned burst. */
 	u8 rfd_burst;
-	enum atl1c_rss_type rss_type;
-	enum atl1c_rss_mode rss_mode;
-	u8 rss_hash_bits;
 	u32 base_cpu;
 	u32 indirect_tab;
 	u8 mac_addr[ETH_ALEN];
@@ -466,8 +444,7 @@ struct atl1c_hw {
 
 /*
  * atl1c_ring_header represents a single, contiguous block of DMA space
- * mapped for the three descriptor rings (tpd, rfd, rrd) and the two
- * message blocks (cmb, smb) described below
+ * mapped for the three descriptor rings (tpd, rfd, rrd) described below
  */
 struct atl1c_ring_header {
 	void *desc;		/* virtual address */
@@ -541,16 +518,6 @@ struct atl1c_rrd_ring {
 	u16 next_to_clean;
 };
 
-struct atl1c_cmb {
-	void *cmb;
-	dma_addr_t dma;
-};
-
-struct atl1c_smb {
-	void *smb;
-	dma_addr_t dma;
-};
-
 /* board specific private data structure */
 struct atl1c_adapter {
 	struct net_device   *netdev;
@@ -586,11 +553,8 @@ struct atl1c_adapter {
 	/* All Descriptor memory */
 	struct atl1c_ring_header ring_header;
 	struct atl1c_tpd_ring tpd_ring[AT_MAX_TRANSMIT_QUEUE];
-	struct atl1c_rfd_ring rfd_ring[AT_MAX_RECEIVE_QUEUE];
-	struct atl1c_rrd_ring rrd_ring[AT_MAX_RECEIVE_QUEUE];
-	struct atl1c_cmb cmb;
-	struct atl1c_smb smb;
-	int num_rx_queues;
+	struct atl1c_rfd_ring rfd_ring;
+	struct atl1c_rrd_ring rrd_ring;
 	u32 bd_number;     /* board number;*/
 };
 
@@ -618,8 +582,14 @@ struct atl1c_adapter {
 #define AT_WRITE_REGW(a, reg, value) (\
 		writew((value), ((a)->hw_addr + reg)))
 
-#define AT_READ_REGW(a, reg) (\
-		readw((a)->hw_addr + reg))
+#define AT_READ_REGW(a, reg, pdata) do {				\
+		if (unlikely((a)->hibernate)) {				\
+			readw((a)->hw_addr + reg);			\
+			*(u16 *)pdata = readw((a)->hw_addr + reg);	\
+		} else {						\
+			*(u16 *)pdata = readw((a)->hw_addr + reg);	\
+		}							\
+	} while (0)
 
 #define AT_WRITE_REG_ARRAY(a, reg, offset, value) ( \
 		writel((value), (((a)->hw_addr + reg) + ((offset) << 2))))

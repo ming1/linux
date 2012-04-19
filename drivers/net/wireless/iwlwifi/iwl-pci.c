@@ -60,14 +60,15 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  *****************************************************************************/
+
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
 #include <linux/module.h>
 #include <linux/pci.h>
 #include <linux/pci-aspm.h>
 
-#include "iwl-io.h"
 #include "iwl-shared.h"
 #include "iwl-trans.h"
-#include "iwl-csr.h"
 #include "iwl-cfg.h"
 #include "iwl-drv.h"
 #include "iwl-trans.h"
