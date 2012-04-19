@@ -198,11 +198,6 @@ static int proc_root_link(struct dentry *dentry, struct path *path)
 	return result;
 }
 
-struct mm_struct *mm_for_maps(struct task_struct *task)
-{
-	return mm_access(task, PTRACE_MODE_READ);
-}
-
 static int proc_pid_cmdline(struct task_struct *task, char * buffer)
 {
 	int res = 0;
@@ -242,9 +237,9 @@ out:
 
 static int proc_pid_auxv(struct task_struct *task, char *buffer)
 {
-	struct mm_struct *mm = mm_for_maps(task);
+	struct mm_struct *mm = mm_access(task, PTRACE_MODE_READ);
 	int res = PTR_ERR(mm);
-	if (mm && !IS_ERR(mm)) {
+	if (!IS_ERR_OR_NULL(mm)) {
 		unsigned int nwords = 0;
 		do {
 			nwords += 2;
@@ -281,19 +276,19 @@ static int proc_pid_wchan(struct task_struct *task, char *buffer)
 }
 #endif /* CONFIG_KALLSYMS */
 
-static int lock_trace(struct task_struct *task)
+static int task_access_lock(struct task_struct *task, unsigned int mode)
 {
 	int err = mutex_lock_killable(&task->signal->cred_guard_mutex);
 	if (err)
 		return err;
-	if (!ptrace_may_access(task, PTRACE_MODE_ATTACH)) {
+	if (!ptrace_may_access(task, mode)) {
 		mutex_unlock(&task->signal->cred_guard_mutex);
 		return -EPERM;
 	}
 	return 0;
 }
 
-static void unlock_trace(struct task_struct *task)
+static void task_access_unlock(struct task_struct *task)
 {
 	mutex_unlock(&task->signal->cred_guard_mutex);
 }
@@ -319,7 +314,7 @@ static int proc_pid_stack(struct seq_file *m, struct pid_namespace *ns,
 	trace.entries		= entries;
 	trace.skip		= 0;
 
-	err = lock_trace(task);
+	err = task_access_lock(task, PTRACE_MODE_ATTACH);
 	if (!err) {
 		save_stack_trace_tsk(task, &trace);
 
@@ -327,7 +322,7 @@ static int proc_pid_stack(struct seq_file *m, struct pid_namespace *ns,
 			seq_printf(m, "[<%pK>] %pS\n",
 				   (void *)entries[i], (void *)entries[i]);
 		}
-		unlock_trace(task);
+		task_access_unlock(task);
 	}
 	kfree(entries);
 
@@ -494,7 +489,7 @@ static int proc_pid_syscall(struct task_struct *task, char *buffer)
 {
 	long nr;
 	unsigned long args[6], sp, pc;
-	int res = lock_trace(task);
+	int res = task_access_lock(task, PTRACE_MODE_ATTACH);
 	if (res)
 		return res;
 
@@ -508,7 +503,7 @@ static int proc_pid_syscall(struct task_struct *task, char *buffer)
 		       nr,
 		       args[0], args[1], args[2], args[3], args[4], args[5],
 		       sp, pc);
-	unlock_trace(task);
+	task_access_unlock(task);
 	return res;
 }
 #endif /* CONFIG_HAVE_ARCH_TRACEHOOK */
@@ -677,7 +672,7 @@ static const struct file_operations proc_single_file_operations = {
 	.release	= single_release,
 };
 
-static int mem_open(struct inode* inode, struct file* file)
+static int __mem_open(struct inode *inode, struct file *file, unsigned int mode)
 {
 	struct task_struct *task = get_proc_task(file->f_path.dentry->d_inode);
 	struct mm_struct *mm;
@@ -685,7 +680,7 @@ static int mem_open(struct inode* inode, struct file* file)
 	if (!task)
 		return -ESRCH;
 
-	mm = mm_access(task, PTRACE_MODE_ATTACH);
+	mm = mm_access(task, mode);
 	put_task_struct(task);
 
 	if (IS_ERR(mm))
@@ -703,6 +698,11 @@ static int mem_open(struct inode* inode, struct file* file)
 	file->private_data = mm;
 
 	return 0;
+}
+
+static int mem_open(struct inode *inode, struct file *file)
+{
+	return __mem_open(inode, file, PTRACE_MODE_ATTACH);
 }
 
 static ssize_t mem_rw(struct file *file, char __user *buf,
@@ -801,30 +801,29 @@ static const struct file_operations proc_mem_operations = {
 	.release	= mem_release,
 };
 
+static int environ_open(struct inode *inode, struct file *file)
+{
+	return __mem_open(inode, file, PTRACE_MODE_READ);
+}
+
 static ssize_t environ_read(struct file *file, char __user *buf,
 			size_t count, loff_t *ppos)
 {
-	struct task_struct *task = get_proc_task(file->f_dentry->d_inode);
 	char *page;
 	unsigned long src = *ppos;
-	int ret = -ESRCH;
-	struct mm_struct *mm;
+	int ret = 0;
+	struct mm_struct *mm = file->private_data;
 
-	if (!task)
-		goto out_no_task;
+	if (!mm)
+		return 0;
 
-	ret = -ENOMEM;
 	page = (char *)__get_free_page(GFP_TEMPORARY);
 	if (!page)
-		goto out;
-
-
-	mm = mm_for_maps(task);
-	ret = PTR_ERR(mm);
-	if (!mm || IS_ERR(mm))
-		goto out_free;
+		return -ENOMEM;
 
 	ret = 0;
+	if (!atomic_inc_not_zero(&mm->mm_users))
+		goto free;
 	while (count > 0) {
 		int this_len, retval, max_len;
 
@@ -836,7 +835,7 @@ static ssize_t environ_read(struct file *file, char __user *buf,
 		max_len = (count > PAGE_SIZE) ? PAGE_SIZE : count;
 		this_len = (this_len > max_len) ? max_len : this_len;
 
-		retval = access_process_vm(task, (mm->env_start + src),
+		retval = access_remote_vm(mm, (mm->env_start + src),
 			page, this_len, 0);
 
 		if (retval <= 0) {
@@ -855,19 +854,18 @@ static ssize_t environ_read(struct file *file, char __user *buf,
 		count -= retval;
 	}
 	*ppos = src;
-
 	mmput(mm);
-out_free:
+
+free:
 	free_page((unsigned long) page);
-out:
-	put_task_struct(task);
-out_no_task:
 	return ret;
 }
 
 static const struct file_operations proc_environ_operations = {
+	.open		= environ_open,
 	.read		= environ_read,
 	.llseek		= generic_file_llseek,
+	.release	= mem_release,
 };
 
 static ssize_t oom_adjust_read(struct file *file, char __user *buf,
@@ -2037,11 +2035,8 @@ static int map_files_d_revalidate(struct dentry *dentry, struct nameidata *nd)
 	if (!task)
 		goto out_notask;
 
-	if (!ptrace_may_access(task, PTRACE_MODE_READ))
-		goto out;
-
-	mm = get_task_mm(task);
-	if (!mm)
+	mm = mm_access(task, PTRACE_MODE_READ);
+	if (IS_ERR_OR_NULL(mm))
 		goto out;
 
 	if (!dname_to_vma_addr(dentry, &vm_start, &vm_end)) {
@@ -2177,7 +2172,7 @@ static struct dentry *proc_map_files_lookup(struct inode *dir,
 		goto out;
 
 	result = ERR_PTR(-EACCES);
-	if (lock_trace(task))
+	if (task_access_lock(task, PTRACE_MODE_ATTACH))
 		goto out_put_task;
 
 	result = ERR_PTR(-ENOENT);
@@ -2199,7 +2194,7 @@ out_no_vma:
 	up_read(&mm->mmap_sem);
 	mmput(mm);
 out_unlock:
-	unlock_trace(task);
+	task_access_unlock(task);
 out_put_task:
 	put_task_struct(task);
 out:
@@ -2233,7 +2228,7 @@ proc_map_files_readdir(struct file *filp, void *dirent, filldir_t filldir)
 		goto out;
 
 	ret = -EACCES;
-	if (lock_trace(task))
+	if (task_access_lock(task, PTRACE_MODE_ATTACH))
 		goto out_put_task;
 
 	ret = 0;
@@ -2333,7 +2328,7 @@ proc_map_files_readdir(struct file *filp, void *dirent, filldir_t filldir)
 	}
 
 out_unlock:
-	unlock_trace(task);
+	task_access_unlock(task);
 out_put_task:
 	put_task_struct(task);
 out:
@@ -2894,14 +2889,9 @@ static int do_io_accounting(struct task_struct *task, char *buffer, int whole)
 	unsigned long flags;
 	int result;
 
-	result = mutex_lock_killable(&task->signal->cred_guard_mutex);
+	result = task_access_lock(task, PTRACE_MODE_READ);
 	if (result)
 		return result;
-
-	if (!ptrace_may_access(task, PTRACE_MODE_READ)) {
-		result = -EACCES;
-		goto out_unlock;
-	}
 
 	if (whole && lock_task_sighand(task, &flags)) {
 		struct task_struct *t = task;
@@ -2927,8 +2917,7 @@ static int do_io_accounting(struct task_struct *task, char *buffer, int whole)
 			(unsigned long long)acct.read_bytes,
 			(unsigned long long)acct.write_bytes,
 			(unsigned long long)acct.cancelled_write_bytes);
-out_unlock:
-	mutex_unlock(&task->signal->cred_guard_mutex);
+	task_access_unlock(task);
 	return result;
 }
 
@@ -2946,10 +2935,10 @@ static int proc_tgid_io_accounting(struct task_struct *task, char *buffer)
 static int proc_pid_personality(struct seq_file *m, struct pid_namespace *ns,
 				struct pid *pid, struct task_struct *task)
 {
-	int err = lock_trace(task);
+	int err = task_access_lock(task, PTRACE_MODE_ATTACH);
 	if (!err) {
 		seq_printf(m, "%08x\n", task->personality);
-		unlock_trace(task);
+		task_access_unlock(task);
 	}
 	return err;
 }
@@ -2990,6 +2979,9 @@ static const struct pid_entry tgid_base_stuff[] = {
 	ONE("stat",       S_IRUGO, proc_tgid_stat),
 	ONE("statm",      S_IRUGO, proc_pid_statm),
 	REG("maps",       S_IRUGO, proc_pid_maps_operations),
+#ifdef CONFIG_CHECKPOINT_RESTORE
+	REG("children",  S_IRUGO, proc_tid_children_operations),
+#endif
 #ifdef CONFIG_NUMA
 	REG("numa_maps",  S_IRUGO, proc_pid_numa_maps_operations),
 #endif
