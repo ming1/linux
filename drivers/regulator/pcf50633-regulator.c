@@ -52,7 +52,7 @@ static const u8 pcf50633_regulator_registers[PCF50633_NUM_REGULATORS] = {
 static u8 auto_voltage_bits(unsigned int millivolts)
 {
 	if (millivolts < 1800)
-		return 0;
+		return 0x2f;
 	if (millivolts > 3800)
 		return 0xff;
 
@@ -87,6 +87,9 @@ static u8 ldo_voltage_bits(unsigned int millivolts)
 /* Obtain voltage value from bits */
 static unsigned int auto_voltage_value(u8 bits)
 {
+	/* AUTOOUT: 00000000 to 00101110 are reserved.
+	 * Return 0 for bits in reserved range, which means this selector code
+	 * can't be used on this system */
 	if (bits < 0x2f)
 		return 0;
 
@@ -154,43 +157,11 @@ static int pcf50633_regulator_set_voltage(struct regulator_dev *rdev,
 	return pcf50633_reg_write(pcf, regnr, volt_bits);
 }
 
-static int pcf50633_regulator_voltage_value(enum pcf50633_regulator_id id,
-						u8 bits)
-{
-	int millivolts;
-
-	switch (id) {
-	case PCF50633_REGULATOR_AUTO:
-		millivolts = auto_voltage_value(bits);
-		break;
-	case PCF50633_REGULATOR_DOWN1:
-		millivolts = down_voltage_value(bits);
-		break;
-	case PCF50633_REGULATOR_DOWN2:
-		millivolts = down_voltage_value(bits);
-		break;
-	case PCF50633_REGULATOR_LDO1:
-	case PCF50633_REGULATOR_LDO2:
-	case PCF50633_REGULATOR_LDO3:
-	case PCF50633_REGULATOR_LDO4:
-	case PCF50633_REGULATOR_LDO5:
-	case PCF50633_REGULATOR_LDO6:
-	case PCF50633_REGULATOR_HCLDO:
-	case PCF50633_REGULATOR_MEMLDO:
-		millivolts = ldo_voltage_value(bits);
-		break;
-	default:
-		return -EINVAL;
-	}
-
-	return millivolts * 1000;
-}
-
-static int pcf50633_regulator_get_voltage(struct regulator_dev *rdev)
+static int pcf50633_regulator_get_voltage_sel(struct regulator_dev *rdev)
 {
 	struct pcf50633 *pcf;
 	int regulator_id;
-	u8 volt_bits, regnr;
+	u8 regnr;
 
 	pcf = rdev_get_drvdata(rdev);
 
@@ -200,30 +171,41 @@ static int pcf50633_regulator_get_voltage(struct regulator_dev *rdev)
 
 	regnr = pcf50633_regulator_registers[regulator_id];
 
-	volt_bits = pcf50633_reg_read(pcf, regnr);
-
-	return pcf50633_regulator_voltage_value(regulator_id, volt_bits);
+	return pcf50633_reg_read(pcf, regnr);
 }
 
 static int pcf50633_regulator_list_voltage(struct regulator_dev *rdev,
 						unsigned int index)
 {
-	struct pcf50633 *pcf;
-	int regulator_id;
+	int regulator_id = rdev_get_id(rdev);
 
-	pcf = rdev_get_drvdata(rdev);
-
-	regulator_id = rdev_get_id(rdev);
+	int millivolts;
 
 	switch (regulator_id) {
 	case PCF50633_REGULATOR_AUTO:
-		index += 0x2f;
+		millivolts = auto_voltage_value(index);
+		break;
+	case PCF50633_REGULATOR_DOWN1:
+		millivolts = down_voltage_value(index);
+		break;
+	case PCF50633_REGULATOR_DOWN2:
+		millivolts = down_voltage_value(index);
+		break;
+	case PCF50633_REGULATOR_LDO1:
+	case PCF50633_REGULATOR_LDO2:
+	case PCF50633_REGULATOR_LDO3:
+	case PCF50633_REGULATOR_LDO4:
+	case PCF50633_REGULATOR_LDO5:
+	case PCF50633_REGULATOR_LDO6:
+	case PCF50633_REGULATOR_HCLDO:
+	case PCF50633_REGULATOR_MEMLDO:
+		millivolts = ldo_voltage_value(index);
 		break;
 	default:
-		break;
+		return -EINVAL;
 	}
 
-	return pcf50633_regulator_voltage_value(regulator_id, index);
+	return millivolts * 1000;
 }
 
 static int pcf50633_regulator_enable(struct regulator_dev *rdev)
@@ -278,16 +260,16 @@ static int pcf50633_regulator_is_enabled(struct regulator_dev *rdev)
 
 static struct regulator_ops pcf50633_regulator_ops = {
 	.set_voltage = pcf50633_regulator_set_voltage,
-	.get_voltage = pcf50633_regulator_get_voltage,
+	.get_voltage_sel = pcf50633_regulator_get_voltage_sel,
 	.list_voltage = pcf50633_regulator_list_voltage,
 	.enable = pcf50633_regulator_enable,
 	.disable = pcf50633_regulator_disable,
 	.is_enabled = pcf50633_regulator_is_enabled,
 };
 
-static struct regulator_desc regulators[] = {
+static const struct regulator_desc regulators[] = {
 	[PCF50633_REGULATOR_AUTO] =
-		PCF50633_REGULATOR("auto", PCF50633_REGULATOR_AUTO, 81),
+		PCF50633_REGULATOR("auto", PCF50633_REGULATOR_AUTO, 128),
 	[PCF50633_REGULATOR_DOWN1] =
 		PCF50633_REGULATOR("down1", PCF50633_REGULATOR_DOWN1, 96),
 	[PCF50633_REGULATOR_DOWN2] =
@@ -314,12 +296,16 @@ static int __devinit pcf50633_regulator_probe(struct platform_device *pdev)
 {
 	struct regulator_dev *rdev;
 	struct pcf50633 *pcf;
+	struct regulator_config config = { };
 
 	/* Already set by core driver */
 	pcf = dev_to_pcf50633(pdev->dev.parent);
 
-	rdev = regulator_register(&regulators[pdev->id], &pdev->dev,
-				  pdev->dev.platform_data, pcf, NULL);
+	config.dev = &pdev->dev;
+	config.init_data = pdev->dev.platform_data;
+	config.driver_data = pcf;
+
+	rdev = regulator_register(&regulators[pdev->id], &config);
 	if (IS_ERR(rdev))
 		return PTR_ERR(rdev);
 
