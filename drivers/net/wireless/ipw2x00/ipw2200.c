@@ -34,6 +34,7 @@
 #include <linux/slab.h>
 #include <net/cfg80211-wext.h>
 #include "ipw2200.h"
+#include "ipw.h"
 
 
 #ifndef KBUILD_EXTMOD
@@ -3657,8 +3658,7 @@ static int ipw_load(struct ipw_priv *priv)
 		priv->rxq = NULL;
 	}
 	ipw_tx_queue_free(priv);
-	if (raw)
-		release_firmware(raw);
+	release_firmware(raw);
 #ifdef CONFIG_PM
 	fw_loaded = 0;
 	raw = NULL;
@@ -7024,7 +7024,7 @@ static int ipw_qos_activate(struct ipw_priv *priv,
 			    cpu_to_le16(burst_duration);
 	} else if (priv->ieee->iw_mode == IW_MODE_ADHOC) {
 		if (type == IEEE_B) {
-			IPW_DEBUG_QOS("QoS activate IBSS nework mode %d\n",
+			IPW_DEBUG_QOS("QoS activate IBSS network mode %d\n",
 				      type);
 			if (priv->qos_data.qos_enable == 0)
 				active_one = &def_parameters_CCK;
@@ -11533,6 +11533,9 @@ static int ipw_wdev_init(struct net_device *dev)
 		wdev->wiphy->bands[IEEE80211_BAND_5GHZ] = a_band;
 	}
 
+	wdev->wiphy->cipher_suites = ipw_cipher_suites;
+	wdev->wiphy->n_cipher_suites = ARRAY_SIZE(ipw_cipher_suites);
+
 	set_wiphy_dev(wdev->wiphy, &priv->pci_dev->dev);
 
 	/* With that information in place, we can now register the wiphy... */
@@ -11826,10 +11829,6 @@ static int __devinit ipw_pci_probe(struct pci_dev *pdev,
 	net_dev->wireless_data = &priv->wireless_data;
 	net_dev->wireless_handlers = &ipw_wx_handler_def;
 	net_dev->ethtool_ops = &ipw_ethtool_ops;
-	net_dev->irq = pdev->irq;
-	net_dev->base_addr = (unsigned long)priv->hw_base;
-	net_dev->mem_start = pci_resource_start(pdev, 0);
-	net_dev->mem_end = net_dev->mem_start + pci_resource_len(pdev, 0) - 1;
 
 	err = sysfs_create_group(&pdev->dev.kobj, &ipw_attribute_group);
 	if (err) {

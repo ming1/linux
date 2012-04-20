@@ -23,13 +23,17 @@
  * (you will need to reboot afterwards) */
 /* #define BNX2X_STOP_ON_ERROR */
 
-#define DRV_MODULE_VERSION      "1.72.10-0"
-#define DRV_MODULE_RELDATE      "2012/02/20"
+#define DRV_MODULE_VERSION      "1.72.17-0"
+#define DRV_MODULE_RELDATE      "2012/04/02"
 #define BNX2X_BC_VER            0x040200
 
 #if defined(CONFIG_DCB)
 #define BCM_DCBNL
 #endif
+
+
+#include "bnx2x_hsi.h"
+
 #if defined(CONFIG_CNIC) || defined(CONFIG_CNIC_MODULE)
 #define BCM_CNIC 1
 #include "../cnic_if.h"
@@ -815,6 +819,8 @@ struct bnx2x_common {
 #define CHIP_NUM_57800_MF		0x16a5
 #define CHIP_NUM_57810			0x168e
 #define CHIP_NUM_57810_MF		0x16ae
+#define CHIP_NUM_57811			0x163d
+#define CHIP_NUM_57811_MF		0x163e
 #define CHIP_NUM_57840			0x168d
 #define CHIP_NUM_57840_MF		0x16ab
 #define CHIP_IS_E1(bp)			(CHIP_NUM(bp) == CHIP_NUM_57710)
@@ -826,6 +832,8 @@ struct bnx2x_common {
 #define CHIP_IS_57800_MF(bp)		(CHIP_NUM(bp) == CHIP_NUM_57800_MF)
 #define CHIP_IS_57810(bp)		(CHIP_NUM(bp) == CHIP_NUM_57810)
 #define CHIP_IS_57810_MF(bp)		(CHIP_NUM(bp) == CHIP_NUM_57810_MF)
+#define CHIP_IS_57811(bp)		(CHIP_NUM(bp) == CHIP_NUM_57811)
+#define CHIP_IS_57811_MF(bp)		(CHIP_NUM(bp) == CHIP_NUM_57811_MF)
 #define CHIP_IS_57840(bp)		(CHIP_NUM(bp) == CHIP_NUM_57840)
 #define CHIP_IS_57840_MF(bp)		(CHIP_NUM(bp) == CHIP_NUM_57840_MF)
 #define CHIP_IS_E1H(bp)			(CHIP_IS_57711(bp) || \
@@ -836,6 +844,8 @@ struct bnx2x_common {
 					 CHIP_IS_57800_MF(bp) || \
 					 CHIP_IS_57810(bp) || \
 					 CHIP_IS_57810_MF(bp) || \
+					 CHIP_IS_57811(bp) || \
+					 CHIP_IS_57811_MF(bp) || \
 					 CHIP_IS_57840(bp) || \
 					 CHIP_IS_57840_MF(bp))
 #define CHIP_IS_E1x(bp)			(CHIP_IS_E1((bp)) || CHIP_IS_E1H((bp)))
@@ -1300,6 +1310,7 @@ struct bnx2x {
 #define NO_ISCSI_FLAG			(1 << 14)
 #define NO_FCOE_FLAG			(1 << 15)
 #define BC_SUPPORTS_PFC_STATS		(1 << 17)
+#define USING_SINGLE_MSIX_FLAG		(1 << 20)
 
 #define NO_ISCSI(bp)		((bp)->flags & NO_ISCSI_FLAG)
 #define NO_ISCSI_OOO(bp)	((bp)->flags & NO_ISCSI_OOO_FLAG)
@@ -1329,8 +1340,8 @@ struct bnx2x {
 	struct bnx2x_common	common;
 	struct bnx2x_port	port;
 
-	struct cmng_struct_per_port cmng;
-	u32			vn_weight_sum;
+	struct cmng_init	cmng;
+
 	u32			mf_config[E1HVN_MAX];
 	u32			mf2_config[E2_FUNC_MAX];
 	u32			path_has_ovlan; /* E3 */
@@ -1371,7 +1382,6 @@ struct bnx2x {
 #define BNX2X_STATE_DIAG		0xe000
 #define BNX2X_STATE_ERROR		0xf000
 
-	int			multi_mode;
 #define BNX2X_MAX_PRIORITY		8
 #define BNX2X_MAX_ENTRIES_PER_PRI	16
 #define BNX2X_MAX_COS			3
