@@ -1828,15 +1828,15 @@ int bitmap_resize(struct bitmap *bitmap, sector_t blocks,
 		do {
 			/* 'chunkshift' is shift from block size to chunk size */
 			chunkshift++;
-			chunks = DIV_ROUND_UP(blocks, 1 << chunkshift);
-			bytes = DIV_ROUND_UP(chunks, 8);
+			chunks = DIV_ROUND_UP_SECTOR_T(blocks, 1 << chunkshift);
+			bytes = DIV_ROUND_UP_SECTOR_T(chunks, 8);
 			if (!bitmap->mddev->bitmap_info.external)
 				bytes += sizeof(bitmap_super_t);
 		} while (bytes > (space << 9));
 	} else
 		chunkshift = ffz(~chunksize) - BITMAP_BLOCK_SHIFT;
 
-	chunks = DIV_ROUND_UP(blocks, 1 << chunkshift);
+	chunks = DIV_ROUND_UP_SECTOR_T(blocks, 1 << chunkshift);
 	memset(&store, 0, sizeof(store));
 	if (bitmap->mddev->bitmap_info.offset || bitmap->mddev->bitmap_info.file)
 		ret = bitmap_storage_alloc(&store, chunks,
@@ -1844,7 +1844,7 @@ int bitmap_resize(struct bitmap *bitmap, sector_t blocks,
 	if (ret)
 		goto err;
 
-	pages = DIV_ROUND_UP(chunks, PAGE_COUNTER_RATIO);
+	pages = DIV_ROUND_UP_SECTOR_T(chunks, PAGE_COUNTER_RATIO);
 
 	new_bp = kzalloc(pages * sizeof(*new_bp), GFP_KERNEL);
 	ret = -ENOMEM;
