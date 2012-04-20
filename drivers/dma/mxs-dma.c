@@ -399,6 +399,8 @@ static struct dma_async_tx_descriptor *mxs_dma_prep_slave_sg(
 		ccw->bits &= ~CCW_DEC_SEM;
 	} else {
 		idx = 0;
+		/* assign cookie here */
+		dma_cookie_assign(&mxs_chan->desc);
 	}
 
 	if (direction == DMA_TRANS_NONE) {
