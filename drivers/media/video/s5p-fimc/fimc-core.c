@@ -320,7 +320,7 @@ static int fimc_m2m_shutdown(struct fimc_ctx *ctx)
 	if (!fimc_m2m_pending(fimc))
 		return 0;
 
-	fimc_ctx_state_lock_set(FIMC_CTX_SHUT, ctx);
+	fimc_ctx_state_set(FIMC_CTX_SHUT, ctx);
 
 	ret = wait_event_timeout(fimc->irq_queue,
 			   !fimc_ctx_state_is_set(FIMC_CTX_SHUT, ctx),
@@ -430,14 +430,12 @@ static irqreturn_t fimc_irq_handler(int irq, void *priv)
 			spin_unlock(&fimc->slock);
 			fimc_m2m_job_finish(ctx, VB2_BUF_STATE_DONE);
 
-			spin_lock(&ctx->slock);
 			if (ctx->state & FIMC_CTX_SHUT) {
 				ctx->state &= ~FIMC_CTX_SHUT;
 				wake_up(&fimc->irq_queue);
 			}
-			spin_unlock(&ctx->slock);
+			return IRQ_HANDLED;
 		}
-		return IRQ_HANDLED;
 	} else if (test_bit(ST_CAPT_PEND, &fimc->state)) {
 		fimc_capture_irq_handler(fimc,
 				 !test_bit(ST_CAPT_JPEG, &fimc->state));
@@ -584,55 +582,11 @@ void fimc_prepare_dma_offset(struct fimc_ctx *ctx, struct fimc_frame *f)
 	    f->fmt->color, f->dma_offset.y_h, f->dma_offset.y_v);
 }
 
-/**
- * fimc_prepare_config - check dimensions, operation and color mode
- *			 and pre-calculate offset and the scaling coefficients.
- *
- * @ctx: hardware context information
- * @flags: flags indicating which parameters to check/update
- *
- * Return: 0 if dimensions are valid or non zero otherwise.
- */
-int fimc_prepare_config(struct fimc_ctx *ctx, u32 flags)
-{
-	struct fimc_frame *s_frame, *d_frame;
-	struct vb2_buffer *vb = NULL;
-	int ret = 0;
-
-	s_frame = &ctx->s_frame;
-	d_frame = &ctx->d_frame;
-
-	if (flags & FIMC_PARAMS) {
-		/* Prepare the DMA offset ratios for scaler. */
-		fimc_prepare_dma_offset(ctx, &ctx->s_frame);
-		fimc_prepare_dma_offset(ctx, &ctx->d_frame);
-
-		if (s_frame->height > (SCALER_MAX_VRATIO * d_frame->height) ||
-		    s_frame->width > (SCALER_MAX_HRATIO * d_frame->width)) {
-			err("out of scaler range");
-			return -EINVAL;
-		}
-		fimc_set_yuv_order(ctx);
-	}
-
-	if (flags & FIMC_SRC_ADDR) {
-		vb = v4l2_m2m_next_src_buf(ctx->m2m_ctx);
-		ret = fimc_prepare_addr(ctx, vb, s_frame, &s_frame->paddr);
-		if (ret)
-			return ret;
-	}
-
-	if (flags & FIMC_DST_ADDR) {
-		vb = v4l2_m2m_next_dst_buf(ctx->m2m_ctx);
-		ret = fimc_prepare_addr(ctx, vb, d_frame, &d_frame->paddr);
-	}
-
-	return ret;
-}
-
 static void fimc_dma_run(void *priv)
 {
+	struct vb2_buffer *vb = NULL;
 	struct fimc_ctx *ctx = priv;
+	struct fimc_frame *sf, *df;
 	struct fimc_dev *fimc;
 	unsigned long flags;
 	u32 ret;
@@ -643,10 +597,22 @@ static void fimc_dma_run(void *priv)
 	fimc = ctx->fimc_dev;
 	spin_lock_irqsave(&fimc->slock, flags);
 	set_bit(ST_M2M_PEND, &fimc->state);
+	sf = &ctx->s_frame;
+	df = &ctx->d_frame;
 
-	spin_lock(&ctx->slock);
-	ctx->state |= (FIMC_SRC_ADDR | FIMC_DST_ADDR);
-	ret = fimc_prepare_config(ctx, ctx->state);
+	if (ctx->state & FIMC_PARAMS) {
+		/* Prepare the DMA offsets for scaler */
+		fimc_prepare_dma_offset(ctx, sf);
+		fimc_prepare_dma_offset(ctx, df);
+	}
+
+	vb = v4l2_m2m_next_src_buf(ctx->m2m_ctx);
+	ret = fimc_prepare_addr(ctx, vb, sf, &sf->paddr);
+	if (ret)
+		goto dma_unlock;
+
+	vb = v4l2_m2m_next_dst_buf(ctx->m2m_ctx);
+	ret = fimc_prepare_addr(ctx, vb, df, &df->paddr);
 	if (ret)
 		goto dma_unlock;
 
@@ -655,32 +621,26 @@ static void fimc_dma_run(void *priv)
 		ctx->state |= FIMC_PARAMS;
 		fimc->m2m.ctx = ctx;
 	}
-	fimc_hw_set_input_addr(fimc, &ctx->s_frame.paddr);
 
 	if (ctx->state & FIMC_PARAMS) {
+		fimc_set_yuv_order(ctx);
 		fimc_hw_set_input_path(ctx);
 		fimc_hw_set_in_dma(ctx);
 		ret = fimc_set_scaler_info(ctx);
-		if (ret) {
-			spin_unlock(&fimc->slock);
+		if (ret)
 			goto dma_unlock;
-		}
 		fimc_hw_set_prescaler(ctx);
 		fimc_hw_set_mainscaler(ctx);
 		fimc_hw_set_target_format(ctx);
 		fimc_hw_set_rotation(ctx);
 		fimc_hw_set_effect(ctx, false);
-	}
-
-	fimc_hw_set_output_path(ctx);
-	if (ctx->state & (FIMC_DST_ADDR | FIMC_PARAMS))
-		fimc_hw_set_output_addr(fimc, &ctx->d_frame.paddr, -1);
-
-	if (ctx->state & FIMC_PARAMS) {
 		fimc_hw_set_out_dma(ctx);
 		if (fimc->variant->has_alpha)
 			fimc_hw_set_rgb_alpha(ctx);
+		fimc_hw_set_output_path(ctx);
 	}
+	fimc_hw_set_input_addr(fimc, &sf->paddr);
+	fimc_hw_set_output_addr(fimc, &df->paddr, -1);
 
 	fimc_activate_capture(ctx);
 
@@ -688,7 +648,6 @@ static void fimc_dma_run(void *priv)
 		       FIMC_SRC_FMT | FIMC_DST_FMT);
 	fimc_hw_activate_input_dma(fimc, true);
 dma_unlock:
-	spin_unlock(&ctx->slock);
 	spin_unlock_irqrestore(&fimc->slock, flags);
 }
 
@@ -827,9 +786,9 @@ static int fimc_s_ctrl(struct v4l2_ctrl *ctrl)
 	unsigned long flags;
 	int ret;
 
-	spin_lock_irqsave(&ctx->slock, flags);
+	spin_lock_irqsave(&ctx->fimc_dev->slock, flags);
 	ret = __fimc_s_ctrl(ctx, ctrl);
-	spin_unlock_irqrestore(&ctx->slock, flags);
+	spin_unlock_irqrestore(&ctx->fimc_dev->slock, flags);
 
 	return ret;
 }
@@ -1174,9 +1133,9 @@ static int fimc_m2m_s_fmt_mplane(struct file *file, void *fh,
 	ctx->scaler.enabled = 1;
 
 	if (f->type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE)
-		fimc_ctx_state_lock_set(FIMC_PARAMS | FIMC_DST_FMT, ctx);
+		fimc_ctx_state_set(FIMC_PARAMS | FIMC_DST_FMT, ctx);
 	else
-		fimc_ctx_state_lock_set(FIMC_PARAMS | FIMC_SRC_FMT, ctx);
+		fimc_ctx_state_set(FIMC_PARAMS | FIMC_SRC_FMT, ctx);
 
 	dbg("f_w: %d, f_h: %d", frame->f_width, frame->f_height);
 
@@ -1363,7 +1322,7 @@ static int fimc_m2m_s_crop(struct file *file, void *fh, struct v4l2_crop *cr)
 	f->width  = cr->c.width;
 	f->height = cr->c.height;
 
-	fimc_ctx_state_lock_set(FIMC_PARAMS, ctx);
+	fimc_ctx_state_set(FIMC_PARAMS, ctx);
 
 	return 0;
 }
@@ -1467,7 +1426,6 @@ static int fimc_m2m_open(struct file *file)
 	ctx->flags = 0;
 	ctx->in_path = FIMC_DMA;
 	ctx->out_path = FIMC_DMA;
-	spin_lock_init(&ctx->slock);
 
 	ctx->m2m_ctx = v4l2_m2m_ctx_init(fimc->m2m.m2m_dev, ctx, queue_init);
 	if (IS_ERR(ctx->m2m_ctx)) {
@@ -1601,7 +1559,7 @@ void fimc_unregister_m2m_device(struct fimc_dev *fimc)
 static void fimc_clk_put(struct fimc_dev *fimc)
 {
 	int i;
-	for (i = 0; i < fimc->num_clocks; i++) {
+	for (i = 0; i < MAX_FIMC_CLOCKS; i++) {
 		if (IS_ERR_OR_NULL(fimc->clock[i]))
 			continue;
 		clk_unprepare(fimc->clock[i]);
@@ -1614,7 +1572,7 @@ static int fimc_clk_get(struct fimc_dev *fimc)
 {
 	int i, ret;
 
-	for (i = 0; i < fimc->num_clocks; i++) {
+	for (i = 0; i < MAX_FIMC_CLOCKS; i++) {
 		fimc->clock[i] = clk_get(&fimc->pdev->dev, fimc_clocks[i]);
 		if (IS_ERR(fimc->clock[i]))
 			goto err;
@@ -1714,9 +1672,7 @@ static int fimc_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "Failed to get IRQ resource\n");
 		return -ENXIO;
 	}
-	fimc->irq = res->start;
 
-	fimc->num_clocks = MAX_FIMC_CLOCKS;
 	ret = fimc_clk_get(fimc);
 	if (ret)
 		return ret;
@@ -1725,7 +1681,7 @@ static int fimc_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, fimc);
 
-	ret = devm_request_irq(&pdev->dev, fimc->irq, fimc_irq_handler,
+	ret = devm_request_irq(&pdev->dev, res->start, fimc_irq_handler,
 			       0, pdev->name, fimc);
 	if (ret) {
 		dev_err(&pdev->dev, "failed to install irq (%d)\n", ret);
@@ -2036,7 +1992,7 @@ static struct platform_driver fimc_driver = {
 
 int __init fimc_register_driver(void)
 {
-	return platform_driver_probe(&fimc_driver, fimc_probe);
+	return platform_driver_register(&fimc_driver);
 }
 
 void __exit fimc_unregister_driver(void)
