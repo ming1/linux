@@ -24,12 +24,55 @@
 #include <linux/clk.h>
 #include <linux/slab.h>
 
-#include <mach/hardware.h>
-#include <mach/i2c.h>
-
 #define I2C_PNX_TIMEOUT		10 /* msec */
 #define I2C_PNX_SPEED_KHZ	100
 #define I2C_PNX_REGION_SIZE	0x100
+
+enum {
+	mstatus_tdi = 0x00000001,
+	mstatus_afi = 0x00000002,
+	mstatus_nai = 0x00000004,
+	mstatus_drmi = 0x00000008,
+	mstatus_active = 0x00000020,
+	mstatus_scl = 0x00000040,
+	mstatus_sda = 0x00000080,
+	mstatus_rff = 0x00000100,
+	mstatus_rfe = 0x00000200,
+	mstatus_tff = 0x00000400,
+	mstatus_tfe = 0x00000800,
+};
+
+enum {
+	mcntrl_tdie = 0x00000001,
+	mcntrl_afie = 0x00000002,
+	mcntrl_naie = 0x00000004,
+	mcntrl_drmie = 0x00000008,
+	mcntrl_daie = 0x00000020,
+	mcntrl_rffie = 0x00000040,
+	mcntrl_tffie = 0x00000080,
+	mcntrl_reset = 0x00000100,
+	mcntrl_cdbmode = 0x00000400,
+};
+
+enum {
+	rw_bit = 1 << 0,
+	start_bit = 1 << 8,
+	stop_bit = 1 << 9,
+};
+
+#define I2C_REG_RX(a)	((a)->ioaddr)		/* Rx FIFO reg (RO) */
+#define I2C_REG_TX(a)	((a)->ioaddr)		/* Tx FIFO reg (WO) */
+#define I2C_REG_STS(a)	((a)->ioaddr + 0x04)	/* Status reg (RO) */
+#define I2C_REG_CTL(a)	((a)->ioaddr + 0x08)	/* Ctl reg */
+#define I2C_REG_CKL(a)	((a)->ioaddr + 0x0c)	/* Clock divider low */
+#define I2C_REG_CKH(a)	((a)->ioaddr + 0x10)	/* Clock divider high */
+#define I2C_REG_ADR(a)	((a)->ioaddr + 0x14)	/* I2C address */
+#define I2C_REG_RFL(a)	((a)->ioaddr + 0x18)	/* Rx FIFO level (RO) */
+#define I2C_REG_TFL(a)	((a)->ioaddr + 0x1c)	/* Tx FIFO level (RO) */
+#define I2C_REG_RXB(a)	((a)->ioaddr + 0x20)	/* Num of bytes Rx-ed (RO) */
+#define I2C_REG_TXB(a)	((a)->ioaddr + 0x24)	/* Num of bytes Tx-ed (RO) */
+#define I2C_REG_TXS(a)	((a)->ioaddr + 0x28)	/* Tx slave FIFO (RO) */
+#define I2C_REG_STFL(a)	((a)->ioaddr + 0x2c)	/* Tx slave FIFO level (RO) */
 
 static inline int wait_timeout(long timeout, struct i2c_pnx_algo_data *data)
 {
@@ -546,8 +589,7 @@ static int i2c_pnx_controller_suspend(struct platform_device *pdev,
 {
 	struct i2c_pnx_algo_data *alg_data = platform_get_drvdata(pdev);
 
-	/* FIXME: shouldn't this be clk_disable? */
-	clk_enable(alg_data->clk);
+	clk_disable(alg_data->clk);
 
 	return 0;
 }
@@ -569,14 +611,7 @@ static int __devinit i2c_pnx_probe(struct platform_device *pdev)
 	int ret = 0;
 	struct i2c_pnx_algo_data *alg_data;
 	unsigned long freq;
-	struct i2c_pnx_data *i2c_pnx = pdev->dev.platform_data;
-
-	if (!i2c_pnx || !i2c_pnx->name) {
-		dev_err(&pdev->dev, "%s: no platform data supplied\n",
-		       __func__);
-		ret = -EINVAL;
-		goto out;
-	}
+	struct resource *res;
 
 	alg_data = kzalloc(sizeof(*alg_data), GFP_KERNEL);
 	if (!alg_data) {
@@ -586,13 +621,10 @@ static int __devinit i2c_pnx_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, alg_data);
 
-	strlcpy(alg_data->adapter.name, i2c_pnx->name,
-		sizeof(alg_data->adapter.name));
 	alg_data->adapter.dev.parent = &pdev->dev;
 	alg_data->adapter.algo = &pnx_algorithm;
 	alg_data->adapter.algo_data = alg_data;
 	alg_data->adapter.nr = pdev->id;
-	alg_data->i2c_pnx = i2c_pnx;
 
 	alg_data->clk = clk_get(&pdev->dev, NULL);
 	if (IS_ERR(alg_data->clk)) {
@@ -604,17 +636,27 @@ static int __devinit i2c_pnx_probe(struct platform_device *pdev)
 	alg_data->mif.timer.function = i2c_pnx_timeout;
 	alg_data->mif.timer.data = (unsigned long)alg_data;
 
+	snprintf(alg_data->adapter.name, sizeof(alg_data->adapter.name),
+		 "%s", pdev->name);
+
 	/* Register I/O resource */
-	if (!request_mem_region(i2c_pnx->base, I2C_PNX_REGION_SIZE,
+	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	if (!res) {
+		dev_err(&pdev->dev, "Unable to get mem resource.\n");
+		ret = -EBUSY;
+		goto out_clkget;
+	}
+	if (!request_mem_region(res->start, I2C_PNX_REGION_SIZE,
 				pdev->name)) {
 		dev_err(&pdev->dev,
 		       "I/O region 0x%08x for I2C already in use.\n",
-		       i2c_pnx->base);
+		       res->start);
 		ret = -ENODEV;
 		goto out_clkget;
 	}
 
-	alg_data->ioaddr = ioremap(i2c_pnx->base, I2C_PNX_REGION_SIZE);
+	alg_data->base = res->start;
+	alg_data->ioaddr = ioremap(res->start, I2C_PNX_REGION_SIZE);
 	if (!alg_data->ioaddr) {
 		dev_err(&pdev->dev, "Couldn't ioremap I2C I/O region\n");
 		ret = -ENOMEM;
@@ -651,7 +693,12 @@ static int __devinit i2c_pnx_probe(struct platform_device *pdev)
 	}
 	init_completion(&alg_data->mif.complete);
 
-	ret = request_irq(i2c_pnx->irq, i2c_pnx_interrupt,
+	alg_data->irq = platform_get_irq(pdev, 0);
+	if (alg_data->irq < 0) {
+		dev_err(&pdev->dev, "Failed to get IRQ from platform resource\n");
+		goto out_irq;
+	}
+	ret = request_irq(alg_data->irq, i2c_pnx_interrupt,
 			0, pdev->name, alg_data);
 	if (ret)
 		goto out_clock;
@@ -664,38 +711,36 @@ static int __devinit i2c_pnx_probe(struct platform_device *pdev)
 	}
 
 	dev_dbg(&pdev->dev, "%s: Master at %#8x, irq %d.\n",
-	       alg_data->adapter.name, i2c_pnx->base, i2c_pnx->irq);
+		alg_data->adapter.name, res->start, alg_data->irq);
 
 	return 0;
 
 out_irq:
-	free_irq(i2c_pnx->irq, alg_data);
+	free_irq(alg_data->irq, alg_data);
 out_clock:
 	clk_disable(alg_data->clk);
 out_unmap:
 	iounmap(alg_data->ioaddr);
 out_release:
-	release_mem_region(i2c_pnx->base, I2C_PNX_REGION_SIZE);
+	release_mem_region(res->start, I2C_PNX_REGION_SIZE);
 out_clkget:
 	clk_put(alg_data->clk);
 out_drvdata:
 	kfree(alg_data);
 err_kzalloc:
 	platform_set_drvdata(pdev, NULL);
-out:
 	return ret;
 }
 
 static int __devexit i2c_pnx_remove(struct platform_device *pdev)
 {
 	struct i2c_pnx_algo_data *alg_data = platform_get_drvdata(pdev);
-	struct i2c_pnx_data *i2c_pnx = alg_data->i2c_pnx;
 
-	free_irq(i2c_pnx->irq, alg_data);
+	free_irq(alg_data->irq, alg_data);
 	i2c_del_adapter(&alg_data->adapter);
 	clk_disable(alg_data->clk);
 	iounmap(alg_data->ioaddr);
-	release_mem_region(i2c_pnx->base, I2C_PNX_REGION_SIZE);
+	release_mem_region(alg_data->base, I2C_PNX_REGION_SIZE);
 	clk_put(alg_data->clk);
 	kfree(alg_data);
 	platform_set_drvdata(pdev, NULL);
