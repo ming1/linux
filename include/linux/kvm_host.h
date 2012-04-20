@@ -68,10 +68,11 @@ struct kvm_io_range {
 	struct kvm_io_device *dev;
 };
 
+#define NR_IOBUS_DEVS 1000
+
 struct kvm_io_bus {
 	int                   dev_count;
-#define NR_IOBUS_DEVS 300
-	struct kvm_io_range range[NR_IOBUS_DEVS];
+	struct kvm_io_range range[];
 };
 
 enum kvm_bus {
@@ -178,8 +179,6 @@ struct kvm_memory_slot {
 	unsigned long flags;
 	unsigned long *rmap;
 	unsigned long *dirty_bitmap;
-	unsigned long *dirty_bitmap_head;
-	unsigned long nr_dirty_pages;
 	struct kvm_arch_memory_slot arch;
 	unsigned long userspace_addr;
 	int user_alloc;
@@ -438,6 +437,7 @@ void mark_page_dirty_in_slot(struct kvm *kvm, struct kvm_memory_slot *memslot,
 			     gfn_t gfn);
 
 void kvm_vcpu_block(struct kvm_vcpu *vcpu);
+void kvm_vcpu_kick(struct kvm_vcpu *vcpu);
 void kvm_vcpu_on_spin(struct kvm_vcpu *vcpu);
 void kvm_resched(struct kvm_vcpu *vcpu);
 void kvm_load_guest_fpu(struct kvm_vcpu *vcpu);
@@ -506,6 +506,7 @@ int kvm_arch_hardware_setup(void);
 void kvm_arch_hardware_unsetup(void);
 void kvm_arch_check_processor_compat(void *rtn);
 int kvm_arch_vcpu_runnable(struct kvm_vcpu *vcpu);
+int kvm_arch_vcpu_should_kick(struct kvm_vcpu *vcpu);
 
 void kvm_free_physmem(struct kvm *kvm);
 
@@ -520,6 +521,15 @@ static inline void kvm_arch_free_vm(struct kvm *kvm)
 	kfree(kvm);
 }
 #endif
+
+static inline wait_queue_head_t *kvm_arch_vcpu_wq(struct kvm_vcpu *vcpu)
+{
+#ifdef __KVM_HAVE_ARCH_WQP
+	return vcpu->arch.wqp;
+#else
+	return &vcpu->wq;
+#endif
+}
 
 int kvm_arch_init_vm(struct kvm *kvm, unsigned long type);
 void kvm_arch_destroy_vm(struct kvm *kvm);
