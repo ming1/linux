@@ -208,7 +208,7 @@ static int sn_set_msi_irq_affinity(struct irq_data *data,
 	write_msi_msg(irq, &msg);
 	cpumask_copy(data->affinity, cpu_mask);
 
-	return 0;
+	return IRQ_SET_MASK_OK_NOCOPY;
 }
 #endif /* CONFIG_SMP */
 
