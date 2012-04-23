@@ -260,7 +260,7 @@ static int blkif_ioctl(struct block_device *bdev, fmode_t mode,
 static int blkif_queue_request(struct request *req)
 {
 	struct blkfront_info *info = req->rq_disk->private_data;
-	unsigned long buffer_mfn;
+	unsigned long buffer_mfn, buffer_pfn;
 	struct blkif_request *ring_req;
 	unsigned long id;
 	unsigned int fsect, lsect;
@@ -319,7 +319,8 @@ static int blkif_queue_request(struct request *req)
 		       BLKIF_MAX_SEGMENTS_PER_REQUEST);
 
 		for_each_sg(info->sg, sg, ring_req->u.rw.nr_segments, i) {
-			buffer_mfn = pfn_to_mfn(page_to_pfn(sg_page(sg)));
+			buffer_pfn = page_to_pfn(sg_page(sg));
+			buffer_mfn = pfn_to_mfn(buffer_pfn);
 			fsect = sg->offset >> 9;
 			lsect = fsect + (sg->length >> 9) - 1;
 			/* install a grant reference. */
@@ -338,6 +339,17 @@ static int blkif_queue_request(struct request *req)
 						.gref       = ref,
 						.first_sect = fsect,
 						.last_sect  = lsect };
+			/* 
+			 * Set the page as foreign, considering that we are giving
+			 * it to a foreign domain.
+			 * This is important in case the destination domain is
+			 * ourselves, so that we can more easily recognize the
+			 * source pfn from destination pfn, both mapping to the same
+			 * mfn.
+			 */
+			if (xen_pv_domain())
+				set_phys_to_machine(buffer_pfn,
+						FOREIGN_FRAME(buffer_mfn));
 		}
 	}
 
@@ -526,6 +538,14 @@ static int xen_translate_vdev(int vdevice, int *minor, unsigned int *offset)
 	return 0;
 }
 
+static char *encode_disk_name(char *ptr, unsigned int n)
+{
+	if (n >= 26)
+		ptr = encode_disk_name(ptr, n / 26 - 1);
+	*ptr = 'a' + n % 26;
+	return ptr + 1;
+}
+
 static int xlvbd_alloc_gendisk(blkif_sector_t capacity,
 			       struct blkfront_info *info,
 			       u16 vdisk_info, u16 sector_size)
@@ -536,6 +556,7 @@ static int xlvbd_alloc_gendisk(blkif_sector_t capacity,
 	unsigned int offset;
 	int minor;
 	int nr_parts;
+	char *ptr;
 
 	BUG_ON(info->gd != NULL);
 	BUG_ON(info->rq != NULL);
@@ -560,7 +581,11 @@ static int xlvbd_alloc_gendisk(blkif_sector_t capacity,
 					"emulated IDE disks,\n\t choose an xvd device name"
 					"from xvde on\n", info->vdevice);
 	}
-	err = -ENODEV;
+	if (minor >> MINORBITS) {
+		pr_warn("blkfront: %#x's minor (%#x) out of range; ignoring\n",
+			info->vdevice, minor);
+		return -ENODEV;
+	}
 
 	if ((minor % nr_parts) == 0)
 		nr_minors = nr_parts;
@@ -574,23 +599,14 @@ static int xlvbd_alloc_gendisk(blkif_sector_t capacity,
 	if (gd == NULL)
 		goto release;
 
-	if (nr_minors > 1) {
-		if (offset < 26)
-			sprintf(gd->disk_name, "%s%c", DEV_NAME, 'a' + offset);
-		else
-			sprintf(gd->disk_name, "%s%c%c", DEV_NAME,
-				'a' + ((offset / 26)-1), 'a' + (offset % 26));
-	} else {
-		if (offset < 26)
-			sprintf(gd->disk_name, "%s%c%d", DEV_NAME,
-				'a' + offset,
-				minor & (nr_parts - 1));
-		else
-			sprintf(gd->disk_name, "%s%c%c%d", DEV_NAME,
-				'a' + ((offset / 26) - 1),
-				'a' + (offset % 26),
-				minor & (nr_parts - 1));
-	}
+	strcpy(gd->disk_name, DEV_NAME);
+	ptr = encode_disk_name(gd->disk_name + sizeof(DEV_NAME) - 1, offset);
+	BUG_ON(ptr >= gd->disk_name + DISK_NAME_LEN);
+	if (nr_minors > 1)
+		*ptr = 0;
+	else
+		snprintf(ptr, gd->disk_name + DISK_NAME_LEN - ptr,
+			 "%d", minor & (nr_parts - 1));
 
 	gd->major = XENVBD_MAJOR;
 	gd->first_minor = minor;
@@ -713,8 +729,12 @@ static void blkif_completion(struct blk_shadow *s)
 	int i;
 	/* Do not let BLKIF_OP_DISCARD as nr_segment is in the same place
 	 * flag. */
-	for (i = 0; i < s->req.u.rw.nr_segments; i++)
+	for (i = 0; i < s->req.u.rw.nr_segments; i++) {
 		gnttab_end_foreign_access(s->req.u.rw.seg[i].gref, 0, 0UL);
+		if (xen_pv_domain())
+			set_phys_to_machine(s->frame[i],
+					get_phys_to_machine(s->frame[i]) & ~FOREIGN_FRAME_BIT);
+	}
 }
 
 static irqreturn_t blkif_interrupt(int irq, void *dev_id)
@@ -1050,13 +1070,20 @@ static int blkif_recover(struct blkfront_info *info)
 		memcpy(&info->shadow[req->u.rw.id], &copy[i], sizeof(copy[i]));
 
 		if (req->operation != BLKIF_OP_DISCARD) {
+			unsigned long buffer_pfn;
+			unsigned long buffer_mfn;
 		/* Rewrite any grant references invalidated by susp/resume. */
-			for (j = 0; j < req->u.rw.nr_segments; j++)
+			for (j = 0; j < req->u.rw.nr_segments; j++) {
+				buffer_pfn = info->shadow[req->u.rw.id].frame[j];
+				buffer_mfn = pfn_to_mfn(buffer_pfn);
 				gnttab_grant_foreign_access_ref(
 					req->u.rw.seg[j].gref,
 					info->xbdev->otherend_id,
-					pfn_to_mfn(info->shadow[req->u.rw.id].frame[j]),
+					buffer_mfn,
 					rq_data_dir(info->shadow[req->u.rw.id].request));
+				if (xen_pv_domain())
+					set_phys_to_machine(buffer_pfn, FOREIGN_FRAME(buffer_mfn));
+			}
 		}
 		info->shadow[req->u.rw.id].req = *req;
 
@@ -1496,7 +1523,9 @@ module_init(xlblk_init);
 
 static void __exit xlblk_exit(void)
 {
-	return xenbus_unregister_driver(&blkfront_driver);
+	xenbus_unregister_driver(&blkfront_driver);
+	unregister_blkdev(XENVBD_MAJOR, DEV_NAME);
+	kfree(minors);
 }
 module_exit(xlblk_exit);
 
