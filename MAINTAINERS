@@ -640,13 +640,6 @@ S:	Maintained
 F:	drivers/amba/
 F:	include/linux/amba/bus.h
 
-ARM/ADI ROADRUNNER MACHINE SUPPORT
-M:	Lennert Buytenhek <kernel@wantstofly.org>
-L:	linux-arm-kernel@lists.infradead.org (moderated for non-subscribers)
-S:	Maintained
-F:	arch/arm/mach-ixp23xx/
-F:	arch/arm/mach-ixp23xx/include/mach/
-
 ARM/ADS SPHERE MACHINE SUPPORT
 M:	Lennert Buytenhek <kernel@wantstofly.org>
 L:	linux-arm-kernel@lists.infradead.org (moderated for non-subscribers)
@@ -859,17 +852,7 @@ M:	Dan Williams <dan.j.williams@intel.com>
 L:	linux-arm-kernel@lists.infradead.org (moderated for non-subscribers)
 S:	Maintained
 
-ARM/INTEL IXP2000 ARM ARCHITECTURE
-M:	Lennert Buytenhek <kernel@wantstofly.org>
-L:	linux-arm-kernel@lists.infradead.org (moderated for non-subscribers)
-S:	Maintained
-
 ARM/INTEL IXDP2850 MACHINE SUPPORT
-M:	Lennert Buytenhek <kernel@wantstofly.org>
-L:	linux-arm-kernel@lists.infradead.org (moderated for non-subscribers)
-S:	Maintained
-
-ARM/INTEL IXP23XX ARM ARCHITECTURE
 M:	Lennert Buytenhek <kernel@wantstofly.org>
 L:	linux-arm-kernel@lists.infradead.org (moderated for non-subscribers)
 S:	Maintained
@@ -1331,6 +1314,21 @@ M:	Nicolas Ferre <nicolas.ferre@atmel.com>
 S:	Supported
 F:	drivers/tty/serial/atmel_serial.c
 
+ATMEL DMA DRIVER
+M:	Nicolas Ferre <nicolas.ferre@atmel.com>
+L:	linux-arm-kernel@lists.infradead.org (moderated for non-subscribers)
+S:	Supported
+F:	drivers/dma/at_hdmac.c
+F:	drivers/dma/at_hdmac_regs.h
+F:	arch/arm/mach-at91/include/mach/at_hdmac.h
+
+ATMEL ISI DRIVER
+M:	Josh Wu <josh.wu@atmel.com>
+L:	linux-media@vger.kernel.org
+S:	Supported
+F:	drivers/media/video/atmel-isi.c
+F:	include/media/atmel-isi.h
+
 ATMEL LCDFB DRIVER
 M:	Nicolas Ferre <nicolas.ferre@atmel.com>
 L:	linux-fbdev@vger.kernel.org
@@ -1348,10 +1346,22 @@ M:	Nicolas Ferre <nicolas.ferre@atmel.com>
 S:	Supported
 F:	drivers/spi/spi-atmel.*
 
+ATMEL Timer Counter (TC) AND CLOCKSOURCE DRIVERS
+M:	Nicolas Ferre <nicolas.ferre@atmel.com>
+L:	linux-arm-kernel@lists.infradead.org (moderated for non-subscribers)
+S:	Supported
+F:	drivers/misc/atmel_tclib.c
+F:	drivers/clocksource/tcb_clksrc.c
+
+ATMEL TSADCC DRIVER
+M:	Josh Wu <josh.wu@atmel.com>
+L:	linux-input@vger.kernel.org
+S:	Supported
+F:	drivers/input/touchscreen/atmel_tsadcc.c
+
 ATMEL USBA UDC DRIVER
 M:	Nicolas Ferre <nicolas.ferre@atmel.com>
 L:	linux-arm-kernel@lists.infradead.org (moderated for non-subscribers)
-W:	http://avr32linux.org/twiki/bin/view/Main/AtmelUsbDeviceDriver
 S:	Supported
 F:	drivers/usb/gadget/atmel_usba_udc.*
 
@@ -5259,6 +5269,14 @@ M:	Linus Walleij <linus.walleij@linaro.org>
 S:	Maintained
 F:	drivers/pinctrl/
 
+PIN CONTROLLER - ST SPEAR
+M:	Viresh Kumar <viresh.kumar@st.com>
+L:	spear-devel@list.st.com
+L:	linux-arm-kernel@lists.infradead.org (moderated for non-subscribers)
+W:	http://www.st.com/spear
+S:	Maintained
+F:	driver/pinctrl/spear/
+
 PKTCDVD DRIVER
 M:	Peter Osterlund <petero2@telia.com>
 S:	Maintained
@@ -6354,21 +6372,6 @@ S:	Maintained
 F:	arch/arm/mach-spear*/clock.c
 F:	arch/arm/plat-spear/clock.c
 F:	arch/arm/plat-spear/include/plat/clock.h
-
-SPEAR PAD MULTIPLEXING SUPPORT
-M:	Viresh Kumar <viresh.kumar@st.com>
-L:	spear-devel@list.st.com
-L:	linux-arm-kernel@lists.infradead.org (moderated for non-subscribers)
-W:	http://www.st.com/spear
-S:	Maintained
-F:	arch/arm/plat-spear/include/plat/padmux.h
-F:	arch/arm/plat-spear/padmux.c
-F:	arch/arm/mach-spear*/spear*xx.c
-F:	arch/arm/mach-spear*/include/mach/generic.h
-F:	arch/arm/mach-spear3xx/spear3*0.c
-F:	arch/arm/mach-spear3xx/spear3*0_evb.c
-F:	arch/arm/mach-spear6xx/spear600.c
-F:	arch/arm/mach-spear6xx/spear600_evb.c
 
 SPI SUBSYSTEM
 M:	Grant Likely <grant.likely@secretlab.ca>
