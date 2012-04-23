@@ -1097,6 +1097,7 @@ static int tps65910_set_ext_sleep_config(struct tps65910_reg *pmic,
 static __devinit int tps65910_probe(struct platform_device *pdev)
 {
 	struct tps65910 *tps65910 = dev_get_drvdata(pdev->dev.parent);
+	struct regulator_config config = { };
 	struct tps_info *info;
 	struct regulator_init_data *reg_data;
 	struct regulator_dev *rdev;
@@ -1108,7 +1109,7 @@ static __devinit int tps65910_probe(struct platform_device *pdev)
 	if (!pmic_plat_data)
 		return -EINVAL;
 
-	pmic = kzalloc(sizeof(*pmic), GFP_KERNEL);
+	pmic = devm_kzalloc(&pdev->dev, sizeof(*pmic), GFP_KERNEL);
 	if (!pmic)
 		return -ENOMEM;
 
@@ -1135,7 +1136,6 @@ static __devinit int tps65910_probe(struct platform_device *pdev)
 		break;
 	default:
 		pr_err("Invalid tps chip version\n");
-		kfree(pmic);
 		return -ENODEV;
 	}
 
@@ -1143,7 +1143,7 @@ static __devinit int tps65910_probe(struct platform_device *pdev)
 			sizeof(struct regulator_desc), GFP_KERNEL);
 	if (!pmic->desc) {
 		err = -ENOMEM;
-		goto err_free_pmic;
+		goto err_out;
 	}
 
 	pmic->info = kcalloc(pmic->num_regulators,
@@ -1206,8 +1206,11 @@ static __devinit int tps65910_probe(struct platform_device *pdev)
 		pmic->desc[i].type = REGULATOR_VOLTAGE;
 		pmic->desc[i].owner = THIS_MODULE;
 
-		rdev = regulator_register(&pmic->desc[i],
-				tps65910->dev, reg_data, pmic, NULL);
+		config.dev = tps65910->dev;
+		config.init_data = reg_data;
+		config.driver_data = pmic;
+
+		rdev = regulator_register(&pmic->desc[i], &config);
 		if (IS_ERR(rdev)) {
 			dev_err(tps65910->dev,
 				"failed to register %s regulator\n",
@@ -1229,8 +1232,7 @@ err_free_info:
 	kfree(pmic->info);
 err_free_desc:
 	kfree(pmic->desc);
-err_free_pmic:
-	kfree(pmic);
+err_out:
 	return err;
 }
 
@@ -1245,7 +1247,6 @@ static int __devexit tps65910_remove(struct platform_device *pdev)
 	kfree(pmic->rdev);
 	kfree(pmic->info);
 	kfree(pmic->desc);
-	kfree(pmic);
 	return 0;
 }
 
