@@ -1,7 +1,7 @@
 /*
  * Driver for the NVIDIA Tegra pinmux
  *
- * Copyright (c) 2011, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2011-2012, NVIDIA CORPORATION.  All rights reserved.
  *
  * Derived from code:
  * Copyright (C) 2010 Google, Inc.
@@ -22,7 +22,8 @@
 #include <linux/init.h>
 #include <linux/io.h>
 #include <linux/module.h>
-#include <linux/of_device.h>
+#include <linux/of.h>
+#include <linux/platform_device.h>
 #include <linux/pinctrl/machine.h>
 #include <linux/pinctrl/pinctrl.h>
 #include <linux/pinctrl/pinmux.h>
@@ -31,9 +32,8 @@
 
 #include <mach/pinconf-tegra.h>
 
+#include "core.h"
 #include "pinctrl-tegra.h"
-
-#define DRIVER_NAME "tegra-pinmux-disabled"
 
 struct tegra_pmx {
 	struct device *dev;
@@ -83,12 +83,14 @@ static int tegra_pinctrl_get_group_pins(struct pinctrl_dev *pctldev,
 	return 0;
 }
 
+#ifdef CONFIG_DEBUG_FS
 static void tegra_pinctrl_pin_dbg_show(struct pinctrl_dev *pctldev,
 				       struct seq_file *s,
 				       unsigned offset)
 {
-	seq_printf(s, " " DRIVER_NAME);
+	seq_printf(s, " %s", dev_name(pctldev->dev));
 }
+#endif
 
 static int reserve_map(struct pinctrl_map **map, unsigned *reserved_maps,
 		       unsigned *num_maps, unsigned reserve)
@@ -295,7 +297,9 @@ static struct pinctrl_ops tegra_pinctrl_ops = {
 	.get_groups_count = tegra_pinctrl_get_groups_count,
 	.get_group_name = tegra_pinctrl_get_group_name,
 	.get_group_pins = tegra_pinctrl_get_group_pins,
+#ifdef CONFIG_DEBUG_FS
 	.pin_dbg_show = tegra_pinctrl_pin_dbg_show,
+#endif
 	.dt_node_to_map = tegra_pinctrl_dt_node_to_map,
 	.dt_free_map = tegra_pinctrl_dt_free_map,
 };
@@ -385,6 +389,7 @@ static struct pinmux_ops tegra_pinmux_ops = {
 static int tegra_pinconf_reg(struct tegra_pmx *pmx,
 			     const struct tegra_pingroup *g,
 			     enum tegra_pinconf_param param,
+			     bool report_err,
 			     s8 *bank, s16 *reg, s8 *bit, s8 *width)
 {
 	switch (param) {
@@ -472,9 +477,10 @@ static int tegra_pinconf_reg(struct tegra_pmx *pmx,
 	}
 
 	if (*reg < 0) {
-		dev_err(pmx->dev,
-			"Config param %04x not supported on group %s\n",
-			param, g->name);
+		if (report_err)
+			dev_err(pmx->dev,
+				"Config param %04x not supported on group %s\n",
+				param, g->name);
 		return -ENOTSUPP;
 	}
 
@@ -507,7 +513,8 @@ static int tegra_pinconf_group_get(struct pinctrl_dev *pctldev,
 
 	g = &pmx->soc->groups[group];
 
-	ret = tegra_pinconf_reg(pmx, g, param, &bank, &reg, &bit, &width);
+	ret = tegra_pinconf_reg(pmx, g, param, true, &bank, &reg, &bit,
+				&width);
 	if (ret < 0)
 		return ret;
 
@@ -534,7 +541,8 @@ static int tegra_pinconf_group_set(struct pinctrl_dev *pctldev,
 
 	g = &pmx->soc->groups[group];
 
-	ret = tegra_pinconf_reg(pmx, g, param, &bank, &reg, &bit, &width);
+	ret = tegra_pinconf_reg(pmx, g, param, true, &bank, &reg, &bit,
+				&width);
 	if (ret < 0)
 		return ret;
 
@@ -563,23 +571,78 @@ static int tegra_pinconf_group_set(struct pinctrl_dev *pctldev,
 	return 0;
 }
 
+#ifdef CONFIG_DEBUG_FS
 static void tegra_pinconf_dbg_show(struct pinctrl_dev *pctldev,
 				   struct seq_file *s, unsigned offset)
 {
 }
 
-static void tegra_pinconf_group_dbg_show(struct pinctrl_dev *pctldev,
-					 struct seq_file *s, unsigned selector)
+static const char *strip_prefix(const char *s)
 {
+	const char *comma = strchr(s, ',');
+	if (!comma)
+		return s;
+
+	return comma + 1;
 }
+
+static void tegra_pinconf_group_dbg_show(struct pinctrl_dev *pctldev,
+					 struct seq_file *s, unsigned group)
+{
+	struct tegra_pmx *pmx = pinctrl_dev_get_drvdata(pctldev);
+	const struct tegra_pingroup *g;
+	int i, ret;
+	s8 bank, bit, width;
+	s16 reg;
+	u32 val;
+
+	g = &pmx->soc->groups[group];
+
+	for (i = 0; i < ARRAY_SIZE(cfg_params); i++) {
+		ret = tegra_pinconf_reg(pmx, g, cfg_params[i].param, false,
+					&bank, &reg, &bit, &width);
+		if (ret < 0)
+			continue;
+
+		val = pmx_readl(pmx, bank, reg);
+		val >>= bit;
+		val &= (1 << width) - 1;
+
+		seq_printf(s, "\n\t%s=%u",
+			   strip_prefix(cfg_params[i].property), val);
+	}
+}
+
+static void tegra_pinconf_config_dbg_show(struct pinctrl_dev *pctldev,
+					  struct seq_file *s,
+					  unsigned long config)
+{
+	enum tegra_pinconf_param param = TEGRA_PINCONF_UNPACK_PARAM(config);
+	u16 arg = TEGRA_PINCONF_UNPACK_ARG(config);
+	const char *pname = "unknown";
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(cfg_params); i++) {
+		if (cfg_params[i].param == param) {
+			pname = cfg_params[i].property;
+			break;
+		}
+	}
+
+	seq_printf(s, "%s=%d", strip_prefix(pname), arg);
+}
+#endif
 
 struct pinconf_ops tegra_pinconf_ops = {
 	.pin_config_get = tegra_pinconf_get,
 	.pin_config_set = tegra_pinconf_set,
 	.pin_config_group_get = tegra_pinconf_group_get,
 	.pin_config_group_set = tegra_pinconf_group_set,
+#ifdef CONFIG_DEBUG_FS
 	.pin_config_dbg_show = tegra_pinconf_dbg_show,
 	.pin_config_group_dbg_show = tegra_pinconf_group_dbg_show,
+	.pin_config_config_dbg_show = tegra_pinconf_config_dbg_show,
+#endif
 };
 
 static struct pinctrl_gpio_range tegra_pinctrl_gpio_range = {
@@ -589,49 +652,18 @@ static struct pinctrl_gpio_range tegra_pinctrl_gpio_range = {
 };
 
 static struct pinctrl_desc tegra_pinctrl_desc = {
-	.name = DRIVER_NAME,
 	.pctlops = &tegra_pinctrl_ops,
 	.pmxops = &tegra_pinmux_ops,
 	.confops = &tegra_pinconf_ops,
 	.owner = THIS_MODULE,
 };
 
-static struct of_device_id tegra_pinctrl_of_match[] __devinitdata = {
-#ifdef CONFIG_PINCTRL_TEGRA20
-	{
-		.compatible = "nvidia,tegra20-pinmux-disabled",
-		.data = tegra20_pinctrl_init,
-	},
-#endif
-#ifdef CONFIG_PINCTRL_TEGRA30
-	{
-		.compatible = "nvidia,tegra30-pinmux-disabled",
-		.data = tegra30_pinctrl_init,
-	},
-#endif
-	{},
-};
-
-static int __devinit tegra_pinctrl_probe(struct platform_device *pdev)
+int __devinit tegra_pinctrl_probe(struct platform_device *pdev,
+			const struct tegra_pinctrl_soc_data *soc_data)
 {
-	const struct of_device_id *match;
-	tegra_pinctrl_soc_initf initf = NULL;
 	struct tegra_pmx *pmx;
 	struct resource *res;
 	int i;
-
-	match = of_match_device(tegra_pinctrl_of_match, &pdev->dev);
-	if (match)
-		initf = (tegra_pinctrl_soc_initf)match->data;
-#ifdef CONFIG_PINCTRL_TEGRA20
-	if (!initf)
-		initf = tegra20_pinctrl_init;
-#endif
-	if (!initf) {
-		dev_err(&pdev->dev,
-			"Could not determine SoC-specific init func\n");
-		return -EINVAL;
-	}
 
 	pmx = devm_kzalloc(&pdev->dev, sizeof(*pmx), GFP_KERNEL);
 	if (!pmx) {
@@ -639,10 +671,10 @@ static int __devinit tegra_pinctrl_probe(struct platform_device *pdev)
 		return -ENOMEM;
 	}
 	pmx->dev = &pdev->dev;
-
-	(*initf)(&pmx->soc);
+	pmx->soc = soc_data;
 
 	tegra_pinctrl_gpio_range.npins = pmx->soc->ngpios;
+	tegra_pinctrl_desc.name = dev_name(&pdev->dev);
 	tegra_pinctrl_desc.pins = pmx->soc->pins;
 	tegra_pinctrl_desc.npins = pmx->soc->npins;
 
@@ -697,8 +729,9 @@ static int __devinit tegra_pinctrl_probe(struct platform_device *pdev)
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(tegra_pinctrl_probe);
 
-static int __devexit tegra_pinctrl_remove(struct platform_device *pdev)
+int __devexit tegra_pinctrl_remove(struct platform_device *pdev)
 {
 	struct tegra_pmx *pmx = platform_get_drvdata(pdev);
 
@@ -707,30 +740,4 @@ static int __devexit tegra_pinctrl_remove(struct platform_device *pdev)
 
 	return 0;
 }
-
-static struct platform_driver tegra_pinctrl_driver = {
-	.driver = {
-		.name = DRIVER_NAME,
-		.owner = THIS_MODULE,
-		.of_match_table = tegra_pinctrl_of_match,
-	},
-	.probe = tegra_pinctrl_probe,
-	.remove = __devexit_p(tegra_pinctrl_remove),
-};
-
-static int __init tegra_pinctrl_init(void)
-{
-	return platform_driver_register(&tegra_pinctrl_driver);
-}
-arch_initcall(tegra_pinctrl_init);
-
-static void __exit tegra_pinctrl_exit(void)
-{
-	platform_driver_unregister(&tegra_pinctrl_driver);
-}
-module_exit(tegra_pinctrl_exit);
-
-MODULE_AUTHOR("Stephen Warren <swarren@nvidia.com>");
-MODULE_DESCRIPTION("NVIDIA Tegra pinctrl driver");
-MODULE_LICENSE("GPL v2");
-MODULE_DEVICE_TABLE(of, tegra_pinctrl_of_match);
+EXPORT_SYMBOL_GPL(tegra_pinctrl_remove);
