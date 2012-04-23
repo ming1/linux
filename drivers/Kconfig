@@ -142,4 +142,6 @@ source "drivers/devfreq/Kconfig"
 
 source "drivers/extcon/Kconfig"
 
+source "drivers/modem_shm/Kconfig"
+
 endmenu
