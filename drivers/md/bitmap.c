@@ -1695,9 +1695,8 @@ int bitmap_create(struct mddev *mddev)
 			      - BITMAP_BLOCK_SHIFT);
 
 	/* now that chunksize and chunkshift are set, we can use these macros */
-	chunks = (blocks + bitmap->counts.chunkshift - 1) >>
-			bitmap->counts.chunkshift;
-	pages = (chunks + PAGE_COUNTER_RATIO - 1) / PAGE_COUNTER_RATIO;
+	chunks = DIV_ROUND_UP(blocks, CHUNK_BLOCK_RATIO(bitmap));
+	pages = DIV_ROUND_UP(chunks, PAGE_COUNTER_RATIO);
 
 	BUG_ON(!pages);
 
