@@ -138,6 +138,14 @@ int tcp_twsk_unique(struct sock *sk, struct sock *sktw, void *twp)
 }
 EXPORT_SYMBOL_GPL(tcp_twsk_unique);
 
+static int tcp_repair_connect(struct sock *sk)
+{
+	tcp_connect_init(sk);
+	tcp_finish_connect(sk, NULL);
+
+	return 0;
+}
+
 /* This will initiate an outgoing connection. */
 int tcp_v4_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 {
@@ -196,7 +204,8 @@ int tcp_v4_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 		/* Reset inherited state */
 		tp->rx_opt.ts_recent	   = 0;
 		tp->rx_opt.ts_recent_stamp = 0;
-		tp->write_seq		   = 0;
+		if (likely(!tp->repair))
+			tp->write_seq	   = 0;
 	}
 
 	if (tcp_death_row.sysctl_tw_recycle &&
@@ -247,7 +256,7 @@ int tcp_v4_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 	sk->sk_gso_type = SKB_GSO_TCPV4;
 	sk_setup_caps(sk, &rt->dst);
 
-	if (!tp->write_seq)
+	if (!tp->write_seq && likely(!tp->repair))
 		tp->write_seq = secure_tcp_sequence_number(inet->inet_saddr,
 							   inet->inet_daddr,
 							   inet->inet_sport,
@@ -255,7 +264,11 @@ int tcp_v4_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 
 	inet->inet_id = tp->write_seq ^ jiffies;
 
-	err = tcp_connect(sk);
+	if (likely(!tp->repair))
+		err = tcp_connect(sk);
+	else
+		err = tcp_repair_connect(sk);
+
 	rt = NULL;
 	if (err)
 		goto failure;
@@ -1875,63 +1888,14 @@ static const struct tcp_sock_af_ops tcp_sock_ipv4_specific = {
 static int tcp_v4_init_sock(struct sock *sk)
 {
 	struct inet_connection_sock *icsk = inet_csk(sk);
-	struct tcp_sock *tp = tcp_sk(sk);
 
-	skb_queue_head_init(&tp->out_of_order_queue);
-	tcp_init_xmit_timers(sk);
-	tcp_prequeue_init(tp);
-
-	icsk->icsk_rto = TCP_TIMEOUT_INIT;
-	tp->mdev = TCP_TIMEOUT_INIT;
-
-	/* So many TCP implementations out there (incorrectly) count the
-	 * initial SYN frame in their delayed-ACK and congestion control
-	 * algorithms that we must have the following bandaid to talk
-	 * efficiently to them.  -DaveM
-	 */
-	tp->snd_cwnd = TCP_INIT_CWND;
-
-	/* See draft-stevens-tcpca-spec-01 for discussion of the
-	 * initialization of these values.
-	 */
-	tp->snd_ssthresh = TCP_INFINITE_SSTHRESH;
-	tp->snd_cwnd_clamp = ~0;
-	tp->mss_cache = TCP_MSS_DEFAULT;
-
-	tp->reordering = sysctl_tcp_reordering;
-	icsk->icsk_ca_ops = &tcp_init_congestion_ops;
-
-	sk->sk_state = TCP_CLOSE;
-
-	sk->sk_write_space = sk_stream_write_space;
-	sock_set_flag(sk, SOCK_USE_WRITE_QUEUE);
+	tcp_init_sock(sk);
 
 	icsk->icsk_af_ops = &ipv4_specific;
-	icsk->icsk_sync_mss = tcp_sync_mss;
+
 #ifdef CONFIG_TCP_MD5SIG
-	tp->af_specific = &tcp_sock_ipv4_specific;
+	tcp_sk(sk)->af_specific = &tcp_sock_ipv4_specific;
 #endif
-
-	/* TCP Cookie Transactions */
-	if (sysctl_tcp_cookie_size > 0) {
-		/* Default, cookies without s_data_payload. */
-		tp->cookie_values =
-			kzalloc(sizeof(*tp->cookie_values),
-				sk->sk_allocation);
-		if (tp->cookie_values != NULL)
-			kref_init(&tp->cookie_values->kref);
-	}
-	/* Presumed zeroed, in order of appearance:
-	 *	cookie_in_always, cookie_out_never,
-	 *	s_data_constant, s_data_in, s_data_out
-	 */
-	sk->sk_sndbuf = sysctl_tcp_wmem[1];
-	sk->sk_rcvbuf = sysctl_tcp_rmem[1];
-
-	local_bh_disable();
-	sock_update_memcg(sk);
-	sk_sockets_allocated_inc(sk);
-	local_bh_enable();
 
 	return 0;
 }
