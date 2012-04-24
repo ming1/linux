@@ -109,15 +109,46 @@ static struct ad5933_platform_data ad5933_default_pdata  = {
 };
 
 static struct iio_chan_spec ad5933_channels[] = {
-	IIO_CHAN(IIO_TEMP, 0, 1, 1, NULL, 0, 0, 0,
-		 0, AD5933_REG_TEMP_DATA, IIO_ST('s', 14, 16, 0), 0),
-	/* Ring Channels */
-	IIO_CHAN(IIO_VOLTAGE, 0, 1, 0, "real_raw", 0, 0,
-		 IIO_CHAN_INFO_SCALE_SEPARATE_BIT,
-		 AD5933_REG_REAL_DATA, 0, IIO_ST('s', 16, 16, 0), 0),
-	IIO_CHAN(IIO_VOLTAGE, 0, 1, 0, "imag_raw", 0, 0,
-		 IIO_CHAN_INFO_SCALE_SEPARATE_BIT,
-		 AD5933_REG_IMAG_DATA, 1, IIO_ST('s', 16, 16, 0), 0),
+	{
+		.type = IIO_TEMP,
+		.indexed = 1,
+		.channel = 0,
+		.info_mask = IIO_CHAN_INFO_PROCESSED_SEPARATE_BIT,
+		.address = AD5933_REG_TEMP_DATA,
+		.scan_type = {
+			.sign = 's',
+			.realbits = 14,
+			.storagebits = 16,
+		},
+	}, { /* Ring Channels */
+		.type = IIO_VOLTAGE,
+		.indexed = 1,
+		.channel = 0,
+		.extend_name = "real_raw",
+		.info_mask = IIO_CHAN_INFO_RAW_SEPARATE_BIT |
+		IIO_CHAN_INFO_SCALE_SEPARATE_BIT,
+		.address = AD5933_REG_REAL_DATA,
+		.scan_index = 0,
+		.scan_type = {
+			.sign = 's',
+			.realbits = 16,
+			.storagebits = 16,
+		},
+	}, {
+		.type = IIO_VOLTAGE,
+		.indexed = 1,
+		.channel = 0,
+		.extend_name = "imag_raw",
+		.info_mask = IIO_CHAN_INFO_RAW_SEPARATE_BIT |
+		IIO_CHAN_INFO_SCALE_SEPARATE_BIT,
+		.address = AD5933_REG_IMAG_DATA,
+		.scan_index = 1,
+		.scan_type = {
+			.sign = 's',
+			.realbits = 16,
+			.storagebits = 16,
+		},
+	},
 };
 
 static int ad5933_i2c_write(struct i2c_client *client,
@@ -495,7 +526,8 @@ static int ad5933_read_raw(struct iio_dev *indio_dev,
 
 	mutex_lock(&indio_dev->mlock);
 	switch (m) {
-	case 0:
+	case IIO_CHAN_INFO_RAW:
+	case IIO_CHAN_INFO_PROCESSED:
 		if (iio_buffer_enabled(indio_dev)) {
 			ret = -EBUSY;
 			goto out;
