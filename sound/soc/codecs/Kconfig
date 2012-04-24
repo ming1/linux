@@ -37,11 +37,13 @@ config SND_SOC_ALL_CODECS
 	select SND_SOC_DFBMCS320
 	select SND_SOC_JZ4740_CODEC
 	select SND_SOC_LM4857 if I2C
+	select SND_SOC_LM49453 if I2C
 	select SND_SOC_MAX98088 if I2C
 	select SND_SOC_MAX98095 if I2C
 	select SND_SOC_MAX9850 if I2C
 	select SND_SOC_MAX9768 if I2C
 	select SND_SOC_MAX9877 if I2C
+	select SND_SOC_ML26124 if I2C
 	select SND_SOC_PCM3008
 	select SND_SOC_RT5631 if I2C
 	select SND_SOC_SGTL5000 if I2C
@@ -215,6 +217,9 @@ config SND_SOC_DFBMCS320
 	tristate
 
 config SND_SOC_DMIC
+	tristate
+
+config SND_SOC_LM49453
 	tristate
 
 config SND_SOC_MAX98088
@@ -433,6 +438,9 @@ config SND_SOC_MAX9768
 	tristate
 
 config SND_SOC_MAX9877
+	tristate
+
+config SND_SOC_ML26124
 	tristate
 
 config SND_SOC_TPA6130A2
