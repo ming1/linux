@@ -118,7 +118,8 @@ static struct notifier_block heartbeat_reboot_nb = {
 static int __init heartbeat_trig_init(void)
 {
 	int rc = led_trigger_register(&heartbeat_led_trigger);
-	if( ! rc )
+
+	if (!rc)
 		register_reboot_notifier(&heartbeat_reboot_nb);
 	return rc;
 }
