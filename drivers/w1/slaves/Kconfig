@@ -97,6 +97,7 @@ config W1_SLAVE_DS2781
 config W1_SLAVE_DS28E04
 	tristate "4096-Bit Addressable 1-Wire EEPROM with PIO (DS28E04-100)"
 	depends on W1
+	select CRC16
 	help
 	  Say Y here if you want to use a 1-wire
 	  4kb EEPROM with PIO family device (DS28E04).
