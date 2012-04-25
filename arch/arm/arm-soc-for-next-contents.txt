@@ -24,6 +24,9 @@ renesas/dt:		git://git.kernel.org/pub/scm/linux/kernel/git/rafael/renesas.git dt
 lpc32xx/dt		git://git.antcom.de/linux-2.6.git lpc32xx/dt
 				depends on depends/i2c/lpc32xx
 
+next/boards:
+mx/boards		git://git.pengutronix.de/git/imx/linux-2.6.git tags/imx-features-board-20120411-2
+
 next/pinctrl:
 spear/pinctrl:		git://git.stlinux.com/spear/linux-2.6.git spear-v3.5
 				depends on spear/dt:
