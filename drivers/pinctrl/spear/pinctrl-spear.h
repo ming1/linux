@@ -46,6 +46,23 @@ struct spear_muxreg {
 	u32 val;
 };
 
+struct spear_gpio_pingroup {
+	const unsigned *pins;
+	unsigned npins;
+	struct spear_muxreg muxreg;
+};
+
+#define GPIO_PINGROUP(__pins, __reg, __mask, __set_to_enb)	\
+	{							\
+		.pins = __pins,					\
+		.npins = ARRAY_SIZE(__pins),			\
+		.muxreg = {					\
+			.reg = __reg,				\
+			.mask = __mask,				\
+			.val = __set_to_enb ? __mask : 0,	\
+		},						\
+	}
+
 /**
  * struct spear_modemux - SPEAr mode mux configuration
  * @modes: mode ids supported by this group of muxregs
@@ -100,6 +117,9 @@ struct spear_function {
  * @nfunctions: The numbmer of entries in @functions.
  * @groups: An array describing all pin groups the pin SoC supports.
  * @ngroups: The numbmer of entries in @groups.
+ * @ranges: PLGPIO ranges for the machine
+ * @gpio_pingroups: gpio pingroups
+ * @ngpio_pingroups: gpio pingroups count
  *
  * @modes_supported: Does SoC support modes
  * @mode: mode configured from probe
@@ -113,6 +133,9 @@ struct spear_pinctrl_machdata {
 	unsigned nfunctions;
 	struct spear_pingroup **groups;
 	unsigned ngroups;
+	struct pinctrl_gpio_range *ranges;
+	struct spear_gpio_pingroup *gpio_pingroups;
+	unsigned ngpio_pingroups;
 
 	bool modes_supported;
 	u16 mode;
@@ -136,6 +159,9 @@ struct spear_pmx {
 
 /* exported routines */
 void __devinit pmx_init_addr(struct spear_pinctrl_machdata *machdata, u16 reg);
+void __devinit
+pmx_init_gpio_pingroup_addr(struct spear_gpio_pingroup *gpio_pingroup,
+		unsigned count, u16 reg);
 int __devinit spear_pinctrl_probe(struct platform_device *pdev,
 		struct spear_pinctrl_machdata *machdata);
 int __devexit spear_pinctrl_remove(struct platform_device *pdev);

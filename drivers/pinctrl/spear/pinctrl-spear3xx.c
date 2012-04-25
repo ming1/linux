@@ -582,7 +582,36 @@ struct spear_function spear3xx_timer_2_3_function = {
 	.ngroups = ARRAY_SIZE(timer_2_3_grps),
 };
 
+/* plgpio */
+static struct pinctrl_gpio_range spear3xx_plgpio_range = {
+	.name		= "SPEAr3xx PLGPIO",
+	.id		= 0,
+	.pin_base	= 0,
+	.npins		= ARRAY_SIZE(spear3xx_pins),
+};
+
+static struct spear_gpio_pingroup spear3xx_gpio_pingroup[] = {
+	GPIO_PINGROUP(firda_pins, 0, PMX_FIRDA_MASK, 1),
+	GPIO_PINGROUP(i2c_pins, 0, PMX_I2C_MASK, 1),
+	GPIO_PINGROUP(ssp_cs_pins, 0, PMX_SSP_CS_MASK, 1),
+	GPIO_PINGROUP(ssp_pins, 0, PMX_SSP_MASK, 1),
+	GPIO_PINGROUP(mii_pins, 0, PMX_MII_MASK, 1),
+	GPIO_PINGROUP(gpio0_pin0_pins, 0, PMX_GPIO_PIN0_MASK, 1),
+	GPIO_PINGROUP(gpio0_pin1_pins, 0, PMX_GPIO_PIN1_MASK, 1),
+	GPIO_PINGROUP(gpio0_pin2_pins, 0, PMX_GPIO_PIN2_MASK, 1),
+	GPIO_PINGROUP(gpio0_pin3_pins, 0, PMX_GPIO_PIN3_MASK, 1),
+	GPIO_PINGROUP(gpio0_pin4_pins, 0, PMX_GPIO_PIN4_MASK, 1),
+	GPIO_PINGROUP(gpio0_pin5_pins, 0, PMX_GPIO_PIN5_MASK, 1),
+	GPIO_PINGROUP(uart0_ext_pins, 0, PMX_UART0_MODEM_MASK, 1),
+	GPIO_PINGROUP(uart0_pins, 0, PMX_UART0_MASK, 1),
+	GPIO_PINGROUP(timer_0_1_pins, 0, PMX_TIMER_0_1_MASK, 1),
+	GPIO_PINGROUP(timer_2_3_pins, 0, PMX_TIMER_2_3_MASK, 1),
+};
+
 struct spear_pinctrl_machdata spear3xx_machdata = {
 	.pins = spear3xx_pins,
 	.npins = ARRAY_SIZE(spear3xx_pins),
+	.ranges = &spear3xx_plgpio_range,
+	.gpio_pingroups = spear3xx_gpio_pingroup,
+	.ngpio_pingroups = ARRAY_SIZE(spear3xx_gpio_pingroup),
 };
