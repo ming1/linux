@@ -308,28 +308,6 @@ no_dcbz32_off:
 
 #endif /* CONFIG_PPC_BOOK3S_64 */
 
-	/*
-	 * For some interrupts, we need to call the real Linux
-	 * handler, so it can do work for us. This has to happen
-	 * as if the interrupt arrived from the kernel though,
-	 * so let's fake it here where most state is restored.
-	 *
-	 * Having set up SRR0/1 with the address where we want
-	 * to continue with relocation on (potentially in module
-	 * space), we either just go straight there with rfi[d],
-	 * or we jump to an interrupt handler with bctr if there
-	 * is an interrupt to be handled first.  In the latter
-	 * case, the rfi[d] at the end of the interrupt handler
-	 * will get us back to where we want to continue.
-	 */
-
-	cmpwi	r12, BOOK3S_INTERRUPT_EXTERNAL
-	beq	1f
-	cmpwi	r12, BOOK3S_INTERRUPT_DECREMENTER
-	beq	1f
-	cmpwi	r12, BOOK3S_INTERRUPT_PERFMON
-1:	mtctr	r12
-
 	/* Register usage at this point:
 	 *
 	 * R1       = host R1
@@ -348,7 +326,6 @@ no_dcbz32_off:
 	/* Load highmem handler address */
 	mtsrr0	r8
 
-	/* RFI into the highmem handler, or jump to interrupt handler */
-	beqctr
+	/* RFI into the highmem handler */
 	RFI
 kvmppc_handler_trampoline_exit_end:
