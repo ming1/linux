@@ -724,6 +724,57 @@ static void l2cap_do_send(struct l2cap_chan *chan, struct sk_buff *skb)
 	hci_send_acl(chan->conn->hchan, skb, flags);
 }
 
+static u32 __pack_extended_control(struct l2cap_ctrl *control)
+{
+	u32 packed;
+
+	packed = control->reqseq << L2CAP_EXT_CTRL_REQSEQ_SHIFT;
+	packed |= control->final << L2CAP_EXT_CTRL_FINAL_SHIFT;
+
+	if (control->sframe) {
+		packed |= control->poll << L2CAP_EXT_CTRL_POLL_SHIFT;
+		packed |= control->super << L2CAP_EXT_CTRL_SUPER_SHIFT;
+		packed |= L2CAP_EXT_CTRL_FRAME_TYPE;
+	} else {
+		packed |= control->sar << L2CAP_EXT_CTRL_SAR_SHIFT;
+		packed |= control->txseq << L2CAP_EXT_CTRL_TXSEQ_SHIFT;
+	}
+
+	return packed;
+}
+
+static u16 __pack_enhanced_control(struct l2cap_ctrl *control)
+{
+	u16 packed;
+
+	packed = control->reqseq << L2CAP_CTRL_REQSEQ_SHIFT;
+	packed |= control->final << L2CAP_CTRL_FINAL_SHIFT;
+
+	if (control->sframe) {
+		packed |= control->poll << L2CAP_CTRL_POLL_SHIFT;
+		packed |= control->super << L2CAP_CTRL_SUPER_SHIFT;
+		packed |= L2CAP_CTRL_FRAME_TYPE;
+	} else {
+		packed |= control->sar << L2CAP_CTRL_SAR_SHIFT;
+		packed |= control->txseq << L2CAP_CTRL_TXSEQ_SHIFT;
+	}
+
+	return packed;
+}
+
+static inline void __pack_control(struct l2cap_chan *chan,
+				  struct l2cap_ctrl *control,
+				  struct sk_buff *skb)
+{
+	if (test_bit(FLAG_EXT_CTRL, &chan->flags)) {
+		put_unaligned_le32(__pack_extended_control(control),
+				   skb->data + L2CAP_HDR_SIZE);
+	} else {
+		put_unaligned_le16(__pack_enhanced_control(control),
+				   skb->data + L2CAP_HDR_SIZE);
+	}
+}
+
 static inline void l2cap_send_sframe(struct l2cap_chan *chan, u32 control)
 {
 	struct sk_buff *skb;
@@ -786,25 +837,6 @@ static inline void l2cap_send_rr_or_rnr(struct l2cap_chan *chan, u32 control)
 	l2cap_send_sframe(chan, control);
 }
 
-static u16 __pack_enhanced_control(struct l2cap_ctrl *control)
-{
-	u16 packed;
-
-	packed = control->reqseq << L2CAP_CTRL_REQSEQ_SHIFT;
-	packed |= control->final << L2CAP_CTRL_FINAL_SHIFT;
-
-	if (control->sframe) {
-		packed |= control->poll << L2CAP_CTRL_POLL_SHIFT;
-		packed |= control->super << L2CAP_CTRL_SUPER_SHIFT;
-		packed |= L2CAP_CTRL_FRAME_TYPE;
-	} else {
-		packed |= control->sar << L2CAP_CTRL_SAR_SHIFT;
-		packed |= control->txseq << L2CAP_CTRL_TXSEQ_SHIFT;
-	}
-
-	return packed;
-}
-
 static void __unpack_enhanced_control(u16 enh, struct l2cap_ctrl *control)
 {
 	control->reqseq = (enh & L2CAP_CTRL_REQSEQ) >> L2CAP_CTRL_REQSEQ_SHIFT;
@@ -827,25 +859,6 @@ static void __unpack_enhanced_control(u16 enh, struct l2cap_ctrl *control)
 		control->poll = 0;
 		control->super = 0;
 	}
-}
-
-static u32 __pack_extended_control(struct l2cap_ctrl *control)
-{
-	u32 packed;
-
-	packed = control->reqseq << L2CAP_EXT_CTRL_REQSEQ_SHIFT;
-	packed |= control->final << L2CAP_EXT_CTRL_FINAL_SHIFT;
-
-	if (control->sframe) {
-		packed |= control->poll << L2CAP_EXT_CTRL_POLL_SHIFT;
-		packed |= control->super << L2CAP_EXT_CTRL_SUPER_SHIFT;
-		packed |= L2CAP_EXT_CTRL_FRAME_TYPE;
-	} else {
-		packed |= control->sar << L2CAP_EXT_CTRL_SAR_SHIFT;
-		packed |= control->txseq << L2CAP_EXT_CTRL_TXSEQ_SHIFT;
-	}
-
-	return packed;
 }
 
 static void __unpack_extended_control(u32 ext, struct l2cap_ctrl *control)
@@ -881,19 +894,6 @@ static inline void __unpack_control(struct l2cap_chan *chan,
 	} else {
 		__unpack_enhanced_control(get_unaligned_le16(skb->data),
 					  &bt_cb(skb)->control);
-	}
-}
-
-static inline void __pack_control(struct l2cap_chan *chan,
-				  struct l2cap_ctrl *control,
-				  struct sk_buff *skb)
-{
-	if (test_bit(FLAG_EXT_CTRL, &chan->flags)) {
-		put_unaligned_le32(__pack_extended_control(control),
-				   skb->data + L2CAP_HDR_SIZE);
-	} else {
-		put_unaligned_le16(__pack_enhanced_control(control),
-				   skb->data + L2CAP_HDR_SIZE);
 	}
 }
 
