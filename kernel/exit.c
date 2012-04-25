@@ -960,6 +960,9 @@ void do_exit(long code)
 
 	acct_update_integrals(tsk);
 
+	/* Set exit_code before complete_vfork_done() in mm_release() */
+	tsk->exit_code = code;
+
 	/* Release mm and sync mm's RSS info before statistics gathering */
 	mm_release(tsk, tsk->mm);
 
@@ -975,7 +978,6 @@ void do_exit(long code)
 		tty_audit_exit();
 	audit_free(tsk);
 
-	tsk->exit_code = code;
 	taskstats_exit(tsk, group_dead);
 
 	exit_mm(tsk);
