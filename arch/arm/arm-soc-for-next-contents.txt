@@ -14,6 +14,7 @@ at91/maintainers:	git://github.com/at91linux/linux-at91.git tags/at91-3.5-mainta
 next/cleanup:
 ixp2xxx/removal		git://sources.calxeda.com/kernel/linux.git ixp2xxx-removal
 at91/cleanup		git://github.com/at91linux/linux-at91.git tags/at91-3.5-cleanup
+imx/cleanup		git://git.pengutronix.de/git/imx/linux-2.6.git tags/arm-imx-cleanup
 
 next/dt:
 omap/dt-missed-3.4:	git://git.kernel.org/pub/scm/linux/kernel/git/bcousson/linux-omap-dt.git for_3.4/dts/all
