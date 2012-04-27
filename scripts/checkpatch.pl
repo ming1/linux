@@ -2382,6 +2382,19 @@ sub process {
 			}
 		}
 
+		if ($line =~ /\bprintk\s*\(\s*KERN_([A-Z]+)/) {
+			my $orig = $1;
+			my $level = lc($orig);
+			$level = "warn" if ($level eq "warning");
+			WARN("PREFER_PR_LEVEL",
+			     "Prefer pr_$level(... to printk(KERN_$1, ...\n" . $herecurr);
+		}
+
+		if ($line =~ /\bpr_warning\s*\(/) {
+			WARN("PREFER_PR_LEVEL",
+			     "Prefer pr_warn(... to pr_warning(...\n" . $herecurr);
+		}
+
 # function brace can't be on same line, except for #defines of do while,
 # or if closed on same line
 		if (($line=~/$Type\s*$Ident\(.*\).*\s{/) and
@@ -3449,6 +3462,20 @@ sub process {
 			} elsif ($realfile !~ m@^kernel/@) {
 				WARN("IN_ATOMIC",
 				     "use of in_atomic() is incorrect outside core kernel code\n" . $herecurr);
+			}
+		}
+
+# spin_is_locked is usually misused. warn about it.
+		if ($line =~ /\bspin_is_locked\s*\(/) {
+			# BUG_ON/WARN_ON(!spin_is_locked() is generally a bug
+			if ($line =~ /(BUG_ON|WARN_ON|ASSERT)\s*\(!spin_is_locked/) {
+				ERROR("SPIN_IS_LOCKED",
+				     "Use lockdep_assert_held() instead of asserts on !spin_is_locked\n"
+				      . $herecurr);
+			} else {
+				WARN("SPIN_IS_LOCKED",
+			     "spin_is_locked is usually misused. See Documentation/spinlocks.txt\n"
+					. $herecurr)
 			}
 		}
 
