@@ -23,7 +23,6 @@
 #include <linux/ip.h>
 #include <net/ipv6.h>
 #include <net/ip6_checksum.h>
-#include <linux/firmware.h>
 #include <linux/prefetch.h>
 #include "bnx2x_cmn.h"
 #include "bnx2x_init.h"
@@ -329,16 +328,6 @@ static void bnx2x_tpa_start(struct bnx2x_fastpath *fp, u16 queue,
 		u16 gro_size = le16_to_cpu(cqe->pkt_len_or_gro_seg_len);
 		tpa_info->full_page =
 			SGE_PAGE_SIZE * PAGES_PER_SGE / gro_size * gro_size;
-		/*
-		 * FW 7.2.16 BUG workaround:
-		 * if SGE size is (exactly) multiple gro_size
-		 * fw will place one less frag on SGE.
-		 * the calculation is done only for potentially
-		 * dangerous MTUs.
-		 */
-		if (unlikely(bp->gro_check))
-			if (!(SGE_PAGE_SIZE * PAGES_PER_SGE % gro_size))
-				tpa_info->full_page -= gro_size;
 		tpa_info->gro_size = gro_size;
 	}
 
@@ -1212,16 +1201,15 @@ static void bnx2x_free_msix_irqs(struct bnx2x *bp, int nvecs)
 
 void bnx2x_free_irq(struct bnx2x *bp)
 {
-	if (bp->flags & USING_MSIX_FLAG)
+	if (bp->flags & USING_MSIX_FLAG &&
+	    !(bp->flags & USING_SINGLE_MSIX_FLAG))
 		bnx2x_free_msix_irqs(bp, BNX2X_NUM_ETH_QUEUES(bp) +
 				     CNIC_PRESENT + 1);
-	else if (bp->flags & USING_MSI_FLAG)
-		free_irq(bp->pdev->irq, bp->dev);
 	else
-		free_irq(bp->pdev->irq, bp->dev);
+		free_irq(bp->dev->irq, bp->dev);
 }
 
-int bnx2x_enable_msix(struct bnx2x *bp)
+int __devinit bnx2x_enable_msix(struct bnx2x *bp)
 {
 	int msix_vec = 0, i, rc, req_cnt;
 
@@ -1261,8 +1249,8 @@ int bnx2x_enable_msix(struct bnx2x *bp)
 		rc = pci_enable_msix(bp->pdev, &bp->msix_table[0], rc);
 
 		if (rc) {
-			BNX2X_DEV_INFO("MSI-X is not attainable  rc %d\n", rc);
-			return rc;
+			BNX2X_DEV_INFO("MSI-X is not attainable rc %d\n", rc);
+			goto no_msix;
 		}
 		/*
 		 * decrease number of queues by number of unallocated entries
@@ -1270,18 +1258,34 @@ int bnx2x_enable_msix(struct bnx2x *bp)
 		bp->num_queues -= diff;
 
 		BNX2X_DEV_INFO("New queue configuration set: %d\n",
-				  bp->num_queues);
-	} else if (rc) {
-		/* fall to INTx if not enough memory */
-		if (rc == -ENOMEM)
-			bp->flags |= DISABLE_MSI_FLAG;
+			       bp->num_queues);
+	} else if (rc > 0) {
+		/* Get by with single vector */
+		rc = pci_enable_msix(bp->pdev, &bp->msix_table[0], 1);
+		if (rc) {
+			BNX2X_DEV_INFO("Single MSI-X is not attainable rc %d\n",
+				       rc);
+			goto no_msix;
+		}
+
+		BNX2X_DEV_INFO("Using single MSI-X vector\n");
+		bp->flags |= USING_SINGLE_MSIX_FLAG;
+
+	} else if (rc < 0) {
 		BNX2X_DEV_INFO("MSI-X is not attainable  rc %d\n", rc);
-		return rc;
+		goto no_msix;
 	}
 
 	bp->flags |= USING_MSIX_FLAG;
 
 	return 0;
+
+no_msix:
+	/* fall to INTx if not enough memory */
+	if (rc == -ENOMEM)
+		bp->flags |= DISABLE_MSI_FLAG;
+
+	return rc;
 }
 
 static int bnx2x_req_msix_irqs(struct bnx2x *bp)
@@ -1343,22 +1347,26 @@ int bnx2x_enable_msi(struct bnx2x *bp)
 static int bnx2x_req_irq(struct bnx2x *bp)
 {
 	unsigned long flags;
-	int rc;
+	unsigned int irq;
 
-	if (bp->flags & USING_MSI_FLAG)
+	if (bp->flags & (USING_MSI_FLAG | USING_MSIX_FLAG))
 		flags = 0;
 	else
 		flags = IRQF_SHARED;
 
-	rc = request_irq(bp->pdev->irq, bnx2x_interrupt, flags,
-			 bp->dev->name, bp->dev);
-	return rc;
+	if (bp->flags & USING_MSIX_FLAG)
+		irq = bp->msix_table[0].vector;
+	else
+		irq = bp->pdev->irq;
+
+	return request_irq(irq, bnx2x_interrupt, flags, bp->dev->name, bp->dev);
 }
 
 static inline int bnx2x_setup_irqs(struct bnx2x *bp)
 {
 	int rc = 0;
-	if (bp->flags & USING_MSIX_FLAG) {
+	if (bp->flags & USING_MSIX_FLAG &&
+	    !(bp->flags & USING_SINGLE_MSIX_FLAG)) {
 		rc = bnx2x_req_msix_irqs(bp);
 		if (rc)
 			return rc;
@@ -1371,8 +1379,13 @@ static inline int bnx2x_setup_irqs(struct bnx2x *bp)
 		}
 		if (bp->flags & USING_MSI_FLAG) {
 			bp->dev->irq = bp->pdev->irq;
-			netdev_info(bp->dev, "using MSI  IRQ %d\n",
-			       bp->pdev->irq);
+			netdev_info(bp->dev, "using MSI IRQ %d\n",
+				    bp->dev->irq);
+		}
+		if (bp->flags & USING_MSIX_FLAG) {
+			bp->dev->irq = bp->msix_table[0].vector;
+			netdev_info(bp->dev, "using MSIX IRQ %d\n",
+				    bp->dev->irq);
 		}
 	}
 
@@ -1437,24 +1450,15 @@ u16 bnx2x_select_queue(struct net_device *dev, struct sk_buff *skb)
 	return __skb_tx_hash(dev, skb, BNX2X_NUM_ETH_QUEUES(bp));
 }
 
+
 void bnx2x_set_num_queues(struct bnx2x *bp)
 {
-	switch (bp->multi_mode) {
-	case ETH_RSS_MODE_DISABLED:
-		bp->num_queues = 1;
-		break;
-	case ETH_RSS_MODE_REGULAR:
-		bp->num_queues = bnx2x_calc_num_queues(bp);
-		break;
-
-	default:
-		bp->num_queues = 1;
-		break;
-	}
+	/* RSS queues */
+	bp->num_queues = bnx2x_calc_num_queues(bp);
 
 #ifdef BCM_CNIC
-	/* override in STORAGE SD mode */
-	if (IS_MF_STORAGE_SD(bp))
+	/* override in STORAGE SD modes */
+	if (IS_MF_STORAGE_SD(bp) || IS_MF_FCOE_AFEX(bp))
 		bp->num_queues = 1;
 #endif
 	/* Add special queues */
@@ -1549,16 +1553,13 @@ static inline int bnx2x_init_rss_pf(struct bnx2x *bp)
 	u8 ind_table[T_ETH_INDIRECTION_TABLE_SIZE] = {0};
 	u8 num_eth_queues = BNX2X_NUM_ETH_QUEUES(bp);
 
-	/*
-	 * Prepare the inital contents fo the indirection table if RSS is
+	/* Prepare the initial contents fo the indirection table if RSS is
 	 * enabled
 	 */
-	if (bp->multi_mode != ETH_RSS_MODE_DISABLED) {
-		for (i = 0; i < sizeof(ind_table); i++)
-			ind_table[i] =
-				bp->fp->cl_id +
-				ethtool_rxfh_indir_default(i, num_eth_queues);
-	}
+	for (i = 0; i < sizeof(ind_table); i++)
+		ind_table[i] =
+			bp->fp->cl_id +
+			ethtool_rxfh_indir_default(i, num_eth_queues);
 
 	/*
 	 * For 57710 and 57711 SEARCHER configuration (rss_keys) is
@@ -1568,11 +1569,12 @@ static inline int bnx2x_init_rss_pf(struct bnx2x *bp)
 	 * For 57712 and newer on the other hand it's a per-function
 	 * configuration.
 	 */
-	return bnx2x_config_rss_pf(bp, ind_table,
-				   bp->port.pmf || !CHIP_IS_E1x(bp));
+	return bnx2x_config_rss_eth(bp, ind_table,
+				    bp->port.pmf || !CHIP_IS_E1x(bp));
 }
 
-int bnx2x_config_rss_pf(struct bnx2x *bp, u8 *ind_table, bool config_hash)
+int bnx2x_config_rss_pf(struct bnx2x *bp, struct bnx2x_rss_config_obj *rss_obj,
+			u8 *ind_table, bool config_hash)
 {
 	struct bnx2x_config_rss_params params = {NULL};
 	int i;
@@ -1584,52 +1586,29 @@ int bnx2x_config_rss_pf(struct bnx2x *bp, u8 *ind_table, bool config_hash)
 	 *      bp->multi_mode = ETH_RSS_MODE_DISABLED;
 	 */
 
-	params.rss_obj = &bp->rss_conf_obj;
+	params.rss_obj = rss_obj;
 
 	__set_bit(RAMROD_COMP_WAIT, &params.ramrod_flags);
 
-	/* RSS mode */
-	switch (bp->multi_mode) {
-	case ETH_RSS_MODE_DISABLED:
-		__set_bit(BNX2X_RSS_MODE_DISABLED, &params.rss_flags);
-		break;
-	case ETH_RSS_MODE_REGULAR:
-		__set_bit(BNX2X_RSS_MODE_REGULAR, &params.rss_flags);
-		break;
-	case ETH_RSS_MODE_VLAN_PRI:
-		__set_bit(BNX2X_RSS_MODE_VLAN_PRI, &params.rss_flags);
-		break;
-	case ETH_RSS_MODE_E1HOV_PRI:
-		__set_bit(BNX2X_RSS_MODE_E1HOV_PRI, &params.rss_flags);
-		break;
-	case ETH_RSS_MODE_IP_DSCP:
-		__set_bit(BNX2X_RSS_MODE_IP_DSCP, &params.rss_flags);
-		break;
-	default:
-		BNX2X_ERR("Unknown multi_mode: %d\n", bp->multi_mode);
-		return -EINVAL;
-	}
+	__set_bit(BNX2X_RSS_MODE_REGULAR, &params.rss_flags);
 
-	/* If RSS is enabled */
-	if (bp->multi_mode != ETH_RSS_MODE_DISABLED) {
-		/* RSS configuration */
-		__set_bit(BNX2X_RSS_IPV4, &params.rss_flags);
-		__set_bit(BNX2X_RSS_IPV4_TCP, &params.rss_flags);
-		__set_bit(BNX2X_RSS_IPV6, &params.rss_flags);
-		__set_bit(BNX2X_RSS_IPV6_TCP, &params.rss_flags);
+	/* RSS configuration */
+	__set_bit(BNX2X_RSS_IPV4, &params.rss_flags);
+	__set_bit(BNX2X_RSS_IPV4_TCP, &params.rss_flags);
+	__set_bit(BNX2X_RSS_IPV6, &params.rss_flags);
+	__set_bit(BNX2X_RSS_IPV6_TCP, &params.rss_flags);
 
-		/* Hash bits */
-		params.rss_result_mask = MULTI_MASK;
+	/* Hash bits */
+	params.rss_result_mask = MULTI_MASK;
 
-		memcpy(params.ind_table, ind_table, sizeof(params.ind_table));
+	memcpy(params.ind_table, ind_table, sizeof(params.ind_table));
 
-		if (config_hash) {
-			/* RSS keys */
-			for (i = 0; i < sizeof(params.rss_key) / 4; i++)
-				params.rss_key[i] = random32();
+	if (config_hash) {
+		/* RSS keys */
+		for (i = 0; i < sizeof(params.rss_key) / 4; i++)
+			params.rss_key[i] = random32();
 
-			__set_bit(BNX2X_RSS_SET_SRCH, &params.rss_flags);
-		}
+		__set_bit(BNX2X_RSS_SET_SRCH, &params.rss_flags);
 	}
 
 	return bnx2x_config_rss(bp, &params);
@@ -1911,7 +1890,13 @@ int bnx2x_nic_load(struct bnx2x *bp, int load_mode)
 			SHMEM2_WR(bp, dcc_support,
 				  (SHMEM_DCC_SUPPORT_DISABLE_ENABLE_PF_TLV |
 				   SHMEM_DCC_SUPPORT_BANDWIDTH_ALLOCATION_TLV));
+		if (SHMEM2_HAS(bp, afex_driver_support))
+			SHMEM2_WR(bp, afex_driver_support,
+				  SHMEM_AFEX_SUPPORTED_VERSION_ONE);
 	}
+
+	/* Set AFEX default VLAN tag to an invalid value */
+	bp->afex_def_vlan_tag = -1;
 
 	bp->state = BNX2X_STATE_OPENING_WAIT4_PORT;
 	rc = bnx2x_func_start(bp);
@@ -3084,7 +3069,8 @@ int bnx2x_change_mac_addr(struct net_device *dev, void *p)
 	}
 
 #ifdef BCM_CNIC
-	if (IS_MF_STORAGE_SD(bp) && !is_zero_ether_addr(addr->sa_data)) {
+	if ((IS_MF_STORAGE_SD(bp) || IS_MF_FCOE_AFEX(bp)) &&
+	    !is_zero_ether_addr(addr->sa_data)) {
 		BNX2X_ERR("Can't configure non-zero address on iSCSI or FCoE functions in MF-SD mode\n");
 		return -EINVAL;
 	}
@@ -3206,7 +3192,8 @@ static int bnx2x_alloc_fp_mem_at(struct bnx2x *bp, int index)
 	int rx_ring_size = 0;
 
 #ifdef BCM_CNIC
-	if (!bp->rx_ring_size && IS_MF_STORAGE_SD(bp)) {
+	if (!bp->rx_ring_size &&
+	    (IS_MF_STORAGE_SD(bp) || IS_MF_FCOE_AFEX(bp))) {
 		rx_ring_size = MIN_RX_SIZE_NONTPA;
 		bp->rx_ring_size = rx_ring_size;
 	} else
@@ -3527,8 +3514,6 @@ int bnx2x_change_mtu(struct net_device *dev, int new_mtu)
 	 * only updated as part of load
 	 */
 	dev->mtu = new_mtu;
-
-	bp->gro_check = bnx2x_need_gro_check(new_mtu);
 
 	return bnx2x_reload_if_running(dev);
 }

@@ -149,7 +149,7 @@ static int store_bool_attr(char *buff, size_t count,
 		 atomic_read(attr) == 1 ? "enabled" : "disabled",
 		 enabled == 1 ? "enabled" : "disabled");
 
-	atomic_set(attr, (unsigned)enabled);
+	atomic_set(attr, (unsigned int)enabled);
 	return count;
 }
 
@@ -268,7 +268,7 @@ static ssize_t store_vis_mode(struct kobject *kobj, struct attribute *attr,
 		 "client" : "server", vis_mode_tmp == VIS_TYPE_CLIENT_UPDATE ?
 		 "client" : "server");
 
-	atomic_set(&bat_priv->vis_mode, (unsigned)vis_mode_tmp);
+	atomic_set(&bat_priv->vis_mode, (unsigned int)vis_mode_tmp);
 	return count;
 }
 
@@ -354,7 +354,7 @@ static ssize_t store_gw_mode(struct kobject *kobj, struct attribute *attr,
 		 curr_gw_mode_str, buff);
 
 	gw_deselect(bat_priv);
-	atomic_set(&bat_priv->gw_mode, (unsigned)gw_mode_tmp);
+	atomic_set(&bat_priv->gw_mode, (unsigned int)gw_mode_tmp);
 	return count;
 }
 
@@ -386,6 +386,9 @@ static ssize_t store_gw_bwidth(struct kobject *kobj, struct attribute *attr,
 
 BAT_ATTR_BOOL(aggregated_ogms, S_IRUGO | S_IWUSR, NULL);
 BAT_ATTR_BOOL(bonding, S_IRUGO | S_IWUSR, NULL);
+#ifdef CONFIG_BATMAN_ADV_BLA
+BAT_ATTR_BOOL(bridge_loop_avoidance, S_IRUGO | S_IWUSR, NULL);
+#endif
 BAT_ATTR_BOOL(fragmentation, S_IRUGO | S_IWUSR, update_min_mtu);
 BAT_ATTR_BOOL(ap_isolation, S_IRUGO | S_IWUSR, NULL);
 static BAT_ATTR(vis_mode, S_IRUGO | S_IWUSR, show_vis_mode, store_vis_mode);
@@ -398,12 +401,15 @@ BAT_ATTR_UINT(gw_sel_class, S_IRUGO | S_IWUSR, 1, TQ_MAX_VALUE,
 static BAT_ATTR(gw_bandwidth, S_IRUGO | S_IWUSR, show_gw_bwidth,
 		store_gw_bwidth);
 #ifdef CONFIG_BATMAN_ADV_DEBUG
-BAT_ATTR_UINT(log_level, S_IRUGO | S_IWUSR, 0, 7, NULL);
+BAT_ATTR_UINT(log_level, S_IRUGO | S_IWUSR, 0, 15, NULL);
 #endif
 
 static struct bat_attribute *mesh_attrs[] = {
 	&bat_attr_aggregated_ogms,
 	&bat_attr_bonding,
+#ifdef CONFIG_BATMAN_ADV_BLA
+	&bat_attr_bridge_loop_avoidance,
+#endif
 	&bat_attr_fragmentation,
 	&bat_attr_ap_isolation,
 	&bat_attr_vis_mode,

@@ -86,13 +86,15 @@ u32 bnx2x_send_unload_req(struct bnx2x *bp, int unload_mode);
 void bnx2x_send_unload_done(struct bnx2x *bp);
 
 /**
- * bnx2x_config_rss_pf - configure RSS parameters.
+ * bnx2x_config_rss_pf - configure RSS parameters in a PF.
  *
  * @bp:			driver handle
+ * @rss_obj		RSS object to use
  * @ind_table:		indirection table to configure
  * @config_hash:	re-configure RSS hash keys configuration
  */
-int bnx2x_config_rss_pf(struct bnx2x *bp, u8 *ind_table, bool config_hash);
+int bnx2x_config_rss_pf(struct bnx2x *bp, struct bnx2x_rss_config_obj *rss_obj,
+			u8 *ind_table, bool config_hash);
 
 /**
  * bnx2x__init_func_obj - init function object
@@ -485,7 +487,7 @@ void bnx2x_netif_start(struct bnx2x *bp);
  * fills msix_table, requests vectors, updates num_queues
  * according to number of available vectors.
  */
-int bnx2x_enable_msix(struct bnx2x *bp);
+int __devinit bnx2x_enable_msix(struct bnx2x *bp);
 
 /**
  * bnx2x_enable_msi - request msi mode from OS, updated internals accordingly
@@ -843,7 +845,7 @@ static inline void bnx2x_disable_msi(struct bnx2x *bp)
 {
 	if (bp->flags & USING_MSIX_FLAG) {
 		pci_disable_msix(bp->pdev);
-		bp->flags &= ~USING_MSIX_FLAG;
+		bp->flags &= ~(USING_MSIX_FLAG | USING_SINGLE_MSIX_FLAG);
 	} else if (bp->flags & USING_MSI_FLAG) {
 		pci_disable_msi(bp->pdev);
 		bp->flags &= ~USING_MSI_FLAG;
@@ -963,6 +965,19 @@ static inline void bnx2x_reuse_rx_data(struct bnx2x_fastpath *fp,
 }
 
 /************************* Init ******************************************/
+
+/* returns func by VN for current port */
+static inline int func_by_vn(struct bnx2x *bp, int vn)
+{
+	return 2 * vn + BP_PORT(bp);
+}
+
+static inline int bnx2x_config_rss_eth(struct bnx2x *bp, u8 *ind_table,
+				       bool config_hash)
+{
+	return bnx2x_config_rss_pf(bp, &bp->rss_conf_obj, ind_table,
+				   config_hash);
+}
 
 /**
  * bnx2x_func_start - init function
@@ -1419,15 +1434,32 @@ static inline void storm_memset_func_cfg(struct bnx2x *bp,
 }
 
 static inline void storm_memset_cmng(struct bnx2x *bp,
-				struct cmng_struct_per_port *cmng,
+				struct cmng_init *cmng,
 				u8 port)
 {
+	int vn;
 	size_t size = sizeof(struct cmng_struct_per_port);
 
 	u32 addr = BAR_XSTRORM_INTMEM +
 			XSTORM_CMNG_PER_PORT_VARS_OFFSET(port);
 
-	__storm_memset_struct(bp, addr, size, (u32 *)cmng);
+	__storm_memset_struct(bp, addr, size, (u32 *)&cmng->port);
+
+	for (vn = VN_0; vn < BP_MAX_VN_NUM(bp); vn++) {
+		int func = func_by_vn(bp, vn);
+
+		addr = BAR_XSTRORM_INTMEM +
+		       XSTORM_RATE_SHAPING_PER_VN_VARS_OFFSET(func);
+		size = sizeof(struct rate_shaping_vars_per_vn);
+		__storm_memset_struct(bp, addr, size,
+				      (u32 *)&cmng->vnic.vnic_max_rate[vn]);
+
+		addr = BAR_XSTRORM_INTMEM +
+		       XSTORM_FAIRNESS_PER_VN_VARS_OFFSET(func);
+		size = sizeof(struct fairness_vars_per_vn);
+		__storm_memset_struct(bp, addr, size,
+				      (u32 *)&cmng->vnic.vnic_min_rate[vn]);
+	}
 }
 
 /**
@@ -1512,13 +1544,6 @@ static inline bool bnx2x_mtu_allows_gro(int mtu)
 	 */
 	return mtu <= SGE_PAGE_SIZE && (U_ETH_SGL_SIZE * fpp) <= MAX_SKB_FRAGS;
 }
-
-static inline bool bnx2x_need_gro_check(int mtu)
-{
-	return (SGE_PAGES / (mtu - ETH_MAX_TPA_HEADER_SIZE - 1)) !=
-		(SGE_PAGES / (mtu - ETH_MIN_TPA_HEADER_SIZE + 1));
-}
-
 /**
  * bnx2x_bz_fp - zero content of the fastpath structure.
  *
@@ -1608,11 +1633,6 @@ static inline void bnx2x_bz_fp(struct bnx2x *bp, int index)
  */
 void bnx2x_get_iscsi_info(struct bnx2x *bp);
 #endif
-/* returns func by VN for current port */
-static inline int func_by_vn(struct bnx2x *bp, int vn)
-{
-	return 2 * vn + BP_PORT(bp);
-}
 
 /**
  * bnx2x_link_sync_notify - send notification to other functions.
@@ -1667,7 +1687,8 @@ static inline bool bnx2x_is_valid_ether_addr(struct bnx2x *bp, u8 *addr)
 	if (is_valid_ether_addr(addr))
 		return true;
 #ifdef BCM_CNIC
-	if (is_zero_ether_addr(addr) && IS_MF_STORAGE_SD(bp))
+	if (is_zero_ether_addr(addr) &&
+	    (IS_MF_STORAGE_SD(bp) || IS_MF_FCOE_AFEX(bp)))
 		return true;
 #endif
 	return false;
