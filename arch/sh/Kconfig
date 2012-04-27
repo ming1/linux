@@ -427,6 +427,16 @@ config CPU_SUBTYPE_SH7724
 	help
 	  Select SH7724 if you have an SH-MobileR2R CPU.
 
+config CPU_SUBTYPE_SH7734
+	bool "Support SH7734 processor"
+	select CPU_SH4A
+	select CPU_SHX2
+	select ARCH_WANT_OPTIONAL_GPIOLIB
+	select USB_ARCH_HAS_OHCI
+	select USB_ARCH_HAS_EHCI
+	help
+	  Select SH7734 if you have a SH4A SH7734 CPU.
+
 config CPU_SUBTYPE_SH7757
 	bool "Support SH7757 processor"
 	select CPU_SH4A
@@ -584,7 +594,7 @@ config SH_CLK_CPG
 config SH_CLK_CPG_LEGACY
 	depends on SH_CLK_CPG
 	def_bool y if !CPU_SUBTYPE_SH7785 && !ARCH_SHMOBILE && \
-		      !CPU_SHX3 && !CPU_SUBTYPE_SH7757
+		      !CPU_SHX3 && !CPU_SUBTYPE_SH7757 && !CPU_SUBTYPE_SH7734
 
 source "kernel/time/Kconfig"
 
@@ -684,6 +694,20 @@ config SECCOMP
 	  mode.
 
 	  If unsure, say N.
+
+config CC_STACKPROTECTOR
+	bool "Enable -fstack-protector buffer overflow detection (EXPERIMENTAL)"
+	depends on SUPERH32 && EXPERIMENTAL
+	help
+	  This option turns on the -fstack-protector GCC feature. This
+	  feature puts, at the beginning of functions, a canary value on
+	  the stack just before the return address, and validates
+	  the value just before actually returning.  Stack based buffer
+	  overflows (that need to overwrite this return address) now also
+	  overwrite the canary, which gets detected and the attack is then
+	  neutralized via a kernel panic.
+
+	  This feature requires gcc version 4.2 or above.
 
 config SMP
 	bool "Symmetric multi-processing support"
