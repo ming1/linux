@@ -233,6 +233,9 @@ static int wacom_parse_logical_collection(unsigned char *report,
  * 3rd gen Bamboo Touch no longer define a Digitizer-Finger Pysical
  * Collection. Instead they define a Logical Collection with a single
  * Logical Maximum for both X and Y.
+ *
+ * Intuos5 touch interface does not contain useful data. We deal with
+ * this after returning from this function.
  */
 static int wacom_parse_hid(struct usb_interface *intf,
 			   struct hid_descriptor *hid_desc,
@@ -574,23 +577,39 @@ static void wacom_remove_shared_data(struct wacom_wac *wacom)
 static int wacom_led_control(struct wacom *wacom)
 {
 	unsigned char *buf;
-	int retval, led = 0;
+	int retval;
 
 	buf = kzalloc(9, GFP_KERNEL);
 	if (!buf)
 		return -ENOMEM;
 
-	if (wacom->wacom_wac.features.type == WACOM_21UX2 ||
-	    wacom->wacom_wac.features.type == WACOM_24HD)
-		led = (wacom->led.select[1] << 4) | 0x40;
+	if (wacom->wacom_wac.features.type >= INTUOS5S &&
+	    wacom->wacom_wac.features.type <= INTUOS5L)	{
+		/*
+		 * Touch Ring and crop mark LED luminance may take on
+		 * one of four values:
+		 *    0 = Low; 1 = Medium; 2 = High; 3 = Off
+		 */
+		int ring_led = wacom->led.select[0] & 0x03;
+		int ring_lum = (((wacom->led.llv & 0x60) >> 5) - 1) & 0x03;
+		int crop_lum = 0;
 
-	led |=  wacom->led.select[0] | 0x4;
+		buf[0] = WAC_CMD_LED_CONTROL;
+		buf[1] = (crop_lum << 4) | (ring_lum << 2) | (ring_led);
+	}
+	else {
+		int led = wacom->led.select[0] | 0x4;
 
-	buf[0] = WAC_CMD_LED_CONTROL;
-	buf[1] = led;
-	buf[2] = wacom->led.llv;
-	buf[3] = wacom->led.hlv;
-	buf[4] = wacom->led.img_lum;
+		if (wacom->wacom_wac.features.type == WACOM_21UX2 ||
+		    wacom->wacom_wac.features.type == WACOM_24HD)
+			led |= (wacom->led.select[1] << 4) | 0x40;
+
+		buf[0] = WAC_CMD_LED_CONTROL;
+		buf[1] = led;
+		buf[2] = wacom->led.llv;
+		buf[3] = wacom->led.hlv;
+		buf[4] = wacom->led.img_lum;
+	}
 
 	retval = wacom_set_report(wacom->intf, 0x03, WAC_CMD_LED_CONTROL,
 				  buf, 9, WAC_CMD_RETRIES);
@@ -783,6 +802,17 @@ static struct attribute_group intuos4_led_attr_group = {
 	.attrs = intuos4_led_attrs,
 };
 
+static struct attribute *intuos5_led_attrs[] = {
+	&dev_attr_status0_luminance.attr,
+	&dev_attr_status_led0_select.attr,
+	NULL
+};
+
+static struct attribute_group intuos5_led_attr_group = {
+	.name = "wacom_led",
+	.attrs = intuos5_led_attrs,
+};
+
 static int wacom_initialize_leds(struct wacom *wacom)
 {
 	int error;
@@ -812,6 +842,19 @@ static int wacom_initialize_leds(struct wacom *wacom)
 					   &cintiq_led_attr_group);
 		break;
 
+	case INTUOS5S:
+	case INTUOS5:
+	case INTUOS5L:
+		wacom->led.select[0] = 0;
+		wacom->led.select[1] = 0;
+		wacom->led.llv = 32;
+		wacom->led.hlv = 0;
+		wacom->led.img_lum = 0;
+
+		error = sysfs_create_group(&wacom->intf->dev.kobj,
+					   &intuos5_led_attr_group);
+		break;
+
 	default:
 		return 0;
 	}
@@ -839,6 +882,13 @@ static void wacom_destroy_leds(struct wacom *wacom)
 	case WACOM_21UX2:
 		sysfs_remove_group(&wacom->intf->dev.kobj,
 				   &cintiq_led_attr_group);
+		break;
+
+	case INTUOS5S:
+	case INTUOS5:
+	case INTUOS5L:
+		sysfs_remove_group(&wacom->intf->dev.kobj,
+				   &intuos5_led_attr_group);
 		break;
 	}
 }
@@ -1039,6 +1089,28 @@ static int wacom_probe(struct usb_interface *intf, const struct usb_device_id *i
 	error = wacom_retrieve_hid_descriptor(intf, features);
 	if (error)
 		goto fail3;
+
+	/*
+	 * Intuos5 has no useful data about its touch interface in its
+	 * HID descriptor. If this is the touch interface (wMaxPacketSize
+	 * of WACOM_PKGLEN_BBTOUCH3), override the table values.
+	 */
+	if (features->type >= INTUOS5S && features->type <= INTUOS5L) {
+		if (endpoint->wMaxPacketSize == WACOM_PKGLEN_BBTOUCH3) {
+			features->device_type = BTN_TOOL_FINGER;
+			features->pktlen = WACOM_PKGLEN_BBTOUCH3;
+
+			features->x_phy =
+				(features->x_max * 100) / features->x_resolution;
+			features->y_phy =
+				(features->y_max * 100) / features->y_resolution;
+
+			features->x_max = 4096;
+			features->y_max = 4096;
+		} else {
+			features->device_type = BTN_TOOL_PEN;
+		}
+	}
 
 	wacom_setup_device_quirks(features);
 
