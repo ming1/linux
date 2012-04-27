@@ -11,10 +11,10 @@
 #include <linux/kernel.h>
 #include <linux/slab.h>
 
-#include "../iio.h"
-#include "../buffer.h"
+#include <linux/iio/iio.h>
+#include <linux/iio/buffer.h>
 #include "../ring_sw.h"
-#include "../trigger_consumer.h"
+#include <linux/iio/trigger_consumer.h>
 
 #include "ad7606.h"
 
@@ -51,8 +51,7 @@ static void ad7606_poll_bh_to_ring(struct work_struct *work_s)
 	__u8 *buf;
 	int ret;
 
-	buf = kzalloc(ring->access->get_bytes_per_datum(ring),
-		      GFP_KERNEL);
+	buf = kzalloc(indio_dev->scan_bytes, GFP_KERNEL);
 	if (buf == NULL)
 		return;
 
@@ -82,9 +81,8 @@ static void ad7606_poll_bh_to_ring(struct work_struct *work_s)
 
 	time_ns = iio_get_time_ns();
 
-	if (ring->scan_timestamp)
-		*((s64 *)(buf + ring->access->get_bytes_per_datum(ring) -
-			  sizeof(s64))) = time_ns;
+	if (indio_dev->scan_timestamp)
+		*((s64 *)(buf + indio_dev->scan_bytes - sizeof(s64))) = time_ns;
 
 	ring->access->store_to(indio_dev->buffer, buf, time_ns);
 done:

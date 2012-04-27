@@ -30,9 +30,10 @@
 #include <linux/clk.h>
 #include <linux/err.h>
 #include <linux/completion.h>
+#include <linux/of.h>
 
-#include "../iio.h"
-#include "../sysfs.h"
+#include <linux/iio/iio.h>
+#include <linux/iio/sysfs.h>
 
 /*
  * LPC32XX registers definitions
@@ -73,7 +74,7 @@ static int lpc32xx_read_raw(struct iio_dev *indio_dev,
 {
 	struct lpc32xx_adc_info *info = iio_priv(indio_dev);
 
-	if (mask == 0) {
+	if (mask == IIO_CHAN_INFO_RAW) {
 		mutex_lock(&indio_dev->mlock);
 		clk_enable(info->clk);
 		/* Measurement setup */
@@ -98,12 +99,13 @@ static const struct iio_info lpc32xx_adc_iio_info = {
 	.driver_module = THIS_MODULE,
 };
 
-#define LPC32XX_ADC_CHANNEL(_index) {		\
-	.type = IIO_VOLTAGE,			\
-	.indexed = 1,				\
-	.channel = _index,			\
-	.address = AD_IN * _index,		\
-	.scan_index = _index,			\
+#define LPC32XX_ADC_CHANNEL(_index) {			\
+	.type = IIO_VOLTAGE,				\
+	.indexed = 1,					\
+	.channel = _index,				\
+	.info_mask = IIO_CHAN_INFO_RAW_SEPARATE_BIT,	\
+	.address = AD_IN * _index,			\
+	.scan_index = _index,				\
 }
 
 static struct iio_chan_spec lpc32xx_adc_iio_channels[] = {
@@ -221,12 +223,21 @@ static int __devexit lpc32xx_adc_remove(struct platform_device *pdev)
 	return 0;
 }
 
+#ifdef CONFIG_OF
+static const struct of_device_id lpc32xx_adc_match[] = {
+	{ .compatible = "nxp,lpc3220-adc" },
+	{},
+};
+MODULE_DEVICE_TABLE(of, lpc32xx_adc_match);
+#endif
+
 static struct platform_driver lpc32xx_adc_driver = {
 	.probe		= lpc32xx_adc_probe,
 	.remove		= __devexit_p(lpc32xx_adc_remove),
 	.driver		= {
 		.name	= MOD_NAME,
 		.owner	= THIS_MODULE,
+		.of_match_table = of_match_ptr(lpc32xx_adc_match),
 	},
 };
 
