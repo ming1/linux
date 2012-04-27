@@ -142,6 +142,10 @@
 #define Src2FS      (OpFS << Src2Shift)
 #define Src2GS      (OpGS << Src2Shift)
 #define Src2Mask    (OpMask << Src2Shift)
+#define Mmx         ((u64)1 << 40)  /* MMX Vector instruction */
+#define Aligned     ((u64)1 << 41)  /* Explicitly aligned (e.g. MOVDQA) */
+#define Unaligned   ((u64)1 << 42)  /* Explicitly unaligned (e.g. MOVDQU) */
+#define Avx         ((u64)1 << 43)  /* Advanced Vector Extensions */
 
 #define X2(x...) x, x
 #define X3(x...) X2(x), x
@@ -557,6 +561,29 @@ static void set_segment_selector(struct x86_emulate_ctxt *ctxt, u16 selector,
 	ctxt->ops->set_segment(ctxt, selector, &desc, base3, seg);
 }
 
+/*
+ * x86 defines three classes of vector instructions: explicitly
+ * aligned, explicitly unaligned, and the rest, which change behaviour
+ * depending on whether they're AVX encoded or not.
+ *
+ * Also included is CMPXCHG16B which is not a vector instruction, yet it is
+ * subject to the same check.
+ */
+static bool insn_aligned(struct x86_emulate_ctxt *ctxt, unsigned size)
+{
+	if (likely(size < 16))
+		return false;
+
+	if (ctxt->d & Aligned)
+		return true;
+	else if (ctxt->d & Unaligned)
+		return false;
+	else if (ctxt->d & Avx)
+		return false;
+	else
+		return true;
+}
+
 static int __linearize(struct x86_emulate_ctxt *ctxt,
 		     struct segmented_address addr,
 		     unsigned size, bool write, bool fetch,
@@ -621,6 +648,8 @@ static int __linearize(struct x86_emulate_ctxt *ctxt,
 	}
 	if (fetch ? ctxt->mode != X86EMUL_MODE_PROT64 : ctxt->ad_bytes != 8)
 		la &= (u32)-1;
+	if (insn_aligned(ctxt, size) && ((la & (size - 1)) != 0))
+		return emulate_gp(ctxt, 0);
 	*linear = la;
 	return X86EMUL_CONTINUE;
 bad:
@@ -859,6 +888,40 @@ static void write_sse_reg(struct x86_emulate_ctxt *ctxt, sse128_t *data,
 	ctxt->ops->put_fpu(ctxt);
 }
 
+static void read_mmx_reg(struct x86_emulate_ctxt *ctxt, u64 *data, int reg)
+{
+	ctxt->ops->get_fpu(ctxt);
+	switch (reg) {
+	case 0: asm("movq %%mm0, %0" : "=m"(*data)); break;
+	case 1: asm("movq %%mm1, %0" : "=m"(*data)); break;
+	case 2: asm("movq %%mm2, %0" : "=m"(*data)); break;
+	case 3: asm("movq %%mm3, %0" : "=m"(*data)); break;
+	case 4: asm("movq %%mm4, %0" : "=m"(*data)); break;
+	case 5: asm("movq %%mm5, %0" : "=m"(*data)); break;
+	case 6: asm("movq %%mm6, %0" : "=m"(*data)); break;
+	case 7: asm("movq %%mm7, %0" : "=m"(*data)); break;
+	default: BUG();
+	}
+	ctxt->ops->put_fpu(ctxt);
+}
+
+static void write_mmx_reg(struct x86_emulate_ctxt *ctxt, u64 *data, int reg)
+{
+	ctxt->ops->get_fpu(ctxt);
+	switch (reg) {
+	case 0: asm("movq %0, %%mm0" : : "m"(*data)); break;
+	case 1: asm("movq %0, %%mm1" : : "m"(*data)); break;
+	case 2: asm("movq %0, %%mm2" : : "m"(*data)); break;
+	case 3: asm("movq %0, %%mm3" : : "m"(*data)); break;
+	case 4: asm("movq %0, %%mm4" : : "m"(*data)); break;
+	case 5: asm("movq %0, %%mm5" : : "m"(*data)); break;
+	case 6: asm("movq %0, %%mm6" : : "m"(*data)); break;
+	case 7: asm("movq %0, %%mm7" : : "m"(*data)); break;
+	default: BUG();
+	}
+	ctxt->ops->put_fpu(ctxt);
+}
+
 static void decode_register_operand(struct x86_emulate_ctxt *ctxt,
 				    struct operand *op)
 {
@@ -873,6 +936,13 @@ static void decode_register_operand(struct x86_emulate_ctxt *ctxt,
 		op->bytes = 16;
 		op->addr.xmm = reg;
 		read_sse_reg(ctxt, &op->vec_val, reg);
+		return;
+	}
+	if (ctxt->d & Mmx) {
+		reg &= 7;
+		op->type = OP_MM;
+		op->bytes = 8;
+		op->addr.mm = reg;
 		return;
 	}
 
@@ -918,6 +988,12 @@ static int decode_modrm(struct x86_emulate_ctxt *ctxt,
 			op->bytes = 16;
 			op->addr.xmm = ctxt->modrm_rm;
 			read_sse_reg(ctxt, &op->vec_val, ctxt->modrm_rm);
+			return rc;
+		}
+		if (ctxt->d & Mmx) {
+			op->type = OP_MM;
+			op->bytes = 8;
+			op->addr.xmm = ctxt->modrm_rm & 7;
 			return rc;
 		}
 		fetch_register_operand(op);
@@ -1386,6 +1462,9 @@ static int writeback(struct x86_emulate_ctxt *ctxt)
 		break;
 	case OP_XMM:
 		write_sse_reg(ctxt, &ctxt->dst.vec_val, ctxt->dst.addr.xmm);
+		break;
+	case OP_MM:
+		write_mmx_reg(ctxt, &ctxt->dst.mm_val, ctxt->dst.addr.mm);
 		break;
 	case OP_NONE:
 		/* no writeback */
@@ -2790,7 +2869,7 @@ static int em_rdpmc(struct x86_emulate_ctxt *ctxt)
 
 static int em_mov(struct x86_emulate_ctxt *ctxt)
 {
-	ctxt->dst.val = ctxt->src.val;
+	memcpy(ctxt->dst.valptr, ctxt->src.valptr, ctxt->op_bytes);
 	return X86EMUL_CONTINUE;
 }
 
@@ -2868,12 +2947,6 @@ static int em_mov_sreg_rm(struct x86_emulate_ctxt *ctxt)
 	/* Disable writeback. */
 	ctxt->dst.type = OP_NONE;
 	return load_segment_descriptor(ctxt, sel, ctxt->modrm_reg);
-}
-
-static int em_movdqu(struct x86_emulate_ctxt *ctxt)
-{
-	memcpy(&ctxt->dst.vec_val, &ctxt->src.vec_val, ctxt->op_bytes);
-	return X86EMUL_CONTINUE;
 }
 
 static int em_invlpg(struct x86_emulate_ctxt *ctxt)
@@ -3415,7 +3488,11 @@ static struct opcode group11[] = {
 };
 
 static struct gprefix pfx_0f_6f_0f_7f = {
-	N, N, N, I(Sse, em_movdqu),
+	I(Mmx, em_mov), I(Sse | Aligned, em_mov), N, I(Sse | Unaligned, em_mov),
+};
+
+static struct gprefix pfx_vmovntpx = {
+	I(0, em_mov), N, N, N,
 };
 
 static struct opcode opcode_table[256] = {
@@ -3549,7 +3626,8 @@ static struct opcode twobyte_table[256] = {
 	IIP(ModRM | SrcMem | Priv | Op3264, em_cr_write, cr_write, check_cr_write),
 	IIP(ModRM | SrcMem | Priv | Op3264, em_dr_write, dr_write, check_dr_write),
 	N, N, N, N,
-	N, N, N, N, N, N, N, N,
+	N, N, N, GP(ModRM | DstMem | SrcReg | Sse | Mov | Aligned, &pfx_vmovntpx),
+	N, N, N, N,
 	/* 0x30 - 0x3F */
 	II(ImplicitOps | Priv, em_wrmsr, wrmsr),
 	IIP(ImplicitOps, em_rdtsc, rdtsc, check_rdtsc),
@@ -3960,6 +4038,8 @@ done_prefixes:
 
 	if (ctxt->d & Sse)
 		ctxt->op_bytes = 16;
+	else if (ctxt->d & Mmx)
+		ctxt->op_bytes = 8;
 
 	/* ModRM and SIB bytes. */
 	if (ctxt->d & ModRM) {
@@ -4030,6 +4110,35 @@ static bool string_insn_completed(struct x86_emulate_ctxt *ctxt)
 	return false;
 }
 
+static int flush_pending_x87_faults(struct x86_emulate_ctxt *ctxt)
+{
+	bool fault = false;
+
+	ctxt->ops->get_fpu(ctxt);
+	asm volatile("1: fwait \n\t"
+		     "2: \n\t"
+		     ".pushsection .fixup,\"ax\" \n\t"
+		     "3: \n\t"
+		     "movb $1, %[fault] \n\t"
+		     "jmp 2b \n\t"
+		     ".popsection \n\t"
+		     _ASM_EXTABLE(1b, 3b)
+		     : [fault]"+qm"(fault));
+	ctxt->ops->put_fpu(ctxt);
+
+	if (unlikely(fault))
+		return emulate_exception(ctxt, MF_VECTOR, 0, false);
+
+	return X86EMUL_CONTINUE;
+}
+
+static void fetch_possible_mmx_operand(struct x86_emulate_ctxt *ctxt,
+				       struct operand *op)
+{
+	if (op->type == OP_MM)
+		read_mmx_reg(ctxt, &op->mm_val, op->addr.mm);
+}
+
 int x86_emulate_insn(struct x86_emulate_ctxt *ctxt)
 {
 	struct x86_emulate_ops *ops = ctxt->ops;
@@ -4054,16 +4163,29 @@ int x86_emulate_insn(struct x86_emulate_ctxt *ctxt)
 		goto done;
 	}
 
-	if ((ctxt->d & Sse)
-	    && ((ops->get_cr(ctxt, 0) & X86_CR0_EM)
-		|| !(ops->get_cr(ctxt, 4) & X86_CR4_OSFXSR))) {
+	if (((ctxt->d & (Sse|Mmx)) && ((ops->get_cr(ctxt, 0) & X86_CR0_EM)))
+	    || ((ctxt->d & Sse) && !(ops->get_cr(ctxt, 4) & X86_CR4_OSFXSR))) {
 		rc = emulate_ud(ctxt);
 		goto done;
 	}
 
-	if ((ctxt->d & Sse) && (ops->get_cr(ctxt, 0) & X86_CR0_TS)) {
+	if ((ctxt->d & (Sse|Mmx)) && (ops->get_cr(ctxt, 0) & X86_CR0_TS)) {
 		rc = emulate_nm(ctxt);
 		goto done;
+	}
+
+	if (ctxt->d & Mmx) {
+		rc = flush_pending_x87_faults(ctxt);
+		if (rc != X86EMUL_CONTINUE)
+			goto done;
+		/*
+		 * Now that we know the fpu is exception safe, we can fetch
+		 * operands from it.
+		 */
+		fetch_possible_mmx_operand(ctxt, &ctxt->src);
+		fetch_possible_mmx_operand(ctxt, &ctxt->src2);
+		if (!(ctxt->d & Mov))
+			fetch_possible_mmx_operand(ctxt, &ctxt->dst);
 	}
 
 	if (unlikely(ctxt->guest_mode) && ctxt->intercept) {
