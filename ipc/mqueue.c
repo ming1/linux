@@ -34,6 +34,7 @@
 #include <linux/ipc_namespace.h>
 #include <linux/user_namespace.h>
 #include <linux/slab.h>
+#include <linux/vmalloc.h>
 
 #include <net/sock.h>
 #include "util.h"
