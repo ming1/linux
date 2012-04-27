@@ -190,3 +190,7 @@ EXPORT_SYMBOL(__arch_hweight16);
 EXPORT_SYMBOL(__arch_hweight32);
 EXPORT_SYMBOL(__arch_hweight64);
 #endif
+
+EXPORT_SYMBOL_GPL(do_IRQ);
+EXPORT_SYMBOL_GPL(timer_interrupt);
+EXPORT_SYMBOL_GPL(performance_monitor_exception);
