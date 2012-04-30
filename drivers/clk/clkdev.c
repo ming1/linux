@@ -35,7 +35,12 @@ static DEFINE_MUTEX(clocks_mutex);
 static struct clk_lookup *clk_find(const char *dev_id, const char *con_id)
 {
 	struct clk_lookup *p, *cl = NULL;
-	int match, best = 0;
+	int match, best_found = 0, best_possible = 0;
+
+	if (dev_id)
+		best_possible += 2;
+	if (con_id)
+		best_possible += 1;
 
 	list_for_each_entry(p, &clocks, node) {
 		match = 0;
@@ -50,10 +55,10 @@ static struct clk_lookup *clk_find(const char *dev_id, const char *con_id)
 			match += 1;
 		}
 
-		if (match > best) {
+		if (match > best_found) {
 			cl = p;
-			if (match != 3)
-				best = match;
+			if (match != best_possible)
+				best_found = match;
 			else
 				break;
 		}
@@ -88,6 +93,51 @@ void clk_put(struct clk *clk)
 	__clk_put(clk);
 }
 EXPORT_SYMBOL(clk_put);
+
+static void devm_clk_release(struct device *dev, void *res)
+{
+	clk_put(*(struct clk **)res);
+}
+
+struct clk *devm_clk_get(struct device *dev, const char *id)
+{
+	struct clk **ptr, *clk;
+
+	ptr = devres_alloc(devm_clk_release, sizeof(*ptr), GFP_KERNEL);
+	if (!ptr)
+		return ERR_PTR(-ENOMEM);
+
+	clk = clk_get(dev, id);
+	if (!IS_ERR(clk)) {
+		*ptr = clk;
+		devres_add(dev, ptr);
+	} else {
+		devres_free(ptr);
+	}
+
+	return clk;
+}
+EXPORT_SYMBOL(devm_clk_get);
+
+static int devm_clk_match(struct device *dev, void *res, void *data)
+{
+	struct clk **c = res;
+	if (!c || !*c) {
+		WARN_ON(!c || !*c);
+		return 0;
+	}
+	return *c == data;
+}
+
+void devm_clk_put(struct device *dev, struct clk *clk)
+{
+	int ret;
+
+	ret = devres_destroy(dev, devm_clk_release, devm_clk_match, clk);
+
+	WARN_ON(ret);
+}
+EXPORT_SYMBOL(devm_clk_put);
 
 void clkdev_add(struct clk_lookup *cl)
 {
