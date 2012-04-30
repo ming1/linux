@@ -32,3 +32,11 @@ spear/pinctrl:		git://git.stlinux.com/spear/linux-2.6.git spear-v3.5
 				depends on spear/dt:
 
 next/stmp-device:	git://git.pengutronix.de/git/wsa/linux.git stmp_device
+
+staging/clock:
+spear/clock:		git://git.stlinux.com/spear/linux-2.6.git for-v3.5-spear-clk
+				depends on spear/dt and spear/pinctrl
+
+staging/newsoc:
+spear/13xx:		git://git.stlinux.com/spear/linux-2.6.git for-v3.5-spear13xx
+				depends on spear/clock
