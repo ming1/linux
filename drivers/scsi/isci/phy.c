@@ -164,9 +164,17 @@ sci_phy_link_layer_initialization(struct isci_phy *iphy,
 	/* Configure the SNW capabilities */
 	phy_cap.all = 0;
 	phy_cap.start = 1;
-	phy_cap.gen3_no_ssc = 1;
-	phy_cap.gen2_no_ssc = 1;
-	phy_cap.gen1_no_ssc = 1;
+	switch (phy_user->max_speed_generation) {
+	case 3:
+		phy_cap.gen3_no_ssc = 1;
+		/* fall through */
+	case 2:
+		phy_cap.gen2_no_ssc = 1;
+		/* fall through */
+	default:
+		phy_cap.gen1_no_ssc = 1;
+		break;
+	}
 	if (ihost->oem_parameters.controller.do_enable_ssc) {
 		struct scu_afe_registers __iomem *afe = &ihost->scu_registers->afe;
 		struct scu_afe_transceiver *xcvr = &afe->scu_afe_xcvr[phy_idx];
@@ -177,9 +185,17 @@ sci_phy_link_layer_initialization(struct isci_phy *iphy,
 		u32 sata_spread = 0x2;
 		u32 sas_spread = 0x2;
 
-		phy_cap.gen3_ssc = 1;
-		phy_cap.gen2_ssc = 1;
-		phy_cap.gen1_ssc = 1;
+		switch (phy_user->max_speed_generation) {
+		case 3:
+			phy_cap.gen3_ssc = 1;
+			/* fall through */
+		case 2:
+			phy_cap.gen2_ssc = 1;
+			/* fall through */
+		default:
+			phy_cap.gen1_ssc = 1;
+			break;
+		}
 
 		if (pci_info->orom->hdr.version < ISCI_ROM_VER_1_1)
 			en_sas = en_sata = true;
@@ -267,17 +283,7 @@ sci_phy_link_layer_initialization(struct isci_phy *iphy,
 	llctl = SCU_SAS_LLCTL_GEN_VAL(NO_OUTBOUND_TASK_TIMEOUT,
 		(u8)ihost->user_parameters.no_outbound_task_timeout);
 
-	switch (phy_user->max_speed_generation) {
-	case SCIC_SDS_PARM_GEN3_SPEED:
-		link_rate = SCU_SAS_LINK_LAYER_CONTROL_MAX_LINK_RATE_GEN3;
-		break;
-	case SCIC_SDS_PARM_GEN2_SPEED:
-		link_rate = SCU_SAS_LINK_LAYER_CONTROL_MAX_LINK_RATE_GEN2;
-		break;
-	default:
-		link_rate = SCU_SAS_LINK_LAYER_CONTROL_MAX_LINK_RATE_GEN1;
-		break;
-	}
+	link_rate = SCU_SAS_LINK_LAYER_CONTROL_MAX_LINK_RATE_GEN3;
 	llctl |= SCU_SAS_LLCTL_GEN_VAL(MAX_LINK_RATE, link_rate);
 	writel(llctl, &llr->link_layer_control);
 
@@ -520,15 +526,16 @@ enum sci_status sci_phy_reset(struct isci_phy *iphy)
 
 enum sci_status sci_phy_consume_power_handler(struct isci_phy *iphy)
 {
+	struct scu_link_layer_registers __iomem *llr = iphy->link_layer_registers;
 	enum sci_phy_states state = iphy->sm.current_state_id;
 
 	switch (state) {
 	case SCI_PHY_SUB_AWAIT_SAS_POWER: {
 		u32 enable_spinup;
 
-		enable_spinup = readl(&iphy->link_layer_registers->notify_enable_spinup_control);
+		enable_spinup = readl(&llr->notify_enable_spinup_control);
 		enable_spinup |= SCU_ENSPINUP_GEN_BIT(ENABLE);
-		writel(enable_spinup, &iphy->link_layer_registers->notify_enable_spinup_control);
+		writel(enable_spinup, &llr->notify_enable_spinup_control);
 
 		/* Change state to the final state this substate machine has run to completion */
 		sci_change_state(&iphy->sm, SCI_PHY_SUB_FINAL);
@@ -536,22 +543,41 @@ enum sci_status sci_phy_consume_power_handler(struct isci_phy *iphy)
 		return SCI_SUCCESS;
 	}
 	case SCI_PHY_SUB_AWAIT_SATA_POWER: {
-		u32 scu_sas_pcfg_value;
+		struct isci_host *ihost = phy_to_host(iphy);
+		struct sci_phy_user_params *phy_user;
+		u32 llctl, link_rate, pcfg;
+
+		/* once we know the phy is sata we need to apply the
+		 * max_speed limit since it defaults to gen-3 for the
+		 * negotiation of SAS SSC
+		 */
+		phy_user = &ihost->user_parameters.phys[iphy->phy_index];
+		switch (phy_user->max_speed_generation) {
+		case SCIC_SDS_PARM_GEN3_SPEED:
+			link_rate = SCU_SAS_LINK_LAYER_CONTROL_MAX_LINK_RATE_GEN3;
+			break;
+		case SCIC_SDS_PARM_GEN2_SPEED:
+			link_rate = SCU_SAS_LINK_LAYER_CONTROL_MAX_LINK_RATE_GEN2;
+			break;
+		default:
+			link_rate = SCU_SAS_LINK_LAYER_CONTROL_MAX_LINK_RATE_GEN1;
+			break;
+		}
+		llctl = readl(&llr->link_layer_control);
+		llctl &= ~SCU_SAS_LINK_LAYER_CONTROL_MAX_LINK_RATE_MASK;
+		llctl |= SCU_SAS_LLCTL_GEN_VAL(MAX_LINK_RATE, link_rate);
+		writel(llctl, &llr->link_layer_control);
 
 		/* Release the spinup hold state and reset the OOB state machine */
-		scu_sas_pcfg_value =
-			readl(&iphy->link_layer_registers->phy_configuration);
-		scu_sas_pcfg_value &=
-			~(SCU_SAS_PCFG_GEN_BIT(SATA_SPINUP_HOLD) | SCU_SAS_PCFG_GEN_BIT(OOB_ENABLE));
-		scu_sas_pcfg_value |= SCU_SAS_PCFG_GEN_BIT(OOB_RESET);
-		writel(scu_sas_pcfg_value,
-			&iphy->link_layer_registers->phy_configuration);
+		pcfg = readl(&llr->phy_configuration);
+		pcfg &= ~(SCU_SAS_PCFG_GEN_BIT(SATA_SPINUP_HOLD) | SCU_SAS_PCFG_GEN_BIT(OOB_ENABLE));
+		pcfg |= SCU_SAS_PCFG_GEN_BIT(OOB_RESET);
+		writel(pcfg, &llr->phy_configuration);
 
 		/* Now restart the OOB operation */
-		scu_sas_pcfg_value &= ~SCU_SAS_PCFG_GEN_BIT(OOB_RESET);
-		scu_sas_pcfg_value |= SCU_SAS_PCFG_GEN_BIT(OOB_ENABLE);
-		writel(scu_sas_pcfg_value,
-			&iphy->link_layer_registers->phy_configuration);
+		pcfg &= ~SCU_SAS_PCFG_GEN_BIT(OOB_RESET);
+		pcfg |= SCU_SAS_PCFG_GEN_BIT(OOB_ENABLE);
+		writel(pcfg, &llr->phy_configuration);
 
 		/* Change state to the final state this substate machine has run to completion */
 		sci_change_state(&iphy->sm, SCI_PHY_SUB_AWAIT_SATA_PHY_EN);
@@ -1200,7 +1226,13 @@ static void scu_link_layer_stop_protocol_engine(
 static void scu_link_layer_start_oob(struct isci_phy *iphy)
 {
 	struct scu_link_layer_registers __iomem *ll = iphy->link_layer_registers;
-	u32 val;
+	u32 val, link_rate;
+
+	link_rate = SCU_SAS_LINK_LAYER_CONTROL_MAX_LINK_RATE_GEN3;
+	val = readl(&ll->link_layer_control);
+	val &= ~SCU_SAS_LINK_LAYER_CONTROL_MAX_LINK_RATE_MASK;
+	val |= SCU_SAS_LLCTL_GEN_VAL(MAX_LINK_RATE, link_rate);
+	writel(val, &ll->link_layer_control);
 
 	/** Reset OOB sequence - start */
 	val = readl(&ll->phy_configuration);
