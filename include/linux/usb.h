@@ -1627,6 +1627,7 @@ static inline int usb_translate_errors(int error_code)
 	case 0:
 	case -ENOMEM:
 	case -ENODEV:
+	case -EOPNOTSUPP:
 		return error_code;
 	default:
 		return -EIO;
@@ -1651,9 +1652,6 @@ do {									\
 		printk(KERN_DEBUG "%s: " format "\n", __FILE__, ##arg); \
 } while (0)
 #endif
-
-#define err(format, arg...)					\
-	printk(KERN_ERR KBUILD_MODNAME ": " format "\n", ##arg)
 
 /* debugfs stuff */
 extern struct dentry *usb_debug_root;
