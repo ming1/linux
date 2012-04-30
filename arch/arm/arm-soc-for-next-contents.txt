@@ -35,6 +35,10 @@ spear/pinctrl:		git://git.stlinux.com/spear/linux-2.6.git spear-v3.5
 				depends on spear/dt:
 ux500/gpio		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git ux500-gpio-pins-for-arm-soc
 
+
+next/drivers:
+pxa/keyboard		git://github.com/hzhuang1/linux.git keyboard
+
 next/stmp-device:	git://git.pengutronix.de/git/wsa/linux.git stmp_device
 
 staging/clock:
