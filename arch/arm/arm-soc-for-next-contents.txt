@@ -27,6 +27,11 @@ lpc32xx/dt		git://git.antcom.de/linux-2.6.git lpc32xx/dt
 				depends on depends/i2c/lpc32xx
 ux500/dt:		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git ux500-devicetree-for-arm-soc
 at91/dt			git://github.com/at91linux/linux-at91.git tags/at91-for-next-dt
+				depends on at91/cleanup
+
+next/newsoc:
+at91/sam9n12:		git://github.com/at91linux/linux-at91.git tags/at91-for-next-soc
+				depends on at91/dt
 
 next/boards:
 mx/boards		git://git.pengutronix.de/git/imx/linux-2.6.git tags/imx-features-board-20120411-2
