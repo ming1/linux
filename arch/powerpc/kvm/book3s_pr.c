@@ -54,6 +54,11 @@ static int kvmppc_handle_ext(struct kvm_vcpu *vcpu, unsigned int exit_nr,
 #define HW_PAGE_SIZE PAGE_SIZE
 #define __hard_irq_disable local_irq_disable
 #define __hard_irq_enable local_irq_enable
+static void soft_irq_disable(void) { }
+static void soft_irq_enable(void) { }
+#else
+#define soft_irq_disable local_irq_disable
+#define soft_irq_enable local_irq_enable
 #endif
 
 void kvmppc_core_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
@@ -538,6 +543,55 @@ static int kvmppc_handle_ext(struct kvm_vcpu *vcpu, unsigned int exit_nr,
 	return RESUME_GUEST;
 }
 
+static void kvmppc_fill_pt_regs(struct pt_regs *regs)
+{
+	ulong r1, ip, msr, lr;
+
+	asm("mr %0, 1" : "=r"(r1));
+	asm("mflr %0" : "=r"(lr));
+	asm("mfmsr %0" : "=r"(msr));
+	asm("bl 1f; 1: mflr %0" : "=r"(ip));
+
+	memset(regs, 0, sizeof(*regs));
+	regs->gpr[1] = r1;
+	regs->nip = ip;
+	regs->msr = msr;
+	regs->link = lr;
+}
+
+static void kvmppc_restart_interrupt(struct kvm_vcpu *vcpu,
+				     unsigned int exit_nr)
+{
+	struct pt_regs regs;
+
+	switch (exit_nr) {
+	case BOOK3S_INTERRUPT_EXTERNAL:
+	case BOOK3S_INTERRUPT_EXTERNAL_LEVEL:
+	case BOOK3S_INTERRUPT_EXTERNAL_HV:
+		kvmppc_fill_pt_regs(&regs);
+		soft_irq_disable();
+		do_IRQ(&regs);
+		soft_irq_enable();
+		break;
+	case BOOK3S_INTERRUPT_DECREMENTER:
+	case BOOK3S_INTERRUPT_HV_DECREMENTER:
+		kvmppc_fill_pt_regs(&regs);
+		soft_irq_disable();
+		timer_interrupt(&regs);
+		soft_irq_enable();
+		break;
+	case BOOK3S_INTERRUPT_MACHINE_CHECK:
+		/* FIXME */
+		break;
+	case BOOK3S_INTERRUPT_PERFMON:
+		kvmppc_fill_pt_regs(&regs);
+		soft_irq_disable();
+		performance_monitor_exception(&regs);
+		soft_irq_enable();
+		break;
+	}
+}
+
 int kvmppc_handle_exit(struct kvm_run *run, struct kvm_vcpu *vcpu,
                        unsigned int exit_nr)
 {
@@ -547,6 +601,10 @@ int kvmppc_handle_exit(struct kvm_run *run, struct kvm_vcpu *vcpu,
 
 	run->exit_reason = KVM_EXIT_UNKNOWN;
 	run->ready_for_interrupt_injection = 1;
+
+	/* restart interrupts if they were meant for the host */
+	kvmppc_restart_interrupt(vcpu, exit_nr);
+	__hard_irq_enable();
 
 	trace_kvm_book3s_exit(exit_nr, vcpu);
 	preempt_enable();
