@@ -153,6 +153,7 @@ static int ip6_parse_tlv(struct tlvtype_proc *procs, struct sk_buff *skb)
 
 	while (len > 0) {
 		int optlen = nh[off + 1] + 2;
+		int i;
 
 		switch (nh[off]) {
 		case IPV6_TLV_PAD0:
@@ -160,6 +161,21 @@ static int ip6_parse_tlv(struct tlvtype_proc *procs, struct sk_buff *skb)
 			break;
 
 		case IPV6_TLV_PADN:
+			/* RFC 2460 states that the purpose of PadN is
+			 * to align the containing header to multiples
+			 * of 8. 7 is therefore the highest valid value.
+			 * See also RFC 4942, Section 2.1.9.5.
+			 */
+			if (optlen > 7)
+				goto bad;
+			/* RFC 4942 recommends receiving hosts to
+			 * actively check PadN payload to contain
+			 * only zeroes.
+			 */
+			for (i = 2; i < optlen; i++) {
+				if (nh[off + i] != 0)
+					goto bad;
+			}
 			break;
 
 		default: /* Other TLV code so scan list */
@@ -722,7 +738,6 @@ void ipv6_push_nfrag_opts(struct sk_buff *skb, struct ipv6_txoptions *opt,
 	if (opt->hopopt)
 		ipv6_push_exthdr(skb, proto, NEXTHDR_HOP, opt->hopopt);
 }
-
 EXPORT_SYMBOL(ipv6_push_nfrag_opts);
 
 void ipv6_push_frag_opts(struct sk_buff *skb, struct ipv6_txoptions *opt, u8 *proto)
@@ -738,20 +753,19 @@ ipv6_dup_options(struct sock *sk, struct ipv6_txoptions *opt)
 
 	opt2 = sock_kmalloc(sk, opt->tot_len, GFP_ATOMIC);
 	if (opt2) {
-		long dif = (char*)opt2 - (char*)opt;
+		long dif = (char *)opt2 - (char *)opt;
 		memcpy(opt2, opt, opt->tot_len);
 		if (opt2->hopopt)
-			*((char**)&opt2->hopopt) += dif;
+			*((char **)&opt2->hopopt) += dif;
 		if (opt2->dst0opt)
-			*((char**)&opt2->dst0opt) += dif;
+			*((char **)&opt2->dst0opt) += dif;
 		if (opt2->dst1opt)
-			*((char**)&opt2->dst1opt) += dif;
+			*((char **)&opt2->dst1opt) += dif;
 		if (opt2->srcrt)
-			*((char**)&opt2->srcrt) += dif;
+			*((char **)&opt2->srcrt) += dif;
 	}
 	return opt2;
 }
-
 EXPORT_SYMBOL_GPL(ipv6_dup_options);
 
 static int ipv6_renew_option(void *ohdr,
@@ -892,5 +906,4 @@ struct in6_addr *fl6_update_dst(struct flowi6 *fl6,
 	fl6->daddr = *((struct rt0_hdr *)opt->srcrt)->addr;
 	return orig;
 }
-
 EXPORT_SYMBOL_GPL(fl6_update_dst);

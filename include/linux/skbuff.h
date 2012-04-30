@@ -117,11 +117,11 @@ struct nf_conntrack {
 
 #ifdef CONFIG_BRIDGE_NETFILTER
 struct nf_bridge_info {
-	atomic_t use;
-	struct net_device *physindev;
-	struct net_device *physoutdev;
-	unsigned int mask;
-	unsigned long data[32 / sizeof(unsigned long)];
+	atomic_t		use;
+	unsigned int		mask;
+	struct net_device	*physindev;
+	struct net_device	*physoutdev;
+	unsigned long		data[32 / sizeof(unsigned long)];
 };
 #endif
 
@@ -1963,8 +1963,8 @@ static inline int skb_add_data(struct sk_buff *skb,
 	return -EFAULT;
 }
 
-static inline int skb_can_coalesce(struct sk_buff *skb, int i,
-				   const struct page *page, int off)
+static inline bool skb_can_coalesce(struct sk_buff *skb, int i,
+				    const struct page *page, int off)
 {
 	if (i) {
 		const struct skb_frag_struct *frag = &skb_shinfo(skb)->frags[i - 1];
@@ -1972,7 +1972,7 @@ static inline int skb_can_coalesce(struct sk_buff *skb, int i,
 		return page == skb_frag_page(frag) &&
 		       off == frag->page_offset + skb_frag_size(frag);
 	}
-	return 0;
+	return false;
 }
 
 static inline int __skb_linearize(struct sk_buff *skb)

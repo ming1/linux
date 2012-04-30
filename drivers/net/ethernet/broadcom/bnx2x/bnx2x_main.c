@@ -39,7 +39,6 @@
 #include <linux/time.h>
 #include <linux/ethtool.h>
 #include <linux/mii.h>
-#include <linux/if.h>
 #include <linux/if_vlan.h>
 #include <net/ip.h>
 #include <net/ipv6.h>
@@ -93,15 +92,11 @@ MODULE_FIRMWARE(FW_FILE_NAME_E1);
 MODULE_FIRMWARE(FW_FILE_NAME_E1H);
 MODULE_FIRMWARE(FW_FILE_NAME_E2);
 
-static int multi_mode = 1;
-module_param(multi_mode, int, 0);
-MODULE_PARM_DESC(multi_mode, " Multi queue mode "
-			     "(0 Disable; 1 Enable (default))");
 
 int num_queues;
 module_param(num_queues, int, 0);
-MODULE_PARM_DESC(num_queues, " Number of queues for multi_mode=1"
-				" (default is as a number of CPUs)");
+MODULE_PARM_DESC(num_queues,
+		 " Set number of queues (default is as a number of CPUs)");
 
 static int disable_tpa;
 module_param(disable_tpa, int, 0);
@@ -141,7 +136,9 @@ enum bnx2x_board_type {
 	BCM57810,
 	BCM57810_MF,
 	BCM57840,
-	BCM57840_MF
+	BCM57840_MF,
+	BCM57811,
+	BCM57811_MF
 };
 
 /* indexed by board_type, above */
@@ -158,8 +155,9 @@ static struct {
 	{ "Broadcom NetXtreme II BCM57810 10 Gigabit Ethernet" },
 	{ "Broadcom NetXtreme II BCM57810 10 Gigabit Ethernet Multi Function" },
 	{ "Broadcom NetXtreme II BCM57840 10/20 Gigabit Ethernet" },
-	{ "Broadcom NetXtreme II BCM57840 10/20 Gigabit "
-						"Ethernet Multi Function"}
+	{ "Broadcom NetXtreme II BCM57840 10/20 Gigabit Ethernet Multi Function"},
+	{ "Broadcom NetXtreme II BCM57811 10 Gigabit Ethernet"},
+	{ "Broadcom NetXtreme II BCM57811 10 Gigabit Ethernet Multi Function"},
 };
 
 #ifndef PCI_DEVICE_ID_NX2_57710
@@ -195,6 +193,12 @@ static struct {
 #ifndef PCI_DEVICE_ID_NX2_57840_MF
 #define PCI_DEVICE_ID_NX2_57840_MF	CHIP_NUM_57840_MF
 #endif
+#ifndef PCI_DEVICE_ID_NX2_57811
+#define PCI_DEVICE_ID_NX2_57811		CHIP_NUM_57811
+#endif
+#ifndef PCI_DEVICE_ID_NX2_57811_MF
+#define PCI_DEVICE_ID_NX2_57811_MF	CHIP_NUM_57811_MF
+#endif
 static DEFINE_PCI_DEVICE_TABLE(bnx2x_pci_tbl) = {
 	{ PCI_VDEVICE(BROADCOM, PCI_DEVICE_ID_NX2_57710), BCM57710 },
 	{ PCI_VDEVICE(BROADCOM, PCI_DEVICE_ID_NX2_57711), BCM57711 },
@@ -207,6 +211,8 @@ static DEFINE_PCI_DEVICE_TABLE(bnx2x_pci_tbl) = {
 	{ PCI_VDEVICE(BROADCOM, PCI_DEVICE_ID_NX2_57810_MF), BCM57810_MF },
 	{ PCI_VDEVICE(BROADCOM, PCI_DEVICE_ID_NX2_57840), BCM57840 },
 	{ PCI_VDEVICE(BROADCOM, PCI_DEVICE_ID_NX2_57840_MF), BCM57840_MF },
+	{ PCI_VDEVICE(BROADCOM, PCI_DEVICE_ID_NX2_57811), BCM57811 },
+	{ PCI_VDEVICE(BROADCOM, PCI_DEVICE_ID_NX2_57811_MF), BCM57811_MF },
 	{ 0 }
 };
 
@@ -309,67 +315,6 @@ static u32 bnx2x_reg_rd_ind(struct bnx2x *bp, u32 addr)
 #define DMAE_DP_DST_PCI		"pci dst_addr [%x:%08x]"
 #define DMAE_DP_DST_NONE	"dst_addr [none]"
 
-static void bnx2x_dp_dmae(struct bnx2x *bp, struct dmae_command *dmae,
-			  int msglvl)
-{
-	u32 src_type = dmae->opcode & DMAE_COMMAND_SRC;
-
-	switch (dmae->opcode & DMAE_COMMAND_DST) {
-	case DMAE_CMD_DST_PCI:
-		if (src_type == DMAE_CMD_SRC_PCI)
-			DP(msglvl, "DMAE: opcode 0x%08x\n"
-			   "src [%x:%08x], len [%d*4], dst [%x:%08x]\n"
-			   "comp_addr [%x:%08x], comp_val 0x%08x\n",
-			   dmae->opcode, dmae->src_addr_hi, dmae->src_addr_lo,
-			   dmae->len, dmae->dst_addr_hi, dmae->dst_addr_lo,
-			   dmae->comp_addr_hi, dmae->comp_addr_lo,
-			   dmae->comp_val);
-		else
-			DP(msglvl, "DMAE: opcode 0x%08x\n"
-			   "src [%08x], len [%d*4], dst [%x:%08x]\n"
-			   "comp_addr [%x:%08x], comp_val 0x%08x\n",
-			   dmae->opcode, dmae->src_addr_lo >> 2,
-			   dmae->len, dmae->dst_addr_hi, dmae->dst_addr_lo,
-			   dmae->comp_addr_hi, dmae->comp_addr_lo,
-			   dmae->comp_val);
-		break;
-	case DMAE_CMD_DST_GRC:
-		if (src_type == DMAE_CMD_SRC_PCI)
-			DP(msglvl, "DMAE: opcode 0x%08x\n"
-			   "src [%x:%08x], len [%d*4], dst_addr [%08x]\n"
-			   "comp_addr [%x:%08x], comp_val 0x%08x\n",
-			   dmae->opcode, dmae->src_addr_hi, dmae->src_addr_lo,
-			   dmae->len, dmae->dst_addr_lo >> 2,
-			   dmae->comp_addr_hi, dmae->comp_addr_lo,
-			   dmae->comp_val);
-		else
-			DP(msglvl, "DMAE: opcode 0x%08x\n"
-			   "src [%08x], len [%d*4], dst [%08x]\n"
-			   "comp_addr [%x:%08x], comp_val 0x%08x\n",
-			   dmae->opcode, dmae->src_addr_lo >> 2,
-			   dmae->len, dmae->dst_addr_lo >> 2,
-			   dmae->comp_addr_hi, dmae->comp_addr_lo,
-			   dmae->comp_val);
-		break;
-	default:
-		if (src_type == DMAE_CMD_SRC_PCI)
-			DP(msglvl, "DMAE: opcode 0x%08x\n"
-			   "src_addr [%x:%08x]  len [%d * 4]  dst_addr [none]\n"
-			   "comp_addr [%x:%08x]  comp_val 0x%08x\n",
-			   dmae->opcode, dmae->src_addr_hi, dmae->src_addr_lo,
-			   dmae->len, dmae->comp_addr_hi, dmae->comp_addr_lo,
-			   dmae->comp_val);
-		else
-			DP(msglvl, "DMAE: opcode 0x%08x\n"
-			   "src_addr [%08x]  len [%d * 4]  dst_addr [none]\n"
-			   "comp_addr [%x:%08x]  comp_val 0x%08x\n",
-			   dmae->opcode, dmae->src_addr_lo >> 2,
-			   dmae->len, dmae->comp_addr_hi, dmae->comp_addr_lo,
-			   dmae->comp_val);
-		break;
-	}
-
-}
 
 /* copy command into DMAE command memory and set DMAE command go */
 void bnx2x_post_dmae(struct bnx2x *bp, struct dmae_command *dmae, int idx)
@@ -506,8 +451,6 @@ void bnx2x_write_dmae(struct bnx2x *bp, dma_addr_t dma_addr, u32 dst_addr,
 	dmae.dst_addr_hi = 0;
 	dmae.len = len32;
 
-	bnx2x_dp_dmae(bp, &dmae, BNX2X_MSG_OFF);
-
 	/* issue the command and wait for completion */
 	bnx2x_issue_dmae_with_comp(bp, &dmae);
 }
@@ -540,8 +483,6 @@ void bnx2x_read_dmae(struct bnx2x *bp, u32 src_addr, u32 len32)
 	dmae.dst_addr_hi = U64_HI(bnx2x_sp_mapping(bp, wb_data));
 	dmae.len = len32;
 
-	bnx2x_dp_dmae(bp, &dmae, BNX2X_MSG_OFF);
-
 	/* issue the command and wait for completion */
 	bnx2x_issue_dmae_with_comp(bp, &dmae);
 }
@@ -561,27 +502,6 @@ static void bnx2x_write_dmae_phys_len(struct bnx2x *bp, dma_addr_t phys_addr,
 
 	bnx2x_write_dmae(bp, phys_addr + offset, addr + offset, len);
 }
-
-/* used only for slowpath so not inlined */
-static void bnx2x_wb_wr(struct bnx2x *bp, int reg, u32 val_hi, u32 val_lo)
-{
-	u32 wb_write[2];
-
-	wb_write[0] = val_hi;
-	wb_write[1] = val_lo;
-	REG_WR_DMAE(bp, reg, wb_write, 2);
-}
-
-#ifdef USE_WB_RD
-static u64 bnx2x_wb_rd(struct bnx2x *bp, int reg)
-{
-	u32 wb_data[2];
-
-	REG_RD_DMAE(bp, reg, wb_data, 2);
-
-	return HILO_U64(wb_data[0], wb_data[1]);
-}
-#endif
 
 static int bnx2x_mc_assert(struct bnx2x *bp)
 {
@@ -1425,8 +1345,9 @@ static void bnx2x_hc_int_enable(struct bnx2x *bp)
 static void bnx2x_igu_int_enable(struct bnx2x *bp)
 {
 	u32 val;
-	int msix = (bp->flags & USING_MSIX_FLAG) ? 1 : 0;
-	int msi = (bp->flags & USING_MSI_FLAG) ? 1 : 0;
+	bool msix = (bp->flags & USING_MSIX_FLAG) ? true : false;
+	bool single_msix = (bp->flags & USING_SINGLE_MSIX_FLAG) ? true : false;
+	bool msi = (bp->flags & USING_MSI_FLAG) ? true : false;
 
 	val = REG_RD(bp, IGU_REG_PF_CONFIGURATION);
 
@@ -1436,6 +1357,9 @@ static void bnx2x_igu_int_enable(struct bnx2x *bp)
 		val |= (IGU_PF_CONF_FUNC_EN |
 			IGU_PF_CONF_MSI_MSIX_EN |
 			IGU_PF_CONF_ATTN_BIT_EN);
+
+		if (single_msix)
+			val |= IGU_PF_CONF_SINGLE_ISR_EN;
 	} else if (msi) {
 		val &= ~IGU_PF_CONF_INT_LINE_EN;
 		val |= (IGU_PF_CONF_FUNC_EN |
@@ -1454,6 +1378,9 @@ static void bnx2x_igu_int_enable(struct bnx2x *bp)
 	   val, (msix ? "MSI-X" : (msi ? "MSI" : "INTx")));
 
 	REG_WR(bp, IGU_REG_PF_CONFIGURATION, val);
+
+	if (val & IGU_PF_CONF_INT_LINE_EN)
+		pci_intx(bp->pdev, true);
 
 	barrier();
 
@@ -1718,6 +1645,27 @@ void bnx2x_sp_event(struct bnx2x_fastpath *fp, union eth_rx_cqe *rr_cqe)
 	smp_mb__after_atomic_inc();
 
 	DP(BNX2X_MSG_SP, "bp->cq_spq_left %x\n", atomic_read(&bp->cq_spq_left));
+
+	if ((drv_cmd == BNX2X_Q_CMD_UPDATE) && (IS_FCOE_FP(fp)) &&
+	    (!!test_bit(BNX2X_AFEX_FCOE_Q_UPDATE_PENDING, &bp->sp_state))) {
+		/* if Q update ramrod is completed for last Q in AFEX vif set
+		 * flow, then ACK MCP at the end
+		 *
+		 * mark pending ACK to MCP bit.
+		 * prevent case that both bits are cleared.
+		 * At the end of load/unload driver checks that
+		 * sp_state is cleaerd, and this order prevents
+		 * races
+		 */
+		smp_mb__before_clear_bit();
+		set_bit(BNX2X_AFEX_PENDING_VIFSET_MCP_ACK, &bp->sp_state);
+		wmb();
+		clear_bit(BNX2X_AFEX_FCOE_Q_UPDATE_PENDING, &bp->sp_state);
+		smp_mb__after_clear_bit();
+
+		/* schedule workqueue to send ack to MCP */
+		queue_delayed_work(bnx2x_wq, &bp->sp_task, 0);
+	}
 
 	return;
 }
@@ -2229,40 +2177,6 @@ u8 bnx2x_link_test(struct bnx2x *bp, u8 is_serdes)
 	return rc;
 }
 
-static void bnx2x_init_port_minmax(struct bnx2x *bp)
-{
-	u32 r_param = bp->link_vars.line_speed / 8;
-	u32 fair_periodic_timeout_usec;
-	u32 t_fair;
-
-	memset(&(bp->cmng.rs_vars), 0,
-	       sizeof(struct rate_shaping_vars_per_port));
-	memset(&(bp->cmng.fair_vars), 0, sizeof(struct fairness_vars_per_port));
-
-	/* 100 usec in SDM ticks = 25 since each tick is 4 usec */
-	bp->cmng.rs_vars.rs_periodic_timeout = RS_PERIODIC_TIMEOUT_USEC / 4;
-
-	/* this is the threshold below which no timer arming will occur
-	   1.25 coefficient is for the threshold to be a little bigger
-	   than the real time, to compensate for timer in-accuracy */
-	bp->cmng.rs_vars.rs_threshold =
-				(RS_PERIODIC_TIMEOUT_USEC * r_param * 5) / 4;
-
-	/* resolution of fairness timer */
-	fair_periodic_timeout_usec = QM_ARB_BYTES / r_param;
-	/* for 10G it is 1000usec. for 1G it is 10000usec. */
-	t_fair = T_FAIR_COEF / bp->link_vars.line_speed;
-
-	/* this is the threshold below which we won't arm the timer anymore */
-	bp->cmng.fair_vars.fair_threshold = QM_ARB_BYTES;
-
-	/* we multiply by 1e3/8 to get bytes/msec.
-	   We don't want the credits to pass a credit
-	   of the t_fair*FAIR_MEM (algorithm resolution) */
-	bp->cmng.fair_vars.upper_bound = r_param * t_fair * FAIR_MEM;
-	/* since each tick is 4 usec */
-	bp->cmng.fair_vars.fairness_timeout = fair_periodic_timeout_usec / 4;
-}
 
 /* Calculates the sum of vn_min_rates.
    It's needed for further normalizing of the min_rates.
@@ -2273,12 +2187,12 @@ static void bnx2x_init_port_minmax(struct bnx2x *bp)
      In the later case fainess algorithm should be deactivated.
      If not all min_rates are zero then those that are zeroes will be set to 1.
  */
-static void bnx2x_calc_vn_weight_sum(struct bnx2x *bp)
+static void bnx2x_calc_vn_min(struct bnx2x *bp,
+				      struct cmng_init_input *input)
 {
 	int all_zero = 1;
 	int vn;
 
-	bp->vn_weight_sum = 0;
 	for (vn = VN_0; vn < BP_MAX_VN_NUM(bp); vn++) {
 		u32 vn_cfg = bp->mf_config[vn];
 		u32 vn_min_rate = ((vn_cfg & FUNC_MF_CFG_MIN_BW_MASK) >>
@@ -2286,105 +2200,55 @@ static void bnx2x_calc_vn_weight_sum(struct bnx2x *bp)
 
 		/* Skip hidden vns */
 		if (vn_cfg & FUNC_MF_CFG_FUNC_HIDE)
-			continue;
-
+			vn_min_rate = 0;
 		/* If min rate is zero - set it to 1 */
-		if (!vn_min_rate)
+		else if (!vn_min_rate)
 			vn_min_rate = DEF_MIN_RATE;
 		else
 			all_zero = 0;
 
-		bp->vn_weight_sum += vn_min_rate;
+		input->vnic_min_rate[vn] = vn_min_rate;
 	}
 
 	/* if ETS or all min rates are zeros - disable fairness */
 	if (BNX2X_IS_ETS_ENABLED(bp)) {
-		bp->cmng.flags.cmng_enables &=
+		input->flags.cmng_enables &=
 					~CMNG_FLAGS_PER_PORT_FAIRNESS_VN;
 		DP(NETIF_MSG_IFUP, "Fairness will be disabled due to ETS\n");
 	} else if (all_zero) {
-		bp->cmng.flags.cmng_enables &=
+		input->flags.cmng_enables &=
 					~CMNG_FLAGS_PER_PORT_FAIRNESS_VN;
-		DP(NETIF_MSG_IFUP, "All MIN values are zeroes"
-		   "  fairness will be disabled\n");
+		DP(NETIF_MSG_IFUP,
+		   "All MIN values are zeroes fairness will be disabled\n");
 	} else
-		bp->cmng.flags.cmng_enables |=
+		input->flags.cmng_enables |=
 					CMNG_FLAGS_PER_PORT_FAIRNESS_VN;
 }
 
-static void bnx2x_init_vn_minmax(struct bnx2x *bp, int vn)
+static void bnx2x_calc_vn_max(struct bnx2x *bp, int vn,
+				    struct cmng_init_input *input)
 {
-	struct rate_shaping_vars_per_vn m_rs_vn;
-	struct fairness_vars_per_vn m_fair_vn;
+	u16 vn_max_rate;
 	u32 vn_cfg = bp->mf_config[vn];
-	int func = func_by_vn(bp, vn);
-	u16 vn_min_rate, vn_max_rate;
-	int i;
 
-	/* If function is hidden - set min and max to zeroes */
-	if (vn_cfg & FUNC_MF_CFG_FUNC_HIDE) {
-		vn_min_rate = 0;
+	if (vn_cfg & FUNC_MF_CFG_FUNC_HIDE)
 		vn_max_rate = 0;
-
-	} else {
+	else {
 		u32 maxCfg = bnx2x_extract_max_cfg(bp, vn_cfg);
 
-		vn_min_rate = ((vn_cfg & FUNC_MF_CFG_MIN_BW_MASK) >>
-				FUNC_MF_CFG_MIN_BW_SHIFT) * 100;
-		/* If fairness is enabled (not all min rates are zeroes) and
-		   if current min rate is zero - set it to 1.
-		   This is a requirement of the algorithm. */
-		if (bp->vn_weight_sum && (vn_min_rate == 0))
-			vn_min_rate = DEF_MIN_RATE;
-
-		if (IS_MF_SI(bp))
+		if (IS_MF_SI(bp)) {
 			/* maxCfg in percents of linkspeed */
 			vn_max_rate = (bp->link_vars.line_speed * maxCfg) / 100;
-		else
+		} else /* SD modes */
 			/* maxCfg is absolute in 100Mb units */
 			vn_max_rate = maxCfg * 100;
 	}
 
-	DP(NETIF_MSG_IFUP,
-	   "func %d: vn_min_rate %d  vn_max_rate %d  vn_weight_sum %d\n",
-	   func, vn_min_rate, vn_max_rate, bp->vn_weight_sum);
+	DP(NETIF_MSG_IFUP, "vn %d: vn_max_rate %d\n", vn, vn_max_rate);
 
-	memset(&m_rs_vn, 0, sizeof(struct rate_shaping_vars_per_vn));
-	memset(&m_fair_vn, 0, sizeof(struct fairness_vars_per_vn));
-
-	/* global vn counter - maximal Mbps for this vn */
-	m_rs_vn.vn_counter.rate = vn_max_rate;
-
-	/* quota - number of bytes transmitted in this period */
-	m_rs_vn.vn_counter.quota =
-				(vn_max_rate * RS_PERIODIC_TIMEOUT_USEC) / 8;
-
-	if (bp->vn_weight_sum) {
-		/* credit for each period of the fairness algorithm:
-		   number of bytes in T_FAIR (the vn share the port rate).
-		   vn_weight_sum should not be larger than 10000, thus
-		   T_FAIR_COEF / (8 * vn_weight_sum) will always be greater
-		   than zero */
-		m_fair_vn.vn_credit_delta =
-			max_t(u32, (vn_min_rate * (T_FAIR_COEF /
-						   (8 * bp->vn_weight_sum))),
-			      (bp->cmng.fair_vars.fair_threshold +
-							MIN_ABOVE_THRESH));
-		DP(NETIF_MSG_IFUP, "m_fair_vn.vn_credit_delta %d\n",
-		   m_fair_vn.vn_credit_delta);
-	}
-
-	/* Store it to internal memory */
-	for (i = 0; i < sizeof(struct rate_shaping_vars_per_vn)/4; i++)
-		REG_WR(bp, BAR_XSTRORM_INTMEM +
-		       XSTORM_RATE_SHAPING_PER_VN_VARS_OFFSET(func) + i * 4,
-		       ((u32 *)(&m_rs_vn))[i]);
-
-	for (i = 0; i < sizeof(struct fairness_vars_per_vn)/4; i++)
-		REG_WR(bp, BAR_XSTRORM_INTMEM +
-		       XSTORM_FAIRNESS_PER_VN_VARS_OFFSET(func) + i * 4,
-		       ((u32 *)(&m_fair_vn))[i]);
+	input->vnic_max_rate[vn] = vn_max_rate;
 }
+
 
 static int bnx2x_get_cmng_fns_mode(struct bnx2x *bp)
 {
@@ -2423,38 +2287,42 @@ void bnx2x_read_mf_cfg(struct bnx2x *bp)
 		bp->mf_config[vn] =
 			MF_CFG_RD(bp, func_mf_config[func].config);
 	}
+	if (bp->mf_config[BP_VN(bp)] & FUNC_MF_CFG_FUNC_DISABLED) {
+		DP(NETIF_MSG_IFUP, "mf_cfg function disabled\n");
+		bp->flags |= MF_FUNC_DIS;
+	} else {
+		DP(NETIF_MSG_IFUP, "mf_cfg function enabled\n");
+		bp->flags &= ~MF_FUNC_DIS;
+	}
 }
 
 static void bnx2x_cmng_fns_init(struct bnx2x *bp, u8 read_cfg, u8 cmng_type)
 {
+	struct cmng_init_input input;
+	memset(&input, 0, sizeof(struct cmng_init_input));
+
+	input.port_rate = bp->link_vars.line_speed;
 
 	if (cmng_type == CMNG_FNS_MINMAX) {
 		int vn;
-
-		/* clear cmng_enables */
-		bp->cmng.flags.cmng_enables = 0;
 
 		/* read mf conf from shmem */
 		if (read_cfg)
 			bnx2x_read_mf_cfg(bp);
 
-		/* Init rate shaping and fairness contexts */
-		bnx2x_init_port_minmax(bp);
-
 		/* vn_weight_sum and enable fairness if not 0 */
-		bnx2x_calc_vn_weight_sum(bp);
+		bnx2x_calc_vn_min(bp, &input);
 
 		/* calculate and set min-max rate for each vn */
 		if (bp->port.pmf)
 			for (vn = VN_0; vn < BP_MAX_VN_NUM(bp); vn++)
-				bnx2x_init_vn_minmax(bp, vn);
+				bnx2x_calc_vn_max(bp, vn, &input);
 
 		/* always enable rate shaping and fairness */
-		bp->cmng.flags.cmng_enables |=
+		input.flags.cmng_enables |=
 					CMNG_FLAGS_PER_PORT_RATE_SHAPING_VN;
-		if (!bp->vn_weight_sum)
-			DP(NETIF_MSG_IFUP, "All MIN values are zeroes"
-				   "  fairness will be disabled\n");
+
+		bnx2x_init_cmng(&input, &bp->cmng);
 		return;
 	}
 
@@ -2533,6 +2401,190 @@ void bnx2x__link_status_update(struct bnx2x *bp)
 
 	/* indicate link status */
 	bnx2x_link_report(bp);
+}
+
+static int bnx2x_afex_func_update(struct bnx2x *bp, u16 vifid,
+				  u16 vlan_val, u8 allowed_prio)
+{
+	struct bnx2x_func_state_params func_params = {0};
+	struct bnx2x_func_afex_update_params *f_update_params =
+		&func_params.params.afex_update;
+
+	func_params.f_obj = &bp->func_obj;
+	func_params.cmd = BNX2X_F_CMD_AFEX_UPDATE;
+
+	/* no need to wait for RAMROD completion, so don't
+	 * set RAMROD_COMP_WAIT flag
+	 */
+
+	f_update_params->vif_id = vifid;
+	f_update_params->afex_default_vlan = vlan_val;
+	f_update_params->allowed_priorities = allowed_prio;
+
+	/* if ramrod can not be sent, response to MCP immediately */
+	if (bnx2x_func_state_change(bp, &func_params) < 0)
+		bnx2x_fw_command(bp, DRV_MSG_CODE_AFEX_VIFSET_ACK, 0);
+
+	return 0;
+}
+
+static int bnx2x_afex_handle_vif_list_cmd(struct bnx2x *bp, u8 cmd_type,
+					  u16 vif_index, u8 func_bit_map)
+{
+	struct bnx2x_func_state_params func_params = {0};
+	struct bnx2x_func_afex_viflists_params *update_params =
+		&func_params.params.afex_viflists;
+	int rc;
+	u32 drv_msg_code;
+
+	/* validate only LIST_SET and LIST_GET are received from switch */
+	if ((cmd_type != VIF_LIST_RULE_GET) && (cmd_type != VIF_LIST_RULE_SET))
+		BNX2X_ERR("BUG! afex_handle_vif_list_cmd invalid type 0x%x\n",
+			  cmd_type);
+
+	func_params.f_obj = &bp->func_obj;
+	func_params.cmd = BNX2X_F_CMD_AFEX_VIFLISTS;
+
+	/* set parameters according to cmd_type */
+	update_params->afex_vif_list_command = cmd_type;
+	update_params->vif_list_index = cpu_to_le16(vif_index);
+	update_params->func_bit_map =
+		(cmd_type == VIF_LIST_RULE_GET) ? 0 : func_bit_map;
+	update_params->func_to_clear = 0;
+	drv_msg_code =
+		(cmd_type == VIF_LIST_RULE_GET) ?
+		DRV_MSG_CODE_AFEX_LISTGET_ACK :
+		DRV_MSG_CODE_AFEX_LISTSET_ACK;
+
+	/* if ramrod can not be sent, respond to MCP immediately for
+	 * SET and GET requests (other are not triggered from MCP)
+	 */
+	rc = bnx2x_func_state_change(bp, &func_params);
+	if (rc < 0)
+		bnx2x_fw_command(bp, drv_msg_code, 0);
+
+	return 0;
+}
+
+static void bnx2x_handle_afex_cmd(struct bnx2x *bp, u32 cmd)
+{
+	struct afex_stats afex_stats;
+	u32 func = BP_ABS_FUNC(bp);
+	u32 mf_config;
+	u16 vlan_val;
+	u32 vlan_prio;
+	u16 vif_id;
+	u8 allowed_prio;
+	u8 vlan_mode;
+	u32 addr_to_write, vifid, addrs, stats_type, i;
+
+	if (cmd & DRV_STATUS_AFEX_LISTGET_REQ) {
+		vifid = SHMEM2_RD(bp, afex_param1_to_driver[BP_FW_MB_IDX(bp)]);
+		DP(BNX2X_MSG_MCP,
+		   "afex: got MCP req LISTGET_REQ for vifid 0x%x\n", vifid);
+		bnx2x_afex_handle_vif_list_cmd(bp, VIF_LIST_RULE_GET, vifid, 0);
+	}
+
+	if (cmd & DRV_STATUS_AFEX_LISTSET_REQ) {
+		vifid = SHMEM2_RD(bp, afex_param1_to_driver[BP_FW_MB_IDX(bp)]);
+		addrs = SHMEM2_RD(bp, afex_param2_to_driver[BP_FW_MB_IDX(bp)]);
+		DP(BNX2X_MSG_MCP,
+		   "afex: got MCP req LISTSET_REQ for vifid 0x%x addrs 0x%x\n",
+		   vifid, addrs);
+		bnx2x_afex_handle_vif_list_cmd(bp, VIF_LIST_RULE_SET, vifid,
+					       addrs);
+	}
+
+	if (cmd & DRV_STATUS_AFEX_STATSGET_REQ) {
+		addr_to_write = SHMEM2_RD(bp,
+			afex_scratchpad_addr_to_write[BP_FW_MB_IDX(bp)]);
+		stats_type = SHMEM2_RD(bp,
+			afex_param1_to_driver[BP_FW_MB_IDX(bp)]);
+
+		DP(BNX2X_MSG_MCP,
+		   "afex: got MCP req STATSGET_REQ, write to addr 0x%x\n",
+		   addr_to_write);
+
+		bnx2x_afex_collect_stats(bp, (void *)&afex_stats, stats_type);
+
+		/* write response to scratchpad, for MCP */
+		for (i = 0; i < (sizeof(struct afex_stats)/sizeof(u32)); i++)
+			REG_WR(bp, addr_to_write + i*sizeof(u32),
+			       *(((u32 *)(&afex_stats))+i));
+
+		/* send ack message to MCP */
+		bnx2x_fw_command(bp, DRV_MSG_CODE_AFEX_STATSGET_ACK, 0);
+	}
+
+	if (cmd & DRV_STATUS_AFEX_VIFSET_REQ) {
+		mf_config = MF_CFG_RD(bp, func_mf_config[func].config);
+		bp->mf_config[BP_VN(bp)] = mf_config;
+		DP(BNX2X_MSG_MCP,
+		   "afex: got MCP req VIFSET_REQ, mf_config 0x%x\n",
+		   mf_config);
+
+		/* if VIF_SET is "enabled" */
+		if (!(mf_config & FUNC_MF_CFG_FUNC_DISABLED)) {
+			/* set rate limit directly to internal RAM */
+			struct cmng_init_input cmng_input;
+			struct rate_shaping_vars_per_vn m_rs_vn;
+			size_t size = sizeof(struct rate_shaping_vars_per_vn);
+			u32 addr = BAR_XSTRORM_INTMEM +
+			    XSTORM_RATE_SHAPING_PER_VN_VARS_OFFSET(BP_FUNC(bp));
+
+			bp->mf_config[BP_VN(bp)] = mf_config;
+
+			bnx2x_calc_vn_max(bp, BP_VN(bp), &cmng_input);
+			m_rs_vn.vn_counter.rate =
+				cmng_input.vnic_max_rate[BP_VN(bp)];
+			m_rs_vn.vn_counter.quota =
+				(m_rs_vn.vn_counter.rate *
+				 RS_PERIODIC_TIMEOUT_USEC) / 8;
+
+			__storm_memset_struct(bp, addr, size, (u32 *)&m_rs_vn);
+
+			/* read relevant values from mf_cfg struct in shmem */
+			vif_id =
+				(MF_CFG_RD(bp, func_mf_config[func].e1hov_tag) &
+				 FUNC_MF_CFG_E1HOV_TAG_MASK) >>
+				FUNC_MF_CFG_E1HOV_TAG_SHIFT;
+			vlan_val =
+				(MF_CFG_RD(bp, func_mf_config[func].e1hov_tag) &
+				 FUNC_MF_CFG_AFEX_VLAN_MASK) >>
+				FUNC_MF_CFG_AFEX_VLAN_SHIFT;
+			vlan_prio = (mf_config &
+				     FUNC_MF_CFG_TRANSMIT_PRIORITY_MASK) >>
+				    FUNC_MF_CFG_TRANSMIT_PRIORITY_SHIFT;
+			vlan_val |= (vlan_prio << VLAN_PRIO_SHIFT);
+			vlan_mode =
+				(MF_CFG_RD(bp,
+					   func_mf_config[func].afex_config) &
+				 FUNC_MF_CFG_AFEX_VLAN_MODE_MASK) >>
+				FUNC_MF_CFG_AFEX_VLAN_MODE_SHIFT;
+			allowed_prio =
+				(MF_CFG_RD(bp,
+					   func_mf_config[func].afex_config) &
+				 FUNC_MF_CFG_AFEX_COS_FILTER_MASK) >>
+				FUNC_MF_CFG_AFEX_COS_FILTER_SHIFT;
+
+			/* send ramrod to FW, return in case of failure */
+			if (bnx2x_afex_func_update(bp, vif_id, vlan_val,
+						   allowed_prio))
+				return;
+
+			bp->afex_def_vlan_tag = vlan_val;
+			bp->afex_vlan_mode = vlan_mode;
+		} else {
+			/* notify link down because BP->flags is disabled */
+			bnx2x_link_report(bp);
+
+			/* send INVALID VIF ramrod to FW */
+			bnx2x_afex_func_update(bp, 0xFFFF, 0, 0);
+
+			/* Reset the default afex VLAN */
+			bp->afex_def_vlan_tag = -1;
+		}
+	}
 }
 
 static void bnx2x_pmf_update(struct bnx2x *bp)
@@ -2680,8 +2732,11 @@ static inline unsigned long bnx2x_get_q_flags(struct bnx2x *bp,
 	if (IS_MF_SD(bp))
 		__set_bit(BNX2X_Q_FLG_OV, &flags);
 
-	if (IS_FCOE_FP(fp))
+	if (IS_FCOE_FP(fp)) {
 		__set_bit(BNX2X_Q_FLG_FCOE, &flags);
+		/* For FCoE - force usage of default priority (for afex) */
+		__set_bit(BNX2X_Q_FLG_FORCE_DEFAULT_PRI, &flags);
+	}
 
 	if (!fp->disable_tpa) {
 		__set_bit(BNX2X_Q_FLG_TPA, &flags);
@@ -2697,6 +2752,10 @@ static inline unsigned long bnx2x_get_q_flags(struct bnx2x *bp,
 
 	/* Always set HW VLAN stripping */
 	__set_bit(BNX2X_Q_FLG_VLAN, &flags);
+
+	/* configure silent vlan removal */
+	if (IS_MF_AFEX(bp))
+		__set_bit(BNX2X_Q_FLG_SILENT_VLAN_REM, &flags);
 
 
 	return flags | bnx2x_get_common_flags(bp, fp, true);
@@ -2800,6 +2859,13 @@ static void bnx2x_pf_rx_q_prep(struct bnx2x *bp,
 		rxq_init->sb_cq_index = HC_SP_INDEX_ETH_FCOE_RX_CQ_CONS;
 	else
 		rxq_init->sb_cq_index = HC_INDEX_ETH_RX_CQ_CONS;
+	/* configure silent vlan removal
+	 * if multi function mode is afex, then mask default vlan
+	 */
+	if (IS_MF_AFEX(bp)) {
+		rxq_init->silent_removal_value = bp->afex_def_vlan_tag;
+		rxq_init->silent_removal_mask = VLAN_VID_MASK;
+	}
 }
 
 static void bnx2x_pf_tx_q_prep(struct bnx2x *bp,
@@ -3606,6 +3672,7 @@ static inline void bnx2x_attn_int_deasserted3(struct bnx2x *bp, u32 attn)
 			int func = BP_FUNC(bp);
 
 			REG_WR(bp, MISC_REG_AEU_GENERAL_ATTN_12 + func*4, 0);
+			bnx2x_read_mf_cfg(bp);
 			bp->mf_config[BP_VN(bp)] = MF_CFG_RD(bp,
 					func_mf_config[BP_ABS_FUNC(bp)].config);
 			val = SHMEM_RD(bp,
@@ -3628,6 +3695,9 @@ static inline void bnx2x_attn_int_deasserted3(struct bnx2x *bp, u32 attn)
 				/* start dcbx state machine */
 				bnx2x_dcbx_set_params(bp,
 					BNX2X_DCBX_STATE_NEG_RECEIVED);
+			if (val & DRV_STATUS_AFEX_EVENT_MASK)
+				bnx2x_handle_afex_cmd(bp,
+					val & DRV_STATUS_AFEX_EVENT_MASK);
 			if (bp->link_vars.periodic_flags &
 			    PERIODIC_FLAGS_LINK_EVENT) {
 				/*  sync with link */
@@ -4555,6 +4625,93 @@ static inline void bnx2x_handle_rx_mode_eqe(struct bnx2x *bp)
 	netif_addr_unlock_bh(bp->dev);
 }
 
+static inline void bnx2x_after_afex_vif_lists(struct bnx2x *bp,
+					      union event_ring_elem *elem)
+{
+	if (elem->message.data.vif_list_event.echo == VIF_LIST_RULE_GET) {
+		DP(BNX2X_MSG_SP,
+		   "afex: ramrod completed VIF LIST_GET, addrs 0x%x\n",
+		   elem->message.data.vif_list_event.func_bit_map);
+		bnx2x_fw_command(bp, DRV_MSG_CODE_AFEX_LISTGET_ACK,
+			elem->message.data.vif_list_event.func_bit_map);
+	} else if (elem->message.data.vif_list_event.echo ==
+		   VIF_LIST_RULE_SET) {
+		DP(BNX2X_MSG_SP, "afex: ramrod completed VIF LIST_SET\n");
+		bnx2x_fw_command(bp, DRV_MSG_CODE_AFEX_LISTSET_ACK, 0);
+	}
+}
+
+/* called with rtnl_lock */
+static inline void bnx2x_after_function_update(struct bnx2x *bp)
+{
+	int q, rc;
+	struct bnx2x_fastpath *fp;
+	struct bnx2x_queue_state_params queue_params = {NULL};
+	struct bnx2x_queue_update_params *q_update_params =
+		&queue_params.params.update;
+
+	/* Send Q update command with afex vlan removal values	for all Qs */
+	queue_params.cmd = BNX2X_Q_CMD_UPDATE;
+
+	/* set silent vlan removal values according to vlan mode */
+	__set_bit(BNX2X_Q_UPDATE_SILENT_VLAN_REM_CHNG,
+		  &q_update_params->update_flags);
+	__set_bit(BNX2X_Q_UPDATE_SILENT_VLAN_REM,
+		  &q_update_params->update_flags);
+	__set_bit(RAMROD_COMP_WAIT, &queue_params.ramrod_flags);
+
+	/* in access mode mark mask and value are 0 to strip all vlans */
+	if (bp->afex_vlan_mode == FUNC_MF_CFG_AFEX_VLAN_ACCESS_MODE) {
+		q_update_params->silent_removal_value = 0;
+		q_update_params->silent_removal_mask = 0;
+	} else {
+		q_update_params->silent_removal_value =
+			(bp->afex_def_vlan_tag & VLAN_VID_MASK);
+		q_update_params->silent_removal_mask = VLAN_VID_MASK;
+	}
+
+	for_each_eth_queue(bp, q) {
+		/* Set the appropriate Queue object */
+		fp = &bp->fp[q];
+		queue_params.q_obj = &fp->q_obj;
+
+		/* send the ramrod */
+		rc = bnx2x_queue_state_change(bp, &queue_params);
+		if (rc < 0)
+			BNX2X_ERR("Failed to config silent vlan rem for Q %d\n",
+				  q);
+	}
+
+#ifdef BCM_CNIC
+	if (!NO_FCOE(bp)) {
+		fp = &bp->fp[FCOE_IDX];
+		queue_params.q_obj = &fp->q_obj;
+
+		/* clear pending completion bit */
+		__clear_bit(RAMROD_COMP_WAIT, &queue_params.ramrod_flags);
+
+		/* mark latest Q bit */
+		smp_mb__before_clear_bit();
+		set_bit(BNX2X_AFEX_FCOE_Q_UPDATE_PENDING, &bp->sp_state);
+		smp_mb__after_clear_bit();
+
+		/* send Q update ramrod for FCoE Q */
+		rc = bnx2x_queue_state_change(bp, &queue_params);
+		if (rc < 0)
+			BNX2X_ERR("Failed to config silent vlan rem for Q %d\n",
+				  q);
+	} else {
+		/* If no FCoE ring - ACK MCP now */
+		bnx2x_link_report(bp);
+		bnx2x_fw_command(bp, DRV_MSG_CODE_AFEX_VIFSET_ACK, 0);
+	}
+#else
+	/* If no FCoE ring - ACK MCP now */
+	bnx2x_link_report(bp);
+	bnx2x_fw_command(bp, DRV_MSG_CODE_AFEX_VIFSET_ACK, 0);
+#endif /* BCM_CNIC */
+}
+
 static inline struct bnx2x_queue_sp_obj *bnx2x_cid_to_q_obj(
 	struct bnx2x *bp, u32 cid)
 {
@@ -4652,6 +4809,28 @@ static void bnx2x_eq_int(struct bnx2x *bp)
 						BNX2X_F_CMD_TX_START))
 				break;
 			bnx2x_dcbx_set_params(bp, BNX2X_DCBX_STATE_TX_RELEASED);
+			goto next_spqe;
+		case EVENT_RING_OPCODE_FUNCTION_UPDATE:
+			DP(BNX2X_MSG_SP | BNX2X_MSG_MCP,
+			   "AFEX: ramrod completed FUNCTION_UPDATE\n");
+			f_obj->complete_cmd(bp, f_obj, BNX2X_F_CMD_AFEX_UPDATE);
+
+			/* We will perform the Queues update from sp_rtnl task
+			 * as all Queue SP operations should run under
+			 * rtnl_lock.
+			 */
+			smp_mb__before_clear_bit();
+			set_bit(BNX2X_SP_RTNL_AFEX_F_UPDATE,
+				&bp->sp_rtnl_state);
+			smp_mb__after_clear_bit();
+
+			schedule_delayed_work(&bp->sp_rtnl_task, 0);
+			goto next_spqe;
+
+		case EVENT_RING_OPCODE_AFEX_VIF_LISTS:
+			f_obj->complete_cmd(bp, f_obj,
+					    BNX2X_F_CMD_AFEX_VIFLISTS);
+			bnx2x_after_afex_vif_lists(bp, elem);
 			goto next_spqe;
 		case EVENT_RING_OPCODE_FUNCTION_START:
 			DP(BNX2X_MSG_SP | NETIF_MSG_IFUP,
@@ -4784,6 +4963,13 @@ static void bnx2x_sp_task(struct work_struct *work)
 
 	bnx2x_ack_sb(bp, bp->igu_dsb_id, ATTENTION_ID,
 	     le16_to_cpu(bp->def_att_idx), IGU_INT_ENABLE, 1);
+
+	/* afex - poll to check if VIFSET_ACK should be sent to MFW */
+	if (test_and_clear_bit(BNX2X_AFEX_PENDING_VIFSET_MCP_ACK,
+			       &bp->sp_state)) {
+		bnx2x_link_report(bp);
+		bnx2x_fw_command(bp, DRV_MSG_CODE_AFEX_VIFSET_ACK, 0);
+	}
 }
 
 irqreturn_t bnx2x_msix_sp_int(int irq, void *dev_instance)
@@ -6255,12 +6441,24 @@ static int bnx2x_init_hw_common(struct bnx2x *bp)
 	if (!CHIP_IS_E1(bp))
 		REG_WR(bp, PRS_REG_E1HOV_MODE, bp->path_has_ovlan);
 
-	if (!CHIP_IS_E1x(bp) && !CHIP_IS_E3B0(bp))
-		/* Bit-map indicating which L2 hdrs may appear
-		 * after the basic Ethernet header
-		 */
-		REG_WR(bp, PRS_REG_HDRS_AFTER_BASIC,
-		       bp->path_has_ovlan ? 7 : 6);
+	if (!CHIP_IS_E1x(bp) && !CHIP_IS_E3B0(bp)) {
+		if (IS_MF_AFEX(bp)) {
+			/* configure that VNTag and VLAN headers must be
+			 * received in afex mode
+			 */
+			REG_WR(bp, PRS_REG_HDRS_AFTER_BASIC, 0xE);
+			REG_WR(bp, PRS_REG_MUST_HAVE_HDRS, 0xA);
+			REG_WR(bp, PRS_REG_HDRS_AFTER_TAG_0, 0x6);
+			REG_WR(bp, PRS_REG_TAG_ETHERTYPE_0, 0x8926);
+			REG_WR(bp, PRS_REG_TAG_LEN_0, 0x4);
+		} else {
+			/* Bit-map indicating which L2 hdrs may appear
+			 * after the basic Ethernet header
+			 */
+			REG_WR(bp, PRS_REG_HDRS_AFTER_BASIC,
+			       bp->path_has_ovlan ? 7 : 6);
+		}
+	}
 
 	bnx2x_init_block(bp, BLOCK_TSDM, PHASE_COMMON);
 	bnx2x_init_block(bp, BLOCK_CSDM, PHASE_COMMON);
@@ -6294,9 +6492,21 @@ static int bnx2x_init_hw_common(struct bnx2x *bp)
 	bnx2x_init_block(bp, BLOCK_XPB, PHASE_COMMON);
 	bnx2x_init_block(bp, BLOCK_PBF, PHASE_COMMON);
 
-	if (!CHIP_IS_E1x(bp))
-		REG_WR(bp, PBF_REG_HDRS_AFTER_BASIC,
-		       bp->path_has_ovlan ? 7 : 6);
+	if (!CHIP_IS_E1x(bp)) {
+		if (IS_MF_AFEX(bp)) {
+			/* configure that VNTag and VLAN headers must be
+			 * sent in afex mode
+			 */
+			REG_WR(bp, PBF_REG_HDRS_AFTER_BASIC, 0xE);
+			REG_WR(bp, PBF_REG_MUST_HAVE_HDRS, 0xA);
+			REG_WR(bp, PBF_REG_HDRS_AFTER_TAG_0, 0x6);
+			REG_WR(bp, PBF_REG_TAG_ETHERTYPE_0, 0x8926);
+			REG_WR(bp, PBF_REG_TAG_LEN_0, 0x4);
+		} else {
+			REG_WR(bp, PBF_REG_HDRS_AFTER_BASIC,
+			       bp->path_has_ovlan ? 7 : 6);
+		}
+	}
 
 	REG_WR(bp, SRC_REG_SOFT_RST, 1);
 
@@ -6514,15 +6724,29 @@ static int bnx2x_init_hw_port(struct bnx2x *bp)
 
 
 	bnx2x_init_block(bp, BLOCK_PRS, init_phase);
-	if (CHIP_IS_E3B0(bp))
-		/* Ovlan exists only if we are in multi-function +
-		 * switch-dependent mode, in switch-independent there
-		 * is no ovlan headers
-		 */
-		REG_WR(bp, BP_PORT(bp) ?
-		       PRS_REG_HDRS_AFTER_BASIC_PORT_1 :
-		       PRS_REG_HDRS_AFTER_BASIC_PORT_0,
-		       (bp->path_has_ovlan ? 7 : 6));
+	if (CHIP_IS_E3B0(bp)) {
+		if (IS_MF_AFEX(bp)) {
+			/* configure headers for AFEX mode */
+			REG_WR(bp, BP_PORT(bp) ?
+			       PRS_REG_HDRS_AFTER_BASIC_PORT_1 :
+			       PRS_REG_HDRS_AFTER_BASIC_PORT_0, 0xE);
+			REG_WR(bp, BP_PORT(bp) ?
+			       PRS_REG_HDRS_AFTER_TAG_0_PORT_1 :
+			       PRS_REG_HDRS_AFTER_TAG_0_PORT_0, 0x6);
+			REG_WR(bp, BP_PORT(bp) ?
+			       PRS_REG_MUST_HAVE_HDRS_PORT_1 :
+			       PRS_REG_MUST_HAVE_HDRS_PORT_0, 0xA);
+		} else {
+			/* Ovlan exists only if we are in multi-function +
+			 * switch-dependent mode, in switch-independent there
+			 * is no ovlan headers
+			 */
+			REG_WR(bp, BP_PORT(bp) ?
+			       PRS_REG_HDRS_AFTER_BASIC_PORT_1 :
+			       PRS_REG_HDRS_AFTER_BASIC_PORT_0,
+			       (bp->path_has_ovlan ? 7 : 6));
+		}
+	}
 
 	bnx2x_init_block(bp, BLOCK_TSDM, init_phase);
 	bnx2x_init_block(bp, BLOCK_CSDM, init_phase);
@@ -6584,10 +6808,15 @@ static int bnx2x_init_hw_port(struct bnx2x *bp)
 		/* Bit-map indicating which L2 hdrs may appear after the
 		 * basic Ethernet header
 		 */
-		REG_WR(bp, BP_PORT(bp) ?
-			   NIG_REG_P1_HDRS_AFTER_BASIC :
-			   NIG_REG_P0_HDRS_AFTER_BASIC,
-			   IS_MF_SD(bp) ? 7 : 6);
+		if (IS_MF_AFEX(bp))
+			REG_WR(bp, BP_PORT(bp) ?
+			       NIG_REG_P1_HDRS_AFTER_BASIC :
+			       NIG_REG_P0_HDRS_AFTER_BASIC, 0xE);
+		else
+			REG_WR(bp, BP_PORT(bp) ?
+			       NIG_REG_P1_HDRS_AFTER_BASIC :
+			       NIG_REG_P0_HDRS_AFTER_BASIC,
+			       IS_MF_SD(bp) ? 7 : 6);
 
 		if (CHIP_IS_E3(bp))
 			REG_WR(bp, BP_PORT(bp) ?
@@ -6609,6 +6838,7 @@ static int bnx2x_init_hw_port(struct bnx2x *bp)
 				val = 1;
 				break;
 			case MULTI_FUNCTION_SI:
+			case MULTI_FUNCTION_AFEX:
 				val = 2;
 				break;
 			}
@@ -6640,13 +6870,16 @@ static int bnx2x_init_hw_port(struct bnx2x *bp)
 static void bnx2x_ilt_wr(struct bnx2x *bp, u32 index, dma_addr_t addr)
 {
 	int reg;
+	u32 wb_write[2];
 
 	if (CHIP_IS_E1(bp))
 		reg = PXP2_REG_RQ_ONCHIP_AT + index*8;
 	else
 		reg = PXP2_REG_RQ_ONCHIP_AT_B0 + index*8;
 
-	bnx2x_wb_wr(bp, reg, ONCHIP_ADDR1(addr), ONCHIP_ADDR2(addr));
+	wb_write[0] = ONCHIP_ADDR1(addr);
+	wb_write[1] = ONCHIP_ADDR2(addr);
+	REG_WR_DMAE(bp, reg, wb_write, 2);
 }
 
 static inline void bnx2x_igu_clear_sb(struct bnx2x *bp, u8 idu_sb_id)
@@ -7192,7 +7425,8 @@ int bnx2x_set_eth_mac(struct bnx2x *bp, bool set)
 	unsigned long ramrod_flags = 0;
 
 #ifdef BCM_CNIC
-	if (is_zero_ether_addr(bp->dev->dev_addr) && IS_MF_STORAGE_SD(bp)) {
+	if (is_zero_ether_addr(bp->dev->dev_addr) &&
+	    (IS_MF_STORAGE_SD(bp) || IS_MF_FCOE_AFEX(bp))) {
 		DP(NETIF_MSG_IFUP | NETIF_MSG_IFDOWN,
 		   "Ignoring Zero MAC for STORAGE SD mode\n");
 		return 0;
@@ -7230,7 +7464,7 @@ static void __devinit bnx2x_set_int_mode(struct bnx2x *bp)
 		BNX2X_DEV_INFO("set number of queues to 1\n");
 		break;
 	default:
-		/* Set number of queues according to bp->multi_mode value */
+		/* Set number of queues for MSI-X mode */
 		bnx2x_set_num_queues(bp);
 
 		BNX2X_DEV_INFO("set number of queues to %d\n", bp->num_queues);
@@ -7239,15 +7473,17 @@ static void __devinit bnx2x_set_int_mode(struct bnx2x *bp)
 		 * so try to enable MSI-X with the requested number of fp's
 		 * and fallback to MSI or legacy INTx with one fp
 		 */
-		if (bnx2x_enable_msix(bp)) {
-			/* failed to enable MSI-X */
-			BNX2X_DEV_INFO("Failed to enable MSI-X (%d), set number of queues to %d\n",
+		if (bnx2x_enable_msix(bp) ||
+		    bp->flags & USING_SINGLE_MSIX_FLAG) {
+			/* failed to enable multiple MSI-X */
+			BNX2X_DEV_INFO("Failed to enable multiple MSI-X (%d), set number of queues to %d\n",
 				       bp->num_queues, 1 + NON_ETH_CONTEXT_USE);
 
 			bp->num_queues = 1 + NON_ETH_CONTEXT_USE;
 
 			/* Try to enable MSI */
-			if (!(bp->flags & DISABLE_MSI_FLAG))
+			if (!(bp->flags & USING_SINGLE_MSIX_FLAG) &&
+			    !(bp->flags & DISABLE_MSI_FLAG))
 				bnx2x_enable_msi(bp);
 		}
 		break;
@@ -8727,7 +8963,8 @@ sp_rtnl_not_reset:
 #endif
 	if (test_and_clear_bit(BNX2X_SP_RTNL_SETUP_TC, &bp->sp_rtnl_state))
 		bnx2x_setup_tc(bp->dev, bp->dcbx_port_params.ets.num_of_cos);
-
+	if (test_and_clear_bit(BNX2X_SP_RTNL_AFEX_F_UPDATE, &bp->sp_rtnl_state))
+		bnx2x_after_function_update(bp);
 	/*
 	 * in case of fan failure we need to reset id if the "stop on error"
 	 * debug flag is set, since we trying to prevent permanent overheating
@@ -9201,6 +9438,17 @@ static void __devinit bnx2x_get_common_hwinfo(struct bnx2x *bp)
 	id |= (val & 0xf);
 	bp->common.chip_id = id;
 
+	/* force 57811 according to MISC register */
+	if (REG_RD(bp, MISC_REG_CHIP_TYPE) & MISC_REG_CHIP_TYPE_57811_MASK) {
+		if (CHIP_IS_57810(bp))
+			bp->common.chip_id = (CHIP_NUM_57811 << 16) |
+				(bp->common.chip_id & 0x0000FFFF);
+		else if (CHIP_IS_57810_MF(bp))
+			bp->common.chip_id = (CHIP_NUM_57811_MF << 16) |
+				(bp->common.chip_id & 0x0000FFFF);
+		bp->common.chip_id |= 0x1;
+	}
+
 	/* Set doorbell size */
 	bp->db_size = (1 << BNX2X_DB_SHIFT);
 
@@ -9293,7 +9541,9 @@ static void __devinit bnx2x_get_common_hwinfo(struct bnx2x *bp)
 	bp->link_params.feature_config_flags |=
 		(val >= REQ_BC_VER_4_VRFY_SPECIFIC_PHY_OPT_MDL) ?
 		FEATURE_CONFIG_BC_SUPPORTS_DUAL_PHY_OPT_MDL_VRFY : 0;
-
+	bp->link_params.feature_config_flags |=
+		(val >= REQ_BC_VER_4_VRFY_AFEX_SUPPORTED) ?
+		FEATURE_CONFIG_BC_SUPPORTS_AFEX : 0;
 	bp->link_params.feature_config_flags |=
 		(val >= REQ_BC_VER_4_SFP_TX_DISABLE_SUPPORTED) ?
 		FEATURE_CONFIG_BC_SUPPORTS_SFP_TX_DISABLED : 0;
@@ -9925,6 +10175,9 @@ static void __devinit bnx2x_get_mac_hwinfo(struct bnx2x *bp)
 
 			} else
 				bp->flags |= NO_FCOE_FLAG;
+
+			bp->mf_ext_config = cfg;
+
 		} else { /* SD MODE */
 			if (IS_MF_STORAGE_SD(bp)) {
 				if (BNX2X_IS_MF_SD_PROTOCOL_ISCSI(bp)) {
@@ -9946,6 +10199,11 @@ static void __devinit bnx2x_get_mac_hwinfo(struct bnx2x *bp)
 				memset(bp->dev->dev_addr, 0, ETH_ALEN);
 			}
 		}
+
+		if (IS_MF_FCOE_AFEX(bp))
+			/* use FIP MAC as primary MAC */
+			memcpy(bp->dev->dev_addr, fip_mac, ETH_ALEN);
+
 #endif
 	} else {
 		/* in SF read MACs from port configuration */
@@ -10118,6 +10376,19 @@ static int __devinit bnx2x_get_hwinfo(struct bnx2x *bp)
 				} else
 					BNX2X_DEV_INFO("illegal MAC address for SI\n");
 				break;
+			case SHARED_FEAT_CFG_FORCE_SF_MODE_AFEX_MODE:
+				if ((!CHIP_IS_E1x(bp)) &&
+				    (MF_CFG_RD(bp, func_mf_config[func].
+					       mac_upper) != 0xffff) &&
+				    (SHMEM2_HAS(bp,
+						afex_driver_support))) {
+					bp->mf_mode = MULTI_FUNCTION_AFEX;
+					bp->mf_config[vn] = MF_CFG_RD(bp,
+						func_mf_config[func].config);
+				} else {
+					BNX2X_DEV_INFO("can not configure afex mode\n");
+				}
+				break;
 			case SHARED_FEAT_CFG_FORCE_SF_MODE_MF_ALLOWED:
 				/* get OV configuration */
 				val = MF_CFG_RD(bp,
@@ -10157,6 +10428,9 @@ static int __devinit bnx2x_get_hwinfo(struct bnx2x *bp)
 					func);
 				return -EPERM;
 			}
+			break;
+		case MULTI_FUNCTION_AFEX:
+			BNX2X_DEV_INFO("func %d is in MF afex mode\n", func);
 			break;
 		case MULTI_FUNCTION_SI:
 			BNX2X_DEV_INFO("func %d is in MF switch-independent mode\n",
@@ -10325,6 +10599,9 @@ static void __devinit bnx2x_set_modes_bitmap(struct bnx2x *bp)
 		case MULTI_FUNCTION_SI:
 			SET_FLAGS(flags, MODE_MF_SI);
 			break;
+		case MULTI_FUNCTION_AFEX:
+			SET_FLAGS(flags, MODE_MF_AFEX);
+			break;
 		}
 	} else
 		SET_FLAGS(flags, MODE_SF);
@@ -10384,12 +10661,10 @@ static int __devinit bnx2x_init_bp(struct bnx2x *bp)
 	if (BP_NOMCP(bp) && (func == 0))
 		dev_err(&bp->pdev->dev, "MCP disabled, must load devices in order!\n");
 
-	bp->multi_mode = multi_mode;
-
 	bp->disable_tpa = disable_tpa;
 
 #ifdef BCM_CNIC
-	bp->disable_tpa |= IS_MF_STORAGE_SD(bp);
+	bp->disable_tpa |= IS_MF_STORAGE_SD(bp) || IS_MF_FCOE_AFEX(bp);
 #endif
 
 	/* Set TPA flags */
@@ -10408,7 +10683,7 @@ static int __devinit bnx2x_init_bp(struct bnx2x *bp)
 
 	bp->mrrs = mrrs;
 
-	bp->tx_ring_size = MAX_TX_AVAIL;
+	bp->tx_ring_size = IS_MF_FCOE_AFEX(bp) ? 0 : MAX_TX_AVAIL;
 
 	/* make sure that the numbers are in the right granularity */
 	bp->tx_ticks = (50 / BNX2X_BTR) * BNX2X_BTR;
@@ -10438,8 +10713,6 @@ static int __devinit bnx2x_init_bp(struct bnx2x *bp)
 		bp->max_cos = BNX2X_MULTI_TX_COS_E2_E3A0;
 	if (CHIP_IS_E3B0(bp))
 		bp->max_cos = BNX2X_MULTI_TX_COS_E3B0;
-
-	bp->gro_check = bnx2x_need_gro_check(bp->dev->mtu);
 
 	return rc;
 }
@@ -11244,6 +11517,8 @@ void bnx2x__init_func_obj(struct bnx2x *bp)
 	bnx2x_init_func_obj(bp, &bp->func_obj,
 			    bnx2x_sp(bp, func_rdata),
 			    bnx2x_sp_mapping(bp, func_rdata),
+			    bnx2x_sp(bp, func_afex_rdata),
+			    bnx2x_sp_mapping(bp, func_afex_rdata),
 			    &bnx2x_func_sp_drv);
 }
 
@@ -11325,6 +11600,8 @@ static int __devinit bnx2x_init_one(struct pci_dev *pdev,
 	case BCM57810_MF:
 	case BCM57840:
 	case BCM57840_MF:
+	case BCM57811:
+	case BCM57811_MF:
 		max_cos_est = BNX2X_MULTI_TX_COS_E3B0;
 		break;
 

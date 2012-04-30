@@ -535,7 +535,7 @@ static int send_msg(struct kiocb *iocb, struct socket *sock,
 		     (dest->family != AF_TIPC)))
 		return -EINVAL;
 	if ((total_len > TIPC_MAX_USER_MSG_SIZE) ||
-	    (m->msg_iovlen > (unsigned)INT_MAX))
+	    (m->msg_iovlen > (unsigned int)INT_MAX))
 		return -EMSGSIZE;
 
 	if (iocb)
@@ -647,7 +647,7 @@ static int send_packet(struct kiocb *iocb, struct socket *sock,
 		return send_msg(iocb, sock, m, total_len);
 
 	if ((total_len > TIPC_MAX_USER_MSG_SIZE) ||
-	    (m->msg_iovlen > (unsigned)INT_MAX))
+	    (m->msg_iovlen > (unsigned int)INT_MAX))
 		return -EMSGSIZE;
 
 	if (iocb)
@@ -734,8 +734,8 @@ static int send_stream(struct kiocb *iocb, struct socket *sock,
 		goto exit;
 	}
 
-	if ((total_len > (unsigned)INT_MAX) ||
-	    (m->msg_iovlen > (unsigned)INT_MAX)) {
+	if ((total_len > (unsigned int)INT_MAX) ||
+	    (m->msg_iovlen > (unsigned int)INT_MAX)) {
 		res = -EMSGSIZE;
 		goto exit;
 	}
@@ -1236,7 +1236,8 @@ static u32 filter_rcv(struct sock *sk, struct sk_buff *buf)
 		if (msg_mcast(msg))
 			return TIPC_ERR_NO_PORT;
 		if (sock->state == SS_CONNECTED) {
-			if (!msg_connected(msg))
+			if (!msg_connected(msg) ||
+			    !tipc_port_peer_msg(tipc_sk_port(sk), msg))
 				return TIPC_ERR_NO_PORT;
 		} else if (sock->state == SS_CONNECTING) {
 			if (!msg_connected(msg) && (msg_errcode(msg) == 0))
@@ -1329,7 +1330,7 @@ static u32 dispatch(struct tipc_port *tport, struct sk_buff *buf)
 	if (!sock_owned_by_user(sk)) {
 		res = filter_rcv(sk, buf);
 	} else {
-		if (sk_add_backlog(sk, buf))
+		if (sk_add_backlog(sk, buf, sk->sk_rcvbuf))
 			res = TIPC_ERR_OVERLOAD;
 		else
 			res = TIPC_OK;

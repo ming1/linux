@@ -135,6 +135,7 @@
 
 /* PHY Power Management Control */
 #define HV_PM_CTRL		PHY_REG(770, 17)
+#define HV_PM_CTRL_PLL_STOP_IN_K1_GIGA	0x100
 
 /* PHY Low Power Idle Control */
 #define I82579_LPI_CTRL				PHY_REG(772, 20)
@@ -1708,8 +1709,18 @@ static s32 e1000_k1_workaround_lv(struct e1000_hw *hw)
 			return ret_val;
 
 		if (status_reg & HV_M_STATUS_SPEED_1000) {
+			u16 pm_phy_reg;
+
 			mac_reg |= E1000_FEXTNVM4_BEACON_DURATION_8USEC;
 			phy_reg &= ~I82579_LPI_CTRL_FORCE_PLL_LOCK_COUNT;
+			/* LV 1G Packet drop issue wa  */
+			ret_val = e1e_rphy(hw, HV_PM_CTRL, &pm_phy_reg);
+			if (ret_val)
+				return ret_val;
+			pm_phy_reg &= ~HV_PM_CTRL_PLL_STOP_IN_K1_GIGA;
+			ret_val = e1e_wphy(hw, HV_PM_CTRL, pm_phy_reg);
+			if (ret_val)
+				return ret_val;
 		} else {
 			mac_reg |= E1000_FEXTNVM4_BEACON_DURATION_16USEC;
 			phy_reg |= I82579_LPI_CTRL_FORCE_PLL_LOCK_COUNT;
@@ -2213,7 +2224,7 @@ static s32 e1000_flash_cycle_init_ich8lan(struct e1000_hw *hw)
 	hsfsts.regval = er16flash(ICH_FLASH_HSFSTS);
 
 	/* Check if the flash descriptor is valid */
-	if (hsfsts.hsf_status.fldesvalid == 0) {
+	if (!hsfsts.hsf_status.fldesvalid) {
 		e_dbg("Flash descriptor invalid.  SW Sequencing must be used.\n");
 		return -E1000_ERR_NVM;
 	}
@@ -2233,7 +2244,7 @@ static s32 e1000_flash_cycle_init_ich8lan(struct e1000_hw *hw)
 	 * completed.
 	 */
 
-	if (hsfsts.hsf_status.flcinprog == 0) {
+	if (!hsfsts.hsf_status.flcinprog) {
 		/*
 		 * There is no cycle running at present,
 		 * so we can start a cycle.
@@ -2251,7 +2262,7 @@ static s32 e1000_flash_cycle_init_ich8lan(struct e1000_hw *hw)
 		 */
 		for (i = 0; i < ICH_FLASH_READ_COMMAND_TIMEOUT; i++) {
 			hsfsts.regval = er16flash(ICH_FLASH_HSFSTS);
-			if (hsfsts.hsf_status.flcinprog == 0) {
+			if (!hsfsts.hsf_status.flcinprog) {
 				ret_val = 0;
 				break;
 			}
@@ -2293,12 +2304,12 @@ static s32 e1000_flash_cycle_ich8lan(struct e1000_hw *hw, u32 timeout)
 	/* wait till FDONE bit is set to 1 */
 	do {
 		hsfsts.regval = er16flash(ICH_FLASH_HSFSTS);
-		if (hsfsts.hsf_status.flcdone == 1)
+		if (hsfsts.hsf_status.flcdone)
 			break;
 		udelay(1);
 	} while (i++ < timeout);
 
-	if (hsfsts.hsf_status.flcdone == 1 && hsfsts.hsf_status.flcerr == 0)
+	if (hsfsts.hsf_status.flcdone && !hsfsts.hsf_status.flcerr)
 		return 0;
 
 	return -E1000_ERR_NVM;
@@ -2409,10 +2420,10 @@ static s32 e1000_read_flash_data_ich8lan(struct e1000_hw *hw, u32 offset,
 			 * ICH_FLASH_CYCLE_REPEAT_COUNT times.
 			 */
 			hsfsts.regval = er16flash(ICH_FLASH_HSFSTS);
-			if (hsfsts.hsf_status.flcerr == 1) {
+			if (hsfsts.hsf_status.flcerr) {
 				/* Repeat for some time before giving up. */
 				continue;
-			} else if (hsfsts.hsf_status.flcdone == 0) {
+			} else if (!hsfsts.hsf_status.flcdone) {
 				e_dbg("Timeout error - flash cycle did not complete.\n");
 				break;
 			}
@@ -2642,7 +2653,7 @@ static s32 e1000_validate_nvm_checksum_ich8lan(struct e1000_hw *hw)
 	if (ret_val)
 		return ret_val;
 
-	if ((data & 0x40) == 0) {
+	if (!(data & 0x40)) {
 		data |= 0x40;
 		ret_val = e1000_write_nvm(hw, 0x19, 1, &data);
 		if (ret_val)
@@ -2760,10 +2771,10 @@ static s32 e1000_write_flash_data_ich8lan(struct e1000_hw *hw, u32 offset,
 		 * try...ICH_FLASH_CYCLE_REPEAT_COUNT times.
 		 */
 		hsfsts.regval = er16flash(ICH_FLASH_HSFSTS);
-		if (hsfsts.hsf_status.flcerr == 1)
+		if (hsfsts.hsf_status.flcerr)
 			/* Repeat for some time before giving up. */
 			continue;
-		if (hsfsts.hsf_status.flcdone == 0) {
+		if (!hsfsts.hsf_status.flcdone) {
 			e_dbg("Timeout error - flash cycle did not complete.\n");
 			break;
 		}
@@ -2915,10 +2926,10 @@ static s32 e1000_erase_flash_bank_ich8lan(struct e1000_hw *hw, u32 bank)
 			 * a few more times else Done
 			 */
 			hsfsts.regval = er16flash(ICH_FLASH_HSFSTS);
-			if (hsfsts.hsf_status.flcerr == 1)
+			if (hsfsts.hsf_status.flcerr)
 				/* repeat for some time before giving up */
 				continue;
-			else if (hsfsts.hsf_status.flcdone == 0)
+			else if (!hsfsts.hsf_status.flcdone)
 				return ret_val;
 		} while (++count < ICH_FLASH_CYCLE_REPEAT_COUNT);
 	}
@@ -3921,7 +3932,7 @@ static s32 e1000_get_cfg_done_ich8lan(struct e1000_hw *hw)
 
 	/* If EEPROM is not marked present, init the IGP 3 PHY manually */
 	if (hw->mac.type <= e1000_ich9lan) {
-		if (((er32(EECD) & E1000_EECD_PRES) == 0) &&
+		if (!(er32(EECD) & E1000_EECD_PRES) &&
 		    (hw->phy.type == e1000_phy_igp_3)) {
 			e1000e_phy_init_script_igp3(hw);
 		}

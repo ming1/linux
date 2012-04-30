@@ -58,7 +58,7 @@ static atomic_t tipc_num_links = ATOMIC_INIT(0);
  * entries has been chosen so that no hash chain exceeds 8 nodes and will
  * usually be much smaller (typically only a single node).
  */
-static inline unsigned int tipc_hashfn(u32 addr)
+static unsigned int tipc_hashfn(u32 addr)
 {
 	return addr & (NODE_HTABLE_SIZE - 1);
 }
@@ -72,7 +72,7 @@ struct tipc_node *tipc_node_find(u32 addr)
 	struct tipc_node *node;
 	struct hlist_node *pos;
 
-	if (unlikely(!in_own_cluster(addr)))
+	if (unlikely(!in_own_cluster_exact(addr)))
 		return NULL;
 
 	hlist_for_each_entry(node, pos, &node_htable[tipc_hashfn(addr)], hash) {

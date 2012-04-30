@@ -278,33 +278,158 @@ void atl1c_hash_set(struct atl1c_hw *hw, u32 hash_value)
 }
 
 /*
+ * wait mdio module be idle
+ * return true: idle
+ *        false: still busy
+ */
+bool atl1c_wait_mdio_idle(struct atl1c_hw *hw)
+{
+	u32 val;
+	int i;
+
+	for (i = 0; i < MDIO_MAX_AC_TO; i++) {
+		AT_READ_REG(hw, REG_MDIO_CTRL, &val);
+		if (!(val & (MDIO_CTRL_BUSY | MDIO_CTRL_START)))
+			break;
+		udelay(10);
+	}
+
+	return i != MDIO_MAX_AC_TO;
+}
+
+void atl1c_stop_phy_polling(struct atl1c_hw *hw)
+{
+	if (!(hw->ctrl_flags & ATL1C_FPGA_VERSION))
+		return;
+
+	AT_WRITE_REG(hw, REG_MDIO_CTRL, 0);
+	atl1c_wait_mdio_idle(hw);
+}
+
+void atl1c_start_phy_polling(struct atl1c_hw *hw, u16 clk_sel)
+{
+	u32 val;
+
+	if (!(hw->ctrl_flags & ATL1C_FPGA_VERSION))
+		return;
+
+	val = MDIO_CTRL_SPRES_PRMBL |
+		FIELDX(MDIO_CTRL_CLK_SEL, clk_sel) |
+		FIELDX(MDIO_CTRL_REG, 1) |
+		MDIO_CTRL_START |
+		MDIO_CTRL_OP_READ;
+	AT_WRITE_REG(hw, REG_MDIO_CTRL, val);
+	atl1c_wait_mdio_idle(hw);
+	val |= MDIO_CTRL_AP_EN;
+	val &= ~MDIO_CTRL_START;
+	AT_WRITE_REG(hw, REG_MDIO_CTRL, val);
+	udelay(30);
+}
+
+
+/*
+ * atl1c_read_phy_core
+ * core funtion to read register in PHY via MDIO control regsiter.
+ * ext: extension register (see IEEE 802.3)
+ * dev: device address (see IEEE 802.3 DEVAD, PRTAD is fixed to 0)
+ * reg: reg to read
+ */
+int atl1c_read_phy_core(struct atl1c_hw *hw, bool ext, u8 dev,
+			u16 reg, u16 *phy_data)
+{
+	u32 val;
+	u16 clk_sel = MDIO_CTRL_CLK_25_4;
+
+	atl1c_stop_phy_polling(hw);
+
+	*phy_data = 0;
+
+	/* only l2c_b2 & l1d_2 could use slow clock */
+	if ((hw->nic_type == athr_l2c_b2 || hw->nic_type == athr_l1d_2) &&
+		hw->hibernate)
+		clk_sel = MDIO_CTRL_CLK_25_128;
+	if (ext) {
+		val = FIELDX(MDIO_EXTN_DEVAD, dev) | FIELDX(MDIO_EXTN_REG, reg);
+		AT_WRITE_REG(hw, REG_MDIO_EXTN, val);
+		val = MDIO_CTRL_SPRES_PRMBL |
+			FIELDX(MDIO_CTRL_CLK_SEL, clk_sel) |
+			MDIO_CTRL_START |
+			MDIO_CTRL_MODE_EXT |
+			MDIO_CTRL_OP_READ;
+	} else {
+		val = MDIO_CTRL_SPRES_PRMBL |
+			FIELDX(MDIO_CTRL_CLK_SEL, clk_sel) |
+			FIELDX(MDIO_CTRL_REG, reg) |
+			MDIO_CTRL_START |
+			MDIO_CTRL_OP_READ;
+	}
+	AT_WRITE_REG(hw, REG_MDIO_CTRL, val);
+
+	if (!atl1c_wait_mdio_idle(hw))
+		return -1;
+
+	AT_READ_REG(hw, REG_MDIO_CTRL, &val);
+	*phy_data = (u16)FIELD_GETX(val, MDIO_CTRL_DATA);
+
+	atl1c_start_phy_polling(hw, clk_sel);
+
+	return 0;
+}
+
+/*
+ * atl1c_write_phy_core
+ * core funtion to write to register in PHY via MDIO control regsiter.
+ * ext: extension register (see IEEE 802.3)
+ * dev: device address (see IEEE 802.3 DEVAD, PRTAD is fixed to 0)
+ * reg: reg to write
+ */
+int atl1c_write_phy_core(struct atl1c_hw *hw, bool ext, u8 dev,
+			u16 reg, u16 phy_data)
+{
+	u32 val;
+	u16 clk_sel = MDIO_CTRL_CLK_25_4;
+
+	atl1c_stop_phy_polling(hw);
+
+
+	/* only l2c_b2 & l1d_2 could use slow clock */
+	if ((hw->nic_type == athr_l2c_b2 || hw->nic_type == athr_l1d_2) &&
+		hw->hibernate)
+		clk_sel = MDIO_CTRL_CLK_25_128;
+
+	if (ext) {
+		val = FIELDX(MDIO_EXTN_DEVAD, dev) | FIELDX(MDIO_EXTN_REG, reg);
+		AT_WRITE_REG(hw, REG_MDIO_EXTN, val);
+		val = MDIO_CTRL_SPRES_PRMBL |
+			FIELDX(MDIO_CTRL_CLK_SEL, clk_sel) |
+			FIELDX(MDIO_CTRL_DATA, phy_data) |
+			MDIO_CTRL_START |
+			MDIO_CTRL_MODE_EXT;
+	} else {
+		val = MDIO_CTRL_SPRES_PRMBL |
+			FIELDX(MDIO_CTRL_CLK_SEL, clk_sel) |
+			FIELDX(MDIO_CTRL_DATA, phy_data) |
+			FIELDX(MDIO_CTRL_REG, reg) |
+			MDIO_CTRL_START;
+	}
+	AT_WRITE_REG(hw, REG_MDIO_CTRL, val);
+
+	if (!atl1c_wait_mdio_idle(hw))
+		return -1;
+
+	atl1c_start_phy_polling(hw, clk_sel);
+
+	return 0;
+}
+
+/*
  * Reads the value from a PHY register
  * hw - Struct containing variables accessed by shared code
  * reg_addr - address of the PHY register to read
  */
 int atl1c_read_phy_reg(struct atl1c_hw *hw, u16 reg_addr, u16 *phy_data)
 {
-	u32 val;
-	int i;
-
-	val = ((u32)(reg_addr & MDIO_REG_ADDR_MASK)) << MDIO_REG_ADDR_SHIFT |
-		MDIO_START | MDIO_SUP_PREAMBLE | MDIO_RW |
-		MDIO_CLK_25_4 << MDIO_CLK_SEL_SHIFT;
-
-	AT_WRITE_REG(hw, REG_MDIO_CTRL, val);
-
-	for (i = 0; i < MDIO_WAIT_TIMES; i++) {
-		udelay(2);
-		AT_READ_REG(hw, REG_MDIO_CTRL, &val);
-		if (!(val & (MDIO_START | MDIO_BUSY)))
-			break;
-	}
-	if (!(val & (MDIO_START | MDIO_BUSY))) {
-		*phy_data = (u16)val;
-		return 0;
-	}
-
-	return -1;
+	return atl1c_read_phy_core(hw, false, 0, reg_addr, phy_data);
 }
 
 /*
@@ -315,27 +440,47 @@ int atl1c_read_phy_reg(struct atl1c_hw *hw, u16 reg_addr, u16 *phy_data)
  */
 int atl1c_write_phy_reg(struct atl1c_hw *hw, u32 reg_addr, u16 phy_data)
 {
-	int i;
-	u32 val;
+	return atl1c_write_phy_core(hw, false, 0, reg_addr, phy_data);
+}
 
-	val = ((u32)(phy_data & MDIO_DATA_MASK)) << MDIO_DATA_SHIFT   |
-	       (reg_addr & MDIO_REG_ADDR_MASK) << MDIO_REG_ADDR_SHIFT |
-	       MDIO_SUP_PREAMBLE | MDIO_START |
-	       MDIO_CLK_25_4 << MDIO_CLK_SEL_SHIFT;
+/* read from PHY extension register */
+int atl1c_read_phy_ext(struct atl1c_hw *hw, u8 dev_addr,
+			u16 reg_addr, u16 *phy_data)
+{
+	return atl1c_read_phy_core(hw, true, dev_addr, reg_addr, phy_data);
+}
 
-	AT_WRITE_REG(hw, REG_MDIO_CTRL, val);
+/* write to PHY extension register */
+int atl1c_write_phy_ext(struct atl1c_hw *hw, u8 dev_addr,
+			u16 reg_addr, u16 phy_data)
+{
+	return atl1c_write_phy_core(hw, true, dev_addr, reg_addr, phy_data);
+}
 
-	for (i = 0; i < MDIO_WAIT_TIMES; i++) {
-		udelay(2);
-		AT_READ_REG(hw, REG_MDIO_CTRL, &val);
-		if (!(val & (MDIO_START | MDIO_BUSY)))
-			break;
-	}
+int atl1c_read_phy_dbg(struct atl1c_hw *hw, u16 reg_addr, u16 *phy_data)
+{
+	int err;
 
-	if (!(val & (MDIO_START | MDIO_BUSY)))
-		return 0;
+	err = atl1c_write_phy_reg(hw, MII_DBG_ADDR, reg_addr);
+	if (unlikely(err))
+		return err;
+	else
+		err = atl1c_read_phy_reg(hw, MII_DBG_DATA, phy_data);
 
-	return -1;
+	return err;
+}
+
+int atl1c_write_phy_dbg(struct atl1c_hw *hw, u16 reg_addr, u16 phy_data)
+{
+	int err;
+
+	err = atl1c_write_phy_reg(hw, MII_DBG_ADDR, reg_addr);
+	if (unlikely(err))
+		return err;
+	else
+		err = atl1c_write_phy_reg(hw, MII_DBG_DATA, phy_data);
+
+	return err;
 }
 
 /*
@@ -380,119 +525,100 @@ static int atl1c_phy_setup_adv(struct atl1c_hw *hw)
 
 void atl1c_phy_disable(struct atl1c_hw *hw)
 {
-	AT_WRITE_REGW(hw, REG_GPHY_CTRL,
-			GPHY_CTRL_PW_WOL_DIS | GPHY_CTRL_EXT_RESET);
+	atl1c_power_saving(hw, 0);
 }
 
-static void atl1c_phy_magic_data(struct atl1c_hw *hw)
-{
-	u16 data;
-
-	data = ANA_LOOP_SEL_10BT | ANA_EN_MASK_TB | ANA_EN_10BT_IDLE |
-		((1 & ANA_INTERVAL_SEL_TIMER_MASK) <<
-		ANA_INTERVAL_SEL_TIMER_SHIFT);
-
-	atl1c_write_phy_reg(hw, MII_DBG_ADDR, MII_ANA_CTRL_18);
-	atl1c_write_phy_reg(hw, MII_DBG_DATA, data);
-
-	data = (2 & ANA_SERDES_CDR_BW_MASK) | ANA_MS_PAD_DBG |
-		ANA_SERDES_EN_DEEM | ANA_SERDES_SEL_HSP | ANA_SERDES_EN_PLL |
-		ANA_SERDES_EN_LCKDT;
-
-	atl1c_write_phy_reg(hw, MII_DBG_ADDR, MII_ANA_CTRL_5);
-	atl1c_write_phy_reg(hw, MII_DBG_DATA, data);
-
-	data = (44 & ANA_LONG_CABLE_TH_100_MASK) |
-		((33 & ANA_SHORT_CABLE_TH_100_MASK) <<
-		ANA_SHORT_CABLE_TH_100_SHIFT) | ANA_BP_BAD_LINK_ACCUM |
-		ANA_BP_SMALL_BW;
-
-	atl1c_write_phy_reg(hw, MII_DBG_ADDR, MII_ANA_CTRL_54);
-	atl1c_write_phy_reg(hw, MII_DBG_DATA, data);
-
-	data = (11 & ANA_IECHO_ADJ_MASK) | ((11 & ANA_IECHO_ADJ_MASK) <<
-		ANA_IECHO_ADJ_2_SHIFT) | ((8 & ANA_IECHO_ADJ_MASK) <<
-		ANA_IECHO_ADJ_1_SHIFT) | ((8 & ANA_IECHO_ADJ_MASK) <<
-		ANA_IECHO_ADJ_0_SHIFT);
-
-	atl1c_write_phy_reg(hw, MII_DBG_ADDR, MII_ANA_CTRL_4);
-	atl1c_write_phy_reg(hw, MII_DBG_DATA, data);
-
-	data = ANA_RESTART_CAL | ((7 & ANA_MANUL_SWICH_ON_MASK) <<
-		ANA_MANUL_SWICH_ON_SHIFT) | ANA_MAN_ENABLE |
-		ANA_SEL_HSP | ANA_EN_HB | ANA_OEN_125M;
-
-	atl1c_write_phy_reg(hw, MII_DBG_ADDR, MII_ANA_CTRL_0);
-	atl1c_write_phy_reg(hw, MII_DBG_DATA, data);
-
-	if (hw->ctrl_flags & ATL1C_HIB_DISABLE) {
-		atl1c_write_phy_reg(hw, MII_DBG_ADDR, MII_ANA_CTRL_41);
-		if (atl1c_read_phy_reg(hw, MII_DBG_DATA, &data) != 0)
-			return;
-		data &= ~ANA_TOP_PS_EN;
-		atl1c_write_phy_reg(hw, MII_DBG_DATA, data);
-
-		atl1c_write_phy_reg(hw, MII_DBG_ADDR, MII_ANA_CTRL_11);
-		if (atl1c_read_phy_reg(hw, MII_DBG_DATA, &data) != 0)
-			return;
-		data &= ~ANA_PS_HIB_EN;
-		atl1c_write_phy_reg(hw, MII_DBG_DATA, data);
-	}
-}
 
 int atl1c_phy_reset(struct atl1c_hw *hw)
 {
 	struct atl1c_adapter *adapter = hw->adapter;
 	struct pci_dev *pdev = adapter->pdev;
 	u16 phy_data;
-	u32 phy_ctrl_data = GPHY_CTRL_DEFAULT;
-	u32 mii_ier_data = IER_LINK_UP | IER_LINK_DOWN;
+	u32 phy_ctrl_data, lpi_ctrl;
 	int err;
 
-	if (hw->ctrl_flags & ATL1C_HIB_DISABLE)
-		phy_ctrl_data &= ~GPHY_CTRL_HIB_EN;
-
+	/* reset PHY core */
+	AT_READ_REG(hw, REG_GPHY_CTRL, &phy_ctrl_data);
+	phy_ctrl_data &= ~(GPHY_CTRL_EXT_RESET | GPHY_CTRL_PHY_IDDQ |
+		GPHY_CTRL_GATE_25M_EN | GPHY_CTRL_PWDOWN_HW | GPHY_CTRL_CLS);
+	phy_ctrl_data |= GPHY_CTRL_SEL_ANA_RST;
+	if (!(hw->ctrl_flags & ATL1C_HIB_DISABLE))
+		phy_ctrl_data |= (GPHY_CTRL_HIB_EN | GPHY_CTRL_HIB_PULSE);
+	else
+		phy_ctrl_data &= ~(GPHY_CTRL_HIB_EN | GPHY_CTRL_HIB_PULSE);
 	AT_WRITE_REG(hw, REG_GPHY_CTRL, phy_ctrl_data);
 	AT_WRITE_FLUSH(hw);
-	msleep(40);
-	phy_ctrl_data |= GPHY_CTRL_EXT_RESET;
-	AT_WRITE_REG(hw, REG_GPHY_CTRL, phy_ctrl_data);
+	udelay(10);
+	AT_WRITE_REG(hw, REG_GPHY_CTRL, phy_ctrl_data | GPHY_CTRL_EXT_RESET);
 	AT_WRITE_FLUSH(hw);
-	msleep(10);
+	udelay(10 * GPHY_CTRL_EXT_RST_TO);	/* delay 800us */
 
+	/* switch clock */
 	if (hw->nic_type == athr_l2c_b) {
-		atl1c_write_phy_reg(hw, MII_DBG_ADDR, 0x0A);
-		atl1c_read_phy_reg(hw, MII_DBG_DATA, &phy_data);
-		atl1c_write_phy_reg(hw, MII_DBG_DATA, phy_data & 0xDFFF);
+		atl1c_read_phy_dbg(hw, MIIDBG_CFGLPSPD, &phy_data);
+		atl1c_write_phy_dbg(hw, MIIDBG_CFGLPSPD,
+			phy_data & ~CFGLPSPD_RSTCNT_CLK125SW);
 	}
 
-	if (hw->nic_type == athr_l2c_b ||
-	    hw->nic_type == athr_l2c_b2 ||
-	    hw->nic_type == athr_l1d ||
-	    hw->nic_type == athr_l1d_2) {
-		atl1c_write_phy_reg(hw, MII_DBG_ADDR, 0x3B);
-		atl1c_read_phy_reg(hw, MII_DBG_DATA, &phy_data);
-		atl1c_write_phy_reg(hw, MII_DBG_DATA, phy_data & 0xFFF7);
-		msleep(20);
+	/* tx-half amplitude issue fix */
+	if (hw->nic_type == athr_l2c_b || hw->nic_type == athr_l2c_b2) {
+		atl1c_read_phy_dbg(hw, MIIDBG_CABLE1TH_DET, &phy_data);
+		phy_data |= CABLE1TH_DET_EN;
+		atl1c_write_phy_dbg(hw, MIIDBG_CABLE1TH_DET, phy_data);
 	}
-	if (hw->nic_type == athr_l1d) {
-		atl1c_write_phy_reg(hw, MII_DBG_ADDR, 0x29);
-		atl1c_write_phy_reg(hw, MII_DBG_DATA, 0x929D);
+
+	/* clear bit3 of dbgport 3B to lower voltage */
+	if (!(hw->ctrl_flags & ATL1C_HIB_DISABLE)) {
+		if (hw->nic_type == athr_l2c_b || hw->nic_type == athr_l2c_b2) {
+			atl1c_read_phy_dbg(hw, MIIDBG_VOLT_CTRL, &phy_data);
+			phy_data &= ~VOLT_CTRL_SWLOWEST;
+			atl1c_write_phy_dbg(hw, MIIDBG_VOLT_CTRL, phy_data);
+		}
+		/* power saving config */
+		phy_data =
+			hw->nic_type == athr_l1d || hw->nic_type == athr_l1d_2 ?
+			L1D_LEGCYPS_DEF : L1C_LEGCYPS_DEF;
+		atl1c_write_phy_dbg(hw, MIIDBG_LEGCYPS, phy_data);
+		/* hib */
+		atl1c_write_phy_dbg(hw, MIIDBG_SYSMODCTRL,
+			SYSMODCTRL_IECHOADJ_DEF);
+	} else {
+		/* disable pws */
+		atl1c_read_phy_dbg(hw, MIIDBG_LEGCYPS, &phy_data);
+		atl1c_write_phy_dbg(hw, MIIDBG_LEGCYPS,
+			phy_data & ~LEGCYPS_EN);
+		/* disable hibernate */
+		atl1c_read_phy_dbg(hw, MIIDBG_HIBNEG, &phy_data);
+		atl1c_write_phy_dbg(hw, MIIDBG_HIBNEG,
+			phy_data & HIBNEG_PSHIB_EN);
 	}
-	if (hw->nic_type == athr_l1c || hw->nic_type == athr_l2c_b2
-		|| hw->nic_type == athr_l2c) {
-		atl1c_write_phy_reg(hw, MII_DBG_ADDR, 0x29);
-		atl1c_write_phy_reg(hw, MII_DBG_DATA, 0xB6DD);
+	/* disable AZ(EEE) by default */
+	if (hw->nic_type == athr_l1d || hw->nic_type == athr_l1d_2 ||
+	    hw->nic_type == athr_l2c_b2) {
+		AT_READ_REG(hw, REG_LPI_CTRL, &lpi_ctrl);
+		AT_WRITE_REG(hw, REG_LPI_CTRL, lpi_ctrl & ~LPI_CTRL_EN);
+		atl1c_write_phy_ext(hw, MIIEXT_ANEG, MIIEXT_LOCAL_EEEADV, 0);
+		atl1c_write_phy_ext(hw, MIIEXT_PCS, MIIEXT_CLDCTRL3,
+			L2CB_CLDCTRL3);
 	}
-	err = atl1c_write_phy_reg(hw, MII_IER, mii_ier_data);
+
+	/* other debug port to set */
+	atl1c_write_phy_dbg(hw, MIIDBG_ANACTRL, ANACTRL_DEF);
+	atl1c_write_phy_dbg(hw, MIIDBG_SRDSYSMOD, SRDSYSMOD_DEF);
+	atl1c_write_phy_dbg(hw, MIIDBG_TST10BTCFG, TST10BTCFG_DEF);
+	/* UNH-IOL test issue, set bit7 */
+	atl1c_write_phy_dbg(hw, MIIDBG_TST100BTCFG,
+		TST100BTCFG_DEF | TST100BTCFG_LITCH_EN);
+
+	/* set phy interrupt mask */
+	phy_data = IER_LINK_UP | IER_LINK_DOWN;
+	err = atl1c_write_phy_reg(hw, MII_IER, phy_data);
 	if (err) {
 		if (netif_msg_hw(adapter))
 			dev_err(&pdev->dev,
 				"Error enable PHY linkChange Interrupt\n");
 		return err;
 	}
-	if (!(hw->ctrl_flags & ATL1C_FPGA_VERSION))
-		atl1c_phy_magic_data(hw);
 	return 0;
 }
 
@@ -589,7 +715,8 @@ int atl1c_get_speed_and_duplex(struct atl1c_hw *hw, u16 *speed, u16 *duplex)
 	return 0;
 }
 
-int atl1c_phy_power_saving(struct atl1c_hw *hw)
+/* select one link mode to get lower power consumption */
+int atl1c_phy_to_ps_link(struct atl1c_hw *hw)
 {
 	struct atl1c_adapter *adapter = (struct atl1c_adapter *)hw->adapter;
 	struct pci_dev *pdev = adapter->pdev;
@@ -659,4 +786,65 @@ int atl1c_restart_autoneg(struct atl1c_hw *hw)
 	mii_bmcr_data |= BMCR_ANENABLE | BMCR_ANRESTART;
 
 	return atl1c_write_phy_reg(hw, MII_BMCR, mii_bmcr_data);
+}
+
+int atl1c_power_saving(struct atl1c_hw *hw, u32 wufc)
+{
+	struct atl1c_adapter *adapter = (struct atl1c_adapter *)hw->adapter;
+	struct pci_dev *pdev = adapter->pdev;
+	u32 master_ctrl, mac_ctrl, phy_ctrl;
+	u32 wol_ctrl, speed;
+	u16 phy_data;
+
+	wol_ctrl = 0;
+	speed = adapter->link_speed == SPEED_1000 ?
+		MAC_CTRL_SPEED_1000 : MAC_CTRL_SPEED_10_100;
+
+	AT_READ_REG(hw, REG_MASTER_CTRL, &master_ctrl);
+	AT_READ_REG(hw, REG_MAC_CTRL, &mac_ctrl);
+	AT_READ_REG(hw, REG_GPHY_CTRL, &phy_ctrl);
+
+	master_ctrl &= ~MASTER_CTRL_CLK_SEL_DIS;
+	mac_ctrl = FIELD_SETX(mac_ctrl, MAC_CTRL_SPEED, speed);
+	mac_ctrl &= ~(MAC_CTRL_DUPLX | MAC_CTRL_RX_EN | MAC_CTRL_TX_EN);
+	if (adapter->link_duplex == FULL_DUPLEX)
+		mac_ctrl |= MAC_CTRL_DUPLX;
+	phy_ctrl &= ~(GPHY_CTRL_EXT_RESET | GPHY_CTRL_CLS);
+	phy_ctrl |= GPHY_CTRL_SEL_ANA_RST | GPHY_CTRL_HIB_PULSE |
+		GPHY_CTRL_HIB_EN;
+	if (!wufc) { /* without WoL */
+		master_ctrl |= MASTER_CTRL_CLK_SEL_DIS;
+		phy_ctrl |= GPHY_CTRL_PHY_IDDQ | GPHY_CTRL_PWDOWN_HW;
+		AT_WRITE_REG(hw, REG_MASTER_CTRL, master_ctrl);
+		AT_WRITE_REG(hw, REG_MAC_CTRL, mac_ctrl);
+		AT_WRITE_REG(hw, REG_GPHY_CTRL, phy_ctrl);
+		AT_WRITE_REG(hw, REG_WOL_CTRL, 0);
+		hw->phy_configured = false; /* re-init PHY when resume */
+		return 0;
+	}
+	phy_ctrl |= GPHY_CTRL_EXT_RESET;
+	if (wufc & AT_WUFC_MAG) {
+		mac_ctrl |= MAC_CTRL_RX_EN | MAC_CTRL_BC_EN;
+		wol_ctrl |= WOL_MAGIC_EN | WOL_MAGIC_PME_EN;
+		if (hw->nic_type == athr_l2c_b && hw->revision_id == L2CB_V11)
+			wol_ctrl |= WOL_PATTERN_EN | WOL_PATTERN_PME_EN;
+	}
+	if (wufc & AT_WUFC_LNKC) {
+		wol_ctrl |= WOL_LINK_CHG_EN | WOL_LINK_CHG_PME_EN;
+		if (atl1c_write_phy_reg(hw, MII_IER, IER_LINK_UP) != 0) {
+			dev_dbg(&pdev->dev, "%s: write phy MII_IER faild.\n",
+				atl1c_driver_name);
+		}
+	}
+	/* clear PHY interrupt */
+	atl1c_read_phy_reg(hw, MII_ISR, &phy_data);
+
+	dev_dbg(&pdev->dev, "%s: suspend MAC=%x,MASTER=%x,PHY=0x%x,WOL=%x\n",
+		atl1c_driver_name, mac_ctrl, master_ctrl, phy_ctrl, wol_ctrl);
+	AT_WRITE_REG(hw, REG_MASTER_CTRL, master_ctrl);
+	AT_WRITE_REG(hw, REG_MAC_CTRL, mac_ctrl);
+	AT_WRITE_REG(hw, REG_GPHY_CTRL, phy_ctrl);
+	AT_WRITE_REG(hw, REG_WOL_CTRL, wol_ctrl);
+
+	return 0;
 }

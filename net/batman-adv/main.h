@@ -65,7 +65,7 @@
 
 #define NULL_IFINDEX 0 /* dummy ifindex used to avoid iface checks */
 
-#define NUM_WORDS (TQ_LOCAL_WINDOW_SIZE / WORD_BIT_SIZE)
+#define NUM_WORDS BITS_TO_LONGS(TQ_LOCAL_WINDOW_SIZE)
 
 #define LOG_BUF_LEN 8192	  /* has to be a power of 2 */
 
@@ -80,8 +80,12 @@
 #define MAX_AGGREGATION_BYTES 512
 #define MAX_AGGREGATION_MS 100
 
-#define SOFTIF_NEIGH_TIMEOUT 180000 /* 3 minutes */
+#define BLA_PERIOD_LENGTH	10000	/* 10 seconds */
+#define BLA_BACKBONE_TIMEOUT	(BLA_PERIOD_LENGTH * 3)
+#define BLA_CLAIM_TIMEOUT	(BLA_PERIOD_LENGTH * 10)
 
+#define DUPLIST_SIZE		16
+#define DUPLIST_TIMEOUT		500	/* 500 ms */
 /* don't reset again within 30 seconds */
 #define RESET_PROTECTION_MS 30000
 #define EXPECTED_SEQNO_RANGE	65536
@@ -119,7 +123,8 @@ enum dbg_level {
 	DBG_BATMAN = 1 << 0,
 	DBG_ROUTES = 1 << 1, /* route added / changed / deleted */
 	DBG_TT	   = 1 << 2, /* translation table operations */
-	DBG_ALL    = 7
+	DBG_BLA    = 1 << 3, /* bridge loop avoidance */
+	DBG_ALL    = 15
 };
 
 /* Kernel headers */
