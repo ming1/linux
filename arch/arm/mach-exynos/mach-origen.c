@@ -472,12 +472,10 @@ static struct i2c_board_info i2c0_devs[] __initdata = {
 
 static struct s3c_sdhci_platdata origen_hsmmc0_pdata __initdata = {
 	.cd_type		= S3C_SDHCI_CD_INTERNAL,
-	.clk_type		= S3C_SDHCI_CLK_DIV_EXTERNAL,
 };
 
 static struct s3c_sdhci_platdata origen_hsmmc2_pdata __initdata = {
 	.cd_type		= S3C_SDHCI_CD_INTERNAL,
-	.clk_type		= S3C_SDHCI_CLK_DIV_EXTERNAL,
 };
 
 /* USB EHCI */
@@ -596,6 +594,8 @@ static struct s3c_fb_pd_win origen_fb_win0 = {
 	},
 	.max_bpp		= 32,
 	.default_bpp		= 24,
+	.virtual_x		= 1024,
+	.virtual_y		= 2 * 600,
 };
 
 static struct s3c_fb_platdata origen_lcd_pdata __initdata = {
