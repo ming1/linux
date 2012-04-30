@@ -120,6 +120,7 @@ void kvmppc_set_msr(struct kvm_vcpu *vcpu, u64 msr)
 	if (msr & MSR_POW) {
 		if (!vcpu->arch.pending_exceptions) {
 			kvm_vcpu_block(vcpu);
+			clear_bit(KVM_REQ_UNHALT, &vcpu->requests);
 			vcpu->stat.halt_wakeup++;
 
 			/* Unset POW bit after we woke up */
@@ -142,6 +143,21 @@ void kvmppc_set_msr(struct kvm_vcpu *vcpu, u64 msr)
 			else
 				kvmppc_mmu_map_segment(vcpu, a->magic_page_pa);
 		}
+	}
+
+	/*
+	 * When switching from 32 to 64-bit, we may have a stale 32-bit
+	 * magic page around, we need to flush it. Typically 32-bit magic
+	 * page will be instanciated when calling into RTAS. Note: We
+	 * assume that such transition only happens while in kernel mode,
+	 * ie, we never transition from user 32-bit to kernel 64-bit with
+	 * a 32-bit magic page around.
+	 */
+	if (vcpu->arch.magic_page_pa &&
+	    !(old_msr & MSR_PR) && !(old_msr & MSR_SF) && (msr & MSR_SF)) {
+		/* going from RTAS to normal kernel code */
+		kvmppc_mmu_pte_flush(vcpu, (uint32_t)vcpu->arch.magic_page_pa,
+				     ~0xFFFUL);
 	}
 
 	/* Preload FPU if it's enabled */
@@ -251,6 +267,9 @@ static int kvmppc_visible_gfn(struct kvm_vcpu *vcpu, gfn_t gfn)
 {
 	ulong mp_pa = vcpu->arch.magic_page_pa;
 
+	if (!(vcpu->arch.shared->msr & MSR_SF))
+		mp_pa = (uint32_t)mp_pa;
+
 	if (unlikely(mp_pa) &&
 	    unlikely((mp_pa & KVM_PAM) >> PAGE_SHIFT == gfn)) {
 		return 1;
@@ -351,6 +370,7 @@ int kvmppc_handle_pagefault(struct kvm_run *run, struct kvm_vcpu *vcpu,
 		/* MMIO */
 		vcpu->stat.mmio_exits++;
 		vcpu->arch.paddr_accessed = pte.raddr;
+		vcpu->arch.vaddr_accessed = pte.eaddr;
 		r = kvmppc_emulate_mmio(run, vcpu);
 		if ( r == RESUME_HOST_NV )
 			r = RESUME_HOST;
@@ -617,10 +637,13 @@ int kvmppc_handle_exit(struct kvm_run *run, struct kvm_vcpu *vcpu,
 		break;
 	/* We're good on these - the host merely wanted to get our attention */
 	case BOOK3S_INTERRUPT_DECREMENTER:
+	case BOOK3S_INTERRUPT_HV_DECREMENTER:
 		vcpu->stat.dec_exits++;
 		r = RESUME_GUEST;
 		break;
 	case BOOK3S_INTERRUPT_EXTERNAL:
+	case BOOK3S_INTERRUPT_EXTERNAL_LEVEL:
+	case BOOK3S_INTERRUPT_EXTERNAL_HV:
 		vcpu->stat.ext_intr_exits++;
 		r = RESUME_GUEST;
 		break;
@@ -628,6 +651,7 @@ int kvmppc_handle_exit(struct kvm_run *run, struct kvm_vcpu *vcpu,
 		r = RESUME_GUEST;
 		break;
 	case BOOK3S_INTERRUPT_PROGRAM:
+	case BOOK3S_INTERRUPT_H_EMUL_ASSIST:
 	{
 		enum emulation_result er;
 		struct kvmppc_book3s_shadow_vcpu *svcpu;

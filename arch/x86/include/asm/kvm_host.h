@@ -173,6 +173,9 @@ enum {
 #define DR7_FIXED_1	0x00000400
 #define DR7_VOLATILE	0xffff23ff
 
+/* apic attention bits */
+#define KVM_APIC_CHECK_VAPIC	0
+
 /*
  * We don't want allocation failures within the mmu code, so we preallocate
  * enough memory for a single page fault in a cache.
@@ -338,6 +341,7 @@ struct kvm_vcpu_arch {
 	u64 efer;
 	u64 apic_base;
 	struct kvm_lapic *apic;    /* kernel irqchip context */
+	unsigned long apic_attention;
 	int32_t apic_arb_prio;
 	int mp_state;
 	int sipi_vector;
@@ -713,8 +717,9 @@ void kvm_mmu_set_mask_ptes(u64 user_mask, u64 accessed_mask,
 
 int kvm_mmu_reset_context(struct kvm_vcpu *vcpu);
 void kvm_mmu_slot_remove_write_access(struct kvm *kvm, int slot);
-int kvm_mmu_rmap_write_protect(struct kvm *kvm, u64 gfn,
-			       struct kvm_memory_slot *slot);
+void kvm_mmu_write_protect_pt_masked(struct kvm *kvm,
+				     struct kvm_memory_slot *slot,
+				     gfn_t gfn_offset, unsigned long mask);
 void kvm_mmu_zap_all(struct kvm *kvm);
 unsigned int kvm_mmu_calculate_mmu_pages(struct kvm *kvm);
 void kvm_mmu_change_mmu_pages(struct kvm *kvm, unsigned int kvm_nr_mmu_pages);
