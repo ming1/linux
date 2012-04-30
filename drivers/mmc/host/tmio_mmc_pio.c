@@ -34,9 +34,9 @@
 #include <linux/io.h>
 #include <linux/irq.h>
 #include <linux/mfd/tmio.h>
-#include <linux/mmc/cd-gpio.h>
 #include <linux/mmc/host.h>
 #include <linux/mmc/mmc.h>
+#include <linux/mmc/slot-gpio.h>
 #include <linux/mmc/tmio.h>
 #include <linux/module.h>
 #include <linux/pagemap.h>
@@ -1029,7 +1029,7 @@ int __devinit tmio_mmc_host_probe(struct tmio_mmc_host **host,
 	dev_pm_qos_expose_latency_limit(&pdev->dev, 100);
 
 	if (pdata->flags & TMIO_MMC_USE_GPIO_CD) {
-		ret = mmc_cd_gpio_request(mmc, pdata->cd_gpio);
+		ret = mmc_gpio_request_cd(mmc, pdata->cd_gpio);
 		if (ret < 0) {
 			tmio_mmc_host_remove(_host);
 			return ret;
@@ -1061,7 +1061,7 @@ void tmio_mmc_host_remove(struct tmio_mmc_host *host)
 		 * This means we can miss a card-eject, but this is anyway
 		 * possible, because of delayed processing of hotplug events.
 		 */
-		mmc_cd_gpio_free(mmc);
+		mmc_gpio_free_cd(mmc);
 
 	if (!host->native_hotplug)
 		pm_runtime_get_sync(&pdev->dev);
