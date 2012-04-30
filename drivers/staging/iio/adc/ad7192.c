@@ -17,12 +17,12 @@
 #include <linux/sched.h>
 #include <linux/delay.h>
 
-#include "../iio.h"
-#include "../sysfs.h"
-#include "../buffer.h"
+#include <linux/iio/iio.h>
+#include <linux/iio/sysfs.h>
+#include <linux/iio/buffer.h>
 #include "../ring_sw.h"
-#include "../trigger.h"
-#include "../trigger_consumer.h"
+#include <linux/iio/trigger.h>
+#include <linux/iio/trigger_consumer.h>
 
 #include "ad7192.h"
 
@@ -456,30 +456,18 @@ out:
 static int ad7192_ring_preenable(struct iio_dev *indio_dev)
 {
 	struct ad7192_state *st = iio_priv(indio_dev);
-	struct iio_buffer *ring = indio_dev->buffer;
-	size_t d_size;
 	unsigned channel;
+	int ret;
 
 	if (bitmap_empty(indio_dev->active_scan_mask, indio_dev->masklength))
 		return -EINVAL;
 
+	ret = iio_sw_buffer_preenable(indio_dev);
+	if (ret < 0)
+		return ret;
+
 	channel = find_first_bit(indio_dev->active_scan_mask,
 				 indio_dev->masklength);
-
-	d_size = bitmap_weight(indio_dev->active_scan_mask,
-			       indio_dev->masklength) *
-		 indio_dev->channels[0].scan_type.storagebits / 8;
-
-	if (ring->scan_timestamp) {
-		d_size += sizeof(s64);
-
-		if (d_size % sizeof(s64))
-			d_size += sizeof(s64) - (d_size % sizeof(s64));
-	}
-
-	if (indio_dev->buffer->access->set_bytes_per_datum)
-		indio_dev->buffer->access->
-			set_bytes_per_datum(indio_dev->buffer, d_size);
 
 	st->mode  = (st->mode & ~AD7192_MODE_SEL(-1)) |
 		    AD7192_MODE_SEL(AD7192_MODE_CONT);
@@ -533,7 +521,7 @@ static irqreturn_t ad7192_trigger_handler(int irq, void *p)
 				  indio_dev->channels[0].scan_type.realbits/8);
 
 	/* Guaranteed to be aligned with 8 byte boundary */
-	if (ring->scan_timestamp)
+	if (indio_dev->scan_timestamp)
 		dat64[1] = pf->timestamp;
 
 	ring->access->store_to(ring, (u8 *)dat64, pf->timestamp);
@@ -849,7 +837,7 @@ static int ad7192_read_raw(struct iio_dev *indio_dev,
 	bool unipolar = !!(st->conf & AD7192_CONF_UNIPOLAR);
 
 	switch (m) {
-	case 0:
+	case IIO_CHAN_INFO_RAW:
 		mutex_lock(&indio_dev->mlock);
 		if (iio_buffer_enabled(indio_dev))
 			ret = -EBUSY;
@@ -981,7 +969,8 @@ static const struct iio_info ad7195_info = {
 	  .extend_name = _name,						\
 	  .channel = _chan,						\
 	  .channel2 = _chan2,						\
-	  .info_mask = IIO_CHAN_INFO_SCALE_SHARED_BIT,		\
+	  .info_mask = IIO_CHAN_INFO_RAW_SEPARATE_BIT |			\
+	  IIO_CHAN_INFO_SCALE_SHARED_BIT,				\
 	  .address = _address,						\
 	  .scan_index = _si,						\
 	  .scan_type =  IIO_ST('s', 24, 32, 0)}
@@ -990,7 +979,8 @@ static const struct iio_info ad7195_info = {
 	{ .type = IIO_VOLTAGE,						\
 	  .indexed = 1,							\
 	  .channel = _chan,						\
-	  .info_mask = IIO_CHAN_INFO_SCALE_SHARED_BIT,		\
+	  .info_mask = IIO_CHAN_INFO_RAW_SEPARATE_BIT |			\
+	  IIO_CHAN_INFO_SCALE_SHARED_BIT,				\
 	  .address = _address,						\
 	  .scan_index = _si,						\
 	  .scan_type =  IIO_ST('s', 24, 32, 0)}
@@ -999,7 +989,8 @@ static const struct iio_info ad7195_info = {
 	{ .type = IIO_TEMP,						\
 	  .indexed = 1,							\
 	  .channel = _chan,						\
-	  .info_mask = IIO_CHAN_INFO_SCALE_SEPARATE_BIT,		\
+	  .info_mask = IIO_CHAN_INFO_RAW_SEPARATE_BIT |			\
+	  IIO_CHAN_INFO_SCALE_SEPARATE_BIT,				\
 	  .address = _address,						\
 	  .scan_index = _si,						\
 	  .scan_type =  IIO_ST('s', 24, 32, 0)}

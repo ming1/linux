@@ -19,8 +19,8 @@
 #include <linux/gpio.h>
 #include <linux/module.h>
 
-#include "../iio.h"
-#include "../sysfs.h"
+#include <linux/iio/iio.h>
+#include <linux/iio/sysfs.h>
 
 #define DRV_NAME "ad2s1200"
 
@@ -85,10 +85,12 @@ static const struct iio_chan_spec ad2s1200_channels[] = {
 		.type = IIO_ANGL,
 		.indexed = 1,
 		.channel = 0,
+		.info_mask = IIO_CHAN_INFO_RAW_SEPARATE_BIT,
 	}, {
 		.type = IIO_ANGL_VEL,
 		.indexed = 1,
 		.channel = 0,
+		.info_mask = IIO_CHAN_INFO_RAW_SEPARATE_BIT,
 	}
 };
 
