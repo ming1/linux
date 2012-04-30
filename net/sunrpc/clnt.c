@@ -176,16 +176,22 @@ rpc_setup_pipedir(struct rpc_clnt *clnt, const char *dir_name)
 	return 0;
 }
 
-static int __rpc_pipefs_event(struct rpc_clnt *clnt, unsigned long event,
-				struct super_block *sb)
+static inline int rpc_clnt_skip_event(struct rpc_clnt *clnt, unsigned long event)
+{
+	if (((event == RPC_PIPEFS_MOUNT) && clnt->cl_dentry) ||
+	    ((event == RPC_PIPEFS_UMOUNT) && !clnt->cl_dentry))
+		return 1;
+	return 0;
+}
+
+static int __rpc_clnt_handle_event(struct rpc_clnt *clnt, unsigned long event,
+				   struct super_block *sb)
 {
 	struct dentry *dentry;
 	int err = 0;
 
 	switch (event) {
 	case RPC_PIPEFS_MOUNT:
-		if (clnt->cl_program->pipe_dir_name == NULL)
-			break;
 		dentry = rpc_setup_pipedir_sb(sb, clnt,
 					      clnt->cl_program->pipe_dir_name);
 		BUG_ON(dentry == NULL);
@@ -208,6 +214,20 @@ static int __rpc_pipefs_event(struct rpc_clnt *clnt, unsigned long event,
 	return err;
 }
 
+static int __rpc_pipefs_event(struct rpc_clnt *clnt, unsigned long event,
+				struct super_block *sb)
+{
+	int error = 0;
+
+	for (;; clnt = clnt->cl_parent) {
+		if (!rpc_clnt_skip_event(clnt, event))
+			error = __rpc_clnt_handle_event(clnt, event, sb);
+		if (error || clnt == clnt->cl_parent)
+			break;
+	}
+	return error;
+}
+
 static struct rpc_clnt *rpc_get_client_for_event(struct net *net, int event)
 {
 	struct sunrpc_net *sn = net_generic(net, sunrpc_net_id);
@@ -215,10 +235,12 @@ static struct rpc_clnt *rpc_get_client_for_event(struct net *net, int event)
 
 	spin_lock(&sn->rpc_client_lock);
 	list_for_each_entry(clnt, &sn->all_clients, cl_clients) {
-		if (((event == RPC_PIPEFS_MOUNT) && clnt->cl_dentry) ||
-		    ((event == RPC_PIPEFS_UMOUNT) && !clnt->cl_dentry))
+		if (clnt->cl_program->pipe_dir_name == NULL)
+			break;
+		if (rpc_clnt_skip_event(clnt, event))
 			continue;
-		atomic_inc(&clnt->cl_count);
+		if (atomic_inc_not_zero(&clnt->cl_count) == 0)
+			continue;
 		spin_unlock(&sn->rpc_client_lock);
 		return clnt;
 	}
