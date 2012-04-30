@@ -57,6 +57,7 @@ struct sockaddr_l2 {
 	__le16		l2_psm;
 	bdaddr_t	l2_bdaddr;
 	__le16		l2_cid;
+	__u8		l2_bdaddr_type;
 };
 
 /* L2CAP socket options */
@@ -723,13 +724,10 @@ static inline bool l2cap_clear_timer(struct l2cap_chan *chan,
 
 static inline int __seq_offset(struct l2cap_chan *chan, __u16 seq1, __u16 seq2)
 {
-	int offset;
-
-	offset = (seq1 - seq2) % (chan->tx_win_max + 1);
-	if (offset < 0)
-		offset += (chan->tx_win_max + 1);
-
-	return offset;
+	if (seq1 >= seq2)
+		return seq1 - seq2;
+	else
+		return chan->tx_win_max + 1 - seq2 + seq1;
 }
 
 static inline __u16 __next_seq(struct l2cap_chan *chan, __u16 seq)
@@ -921,7 +919,7 @@ struct l2cap_chan *l2cap_chan_create(void);
 void l2cap_chan_close(struct l2cap_chan *chan, int reason);
 void l2cap_chan_destroy(struct l2cap_chan *chan);
 int l2cap_chan_connect(struct l2cap_chan *chan, __le16 psm, u16 cid,
-								bdaddr_t *dst);
+		       bdaddr_t *dst, u8 dst_type);
 int l2cap_chan_send(struct l2cap_chan *chan, struct msghdr *msg, size_t len,
 								u32 priority);
 void l2cap_chan_busy(struct l2cap_chan *chan, int busy);

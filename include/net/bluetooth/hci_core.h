@@ -255,9 +255,6 @@ struct hci_dev {
 
 	struct list_head	remote_oob_data;
 
-	struct list_head	adv_entries;
-	struct delayed_work	adv_work;
-
 	struct hci_dev_stats	stat;
 
 	struct sk_buff_head	driver_init;
@@ -575,7 +572,7 @@ int hci_chan_del(struct hci_chan *chan);
 void hci_chan_list_flush(struct hci_conn *conn);
 
 struct hci_conn *hci_connect(struct hci_dev *hdev, int type, bdaddr_t *dst,
-						__u8 sec_level, __u8 auth_type);
+			     __u8 dst_type, __u8 sec_level, __u8 auth_type);
 int hci_conn_check_link_mode(struct hci_conn *conn);
 int hci_conn_check_secure(struct hci_conn *conn, __u8 sec_level);
 int hci_conn_security(struct hci_conn *conn, __u8 sec_level, __u8 auth_type);
@@ -691,12 +688,6 @@ struct oob_data *hci_find_remote_oob_data(struct hci_dev *hdev,
 int hci_add_remote_oob_data(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 *hash,
 								u8 *randomizer);
 int hci_remove_remote_oob_data(struct hci_dev *hdev, bdaddr_t *bdaddr);
-
-#define ADV_CLEAR_TIMEOUT (3*60*HZ) /* Three minutes */
-int hci_adv_entries_clear(struct hci_dev *hdev);
-struct adv_entry *hci_find_adv_entry(struct hci_dev *hdev, bdaddr_t *bdaddr);
-int hci_add_adv_entry(struct hci_dev *hdev,
-					struct hci_ev_le_advertising_info *ev);
 
 void hci_event_packet(struct hci_dev *hdev, struct sk_buff *skb);
 
@@ -935,6 +926,23 @@ static inline bool eir_has_data_type(u8 *data, size_t data_len, u8 type)
 	return false;
 }
 
+static inline size_t eir_get_length(u8 *eir, size_t eir_len)
+{
+	size_t parsed = 0;
+
+	while (parsed < eir_len) {
+		u8 field_len = eir[0];
+
+		if (field_len == 0)
+			return parsed;
+
+		parsed += field_len + 1;
+		eir += field_len + 1;
+	}
+
+	return eir_len;
+}
+
 static inline u16 eir_append_data(u8 *eir, u16 eir_len, u8 type, u8 *data,
 				  u8 data_len)
 {
@@ -963,16 +971,12 @@ void hci_send_to_monitor(struct hci_dev *hdev, struct sk_buff *skb);
 void hci_sock_dev_event(struct hci_dev *hdev, int event);
 
 /* Management interface */
-#define MGMT_ADDR_BREDR			0x00
-#define MGMT_ADDR_LE_PUBLIC		0x01
-#define MGMT_ADDR_LE_RANDOM		0x02
-
-#define DISCOV_TYPE_BREDR		(BIT(MGMT_ADDR_BREDR))
-#define DISCOV_TYPE_LE			(BIT(MGMT_ADDR_LE_PUBLIC) | \
-						BIT(MGMT_ADDR_LE_RANDOM))
-#define DISCOV_TYPE_INTERLEAVED		(BIT(MGMT_ADDR_BREDR) | \
-						BIT(MGMT_ADDR_LE_PUBLIC) | \
-						BIT(MGMT_ADDR_LE_RANDOM))
+#define DISCOV_TYPE_BREDR		(BIT(BDADDR_BREDR))
+#define DISCOV_TYPE_LE			(BIT(BDADDR_LE_PUBLIC) | \
+					 BIT(BDADDR_LE_RANDOM))
+#define DISCOV_TYPE_INTERLEAVED		(BIT(BDADDR_BREDR) | \
+					 BIT(BDADDR_LE_PUBLIC) | \
+					 BIT(BDADDR_LE_RANDOM))
 
 int mgmt_control(struct sock *sk, struct msghdr *msg, size_t len);
 int mgmt_index_added(struct hci_dev *hdev);
@@ -1076,5 +1080,7 @@ int hci_cancel_inquiry(struct hci_dev *hdev);
 int hci_le_scan(struct hci_dev *hdev, u8 type, u16 interval, u16 window,
 		int timeout);
 int hci_cancel_le_scan(struct hci_dev *hdev);
+
+u8 bdaddr_to_le(u8 bdaddr_type);
 
 #endif /* __HCI_CORE_H */

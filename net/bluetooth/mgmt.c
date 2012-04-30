@@ -1524,7 +1524,7 @@ static int unpair_device(struct sock *sk, struct hci_dev *hdev, void *data,
 		goto unlock;
 	}
 
-	if (cp->addr.type == MGMT_ADDR_BREDR)
+	if (cp->addr.type == BDADDR_BREDR)
 		err = hci_remove_link_key(hdev, &cp->addr.bdaddr);
 	else
 		err = hci_remove_ltk(hdev, &cp->addr.bdaddr);
@@ -1536,7 +1536,7 @@ static int unpair_device(struct sock *sk, struct hci_dev *hdev, void *data,
 	}
 
 	if (cp->disconnect) {
-		if (cp->addr.type == MGMT_ADDR_BREDR)
+		if (cp->addr.type == BDADDR_BREDR)
 			conn = hci_conn_hash_lookup_ba(hdev, ACL_LINK,
 							&cp->addr.bdaddr);
 		else
@@ -1596,7 +1596,7 @@ static int disconnect(struct sock *sk, struct hci_dev *hdev, void *data,
 		goto failed;
 	}
 
-	if (cp->addr.type == MGMT_ADDR_BREDR)
+	if (cp->addr.type == BDADDR_BREDR)
 		conn = hci_conn_hash_lookup_ba(hdev, ACL_LINK, &cp->addr.bdaddr);
 	else
 		conn = hci_conn_hash_lookup_ba(hdev, LE_LINK, &cp->addr.bdaddr);
@@ -1625,34 +1625,22 @@ failed:
 	return err;
 }
 
-static u8 link_to_mgmt(u8 link_type, u8 addr_type)
+static u8 link_to_bdaddr(u8 link_type, u8 addr_type)
 {
 	switch (link_type) {
 	case LE_LINK:
 		switch (addr_type) {
 		case ADDR_LE_DEV_PUBLIC:
-			return MGMT_ADDR_LE_PUBLIC;
+			return BDADDR_LE_PUBLIC;
 
 		default:
 			/* Fallback to LE Random address type */
-			return MGMT_ADDR_LE_RANDOM;
+			return BDADDR_LE_RANDOM;
 		}
 
 	default:
 		/* Fallback to BR/EDR type */
-		return MGMT_ADDR_BREDR;
-	}
-}
-
-static u8 mgmt_to_le(u8 mgmt_type)
-{
-	switch (mgmt_type) {
-	case MGMT_ADDR_LE_PUBLIC:
-		return ADDR_LE_DEV_PUBLIC;
-
-	default:
-		/* Fallback to LE Random address type */
-		return ADDR_LE_DEV_RANDOM;
+		return BDADDR_BREDR;
 	}
 }
 
@@ -1693,7 +1681,7 @@ static int get_connections(struct sock *sk, struct hci_dev *hdev, void *data,
 		if (!test_bit(HCI_CONN_MGMT_CONNECTED, &c->flags))
 			continue;
 		bacpy(&rp->addr[i].bdaddr, &c->dst);
-		rp->addr[i].type = link_to_mgmt(c->type, c->dst_type);
+		rp->addr[i].type = link_to_bdaddr(c->type, c->dst_type);
 		if (c->type == SCO_LINK || c->type == ESCO_LINK)
 			continue;
 		i++;
@@ -1860,7 +1848,7 @@ static void pairing_complete(struct pending_cmd *cmd, u8 status)
 	struct hci_conn *conn = cmd->user_data;
 
 	bacpy(&rp.addr.bdaddr, &conn->dst);
-	rp.addr.type = link_to_mgmt(conn->type, conn->dst_type);
+	rp.addr.type = link_to_bdaddr(conn->type, conn->dst_type);
 
 	cmd_complete(cmd->sk, cmd->index, MGMT_OP_PAIR_DEVICE, status,
 		     &rp, sizeof(rp));
@@ -1914,12 +1902,12 @@ static int pair_device(struct sock *sk, struct hci_dev *hdev, void *data,
 	else
 		auth_type = HCI_AT_DEDICATED_BONDING_MITM;
 
-	if (cp->addr.type == MGMT_ADDR_BREDR)
-		conn = hci_connect(hdev, ACL_LINK, &cp->addr.bdaddr, sec_level,
-				   auth_type);
+	if (cp->addr.type == BDADDR_BREDR)
+		conn = hci_connect(hdev, ACL_LINK, &cp->addr.bdaddr,
+				   cp->addr.type, sec_level, auth_type);
 	else
-		conn = hci_connect(hdev, LE_LINK, &cp->addr.bdaddr, sec_level,
-				   auth_type);
+		conn = hci_connect(hdev, LE_LINK, &cp->addr.bdaddr,
+				   cp->addr.type, sec_level, auth_type);
 
 	memset(&rp, 0, sizeof(rp));
 	bacpy(&rp.addr.bdaddr, &cp->addr.bdaddr);
@@ -1947,7 +1935,7 @@ static int pair_device(struct sock *sk, struct hci_dev *hdev, void *data,
 	}
 
 	/* For LE, just connecting isn't a proof that the pairing finished */
-	if (cp->addr.type == MGMT_ADDR_BREDR)
+	if (cp->addr.type == BDADDR_BREDR)
 		conn->connect_cfm_cb = pairing_complete_cb;
 
 	conn->security_cfm_cb = pairing_complete_cb;
@@ -2024,7 +2012,7 @@ static int user_pairing_resp(struct sock *sk, struct hci_dev *hdev,
 		goto done;
 	}
 
-	if (type == MGMT_ADDR_BREDR)
+	if (type == BDADDR_BREDR)
 		conn = hci_conn_hash_lookup_ba(hdev, ACL_LINK, bdaddr);
 	else
 		conn = hci_conn_hash_lookup_ba(hdev, LE_LINK, bdaddr);
@@ -2035,7 +2023,7 @@ static int user_pairing_resp(struct sock *sk, struct hci_dev *hdev,
 		goto done;
 	}
 
-	if (type == MGMT_ADDR_LE_PUBLIC || type == MGMT_ADDR_LE_RANDOM) {
+	if (type == BDADDR_LE_PUBLIC || type == BDADDR_LE_RANDOM) {
 		/* Continue with pairing via SMP */
 		err = smp_user_confirm_reply(conn, mgmt_op, passkey);
 
@@ -2664,7 +2652,7 @@ static int load_long_term_keys(struct sock *sk, struct hci_dev *hdev,
 			type = HCI_SMP_LTK_SLAVE;
 
 		hci_add_ltk(hdev, &key->addr.bdaddr,
-			    mgmt_to_le(key->addr.type),
+			    bdaddr_to_le(key->addr.type),
 			    type, 0, key->authenticated, key->val,
 			    key->enc_size, key->ediv, key->rand);
 	}
@@ -2966,7 +2954,7 @@ int mgmt_new_link_key(struct hci_dev *hdev, struct link_key *key, bool persisten
 
 	ev.store_hint = persistent;
 	bacpy(&ev.key.addr.bdaddr, &key->bdaddr);
-	ev.key.addr.type = MGMT_ADDR_BREDR;
+	ev.key.addr.type = BDADDR_BREDR;
 	ev.key.type = key->type;
 	memcpy(ev.key.val, key->val, 16);
 	ev.key.pin_len = key->pin_len;
@@ -2982,7 +2970,7 @@ int mgmt_new_ltk(struct hci_dev *hdev, struct smp_ltk *key, u8 persistent)
 
 	ev.store_hint = persistent;
 	bacpy(&ev.key.addr.bdaddr, &key->bdaddr);
-	ev.key.addr.type = link_to_mgmt(LE_LINK, key->bdaddr_type);
+	ev.key.addr.type = link_to_bdaddr(LE_LINK, key->bdaddr_type);
 	ev.key.authenticated = key->authenticated;
 	ev.key.enc_size = key->enc_size;
 	ev.key.ediv = key->ediv;
@@ -3006,7 +2994,7 @@ int mgmt_device_connected(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 link_type,
 	u16 eir_len = 0;
 
 	bacpy(&ev->addr.bdaddr, bdaddr);
-	ev->addr.type = link_to_mgmt(link_type, addr_type);
+	ev->addr.type = link_to_bdaddr(link_type, addr_type);
 
 	ev->flags = __cpu_to_le32(flags);
 
@@ -3069,7 +3057,7 @@ int mgmt_device_disconnected(struct hci_dev *hdev, bdaddr_t *bdaddr,
 	mgmt_pending_foreach(MGMT_OP_DISCONNECT, hdev, disconnect_rsp, &sk);
 
 	bacpy(&ev.bdaddr, bdaddr);
-	ev.type = link_to_mgmt(link_type, addr_type);
+	ev.type = link_to_bdaddr(link_type, addr_type);
 
 	err = mgmt_event(MGMT_EV_DEVICE_DISCONNECTED, hdev, &ev, sizeof(ev),
 			 sk);
@@ -3095,7 +3083,7 @@ int mgmt_disconnect_failed(struct hci_dev *hdev, bdaddr_t *bdaddr,
 		return -ENOENT;
 
 	bacpy(&rp.addr.bdaddr, bdaddr);
-	rp.addr.type = link_to_mgmt(link_type, addr_type);
+	rp.addr.type = link_to_bdaddr(link_type, addr_type);
 
 	err = cmd_complete(cmd->sk, cmd->index, MGMT_OP_DISCONNECT,
 			   mgmt_status(status), &rp, sizeof(rp));
@@ -3113,7 +3101,7 @@ int mgmt_connect_failed(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 link_type,
 	struct mgmt_ev_connect_failed ev;
 
 	bacpy(&ev.addr.bdaddr, bdaddr);
-	ev.addr.type = link_to_mgmt(link_type, addr_type);
+	ev.addr.type = link_to_bdaddr(link_type, addr_type);
 	ev.status = mgmt_status(status);
 
 	return mgmt_event(MGMT_EV_CONNECT_FAILED, hdev, &ev, sizeof(ev), NULL);
@@ -3124,7 +3112,7 @@ int mgmt_pin_code_request(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 secure)
 	struct mgmt_ev_pin_code_request ev;
 
 	bacpy(&ev.addr.bdaddr, bdaddr);
-	ev.addr.type = MGMT_ADDR_BREDR;
+	ev.addr.type = BDADDR_BREDR;
 	ev.secure = secure;
 
 	return mgmt_event(MGMT_EV_PIN_CODE_REQUEST, hdev, &ev, sizeof(ev),
@@ -3143,7 +3131,7 @@ int mgmt_pin_code_reply_complete(struct hci_dev *hdev, bdaddr_t *bdaddr,
 		return -ENOENT;
 
 	bacpy(&rp.addr.bdaddr, bdaddr);
-	rp.addr.type = MGMT_ADDR_BREDR;
+	rp.addr.type = BDADDR_BREDR;
 
 	err = cmd_complete(cmd->sk, hdev->id, MGMT_OP_PIN_CODE_REPLY,
 			   mgmt_status(status), &rp, sizeof(rp));
@@ -3165,7 +3153,7 @@ int mgmt_pin_code_neg_reply_complete(struct hci_dev *hdev, bdaddr_t *bdaddr,
 		return -ENOENT;
 
 	bacpy(&rp.addr.bdaddr, bdaddr);
-	rp.addr.type = MGMT_ADDR_BREDR;
+	rp.addr.type = BDADDR_BREDR;
 
 	err = cmd_complete(cmd->sk, hdev->id, MGMT_OP_PIN_CODE_NEG_REPLY,
 			   mgmt_status(status), &rp, sizeof(rp));
@@ -3184,7 +3172,7 @@ int mgmt_user_confirm_request(struct hci_dev *hdev, bdaddr_t *bdaddr,
 	BT_DBG("%s", hdev->name);
 
 	bacpy(&ev.addr.bdaddr, bdaddr);
-	ev.addr.type = link_to_mgmt(link_type, addr_type);
+	ev.addr.type = link_to_bdaddr(link_type, addr_type);
 	ev.confirm_hint = confirm_hint;
 	ev.value = value;
 
@@ -3200,7 +3188,7 @@ int mgmt_user_passkey_request(struct hci_dev *hdev, bdaddr_t *bdaddr,
 	BT_DBG("%s", hdev->name);
 
 	bacpy(&ev.addr.bdaddr, bdaddr);
-	ev.addr.type = link_to_mgmt(link_type, addr_type);
+	ev.addr.type = link_to_bdaddr(link_type, addr_type);
 
 	return mgmt_event(MGMT_EV_USER_PASSKEY_REQUEST, hdev, &ev, sizeof(ev),
 			  NULL);
@@ -3219,7 +3207,7 @@ static int user_pairing_resp_complete(struct hci_dev *hdev, bdaddr_t *bdaddr,
 		return -ENOENT;
 
 	bacpy(&rp.addr.bdaddr, bdaddr);
-	rp.addr.type = link_to_mgmt(link_type, addr_type);
+	rp.addr.type = link_to_bdaddr(link_type, addr_type);
 	err = cmd_complete(cmd->sk, hdev->id, opcode, mgmt_status(status),
 			   &rp, sizeof(rp));
 
@@ -3262,7 +3250,7 @@ int mgmt_auth_failed(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 link_type,
 	struct mgmt_ev_auth_failed ev;
 
 	bacpy(&ev.addr.bdaddr, bdaddr);
-	ev.addr.type = link_to_mgmt(link_type, addr_type);
+	ev.addr.type = link_to_bdaddr(link_type, addr_type);
 	ev.status = mgmt_status(status);
 
 	return mgmt_event(MGMT_EV_AUTH_FAILED, hdev, &ev, sizeof(ev), NULL);
@@ -3529,7 +3517,7 @@ int mgmt_device_found(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 link_type,
 	memset(buf, 0, sizeof(buf));
 
 	bacpy(&ev->addr.bdaddr, bdaddr);
-	ev->addr.type = link_to_mgmt(link_type, addr_type);
+	ev->addr.type = link_to_bdaddr(link_type, addr_type);
 	ev->rssi = rssi;
 	if (cfm_name)
 		ev->flags[0] |= MGMT_DEV_FOUND_CONFIRM_NAME;
@@ -3562,7 +3550,7 @@ int mgmt_remote_name(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 link_type,
 	memset(buf, 0, sizeof(buf));
 
 	bacpy(&ev->addr.bdaddr, bdaddr);
-	ev->addr.type = link_to_mgmt(link_type, addr_type);
+	ev->addr.type = link_to_bdaddr(link_type, addr_type);
 	ev->rssi = rssi;
 
 	eir_len = eir_append_data(ev->eir, 0, EIR_NAME_COMPLETE, name,
