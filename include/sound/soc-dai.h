@@ -173,6 +173,8 @@ struct snd_soc_dai_ops {
 		struct snd_soc_dai *);
 	int (*trigger)(struct snd_pcm_substream *, int,
 		struct snd_soc_dai *);
+	int (*bespoke_trigger)(struct snd_pcm_substream *, int,
+		struct snd_soc_dai *);
 	/*
 	 * For hardware based FIFO caused delay reporting.
 	 * Optional.
@@ -241,6 +243,7 @@ struct snd_soc_dai {
 
 	struct snd_soc_dapm_widget *playback_widget;
 	struct snd_soc_dapm_widget *capture_widget;
+	struct snd_soc_dapm_context dapm;
 
 	/* DAI DMA data */
 	void *playback_dma_data;
