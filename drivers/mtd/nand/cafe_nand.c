@@ -383,6 +383,7 @@ static int cafe_nand_read_page(struct mtd_info *mtd, struct nand_chip *chip,
 			       uint8_t *buf, int page)
 {
 	struct cafe_priv *cafe = mtd->priv;
+	unsigned int max_bitflips = 0;
 
 	cafe_dev_dbg(&cafe->pdev->dev, "ECC result %08x SYN1,2 %08x\n",
 		     cafe_readl(cafe, NAND_ECC_RESULT),
@@ -449,10 +450,11 @@ static int cafe_nand_read_page(struct mtd_info *mtd, struct nand_chip *chip,
 		} else {
 			dev_dbg(&cafe->pdev->dev, "Corrected %d symbol errors\n", n);
 			mtd->ecc_stats.corrected += n;
+			max_bitflips = max_t(unsigned int, max_bitflips, n);
 		}
 	}
 
-	return 0;
+	return max_bitflips;
 }
 
 static struct nand_ecclayout cafe_oobinfo_2048 = {
@@ -888,17 +890,7 @@ static struct pci_driver cafe_nand_pci_driver = {
 	.resume = cafe_nand_resume,
 };
 
-static int __init cafe_nand_init(void)
-{
-	return pci_register_driver(&cafe_nand_pci_driver);
-}
-
-static void __exit cafe_nand_exit(void)
-{
-	pci_unregister_driver(&cafe_nand_pci_driver);
-}
-module_init(cafe_nand_init);
-module_exit(cafe_nand_exit);
+module_pci_driver(cafe_nand_pci_driver);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("David Woodhouse <dwmw2@infradead.org>");
