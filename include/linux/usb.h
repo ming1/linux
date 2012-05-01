@@ -351,10 +351,6 @@ struct usb_bus {
 	int bandwidth_int_reqs;		/* number of Interrupt requests */
 	int bandwidth_isoc_reqs;	/* number of Isoc. requests */
 
-#ifdef CONFIG_USB_DEVICEFS
-	struct dentry *usbfs_dentry;	/* usbfs dentry entry for the bus */
-#endif
-
 #if defined(CONFIG_USB_MON) || defined(CONFIG_USB_MON_MODULE)
 	struct mon_bus *mon_bus;	/* non-null when associated */
 	int monitored;			/* non-zero when monitored */
@@ -493,12 +489,6 @@ struct usb_device {
 	char *serial;
 
 	struct list_head filelist;
-#ifdef CONFIG_USB_DEVICE_CLASS
-	struct device *usb_classdev;
-#endif
-#ifdef CONFIG_USB_DEVICEFS
-	struct dentry *usbfs_dentry;
-#endif
 
 	int maxchild;
 	struct usb_device **children;
@@ -1627,6 +1617,7 @@ static inline int usb_translate_errors(int error_code)
 	case 0:
 	case -ENOMEM:
 	case -ENODEV:
+	case -EOPNOTSUPP:
 		return error_code;
 	default:
 		return -EIO;
@@ -1651,9 +1642,6 @@ do {									\
 		printk(KERN_DEBUG "%s: " format "\n", __FILE__, ##arg); \
 } while (0)
 #endif
-
-#define err(format, arg...)					\
-	printk(KERN_ERR KBUILD_MODNAME ": " format "\n", ##arg)
 
 /* debugfs stuff */
 extern struct dentry *usb_debug_root;
