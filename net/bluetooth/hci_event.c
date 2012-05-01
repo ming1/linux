@@ -520,7 +520,7 @@ static void hci_setup_event_mask(struct hci_dev *hdev)
 	events[5] |= 0x10; /* Synchronous Connection Changed */
 
 	if (hdev->features[3] & LMP_RSSI_INQ)
-		events[4] |= 0x04; /* Inquiry Result with RSSI */
+		events[4] |= 0x02; /* Inquiry Result with RSSI */
 
 	if (hdev->features[5] & LMP_SNIFF_SUBR)
 		events[5] |= 0x20; /* Sniff Subrating */
@@ -1100,10 +1100,7 @@ static void hci_cc_le_set_scan_enable(struct hci_dev *hdev,
 
 		set_bit(HCI_LE_SCAN, &hdev->dev_flags);
 
-		cancel_delayed_work_sync(&hdev->adv_work);
-
 		hci_dev_lock(hdev);
-		hci_adv_entries_clear(hdev);
 		hci_discovery_set_state(hdev, DISCOVERY_FINDING);
 		hci_dev_unlock(hdev);
 		break;
@@ -1117,8 +1114,6 @@ static void hci_cc_le_set_scan_enable(struct hci_dev *hdev,
 		}
 
 		clear_bit(HCI_LE_SCAN, &hdev->dev_flags);
-
-		schedule_delayed_work(&hdev->adv_work, ADV_CLEAR_TIMEOUT);
 
 		if (hdev->discovery.type == DISCOV_TYPE_INTERLEAVED &&
 				hdev->discovery.state == DISCOVERY_FINDING) {
@@ -2999,6 +2994,7 @@ static inline void hci_extended_inquiry_result_evt(struct hci_dev *hdev, struct 
 	struct inquiry_data data;
 	struct extended_inquiry_info *info = (void *) (skb->data + 1);
 	int num_rsp = *((__u8 *) skb->data);
+	size_t eir_len;
 
 	BT_DBG("%s num_rsp %d", hdev->name, num_rsp);
 
@@ -3031,9 +3027,10 @@ static inline void hci_extended_inquiry_result_evt(struct hci_dev *hdev, struct 
 
 		name_known = hci_inquiry_cache_update(hdev, &data, name_known,
 						      &ssp);
+		eir_len = eir_get_length(info->data, sizeof(info->data));
 		mgmt_device_found(hdev, &info->bdaddr, ACL_LINK, 0x00,
 				  info->dev_class, info->rssi, !name_known,
-				  ssp, info->data, sizeof(info->data));
+				  ssp, info->data, eir_len);
 	}
 
 	hci_dev_unlock(hdev);
@@ -3352,8 +3349,6 @@ static inline void hci_le_adv_report_evt(struct hci_dev *hdev,
 
 	while (num_reports--) {
 		struct hci_ev_le_advertising_info *ev = ptr;
-
-		hci_add_adv_entry(hdev, ev);
 
 		rssi = ev->data[ev->length];
 		mgmt_device_found(hdev, &ev->bdaddr, LE_LINK, ev->bdaddr_type,

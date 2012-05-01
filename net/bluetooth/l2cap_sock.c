@@ -124,7 +124,7 @@ static int l2cap_sock_connect(struct socket *sock, struct sockaddr *addr, int al
 		return -EINVAL;
 
 	err = l2cap_chan_connect(chan, la.l2_psm, __le16_to_cpu(la.l2_cid),
-				&la.l2_bdaddr);
+				 &la.l2_bdaddr, la.l2_bdaddr_type);
 	if (err)
 		return err;
 
@@ -956,6 +956,7 @@ static void l2cap_sock_destruct(struct sock *sk)
 {
 	BT_DBG("sk %p", sk);
 
+	l2cap_chan_put(l2cap_pi(sk)->chan);
 	if (l2cap_pi(sk)->rx_busy_skb) {
 		kfree_skb(l2cap_pi(sk)->rx_busy_skb);
 		l2cap_pi(sk)->rx_busy_skb = NULL;
@@ -1056,6 +1057,8 @@ static struct sock *l2cap_sock_alloc(struct net *net, struct socket *sock, int p
 		l2cap_sock_kill(sk);
 		return NULL;
 	}
+
+	l2cap_chan_hold(chan);
 
 	chan->sk = sk;
 
