@@ -198,7 +198,7 @@ ip6_tnl_bucket(struct ip6_tnl_net *ip6n, const struct ip6_tnl_parm *p)
 {
 	const struct in6_addr *remote = &p->raddr;
 	const struct in6_addr *local = &p->laddr;
-	unsigned h = 0;
+	unsigned int h = 0;
 	int prio = 0;
 
 	if (!ipv6_addr_any(remote) || !ipv6_addr_any(local)) {
@@ -954,7 +954,7 @@ static int ip6_tnl_xmit2(struct sk_buff *skb,
 
 		if (skb->sk)
 			skb_set_owner_w(new_skb, skb->sk);
-		kfree_skb(skb);
+		consume_skb(skb);
 		skb = new_skb;
 	}
 	skb_dst_drop(skb);
