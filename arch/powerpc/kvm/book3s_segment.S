@@ -128,24 +128,25 @@ no_dcbz32_on:
 	/* First clear RI in our current MSR value */
 	li	r0, MSR_RI
 	andc	r6, r6, r0
-	MTMSR_EERI(r6)
-	mtsrr0	r9
-	mtsrr1	r4
 
 	PPC_LL	r0, SVCPU_R0(r3)
 	PPC_LL	r1, SVCPU_R1(r3)
 	PPC_LL	r2, SVCPU_R2(r3)
-	PPC_LL	r4, SVCPU_R4(r3)
 	PPC_LL	r5, SVCPU_R5(r3)
-	PPC_LL	r6, SVCPU_R6(r3)
 	PPC_LL	r7, SVCPU_R7(r3)
 	PPC_LL	r8, SVCPU_R8(r3)
-	PPC_LL	r9, SVCPU_R9(r3)
 	PPC_LL	r10, SVCPU_R10(r3)
 	PPC_LL	r11, SVCPU_R11(r3)
 	PPC_LL	r12, SVCPU_R12(r3)
 	PPC_LL	r13, SVCPU_R13(r3)
 
+	MTMSR_EERI(r6)
+	mtsrr0	r9
+	mtsrr1	r4
+
+	PPC_LL	r4, SVCPU_R4(r3)
+	PPC_LL	r6, SVCPU_R6(r3)
+	PPC_LL	r9, SVCPU_R9(r3)
 	PPC_LL	r3, (SVCPU_R3)(r3)
 
 	RFI
@@ -307,28 +308,6 @@ no_dcbz32_off:
 
 #endif /* CONFIG_PPC_BOOK3S_64 */
 
-	/*
-	 * For some interrupts, we need to call the real Linux
-	 * handler, so it can do work for us. This has to happen
-	 * as if the interrupt arrived from the kernel though,
-	 * so let's fake it here where most state is restored.
-	 *
-	 * Having set up SRR0/1 with the address where we want
-	 * to continue with relocation on (potentially in module
-	 * space), we either just go straight there with rfi[d],
-	 * or we jump to an interrupt handler with bctr if there
-	 * is an interrupt to be handled first.  In the latter
-	 * case, the rfi[d] at the end of the interrupt handler
-	 * will get us back to where we want to continue.
-	 */
-
-	cmpwi	r12, BOOK3S_INTERRUPT_EXTERNAL
-	beq	1f
-	cmpwi	r12, BOOK3S_INTERRUPT_DECREMENTER
-	beq	1f
-	cmpwi	r12, BOOK3S_INTERRUPT_PERFMON
-1:	mtctr	r12
-
 	/* Register usage at this point:
 	 *
 	 * R1       = host R1
@@ -347,7 +326,6 @@ no_dcbz32_off:
 	/* Load highmem handler address */
 	mtsrr0	r8
 
-	/* RFI into the highmem handler, or jump to interrupt handler */
-	beqctr
+	/* RFI into the highmem handler */
 	RFI
 kvmppc_handler_trampoline_exit_end:
