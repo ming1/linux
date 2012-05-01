@@ -15,6 +15,11 @@ enum lantiq_mach_type {
 	LTQ_MACH_GENERIC = 0,
 	LTQ_MACH_EASY50712,	/* Danube evaluation board */
 	LTQ_MACH_EASY50601,	/* Amazon SE evaluation board */
+
+	/* FALCON */
+	LANTIQ_MACH_EASY98000,		/* Falcon Eval Board, NOR Flash */
+	LANTIQ_MACH_EASY98000SF,	/* Falcon Eval Board, Serial Flash */
+	LANTIQ_MACH_EASY98000NAND,	/* Falcon Eval Board, NAND Flash */
 };
 
 #endif
