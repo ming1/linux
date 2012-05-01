@@ -14,6 +14,8 @@
  *
  */
 
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
 #include <linux/module.h>
 #include <linux/moduleparam.h>
 #include <linux/kernel.h>
@@ -39,16 +41,7 @@
 #include "mei.h"
 #include "interface.h"
 
-
-#define MEI_READ_TIMEOUT 45
-#define MEI_DRIVER_NAME	"mei"
-#define MEI_DEV_NAME "mei"
-
-/*
- *  mei driver strings
- */
-static char mei_driver_name[] = MEI_DRIVER_NAME;
-static const char mei_driver_string[] = "Intel(R) Management Engine Interface";
+static const char mei_driver_name[] = "mei";
 
 /* The device pointer */
 /* Currently this driver works as long as there is only a single AMT device. */
@@ -931,7 +924,7 @@ static const struct file_operations mei_fops = {
  * Misc Device Struct
  */
 static struct miscdevice  mei_misc_device = {
-		.name = MEI_DRIVER_NAME,
+		.name = "mei",
 		.fops = &mei_fops,
 		.minor = MISC_DYNAMIC_MINOR,
 };
@@ -1020,7 +1013,7 @@ static int __devinit mei_probe(struct pci_dev *pdev,
 
 	mutex_unlock(&mei_mutex);
 
-	pr_debug("mei: Driver initialization successful.\n");
+	pr_debug("initialization successful.\n");
 
 	return 0;
 
@@ -1204,7 +1197,7 @@ static int __init mei_init_module(void)
 {
 	int ret;
 
-	pr_debug("mei: %s\n", mei_driver_string);
+	pr_debug("loading.\n");
 	/* init pci module */
 	ret = pci_register_driver(&mei_driver);
 	if (ret < 0)
@@ -1226,7 +1219,7 @@ static void __exit mei_exit_module(void)
 	misc_deregister(&mei_misc_device);
 	pci_unregister_driver(&mei_driver);
 
-	pr_debug("mei: Driver unloaded successfully.\n");
+	pr_debug("unloaded successfully.\n");
 }
 
 module_exit(mei_exit_module);
