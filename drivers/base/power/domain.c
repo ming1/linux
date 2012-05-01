@@ -381,6 +381,7 @@ static int pm_genpd_poweroff(struct generic_pm_domain *genpd)
 		return 0;
 	}
 
+	genpd->max_off_time_ns = -1;
 	if (genpd->gov && genpd->gov->power_down_ok) {
 		if (!genpd->gov->power_down_ok(&genpd->domain))
 			return -EAGAIN;
@@ -443,17 +444,6 @@ static int pm_genpd_poweroff(struct generic_pm_domain *genpd)
 	}
 
 	genpd->status = GPD_STATE_POWER_OFF;
-	genpd->power_off_time = ktime_get();
-
-	/* Update PM QoS information for devices in the domain. */
-	list_for_each_entry_reverse(pdd, &genpd->dev_list, list_node) {
-		struct gpd_timing_data *td = &to_gpd_data(pdd)->td;
-
-		pm_runtime_update_max_time_suspended(pdd->dev,
-					td->start_latency_ns +
-					td->restore_state_latency_ns +
-					genpd->power_on_latency_ns);
-	}
 
 	list_for_each_entry(link, &genpd->slave_links, slave_node) {
 		genpd_sd_counter_dec(link->master);
@@ -506,6 +496,7 @@ static int pm_genpd_runtime_suspend(struct device *dev)
 	if (dev_gpd_data(dev)->always_on)
 		return -EBUSY;
 
+	dev_gpd_data(dev)->td.effective_constraint_ns = -1;
 	stop_ok = genpd->gov ? genpd->gov->stop_ok : NULL;
 	if (stop_ok && !stop_ok(dev))
 		return -EBUSY;
@@ -513,9 +504,6 @@ static int pm_genpd_runtime_suspend(struct device *dev)
 	ret = genpd_stop_dev(genpd, dev);
 	if (ret)
 		return ret;
-
-	pm_runtime_update_max_time_suspended(dev,
-				dev_gpd_data(dev)->td.start_latency_ns);
 
 	/*
 	 * If power.irq_safe is set, this routine will be run with interrupts
