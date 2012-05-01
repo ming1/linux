@@ -1,0 +1,59 @@
+This file lists all branches that are pulled into the for-next branch
+of git://git.kernel.org/pub/scm/linux/kernel/git/arm/arm-soc.git
+and their external dependencies.
+
+It also includes a couple of directly applied patches for build breaks with subject
+The next/* branches are kept in the order in which they get applied.
+
+dependencies:
+depends/i2c/lpc32xx:     git://git.antcom.de/linux-2.6.git lpc32xx/i2c
+
+next/maintainers:
+at91/maintainers:	git://github.com/at91linux/linux-at91.git tags/at91-3.5-maintainers
+			various patches by email
+
+next/cleanup:
+ixp2xxx/removal		git://sources.calxeda.com/kernel/linux.git ixp2xxx-removal
+at91/cleanup		git://github.com/at91linux/linux-at91.git tags/at91-3.5-cleanup
+imx/cleanup		git://git.pengutronix.de/git/imx/linux-2.6.git tags/arm-imx-cleanup
+
+next/dt:
+omap/dt-missed-3.4:	git://git.kernel.org/pub/scm/linux/kernel/git/bcousson/linux-omap-dt.git for_3.4/dts/all
+mxs/dt:			git://git.linaro.org/people/shawnguo/linux-2.6.git mxs/dt
+spear/dt:		git://git.stlinux.com/spear/linux-2.6.git spear-v3.5 (rebased)
+				+extra patch
+renesas/dt:		git://git.kernel.org/pub/scm/linux/kernel/git/rafael/renesas.git dt
+lpc32xx/dt		git://git.antcom.de/linux-2.6.git lpc32xx/dt
+				depends on depends/i2c/lpc32xx
+ux500/dt:		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git ux500-devicetree-for-arm-soc
+at91/dt			git://github.com/at91linux/linux-at91.git tags/at91-for-next-dt
+				depends on at91/cleanup
+
+next/newsoc:
+at91/sam9n12:		git://github.com/at91linux/linux-at91.git tags/at91-for-next-soc
+				depends on at91/dt
+
+next/boards:
+mx/boards		git://git.pengutronix.de/git/imx/linux-2.6.git tags/imx-features-board-20120411-2
+
+next/pinctrl:
+spear/pinctrl:		git://git.stlinux.com/spear/linux-2.6.git spear-v3.5
+				depends on spear/dt:
+ux500/gpio		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git ux500-gpio-pins-for-arm-soc
+
+
+next/drivers:
+pxa/keyboard		git://github.com/hzhuang1/linux.git keyboard
+
+next/stmp-device:	git://git.pengutronix.de/git/wsa/linux.git stmp_device
+
+staging/clock:
+spear/clock:		git://git.stlinux.com/spear/linux-2.6.git for-v3.5-spear-clk
+				depends on spear/dt and spear/pinctrl
+
+staging/newsoc:
+spear/13xx:		git://git.stlinux.com/spear/linux-2.6.git for-v3.5-spear13xx
+				depends on spear/clock
+
+staging/ux500-core-for-arm-soc:
+			git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git ux500-core-for-arm-soc
