@@ -1,0 +1,17 @@
+Importing i2c based on 3.4-rc1
+Unchanged quilt series i2c
+Importing jdelvare-hwmon based on 437538267b672f9320833907f1b5acbb2605f4be
+Unchanged quilt series jdelvare-hwmon
+Importing rr based on v3.3-rc5-86-g5ffca28
+Unchanged quilt series rr
+Importing device-mapper based on v3.4-rc5
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard 69964ea4c7b68c9399f7977aa5b9aa6539a6a98a
+HEAD is now at 69964ea Linux 3.4-rc5
+$ git am ../quilt/device-mapper/dm-thin-reinstate-missing-mempool_free-in-cell_release_singleton.patch
+Applying: Fix a memory leak inadvertently introduced during simplification of
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/device-mapper
+From ../quilt-tmp
+ + 025716f...27fd946 master     -> quilt/device-mapper  (forced update)
