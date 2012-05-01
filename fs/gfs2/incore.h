@@ -118,13 +118,7 @@ TAS_BUFFER_FNS(Zeronew, zeronew)
 struct gfs2_bufdata {
 	struct buffer_head *bd_bh;
 	struct gfs2_glock *bd_gl;
-
-	union {
-		struct list_head list_tr;
-		u64 blkno;
-	} u;
-#define bd_list_tr u.list_tr
-#define bd_blkno u.blkno
+	u64 bd_blkno;
 
 	struct gfs2_log_element bd_le;
 
@@ -411,13 +405,10 @@ struct gfs2_trans {
 
 	int tr_touched;
 
-	unsigned int tr_num_buf;
 	unsigned int tr_num_buf_new;
 	unsigned int tr_num_databuf_new;
 	unsigned int tr_num_buf_rm;
 	unsigned int tr_num_databuf_rm;
-	struct list_head tr_list_buf;
-
 	unsigned int tr_num_revoke;
 	unsigned int tr_num_revoke_rm;
 };
@@ -699,7 +690,6 @@ struct gfs2_sbd {
 
 	struct list_head sd_log_le_buf;
 	struct list_head sd_log_le_revoke;
-	struct list_head sd_log_le_rg;
 	struct list_head sd_log_le_databuf;
 	struct list_head sd_log_le_ordered;
 
@@ -716,7 +706,9 @@ struct gfs2_sbd {
 
 	struct rw_semaphore sd_log_flush_lock;
 	atomic_t sd_log_in_flight;
+	struct bio *sd_log_bio;
 	wait_queue_head_t sd_log_flush_wait;
+	int sd_log_error;
 
 	unsigned int sd_log_flush_head;
 	u64 sd_log_flush_wrapped;
