@@ -327,7 +327,7 @@ static void send_sig_all(int sig)
 		if (is_global_init(p))
 			continue;
 
-		force_sig(sig, p);
+		do_send_sig_info(sig, SEND_SIG_FORCED, p, true);
 	}
 	read_unlock(&tasklist_lock);
 }
@@ -346,7 +346,7 @@ static struct sysrq_key_op sysrq_term_op = {
 
 static void moom_callback(struct work_struct *ignored)
 {
-	out_of_memory(node_zonelist(0, GFP_KERNEL), GFP_KERNEL, 0, NULL);
+	out_of_memory(node_zonelist(0, GFP_KERNEL), GFP_KERNEL, 0, NULL, true);
 }
 
 static DECLARE_WORK(moom_work, moom_callback);

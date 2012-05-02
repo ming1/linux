@@ -23,7 +23,7 @@
 #include <linux/init.h>
 #include <linux/hash.h>
 #include <linux/cache.h>
-#include <linux/module.h>
+#include <linux/export.h>
 #include <linux/mount.h>
 #include <linux/file.h>
 #include <asm/uaccess.h>
@@ -1466,30 +1466,6 @@ struct dentry *d_instantiate_unique(struct dentry *entry, struct inode *inode)
 
 EXPORT_SYMBOL(d_instantiate_unique);
 
-/**
- * d_alloc_root - allocate root dentry
- * @root_inode: inode to allocate the root for
- *
- * Allocate a root ("/") dentry for the inode given. The inode is
- * instantiated and returned. %NULL is returned if there is insufficient
- * memory or the inode passed is %NULL.
- */
- 
-struct dentry * d_alloc_root(struct inode * root_inode)
-{
-	struct dentry *res = NULL;
-
-	if (root_inode) {
-		static const struct qstr name = { .name = "/", .len = 1 };
-
-		res = __d_alloc(root_inode->i_sb, &name);
-		if (res)
-			d_instantiate(res, root_inode);
-	}
-	return res;
-}
-EXPORT_SYMBOL(d_alloc_root);
-
 struct dentry *d_make_root(struct inode *root_inode)
 {
 	struct dentry *res = NULL;
@@ -1737,7 +1713,7 @@ EXPORT_SYMBOL(d_add_ci);
  * __d_lookup_rcu - search for a dentry (racy, store-free)
  * @parent: parent dentry
  * @name: qstr of name we wish to find
- * @seq: returns d_seq value at the point where the dentry was found
+ * @seqp: returns d_seq value at the point where the dentry was found
  * @inode: returns dentry->d_inode when the inode was found valid.
  * Returns: dentry, or NULL
  *
@@ -2428,6 +2404,7 @@ struct dentry *d_materialise_unique(struct dentry *dentry, struct inode *inode)
 			if (d_ancestor(alias, dentry)) {
 				/* Check for loops */
 				actual = ERR_PTR(-ELOOP);
+				spin_unlock(&inode->i_lock);
 			} else if (IS_ROOT(alias)) {
 				/* Is this an anonymous mountpoint that we
 				 * could splice into our tree? */
@@ -2437,7 +2414,7 @@ struct dentry *d_materialise_unique(struct dentry *dentry, struct inode *inode)
 				goto found;
 			} else {
 				/* Nope, but we must(!) avoid directory
-				 * aliasing */
+				 * aliasing. This drops inode->i_lock */
 				actual = __d_unalias(inode, dentry, alias);
 			}
 			write_sequnlock(&rename_lock);

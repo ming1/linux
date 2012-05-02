@@ -132,10 +132,12 @@ struct usb_device_id {
 #define USB_DEVICE_ID_MATCH_INT_PROTOCOL	0x0200
 
 #define HID_ANY_ID				(~0)
+#define HID_BUS_ANY				0xffff
+#define HID_GROUP_ANY				0x0000
 
 struct hid_device_id {
 	__u16 bus;
-	__u16 pad1;
+	__u16 group;
 	__u32 vendor;
 	__u32 product;
 	kernel_ulong_t driver_data
@@ -412,6 +414,15 @@ struct hv_vmbus_device_id {
 	__u8 guid[16];
 	kernel_ulong_t driver_data	/* Data private to the driver */
 			__attribute__((aligned(sizeof(kernel_ulong_t))));
+};
+
+/* rpmsg */
+
+#define RPMSG_NAME_SIZE			32
+#define RPMSG_DEVICE_MODALIAS_FMT	"rpmsg:%s"
+
+struct rpmsg_device_id {
+	char name[RPMSG_NAME_SIZE];
 };
 
 /* i2c */

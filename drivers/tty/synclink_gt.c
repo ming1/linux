@@ -73,7 +73,6 @@
 #include <linux/hdlc.h>
 #include <linux/synclink.h>
 
-#include <asm/system.h>
 #include <asm/io.h>
 #include <asm/irq.h>
 #include <asm/dma.h>
@@ -3923,7 +3922,7 @@ static void tdma_reset(struct slgt_info *info)
  */
 static void enable_loopback(struct slgt_info *info)
 {
-	/* SCR (serial control) BIT2=looopback enable */
+	/* SCR (serial control) BIT2=loopback enable */
 	wr_reg16(info, SCR, (unsigned short)(rd_reg16(info, SCR) | BIT2));
 
 	if (info->params.mode != MGSL_MODE_ASYNC) {

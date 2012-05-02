@@ -1247,7 +1247,7 @@ static int iommu_init_domains(struct intel_iommu *iommu)
 	unsigned long nlongs;
 
 	ndomains = cap_ndoms(iommu->cap);
-	pr_debug("IOMMU %d: Number of Domains supportd <%ld>\n", iommu->seq_id,
+	pr_debug("IOMMU %d: Number of Domains supported <%ld>\n", iommu->seq_id,
 			ndomains);
 	nlongs = BITS_TO_LONGS(ndomains);
 
@@ -2949,7 +2949,8 @@ static void intel_unmap_page(struct device *dev, dma_addr_t dev_addr,
 }
 
 static void *intel_alloc_coherent(struct device *hwdev, size_t size,
-				  dma_addr_t *dma_handle, gfp_t flags)
+				  dma_addr_t *dma_handle, gfp_t flags,
+				  struct dma_attrs *attrs)
 {
 	void *vaddr;
 	int order;
@@ -2981,7 +2982,7 @@ static void *intel_alloc_coherent(struct device *hwdev, size_t size,
 }
 
 static void intel_free_coherent(struct device *hwdev, size_t size, void *vaddr,
-				dma_addr_t dma_handle)
+				dma_addr_t dma_handle, struct dma_attrs *attrs)
 {
 	int order;
 
@@ -3126,8 +3127,8 @@ static int intel_mapping_error(struct device *dev, dma_addr_t dma_addr)
 }
 
 struct dma_map_ops intel_dma_ops = {
-	.alloc_coherent = intel_alloc_coherent,
-	.free_coherent = intel_free_coherent,
+	.alloc = intel_alloc_coherent,
+	.free = intel_free_coherent,
 	.map_sg = intel_map_sg,
 	.unmap_sg = intel_unmap_sg,
 	.map_page = intel_map_page,

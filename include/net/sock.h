@@ -56,6 +56,8 @@
 #include <linux/memcontrol.h>
 #include <linux/res_counter.h>
 #include <linux/static_key.h>
+#include <linux/aio.h>
+#include <linux/sched.h>
 
 #include <linux/filter.h>
 #include <linux/rculist_nulls.h>
@@ -1852,7 +1854,7 @@ static inline bool wq_has_sleeper(struct socket_wq *wq)
 static inline void sock_poll_wait(struct file *filp,
 		wait_queue_head_t *wait_address, poll_table *p)
 {
-	if (p && wait_address) {
+	if (!poll_does_not_wait(p) && wait_address) {
 		poll_wait(filp, wait_address, p);
 		/*
 		 * We need to be sure we are in sync with the
