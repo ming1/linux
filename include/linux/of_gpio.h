@@ -50,6 +50,8 @@ static inline struct of_mm_gpio_chip *to_of_mm_gpio_chip(struct gpio_chip *gc)
 extern int of_get_named_gpio_flags(struct device_node *np,
 		const char *list_name, int index, enum of_gpio_flags *flags);
 
+extern struct gpio_chip *of_get_gpio_chip_by_phandle(struct device_node *np);
+
 extern unsigned int of_gpio_named_count(struct device_node *np,
 					const char* propname);
 
@@ -70,6 +72,12 @@ static inline int of_get_named_gpio_flags(struct device_node *np,
 		const char *list_name, int index, enum of_gpio_flags *flags)
 {
 	return -ENOSYS;
+}
+
+static inline struct gpio_chip *
+of_get_gpio_chip_by_phandle(struct device_node *np)
+{
+	return NULL;
 }
 
 static inline unsigned int of_gpio_named_count(struct device_node *np,
@@ -154,5 +162,4 @@ static inline int of_get_gpio(struct device_node *np, int index)
 {
 	return of_get_gpio_flags(np, index, NULL);
 }
-
 #endif /* __LINUX_OF_GPIO_H */

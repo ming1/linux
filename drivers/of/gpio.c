@@ -78,6 +78,38 @@ err0:
 EXPORT_SYMBOL(of_get_named_gpio_flags);
 
 /**
+ * of_get_gpio_chip_by_phandle() - Get a GPIO Chip using "gpio-phandle"
+ * @np:		device node to get GPIO chip from
+ *
+ * Returns GPIO chip pointer or NULL on error.
+ */
+struct gpio_chip *of_get_gpio_chip_by_phandle(struct device_node *np)
+{
+	struct gpio_chip *gc;
+	struct device_node *gpio_np;
+
+	gpio_np = of_parse_phandle(np, "gpio-phandle", 0);
+	if (!gpio_np) {
+		pr_debug("%s: Looking up gpio-phandle property failed",
+				np->full_name);
+		return NULL;
+	}
+
+	gc = of_node_to_gpiochip(gpio_np);
+	if (!gc) {
+		pr_debug("%s: gpio controller %s isn't registered\n",
+				np->full_name, gpio_np->full_name);
+		goto err;
+	}
+
+err:
+	of_node_put(gpio_np);
+
+	return gc;
+}
+EXPORT_SYMBOL(of_get_gpio_chip_by_phandle);
+
+/**
  * of_gpio_named_count - Count GPIOs for a device
  * @np:		device node to count GPIOs for
  * @propname:	property name containing gpio specifier(s)
