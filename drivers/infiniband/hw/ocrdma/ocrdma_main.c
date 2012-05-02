@@ -47,16 +47,10 @@ MODULE_AUTHOR("Emulex Corporation");
 MODULE_LICENSE("GPL");
 
 static LIST_HEAD(ocrdma_dev_list);
-static DEFINE_MUTEX(ocrdma_devlist_lock);
+static DEFINE_SPINLOCK(ocrdma_devlist_lock);
 static DEFINE_IDR(ocrdma_dev_id);
 
 static union ib_gid ocrdma_zero_sgid;
-static int ocrdma_inet6addr_event(struct notifier_block *,
-				  unsigned long, void *);
-
-static struct notifier_block ocrdma_inet6addr_notifier = {
-	.notifier_call = ocrdma_inet6addr_event
-};
 
 static int ocrdma_get_instance(void)
 {
@@ -204,6 +198,8 @@ static int ocrdma_build_sgid_tbl(struct ocrdma_dev *dev)
 	return 0;
 }
 
+#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+
 static int ocrdma_inet6addr_event(struct notifier_block *notifier,
 				  unsigned long event, void *ptr)
 {
@@ -221,14 +217,14 @@ static int ocrdma_inet6addr_event(struct notifier_block *notifier,
 		is_vlan = true;
 		vid = vlan_dev_vlan_id(event_netdev);
 	}
-	mutex_lock(&ocrdma_devlist_lock);
-	list_for_each_entry(dev, &ocrdma_dev_list, entry) {
+	rcu_read_lock();
+	list_for_each_entry_rcu(dev, &ocrdma_dev_list, entry) {
 		if (dev->nic_info.netdev == netdev) {
 			found = true;
 			break;
 		}
 	}
-	mutex_unlock(&ocrdma_devlist_lock);
+	rcu_read_unlock();
 
 	if (!found)
 		return NOTIFY_DONE;
@@ -258,6 +254,12 @@ static int ocrdma_inet6addr_event(struct notifier_block *notifier,
 	mutex_unlock(&dev->dev_lock);
 	return NOTIFY_OK;
 }
+
+static struct notifier_block ocrdma_inet6addr_notifier = {
+	.notifier_call = ocrdma_inet6addr_event
+};
+
+#endif /* IPV6 */
 
 static enum rdma_link_layer ocrdma_link_layer(struct ib_device *device,
 					      u8 port_num)
@@ -431,9 +433,9 @@ static struct ocrdma_dev *ocrdma_add(struct be_dev_info *dev_info)
 	if (status)
 		goto alloc_err;
 
-	mutex_lock(&ocrdma_devlist_lock);
-	list_add_tail(&dev->entry, &ocrdma_dev_list);
-	mutex_unlock(&ocrdma_devlist_lock);
+	spin_lock(&ocrdma_devlist_lock);
+	list_add_tail_rcu(&dev->entry, &ocrdma_dev_list);
+	spin_unlock(&ocrdma_devlist_lock);
 	return dev;
 
 alloc_err:
@@ -448,16 +450,9 @@ idr_err:
 	return NULL;
 }
 
-static void ocrdma_remove(struct ocrdma_dev *dev)
+static void ocrdma_remove_free(struct rcu_head *rcu)
 {
-	/* first unregister with stack to stop all the active traffic
-	 * of the registered clients.
-	 */
-	ib_unregister_device(&dev->ibdev);
-
-	mutex_lock(&ocrdma_devlist_lock);
-	list_del(&dev->entry);
-	mutex_unlock(&ocrdma_devlist_lock);
+	struct ocrdma_dev *dev = container_of(rcu, struct ocrdma_dev, rcu);
 
 	ocrdma_free_resources(dev);
 	ocrdma_cleanup_hw(dev);
@@ -465,6 +460,19 @@ static void ocrdma_remove(struct ocrdma_dev *dev)
 	idr_remove(&ocrdma_dev_id, dev->id);
 	kfree(dev->mbx_cmd);
 	ib_dealloc_device(&dev->ibdev);
+}
+
+static void ocrdma_remove(struct ocrdma_dev *dev)
+{
+	/* first unregister with stack to stop all the active traffic
+	 * of the registered clients.
+	 */
+	ib_unregister_device(&dev->ibdev);
+
+	spin_lock(&ocrdma_devlist_lock);
+	list_del_rcu(&dev->entry);
+	spin_unlock(&ocrdma_devlist_lock);
+	call_rcu(&dev->rcu, ocrdma_remove_free);
 }
 
 static int ocrdma_open(struct ocrdma_dev *dev)
@@ -535,23 +543,34 @@ static struct ocrdma_driver ocrdma_drv = {
 	.state_change_handler	= ocrdma_event_handler,
 };
 
+static void ocrdma_unregister_inet6addr_notifier(void)
+{
+#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+	unregister_inet6addr_notifier(&ocrdma_inet6addr_notifier);
+#endif
+}
+
 static int __init ocrdma_init_module(void)
 {
 	int status;
 
+#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
 	status = register_inet6addr_notifier(&ocrdma_inet6addr_notifier);
 	if (status)
 		return status;
+#endif
+
 	status = be_roce_register_driver(&ocrdma_drv);
 	if (status)
-		unregister_inet6addr_notifier(&ocrdma_inet6addr_notifier);
+		ocrdma_unregister_inet6addr_notifier();
+
 	return status;
 }
 
 static void __exit ocrdma_exit_module(void)
 {
 	be_roce_unregister_driver(&ocrdma_drv);
-	unregister_inet6addr_notifier(&ocrdma_inet6addr_notifier);
+	ocrdma_unregister_inet6addr_notifier();
 }
 
 module_init(ocrdma_init_module);

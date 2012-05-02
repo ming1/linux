@@ -486,8 +486,8 @@ struct ib_mr *ocrdma_get_dma_mr(struct ib_pd *ibpd, int acc)
 	struct ocrdma_mr *mr;
 
 	mr = ocrdma_alloc_lkey(ibpd, acc, 0, OCRDMA_ADDR_CHECK_DISABLE);
-	if (!mr)
-		return ERR_PTR(-ENOMEM);
+	if (IS_ERR(mr))
+		return ERR_CAST(mr);
 
 	return &mr->ibmr;
 }
@@ -1431,7 +1431,7 @@ int ocrdma_destroy_qp(struct ib_qp *ibqp)
 	struct ocrdma_dev *dev;
 	struct ib_qp_attr attrs;
 	int attr_mask = IB_QP_STATE;
-	unsigned long wq_flags = 0, rq_flags = 0;
+	unsigned long flags;
 
 	qp = get_ocrdma_qp(ibqp);
 	dev = qp->dev;
@@ -1453,15 +1453,15 @@ int ocrdma_destroy_qp(struct ib_qp *ibqp)
 	 * acquire CQ lock while destroy is in progress, in order to
 	 * protect against proessing in-flight CQEs for this QP.
 	 */
-	spin_lock_irqsave(&qp->sq_cq->cq_lock, wq_flags);
+	spin_lock_irqsave(&qp->sq_cq->cq_lock, flags);
 	if (qp->rq_cq && (qp->rq_cq != qp->sq_cq))
-		spin_lock_irqsave(&qp->rq_cq->cq_lock, rq_flags);
+		spin_lock(&qp->rq_cq->cq_lock);
 
 	ocrdma_del_qpn_map(dev, qp);
 
 	if (qp->rq_cq && (qp->rq_cq != qp->sq_cq))
-		spin_unlock_irqrestore(&qp->rq_cq->cq_lock, rq_flags);
-	spin_unlock_irqrestore(&qp->sq_cq->cq_lock, wq_flags);
+		spin_unlock(&qp->rq_cq->cq_lock);
+	spin_unlock_irqrestore(&qp->sq_cq->cq_lock, flags);
 
 	if (!pd->uctx) {
 		ocrdma_discard_cqes(qp, qp->sq_cq);
