@@ -17,6 +17,7 @@ ixp2xxx/removal		git://sources.calxeda.com/kernel/linux.git ixp2xxx-removal
 at91/cleanup		git://github.com/at91linux/linux-at91.git tags/at91-3.5-cleanup
 imx/cleanup		git://git.pengutronix.de/git/imx/linux-2.6.git tags/arm-imx-cleanup
 imx/cleanup2		git://git.pengutronix.de/git/imx/linux-2.6.git tags/imx-cleanup
+ux500/remove-u5500	git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git ux500-del-u5500-for-arm-soc
 
 next/dt:
 omap/dt-missed-3.4:	git://git.kernel.org/pub/scm/linux/kernel/git/bcousson/linux-omap-dt.git for_3.4/dts/all
@@ -33,6 +34,7 @@ at91/dt			git://github.com/at91linux/linux-at91.git tags/at91-for-next-dt
 next/newsoc:
 at91/sam9n12:		git://github.com/at91linux/linux-at91.git tags/at91-for-next-soc
 				depends on at91/dt
+ux500/u9540		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git ux500-u9540-for-arm-soc
 
 next/boards:
 mx/boards		git://git.pengutronix.de/git/imx/linux-2.6.git tags/imx-features-board-20120411-2
@@ -48,6 +50,9 @@ imx/defconfig:		git://git.pengutronix.de/git/imx/linux-2.6.git tags/imx-defconfi
 next/drivers:
 pxa/keyboard		git://github.com/hzhuang1/linux.git keyboard
 
+next/cpuidle:
+ux500/cpuidle		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git ux500-cpuidle-for-arm-soc
+
 next/stmp-device:	git://git.pengutronix.de/git/wsa/linux.git stmp_device
 
 staging/clock:
@@ -57,6 +62,3 @@ spear/clock:		git://git.stlinux.com/spear/linux-2.6.git for-v3.5-spear-clk
 staging/newsoc:
 spear/13xx:		git://git.stlinux.com/spear/linux-2.6.git for-v3.5-spear13xx
 				depends on spear/clock
-
-staging/ux500-core-for-arm-soc:
-			git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git ux500-core-for-arm-soc
