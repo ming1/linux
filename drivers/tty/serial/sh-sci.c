@@ -1564,10 +1564,32 @@ static void sci_enable_ms(struct uart_port *port)
 
 static void sci_break_ctl(struct uart_port *port, int break_state)
 {
-	/*
-	 * Not supported by hardware. Most parts couple break and rx
-	 * interrupts together, with break detection always enabled.
-	 */
+	struct sci_port *s = to_sci_port(port);
+	struct plat_sci_reg *reg = sci_regmap[s->cfg->regtype] + SCSPTR;
+	unsigned short scscr, scsptr;
+
+	/* check wheter the port has SCSPTR */
+	if (!reg->size) {
+		/*
+		 * Not supported by hardware. Most parts couple break and rx
+		 * interrupts together, with break detection always enabled.
+		 */
+		return;
+	}
+
+	scsptr = serial_port_in(port, SCSPTR);
+	scscr = serial_port_in(port, SCSCR);
+
+	if (break_state == -1) {
+		scsptr = (scsptr | SCSPTR_SPB2IO) & ~SCSPTR_SPB2DT;
+		scscr &= ~SCSCR_TE;
+	} else {
+		scsptr = (scsptr | SCSPTR_SPB2DT) & ~SCSPTR_SPB2IO;
+		scscr |= SCSCR_TE;
+	}
+
+	serial_port_out(port, SCSPTR, scsptr);
+	serial_port_out(port, SCSCR, scscr);
 }
 
 #ifdef CONFIG_SERIAL_SH_SCI_DMA

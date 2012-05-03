@@ -3,7 +3,7 @@
  *
  * Copyright (C) 2000, 2001  Paolo Alberelli
  * Copyright (C) 2003  Richard Curnow (/proc/tlb, bug fixes)
- * Copyright (C) 2003 - 2009 Paul Mundt
+ * Copyright (C) 2003 - 2012 Paul Mundt
  *
  * This file is subject to the terms and conditions of the GNU General Public
  * License.  See the file "COPYING" in the main directory of this archive
@@ -27,33 +27,6 @@
 #include <asm/uaccess.h>
 #include <asm/pgalloc.h>
 #include <asm/mmu_context.h>
-
-extern void die(const char *,struct pt_regs *,long);
-
-#define PFLAG(val,flag)   (( (val) & (flag) ) ? #flag : "" )
-#define PPROT(flag) PFLAG(pgprot_val(prot),flag)
-
-static inline void print_prots(pgprot_t prot)
-{
-	printk("prot is 0x%016llx\n",pgprot_val(prot));
-
-	printk("%s %s %s %s %s\n",PPROT(_PAGE_SHARED),PPROT(_PAGE_READ),
-	       PPROT(_PAGE_EXECUTE),PPROT(_PAGE_WRITE),PPROT(_PAGE_USER));
-}
-
-static inline void print_vma(struct vm_area_struct *vma)
-{
-	printk("vma start 0x%08lx\n", vma->vm_start);
-	printk("vma end   0x%08lx\n", vma->vm_end);
-
-	print_prots(vma->vm_page_prot);
-	printk("vm_flags 0x%08lx\n", vma->vm_flags);
-}
-
-static inline void print_task(struct task_struct *tsk)
-{
-	printk("Task pid %d\n", task_pid_nr(tsk));
-}
 
 static pte_t *lookup_pte(struct mm_struct *mm, unsigned long address)
 {
@@ -95,6 +68,8 @@ asmlinkage void do_page_fault(struct pt_regs *regs, unsigned long writeaccess,
 	struct mm_struct *mm;
 	struct vm_area_struct * vma;
 	const struct exception_table_entry *fixup;
+	unsigned int flags = (FAULT_FLAG_ALLOW_RETRY | FAULT_FLAG_KILLABLE |
+			      (writeaccess ? FAULT_FLAG_WRITE : 0));
 	pte_t *pte;
 	int fault;
 
@@ -124,47 +99,20 @@ asmlinkage void do_page_fault(struct pt_regs *regs, unsigned long writeaccess,
 	if (in_atomic() || !mm)
 		goto no_context;
 
+retry:
 	/* TLB misses upon some cache flushes get done under cli() */
 	down_read(&mm->mmap_sem);
 
 	vma = find_vma(mm, address);
-
-	if (!vma) {
-#ifdef DEBUG_FAULT
-		print_task(tsk);
-		printk("%s:%d fault, address is 0x%08x PC %016Lx textaccess %d writeaccess %d\n",
-		       __func__, __LINE__,
-		       address,regs->pc,textaccess,writeaccess);
-		show_regs(regs);
-#endif
+	if (!vma)
 		goto bad_area;
-	}
-	if (vma->vm_start <= address) {
+	if (vma->vm_start <= address)
 		goto good_area;
-	}
-
-	if (!(vma->vm_flags & VM_GROWSDOWN)) {
-#ifdef DEBUG_FAULT
-		print_task(tsk);
-		printk("%s:%d fault, address is 0x%08x PC %016Lx textaccess %d writeaccess %d\n",
-		       __func__, __LINE__,
-		       address,regs->pc,textaccess,writeaccess);
-		show_regs(regs);
-
-		print_vma(vma);
-#endif
+	if (!(vma->vm_flags & VM_GROWSDOWN))
 		goto bad_area;
-	}
-	if (expand_stack(vma, address)) {
-#ifdef DEBUG_FAULT
-		print_task(tsk);
-		printk("%s:%d fault, address is 0x%08x PC %016Lx textaccess %d writeaccess %d\n",
-		       __func__, __LINE__,
-		       address,regs->pc,textaccess,writeaccess);
-		show_regs(regs);
-#endif
+	if (expand_stack(vma, address))
 		goto bad_area;
-	}
+
 /*
  * Ok, we have a good vm_area for this memory access, so
  * we can handle it..
@@ -188,7 +136,11 @@ good_area:
 	 * make sure we exit gracefully rather than endlessly redo
 	 * the fault.
 	 */
-	fault = handle_mm_fault(mm, vma, address, writeaccess ? FAULT_FLAG_WRITE : 0);
+	fault = handle_mm_fault(mm, vma, address, flags);
+
+	if ((fault & VM_FAULT_RETRY) && fatal_signal_pending(current))
+		return;
+
 	if (unlikely(fault & VM_FAULT_ERROR)) {
 		if (fault & VM_FAULT_OOM)
 			goto out_of_memory;
@@ -197,14 +149,27 @@ good_area:
 		BUG();
 	}
 
-	if (fault & VM_FAULT_MAJOR) {
-		tsk->maj_flt++;
-		perf_sw_event(PERF_COUNT_SW_PAGE_FAULTS_MAJ, 1,
-				     regs, address);
-	} else {
-		tsk->min_flt++;
-		perf_sw_event(PERF_COUNT_SW_PAGE_FAULTS_MIN, 1,
-				     regs, address);
+	if (flags & FAULT_FLAG_ALLOW_RETRY) {
+		if (fault & VM_FAULT_MAJOR) {
+			tsk->maj_flt++;
+			perf_sw_event(PERF_COUNT_SW_PAGE_FAULTS_MAJ, 1,
+				      regs, address);
+		} else {
+			tsk->min_flt++;
+			perf_sw_event(PERF_COUNT_SW_PAGE_FAULTS_MIN, 1,
+				      regs, address);
+		}
+
+		if (fault & VM_FAULT_RETRY) {
+			flags &= ~FAULT_FLAG_ALLOW_RETRY;
+
+			/*
+			 * No need to up_read(&mm->mmap_sem) as we would
+			 * have already released it in __lock_page_or_retry
+			 * in mm/filemap.c.
+			 */
+			goto retry;
+		}
 	}
 
 	/* If we get here, the page fault has been handled.  Do the TLB refill
@@ -231,9 +196,6 @@ no_pte:
  * Fix it, but check if it's kernel or user first..
  */
 bad_area:
-#ifdef DEBUG_FAULT
-	printk("fault:bad area\n");
-#endif
 	up_read(&mm->mmap_sem);
 
 	if (user_mode(regs)) {
@@ -246,15 +208,11 @@ bad_area:
 			printk("user mode bad_area address=%08lx pid=%d (%s) pc=%08lx\n",
 				address, task_pid_nr(current), current->comm,
 				(unsigned long) regs->pc);
-#if 0
-			show_regs(regs);
-#endif
 		}
 		if (is_global_init(tsk)) {
 			panic("INIT had user mode bad_area\n");
 		}
 		tsk->thread.address = address;
-		tsk->thread.error_code = writeaccess;
 		info.si_signo = SIGSEGV;
 		info.si_errno = 0;
 		info.si_addr = (void *) address;
@@ -263,9 +221,6 @@ bad_area:
 	}
 
 no_context:
-#ifdef DEBUG_FAULT
-	printk("fault:No context\n");
-#endif
 	/* Are we prepared to handle this kernel fault?  */
 	fixup = search_exception_tables(regs->pc);
 	if (fixup) {
@@ -307,8 +262,6 @@ do_sigbus:
 	 * or user mode.
 	 */
 	tsk->thread.address = address;
-	tsk->thread.error_code = writeaccess;
-	tsk->thread.trap_no = 14;
 	force_sig(SIGBUS, tsk);
 
 	/* Kernel mode? Handle exceptions or die */
