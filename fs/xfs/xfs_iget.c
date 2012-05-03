@@ -76,7 +76,7 @@ xfs_inode_alloc(
 	}
 
 	ASSERT(atomic_read(&ip->i_pincount) == 0);
-	ASSERT(!spin_is_locked(&ip->i_flags_lock));
+	lockdep_assert_held(&ip->i_flags_lock);
 	ASSERT(!xfs_isiflocked(ip));
 	ASSERT(ip->i_ino == 0);
 
@@ -146,7 +146,7 @@ xfs_inode_free(
 
 	/* asserts to verify all state is correct here */
 	ASSERT(atomic_read(&ip->i_pincount) == 0);
-	ASSERT(!spin_is_locked(&ip->i_flags_lock));
+	lockdep_assert_held(&ip->i_flags_lock);
 	ASSERT(!xfs_isiflocked(ip));
 
 	/*
