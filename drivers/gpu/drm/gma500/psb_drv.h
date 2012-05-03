@@ -130,6 +130,7 @@ enum {
 #define _PSB_VSYNC_PIPEA_FLAG	  (1<<7)
 #define _MDFLD_MIPIA_FLAG	  (1<<16)
 #define _MDFLD_MIPIC_FLAG	  (1<<17)
+#define _PSB_IRQ_DISP_HOTSYNC	  (1<<17)
 #define _PSB_IRQ_SGX_FLAG	  (1<<18)
 #define _PSB_IRQ_MSVDX_FLAG	  (1<<19)
 #define _LNC_IRQ_TOPAZ_FLAG	  (1<<20)
@@ -257,6 +258,7 @@ struct psb_intel_opregion {
 	struct opregion_acpi *acpi;
 	struct opregion_swsci *swsci;
 	struct opregion_asle *asle;
+	void *vbt;
 	int enabled;
 };
 
@@ -494,6 +496,9 @@ struct psb_ops;
 struct drm_psb_private {
 	struct drm_device *dev;
 	const struct psb_ops *ops;
+	
+	struct child_device_config *child_dev;
+	int child_dev_num;
 
 	struct psb_gtt gtt;
 
@@ -621,6 +626,11 @@ struct drm_psb_private {
 	uint32_t msi_addr;
 	uint32_t msi_data;
 
+	/*
+	 * Hotplug handling
+	 */
+
+	struct work_struct hotplug_work;
 
 	/*
 	 * LID-Switch
@@ -669,6 +679,8 @@ struct drm_psb_private {
 	u32 dspcntr[3];
 
 	int mdfld_panel_id;
+
+	bool dplla_96mhz;	/* DPLL data from the VBT */
 };
 
 
@@ -682,6 +694,8 @@ struct psb_ops {
 	int pipes;		/* Number of output pipes */
 	int crtcs;		/* Number of CRTCs */
 	int sgx_offset;		/* Base offset of SGX device */
+	int hdmi_mask;		/* Mask of HDMI CRTCs */
+	int lvds_mask;		/* Mask of LVDS CRTCs */
 
 	/* Sub functions */
 	struct drm_crtc_helper_funcs const *crtc_helper;
@@ -690,9 +704,13 @@ struct psb_ops {
 	/* Setup hooks */
 	int (*chip_setup)(struct drm_device *dev);
 	void (*chip_teardown)(struct drm_device *dev);
+	/* Optional helper caller after modeset */
+	void (*errata)(struct drm_device *dev);
 
 	/* Display management hooks */
 	int (*output_init)(struct drm_device *dev);
+	int (*hotplug)(struct drm_device *dev);
+	void (*hotplug_enable)(struct drm_device *dev, bool on);
 	/* Power management hooks */
 	void (*init_pm)(struct drm_device *dev);
 	int (*save_regs)(struct drm_device *dev);
