@@ -1639,7 +1639,7 @@ struct vm_area_struct *find_vma(struct mm_struct *mm, unsigned long addr)
 {
 	struct vm_area_struct *vma = NULL;
 
-	if (WARN_ON_ONCE(!mm))
+	if (WARN_ON_ONCE(!mm))		/* Remove this in linux-3.6 */
 		return NULL;
 
 	/* Check the cache first. */
