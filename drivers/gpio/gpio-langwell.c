@@ -263,6 +263,24 @@ static void lnw_irq_handler(unsigned irq, struct irq_desc *desc)
 	chip->irq_eoi(data);
 }
 
+static void lnw_irq_init_hw(struct lnw_gpio *lnw)
+{
+	void __iomem *reg;
+	unsigned base;
+
+	for (base = 0; base < lnw->chip.ngpio; base += 32) {
+		/* Clear the rising-edge detect register */
+		reg = gpio_reg(&lnw->chip, base, GRER);
+		writel(0, reg);
+		/* Clear the falling-edge detect register */
+		reg = gpio_reg(&lnw->chip, base, GFER);
+		writel(0, reg);
+		/* Clear the edge detect status register */
+		reg = gpio_reg(&lnw->chip, base, GEDR);
+		writel(~0, reg);
+	}
+}
+
 #ifdef CONFIG_PM
 static int lnw_gpio_runtime_resume(struct device *dev)
 {
@@ -306,10 +324,11 @@ static int __devinit lnw_gpio_probe(struct pci_dev *pdev,
 	u32 irq_base;
 	u32 gpio_base;
 	int retval = 0;
+	int ngpio = id->driver_data;
 
 	retval = pci_enable_device(pdev);
 	if (retval)
-		goto done;
+		return retval;
 
 	retval = pci_request_regions(pdev, "langwell_gpio");
 	if (retval) {
@@ -331,21 +350,28 @@ static int __devinit lnw_gpio_probe(struct pci_dev *pdev,
 	/* get the register base from bar0 */
 	start = pci_resource_start(pdev, 0);
 	len = pci_resource_len(pdev, 0);
-	base = ioremap_nocache(start, len);
+	base = devm_ioremap_nocache(&pdev->dev, start, len);
 	if (!base) {
 		dev_err(&pdev->dev, "error mapping bar0\n");
 		retval = -EFAULT;
 		goto err3;
 	}
 
-	lnw = kzalloc(sizeof(struct lnw_gpio), GFP_KERNEL);
+	lnw = devm_kzalloc(&pdev->dev, sizeof(struct lnw_gpio), GFP_KERNEL);
 	if (!lnw) {
 		dev_err(&pdev->dev, "can't allocate langwell_gpio chip data\n");
 		retval = -ENOMEM;
-		goto err4;
+		goto err3;
 	}
+
+	retval = irq_alloc_descs(-1, irq_base, ngpio, 0);
+	if (retval < 0) {
+		dev_err(&pdev->dev, "can't allocate IRQ descs\n");
+		goto err3;
+	}
+	lnw->irq_base = retval;
+
 	lnw->reg_base = base;
-	lnw->irq_base = irq_base;
 	lnw->chip.label = dev_name(&pdev->dev);
 	lnw->chip.request = lnw_gpio_request;
 	lnw->chip.direction_input = lnw_gpio_direction_input;
@@ -354,15 +380,18 @@ static int __devinit lnw_gpio_probe(struct pci_dev *pdev,
 	lnw->chip.set = lnw_gpio_set;
 	lnw->chip.to_irq = lnw_gpio_to_irq;
 	lnw->chip.base = gpio_base;
-	lnw->chip.ngpio = id->driver_data;
+	lnw->chip.ngpio = ngpio;
 	lnw->chip.can_sleep = 0;
 	lnw->pdev = pdev;
 	pci_set_drvdata(pdev, lnw);
 	retval = gpiochip_add(&lnw->chip);
 	if (retval) {
 		dev_err(&pdev->dev, "langwell gpiochip_add error %d\n", retval);
-		goto err5;
+		goto err4;
 	}
+
+	lnw_irq_init_hw(lnw);
+
 	irq_set_handler_data(pdev->irq, lnw);
 	irq_set_chained_handler(pdev->irq, lnw_irq_handler);
 	for (i = 0; i < lnw->chip.ngpio; i++) {
@@ -376,16 +405,14 @@ static int __devinit lnw_gpio_probe(struct pci_dev *pdev,
 	pm_runtime_put_noidle(&pdev->dev);
 	pm_runtime_allow(&pdev->dev);
 
-	goto done;
-err5:
-	kfree(lnw);
+	return 0;
+
 err4:
-	iounmap(base);
+	irq_free_descs(lnw->irq_base, ngpio);
 err3:
 	pci_release_regions(pdev);
 err2:
 	pci_disable_device(pdev);
-done:
 	return retval;
 }
 
