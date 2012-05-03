@@ -3452,6 +3452,20 @@ sub process {
 			}
 		}
 
+# spin_is_locked is usually misused. warn about it.
+		if ($line =~ /\bspin_is_locked\s*\(/) {
+			# BUG_ON/WARN_ON(!spin_is_locked() is generally a bug
+			if ($line =~ /(BUG_ON|WARN_ON|ASSERT)\s*\(!spin_is_locked/) {
+				ERROR("SPIN_IS_LOCKED",
+				     "Use lockdep_assert_held() instead of asserts on !spin_is_locked\n"
+				      . $herecurr);
+			} else {
+				WARN("SPIN_IS_LOCKED",
+			     "spin_is_locked is usually misused. See Documentation/spinlocks.txt\n"
+					. $herecurr)
+			}
+		}
+
 # check for lockdep_set_novalidate_class
 		if ($line =~ /^.\s*lockdep_set_novalidate_class\s*\(/ ||
 		    $line =~ /__lockdep_no_validate__\s*\)/ ) {
