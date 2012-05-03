@@ -720,6 +720,7 @@ static int read_page(struct mtd_info *mtd, struct nand_chip *nand,
 	struct docg4_priv *doc = nand->priv;
 	void __iomem *docptr = doc->virtadr;
 	uint16_t status, edc_err, *buf16;
+	int bits_corrected = 0;
 
 	dev_dbg(doc->dev, "%s: page %08x\n", __func__, page);
 
@@ -772,7 +773,7 @@ static int read_page(struct mtd_info *mtd, struct nand_chip *nand,
 
 		/* If bitflips are reported, attempt to correct with ecc */
 		if (edc_err & DOC_ECCCONF1_BCH_SYNDROM_ERR) {
-			int bits_corrected = correct_data(mtd, buf, page);
+			bits_corrected = correct_data(mtd, buf, page);
 			if (bits_corrected == -EBADMSG)
 				mtd->ecc_stats.failed++;
 			else
@@ -781,7 +782,7 @@ static int read_page(struct mtd_info *mtd, struct nand_chip *nand,
 	}
 
 	writew(0, docptr + DOC_DATAEND);
-	return 0;
+	return bits_corrected;
 }
 
 
@@ -1192,8 +1193,7 @@ static void __init init_mtd_structs(struct mtd_info *mtd)
 	nand->ecc.prepad = 8;
 	nand->ecc.bytes	= 8;
 	nand->ecc.strength = DOCG4_T;
-	nand->options =
-		NAND_BUSWIDTH_16 | NAND_NO_SUBPAGE_WRITE | NAND_NO_AUTOINCR;
+	nand->options = NAND_BUSWIDTH_16 | NAND_NO_SUBPAGE_WRITE;
 	nand->IO_ADDR_R = nand->IO_ADDR_W = doc->virtadr + DOC_IOSPACE_DATA;
 	nand->controller = &nand->hwcontrol;
 	spin_lock_init(&nand->controller->lock);

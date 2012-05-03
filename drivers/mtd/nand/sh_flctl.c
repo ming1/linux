@@ -359,7 +359,7 @@ static int flctl_read_page_hwecc(struct mtd_info *mtd, struct nand_chip *chip,
 		if (flctl->hwecc_cant_correct[i])
 			mtd->ecc_stats.failed++;
 		else
-			mtd->ecc_stats.corrected += 0;
+			mtd->ecc_stats.corrected += 0; /* FIXME */
 	}
 
 	return 0;
@@ -880,8 +880,6 @@ static int __devinit flctl_probe(struct platform_device *pdev)
 	flctl->flcmncr_base = pdata->flcmncr_val;
 	flctl->hwecc = pdata->has_hwecc;
 	flctl->holden = pdata->use_holden;
-
-	nand->options = NAND_NO_AUTOINCR;
 
 	/* Set address of hardware control function */
 	/* 20 us command delay time */
