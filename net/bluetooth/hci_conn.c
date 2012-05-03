@@ -223,22 +223,6 @@ void hci_le_start_enc(struct hci_conn *conn, __le16 ediv, __u8 rand[8],
 }
 EXPORT_SYMBOL(hci_le_start_enc);
 
-void hci_le_ltk_reply(struct hci_conn *conn, u8 ltk[16])
-{
-	struct hci_dev *hdev = conn->hdev;
-	struct hci_cp_le_ltk_reply cp;
-
-	BT_DBG("%p", conn);
-
-	memset(&cp, 0, sizeof(cp));
-
-	cp.handle = cpu_to_le16(conn->handle);
-	memcpy(cp.ltk, ltk, sizeof(ltk));
-
-	hci_send_cmd(hdev, HCI_OP_LE_LTK_REPLY, sizeof(cp), &cp);
-}
-EXPORT_SYMBOL(hci_le_ltk_reply);
-
 void hci_le_ltk_neg_reply(struct hci_conn *conn)
 {
 	struct hci_dev *hdev = conn->hdev;
@@ -513,7 +497,8 @@ EXPORT_SYMBOL(hci_get_route);
 
 /* Create SCO, ACL or LE connection.
  * Device _must_ be locked */
-struct hci_conn *hci_connect(struct hci_dev *hdev, int type, bdaddr_t *dst, __u8 sec_level, __u8 auth_type)
+struct hci_conn *hci_connect(struct hci_dev *hdev, int type, bdaddr_t *dst,
+			     __u8 dst_type, __u8 sec_level, __u8 auth_type)
 {
 	struct hci_conn *acl;
 	struct hci_conn *sco;
@@ -522,22 +507,13 @@ struct hci_conn *hci_connect(struct hci_dev *hdev, int type, bdaddr_t *dst, __u8
 	BT_DBG("%s dst %s", hdev->name, batostr(dst));
 
 	if (type == LE_LINK) {
-		struct adv_entry *entry = NULL;
-
 		le = hci_conn_hash_lookup_ba(hdev, LE_LINK, dst);
 		if (!le) {
-			entry = hci_find_adv_entry(hdev, dst);
-			if (!entry)
-				return ERR_PTR(-EHOSTUNREACH);
-
 			le = hci_conn_add(hdev, LE_LINK, dst);
 			if (!le)
 				return ERR_PTR(-ENOMEM);
 
-			le->dst_type = entry->bdaddr_type;
-			le->pending_sec_level = sec_level;
-			le->sec_level = BT_SECURITY_LOW;
-			le->auth_type = auth_type;
+			le->dst_type = bdaddr_to_le(dst_type);
 			hci_le_connect(le);
 		}
 
