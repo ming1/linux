@@ -1834,7 +1834,7 @@ static const struct dentry_operations tid_fd_dentry_operations =
 static struct dentry *proc_fd_instantiate(struct inode *dir,
 	struct dentry *dentry, struct task_struct *task, const void *ptr)
 {
-	unsigned fd = *(const unsigned *)ptr;
+	unsigned fd = (unsigned long)ptr;
 	struct file *file;
 	struct files_struct *files;
  	struct inode *inode;
@@ -1898,7 +1898,7 @@ static struct dentry *proc_lookupfd_common(struct inode *dir,
 	if (fd == ~0U)
 		goto out;
 
-	result = instantiate(dir, dentry, task, &fd);
+	result = instantiate(dir, dentry, task, (void *)(unsigned long)fd);
 out:
 	put_task_struct(task);
 out_no_task:
@@ -1950,7 +1950,7 @@ static int proc_readfd_common(struct file * filp, void * dirent,
 				len = snprintf(name, sizeof(name), "%d", fd);
 				rv = proc_fill_cache(filp, dirent, filldir,
 						     name, len, instantiate, p,
-						     &fd);
+						     (void *)(unsigned long)fd);
 				if (rv < 0)
 					goto out_fd_loop;
 				rcu_read_lock();
@@ -2370,7 +2370,7 @@ static const struct inode_operations proc_fd_inode_operations = {
 static struct dentry *proc_fdinfo_instantiate(struct inode *dir,
 	struct dentry *dentry, struct task_struct *task, const void *ptr)
 {
-	unsigned fd = *(unsigned *)ptr;
+	unsigned fd = (unsigned long)ptr;
  	struct inode *inode;
  	struct proc_inode *ei;
 	struct dentry *error = ERR_PTR(-ENOENT);
