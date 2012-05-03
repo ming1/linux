@@ -131,10 +131,7 @@ sys_rt_sigreturn(struct pt_regs *regs, int in_syscall)
 	}
 		
 	sigdelsetmask(&set, ~_BLOCKABLE);
-	spin_lock_irq(&current->sighand->siglock);
-	current->blocked = set;
-	recalc_sigpending();
-	spin_unlock_irq(&current->sighand->siglock);
+	set_current_blocked(&set);
 
 	/* Good thing we saved the old gr[30], eh? */
 #ifdef CONFIG_64BIT
@@ -454,12 +451,7 @@ handle_signal(unsigned long sig, siginfo_t *info, struct k_sigaction *ka,
 	if (!setup_rt_frame(sig, ka, info, oldset, regs, in_syscall))
 		return 0;
 
-	spin_lock_irq(&current->sighand->siglock);
-	sigorsets(&current->blocked,&current->blocked,&ka->sa.sa_mask);
-	if (!(ka->sa.sa_flags & SA_NODEFER))
-		sigaddset(&current->blocked,sig);
-	recalc_sigpending();
-	spin_unlock_irq(&current->sighand->siglock);
+	block_sigmask(ka, sig);
 
 	tracehook_signal_handler(sig, info, ka, regs, 
 		test_thread_flag(TIF_SINGLESTEP) ||
@@ -647,7 +639,5 @@ void do_notify_resume(struct pt_regs *regs, long in_syscall)
 	if (test_thread_flag(TIF_NOTIFY_RESUME)) {
 		clear_thread_flag(TIF_NOTIFY_RESUME);
 		tracehook_notify_resume(regs);
-		if (current->replacement_session_keyring)
-			key_replace_session_keyring();
 	}
 }
