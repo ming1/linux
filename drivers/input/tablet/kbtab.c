@@ -53,10 +53,12 @@ static void kbtab_irq(struct urb *urb)
 	case -ENOENT:
 	case -ESHUTDOWN:
 		/* this urb is terminated, clean up */
-		dbg("%s - urb shutting down with status: %d", __func__, urb->status);
+		dev_dbg(&dev->dev, "%s - urb shutting down with status: %d\n",
+			__func__, urb->status);
 		return;
 	default:
-		dbg("%s - nonzero urb status received: %d", __func__, urb->status);
+		dev_dbg(&dev->dev, "%s - nonzero urb status received: %d\n",
+			__func__, urb->status);
 		goto exit;
 	}
 
@@ -80,8 +82,9 @@ static void kbtab_irq(struct urb *urb)
  exit:
 	retval = usb_submit_urb(urb, GFP_ATOMIC);
 	if (retval)
-		err("%s - usb_submit_urb failed with result %d",
-		     __func__, retval);
+		dev_err(&dev->dev,
+			"%s - usb_submit_urb failed with result %d\n",
+			__func__, retval);
 }
 
 static struct usb_device_id kbtab_ids[] = {

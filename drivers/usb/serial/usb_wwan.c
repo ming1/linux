@@ -307,20 +307,17 @@ static void usb_wwan_indat_callback(struct urb *urb)
 		}
 
 		/* Resubmit urb so we continue receiving */
-		if (status != -ESHUTDOWN) {
-			err = usb_submit_urb(urb, GFP_ATOMIC);
-			if (err) {
-				if (err != -EPERM) {
-					printk(KERN_ERR "%s: resubmit read urb failed. "
-						"(%d)", __func__, err);
-					/* busy also in error unless we are killed */
-					usb_mark_last_busy(port->serial->dev);
-				}
-			} else {
+		err = usb_submit_urb(urb, GFP_ATOMIC);
+		if (err) {
+			if (err != -EPERM) {
+				printk(KERN_ERR "%s: resubmit read urb failed. "
+					"(%d)", __func__, err);
+				/* busy also in error unless we are killed */
 				usb_mark_last_busy(port->serial->dev);
 			}
+		} else {
+			usb_mark_last_busy(port->serial->dev);
 		}
-
 	}
 }
 
@@ -725,8 +722,8 @@ int usb_wwan_resume(struct usb_serial *serial)
 		err = usb_submit_urb(port->interrupt_in_urb, GFP_NOIO);
 		dbg("Submitted interrupt URB for port %d (result %d)", i, err);
 		if (err < 0) {
-			err("%s: Error %d for interrupt URB of port%d",
-			    __func__, err, i);
+			dev_err(&port->dev, "%s: Error %d for interrupt URB\n",
+				__func__, err);
 			goto err_out;
 		}
 	}
@@ -747,8 +744,8 @@ int usb_wwan_resume(struct usb_serial *serial)
 			urb = portdata->in_urbs[j];
 			err = usb_submit_urb(urb, GFP_ATOMIC);
 			if (err < 0) {
-				err("%s: Error %d for bulk URB %d",
-				    __func__, err, i);
+				dev_err(&port->dev, "%s: Error %d for bulk URB %d\n",
+					__func__, err, i);
 				spin_unlock_irq(&intfdata->susp_lock);
 				goto err_out;
 			}
