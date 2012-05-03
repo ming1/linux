@@ -608,8 +608,9 @@ void lockup_detector_bootcpu_resume(void)
 {
 	void *cpu = (void *)(long)smp_processor_id();
 
-	cpu_callback(&cpu_nfb, CPU_DEAD, cpu);
-	cpu_callback(&cpu_nfb, CPU_ONLINE, cpu);
+	cpu_callback(&cpu_nfb, CPU_DEAD_FROZEN, cpu);
+	cpu_callback(&cpu_nfb, CPU_UP_PREPARE_FROZEN, cpu);
+	cpu_callback(&cpu_nfb, CPU_ONLINE_FROZEN, cpu);
 }
 #endif
 
