@@ -70,7 +70,7 @@ static char *usage =
 char *MAX_MSGS = "/proc/sys/fs/mqueue/msg_max";
 char *MAX_MSGSIZE = "/proc/sys/fs/mqueue/msgsize_max";
 
-#define min(a,b) ((a) < (b) ? (a) : (b))
+#define min(a, b) ((a) < (b) ? (a) : (b))
 #define MAX_CPUS 64
 char *cpu_option_string;
 int cpus_to_pin[MAX_CPUS];
@@ -97,8 +97,7 @@ mqd_t queue = -1;
 struct mq_attr result;
 int mq_prio_max;
 
-const struct poptOption options[] =
-{
+const struct poptOption options[] = {
 	{
 		.longName = "continuous",
 		.shortName = 'c',
@@ -178,7 +177,7 @@ void shutdown(int exit_val, char *err_cause, int line_no)
 	if (in_shutdown++)
 		return;
 
-	for (i=0; i < num_cpus_to_pin; i++)
+	for (i = 0; i < num_cpus_to_pin; i++)
 		if (cpu_threads[i]) {
 			pthread_kill(cpu_threads[i], SIGUSR1);
 			pthread_join(cpu_threads[i], NULL);
@@ -211,7 +210,7 @@ void sig_action_SIGUSR1(int signum, siginfo_t *info, void *context)
 		pthread_exit(0);
 	else {
 		fprintf(stderr, "Caught signal %d in SIGUSR1 handler, "
-			"exiting\n", signum);
+				"exiting\n", signum);
 		shutdown(0, "", 0);
 		fprintf(stderr, "\n\nReturned from shutdown?!?!\n\n");
 		exit(0);
@@ -289,7 +288,8 @@ static inline void open_queue(struct mq_attr *attr)
 	int flags = O_RDWR | O_EXCL | O_CREAT | O_NONBLOCK;
 	int perms = DEFFILEMODE;
 
-	if ((queue = mq_open(queue_path, flags, perms, attr)) == -1)
+	queue = mq_open(queue_path, flags, perms, attr);
+	if (queue == -1)
 		shutdown(1, "mq_open()", __LINE__);
 	if (mq_getattr(queue, &result))
 		shutdown(1, "mq_getattr()", __LINE__);
@@ -305,12 +305,13 @@ void *fake_cont_thread(void *arg)
 {
 	int i;
 
-	for (i=0; i < num_cpus_to_pin; i++)
+	for (i = 0; i < num_cpus_to_pin; i++)
 		if (cpu_threads[i] == pthread_self())
 			break;
 	printf("\tStarted fake continuous mode thread %d on CPU %d\n", i,
 	       cpus_to_pin[i]);
-	while(1) ;
+	while (1)
+		;
 }
 
 void *cont_thread(void *arg)
@@ -318,13 +319,14 @@ void *cont_thread(void *arg)
 	char buff[MSG_SIZE];
 	int i, priority;
 
-	for (i=0; i < num_cpus_to_pin; i++)
+	for (i = 0; i < num_cpus_to_pin; i++)
 		if (cpu_threads[i] == pthread_self())
 			break;
 	printf("\tStarted continuous mode thread %d on CPU %d\n", i,
 	       cpus_to_pin[i]);
-	while(1) {
-		while(mq_send(queue, buff, sizeof(buff), 0) == 0);
+	while (1) {
+		while (mq_send(queue, buff, sizeof(buff), 0) == 0)
+			;
 		mq_receive(queue, buff, sizeof(buff), &priority);
 	}
 }
@@ -336,7 +338,7 @@ void *cont_thread(void *arg)
 	do { \
 		if (mq_send(queue, buff, MSG_SIZE, prio_out)) \
 			shutdown(3, "Test send failure", __LINE__); \
-	} while(0)
+	} while (0)
 
 #define do_send_recv() \
 	do { \
@@ -376,7 +378,7 @@ void const_prio(int *prio)
 void inc_prio(int *prio)
 {
 	if (++*prio == mq_prio_max)
-		*prio = 0;;
+		*prio = 0;
 }
 
 void dec_prio(int *prio)
@@ -428,7 +430,8 @@ void *perf_test_thread(void *arg)
 	t = &cpu_threads[0];
 	printf("\n\tStarted mqueue performance test thread on CPU %d\n",
 	       cpus_to_pin[0]);
-	if ((mq_prio_max = sysconf(_SC_MQ_PRIO_MAX)) == -1)
+	mq_prio_max = sysconf(_SC_MQ_PRIO_MAX);
+	if (mq_prio_max == -1)
 		shutdown(2, "sysconf(_SC_MQ_PRIO_MAX)", __LINE__);
 	if (pthread_getcpuclockid(cpu_threads[0], &clock) != 0)
 		shutdown(2, "pthread_getcpuclockid", __LINE__);
@@ -442,8 +445,7 @@ void *perf_test_thread(void *arg)
 
 
 
-	printf("\n\tTest #1: Time send/recv message, queue "
-	       "empty\n");
+	printf("\n\tTest #1: Time send/recv message, queue empty\n");
 	printf("\t\t(%d iterations)\n", TEST1_LOOPS);
 	prio_out = 0;
 	send_total.tv_sec = 0;
@@ -519,9 +521,11 @@ void increase_limits(void)
 	cur_limits.rlim_cur = RLIM_INFINITY;
 	cur_limits.rlim_max = RLIM_INFINITY;
 	setr(RLIMIT_MSGQUEUE, &cur_limits);
-	while (try_set(max_msgs, cur_max_msgs += 10));
+	while (try_set(max_msgs, cur_max_msgs += 10))
+		;
 	cur_max_msgs = get(max_msgs);
-	while (try_set(max_msgsize, cur_max_msgsize += 1024));
+	while (try_set(max_msgsize, cur_max_msgsize += 1024))
+		;
 	cur_max_msgsize = get(max_msgsize);
 	if (setpriority(PRIO_PROCESS, 0, -20) != 0)
 		shutdown(2, "setpriority()", __LINE__);
@@ -546,7 +550,8 @@ int main(int argc, char *argv[])
 		exit(1);
 	}
 	cpus_online = min(MAX_CPUS, sysconf(_SC_NPROCESSORS_ONLN));
-	if ((cpu_set = CPU_ALLOC(cpus_online)) == NULL) {
+	cpu_set = CPU_ALLOC(cpus_online);
+	if (cpu_set == NULL) {
 		perror("CPU_ALLOC()");
 		exit(1);
 	}
@@ -674,7 +679,7 @@ int main(int argc, char *argv[])
 	       (continuous_mode_fake ? "fake mode" : "enabled") :
 	       "disabled");
 	printf("\tCPUs to pin:\t\t\t\t%d", cpus_to_pin[0]);
-	for(cpu=1; cpu < num_cpus_to_pin; cpu++)
+	for (cpu = 1; cpu < num_cpus_to_pin; cpu++)
 			printf(",%d", cpus_to_pin[cpu]);
 	printf("\n");
 
@@ -703,7 +708,7 @@ int main(int argc, char *argv[])
 		attr.mq_msgsize = MSG_SIZE;
 		open_queue(&attr);
 	}
-	for (i=0; i < num_cpus_to_pin; i++) {
+	for (i = 0; i < num_cpus_to_pin; i++) {
 		pthread_attr_t thread_attr;
 		void *thread_func;
 
@@ -728,7 +733,9 @@ int main(int argc, char *argv[])
 	if (!continuous_mode) {
 		pthread_join(cpu_threads[0], &retval);
 		shutdown((long)retval, "perf_test_thread()", __LINE__);
-	} else
-		while(1) sleep(1);
-	shutdown(0,"",0);
+	} else {
+		while (1)
+			sleep(1);
+	}
+	shutdown(0, "", 0);
 }
