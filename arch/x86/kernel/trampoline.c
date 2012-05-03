@@ -20,8 +20,9 @@ void __init setup_trampolines(void)
 	x86_trampoline_base = __va(mem);
 	memblock_reserve(mem, size);
 
-	printk(KERN_DEBUG "Base memory trampoline at [%p] %llx size %zu\n",
-	       x86_trampoline_base, (unsigned long long)mem, size);
+	printk(KERN_DEBUG "Base memory trampoline [mem %#010llx-%#010llx] mapped at [%p]\n",
+	       (unsigned long long) mem, (unsigned long long) mem + size - 1,
+	       x86_trampoline_base);
 
 	memcpy(x86_trampoline_base, x86_trampoline_start, size);
 }
