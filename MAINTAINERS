@@ -4445,6 +4445,12 @@ S:	Supported
 F:	Documentation/mips/
 F:	arch/mips/
 
+MIPS/LANTIQ
+M:	John Crispin <blogic@openwrt.org>
+M:	Thomas Langer <thomas.langer@lantiq.com>
+S:	Maintained
+F:	arch/mips/lantiq/*
+
 MODULE SUPPORT
 M:	Rusty Russell <rusty@rustcorp.com.au>
 S:	Maintained

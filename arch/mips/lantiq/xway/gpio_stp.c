@@ -35,6 +35,8 @@
 #define LTQ_STP_ADSL_SRC	(3 << 24)
 
 #define LTQ_STP_GROUP0		(1 << 0)
+#define LTQ_STP_GROUP1		(1 << 1)
+#define LTQ_STP_GROUP2		(1 << 2)
 
 #define LTQ_STP_RISING		0
 #define LTQ_STP_FALLING		(1 << 26)
@@ -79,9 +81,9 @@ static struct gpio_chip ltq_stp_chip = {
 static int ltq_stp_hw_init(void)
 {
 	/* the 3 pins used to control the external stp */
-	ltq_gpio_request(4, 1, 0, 1, "stp-st");
-	ltq_gpio_request(5, 1, 0, 1, "stp-d");
-	ltq_gpio_request(6, 1, 0, 1, "stp-sh");
+	ltq_gpio_request(4, 2, 1, "stp-st");
+	ltq_gpio_request(5, 2, 1, "stp-d");
+	ltq_gpio_request(6, 2, 1, "stp-sh");
 
 	/* sane defaults */
 	ltq_stp_w32(0, LTQ_STP_AR);
@@ -93,8 +95,9 @@ static int ltq_stp_hw_init(void)
 	/* rising or falling edge */
 	ltq_stp_w32_mask(LTQ_STP_EDGE_MASK, LTQ_STP_FALLING, LTQ_STP_CON0);
 
-	/* per default stp 15-0 are set */
-	ltq_stp_w32_mask(0, LTQ_STP_GROUP0, LTQ_STP_CON1);
+	/* enable all three led groups */
+	ltq_stp_w32_mask(0, LTQ_STP_GROUP0 | LTQ_STP_GROUP1 | LTQ_STP_GROUP2,
+		LTQ_STP_CON1);
 
 	/* stp are update periodically by the FPI bus */
 	ltq_stp_w32_mask(LTQ_STP_UPD_MASK, LTQ_STP_UPD_FPI, LTQ_STP_CON1);
