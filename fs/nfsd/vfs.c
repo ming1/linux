@@ -272,11 +272,28 @@ out:
 	return err;
 }
 
-static int nfsd_break_lease(struct inode *inode)
+/*
+ * Note that the vfs operation that we call into will also typically
+ * break the delegation.  However, the vfs will make the call without
+ * O_NONBLOCK set.  That can tie up nfsd threads and, in the worst case,
+ * deadlock until delegations are forcibly expired (because nfsd threads
+ * are also needed to process clients' delegation returns).
+ *
+ * Therefore we must do a non-blocking break from nfsd first.  Holding
+ * the i_mutex will guarantee that delegations "stay broken" until we
+ * call into the vfs, so the second break_deleg call won't wait.
+ *
+ * (Also: note in the case we're exporting a distributed filesystem,
+ * the vfs call might still need to wait for the filesystem to recall a
+ * delegation on another node.  There's no deadlock in that case, since
+ * returning the other node's delegation won't require any of this
+ * node's nfsd threads.)
+ */
+static int nfsd_break_deleg(struct inode *inode)
 {
 	if (!S_ISREG(inode->i_mode))
 		return 0;
-	return break_lease(inode, O_WRONLY | O_NONBLOCK);
+	return break_deleg(inode, O_WRONLY | O_NONBLOCK);
 }
 
 /*
@@ -421,7 +438,7 @@ nfsd_setattr(struct svc_rqst *rqstp, struct svc_fh *fhp, struct iattr *iap,
 
 	err = nfserr_notsync;
 	if (!check_guard || guardtime == inode->i_ctime.tv_sec) {
-		host_err = nfsd_break_lease(inode);
+		host_err = nfsd_break_deleg(inode);
 		if (host_err)
 			goto out_nfserr;
 		fh_lock(fhp);
@@ -1702,7 +1719,7 @@ nfsd_link(struct svc_rqst *rqstp, struct svc_fh *ffhp,
 	err = nfserr_noent;
 	if (!dold->d_inode)
 		goto out_drop_write;
-	host_err = nfsd_break_lease(dold->d_inode);
+	host_err = nfsd_break_deleg(dold->d_inode);
 	if (host_err) {
 		err = nfserrno(host_err);
 		goto out_drop_write;
@@ -1800,11 +1817,11 @@ nfsd_rename(struct svc_rqst *rqstp, struct svc_fh *ffhp, char *fname, int flen,
 	if (host_err)
 		goto out_dput_new;
 
-	host_err = nfsd_break_lease(odentry->d_inode);
+	host_err = nfsd_break_deleg(odentry->d_inode);
 	if (host_err)
 		goto out_drop_write;
 	if (ndentry->d_inode) {
-		host_err = nfsd_break_lease(ndentry->d_inode);
+		host_err = nfsd_break_deleg(ndentry->d_inode);
 		if (host_err)
 			goto out_drop_write;
 	}
@@ -1878,7 +1895,7 @@ nfsd_unlink(struct svc_rqst *rqstp, struct svc_fh *fhp, int type,
 	if (host_err)
 		goto out_put;
 
-	host_err = nfsd_break_lease(rdentry->d_inode);
+	host_err = nfsd_break_deleg(rdentry->d_inode);
 	if (host_err)
 		goto out_drop_write;
 	if (type != S_IFDIR)
@@ -2039,7 +2056,7 @@ nfsd_readdir(struct svc_rqst *rqstp, struct svc_fh *fhp, loff_t *offsetp,
 	if (err)
 		goto out;
 
-	offset = vfs_llseek(file, offset, 0);
+	offset = vfs_llseek(file, offset, SEEK_SET);
 	if (offset < 0) {
 		err = nfserrno((int)offset);
 		goto out_close;
