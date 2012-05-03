@@ -322,6 +322,7 @@ static inline int hstate_index(struct hstate *h)
 
 #else
 struct hstate {};
+#define HUGE_MAX_HSTATE 0
 #define alloc_huge_page_node(h, nid) NULL
 #define alloc_bootmem_huge_page(h) NULL
 #define hstate_file(f) NULL
