@@ -57,6 +57,16 @@
 
 #include <trace/events/vmscan.h>
 
+/*
+ * If CONFIG_MEM_RES_CTLR_HUGETLB=n, CONFIG_HUGETLB_PAGE=y we can avoid
+ * generating any code or storage for the resource counters
+ */
+#ifdef CONFIG_MEM_RES_CTLR_HUGETLB
+#define NR_HUGEPAGE_RES_COUNTERS HUGE_MAX_HSTATE
+#else
+#define NR_HUGEPAGE_RES_COUNTERS 0
+#endif
+
 struct cgroup_subsys mem_cgroup_subsys __read_mostly;
 #define MEM_CGROUP_RECLAIM_RETRIES	5
 struct mem_cgroup *root_mem_cgroup __read_mostly;
@@ -254,7 +264,7 @@ struct mem_cgroup {
 	/*
 	 * the counter to account for hugepages from hugetlb.
 	 */
-	struct res_counter hugepage[HUGE_MAX_HSTATE];
+	struct res_counter hugepage[NR_HUGEPAGE_RES_COUNTERS];
 	/*
 	 * Per cgroup active and inactive list, similar to the
 	 * per zone LRU lists.
@@ -5112,9 +5122,9 @@ mem_cgroup_create(struct cgroup *cont)
 		mem_cgroup_get(parent);
 		/*
 		 * We could get called before hugetlb init is called.
-		 * Use HUGE_MAX_HSTATE as the max index.
+		 * Use NR_HUGEPAGE_RES_COUNTERS as the max index.
 		 */
-		for (idx = 0; idx < HUGE_MAX_HSTATE; idx++)
+		for (idx = 0; idx < NR_HUGEPAGE_RES_COUNTERS; idx++)
 			res_counter_init(&memcg->hugepage[idx],
 					 &parent->hugepage[idx]);
 	} else {
@@ -5122,9 +5132,9 @@ mem_cgroup_create(struct cgroup *cont)
 		res_counter_init(&memcg->memsw, NULL);
 		/*
 		 * We could get called before hugetlb init is called.
-		 * Use HUGE_MAX_HSTATE as the max index.
+		 * Use NR_HUGEPAGE_RES_COUNTERS as the max index.
 		 */
-		for (idx = 0; idx < HUGE_MAX_HSTATE; idx++)
+		for (idx = 0; idx < NR_HUGEPAGE_RES_COUNTERS; idx++)
 			res_counter_init(&memcg->hugepage[idx], NULL);
 	}
 	memcg->last_scanned_node = MAX_NUMNODES;
