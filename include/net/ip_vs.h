@@ -10,7 +10,6 @@
 
 #include <asm/types.h>                  /* for __uXX types */
 
-#include <linux/sysctl.h>               /* for ctl_path */
 #include <linux/list.h>                 /* for struct list_head */
 #include <linux/spinlock.h>             /* for struct rwlock_t */
 #include <linux/atomic.h>                 /* for struct atomic_t */
@@ -580,8 +579,8 @@ struct ip_vs_service_user_kern {
 	/* virtual service options */
 	char			*sched_name;
 	char			*pe_name;
-	unsigned		flags;		/* virtual service flags */
-	unsigned		timeout;	/* persistent timeout in sec */
+	unsigned int		flags;		/* virtual service flags */
+	unsigned int		timeout;	/* persistent timeout in sec */
 	u32			netmask;	/* persistent netmask */
 };
 
@@ -592,7 +591,7 @@ struct ip_vs_dest_user_kern {
 	u16			port;
 
 	/* real server options */
-	unsigned		conn_flags;	/* connection flags */
+	unsigned int		conn_flags;	/* connection flags */
 	int			weight;		/* destination weight */
 
 	/* thresholds for active connections */
@@ -616,8 +615,8 @@ struct ip_vs_service {
 	union nf_inet_addr	addr;	  /* IP address for virtual service */
 	__be16			port;	  /* port number for the service */
 	__u32                   fwmark;   /* firewall mark of the service */
-	unsigned		flags;	  /* service status flags */
-	unsigned		timeout;  /* persistent timeout in ticks */
+	unsigned int		flags;	  /* service status flags */
+	unsigned int		timeout;  /* persistent timeout in ticks */
 	__be32			netmask;  /* grouping granularity */
 	struct net		*net;
 
@@ -647,7 +646,7 @@ struct ip_vs_dest {
 	u16			af;		/* address family */
 	__be16			port;		/* port number of the server */
 	union nf_inet_addr	addr;		/* IP address of the server */
-	volatile unsigned	flags;		/* dest status flags */
+	volatile unsigned int	flags;		/* dest status flags */
 	atomic_t		conn_flags;	/* flags to copy to conn */
 	atomic_t		weight;		/* server weight */
 
@@ -953,7 +952,7 @@ static inline int sysctl_sync_ver(struct netns_ipvs *ipvs)
  *      IPVS core functions
  *      (from ip_vs_core.c)
  */
-extern const char *ip_vs_proto_name(unsigned proto);
+extern const char *ip_vs_proto_name(unsigned int proto);
 extern void ip_vs_init_hash_table(struct list_head *table, int rows);
 #define IP_VS_INIT_HASH_TABLE(t) ip_vs_init_hash_table((t), ARRAY_SIZE((t)))
 
@@ -1014,7 +1013,7 @@ extern void ip_vs_conn_fill_cport(struct ip_vs_conn *cp, __be16 cport);
 
 struct ip_vs_conn *ip_vs_conn_new(const struct ip_vs_conn_param *p,
 				  const union nf_inet_addr *daddr,
-				  __be16 dport, unsigned flags,
+				  __be16 dport, unsigned int flags,
 				  struct ip_vs_dest *dest, __u32 fwmark);
 extern void ip_vs_conn_expire_now(struct ip_vs_conn *cp);
 
@@ -1184,7 +1183,6 @@ extern void ip_vs_scheduler_err(struct ip_vs_service *svc, const char *msg);
  *      IPVS control data and functions (from ip_vs_ctl.c)
  */
 extern struct ip_vs_stats ip_vs_stats;
-extern const struct ctl_path net_vs_ctl_path[];
 extern int sysctl_ip_vs_sync_ver;
 
 extern void ip_vs_sync_switch_mode(struct net *net, int mode);

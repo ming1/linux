@@ -569,7 +569,7 @@ static int ip_frag_reasm(struct ipq *qp, struct sk_buff *prev,
 		skb_morph(head, qp->q.fragments);
 		head->next = qp->q.fragments->next;
 
-		kfree_skb(qp->q.fragments);
+		consume_skb(qp->q.fragments);
 		qp->q.fragments = head;
 	}
 
@@ -782,7 +782,7 @@ static int __net_init ip4_frags_ns_ctl_register(struct net *net)
 		table[2].data = &net->ipv4.frags.timeout;
 	}
 
-	hdr = register_net_sysctl_table(net, net_ipv4_ctl_path, table);
+	hdr = register_net_sysctl(net, "net/ipv4", table);
 	if (hdr == NULL)
 		goto err_reg;
 
@@ -807,7 +807,7 @@ static void __net_exit ip4_frags_ns_ctl_unregister(struct net *net)
 
 static void ip4_frags_ctl_register(void)
 {
-	register_net_sysctl_rotable(net_ipv4_ctl_path, ip4_frags_ctl_table);
+	register_net_sysctl(&init_net, "net/ipv4", ip4_frags_ctl_table);
 }
 #else
 static inline int ip4_frags_ns_ctl_register(struct net *net)

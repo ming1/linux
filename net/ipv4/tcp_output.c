@@ -563,13 +563,13 @@ static void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 /* Compute TCP options for SYN packets. This is not the final
  * network wire format yet.
  */
-static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
+static unsigned int tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 				struct tcp_out_options *opts,
 				struct tcp_md5sig_key **md5)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct tcp_cookie_values *cvp = tp->cookie_values;
-	unsigned remaining = MAX_TCP_OPTION_SPACE;
+	unsigned int remaining = MAX_TCP_OPTION_SPACE;
 	u8 cookie_size = (!tp->rx_opt.cookie_out_never && cvp != NULL) ?
 			 tcp_cookie_size_check(cvp->cookie_desired) :
 			 0;
@@ -663,15 +663,15 @@ static unsigned tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 }
 
 /* Set up TCP options for SYN-ACKs. */
-static unsigned tcp_synack_options(struct sock *sk,
+static unsigned int tcp_synack_options(struct sock *sk,
 				   struct request_sock *req,
-				   unsigned mss, struct sk_buff *skb,
+				   unsigned int mss, struct sk_buff *skb,
 				   struct tcp_out_options *opts,
 				   struct tcp_md5sig_key **md5,
 				   struct tcp_extend_values *xvp)
 {
 	struct inet_request_sock *ireq = inet_rsk(req);
-	unsigned remaining = MAX_TCP_OPTION_SPACE;
+	unsigned int remaining = MAX_TCP_OPTION_SPACE;
 	u8 cookie_plus = (xvp != NULL && !xvp->cookie_out_never) ?
 			 xvp->cookie_plus :
 			 0;
@@ -742,13 +742,13 @@ static unsigned tcp_synack_options(struct sock *sk,
 /* Compute TCP options for ESTABLISHED sockets. This is not the
  * final wire format yet.
  */
-static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
+static unsigned int tcp_established_options(struct sock *sk, struct sk_buff *skb,
 					struct tcp_out_options *opts,
 					struct tcp_md5sig_key **md5)
 {
 	struct tcp_skb_cb *tcb = skb ? TCP_SKB_CB(skb) : NULL;
 	struct tcp_sock *tp = tcp_sk(sk);
-	unsigned size = 0;
+	unsigned int size = 0;
 	unsigned int eff_sacks;
 
 #ifdef CONFIG_TCP_MD5SIG
@@ -770,9 +770,9 @@ static unsigned tcp_established_options(struct sock *sk, struct sk_buff *skb,
 
 	eff_sacks = tp->rx_opt.num_sacks + tp->rx_opt.dsack;
 	if (unlikely(eff_sacks)) {
-		const unsigned remaining = MAX_TCP_OPTION_SPACE - size;
+		const unsigned int remaining = MAX_TCP_OPTION_SPACE - size;
 		opts->num_sack_blocks =
-			min_t(unsigned, eff_sacks,
+			min_t(unsigned int, eff_sacks,
 			      (remaining - TCPOLEN_SACK_BASE_ALIGNED) /
 			      TCPOLEN_SACK_PERBLOCK);
 		size += TCPOLEN_SACK_BASE_ALIGNED +
@@ -801,7 +801,7 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	struct tcp_sock *tp;
 	struct tcp_skb_cb *tcb;
 	struct tcp_out_options opts;
-	unsigned tcp_options_size, tcp_header_size;
+	unsigned int tcp_options_size, tcp_header_size;
 	struct tcp_md5sig_key *md5;
 	struct tcphdr *th;
 	int err;
@@ -1150,7 +1150,7 @@ int tcp_trim_head(struct sock *sk, struct sk_buff *skb, u32 len)
 }
 
 /* Calculate MSS. Not accounting for SACKs here.  */
-int tcp_mtu_to_mss(const struct sock *sk, int pmtu)
+int tcp_mtu_to_mss(struct sock *sk, int pmtu)
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
 	const struct inet_connection_sock *icsk = inet_csk(sk);
@@ -1160,6 +1160,14 @@ int tcp_mtu_to_mss(const struct sock *sk, int pmtu)
 	   It is MMS_S - sizeof(tcphdr) of rfc1122
 	 */
 	mss_now = pmtu - icsk->icsk_af_ops->net_header_len - sizeof(struct tcphdr);
+
+	/* IPv6 adds a frag_hdr in case RTAX_FEATURE_ALLFRAG is set */
+	if (icsk->icsk_af_ops->net_frag_header_len) {
+		const struct dst_entry *dst = __sk_dst_get(sk);
+
+		if (dst && dst_allfrag(dst))
+			mss_now -= icsk->icsk_af_ops->net_frag_header_len;
+	}
 
 	/* Clamp it (mss_clamp does not include tcp options) */
 	if (mss_now > tp->rx_opt.mss_clamp)
@@ -1179,7 +1187,7 @@ int tcp_mtu_to_mss(const struct sock *sk, int pmtu)
 }
 
 /* Inverse of above */
-int tcp_mss_to_mtu(const struct sock *sk, int mss)
+int tcp_mss_to_mtu(struct sock *sk, int mss)
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
 	const struct inet_connection_sock *icsk = inet_csk(sk);
@@ -1190,6 +1198,13 @@ int tcp_mss_to_mtu(const struct sock *sk, int mss)
 	      icsk->icsk_ext_hdr_len +
 	      icsk->icsk_af_ops->net_header_len;
 
+	/* IPv6 adds a frag_hdr in case RTAX_FEATURE_ALLFRAG is set */
+	if (icsk->icsk_af_ops->net_frag_header_len) {
+		const struct dst_entry *dst = __sk_dst_get(sk);
+
+		if (dst && dst_allfrag(dst))
+			mtu += icsk->icsk_af_ops->net_frag_header_len;
+	}
 	return mtu;
 }
 
@@ -1259,7 +1274,7 @@ unsigned int tcp_current_mss(struct sock *sk)
 	const struct tcp_sock *tp = tcp_sk(sk);
 	const struct dst_entry *dst = __sk_dst_get(sk);
 	u32 mss_now;
-	unsigned header_len;
+	unsigned int header_len;
 	struct tcp_out_options opts;
 	struct tcp_md5sig_key *md5;
 
@@ -1390,7 +1405,7 @@ static inline int tcp_minshall_check(const struct tcp_sock *tp)
  */
 static inline int tcp_nagle_check(const struct tcp_sock *tp,
 				  const struct sk_buff *skb,
-				  unsigned mss_now, int nonagle)
+				  unsigned int mss_now, int nonagle)
 {
 	return skb->len < mss_now &&
 		((nonagle & TCP_NAGLE_CORK) ||
@@ -2562,7 +2577,7 @@ struct sk_buff *tcp_make_synack(struct sock *sk, struct dst_entry *dst,
 EXPORT_SYMBOL(tcp_make_synack);
 
 /* Do all connect socket setups that can be done AF independent. */
-static void tcp_connect_init(struct sock *sk)
+void tcp_connect_init(struct sock *sk)
 {
 	const struct dst_entry *dst = __sk_dst_get(sk);
 	struct tcp_sock *tp = tcp_sk(sk);
@@ -2617,9 +2632,12 @@ static void tcp_connect_init(struct sock *sk)
 	tp->snd_una = tp->write_seq;
 	tp->snd_sml = tp->write_seq;
 	tp->snd_up = tp->write_seq;
-	tp->rcv_nxt = 0;
-	tp->rcv_wup = 0;
-	tp->copied_seq = 0;
+	tp->snd_nxt = tp->write_seq;
+
+	if (likely(!tp->repair))
+		tp->rcv_nxt = 0;
+	tp->rcv_wup = tp->rcv_nxt;
+	tp->copied_seq = tp->rcv_nxt;
 
 	inet_csk(sk)->icsk_rto = TCP_TIMEOUT_INIT;
 	inet_csk(sk)->icsk_retransmits = 0;
@@ -2642,7 +2660,6 @@ int tcp_connect(struct sock *sk)
 	/* Reserve space for headers. */
 	skb_reserve(buff, MAX_TCP_HEADER);
 
-	tp->snd_nxt = tp->write_seq;
 	tcp_init_nondata_skb(buff, tp->write_seq++, TCPHDR_SYN);
 	TCP_ECN_send_syn(sk, buff);
 
@@ -2789,6 +2806,15 @@ static int tcp_xmit_probe_skb(struct sock *sk, int urgent)
 	tcp_init_nondata_skb(skb, tp->snd_una - !urgent, TCPHDR_ACK);
 	TCP_SKB_CB(skb)->when = tcp_time_stamp;
 	return tcp_transmit_skb(sk, skb, 0, GFP_ATOMIC);
+}
+
+void tcp_send_window_probe(struct sock *sk)
+{
+	if (sk->sk_state == TCP_ESTABLISHED) {
+		tcp_sk(sk)->snd_wl1 = tcp_sk(sk)->rcv_nxt - 1;
+		tcp_sk(sk)->snd_nxt = tcp_sk(sk)->write_seq;
+		tcp_xmit_probe_skb(sk, 0);
+	}
 }
 
 /* Initiate keepalive or window probe from timer. */

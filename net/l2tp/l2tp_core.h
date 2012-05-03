@@ -45,6 +45,7 @@ struct l2tp_stats {
 	u64			rx_oos_packets;
 	u64			rx_errors;
 	u64			rx_cookie_discards;
+	struct u64_stats_sync	syncp;
 };
 
 struct l2tp_tunnel;
@@ -54,15 +55,15 @@ struct l2tp_tunnel;
  */
 struct l2tp_session_cfg {
 	enum l2tp_pwtype	pw_type;
-	unsigned		data_seq:2;	/* data sequencing level
+	unsigned int		data_seq:2;	/* data sequencing level
 						 * 0 => none, 1 => IP only,
 						 * 2 => all
 						 */
-	unsigned		recv_seq:1;	/* expect receive packets with
+	unsigned int		recv_seq:1;	/* expect receive packets with
 						 * sequence numbers? */
-	unsigned		send_seq:1;	/* send packets with sequence
+	unsigned int		send_seq:1;	/* send packets with sequence
 						 * numbers? */
-	unsigned		lns_mode:1;	/* behave as LNS? LAC enables
+	unsigned int		lns_mode:1;	/* behave as LNS? LAC enables
 						 * sequence numbers under
 						 * control of LNS. */
 	int			debug;		/* bitmask of debug message
@@ -107,15 +108,15 @@ struct l2tp_session {
 
 	char			name[32];	/* for logging */
 	char			ifname[IFNAMSIZ];
-	unsigned		data_seq:2;	/* data sequencing level
+	unsigned int		data_seq:2;	/* data sequencing level
 						 * 0 => none, 1 => IP only,
 						 * 2 => all
 						 */
-	unsigned		recv_seq:1;	/* expect receive packets with
+	unsigned int		recv_seq:1;	/* expect receive packets with
 						 * sequence numbers? */
-	unsigned		send_seq:1;	/* send packets with sequence
+	unsigned int		send_seq:1;	/* send packets with sequence
 						 * numbers? */
-	unsigned		lns_mode:1;	/* behave as LNS? LAC enables
+	unsigned int		lns_mode:1;	/* behave as LNS? LAC enables
 						 * sequence numbers under
 						 * control of LNS. */
 	int			debug;		/* bitmask of debug message
@@ -150,6 +151,10 @@ struct l2tp_tunnel_cfg {
 	/* Used only for kernel-created sockets */
 	struct in_addr		local_ip;
 	struct in_addr		peer_ip;
+#if IS_ENABLED(CONFIG_IPV6)
+	struct in6_addr		*local_ip6;
+	struct in6_addr		*peer_ip6;
+#endif
 	u16			local_udp_port;
 	u16			peer_udp_port;
 	unsigned int		use_udp_checksums:1;
