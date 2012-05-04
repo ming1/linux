@@ -635,6 +635,21 @@ static void mt_set_maxcontacts(struct hid_device *hdev)
 	}
 }
 
+static void mt_post_parse_default_settings(struct mt_device *td)
+{
+	__s32 quirks = td->mtclass.quirks;
+
+	/* unknown serial device needs special quirks */
+	if (td->touches_by_report == 1) {
+		quirks |= MT_QUIRK_ALWAYS_VALID;
+		quirks &= ~MT_QUIRK_NOT_SEEN_MEANS_UP;
+		quirks &= ~MT_QUIRK_VALID_IS_INRANGE;
+		quirks &= ~MT_QUIRK_VALID_IS_CONFIDENCE;
+	}
+
+	td->mtclass.quirks = quirks;
+}
+
 static int mt_probe(struct hid_device *hdev, const struct hid_device_id *id)
 {
 	int ret, i;
@@ -654,7 +669,6 @@ static int mt_probe(struct hid_device *hdev, const struct hid_device_id *id)
 	 * that emit events over several HID messages.
 	 */
 	hdev->quirks |= HID_QUIRK_NO_INPUT_SYNC;
-	hdev->quirks &= ~HID_QUIRK_MULTITOUCH;
 
 	td = kzalloc(sizeof(struct mt_device), GFP_KERNEL);
 	if (!td) {
@@ -674,14 +688,8 @@ static int mt_probe(struct hid_device *hdev, const struct hid_device_id *id)
 	if (ret)
 		goto fail;
 
-	if (!id && td->touches_by_report == 1) {
-		/* the device has been sent by hid-generic */
-		mtclass = &td->mtclass;
-		mtclass->quirks |= MT_QUIRK_ALWAYS_VALID;
-		mtclass->quirks &= ~MT_QUIRK_NOT_SEEN_MEANS_UP;
-		mtclass->quirks &= ~MT_QUIRK_VALID_IS_INRANGE;
-		mtclass->quirks &= ~MT_QUIRK_VALID_IS_CONFIDENCE;
-	}
+	if (id->vendor == HID_ANY_ID && id->product == HID_ANY_ID)
+		mt_post_parse_default_settings(td);
 
 	td->slots = kzalloc(td->maxcontacts * sizeof(struct mt_slot),
 				GFP_KERNEL);
@@ -749,6 +757,10 @@ static const struct hid_device_id mt_devices[] = {
 		HID_USB_DEVICE(USB_VENDOR_ID_ATMEL,
 			USB_DEVICE_ID_ATMEL_MXT_DIGITIZER) },
 
+	/* Baanto multitouch devices */
+	{ .driver_data = MT_CLS_DEFAULT,
+		HID_USB_DEVICE(USB_VENDOR_ID_BAANTO,
+			USB_DEVICE_ID_BAANTO_MT_190W2) },
 	/* Cando panels */
 	{ .driver_data = MT_CLS_DUAL_INRANGE_CONTACTNUMBER,
 		HID_USB_DEVICE(USB_VENDOR_ID_CANDO,
@@ -999,6 +1011,8 @@ static const struct hid_device_id mt_devices[] = {
 		HID_USB_DEVICE(USB_VENDOR_ID_XIROKU,
 			USB_DEVICE_ID_XIROKU_CSR2) },
 
+	/* Generic MT device */
+	{ HID_DEVICE(HID_BUS_ANY, HID_GROUP_MULTITOUCH, HID_ANY_ID, HID_ANY_ID) },
 	{ }
 };
 MODULE_DEVICE_TABLE(hid, mt_devices);
