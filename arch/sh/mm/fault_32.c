@@ -35,6 +35,74 @@ static inline int notify_page_fault(struct pt_regs *regs, int trap)
 	return ret;
 }
 
+/*
+ * This is useful to dump out the page tables associated with
+ * 'addr' in mm 'mm'.
+ */
+static void show_pte(struct mm_struct *mm, unsigned long addr)
+{
+	pgd_t *pgd;
+
+	if (mm)
+		pgd = mm->pgd;
+	else
+		pgd = get_TTB();
+
+	printk(KERN_ALERT "pgd = %p\n", pgd);
+	pgd += pgd_index(addr);
+	printk(KERN_ALERT "[%08lx] *pgd=%0*Lx", addr,
+	       sizeof(*pgd) * 2, (u64)pgd_val(*pgd));
+
+	do {
+		pud_t *pud;
+		pmd_t *pmd;
+		pte_t *pte;
+
+		if (pgd_none(*pgd))
+			break;
+
+		if (pgd_bad(*pgd)) {
+			printk("(bad)");
+			break;
+		}
+
+		pud = pud_offset(pgd, addr);
+		if (PTRS_PER_PUD != 1)
+			printk(", *pud=%0*Lx", sizeof(*pud) * 2,
+			       (u64)pud_val(*pud));
+
+		if (pud_none(*pud))
+			break;
+
+		if (pud_bad(*pud)) {
+			printk("(bad)");
+			break;
+		}
+
+		pmd = pmd_offset(pud, addr);
+		if (PTRS_PER_PMD != 1)
+			printk(", *pmd=%0*Lx", sizeof(*pmd) * 2,
+			       (u64)pmd_val(*pmd));
+
+		if (pmd_none(*pmd))
+			break;
+
+		if (pmd_bad(*pmd)) {
+			printk("(bad)");
+			break;
+		}
+
+		/* We must not map this if we have highmem enabled */
+		if (PageHighMem(pfn_to_page(pmd_val(*pmd) >> PAGE_SHIFT)))
+			break;
+
+		pte = pte_offset_kernel(pmd, addr);
+		printk(", *pte=%0*Lx", sizeof(*pte) * 2, (u64)pte_val(*pte));
+	} while (0);
+
+	printk("\n");
+}
+
 static inline pmd_t *vmalloc_sync_one(pgd_t *pgd, unsigned long address)
 {
 	unsigned index = pgd_index(address);
@@ -129,6 +197,8 @@ asmlinkage void __kprobes do_page_fault(struct pt_regs *regs,
 	int si_code;
 	int fault;
 	siginfo_t info;
+	unsigned int flags = (FAULT_FLAG_ALLOW_RETRY | FAULT_FLAG_KILLABLE |
+			      (writeaccess ? FAULT_FLAG_WRITE : 0));
 
 	tsk = current;
 	mm = tsk->mm;
@@ -169,6 +239,7 @@ asmlinkage void __kprobes do_page_fault(struct pt_regs *regs,
 	if (in_atomic() || !mm)
 		goto no_context;
 
+retry:
 	down_read(&mm->mmap_sem);
 
 	vma = find_vma(mm, address);
@@ -200,7 +271,11 @@ good_area:
 	 * make sure we exit gracefully rather than endlessly redo
 	 * the fault.
 	 */
-	fault = handle_mm_fault(mm, vma, address, writeaccess ? FAULT_FLAG_WRITE : 0);
+	fault = handle_mm_fault(mm, vma, address, flags);
+
+	if ((fault & VM_FAULT_RETRY) && fatal_signal_pending(current))
+		return;
+
 	if (unlikely(fault & VM_FAULT_ERROR)) {
 		if (fault & VM_FAULT_OOM)
 			goto out_of_memory;
@@ -208,14 +283,27 @@ good_area:
 			goto do_sigbus;
 		BUG();
 	}
-	if (fault & VM_FAULT_MAJOR) {
-		tsk->maj_flt++;
-		perf_sw_event(PERF_COUNT_SW_PAGE_FAULTS_MAJ, 1,
-				     regs, address);
-	} else {
-		tsk->min_flt++;
-		perf_sw_event(PERF_COUNT_SW_PAGE_FAULTS_MIN, 1,
-				     regs, address);
+
+	if (flags & FAULT_FLAG_ALLOW_RETRY) {
+		if (fault & VM_FAULT_MAJOR) {
+			tsk->maj_flt++;
+			perf_sw_event(PERF_COUNT_SW_PAGE_FAULTS_MAJ, 1,
+				      regs, address);
+		} else {
+			tsk->min_flt++;
+			perf_sw_event(PERF_COUNT_SW_PAGE_FAULTS_MIN, 1,
+				      regs, address);
+		}
+		if (fault & VM_FAULT_RETRY) {
+			flags &= ~FAULT_FLAG_ALLOW_RETRY;
+
+			/*
+			 * No need to up_read(&mm->mmap_sem) as we would
+			 * have already released it in __lock_page_or_retry
+			 * in mm/filemap.c.
+			 */
+			goto retry;
+		}
 	}
 
 	up_read(&mm->mmap_sem);
@@ -254,29 +342,12 @@ no_context:
 	bust_spinlocks(1);
 
 	if (oops_may_print()) {
-		unsigned long page;
+		printk(KERN_ALERT
+		       "Unable to handle kernel %s at virtual address %08lx\n",
+		       (address < PAGE_SIZE) ? "NULL pointer dereference" :
+		       "paging request", address);
 
-		if (address < PAGE_SIZE)
-			printk(KERN_ALERT "Unable to handle kernel NULL "
-					  "pointer dereference");
-		else
-			printk(KERN_ALERT "Unable to handle kernel paging "
-					  "request");
-		printk(" at virtual address %08lx\n", address);
-		printk(KERN_ALERT "pc = %08lx\n", regs->pc);
-		page = (unsigned long)get_TTB();
-		if (page) {
-			page = ((__typeof__(page) *)page)[address >> PGDIR_SHIFT];
-			printk(KERN_ALERT "*pde = %08lx\n", page);
-			if (page & _PAGE_PRESENT) {
-				page &= PAGE_MASK;
-				address &= 0x003ff000;
-				page = ((__typeof__(page) *)
-						__va(page))[address >>
-							    PAGE_SHIFT];
-				printk(KERN_ALERT "*pte = %08lx\n", page);
-			}
-		}
+		show_pte(mm, address);
 	}
 
 	die("Oops", regs, writeaccess);
