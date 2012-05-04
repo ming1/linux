@@ -150,9 +150,6 @@ struct dsi_clock_info {
 	u16 regm_dsi;	/* OMAP3: REGM4
 			 * OMAP4: REGM5 */
 	u16 lp_clk_div;
-
-	u8 highfreq;
-	bool use_sys_clk;
 };
 
 struct seq_file;
@@ -162,6 +159,7 @@ struct platform_device;
 struct bus_type *dss_get_bus(void);
 struct regulator *dss_get_vdds_dsi(void);
 struct regulator *dss_get_vdds_sdi(void);
+int dss_set_min_bus_tput(struct device *dev, unsigned long tput);
 
 /* apply */
 void dss_apply_init(void);
@@ -409,12 +407,12 @@ void dispc_disable_sidle(void);
 void dispc_lcd_enable_signal_polarity(bool act_high);
 void dispc_lcd_enable_signal(bool enable);
 void dispc_pck_free_enable(bool enable);
-void dispc_set_digit_size(u16 width, u16 height);
 void dispc_enable_fifomerge(bool enable);
 void dispc_enable_gamma_table(bool enable);
 void dispc_set_loadmode(enum omap_dss_load_mode mode);
 
-bool dispc_lcd_timings_ok(struct omap_video_timings *timings);
+bool dispc_mgr_timings_ok(enum omap_channel channel,
+		struct omap_video_timings *timings);
 unsigned long dispc_fclk_rate(void);
 void dispc_find_clk_divs(bool is_tft, unsigned long req_pck, unsigned long fck,
 		struct dispc_clock_info *cinfo);
@@ -432,7 +430,6 @@ void dispc_ovl_set_channel_out(enum omap_plane plane,
 		enum omap_channel channel);
 
 void dispc_mgr_enable_fifohandcheck(enum omap_channel channel, bool enable);
-void dispc_mgr_set_lcd_size(enum omap_channel channel, u16 width, u16 height);
 u32 dispc_mgr_get_vsync_irq(enum omap_channel channel);
 u32 dispc_mgr_get_framedone_irq(enum omap_channel channel);
 bool dispc_mgr_go_busy(enum omap_channel channel);
@@ -445,12 +442,13 @@ void dispc_mgr_enable_stallmode(enum omap_channel channel, bool enable);
 void dispc_mgr_set_tft_data_lines(enum omap_channel channel, u8 data_lines);
 void dispc_mgr_set_lcd_display_type(enum omap_channel channel,
 		enum omap_lcd_display_type type);
-void dispc_mgr_set_lcd_timings(enum omap_channel channel,
+void dispc_mgr_set_timings(enum omap_channel channel,
 		struct omap_video_timings *timings);
 void dispc_mgr_set_pol_freq(enum omap_channel channel,
 		enum omap_panel_config config, u8 acbi, u8 acb);
 unsigned long dispc_mgr_lclk_rate(enum omap_channel channel);
 unsigned long dispc_mgr_pclk_rate(enum omap_channel channel);
+unsigned long dispc_core_clk_rate(void);
 int dispc_mgr_set_clock_div(enum omap_channel channel,
 		struct dispc_clock_info *cinfo);
 int dispc_mgr_get_clock_div(enum omap_channel channel,
