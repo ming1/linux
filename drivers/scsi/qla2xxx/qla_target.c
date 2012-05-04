@@ -3045,7 +3045,7 @@ static int qlt_set_data_offset(struct qla_tgt_cmd *cmd, uint32_t offset)
 			sg_srr_start = sg;
 			ql_dbg(ql_dbg_tgt, cmd->vha, 0xe025,
 			    "Found matching sg[%d], using %p as sg_srr_start, "
-			    "and using first_offset: %lu\n", i, sg,
+			    "and using first_offset: %zu\n", i, sg,
 			    first_offset);
 			break;
 		}
@@ -4362,17 +4362,17 @@ static void qlt_lport_dump(struct scsi_qla_host *vha, u64 wwpn,
 	int i;
 
 	pr_debug("qla2xxx HW vha->node_name: ");
-	for (i = 0; i < 8; i++)
+	for (i = 0; i < WWN_SIZE; i++)
 		pr_debug("%02x ", vha->node_name[i]);
 	pr_debug("\n");
 	pr_debug("qla2xxx HW vha->port_name: ");
-	for (i = 0; i < 8; i++)
+	for (i = 0; i < WWN_SIZE; i++)
 		pr_debug("%02x ", vha->port_name[i]);
 	pr_debug("\n");
 
 	pr_debug("qla2xxx passed configfs WWPN: ");
 	put_unaligned_be64(wwpn, b);
-	for (i = 0; i < 8; i++)
+	for (i = 0; i < WWN_SIZE; i++)
 		pr_debug("%02x ", b[i]);
 	pr_debug("\n");
 }
@@ -4394,7 +4394,7 @@ int qlt_lport_register(struct qla_tgt_func_tmpl *qla_tgt_ops, u64 wwpn,
 	struct Scsi_Host *host;
 	unsigned long flags;
 	int rc;
-	u8 b[8];
+	u8 b[WWN_SIZE];
 
 	mutex_lock(&qla_tgt_mutex);
 	list_for_each_entry(tgt, &qla_tgt_glist, tgt_list_entry) {
@@ -4428,7 +4428,7 @@ int qlt_lport_register(struct qla_tgt_func_tmpl *qla_tgt_ops, u64 wwpn,
 		}
 		qlt_lport_dump(vha, wwpn, b);
 
-		if (memcmp(vha->port_name, b, 8)) {
+		if (memcmp(vha->port_name, b, WWN_SIZE)) {
 			scsi_host_put(host);
 			continue;
 		}
