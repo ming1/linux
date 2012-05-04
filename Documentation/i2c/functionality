@@ -33,6 +33,7 @@ For the most up-to-date list of functionality constants, please check
   I2C_FUNC_SMBUS_WRITE_BLOCK_DATA Handles the SMBus write_block_data command
   I2C_FUNC_SMBUS_READ_I2C_BLOCK   Handles the SMBus read_i2c_block_data command
   I2C_FUNC_SMBUS_WRITE_I2C_BLOCK  Handles the SMBus write_i2c_block_data command
+  I2C_FUNC_NOSTART                Transfers can be sent without a start
 
 A few combinations of the above flags are also defined for your convenience:
 
