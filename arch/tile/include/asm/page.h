@@ -136,9 +136,8 @@ static inline __attribute_const__ int get_order(unsigned long size)
 
 #define HUGETLB_PAGE_ORDER	(HPAGE_SHIFT - PAGE_SHIFT)
 
-#define HUGE_MAX_HSTATE		6
-
 #ifdef CONFIG_HUGETLB_PAGE
+#define HUGE_MAX_HSTATE		6
 #define HAVE_ARCH_HUGETLB_UNMAPPED_AREA
 #endif
 
