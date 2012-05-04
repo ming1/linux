@@ -210,7 +210,7 @@ int ip6_xmit(struct sock *sk, struct sk_buff *skb, struct flowi6 *fl6,
 				kfree_skb(skb);
 				return -ENOBUFS;
 			}
-			kfree_skb(skb);
+			consume_skb(skb);
 			skb = skb2;
 			skb_set_owner_w(skb, sk);
 		}
@@ -889,7 +889,7 @@ slow_path:
 	}
 	IP6_INC_STATS(net, ip6_dst_idev(skb_dst(skb)),
 		      IPSTATS_MIB_FRAGOKS);
-	kfree_skb(skb);
+	consume_skb(skb);
 	return err;
 
 fail:
@@ -1535,6 +1535,7 @@ error:
 	IP6_INC_STATS(sock_net(sk), rt->rt6i_idev, IPSTATS_MIB_OUTDISCARDS);
 	return err;
 }
+EXPORT_SYMBOL_GPL(ip6_append_data);
 
 static void ip6_cork_release(struct inet_sock *inet, struct ipv6_pinfo *np)
 {
@@ -1638,6 +1639,7 @@ error:
 	IP6_INC_STATS(net, rt->rt6i_idev, IPSTATS_MIB_OUTDISCARDS);
 	goto out;
 }
+EXPORT_SYMBOL_GPL(ip6_push_pending_frames);
 
 void ip6_flush_pending_frames(struct sock *sk)
 {
@@ -1652,3 +1654,4 @@ void ip6_flush_pending_frames(struct sock *sk)
 
 	ip6_cork_release(inet_sk(sk), inet6_sk(sk));
 }
+EXPORT_SYMBOL_GPL(ip6_flush_pending_frames);
