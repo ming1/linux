@@ -39,6 +39,10 @@ static inline uint32_t psb_gtt_mask_pte(uint32_t pfn, int type)
 {
 	uint32_t mask = PSB_PTE_VALID;
 
+	/* Ensure we explode rather than put an invalid low mapping of
+	   a high mapping page into the gtt */
+	BUG_ON(pfn & ~(0xFFFFFFFF >> PAGE_SHIFT));
+
 	if (type & PSB_MMU_CACHED_MEMORY)
 		mask |= PSB_PTE_CACHED;
 	if (type & PSB_MMU_RO_MEMORY)
@@ -93,7 +97,7 @@ static int psb_gtt_insert(struct drm_device *dev, struct gtt_range *r)
 	pages = r->pages;
 
 	/* Make sure changes are visible to the GPU */
-	set_pages_array_uc(pages, r->npage);
+	set_pages_array_wc(pages, r->npage);
 
 	/* Write our page entries into the GTT itself */
 	for (i = r->roll; i < r->npage; i++) {

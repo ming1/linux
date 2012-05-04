@@ -94,6 +94,7 @@ extern int radeon_disp_priority;
 extern int radeon_hw_i2c;
 extern int radeon_pcie_gen2;
 extern int radeon_msi;
+extern int radeon_lockup_timeout;
 
 /*
  * Copy from radeon_drv.h so we don't have to include both and have conflicting
@@ -255,10 +256,8 @@ struct radeon_fence_driver {
 	volatile uint32_t		*cpu_addr;
 	atomic_t			seq;
 	uint32_t			last_seq;
-	unsigned long			last_jiffies;
-	unsigned long			last_timeout;
+	unsigned long			last_activity;
 	wait_queue_head_t		queue;
-	struct list_head		created;
 	struct list_head		emitted;
 	struct list_head		signaled;
 	bool				initialized;
@@ -286,7 +285,7 @@ void radeon_fence_process(struct radeon_device *rdev, int ring);
 bool radeon_fence_signaled(struct radeon_fence *fence);
 int radeon_fence_wait(struct radeon_fence *fence, bool interruptible);
 int radeon_fence_wait_next(struct radeon_device *rdev, int ring);
-int radeon_fence_wait_last(struct radeon_device *rdev, int ring);
+int radeon_fence_wait_empty(struct radeon_device *rdev, int ring);
 struct radeon_fence *radeon_fence_ref(struct radeon_fence *fence);
 void radeon_fence_unref(struct radeon_fence **fence);
 int radeon_fence_count_emitted(struct radeon_device *rdev, int ring);
@@ -462,6 +461,10 @@ void radeon_semaphore_emit_signal(struct radeon_device *rdev, int ring,
 				  struct radeon_semaphore *semaphore);
 void radeon_semaphore_emit_wait(struct radeon_device *rdev, int ring,
 				struct radeon_semaphore *semaphore);
+int radeon_semaphore_sync_rings(struct radeon_device *rdev,
+				struct radeon_semaphore *semaphore,
+				bool sync_to[RADEON_NUM_RINGS],
+				int dst_ring);
 void radeon_semaphore_free(struct radeon_device *rdev,
 			   struct radeon_semaphore *semaphore);
 
@@ -560,6 +563,7 @@ struct radeon_unpin_work {
 
 struct r500_irq_stat_regs {
 	u32 disp_int;
+	u32 hdmi0_status;
 };
 
 struct r600_irq_stat_regs {
@@ -568,6 +572,8 @@ struct r600_irq_stat_regs {
 	u32 disp_int_cont2;
 	u32 d1grph_int;
 	u32 d2grph_int;
+	u32 hdmi0_status;
+	u32 hdmi1_status;
 };
 
 struct evergreen_irq_stat_regs {
@@ -583,6 +589,12 @@ struct evergreen_irq_stat_regs {
 	u32 d4grph_int;
 	u32 d5grph_int;
 	u32 d6grph_int;
+	u32 afmt_status1;
+	u32 afmt_status2;
+	u32 afmt_status3;
+	u32 afmt_status4;
+	u32 afmt_status5;
+	u32 afmt_status6;
 };
 
 union radeon_irq_stat_regs {
@@ -593,7 +605,7 @@ union radeon_irq_stat_regs {
 
 #define RADEON_MAX_HPD_PINS 6
 #define RADEON_MAX_CRTCS 6
-#define RADEON_MAX_HDMI_BLOCKS 2
+#define RADEON_MAX_AFMT_BLOCKS 6
 
 struct radeon_irq {
 	bool		installed;
@@ -605,7 +617,7 @@ struct radeon_irq {
 	bool            gui_idle;
 	bool            gui_idle_acked;
 	wait_queue_head_t	idle_queue;
-	bool		hdmi[RADEON_MAX_HDMI_BLOCKS];
+	bool		afmt[RADEON_MAX_AFMT_BLOCKS];
 	spinlock_t sw_lock;
 	int sw_refcount[RADEON_NUM_RINGS];
 	union radeon_irq_stat_regs stat_regs;
@@ -659,6 +671,8 @@ struct radeon_ring {
 	unsigned		ring_size;
 	unsigned		ring_free_dw;
 	int			count_dw;
+	unsigned long		last_activity;
+	unsigned		last_rptr;
 	uint64_t		gpu_addr;
 	uint32_t		align_mask;
 	uint32_t		ptr_mask;
@@ -793,6 +807,7 @@ int radeon_ib_pool_init(struct radeon_device *rdev);
 void radeon_ib_pool_fini(struct radeon_device *rdev);
 int radeon_ib_pool_start(struct radeon_device *rdev);
 int radeon_ib_pool_suspend(struct radeon_device *rdev);
+int radeon_ib_ring_tests(struct radeon_device *rdev);
 /* Ring access between begin & end cannot sleep */
 int radeon_ring_index(struct radeon_device *rdev, struct radeon_ring *cp);
 void radeon_ring_free_size(struct radeon_device *rdev, struct radeon_ring *cp);
@@ -802,6 +817,9 @@ void radeon_ring_commit(struct radeon_device *rdev, struct radeon_ring *cp);
 void radeon_ring_unlock_commit(struct radeon_device *rdev, struct radeon_ring *cp);
 void radeon_ring_unlock_undo(struct radeon_device *rdev, struct radeon_ring *cp);
 int radeon_ring_test(struct radeon_device *rdev, struct radeon_ring *cp);
+void radeon_ring_force_activity(struct radeon_device *rdev, struct radeon_ring *ring);
+void radeon_ring_lockup_update(struct radeon_ring *ring);
+bool radeon_ring_test_lockup(struct radeon_device *rdev, struct radeon_ring *ring);
 int radeon_ring_init(struct radeon_device *rdev, struct radeon_ring *cp, unsigned ring_size,
 		     unsigned rptr_offs, unsigned rptr_reg, unsigned wptr_reg,
 		     u32 ptr_reg_shift, u32 ptr_reg_mask, u32 nop);
@@ -1105,6 +1123,15 @@ int radeon_pm_get_type_index(struct radeon_device *rdev,
 			     enum radeon_pm_state_type ps_type,
 			     int instance);
 
+struct r600_audio {
+	bool			enabled;
+	int			channels;
+	int			rate;
+	int			bits_per_sample;
+	u8			status_bits;
+	u8			category_code;
+};
+
 /*
  * Benchmarking
  */
@@ -1144,7 +1171,6 @@ struct radeon_asic {
 	int (*resume)(struct radeon_device *rdev);
 	int (*suspend)(struct radeon_device *rdev);
 	void (*vga_set_state)(struct radeon_device *rdev, bool state);
-	bool (*gpu_is_lockup)(struct radeon_device *rdev, struct radeon_ring *cp);
 	int (*asic_reset)(struct radeon_device *rdev);
 	/* ioctl hw specific callback. Some hw might want to perform special
 	 * operation on specific ioctl. For instance on wait idle some hw
@@ -1173,6 +1199,7 @@ struct radeon_asic {
 		void (*ring_start)(struct radeon_device *rdev, struct radeon_ring *cp);
 		int (*ring_test)(struct radeon_device *rdev, struct radeon_ring *cp);
 		int (*ib_test)(struct radeon_device *rdev, struct radeon_ring *cp);
+		bool (*is_lockup)(struct radeon_device *rdev, struct radeon_ring *cp);
 	} ring[RADEON_NUM_RINGS];
 	/* irqs */
 	struct {
@@ -1251,16 +1278,10 @@ struct radeon_asic {
 /*
  * Asic structures
  */
-struct r100_gpu_lockup {
-	unsigned long	last_jiffies;
-	u32		last_cp_rptr;
-};
-
 struct r100_asic {
 	const unsigned		*reg_safe_bm;
 	unsigned		reg_safe_bm_size;
 	u32			hdp_cntl;
-	struct r100_gpu_lockup	lockup;
 };
 
 struct r300_asic {
@@ -1268,7 +1289,6 @@ struct r300_asic {
 	unsigned		reg_safe_bm_size;
 	u32			resync_scratch;
 	u32			hdp_cntl;
-	struct r100_gpu_lockup	lockup;
 };
 
 struct r600_asic {
@@ -1290,7 +1310,6 @@ struct r600_asic {
 	unsigned		tiling_group_size;
 	unsigned		tile_config;
 	unsigned		backend_map;
-	struct r100_gpu_lockup	lockup;
 };
 
 struct rv770_asic {
@@ -1316,7 +1335,6 @@ struct rv770_asic {
 	unsigned		tiling_group_size;
 	unsigned		tile_config;
 	unsigned		backend_map;
-	struct r100_gpu_lockup	lockup;
 };
 
 struct evergreen_asic {
@@ -1343,7 +1361,6 @@ struct evergreen_asic {
 	unsigned tiling_group_size;
 	unsigned tile_config;
 	unsigned backend_map;
-	struct r100_gpu_lockup	lockup;
 };
 
 struct cayman_asic {
@@ -1382,7 +1399,6 @@ struct cayman_asic {
 	unsigned multi_gpu_tile_size;
 
 	unsigned tile_config;
-	struct r100_gpu_lockup	lockup;
 };
 
 struct si_asic {
@@ -1413,7 +1429,6 @@ struct si_asic {
 	unsigned multi_gpu_tile_size;
 
 	unsigned tile_config;
-	struct r100_gpu_lockup	lockup;
 };
 
 union radeon_asic_config {
@@ -1529,7 +1544,6 @@ struct radeon_device {
 	struct radeon_mutex		cs_mutex;
 	struct radeon_wb		wb;
 	struct radeon_dummy_page	dummy_page;
-	bool				gpu_lockup;
 	bool				shutdown;
 	bool				suspend;
 	bool				need_dma32;
@@ -1546,19 +1560,11 @@ struct radeon_device {
 	struct r600_ih ih; /* r6/700 interrupt ring */
 	struct si_rlc rlc;
 	struct work_struct hotplug_work;
+	struct work_struct audio_work;
 	int num_crtc; /* number of crtcs */
 	struct mutex dc_hw_i2c_mutex; /* display controller hw i2c mutex */
 	struct mutex vram_mutex;
-
-	/* audio stuff */
-	bool			audio_enabled;
-	struct timer_list	audio_timer;
-	int			audio_channels;
-	int			audio_rate;
-	int			audio_bits_per_sample;
-	uint8_t			audio_status_bits;
-	uint8_t			audio_category_code;
-
+	struct r600_audio audio; /* audio stuff */
 	struct notifier_block acpi_nb;
 	/* only one userspace can use Hyperz features or CMASK at a time */
 	struct drm_file *hyperz_filp;
@@ -1730,7 +1736,6 @@ void radeon_ring_write(struct radeon_ring *ring, uint32_t v);
 #define radeon_suspend(rdev) (rdev)->asic->suspend((rdev))
 #define radeon_cs_parse(rdev, r, p) (rdev)->asic->ring[(r)].cs_parse((p))
 #define radeon_vga_set_state(rdev, state) (rdev)->asic->vga_set_state((rdev), (state))
-#define radeon_gpu_is_lockup(rdev, cp) (rdev)->asic->gpu_is_lockup((rdev), (cp))
 #define radeon_asic_reset(rdev) (rdev)->asic->asic_reset((rdev))
 #define radeon_gart_tlb_flush(rdev) (rdev)->asic->gart.tlb_flush((rdev))
 #define radeon_gart_set_page(rdev, i, p) (rdev)->asic->gart.set_page((rdev), (i), (p))
@@ -1739,6 +1744,7 @@ void radeon_ring_write(struct radeon_ring *ring, uint32_t v);
 #define radeon_ib_test(rdev, r, cp) (rdev)->asic->ring[(r)].ib_test((rdev), (cp))
 #define radeon_ring_ib_execute(rdev, r, ib) (rdev)->asic->ring[(r)].ib_execute((rdev), (ib))
 #define radeon_ring_ib_parse(rdev, r, ib) (rdev)->asic->ring[(r)].ib_parse((rdev), (ib))
+#define radeon_ring_is_lockup(rdev, r, cp) (rdev)->asic->ring[(r)].is_lockup((rdev), (cp))
 #define radeon_irq_set(rdev) (rdev)->asic->irq.set((rdev))
 #define radeon_irq_process(rdev) (rdev)->asic->irq.process((rdev))
 #define radeon_get_vblank_counter(rdev, crtc) (rdev)->asic->display.get_vblank_counter((rdev), (crtc))
@@ -1828,6 +1834,8 @@ int radeon_vm_bo_rmv(struct radeon_device *rdev,
 		     struct radeon_vm *vm,
 		     struct radeon_bo *bo);
 
+/* audio */
+void r600_audio_update_hdmi(struct work_struct *work);
 
 /*
  * R600 vram scratch functions
