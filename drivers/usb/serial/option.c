@@ -1375,7 +1375,6 @@ static void option_instat_callback(struct urb *urb)
 	struct usb_serial_port *port =  urb->context;
 	struct option_port_private *portdata = usb_get_serial_port_data(port);
 
-	dbg("%s", __func__);
 	dbg("%s: urb %p port %p has data %p", __func__, urb, port, portdata);
 
 	if (status == 0) {
@@ -1413,7 +1412,7 @@ static void option_instat_callback(struct urb *urb)
 				req_pkt->bRequestType, req_pkt->bRequest);
 		}
 	} else
-		err("%s: error %d", __func__, status);
+		dev_err(&port->dev, "%s: error %d\n", __func__, status);
 
 	/* Resubmit urb so we continue receiving IRQ data */
 	if (status != -ESHUTDOWN && status != -ENOENT) {
@@ -1437,7 +1436,6 @@ static int option_send_setup(struct usb_serial_port *port)
 	struct option_port_private *portdata;
 	int ifNum = serial->interface->cur_altsetting->desc.bInterfaceNumber;
 	int val = 0;
-	dbg("%s", __func__);
 
 	if (is_blacklisted(ifNum, OPTION_BLACKLIST_SENDSETUP,
 			(struct option_blacklist_info *) intfdata->private)) {

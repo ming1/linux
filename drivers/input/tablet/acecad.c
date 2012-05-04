@@ -73,10 +73,12 @@ static void usb_acecad_irq(struct urb *urb)
 	case -ENOENT:
 	case -ESHUTDOWN:
 		/* this urb is terminated, clean up */
-		dbg("%s - urb shutting down with status: %d", __func__, urb->status);
+		dev_dbg(&dev->dev, "%s - urb shutting down with status: %d\n",
+			__func__, urb->status);
 		return;
 	default:
-		dbg("%s - nonzero urb status received: %d", __func__, urb->status);
+		dev_dbg(&dev->dev, "%s - nonzero urb status received: %d\n",
+			__func__, urb->status);
 		goto resubmit;
 	}
 
@@ -105,8 +107,10 @@ static void usb_acecad_irq(struct urb *urb)
 resubmit:
 	status = usb_submit_urb(urb, GFP_ATOMIC);
 	if (status)
-		err("can't resubmit intr, %s-%s/input0, status %d",
-			acecad->usbdev->bus->bus_name, acecad->usbdev->devpath, status);
+		dev_err(&dev->dev,
+			"can't resubmit intr, %s-%s/input0, status %d\n",
+			acecad->usbdev->bus->bus_name,
+			acecad->usbdev->devpath, status);
 }
 
 static int usb_acecad_open(struct input_dev *dev)

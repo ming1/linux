@@ -100,6 +100,7 @@ static int wacom_set_report(struct usb_interface *intf, u8 type, u8 id,
 static void wacom_sys_irq(struct urb *urb)
 {
 	struct wacom *wacom = urb->context;
+	struct device *dev = &wacom->wacom_wac.input->dev;
 	int retval;
 
 	switch (urb->status) {
@@ -110,10 +111,12 @@ static void wacom_sys_irq(struct urb *urb)
 	case -ENOENT:
 	case -ESHUTDOWN:
 		/* this urb is terminated, clean up */
-		dbg("%s - urb shutting down with status: %d", __func__, urb->status);
+		dev_dbg(dev, "%s - urb shutting down with status: %d\n",
+			__func__, urb->status);
 		return;
 	default:
-		dbg("%s - nonzero urb status received: %d", __func__, urb->status);
+		dev_dbg(dev, "%s - nonzero urb status received: %d\n",
+			__func__, urb->status);
 		goto exit;
 	}
 
@@ -123,8 +126,8 @@ static void wacom_sys_irq(struct urb *urb)
 	usb_mark_last_busy(wacom->usbdev);
 	retval = usb_submit_urb(urb, GFP_ATOMIC);
 	if (retval)
-		err ("%s - usb_submit_urb failed with result %d",
-		     __func__, retval);
+		dev_err(dev, "%s - usb_submit_urb failed with result %d\n",
+			__func__, retval);
 }
 
 static int wacom_open(struct input_dev *dev)
@@ -896,7 +899,7 @@ static int wacom_initialize_leds(struct wacom *wacom)
 	}
 
 	if (error) {
-		dev_err(&wacom->intf->dev,
+		dev_err(&wacom->wacom_wac.input->dev,
 			"cannot create sysfs group err: %d\n", error);
 		return error;
 	}
