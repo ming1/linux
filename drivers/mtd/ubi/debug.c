@@ -18,24 +18,49 @@
  * Author: Artem Bityutskiy (Битюцкий Артём)
  */
 
-/*
- * Here we keep all the UBI debugging stuff which should normally be disabled
- * and compiled-out, but it is extremely helpful when hunting bugs or doing big
- * changes.
- */
-
-#ifdef CONFIG_MTD_UBI_DEBUG
-
 #include "ubi.h"
 #include <linux/debugfs.h>
 #include <linux/uaccess.h>
 #include <linux/module.h>
 
+
 /**
- * ubi_dbg_dump_ec_hdr - dump an erase counter header.
+ * ubi_dump_flash - dump a region of flash.
+ * @ubi: UBI device description object
+ * @pnum: the physical eraseblock number to dump
+ * @offset: the starting offset within the physical eraseblock to dump
+ * @len: the length of the region to dump
+ */
+void ubi_dump_flash(struct ubi_device *ubi, int pnum, int offset, int len)
+{
+	int err;
+	size_t read;
+	void *buf;
+	loff_t addr = (loff_t)pnum * ubi->peb_size + offset;
+
+	buf = vmalloc(len);
+	if (!buf)
+		return;
+	err = mtd_read(ubi->mtd, addr, len, &read, buf);
+	if (err && err != -EUCLEAN) {
+		ubi_err("error %d while reading %d bytes from PEB %d:%d, "
+			"read %zd bytes", err, len, pnum, offset, read);
+		goto out;
+	}
+
+	ubi_msg("dumping %d bytes of data from PEB %d, offset %d",
+		len, pnum, offset);
+	print_hex_dump(KERN_DEBUG, "", DUMP_PREFIX_OFFSET, 32, 1, buf, len, 1);
+out:
+	vfree(buf);
+	return;
+}
+
+/**
+ * ubi_dump_ec_hdr - dump an erase counter header.
  * @ec_hdr: the erase counter header to dump
  */
-void ubi_dbg_dump_ec_hdr(const struct ubi_ec_hdr *ec_hdr)
+void ubi_dump_ec_hdr(const struct ubi_ec_hdr *ec_hdr)
 {
 	printk(KERN_DEBUG "Erase counter header dump:\n");
 	printk(KERN_DEBUG "\tmagic          %#08x\n",
@@ -57,10 +82,10 @@ void ubi_dbg_dump_ec_hdr(const struct ubi_ec_hdr *ec_hdr)
 }
 
 /**
- * ubi_dbg_dump_vid_hdr - dump a volume identifier header.
+ * ubi_dump_vid_hdr - dump a volume identifier header.
  * @vid_hdr: the volume identifier header to dump
  */
-void ubi_dbg_dump_vid_hdr(const struct ubi_vid_hdr *vid_hdr)
+void ubi_dump_vid_hdr(const struct ubi_vid_hdr *vid_hdr)
 {
 	printk(KERN_DEBUG "Volume identifier header dump:\n");
 	printk(KERN_DEBUG "\tmagic     %08x\n", be32_to_cpu(vid_hdr->magic));
@@ -80,6 +105,8 @@ void ubi_dbg_dump_vid_hdr(const struct ubi_vid_hdr *vid_hdr)
 	print_hex_dump(KERN_DEBUG, "", DUMP_PREFIX_OFFSET, 32, 1,
 		       vid_hdr, UBI_VID_HDR_SIZE, 1);
 }
+
+#ifdef CONFIG_MTD_UBI_DEBUG
 
 /**
  * ubi_dbg_dump_vol_info- dump volume information.
@@ -197,38 +224,6 @@ void ubi_dbg_dump_mkvol_req(const struct ubi_mkvol_req *req)
 	memcpy(nm, req->name, 16);
 	nm[16] = 0;
 	printk(KERN_DEBUG "\t1st 16 characters of name: %s\n", nm);
-}
-
-/**
- * ubi_dbg_dump_flash - dump a region of flash.
- * @ubi: UBI device description object
- * @pnum: the physical eraseblock number to dump
- * @offset: the starting offset within the physical eraseblock to dump
- * @len: the length of the region to dump
- */
-void ubi_dbg_dump_flash(struct ubi_device *ubi, int pnum, int offset, int len)
-{
-	int err;
-	size_t read;
-	void *buf;
-	loff_t addr = (loff_t)pnum * ubi->peb_size + offset;
-
-	buf = vmalloc(len);
-	if (!buf)
-		return;
-	err = mtd_read(ubi->mtd, addr, len, &read, buf);
-	if (err && err != -EUCLEAN) {
-		ubi_err("error %d while reading %d bytes from PEB %d:%d, "
-			"read %zd bytes", err, len, pnum, offset, read);
-		goto out;
-	}
-
-	dbg_msg("dumping %d bytes of data from PEB %d, offset %d",
-		len, pnum, offset);
-	print_hex_dump(KERN_DEBUG, "", DUMP_PREFIX_OFFSET, 32, 1, buf, len, 1);
-out:
-	vfree(buf);
-	return;
 }
 
 /**
