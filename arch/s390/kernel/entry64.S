@@ -81,16 +81,16 @@ _TIF_EXIT_SIE = (_TIF_SIGPENDING | _TIF_NEED_RESCHED | _TIF_MCCK_PENDING)
 
 	.macro	HANDLE_SIE_INTERCEPT scratch
 #if defined(CONFIG_KVM) || defined(CONFIG_KVM_MODULE)
-	tm	__TI_flags+6(%r12),_TIF_SIE>>8
-	jz	.+42
-	tm	__LC_MACHINE_FLAGS+6,0x20	# MACHINE_FLAG_SPP
-	jz	.+8
-	.insn	s,0xb2800000,BASED(.Lhost_id)	# set host id
+	tmhh	%r8,0x0001		# interrupting from user ?
+	jnz	.+42
 	lgr	\scratch,%r9
 	slg	\scratch,BASED(.Lsie_loop)
 	clg	\scratch,BASED(.Lsie_length)
-	jhe	.+10
+	jhe	.+22
 	lg	%r9,BASED(.Lsie_loop)
+	tm	__LC_MACHINE_FLAGS+6,0x20	# MACHINE_FLAG_SPP
+	jz	.+8
+	.insn	s,0xb2800000,BASED(.Lhost_id)	# set host id
 #endif
 	.endm
 
@@ -622,6 +622,7 @@ ext_skip:
 	mvc	__PT_R8(64,%r11),__LC_SAVE_AREA_ASYNC
 	stmg	%r8,%r9,__PT_PSW(%r11)
 	TRACE_IRQS_OFF
+	xc	__SF_BACKCHAIN(8,%r15),__SF_BACKCHAIN(%r15)
 	lghi	%r1,4096
 	lgr	%r2,%r11		# pass pointer to pt_regs
 	llgf	%r3,__LC_EXT_CPU_ADDR	# get cpu address + interruption code
@@ -967,7 +968,6 @@ ENTRY(sie64a)
 	xc	__SF_EMPTY+16(8,%r15),__SF_EMPTY+16(%r15) # host id == 0
 	lmg	%r0,%r13,0(%r3)			# load guest gprs 0-13
 	lg	%r14,__LC_THREAD_INFO		# pointer thread_info struct
-	oi	__TI_flags+6(%r14),_TIF_SIE>>8
 sie_loop:
 	lg	%r14,__LC_THREAD_INFO		# pointer thread_info struct
 	tm	__TI_flags+7(%r14),_TIF_EXIT_SIE
@@ -985,7 +985,6 @@ sie_done:
 	lg	%r14,__LC_THREAD_INFO		# pointer thread_info struct
 sie_exit:
 	lctlg	%c1,%c1,__LC_USER_ASCE		# load primary asce
-	ni	__TI_flags+6(%r14),255-(_TIF_SIE>>8)
 	lg	%r14,__SF_EMPTY+8(%r15)		# load guest register save area
 	stmg	%r0,%r13,0(%r14)		# save guest gprs 0-13
 	lmg	%r6,%r14,__SF_GPRS(%r15)	# restore kernel registers
@@ -994,7 +993,6 @@ sie_exit:
 sie_fault:
 	lctlg	%c1,%c1,__LC_USER_ASCE		# load primary asce
 	lg	%r14,__LC_THREAD_INFO		# pointer thread_info struct
-	ni	__TI_flags+6(%r14),255-(_TIF_SIE>>8)
 	lg	%r14,__SF_EMPTY+8(%r15)		# load guest register save area
 	stmg	%r0,%r13,0(%r14)		# save guest gprs 0-13
 	lmg	%r6,%r14,__SF_GPRS(%r15)	# restore kernel registers
