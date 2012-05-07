@@ -95,7 +95,7 @@ extern int kvmppc_core_vcpu_translate(struct kvm_vcpu *vcpu,
 extern void kvmppc_core_vcpu_load(struct kvm_vcpu *vcpu, int cpu);
 extern void kvmppc_core_vcpu_put(struct kvm_vcpu *vcpu);
 
-extern void kvmppc_core_prepare_to_enter(struct kvm_vcpu *vcpu);
+extern int kvmppc_core_prepare_to_enter(struct kvm_vcpu *vcpu);
 extern int kvmppc_core_pending_dec(struct kvm_vcpu *vcpu);
 extern void kvmppc_core_queue_program(struct kvm_vcpu *vcpu, ulong flags);
 extern void kvmppc_core_queue_dec(struct kvm_vcpu *vcpu);
@@ -138,6 +138,9 @@ extern int kvmppc_core_prepare_memory_region(struct kvm *kvm,
 				struct kvm_userspace_memory_region *mem);
 extern void kvmppc_core_commit_memory_region(struct kvm *kvm,
 				struct kvm_userspace_memory_region *mem);
+
+extern int kvmppc_bookehv_init(void);
+extern void kvmppc_bookehv_exit(void);
 
 /*
  * Cuts out inst bits with ordering according to spec.
@@ -203,5 +206,10 @@ int kvm_vcpu_ioctl_config_tlb(struct kvm_vcpu *vcpu,
 			      struct kvm_config_tlb *cfg);
 int kvm_vcpu_ioctl_dirty_tlb(struct kvm_vcpu *vcpu,
 			     struct kvm_dirty_tlb *cfg);
+
+long kvmppc_alloc_lpid(void);
+void kvmppc_claim_lpid(long lpid);
+void kvmppc_free_lpid(long lpid);
+void kvmppc_init_lpid(unsigned long nr_lpids);
 
 #endif /* __POWERPC_KVM_PPC_H__ */
