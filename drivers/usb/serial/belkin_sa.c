@@ -2,17 +2,17 @@
  * Belkin USB Serial Adapter Driver
  *
  *  Copyright (C) 2000		William Greathouse (wgreathouse@smva.com)
- *  Copyright (C) 2000-2001 	Greg Kroah-Hartman (greg@kroah.com)
+ *  Copyright (C) 2000-2001	Greg Kroah-Hartman (greg@kroah.com)
  *  Copyright (C) 2010		Johan Hovold (jhovold@gmail.com)
  *
  *  This program is largely derived from work by the linux-usb group
  *  and associated source files.  Please see the usb/serial files for
  *  individual credits and copyrights.
  *
- * 	This program is free software; you can redistribute it and/or modify
- * 	it under the terms of the GNU General Public License as published by
- * 	the Free Software Foundation; either version 2 of the License, or
- * 	(at your option) any later version.
+ *	This program is free software; you can redistribute it and/or modify
+ *	it under the terms of the GNU General Public License as published by
+ *	the Free Software Foundation; either version 2 of the License, or
+ *	(at your option) any later version.
  *
  * See Documentation/usb/usb-serial.txt for more information on using this
  * driver
@@ -159,8 +159,6 @@ static void belkin_sa_release(struct usb_serial *serial)
 {
 	int i;
 
-	dbg("%s", __func__);
-
 	for (i = 0; i < serial->num_ports; ++i)
 		kfree(usb_get_serial_port_data(serial->port[i]));
 }
@@ -169,8 +167,6 @@ static int belkin_sa_open(struct tty_struct *tty,
 					struct usb_serial_port *port)
 {
 	int retval;
-
-	dbg("%s port %d", __func__, port->number);
 
 	retval = usb_submit_urb(port->interrupt_in_urb, GFP_KERNEL);
 	if (retval) {
@@ -187,8 +183,6 @@ static int belkin_sa_open(struct tty_struct *tty,
 
 static void belkin_sa_close(struct usb_serial_port *port)
 {
-	dbg("%s port %d", __func__, port->number);
-
 	usb_serial_generic_close(port);
 	usb_kill_urb(port->interrupt_in_urb);
 }
@@ -403,7 +397,8 @@ static void belkin_sa_set_termios(struct tty_struct *tty,
 		case CS8:
 			urb_value = BELKIN_SA_DATA_BITS(8);
 			break;
-		default: dbg("CSIZE was not CS5-CS8, using default of 8");
+		default:
+			dbg("CSIZE was not CS5-CS8, using default of 8");
 			urb_value = BELKIN_SA_DATA_BITS(8);
 			break;
 		}
@@ -463,8 +458,6 @@ static int belkin_sa_tiocmget(struct tty_struct *tty)
 	unsigned long control_state;
 	unsigned long flags;
 
-	dbg("%s", __func__);
-
 	spin_lock_irqsave(&priv->lock, flags);
 	control_state = priv->control_state;
 	spin_unlock_irqrestore(&priv->lock, flags);
@@ -483,8 +476,6 @@ static int belkin_sa_tiocmset(struct tty_struct *tty,
 	int retval;
 	int rts = 0;
 	int dtr = 0;
-
-	dbg("%s", __func__);
 
 	spin_lock_irqsave(&priv->lock, flags);
 	control_state = priv->control_state;
