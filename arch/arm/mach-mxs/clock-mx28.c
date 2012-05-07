@@ -648,6 +648,10 @@ static struct clk_lookup lookups[] = {
 	_REGISTER_CLOCK("imx28-fb", NULL, lcdif_clk)
 	_REGISTER_CLOCK("mxs-saif.0", NULL, saif0_clk)
 	_REGISTER_CLOCK("mxs-saif.1", NULL, saif1_clk)
+	/* for DT */
+	_REGISTER_CLOCK("80074000.serial", NULL, uart_clk)
+	_REGISTER_CLOCK("800f0000.ethernet", NULL, fec_clk)
+	_REGISTER_CLOCK("800f4000.ethernet", NULL, fec_clk)
 };
 
 static int clk_misc_init(void)
