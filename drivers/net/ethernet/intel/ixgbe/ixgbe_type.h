@@ -110,6 +110,28 @@
 #define IXGBE_I2C_CLK_OUT   0x00000002
 #define IXGBE_I2C_DATA_IN   0x00000004
 #define IXGBE_I2C_DATA_OUT  0x00000008
+#define IXGBE_I2C_CLOCK_STRETCHING_TIMEOUT	500
+
+#define IXGBE_I2C_THERMAL_SENSOR_ADDR	0xF8
+#define IXGBE_EMC_INTERNAL_DATA		0x00
+#define IXGBE_EMC_INTERNAL_THERM_LIMIT	0x20
+#define IXGBE_EMC_DIODE1_DATA		0x01
+#define IXGBE_EMC_DIODE1_THERM_LIMIT	0x19
+#define IXGBE_EMC_DIODE2_DATA		0x23
+#define IXGBE_EMC_DIODE2_THERM_LIMIT	0x1A
+
+#define IXGBE_MAX_SENSORS		3
+
+struct ixgbe_thermal_diode_data {
+	u8 location;
+	u8 temp;
+	u8 caution_thresh;
+	u8 max_op_thresh;
+};
+
+struct ixgbe_thermal_sensor_data {
+	struct ixgbe_thermal_diode_data sensor[IXGBE_MAX_SENSORS];
+};
 
 /* Interrupt Registers */
 #define IXGBE_EICR      0x00800
@@ -1677,11 +1699,29 @@ enum {
 #define IXGBE_PBANUM0_PTR       0x15
 #define IXGBE_PBANUM1_PTR       0x16
 #define IXGBE_FREE_SPACE_PTR    0X3E
+
+/* External Thermal Sensor Config */
+#define IXGBE_ETS_CFG                   0x26
+#define IXGBE_ETS_LTHRES_DELTA_MASK     0x07C0
+#define IXGBE_ETS_LTHRES_DELTA_SHIFT    6
+#define IXGBE_ETS_TYPE_MASK             0x0038
+#define IXGBE_ETS_TYPE_SHIFT            3
+#define IXGBE_ETS_TYPE_EMC              0x000
+#define IXGBE_ETS_TYPE_EMC_SHIFTED      0x000
+#define IXGBE_ETS_NUM_SENSORS_MASK      0x0007
+#define IXGBE_ETS_DATA_LOC_MASK         0x3C00
+#define IXGBE_ETS_DATA_LOC_SHIFT        10
+#define IXGBE_ETS_DATA_INDEX_MASK       0x0300
+#define IXGBE_ETS_DATA_INDEX_SHIFT      8
+#define IXGBE_ETS_DATA_HTHRESH_MASK     0x00FF
+
 #define IXGBE_SAN_MAC_ADDR_PTR  0x28
 #define IXGBE_DEVICE_CAPS       0x2C
 #define IXGBE_SERIAL_NUMBER_MAC_ADDR 0x11
 #define IXGBE_PCIE_MSIX_82599_CAPS  0x72
+#define IXGBE_MAX_MSIX_VECTORS_82599	0x40
 #define IXGBE_PCIE_MSIX_82598_CAPS  0x62
+#define IXGBE_MAX_MSIX_VECTORS_82598	0x13
 
 /* MSI-X capability fields masks */
 #define IXGBE_PCIE_MSIX_TBL_SZ_MASK     0x7FF
@@ -1852,7 +1892,7 @@ enum {
 #define IXGBE_MFLCN_DPF         0x00000002 /* Discard Pause Frame */
 #define IXGBE_MFLCN_RPFCE       0x00000004 /* Receive Priority FC Enable */
 #define IXGBE_MFLCN_RFCE        0x00000008 /* Receive FC Enable */
-#define IXGBE_MFLCN_RPFCE_MASK	0x00000FF0 /* Receive FC Mask */
+#define IXGBE_MFLCN_RPFCE_MASK	0x00000FF4 /* Receive FC Mask */
 
 #define IXGBE_MFLCN_RPFCE_SHIFT		 4
 
@@ -2768,10 +2808,12 @@ struct ixgbe_mac_operations {
 	void (*set_vlan_anti_spoofing)(struct ixgbe_hw *, bool, int);
 
 	/* Flow Control */
-	s32 (*fc_enable)(struct ixgbe_hw *, s32);
+	s32 (*fc_enable)(struct ixgbe_hw *);
 
 	/* Manageability interface */
 	s32 (*set_fw_drv_ver)(struct ixgbe_hw *, u8, u8, u8, u8);
+	s32 (*get_thermal_sensor_data)(struct ixgbe_hw *);
+	s32 (*init_thermal_sensor_thresh)(struct ixgbe_hw *hw);
 };
 
 struct ixgbe_phy_operations {
@@ -2813,6 +2855,7 @@ struct ixgbe_mac_info {
 	u16                             wwnn_prefix;
 	/* prefix for World Wide Port Name (WWPN) */
 	u16                             wwpn_prefix;
+	u16				max_msix_vectors;
 #define IXGBE_MAX_MTA			128
 	u32				mta_shadow[IXGBE_MAX_MTA];
 	s32                             mc_filter_type;
@@ -2823,12 +2866,12 @@ struct ixgbe_mac_info {
 	u32				rx_pb_size;
 	u32                             max_tx_queues;
 	u32                             max_rx_queues;
-	u32                             max_msix_vectors;
 	u32                             orig_autoc;
 	u32                             orig_autoc2;
 	bool                            orig_link_settings_stored;
 	bool                            autotry_restart;
 	u8                              flags;
+	struct ixgbe_thermal_sensor_data  thermal_sensor_data;
 };
 
 struct ixgbe_phy_info {
@@ -2938,7 +2981,6 @@ struct ixgbe_info {
 #define IXGBE_ERR_OVERTEMP                      -26
 #define IXGBE_ERR_FC_NOT_NEGOTIATED             -27
 #define IXGBE_ERR_FC_NOT_SUPPORTED              -28
-#define IXGBE_ERR_FLOW_CONTROL                  -29
 #define IXGBE_ERR_SFP_SETUP_NOT_COMPLETE        -30
 #define IXGBE_ERR_PBA_SECTION                   -31
 #define IXGBE_ERR_INVALID_ARGUMENT              -32
