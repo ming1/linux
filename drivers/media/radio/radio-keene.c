@@ -28,7 +28,6 @@
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-event.h>
 #include <linux/usb.h>
-#include <linux/version.h>
 #include <linux/mutex.h>
 
 /* driver and module definitions */
@@ -149,7 +148,6 @@ static void usb_keene_disconnect(struct usb_interface *intf)
 {
 	struct keene_device *radio = to_keene_dev(usb_get_intfdata(intf));
 
-	v4l2_device_get(&radio->v4l2_dev);
 	mutex_lock(&radio->lock);
 	usb_set_intfdata(intf, NULL);
 	video_unregister_device(&radio->vdev);
