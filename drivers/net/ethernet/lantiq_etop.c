@@ -71,10 +71,43 @@
 #define ETOP_MII_REVERSE	0xe
 #define ETOP_PLEN_UNDER		0x40
 #define ETOP_CGEN		0x800
+#define ETOP_CFG_MII0		0x01
 
-/* use 2 static channels for TX/RX */
+#define LTQ_GBIT_MDIO_CTL	0xCC
+#define LTQ_GBIT_MDIO_DATA	0xd0
+#define LTQ_GBIT_GCTL0		0x68
+#define LTQ_GBIT_PMAC_HD_CTL	0x8c
+#define LTQ_GBIT_P0_CTL		0x4
+#define LTQ_GBIT_PMAC_RX_IPG	0xa8
+
+#define PMAC_HD_CTL_AS		(1 << 19)
+#define PMAC_HD_CTL_RXSH	(1 << 22)
+
+/* Switch Enable (0=disable, 1=enable) */
+#define GCTL0_SE		0x80000000
+/* Disable MDIO auto polling (0=disable, 1=enable) */
+#define PX_CTL_DMDIO		0x00400000
+
+/* register information for the gbit's MDIO bus */
+#define MDIO_XR9_REQUEST	0x00008000
+#define MDIO_XR9_READ		0x00000800
+#define MDIO_XR9_WRITE		0x00000400
+#define MDIO_XR9_REG_MASK	0x1f
+#define MDIO_XR9_ADDR_MASK	0x1f
+#define MDIO_XR9_RD_MASK	0xffff
+#define MDIO_XR9_REG_OFFSET	0
+#define MDIO_XR9_ADDR_OFFSET	5
+#define MDIO_XR9_WR_OFFSET	16
+
+/* the newer xway socks have a embedded 3/7 port gbit multiplexer */
+#define ltq_has_gbit()		(ltq_is_ar9() || ltq_is_vr9())
+
+/* use 2 static channels for TX/RX
+   depending on the SoC we need to use different DMA channels for ethernet */
 #define LTQ_ETOP_TX_CHANNEL	1
-#define LTQ_ETOP_RX_CHANNEL	6
+#define LTQ_ETOP_RX_CHANNEL	((ltq_is_ase()) ? (5) : \
+				((ltq_has_gbit()) ? (0) : (6)))
+
 #define IS_TX(x)		(x == LTQ_ETOP_TX_CHANNEL)
 #define IS_RX(x)		(x == LTQ_ETOP_RX_CHANNEL)
 
@@ -83,9 +116,15 @@
 #define ltq_etop_w32_mask(x, y, z)	\
 		ltq_w32_mask(x, y, ltq_etop_membase + (z))
 
+#define ltq_gbit_r32(x)		ltq_r32(ltq_gbit_membase + (x))
+#define ltq_gbit_w32(x, y)	ltq_w32(x, ltq_gbit_membase + (y))
+#define ltq_gbit_w32_mask(x, y, z)	\
+		ltq_w32_mask(x, y, ltq_gbit_membase + (z))
+
 #define DRV_VERSION	"1.0"
 
 static void __iomem *ltq_etop_membase;
+static void __iomem *ltq_gbit_membase;
 
 struct ltq_etop_chan {
 	int idx;
@@ -110,6 +149,9 @@ struct ltq_etop_priv {
 
 	spinlock_t lock;
 };
+
+static int ltq_etop_mdio_wr(struct mii_bus *bus, int phy_addr,
+				int phy_reg, u16 phy_data);
 
 static int
 ltq_etop_alloc_skb(struct ltq_etop_chan *ch)
@@ -212,7 +254,7 @@ static irqreturn_t
 ltq_etop_dma_irq(int irq, void *_priv)
 {
 	struct ltq_etop_priv *priv = _priv;
-	int ch = irq - LTQ_DMA_CH0_INT;
+	int ch = irq - LTQ_DMA_ETOP;
 
 	napi_schedule(&priv->ch[ch].napi);
 	return IRQ_HANDLED;
@@ -245,15 +287,44 @@ ltq_etop_hw_exit(struct net_device *dev)
 			ltq_etop_free_channel(dev, &priv->ch[i]);
 }
 
+static void
+ltq_etop_gbit_init(void)
+{
+	ltq_pmu_enable(PMU_SWITCH);
+
+	ltq_gpio_request(42, 2, 1, "MDIO");
+	ltq_gpio_request(43, 2, 1, "MDC");
+
+	ltq_gbit_w32_mask(0, GCTL0_SE, LTQ_GBIT_GCTL0);
+	/** Disable MDIO auto polling mode */
+	ltq_gbit_w32_mask(0, PX_CTL_DMDIO, LTQ_GBIT_P0_CTL);
+	/* set 1522 packet size */
+	ltq_gbit_w32_mask(0x300, 0, LTQ_GBIT_GCTL0);
+	/* disable pmac & dmac headers */
+	ltq_gbit_w32_mask(PMAC_HD_CTL_AS | PMAC_HD_CTL_RXSH, 0,
+		LTQ_GBIT_PMAC_HD_CTL);
+	/* Due to traffic halt when burst length 8,
+		replace default IPG value with 0x3B */
+	ltq_gbit_w32(0x3B, LTQ_GBIT_PMAC_RX_IPG);
+}
+
 static int
 ltq_etop_hw_init(struct net_device *dev)
 {
 	struct ltq_etop_priv *priv = netdev_priv(dev);
+	unsigned int mii_mode = priv->pldata->mii_mode;
+	int err = 0;
 	int i;
 
 	ltq_pmu_enable(PMU_PPE);
 
-	switch (priv->pldata->mii_mode) {
+	if (ltq_has_gbit()) {
+		ltq_etop_gbit_init();
+		/* force the etops link to the gbit to MII */
+		mii_mode = PHY_INTERFACE_MODE_MII;
+	}
+
+	switch (mii_mode) {
 	case PHY_INTERFACE_MODE_RMII:
 		ltq_etop_w32_mask(ETOP_MII_MASK,
 			ETOP_MII_REVERSE, LTQ_ETOP_CFG);
@@ -265,6 +336,18 @@ ltq_etop_hw_init(struct net_device *dev)
 		break;
 
 	default:
+		if (ltq_is_ase()) {
+			ltq_pmu_enable(PMU_EPHY);
+			/* disable external MII */
+			ltq_etop_w32_mask(0, ETOP_CFG_MII0, LTQ_ETOP_CFG);
+			/* enable clock for internal PHY */
+			ltq_cgu_enable(CGU_EPHY);
+			/* we need to write this magic to the internal phy to
+			   make it work */
+			ltq_etop_mdio_wr(NULL, 0x8, 0x12, 0xC020);
+			pr_info("Selected EPHY mode\n");
+			break;
+		}
 		netdev_err(dev, "unknown mii mode %d\n",
 			priv->pldata->mii_mode);
 		return -ENOTSUPP;
@@ -275,29 +358,33 @@ ltq_etop_hw_init(struct net_device *dev)
 
 	ltq_dma_init_port(DMA_PORT_ETOP);
 
-	for (i = 0; i < MAX_DMA_CHAN; i++) {
-		int irq = LTQ_DMA_CH0_INT + i;
+	for (i = 0; i < MAX_DMA_CHAN && !err; i++) {
+		int irq = LTQ_DMA_ETOP + i;
 		struct ltq_etop_chan *ch = &priv->ch[i];
 
 		ch->idx = ch->dma.nr = i;
 
 		if (IS_TX(i)) {
 			ltq_dma_alloc_tx(&ch->dma);
-			request_irq(irq, ltq_etop_dma_irq, IRQF_DISABLED,
+			err = request_irq(irq, ltq_etop_dma_irq, 0,
 				"etop_tx", priv);
 		} else if (IS_RX(i)) {
 			ltq_dma_alloc_rx(&ch->dma);
 			for (ch->dma.desc = 0; ch->dma.desc < LTQ_DESC_NUM;
 					ch->dma.desc++)
-				if (ltq_etop_alloc_skb(ch))
-					return -ENOMEM;
+				if (ltq_etop_alloc_skb(ch)) {
+					err = -ENOMEM;
+					goto err_out;
+				}
 			ch->dma.desc = 0;
-			request_irq(irq, ltq_etop_dma_irq, IRQF_DISABLED,
+			err = request_irq(irq, ltq_etop_dma_irq, 0,
 				"etop_rx", priv);
 		}
-		ch->dma.irq = irq;
+		if (!err)
+			ch->dma.irq = irq;
 	}
-	return 0;
+err_out:
+	return err;
 }
 
 static void
@@ -340,6 +427,39 @@ static const struct ethtool_ops ltq_etop_ethtool_ops = {
 };
 
 static int
+ltq_etop_mdio_wr_xr9(struct mii_bus *bus, int phy_addr,
+		int phy_reg, u16 phy_data)
+{
+	u32 val = MDIO_XR9_REQUEST | MDIO_XR9_WRITE |
+		(phy_data << MDIO_XR9_WR_OFFSET) |
+		((phy_addr & MDIO_XR9_ADDR_MASK) << MDIO_XR9_ADDR_OFFSET) |
+		((phy_reg & MDIO_XR9_REG_MASK) << MDIO_XR9_REG_OFFSET);
+
+	while (ltq_gbit_r32(LTQ_GBIT_MDIO_CTL) & MDIO_XR9_REQUEST)
+		;
+	ltq_gbit_w32(val, LTQ_GBIT_MDIO_CTL);
+	while (ltq_gbit_r32(LTQ_GBIT_MDIO_CTL) & MDIO_XR9_REQUEST)
+		;
+	return 0;
+}
+
+static int
+ltq_etop_mdio_rd_xr9(struct mii_bus *bus, int phy_addr, int phy_reg)
+{
+	u32 val = MDIO_XR9_REQUEST | MDIO_XR9_READ |
+		((phy_addr & MDIO_XR9_ADDR_MASK) << MDIO_XR9_ADDR_OFFSET) |
+		((phy_reg & MDIO_XR9_REG_MASK) << MDIO_XR9_REG_OFFSET);
+
+	while (ltq_gbit_r32(LTQ_GBIT_MDIO_CTL) & MDIO_XR9_REQUEST)
+		;
+	ltq_gbit_w32(val, LTQ_GBIT_MDIO_CTL);
+	while (ltq_gbit_r32(LTQ_GBIT_MDIO_CTL) & MDIO_XR9_REQUEST)
+		;
+	val = ltq_gbit_r32(LTQ_GBIT_MDIO_DATA) & MDIO_XR9_RD_MASK;
+	return val;
+}
+
+static int
 ltq_etop_mdio_wr(struct mii_bus *bus, int phy_addr, int phy_reg, u16 phy_data)
 {
 	u32 val = MDIO_REQUEST |
@@ -380,14 +500,11 @@ ltq_etop_mdio_probe(struct net_device *dev)
 {
 	struct ltq_etop_priv *priv = netdev_priv(dev);
 	struct phy_device *phydev = NULL;
-	int phy_addr;
 
-	for (phy_addr = 0; phy_addr < PHY_MAX_ADDR; phy_addr++) {
-		if (priv->mii_bus->phy_map[phy_addr]) {
-			phydev = priv->mii_bus->phy_map[phy_addr];
-			break;
-		}
-	}
+	if (ltq_is_ase())
+		phydev = priv->mii_bus->phy_map[8];
+	else
+		phydev = priv->mii_bus->phy_map[0];
 
 	if (!phydev) {
 		netdev_err(dev, "no PHY found\n");
@@ -409,6 +526,9 @@ ltq_etop_mdio_probe(struct net_device *dev)
 			      | SUPPORTED_Autoneg
 			      | SUPPORTED_MII
 			      | SUPPORTED_TP);
+	if (ltq_has_gbit())
+		phydev->supported &= SUPPORTED_1000baseT_Half
+					| SUPPORTED_1000baseT_Full;
 
 	phydev->advertising = phydev->supported;
 	priv->phydev = phydev;
@@ -434,8 +554,13 @@ ltq_etop_mdio_init(struct net_device *dev)
 	}
 
 	priv->mii_bus->priv = dev;
-	priv->mii_bus->read = ltq_etop_mdio_rd;
-	priv->mii_bus->write = ltq_etop_mdio_wr;
+	if (ltq_has_gbit()) {
+		priv->mii_bus->read = ltq_etop_mdio_rd_xr9;
+		priv->mii_bus->write = ltq_etop_mdio_wr_xr9;
+	} else {
+		priv->mii_bus->read = ltq_etop_mdio_rd;
+		priv->mii_bus->write = ltq_etop_mdio_wr;
+	}
 	priv->mii_bus->name = "ltq_mii";
 	snprintf(priv->mii_bus->id, MII_BUS_ID_SIZE, "%s-%x",
 		priv->pdev->name, priv->pdev->id);
@@ -494,7 +619,8 @@ ltq_etop_open(struct net_device *dev)
 		ltq_dma_open(&ch->dma);
 		napi_enable(&ch->napi);
 	}
-	phy_start(priv->phydev);
+	if (priv->phydev)
+		phy_start(priv->phydev);
 	netif_tx_start_all_queues(dev);
 	return 0;
 }
@@ -506,7 +632,8 @@ ltq_etop_stop(struct net_device *dev)
 	int i;
 
 	netif_tx_stop_all_queues(dev);
-	phy_stop(priv->phydev);
+	if (priv->phydev)
+		phy_stop(priv->phydev);
 	for (i = 0; i < MAX_DMA_CHAN; i++) {
 		struct ltq_etop_chan *ch = &priv->ch[i];
 
@@ -526,9 +653,9 @@ ltq_etop_tx(struct sk_buff *skb, struct net_device *dev)
 	struct ltq_etop_priv *priv = netdev_priv(dev);
 	struct ltq_etop_chan *ch = &priv->ch[(queue << 1) | 1];
 	struct ltq_dma_desc *desc = &ch->dma.desc_base[ch->dma.desc];
-	int len;
 	unsigned long flags;
 	u32 byte_offset;
+	int len;
 
 	len = skb->len < ETH_ZLEN ? ETH_ZLEN : skb->len;
 
@@ -659,9 +786,10 @@ ltq_etop_init(struct net_device *dev)
 		dev->addr_assign_type |= NET_ADDR_RANDOM;
 
 	ltq_etop_set_multicast_list(dev);
-	err = ltq_etop_mdio_init(dev);
-	if (err)
-		goto err_netdev;
+	if (!ltq_etop_mdio_init(dev))
+		dev->ethtool_ops = &ltq_etop_ethtool_ops;
+	else
+		pr_warn("etop: mdio probe failed\n");
 	return 0;
 
 err_netdev:
@@ -709,7 +837,7 @@ ltq_etop_probe(struct platform_device *pdev)
 {
 	struct net_device *dev;
 	struct ltq_etop_priv *priv;
-	struct resource *res;
+	struct resource *res, *gbit_res;
 	int err;
 	int i;
 
@@ -737,6 +865,23 @@ ltq_etop_probe(struct platform_device *pdev)
 		goto err_out;
 	}
 
+	if (ltq_has_gbit()) {
+		gbit_res = platform_get_resource(pdev, IORESOURCE_MEM, 1);
+		if (!gbit_res) {
+			dev_err(&pdev->dev, "failed to get gbit resource\n");
+			err = -ENOENT;
+			goto err_out;
+		}
+		ltq_gbit_membase = devm_ioremap_nocache(&pdev->dev,
+			gbit_res->start, resource_size(gbit_res));
+		if (!ltq_gbit_membase) {
+			dev_err(&pdev->dev, "failed to remap gigabit switch %d\n",
+				pdev->id);
+			err = -ENOMEM;
+			goto err_out;
+		}
+	}
+
 	dev = alloc_etherdev_mq(sizeof(struct ltq_etop_priv), 4);
 	if (!dev) {
 		err = -ENOMEM;
@@ -744,7 +889,6 @@ ltq_etop_probe(struct platform_device *pdev)
 	}
 	strcpy(dev->name, "eth%d");
 	dev->netdev_ops = &ltq_eth_netdev_ops;
-	dev->ethtool_ops = &ltq_etop_ethtool_ops;
 	priv = netdev_priv(dev);
 	priv->res = res;
 	priv->pdev = pdev;
