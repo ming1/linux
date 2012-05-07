@@ -643,9 +643,8 @@ void core_dev_unexport(
 	lun->lun_se_dev = NULL;
 }
 
-int target_report_luns(struct se_task *se_task)
+int target_report_luns(struct se_cmd *se_cmd)
 {
-	struct se_cmd *se_cmd = se_task->task_se_cmd;
 	struct se_dev_entry *deve;
 	struct se_session *se_sess = se_cmd->se_sess;
 	unsigned char *buf;
@@ -696,8 +695,7 @@ done:
 	buf[3] = (lun_count & 0xff);
 	transport_kunmap_data_sg(se_cmd);
 
-	se_task->task_scsi_status = GOOD;
-	transport_complete_task(se_task, 1);
+	target_complete_cmd(se_cmd, GOOD);
 	return 0;
 }
 
@@ -1341,7 +1339,6 @@ struct se_lun *core_dev_add_lun(
 	u32 lun)
 {
 	struct se_lun *lun_p;
-	u32 lun_access = 0;
 	int rc;
 
 	if (atomic_read(&dev->dev_access_obj.obj_access_count) != 0) {
@@ -1354,12 +1351,8 @@ struct se_lun *core_dev_add_lun(
 	if (IS_ERR(lun_p))
 		return lun_p;
 
-	if (dev->dev_flags & DF_READ_ONLY)
-		lun_access = TRANSPORT_LUNFLAGS_READ_ONLY;
-	else
-		lun_access = TRANSPORT_LUNFLAGS_READ_WRITE;
-
-	rc = core_tpg_post_addlun(tpg, lun_p, lun_access, dev);
+	rc = core_tpg_post_addlun(tpg, lun_p,
+				TRANSPORT_LUNFLAGS_READ_WRITE, dev);
 	if (rc < 0)
 		return ERR_PTR(rc);
 
