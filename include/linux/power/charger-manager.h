@@ -90,6 +90,10 @@ struct charger_global_desc {
  *	return_value > 0: overheat
  *	return_value == 0: normal
  *	return_value < 0: cold
+ * @charging_zone_changed:
+ *	Determine whether charge profile need an update
+ *	return_value true if charge profile update required
+ *	return_value false if charge profile update is not required
  * @measure_battery_temp:
  *	true: measure battery temperature
  *	false: measure ambient temperature
@@ -114,6 +118,7 @@ struct charger_desc {
 	char *psy_fuel_gauge;
 
 	int (*temperature_out_of_range)(int *mC);
+	bool (*charging_zone_changed)(int mC);
 	bool measure_battery_temp;
 };
 

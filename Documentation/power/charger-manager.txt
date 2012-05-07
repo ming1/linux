@@ -50,6 +50,15 @@ Charger Manager supports the following:
 	restarts charging. This check is also performed while suspended by
 	setting wakeup time accordingly and using suspend_again.
 
+* Support for adjusting charging parameters
+	Batteries can have different charge profiles with in the battery
+	operating temperature limits. And events like drop or rise in VBUS
+	voltage require adjustment of charge current to stabilize VBUS voltage.
+
+	Charger Manager provides a function pointer "charging_zone_changed" which
+	can be implemented by platform/core drivers and Charger Manager checks
+	this function to update the charger.
+
 * Support for uevent-notify
 	With the charger-related events, the device sends
 	notification to users with UEVENT.
@@ -169,6 +178,7 @@ char *psy_fuel_gauge;
 	: Power-supply-class name of the fuel gauge.
 
 int (*temperature_out_of_range)(int *mC);
+bool (*charging_zone_changed)(int mC);
 bool measure_battery_temp;
 	: This callback returns 0 if the temperature is safe for charging,
 	a positive number if it is too hot to charge, and a negative number
