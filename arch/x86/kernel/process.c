@@ -76,10 +76,9 @@ void free_thread_xstate(struct task_struct *tsk)
 	fpu_free(&tsk->thread.fpu);
 }
 
-void free_thread_info(struct thread_info *ti)
+void arch_release_task_struct(struct task_struct *tsk)
 {
-	free_thread_xstate(ti->task);
-	free_pages((unsigned long)ti, THREAD_ORDER);
+	free_thread_xstate(tsk);
 }
 
 void arch_task_cache_init(void)
@@ -524,26 +523,6 @@ void stop_this_cpu(void *dummy)
 			halt();
 	}
 }
-
-static void do_nothing(void *unused)
-{
-}
-
-/*
- * cpu_idle_wait - Used to ensure that all the CPUs discard old value of
- * pm_idle and update to new pm_idle value. Required while changing pm_idle
- * handler on SMP systems.
- *
- * Caller must have changed pm_idle to the new value before the call. Old
- * pm_idle value will not be used by any CPU after the return of this function.
- */
-void cpu_idle_wait(void)
-{
-	smp_mb();
-	/* kick all the CPUs so that they exit out of pm_idle */
-	smp_call_function(do_nothing, NULL, 1);
-}
-EXPORT_SYMBOL_GPL(cpu_idle_wait);
 
 /* Default MONITOR/MWAIT with no hints, used for default C1 state */
 static void mwait_idle(void)
