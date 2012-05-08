@@ -15,6 +15,7 @@
 #include <linux/compiler.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
+#include <linux/module.h>
 #include <linux/mm.h>
 #include <linux/sched.h>
 #include <linux/smp.h>
@@ -1548,7 +1549,7 @@ void __cpuinit per_cpu_trap_init(void)
 #endif
 	if (current_cpu_data.isa_level == MIPS_CPU_ISA_IV)
 		status_set |= ST0_XX;
-	if (cpu_has_dsp)
+	if (cpu_has_dsp || cpu_has_mdmx)
 		status_set |= ST0_MX;
 
 	change_c0_status(ST0_CU|ST0_MX|ST0_RE|ST0_FR|ST0_BEV|ST0_TS|ST0_KX|ST0_SX|ST0_UX,
