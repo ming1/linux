@@ -53,8 +53,6 @@ MODULE_DEVICE_TABLE(usb, id_table);
 
 static struct usb_driver empeg_driver = {
 	.name =		"empeg",
-	.probe =	usb_serial_probe,
-	.disconnect =	usb_serial_disconnect,
 	.id_table =	id_table,
 };
 
@@ -80,14 +78,12 @@ static int empeg_startup(struct usb_serial *serial)
 {
 	int r;
 
-	dbg("%s", __func__);
-
 	if (serial->dev->actconfig->desc.bConfigurationValue != 1) {
 		dev_err(&serial->dev->dev, "active config #%d != 1 ??\n",
 			serial->dev->actconfig->desc.bConfigurationValue);
 		return -ENODEV;
 	}
-	dbg("%s - reset config", __func__);
+
 	r = usb_reset_configuration(serial->dev);
 
 	/* continue on with initialization */

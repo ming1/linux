@@ -226,8 +226,13 @@ static int ehci_halt (struct ehci_hcd *ehci)
 	if ((temp & STS_HALT) != 0)
 		return 0;
 
+	/*
+	 * This routine gets called during probe before ehci->command
+	 * has been initialized, so we can't rely on its value.
+	 */
+	ehci->command &= ~CMD_RUN;
 	temp = ehci_readl(ehci, &ehci->regs->command);
-	temp &= ~CMD_RUN;
+	temp &= ~(CMD_RUN | CMD_IAAD);
 	ehci_writel(ehci, temp, &ehci->regs->command);
 	return handshake (ehci, &ehci->regs->status,
 			  STS_HALT, STS_HALT, 16 * 125);
@@ -347,6 +352,7 @@ static int ehci_reset (struct ehci_hcd *ehci)
 	if (ehci->debug)
 		dbgp_external_startup();
 
+	ehci->command = ehci_readl(ehci, &ehci->regs->command);
 	ehci->port_c_suspend = ehci->suspended_ports =
 			ehci->resuming_ports = 0;
 	return retval;
@@ -363,16 +369,14 @@ static void ehci_quiesce (struct ehci_hcd *ehci)
 #endif
 
 	/* wait for any schedule enables/disables to take effect */
-	temp = ehci_readl(ehci, &ehci->regs->command) << 10;
-	temp &= STS_ASS | STS_PSS;
+	temp = (ehci->command << 10) & (STS_ASS | STS_PSS);
 	if (handshake_on_error_set_halt(ehci, &ehci->regs->status,
 					STS_ASS | STS_PSS, temp, 16 * 125))
 		return;
 
 	/* then disable anything that's still active */
-	temp = ehci_readl(ehci, &ehci->regs->command);
-	temp &= ~(CMD_ASE | CMD_IAAD | CMD_PSE);
-	ehci_writel(ehci, temp, &ehci->regs->command);
+	ehci->command &= ~(CMD_ASE | CMD_PSE);
+	ehci_writel(ehci, ehci->command, &ehci->regs->command);
 
 	/* hardware can take 16 microframes to turn off ... */
 	handshake_on_error_set_halt(ehci, &ehci->regs->status,
@@ -417,9 +421,6 @@ static void ehci_iaa_watchdog(unsigned long param)
 		 * CMD_IAAD when it sets STS_IAA.)
 		 */
 		cmd = ehci_readl(ehci, &ehci->regs->command);
-		if (cmd & CMD_IAAD)
-			ehci_writel(ehci, cmd & ~CMD_IAAD,
-					&ehci->regs->command);
 
 		/* If IAA is set here it either legitimately triggered
 		 * before we cleared IAAD above (but _way_ late, so we'll
@@ -894,11 +895,8 @@ static irqreturn_t ehci_irq (struct usb_hcd *hcd)
 	/* complete the unlinking of some qh [4.15.2.3] */
 	if (status & STS_IAA) {
 		/* guard against (alleged) silicon errata */
-		if (cmd & CMD_IAAD) {
-			ehci_writel(ehci, cmd & ~CMD_IAAD,
-					&ehci->regs->command);
+		if (cmd & CMD_IAAD)
 			ehci_dbg(ehci, "IAA with IAAD still set?\n");
-		}
 		if (ehci->reclaim) {
 			COUNT(ehci->stats.reclaim);
 			end_unlink_async(ehci);
@@ -1376,6 +1374,11 @@ MODULE_LICENSE ("GPL");
 #ifdef CONFIG_MACH_LOONGSON1
 #include "ehci-ls1x.c"
 #define PLATFORM_DRIVER		ehci_ls1x_driver
+#endif
+
+#ifdef CONFIG_MIPS_SEAD3
+#include "ehci-sead3.c"
+#define	PLATFORM_DRIVER		ehci_hcd_sead3_driver
 #endif
 
 #ifdef CONFIG_USB_EHCI_HCD_PLATFORM

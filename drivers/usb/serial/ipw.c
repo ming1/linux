@@ -141,8 +141,6 @@ MODULE_DEVICE_TABLE(usb, usb_ipw_ids);
 
 static struct usb_driver usb_ipw_driver = {
 	.name =		"ipwtty",
-	.probe =	usb_serial_probe,
-	.disconnect =	usb_serial_disconnect,
 	.id_table =	usb_ipw_ids,
 };
 
@@ -154,8 +152,6 @@ static int ipw_open(struct tty_struct *tty, struct usb_serial_port *port)
 	u8 buf_flow_static[16] = IPW_BYTES_FLOWINIT;
 	u8 *buf_flow_init;
 	int result;
-
-	dbg("%s", __func__);
 
 	buf_flow_init = kmemdup(buf_flow_static, 16, GFP_KERNEL);
 	if (!buf_flow_init)

@@ -82,7 +82,6 @@ struct ci13xxx_req {
 /* Extension of usb_ep */
 struct ci13xxx_ep {
 	struct usb_ep                          ep;
-	const struct usb_endpoint_descriptor  *desc;
 	u8                                     dir;
 	u8                                     num;
 	u8                                     type;
@@ -212,7 +211,6 @@ do { \
 			   "[%s] " format "\n", __func__, ## args); \
 } while (0)
 
-#define err(format, args...)    ci13xxx_printk(KERN_ERR, format, ## args)
 #define warn(format, args...)   ci13xxx_printk(KERN_WARNING, format, ## args)
 #define info(format, args...)   ci13xxx_printk(KERN_INFO, format, ## args)
 

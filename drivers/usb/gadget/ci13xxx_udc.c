@@ -1686,7 +1686,7 @@ __acquires(udc->lock)
 	trace("%p", udc);
 
 	if (udc == NULL) {
-		err("EINVAL");
+		pr_err("EINVAL\n");
 		return;
 	}
 
@@ -1709,7 +1709,7 @@ __acquires(udc->lock)
 
  done:
 	if (retval)
-		err("error: %i", retval);
+		pr_err("error: %i\n", retval);
 }
 
 /**
@@ -1724,7 +1724,7 @@ static void isr_get_status_complete(struct usb_ep *ep, struct usb_request *req)
 	trace("%p, %p", ep, req);
 
 	if (ep == NULL || req == NULL) {
-		err("EINVAL");
+		pr_err("EINVAL\n");
 		return;
 	}
 
@@ -1907,7 +1907,7 @@ __acquires(udc->lock)
 	trace("%p", udc);
 
 	if (udc == NULL) {
-		err("EINVAL");
+		pr_err("EINVAL\n");
 		return;
 	}
 
@@ -1916,7 +1916,7 @@ __acquires(udc->lock)
 		int type, num, dir, err = -EINVAL;
 		struct usb_ctrlrequest req;
 
-		if (mEp->desc == NULL)
+		if (mEp->ep.desc == NULL)
 			continue;   /* not configured */
 
 		if (hw_test_and_clear_complete(i)) {
@@ -1929,7 +1929,8 @@ __acquires(udc->lock)
 						  "ERROR", err);
 					spin_unlock(udc->lock);
 					if (usb_ep_set_halt(&mEp->ep))
-						err("error: ep_set_halt");
+						dev_err(&udc->gadget.dev,
+							"error: ep_set_halt\n");
 					spin_lock(udc->lock);
 				}
 			}
@@ -1940,7 +1941,8 @@ __acquires(udc->lock)
 			continue;
 
 		if (i != 0) {
-			warn("ctrl traffic received at endpoint");
+			dev_warn(&udc->gadget.dev,
+				"ctrl traffic received at endpoint\n");
 			continue;
 		}
 
@@ -2079,7 +2081,8 @@ delegate:
 
 			spin_unlock(udc->lock);
 			if (usb_ep_set_halt(&mEp->ep))
-				err("error: ep_set_halt");
+				dev_err(&udc->gadget.dev,
+					"error: ep_set_halt\n");
 			spin_lock(udc->lock);
 		}
 	}
@@ -2109,7 +2112,7 @@ static int ep_enable(struct usb_ep *ep,
 
 	/* only internal SW should enable ctrl endpts */
 
-	mEp->desc = desc;
+	mEp->ep.desc = desc;
 
 	if (!list_empty(&mEp->qh.queue))
 		warn("enabling a non-empty endpoint!");
@@ -2161,7 +2164,7 @@ static int ep_disable(struct usb_ep *ep)
 
 	if (ep == NULL)
 		return -EINVAL;
-	else if (mEp->desc == NULL)
+	else if (mEp->ep.desc == NULL)
 		return -EBUSY;
 
 	spin_lock_irqsave(mEp->lock, flags);
@@ -2180,7 +2183,6 @@ static int ep_disable(struct usb_ep *ep)
 
 	} while (mEp->dir != direction);
 
-	mEp->desc = NULL;
 	mEp->ep.desc = NULL;
 
 	spin_unlock_irqrestore(mEp->lock, flags);
@@ -2200,7 +2202,7 @@ static struct usb_request *ep_alloc_request(struct usb_ep *ep, gfp_t gfp_flags)
 	trace("%p, %i", ep, gfp_flags);
 
 	if (ep == NULL) {
-		err("EINVAL");
+		pr_err("EINVAL\n");
 		return NULL;
 	}
 
@@ -2236,10 +2238,10 @@ static void ep_free_request(struct usb_ep *ep, struct usb_request *req)
 	trace("%p, %p", ep, req);
 
 	if (ep == NULL || req == NULL) {
-		err("EINVAL");
+		pr_err("EINVAL\n");
 		return;
 	} else if (!list_empty(&mReq->queue)) {
-		err("EBUSY");
+		pr_err("EBUSY\n");
 		return;
 	}
 
@@ -2269,7 +2271,7 @@ static int ep_queue(struct usb_ep *ep, struct usb_request *req,
 
 	trace("%p, %p, %X", ep, req, gfp_flags);
 
-	if (ep == NULL || req == NULL || mEp->desc == NULL)
+	if (ep == NULL || req == NULL || mEp->ep.desc == NULL)
 		return -EINVAL;
 
 	spin_lock_irqsave(mEp->lock, flags);
@@ -2288,7 +2290,7 @@ static int ep_queue(struct usb_ep *ep, struct usb_request *req,
 	/* first nuke then test link, e.g. previous status has not sent */
 	if (!list_empty(&mReq->queue)) {
 		retval = -EBUSY;
-		err("request already in queue");
+		pr_err("request already in queue\n");
 		goto done;
 	}
 
@@ -2332,7 +2334,7 @@ static int ep_dequeue(struct usb_ep *ep, struct usb_request *req)
 	trace("%p, %p", ep, req);
 
 	if (ep == NULL || req == NULL || mReq->req.status != -EALREADY ||
-		mEp->desc == NULL || list_empty(&mReq->queue) ||
+		mEp->ep.desc == NULL || list_empty(&mReq->queue) ||
 		list_empty(&mEp->qh.queue))
 		return -EINVAL;
 
@@ -2375,7 +2377,7 @@ static int ep_set_halt(struct usb_ep *ep, int value)
 
 	trace("%p, %i", ep, value);
 
-	if (ep == NULL || mEp->desc == NULL)
+	if (ep == NULL || mEp->ep.desc == NULL)
 		return -EINVAL;
 
 	spin_lock_irqsave(mEp->lock, flags);
@@ -2418,7 +2420,7 @@ static int ep_set_wedge(struct usb_ep *ep)
 
 	trace("%p", ep);
 
-	if (ep == NULL || mEp->desc == NULL)
+	if (ep == NULL || mEp->ep.desc == NULL)
 		return -EINVAL;
 
 	spin_lock_irqsave(mEp->lock, flags);
@@ -2444,7 +2446,7 @@ static void ep_fifo_flush(struct usb_ep *ep)
 	trace("%p", ep);
 
 	if (ep == NULL) {
-		err("%02X: -EINVAL", _usb_addr(mEp));
+		pr_err("%02X: -EINVAL\n", _usb_addr(mEp));
 		return;
 	}
 
@@ -2777,7 +2779,7 @@ static irqreturn_t udc_irq(void)
 	trace();
 
 	if (udc == NULL) {
-		err("ENODEV");
+		pr_err("ENODEV\n");
 		return IRQ_HANDLED;
 	}
 
@@ -2849,7 +2851,7 @@ static void udc_release(struct device *dev)
 	trace("%p", dev);
 
 	if (dev == NULL)
-		err("EINVAL");
+		pr_err("EINVAL\n");
 }
 
 /**
@@ -2951,7 +2953,7 @@ remove_trans:
 		usb_put_transceiver(udc->transceiver);
 	}
 
-	err("error = %i", retval);
+	dev_err(dev, "error = %i\n", retval);
 remove_dbg:
 #ifdef CONFIG_USB_GADGET_DEBUG_FILES
 	dbg_remove_files(&udc->gadget.dev);
@@ -2977,7 +2979,7 @@ static void udc_remove(void)
 	struct ci13xxx *udc = _udc;
 
 	if (udc == NULL) {
-		err("EINVAL");
+		pr_err("EINVAL\n");
 		return;
 	}
 	usb_del_gadget_udc(&udc->gadget);

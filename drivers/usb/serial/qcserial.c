@@ -114,12 +114,7 @@ MODULE_DEVICE_TABLE(usb, id_table);
 
 static struct usb_driver qcdriver = {
 	.name			= "qcserial",
-	.probe			= usb_serial_probe,
-	.disconnect		= usb_serial_disconnect,
 	.id_table		= id_table,
-	.suspend		= usb_serial_suspend,
-	.resume			= usb_serial_resume,
-	.supports_autosuspend	= true,
 };
 
 static int qcprobe(struct usb_serial *serial, const struct usb_device_id *id)
@@ -131,7 +126,6 @@ static int qcprobe(struct usb_serial *serial, const struct usb_device_id *id)
 	__u8 ifnum;
 	bool is_gobi1k = id->driver_info ? true : false;
 
-	dbg("%s", __func__);
 	dbg("Is Gobi 1000 = %d", is_gobi1k);
 
 	nintf = serial->dev->actconfig->desc.bNumInterfaces;
@@ -249,8 +243,6 @@ static int qcprobe(struct usb_serial *serial, const struct usb_device_id *id)
 static void qc_release(struct usb_serial *serial)
 {
 	struct usb_wwan_intf_private *priv = usb_get_serial_data(serial);
-
-	dbg("%s", __func__);
 
 	/* Call usb_wwan release & free the private data allocated in qcprobe */
 	usb_wwan_release(serial);

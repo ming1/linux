@@ -132,8 +132,6 @@ MODULE_DEVICE_TABLE(usb, quausb2_id_table);
 /* custom structures we need go here */
 static struct usb_driver quausb2_usb_driver = {
 	.name = "quatech-usb2-serial",
-	.probe = usb_serial_probe,
-	.disconnect = usb_serial_disconnect,
 	.id_table = quausb2_id_table,
 };
 
@@ -415,8 +413,6 @@ static void qt2_release(struct usb_serial *serial)
 	struct quatech2_port *qt_port;
 	int i;
 
-	dbg("enterting %s", __func__);
-
 	for (i = 0; i < serial->num_ports; i++) {
 		port = serial->port[i];
 		if (!port)
@@ -454,8 +450,6 @@ int qt2_open(struct tty_struct *tty, struct usb_serial_port *port)
 
 	if (port_paranoia_check(port, __func__))
 		return -ENODEV;
-
-	dbg("%s(): port %d", __func__, port->number);
 
 	serial = port->serial;	/* get the parent device structure */
 	if (serial_paranoia_check(serial, __func__)) {
@@ -541,7 +535,7 @@ int qt2_open(struct tty_struct *tty, struct usb_serial_port *port)
 		dbg("port->write_urb == NULL, allocating one");
 		port->write_urb = usb_alloc_urb(0, GFP_KERNEL);
 		if (!port->write_urb) {
-			err("Allocating write URB failed");
+			dev_err(&port->dev, "Allocating write URB failed\n");
 			return -ENOMEM;
 		}
 		/* buffer same size as port0 */
@@ -549,7 +543,7 @@ int qt2_open(struct tty_struct *tty, struct usb_serial_port *port)
 		port->bulk_out_buffer = kmalloc(port->bulk_out_size,
 						GFP_KERNEL);
 		if (!port->bulk_out_buffer) {
-			err("Couldn't allocate bulk_out_buffer");
+			dev_err(&port->dev, "Couldn't allocate bulk_out_buffer\n");
 			return -ENOMEM;
 		}
 	}
@@ -636,7 +630,6 @@ static void qt2_close(struct usb_serial_port *port)
 	__u8  lsr_value = 0;	/* value of Line Status Register */
 	int status;	/* result of last USB comms function */
 
-	dbg("%s(): port %d", __func__, port->number);
 	serial = port->serial;	/* get the parent device structure */
 	dev_extra = qt2_get_dev_private(serial);
 	/* get the device private data */
@@ -971,10 +964,7 @@ static void qt2_set_termios(struct tty_struct *tty,
 	int status;
 	__u16 UartNumber;
 
-	dbg("%s(): port %d", __func__, port->number);
-
 	serial = port->serial;
-
 	UartNumber = port->number;
 
 	if (old_termios && !tty_termios_hw_change(old_termios, tty->termios))
@@ -1096,9 +1086,7 @@ static int qt2_tiocmget(struct tty_struct *tty)
 	if (serial == NULL)
 		return -ENODEV;
 
-	dbg("%s(): port %d, tty =0x%p", __func__, port->number, tty);
 	UartNumber = tty->index - serial->minor;
-	dbg("UartNumber is %d", UartNumber);
 
 	status = qt2_box_get_register(port->serial, UartNumber,
 			QT2_MODEM_CONTROL_REGISTER,	&mcr_value);
@@ -1138,7 +1126,6 @@ static int qt2_tiocmset(struct tty_struct *tty,
 		return -ENODEV;
 
 	UartNumber = tty->index - serial->minor;
-	dbg("%s(): port %d, UartNumber %d", __func__, port->number, UartNumber);
 
 	status = qt2_box_get_register(port->serial, UartNumber,
 			QT2_MODEM_CONTROL_REGISTER, &mcr_value);
@@ -1198,7 +1185,6 @@ static void qt2_break(struct tty_struct *tty, int break_state)
 				port->number, NULL, 0, 300);
 exit:
 	mutex_unlock(&port_extra->modelock);
-	dbg("%s(): exit port %d", __func__, port->number);
 
 }
 /**
@@ -1209,7 +1195,6 @@ static void qt2_throttle(struct tty_struct *tty)
 	struct usb_serial_port *port = tty->driver_data;
 	struct usb_serial *serial = port->serial;
 	struct quatech2_port *port_extra;	/* extra data for this port */
-	dbg("%s(): port %d", __func__, port->number);
 
 	port_extra = qt2_get_port_private(port);
 	if (!serial) {
@@ -1255,7 +1240,6 @@ static void qt2_unthrottle(struct tty_struct *tty)
 			port->number);
 		return;
 	}
-	dbg("%s(): enter port %d", __func__, port->number);
 	dev_extra = qt2_get_dev_private(serial);
 	port_extra = qt2_get_port_private(port);
 	port0 = serial->port[0]; /* get the first port's device structure */
@@ -1285,7 +1269,6 @@ static void qt2_unthrottle(struct tty_struct *tty)
 	}
 exit:
 	mutex_unlock(&port_extra->modelock);
-	dbg("%s(): exit port %d", __func__, port->number);
 	return;
 }
 
@@ -1682,7 +1665,6 @@ __func__);
 	/* cribbed from serqt_usb2 driver, but not sure which work needs
 	 * scheduling - port0 or currently active port? */
 	/* schedule_work(&port->work); */
-	dbg("%s() completed", __func__);
 	return;
 }
 
@@ -1696,7 +1678,7 @@ static void qt2_write_bulk_callback(struct urb *urb)
 {
 	struct usb_serial_port *port = (struct usb_serial_port *)urb->context;
 	struct usb_serial *serial = port->serial;
-	dbg("%s(): port %d", __func__, port->number);
+
 	if (!serial) {
 		dbg("%s(): bad serial pointer, exiting", __func__);
 		return;
@@ -1711,7 +1693,6 @@ static void qt2_write_bulk_callback(struct urb *urb)
 	 */
 	/*port_softint((void *) serial); commented in vendor driver */
 	schedule_work(&port->work);
-	dbg("%s(): port %d exit", __func__, port->number);
 	return;
 }
 
