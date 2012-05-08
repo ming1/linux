@@ -373,8 +373,10 @@ iosapic_set_affinity(struct irq_data *data, const struct cpumask *mask,
 		iosapic_write(iosapic, IOSAPIC_RTE_LOW(rte_index), low32);
 	}
 
+	return IRQ_SET_MASK_OK_NOCOPY;
+#else
+	return IRQ_SET_MASK_OK;
 #endif
-	return 0;
 }
 
 /*
