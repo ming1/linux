@@ -303,9 +303,13 @@ static void cell_release(struct cell *cell, struct bio_list *bios)
  */
 static void __cell_release_singleton(struct cell *cell, struct bio *bio)
 {
-	hlist_del(&cell->list);
+	struct bio_prison *prison = cell->prison;
+
 	BUG_ON(cell->holder != bio);
 	BUG_ON(!bio_list_empty(&cell->bios));
+
+	hlist_del(&cell->list);
+	mempool_free(cell, prison->cell_pool);
 }
 
 static void cell_release_singleton(struct cell *cell, struct bio *bio)
