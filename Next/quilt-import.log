@@ -1,0 +1,34 @@
+Importing i2c based on 3.4-rc1
+Unchanged quilt series i2c
+Importing jdelvare-hwmon based on 437538267b672f9320833907f1b5acbb2605f4be
+Unchanged quilt series jdelvare-hwmon
+Importing rr based on v3.4-rc6
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard d48b97b403d23f6df0b990cee652bdf9a52337a3
+HEAD is now at d48b97b Linux 3.4-rc6
+$ git am ../quilt/rr/virtio-spec-update.patch
+Applying: virtio: update documentation to v0.9.4 of spec
+/home/sfr/kernels/next/quilt-tmp/.git/rebase-apply/patch:1171: new blank line at EOF.
++
+warning: 1 line adds whitespace errors.
+$ git am ../quilt/rr/misc:9p_disconnect_channel_when_pci_device_is_removed.patch
+Applying: 9p: disconnect channel when PCI device is removed
+$ git am ../quilt/rr/virtio:balloon_drop_restore_common.patch
+Applying: virtio: balloon: drop restore_common()
+$ git am ../quilt/rr/virtio:balloon_separate_out_common_code_between_remove_and_freeze_functions.patch
+Applying: virtio: balloon: separate out common code between remove and freeze functions
+error: patch failed: drivers/virtio/virtio_balloon.c:381
+error: drivers/virtio/virtio_balloon.c: patch does not apply
+Patch failed at 0001 virtio: balloon: separate out common code between remove and freeze functions
+When you have resolved this problem run "git am --resolved".
+If you would prefer to skip this patch, instead run "git am --skip".
+To restore the original branch and stop patching run "git am --abort".
+Importing i2c based on 3.4-rc1
+Unchanged quilt series i2c
+Importing jdelvare-hwmon based on 437538267b672f9320833907f1b5acbb2605f4be
+Unchanged quilt series jdelvare-hwmon
+Importing rr based on v3.3-rc5-86-g5ffca28
+Unchanged quilt series rr
+Importing device-mapper based on v3.4-rc5
+Unchanged quilt series device-mapper
