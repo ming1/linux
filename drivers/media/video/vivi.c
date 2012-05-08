@@ -177,6 +177,7 @@ struct vivi_dev {
 	struct v4l2_ctrl	   *menu;
 	struct v4l2_ctrl	   *string;
 	struct v4l2_ctrl	   *bitmask;
+	struct v4l2_ctrl	   *int_menu;
 
 	spinlock_t                 slock;
 	struct mutex		   mutex;
@@ -503,8 +504,12 @@ static void vivi_fillbuff(struct vivi_dev *dev, struct vivi_buffer *buf)
 			dev->boolean->cur.val,
 			dev->menu->qmenu[dev->menu->cur.val],
 			dev->string->cur.string);
-	mutex_unlock(&dev->ctrl_handler.lock);
 	gen_text(dev, vbuf, line++ * 16, 16, str);
+	snprintf(str, sizeof(str), " integer_menu %lld, value %d ",
+			dev->int_menu->qmenu_int[dev->int_menu->cur.val],
+			dev->int_menu->cur.val);
+	gen_text(dev, vbuf, line++ * 16, 16, str);
+	mutex_unlock(&dev->ctrl_handler.lock);
 	if (dev->button_pressed) {
 		dev->button_pressed--;
 		snprintf(str, sizeof(str), " button pressed!");
@@ -1039,17 +1044,10 @@ static unsigned int
 vivi_poll(struct file *file, struct poll_table_struct *wait)
 {
 	struct vivi_dev *dev = video_drvdata(file);
-	struct v4l2_fh *fh = file->private_data;
 	struct vb2_queue *q = &dev->vb_vidq;
-	unsigned int res;
 
 	dprintk(dev, 1, "%s\n", __func__);
-	res = vb2_poll(q, file, wait);
-	if (v4l2_event_pending(fh))
-		res |= POLLPRI;
-	else
-		poll_wait(file, &fh->wait, wait);
-	return res;
+	return vb2_poll(q, file, wait);
 }
 
 static int vivi_close(struct file *file)
@@ -1165,6 +1163,22 @@ static const struct v4l2_ctrl_config vivi_ctrl_bitmask = {
 	.step = 0,
 };
 
+static const s64 vivi_ctrl_int_menu_values[] = {
+	1, 1, 2, 3, 5, 8, 13, 21, 42,
+};
+
+static const struct v4l2_ctrl_config vivi_ctrl_int_menu = {
+	.ops = &vivi_ctrl_ops,
+	.id = VIVI_CID_CUSTOM_BASE + 7,
+	.name = "Integer menu",
+	.type = V4L2_CTRL_TYPE_INTEGER_MENU,
+	.min = 1,
+	.max = 8,
+	.def = 4,
+	.menu_skip_mask = 0x02,
+	.qmenu_int = vivi_ctrl_int_menu_values,
+};
+
 static const struct v4l2_file_operations vivi_fops = {
 	.owner		= THIS_MODULE,
 	.open           = v4l2_fh_open,
@@ -1275,6 +1289,7 @@ static int __init vivi_create_instance(int inst)
 	dev->menu = v4l2_ctrl_new_custom(hdl, &vivi_ctrl_menu, NULL);
 	dev->string = v4l2_ctrl_new_custom(hdl, &vivi_ctrl_string, NULL);
 	dev->bitmask = v4l2_ctrl_new_custom(hdl, &vivi_ctrl_bitmask, NULL);
+	dev->int_menu = v4l2_ctrl_new_custom(hdl, &vivi_ctrl_int_menu, NULL);
 	if (hdl->error) {
 		ret = hdl->error;
 		goto unreg_dev;
