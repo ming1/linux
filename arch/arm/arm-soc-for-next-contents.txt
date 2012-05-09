@@ -18,6 +18,9 @@ at91/cleanup		git://github.com/at91linux/linux-at91.git tags/at91-3.5-cleanup
 imx/cleanup		git://git.pengutronix.de/git/imx/linux-2.6.git tags/arm-imx-cleanup
 imx/cleanup2		git://git.pengutronix.de/git/imx/linux-2.6.git tags/imx-cleanup
 ux500/remove-u5500	git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git ux500-del-u5500-for-arm-soc
+omap/cleanup		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-cleanup-sparse-for-v3.5
+omap/hwmod-cleanup	git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-cleanup-hwmod-for-v3.5
+omap/cpuidle-cleanup	git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-cleanup-cpuidle-for-v3.5
 
 next/dt:
 omap/dt-missed-3.4:	git://git.kernel.org/pub/scm/linux/kernel/git/bcousson/linux-omap-dt.git for_3.4/dts/all
