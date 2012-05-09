@@ -40,8 +40,9 @@ at91/sam9n12:		git://github.com/at91linux/linux-at91.git tags/at91-for-next-soc
 ux500/u9540		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git ux500-u9540-for-arm-soc
 
 next/boards:
-mx/boards		git://git.pengutronix.de/git/imx/linux-2.6.git tags/imx-features-board-20120411-2
+imx/boards		git://git.pengutronix.de/git/imx/linux-2.6.git tags/imx-features-board-20120411-2
 pxa/boards		git://github.com/hzhuang1/linux.git board-specific
+imx/eukrea		git://git.pengutronix.de/git/imx/linux-2.6.git tags/imx-eukrea
 
 next/pinctrl:
 spear/pinctrl:		git://git.stlinux.com/spear/linux-2.6.git spear-v3.5
