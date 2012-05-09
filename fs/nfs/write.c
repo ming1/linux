@@ -230,7 +230,6 @@ static int nfs_set_page_writeback(struct page *page)
 		struct inode *inode = page->mapping->host;
 		struct nfs_server *nfss = NFS_SERVER(inode);
 
-		page_cache_get(page);
 		if (atomic_long_inc_return(&nfss->writeback) >
 				NFS_CONGESTION_ON_THRESH) {
 			set_bdi_congested(&nfss->backing_dev_info,
@@ -246,7 +245,6 @@ static void nfs_end_page_writeback(struct page *page)
 	struct nfs_server *nfss = NFS_SERVER(inode);
 
 	end_page_writeback(page);
-	page_cache_release(page);
 	if (atomic_long_dec_return(&nfss->writeback) < NFS_CONGESTION_OFF_THRESH)
 		clear_bdi_congested(&nfss->backing_dev_info, BLK_RW_ASYNC);
 }
@@ -262,10 +260,10 @@ static struct nfs_page *nfs_find_and_lock_request(struct page *page, bool nonblo
 		req = nfs_page_find_request_locked(page);
 		if (req == NULL)
 			break;
-		if (nfs_lock_request_dontget(req))
+		if (nfs_lock_request(req))
 			break;
 		/* Note: If we hold the page lock, as is the case in nfs_writepage,
-		 *	 then the call to nfs_lock_request_dontget() will always
+		 *	 then the call to nfs_lock_request() will always
 		 *	 succeed provided that someone hasn't already marked the
 		 *	 request as dirty (in which case we don't care).
 		 */
@@ -408,7 +406,7 @@ static void nfs_inode_add_request(struct inode *inode, struct nfs_page *req)
 	struct nfs_inode *nfsi = NFS_I(inode);
 
 	/* Lock the request! */
-	nfs_lock_request_dontget(req);
+	nfs_lock_request(req);
 
 	spin_lock(&inode->i_lock);
 	if (!nfsi->npages && nfs_have_delegation(inode, FMODE_WRITE))
@@ -607,13 +605,12 @@ static void nfs_write_completion(struct nfs_pgio_header *hdr)
 	nfs_init_cinfo_from_inode(&cinfo, hdr->inode);
 	while (!list_empty(&hdr->pages)) {
 		struct nfs_page *req = nfs_list_entry(hdr->pages.next);
-		struct page *page = req->wb_page;
 
 		bytes += req->wb_bytes;
 		nfs_list_remove_request(req);
 		if (test_bit(NFS_IOHDR_ERROR, &hdr->flags) &&
 		    (hdr->good_bytes < bytes)) {
-			nfs_set_pageerror(page);
+			nfs_set_pageerror(req->wb_page);
 			nfs_context_set_write_error(req->wb_context, hdr->error);
 			goto remove_req;
 		}
@@ -629,7 +626,8 @@ remove_req:
 		nfs_inode_remove_request(req);
 next:
 		nfs_unlock_request(req);
-		nfs_end_page_writeback(page);
+		nfs_end_page_writeback(req->wb_page);
+		nfs_release_request(req);
 	}
 out:
 	hdr->release(hdr);
@@ -653,6 +651,7 @@ nfs_scan_commit_list(struct list_head *src, struct list_head *dst,
 	list_for_each_entry_safe(req, tmp, src, wb_list) {
 		if (!nfs_lock_request(req))
 			continue;
+		kref_get(&req->wb_kref);
 		if (cond_resched_lock(cinfo->lock))
 			list_safe_reset_next(req, tmp, wb_list);
 		nfs_request_remove_commit_list(req, cinfo);
@@ -743,7 +742,7 @@ static struct nfs_page *nfs_try_to_update_request(struct inode *inode,
 		    || end < req->wb_offset)
 			goto out_flushme;
 
-		if (nfs_lock_request_dontget(req))
+		if (nfs_lock_request(req))
 			break;
 
 		/* The request is locked, so wait and then retry */
@@ -813,7 +812,7 @@ static int nfs_writepage_setup(struct nfs_open_context *ctx, struct page *page,
 	nfs_grow_file(page, offset, count);
 	nfs_mark_uptodate(page, req->wb_pgbase, req->wb_bytes);
 	nfs_mark_request_dirty(req);
-	nfs_unlock_request(req);
+	nfs_unlock_and_release_request(req);
 	return 0;
 }
 
@@ -1039,11 +1038,10 @@ static int nfs_do_multiple_writes(struct list_head *head,
  */
 static void nfs_redirty_request(struct nfs_page *req)
 {
-	struct page *page = req->wb_page;
-
 	nfs_mark_request_dirty(req);
 	nfs_unlock_request(req);
-	nfs_end_page_writeback(page);
+	nfs_end_page_writeback(req->wb_page);
+	nfs_release_request(req);
 }
 
 static void nfs_async_write_error(struct list_head *head)
@@ -1479,7 +1477,7 @@ void nfs_retry_commit(struct list_head *page_list,
 			dec_bdi_stat(req->wb_page->mapping->backing_dev_info,
 				     BDI_RECLAIMABLE);
 		}
-		nfs_unlock_request(req);
+		nfs_unlock_and_release_request(req);
 	}
 }
 EXPORT_SYMBOL_GPL(nfs_retry_commit);
@@ -1557,7 +1555,7 @@ static void nfs_commit_release_pages(struct nfs_commit_data *data)
 		dprintk(" mismatch\n");
 		nfs_mark_request_dirty(req);
 	next:
-		nfs_unlock_request(req);
+		nfs_unlock_and_release_request(req);
 	}
 	nfs_init_cinfo(&cinfo, data->inode, data->dreq);
 	if (atomic_dec_and_test(&cinfo.mds->rpcs_out))
@@ -1720,7 +1718,7 @@ int nfs_wb_page_cancel(struct inode *inode, struct page *page)
 		req = nfs_page_find_request(page);
 		if (req == NULL)
 			break;
-		if (nfs_lock_request_dontget(req)) {
+		if (nfs_lock_request(req)) {
 			nfs_clear_request_commit(req);
 			nfs_inode_remove_request(req);
 			/*
@@ -1728,7 +1726,7 @@ int nfs_wb_page_cancel(struct inode *inode, struct page *page)
 			 * page as being dirty
 			 */
 			cancel_dirty_page(page, PAGE_CACHE_SIZE);
-			nfs_unlock_request(req);
+			nfs_unlock_and_release_request(req);
 			break;
 		}
 		ret = nfs_wait_on_request(req);
