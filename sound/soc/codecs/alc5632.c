@@ -1130,7 +1130,7 @@ static __devinit int alc5632_i2c_probe(struct i2c_client *client,
 
 	i2c_set_clientdata(client, alc5632);
 
-	alc5632->regmap = regmap_init_i2c(client, &alc5632_regmap);
+	alc5632->regmap = devm_regmap_init_i2c(client, &alc5632_regmap);
 	if (IS_ERR(alc5632->regmap)) {
 		ret = PTR_ERR(alc5632->regmap);
 		dev_err(&client->dev, "regmap_init() failed: %d\n", ret);
@@ -1142,7 +1142,6 @@ static __devinit int alc5632_i2c_probe(struct i2c_client *client,
 	if (ret1 != 0 || ret2 != 0) {
 		dev_err(&client->dev,
 		"Failed to read chip ID: ret1=%d, ret2=%d\n", ret1, ret2);
-		regmap_exit(alc5632->regmap);
 		return -EIO;
 	}
 
@@ -1151,14 +1150,12 @@ static __devinit int alc5632_i2c_probe(struct i2c_client *client,
 	if ((vid1 != 0x10EC) || (vid2 != id->driver_data)) {
 		dev_err(&client->dev,
 		"Device is not a ALC5632: VID1=0x%x, VID2=0x%x\n", vid1, vid2);
-		regmap_exit(alc5632->regmap);
 		return -EINVAL;
 	}
 
 	ret = alc5632_reset(alc5632->regmap);
 	if (ret < 0) {
 		dev_err(&client->dev, "Failed to issue reset\n");
-		regmap_exit(alc5632->regmap);
 		return ret;
 	}
 
@@ -1176,7 +1173,6 @@ static __devinit int alc5632_i2c_probe(struct i2c_client *client,
 
 	if (ret < 0) {
 		dev_err(&client->dev, "Failed to register codec: %d\n", ret);
-		regmap_exit(alc5632->regmap);
 		return ret;
 	}
 
@@ -1185,9 +1181,7 @@ static __devinit int alc5632_i2c_probe(struct i2c_client *client,
 
 static __devexit int alc5632_i2c_remove(struct i2c_client *client)
 {
-	struct alc5632_priv *alc5632 = i2c_get_clientdata(client);
 	snd_soc_unregister_codec(&client->dev);
-	regmap_exit(alc5632->regmap);
 	return 0;
 }
 
@@ -1208,25 +1202,7 @@ static struct i2c_driver alc5632_i2c_driver = {
 	.id_table = alc5632_i2c_table,
 };
 
-static int __init alc5632_modinit(void)
-{
-	int ret;
-
-	ret = i2c_add_driver(&alc5632_i2c_driver);
-	if (ret != 0) {
-		printk(KERN_ERR "%s: can't add i2c driver", __func__);
-		return ret;
-	}
-
-	return ret;
-}
-module_init(alc5632_modinit);
-
-static void __exit alc5632_modexit(void)
-{
-	i2c_del_driver(&alc5632_i2c_driver);
-}
-module_exit(alc5632_modexit);
+module_i2c_driver(alc5632_i2c_driver);
 
 MODULE_DESCRIPTION("ASoC ALC5632 driver");
 MODULE_AUTHOR("Leon Romanovsky <leon@leon.nu>");
