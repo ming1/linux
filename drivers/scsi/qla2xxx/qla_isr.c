@@ -5,6 +5,7 @@
  * See LICENSE.qla2xxx for copyright and licensing details.
  */
 #include "qla_def.h"
+#include "qla_target.h"
 
 #include <linux/delay.h>
 #include <linux/slab.h>
@@ -454,8 +455,8 @@ skip_rio:
 	case MBA_WAKEUP_THRES:		/* Request Queue Wake-up */
 		ql_dbg(ql_dbg_async, vha, 0x5008,
 		    "Asynchronous WAKEUP_THRES.\n");
-		break;
 
+		break;
 	case MBA_LIP_OCCURRED:		/* Loop Initialization Procedure */
 		ql_dbg(ql_dbg_async, vha, 0x5009,
 		    "LIP occurred (%x).\n", mb[1]);
@@ -670,6 +671,8 @@ skip_rio:
 			ql_dbg(ql_dbg_async, vha, 0x5011,
 			    "Asynchronous PORT UPDATE ignored %04x/%04x/%04x.\n",
 			    mb[1], mb[2], mb[3]);
+
+			qlt_async_event(mb[0], vha, mb);
 			break;
 		}
 
@@ -684,8 +687,13 @@ skip_rio:
 
 		qla2x00_mark_all_devices_lost(vha, 1);
 
+		if (vha->vp_idx == 0 && !qla_ini_mode_enabled(vha))
+			set_bit(SCR_PENDING, &vha->dpc_flags);
+
 		set_bit(LOOP_RESYNC_NEEDED, &vha->dpc_flags);
 		set_bit(LOCAL_LOOP_UPDATE, &vha->dpc_flags);
+
+		qlt_async_event(mb[0], vha, mb);
 		break;
 
 	case MBA_RSCN_UPDATE:		/* State Change Registration */
@@ -806,6 +814,8 @@ skip_rio:
 		    "Unknown AEN:%04x %04x %04x %04x\n",
 		    mb[0], mb[1], mb[2], mb[3]);
 	}
+
+	qlt_async_event(mb[0], vha, mb);
 
 	if (!vha->vp_idx && ha->num_vhosts)
 		qla2x00_alert_all_vps(rsp, mb);
@@ -1171,6 +1181,9 @@ qla24xx_logio_entry(scsi_qla_host_t *vha, struct req_que *req,
 				fcport->flags |= FCF_FCP2_DEVICE;
 		} else if (iop[0] & BIT_5)
 			fcport->port_type = FCT_INITIATOR;
+
+		if (iop[0] & BIT_7)
+			fcport->flags |= FCF_CONF_COMP_SUPPORTED;
 
 		if (logio->io_parameter[7] || logio->io_parameter[8])
 			fcport->supported_classes |= FC_COS_CLASS2;
@@ -1975,6 +1988,9 @@ void qla24xx_process_response_queue(struct scsi_qla_host *vha,
 
 		if (pkt->entry_status != 0) {
 			qla2x00_error_entry(vha, rsp, (sts_entry_t *) pkt);
+
+			(void)qlt_24xx_process_response_error(vha, pkt);
+
 			((response_t *)pkt)->signature = RESPONSE_PROCESSED;
 			wmb();
 			continue;
@@ -2004,6 +2020,14 @@ void qla24xx_process_response_queue(struct scsi_qla_host *vha,
 			break;
                 case ELS_IOCB_TYPE:
 			qla24xx_els_ct_entry(vha, rsp->req, pkt, ELS_IOCB_TYPE);
+			break;
+		case ABTS_RECV_24XX:
+			/* ensure that the ATIO queue is empty */
+			qlt_24xx_process_atio_queue(vha);
+		case ABTS_RESP_24XX:
+		case CTIO_TYPE7:
+		case NOTIFY_ACK_TYPE:
+			qlt_response_pkt_all_vps(vha, (response_t *)pkt);
 			break;
 		case MARKER_TYPE:
 			/* Do nothing in this case, this check is to prevent it
@@ -2157,6 +2181,13 @@ qla24xx_intr_handler(int irq, void *dev_id)
 		case 0x14:
 			qla24xx_process_response_queue(vha, rsp);
 			break;
+		case 0x1C: /* ATIO queue updated */
+			qlt_24xx_process_atio_queue(vha);
+			break;
+		case 0x1D: /* ATIO and response queues updated */
+			qlt_24xx_process_atio_queue(vha);
+			qla24xx_process_response_queue(vha, rsp);
+			break;
 		default:
 			ql_dbg(ql_dbg_async, vha, 0x504f,
 			    "Unrecognized interrupt type (%d).\n", stat * 0xff);
@@ -2299,6 +2330,13 @@ qla24xx_msix_default(int irq, void *dev_id)
 			break;
 		case 0x13:
 		case 0x14:
+			qla24xx_process_response_queue(vha, rsp);
+			break;
+		case 0x1C: /* ATIO queue updated */
+			qlt_24xx_process_atio_queue(vha);
+			break;
+		case 0x1D: /* ATIO and response queues updated */
+			qlt_24xx_process_atio_queue(vha);
 			qla24xx_process_response_queue(vha, rsp);
 			break;
 		default:
