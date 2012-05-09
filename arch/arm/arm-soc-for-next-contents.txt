@@ -41,6 +41,7 @@ ux500/u9540		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericss
 
 next/boards:
 mx/boards		git://git.pengutronix.de/git/imx/linux-2.6.git tags/imx-features-board-20120411-2
+pxa/boards		git://github.com/hzhuang1/linux.git board-specific
 
 next/pinctrl:
 spear/pinctrl:		git://git.stlinux.com/spear/linux-2.6.git spear-v3.5
