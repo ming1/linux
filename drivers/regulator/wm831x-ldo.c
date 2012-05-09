@@ -274,9 +274,6 @@ static __devinit int wm831x_gp_ldo_probe(struct platform_device *pdev)
 
 	dev_dbg(&pdev->dev, "Probing LDO%d\n", id + 1);
 
-	if (pdata == NULL || pdata->ldo[id] == NULL)
-		return -ENODEV;
-
 	ldo = devm_kzalloc(&pdev->dev, sizeof(struct wm831x_ldo), GFP_KERNEL);
 	if (ldo == NULL) {
 		dev_err(&pdev->dev, "Unable to allocate private data\n");
@@ -311,7 +308,8 @@ static __devinit int wm831x_gp_ldo_probe(struct platform_device *pdev)
 	ldo->desc.enable_mask = 1 << id;
 
 	config.dev = pdev->dev.parent;
-	config.init_data = pdata->ldo[id];
+	if (pdata)
+		config.init_data = pdata->ldo[id];
 	config.driver_data = ldo;
 	config.regmap = wm831x->regmap;
 
@@ -537,9 +535,6 @@ static __devinit int wm831x_aldo_probe(struct platform_device *pdev)
 
 	dev_dbg(&pdev->dev, "Probing LDO%d\n", id + 1);
 
-	if (pdata == NULL || pdata->ldo[id] == NULL)
-		return -ENODEV;
-
 	ldo = devm_kzalloc(&pdev->dev, sizeof(struct wm831x_ldo), GFP_KERNEL);
 	if (ldo == NULL) {
 		dev_err(&pdev->dev, "Unable to allocate private data\n");
@@ -574,7 +569,8 @@ static __devinit int wm831x_aldo_probe(struct platform_device *pdev)
 	ldo->desc.enable_mask = 1 << id;
 
 	config.dev = pdev->dev.parent;
-	config.init_data = pdata->ldo[id];
+	if (pdata)
+		config.init_data = pdata->ldo[id];
 	config.driver_data = ldo;
 	config.regmap = wm831x->regmap;
 
@@ -730,9 +726,6 @@ static __devinit int wm831x_alive_ldo_probe(struct platform_device *pdev)
 
 	dev_dbg(&pdev->dev, "Probing LDO%d\n", id + 1);
 
-	if (pdata == NULL || pdata->ldo[id] == NULL)
-		return -ENODEV;
-
 	ldo = devm_kzalloc(&pdev->dev, sizeof(struct wm831x_ldo), GFP_KERNEL);
 	if (ldo == NULL) {
 		dev_err(&pdev->dev, "Unable to allocate private data\n");
@@ -767,7 +760,8 @@ static __devinit int wm831x_alive_ldo_probe(struct platform_device *pdev)
 	ldo->desc.enable_mask = 1 << id;
 
 	config.dev = pdev->dev.parent;
-	config.init_data = pdata->ldo[id];
+	if (pdata)
+		config.init_data = pdata->ldo[id];
 	config.driver_data = ldo;
 	config.regmap = wm831x->regmap;
 
