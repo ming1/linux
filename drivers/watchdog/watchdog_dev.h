@@ -26,6 +26,8 @@
  *	This material is provided "AS-IS" and at no charge.
  */
 
+#define MAX_DOGS	32	/* Maximum number of watchdog devices */
+
 /*
  *	Functions/procedures to be called by the core
  */
