@@ -2353,17 +2353,6 @@ static void azx_power_notify(struct hda_bus *bus)
  * power management
  */
 
-static int snd_hda_codecs_inuse(struct hda_bus *bus)
-{
-	struct hda_codec *codec;
-
-	list_for_each_entry(codec, &bus->codec_list, list) {
-		if (snd_hda_codec_needs_resume(codec))
-			return 1;
-	}
-	return 0;
-}
-
 static int azx_suspend(struct pci_dev *pci, pm_message_t state)
 {
 	struct snd_card *card = pci_get_drvdata(pci);
@@ -2410,8 +2399,7 @@ static int azx_resume(struct pci_dev *pci)
 		return -EIO;
 	azx_init_pci(chip);
 
-	if (snd_hda_codecs_inuse(chip->bus))
-		azx_init_chip(chip, 1);
+	azx_init_chip(chip, 1);
 
 	snd_hda_resume(chip->bus);
 	snd_power_change_state(card, SNDRV_CTL_POWER_D0);
@@ -3148,7 +3136,7 @@ static DEFINE_PCI_DEVICE_TABLE(azx_ids) = {
 MODULE_DEVICE_TABLE(pci, azx_ids);
 
 /* pci_driver definition */
-static struct pci_driver driver = {
+static struct pci_driver azx_driver = {
 	.name = KBUILD_MODNAME,
 	.id_table = azx_ids,
 	.probe = azx_probe,
@@ -3159,15 +3147,4 @@ static struct pci_driver driver = {
 #endif
 };
 
-static int __init alsa_card_azx_init(void)
-{
-	return pci_register_driver(&driver);
-}
-
-static void __exit alsa_card_azx_exit(void)
-{
-	pci_unregister_driver(&driver);
-}
-
-module_init(alsa_card_azx_init)
-module_exit(alsa_card_azx_exit)
+module_pci_driver(azx_driver);
