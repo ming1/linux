@@ -1149,6 +1149,7 @@ static void ironlake_edp_panel_off(struct intel_dp *intel_dp)
 	DRM_DEBUG_KMS("Turn eDP power off\n");
 
 	WARN(intel_dp->want_panel_vdd, "Cannot turn power off while VDD is on\n");
+	ironlake_panel_vdd_off_sync(intel_dp); /* finish any pending work */
 
 	pp = ironlake_get_pp_control(dev_priv);
 	pp &= ~(POWER_TARGET_ON | EDP_FORCE_VDD | PANEL_POWER_RESET | EDP_BLC_ENABLE);
@@ -2482,6 +2483,13 @@ intel_dp_init(struct drm_device *dev, int output_reg)
 		pp_on = I915_READ(PCH_PP_ON_DELAYS);
 		pp_off = I915_READ(PCH_PP_OFF_DELAYS);
 		pp_div = I915_READ(PCH_PP_DIVISOR);
+
+		if (!pp_on || !pp_off || !pp_div) {
+			DRM_INFO("bad panel power sequencing delays, disabling panel\n");
+			intel_dp_encoder_destroy(&intel_dp->base.base);
+			intel_dp_destroy(&intel_connector->base);
+			return;
+		}
 
 		/* Pull timing values out of registers */
 		cur.t1_t3 = (pp_on & PANEL_POWER_UP_DELAY_MASK) >>
