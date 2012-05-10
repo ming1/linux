@@ -42,6 +42,8 @@
 #include <linux/init.h>		/* For __init/__exit/... */
 #include <linux/uaccess.h>	/* For copy_to_user/put_user/... */
 
+#include "watchdog_dev.h"
+
 /* make sure we only register one /dev/watchdog device */
 static unsigned long watchdog_dev_busy;
 /* the watchdog device behind /dev/watchdog */
@@ -59,7 +61,7 @@ static struct watchdog_device *wdd;
 
 static int watchdog_ping(struct watchdog_device *wddev)
 {
-	if (test_bit(WDOG_ACTIVE, &wddev->status)) {
+	if (watchdog_active(wddev)) {
 		if (wddev->ops->ping)
 			return wddev->ops->ping(wddev);  /* ping the watchdog */
 		else
@@ -81,7 +83,7 @@ static int watchdog_start(struct watchdog_device *wddev)
 {
 	int err;
 
-	if (!test_bit(WDOG_ACTIVE, &wddev->status)) {
+	if (!watchdog_active(wddev)) {
 		err = wddev->ops->start(wddev);
 		if (err < 0)
 			return err;
@@ -111,7 +113,7 @@ static int watchdog_stop(struct watchdog_device *wddev)
 		return err;
 	}
 
-	if (test_bit(WDOG_ACTIVE, &wddev->status)) {
+	if (watchdog_active(wddev)) {
 		err = wddev->ops->stop(wddev);
 		if (err < 0)
 			return err;
