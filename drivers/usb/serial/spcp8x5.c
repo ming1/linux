@@ -151,14 +151,6 @@ enum spcp8x5_type {
 	SPCP835_TYPE,
 };
 
-static struct usb_driver spcp8x5_driver = {
-	.name =			"spcp8x5",
-	.probe =		usb_serial_probe,
-	.disconnect =		usb_serial_disconnect,
-	.id_table =		id_table,
-};
-
-
 struct spcp8x5_private {
 	spinlock_t 	lock;
 	enum spcp8x5_type	type;
@@ -454,8 +446,6 @@ static int spcp8x5_open(struct tty_struct *tty, struct usb_serial_port *port)
 	u8 status = 0x30;
 	/* status 0x30 means DSR and CTS = 1 other CDC RI and delta = 0 */
 
-	dbg("%s -  port %d", __func__, port->number);
-
 	usb_clear_halt(serial->dev, port->write_urb->pipe);
 	usb_clear_halt(serial->dev, port->read_urb->pipe);
 
@@ -666,7 +656,7 @@ static struct usb_serial_driver * const serial_drivers[] = {
 	&spcp8x5_device, NULL
 };
 
-module_usb_serial_driver(spcp8x5_driver, serial_drivers);
+module_usb_serial_driver(serial_drivers, id_table);
 
 MODULE_DESCRIPTION(DRIVER_DESC);
 MODULE_VERSION(DRIVER_VERSION);

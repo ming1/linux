@@ -77,13 +77,6 @@ static const struct usb_device_id ir_id_table[] = {
 
 MODULE_DEVICE_TABLE(usb, ir_id_table);
 
-static struct usb_driver ir_driver = {
-	.name		= "ir-usb",
-	.probe		= usb_serial_probe,
-	.disconnect	= usb_serial_disconnect,
-	.id_table	= ir_id_table,
-};
-
 static struct usb_serial_driver ir_device = {
 	.driver	= {
 		.owner	= THIS_MODULE,
@@ -264,8 +257,6 @@ static int ir_open(struct tty_struct *tty, struct usb_serial_port *port)
 {
 	int i;
 
-	dbg("%s - port %d", __func__, port->number);
-
 	for (i = 0; i < ARRAY_SIZE(port->write_urbs); ++i)
 		port->write_urbs[i]->transfer_flags = URB_ZERO_PACKET;
 
@@ -322,15 +313,10 @@ static void ir_process_read_urb(struct urb *urb)
 
 static void ir_set_termios_callback(struct urb *urb)
 {
-	struct usb_serial_port *port = urb->context;
-	int status = urb->status;
-
-	dbg("%s - port %d", __func__, port->number);
-
 	kfree(urb->transfer_buffer);
 
-	if (status)
-		dbg("%s - non-zero urb status: %d", __func__, status);
+	if (urb->status)
+		dbg("%s - non-zero urb status: %d", __func__, urb->status);
 }
 
 static void ir_set_termios(struct tty_struct *tty,
@@ -341,8 +327,6 @@ static void ir_set_termios(struct tty_struct *tty,
 	int result;
 	speed_t baud;
 	int ir_baud;
-
-	dbg("%s - port %d", __func__, port->number);
 
 	baud = tty_get_baud_rate(tty);
 
@@ -447,7 +431,7 @@ static int __init ir_init(void)
 		ir_device.bulk_out_size = buffer_size;
 	}
 
-	retval = usb_serial_register_drivers(&ir_driver, serial_drivers);
+	retval = usb_serial_register_drivers(serial_drivers, KBUILD_MODNAME, ir_id_table);
 	if (retval == 0)
 		printk(KERN_INFO KBUILD_MODNAME ": " DRIVER_VERSION ":"
 			       DRIVER_DESC "\n");
@@ -456,7 +440,7 @@ static int __init ir_init(void)
 
 static void __exit ir_exit(void)
 {
-	usb_serial_deregister_drivers(&ir_driver, serial_drivers);
+	usb_serial_deregister_drivers(serial_drivers);
 }
 
 

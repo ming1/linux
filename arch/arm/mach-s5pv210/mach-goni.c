@@ -27,6 +27,7 @@
 #include <linux/gpio.h>
 #include <linux/mmc/host.h>
 #include <linux/interrupt.h>
+#include <linux/platform_data/s3c-hsotg.h>
 
 #include <asm/hardware/vic.h>
 #include <asm/mach/arch.h>
