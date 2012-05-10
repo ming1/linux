@@ -26,11 +26,36 @@
 #include <asm/mcfsim.h>
 #include <asm/mcfuart.h>
 #include <asm/mcfdma.h>
+#include <asm/mcfgpio.h>
 #include <asm/mcfwdebug.h>
 
 /***************************************************************************/
 
-#ifdef CONFIG_SPI_COLDFIRE_QSPI
+struct mcf_gpio_chip mcf_gpio_chips[] = {
+	MCFGPS(PIRQ, 0, 8, MCFEPORT_EPDDR, MCFEPORT_EPDR, MCFEPORT_EPPDR),
+	MCFGPF(FECH, 8, 8),
+	MCFGPF(FECL, 16, 8),
+	MCFGPF(SSI, 24, 5),
+	MCFGPF(BUSCTL, 32, 4),
+	MCFGPF(BE, 40, 4),
+	MCFGPF(CS, 49, 5),
+	MCFGPF(PWM, 58, 4),
+	MCFGPF(FECI2C, 64, 4),
+	MCFGPF(UART, 72, 8),
+	MCFGPF(QSPI, 80, 6),
+	MCFGPF(TIMER, 88, 4),
+	MCFGPF(LCDDATAH, 96, 2),
+	MCFGPF(LCDDATAM, 104, 8),
+	MCFGPF(LCDDATAL, 112, 8),
+	MCFGPF(LCDCTLH, 120, 1),
+	MCFGPF(LCDCTLL, 128, 8),
+};
+
+unsigned int mcf_gpio_chips_size = ARRAY_SIZE(mcf_gpio_chips);
+
+/***************************************************************************/
+
+#if IS_ENABLED(CONFIG_SPI_COLDFIRE_QSPI)
 
 static void __init m532x_qspi_init(void)
 {
@@ -38,7 +63,7 @@ static void __init m532x_qspi_init(void)
 	writew(0x01f0, MCF_GPIO_PAR_QSPI);
 }
 
-#endif /* CONFIG_SPI_COLDFIRE_QSPI */
+#endif /* IS_ENABLED(CONFIG_SPI_COLDFIRE_QSPI) */
 
 /***************************************************************************/
 
@@ -77,7 +102,7 @@ void __init config_BSP(char *commandp, int size)
 	mach_sched_init = hw_timer_init;
 	m532x_uarts_init();
 	m532x_fec_init();
-#ifdef CONFIG_SPI_COLDFIRE_QSPI
+#if IS_ENABLED(CONFIG_SPI_COLDFIRE_QSPI)
 	m532x_qspi_init();
 #endif
 
