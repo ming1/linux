@@ -199,6 +199,15 @@ static void regmap_unlock_spinlock(struct regmap *map)
 	spin_unlock(&map->spinlock);
 }
 
+static void dev_get_regmap_release(struct device *dev, void *res)
+{
+	/*
+	 * We don't actually have anything to do here; the goal here
+	 * is not to manage the regmap but to provide a simple way to
+	 * get the regmap back given a struct device.
+	 */
+}
+
 /**
  * regmap_init(): Initialise register map
  *
@@ -216,7 +225,7 @@ struct regmap *regmap_init(struct device *dev,
 			   void *bus_context,
 			   const struct regmap_config *config)
 {
-	struct regmap *map;
+	struct regmap *map, **m;
 	int ret = -EINVAL;
 
 	if (!bus || !config)
@@ -247,6 +256,7 @@ struct regmap *regmap_init(struct device *dev,
 		map->reg_stride = config->reg_stride;
 	else
 		map->reg_stride = 1;
+	map->use_single_rw = config->use_single_rw;
 	map->dev = dev;
 	map->bus = bus;
 	map->bus_context = bus_context;
@@ -256,6 +266,7 @@ struct regmap *regmap_init(struct device *dev,
 	map->volatile_reg = config->volatile_reg;
 	map->precious_reg = config->precious_reg;
 	map->cache_type = config->cache_type;
+	map->name = config->name;
 
 	if (config->read_flag_mask || config->write_flag_mask) {
 		map->read_flag_mask = config->read_flag_mask;
@@ -340,6 +351,9 @@ struct regmap *regmap_init(struct device *dev,
 		break;
 	}
 
+	if (map->format.format_write)
+		map->use_single_rw = true;
+
 	if (!map->format.format_write &&
 	    !(map->format.format_reg && map->format.format_val))
 		goto err_map;
@@ -356,8 +370,19 @@ struct regmap *regmap_init(struct device *dev,
 	if (ret < 0)
 		goto err_free_workbuf;
 
+	/* Add a devres resource for dev_get_regmap() */
+	m = devres_alloc(dev_get_regmap_release, sizeof(*m), GFP_KERNEL);
+	if (!m) {
+		ret = -ENOMEM;
+		goto err_cache;
+	}
+	*m = map;
+	devres_add(dev, m);
+
 	return map;
 
+err_cache:
+	regcache_exit(map);
 err_free_workbuf:
 	kfree(map->work_buf);
 err_map:
@@ -460,6 +485,44 @@ void regmap_exit(struct regmap *map)
 	kfree(map);
 }
 EXPORT_SYMBOL_GPL(regmap_exit);
+
+static int dev_get_regmap_match(struct device *dev, void *res, void *data)
+{
+	struct regmap **r = res;
+	if (!r || !*r) {
+		WARN_ON(!r || !*r);
+		return 0;
+	}
+
+	/* If the user didn't specify a name match any */
+	if (data)
+		return (*r)->name == data;
+	else
+		return 1;
+}
+
+/**
+ * dev_get_regmap(): Obtain the regmap (if any) for a device
+ *
+ * @dev: Device to retrieve the map for
+ * @name: Optional name for the register map, usually NULL.
+ *
+ * Returns the regmap for the device if one is present, or NULL.  If
+ * name is specified then it must match the name specified when
+ * registering the device, if it is NULL then the first regmap found
+ * will be used.  Devices with multiple register maps are very rare,
+ * generic code should normally not need to specify a name.
+ */
+struct regmap *dev_get_regmap(struct device *dev, const char *name)
+{
+	struct regmap **r = devres_find(dev, dev_get_regmap_release,
+					dev_get_regmap_match, (void *)name);
+
+	if (!r)
+		return NULL;
+	return *r;
+}
+EXPORT_SYMBOL_GPL(dev_get_regmap);
 
 static int _regmap_raw_write(struct regmap *map, unsigned int reg,
 			     const void *val, size_t val_len)
@@ -686,7 +749,22 @@ int regmap_bulk_write(struct regmap *map, unsigned int reg, const void *val,
 		for (i = 0; i < val_count * val_bytes; i += val_bytes)
 			map->format.parse_val(wval + i);
 	}
-	ret = _regmap_raw_write(map, reg, wval, val_bytes * val_count);
+	/*
+	 * Some devices does not support bulk write, for
+	 * them we have a series of single write operations.
+	 */
+	if (map->use_single_rw) {
+		for (i = 0; i < val_count; i++) {
+			ret = regmap_raw_write(map,
+						reg + (i * map->reg_stride),
+						val + (i * val_bytes),
+						val_bytes);
+			if (ret != 0)
+				return ret;
+		}
+	} else {
+		ret = _regmap_raw_write(map, reg, wval, val_bytes * val_count);
+	}
 
 	if (val_bytes != 1)
 		kfree(wval);
@@ -748,6 +826,9 @@ static int _regmap_read(struct regmap *map, unsigned int reg,
 		*val = map->format.parse_val(map->work_buf);
 		trace_regmap_reg_read(map->dev, reg, *val);
 	}
+
+	if (ret == 0 && !map->cache_bypass)
+		regcache_write(map, reg, *val);
 
 	return ret;
 }
@@ -855,9 +936,25 @@ int regmap_bulk_read(struct regmap *map, unsigned int reg, void *val,
 		return -EINVAL;
 
 	if (vol || map->cache_type == REGCACHE_NONE) {
-		ret = regmap_raw_read(map, reg, val, val_bytes * val_count);
-		if (ret != 0)
-			return ret;
+		/*
+		 * Some devices does not support bulk read, for
+		 * them we have a series of single read operations.
+		 */
+		if (map->use_single_rw) {
+			for (i = 0; i < val_count; i++) {
+				ret = regmap_raw_read(map,
+						reg + (i * map->reg_stride),
+						val + (i * val_bytes),
+						val_bytes);
+				if (ret != 0)
+					return ret;
+			}
+		} else {
+			ret = regmap_raw_read(map, reg, val,
+					      val_bytes * val_count);
+			if (ret != 0)
+				return ret;
+		}
 
 		for (i = 0; i < val_count * val_bytes; i += val_bytes)
 			map->format.parse_val(val + i);
