@@ -39,12 +39,7 @@
 #define SUPPORT_CPRM
 #define SUPPORT_MAGIC_GATE
 #define SUPPORT_MSXC
-/* #define LED_AUTO_BLINK */
-
-/* { wwang, 2010-07-26
- * Add support for SD lock/unlock */
-/* #define SUPPORT_SD_LOCK */
-/* } wwang, 2010-07-26 */
+#define USING_POLLING_CYCLE_DELINK
 
 #ifdef SUPPORT_MAGIC_GA
 /* Using NORMAL_WRITE instead of AUTO_WRITE to set ICVTE */
@@ -63,7 +58,6 @@
 #define SUPPORT_OCP
 
 #define MS_SPEEDUP
-/* #define XD_SPEEDUP */
 
 #define SD_XD_IO_FOLLOW_PWR
 
@@ -207,10 +201,6 @@ struct trace_msg_t {
 /* WRITE ERROR */
 #define SENSE_TYPE_MG_WRITE_ERR				0x0e
 #endif
-#ifdef SUPPORT_SD_LOCK
-/* FOR Locked SD card */
-#define SENSE_TYPE_MEDIA_READ_FORBIDDEN			0x10
-#endif
 
 /*---- sense key ----*/
 #define ILI                     0x20	/* ILI bit is on                    */
@@ -242,8 +232,8 @@ struct trace_msg_t {
 #define CUR_ERR                 0x70	/* current error                    */
 #define DEF_ERR                 0x71	/* specific command error           */
 
-/*---- sense key Infomation ----*/
-#define SNSKEYINFO_LEN          3	/* length of sense key infomation   */
+/*---- sense key Information ----*/
+#define SNSKEYINFO_LEN          3	/* length of sense key information   */
 
 #define SKSV                    0x80
 #define CDB_ILLEGAL             0x40
@@ -296,13 +286,13 @@ struct sense_data_t {
 	unsigned char seg_no;	/* segment No.                      */
 	unsigned char sense_key;	/* byte5 : ILI                      */
 	/* bit3-0 : sense key              */
-	unsigned char info[4];	/* infomation                       */
+	unsigned char info[4];	/* information                       */
 	unsigned char ad_sense_len;	/* additional sense data length     */
-	unsigned char cmd_info[4];	/* command specific infomation      */
+	unsigned char cmd_info[4];	/* command specific information      */
 	unsigned char asc;	/* ASC                              */
 	unsigned char ascq;	/* ASCQ                             */
 	unsigned char rfu;	/* FRU                              */
-	unsigned char sns_key_info[3];	/* sense key specific infomation    */
+	unsigned char sns_key_info[3];	/* sense key specific information    */
 };
 
 /* sd_ctl bit map */
@@ -614,11 +604,6 @@ struct sd_info {
 	u8 sd_reset_fail;	/* sangdy2010-07-01 */
 	u8 sd_send_status_en;
 
-#ifdef SUPPORT_SD_LOCK
-	u8 sd_lock_status;
-	u8 sd_erase_status;
-	u8 sd_lock_notify;
-#endif
 };
 
 #define MODE_512_SEQ		0x01
@@ -720,9 +705,8 @@ struct rts51x_chip {
 	struct scsi_cmnd *srb;
 	struct sense_data_t sense_buffer[MAX_ALLOWED_LUN_CNT];
 
-#ifndef LED_AUTO_BLINK
 	int led_toggle_counter;
-#endif
+
 	int ss_counter;
 	int idle_counter;
 	int auto_delink_counter;

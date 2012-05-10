@@ -51,7 +51,6 @@
 #define RTS51X_POLLING_THREAD	"rts5139-polling"
 
 #define POLLING_IN_THREAD
-/* #define SCSI_SCAN_DELAY */
 #define SUPPORT_FILE_OP
 
 #define wait_timeout_x(task_state, msecs)	\
@@ -116,10 +115,6 @@ struct rts51x_usb {
 	struct completion control_exit;	/* control thread exit     */
 	struct completion polling_exit;	/* polling thread exit     */
 	struct completion notify;	/* thread begin/end        */
-#ifdef SCSI_SCAN_DELAY
-	wait_queue_head_t delay_wait;	/* wait during scan, reset */
-	struct completion scanning_done;	/* wait for scan thread    */
-#endif
 };
 
 extern struct usb_driver rts51x_driver;
@@ -188,7 +183,6 @@ enum xfer_buf_dir { TO_XFER_BUF, FROM_XFER_BUF };
 
 /* General routines provided by the usb-storage standard core */
 #ifdef CONFIG_PM
-void rts51x_try_to_enter_ss(struct rts51x_chip *chip);
 void rts51x_try_to_exit_ss(struct rts51x_chip *chip);
 int rts51x_suspend(struct usb_interface *iface, pm_message_t message);
 int rts51x_resume(struct usb_interface *iface);
