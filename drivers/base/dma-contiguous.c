@@ -346,7 +346,7 @@ struct page *dma_alloc_from_contiguous(struct device *dev, int count,
 		if (ret == 0) {
 			bitmap_set(cma->bitmap, pageno, count);
 			break;
-		} else if (ret != -EBUSY) {
+		} else if (ret != -EBUSY && ret != -EAGAIN) {
 			goto error;
 		}
 		pr_debug("%s(): memory range at %p is busy, retrying\n",
