@@ -133,7 +133,7 @@ static struct notifier_block dca_notifier = {
 static unsigned int max_vfs;
 module_param(max_vfs, uint, 0);
 MODULE_PARM_DESC(max_vfs,
-		 "Maximum number of virtual functions to allocate per physical function");
+		 "Maximum number of virtual functions to allocate per physical function - default is zero and maximum value is 63");
 #endif /* CONFIG_PCI_IOV */
 
 static unsigned int allow_unsupported_sfp;
@@ -637,7 +637,11 @@ static void ixgbe_update_xoff_received(struct ixgbe_adapter *adapter)
 			clear_bit(__IXGBE_HANG_CHECK_ARMED,
 				  &adapter->tx_ring[i]->state);
 		return;
-	} else if (!(adapter->dcb_cfg.pfc_mode_enable))
+	} else if (((adapter->dcbx_cap & DCB_CAP_DCBX_VER_CEE) &&
+		    !(adapter->dcb_cfg.pfc_mode_enable)) ||
+		   ((adapter->dcbx_cap & DCB_CAP_DCBX_VER_IEEE) &&
+		    adapter->ixgbe_ieee_pfc &&
+		    !(adapter->ixgbe_ieee_pfc->pfc_en)))
 		return;
 
 	/* update stats for each tc, only valid with PFC enabled */
@@ -1144,7 +1148,7 @@ static bool ixgbe_alloc_mapped_page(struct ixgbe_ring *rx_ring,
 	 * there isn't much point in holding memory we can't use
 	 */
 	if (dma_mapping_error(rx_ring->dev, dma)) {
-		put_page(page);
+		__free_pages(page, ixgbe_rx_pg_order(rx_ring));
 		bi->page = NULL;
 
 		rx_ring->rx_stats.alloc_rx_page_failed++;
@@ -2902,33 +2906,6 @@ static void ixgbe_configure_rscctl(struct ixgbe_adapter *adapter,
 	IXGBE_WRITE_REG(hw, IXGBE_RSCCTL(reg_idx), rscctrl);
 }
 
-/**
- *  ixgbe_set_uta - Set unicast filter table address
- *  @adapter: board private structure
- *
- *  The unicast table address is a register array of 32-bit registers.
- *  The table is meant to be used in a way similar to how the MTA is used
- *  however due to certain limitations in the hardware it is necessary to
- *  set all the hash bits to 1 and use the VMOLR ROPE bit as a promiscuous
- *  enable bit to allow vlan tag stripping when promiscuous mode is enabled
- **/
-static void ixgbe_set_uta(struct ixgbe_adapter *adapter)
-{
-	struct ixgbe_hw *hw = &adapter->hw;
-	int i;
-
-	/* The UTA table only exists on 82599 hardware and newer */
-	if (hw->mac.type < ixgbe_mac_82599EB)
-		return;
-
-	/* we only need to do this if VMDq is enabled */
-	if (!(adapter->flags & IXGBE_FLAG_SRIOV_ENABLED))
-		return;
-
-	for (i = 0; i < 128; i++)
-		IXGBE_WRITE_REG(hw, IXGBE_UTA(i), ~0);
-}
-
 #define IXGBE_MAX_RX_DESC_POLL 10
 static void ixgbe_rx_desc_queue_enable(struct ixgbe_adapter *adapter,
 				       struct ixgbe_ring *ring)
@@ -3214,8 +3191,6 @@ static void ixgbe_configure_rx(struct ixgbe_adapter *adapter)
 	/* Program registers for the distribution of queues */
 	ixgbe_setup_mrqc(adapter);
 
-	ixgbe_set_uta(adapter);
-
 	/* set_rx_buffer_len must be called before ring initialization */
 	ixgbe_set_rx_buffer_len(adapter);
 
@@ -3452,16 +3427,17 @@ void ixgbe_set_rx_mode(struct net_device *netdev)
 		}
 		ixgbe_vlan_filter_enable(adapter);
 		hw->addr_ctrl.user_set_promisc = false;
-		/*
-		 * Write addresses to available RAR registers, if there is not
-		 * sufficient space to store all the addresses then enable
-		 * unicast promiscuous mode
-		 */
-		count = ixgbe_write_uc_addr_list(netdev);
-		if (count < 0) {
-			fctrl |= IXGBE_FCTRL_UPE;
-			vmolr |= IXGBE_VMOLR_ROPE;
-		}
+	}
+
+	/*
+	 * Write addresses to available RAR registers, if there is not
+	 * sufficient space to store all the addresses then enable
+	 * unicast promiscuous mode
+	 */
+	count = ixgbe_write_uc_addr_list(netdev);
+	if (count < 0) {
+		fctrl |= IXGBE_FCTRL_UPE;
+		vmolr |= IXGBE_VMOLR_ROPE;
 	}
 
 	if (adapter->num_vfs) {
@@ -4128,7 +4104,8 @@ static void ixgbe_clean_rx_ring(struct ixgbe_ring *rx_ring)
 				       DMA_FROM_DEVICE);
 		rx_buffer->dma = 0;
 		if (rx_buffer->page)
-			put_page(rx_buffer->page);
+			__free_pages(rx_buffer->page,
+				     ixgbe_rx_pg_order(rx_ring));
 		rx_buffer->page = NULL;
 	}
 
@@ -4993,9 +4970,6 @@ void ixgbe_update_stats(struct ixgbe_adapter *adapter)
 	if (adapter->flags2 & IXGBE_FLAG2_RSC_ENABLED) {
 		u64 rsc_count = 0;
 		u64 rsc_flush = 0;
-		for (i = 0; i < 16; i++)
-			adapter->hw_rx_no_dma_resources +=
-				IXGBE_READ_REG(hw, IXGBE_QPRDC(i));
 		for (i = 0; i < adapter->num_rx_queues; i++) {
 			rsc_count += adapter->rx_ring[i]->rx_stats.rsc_count;
 			rsc_flush += adapter->rx_ring[i]->rx_stats.rsc_flush;
@@ -5098,6 +5072,9 @@ void ixgbe_update_stats(struct ixgbe_adapter *adapter)
 		hwstats->b2ospc += IXGBE_READ_REG(hw, IXGBE_B2OSPC);
 		hwstats->b2ogprc += IXGBE_READ_REG(hw, IXGBE_B2OGPRC);
 	case ixgbe_mac_82599EB:
+		for (i = 0; i < 16; i++)
+			adapter->hw_rx_no_dma_resources +=
+					     IXGBE_READ_REG(hw, IXGBE_QPRDC(i));
 		hwstats->gorc += IXGBE_READ_REG(hw, IXGBE_GORCL);
 		IXGBE_READ_REG(hw, IXGBE_GORCH); /* to clear */
 		hwstats->gotc += IXGBE_READ_REG(hw, IXGBE_GOTCL);
@@ -5275,7 +5252,7 @@ static void ixgbe_watchdog_update_link(struct ixgbe_adapter *adapter)
 	struct ixgbe_hw *hw = &adapter->hw;
 	u32 link_speed = adapter->link_speed;
 	bool link_up = adapter->link_up;
-	int i;
+	bool pfc_en = adapter->dcb_cfg.pfc_mode_enable;
 
 	if (!(adapter->flags & IXGBE_FLAG_NEED_LINK_UPDATE))
 		return;
@@ -5287,14 +5264,12 @@ static void ixgbe_watchdog_update_link(struct ixgbe_adapter *adapter)
 		link_speed = IXGBE_LINK_SPEED_10GB_FULL;
 		link_up = true;
 	}
-	if (link_up) {
-		if (adapter->flags & IXGBE_FLAG_DCB_ENABLED) {
-			for (i = 0; i < MAX_TRAFFIC_CLASS; i++)
-				hw->mac.ops.fc_enable(hw, i);
-		} else {
-			hw->mac.ops.fc_enable(hw, 0);
-		}
-	}
+
+	if (adapter->ixgbe_ieee_pfc)
+		pfc_en |= !!(adapter->ixgbe_ieee_pfc->pfc_en);
+
+	if (link_up && !((adapter->flags & IXGBE_FLAG_DCB_ENABLED) && pfc_en))
+		hw->mac.ops.fc_enable(hw);
 
 	if (link_up ||
 	    time_after(jiffies, (adapter->link_check_timeout +
@@ -6624,7 +6599,7 @@ static netdev_features_t ixgbe_fix_features(struct net_device *netdev,
 	/* Turn off LRO if not RSC capable */
 	if (!(adapter->flags2 & IXGBE_FLAG2_RSC_CAPABLE))
 		features &= ~NETIF_F_LRO;
-	
+
 
 	return features;
 }
@@ -6683,6 +6658,74 @@ static int ixgbe_set_features(struct net_device *netdev,
 	return 0;
 }
 
+static int ixgbe_ndo_fdb_add(struct ndmsg *ndm,
+			     struct net_device *dev,
+			     unsigned char *addr,
+			     u16 flags)
+{
+	struct ixgbe_adapter *adapter = netdev_priv(dev);
+	int err = -EOPNOTSUPP;
+
+	if (ndm->ndm_state & NUD_PERMANENT) {
+		pr_info("%s: FDB only supports static addresses\n",
+			ixgbe_driver_name);
+		return -EINVAL;
+	}
+
+	if (adapter->flags & IXGBE_FLAG_SRIOV_ENABLED) {
+		if (is_unicast_ether_addr(addr))
+			err = dev_uc_add_excl(dev, addr);
+		else if (is_multicast_ether_addr(addr))
+			err = dev_mc_add_excl(dev, addr);
+		else
+			err = -EINVAL;
+	}
+
+	/* Only return duplicate errors if NLM_F_EXCL is set */
+	if (err == -EEXIST && !(flags & NLM_F_EXCL))
+		err = 0;
+
+	return err;
+}
+
+static int ixgbe_ndo_fdb_del(struct ndmsg *ndm,
+			     struct net_device *dev,
+			     unsigned char *addr)
+{
+	struct ixgbe_adapter *adapter = netdev_priv(dev);
+	int err = -EOPNOTSUPP;
+
+	if (ndm->ndm_state & NUD_PERMANENT) {
+		pr_info("%s: FDB only supports static addresses\n",
+			ixgbe_driver_name);
+		return -EINVAL;
+	}
+
+	if (adapter->flags & IXGBE_FLAG_SRIOV_ENABLED) {
+		if (is_unicast_ether_addr(addr))
+			err = dev_uc_del(dev, addr);
+		else if (is_multicast_ether_addr(addr))
+			err = dev_mc_del(dev, addr);
+		else
+			err = -EINVAL;
+	}
+
+	return err;
+}
+
+static int ixgbe_ndo_fdb_dump(struct sk_buff *skb,
+			      struct netlink_callback *cb,
+			      struct net_device *dev,
+			      int idx)
+{
+	struct ixgbe_adapter *adapter = netdev_priv(dev);
+
+	if (adapter->flags & IXGBE_FLAG_SRIOV_ENABLED)
+		idx = ndo_dflt_fdb_dump(skb, cb, dev, idx);
+
+	return idx;
+}
+
 static const struct net_device_ops ixgbe_netdev_ops = {
 	.ndo_open		= ixgbe_open,
 	.ndo_stop		= ixgbe_close,
@@ -6719,6 +6762,9 @@ static const struct net_device_ops ixgbe_netdev_ops = {
 #endif /* IXGBE_FCOE */
 	.ndo_set_features = ixgbe_set_features,
 	.ndo_fix_features = ixgbe_fix_features,
+	.ndo_fdb_add		= ixgbe_ndo_fdb_add,
+	.ndo_fdb_del		= ixgbe_ndo_fdb_del,
+	.ndo_fdb_dump		= ixgbe_ndo_fdb_dump,
 };
 
 static void __devinit ixgbe_probe_vf(struct ixgbe_adapter *adapter,
@@ -6733,11 +6779,63 @@ static void __devinit ixgbe_probe_vf(struct ixgbe_adapter *adapter,
 	/* The 82599 supports up to 64 VFs per physical function
 	 * but this implementation limits allocation to 63 so that
 	 * basic networking resources are still available to the
-	 * physical function
+	 * physical function.  If the user requests greater thn
+	 * 63 VFs then it is an error - reset to default of zero.
 	 */
-	adapter->num_vfs = (max_vfs > 63) ? 63 : max_vfs;
+	adapter->num_vfs = (max_vfs > 63) ? 0 : max_vfs;
 	ixgbe_enable_sriov(adapter, ii);
 #endif /* CONFIG_PCI_IOV */
+}
+
+/**
+ * ixgbe_wol_supported - Check whether device supports WoL
+ * @hw: hw specific details
+ * @device_id: the device ID
+ * @subdev_id: the subsystem device ID
+ *
+ * This function is used by probe and ethtool to determine
+ * which devices have WoL support
+ *
+ **/
+int ixgbe_wol_supported(struct ixgbe_adapter *adapter, u16 device_id,
+			u16 subdevice_id)
+{
+	struct ixgbe_hw *hw = &adapter->hw;
+	u16 wol_cap = adapter->eeprom_cap & IXGBE_DEVICE_CAPS_WOL_MASK;
+	int is_wol_supported = 0;
+
+	switch (device_id) {
+	case IXGBE_DEV_ID_82599_SFP:
+		/* Only these subdevices could supports WOL */
+		switch (subdevice_id) {
+		case IXGBE_SUBDEV_ID_82599_560FLR:
+			/* only support first port */
+			if (hw->bus.func != 0)
+				break;
+		case IXGBE_SUBDEV_ID_82599_SFP:
+			is_wol_supported = 1;
+			break;
+		}
+		break;
+	case IXGBE_DEV_ID_82599_COMBO_BACKPLANE:
+		/* All except this subdevice support WOL */
+		if (subdevice_id != IXGBE_SUBDEV_ID_82599_KX4_KR_MEZZ)
+			is_wol_supported = 1;
+		break;
+	case IXGBE_DEV_ID_82599_KX4:
+		is_wol_supported = 1;
+		break;
+	case IXGBE_DEV_ID_X540T:
+		/* check eeprom to see if enabled wol */
+		if ((wol_cap == IXGBE_DEVICE_CAPS_WOL_PORT0_1) ||
+		    ((wol_cap == IXGBE_DEVICE_CAPS_WOL_PORT0) &&
+		     (hw->bus.func == 0))) {
+			is_wol_supported = 1;
+		}
+		break;
+	}
+
+	return is_wol_supported;
 }
 
 /**
@@ -6766,7 +6864,6 @@ static int __devinit ixgbe_probe(struct pci_dev *pdev,
 	u16 device_caps;
 #endif
 	u32 eec;
-	u16 wol_cap;
 
 	/* Catch broken hardware that put the wrong VF device ID in
 	 * the PCIe SR-IOV capability.
@@ -7030,40 +7127,12 @@ static int __devinit ixgbe_probe(struct pci_dev *pdev,
 		netdev->features &= ~NETIF_F_RXHASH;
 	}
 
-	/* WOL not supported for all but the following */
+	/* WOL not supported for all devices */
 	adapter->wol = 0;
-	switch (pdev->device) {
-	case IXGBE_DEV_ID_82599_SFP:
-		/* Only these subdevice supports WOL */
-		switch (pdev->subsystem_device) {
-		case IXGBE_SUBDEV_ID_82599_560FLR:
-			/* only support first port */
-			if (hw->bus.func != 0)
-				break;
-		case IXGBE_SUBDEV_ID_82599_SFP:
-			adapter->wol = IXGBE_WUFC_MAG;
-			break;
-		}
-		break;
-	case IXGBE_DEV_ID_82599_COMBO_BACKPLANE:
-		/* All except this subdevice support WOL */
-		if (pdev->subsystem_device != IXGBE_SUBDEV_ID_82599_KX4_KR_MEZZ)
-			adapter->wol = IXGBE_WUFC_MAG;
-		break;
-	case IXGBE_DEV_ID_82599_KX4:
+	hw->eeprom.ops.read(hw, 0x2c, &adapter->eeprom_cap);
+	if (ixgbe_wol_supported(adapter, pdev->device, pdev->subsystem_device))
 		adapter->wol = IXGBE_WUFC_MAG;
-		break;
-	case IXGBE_DEV_ID_X540T:
-		/* Check eeprom to see if it is enabled */
-		hw->eeprom.ops.read(hw, 0x2c, &adapter->eeprom_cap);
-		wol_cap = adapter->eeprom_cap & IXGBE_DEVICE_CAPS_WOL_MASK;
 
-		if ((wol_cap == IXGBE_DEVICE_CAPS_WOL_PORT0_1) ||
-		    ((wol_cap == IXGBE_DEVICE_CAPS_WOL_PORT0) &&
-		     (hw->bus.func == 0)))
-			adapter->wol = IXGBE_WUFC_MAG;
-		break;
-	}
 	device_set_wakeup_enable(&adapter->pdev->dev, adapter->wol);
 
 	/* save off EEPROM version number */
@@ -7152,6 +7221,10 @@ static int __devinit ixgbe_probe(struct pci_dev *pdev,
 
 	e_dev_info("%s\n", ixgbe_default_device_descr);
 	cards_found++;
+
+	if (ixgbe_sysfs_init(adapter))
+		e_err(probe, "failed to allocate sysfs resources\n");
+
 	return 0;
 
 err_register:
@@ -7198,6 +7271,8 @@ static void __devexit ixgbe_remove(struct pci_dev *pdev)
 	}
 
 #endif
+	ixgbe_sysfs_exit(adapter);
+
 #ifdef IXGBE_FCOE
 	if (adapter->flags & IXGBE_FLAG_FCOE_ENABLED)
 		ixgbe_cleanup_fcoe(adapter);

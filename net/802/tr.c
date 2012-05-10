@@ -101,7 +101,7 @@ static inline unsigned long rif_hash(const unsigned char *addr)
 
 static int tr_header(struct sk_buff *skb, struct net_device *dev,
 		     unsigned short type,
-		     const void *daddr, const void *saddr, unsigned len)
+		     const void *daddr, const void *saddr, unsigned int len)
 {
 	struct trh_hdr *trh;
 	int hdr_len;
@@ -193,7 +193,7 @@ __be16 tr_type_trans(struct sk_buff *skb, struct net_device *dev)
 
 	struct trh_hdr *trh;
 	struct trllc *trllc;
-	unsigned riflen=0;
+	unsigned int riflen=0;
 
 	skb->dev = dev;
 	skb_reset_mac_header(skb);
@@ -643,12 +643,6 @@ static struct ctl_table tr_table[] = {
 	},
 	{ },
 };
-
-static __initdata struct ctl_path tr_path[] = {
-	{ .procname = "net", },
-	{ .procname = "token-ring", },
-	{ }
-};
 #endif
 
 /*
@@ -662,7 +656,7 @@ static int __init rif_init(void)
 	setup_timer(&rif_timer, rif_check_expire, 0);
 	add_timer(&rif_timer);
 #ifdef CONFIG_SYSCTL
-	register_sysctl_paths(tr_path, tr_table);
+	register_net_sysctl(&init_net, "net/token-ring", tr_table);
 #endif
 	proc_net_fops_create(&init_net, "tr_rif", S_IRUGO, &rif_seq_fops);
 	return 0;
