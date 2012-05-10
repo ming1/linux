@@ -8,6 +8,7 @@ The next/* branches are kept in the order in which they get applied.
 dependencies:
 depends/i2c/lpc32xx:     git://git.antcom.de/linux-2.6.git lpc32xx/i2c
 depends/pinctrl/mergebase git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-pinctrl.git pinctrl-mergebase-20120418
+depends/rmk/clkdev	git://ftp.arm.linux.org.uk/~rmk/linux.git clkdev
 
 next/maintainers:
 at91/maintainers:	git://github.com/at91linux/linux-at91.git tags/at91-3.5-maintainers
