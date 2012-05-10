@@ -275,18 +275,8 @@ int dlm_rcom_names(struct dlm_ls *ls, int nodeid, char *last_name, int last_len)
 	struct dlm_rcom *rc;
 	struct dlm_mhandle *mh;
 	int error = 0;
-	int max_size = dlm_config.ci_buffer_size - sizeof(struct dlm_rcom);
 
 	ls->ls_recover_nodeid = nodeid;
-
-	if (nodeid == dlm_our_nodeid()) {
-		ls->ls_recover_buf->rc_header.h_length =
-			dlm_config.ci_buffer_size;
-		dlm_copy_master_names(ls, last_name, last_len,
-		                      ls->ls_recover_buf->rc_buf,
-		                      max_size, nodeid);
-		goto out;
-	}
 
 	error = create_rcom(ls, nodeid, DLM_RCOM_NAMES, last_len, &rc, &mh);
 	if (error)
@@ -355,7 +345,8 @@ static void receive_rcom_lookup(struct dlm_ls *ls, struct dlm_rcom *rc_in)
 	if (error)
 		return;
 
-	error = dlm_dir_lookup(ls, nodeid, rc_in->rc_buf, len, &ret_nodeid);
+	error = dlm_master_lookup(ls, nodeid, rc_in->rc_buf, len,
+				  DLM_LU_RECOVER_MASTER, &ret_nodeid, NULL);
 	if (error)
 		ret_nodeid = error;
 	rc->rc_result = ret_nodeid;

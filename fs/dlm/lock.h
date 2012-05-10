@@ -28,9 +28,11 @@ void dlm_unlock_recovery(struct dlm_ls *ls);
 void dlm_scan_waiters(struct dlm_ls *ls);
 void dlm_scan_timeout(struct dlm_ls *ls);
 void dlm_adjust_timeouts(struct dlm_ls *ls);
+int dlm_master_lookup(struct dlm_ls *ls, int nodeid, char *name, int len,
+		      unsigned int flags, int *r_nodeid, int *result);
 
 int dlm_search_rsb_tree(struct rb_root *tree, char *name, int len,
-			unsigned int flags, struct dlm_rsb **r_ret);
+			struct dlm_rsb **r_ret);
 
 void dlm_recover_purge(struct dlm_ls *ls);
 void dlm_purge_mstcpy_locks(struct dlm_rsb *r);
