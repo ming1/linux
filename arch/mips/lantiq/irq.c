@@ -195,7 +195,7 @@ static void ltq_hw_irqdispatch(int module)
 	do_IRQ((int)irq + INT_NUM_IM0_IRL0 + (INT_NUM_IM_OFFSET * module));
 
 	/* if this is a EBU irq, we need to ack it or get a deadlock */
-	if ((irq == LTQ_ICU_EBU_IRQ) && (module == 0))
+	if ((irq == LTQ_ICU_EBU_IRQ) && (module == 0) && LTQ_EBU_PCC_ISTAT)
 		ltq_ebu_w32(ltq_ebu_r32(LTQ_EBU_PCC_ISTAT) | 0x10,
 			LTQ_EBU_PCC_ISTAT);
 }
@@ -259,17 +259,19 @@ void __init arch_init_irq(void)
 	if (!ltq_icu_membase)
 		panic("Failed to remap icu memory");
 
-	if (insert_resource(&iomem_resource, &ltq_eiu_resource) < 0)
-		panic("Failed to insert eiu memory");
+	if (LTQ_EIU_BASE_ADDR) {
+		if (insert_resource(&iomem_resource, &ltq_eiu_resource) < 0)
+			panic("Failed to insert eiu memory");
 
-	if (request_mem_region(ltq_eiu_resource.start,
-			resource_size(&ltq_eiu_resource), "eiu") < 0)
-		panic("Failed to request eiu memory");
+		if (request_mem_region(ltq_eiu_resource.start,
+				resource_size(&ltq_eiu_resource), "eiu") < 0)
+			panic("Failed to request eiu memory");
 
-	ltq_eiu_membase = ioremap_nocache(ltq_eiu_resource.start,
+		ltq_eiu_membase = ioremap_nocache(ltq_eiu_resource.start,
 				resource_size(&ltq_eiu_resource));
-	if (!ltq_eiu_membase)
-		panic("Failed to remap eiu memory");
+		if (!ltq_eiu_membase)
+			panic("Failed to remap eiu memory");
+	}
 
 	/* make sure all irqs are turned off by default */
 	for (i = 0; i < 5; i++)
@@ -295,8 +297,8 @@ void __init arch_init_irq(void)
 
 	for (i = INT_NUM_IRQ0;
 		i <= (INT_NUM_IRQ0 + (5 * INT_NUM_IM_OFFSET)); i++)
-		if ((i == LTQ_EIU_IR0) || (i == LTQ_EIU_IR1) ||
-			(i == LTQ_EIU_IR2))
+		if (((i == LTQ_EIU_IR0) || (i == LTQ_EIU_IR1) ||
+			(i == LTQ_EIU_IR2)) && LTQ_EIU_BASE_ADDR)
 			irq_set_chip_and_handler(i, &ltq_eiu_type,
 				handle_level_irq);
 		/* EIU3-5 only exist on ar9 and vr9 */
