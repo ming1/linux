@@ -1433,8 +1433,6 @@ int journal_stop(handle_t *handle)
 		}
 	}
 
-	if (handle->h_sync)
-		transaction->t_synchronous_commit = 1;
 	current->journal_info = NULL;
 	spin_lock(&journal->j_state_lock);
 	spin_lock(&transaction->t_handle_lock);
@@ -1790,6 +1788,7 @@ static int __dispose_buffer(struct journal_head *jh, transaction_t *transaction)
 		 */
 		clear_buffer_dirty(bh);
 		__journal_file_buffer(jh, transaction, BJ_Forget);
+		jh->b_modified = 0;
 		may_free = 0;
 	} else {
 		JBUFFER_TRACE(jh, "on running transaction");
@@ -1958,8 +1957,10 @@ static int journal_unmap_buffer(journal_t *journal, struct buffer_head *bh)
 		 * clear dirty bits when it is done with the buffer.
 		 */
 		set_buffer_freed(bh);
-		if (journal->j_running_transaction && buffer_jbddirty(bh))
+		if (journal->j_running_transaction && buffer_jbddirty(bh)) {
+			jh->b_modified = 0;
 			jh->b_next_transaction = journal->j_running_transaction;
+		}
 		journal_put_journal_head(jh);
 		spin_unlock(&journal->j_list_lock);
 		jbd_unlock_bh_state(bh);
