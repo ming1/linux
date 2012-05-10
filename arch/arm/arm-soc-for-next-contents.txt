@@ -67,6 +67,12 @@ tegra/defconfig		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-teg
 
 next/drivers:
 pxa/keyboard		git://github.com/hzhuang1/linux.git keyboard
+tegra/usb-ulpi		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git for-3.5/usb-ulpi
+				depends on tegra/pinctrl
+tegra/tegra30-audio	git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git for-3.5/tegra30-audio
+				depends on tegra/pinctrl
+tegra/debug		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git for-3.5/debug
+davinci/soc		git://gitorious.org/linux-davinci/linux-davinci.git tags/v3.5-soc
 
 next/cpuidle:
 ux500/cpuidle		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git ux500-cpuidle-for-arm-soc
