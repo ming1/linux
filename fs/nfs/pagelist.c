@@ -141,6 +141,15 @@ void nfs_unlock_request(struct nfs_page *req)
 	clear_bit(PG_BUSY, &req->wb_flags);
 	smp_mb__after_clear_bit();
 	wake_up_bit(&req->wb_flags, PG_BUSY);
+}
+
+/**
+ * nfs_unlock_and_release_request - Unlock request and release the nfs_page
+ * @req:
+ */
+void nfs_unlock_and_release_request(struct nfs_page *req)
+{
+	nfs_unlock_request(req);
 	nfs_release_request(req);
 }
 
