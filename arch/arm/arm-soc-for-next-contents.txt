@@ -7,6 +7,7 @@ The next/* branches are kept in the order in which they get applied.
 
 dependencies:
 depends/i2c/lpc32xx:     git://git.antcom.de/linux-2.6.git lpc32xx/i2c
+depends/pinctrl/mergebase git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-pinctrl.git pinctrl-mergebase-20120418
 
 next/maintainers:
 at91/maintainers:	git://github.com/at91linux/linux-at91.git tags/at91-3.5-maintainers
@@ -52,6 +53,8 @@ next/pinctrl:
 spear/pinctrl:		git://git.stlinux.com/spear/linux-2.6.git spear-v3.5
 				depends on spear/dt:
 ux500/gpio		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git ux500-gpio-pins-for-arm-soc
+tegra/pinctrl		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git for-2.5/gpio-pinmux
+				depends on depends/pinctrl/mergebase
 
 next/pm:
 omap/pm			git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-pm-regulator-for-v3.5
