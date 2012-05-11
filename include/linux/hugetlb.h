@@ -238,6 +238,7 @@ struct hstate *size_to_hstate(unsigned long size);
 #define HUGE_MAX_HSTATE 1
 #endif
 
+extern int hugetlb_max_hstate;
 extern struct hstate hstates[HUGE_MAX_HSTATE];
 extern unsigned int default_hstate_idx;
 
