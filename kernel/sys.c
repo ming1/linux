@@ -1864,8 +1864,10 @@ static int prctl_set_mm(int opt, unsigned long addr,
 	case PR_SET_MM_ARG_END:
 	case PR_SET_MM_ENV_START:
 	case PR_SET_MM_ENV_END:
-		if (!vma)
+		if (!vma) {
+			error = -EFAULT;
 			goto out;
+		}
 #ifdef CONFIG_STACK_GROWSUP
 		if (vma_flags_mismatch(vma, VM_READ | VM_WRITE | VM_GROWSUP, 0))
 #else
