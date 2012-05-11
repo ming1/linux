@@ -996,18 +996,18 @@ int do_migrate_pages(struct mm_struct *mm,
 		for_each_node_mask(s, tmp) {
 
 			/*
-			 * do_migrate_pages() tries to maintain the
-			 * relative node relationship of the pages
-			 * established between threads and memory areas.
+			 * do_migrate_pages() tries to maintain the relative
+			 * node relationship of the pages established between
+			 * threads and memory areas.
                          *
-			 * However if the number of source nodes is not
-			 * equal to the number of destination nodes we
-			 * can not preserve this node relative relationship.
-			 * In that case, skip copying memory from a node that
-			 * is in the destination mask.
+			 * However if the number of source nodes is not equal to
+			 * the number of destination nodes we can not preserve
+			 * this node relative relationship.  In that case, skip
+			 * copying memory from a node that is in the destination
+			 * mask.
 			 *
 			 * Example: [2,3,4] -> [3,4,5] moves everything.
-			 *                 [0-7] - > [3,4,5] moves only 0,1,2,6,7.
+			 *          [0-7] - > [3,4,5] moves only 0,1,2,6,7.
 			 */
 
 			if ((nodes_weight(*from_nodes) != nodes_weight(*to_nodes)) &&
