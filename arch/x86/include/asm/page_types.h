@@ -25,7 +25,9 @@
 #define HPAGE_MASK		(~(HPAGE_SIZE - 1))
 #define HUGETLB_PAGE_ORDER	(HPAGE_SHIFT - PAGE_SHIFT)
 
+#ifdef CONFIG_HUGETLB_PAGE
 #define HUGE_MAX_HSTATE 2
+#endif
 
 #define PAGE_OFFSET		((unsigned long)__PAGE_OFFSET)
 
