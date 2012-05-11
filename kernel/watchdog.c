@@ -597,20 +597,17 @@ static struct notifier_block __cpuinitdata cpu_nfb = {
 	.notifier_call = cpu_callback
 };
 
+/*
+ * On entry to suspend we force an offline->online transition on the boot CPU so
+ * that PMU state is available to that CPU when it comes back online after
+ * resume.  This information is required for restarting the NMI watchdog.
+ */
 void lockup_detector_bootcpu_resume(void)
 {
 	void *cpu = (void *)(long)smp_processor_id();
 
-	/*
-	 * On the suspend/resume path the boot CPU does not go though the
-	 * offline->online transition. This breaks the NMI detector post
-	 * resume. Force an offline->online transition for the boot CPU on
-	 * resume.
-	 */
 	cpu_callback(&cpu_nfb, CPU_DEAD, cpu);
 	cpu_callback(&cpu_nfb, CPU_ONLINE, cpu);
-
-	return;
 }
 
 void __init lockup_detector_init(void)
