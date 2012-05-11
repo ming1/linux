@@ -76,6 +76,9 @@ struct reg_default {
  * @write_flag_mask: Mask to be set in the top byte of the register when doing
  *                   a write. If both read_flag_mask and write_flag_mask are
  *                   empty the regmap_bus default masks are used.
+ * @use_single_rw: If set, converts the bulk read and write operations into
+ *		    a series of single read and write operations. This is useful
+ *		    for device that does not support bulk read and write.
  *
  * @cache_type: The actual cache type.
  * @reg_defaults_raw: Power on reset values for registers (for use with
@@ -104,6 +107,8 @@ struct regmap_config {
 
 	u8 read_flag_mask;
 	u8 write_flag_mask;
+
+	bool use_single_rw;
 };
 
 typedef int (*regmap_hw_write)(void *context, const void *data,
@@ -165,6 +170,7 @@ struct regmap *devm_regmap_init_mmio(struct device *dev,
 void regmap_exit(struct regmap *map);
 int regmap_reinit_cache(struct regmap *map,
 			const struct regmap_config *config);
+struct regmap *dev_get_regmap(struct device *dev, const char *name);
 int regmap_write(struct regmap *map, unsigned int reg, unsigned int val);
 int regmap_raw_write(struct regmap *map, unsigned int reg,
 		     const void *val, size_t val_len);
@@ -347,6 +353,13 @@ static inline int regmap_register_patch(struct regmap *map,
 {
 	WARN_ONCE(1, "regmap API is disabled");
 	return -EINVAL;
+}
+
+static inline struct regmap *dev_get_regmap(struct device *dev,
+					    const char *name)
+{
+	WARN_ONCE(1, "regmap API is disabled");
+	return NULL;
 }
 
 #endif
