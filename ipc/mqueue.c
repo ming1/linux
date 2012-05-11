@@ -24,6 +24,7 @@
 #include <linux/mqueue.h>
 #include <linux/msg.h>
 #include <linux/skbuff.h>
+#include <linux/vmalloc.h>
 #include <linux/netlink.h>
 #include <linux/syscalls.h>
 #include <linux/audit.h>
