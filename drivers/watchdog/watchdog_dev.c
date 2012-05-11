@@ -48,6 +48,8 @@
 static struct watchdog_device *old_wdd;
 /* the dev_t structure to store the dynamically allocated watchdog devices */
 static dev_t watchdog_devt;
+/* the class for the dynamically allocated watchdog devices */
+static struct class *watchdog_class;
 
 /*
  *	watchdog_ping: ping the watchdog.
@@ -386,10 +388,22 @@ int watchdog_dev_register(struct watchdog_device *watchdog)
 	if (err) {
 		pr_err("watchdog%d unable to add device %d:%d\n",
 			watchdog->id,  MAJOR(watchdog_devt), watchdog->id);
-		if (watchdog->id == 0) {
-			misc_deregister(&watchdog_miscdev);
-			old_wdd = NULL;
-		}
+		goto error;
+	}
+	watchdog->dev = device_create(watchdog_class, watchdog->busdev, devno,
+					NULL, "watchdog%d", watchdog->id);
+	if (IS_ERR(watchdog->dev)) {
+		cdev_del(&watchdog->cdev);
+		err = PTR_ERR(watchdog->dev);
+		goto error;
+	}
+
+	return 0;
+
+error:
+	if (watchdog->id == 0) {
+		misc_deregister(&watchdog_miscdev);
+		old_wdd = NULL;
 	}
 	return err;
 }
@@ -404,6 +418,10 @@ int watchdog_dev_register(struct watchdog_device *watchdog)
 int watchdog_dev_unregister(struct watchdog_device *watchdog)
 {
 	cdev_del(&watchdog->cdev);
+	device_destroy(watchdog_class,
+		       MKDEV(MAJOR(watchdog_devt), watchdog->id));
+	watchdog->dev = NULL;
+
 	if (watchdog->id == 0) {
 		misc_deregister(&watchdog_miscdev);
 		old_wdd = NULL;
@@ -420,9 +438,16 @@ int watchdog_dev_unregister(struct watchdog_device *watchdog)
 int __init watchdog_init(void)
 {
 	int err = alloc_chrdev_region(&watchdog_devt, 0, MAX_DOGS, "watchdog");
-	if (err < 0)
+	if (err < 0) {
 		pr_err("watchdog: unable to allocate char dev region\n");
-	return err;
+		return err;
+	}
+	watchdog_class = class_create(THIS_MODULE, "watchdog");
+	if (IS_ERR(watchdog_class)) {
+		unregister_chrdev_region(watchdog_devt, MAX_DOGS);
+		return PTR_ERR(watchdog_class);
+	}
+	return 0;
 }
 
 /*
@@ -434,6 +459,7 @@ int __init watchdog_init(void)
 void __exit watchdog_exit(void)
 {
 	unregister_chrdev_region(watchdog_devt, MAX_DOGS);
+	class_destroy(watchdog_class);
 }
 
 module_init(watchdog_init);

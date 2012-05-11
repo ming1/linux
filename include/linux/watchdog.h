@@ -102,6 +102,8 @@ struct watchdog_ops {
  * @driver-data:Pointer to the drivers private data.
  * @id:		The watchdog's ID.
  * @cdev:	The watchdog's Character device.
+ * @dev:	The device for our node
+ * @busdev:	Parent bus device
  * @status:	Field that contains the devices internal status bits.
  *
  * The watchdog_device structure contains all information about a
@@ -120,6 +122,8 @@ struct watchdog_device {
 	void *driver_data;
 	int id;
 	struct cdev cdev;
+	struct device *dev;
+	struct device *busdev;
 	unsigned long status;
 /* Bit numbers for status flags */
 #define WDOG_ACTIVE		0	/* Is the watchdog running/active */
