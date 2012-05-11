@@ -1044,7 +1044,7 @@ int __isolate_lru_page(struct page *page, isolate_mode_t mode, int file)
  * @nr_scanned:	The number of pages that were scanned.
  * @sc:		The scan_control struct for this reclaim session
  * @mode:	One of the LRU isolation modes
- * @lru		LRU list id for isolating
+ * @lru:	LRU list id for isolating
  *
  * returns how many pages were moved onto *@dst.
  */
