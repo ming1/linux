@@ -464,8 +464,8 @@ extern int mem_cgroup_move_hugetlb_parent(int idx, struct cgroup *cgroup,
 					  struct page *page);
 extern bool mem_cgroup_have_hugetlb_usage(struct cgroup *cgroup);
 
-extern void  mem_cgroup_hugetlb_migrate(struct page *oldhpage,
-					struct page *newhpage);
+extern void mem_cgroup_hugetlb_migrate(struct page *oldhpage,
+				       struct page *newhpage);
 #else
 static inline int
 mem_cgroup_hugetlb_charge_page(int idx, unsigned long nr_pages,
