@@ -133,7 +133,7 @@ static int msg_insert(struct msg_msg *msg, struct mqueue_inode_info *info)
 			p = &(*p)->rb_left;
 		else
 			p = &(*p)->rb_right;
-	};
+	}
 	leaf = kzalloc(sizeof(struct posix_msg_tree_node), GFP_KERNEL);
 	if (!leaf)
 		return -ENOMEM;
@@ -161,9 +161,9 @@ try_again:
 	while (*p) {
 		parent = *p;
 		/*
-		 * During insert, low priorities fo to the left and high to
-		 * the right.  On receive, we want the highest priorities
-		 * first, so walk all the way to the right.
+		 * During insert, low priorities go to the left and high to the
+		 * right.  On receive, we want the highest priorities first, so
+		 * walk all the way to the right.
 		 */
 		p = &(*p)->rb_right;
 	}
