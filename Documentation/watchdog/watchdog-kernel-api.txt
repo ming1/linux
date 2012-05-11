@@ -1,6 +1,6 @@
 The Linux WatchDog Timer Driver Core kernel API.
 ===============================================
-Last reviewed: 16-Mar-2012
+Last reviewed: 11-May-2012
 
 Wim Van Sebroeck <wim@iguana.be>
 
@@ -46,6 +46,10 @@ struct watchdog_device {
 	unsigned int min_timeout;
 	unsigned int max_timeout;
 	void *driver_data;
+	int id;
+	struct cdev cdev;
+	struct device *dev;
+	struct device *busdev;
 	unsigned long status;
 };
 
@@ -61,6 +65,11 @@ It contains following fields:
 * driver_data: a pointer to the drivers private data of a watchdog device.
   This data should only be accessed via the watchdog_set_drvadata and
   watchdog_get_drvdata routines.
+* id: set by watchdog_register_device, id 0 is special it has both a dynamic
+  major, minor 0 /dev/watchdog0 cdev as well as the old miscdev /dev/watchdog
+* cdev: cdev for the dynamic major /dev/watchdog<id> device nodes
+* dev: device under the watchdog class
+* busdev: set this to the parent device (or NULL) before calling register
 * status: this field contains a number of status bits that give extra
   information about the status of the device (Like: is the watchdog timer
   running/active, is the nowayout bit set, is the device opened via
