@@ -14,21 +14,19 @@
 #include <asm/unistd.h>
 
 /*
- * We don't expose real in-memory order of objects for security
- * reasons, still the comparison results should be suitable for
- * sorting. Thus, we obfuscate kernel pointers values and compare
- * the production instead.
+ * We don't expose the real in-memory order of objects for security reasons.
+ * But still the comparison results should be suitable for sorting. So we
+ * obfuscate kernel pointers values and compare the production instead.
  *
- * The obfuscation is done in two steps. First -- we use xor on
- * kernel pointer with random value, which puts pointer into
- * a new position in reordered space. Second -- we multiply
- * the xor production with big odd random number to permute
- * bits even more (the odd multiplier guarantees that the product
- * is unique ever after the high bits are truncated, since any odd
- * number is relative prime to 2^n).
+ * The obfuscation is done in two steps. First we xor the kernel pointer with
+ * a random value, which puts pointer into a new position in a reordered space.
+ * Secondly we multiply the xor production with a large odd random number to
+ * permute its bits even more (the odd multiplier guarantees that the product
+ * is unique ever after the high bits are truncated, since any odd number is
+ * relative prime to 2^n).
  *
- * Note also the obfuscation itself is invisible to user-space
- * and if needed it can be changed to any suitable scheme.
+ * Note also that the obfuscation itself is invisible to userspace and if needed
+ * it can be changed to an alternate scheme.
  */
 static unsigned long cookies[KCMP_TYPES][2] __read_mostly;
 
