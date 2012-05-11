@@ -51,15 +51,13 @@ struct eventfd_ctx {
  *
  * -EINVAL    : The value of @n is negative.
  */
-int eventfd_signal(struct eventfd_ctx *ctx, int n)
+__u64 eventfd_signal(struct eventfd_ctx *ctx, __u64 n)
 {
 	unsigned long flags;
 
-	if (n < 0)
-		return -EINVAL;
 	spin_lock_irqsave(&ctx->wqh.lock, flags);
 	if (ULLONG_MAX - ctx->count < n)
-		n = (int) (ULLONG_MAX - ctx->count);
+		n = ULLONG_MAX - ctx->count;
 	ctx->count += n;
 	if (waitqueue_active(&ctx->wqh))
 		wake_up_locked_poll(&ctx->wqh, POLLIN);
