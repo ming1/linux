@@ -153,7 +153,7 @@ void zap_pid_ns_processes(struct pid_namespace *pid_ns)
 
 	/* Ignore SIGCHLD causing any terminated children to autoreap */
 	spin_lock_irq(&me->sighand->siglock);
-	me->sighand->action[SIGCHLD -1].sa.sa_handler = SIG_IGN;
+	me->sighand->action[SIGCHLD - 1].sa.sa_handler = SIG_IGN;
 	spin_unlock_irq(&me->sighand->siglock);
 
 	/*
