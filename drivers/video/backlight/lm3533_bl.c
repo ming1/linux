@@ -242,7 +242,7 @@ static umode_t lm3533_bl_attr_is_visible(struct kobject *kobj,
 {
 	struct device *dev = container_of(kobj, struct device, kobj);
 	struct lm3533_bl *bl = dev_get_drvdata(dev);
-	mode_t mode = attr->mode;
+	umode_t mode = attr->mode;
 
 	if (attr == &dev_attr_als.attr) {
 		if (!bl->lm3533->have_als)
