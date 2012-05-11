@@ -74,6 +74,7 @@ struct kvm_stats_debugfs_item debugfs_entries[] = {
 	{ "instruction_sigp_restart", VCPU_STAT(instruction_sigp_restart) },
 	{ "diagnose_10", VCPU_STAT(diagnose_10) },
 	{ "diagnose_44", VCPU_STAT(diagnose_44) },
+	{ "diagnose_9c", VCPU_STAT(diagnose_9c) },
 	{ NULL }
 };
 
@@ -134,6 +135,10 @@ int kvm_dev_ioctl_check_extension(long ext)
 #endif
 	case KVM_CAP_SYNC_REGS:
 		r = 1;
+		break;
+	case KVM_CAP_NR_VCPUS:
+	case KVM_CAP_MAX_VCPUS:
+		r = KVM_MAX_VCPUS;
 		break;
 	default:
 		r = 0;
@@ -422,6 +427,14 @@ int kvm_arch_vcpu_runnable(struct kvm_vcpu *vcpu)
 	BUG();
 	return 0;
 }
+
+int kvm_arch_vcpu_should_kick(struct kvm_vcpu *vcpu)
+{
+	/* kvm common code refers to this, but never calls it */
+	BUG();
+	return 0;
+}
+
 
 static int kvm_arch_vcpu_ioctl_initial_reset(struct kvm_vcpu *vcpu)
 {
