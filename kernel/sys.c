@@ -1809,6 +1809,8 @@ static int prctl_set_mm(int opt, unsigned long addr,
 	if (addr >= TASK_SIZE)
 		return -EINVAL;
 
+	error = -EINVAL;
+
 	down_read(&mm->mmap_sem);
 	vma = find_vma(mm, addr);
 
