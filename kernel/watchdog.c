@@ -597,6 +597,7 @@ static struct notifier_block __cpuinitdata cpu_nfb = {
 	.notifier_call = cpu_callback
 };
 
+#ifdef CONFIG_SUSPEND
 /*
  * On exit from suspend we force an offline->online transition on the boot CPU
  * so that the PMU state that was lost while in suspended state gets set up
@@ -610,6 +611,7 @@ void lockup_detector_bootcpu_resume(void)
 	cpu_callback(&cpu_nfb, CPU_DEAD, cpu);
 	cpu_callback(&cpu_nfb, CPU_ONLINE, cpu);
 }
+#endif
 
 void __init lockup_detector_init(void)
 {
