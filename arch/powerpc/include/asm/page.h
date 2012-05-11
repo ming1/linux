@@ -39,13 +39,13 @@
 #ifndef __ASSEMBLY__
 #ifdef CONFIG_HUGETLB_PAGE
 extern unsigned int HPAGE_SHIFT;
+#define HUGE_MAX_HSTATE		(MMU_PAGE_COUNT-1)
 #else
 #define HPAGE_SHIFT PAGE_SHIFT
 #endif
 #define HPAGE_SIZE		((1UL) << HPAGE_SHIFT)
 #define HPAGE_MASK		(~(HPAGE_SIZE - 1))
 #define HUGETLB_PAGE_ORDER	(HPAGE_SHIFT - PAGE_SHIFT)
-#define HUGE_MAX_HSTATE		(MMU_PAGE_COUNT-1)
 #endif
 
 /* We do define AT_SYSINFO_EHDR but don't use the gate mechanism */
