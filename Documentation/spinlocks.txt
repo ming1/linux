@@ -148,40 +148,40 @@ indeed), while write-locks need to protect themselves against interrupts.
 
 spin_is_locked is a bad idea
 
-spin_is_locked checks if a lock is currently hold.  On uniprocessor kernels
-it always returns 0. In general this function should be avoided because most
-uses of it are either redundant or broken.
+spin_is_locked checks if a lock is currently held.  On uniprocessor
+kernels it always returns 0.  In general this function should be avoided
+because most uses of it are either redundant or broken.
 
-People often use spin_is_locked() to check if a particular lock is hold when a function
-is called to enforce a locking discipline, like
+People often use spin_is_locked() to check if a particular lock is held
+when a function is called to enforce a locking discipline, like
 
-	WARN_ON(!spin_is_locked(!my_lock))
+	WARN_ON(!spin_is_locked(&my_lock))
 
 or
 
-	BUG_ON(!spin_is_locked(!my_lock))
+	BUG_ON(!spin_is_locked(&my_lock))
 
 or some variant of those.
 
 This does not work on uniprocessor kernels because they will always fail.
-While there are ways around that they are ugly and not recommended.
-Better use lockdep_assert_held(). This also only checks on a lock debugging
-kernel (which you should occasionally run on your code anyways because
-it catches many more problems).
+While there are ways around that they are ugly and not recommended.  It is
+better to use lockdep_assert_held().  This also only checks on a lock
+debugging kernel (which you should occasionally run on your code anyway
+because it catches many more problems).
 
-In generally this would be better done with static annotation anyways
-(there's some support for it in sparse)
+In generally this would be better done with static annotation anyway
+(there is some support for it in sparse)
 
 	BUG_ON(spin_is_locked(obj->lock));
 	kfree(obj);
 
-Another usage is checking whether a lock is not hold when freeing an object.
-However this is redundant because lock debugging supports this anyways
-without explicit code. Just delete the BUG_ON.
+Another usage is checking whether a lock is not held when freeing an
+object.  However this is redundant because lock debugging supports this
+already without explicit code.  Just delete the BUG_ON.
 
-A third usage is to check in a console function if a lock is hold, to get
-a panic crash dump out even when some other thread died in it.
-This is better implemented with spin_try_lock() et.al. and a timeout.
+A third usage is to check in a console function if a lock is held, to get
+a panic crash dump even when some other thread died in it.  This is better
+implemented with spin_try_lock() et.al.  and a timeout.
 
 Other usages are usually simply races.
 
