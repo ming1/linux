@@ -501,7 +501,7 @@ static inline int mem_cgroup_hugetlb_file_init(int idx)
 	return 0;
 }
 
-static inline  void  mem_cgroup_hugetlb_migrate(struct page *oldhpage,
+static inline void mem_cgroup_hugetlb_migrate(struct page *oldhpage,
 						struct page *newhpage)
 {
 	return;
