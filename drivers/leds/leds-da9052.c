@@ -40,7 +40,7 @@ struct da9052_led {
 	int brightness;
 };
 
-unsigned char led_reg[] = {
+static unsigned char led_reg[] = {
 	DA9052_LED_CONT_4_REG,
 	DA9052_LED_CONT_5_REG,
 };
