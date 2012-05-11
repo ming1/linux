@@ -448,5 +448,47 @@ static inline void sock_release_memcg(struct sock *sk)
 {
 }
 #endif /* CONFIG_CGROUP_MEM_RES_CTLR_KMEM */
+
+#ifdef CONFIG_MEM_RES_CTLR_HUGETLB
+extern int mem_cgroup_hugetlb_charge_page(int idx, unsigned long nr_pages,
+					  struct mem_cgroup **ptr);
+extern void mem_cgroup_hugetlb_commit_charge(int idx, unsigned long nr_pages,
+					     struct mem_cgroup *memcg,
+					     struct page *page);
+extern void mem_cgroup_hugetlb_uncharge_page(int idx, unsigned long nr_pages,
+					     struct page *page);
+extern void mem_cgroup_hugetlb_uncharge_memcg(int idx, unsigned long nr_pages,
+					      struct mem_cgroup *memcg);
+
+#else
+static inline int
+mem_cgroup_hugetlb_charge_page(int idx, unsigned long nr_pages,
+						 struct mem_cgroup **ptr)
+{
+	return 0;
+}
+
+static inline void
+mem_cgroup_hugetlb_commit_charge(int idx, unsigned long nr_pages,
+				 struct mem_cgroup *memcg,
+				 struct page *page)
+{
+	return;
+}
+
+static inline void
+mem_cgroup_hugetlb_uncharge_page(int idx, unsigned long nr_pages,
+				 struct page *page)
+{
+	return;
+}
+
+static inline void
+mem_cgroup_hugetlb_uncharge_memcg(int idx, unsigned long nr_pages,
+				  struct mem_cgroup *memcg)
+{
+	return;
+}
+#endif  /* CONFIG_MEM_RES_CTLR_HUGETLB */
 #endif /* _LINUX_MEMCONTROL_H */
 
