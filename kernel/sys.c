@@ -1809,42 +1809,21 @@ static int prctl_set_mm(int opt, unsigned long addr,
 	if (addr >= TASK_SIZE)
 		return -EINVAL;
 
-	error = -EINVAL;
-
 	down_read(&mm->mmap_sem);
 	vma = find_vma(mm, addr);
 
-	if (opt != PR_SET_MM_START_BRK &&
-	    opt != PR_SET_MM_BRK &&
-	    opt != PR_SET_MM_AUXV) {
-		/* It must be existing VMA */
-		if (!vma || vma->vm_start > addr)
-			goto out;
-	}
-
 	switch (opt) {
 	case PR_SET_MM_START_CODE:
-	case PR_SET_MM_END_CODE:
-		if (vma_flags_mismatch(vma, VM_READ | VM_EXEC,
-				       VM_WRITE | VM_MAYSHARE))
-			goto out;
-
-		if (opt == PR_SET_MM_START_CODE)
-			mm->start_code = addr;
-		else
-			mm->end_code = addr;
+		mm->start_code = addr;
 		break;
-
+	case PR_SET_MM_END_CODE:
+		mm->end_code = addr;
+		break;
 	case PR_SET_MM_START_DATA:
+		mm->start_data = addr;
+		break;
 	case PR_SET_MM_END_DATA:
-		if (vma_flags_mismatch(vma, VM_READ | VM_WRITE,
-				       VM_EXEC | VM_MAYSHARE))
-			goto out;
-
-		if (opt == PR_SET_MM_START_DATA)
-			mm->start_data = addr;
-		else
-			mm->end_data = addr;
+		mm->end_data = addr;
 		break;
 
 	case PR_SET_MM_START_BRK:
@@ -1883,6 +1862,8 @@ static int prctl_set_mm(int opt, unsigned long addr,
 	case PR_SET_MM_ARG_END:
 	case PR_SET_MM_ENV_START:
 	case PR_SET_MM_ENV_END:
+		if (!vma)
+			goto out;
 #ifdef CONFIG_STACK_GROWSUP
 		if (vma_flags_mismatch(vma, VM_READ | VM_WRITE | VM_GROWSUP, 0))
 #else
