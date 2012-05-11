@@ -277,19 +277,19 @@ static int proc_pid_wchan(struct task_struct *task, char *buffer)
 }
 #endif /* CONFIG_KALLSYMS */
 
-static int lock_trace(struct task_struct *task)
+static int task_access_lock(struct task_struct *task, unsigned int mode)
 {
 	int err = mutex_lock_killable(&task->signal->cred_guard_mutex);
 	if (err)
 		return err;
-	if (!ptrace_may_access(task, PTRACE_MODE_ATTACH)) {
+	if (!ptrace_may_access(task, mode)) {
 		mutex_unlock(&task->signal->cred_guard_mutex);
 		return -EPERM;
 	}
 	return 0;
 }
 
-static void unlock_trace(struct task_struct *task)
+static void task_access_unlock(struct task_struct *task)
 {
 	mutex_unlock(&task->signal->cred_guard_mutex);
 }
@@ -315,7 +315,7 @@ static int proc_pid_stack(struct seq_file *m, struct pid_namespace *ns,
 	trace.entries		= entries;
 	trace.skip		= 0;
 
-	err = lock_trace(task);
+	err = task_access_lock(task, PTRACE_MODE_ATTACH);
 	if (!err) {
 		save_stack_trace_tsk(task, &trace);
 
@@ -323,7 +323,7 @@ static int proc_pid_stack(struct seq_file *m, struct pid_namespace *ns,
 			seq_printf(m, "[<%pK>] %pS\n",
 				   (void *)entries[i], (void *)entries[i]);
 		}
-		unlock_trace(task);
+		task_access_unlock(task);
 	}
 	kfree(entries);
 
@@ -491,7 +491,7 @@ static int proc_pid_syscall(struct task_struct *task, char *buffer)
 {
 	long nr;
 	unsigned long args[6], sp, pc;
-	int res = lock_trace(task);
+	int res = task_access_lock(task, PTRACE_MODE_ATTACH);
 	if (res)
 		return res;
 
@@ -505,7 +505,7 @@ static int proc_pid_syscall(struct task_struct *task, char *buffer)
 		       nr,
 		       args[0], args[1], args[2], args[3], args[4], args[5],
 		       sp, pc);
-	unlock_trace(task);
+	task_access_unlock(task);
 	return res;
 }
 #endif /* CONFIG_HAVE_ARCH_TRACEHOOK */
@@ -2873,14 +2873,9 @@ static int do_io_accounting(struct task_struct *task, char *buffer, int whole)
 	unsigned long flags;
 	int result;
 
-	result = mutex_lock_killable(&task->signal->cred_guard_mutex);
+	result = task_access_lock(task, PTRACE_MODE_READ);
 	if (result)
 		return result;
-
-	if (!ptrace_may_access(task, PTRACE_MODE_READ)) {
-		result = -EACCES;
-		goto out_unlock;
-	}
 
 	if (whole && lock_task_sighand(task, &flags)) {
 		struct task_struct *t = task;
@@ -2906,8 +2901,7 @@ static int do_io_accounting(struct task_struct *task, char *buffer, int whole)
 			(unsigned long long)acct.read_bytes,
 			(unsigned long long)acct.write_bytes,
 			(unsigned long long)acct.cancelled_write_bytes);
-out_unlock:
-	mutex_unlock(&task->signal->cred_guard_mutex);
+	task_access_unlock(task);
 	return result;
 }
 
@@ -2993,10 +2987,10 @@ static const struct file_operations proc_gid_map_operations = {
 static int proc_pid_personality(struct seq_file *m, struct pid_namespace *ns,
 				struct pid *pid, struct task_struct *task)
 {
-	int err = lock_trace(task);
+	int err = task_access_lock(task, PTRACE_MODE_ATTACH);
 	if (!err) {
 		seq_printf(m, "%08x\n", task->personality);
-		unlock_trace(task);
+		task_access_unlock(task);
 	}
 	return err;
 }
