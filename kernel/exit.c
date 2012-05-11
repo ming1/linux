@@ -164,6 +164,16 @@ static void delayed_put_task_struct(struct rcu_head *rhp)
 	put_task_struct(tsk);
 }
 
+static bool pidns_leader(struct task_struct *tsk)
+{
+	return is_child_reaper(task_pid(tsk));
+}
+
+static bool delay_pidns_leader(struct task_struct *tsk)
+{
+	return pidns_leader(tsk) &&
+	       (!thread_group_empty(tsk) || !list_empty(&tsk->children));
+}
 
 void release_task(struct task_struct * p)
 {
@@ -183,15 +193,23 @@ repeat:
 	__exit_signal(p);
 
 	/*
-	 * If we are the last non-leader member of the thread
-	 * group, and the leader is zombie, then notify the
-	 * group leader's parent process. (if it wants notification.)
+	 * If we are the last non-leader member of the thread group,
+	 * or the last non-leader member of the pid namespace, and the
+	 * leader is zombie, then notify the leader's parent
+	 * process. (if it wants notification.)
 	 */
 	zap_leader = 0;
-	leader = p->group_leader;
-	if (leader != p && thread_group_empty(leader) && leader->exit_state == EXIT_ZOMBIE) {
+	leader = NULL;
+	/* Do we need to worry about our thread_group or our pidns leader? */
+	if (p != p->group_leader)
+		leader = p->group_leader;
+	else if (pidns_leader(p->real_parent))
+		leader = p->real_parent;
+
+	if (leader && thread_group_empty(leader) &&
+	    leader->exit_state == EXIT_ZOMBIE && list_empty(&leader->children)) {
 		/*
-		 * If we were the last child thread and the leader has
+		 * If we were the last task in the group and the leader has
 		 * exited already, and the leader's parent ignores SIGCHLD,
 		 * then we are the one who should release the leader.
 		 */
@@ -720,11 +738,10 @@ static struct task_struct *find_new_reaper(struct task_struct *father)
 		zap_pid_ns_processes(pid_ns);
 		write_lock_irq(&tasklist_lock);
 		/*
-		 * We can not clear ->child_reaper or leave it alone.
-		 * There may by stealth EXIT_DEAD tasks on ->children,
-		 * forget_original_parent() must move them somewhere.
+		 * Move all lingering EXIT_DEAD tasks onto the
+		 * children list of init's thread group leader.
 		 */
-		pid_ns->child_reaper = init_pid_ns.child_reaper;
+		pid_ns->child_reaper = father->group_leader;
 	} else if (father->signal->has_child_subreaper) {
 		struct task_struct *reaper;
 
@@ -798,6 +815,12 @@ static void forget_original_parent(struct task_struct *father)
 	exit_ptrace(father);
 	reaper = find_new_reaper(father);
 
+	/* Return immediately if we aren't going to reparent anything */
+	if (unlikely(reaper == father)) {
+		write_unlock_irq(&tasklist_lock);
+		return;
+	}
+
 	list_for_each_entry_safe(p, n, &father->children, sibling) {
 		struct task_struct *t = p;
 		do {
@@ -853,6 +876,7 @@ static void exit_notify(struct task_struct *tsk, int group_dead)
 		autoreap = do_notify_parent(tsk, sig);
 	} else if (thread_group_leader(tsk)) {
 		autoreap = thread_group_empty(tsk) &&
+			!delay_pidns_leader(tsk) &&
 			do_notify_parent(tsk, tsk->exit_signal);
 	} else {
 		autoreap = true;
@@ -1584,7 +1608,7 @@ static int wait_consider_task(struct wait_opts *wo, int ptrace,
 		}
 
 		/* we don't reap group leaders with subthreads */
-		if (!delay_group_leader(p))
+		if (!delay_group_leader(p) && !delay_pidns_leader(p))
 			return wait_task_zombie(wo, p);
 
 		/*
