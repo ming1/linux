@@ -19,10 +19,26 @@
 #include <asm/coldfire.h>
 #include <asm/mcfsim.h>
 #include <asm/mcfuart.h>
+#include <asm/mcfgpio.h>
 
 /***************************************************************************/
 
-#ifdef CONFIG_SPI_COLDFIRE_QSPI
+struct mcf_gpio_chip mcf_gpio_chips[] = {
+	MCFGPS(PIRQ, 0, 8, MCFEPORT_EPDDR, MCFEPORT_EPDR, MCFEPORT_EPPDR),
+	MCFGPF(CS, 9, 3),
+	MCFGPF(FECI2C, 16, 4),
+	MCFGPF(QSPI, 24, 4),
+	MCFGPF(TIMER, 32, 4),
+	MCFGPF(UART, 40, 8),
+	MCFGPF(FECH, 48, 8),
+	MCFGPF(FECL, 56, 8),
+};
+
+unsigned int mcf_gpio_chips_size = ARRAY_SIZE(mcf_gpio_chips);
+
+/***************************************************************************/
+
+#if IS_ENABLED(CONFIG_SPI_COLDFIRE_QSPI)
 
 static void __init m520x_qspi_init(void)
 {
@@ -35,7 +51,7 @@ static void __init m520x_qspi_init(void)
 	writew(par, MCF_GPIO_PAR_UART);
 }
 
-#endif /* CONFIG_SPI_COLDFIRE_QSPI */
+#endif /* IS_ENABLED(CONFIG_SPI_COLDFIRE_QSPI) */
 
 /***************************************************************************/
 
@@ -79,7 +95,7 @@ void __init config_BSP(char *commandp, int size)
 	mach_sched_init = hw_timer_init;
 	m520x_uarts_init();
 	m520x_fec_init();
-#ifdef CONFIG_SPI_COLDFIRE_QSPI
+#if IS_ENABLED(CONFIG_SPI_COLDFIRE_QSPI)
 	m520x_qspi_init();
 #endif
 }
