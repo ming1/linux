@@ -360,9 +360,8 @@ static int lm3556_probe(struct i2c_client *client,
 		return -ENODATA;
 	}
 
-	chip =
-	    devm_kzalloc(&client->dev, sizeof(struct lm3556_chip_data),
-			 GFP_KERNEL);
+	chip = devm_kzalloc(&client->dev, sizeof(struct lm3556_chip_data),
+			    GFP_KERNEL);
 	if (!chip)
 		return -ENOMEM;
 
@@ -416,7 +415,6 @@ err_create_torch_file:
 err_create_flash_file:
 err_chip_init:
 	i2c_set_clientdata(client, NULL);
-	kfree(chip);
 	return err;
 }
 
@@ -430,7 +428,6 @@ static int lm3556_remove(struct i2c_client *client)
 	led_classdev_unregister(&chip->cdev_flash);
 	lm3556_write_reg(client, REG_ENABLE, 0);
 
-	kfree(chip);
 	return 0;
 }
 
