@@ -402,7 +402,7 @@ static inline int omap_nand_dma_transfer(struct mtd_info *mtd, void *addr,
 			PREFETCH_FIFOTHRESHOLD_MAX, 0x1, len, is_write);
 	if (ret)
 		/* PFPW engine is busy, use cpu copy method */
-		goto out_copy;
+		goto out_copy_unmap;
 
 	init_completion(&info->comp);
 
@@ -421,6 +421,8 @@ static inline int omap_nand_dma_transfer(struct mtd_info *mtd, void *addr,
 	dma_unmap_single(&info->pdev->dev, dma_addr, len, dir);
 	return 0;
 
+out_copy_unmap:
+	dma_unmap_single(&info->pdev->dev, dma_addr, len, dir);
 out_copy:
 	if (info->nand.options & NAND_BUSWIDTH_16)
 		is_write == 0 ? omap_read_buf16(mtd, (u_char *) addr, len)
@@ -879,7 +881,7 @@ static int omap_wait(struct mtd_info *mtd, struct nand_chip *chip)
 	struct omap_nand_info *info = container_of(mtd, struct omap_nand_info,
 							mtd);
 	unsigned long timeo = jiffies;
-	int status = NAND_STATUS_FAIL, state = this->state;
+	int status, state = this->state;
 
 	if (state == FL_ERASING)
 		timeo += (HZ * 400) / 1000;
@@ -894,6 +896,8 @@ static int omap_wait(struct mtd_info *mtd, struct nand_chip *chip)
 			break;
 		cond_resched();
 	}
+
+	status = gpmc_nand_read(info->gpmc_cs, GPMC_NAND_DATA);
 	return status;
 }
 
