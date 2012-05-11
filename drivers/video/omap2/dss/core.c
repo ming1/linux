@@ -87,6 +87,16 @@ struct regulator *dss_get_vdds_sdi(void)
 	return reg;
 }
 
+int dss_set_min_bus_tput(struct device *dev, unsigned long tput)
+{
+	struct omap_dss_board_info *pdata = core.pdev->dev.platform_data;
+
+	if (pdata->set_min_bus_tput)
+		return pdata->set_min_bus_tput(dev, tput);
+	else
+		return 0;
+}
+
 #if defined(CONFIG_DEBUG_FS) && defined(CONFIG_OMAP2_DSS_DEBUG_SUPPORT)
 static int dss_debug_show(struct seq_file *s, void *unused)
 {
@@ -381,6 +391,8 @@ int omap_dss_register_driver(struct omap_dss_driver *dssdriver)
 	if (dssdriver->get_recommended_bpp == NULL)
 		dssdriver->get_recommended_bpp =
 			omapdss_default_get_recommended_bpp;
+	if (dssdriver->get_timings == NULL)
+		dssdriver->get_timings = omapdss_default_get_timings;
 
 	return driver_register(&dssdriver->driver);
 }
