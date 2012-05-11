@@ -293,7 +293,7 @@ static int psb_chip_setup(struct drm_device *dev)
 {
 	psb_get_core_freq(dev);
 	gma_intel_setup_gmbus(dev);
-	gma_intel_opregion_init(dev);
+	psb_intel_opregion_init(dev);
 	psb_intel_init_bios(dev);
 	return 0;
 }
@@ -308,6 +308,8 @@ const struct psb_ops psb_chip_ops = {
 	.accel_2d = 1,
 	.pipes = 2,
 	.crtcs = 2,
+	.hdmi_mask = (1 << 0),
+	.lvds_mask = (1 << 1),
 	.sgx_offset = PSB_SGX_OFFSET,
 	.chip_setup = psb_chip_setup,
 	.chip_teardown = psb_chip_teardown,

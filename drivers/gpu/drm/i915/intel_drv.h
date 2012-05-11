@@ -45,6 +45,18 @@
 	ret__;								\
 })
 
+#define wait_for_atomic_us(COND, US) ({ \
+	int i, ret__ = -ETIMEDOUT;	\
+	for (i = 0; i < (US); i++) {	\
+		if ((COND)) {		\
+			ret__ = 0;	\
+			break;		\
+		}			\
+		udelay(1);		\
+	}				\
+	ret__;				\
+})
+
 #define wait_for(COND, MS) _wait_for(COND, MS, 1)
 #define wait_for_atomic(COND, MS) _wait_for(COND, MS, 0)
 
@@ -196,6 +208,25 @@ struct intel_plane {
 			     struct drm_intel_sprite_colorkey *key);
 };
 
+struct intel_watermark_params {
+	unsigned long fifo_size;
+	unsigned long max_wm;
+	unsigned long default_wm;
+	unsigned long guard_size;
+	unsigned long cacheline_size;
+};
+
+struct cxsr_latency {
+	int is_desktop;
+	int is_ddr3;
+	unsigned long fsb_freq;
+	unsigned long mem_freq;
+	unsigned long display_sr;
+	unsigned long display_hpll_disable;
+	unsigned long cursor_sr;
+	unsigned long cursor_hpll_disable;
+};
+
 #define to_intel_crtc(x) container_of(x, struct intel_crtc, base)
 #define to_intel_connector(x) container_of(x, struct intel_connector, base)
 #define to_intel_encoder(x) container_of(x, struct intel_encoder, base)
@@ -297,7 +328,8 @@ extern void intel_attach_broadcast_rgb_property(struct drm_connector *connector)
 extern void intel_crt_init(struct drm_device *dev);
 extern void intel_hdmi_init(struct drm_device *dev, int sdvox_reg);
 void intel_dip_infoframe_csum(struct dip_infoframe *avi_if);
-extern bool intel_sdvo_init(struct drm_device *dev, int output_device);
+extern bool intel_sdvo_init(struct drm_device *dev, uint32_t sdvo_reg,
+			    bool is_sdvob);
 extern void intel_dvo_init(struct drm_device *dev);
 extern void intel_tv_init(struct drm_device *dev);
 extern void intel_mark_busy(struct drm_device *dev,
@@ -311,6 +343,8 @@ extern bool intel_dpd_is_edp(struct drm_device *dev);
 extern void intel_edp_link_config(struct intel_encoder *, int *, int *);
 extern bool intel_encoder_is_pch_edp(struct drm_encoder *encoder);
 extern int intel_plane_init(struct drm_device *dev, enum pipe pipe);
+extern void intel_flush_display_plane(struct drm_i915_private *dev_priv,
+				      enum plane plane);
 
 /* intel_panel.c */
 extern void intel_fixed_panel_mode(struct drm_display_mode *fixed_mode,
@@ -368,6 +402,7 @@ extern void intel_crtc_fb_gamma_set(struct drm_crtc *crtc, u16 red, u16 green,
 extern void intel_crtc_fb_gamma_get(struct drm_crtc *crtc, u16 *red, u16 *green,
 				    u16 *blue, int regno);
 extern void intel_enable_clock_gating(struct drm_device *dev);
+extern void ironlake_disable_rc6(struct drm_device *dev);
 extern void ironlake_enable_drps(struct drm_device *dev);
 extern void ironlake_disable_drps(struct drm_device *dev);
 extern void gen6_enable_rps(struct drm_i915_private *dev_priv);
@@ -413,7 +448,7 @@ extern void intel_write_eld(struct drm_encoder *encoder,
 extern void intel_cpt_verify_modeset(struct drm_device *dev, int pipe);
 
 /* For use by IVB LP watermark workaround in intel_sprite.c */
-extern void sandybridge_update_wm(struct drm_device *dev);
+extern void intel_update_watermarks(struct drm_device *dev);
 extern void intel_update_sprite_watermarks(struct drm_device *dev, int pipe,
 					   uint32_t sprite_width,
 					   int pixel_size);
@@ -422,5 +457,14 @@ extern int intel_sprite_set_colorkey(struct drm_device *dev, void *data,
 				     struct drm_file *file_priv);
 extern int intel_sprite_get_colorkey(struct drm_device *dev, void *data,
 				     struct drm_file *file_priv);
+
+extern u32 intel_dpio_read(struct drm_i915_private *dev_priv, int reg);
+
+/* Power-related functions, located in intel_pm.c */
+extern void intel_init_pm(struct drm_device *dev);
+/* FBC */
+extern bool intel_fbc_enabled(struct drm_device *dev);
+extern void intel_enable_fbc(struct drm_crtc *crtc, unsigned long interval);
+extern void intel_update_fbc(struct drm_device *dev);
 
 #endif /* __INTEL_DRV_H__ */

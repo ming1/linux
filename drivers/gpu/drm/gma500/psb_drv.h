@@ -30,6 +30,7 @@
 #include "psb_intel_drv.h"
 #include "gtt.h"
 #include "power.h"
+#include "opregion.h"
 #include "oaktrail.h"
 
 /* Append new drm mode definition here, align with libdrm definition */
@@ -120,6 +121,7 @@ enum {
 #define PSB_HWSTAM		  0x2098
 #define PSB_INSTPM		  0x20C0
 #define PSB_INT_IDENTITY_R        0x20A4
+#define _PSB_IRQ_ASLE		  (1<<0)
 #define _MDFLD_PIPEC_EVENT_FLAG   (1<<2)
 #define _MDFLD_PIPEC_VBLANK_FLAG  (1<<3)
 #define _PSB_DPST_PIPEB_FLAG      (1<<4)
@@ -130,6 +132,7 @@ enum {
 #define _PSB_VSYNC_PIPEA_FLAG	  (1<<7)
 #define _MDFLD_MIPIA_FLAG	  (1<<16)
 #define _MDFLD_MIPIC_FLAG	  (1<<17)
+#define _PSB_IRQ_DISP_HOTSYNC	  (1<<17)
 #define _PSB_IRQ_SGX_FLAG	  (1<<18)
 #define _PSB_IRQ_MSVDX_FLAG	  (1<<19)
 #define _LNC_IRQ_TOPAZ_FLAG	  (1<<20)
@@ -257,7 +260,8 @@ struct psb_intel_opregion {
 	struct opregion_acpi *acpi;
 	struct opregion_swsci *swsci;
 	struct opregion_asle *asle;
-	int enabled;
+	void *vbt;
+	u32 __iomem *lid_state;
 };
 
 struct sdvo_device_mapping {
@@ -494,15 +498,18 @@ struct psb_ops;
 struct drm_psb_private {
 	struct drm_device *dev;
 	const struct psb_ops *ops;
+	
+	struct child_device_config *child_dev;
+	int child_dev_num;
 
 	struct psb_gtt gtt;
 
 	/* GTT Memory manager */
 	struct psb_gtt_mm *gtt_mm;
 	struct page *scratch_page;
-	u32 *gtt_map;
+	u32 __iomem *gtt_map;
 	uint32_t stolen_base;
-	void *vram_addr;
+	u8 __iomem *vram_addr;
 	unsigned long vram_stolen_size;
 	int gtt_initialized;
 	u16 gmch_ctrl;		/* Saved GTT setup */
@@ -518,8 +525,8 @@ struct drm_psb_private {
 	 * Register base
 	 */
 
-	uint8_t *sgx_reg;
-	uint8_t *vdc_reg;
+	uint8_t __iomem *sgx_reg;
+	uint8_t __iomem *vdc_reg;
 	uint32_t gatt_free_offset;
 
 	/*
@@ -605,7 +612,7 @@ struct drm_psb_private {
 	int rpm_enabled;
 
 	/* MID specific */
-	struct oaktrail_vbt vbt_data;
+	bool has_gct;
 	struct oaktrail_gct_data gct_data;
 
 	/* Oaktrail HDMI state */
@@ -621,6 +628,11 @@ struct drm_psb_private {
 	uint32_t msi_addr;
 	uint32_t msi_data;
 
+	/*
+	 * Hotplug handling
+	 */
+
+	struct work_struct hotplug_work;
 
 	/*
 	 * LID-Switch
@@ -628,7 +640,6 @@ struct drm_psb_private {
 	spinlock_t lid_lock;
 	struct timer_list lid_timer;
 	struct psb_intel_opregion opregion;
-	u32 *lid_state;
 	u32 lid_last_state;
 
 	/*
@@ -669,6 +680,8 @@ struct drm_psb_private {
 	u32 dspcntr[3];
 
 	int mdfld_panel_id;
+
+	bool dplla_96mhz;	/* DPLL data from the VBT */
 };
 
 
@@ -682,6 +695,8 @@ struct psb_ops {
 	int pipes;		/* Number of output pipes */
 	int crtcs;		/* Number of CRTCs */
 	int sgx_offset;		/* Base offset of SGX device */
+	int hdmi_mask;		/* Mask of HDMI CRTCs */
+	int lvds_mask;		/* Mask of LVDS CRTCs */
 
 	/* Sub functions */
 	struct drm_crtc_helper_funcs const *crtc_helper;
@@ -690,9 +705,13 @@ struct psb_ops {
 	/* Setup hooks */
 	int (*chip_setup)(struct drm_device *dev);
 	void (*chip_teardown)(struct drm_device *dev);
+	/* Optional helper caller after modeset */
+	void (*errata)(struct drm_device *dev);
 
 	/* Display management hooks */
 	int (*output_init)(struct drm_device *dev);
+	int (*hotplug)(struct drm_device *dev);
+	void (*hotplug_enable)(struct drm_device *dev, bool on);
 	/* Power management hooks */
 	void (*init_pm)(struct drm_device *dev);
 	int (*save_regs)(struct drm_device *dev);
