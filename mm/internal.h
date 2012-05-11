@@ -229,8 +229,8 @@ static inline void mlock_migrate_page(struct page *newpage, struct page *page)
 {
 	/*
 	 * Here we are supposed to update the page memcg's mlock stat and the
-	 * newpage memcgs' mlock. Since the page and newpage are always being
-	 * charged to the same memcg, so no need.
+	 * newpage memcgs' mlock. Since the two pages are always being charged
+	 * to the same memcg there is no need for this.
 	 */
 	if (TestClearPageMlocked(page)) {
 		unsigned long flags;
