@@ -723,6 +723,11 @@ static void __free_pages_ok(struct page *page, unsigned int order)
 		return;
 
 	local_irq_save(flags);
+	/*
+	 * Note: we didn't update the page memcg's mlock stat since we believe
+	 * the mlocked page shouldn't get to here. However, we could be wrong
+	 * and a warn_once would tell us.
+	 */
 	if (unlikely(wasMlocked))
 		free_page_mlock(page);
 	__count_vm_events(PGFREE, 1 << order);
@@ -1298,6 +1303,11 @@ void free_hot_cold_page(struct page *page, int cold)
 	migratetype = get_pageblock_migratetype(page);
 	set_page_private(page, migratetype);
 	local_irq_save(flags);
+	/*
+	 * Note: we didn't update the page memcg's mlock stat since we believe
+	 * the mlocked page shouldn't get to here. However, we could be wrong
+	 * and a warn_once would tell us.
+	 */
 	if (unlikely(wasMlocked))
 		free_page_mlock(page);
 	__count_vm_event(PGFREE);
