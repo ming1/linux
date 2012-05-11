@@ -679,7 +679,7 @@ static const struct file_operations proc_single_file_operations = {
 	.release	= single_release,
 };
 
-static int __mem_open(struct inode* inode, struct file* file, unsigned int mode)
+static int __mem_open(struct inode *inode, struct file *file, unsigned int mode)
 {
 	struct task_struct *task = get_proc_task(file->f_path.dentry->d_inode);
 	struct mm_struct *mm;
@@ -707,7 +707,7 @@ static int __mem_open(struct inode* inode, struct file* file, unsigned int mode)
 	return 0;
 }
 
-static int mem_open(struct inode* inode, struct file* file)
+static int mem_open(struct inode *inode, struct file *file)
 {
 	return __mem_open(inode, file, PTRACE_MODE_ATTACH);
 }
@@ -808,7 +808,7 @@ static const struct file_operations proc_mem_operations = {
 	.release	= mem_release,
 };
 
-static int environ_open(struct inode* inode, struct file* file)
+static int environ_open(struct inode *inode, struct file *file)
 {
 	return __mem_open(inode, file, PTRACE_MODE_READ);
 }
