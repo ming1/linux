@@ -126,7 +126,7 @@ static void *m_start(struct seq_file *m, loff_t *pos)
 		return ERR_PTR(-ESRCH);
 
 	mm = mm_access(priv->task, PTRACE_MODE_READ);
-	if (!mm || IS_ERR(mm))
+	if (IS_ERR_OR_NULL(mm))
 		return mm;
 	down_read(&mm->mmap_sem);
 
@@ -957,7 +957,7 @@ static ssize_t pagemap_read(struct file *file, char __user *buf,
 
 	mm = mm_access(task, PTRACE_MODE_READ);
 	ret = PTR_ERR(mm);
-	if (!mm || IS_ERR(mm))
+	if (IS_ERR_OR_NULL(mm))
 		goto out_free;
 
 	pagemap_walk.pmd_entry = pagemap_pte_range;
