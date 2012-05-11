@@ -336,7 +336,7 @@ static unsigned long * __init
 sparse_early_usemaps_alloc_pgdat_section(struct pglist_data *pgdat,
 					 unsigned long size)
 {
-	return alloc_bootmem_node_nopanic(pgdat, size)
+	return alloc_bootmem_node_nopanic(pgdat, size);
 }
 
 static void __init check_usemap_section_nr(int nid, unsigned long *usemap)
