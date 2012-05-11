@@ -237,7 +237,7 @@ static struct attribute *lm3533_bl_attributes[] = {
 	NULL,
 };
 
-static mode_t lm3533_bl_attr_is_visible(struct kobject *kobj,
+static umode_t lm3533_bl_attr_is_visible(struct kobject *kobj,
 					     struct attribute *attr, int n)
 {
 	struct device *dev = container_of(kobj, struct device, kobj);
