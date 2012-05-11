@@ -49,9 +49,9 @@ EXPORT_SYMBOL(can_do_mlock);
  */
 
 /*
- *  LRU accounting for clear_page_mlock()
- *  Make sure the caller calls mem_cgroup_begin[end]_update_page_stat,
- *  otherwise it will be race between "move" and "page stat accounting".
+ * LRU accounting for clear_page_mlock()
+ * The caller must use mem_cgroup_begin[end]_update_page_stat to prevent a race
+ * between "move" and "page stat accounting".
  */
 void __clear_page_mlock(struct page *page)
 {
