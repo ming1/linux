@@ -252,6 +252,10 @@ struct mem_cgroup {
 	};
 
 	/*
+	 * the counter to account for hugepages from hugetlb.
+	 */
+	struct res_counter hugepage[HUGE_MAX_HSTATE];
+	/*
 	 * Per cgroup active and inactive list, similar to the
 	 * per zone LRU lists.
 	 */
@@ -3208,6 +3212,114 @@ static inline int mem_cgroup_move_swap_account(swp_entry_t entry,
 }
 #endif
 
+#ifdef CONFIG_MEM_RES_CTLR_HUGETLB
+static bool mem_cgroup_have_hugetlb_usage(struct mem_cgroup *memcg)
+{
+	int idx;
+	for (idx = 0; idx < hugetlb_max_hstate; idx++) {
+		if ((res_counter_read_u64(&memcg->hugepage[idx], RES_USAGE)) > 0)
+			return 1;
+	}
+	return 0;
+}
+
+int mem_cgroup_hugetlb_charge_page(int idx, unsigned long nr_pages,
+				   struct mem_cgroup **ptr)
+{
+	int ret = 0;
+	struct mem_cgroup *memcg = NULL;
+	struct res_counter *fail_res;
+	unsigned long csize = nr_pages * PAGE_SIZE;
+
+	if (mem_cgroup_disabled())
+		goto done;
+again:
+	rcu_read_lock();
+	memcg = mem_cgroup_from_task(current);
+	if (!memcg)
+		memcg = root_mem_cgroup;
+
+	if (!css_tryget(&memcg->css)) {
+		rcu_read_unlock();
+		goto again;
+	}
+	rcu_read_unlock();
+
+	ret = res_counter_charge(&memcg->hugepage[idx], csize, &fail_res);
+	css_put(&memcg->css);
+done:
+	*ptr = memcg;
+	return ret;
+}
+
+void mem_cgroup_hugetlb_commit_charge(int idx, unsigned long nr_pages,
+				      struct mem_cgroup *memcg,
+				      struct page *page)
+{
+	struct page_cgroup *pc;
+
+	if (mem_cgroup_disabled())
+		return;
+
+	pc = lookup_page_cgroup(page);
+	lock_page_cgroup(pc);
+	if (unlikely(PageCgroupUsed(pc))) {
+		unlock_page_cgroup(pc);
+		mem_cgroup_hugetlb_uncharge_memcg(idx, nr_pages, memcg);
+		return;
+	}
+	pc->mem_cgroup = memcg;
+	SetPageCgroupUsed(pc);
+	unlock_page_cgroup(pc);
+	return;
+}
+
+void mem_cgroup_hugetlb_uncharge_page(int idx, unsigned long nr_pages,
+				      struct page *page)
+{
+	struct page_cgroup *pc;
+	struct mem_cgroup *memcg;
+	unsigned long csize = nr_pages * PAGE_SIZE;
+
+	if (mem_cgroup_disabled())
+		return;
+
+	pc = lookup_page_cgroup(page);
+	if (unlikely(!PageCgroupUsed(pc)))
+		return;
+
+	lock_page_cgroup(pc);
+	if (!PageCgroupUsed(pc)) {
+		unlock_page_cgroup(pc);
+		return;
+	}
+	memcg = pc->mem_cgroup;
+	pc->mem_cgroup = root_mem_cgroup;
+	ClearPageCgroupUsed(pc);
+	unlock_page_cgroup(pc);
+
+	res_counter_uncharge(&memcg->hugepage[idx], csize);
+	return;
+}
+
+void mem_cgroup_hugetlb_uncharge_memcg(int idx, unsigned long nr_pages,
+				       struct mem_cgroup *memcg)
+{
+	unsigned long csize = nr_pages * PAGE_SIZE;
+
+	if (mem_cgroup_disabled())
+		return;
+
+	res_counter_uncharge(&memcg->hugepage[idx], csize);
+	return;
+}
+#else
+static bool mem_cgroup_have_hugetlb_usage(struct mem_cgroup *memcg)
+{
+	return 0;
+}
+#endif /* CONFIG_MEM_RES_CTLR_HUGETLB */
+
 /*
  * Before starting migration, account PAGE_SIZE to mem_cgroup that the old
  * page belongs to.
@@ -4955,6 +5067,7 @@ err_cleanup:
 static struct cgroup_subsys_state * __ref
 mem_cgroup_create(struct cgroup *cont)
 {
+	int idx;
 	struct mem_cgroup *memcg, *parent;
 	long error = -ENOMEM;
 	int node;
@@ -4997,9 +5110,22 @@ mem_cgroup_create(struct cgroup *cont)
 		 * mem_cgroup(see mem_cgroup_put).
 		 */
 		mem_cgroup_get(parent);
+		/*
+		 * We could get called before hugetlb init is called.
+		 * Use HUGE_MAX_HSTATE as the max index.
+		 */
+		for (idx = 0; idx < HUGE_MAX_HSTATE; idx++)
+			res_counter_init(&memcg->hugepage[idx],
+					 &parent->hugepage[idx]);
 	} else {
 		res_counter_init(&memcg->res, NULL);
 		res_counter_init(&memcg->memsw, NULL);
+		/*
+		 * We could get called before hugetlb init is called.
+		 * Use HUGE_MAX_HSTATE as the max index.
+		 */
+		for (idx = 0; idx < HUGE_MAX_HSTATE; idx++)
+			res_counter_init(&memcg->hugepage[idx], NULL);
 	}
 	memcg->last_scanned_node = MAX_NUMNODES;
 	INIT_LIST_HEAD(&memcg->oom_notify);
@@ -5030,6 +5156,12 @@ free_out:
 static int mem_cgroup_pre_destroy(struct cgroup *cont)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_cont(cont);
+	/*
+	 * Don't allow memcg removal if we have HugeTLB resource
+	 * usage.
+	 */
+	if (mem_cgroup_have_hugetlb_usage(memcg))
+		return -EBUSY;
 
 	return mem_cgroup_force_empty(memcg, false);
 }
