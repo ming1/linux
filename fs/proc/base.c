@@ -240,7 +240,7 @@ static int proc_pid_auxv(struct task_struct *task, char *buffer)
 {
 	struct mm_struct *mm = mm_access(task, PTRACE_MODE_READ);
 	int res = PTR_ERR(mm);
-	if (mm && !IS_ERR(mm)) {
+	if (!IS_ERR_OR_NULL(mm)) {
 		unsigned int nwords = 0;
 		do {
 			nwords += 2;
