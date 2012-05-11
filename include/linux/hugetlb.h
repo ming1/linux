@@ -7,6 +7,7 @@
 
 struct ctl_table;
 struct user_struct;
+struct mmu_gather;
 
 #ifdef CONFIG_HUGETLB_PAGE
 
