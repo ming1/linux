@@ -180,13 +180,13 @@ EXPORT_SYMBOL(unregister_cpu_notifier);
  * clear_tasks_mm_cpumask - Safely clear tasks' mm_cpumask for a CPU
  * @cpu: a CPU id
  *
- * This function walks up all processes, finds a valid mm struct for
- * each one and then clears a corresponding bit in mm's cpumask. While
- * this all sounds trivial, there are various non-obvious corner cases,
- * which this function tries to solve in a safe manner.
+ * This function walks all processes, finds a valid mm struct for each one and
+ * then clears a corresponding bit in mm's cpumask.  While this all sounds
+ * trivial, there are various non-obvious corner cases, which this function
+ * tries to solve in a safe manner.
  *
- * Also note that the function uses a somewhat relaxed locking scheme,
- * so it may be called only for an already offlined CPU.
+ * Also note that the function uses a somewhat relaxed locking scheme, so it may
+ * be called only for an already offlined CPU.
  */
 void clear_tasks_mm_cpumask(int cpu)
 {
