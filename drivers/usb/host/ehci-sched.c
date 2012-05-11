@@ -481,7 +481,6 @@ static int tt_no_collision (
 
 static int enable_periodic (struct ehci_hcd *ehci)
 {
-	u32	cmd;
 	int	status;
 
 	if (ehci->periodic_sched++)
@@ -497,8 +496,8 @@ static int enable_periodic (struct ehci_hcd *ehci)
 		return status;
 	}
 
-	cmd = ehci_readl(ehci, &ehci->regs->command) | CMD_PSE;
-	ehci_writel(ehci, cmd, &ehci->regs->command);
+	ehci->command |= CMD_PSE;
+	ehci_writel(ehci, ehci->command, &ehci->regs->command);
 	/* posted write ... PSS happens later */
 
 	/* make sure ehci_work scans these */
@@ -511,7 +510,6 @@ static int enable_periodic (struct ehci_hcd *ehci)
 
 static int disable_periodic (struct ehci_hcd *ehci)
 {
-	u32	cmd;
 	int	status;
 
 	if (--ehci->periodic_sched)
@@ -537,8 +535,8 @@ static int disable_periodic (struct ehci_hcd *ehci)
 		return status;
 	}
 
-	cmd = ehci_readl(ehci, &ehci->regs->command) & ~CMD_PSE;
-	ehci_writel(ehci, cmd, &ehci->regs->command);
+	ehci->command &= ~CMD_PSE;
+	ehci_writel(ehci, ehci->command, &ehci->regs->command);
 	/* posted write ... */
 
 	free_cached_lists(ehci);
@@ -2358,7 +2356,8 @@ restart:
 				 * in the previous frame for completions.
 				 */
 				if (q.fstn->hw_prev != EHCI_LIST_END(ehci)) {
-					dbg ("ignoring completions from FSTNs");
+					ehci_dbg(ehci,
+						"ignoring completions from FSTNs\n");
 				}
 				type = Q_NEXT_TYPE(ehci, q.fstn->hw_next);
 				q = q.fstn->fstn_next;
@@ -2441,7 +2440,7 @@ restart:
 				q = *q_p;
 				break;
 			default:
-				dbg ("corrupt type %d frame %d shadow %p",
+				ehci_dbg(ehci, "corrupt type %d frame %d shadow %p\n",
 					type, frame, q.ptr);
 				// BUG ();
 				q.ptr = NULL;

@@ -20,10 +20,10 @@
  * DEFINE
  *****************************************************************************/
 #define CI13XXX_PAGE_SIZE  4096ul /* page size for TD's */
-#define ENDPT_MAX          (32)
-#define CTRL_PAYLOAD_MAX   (64)
-#define RX        (0)  /* similar to USB_DIR_OUT but can be used as an index */
-#define TX        (1)  /* similar to USB_DIR_IN  but can be used as an index */
+#define ENDPT_MAX          32
+#define CTRL_PAYLOAD_MAX   64
+#define RX        0  /* similar to USB_DIR_OUT but can be used as an index */
+#define TX        1  /* similar to USB_DIR_IN  but can be used as an index */
 
 /******************************************************************************
  * STRUCTURES
@@ -82,7 +82,6 @@ struct ci13xxx_req {
 /* Extension of usb_ep */
 struct ci13xxx_ep {
 	struct usb_ep                          ep;
-	const struct usb_endpoint_descriptor  *desc;
 	u8                                     dir;
 	u8                                     num;
 	u8                                     type;
@@ -95,6 +94,7 @@ struct ci13xxx_ep {
 	int                                    wedge;
 
 	/* global resources */
+	struct ci13xxx                        *udc;
 	spinlock_t                            *lock;
 	struct device                         *device;
 	struct dma_pool                       *td_pool;
@@ -103,6 +103,8 @@ struct ci13xxx_ep {
 struct ci13xxx;
 struct ci13xxx_udc_driver {
 	const char	*name;
+	/* offset of the capability registers */
+	uintptr_t	 capoffset;
 	unsigned long	 flags;
 #define CI13XXX_REGS_SHARED		BIT(0)
 #define CI13XXX_REQUIRE_TRANSCEIVER	BIT(1)
@@ -114,25 +116,38 @@ struct ci13xxx_udc_driver {
 	void	(*notify_event) (struct ci13xxx *udc, unsigned event);
 };
 
+struct hw_bank {
+	unsigned      lpm;    /* is LPM? */
+	void __iomem *abs;    /* bus map offset */
+	void __iomem *cap;    /* bus map offset + CAP offset */
+	void __iomem *op;     /* bus map offset + OP offset */
+	size_t        size;   /* bank size */
+	void *__iomem *regmap;
+};
+
 /* CI13XXX UDC descriptor & global resources */
 struct ci13xxx {
-	spinlock_t		  *lock;      /* ctrl register bank access */
+	spinlock_t		   lock;      /* ctrl register bank access */
 	void __iomem              *regs;      /* registers address space */
 
 	struct dma_pool           *qh_pool;   /* DMA pool for queue heads */
 	struct dma_pool           *td_pool;   /* DMA pool for transfer descs */
 	struct usb_request        *status;    /* ep0 status request */
 
+	struct device             *dev;
 	struct usb_gadget          gadget;     /* USB slave device */
 	struct ci13xxx_ep          ci13xxx_ep[ENDPT_MAX]; /* extended endpts */
 	u32                        ep0_dir;    /* ep0 direction */
-#define ep0out ci13xxx_ep[0]
-#define ep0in  ci13xxx_ep[hw_ep_max / 2]
+	struct ci13xxx_ep          *ep0out, *ep0in;
+	unsigned		   hw_ep_max;  /* number of hw endpoints */
+
 	u8                         remote_wakeup; /* Is remote wakeup feature
 							enabled by the host? */
 	u8                         suspended;  /* suspended by the host */
 	u8                         test_mode;  /* the selected test mode */
 
+	struct hw_bank             hw_bank;
+	int			   irq;
 	struct usb_gadget_driver  *driver;     /* 3rd party gadget driver */
 	struct ci13xxx_udc_driver *udc_driver; /* device controller driver */
 	int                        vbus_active; /* is VBUS active */
@@ -142,8 +157,36 @@ struct ci13xxx {
 /******************************************************************************
  * REGISTERS
  *****************************************************************************/
+/* Default offset of capability registers */
+#define DEF_CAPOFFSET		0x100
+
 /* register size */
 #define REG_BITS   (32)
+
+/* register indices */
+enum ci13xxx_regs {
+	CAP_CAPLENGTH,
+	CAP_HCCPARAMS,
+	CAP_DCCPARAMS,
+	CAP_TESTMODE,
+	CAP_LAST = CAP_TESTMODE,
+	OP_USBCMD,
+	OP_USBSTS,
+	OP_USBINTR,
+	OP_DEVICEADDR,
+	OP_ENDPTLISTADDR,
+	OP_PORTSC,
+	OP_DEVLC,
+	OP_USBMODE,
+	OP_ENDPTSETUPSTAT,
+	OP_ENDPTPRIME,
+	OP_ENDPTFLUSH,
+	OP_ENDPTSTAT,
+	OP_ENDPTCOMPLETE,
+	OP_ENDPTCTRL,
+	/* endptctrl1..15 follow */
+	OP_LAST = OP_ENDPTCTRL + ENDPT_MAX / 2,
+};
 
 /* HCCPARAMS */
 #define HCCPARAMS_LEN         BIT(17)
@@ -203,25 +246,18 @@ struct ci13xxx {
 /******************************************************************************
  * LOGGING
  *****************************************************************************/
-#define ci13xxx_printk(level, format, args...) \
-do { \
-	if (_udc == NULL) \
-		printk(level "[%s] " format "\n", __func__, ## args); \
-	else \
-		dev_printk(level, _udc->gadget.dev.parent, \
-			   "[%s] " format "\n", __func__, ## args); \
-} while (0)
-
-#define err(format, args...)    ci13xxx_printk(KERN_ERR, format, ## args)
-#define warn(format, args...)   ci13xxx_printk(KERN_WARNING, format, ## args)
-#define info(format, args...)   ci13xxx_printk(KERN_INFO, format, ## args)
-
 #ifdef TRACE
-#define trace(format, args...)      ci13xxx_printk(KERN_DEBUG, format, ## args)
-#define dbg_trace(format, args...)  dev_dbg(dev, format, ##args)
+#define trace(dev, format, args...)					\
+	do {								\
+		if (dev == NULL)					\
+			pr_debug("[%s] " format "\n", __func__,		\
+			       ## args);				\
+		else							\
+			dev_printk(KERN_DEBUG, dev, "[%s] " format "\n", \
+				   __func__, ## args);			\
+	} while (0)
 #else
-#define trace(format, args...)      do {} while (0)
-#define dbg_trace(format, args...)  do {} while (0)
+#define trace(dev, format, args...)      do {} while (0)
 #endif
 
 #endif	/* _CI13XXX_h_ */
