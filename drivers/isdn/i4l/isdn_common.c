@@ -2351,18 +2351,18 @@ static int __init isdn_init(void)
 	strcpy(tmprev, isdn_revision);
 	printk(KERN_NOTICE "ISDN subsystem Rev: %s/", isdn_getrev(tmprev));
 	strcpy(tmprev, isdn_net_revision);
-	printk(KERN_CONT "%s/", isdn_getrev(tmprev));
+	printk("%s/", isdn_getrev(tmprev));
 	strcpy(tmprev, isdn_ppp_revision);
-	printk(KERN_CONT "%s/", isdn_getrev(tmprev));
+	printk("%s/", isdn_getrev(tmprev));
 	strcpy(tmprev, isdn_audio_revision);
-	printk(KERN_CONT "%s/", isdn_getrev(tmprev));
+	printk("%s/", isdn_getrev(tmprev));
 	strcpy(tmprev, isdn_v110_revision);
-	printk(KERN_CONT "%s", isdn_getrev(tmprev));
+	printk("%s", isdn_getrev(tmprev));
 
 #ifdef MODULE
-	printk(KERN_CONT " loaded\n");
+	printk(" loaded\n");
 #else
-	printk(KERN_CONG "\n");
+	printk("\n");
 #endif
 	isdn_info_update();
 	return 0;
