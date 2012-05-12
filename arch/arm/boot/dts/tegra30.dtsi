@@ -224,4 +224,28 @@
 			nvidia,ahub-cif-ids = <8 8>;
 		};
 	};
+
+	ahb: ahb@6000c004 {
+		compatible = "nvidia,tegra30-ahb";
+		reg = <0x6000c004 0x14c>; /* AHB Arbitration + Gizmo Controller */
+	};
+
+	mc {
+		compatible = "nvidia,tegra30-mc";
+		reg = <0x7000f000 0x010
+		       0x7000f03c 0x1b4
+		       0x7000f200 0x028
+		       0x7000f284 0x17c>;
+		interrupts = <0 77 0x04>;
+	};
+
+	smmu {
+		compatible = "nvidia,tegra30-smmu";
+		reg = <0x7000f010 0x02c
+		       0x7000f1f0 0x010
+		       0x7000f228 0x05c>;
+		nvidia,#asids = <4>;		/* # of ASIDs */
+		dma-window = <0 0x40000000>;	/* IOVA start & length */
+		nvidia,ahb = <&ahb>;
+	};
 };
