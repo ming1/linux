@@ -26,12 +26,11 @@
 #include <linux/platform_device.h>
 #include <linux/jiffies.h>
 #include <linux/io.h>
+#include <linux/stmp_device.h>
 #include <linux/pinctrl/consumer.h>
 #include <linux/of.h>
 #include <linux/of_device.h>
 #include <linux/of_i2c.h>
-
-#include <mach/common.h>
 
 #define DRIVER_NAME "mxs-i2c"
 
@@ -115,13 +114,9 @@ struct mxs_i2c_dev {
 	struct i2c_adapter adapter;
 };
 
-/*
- * TODO: check if calls to here are really needed. If not, we could get rid of
- * mxs_reset_block and the mach-dependency. Needs an I2C analyzer, probably.
- */
 static void mxs_i2c_reset(struct mxs_i2c_dev *i2c)
 {
-	mxs_reset_block(i2c->regs);
+	stmp_reset_block(i2c->regs);
 	writel(MXS_I2C_IRQ_MASK << 8, i2c->regs + MXS_I2C_CTRL1_SET);
 	writel(MXS_I2C_QUEUECTRL_PIO_QUEUE_MODE,
 			i2c->regs + MXS_I2C_QUEUECTRL_SET);
