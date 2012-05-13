@@ -58,6 +58,8 @@ at91/sam9n12:		git://github.com/at91linux/linux-at91.git tags/at91-for-next-soc
 ux500/u9540		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git ux500-u9540-for-arm-soc
 renesas/soc-core	git://git.kernel.org/pub/scm/linux/kernel/git/rafael/renesas.git soc-core
 				depends on renesas/dt
+spear/13xx:		git://git.stlinux.com/spear/linux-2.6.git for-v3.5-spear13xx
+				depends on spear/clock, spear/pinctrl and spear/dt
 
 next/pinctrl:
 spear/pinctrl:		git://git.stlinux.com/spear/linux-2.6.git spear-v3.5
@@ -118,19 +120,14 @@ next/clock:
 depends/clk/clk-next	git://git.linaro.org/people/mturquette/linux.git clk-next
 mxs/clock		git://git.linaro.org/people/shawnguo/linux-2.6.git clk/mxs
 imx/clock		git://git.pengutronix.de/git/imx/linux-2.6.git tags/imx-common-clk
+spear/clock:		git://git.stlinux.com/spear/linux-2.6.git for-v3.5-spear-clk
+				depends on depends/clk/clk-next and depends/rmk/clkdev
+
 
 next/cpuidle:
 ux500/cpuidle		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git ux500-cpuidle-for-arm-soc
 
 next/stmp-dev:		git://git.pengutronix.de/git/wsa/linux.git stmp_device
-
-staging/clock:
-spear/clock:		git://git.stlinux.com/spear/linux-2.6.git for-v3.5-spear-clk
-				depends on spear/dt and spear/pinctrl
-
-staging/newsoc:
-spear/13xx:		git://git.stlinux.com/spear/linux-2.6.git for-v3.5-spear13xx
-				depends on spear/clock
 
 staging/cleanup:
 devel/cleanup-late-initcall	git://git.linaro.org/people/shawnguo/linux-2.6.git clean/late_initcall_v2
