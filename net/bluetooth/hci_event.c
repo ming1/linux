@@ -2062,6 +2062,12 @@ static inline void hci_encrypt_change_evt(struct hci_dev *hdev, struct sk_buff *
 
 		clear_bit(HCI_CONN_ENCRYPT_PEND, &conn->flags);
 
+		if (ev->status && conn->state == BT_CONNECTED) {
+			hci_acl_disconn(conn, 0x13);
+			hci_conn_put(conn);
+			goto unlock;
+		}
+
 		if (conn->state == BT_CONFIG) {
 			if (!ev->status)
 				conn->state = BT_CONNECTED;
@@ -2072,6 +2078,7 @@ static inline void hci_encrypt_change_evt(struct hci_dev *hdev, struct sk_buff *
 			hci_encrypt_cfm(conn, ev->status, ev->encrypt);
 	}
 
+unlock:
 	hci_dev_unlock(hdev);
 }
 
