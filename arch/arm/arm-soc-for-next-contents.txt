@@ -1,0 +1,158 @@
+This file lists all branches that are pulled into the for-next branch
+of git://git.kernel.org/pub/scm/linux/kernel/git/arm/arm-soc.git
+and their external dependencies.
+
+It also includes a couple of directly applied patches for build breaks with subject
+The next/* branches are kept in the order in which they get applied.
+
+dependencies:
+depends/i2c/lpc32xx:     git://git.antcom.de/linux-2.6.git lpc32xx/i2c
+depends/pinctrl/mergebase git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-pinctrl.git pinctrl-mergebase-20120418
+depends/pinctrl/devel	git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-pinctrl.git devel (this is a superset of mergebase)
+depends/rmk/clkdev	git://ftp.arm.linux.org.uk/~rmk/linux.git clkdev
+
+next/maintainers:
+at91/maintainers:	git://github.com/at91linux/linux-at91.git tags/at91-3.5-maintainers
+			various patches by email
+
+next/cleanup:
+ixp2xxx/removal		git://sources.calxeda.com/kernel/linux.git ixp2xxx-removal
+at91/cleanup		git://github.com/at91linux/linux-at91.git tags/at91-3.5-cleanup
+imx/cleanup		git://git.pengutronix.de/git/imx/linux-2.6.git tags/arm-imx-cleanup
+imx/cleanup2		git://git.pengutronix.de/git/imx/linux-2.6.git tags/imx-cleanup
+ux500/remove-u5500	git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git ux500-del-u5500-for-arm-soc
+omap/cleanup-sparse	git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-cleanup-sparse-for-v3.5
+omap/hwmod-cleanup	git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-cleanup-hwmod-for-v3.5
+omap/cpuidle-cleanup	git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-cleanup-cpuidle-for-v3.5
+tegra/cleanup		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git for-3.5/cleanup
+ep93xx/cleanup		git://github.com/RyanMallon/linux-ep93xx.git tags/ep93xx-cleanup-for-3.5
+omap/cleanup		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-cleanup-for-v3.5
+omap/cleanup-dss	git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-cleanup-dss-for-v3.5
+clps711x/cleanup	http://comments.gmane.org/gmane.linux.ports.arm.kernel/164566
+omap/fixes-for-cleanup	git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap fixes-for-cleanup
+msm/msm-core		git://git.kernel.org/pub/scm/linux/kernel/git/davidb/linux-msm.git msm-core
+samsung/cleanup		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/cleanup-samsung
+
+next/fixes:
+tegra/fixes		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git for-3.5/fixes
+davinci/fixes-and-cleanup	git://gitorious.org/linux-davinci/linux-davinci.git tags/v3.5-fixes-and-cleanups
+omap/fixes		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-fixes-non-critical-for-v3.5
+orion/fixes		git://git.infradead.org/users/jcooper/linux.git orion_fixes_for_v3.4
+
+next/dt:
+omap/dt-missed-3.4:	git://git.kernel.org/pub/scm/linux/kernel/git/bcousson/linux-omap-dt.git for_3.4/dts/all
+spear/dt:		git://git.stlinux.com/spear/linux-2.6.git spear-v3.5 (rebased)
+				+extra patch
+renesas/dt:		git://git.kernel.org/pub/scm/linux/kernel/git/rafael/renesas.git dt
+lpc32xx/dt		git://git.antcom.de/linux-2.6.git lpc32xx/dt
+				depends on depends/i2c/lpc32xx
+ux500/dt:		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git ux500-devicetree-for-arm-soc
+at91/dt			git://github.com/at91linux/linux-at91.git tags/at91-for-next-dt
+				depends on at91/cleanup
+omap/dt			git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-dt-for-v3.5
+mmp/dt			git://github.com/hzhuang1/linux.git dt
+
+next/soc:
+at91/sam9n12:		git://github.com/at91linux/linux-at91.git tags/at91-for-next-soc
+				depends on at91/dt
+ux500/u9540		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git ux500-u9540-for-arm-soc
+renesas/soc-core	git://git.kernel.org/pub/scm/linux/kernel/git/rafael/renesas.git soc-core
+				depends on renesas/dt
+
+next/pinctrl:
+spear/pinctrl:		git://git.stlinux.com/spear/linux-2.6.git spear-v3.5
+				depends on depends/pinctrl/devel and depends/rmk/clkdev
+ux500/gpio		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git ux500-gpio-pins-for-arm-soc
+tegra/pinctrl		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git for-2.5/gpio-pinmux
+				depends on depends/pinctrl/mergebase
+imx/pinctrl		git://git.linaro.org/people/shawnguo/linux-2.6.git imx/pinctrl/for-3.5
+				depends on depends/pinctrl/devel for building
+ux500/gpio-pins		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git ux500-gpio-pins-for-3.5
+				depends on depends/pinctrl/mergebase
+
+next/pm:
+omap/pm			git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-pm-regulator-for-v3.5
+omap/hwmod		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-devel-hwmod-for-v3.5
+				depends on omap/hwmod-cleanup
+omap/devel-prcm		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-devel-prcm-for-v3.5
+omap/devel-hwmod	git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-devel-hwmod-data-for-v3.5
+mmp/pm			git://github.com/hzhuang1/linux.git power
+				depends on mmp/dt
+ux500/cpuidle		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git ux500-cpuidle-for-arm-soc
+
+next/boards:
+imx/boards		git://git.pengutronix.de/git/imx/linux-2.6.git tags/imx-features-board-20120411-2
+pxa/boards		git://github.com/hzhuang1/linux.git board-specific
+imx/eukrea		git://git.pengutronix.de/git/imx/linux-2.6.git tags/imx-eukrea
+omap/boards		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-board-for-v3.5
+				depends on omap/hwmod and omap/pm
+renesas/board		git://git.kernel.org/pub/scm/linux/kernel/git/rafael/renesas.git soc-core
+				depends on renesas/dt
+samsung/board		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/board-samsung
+renesas/board2		git://git.kernel.org/pub/scm/linux/kernel/git/rafael/renesas.git board-new
+				depends on renesas/board
+
+next/defconfig:
+imx/defconfig:		git://git.pengutronix.de/git/imx/linux-2.6.git tags/imx-defconfig
+tegra/defconfig		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git for-3.5/defconfig
+tegra/defconfig2	git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git for-3.5/defconfig
+
+next/drivers:
+pxa/keyboard		git://github.com/hzhuang1/linux.git keyboard
+tegra/usb-ulpi		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git for-3.5/usb-ulpi
+				depends on tegra/pinctrl
+tegra/tegra30-audio	git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git for-3.5/tegra30-audio
+				depends on tegra/pinctrl
+tegra/debug		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git for-3.5/debug
+davinci/soc		git://gitorious.org/linux-davinci/linux-davinci.git tags/v3.5-soc
+ep93xx/drivers		git://github.com/RyanMallon/linux-ep93xx.git tags/ep93xx-fixes-for-3.5
+exynos/sysmmu		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/cleanup-samsung-iommu
+drivers/mmc			patch from Arnd
+				depends on omap/dt-missed-3.4
+tegra/ahb		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git for-3.5/ahb
+exynos/iommu		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung next/devel-samsung-iommu
+					depends on exynos/sysmmu
+
+next/cleanup2:
+omap/cleanup		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-cleanup-for-v3.5
+				depends on omap/hwmod
+omap/cleanup-renames	git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-cleanup-renames-for-v3.5
+omap/cleanup-devices	git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-cleanup-devices-for-v3.5
+				depends on omap/hwmod and omap/fixes
+omap/cleanup-timer	git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-cleanup-timer-for-v3.5
+samsung/cleanup-plat-s3c23xx git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/cleanup-plat-s3c24xx-s5p
+				depends on exynos/sysmmu
+samsung/cleanup-plat-s5p git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/cleanup-plat-s3c24xx-s5p
+
+next/clock:
+depends/clk/clk-next	git://git.linaro.org/people/mturquette/linux.git clk-next
+mxs/clock		git://git.linaro.org/people/shawnguo/linux-2.6.git clk/mxs
+imx/clock		git://git.pengutronix.de/git/imx/linux-2.6.git tags/imx-common-clk
+spear/clock:		git://git.stlinux.com/spear/linux-2.6.git for-v3.5-spear-clk
+				depends on depends/clk/clk-next and depends/rmk/clkdev
+
+next/stmp-dev:		git://git.pengutronix.de/git/wsa/linux.git stmp_device
+depends/clk/clk-next2	git://git.linaro.org/people/mturquette/linux.git clk-next
+
+next/dt2:
+tegra/dt		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git for-3.5/dt
+				depends on tegra/pinctrl
+mxs/dt			git://git.linaro.org/people/shawnguo/linux-2.6.git mxs/dt/for-3.5
+				depends on mxs/clock and imx/pinctrl
+				depends on next/stmp-dev (for building)
+imx/dt			git://git.linaro.org/people/shawnguo/linux-2.6.git imx/dt/for-3.5
+				depends on imx/clock
+tegra/dt2		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git for-3.5/dt2
+				depends on drivers/mmc
+
+next/soc2:
+spear/13xx:		git://git.stlinux.com/spear/linux-2.6.git for-v3.5-spear13xx
+				depends on spear/clock, spear/pinctrl and spear/dt
+samsung/devel		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/devel-samsung
+				depends on samsung/sysmmu
+samsung/devel2		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/devel-exynos5250-1
+				depends on samsung/devel2
+
+staging/cleanup:
+devel/cleanup-late-initcall	git://git.linaro.org/people/shawnguo/linux-2.6.git clean/late_initcall_v2
+
