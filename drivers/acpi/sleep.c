@@ -720,10 +720,30 @@ int acpi_pm_device_sleep_state(struct device *dev, int *d_min_p)
 	 *
 	 * NOTE: We rely on acpi_evaluate_integer() not clobbering the integer
 	 * provided -- that's our fault recovery, we ignore retval.
+	 *
+	 * According to ACPI 4.0a (April 5, 2010), page 294,
+	 * Table 7-7 S3 Action / Result Table, we need to evaluate _SxW in
+	 * addition to _SxD if the device is configured for wakeup:
+	 * Desired Action    | _S3D | _PRW | _S3W | Resultant D-state
+	 * Enter S3          |  N/A |  D/C |  N/A | OSPM decides
+	 * Enter S3, No Wake |   2  |  D/C |  D/C | Enter D2 or D3
+	 * Enter S3, Wake    |   2  |   3  |  N/A | Enter D2
+	 * Enter S3, Wake    |   2  |   3  |   3  | Enter D2 or D3
+	 * Enter S3, Wake    |  N/A |   3  |   2  | Enter D0, D1 or D2
 	 */
-	if (acpi_target_sleep_state > ACPI_STATE_S0)
+	if (acpi_target_sleep_state > ACPI_STATE_S0) {
+		acpi_status status;
+
 		acpi_evaluate_integer(handle, acpi_method, NULL, &d_min);
 
+		if (device_may_wakeup(dev)) {
+			acpi_method[3] = 'W';
+			status = acpi_evaluate_integer(handle, acpi_method,
+						       NULL, &d_max);
+			if (ACPI_FAILURE(status))
+				d_max = d_min;
+		}
+	}
 	/*
 	 * If _PRW says we can wake up the system from the target sleep state,
 	 * the D-state returned by _SxD is sufficient for that (we assume a
