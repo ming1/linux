@@ -45,6 +45,7 @@ struct regmap {
 	struct regmap_format format;  /* Buffer format */
 	const struct regmap_bus *bus;
 	void *bus_context;
+	const char *name;
 
 #ifdef CONFIG_DEBUG_FS
 	struct dentry *debugfs;
@@ -91,6 +92,9 @@ struct regmap {
 
 	struct reg_default *patch;
 	int patch_regs;
+
+	/* if set, converts bulk rw to single rw */
+	bool use_single_rw;
 };
 
 struct regcache_ops {
