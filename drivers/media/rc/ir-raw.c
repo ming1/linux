@@ -46,9 +46,9 @@ static int ir_raw_event_thread(void *data)
 	while (!kthread_should_stop()) {
 
 		spin_lock_irq(&raw->lock);
-		retval = kfifo_out(&raw->kfifo, &ev, sizeof(ev));
+		retval = kfifo_len(&raw->kfifo);
 
-		if (!retval) {
+		if (retval < sizeof(ev)) {
 			set_current_state(TASK_INTERRUPTIBLE);
 
 			if (kthread_should_stop())
@@ -59,10 +59,8 @@ static int ir_raw_event_thread(void *data)
 			continue;
 		}
 
+		retval = kfifo_out(&raw->kfifo, &ev, sizeof(ev));
 		spin_unlock_irq(&raw->lock);
-
-
-		BUG_ON(retval != sizeof(ev));
 
 		mutex_lock(&ir_raw_handler_lock);
 		list_for_each_entry(handler, &ir_raw_handler_list, list)
@@ -92,7 +90,9 @@ int ir_raw_event_store(struct rc_dev *dev, struct ir_raw_event *ev)
 	IR_dprintk(2, "sample: (%05dus %s)\n",
 		   TO_US(ev->duration), TO_STR(ev->pulse));
 
-	if (kfifo_in(&dev->raw->kfifo, ev, sizeof(*ev)) != sizeof(*ev))
+	if (kfifo_avail(&dev->raw->kfifo) >= sizeof(*ev))
+		kfifo_in(&dev->raw->kfifo, ev, sizeof(*ev));
+	else
 		return -ENOMEM;
 
 	return 0;

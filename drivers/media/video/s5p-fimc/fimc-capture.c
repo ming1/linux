@@ -83,7 +83,9 @@ static int fimc_capture_state_cleanup(struct fimc_dev *fimc, bool suspend)
 
 	fimc->state &= ~(1 << ST_CAPT_RUN | 1 << ST_CAPT_SHUT |
 			 1 << ST_CAPT_STREAM | 1 << ST_CAPT_ISP_STREAM);
-	if (!suspend)
+	if (suspend)
+		fimc->state |= (1 << ST_CAPT_SUSPENDED);
+	else
 		fimc->state &= ~(1 << ST_CAPT_PEND | 1 << ST_CAPT_SUSPENDED);
 
 	/* Release unused buffers */
@@ -99,7 +101,6 @@ static int fimc_capture_state_cleanup(struct fimc_dev *fimc, bool suspend)
 		else
 			vb2_buffer_done(&buf->vb, VB2_BUF_STATE_ERROR);
 	}
-	set_bit(ST_CAPT_SUSPENDED, &fimc->state);
 
 	fimc_hw_reset(fimc);
 	cap->buf_index = 0;
@@ -146,21 +147,22 @@ int fimc_capture_config_update(struct fimc_ctx *ctx)
 	if (!test_bit(ST_CAPT_APPLY_CFG, &fimc->state))
 		return 0;
 
-	spin_lock(&ctx->slock);
 	fimc_hw_set_camera_offset(fimc, &ctx->s_frame);
+
 	ret = fimc_set_scaler_info(ctx);
-	if (ret == 0) {
-		fimc_hw_set_prescaler(ctx);
-		fimc_hw_set_mainscaler(ctx);
-		fimc_hw_set_target_format(ctx);
-		fimc_hw_set_rotation(ctx);
-		fimc_prepare_dma_offset(ctx, &ctx->d_frame);
-		fimc_hw_set_out_dma(ctx);
-		if (fimc->variant->has_alpha)
-			fimc_hw_set_rgb_alpha(ctx);
-		clear_bit(ST_CAPT_APPLY_CFG, &fimc->state);
-	}
-	spin_unlock(&ctx->slock);
+	if (ret)
+		return ret;
+
+	fimc_hw_set_prescaler(ctx);
+	fimc_hw_set_mainscaler(ctx);
+	fimc_hw_set_target_format(ctx);
+	fimc_hw_set_rotation(ctx);
+	fimc_prepare_dma_offset(ctx, &ctx->d_frame);
+	fimc_hw_set_out_dma(ctx);
+	if (fimc->variant->has_alpha)
+		fimc_hw_set_rgb_alpha(ctx);
+
+	clear_bit(ST_CAPT_APPLY_CFG, &fimc->state);
 	return ret;
 }
 
@@ -246,28 +248,37 @@ int fimc_capture_resume(struct fimc_dev *fimc)
 
 }
 
-static unsigned int get_plane_size(struct fimc_frame *fr, unsigned int plane)
-{
-	if (!fr || plane >= fr->fmt->memplanes)
-		return 0;
-	return fr->f_width * fr->f_height * fr->fmt->depth[plane] / 8;
-}
-
-static int queue_setup(struct vb2_queue *vq,  const struct v4l2_format *pfmt,
+static int queue_setup(struct vb2_queue *vq, const struct v4l2_format *pfmt,
 		       unsigned int *num_buffers, unsigned int *num_planes,
 		       unsigned int sizes[], void *allocators[])
 {
+	const struct v4l2_pix_format_mplane *pixm = NULL;
 	struct fimc_ctx *ctx = vq->drv_priv;
-	struct fimc_fmt *fmt = ctx->d_frame.fmt;
+	struct fimc_frame *frame = &ctx->d_frame;
+	struct fimc_fmt *fmt = frame->fmt;
+	unsigned long wh;
 	int i;
 
-	if (!fmt)
+	if (pfmt) {
+		pixm = &pfmt->fmt.pix_mp;
+		fmt = fimc_find_format(&pixm->pixelformat, NULL,
+				       FMT_FLAGS_CAM | FMT_FLAGS_M2M, -1);
+		wh = pixm->width * pixm->height;
+	} else {
+		wh = frame->f_width * frame->f_height;
+	}
+
+	if (fmt == NULL)
 		return -EINVAL;
 
 	*num_planes = fmt->memplanes;
 
 	for (i = 0; i < fmt->memplanes; i++) {
-		sizes[i] = get_plane_size(&ctx->d_frame, i);
+		unsigned int size = (wh * fmt->depth[i]) / 8;
+		if (pixm)
+			sizes[i] = max(size, pixm->plane_fmt[i].sizeimage);
+		else
+			sizes[i] = size;
 		allocators[i] = ctx->fimc_dev->alloc_ctx;
 	}
 
@@ -1383,7 +1394,7 @@ static int fimc_subdev_set_crop(struct v4l2_subdev *sd,
 	fimc_capture_try_crop(ctx, r, crop->pad);
 
 	if (crop->which == V4L2_SUBDEV_FORMAT_TRY) {
-		mutex_lock(&fimc->lock);
+		mutex_unlock(&fimc->lock);
 		*v4l2_subdev_get_try_crop(fh, crop->pad) = *r;
 		return 0;
 	}
@@ -1524,7 +1535,6 @@ int fimc_register_capture_device(struct fimc_dev *fimc,
 
 	INIT_LIST_HEAD(&vid_cap->pending_buf_q);
 	INIT_LIST_HEAD(&vid_cap->active_buf_q);
-	spin_lock_init(&ctx->slock);
 	vid_cap->ctx = ctx;
 
 	q = &fimc->vid_cap.vbq;
