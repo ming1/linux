@@ -839,7 +839,7 @@ static int __devinit iTCO_wdt_init(struct pci_dev *pdev,
 	/* The TCO logic uses the TCO_EN bit in the SMI_EN register */
 	if (!request_region(SMI_EN, 4, "iTCO_wdt")) {
 		pr_err("I/O address 0x%04lx already in use, device disabled\n",
-		       SMI_EN);
+		       (u64)SMI_EN);
 		ret = -EIO;
 		goto out_unmap;
 	}
@@ -854,7 +854,7 @@ static int __devinit iTCO_wdt_init(struct pci_dev *pdev,
 	   by the TCOBASE value */
 	if (!request_region(TCOBASE, 0x20, "iTCO_wdt")) {
 		pr_err("I/O address 0x%04lx already in use, device disabled\n",
-		       TCOBASE);
+		       (u64)TCOBASE);
 		ret = -EIO;
 		goto unreg_smi_en;
 	}
@@ -862,7 +862,7 @@ static int __devinit iTCO_wdt_init(struct pci_dev *pdev,
 	pr_info("Found a %s TCO device (Version=%d, TCOBASE=0x%04lx)\n",
 		iTCO_chipset_info[ent->driver_data].name,
 		iTCO_chipset_info[ent->driver_data].iTCO_version,
-		TCOBASE);
+		(u64)TCOBASE);
 
 	/* Clear out the (probably old) status */
 	outw(0x0008, TCO1_STS);	/* Clear the Time Out Status bit */
