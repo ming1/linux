@@ -107,6 +107,7 @@ ep93xx/drivers		git://github.com/RyanMallon/linux-ep93xx.git tags/ep93xx-fixes-f
 exynos/sysmmu		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/cleanup-samsung-iommu
 drivers/mmc			patch from Arnd
 				depends on omap/dt-missed-3.4
+tegra/ahb		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git for-3.5/ahb
 
 next/cleanup2:
 omap/cleanup		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-cleanup-for-v3.5
