@@ -2362,7 +2362,7 @@ static int __init isdn_init(void)
 #ifdef MODULE
 	printk(KERN_CONT " loaded\n");
 #else
-	printk(KERN_CONG "\n");
+	printk(KERN_CONT "\n");
 #endif
 	isdn_info_update();
 	return 0;
