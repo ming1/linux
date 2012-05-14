@@ -59,7 +59,7 @@ extern struct net_device *alloc_etherdev_mqs(int sizeof_priv, unsigned int txqs,
  *
  * Return true if the address is all zeroes.
  */
-static inline int is_zero_ether_addr(const u8 *addr)
+static inline bool is_zero_ether_addr(const u8 *addr)
 {
 	return !(addr[0] | addr[1] | addr[2] | addr[3] | addr[4] | addr[5]);
 }
@@ -71,7 +71,7 @@ static inline int is_zero_ether_addr(const u8 *addr)
  * Return true if the address is a multicast address.
  * By definition the broadcast address is also a multicast address.
  */
-static inline int is_multicast_ether_addr(const u8 *addr)
+static inline bool is_multicast_ether_addr(const u8 *addr)
 {
 	return 0x01 & addr[0];
 }
@@ -82,7 +82,7 @@ static inline int is_multicast_ether_addr(const u8 *addr)
  *
  * Return true if the address is a local address.
  */
-static inline int is_local_ether_addr(const u8 *addr)
+static inline bool is_local_ether_addr(const u8 *addr)
 {
 	return 0x02 & addr[0];
 }
@@ -93,7 +93,7 @@ static inline int is_local_ether_addr(const u8 *addr)
  *
  * Return true if the address is the broadcast address.
  */
-static inline int is_broadcast_ether_addr(const u8 *addr)
+static inline bool is_broadcast_ether_addr(const u8 *addr)
 {
 	return (addr[0] & addr[1] & addr[2] & addr[3] & addr[4] & addr[5]) == 0xff;
 }
@@ -104,7 +104,7 @@ static inline int is_broadcast_ether_addr(const u8 *addr)
  *
  * Return true if the address is a unicast address.
  */
-static inline int is_unicast_ether_addr(const u8 *addr)
+static inline bool is_unicast_ether_addr(const u8 *addr)
 {
 	return !is_multicast_ether_addr(addr);
 }
@@ -118,7 +118,7 @@ static inline int is_unicast_ether_addr(const u8 *addr)
  *
  * Return true if the address is valid.
  */
-static inline int is_valid_ether_addr(const u8 *addr)
+static inline bool is_valid_ether_addr(const u8 *addr)
 {
 	/* FF:FF:FF:FF:FF:FF is a multicast address so we don't need to
 	 * explicitly check for it here. */
@@ -171,6 +171,18 @@ static inline unsigned compare_ether_addr(const u8 *addr1, const u8 *addr2)
 	return ((a[0] ^ b[0]) | (a[1] ^ b[1]) | (a[2] ^ b[2])) != 0;
 }
 
+/**
+ * ether_addr_equal - Compare two Ethernet addresses
+ * @addr1: Pointer to a six-byte array containing the Ethernet address
+ * @addr2: Pointer other six-byte array containing the Ethernet address
+ *
+ * Compare two ethernet addresses, returns true if equal
+ */
+static inline bool ether_addr_equal(const u8 *addr1, const u8 *addr2)
+{
+	return !compare_ether_addr(addr1, addr2);
+}
+
 static inline unsigned long zap_last_2bytes(unsigned long value)
 {
 #ifdef __BIG_ENDIAN
@@ -210,6 +222,26 @@ static inline unsigned compare_ether_addr_64bits(const u8 addr1[6+2],
 #else
 	return compare_ether_addr(addr1, addr2);
 #endif
+}
+
+/**
+ * ether_addr_equal_64bits - Compare two Ethernet addresses
+ * @addr1: Pointer to an array of 8 bytes
+ * @addr2: Pointer to an other array of 8 bytes
+ *
+ * Compare two ethernet addresses, returns true if equal, false otherwise.
+ *
+ * The function doesn't need any conditional branches and possibly uses
+ * word memory accesses on CPU allowing cheap unaligned memory reads.
+ * arrays = { byte1, byte2, byte3, byte4, byte6, byte7, pad1, pad2}
+ *
+ * Please note that alignment of addr1 & addr2 is only guaranted to be 16 bits.
+ */
+
+static inline bool ether_addr_equal_64bits(const u8 addr1[6+2],
+					   const u8 addr2[6+2])
+{
+	return !compare_ether_addr_64bits(addr1, addr2);
 }
 
 /**

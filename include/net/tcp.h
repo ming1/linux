@@ -123,7 +123,7 @@ extern void tcp_time_wait(struct sock *sk, int state, int timeo);
 #endif
 #define TCP_RTO_MAX	((unsigned)(120*HZ))
 #define TCP_RTO_MIN	((unsigned)(HZ/5))
-#define TCP_TIMEOUT_INIT ((unsigned)(1*HZ))	/* RFC2988bis initial RTO value	*/
+#define TCP_TIMEOUT_INIT ((unsigned)(1*HZ))	/* RFC6298 2.1 initial RTO value	*/
 #define TCP_TIMEOUT_FALLBACK ((unsigned)(3*HZ))	/* RFC 1122 initial RTO value, now
 						 * used as a fallback RTO for the
 						 * initial data transmission if no
@@ -252,6 +252,7 @@ extern int sysctl_tcp_max_ssthresh;
 extern int sysctl_tcp_cookie_size;
 extern int sysctl_tcp_thin_linear_timeouts;
 extern int sysctl_tcp_thin_dupack;
+extern int sysctl_tcp_early_retrans;
 
 extern atomic_long_t tcp_memory_allocated;
 extern struct percpu_counter tcp_sockets_allocated;
@@ -366,13 +367,6 @@ static inline void tcp_dec_quickack_mode(struct sock *sk,
 #define	TCP_ECN_DEMAND_CWR	4
 #define	TCP_ECN_SEEN		8
 
-static __inline__ void
-TCP_ECN_create_request(struct request_sock *req, struct tcphdr *th)
-{
-	if (sysctl_tcp_ecn && th->ece && th->cwr)
-		inet_rsk(req)->ecn_ok = 1;
-}
-
 enum tcp_tw_status {
 	TCP_TW_SUCCESS = 0,
 	TCP_TW_RST = 1,
@@ -395,6 +389,7 @@ extern void tcp_enter_loss(struct sock *sk, int how);
 extern void tcp_clear_retrans(struct tcp_sock *tp);
 extern void tcp_update_metrics(struct sock *sk);
 extern void tcp_close(struct sock *sk, long timeout);
+extern void tcp_init_sock(struct sock *sk);
 extern unsigned int tcp_poll(struct file * file, struct socket *sock,
 			     struct poll_table_struct *wait);
 extern int tcp_getsockopt(struct sock *sk, int level, int optname,
@@ -435,6 +430,9 @@ extern struct sk_buff * tcp_make_synack(struct sock *sk, struct dst_entry *dst,
 					struct request_values *rvp);
 extern int tcp_disconnect(struct sock *sk, int flags);
 
+void tcp_connect_init(struct sock *sk);
+void tcp_finish_connect(struct sock *sk, struct sk_buff *skb);
+int tcp_send_rcvq(struct sock *sk, struct msghdr *msg, size_t size);
 
 /* From syncookies.c */
 extern __u32 syncookie_secret[2][16-4+SHA_DIGEST_WORDS];
@@ -495,6 +493,8 @@ extern void tcp_send_delayed_ack(struct sock *sk);
 
 /* tcp_input.c */
 extern void tcp_cwnd_application_limited(struct sock *sk);
+extern void tcp_resume_early_retransmit(struct sock *sk);
+extern void tcp_rearm_rto(struct sock *sk);
 
 /* tcp_timer.c */
 extern void tcp_init_xmit_timers(struct sock *);
@@ -540,8 +540,8 @@ extern int tcp_read_sock(struct sock *sk, read_descriptor_t *desc,
 
 extern void tcp_initialize_rcv_mss(struct sock *sk);
 
-extern int tcp_mtu_to_mss(const struct sock *sk, int pmtu);
-extern int tcp_mss_to_mtu(const struct sock *sk, int mss);
+extern int tcp_mtu_to_mss(struct sock *sk, int pmtu);
+extern int tcp_mss_to_mtu(struct sock *sk, int mss);
 extern void tcp_mtup_init(struct sock *sk);
 extern void tcp_valid_rtt_meas(struct sock *sk, u32 seq_rtt);
 
@@ -609,6 +609,8 @@ static inline u32 tcp_receive_window(const struct tcp_sock *tp)
  */
 extern u32 __tcp_select_window(struct sock *sk);
 
+void tcp_send_window_probe(struct sock *sk);
+
 /* TCP timestamps are only 32-bits, this causes a slight
  * complication on 64-bit systems since we store a snapshot
  * of jiffies in the buffer control blocks below.  We decided
@@ -645,20 +647,37 @@ struct tcp_skb_cb {
 	__u32		end_seq;	/* SEQ + FIN + SYN + datalen	*/
 	__u32		when;		/* used to compute rtt's	*/
 	__u8		tcp_flags;	/* TCP header flags. (tcp[13])	*/
+
 	__u8		sacked;		/* State flags for SACK/FACK.	*/
 #define TCPCB_SACKED_ACKED	0x01	/* SKB ACK'd by a SACK block	*/
 #define TCPCB_SACKED_RETRANS	0x02	/* SKB retransmitted		*/
 #define TCPCB_LOST		0x04	/* SKB is lost			*/
 #define TCPCB_TAGBITS		0x07	/* All tag bits			*/
-	__u8		ip_dsfield;	/* IPv4 tos or IPv6 dsfield	*/
-	/* 1 byte hole */
 #define TCPCB_EVER_RETRANS	0x80	/* Ever retransmitted frame	*/
 #define TCPCB_RETRANS		(TCPCB_SACKED_RETRANS|TCPCB_EVER_RETRANS)
 
+	__u8		ip_dsfield;	/* IPv4 tos or IPv6 dsfield	*/
+	/* 1 byte hole */
 	__u32		ack_seq;	/* Sequence number ACK'd	*/
 };
 
 #define TCP_SKB_CB(__skb)	((struct tcp_skb_cb *)&((__skb)->cb[0]))
+
+/* RFC3168 : 6.1.1 SYN packets must not have ECT/ECN bits set
+ *
+ * If we receive a SYN packet with these bits set, it means a network is
+ * playing bad games with TOS bits. In order to avoid possible false congestion
+ * notifications, we disable TCP ECN negociation.
+ */
+static inline void
+TCP_ECN_create_request(struct request_sock *req, const struct sk_buff *skb)
+{
+	const struct tcphdr *th = tcp_hdr(skb);
+
+	if (sysctl_tcp_ecn && th->ece && th->cwr &&
+	    INET_ECN_is_not_ect(TCP_SKB_CB(skb)->ip_dsfield))
+		inet_rsk(req)->ecn_ok = 1;
+}
 
 /* Due to TSO, an SKB can be composed of multiple actual
  * packets.  To keep these tracked properly, we use this.
@@ -788,6 +807,21 @@ static inline int tcp_is_fack(const struct tcp_sock *tp)
 static inline void tcp_enable_fack(struct tcp_sock *tp)
 {
 	tp->rx_opt.sack_ok |= TCP_FACK_ENABLED;
+}
+
+/* TCP early-retransmit (ER) is similar to but more conservative than
+ * the thin-dupack feature.  Enable ER only if thin-dupack is disabled.
+ */
+static inline void tcp_enable_early_retrans(struct tcp_sock *tp)
+{
+	tp->do_early_retrans = sysctl_tcp_early_retrans &&
+		!sysctl_tcp_thin_dupack && sysctl_tcp_reordering == 3;
+	tp->early_retrans_delayed = 0;
+}
+
+static inline void tcp_disable_early_retrans(struct tcp_sock *tp)
+{
+	tp->do_early_retrans = 0;
 }
 
 static inline unsigned int tcp_left_out(const struct tcp_sock *tp)
@@ -1226,7 +1260,7 @@ extern void tcp_put_md5sig_pool(void);
 
 extern int tcp_md5_hash_header(struct tcp_md5sig_pool *, const struct tcphdr *);
 extern int tcp_md5_hash_skb_data(struct tcp_md5sig_pool *, const struct sk_buff *,
-				 unsigned header_len);
+				 unsigned int header_len);
 extern int tcp_md5_hash_key(struct tcp_md5sig_pool *hp,
 			    const struct tcp_md5sig_key *key);
 

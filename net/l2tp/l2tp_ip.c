@@ -32,15 +32,8 @@ struct l2tp_ip_sock {
 	/* inet_sock has to be the first member of l2tp_ip_sock */
 	struct inet_sock	inet;
 
-	__u32			conn_id;
-	__u32			peer_conn_id;
-
-	__u64			tx_packets;
-	__u64			tx_bytes;
-	__u64			tx_errors;
-	__u64			rx_packets;
-	__u64			rx_bytes;
-	__u64			rx_errors;
+	u32			conn_id;
+	u32			peer_conn_id;
 };
 
 static DEFINE_RWLOCK(l2tp_ip_lock);
@@ -298,68 +291,27 @@ out_in_use:
 static int l2tp_ip_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 {
 	struct sockaddr_l2tpip *lsa = (struct sockaddr_l2tpip *) uaddr;
-	struct inet_sock *inet = inet_sk(sk);
-	struct flowi4 *fl4;
-	struct rtable *rt;
-	__be32 saddr;
-	int oif, rc;
+	int rc;
 
-	rc = -EINVAL;
 	if (addr_len < sizeof(*lsa))
-		goto out;
+		return -EINVAL;
 
-	rc = -EAFNOSUPPORT;
-	if (lsa->l2tp_family != AF_INET)
-		goto out;
+	if (ipv4_is_multicast(lsa->l2tp_addr.s_addr))
+		return -EINVAL;
+
+	rc = ip4_datagram_connect(sk, uaddr, addr_len);
+	if (rc < 0)
+		return rc;
 
 	lock_sock(sk);
 
-	sk_dst_reset(sk);
-
-	oif = sk->sk_bound_dev_if;
-	saddr = inet->inet_saddr;
-
-	rc = -EINVAL;
-	if (ipv4_is_multicast(lsa->l2tp_addr.s_addr))
-		goto out;
-
-	fl4 = &inet->cork.fl.u.ip4;
-	rt = ip_route_connect(fl4, lsa->l2tp_addr.s_addr, saddr,
-			      RT_CONN_FLAGS(sk), oif,
-			      IPPROTO_L2TP,
-			      0, 0, sk, true);
-	if (IS_ERR(rt)) {
-		rc = PTR_ERR(rt);
-		if (rc == -ENETUNREACH)
-			IP_INC_STATS_BH(&init_net, IPSTATS_MIB_OUTNOROUTES);
-		goto out;
-	}
-
-	rc = -ENETUNREACH;
-	if (rt->rt_flags & (RTCF_MULTICAST | RTCF_BROADCAST)) {
-		ip_rt_put(rt);
-		goto out;
-	}
-
 	l2tp_ip_sk(sk)->peer_conn_id = lsa->l2tp_conn_id;
-
-	if (!inet->inet_saddr)
-		inet->inet_saddr = fl4->saddr;
-	if (!inet->inet_rcv_saddr)
-		inet->inet_rcv_saddr = fl4->saddr;
-	inet->inet_daddr = fl4->daddr;
-	sk->sk_state = TCP_ESTABLISHED;
-	inet->inet_id = jiffies;
-
-	sk_dst_set(sk, &rt->dst);
 
 	write_lock_bh(&l2tp_ip_lock);
 	hlist_del_init(&sk->sk_bind_node);
 	sk_add_bind_node(sk, &l2tp_ip_bind_table);
 	write_unlock_bh(&l2tp_ip_lock);
 
-	rc = 0;
-out:
 	release_sock(sk);
 	return rc;
 }
@@ -414,7 +366,6 @@ static int l2tp_ip_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *m
 {
 	struct sk_buff *skb;
 	int rc;
-	struct l2tp_ip_sock *lsa = l2tp_ip_sk(sk);
 	struct inet_sock *inet = inet_sk(sk);
 	struct rtable *rt = NULL;
 	struct flowi4 *fl4;
@@ -514,14 +465,8 @@ static int l2tp_ip_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *m
 	rcu_read_unlock();
 
 error:
-	/* Update stats */
-	if (rc >= 0) {
-		lsa->tx_packets++;
-		lsa->tx_bytes += len;
+	if (rc >= 0)
 		rc = len;
-	} else {
-		lsa->tx_errors++;
-	}
 
 out:
 	release_sock(sk);
@@ -539,7 +484,6 @@ static int l2tp_ip_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *m
 			   size_t len, int noblock, int flags, int *addr_len)
 {
 	struct inet_sock *inet = inet_sk(sk);
-	struct l2tp_ip_sock *lsk = l2tp_ip_sk(sk);
 	size_t copied = 0;
 	int err = -EOPNOTSUPP;
 	struct sockaddr_in *sin = (struct sockaddr_in *)msg->msg_name;
@@ -581,15 +525,7 @@ static int l2tp_ip_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *m
 done:
 	skb_free_datagram(sk, skb);
 out:
-	if (err) {
-		lsk->rx_errors++;
-		return err;
-	}
-
-	lsk->rx_packets++;
-	lsk->rx_bytes += copied;
-
-	return copied;
+	return err ? err : copied;
 }
 
 static struct proto l2tp_ip_prot = {
