@@ -57,6 +57,7 @@ MODULE_PARM_DESC(gts, "Enable evaluation of _GTS on suspend.");
 MODULE_PARM_DESC(bfs, "Enable evaluation of _BFS on resume".);
 
 static u8 sleep_states[ACPI_S_STATE_COUNT];
+static bool pwr_btn_event_pending;
 
 static void acpi_sleep_tts_switch(u32 acpi_state)
 {
@@ -186,6 +187,14 @@ static int acpi_pm_prepare(void)
 	return error;
 }
 
+static int find_powerf_dev(struct device *dev, void *data)
+{
+	struct acpi_device *device = to_acpi_device(dev);
+	const char *hid = acpi_device_hid(device);
+
+	return !strcmp(hid, ACPI_BUTTON_HID_POWERF);
+}
+
 /**
  *	acpi_pm_finish - Instruct the platform to leave a sleep state.
  *
@@ -194,6 +203,7 @@ static int acpi_pm_prepare(void)
  */
 static void acpi_pm_finish(void)
 {
+	struct device *pwr_btn_dev;
 	u32 acpi_state = acpi_target_sleep_state;
 
 	acpi_ec_unblock_transactions();
@@ -211,6 +221,23 @@ static void acpi_pm_finish(void)
 	acpi_set_firmware_waking_vector((acpi_physical_address) 0);
 
 	acpi_target_sleep_state = ACPI_STATE_S0;
+
+	/* If we were woken with the fixed power button, provide a small
+	 * hint to userspace in the form of a wakeup event on the fixed power
+	 * button device (if it can be found).
+	 *
+	 * We delay the event generation til now, as the PM layer requires
+	 * timekeeping to be running before we generate events. */
+	if (!pwr_btn_event_pending)
+		return;
+
+	pwr_btn_event_pending = false;
+	pwr_btn_dev = bus_find_device(&acpi_bus_type, NULL, NULL,
+				      find_powerf_dev);
+	if (pwr_btn_dev) {
+		pm_wakeup_event(pwr_btn_dev, 0);
+		put_device(pwr_btn_dev);
+	}
 }
 
 /**
@@ -300,9 +327,23 @@ static int acpi_suspend_enter(suspend_state_t pm_state)
 	/* ACPI 3.0 specs (P62) says that it's the responsibility
 	 * of the OSPM to clear the status bit [ implying that the
 	 * POWER_BUTTON event should not reach userspace ]
+	 *
+	 * However, we do generate a small hint for userspace in the form of
+	 * a wakeup event. We flag this condition for now and generate the
+	 * event later, as we're currently too early in resume to be able to
+	 * generate wakeup events.
 	 */
-	if (ACPI_SUCCESS(status) && (acpi_state == ACPI_STATE_S3))
-		acpi_clear_event(ACPI_EVENT_POWER_BUTTON);
+	if (ACPI_SUCCESS(status) && (acpi_state == ACPI_STATE_S3)) {
+		acpi_event_status pwr_btn_status;
+
+		acpi_get_event_status(ACPI_EVENT_POWER_BUTTON, &pwr_btn_status);
+
+		if (pwr_btn_status & ACPI_EVENT_FLAG_SET) {
+			acpi_clear_event(ACPI_EVENT_POWER_BUTTON);
+			/* Flag for later */
+			pwr_btn_event_pending = true;
+		}
+	}
 
 	/*
 	 * Disable and clear GPE status before interrupt is enabled. Some GPEs
@@ -720,10 +761,30 @@ int acpi_pm_device_sleep_state(struct device *dev, int *d_min_p)
 	 *
 	 * NOTE: We rely on acpi_evaluate_integer() not clobbering the integer
 	 * provided -- that's our fault recovery, we ignore retval.
+	 *
+	 * According to ACPI 4.0a (April 5, 2010), page 294,
+	 * Table 7-7 S3 Action / Result Table, we need to evaluate _SxW in
+	 * addition to _SxD if the device is configured for wakeup:
+	 * Desired Action    | _S3D | _PRW | _S3W | Resultant D-state
+	 * Enter S3          |  N/A |  D/C |  N/A | OSPM decides
+	 * Enter S3, No Wake |   2  |  D/C |  D/C | Enter D2 or D3
+	 * Enter S3, Wake    |   2  |   3  |  N/A | Enter D2
+	 * Enter S3, Wake    |   2  |   3  |   3  | Enter D2 or D3
+	 * Enter S3, Wake    |  N/A |   3  |   2  | Enter D0, D1 or D2
 	 */
-	if (acpi_target_sleep_state > ACPI_STATE_S0)
+	if (acpi_target_sleep_state > ACPI_STATE_S0) {
+		acpi_status status;
+
 		acpi_evaluate_integer(handle, acpi_method, NULL, &d_min);
 
+		if (device_may_wakeup(dev)) {
+			acpi_method[3] = 'W';
+			status = acpi_evaluate_integer(handle, acpi_method,
+						       NULL, &d_max);
+			if (ACPI_FAILURE(status))
+				d_max = d_min;
+		}
+	}
 	/*
 	 * If _PRW says we can wake up the system from the target sleep state,
 	 * the D-state returned by _SxD is sufficient for that (we assume a
