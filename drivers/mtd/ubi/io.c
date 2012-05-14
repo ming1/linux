@@ -189,16 +189,16 @@ retry:
 		}
 
 		if (retries++ < UBI_IO_RETRIES) {
-			dbg_io("error %d%s while reading %d bytes from PEB "
-			       "%d:%d, read only %zd bytes, retry",
-			       err, errstr, len, pnum, offset, read);
+			ubi_warn("error %d%s while reading %d bytes from PEB "
+				 "%d:%d, read only %zd bytes, retry",
+				 err, errstr, len, pnum, offset, read);
 			yield();
 			goto retry;
 		}
 
 		ubi_err("error %d%s while reading %d bytes from PEB %d:%d, "
 			"read %zd bytes", err, errstr, len, pnum, offset, read);
-		ubi_dbg_dump_stack();
+		dump_stack();
 
 		/*
 		 * The driver should never return -EBADMSG if it failed to read
@@ -284,7 +284,7 @@ int ubi_io_write(struct ubi_device *ubi, const void *buf, int pnum, int offset,
 	if (ubi_dbg_is_write_failure(ubi)) {
 		dbg_err("cannot write %d bytes to PEB %d:%d "
 			"(emulated)", len, pnum, offset);
-		ubi_dbg_dump_stack();
+		dump_stack();
 		return -EIO;
 	}
 
@@ -293,8 +293,8 @@ int ubi_io_write(struct ubi_device *ubi, const void *buf, int pnum, int offset,
 	if (err) {
 		ubi_err("error %d while writing %d bytes to PEB %d:%d, written "
 			"%zd bytes", err, len, pnum, offset, written);
-		ubi_dbg_dump_stack();
-		ubi_dbg_dump_flash(ubi, pnum, offset, len);
+		dump_stack();
+		ubi_dump_flash(ubi, pnum, offset, len);
 	} else
 		ubi_assert(written == len);
 
@@ -364,13 +364,13 @@ retry:
 	err = mtd_erase(ubi->mtd, &ei);
 	if (err) {
 		if (retries++ < UBI_IO_RETRIES) {
-			dbg_io("error %d while erasing PEB %d, retry",
-			       err, pnum);
+			ubi_warn("error %d while erasing PEB %d, retry",
+				 err, pnum);
 			yield();
 			goto retry;
 		}
 		ubi_err("cannot erase PEB %d, error %d", pnum, err);
-		ubi_dbg_dump_stack();
+		dump_stack();
 		return err;
 	}
 
@@ -383,12 +383,12 @@ retry:
 
 	if (ei.state == MTD_ERASE_FAILED) {
 		if (retries++ < UBI_IO_RETRIES) {
-			dbg_io("error while erasing PEB %d, retry", pnum);
+			ubi_warn("error while erasing PEB %d, retry", pnum);
 			yield();
 			goto retry;
 		}
 		ubi_err("cannot erase PEB %d", pnum);
-		ubi_dbg_dump_stack();
+		dump_stack();
 		return -EIO;
 	}
 
@@ -563,7 +563,7 @@ static int nor_erase_prepare(struct ubi_device *ubi, int pnum)
 	 */
 	ubi_err("cannot invalidate PEB %d, write returned %d read returned %d",
 		pnum, err, err1);
-	ubi_dbg_dump_flash(ubi, pnum, 0, ubi->peb_size);
+	ubi_dump_flash(ubi, pnum, 0, ubi->peb_size);
 	return -EIO;
 }
 
@@ -721,8 +721,8 @@ static int validate_ec_hdr(const struct ubi_device *ubi,
 
 bad:
 	ubi_err("bad EC header");
-	ubi_dbg_dump_ec_hdr(ec_hdr);
-	ubi_dbg_dump_stack();
+	ubi_dump_ec_hdr(ec_hdr);
+	dump_stack();
 	return 1;
 }
 
@@ -803,7 +803,7 @@ int ubi_io_read_ec_hdr(struct ubi_device *ubi, int pnum,
 		if (verbose) {
 			ubi_warn("bad magic number at PEB %d: %08x instead of "
 				 "%08x", pnum, magic, UBI_EC_HDR_MAGIC);
-			ubi_dbg_dump_ec_hdr(ec_hdr);
+			ubi_dump_ec_hdr(ec_hdr);
 		}
 		dbg_bld("bad magic number at PEB %d: %08x instead of "
 			"%08x", pnum, magic, UBI_EC_HDR_MAGIC);
@@ -817,7 +817,7 @@ int ubi_io_read_ec_hdr(struct ubi_device *ubi, int pnum,
 		if (verbose) {
 			ubi_warn("bad EC header CRC at PEB %d, calculated "
 				 "%#08x, read %#08x", pnum, crc, hdr_crc);
-			ubi_dbg_dump_ec_hdr(ec_hdr);
+			ubi_dump_ec_hdr(ec_hdr);
 		}
 		dbg_bld("bad EC header CRC at PEB %d, calculated "
 			"%#08x, read %#08x", pnum, crc, hdr_crc);
@@ -997,8 +997,8 @@ static int validate_vid_hdr(const struct ubi_device *ubi,
 
 bad:
 	ubi_err("bad VID header");
-	ubi_dbg_dump_vid_hdr(vid_hdr);
-	ubi_dbg_dump_stack();
+	ubi_dump_vid_hdr(vid_hdr);
+	dump_stack();
 	return 1;
 }
 
@@ -1054,7 +1054,7 @@ int ubi_io_read_vid_hdr(struct ubi_device *ubi, int pnum,
 		if (verbose) {
 			ubi_warn("bad magic number at PEB %d: %08x instead of "
 				 "%08x", pnum, magic, UBI_VID_HDR_MAGIC);
-			ubi_dbg_dump_vid_hdr(vid_hdr);
+			ubi_dump_vid_hdr(vid_hdr);
 		}
 		dbg_bld("bad magic number at PEB %d: %08x instead of "
 			"%08x", pnum, magic, UBI_VID_HDR_MAGIC);
@@ -1068,7 +1068,7 @@ int ubi_io_read_vid_hdr(struct ubi_device *ubi, int pnum,
 		if (verbose) {
 			ubi_warn("bad CRC at PEB %d, calculated %#08x, "
 				 "read %#08x", pnum, crc, hdr_crc);
-			ubi_dbg_dump_vid_hdr(vid_hdr);
+			ubi_dump_vid_hdr(vid_hdr);
 		}
 		dbg_bld("bad CRC at PEB %d, calculated %#08x, "
 			"read %#08x", pnum, crc, hdr_crc);
@@ -1153,7 +1153,7 @@ static int paranoid_check_not_bad(const struct ubi_device *ubi, int pnum)
 		return err;
 
 	ubi_err("paranoid check failed for PEB %d", pnum);
-	ubi_dbg_dump_stack();
+	dump_stack();
 	return err > 0 ? -EINVAL : err;
 }
 
@@ -1191,8 +1191,8 @@ static int paranoid_check_ec_hdr(const struct ubi_device *ubi, int pnum,
 	return 0;
 
 fail:
-	ubi_dbg_dump_ec_hdr(ec_hdr);
-	ubi_dbg_dump_stack();
+	ubi_dump_ec_hdr(ec_hdr);
+	dump_stack();
 	return -EINVAL;
 }
 
@@ -1226,8 +1226,8 @@ static int paranoid_check_peb_ec_hdr(const struct ubi_device *ubi, int pnum)
 	if (hdr_crc != crc) {
 		ubi_err("bad CRC, calculated %#08x, read %#08x", crc, hdr_crc);
 		ubi_err("paranoid check failed for PEB %d", pnum);
-		ubi_dbg_dump_ec_hdr(ec_hdr);
-		ubi_dbg_dump_stack();
+		ubi_dump_ec_hdr(ec_hdr);
+		dump_stack();
 		err = -EINVAL;
 		goto exit;
 	}
@@ -1274,8 +1274,8 @@ static int paranoid_check_vid_hdr(const struct ubi_device *ubi, int pnum,
 
 fail:
 	ubi_err("paranoid check failed for PEB %d", pnum);
-	ubi_dbg_dump_vid_hdr(vid_hdr);
-	ubi_dbg_dump_stack();
+	ubi_dump_vid_hdr(vid_hdr);
+	dump_stack();
 	return -EINVAL;
 
 }
@@ -1314,8 +1314,8 @@ static int paranoid_check_peb_vid_hdr(const struct ubi_device *ubi, int pnum)
 		ubi_err("bad VID header CRC at PEB %d, calculated %#08x, "
 			"read %#08x", pnum, crc, hdr_crc);
 		ubi_err("paranoid check failed for PEB %d", pnum);
-		ubi_dbg_dump_vid_hdr(vid_hdr);
-		ubi_dbg_dump_stack();
+		ubi_dump_vid_hdr(vid_hdr);
+		dump_stack();
 		err = -EINVAL;
 		goto exit;
 	}
@@ -1380,7 +1380,7 @@ int ubi_dbg_check_write(struct ubi_device *ubi, const void *buf, int pnum,
 			i, i + dump_len);
 		print_hex_dump(KERN_DEBUG, "", DUMP_PREFIX_OFFSET, 32, 1,
 			       buf1 + i, dump_len, 1);
-		ubi_dbg_dump_stack();
+		dump_stack();
 		err = -EINVAL;
 		goto out_free;
 	}
@@ -1443,7 +1443,7 @@ fail:
 	print_hex_dump(KERN_DEBUG, "", DUMP_PREFIX_OFFSET, 32, 1, buf, len, 1);
 	err = -EINVAL;
 error:
-	ubi_dbg_dump_stack();
+	dump_stack();
 	vfree(buf);
 	return err;
 }
