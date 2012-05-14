@@ -45,6 +45,8 @@ struct watchdog_info {
 #define	WDIOF_SETTIMEOUT	0x0080  /* Set timeout (in seconds) */
 #define	WDIOF_MAGICCLOSE	0x0100	/* Supports magic close char */
 #define	WDIOF_PRETIMEOUT	0x0200  /* Pretimeout (in seconds), get/set */
+#define	WDIOF_ALARMONLY		0x0400	/* Watchdog triggers a management or
+					   other external alarm not a reboot */
 #define	WDIOF_KEEPALIVEPING	0x8000	/* Keep alive ping reply */
 
 #define	WDIOS_DISABLECARD	0x0001	/* Turn off the watchdog timer */
@@ -54,6 +56,8 @@ struct watchdog_info {
 #ifdef __KERNEL__
 
 #include <linux/bitops.h>
+#include <linux/device.h>
+#include <linux/cdev.h>
 
 struct watchdog_ops;
 struct watchdog_device;
@@ -96,6 +100,10 @@ struct watchdog_ops {
  * @min_timeout:The watchdog devices minimum timeout value.
  * @max_timeout:The watchdog devices maximum timeout value.
  * @driver-data:Pointer to the drivers private data.
+ * @id:		The watchdog's ID.
+ * @cdev:	The watchdog's Character device.
+ * @dev:	The device for our node
+ * @busdev:	Parent bus device
  * @status:	Field that contains the devices internal status bits.
  *
  * The watchdog_device structure contains all information about a
@@ -112,6 +120,10 @@ struct watchdog_device {
 	unsigned int min_timeout;
 	unsigned int max_timeout;
 	void *driver_data;
+	int id;
+	struct cdev cdev;
+	struct device *dev;
+	struct device *busdev;
 	unsigned long status;
 /* Bit numbers for status flags */
 #define WDOG_ACTIVE		0	/* Is the watchdog running/active */
@@ -127,6 +139,12 @@ struct watchdog_device {
 #define WATCHDOG_NOWAYOUT		0
 #define WATCHDOG_NOWAYOUT_INIT_STATUS	0
 #endif
+
+/* Use the following function to check wether or not the watchdog is active */
+static inline bool watchdog_active(struct watchdog_device *wdd)
+{
+	return test_bit(WDOG_ACTIVE, &wdd->status);
+}
 
 /* Use the following function to set the nowayout feature */
 static inline void watchdog_set_nowayout(struct watchdog_device *wdd, bool nowayout)
