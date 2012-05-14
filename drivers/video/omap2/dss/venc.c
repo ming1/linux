@@ -421,6 +421,7 @@ static int venc_power_on(struct omap_dss_device *dssdev)
 {
 	u32 l;
 	int r;
+	struct omap_video_timings timings;
 
 	venc_reset();
 	venc_write_config(venc_timings_to_config(&dssdev->panel.timings));
@@ -440,10 +441,14 @@ static int venc_power_on(struct omap_dss_device *dssdev)
 
 	venc_write_reg(VENC_OUTPUT_CONTROL, l);
 
-	dispc_set_digit_size(dssdev->panel.timings.x_res,
-			dssdev->panel.timings.y_res/2);
+	timings = dssdev->panel.timings;
+	timings.y_res /= 2;
 
-	regulator_enable(venc.vdda_dac_reg);
+	dss_mgr_set_timings(dssdev->manager, &timings);
+
+	r = regulator_enable(venc.vdda_dac_reg);
+	if (r)
+		goto err;
 
 	if (dssdev->platform_enable)
 		dssdev->platform_enable(dssdev);
@@ -577,12 +582,6 @@ static int venc_panel_resume(struct omap_dss_device *dssdev)
 	return venc_panel_enable(dssdev);
 }
 
-static void venc_get_timings(struct omap_dss_device *dssdev,
-			struct omap_video_timings *timings)
-{
-	*timings = dssdev->panel.timings;
-}
-
 static void venc_set_timings(struct omap_dss_device *dssdev,
 			struct omap_video_timings *timings)
 {
@@ -661,7 +660,6 @@ static struct omap_dss_driver venc_driver = {
 	.get_resolution	= omapdss_default_get_resolution,
 	.get_recommended_bpp = omapdss_default_get_recommended_bpp,
 
-	.get_timings	= venc_get_timings,
 	.set_timings	= venc_set_timings,
 	.check_timings	= venc_check_timings,
 
