@@ -37,6 +37,7 @@ next/fixes:
 tegra/fixes		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git for-3.5/fixes
 davinci/fixes-and-cleanup	git://gitorious.org/linux-davinci/linux-davinci.git tags/v3.5-fixes-and-cleanups
 omap/fixes		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-fixes-non-critical-for-v3.5
+orion/fixes		git://git.infradead.org/users/jcooper/linux.git orion_fixes_for_v3.4
 
 next/dt:
 omap/dt-missed-3.4:	git://git.kernel.org/pub/scm/linux/kernel/git/bcousson/linux-omap-dt.git for_3.4/dts/all
@@ -132,6 +133,8 @@ mxs/dt			git://git.linaro.org/people/shawnguo/linux-2.6.git mxs/dt/for-3.5
 				depends on mxs/clock and imx/pinctrl
 imx/dt			git://git.linaro.org/people/shawnguo/linux-2.6.git imx/dt/for-3.5
 				depends on imx/clock
+tegra/dt2		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git for-3.5/dt2
+				depends on drivers/mmc
 
 next/soc2:
 spear/13xx:		git://git.stlinux.com/spear/linux-2.6.git for-v3.5-spear13xx
