@@ -68,8 +68,6 @@ static void f81232_read_int_callback(struct urb *urb)
 	int status = urb->status;
 	int retval;
 
-	dbg("%s (%d)", __func__, port->number);
-
 	switch (status) {
 	case 0:
 		/* success */
@@ -203,7 +201,6 @@ static int f81232_open(struct tty_struct *tty, struct usb_serial_port *port)
 	if (tty)
 		f81232_set_termios(tty, port, &tmp_termios);
 
-	dbg("%s - submitting interrupt urb", __func__);
 	result = usb_submit_urb(port->interrupt_in_urb, GFP_KERNEL);
 	if (result) {
 		dev_err(&port->dev, "%s - failed submitting interrupt urb,"
@@ -353,24 +350,12 @@ static void f81232_release(struct usb_serial *serial)
 	}
 }
 
-static struct usb_driver f81232_driver = {
-	.name =		"f81232",
-	.probe =	usb_serial_probe,
-	.disconnect =	usb_serial_disconnect,
-	.id_table =	id_table,
-	.suspend =      usb_serial_suspend,
-	.resume =       usb_serial_resume,
-	.no_dynamic_id = 	1,
-	.supports_autosuspend =	1,
-};
-
 static struct usb_serial_driver f81232_device = {
 	.driver = {
 		.owner =	THIS_MODULE,
 		.name =		"f81232",
 	},
 	.id_table =		id_table,
-	.usb_driver = 		&f81232_driver,
 	.num_ports =		1,
 	.bulk_in_size =		256,
 	.bulk_out_size =	256,
@@ -394,7 +379,7 @@ static struct usb_serial_driver * const serial_drivers[] = {
 	NULL,
 };
 
-module_usb_serial_driver(f81232_driver, serial_drivers);
+module_usb_serial_driver(serial_drivers, id_table);
 
 MODULE_DESCRIPTION("Fintek F81232 USB to serial adaptor driver");
 MODULE_AUTHOR("Greg Kroah-Hartman <gregkh@linuxfoundation.org");
