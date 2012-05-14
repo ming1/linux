@@ -287,16 +287,6 @@ static void sun4m_send_ipi(int cpu, int level)
 {
 	sbus_writel(SUN4M_SOFT_INT(level), &sun4m_irq_percpu[cpu]->set);
 }
-
-static void sun4m_clear_ipi(int cpu, int level)
-{
-	sbus_writel(SUN4M_SOFT_INT(level), &sun4m_irq_percpu[cpu]->clear);
-}
-
-static void sun4m_set_udt(int cpu)
-{
-	sbus_writel(cpu, &sun4m_irq_global->interrupt_target);
-}
 #endif
 
 struct sun4m_timer_percpu {
@@ -317,9 +307,6 @@ struct sun4m_timer_global {
 };
 
 static struct sun4m_timer_global __iomem *timers_global;
-
-
-unsigned int lvl14_resolution = (((1000000/HZ) + 1) << 10);
 
 static void sun4m_clear_clock_irq(void)
 {
@@ -369,10 +356,11 @@ void sun4m_clear_profile_irq(int cpu)
 
 static void sun4m_load_profile_irq(int cpu, unsigned int limit)
 {
-	sbus_writel(limit, &timers_percpu[cpu]->l14_limit);
+	unsigned int value = limit ? timer_value(limit) : 0;
+	sbus_writel(value, &timers_percpu[cpu]->l14_limit);
 }
 
-static void __init sun4m_init_timers(irq_handler_t counter_fn)
+static void __init sun4m_init_timers(void)
 {
 	struct device_node *dp = of_find_node_by_name(NULL, "counter");
 	int i, err, len, num_cpu_timers;
@@ -402,13 +390,22 @@ static void __init sun4m_init_timers(irq_handler_t counter_fn)
 	/* Every per-cpu timer works in timer mode */
 	sbus_writel(0x00000000, &timers_global->timer_config);
 
-	sbus_writel((((1000000/HZ) + 1) << 10), &timers_global->l10_limit);
+#ifdef CONFIG_SMP
+	sparc_config.cs_period = SBUS_CLOCK_RATE * 2;  /* 2 seconds */
+	sparc_config.features |= FEAT_L14_ONESHOT;
+#else
+	sparc_config.cs_period = SBUS_CLOCK_RATE / HZ; /* 1/HZ sec  */
+	sparc_config.features |= FEAT_L10_CLOCKEVENT;
+#endif
+	sparc_config.features |= FEAT_L10_CLOCKSOURCE;
+	sbus_writel(timer_value(sparc_config.cs_period),
+	            &timers_global->l10_limit);
 
 	master_l10_counter = &timers_global->l10_count;
 
 	irq = sun4m_build_device_irq(NULL, SUN4M_TIMER_IRQ);
 
-	err = request_irq(irq, counter_fn, IRQF_TIMER, "timer", NULL);
+	err = request_irq(irq, timer_interrupt, IRQF_TIMER, "timer", NULL);
 	if (err) {
 		printk(KERN_ERR "sun4m_init_timers: Register IRQ error %d.\n",
 			err);
@@ -478,13 +475,12 @@ void __init sun4m_init_IRQ(void)
 	BTFIXUPSET_CALL(clear_clock_irq, sun4m_clear_clock_irq, BTFIXUPCALL_NORM);
 	BTFIXUPSET_CALL(load_profile_irq, sun4m_load_profile_irq, BTFIXUPCALL_NORM);
 
-	sparc_irq_config.init_timers = sun4m_init_timers;
-	sparc_irq_config.build_device_irq = sun4m_build_device_irq;
+	sparc_config.init_timers = sun4m_init_timers;
+	sparc_config.build_device_irq = sun4m_build_device_irq;
+	sparc_config.clock_rate       = SBUS_CLOCK_RATE;
 
 #ifdef CONFIG_SMP
 	BTFIXUPSET_CALL(set_cpu_int, sun4m_send_ipi, BTFIXUPCALL_NORM);
-	BTFIXUPSET_CALL(clear_cpu_int, sun4m_clear_ipi, BTFIXUPCALL_NORM);
-	BTFIXUPSET_CALL(set_irq_udt, sun4m_set_udt, BTFIXUPCALL_NORM);
 #endif
 
 	/* Cannot enable interrupts until OBP ticker is disabled. */

@@ -32,7 +32,7 @@
 #endif /* SMP */
 
 /* platform specific irq setup */
-struct sparc_irq_config sparc_irq_config;
+struct sparc_config sparc_config;
 
 unsigned long arch_local_irq_save(void)
 {
@@ -346,11 +346,6 @@ void sparc_floppy_irq(int irq, void *dev_id, struct pt_regs *regs)
 void __init init_IRQ(void)
 {
 	switch (sparc_cpu_model) {
-	case sun4c:
-	case sun4:
-		sun4c_init_IRQ();
-		break;
-
 	case sun4m:
 		pcic_probe();
 		if (pcic_present())

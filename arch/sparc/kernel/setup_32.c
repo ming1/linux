@@ -42,7 +42,6 @@
 #include <asm/vaddrs.h>
 #include <asm/mbus.h>
 #include <asm/idprom.h>
-#include <asm/machines.h>
 #include <asm/cpudata.h>
 #include <asm/setup.h>
 #include <asm/cacheflush.h>
@@ -182,13 +181,6 @@ static void __init boot_flags_init(char *commands)
 	}
 }
 
-/* This routine will in the future do all the nasty prom stuff
- * to probe for the mmu type and its parameters, etc. This will
- * also be where SMP things happen.
- */
-
-extern void sun4c_probe_vac(void);
-
 extern unsigned short root_flags;
 extern unsigned short root_dev;
 extern unsigned short ram_flags;
@@ -225,10 +217,6 @@ void __init setup_arch(char **cmdline_p)
 
 	/* Set sparc_cpu_model */
 	sparc_cpu_model = sun_unknown;
-	if (!strcmp(&cputypval[0], "sun4 "))
-		sparc_cpu_model = sun4;
-	if (!strcmp(&cputypval[0], "sun4c"))
-		sparc_cpu_model = sun4c;
 	if (!strcmp(&cputypval[0], "sun4m"))
 		sparc_cpu_model = sun4m;
 	if (!strcmp(&cputypval[0], "sun4s"))
@@ -244,12 +232,6 @@ void __init setup_arch(char **cmdline_p)
 
 	printk("ARCH: ");
 	switch(sparc_cpu_model) {
-	case sun4:
-		printk("SUN4\n");
-		break;
-	case sun4c:
-		printk("SUN4C\n");
-		break;
 	case sun4m:
 		printk("SUN4M\n");
 		break;
@@ -275,8 +257,6 @@ void __init setup_arch(char **cmdline_p)
 #endif
 
 	idprom_init();
-	if (ARCH_SUN4C)
-		sun4c_probe_vac();
 	load_mmu();
 
 	phys_base = 0xffffffffUL;

@@ -24,7 +24,6 @@
 
 #include <asm/page.h>
 #include <asm/pgtable.h>
-#include <asm/memreg.h>
 #include <asm/openprom.h>
 #include <asm/oplib.h>
 #include <asm/smp.h>
@@ -58,26 +57,6 @@ unsigned long probe_memory(void)
 		total += sp_banks[i].num_bytes;
 
 	return total;
-}
-
-extern void sun4c_complete_all_stores(void);
-
-/* Whee, a level 15 NMI interrupt memory error.  Let's have fun... */
-asmlinkage void sparc_lvl15_nmi(struct pt_regs *regs, unsigned long serr,
-				unsigned long svaddr, unsigned long aerr,
-				unsigned long avaddr)
-{
-	sun4c_complete_all_stores();
-	printk("FAULT: NMI received\n");
-	printk("SREGS: Synchronous Error %08lx\n", serr);
-	printk("       Synchronous Vaddr %08lx\n", svaddr);
-	printk("      Asynchronous Error %08lx\n", aerr);
-	printk("      Asynchronous Vaddr %08lx\n", avaddr);
-	if (sun4c_memerr_reg)
-		printk("     Memory Parity Error %08lx\n", *sun4c_memerr_reg);
-	printk("REGISTER DUMP:\n");
-	show_regs(regs);
-	prom_halt();
 }
 
 static void unhandled_fault(unsigned long, struct task_struct *,
@@ -241,7 +220,7 @@ asmlinkage void do_sparc_fault(struct pt_regs *regs, int text_fault, int write,
 	 * nothing more.
 	 */
 	code = SEGV_MAPERR;
-	if (!ARCH_SUN4C && address >= TASK_SIZE)
+	if (address >= TASK_SIZE)
 		goto vmalloc_fault;
 
 	/*
@@ -256,10 +235,6 @@ asmlinkage void do_sparc_fault(struct pt_regs *regs, int text_fault, int write,
 retry:
 	down_read(&mm->mmap_sem);
 
-	/*
-	 * The kernel referencing a bad kernel pointer can lock up
-	 * a sun4c machine completely, so we must attempt recovery.
-	 */
 	if(!from_user && address >= PAGE_OFFSET)
 		goto bad_area;
 
@@ -423,92 +398,6 @@ vmalloc_fault:
 		*pmd = *pmd_k;
 		return;
 	}
-}
-
-asmlinkage void do_sun4c_fault(struct pt_regs *regs, int text_fault, int write,
-			       unsigned long address)
-{
-	extern void sun4c_update_mmu_cache(struct vm_area_struct *,
-					   unsigned long,pte_t *);
-	extern pte_t *sun4c_pte_offset_kernel(pmd_t *,unsigned long);
-	struct task_struct *tsk = current;
-	struct mm_struct *mm = tsk->mm;
-	pgd_t *pgdp;
-	pte_t *ptep;
-
-	if (text_fault) {
-		address = regs->pc;
-	} else if (!write &&
-		   !(regs->psr & PSR_PS)) {
-		unsigned int insn, __user *ip;
-
-		ip = (unsigned int __user *)regs->pc;
-		if (!get_user(insn, ip)) {
-			if ((insn & 0xc1680000) == 0xc0680000)
-				write = 1;
-		}
-	}
-
-	if (!mm) {
-		/* We are oopsing. */
-		do_sparc_fault(regs, text_fault, write, address);
-		BUG();	/* P3 Oops already, you bitch */
-	}
-
-	pgdp = pgd_offset(mm, address);
-	ptep = sun4c_pte_offset_kernel((pmd_t *) pgdp, address);
-
-	if (pgd_val(*pgdp)) {
-	    if (write) {
-		if ((pte_val(*ptep) & (_SUN4C_PAGE_WRITE|_SUN4C_PAGE_PRESENT))
-				   == (_SUN4C_PAGE_WRITE|_SUN4C_PAGE_PRESENT)) {
-			unsigned long flags;
-
-			*ptep = __pte(pte_val(*ptep) | _SUN4C_PAGE_ACCESSED |
-				      _SUN4C_PAGE_MODIFIED |
-				      _SUN4C_PAGE_VALID |
-				      _SUN4C_PAGE_DIRTY);
-
-			local_irq_save(flags);
-			if (sun4c_get_segmap(address) != invalid_segment) {
-				sun4c_put_pte(address, pte_val(*ptep));
-				local_irq_restore(flags);
-				return;
-			}
-			local_irq_restore(flags);
-		}
-	    } else {
-		if ((pte_val(*ptep) & (_SUN4C_PAGE_READ|_SUN4C_PAGE_PRESENT))
-				   == (_SUN4C_PAGE_READ|_SUN4C_PAGE_PRESENT)) {
-			unsigned long flags;
-
-			*ptep = __pte(pte_val(*ptep) | _SUN4C_PAGE_ACCESSED |
-				      _SUN4C_PAGE_VALID);
-
-			local_irq_save(flags);
-			if (sun4c_get_segmap(address) != invalid_segment) {
-				sun4c_put_pte(address, pte_val(*ptep));
-				local_irq_restore(flags);
-				return;
-			}
-			local_irq_restore(flags);
-		}
-	    }
-	}
-
-	/* This conditional is 'interesting'. */
-	if (pgd_val(*pgdp) && !(write && !(pte_val(*ptep) & _SUN4C_PAGE_WRITE))
-	    && (pte_val(*ptep) & _SUN4C_PAGE_VALID))
-		/* Note: It is safe to not grab the MMAP semaphore here because
-		 *       we know that update_mmu_cache() will not sleep for
-		 *       any reason (at least not in the current implementation)
-		 *       and therefore there is no danger of another thread getting
-		 *       on the CPU and doing a shrink_mmap() on this vma.
-		 */
-		sun4c_update_mmu_cache (find_vma(current->mm, address), address,
-					ptep);
-	else
-		do_sparc_fault(regs, text_fault, write, address);
 }
 
 /* This always deals with user addresses. */

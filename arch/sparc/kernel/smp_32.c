@@ -85,14 +85,6 @@ void __init smp_cpus_done(unsigned int max_cpus)
 		(bogosum/(5000/HZ))%100);
 
 	switch(sparc_cpu_model) {
-	case sun4:
-		printk("SUN4\n");
-		BUG();
-		break;
-	case sun4c:
-		printk("SUN4C\n");
-		BUG();
-		break;
 	case sun4m:
 		smp4m_smp_done();
 		break;
@@ -301,28 +293,9 @@ void smp_flush_sig_insns(struct mm_struct *mm, unsigned long insn_addr)
 	local_flush_sig_insns(mm, insn_addr);
 }
 
-extern unsigned int lvl14_resolution;
-
-/* /proc/profile writes can call this, don't __init it please. */
-static DEFINE_SPINLOCK(prof_setup_lock);
-
 int setup_profiling_timer(unsigned int multiplier)
 {
-	int i;
-	unsigned long flags;
-
-	/* Prevent level14 ticker IRQ flooding. */
-	if((!multiplier) || (lvl14_resolution / multiplier) < 500)
-		return -EINVAL;
-
-	spin_lock_irqsave(&prof_setup_lock, flags);
-	for_each_possible_cpu(i) {
-		load_profile_irq(i, lvl14_resolution / multiplier);
-		prof_multiplier(i) = multiplier;
-	}
-	spin_unlock_irqrestore(&prof_setup_lock, flags);
-
-	return 0;
+	return -EINVAL;
 }
 
 void __init smp_prepare_cpus(unsigned int max_cpus)
@@ -345,14 +318,6 @@ void __init smp_prepare_cpus(unsigned int max_cpus)
 	smp_store_cpu_info(boot_cpu_id);
 
 	switch(sparc_cpu_model) {
-	case sun4:
-		printk("SUN4\n");
-		BUG();
-		break;
-	case sun4c:
-		printk("SUN4C\n");
-		BUG();
-		break;
 	case sun4m:
 		smp4m_boot_cpus();
 		break;
@@ -418,14 +383,6 @@ int __cpuinit __cpu_up(unsigned int cpu)
 	int ret=0;
 
 	switch(sparc_cpu_model) {
-	case sun4:
-		printk("SUN4\n");
-		BUG();
-		break;
-	case sun4c:
-		printk("SUN4C\n");
-		BUG();
-		break;
 	case sun4m:
 		ret = smp4m_boot_one_cpu(cpu);
 		break;
