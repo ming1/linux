@@ -95,6 +95,7 @@ omap/cleanup-timer	git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-om
 next/defconfig:
 imx/defconfig:		git://git.pengutronix.de/git/imx/linux-2.6.git tags/imx-defconfig
 tegra/defconfig		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git for-3.5/defconfig
+tegra/defconfig2	git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git for-3.5/defconfig
 
 next/drivers:
 pxa/keyboard		git://github.com/hzhuang1/linux.git keyboard
