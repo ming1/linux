@@ -77,6 +77,7 @@ omap/devel-prcm		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap
 omap/devel-hwmod	git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-devel-hwmod-data-for-v3.5
 mmp/pm			git://github.com/hzhuang1/linux.git power
 				depends on mmp/dt
+ux500/cpuidle		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git ux500-cpuidle-for-arm-soc
 
 next/boards:
 imx/boards		git://git.pengutronix.de/git/imx/linux-2.6.git tags/imx-features-board-20120411-2
@@ -102,6 +103,8 @@ tegra/debug		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.g
 davinci/soc		git://gitorious.org/linux-davinci/linux-davinci.git tags/v3.5-soc
 ep93xx/drivers		git://github.com/RyanMallon/linux-ep93xx.git tags/ep93xx-fixes-for-3.5
 exynos/sysmmu		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/cleanup-samsung-iommu
+drivers/mmc			patch from Arnd
+				depends on omap/dt-missed-3.4
 
 next/cleanup2:
 omap/cleanup		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-cleanup-for-v3.5
@@ -133,8 +136,6 @@ next/soc2:
 spear/13xx:		git://git.stlinux.com/spear/linux-2.6.git for-v3.5-spear13xx
 				depends on spear/clock, spear/pinctrl and spear/dt
 
-next/cpuidle:
-ux500/cpuidle		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git ux500-cpuidle-for-arm-soc
 
 next/stmp-dev:		git://git.pengutronix.de/git/wsa/linux.git stmp_device
 
