@@ -48,7 +48,8 @@ lpc32xx/dt		git://git.antcom.de/linux-2.6.git lpc32xx/dt
 ux500/dt:		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git ux500-devicetree-for-arm-soc
 at91/dt			git://github.com/at91linux/linux-at91.git tags/at91-for-next-dt
 				depends on at91/cleanup
-omap/dt			 git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-dt-for-v3.5
+omap/dt			git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-dt-for-v3.5
+mmp/dt			git://github.com/hzhuang1/linux.git dt
 
 next/soc:
 at91/sam9n12:		git://github.com/at91linux/linux-at91.git tags/at91-for-next-soc
@@ -74,6 +75,8 @@ omap/hwmod		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags
 				depends on omap/hwmod-cleanup
 omap/devel-prcm		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-devel-prcm-for-v3.5
 omap/devel-hwmod	git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-devel-hwmod-data-for-v3.5
+mmp/pm			git://github.com/hzhuang1/linux.git power
+				depends on mmp/dt
 
 next/boards:
 imx/boards		git://git.pengutronix.de/git/imx/linux-2.6.git tags/imx-features-board-20120411-2
@@ -83,14 +86,6 @@ omap/boards		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tag
 				depends on omap/hwmod and omap/pm
 renesas/board		git://git.kernel.org/pub/scm/linux/kernel/git/rafael/renesas.git soc-core
 				depends on renesas/dt
-
-next/cleanup2:
-omap/cleanup		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-cleanup-for-v3.5
-				depends on omap/hwmod
-omap/cleanup-renames	git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-cleanup-renames-for-v3.5
-omap/cleanup-devices	git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-cleanup-devices-for-v3.5
-				depends on omap/hwmod and omap/fixes
-omap/cleanup-timer	git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-cleanup-timer-for-v3.5
 
 next/defconfig:
 imx/defconfig:		git://git.pengutronix.de/git/imx/linux-2.6.git tags/imx-defconfig
@@ -106,6 +101,18 @@ tegra/tegra30-audio	git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-
 tegra/debug		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git for-3.5/debug
 davinci/soc		git://gitorious.org/linux-davinci/linux-davinci.git tags/v3.5-soc
 ep93xx/drivers		git://github.com/RyanMallon/linux-ep93xx.git tags/ep93xx-fixes-for-3.5
+exynos/sysmmu		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/cleanup-samsung-iommu
+
+next/cleanup2:
+omap/cleanup		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-cleanup-for-v3.5
+				depends on omap/hwmod
+omap/cleanup-renames	git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-cleanup-renames-for-v3.5
+omap/cleanup-devices	git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-cleanup-devices-for-v3.5
+				depends on omap/hwmod and omap/fixes
+omap/cleanup-timer	git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-cleanup-timer-for-v3.5
+samsung/cleanup-plat-s3c23xx git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/cleanup-plat-s3c24xx-s5p
+				depends on exynos/sysmmu
+samsung/cleanup-plat-s5p git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/cleanup-plat-s3c24xx-s5p
 
 next/clock:
 depends/clk/clk-next	git://git.linaro.org/people/mturquette/linux.git clk-next
