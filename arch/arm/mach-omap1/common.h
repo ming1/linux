@@ -63,8 +63,14 @@ extern void omap1_nand_cmd_ctl(struct mtd_info *mtd, int cmd,
 			       unsigned int ctrl);
 
 extern struct sys_timer omap1_timer;
-extern bool omap_32k_timer_init(void);
-
+#ifdef CONFIG_OMAP_32K_TIMER
+extern int omap_32k_timer_init(void);
+#else
+static inline int __init omap_32k_timer_init(void)
+{
+	return -ENODEV;
+}
+#endif
 extern u32 omap_irq_flags;
 
 #ifdef CONFIG_ARCH_OMAP16XX
@@ -72,5 +78,7 @@ extern int ocpi_enable(void);
 #else
 static inline int ocpi_enable(void) { return 0; }
 #endif
+
+extern void __init omap_init_consistent_dma_size(void);
 
 #endif /* __ARCH_ARM_MACH_OMAP1_COMMON_H */
