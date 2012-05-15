@@ -110,6 +110,8 @@ exynos/sysmmu		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung
 drivers/mmc			patch from Arnd
 				depends on omap/dt-missed-3.4
 tegra/ahb		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git for-3.5/ahb
+exynos/iommu		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung next/devel-samsung-iommu
+					depends on exynos/sysmmu
 
 next/cleanup2:
 omap/cleanup		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-cleanup-for-v3.5
@@ -142,7 +144,8 @@ tegra/dt2		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git
 next/soc2:
 spear/13xx:		git://git.stlinux.com/spear/linux-2.6.git for-v3.5-spear13xx
 				depends on spear/clock, spear/pinctrl and spear/dt
-
+samsung/devel		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/devel-samsung
+				depends on samsung/sysmmu
 
 next/stmp-dev:		git://git.pengutronix.de/git/wsa/linux.git stmp_device
 
