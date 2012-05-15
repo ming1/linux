@@ -69,7 +69,7 @@ void sdhci_get_of_property(struct platform_device *pdev)
 
 		if (of_get_property(np, "sdhci,1-bit-only", NULL) ||
 		    (of_property_read_u32(np, "bus-width", &bus_width) == 0 &&
-		    bus_width = 1))
+		    bus_width == 1))
 			host->quirks |= SDHCI_QUIRK_FORCE_1_BIT_DATA;
 
 		if (sdhci_of_wp_inverted(np))
