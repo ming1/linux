@@ -748,10 +748,10 @@ out:
 	return handle_pte_fault(mm, vma, address, pte, pmd, flags);
 }
 
-int copy_huge_pmd(struct mm_struct *dst_mm, struct mm_struct *src_mm,
-		  pmd_t *dst_pmd, pmd_t *src_pmd, unsigned long addr,
-		  struct vm_area_struct *vma)
+int copy_huge_pmd(struct vm_area_struct *dst_vma, struct vm_area_struct *src_vma,
+		  pmd_t *dst_pmd, pmd_t *src_pmd, unsigned long addr)
 {
+	struct mm_struct *dst_mm = dst_vma->vm_mm, *src_mm = src_vma->vm_mm;
 	struct page *src_page;
 	pmd_t pmd;
 	pgtable_t pgtable;
@@ -777,7 +777,7 @@ int copy_huge_pmd(struct mm_struct *dst_mm, struct mm_struct *src_mm,
 		spin_unlock(&dst_mm->page_table_lock);
 		pte_free(dst_mm, pgtable);
 
-		wait_split_huge_page(vma->anon_vma, src_pmd); /* src_vma */
+		wait_split_huge_page(src_vma->anon_vma, src_pmd); /* src_vma */
 		goto out;
 	}
 	src_page = pmd_page(pmd);
