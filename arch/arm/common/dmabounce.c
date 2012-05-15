@@ -456,10 +456,10 @@ static struct dma_map_ops dmabounce_ops = {
 	.unmap_page		= dmabounce_unmap_page,
 	.sync_single_for_cpu	= dmabounce_sync_for_cpu,
 	.sync_single_for_device	= dmabounce_sync_for_device,
-	.map_sg			= generic_dma_map_sg,
-	.unmap_sg		= generic_dma_unmap_sg,
-	.sync_sg_for_cpu	= generic_dma_sync_sg_for_cpu,
-	.sync_sg_for_device	= generic_dma_sync_sg_for_device,
+	.map_sg			= arm_dma_map_sg,
+	.unmap_sg		= arm_dma_unmap_sg,
+	.sync_sg_for_cpu	= arm_dma_sync_sg_for_cpu,
+	.sync_sg_for_device	= arm_dma_sync_sg_for_device,
 	.set_dma_mask		= dmabounce_set_mask,
 };
 
