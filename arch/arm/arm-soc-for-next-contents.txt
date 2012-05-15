@@ -89,6 +89,8 @@ omap/boards		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tag
 renesas/board		git://git.kernel.org/pub/scm/linux/kernel/git/rafael/renesas.git soc-core
 				depends on renesas/dt
 samsung/board		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/board-samsung
+renesas/board2		git://git.kernel.org/pub/scm/linux/kernel/git/rafael/renesas.git board-new
+				depends on renesas/board
 
 next/defconfig:
 imx/defconfig:		git://git.pengutronix.de/git/imx/linux-2.6.git tags/imx-defconfig
