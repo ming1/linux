@@ -273,6 +273,9 @@ static int __acpi_bus_set_power(struct acpi_device *device, int state)
 		}
 	} else {
 		if (device->power.states[state].flags.explicit_set) {
+			/* Evaluate _PS3 when entering D3cold */
+			if (state == ACPI_STATE_D3)
+				object_name[3] = '3';
 			status = acpi_evaluate_object(device->handle,
 						      object_name, NULL, NULL);
 			if (ACPI_FAILURE(status)) {
