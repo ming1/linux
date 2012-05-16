@@ -41,12 +41,6 @@
  * physical eraseblocks with low erase counter to free physical eraseblocks
  * with high erase counter.
  *
- * The 'ubi_wl_get_peb()' function accepts data type hints which help to pick
- * an "optimal" physical eraseblock. For example, when it is known that the
- * physical eraseblock will be "put" soon because it contains short-term data,
- * the WL sub-system may pick a free physical eraseblock with low erase
- * counter, and so forth.
- *
  * If the WL sub-system fails to erase a physical eraseblock, it marks it as
  * bad.
  *
@@ -70,8 +64,7 @@
  *    to the user; instead, we first want to let users fill them up with data;
  *
  *  o there is a chance that the user will put the physical eraseblock very
- *    soon, so it makes sense not to move it for some time, but wait; this is
- *    especially important in case of "short term" physical eraseblocks.
+ *    soon, so it makes sense not to move it for some time, but wait.
  *
  * Physical eraseblocks stay protected only for limited time. But the "time" is
  * measured in erase cycles in this case. This is implemented with help of the
@@ -383,18 +376,14 @@ static struct ubi_wl_entry *find_wl_entry(struct rb_root *root, int diff)
 /**
  * ubi_wl_get_peb - get a physical eraseblock.
  * @ubi: UBI device description object
- * @dtype: type of data which will be stored in this physical eraseblock
  *
  * This function returns a physical eraseblock in case of success and a
  * negative error code in case of failure. Might sleep.
  */
-int ubi_wl_get_peb(struct ubi_device *ubi, int dtype)
+int ubi_wl_get_peb(struct ubi_device *ubi)
 {
 	int err;
 	struct ubi_wl_entry *e, *first, *last;
-
-	ubi_assert(dtype == UBI_LONGTERM || dtype == UBI_SHORTTERM ||
-		   dtype == UBI_UNKNOWN);
 
 retry:
 	spin_lock(&ubi->wl_lock);
@@ -413,43 +402,13 @@ retry:
 		goto retry;
 	}
 
-	switch (dtype) {
-	case UBI_LONGTERM:
-		/*
-		 * For long term data we pick a physical eraseblock with high
-		 * erase counter. But the highest erase counter we can pick is
-		 * bounded by the the lowest erase counter plus
-		 * %WL_FREE_MAX_DIFF.
-		 */
-		e = find_wl_entry(&ubi->free, WL_FREE_MAX_DIFF);
-		break;
-	case UBI_UNKNOWN:
-		/*
-		 * For unknown data we pick a physical eraseblock with medium
-		 * erase counter. But we by no means can pick a physical
-		 * eraseblock with erase counter greater or equivalent than the
-		 * lowest erase counter plus %WL_FREE_MAX_DIFF/2.
-		 */
-		first = rb_entry(rb_first(&ubi->free), struct ubi_wl_entry,
-					u.rb);
-		last = rb_entry(rb_last(&ubi->free), struct ubi_wl_entry, u.rb);
+	first = rb_entry(rb_first(&ubi->free), struct ubi_wl_entry, u.rb);
+	last = rb_entry(rb_last(&ubi->free), struct ubi_wl_entry, u.rb);
 
-		if (last->ec - first->ec < WL_FREE_MAX_DIFF)
-			e = rb_entry(ubi->free.rb_node,
-					struct ubi_wl_entry, u.rb);
-		else
-			e = find_wl_entry(&ubi->free, WL_FREE_MAX_DIFF/2);
-		break;
-	case UBI_SHORTTERM:
-		/*
-		 * For short term data we pick a physical eraseblock with the
-		 * lowest erase counter as we expect it will be erased soon.
-		 */
-		e = rb_entry(rb_first(&ubi->free), struct ubi_wl_entry, u.rb);
-		break;
-	default:
-		BUG();
-	}
+	if (last->ec - first->ec < WL_FREE_MAX_DIFF)
+		e = rb_entry(ubi->free.rb_node, struct ubi_wl_entry, u.rb);
+	else
+		e = find_wl_entry(&ubi->free, WL_FREE_MAX_DIFF/2);
 
 	paranoid_check_in_wl_tree(ubi, e, &ubi->free);
 
@@ -1603,7 +1562,7 @@ static int paranoid_check_ec(struct ubi_device *ubi, int pnum, int ec)
 	if (ec != read_ec) {
 		ubi_err("paranoid check failed for PEB %d", pnum);
 		ubi_err("read EC is %lld, should be %d", read_ec, ec);
-		ubi_dbg_dump_stack();
+		dump_stack();
 		err = 1;
 	} else
 		err = 0;
@@ -1634,7 +1593,7 @@ static int paranoid_check_in_wl_tree(const struct ubi_device *ubi,
 
 	ubi_err("paranoid check failed for PEB %d, EC %d, RB-tree %p ",
 		e->pnum, e->ec, root);
-	ubi_dbg_dump_stack();
+	dump_stack();
 	return -EINVAL;
 }
 
@@ -1662,7 +1621,7 @@ static int paranoid_check_in_pq(const struct ubi_device *ubi,
 
 	ubi_err("paranoid check failed for PEB %d, EC %d, Protect queue",
 		e->pnum, e->ec);
-	ubi_dbg_dump_stack();
+	dump_stack();
 	return -EINVAL;
 }
 

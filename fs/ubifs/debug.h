@@ -307,11 +307,10 @@ int dbg_check_data_nodes_order(struct ubifs_info *c, struct list_head *head);
 int dbg_check_nondata_nodes_order(struct ubifs_info *c, struct list_head *head);
 
 int dbg_leb_write(struct ubifs_info *c, int lnum, const void *buf, int offs,
-		  int len, int dtype);
-int dbg_leb_change(struct ubifs_info *c, int lnum, const void *buf, int len,
-		   int dtype);
+		  int len);
+int dbg_leb_change(struct ubifs_info *c, int lnum, const void *buf, int len);
 int dbg_leb_unmap(struct ubifs_info *c, int lnum);
-int dbg_leb_map(struct ubifs_info *c, int lnum, int dtype);
+int dbg_leb_map(struct ubifs_info *c, int lnum);
 
 /* Debugfs-related stuff */
 int dbg_debugfs_init(void);
@@ -455,13 +454,11 @@ dbg_check_nondata_nodes_order(struct ubifs_info *c,
 
 static inline int dbg_leb_write(struct ubifs_info *c, int lnum,
 				const void *buf, int offset,
-				int len, int dtype)               { return 0; }
+				int len)			  { return 0; }
 static inline int dbg_leb_change(struct ubifs_info *c, int lnum,
-				 const void *buf, int len,
-				 int dtype)                       { return 0; }
+				 const void *buf, int len)	  { return 0; }
 static inline int dbg_leb_unmap(struct ubifs_info *c, int lnum)   { return 0; }
-static inline int dbg_leb_map(struct ubifs_info *c, int lnum,
-			      int dtype)                          { return 0; }
+static inline int dbg_leb_map(struct ubifs_info *c, int lnum)	  { return 0; }
 
 static inline int dbg_is_chk_gen(const struct ubifs_info *c)      { return 0; }
 static inline int dbg_is_chk_index(const struct ubifs_info *c)    { return 0; }
