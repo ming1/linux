@@ -311,6 +311,8 @@ static const struct dss_param_range omap2_dss_param_range[] = {
 	 * scaler cannot scale a image with width more than 768.
 	 */
 	[FEAT_PARAM_LINEWIDTH]			= { 1, 768 },
+	[FEAT_PARAM_MGR_WIDTH]			= { 1, 2048 },
+	[FEAT_PARAM_MGR_HEIGHT]			= { 1, 2048 },
 };
 
 static const struct dss_param_range omap3_dss_param_range[] = {
@@ -324,6 +326,8 @@ static const struct dss_param_range omap3_dss_param_range[] = {
 	[FEAT_PARAM_DSIPLL_LPDIV]		= { 1, (1 << 13) - 1},
 	[FEAT_PARAM_DOWNSCALE]			= { 1, 4 },
 	[FEAT_PARAM_LINEWIDTH]			= { 1, 1024 },
+	[FEAT_PARAM_MGR_WIDTH]			= { 1, 2048 },
+	[FEAT_PARAM_MGR_HEIGHT]			= { 1, 2048 },
 };
 
 static const struct dss_param_range omap4_dss_param_range[] = {
@@ -337,6 +341,8 @@ static const struct dss_param_range omap4_dss_param_range[] = {
 	[FEAT_PARAM_DSIPLL_LPDIV]		= { 0, (1 << 13) - 1 },
 	[FEAT_PARAM_DOWNSCALE]			= { 1, 4 },
 	[FEAT_PARAM_LINEWIDTH]			= { 1, 2048 },
+	[FEAT_PARAM_MGR_WIDTH]			= { 1, 2048 },
+	[FEAT_PARAM_MGR_HEIGHT]			= { 1, 2048 },
 };
 
 static const enum dss_feat_id omap2_dss_feat_list[] = {
@@ -562,13 +568,17 @@ static const struct ti_hdmi_ip_ops omap4_hdmi_functions = {
 	.pll_enable		=	ti_hdmi_4xxx_pll_enable,
 	.pll_disable		=	ti_hdmi_4xxx_pll_disable,
 	.video_enable		=	ti_hdmi_4xxx_wp_video_start,
+	.video_disable		=	ti_hdmi_4xxx_wp_video_stop,
 	.dump_wrapper		=	ti_hdmi_4xxx_wp_dump,
 	.dump_core		=	ti_hdmi_4xxx_core_dump,
 	.dump_pll		=	ti_hdmi_4xxx_pll_dump,
 	.dump_phy		=	ti_hdmi_4xxx_phy_dump,
-#if defined(CONFIG_SND_OMAP_SOC_OMAP4_HDMI) || \
-	defined(CONFIG_SND_OMAP_SOC_OMAP4_HDMI_MODULE)
+#if defined(CONFIG_OMAP4_DSS_HDMI_AUDIO)
 	.audio_enable		=       ti_hdmi_4xxx_wp_audio_enable,
+	.audio_disable		=       ti_hdmi_4xxx_wp_audio_disable,
+	.audio_start		=       ti_hdmi_4xxx_audio_start,
+	.audio_stop		=       ti_hdmi_4xxx_audio_stop,
+	.audio_config		=	ti_hdmi_4xxx_audio_config,
 #endif
 
 };
