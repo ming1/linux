@@ -23,6 +23,7 @@
 #include <linux/i2c-gpio.h>
 #include <linux/i2c/mcs.h>
 #include <linux/i2c/atmel_mxt_ts.h>
+#include <linux/platform_data/s3c-hsotg.h>
 #include <drm/exynos_drm.h>
 
 #include <asm/mach/arch.h>

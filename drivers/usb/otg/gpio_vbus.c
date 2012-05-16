@@ -37,7 +37,8 @@ struct gpio_vbus_data {
 	struct regulator       *vbus_draw;
 	int			vbus_draw_enabled;
 	unsigned		mA;
-	struct work_struct	work;
+	struct delayed_work	work;
+	int			vbus;
 };
 
 
@@ -94,12 +95,17 @@ static int is_vbus_powered(struct gpio_vbus_mach_info *pdata)
 static void gpio_vbus_work(struct work_struct *work)
 {
 	struct gpio_vbus_data *gpio_vbus =
-		container_of(work, struct gpio_vbus_data, work);
+		container_of(work, struct gpio_vbus_data, work.work);
 	struct gpio_vbus_mach_info *pdata = gpio_vbus->dev->platform_data;
-	int gpio, status;
+	int gpio, status, vbus;
 
 	if (!gpio_vbus->phy.otg->gadget)
 		return;
+
+	vbus = is_vbus_powered(pdata);
+	if ((vbus ^ gpio_vbus->vbus) == 0)
+		return;
+	gpio_vbus->vbus = vbus;
 
 	/* Peripheral controllers which manage the pullup themselves won't have
 	 * gpio_pullup configured here.  If it's configured here, we'll do what
@@ -107,7 +113,8 @@ static void gpio_vbus_work(struct work_struct *work)
 	 * that may complicate usb_gadget_{,dis}connect() support.
 	 */
 	gpio = pdata->gpio_pullup;
-	if (is_vbus_powered(pdata)) {
+
+	if (vbus) {
 		status = USB_EVENT_VBUS;
 		gpio_vbus->phy.state = OTG_STATE_B_PERIPHERAL;
 		gpio_vbus->phy.last_event = status;
@@ -152,7 +159,7 @@ static irqreturn_t gpio_vbus_irq(int irq, void *data)
 		otg->gadget ? otg->gadget->name : "none");
 
 	if (otg->gadget)
-		schedule_work(&gpio_vbus->work);
+		schedule_delayed_work(&gpio_vbus->work, msecs_to_jiffies(100));
 
 	return IRQ_HANDLED;
 }
@@ -195,6 +202,7 @@ static int gpio_vbus_set_peripheral(struct usb_otg *otg,
 	dev_dbg(&pdev->dev, "registered gadget '%s'\n", gadget->name);
 
 	/* initialize connection state */
+	gpio_vbus->vbus = 0; /* start with disconnected */
 	gpio_vbus_irq(irq, pdev);
 	return 0;
 }
@@ -300,7 +308,7 @@ static int __init gpio_vbus_probe(struct platform_device *pdev)
 
 	ATOMIC_INIT_NOTIFIER_HEAD(&gpio_vbus->phy.notifier);
 
-	INIT_WORK(&gpio_vbus->work, gpio_vbus_work);
+	INIT_DELAYED_WORK(&gpio_vbus->work, gpio_vbus_work);
 
 	gpio_vbus->vbus_draw = regulator_get(&pdev->dev, "vbus_draw");
 	if (IS_ERR(gpio_vbus->vbus_draw)) {
@@ -319,7 +327,8 @@ static int __init gpio_vbus_probe(struct platform_device *pdev)
 
 	return 0;
 err_otg:
-	free_irq(irq, &pdev->dev);
+	regulator_put(gpio_vbus->vbus_draw);
+	free_irq(irq, pdev);
 err_irq:
 	if (gpio_is_valid(pdata->gpio_pullup))
 		gpio_free(pdata->gpio_pullup);
@@ -341,7 +350,7 @@ static int __exit gpio_vbus_remove(struct platform_device *pdev)
 
 	usb_set_transceiver(NULL);
 
-	free_irq(gpio_to_irq(gpio), &pdev->dev);
+	free_irq(gpio_to_irq(gpio), pdev);
 	if (gpio_is_valid(pdata->gpio_pullup))
 		gpio_free(pdata->gpio_pullup);
 	gpio_free(gpio);
