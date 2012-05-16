@@ -214,6 +214,7 @@
 		reg = <0xc8000000 0x200>;
 		interrupts = <0 14 0x04>;
 		status = "disable";
+		bus-width = <4>;
 	};
 
 	sdhci@c8000200 {
@@ -221,6 +222,7 @@
 		reg = <0xc8000200 0x200>;
 		interrupts = <0 15 0x04>;
 		status = "disable";
+		bus-width = <4>;
 	};
 
 	sdhci@c8000400 {
@@ -228,6 +230,7 @@
 		reg = <0xc8000400 0x200>;
 		interrupts = <0 19 0x04>;
 		status = "disable";
+		bus-width = <4>;
 	};
 
 	sdhci@c8000600 {
@@ -235,6 +238,7 @@
 		reg = <0xc8000600 0x200>;
 		interrupts = <0 31 0x04>;
 		status = "disable";
+		bus-width = <4>;
 	};
 
 	pmu {
