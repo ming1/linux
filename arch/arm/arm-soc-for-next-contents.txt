@@ -130,9 +130,9 @@ mxs/clock		git://git.linaro.org/people/shawnguo/linux-2.6.git clk/mxs
 imx/clock		git://git.pengutronix.de/git/imx/linux-2.6.git tags/imx-common-clk
 spear/clock:		git://git.stlinux.com/spear/linux-2.6.git for-v3.5-spear-clk
 				depends on depends/clk/clk-next and depends/rmk/clkdev
+depends/clk/clk-next2	git://git.linaro.org/people/mturquette/linux.git clk-next
 
 next/stmp-dev:		git://git.pengutronix.de/git/wsa/linux.git stmp_device
-depends/clk/clk-next2	git://git.linaro.org/people/mturquette/linux.git clk-next
 
 next/dt2:
 tegra/dt		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git for-3.5/dt
