@@ -22,8 +22,8 @@
 #include <linux/i2c.h>
 #include <linux/slab.h>
 #include <linux/types.h>
-#include "../iio.h"
-#include "../sysfs.h"
+#include <linux/iio/iio.h>
+#include <linux/iio/sysfs.h>
 
 #define HMC5843_I2C_ADDRESS			0x1E
 
@@ -184,7 +184,7 @@ static ssize_t hmc5843_show_operating_mode(struct device *dev,
 					struct device_attribute *attr,
 					char *buf)
 {
-	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct hmc5843_data *data = iio_priv(indio_dev);
 	return sprintf(buf, "%d\n", data->operating_mode);
 }
@@ -194,7 +194,7 @@ static ssize_t hmc5843_set_operating_mode(struct device *dev,
 				const char *buf,
 				size_t count)
 {
-	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct i2c_client *client = to_i2c_client(indio_dev->dev.parent);
 	struct hmc5843_data *data = iio_priv(indio_dev);
 	struct iio_dev_attr *this_attr = to_iio_dev_attr(attr);
@@ -260,7 +260,7 @@ static ssize_t hmc5843_show_measurement_configuration(struct device *dev,
 						struct device_attribute *attr,
 						char *buf)
 {
-	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct hmc5843_data *data = iio_priv(indio_dev);
 	return sprintf(buf, "%d\n", data->meas_conf);
 }
@@ -270,7 +270,7 @@ static ssize_t hmc5843_set_measurement_configuration(struct device *dev,
 						const char *buf,
 						size_t count)
 {
-	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct i2c_client *client = to_i2c_client(indio_dev->dev.parent);
 	struct hmc5843_data *data = i2c_get_clientdata(client);
 	unsigned long meas_conf = 0;
@@ -331,7 +331,7 @@ static ssize_t set_sampling_frequency(struct device *dev,
 					const char *buf, size_t count)
 {
 
-	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct i2c_client *client = to_i2c_client(indio_dev->dev.parent);
 	struct hmc5843_data *data = iio_priv(indio_dev);
 	unsigned long rate = 0;
@@ -369,7 +369,7 @@ exit:
 static ssize_t show_sampling_frequency(struct device *dev,
 			struct device_attribute *attr, char *buf)
 {
-	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct i2c_client *client = to_i2c_client(indio_dev->dev.parent);
 	struct iio_dev_attr *this_attr = to_iio_dev_attr(attr);
 	s32 rate;
@@ -404,7 +404,7 @@ static ssize_t show_range(struct device *dev,
 				char *buf)
 {
 	u8 range;
-	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct hmc5843_data *data = iio_priv(indio_dev);
 
 	range = data->range;
@@ -416,7 +416,7 @@ static ssize_t set_range(struct device *dev,
 			const char *buf,
 			size_t count)
 {
-	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct i2c_client *client = to_i2c_client(indio_dev->dev.parent);
 	struct iio_dev_attr *this_attr = to_iio_dev_attr(attr);
 	struct hmc5843_data *data = iio_priv(indio_dev);
@@ -459,7 +459,7 @@ static int hmc5843_read_raw(struct iio_dev *indio_dev,
 	struct hmc5843_data *data = iio_priv(indio_dev);
 
 	switch (mask) {
-	case 0:
+	case IIO_CHAN_INFO_RAW:
 		return hmc5843_read_measurement(indio_dev,
 						chan->address,
 						val);
@@ -476,7 +476,8 @@ static int hmc5843_read_raw(struct iio_dev *indio_dev,
 		.type = IIO_MAGN,					\
 		.modified = 1,						\
 		.channel2 = IIO_MOD_##axis,				\
-		.info_mask = IIO_CHAN_INFO_SCALE_SHARED_BIT,		\
+		.info_mask = IIO_CHAN_INFO_RAW_SEPARATE_BIT |		\
+			     IIO_CHAN_INFO_SCALE_SHARED_BIT,		\
 		.address = add						\
 	}
 
@@ -545,7 +546,7 @@ static int hmc5843_probe(struct i2c_client *client,
 	struct iio_dev *indio_dev;
 	int err = 0;
 
-	indio_dev = iio_allocate_device(sizeof(*data));
+	indio_dev = iio_device_alloc(sizeof(*data));
 	if (indio_dev == NULL) {
 		err = -ENOMEM;
 		goto exit;
@@ -573,7 +574,7 @@ static int hmc5843_probe(struct i2c_client *client,
 		goto exit_free2;
 	return 0;
 exit_free2:
-	iio_free_device(indio_dev);
+	iio_device_free(indio_dev);
 exit:
 	return err;
 }
@@ -585,7 +586,7 @@ static int hmc5843_remove(struct i2c_client *client)
 	iio_device_unregister(indio_dev);
 	 /*  sleep mode to save power */
 	hmc5843_configure(client, MODE_SLEEP);
-	iio_free_device(indio_dev);
+	iio_device_free(indio_dev);
 
 	return 0;
 }

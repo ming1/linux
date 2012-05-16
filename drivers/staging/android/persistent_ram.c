@@ -23,6 +23,7 @@
 #include <linux/rslib.h>
 #include <linux/slab.h>
 #include <linux/vmalloc.h>
+#include <asm/page.h>
 #include "persistent_ram.h"
 
 struct persistent_ram_buffer {
@@ -77,23 +78,6 @@ static inline void buffer_size_add(struct persistent_ram_zone *prz, size_t a)
 		if (new > prz->buffer_size)
 			new = prz->buffer_size;
 	} while (atomic_cmpxchg(&prz->buffer->size, old, new) != old);
-}
-
-/* increase the size counter, retuning an error if it hits the max size */
-static inline ssize_t buffer_size_add_clamp(struct persistent_ram_zone *prz,
-	size_t a)
-{
-	size_t old;
-	size_t new;
-
-	do {
-		old = atomic_read(&prz->buffer->size);
-		new = old + a;
-		if (new > prz->buffer_size)
-			return -ENOMEM;
-	} while (atomic_cmpxchg(&prz->buffer->size, old, new) != old);
-
-	return 0;
 }
 
 static void notrace persistent_ram_encode_rs8(struct persistent_ram_zone *prz,
@@ -300,7 +284,7 @@ int notrace persistent_ram_write(struct persistent_ram_zone *prz,
 		c = prz->buffer_size;
 	}
 
-	buffer_size_add_clamp(prz, c);
+	buffer_size_add(prz, c);
 
 	start = buffer_start_add(prz, c);
 
@@ -335,14 +319,14 @@ void persistent_ram_free_old(struct persistent_ram_zone *prz)
 	prz->old_log_size = 0;
 }
 
-static int persistent_ram_buffer_map(phys_addr_t start, phys_addr_t size,
-		struct persistent_ram_zone *prz)
+static void *persistent_ram_vmap(phys_addr_t start, size_t size)
 {
 	struct page **pages;
 	phys_addr_t page_start;
 	unsigned int page_count;
 	pgprot_t prot;
 	unsigned int i;
+	void *vaddr;
 
 	page_start = start - offset_in_page(start);
 	page_count = DIV_ROUND_UP(size + offset_in_page(start), PAGE_SIZE);
@@ -353,17 +337,44 @@ static int persistent_ram_buffer_map(phys_addr_t start, phys_addr_t size,
 	if (!pages) {
 		pr_err("%s: Failed to allocate array for %u pages\n", __func__,
 			page_count);
-		return -ENOMEM;
+		return NULL;
 	}
 
 	for (i = 0; i < page_count; i++) {
 		phys_addr_t addr = page_start + i * PAGE_SIZE;
 		pages[i] = pfn_to_page(addr >> PAGE_SHIFT);
 	}
-	prz->vaddr = vmap(pages, page_count, VM_MAP, prot);
+	vaddr = vmap(pages, page_count, VM_MAP, prot);
 	kfree(pages);
+
+	return vaddr;
+}
+
+static void *persistent_ram_iomap(phys_addr_t start, size_t size)
+{
+	if (!request_mem_region(start, size, "persistent_ram")) {
+		pr_err("request mem region (0x%llx@0x%llx) failed\n",
+			(unsigned long long)size, (unsigned long long)start);
+		return NULL;
+	}
+
+	return ioremap(start, size);
+}
+
+static int persistent_ram_buffer_map(phys_addr_t start, phys_addr_t size,
+		struct persistent_ram_zone *prz)
+{
+	prz->paddr = start;
+	prz->size = size;
+
+	if (pfn_valid(start >> PAGE_SHIFT))
+		prz->vaddr = persistent_ram_vmap(start, size);
+	else
+		prz->vaddr = persistent_ram_iomap(start, size);
+
 	if (!prz->vaddr) {
-		pr_err("%s: Failed to map %u pages\n", __func__, page_count);
+		pr_err("%s: Failed to map 0x%llx pages at 0x%llx\n", __func__,
+			(unsigned long long)size, (unsigned long long)start);
 		return -ENOMEM;
 	}
 
@@ -395,6 +406,78 @@ static int __init persistent_ram_buffer_init(const char *name,
 	return -EINVAL;
 }
 
+static int __init persistent_ram_post_init(struct persistent_ram_zone *prz, bool ecc)
+{
+	int ret;
+
+	prz->ecc = ecc;
+
+	ret = persistent_ram_init_ecc(prz, prz->buffer_size);
+	if (ret)
+		return ret;
+
+	if (prz->buffer->sig == PERSISTENT_RAM_SIG) {
+		if (buffer_size(prz) > prz->buffer_size ||
+		    buffer_start(prz) > buffer_size(prz))
+			pr_info("persistent_ram: found existing invalid buffer,"
+				" size %zu, start %zu\n",
+			       buffer_size(prz), buffer_start(prz));
+		else {
+			pr_info("persistent_ram: found existing buffer,"
+				" size %zu, start %zu\n",
+			       buffer_size(prz), buffer_start(prz));
+			persistent_ram_save_old(prz);
+		}
+	} else {
+		pr_info("persistent_ram: no valid data in buffer"
+			" (sig = 0x%08x)\n", prz->buffer->sig);
+	}
+
+	prz->buffer->sig = PERSISTENT_RAM_SIG;
+	atomic_set(&prz->buffer->start, 0);
+	atomic_set(&prz->buffer->size, 0);
+
+	return 0;
+}
+
+void persistent_ram_free(struct persistent_ram_zone *prz)
+{
+	if (pfn_valid(prz->paddr >> PAGE_SHIFT)) {
+		vunmap(prz->vaddr);
+	} else {
+		iounmap(prz->vaddr);
+		release_mem_region(prz->paddr, prz->size);
+	}
+	persistent_ram_free_old(prz);
+	kfree(prz);
+}
+
+struct persistent_ram_zone * __init persistent_ram_new(phys_addr_t start,
+						       size_t size,
+						       bool ecc)
+{
+	struct persistent_ram_zone *prz;
+	int ret = -ENOMEM;
+
+	prz = kzalloc(sizeof(struct persistent_ram_zone), GFP_KERNEL);
+	if (!prz) {
+		pr_err("persistent_ram: failed to allocate persistent ram zone\n");
+		goto err;
+	}
+
+	ret = persistent_ram_buffer_map(start, size, prz);
+	if (ret)
+		goto err;
+
+	persistent_ram_post_init(prz, ecc);
+	persistent_ram_update_header_ecc(prz);
+
+	return prz;
+err:
+	kfree(prz);
+	return ERR_PTR(ret);
+}
+
 static  __init
 struct persistent_ram_zone *__persistent_ram_init(struct device *dev, bool ecc)
 {
@@ -407,39 +490,13 @@ struct persistent_ram_zone *__persistent_ram_init(struct device *dev, bool ecc)
 		goto err;
 	}
 
-	INIT_LIST_HEAD(&prz->node);
-
 	ret = persistent_ram_buffer_init(dev_name(dev), prz);
 	if (ret) {
 		pr_err("persistent_ram: failed to initialize buffer\n");
 		goto err;
 	}
 
-	prz->ecc = ecc;
-	ret = persistent_ram_init_ecc(prz, prz->buffer_size);
-	if (ret)
-		goto err;
-
-	if (prz->buffer->sig == PERSISTENT_RAM_SIG) {
-		if (buffer_size(prz) > prz->buffer_size ||
-		    buffer_start(prz) > buffer_size(prz))
-			pr_info("persistent_ram: found existing invalid buffer,"
-				" size %ld, start %ld\n",
-			       buffer_size(prz), buffer_start(prz));
-		else {
-			pr_info("persistent_ram: found existing buffer,"
-				" size %ld, start %ld\n",
-			       buffer_size(prz), buffer_start(prz));
-			persistent_ram_save_old(prz);
-		}
-	} else {
-		pr_info("persistent_ram: no valid data in buffer"
-			" (sig = 0x%08x)\n", prz->buffer->sig);
-	}
-
-	prz->buffer->sig = PERSISTENT_RAM_SIG;
-	atomic_set(&prz->buffer->start, 0);
-	atomic_set(&prz->buffer->size, 0);
+	persistent_ram_post_init(prz, ecc);
 
 	return prz;
 err:
