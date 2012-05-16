@@ -547,8 +547,7 @@ struct cifsLockInfo {
 	__u64 offset;
 	__u64 length;
 	__u32 pid;
-	__u8 type;
-	__u16 netfid;
+	__u32 type;
 };
 
 /*
@@ -573,6 +572,10 @@ struct cifs_search_info {
 struct cifsFileInfo {
 	struct list_head tlist;	/* pointer to next fid owned by tcon */
 	struct list_head flist;	/* next fid (file instance) for this inode */
+	struct list_head llist;	/*
+				 * brlocks held by this fid, protected by
+				 * lock_mutex from cifsInodeInfo structure
+				 */
 	unsigned int uid;	/* allows finding which FileInfo structure */
 	__u32 pid;		/* process id who opened file */
 	__u16 netfid;		/* file id from remote */
@@ -615,9 +618,12 @@ void cifsFileInfo_put(struct cifsFileInfo *cifs_file);
  */
 
 struct cifsInodeInfo {
-	struct list_head llist;		/* brlocks for this inode */
 	bool can_cache_brlcks;
-	struct mutex lock_mutex;	/* protect two fields above */
+	struct mutex lock_mutex;	/*
+					 * protect the field above and llist
+					 * from every cifsFileInfo structure
+					 * from openFileList
+					 */
 	/* BB add in lists for dirty pages i.e. write caching info for oplock */
 	struct list_head openFileList;
 	__u32 cifsAttrs; /* e.g. DOS archive bit, sparse, compressed, system */
@@ -1042,12 +1048,7 @@ GLOBAL_EXTERN atomic_t smBufAllocCount;
 GLOBAL_EXTERN atomic_t midCount;
 
 /* Misc globals */
-GLOBAL_EXTERN unsigned int multiuser_mount; /* if enabled allows new sessions
-				to be established on existing mount if we
-				have the uid/password or Kerberos credential
-				or equivalent for current user */
-/* enable or disable oplocks */
-GLOBAL_EXTERN bool enable_oplocks;
+GLOBAL_EXTERN bool enable_oplocks; /* enable or disable oplocks */
 GLOBAL_EXTERN unsigned int lookupCacheEnabled;
 GLOBAL_EXTERN unsigned int global_secflags;	/* if on, session setup sent
 				with more secure ntlmssp2 challenge/resp */

@@ -192,11 +192,13 @@ extern int CIFSTCon(unsigned int xid, struct cifs_ses *ses,
 
 extern int CIFSFindFirst(const int xid, struct cifs_tcon *tcon,
 		const char *searchName, const struct nls_table *nls_codepage,
-		__u16 *searchHandle, struct cifs_search_info *psrch_inf,
+		__u16 *searchHandle, __u16 search_flags,
+		struct cifs_search_info *psrch_inf,
 		int map, const char dirsep);
 
 extern int CIFSFindNext(const int xid, struct cifs_tcon *tcon,
-		__u16 searchHandle, struct cifs_search_info *psrch_inf);
+		__u16 searchHandle, __u16 search_flags,
+		struct cifs_search_info *psrch_inf);
 
 extern int CIFSFindClose(const int, struct cifs_tcon *tcon,
 			const __u16 search_handle);
@@ -464,6 +466,9 @@ extern int SMBencrypt(unsigned char *passwd, const unsigned char *c8,
 
 /* asynchronous read support */
 struct cifs_readdata {
+	struct kref			refcount;
+	struct list_head		list;
+	struct completion		done;
 	struct cifsFileInfo		*cfile;
 	struct address_space		*mapping;
 	__u64				offset;
@@ -472,12 +477,13 @@ struct cifs_readdata {
 	int				result;
 	struct list_head		pages;
 	struct work_struct		work;
+	int (*marshal_iov) (struct cifs_readdata *rdata,
+			    unsigned int remaining);
 	unsigned int			nr_iov;
 	struct kvec			iov[1];
 };
 
-struct cifs_readdata *cifs_readdata_alloc(unsigned int nr_pages);
-void cifs_readdata_free(struct cifs_readdata *rdata);
+void cifs_readdata_release(struct kref *refcount);
 int cifs_async_readv(struct cifs_readdata *rdata);
 
 /* asynchronous write support */
