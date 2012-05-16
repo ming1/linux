@@ -1077,13 +1077,23 @@ static inline unsigned long get_mm_counter(struct mm_struct *mm, int member)
 }
 
 #ifdef CONFIG_NUMA
-extern void __numa_add_rss_counter(struct vm_area_struct *, int, long);
+#include <linux/jump_label.h>
+
+extern struct static_key sched_numa_groups;
 
 static inline
 void numa_add_rss_counter(struct vm_area_struct *vma, int member, long value)
 {
-	if (vma->vm_policy) /* XXX sodding include dependecies */
-		__numa_add_rss_counter(vma, member, value);
+	if (static_key_false(&sched_numa_groups) &&
+	    vma->vm_policy && vma->vm_policy->numa_group) {
+		/*
+		 * Since the caller passes the vma argument, the caller is
+		 * responsible for making sure the vma is stable, hence the
+		 * ->vm_policy->numa_group dereference is safe. (caller usually
+		 * has vma->vm_mm->mmap_sem for reading).
+		 */
+		atomic_long_add(value, &vma->vm_policy->numa_group->rss.count[member]);
+	}
 }
 #else /* !CONFIG_NUMA */
 static inline void numa_add_rss_counter(struct vm_area_struct *vma, int member, long value) { }

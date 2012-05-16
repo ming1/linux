@@ -863,23 +863,6 @@ early_initcall(numa_init);
 #include <linux/srcu.h>
 #include <linux/syscalls.h>
 
-struct numa_group {
-	spinlock_t		lock;
-	int			id;
-
-	struct mm_rss_stat	rss;
-
-	struct list_head	tasks;
-	struct list_head	vmas;
-
-	const struct cred	*cred;
-	atomic_t		ref;
-
-	struct numa_entity	numa_entity;
-
-	struct rcu_head		rcu;
-};
-
 static struct srcu_struct ng_srcu;
 
 static DEFINE_MUTEX(numa_group_idr_lock);
@@ -908,6 +891,8 @@ static void __ng_put_rcu(struct rcu_head *rcu)
 	kfree(ng);
 }
 
+struct static_key sched_numa_groups = STATIC_KEY_INIT_FALSE;
+
 static void __ng_put(struct numa_group *ng)
 {
 	mutex_lock(&numa_group_idr_lock);
@@ -918,6 +903,8 @@ static void __ng_put(struct numa_group *ng)
 	WARN_ON(!list_empty(&ng->vmas));
 
 	dequeue_ne(&ng->numa_entity);
+
+	static_key_slow_dec(&sched_numa_groups);
 
 	call_rcu(&ng->rcu, __ng_put_rcu);
 }
@@ -1133,18 +1120,6 @@ void numa_vma_link(struct vm_area_struct *new, struct vm_area_struct *old)
 	spin_unlock(&ng->lock);
 }
 
-void __numa_add_rss_counter(struct vm_area_struct *vma, int member, long value)
-{
-	/*
-	 * Since the caller passes the vma argument, the caller is responsible
-	 * for making sure the vma is stable, hence the ->vm_policy->numa_group
-	 * dereference is safe. (caller usually has vma->vm_mm->mmap_sem for
-	 * reading).
-	 */
-	if (vma->vm_policy->numa_group)
-		atomic_long_add(value, &vma->vm_policy->numa_group->rss.count[member]);
-}
-
 static void __mpol_put_rcu(struct rcu_head *rcu)
 {
 	struct mempolicy *mpol = container_of(rcu, struct mempolicy, rcu);
@@ -1206,6 +1181,8 @@ static struct numa_group *ng_create(struct task_struct *p)
 
 	if (err)
 		goto fail_alloc;
+
+	static_key_slow_inc(&sched_numa_groups);
 
 	spin_lock_init(&ng->lock);
 	atomic_set(&ng->ref, 1);

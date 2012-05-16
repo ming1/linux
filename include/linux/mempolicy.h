@@ -81,52 +81,9 @@ enum mpol_rebind_step {
 #include <linux/migrate.h>
 #include <linux/list.h>
 #include <linux/sched.h>
-
-struct mm_struct;
+#include <linux/mm_types.h>
 
 #ifdef CONFIG_NUMA
-
-/*
- * Describe a memory policy.
- *
- * A mempolicy can be either associated with a process or with a VMA.
- * For VMA related allocations the VMA policy is preferred, otherwise
- * the process policy is used. Interrupts ignore the memory policy
- * of the current process.
- *
- * Locking policy for interlave:
- * In process context there is no locking because only the process accesses
- * its own state. All vma manipulation is somewhat protected by a down_read on
- * mmap_sem.
- *
- * Freeing policy:
- * Mempolicy objects are reference counted.  A mempolicy will be freed when
- * mpol_put() decrements the reference count to zero.
- *
- * Duplicating policy objects:
- * mpol_dup() allocates a new mempolicy and copies the specified mempolicy
- * to the new storage.  The reference count of the new object is initialized
- * to 1, representing the caller of mpol_dup().
- */
-struct mempolicy {
-	atomic_t refcnt;
-	unsigned short mode; 	/* See MPOL_* above */
-	unsigned short flags;	/* See set_mempolicy() MPOL_F_* above */
-	struct numa_group *numa_group;
-	struct list_head ng_entry;
-	struct vm_area_struct *vma;
-	struct rcu_head rcu;
-	union {
-		short 		 preferred_node; /* preferred */
-		nodemask_t	 nodes;		/* interleave/bind */
-		/* undefined for default */
-	} v;
-	union {
-		nodemask_t cpuset_mems_allowed;	/* relative to these nodes */
-		nodemask_t user_nodemask;	/* nodemask passed by user */
-	} w;
-};
-
 /*
  * Support for managing mempolicy data objects (clone, copy, destroy)
  * The default fast path of a NULL MPOL_DEFAULT policy is always inlined.
