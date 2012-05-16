@@ -23,7 +23,6 @@
 #include "memory.h"
 #include "lock.h"
 #include "util.h"
-#include "member.h"
 
 
 static int rcom_response(struct dlm_ls *ls)

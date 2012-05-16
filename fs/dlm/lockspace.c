@@ -519,6 +519,9 @@ static int new_lockspace(const char *name, const char *cluster,
 	INIT_LIST_HEAD(&ls->ls_new_rsb);
 	spin_lock_init(&ls->ls_new_rsb_spin);
 
+	INIT_LIST_HEAD(&ls->ls_send_remove);
+	spin_lock_init(&ls->ls_send_remove_spin);
+
 	INIT_LIST_HEAD(&ls->ls_nodes);
 	INIT_LIST_HEAD(&ls->ls_nodes_gone);
 	ls->ls_num_nodes = 0;
@@ -798,6 +801,13 @@ static int release_lockspace(struct dlm_ls *ls, int force)
 
 	while (!list_empty(&ls->ls_new_rsb)) {
 		rsb = list_first_entry(&ls->ls_new_rsb, struct dlm_rsb,
+				       res_hashchain);
+		list_del(&rsb->res_hashchain);
+		dlm_free_rsb(rsb);
+	}
+
+	while (!list_empty(&ls->ls_send_remove)) {
+		rsb = list_first_entry(&ls->ls_send_remove, struct dlm_rsb,
 				       res_hashchain);
 		list_del(&rsb->res_hashchain);
 		dlm_free_rsb(rsb);

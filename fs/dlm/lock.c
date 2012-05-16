@@ -864,12 +864,16 @@ int dlm_master_lookup(struct dlm_ls *ls, int from_nodeid, char *name, int len,
 	int from_master = (flags & DLM_LU_RECOVER_DIR);
 	int fix_master = (flags & DLM_LU_RECOVER_MASTER);
 	int our_nodeid = dlm_our_nodeid();
-	int dir_nodeid, error, from_us, toss_list = 0;
+	int dir_nodeid, error, toss_list = 0;
 
 	if (len > DLM_RESNAME_MAXLEN)
 		return -EINVAL;
 
-	from_us = (from_nodeid == our_nodeid);
+	if (from_nodeid == our_nodeid) {
+		log_error(ls, "dlm_master_lookup from our_nodeid %d flags %x",
+			  our_nodeid, flags);
+		return -EINVAL;
+	}
 
 	hash = jhash(name, len, 0);
 	b = hash & (ls->ls_rsbtbl_size - 1);
@@ -909,6 +913,12 @@ int dlm_master_lookup(struct dlm_ls *ls, int from_nodeid, char *name, int len,
 		r->res_dir_nodeid = our_nodeid;
 	}
 
+	if (!from_master && (r->res_master_nodeid == from_nodeid)) {
+		/* I don't think this should happen */
+		log_error(ls, "dlm_master_lookup from master %d flags %x",
+			  from_nodeid, flags);
+	}
+
 	if (fix_master && dlm_is_removed(ls, r->res_master_nodeid)) {
 		/* Recovery uses this function to set a new master when
 		   the previous master failed.  Setting NEW_MASTER will
@@ -916,7 +926,7 @@ int dlm_master_lookup(struct dlm_ls *ls, int from_nodeid, char *name, int len,
 		   rsb even though the res_nodeid is no longer removed. */
 
 		r->res_master_nodeid = from_nodeid;
-		r->res_nodeid = from_us ? 0 : from_nodeid;
+		r->res_nodeid = from_nodeid;
 		rsb_set_flag(r, RSB_NEW_MASTER);
 
 		if (toss_list) {
@@ -947,7 +957,7 @@ int dlm_master_lookup(struct dlm_ls *ls, int from_nodeid, char *name, int len,
 		log_debug(ls, "dlm_master_lookup master 0 to %d first_lkid %x",
 			  from_nodeid, r->res_first_lkid);
 		r->res_master_nodeid = from_nodeid;
-		r->res_nodeid = from_us ? 0 : from_nodeid;
+		r->res_nodeid = from_nodeid;
 	}
 
 	if (toss_list)
@@ -973,7 +983,7 @@ int dlm_master_lookup(struct dlm_ls *ls, int from_nodeid, char *name, int len,
 	r->res_bucket = b;
 	r->res_dir_nodeid = our_nodeid;
 	r->res_master_nodeid = from_nodeid;
-	r->res_nodeid = from_us ? 0 : from_nodeid;
+	r->res_nodeid = from_nodeid;
 	kref_init(&r->res_ref);
 	r->res_toss_time = jiffies;
 
@@ -1544,65 +1554,128 @@ static int remove_from_waiters_ms(struct dlm_lkb *lkb, struct dlm_message *ms)
 	return error;
 }
 
-/* FIXME: make this more efficient */
+/* If there's an rsb for the same resource being removed, ensure
+   that the remove message is sent before the new lookup message.
+   It should be rare to need a delay here, but if not, then it may
+   be worthwhile to add a proper wait mechanism rather than a delay. */
 
-static int shrink_bucket(struct dlm_ls *ls, int b)
+static void wait_pending_remove(struct dlm_rsb *r_new)
 {
-	struct rb_node *n;
+	struct dlm_ls *ls = r_new->res_ls;
+	struct dlm_rsb *r;
+
+	spin_lock(&ls->ls_send_remove_spin);
+	list_for_each_entry(r, &ls->ls_send_remove, res_hashchain) {
+		if (r_new->res_hash != r->res_hash)
+			continue;
+		if (rsb_cmp(r_new, r->res_name, r->res_length))
+			continue;
+		spin_unlock(&ls->ls_send_remove_spin);
+
+		log_debug(ls, "delay lookup %p for remove %p dir %d %s",
+		  	  r_new, r, r_new->res_dir_nodeid, r_new->res_name);
+		msleep(1);
+	}
+	spin_unlock(&ls->ls_send_remove_spin);
+}
+
+/*
+ * Max number of removals per bucket per call.  Keep this fairly small
+ * because it can delay wait_pending_remove(), and is not interrupted
+ * by recovery.
+ */
+
+#define DLM_SHRINK_BUCKET_MAX 10
+
+static void shrink_bucket(struct dlm_ls *ls, int b)
+{
+	struct rb_node *n, *next;
 	struct dlm_rsb *r;
 	int our_nodeid = dlm_our_nodeid();
-	int count = 0, found;
+	unsigned int free = 0;
 
-	for (;;) {
-		found = 0;
-		spin_lock(&ls->ls_rsbtbl[b].lock);
-		for (n = rb_first(&ls->ls_rsbtbl[b].toss); n; n = rb_next(n)) {
-			r = rb_entry(n, struct dlm_rsb, res_hashnode);
+	spin_lock(&ls->ls_rsbtbl[b].lock);
+	for (n = rb_first(&ls->ls_rsbtbl[b].toss); n; n = next) {
+		next = rb_next(n);
+		r = rb_entry(n, struct dlm_rsb, res_hashnode);
 
-			/* If we're the directory record for this rsb, and
-			   we're not the master of it, then we need to wait
-			   for the master node to send us a dir remove for
-			   before removing the dir record. */
+		/* If we're the directory record for this rsb, and
+		   we're not the master of it, then we need to wait
+		   for the master node to send us a dir remove for
+		   before removing the dir record. */
 
-			if (!dlm_no_directory(ls) && !is_master(r) &&
-			    (dlm_dir_nodeid(r) == our_nodeid)) {
-				continue;
-			}
-
-			if (!time_after_eq(jiffies, r->res_toss_time +
-					   dlm_config.ci_toss_secs * HZ))
-				continue;
-			found = 1;
-			break;
+		if (!dlm_no_directory(r->res_ls) &&
+		    (r->res_master_nodeid != our_nodeid) &&
+		    (dlm_dir_nodeid(r) == our_nodeid)) {
+			continue;
 		}
 
-		if (!found) {
-			spin_unlock(&ls->ls_rsbtbl[b].lock);
-			break;
+		if (!time_after_eq(jiffies, r->res_toss_time +
+				   dlm_config.ci_toss_secs * HZ)) {
+			continue;
 		}
 
-		if (kref_put(&r->res_ref, kill_rsb)) {
-			rb_erase(&r->res_hashnode, &ls->ls_rsbtbl[b].toss);
-			spin_unlock(&ls->ls_rsbtbl[b].lock);
-
-			/* We're the master of this rsb but we're not
-			   the directory record, so we need to tell the
-			   dir node to remove the dir record. */
-
-			if (!dlm_no_directory(ls) && is_master(r) &&
-			    (dlm_dir_nodeid(r) != our_nodeid)) {
-				send_remove(r);
-			}
-
-			dlm_free_rsb(r);
-			count++;
-		} else {
-			spin_unlock(&ls->ls_rsbtbl[b].lock);
+		if (!kref_put(&r->res_ref, kill_rsb)) {
 			log_error(ls, "tossed rsb in use %s", r->res_name);
+			continue;
 		}
-	}
 
-	return count;
+		free++;
+
+		rb_erase(&r->res_hashnode, &ls->ls_rsbtbl[b].toss);
+
+		/* We're the master of this rsb but we're not
+		   the directory record, so we need to tell the
+		   dir node to remove the dir record. */
+
+		if (!dlm_no_directory(r->res_ls) &&
+		    (r->res_master_nodeid == our_nodeid) &&
+		    (dlm_dir_nodeid(r) != our_nodeid)) {
+			spin_lock(&ls->ls_send_remove_spin);
+			list_add(&r->res_hashchain, &ls->ls_send_remove);
+			spin_unlock(&ls->ls_send_remove_spin);
+		} else {
+			dlm_free_rsb(r);
+		}
+
+		if (free >= DLM_SHRINK_BUCKET_MAX)
+			break;
+	}
+	spin_unlock(&ls->ls_rsbtbl[b].lock);
+
+	/*
+	 * There's an important race here between remove and lookup.
+	 * After removal from toss list above, a new rsb with the same
+	 * name can be created, which will make its way to send_lookup().
+	 * We can't allow the send_lookup() to happen before the
+	 * send_remove() below for the same resource name, otherwise
+	 * the resource may end up with no dir record (leading to two
+	 * different masters; the worst possible mistake.)
+	 *
+	 * So, the lookup checks ls_send_remove list for any pending
+	 * removal for the same resource name, and waits for this function
+	 * to remove it from ls_send_remove before doing send_lookup.
+	 * We must leave the rsb on ls_send_remove until after the
+	 * send_remove() to ensure the correct order.
+	 */
+
+ next_remove:
+	spin_lock(&ls->ls_send_remove_spin);
+	if (list_empty(&ls->ls_send_remove))
+		r = NULL;
+	else
+		r = list_first_entry(&ls->ls_send_remove, struct dlm_rsb,
+				     res_hashchain);
+	spin_unlock(&ls->ls_send_remove_spin);
+
+	if (r) {
+		send_remove(r);
+		spin_lock(&ls->ls_send_remove_spin);
+		list_del(&r->res_hashchain);
+		spin_unlock(&ls->ls_send_remove_spin);
+		dlm_free_rsb(r);
+		goto next_remove;
+	}
 }
 
 void dlm_scan_rsbs(struct dlm_ls *ls)
@@ -2527,6 +2600,8 @@ static int set_master(struct dlm_rsb *r, struct dlm_lkb *lkb)
 		lkb->lkb_nodeid = 0;
 		return 0;
 	}
+
+	wait_pending_remove(r);
 
 	r->res_first_lkid = lkb->lkb_id;
 	send_lookup(r, lkb);
@@ -4123,11 +4198,17 @@ static void receive_remove(struct dlm_ls *ls, struct dlm_message *ms)
 
 	rv = dlm_search_rsb_tree(&ls->ls_rsbtbl[b].toss, name, len, &r);
 	if (rv) {
-		/* not really an error, per comment above.
-		   we could verify the rsb is on rsbtbl.keep */
+		/* not really an error, per comment above; should be on keep */
+		log_debug(ls, "receive_remove from %d not on toss %s",
+			  from_nodeid, name);
+
+		/* verify the rsb is on keep list per comment above */
+		rv = dlm_search_rsb_tree(&ls->ls_rsbtbl[b].keep, name, len, &r);
+		if (rv) {
+			log_error(ls, "receive_remove from %d not found %s",
+				  from_nodeid, name);
+		}
 		spin_unlock(&ls->ls_rsbtbl[b].lock);
-		log_error(ls, "receive_remove from %d not found %d %s",
-			  from_nodeid, rv, name);
 		return;
 	}
 
