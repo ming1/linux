@@ -37,7 +37,7 @@
  */
 #define	MISDN_MAJOR_VERSION	1
 #define	MISDN_MINOR_VERSION	1
-#define MISDN_RELEASE		21
+#define MISDN_RELEASE		28
 
 /* primitives for information exchange
  * generell format
@@ -114,6 +114,11 @@
 #define MDL_STATUS_UI_IND	0x1E04
 #define MDL_ERROR_IND		0x1F04
 #define MDL_ERROR_RSP		0x5F04
+
+/* intern layer 2 */
+#define DL_TIMER200_IND		0x7004
+#define DL_TIMER203_IND		0x7304
+#define DL_INTERN_MSG		0x7804
 
 /* DL_INFORMATION_IND types */
 #define DL_INFO_L2_CONNECT	0x0001
@@ -367,6 +372,7 @@ clear_channelmap(u_int nr, u_char *map)
 #define MISDN_CTRL_RX_OFF		0x0100
 #define MISDN_CTRL_FILL_EMPTY		0x0200
 #define MISDN_CTRL_GETPEER		0x0400
+#define MISDN_CTRL_L1_TIMER3		0x0800
 #define MISDN_CTRL_HW_FEATURES_OP	0x2000
 #define MISDN_CTRL_HW_FEATURES		0x2001
 #define MISDN_CTRL_HFC_OP		0x4000
@@ -585,6 +591,7 @@ static inline struct mISDNdevice *dev_to_mISDN(struct device *dev)
 extern void	set_channel_address(struct mISDNchannel *, u_int, u_int);
 extern void	mISDN_clock_update(struct mISDNclock *, int, struct timeval *);
 extern unsigned short mISDN_clock_get(void);
+extern const char *mISDNDevName4ch(struct mISDNchannel *);
 
 #endif /* __KERNEL__ */
 #endif /* mISDNIF_H */

@@ -377,6 +377,17 @@ struct sock {
 	void                    (*sk_destruct)(struct sock *sk);
 };
 
+/*
+ * SK_CAN_REUSE and SK_NO_REUSE on a socket mean that the socket is OK
+ * or not whether his port will be reused by someone else. SK_FORCE_REUSE
+ * on a socket means that the socket will reuse everybody else's port
+ * without looking at the other's sk_reuse value.
+ */
+
+#define SK_NO_REUSE	0
+#define SK_CAN_REUSE	1
+#define SK_FORCE_REUSE	2
+
 static inline int sk_peek_offset(struct sock *sk, int flags)
 {
 	if ((flags & MSG_PEEK) && (sk->sk_peek_off >= 0))
@@ -699,17 +710,19 @@ static inline void __sk_add_backlog(struct sock *sk, struct sk_buff *skb)
  * Do not take into account this skb truesize,
  * to allow even a single big packet to come.
  */
-static inline bool sk_rcvqueues_full(const struct sock *sk, const struct sk_buff *skb)
+static inline bool sk_rcvqueues_full(const struct sock *sk, const struct sk_buff *skb,
+				     unsigned int limit)
 {
 	unsigned int qsize = sk->sk_backlog.len + atomic_read(&sk->sk_rmem_alloc);
 
-	return qsize > sk->sk_rcvbuf;
+	return qsize > limit;
 }
 
 /* The per-socket spinlock must be held here. */
-static inline __must_check int sk_add_backlog(struct sock *sk, struct sk_buff *skb)
+static inline __must_check int sk_add_backlog(struct sock *sk, struct sk_buff *skb,
+					      unsigned int limit)
 {
-	if (sk_rcvqueues_full(sk, skb))
+	if (sk_rcvqueues_full(sk, skb, limit))
 		return -ENOBUFS;
 
 	__sk_add_backlog(sk, skb);

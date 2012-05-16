@@ -54,6 +54,7 @@ head-y                 += arch/sparc/kernel/init_task.o
 
 # See arch/sparc/Kbuild for the core part of the kernel
 core-y                 += arch/sparc/
+core-y                 += arch/sparc/net/
 
 libs-y                 += arch/sparc/prom/
 libs-y                 += arch/sparc/lib/
