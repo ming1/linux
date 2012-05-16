@@ -1544,65 +1544,68 @@ static int remove_from_waiters_ms(struct dlm_lkb *lkb, struct dlm_message *ms)
 	return error;
 }
 
-/* FIXME: make this more efficient */
+/* Max number of removals per bucket per call */
+#define DLM_SHRINK_BUCKET_MAX 10
 
-static int shrink_bucket(struct dlm_ls *ls, int b)
+static void shrink_bucket(struct dlm_ls *ls, int b)
 {
-	struct rb_node *n;
-	struct dlm_rsb *r;
+	LIST_HEAD(send_list);
+	struct rb_node *n, *next;
+	struct dlm_rsb *r, *safe;
 	int our_nodeid = dlm_our_nodeid();
-	int count = 0, found;
+	unsigned int free = 0;
 
-	for (;;) {
-		found = 0;
-		spin_lock(&ls->ls_rsbtbl[b].lock);
-		for (n = rb_first(&ls->ls_rsbtbl[b].toss); n; n = rb_next(n)) {
-			r = rb_entry(n, struct dlm_rsb, res_hashnode);
+	spin_lock(&ls->ls_rsbtbl[b].lock);
+	for (n = rb_first(&ls->ls_rsbtbl[b].toss); n; n = next) {
+		next = rb_next(n);
+		r = rb_entry(n, struct dlm_rsb, res_hashnode);
 
-			/* If we're the directory record for this rsb, and
-			   we're not the master of it, then we need to wait
-			   for the master node to send us a dir remove for
-			   before removing the dir record. */
+		/* If we're the directory record for this rsb, and
+		   we're not the master of it, then we need to wait
+		   for the master node to send us a dir remove for
+		   before removing the dir record. */
 
-			if (!dlm_no_directory(ls) && !is_master(r) &&
-			    (dlm_dir_nodeid(r) == our_nodeid)) {
-				continue;
-			}
-
-			if (!time_after_eq(jiffies, r->res_toss_time +
-					   dlm_config.ci_toss_secs * HZ))
-				continue;
-			found = 1;
-			break;
+		if (!dlm_no_directory(r->res_ls) && !is_master(r) &&
+		    (dlm_dir_nodeid(r) == our_nodeid)) {
+			continue;
 		}
 
-		if (!found) {
-			spin_unlock(&ls->ls_rsbtbl[b].lock);
-			break;
+		if (!time_after_eq(jiffies, r->res_toss_time +
+				   dlm_config.ci_toss_secs * HZ)) {
+			continue;
 		}
 
-		if (kref_put(&r->res_ref, kill_rsb)) {
-			rb_erase(&r->res_hashnode, &ls->ls_rsbtbl[b].toss);
-			spin_unlock(&ls->ls_rsbtbl[b].lock);
-
-			/* We're the master of this rsb but we're not
-			   the directory record, so we need to tell the
-			   dir node to remove the dir record. */
-
-			if (!dlm_no_directory(ls) && is_master(r) &&
-			    (dlm_dir_nodeid(r) != our_nodeid)) {
-				send_remove(r);
-			}
-
-			dlm_free_rsb(r);
-			count++;
-		} else {
-			spin_unlock(&ls->ls_rsbtbl[b].lock);
+		if (!kref_put(&r->res_ref, kill_rsb)) {
 			log_error(ls, "tossed rsb in use %s", r->res_name);
+			continue;
 		}
-	}
 
-	return count;
+		free++;
+
+		rb_erase(&r->res_hashnode, &ls->ls_rsbtbl[b].toss);
+
+		/* We're the master of this rsb but we're not
+		   the directory record, so we need to tell the
+		   dir node to remove the dir record. */
+
+		if (!dlm_no_directory(r->res_ls) && is_master(r) &&
+		    (dlm_dir_nodeid(r) != our_nodeid)) {
+			/* can't send_remove(r) while holding lock */
+			list_add(&r->res_hashchain, &send_list);
+		} else {
+			dlm_free_rsb(r);
+		}
+
+		if (free >= DLM_SHRINK_BUCKET_MAX)
+			break;
+	}
+	spin_unlock(&ls->ls_rsbtbl[b].lock);
+
+	list_for_each_entry_safe(r, safe, &send_list, res_hashchain) {
+		list_del(&r->res_hashchain);
+		send_remove(r);
+		dlm_free_rsb(r);
+	}
 }
 
 void dlm_scan_rsbs(struct dlm_ls *ls)
