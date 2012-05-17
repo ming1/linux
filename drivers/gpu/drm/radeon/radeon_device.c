@@ -225,9 +225,9 @@ int radeon_wb_init(struct radeon_device *rdev)
 	/* disable event_write fences */
 	rdev->wb.use_event = false;
 	/* disabled via module param */
-	if (radeon_no_wb == 1)
+	if (radeon_no_wb == 1) {
 		rdev->wb.enabled = false;
-	else {
+	} else {
 		if (rdev->flags & RADEON_IS_AGP) {
 			/* often unreliable on AGP */
 			rdev->wb.enabled = false;
@@ -237,8 +237,9 @@ int radeon_wb_init(struct radeon_device *rdev)
 		} else {
 			rdev->wb.enabled = true;
 			/* event_write fences are only available on r600+ */
-			if (rdev->family >= CHIP_R600)
+			if (rdev->family >= CHIP_R600) {
 				rdev->wb.use_event = true;
+			}
 		}
 	}
 	/* always use writeback/events on NI, APUs */
@@ -714,7 +715,6 @@ int radeon_device_init(struct radeon_device *rdev,
 	rdev->is_atom_bios = false;
 	rdev->usec_timeout = RADEON_MAX_USEC_TIMEOUT;
 	rdev->mc.gtt_size = radeon_gart_size * 1024 * 1024;
-	rdev->gpu_lockup = false;
 	rdev->accel_working = false;
 
 	DRM_INFO("initializing kernel modesetting (%s 0x%04X:0x%04X 0x%04X:0x%04X).\n",
@@ -724,21 +724,16 @@ int radeon_device_init(struct radeon_device *rdev,
 	/* mutex initialization are all done here so we
 	 * can recall function without having locking issues */
 	radeon_mutex_init(&rdev->cs_mutex);
-	radeon_mutex_init(&rdev->ib_pool.mutex);
-	for (i = 0; i < RADEON_NUM_RINGS; ++i)
-		mutex_init(&rdev->ring[i].mutex);
+	mutex_init(&rdev->ring_lock);
 	mutex_init(&rdev->dc_hw_i2c_mutex);
 	if (rdev->family >= CHIP_R600)
 		spin_lock_init(&rdev->ih.lock);
 	mutex_init(&rdev->gem.mutex);
 	mutex_init(&rdev->pm.mutex);
 	mutex_init(&rdev->vram_mutex);
-	rwlock_init(&rdev->fence_lock);
-	rwlock_init(&rdev->semaphore_drv.lock);
 	INIT_LIST_HEAD(&rdev->gem.objects);
 	init_waitqueue_head(&rdev->irq.vblank_queue);
 	init_waitqueue_head(&rdev->irq.idle_queue);
-	INIT_LIST_HEAD(&rdev->semaphore_drv.bo);
 	/* initialize vm here */
 	rdev->vm_manager.use_bitmap = 1;
 	rdev->vm_manager.max_pfn = 1 << 20;
@@ -914,9 +909,12 @@ int radeon_suspend_kms(struct drm_device *dev, pm_message_t state)
 	}
 	/* evict vram memory */
 	radeon_bo_evict_vram(rdev);
+
+	mutex_lock(&rdev->ring_lock);
 	/* wait for gpu to finish processing current batch */
 	for (i = 0; i < RADEON_NUM_RINGS; i++)
-		radeon_fence_wait_last(rdev, i);
+		radeon_fence_wait_empty_locked(rdev, i);
+	mutex_unlock(&rdev->ring_lock);
 
 	radeon_save_bios_scratch_regs(rdev);
 
@@ -955,7 +953,6 @@ int radeon_resume_kms(struct drm_device *dev)
 		console_unlock();
 		return -1;
 	}
-	pci_set_master(dev->pdev);
 	/* resume AGP if in use */
 	radeon_agp_resume(rdev);
 	radeon_resume(rdev);
@@ -988,9 +985,6 @@ int radeon_gpu_reset(struct radeon_device *rdev)
 	int r;
 	int resched;
 
-	/* Prevent CS ioctl from interfering */
-	radeon_mutex_lock(&rdev->cs_mutex);
-
 	radeon_save_bios_scratch_regs(rdev);
 	/* block TTM */
 	resched = ttm_bo_lock_delayed_workqueue(&rdev->mman.bdev);
@@ -1004,8 +998,6 @@ int radeon_gpu_reset(struct radeon_device *rdev)
 		drm_helper_resume_force_mode(rdev->ddev);
 		ttm_bo_unlock_delayed_workqueue(&rdev->mman.bdev, resched);
 	}
-
-	radeon_mutex_unlock(&rdev->cs_mutex);
 
 	if (r) {
 		/* bad news, how to tell it to userspace ? */
