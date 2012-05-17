@@ -22,6 +22,7 @@
 #include "cifs_debug.h"
 #include "cifspdu.h"
 #include "cifsproto.h"
+#include "cifs_debug.h"
 
 /*
  * An NT cancel request header looks just like the original request except:
@@ -82,6 +83,25 @@ cifs_read_data_length(char *buf)
 	       le16_to_cpu(rsp->DataLength);
 }
 
+static struct mid_q_entry *
+cifs_find_mid(struct TCP_Server_Info *server, char *buffer)
+{
+	struct smb_hdr *buf = (struct smb_hdr *)buffer;
+	struct mid_q_entry *mid;
+
+	spin_lock(&GlobalMid_Lock);
+	list_for_each_entry(mid, &server->pending_mid_q, qhead) {
+		if (mid->mid == buf->Mid &&
+		    mid->mid_state == MID_REQUEST_SUBMITTED &&
+		    le16_to_cpu(mid->command) == buf->Command) {
+			spin_unlock(&GlobalMid_Lock);
+			return mid;
+		}
+	}
+	spin_unlock(&GlobalMid_Lock);
+	return NULL;
+}
+
 struct smb_version_operations smb1_operations = {
 	.send_cancel = send_nt_cancel,
 	.compare_fids = cifs_compare_fids,
@@ -90,6 +110,12 @@ struct smb_version_operations smb1_operations = {
 	.read_data_offset = cifs_read_data_offset,
 	.read_data_length = cifs_read_data_length,
 	.map_error = map_smb_to_linux_error,
+	.find_mid = cifs_find_mid,
+	.check_message = checkSMB,
+#ifdef CONFIG_CIFS_DEBUG2
+	.dump_detail = cifs_dump_detail,
+#endif
+	.is_oplock_break = is_valid_oplock_break,
 };
 
 struct smb_version_values smb1_values = {

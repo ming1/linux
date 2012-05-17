@@ -170,6 +170,12 @@ struct smb_version_operations {
 	unsigned int (*read_data_offset)(char *);
 	unsigned int (*read_data_length)(char *);
 	int (*map_error)(char *, bool);
+	struct mid_q_entry * (*find_mid)(struct TCP_Server_Info *, char *);
+#ifdef CONFIG_CIFS_DEBUG2
+	void (*dump_detail)(void *);
+#endif
+	int (*check_message)(char *, unsigned int);
+	bool (*is_oplock_break)(char *, struct TCP_Server_Info *);
 };
 
 struct smb_version_values {
