@@ -1692,10 +1692,20 @@ pci_power_t pci_target_state(struct pci_dev *dev)
 {
 	pci_power_t target_state = PCI_D3hot;
 
-	if (platform_pci_power_manageable(dev)) {
+	/*
+	 * According to ACPI 4.0a,7.2 Device Power Management Objects, device
+	 * with wake capability should have _PRW or _PSW object and can have
+	 * _SxD or _SxW object.
+	 * It looks like some OEMs use this fields to avoid buggy Dx states
+	 * of devices, so we need to check for _PRW or _PSW and see if _SxD or
+	 * _SxW indicate to overwrite Dx.
+	 */
+	if (platform_pci_power_manageable(dev)
+	    || platform_pci_can_wakeup(dev)) {
 		/*
 		 * Call the platform to choose the target state of the device
 		 * and enable wake-up from this state if supported.
+		 * (Check _SxD and _SxW)
 		 */
 		pci_power_t state = platform_pci_choose_state(dev);
 
