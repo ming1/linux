@@ -26,6 +26,7 @@ config HEXAGON
 	select NO_IOPORT
 	select GENERIC_IOMAP
 	select STACKTRACE_SUPPORT
+	select GENERIC_SMP_IDLE_THREAD
 	---help---
 	  Qualcomm Hexagon is a processor architecture designed for high
 	  performance and low power across a wide variety of applications.

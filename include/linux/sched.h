@@ -1619,6 +1619,10 @@ struct task_struct {
 #ifdef CONFIG_HAVE_HW_BREAKPOINT
 	atomic_t ptrace_bp_refcnt;
 #endif
+#ifdef CONFIG_UPROBES
+	struct uprobe_task *utask;
+	int uprobe_srcu_id;
+#endif
 };
 
 /* Future-safe accessor for struct task_struct's cpus_allowed. */
@@ -1907,9 +1911,19 @@ static inline void rcu_copy_process(struct task_struct *p)
 	INIT_LIST_HEAD(&p->rcu_node_entry);
 }
 
+static inline void rcu_switch_from(struct task_struct *prev)
+{
+	if (prev->rcu_read_lock_nesting != 0)
+		rcu_preempt_note_context_switch();
+}
+
 #else
 
 static inline void rcu_copy_process(struct task_struct *p)
+{
+}
+
+static inline void rcu_switch_from(struct task_struct *prev)
 {
 }
 
@@ -1952,7 +1966,7 @@ static inline int set_cpus_allowed(struct task_struct *p, cpumask_t new_mask)
  */
 extern unsigned long long notrace sched_clock(void);
 /*
- * See the comment in kernel/sched_clock.c
+ * See the comment in kernel/sched/clock.c
  */
 extern u64 cpu_clock(int cpu);
 extern u64 local_clock(void);
