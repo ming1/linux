@@ -224,13 +224,13 @@ int bch_set_geometry(struct gpmi_nand_data *this)
 	/* Configure layout 0. */
 	writel(BF_BCH_FLASH0LAYOUT0_NBLOCKS(block_count)
 			| BF_BCH_FLASH0LAYOUT0_META_SIZE(metadata_size)
-			| BF_BCH_FLASH0LAYOUT0_ECC0(ecc_strength)
-			| BF_BCH_FLASH0LAYOUT0_DATA0_SIZE(block_size),
+			| BF_BCH_FLASH0LAYOUT0_ECC0(ecc_strength, this)
+			| BF_BCH_FLASH0LAYOUT0_DATA0_SIZE(block_size, this),
 			r->bch_regs + HW_BCH_FLASH0LAYOUT0);
 
 	writel(BF_BCH_FLASH0LAYOUT1_PAGE_SIZE(page_size)
-			| BF_BCH_FLASH0LAYOUT1_ECCN(ecc_strength)
-			| BF_BCH_FLASH0LAYOUT1_DATAN_SIZE(block_size),
+			| BF_BCH_FLASH0LAYOUT1_ECCN(ecc_strength, this)
+			| BF_BCH_FLASH0LAYOUT1_DATAN_SIZE(block_size, this),
 			r->bch_regs + HW_BCH_FLASH0LAYOUT1);
 
 	/* Set *all* chip selects to use layout 0. */
@@ -256,11 +256,12 @@ static unsigned int ns_to_cycles(unsigned int time,
 	return max(k, min);
 }
 
+#define DEF_MIN_PROP_DELAY	5
+#define DEF_MAX_PROP_DELAY	9
 /* Apply timing to current hardware conditions. */
 static int gpmi_nfc_compute_hardware_timing(struct gpmi_nand_data *this,
 					struct gpmi_nfc_hardware_timing *hw)
 {
-	struct gpmi_nand_platform_data *pdata = this->pdata;
 	struct timing_threshod *nfc = &timing_default_threshold;
 	struct nand_chip *nand = &this->nand;
 	struct nand_timing target = this->timing;
@@ -277,8 +278,8 @@ static int gpmi_nfc_compute_hardware_timing(struct gpmi_nand_data *this,
 	int ideal_sample_delay_in_ns;
 	unsigned int sample_delay_factor;
 	int tEYE;
-	unsigned int min_prop_delay_in_ns = pdata->min_prop_delay_in_ns;
-	unsigned int max_prop_delay_in_ns = pdata->max_prop_delay_in_ns;
+	unsigned int min_prop_delay_in_ns = DEF_MIN_PROP_DELAY;
+	unsigned int max_prop_delay_in_ns = DEF_MAX_PROP_DELAY;
 
 	/*
 	 * If there are multiple chips, we need to relax the timings to allow
@@ -804,7 +805,8 @@ int gpmi_is_ready(struct gpmi_nand_data *this, unsigned chip)
 	if (GPMI_IS_MX23(this)) {
 		mask = MX23_BM_GPMI_DEBUG_READY0 << chip;
 		reg = readl(r->gpmi_regs + HW_GPMI_DEBUG);
-	} else if (GPMI_IS_MX28(this)) {
+	} else if (GPMI_IS_MX28(this) || GPMI_IS_MX6Q(this)) {
+		/* MX28 shares the same R/B register as MX6Q. */
 		mask = MX28_BF_GPMI_STAT_READY_BUSY(1 << chip);
 		reg = readl(r->gpmi_regs + HW_GPMI_STAT);
 	} else
