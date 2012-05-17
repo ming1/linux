@@ -120,6 +120,7 @@ obj-$(CONFIG_VLYNQ)		+= vlynq/
 obj-$(CONFIG_STAGING)		+= staging/
 obj-y				+= platform/
 obj-y				+= ieee802154/
+obj-$(CONFIG_MODEM_SHM)	+= modem_shm/
 #common clk code
 obj-y				+= clk/
 
