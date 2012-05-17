@@ -45,10 +45,12 @@ static void __init prom_init_cmdline(void)
 	char **argv = (char **) KSEG1ADDR(fw_arg1);
 	int i;
 
-	for (i = 0; i < argc; i++) {
-		char *p = (char *)  KSEG1ADDR(argv[i]);
+	arcs_cmdline[0] = '\0';
 
-		if (p && *p) {
+	for (i = 0; i < argc; i++) {
+		char *p = (char *) KSEG1ADDR(argv[i]);
+
+		if (CPHYSADDR(p) && *p) {
 			strlcat(arcs_cmdline, p, sizeof(arcs_cmdline));
 			strlcat(arcs_cmdline, " ", sizeof(arcs_cmdline));
 		}
@@ -68,4 +70,9 @@ void __init prom_init(void)
 	soc_info.sys_type[LTQ_SYS_TYPE_LEN - 1] = '\0';
 	pr_info("SoC: %s\n", soc_info.sys_type);
 	prom_init_cmdline();
+
+#if defined(CONFIG_MIPS_MT_SMP)
+	if (register_vsmp_smp_ops())
+		panic("failed to register_vsmp_smp_ops()");
+#endif
 }
