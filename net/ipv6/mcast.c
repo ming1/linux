@@ -1061,7 +1061,7 @@ static int mld_xmarksources(struct ifmcaddr6 *pmc, int nsrcs,
 			if (psf->sf_count[MCAST_INCLUDE] ||
 			    pmc->mca_sfcount[MCAST_EXCLUDE] !=
 			    psf->sf_count[MCAST_EXCLUDE])
-				continue;
+				break;
 			if (ipv6_addr_equal(&srcs[i], &psf->sf_addr)) {
 				scount++;
 				break;
@@ -2627,8 +2627,7 @@ static int __net_init igmp6_net_init(struct net *net)
 	err = inet_ctl_sock_create(&net->ipv6.igmp_sk, PF_INET6,
 				   SOCK_RAW, IPPROTO_ICMPV6, net);
 	if (err < 0) {
-		printk(KERN_ERR
-		       "Failed to initialize the IGMP6 control socket (err %d).\n",
+		pr_err("Failed to initialize the IGMP6 control socket (err %d)\n",
 		       err);
 		goto out;
 	}
