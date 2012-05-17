@@ -112,10 +112,7 @@ sys_rt_sigreturn(unsigned long r0, unsigned long r1,
 		goto badframe;
 
 	sigdelsetmask(&set, ~_BLOCKABLE);
-	spin_lock_irq(&current->sighand->siglock);
-	current->blocked = set;
-	recalc_sigpending();
-	spin_unlock_irq(&current->sighand->siglock);
+	set_current_blocked(&set);
 
 	if (restore_sigcontext(regs, &frame->uc.uc_mcontext, &result))
 		goto badframe;
@@ -300,12 +297,7 @@ handle_signal(unsigned long sig, struct k_sigaction *ka, siginfo_t *info,
 	if (setup_rt_frame(sig, ka, info, oldset, regs))
 		return -EFAULT;
 
-	spin_lock_irq(&current->sighand->siglock);
-	sigorsets(&current->blocked,&current->blocked,&ka->sa.sa_mask);
-	if (!(ka->sa.sa_flags & SA_NODEFER))
-		sigaddset(&current->blocked,sig);
-	recalc_sigpending();
-	spin_unlock_irq(&current->sighand->siglock);
+	block_sigmask(ka, sig);
 	return 0;
 }
 
@@ -391,8 +383,6 @@ void do_notify_resume(struct pt_regs *regs, __u32 thread_info_flags)
 	if (thread_info_flags & _TIF_NOTIFY_RESUME) {
 		clear_thread_flag(TIF_NOTIFY_RESUME);
 		tracehook_notify_resume(regs);
-		if (current->replacement_session_keyring)
-			key_replace_session_keyring();
 	}
 
 	clear_thread_flag(TIF_IRET);
