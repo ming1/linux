@@ -157,11 +157,16 @@ enum smb_version {
 struct mid_q_entry;
 struct TCP_Server_Info;
 struct cifsFileInfo;
+struct cifs_ses;
 
 struct smb_version_operations {
 	int (*send_cancel)(struct TCP_Server_Info *, void *,
 			   struct mid_q_entry *);
 	bool (*compare_fids)(struct cifsFileInfo *, struct cifsFileInfo *);
+	int (*setup_request)(struct cifs_ses *, struct kvec *, unsigned int,
+			     struct mid_q_entry **);
+	int (*check_receive)(struct mid_q_entry *, struct TCP_Server_Info *,
+			     bool);
 };
 
 struct smb_version_values {

@@ -21,6 +21,7 @@
 #include "cifsproto.h"
 #include "cifs_debug.h"
 #include "cifspdu.h"
+#include "cifsproto.h"
 
 /*
  * An NT cancel request header looks just like the original request except:
@@ -69,6 +70,8 @@ cifs_compare_fids(struct cifsFileInfo *ob1, struct cifsFileInfo *ob2)
 struct smb_version_operations smb1_operations = {
 	.send_cancel = send_nt_cancel,
 	.compare_fids = cifs_compare_fids,
+	.setup_request = cifs_setup_request,
+	.check_receive = cifs_check_receive,
 };
 
 struct smb_version_values smb1_values = {
