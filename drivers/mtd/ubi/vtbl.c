@@ -62,11 +62,7 @@
 #include <asm/div64.h>
 #include "ubi.h"
 
-#ifdef CONFIG_MTD_UBI_DEBUG
-static void paranoid_vtbl_check(const struct ubi_device *ubi);
-#else
-#define paranoid_vtbl_check(ubi)
-#endif
+static void self_vtbl_check(const struct ubi_device *ubi);
 
 /* Empty volume table record */
 static struct ubi_vtbl_record empty_vtbl_record;
@@ -106,12 +102,12 @@ int ubi_change_vtbl_record(struct ubi_device *ubi, int idx,
 			return err;
 
 		err = ubi_eba_write_leb(ubi, layout_vol, i, ubi->vtbl, 0,
-					ubi->vtbl_size, UBI_LONGTERM);
+					ubi->vtbl_size);
 		if (err)
 			return err;
 	}
 
-	paranoid_vtbl_check(ubi);
+	self_vtbl_check(ubi);
 	return 0;
 }
 
@@ -158,7 +154,7 @@ int ubi_vtbl_rename_volumes(struct ubi_device *ubi,
 			return err;
 
 		err = ubi_eba_write_leb(ubi, layout_vol, i, ubi->vtbl, 0,
-					ubi->vtbl_size, UBI_LONGTERM);
+					ubi->vtbl_size);
 		if (err)
 			return err;
 	}
@@ -197,7 +193,7 @@ static int vtbl_check(const struct ubi_device *ubi,
 		if (be32_to_cpu(vtbl[i].crc) != crc) {
 			ubi_err("bad CRC at record %u: %#08x, not %#08x",
 				 i, crc, be32_to_cpu(vtbl[i].crc));
-			ubi_dbg_dump_vtbl_record(&vtbl[i], i);
+			ubi_dump_vtbl_record(&vtbl[i], i);
 			return 1;
 		}
 
@@ -229,7 +225,7 @@ static int vtbl_check(const struct ubi_device *ubi,
 
 		n = ubi->leb_size % alignment;
 		if (data_pad != n) {
-			dbg_err("bad data_pad, has to be %d", n);
+			ubi_err("bad data_pad, has to be %d", n);
 			err = 6;
 			goto bad;
 		}
@@ -245,7 +241,7 @@ static int vtbl_check(const struct ubi_device *ubi,
 		}
 
 		if (reserved_pebs > ubi->good_peb_count) {
-			dbg_err("too large reserved_pebs %d, good PEBs %d",
+			ubi_err("too large reserved_pebs %d, good PEBs %d",
 				reserved_pebs, ubi->good_peb_count);
 			err = 9;
 			goto bad;
@@ -277,8 +273,8 @@ static int vtbl_check(const struct ubi_device *ubi,
 			    !strncmp(vtbl[i].name, vtbl[n].name, len1)) {
 				ubi_err("volumes %d and %d have the same name"
 					" \"%s\"", i, n, vtbl[i].name);
-				ubi_dbg_dump_vtbl_record(&vtbl[i], i);
-				ubi_dbg_dump_vtbl_record(&vtbl[n], n);
+				ubi_dump_vtbl_record(&vtbl[i], i);
+				ubi_dump_vtbl_record(&vtbl[n], n);
 				return -EINVAL;
 			}
 		}
@@ -288,7 +284,7 @@ static int vtbl_check(const struct ubi_device *ubi,
 
 bad:
 	ubi_err("volume table check failed: record %d, error %d", i, err);
-	ubi_dbg_dump_vtbl_record(&vtbl[i], i);
+	ubi_dump_vtbl_record(&vtbl[i], i);
 	return -EINVAL;
 }
 
@@ -700,8 +696,8 @@ static int check_sv(const struct ubi_volume *vol,
 
 bad:
 	ubi_err("bad scanning information, error %d", err);
-	ubi_dbg_dump_sv(sv);
-	ubi_dbg_dump_vol_info(vol);
+	ubi_dump_sv(sv);
+	ubi_dump_vol_info(vol);
 	return -EINVAL;
 }
 
@@ -819,7 +815,7 @@ int ubi_read_volume_table(struct ubi_device *ubi, struct ubi_scan_info *si)
 	} else {
 		if (sv->leb_count > UBI_LAYOUT_VOLUME_EBS) {
 			/* This must not happen with proper UBI images */
-			dbg_err("too many LEBs (%d) in layout volume",
+			ubi_err("too many LEBs (%d) in layout volume",
 				sv->leb_count);
 			return -EINVAL;
 		}
@@ -858,21 +854,17 @@ out_free:
 	return err;
 }
 
-#ifdef CONFIG_MTD_UBI_DEBUG
-
 /**
- * paranoid_vtbl_check - check volume table.
+ * self_vtbl_check - check volume table.
  * @ubi: UBI device description object
  */
-static void paranoid_vtbl_check(const struct ubi_device *ubi)
+static void self_vtbl_check(const struct ubi_device *ubi)
 {
 	if (!ubi->dbg->chk_gen)
 		return;
 
 	if (vtbl_check(ubi, ubi->vtbl)) {
-		ubi_err("paranoid check failed");
+		ubi_err("self-check failed");
 		BUG();
 	}
 }
-
-#endif /* CONFIG_MTD_UBI_DEBUG */
