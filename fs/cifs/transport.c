@@ -304,7 +304,8 @@ wait_for_free_credits(struct TCP_Server_Info *server, const int optype,
 static int
 wait_for_free_request(struct TCP_Server_Info *server, const int optype)
 {
-	return wait_for_free_credits(server, optype, get_credits_field(server));
+	return wait_for_free_credits(server, optype,
+				     server->ops->get_credits_field(server));
 }
 
 static int allocate_mid(struct cifs_ses *ses, struct smb_hdr *in_buf,
