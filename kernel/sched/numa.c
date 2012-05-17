@@ -18,6 +18,9 @@
 
 #include "sched.h"
 
+struct static_key sched_numa_disabled = STATIC_KEY_INIT_FALSE;
+static DEFINE_MUTEX(sched_numa_mutex);
+int sysctl_sched_numa = IS_ENABLED(CONFIG_SCHED_NUMA_DEFAULT);
 
 static const int numa_balance_interval = 2 * HZ; /* 2 seconds */
 
@@ -137,7 +140,7 @@ bool account_numa_enqueue(struct task_struct *p)
 
 void account_numa_dequeue(struct task_struct *p)
 {
-	int home_node = tsk_home_node(p);
+	int home_node = p->node; /* ignore sched_numa_disabled */
 	struct numa_cpu_load *nl;
 	struct rq *rq;
 
@@ -454,7 +457,7 @@ void select_task_node(struct task_struct *p, struct mm_struct *mm, int sd_flags)
 {
 	int node;
 
-	if (!sched_feat(NUMA_SELECT)) {
+	if (!sched_feat(NUMA_SELECT) || !sysctl_sched_numa) {
 		p->node = -1;
 		return;
 	}
@@ -776,13 +779,74 @@ static int numad_thread(void *data)
 	return 0;
 }
 
+static int numad_create(struct node_queue *nq)
+{
+	struct task_struct *numad;
+
+	if (!sysctl_sched_numa)
+		return 0;
+
+	numad = kthread_create_on_node(numad_thread,
+			nq, nq->node, "numad/%d", nq->node);
+	if (IS_ERR(numad))
+		return PTR_ERR(numad);
+
+	nq->numad = numad;
+	nq->next_schedule = jiffies + HZ;
+
+	return 0;
+}
+
+static void numad_destroy(struct node_queue *nq)
+{
+	kthread_stop(nq->numad);
+	nq->numad = NULL;
+}
+
+int sched_numa_handler(struct ctl_table *table, int write,
+		void __user *buffer, size_t *lenp,
+		loff_t *ppos)
+{
+	int old, new, ret, node;
+
+	mutex_lock(&sched_numa_mutex);
+	get_online_cpus();
+
+	old = sysctl_sched_numa;
+	ret = proc_dointvec_minmax(table, write, buffer, lenp, ppos);
+	new = sysctl_sched_numa;
+
+	if (old == new)
+		goto unlock;
+
+	if (new)
+		static_key_slow_dec(&sched_numa_disabled);
+	else
+		static_key_slow_inc(&sched_numa_disabled);
+
+	for_each_online_node(node) {
+		struct node_queue *nq = nq_of(node);
+
+		if (new && !nq->numad) {
+			if (!numad_create(nq))
+				wake_up_process(nq->numad);
+		} else if (!new && nq->numad)
+			numad_destroy(nq);
+	}
+
+unlock:
+	put_online_cpus();
+	mutex_unlock(&sched_numa_mutex);
+
+	return ret;
+}
+
 static int __cpuinit
 numa_hotplug(struct notifier_block *nb, unsigned long action, void *hcpu)
 {
 	int cpu = (long)hcpu;
 	int node = cpu_to_node(cpu);
 	struct node_queue *nq = nq_of(node);
-	struct task_struct *numad;
 	int err = 0;
 
 	switch (action & ~CPU_TASKS_FROZEN) {
@@ -790,19 +854,12 @@ numa_hotplug(struct notifier_block *nb, unsigned long action, void *hcpu)
 		if (nq->numad)
 			break;
 
-		numad = kthread_create_on_node(numad_thread,
-				nq, node, "numad/%d", node);
-		if (IS_ERR(numad)) {
-			err = PTR_ERR(numad);
-			break;
-		}
-
-		nq->numad = numad;
-		nq->next_schedule = jiffies + HZ; // XXX sync-up?
+		err = numad_create(nq);
 		break;
 
 	case CPU_ONLINE:
-		wake_up_process(nq->numad);
+		if (nq->numad)
+			wake_up_process(nq->numad);
 		break;
 
 	case CPU_DEAD:
@@ -811,10 +868,8 @@ numa_hotplug(struct notifier_block *nb, unsigned long action, void *hcpu)
 			break;
 
 		if (cpumask_any_and(cpu_online_mask,
-				    cpumask_of_node(node)) >= nr_cpu_ids) {
-			kthread_stop(nq->numad);
-			nq->numad = NULL;
-		}
+				    cpumask_of_node(node)) >= nr_cpu_ids)
+			numad_destroy(nq);
 		break;
 	}
 

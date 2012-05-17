@@ -90,6 +90,7 @@ struct sched_param {
 #include <linux/latencytop.h>
 #include <linux/cred.h>
 #include <linux/llist.h>
+#include <linux/jump_label.h>
 
 #include <asm/processor.h>
 
@@ -1584,9 +1585,14 @@ struct task_struct {
 /* Future-safe accessor for struct task_struct's cpus_allowed. */
 #define tsk_cpus_allowed(tsk) (&(tsk)->cpus_allowed)
 
+extern struct static_key sched_numa_disabled;
+
 static inline int tsk_home_node(struct task_struct *p)
 {
 #ifdef CONFIG_NUMA
+	if (static_key_false(&sched_numa_disabled))
+		return -1;
+
 	return p->node;
 #else
 	return -1;
@@ -2056,6 +2062,13 @@ static inline void sched_autogroup_exit(struct signal_struct *sig) { }
 
 #ifdef CONFIG_CFS_BANDWIDTH
 extern unsigned int sysctl_sched_cfs_bandwidth_slice;
+#endif
+
+#ifdef CONFIG_NUMA
+extern int sysctl_sched_numa;
+int sched_numa_handler(struct ctl_table *table, int write,
+		void __user *buffer, size_t *lenp,
+		loff_t *ppos);
 #endif
 
 #ifdef CONFIG_RT_MUTEXES
