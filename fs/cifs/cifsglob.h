@@ -167,6 +167,9 @@ struct smb_version_operations {
 			     struct mid_q_entry **);
 	int (*check_receive)(struct mid_q_entry *, struct TCP_Server_Info *,
 			     bool);
+	unsigned int (*read_data_offset)(char *);
+	unsigned int (*read_data_length)(char *);
+	int (*map_error)(char *, bool);
 };
 
 struct smb_version_values {
@@ -177,6 +180,7 @@ struct smb_version_values {
 	__u32		unlock_lock_type;
 	size_t		header_size;
 	size_t		max_header_size;
+	size_t		read_rsp_size;
 };
 
 #define HEADER_SIZE(server) (server->vals->header_size)
