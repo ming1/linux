@@ -88,11 +88,7 @@
 #include <linux/random.h>
 #include "ubi.h"
 
-#ifdef CONFIG_MTD_UBI_DEBUG
-static int paranoid_check_si(struct ubi_device *ubi, struct ubi_scan_info *si);
-#else
-#define paranoid_check_si(ubi, si) 0
-#endif
+static int self_check_si(struct ubi_device *ubi, struct ubi_scan_info *si);
 
 /* Temporary variables used during scanning */
 static struct ubi_ec_hdr *ech;
@@ -201,7 +197,7 @@ static int validate_vid_hdr(const struct ubi_vid_hdr *vid_hdr,
 		 */
 
 		if (vol_id != sv->vol_id) {
-			dbg_err("inconsistent vol_id");
+			ubi_err("inconsistent vol_id");
 			goto bad;
 		}
 
@@ -211,17 +207,17 @@ static int validate_vid_hdr(const struct ubi_vid_hdr *vid_hdr,
 			sv_vol_type = UBI_VID_DYNAMIC;
 
 		if (vol_type != sv_vol_type) {
-			dbg_err("inconsistent vol_type");
+			ubi_err("inconsistent vol_type");
 			goto bad;
 		}
 
 		if (used_ebs != sv->used_ebs) {
-			dbg_err("inconsistent used_ebs");
+			ubi_err("inconsistent used_ebs");
 			goto bad;
 		}
 
 		if (data_pad != sv->data_pad) {
-			dbg_err("inconsistent data_pad");
+			ubi_err("inconsistent data_pad");
 			goto bad;
 		}
 	}
@@ -230,8 +226,8 @@ static int validate_vid_hdr(const struct ubi_vid_hdr *vid_hdr,
 
 bad:
 	ubi_err("inconsistent VID header at PEB %d", pnum);
-	ubi_dbg_dump_vid_hdr(vid_hdr);
-	ubi_dbg_dump_sv(sv);
+	ubi_dump_vid_hdr(vid_hdr);
+	ubi_dump_sv(sv);
 	return -EINVAL;
 }
 
@@ -337,7 +333,7 @@ static int compare_lebs(struct ubi_device *ubi, const struct ubi_scan_leb *seb,
 	}
 
 	/* Obviously the LEB with lower sequence counter is older */
-	second_is_newer = !!(sqnum2 > seb->sqnum);
+	second_is_newer = (sqnum2 > seb->sqnum);
 
 	/*
 	 * Now we know which copy is newer. If the copy flag of the PEB with
@@ -373,7 +369,7 @@ static int compare_lebs(struct ubi_device *ubi, const struct ubi_scan_leb *seb,
 			if (err == UBI_IO_BITFLIPS)
 				bitflips = 1;
 			else {
-				dbg_err("VID of PEB %d header is bad, but it "
+				ubi_err("VID of PEB %d header is bad, but it "
 					"was OK earlier, err %d", pnum, err);
 				if (err > 0)
 					err = -EIO;
@@ -510,8 +506,8 @@ int ubi_scan_add_used(struct ubi_device *ubi, struct ubi_scan_info *si,
 		if (seb->sqnum == sqnum && sqnum != 0) {
 			ubi_err("two LEBs with same sequence number %llu",
 				sqnum);
-			ubi_dbg_dump_seb(seb, 0);
-			ubi_dbg_dump_vid_hdr(vid_hdr);
+			ubi_dump_seb(seb, 0);
+			ubi_dump_vid_hdr(vid_hdr);
 			return -EINVAL;
 		}
 
@@ -814,7 +810,7 @@ static int check_corruption(struct ubi_device *ubi, struct ubi_vid_hdr *vid_hdr,
 	ubi_err("PEB %d contains corrupted VID header, and the data does not "
 		"contain all 0xFF, this may be a non-UBI PEB or a severe VID "
 		"header corruption which requires manual inspection", pnum);
-	ubi_dbg_dump_vid_hdr(vid_hdr);
+	ubi_dump_vid_hdr(vid_hdr);
 	dbg_msg("hexdump of PEB %d offset %d, length %d",
 		pnum, ubi->leb_start, ubi->leb_size);
 	ubi_dbg_print_hex_dump(KERN_DEBUG, "", DUMP_PREFIX_OFFSET, 32, 1,
@@ -911,7 +907,7 @@ static int process_eb(struct ubi_device *ubi, struct ubi_scan_info *si,
 			 */
 			ubi_err("erase counter overflow, max is %d",
 				UBI_MAX_ERASECOUNTER);
-			ubi_dbg_dump_ec_hdr(ech);
+			ubi_dump_ec_hdr(ech);
 			return -EINVAL;
 		}
 
@@ -933,7 +929,7 @@ static int process_eb(struct ubi_device *ubi, struct ubi_scan_info *si,
 		    ubi->image_seq != image_seq) {
 			ubi_err("bad image sequence number %d in PEB %d, "
 				"expected %d", image_seq, pnum, ubi->image_seq);
-			ubi_dbg_dump_ec_hdr(ech);
+			ubi_dump_ec_hdr(ech);
 			return -EINVAL;
 		}
 	}
@@ -1222,7 +1218,7 @@ struct ubi_scan_info *ubi_scan(struct ubi_device *ubi)
 		if (seb->ec == UBI_SCAN_UNKNOWN_EC)
 			seb->ec = si->mean_ec;
 
-	err = paranoid_check_si(ubi, si);
+	err = self_check_si(ubi, si);
 	if (err)
 		goto out_vidh;
 
@@ -1329,17 +1325,15 @@ void ubi_scan_destroy_si(struct ubi_scan_info *si)
 	kfree(si);
 }
 
-#ifdef CONFIG_MTD_UBI_DEBUG
-
 /**
- * paranoid_check_si - check the scanning information.
+ * self_check_si - check the scanning information.
  * @ubi: UBI device description object
  * @si: scanning information
  *
  * This function returns zero if the scanning information is all right, and a
  * negative error code if not or if an error occurred.
  */
-static int paranoid_check_si(struct ubi_device *ubi, struct ubi_scan_info *si)
+static int self_check_si(struct ubi_device *ubi, struct ubi_scan_info *si)
 {
 	int pnum, err, vols_found = 0;
 	struct rb_node *rb1, *rb2;
@@ -1583,23 +1577,21 @@ static int paranoid_check_si(struct ubi_device *ubi, struct ubi_scan_info *si)
 
 bad_seb:
 	ubi_err("bad scanning information about LEB %d", seb->lnum);
-	ubi_dbg_dump_seb(seb, 0);
-	ubi_dbg_dump_sv(sv);
+	ubi_dump_seb(seb, 0);
+	ubi_dump_sv(sv);
 	goto out;
 
 bad_sv:
 	ubi_err("bad scanning information about volume %d", sv->vol_id);
-	ubi_dbg_dump_sv(sv);
+	ubi_dump_sv(sv);
 	goto out;
 
 bad_vid_hdr:
 	ubi_err("bad scanning information about volume %d", sv->vol_id);
-	ubi_dbg_dump_sv(sv);
-	ubi_dbg_dump_vid_hdr(vidh);
+	ubi_dump_sv(sv);
+	ubi_dump_vid_hdr(vidh);
 
 out:
-	ubi_dbg_dump_stack();
+	dump_stack();
 	return -EINVAL;
 }
-
-#endif /* CONFIG_MTD_UBI_DEBUG */
