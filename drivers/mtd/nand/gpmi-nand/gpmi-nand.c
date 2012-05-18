@@ -26,6 +26,7 @@
 #include <linux/mtd/partitions.h>
 #include <linux/of.h>
 #include <linux/of_device.h>
+#include <linux/pinctrl/consumer.h>
 #include "gpmi-nand.h"
 
 /* add our owner bbt descriptor */
@@ -466,6 +467,7 @@ acquire_err:
 static int __devinit acquire_resources(struct gpmi_nand_data *this)
 {
 	struct resources *res = &this->resources;
+	struct pinctrl *pinctrl;
 	int ret;
 
 	ret = acquire_register_block(this, GPMI_NAND_GPMI_REGS_ADDR_RES_NAME);
@@ -484,6 +486,12 @@ static int __devinit acquire_resources(struct gpmi_nand_data *this)
 	if (ret)
 		goto exit_dma_channels;
 
+	pinctrl = devm_pinctrl_get_select_default(&pdev->dev);
+	if (IS_ERR(pinctrl)) {
+		ret = PTR_ERR(pinctrl);
+		goto exit_pin;
+	}
+
 	res->clock = clk_get(&this->pdev->dev, NULL);
 	if (IS_ERR(res->clock)) {
 		pr_err("can not get the clock\n");
@@ -493,6 +501,7 @@ static int __devinit acquire_resources(struct gpmi_nand_data *this)
 	return 0;
 
 exit_clock:
+exit_pin:
 	release_dma_channels(this);
 exit_dma_channels:
 	release_bch_irq(this);
