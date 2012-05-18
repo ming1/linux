@@ -545,7 +545,7 @@ atombios_dig_encoder_setup(struct drm_encoder *encoder, int action, int panel_mo
 		dp_clock = dig_connector->dp_clock;
 		dp_lane_count = dig_connector->dp_lane_count;
 		hpd_id = radeon_connector->hpd.hpd;
-		/* bpc = connector->display_info.bpc; */
+		bpc = radeon_get_monitor_bpc(connector);
 	}
 
 	/* no dig encoder assigned */
@@ -1163,7 +1163,7 @@ atombios_external_encoder_setup(struct drm_encoder *encoder,
 		dp_lane_count = dig_connector->dp_lane_count;
 		connector_object_id =
 			(radeon_connector->connector_object_id & OBJECT_ID_MASK) >> OBJECT_ID_SHIFT;
-		/* bpc = connector->display_info.bpc; */
+		bpc = radeon_get_monitor_bpc(connector);
 	}
 
 	memset(&args, 0, sizeof(args));
@@ -1926,7 +1926,10 @@ radeon_atom_encoder_mode_set(struct drm_encoder *encoder,
 
 	if (atombios_get_encoder_mode(encoder) == ATOM_ENCODER_MODE_HDMI) {
 		r600_hdmi_enable(encoder);
-		r600_hdmi_setmode(encoder, adjusted_mode);
+		if (ASIC_IS_DCE4(rdev))
+			evergreen_hdmi_setmode(encoder, adjusted_mode);
+		else
+			r600_hdmi_setmode(encoder, adjusted_mode);
 	}
 }
 
