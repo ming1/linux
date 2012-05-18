@@ -23,7 +23,6 @@
 #include "memory.h"
 #include "lock.h"
 #include "util.h"
-#include "member.h"
 
 
 static int rcom_response(struct dlm_ls *ls)
@@ -275,18 +274,8 @@ int dlm_rcom_names(struct dlm_ls *ls, int nodeid, char *last_name, int last_len)
 	struct dlm_rcom *rc;
 	struct dlm_mhandle *mh;
 	int error = 0;
-	int max_size = dlm_config.ci_buffer_size - sizeof(struct dlm_rcom);
 
 	ls->ls_recover_nodeid = nodeid;
-
-	if (nodeid == dlm_our_nodeid()) {
-		ls->ls_recover_buf->rc_header.h_length =
-			dlm_config.ci_buffer_size;
-		dlm_copy_master_names(ls, last_name, last_len,
-		                      ls->ls_recover_buf->rc_buf,
-		                      max_size, nodeid);
-		goto out;
-	}
 
 	error = create_rcom(ls, nodeid, DLM_RCOM_NAMES, last_len, &rc, &mh);
 	if (error)
@@ -337,7 +326,7 @@ int dlm_send_rcom_lookup(struct dlm_rsb *r, int dir_nodeid)
 	if (error)
 		goto out;
 	memcpy(rc->rc_buf, r->res_name, r->res_length);
-	rc->rc_id = (unsigned long) r;
+	rc->rc_id = (unsigned long) r->res_id;
 
 	send_rcom(ls, mh, rc);
  out:
@@ -355,7 +344,8 @@ static void receive_rcom_lookup(struct dlm_ls *ls, struct dlm_rcom *rc_in)
 	if (error)
 		return;
 
-	error = dlm_dir_lookup(ls, nodeid, rc_in->rc_buf, len, &ret_nodeid);
+	error = dlm_master_lookup(ls, nodeid, rc_in->rc_buf, len,
+				  DLM_LU_RECOVER_MASTER, &ret_nodeid, NULL);
 	if (error)
 		ret_nodeid = error;
 	rc->rc_result = ret_nodeid;
@@ -486,46 +476,49 @@ int dlm_send_ls_not_ready(int nodeid, struct dlm_rcom *rc_in)
 	return 0;
 }
 
-static int is_old_reply(struct dlm_ls *ls, struct dlm_rcom *rc)
-{
-	uint64_t seq;
-	int rv = 0;
-
-	switch (rc->rc_type) {
-	case DLM_RCOM_STATUS_REPLY:
-	case DLM_RCOM_NAMES_REPLY:
-	case DLM_RCOM_LOOKUP_REPLY:
-	case DLM_RCOM_LOCK_REPLY:
-		spin_lock(&ls->ls_recover_lock);
-		seq = ls->ls_recover_seq;
-		spin_unlock(&ls->ls_recover_lock);
-		if (rc->rc_seq_reply != seq) {
-			log_debug(ls, "ignoring old reply %x from %d "
-				      "seq_reply %llx expect %llx",
-				      rc->rc_type, rc->rc_header.h_nodeid,
-				      (unsigned long long)rc->rc_seq_reply,
-				      (unsigned long long)seq);
-			rv = 1;
-		}
-	}
-	return rv;
-}
-
 /* Called by dlm_recv; corresponds to dlm_receive_message() but special
    recovery-only comms are sent through here. */
 
 void dlm_receive_rcom(struct dlm_ls *ls, struct dlm_rcom *rc, int nodeid)
 {
 	int lock_size = sizeof(struct dlm_rcom) + sizeof(struct rcom_lock);
+	int stop, reply = 0, lock = 0;
+	uint32_t status;
+	uint64_t seq;
 
-	if (dlm_recovery_stopped(ls) && (rc->rc_type != DLM_RCOM_STATUS)) {
-		log_debug(ls, "ignoring recovery message %x from %d",
-			  rc->rc_type, nodeid);
+	switch (rc->rc_type) {
+	case DLM_RCOM_LOCK:
+		lock = 1;
+		break;
+	case DLM_RCOM_LOCK_REPLY:
+		lock = 1;
+		reply = 1;
+		break;
+	case DLM_RCOM_STATUS_REPLY:
+	case DLM_RCOM_NAMES_REPLY:
+	case DLM_RCOM_LOOKUP_REPLY:
+		reply = 1;
+	};
+
+	spin_lock(&ls->ls_recover_lock);
+	status = ls->ls_recover_status;
+	stop = test_bit(LSFL_RECOVERY_STOP, &ls->ls_flags);
+	seq = ls->ls_recover_seq;
+	spin_unlock(&ls->ls_recover_lock);
+
+	if ((stop && (rc->rc_type != DLM_RCOM_STATUS)) ||
+	    (reply && (rc->rc_seq_reply != seq)) ||
+	    (lock && !(status & DLM_RS_DIR))) {
+		log_limit(ls, "dlm_receive_rcom ignore msg %d "
+			  "from %d %llu %llu recover seq %llu sts %x gen %u",
+			   rc->rc_type,
+			   nodeid,
+			   (unsigned long long)rc->rc_seq,
+			   (unsigned long long)rc->rc_seq_reply,
+			   (unsigned long long)seq,
+			   status, ls->ls_generation);
 		goto out;
 	}
-
-	if (is_old_reply(ls, rc))
-		goto out;
 
 	switch (rc->rc_type) {
 	case DLM_RCOM_STATUS:
