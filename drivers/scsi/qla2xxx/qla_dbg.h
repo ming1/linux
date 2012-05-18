@@ -244,6 +244,7 @@ struct qla2xxx_mqueue_header {
 	uint32_t queue;
 #define TYPE_REQUEST_QUEUE	0x1
 #define TYPE_RESPONSE_QUEUE	0x2
+#define TYPE_ATIO_QUEUE		0x3
 	uint32_t number;
 	uint32_t size;
 };
@@ -339,3 +340,6 @@ ql_log_pci(uint32_t, struct pci_dev *pdev, int32_t, const char *fmt, ...);
 #define ql_dbg_misc	0x00010000 /* For dumping everything that is not
 				    * not covered by upper categories
 				    */
+#define ql_dbg_tgt	0x00004000 /* Target mode */
+#define ql_dbg_tgt_mgt	0x00002000 /* Target mode management */
+#define ql_dbg_tgt_tmr	0x00001000 /* Target mode task management */
