@@ -616,6 +616,7 @@ struct kvm_ppc_smmu_info {
 #define KVM_CAP_KVMCLOCK_CTRL 76
 #define KVM_CAP_SIGNAL_MSI 77
 #define KVM_CAP_PPC_GET_SMMU_INFO 78
+#define KVM_CAP_PPC_ALLOC_HTAB 79
 
 #ifdef KVM_CAP_IRQ_ROUTING
 
@@ -827,6 +828,8 @@ struct kvm_s390_ucas_mapping {
 #define KVM_SIGNAL_MSI            _IOW(KVMIO,  0xa5, struct kvm_msi)
 /* Available with KVM_CAP_PPC_GET_SMMU_INFO */
 #define KVM_PPC_GET_SMMU_INFO	  _IOR(KVMIO,  0xa6, struct kvm_ppc_smmu_info)
+/* Available with KVM_CAP_PPC_ALLOC_HTAB */
+#define KVM_PPC_ALLOCATE_HTAB	  _IOWR(KVMIO, 0xa7, __u32)
 
 /*
  * ioctls for vcpu fds
