@@ -79,6 +79,30 @@ ssize_t usb_store_new_id(struct usb_dynids *dynids,
 }
 EXPORT_SYMBOL_GPL(usb_store_new_id);
 
+ssize_t usb_show_dynids(struct usb_dynids *dynids, char *buf)
+{
+	struct usb_dynid *dynid;
+	size_t count = 0;
+
+	list_for_each_entry(dynid, &dynids->list, node)
+		if (dynid->id.bInterfaceClass != 0)
+			count += scnprintf(&buf[count], PAGE_SIZE - count, "%04x %04x %02x\n",
+					   dynid->id.idVendor, dynid->id.idProduct,
+					   dynid->id.bInterfaceClass);
+		else
+			count += scnprintf(&buf[count], PAGE_SIZE - count, "%04x %04x\n",
+					   dynid->id.idVendor, dynid->id.idProduct);
+	return count;
+}
+EXPORT_SYMBOL_GPL(usb_show_dynids);
+
+static ssize_t show_dynids(struct device_driver *driver, char *buf)
+{
+	struct usb_driver *usb_drv = to_usb_driver(driver);
+
+	return usb_show_dynids(&usb_drv->dynids, buf);
+}
+
 static ssize_t store_new_id(struct device_driver *driver,
 			    const char *buf, size_t count)
 {
@@ -86,7 +110,7 @@ static ssize_t store_new_id(struct device_driver *driver,
 
 	return usb_store_new_id(&usb_drv->dynids, driver, buf, count);
 }
-static DRIVER_ATTR(new_id, S_IWUSR, NULL, store_new_id);
+static DRIVER_ATTR(new_id, S_IRUGO | S_IWUSR, show_dynids, store_new_id);
 
 /**
  * store_remove_id - remove a USB device ID from this driver
@@ -127,7 +151,7 @@ store_remove_id(struct device_driver *driver, const char *buf, size_t count)
 		return retval;
 	return count;
 }
-static DRIVER_ATTR(remove_id, S_IWUSR, NULL, store_remove_id);
+static DRIVER_ATTR(remove_id, S_IRUGO | S_IWUSR, show_dynids, store_remove_id);
 
 static int usb_create_newid_files(struct usb_driver *usb_drv)
 {
@@ -726,16 +750,6 @@ static int usb_uevent(struct device *dev, struct kobj_uevent_env *env)
 		return -ENODEV;
 	}
 
-#ifdef	CONFIG_USB_DEVICEFS
-	/* If this is available, userspace programs can directly read
-	 * all the device descriptors we don't tell them about.  Or
-	 * act as usermode drivers.
-	 */
-	if (add_uevent_var(env, "DEVICE=/proc/bus/usb/%03d/%03d",
-			   usb_dev->bus->busnum, usb_dev->devnum))
-		return -ENOMEM;
-#endif
-
 	/* per-device configurations are common */
 	if (add_uevent_var(env, "PRODUCT=%x/%x/%x",
 			   le16_to_cpu(usb_dev->descriptor.idVendor),
@@ -788,15 +802,13 @@ int usb_register_device_driver(struct usb_device_driver *new_udriver,
 
 	retval = driver_register(&new_udriver->drvwrap.driver);
 
-	if (!retval) {
+	if (!retval)
 		pr_info("%s: registered new device driver %s\n",
 			usbcore_name, new_udriver->name);
-		usbfs_update_special();
-	} else {
+	else
 		printk(KERN_ERR "%s: error %d registering device "
 			"	driver %s\n",
 			usbcore_name, retval, new_udriver->name);
-	}
 
 	return retval;
 }
@@ -815,7 +827,6 @@ void usb_deregister_device_driver(struct usb_device_driver *udriver)
 			usbcore_name, udriver->name);
 
 	driver_unregister(&udriver->drvwrap.driver);
-	usbfs_update_special();
 }
 EXPORT_SYMBOL_GPL(usb_deregister_device_driver);
 
@@ -856,8 +867,6 @@ int usb_register_driver(struct usb_driver *new_driver, struct module *owner,
 	if (retval)
 		goto out;
 
-	usbfs_update_special();
-
 	retval = usb_create_newid_files(new_driver);
 	if (retval)
 		goto out_newid;
@@ -897,8 +906,6 @@ void usb_deregister(struct usb_driver *driver)
 	usb_remove_newid_files(driver);
 	driver_unregister(&driver->drvwrap.driver);
 	usb_free_dynids(driver);
-
-	usbfs_update_special();
 }
 EXPORT_SYMBOL_GPL(usb_deregister);
 
