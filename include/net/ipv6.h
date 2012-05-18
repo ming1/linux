@@ -113,7 +113,6 @@ struct frag_hdr {
 
 /* sysctls */
 extern int sysctl_mld_max_msf;
-extern struct ctl_path net_ipv6_ctl_path[];
 
 #define _DEVINC(net, statname, modifier, idev, field)			\
 ({									\
@@ -345,7 +344,7 @@ static inline int ipv6_addr_equal(const struct in6_addr *a1,
 static inline int __ipv6_prefix_equal(const __be32 *a1, const __be32 *a2,
 				      unsigned int prefixlen)
 {
-	unsigned pdw, pbi;
+	unsigned int pdw, pbi;
 
 	/* check complete u32 in prefix */
 	pdw = prefixlen >> 5;
@@ -661,8 +660,6 @@ extern struct ctl_table *ipv6_icmp_sysctl_init(struct net *net);
 extern struct ctl_table *ipv6_route_sysctl_init(struct net *net);
 extern int ipv6_sysctl_register(void);
 extern void ipv6_sysctl_unregister(void);
-extern int ipv6_static_sysctl_register(void);
-extern void ipv6_static_sysctl_unregister(void);
 #endif
 
 #endif /* _NET_IPV6_H */

@@ -5,3 +5,4 @@
 obj-y += kernel/
 obj-y += mm/
 obj-y += math-emu/
+obj-y += net/
