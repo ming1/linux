@@ -336,32 +336,12 @@ static inline int usbfs_positive (struct dentry *dentry)
 	return dentry->d_inode && !d_unhashed(dentry);
 }
 
-static int usbfs_empty (struct dentry *dentry)
-{
-	struct list_head *list;
-
-	spin_lock(&dentry->d_lock);
-	list_for_each(list, &dentry->d_subdirs) {
-		struct dentry *de = list_entry(list, struct dentry, d_u.d_child);
-
-		spin_lock_nested(&de->d_lock, DENTRY_D_LOCK_NESTED);
-		if (usbfs_positive(de)) {
-			spin_unlock(&de->d_lock);
-			spin_unlock(&dentry->d_lock);
-			return 0;
-		}
-		spin_unlock(&de->d_lock);
-	}
-	spin_unlock(&dentry->d_lock);
-	return 1;
-}
-
 static int usbfs_unlink (struct inode *dir, struct dentry *dentry)
 {
 	struct inode *inode = dentry->d_inode;
 	mutex_lock(&inode->i_mutex);
-	drop_nlink(dentry->d_inode);
-	dput(dentry);
+	simple_unlink(dir, dentry);
+	dont_mount(dentry);
 	mutex_unlock(&inode->i_mutex);
 	d_delete(dentry);
 	return 0;
@@ -369,19 +349,15 @@ static int usbfs_unlink (struct inode *dir, struct dentry *dentry)
 
 static int usbfs_rmdir(struct inode *dir, struct dentry *dentry)
 {
-	int error = -ENOTEMPTY;
-	struct inode * inode = dentry->d_inode;
+	struct inode *inode = dentry->d_inode;
+	int error;
 
 	mutex_lock(&inode->i_mutex);
 	dentry_unhash(dentry);
-	if (usbfs_empty(dentry)) {
+	error = simple_rmdir(dir, dentry);
+	if (!error) {
 		dont_mount(dentry);
-		drop_nlink(dentry->d_inode);
-		drop_nlink(dentry->d_inode);
-		dput(dentry);
 		inode->i_flags |= S_DEAD;
-		drop_nlink(dir);
-		error = 0;
 	}
 	mutex_unlock(&inode->i_mutex);
 	if (!error)
