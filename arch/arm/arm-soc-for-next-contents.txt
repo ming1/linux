@@ -92,7 +92,7 @@ omap/boards		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tag
 				depends on omap/hwmod and omap/pm
 samsung/board		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/board-samsung
 renesas/board2		git://git.kernel.org/pub/scm/linux/kernel/git/rafael/renesas.git board-new
-				depends on renesas/board
+				depends on renesas/soc-core
 pxa/boards2		git://github.com/hzhuang1/linux.git board-specific
 				(same remote branch as pxa/boards, but new contents)
 
