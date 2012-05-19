@@ -166,3 +166,6 @@ samsung/cleanup2	git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsu
 
 late/soc:
 samsung/devel2		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/devel-samsung-2
+
+late/board:
+samsung/board2		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/board-samsung-2
