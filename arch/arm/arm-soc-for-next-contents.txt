@@ -92,6 +92,8 @@ renesas/board		git://git.kernel.org/pub/scm/linux/kernel/git/rafael/renesas.git 
 samsung/board		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/board-samsung
 renesas/board2		git://git.kernel.org/pub/scm/linux/kernel/git/rafael/renesas.git board-new
 				depends on renesas/board
+pxa/boards2		git://github.com/hzhuang1/linux.git board-specific
+				(same remote branch as pxa/boards, but new contents)
 
 next/defconfig:
 imx/defconfig:		git://git.pengutronix.de/git/imx/linux-2.6.git tags/imx-defconfig
