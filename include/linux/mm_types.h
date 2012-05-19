@@ -192,6 +192,87 @@ struct vm_region {
 						* this region */
 };
 
+enum {
+	MM_FILEPAGES,
+	MM_ANONPAGES,
+	MM_SWAPENTS,
+	NR_MM_COUNTERS
+};
+
+struct mm_rss_stat {
+	atomic_long_t count[NR_MM_COUNTERS];
+};
+
+struct numa_entity {
+#ifdef CONFIG_NUMA
+	int			node;		/* home node */
+	struct list_head	numa_entry;	/* balance list */
+	const struct numa_ops	*nops;
+#endif
+};
+
+#ifdef CONFIG_NUMA
+#include <linux/nodemask.h>
+
+struct numa_group {
+	spinlock_t		lock;
+	int			id;
+
+	struct mm_rss_stat	rss;
+
+	struct list_head	tasks;
+	struct list_head	vmas;
+
+	const struct cred	*cred;
+	atomic_t		ref;
+
+	struct numa_entity	numa_entity;
+
+	struct rcu_head		rcu;
+};
+
+/*
+ * Describe a memory policy.
+ *
+ * A mempolicy can be either associated with a process or with a VMA.
+ * For VMA related allocations the VMA policy is preferred, otherwise
+ * the process policy is used. Interrupts ignore the memory policy
+ * of the current process.
+ *
+ * Locking policy for interlave:
+ * In process context there is no locking because only the process accesses
+ * its own state. All vma manipulation is somewhat protected by a down_read on
+ * mmap_sem.
+ *
+ * Freeing policy:
+ * Mempolicy objects are reference counted.  A mempolicy will be freed when
+ * mpol_put() decrements the reference count to zero.
+ *
+ * Duplicating policy objects:
+ * mpol_dup() allocates a new mempolicy and copies the specified mempolicy
+ * to the new storage.  The reference count of the new object is initialized
+ * to 1, representing the caller of mpol_dup().
+ */
+struct mempolicy {
+	atomic_t refcnt;
+	unsigned short mode; 	/* See MPOL_* above */
+	unsigned short flags;	/* See set_mempolicy() MPOL_F_* above */
+	struct numa_group *numa_group;
+	struct list_head ng_entry;
+	struct vm_area_struct *vma;
+	struct rcu_head rcu;
+	union {
+		short 		 preferred_node; /* preferred */
+		nodemask_t	 nodes;		/* interleave/bind */
+		/* undefined for default */
+	} v;
+	union {
+		nodemask_t cpuset_mems_allowed;	/* relative to these nodes */
+		nodemask_t user_nodemask;	/* nodemask passed by user */
+	} w;
+};
+#endif /* CONFIG_NUMA */
+
 /*
  * This struct defines a memory VMM memory area. There is one of these
  * per VM-area/task.  A VM area is any part of the process virtual memory
@@ -266,13 +347,6 @@ struct core_state {
 	struct completion startup;
 };
 
-enum {
-	MM_FILEPAGES,
-	MM_ANONPAGES,
-	MM_SWAPENTS,
-	NR_MM_COUNTERS
-};
-
 #if USE_SPLIT_PTLOCKS && defined(CONFIG_MMU)
 #define SPLIT_RSS_COUNTING
 /* per-thread cached information, */
@@ -281,10 +355,6 @@ struct task_rss_stat {
 	int count[NR_MM_COUNTERS];
 };
 #endif /* USE_SPLIT_PTLOCKS */
-
-struct mm_rss_stat {
-	atomic_long_t count[NR_MM_COUNTERS];
-};
 
 struct mm_struct {
 	struct vm_area_struct * mmap;		/* list of VMAs */
@@ -390,6 +460,7 @@ struct mm_struct {
 	struct cpumask cpumask_allocation;
 #endif
 	struct uprobes_state uprobes_state;
+	struct numa_entity numa;
 };
 
 static inline void mm_init_cpumask(struct mm_struct *mm)
