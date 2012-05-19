@@ -160,3 +160,6 @@ samsung/devel2		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsun
 staging/cleanup:
 devel/cleanup-late-initcall	git://git.linaro.org/people/shawnguo/linux-2.6.git clean/late_initcall_v2
 
+
+late/cleanup:
+samsung/cleanup2	git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/cleanup-samsung-2
