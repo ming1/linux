@@ -59,6 +59,8 @@ ux500/u9540		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericss
 renesas/soc-core	git://git.kernel.org/pub/scm/linux/kernel/git/rafael/renesas.git soc-core
 				depends on renesas/dt
 				pulled twice (c824108 and 4da7731)
+renesas/emev2		git://git.kernel.org/pub/scm/linux/kernel/git/rafael/renesas.git emev2
+				depends on renesas/soc-core @4da7731
 
 next/pinctrl:
 spear/pinctrl:		git://git.stlinux.com/spear/linux-2.6.git spear-v3.5
@@ -88,8 +90,6 @@ pxa/boards		git://github.com/hzhuang1/linux.git board-specific
 imx/eukrea		git://git.pengutronix.de/git/imx/linux-2.6.git tags/imx-eukrea
 omap/boards		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-board-for-v3.5
 				depends on omap/hwmod and omap/pm
-renesas/board		git://git.kernel.org/pub/scm/linux/kernel/git/rafael/renesas.git soc-core
-				depends on renesas/dt
 samsung/board		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/board-samsung
 renesas/board2		git://git.kernel.org/pub/scm/linux/kernel/git/rafael/renesas.git board-new
 				depends on renesas/board
