@@ -105,6 +105,7 @@ int	transport_dump_vpd_ident(struct t10_vpd *, unsigned char *, int);
 bool	target_stop_cmd(struct se_cmd *cmd, unsigned long *flags);
 int	transport_clear_lun_from_sessions(struct se_lun *);
 void	transport_send_task_abort(struct se_cmd *);
+int	target_cmd_size_check(struct se_cmd *cmd, unsigned int size);
 
 /* target_core_stat.c */
 void	target_stat_setup_dev_default_groups(struct se_subsystem_dev *);

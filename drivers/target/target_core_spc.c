@@ -938,7 +938,7 @@ static int spc_emulate_testunitready(struct se_cmd *cmd)
 	return 0;
 }
 
-int spc_parse_cdb(struct se_cmd *cmd, unsigned int *size, bool passthrough)
+int spc_parse_cdb(struct se_cmd *cmd, unsigned int *size)
 {
 	struct se_subsystem_dev *su_dev = cmd->se_dev->se_sub_dev;
 	unsigned char *cdb = cmd->t_task_cdb;
@@ -952,13 +952,11 @@ int spc_parse_cdb(struct se_cmd *cmd, unsigned int *size, bool passthrough)
 		break;
 	case MODE_SENSE:
 		*size = cdb[4];
-		if (!passthrough)
-			cmd->execute_cmd = spc_emulate_modesense;
+		cmd->execute_cmd = spc_emulate_modesense;
 		break;
 	case MODE_SENSE_10:
 		*size = (cdb[7] << 8) + cdb[8];
-		if (!passthrough)
-			cmd->execute_cmd = spc_emulate_modesense;
+		cmd->execute_cmd = spc_emulate_modesense;
 		break;
 	case LOG_SELECT:
 	case LOG_SENSE:
@@ -1007,8 +1005,7 @@ int spc_parse_cdb(struct se_cmd *cmd, unsigned int *size, bool passthrough)
 		break;
 	case REQUEST_SENSE:
 		*size = cdb[4];
-		if (!passthrough)
-			cmd->execute_cmd = spc_emulate_request_sense;
+		cmd->execute_cmd = spc_emulate_request_sense;
 		break;
 	case INQUIRY:
 		*size = (cdb[3] << 8) + cdb[4];
@@ -1019,8 +1016,7 @@ int spc_parse_cdb(struct se_cmd *cmd, unsigned int *size, bool passthrough)
 		 */
 		if (cmd->se_dev->dev_task_attr_type == SAM_TASK_ATTR_EMULATED)
 			cmd->sam_task_attr = MSG_HEAD_TAG;
-		if (!passthrough)
-			cmd->execute_cmd = spc_emulate_inquiry;
+		cmd->execute_cmd = spc_emulate_inquiry;
 		break;
 	case SECURITY_PROTOCOL_IN:
 	case SECURITY_PROTOCOL_OUT:
@@ -1051,9 +1047,8 @@ int spc_parse_cdb(struct se_cmd *cmd, unsigned int *size, bool passthrough)
 			cmd->sam_task_attr = MSG_HEAD_TAG;
 		break;
 	case TEST_UNIT_READY:
+		cmd->execute_cmd = spc_emulate_testunitready;
 		*size = 0;
-		if (!passthrough)
-			cmd->execute_cmd = spc_emulate_testunitready;
 		break;
 	default:
 		pr_warn("TARGET_CORE[%s]: Unsupported SCSI Opcode"

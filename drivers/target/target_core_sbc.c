@@ -395,11 +395,12 @@ out:
 	kfree(buf);
 }
 
-int sbc_parse_cdb(struct se_cmd *cmd, unsigned int *size)
+int sbc_parse_cdb(struct se_cmd *cmd)
 {
 	struct se_subsystem_dev *su_dev = cmd->se_dev->se_sub_dev;
 	struct se_device *dev = cmd->se_dev;
 	unsigned char *cdb = cmd->t_task_cdb;
+	unsigned int size;
 	u32 sectors = 0;
 	int ret;
 
@@ -497,7 +498,7 @@ int sbc_parse_cdb(struct se_cmd *cmd, unsigned int *size)
 				goto out_invalid_cdb_field;
 			}
 
-			*size = sbc_get_size(cmd, 1);
+			size = sbc_get_size(cmd, 1);
 			cmd->t_task_lba = get_unaligned_be64(&cdb[12]);
 
 			if (sbc_write_same_supported(dev, &cdb[10]) < 0)
@@ -512,7 +513,7 @@ int sbc_parse_cdb(struct se_cmd *cmd, unsigned int *size)
 		break;
 	}
 	case READ_CAPACITY:
-		*size = READ_CAP_LEN;
+		size = READ_CAP_LEN;
 		cmd->execute_cmd = sbc_emulate_readcapacity;
 		break;
 	case SERVICE_ACTION_IN:
@@ -525,7 +526,7 @@ int sbc_parse_cdb(struct se_cmd *cmd, unsigned int *size)
 				cmd->t_task_cdb[1] & 0x1f);
 			goto out_invalid_cdb_field;
 		}
-		*size = (cdb[10] << 24) | (cdb[11] << 16) |
+		size = (cdb[10] << 24) | (cdb[11] << 16) |
 		       (cdb[12] << 8) | cdb[13];
 		break;
 	case SYNCHRONIZE_CACHE:
@@ -541,7 +542,7 @@ int sbc_parse_cdb(struct se_cmd *cmd, unsigned int *size)
 			cmd->t_task_lba = transport_lba_64(cdb);
 		}
 
-		*size = sbc_get_size(cmd, sectors);
+		size = sbc_get_size(cmd, sectors);
 
 		/*
 		 * Check to ensure that LBA + Range does not exceed past end of
@@ -554,7 +555,7 @@ int sbc_parse_cdb(struct se_cmd *cmd, unsigned int *size)
 		cmd->execute_cmd = sbc_emulate_synchronize_cache;
 		break;
 	case UNMAP:
-		*size = get_unaligned_be16(&cdb[7]);
+		size = get_unaligned_be16(&cdb[7]);
 		cmd->execute_cmd = sbc_emulate_unmap;
 		break;
 	case WRITE_SAME_16:
@@ -564,7 +565,7 @@ int sbc_parse_cdb(struct se_cmd *cmd, unsigned int *size)
 			goto out_invalid_cdb_field;
 		}
 
-		*size = sbc_get_size(cmd, 1);
+		size = sbc_get_size(cmd, 1);
 		cmd->t_task_lba = get_unaligned_be64(&cdb[2]);
 
 		if (sbc_write_same_supported(dev, &cdb[1]) < 0)
@@ -578,7 +579,7 @@ int sbc_parse_cdb(struct se_cmd *cmd, unsigned int *size)
 			goto out_invalid_cdb_field;
 		}
 
-		*size = sbc_get_size(cmd, 1);
+		size = sbc_get_size(cmd, 1);
 		cmd->t_task_lba = get_unaligned_be32(&cdb[2]);
 
 		/*
@@ -590,11 +591,11 @@ int sbc_parse_cdb(struct se_cmd *cmd, unsigned int *size)
 		cmd->execute_cmd = sbc_emulate_write_same;
 		break;
 	case VERIFY:
-		*size = 0;
+		size = 0;
 		cmd->execute_cmd = sbc_emulate_verify;
 		break;
 	default:
-		ret = spc_parse_cdb(cmd, size, false);
+		ret = spc_parse_cdb(cmd, &size);
 		if (ret)
 			return ret;
 	}
@@ -604,6 +605,8 @@ int sbc_parse_cdb(struct se_cmd *cmd, unsigned int *size)
 		goto out_unsupported_cdb;
 
 	if (cmd->se_cmd_flags & SCF_SCSI_DATA_CDB) {
+		unsigned long long end_lba;
+
 		if (sectors > su_dev->se_dev_attrib.fabric_max_sectors) {
 			printk_ratelimited(KERN_ERR "SCSI OP %02xh with too"
 				" big sectors %u exceeds fabric_max_sectors:"
@@ -619,8 +622,20 @@ int sbc_parse_cdb(struct se_cmd *cmd, unsigned int *size)
 			goto out_invalid_cdb_field;
 		}
 
-		*size = sbc_get_size(cmd, sectors);
+		end_lba = dev->transport->get_blocks(dev) + 1;
+		if (cmd->t_task_lba + sectors > end_lba) {
+			pr_err("cmd exceeds last lba %llu "
+				"(lba %llu, sectors %u)\n",
+				end_lba, cmd->t_task_lba, sectors);
+			goto out_invalid_cdb_field;
+		}
+
+		size = sbc_get_size(cmd, sectors);
 	}
+
+	ret = target_cmd_size_check(cmd, size);
+	if (ret < 0)
+		return ret;
 
 	return 0;
 
