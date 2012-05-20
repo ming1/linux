@@ -69,6 +69,8 @@ struct em28xx_hash_table {
 	unsigned int  tuner;
 };
 
+static void em28xx_pre_card_setup(struct em28xx *dev);
+
 /*
  *  Reset sequences for analog/digital modes
  */
@@ -2361,7 +2363,7 @@ static int em28xx_hint_sensor(struct em28xx *dev)
 /* Since em28xx_pre_card_setup() requires a proper dev->model,
  * this won't work for boards with generic PCI IDs
  */
-void em28xx_pre_card_setup(struct em28xx *dev)
+static void em28xx_pre_card_setup(struct em28xx *dev)
 {
 	/* Set the initial XCLK and I2C clock values based on the board
 	   definition */
@@ -2661,7 +2663,7 @@ static int em28xx_hint_board(struct em28xx *dev)
 	return -1;
 }
 
-void em28xx_card_setup(struct em28xx *dev)
+static void em28xx_card_setup(struct em28xx *dev)
 {
 	/*
 	 * If the device can be a webcam, seek for a sensor.
@@ -2943,9 +2945,6 @@ static int em28xx_init_dev(struct em28xx *dev, struct usb_device *udev,
 	dev->udev = udev;
 	mutex_init(&dev->ctrl_urb_lock);
 	spin_lock_init(&dev->slock);
-	init_waitqueue_head(&dev->open);
-	init_waitqueue_head(&dev->wait_frame);
-	init_waitqueue_head(&dev->wait_stream);
 
 	dev->em28xx_write_regs = em28xx_write_regs;
 	dev->em28xx_read_reg = em28xx_read_reg;
@@ -3078,9 +3077,7 @@ static int em28xx_init_dev(struct em28xx *dev, struct usb_device *udev,
 
 	/* init video dma queues */
 	INIT_LIST_HEAD(&dev->vidq.active);
-	INIT_LIST_HEAD(&dev->vidq.queued);
 	INIT_LIST_HEAD(&dev->vbiq.active);
-	INIT_LIST_HEAD(&dev->vbiq.queued);
 
 	if (dev->board.has_msp34xx) {
 		/* Send a reset to other chips via gpio */
@@ -3385,8 +3382,6 @@ static void em28xx_usb_disconnect(struct usb_interface *interface)
 	   resources */
 	mutex_lock(&dev->lock);
 
-	wake_up_interruptible_all(&dev->open);
-
 	v4l2_device_disconnect(&dev->v4l2_dev);
 
 	if (dev->users) {
@@ -3398,8 +3393,6 @@ static void em28xx_usb_disconnect(struct usb_interface *interface)
 		dev->state |= DEV_MISCONFIGURED;
 		em28xx_uninit_isoc(dev, dev->mode);
 		dev->state |= DEV_DISCONNECTED;
-		wake_up_interruptible(&dev->wait_frame);
-		wake_up_interruptible(&dev->wait_stream);
 	} else {
 		dev->state |= DEV_DISCONNECTED;
 		em28xx_release_resources(dev);

@@ -150,14 +150,6 @@ static int radio_isa_log_status(struct file *file, void *priv)
 	return 0;
 }
 
-static int radio_isa_subscribe_event(struct v4l2_fh *fh,
-				struct v4l2_event_subscription *sub)
-{
-	if (sub->type == V4L2_EVENT_CTRL)
-		return v4l2_event_subscribe(fh, sub, 0);
-	return -EINVAL;
-}
-
 static const struct v4l2_ctrl_ops radio_isa_ctrl_ops = {
 	.s_ctrl = radio_isa_s_ctrl,
 };
@@ -177,7 +169,7 @@ static const struct v4l2_ioctl_ops radio_isa_ioctl_ops = {
 	.vidioc_g_frequency = radio_isa_g_frequency,
 	.vidioc_s_frequency = radio_isa_s_frequency,
 	.vidioc_log_status  = radio_isa_log_status,
-	.vidioc_subscribe_event   = radio_isa_subscribe_event,
+	.vidioc_subscribe_event   = v4l2_ctrl_subscribe_event,
 	.vidioc_unsubscribe_event = v4l2_event_unsubscribe,
 };
 
@@ -274,23 +266,21 @@ int radio_isa_common_probe(struct radio_isa_card *isa, struct device *pdev,
 		res = ops->s_stereo(isa, isa->stereo);
 	if (res < 0) {
 		v4l2_err(v4l2_dev, "Could not setup card\n");
-		goto err_node_reg;
+		goto err_hdl;
 	}
 	res = video_register_device(&isa->vdev, VFL_TYPE_RADIO, radio_nr);
 
 	if (res < 0) {
 		v4l2_err(v4l2_dev, "Could not register device node\n");
-		goto err_node_reg;
+		goto err_hdl;
 	}
 
 	v4l2_info(v4l2_dev, "Initialized radio card %s on port 0x%03x\n",
 			drv->card, isa->io);
 	return 0;
 
-err_node_reg:
-	v4l2_ctrl_handler_free(&isa->hdl);
 err_hdl:
-	v4l2_device_unregister(&isa->v4l2_dev);
+	v4l2_ctrl_handler_free(&isa->hdl);
 err_dev_reg:
 	release_region(isa->io, region_size);
 	kfree(isa);

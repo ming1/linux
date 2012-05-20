@@ -20,24 +20,11 @@
  */
 
 #include "af9035.h"
-#include "af9033.h"
-#include "tua9001.h"
-#include "fc0011.h"
-#include "mxl5007t.h"
-#include "tda18218.h"
 
 DVB_DEFINE_MOD_OPT_ADAPTER_NR(adapter_nr);
 static DEFINE_MUTEX(af9035_usb_mutex);
-static struct config af9035_config;
 static struct dvb_usb_device_properties af9035_properties[2];
 static int af9035_properties_count = ARRAY_SIZE(af9035_properties);
-static struct af9033_config af9035_af9033_config[] = {
-	{
-		.ts_mode = AF9033_TS_MODE_USB,
-	}, {
-		.ts_mode = AF9033_TS_MODE_SERIAL,
-	}
-};
 
 static u16 af9035_checksum(const u8 *buf, size_t len)
 {
@@ -57,17 +44,16 @@ static u16 af9035_checksum(const u8 *buf, size_t len)
 
 static int af9035_ctrl_msg(struct usb_device *udev, struct usb_req *req)
 {
-#define BUF_LEN 63
+#define BUF_LEN 64
 #define REQ_HDR_LEN 4 /* send header size */
 #define ACK_HDR_LEN 3 /* rece header size */
 #define CHECKSUM_LEN 2
 #define USB_TIMEOUT 2000
 
-	int ret, act_len;
+	int ret, msg_len, act_len;
 	u8 buf[BUF_LEN];
-	u32 msg_len;
 	static u8 seq; /* packet sequence number */
-	u16 checksum, tmpsum;
+	u16 checksum, tmp_checksum;
 
 	/* buffer overflow check */
 	if (req->wlen > (BUF_LEN - REQ_HDR_LEN - CHECKSUM_LEN) ||
@@ -89,14 +75,14 @@ static int af9035_ctrl_msg(struct usb_device *udev, struct usb_req *req)
 
 	/* calc and add checksum */
 	checksum = af9035_checksum(buf, buf[0] - 1);
-	buf[buf[0]-1] = (checksum >> 8);
-	buf[buf[0]-0] = (checksum & 0xff);
+	buf[buf[0] - 1] = (checksum >> 8);
+	buf[buf[0] - 0] = (checksum & 0xff);
 
 	msg_len = REQ_HDR_LEN + req->wlen + CHECKSUM_LEN ;
 
 	/* send req */
 	ret = usb_bulk_msg(udev, usb_sndbulkpipe(udev, 0x02), buf, msg_len,
-		&act_len, USB_TIMEOUT);
+			&act_len, USB_TIMEOUT);
 	if (ret < 0)
 		err("bulk message failed=%d (%d/%d)", ret, msg_len, act_len);
 	else
@@ -112,29 +98,29 @@ static int af9035_ctrl_msg(struct usb_device *udev, struct usb_req *req)
 	/* receive ack and data if read req */
 	msg_len = ACK_HDR_LEN + req->rlen + CHECKSUM_LEN;
 	ret = usb_bulk_msg(udev, usb_rcvbulkpipe(udev, 0x81), buf, msg_len,
-		&act_len, USB_TIMEOUT);
+			&act_len, USB_TIMEOUT);
 	if (ret < 0) {
 		err("recv bulk message failed=%d", ret);
 		ret = -EIO;
 		goto err_mutex_unlock;
 	}
+
 	if (act_len != msg_len) {
-		err("recv bulk message truncated (%d != %u)\n",
-		    act_len, (unsigned int)msg_len);
+		err("recv bulk message truncated (%d != %d)", act_len, msg_len);
 		ret = -EIO;
 		goto err_mutex_unlock;
 	}
 
 	/* verify checksum */
 	checksum = af9035_checksum(buf, act_len - 2);
-	tmpsum = (buf[act_len - 2] << 8) | buf[act_len - 1];
-	if (tmpsum != checksum) {
-		err("%s: command=%02X checksum mismatch (%04X != %04X)\n",
-		    __func__, req->cmd,
-		    (unsigned int)tmpsum, (unsigned int)checksum);
+	tmp_checksum = (buf[act_len - 2] << 8) | buf[act_len - 1];
+	if (tmp_checksum != checksum) {
+		err("%s: command=%02x checksum mismatch (%04x != %04x)",
+		    __func__, req->cmd, tmp_checksum, checksum);
 		ret = -EIO;
 		goto err_mutex_unlock;
 	}
+
 	/* check status */
 	if (buf[2]) {
 		pr_debug("%s: command=%02x failed fw error=%d\n", __func__,
@@ -219,6 +205,7 @@ static int af9035_i2c_master_xfer(struct i2c_adapter *adap,
 		struct i2c_msg msg[], int num)
 {
 	struct dvb_usb_device *d = i2c_get_adapdata(adap);
+	struct state *state = d->priv;
 	int ret;
 
 	if (mutex_lock_interruptible(&d->i2c_mutex) < 0)
@@ -245,7 +232,7 @@ static int af9035_i2c_master_xfer(struct i2c_adapter *adap,
 		if (msg[0].len > 40 || msg[1].len > 40) {
 			/* TODO: correct limits > 40 */
 			ret = -EOPNOTSUPP;
-		} else if (msg[0].addr == af9035_af9033_config[0].i2c_addr) {
+		} else if (msg[0].addr == state->af9033_config[0].i2c_addr) {
 			/* integrated demod */
 			u32 reg = msg[0].buf[0] << 16 | msg[0].buf[1] << 8 |
 					msg[0].buf[2];
@@ -268,7 +255,7 @@ static int af9035_i2c_master_xfer(struct i2c_adapter *adap,
 		if (msg[0].len > 40) {
 			/* TODO: correct limits > 40 */
 			ret = -EOPNOTSUPP;
-		} else if (msg[0].addr == af9035_af9033_config[0].i2c_addr) {
+		} else if (msg[0].addr == state->af9033_config[0].i2c_addr) {
 			/* integrated demod */
 			u32 reg = msg[0].buf[0] << 16 | msg[0].buf[1] << 8 |
 					msg[0].buf[2];
@@ -314,8 +301,40 @@ static struct i2c_algorithm af9035_i2c_algo = {
 	.functionality = af9035_i2c_functionality,
 };
 
+#define AF9035_POLL 250
+static int af9035_rc_query(struct dvb_usb_device *d)
+{
+	unsigned int key;
+	unsigned char b[4];
+	int ret;
+	struct usb_req req = { CMD_IR_GET, 0, 0, NULL, 4, b };
+
+	ret = af9035_ctrl_msg(d->udev, &req);
+	if (ret < 0)
+		goto err;
+
+	if ((b[2] + b[3]) == 0xff) {
+		if ((b[0] + b[1]) == 0xff) {
+			/* NEC */
+			key = b[0] << 8 | b[2];
+		} else {
+			/* ext. NEC */
+			key = b[0] << 16 | b[1] << 8 | b[2];
+		}
+	} else {
+		key = b[0] << 24 | b[1] << 16 | b[2] << 8 | b[3];
+	}
+
+	rc_keydown(d->rc_dev, key, 0);
+
+err:
+	/* ignore errors */
+	return 0;
+}
+
 static int af9035_init(struct dvb_usb_device *d)
 {
+	struct state *state = d->priv;
 	int ret, i;
 	u16 frame_size = 87 * 188 / 4;
 	u8  packet_size = 512 / 4;
@@ -330,7 +349,7 @@ static int af9035_init(struct dvb_usb_device *d)
 		{ 0x00dd88, (frame_size >> 0) & 0xff, 0xff},
 		{ 0x00dd89, (frame_size >> 8) & 0xff, 0xff},
 		{ 0x00dd0c, packet_size, 0xff},
-		{ 0x00dd11, af9035_config.dual_mode << 6, 0x40 },
+		{ 0x00dd11, state->dual_mode << 6, 0x40 },
 		{ 0x00dd8a, (frame_size >> 0) & 0xff, 0xff},
 		{ 0x00dd8b, (frame_size >> 8) & 0xff, 0xff},
 		{ 0x00dd0d, packet_size, 0xff },
@@ -400,7 +419,7 @@ static int af9035_download_firmware(struct usb_device *udev,
 	struct usb_req req_fw_ver = { CMD_FW_QUERYINFO, 0, 1, wbuf, 4, rbuf } ;
 	u8 hdr_core;
 	u16 hdr_addr, hdr_data_len, hdr_checksum;
-	#define MAX_DATA 57
+	#define MAX_DATA 58
 	#define HDR_SIZE 7
 
 	/*
@@ -566,6 +585,7 @@ err:
 /* abuse that callback as there is no better one for reading eeprom */
 static int af9035_read_mac_address(struct dvb_usb_device *d, u8 mac[6])
 {
+	struct state *state = d->priv;
 	int ret, i, eeprom_shift = 0;
 	u8 tmp;
 	u16 tmp16;
@@ -575,8 +595,8 @@ static int af9035_read_mac_address(struct dvb_usb_device *d, u8 mac[6])
 	if (ret < 0)
 		goto err;
 
-	af9035_config.dual_mode = tmp;
-	pr_debug("%s: dual mode=%d\n", __func__, af9035_config.dual_mode);
+	state->dual_mode = tmp;
+	pr_debug("%s: dual mode=%d\n", __func__, state->dual_mode);
 
 	for (i = 0; i < af9035_properties[0].num_adapters; i++) {
 		/* tuner */
@@ -584,7 +604,7 @@ static int af9035_read_mac_address(struct dvb_usb_device *d, u8 mac[6])
 		if (ret < 0)
 			goto err;
 
-		af9035_af9033_config[i].tuner = tmp;
+		state->af9033_config[i].tuner = tmp;
 		pr_debug("%s: [%d]tuner=%02x\n", __func__, i, tmp);
 
 		switch (tmp) {
@@ -592,10 +612,9 @@ static int af9035_read_mac_address(struct dvb_usb_device *d, u8 mac[6])
 		case AF9033_TUNER_FC0011:
 		case AF9033_TUNER_MXL5007T:
 		case AF9033_TUNER_TDA18218:
-			af9035_af9033_config[i].spec_inv = 1;
+			state->af9033_config[i].spec_inv = 1;
 			break;
 		default:
-			af9035_config.hw_not_supported = true;
 			warn("tuner ID=%02x not supported, please report!",
 				tmp);
 		};
@@ -626,7 +645,33 @@ static int af9035_read_mac_address(struct dvb_usb_device *d, u8 mac[6])
 	tmp = (tmp >> 0) & 0x0f;
 
 	for (i = 0; i < af9035_properties[0].num_adapters; i++)
-		af9035_af9033_config[i].clock = clock_lut[tmp];
+		state->af9033_config[i].clock = clock_lut[tmp];
+
+	ret = af9035_rd_reg(d, EEPROM_IR_MODE, &tmp);
+	if (ret < 0)
+		goto err;
+	pr_debug("%s: ir_mode=%02x\n", __func__, tmp);
+
+	/* don't activate rc if in HID mode or if not available */
+	if (tmp == 5) {
+		ret = af9035_rd_reg(d, EEPROM_IR_TYPE, &tmp);
+		if (ret < 0)
+			goto err;
+		pr_debug("%s: ir_type=%02x\n", __func__, tmp);
+
+		switch (tmp) {
+		case 0: /* NEC */
+		default:
+			d->props.rc.core.protocol = RC_TYPE_NEC;
+			d->props.rc.core.allowed_protos = RC_TYPE_NEC;
+			break;
+		case 1: /* RC6 */
+			d->props.rc.core.protocol = RC_TYPE_RC6;
+			d->props.rc.core.allowed_protos = RC_TYPE_RC6;
+			break;
+		}
+		d->props.rc.core.rc_query = af9035_rc_query;
+	}
 
 	return 0;
 
@@ -639,10 +684,11 @@ err:
 /* abuse that callback as there is no better one for reading eeprom */
 static int af9035_read_mac_address_it9135(struct dvb_usb_device *d, u8 mac[6])
 {
+	struct state *state = d->priv;
 	int ret, i;
 	u8 tmp;
 
-	af9035_config.dual_mode = 0;
+	state->dual_mode = false;
 
 	/* get demod clock */
 	ret = af9035_rd_reg(d, 0x00d800, &tmp);
@@ -652,7 +698,7 @@ static int af9035_read_mac_address_it9135(struct dvb_usb_device *d, u8 mac[6])
 	tmp = (tmp >> 0) & 0x0f;
 
 	for (i = 0; i < af9035_properties[0].num_adapters; i++)
-		af9035_af9033_config[i].clock = clock_lut_it9135[tmp];
+		state->af9033_config[i].clock = clock_lut_it9135[tmp];
 
 	return 0;
 
@@ -729,7 +775,9 @@ err:
 
 static int af9035_tuner_callback(struct dvb_usb_device *d, int cmd, int arg)
 {
-	switch (af9035_af9033_config[0].tuner) {
+	struct state *state = d->priv;
+
+	switch (state->af9033_config[0].tuner) {
 	case AF9033_TUNER_FC0011:
 		return af9035_fc0011_tuner_callback(d, cmd, arg);
 	default:
@@ -757,28 +805,33 @@ static int af9035_frontend_callback(void *adapter_priv, int component,
 
 static int af9035_frontend_attach(struct dvb_usb_adapter *adap)
 {
+	struct state *state = adap->dev->priv;
 	int ret;
 
-	if (af9035_config.hw_not_supported) {
+	if (!state->af9033_config[adap->id].tuner) {
+		/* unsupported tuner */
 		ret = -ENODEV;
 		goto err;
 	}
 
 	if (adap->id == 0) {
+		state->af9033_config[0].ts_mode = AF9033_TS_MODE_USB;
+		state->af9033_config[1].ts_mode = AF9033_TS_MODE_SERIAL;
+
 		ret = af9035_wr_reg(adap->dev, 0x00417f,
-				af9035_af9033_config[1].i2c_addr);
+				state->af9033_config[1].i2c_addr);
 		if (ret < 0)
 			goto err;
 
 		ret = af9035_wr_reg(adap->dev, 0x00d81a,
-				af9035_config.dual_mode);
+				state->dual_mode);
 		if (ret < 0)
 			goto err;
 	}
 
 	/* attach demodulator */
 	adap->fe_adap[0].fe = dvb_attach(af9033_attach,
-			&af9035_af9033_config[adap->id], &adap->dev->i2c_adap);
+			&state->af9033_config[adap->id], &adap->dev->i2c_adap);
 	if (adap->fe_adap[0].fe == NULL) {
 		ret = -ENODEV;
 		goto err;
@@ -820,10 +873,11 @@ static struct tda18218_config af9035_tda18218_config = {
 
 static int af9035_tuner_attach(struct dvb_usb_adapter *adap)
 {
+	struct state *state = adap->dev->priv;
 	int ret;
 	struct dvb_frontend *fe;
 
-	switch (af9035_af9033_config[adap->id].tuner) {
+	switch (state->af9033_config[adap->id].tuner) {
 	case AF9033_TUNER_TUA9001:
 		/* AF9035 gpiot3 = TUA9001 RESETN
 		   AF9035 gpiot2 = TUA9001 RXEN */
@@ -936,7 +990,10 @@ err:
 
 enum af9035_id_entry {
 	AF9035_15A4_9035,
+	AF9035_15A4_1000,
 	AF9035_15A4_1001,
+	AF9035_15A4_1002,
+	AF9035_15A4_1003,
 	AF9035_0CCD_0093,
 	AF9035_07CA_A835,
 	AF9035_07CA_B835,
@@ -947,9 +1004,15 @@ enum af9035_id_entry {
 
 static struct usb_device_id af9035_id[] = {
 	[AF9035_15A4_9035] = {
-		USB_DEVICE(USB_VID_AFATECH, USB_PID_AFATECH_AF9035)},
+		USB_DEVICE(USB_VID_AFATECH, USB_PID_AFATECH_AF9035_9035)},
+	[AF9035_15A4_1000] = {
+		USB_DEVICE(USB_VID_AFATECH, USB_PID_AFATECH_AF9035_1000)},
 	[AF9035_15A4_1001] = {
-		USB_DEVICE(USB_VID_AFATECH, USB_PID_AFATECH_AF9035_2)},
+		USB_DEVICE(USB_VID_AFATECH, USB_PID_AFATECH_AF9035_1001)},
+	[AF9035_15A4_1002] = {
+		USB_DEVICE(USB_VID_AFATECH, USB_PID_AFATECH_AF9035_1002)},
+	[AF9035_15A4_1003] = {
+		USB_DEVICE(USB_VID_AFATECH, USB_PID_AFATECH_AF9035_1003)},
 	[AF9035_0CCD_0093] = {
 		USB_DEVICE(USB_VID_TERRATEC, USB_PID_TERRATEC_CINERGY_T_STICK)},
 	[AF9035_07CA_A835] = {
@@ -975,6 +1038,8 @@ static struct dvb_usb_device_properties af9035_properties[] = {
 		.download_firmware = af9035_download_firmware,
 		.firmware = "dvb-usb-af9035-02.fw",
 		.no_reconnect = 1,
+
+		.size_of_priv = sizeof(struct state),
 
 		.num_adapters = 1,
 		.adapter = {
@@ -1004,13 +1069,24 @@ static struct dvb_usb_device_properties af9035_properties[] = {
 
 		.i2c_algo = &af9035_i2c_algo,
 
+		.rc.core = {
+			.protocol       = RC_TYPE_UNKNOWN,
+			.module_name    = "af9035",
+			.rc_query       = NULL,
+			.rc_interval    = AF9035_POLL,
+			.allowed_protos = RC_TYPE_UNKNOWN,
+			.rc_codes       = RC_MAP_EMPTY,
+		},
 		.num_device_descs = 5,
 		.devices = {
 			{
 				.name = "Afatech AF9035 reference design",
 				.cold_ids = {
 					&af9035_id[AF9035_15A4_9035],
+					&af9035_id[AF9035_15A4_1000],
 					&af9035_id[AF9035_15A4_1001],
+					&af9035_id[AF9035_15A4_1002],
+					&af9035_id[AF9035_15A4_1003],
 				},
 			}, {
 				.name = "TerraTec Cinergy T Stick",
@@ -1044,6 +1120,8 @@ static struct dvb_usb_device_properties af9035_properties[] = {
 		.download_firmware = af9035_download_firmware_it9135,
 		.firmware = "dvb-usb-it9135-01.fw",
 		.no_reconnect = 1,
+
+		.size_of_priv = sizeof(struct state),
 
 		.num_adapters = 1,
 		.adapter = {

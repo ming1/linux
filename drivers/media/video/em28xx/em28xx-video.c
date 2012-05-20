@@ -2260,6 +2260,7 @@ static int em28xx_v4l2_close(struct file *filp)
 			em28xx_release_resources(dev);
 			kfree(dev->alt_max_pkt_size);
 			kfree(dev);
+			kfree(fh);
 			return 0;
 		}
 
@@ -2284,7 +2285,6 @@ static int em28xx_v4l2_close(struct file *filp)
 	videobuf_mmap_free(&fh->vb_vbiq);
 	kfree(fh);
 	dev->users--;
-	wake_up_interruptible_nr(&dev->open, 1);
 	return 0;
 }
 
@@ -2495,6 +2495,10 @@ static struct video_device *em28xx_vdev_init(struct em28xx *dev,
 	vfd->release	= video_device_release;
 	vfd->debug	= video_debug;
 	vfd->lock	= &dev->lock;
+	/* Locking in file operations other than ioctl should be done
+	   by the driver, not the V4L2 core.
+	   This driver needs auditing so that this flag can be removed. */
+	set_bit(V4L2_FL_LOCK_ALL_FOPS, &vfd->flags);
 
 	snprintf(vfd->name, sizeof(vfd->name), "%s %s",
 		 dev->name, type_name);
