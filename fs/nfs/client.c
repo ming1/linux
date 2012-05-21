@@ -90,7 +90,9 @@ static bool nfs4_disable_idmapping = true;
  * RPC cruft for NFS
  */
 static const struct rpc_version *nfs_version[5] = {
+#ifdef CONFIG_NFS_V2
 	[2]			= &nfs_version2,
+#endif
 #ifdef CONFIG_NFS_V3
 	[3]			= &nfs_version3,
 #endif
@@ -847,7 +849,7 @@ static int nfs_init_server(struct nfs_server *server,
 		.hostname = data->nfs_server.hostname,
 		.addr = (const struct sockaddr *)&data->nfs_server.address,
 		.addrlen = data->nfs_server.addrlen,
-		.rpc_ops = &nfs_v2_clientops,
+		.rpc_ops = NULL,
 		.proto = data->nfs_server.protocol,
 		.net = data->net,
 	};
@@ -857,10 +859,20 @@ static int nfs_init_server(struct nfs_server *server,
 
 	dprintk("--> nfs_init_server()\n");
 
-#ifdef CONFIG_NFS_V3
-	if (data->version == 3)
-		cl_init.rpc_ops = &nfs_v3_clientops;
+	switch (data->version) {
+#ifdef CONFIG_NFS_V2
+	case 2:
+		cl_init.rpc_ops = &nfs_v2_clientops;
+		break;
 #endif
+#ifdef CONFIG_NFS_V3
+	case 3:
+		cl_init.rpc_ops = &nfs_v3_clientops;
+		break;
+#endif
+	default:
+		return -EPROTONOSUPPORT;
+	}
 
 	nfs_init_timeout_values(&timeparms, data->nfs_server.protocol,
 			data->timeo, data->retrans);
@@ -880,7 +892,7 @@ static int nfs_init_server(struct nfs_server *server,
 	server->options = data->options;
 	server->caps |= NFS_CAP_HARDLINKS|NFS_CAP_SYMLINKS|NFS_CAP_FILEID|
 		NFS_CAP_MODE|NFS_CAP_NLINK|NFS_CAP_OWNER|NFS_CAP_OWNER_GROUP|
-		NFS_CAP_ATIME|NFS_CAP_CTIME|NFS_CAP_MTIME;
+		NFS_CAP_ATIME|NFS_CAP_CTIME|NFS_CAP_MTIME|NFS_CAP_CHANGE_ATTR;
 
 	if (data->rsize)
 		server->rsize = nfs_block_size(data->rsize, NULL);
@@ -1465,8 +1477,8 @@ error:
  * the MDS.
  */
 struct nfs_client *nfs4_set_ds_client(struct nfs_client* mds_clp,
-		const struct sockaddr *ds_addr,
-		int ds_addrlen, int ds_proto)
+		const struct sockaddr *ds_addr, int ds_addrlen,
+		int ds_proto, unsigned int ds_timeo, unsigned int ds_retrans)
 {
 	struct nfs_client_initdata cl_init = {
 		.addr = ds_addr,
@@ -1476,12 +1488,7 @@ struct nfs_client *nfs4_set_ds_client(struct nfs_client* mds_clp,
 		.minorversion = mds_clp->cl_minorversion,
 		.net = mds_clp->net,
 	};
-	struct rpc_timeout ds_timeout = {
-		.to_initval = 15 * HZ,
-		.to_maxval = 15 * HZ,
-		.to_retries = 1,
-		.to_exponential = 1,
-	};
+	struct rpc_timeout ds_timeout;
 	struct nfs_client *clp;
 
 	/*
@@ -1489,6 +1496,7 @@ struct nfs_client *nfs4_set_ds_client(struct nfs_client* mds_clp,
 	 * cl_ipaddr so as to use the same EXCHANGE_ID co_ownerid as the MDS
 	 * (section 13.1 RFC 5661).
 	 */
+	nfs_init_timeout_values(&ds_timeout, ds_proto, ds_timeo, ds_retrans);
 	clp = nfs_get_client(&cl_init, &ds_timeout, mds_clp->cl_ipaddr,
 			     mds_clp->cl_rpcclient->cl_auth->au_flavor, 0);
 
