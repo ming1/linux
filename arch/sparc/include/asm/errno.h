@@ -114,5 +114,7 @@
 
 #define EHWPOISON	135	/* Memory page has hardware error */
 #define	ENOAUTHSERVICE	136	/* Authentication service not available */
+#define	ENONAMESERVICE	137	/* Network name service unavailable */
+#define	ENAMEUNKNOWN	138	/* Network name unknown */
 
 #endif
