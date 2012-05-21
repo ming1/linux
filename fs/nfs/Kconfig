@@ -3,7 +3,6 @@ config NFS_FS
 	depends on INET && FILE_LOCKING
 	select LOCKD
 	select SUNRPC
-	select NFS_ACL_SUPPORT if NFS_V3_ACL
 	help
 	  Choose Y here if you want to access files residing on other
 	  computers using Sun's Network File System protocol.  To compile
