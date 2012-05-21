@@ -1,7 +1,7 @@
 /*
  * Copyright 2008-2010 Analog Devices Inc.
  *
- * Licensed under the ADI BSD license or the GPL-2 (or later)
+ * Licensed under the 3-clause BSD license or the GPL-2 (or later)
  */
 
 #ifndef _CDEF_BF512_H
