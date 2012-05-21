@@ -1,0 +1,19 @@
+Importing i2c based on af3a3ab2966112c0d0a44df7eeb1e95fe32d4495
+Unchanged quilt series i2c
+Importing jdelvare-hwmon based on 437538267b672f9320833907f1b5acbb2605f4be
+Unchanged quilt series jdelvare-hwmon
+Importing rr based on v3.4-rc6-1-gfebb72a
+Unchanged quilt series rr
+Importing device-mapper based on v3.4-rc7
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard 36be50515fe2aef61533b516fa2576a2c7fe7664
+HEAD is now at 36be505 Linux 3.4-rc7
+$ git am ../quilt/device-mapper/dm-thin-fix-table-output-when-pool-target-disables-discard-passdown-internally.patch
+Applying: When the thin pool target clears the discard_passdown parameter
+$ git am ../quilt/device-mapper/dm-mpath-allow-ioctls-to-trigger-pg-init.patch
+Applying: After the failure of a group of paths, any alternative paths that
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/device-mapper
+From ../quilt-tmp
+ + 0f7a379...053388f master     -> quilt/device-mapper  (forced update)
