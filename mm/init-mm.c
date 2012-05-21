@@ -13,6 +13,15 @@
 #define INIT_MM_CONTEXT(name)
 #endif
 
+#ifdef CONFIG_NUMA
+# define INIT_MM_NUMA(mm)						\
+	.numa = {							\
+		.node = -1,						\
+	},
+#else
+# define INIT_MM_NUMA(mm)
+#endif
+
 struct mm_struct init_mm = {
 	.mm_rb		= RB_ROOT,
 	.pgd		= swapper_pg_dir,
@@ -22,4 +31,5 @@ struct mm_struct init_mm = {
 	.page_table_lock =  __SPIN_LOCK_UNLOCKED(init_mm.page_table_lock),
 	.mmlist		= LIST_HEAD_INIT(init_mm.mmlist),
 	INIT_MM_CONTEXT(init_mm)
+	INIT_MM_NUMA(init_mm)
 };

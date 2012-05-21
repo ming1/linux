@@ -340,9 +340,6 @@ struct task_struct;
  */
 #define release_thread(dead_task)
 
-/* Prepare to copy thread state - unlazy all lazy status */
-#define prepare_to_copy(tsk)	do { } while (0)
-
 /*
  * This is the mechanism for creating a new kernel thread.
  *
@@ -720,7 +717,6 @@ extern unsigned long boot_option_idle_override;
 enum idle_boot_override {IDLE_NO_OVERRIDE=0, IDLE_HALT, IDLE_FORCE_MWAIT,
 			 IDLE_NOMWAIT, IDLE_POLL};
 
-void cpu_idle_wait(void);
 void default_idle(void);
 
 #define ia64_platform_is(x) (strcmp(x, platform_name) == 0)
