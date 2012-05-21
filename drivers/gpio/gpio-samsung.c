@@ -2454,6 +2454,12 @@ static struct samsung_gpio_chip exynos5_gpios_1[] = {
 		},
 	}, {
 		.chip	= {
+			.base	= EXYNOS5_GPC4(0),
+			.ngpio	= EXYNOS5_GPIO_C4_NR,
+			.label	= "GPC4",
+		},
+	}, {
+		.chip	= {
 			.base	= EXYNOS5_GPD0(0),
 			.ngpio	= EXYNOS5_GPIO_D0_NR,
 			.label	= "GPD0",
