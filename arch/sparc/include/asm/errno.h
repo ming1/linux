@@ -113,5 +113,6 @@
 #define	ERFKILL		134	/* Operation not possible due to RF-kill */
 
 #define EHWPOISON	135	/* Memory page has hardware error */
+#define	ENOAUTHSERVICE	136	/* Authentication service not available */
 
 #endif
