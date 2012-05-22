@@ -29,6 +29,10 @@ config MIPS
 	select HAVE_MEMBLOCK
 	select HAVE_MEMBLOCK_NODE_MAP
 	select ARCH_DISCARD_MEMBLOCK
+	select GENERIC_CLOCKEVENTS
+	select GENERIC_CMOS_UPDATE
+	select GENERIC_SMP_IDLE_THREAD
+	select BUILDTIME_EXTABLE_SORT
 
 menu "Machine selection"
 
@@ -854,14 +858,6 @@ config GENERIC_HWEIGHT
 	default y
 
 config GENERIC_CALIBRATE_DELAY
-	bool
-	default y
-
-config GENERIC_CLOCKEVENTS
-	bool
-	default y
-
-config GENERIC_CMOS_UPDATE
 	bool
 	default y
 
@@ -2052,9 +2048,6 @@ config CPU_HAS_SYNC
 	bool
 	depends on !CPU_R3000
 	default y
-
-config GENERIC_CLOCKEVENTS_BROADCAST
-	bool
 
 #
 # CPU non-features

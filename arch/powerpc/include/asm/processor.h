@@ -74,9 +74,6 @@ struct task_struct;
 void start_thread(struct pt_regs *regs, unsigned long fdptr, unsigned long sp);
 void release_thread(struct task_struct *);
 
-/* Prepare to copy thread state - unlazy all lazy status */
-extern void prepare_to_copy(struct task_struct *tsk);
-
 /* Create a new kernel thread. */
 extern long kernel_thread(int (*fn)(void *), void *arg, unsigned long flags);
 
@@ -386,7 +383,6 @@ extern unsigned long cpuidle_disable;
 enum idle_boot_override {IDLE_NO_OVERRIDE = 0, IDLE_POWERSAVE_OFF};
 
 extern int powersave_nap;	/* set if nap mode can be used in idle loop */
-void cpu_idle_wait(void);
 
 #ifdef CONFIG_PSERIES_IDLE
 extern void update_smt_snooze_delay(int snooze);

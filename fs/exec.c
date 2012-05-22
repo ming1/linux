@@ -184,7 +184,7 @@ static void acct_arg_size(struct linux_binprm *bprm, unsigned long pages)
 		return;
 
 	bprm->vma_pages = pages;
-	add_mm_counter(mm, MM_ANONPAGES, diff);
+	add_rss_counter(bprm->vma, MM_ANONPAGES, diff);
 }
 
 static struct page *get_arg_page(struct linux_binprm *bprm, unsigned long pos,
@@ -1514,8 +1514,6 @@ static int do_execve_common(const char *filename,
 	if (IS_ERR(file))
 		goto out_unmark;
 
-	sched_exec();
-
 	bprm->file = file;
 	bprm->filename = filename;
 	bprm->interp = filename;
@@ -1523,6 +1521,8 @@ static int do_execve_common(const char *filename,
 	retval = bprm_mm_init(bprm);
 	if (retval)
 		goto out_file;
+
+	sched_exec(bprm->mm);
 
 	bprm->argc = count(argv, MAX_ARG_STRINGS);
 	if ((retval = bprm->argc) < 0)
@@ -1938,8 +1938,21 @@ static int coredump_wait(int exit_code, struct core_state *core_state)
 		core_waiters = zap_threads(tsk, mm, core_state, exit_code);
 	up_write(&mm->mmap_sem);
 
-	if (core_waiters > 0)
+	if (core_waiters > 0) {
+		struct core_thread *ptr;
+
 		wait_for_completion(&core_state->startup);
+		/*
+		 * Wait for all the threads to become inactive, so that
+		 * all the thread context (extended register state, like
+		 * fpu etc) gets copied to the memory.
+		 */
+		ptr = core_state->dumper.next;
+		while (ptr != NULL) {
+			wait_task_inactive(ptr->task, 0);
+			ptr = ptr->next;
+		}
+	}
 
 	return core_waiters;
 }

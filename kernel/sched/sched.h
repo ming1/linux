@@ -201,7 +201,7 @@ struct cfs_bandwidth { };
 /* CFS-related fields in a runqueue */
 struct cfs_rq {
 	struct load_weight load;
-	unsigned long nr_running, h_nr_running;
+	unsigned int nr_running, h_nr_running;
 
 	u64 exec_clock;
 	u64 min_vruntime;
@@ -279,7 +279,7 @@ static inline int rt_bandwidth_enabled(void)
 /* Real-Time classes' related field in a runqueue: */
 struct rt_rq {
 	struct rt_prio_array active;
-	unsigned long rt_nr_running;
+	unsigned int rt_nr_running;
 #if defined CONFIG_SMP || defined CONFIG_RT_GROUP_SCHED
 	struct {
 		int curr; /* highest queued rt task prio */
@@ -353,7 +353,7 @@ struct rq {
 	 * nr_running and cpu_load should be in the same cacheline because
 	 * remote CPUs use both these fields when doing load calculation.
 	 */
-	unsigned long nr_running;
+	unsigned int nr_running;
 	#define CPU_LOAD_IDX_MAX 5
 	unsigned long cpu_load[CPU_LOAD_IDX_MAX];
 	unsigned long last_load_update_tick;
@@ -414,6 +414,12 @@ struct rq {
 
 	struct list_head cfs_tasks;
 
+#ifdef CONFIG_NUMA
+	unsigned long    offnode_running;
+	unsigned long	 offnode_weight;
+	struct list_head offnode_tasks;
+#endif
+
 	u64 rt_avg;
 	u64 age_stamp;
 	u64 idle_stamp;
@@ -464,6 +470,15 @@ struct rq {
 	struct llist_head wake_list;
 #endif
 };
+
+static inline struct list_head *offnode_tasks(struct rq *rq)
+{
+#ifdef CONFIG_NUMA
+	return &rq->offnode_tasks;
+#else
+	return NULL;
+#endif
+}
 
 static inline int cpu_of(struct rq *rq)
 {
@@ -525,6 +540,7 @@ static inline struct sched_domain *highest_flag_domain(int cpu, int flag)
 
 DECLARE_PER_CPU(struct sched_domain *, sd_llc);
 DECLARE_PER_CPU(int, sd_llc_id);
+DECLARE_PER_CPU(struct sched_domain *, sd_node);
 
 #endif /* CONFIG_SMP */
 
@@ -644,6 +660,12 @@ extern struct static_key sched_feat_keys[__SCHED_FEAT_NR];
 #else /* !(SCHED_DEBUG && HAVE_JUMP_LABEL) */
 #define sched_feat(x) (sysctl_sched_features & (1UL << __SCHED_FEAT_##x))
 #endif /* SCHED_DEBUG && HAVE_JUMP_LABEL */
+
+#ifdef CONFIG_NUMA
+#define sched_feat_numa(x) sched_feat(x)
+#else
+#define sched_feat_numa(x) (0)
+#endif
 
 static inline u64 global_rt_period(void)
 {
@@ -876,7 +898,7 @@ extern void resched_cpu(int cpu);
 extern struct rt_bandwidth def_rt_bandwidth;
 extern void init_rt_bandwidth(struct rt_bandwidth *rt_b, u64 period, u64 runtime);
 
-extern void update_cpu_load(struct rq *this_rq);
+extern void update_idle_cpu_load(struct rq *this_rq);
 
 #ifdef CONFIG_CGROUP_CPUACCT
 #include <linux/cgroup.h>
@@ -1156,3 +1178,26 @@ enum rq_nohz_flag_bits {
 
 #define nohz_flags(cpu)	(&cpu_rq(cpu)->nohz_flags)
 #endif
+
+unsigned long task_h_load(struct task_struct *p);
+
+#ifdef CONFIG_NUMA
+
+void sched_setnode(struct task_struct *p, int node);
+void select_task_node(struct task_struct *p, struct mm_struct *mm, int sd_flags);
+bool account_numa_enqueue(struct task_struct *p);
+void account_numa_dequeue(struct task_struct *p);
+void init_sched_numa(void);
+
+#else /* CONFIG_NUMA */
+
+/*
+ * Macro to avoid argument evaluation
+ */
+#define select_task_node(p, mm, sd_flags) do { } while (0)
+static inline bool account_numa_enqueue(struct task_struct *p) { return false; }
+static inline void account_numa_dequeue(struct task_struct *p) { }
+static inline void init_sched_numa(void) { }
+
+#endif /* CONFIG_NUMA */
+
