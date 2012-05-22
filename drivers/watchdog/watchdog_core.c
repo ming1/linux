@@ -78,6 +78,7 @@ int watchdog_register_device(struct watchdog_device *wdd)
 	 * corrupted in a later stage then we expect a kernel panic!
 	 */
 
+	mutex_init(&wdd->lock);
 	id = ida_simple_get(&watchdog_ida, 0, MAX_DOGS, GFP_KERNEL);
 	if (id < 0)
 		return id;
