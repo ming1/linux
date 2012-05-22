@@ -87,10 +87,7 @@ asmlinkage int sys_rt_sigreturn(struct pt_regs *regs)
 		goto badframe;
 
 	sigdelsetmask(&set, ~_BLOCKABLE);
-	spin_lock_irq(&current->sighand->siglock);
-	current->blocked = set;
-	recalc_sigpending();
-	spin_unlock_irq(&current->sighand->siglock);
+	set_current_blocked(&set);
 
 	if (restore_sigcontext(regs, &frame->uc.uc_mcontext))
 		goto badframe;
@@ -238,22 +235,15 @@ handle_signal(unsigned long sig, struct k_sigaction *ka, siginfo_t *info,
 	 */
 	ret |= !valid_user_regs(regs);
 
-	/*
-	 * Block the signal if we were unsuccessful.
-	 */
-	if (ret != 0 || !(ka->sa.sa_flags & SA_NODEFER)) {
-		spin_lock_irq(&current->sighand->siglock);
-		sigorsets(&current->blocked, &current->blocked,
-			  &ka->sa.sa_mask);
-		sigaddset(&current->blocked, sig);
-		recalc_sigpending();
-		spin_unlock_irq(&current->sighand->siglock);
+	if (ret != 0) {
+		force_sigsegv(sig, current);
+		return;
 	}
 
-	if (ret == 0)
-		return;
-
-	force_sigsegv(sig, current);
+	/*
+	 * Block the signal if we were successful.
+	 */
+	block_sigmask(ka, sig);
 }
 
 /*
@@ -327,7 +317,5 @@ asmlinkage void do_notify_resume(struct pt_regs *regs, struct thread_info *ti)
 	if (ti->flags & _TIF_NOTIFY_RESUME) {
 		clear_thread_flag(TIF_NOTIFY_RESUME);
 		tracehook_notify_resume(regs);
-		if (current->replacement_session_keyring)
-			key_replace_session_keyring();
 	}
 }

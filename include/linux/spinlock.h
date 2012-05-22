@@ -360,6 +360,15 @@ static inline void spin_unlock_wait(spinlock_t *lock)
 	raw_spin_unlock_wait(&lock->rlock);
 }
 
+/**
+ * spin_is_locked() - Check if a spinlock is being held.
+ * @lock: Lock to check.
+ *
+ * This function should normally not be used. Especially using it in
+ * WARN and BUG_ONs is usually incorrect or redundant.
+ * If you want to check if a lock is held in a function
+ * use lockdep_assert_held(). A lot of other usages are racy.
+ */
 static inline int spin_is_locked(spinlock_t *lock)
 {
 	return raw_spin_is_locked(&lock->rlock);

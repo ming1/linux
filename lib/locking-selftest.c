@@ -959,16 +959,16 @@ static void dotest(void (*testcase_fn)(void), int expected, int lockclass_mask)
 	if (debug_locks != expected) {
 		if (expected_failure) {
 			expected_testcase_failures++;
-			printk("failed|");
+			printk(KERN_CONT "failed|");
 		} else {
 			unexpected_testcase_failures++;
 
-			printk("FAILED|");
+			printk(KERN_CONT "FAILED|");
 			dump_stack();
 		}
 	} else {
 		testcase_successes++;
-		printk("  ok  |");
+		printk(KERN_CONT "  ok  |");
 	}
 	testcase_total++;
 
@@ -998,26 +998,26 @@ static inline void print_testname(const char *testname)
 #define DO_TESTCASE_1(desc, name, nr)				\
 	print_testname(desc"/"#nr);				\
 	dotest(name##_##nr, SUCCESS, LOCKTYPE_RWLOCK);		\
-	printk("\n");
+	printk(KERN_CONT "\n");
 
 #define DO_TESTCASE_1B(desc, name, nr)				\
 	print_testname(desc"/"#nr);				\
 	dotest(name##_##nr, FAILURE, LOCKTYPE_RWLOCK);		\
-	printk("\n");
+	printk(KERN_CONT "\n");
 
 #define DO_TESTCASE_3(desc, name, nr)				\
 	print_testname(desc"/"#nr);				\
 	dotest(name##_spin_##nr, FAILURE, LOCKTYPE_SPIN);	\
 	dotest(name##_wlock_##nr, FAILURE, LOCKTYPE_RWLOCK);	\
 	dotest(name##_rlock_##nr, SUCCESS, LOCKTYPE_RWLOCK);	\
-	printk("\n");
+	printk(KERN_CONT "\n");
 
 #define DO_TESTCASE_3RW(desc, name, nr)				\
 	print_testname(desc"/"#nr);				\
 	dotest(name##_spin_##nr, FAILURE, LOCKTYPE_SPIN|LOCKTYPE_RWLOCK);\
 	dotest(name##_wlock_##nr, FAILURE, LOCKTYPE_RWLOCK);	\
 	dotest(name##_rlock_##nr, SUCCESS, LOCKTYPE_RWLOCK);	\
-	printk("\n");
+	printk(KERN_CONT "\n");
 
 #define DO_TESTCASE_6(desc, name)				\
 	print_testname(desc);					\
@@ -1027,7 +1027,7 @@ static inline void print_testname(const char *testname)
 	dotest(name##_mutex, FAILURE, LOCKTYPE_MUTEX);		\
 	dotest(name##_wsem, FAILURE, LOCKTYPE_RWSEM);		\
 	dotest(name##_rsem, FAILURE, LOCKTYPE_RWSEM);		\
-	printk("\n");
+	printk(KERN_CONT "\n");
 
 #define DO_TESTCASE_6_SUCCESS(desc, name)			\
 	print_testname(desc);					\
@@ -1037,7 +1037,7 @@ static inline void print_testname(const char *testname)
 	dotest(name##_mutex, SUCCESS, LOCKTYPE_MUTEX);		\
 	dotest(name##_wsem, SUCCESS, LOCKTYPE_RWSEM);		\
 	dotest(name##_rsem, SUCCESS, LOCKTYPE_RWSEM);		\
-	printk("\n");
+	printk(KERN_CONT "\n");
 
 /*
  * 'read' variant: rlocks must not trigger.
@@ -1050,7 +1050,7 @@ static inline void print_testname(const char *testname)
 	dotest(name##_mutex, FAILURE, LOCKTYPE_MUTEX);		\
 	dotest(name##_wsem, FAILURE, LOCKTYPE_RWSEM);		\
 	dotest(name##_rsem, FAILURE, LOCKTYPE_RWSEM);		\
-	printk("\n");
+	printk(KERN_CONT "\n");
 
 #define DO_TESTCASE_2I(desc, name, nr)				\
 	DO_TESTCASE_1("hard-"desc, name##_hard, nr);		\
@@ -1146,32 +1146,32 @@ void locking_selftest(void)
 
 	printk("  --------------------------------------------------------------------------\n");
 	print_testname("recursive read-lock");
-	printk("             |");
+	printk(KERN_CONT "             |");
 	dotest(rlock_AA1, SUCCESS, LOCKTYPE_RWLOCK);
-	printk("             |");
+	printk(KERN_CONT "             |");
 	dotest(rsem_AA1, FAILURE, LOCKTYPE_RWSEM);
-	printk("\n");
+	printk(KERN_CONT "\n");
 
 	print_testname("recursive read-lock #2");
-	printk("             |");
+	printk(KERN_CONT "             |");
 	dotest(rlock_AA1B, SUCCESS, LOCKTYPE_RWLOCK);
-	printk("             |");
+	printk(KERN_CONT "             |");
 	dotest(rsem_AA1B, FAILURE, LOCKTYPE_RWSEM);
-	printk("\n");
+	printk(KERN_CONT "\n");
 
 	print_testname("mixed read-write-lock");
-	printk("             |");
+	printk(KERN_CONT "             |");
 	dotest(rlock_AA2, FAILURE, LOCKTYPE_RWLOCK);
-	printk("             |");
+	printk(KERN_CONT "             |");
 	dotest(rsem_AA2, FAILURE, LOCKTYPE_RWSEM);
-	printk("\n");
+	printk(KERN_CONT "\n");
 
 	print_testname("mixed write-read-lock");
-	printk("             |");
+	printk(KERN_CONT "             |");
 	dotest(rlock_AA3, FAILURE, LOCKTYPE_RWLOCK);
-	printk("             |");
+	printk(KERN_CONT "             |");
 	dotest(rsem_AA3, FAILURE, LOCKTYPE_RWSEM);
-	printk("\n");
+	printk(KERN_CONT "\n");
 
 	printk("  --------------------------------------------------------------------------\n");
 
