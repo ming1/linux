@@ -1268,7 +1268,7 @@ static int ng_allowed(struct numa_group *ng, struct task_struct *p)
 
 	rcu_read_lock();
 	tcred = __task_cred(p);
-	if (cred->user->user_ns == tcred->user->user_ns &&
+	if (cred->user_ns == tcred->user_ns &&
 	    (cred->uid == tcred->euid &&
 	     cred->uid == tcred->suid &&
 	     cred->uid == tcred->uid  &&
@@ -1276,7 +1276,7 @@ static int ng_allowed(struct numa_group *ng, struct task_struct *p)
 	     cred->gid == tcred->sgid &&
 	     cred->gid == tcred->gid))
 		goto ok;
-	if (ns_capable(tcred->user->user_ns, CAP_SYS_PTRACE))
+	if (ns_capable(tcred->user_ns, CAP_SYS_PTRACE))
 		goto ok;
 	rcu_read_unlock();
 	return -EPERM;
