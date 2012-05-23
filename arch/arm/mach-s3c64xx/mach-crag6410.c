@@ -674,6 +674,7 @@ static struct i2c_board_info i2c_devs1[] __initdata = {
 	  .irq = S3C_EINT(0),
 	  .platform_data = &glenfarclas_pmic_pdata },
 
+	{ I2C_BOARD_INFO("wlf-gf-module", 0x22) },
 	{ I2C_BOARD_INFO("wlf-gf-module", 0x24) },
 	{ I2C_BOARD_INFO("wlf-gf-module", 0x25) },
 	{ I2C_BOARD_INFO("wlf-gf-module", 0x26) },
@@ -816,6 +817,7 @@ MACHINE_START(WLF_CRAGG_6410, "Wolfson Cragganmore 6410")
 	.handle_irq	= vic_handle_irq,
 	.map_io		= crag6410_map_io,
 	.init_machine	= crag6410_machine_init,
+	.init_late	= s3c64xx_init_late,
 	.timer		= &s3c24xx_timer,
 	.restart	= s3c64xx_restart,
 MACHINE_END

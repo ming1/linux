@@ -19,6 +19,8 @@
 #include <linux/gpio.h>
 #include <linux/mfd/88pm860x.h>
 #include <linux/platform_data/mv_usb.h>
+#include <linux/platform_data/mv_usb.h>
+#include <linux/mfd/88pm860x.h>
 
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
