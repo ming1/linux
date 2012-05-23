@@ -272,8 +272,7 @@ again:
 	spin_unlock(&file_priv->table_lock);
 	if (ret == -EAGAIN)
 		goto again;
-
-	if (ret != 0)
+	else if (ret)
 		return ret;
 
 	drm_gem_object_handle_reference(obj);
@@ -329,7 +328,7 @@ drm_gem_create_mmap_offset(struct drm_gem_object *obj)
 	struct drm_gem_mm *mm = dev->mm_private;
 	struct drm_map_list *list;
 	struct drm_local_map *map;
-	int ret = 0;
+	int ret;
 
 	/* Set the object up for mmap'ing */
 	list = &obj->map_list;
@@ -456,8 +455,7 @@ again:
 
 		if (ret == -EAGAIN)
 			goto again;
-
-		if (ret != 0)
+		else if (ret)
 			goto err;
 
 		/* Allocate a reference for the name table.  */
@@ -628,7 +626,7 @@ void drm_gem_vm_open(struct vm_area_struct *vma)
 	drm_gem_object_reference(obj);
 
 	mutex_lock(&obj->dev->struct_mutex);
-	drm_vm_open_locked(vma);
+	drm_vm_open_locked(obj->dev, vma);
 	mutex_unlock(&obj->dev->struct_mutex);
 }
 EXPORT_SYMBOL(drm_gem_vm_open);
@@ -639,7 +637,7 @@ void drm_gem_vm_close(struct vm_area_struct *vma)
 	struct drm_device *dev = obj->dev;
 
 	mutex_lock(&dev->struct_mutex);
-	drm_vm_close_locked(vma);
+	drm_vm_close_locked(obj->dev, vma);
 	drm_gem_object_unreference(obj);
 	mutex_unlock(&dev->struct_mutex);
 }
@@ -712,7 +710,7 @@ int drm_gem_mmap(struct file *filp, struct vm_area_struct *vma)
 	 */
 	drm_gem_object_reference(obj);
 
-	drm_vm_open_locked(vma);
+	drm_vm_open_locked(dev, vma);
 
 out_unlock:
 	mutex_unlock(&dev->struct_mutex);
