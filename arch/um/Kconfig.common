@@ -53,11 +53,6 @@ config GENERIC_BUG
 	default y
 	depends on BUG
 
-# Used in kernel/irq/manage.c and include/linux/irq.h
-config IRQ_RELEASE_METHOD
-	bool
-	default y
-
 config HZ
 	int
 	default 100
