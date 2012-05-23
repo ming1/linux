@@ -31,6 +31,7 @@ config SPARC
 	select GENERIC_PCI_IOMAP
 	select HAVE_NMI_WATCHDOG if SPARC64
 	select GENERIC_CMOS_UPDATE
+	select HAVE_BPF_JIT
 	select GENERIC_SMP_IDLE_THREAD
 
 config SPARC32
@@ -66,6 +67,7 @@ config SPARC64
 	select ARCH_HAVE_NMI_SAFE_CMPXCHG
 	select HAVE_C_RECORDMCOUNT
 	select GENERIC_CLOCKEVENTS
+	select NO_BOOTMEM
 
 config ARCH_DEFCONFIG
 	string
@@ -147,7 +149,7 @@ source "kernel/Kconfig.freezer"
 menu "Processor type and features"
 
 config SMP
-	bool "Symmetric multi-processing support (does not work on sun4/sun4c)"
+	bool "Symmetric multi-processing support"
 	---help---
 	  This enables support for systems with more than one CPU. If you have
 	  a system with only one CPU, say N. If you have a system with more
@@ -574,6 +576,9 @@ config SYSVIPC_COMPAT
 	bool
 	depends on COMPAT && SYSVIPC
 	default y
+
+config KEYS_COMPAT
+	def_bool y if COMPAT && KEYS
 
 endmenu
 

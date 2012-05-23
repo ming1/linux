@@ -70,8 +70,6 @@ arch-$(CONFIG_CPU_32v4)		:=-D__LINUX_ARM_ARCH__=4 -march=armv4
 arch-$(CONFIG_CPU_32v3)		:=-D__LINUX_ARM_ARCH__=3 -march=armv3
 
 # This selects how we optimise for the processor.
-tune-$(CONFIG_CPU_ARM610)	:=-mtune=arm610
-tune-$(CONFIG_CPU_ARM710)	:=-mtune=arm710
 tune-$(CONFIG_CPU_ARM7TDMI)	:=-mtune=arm7tdmi
 tune-$(CONFIG_CPU_ARM720T)	:=-mtune=arm7tdmi
 tune-$(CONFIG_CPU_ARM740T)	:=-mtune=arm7tdmi
@@ -149,8 +147,6 @@ machine-$(CONFIG_ARCH_INTEGRATOR)	:= integrator
 machine-$(CONFIG_ARCH_IOP13XX)		:= iop13xx
 machine-$(CONFIG_ARCH_IOP32X)		:= iop32x
 machine-$(CONFIG_ARCH_IOP33X)		:= iop33x
-machine-$(CONFIG_ARCH_IXP2000)		:= ixp2000
-machine-$(CONFIG_ARCH_IXP23XX)		:= ixp23xx
 machine-$(CONFIG_ARCH_IXP4XX)		:= ixp4xx
 machine-$(CONFIG_ARCH_KIRKWOOD)		:= kirkwood
 machine-$(CONFIG_ARCH_KS8695)		:= ks8695
