@@ -1482,9 +1482,9 @@ SYSCALL_DEFINE4(numa_mbind, unsigned long, addr, unsigned long, len,
 
 	mask = nodemask_of_node(ng->numa_entity.node);
 	mpol = mpol_new(MPOL_BIND, 0, &mask);
-	if (!mpol) {
+	if (IS_ERR(mpol)) {
 		ng_put(ng);
-		return -ENOMEM;
+		return PTR_ERR(mpol);
 	}
 	mpol->flags |= MPOL_MF_LAZY;
 	mpol->numa_group = ng;
