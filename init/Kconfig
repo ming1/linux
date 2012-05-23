@@ -27,6 +27,9 @@ config IRQ_WORK
 	bool
 	depends on HAVE_IRQ_WORK
 
+config BUILDTIME_EXTABLE_SORT
+	bool
+
 menu "General setup"
 
 config EXPERIMENTAL
@@ -907,8 +910,26 @@ config SCHED_AUTOGROUP
 	  desktop applications.  Task group autogeneration is currently based
 	  upon task session.
 
+config SCHED_NUMA_DEFAULT
+	bool "Enable NUMA scheduling by default"
+	depends on NUMA
+	default n
+	help
+	  This option selects the default enablement of a scheduler feature
+	  that gives each process a home-node and allocates all its memory
+	  from there and tries to schedule all the process tasks on that node
+	  (or as near to it) while trying to maintain fairness.
+
+	  Without this feature memory is allocated on whatever node a task
+	  happens to run on and the scheduler is free to migrate tasks around
+	  at will -- which can result in significant cross-node memory
+	  traffic.
+
+	  Regardless of this setting it can always be changed at runtime
+	  by changing /proc/sys/kernel/sched_numa.
+
 config MM_OWNER
-	bool
+	def_bool NUMA
 
 config SYSFS_DEPRECATED
 	bool "Enable deprecated sysfs features to support old userspace tools"
@@ -1198,7 +1219,7 @@ menu "Kernel Performance Events And Counters"
 
 config PERF_EVENTS
 	bool "Kernel performance events and counters"
-	default y if (PROFILING || PERF_COUNTERS)
+	default y if PROFILING
 	depends on HAVE_PERF_EVENTS
 	select ANON_INODES
 	select IRQ_WORK
@@ -1224,18 +1245,6 @@ config PERF_EVENTS
 	  capabilities on top of those.
 
 	  Say Y if unsure.
-
-config PERF_COUNTERS
-	bool "Kernel performance counters (old config option)"
-	depends on HAVE_PERF_EVENTS
-	help
-	  This config has been obsoleted by the PERF_EVENTS
-	  config option - please see that one for details.
-
-	  It has no effect on the kernel whether you enable
-	  it or not, it is a compatibility placeholder.
-
-	  Say N if unsure.
 
 config DEBUG_PERF_USE_VMALLOC
 	default n
