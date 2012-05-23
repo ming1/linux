@@ -35,6 +35,7 @@
 #include <linux/watchdog.h>	/* For watchdog specific items */
 #include <linux/init.h>		/* For __init/__exit/... */
 #include <linux/idr.h>		/* For ida_* macros */
+#include <linux/err.h>		/* For ida_* macros */
 
 #include "watchdog_core.h"	/* For watchdog_dev_register/... */
 
