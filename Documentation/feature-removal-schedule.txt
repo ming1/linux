@@ -586,5 +586,3 @@ Why:	Remount currently allows changing bound subsystems and
 	release_agent.  Rebinding is hardly useful as it only works
 	when the hierarchy is empty and release_agent itself should be
 	replaced with conventional fsnotify.
-
-----------------------------
