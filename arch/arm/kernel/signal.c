@@ -67,17 +67,8 @@ const unsigned long syscall_restart_code[2] = {
 asmlinkage int sys_sigsuspend(int restart, unsigned long oldmask, old_sigset_t mask)
 {
 	sigset_t blocked;
-
-	current->saved_sigmask = current->blocked;
-
-	mask &= _BLOCKABLE;
 	siginitset(&blocked, mask);
-	set_current_blocked(&blocked);
-
-	current->state = TASK_INTERRUPTIBLE;
-	schedule();
-	set_restore_sigmask();
-	return -ERESTARTNOHAND;
+	return sigsuspend(&blocked);
 }
 
 asmlinkage int 
@@ -737,7 +728,5 @@ do_notify_resume(struct pt_regs *regs, unsigned int thread_flags, int syscall)
 	if (thread_flags & _TIF_NOTIFY_RESUME) {
 		clear_thread_flag(TIF_NOTIFY_RESUME);
 		tracehook_notify_resume(regs);
-		if (current->replacement_session_keyring)
-			key_replace_session_keyring();
 	}
 }

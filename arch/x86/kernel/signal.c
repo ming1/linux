@@ -479,18 +479,8 @@ asmlinkage int
 sys_sigsuspend(int history0, int history1, old_sigset_t mask)
 {
 	sigset_t blocked;
-
-	current->saved_sigmask = current->blocked;
-
-	mask &= _BLOCKABLE;
 	siginitset(&blocked, mask);
-	set_current_blocked(&blocked);
-
-	current->state = TASK_INTERRUPTIBLE;
-	schedule();
-
-	set_restore_sigmask();
-	return -ERESTARTNOHAND;
+	return sigsuspend(&blocked);
 }
 
 asmlinkage int
@@ -837,8 +827,6 @@ do_notify_resume(struct pt_regs *regs, void *unused, __u32 thread_info_flags)
 	if (thread_info_flags & _TIF_NOTIFY_RESUME) {
 		clear_thread_flag(TIF_NOTIFY_RESUME);
 		tracehook_notify_resume(regs);
-		if (current->replacement_session_keyring)
-			key_replace_session_keyring();
 	}
 	if (thread_info_flags & _TIF_USER_RETURN_NOTIFY)
 		fire_user_return_notifiers();

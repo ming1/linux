@@ -370,10 +370,7 @@ static int handle_signal(unsigned long sig, struct k_sigaction *ka,
 	/*
 	 * Block the signal if we were successful.
 	 */
-	sigorsets(&blocked, &tsk->blocked, &ka->sa.sa_mask);
-	if (!(ka->sa.sa_flags & SA_NODEFER))
-		sigaddset(&blocked, sig);
-	set_current_blocked(&blocked);
+	block_sigmask(ka, sig);
 
 	return 0;
 }
@@ -450,15 +447,12 @@ static void do_signal(struct pt_regs *regs, int syscall)
 		    regs->UCreg_00 == -ERESTARTNOINTR) {
 			setup_syscall_restart(regs);
 		}
-
-		/* If there's no signal to deliver, we just put the saved
-		 * sigmask back.
-		 */
-		if (test_thread_flag(TIF_RESTORE_SIGMASK)) {
-			clear_thread_flag(TIF_RESTORE_SIGMASK);
-			sigprocmask(SIG_SETMASK, &current->saved_sigmask, NULL);
-		}
 	}
+	/* If there's no signal to deliver, we just put the saved
+	 * sigmask back.
+	 */
+	if (test_and_clear_thread_flag(TIF_RESTORE_SIGMASK))
+		set_current_blocked(&current->saved_sigmask);
 }
 
 asmlinkage void do_notify_resume(struct pt_regs *regs,
@@ -470,8 +464,6 @@ asmlinkage void do_notify_resume(struct pt_regs *regs,
 	if (thread_flags & _TIF_NOTIFY_RESUME) {
 		clear_thread_flag(TIF_NOTIFY_RESUME);
 		tracehook_notify_resume(regs);
-		if (current->replacement_session_keyring)
-			key_replace_session_keyring();
 	}
 }
 

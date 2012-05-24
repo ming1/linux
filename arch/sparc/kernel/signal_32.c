@@ -64,18 +64,8 @@ struct rt_signal_frame {
 static int _sigpause_common(old_sigset_t set)
 {
 	sigset_t blocked;
-
-	current->saved_sigmask = current->blocked;
-
-	set &= _BLOCKABLE;
 	siginitset(&blocked, set);
-	set_current_blocked(&blocked);
-
-	current->state = TASK_INTERRUPTIBLE;
-	schedule();
-	set_thread_flag(TIF_RESTORE_SIGMASK);
-
-	return -ERESTARTNOHAND;
+	return sigsuspend(&blocked);
 }
 
 asmlinkage int sys_sigsuspend(old_sigset_t set)
@@ -600,8 +590,6 @@ void do_notify_resume(struct pt_regs *regs, unsigned long orig_i0,
 	if (thread_info_flags & _TIF_NOTIFY_RESUME) {
 		clear_thread_flag(TIF_NOTIFY_RESUME);
 		tracehook_notify_resume(regs);
-		if (current->replacement_session_keyring)
-			key_replace_session_keyring();
 	}
 }
 
