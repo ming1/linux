@@ -1,0 +1,41 @@
+What:		/sys/class/backlight/<backlight>/als
+Date:		April 2012
+KernelVersion:	3.5
+Contact:	Johan Hovold <jhovold@gmail.com>
+Description:
+		Set the ALS-control mode (0,..2), where
+
+		0 - disabled
+		1 - ALS-mapper 1 (backlight 0)
+		2 - ALS-mapper 2 (backlight 1)
+
+What:		/sys/class/backlight/<backlight>/id
+Date:		April 2012
+KernelVersion:	3.5
+Contact:	Johan Hovold <jhovold@gmail.com>
+Description:
+		Get the id of this backlight (0, 1).
+
+What:		/sys/class/backlight/<backlight>/linear
+Date:		April 2012
+KernelVersion:	3.5
+Contact:	Johan Hovold <jhovold@gmail.com>
+Description:
+		Set the brightness-mapping mode (0, 1), where
+
+		0 - exponential mode
+		1 - linear mode
+
+What:		/sys/class/backlight/<backlight>/pwm
+Date:		April 2012
+KernelVersion:	3.5
+Contact:	Johan Hovold <jhovold@gmail.com>
+Description:
+		Set the PWM-input control mask (5 bits), where
+
+		bit 5 - PWM-input enabled in Zone 4
+		bit 4 - PWM-input enabled in Zone 3
+		bit 3 - PWM-input enabled in Zone 2
+		bit 2 - PWM-input enabled in Zone 1
+		bit 1 - PWM-input enabled in Zone 0
+		bit 0 - PWM-input enabled
