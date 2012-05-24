@@ -597,3 +597,11 @@ Why:	There are two mci drivers: at91-mci and atmel-mci. The PDC support
 	at91sam9261). The support of these IP versions has just been added
 	to atmel-mci, so atmel-mci can be used for all chips.
 Who:	Ludovic Desroches <ludovic.desroches@atmel.com>
+
+----------------------------
+
+What:	KVM debugfs statistics
+When:	2013
+Why:	KVM tracepoints provide mostly equivalent information in a much more
+        flexible fashion.
+
