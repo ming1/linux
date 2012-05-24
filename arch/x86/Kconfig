@@ -90,9 +90,8 @@ config X86
 	select GENERIC_TIME_VSYSCALL if X86_64
 	select KTIME_SCALAR if X86_32
 	select GENERIC_SMP_IDLE_THREAD
-	select BUILDTIME_EXTABLE_SORT
-	select GENERIC_SMP_IDLE_THREAD
 	select HAVE_ARCH_SECCOMP_FILTER
+	select BUILDTIME_EXTABLE_SORT
 
 config INSTRUCTION_DECODER
 	def_bool (KPROBES || PERF_EVENTS || UPROBES)
@@ -2052,16 +2051,6 @@ config EISA
 	  Otherwise, say N.
 
 source "drivers/eisa/Kconfig"
-
-config MCA
-	bool "MCA support"
-	---help---
-	  MicroChannel Architecture is found in some IBM PS/2 machines and
-	  laptops.  It is a bus system similar to PCI or ISA. See
-	  <file:Documentation/mca.txt> (and especially the web page given
-	  there) before attempting to build an MCA bus kernel.
-
-source "drivers/mca/Kconfig"
 
 config SCx200
 	tristate "NatSemi SCx200 support"
