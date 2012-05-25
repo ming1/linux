@@ -52,7 +52,7 @@ static int pgcnt;
 
 static int rand_eb(void)
 {
-	int eb;
+	unsigned int eb;
 
 again:
 	eb = random32();
@@ -65,7 +65,7 @@ again:
 
 static int rand_offs(void)
 {
-	int offs;
+	unsigned int offs;
 
 	offs = random32();
 	offs %= bufsize;
@@ -74,7 +74,7 @@ static int rand_offs(void)
 
 static int rand_len(int offs)
 {
-	int len;
+	unsigned int len;
 
 	len = random32();
 	len %= (bufsize - offs);
