@@ -764,7 +764,7 @@ static void mxc_nand_select_chip_v2(struct mtd_info *mtd, int chip)
 	if (chip == -1) {
 		/* Disable the NFC clock */
 		if (host->clk_act) {
-			clk_disable(host->clk);
+			clk_disable_unprepare(host->clk);
 			host->clk_act = 0;
 		}
 		return;
@@ -772,7 +772,7 @@ static void mxc_nand_select_chip_v2(struct mtd_info *mtd, int chip)
 
 	if (!host->clk_act) {
 		/* Enable the NFC clock */
-		clk_enable(host->clk);
+		clk_prepare_enable(host->clk);
 		host->clk_act = 1;
 	}
 
