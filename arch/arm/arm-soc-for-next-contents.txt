@@ -1,0 +1,44 @@
+This file lists all branches that are pulled into the for-next branch
+of git://git.kernel.org/pub/scm/linux/kernel/git/arm/arm-soc.git
+and their external dependencies.
+
+It also includes a couple of directly applied patches for build breaks with subject
+The next/* branches are kept in the order in which they get applied.
+
+dependencies (all merged in mainline by now):
+depends/i2c/lpc32xx:     git://git.antcom.de/linux-2.6.git lpc32xx/i2c
+depends/pinctrl/mergebase git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-pinctrl.git pinctrl-mergebase-20120418
+depends/pinctrl/devel	git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-pinctrl.git devel (this is a superset of mergebase)
+depends/rmk/clkdev	git://ftp.arm.linux.org.uk/~rmk/linux.git clkdev
+
+
+The following branches have alreayd been merged:
+next/maintainers
+next/cleanup
+next/fixes
+next/dt
+next/soc
+next/pinctrl
+next/pm
+next/boards
+next/defconfig
+next/drivers
+next/cleanup2
+next/clock
+next/stmp-dev
+next/dt2
+next/soc2
+staging/cleanup
+
+
+The following remains:
+
+late/cleanup:
+samsung/cleanup2	git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/cleanup-samsung-2
+
+late/soc:
+samsung/devel2		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/devel-samsung-2
+vexpress/dt-and-fixes	git://git.linaro.org/people/pawelmoll/linux.git vexpress-v3.4
+
+late/board:
+samsung/board2		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/board-samsung-2
