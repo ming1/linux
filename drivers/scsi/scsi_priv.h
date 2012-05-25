@@ -2,7 +2,6 @@
 #define _SCSI_PRIV_H
 
 #include <linux/device.h>
-#include <linux/async.h>
 
 struct request_queue;
 struct request;
