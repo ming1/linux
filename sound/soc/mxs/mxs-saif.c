@@ -481,7 +481,7 @@ static int mxs_saif_trigger(struct snd_pcm_substream *substream, int cmd,
 	case SNDRV_PCM_TRIGGER_PAUSE_RELEASE:
 		dev_dbg(cpu_dai->dev, "start\n");
 
-		clk_enable(master_saif->clk);
+		clk_prepare_enable(master_saif->clk);
 		if (!master_saif->mclk_in_use)
 			__raw_writel(BM_SAIF_CTRL_RUN,
 				master_saif->base + SAIF_CTRL + MXS_SET_ADDR);
@@ -491,7 +491,7 @@ static int mxs_saif_trigger(struct snd_pcm_substream *substream, int cmd,
 		 * itself clk for its internal basic logic to work.
 		 */
 		if (saif != master_saif) {
-			clk_enable(saif->clk);
+			clk_prepare_enable(saif->clk);
 			__raw_writel(BM_SAIF_CTRL_RUN,
 				saif->base + SAIF_CTRL + MXS_SET_ADDR);
 		}
@@ -533,13 +533,13 @@ static int mxs_saif_trigger(struct snd_pcm_substream *substream, int cmd,
 				master_saif->base + SAIF_CTRL + MXS_CLR_ADDR);
 			udelay(delay);
 		}
-		clk_disable(master_saif->clk);
+		clk_disable_unprepare(master_saif->clk);
 
 		if (saif != master_saif) {
 			__raw_writel(BM_SAIF_CTRL_RUN,
 				saif->base + SAIF_CTRL + MXS_CLR_ADDR);
 			udelay(delay);
-			clk_disable(saif->clk);
+			clk_disable_unprepare(saif->clk);
 		}
 
 		master_saif->ongoing = 0;
