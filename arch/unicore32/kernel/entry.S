@@ -578,9 +578,8 @@ ENTRY(ret_from_fork)
 	mov	why, #1
 	cand.a	r1, #_TIF_SYSCALL_TRACE		@ are we tracing syscalls?
 	beq	ret_slow_syscall
-	mov	r1, sp
-	mov	r0, #1				@ trace exit [IP = 1]
-	b.l	syscall_trace
+	mov	r0, sp
+	b.l	syscall_trace_leave
 	b	ret_slow_syscall
 ENDPROC(ret_from_fork)
 
@@ -640,10 +639,9 @@ ENTRY(vector_swi)
 	 * context switches, and waiting for our parent to respond.
 	 */
 __sys_trace:
-	mov	r2, scno
 	add	r1, sp, #S_OFF
-	mov	r0, #0				@ trace entry [IP = 0]
-	b.l	syscall_trace
+	mov	r0, scno
+	b.l	syscall_trace_enter
 
 	adr	lr, __sys_trace_return		@ return address
 	mov	scno, r0			@ syscall number (possibly new)
@@ -655,10 +653,8 @@ __sys_trace:
 
 __sys_trace_return:
 	stw.w	r0, [sp+], #S_R0 + S_OFF	@ save returned r0
-	mov	r2, scno
-	mov	r1, sp
-	mov	r0, #1				@ trace exit [IP = 1]
-	b.l	syscall_trace
+	mov	r0, sp
+	b.l	syscall_trace_leave
 	b	ret_slow_syscall
 
 	.align	5
