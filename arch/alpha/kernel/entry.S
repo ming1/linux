@@ -418,7 +418,7 @@ $work_notifysig:
 strace:
 	/* set up signal stack, call syscall_trace */
 	bsr	$1, do_switch_stack
-	jsr	$26, syscall_trace
+	jsr	$26, syscall_trace_enter
 	bsr	$1, undo_switch_stack
 
 	/* get the system call number and the arguments back.. */
@@ -449,7 +449,7 @@ $strace_success:
 	stq	$0, 0($sp)		/* save return value */
 
 	bsr	$1, do_switch_stack
-	jsr	$26, syscall_trace
+	jsr	$26, syscall_trace_leave
 	bsr	$1, undo_switch_stack
 	br	$31, ret_from_sys_call
 
@@ -467,7 +467,7 @@ $strace_error:
 	bsr	$1, do_switch_stack
 	mov	$19, $9		/* save old syscall number */
 	mov	$20, $10	/* save old a3 */
-	jsr	$26, syscall_trace
+	jsr	$26, syscall_trace_leave
 	mov	$9, $19
 	mov	$10, $20
 	bsr	$1, undo_switch_stack
@@ -774,7 +774,7 @@ sys_sigreturn:
 	lda	$sp, -SWITCH_STACK_SIZE($sp)
 	jsr	$26, do_sigreturn
 	bne	$9, 1f
-	jsr	$26, syscall_trace
+	jsr	$26, syscall_trace_leave
 1:	br	$1, undo_switch_stack
 	br	ret_from_sys_call
 .end sys_sigreturn
@@ -791,7 +791,7 @@ sys_rt_sigreturn:
 	lda	$sp, -SWITCH_STACK_SIZE($sp)
 	jsr	$26, do_rt_sigreturn
 	bne	$9, 1f
-	jsr	$26, syscall_trace
+	jsr	$26, syscall_trace_leave
 1:	br	$1, undo_switch_stack
 	br	ret_from_sys_call
 .end sys_rt_sigreturn
