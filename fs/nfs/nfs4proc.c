@@ -306,7 +306,7 @@ static int nfs4_handle_exception(struct nfs_server *server, int errorcode, struc
 		case -NFS4ERR_SEQ_MISORDERED:
 			dprintk("%s ERROR: %d Reset session\n", __func__,
 				errorcode);
-			nfs4_schedule_session_recovery(clp->cl_session);
+			nfs4_schedule_session_recovery(clp->cl_session, errorcode);
 			exception->retry = 1;
 			break;
 #endif /* defined(CONFIG_NFS_V4_1) */
@@ -1330,7 +1330,7 @@ int nfs4_open_delegation_recall(struct nfs_open_context *ctx, struct nfs4_state 
 			case -NFS4ERR_BAD_HIGH_SLOT:
 			case -NFS4ERR_CONN_NOT_BOUND_TO_SESSION:
 			case -NFS4ERR_DEADSESSION:
-				nfs4_schedule_session_recovery(server->nfs_client->cl_session);
+				nfs4_schedule_session_recovery(server->nfs_client->cl_session, err);
 				goto out;
 			case -NFS4ERR_STALE_CLIENTID:
 			case -NFS4ERR_STALE_STATEID:
@@ -3905,7 +3905,7 @@ nfs4_async_handle_error(struct rpc_task *task, const struct nfs_server *server, 
 		case -NFS4ERR_SEQ_MISORDERED:
 			dprintk("%s ERROR %d, Reset session\n", __func__,
 				task->tk_status);
-			nfs4_schedule_session_recovery(clp->cl_session);
+			nfs4_schedule_session_recovery(clp->cl_session, task->tk_status);
 			task->tk_status = 0;
 			return -EAGAIN;
 #endif /* CONFIG_NFS_V4_1 */
@@ -4846,7 +4846,7 @@ int nfs4_lock_delegation_recall(struct nfs4_state *state, struct file_lock *fl)
 			case -NFS4ERR_BAD_HIGH_SLOT:
 			case -NFS4ERR_CONN_NOT_BOUND_TO_SESSION:
 			case -NFS4ERR_DEADSESSION:
-				nfs4_schedule_session_recovery(server->nfs_client->cl_session);
+				nfs4_schedule_session_recovery(server->nfs_client->cl_session, err);
 				goto out;
 			case -ERESTARTSYS:
 				/*
@@ -5104,7 +5104,7 @@ nfs41_same_server_scope(struct nfs41_server_scope *a,
  * The 4.1 client currently uses the same TCP connection for the
  * fore and backchannel.
  */
-int nfs4_proc_bind_conn_to_session(struct nfs_client *clp)
+int nfs4_proc_bind_conn_to_session(struct nfs_client *clp, struct rpc_cred *cred)
 {
 	int status;
 	struct nfs41_bind_conn_to_session_res res;
@@ -5113,6 +5113,7 @@ int nfs4_proc_bind_conn_to_session(struct nfs_client *clp)
 			&nfs4_procedures[NFSPROC4_CLNT_BIND_CONN_TO_SESSION],
 		.rpc_argp = clp,
 		.rpc_resp = &res,
+		.rpc_cred = cred,
 	};
 
 	dprintk("--> %s\n", __func__);
@@ -5169,7 +5170,7 @@ int nfs4_proc_exchange_id(struct nfs_client *clp, struct rpc_cred *cred)
 		.flags = EXCHGID4_FLAG_SUPP_MOVED_REFER,
 	};
 	struct nfs41_exchange_id_res res = {
-		.client = clp,
+		0
 	};
 	int status;
 	struct rpc_message msg = {
@@ -5212,22 +5213,22 @@ int nfs4_proc_exchange_id(struct nfs_client *clp, struct rpc_cred *cred)
 
 	status = rpc_call_sync(clp->cl_rpcclient, &msg, RPC_TASK_TIMEOUT);
 	if (status == 0)
-		status = nfs4_check_cl_exchange_flags(clp->cl_exchange_flags);
+		status = nfs4_check_cl_exchange_flags(res.flags);
 
 	if (status == 0) {
+		clp->cl_clientid = res.clientid;
+		clp->cl_exchange_flags = (res.flags & ~EXCHGID4_FLAG_CONFIRMED_R);
+		if (!(res.flags & EXCHGID4_FLAG_CONFIRMED_R))
+			clp->cl_seqid = res.seqid;
+
 		kfree(clp->cl_serverowner);
 		clp->cl_serverowner = res.server_owner;
 		res.server_owner = NULL;
-	}
 
-	if (status == 0) {
 		/* use the most recent implementation id */
 		kfree(clp->cl_implid);
 		clp->cl_implid = res.impl_id;
-	} else
-		kfree(res.impl_id);
 
-	if (status == 0) {
 		if (clp->cl_serverscope != NULL &&
 		    !nfs41_same_server_scope(clp->cl_serverscope,
 					     res.server_scope)) {
@@ -5242,7 +5243,8 @@ int nfs4_proc_exchange_id(struct nfs_client *clp, struct rpc_cred *cred)
 			clp->cl_serverscope = res.server_scope;
 			goto out;
 		}
-	}
+	} else
+		kfree(res.impl_id);
 
 out_server_owner:
 	kfree(res.server_owner);
@@ -5257,6 +5259,65 @@ out:
 			clp->cl_implid->date.nseconds);
 	dprintk("<-- %s status= %d\n", __func__, status);
 	return status;
+}
+
+static int _nfs4_proc_destroy_clientid(struct nfs_client *clp,
+		struct rpc_cred *cred)
+{
+	struct rpc_message msg = {
+		.rpc_proc = &nfs4_procedures[NFSPROC4_CLNT_DESTROY_CLIENTID],
+		.rpc_argp = clp,
+		.rpc_cred = cred,
+	};
+	int status;
+
+	status = rpc_call_sync(clp->cl_rpcclient, &msg, RPC_TASK_TIMEOUT);
+	if (status)
+		pr_warn("NFS: Got error %d from the server %s on "
+			"DESTROY_CLIENTID.", status, clp->cl_hostname);
+	return status;
+}
+
+static int nfs4_proc_destroy_clientid(struct nfs_client *clp,
+		struct rpc_cred *cred)
+{
+	unsigned int loop;
+	int ret;
+
+	for (loop = NFS4_MAX_LOOP_ON_RECOVER; loop != 0; loop--) {
+		ret = _nfs4_proc_destroy_clientid(clp, cred);
+		switch (ret) {
+		case -NFS4ERR_DELAY:
+		case -NFS4ERR_CLIENTID_BUSY:
+			ssleep(1);
+			break;
+		default:
+			return ret;
+		}
+	}
+	return 0;
+}
+
+int nfs4_destroy_clientid(struct nfs_client *clp)
+{
+	struct rpc_cred *cred;
+	int ret = 0;
+
+	if (clp->cl_mvops->minor_version < 1)
+		goto out;
+	if (clp->cl_exchange_flags == 0)
+		goto out;
+	cred = nfs4_get_exchange_id_cred(clp);
+	ret = nfs4_proc_destroy_clientid(clp, cred);
+	if (cred)
+		put_rpccred(cred);
+	switch (ret) {
+	case 0:
+	case -NFS4ERR_STALE_CLIENTID:
+		clp->cl_exchange_flags = 0;
+	}
+out:
+	return ret;
 }
 
 struct nfs4_get_lease_time_data {
@@ -5479,8 +5540,12 @@ struct nfs4_session *nfs4_alloc_session(struct nfs_client *clp)
 void nfs4_destroy_session(struct nfs4_session *session)
 {
 	struct rpc_xprt *xprt;
+	struct rpc_cred *cred;
 
-	nfs4_proc_destroy_session(session);
+	cred = nfs4_get_exchange_id_cred(session->clp);
+	nfs4_proc_destroy_session(session, cred);
+	if (cred)
+		put_rpccred(cred);
 
 	rcu_read_lock();
 	xprt = rcu_dereference(session->clp->cl_rpcclient->cl_xprt);
@@ -5590,7 +5655,8 @@ static int nfs4_verify_channel_attrs(struct nfs41_create_session_args *args,
 	return nfs4_verify_back_channel_attrs(args, session);
 }
 
-static int _nfs4_proc_create_session(struct nfs_client *clp)
+static int _nfs4_proc_create_session(struct nfs_client *clp,
+		struct rpc_cred *cred)
 {
 	struct nfs4_session *session = clp->cl_session;
 	struct nfs41_create_session_args args = {
@@ -5604,6 +5670,7 @@ static int _nfs4_proc_create_session(struct nfs_client *clp)
 		.rpc_proc = &nfs4_procedures[NFSPROC4_CLNT_CREATE_SESSION],
 		.rpc_argp = &args,
 		.rpc_resp = &res,
+		.rpc_cred = cred,
 	};
 	int status;
 
@@ -5628,7 +5695,7 @@ static int _nfs4_proc_create_session(struct nfs_client *clp)
  * It is the responsibility of the caller to verify the session is
  * expired before calling this routine.
  */
-int nfs4_proc_create_session(struct nfs_client *clp)
+int nfs4_proc_create_session(struct nfs_client *clp, struct rpc_cred *cred)
 {
 	int status;
 	unsigned *ptr;
@@ -5636,7 +5703,7 @@ int nfs4_proc_create_session(struct nfs_client *clp)
 
 	dprintk("--> %s clp=%p session=%p\n", __func__, clp, session);
 
-	status = _nfs4_proc_create_session(clp);
+	status = _nfs4_proc_create_session(clp, cred);
 	if (status)
 		goto out;
 
@@ -5658,10 +5725,15 @@ out:
  * Issue the over-the-wire RPC DESTROY_SESSION.
  * The caller must serialize access to this routine.
  */
-int nfs4_proc_destroy_session(struct nfs4_session *session)
+int nfs4_proc_destroy_session(struct nfs4_session *session,
+		struct rpc_cred *cred)
 {
+	struct rpc_message msg = {
+		.rpc_proc = &nfs4_procedures[NFSPROC4_CLNT_DESTROY_SESSION],
+		.rpc_argp = session,
+		.rpc_cred = cred,
+	};
 	int status = 0;
-	struct rpc_message msg;
 
 	dprintk("--> nfs4_proc_destroy_session\n");
 
@@ -5669,10 +5741,6 @@ int nfs4_proc_destroy_session(struct nfs4_session *session)
 	if (session->clp->cl_cons_state != NFS_CS_READY)
 		return status;
 
-	msg.rpc_proc = &nfs4_procedures[NFSPROC4_CLNT_DESTROY_SESSION];
-	msg.rpc_argp = session;
-	msg.rpc_resp = NULL;
-	msg.rpc_cred = NULL;
 	status = rpc_call_sync(session->clp->cl_rpcclient, &msg, RPC_TASK_TIMEOUT);
 
 	if (status)
