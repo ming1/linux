@@ -25,6 +25,7 @@
 #include <linux/pci.h>
 #include <linux/initrd.h>
 #include <linux/io.h>
+#include <linux/start_kernel.h>
 #include <linux/highmem.h>
 #include <linux/smp.h>
 #include <linux/timex.h>
