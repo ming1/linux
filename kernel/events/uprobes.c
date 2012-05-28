@@ -161,8 +161,8 @@ static int __replace_page(struct vm_area_struct *vma, struct page *page, struct 
 	page_add_new_anon_rmap(kpage, vma, addr);
 
 	if (!PageAnon(page)) {
-		dec_mm_counter(mm, MM_FILEPAGES);
-		inc_mm_counter(mm, MM_ANONPAGES);
+		dec_rss_counter(vma, MM_FILEPAGES);
+		inc_rss_counter(vma, MM_ANONPAGES);
 	}
 
 	flush_cache_page(vma, addr, pte_pfn(*ptep));

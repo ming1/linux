@@ -931,8 +931,7 @@ int walk_page_range(unsigned long addr, unsigned long end,
 		struct mm_walk *walk);
 void free_pgd_range(struct mmu_gather *tlb, unsigned long addr,
 		unsigned long end, unsigned long floor, unsigned long ceiling);
-int copy_page_range(struct mm_struct *dst, struct mm_struct *src,
-			struct vm_area_struct *vma);
+int copy_page_range(struct vm_area_struct *dst_vma, struct vm_area_struct *src_vma);
 void unmap_mapping_range(struct address_space *mapping,
 		loff_t const holebegin, loff_t const holelen, int even_cows);
 int follow_pfn(struct vm_area_struct *vma, unsigned long address,
@@ -1075,19 +1074,45 @@ static inline unsigned long get_mm_counter(struct mm_struct *mm, int member)
 	return (unsigned long)val;
 }
 
-static inline void add_mm_counter(struct mm_struct *mm, int member, long value)
+#ifdef CONFIG_NUMA
+#include <linux/jump_label.h>
+
+extern struct static_key sched_numa_groups;
+
+static inline
+void numa_add_rss_counter(struct vm_area_struct *vma, int member, long value)
 {
-	atomic_long_add(value, &mm->rss_stat.count[member]);
+	if (static_key_false(&sched_numa_groups) &&
+	    vma->vm_policy && vma->vm_policy->numa_group) {
+		/*
+		 * Since the caller passes the vma argument, the caller is
+		 * responsible for making sure the vma is stable, hence the
+		 * ->vm_policy->numa_group dereference is safe. (caller usually
+		 * has vma->vm_mm->mmap_sem for reading).
+		 */
+		atomic_long_add(value, &vma->vm_policy->numa_group->rss.count[member]);
+	}
+}
+#else /* !CONFIG_NUMA */
+static inline void numa_add_rss_counter(struct vm_area_struct *vma, int member, long value) { }
+#endif /* CONFIG_NUMA */
+
+static inline void add_rss_counter(struct vm_area_struct *vma, int member, long value)
+{
+	atomic_long_add(value, &vma->vm_mm->rss_stat.count[member]);
+	numa_add_rss_counter(vma, member, value);
 }
 
-static inline void inc_mm_counter(struct mm_struct *mm, int member)
+static inline void inc_rss_counter(struct vm_area_struct *vma, int member)
 {
-	atomic_long_inc(&mm->rss_stat.count[member]);
+	atomic_long_inc(&vma->vm_mm->rss_stat.count[member]);
+	numa_add_rss_counter(vma, member, 1);
 }
 
-static inline void dec_mm_counter(struct mm_struct *mm, int member)
+static inline void dec_rss_counter(struct vm_area_struct *vma, int member)
 {
-	atomic_long_dec(&mm->rss_stat.count[member]);
+	atomic_long_dec(&vma->vm_mm->rss_stat.count[member]);
+	numa_add_rss_counter(vma, member, -1);
 }
 
 static inline unsigned long get_mm_rss(struct mm_struct *mm)
