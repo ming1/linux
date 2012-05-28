@@ -1,0 +1,17 @@
+Importing i2c based on af3a3ab2966112c0d0a44df7eeb1e95fe32d4495
+Unchanged quilt series i2c
+Importing jdelvare-hwmon based on 437538267b672f9320833907f1b5acbb2605f4be
+Unchanged quilt series jdelvare-hwmon
+Importing rr based on v3.4-rc6-1-gfebb72a
+Unchanged quilt series rr
+Importing device-mapper based on v3.4
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard 76e10d158efb6d4516018846f60c2ab5501900bc
+HEAD is now at 76e10d1 Linux 3.4
+$ git am ../quilt/device-mapper/dm-mpath-allow-ioctls-to-trigger-pg-init.patch
+Applying: After the failure of a group of paths, any alternative paths that
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/device-mapper
+From ../quilt-tmp
+ + 053388f...2e16d09 master     -> quilt/device-mapper  (forced update)
