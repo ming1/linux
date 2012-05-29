@@ -73,7 +73,7 @@
 
 #include <asm/mtrr.h>
 #include <asm/apic.h>
-#include <asm/trampoline.h>
+#include <asm/realmode.h>
 #include <asm/e820.h>
 #include <asm/mpspec.h>
 #include <asm/setup.h>
@@ -673,6 +673,8 @@ early_param("reservelow", parse_reservelow);
 
 void __init setup_arch(char **cmdline_p)
 {
+	unsigned long end_pfn;
+
 #ifdef CONFIG_X86_32
 	memcpy(&boot_cpu_data, &new_cpu_data, sizeof(new_cpu_data));
 	visws_early_detect();
@@ -909,12 +911,29 @@ void __init setup_arch(char **cmdline_p)
 	printk(KERN_DEBUG "initial memory mapped : 0 - %08lx\n",
 			max_pfn_mapped<<PAGE_SHIFT);
 
-	setup_trampolines();
+	setup_real_mode();
 
 	init_gbpages();
 
 	/* max_pfn_mapped is updated here */
-	max_low_pfn_mapped = init_memory_mapping(0, max_low_pfn<<PAGE_SHIFT);
+	end_pfn = max_low_pfn;
+
+#ifdef CONFIG_X86_64
+	/*
+	 * There may be regions after the last E820_RAM region that we
+	 * want to include in the kernel direct mapping because their
+	 * contents are needed at runtime.
+	 */
+	if (efi_enabled) {
+		unsigned long efi_end;
+
+		efi_end = e820_end_pfn(MAXMEM>>PAGE_SHIFT, E820_RESERVED_EFI);
+		if (efi_end > end_pfn)
+			end_pfn = efi_end;
+	}
+#endif
+
+	max_low_pfn_mapped = init_memory_mapping(0, end_pfn << PAGE_SHIFT);
 	max_pfn_mapped = max_low_pfn_mapped;
 
 #ifdef CONFIG_X86_64
@@ -968,6 +987,8 @@ void __init setup_arch(char **cmdline_p)
 	if (boot_cpu_data.cpuid_level >= 0) {
 		/* A CPU has %cr4 if and only if it has CPUID */
 		mmu_cr4_features = read_cr4();
+		if (trampoline_cr4_features)
+			*trampoline_cr4_features = mmu_cr4_features;
 	}
 
 #ifdef CONFIG_X86_32
@@ -1028,8 +1049,6 @@ void __init setup_arch(char **cmdline_p)
 	x86_init.oem.banner();
 
 	x86_init.timers.wallclock_init();
-
-	x86_platform.wallclock_init();
 
 	mcheck_init();
 

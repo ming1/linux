@@ -20,6 +20,8 @@ enum {
 	MPOL_PREFERRED,
 	MPOL_BIND,
 	MPOL_INTERLEAVE,
+	MPOL_LOCAL,
+	MPOL_NOOP,		/* retain existing policy for range */
 	MPOL_MAX,	/* always last member of enum */
 };
 
@@ -47,9 +49,16 @@ enum mpol_rebind_step {
 
 /* Flags for mbind */
 #define MPOL_MF_STRICT	(1<<0)	/* Verify existing pages in the mapping */
-#define MPOL_MF_MOVE	(1<<1)	/* Move pages owned by this process to conform to mapping */
-#define MPOL_MF_MOVE_ALL (1<<2)	/* Move every page to conform to mapping */
-#define MPOL_MF_INTERNAL (1<<3)	/* Internal flags start here */
+#define MPOL_MF_MOVE	 (1<<1)	/* Move pages owned by this process to conform
+				   to policy */
+#define MPOL_MF_MOVE_ALL (1<<2)	/* Move every page to conform to policy */
+#define MPOL_MF_LAZY	 (1<<3)	/* Modifies '_MOVE:  lazy migrate on fault */
+#define MPOL_MF_INTERNAL (1<<4)	/* Internal flags start here */
+
+#define MPOL_MF_VALID	(MPOL_MF_STRICT   | 	\
+			 MPOL_MF_MOVE     | 	\
+			 MPOL_MF_MOVE_ALL |	\
+			 MPOL_MF_LAZY)
 
 /*
  * Internal flags that share the struct mempolicy flags word with
@@ -59,6 +68,7 @@ enum mpol_rebind_step {
 #define MPOL_F_SHARED  (1 << 0)	/* identify shared policies */
 #define MPOL_F_LOCAL   (1 << 1)	/* preferred local allocation */
 #define MPOL_F_REBINDING (1 << 2)	/* identify policies in rebinding */
+#define MPOL_F_MOF	(1 << 3) /* this policy wants migrate on fault */
 
 #ifdef __KERNEL__
 
@@ -68,48 +78,12 @@ enum mpol_rebind_step {
 #include <linux/spinlock.h>
 #include <linux/nodemask.h>
 #include <linux/pagemap.h>
-
-struct mm_struct;
+#include <linux/migrate.h>
+#include <linux/list.h>
+#include <linux/sched.h>
+#include <linux/mm_types.h>
 
 #ifdef CONFIG_NUMA
-
-/*
- * Describe a memory policy.
- *
- * A mempolicy can be either associated with a process or with a VMA.
- * For VMA related allocations the VMA policy is preferred, otherwise
- * the process policy is used. Interrupts ignore the memory policy
- * of the current process.
- *
- * Locking policy for interlave:
- * In process context there is no locking because only the process accesses
- * its own state. All vma manipulation is somewhat protected by a down_read on
- * mmap_sem.
- *
- * Freeing policy:
- * Mempolicy objects are reference counted.  A mempolicy will be freed when
- * mpol_put() decrements the reference count to zero.
- *
- * Duplicating policy objects:
- * mpol_dup() allocates a new mempolicy and copies the specified mempolicy
- * to the new storage.  The reference count of the new object is initialized
- * to 1, representing the caller of mpol_dup().
- */
-struct mempolicy {
-	atomic_t refcnt;
-	unsigned short mode; 	/* See MPOL_* above */
-	unsigned short flags;	/* See set_mempolicy() MPOL_F_* above */
-	union {
-		short 		 preferred_node; /* preferred */
-		nodemask_t	 nodes;		/* interleave/bind */
-		/* undefined for default */
-	} v;
-	union {
-		nodemask_t cpuset_mems_allowed;	/* relative to these nodes */
-		nodemask_t user_nodemask;	/* nodemask passed by user */
-	} w;
-};
-
 /*
  * Support for managing mempolicy data objects (clone, copy, destroy)
  * The default fast path of a NULL MPOL_DEFAULT policy is always inlined.
@@ -158,6 +132,9 @@ static inline struct mempolicy *mpol_dup(struct mempolicy *pol)
 #define vma_policy(vma) ((vma)->vm_policy)
 #define vma_set_policy(vma, pol) ((vma)->vm_policy = (pol))
 
+extern int vma_dup_policy(struct vm_area_struct *new, struct vm_area_struct *old);
+extern void vma_put_policy(struct vm_area_struct *vma);
+
 static inline void mpol_get(struct mempolicy *pol)
 {
 	if (pol)
@@ -191,6 +168,12 @@ struct shared_policy {
 	spinlock_t lock;
 };
 
+extern struct mempolicy *mpol_new(unsigned short mode, unsigned short flags,
+				  nodemask_t *nodes);
+extern long mpol_do_mbind(unsigned long start, unsigned long len,
+				struct mempolicy *policy, unsigned long mode,
+				nodemask_t *nmask, unsigned long flags);
+
 void mpol_shared_policy_init(struct shared_policy *sp, struct mempolicy *mpol);
 int mpol_set_shared_policy(struct shared_policy *info,
 				struct vm_area_struct *vma,
@@ -204,6 +187,8 @@ struct mempolicy *get_vma_policy(struct task_struct *tsk,
 
 extern void numa_default_policy(void);
 extern void numa_policy_init(void);
+extern void mpol_rebind_policy(struct mempolicy *pol, const nodemask_t *new,
+				enum mpol_rebind_step step);
 extern void mpol_rebind_task(struct task_struct *tsk, const nodemask_t *new,
 				enum mpol_rebind_step step);
 extern void mpol_rebind_mm(struct mm_struct *mm, nodemask_t *new);
@@ -236,22 +221,12 @@ extern int mpol_parse_str(char *str, struct mempolicy **mpol, int no_context);
 extern int mpol_to_str(char *buffer, int maxlen, struct mempolicy *pol,
 			int no_context);
 
-/* Check if a vma is migratable */
-static inline int vma_migratable(struct vm_area_struct *vma)
-{
-	if (vma->vm_flags & (VM_IO|VM_HUGETLB|VM_PFNMAP|VM_RESERVED))
-		return 0;
-	/*
-	 * Migration allocates pages in the highest zone. If we cannot
-	 * do so then migration (at least from node to node) is not
-	 * possible.
-	 */
-	if (vma->vm_file &&
-		gfp_zone(mapping_gfp_mask(vma->vm_file->f_mapping))
-								< policy_zone)
-			return 0;
-	return 1;
-}
+extern int vma_migratable(struct vm_area_struct *);
+
+extern int mpol_misplaced(struct page *, struct vm_area_struct *, unsigned long);
+
+extern void lazy_migrate_vma(struct vm_area_struct *vma, int node);
+extern void lazy_migrate_process(struct mm_struct *mm, int node);
 
 #else
 
@@ -311,6 +286,11 @@ mpol_shared_policy_lookup(struct shared_policy *sp, unsigned long idx)
 
 #define vma_policy(vma) NULL
 #define vma_set_policy(vma, pol) do {} while(0)
+#define vma_dup_policy(new, old) (0)
+
+static inline void vma_put_policy(struct vm_area_struct *vma)
+{
+}
 
 static inline void numa_policy_init(void)
 {
@@ -380,6 +360,27 @@ static inline int mpol_to_str(char *buffer, int maxlen, struct mempolicy *pol,
 }
 
 #endif /* CONFIG_NUMA */
+
+#ifdef CONFIG_NUMA
+
+extern void __numa_task_exit(struct task_struct *);
+extern void numa_vma_link(struct vm_area_struct *, struct vm_area_struct *);
+extern void numa_vma_unlink(struct vm_area_struct *);
+
+static inline void numa_task_exit(struct task_struct *p)
+{
+	if (p->numa_group)
+		__numa_task_exit(p);
+}
+
+#else /* CONFIG_NUMA */
+
+static inline void numa_task_exit(struct task_struct *p) { }
+static inline void numa_vma_link(struct vm_area_struct *new, struct vm_area_struct *old) { }
+static inline void numa_vma_unlink(struct vm_area_struct *vma) { }
+
+#endif /* CONFIG_NUMA */
+
 #endif /* __KERNEL__ */
 
 #endif

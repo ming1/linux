@@ -1039,8 +1039,26 @@ config SCHED_AUTOGROUP
 	  desktop applications.  Task group autogeneration is currently based
 	  upon task session.
 
+config SCHED_NUMA_DEFAULT
+	bool "Enable NUMA scheduling by default"
+	depends on NUMA
+	default n
+	help
+	  This option selects the default enablement of a scheduler feature
+	  that gives each process a home-node and allocates all its memory
+	  from there and tries to schedule all the process tasks on that node
+	  (or as near to it) while trying to maintain fairness.
+
+	  Without this feature memory is allocated on whatever node a task
+	  happens to run on and the scheduler is free to migrate tasks around
+	  at will -- which can result in significant cross-node memory
+	  traffic.
+
+	  Regardless of this setting it can always be changed at runtime
+	  by changing /proc/sys/kernel/sched_numa.
+
 config MM_OWNER
-	bool
+	def_bool NUMA
 
 config SYSFS_DEPRECATED
 	bool "Enable deprecated sysfs features to support old userspace tools"
