@@ -534,7 +534,6 @@ Who:	Kees Cook <keescook@chromium.org>
 
 ----------------------------
 
-<<<<<<< HEAD
 What:	setitimer accepts user NULL pointer (value)
 When:	3.6
 Why:	setitimer is not returning -EFAULT if user pointer is NULL. This
