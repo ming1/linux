@@ -1502,7 +1502,7 @@ static int omapfb_parse_vram_param(const char *param, int max_entries,
 
 		fbnum = simple_strtoul(p, &p, 10);
 
-		if (p == param)
+		if (p == start)
 			return -EINVAL;
 
 		if (*p != ':')
@@ -2307,7 +2307,7 @@ static int omapfb_init_display(struct omapfb2_device *fbdev,
 	return 0;
 }
 
-static int omapfb_probe(struct platform_device *pdev)
+static int __init omapfb_probe(struct platform_device *pdev)
 {
 	struct omapfb2_device *fbdev = NULL;
 	int r = 0;
@@ -2448,7 +2448,7 @@ err0:
 	return r;
 }
 
-static int omapfb_remove(struct platform_device *pdev)
+static int __exit omapfb_remove(struct platform_device *pdev)
 {
 	struct omapfb2_device *fbdev = platform_get_drvdata(pdev);
 
@@ -2462,8 +2462,7 @@ static int omapfb_remove(struct platform_device *pdev)
 }
 
 static struct platform_driver omapfb_driver = {
-	.probe          = omapfb_probe,
-	.remove         = omapfb_remove,
+	.remove         = __exit_p(omapfb_remove),
 	.driver         = {
 		.name   = "omapfb",
 		.owner  = THIS_MODULE,
@@ -2474,7 +2473,7 @@ static int __init omapfb_init(void)
 {
 	DBG("omapfb_init\n");
 
-	if (platform_driver_register(&omapfb_driver)) {
+	if (platform_driver_probe(&omapfb_driver, omapfb_probe)) {
 		printk(KERN_ERR "failed to register omapfb driver\n");
 		return -ENODEV;
 	}
