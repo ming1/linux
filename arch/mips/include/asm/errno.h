@@ -122,6 +122,9 @@
 #define	ERFKILL		167	/* Operation not possible due to RF-kill */
 
 #define EHWPOISON	168	/* Memory page has hardware error */
+#define	ENOAUTHSERVICE	169	/* Authentication service not available */
+#define	ENONAMESERVICE	170	/* Network name service unavailable */
+#define	ENAMEUNKNOWN	171	/* Network name unknown */
 
 #define EDQUOT		1133	/* Quota exceeded */
 
