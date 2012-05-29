@@ -259,6 +259,14 @@ config LEDS_DA903X
 	  This option enables support for on-chip LED drivers found
 	  on Dialog Semiconductor DA9030/DA9034 PMICs.
 
+config LEDS_DA9052
+	tristate "Dialog DA9052/DA9053 LEDS"
+	depends on LEDS_CLASS
+	depends on PMIC_DA9052
+	help
+	  This option enables support for on-chip LED drivers found
+	  on Dialog Semiconductor DA9052-BC and DA9053-AA/Bx PMICs.
+
 config LEDS_DAC124S085
 	tristate "LED Support for DAC124S085 SPI DAC"
 	depends on LEDS_CLASS
@@ -394,6 +402,15 @@ config LEDS_MAX8997
 	  This option enables support for on-chip LED drivers on
 	  MAXIM MAX8997 PMIC.
 
+config LEDS_LM3556
+	tristate "LED Support for TI LM3556 Chip"
+	depends on LEDS_CLASS
+	depends on I2C
+	help
+	  This option enables support for LEDs connected to LM3556.
+	  LM3556 includes Torch, Flash and Indicator functions and
+	  controlled via I2C.
+
 config LEDS_OT200
 	tristate "LED support for the Bachmann OT200"
 	depends on LEDS_CLASS && HAS_IOMEM
@@ -470,5 +487,13 @@ config LEDS_TRIGGER_DEFAULT_ON
 
 comment "iptables trigger is under Netfilter config (LED target)"
 	depends on LEDS_TRIGGERS
+
+config LEDS_TRIGGER_TRANSIENT
+	tristate "LED Transient Trigger"
+	depends on LEDS_TRIGGERS
+	help
+	  This allows one time activation of a transient state on
+	  GPIO/PWM based hadrware.
+	  If unsure, say Y.
 
 endif # NEW_LEDS
