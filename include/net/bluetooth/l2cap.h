@@ -229,6 +229,10 @@ struct l2cap_conn_rsp {
 	__le16     status;
 } __packed;
 
+/* protocol/service multiplexer (PSM) */
+#define L2CAP_PSM_SDP		0x0001
+#define L2CAP_PSM_RFCOMM	0x0003
+
 /* channel indentifier */
 #define L2CAP_CID_SIGNALING	0x0001
 #define L2CAP_CID_CONN_LESS	0x0002
@@ -270,6 +274,9 @@ struct l2cap_conf_rsp {
 #define L2CAP_CONF_UNKNOWN	0x0003
 #define L2CAP_CONF_PENDING	0x0004
 #define L2CAP_CONF_EFS_REJECT	0x0005
+
+/* configuration req/rsp continuation flag */
+#define L2CAP_CONF_FLAG_CONTINUATION	0x0001
 
 struct l2cap_conf_opt {
 	__u8       type;
@@ -419,11 +426,6 @@ struct l2cap_seq_list {
 #define L2CAP_SEQ_LIST_CLEAR	0xFFFF
 #define L2CAP_SEQ_LIST_TAIL	0x8000
 
-struct srej_list {
-	__u16	tx_seq;
-	struct list_head list;
-};
-
 struct l2cap_chan {
 	struct sock *sk;
 
@@ -475,14 +477,12 @@ struct l2cap_chan {
 	__u16		expected_ack_seq;
 	__u16		expected_tx_seq;
 	__u16		buffer_seq;
-	__u16		buffer_seq_srej;
 	__u16		srej_save_reqseq;
 	__u16		last_acked_seq;
 	__u16		frames_sent;
 	__u16		unacked_frames;
 	__u8		retry_count;
 	__u16		srej_queue_next;
-	__u8		num_acked;
 	__u16		sdu_len;
 	struct sk_buff	*sdu;
 	struct sk_buff	*sdu_last_frag;
@@ -515,7 +515,6 @@ struct l2cap_chan {
 	struct sk_buff_head	srej_q;
 	struct l2cap_seq_list	srej_list;
 	struct l2cap_seq_list	retrans_list;
-	struct list_head	srej_l;
 
 	struct list_head	list;
 	struct list_head	global_l;
@@ -528,10 +527,14 @@ struct l2cap_chan {
 struct l2cap_ops {
 	char			*name;
 
-	struct l2cap_chan	*(*new_connection) (void *data);
-	int			(*recv) (void *data, struct sk_buff *skb);
-	void			(*close) (void *data);
-	void			(*state_change) (void *data, int state);
+	struct l2cap_chan	*(*new_connection) (struct l2cap_chan *chan);
+	int			(*recv) (struct l2cap_chan * chan,
+					 struct sk_buff *skb);
+	void			(*teardown) (struct l2cap_chan *chan, int err);
+	void			(*close) (struct l2cap_chan *chan);
+	void			(*state_change) (struct l2cap_chan *chan,
+						 int state);
+	void			(*ready) (struct l2cap_chan *chan);
 	struct sk_buff		*(*alloc_skb) (struct l2cap_chan *chan,
 					       unsigned long len, int nb);
 };
@@ -597,6 +600,7 @@ enum {
 	CONF_EWS_RECV,
 	CONF_LOC_CONF_PEND,
 	CONF_REM_CONF_PEND,
+	CONF_NOT_COMPLETE,
 };
 
 #define L2CAP_CONF_MAX_CONF_REQ 2
@@ -713,11 +717,7 @@ static inline bool l2cap_clear_timer(struct l2cap_chan *chan,
 
 #define __set_chan_timer(c, t) l2cap_set_timer(c, &c->chan_timer, (t))
 #define __clear_chan_timer(c) l2cap_clear_timer(c, &c->chan_timer)
-#define __set_retrans_timer(c) l2cap_set_timer(c, &c->retrans_timer, \
-		msecs_to_jiffies(L2CAP_DEFAULT_RETRANS_TO));
 #define __clear_retrans_timer(c) l2cap_clear_timer(c, &c->retrans_timer)
-#define __set_monitor_timer(c) l2cap_set_timer(c, &c->monitor_timer, \
-		msecs_to_jiffies(L2CAP_DEFAULT_MONITOR_TO));
 #define __clear_monitor_timer(c) l2cap_clear_timer(c, &c->monitor_timer)
 #define __set_ack_timer(c) l2cap_set_timer(c, &chan->ack_timer, \
 		msecs_to_jiffies(L2CAP_DEFAULT_ACK_TO));
@@ -736,174 +736,6 @@ static inline __u16 __next_seq(struct l2cap_chan *chan, __u16 seq)
 	return (seq + 1) % (chan->tx_win_max + 1);
 }
 
-static inline int l2cap_tx_window_full(struct l2cap_chan *ch)
-{
-	int sub;
-
-	sub = (ch->next_tx_seq - ch->expected_ack_seq) % 64;
-
-	if (sub < 0)
-		sub += 64;
-
-	return sub == ch->remote_tx_win;
-}
-
-static inline __u16 __get_reqseq(struct l2cap_chan *chan, __u32 ctrl)
-{
-	if (test_bit(FLAG_EXT_CTRL, &chan->flags))
-		return (ctrl & L2CAP_EXT_CTRL_REQSEQ) >>
-						L2CAP_EXT_CTRL_REQSEQ_SHIFT;
-	else
-		return (ctrl & L2CAP_CTRL_REQSEQ) >> L2CAP_CTRL_REQSEQ_SHIFT;
-}
-
-static inline __u32 __set_reqseq(struct l2cap_chan *chan, __u32 reqseq)
-{
-	if (test_bit(FLAG_EXT_CTRL, &chan->flags))
-		return (reqseq << L2CAP_EXT_CTRL_REQSEQ_SHIFT) &
-							L2CAP_EXT_CTRL_REQSEQ;
-	else
-		return (reqseq << L2CAP_CTRL_REQSEQ_SHIFT) & L2CAP_CTRL_REQSEQ;
-}
-
-static inline __u16 __get_txseq(struct l2cap_chan *chan, __u32 ctrl)
-{
-	if (test_bit(FLAG_EXT_CTRL, &chan->flags))
-		return (ctrl & L2CAP_EXT_CTRL_TXSEQ) >>
-						L2CAP_EXT_CTRL_TXSEQ_SHIFT;
-	else
-		return (ctrl & L2CAP_CTRL_TXSEQ) >> L2CAP_CTRL_TXSEQ_SHIFT;
-}
-
-static inline __u32 __set_txseq(struct l2cap_chan *chan, __u32 txseq)
-{
-	if (test_bit(FLAG_EXT_CTRL, &chan->flags))
-		return (txseq << L2CAP_EXT_CTRL_TXSEQ_SHIFT) &
-							L2CAP_EXT_CTRL_TXSEQ;
-	else
-		return (txseq << L2CAP_CTRL_TXSEQ_SHIFT) & L2CAP_CTRL_TXSEQ;
-}
-
-static inline bool __is_sframe(struct l2cap_chan *chan, __u32 ctrl)
-{
-	if (test_bit(FLAG_EXT_CTRL, &chan->flags))
-		return ctrl & L2CAP_EXT_CTRL_FRAME_TYPE;
-	else
-		return ctrl & L2CAP_CTRL_FRAME_TYPE;
-}
-
-static inline __u32 __set_sframe(struct l2cap_chan *chan)
-{
-	if (test_bit(FLAG_EXT_CTRL, &chan->flags))
-		return L2CAP_EXT_CTRL_FRAME_TYPE;
-	else
-		return L2CAP_CTRL_FRAME_TYPE;
-}
-
-static inline __u8 __get_ctrl_sar(struct l2cap_chan *chan, __u32 ctrl)
-{
-	if (test_bit(FLAG_EXT_CTRL, &chan->flags))
-		return (ctrl & L2CAP_EXT_CTRL_SAR) >> L2CAP_EXT_CTRL_SAR_SHIFT;
-	else
-		return (ctrl & L2CAP_CTRL_SAR) >> L2CAP_CTRL_SAR_SHIFT;
-}
-
-static inline __u32 __set_ctrl_sar(struct l2cap_chan *chan, __u32 sar)
-{
-	if (test_bit(FLAG_EXT_CTRL, &chan->flags))
-		return (sar << L2CAP_EXT_CTRL_SAR_SHIFT) & L2CAP_EXT_CTRL_SAR;
-	else
-		return (sar << L2CAP_CTRL_SAR_SHIFT) & L2CAP_CTRL_SAR;
-}
-
-static inline bool __is_sar_start(struct l2cap_chan *chan, __u32 ctrl)
-{
-	return __get_ctrl_sar(chan, ctrl) == L2CAP_SAR_START;
-}
-
-static inline __u32 __get_sar_mask(struct l2cap_chan *chan)
-{
-	if (test_bit(FLAG_EXT_CTRL, &chan->flags))
-		return L2CAP_EXT_CTRL_SAR;
-	else
-		return L2CAP_CTRL_SAR;
-}
-
-static inline __u8 __get_ctrl_super(struct l2cap_chan *chan, __u32 ctrl)
-{
-	if (test_bit(FLAG_EXT_CTRL, &chan->flags))
-		return (ctrl & L2CAP_EXT_CTRL_SUPERVISE) >>
-						L2CAP_EXT_CTRL_SUPER_SHIFT;
-	else
-		return (ctrl & L2CAP_CTRL_SUPERVISE) >> L2CAP_CTRL_SUPER_SHIFT;
-}
-
-static inline __u32 __set_ctrl_super(struct l2cap_chan *chan, __u32 super)
-{
-	if (test_bit(FLAG_EXT_CTRL, &chan->flags))
-		return (super << L2CAP_EXT_CTRL_SUPER_SHIFT) &
-						L2CAP_EXT_CTRL_SUPERVISE;
-	else
-		return (super << L2CAP_CTRL_SUPER_SHIFT) &
-							L2CAP_CTRL_SUPERVISE;
-}
-
-static inline __u32 __set_ctrl_final(struct l2cap_chan *chan)
-{
-	if (test_bit(FLAG_EXT_CTRL, &chan->flags))
-		return L2CAP_EXT_CTRL_FINAL;
-	else
-		return L2CAP_CTRL_FINAL;
-}
-
-static inline bool __is_ctrl_final(struct l2cap_chan *chan, __u32 ctrl)
-{
-	if (test_bit(FLAG_EXT_CTRL, &chan->flags))
-		return ctrl & L2CAP_EXT_CTRL_FINAL;
-	else
-		return ctrl & L2CAP_CTRL_FINAL;
-}
-
-static inline __u32 __set_ctrl_poll(struct l2cap_chan *chan)
-{
-	if (test_bit(FLAG_EXT_CTRL, &chan->flags))
-		return L2CAP_EXT_CTRL_POLL;
-	else
-		return L2CAP_CTRL_POLL;
-}
-
-static inline bool __is_ctrl_poll(struct l2cap_chan *chan, __u32 ctrl)
-{
-	if (test_bit(FLAG_EXT_CTRL, &chan->flags))
-		return ctrl & L2CAP_EXT_CTRL_POLL;
-	else
-		return ctrl & L2CAP_CTRL_POLL;
-}
-
-static inline __u32 __get_control(struct l2cap_chan *chan, void *p)
-{
-	if (test_bit(FLAG_EXT_CTRL, &chan->flags))
-		return get_unaligned_le32(p);
-	else
-		return get_unaligned_le16(p);
-}
-
-static inline void __put_control(struct l2cap_chan *chan, __u32 control,
-								void *p)
-{
-	if (test_bit(FLAG_EXT_CTRL, &chan->flags))
-		return put_unaligned_le32(control, p);
-	else
-		return put_unaligned_le16(control, p);
-}
-
-static inline __u8 __ctrl_size(struct l2cap_chan *chan)
-{
-	if (test_bit(FLAG_EXT_CTRL, &chan->flags))
-		return L2CAP_EXT_HDR_SIZE - L2CAP_HDR_SIZE;
-	else
-		return L2CAP_ENH_HDR_SIZE - L2CAP_HDR_SIZE;
-}
 
 extern bool disable_ertm;
 
