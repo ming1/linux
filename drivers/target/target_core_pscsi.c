@@ -1048,8 +1048,6 @@ static inline void pscsi_clear_cdb_lun(unsigned char *cdb)
 
 static int pscsi_parse_cdb(struct se_cmd *cmd)
 {
-	struct se_device *dev = cmd->se_dev;
-	struct se_subsystem_dev *su_dev = dev->se_sub_dev;
 	unsigned char *cdb = cmd->t_task_cdb;
 	unsigned int dummy_size;
 	int ret;
@@ -1078,32 +1076,6 @@ static int pscsi_parse_cdb(struct se_cmd *cmd)
 		ret = spc_parse_cdb(cmd, &dummy_size);
 		if (ret)
 			return ret;
-		break;
-	case MAINTENANCE_IN:
-		if (dev->transport->get_device_type(dev) != TYPE_ROM) {
-			/* MAINTENANCE_IN from SCC-2 */
-			/*
-			 * Check for emulated MI_REPORT_TARGET_PGS.
-			 */
-			if ((cdb[1] & 0x1f) == MI_REPORT_TARGET_PGS &&
-			    su_dev->t10_alua.alua_type == SPC3_ALUA_EMULATED) {
-				cmd->execute_cmd =
-					target_emulate_report_target_port_groups;
-			}
-		}
-		break;
-	case MAINTENANCE_OUT:
-		if (dev->transport->get_device_type(dev) != TYPE_ROM) {
-			/* MAINTENANCE_OUT from SCC-2
-			 *
-			 * Check for emulated MO_SET_TARGET_PGS.
-			 */
-			if (cdb[1] == MO_SET_TARGET_PGS &&
-			    su_dev->t10_alua.alua_type == SPC3_ALUA_EMULATED) {
-				cmd->execute_cmd =
-					target_emulate_set_target_port_groups;
-			}
-		}
 		break;
 	case READ_6:
 	case READ_10:
