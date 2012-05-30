@@ -2818,6 +2818,12 @@ F:	Documentation/firmware_class/
 F:	drivers/base/firmware*.c
 F:	include/linux/firmware.h
 
+FLOPPY DRIVER
+M:	Jiri Kosina <jkosina@suse.cz>
+T:	git git://git.kernel.org/pub/scm/linux/kernel/git/jikos/floppy.git
+S:	Odd fixes
+F:	drivers/block/floppy.c
+
 FPU EMULATOR
 M:	Bill Metzenthen <billm@melbpc.org.au>
 W:	http://floatingpoint.sourceforge.net/emulator/index.html
@@ -2988,9 +2994,9 @@ GENERIC GPIO I2C MULTIPLEXER DRIVER
 M:	Peter Korsgaard <peter.korsgaard@barco.com>
 L:	linux-i2c@vger.kernel.org
 S:	Supported
-F:	drivers/i2c/muxes/gpio-i2cmux.c
-F:	include/linux/gpio-i2cmux.h
-F:	Documentation/i2c/muxes/gpio-i2cmux
+F:	drivers/i2c/muxes/i2c-mux-gpio.c
+F:	include/linux/i2c-mux-gpio.h
+F:	Documentation/i2c/muxes/i2c-mux-gpio
 
 GENERIC HDLC (WAN) DRIVERS
 M:	Krzysztof Halasa <khc@pm.waw.pl>
@@ -3232,10 +3238,8 @@ F:	include/linux/clockchips.h
 F:	include/linux/hrtimer.h
 
 HIGH-SPEED SCC DRIVER FOR AX.25
-M:	Klaus Kudielka <klaus.kudielka@ieee.org>
 L:	linux-hams@vger.kernel.org
-W:	http://www.nt.tuwien.ac.at/~kkudielk/Linux/
-S:	Maintained
+S:	Orphan
 F:	drivers/net/hamradio/dmascc.c
 F:	drivers/net/hamradio/scc.c
 
@@ -3381,6 +3385,12 @@ M:	Dave Jeffery <ipslinux@adaptec.com>
 W:	http://www.developer.ibm.com/welcome/netfinity/serveraid.html
 S:	Supported
 F:	drivers/scsi/ips.*
+
+ICH LPC AND GPIO DRIVER
+M:	Peter Tyser <ptyser@xes-inc.com>
+S:	Maintained
+F:	drivers/mfd/lpc_ich.c
+F:	drivers/gpio/gpio-ich.c
 
 IDE SUBSYSTEM
 M:	"David S. Miller" <davem@davemloft.net>
@@ -4505,12 +4515,6 @@ L:	linux-arm-kernel@lists.infradead.org (moderated for non-subscribers)
 S:	Maintained
 F:	drivers/mmc/host/imxmmc.*
 
-MOUSE AND MISC DEVICES [GENERAL]
-M:	Alessandro Rubini <rubini@ipvvis.unipv.it>
-S:	Maintained
-F:	drivers/input/mouse/
-F:	include/linux/gpio_mouse.h
-
 MOXA SMARTIO/INDUSTIO/INTELLIO SERIAL CARD
 M:	Jiri Slaby <jirislaby@gmail.com>
 S:	Maintained
@@ -5148,7 +5152,7 @@ PCA9541 I2C BUS MASTER SELECTOR DRIVER
 M:	Guenter Roeck <guenter.roeck@ericsson.com>
 L:	linux-i2c@vger.kernel.org
 S:	Maintained
-F:	drivers/i2c/muxes/pca9541.c
+F:	drivers/i2c/muxes/i2c-mux-pca9541.c
 
 PCA9564/PCA9665 I2C BUS DRIVER
 M:	Wolfram Sang <w.sang@pengutronix.de>
