@@ -919,7 +919,7 @@ static ssize_t show_idle_count(struct device *dev,
 	do {
 		sequence = ACCESS_ONCE(idle->sequence);
 		idle_count = ACCESS_ONCE(idle->idle_count);
-		if (ACCESS_ONCE(idle->idle_enter))
+		if (ACCESS_ONCE(idle->clock_idle_enter))
 			idle_count++;
 	} while ((sequence & 1) || (idle->sequence != sequence));
 	return sprintf(buf, "%llu\n", idle_count);
@@ -937,8 +937,8 @@ static ssize_t show_idle_time(struct device *dev,
 		now = get_clock();
 		sequence = ACCESS_ONCE(idle->sequence);
 		idle_time = ACCESS_ONCE(idle->idle_time);
-		idle_enter = ACCESS_ONCE(idle->idle_enter);
-		idle_exit = ACCESS_ONCE(idle->idle_exit);
+		idle_enter = ACCESS_ONCE(idle->clock_idle_enter);
+		idle_exit = ACCESS_ONCE(idle->clock_idle_exit);
 	} while ((sequence & 1) || (idle->sequence != sequence));
 	idle_time += idle_enter ? ((idle_exit ? : now) - idle_enter) : 0;
 	return sprintf(buf, "%llu\n", idle_time >> 12);

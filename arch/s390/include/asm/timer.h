@@ -17,29 +17,18 @@
 struct vtimer_list {
 	struct list_head entry;
 
-	int cpu;
-	__u64 expires;
-	__u64 interval;
+	u64 expires;
+	u64 interval;
 
 	void (*function)(unsigned long);
 	unsigned long data;
 };
 
-/* the vtimer value will wrap after ca. 71 years */
-struct vtimer_queue {
-	struct list_head list;
-	spinlock_t lock;
-	__u64 timer;		/* last programmed timer */
-	__u64 elapsed;		/* elapsed time of timer expire values */
-	__u64 idle_enter;	/* cpu timer on idle enter */
-	__u64 idle_exit;	/* cpu timer on idle exit */
-};
-
 extern void init_virt_timer(struct vtimer_list *timer);
-extern void add_virt_timer(void *new);
-extern void add_virt_timer_periodic(void *new);
-extern int mod_virt_timer(struct vtimer_list *timer, __u64 expires);
-extern int mod_virt_timer_periodic(struct vtimer_list *timer, __u64 expires);
+extern void add_virt_timer(struct vtimer_list *timer);
+extern void add_virt_timer_periodic(struct vtimer_list *timer);
+extern int mod_virt_timer(struct vtimer_list *timer, u64 expires);
+extern int mod_virt_timer_periodic(struct vtimer_list *timer, u64 expires);
 extern int del_virt_timer(struct vtimer_list *timer);
 
 extern void init_cpu_vtimer(void);
