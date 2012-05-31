@@ -32,7 +32,7 @@ config CAIF_SPI_SYNC
 	help to synchronize to the next transfer in case of over or under-runs.
 	This option also needs to be enabled on the modem.
 
-config CAIF_SHM
+config CAIF_SHM_MBX
 	tristate "CAIF shared memory protocol driver"
 	depends on CAIF && U5500_MBOX
 	default n
@@ -47,3 +47,13 @@ config CAIF_HSI
        The caif low level driver for CAIF over HSI.
        Be aware that if you enable this then you also need to
        enable a low-level HSI driver.
+
+config CAIF_SHM
+	tristate "CAIF shared memory protocol driver"
+	depends on MODEM_SHM_BUS && CAIF
+	default n
+	---help---
+	Say "Y" if you want to support CAIF over Modem Shared Memory
+	IPC mechanism (e.g. over Chip to Chip). Only say M here if you want to
+	test CAIF over SHM and need to load and unload its module.
+	If unsure say N.
