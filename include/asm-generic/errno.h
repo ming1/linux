@@ -109,5 +109,8 @@
 #define ERFKILL		132	/* Operation not possible due to RF-kill */
 
 #define EHWPOISON	133	/* Memory page has hardware error */
+#define	ENOAUTHSERVICE	134	/* Authentication service not available */
+#define	ENONAMESERVICE	135	/* Network name service unavailable */
+#define	ENAMEUNKNOWN	136	/* Network name unknown */
 
 #endif
