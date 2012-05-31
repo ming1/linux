@@ -1,0 +1,49 @@
+Importing i2c based on 731a7378b81c2f5fa88ca1ae20b83d548d5613dc
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard 731a7378b81c2f5fa88ca1ae20b83d548d5613dc
+HEAD is now at 731a737 Merge branch 'x86-trampoline-for-linus' of git://git.kernel.org/pub/scm/linux/kernel/git/tip/tip
+$ git am ../quilt/i2c/i2c-dev-accept-RECV_LEN.patch
+Applying: i2c-dev: Add support for I2C_M_RECV_LEN
+$ git am ../quilt/i2c/i2c-split-I2C_M_NOSTART-support-out-of-I2C_FUNC_PROTOCOL_MANGLING.patch
+Applying: i2c: Split I2C_M_NOSTART support out of I2C_FUNC_PROTOCOL_MANGLING
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/i2c
+From ../quilt-tmp
+ + d66c6c5...b2b60dd master     -> quilt/i2c  (forced update)
+Importing jdelvare-hwmon based on 731a7378b81c2f5fa88ca1ae20b83d548d5613dc
+$ cd ../quilt-tmp
+$ git reset --hard 731a7378b81c2f5fa88ca1ae20b83d548d5613dc
+HEAD is now at 731a737 Merge branch 'x86-trampoline-for-linus' of git://git.kernel.org/pub/scm/linux/kernel/git/tip/tip
+$ git am ../quilt/jdelvare-hwmon/hwmon-coretemp-improve-support-of-recent-Atom-CPU-models.patch
+Applying: hwmon: (coretemp) Improve support of recent Atom CPU models
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/jdelvare-hwmon
+From ../quilt-tmp
+ + e3a9568...7ae8d78 master     -> quilt/jdelvare-hwmon  (forced update)
+Importing rr based on v3.4-8906-g731a737
+$ cd ../quilt-tmp
+$ git reset --hard 731a7378b81c2f5fa88ca1ae20b83d548d5613dc
+HEAD is now at 731a737 Merge branch 'x86-trampoline-for-linus' of git://git.kernel.org/pub/scm/linux/kernel/git/tip/tip
+$ git am ../quilt/rr/virtio:ids_fix_comment_for_rng.patch
+Applying: virtio ids: fix comment for virtio-rng
+$ git am ../quilt/rr/virtio:rng_allow_tasks_to_be_killed_that_are_waiting_for_rng_input.patch
+Applying: virtio: rng: allow tasks to be killed that are waiting for rng input
+$ git am ../quilt/rr/virtio:rng_don_t_wait_on_host_when_module_is_going_away.patch
+Applying: virtio: rng: don't wait on host when module is going away
+$ git am ../quilt/rr/virtio:rng_split_out_common_code_in_probe_remove_for_s3_s4_ops.patch
+Applying: virtio: rng: split out common code in probe / remove for s3/s4 ops
+$ git am ../quilt/rr/virtio:rng_s3_s4_support.patch
+Applying: virtio: rng: s3/s4 support
+$ git am ../quilt/rr/lglock-simplify.patch
+Applying: lglock: remove online variants of lock
+$ git am ../quilt/rr/misc:cpumask_fix_lg_lock_br_lock-1.patch
+Applying: brlocks/lglocks: API cleanups
+$ git am ../quilt/rr/misc:cpumask_fix_lg_lock_br_lock-2.patch
+Applying: brlocks/lglocks: turn into functions
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/rr
+From ../quilt-tmp
+ + 5bdc3af...56abc41 master     -> quilt/rr  (forced update)
+Importing device-mapper based on v3.4
+Unchanged quilt series device-mapper
