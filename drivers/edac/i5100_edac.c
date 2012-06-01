@@ -859,8 +859,8 @@ static void __devinit i5100_init_csrows(struct mem_ctl_info *mci)
 				i5100_rank_to_slot(mci, chan, rank));
 		}
 
-		debugf2("dimm channel %d, rank %d, size %ld\n",
-			chan, rank, (long)PAGES_TO_MiB(npages));
+		edac_dbg(2, "dimm channel %d, rank %d, size %ld\n",
+			 chan, rank, (long)PAGES_TO_MiB(npages));
 	}
 }
 
@@ -943,7 +943,7 @@ static int __devinit i5100_init_one(struct pci_dev *pdev,
 		goto bail_disable_ch1;
 	}
 
-	mci->dev = &pdev->dev;
+	mci->pdev = &pdev->dev;
 
 	priv = mci->pvt_info;
 	priv->ranksperchan = ranksperch;
