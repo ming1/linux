@@ -294,6 +294,10 @@ static int migrate_page_move_mapping(struct address_space *mapping,
  					page_index(page));
 
 	expected_count = 2 + page_has_private(page);
+	if (mode == MIGRATE_FAULT) {
+		expected_count++;
+		mode = MIGRATE_ASYNC; /* don't bother blocking for MoF */
+	}
 	if (page_count(page) != expected_count ||
 		radix_tree_deref_slot_protected(pslot, &mapping->tree_lock) != page) {
 		spin_unlock_irq(&mapping->tree_lock);
@@ -802,7 +806,7 @@ static int __unmap_and_move(struct page *page, struct page *newpage,
 	}
 
 	/* Establish migration ptes or remove ptes */
-	try_to_unmap(page, TTU_MIGRATION|TTU_IGNORE_MLOCK|TTU_IGNORE_ACCESS);
+	try_to_unmap(page, TTU_MIGRATE_DIRECT|TTU_IGNORE_MLOCK|TTU_IGNORE_ACCESS);
 
 skip_unmap:
 	if (!page_mapped(page))
@@ -918,7 +922,7 @@ static int unmap_and_move_huge_page(new_page_t get_new_page,
 	if (PageAnon(hpage))
 		anon_vma = page_get_anon_vma(hpage);
 
-	try_to_unmap(hpage, TTU_MIGRATION|TTU_IGNORE_MLOCK|TTU_IGNORE_ACCESS);
+	try_to_unmap(hpage, TTU_MIGRATE_DIRECT|TTU_IGNORE_MLOCK|TTU_IGNORE_ACCESS);
 
 	if (!page_mapped(hpage))
 		rc = move_to_new_page(new_hpage, hpage, 1, mode);
@@ -945,6 +949,98 @@ out:
 			*result = page_to_nid(new_hpage);
 	}
 	return rc;
+}
+
+/*
+ * Lazy migration:  just unmap pages, moving anon pages to swap cache, if
+ * necessary.  Migration will occur, if policy dictates, when a task faults
+ * an unmapped page back into its page table--i.e., on "first touch" after
+ * unmapping.  Note that migrate-on-fault only migrates pages whose mapping
+ * [e.g., file system] supplies a migratepage op, so we skip pages that
+ * wouldn't migrate on fault.
+ *
+ * Pages are placed back on the lru whether or not they were successfully
+ * unmapped.  Like migrate_pages().
+ *
+ * Unline migrate_pages(), this function is only called in the context of
+ * a task that is unmapping it's own pages while holding its map semaphore
+ * for write.
+ */
+int migrate_pages_unmap_only(struct list_head *pagelist)
+{
+	struct page *page;
+	struct page *page2;
+	int nr_failed = 0;
+	int nr_unmapped = 0;
+
+	list_for_each_entry_safe(page, page2, pagelist, lru) {
+		int ret;
+
+		cond_resched();
+
+		/*
+		 * Give up easily.  We ARE being lazy.
+		 */
+		if (page_count(page) == 1)
+			goto next;
+
+		if (unlikely(PageTransHuge(page)))
+			if (unlikely(split_huge_page(page)))
+				goto next;
+
+		if (!trylock_page(page))
+			goto next;
+
+		if (PageKsm(page) || PageWriteback(page))
+			goto unlock;
+
+		/*
+		 * see comments in unmap_and_move()
+		 */
+		if (!page->mapping)
+			goto unlock;
+
+		if (PageAnon(page)) {
+			if (!PageSwapCache(page) && !add_to_swap(page)) {
+				nr_failed++;
+				goto unlock;
+			}
+		} else {
+			struct address_space *mapping = page_mapping(page);
+			BUG_ON(!mapping);
+			if (!mapping->a_ops->migratepage)
+				goto unlock;
+		}
+
+		ret = try_to_unmap(page,
+	             TTU_MIGRATE_DEFERRED|TTU_IGNORE_MLOCK|TTU_IGNORE_ACCESS);
+		if (ret != SWAP_SUCCESS || page_mapped(page))
+			nr_failed++;
+		else
+			nr_unmapped++;
+
+unlock:
+		unlock_page(page);
+next:
+		list_del(&page->lru);
+		dec_zone_page_state(page, NR_ISOLATED_ANON +
+				page_is_file_cache(page));
+		putback_lru_page(page);
+
+	}
+
+	/*
+	 * Drain local per cpu pagevecs so fault path can find the the pages
+	 * on the lru.  If we got migrated during the loop above, we may
+	 * have left pages cached on other cpus.  But, we'll live with that
+	 * here to avoid lru_add_drain_all().
+	 * TODO:  mechanism to drain on only those cpus we've been
+	 *        scheduled on between two points--e.g., during the loop.
+	 */
+	if (nr_unmapped)
+		lru_add_drain();
+
+	return nr_failed;
 }
 
 /*
@@ -1425,4 +1521,128 @@ int migrate_vmas(struct mm_struct *mm, const nodemask_t *to,
  	}
  	return err;
 }
-#endif
+
+/*
+ * Attempt to migrate a misplaced page to the specified destination
+ * node.  Page is already unmapped, up to date and locked by caller.
+ * Anon pages are in the swap cache.  Page's mapping has a migratepage aop.
+ *
+ * page refs on entry/exit:  cache + fault path [+ bufs]
+ */
+struct page *
+migrate_misplaced_page(struct page *page, struct mm_struct *mm, int node)
+{
+	struct page *oldpage = page, *newpage;
+	struct address_space *mapping = page_mapping(page);
+	struct mem_cgroup *mcg;
+	unsigned int gfp;
+	int rc = 0;
+	int charge = -ENOMEM;
+
+	VM_BUG_ON(!PageLocked(page));
+	VM_BUG_ON(page_mapcount(page));
+	VM_BUG_ON(PageAnon(page) && !PageSwapCache(page));
+	VM_BUG_ON(!mapping || !mapping->a_ops->migratepage);
+
+	/*
+	 * remove old page from LRU so it can't be found while migrating
+	 * except thru' the cache by other faulting tasks who will
+	 * block behind my lock.
+	 */
+	if (isolate_lru_page(page))	/* incrs page count on success */
+		goto out_nolru;	/* we lost */
+
+	/*
+	 * Never wait for allocations just to migrate on fault,
+	 * but don't dip into reserves.
+	 * And, only accept pages from specified node.
+	 * No sense migrating to a different "misplaced" page!
+	 */
+	gfp = (unsigned int)mapping_gfp_mask(mapping) & ~__GFP_WAIT;
+	gfp |= __GFP_NOMEMALLOC | GFP_THISNODE ;
+
+	newpage = alloc_pages_node(node, gfp, 0);
+	if (!newpage)
+		goto out;	/* give up */
+
+	/*
+	 * can't just lock_page() -- "might sleep" in atomic context
+	 */
+	if (!trylock_page(newpage))
+		BUG();		/* new page should be unlocked!!! */
+
+	// XXX hnaz, is this right?
+	charge = mem_cgroup_prepare_migration(page, newpage, &mcg, gfp);
+	if (charge == -ENOMEM) {
+		rc = charge;
+		goto out;
+	}
+
+	newpage->index = page->index;
+	newpage->mapping = page->mapping;
+	if (PageSwapBacked(page))		/* like move_to_new_page() */
+		SetPageSwapBacked(newpage);
+
+	/*
+	 * migrate a_op transfers cache [+ buf] refs
+	 */
+	rc = mapping->a_ops->migratepage(mapping, newpage, page, MIGRATE_FAULT);
+	if (!rc) {
+		get_page(newpage);	/* add isolate_lru_page ref */
+		put_page(page);		/* drop       "          "  */
+
+		unlock_page(page);
+
+		page = newpage;
+	}
+
+out:
+	if (!charge)
+		mem_cgroup_end_migration(mcg, oldpage, newpage, !rc);
+
+       if (oldpage != page)
+               put_page(oldpage);
+
+	if (rc) {
+		unlock_page(newpage);
+		__free_page(newpage);
+	}
+
+	putback_lru_page(page);		/* ultimately, drops a page ref */
+
+out_nolru:
+	return page;			/* locked, to complete fault */
+}
+
+/*
+ * Called in fault path, if migrate_on_fault_enabled(current) for a page
+ * found in the cache, page is locked, and page_mapping(page) != NULL;
+ * We check for page uptodate here because we want to be able to do any
+ * needed migration before grabbing the page table lock.  In the anon fault
+ * path, PageUptodate() isn't checked until after locking the page table.
+ *
+ * For migrate on fault, we only migrate pages whose mapping has a
+ * migratepage op.  The fallback path requires writing out the page and
+ * reading it back in.  That sort of defeats the purpose of
+ * migrate-on-fault [performance].  So, we don't even bother to check
+ * for misplacment unless the op is present.  Of course, this is an extra
+ * check in the fault path for pages we care about :-(
+ */
+struct page *check_migrate_misplaced_page(struct page *page,
+		struct vm_area_struct *vma, unsigned long address)
+{
+	int node;
+
+	if (page_mapcount(page) || PageWriteback(page) ||
+			unlikely(!PageUptodate(page))  ||
+			!page_mapping(page)->a_ops->migratepage)
+		return page;
+
+	node = mpol_misplaced(page, vma, address);
+	if (node == -1)
+		return page;
+
+	return migrate_misplaced_page(page, vma->vm_mm, node);
+}
+
+#endif /* CONFIG_NUMA */
