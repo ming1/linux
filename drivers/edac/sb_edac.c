@@ -555,7 +555,7 @@ static int get_dimm_config(struct mem_ctl_info *mci)
 		pvt->is_close_pg = false;
 	}
 
-	pci_read_config_dword(pvt->pci_ta, RANK_CFG_A, &reg);
+	pci_read_config_dword(pvt->pci_ddrio, RANK_CFG_A, &reg);
 	if (IS_RDIMM_ENABLED(reg)) {
 		/* FIXME: Can also be LRDIMM */
 		edac_dbg(0, "Memory is registered\n");
@@ -1600,8 +1600,6 @@ static void sbridge_unregister_mci(struct sbridge_dev *sbridge_dev)
 	edac_dbg(0, "MC: mci = %p, dev = %p\n",
 		 mci, &sbridge_dev->pdev[0]->dev);
 
-	mce_unregister_decode_chain(&sbridge_mce_dec);
-
 	/* Remove MC sysfs nodes */
 	edac_mc_del_mc(mci->pdev);
 
@@ -1677,7 +1675,6 @@ static int sbridge_register_mci(struct sbridge_dev *sbridge_dev)
 		goto fail0;
 	}
 
-	mce_register_decode_chain(&sbridge_mce_dec);
 	return 0;
 
 fail0:
@@ -1807,8 +1804,10 @@ static int __init sbridge_init(void)
 
 	pci_rc = pci_register_driver(&sbridge_driver);
 
-	if (pci_rc >= 0)
+	if (pci_rc >= 0) {
+		mce_register_decode_chain(&sbridge_mce_dec);
 		return 0;
+	}
 
 	sbridge_printk(KERN_ERR, "Failed to register device with error %d.\n",
 		      pci_rc);
@@ -1824,6 +1823,7 @@ static void __exit sbridge_exit(void)
 {
 	edac_dbg(2, "\n");
 	pci_unregister_driver(&sbridge_driver);
+	mce_unregister_decode_chain(&sbridge_mce_dec);
 }
 
 module_init(sbridge_init);
