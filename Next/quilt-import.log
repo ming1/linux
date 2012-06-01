@@ -1,0 +1,24 @@
+Importing i2c based on af56e0aa35f3ae2a4c1a6d1000702df1dd78cb76
+	quilt series is empty
+$ git branch -f quilt/i2c af56e0aa35f3ae2a4c1a6d1000702df1dd78cb76
+Importing jdelvare-hwmon based on 731a7378b81c2f5fa88ca1ae20b83d548d5613dc
+Unchanged quilt series jdelvare-hwmon
+Importing rr based on v3.4-8906-g731a737
+Unchanged quilt series rr
+Importing device-mapper based on v3.4
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard 76e10d158efb6d4516018846f60c2ab5501900bc
+HEAD is now at 76e10d1 Linux 3.4
+$ git am ../quilt/device-mapper/dm-mpath-allow-ioctls-to-trigger-pg-init.patch
+Applying: After the failure of a group of paths, any alternative paths that
+$ git am ../quilt/device-mapper/dm-mpath-delay-retry-of-bypassed-pg.patch
+Applying: If I/O needs retrying and only bypassed priority groups are available,
+$ git am ../quilt/device-mapper/dm-mpath-reduce-size-of-struct-multipath.patch
+Applying: Move multipath structure's 'lock' and 'queue_size' members to eliminate
+$ git am ../quilt/device-mapper/dm-thin-use-slab-mempools.patch
+Applying: Use dedicated caches prefixed with a "dm_" name rather than relying on
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/device-mapper
+From ../quilt-tmp
+ + 2e16d09...b71b4b5 master     -> quilt/device-mapper  (forced update)
