@@ -1064,6 +1064,9 @@ exit_auxiliary:
  * ECC-based or raw view of the page is implicit in which function it calls
  * (there is a similar pair of ECC-based/raw functions for writing).
  *
+ * FIXME: The following paragraph is incorrect, now that there exist
+ * ecc.read_oob_raw and ecc.write_oob_raw functions.
+ *
  * Since MTD assumes the OOB is not covered by ECC, there is no pair of
  * ECC-based/raw functions for reading or or writing the OOB. The fact that the
  * caller wants an ECC-based or raw view of the page is not propagated down to
@@ -1433,6 +1436,10 @@ static int gpmi_pre_bbt_scan(struct gpmi_nand_data  *this)
 	if (ret)
 		return ret;
 
+	/* Adjust the ECC strength according to the chip. */
+	this->nand.ecc.strength = this->bch_geometry.ecc_strength;
+	this->mtd.ecc_strength = this->bch_geometry.ecc_strength;
+
 	/* NAND boot init, depends on the gpmi_set_geometry(). */
 	return nand_boot_init(this);
 }
@@ -1491,6 +1498,7 @@ static int __devinit gpmi_nfc_init(struct gpmi_nand_data *this)
 	chip->options		|= NAND_NO_SUBPAGE_WRITE;
 	chip->ecc.mode		= NAND_ECC_HW;
 	chip->ecc.size		= 1;
+	chip->ecc.strength	= 8;
 	chip->ecc.layout	= &gpmi_hw_ecclayout;
 
 	/* Allocate a temporary DMA buffer for reading ID in the nand_scan() */
