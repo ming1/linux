@@ -90,29 +90,29 @@
 #define CKCTL_6368_PHYMIPS_EN		(1 << 6)
 #define CKCTL_6368_SWPKT_USB_EN		(1 << 7)
 #define CKCTL_6368_SWPKT_SAR_EN		(1 << 8)
-#define CKCTL_6368_SPI_CLK_EN		(1 << 9)
-#define CKCTL_6368_USBD_CLK_EN		(1 << 10)
-#define CKCTL_6368_SAR_CLK_EN		(1 << 11)
-#define CKCTL_6368_ROBOSW_CLK_EN	(1 << 12)
-#define CKCTL_6368_UTOPIA_CLK_EN	(1 << 13)
-#define CKCTL_6368_PCM_CLK_EN		(1 << 14)
-#define CKCTL_6368_USBH_CLK_EN		(1 << 15)
+#define CKCTL_6368_SPI_EN		(1 << 9)
+#define CKCTL_6368_USBD_EN		(1 << 10)
+#define CKCTL_6368_SAR_EN		(1 << 11)
+#define CKCTL_6368_ROBOSW_EN		(1 << 12)
+#define CKCTL_6368_UTOPIA_EN		(1 << 13)
+#define CKCTL_6368_PCM_EN		(1 << 14)
+#define CKCTL_6368_USBH_EN		(1 << 15)
 #define CKCTL_6368_DISABLE_GLESS_EN	(1 << 16)
-#define CKCTL_6368_NAND_CLK_EN		(1 << 17)
+#define CKCTL_6368_NAND_EN		(1 << 17)
 #define CKCTL_6368_IPSEC_EN		(1 << 18)
 
 #define CKCTL_6368_ALL_SAFE_EN		(CKCTL_6368_SWPKT_USB_EN |	\
 					CKCTL_6368_SWPKT_SAR_EN |	\
-					CKCTL_6368_SPI_CLK_EN |		\
-					CKCTL_6368_USBD_CLK_EN |	\
-					CKCTL_6368_SAR_CLK_EN |		\
-					CKCTL_6368_ROBOSW_CLK_EN |	\
-					CKCTL_6368_UTOPIA_CLK_EN |	\
-					CKCTL_6368_PCM_CLK_EN |		\
-					CKCTL_6368_USBH_CLK_EN |	\
+					CKCTL_6368_SPI_EN |		\
+					CKCTL_6368_USBD_EN |		\
+					CKCTL_6368_SAR_EN |		\
+					CKCTL_6368_ROBOSW_EN |		\
+					CKCTL_6368_UTOPIA_EN |		\
+					CKCTL_6368_PCM_EN |		\
+					CKCTL_6368_USBH_EN |		\
 					CKCTL_6368_DISABLE_GLESS_EN |	\
-					CKCTL_6368_NAND_CLK_EN |	\
-					CKCTL_6368_IPSEC_CLK_EN)
+					CKCTL_6368_NAND_EN |		\
+					CKCTL_6368_IPSEC_EN)
 
 /* System PLL Control register  */
 #define PERF_SYS_PLL_CTL_REG		0x8
@@ -972,6 +972,20 @@
 
 #define M2M_SRCID_REG(x)		((x) * 0x40 + 0x14)
 #define M2M_DSTID_REG(x)		((x) * 0x40 + 0x18)
+
+/*************************************************************************
+ * _REG relative to RSET_RNG
+ *************************************************************************/
+
+#define RNG_CTRL			0x00
+#define RNG_EN				(1 << 0)
+
+#define RNG_STAT			0x04
+#define RNG_AVAIL_MASK			(0xff000000)
+
+#define RNG_DATA			0x08
+#define RNG_THRES			0x0c
+#define RNG_MASK			0x10
 
 /*************************************************************************
  * _REG relative to RSET_SPI
