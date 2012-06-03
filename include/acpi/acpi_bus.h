@@ -424,13 +424,13 @@ int acpi_enable_wakeup_device_power(struct acpi_device *dev, int state);
 int acpi_disable_wakeup_device_power(struct acpi_device *dev);
 
 #ifdef CONFIG_PM
-int acpi_pm_device_sleep_state(struct device *, int *, int);
+int acpi_pm_device_sleep_state(struct device *, int *);
 #else
-static inline int acpi_pm_device_sleep_state(struct device *d, int *p, int m)
+static inline int acpi_pm_device_sleep_state(struct device *d, int *p)
 {
 	if (p)
 		*p = ACPI_STATE_D0;
-	return (m >= ACPI_STATE_D0 && <= ACPI_STATE_D3) ? m : ACPI_STATE_D0;
+	return ACPI_STATE_D3;
 }
 #endif
 
