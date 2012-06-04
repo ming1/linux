@@ -1329,7 +1329,7 @@ static void unmap_single_vma(struct mmu_gather *tlb,
 			 * safe to do nothing in this case.
 			 */
 			if (vma->vm_file)
-				unmap_hugepage_range(vma, start, end, NULL);
+				__unmap_hugepage_range(tlb, vma, start, end, NULL);
 		} else
 			unmap_page_range(tlb, vma, start, end, details);
 	}
