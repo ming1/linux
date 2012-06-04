@@ -1,0 +1,17 @@
+Importing i2c based on af56e0aa35f3ae2a4c1a6d1000702df1dd78cb76
+Unchanged quilt series i2c
+Importing jdelvare-hwmon based on 731a7378b81c2f5fa88ca1ae20b83d548d5613dc
+Unchanged quilt series jdelvare-hwmon
+Importing rr based on v3.4-8906-g731a737
+Unchanged quilt series rr
+Importing device-mapper based on v3.4-10118-g233e562
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard 233e562eac549f4f719176bbddeb50c3f17a9c8d
+HEAD is now at 233e562 Merge 'for-linus' branches from git://git.kernel.org/pub/scm/linux/kernel/git/viro/{vfs,signal}
+$ git am ../quilt/device-mapper/dm-support-non-power-of-two-target-max_io_len.patch
+Applying: Remove the restriction that limits a target's specified maximum incoming
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/device-mapper
+From ../quilt-tmp
+ + 549c5cf...7c66983 master     -> quilt/device-mapper  (forced update)
