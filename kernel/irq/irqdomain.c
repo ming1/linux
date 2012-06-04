@@ -181,6 +181,13 @@ struct irq_domain *irq_domain_add_legacy(struct device_node *of_node,
 	if (!domain)
 		return NULL;
 
+	/*
+	 * Do our best to reserve the irq descs; but this overlaps with the nr_irqs setting
+	 * from the platform code
+	 */
+	if (irq_reserve_irqs(first_irq, size))
+		pr_info("IRQs %i..%i already reserved, overlapping with nr_irqs?\n",
+			first_irq, first_irq + size - 1);
 	WARN_ON(irq_domain_associate_many(domain, first_irq, first_hwirq, size));
 
 	return domain;
