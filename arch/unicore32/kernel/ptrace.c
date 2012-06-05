@@ -15,6 +15,7 @@
 #include <linux/ptrace.h>
 #include <linux/signal.h>
 #include <linux/uaccess.h>
+#include <linux/tracehook.h>
 
 /*
  * this routine will get a word off of the processes privileged stack.
@@ -112,38 +113,38 @@ long arch_ptrace(struct task_struct *child, long request,
 	return ret;
 }
 
-asmlinkage int syscall_trace(int why, struct pt_regs *regs, int scno)
+asmlinkage int syscall_trace_enter(int scno, struct pt_regs *regs)
 {
 	unsigned long ip;
+	int ret;
 
 	if (!test_thread_flag(TIF_SYSCALL_TRACE))
 		return scno;
-	if (!(current->ptrace & PT_PTRACED))
-		return scno;
 
+	current_thread_info()->syscall = scno;
 	/*
 	 * Save IP.  IP is used to denote syscall entry/exit:
 	 *  IP = 0 -> entry, = 1 -> exit
 	 */
 	ip = regs->UCreg_ip;
-	regs->UCreg_ip = why;
-
-	current_thread_info()->syscall = scno;
-
-	/* the 0x80 provides a way for the tracing parent to distinguish
-	   between a syscall stop and SIGTRAP delivery */
-	ptrace_notify(SIGTRAP | ((current->ptrace & PT_TRACESYSGOOD)
-				 ? 0x80 : 0));
-	/*
-	 * this isn't the same as continuing with a signal, but it will do
-	 * for normal use.  strace only continues with a signal if the
-	 * stopping signal is not SIGTRAP.  -brl
-	 */
-	if (current->exit_code) {
-		send_sig(current->exit_code, current, 1);
-		current->exit_code = 0;
-	}
+	regs->UCreg_ip = 0;
+	ret = tracehook_report_syscall_entry(regs);
 	regs->UCreg_ip = ip;
 
-	return current_thread_info()->syscall;
+	return ret ? -1 : current_thread_info()->syscall;
+}
+
+asmlinkage void syscall_trace_leave(struct pt_regs *regs)
+{
+	unsigned long ip;
+	if (!test_thread_flag(TIF_SYSCALL_TRACE))
+		return;
+	/*
+	 * Save IP.  IP is used to denote syscall entry/exit:
+	 *  IP = 0 -> entry, = 1 -> exit
+	 */
+	ip = regs->UCreg_ip;
+	regs->UCreg_ip = 1;
+	tracehook_report_syscall_exit(regs, 0);
+	regs->UCreg_ip = ip;
 }
