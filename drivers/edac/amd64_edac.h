@@ -421,7 +421,7 @@ static inline int amd64_create_sysfs_dbg_files(struct mem_ctl_info *mci)
 {
 	return 0;
 }
-void inline amd64_remove_sysfs_dbg_files(struct mem_ctl_info *mci)
+static void inline amd64_remove_sysfs_dbg_files(struct mem_ctl_info *mci)
 {
 }
 #endif
