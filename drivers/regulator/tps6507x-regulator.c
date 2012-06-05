@@ -70,29 +70,11 @@ static const unsigned int LDO1_VSEL_table[] = {
 	2800000, 3000000, 3100000, 3300000,
 };
 
-static const unsigned int LDO2_VSEL_table[] = {
-	725000, 750000, 775000, 800000,
-	825000, 850000, 875000, 900000,
-	925000, 950000, 975000, 1000000,
-	1025000, 1050000, 1075000, 1100000,
-	1125000, 1150000, 1175000, 1200000,
-	1225000, 1250000, 1275000, 1300000,
-	1325000, 1350000, 1375000, 1400000,
-	1425000, 1450000, 1475000, 1500000,
-	1550000, 1600000, 1650000, 1700000,
-	1750000, 1800000, 1850000, 1900000,
-	1950000, 2000000, 2050000, 2100000,
-	2150000, 2200000, 2250000, 2300000,
-	2350000, 2400000, 2450000, 2500000,
-	2550000, 2600000, 2650000, 2700000,
-	2750000, 2800000, 2850000, 2900000,
-	3000000, 3100000, 3200000, 3300000,
-};
+/* The voltage mapping table for LDO2 is the same as VDCDCx */
+#define LDO2_VSEL_table VDCDCx_VSEL_table
 
 struct tps_info {
 	const char *name;
-	unsigned min_uV;
-	unsigned max_uV;
 	u8 table_len;
 	const unsigned int *table;
 
@@ -103,36 +85,26 @@ struct tps_info {
 static struct tps_info tps6507x_pmic_regs[] = {
 	{
 		.name = "VDCDC1",
-		.min_uV = 725000,
-		.max_uV = 3300000,
 		.table_len = ARRAY_SIZE(VDCDCx_VSEL_table),
 		.table = VDCDCx_VSEL_table,
 	},
 	{
 		.name = "VDCDC2",
-		.min_uV = 725000,
-		.max_uV = 3300000,
 		.table_len = ARRAY_SIZE(VDCDCx_VSEL_table),
 		.table = VDCDCx_VSEL_table,
 	},
 	{
 		.name = "VDCDC3",
-		.min_uV = 725000,
-		.max_uV = 3300000,
 		.table_len = ARRAY_SIZE(VDCDCx_VSEL_table),
 		.table = VDCDCx_VSEL_table,
 	},
 	{
 		.name = "LDO1",
-		.min_uV = 1000000,
-		.max_uV = 3300000,
 		.table_len = ARRAY_SIZE(LDO1_VSEL_table),
 		.table = LDO1_VSEL_table,
 	},
 	{
 		.name = "LDO2",
-		.min_uV = 725000,
-		.max_uV = 3300000,
 		.table_len = ARRAY_SIZE(LDO2_VSEL_table),
 		.table = LDO2_VSEL_table,
 	},
