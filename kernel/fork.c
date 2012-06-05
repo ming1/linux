@@ -808,6 +808,14 @@ void mm_release(struct task_struct *tsk, struct mm_struct *mm)
 	}
 
 	/*
+	 * Final rss-counter synchronization. After this point there must be
+	 * no pagefaults into this mm from the current context.  Otherwise
+	 * mm->rss_stat will be inconsistent.
+	 */
+	if (mm)
+		sync_mm_rss(mm);
+
+	/*
 	 * All done, finally we can wake up parent and return this mm to him.
 	 * Also kthread_stop() uses this completion for synchronization.
 	 */

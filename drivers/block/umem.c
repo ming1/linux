@@ -111,7 +111,8 @@ struct cardinfo {
 	int		current_idx;
 	sector_t	current_sector;
 
-	struct request_queue *queue;
+	struct request_queue	*queue;
+	struct blk_plug_cb	plug_cb;
 
 	struct mm_page {
 		dma_addr_t		page_dma;
@@ -513,6 +514,33 @@ static void process_page(unsigned long data)
 	}
 }
 
+static void mm_unplug(struct blk_plug_cb *cb)
+{
+	struct cardinfo *card = container_of(cb, struct cardinfo, plug_cb);
+
+	spin_lock_irq(&card->lock);
+	activate(card);
+	spin_unlock_irq(&card->lock);
+}
+
+int mm_check_plugged(struct cardinfo *card)
+{
+	struct blk_plug *plug = current->plug;
+	struct cardinfo *c;
+
+	if (!plug)
+		return 0;
+
+	list_for_each_entry(c, &plug->cb_list, plug_cb.list) {
+		if (c == card)
+			return 1;
+	}
+
+	/* set up unplug callback */
+	list_add(&card->plug_cb.list, &plug->cb_list);
+	return 1;
+}
+
 static void mm_make_request(struct request_queue *q, struct bio *bio)
 {
 	struct cardinfo *card = q->queuedata;
@@ -523,6 +551,8 @@ static void mm_make_request(struct request_queue *q, struct bio *bio)
 	*card->biotail = bio;
 	bio->bi_next = NULL;
 	card->biotail = &bio->bi_next;
+	if (bio->bi_rw & REQ_SYNC || !mm_check_plugged(card))
+		activate(card);
 	spin_unlock_irq(&card->lock);
 
 	return;
@@ -884,6 +914,7 @@ static int __devinit mm_pci_probe(struct pci_dev *dev,
 	blk_queue_make_request(card->queue, mm_make_request);
 	card->queue->queue_lock = &card->lock;
 	card->queue->queuedata = card;
+	card->plug_cb.callback = mm_unplug;
 
 	tasklet_init(&card->tasklet, process_page, (unsigned long)card);
 
