@@ -1,0 +1,37 @@
+Importing i2c based on af56e0aa35f3ae2a4c1a6d1000702df1dd78cb76
+Unchanged quilt series i2c
+Importing jdelvare-hwmon based on 731a7378b81c2f5fa88ca1ae20b83d548d5613dc
+Unchanged quilt series jdelvare-hwmon
+Importing rr based on v3.5-rc1
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard f8f5701bdaf9134b1f90e5044a82c66324d2073f
+HEAD is now at f8f5701 Linux 3.5-rc1
+$ git am ../quilt/rr/virtio:ids_fix_comment_for_rng.patch
+Applying: virtio ids: fix comment for virtio-rng
+$ git am ../quilt/rr/virtio:rng_allow_tasks_to_be_killed_that_are_waiting_for_rng_input.patch
+Applying: virtio: rng: allow tasks to be killed that are waiting for rng input
+$ git am ../quilt/rr/virtio:rng_don_t_wait_on_host_when_module_is_going_away.patch
+Applying: virtio: rng: don't wait on host when module is going away
+$ git am ../quilt/rr/virtio:rng_split_out_common_code_in_probe_remove_for_s3_s4_ops.patch
+Applying: virtio: rng: split out common code in probe / remove for s3/s4 ops
+$ git am ../quilt/rr/virtio:rng_s3_s4_support.patch
+Applying: virtio: rng: s3/s4 support
+$ git am ../quilt/rr/virtio:blk_call_del_gendisk_before_disable_guest_kick.patch
+Applying: virtio-blk: Call del_gendisk() before disable guest kick
+$ git am ../quilt/rr/virtio:blk_reset_device_after_blk_cleanup_queue.patch
+Applying: virtio-blk: Reset device after blk_cleanup_queue()
+$ git am ../quilt/rr/virtio:blk_use_block_layer_provided_spinlock.patch
+Applying: virtio-blk: Use block layer provided spinlock
+$ git am ../quilt/rr/initcall-double-call-fix.patch
+Applying: module_param: stop double-calling parameters.
+$ git am ../quilt/rr/misc:cpumask_add_a_few_comments_of_cpumask_functions.patch
+Applying: cpumask: add a few comments of cpumask functions
+$ git am ../quilt/rr/misc:init_drop_initcall_level_output.patch
+Applying: init: Drop initcall level output
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/rr
+From ../quilt-tmp
+ + 56abc41...ba528af master     -> quilt/rr  (forced update)
+Importing device-mapper based on v3.4-10118-g233e562
+Unchanged quilt series device-mapper
