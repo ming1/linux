@@ -1923,7 +1923,7 @@ int hugetlb_force_memcg_empty(struct cgroup *cgroup)
 
 	do {
 		if (cgroup_task_count(cgroup) ||
-		    !list_empty(&cgroup->children)){
+		    !list_empty(&cgroup->children)) {
 			ret = -EBUSY;
 			goto out;
 		}
