@@ -4093,7 +4093,7 @@ out:
 static int mem_cgroup_reset(struct cgroup *cont, unsigned int event)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_cont(cont);
-	int type, name;
+	int type, name, idx;
 
 	type = MEMFILE_TYPE(event);
 	name = MEMFILE_ATTR(event);
@@ -4101,24 +4101,29 @@ static int mem_cgroup_reset(struct cgroup *cont, unsigned int event)
 	if (!do_swap_account && type == _MEMSWAP)
 		return -EOPNOTSUPP;
 
-	switch (name) {
-	case RES_MAX_USAGE:
-		if (type == _MEM)
+	switch (type) {
+	case _MEM:
+		if (name == RES_MAX_USAGE)
 			res_counter_reset_max(&memcg->res);
-		else if (type == _MEMHUGETLB) {
-			int idx = MEMFILE_IDX(event);
-			res_counter_reset_max(&memcg->hugepage[idx]);
-		} else
-			res_counter_reset_max(&memcg->memsw);
-		break;
-	case RES_FAILCNT:
-		if (type == _MEM)
+		else
 			res_counter_reset_failcnt(&memcg->res);
+		break;
+	case _MEMSWAP:
+		if (name == RES_MAX_USAGE)
+			res_counter_reset_max(&memcg->memsw);
 		else
 			res_counter_reset_failcnt(&memcg->memsw);
 		break;
+	case _MEMHUGETLB:
+		idx = MEMFILE_IDX(event);
+		if (name == RES_MAX_USAGE)
+			res_counter_reset_max(&memcg->hugepage[idx]);
+		else
+			res_counter_reset_failcnt(&memcg->hugepage[idx]);
+		break;
+	default:
+		BUG();
 	}
-
 	return 0;
 }
 
@@ -5150,8 +5155,15 @@ int __init mem_cgroup_hugetlb_file_init(int idx)
 	cft->trigger  = mem_cgroup_reset;
 	cft->read = mem_cgroup_read;
 
-	/* NULL terminate the last cft */
+	/* Add the failcntfile */
 	cft = &h->mem_cgroup_files[3];
+	snprintf(cft->name, MAX_CFTYPE_NAME, "hugetlb.%s.failcnt", buf);
+	cft->private  = __MEMFILE_PRIVATE(idx, _MEMHUGETLB, RES_FAILCNT);
+	cft->trigger  = mem_cgroup_reset;
+	cft->read = mem_cgroup_read;
+
+	/* NULL terminate the last cft */
+	cft = &h->mem_cgroup_files[4];
 	memset(cft, 0, sizeof(*cft));
 
 	WARN_ON(cgroup_add_cftypes(&mem_cgroup_subsys, h->mem_cgroup_files));
