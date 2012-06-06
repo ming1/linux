@@ -3298,6 +3298,7 @@ int mem_cgroup_move_hugetlb_parent(int idx, struct cgroup *cgroup,
 	struct cgroup *pcgrp = cgroup->parent;
 	struct mem_cgroup *parent = mem_cgroup_from_cont(pcgrp);
 	struct mem_cgroup *memcg  = mem_cgroup_from_cont(cgroup);
+	struct res_counter *counter;
 
 	if (!get_page_unless_zero(page))
 		goto out;
@@ -3308,28 +3309,18 @@ int mem_cgroup_move_hugetlb_parent(int idx, struct cgroup *cgroup,
 		goto err_out;
 
 	csize = PAGE_SIZE << compound_order(page);
-	/*
-	 * If we have use_hierarchy set we can never fail here. So instead of
-	 * using res_counter_uncharge use the open-coded variant which just
-	 * uncharge the child res_counter. The parent will retain the charge.
-	 */
-	if (parent->use_hierarchy) {
-		unsigned long flags;
-		struct res_counter *counter;
-
-		counter = &memcg->hugepage[idx];
-		spin_lock_irqsave(&counter->lock, flags);
-		res_counter_uncharge_locked(counter, csize);
-		spin_unlock_irqrestore(&counter->lock, flags);
-	} else {
+	/* If parent->use_hierarchy == 0, we need to charge parent */
+	if (!parent->use_hierarchy) {
 		ret = res_counter_charge(&parent->hugepage[idx],
 					 csize, &fail_res);
 		if (ret) {
 			ret = -EBUSY;
 			goto err_out;
 		}
-		res_counter_uncharge(&memcg->hugepage[idx], csize);
 	}
+	counter = &memcg->hugepage[idx];
+	res_counter_uncharge_until(counter, counter->parent, csize);
+
 	pc->mem_cgroup = parent;
 err_out:
 	unlock_page_cgroup(pc);
