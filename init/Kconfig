@@ -761,6 +761,14 @@ config CGROUP_PERF
 
 	  Say N if unsure.
 
+config MEM_RES_CTLR_HUGETLB
+	bool "Memory Resource Controller HugeTLB Extension (EXPERIMENTAL)"
+	depends on CGROUP_MEM_RES_CTLR && HUGETLB_PAGE && EXPERIMENTAL
+	default n
+	help
+	  Add HugeTLB management to memory resource controller. When you
+	  enable this, you can put a per cgroup limit on HugeTLB usage.
+
 menuconfig CGROUP_SCHED
 	bool "Group CPU scheduler"
 	default n
