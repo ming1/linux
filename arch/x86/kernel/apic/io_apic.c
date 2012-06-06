@@ -1126,8 +1126,7 @@ __assign_irq_vector(int irq, struct irq_cfg *cfg, const struct cpumask *mask)
 	old_vector = cfg->vector;
 	if (old_vector) {
 		cpumask_and(tmp_mask, mask, cpu_online_mask);
-		cpumask_and(tmp_mask, cfg->domain, tmp_mask);
-		if (!cpumask_empty(tmp_mask)) {
+		if (cpumask_subset(tmp_mask, cfg->domain)) {
 			free_cpumask_var(tmp_mask);
 			return 0;
 		}
@@ -1140,6 +1139,11 @@ __assign_irq_vector(int irq, struct irq_cfg *cfg, const struct cpumask *mask)
 		int vector, offset;
 
 		apic->vector_allocation_domain(cpu, tmp_mask);
+
+		if (cpumask_subset(tmp_mask, cfg->domain)) {
+			free_cpumask_var(tmp_mask);
+			return 0;
+		}
 
 		vector = current_vector;
 		offset = current_offset;
@@ -1346,13 +1350,6 @@ static void setup_ioapic_irq(unsigned int irq, struct irq_cfg *cfg,
 
 	if (!IO_APIC_IRQ(irq))
 		return;
-	/*
-	 * For legacy irqs, cfg->domain starts with cpu 0 for legacy
-	 * controllers like 8259. Now that IO-APIC can handle this irq, update
-	 * the cfg->domain.
-	 */
-	if (irq < legacy_pic->nr_legacy_irqs && cpumask_test_cpu(0, cfg->domain))
-		apic->vector_allocation_domain(0, cfg->domain);
 
 	if (assign_irq_vector(irq, cfg, apic->target_cpus()))
 		return;
@@ -1366,7 +1363,7 @@ static void setup_ioapic_irq(unsigned int irq, struct irq_cfg *cfg,
 		    cfg->vector, irq, attr->trigger, attr->polarity, dest);
 
 	if (setup_ioapic_entry(irq, &entry, dest, cfg->vector, attr)) {
-		pr_warn("Failed to setup ioapic entry for ioapic  %d, pin %d\n",
+		pr_warn("Failed to setup ioapic entry for ioapic %d, pin %d\n",
 			mpc_ioapic_id(attr->ioapic), attr->ioapic_pin);
 		__clear_irq_vector(irq, cfg);
 
@@ -1469,7 +1466,7 @@ void setup_IO_APIC_irq_extra(u32 gsi)
  * Set up the timer pin, possibly with the 8259A-master behind.
  */
 static void __init setup_timer_IRQ0_pin(unsigned int ioapic_idx,
-					 unsigned int pin, int vector)
+					unsigned int pin, int vector)
 {
 	struct IO_APIC_route_entry entry;
 
