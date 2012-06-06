@@ -598,9 +598,10 @@ static struct notifier_block __cpuinitdata cpu_nfb = {
 };
 
 /*
- * On entry to suspend we force an offline->online transition on the boot CPU so
- * that PMU state is available to that CPU when it comes back online after
- * resume.  This information is required for restarting the NMI watchdog.
+ * On exit from suspend we force an offline->online transition on the boot CPU
+ * so that the PMU state that was lost while in suspended state gets set up
+ * properly for the boot CPU.  This information is required for restarting the
+ * NMI watchdog.
  */
 void lockup_detector_bootcpu_resume(void)
 {
