@@ -27,6 +27,7 @@ EXPORT_SYMBOL_GPL(leds_list);
 static void led_stop_software_blink(struct led_classdev *led_cdev)
 {
 	/* deactivate previous settings */
+	del_timer_sync(&led_cdev->blink_timer);
 	led_cdev->blink_delay_on = 0;
 	led_cdev->blink_delay_off = 0;
 }
@@ -87,7 +88,7 @@ void led_blink_set(struct led_classdev *led_cdev,
 		   unsigned long *delay_on,
 		   unsigned long *delay_off)
 {
-	del_timer_sync(&led_cdev->blink_timer);
+	led_stop_software_blink(led_cdev);
 
 	led_cdev->flags &= ~LED_BLINK_ONESHOT;
 	led_cdev->flags &= ~LED_BLINK_ONESHOT_STOP;
@@ -121,6 +122,6 @@ void led_brightness_set(struct led_classdev *led_cdev,
 			enum led_brightness brightness)
 {
 	led_stop_software_blink(led_cdev);
-	led_cdev->brightness_set(led_cdev, brightness);
+	led_set_brightness(led_cdev, brightness);
 }
 EXPORT_SYMBOL(led_brightness_set);
