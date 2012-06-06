@@ -38,7 +38,6 @@
 #define UINSNS_PER_PAGE			(PAGE_SIZE/UPROBE_XOL_SLOT_BYTES)
 #define MAX_UPROBE_XOL_SLOTS		UINSNS_PER_PAGE
 
-static struct srcu_struct uprobes_srcu;
 static struct rb_root uprobes_tree = RB_ROOT;
 
 static DEFINE_SPINLOCK(uprobes_treelock);	/* serialize rbtree access */
@@ -312,7 +311,7 @@ static int read_opcode(struct mm_struct *mm, unsigned long vaddr, uprobe_opcode_
 	void *vaddr_new;
 	int ret;
 
-	ret = get_user_pages(NULL, mm, vaddr, 1, 0, 0, &page, NULL);
+	ret = get_user_pages(NULL, mm, vaddr, 1, 0, 1, &page, NULL);
 	if (ret <= 0)
 		return ret;
 
@@ -333,10 +332,20 @@ static int is_swbp_at_addr(struct mm_struct *mm, unsigned long vaddr)
 	uprobe_opcode_t opcode;
 	int result;
 
+	if (current->mm == mm) {
+		pagefault_disable();
+		result = __copy_from_user_inatomic(&opcode, (void __user*)vaddr,
+								sizeof(opcode));
+		pagefault_enable();
+
+		if (likely(result == 0))
+			goto out;
+	}
+
 	result = read_opcode(mm, vaddr, &opcode);
 	if (result)
 		return result;
-
+out:
 	if (is_swbp_insn(&opcode))
 		return 1;
 
@@ -728,20 +737,14 @@ remove_breakpoint(struct uprobe *uprobe, struct mm_struct *mm, loff_t vaddr)
 }
 
 /*
- * There could be threads that have hit the breakpoint and are entering the
- * notifier code and trying to acquire the uprobes_treelock. The thread
- * calling delete_uprobe() that is removing the uprobe from the rb_tree can
- * race with these threads and might acquire the uprobes_treelock compared
- * to some of the breakpoint hit threads. In such a case, the breakpoint
- * hit threads will not find the uprobe. The current unregistering thread
- * waits till all other threads have hit a breakpoint, to acquire the
- * uprobes_treelock before the uprobe is removed from the rbtree.
+ * There could be threads that have already hit the breakpoint. They
+ * will recheck the current insn and restart if find_uprobe() fails.
+ * See find_active_uprobe().
  */
 static void delete_uprobe(struct uprobe *uprobe)
 {
 	unsigned long flags;
 
-	synchronize_srcu(&uprobes_srcu);
 	spin_lock_irqsave(&uprobes_treelock, flags);
 	rb_erase(&uprobe->rb_node, &uprobes_tree);
 	spin_unlock_irqrestore(&uprobes_treelock, flags);
@@ -843,12 +846,12 @@ static int register_for_each_vma(struct uprobe *uprobe, bool is_register)
 		}
 
 		mm = vi->mm;
-		down_read(&mm->mmap_sem);
+		down_write(&mm->mmap_sem);
 		vma = find_vma(mm, (unsigned long)vi->vaddr);
 		if (!vma || !valid_vma(vma, is_register)) {
 			list_del(&vi->probe_list);
 			kfree(vi);
-			up_read(&mm->mmap_sem);
+			up_write(&mm->mmap_sem);
 			mmput(mm);
 			continue;
 		}
@@ -857,7 +860,7 @@ static int register_for_each_vma(struct uprobe *uprobe, bool is_register)
 						vaddr != vi->vaddr) {
 			list_del(&vi->probe_list);
 			kfree(vi);
-			up_read(&mm->mmap_sem);
+			up_write(&mm->mmap_sem);
 			mmput(mm);
 			continue;
 		}
@@ -867,7 +870,7 @@ static int register_for_each_vma(struct uprobe *uprobe, bool is_register)
 		else
 			remove_breakpoint(uprobe, mm, vi->vaddr);
 
-		up_read(&mm->mmap_sem);
+		up_write(&mm->mmap_sem);
 		mmput(mm);
 		if (is_register) {
 			if (ret && ret == -EEXIST)
@@ -1378,9 +1381,6 @@ void uprobe_free_utask(struct task_struct *t)
 {
 	struct uprobe_task *utask = t->utask;
 
-	if (t->uprobe_srcu_id != -1)
-		srcu_read_unlock_raw(&uprobes_srcu, t->uprobe_srcu_id);
-
 	if (!utask)
 		return;
 
@@ -1398,7 +1398,6 @@ void uprobe_free_utask(struct task_struct *t)
 void uprobe_copy_process(struct task_struct *t)
 {
 	t->utask = NULL;
-	t->uprobe_srcu_id = -1;
 }
 
 /*
@@ -1479,41 +1478,64 @@ static bool can_skip_sstep(struct uprobe *uprobe, struct pt_regs *regs)
 	return false;
 }
 
+static struct uprobe *find_active_uprobe(unsigned long bp_vaddr, int *is_swbp)
+{
+	struct mm_struct *mm = current->mm;
+	struct uprobe *uprobe = NULL;
+	struct vm_area_struct *vma;
+
+	down_read(&mm->mmap_sem);
+	vma = find_vma(mm, bp_vaddr);
+	if (vma && vma->vm_start <= bp_vaddr) {
+		if (valid_vma(vma, false)) {
+			struct inode *inode;
+			loff_t offset;
+
+			inode = vma->vm_file->f_mapping->host;
+			offset = bp_vaddr - vma->vm_start;
+			offset += (vma->vm_pgoff << PAGE_SHIFT);
+			uprobe = find_uprobe(inode, offset);
+		}
+
+		if (!uprobe)
+			*is_swbp = is_swbp_at_addr(mm, bp_vaddr);
+	} else {
+		*is_swbp = -EFAULT;
+	}
+	up_read(&mm->mmap_sem);
+
+	return uprobe;
+}
+
 /*
  * Run handler and ask thread to singlestep.
  * Ensure all non-fatal signals cannot interrupt thread while it singlesteps.
  */
 static void handle_swbp(struct pt_regs *regs)
 {
-	struct vm_area_struct *vma;
 	struct uprobe_task *utask;
 	struct uprobe *uprobe;
-	struct mm_struct *mm;
 	unsigned long bp_vaddr;
+	int uninitialized_var(is_swbp);
 
-	uprobe = NULL;
 	bp_vaddr = uprobe_get_swbp_addr(regs);
-	mm = current->mm;
-	down_read(&mm->mmap_sem);
-	vma = find_vma(mm, bp_vaddr);
-
-	if (vma && vma->vm_start <= bp_vaddr && valid_vma(vma, false)) {
-		struct inode *inode;
-		loff_t offset;
-
-		inode = vma->vm_file->f_mapping->host;
-		offset = bp_vaddr - vma->vm_start;
-		offset += (vma->vm_pgoff << PAGE_SHIFT);
-		uprobe = find_uprobe(inode, offset);
-	}
-
-	srcu_read_unlock_raw(&uprobes_srcu, current->uprobe_srcu_id);
-	current->uprobe_srcu_id = -1;
-	up_read(&mm->mmap_sem);
+	uprobe = find_active_uprobe(bp_vaddr, &is_swbp);
 
 	if (!uprobe) {
-		/* No matching uprobe; signal SIGTRAP. */
-		send_sig(SIGTRAP, current, 0);
+		if (is_swbp > 0) {
+			/* No matching uprobe; signal SIGTRAP. */
+			send_sig(SIGTRAP, current, 0);
+		} else {
+			/*
+			 * Either we raced with uprobe_unregister() or we can't
+			 * access this memory. The latter is only possible if
+			 * another thread plays with our ->mm. In both cases
+			 * we can simply restart. If this vma was unmapped we
+			 * can pretend this insn was not executed yet and get
+			 * the (correct) SIGSEGV after restart.
+			 */
+			instruction_pointer_set(regs, bp_vaddr);
+		}
 		return;
 	}
 
@@ -1620,7 +1642,6 @@ int uprobe_pre_sstep_notifier(struct pt_regs *regs)
 		utask->state = UTASK_BP_HIT;
 
 	set_thread_flag(TIF_UPROBE);
-	current->uprobe_srcu_id = srcu_read_lock_raw(&uprobes_srcu);
 
 	return 1;
 }
@@ -1655,7 +1676,6 @@ static int __init init_uprobes(void)
 		mutex_init(&uprobes_mutex[i]);
 		mutex_init(&uprobes_mmap_mutex[i]);
 	}
-	init_srcu_struct(&uprobes_srcu);
 
 	return register_die_notifier(&uprobe_exception_nb);
 }
