@@ -259,10 +259,10 @@ static int qcow_decompress_buffer(u8 *out_buf, int out_buf_size,
 
 	memset(strm, 0, sizeof(*strm));
 
-	strm->next_in = (u8 *)buf;
-	strm->avail_in = buf_size;
-	strm->next_out = out_buf;
-	strm->avail_out = out_buf_size;
+	strm->next_in	= (u8 *)buf;
+	strm->avail_in	= buf_size;
+	strm->next_out	= out_buf;
+	strm->avail_out	= out_buf_size;
 
 	ret = inflateInit2(strm, -12);
 	if (ret != Z_OK)
@@ -330,9 +330,9 @@ static ssize_t qcow1_read_cluster(struct qcow *q, u64 offset,
 
 	clust_start = be64_to_cpu(l2t->table[l2_idx]);
 	if (clust_start & QCOW1_OFLAG_COMPRESSED) {
-		coffset = clust_start & q->cluster_offset_mask;
-		csize = clust_start >> (63 - q->header->cluster_bits);
-		csize &= (q->cluster_size - 1);
+		coffset	= clust_start & q->cluster_offset_mask;
+		csize	= clust_start >> (63 - q->header->cluster_bits);
+		csize	&= (q->cluster_size - 1);
 
 		if (pread_in_full(q->fd, q->cluster_data, csize,
 				  coffset) < 0)
@@ -1180,15 +1180,15 @@ static int qcow_disk_close(struct disk_image *disk)
 }
 
 static struct disk_image_operations qcow_disk_readonly_ops = {
-	.read_sector		= qcow_read_sector,
-	.close			= qcow_disk_close,
+	.read	= qcow_read_sector,
+	.close	= qcow_disk_close,
 };
 
 static struct disk_image_operations qcow_disk_ops = {
-	.read_sector		= qcow_read_sector,
-	.write_sector		= qcow_write_sector,
-	.flush			= qcow_disk_flush,
-	.close			= qcow_disk_close,
+	.read	= qcow_read_sector,
+	.write	= qcow_write_sector,
+	.flush	= qcow_disk_flush,
+	.close	= qcow_disk_close,
 };
 
 static int qcow_read_refcount_table(struct qcow *q)
@@ -1223,7 +1223,7 @@ static int qcow_read_l1_table(struct qcow *q)
 	struct qcow_header *header = q->header;
 	struct qcow_l1_table *table = &q->table;
 
-	table->table_size	= header->l1_size;
+	table->table_size = header->l1_size;
 
 	table->l1_table	= calloc(table->table_size, sizeof(u64));
 	if (!table->l1_table)

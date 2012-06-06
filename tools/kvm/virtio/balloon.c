@@ -209,9 +209,9 @@ static int init_vq(struct kvm *kvm, void *dev, u32 vq, u32 pfn)
 
 	compat__remove_message(compat_id);
 
-	queue			= &bdev->vqs[vq];
-	queue->pfn		= pfn;
-	p			= guest_pfn_to_host(kvm, queue->pfn);
+	queue		= &bdev->vqs[vq];
+	queue->pfn	= pfn;
+	p		= guest_pfn_to_host(kvm, queue->pfn);
 
 	thread_pool__init_job(&bdev->jobs[vq], kvm, virtio_bln_do_io, queue);
 	vring_init(&queue->vring, VIRTIO_BLN_QUEUE_SIZE, p, VIRTIO_PCI_VRING_ALIGN);
@@ -262,11 +262,6 @@ void virtio_bln__init(struct kvm *kvm)
 	virtio_init(kvm, &bdev, &bdev.vdev, &bln_dev_virtio_ops,
 		    VIRTIO_PCI, PCI_DEVICE_ID_VIRTIO_BLN, VIRTIO_ID_BALLOON, PCI_CLASS_BLN);
 
-	if (compat_id != -1)
-		compat_id = compat__add_message("virtio-balloon device was not detected",
-						"While you have requested a virtio-balloon device, "
-						"the guest kernel did not initialize it.\n"
-						"Please make sure that the guest kernel was "
-						"compiled with CONFIG_VIRTIO_BALLOON=y enabled "
-						"in its .config");
+	if (compat_id == -1)
+		compat_id = virtio_compat_add_message("virtio-balloon", "CONFIG_VIRTIO_BALLOON");
 }
