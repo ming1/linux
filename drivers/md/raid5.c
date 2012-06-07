@@ -4521,7 +4521,7 @@ static void raid5d(struct mddev *mddev)
 	while (1) {
 		struct bio *bio;
 
-		if (atomic_read(&mddev->plug_cnt) == 0 &&
+		if (atomic_read(&mddev->queue->plug_cnt) == 0 &&
 		    !list_empty(&conf->bitmap_list)) {
 			/* Now is a good time to flush some bitmap updates */
 			conf->seq_flush++;
@@ -4531,7 +4531,7 @@ static void raid5d(struct mddev *mddev)
 			conf->seq_write = conf->seq_flush;
 			activate_bit_delay(conf);
 		}
-		if (atomic_read(&mddev->plug_cnt) == 0)
+		if (atomic_read(&mddev->queue->plug_cnt) == 0)
 			raid5_activate_delayed(conf);
 
 		while ((bio = remove_bio_from_retry(conf))) {
