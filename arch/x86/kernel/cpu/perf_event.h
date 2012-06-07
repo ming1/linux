@@ -14,6 +14,18 @@
 
 #include <linux/perf_event.h>
 
+#if 0
+#undef wrmsrl
+#define wrmsrl(msr, val) 						\
+do {									\
+	unsigned int _msr = (msr);					\
+	u64 _val = (val);						\
+	trace_printk("wrmsrl(%x, %Lx)\n", (unsigned int)(_msr),		\
+			(unsigned long long)(_val));			\
+	native_write_msr((_msr), (u32)(_val), (u32)(_val >> 32));	\
+} while (0)
+#endif
+
 /*
  *          |   NHM/WSM    |      SNB     |
  * register -------------------------------
@@ -57,7 +69,7 @@ struct amd_nb {
 };
 
 /* The maximal number of PEBS events: */
-#define MAX_PEBS_EVENTS		4
+#define MAX_PEBS_EVENTS		8
 
 /*
  * A debug store configuration.
@@ -117,6 +129,7 @@ struct cpu_hw_events {
 	struct perf_event	*event_list[X86_PMC_IDX_MAX]; /* in enabled order */
 
 	unsigned int		group_flag;
+	int			is_fake;
 
 	/*
 	 * Intel DebugStore bits
@@ -364,6 +377,8 @@ struct x86_pmu {
 	int		pebs_record_size;
 	void		(*drain_pebs)(struct pt_regs *regs);
 	struct event_constraint *pebs_constraints;
+	void		(*pebs_aliases)(struct perf_event *event);
+	int 		max_pebs_events;
 
 	/*
 	 * Intel LBR

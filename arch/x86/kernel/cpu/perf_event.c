@@ -35,17 +35,6 @@
 
 #include "perf_event.h"
 
-#if 0
-#undef wrmsrl
-#define wrmsrl(msr, val) 					\
-do {								\
-	trace_printk("wrmsrl(%lx, %lx)\n", (unsigned long)(msr),\
-			(unsigned long)(val));			\
-	native_write_msr((msr), (u32)((u64)(val)), 		\
-			(u32)((u64)(val) >> 32));		\
-} while (0)
-#endif
-
 struct x86_pmu x86_pmu __read_mostly;
 
 DEFINE_PER_CPU(struct cpu_hw_events, cpu_hw_events) = {
@@ -86,7 +75,7 @@ u64 x86_perf_event_update(struct perf_event *event)
 	 */
 again:
 	prev_raw_count = local64_read(&hwc->prev_count);
-	rdmsrl(hwc->event_base, new_raw_count);
+	rdpmcl(hwc->event_base_rdpmc, new_raw_count);
 
 	if (local64_cmpxchg(&hwc->prev_count, prev_raw_count,
 					new_raw_count) != prev_raw_count)
@@ -830,9 +819,11 @@ static inline void x86_assign_hw_event(struct perf_event *event,
 	} else if (hwc->idx >= X86_PMC_IDX_FIXED) {
 		hwc->config_base = MSR_ARCH_PERFMON_FIXED_CTR_CTRL;
 		hwc->event_base = MSR_ARCH_PERFMON_FIXED_CTR0 + (hwc->idx - X86_PMC_IDX_FIXED);
+		hwc->event_base_rdpmc = (hwc->idx - X86_PMC_IDX_FIXED) | 1<<30;
 	} else {
 		hwc->config_base = x86_pmu_config_addr(hwc->idx);
 		hwc->event_base  = x86_pmu_event_addr(hwc->idx);
+		hwc->event_base_rdpmc = x86_pmu_addr_offset(hwc->idx);
 	}
 }
 
@@ -1496,6 +1487,7 @@ static struct cpu_hw_events *allocate_fake_cpuc(void)
 		if (!cpuc->shared_regs)
 			goto error;
 	}
+	cpuc->is_fake = 1;
 	return cpuc;
 error:
 	free_fake_cpuc(cpuc);
@@ -1756,6 +1748,12 @@ perf_callchain_kernel(struct perf_callchain_entry *entry, struct pt_regs *regs)
 	dump_trace(NULL, regs, NULL, 0, &backtrace_ops, entry);
 }
 
+static inline int
+valid_user_frame(const void __user *fp, unsigned long size)
+{
+	return (__range_not_ok(fp, size, TASK_SIZE) == 0);
+}
+
 #ifdef CONFIG_COMPAT
 
 #include <asm/compat.h>
@@ -1780,7 +1778,7 @@ perf_callchain_user32(struct pt_regs *regs, struct perf_callchain_entry *entry)
 		if (bytes != sizeof(frame))
 			break;
 
-		if (fp < compat_ptr(regs->sp))
+		if (!valid_user_frame(fp, sizeof(frame)))
 			break;
 
 		perf_callchain_store(entry, frame.return_address);
@@ -1826,7 +1824,7 @@ perf_callchain_user(struct perf_callchain_entry *entry, struct pt_regs *regs)
 		if (bytes != sizeof(frame))
 			break;
 
-		if ((unsigned long)fp < regs->sp)
+		if (!valid_user_frame(fp, sizeof(frame)))
 			break;
 
 		perf_callchain_store(entry, frame.return_address);
