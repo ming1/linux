@@ -1,0 +1,17 @@
+Importing i2c based on af56e0aa35f3ae2a4c1a6d1000702df1dd78cb76
+Unchanged quilt series i2c
+Importing jdelvare-hwmon based on 731a7378b81c2f5fa88ca1ae20b83d548d5613dc
+Unchanged quilt series jdelvare-hwmon
+Importing rr based on v3.5-rc1
+Unchanged quilt series rr
+Importing device-mapper based on v3.5-rc1
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard f8f5701bdaf9134b1f90e5044a82c66324d2073f
+HEAD is now at f8f5701 Linux 3.5-rc1
+$ git am ../quilt/device-mapper/dm-support-non-power-of-two-target-max_io_len.patch
+Applying: Remove the restriction that limits a target's specified maximum incoming
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/device-mapper
+From ../quilt-tmp
+ + 7c66983...6bc816b master     -> quilt/device-mapper  (forced update)
