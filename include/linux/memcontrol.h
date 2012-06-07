@@ -417,5 +417,65 @@ static inline void sock_release_memcg(struct sock *sk)
 {
 }
 #endif /* CONFIG_CGROUP_MEM_RES_CTLR_KMEM */
+
+#ifdef CONFIG_MEM_RES_CTLR_HUGETLB
+extern int mem_cgroup_hugetlb_charge_page(int idx, unsigned long nr_pages,
+					  struct mem_cgroup **ptr);
+extern void mem_cgroup_hugetlb_commit_charge(int idx, unsigned long nr_pages,
+					     struct mem_cgroup *memcg,
+					     struct page *page);
+extern void mem_cgroup_hugetlb_uncharge_page(int idx, unsigned long nr_pages,
+					     struct page *page);
+extern void mem_cgroup_hugetlb_uncharge_memcg(int idx, unsigned long nr_pages,
+					      struct mem_cgroup *memcg);
+extern int mem_cgroup_hugetlb_file_init(int idx) __init;
+extern int mem_cgroup_move_hugetlb_parent(int idx, struct cgroup *cgroup,
+					  struct page *page);
+extern bool mem_cgroup_have_hugetlb_usage(struct cgroup *cgroup);
+
+extern void mem_cgroup_hugetlb_migrate(struct page *oldhpage,
+				       struct page *newhpage);
+#else
+static inline int
+mem_cgroup_hugetlb_charge_page(int idx, unsigned long nr_pages,
+						 struct mem_cgroup **ptr)
+{
+	return 0;
+}
+
+static inline void
+mem_cgroup_hugetlb_commit_charge(int idx, unsigned long nr_pages,
+				 struct mem_cgroup *memcg,
+				 struct page *page)
+{
+	return;
+}
+
+static inline void
+mem_cgroup_hugetlb_uncharge_page(int idx, unsigned long nr_pages,
+				 struct page *page)
+{
+	return;
+}
+
+static inline void
+mem_cgroup_hugetlb_uncharge_memcg(int idx, unsigned long nr_pages,
+				  struct mem_cgroup *memcg)
+{
+	return;
+}
+
+static inline int mem_cgroup_hugetlb_file_init(int idx)
+{
+	return 0;
+}
+
+static inline void mem_cgroup_hugetlb_migrate(struct page *oldhpage,
+						struct page *newhpage)
+{
+	return;
+}
+
+#endif  /* CONFIG_MEM_RES_CTLR_HUGETLB */
 #endif /* _LINUX_MEMCONTROL_H */
 
