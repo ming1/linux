@@ -1,0 +1,9 @@
+This file lists all branches that are pulled into the for-next branch
+of git://git.kernel.org/pub/scm/linux/kernel/git/arm/arm-soc.git
+and their external dependencies.
+
+It also includes a couple of directly applied patches for build breaks with subject
+The next/* branches are kept in the order in which they get applied.
+
+dependencies:
+<none at this time>
