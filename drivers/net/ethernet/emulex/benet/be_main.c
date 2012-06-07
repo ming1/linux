@@ -719,8 +719,8 @@ static netdev_tx_t be_xmit(struct sk_buff *skb,
 	 * 60 bytes long.
 	 * As a workaround disable TX vlan offloading in such cases.
 	 */
-	if (unlikely(vlan_tx_tag_present(skb) &&
-		     (skb->ip_summed != CHECKSUM_PARTIAL || skb->len <= 60))) {
+	if (vlan_tx_tag_present(skb) &&
+	    (skb->ip_summed != CHECKSUM_PARTIAL || skb->len <= 60)) {
 		skb = skb_share_check(skb, GFP_ATOMIC);
 		if (unlikely(!skb))
 			goto tx_drop;
@@ -785,18 +785,11 @@ static int be_change_mtu(struct net_device *netdev, int new_mtu)
  * A max of 64 (BE_NUM_VLANS_SUPPORTED) vlans can be configured in BE.
  * If the user configures more, place BE in vlan promiscuous mode.
  */
-static int be_vid_config(struct be_adapter *adapter, bool vf, u32 vf_num)
+static int be_vid_config(struct be_adapter *adapter)
 {
-	struct be_vf_cfg *vf_cfg = &adapter->vf_cfg[vf_num];
-	u16 vtag[BE_NUM_VLANS_SUPPORTED];
-	u16 ntags = 0, i;
+	u16 vids[BE_NUM_VLANS_SUPPORTED];
+	u16 num = 0, i;
 	int status = 0;
-
-	if (vf) {
-		vtag[0] = cpu_to_le16(vf_cfg->vlan_tag);
-		status = be_cmd_vlan_config(adapter, vf_cfg->if_handle, vtag,
-					    1, 1, 0);
-	}
 
 	/* No need to further configure vids if in promiscuous mode */
 	if (adapter->promiscuous)
@@ -808,10 +801,10 @@ static int be_vid_config(struct be_adapter *adapter, bool vf, u32 vf_num)
 	/* Construct VLAN Table to give to HW */
 	for (i = 0; i < VLAN_N_VID; i++)
 		if (adapter->vlan_tag[i])
-			vtag[ntags++] = cpu_to_le16(i);
+			vids[num++] = cpu_to_le16(i);
 
 	status = be_cmd_vlan_config(adapter, adapter->if_handle,
-				    vtag, ntags, 1, 0);
+				    vids, num, 1, 0);
 
 	/* Set to VLAN promisc mode as setting VLAN filter failed */
 	if (status) {
@@ -840,7 +833,7 @@ static int be_vlan_add_vid(struct net_device *netdev, u16 vid)
 
 	adapter->vlan_tag[vid] = 1;
 	if (adapter->vlans_added <= (adapter->max_vlans + 1))
-		status = be_vid_config(adapter, false, 0);
+		status = be_vid_config(adapter);
 
 	if (!status)
 		adapter->vlans_added++;
@@ -862,7 +855,7 @@ static int be_vlan_rem_vid(struct net_device *netdev, u16 vid)
 
 	adapter->vlan_tag[vid] = 0;
 	if (adapter->vlans_added <= adapter->max_vlans)
-		status = be_vid_config(adapter, false, 0);
+		status = be_vid_config(adapter);
 
 	if (!status)
 		adapter->vlans_added--;
@@ -889,7 +882,7 @@ static void be_set_rx_mode(struct net_device *netdev)
 		be_cmd_rx_filter(adapter, IFF_PROMISC, OFF);
 
 		if (adapter->vlans_added)
-			be_vid_config(adapter, false, 0);
+			be_vid_config(adapter);
 	}
 
 	/* Enable multicast promisc if num configured exceeds what we support */
@@ -1056,6 +1049,8 @@ static int be_find_vfs(struct be_adapter *adapter, int vf_state)
 	u16 offset, stride;
 
 	pos = pci_find_ext_capability(pdev, PCI_EXT_CAP_ID_SRIOV);
+	if (!pos)
+		return 0;
 	pci_read_config_word(pdev, pos + PCI_SRIOV_VF_OFFSET, &offset);
 	pci_read_config_word(pdev, pos + PCI_SRIOV_VF_STRIDE, &stride);
 
@@ -1897,6 +1892,12 @@ static int be_rx_cqs_create(struct be_adapter *adapter)
 	 */
 	adapter->num_rx_qs = (num_irqs(adapter) > 1) ?
 				num_irqs(adapter) + 1 : 1;
+	if (adapter->num_rx_qs != MAX_RX_QS) {
+		rtnl_lock();
+		netif_set_real_num_rx_queues(adapter->netdev,
+					     adapter->num_rx_qs);
+		rtnl_unlock();
+	}
 
 	adapter->big_page_size = (1 << get_order(rx_frag_size)) * PAGE_SIZE;
 	for_all_rx_queues(adapter, rxo, i) {
@@ -2543,7 +2544,6 @@ static int be_clear(struct be_adapter *adapter)
 	be_cmd_fw_clean(adapter);
 
 	be_msix_disable(adapter);
-	pci_write_config_dword(adapter->pdev, PCICFG_CUST_SCRATCHPAD_CSR, 0);
 	return 0;
 }
 
@@ -2762,7 +2762,8 @@ static int be_setup(struct be_adapter *adapter)
 
 	be_cmd_get_fw_ver(adapter, adapter->fw_ver, NULL);
 
-	be_vid_config(adapter, false, 0);
+	if (adapter->vlans_added)
+		be_vid_config(adapter);
 
 	be_set_rx_mode(adapter->netdev);
 
@@ -2771,8 +2772,6 @@ static int be_setup(struct be_adapter *adapter)
 	if (rx_fc != adapter->rx_fc || tx_fc != adapter->tx_fc)
 		be_cmd_set_flow_control(adapter, adapter->tx_fc,
 					adapter->rx_fc);
-
-	pcie_set_readrq(adapter->pdev, 4096);
 
 	if (be_physfn(adapter) && num_vfs) {
 		if (adapter->dev_num_vfs)
@@ -2787,8 +2786,6 @@ static int be_setup(struct be_adapter *adapter)
 
 	schedule_delayed_work(&adapter->work, msecs_to_jiffies(1000));
 	adapter->flags |= BE_FLAGS_WORKER_SCHEDULED;
-
-	pci_write_config_dword(adapter->pdev, PCICFG_CUST_SCRATCHPAD_CSR, 1);
 	return 0;
 err:
 	be_clear(adapter);
@@ -3726,10 +3723,7 @@ reschedule:
 
 static bool be_reset_required(struct be_adapter *adapter)
 {
-	u32 reg;
-
-	pci_read_config_dword(adapter->pdev, PCICFG_CUST_SCRATCHPAD_CSR, &reg);
-	return reg;
+	return be_find_vfs(adapter, ENABLED) > 0 ? false : true;
 }
 
 static int __devinit be_probe(struct pci_dev *pdev,
@@ -3748,7 +3742,7 @@ static int __devinit be_probe(struct pci_dev *pdev,
 		goto disable_dev;
 	pci_set_master(pdev);
 
-	netdev = alloc_etherdev_mq(sizeof(struct be_adapter), MAX_TX_QS);
+	netdev = alloc_etherdev_mqs(sizeof(*adapter), MAX_TX_QS, MAX_RX_QS);
 	if (netdev == NULL) {
 		status = -ENOMEM;
 		goto rel_reg;
