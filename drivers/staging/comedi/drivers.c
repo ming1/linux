@@ -304,14 +304,13 @@ static int postconfig(struct comedi_device *dev)
  * that register their supported board names */
 static void *comedi_recognize(struct comedi_driver *driv, const char *name)
 {
-	unsigned i;
-	const char *const *name_ptr = driv->board_name;
+	char **name_ptr = (char **)driv->board_name;
+	int i;
+
 	for (i = 0; i < driv->num_names; i++) {
 		if (strcmp(*name_ptr, name) == 0)
-			return (void *)name_ptr;
-		name_ptr =
-		    (const char *const *)((const char *)name_ptr +
-					  driv->offset);
+			return name_ptr;
+		name_ptr = (void *)name_ptr + driv->offset;
 	}
 
 	return NULL;
@@ -382,39 +381,6 @@ static int insn_rw_emulate_bits(struct comedi_device *dev,
 		data[0] = (new_data[1] >> (chan - base_bitfield_channel)) & 1;
 
 	return 1;
-}
-
-static inline unsigned long uvirt_to_kva(pgd_t *pgd, unsigned long adr)
-{
-	unsigned long ret = 0UL;
-	pmd_t *pmd;
-	pte_t *ptep, pte;
-	pud_t *pud;
-
-	if (!pgd_none(*pgd)) {
-		pud = pud_offset(pgd, adr);
-		pmd = pmd_offset(pud, adr);
-		if (!pmd_none(*pmd)) {
-			ptep = pte_offset_kernel(pmd, adr);
-			pte = *ptep;
-			if (pte_present(pte)) {
-				ret = (unsigned long)
-				    page_address(pte_page(pte));
-				ret |= (adr & (PAGE_SIZE - 1));
-			}
-		}
-	}
-	return ret;
-}
-
-static inline unsigned long kvirt_to_kva(unsigned long adr)
-{
-	unsigned long va, kva;
-
-	va = adr;
-	kva = uvirt_to_kva(pgd_offset_k(va), va);
-
-	return kva;
 }
 
 int comedi_buf_alloc(struct comedi_device *dev, struct comedi_subdevice *s,
@@ -907,6 +873,40 @@ static void comedi_auto_unconfig(struct device *hardware_device)
 	BUG_ON(minor >= COMEDI_NUM_BOARD_MINORS);
 	comedi_free_board_minor(minor);
 }
+
+/**
+ * comedi_pci_enable() - Enable the PCI device and request the regions.
+ * @pdev: pci_dev struct
+ * @res_name: name for the requested reqource
+ */
+int comedi_pci_enable(struct pci_dev *pdev, const char *res_name)
+{
+	int rc;
+
+	rc = pci_enable_device(pdev);
+	if (rc < 0)
+		return rc;
+
+	rc = pci_request_regions(pdev, res_name);
+	if (rc < 0)
+		pci_disable_device(pdev);
+
+	return rc;
+}
+EXPORT_SYMBOL_GPL(comedi_pci_enable);
+
+/**
+ * comedi_pci_disable() - Release the regions and disable the PCI device.
+ * @pdev: pci_dev struct
+ *
+ * This must be matched with a previous successful call to comedi_pci_enable().
+ */
+void comedi_pci_disable(struct pci_dev *pdev)
+{
+	pci_release_regions(pdev);
+	pci_disable_device(pdev);
+}
+EXPORT_SYMBOL_GPL(comedi_pci_disable);
 
 static int comedi_old_pci_auto_config(struct pci_dev *pcidev,
 				      struct comedi_driver *driver)
