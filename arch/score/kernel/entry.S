@@ -322,8 +322,7 @@ ENTRY(syscall_exit_work)
 	nop
 	enable_irq
 	mv	r4, r0
-	li	r5, 1
-	bl	do_syscall_trace
+	bl	do_syscall_trace_leave
 	nop
 	b	resume_userspace
 	nop
@@ -453,8 +452,7 @@ syscall_return_work:
 syscall_trace_entry:
 	mv	r16, r10
 	mv	r4, r0
-	li	r5, 0
-	bl	do_syscall_trace
+	bl	do_syscall_trace_enter
 
 	mv	r8, r16
 	lw	r4, [r0, PT_R4]		# Restore argument registers
