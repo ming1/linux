@@ -2321,7 +2321,7 @@ static void pl330_tasklet(unsigned long data)
 	/* Pick up ripe tomatoes */
 	list_for_each_entry_safe(desc, _dt, &pch->work_list, node)
 		if (desc->status == DONE) {
-			if (pch->cyclic)
+			if (!pch->cyclic)
 				dma_cookie_complete(&desc->txd);
 			list_move_tail(&desc->node, &list);
 		}
@@ -2539,7 +2539,7 @@ static inline void _init_desc(struct dma_pl330_desc *desc)
 }
 
 /* Returns the number of descriptors added to the DMAC pool */
-int add_desc(struct dma_pl330_dmac *pdmac, gfp_t flg, int count)
+static int add_desc(struct dma_pl330_dmac *pdmac, gfp_t flg, int count)
 {
 	struct dma_pl330_desc *desc;
 	unsigned long flags;
