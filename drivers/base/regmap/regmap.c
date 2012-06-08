@@ -119,11 +119,17 @@ static void regmap_format_8(void *buf, unsigned int val, unsigned int shift)
 	b[0] = val << shift;
 }
 
-static void regmap_format_16(void *buf, unsigned int val, unsigned int shift)
+static void regmap_format_16_be(void *buf, unsigned int val, unsigned int shift)
 {
 	__be16 *b = buf;
 
 	b[0] = cpu_to_be16(val << shift);
+}
+
+static void regmap_format_16_native(void *buf, unsigned int val,
+				    unsigned int shift)
+{
+	*(u16 *)buf = val << shift;
 }
 
 static void regmap_format_24(void *buf, unsigned int val, unsigned int shift)
@@ -137,11 +143,17 @@ static void regmap_format_24(void *buf, unsigned int val, unsigned int shift)
 	b[2] = val;
 }
 
-static void regmap_format_32(void *buf, unsigned int val, unsigned int shift)
+static void regmap_format_32_be(void *buf, unsigned int val, unsigned int shift)
 {
 	__be32 *b = buf;
 
 	b[0] = cpu_to_be32(val << shift);
+}
+
+static void regmap_format_32_native(void *buf, unsigned int val,
+				    unsigned int shift)
+{
+	*(u32 *)buf = val << shift;
 }
 
 static unsigned int regmap_parse_8(void *buf)
@@ -151,13 +163,18 @@ static unsigned int regmap_parse_8(void *buf)
 	return b[0];
 }
 
-static unsigned int regmap_parse_16(void *buf)
+static unsigned int regmap_parse_16_be(void *buf)
 {
 	__be16 *b = buf;
 
 	b[0] = be16_to_cpu(b[0]);
 
 	return b[0];
+}
+
+static unsigned int regmap_parse_16_native(void *buf)
+{
+	return *(u16 *)buf;
 }
 
 static unsigned int regmap_parse_24(void *buf)
@@ -170,13 +187,18 @@ static unsigned int regmap_parse_24(void *buf)
 	return ret;
 }
 
-static unsigned int regmap_parse_32(void *buf)
+static unsigned int regmap_parse_32_be(void *buf)
 {
 	__be32 *b = buf;
 
 	b[0] = be32_to_cpu(b[0]);
 
 	return b[0];
+}
+
+static unsigned int regmap_parse_32_native(void *buf)
+{
+	return *(u32 *)buf;
 }
 
 static void regmap_lock_mutex(struct regmap *map)
@@ -227,6 +249,7 @@ struct regmap *regmap_init(struct device *dev,
 {
 	struct regmap *map, **m;
 	int ret = -EINVAL;
+	enum regmap_endian reg_endian, val_endian;
 
 	if (!bus || !config)
 		goto err;
@@ -246,11 +269,11 @@ struct regmap *regmap_init(struct device *dev,
 		map->lock = regmap_lock_mutex;
 		map->unlock = regmap_unlock_mutex;
 	}
-	map->format.buf_size = (config->reg_bits + config->val_bits) / 8;
 	map->format.reg_bytes = DIV_ROUND_UP(config->reg_bits, 8);
 	map->format.pad_bytes = config->pad_bits / 8;
 	map->format.val_bytes = DIV_ROUND_UP(config->val_bits, 8);
-	map->format.buf_size += map->format.pad_bytes;
+	map->format.buf_size = DIV_ROUND_UP(config->reg_bits +
+			config->val_bits + config->pad_bits, 8);
 	map->reg_shift = config->pad_bits % 8;
 	if (config->reg_stride)
 		map->reg_stride = config->reg_stride;
@@ -274,6 +297,18 @@ struct regmap *regmap_init(struct device *dev,
 	} else {
 		map->read_flag_mask = bus->read_flag_mask;
 	}
+
+	reg_endian = config->reg_format_endian;
+	if (reg_endian == REGMAP_ENDIAN_DEFAULT)
+		reg_endian = bus->reg_format_endian_default;
+	if (reg_endian == REGMAP_ENDIAN_DEFAULT)
+		reg_endian = REGMAP_ENDIAN_BIG;
+
+	val_endian = config->val_format_endian;
+	if (val_endian == REGMAP_ENDIAN_DEFAULT)
+		val_endian = bus->val_format_endian_default;
+	if (val_endian == REGMAP_ENDIAN_DEFAULT)
+		val_endian = REGMAP_ENDIAN_BIG;
 
 	switch (config->reg_bits + map->reg_shift) {
 	case 2:
@@ -321,11 +356,29 @@ struct regmap *regmap_init(struct device *dev,
 		break;
 
 	case 16:
-		map->format.format_reg = regmap_format_16;
+		switch (reg_endian) {
+		case REGMAP_ENDIAN_BIG:
+			map->format.format_reg = regmap_format_16_be;
+			break;
+		case REGMAP_ENDIAN_NATIVE:
+			map->format.format_reg = regmap_format_16_native;
+			break;
+		default:
+			goto err_map;
+		}
 		break;
 
 	case 32:
-		map->format.format_reg = regmap_format_32;
+		switch (reg_endian) {
+		case REGMAP_ENDIAN_BIG:
+			map->format.format_reg = regmap_format_32_be;
+			break;
+		case REGMAP_ENDIAN_NATIVE:
+			map->format.format_reg = regmap_format_32_native;
+			break;
+		default:
+			goto err_map;
+		}
 		break;
 
 	default:
@@ -338,21 +391,47 @@ struct regmap *regmap_init(struct device *dev,
 		map->format.parse_val = regmap_parse_8;
 		break;
 	case 16:
-		map->format.format_val = regmap_format_16;
-		map->format.parse_val = regmap_parse_16;
+		switch (val_endian) {
+		case REGMAP_ENDIAN_BIG:
+			map->format.format_val = regmap_format_16_be;
+			map->format.parse_val = regmap_parse_16_be;
+			break;
+		case REGMAP_ENDIAN_NATIVE:
+			map->format.format_val = regmap_format_16_native;
+			map->format.parse_val = regmap_parse_16_native;
+			break;
+		default:
+			goto err_map;
+		}
 		break;
 	case 24:
+		if (val_endian != REGMAP_ENDIAN_BIG)
+			goto err_map;
 		map->format.format_val = regmap_format_24;
 		map->format.parse_val = regmap_parse_24;
 		break;
 	case 32:
-		map->format.format_val = regmap_format_32;
-		map->format.parse_val = regmap_parse_32;
+		switch (val_endian) {
+		case REGMAP_ENDIAN_BIG:
+			map->format.format_val = regmap_format_32_be;
+			map->format.parse_val = regmap_parse_32_be;
+			break;
+		case REGMAP_ENDIAN_NATIVE:
+			map->format.format_val = regmap_format_32_native;
+			map->format.parse_val = regmap_parse_32_native;
+			break;
+		default:
+			goto err_map;
+		}
 		break;
 	}
 
-	if (map->format.format_write)
+	if (map->format.format_write) {
+		if ((reg_endian != REGMAP_ENDIAN_BIG) ||
+		    (val_endian != REGMAP_ENDIAN_BIG))
+			goto err_map;
 		map->use_single_rw = true;
+	}
 
 	if (!map->format.format_write &&
 	    !(map->format.format_reg && map->format.format_val))
@@ -368,7 +447,7 @@ struct regmap *regmap_init(struct device *dev,
 
 	ret = regcache_init(map, config);
 	if (ret < 0)
-		goto err_free_workbuf;
+		goto err_debugfs;
 
 	/* Add a devres resource for dev_get_regmap() */
 	m = devres_alloc(dev_get_regmap_release, sizeof(*m), GFP_KERNEL);
@@ -383,7 +462,8 @@ struct regmap *regmap_init(struct device *dev,
 
 err_cache:
 	regcache_exit(map);
-err_free_workbuf:
+err_debugfs:
+	regmap_debugfs_exit(map);
 	kfree(map->work_buf);
 err_map:
 	kfree(map);
@@ -471,6 +551,7 @@ int regmap_reinit_cache(struct regmap *map, const struct regmap_config *config)
 
 	return ret;
 }
+EXPORT_SYMBOL_GPL(regmap_reinit_cache);
 
 /**
  * regmap_exit(): Free a previously allocated register map
