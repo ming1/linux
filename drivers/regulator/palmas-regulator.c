@@ -257,8 +257,7 @@ static int palmas_set_mode_smps(struct regulator_dev *dev, unsigned int mode)
 	unsigned int reg;
 
 	palmas_smps_read(pmic->palmas, palmas_regs_info[id].ctrl_addr, &reg);
-	reg &= ~PALMAS_SMPS12_CTRL_STATUS_MASK;
-	reg >>= PALMAS_SMPS12_CTRL_STATUS_SHIFT;
+	reg &= ~PALMAS_SMPS12_CTRL_MODE_ACTIVE_MASK;
 
 	switch (mode) {
 	case REGULATOR_MODE_NORMAL:
@@ -400,19 +399,14 @@ static struct regulator_ops palmas_ops_smps = {
 	.map_voltage		= palmas_map_voltage_smps,
 };
 
-static int palmas_list_voltage_smps10(struct regulator_dev *dev,
-					unsigned selector)
-{
-	return 3750000 + (selector * 1250000);
-}
-
 static struct regulator_ops palmas_ops_smps10 = {
 	.is_enabled		= regulator_is_enabled_regmap,
 	.enable			= regulator_enable_regmap,
 	.disable		= regulator_disable_regmap,
 	.get_voltage_sel	= regulator_get_voltage_sel_regmap,
 	.set_voltage_sel	= regulator_set_voltage_sel_regmap,
-	.list_voltage		= palmas_list_voltage_smps10,
+	.list_voltage		= regulator_list_voltage_linear,
+	.map_voltage		= regulator_map_voltage_linear,
 };
 
 static int palmas_is_enabled_ldo(struct regulator_dev *dev)
@@ -522,7 +516,15 @@ static int palmas_smps_init(struct palmas *palmas, int id,
 	if (ret)
 		return ret;
 
-	if (id != PALMAS_REG_SMPS10) {
+	switch (id) {
+	case PALMAS_REG_SMPS10:
+		if (reg_init->mode_sleep) {
+			reg &= ~PALMAS_SMPS10_CTRL_MODE_SLEEP_MASK;
+			reg |= reg_init->mode_sleep <<
+					PALMAS_SMPS10_CTRL_MODE_SLEEP_SHIFT;
+		}
+		break;
+	default:
 		if (reg_init->warm_reset)
 			reg |= PALMAS_SMPS12_CTRL_WR_S;
 
@@ -534,14 +536,8 @@ static int palmas_smps_init(struct palmas *palmas, int id,
 			reg |= reg_init->mode_sleep <<
 					PALMAS_SMPS12_CTRL_MODE_SLEEP_SHIFT;
 		}
-	} else {
-		if (reg_init->mode_sleep) {
-			reg &= ~PALMAS_SMPS10_CTRL_MODE_SLEEP_MASK;
-			reg |= reg_init->mode_sleep <<
-					PALMAS_SMPS10_CTRL_MODE_SLEEP_SHIFT;
-		}
-
 	}
+
 	ret = palmas_smps_write(palmas, addr, reg);
 	if (ret)
 		return ret;
@@ -665,16 +661,20 @@ static __devinit int palmas_probe(struct platform_device *pdev)
 		pmic->desc[id].name = palmas_regs_info[id].name;
 		pmic->desc[id].id = id;
 
-		if (id != PALMAS_REG_SMPS10) {
-			pmic->desc[id].ops = &palmas_ops_smps;
-			pmic->desc[id].n_voltages = PALMAS_SMPS_NUM_VOLTAGES;
-		} else {
+		switch (id) {
+		case PALMAS_REG_SMPS10:
 			pmic->desc[id].n_voltages = PALMAS_SMPS10_NUM_VOLTAGES;
 			pmic->desc[id].ops = &palmas_ops_smps10;
 			pmic->desc[id].vsel_reg = PALMAS_SMPS10_CTRL;
 			pmic->desc[id].vsel_mask = SMPS10_VSEL;
 			pmic->desc[id].enable_reg = PALMAS_SMPS10_STATUS;
 			pmic->desc[id].enable_mask = SMPS10_BOOST_EN;
+			pmic->desc[id].min_uV = 3750000;
+			pmic->desc[id].uV_step = 1250000;
+			break;
+		default:
+			pmic->desc[id].ops = &palmas_ops_smps;
+			pmic->desc[id].n_voltages = PALMAS_SMPS_NUM_VOLTAGES;
 		}
 
 		pmic->desc[id].type = REGULATOR_VOLTAGE;
@@ -775,9 +775,6 @@ static __devinit int palmas_probe(struct platform_device *pdev)
 err_unregister_regulator:
 	while (--id >= 0)
 		regulator_unregister(pmic->rdev[id]);
-	kfree(pmic->rdev);
-	kfree(pmic->desc);
-	kfree(pmic);
 	return ret;
 }
 
@@ -788,10 +785,6 @@ static int __devexit palmas_remove(struct platform_device *pdev)
 
 	for (id = 0; id < PALMAS_NUM_REGS; id++)
 		regulator_unregister(pmic->rdev[id]);
-
-	kfree(pmic->rdev);
-	kfree(pmic->desc);
-	kfree(pmic);
 	return 0;
 }
 
