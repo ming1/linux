@@ -7,3 +7,6 @@ The next/* branches are kept in the order in which they get applied.
 
 dependencies:
 <none at this time>
+
+next/drivers:
+devel/led-driver	git://git.kernel.org/pub/scm/linux/kernel/git/cooloney/linux-leds.git for-arm-soc
