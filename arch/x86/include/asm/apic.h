@@ -306,7 +306,7 @@ struct apic {
 	unsigned long (*check_apicid_used)(physid_mask_t *map, int apicid);
 	unsigned long (*check_apicid_present)(int apicid);
 
-	void (*vector_allocation_domain)(int cpu, struct cpumask *retmask);
+	bool (*vector_allocation_domain)(int cpu, struct cpumask *retmask);
 	void (*init_apic_ldr)(void);
 
 	void (*ioapic_phys_id_map)(physid_mask_t *phys_map, physid_mask_t *retmap);
@@ -331,9 +331,11 @@ struct apic {
 	unsigned long (*set_apic_id)(unsigned int id);
 	unsigned long apic_id_mask;
 
-	unsigned int (*cpu_mask_to_apicid)(const struct cpumask *cpumask);
-	unsigned int (*cpu_mask_to_apicid_and)(const struct cpumask *cpumask,
-					       const struct cpumask *andmask);
+	int (*cpu_mask_to_apicid)(const struct cpumask *cpumask,
+				  unsigned int *apicid);
+	int (*cpu_mask_to_apicid_and)(const struct cpumask *cpumask,
+				      const struct cpumask *andmask,
+				      unsigned int *apicid);
 
 	/* ipi */
 	void (*send_IPI_mask)(const struct cpumask *mask, int vector);
@@ -591,29 +593,66 @@ static inline int default_phys_pkg_id(int cpuid_apic, int index_msb)
 
 #endif
 
-static inline unsigned int
-flat_cpu_mask_to_apicid(const struct cpumask *cpumask)
+static inline int
+__flat_cpu_mask_to_apicid(unsigned long cpu_mask, unsigned int *apicid)
 {
-	return cpumask_bits(cpumask)[0] & APIC_ALL_CPUS;
+	cpu_mask = cpu_mask & APIC_ALL_CPUS & cpumask_bits(cpu_online_mask)[0];
+	if (likely(cpu_mask)) {
+		*apicid = (unsigned int)cpu_mask;
+		return 0;
+	} else {
+		return -EINVAL;
+	}
 }
 
-static inline unsigned int
+static inline int
+flat_cpu_mask_to_apicid(const struct cpumask *cpumask,
+			unsigned int *apicid)
+{
+	return __flat_cpu_mask_to_apicid(cpumask_bits(cpumask)[0], apicid);
+}
+
+static inline int
 flat_cpu_mask_to_apicid_and(const struct cpumask *cpumask,
-			    const struct cpumask *andmask)
+			    const struct cpumask *andmask,
+			    unsigned int *apicid)
 {
 	unsigned long mask1 = cpumask_bits(cpumask)[0];
 	unsigned long mask2 = cpumask_bits(andmask)[0];
-	unsigned long mask3 = cpumask_bits(cpu_online_mask)[0];
-
-	return (unsigned int)(mask1 & mask2 & mask3);
+	return __flat_cpu_mask_to_apicid(mask1 & mask2, apicid);
 }
 
-extern unsigned int
-default_cpu_mask_to_apicid(const struct cpumask *cpumask);
+extern int
+default_cpu_mask_to_apicid(const struct cpumask *cpumask,
+			   unsigned int *apicid);
 
-extern unsigned int
+extern int
 default_cpu_mask_to_apicid_and(const struct cpumask *cpumask,
-			       const struct cpumask *andmask);
+			       const struct cpumask *andmask,
+			       unsigned int *apicid);
+
+static inline bool
+flat_vector_allocation_domain(int cpu, struct cpumask *retmask)
+{
+	/* Careful. Some cpus do not strictly honor the set of cpus
+	 * specified in the interrupt destination when using lowest
+	 * priority interrupt delivery mode.
+	 *
+	 * In particular there was a hyperthreading cpu observed to
+	 * deliver interrupts to the wrong hyperthread when only one
+	 * hyperthread was specified in the interrupt desitination.
+	 */
+	cpumask_clear(retmask);
+	cpumask_bits(retmask)[0] = APIC_ALL_CPUS;
+	return false;
+}
+
+static inline bool
+default_vector_allocation_domain(int cpu, struct cpumask *retmask)
+{
+	cpumask_copy(retmask, cpumask_of(cpu));
+	return true;
+}
 
 static inline unsigned long default_check_apicid_used(physid_mask_t *map, int apicid)
 {
