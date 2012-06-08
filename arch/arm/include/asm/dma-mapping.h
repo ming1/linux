@@ -207,7 +207,7 @@ static inline void dma_free_writecombine(struct device *dev, size_t size,
  * DMA region above it's default value of 2MB. It must be called before the
  * memory allocator is initialised, i.e. before any core_initcall.
  */
-extern void __init init_consistent_dma_size(unsigned long size);
+static inline void init_consistent_dma_size(unsigned long size) { }
 
 /*
  * For SA-1111, IXP425, and ADI systems  the dma-mapping functions are "magic"
