@@ -319,6 +319,8 @@
 310	64	process_vm_readv	sys_process_vm_readv
 311	64	process_vm_writev	sys_process_vm_writev
 312	64	kcmp			sys_kcmp
+313	64	numa_mbind		sys_numa_mbind
+314	64	numa_tbind		sys_numa_tbind
 
 #
 # x32-specific system call numbers start at 512 to avoid cache impact

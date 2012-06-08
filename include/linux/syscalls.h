@@ -857,6 +857,9 @@ asmlinkage long sys_process_vm_writev(pid_t pid,
 				      const struct iovec __user *rvec,
 				      unsigned long riovcnt,
 				      unsigned long flags);
+asmlinkage long sys_numa_mbind(unsigned long addr, unsigned long len,
+			       int ng_id, unsigned long flags);
+asmlinkage long sys_numa_tbind(int tid, int ng_id, unsigned long flags);
 
 asmlinkage long sys_kcmp(pid_t pid1, pid_t pid2, int type,
 			 unsigned long idx1, unsigned long idx2);
