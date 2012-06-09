@@ -329,7 +329,7 @@ static unsigned int iTCO_wdt_get_timeleft(struct watchdog_device *wd_dev)
 		spin_unlock(&iTCO_wdt_private.io_lock);
 
 		time_left = (val8 * 6) / 10;
-	} 
+	}
 	return time_left;
 }
 
