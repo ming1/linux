@@ -11,6 +11,7 @@
  * This work is licensed under the terms of the GNU GPL, version 2.
  */
 
+#define CREATE_TRACE_POINTS
 #include <linux/mm.h>
 #include <linux/mman.h>
 #include <linux/swap.h>
@@ -23,6 +24,7 @@
 #include <linux/debugfs.h>
 #include <linux/frontswap.h>
 #include <linux/swapfile.h>
+#include <trace/events/frontswap.h>
 
 /*
  * frontswap_ops is set by frontswap_register_ops to contain the pointers
@@ -85,6 +87,7 @@ struct frontswap_ops frontswap_register_ops(struct frontswap_ops *ops)
 {
 	struct frontswap_ops old = frontswap_ops;
 
+	trace_frontswap_register_ops(&old, ops);
 	frontswap_ops = *ops;
 	frontswap_enabled = true;
 	return old;
@@ -108,6 +111,9 @@ void __frontswap_init(unsigned type)
 	struct swap_info_struct *sis = swap_info[type];
 
 	BUG_ON(sis == NULL);
+
+	trace_frontswap_init(type, sis, sis->frontswap_map);
+
 	if (sis->frontswap_map == NULL)
 		return;
 	frontswap_ops.init(type);
@@ -134,6 +140,7 @@ int __frontswap_store(struct page *page)
 	if (frontswap_test(sis, offset))
 		dup = 1;
 	ret = frontswap_ops.store(type, offset, page);
+	trace_frontswap_store(page, dup, ret);
 	if (ret == 0) {
 		frontswap_set(sis, offset);
 		inc_frontswap_succ_stores();
@@ -174,6 +181,7 @@ int __frontswap_load(struct page *page)
 	BUG_ON(sis == NULL);
 	if (frontswap_test(sis, offset))
 		ret = frontswap_ops.load(type, offset, page);
+	trace_frontswap_load(page, ret);
 	if (ret == 0)
 		inc_frontswap_loads();
 	return ret;
@@ -189,6 +197,7 @@ void __frontswap_invalidate_page(unsigned type, pgoff_t offset)
 	struct swap_info_struct *sis = swap_info[type];
 
 	BUG_ON(sis == NULL);
+	trace_frontswap_invalidate_page(type, offset, sis, frontswap_test(sis, offset));
 	if (frontswap_test(sis, offset)) {
 		frontswap_ops.invalidate_page(type, offset);
 		atomic_dec(&sis->frontswap_pages);
@@ -207,6 +216,7 @@ void __frontswap_invalidate_area(unsigned type)
 	struct swap_info_struct *sis = swap_info[type];
 
 	BUG_ON(sis == NULL);
+	trace_frontswap_invalidate_area(type, sis, sis->frontswap_map);
 	if (sis->frontswap_map == NULL)
 		return;
 	frontswap_ops.invalidate_area(type);
@@ -295,6 +305,8 @@ void frontswap_shrink(unsigned long target_pages)
 	unsigned long pages_to_unuse = 0;
 	int type, ret;
 
+	trace_frontswap_shrink(target_pages);
+
 	/*
 	 * we don't want to hold swap_lock while doing a very
 	 * lengthy try_to_unuse, but swap_list may change
@@ -321,6 +333,8 @@ unsigned long frontswap_curr_pages(void)
 	spin_lock(&swap_lock);
 	totalpages = __frontswap_curr_pages();
 	spin_unlock(&swap_lock);
+
+	trace_frontswap_curr_pages(totalpages);
 
 	return totalpages;
 }
