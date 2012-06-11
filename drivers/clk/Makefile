@@ -6,6 +6,7 @@ obj-$(CONFIG_COMMON_CLK)	+= clk.o clk-fixed-rate.o clk-gate.o \
 obj-$(CONFIG_ARCH_MXS)		+= mxs/
 obj-$(CONFIG_PLAT_SPEAR)	+= spear/
 obj-$(CONFIG_CLK_ICST)		+= clk-icst.o
+obj-$(CONFIG_ARCH_INTEGRATOR)	+= clk-integrator.o
 
 # Chip specific
 obj-$(CONFIG_COMMON_CLK_WM831X) += clk-wm831x.o
