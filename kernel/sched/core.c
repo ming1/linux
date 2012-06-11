@@ -2368,7 +2368,7 @@ void get_avenrun(unsigned long *loads, unsigned long offset, int shift)
  * calc_load - update the avenrun load estimates 10 ticks after the
  * CPUs have updated calc_load_tasks.
  */
-void calc_global_load(unsigned long ticks)
+void calc_global_load(void)
 {
 	long active;
 
@@ -2396,7 +2396,7 @@ void calc_global_load(unsigned long ticks)
 }
 
 /*
- * Called from update_cpu_load() to periodically update this CPU's
+ * Called from update_cpu_load_active() to periodically update this CPU's
  * active count.
  */
 static void calc_load_account_active(struct rq *this_rq)
