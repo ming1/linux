@@ -41,4 +41,9 @@ config COMMON_CLK_WM831X
           Supports the clocking subsystem of the WM831x/2x series of
 	  PMICs from Wolfson Microlectronics.
 
+config CLK_ICST
+	bool "ICST307 VCO clock driver"
+	depends on COMMON_CLK
+	depends on ICST
+
 endmenu
