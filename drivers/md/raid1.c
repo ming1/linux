@@ -2170,7 +2170,7 @@ static void raid1d(struct mddev *mddev)
 	blk_start_plug(&plug);
 	for (;;) {
 
-		if (atomic_read(&mddev->plug_cnt) == 0)
+		if (atomic_read(&mddev->queue->plug_cnt) == 0)
 			flush_pending_writes(conf);
 
 		spin_lock_irqsave(&conf->device_lock, flags);
