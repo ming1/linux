@@ -628,8 +628,8 @@ static long writeback_sb_inodes(struct super_block *sb,
 		}
 
 		/*
-		 * Don't bother with new inodes or inodes beeing freed, first
-		 * kind does not need peridic writeout yet, and for the latter
+		 * Don't bother with new inodes or inodes being freed, first
+		 * kind does not need periodic writeout yet, and for the latter
 		 * kind writeout is handled by the freer.
 		 */
 		spin_lock(&inode->i_lock);
@@ -664,6 +664,7 @@ static long writeback_sb_inodes(struct super_block *sb,
 			/* Wait for I_SYNC. This function drops i_lock... */
 			inode_sleep_on_writeback(inode);
 			/* Inode may be gone, start again */
+			spin_lock(&wb->list_lock);
 			continue;
 		}
 		inode->i_state |= I_SYNC;
