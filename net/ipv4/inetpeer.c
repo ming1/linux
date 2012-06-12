@@ -82,23 +82,39 @@ static const struct inet_peer peer_fake_node = {
 	.avl_height	= 0
 };
 
-struct inet_peer_base {
-	struct inet_peer __rcu *root;
-	seqlock_t	lock;
-	int		total;
-};
+void inet_peer_base_init(struct inet_peer_base *bp)
+{
+	bp->root = peer_avl_empty_rcu;
+	seqlock_init(&bp->lock);
+	bp->flush_seq = ~0U;
+	bp->total = 0;
+}
+EXPORT_SYMBOL_GPL(inet_peer_base_init);
 
-static struct inet_peer_base v4_peers = {
-	.root		= peer_avl_empty_rcu,
-	.lock		= __SEQLOCK_UNLOCKED(v4_peers.lock),
-	.total		= 0,
-};
+static atomic_t v4_seq = ATOMIC_INIT(0);
+static atomic_t v6_seq = ATOMIC_INIT(0);
 
-static struct inet_peer_base v6_peers = {
-	.root		= peer_avl_empty_rcu,
-	.lock		= __SEQLOCK_UNLOCKED(v6_peers.lock),
-	.total		= 0,
-};
+static atomic_t *inetpeer_seq_ptr(int family)
+{
+	return (family == AF_INET ? &v4_seq : &v6_seq);
+}
+
+static inline void flush_check(struct inet_peer_base *base, int family)
+{
+	atomic_t *fp = inetpeer_seq_ptr(family);
+
+	if (unlikely(base->flush_seq != atomic_read(fp))) {
+		inetpeer_invalidate_tree(base);
+		base->flush_seq = atomic_read(fp);
+	}
+}
+
+void inetpeer_invalidate_family(int family)
+{
+	atomic_t *fp = inetpeer_seq_ptr(family);
+
+	atomic_inc(fp);
+}
 
 #define PEER_MAXDEPTH 40 /* sufficient for about 2^27 nodes */
 
@@ -401,11 +417,6 @@ static void unlink_from_pool(struct inet_peer *p, struct inet_peer_base *base,
 	call_rcu(&p->rcu, inetpeer_free_rcu);
 }
 
-static struct inet_peer_base *family_to_base(int family)
-{
-	return family == AF_INET ? &v4_peers : &v6_peers;
-}
-
 /* perform garbage collect on all items stacked during a lookup */
 static int inet_peer_gc(struct inet_peer_base *base,
 			struct inet_peer __rcu **stack[PEER_MAXDEPTH],
@@ -443,13 +454,16 @@ static int inet_peer_gc(struct inet_peer_base *base,
 	return cnt;
 }
 
-struct inet_peer *inet_getpeer(const struct inetpeer_addr *daddr, int create)
+struct inet_peer *inet_getpeer(struct inet_peer_base *base,
+			       const struct inetpeer_addr *daddr,
+			       int create)
 {
 	struct inet_peer __rcu **stack[PEER_MAXDEPTH], ***stackptr;
-	struct inet_peer_base *base = family_to_base(daddr->family);
 	struct inet_peer *p;
 	unsigned int sequence;
 	int invalidated, gccnt = 0;
+
+	flush_check(base, daddr->family);
 
 	/* Attempt a lockless lookup first.
 	 * Because of a concurrent writer, we might not find an existing entry.
@@ -571,10 +585,9 @@ static void inetpeer_inval_rcu(struct rcu_head *head)
 	schedule_delayed_work(&gc_work, gc_delay);
 }
 
-void inetpeer_invalidate_tree(int family)
+void inetpeer_invalidate_tree(struct inet_peer_base *base)
 {
 	struct inet_peer *old, *new, *prev;
-	struct inet_peer_base *base = family_to_base(family);
 
 	write_seqlock_bh(&base->lock);
 

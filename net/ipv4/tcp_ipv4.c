@@ -848,7 +848,6 @@ static int tcp_v4_send_synack(struct sock *sk, struct dst_entry *dst,
 		err = net_xmit_eval(err);
 	}
 
-	dst_release(dst);
 	return err;
 }
 
@@ -1821,40 +1820,25 @@ do_time_wait:
 	goto discard_it;
 }
 
-struct inet_peer *tcp_v4_get_peer(struct sock *sk, bool *release_it)
+struct inet_peer *tcp_v4_get_peer(struct sock *sk)
 {
 	struct rtable *rt = (struct rtable *) __sk_dst_get(sk);
 	struct inet_sock *inet = inet_sk(sk);
-	struct inet_peer *peer;
 
-	if (!rt ||
-	    inet->cork.fl.u.ip4.daddr != inet->inet_daddr) {
-		peer = inet_getpeer_v4(inet->inet_daddr, 1);
-		*release_it = true;
-	} else {
-		if (!rt->peer)
-			rt_bind_peer(rt, inet->inet_daddr, 1);
-		peer = rt->peer;
-		*release_it = false;
-	}
-
-	return peer;
+	/* If we don't have a valid cached route, or we're doing IP
+	 * options which make the IPv4 header destination address
+	 * different from our peer's, do not bother with this.
+	 */
+	if (!rt || inet->cork.fl.u.ip4.daddr != inet->inet_daddr)
+		return NULL;
+	return rt_get_peer_create(rt, inet->inet_daddr);
 }
 EXPORT_SYMBOL(tcp_v4_get_peer);
-
-void *tcp_v4_tw_get_peer(struct sock *sk)
-{
-	const struct inet_timewait_sock *tw = inet_twsk(sk);
-
-	return inet_getpeer_v4(tw->tw_daddr, 1);
-}
-EXPORT_SYMBOL(tcp_v4_tw_get_peer);
 
 static struct timewait_sock_ops tcp_timewait_sock_ops = {
 	.twsk_obj_size	= sizeof(struct tcp_timewait_sock),
 	.twsk_unique	= tcp_twsk_unique,
 	.twsk_destructor= tcp_twsk_destructor,
-	.twsk_getpeer	= tcp_v4_tw_get_peer,
 };
 
 const struct inet_connection_sock_af_ops ipv4_specific = {
