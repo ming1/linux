@@ -63,8 +63,6 @@ AO commands are not supported.
 #include "../comedidev.h"
 #include <linux/delay.h>
 
-#include "comedi_pci.h"
-
 #define PCI_VENDOR_ID_DT	0x1116
 
 static const struct comedi_lrange range_dt3000_ai = { 4, {
@@ -254,7 +252,7 @@ struct dt3k_private {
 
 	struct pci_dev *pci_dev;
 	resource_size_t phys_addr;
-	void *io_addr;
+	void __iomem *io_addr;
 	unsigned int lock;
 	unsigned int ao_readback[2];
 	unsigned int ai_front;

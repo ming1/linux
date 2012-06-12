@@ -11,3 +11,6 @@ obj-$(CONFIG_IIO_KFIFO_BUF) += kfifo_buf.o
 
 obj-y += adc/
 obj-y += amplifiers/
+obj-y += light/
+obj-y += frequency/
+obj-y += dac/
