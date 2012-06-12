@@ -117,6 +117,22 @@ static struct mempolicy default_policy = {
 	.flags = MPOL_F_LOCAL,
 };
 
+static struct mempolicy preferred_node_policy[MAX_NUMNODES];
+
+static struct mempolicy *get_task_policy(struct task_struct *p)
+{
+	struct mempolicy *pol = p->mempolicy;
+	int node;
+
+	if (!pol) {
+		node = tsk_home_node(p);
+		if (node != -1)
+			pol = &preferred_node_policy[node];
+	}
+
+	return pol;
+}
+
 static const struct mempolicy_operations {
 	int (*create)(struct mempolicy *pol, const nodemask_t *nodes);
 	/*
@@ -243,7 +259,7 @@ static int mpol_set_nodemask(struct mempolicy *pol,
  * This function just creates a new policy, does some check and simple
  * initialization. You must invoke mpol_set_nodemask() to set nodes.
  */
-static struct mempolicy *mpol_new(unsigned short mode, unsigned short flags,
+struct mempolicy *mpol_new(unsigned short mode, unsigned short flags,
 				  nodemask_t *nodes)
 {
 	struct mempolicy *policy;
@@ -251,10 +267,10 @@ static struct mempolicy *mpol_new(unsigned short mode, unsigned short flags,
 	pr_debug("setting mode %d flags %d nodes[0] %lx\n",
 		 mode, flags, nodes ? nodes_addr(*nodes)[0] : -1);
 
-	if (mode == MPOL_DEFAULT) {
+	if (mode == MPOL_DEFAULT || mode == MPOL_NOOP) {
 		if (nodes && !nodes_empty(*nodes))
 			return ERR_PTR(-EINVAL);
-		return NULL;	/* simply delete any existing policy */
+		return NULL;
 	}
 	VM_BUG_ON(!nodes);
 
@@ -269,14 +285,19 @@ static struct mempolicy *mpol_new(unsigned short mode, unsigned short flags,
 			     (flags & MPOL_F_RELATIVE_NODES)))
 				return ERR_PTR(-EINVAL);
 		}
+	} else if (mode == MPOL_LOCAL) {
+		if (!nodes_empty(*nodes))
+			return ERR_PTR(-EINVAL);
+		mode = MPOL_PREFERRED;
 	} else if (nodes_empty(*nodes))
 		return ERR_PTR(-EINVAL);
-	policy = kmem_cache_alloc(policy_cache, GFP_KERNEL);
+	policy = kmem_cache_alloc(policy_cache, GFP_KERNEL | __GFP_ZERO);
 	if (!policy)
 		return ERR_PTR(-ENOMEM);
 	atomic_set(&policy->refcnt, 1);
 	policy->mode = mode;
 	policy->flags = flags;
+	INIT_LIST_HEAD(&policy->ng_entry);
 
 	return policy;
 }
@@ -385,7 +406,7 @@ static void mpol_rebind_preferred(struct mempolicy *pol,
  * 	MPOL_REBIND_STEP1 - set all the newly nodes
  * 	MPOL_REBIND_STEP2 - clean all the disallowed nodes
  */
-static void mpol_rebind_policy(struct mempolicy *pol, const nodemask_t *newmask,
+void mpol_rebind_policy(struct mempolicy *pol, const nodemask_t *newmask,
 				enum mpol_rebind_step step)
 {
 	if (!pol)
@@ -460,105 +481,64 @@ static const struct mempolicy_operations mpol_ops[MPOL_MAX] = {
 static void migrate_page_add(struct page *page, struct list_head *pagelist,
 				unsigned long flags);
 
-/* Scan through pages checking if pages follow certain conditions. */
-static int check_pte_range(struct vm_area_struct *vma, pmd_t *pmd,
-		unsigned long addr, unsigned long end,
-		const nodemask_t *nodes, unsigned long flags,
-		void *private)
+/*
+ * Check whether a vma is migratable
+ */
+int vma_migratable(struct vm_area_struct *vma)
 {
-	pte_t *orig_pte;
-	pte_t *pte;
-	spinlock_t *ptl;
-
-	orig_pte = pte = pte_offset_map_lock(vma->vm_mm, pmd, addr, &ptl);
-	do {
-		struct page *page;
-		int nid;
-
-		if (!pte_present(*pte))
-			continue;
-		page = vm_normal_page(vma, addr, *pte);
-		if (!page)
-			continue;
-		/*
-		 * vm_normal_page() filters out zero pages, but there might
-		 * still be PageReserved pages to skip, perhaps in a VDSO.
-		 * And we cannot move PageKsm pages sensibly or safely yet.
-		 */
-		if (PageReserved(page) || PageKsm(page))
-			continue;
-		nid = page_to_nid(page);
-		if (node_isset(nid, *nodes) == !!(flags & MPOL_MF_INVERT))
-			continue;
-
-		if (flags & (MPOL_MF_MOVE | MPOL_MF_MOVE_ALL))
-			migrate_page_add(page, private, flags);
-		else
-			break;
-	} while (pte++, addr += PAGE_SIZE, addr != end);
-	pte_unmap_unlock(orig_pte, ptl);
-	return addr != end;
+	if (vma->vm_flags & (VM_IO|VM_HUGETLB|VM_PFNMAP|VM_RESERVED))
+		return 0;
+	/*
+	 * Migration allocates pages in the highest zone. If we cannot
+	 * do so then migration (at least from node to node) is not
+	 * possible.
+	 */
+	if (vma->vm_file &&
+		gfp_zone(mapping_gfp_mask(vma->vm_file->f_mapping))
+								< policy_zone)
+			return 0;
+	return 1;
 }
 
-static inline int check_pmd_range(struct vm_area_struct *vma, pud_t *pud,
-		unsigned long addr, unsigned long end,
-		const nodemask_t *nodes, unsigned long flags,
-		void *private)
+struct mempol_walk_data {
+	struct vm_area_struct *vma;
+	const nodemask_t *nodes;
+	unsigned long flags;
+	void *private;
+};
+
+static int check_pte_entry(pte_t *pte, unsigned long addr,
+			   unsigned long end, struct mm_walk *walk)
 {
-	pmd_t *pmd;
-	unsigned long next;
+	struct mempol_walk_data *data = walk->private;
+	struct page *page;
+	int nid;
 
-	pmd = pmd_offset(pud, addr);
-	do {
-		next = pmd_addr_end(addr, end);
-		split_huge_page_pmd(vma->vm_mm, pmd);
-		if (pmd_none_or_trans_huge_or_clear_bad(pmd))
-			continue;
-		if (check_pte_range(vma, pmd, addr, next, nodes,
-				    flags, private))
-			return -EIO;
-	} while (pmd++, addr = next, addr != end);
-	return 0;
-}
+	if (!pte_present(*pte))
+		return 0;
 
-static inline int check_pud_range(struct vm_area_struct *vma, pgd_t *pgd,
-		unsigned long addr, unsigned long end,
-		const nodemask_t *nodes, unsigned long flags,
-		void *private)
-{
-	pud_t *pud;
-	unsigned long next;
+	page = vm_normal_page(data->vma, addr, *pte);
+	if (!page)
+		return 0;
 
-	pud = pud_offset(pgd, addr);
-	do {
-		next = pud_addr_end(addr, end);
-		if (pud_none_or_clear_bad(pud))
-			continue;
-		if (check_pmd_range(vma, pud, addr, next, nodes,
-				    flags, private))
-			return -EIO;
-	} while (pud++, addr = next, addr != end);
-	return 0;
-}
+	/*
+	 * vm_normal_page() filters out zero pages, but there might
+	 * still be PageReserved pages to skip, perhaps in a VDSO.
+	 * And we cannot move PageKsm pages sensibly or safely yet.
+	 */
+	if (PageReserved(page) || PageKsm(page))
+		return 0;
 
-static inline int check_pgd_range(struct vm_area_struct *vma,
-		unsigned long addr, unsigned long end,
-		const nodemask_t *nodes, unsigned long flags,
-		void *private)
-{
-	pgd_t *pgd;
-	unsigned long next;
+	nid = page_to_nid(page);
+	if (node_isset(nid, *data->nodes) == !!(data->flags & MPOL_MF_INVERT))
+		return 0;
 
-	pgd = pgd_offset(vma->vm_mm, addr);
-	do {
-		next = pgd_addr_end(addr, end);
-		if (pgd_none_or_clear_bad(pgd))
-			continue;
-		if (check_pud_range(vma, pgd, addr, next, nodes,
-				    flags, private))
-			return -EIO;
-	} while (pgd++, addr = next, addr != end);
-	return 0;
+	if (data->flags & (MPOL_MF_MOVE | MPOL_MF_MOVE_ALL)) {
+		migrate_page_add(page, data->private, data->flags);
+		return 0;
+	}
+
+	return -EIO;
 }
 
 /*
@@ -570,9 +550,18 @@ static struct vm_area_struct *
 check_range(struct mm_struct *mm, unsigned long start, unsigned long end,
 		const nodemask_t *nodes, unsigned long flags, void *private)
 {
-	int err;
 	struct vm_area_struct *first, *vma, *prev;
-
+	struct mempol_walk_data data = {
+		.nodes = nodes,
+		.flags = flags,
+		.private = private,
+	};
+	struct mm_walk walk = {
+		.pte_entry = check_pte_entry,
+		.mm = mm,
+		.private = &data,
+	};
+	int err;
 
 	first = find_vma(mm, start);
 	if (!first)
@@ -595,8 +584,8 @@ check_range(struct mm_struct *mm, unsigned long start, unsigned long end,
 				endvma = end;
 			if (vma->vm_start > start)
 				start = vma->vm_start;
-			err = check_pgd_range(vma, start, endvma, nodes,
-						flags, private);
+			data.vma = vma;
+			err = walk_page_range(start, endvma, &walk);
 			if (err) {
 				first = ERR_PTR(err);
 				break;
@@ -1097,19 +1086,90 @@ static struct page *new_vma_page(struct page *page, unsigned long private, int *
 }
 #endif
 
+long mpol_do_mbind(unsigned long start, unsigned long len,
+		struct mempolicy *new, unsigned long mode,
+		nodemask_t *nmask, unsigned long flags)
+{
+	struct mm_struct *mm = current->mm;
+	struct vm_area_struct *vma;
+	int err, nr_failed = 0;
+	unsigned long end;
+	LIST_HEAD(pagelist);
+
+	len = (len + PAGE_SIZE - 1) & PAGE_MASK;
+	end = start + len;
+
+	if (end < start) {
+		err = -EINVAL;
+		goto mpol_out;
+	}
+
+	if (end == start) {
+		err = 0;
+		goto mpol_out;
+	}
+
+	if (flags & (MPOL_MF_MOVE | MPOL_MF_MOVE_ALL)) {
+		err = migrate_prep();
+		if (err)
+			goto mpol_out;
+	}
+
+	if (mode != MPOL_NOOP) {
+		NODEMASK_SCRATCH(scratch);
+		err = -ENOMEM;
+		if (scratch) {
+			task_lock(current);
+			err = mpol_set_nodemask(new, nmask, scratch);
+			task_unlock(current);
+		}
+		NODEMASK_SCRATCH_FREE(scratch);
+		if (err)
+			goto mpol_out;
+	}
+
+	vma = check_range(mm, start, end, nmask,
+			  flags | MPOL_MF_INVERT, &pagelist);
+
+	err = PTR_ERR(vma);	/* maybe ... */
+	if (IS_ERR(vma))
+		goto mpol_out_putback;
+
+	if (mode != MPOL_NOOP) {
+		err = mbind_range(mm, start, end, new);
+		if (err)
+			goto mpol_out_putback;
+	}
+
+	if (!list_empty(&pagelist)) {
+		if (flags & MPOL_MF_LAZY)
+			nr_failed = migrate_pages_unmap_only(&pagelist);
+		else {
+			nr_failed = migrate_pages(&pagelist, new_vma_page,
+					(unsigned long)vma,
+					false, true);
+		}
+	}
+
+	if (nr_failed && (flags & MPOL_MF_STRICT))
+		err = -EIO;
+
+mpol_out_putback:
+	putback_lru_pages(&pagelist);
+
+mpol_out:
+	return err;
+}
+
 static long do_mbind(unsigned long start, unsigned long len,
 		     unsigned short mode, unsigned short mode_flags,
 		     nodemask_t *nmask, unsigned long flags)
 {
-	struct vm_area_struct *vma;
 	struct mm_struct *mm = current->mm;
-	struct mempolicy *new;
-	unsigned long end;
+	struct mempolicy *new = NULL;
 	int err;
-	LIST_HEAD(pagelist);
 
-	if (flags & ~(unsigned long)(MPOL_MF_STRICT |
-				     MPOL_MF_MOVE | MPOL_MF_MOVE_ALL))
+	if (flags & ~(unsigned long)MPOL_MF_VALID)
 		return -EINVAL;
 	if ((flags & MPOL_MF_MOVE_ALL) && !capable(CAP_SYS_NICE))
 		return -EPERM;
@@ -1117,21 +1177,17 @@ static long do_mbind(unsigned long start, unsigned long len,
 	if (start & ~PAGE_MASK)
 		return -EINVAL;
 
-	if (mode == MPOL_DEFAULT)
+	if (mode == MPOL_DEFAULT || mode == MPOL_NOOP)
 		flags &= ~MPOL_MF_STRICT;
 
-	len = (len + PAGE_SIZE - 1) & PAGE_MASK;
-	end = start + len;
+	if (mode != MPOL_NOOP) {
+		new = mpol_new(mode, mode_flags, nmask);
+		if (IS_ERR(new))
+			return PTR_ERR(new);
 
-	if (end < start)
-		return -EINVAL;
-	if (end == start)
-		return 0;
-
-	new = mpol_new(mode, mode_flags, nmask);
-	if (IS_ERR(new))
-		return PTR_ERR(new);
-
+		if (flags & MPOL_MF_LAZY)
+			new->flags |= MPOL_F_MOF;
+	}
 	/*
 	 * If we are using the default policy then operation
 	 * on discontinuous address spaces is okay after all
@@ -1143,54 +1199,96 @@ static long do_mbind(unsigned long start, unsigned long len,
 		 start, start + len, mode, mode_flags,
 		 nmask ? nodes_addr(*nmask)[0] : -1);
 
-	if (flags & (MPOL_MF_MOVE | MPOL_MF_MOVE_ALL)) {
-
-		err = migrate_prep();
-		if (err)
-			goto mpol_out;
-	}
-	{
-		NODEMASK_SCRATCH(scratch);
-		if (scratch) {
-			down_write(&mm->mmap_sem);
-			task_lock(current);
-			err = mpol_set_nodemask(new, nmask, scratch);
-			task_unlock(current);
-			if (err)
-				up_write(&mm->mmap_sem);
-		} else
-			err = -ENOMEM;
-		NODEMASK_SCRATCH_FREE(scratch);
-	}
-	if (err)
-		goto mpol_out;
-
-	vma = check_range(mm, start, end, nmask,
-			  flags | MPOL_MF_INVERT, &pagelist);
-
-	err = PTR_ERR(vma);
-	if (!IS_ERR(vma)) {
-		int nr_failed = 0;
-
-		err = mbind_range(mm, start, end, new);
-
-		if (!list_empty(&pagelist)) {
-			nr_failed = migrate_pages(&pagelist, new_vma_page,
-						(unsigned long)vma,
-						false, true);
-			if (nr_failed)
-				putback_lru_pages(&pagelist);
-		}
-
-		if (!err && nr_failed && (flags & MPOL_MF_STRICT))
-			err = -EIO;
-	} else
-		putback_lru_pages(&pagelist);
-
+	down_write(&mm->mmap_sem);
+	err = mpol_do_mbind(start, len, new, mode, nmask, flags);
 	up_write(&mm->mmap_sem);
- mpol_out:
 	mpol_put(new);
+
 	return err;
+}
+
+static nodemask_t mpol_node_mask(struct mempolicy *pol, int node)
+{
+	if (pol->mode == MPOL_PREFERRED) {
+		if (pol->flags & MPOL_F_LOCAL)
+			return nodemask_of_node(node);
+
+		return nodemask_of_node(pol->v.preferred_node);
+	}
+
+	return pol->v.nodes;
+}
+
+void lazy_migrate_vma(struct vm_area_struct *vma, int node)
+{
+	struct mempolicy *pol = NULL;
+	struct mempol_walk_data data;
+	struct mm_walk walk;
+	LIST_HEAD(pagelist);
+	nodemask_t nmask;
+
+	if (vma->vm_file)
+		return;
+
+	if (!vma_migratable(vma))
+		return;
+
+	/*
+	 * Obtain a more-or-less correct nodemask to find which pages we need
+	 * to unmap so that MoF can put them right again.
+	 *
+	 * Not quite correct for INTERLEAVE, that would need us doing
+	 * offset_il_node() from check_pte_entry().
+	 *
+	 * Also not quite correct for task policies since we don't have a task,
+	 * approximate by having @node function as local / task-home-node.
+	 */
+
+	if (vma->vm_ops && vma->vm_ops->get_policy)
+	        pol = vma->vm_ops->get_policy(vma, vma->vm_start);
+	else if (vma->vm_policy)
+		pol = vma->vm_policy;
+
+	if (pol) {
+		nmask = mpol_node_mask(pol, node);
+		mpol_cond_put(pol);
+
+		/*
+		 * If there's an explicit policy that doesn't support MoF, skip
+		 * this vma, there's nothing we can do about that.
+		 */
+		if (!(pol->flags & MPOL_F_MOF))
+			return;
+	} else
+		nmask = nodemask_of_node(node);
+
+	data = (struct mempol_walk_data){
+		.nodes = &nmask,
+		.flags = MPOL_MF_MOVE | MPOL_MF_INVERT, /* move all pages not in set */
+		.private = &pagelist,
+		.vma = vma,
+	};
+
+	walk = (struct mm_walk){
+		.pte_entry = check_pte_entry,
+		.mm = vma->vm_mm,
+		.private = &data,
+	};
+
+	if (!walk_page_range(vma->vm_start, vma->vm_end, &walk))
+		migrate_pages_unmap_only(&pagelist);
+
+	putback_lru_pages(&pagelist);
+}
+
+void lazy_migrate_process(struct mm_struct *mm, int node)
+{
+	struct vm_area_struct *vma;
+
+	down_read(&mm->mmap_sem);
+	for (vma = mm->mmap; vma; vma = vma->vm_next)
+		lazy_migrate_vma(vma, node);
+	up_read(&mm->mmap_sem);
 }
 
 /*
@@ -1522,7 +1620,7 @@ asmlinkage long compat_sys_mbind(compat_ulong_t start, compat_ulong_t len,
 struct mempolicy *get_vma_policy(struct task_struct *task,
 		struct vm_area_struct *vma, unsigned long addr)
 {
-	struct mempolicy *pol = task->mempolicy;
+	struct mempolicy *pol = get_task_policy(task);
 
 	if (vma) {
 		if (vma->vm_ops && vma->vm_ops->get_policy) {
@@ -1553,11 +1651,29 @@ static nodemask_t *policy_nodemask(gfp_t gfp, struct mempolicy *policy)
 	return NULL;
 }
 
+/* Do dynamic interleaving for a process */
+static unsigned interleave_nodes(struct mempolicy *policy)
+{
+	unsigned nid, next;
+	struct task_struct *me = current;
+
+	nid = me->il_next;
+	next = next_node(nid, policy->v.nodes);
+	if (next >= MAX_NUMNODES)
+		next = first_node(policy->v.nodes);
+	if (next < MAX_NUMNODES)
+		me->il_next = next;
+	return nid;
+}
+
 /* Return a zonelist indicated by gfp for node representing a mempolicy */
 static struct zonelist *policy_zonelist(gfp_t gfp, struct mempolicy *policy,
 	int nd)
 {
 	switch (policy->mode) {
+	case MPOL_INTERLEAVE:
+		nd = interleave_nodes(policy);
+		break;
 	case MPOL_PREFERRED:
 		if (!(policy->flags & MPOL_F_LOCAL))
 			nd = policy->v.preferred_node;
@@ -1577,21 +1693,6 @@ static struct zonelist *policy_zonelist(gfp_t gfp, struct mempolicy *policy,
 		BUG();
 	}
 	return node_zonelist(nd, gfp);
-}
-
-/* Do dynamic interleaving for a process */
-static unsigned interleave_nodes(struct mempolicy *policy)
-{
-	unsigned nid, next;
-	struct task_struct *me = current;
-
-	nid = me->il_next;
-	next = next_node(nid, policy->v.nodes);
-	if (next >= MAX_NUMNODES)
-		next = first_node(policy->v.nodes);
-	if (next < MAX_NUMNODES)
-		me->il_next = next;
-	return nid;
 }
 
 /*
@@ -1708,7 +1809,7 @@ int node_random(const nodemask_t *maskp)
  * If the effective policy is 'BIND, returns a pointer to the mempolicy's
  * @nodemask for filtering the zonelist.
  *
- * Must be protected by get_mems_allowed()
+ * Must be protected by read_mems_allowed_begin()
  */
 struct zonelist *huge_zonelist(struct vm_area_struct *vma, unsigned long addr,
 				gfp_t gfp_flags, struct mempolicy **mpol,
@@ -1824,21 +1925,6 @@ out:
 	return ret;
 }
 
-/* Allocate a page in interleaved policy.
-   Own path because it needs to do special accounting. */
-static struct page *alloc_page_interleave(gfp_t gfp, unsigned order,
-					unsigned nid)
-{
-	struct zonelist *zl;
-	struct page *page;
-
-	zl = node_zonelist(nid, gfp);
-	page = __alloc_pages(gfp, order, zl);
-	if (page && page_zone(page) == zonelist_zone(&zl->_zonerefs[0]))
-		inc_zone_page_state(page, NUMA_INTERLEAVE_HIT);
-	return page;
-}
-
 /**
  * 	alloc_pages_vma	- Allocate a page for a VMA.
  *
@@ -1873,19 +1959,8 @@ alloc_pages_vma(gfp_t gfp, int order, struct vm_area_struct *vma,
 
 retry_cpuset:
 	pol = get_vma_policy(current, vma, addr);
-	cpuset_mems_cookie = get_mems_allowed();
+	cpuset_mems_cookie = read_mems_allowed_begin();
 
-	if (unlikely(pol->mode == MPOL_INTERLEAVE)) {
-		unsigned nid;
-
-		nid = interleave_nid(pol, vma, addr, PAGE_SHIFT + order);
-		mpol_cond_put(pol);
-		page = alloc_page_interleave(gfp, order, nid);
-		if (unlikely(!put_mems_allowed(cpuset_mems_cookie) && !page))
-			goto retry_cpuset;
-
-		return page;
-	}
 	zl = policy_zonelist(gfp, pol, node);
 	if (unlikely(mpol_needs_cond_ref(pol))) {
 		/*
@@ -1894,7 +1969,7 @@ retry_cpuset:
 		struct page *page =  __alloc_pages_nodemask(gfp, order,
 						zl, policy_nodemask(gfp, pol));
 		__mpol_put(pol);
-		if (unlikely(!put_mems_allowed(cpuset_mems_cookie) && !page))
+		if (unlikely(!page && read_mems_allowed_retry(cpuset_mems_cookie)))
 			goto retry_cpuset;
 		return page;
 	}
@@ -1903,7 +1978,7 @@ retry_cpuset:
 	 */
 	page = __alloc_pages_nodemask(gfp, order, zl,
 				      policy_nodemask(gfp, pol));
-	if (unlikely(!put_mems_allowed(cpuset_mems_cookie) && !page))
+	if (unlikely(!page && read_mems_allowed_retry(cpuset_mems_cookie)))
 		goto retry_cpuset;
 	return page;
 }
@@ -1929,7 +2004,7 @@ retry_cpuset:
  */
 struct page *alloc_pages_current(gfp_t gfp, unsigned order)
 {
-	struct mempolicy *pol = current->mempolicy;
+	struct mempolicy *pol = get_task_policy(current);
 	struct page *page;
 	unsigned int cpuset_mems_cookie;
 
@@ -1937,20 +2012,17 @@ struct page *alloc_pages_current(gfp_t gfp, unsigned order)
 		pol = &default_policy;
 
 retry_cpuset:
-	cpuset_mems_cookie = get_mems_allowed();
+	cpuset_mems_cookie = read_mems_allowed_begin();
 
 	/*
 	 * No reference counting needed for current->mempolicy
 	 * nor system default_policy
 	 */
-	if (pol->mode == MPOL_INTERLEAVE)
-		page = alloc_page_interleave(gfp, order, interleave_nodes(pol));
-	else
-		page = __alloc_pages_nodemask(gfp, order,
-				policy_zonelist(gfp, pol, numa_node_id()),
-				policy_nodemask(gfp, pol));
+	page = __alloc_pages_nodemask(gfp, order,
+			policy_zonelist(gfp, pol, numa_node_id()),
+			policy_nodemask(gfp, pol));
 
-	if (unlikely(!put_mems_allowed(cpuset_mems_cookie) && !page))
+	if (unlikely(!page && read_mems_allowed_retry(cpuset_mems_cookie)))
 		goto retry_cpuset;
 
 	return page;
@@ -1995,6 +2067,24 @@ struct mempolicy *__mpol_dup(struct mempolicy *old)
 	rcu_read_unlock();
 	atomic_set(&new->refcnt, 1);
 	return new;
+}
+
+int vma_dup_policy(struct vm_area_struct *new, struct vm_area_struct *old)
+{
+	struct mempolicy *mpol;
+
+	mpol = mpol_dup(vma_policy(old));
+	if (IS_ERR(mpol))
+		return PTR_ERR(mpol);
+	vma_set_policy(new, mpol);
+	numa_vma_link(new, old);
+	return 0;
+}
+
+void vma_put_policy(struct vm_area_struct *vma)
+{
+	numa_vma_unlink(vma);
+	mpol_put(vma_policy(vma));
 }
 
 /*
@@ -2127,6 +2217,82 @@ mpol_shared_policy_lookup(struct shared_policy *sp, unsigned long idx)
 	}
 	spin_unlock(&sp->lock);
 	return pol;
+}
+
+/**
+ * mpol_misplaced - check whether current page node is valid in policy
+ *
+ * @page   - page to be checked
+ * @vma    - vm area where page mapped
+ * @addr   - virtual address where page mapped
+ *
+ * Lookup current policy node id for vma,addr and "compare to" page's
+ * node id.
+ *
+ * Returns:
+ * 	-1	- not misplaced, page is in the right node
+ * 	node	- node id where the page should be
+ *
+ * Policy determination "mimics" alloc_page_vma().
+ * Called from fault path where we know the vma and faulting address.
+ */
+int mpol_misplaced(struct page *page, struct vm_area_struct *vma, unsigned long addr)
+{
+	struct mempolicy *pol;
+	struct zone *zone;
+	int curnid = page_to_nid(page);
+	unsigned long pgoff;
+	int polnid = -1;
+	int ret = -1;
+
+	BUG_ON(!vma);
+
+	pol = get_vma_policy(current, vma, addr);
+	if (!(pol->flags & MPOL_F_MOF))
+		goto out;
+
+	switch (pol->mode) {
+	case MPOL_INTERLEAVE:
+		BUG_ON(addr >= vma->vm_end);
+		BUG_ON(addr < vma->vm_start);
+
+		pgoff = vma->vm_pgoff;
+		pgoff += (addr - vma->vm_start) >> PAGE_SHIFT;
+		polnid = offset_il_node(pol, vma, pgoff);
+		break;
+
+	case MPOL_PREFERRED:
+		if (pol->flags & MPOL_F_LOCAL)
+			polnid = numa_node_id();
+		else
+			polnid = pol->v.preferred_node;
+		break;
+
+	case MPOL_BIND:
+		/*
+		 * allows binding to multiple nodes.
+		 * use current page if in policy nodemask,
+		 * else select nearest allowed node, if any.
+		 * If no allowed nodes, use current [!misplaced].
+		 */
+		if (node_isset(curnid, pol->v.nodes))
+			goto out;
+		(void)first_zones_zonelist(
+				node_zonelist(numa_node_id(), GFP_HIGHUSER),
+				gfp_zone(GFP_HIGHUSER),
+				&pol->v.nodes, &zone);
+		polnid = zone->node;
+		break;
+
+	default:
+		BUG();
+	}
+	if (curnid != polnid)
+		ret = polnid;
+out:
+	mpol_cond_put(pol);
+
+	return ret;
 }
 
 static void sp_delete(struct shared_policy *sp, struct sp_node *n)
@@ -2308,6 +2474,15 @@ void __init numa_policy_init(void)
 				     sizeof(struct sp_node),
 				     0, SLAB_PANIC, NULL);
 
+	for_each_node(nid) {
+		preferred_node_policy[nid] = (struct mempolicy) {
+			.refcnt = ATOMIC_INIT(1),
+			.mode = MPOL_PREFERRED,
+			.flags = MPOL_F_MOF,
+			.v = { .preferred_node = nid, },
+		};
+	}
+
 	/*
 	 * Set interleaving policy for system init. Interleaving is only
 	 * enabled across suitably sized nodes (default is >= 16MB), or
@@ -2350,7 +2525,6 @@ void numa_default_policy(void)
  * "local" is pseudo-policy:  MPOL_PREFERRED with MPOL_F_LOCAL flag
  * Used only for mpol_parse_str() and mpol_to_str()
  */
-#define MPOL_LOCAL MPOL_MAX
 static const char * const policy_modes[] =
 {
 	[MPOL_DEFAULT]    = "default",
@@ -2403,12 +2577,12 @@ int mpol_parse_str(char *str, struct mempolicy **mpol, int no_context)
 	if (flags)
 		*flags++ = '\0';	/* terminate mode string */
 
-	for (mode = 0; mode <= MPOL_LOCAL; mode++) {
+	for (mode = 0; mode < MPOL_MAX; mode++) {
 		if (!strcmp(str, policy_modes[mode])) {
 			break;
 		}
 	}
-	if (mode > MPOL_LOCAL)
+	if (mode >= MPOL_MAX)
 		goto out;
 
 	switch (mode) {
