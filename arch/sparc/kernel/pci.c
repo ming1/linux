@@ -686,7 +686,7 @@ struct pci_bus * __devinit pci_scan_one_pbm(struct pci_pbm_info *pbm,
 	pci_add_resource_offset(&resources, &pbm->mem_space,
 				pbm->mem_space.start);
 	pbm->busn.start = pbm->pci_first_busno;
-	pbm->busn.end	= pbm->pci_last_busn;
+	pbm->busn.end	= pbm->pci_last_busno;
 	pbm->busn.flags	= IORESOURCE_BUS;
 	pci_add_resource(&resources, &pbm->busn);
 	bus = pci_create_root_bus(parent, pbm->pci_first_busno, pbm->pci_ops,
