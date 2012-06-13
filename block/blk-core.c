@@ -2840,6 +2840,39 @@ void blk_start_plug(struct blk_plug *plug)
 }
 EXPORT_SYMBOL(blk_start_plug);
 
+/* Check that an unplug wakeup will come shortly.
+ */
+bool blk_check_plugged(struct request_queue *q, plug_cb_fn cb_fn)
+{
+	struct blk_plug *plug = current->plug;
+	struct blk_plug_cb *cb;
+
+	if (!plug)
+		return false;
+
+	list_for_each_entry(cb, &plug->cb_list, list) {
+		if (cb->cb_fn == cb_fn && cb->q == q) {
+			/* Already on the list, move to top */
+			if (cb != list_first_entry(&plug->cb_list,
+						    struct blk_plug_cb,
+						    list))
+				list_move(&cb->list, &plug->cb_list);
+			return true;
+		}
+	}
+	/* Not currently on the callback list */
+	cb = kmalloc(sizeof(*cb), GFP_ATOMIC);
+	if (!cb)
+		return false;
+
+	cb->q = q;
+	cb->cb_fn = cb_fn;
+	atomic_inc(&q->plug_cnt);
+	list_add(&cb->list, &plug->cb_list);
+	return true;
+}
+EXPORT_SYMBOL(blk_check_plugged);
+
 static int plug_rq_cmp(void *priv, struct list_head *a, struct list_head *b)
 {
 	struct request *rqa = container_of(a, struct request, queuelist);
@@ -2897,7 +2930,8 @@ static void flush_plug_callbacks(struct blk_plug *plug)
 							  struct blk_plug_cb,
 							  list);
 		list_del(&cb->list);
-		cb->callback(cb);
+		cb->cb_fn(cb);
+		kfree(cb);
 	}
 }
 

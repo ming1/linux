@@ -316,6 +316,9 @@ struct request_queue {
 	 * ll_rw_blk doesn't touch it.
 	 */
 	void			*queuedata;
+	atomic_t		plug_cnt;	/* If device is expecting
+						 * more bios soon.
+						 */
 
 	/*
 	 * various queue flags, see QUEUE_* below
@@ -914,12 +917,15 @@ struct blk_plug {
 
 struct blk_plug_cb {
 	struct list_head list;
-	void (*callback)(struct blk_plug_cb *);
+	struct request_queue *q;
+	void (*cb_fn)(struct blk_plug_cb *);
 };
+typedef void (plug_cb_fn) (struct blk_plug_cb *cb);
 
 extern void blk_start_plug(struct blk_plug *);
 extern void blk_finish_plug(struct blk_plug *);
 extern void blk_flush_plug_list(struct blk_plug *, bool);
+extern bool blk_check_plugged(struct request_queue *q, plug_cb_fn cb_fn);
 
 static inline void blk_flush_plug(struct task_struct *tsk)
 {
