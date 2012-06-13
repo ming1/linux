@@ -1,0 +1,17 @@
+Importing i2c based on 3.5-rc2
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard cfaf025112d3856637ff34a767ef785ef5cf2ca9
+HEAD is now at cfaf025 Linux 3.5-rc2
+$ git am ../quilt/i2c/i2c-use-module_pci_driver.patch
+Applying: i2c/busses: Use module_pci_driver
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/i2c
+From ../quilt-tmp
+   af56e0a..a843bfa  master     -> quilt/i2c
+Importing jdelvare-hwmon based on 3.5-rc2
+Unchanged quilt series jdelvare-hwmon
+Importing rr based on v3.5-rc1
+Unchanged quilt series rr
+Importing device-mapper based on v3.5-rc1
+Unchanged quilt series device-mapper
