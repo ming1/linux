@@ -1904,7 +1904,7 @@ static int __devinit xgifb_probe(struct pci_dev *pdev,
 	if (reg1 != 0xa1) { /*I/O error */
 		pr_err("I/O error!!!");
 		ret = -EIO;
-		goto error;
+		goto error_disable;
 	}
 
 	switch (xgifb_info->chip_id) {
@@ -1927,7 +1927,7 @@ static int __devinit xgifb_probe(struct pci_dev *pdev,
 		break;
 	default:
 		ret = -ENODEV;
-		goto error;
+		goto error_disable;
 	}
 
 	pr_info("chipid = %x\n", xgifb_info->chip);
@@ -1936,7 +1936,7 @@ static int __devinit xgifb_probe(struct pci_dev *pdev,
 	if (XGIfb_get_dram_size(xgifb_info)) {
 		pr_err("Fatal error: Unable to determine RAM size.\n");
 		ret = -ENODEV;
-		goto error;
+		goto error_disable;
 	}
 
 	/* Enable PCI_LINEAR_ADDRESSING and MMIO_ENABLE  */
@@ -1956,7 +1956,7 @@ static int __devinit xgifb_probe(struct pci_dev *pdev,
 		pr_err("Fatal error: Unable to reserve frame buffer memory\n");
 		pr_err("Is there another framebuffer driver active?\n");
 		ret = -ENODEV;
-		goto error;
+		goto error_disable;
 	}
 
 	if (!request_mem_region(xgifb_info->mmio_base,
@@ -2271,6 +2271,8 @@ error_1:
 	release_mem_region(xgifb_info->mmio_base, xgifb_info->mmio_size);
 error_0:
 	release_mem_region(xgifb_info->video_base, xgifb_info->video_size);
+error_disable:
+	pci_disable_device(pdev);
 error:
 	framebuffer_release(fb_info);
 	return ret;
@@ -2295,6 +2297,7 @@ static void __devexit xgifb_remove(struct pci_dev *pdev)
 	iounmap(xgifb_info->video_vbase);
 	release_mem_region(xgifb_info->mmio_base, xgifb_info->mmio_size);
 	release_mem_region(xgifb_info->video_base, xgifb_info->video_size);
+	pci_disable_device(pdev);
 	framebuffer_release(fb_info);
 	pci_set_drvdata(pdev, NULL);
 }
@@ -2305,6 +2308,32 @@ static struct pci_driver xgifb_driver = {
 	.probe = xgifb_probe,
 	.remove = __devexit_p(xgifb_remove)
 };
+
+
+
+/*****************************************************/
+/*                      MODULE                       */
+/*****************************************************/
+
+module_param(mode, charp, 0);
+MODULE_PARM_DESC(mode,
+	"\nSelects the desired default display mode in the format XxYxDepth,\n"
+	"eg. 1024x768x16.\n");
+
+module_param(forcecrt2type, charp, 0);
+MODULE_PARM_DESC(forcecrt2type,
+	"\nForce the second display output type. Possible values are NONE,\n"
+	"LCD, TV, VGA, SVIDEO or COMPOSITE.\n");
+
+module_param(vesa, int, 0);
+MODULE_PARM_DESC(vesa,
+	"\nSelects the desired default display mode by VESA mode number, eg.\n"
+	"0x117.\n");
+
+module_param(filter, int, 0);
+MODULE_PARM_DESC(filter,
+	"\nSelects TV flicker filter type (only for systems with a SiS301 video bridge).\n"
+	"(Possible values 0-7, default: [no filter])\n");
 
 static int __init xgifb_init(void)
 {
@@ -2319,45 +2348,14 @@ static int __init xgifb_init(void)
 	return pci_register_driver(&xgifb_driver);
 }
 
-module_init(xgifb_init);
-
-/*****************************************************/
-/*                      MODULE                       */
-/*****************************************************/
-
-#ifdef MODULE
-
-MODULE_DESCRIPTION("Z7 Z9 Z9S Z11 framebuffer device driver");
-MODULE_LICENSE("GPL");
-MODULE_AUTHOR("XGITECH , Others");
-
-module_param(mode, charp, 0);
-module_param(vesa, int, 0);
-module_param(filter, int, 0);
-module_param(forcecrt2type, charp, 0);
-
-MODULE_PARM_DESC(forcecrt2type,
-	"\nForce the second display output type. Possible values are NONE,\n"
-	"LCD, TV, VGA, SVIDEO or COMPOSITE.\n");
-
-MODULE_PARM_DESC(mode,
-	"\nSelects the desired default display mode in the format XxYxDepth,\n"
-	"eg. 1024x768x16.\n");
-
-MODULE_PARM_DESC(vesa,
-	"\nSelects the desired default display mode by VESA mode number, eg.\n"
-	"0x117.\n");
-
-MODULE_PARM_DESC(filter,
-		"\nSelects TV flicker filter type (only for systems with a SiS301 video bridge).\n"
-		"(Possible values 0-7, default: [no filter])\n");
-
 static void __exit xgifb_remove_module(void)
 {
 	pci_unregister_driver(&xgifb_driver);
 	pr_debug("Module unloaded\n");
 }
 
+MODULE_DESCRIPTION("Z7 Z9 Z9S Z11 framebuffer device driver");
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("XGITECH , Others");
+module_init(xgifb_init);
 module_exit(xgifb_remove_module);
-
-#endif	/*  /MODULE  */

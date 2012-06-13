@@ -388,13 +388,9 @@ static int dev_8255_attach(struct comedi_device *dev,
 		return -EINVAL;
 	}
 
-	ret = alloc_subdevices(dev, i);
-	if (ret < 0) {
-		/* FIXME this printk call should give a proper message, the
-		 * below line just maintains previous functionality */
-		printk("comedi%d: 8255:", dev->minor);
+	ret = comedi_alloc_subdevices(dev, i);
+	if (ret)
 		return ret;
-	}
 
 	printk(KERN_INFO "comedi%d: 8255:", dev->minor);
 

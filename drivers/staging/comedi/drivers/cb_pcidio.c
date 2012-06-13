@@ -41,7 +41,6 @@ Passing a zero for an option is the same as leaving it unspecified.
 
 /*------------------------------ HEADER FILES ---------------------------------*/
 #include "../comedidev.h"
-#include "comedi_pci.h"
 #include "8255.h"
 
 /*-------------------------- MACROS and DATATYPES -----------------------------*/
@@ -117,6 +116,7 @@ static int pcidio_attach(struct comedi_device *dev, struct comedi_devconfig *it)
 	struct pci_dev *pcidev = NULL;
 	int index;
 	int i;
+	int ret;
 
 /*
  * Allocate the private structure area.  alloc_private() is a
@@ -178,12 +178,9 @@ found:
 	    pci_resource_start(devpriv->pci_dev,
 			       pcidio_boards[index].dioregs_badrindex);
 
-/*
- * Allocate the subdevice structures.  alloc_subdevice() is a
- * convenient macro defined in comedidev.h.
- */
-	if (alloc_subdevices(dev, thisboard->n_8255) < 0)
-		return -ENOMEM;
+	ret = comedi_alloc_subdevices(dev, thisboard->n_8255);
+	if (ret)
+		return ret;
 
 	for (i = 0; i < thisboard->n_8255; i++) {
 		subdev_8255_init(dev, dev->subdevices + i,

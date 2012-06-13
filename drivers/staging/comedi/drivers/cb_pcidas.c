@@ -57,8 +57,8 @@ range and aref.
 AI Triggering:
    For start_src == TRIG_EXT, the A/D EXTERNAL TRIGGER IN (pin 45) is used.
    For 1602 series, the start_arg is interpreted as follows:
-     start_arg == 0                   => gated triger (level high)
-     start_arg == CR_INVERT           => gated triger (level low)
+     start_arg == 0                   => gated trigger (level high)
+     start_arg == CR_INVERT           => gated trigger (level low)
      start_arg == CR_EDGE             => Rising edge
      start_arg == CR_EDGE | CR_INVERT => Falling edge
    For the other boards the trigger will be done on rising edge
@@ -77,7 +77,6 @@ analog triggering on 1602 series
 #include "8253.h"
 #include "8255.h"
 #include "amcc_s5933.h"
-#include "comedi_pci.h"
 #include "comedi_fc.h"
 
 #undef CB_PCIDAS_DEBUG		/*  disable debugging code */
@@ -534,6 +533,7 @@ static int cb_pcidas_attach(struct comedi_device *dev,
 	struct pci_dev *pcidev = NULL;
 	int index;
 	int i;
+	int ret;
 
 /*
  * Allocate the private structure area.
@@ -615,11 +615,9 @@ found:
 	/* Initialize dev->board_name */
 	dev->board_name = thisboard->name;
 
-/*
- * Allocate the subdevice structures.
- */
-	if (alloc_subdevices(dev, 7) < 0)
-		return -ENOMEM;
+	ret = comedi_alloc_subdevices(dev, 7);
+	if (ret)
+		return ret;
 
 	s = dev->subdevices + 0;
 	/* analog input subdevice */

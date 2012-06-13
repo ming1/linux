@@ -1358,7 +1358,7 @@ static int usbdux_ai_insn_read(struct comedi_device *dev,
 		/* 32 bits big endian from the A/D converter */
 		one = be32_to_cpu(*((int32_t *)
 				    ((this_usbduxsub->insnBuffer)+1)));
-		/* mask out the staus byte */
+		/* mask out the status byte */
 		one = one & 0x00ffffff;
 		/* turn it into an unsigned integer */
 		one = one ^ 0x00800000;
@@ -2642,6 +2642,7 @@ static int usbduxsigma_attach(struct comedi_device *dev,
 	int index;
 	int i;
 	struct usbduxsub *udev;
+	int n_subdevs;
 
 	int offset;
 
@@ -2683,17 +2684,14 @@ static int usbduxsigma_attach(struct comedi_device *dev,
 	/* set number of subdevices */
 	if (udev->high_speed) {
 		/* with pwm */
-		dev->n_subdevices = 4;
+		n_subdevs = 4;
 	} else {
 		/* without pwm */
-		dev->n_subdevices = 3;
+		n_subdevs = 3;
 	}
 
-	/* allocate space for the subdevices */
-	ret = alloc_subdevices(dev, dev->n_subdevices);
-	if (ret < 0) {
-		dev_err(&udev->interface->dev,
-			"comedi%d: no space for subdev\n", dev->minor);
+	ret = comedi_alloc_subdevices(dev, n_subdevs);
+	if (ret) {
 		up(&udev->sem);
 		up(&start_stop_sem);
 		return ret;

@@ -678,8 +678,8 @@ static int ni_65xx_attach(struct comedi_device *dev,
 	printk(KERN_INFO " ID=0x%02x",
 	       readb(private(dev)->mite->daq_io_addr + ID_Register));
 
-	ret = alloc_subdevices(dev, 4);
-	if (ret < 0)
+	ret = comedi_alloc_subdevices(dev, 4);
+	if (ret)
 		return ret;
 
 	s = dev->subdevices + 0;

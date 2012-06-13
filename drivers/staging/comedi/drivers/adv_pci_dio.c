@@ -33,7 +33,6 @@ Configuration options:
 
 #include <linux/delay.h>
 
-#include "comedi_pci.h"
 #include "8255.h"
 #include "8253.h"
 
@@ -1157,8 +1156,8 @@ static int pci_dio_attach(struct comedi_device *dev,
 				n_subdevices++;
 	}
 
-	ret = alloc_subdevices(dev, n_subdevices);
-	if (ret < 0)
+	ret = comedi_alloc_subdevices(dev, n_subdevices);
+	if (ret)
 		return ret;
 
 	subdev = 0;

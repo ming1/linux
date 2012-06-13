@@ -36,8 +36,6 @@ Configuration Options:
 
 #include "../comedidev.h"
 
-#include "comedi_pci.h"
-
 enum contec_model {
 	PIO1616L = 0,
 };
@@ -109,6 +107,7 @@ static int contec_attach(struct comedi_device *dev, struct comedi_devconfig *it)
 {
 	struct pci_dev *pcidev = NULL;
 	struct comedi_subdevice *s;
+	int ret;
 
 	printk("comedi%d: contec: ", dev->minor);
 
@@ -117,8 +116,9 @@ static int contec_attach(struct comedi_device *dev, struct comedi_devconfig *it)
 	if (alloc_private(dev, sizeof(struct contec_private)) < 0)
 		return -ENOMEM;
 
-	if (alloc_subdevices(dev, 2) < 0)
-		return -ENOMEM;
+	ret = comedi_alloc_subdevices(dev, 2);
+	if (ret)
+		return ret;
 
 	for_each_pci_dev(pcidev) {
 		if (pcidev->vendor == PCI_VENDOR_ID_CONTEC &&
