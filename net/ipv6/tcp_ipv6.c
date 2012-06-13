@@ -522,7 +522,6 @@ static int tcp_v6_send_synack(struct sock *sk, struct request_sock *req,
 done:
 	if (opt && opt != np->opt)
 		sock_kfree_s(sk, opt, opt->tot_len);
-	dst_release(dst);
 	return err;
 }
 
@@ -1733,42 +1732,24 @@ do_time_wait:
 	goto discard_it;
 }
 
-static struct inet_peer *tcp_v6_get_peer(struct sock *sk, bool *release_it)
+static struct inet_peer *tcp_v6_get_peer(struct sock *sk)
 {
 	struct rt6_info *rt = (struct rt6_info *) __sk_dst_get(sk);
 	struct ipv6_pinfo *np = inet6_sk(sk);
-	struct inet_peer *peer;
 
-	if (!rt ||
-	    !ipv6_addr_equal(&np->daddr, &rt->rt6i_dst.addr)) {
-		peer = inet_getpeer_v6(&np->daddr, 1);
-		*release_it = true;
-	} else {
-		if (!rt->rt6i_peer)
-			rt6_bind_peer(rt, 1);
-		peer = rt->rt6i_peer;
-		*release_it = false;
-	}
-
-	return peer;
-}
-
-static void *tcp_v6_tw_get_peer(struct sock *sk)
-{
-	const struct inet6_timewait_sock *tw6 = inet6_twsk(sk);
-	const struct inet_timewait_sock *tw = inet_twsk(sk);
-
-	if (tw->tw_family == AF_INET)
-		return tcp_v4_tw_get_peer(sk);
-
-	return inet_getpeer_v6(&tw6->tw_v6_daddr, 1);
+	/* If we don't have a valid cached route, or we're doing IP
+	 * options which make the IPv6 header destination address
+	 * different from our peer's, do not bother with this.
+	 */
+	if (!rt || !ipv6_addr_equal(&np->daddr, &rt->rt6i_dst.addr))
+		return NULL;
+	return rt6_get_peer_create(rt);
 }
 
 static struct timewait_sock_ops tcp6_timewait_sock_ops = {
 	.twsk_obj_size	= sizeof(struct tcp6_timewait_sock),
 	.twsk_unique	= tcp_twsk_unique,
 	.twsk_destructor= tcp_twsk_destructor,
-	.twsk_getpeer	= tcp_v6_tw_get_peer,
 };
 
 static const struct inet_connection_sock_af_ops ipv6_specific = {

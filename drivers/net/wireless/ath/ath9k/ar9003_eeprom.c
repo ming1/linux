@@ -3178,7 +3178,7 @@ static int ar9300_compress_decision(struct ath_hw *ah,
 				mdata_size, length);
 			return -1;
 		}
-		memcpy(mptr, (u8 *) (word + COMP_HDR_LEN), length);
+		memcpy(mptr, word + COMP_HDR_LEN, length);
 		ath_dbg(common, EEPROM,
 			"restored eeprom %d: uncompressed, length %d\n",
 			it, length);
@@ -3199,7 +3199,7 @@ static int ar9300_compress_decision(struct ath_hw *ah,
 			"restore eeprom %d: block, reference %d, length %d\n",
 			it, reference, length);
 		ar9300_uncompress_block(ah, mptr, mdata_size,
-					(u8 *) (word + COMP_HDR_LEN), length);
+					(word + COMP_HDR_LEN), length);
 		break;
 	default:
 		ath_dbg(common, EEPROM, "unknown compression code %d\n", code);
@@ -3412,11 +3412,11 @@ static u32 ath9k_hw_ar9003_dump_eeprom(struct ath_hw *ah, bool dump_base_hdr,
 	if (!dump_base_hdr) {
 		len += snprintf(buf + len, size - len,
 				"%20s :\n", "2GHz modal Header");
-		len += ar9003_dump_modal_eeprom(buf, len, size,
+		len = ar9003_dump_modal_eeprom(buf, len, size,
 						&eep->modalHeader2G);
 		len += snprintf(buf + len, size - len,
 				"%20s :\n", "5GHz modal Header");
-		len += ar9003_dump_modal_eeprom(buf, len, size,
+		len = ar9003_dump_modal_eeprom(buf, len, size,
 						&eep->modalHeader5G);
 		goto out;
 	}
@@ -3613,6 +3613,7 @@ static void ar9003_hw_ant_ctrl_apply(struct ath_hw *ah, bool is2ghz)
 		value = ar9003_switch_com_spdt_get(ah, is2ghz);
 		REG_RMW_FIELD(ah, AR_PHY_GLB_CONTROL,
 				AR_SWITCH_TABLE_COM_SPDT_ALL, value);
+		REG_SET_BIT(ah, AR_PHY_GLB_CONTROL, AR_BTCOEX_CTRL_SPDT_ENABLE);
 	}
 
 	value = ar9003_hw_ant_ctrl_common_2_get(ah, is2ghz);
