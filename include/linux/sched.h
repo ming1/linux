@@ -862,6 +862,7 @@ enum cpu_idle_type {
 #define SD_ASYM_PACKING		0x0800  /* Place busy groups earlier in the domain */
 #define SD_PREFER_SIBLING	0x1000	/* Prefer to place tasks in a sibling domain */
 #define SD_OVERLAP		0x2000	/* sched_domains of this level overlap */
+#define SD_NUMA			0x4000	/* cross-node balancing */
 
 extern int __weak arch_sd_sibiling_asym_packing(void);
 
@@ -1245,6 +1246,11 @@ struct task_struct {
 	struct sched_entity se;
 	struct sched_rt_entity rt;
 
+#ifdef CONFIG_NUMA
+	unsigned long	 numa_contrib;
+	int		 numa_remote;
+#endif
+
 #ifdef CONFIG_PREEMPT_NOTIFIERS
 	/* list of struct preempt_notifier: */
 	struct hlist_head preempt_notifiers;
@@ -1514,6 +1520,7 @@ struct task_struct {
 	struct mempolicy *mempolicy;	/* Protected by alloc_lock */
 	short il_next;
 	short pref_node_fork;
+	int node;
 #endif
 	struct rcu_head rcu;
 
@@ -1587,6 +1594,15 @@ struct task_struct {
 
 /* Future-safe accessor for struct task_struct's cpus_allowed. */
 #define tsk_cpus_allowed(tsk) (&(tsk)->cpus_allowed)
+
+static inline int tsk_home_node(struct task_struct *p)
+{
+#ifdef CONFIG_NUMA
+	return p->node;
+#else
+	return -1;
+#endif
+}
 
 /*
  * Priority of a process goes from 0..MAX_PRIO-1, valid RT
@@ -1979,9 +1995,9 @@ task_sched_runtime(struct task_struct *task);
 
 /* sched_exec is called by processes performing an exec */
 #ifdef CONFIG_SMP
-extern void sched_exec(void);
+extern void sched_exec(struct mm_struct *mm);
 #else
-#define sched_exec()   {}
+#define sched_exec(mm)   {}
 #endif
 
 extern void sched_clock_idle_sleep_event(void);
@@ -2806,6 +2822,14 @@ static inline unsigned long rlimit_max(unsigned int limit)
 {
 	return task_rlimit_max(current, limit);
 }
+
+#ifdef CONFIG_NUMA
+void mm_init_numa(struct mm_struct *mm);
+void exit_numa(struct mm_struct *mm);
+#else
+static inline void mm_init_numa(struct mm_struct *mm) { }
+static inline void exit_numa(struct mm_struct *mm) { }
+#endif
 
 #endif /* __KERNEL__ */
 
