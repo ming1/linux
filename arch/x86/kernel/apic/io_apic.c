@@ -2292,6 +2292,7 @@ ioapic_set_affinity(struct irq_data *data, const struct cpumask *mask,
 		/* Only the high 8 bits are valid. */
 		dest = SET_APIC_LOGICAL_ID(dest);
 		__target_IO_APIC_irq(irq, dest, data->chip_data);
+		ret = IRQ_SET_MASK_OK_NOCOPY;
 	}
 	raw_spin_unlock_irqrestore(&ioapic_lock, flags);
 	return ret;
@@ -3117,7 +3118,7 @@ msi_set_affinity(struct irq_data *data, const struct cpumask *mask, bool force)
 
 	__write_msi_msg(data->msi_desc, &msg);
 
-	return 0;
+	return IRQ_SET_MASK_OK_NOCOPY;
 }
 #endif /* CONFIG_SMP */
 
@@ -3239,7 +3240,7 @@ dmar_msi_set_affinity(struct irq_data *data, const struct cpumask *mask,
 
 	dmar_msi_write(irq, &msg);
 
-	return 0;
+	return IRQ_SET_MASK_OK_NOCOPY;
 }
 
 #endif /* CONFIG_SMP */
@@ -3292,7 +3293,7 @@ static int hpet_msi_set_affinity(struct irq_data *data,
 
 	hpet_msi_write(data->handler_data, &msg);
 
-	return 0;
+	return IRQ_SET_MASK_OK_NOCOPY;
 }
 
 #endif /* CONFIG_SMP */
@@ -3365,7 +3366,7 @@ ht_set_affinity(struct irq_data *data, const struct cpumask *mask, bool force)
 		return -1;
 
 	target_ht_irq(data->irq, dest, cfg->vector);
-	return 0;
+	return IRQ_SET_MASK_OK_NOCOPY;
 }
 
 #endif
