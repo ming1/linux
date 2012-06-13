@@ -812,13 +812,15 @@ static int soc_bind_dai_link(struct snd_soc_card *card, int num)
 
 	/* Find CPU DAI from registered DAIs*/
 	list_for_each_entry(cpu_dai, &dai_list, list) {
-		if (dai_link->cpu_dai_of_node) {
-			if (cpu_dai->dev->of_node != dai_link->cpu_dai_of_node)
-				continue;
-		} else {
-			if (strcmp(cpu_dai->name, dai_link->cpu_dai_name))
-				continue;
-		}
+		if (dai_link->cpu_of_node &&
+		    (cpu_dai->dev->of_node != dai_link->cpu_of_node))
+			continue;
+		if (dai_link->cpu_name &&
+		    strcmp(dev_name(cpu_dai->dev), dai_link->cpu_name))
+			continue;
+		if (dai_link->cpu_dai_name &&
+		    strcmp(cpu_dai->name, dai_link->cpu_dai_name))
+			continue;
 
 		rtd->cpu_dai = cpu_dai;
 	}
@@ -2790,6 +2792,104 @@ int snd_soc_put_volsw_s8(struct snd_kcontrol *kcontrol,
 EXPORT_SYMBOL_GPL(snd_soc_put_volsw_s8);
 
 /**
+ * snd_soc_info_volsw_range - single mixer info callback with range.
+ * @kcontrol: mixer control
+ * @uinfo: control element information
+ *
+ * Callback to provide information, within a range, about a single
+ * mixer control.
+ *
+ * returns 0 for success.
+ */
+int snd_soc_info_volsw_range(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_info *uinfo)
+{
+	struct soc_mixer_control *mc =
+		(struct soc_mixer_control *)kcontrol->private_value;
+	int platform_max;
+	int min = mc->min;
+
+	if (!mc->platform_max)
+		mc->platform_max = mc->max;
+	platform_max = mc->platform_max;
+
+	uinfo->type = SNDRV_CTL_ELEM_TYPE_INTEGER;
+	uinfo->count = 1;
+	uinfo->value.integer.min = 0;
+	uinfo->value.integer.max = platform_max - min;
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(snd_soc_info_volsw_range);
+
+/**
+ * snd_soc_put_volsw_range - single mixer put value callback with range.
+ * @kcontrol: mixer control
+ * @ucontrol: control element information
+ *
+ * Callback to set the value, within a range, for a single mixer control.
+ *
+ * Returns 0 for success.
+ */
+int snd_soc_put_volsw_range(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_value *ucontrol)
+{
+	struct soc_mixer_control *mc =
+		(struct soc_mixer_control *)kcontrol->private_value;
+	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
+	unsigned int reg = mc->reg;
+	unsigned int shift = mc->shift;
+	int min = mc->min;
+	int max = mc->max;
+	unsigned int mask = (1 << fls(max)) - 1;
+	unsigned int invert = mc->invert;
+	unsigned int val, val_mask;
+
+	val = ((ucontrol->value.integer.value[0] + min) & mask);
+	if (invert)
+		val = max - val;
+	val_mask = mask << shift;
+	val = val << shift;
+
+	return snd_soc_update_bits_locked(codec, reg, val_mask, val);
+}
+EXPORT_SYMBOL_GPL(snd_soc_put_volsw_range);
+
+/**
+ * snd_soc_get_volsw_range - single mixer get callback with range
+ * @kcontrol: mixer control
+ * @ucontrol: control element information
+ *
+ * Callback to get the value, within a range, of a single mixer control.
+ *
+ * Returns 0 for success.
+ */
+int snd_soc_get_volsw_range(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_value *ucontrol)
+{
+	struct soc_mixer_control *mc =
+		(struct soc_mixer_control *)kcontrol->private_value;
+	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
+	unsigned int reg = mc->reg;
+	unsigned int shift = mc->shift;
+	int min = mc->min;
+	int max = mc->max;
+	unsigned int mask = (1 << fls(max)) - 1;
+	unsigned int invert = mc->invert;
+
+	ucontrol->value.integer.value[0] =
+		(snd_soc_read(codec, reg) >> shift) & mask;
+	if (invert)
+		ucontrol->value.integer.value[0] =
+			max - ucontrol->value.integer.value[0];
+	ucontrol->value.integer.value[0] =
+		ucontrol->value.integer.value[0] - min;
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(snd_soc_get_volsw_range);
+
+/**
  * snd_soc_limit_volume - Set new limit to an existing volume control.
  *
  * @codec: where to look for the control
@@ -3346,6 +3446,12 @@ int snd_soc_register_card(struct snd_soc_card *card)
 				link->name);
 			return -EINVAL;
 		}
+		/* Codec DAI name must be specified */
+		if (!link->codec_dai_name) {
+			dev_err(card->dev, "codec_dai_name not set for %s\n",
+				link->name);
+			return -EINVAL;
+		}
 
 		/*
 		 * Platform may be specified by either name or OF node, but
@@ -3358,12 +3464,24 @@ int snd_soc_register_card(struct snd_soc_card *card)
 		}
 
 		/*
-		 * CPU DAI must be specified by 1 of name or OF node,
-		 * not both or neither.
+		 * CPU device may be specified by either name or OF node, but
+		 * can be left unspecified, and will be matched based on DAI
+		 * name alone..
 		 */
-		if (!!link->cpu_dai_name == !!link->cpu_dai_of_node) {
+		if (link->cpu_name && link->cpu_of_node) {
 			dev_err(card->dev,
-				"Neither/both cpu_dai name/of_node are set for %s\n",
+				"Neither/both cpu name/of_node are set for %s\n",
+				link->name);
+			return -EINVAL;
+		}
+		/*
+		 * At least one of CPU DAI name or CPU device name/node must be
+		 * specified
+		 */
+		if (!link->cpu_dai_name &&
+		    !(link->cpu_name || link->cpu_of_node)) {
+			dev_err(card->dev,
+				"Neither cpu_dai_name nor cpu_name/of_node are set for %s\n",
 				link->name);
 			return -EINVAL;
 		}
