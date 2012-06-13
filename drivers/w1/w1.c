@@ -557,7 +557,7 @@ static int w1_uevent(struct device *dev, struct kobj_uevent_env *env)
 	struct w1_master *md = NULL;
 	struct w1_slave *sl = NULL;
 	char *event_owner, *name;
-	int err;
+	int err = 0;
 
 	if (dev->driver == &w1_master_driver) {
 		md = container_of(dev, struct w1_master, dev);
@@ -576,19 +576,17 @@ static int w1_uevent(struct device *dev, struct kobj_uevent_env *env)
 			event_owner, name, dev_name(dev));
 
 	if (dev->driver != &w1_slave_driver || !sl)
-		return 0;
+		goto end;
 
 	err = add_uevent_var(env, "W1_FID=%02X", sl->reg_num.family);
 	if (err)
-		return err;
+		goto end;
 
 	err = add_uevent_var(env, "W1_SLAVE_ID=%024LX",
 			     (unsigned long long)sl->reg_num.id);
-	if (err)
-		return err;
-
-	return 0;
-};
+end:
+	return err;
+}
 #else
 static int w1_uevent(struct device *dev, struct kobj_uevent_env *env)
 {
@@ -688,6 +686,7 @@ static int w1_attach_slave_device(struct w1_master *dev, struct w1_reg_num *rn)
 	memcpy(&sl->reg_num, rn, sizeof(sl->reg_num));
 	atomic_set(&sl->refcnt, 0);
 	init_completion(&sl->released);
+	mutex_init(&sl->mutex);
 
 	spin_lock(&w1_flock);
 	f = w1_family_registered(rn->family);
