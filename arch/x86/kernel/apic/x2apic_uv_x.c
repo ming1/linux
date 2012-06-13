@@ -185,17 +185,6 @@ EXPORT_SYMBOL_GPL(uv_possible_blades);
 unsigned long sn_rtc_cycles_per_second;
 EXPORT_SYMBOL(sn_rtc_cycles_per_second);
 
-static const struct cpumask *uv_target_cpus(void)
-{
-	return cpu_online_mask;
-}
-
-static void uv_vector_allocation_domain(int cpu, struct cpumask *retmask)
-{
-	cpumask_clear(retmask);
-	cpumask_set_cpu(cpu, retmask);
-}
-
 static int __cpuinit uv_wakeup_secondary(int phys_apicid, unsigned long start_rip)
 {
 #ifdef CONFIG_SMP
@@ -280,23 +269,31 @@ static void uv_init_apic_ldr(void)
 {
 }
 
-static unsigned int uv_cpu_mask_to_apicid(const struct cpumask *cpumask)
+static inline int __uv_cpu_to_apicid(int cpu, unsigned int *apicid)
+{
+	if (likely((unsigned int)cpu < nr_cpu_ids)) {
+		*apicid = per_cpu(x86_cpu_to_apicid, cpu) | uv_apicid_hibits;
+		return 0;
+	} else {
+		return -EINVAL;
+	}
+}
+
+static int
+uv_cpu_mask_to_apicid(const struct cpumask *cpumask, unsigned int *apicid)
 {
 	/*
 	 * We're using fixed IRQ delivery, can only return one phys APIC ID.
 	 * May as well be the first.
 	 */
-	int cpu = cpumask_first(cpumask);
-
-	if ((unsigned)cpu < nr_cpu_ids)
-		return per_cpu(x86_cpu_to_apicid, cpu) | uv_apicid_hibits;
-	else
-		return BAD_APICID;
+	int cpu = cpumask_first_and(cpumask, cpu_online_mask);
+	return __uv_cpu_to_apicid(cpu, apicid);
 }
 
-static unsigned int
+static int
 uv_cpu_mask_to_apicid_and(const struct cpumask *cpumask,
-			  const struct cpumask *andmask)
+			  const struct cpumask *andmask,
+			  unsigned int *apicid)
 {
 	int cpu;
 
@@ -308,7 +305,8 @@ uv_cpu_mask_to_apicid_and(const struct cpumask *cpumask,
 		if (cpumask_test_cpu(cpu, cpu_online_mask))
 			break;
 	}
-	return per_cpu(x86_cpu_to_apicid, cpu) | uv_apicid_hibits;
+
+	return __uv_cpu_to_apicid(cpu, apicid);
 }
 
 static unsigned int x2apic_get_apic_id(unsigned long x)
@@ -362,13 +360,13 @@ static struct apic __refdata apic_x2apic_uv_x = {
 	.irq_delivery_mode		= dest_Fixed,
 	.irq_dest_mode			= 0, /* physical */
 
-	.target_cpus			= uv_target_cpus,
+	.target_cpus			= online_target_cpus,
 	.disable_esr			= 0,
 	.dest_logical			= APIC_DEST_LOGICAL,
 	.check_apicid_used		= NULL,
 	.check_apicid_present		= NULL,
 
-	.vector_allocation_domain	= uv_vector_allocation_domain,
+	.vector_allocation_domain	= default_vector_allocation_domain,
 	.init_apic_ldr			= uv_init_apic_ldr,
 
 	.ioapic_phys_id_map		= NULL,

@@ -1112,7 +1112,7 @@ __assign_irq_vector(int irq, struct irq_cfg *cfg, const struct cpumask *mask)
 	 * 0x80, because int 0x80 is hm, kind of importantish. ;)
 	 */
 	static int current_vector = FIRST_EXTERNAL_VECTOR + VECTOR_OFFSET_START;
-	static int current_offset = VECTOR_OFFSET_START % 8;
+	static int current_offset = VECTOR_OFFSET_START % 16;
 	unsigned int old_vector;
 	int cpu, err;
 	cpumask_var_t tmp_mask;
@@ -1126,8 +1126,7 @@ __assign_irq_vector(int irq, struct irq_cfg *cfg, const struct cpumask *mask)
 	old_vector = cfg->vector;
 	if (old_vector) {
 		cpumask_and(tmp_mask, mask, cpu_online_mask);
-		cpumask_and(tmp_mask, cfg->domain, tmp_mask);
-		if (!cpumask_empty(tmp_mask)) {
+		if (cpumask_subset(tmp_mask, cfg->domain)) {
 			free_cpumask_var(tmp_mask);
 			return 0;
 		}
@@ -1138,20 +1137,30 @@ __assign_irq_vector(int irq, struct irq_cfg *cfg, const struct cpumask *mask)
 	for_each_cpu_and(cpu, mask, cpu_online_mask) {
 		int new_cpu;
 		int vector, offset;
+		bool more_domains;
 
-		apic->vector_allocation_domain(cpu, tmp_mask);
+		more_domains = apic->vector_allocation_domain(cpu, tmp_mask);
+
+		if (cpumask_subset(tmp_mask, cfg->domain)) {
+			free_cpumask_var(tmp_mask);
+			return 0;
+		}
 
 		vector = current_vector;
 		offset = current_offset;
 next:
-		vector += 8;
+		vector += 16;
 		if (vector >= first_system_vector) {
-			/* If out of vectors on large boxen, must share them. */
-			offset = (offset + 1) % 8;
+			offset = (offset + 1) % 16;
 			vector = FIRST_EXTERNAL_VECTOR + offset;
 		}
-		if (unlikely(current_vector == vector))
-			continue;
+
+		if (unlikely(current_vector == vector)) {
+			if (more_domains)
+				continue;
+			else
+				break;
+		}
 
 		if (test_bit(vector, used_vectors))
 			goto next;
@@ -1346,18 +1355,18 @@ static void setup_ioapic_irq(unsigned int irq, struct irq_cfg *cfg,
 
 	if (!IO_APIC_IRQ(irq))
 		return;
-	/*
-	 * For legacy irqs, cfg->domain starts with cpu 0 for legacy
-	 * controllers like 8259. Now that IO-APIC can handle this irq, update
-	 * the cfg->domain.
-	 */
-	if (irq < legacy_pic->nr_legacy_irqs && cpumask_test_cpu(0, cfg->domain))
-		apic->vector_allocation_domain(0, cfg->domain);
 
 	if (assign_irq_vector(irq, cfg, apic->target_cpus()))
 		return;
 
-	dest = apic->cpu_mask_to_apicid_and(cfg->domain, apic->target_cpus());
+	if (apic->cpu_mask_to_apicid_and(cfg->domain, apic->target_cpus(),
+					 &dest)) {
+		pr_warn("Failed to obtain apicid for ioapic %d, pin %d\n",
+			mpc_ioapic_id(attr->ioapic), attr->ioapic_pin);
+		__clear_irq_vector(irq, cfg);
+
+		return;
+	}
 
 	apic_printk(APIC_VERBOSE,KERN_DEBUG
 		    "IOAPIC[%d]: Set routing entry (%d-%d -> 0x%x -> "
@@ -1366,7 +1375,7 @@ static void setup_ioapic_irq(unsigned int irq, struct irq_cfg *cfg,
 		    cfg->vector, irq, attr->trigger, attr->polarity, dest);
 
 	if (setup_ioapic_entry(irq, &entry, dest, cfg->vector, attr)) {
-		pr_warn("Failed to setup ioapic entry for ioapic  %d, pin %d\n",
+		pr_warn("Failed to setup ioapic entry for ioapic %d, pin %d\n",
 			mpc_ioapic_id(attr->ioapic), attr->ioapic_pin);
 		__clear_irq_vector(irq, cfg);
 
@@ -1469,9 +1478,10 @@ void setup_IO_APIC_irq_extra(u32 gsi)
  * Set up the timer pin, possibly with the 8259A-master behind.
  */
 static void __init setup_timer_IRQ0_pin(unsigned int ioapic_idx,
-					 unsigned int pin, int vector)
+					unsigned int pin, int vector)
 {
 	struct IO_APIC_route_entry entry;
+	unsigned int dest;
 
 	if (irq_remapping_enabled)
 		return;
@@ -1482,9 +1492,12 @@ static void __init setup_timer_IRQ0_pin(unsigned int ioapic_idx,
 	 * We use logical delivery to get the timer IRQ
 	 * to the first CPU.
 	 */
+	if (unlikely(apic->cpu_mask_to_apicid(apic->target_cpus(), &dest)))
+		dest = BAD_APICID;
+
 	entry.dest_mode = apic->irq_dest_mode;
 	entry.mask = 0;			/* don't mask IRQ for edge */
-	entry.dest = apic->cpu_mask_to_apicid(apic->target_cpus());
+	entry.dest = dest;
 	entry.delivery_mode = apic->irq_delivery_mode;
 	entry.polarity = 0;
 	entry.trigger = 0;
@@ -2243,16 +2256,25 @@ int __ioapic_set_affinity(struct irq_data *data, const struct cpumask *mask,
 			  unsigned int *dest_id)
 {
 	struct irq_cfg *cfg = data->chip_data;
+	unsigned int irq = data->irq;
+	int err;
 
 	if (!cpumask_intersects(mask, cpu_online_mask))
-		return -1;
+		return -EINVAL;
 
-	if (assign_irq_vector(data->irq, data->chip_data, mask))
-		return -1;
+	err = assign_irq_vector(irq, cfg, mask);
+	if (err)
+		return err;
+
+	err = apic->cpu_mask_to_apicid_and(mask, cfg->domain, dest_id);
+	if (err) {
+		if (assign_irq_vector(irq, cfg, data->affinity))
+			pr_err("Failed to recover vector for irq %d\n", irq);
+		return err;
+	}
 
 	cpumask_copy(data->affinity, mask);
 
-	*dest_id = apic->cpu_mask_to_apicid_and(mask, cfg->domain);
 	return 0;
 }
 
@@ -3038,7 +3060,10 @@ static int msi_compose_msg(struct pci_dev *pdev, unsigned int irq,
 	if (err)
 		return err;
 
-	dest = apic->cpu_mask_to_apicid_and(cfg->domain, apic->target_cpus());
+	err = apic->cpu_mask_to_apicid_and(cfg->domain,
+					   apic->target_cpus(), &dest);
+	if (err)
+		return err;
 
 	if (irq_remapped(cfg)) {
 		compose_remapped_msi_msg(pdev, irq, dest, msg, hpet_id);
@@ -3359,6 +3384,8 @@ static struct irq_chip ht_irq_chip = {
 int arch_setup_ht_irq(unsigned int irq, struct pci_dev *dev)
 {
 	struct irq_cfg *cfg;
+	struct ht_irq_msg msg;
+	unsigned dest;
 	int err;
 
 	if (disable_apic)
@@ -3366,36 +3393,37 @@ int arch_setup_ht_irq(unsigned int irq, struct pci_dev *dev)
 
 	cfg = irq_cfg(irq);
 	err = assign_irq_vector(irq, cfg, apic->target_cpus());
-	if (!err) {
-		struct ht_irq_msg msg;
-		unsigned dest;
+	if (err)
+		return err;
 
-		dest = apic->cpu_mask_to_apicid_and(cfg->domain,
-						    apic->target_cpus());
+	err = apic->cpu_mask_to_apicid_and(cfg->domain,
+					   apic->target_cpus(), &dest);
+	if (err)
+		return err;
 
-		msg.address_hi = HT_IRQ_HIGH_DEST_ID(dest);
+	msg.address_hi = HT_IRQ_HIGH_DEST_ID(dest);
 
-		msg.address_lo =
-			HT_IRQ_LOW_BASE |
-			HT_IRQ_LOW_DEST_ID(dest) |
-			HT_IRQ_LOW_VECTOR(cfg->vector) |
-			((apic->irq_dest_mode == 0) ?
-				HT_IRQ_LOW_DM_PHYSICAL :
-				HT_IRQ_LOW_DM_LOGICAL) |
-			HT_IRQ_LOW_RQEOI_EDGE |
-			((apic->irq_delivery_mode != dest_LowestPrio) ?
-				HT_IRQ_LOW_MT_FIXED :
-				HT_IRQ_LOW_MT_ARBITRATED) |
-			HT_IRQ_LOW_IRQ_MASKED;
+	msg.address_lo =
+		HT_IRQ_LOW_BASE |
+		HT_IRQ_LOW_DEST_ID(dest) |
+		HT_IRQ_LOW_VECTOR(cfg->vector) |
+		((apic->irq_dest_mode == 0) ?
+			HT_IRQ_LOW_DM_PHYSICAL :
+			HT_IRQ_LOW_DM_LOGICAL) |
+		HT_IRQ_LOW_RQEOI_EDGE |
+		((apic->irq_delivery_mode != dest_LowestPrio) ?
+			HT_IRQ_LOW_MT_FIXED :
+			HT_IRQ_LOW_MT_ARBITRATED) |
+		HT_IRQ_LOW_IRQ_MASKED;
 
-		write_ht_irq_msg(irq, &msg);
+	write_ht_irq_msg(irq, &msg);
 
-		irq_set_chip_and_handler_name(irq, &ht_irq_chip,
-					      handle_edge_irq, "edge");
+	irq_set_chip_and_handler_name(irq, &ht_irq_chip,
+				      handle_edge_irq, "edge");
 
-		dev_printk(KERN_DEBUG, &dev->dev, "irq %d for HT\n", irq);
-	}
-	return err;
+	dev_printk(KERN_DEBUG, &dev->dev, "irq %d for HT\n", irq);
+
+	return 0;
 }
 #endif /* CONFIG_HT_IRQ */
 
