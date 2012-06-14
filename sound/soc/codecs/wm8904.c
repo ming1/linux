@@ -1,7 +1,7 @@
 /*
  * wm8904.c  --  WM8904 ALSA SoC Audio driver
  *
- * Copyright 2009 Wolfson Microelectronics plc
+ * Copyright 2009-12 Wolfson Microelectronics plc
  *
  * Author: Mark Brown <broonie@opensource.wolfsonmicro.com>
  *
@@ -1863,6 +1863,7 @@ static int wm8904_set_bias_level(struct snd_soc_codec *codec,
 				return ret;
 			}
 
+			regcache_cache_only(wm8904->regmap, false);
 			regcache_sync(wm8904->regmap);
 
 			/* Enable bias */
@@ -1899,14 +1900,8 @@ static int wm8904_set_bias_level(struct snd_soc_codec *codec,
 		snd_soc_update_bits(codec, WM8904_BIAS_CONTROL_0,
 				    WM8904_BIAS_ENA, 0);
 
-#ifdef CONFIG_REGULATOR
-		/* Post 2.6.34 we will be able to get a callback when
-		 * the regulators are disabled which we can use but
-		 * for now just assume that the power will be cut if
-		 * the regulator API is in use.
-		 */
-		codec->cache_sync = 1;
-#endif
+		regcache_cache_only(wm8904->regmap, true);
+		regcache_mark_dirty(wm8904->regmap);
 
 		regulator_bulk_disable(ARRAY_SIZE(wm8904->supplies),
 				       wm8904->supplies);
@@ -2084,10 +2079,8 @@ static int wm8904_probe(struct snd_soc_codec *codec)
 {
 	struct wm8904_priv *wm8904 = snd_soc_codec_get_drvdata(codec);
 	struct wm8904_pdata *pdata = wm8904->pdata;
-	u16 *reg_cache = codec->reg_cache;
 	int ret, i;
 
-	codec->cache_sync = 1;
 	codec->control_data = wm8904->regmap;
 
 	switch (wm8904->devtype) {
@@ -2150,6 +2143,7 @@ static int wm8904_probe(struct snd_soc_codec *codec)
 		goto err_enable;
 	}
 
+	regcache_cache_only(wm8904->regmap, true);
 	/* Change some default settings - latch VU and enable ZC */
 	snd_soc_update_bits(codec, WM8904_ADC_DIGITAL_VOLUME_LEFT,
 			    WM8904_ADC_VU, WM8904_ADC_VU);
@@ -2180,14 +2174,18 @@ static int wm8904_probe(struct snd_soc_codec *codec)
 			if (!pdata->gpio_cfg[i])
 				continue;
 
-			reg_cache[WM8904_GPIO_CONTROL_1 + i]
-				= pdata->gpio_cfg[i] & 0xffff;
+			regmap_update_bits(wm8904->regmap,
+					   WM8904_GPIO_CONTROL_1 + i,
+					   0xffff,
+					   pdata->gpio_cfg[i]);
 		}
 
 		/* Zero is the default value for these anyway */
 		for (i = 0; i < WM8904_MIC_REGS; i++)
-			reg_cache[WM8904_MIC_BIAS_CONTROL_0 + i]
-				= pdata->mic_cfg[i];
+			regmap_update_bits(wm8904->regmap,
+					   WM8904_MIC_BIAS_CONTROL_0 + i,
+					   0xffff,
+					   pdata->mic_cfg[i]);
 	}
 
 	/* Set Class W by default - this will be managed by the Class
@@ -2263,7 +2261,7 @@ static __devinit int wm8904_i2c_probe(struct i2c_client *i2c,
 	if (wm8904 == NULL)
 		return -ENOMEM;
 
-	wm8904->regmap = regmap_init_i2c(i2c, &wm8904_regmap);
+	wm8904->regmap = devm_regmap_init_i2c(i2c, &wm8904_regmap);
 	if (IS_ERR(wm8904->regmap)) {
 		ret = PTR_ERR(wm8904->regmap);
 		dev_err(&i2c->dev, "Failed to allocate register map: %d\n",
@@ -2283,15 +2281,12 @@ static __devinit int wm8904_i2c_probe(struct i2c_client *i2c,
 	return 0;
 
 err:
-	regmap_exit(wm8904->regmap);
 	return ret;
 }
 
 static __devexit int wm8904_i2c_remove(struct i2c_client *client)
 {
-	struct wm8904_priv *wm8904 = i2c_get_clientdata(client);
 	snd_soc_unregister_codec(&client->dev);
-	regmap_exit(wm8904->regmap);
 	return 0;
 }
 
@@ -2313,23 +2308,7 @@ static struct i2c_driver wm8904_i2c_driver = {
 	.id_table = wm8904_i2c_id,
 };
 
-static int __init wm8904_modinit(void)
-{
-	int ret = 0;
-	ret = i2c_add_driver(&wm8904_i2c_driver);
-	if (ret != 0) {
-		printk(KERN_ERR "Failed to register wm8904 I2C driver: %d\n",
-		       ret);
-	}
-	return ret;
-}
-module_init(wm8904_modinit);
-
-static void __exit wm8904_exit(void)
-{
-	i2c_del_driver(&wm8904_i2c_driver);
-}
-module_exit(wm8904_exit);
+module_i2c_driver(wm8904_i2c_driver);
 
 MODULE_DESCRIPTION("ASoC WM8904 driver");
 MODULE_AUTHOR("Mark Brown <broonie@opensource.wolfsonmicro.com>");
