@@ -706,9 +706,13 @@ typedef u32 acpi_event_status;
 #define ACPI_DEVICE_NOTIFY              0x2
 #define ACPI_ALL_NOTIFY                 (ACPI_SYSTEM_NOTIFY | ACPI_DEVICE_NOTIFY)
 #define ACPI_MAX_NOTIFY_HANDLER_TYPE    0x3
+#define ACPI_NUM_NOTIFY_TYPES           2
 
 #define ACPI_MAX_SYS_NOTIFY             0x7F
 #define ACPI_MAX_DEVICE_SPECIFIC_NOTIFY 0xBF
+
+#define ACPI_SYSTEM_HANDLER_LIST        0	/* Used as index, must be SYSTEM_NOTIFY -1 */
+#define ACPI_DEVICE_HANDLER_LIST        1	/* Used as index, must be DEVICE_NOTIFY -1 */
 
 /* Address Space (Operation Region) Types */
 
@@ -724,8 +728,9 @@ typedef u8 acpi_adr_space_type;
 #define ACPI_ADR_SPACE_IPMI             (acpi_adr_space_type) 7
 #define ACPI_ADR_SPACE_GPIO             (acpi_adr_space_type) 8
 #define ACPI_ADR_SPACE_GSBUS            (acpi_adr_space_type) 9
+#define ACPI_ADR_SPACE_PLATFORM_COMM    (acpi_adr_space_type) 10
 
-#define ACPI_NUM_PREDEFINED_REGIONS     10
+#define ACPI_NUM_PREDEFINED_REGIONS     11
 
 /*
  * Special Address Spaces
