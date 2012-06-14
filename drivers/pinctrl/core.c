@@ -61,7 +61,7 @@ static LIST_HEAD(pinctrl_maps);
 	list_for_each_entry(_maps_node_, &pinctrl_maps, node) \
 		for (_i_ = 0, _map_ = &_maps_node_->maps[_i_]; \
 			_i_ < _maps_node_->num_maps; \
-			i++, _map_ = &_maps_node_->maps[_i_])
+			_i_++, _map_ = &_maps_node_->maps[_i_])
 
 /**
  * pinctrl_provide_dummies() - indicate if pinctrl provides dummy state support
@@ -332,19 +332,16 @@ void pinctrl_add_gpio_range(struct pinctrl_dev *pctldev,
 }
 EXPORT_SYMBOL_GPL(pinctrl_add_gpio_range);
 
-/**
- * pinctrl_remove_gpio_range() - remove a range of GPIOs fro a pin controller
- * @pctldev: pin controller device to remove the range from
- * @range: the GPIO range to remove
- */
-void pinctrl_remove_gpio_range(struct pinctrl_dev *pctldev,
-			       struct pinctrl_gpio_range *range)
+void pinctrl_add_gpio_ranges(struct pinctrl_dev *pctldev,
+			     struct pinctrl_gpio_range *ranges,
+			     unsigned nranges)
 {
-	mutex_lock(&pinctrl_mutex);
-	list_del(&range->node);
-	mutex_unlock(&pinctrl_mutex);
+	int i;
+
+	for (i = 0; i < nranges; i++)
+		pinctrl_add_gpio_range(pctldev, &ranges[i]);
 }
-EXPORT_SYMBOL_GPL(pinctrl_remove_gpio_range);
+EXPORT_SYMBOL_GPL(pinctrl_add_gpio_ranges);
 
 /**
  * pinctrl_get_group_selector() - returns the group selector for a group
@@ -1485,6 +1482,7 @@ EXPORT_SYMBOL_GPL(pinctrl_register);
  */
 void pinctrl_unregister(struct pinctrl_dev *pctldev)
 {
+	struct pinctrl_gpio_range *range, *n;
 	if (pctldev == NULL)
 		return;
 
@@ -1500,6 +1498,10 @@ void pinctrl_unregister(struct pinctrl_dev *pctldev)
 	/* Destroy descriptor tree */
 	pinctrl_free_pindescs(pctldev, pctldev->desc->pins,
 			      pctldev->desc->npins);
+	/* remove gpio ranges map */
+	list_for_each_entry_safe(range, n, &pctldev->gpio_ranges, node)
+		list_del(&range->node);
+
 	kfree(pctldev);
 
 	mutex_unlock(&pinctrl_mutex);
