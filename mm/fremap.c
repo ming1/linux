@@ -39,7 +39,7 @@ static void zap_pte(struct mm_struct *mm, struct vm_area_struct *vma,
 			page_remove_rmap(page);
 			page_cache_release(page);
 			update_hiwater_rss(mm);
-			dec_mm_counter(mm, MM_FILEPAGES);
+			dec_rss_counter(vma, MM_FILEPAGES);
 		}
 	} else {
 		if (!pte_file(pte))

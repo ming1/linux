@@ -57,6 +57,7 @@
 #include <linux/swapops.h>
 #include <linux/elf.h>
 #include <linux/gfp.h>
+#include <linux/mempolicy.h>	/* check_migrate_misplaced_page() */
 
 #include <asm/io.h>
 #include <asm/pgalloc.h>
@@ -131,24 +132,26 @@ void sync_mm_rss(struct mm_struct *mm)
 
 	for (i = 0; i < NR_MM_COUNTERS; i++) {
 		if (current->rss_stat.count[i]) {
-			add_mm_counter(mm, i, current->rss_stat.count[i]);
+			atomic_long_add(current->rss_stat.count[i],
+					&mm->rss_stat.count[i]);
 			current->rss_stat.count[i] = 0;
 		}
 	}
 	current->rss_stat.events = 0;
 }
 
-static void add_mm_counter_fast(struct mm_struct *mm, int member, int val)
+static void add_rss_counter_fast(struct vm_area_struct *vma, int member, int val)
 {
 	struct task_struct *task = current;
 
-	if (likely(task->mm == mm))
+	if (likely(task->mm == vma->vm_mm)) {
 		task->rss_stat.count[member] += val;
-	else
-		add_mm_counter(mm, member, val);
+		numa_add_rss_counter(vma, member, val);
+	} else
+		add_rss_counter(vma, member, val);
 }
-#define inc_mm_counter_fast(mm, member) add_mm_counter_fast(mm, member, 1)
-#define dec_mm_counter_fast(mm, member) add_mm_counter_fast(mm, member, -1)
+#define inc_rss_counter_fast(vma, member) add_rss_counter_fast(vma, member, 1)
+#define dec_rss_counter_fast(vma, member) add_rss_counter_fast(vma, member, -1)
 
 /* sync counter once per 64 page faults */
 #define TASK_RSS_EVENTS_THRESH	(64)
@@ -161,8 +164,8 @@ static void check_sync_rss_stat(struct task_struct *task)
 }
 #else /* SPLIT_RSS_COUNTING */
 
-#define inc_mm_counter_fast(mm, member) inc_mm_counter(mm, member)
-#define dec_mm_counter_fast(mm, member) dec_mm_counter(mm, member)
+#define inc_rss_counter_fast(vma, member) inc_rss_counter(vma, member)
+#define dec_rss_counter_fast(vma, member) dec_rss_counter(vma, member)
 
 static void check_sync_rss_stat(struct task_struct *task)
 {
@@ -633,15 +636,17 @@ static inline void init_rss_vec(int *rss)
 	memset(rss, 0, sizeof(int) * NR_MM_COUNTERS);
 }
 
-static inline void add_mm_rss_vec(struct mm_struct *mm, int *rss)
+static inline
+void add_rss_vec(struct vm_area_struct *vma, int *rss)
 {
 	int i;
 
-	if (current->mm == mm)
-		sync_mm_rss(mm);
-	for (i = 0; i < NR_MM_COUNTERS; i++)
+	if (current->mm == vma->vm_mm)
+		sync_mm_rss(vma->vm_mm);
+	for (i = 0; i < NR_MM_COUNTERS; i++) {
 		if (rss[i])
-			add_mm_counter(mm, i, rss[i]);
+			add_rss_counter(vma, i, rss[i]);
+	}
 }
 
 /*
@@ -829,11 +834,11 @@ out:
  */
 
 static inline unsigned long
-copy_one_pte(struct mm_struct *dst_mm, struct mm_struct *src_mm,
-		pte_t *dst_pte, pte_t *src_pte, struct vm_area_struct *vma,
-		unsigned long addr, int *rss)
+copy_one_pte(struct vm_area_struct *dst_vma, struct vm_area_struct *src_vma,
+		pte_t *dst_pte, pte_t *src_pte, unsigned long addr, int *rss)
 {
-	unsigned long vm_flags = vma->vm_flags;
+	struct mm_struct *dst_mm = dst_vma->vm_mm, *src_mm = src_vma->vm_mm;
+	unsigned long vm_flags = src_vma->vm_flags;
 	pte_t pte = *src_pte;
 	struct page *page;
 
@@ -895,7 +900,7 @@ copy_one_pte(struct mm_struct *dst_mm, struct mm_struct *src_mm,
 		pte = pte_mkclean(pte);
 	pte = pte_mkold(pte);
 
-	page = vm_normal_page(vma, addr, pte);
+	page = vm_normal_page(src_vma, addr, pte);
 	if (page) {
 		get_page(page);
 		page_dup_rmap(page);
@@ -910,10 +915,10 @@ out_set_pte:
 	return 0;
 }
 
-int copy_pte_range(struct mm_struct *dst_mm, struct mm_struct *src_mm,
-		   pmd_t *dst_pmd, pmd_t *src_pmd, struct vm_area_struct *vma,
-		   unsigned long addr, unsigned long end)
+int copy_pte_range(struct vm_area_struct *dst_vma, struct vm_area_struct *src_vma,
+		pmd_t *dst_pmd, pmd_t *src_pmd, unsigned long addr, unsigned long end)
 {
+	struct mm_struct *dst_mm = dst_vma->vm_mm, *src_mm = src_vma->vm_mm;
 	pte_t *orig_src_pte, *orig_dst_pte;
 	pte_t *src_pte, *dst_pte;
 	spinlock_t *src_ptl, *dst_ptl;
@@ -949,8 +954,8 @@ again:
 			progress++;
 			continue;
 		}
-		entry.val = copy_one_pte(dst_mm, src_mm, dst_pte, src_pte,
-							vma, addr, rss);
+		entry.val = copy_one_pte(dst_vma, src_vma,
+					 dst_pte, src_pte, addr, rss);
 		if (entry.val)
 			break;
 		progress += 8;
@@ -959,7 +964,7 @@ again:
 	arch_leave_lazy_mmu_mode();
 	spin_unlock(src_ptl);
 	pte_unmap(orig_src_pte);
-	add_mm_rss_vec(dst_mm, rss);
+	add_rss_vec(dst_vma, rss);
 	pte_unmap_unlock(orig_dst_pte, dst_ptl);
 	cond_resched();
 
@@ -973,14 +978,14 @@ again:
 	return 0;
 }
 
-static inline int copy_pmd_range(struct mm_struct *dst_mm, struct mm_struct *src_mm,
-		pud_t *dst_pud, pud_t *src_pud, struct vm_area_struct *vma,
-		unsigned long addr, unsigned long end)
+static inline
+int copy_pmd_range(struct vm_area_struct *dst_vma, struct vm_area_struct *src_vma,
+		pud_t *dst_pud, pud_t *src_pud, unsigned long addr, unsigned long end)
 {
 	pmd_t *src_pmd, *dst_pmd;
 	unsigned long next;
 
-	dst_pmd = pmd_alloc(dst_mm, dst_pud, addr);
+	dst_pmd = pmd_alloc(dst_vma->vm_mm, dst_pud, addr);
 	if (!dst_pmd)
 		return -ENOMEM;
 	src_pmd = pmd_offset(src_pud, addr);
@@ -989,8 +994,7 @@ static inline int copy_pmd_range(struct mm_struct *dst_mm, struct mm_struct *src
 		if (pmd_trans_huge(*src_pmd)) {
 			int err;
 			VM_BUG_ON(next-addr != HPAGE_PMD_SIZE);
-			err = copy_huge_pmd(dst_mm, src_mm,
-					    dst_pmd, src_pmd, addr, vma);
+			err = copy_huge_pmd(dst_vma, src_vma, dst_pmd, src_pmd, addr);
 			if (err == -ENOMEM)
 				return -ENOMEM;
 			if (!err)
@@ -999,21 +1003,20 @@ static inline int copy_pmd_range(struct mm_struct *dst_mm, struct mm_struct *src
 		}
 		if (pmd_none_or_clear_bad(src_pmd))
 			continue;
-		if (copy_pte_range(dst_mm, src_mm, dst_pmd, src_pmd,
-						vma, addr, next))
+		if (copy_pte_range(dst_vma, src_vma, dst_pmd, src_pmd, addr, next))
 			return -ENOMEM;
 	} while (dst_pmd++, src_pmd++, addr = next, addr != end);
 	return 0;
 }
 
-static inline int copy_pud_range(struct mm_struct *dst_mm, struct mm_struct *src_mm,
-		pgd_t *dst_pgd, pgd_t *src_pgd, struct vm_area_struct *vma,
-		unsigned long addr, unsigned long end)
+static inline
+int copy_pud_range(struct vm_area_struct *dst_vma, struct vm_area_struct *src_vma,
+		pgd_t *dst_pgd, pgd_t *src_pgd, unsigned long addr, unsigned long end)
 {
 	pud_t *src_pud, *dst_pud;
 	unsigned long next;
 
-	dst_pud = pud_alloc(dst_mm, dst_pgd, addr);
+	dst_pud = pud_alloc(dst_vma->vm_mm, dst_pgd, addr);
 	if (!dst_pud)
 		return -ENOMEM;
 	src_pud = pud_offset(src_pgd, addr);
@@ -1021,20 +1024,20 @@ static inline int copy_pud_range(struct mm_struct *dst_mm, struct mm_struct *src
 		next = pud_addr_end(addr, end);
 		if (pud_none_or_clear_bad(src_pud))
 			continue;
-		if (copy_pmd_range(dst_mm, src_mm, dst_pud, src_pud,
-						vma, addr, next))
+		if (copy_pmd_range(dst_vma, src_vma, dst_pud, src_pud, addr, next))
 			return -ENOMEM;
 	} while (dst_pud++, src_pud++, addr = next, addr != end);
 	return 0;
 }
 
-int copy_page_range(struct mm_struct *dst_mm, struct mm_struct *src_mm,
-		struct vm_area_struct *vma)
+int copy_page_range(struct vm_area_struct *dst_vma, struct vm_area_struct *src_vma)
 {
+	struct mm_struct *dst_mm = dst_vma->vm_mm, *src_mm = src_vma->vm_mm;
 	pgd_t *src_pgd, *dst_pgd;
 	unsigned long next;
-	unsigned long addr = vma->vm_start;
-	unsigned long end = vma->vm_end;
+	unsigned long addr = src_vma->vm_start;
+	unsigned long end = src_vma->vm_end;
+	vm_flags_t vm_flags = src_vma->vm_flags;
 	int ret;
 
 	/*
@@ -1043,20 +1046,20 @@ int copy_page_range(struct mm_struct *dst_mm, struct mm_struct *src_mm,
 	 * readonly mappings. The tradeoff is that copy_page_range is more
 	 * efficient than faulting.
 	 */
-	if (!(vma->vm_flags & (VM_HUGETLB|VM_NONLINEAR|VM_PFNMAP|VM_INSERTPAGE))) {
-		if (!vma->anon_vma)
+	if (!(vm_flags & (VM_HUGETLB|VM_NONLINEAR|VM_PFNMAP|VM_INSERTPAGE))) {
+		if (!src_vma->anon_vma)
 			return 0;
 	}
 
-	if (is_vm_hugetlb_page(vma))
-		return copy_hugetlb_page_range(dst_mm, src_mm, vma);
+	if (is_vm_hugetlb_page(src_vma))
+		return copy_hugetlb_page_range(dst_mm, src_mm, src_vma);
 
-	if (unlikely(is_pfn_mapping(vma))) {
+	if (unlikely(is_pfn_mapping(src_vma))) {
 		/*
 		 * We do not free on error cases below as remove_vma
 		 * gets called on error from higher level routine
 		 */
-		ret = track_pfn_vma_copy(vma);
+		ret = track_pfn_vma_copy(src_vma);
 		if (ret)
 			return ret;
 	}
@@ -1067,7 +1070,7 @@ int copy_page_range(struct mm_struct *dst_mm, struct mm_struct *src_mm,
 	 * parent mm. And a permission downgrade will only happen if
 	 * is_cow_mapping() returns true.
 	 */
-	if (is_cow_mapping(vma->vm_flags))
+	if (is_cow_mapping(vm_flags))
 		mmu_notifier_invalidate_range_start(src_mm, addr, end);
 
 	ret = 0;
@@ -1077,16 +1080,15 @@ int copy_page_range(struct mm_struct *dst_mm, struct mm_struct *src_mm,
 		next = pgd_addr_end(addr, end);
 		if (pgd_none_or_clear_bad(src_pgd))
 			continue;
-		if (unlikely(copy_pud_range(dst_mm, src_mm, dst_pgd, src_pgd,
-					    vma, addr, next))) {
+		if (unlikely(copy_pud_range(dst_vma, src_vma, dst_pgd, src_pgd,
+					    addr, next))) {
 			ret = -ENOMEM;
 			break;
 		}
 	} while (dst_pgd++, src_pgd++, addr = next, addr != end);
 
-	if (is_cow_mapping(vma->vm_flags))
-		mmu_notifier_invalidate_range_end(src_mm,
-						  vma->vm_start, end);
+	if (is_cow_mapping(vm_flags))
+		mmu_notifier_invalidate_range_end(src_mm, src_vma->vm_start, end);
 	return ret;
 }
 
@@ -1193,7 +1195,7 @@ again:
 		pte_clear_not_present_full(mm, addr, pte, tlb->fullmm);
 	} while (pte++, addr += PAGE_SIZE, addr != end);
 
-	add_mm_rss_vec(mm, rss);
+	add_rss_vec(vma, rss);
 	arch_leave_lazy_mmu_mode();
 	pte_unmap_unlock(start_pte, ptl);
 
@@ -2031,7 +2033,7 @@ static int insert_page(struct vm_area_struct *vma, unsigned long addr,
 
 	/* Ok, finally just insert the thing.. */
 	get_page(page);
-	inc_mm_counter_fast(mm, MM_FILEPAGES);
+	inc_rss_counter_fast(vma, MM_FILEPAGES);
 	page_add_file_rmap(page);
 	set_pte_at(mm, addr, pte, mk_pte(page, prot));
 
@@ -2686,11 +2688,11 @@ gotten:
 	if (likely(pte_same(*page_table, orig_pte))) {
 		if (old_page) {
 			if (!PageAnon(old_page)) {
-				dec_mm_counter_fast(mm, MM_FILEPAGES);
-				inc_mm_counter_fast(mm, MM_ANONPAGES);
+				dec_rss_counter_fast(vma, MM_FILEPAGES);
+				inc_rss_counter_fast(vma, MM_ANONPAGES);
 			}
 		} else
-			inc_mm_counter_fast(mm, MM_ANONPAGES);
+			inc_rss_counter_fast(vma, MM_ANONPAGES);
 		flush_cache_page(vma, address, pte_pfn(orig_pte));
 		entry = mk_pte(new_page, vma->vm_page_prot);
 		entry = maybe_mkwrite(pte_mkdirty(entry), vma);
@@ -2971,6 +2973,22 @@ static int do_swap_page(struct mm_struct *mm, struct vm_area_struct *vma,
 	}
 
 	/*
+	 * No sense in migrating a page that will be "COWed" as the new
+	 * new page will be allocated according to effective mempolicy.
+	 */
+	if ((flags & FAULT_FLAG_WRITE) && can_reuse_swap_page(page)) {
+		/*
+		 * check for misplacement and migrate, if necessary/possible,
+		 * here and now.  Note that if we're racing with another thread,
+		 * we may end up discarding the migrated page after locking
+		 * the page table and checking the pte below.  However, we
+		 * don't want to hold the page table locked over migration, so
+		 * we'll live with that [unlikely, one hopes] possibility.
+		 */
+		page = check_migrate_misplaced_page(page, vma, address);
+	}
+
+	/*
 	 * Back out if somebody else already faulted in this pte.
 	 */
 	page_table = pte_offset_map_lock(mm, pmd, address, &ptl);
@@ -2996,8 +3014,8 @@ static int do_swap_page(struct mm_struct *mm, struct vm_area_struct *vma,
 	 * discarded at swap_free().
 	 */
 
-	inc_mm_counter_fast(mm, MM_ANONPAGES);
-	dec_mm_counter_fast(mm, MM_SWAPENTS);
+	inc_rss_counter_fast(vma, MM_ANONPAGES);
+	dec_rss_counter_fast(vma, MM_SWAPENTS);
 	pte = mk_pte(page, vma->vm_page_prot);
 	if ((flags & FAULT_FLAG_WRITE) && reuse_swap_page(page)) {
 		pte = maybe_mkwrite(pte_mkdirty(pte), vma);
@@ -3137,7 +3155,7 @@ static int do_anonymous_page(struct mm_struct *mm, struct vm_area_struct *vma,
 	if (!pte_none(*page_table))
 		goto release;
 
-	inc_mm_counter_fast(mm, MM_ANONPAGES);
+	inc_rss_counter_fast(vma, MM_ANONPAGES);
 	page_add_new_anon_rmap(page, vma, address);
 setpte:
 	set_pte_at(mm, address, page_table, entry);
@@ -3292,10 +3310,10 @@ static int __do_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 		if (flags & FAULT_FLAG_WRITE)
 			entry = maybe_mkwrite(pte_mkdirty(entry), vma);
 		if (anon) {
-			inc_mm_counter_fast(mm, MM_ANONPAGES);
+			inc_rss_counter_fast(vma, MM_ANONPAGES);
 			page_add_new_anon_rmap(page, vma, address);
 		} else {
-			inc_mm_counter_fast(mm, MM_FILEPAGES);
+			inc_rss_counter_fast(vma, MM_FILEPAGES);
 			page_add_file_rmap(page);
 			if (flags & FAULT_FLAG_WRITE) {
 				dirty_page = page;
