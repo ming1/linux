@@ -37,10 +37,10 @@ static const struct {
 } versatile_leds[] = {
 	{ "versatile:0", "heartbeat", },
 	{ "versatile:1", "mmc0", },
-	{ "versatile:2", },
-	{ "versatile:3", },
-	{ "versatile:4", },
-	{ "versatile:5", },
+	{ "versatile:2", "cpu0" },
+	{ "versatile:3", "cpu1" },
+	{ "versatile:4", "cpu2" },
+	{ "versatile:5", "cpu3" },
 	{ "versatile:6", },
 	{ "versatile:7", },
 };
@@ -85,6 +85,11 @@ static int __init versatile_leds_init(void)
 		led->cdev.brightness_set = versatile_led_set;
 		led->cdev.brightness_get = versatile_led_get;
 		led->cdev.default_trigger = versatile_leds[i].trigger;
+		/* Some trigger data for CPU LEDs */
+		if (i >= 2 && i <= 5) {
+			/* This is the CPU number actually */
+			led->cdev.trigger_data = (void *) i - 2;
+		}
 		led->mask = BIT(i);
 
 		if (led_classdev_register(NULL, &led->cdev) < 0) {
