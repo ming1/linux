@@ -265,11 +265,11 @@ static int summit_check_phys_apicid_present(int physical_apicid)
 	return 1;
 }
 
-static int
+static inline int
 summit_cpu_mask_to_apicid(const struct cpumask *cpumask, unsigned int *dest_id)
 {
 	unsigned int round = 0;
-	int cpu, apicid = 0;
+	unsigned int cpu, apicid = 0;
 
 	/*
 	 * The cpus in the mask must all be on the apic cluster.
@@ -284,6 +284,8 @@ summit_cpu_mask_to_apicid(const struct cpumask *cpumask, unsigned int *dest_id)
 		apicid |= new_apicid;
 		round++;
 	}
+	if (!round)
+		return -EINVAL;
 	*dest_id = apicid;
 	return 0;
 }
@@ -293,8 +295,8 @@ summit_cpu_mask_to_apicid_and(const struct cpumask *inmask,
 			      const struct cpumask *andmask,
 			      unsigned int *apicid)
 {
-	*apicid = early_per_cpu(x86_cpu_to_logical_apicid, 0);
 	cpumask_var_t cpumask;
+	*apicid = early_per_cpu(x86_cpu_to_logical_apicid, 0);
 
 	if (!alloc_cpumask_var(&cpumask, GFP_ATOMIC))
 		return 0;
@@ -520,7 +522,6 @@ static struct apic apic_summit = {
 	.set_apic_id			= NULL,
 	.apic_id_mask			= 0xFF << 24,
 
-	.cpu_mask_to_apicid		= summit_cpu_mask_to_apicid,
 	.cpu_mask_to_apicid_and		= summit_cpu_mask_to_apicid_and,
 
 	.send_IPI_mask			= summit_send_IPI_mask,
