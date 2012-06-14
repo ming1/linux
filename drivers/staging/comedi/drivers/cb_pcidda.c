@@ -48,9 +48,7 @@ Please report success/failure with other different cards to
 
 #include "../comedidev.h"
 
-#include "comedi_pci.h"
 #include "8255.h"
-
 
 /* PCI vendor number of ComputerBoards */
 #define PCI_VENDOR_ID_CB        0x1307
@@ -267,7 +265,7 @@ static int cb_pcidda_attach(struct comedi_device *dev,
 	struct comedi_subdevice *s;
 	struct pci_dev *pcidev = NULL;
 	int index;
-
+	int ret;
 
 /*
  * Allocate the private structure area.
@@ -335,11 +333,9 @@ found:
  */
 	dev->board_name = thisboard->name;
 
-/*
- * Allocate the subdevice structures.
- */
-	if (alloc_subdevices(dev, 3) < 0)
-		return -ENOMEM;
+	ret = comedi_alloc_subdevices(dev, 3);
+	if (ret)
+		return ret;
 
 	s = dev->subdevices + 0;
 	/* analog output subdevice */

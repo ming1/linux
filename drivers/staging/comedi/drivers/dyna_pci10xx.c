@@ -38,7 +38,6 @@
 */
 
 #include "../comedidev.h"
-#include "comedi_pci.h"
 #include <linux/mutex.h>
 
 #define PCI_VENDOR_ID_DYNALOG		0x10b5
@@ -142,7 +141,7 @@ static int dyna_pci10xx_insn_read_ai(struct comedi_device *dev,
 		for (counter = 0; counter < READ_TIMEOUT; counter++) {
 			d = inw_p(devpriv->BADR2);
 
-			/* check if read is successfull if the EOC bit is set */
+			/* check if read is successful if the EOC bit is set */
 			if (d & (1 << 15))
 				goto conv_finish;
 		}
@@ -247,6 +246,7 @@ static int dyna_pci10xx_attach(struct comedi_device *dev,
 	struct pci_dev *pcidev;
 	unsigned int opt_bus, opt_slot;
 	int board_index, i;
+	int ret;
 
 	mutex_lock(&start_stop_sem);
 
@@ -330,11 +330,10 @@ found:
 	devpriv->BADR4 = pci_resource_start(pcidev, 4);
 	devpriv->BADR5 = pci_resource_start(pcidev, 5);
 
-	if (alloc_subdevices(dev, 4) < 0) {
-		printk(KERN_ERR "comedi: dyna_pci10xx: "
-			"failed allocating subdevices\n");
+	ret = comedi_alloc_subdevices(dev, 4);
+	if (ret) {
 		mutex_unlock(&start_stop_sem);
-		return -ENOMEM;
+		return ret;
 	}
 
 	/* analog input */

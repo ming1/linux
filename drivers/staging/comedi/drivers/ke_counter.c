@@ -40,8 +40,6 @@ Kolter Electronic PCI Counter Card.
 
 #include "../comedidev.h"
 
-#include "comedi_pci.h"
-
 #define CNT_DRIVER_NAME         "ke_counter"
 #define PCI_VENDOR_ID_KOLTER    0x1001
 #define CNT_CARD_DEVICE_ID      0x0014
@@ -191,9 +189,8 @@ found:
 	io_base = pci_resource_start(pci_device, 0);
 	dev->iobase = io_base;
 
-	/* allocate the subdevice structures */
-	error = alloc_subdevices(dev, 1);
-	if (error < 0)
+	error = comedi_alloc_subdevices(dev, 1);
+	if (error)
 		return error;
 
 	subdevice = dev->subdevices + 0;
