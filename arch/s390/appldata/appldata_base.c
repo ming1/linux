@@ -84,8 +84,7 @@ static struct ctl_table appldata_dir_table[] = {
 /*
  * Timer
  */
-static DEFINE_PER_CPU(struct vtimer_list, appldata_timer);
-static atomic_t appldata_expire_count = ATOMIC_INIT(0);
+static struct vtimer_list appldata_timer;
 
 static DEFINE_SPINLOCK(appldata_timer_lock);
 static int appldata_interval = APPLDATA_CPU_INTERVAL;
@@ -115,10 +114,7 @@ static LIST_HEAD(appldata_ops_list);
  */
 static void appldata_timer_function(unsigned long data)
 {
-	if (atomic_dec_and_test(&appldata_expire_count)) {
-		atomic_set(&appldata_expire_count, num_online_cpus());
-		queue_work(appldata_wq, (struct work_struct *) data);
-	}
+	queue_work(appldata_wq, (struct work_struct *) data);
 }
 
 /*
@@ -131,7 +127,6 @@ static void appldata_work_fn(struct work_struct *work)
 	struct list_head *lh;
 	struct appldata_ops *ops;
 
-	get_online_cpus();
 	mutex_lock(&appldata_ops_mutex);
 	list_for_each(lh, &appldata_ops_list) {
 		ops = list_entry(lh, struct appldata_ops, list);
@@ -140,7 +135,6 @@ static void appldata_work_fn(struct work_struct *work)
 		}
 	}
 	mutex_unlock(&appldata_ops_mutex);
-	put_online_cpus();
 }
 
 /*
@@ -168,20 +162,6 @@ int appldata_diag(char record_nr, u16 function, unsigned long buffer,
 
 /****************************** /proc stuff **********************************/
 
-/*
- * appldata_mod_vtimer_wrap()
- *
- * wrapper function for mod_virt_timer(), because smp_call_function_single()
- * accepts only one parameter.
- */
-static void __appldata_mod_vtimer_wrap(void *p) {
-	struct {
-		struct vtimer_list *timer;
-		u64    expires;
-	} *args = p;
-	mod_virt_timer_periodic(args->timer, args->expires);
-}
-
 #define APPLDATA_ADD_TIMER	0
 #define APPLDATA_DEL_TIMER	1
 #define APPLDATA_MOD_TIMER	2
@@ -195,46 +175,28 @@ static void __appldata_mod_vtimer_wrap(void *p) {
 static void
 __appldata_vtimer_setup(int cmd)
 {
-	u64 per_cpu_interval;
-	int i;
+	u64 timer_interval;
 
 	switch (cmd) {
 	case APPLDATA_ADD_TIMER:
 		if (appldata_timer_active)
 			break;
-		per_cpu_interval = (u64) (appldata_interval*1000 /
-					  num_online_cpus()) * TOD_MICRO;
-		for_each_online_cpu(i) {
-			per_cpu(appldata_timer, i).expires = per_cpu_interval;
-			smp_call_function_single(i, add_virt_timer_periodic,
-						 &per_cpu(appldata_timer, i),
-						 1);
-		}
+		timer_interval = (u64) appldata_interval * 1000 * TOD_MICRO;
+		appldata_timer.expires = timer_interval;
+		add_virt_timer_periodic(&appldata_timer);
 		appldata_timer_active = 1;
 		break;
 	case APPLDATA_DEL_TIMER:
-		for_each_online_cpu(i)
-			del_virt_timer(&per_cpu(appldata_timer, i));
+		del_virt_timer(&appldata_timer);
 		if (!appldata_timer_active)
 			break;
 		appldata_timer_active = 0;
-		atomic_set(&appldata_expire_count, num_online_cpus());
 		break;
 	case APPLDATA_MOD_TIMER:
-		per_cpu_interval = (u64) (appldata_interval*1000 /
-					  num_online_cpus()) * TOD_MICRO;
+		timer_interval = (u64) appldata_interval * 1000 * TOD_MICRO;
 		if (!appldata_timer_active)
 			break;
-		for_each_online_cpu(i) {
-			struct {
-				struct vtimer_list *timer;
-				u64    expires;
-			} args;
-			args.timer = &per_cpu(appldata_timer, i);
-			args.expires = per_cpu_interval;
-			smp_call_function_single(i, __appldata_mod_vtimer_wrap,
-						 &args, 1);
-		}
+		mod_virt_timer_periodic(&appldata_timer, timer_interval);
 	}
 }
 
@@ -265,14 +227,12 @@ appldata_timer_handler(ctl_table *ctl, int write,
 	len = *lenp;
 	if (copy_from_user(buf, buffer, len > sizeof(buf) ? sizeof(buf) : len))
 		return -EFAULT;
-	get_online_cpus();
 	spin_lock(&appldata_timer_lock);
 	if (buf[0] == '1')
 		__appldata_vtimer_setup(APPLDATA_ADD_TIMER);
 	else if (buf[0] == '0')
 		__appldata_vtimer_setup(APPLDATA_DEL_TIMER);
 	spin_unlock(&appldata_timer_lock);
-	put_online_cpus();
 out:
 	*lenp = len;
 	*ppos += len;
@@ -305,20 +265,17 @@ appldata_interval_handler(ctl_table *ctl, int write,
 		goto out;
 	}
 	len = *lenp;
-	if (copy_from_user(buf, buffer, len > sizeof(buf) ? sizeof(buf) : len)) {
+	if (copy_from_user(buf, buffer, len > sizeof(buf) ? sizeof(buf) : len))
 		return -EFAULT;
-	}
 	interval = 0;
 	sscanf(buf, "%i", &interval);
 	if (interval <= 0)
 		return -EINVAL;
 
-	get_online_cpus();
 	spin_lock(&appldata_timer_lock);
 	appldata_interval = interval;
 	__appldata_vtimer_setup(APPLDATA_MOD_TIMER);
 	spin_unlock(&appldata_timer_lock);
-	put_online_cpus();
 out:
 	*lenp = len;
 	*ppos += len;
@@ -485,14 +442,12 @@ static int appldata_freeze(struct device *dev)
 	int rc;
 	struct list_head *lh;
 
-	get_online_cpus();
 	spin_lock(&appldata_timer_lock);
 	if (appldata_timer_active) {
 		__appldata_vtimer_setup(APPLDATA_DEL_TIMER);
 		appldata_timer_suspended = 1;
 	}
 	spin_unlock(&appldata_timer_lock);
-	put_online_cpus();
 
 	mutex_lock(&appldata_ops_mutex);
 	list_for_each(lh, &appldata_ops_list) {
@@ -516,14 +471,12 @@ static int appldata_restore(struct device *dev)
 	int rc;
 	struct list_head *lh;
 
-	get_online_cpus();
 	spin_lock(&appldata_timer_lock);
 	if (appldata_timer_suspended) {
 		__appldata_vtimer_setup(APPLDATA_ADD_TIMER);
 		appldata_timer_suspended = 0;
 	}
 	spin_unlock(&appldata_timer_lock);
-	put_online_cpus();
 
 	mutex_lock(&appldata_ops_mutex);
 	list_for_each(lh, &appldata_ops_list) {
@@ -567,53 +520,6 @@ static struct platform_driver appldata_pdrv = {
 
 /******************************* init / exit *********************************/
 
-static void __cpuinit appldata_online_cpu(int cpu)
-{
-	init_virt_timer(&per_cpu(appldata_timer, cpu));
-	per_cpu(appldata_timer, cpu).function = appldata_timer_function;
-	per_cpu(appldata_timer, cpu).data = (unsigned long)
-		&appldata_work;
-	atomic_inc(&appldata_expire_count);
-	spin_lock(&appldata_timer_lock);
-	__appldata_vtimer_setup(APPLDATA_MOD_TIMER);
-	spin_unlock(&appldata_timer_lock);
-}
-
-static void __cpuinit appldata_offline_cpu(int cpu)
-{
-	del_virt_timer(&per_cpu(appldata_timer, cpu));
-	if (atomic_dec_and_test(&appldata_expire_count)) {
-		atomic_set(&appldata_expire_count, num_online_cpus());
-		queue_work(appldata_wq, &appldata_work);
-	}
-	spin_lock(&appldata_timer_lock);
-	__appldata_vtimer_setup(APPLDATA_MOD_TIMER);
-	spin_unlock(&appldata_timer_lock);
-}
-
-static int __cpuinit appldata_cpu_notify(struct notifier_block *self,
-					 unsigned long action,
-					 void *hcpu)
-{
-	switch (action) {
-	case CPU_ONLINE:
-	case CPU_ONLINE_FROZEN:
-		appldata_online_cpu((long) hcpu);
-		break;
-	case CPU_DEAD:
-	case CPU_DEAD_FROZEN:
-		appldata_offline_cpu((long) hcpu);
-		break;
-	default:
-		break;
-	}
-	return NOTIFY_OK;
-}
-
-static struct notifier_block __cpuinitdata appldata_nb = {
-	.notifier_call = appldata_cpu_notify,
-};
-
 /*
  * appldata_init()
  *
@@ -621,7 +527,10 @@ static struct notifier_block __cpuinitdata appldata_nb = {
  */
 static int __init appldata_init(void)
 {
-	int i, rc;
+	int rc;
+
+	appldata_timer.function = appldata_timer_function;
+	appldata_timer.data = (unsigned long) &appldata_work;
 
 	rc = platform_driver_register(&appldata_pdrv);
 	if (rc)
@@ -638,14 +547,6 @@ static int __init appldata_init(void)
 		rc = -ENOMEM;
 		goto out_device;
 	}
-
-	get_online_cpus();
-	for_each_online_cpu(i)
-		appldata_online_cpu(i);
-	put_online_cpus();
-
-	/* Register cpu hotplug notifier */
-	register_hotcpu_notifier(&appldata_nb);
 
 	appldata_sysctl_header = register_sysctl_table(appldata_dir_table);
 	return 0;
