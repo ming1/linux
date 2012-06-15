@@ -14,7 +14,6 @@
 #ifndef _TPCI200_H_
 #define _TPCI200_H_
 
-#include <linux/version.h>
 #include <linux/limits.h>
 #include <linux/pci.h>
 #include <linux/spinlock.h>
@@ -106,14 +105,12 @@
  * @vector	Vector number
  * @handler	Handler called when IRQ arrives
  * @arg		Handler argument
- * @name	IRQ name
  *
  */
 struct slot_irq {
 	int		vector;
 	int		(*handler)(void *);
 	void		*arg;
-	const char	*name;
 };
 
 /**

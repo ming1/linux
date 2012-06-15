@@ -49,7 +49,6 @@ Devices: [JR3] PCI force sensor board (jr3_pci)
 #include <linux/slab.h>
 #include <linux/timer.h>
 #include <linux/kernel.h>
-#include "comedi_pci.h"
 #include "jr3_pci.h"
 
 #define PCI_VENDOR_ID_JR3 0x1762
@@ -827,9 +826,9 @@ static int jr3_pci_attach(struct comedi_device *dev,
 	if (!devpriv->iobase)
 		return -ENOMEM;
 
-	result = alloc_subdevices(dev, devpriv->n_channels);
-	if (result < 0)
-		goto out;
+	result = comedi_alloc_subdevices(dev, devpriv->n_channels);
+	if (result)
+		return result;
 
 	dev->open = jr3_pci_open;
 	for (i = 0; i < devpriv->n_channels; i++) {
