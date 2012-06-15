@@ -1611,7 +1611,7 @@ static int disconnect(struct sock *sk, struct hci_dev *hdev, void *data,
 	}
 
 	dc.handle = cpu_to_le16(conn->handle);
-	dc.reason = 0x13; /* Remote User Terminated Connection */
+	dc.reason = HCI_ERROR_REMOTE_USER_TERM;
 
 	err = hci_send_cmd(hdev, HCI_OP_DISCONNECT, sizeof(dc), &dc);
 	if (err < 0)
@@ -3546,9 +3546,9 @@ int mgmt_device_found(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 link_type,
 	ev->addr.type = link_to_bdaddr(link_type, addr_type);
 	ev->rssi = rssi;
 	if (cfm_name)
-		ev->flags[0] |= MGMT_DEV_FOUND_CONFIRM_NAME;
+		ev->flags |= MGMT_DEV_FOUND_CONFIRM_NAME;
 	if (!ssp)
-		ev->flags[0] |= MGMT_DEV_FOUND_LEGACY_PAIRING;
+		ev->flags |= MGMT_DEV_FOUND_LEGACY_PAIRING;
 
 	if (eir_len > 0)
 		memcpy(ev->eir, eir, eir_len);
@@ -3558,6 +3558,7 @@ int mgmt_device_found(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 link_type,
 					  dev_class, 3);
 
 	ev->eir_len = cpu_to_le16(eir_len);
+	ev->flags = cpu_to_le32(ev->flags);
 
 	ev_size = sizeof(*ev) + eir_len;
 
