@@ -734,7 +734,6 @@ MACHINE_END
 #ifdef CONFIG_MACH_UX500_DT
 
 static struct platform_device *snowball_of_platform_devs[] __initdata = {
-	&snowball_led_dev,
 	&snowball_key_dev,
 };
 
@@ -819,7 +818,7 @@ static void __init u8500_init_machine(void)
 	} else if (of_machine_is_compatible("calaosystems,snowball-a9500")) {
 		/*
 		 * Devices to be DT:ed:
-		 *   snowball_led_dev   = todo
+		 *   snowball_led_dev   = done
 		 *   snowball_key_dev   = todo
 		 *   snowball_sbnet_dev = done
 		 *   ab8500_device      = done
