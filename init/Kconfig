@@ -1039,7 +1039,7 @@ config SCHED_AUTOGROUP
 	  upon task session.
 
 config MM_OWNER
-	bool
+	def_bool NUMA
 
 config SYSFS_DEPRECATED
 	bool "Enable deprecated sysfs features to support old userspace tools"
