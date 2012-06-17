@@ -10,3 +10,6 @@ dependencies:
 
 next/drivers:
 devel/led-driver	git://git.kernel.org/pub/scm/linux/kernel/git/cooloney/linux-leds.git for-arm-soc
+
+next/soc:
+nomadik/drivercfg	git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-nomadik.git nomadik-for-arm-soc
