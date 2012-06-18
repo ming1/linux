@@ -127,11 +127,6 @@
 #define NUMUSBDUXFAST	16
 
 /*
- * number of subdevices
- */
-#define N_SUBDEVICES	1
-
-/*
  * analogue in subdevice
  */
 #define SUBDEV_AD	0
@@ -1671,14 +1666,8 @@ static int usbduxfast_attach(struct comedi_device *dev,
 
 	dev->board_name = BOARDNAME;
 
-	/* set number of subdevices */
-	dev->n_subdevices = N_SUBDEVICES;
-
-	/* allocate space for the subdevices */
-	ret = alloc_subdevices(dev, N_SUBDEVICES);
-	if (ret < 0) {
-		printk(KERN_ERR "comedi%d: usbduxfast: error alloc space for "
-		       "subdev\n", dev->minor);
+	ret = comedi_alloc_subdevices(dev, 1);
+	if (ret) {
 		up(&(usbduxfastsub[index].sem));
 		up(&start_stop_sem);
 		return ret;

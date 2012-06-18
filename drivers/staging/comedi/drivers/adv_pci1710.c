@@ -45,8 +45,6 @@ Configuration options:
 
 #include "../comedidev.h"
 
-#include "comedi_pci.h"
-
 #include "8253.h"
 #include "amcc_s5933.h"
 
@@ -1435,8 +1433,8 @@ static int pci1710_attach(struct comedi_device *dev,
 	if (this_board->n_counter)
 		n_subdevices++;
 
-	ret = alloc_subdevices(dev, n_subdevices);
-	if (ret < 0)
+	ret = comedi_alloc_subdevices(dev, n_subdevices);
+	if (ret)
 		return ret;
 
 	pci1710_reset(dev);
