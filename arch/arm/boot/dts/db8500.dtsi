@@ -437,6 +437,13 @@
 			interrupts = <0 21 0x4>;
 			#address-cells = <1>;
 			#size-cells = <0>;
+
+			clock-frequency = <400000>;
+			stericsson,slsu = <0xe>;
+			stericsson,tft = <1>;
+			stericsson,rft = <8>;
+			stericsson,timeout = <200>;
+			stericsson,i2c_freq_mode_fast;
 		};
 
 		i2c@80122000 {
@@ -445,6 +452,13 @@
 			interrupts = <0 22 0x4>;
 			#address-cells = <1>;
 			#size-cells = <0>;
+
+			clock-frequency = <400000>;
+			stericsson,slsu = <0xe>;
+			stericsson,tft = <1>;
+			stericsson,rft = <8>;
+			stericsson,timeout = <200>;
+			stericsson,i2c_freq_mode_fast;
 		};
 
 		i2c@80128000 {
@@ -453,6 +467,13 @@
 			interrupts = <0 55 0x4>;
 			#address-cells = <1>;
 			#size-cells = <0>;
+
+			clock-frequency = <400000>;
+			stericsson,slsu = <0xe>;
+			stericsson,tft = <1>;
+			stericsson,rft = <8>;
+			stericsson,timeout = <200>;
+			stericsson,i2c_freq_mode_fast;
 		};
 
 		i2c@80110000 {
@@ -461,6 +482,13 @@
 			interrupts = <0 12 0x4>;
 			#address-cells = <1>;
 			#size-cells = <0>;
+
+			clock-frequency = <400000>;
+			stericsson,slsu = <0xe>;
+			stericsson,tft = <1>;
+			stericsson,rft = <8>;
+			stericsson,timeout = <200>;
+			stericsson,i2c_freq_mode_fast;
 		};
 
 		i2c@8012a000 {
@@ -469,6 +497,13 @@
 			interrupts = <0 51 0x4>;
 			#address-cells = <1>;
 			#size-cells = <0>;
+
+			clock-frequency = <400000>;
+			stericsson,slsu = <0xe>;
+			stericsson,tft = <1>;
+			stericsson,rft = <8>;
+			stericsson,timeout = <200>;
+			stericsson,i2c_freq_mode_fast;
 		};
 
 		ssp@80002000 {
