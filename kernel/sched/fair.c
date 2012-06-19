@@ -3088,18 +3088,18 @@ static unsigned long __read_mostly max_load_balance_interval = HZ/10;
 struct lb_env {
 	struct sched_domain	*sd;
 
-	int			src_cpu;
 	struct rq		*src_rq;
+	int			src_cpu;
 
 	int			dst_cpu;
 	struct rq		*dst_rq;
 
 	enum cpu_idle_type	idle;
 	long			imbalance;
-	unsigned int		flags;
 
 	struct list_head	*tasks;
 
+	unsigned int		flags;
 	unsigned int		loop;
 	unsigned int		loop_break;
 	unsigned int		loop_max;
