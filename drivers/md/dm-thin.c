@@ -1218,7 +1218,7 @@ static void process_discard(struct thin_c *tc, struct bio *bio)
 			 */
 			m = get_next_mapping(pool);
 			m->tc = tc;
-			m->pass_discard = (!lookup_result.shared) & pool->pf.discard_passdown;
+			m->pass_discard = (!lookup_result.shared) && pool->pf.discard_passdown;
 			m->virt_block = block;
 			m->data_block = lookup_result.block;
 			m->cell = cell;
@@ -1825,15 +1825,19 @@ static struct pool *__pool_find(struct mapped_device *pool_md,
 	struct pool *pool = __pool_table_lookup_metadata_dev(metadata_dev);
 
 	if (pool) {
-		if (pool->pool_md != pool_md)
+		if (pool->pool_md != pool_md) {
+			*error = "metadata device already in use by a pool";
 			return ERR_PTR(-EBUSY);
+		}
 		__pool_inc(pool);
 
 	} else {
 		pool = __pool_table_lookup(pool_md);
 		if (pool) {
-			if (pool->md_dev != metadata_dev)
+			if (pool->md_dev != metadata_dev) {
+				*error = "different pool cannot replace a pool";
 				return ERR_PTR(-EINVAL);
+			}
 			__pool_inc(pool);
 
 		} else {
@@ -2614,7 +2618,10 @@ static int thin_ctr(struct dm_target *ti, unsigned argc, char **argv)
 		goto bad_thin_open;
 	}
 
-	ti->split_io = tc->pool->sectors_per_block;
+	r = dm_set_target_max_io_len(ti, tc->pool->sectors_per_block);
+	if (r)
+		goto bad_thin_open;
+
 	ti->num_flush_requests = 1;
 
 	/* In case the pool supports discards, pass them on. */
