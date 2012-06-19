@@ -42,6 +42,7 @@
 #include <linux/virtio.h>
 #include <linux/completion.h>
 #include <linux/idr.h>
+#include <linux/firmware.h>
 
 /**
  * struct resource_table - firmware resource table header
@@ -325,6 +326,14 @@ struct rproc_mem_entry {
 };
 
 struct rproc;
+
+struct resource_table *rproc_find_rsc_table(struct rproc *rproc,
+						const struct firmware *fw,
+						int *tablesz);
+int rproc_load_segments(struct rproc *rproc, const struct firmware *fw);
+int rproc_fw_sanity_check(struct rproc *rproc, const struct firmware *fw);
+u32 rproc_get_boot_addr(struct rproc *rproc, const struct firmware *fw);
+
 
 /**
  * struct rproc_ops - platform-specific device handlers

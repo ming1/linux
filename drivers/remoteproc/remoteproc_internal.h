@@ -40,5 +40,6 @@ void rproc_delete_debug_dir(struct rproc *rproc);
 void rproc_create_debug_dir(struct rproc *rproc);
 void rproc_init_debugfs(void);
 void rproc_exit_debugfs(void);
+void *rproc_da_to_va(struct rproc *rproc, u64 da, int len);
 
 #endif /* REMOTEPROC_INTERNAL_H */
