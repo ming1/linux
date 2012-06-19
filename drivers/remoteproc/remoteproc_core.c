@@ -188,6 +188,7 @@ void *rproc_da_to_va(struct rproc *rproc, u64 da, int len)
 
 	return ptr;
 }
+EXPORT_SYMBOL(rproc_da_to_va);
 
 static int
 __rproc_handle_vring(struct rproc_vdev *rvdev, struct fw_rsc_vdev *rsc, int i)
@@ -1250,6 +1251,9 @@ struct rproc *rproc_alloc(struct device *dev, const char *name,
 	rproc->priv = &rproc[1];
 
 	atomic_set(&rproc->power, 0);
+
+	/* Set ELF as the default fw_ops handler */
+	rproc->fw_ops = &rproc_elf_fw_ops;
 
 	kref_init(&rproc->refcount);
 
