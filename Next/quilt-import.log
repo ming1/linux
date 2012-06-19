@@ -1,0 +1,25 @@
+Importing i2c based on 3.5-rc3
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard 485802a6c524e62b5924849dd727ddbb1497cc71
+HEAD is now at 485802a Linux 3.5-rc3
+$ git am ../quilt/i2c/i2c-use-module_pci_driver.patch
+Applying: i2c/busses: Use module_pci_driver
+$ git am ../quilt/i2c/i2c-piix4-01-eliminate-piix4_smba-global-variable.patch
+Applying: i2c-piix4: Eliminate piix4_smba global variable
+$ git am ../quilt/i2c/i2c-piix4-02-separate-registration-and-probing-code.patch
+Applying: i2c-piix4: Separate registration and probing code
+$ git am ../quilt/i2c/i2c-piix4-03-support-amd-auxiliary-smbus-controller.patch
+Applying: i2c-piix4: Support AMD auxiliary SMBus controller
+$ git am ../quilt/i2c/i2c-writing-clients-mention-module_i2c_driver.patch
+Applying: i2c/writing-clients: Mention module_i2c_driver()
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/i2c
+From ../quilt-tmp
+ + ec4311d...85087e3 master     -> quilt/i2c  (forced update)
+Importing jdelvare-hwmon based on 3.5-rc3
+Unchanged quilt series jdelvare-hwmon
+Importing rr based on v3.5-rc1
+Unchanged quilt series rr
+Importing device-mapper based on v3.5-rc1
+Unchanged quilt series device-mapper
