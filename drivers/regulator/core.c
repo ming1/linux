@@ -2332,6 +2332,7 @@ int regulator_set_voltage_time_sel(struct regulator_dev *rdev,
 
 	return DIV_ROUND_UP(abs(new_volt - old_volt), ramp_delay);
 }
+EXPORT_SYMBOL_GPL(regulator_set_voltage_time_sel);
 
 /**
  * regulator_sync_voltage - re-apply last regulator output voltage
