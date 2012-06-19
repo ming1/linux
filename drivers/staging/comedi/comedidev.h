@@ -40,6 +40,7 @@
 #include <linux/uaccess.h>
 #include <linux/io.h>
 #include <linux/timer.h>
+#include <linux/pci.h>
 
 #include "comedi.h"
 
@@ -180,7 +181,6 @@ struct comedi_async {
 			unsigned int x);
 };
 
-struct pci_dev;
 struct usb_interface;
 
 struct comedi_driver {
@@ -292,6 +292,8 @@ static inline struct comedi_subdevice *comedi_get_write_subdevice(
 	return info->device->write_subdev;
 }
 
+int comedi_alloc_subdevices(struct comedi_device *, int);
+
 void comedi_device_detach(struct comedi_device *dev);
 int comedi_device_attach(struct comedi_device *dev,
 			 struct comedi_devconfig *it);
@@ -310,7 +312,8 @@ int comedi_driver_unregister(struct comedi_driver *);
 	module_driver(__comedi_driver, comedi_driver_register, \
 			comedi_driver_unregister)
 
-struct pci_driver;
+int comedi_pci_enable(struct pci_dev *, const char *);
+void comedi_pci_disable(struct pci_dev *);
 
 int comedi_pci_driver_register(struct comedi_driver *, struct pci_driver *);
 void comedi_pci_driver_unregister(struct comedi_driver *, struct pci_driver *);
@@ -411,26 +414,6 @@ struct comedi_lrange {
 };
 
 /* some silly little inline functions */
-
-static inline int alloc_subdevices(struct comedi_device *dev,
-				   unsigned int num_subdevices)
-{
-	unsigned i;
-
-	dev->n_subdevices = num_subdevices;
-	dev->subdevices =
-	    kcalloc(num_subdevices, sizeof(struct comedi_subdevice),
-		    GFP_KERNEL);
-	if (!dev->subdevices)
-		return -ENOMEM;
-	for (i = 0; i < num_subdevices; ++i) {
-		dev->subdevices[i].device = dev;
-		dev->subdevices[i].async_dma_dir = DMA_NONE;
-		spin_lock_init(&dev->subdevices[i].spin_lock);
-		dev->subdevices[i].minor = -1;
-	}
-	return 0;
-}
 
 static inline int alloc_private(struct comedi_device *dev, int size)
 {

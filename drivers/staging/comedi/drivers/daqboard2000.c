@@ -118,7 +118,6 @@ Configuration options:
 #include <linux/delay.h>
 #include <linux/interrupt.h>
 
-#include "comedi_pci.h"
 #include "8255.h"
 
 #define DAQBOARD2000_SUBSYSTEM_IDS2 	0x00021616	/* Daqboard/2000 - 2 Dacs */
@@ -773,9 +772,9 @@ static int daqboard2000_attach(struct comedi_device *dev,
 	if (!devpriv->plx || !devpriv->daq)
 		return -ENOMEM;
 
-	result = alloc_subdevices(dev, 3);
-	if (result < 0)
-		goto out;
+	result = comedi_alloc_subdevices(dev, 3);
+	if (result)
+		return result;
 
 	readl(devpriv->plx + 0x6c);
 
