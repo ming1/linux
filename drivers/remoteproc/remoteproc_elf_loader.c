@@ -33,13 +33,14 @@
 #include "remoteproc_internal.h"
 
 /**
- * rproc_fw_sanity_check() - Sanity Check ELF firmware image
+ * rproc_elf_sanity_check() - ELF firmware image sanity check
+ * @rproc: the rproc handle
  * @fw: the ELF firmware image
  *
  * Make sure this fw image is sane.
  */
-int
-rproc_fw_sanity_check(struct rproc *rproc, const struct firmware *fw)
+static int
+rproc_elf_sanity_check(struct rproc *rproc, const struct firmware *fw)
 {
 	const char *name = rproc->firmware;
 	struct device *dev = rproc->dev;
@@ -99,21 +100,23 @@ rproc_fw_sanity_check(struct rproc *rproc, const struct firmware *fw)
 }
 
 /**
- * rproc_get_boot_addr() - Get rproc's boot address.
+ * rproc_elf_get_boot_addr() - Get rproc's boot address.
+ * @rproc: the rproc handle
  * @fw: the ELF firmware image
  *
  * This function reads the ELF entry point address.
  * Note that the boot address is not a configurable property of all remote
  * processors. Some will always boot at a specific hard-coded address.
  */
-u32 rproc_get_boot_addr(struct rproc *rproc, const struct firmware *fw)
+static
+u32 rproc_elf_get_boot_addr(struct rproc *rproc, const struct firmware *fw)
 {
 	struct elf32_hdr *ehdr  = (struct elf32_hdr *)fw->data;
 	return ehdr->e_entry;
 }
 
 /**
- * rproc_load_segments() - load firmware segments to memory
+ * rproc_elf_load_segments() - load firmware segments to memory
  * @rproc: remote processor which will be booted using these fw segments
  * @fw: the  the ELF firmware image
  *
@@ -136,8 +139,8 @@ u32 rproc_get_boot_addr(struct rproc *rproc, const struct firmware *fw)
  * directly allocate memory for every segment/resource. This is not yet
  * supported, though.
  */
-int
-rproc_load_segments(struct rproc *rproc, const struct firmware *fw)
+static int
+rproc_elf_load_segments(struct rproc *rproc, const struct firmware *fw)
 {
 	struct device *dev = rproc->dev;
 	struct elf32_hdr *ehdr;
@@ -203,7 +206,7 @@ rproc_load_segments(struct rproc *rproc, const struct firmware *fw)
 }
 
 /**
- * rproc_find_rsc_table() - find the resource table
+ * rproc_elf_find_rsc_table() - find the resource table
  * @rproc: the rproc handle
  * @fw: the ELF firmware image
  * @tablesz: place holder for providing back the table size
@@ -217,8 +220,8 @@ rproc_load_segments(struct rproc *rproc, const struct firmware *fw)
  * size into @tablesz. If a valid table isn't found, NULL is returned
  * (and @tablesz isn't set).
  */
-struct resource_table *
-rproc_find_rsc_table(struct rproc *rproc, const struct firmware *fw,
+static struct resource_table *
+rproc_elf_find_rsc_table(struct rproc *rproc, const struct firmware *fw,
 							int *tablesz)
 {
 	struct elf32_hdr *ehdr;
@@ -280,3 +283,10 @@ rproc_find_rsc_table(struct rproc *rproc, const struct firmware *fw,
 
 	return table;
 }
+
+const struct rproc_fw_ops rproc_elf_fw_ops = {
+	.load = rproc_elf_load_segments,
+	.find_rsc_table = rproc_elf_find_rsc_table,
+	.sanity_check = rproc_elf_sanity_check,
+	.get_boot_addr = rproc_elf_get_boot_addr
+};
