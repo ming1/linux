@@ -4,7 +4,7 @@
 /*
  * Compile time versions of __arch_hweightN()
  */
-#define __const_hweight8(w)		\
+#define __const_hweight8(w)	(unsigned long)	\
       (	(!!((w) & (1ULL << 0))) +	\
 	(!!((w) & (1ULL << 1))) +	\
 	(!!((w) & (1ULL << 2))) +	\
