@@ -71,7 +71,7 @@
 
 /* LDO_CTRL bitfields */
 #define TPS65023_LDO_CTRL_LDOx_SHIFT(ldo_id)	((ldo_id)*4)
-#define TPS65023_LDO_CTRL_LDOx_MASK(ldo_id)	(0x0F << ((ldo_id)*4))
+#define TPS65023_LDO_CTRL_LDOx_MASK(ldo_id)	(0x07 << ((ldo_id)*4))
 
 /* Number of step-down converters available */
 #define TPS65023_NUM_DCDC		3
@@ -324,7 +324,10 @@ static int __devinit tps_65023_probe(struct i2c_client *client,
 
 		tps->desc[i].name = info->name;
 		tps->desc[i].id = i;
-		tps->desc[i].n_voltages = info->table_len;
+		if (info->fixed)
+			tps->desc[i].n_voltages = 1;
+		else
+			tps->desc[i].n_voltages = info->table_len;
 		tps->desc[i].ops = (i > TPS65023_DCDC_3 ?
 					&tps65023_ldo_ops : &tps65023_dcdc_ops);
 		tps->desc[i].type = REGULATOR_VOLTAGE;
