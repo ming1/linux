@@ -1,7 +1,7 @@
 /*
  * wm8904.c  --  WM8904 ALSA SoC Audio driver
  *
- * Copyright 2009 Wolfson Microelectronics plc
+ * Copyright 2009-12 Wolfson Microelectronics plc
  *
  * Author: Mark Brown <broonie@opensource.wolfsonmicro.com>
  *
@@ -2261,7 +2261,7 @@ static __devinit int wm8904_i2c_probe(struct i2c_client *i2c,
 	if (wm8904 == NULL)
 		return -ENOMEM;
 
-	wm8904->regmap = regmap_init_i2c(i2c, &wm8904_regmap);
+	wm8904->regmap = devm_regmap_init_i2c(i2c, &wm8904_regmap);
 	if (IS_ERR(wm8904->regmap)) {
 		ret = PTR_ERR(wm8904->regmap);
 		dev_err(&i2c->dev, "Failed to allocate register map: %d\n",
@@ -2281,15 +2281,12 @@ static __devinit int wm8904_i2c_probe(struct i2c_client *i2c,
 	return 0;
 
 err:
-	regmap_exit(wm8904->regmap);
 	return ret;
 }
 
 static __devexit int wm8904_i2c_remove(struct i2c_client *client)
 {
-	struct wm8904_priv *wm8904 = i2c_get_clientdata(client);
 	snd_soc_unregister_codec(&client->dev);
-	regmap_exit(wm8904->regmap);
 	return 0;
 }
 
@@ -2311,23 +2308,7 @@ static struct i2c_driver wm8904_i2c_driver = {
 	.id_table = wm8904_i2c_id,
 };
 
-static int __init wm8904_modinit(void)
-{
-	int ret = 0;
-	ret = i2c_add_driver(&wm8904_i2c_driver);
-	if (ret != 0) {
-		printk(KERN_ERR "Failed to register wm8904 I2C driver: %d\n",
-		       ret);
-	}
-	return ret;
-}
-module_init(wm8904_modinit);
-
-static void __exit wm8904_exit(void)
-{
-	i2c_del_driver(&wm8904_i2c_driver);
-}
-module_exit(wm8904_exit);
+module_i2c_driver(wm8904_i2c_driver);
 
 MODULE_DESCRIPTION("ASoC WM8904 driver");
 MODULE_AUTHOR("Mark Brown <broonie@opensource.wolfsonmicro.com>");
