@@ -68,17 +68,21 @@ static void __init rcu_bootup_announce_oddness(void)
 	printk(KERN_INFO "\tAdditional per-CPU info printed with stalls.\n");
 #endif
 #if NUM_RCU_LVL_4 != 0
-	printk(KERN_INFO "\tExperimental four-level hierarchy is enabled.\n");
+	printk(KERN_INFO "\tFour-level hierarchy is enabled.\n");
 #endif
+	if (rcu_fanout_leaf != CONFIG_RCU_FANOUT_LEAF)
+		printk(KERN_INFO "\tExperimental boot-time adjustment of leaf fanout.\n");
+	if (nr_cpu_ids != NR_CPUS)
+		printk(KERN_INFO "\tRCU restricting CPUs from NR_CPUS=%d to nr_cpu_ids=%d.\n", NR_CPUS, nr_cpu_ids);
 }
 
 #ifdef CONFIG_TREE_PREEMPT_RCU
 
-struct rcu_state rcu_preempt_state = RCU_STATE_INITIALIZER(rcu_preempt);
+struct rcu_state rcu_preempt_state =
+	RCU_STATE_INITIALIZER(rcu_preempt, call_rcu);
 DEFINE_PER_CPU(struct rcu_data, rcu_preempt_data);
 static struct rcu_state *rcu_state = &rcu_preempt_state;
 
-static void rcu_read_unlock_special(struct task_struct *t);
 static int rcu_preempted_readers_exp(struct rcu_node *rnp);
 
 /*
@@ -233,18 +237,6 @@ void rcu_preempt_note_context_switch(void)
 }
 
 /*
- * Tree-preemptible RCU implementation for rcu_read_lock().
- * Just increment ->rcu_read_lock_nesting, shared state will be updated
- * if we block.
- */
-void __rcu_read_lock(void)
-{
-	current->rcu_read_lock_nesting++;
-	barrier();  /* needed if we ever invoke rcu_read_lock in rcutree.c */
-}
-EXPORT_SYMBOL_GPL(__rcu_read_lock);
-
-/*
  * Check for preempted RCU readers blocking the current grace period
  * for the specified rcu_node structure.  If the caller needs a reliable
  * answer, it must hold the rcu_node's ->lock.
@@ -310,7 +302,7 @@ static struct list_head *rcu_next_node_entry(struct task_struct *t,
  * notify RCU core processing or task having blocked during the RCU
  * read-side critical section.
  */
-static noinline void rcu_read_unlock_special(struct task_struct *t)
+void rcu_read_unlock_special(struct task_struct *t)
 {
 	int empty;
 	int empty_exp;
@@ -417,38 +409,6 @@ static noinline void rcu_read_unlock_special(struct task_struct *t)
 		local_irq_restore(flags);
 	}
 }
-
-/*
- * Tree-preemptible RCU implementation for rcu_read_unlock().
- * Decrement ->rcu_read_lock_nesting.  If the result is zero (outermost
- * rcu_read_unlock()) and ->rcu_read_unlock_special is non-zero, then
- * invoke rcu_read_unlock_special() to clean up after a context switch
- * in an RCU read-side critical section and other special cases.
- */
-void __rcu_read_unlock(void)
-{
-	struct task_struct *t = current;
-
-	if (t->rcu_read_lock_nesting != 1)
-		--t->rcu_read_lock_nesting;
-	else {
-		barrier();  /* critical section before exit code. */
-		t->rcu_read_lock_nesting = INT_MIN;
-		barrier();  /* assign before ->rcu_read_unlock_special load */
-		if (unlikely(ACCESS_ONCE(t->rcu_read_unlock_special)))
-			rcu_read_unlock_special(t);
-		barrier();  /* ->rcu_read_unlock_special load before assign */
-		t->rcu_read_lock_nesting = 0;
-	}
-#ifdef CONFIG_PROVE_LOCKING
-	{
-		int rrln = ACCESS_ONCE(t->rcu_read_lock_nesting);
-
-		WARN_ON_ONCE(rrln < 0 && rrln > INT_MIN / 2);
-	}
-#endif /* #ifdef CONFIG_PROVE_LOCKING */
-}
-EXPORT_SYMBOL_GPL(__rcu_read_unlock);
 
 #ifdef CONFIG_RCU_CPU_STALL_VERBOSE
 
@@ -940,7 +900,7 @@ static int rcu_preempt_cpu_has_callbacks(int cpu)
  */
 void rcu_barrier(void)
 {
-	_rcu_barrier(&rcu_preempt_state, call_rcu);
+	_rcu_barrier(&rcu_preempt_state);
 }
 EXPORT_SYMBOL_GPL(rcu_barrier);
 
@@ -2182,7 +2142,7 @@ static void rcu_prepare_for_idle(int cpu)
 					   jiffies + RCU_IDLE_GP_DELAY;
 		} else {
 			rdtp->idle_gp_timer_expires =
-					   jiffies + RCU_IDLE_LAZY_GP_DELAY;
+				round_jiffies(jiffies + RCU_IDLE_LAZY_GP_DELAY);
 			trace_rcu_prep_idle("Dyntick with lazy callbacks");
 		}
 		tp = &rdtp->idle_gp_timer;
