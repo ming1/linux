@@ -221,8 +221,6 @@ struct dt282x_board {
 	int dabits;
 };
 
-#define this_board ((const struct dt282x_board *)dev->board_ptr)
-
 struct dt282x_private {
 	int ad_2scomp;		/* we have 2's comp jumper set  */
 	int da0_2scomp;		/* same, for DAC0               */
@@ -580,6 +578,7 @@ static int dt282x_ai_insn_read(struct comedi_device *dev,
 static int dt282x_ai_cmdtest(struct comedi_device *dev,
 			     struct comedi_subdevice *s, struct comedi_cmd *cmd)
 {
+	const struct dt282x_board *board = comedi_board(dev);
 	int err = 0;
 	int tmp;
 
@@ -658,8 +657,8 @@ static int dt282x_ai_cmdtest(struct comedi_device *dev,
 		cmd->convert_arg = SLOWEST_TIMER;
 		err++;
 	}
-	if (cmd->convert_arg < this_board->ai_speed) {
-		cmd->convert_arg = this_board->ai_speed;
+	if (cmd->convert_arg < board->ai_speed) {
+		cmd->convert_arg = board->ai_speed;
 		err++;
 	}
 	if (cmd->scan_end_arg != cmd->chanlist_len) {
@@ -694,6 +693,7 @@ static int dt282x_ai_cmdtest(struct comedi_device *dev,
 
 static int dt282x_ai_cmd(struct comedi_device *dev, struct comedi_subdevice *s)
 {
+	const struct dt282x_board *board = comedi_board(dev);
 	struct comedi_cmd *cmd = &s->async->cmd;
 	int timer;
 
@@ -706,8 +706,8 @@ static int dt282x_ai_cmd(struct comedi_device *dev, struct comedi_subdevice *s)
 
 	dt282x_disable_dma(dev);
 
-	if (cmd->convert_arg < this_board->ai_speed)
-		cmd->convert_arg = this_board->ai_speed;
+	if (cmd->convert_arg < board->ai_speed)
+		cmd->convert_arg = board->ai_speed;
 	timer = dt282x_ns_to_timer(&cmd->convert_arg, TRIG_ROUND_NEAREST);
 	outw(timer, dev->iobase + DT2821_TMRCTR);
 
@@ -1038,7 +1038,7 @@ static int dt282x_dio_insn_bits(struct comedi_device *dev,
 	}
 	data[1] = inw(dev->iobase + DT2821_DIODAT);
 
-	return 2;
+	return insn->n;
 }
 
 static int dt282x_dio_insn_config(struct comedi_device *dev,
@@ -1176,12 +1176,13 @@ static int dt282x_grab_dma(struct comedi_device *dev, int dma1, int dma2)
  */
 static int dt282x_attach(struct comedi_device *dev, struct comedi_devconfig *it)
 {
+	const struct dt282x_board *board = comedi_board(dev);
 	int i, irq;
 	int ret;
 	struct comedi_subdevice *s;
 	unsigned long iobase;
 
-	dev->board_name = this_board->name;
+	dev->board_name = board->name;
 
 	iobase = it->options[opt_iobase];
 	if (!iobase)
@@ -1267,8 +1268,8 @@ static int dt282x_attach(struct comedi_device *dev, struct comedi_devconfig *it)
 	if (ret < 0)
 		return ret;
 
-	ret = alloc_subdevices(dev, 3);
-	if (ret < 0)
+	ret = comedi_alloc_subdevices(dev, 3);
+	if (ret)
 		return ret;
 
 	s = dev->subdevices + 0;

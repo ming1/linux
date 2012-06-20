@@ -45,8 +45,6 @@ Configuration options:
 
 #include "../comedidev.h"
 
-#include "comedi_pci.h"
-
 #include "8253.h"
 #include "amcc_s5933.h"
 
@@ -437,7 +435,7 @@ static int pci171x_insn_bits_di(struct comedi_device *dev,
 {
 	data[1] = inw(dev->iobase + PCI171x_DI);
 
-	return 2;
+	return insn->n;
 }
 
 /*
@@ -454,7 +452,7 @@ static int pci171x_insn_bits_do(struct comedi_device *dev,
 	}
 	data[1] = s->state;
 
-	return 2;
+	return insn->n;
 }
 
 /*
@@ -1349,7 +1347,7 @@ static int pci1710_attach(struct comedi_device *dev,
 	int i;
 	int board_index;
 
-	dev_info(dev->hw_dev, "comedi%d: adv_pci1710:\n", dev->minor);
+	dev_info(dev->class_dev, DRV_NAME ": attach\n");
 
 	opt_bus = it->options[0];
 	opt_slot = it->options[1];
@@ -1401,10 +1399,10 @@ static int pci1710_attach(struct comedi_device *dev,
 
 	if (!pcidev) {
 		if (opt_bus || opt_slot) {
-			dev_err(dev->hw_dev, "- Card at b:s %d:%d %s\n",
+			dev_err(dev->class_dev, "- Card at b:s %d:%d %s\n",
 				opt_bus, opt_slot, errstr);
 		} else {
-			dev_err(dev->hw_dev, "- Card %s\n", errstr);
+			dev_err(dev->class_dev, "- Card %s\n", errstr);
 		}
 		return -EIO;
 	}
@@ -1415,8 +1413,8 @@ static int pci1710_attach(struct comedi_device *dev,
 	irq = pcidev->irq;
 	iobase = pci_resource_start(pcidev, 2);
 
-	dev_dbg(dev->hw_dev, "b:s:f=%d:%d:%d, io=0x%4lx\n", pci_bus, pci_slot,
-		pci_func, iobase);
+	dev_dbg(dev->class_dev, "b:s:f=%d:%d:%d, io=0x%4lx\n",
+		pci_bus, pci_slot, pci_func, iobase);
 
 	dev->iobase = iobase;
 
@@ -1435,8 +1433,8 @@ static int pci1710_attach(struct comedi_device *dev,
 	if (this_board->n_counter)
 		n_subdevices++;
 
-	ret = alloc_subdevices(dev, n_subdevices);
-	if (ret < 0)
+	ret = comedi_alloc_subdevices(dev, n_subdevices);
+	if (ret)
 		return ret;
 
 	pci1710_reset(dev);
@@ -1446,14 +1444,15 @@ static int pci1710_attach(struct comedi_device *dev,
 			if (request_irq(irq, interrupt_service_pci1710,
 					IRQF_SHARED, "Advantech PCI-1710",
 					dev)) {
-				dev_dbg(dev->hw_dev, "unable to allocate IRQ %d, DISABLING IT",
+				dev_dbg(dev->class_dev,
+					"unable to allocate IRQ %d, DISABLING IT",
 					irq);
 				irq = 0;	/* Can't use IRQ */
 			} else {
-				dev_dbg(dev->hw_dev, "irq=%u", irq);
+				dev_dbg(dev->class_dev, "irq=%u", irq);
 			}
 		} else {
-			dev_dbg(dev->hw_dev, "IRQ disabled");
+			dev_dbg(dev->class_dev, "IRQ disabled");
 		}
 	} else {
 		irq = 0;

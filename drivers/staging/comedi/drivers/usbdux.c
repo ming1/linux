@@ -1780,9 +1780,6 @@ static int usbdux_dio_insn_bits(struct comedi_device *dev,
 	if (!this_usbduxsub)
 		return -EFAULT;
 
-	if (insn->n != 2)
-		return -EINVAL;
-
 	down(&this_usbduxsub->sem);
 
 	if (!(this_usbduxsub->probed)) {
@@ -1812,7 +1809,7 @@ static int usbdux_dio_insn_bits(struct comedi_device *dev,
 
 	data[1] = le16_to_cpu(this_usbduxsub->insnBuffer[1]);
 	up(&this_usbduxsub->sem);
-	return 2;
+	return insn->n;
 }
 
 /* reads the 4 counters, only two are used just now */
@@ -2624,6 +2621,7 @@ static int usbdux_attach_common(struct comedi_device *dev,
 {
 	int ret;
 	struct comedi_subdevice *s = NULL;
+	int n_subdevs;
 
 	down(&udev->sem);
 	/* pointer back to the corresponding comedi device */
@@ -2638,17 +2636,14 @@ static int usbdux_attach_common(struct comedi_device *dev,
 	/* set number of subdevices */
 	if (udev->high_speed) {
 		/* with pwm */
-		dev->n_subdevices = 5;
+		n_subdevs = 5;
 	} else {
 		/* without pwm */
-		dev->n_subdevices = 4;
+		n_subdevs = 4;
 	}
 
-	/* allocate space for the subdevices */
-	ret = alloc_subdevices(dev, dev->n_subdevices);
-	if (ret < 0) {
-		dev_err(&udev->interface->dev,
-			"comedi%d: error alloc space for subdev\n", dev->minor);
+	ret = comedi_alloc_subdevices(dev, n_subdevs);
+	if (ret) {
 		up(&udev->sem);
 		return ret;
 	}

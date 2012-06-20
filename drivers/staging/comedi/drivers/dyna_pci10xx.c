@@ -38,7 +38,6 @@
 */
 
 #include "../comedidev.h"
-#include "comedi_pci.h"
 #include <linux/mutex.h>
 
 #define PCI_VENDOR_ID_DYNALOG		0x10b5
@@ -142,7 +141,7 @@ static int dyna_pci10xx_insn_read_ai(struct comedi_device *dev,
 		for (counter = 0; counter < READ_TIMEOUT; counter++) {
 			d = inw_p(devpriv->BADR2);
 
-			/* check if read is successfull if the EOC bit is set */
+			/* check if read is successful if the EOC bit is set */
 			if (d & (1 << 15))
 				goto conv_finish;
 		}
@@ -190,9 +189,6 @@ static int dyna_pci10xx_di_insn_bits(struct comedi_device *dev,
 {
 	u16 d = 0;
 
-	if (insn->n != 2)
-		return -EINVAL;
-
 	mutex_lock(&devpriv->mutex);
 	smp_mb();
 	d = inw_p(devpriv->BADR3);
@@ -202,7 +198,7 @@ static int dyna_pci10xx_di_insn_bits(struct comedi_device *dev,
 	data[1] = d;
 	data[0] = s->state;
 	mutex_unlock(&devpriv->mutex);
-	return 2;
+	return insn->n;
 }
 
 /* digital output bit interface */
@@ -210,9 +206,6 @@ static int dyna_pci10xx_do_insn_bits(struct comedi_device *dev,
 			      struct comedi_subdevice *s,
 			      struct comedi_insn *insn, unsigned int *data)
 {
-	if (insn->n != 2)
-		return -EINVAL;
-
 	/* The insn data is a mask in data[0] and the new data
 	 * in data[1], each channel cooresponding to a bit.
 	 * s->state contains the previous write data
@@ -233,7 +226,7 @@ static int dyna_pci10xx_do_insn_bits(struct comedi_device *dev,
 	 */
 	data[1] = s->state;
 	mutex_unlock(&devpriv->mutex);
-	return 2;
+	return insn->n;
 }
 
 /******************************************************************************/
@@ -247,6 +240,7 @@ static int dyna_pci10xx_attach(struct comedi_device *dev,
 	struct pci_dev *pcidev;
 	unsigned int opt_bus, opt_slot;
 	int board_index, i;
+	int ret;
 
 	mutex_lock(&start_stop_sem);
 
@@ -330,11 +324,10 @@ found:
 	devpriv->BADR4 = pci_resource_start(pcidev, 4);
 	devpriv->BADR5 = pci_resource_start(pcidev, 5);
 
-	if (alloc_subdevices(dev, 4) < 0) {
-		printk(KERN_ERR "comedi: dyna_pci10xx: "
-			"failed allocating subdevices\n");
+	ret = comedi_alloc_subdevices(dev, 4);
+	if (ret) {
 		mutex_unlock(&start_stop_sem);
-		return -ENOMEM;
+		return ret;
 	}
 
 	/* analog input */
