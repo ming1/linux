@@ -424,13 +424,17 @@ static void fullbatt_vchk(struct work_struct *work)
 static bool _cm_monitor(struct charger_manager *cm)
 {
 	struct charger_desc *desc = cm->desc;
+	bool update_charger = false;
 	int temp = desc->temperature_out_of_range(&cm->last_temp_mC);
 
 	dev_dbg(cm->dev, "monitoring (%2.2d.%3.3dC)\n",
 		cm->last_temp_mC / 1000, cm->last_temp_mC % 1000);
 
+	if (desc->charging_zone_changed)
+		update_charger = desc->charging_zone_changed(cm->last_temp_mC);
+
 	/* It has been stopped or charging already */
-	if (!!temp == !!cm->emergency_stop)
+	if ((!!temp == !!cm->emergency_stop) && !update_charger)
 		return false;
 
 	if (temp) {
