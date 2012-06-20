@@ -51,14 +51,14 @@ static void smp_task_timedout(unsigned long _task)
 		task->task_state_flags |= SAS_TASK_STATE_ABORTED;
 	spin_unlock_irqrestore(&task->task_state_lock, flags);
 
-	complete(&task->completion);
+	complete(&task->slow_task->completion);
 }
 
 static void smp_task_done(struct sas_task *task)
 {
-	if (!del_timer(&task->timer))
+	if (!del_timer(&task->slow_task->timer))
 		return;
-	complete(&task->completion);
+	complete(&task->slow_task->completion);
 }
 
 /* Give it some long enough timeout. In seconds. */
@@ -79,7 +79,7 @@ static int smp_execute_task(struct domain_device *dev, void *req, int req_size,
 			break;
 		}
 
-		task = sas_alloc_task(GFP_KERNEL);
+		task = sas_alloc_slow_task(GFP_KERNEL);
 		if (!task) {
 			res = -ENOMEM;
 			break;
@@ -91,20 +91,20 @@ static int smp_execute_task(struct domain_device *dev, void *req, int req_size,
 
 		task->task_done = smp_task_done;
 
-		task->timer.data = (unsigned long) task;
-		task->timer.function = smp_task_timedout;
-		task->timer.expires = jiffies + SMP_TIMEOUT*HZ;
-		add_timer(&task->timer);
+		task->slow_task->timer.data = (unsigned long) task;
+		task->slow_task->timer.function = smp_task_timedout;
+		task->slow_task->timer.expires = jiffies + SMP_TIMEOUT*HZ;
+		add_timer(&task->slow_task->timer);
 
 		res = i->dft->lldd_execute_task(task, 1, GFP_KERNEL);
 
 		if (res) {
-			del_timer(&task->timer);
+			del_timer(&task->slow_task->timer);
 			SAS_DPRINTK("executing SMP task failed:%d\n", res);
 			break;
 		}
 
-		wait_for_completion(&task->completion);
+		wait_for_completion(&task->slow_task->completion);
 		res = -ECOMM;
 		if ((task->task_state_flags & SAS_TASK_STATE_ABORTED)) {
 			SAS_DPRINTK("smp task timed out or aborted\n");
@@ -2005,6 +2005,7 @@ static int sas_rediscover_dev(struct domain_device *dev, int phy_id, bool last)
 	u8 sas_addr[8];
 	int res;
 
+	memset(sas_addr, 0, 8);
 	res = sas_get_phy_attached_dev(dev, phy_id, sas_addr, &type);
 	switch (res) {
 	case SMP_RESP_NO_PHY:
@@ -2017,9 +2018,13 @@ static int sas_rediscover_dev(struct domain_device *dev, int phy_id, bool last)
 		return res;
 	case SMP_RESP_FUNC_ACC:
 		break;
+	case -ECOMM:
+		break;
+	default:
+		return res;
 	}
 
-	if (SAS_ADDR(sas_addr) == 0) {
+	if ((SAS_ADDR(sas_addr) == 0) || (res == -ECOMM)) {
 		phy->phy_state = PHY_EMPTY;
 		sas_unregister_devs_sas_addr(dev, phy_id, last);
 		return res;
@@ -2109,9 +2114,7 @@ int sas_ex_revalidate_domain(struct domain_device *port_dev)
 	struct domain_device *dev = NULL;
 
 	res = sas_find_bcast_dev(port_dev, &dev);
-	if (res)
-		goto out;
-	if (dev) {
+	while (res == 0 && dev) {
 		struct expander_device *ex = &dev->ex_dev;
 		int i = 0, phy_id;
 
@@ -2123,8 +2126,10 @@ int sas_ex_revalidate_domain(struct domain_device *port_dev)
 			res = sas_rediscover(dev, phy_id);
 			i = phy_id + 1;
 		} while (i < ex->num_phys);
+
+		dev = NULL;
+		res = sas_find_bcast_dev(port_dev, &dev);
 	}
-out:
 	return res;
 }
 
