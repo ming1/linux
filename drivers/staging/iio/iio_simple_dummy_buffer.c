@@ -67,8 +67,8 @@ static irqreturn_t iio_simple_dummy_trigger_h(int irq, void *p)
 		 * software culled hardware scans:
 		 *   occasionally a driver may process the nearest hardware
 		 *   scan to avoid storing elements that are not desired. This
-		 *   is the fidliest option by far.
-		 * Here lets pretend we have random access. And the values are
+		 *   is the fiddliest option by far.
+		 * Here let's pretend we have random access. And the values are
 		 * in the constant table fakedata.
 		 */
 		int i, j;
@@ -78,7 +78,7 @@ static irqreturn_t iio_simple_dummy_trigger_h(int irq, void *p)
 		     i++) {
 			j = find_next_bit(buffer->scan_mask,
 					  indio_dev->masklength, j + 1);
-			/* random access read form the 'device' */
+			/* random access read from the 'device' */
 			data[i] = fakedata[j];
 			len += 2;
 		}

@@ -174,7 +174,7 @@ static int subdev_700_insn(struct comedi_device *dev,
 	data[1] = s->state & 0xff;
 	data[1] |= CALLBACK_FUNC(0, _700_DATA, 0, CALLBACK_ARG) << 8;
 
-	return 2;
+	return insn->n;
 }
 
 static int subdev_700_insn_config(struct comedi_device *dev,
@@ -364,6 +364,7 @@ static int dio700_attach(struct comedi_device *dev, struct comedi_devconfig *it)
 	unsigned int irq = 0;
 #endif
 	struct pcmcia_device *link;
+	int ret;
 
 	/* allocate and initialize dev->private */
 	if (alloc_private(dev, sizeof(struct dio700_private)) < 0)
@@ -409,8 +410,9 @@ static int dio700_attach(struct comedi_device *dev, struct comedi_devconfig *it)
 
 	dev->board_name = thisboard->name;
 
-	if (alloc_subdevices(dev, 1) < 0)
-		return -ENOMEM;
+	ret = comedi_alloc_subdevices(dev, 1);
+	if (ret)
+		return ret;
 
 	/* DAQCard-700 dio */
 	s = dev->subdevices + 0;

@@ -6,9 +6,10 @@ config COMEDI
 	  Enable support a wide range of data acquisition devices
 	  for Linux.
 
+if COMEDI
+
 config COMEDI_DEBUG
 	bool "Comedi debugging"
-	depends on COMEDI != n
 	---help---
 	  This is an option for use by developers; most people should
 	  say N here. This enables comedi core and driver debugging.
@@ -16,7 +17,6 @@ config COMEDI_DEBUG
 config COMEDI_DEFAULT_BUF_SIZE_KB
 	int "Comedi default initial asynchronous buffer size in KiB"
 	default "2048"
-	depends on COMEDI != n
 	---help---
 	  This is the default asynchronous buffer size which is used for
 	  commands running in the background in kernel space.  This
@@ -26,7 +26,6 @@ config COMEDI_DEFAULT_BUF_SIZE_KB
 config COMEDI_DEFAULT_BUF_MAXSIZE_KB
 	int "Comedi default maximum asynchronous buffer size in KiB"
 	default "20480"
-	depends on COMEDI != n
 	---help---
 	  This is the default maximum asynchronous buffer size which can
 	  be requested by a userspace program without root privileges.
@@ -34,8 +33,7 @@ config COMEDI_DEFAULT_BUF_MAXSIZE_KB
 	  channels running at 100 kHz has 2-4 seconds of buffer.
 
 menuconfig COMEDI_MISC_DRIVERS
-	tristate "Comedi misc drivers"
-	depends on COMEDI
+	bool "Comedi misc drivers"
 	---help---
 	  Enable comedi misc drivers to be built
 
@@ -102,8 +100,8 @@ config COMEDI_SKEL
 endif # COMEDI_MISC_DRIVERS
 
 menuconfig COMEDI_ISA_DRIVERS
-	tristate "Comedi ISA and PC/104 drivers"
-	depends on COMEDI && ISA
+	bool "Comedi ISA and PC/104 drivers"
+	depends on ISA
 	---help---
 	  Enable comedi ISA and PC/104 drivers to be built
 
@@ -111,7 +109,7 @@ menuconfig COMEDI_ISA_DRIVERS
 	  kernel: saying N will just cause the configurator to skip all
 	  the questions about ISA and PC/104 comedi drivers.
 
-if COMEDI_ISA_DRIVERS && ISA
+if COMEDI_ISA_DRIVERS
 
 config COMEDI_ACL7225B
 	tristate "ADlink NuDAQ ACL-7225b and compatibles support"
@@ -215,7 +213,6 @@ config COMEDI_PCM3730
 config COMEDI_AMPLC_DIO200_ISA
 	tristate "Amplicon PC212E/PC214E/PC215E/PC218E/PC272E"
 	select COMEDI_AMPLC_DIO200
-	depends on COMEDI_ISA_DRIVERS
 	---help---
 	  Enable support for Amplicon PC212E, PC214E, PC215E, PC218E and
 	  PC272E ISA DIO boards
@@ -542,8 +539,8 @@ config COMEDI_POC
 endif # COMEDI_ISA_DRIVERS
 
 menuconfig COMEDI_PCI_DRIVERS
-	tristate "Comedi PCI drivers"
-	depends on COMEDI && PCI
+	bool "Comedi PCI drivers"
+	depends on PCI
 	---help---
 	  Enable comedi PCI drivers to be built
 
@@ -551,7 +548,7 @@ menuconfig COMEDI_PCI_DRIVERS
 	  kernel: saying N will just cause the configurator to skip all
 	  the questions about PCI comedi drivers.
 
-if COMEDI_PCI_DRIVERS && PCI
+if COMEDI_PCI_DRIVERS
 
 config COMEDI_ADDI_APCI_035
 	tristate "ADDI-DATA APCI_035 support"
@@ -674,7 +671,6 @@ config COMEDI_ADDI_APCI_3XXX
 
 config COMEDI_ADL_PCI6208
 	tristate "ADLink PCI-6208A support"
-	select COMEDI_8255
 	---help---
 	  Enable support for ADLink PCI-6208A cards
 
@@ -691,6 +687,7 @@ config COMEDI_ADL_PCI7230
 
 config COMEDI_ADL_PCI7296
 	tristate "ADLink PCI-7296 96 ch. digital io board support"
+	select COMEDI_8255
 	---help---
 	  Enable support for ADlink PCI-7296 96 ch. digital io board support
 
@@ -1063,7 +1060,6 @@ config COMEDI_NI_PCIMIO
 
 config COMEDI_RTD520
 	tristate "Real Time Devices PCI4520/DM7520 support"
-	select COMEDI_8255
 	---help---
 	  Enable support for Real Time Devices PCI4520/DM7520
 
@@ -1098,8 +1094,8 @@ config COMEDI_SSV_DNP
 endif # COMEDI_PCI_DRIVERS
 
 menuconfig COMEDI_PCMCIA_DRIVERS
-	tristate "Comedi PCMCIA drivers"
-	depends on COMEDI && (PCMCIA || PCCARD)
+	bool "Comedi PCMCIA drivers"
+	depends on PCMCIA
 	---help---
 	  Enable comedi PCMCIA and PCCARD drivers to be built
 
@@ -1107,7 +1103,7 @@ menuconfig COMEDI_PCMCIA_DRIVERS
 	  kernel: saying N will just cause the configurator to skip all
 	  the questions about PCMCIA comedi drivers.
 
-if COMEDI_PCMCIA_DRIVERS && PCMCIA
+if COMEDI_PCMCIA_DRIVERS
 
 config COMEDI_CB_DAS16_CS
 	tristate "CB DAS16 series PCMCIA support"
@@ -1181,8 +1177,8 @@ config COMEDI_QUATECH_DAQP_CS
 endif # COMEDI_PCMCIA_DRIVERS
 
 menuconfig COMEDI_USB_DRIVERS
-	tristate "Comedi USB drivers"
-	depends on COMEDI && USB
+	bool "Comedi USB drivers"
+	depends on USB
 	---help---
 	  Enable comedi USB drivers to be built
 
@@ -1190,7 +1186,7 @@ menuconfig COMEDI_USB_DRIVERS
 	  kernel: saying N will just cause the configurator to skip all
 	  the questions about USB comedi drivers.
 
-if COMEDI_USB_DRIVERS && USB
+if COMEDI_USB_DRIVERS
 
 config COMEDI_DT9812
 	tristate "DataTranslation DT9812 USB module support"
@@ -1239,7 +1235,6 @@ endif # COMEDI_USB_DRIVERS
 
 menuconfig COMEDI_NI_COMMON
 	tristate "Comedi National Instruments card support"
-	depends on COMEDI
 	---help---
 	  Enable comedi support for National Instruments cards.
 	  Modules in this section are used by many comedi NI drivers.
@@ -1290,7 +1285,6 @@ endif # COMEDI_NI_COMMON
 
 config COMEDI_8255
 	tristate "Generic 8255 support"
-	depends on COMEDI
 	---help---
 	  Enable generic 8255 support.
 
@@ -1305,31 +1299,21 @@ config COMEDI_8255
 	  called 8255.
 
 config COMEDI_FC
-	tristate "Comedi shared functions for low-level driver support"
-	depends on COMEDI
-	---help---
-	  Enable support for shared functions for low-level drivers.
-	  This module is not used directly by end-users. Rather, it
-	  is used by many other comedi drivers.
-
-	  To compile this driver as a module, choose M here: the module will be
-	  called comedi_fc.
+	tristate
 
 config COMEDI_AMPLC_DIO200
 	tristate
-	depends on COMEDI
 	select COMEDI_8255
 
 config COMEDI_AMPLC_PC236
 	tristate
-	depends on COMEDI
 	select COMEDI_8255
 
 config COMEDI_AMPLC_PC263
 	tristate
-	depends on COMEDI
 
 config COMEDI_DAS08
 	tristate
-	depends on COMEDI
 	select COMEDI_8255
+
+endif # COMEDI
