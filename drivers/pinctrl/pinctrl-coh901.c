@@ -770,7 +770,7 @@ static int __init u300_gpio_probe(struct platform_device *pdev)
 		dev_err(gpio->dev, "could not get GPIO clock\n");
 		goto err_no_clk;
 	}
-	err = clk_enable(gpio->clk);
+	err = clk_prepare_enable(gpio->clk);
 	if (err) {
 		dev_err(gpio->dev, "could not enable GPIO clock\n");
 		goto err_no_clk_enable;
