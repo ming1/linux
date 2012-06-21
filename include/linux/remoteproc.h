@@ -42,6 +42,7 @@
 #include <linux/virtio.h>
 #include <linux/completion.h>
 #include <linux/idr.h>
+#include <linux/firmware.h>
 
 /**
  * struct resource_table - firmware resource table header
@@ -339,6 +340,23 @@ struct rproc_ops {
 };
 
 /**
+ * struct rproc_fw_ops - firmware format specific operations.
+ * @find_rsc_table:	finds the resource table inside the firmware image
+ * @load:		load firmeware to memory, where the remote processor
+ *			expects to find it
+ * @sanity_check:	sanity check the fw image
+ * @get_boot_addr:	get boot address to entry point specified in firmware
+ */
+struct rproc_fw_ops {
+	struct resource_table *(*find_rsc_table) (struct rproc *rproc,
+						const struct firmware *fw,
+						int *tablesz);
+	int (*load)(struct rproc *rproc, const struct firmware *fw);
+	int (*sanity_check)(struct rproc *rproc, const struct firmware *fw);
+	u32 (*get_boot_addr)(struct rproc *rproc, const struct firmware *fw);
+};
+
+/**
  * enum rproc_state - remote processor states
  * @RPROC_OFFLINE:	device is powered off
  * @RPROC_SUSPENDED:	device is suspended; needs to be woken up to receive
@@ -369,6 +387,7 @@ enum rproc_state {
  * @firmware: name of firmware file to be loaded
  * @priv: private data which belongs to the platform-specific rproc module
  * @ops: platform-specific start/stop rproc handlers
+ * @fw_ops: firmware-specific handlers
  * @dev: underlying device
  * @refcount: refcount of users that have a valid pointer to this rproc
  * @power: refcount of users who need this rproc powered up
@@ -391,6 +410,7 @@ struct rproc {
 	const char *firmware;
 	void *priv;
 	const struct rproc_ops *ops;
+	const struct rproc_fw_ops *fw_ops;
 	struct device *dev;
 	struct kref refcount;
 	atomic_t power;
