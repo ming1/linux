@@ -460,6 +460,12 @@ void cpu_idle(void)
 				pm_idle();
 
 			rcu_idle_exit();
+
+			/*
+			 * Sanity check to ensure that idle call returns
+			 * with IRQs enabled
+			 */
+			WARN_ON(irqs_disabled());
 			start_critical_timings();
 
 			/* In many cases the interrupt that ended idle
