@@ -98,6 +98,70 @@ static void __init tegra_dt_init(void)
 				tegra20_auxdata_lookup, NULL);
 }
 
+#ifdef CONFIG_MACH_TRIMSLICE
+static void __init trimslice_init(void)
+{
+	int ret;
+
+	ret = tegra_pcie_init(true, true);
+	if (ret)
+		pr_err("tegra_pci_init() failed: %d\n", ret);
+}
+#endif
+
+#ifdef CONFIG_MACH_HARMONY
+static void __init harmony_init(void)
+{
+	int ret;
+
+	ret = harmony_regulator_init();
+	if (ret) {
+		pr_err("harmony_regulator_init() failed: %d\n", ret);
+		return;
+	}
+
+	ret = harmony_pcie_init();
+	if (ret)
+		pr_err("harmony_pcie_init() failed: %d\n", ret);
+}
+#endif
+
+#ifdef CONFIG_MACH_PAZ00
+static void __init paz00_init(void)
+{
+	tegra_paz00_wifikill_init();
+}
+#endif
+
+static struct {
+	char *machine;
+	void (*init)(void);
+} board_init_funcs[] = {
+#ifdef CONFIG_MACH_TRIMSLICE
+	{ "compulab,trimslice", trimslice_init },
+#endif
+#ifdef CONFIG_MACH_HARMONY
+	{ "nvidia,harmony", harmony_init },
+#endif
+#ifdef CONFIG_MACH_PAZ00
+	{ "compal,paz00", paz00_init },
+#endif
+};
+
+static void __init tegra_dt_init_late(void)
+{
+	int i;
+
+	tegra_init_late();
+
+	for (i = 0; i < ARRAY_SIZE(board_init_funcs); i++) {
+		if (of_machine_is_compatible(board_init_funcs[i].machine)) {
+			board_init_funcs[i].init();
+			break;
+		}
+	}
+}
+
 static const char *tegra20_dt_board_compat[] = {
 	"nvidia,tegra20",
 	NULL
@@ -110,7 +174,7 @@ DT_MACHINE_START(TEGRA_DT, "nVidia Tegra20 (Flattened Device Tree)")
 	.handle_irq	= gic_handle_irq,
 	.timer		= &tegra_timer,
 	.init_machine	= tegra_dt_init,
-	.init_late	= tegra_init_late,
+	.init_late	= tegra_dt_init_late,
 	.restart	= tegra_assert_system_reset,
 	.dt_compat	= tegra20_dt_board_compat,
 MACHINE_END
