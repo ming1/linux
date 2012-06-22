@@ -368,7 +368,7 @@ isolate_migratepages_range(struct zone *zone, struct compact_control *cc,
 static bool can_rescue_unmovable_pageblock(struct page *page)
 {
 	struct zone *zone;
-	unsigned long pfn, start_pfn, end_pfn;
+	unsigned long pfn, start_pfn;
 	struct page *start_page;
 
 	zone = page_zone(page);
