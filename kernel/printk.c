@@ -1356,9 +1356,10 @@ asmlinkage int vprintk_emit(int facility, int level,
 		case 'd':	/* KERN_DEFAULT */
 			prefix = true;
 		case 'c':	/* KERN_CONT */
+			break;
 		}
-		text_len -=  end_of_header - text;
-		text = end_of_header;
+		text_len -= end_of_header - text;
+		text = (char *)end_of_header;
 	}
 
 	if (level == -1)
