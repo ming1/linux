@@ -463,7 +463,7 @@ void fimc_prepare_dma_offset(struct fimc_ctx *ctx, struct fimc_frame *f)
 	    f->fmt->color, f->dma_offset.y_h, f->dma_offset.y_v);
 }
 
-int fimc_set_color_effect(struct fimc_ctx *ctx, enum v4l2_colorfx colorfx)
+static int fimc_set_color_effect(struct fimc_ctx *ctx, enum v4l2_colorfx colorfx)
 {
 	struct fimc_effect *effect = &ctx->effect;
 
@@ -615,7 +615,7 @@ int fimc_ctrls_create(struct fimc_ctx *ctx)
 	ctx->effect.type = FIMC_REG_CIIMGEFF_FIN_BYPASS;
 
 	if (!handler->error) {
-		v4l2_ctrl_cluster(3, &ctrls->colorfx);
+		v4l2_ctrl_cluster(2, &ctrls->colorfx);
 		ctrls->ready = true;
 	}
 
