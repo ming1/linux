@@ -33,7 +33,6 @@ Configuration options:
 
 #include <linux/delay.h>
 
-#include "comedi_pci.h"
 #include "8255.h"
 #include "8253.h"
 
@@ -425,7 +424,7 @@ static int pci_dio_insn_bits_di_b(struct comedi_device *dev,
 		data[1] |= inb(dev->iobase + d->addr + i) << (8 * i);
 
 
-	return 2;
+	return insn->n;
 }
 
 /*
@@ -442,7 +441,7 @@ static int pci_dio_insn_bits_di_w(struct comedi_device *dev,
 	for (i = 0; i < d->regs; i++)
 		data[1] |= inw(dev->iobase + d->addr + 2 * i) << (16 * i);
 
-	return 2;
+	return insn->n;
 }
 
 /*
@@ -464,7 +463,7 @@ static int pci_dio_insn_bits_do_b(struct comedi_device *dev,
 	}
 	data[1] = s->state;
 
-	return 2;
+	return insn->n;
 }
 
 /*
@@ -486,7 +485,7 @@ static int pci_dio_insn_bits_do_w(struct comedi_device *dev,
 	}
 	data[1] = s->state;
 
-	return 2;
+	return insn->n;
 }
 
 /*
@@ -635,7 +634,7 @@ static int pci1760_insn_bits_di(struct comedi_device *dev,
 {
 	data[1] = inb(dev->iobase + IMB3);
 
-	return 2;
+	return insn->n;
 }
 
 /*
@@ -664,7 +663,7 @@ static int pci1760_insn_bits_do(struct comedi_device *dev,
 	}
 	data[1] = s->state;
 
-	return 2;
+	return insn->n;
 }
 
 /*
@@ -1122,16 +1121,18 @@ static int pci_dio_attach(struct comedi_device *dev,
 	}
 
 	if (!dev->board_ptr) {
-		dev_err(dev->hw_dev, "Error: Requested type of the card was not found!\n");
+		dev_err(dev->class_dev,
+			"Error: Requested type of the card was not found!\n");
 		return -EIO;
 	}
 
 	if (comedi_pci_enable(pcidev, dev->driver->driver_name)) {
-		dev_err(dev->hw_dev, "Error: Can't enable PCI device and request regions!\n");
+		dev_err(dev->class_dev,
+			"Error: Can't enable PCI device and request regions!\n");
 		return -EIO;
 	}
 	iobase = pci_resource_start(pcidev, this_board->main_pci_region);
-	dev_dbg(dev->hw_dev, "b:s:f=%d:%d:%d, io=0x%4lx\n",
+	dev_dbg(dev->class_dev, "b:s:f=%d:%d:%d, io=0x%4lx\n",
 		pcidev->bus->number, PCI_SLOT(pcidev->devfn),
 		PCI_FUNC(pcidev->devfn), iobase);
 
@@ -1157,8 +1158,8 @@ static int pci_dio_attach(struct comedi_device *dev,
 				n_subdevices++;
 	}
 
-	ret = alloc_subdevices(dev, n_subdevices);
-	if (ret < 0)
+	ret = comedi_alloc_subdevices(dev, n_subdevices);
+	if (ret)
 		return ret;
 
 	subdev = 0;

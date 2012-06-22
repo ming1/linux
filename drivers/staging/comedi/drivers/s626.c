@@ -74,8 +74,6 @@ INSN_CONFIG instructions:
 
 #include "../comedidev.h"
 
-#include "comedi_pci.h"
-
 #include "comedi_fc.h"
 #include "s626.h"
 
@@ -120,7 +118,7 @@ static const struct s626_board s626_boards[] = {
 
 struct s626_private {
 	struct pci_dev *pdev;
-	void *base_addr;
+	void __iomem *base_addr;
 	int got_regions;
 	short allocatedBuf;
 	uint8_t ai_cmd_running;	/*  ai_cmd is running */
@@ -597,8 +595,9 @@ static int s626_attach(struct comedi_device *dev, struct comedi_devconfig *it)
 	dev->board_ptr = s626_boards;
 	dev->board_name = thisboard->name;
 
-	if (alloc_subdevices(dev, 6) < 0)
-		return -ENOMEM;
+	ret = comedi_alloc_subdevices(dev, 6);
+	if (ret)
+		return ret;
 
 	dev->iobase = (unsigned long)devpriv->base_addr;
 	dev->irq = devpriv->pdev->irq;
@@ -2141,18 +2140,6 @@ static int s626_dio_insn_bits(struct comedi_device *dev,
 			      struct comedi_subdevice *s,
 			      struct comedi_insn *insn, unsigned int *data)
 {
-
-	/* Length of data must be 2 (mask and new data, see below) */
-	if (insn->n == 0)
-		return 0;
-
-	if (insn->n != 2) {
-		printk
-		    ("comedi%d: s626: s626_dio_insn_bits(): Invalid instruction length\n",
-		     dev->minor);
-		return -EINVAL;
-	}
-
 	/*
 	 * The insn data consists of a mask in data[0] and the new data in
 	 * data[1]. The mask defines which bits we are concerning about.
@@ -2173,7 +2160,7 @@ static int s626_dio_insn_bits(struct comedi_device *dev,
 	}
 	data[1] = DEBIread(dev, diopriv->RDDIn);
 
-	return 2;
+	return insn->n;
 }
 
 static int s626_dio_insn_config(struct comedi_device *dev,
