@@ -833,18 +833,18 @@ EXPORT_SYMBOL(memchr_inv);
  */
 size_t memweight(const void *ptr, size_t bytes)
 {
-	size_t w = 0;
+	size_t ret = 0;
 	size_t longs;
 	const unsigned char *bitmap = ptr;
 
 	for (; bytes > 0 && ((unsigned long)bitmap) % sizeof(long);
 			bytes--, bitmap++)
-		w += hweight8(*bitmap);
+		ret += hweight8(*bitmap);
 
 	longs = bytes / sizeof(long);
 	if (longs) {
 		BUG_ON(longs >= INT_MAX / BITS_PER_LONG);
-		w += bitmap_weight((unsigned long *)bitmap,
+		ret += bitmap_weight((unsigned long *)bitmap,
 				longs * BITS_PER_LONG);
 		bytes -= longs * sizeof(long);
 		bitmap += longs * sizeof(long);
@@ -855,8 +855,8 @@ size_t memweight(const void *ptr, size_t bytes)
 	 * than sizeof(long) properly on big-endian systems.
 	 */
 	for (; bytes > 0; bytes--, bitmap++)
-		w += hweight8(*bitmap);
+		ret += hweight8(*bitmap);
 
-	return w;
+	return ret;
 }
 EXPORT_SYMBOL(memweight);
