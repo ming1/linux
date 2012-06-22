@@ -11,6 +11,8 @@
 #include "cache.h"
 #include "header.h"
 #include "debugfs.h"
+#include "parse-events-bison.h"
+#define YY_EXTRA_TYPE int
 #include "parse-events-flex.h"
 #include "pmu.h"
 
@@ -26,7 +28,7 @@ struct event_symbol {
 #ifdef PARSER_DEBUG
 extern int parse_events_debug;
 #endif
-int parse_events_parse(struct list_head *list, int *idx);
+int parse_events_parse(void *data, void *scanner);
 
 #define CHW(x) .type = PERF_TYPE_HARDWARE, .config = PERF_COUNT_HW_##x
 #define CSW(x) .type = PERF_TYPE_SOFTWARE, .config = PERF_COUNT_SW_##x
@@ -699,6 +701,9 @@ int parse_events_add_pmu(struct list_head **list, int *idx,
 
 	memset(&attr, 0, sizeof(attr));
 
+	if (perf_pmu__check_alias(pmu, head_config))
+		return -EINVAL;
+
 	/*
 	 * Configure hardcoded terms first, no need to check
 	 * return value when called with fail == 0 ;)
@@ -787,27 +792,62 @@ int parse_events_modifier(struct list_head *list, char *str)
 	return 0;
 }
 
-int parse_events(struct perf_evlist *evlist, const char *str, int unset __used)
+static int parse_events__scanner(const char *str, void *data, int start_token)
 {
-	LIST_HEAD(list);
-	LIST_HEAD(list_tmp);
 	YY_BUFFER_STATE buffer;
-	int ret, idx = evlist->nr_entries;
+	void *scanner;
+	int ret;
 
-	buffer = parse_events__scan_string(str);
+	ret = parse_events_lex_init_extra(start_token, &scanner);
+	if (ret)
+		return ret;
+
+	buffer = parse_events__scan_string(str, scanner);
 
 #ifdef PARSER_DEBUG
 	parse_events_debug = 1;
 #endif
-	ret = parse_events_parse(&list, &idx);
+	ret = parse_events_parse(data, scanner);
 
-	parse_events__flush_buffer(buffer);
-	parse_events__delete_buffer(buffer);
-	parse_events_lex_destroy();
+	parse_events__flush_buffer(buffer, scanner);
+	parse_events__delete_buffer(buffer, scanner);
+	parse_events_lex_destroy(scanner);
+	return ret;
+}
 
+/*
+ * parse event config string, return a list of event terms.
+ */
+int parse_events_terms(struct list_head *terms, const char *str)
+{
+	struct parse_events_data__terms data = {
+		.terms = NULL,
+	};
+	int ret;
+
+	ret = parse_events__scanner(str, &data, PE_START_TERMS);
 	if (!ret) {
-		int entries = idx - evlist->nr_entries;
-		perf_evlist__splice_list_tail(evlist, &list, entries);
+		list_splice(data.terms, terms);
+		free(data.terms);
+		return 0;
+	}
+
+	parse_events__free_terms(data.terms);
+	return ret;
+}
+
+int parse_events(struct perf_evlist *evlist, const char *str, int unset __used)
+{
+	struct parse_events_data__events data = {
+		.list = LIST_HEAD_INIT(data.list),
+		.idx  = evlist->nr_entries,
+	};
+	int ret;
+
+	ret = parse_events__scanner(str, &data, PE_START_EVENTS);
+	if (!ret) {
+		int entries = data.idx - evlist->nr_entries;
+		perf_evlist__splice_list_tail(evlist, &data.list, entries);
 		return 0;
 	}
 
@@ -1104,6 +1144,13 @@ int parse_events__term_str(struct parse_events__term **term,
 {
 	return new_term(term, PARSE_EVENTS__TERM_TYPE_STR, type_term,
 			config, str, 0);
+}
+
+int parse_events__term_clone(struct parse_events__term **new,
+			     struct parse_events__term *term)
+{
+	return new_term(new, term->type_val, term->type_term, term->config,
+			term->val.str, term->val.num);
 }
 
 void parse_events__free_terms(struct list_head *terms)
