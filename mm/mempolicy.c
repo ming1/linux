@@ -1146,7 +1146,7 @@ long mpol_do_mbind(unsigned long start, unsigned long len,
 		else {
 			nr_failed = migrate_pages(&pagelist, new_vma_page,
 					(unsigned long)vma,
-					false, true);
+						false, MIGRATE_SYNC);
 		}
 	}
 
