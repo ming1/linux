@@ -54,6 +54,7 @@
 #include <linux/notifier.h>
 #include <linux/cpu.h>
 #include <linux/mutex.h>
+#include <linux/async.h>
 
 #include <scsi/scsi.h>
 #include <scsi/scsi_cmnd.h>
@@ -92,7 +93,7 @@ EXPORT_SYMBOL(scsi_logging_level);
 
 #if IS_ENABLED(CONFIG_PM) || IS_ENABLED(CONFIG_BLK_DEV_SD)
 /* sd and scsi_pm need to coordinate flushing async actions */
-LIST_HEAD(scsi_sd_probe_domain);
+ASYNC_DOMAIN(scsi_sd_probe_domain);
 EXPORT_SYMBOL(scsi_sd_probe_domain);
 #endif
 
