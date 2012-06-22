@@ -1204,6 +1204,9 @@ static int mei_irq_thread_write_handler(struct mei_io_list *cmpl_list,
 		return 0;
 	}
 	*slots = mei_count_empty_write_slots(dev);
+	if (*slots <= 0)
+		return -EMSGSIZE;
+
 	/* complete all waiting for write CB */
 	dev_dbg(&dev->pdev->dev, "complete all waiting for write cb.\n");
 
@@ -1326,7 +1329,7 @@ static int mei_irq_thread_write_handler(struct mei_io_list *cmpl_list,
 			continue;
 
 		if (cl != &dev->iamthif_cl) {
-			if (!mei_flow_ctrl_creds(dev, cl)) {
+			if (mei_flow_ctrl_creds(dev, cl) <= 0) {
 				dev_dbg(&dev->pdev->dev,
 					"No flow control"
 				    " credentials for client"
@@ -1343,7 +1346,7 @@ static int mei_irq_thread_write_handler(struct mei_io_list *cmpl_list,
 		} else if (cl == &dev->iamthif_cl) {
 			/* IAMTHIF IOCTL */
 			dev_dbg(&dev->pdev->dev, "complete amthi write cb.\n");
-			if (!mei_flow_ctrl_creds(dev, cl)) {
+			if (mei_flow_ctrl_creds(dev, cl) <= 0) {
 				dev_dbg(&dev->pdev->dev,
 					"No flow control"
 				    " credentials for amthi"
