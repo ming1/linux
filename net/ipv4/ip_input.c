@@ -198,14 +198,13 @@ static int ip_local_deliver_finish(struct sk_buff *skb)
 	rcu_read_lock();
 	{
 		int protocol = ip_hdr(skb)->protocol;
-		int hash, raw;
 		const struct net_protocol *ipprot;
+		int raw;
 
 	resubmit:
 		raw = raw_local_deliver(skb, protocol);
 
-		hash = protocol & (MAX_INET_PROTOS - 1);
-		ipprot = rcu_dereference(inet_protos[hash]);
+		ipprot = rcu_dereference(inet_protos[protocol]);
 		if (ipprot != NULL) {
 			int ret;
 
@@ -324,19 +323,32 @@ static int ip_rcv_finish(struct sk_buff *skb)
 	 *	how the packet travels inside Linux networking.
 	 */
 	if (skb_dst(skb) == NULL) {
-		int err = ip_route_input_noref(skb, iph->daddr, iph->saddr,
-					       iph->tos, skb->dev);
-		if (unlikely(err)) {
-			if (err == -EHOSTUNREACH)
-				IP_INC_STATS_BH(dev_net(skb->dev),
-						IPSTATS_MIB_INADDRERRORS);
-			else if (err == -ENETUNREACH)
-				IP_INC_STATS_BH(dev_net(skb->dev),
-						IPSTATS_MIB_INNOROUTES);
-			else if (err == -EXDEV)
-				NET_INC_STATS_BH(dev_net(skb->dev),
-						 LINUX_MIB_IPRPFILTER);
-			goto drop;
+		const struct net_protocol *ipprot;
+		int protocol = iph->protocol;
+		int err;
+
+		rcu_read_lock();
+		ipprot = rcu_dereference(inet_protos[protocol]);
+		err = -ENOENT;
+		if (ipprot && ipprot->early_demux)
+			err = ipprot->early_demux(skb);
+		rcu_read_unlock();
+
+		if (err) {
+			err = ip_route_input_noref(skb, iph->daddr, iph->saddr,
+						   iph->tos, skb->dev);
+			if (unlikely(err)) {
+				if (err == -EHOSTUNREACH)
+					IP_INC_STATS_BH(dev_net(skb->dev),
+							IPSTATS_MIB_INADDRERRORS);
+				else if (err == -ENETUNREACH)
+					IP_INC_STATS_BH(dev_net(skb->dev),
+							IPSTATS_MIB_INNOROUTES);
+				else if (err == -EXDEV)
+					NET_INC_STATS_BH(dev_net(skb->dev),
+							 LINUX_MIB_IPRPFILTER);
+				goto drop;
+			}
 		}
 	}
 

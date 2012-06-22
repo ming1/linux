@@ -1,5 +1,5 @@
 /*
- * net/drivers/team/team_mode_roundrobin.c - Round-robin mode for team
+ * drivers/net/team/team_mode_roundrobin.c - Round-robin mode for team
  * Copyright (c) 2011 Jiri Pirko <jpirko@redhat.com>
  *
  * This program is free software; you can redistribute it and/or modify
@@ -81,7 +81,7 @@ static const struct team_mode_ops rr_mode_ops = {
 	.port_change_mac	= rr_port_change_mac,
 };
 
-static struct team_mode rr_mode = {
+static const struct team_mode rr_mode = {
 	.kind		= "roundrobin",
 	.owner		= THIS_MODULE,
 	.priv_size	= sizeof(struct rr_priv),
