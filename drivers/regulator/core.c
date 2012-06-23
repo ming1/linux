@@ -1459,11 +1459,9 @@ void devm_regulator_put(struct regulator *regulator)
 {
 	int rc;
 
-	rc = devres_destroy(regulator->dev, devm_regulator_release,
+	rc = devres_release(regulator->dev, devm_regulator_release,
 			    devm_regulator_match, regulator);
-	if (rc == 0)
-		regulator_put(regulator);
-	else
+	if (rc != 0)
 		WARN_ON(rc);
 }
 EXPORT_SYMBOL_GPL(devm_regulator_put);
@@ -1883,6 +1881,31 @@ int regulator_list_voltage_linear(struct regulator_dev *rdev,
 EXPORT_SYMBOL_GPL(regulator_list_voltage_linear);
 
 /**
+ * regulator_list_voltage_table - List voltages with table based mapping
+ *
+ * @rdev: Regulator device
+ * @selector: Selector to convert into a voltage
+ *
+ * Regulators with table based mapping between voltages and
+ * selectors can set volt_table in the regulator descriptor
+ * and then use this function as their list_voltage() operation.
+ */
+int regulator_list_voltage_table(struct regulator_dev *rdev,
+				 unsigned int selector)
+{
+	if (!rdev->desc->volt_table) {
+		BUG_ON(!rdev->desc->volt_table);
+		return -EINVAL;
+	}
+
+	if (selector >= rdev->desc->n_voltages)
+		return -EINVAL;
+
+	return rdev->desc->volt_table[selector];
+}
+EXPORT_SYMBOL_GPL(regulator_list_voltage_table);
+
+/**
  * regulator_list_voltage - enumerate supported voltages
  * @regulator: regulator source
  * @selector: identify voltage to list
@@ -2084,7 +2107,8 @@ static int _regulator_do_set_voltage(struct regulator_dev *rdev,
 	 * If we can't obtain the old selector there is not enough
 	 * info to call set_voltage_time_sel().
 	 */
-	if (rdev->desc->ops->set_voltage_time_sel &&
+	if (_regulator_is_enabled(rdev) &&
+	    rdev->desc->ops->set_voltage_time_sel &&
 	    rdev->desc->ops->get_voltage_sel) {
 		old_selector = rdev->desc->ops->get_voltage_sel(rdev);
 		if (old_selector < 0)
@@ -2095,12 +2119,18 @@ static int _regulator_do_set_voltage(struct regulator_dev *rdev,
 		ret = rdev->desc->ops->set_voltage(rdev, min_uV, max_uV,
 						   &selector);
 	} else if (rdev->desc->ops->set_voltage_sel) {
-		if (rdev->desc->ops->map_voltage)
+		if (rdev->desc->ops->map_voltage) {
 			ret = rdev->desc->ops->map_voltage(rdev, min_uV,
 							   max_uV);
-		else
-			ret = regulator_map_voltage_iterate(rdev, min_uV,
-							    max_uV);
+		} else {
+			if (rdev->desc->ops->list_voltage ==
+			    regulator_list_voltage_linear)
+				ret = regulator_map_voltage_linear(rdev,
+								min_uV, max_uV);
+			else
+				ret = regulator_map_voltage_iterate(rdev,
+								min_uV, max_uV);
+		}
 
 		if (ret >= 0) {
 			selector = ret;
@@ -2113,10 +2143,10 @@ static int _regulator_do_set_voltage(struct regulator_dev *rdev,
 	if (rdev->desc->ops->list_voltage)
 		best_val = rdev->desc->ops->list_voltage(rdev, selector);
 	else
-		best_val = -1;
+		best_val = _regulator_get_voltage(rdev);
 
 	/* Call set_voltage_time_sel if successfully obtained old_selector */
-	if (ret == 0 && old_selector >= 0 &&
+	if (_regulator_is_enabled(rdev) && ret == 0 && old_selector >= 0 &&
 	    rdev->desc->ops->set_voltage_time_sel) {
 
 		delay = rdev->desc->ops->set_voltage_time_sel(rdev,
@@ -2126,19 +2156,19 @@ static int _regulator_do_set_voltage(struct regulator_dev *rdev,
 				  delay);
 			delay = 0;
 		}
+
+		/* Insert any necessary delays */
+		if (delay >= 1000) {
+			mdelay(delay / 1000);
+			udelay(delay % 1000);
+		} else if (delay) {
+			udelay(delay);
+		}
 	}
 
-	/* Insert any necessary delays */
-	if (delay >= 1000) {
-		mdelay(delay / 1000);
-		udelay(delay % 1000);
-	} else if (delay) {
-		udelay(delay);
-	}
-
-	if (ret == 0)
+	if (ret == 0 && best_val >= 0)
 		_notifier_call_chain(rdev, REGULATOR_EVENT_VOLTAGE_CHANGE,
-				     NULL);
+				     (void *)best_val);
 
 	trace_regulator_set_voltage_complete(rdev_get_name(rdev), best_val);
 
@@ -2628,7 +2658,7 @@ static void _notifier_call_chain(struct regulator_dev *rdev,
 				  unsigned long event, void *data)
 {
 	/* call rdev chain first */
-	blocking_notifier_call_chain(&rdev->notifier, event, NULL);
+	blocking_notifier_call_chain(&rdev->notifier, event, data);
 }
 
 /**
@@ -3105,7 +3135,10 @@ regulator_register(const struct regulator_desc *regulator_desc,
 	rdev->reg_data = config->driver_data;
 	rdev->owner = regulator_desc->owner;
 	rdev->desc = regulator_desc;
-	rdev->regmap = config->regmap;
+	if (config->regmap)
+		rdev->regmap = config->regmap;
+	else
+		rdev->regmap = dev_get_regmap(dev, NULL);
 	INIT_LIST_HEAD(&rdev->consumer_list);
 	INIT_LIST_HEAD(&rdev->list);
 	BLOCKING_INIT_NOTIFIER_HEAD(&rdev->notifier);
