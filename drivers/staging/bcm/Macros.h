@@ -108,11 +108,11 @@
 /*Leader related terms */
 #define LEADER_STATUS         0x00
 #define LEADER_STATUS_TCP_ACK 0x1
-#define LEADER_SIZE           sizeof(LEADER)
-#define MAC_ADDR_REQ_SIZE     sizeof(PACKETTOSEND)
-#define SS_INFO_REQ_SIZE      sizeof(PACKETTOSEND)
+#define LEADER_SIZE           sizeof(struct bcm_leader)
+#define MAC_ADDR_REQ_SIZE     sizeof(struct bcm_packettosend)
+#define SS_INFO_REQ_SIZE      sizeof(struct bcm_packettosend)
 #define CM_REQUEST_SIZE       (LEADER_SIZE + sizeof(stLocalSFChangeRequest))
-#define IDLE_REQ_SIZE         sizeof(PACKETTOSEND)
+#define IDLE_REQ_SIZE         sizeof(struct bcm_packettosend)
 
 
 #define MAX_TRANSFER_CTRL_BYTE_USB (2*1024)
@@ -252,11 +252,7 @@ typedef enum _E_PHS_DSC_ACTION {
 #define IDLE_MODE_WAKEUP_NOTIFIER_ADDRESS 0x1FC02FA8
 #define IDLE_MODE_MAX_RETRY_COUNT 1000
 
-#ifdef REL_4_1
-#define CONFIG_BEGIN_ADDR 0xBF60B004
-#else
 #define CONFIG_BEGIN_ADDR 0xBF60B000
-#endif
 
 #define FIRMWARE_BEGIN_ADDR 0xBFC00000
 
