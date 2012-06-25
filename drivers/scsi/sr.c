@@ -101,6 +101,7 @@ static DEFINE_MUTEX(sr_ref_mutex);
 static int sr_open(struct cdrom_device_info *, int);
 static void sr_release(struct cdrom_device_info *);
 
+static void check_dbml(struct scsi_cd *);
 static void get_sectorsize(struct scsi_cd *);
 static void get_capabilities(struct scsi_cd *);
 
@@ -728,6 +729,28 @@ fail:
 	return error;
 }
 
+static void check_dbml(struct scsi_cd *cd)
+{
+	struct packet_command cgc;
+	unsigned char buffer[16];
+	struct rm_feature_desc *rfd;
+
+	init_cdrom_command(&cgc, buffer, sizeof(buffer), CGC_DATA_READ);
+	cgc.cmd[0] = GPCMD_GET_CONFIGURATION;
+	cgc.cmd[3] = CDF_RM;
+	cgc.cmd[8] = sizeof(buffer);
+	cgc.quiet = 1;
+
+	if (cd->cdi.ops->generic_packet(&cd->cdi, &cgc))
+		return;
+
+	rfd = (struct rm_feature_desc *)&buffer[sizeof(struct feature_header)];
+	if (be16_to_cpu(rfd->feature_code) != CDF_RM)
+		return;
+
+	if (rfd->dbml)
+		cd->dbml = 1;
+}
 
 static void get_sectorsize(struct scsi_cd *cd)
 {
