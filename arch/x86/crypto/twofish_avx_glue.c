@@ -1,16 +1,11 @@
 /*
- * Glue Code for SSE2 assembler versions of Serpent Cipher
+ * Glue Code for AVX assembler version of Twofish Cipher
  *
- * Copyright (c) 2011 Jussi Kivilinna <jussi.kivilinna@mbnet.fi>
+ * Copyright (C) 2012 Johannes Goetzfried
+ *     <Johannes.Goetzfried@informatik.stud.uni-erlangen.de>
  *
- * Glue code based on aesni-intel_glue.c by:
- *  Copyright (C) 2008, Intel Corp.
- *    Author: Huang Ying <ying.huang@intel.com>
- *
- * CBC & ECB parts based on code (crypto/cbc.c,ecb.c) by:
- *   Copyright (c) 2006 Herbert Xu <herbert@gondor.apana.org.au>
- * CTR part based on code (crypto/ctr.c) by:
- *   (C) Copyright IBM Corp. 2007 - Joy Latten <latten@us.ibm.com>
+ * Glue code based on serpent_sse2_glue.c by:
+ *  Copyright (C) 2011 Jussi Kivilinna <jussi.kivilinna@mbnet.fi>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -35,38 +30,92 @@
 #include <linux/crypto.h>
 #include <linux/err.h>
 #include <crypto/algapi.h>
-#include <crypto/serpent.h>
+#include <crypto/twofish.h>
 #include <crypto/cryptd.h>
 #include <crypto/b128ops.h>
 #include <crypto/ctr.h>
 #include <crypto/lrw.h>
 #include <crypto/xts.h>
 #include <asm/i387.h>
-#include <asm/serpent-sse2.h>
+#include <asm/xcr.h>
+#include <asm/xsave.h>
 #include <crypto/scatterwalk.h>
 #include <linux/workqueue.h>
 #include <linux/spinlock.h>
 
-struct async_serpent_ctx {
+
+#define TWOFISH_PARALLEL_BLOCKS 8
+
+/* regular block cipher functions from twofish_x86_64 module */
+asmlinkage void twofish_enc_blk(struct twofish_ctx *ctx, u8 *dst,
+				const u8 *src);
+asmlinkage void twofish_dec_blk(struct twofish_ctx *ctx, u8 *dst,
+				const u8 *src);
+
+/* 3-way parallel cipher functions from twofish_x86_64-3way module */
+asmlinkage void __twofish_enc_blk_3way(struct twofish_ctx *ctx, u8 *dst,
+				       const u8 *src, bool xor);
+asmlinkage void twofish_dec_blk_3way(struct twofish_ctx *ctx, u8 *dst,
+				     const u8 *src);
+
+static inline void twofish_enc_blk_3way(struct twofish_ctx *ctx, u8 *dst,
+					const u8 *src)
+{
+	__twofish_enc_blk_3way(ctx, dst, src, false);
+}
+
+static inline void twofish_enc_blk_3way_xor(struct twofish_ctx *ctx, u8 *dst,
+					    const u8 *src)
+{
+	__twofish_enc_blk_3way(ctx, dst, src, true);
+}
+
+/* 8-way parallel cipher functions */
+asmlinkage void __twofish_enc_blk_8way(struct twofish_ctx *ctx, u8 *dst,
+				       const u8 *src, bool xor);
+asmlinkage void twofish_dec_blk_8way(struct twofish_ctx *ctx, u8 *dst,
+				     const u8 *src);
+
+static inline void twofish_enc_blk_xway(struct twofish_ctx *ctx, u8 *dst,
+					const u8 *src)
+{
+	__twofish_enc_blk_8way(ctx, dst, src, false);
+}
+
+static inline void twofish_enc_blk_xway_xor(struct twofish_ctx *ctx, u8 *dst,
+					    const u8 *src)
+{
+	__twofish_enc_blk_8way(ctx, dst, src, true);
+}
+
+static inline void twofish_dec_blk_xway(struct twofish_ctx *ctx, u8 *dst,
+					const u8 *src)
+{
+	twofish_dec_blk_8way(ctx, dst, src);
+}
+
+
+
+struct async_twofish_ctx {
 	struct cryptd_ablkcipher *cryptd_tfm;
 };
 
-static inline bool serpent_fpu_begin(bool fpu_enabled, unsigned int nbytes)
+static inline bool twofish_fpu_begin(bool fpu_enabled, unsigned int nbytes)
 {
 	if (fpu_enabled)
 		return true;
 
-	/* SSE2 is only used when chunk to be processed is large enough, so
+	/* AVX is only used when chunk to be processed is large enough, so
 	 * do not enable FPU until it is necessary.
 	 */
-	if (nbytes < SERPENT_BLOCK_SIZE * SERPENT_PARALLEL_BLOCKS)
+	if (nbytes < TF_BLOCK_SIZE * TWOFISH_PARALLEL_BLOCKS)
 		return false;
 
 	kernel_fpu_begin();
 	return true;
 }
 
-static inline void serpent_fpu_end(bool fpu_enabled)
+static inline void twofish_fpu_end(bool fpu_enabled)
 {
 	if (fpu_enabled)
 		kernel_fpu_end();
@@ -76,8 +125,8 @@ static int ecb_crypt(struct blkcipher_desc *desc, struct blkcipher_walk *walk,
 		     bool enc)
 {
 	bool fpu_enabled = false;
-	struct serpent_ctx *ctx = crypto_blkcipher_ctx(desc->tfm);
-	const unsigned int bsize = SERPENT_BLOCK_SIZE;
+	struct twofish_ctx *ctx = crypto_blkcipher_ctx(desc->tfm);
+	const unsigned int bsize = TF_BLOCK_SIZE;
 	unsigned int nbytes;
 	int err;
 
@@ -88,20 +137,37 @@ static int ecb_crypt(struct blkcipher_desc *desc, struct blkcipher_walk *walk,
 		u8 *wsrc = walk->src.virt.addr;
 		u8 *wdst = walk->dst.virt.addr;
 
-		fpu_enabled = serpent_fpu_begin(fpu_enabled, nbytes);
+		fpu_enabled = twofish_fpu_begin(fpu_enabled, nbytes);
 
 		/* Process multi-block batch */
-		if (nbytes >= bsize * SERPENT_PARALLEL_BLOCKS) {
+		if (nbytes >= bsize * TWOFISH_PARALLEL_BLOCKS) {
 			do {
 				if (enc)
-					serpent_enc_blk_xway(ctx, wdst, wsrc);
+					twofish_enc_blk_xway(ctx, wdst, wsrc);
 				else
-					serpent_dec_blk_xway(ctx, wdst, wsrc);
+					twofish_dec_blk_xway(ctx, wdst, wsrc);
 
-				wsrc += bsize * SERPENT_PARALLEL_BLOCKS;
-				wdst += bsize * SERPENT_PARALLEL_BLOCKS;
-				nbytes -= bsize * SERPENT_PARALLEL_BLOCKS;
-			} while (nbytes >= bsize * SERPENT_PARALLEL_BLOCKS);
+				wsrc += bsize * TWOFISH_PARALLEL_BLOCKS;
+				wdst += bsize * TWOFISH_PARALLEL_BLOCKS;
+				nbytes -= bsize * TWOFISH_PARALLEL_BLOCKS;
+			} while (nbytes >= bsize * TWOFISH_PARALLEL_BLOCKS);
+
+			if (nbytes < bsize)
+				goto done;
+		}
+
+		/* Process three block batch */
+		if (nbytes >= bsize * 3) {
+			do {
+				if (enc)
+					twofish_enc_blk_3way(ctx, wdst, wsrc);
+				else
+					twofish_dec_blk_3way(ctx, wdst, wsrc);
+
+				wsrc += bsize * 3;
+				wdst += bsize * 3;
+				nbytes -= bsize * 3;
+			} while (nbytes >= bsize * 3);
 
 			if (nbytes < bsize)
 				goto done;
@@ -110,9 +176,9 @@ static int ecb_crypt(struct blkcipher_desc *desc, struct blkcipher_walk *walk,
 		/* Handle leftovers */
 		do {
 			if (enc)
-				__serpent_encrypt(ctx, wdst, wsrc);
+				twofish_enc_blk(ctx, wdst, wsrc);
 			else
-				__serpent_decrypt(ctx, wdst, wsrc);
+				twofish_dec_blk(ctx, wdst, wsrc);
 
 			wsrc += bsize;
 			wdst += bsize;
@@ -123,7 +189,7 @@ done:
 		err = blkcipher_walk_done(desc, walk, nbytes);
 	}
 
-	serpent_fpu_end(fpu_enabled);
+	twofish_fpu_end(fpu_enabled);
 	return err;
 }
 
@@ -148,8 +214,8 @@ static int ecb_decrypt(struct blkcipher_desc *desc, struct scatterlist *dst,
 static unsigned int __cbc_encrypt(struct blkcipher_desc *desc,
 				  struct blkcipher_walk *walk)
 {
-	struct serpent_ctx *ctx = crypto_blkcipher_ctx(desc->tfm);
-	const unsigned int bsize = SERPENT_BLOCK_SIZE;
+	struct twofish_ctx *ctx = crypto_blkcipher_ctx(desc->tfm);
+	const unsigned int bsize = TF_BLOCK_SIZE;
 	unsigned int nbytes = walk->nbytes;
 	u128 *src = (u128 *)walk->src.virt.addr;
 	u128 *dst = (u128 *)walk->dst.virt.addr;
@@ -157,7 +223,7 @@ static unsigned int __cbc_encrypt(struct blkcipher_desc *desc,
 
 	do {
 		u128_xor(dst, src, iv);
-		__serpent_encrypt(ctx, (u8 *)dst, (u8 *)dst);
+		twofish_enc_blk(ctx, (u8 *)dst, (u8 *)dst);
 		iv = dst;
 
 		src += 1;
@@ -189,12 +255,12 @@ static int cbc_encrypt(struct blkcipher_desc *desc, struct scatterlist *dst,
 static unsigned int __cbc_decrypt(struct blkcipher_desc *desc,
 				  struct blkcipher_walk *walk)
 {
-	struct serpent_ctx *ctx = crypto_blkcipher_ctx(desc->tfm);
-	const unsigned int bsize = SERPENT_BLOCK_SIZE;
+	struct twofish_ctx *ctx = crypto_blkcipher_ctx(desc->tfm);
+	const unsigned int bsize = TF_BLOCK_SIZE;
 	unsigned int nbytes = walk->nbytes;
 	u128 *src = (u128 *)walk->src.virt.addr;
 	u128 *dst = (u128 *)walk->dst.virt.addr;
-	u128 ivs[SERPENT_PARALLEL_BLOCKS - 1];
+	u128 ivs[TWOFISH_PARALLEL_BLOCKS - 1];
 	u128 last_iv;
 	int i;
 
@@ -205,18 +271,18 @@ static unsigned int __cbc_decrypt(struct blkcipher_desc *desc,
 	last_iv = *src;
 
 	/* Process multi-block batch */
-	if (nbytes >= bsize * SERPENT_PARALLEL_BLOCKS) {
+	if (nbytes >= bsize * TWOFISH_PARALLEL_BLOCKS) {
 		do {
-			nbytes -= bsize * (SERPENT_PARALLEL_BLOCKS - 1);
-			src -= SERPENT_PARALLEL_BLOCKS - 1;
-			dst -= SERPENT_PARALLEL_BLOCKS - 1;
+			nbytes -= bsize * (TWOFISH_PARALLEL_BLOCKS - 1);
+			src -= TWOFISH_PARALLEL_BLOCKS - 1;
+			dst -= TWOFISH_PARALLEL_BLOCKS - 1;
 
-			for (i = 0; i < SERPENT_PARALLEL_BLOCKS - 1; i++)
+			for (i = 0; i < TWOFISH_PARALLEL_BLOCKS - 1; i++)
 				ivs[i] = src[i];
 
-			serpent_dec_blk_xway(ctx, (u8 *)dst, (u8 *)src);
+			twofish_dec_blk_xway(ctx, (u8 *)dst, (u8 *)src);
 
-			for (i = 0; i < SERPENT_PARALLEL_BLOCKS - 1; i++)
+			for (i = 0; i < TWOFISH_PARALLEL_BLOCKS - 1; i++)
 				u128_xor(dst + (i + 1), dst + (i + 1), ivs + i);
 
 			nbytes -= bsize;
@@ -226,7 +292,35 @@ static unsigned int __cbc_decrypt(struct blkcipher_desc *desc,
 			u128_xor(dst, dst, src - 1);
 			src -= 1;
 			dst -= 1;
-		} while (nbytes >= bsize * SERPENT_PARALLEL_BLOCKS);
+		} while (nbytes >= bsize * TWOFISH_PARALLEL_BLOCKS);
+
+		if (nbytes < bsize)
+			goto done;
+	}
+
+	/* Process three block batch */
+	if (nbytes >= bsize * 3) {
+		do {
+			nbytes -= bsize * (3 - 1);
+			src -= 3 - 1;
+			dst -= 3 - 1;
+
+			ivs[0] = src[0];
+			ivs[1] = src[1];
+
+			twofish_dec_blk_3way(ctx, (u8 *)dst, (u8 *)src);
+
+			u128_xor(dst + 1, dst + 1, ivs + 0);
+			u128_xor(dst + 2, dst + 2, ivs + 1);
+
+			nbytes -= bsize;
+			if (nbytes < bsize)
+				goto done;
+
+			u128_xor(dst, dst, src - 1);
+			src -= 1;
+			dst -= 1;
+		} while (nbytes >= bsize * 3);
 
 		if (nbytes < bsize)
 			goto done;
@@ -234,7 +328,7 @@ static unsigned int __cbc_decrypt(struct blkcipher_desc *desc,
 
 	/* Handle leftovers */
 	for (;;) {
-		__serpent_decrypt(ctx, (u8 *)dst, (u8 *)src);
+		twofish_dec_blk(ctx, (u8 *)dst, (u8 *)src);
 
 		nbytes -= bsize;
 		if (nbytes < bsize)
@@ -264,12 +358,12 @@ static int cbc_decrypt(struct blkcipher_desc *desc, struct scatterlist *dst,
 	desc->flags &= ~CRYPTO_TFM_REQ_MAY_SLEEP;
 
 	while ((nbytes = walk.nbytes)) {
-		fpu_enabled = serpent_fpu_begin(fpu_enabled, nbytes);
+		fpu_enabled = twofish_fpu_begin(fpu_enabled, nbytes);
 		nbytes = __cbc_decrypt(desc, &walk);
 		err = blkcipher_walk_done(desc, &walk, nbytes);
 	}
 
-	serpent_fpu_end(fpu_enabled);
+	twofish_fpu_end(fpu_enabled);
 	return err;
 }
 
@@ -295,39 +389,39 @@ static inline void u128_inc(u128 *i)
 static void ctr_crypt_final(struct blkcipher_desc *desc,
 			    struct blkcipher_walk *walk)
 {
-	struct serpent_ctx *ctx = crypto_blkcipher_ctx(desc->tfm);
+	struct twofish_ctx *ctx = crypto_blkcipher_ctx(desc->tfm);
 	u8 *ctrblk = walk->iv;
-	u8 keystream[SERPENT_BLOCK_SIZE];
+	u8 keystream[TF_BLOCK_SIZE];
 	u8 *src = walk->src.virt.addr;
 	u8 *dst = walk->dst.virt.addr;
 	unsigned int nbytes = walk->nbytes;
 
-	__serpent_encrypt(ctx, keystream, ctrblk);
+	twofish_enc_blk(ctx, keystream, ctrblk);
 	crypto_xor(keystream, src, nbytes);
 	memcpy(dst, keystream, nbytes);
 
-	crypto_inc(ctrblk, SERPENT_BLOCK_SIZE);
+	crypto_inc(ctrblk, TF_BLOCK_SIZE);
 }
 
 static unsigned int __ctr_crypt(struct blkcipher_desc *desc,
 				struct blkcipher_walk *walk)
 {
-	struct serpent_ctx *ctx = crypto_blkcipher_ctx(desc->tfm);
-	const unsigned int bsize = SERPENT_BLOCK_SIZE;
+	struct twofish_ctx *ctx = crypto_blkcipher_ctx(desc->tfm);
+	const unsigned int bsize = TF_BLOCK_SIZE;
 	unsigned int nbytes = walk->nbytes;
 	u128 *src = (u128 *)walk->src.virt.addr;
 	u128 *dst = (u128 *)walk->dst.virt.addr;
 	u128 ctrblk;
-	be128 ctrblocks[SERPENT_PARALLEL_BLOCKS];
+	be128 ctrblocks[TWOFISH_PARALLEL_BLOCKS];
 	int i;
 
 	be128_to_u128(&ctrblk, (be128 *)walk->iv);
 
 	/* Process multi-block batch */
-	if (nbytes >= bsize * SERPENT_PARALLEL_BLOCKS) {
+	if (nbytes >= bsize * TWOFISH_PARALLEL_BLOCKS) {
 		do {
 			/* create ctrblks for parallel encrypt */
-			for (i = 0; i < SERPENT_PARALLEL_BLOCKS; i++) {
+			for (i = 0; i < TWOFISH_PARALLEL_BLOCKS; i++) {
 				if (dst != src)
 					dst[i] = src[i];
 
@@ -335,13 +429,42 @@ static unsigned int __ctr_crypt(struct blkcipher_desc *desc,
 				u128_inc(&ctrblk);
 			}
 
-			serpent_enc_blk_xway_xor(ctx, (u8 *)dst,
+			twofish_enc_blk_xway_xor(ctx, (u8 *)dst,
 						 (u8 *)ctrblocks);
 
-			src += SERPENT_PARALLEL_BLOCKS;
-			dst += SERPENT_PARALLEL_BLOCKS;
-			nbytes -= bsize * SERPENT_PARALLEL_BLOCKS;
-		} while (nbytes >= bsize * SERPENT_PARALLEL_BLOCKS);
+			src += TWOFISH_PARALLEL_BLOCKS;
+			dst += TWOFISH_PARALLEL_BLOCKS;
+			nbytes -= bsize * TWOFISH_PARALLEL_BLOCKS;
+		} while (nbytes >= bsize * TWOFISH_PARALLEL_BLOCKS);
+
+		if (nbytes < bsize)
+			goto done;
+	}
+
+	/* Process three block batch */
+	if (nbytes >= bsize * 3) {
+		do {
+			if (dst != src) {
+				dst[0] = src[0];
+				dst[1] = src[1];
+				dst[2] = src[2];
+			}
+
+			/* create ctrblks for parallel encrypt */
+			u128_to_be128(&ctrblocks[0], &ctrblk);
+			u128_inc(&ctrblk);
+			u128_to_be128(&ctrblocks[1], &ctrblk);
+			u128_inc(&ctrblk);
+			u128_to_be128(&ctrblocks[2], &ctrblk);
+			u128_inc(&ctrblk);
+
+			twofish_enc_blk_3way_xor(ctx, (u8 *)dst,
+						 (u8 *)ctrblocks);
+
+			src += 3;
+			dst += 3;
+			nbytes -= bsize * 3;
+		} while (nbytes >= bsize * 3);
 
 		if (nbytes < bsize)
 			goto done;
@@ -355,7 +478,7 @@ static unsigned int __ctr_crypt(struct blkcipher_desc *desc,
 		u128_to_be128(&ctrblocks[0], &ctrblk);
 		u128_inc(&ctrblk);
 
-		__serpent_encrypt(ctx, (u8 *)ctrblocks, (u8 *)ctrblocks);
+		twofish_enc_blk(ctx, (u8 *)ctrblocks, (u8 *)ctrblocks);
 		u128_xor(dst, dst, (u128 *)ctrblocks);
 
 		src += 1;
@@ -376,16 +499,16 @@ static int ctr_crypt(struct blkcipher_desc *desc, struct scatterlist *dst,
 	int err;
 
 	blkcipher_walk_init(&walk, dst, src, nbytes);
-	err = blkcipher_walk_virt_block(desc, &walk, SERPENT_BLOCK_SIZE);
+	err = blkcipher_walk_virt_block(desc, &walk, TF_BLOCK_SIZE);
 	desc->flags &= ~CRYPTO_TFM_REQ_MAY_SLEEP;
 
-	while ((nbytes = walk.nbytes) >= SERPENT_BLOCK_SIZE) {
-		fpu_enabled = serpent_fpu_begin(fpu_enabled, nbytes);
+	while ((nbytes = walk.nbytes) >= TF_BLOCK_SIZE) {
+		fpu_enabled = twofish_fpu_begin(fpu_enabled, nbytes);
 		nbytes = __ctr_crypt(desc, &walk);
 		err = blkcipher_walk_done(desc, &walk, nbytes);
 	}
 
-	serpent_fpu_end(fpu_enabled);
+	twofish_fpu_end(fpu_enabled);
 
 	if (walk.nbytes) {
 		ctr_crypt_final(desc, &walk);
@@ -396,71 +519,81 @@ static int ctr_crypt(struct blkcipher_desc *desc, struct scatterlist *dst,
 }
 
 struct crypt_priv {
-	struct serpent_ctx *ctx;
+	struct twofish_ctx *ctx;
 	bool fpu_enabled;
 };
 
 static void encrypt_callback(void *priv, u8 *srcdst, unsigned int nbytes)
 {
-	const unsigned int bsize = SERPENT_BLOCK_SIZE;
+	const unsigned int bsize = TF_BLOCK_SIZE;
 	struct crypt_priv *ctx = priv;
 	int i;
 
-	ctx->fpu_enabled = serpent_fpu_begin(ctx->fpu_enabled, nbytes);
+	ctx->fpu_enabled = twofish_fpu_begin(ctx->fpu_enabled, nbytes);
 
-	if (nbytes == bsize * SERPENT_PARALLEL_BLOCKS) {
-		serpent_enc_blk_xway(ctx->ctx, srcdst, srcdst);
+	if (nbytes == bsize * TWOFISH_PARALLEL_BLOCKS) {
+		twofish_enc_blk_xway(ctx->ctx, srcdst, srcdst);
 		return;
 	}
 
+	for (i = 0; i < nbytes / (bsize * 3); i++, srcdst += bsize * 3)
+		twofish_enc_blk_3way(ctx->ctx, srcdst, srcdst);
+
+	nbytes %= bsize * 3;
+
 	for (i = 0; i < nbytes / bsize; i++, srcdst += bsize)
-		__serpent_encrypt(ctx->ctx, srcdst, srcdst);
+		twofish_enc_blk(ctx->ctx, srcdst, srcdst);
 }
 
 static void decrypt_callback(void *priv, u8 *srcdst, unsigned int nbytes)
 {
-	const unsigned int bsize = SERPENT_BLOCK_SIZE;
+	const unsigned int bsize = TF_BLOCK_SIZE;
 	struct crypt_priv *ctx = priv;
 	int i;
 
-	ctx->fpu_enabled = serpent_fpu_begin(ctx->fpu_enabled, nbytes);
+	ctx->fpu_enabled = twofish_fpu_begin(ctx->fpu_enabled, nbytes);
 
-	if (nbytes == bsize * SERPENT_PARALLEL_BLOCKS) {
-		serpent_dec_blk_xway(ctx->ctx, srcdst, srcdst);
+	if (nbytes == bsize * TWOFISH_PARALLEL_BLOCKS) {
+		twofish_dec_blk_xway(ctx->ctx, srcdst, srcdst);
 		return;
 	}
 
+	for (i = 0; i < nbytes / (bsize * 3); i++, srcdst += bsize * 3)
+		twofish_dec_blk_3way(ctx->ctx, srcdst, srcdst);
+
+	nbytes %= bsize * 3;
+
 	for (i = 0; i < nbytes / bsize; i++, srcdst += bsize)
-		__serpent_decrypt(ctx->ctx, srcdst, srcdst);
+		twofish_dec_blk(ctx->ctx, srcdst, srcdst);
 }
 
-struct serpent_lrw_ctx {
+struct twofish_lrw_ctx {
 	struct lrw_table_ctx lrw_table;
-	struct serpent_ctx serpent_ctx;
+	struct twofish_ctx twofish_ctx;
 };
 
-static int lrw_serpent_setkey(struct crypto_tfm *tfm, const u8 *key,
+static int lrw_twofish_setkey(struct crypto_tfm *tfm, const u8 *key,
 			      unsigned int keylen)
 {
-	struct serpent_lrw_ctx *ctx = crypto_tfm_ctx(tfm);
+	struct twofish_lrw_ctx *ctx = crypto_tfm_ctx(tfm);
 	int err;
 
-	err = __serpent_setkey(&ctx->serpent_ctx, key, keylen -
-							SERPENT_BLOCK_SIZE);
+	err = __twofish_setkey(&ctx->twofish_ctx, key,
+				keylen - TF_BLOCK_SIZE, &tfm->crt_flags);
 	if (err)
 		return err;
 
 	return lrw_init_table(&ctx->lrw_table, key + keylen -
-						SERPENT_BLOCK_SIZE);
+						TF_BLOCK_SIZE);
 }
 
 static int lrw_encrypt(struct blkcipher_desc *desc, struct scatterlist *dst,
 		       struct scatterlist *src, unsigned int nbytes)
 {
-	struct serpent_lrw_ctx *ctx = crypto_blkcipher_ctx(desc->tfm);
-	be128 buf[SERPENT_PARALLEL_BLOCKS];
+	struct twofish_lrw_ctx *ctx = crypto_blkcipher_ctx(desc->tfm);
+	be128 buf[TWOFISH_PARALLEL_BLOCKS];
 	struct crypt_priv crypt_ctx = {
-		.ctx = &ctx->serpent_ctx,
+		.ctx = &ctx->twofish_ctx,
 		.fpu_enabled = false,
 	};
 	struct lrw_crypt_req req = {
@@ -475,7 +608,7 @@ static int lrw_encrypt(struct blkcipher_desc *desc, struct scatterlist *dst,
 
 	desc->flags &= ~CRYPTO_TFM_REQ_MAY_SLEEP;
 	ret = lrw_crypt(desc, dst, src, nbytes, &req);
-	serpent_fpu_end(crypt_ctx.fpu_enabled);
+	twofish_fpu_end(crypt_ctx.fpu_enabled);
 
 	return ret;
 }
@@ -483,10 +616,10 @@ static int lrw_encrypt(struct blkcipher_desc *desc, struct scatterlist *dst,
 static int lrw_decrypt(struct blkcipher_desc *desc, struct scatterlist *dst,
 		       struct scatterlist *src, unsigned int nbytes)
 {
-	struct serpent_lrw_ctx *ctx = crypto_blkcipher_ctx(desc->tfm);
-	be128 buf[SERPENT_PARALLEL_BLOCKS];
+	struct twofish_lrw_ctx *ctx = crypto_blkcipher_ctx(desc->tfm);
+	be128 buf[TWOFISH_PARALLEL_BLOCKS];
 	struct crypt_priv crypt_ctx = {
-		.ctx = &ctx->serpent_ctx,
+		.ctx = &ctx->twofish_ctx,
 		.fpu_enabled = false,
 	};
 	struct lrw_crypt_req req = {
@@ -501,27 +634,27 @@ static int lrw_decrypt(struct blkcipher_desc *desc, struct scatterlist *dst,
 
 	desc->flags &= ~CRYPTO_TFM_REQ_MAY_SLEEP;
 	ret = lrw_crypt(desc, dst, src, nbytes, &req);
-	serpent_fpu_end(crypt_ctx.fpu_enabled);
+	twofish_fpu_end(crypt_ctx.fpu_enabled);
 
 	return ret;
 }
 
 static void lrw_exit_tfm(struct crypto_tfm *tfm)
 {
-	struct serpent_lrw_ctx *ctx = crypto_tfm_ctx(tfm);
+	struct twofish_lrw_ctx *ctx = crypto_tfm_ctx(tfm);
 
 	lrw_free_table(&ctx->lrw_table);
 }
 
-struct serpent_xts_ctx {
-	struct serpent_ctx tweak_ctx;
-	struct serpent_ctx crypt_ctx;
+struct twofish_xts_ctx {
+	struct twofish_ctx tweak_ctx;
+	struct twofish_ctx crypt_ctx;
 };
 
-static int xts_serpent_setkey(struct crypto_tfm *tfm, const u8 *key,
+static int xts_twofish_setkey(struct crypto_tfm *tfm, const u8 *key,
 			      unsigned int keylen)
 {
-	struct serpent_xts_ctx *ctx = crypto_tfm_ctx(tfm);
+	struct twofish_xts_ctx *ctx = crypto_tfm_ctx(tfm);
 	u32 *flags = &tfm->crt_flags;
 	int err;
 
@@ -534,19 +667,20 @@ static int xts_serpent_setkey(struct crypto_tfm *tfm, const u8 *key,
 	}
 
 	/* first half of xts-key is for crypt */
-	err = __serpent_setkey(&ctx->crypt_ctx, key, keylen / 2);
+	err = __twofish_setkey(&ctx->crypt_ctx, key, keylen / 2, flags);
 	if (err)
 		return err;
 
 	/* second half of xts-key is for tweak */
-	return __serpent_setkey(&ctx->tweak_ctx, key + keylen / 2, keylen / 2);
+	return __twofish_setkey(&ctx->tweak_ctx,
+				key + keylen / 2, keylen / 2, flags);
 }
 
 static int xts_encrypt(struct blkcipher_desc *desc, struct scatterlist *dst,
 		       struct scatterlist *src, unsigned int nbytes)
 {
-	struct serpent_xts_ctx *ctx = crypto_blkcipher_ctx(desc->tfm);
-	be128 buf[SERPENT_PARALLEL_BLOCKS];
+	struct twofish_xts_ctx *ctx = crypto_blkcipher_ctx(desc->tfm);
+	be128 buf[TWOFISH_PARALLEL_BLOCKS];
 	struct crypt_priv crypt_ctx = {
 		.ctx = &ctx->crypt_ctx,
 		.fpu_enabled = false,
@@ -556,7 +690,7 @@ static int xts_encrypt(struct blkcipher_desc *desc, struct scatterlist *dst,
 		.tbuflen = sizeof(buf),
 
 		.tweak_ctx = &ctx->tweak_ctx,
-		.tweak_fn = XTS_TWEAK_CAST(__serpent_encrypt),
+		.tweak_fn = XTS_TWEAK_CAST(twofish_enc_blk),
 		.crypt_ctx = &crypt_ctx,
 		.crypt_fn = encrypt_callback,
 	};
@@ -564,7 +698,7 @@ static int xts_encrypt(struct blkcipher_desc *desc, struct scatterlist *dst,
 
 	desc->flags &= ~CRYPTO_TFM_REQ_MAY_SLEEP;
 	ret = xts_crypt(desc, dst, src, nbytes, &req);
-	serpent_fpu_end(crypt_ctx.fpu_enabled);
+	twofish_fpu_end(crypt_ctx.fpu_enabled);
 
 	return ret;
 }
@@ -572,8 +706,8 @@ static int xts_encrypt(struct blkcipher_desc *desc, struct scatterlist *dst,
 static int xts_decrypt(struct blkcipher_desc *desc, struct scatterlist *dst,
 		       struct scatterlist *src, unsigned int nbytes)
 {
-	struct serpent_xts_ctx *ctx = crypto_blkcipher_ctx(desc->tfm);
-	be128 buf[SERPENT_PARALLEL_BLOCKS];
+	struct twofish_xts_ctx *ctx = crypto_blkcipher_ctx(desc->tfm);
+	be128 buf[TWOFISH_PARALLEL_BLOCKS];
 	struct crypt_priv crypt_ctx = {
 		.ctx = &ctx->crypt_ctx,
 		.fpu_enabled = false,
@@ -583,7 +717,7 @@ static int xts_decrypt(struct blkcipher_desc *desc, struct scatterlist *dst,
 		.tbuflen = sizeof(buf),
 
 		.tweak_ctx = &ctx->tweak_ctx,
-		.tweak_fn = XTS_TWEAK_CAST(__serpent_encrypt),
+		.tweak_fn = XTS_TWEAK_CAST(twofish_enc_blk),
 		.crypt_ctx = &crypt_ctx,
 		.crypt_fn = decrypt_callback,
 	};
@@ -591,7 +725,7 @@ static int xts_decrypt(struct blkcipher_desc *desc, struct scatterlist *dst,
 
 	desc->flags &= ~CRYPTO_TFM_REQ_MAY_SLEEP;
 	ret = xts_crypt(desc, dst, src, nbytes, &req);
-	serpent_fpu_end(crypt_ctx.fpu_enabled);
+	twofish_fpu_end(crypt_ctx.fpu_enabled);
 
 	return ret;
 }
@@ -599,7 +733,7 @@ static int xts_decrypt(struct blkcipher_desc *desc, struct scatterlist *dst,
 static int ablk_set_key(struct crypto_ablkcipher *tfm, const u8 *key,
 			unsigned int key_len)
 {
-	struct async_serpent_ctx *ctx = crypto_ablkcipher_ctx(tfm);
+	struct async_twofish_ctx *ctx = crypto_ablkcipher_ctx(tfm);
 	struct crypto_ablkcipher *child = &ctx->cryptd_tfm->base;
 	int err;
 
@@ -615,7 +749,7 @@ static int ablk_set_key(struct crypto_ablkcipher *tfm, const u8 *key,
 static int __ablk_encrypt(struct ablkcipher_request *req)
 {
 	struct crypto_ablkcipher *tfm = crypto_ablkcipher_reqtfm(req);
-	struct async_serpent_ctx *ctx = crypto_ablkcipher_ctx(tfm);
+	struct async_twofish_ctx *ctx = crypto_ablkcipher_ctx(tfm);
 	struct blkcipher_desc desc;
 
 	desc.tfm = cryptd_ablkcipher_child(ctx->cryptd_tfm);
@@ -629,7 +763,7 @@ static int __ablk_encrypt(struct ablkcipher_request *req)
 static int ablk_encrypt(struct ablkcipher_request *req)
 {
 	struct crypto_ablkcipher *tfm = crypto_ablkcipher_reqtfm(req);
-	struct async_serpent_ctx *ctx = crypto_ablkcipher_ctx(tfm);
+	struct async_twofish_ctx *ctx = crypto_ablkcipher_ctx(tfm);
 
 	if (!irq_fpu_usable()) {
 		struct ablkcipher_request *cryptd_req =
@@ -647,7 +781,7 @@ static int ablk_encrypt(struct ablkcipher_request *req)
 static int ablk_decrypt(struct ablkcipher_request *req)
 {
 	struct crypto_ablkcipher *tfm = crypto_ablkcipher_reqtfm(req);
-	struct async_serpent_ctx *ctx = crypto_ablkcipher_ctx(tfm);
+	struct async_twofish_ctx *ctx = crypto_ablkcipher_ctx(tfm);
 
 	if (!irq_fpu_usable()) {
 		struct ablkcipher_request *cryptd_req =
@@ -671,14 +805,14 @@ static int ablk_decrypt(struct ablkcipher_request *req)
 
 static void ablk_exit(struct crypto_tfm *tfm)
 {
-	struct async_serpent_ctx *ctx = crypto_tfm_ctx(tfm);
+	struct async_twofish_ctx *ctx = crypto_tfm_ctx(tfm);
 
 	cryptd_free_ablkcipher(ctx->cryptd_tfm);
 }
 
 static int ablk_init(struct crypto_tfm *tfm)
 {
-	struct async_serpent_ctx *ctx = crypto_tfm_ctx(tfm);
+	struct async_twofish_ctx *ctx = crypto_tfm_ctx(tfm);
 	struct cryptd_ablkcipher *cryptd_tfm;
 	char drv_name[CRYPTO_MAX_ALG_NAME];
 
@@ -696,175 +830,175 @@ static int ablk_init(struct crypto_tfm *tfm)
 	return 0;
 }
 
-static struct crypto_alg serpent_algs[10] = { {
-	.cra_name		= "__ecb-serpent-sse2",
-	.cra_driver_name	= "__driver-ecb-serpent-sse2",
+static struct crypto_alg twofish_algs[10] = { {
+	.cra_name		= "__ecb-twofish-avx",
+	.cra_driver_name	= "__driver-ecb-twofish-avx",
 	.cra_priority		= 0,
 	.cra_flags		= CRYPTO_ALG_TYPE_BLKCIPHER,
-	.cra_blocksize		= SERPENT_BLOCK_SIZE,
-	.cra_ctxsize		= sizeof(struct serpent_ctx),
+	.cra_blocksize		= TF_BLOCK_SIZE,
+	.cra_ctxsize		= sizeof(struct twofish_ctx),
 	.cra_alignmask		= 0,
 	.cra_type		= &crypto_blkcipher_type,
 	.cra_module		= THIS_MODULE,
-	.cra_list		= LIST_HEAD_INIT(serpent_algs[0].cra_list),
+	.cra_list		= LIST_HEAD_INIT(twofish_algs[0].cra_list),
 	.cra_u = {
 		.blkcipher = {
-			.min_keysize	= SERPENT_MIN_KEY_SIZE,
-			.max_keysize	= SERPENT_MAX_KEY_SIZE,
-			.setkey		= serpent_setkey,
+			.min_keysize	= TF_MIN_KEY_SIZE,
+			.max_keysize	= TF_MAX_KEY_SIZE,
+			.setkey		= twofish_setkey,
 			.encrypt	= ecb_encrypt,
 			.decrypt	= ecb_decrypt,
 		},
 	},
 }, {
-	.cra_name		= "__cbc-serpent-sse2",
-	.cra_driver_name	= "__driver-cbc-serpent-sse2",
+	.cra_name		= "__cbc-twofish-avx",
+	.cra_driver_name	= "__driver-cbc-twofish-avx",
 	.cra_priority		= 0,
 	.cra_flags		= CRYPTO_ALG_TYPE_BLKCIPHER,
-	.cra_blocksize		= SERPENT_BLOCK_SIZE,
-	.cra_ctxsize		= sizeof(struct serpent_ctx),
+	.cra_blocksize		= TF_BLOCK_SIZE,
+	.cra_ctxsize		= sizeof(struct twofish_ctx),
 	.cra_alignmask		= 0,
 	.cra_type		= &crypto_blkcipher_type,
 	.cra_module		= THIS_MODULE,
-	.cra_list		= LIST_HEAD_INIT(serpent_algs[1].cra_list),
+	.cra_list		= LIST_HEAD_INIT(twofish_algs[1].cra_list),
 	.cra_u = {
 		.blkcipher = {
-			.min_keysize	= SERPENT_MIN_KEY_SIZE,
-			.max_keysize	= SERPENT_MAX_KEY_SIZE,
-			.setkey		= serpent_setkey,
+			.min_keysize	= TF_MIN_KEY_SIZE,
+			.max_keysize	= TF_MAX_KEY_SIZE,
+			.setkey		= twofish_setkey,
 			.encrypt	= cbc_encrypt,
 			.decrypt	= cbc_decrypt,
 		},
 	},
 }, {
-	.cra_name		= "__ctr-serpent-sse2",
-	.cra_driver_name	= "__driver-ctr-serpent-sse2",
+	.cra_name		= "__ctr-twofish-avx",
+	.cra_driver_name	= "__driver-ctr-twofish-avx",
 	.cra_priority		= 0,
 	.cra_flags		= CRYPTO_ALG_TYPE_BLKCIPHER,
 	.cra_blocksize		= 1,
-	.cra_ctxsize		= sizeof(struct serpent_ctx),
+	.cra_ctxsize		= sizeof(struct twofish_ctx),
 	.cra_alignmask		= 0,
 	.cra_type		= &crypto_blkcipher_type,
 	.cra_module		= THIS_MODULE,
-	.cra_list		= LIST_HEAD_INIT(serpent_algs[2].cra_list),
+	.cra_list		= LIST_HEAD_INIT(twofish_algs[2].cra_list),
 	.cra_u = {
 		.blkcipher = {
-			.min_keysize	= SERPENT_MIN_KEY_SIZE,
-			.max_keysize	= SERPENT_MAX_KEY_SIZE,
-			.ivsize		= SERPENT_BLOCK_SIZE,
-			.setkey		= serpent_setkey,
+			.min_keysize	= TF_MIN_KEY_SIZE,
+			.max_keysize	= TF_MAX_KEY_SIZE,
+			.ivsize		= TF_BLOCK_SIZE,
+			.setkey		= twofish_setkey,
 			.encrypt	= ctr_crypt,
 			.decrypt	= ctr_crypt,
 		},
 	},
 }, {
-	.cra_name		= "__lrw-serpent-sse2",
-	.cra_driver_name	= "__driver-lrw-serpent-sse2",
+	.cra_name		= "__lrw-twofish-avx",
+	.cra_driver_name	= "__driver-lrw-twofish-avx",
 	.cra_priority		= 0,
 	.cra_flags		= CRYPTO_ALG_TYPE_BLKCIPHER,
-	.cra_blocksize		= SERPENT_BLOCK_SIZE,
-	.cra_ctxsize		= sizeof(struct serpent_lrw_ctx),
+	.cra_blocksize		= TF_BLOCK_SIZE,
+	.cra_ctxsize		= sizeof(struct twofish_lrw_ctx),
 	.cra_alignmask		= 0,
 	.cra_type		= &crypto_blkcipher_type,
 	.cra_module		= THIS_MODULE,
-	.cra_list		= LIST_HEAD_INIT(serpent_algs[3].cra_list),
+	.cra_list		= LIST_HEAD_INIT(twofish_algs[3].cra_list),
 	.cra_exit		= lrw_exit_tfm,
 	.cra_u = {
 		.blkcipher = {
-			.min_keysize	= SERPENT_MIN_KEY_SIZE +
-					  SERPENT_BLOCK_SIZE,
-			.max_keysize	= SERPENT_MAX_KEY_SIZE +
-					  SERPENT_BLOCK_SIZE,
-			.ivsize		= SERPENT_BLOCK_SIZE,
-			.setkey		= lrw_serpent_setkey,
+			.min_keysize	= TF_MIN_KEY_SIZE +
+					  TF_BLOCK_SIZE,
+			.max_keysize	= TF_MAX_KEY_SIZE +
+					  TF_BLOCK_SIZE,
+			.ivsize		= TF_BLOCK_SIZE,
+			.setkey		= lrw_twofish_setkey,
 			.encrypt	= lrw_encrypt,
 			.decrypt	= lrw_decrypt,
 		},
 	},
 }, {
-	.cra_name		= "__xts-serpent-sse2",
-	.cra_driver_name	= "__driver-xts-serpent-sse2",
+	.cra_name		= "__xts-twofish-avx",
+	.cra_driver_name	= "__driver-xts-twofish-avx",
 	.cra_priority		= 0,
 	.cra_flags		= CRYPTO_ALG_TYPE_BLKCIPHER,
-	.cra_blocksize		= SERPENT_BLOCK_SIZE,
-	.cra_ctxsize		= sizeof(struct serpent_xts_ctx),
+	.cra_blocksize		= TF_BLOCK_SIZE,
+	.cra_ctxsize		= sizeof(struct twofish_xts_ctx),
 	.cra_alignmask		= 0,
 	.cra_type		= &crypto_blkcipher_type,
 	.cra_module		= THIS_MODULE,
-	.cra_list		= LIST_HEAD_INIT(serpent_algs[4].cra_list),
+	.cra_list		= LIST_HEAD_INIT(twofish_algs[4].cra_list),
 	.cra_u = {
 		.blkcipher = {
-			.min_keysize	= SERPENT_MIN_KEY_SIZE * 2,
-			.max_keysize	= SERPENT_MAX_KEY_SIZE * 2,
-			.ivsize		= SERPENT_BLOCK_SIZE,
-			.setkey		= xts_serpent_setkey,
+			.min_keysize	= TF_MIN_KEY_SIZE * 2,
+			.max_keysize	= TF_MAX_KEY_SIZE * 2,
+			.ivsize		= TF_BLOCK_SIZE,
+			.setkey		= xts_twofish_setkey,
 			.encrypt	= xts_encrypt,
 			.decrypt	= xts_decrypt,
 		},
 	},
 }, {
-	.cra_name		= "ecb(serpent)",
-	.cra_driver_name	= "ecb-serpent-sse2",
+	.cra_name		= "ecb(twofish)",
+	.cra_driver_name	= "ecb-twofish-avx",
 	.cra_priority		= 400,
 	.cra_flags		= CRYPTO_ALG_TYPE_ABLKCIPHER | CRYPTO_ALG_ASYNC,
-	.cra_blocksize		= SERPENT_BLOCK_SIZE,
-	.cra_ctxsize		= sizeof(struct async_serpent_ctx),
+	.cra_blocksize		= TF_BLOCK_SIZE,
+	.cra_ctxsize		= sizeof(struct async_twofish_ctx),
 	.cra_alignmask		= 0,
 	.cra_type		= &crypto_ablkcipher_type,
 	.cra_module		= THIS_MODULE,
-	.cra_list		= LIST_HEAD_INIT(serpent_algs[5].cra_list),
+	.cra_list		= LIST_HEAD_INIT(twofish_algs[5].cra_list),
 	.cra_init		= ablk_init,
 	.cra_exit		= ablk_exit,
 	.cra_u = {
 		.ablkcipher = {
-			.min_keysize	= SERPENT_MIN_KEY_SIZE,
-			.max_keysize	= SERPENT_MAX_KEY_SIZE,
+			.min_keysize	= TF_MIN_KEY_SIZE,
+			.max_keysize	= TF_MAX_KEY_SIZE,
 			.setkey		= ablk_set_key,
 			.encrypt	= ablk_encrypt,
 			.decrypt	= ablk_decrypt,
 		},
 	},
 }, {
-	.cra_name		= "cbc(serpent)",
-	.cra_driver_name	= "cbc-serpent-sse2",
+	.cra_name		= "cbc(twofish)",
+	.cra_driver_name	= "cbc-twofish-avx",
 	.cra_priority		= 400,
 	.cra_flags		= CRYPTO_ALG_TYPE_ABLKCIPHER | CRYPTO_ALG_ASYNC,
-	.cra_blocksize		= SERPENT_BLOCK_SIZE,
-	.cra_ctxsize		= sizeof(struct async_serpent_ctx),
+	.cra_blocksize		= TF_BLOCK_SIZE,
+	.cra_ctxsize		= sizeof(struct async_twofish_ctx),
 	.cra_alignmask		= 0,
 	.cra_type		= &crypto_ablkcipher_type,
 	.cra_module		= THIS_MODULE,
-	.cra_list		= LIST_HEAD_INIT(serpent_algs[6].cra_list),
+	.cra_list		= LIST_HEAD_INIT(twofish_algs[6].cra_list),
 	.cra_init		= ablk_init,
 	.cra_exit		= ablk_exit,
 	.cra_u = {
 		.ablkcipher = {
-			.min_keysize	= SERPENT_MIN_KEY_SIZE,
-			.max_keysize	= SERPENT_MAX_KEY_SIZE,
-			.ivsize		= SERPENT_BLOCK_SIZE,
+			.min_keysize	= TF_MIN_KEY_SIZE,
+			.max_keysize	= TF_MAX_KEY_SIZE,
+			.ivsize		= TF_BLOCK_SIZE,
 			.setkey		= ablk_set_key,
 			.encrypt	= __ablk_encrypt,
 			.decrypt	= ablk_decrypt,
 		},
 	},
 }, {
-	.cra_name		= "ctr(serpent)",
-	.cra_driver_name	= "ctr-serpent-sse2",
+	.cra_name		= "ctr(twofish)",
+	.cra_driver_name	= "ctr-twofish-avx",
 	.cra_priority		= 400,
 	.cra_flags		= CRYPTO_ALG_TYPE_ABLKCIPHER | CRYPTO_ALG_ASYNC,
 	.cra_blocksize		= 1,
-	.cra_ctxsize		= sizeof(struct async_serpent_ctx),
+	.cra_ctxsize		= sizeof(struct async_twofish_ctx),
 	.cra_alignmask		= 0,
 	.cra_type		= &crypto_ablkcipher_type,
 	.cra_module		= THIS_MODULE,
-	.cra_list		= LIST_HEAD_INIT(serpent_algs[7].cra_list),
+	.cra_list		= LIST_HEAD_INIT(twofish_algs[7].cra_list),
 	.cra_init		= ablk_init,
 	.cra_exit		= ablk_exit,
 	.cra_u = {
 		.ablkcipher = {
-			.min_keysize	= SERPENT_MIN_KEY_SIZE,
-			.max_keysize	= SERPENT_MAX_KEY_SIZE,
-			.ivsize		= SERPENT_BLOCK_SIZE,
+			.min_keysize	= TF_MIN_KEY_SIZE,
+			.max_keysize	= TF_MAX_KEY_SIZE,
+			.ivsize		= TF_BLOCK_SIZE,
 			.setkey		= ablk_set_key,
 			.encrypt	= ablk_encrypt,
 			.decrypt	= ablk_encrypt,
@@ -872,48 +1006,48 @@ static struct crypto_alg serpent_algs[10] = { {
 		},
 	},
 }, {
-	.cra_name		= "lrw(serpent)",
-	.cra_driver_name	= "lrw-serpent-sse2",
+	.cra_name		= "lrw(twofish)",
+	.cra_driver_name	= "lrw-twofish-avx",
 	.cra_priority		= 400,
 	.cra_flags		= CRYPTO_ALG_TYPE_ABLKCIPHER | CRYPTO_ALG_ASYNC,
-	.cra_blocksize		= SERPENT_BLOCK_SIZE,
-	.cra_ctxsize		= sizeof(struct async_serpent_ctx),
+	.cra_blocksize		= TF_BLOCK_SIZE,
+	.cra_ctxsize		= sizeof(struct async_twofish_ctx),
 	.cra_alignmask		= 0,
 	.cra_type		= &crypto_ablkcipher_type,
 	.cra_module		= THIS_MODULE,
-	.cra_list		= LIST_HEAD_INIT(serpent_algs[8].cra_list),
+	.cra_list		= LIST_HEAD_INIT(twofish_algs[8].cra_list),
 	.cra_init		= ablk_init,
 	.cra_exit		= ablk_exit,
 	.cra_u = {
 		.ablkcipher = {
-			.min_keysize	= SERPENT_MIN_KEY_SIZE +
-					  SERPENT_BLOCK_SIZE,
-			.max_keysize	= SERPENT_MAX_KEY_SIZE +
-					  SERPENT_BLOCK_SIZE,
-			.ivsize		= SERPENT_BLOCK_SIZE,
+			.min_keysize	= TF_MIN_KEY_SIZE +
+					  TF_BLOCK_SIZE,
+			.max_keysize	= TF_MAX_KEY_SIZE +
+					  TF_BLOCK_SIZE,
+			.ivsize		= TF_BLOCK_SIZE,
 			.setkey		= ablk_set_key,
 			.encrypt	= ablk_encrypt,
 			.decrypt	= ablk_decrypt,
 		},
 	},
 }, {
-	.cra_name		= "xts(serpent)",
-	.cra_driver_name	= "xts-serpent-sse2",
+	.cra_name		= "xts(twofish)",
+	.cra_driver_name	= "xts-twofish-avx",
 	.cra_priority		= 400,
 	.cra_flags		= CRYPTO_ALG_TYPE_ABLKCIPHER | CRYPTO_ALG_ASYNC,
-	.cra_blocksize		= SERPENT_BLOCK_SIZE,
-	.cra_ctxsize		= sizeof(struct async_serpent_ctx),
+	.cra_blocksize		= TF_BLOCK_SIZE,
+	.cra_ctxsize		= sizeof(struct async_twofish_ctx),
 	.cra_alignmask		= 0,
 	.cra_type		= &crypto_ablkcipher_type,
 	.cra_module		= THIS_MODULE,
-	.cra_list		= LIST_HEAD_INIT(serpent_algs[9].cra_list),
+	.cra_list		= LIST_HEAD_INIT(twofish_algs[9].cra_list),
 	.cra_init		= ablk_init,
 	.cra_exit		= ablk_exit,
 	.cra_u = {
 		.ablkcipher = {
-			.min_keysize	= SERPENT_MIN_KEY_SIZE * 2,
-			.max_keysize	= SERPENT_MAX_KEY_SIZE * 2,
-			.ivsize		= SERPENT_BLOCK_SIZE,
+			.min_keysize	= TF_MIN_KEY_SIZE * 2,
+			.max_keysize	= TF_MAX_KEY_SIZE * 2,
+			.ivsize		= TF_BLOCK_SIZE,
 			.setkey		= ablk_set_key,
 			.encrypt	= ablk_encrypt,
 			.decrypt	= ablk_decrypt,
@@ -921,24 +1055,32 @@ static struct crypto_alg serpent_algs[10] = { {
 	},
 } };
 
-static int __init serpent_sse2_init(void)
+static int __init twofish_init(void)
 {
-	if (!cpu_has_xmm2) {
-		printk(KERN_INFO "SSE2 instructions are not detected.\n");
+	u64 xcr0;
+
+	if (!cpu_has_avx || !cpu_has_osxsave) {
+		printk(KERN_INFO "AVX instructions are not detected.\n");
 		return -ENODEV;
 	}
 
-	return crypto_register_algs(serpent_algs, ARRAY_SIZE(serpent_algs));
+	xcr0 = xgetbv(XCR_XFEATURE_ENABLED_MASK);
+	if ((xcr0 & (XSTATE_SSE | XSTATE_YMM)) != (XSTATE_SSE | XSTATE_YMM)) {
+		printk(KERN_INFO "AVX detected but unusable.\n");
+		return -ENODEV;
+	}
+
+	return crypto_register_algs(twofish_algs, ARRAY_SIZE(twofish_algs));
 }
 
-static void __exit serpent_sse2_exit(void)
+static void __exit twofish_exit(void)
 {
-	crypto_unregister_algs(serpent_algs, ARRAY_SIZE(serpent_algs));
+	crypto_unregister_algs(twofish_algs, ARRAY_SIZE(twofish_algs));
 }
 
-module_init(serpent_sse2_init);
-module_exit(serpent_sse2_exit);
+module_init(twofish_init);
+module_exit(twofish_exit);
 
-MODULE_DESCRIPTION("Serpent Cipher Algorithm, SSE2 optimized");
+MODULE_DESCRIPTION("Twofish Cipher Algorithm, AVX optimized");
 MODULE_LICENSE("GPL");
-MODULE_ALIAS("serpent");
+MODULE_ALIAS("twofish");
