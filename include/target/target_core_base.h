@@ -160,25 +160,20 @@ enum se_cmd_flags_table {
 	SCF_SUPPORTED_SAM_OPCODE	= 0x00000001,
 	SCF_TRANSPORT_TASK_SENSE	= 0x00000002,
 	SCF_EMULATED_TASK_SENSE		= 0x00000004,
-	SCF_SCSI_DATA_SG_IO_CDB		= 0x00000008,
-	SCF_SCSI_CONTROL_SG_IO_CDB	= 0x00000010,
-	SCF_SCSI_NON_DATA_CDB		= 0x00000020,
-	SCF_SCSI_TMR_CDB		= 0x00000040,
-	SCF_SCSI_CDB_EXCEPTION		= 0x00000080,
-	SCF_SCSI_RESERVATION_CONFLICT	= 0x00000100,
-	SCF_FUA				= 0x00000200,
-	SCF_SE_LUN_CMD			= 0x00000800,
-	SCF_SE_ALLOW_EOO		= 0x00001000,
-	SCF_BIDI			= 0x00002000,
-	SCF_SENT_CHECK_CONDITION	= 0x00004000,
-	SCF_OVERFLOW_BIT		= 0x00008000,
-	SCF_UNDERFLOW_BIT		= 0x00010000,
-	SCF_SENT_DELAYED_TAS		= 0x00020000,
-	SCF_ALUA_NON_OPTIMIZED		= 0x00040000,
-	SCF_DELAYED_CMD_FROM_SAM_ATTR	= 0x00080000,
-	SCF_UNUSED			= 0x00100000,
-	SCF_PASSTHROUGH_SG_TO_MEM_NOALLOC = 0x00200000,
-	SCF_ACK_KREF			= 0x00400000,
+	SCF_SCSI_DATA_CDB		= 0x00000008,
+	SCF_SCSI_TMR_CDB		= 0x00000010,
+	SCF_SCSI_CDB_EXCEPTION		= 0x00000020,
+	SCF_SCSI_RESERVATION_CONFLICT	= 0x00000040,
+	SCF_FUA				= 0x00000080,
+	SCF_SE_LUN_CMD			= 0x00000100,
+	SCF_BIDI			= 0x00000400,
+	SCF_SENT_CHECK_CONDITION	= 0x00000800,
+	SCF_OVERFLOW_BIT		= 0x00001000,
+	SCF_UNDERFLOW_BIT		= 0x00002000,
+	SCF_SENT_DELAYED_TAS		= 0x00004000,
+	SCF_ALUA_NON_OPTIMIZED		= 0x00008000,
+	SCF_PASSTHROUGH_SG_TO_MEM_NOALLOC = 0x00020000,
+	SCF_ACK_KREF			= 0x00040000,
 };
 
 /* struct se_dev_entry->lun_flags and struct se_lun->lun_access */
@@ -486,11 +481,8 @@ struct se_tmr_req {
 	int			call_transport;
 	/* Reference to ITT that Task Mgmt should be performed */
 	u32			ref_task_tag;
-	/* 64-bit encoded SAM LUN from $FABRIC_MOD TMR header */
-	u64			ref_task_lun;
 	void 			*fabric_tmr_ptr;
 	struct se_cmd		*task_cmd;
-	struct se_cmd		*ref_cmd;
 	struct se_device	*tmr_dev;
 	struct se_lun		*tmr_lun;
 	struct list_head	tmr_list;
@@ -575,7 +567,6 @@ struct se_cmd {
 	struct scatterlist	*t_bidi_data_sg;
 	unsigned int		t_bidi_data_nents;
 
-	struct list_head	execute_list;
 	struct list_head	state_list;
 	bool			state_active;
 
@@ -780,7 +771,6 @@ struct se_device {
 	/* Active commands on this virtual SE device */
 	atomic_t		simple_cmds;
 	atomic_t		dev_ordered_id;
-	atomic_t		execute_tasks;
 	atomic_t		dev_ordered_sync;
 	atomic_t		dev_qf_count;
 	struct se_obj		dev_obj;
@@ -806,7 +796,6 @@ struct se_device {
 	struct task_struct	*process_thread;
 	struct work_struct	qf_work_queue;
 	struct list_head	delayed_cmd_list;
-	struct list_head	execute_list;
 	struct list_head	state_list;
 	struct list_head	qf_cmd_list;
 	/* Pointer to associated SE HBA */
