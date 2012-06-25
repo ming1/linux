@@ -1,0 +1,69 @@
+Importing i2c based on 02edf6abe01610a5fb379df442de3c837ad99467
+Unchanged quilt series i2c
+Importing jdelvare-hwmon based on 02edf6abe01610a5fb379df442de3c837ad99467
+Unchanged quilt series jdelvare-hwmon
+Importing rr based on v3.5-rc3-93-g02edf6a
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard 02edf6abe01610a5fb379df442de3c837ad99467
+HEAD is now at 02edf6a Merge git://git.kernel.org/pub/scm/linux/kernel/git/mchehab/linux-edac
+$ git am ../quilt/rr/virtio:ids_fix_comment_for_rng.patch
+Applying: virtio ids: fix comment for virtio-rng
+$ git am ../quilt/rr/virtio:rng_allow_tasks_to_be_killed_that_are_waiting_for_rng_input.patch
+Applying: virtio: rng: allow tasks to be killed that are waiting for rng input
+$ git am ../quilt/rr/virtio:rng_don_t_wait_on_host_when_module_is_going_away.patch
+Applying: virtio: rng: don't wait on host when module is going away
+$ git am ../quilt/rr/virtio:rng_split_out_common_code_in_probe_remove_for_s3_s4_ops.patch
+Applying: virtio: rng: split out common code in probe / remove for s3/s4 ops
+$ git am ../quilt/rr/virtio:rng_s3_s4_support.patch
+Applying: virtio: rng: s3/s4 support
+$ git am ../quilt/rr/virtio:blk_call_del_gendisk_before_disable_guest_kick.patch
+Applying: virtio-blk: Call del_gendisk() before disable guest kick
+$ git am ../quilt/rr/virtio:blk_reset_device_after_blk_cleanup_queue.patch
+Applying: virtio-blk: Reset device after blk_cleanup_queue()
+$ git am ../quilt/rr/virtio:blk_use_block_layer_provided_spinlock.patch
+Applying: virtio-blk: Use block layer provided spinlock
+$ git am ../quilt/rr/misc:cpumask_add_a_few_comments_of_cpumask_functions.patch
+Applying: cpumask: add a few comments of cpumask functions
+$ git am ../quilt/rr/misc:init_add_comments_to_keep_initcall_names_in_sync_with_initcall_levels.patch
+Applying: init: add comments to keep initcall-names in sync with initcall levels
+$ git am ../quilt/rr/module:taint_kernel_when_lve_is_loaded.patch
+Applying: Taint kernel when lve module is loaded
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/rr
+From ../quilt-tmp
+ + ba528af...231e4d6 master     -> quilt/rr  (forced update)
+Importing device-mapper based on v3.5-rc1
+$ cd ../quilt-tmp
+$ git reset --hard f8f5701bdaf9134b1f90e5044a82c66324d2073f
+HEAD is now at f8f5701 Linux 3.5-rc1
+$ git am ../quilt/device-mapper/dm-thin-commit-metadata-before-creating-metadata-snapshot.patch
+Applying: Userland sometimes sees a corrupt metadata block if metadata is changing
+$ git am ../quilt/device-mapper/dm-persistent-data-fix-shadow_info_leak-on-dm_tm_destroy.patch
+Applying: Cleanup the shadow table before destroying the transaction manager.
+$ git am ../quilt/device-mapper/dm-verity-fix-documentation.patch
+Applying: Fix target line specification.
+$ git am ../quilt/device-mapper/dm-thin-clean-up-compiler-warning.patch
+Applying: Clean up "warning: dubious: !x & y".  Also make it clear that
+$ git am ../quilt/device-mapper/dm-thin-provide-specific-errors-for-two-table-load-failure-cases.patch
+Applying: Provide specific error message strings for two pool_ctr() failure cases
+$ git am ../quilt/device-mapper/dm-stripe-fix-size-test.patch
+Applying: dm-stripe is supposed to ensure that all the space allocated to the
+$ git am ../quilt/device-mapper/dm-stripe-remove-stripes_mask.patch
+Applying: The structure stripe_c contains a stripes_mask field. This field is
+$ git am ../quilt/device-mapper/dm-support-non-power-of-two-target-max_io_len.patch
+Applying: Remove the restriction that limits a target's specified maximum incoming
+$ git am ../quilt/device-mapper/dm-stripe-support-for-non-power-of-2-chunksize.patch
+Applying: Non power of 2 chunksize support is needed to properly align stripe IO
+$ git am ../quilt/device-mapper/dm-stripe-remove-minimum-stripe-size.patch
+Applying: There is no technical limitation in device mapper that would prevent the
+$ git am ../quilt/device-mapper/dm-stripe-optimize-chunk_size-calculations.patch
+Applying: dm-stripe is usually used with a chunk size that is a power of two.
+$ git am ../quilt/device-mapper/dm-thin-support-for-non-power-of-2-pool-blocksize.patch
+Applying: Non power of 2 blocksize support is needed to properly align thinp IO
+$ git am ../quilt/device-mapper/dm-thin-optimize-power-of-two-block-size.patch
+Applying: dm-thin will be most likely used with a block size that is a power of
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/device-mapper
+From ../quilt-tmp
+ + 12ce893...f87f942 master     -> quilt/device-mapper  (forced update)
