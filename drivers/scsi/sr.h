@@ -49,6 +49,8 @@ typedef struct scsi_cd {
 	bool get_event_changed:1;	/* changed according to GET_EVENT */
 	bool ignore_get_event:1;	/* GET_EVENT is unreliable, use TUR */
 
+	atomic_t suspend_count;	/* we should request autosuspend only once */
+
 	struct cdrom_device_info cdi;
 	/* We hold gendisk and scsi_device references on probe and use
 	 * the refs on this kref to decide when to release them */
