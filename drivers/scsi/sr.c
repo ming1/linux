@@ -654,6 +654,13 @@ static int sr_block_ioctl(struct block_device *bdev, fmode_t mode, unsigned cmd,
 	void __user *argp = (void __user *)arg;
 	int ret;
 
+	/* Make sure the ODD is not suspended */
+	ret = pm_runtime_get_sync(&sdev->sdev_gendev);
+	if (ret < 0) {
+		pm_runtime_put_noidle(&sdev->sdev_gendev);
+		return -EACCES;
+	}
+
 	mutex_lock(&sr_mutex);
 
 	/*
@@ -685,6 +692,8 @@ static int sr_block_ioctl(struct block_device *bdev, fmode_t mode, unsigned cmd,
 
 out:
 	mutex_unlock(&sr_mutex);
+	pm_runtime_mark_last_busy(&cd->device->sdev_gendev);
+	pm_runtime_put_autosuspend(&cd->device->sdev_gendev);
 	return ret;
 }
 
