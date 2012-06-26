@@ -1,0 +1,27 @@
+Importing i2c based on bc259adc9b76f625fff0423df3ffb80a03802927
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard bc259adc9b76f625fff0423df3ffb80a03802927
+HEAD is now at bc259ad Merge tag 'staging-3.5-rc4' of git://git.kernel.org/pub/scm/linux/kernel/git/gregkh/staging
+$ git am ../quilt/i2c/i2c-update-Guenter-Roeck-address.patch
+Applying: i2c: Update Guenter's Roeck e-mail address
+$ git am ../quilt/i2c/i2c-use-module_pci_driver.patch
+Applying: i2c/busses: Use module_pci_driver
+$ git am ../quilt/i2c/i2c-piix4-01-eliminate-piix4_smba-global-variable.patch
+Applying: i2c-piix4: Eliminate piix4_smba global variable
+$ git am ../quilt/i2c/i2c-piix4-02-separate-registration-and-probing-code.patch
+Applying: i2c-piix4: Separate registration and probing code
+$ git am ../quilt/i2c/i2c-piix4-03-support-amd-auxiliary-smbus-controller.patch
+Applying: i2c-piix4: Support AMD auxiliary SMBus controller
+$ git am ../quilt/i2c/i2c-writing-clients-mention-module_i2c_driver.patch
+Applying: i2c/writing-clients: Mention module_i2c_driver()
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/i2c
+From ../quilt-tmp
+ + 54b0574...7f56c63 master     -> quilt/i2c  (forced update)
+Importing jdelvare-hwmon based on 02edf6abe01610a5fb379df442de3c837ad99467
+Unchanged quilt series jdelvare-hwmon
+Importing rr based on v3.5-rc3-93-g02edf6a
+Unchanged quilt series rr
+Importing device-mapper based on v3.5-rc1
+Unchanged quilt series device-mapper
