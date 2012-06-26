@@ -652,6 +652,10 @@ static const struct sdhci_pci_fixes sdhci_via = {
 	.probe		= via_probe,
 };
 
+static const struct sdhci_pci_fixes sdhci_xo1 = {
+	.quirks		= SDHCI_QUIRK_BROKEN_CARD_DETECTION,
+};
+
 static const struct pci_device_id pci_ids[] __devinitdata = {
 	{
 		.vendor		= PCI_VENDOR_ID_RICOH,
@@ -891,6 +895,14 @@ static const struct pci_device_id pci_ids[] __devinitdata = {
 		.subvendor	= PCI_ANY_ID,
 		.subdevice	= PCI_ANY_ID,
 		.driver_data	= (kernel_ulong_t)&sdhci_o2,
+	},
+
+	{
+		.vendor		= PCI_VENDOR_ID_MARVELL,
+		.device		= PCI_DEVICE_ID_MARVELL_88ALP01_SD,
+		.subvendor	= PCI_ANY_ID,
+		.subdevice	= PCI_ANY_ID,
+		.driver_data    = (kernel_ulong_t)&sdhci_xo1,
 	},
 
 	{	/* Generic SD host controller */
