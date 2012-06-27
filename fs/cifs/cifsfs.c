@@ -257,7 +257,6 @@ cifs_alloc_inode(struct super_block *sb)
 static void cifs_i_callback(struct rcu_head *head)
 {
 	struct inode *inode = container_of(head, struct inode, i_rcu);
-	INIT_LIST_HEAD(&inode->i_dentry);
 	kmem_cache_free(cifs_inode_cachep, CIFS_I(inode));
 }
 
@@ -778,6 +777,7 @@ struct file_system_type cifs_fs_type = {
 };
 const struct inode_operations cifs_dir_inode_ops = {
 	.create = cifs_create,
+	.atomic_open = cifs_atomic_open,
 	.lookup = cifs_lookup,
 	.getattr = cifs_getattr,
 	.unlink = cifs_unlink,
