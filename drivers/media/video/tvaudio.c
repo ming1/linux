@@ -118,7 +118,7 @@ struct CHIPSTATE {
 	audiocmd   shadow;
 
 	/* current settings */
-	__u16 left,right,treble,bass,muted,mode;
+	__u16 left, right, treble, bass, muted;
 	int prevmode;
 	int radio;
 	int input;
@@ -126,7 +126,6 @@ struct CHIPSTATE {
 	/* thread */
 	struct task_struct   *thread;
 	struct timer_list    wt;
-	int                  watch_stereo;
 	int 		     audmode;
 };
 
@@ -288,7 +287,7 @@ static int chip_thread(void *data)
 	struct CHIPSTATE *chip = data;
 	struct CHIPDESC  *desc = chip->desc;
 	struct v4l2_subdev *sd = &chip->sd;
-	int mode;
+	int mode, selected;
 
 	v4l2_dbg(1, debug, sd, "thread started\n");
 	set_freezable();
@@ -302,8 +301,8 @@ static int chip_thread(void *data)
 			break;
 		v4l2_dbg(1, debug, sd, "thread wakeup\n");
 
-		/* don't do anything for radio or if mode != auto */
-		if (chip->radio || chip->mode != 0)
+		/* don't do anything for radio */
+		if (chip->radio)
 			continue;
 
 		/* have a look what's going on */
@@ -316,16 +315,32 @@ static int chip_thread(void *data)
 
 		chip->prevmode = mode;
 
-		if (mode & V4L2_TUNER_MODE_STEREO)
-			desc->setmode(chip, V4L2_TUNER_MODE_STEREO);
-		if (mode & V4L2_TUNER_MODE_LANG1_LANG2)
-			desc->setmode(chip, V4L2_TUNER_MODE_STEREO);
-		else if (mode & V4L2_TUNER_MODE_LANG1)
-			desc->setmode(chip, V4L2_TUNER_MODE_LANG1);
-		else if (mode & V4L2_TUNER_MODE_LANG2)
-			desc->setmode(chip, V4L2_TUNER_MODE_LANG2);
-		else
-			desc->setmode(chip, V4L2_TUNER_MODE_MONO);
+		selected = V4L2_TUNER_MODE_MONO;
+		switch (chip->audmode) {
+		case V4L2_TUNER_MODE_MONO:
+			if (mode & V4L2_TUNER_SUB_LANG1)
+				selected = V4L2_TUNER_MODE_LANG1;
+			break;
+		case V4L2_TUNER_MODE_STEREO:
+		case V4L2_TUNER_MODE_LANG1:
+			if (mode & V4L2_TUNER_SUB_LANG1)
+				selected = V4L2_TUNER_MODE_LANG1;
+			else if (mode & V4L2_TUNER_SUB_STEREO)
+				selected = V4L2_TUNER_MODE_STEREO;
+			break;
+		case V4L2_TUNER_MODE_LANG2:
+			if (mode & V4L2_TUNER_SUB_LANG2)
+				selected = V4L2_TUNER_MODE_LANG2;
+			else if (mode & V4L2_TUNER_SUB_STEREO)
+				selected = V4L2_TUNER_MODE_STEREO;
+			break;
+		case V4L2_TUNER_MODE_LANG1_LANG2:
+			if (mode & V4L2_TUNER_SUB_LANG2)
+				selected = V4L2_TUNER_MODE_LANG1_LANG2;
+			else if (mode & V4L2_TUNER_SUB_STEREO)
+				selected = V4L2_TUNER_MODE_STEREO;
+		}
+		desc->setmode(chip, selected);
 
 		/* schedule next check */
 		mod_timer(&chip->wt, jiffies+msecs_to_jiffies(2000));
@@ -364,11 +379,11 @@ static int tda9840_getmode(struct CHIPSTATE *chip)
 	int val, mode;
 
 	val = chip_read(chip);
-	mode = V4L2_TUNER_MODE_MONO;
+	mode = V4L2_TUNER_SUB_MONO;
 	if (val & TDA9840_DS_DUAL)
-		mode |= V4L2_TUNER_MODE_LANG1 | V4L2_TUNER_MODE_LANG2;
+		mode |= V4L2_TUNER_SUB_LANG1 | V4L2_TUNER_SUB_LANG2;
 	if (val & TDA9840_ST_STEREO)
-		mode |= V4L2_TUNER_MODE_STEREO;
+		mode = V4L2_TUNER_SUB_STEREO;
 
 	v4l2_dbg(1, debug, sd, "tda9840_getmode(): raw chip read: %d, return: %d\n",
 		val, mode);
@@ -392,6 +407,9 @@ static void tda9840_setmode(struct CHIPSTATE *chip, int mode)
 		break;
 	case V4L2_TUNER_MODE_LANG2:
 		t |= TDA9840_DUALB;
+		break;
+	case V4L2_TUNER_MODE_LANG1_LANG2:
+		t |= TDA9840_DUALAB;
 		break;
 	default:
 		update = 0;
@@ -477,6 +495,7 @@ static int tda9840_checkit(struct CHIPSTATE *chip)
 /* 0x06 - C6 - Control 2 in TDA9855, Control 3 in TDA9850 */
 /* Common to TDA9855 and TDA9850: */
 #define TDA985x_SAP	3<<6 /* Selects SAP output, mute if not received */
+#define TDA985x_MONOSAP	2<<6 /* Selects Mono on left, SAP on right */
 #define TDA985x_STEREO	1<<6 /* Selects Stereo ouput, mono if not received */
 #define TDA985x_MONO	0    /* Forces Mono output */
 #define TDA985x_LMU	1<<3 /* Mute (LOR/LOL for 9855, OUTL/OUTR for 9850) */
@@ -515,13 +534,17 @@ static int tda9855_treble(int val) { return (val/0x1c71+0x3)<<1; }
 
 static int  tda985x_getmode(struct CHIPSTATE *chip)
 {
-	int mode;
+	int mode, val;
 
-	mode = ((TDA985x_STP | TDA985x_SAPP) &
-		chip_read(chip)) >> 4;
 	/* Add mono mode regardless of SAP and stereo */
 	/* Allows forced mono */
-	return mode | V4L2_TUNER_MODE_MONO;
+	mode = V4L2_TUNER_SUB_MONO;
+	val = chip_read(chip);
+	if (val & TDA985x_STP)
+		mode = V4L2_TUNER_SUB_STEREO;
+	if (val & TDA985x_SAPP)
+		mode |= V4L2_TUNER_SUB_SAP;
+	return mode;
 }
 
 static void tda985x_setmode(struct CHIPSTATE *chip, int mode)
@@ -534,10 +557,14 @@ static void tda985x_setmode(struct CHIPSTATE *chip, int mode)
 		c6 |= TDA985x_MONO;
 		break;
 	case V4L2_TUNER_MODE_STEREO:
+	case V4L2_TUNER_MODE_LANG1:
 		c6 |= TDA985x_STEREO;
 		break;
-	case V4L2_TUNER_MODE_LANG1:
+	case V4L2_TUNER_MODE_SAP:
 		c6 |= TDA985x_SAP;
+		break;
+	case V4L2_TUNER_MODE_LANG1_LANG2:
+		c6 |= TDA985x_MONOSAP;
 		break;
 	default:
 		update = 0;
@@ -583,9 +610,10 @@ static void tda985x_setmode(struct CHIPSTATE *chip, int mode)
 #define TDA9873_TR_MASK     (7 << 2)
 #define TDA9873_TR_MONO     4
 #define TDA9873_TR_STEREO   1 << 4
-#define TDA9873_TR_REVERSE  (1 << 3) & (1 << 2)
+#define TDA9873_TR_REVERSE  ((1 << 3) | (1 << 2))
 #define TDA9873_TR_DUALA    1 << 2
 #define TDA9873_TR_DUALB    1 << 3
+#define TDA9873_TR_DUALAB   0
 
 /* output level controls
  * B5:  output level switch (0 = reduced gain, 1 = normal gain)
@@ -653,11 +681,11 @@ static void tda985x_setmode(struct CHIPSTATE *chip, int mode)
 #define TDA9873_MOUT_DUALA  0
 #define TDA9873_MOUT_DUALB  1 << 3
 #define TDA9873_MOUT_ST     1 << 4
-#define TDA9873_MOUT_EXTM   (1 << 4 ) & (1 << 3)
+#define TDA9873_MOUT_EXTM   ((1 << 4) | (1 << 3))
 #define TDA9873_MOUT_EXTL   1 << 5
-#define TDA9873_MOUT_EXTR   (1 << 5 ) & (1 << 3)
-#define TDA9873_MOUT_EXTLR  (1 << 5 ) & (1 << 4)
-#define TDA9873_MOUT_MUTE   (1 << 5 ) & (1 << 4) & (1 << 3)
+#define TDA9873_MOUT_EXTR   ((1 << 5) | (1 << 3))
+#define TDA9873_MOUT_EXTLR  ((1 << 5) | (1 << 4))
+#define TDA9873_MOUT_MUTE   ((1 << 5) | (1 << 4) | (1 << 3))
 
 /* Status bits: (chip read) */
 #define TDA9873_PONR        0 /* Power-on reset detected if = 1 */
@@ -670,11 +698,11 @@ static int tda9873_getmode(struct CHIPSTATE *chip)
 	int val,mode;
 
 	val = chip_read(chip);
-	mode = V4L2_TUNER_MODE_MONO;
+	mode = V4L2_TUNER_SUB_MONO;
 	if (val & TDA9873_STEREO)
-		mode |= V4L2_TUNER_MODE_STEREO;
+		mode = V4L2_TUNER_SUB_STEREO;
 	if (val & TDA9873_DUAL)
-		mode |= V4L2_TUNER_MODE_LANG1 | V4L2_TUNER_MODE_LANG2;
+		mode |= V4L2_TUNER_SUB_LANG1 | V4L2_TUNER_SUB_LANG2;
 	v4l2_dbg(1, debug, sd, "tda9873_getmode(): raw chip read: %d, return: %d\n",
 		val, mode);
 	return mode;
@@ -707,8 +735,10 @@ static void tda9873_setmode(struct CHIPSTATE *chip, int mode)
 	case V4L2_TUNER_MODE_LANG2:
 		sw_data |= TDA9873_TR_DUALB;
 		break;
+	case V4L2_TUNER_MODE_LANG1_LANG2:
+		sw_data |= TDA9873_TR_DUALAB;
+		break;
 	default:
-		chip->mode = 0;
 		return;
 	}
 
@@ -865,7 +895,7 @@ static int tda9874a_getmode(struct CHIPSTATE *chip)
 	int dsr,nsr,mode;
 	int necr; /* just for debugging */
 
-	mode = V4L2_TUNER_MODE_MONO;
+	mode = V4L2_TUNER_SUB_MONO;
 
 	if(-1 == (dsr = chip_read2(chip,TDA9874A_DSR)))
 		return mode;
@@ -888,14 +918,14 @@ static int tda9874a_getmode(struct CHIPSTATE *chip)
 		 * external 4052 multiplexer in audio_hook().
 		 */
 		if(nsr & 0x02) /* NSR.S/MB=1 */
-			mode |= V4L2_TUNER_MODE_STEREO;
+			mode = V4L2_TUNER_SUB_STEREO;
 		if(nsr & 0x01) /* NSR.D/SB=1 */
-			mode |= V4L2_TUNER_MODE_LANG1 | V4L2_TUNER_MODE_LANG2;
+			mode |= V4L2_TUNER_SUB_LANG1 | V4L2_TUNER_SUB_LANG2;
 	} else {
 		if(dsr & 0x02) /* DSR.IDSTE=1 */
-			mode |= V4L2_TUNER_MODE_STEREO;
+			mode = V4L2_TUNER_SUB_STEREO;
 		if(dsr & 0x04) /* DSR.IDDUA=1 */
-			mode |= V4L2_TUNER_MODE_LANG1 | V4L2_TUNER_MODE_LANG2;
+			mode |= V4L2_TUNER_SUB_LANG1 | V4L2_TUNER_SUB_LANG2;
 	}
 
 	v4l2_dbg(1, debug, sd, "tda9874a_getmode(): DSR=0x%X, NSR=0x%X, NECR=0x%X, return: %d.\n",
@@ -939,8 +969,11 @@ static void tda9874a_setmode(struct CHIPSTATE *chip, int mode)
 			aosr = 0xa0; /* auto-select, dual B/B */
 			mdacosr = (tda9874a_mode) ? 0x83:0x81;
 			break;
+		case V4L2_TUNER_MODE_LANG1_LANG2:
+			aosr = 0x00; /* always route L to L and R to R */
+			mdacosr = (tda9874a_mode) ? 0x82:0x80;
+			break;
 		default:
-			chip->mode = 0;
 			return;
 		}
 		chip_write(chip, TDA9874A_AOSR, aosr);
@@ -974,8 +1007,11 @@ static void tda9874a_setmode(struct CHIPSTATE *chip, int mode)
 			fmmr = 0x02; /* dual */
 			aosr = 0x20; /* dual B/B */
 			break;
+		case V4L2_TUNER_MODE_LANG1_LANG2:
+			fmmr = 0x02; /* dual */
+			aosr = 0x00; /* dual A/B */
+			break;
 		default:
-			chip->mode = 0;
 			return;
 		}
 		chip_write(chip, TDA9874A_FMMR, fmmr);
@@ -1230,21 +1266,29 @@ static void tda8425_setmode(struct CHIPSTATE *chip, int mode)
 {
 	int s1 = chip->shadow.bytes[TDA8425_S1+1] & 0xe1;
 
-	if (mode & V4L2_TUNER_MODE_LANG1) {
+	switch (mode) {
+	case V4L2_TUNER_MODE_LANG1:
 		s1 |= TDA8425_S1_ML_SOUND_A;
 		s1 |= TDA8425_S1_STEREO_PSEUDO;
-
-	} else if (mode & V4L2_TUNER_MODE_LANG2) {
+		break;
+	case V4L2_TUNER_MODE_LANG2:
 		s1 |= TDA8425_S1_ML_SOUND_B;
 		s1 |= TDA8425_S1_STEREO_PSEUDO;
-
-	} else {
+		break;
+	case V4L2_TUNER_MODE_LANG1_LANG2:
 		s1 |= TDA8425_S1_ML_STEREO;
-
-		if (mode & V4L2_TUNER_MODE_MONO)
-			s1 |= TDA8425_S1_STEREO_MONO;
-		if (mode & V4L2_TUNER_MODE_STEREO)
-			s1 |= TDA8425_S1_STEREO_SPATIAL;
+		s1 |= TDA8425_S1_STEREO_LINEAR;
+		break;
+	case V4L2_TUNER_MODE_MONO:
+		s1 |= TDA8425_S1_ML_STEREO;
+		s1 |= TDA8425_S1_STEREO_MONO;
+		break;
+	case V4L2_TUNER_MODE_STEREO:
+		s1 |= TDA8425_S1_ML_STEREO;
+		s1 |= TDA8425_S1_STEREO_SPATIAL;
+		break;
+	default:
+		return;
 	}
 	chip_write(chip,TDA8425_S1,s1);
 }
@@ -1302,11 +1346,11 @@ static int ta8874z_getmode(struct CHIPSTATE *chip)
 	int val, mode;
 
 	val = chip_read(chip);
-	mode = V4L2_TUNER_MODE_MONO;
+	mode = V4L2_TUNER_SUB_MONO;
 	if (val & TA8874Z_B1){
-		mode |= V4L2_TUNER_MODE_LANG1 | V4L2_TUNER_MODE_LANG2;
+		mode |= V4L2_TUNER_SUB_LANG1 | V4L2_TUNER_SUB_LANG2;
 	}else if (!(val & TA8874Z_B0)){
-		mode |= V4L2_TUNER_MODE_STEREO;
+		mode = V4L2_TUNER_SUB_STEREO;
 	}
 	/* v4l_dbg(1, debug, chip->c, "ta8874z_getmode(): raw chip read: 0x%02x, return: 0x%02x\n", val, mode); */
 	return mode;
@@ -1316,6 +1360,7 @@ static audiocmd ta8874z_stereo = { 2, {0, TA8874Z_SEPARATION_DEFAULT}};
 static audiocmd ta8874z_mono = {2, { TA8874Z_MONO_SET, TA8874Z_SEPARATION_DEFAULT}};
 static audiocmd ta8874z_main = {2, { 0, TA8874Z_SEPARATION_DEFAULT}};
 static audiocmd ta8874z_sub = {2, { TA8874Z_MODE_SUB, TA8874Z_SEPARATION_DEFAULT}};
+static audiocmd ta8874z_both = {2, { TA8874Z_MODE_MAIN | TA8874Z_MODE_SUB, TA8874Z_SEPARATION_DEFAULT}};
 
 static void ta8874z_setmode(struct CHIPSTATE *chip, int mode)
 {
@@ -1337,6 +1382,9 @@ static void ta8874z_setmode(struct CHIPSTATE *chip, int mode)
 		break;
 	case V4L2_TUNER_MODE_LANG2:
 		t = &ta8874z_sub;
+		break;
+	case V4L2_TUNER_MODE_LANG1_LANG2:
+		t = &ta8874z_both;
 		break;
 	default:
 		update = 0;
@@ -1593,7 +1641,6 @@ static struct CHIPDESC chiplist[] = {
 		.addr_lo    = I2C_ADDR_TDA9840 >> 1,
 		.addr_hi    = I2C_ADDR_TDA9840 >> 1,
 		.registers  = 2,
-		.flags      = CHIP_NEED_CHECKMODE,
 
 		/* callbacks */
 		.getmode    = ta8874z_getmode,
@@ -1736,7 +1783,6 @@ static int tvaudio_s_radio(struct v4l2_subdev *sd)
 	struct CHIPSTATE *chip = to_state(sd);
 
 	chip->radio = 1;
-	chip->watch_stereo = 0;
 	/* del_timer(&chip->wt); */
 	return 0;
 }
@@ -1793,7 +1839,6 @@ static int tvaudio_s_tuner(struct v4l2_subdev *sd, struct v4l2_tuner *vt)
 {
 	struct CHIPSTATE *chip = to_state(sd);
 	struct CHIPDESC *desc = chip->desc;
-	int mode = 0;
 
 	if (!desc->setmode)
 		return 0;
@@ -1805,22 +1850,18 @@ static int tvaudio_s_tuner(struct v4l2_subdev *sd, struct v4l2_tuner *vt)
 	case V4L2_TUNER_MODE_STEREO:
 	case V4L2_TUNER_MODE_LANG1:
 	case V4L2_TUNER_MODE_LANG2:
-		mode = vt->audmode;
-		break;
 	case V4L2_TUNER_MODE_LANG1_LANG2:
-		mode = V4L2_TUNER_MODE_STEREO;
 		break;
 	default:
 		return -EINVAL;
 	}
 	chip->audmode = vt->audmode;
 
-	if (mode) {
-		chip->watch_stereo = 0;
-		/* del_timer(&chip->wt); */
-		chip->mode = mode;
-		desc->setmode(chip, mode);
-	}
+	if (chip->thread)
+		wake_up_process(chip->thread);
+	else
+		desc->setmode(chip, vt->audmode);
+
 	return 0;
 }
 
@@ -1828,7 +1869,6 @@ static int tvaudio_g_tuner(struct v4l2_subdev *sd, struct v4l2_tuner *vt)
 {
 	struct CHIPSTATE *chip = to_state(sd);
 	struct CHIPDESC *desc = chip->desc;
-	int mode = V4L2_TUNER_MODE_MONO;
 
 	if (!desc->getmode)
 		return 0;
@@ -1836,22 +1876,10 @@ static int tvaudio_g_tuner(struct v4l2_subdev *sd, struct v4l2_tuner *vt)
 		return 0;
 
 	vt->audmode = chip->audmode;
-	vt->rxsubchans = 0;
+	vt->rxsubchans = desc->getmode(chip);
 	vt->capability = V4L2_TUNER_CAP_STEREO |
 		V4L2_TUNER_CAP_LANG1 | V4L2_TUNER_CAP_LANG2;
 
-	mode = desc->getmode(chip);
-
-	if (mode & V4L2_TUNER_MODE_MONO)
-		vt->rxsubchans |= V4L2_TUNER_SUB_MONO;
-	if (mode & V4L2_TUNER_MODE_STEREO)
-		vt->rxsubchans |= V4L2_TUNER_SUB_STEREO;
-	/* Note: for SAP it should be mono/lang2 or stereo/lang2.
-	   When this module is converted fully to v4l2, then this
-	   should change for those chips that can detect SAP. */
-	if (mode & V4L2_TUNER_MODE_LANG1)
-		vt->rxsubchans = V4L2_TUNER_SUB_LANG1 |
-			V4L2_TUNER_SUB_LANG2;
 	return 0;
 }
 
@@ -1868,8 +1896,6 @@ static int tvaudio_s_frequency(struct v4l2_subdev *sd, struct v4l2_frequency *fr
 	struct CHIPSTATE *chip = to_state(sd);
 	struct CHIPDESC *desc = chip->desc;
 
-	chip->mode = 0; /* automatic */
-
 	/* For chips that provide getmode and setmode, and doesn't
 	   automatically follows the stereo carrier, a kthread is
 	   created to set the audio standard. In this case, when then
@@ -1880,8 +1906,7 @@ static int tvaudio_s_frequency(struct v4l2_subdev *sd, struct v4l2_frequency *fr
 	 */
 	if (chip->thread) {
 		desc->setmode(chip, V4L2_TUNER_MODE_MONO);
-		if (chip->prevmode != V4L2_TUNER_MODE_MONO)
-			chip->prevmode = -1; /* reset previous mode */
+		chip->prevmode = -1; /* reset previous mode */
 		mod_timer(&chip->wt, jiffies+msecs_to_jiffies(2000));
 	}
 	return 0;
