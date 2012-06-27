@@ -10,6 +10,7 @@
 #include <linux/mutex.h>
 #include <linux/of.h>
 #include <linux/of_address.h>
+#include <linux/topology.h>
 #include <linux/seq_file.h>
 #include <linux/slab.h>
 #include <linux/smp.h>
@@ -45,7 +46,8 @@ static struct irq_domain *irq_domain_alloc(struct device_node *of_node,
 {
 	struct irq_domain *domain;
 
-	domain = kzalloc(sizeof(*domain), GFP_KERNEL);
+	domain = kzalloc_node(sizeof(*domain), GFP_KERNEL,
+			      of_node_to_nid(of_node));
 	if (WARN_ON(!domain))
 		return NULL;
 
@@ -203,7 +205,8 @@ struct irq_domain *irq_domain_add_legacy(struct device_node *of_node,
 		 * one can then use irq_create_mapping() to
 		 * explicitly change them
 		 */
-		ops->map(domain, irq, hwirq);
+		if (ops->map)
+			ops->map(domain, irq, hwirq);
 
 		/* Clear norequest flags */
 		irq_clear_status_flags(irq, IRQ_NOREQUEST);
@@ -229,7 +232,8 @@ struct irq_domain *irq_domain_add_linear(struct device_node *of_node,
 	struct irq_domain *domain;
 	unsigned int *revmap;
 
-	revmap = kzalloc(sizeof(*revmap) * size, GFP_KERNEL);
+	revmap = kzalloc_node(sizeof(*revmap) * size, GFP_KERNEL,
+			      of_node_to_nid(of_node));
 	if (WARN_ON(!revmap))
 		return NULL;
 
@@ -337,8 +341,8 @@ static int irq_setup_virq(struct irq_domain *domain, unsigned int virq,
 
 	irq_data->hwirq = hwirq;
 	irq_data->domain = domain;
-	if (domain->ops->map(domain, virq, hwirq)) {
-		pr_debug("irq-%i==>hwirq-0x%lx mapping failed\n", virq, hwirq);
+	if (domain->ops->map && domain->ops->map(domain, virq, hwirq)) {
+		pr_err("irq-%i==>hwirq-0x%lx mapping failed\n", virq, hwirq);
 		irq_data->domain = NULL;
 		irq_data->hwirq = 0;
 		return -1;
@@ -367,7 +371,7 @@ unsigned int irq_create_direct_mapping(struct irq_domain *domain)
 	BUG_ON(domain == NULL);
 	WARN_ON(domain->revmap_type != IRQ_DOMAIN_MAP_NOMAP);
 
-	virq = irq_alloc_desc_from(1, 0);
+	virq = irq_alloc_desc_from(1, of_node_to_nid(domain->of_node));
 	if (!virq) {
 		pr_debug("create_direct virq allocation failed\n");
 		return 0;
@@ -433,17 +437,16 @@ unsigned int irq_create_mapping(struct irq_domain *domain,
 	hint = hwirq % nr_irqs;
 	if (hint == 0)
 		hint++;
-	virq = irq_alloc_desc_from(hint, 0);
+	virq = irq_alloc_desc_from(hint, of_node_to_nid(domain->of_node));
 	if (virq <= 0)
-		virq = irq_alloc_desc_from(1, 0);
+		virq = irq_alloc_desc_from(1, of_node_to_nid(domain->of_node));
 	if (virq <= 0) {
 		pr_debug("-> virq allocation failed\n");
 		return 0;
 	}
 
 	if (irq_setup_virq(domain, virq, hwirq)) {
-		if (domain->revmap_type != IRQ_DOMAIN_MAP_LEGACY)
-			irq_free_desc(virq);
+		irq_free_desc(virq);
 		return 0;
 	}
 
@@ -761,12 +764,6 @@ static int __init irq_debugfs_init(void)
 __initcall(irq_debugfs_init);
 #endif /* CONFIG_IRQ_DOMAIN_DEBUG */
 
-static int irq_domain_simple_map(struct irq_domain *d, unsigned int irq,
-				 irq_hw_number_t hwirq)
-{
-	return 0;
-}
-
 /**
  * irq_domain_xlate_onecell() - Generic xlate for direct one cell bindings
  *
@@ -829,7 +826,6 @@ int irq_domain_xlate_onetwocell(struct irq_domain *d,
 EXPORT_SYMBOL_GPL(irq_domain_xlate_onetwocell);
 
 const struct irq_domain_ops irq_domain_simple_ops = {
-	.map = irq_domain_simple_map,
 	.xlate = irq_domain_xlate_onetwocell,
 };
 EXPORT_SYMBOL_GPL(irq_domain_simple_ops);
