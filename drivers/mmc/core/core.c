@@ -1029,12 +1029,11 @@ int mmc_regulator_get_supply(struct mmc_host *mmc)
 	int ret;
 
 	supply = devm_regulator_get(dev, "vmmc");
+	mmc->supply.vmmc = supply;
+	mmc->supply.vqmmc = devm_regulator_get(dev, "vqmmc");
 
 	if (IS_ERR(supply))
 		return PTR_ERR(supply);
-
-	mmc->supply.vmmc = supply;
-	mmc->supply.vqmmc = devm_regulator_get(dev, "vqmmc");
 
 	ret = mmc_regulator_get_ocrmask(supply);
 	if (ret > 0)
