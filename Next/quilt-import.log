@@ -1,0 +1,63 @@
+Importing i2c based on aace99e57c90353a51952e9dd1f6f110eec30d15
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard aace99e57c90353a51952e9dd1f6f110eec30d15
+HEAD is now at aace99e Merge branch 'v4l_for_linus' of git://git.kernel.org/pub/scm/linux/kernel/git/mchehab/linux-media
+$ git am ../quilt/i2c/i2c-update-Guenter-Roeck-address.patch
+Applying: i2c: Update Guenter's Roeck e-mail address
+$ git am ../quilt/i2c/i2c-use-module_pci_driver.patch
+Applying: i2c/busses: Use module_pci_driver
+$ git am ../quilt/i2c/i2c-piix4-01-eliminate-piix4_smba-global-variable.patch
+Applying: i2c-piix4: Eliminate piix4_smba global variable
+$ git am ../quilt/i2c/i2c-piix4-02-separate-registration-and-probing-code.patch
+Applying: i2c-piix4: Separate registration and probing code
+$ git am ../quilt/i2c/i2c-piix4-03-support-amd-auxiliary-smbus-controller.patch
+Applying: i2c-piix4: Support AMD auxiliary SMBus controller
+$ git am ../quilt/i2c/i2c-writing-clients-mention-module_i2c_driver.patch
+Applying: i2c/writing-clients: Mention module_i2c_driver()
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/i2c
+From ../quilt-tmp
+ + 7f56c63...d170f6c master     -> quilt/i2c  (forced update)
+Importing jdelvare-hwmon based on 02edf6abe01610a5fb379df442de3c837ad99467
+Unchanged quilt series jdelvare-hwmon
+Importing rr based on v3.5-rc3-93-g02edf6a
+Unchanged quilt series rr
+Importing device-mapper based on v3.5-rc1
+$ cd ../quilt-tmp
+$ git reset --hard f8f5701bdaf9134b1f90e5044a82c66324d2073f
+HEAD is now at f8f5701 Linux 3.5-rc1
+$ git am ../quilt/device-mapper/dm-thin-commit-metadata-before-creating-metadata-snapshot.patch
+Applying: Userland sometimes sees a corrupt metadata block if metadata is changing
+$ git am ../quilt/device-mapper/dm-persistent-data-fix-shadow_info_leak-on-dm_tm_destroy.patch
+Applying: Cleanup the shadow table before destroying the transaction manager.
+$ git am ../quilt/device-mapper/dm-persistent-data-handle-space-map-checker-creation-failure.patch
+Applying: If CONFIG_DM_DEBUG_SPACE_MAPS is enabled and dm_sm_checker_create()
+$ git am ../quilt/device-mapper/dm-persistent-data-fix-allocation-failure-in-space-map-checker-init.patch
+Applying: If CONFIG_DM_DEBUG_SPACE_MAPS is enabled and memory is fragmented and a
+$ git am ../quilt/device-mapper/dm-verity-fix-documentation.patch
+Applying: Fix target line specification.
+$ git am ../quilt/device-mapper/dm-thin-clean-up-compiler-warning.patch
+Applying: Clean up "warning: dubious: !x & y".  Also make it clear that
+$ git am ../quilt/device-mapper/dm-thin-provide-specific-errors-for-two-table-load-failure-cases.patch
+Applying: Provide specific error message strings for two pool_ctr() failure cases
+$ git am ../quilt/device-mapper/dm-stripe-fix-size-test.patch
+Applying: dm-stripe is supposed to ensure that all the space allocated to the
+$ git am ../quilt/device-mapper/dm-stripe-remove-stripes_mask.patch
+Applying: The structure stripe_c contains a stripes_mask field. This field is
+$ git am ../quilt/device-mapper/dm-support-non-power-of-two-target-max_io_len.patch
+Applying: Remove the restriction that limits a target's specified maximum incoming
+$ git am ../quilt/device-mapper/dm-stripe-support-for-non-power-of-2-chunksize.patch
+Applying: Non power of 2 chunksize support is needed to properly align stripe IO
+$ git am ../quilt/device-mapper/dm-stripe-remove-minimum-stripe-size.patch
+Applying: There is no technical limitation in device mapper that would prevent the
+$ git am ../quilt/device-mapper/dm-stripe-optimize-chunk_size-calculations.patch
+Applying: dm-stripe is usually used with a chunk size that is a power of two.
+$ git am ../quilt/device-mapper/dm-thin-support-for-non-power-of-2-pool-blocksize.patch
+Applying: Non power of 2 blocksize support is needed to properly align thinp IO
+$ git am ../quilt/device-mapper/dm-thin-optimize-power-of-two-block-size.patch
+Applying: dm-thin will be most likely used with a block size that is a power of
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/device-mapper
+From ../quilt-tmp
+ + f87f942...4e66fde master     -> quilt/device-mapper  (forced update)
