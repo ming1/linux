@@ -18,6 +18,7 @@
 #include <asm/asm-offsets.h>
 #include <asm/unistd.h>
 #include <asm/page.h>
+#include <asm/sigp.h>
 
 __PT_R0      =	__PT_GPRS
 __PT_R1      =	__PT_GPRS + 8
@@ -750,15 +751,17 @@ ENTRY(restart_int_handler)
 	mvc	__PT_PSW(16,%r15),__LC_RST_OLD_PSW # store restart old psw
 	aghi	%r15,-STACK_FRAME_OVERHEAD	# create stack frame on stack
 	xc	0(STACK_FRAME_OVERHEAD,%r15),0(%r15)
-	lmg	%r1,%r3,__LC_RESTART_FN		# load fn, parm & source cpu
+	lg	%r1,__LC_RESTART_FN		# load fn, parm & source cpu
+	lg	%r2,__LC_RESTART_DATA
+	lg	%r3,__LC_RESTART_SOURCE
 	ltgr	%r3,%r3				# test source cpu address
 	jm	1f				# negative -> skip source stop
-0:	sigp	%r4,%r3,1			# sigp sense to source cpu
+0:	sigp	%r4,%r3,SIGP_SENSE		# sigp sense to source cpu
 	brc	10,0b				# wait for status stored
 1:	basr	%r14,%r1			# call function
 	stap	__SF_EMPTY(%r15)		# store cpu address
 	llgh	%r3,__SF_EMPTY(%r15)
-2:	sigp	%r4,%r3,5			# sigp stop to current cpu
+2:	sigp	%r4,%r3,SIGP_STOP		# sigp stop to current cpu
 	brc	2,2b
 3:	j	3b
 
@@ -974,7 +977,6 @@ ENTRY(sie64a)
 	stg	%r3,__SF_EMPTY+8(%r15)		# save guest register save area
 	xc	__SF_EMPTY+16(8,%r15),__SF_EMPTY+16(%r15) # host id == 0
 	lmg	%r0,%r13,0(%r3)			# load guest gprs 0-13
-	lg	%r14,__LC_THREAD_INFO		# pointer thread_info struct
 sie_loop:
 	lg	%r14,__LC_THREAD_INFO		# pointer thread_info struct
 	tm	__TI_flags+7(%r14),_TIF_EXIT_SIE
