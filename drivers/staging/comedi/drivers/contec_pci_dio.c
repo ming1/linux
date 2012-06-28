@@ -36,8 +36,6 @@ Configuration Options:
 
 #include "../comedidev.h"
 
-#include "comedi_pci.h"
-
 enum contec_model {
 	PIO1616L = 0,
 };
@@ -73,20 +71,17 @@ static int contec_do_insn_bits(struct comedi_device *dev,
 			       struct comedi_insn *insn, unsigned int *data)
 {
 
-	dev_dbg(dev->hw_dev, "contec_do_insn_bits called\n");
-	dev_dbg(dev->hw_dev, "data: %d %d\n", data[0], data[1]);
-
-	if (insn->n != 2)
-		return -EINVAL;
+	dev_dbg(dev->class_dev, "contec_do_insn_bits called\n");
+	dev_dbg(dev->class_dev, "data: %d %d\n", data[0], data[1]);
 
 	if (data[0]) {
 		s->state &= ~data[0];
 		s->state |= data[0] & data[1];
-		dev_dbg(dev->hw_dev, "out: %d on %lx\n", s->state,
+		dev_dbg(dev->class_dev, "out: %d on %lx\n", s->state,
 			dev->iobase + thisboard->out_offs);
 		outw(s->state, dev->iobase + thisboard->out_offs);
 	}
-	return 2;
+	return insn->n;
 }
 
 static int contec_di_insn_bits(struct comedi_device *dev,
@@ -94,21 +89,19 @@ static int contec_di_insn_bits(struct comedi_device *dev,
 			       struct comedi_insn *insn, unsigned int *data)
 {
 
-	dev_dbg(dev->hw_dev, "contec_di_insn_bits called\n");
-	dev_dbg(dev->hw_dev, "data: %d %d\n", data[0], data[1]);
-
-	if (insn->n != 2)
-		return -EINVAL;
+	dev_dbg(dev->class_dev, "contec_di_insn_bits called\n");
+	dev_dbg(dev->class_dev, "data: %d %d\n", data[0], data[1]);
 
 	data[1] = inw(dev->iobase + thisboard->in_offs);
 
-	return 2;
+	return insn->n;
 }
 
 static int contec_attach(struct comedi_device *dev, struct comedi_devconfig *it)
 {
 	struct pci_dev *pcidev = NULL;
 	struct comedi_subdevice *s;
+	int ret;
 
 	printk("comedi%d: contec: ", dev->minor);
 
@@ -117,8 +110,9 @@ static int contec_attach(struct comedi_device *dev, struct comedi_devconfig *it)
 	if (alloc_private(dev, sizeof(struct contec_private)) < 0)
 		return -ENOMEM;
 
-	if (alloc_subdevices(dev, 2) < 0)
-		return -ENOMEM;
+	ret = comedi_alloc_subdevices(dev, 2);
+	if (ret)
+		return ret;
 
 	for_each_pci_dev(pcidev) {
 		if (pcidev->vendor == PCI_VENDOR_ID_CONTEC &&
