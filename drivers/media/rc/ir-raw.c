@@ -90,7 +90,9 @@ int ir_raw_event_store(struct rc_dev *dev, struct ir_raw_event *ev)
 	IR_dprintk(2, "sample: (%05dus %s)\n",
 		   TO_US(ev->duration), TO_STR(ev->pulse));
 
-	if (kfifo_in(&dev->raw->kfifo, ev, sizeof(*ev)) != sizeof(*ev))
+	if (kfifo_avail(&dev->raw->kfifo) >= sizeof(*ev))
+		kfifo_in(&dev->raw->kfifo, ev, sizeof(*ev));
+	else
 		return -ENOMEM;
 
 	return 0;
