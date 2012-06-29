@@ -257,6 +257,23 @@ static int i801_check_post(struct i801_priv *priv, int status, int timeout)
 	return result;
 }
 
+/* wait for INTR bit as advised by Intel */
+static void i801_wait_intr(struct i801_priv *priv)
+{
+	int timeout = 0;
+	int status;
+
+	do {
+		usleep_range(250, 500);
+		status = inb_p(SMBHSTSTS(priv));
+	} while ((!(status & SMBHSTSTS_INTR)) && (timeout++ < MAX_RETRIES));
+
+	if (timeout > MAX_RETRIES)
+		dev_dbg(&priv->pci_dev->dev, "INTR Timeout!\n");
+
+	outb_p(status, SMBHSTSTS(priv));
+}
+
 static int i801_transaction(struct i801_priv *priv, int xact)
 {
 	int status;
@@ -281,26 +298,9 @@ static int i801_transaction(struct i801_priv *priv, int xact)
 	if (result < 0)
 		return result;
 
-	outb_p(SMBHSTSTS_INTR, SMBHSTSTS(priv));
+	i801_wait_intr(priv);
+
 	return 0;
-}
-
-/* wait for INTR bit as advised by Intel */
-static void i801_wait_hwpec(struct i801_priv *priv)
-{
-	int timeout = 0;
-	int status;
-
-	do {
-		usleep_range(250, 500);
-		status = inb_p(SMBHSTSTS(priv));
-	} while ((!(status & SMBHSTSTS_INTR))
-		 && (timeout++ < MAX_RETRIES));
-
-	if (timeout > MAX_RETRIES)
-		dev_dbg(&priv->pci_dev->dev, "PEC Timeout!\n");
-
-	outb_p(status, SMBHSTSTS(priv));
 }
 
 static int i801_block_transaction_by_block(struct i801_priv *priv,
@@ -416,8 +416,10 @@ static int i801_block_transaction_byte_by_byte(struct i801_priv *priv,
 			outb_p(data->block[i+1], SMBBLKDAT(priv));
 
 		/* signals SMBBLKDAT ready */
-		outb_p(SMBHSTSTS_BYTE_DONE | SMBHSTSTS_INTR, SMBHSTSTS(priv));
+		outb_p(SMBHSTSTS_BYTE_DONE, SMBHSTSTS(priv));
 	}
+
+	i801_wait_intr(priv);
 
 	return 0;
 }
@@ -473,9 +475,6 @@ static int i801_block_transaction(struct i801_priv *priv,
 		result = i801_block_transaction_byte_by_byte(priv, data,
 							     read_write,
 							     command, hwpec);
-
-	if (result == 0 && hwpec)
-		i801_wait_hwpec(priv);
 
 	if (command == I2C_SMBUS_I2C_BLOCK_DATA
 	 && read_write == I2C_SMBUS_WRITE) {
