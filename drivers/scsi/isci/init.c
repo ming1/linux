@@ -406,7 +406,7 @@ static void isci_user_parameters_get(struct sci_user_parameters *u)
 	for (i = 0; i < SCI_MAX_PHYS; i++) {
 		struct sci_phy_user_params *u_phy = &u->phys[i];
 
-		u_phy->max_speed_generation = phy_gen;
+		u_phy->max_speed_generation = min_t(unsigned char, phy_gen, 2);
 
 		/* we are not exporting these for now */
 		u_phy->align_insertion_frequency = 0x7f;
@@ -644,7 +644,6 @@ static int __devinit isci_pci_probe(struct pci_dev *pdev, const struct pci_devic
 						orom->hdr.version)) {
 			dev_warn(&pdev->dev,
 				 "[%d]: invalid oem parameters detected, falling back to firmware\n", i);
-			devm_kfree(&pdev->dev, orom);
 			orom = NULL;
 			break;
 		}
