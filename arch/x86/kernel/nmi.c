@@ -19,8 +19,6 @@
 #include <linux/slab.h>
 #include <linux/export.h>
 
-#include <linux/mca.h>
-
 #if defined(CONFIG_EDAC)
 #include <linux/edac.h>
 #endif
@@ -209,7 +207,7 @@ io_check_error(unsigned char reason, struct pt_regs *regs)
 	pr_emerg(
 	"NMI: IOCK error (debug interrupt?) for reason %02x on CPU %d.\n",
 		 reason, smp_processor_id());
-	show_registers(regs);
+	show_regs(regs);
 
 	if (panic_on_io_nmi)
 		panic("NMI IOCK error: Not continuing");
@@ -247,16 +245,6 @@ unknown_nmi_error(unsigned char reason, struct pt_regs *regs)
 
 	__this_cpu_add(nmi_stats.unknown, 1);
 
-#ifdef CONFIG_MCA
-	/*
-	 * Might actually be able to figure out what the guilty party
-	 * is:
-	 */
-	if (MCA_bus) {
-		mca_handle_nmi();
-		return;
-	}
-#endif
 	pr_emerg("Uhhuh. NMI received for unknown reason %02x on CPU %d.\n",
 		 reason, smp_processor_id());
 
@@ -456,14 +444,16 @@ static inline void nmi_nesting_preprocess(struct pt_regs *regs)
 	 */
 	if (unlikely(is_debug_stack(regs->sp))) {
 		debug_stack_set_zero();
-		__get_cpu_var(update_debug_stack) = 1;
+		this_cpu_write(update_debug_stack, 1);
 	}
 }
 
 static inline void nmi_nesting_postprocess(void)
 {
-	if (unlikely(__get_cpu_var(update_debug_stack)))
+	if (unlikely(this_cpu_read(update_debug_stack))) {
 		debug_stack_reset();
+		this_cpu_write(update_debug_stack, 0);
+	}
 }
 #endif
 

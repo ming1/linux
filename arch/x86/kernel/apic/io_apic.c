@@ -140,7 +140,7 @@ int mp_irq_entries;
 /* GSI interrupts */
 static int nr_irqs_gsi = NR_IRQS_LEGACY;
 
-#if defined (CONFIG_MCA) || defined (CONFIG_EISA)
+#ifdef CONFIG_EISA
 int mp_bus_id_to_type[MAX_MP_BUSSES];
 #endif
 
@@ -835,7 +835,7 @@ static int __init find_isa_irq_apic(int irq, int type)
 	return -1;
 }
 
-#if defined(CONFIG_EISA) || defined(CONFIG_MCA)
+#ifdef CONFIG_EISA
 /*
  * EISA Edge/Level control register, ELCR
  */
@@ -871,12 +871,6 @@ static int EISA_ELCR(unsigned int irq)
 
 #define default_PCI_trigger(idx)	(1)
 #define default_PCI_polarity(idx)	(1)
-
-/* MCA interrupts are always polarity zero level triggered,
- * when listed as conforming in the MP table. */
-
-#define default_MCA_trigger(idx)	(1)
-#define default_MCA_polarity(idx)	default_ISA_polarity(idx)
 
 static int irq_polarity(int idx)
 {
@@ -935,7 +929,7 @@ static int irq_trigger(int idx)
 				trigger = default_ISA_trigger(idx);
 			else
 				trigger = default_PCI_trigger(idx);
-#if defined(CONFIG_EISA) || defined(CONFIG_MCA)
+#ifdef CONFIG_EISA
 			switch (mp_bus_id_to_type[bus]) {
 				case MP_BUS_ISA: /* ISA pin */
 				{
@@ -950,11 +944,6 @@ static int irq_trigger(int idx)
 				case MP_BUS_PCI: /* PCI pin */
 				{
 					/* set before the switch */
-					break;
-				}
-				case MP_BUS_MCA: /* MCA pin */
-				{
-					trigger = default_MCA_trigger(idx);
 					break;
 				}
 				default:
@@ -1206,7 +1195,7 @@ static void __clear_irq_vector(int irq, struct irq_cfg *cfg)
 	BUG_ON(!cfg->vector);
 
 	vector = cfg->vector;
-	for_each_cpu_and(cpu, cfg->domain, cpu_online_mask)
+	for_each_cpu(cpu, cfg->domain)
 		per_cpu(vector_irq, cpu)[vector] = -1;
 
 	cfg->vector = 0;
@@ -1214,7 +1203,7 @@ static void __clear_irq_vector(int irq, struct irq_cfg *cfg)
 
 	if (likely(!cfg->move_in_progress))
 		return;
-	for_each_cpu_and(cpu, cfg->old_domain, cpu_online_mask) {
+	for_each_cpu(cpu, cfg->old_domain) {
 		for (vector = FIRST_EXTERNAL_VECTOR; vector < NR_VECTORS;
 								vector++) {
 			if (per_cpu(vector_irq, cpu)[vector] != irq)

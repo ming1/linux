@@ -4,7 +4,7 @@
  * IRQ helper macros for SPEAr3xx machine family
  *
  * Copyright (C) 2009 ST Microelectronics
- * Viresh Kumar<viresh.kumar@st.com>
+ * Viresh Kumar <viresh.linux@gmail.com>
  *
  * This file is licensed under the terms of the GNU General Public
  * License version 2. This program is licensed "as is" without any
@@ -16,7 +16,6 @@
 
 /* FIXME: probe all these from DT */
 #define SPEAR3XX_IRQ_INTRCOMM_RAS_ARM		1
-#define SPEAR3XX_IRQ_CPU_GPT1_1			2
 #define SPEAR3XX_IRQ_GEN_RAS_1			28
 #define SPEAR3XX_IRQ_GEN_RAS_2			29
 #define SPEAR3XX_IRQ_GEN_RAS_3			30

@@ -4,7 +4,7 @@
  * SPEAr3XX machines common source file
  *
  * Copyright (C) 2009-2012 ST Microelectronics
- * Viresh Kumar <viresh.kumar@st.com>
+ * Viresh Kumar <viresh.linux@gmail.com>
  *
  * This file is licensed under the terms of the GNU General Public
  * License version 2. This program is licensed "as is" without any
@@ -90,6 +90,8 @@ static void __init spear3xx_timer_init(void)
 	char pclk_name[] = "pll3_48m_clk";
 	struct clk *gpt_clk, *pclk;
 
+	spear3xx_clk_init();
+
 	/* get the system timer clock */
 	gpt_clk = clk_get_sys("gpt0", NULL);
 	if (IS_ERR(gpt_clk)) {
@@ -109,7 +111,7 @@ static void __init spear3xx_timer_init(void)
 	clk_put(gpt_clk);
 	clk_put(pclk);
 
-	spear_setup_timer(SPEAR3XX_CPU_TMR_BASE, SPEAR3XX_IRQ_CPU_GPT1_1);
+	spear_setup_of_timer();
 }
 
 struct sys_timer spear3xx_timer = {

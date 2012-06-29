@@ -150,6 +150,7 @@ int iwlagn_mac_setup_register(struct iwl_priv *priv,
 		    IEEE80211_HW_QUEUE_CONTROL |
 		    IEEE80211_HW_SUPPORTS_PS |
 		    IEEE80211_HW_SUPPORTS_DYNAMIC_PS |
+		    IEEE80211_HW_WANT_MONITOR_VIF |
 		    IEEE80211_HW_SCAN_WHILE_IDLE;
 
 	hw->offchannel_tx_hw_queue = IWL_AUX_QUEUE;
@@ -198,6 +199,7 @@ int iwlagn_mac_setup_register(struct iwl_priv *priv,
 			    WIPHY_FLAG_DISABLE_BEACON_HINTS |
 			    WIPHY_FLAG_IBSS_RSN;
 
+#ifdef CONFIG_PM_SLEEP
 	if (priv->fw->img[IWL_UCODE_WOWLAN].sec[0].len &&
 	    priv->trans->ops->wowlan_suspend &&
 	    device_can_wakeup(priv->trans->dev)) {
@@ -216,6 +218,7 @@ int iwlagn_mac_setup_register(struct iwl_priv *priv,
 		hw->wiphy->wowlan.pattern_max_len =
 					IWLAGN_WOWLAN_MAX_PATTERN_LEN;
 	}
+#endif
 
 	if (iwlwifi_mod_params.power_save)
 		hw->wiphy->flags |= WIPHY_FLAG_PS_ON_BY_DEFAULT;
@@ -223,8 +226,8 @@ int iwlagn_mac_setup_register(struct iwl_priv *priv,
 		hw->wiphy->flags &= ~WIPHY_FLAG_PS_ON_BY_DEFAULT;
 
 	hw->wiphy->max_scan_ssids = PROBE_OPTION_MAX;
-	/* we create the 802.11 header and a zero-length SSID element */
-	hw->wiphy->max_scan_ie_len = capa->max_probe_length - 24 - 2;
+	/* we create the 802.11 header and a max-length SSID element */
+	hw->wiphy->max_scan_ie_len = capa->max_probe_length - 24 - 34;
 
 	/*
 	 * We don't use all queues: 4 and 9 are unused and any
@@ -248,6 +251,7 @@ int iwlagn_mac_setup_register(struct iwl_priv *priv,
 	ret = ieee80211_register_hw(priv->hw);
 	if (ret) {
 		IWL_ERR(priv, "Failed to register hw (error %d)\n", ret);
+		iwl_leds_exit(priv);
 		return ret;
 	}
 	priv->mac80211_registered = 1;

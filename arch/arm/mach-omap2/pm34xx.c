@@ -697,14 +697,11 @@ static void __init pm_errata_configure(void)
 	}
 }
 
-static int __init omap3_pm_init(void)
+int __init omap3_pm_init(void)
 {
 	struct power_state *pwrst, *tmp;
 	struct clockdomain *neon_clkdm, *mpu_clkdm;
 	int ret;
-
-	if (!cpu_is_omap34xx())
-		return -ENODEV;
 
 	if (!omap3_has_io_chain_ctrl())
 		pr_warning("PM: no software I/O chain control; some wakeups may be lost\n");
@@ -727,6 +724,7 @@ static int __init omap3_pm_init(void)
 	ret = request_irq(omap_prcm_event_to_irq("io"),
 		_prcm_int_handle_io, IRQF_SHARED | IRQF_NO_SUSPEND, "pm_io",
 		omap3_pm_init);
+	enable_irq(omap_prcm_event_to_irq("io"));
 
 	if (ret) {
 		pr_err("pm: Failed to request pm_io irq\n");
@@ -804,5 +802,3 @@ err2:
 err1:
 	return ret;
 }
-
-late_initcall(omap3_pm_init);

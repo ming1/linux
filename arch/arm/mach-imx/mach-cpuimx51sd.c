@@ -142,7 +142,6 @@ static struct i2c_board_info eukrea_cpuimx51sd_i2c_devices[] = {
 		I2C_BOARD_INFO("pcf8563", 0x51),
 	}, {
 		I2C_BOARD_INFO("tsc2007", 0x49),
-		.type		= "tsc2007",
 		.platform_data	= &tsc2007_info,
 	},
 };
@@ -369,5 +368,6 @@ MACHINE_START(EUKREA_CPUIMX51SD, "Eukrea CPUIMX51SD")
 	.handle_irq = imx51_handle_irq,
 	.timer = &mxc_timer,
 	.init_machine = eukrea_cpuimx51sd_init,
+	.init_late	= imx51_init_late,
 	.restart	= mxc_restart,
 MACHINE_END
