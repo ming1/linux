@@ -60,8 +60,10 @@ struct team_port {
 		unsigned int mtu;
 	} orig;
 
-	struct rcu_head rcu;
+	long mode_priv[0];
 };
+
+extern bool team_port_enabled(struct team_port *port);
 
 struct team_mode_ops {
 	int (*init)(struct team *team);
@@ -73,6 +75,8 @@ struct team_mode_ops {
 	int (*port_enter)(struct team *team, struct team_port *port);
 	void (*port_leave)(struct team *team, struct team_port *port);
 	void (*port_change_mac)(struct team *team, struct team_port *port);
+	void (*port_enabled)(struct team *team, struct team_port *port);
+	void (*port_disabled)(struct team *team, struct team_port *port);
 };
 
 enum team_option_type {
@@ -80,6 +84,11 @@ enum team_option_type {
 	TEAM_OPTION_TYPE_STRING,
 	TEAM_OPTION_TYPE_BINARY,
 	TEAM_OPTION_TYPE_BOOL,
+};
+
+struct team_option_inst_info {
+	u32 array_index;
+	struct team_port *port; /* != NULL if per-port */
 };
 
 struct team_gsetter_ctx {
@@ -92,23 +101,28 @@ struct team_gsetter_ctx {
 		} bin_val;
 		bool bool_val;
 	} data;
-	struct team_port *port;
+	struct team_option_inst_info *info;
 };
 
 struct team_option {
 	struct list_head list;
 	const char *name;
 	bool per_port;
+	unsigned int array_size; /* != 0 means the option is array */
 	enum team_option_type type;
+	int (*init)(struct team *team, struct team_option_inst_info *info);
 	int (*getter)(struct team *team, struct team_gsetter_ctx *ctx);
 	int (*setter)(struct team *team, struct team_gsetter_ctx *ctx);
 };
 
+extern void team_option_inst_set_change(struct team_option_inst_info *opt_inst_info);
+extern void team_options_change_check(struct team *team);
+
 struct team_mode {
-	struct list_head list;
 	const char *kind;
 	struct module *owner;
 	size_t priv_size;
+	size_t port_priv_size;
 	const struct team_mode_ops *ops;
 };
 
@@ -178,8 +192,8 @@ extern int team_options_register(struct team *team,
 extern void team_options_unregister(struct team *team,
 				    const struct team_option *option,
 				    size_t option_count);
-extern int team_mode_register(struct team_mode *mode);
-extern int team_mode_unregister(struct team_mode *mode);
+extern int team_mode_register(const struct team_mode *mode);
+extern void team_mode_unregister(const struct team_mode *mode);
 
 #endif /* __KERNEL__ */
 
@@ -241,6 +255,7 @@ enum {
 	TEAM_ATTR_OPTION_DATA,		/* dynamic */
 	TEAM_ATTR_OPTION_REMOVED,	/* flag */
 	TEAM_ATTR_OPTION_PORT_IFINDEX,	/* u32 */ /* for per-port options */
+	TEAM_ATTR_OPTION_ARRAY_INDEX,	/* u32 */ /* for array options */
 
 	__TEAM_ATTR_OPTION_MAX,
 	TEAM_ATTR_OPTION_MAX = __TEAM_ATTR_OPTION_MAX - 1,
