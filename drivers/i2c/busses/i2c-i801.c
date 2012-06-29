@@ -102,12 +102,8 @@
 #define SMBAUXCTL_CRC		1
 #define SMBAUXCTL_E32B		2
 
-/* kill bit for SMBHSTCNT */
-#define SMBHSTCNT_KILL		2
-
 /* Other settings */
 #define MAX_RETRIES		400
-#define ENABLE_INT9		0	/* set to 0x01 to enable - untested */
 
 /* I801 command constants */
 #define I801_QUICK		0x00
@@ -117,10 +113,13 @@
 #define I801_PROC_CALL		0x10	/* unimplemented */
 #define I801_BLOCK_DATA		0x14
 #define I801_I2C_BLOCK_DATA	0x18	/* ICH5 and later */
-#define I801_BLOCK_LAST		0x34
-#define I801_I2C_BLOCK_LAST	0x38	/* ICH5 and later */
-#define I801_START		0x40
-#define I801_PEC_EN		0x80	/* ICH3 and later */
+
+/* I801 Host Control register bits */
+#define SMBHSTCNT_INTREN	0x01
+#define SMBHSTCNT_KILL		0x02
+#define SMBHSTCNT_LAST_BYTE	0x20
+#define SMBHSTCNT_START		0x40
+#define SMBHSTCNT_PEC_EN	0x80	/* ICH3 and later */
 
 /* I801 Hosts Status register bits */
 #define SMBHSTSTS_BYTE_DONE	0x80
@@ -132,9 +131,11 @@
 #define SMBHSTSTS_INTR		0x02
 #define SMBHSTSTS_HOST_BUSY	0x01
 
-#define STATUS_FLAGS		(SMBHSTSTS_BYTE_DONE | SMBHSTSTS_FAILED | \
-				 SMBHSTSTS_BUS_ERR | SMBHSTSTS_DEV_ERR | \
-				 SMBHSTSTS_INTR)
+#define STATUS_ERROR_FLAGS	(SMBHSTSTS_FAILED | SMBHSTSTS_BUS_ERR | \
+				 SMBHSTSTS_DEV_ERR)
+
+#define STATUS_FLAGS		(SMBHSTSTS_BYTE_DONE | SMBHSTSTS_INTR | \
+				 STATUS_ERROR_FLAGS)
 
 /* Older devices have their ID defined in <linux/pci_ids.h> */
 #define PCI_DEVICE_ID_INTEL_COUGARPOINT_SMBUS	0x1c22
@@ -258,6 +259,23 @@ static int i801_check_post(struct i801_priv *priv, int status, int timeout)
 	return result;
 }
 
+/* wait for INTR bit as advised by Intel */
+static void i801_wait_intr(struct i801_priv *priv)
+{
+	int timeout = 0;
+	int status;
+
+	do {
+		usleep_range(250, 500);
+		status = inb_p(SMBHSTSTS(priv));
+	} while ((!(status & SMBHSTSTS_INTR)) && (timeout++ < MAX_RETRIES));
+
+	if (timeout > MAX_RETRIES)
+		dev_dbg(&priv->pci_dev->dev, "INTR Timeout!\n");
+
+	outb_p(status & STATUS_FLAGS, SMBHSTSTS(priv));
+}
+
 static int i801_transaction(struct i801_priv *priv, int xact)
 {
 	int status;
@@ -269,8 +287,8 @@ static int i801_transaction(struct i801_priv *priv, int xact)
 		return result;
 
 	/* the current contents of SMBHSTCNT can be overwritten, since PEC,
-	 * INTREN, SMBSCMD are passed in xact */
-	outb_p(xact | I801_START, SMBHSTCNT(priv));
+	 * SMBSCMD are passed in xact */
+	outb_p(xact | SMBHSTCNT_START, SMBHSTCNT(priv));
 
 	/* We will always wait for a fraction of a second! */
 	do {
@@ -282,26 +300,9 @@ static int i801_transaction(struct i801_priv *priv, int xact)
 	if (result < 0)
 		return result;
 
-	outb_p(SMBHSTSTS_INTR, SMBHSTSTS(priv));
+	i801_wait_intr(priv);
+
 	return 0;
-}
-
-/* wait for INTR bit as advised by Intel */
-static void i801_wait_hwpec(struct i801_priv *priv)
-{
-	int timeout = 0;
-	int status;
-
-	do {
-		usleep_range(250, 500);
-		status = inb_p(SMBHSTSTS(priv));
-	} while ((!(status & SMBHSTSTS_INTR))
-		 && (timeout++ < MAX_RETRIES));
-
-	if (timeout > MAX_RETRIES)
-		dev_dbg(&priv->pci_dev->dev, "PEC Timeout!\n");
-
-	outb_p(status, SMBHSTSTS(priv));
 }
 
 static int i801_block_transaction_by_block(struct i801_priv *priv,
@@ -321,8 +322,8 @@ static int i801_block_transaction_by_block(struct i801_priv *priv,
 			outb_p(data->block[i+1], SMBBLKDAT(priv));
 	}
 
-	status = i801_transaction(priv, I801_BLOCK_DATA | ENABLE_INT9 |
-				  I801_PEC_EN * hwpec);
+	status = i801_transaction(priv, I801_BLOCK_DATA |
+				  (hwpec ? SMBHSTCNT_PEC_EN : 0));
 	if (status)
 		return status;
 
@@ -338,6 +339,11 @@ static int i801_block_transaction_by_block(struct i801_priv *priv,
 	return 0;
 }
 
+/*
+ * For "byte-by-byte" block transactions:
+ *   I2C write uses cmd=I801_BLOCK_DATA, I2C_EN=1
+ *   I2C read uses cmd=I801_I2C_BLOCK_DATA
+ */
 static int i801_block_transaction_byte_by_byte(struct i801_priv *priv,
 					       union i2c_smbus_data *data,
 					       char read_write, int command,
@@ -360,23 +366,19 @@ static int i801_block_transaction_byte_by_byte(struct i801_priv *priv,
 		outb_p(data->block[1], SMBBLKDAT(priv));
 	}
 
+	if (command == I2C_SMBUS_I2C_BLOCK_DATA &&
+	    read_write == I2C_SMBUS_READ)
+		smbcmd = I801_I2C_BLOCK_DATA;
+	else
+		smbcmd = I801_BLOCK_DATA;
+
 	for (i = 1; i <= len; i++) {
-		if (i == len && read_write == I2C_SMBUS_READ) {
-			if (command == I2C_SMBUS_I2C_BLOCK_DATA)
-				smbcmd = I801_I2C_BLOCK_LAST;
-			else
-				smbcmd = I801_BLOCK_LAST;
-		} else {
-			if (command == I2C_SMBUS_I2C_BLOCK_DATA
-			 && read_write == I2C_SMBUS_READ)
-				smbcmd = I801_I2C_BLOCK_DATA;
-			else
-				smbcmd = I801_BLOCK_DATA;
-		}
-		outb_p(smbcmd | ENABLE_INT9, SMBHSTCNT(priv));
+		if (i == len && read_write == I2C_SMBUS_READ)
+			smbcmd |= SMBHSTCNT_LAST_BYTE;
+		outb_p(smbcmd, SMBHSTCNT(priv));
 
 		if (i == 1)
-			outb_p(inb(SMBHSTCNT(priv)) | I801_START,
+			outb_p(inb(SMBHSTCNT(priv)) | SMBHSTCNT_START,
 			       SMBHSTCNT(priv));
 
 		/* We will always wait for a fraction of a second! */
@@ -384,7 +386,7 @@ static int i801_block_transaction_byte_by_byte(struct i801_priv *priv,
 		do {
 			usleep_range(250, 500);
 			status = inb_p(SMBHSTSTS(priv));
-		} while ((!(status & SMBHSTSTS_BYTE_DONE))
+		} while (!(status & (SMBHSTSTS_BYTE_DONE | STATUS_ERROR_FLAGS))
 			 && (timeout++ < MAX_RETRIES));
 
 		result = i801_check_post(priv, status, timeout > MAX_RETRIES);
@@ -416,8 +418,10 @@ static int i801_block_transaction_byte_by_byte(struct i801_priv *priv,
 			outb_p(data->block[i+1], SMBBLKDAT(priv));
 
 		/* signals SMBBLKDAT ready */
-		outb_p(SMBHSTSTS_BYTE_DONE | SMBHSTSTS_INTR, SMBHSTSTS(priv));
+		outb_p(SMBHSTSTS_BYTE_DONE, SMBHSTSTS(priv));
 	}
+
+	i801_wait_intr(priv);
 
 	return 0;
 }
@@ -473,9 +477,6 @@ static int i801_block_transaction(struct i801_priv *priv,
 		result = i801_block_transaction_byte_by_byte(priv, data,
 							     read_write,
 							     command, hwpec);
-
-	if (result == 0 && hwpec)
-		i801_wait_hwpec(priv);
 
 	if (command == I2C_SMBUS_I2C_BLOCK_DATA
 	 && read_write == I2C_SMBUS_WRITE) {
@@ -564,7 +565,7 @@ static s32 i801_access(struct i2c_adapter *adap, u16 addr,
 		ret = i801_block_transaction(priv, data, read_write, size,
 					     hwpec);
 	else
-		ret = i801_transaction(priv, xact | ENABLE_INT9);
+		ret = i801_transaction(priv, xact);
 
 	/* Some BIOSes don't like it when PEC is enabled at reboot or resume
 	   time, so we forcibly disable it after every transaction. Turn off
