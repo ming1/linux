@@ -271,7 +271,7 @@ static void i801_wait_intr(struct i801_priv *priv)
 	if (timeout > MAX_RETRIES)
 		dev_dbg(&priv->pci_dev->dev, "INTR Timeout!\n");
 
-	outb_p(status, SMBHSTSTS(priv));
+	outb_p(status & STATUS_FLAGS, SMBHSTSTS(priv));
 }
 
 static int i801_transaction(struct i801_priv *priv, int xact)
