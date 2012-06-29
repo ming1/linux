@@ -87,7 +87,6 @@ TODO:
 #include <linux/delay.h>
 #include <linux/interrupt.h>
 
-#include "comedi_pci.h"
 #include "8253.h"
 #include "8255.h"
 #include "plx9080.h"
@@ -1153,7 +1152,7 @@ static int eeprom_read_insn(struct comedi_device *dev,
 static void check_adc_timing(struct comedi_device *dev, struct comedi_cmd *cmd);
 static unsigned int get_divisor(unsigned int ns, unsigned int flags);
 static void i2c_write(struct comedi_device *dev, unsigned int address,
-		      const uint8_t * data, unsigned int length);
+		      const uint8_t *data, unsigned int length);
 static void caldac_write(struct comedi_device *dev, unsigned int channel,
 			 unsigned int value);
 static int caldac_8800_write(struct comedi_device *dev, unsigned int address,
@@ -1230,7 +1229,7 @@ static unsigned int hw_revision(const struct comedi_device *dev,
 }
 
 static void set_dac_range_bits(struct comedi_device *dev,
-			       volatile uint16_t * bits, unsigned int channel,
+			       volatile uint16_t *bits, unsigned int channel,
 			       unsigned int range)
 {
 	unsigned int code = board(dev)->ao_range_code[range];
@@ -1345,9 +1344,11 @@ static int setup_subdevices(struct comedi_device *dev)
 	struct comedi_subdevice *s;
 	void __iomem *dio_8255_iobase;
 	int i;
+	int ret;
 
-	if (alloc_subdevices(dev, 10) < 0)
-		return -ENOMEM;
+	ret = comedi_alloc_subdevices(dev, 10);
+	if (ret)
+		return ret;
 
 	s = dev->subdevices + 0;
 	/* analog input subdevice */
@@ -1700,11 +1701,12 @@ static int attach(struct comedi_device *dev, struct comedi_devconfig *it)
 		return -EIO;
 	}
 
-	dev_dbg(dev->hw_dev, "Found %s on bus %i, slot %i\n", board(dev)->name,
-		pcidev->bus->number, PCI_SLOT(pcidev->devfn));
+	dev_dbg(dev->class_dev, "Found %s on bus %i, slot %i\n",
+		board(dev)->name, pcidev->bus->number, PCI_SLOT(pcidev->devfn));
 
 	if (comedi_pci_enable(pcidev, dev->driver->driver_name)) {
-		dev_warn(dev->hw_dev, "failed to enable PCI device and request regions\n");
+		dev_warn(dev->class_dev,
+			 "failed to enable PCI device and request regions\n");
 		return -EIO;
 	}
 	pci_set_master(pcidev);
@@ -1732,7 +1734,7 @@ static int attach(struct comedi_device *dev, struct comedi_devconfig *it)
 
 	if (!priv(dev)->plx9080_iobase || !priv(dev)->main_iobase
 	    || !priv(dev)->dio_counter_iobase) {
-		dev_warn(dev->hw_dev, "failed to remap io memory\n");
+		dev_warn(dev->class_dev, "failed to remap io memory\n");
 		return -ENOMEM;
 	}
 
@@ -1768,19 +1770,19 @@ static int attach(struct comedi_device *dev, struct comedi_devconfig *it)
 
 	priv(dev)->hw_revision =
 	    hw_revision(dev, readw(priv(dev)->main_iobase + HW_STATUS_REG));
-	dev_dbg(dev->hw_dev, "stc hardware revision %i\n",
+	dev_dbg(dev->class_dev, "stc hardware revision %i\n",
 		priv(dev)->hw_revision);
 	init_plx9080(dev);
 	init_stc_registers(dev);
 	/*  get irq */
 	if (request_irq(pcidev->irq, handle_interrupt, IRQF_SHARED,
 			"cb_pcidas64", dev)) {
-		dev_dbg(dev->hw_dev, "unable to allocate irq %u\n",
+		dev_dbg(dev->class_dev, "unable to allocate irq %u\n",
 			pcidev->irq);
 		return -EINVAL;
 	}
 	dev->irq = pcidev->irq;
-	dev_dbg(dev->hw_dev, "irq %u\n", dev->irq);
+	dev_dbg(dev->class_dev, "irq %u\n", dev->irq);
 
 	retval = setup_subdevices(dev);
 	if (retval < 0)
@@ -2001,7 +2003,7 @@ static int ai_config_calibration_source(struct comedi_device *dev,
 	else
 		num_calibration_sources = 8;
 	if (source >= num_calibration_sources) {
-		dev_dbg(dev->hw_dev, "invalid calibration source: %i\n",
+		dev_dbg(dev->class_dev, "invalid calibration source: %i\n",
 			source);
 		return -EINVAL;
 	}
@@ -2833,7 +2835,8 @@ static void pio_drain_ai_fifo_16(struct comedi_device *dev)
 		}
 
 		if (num_samples < 0) {
-			dev_err(dev->hw_dev, "cb_pcidas64: bug! num_samples < 0\n");
+			dev_err(dev->class_dev,
+				"cb_pcidas64: bug! num_samples < 0\n");
 			break;
 		}
 
@@ -3614,7 +3617,7 @@ static int di_rbits(struct comedi_device *dev, struct comedi_subdevice *s,
 	data[1] = bits;
 	data[0] = 0;
 
-	return 2;
+	return insn->n;
 }
 
 static int do_wbits(struct comedi_device *dev, struct comedi_subdevice *s,
@@ -3630,7 +3633,7 @@ static int do_wbits(struct comedi_device *dev, struct comedi_subdevice *s,
 
 	data[1] = s->state;
 
-	return 2;
+	return insn->n;
 }
 
 static int dio_60xx_config_insn(struct comedi_device *dev,
@@ -3673,7 +3676,7 @@ static int dio_60xx_wbits(struct comedi_device *dev, struct comedi_subdevice *s,
 
 	data[1] = readb(priv(dev)->dio_counter_iobase + DIO_DATA_60XX_REG);
 
-	return 2;
+	return insn->n;
 }
 
 static void caldac_write(struct comedi_device *dev, unsigned int channel,
@@ -4191,7 +4194,7 @@ static void i2c_stop(struct comedi_device *dev)
 }
 
 static void i2c_write(struct comedi_device *dev, unsigned int address,
-		      const uint8_t * data, unsigned int length)
+		      const uint8_t *data, unsigned int length)
 {
 	unsigned int i;
 	uint8_t bitstream;
