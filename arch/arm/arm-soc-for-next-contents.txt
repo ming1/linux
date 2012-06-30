@@ -13,3 +13,6 @@ devel/led-driver	git://git.kernel.org/pub/scm/linux/kernel/git/cooloney/linux-le
 
 next/soc:
 nomadik/drivercfg	git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-nomadik.git nomadik-for-arm-soc
+
+next/pm:
+imx/cpuidle		git://git.pengutronix.de/git/imx/linux-2.6.git imx/cpuidle
