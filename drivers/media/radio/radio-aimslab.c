@@ -62,8 +62,16 @@ MODULE_PARM_DESC(radio_nr, "Radio device numbers");
 struct rtrack {
 	struct radio_isa_card isa;
 	int curvol;
-	struct lm7000 lm;
 };
+
+static struct radio_isa_card *rtrack_alloc(void)
+{
+	struct rtrack *rt = kzalloc(sizeof(struct rtrack), GFP_KERNEL);
+
+	if (rt)
+		rt->curvol = 0xff;
+	return rt ? &rt->isa : NULL;
+}
 
 #define AIMS_BIT_TUN_CE		(1 << 0)
 #define AIMS_BIT_TUN_CLK	(1 << 1)
@@ -74,9 +82,10 @@ struct rtrack {
 #define AIMS_BIT_VOL_UP		(1 << 6)	/* active low */
 #define AIMS_BIT_VOL_DN		(1 << 7)	/* active low */
 
-void rtrack_set_pins(struct lm7000 *lm, u8 pins)
+void rtrack_set_pins(void *handle, u8 pins)
 {
-	struct rtrack *rt = container_of(lm, struct rtrack, lm);
+	struct radio_isa_card *isa = handle;
+	struct rtrack *rt = container_of(isa, struct rtrack, isa);
 	u8 bits = AIMS_BIT_VOL_DN | AIMS_BIT_VOL_UP | AIMS_BIT_TUN_STRQ;
 
 	if (!v4l2_ctrl_g_ctrl(rt->isa.mute))
@@ -92,22 +101,9 @@ void rtrack_set_pins(struct lm7000 *lm, u8 pins)
 	outb_p(bits, rt->isa.io);
 }
 
-static struct radio_isa_card *rtrack_alloc(void)
-{
-	struct rtrack *rt = kzalloc(sizeof(struct rtrack), GFP_KERNEL);
-
-	if (rt) {
-		rt->curvol = 0xff;
-		rt->lm.set_pins = rtrack_set_pins;
-	}
-	return rt ? &rt->isa : NULL;
-}
-
 static int rtrack_s_frequency(struct radio_isa_card *isa, u32 freq)
 {
-	struct rtrack *rt = container_of(isa, struct rtrack, isa);
-
-	lm7000_set_freq(&rt->lm, freq);
+	lm7000_set_freq(freq, isa, rtrack_set_pins);
 
 	return 0;
 }
