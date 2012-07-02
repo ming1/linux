@@ -168,7 +168,7 @@ void __btrfs_std_error(struct btrfs_fs_info *fs_info, const char *function,
 	va_end(args);
 }
 
-static const char *logtypes[] = {
+static const char * const logtypes[] = {
 	"emergency",
 	"alert",
 	"critical",
