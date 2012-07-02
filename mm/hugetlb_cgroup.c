@@ -32,9 +32,7 @@ struct hugetlb_cgroup *root_h_cgroup __read_mostly;
 static inline
 struct hugetlb_cgroup *hugetlb_cgroup_from_css(struct cgroup_subsys_state *s)
 {
-	if (s)
-		return container_of(s, struct hugetlb_cgroup, css);
-	return NULL;
+	return container_of(s, struct hugetlb_cgroup, css);
 }
 
 static inline
