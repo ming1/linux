@@ -689,6 +689,8 @@ static inline int may_follow_link(struct path *link)
 	}
 	spin_unlock(&dentry->d_lock);
 
+	if (error)
+		audit_log_link_denied("follow_link", link);
 	return error;
 }
 
@@ -757,6 +759,7 @@ static int may_linkat(struct path *link)
 	    capable(CAP_FOWNER))
 		return 0;
 
+	audit_log_link_denied("linkat", link);
 	return -EPERM;
 }
 #else
