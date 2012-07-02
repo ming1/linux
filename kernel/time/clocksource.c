@@ -678,7 +678,7 @@ void __clocksource_updatefreq_scale(struct clocksource *cs, u32 scale, u32 freq)
 		sec = 600;
 
 	clocks_calc_mult_shift(&cs->mult, &cs->shift, freq,
-			       NSEC_PER_SEC / scale, sec * scale);
+			       (long)NSEC_PER_SEC / scale, sec * scale);
 
 	/*
 	 * for clocksources that have large mults, to avoid overflow.
