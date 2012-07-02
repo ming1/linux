@@ -8,12 +8,16 @@ The next/* branches are kept in the order in which they get applied.
 dependencies:
 <none at this time>
 
-next/drivers:
-devel/led-driver	git://git.kernel.org/pub/scm/linux/kernel/git/cooloney/linux-leds.git for-arm-soc
-
 next/soc:
 nomadik/drivercfg	git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-nomadik.git nomadik-for-arm-soc
 lpc32xx/devel		git://git.antcom.de/linux-2.6.git lpc32xx-next
 
 next/pm:
 imx/cpuidle		git://git.pengutronix.de/git/imx/linux-2.6.git imx/cpuidle
+
+
+---
+next/drivers: (dropped for now)
+devel/led-driver	git://git.kernel.org/pub/scm/linux/kernel/git/cooloney/linux-leds.git for-arm-soc
+
+
