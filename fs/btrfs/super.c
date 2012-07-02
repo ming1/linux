@@ -192,7 +192,7 @@ void btrfs_printk(struct btrfs_fs_info *fs_info, const char *fmt, ...)
 
 	kern_level = printk_get_level(fmt);
 	if (kern_level) {
-		size_t size = printk_skip_level(fmt)  - fmt;
+		size_t size = printk_skip_level(fmt) - fmt;
 		memcpy(lvl, fmt,  size);
 		lvl[size] = '\0';
 		fmt += size;
