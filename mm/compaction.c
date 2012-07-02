@@ -467,6 +467,7 @@ static void isolate_freepages(struct zone *zone,
 		}
 		spin_unlock_irqrestore(&zone->lock, flags);
 
+		WARN_ON_ONCE(high_pfn & (pageblock_nr_pages - 1));
 		/*
 		 * Record the highest PFN we isolated pages from. When next
 		 * looking for free pages, the search will restart here as
