@@ -15,6 +15,9 @@ next/soc:
 nomadik/drivercfg	git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-nomadik.git nomadik-for-arm-soc
 lpc32xx/devel		git://git.antcom.de/linux-2.6.git lpc32xx-next
 
+next/pinctrl:
+prima2/pinctrl		git://gitorious.org/sirfprima2-kernel/sirfprima2-kernel.git prima2/drivers
+
 next/pm:
 imx/cpuidle		git://git.pengutronix.de/git/imx/linux-2.6.git imx/cpuidle
 
