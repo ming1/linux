@@ -422,6 +422,17 @@ static void isolate_freepages(struct zone *zone,
 					pfn -= pageblock_nr_pages) {
 		unsigned long isolated;
 
+		/*
+		 * Skip ahead if another thread is compacting in the area
+		 * simultaneously. If we wrapped around, we can only skip
+		 * ahead if zone->compact_cached_free_pfn also wrapped to
+		 * above our starting point.
+		 */
+		if (cc->order > 0 && (!cc->wrapped ||
+				      zone->compact_cached_free_pfn >
+				      cc->start_free_pfn))
+			pfn = min(pfn, zone->compact_cached_free_pfn);
+
 		if (!pfn_valid(pfn))
 			continue;
 
@@ -456,6 +467,7 @@ static void isolate_freepages(struct zone *zone,
 		}
 		spin_unlock_irqrestore(&zone->lock, flags);
 
+		WARN_ON_ONCE(high_pfn & (pageblock_nr_pages - 1));
 		/*
 		 * Record the highest PFN we isolated pages from. When next
 		 * looking for free pages, the search will restart here as
@@ -463,6 +475,8 @@ static void isolate_freepages(struct zone *zone,
 		 */
 		if (isolated)
 			high_pfn = max(high_pfn, pfn);
+		if (cc->order > 0)
+			zone->compact_cached_free_pfn = high_pfn;
 	}
 
 	/* split_free_page does not map the pages */
@@ -565,8 +579,27 @@ static int compact_finished(struct zone *zone,
 	if (fatal_signal_pending(current))
 		return COMPACT_PARTIAL;
 
-	/* Compaction run completes if the migrate and free scanner meet */
-	if (cc->free_pfn <= cc->migrate_pfn)
+	/*
+	 * A full (order == -1) compaction run starts at the beginning and
+	 * end of a zone; it completes when the migrate and free scanner meet.
+	 * A partial (order > 0) compaction can start with the free scanner
+	 * at a random point in the zone, and may have to restart.
+	 */
+	if (cc->free_pfn <= cc->migrate_pfn) {
+		if (cc->order > 0 && !cc->wrapped) {
+			/* We started partway through; restart at the end. */
+			unsigned long free_pfn;
+			free_pfn = zone->zone_start_pfn + zone->spanned_pages;
+			free_pfn &= ~(pageblock_nr_pages-1);
+			zone->compact_cached_free_pfn = free_pfn;
+			cc->wrapped = 1;
+			return COMPACT_CONTINUE;
+		}
+		return COMPACT_COMPLETE;
+	}
+
+	/* We wrapped around and ended up where we started. */
+	if (cc->wrapped && cc->free_pfn <= cc->start_free_pfn)
 		return COMPACT_COMPLETE;
 
 	/*
@@ -664,8 +697,16 @@ static int compact_zone(struct zone *zone, struct compact_control *cc)
 
 	/* Setup to move all movable pages to the end of the zone */
 	cc->migrate_pfn = zone->zone_start_pfn;
-	cc->free_pfn = cc->migrate_pfn + zone->spanned_pages;
-	cc->free_pfn &= ~(pageblock_nr_pages-1);
+
+	if (cc->order > 0) {
+		/* Incremental compaction. Start where the last one stopped. */
+		cc->free_pfn = zone->compact_cached_free_pfn;
+		cc->start_free_pfn = cc->free_pfn;
+	} else {
+		/* Order == -1 starts at the end of the zone. */
+		cc->free_pfn = cc->migrate_pfn + zone->spanned_pages;
+		cc->free_pfn &= ~(pageblock_nr_pages-1);
+	}
 
 	migrate_prep_local();
 
@@ -701,8 +742,11 @@ static int compact_zone(struct zone *zone, struct compact_control *cc)
 		if (err) {
 			putback_lru_pages(&cc->migratepages);
 			cc->nr_migratepages = 0;
+			if (err == -ENOMEM) {
+				ret = COMPACT_PARTIAL;
+				goto out;
+			}
 		}
-
 	}
 
 out:
