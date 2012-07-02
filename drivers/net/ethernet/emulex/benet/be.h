@@ -34,7 +34,7 @@
 #include "be_hw.h"
 #include "be_roce.h"
 
-#define DRV_VER			"4.2.220u"
+#define DRV_VER			"4.2.248.0u"
 #define DRV_NAME		"be2net"
 #define BE_NAME			"ServerEngines BladeEngine2 10Gbps NIC"
 #define BE3_NAME		"ServerEngines BladeEngine3 10Gbps NIC"
@@ -571,6 +571,11 @@ static inline u8 is_udp_pkt(struct sk_buff *skb)
 		val = (ipv6_hdr(skb)->nexthdr == NEXTHDR_UDP);
 
 	return val;
+}
+
+static inline bool is_ipv4_pkt(struct sk_buff *skb)
+{
+	return skb->protocol == ntohs(ETH_P_IP) && ip_hdr(skb)->version == 4;
 }
 
 static inline void be_vf_eth_addr_generate(struct be_adapter *adapter, u8 *mac)

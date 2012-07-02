@@ -1,5 +1,4 @@
-/*
- * Copyright (C) 2007-2012 B.A.T.M.A.N. contributors:
+/* Copyright (C) 2007-2012 B.A.T.M.A.N. contributors:
  *
  * Marek Lindner, Simon Wunderlich
  *
@@ -16,22 +15,18 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
  * 02110-1301, USA
- *
  */
-
-
 
 #ifndef _NET_BATMAN_ADV_TYPES_H_
 #define _NET_BATMAN_ADV_TYPES_H_
 
 #include "packet.h"
 #include "bitarray.h"
+#include <linux/kernel.h>
 
-#define BAT_HEADER_LEN (ETH_HLEN + \
-	((sizeof(struct unicast_packet) > sizeof(struct bcast_packet) ? \
-	 sizeof(struct unicast_packet) : \
-	 sizeof(struct bcast_packet))))
-
+#define BATADV_HEADER_LEN \
+	(ETH_HLEN + max(sizeof(struct unicast_packet), \
+			sizeof(struct bcast_packet)))
 
 struct hard_iface {
 	struct list_head list;
@@ -49,8 +44,7 @@ struct hard_iface {
 	struct rcu_head rcu;
 };
 
-/**
- *	orig_node - structure for orig_list maintaining nodes of mesh
+/*	orig_node - structure for orig_list maintaining nodes of mesh
  *	@primary_addr: hosts primary interface address
  *	@last_seen: when last packet from this node was received
  *	@bcast_seqno_reset: time when the broadcast seqno window was reset
@@ -86,11 +80,12 @@ struct orig_node {
 	 * If true, then I sent a Roaming_adv to this orig_node and I have to
 	 * inspect every packet directed to it to check whether it is still
 	 * the true destination or not. This flag will be reset to false as
-	 * soon as I receive a new TTVN from this orig_node */
+	 * soon as I receive a new TTVN from this orig_node
+	 */
 	bool tt_poss_change;
 	uint32_t last_real_seqno;
 	uint8_t last_ttl;
-	DECLARE_BITMAP(bcast_bits, TQ_LOCAL_WINDOW_SIZE);
+	DECLARE_BITMAP(bcast_bits, BATADV_TQ_LOCAL_WINDOW_SIZE);
 	uint32_t last_bcast_seqno;
 	struct hlist_head neigh_list;
 	struct list_head frag_list;
@@ -101,7 +96,8 @@ struct orig_node {
 	struct bat_priv *bat_priv;
 	unsigned long last_frag_packet;
 	/* ogm_cnt_lock protects: bcast_own, bcast_own_sum,
-	 * neigh_node->real_bits, neigh_node->real_packet_count */
+	 * neigh_node->real_bits, neigh_node->real_packet_count
+	 */
 	spinlock_t ogm_cnt_lock;
 	/* bcast_seqno_lock protects bcast_bits, last_bcast_seqno */
 	spinlock_t bcast_seqno_lock;
@@ -118,21 +114,20 @@ struct gw_node {
 	struct rcu_head rcu;
 };
 
-/**
- *	neigh_node
+/*	neigh_node
  *	@last_seen: when last packet via this neighbor was received
  */
 struct neigh_node {
 	struct hlist_node list;
 	uint8_t addr[ETH_ALEN];
 	uint8_t real_packet_count;
-	uint8_t tq_recv[TQ_GLOBAL_WINDOW_SIZE];
+	uint8_t tq_recv[BATADV_TQ_GLOBAL_WINDOW_SIZE];
 	uint8_t tq_index;
 	uint8_t tq_avg;
 	uint8_t last_ttl;
 	struct list_head bonding_list;
 	unsigned long last_seen;
-	DECLARE_BITMAP(real_bits, TQ_LOCAL_WINDOW_SIZE);
+	DECLARE_BITMAP(real_bits, BATADV_TQ_LOCAL_WINDOW_SIZE);
 	atomic_t refcount;
 	struct rcu_head rcu;
 	struct orig_node *orig_node;
@@ -148,9 +143,26 @@ struct bcast_duplist_entry {
 };
 #endif
 
+enum bat_counters {
+	BAT_CNT_FORWARD,
+	BAT_CNT_FORWARD_BYTES,
+	BAT_CNT_MGMT_TX,
+	BAT_CNT_MGMT_TX_BYTES,
+	BAT_CNT_MGMT_RX,
+	BAT_CNT_MGMT_RX_BYTES,
+	BAT_CNT_TT_REQUEST_TX,
+	BAT_CNT_TT_REQUEST_RX,
+	BAT_CNT_TT_RESPONSE_TX,
+	BAT_CNT_TT_RESPONSE_RX,
+	BAT_CNT_TT_ROAM_ADV_TX,
+	BAT_CNT_TT_ROAM_ADV_RX,
+	BAT_CNT_NUM,
+};
+
 struct bat_priv {
 	atomic_t mesh_state;
 	struct net_device_stats stats;
+	uint64_t __percpu *bat_counters; /* Per cpu counters */
 	atomic_t aggregated_ogms;	/* boolean */
 	atomic_t bonding;		/* boolean */
 	atomic_t fragmentation;		/* boolean */
@@ -174,7 +186,8 @@ struct bat_priv {
 	 * If true, then I received a Roaming_adv and I have to inspect every
 	 * packet directed to me to check whether I am still the true
 	 * destination or not. This flag will be reset to false as soon as I
-	 * increase my TTVN */
+	 * increase my TTVN
+	 */
 	bool tt_poss_change;
 	char num_ifaces;
 	struct debug_log *debug_log;
@@ -196,7 +209,7 @@ struct bat_priv {
 	struct list_head tt_roam_list;
 	struct hashtable_t *vis_hash;
 #ifdef CONFIG_BATMAN_ADV_BLA
-	struct bcast_duplist_entry bcast_duplist[DUPLIST_SIZE];
+	struct bcast_duplist_entry bcast_duplist[BATADV_DUPLIST_SIZE];
 	int bcast_duplist_curr;
 	struct bla_claim_dst claim_dest;
 #endif
@@ -210,7 +223,7 @@ struct bat_priv {
 	spinlock_t vis_list_lock; /* protects vis_info::recv_list */
 	atomic_t num_local_tt;
 	/* Checksum of the local table, recomputed before sending a new OGM */
-	atomic_t tt_crc;
+	uint16_t tt_crc;
 	unsigned char *tt_buff;
 	int16_t tt_buff_len;
 	spinlock_t tt_buff_lock; /* protects tt_buff */
@@ -309,8 +322,7 @@ struct tt_roam_node {
 	struct list_head list;
 };
 
-/**
- *	forw_packet - structure for forw_list maintaining packets to be
+/*	forw_packet - structure for forw_list maintaining packets to be
  *	              send/forwarded
  */
 struct forw_packet {
@@ -336,7 +348,7 @@ struct if_list_entry {
 };
 
 struct debug_log {
-	char log_buff[LOG_BUF_LEN];
+	char log_buff[BATADV_LOG_BUF_LEN];
 	unsigned long log_start;
 	unsigned long log_end;
 	spinlock_t lock; /* protects log_buff, log_start and log_end */
@@ -352,7 +364,8 @@ struct frag_packet_list_entry {
 struct vis_info {
 	unsigned long first_seen;
 	/* list of server-neighbors we received a vis-packet
-	 * from.  we should not reply to them. */
+	 * from.  we should not reply to them.
+	 */
 	struct list_head recv_list;
 	struct list_head send_list;
 	struct kref refcount;
@@ -360,7 +373,7 @@ struct vis_info {
 	struct bat_priv *bat_priv;
 	/* this packet might be part of the vis send queue. */
 	struct sk_buff *skb_packet;
-	/* vis_info may follow here*/
+	/* vis_info may follow here */
 } __packed;
 
 struct vis_info_entry {
@@ -388,8 +401,7 @@ struct bat_algo_ops {
 	/* called when primary interface is selected / changed */
 	void (*bat_primary_iface_set)(struct hard_iface *hard_iface);
 	/* prepare a new outgoing OGM for the send queue */
-	void (*bat_ogm_schedule)(struct hard_iface *hard_iface,
-				 int tt_num_changes);
+	void (*bat_ogm_schedule)(struct hard_iface *hard_iface);
 	/* send scheduled OGM */
 	void (*bat_ogm_emit)(struct forw_packet *forw_packet);
 };
