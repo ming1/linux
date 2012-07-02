@@ -55,11 +55,11 @@ static long __estimate_accuracy(struct timespec *tv)
 	if (task_nice(current) > 0)
 		divfactor = divfactor / 5;
 
-	if (tv->tv_sec > MAX_SLACK / (NSEC_PER_SEC/divfactor))
+	if (tv->tv_sec > MAX_SLACK / ((long)NSEC_PER_SEC / divfactor))
 		return MAX_SLACK;
 
 	slack = tv->tv_nsec / divfactor;
-	slack += tv->tv_sec * (NSEC_PER_SEC/divfactor);
+	slack += tv->tv_sec * ((long)NSEC_PER_SEC / divfactor);
 
 	if (slack > MAX_SLACK)
 		return MAX_SLACK;
