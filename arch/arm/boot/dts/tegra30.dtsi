@@ -162,6 +162,12 @@
 		status = "disabled";
 	};
 
+	pwm {
+		compatible = "nvidia,tegra30-pwm", "nvidia,tegra20-pwm";
+		reg = <0x7000a000 0x100>;
+		#pwm-cells = <2>;
+	};
+
 	pmc {
 		compatible = "nvidia,tegra20-pmc", "nvidia,tegra30-pmc";
 		reg = <0x7000e400 0x400>;
