@@ -913,7 +913,7 @@ config ARCH_NOMADIK
 	select ARM_AMBA
 	select ARM_VIC
 	select CPU_ARM926T
-	select CLKDEV_LOOKUP
+	select COMMON_CLK
 	select GENERIC_CLOCKEVENTS
 	select PINCTRL
 	select MIGHT_HAVE_CACHE_L2X0
@@ -1020,8 +1020,6 @@ source "arch/arm/mach-ixp4xx/Kconfig"
 source "arch/arm/mach-kirkwood/Kconfig"
 
 source "arch/arm/mach-ks8695/Kconfig"
-
-source "arch/arm/mach-lpc32xx/Kconfig"
 
 source "arch/arm/mach-msm/Kconfig"
 
