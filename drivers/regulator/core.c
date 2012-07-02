@@ -108,28 +108,6 @@ static const char *rdev_get_name(struct regulator_dev *rdev)
 		return "";
 }
 
-/* gets the regulator for a given consumer device */
-static struct regulator *get_device_regulator(struct device *dev)
-{
-	struct regulator *regulator = NULL;
-	struct regulator_dev *rdev;
-
-	mutex_lock(&regulator_list_mutex);
-	list_for_each_entry(rdev, &regulator_list, list) {
-		mutex_lock(&rdev->mutex);
-		list_for_each_entry(regulator, &rdev->consumer_list, list) {
-			if (regulator->dev == dev) {
-				mutex_unlock(&rdev->mutex);
-				mutex_unlock(&regulator_list_mutex);
-				return regulator;
-			}
-		}
-		mutex_unlock(&rdev->mutex);
-	}
-	mutex_unlock(&regulator_list_mutex);
-	return NULL;
-}
-
 /**
  * of_get_regulator - get a regulator device node based on supply name
  * @dev: Device pointer for the consumer (of regulator) device
@@ -301,18 +279,6 @@ static int regulator_check_drms(struct regulator_dev *rdev)
 		return -EPERM;
 	}
 	return 0;
-}
-
-static ssize_t device_requested_uA_show(struct device *dev,
-			     struct device_attribute *attr, char *buf)
-{
-	struct regulator *regulator;
-
-	regulator = get_device_regulator(dev);
-	if (regulator == NULL)
-		return 0;
-
-	return sprintf(buf, "%d\n", regulator->uA_load);
 }
 
 static ssize_t regulator_uV_show(struct device *dev,
@@ -967,6 +933,14 @@ static int set_machine_constraints(struct regulator_dev *rdev,
 		}
 	}
 
+	if (rdev->constraints->ramp_delay && ops->set_ramp_delay) {
+		ret = ops->set_ramp_delay(rdev, rdev->constraints->ramp_delay);
+		if (ret < 0) {
+			rdev_err(rdev, "failed to set ramp_delay\n");
+			goto out;
+		}
+	}
+
 	print_constraints(rdev);
 	return 0;
 out:
@@ -1097,48 +1071,27 @@ static struct regulator *create_regulator(struct regulator_dev *rdev,
 	list_add(&regulator->list, &rdev->consumer_list);
 
 	if (dev) {
-		/* create a 'requested_microamps_name' sysfs entry */
-		size = scnprintf(buf, REG_STR_SIZE,
-				 "microamps_requested_%s-%s",
-				 dev_name(dev), supply_name);
-		if (size >= REG_STR_SIZE)
-			goto overflow_err;
-
-		regulator->dev = dev;
-		sysfs_attr_init(&regulator->dev_attr.attr);
-		regulator->dev_attr.attr.name = kstrdup(buf, GFP_KERNEL);
-		if (regulator->dev_attr.attr.name == NULL)
-			goto attr_name_err;
-
-		regulator->dev_attr.attr.mode = 0444;
-		regulator->dev_attr.show = device_requested_uA_show;
-		err = device_create_file(dev, &regulator->dev_attr);
-		if (err < 0) {
-			rdev_warn(rdev, "could not add regulator_dev requested microamps sysfs entry\n");
-			goto attr_name_err;
-		}
-
-		/* also add a link to the device sysfs entry */
+		/* Add a link to the device sysfs entry */
 		size = scnprintf(buf, REG_STR_SIZE, "%s-%s",
 				 dev->kobj.name, supply_name);
 		if (size >= REG_STR_SIZE)
-			goto attr_err;
+			goto overflow_err;
 
 		regulator->supply_name = kstrdup(buf, GFP_KERNEL);
 		if (regulator->supply_name == NULL)
-			goto attr_err;
+			goto overflow_err;
 
 		err = sysfs_create_link(&rdev->dev.kobj, &dev->kobj,
 					buf);
 		if (err) {
 			rdev_warn(rdev, "could not add device link %s err %d\n",
 				  dev->kobj.name, err);
-			goto link_name_err;
+			/* non-fatal */
 		}
 	} else {
 		regulator->supply_name = kstrdup(supply_name, GFP_KERNEL);
 		if (regulator->supply_name == NULL)
-			goto attr_err;
+			goto overflow_err;
 	}
 
 	regulator->debugfs = debugfs_create_dir(regulator->supply_name,
@@ -1165,12 +1118,6 @@ static struct regulator *create_regulator(struct regulator_dev *rdev,
 
 	mutex_unlock(&rdev->mutex);
 	return regulator;
-link_name_err:
-	kfree(regulator->supply_name);
-attr_err:
-	device_remove_file(regulator->dev, &regulator->dev_attr);
-attr_name_err:
-	kfree(regulator->dev_attr.attr.name);
 overflow_err:
 	list_del(&regulator->list);
 	kfree(regulator);
@@ -1459,11 +1406,9 @@ void devm_regulator_put(struct regulator *regulator)
 {
 	int rc;
 
-	rc = devres_destroy(regulator->dev, devm_regulator_release,
+	rc = devres_release(regulator->dev, devm_regulator_release,
 			    devm_regulator_match, regulator);
-	if (rc == 0)
-		regulator_put(regulator);
-	else
+	if (rc != 0)
 		WARN_ON(rc);
 }
 EXPORT_SYMBOL_GPL(devm_regulator_put);
@@ -1883,6 +1828,31 @@ int regulator_list_voltage_linear(struct regulator_dev *rdev,
 EXPORT_SYMBOL_GPL(regulator_list_voltage_linear);
 
 /**
+ * regulator_list_voltage_table - List voltages with table based mapping
+ *
+ * @rdev: Regulator device
+ * @selector: Selector to convert into a voltage
+ *
+ * Regulators with table based mapping between voltages and
+ * selectors can set volt_table in the regulator descriptor
+ * and then use this function as their list_voltage() operation.
+ */
+int regulator_list_voltage_table(struct regulator_dev *rdev,
+				 unsigned int selector)
+{
+	if (!rdev->desc->volt_table) {
+		BUG_ON(!rdev->desc->volt_table);
+		return -EINVAL;
+	}
+
+	if (selector >= rdev->desc->n_voltages)
+		return -EINVAL;
+
+	return rdev->desc->volt_table[selector];
+}
+EXPORT_SYMBOL_GPL(regulator_list_voltage_table);
+
+/**
  * regulator_list_voltage - enumerate supported voltages
  * @regulator: regulator source
  * @selector: identify voltage to list
@@ -2045,6 +2015,14 @@ int regulator_map_voltage_linear(struct regulator_dev *rdev,
 {
 	int ret, voltage;
 
+	/* Allow uV_step to be 0 for fixed voltage */
+	if (rdev->desc->n_voltages == 1 && rdev->desc->uV_step == 0) {
+		if (min_uV <= rdev->desc->min_uV && rdev->desc->min_uV <= max_uV)
+			return 0;
+		else
+			return -EINVAL;
+	}
+
 	if (!rdev->desc->uV_step) {
 		BUG_ON(!rdev->desc->uV_step);
 		return -EINVAL;
@@ -2084,7 +2062,8 @@ static int _regulator_do_set_voltage(struct regulator_dev *rdev,
 	 * If we can't obtain the old selector there is not enough
 	 * info to call set_voltage_time_sel().
 	 */
-	if (rdev->desc->ops->set_voltage_time_sel &&
+	if (_regulator_is_enabled(rdev) &&
+	    rdev->desc->ops->set_voltage_time_sel &&
 	    rdev->desc->ops->get_voltage_sel) {
 		old_selector = rdev->desc->ops->get_voltage_sel(rdev);
 		if (old_selector < 0)
@@ -2095,12 +2074,18 @@ static int _regulator_do_set_voltage(struct regulator_dev *rdev,
 		ret = rdev->desc->ops->set_voltage(rdev, min_uV, max_uV,
 						   &selector);
 	} else if (rdev->desc->ops->set_voltage_sel) {
-		if (rdev->desc->ops->map_voltage)
+		if (rdev->desc->ops->map_voltage) {
 			ret = rdev->desc->ops->map_voltage(rdev, min_uV,
 							   max_uV);
-		else
-			ret = regulator_map_voltage_iterate(rdev, min_uV,
-							    max_uV);
+		} else {
+			if (rdev->desc->ops->list_voltage ==
+			    regulator_list_voltage_linear)
+				ret = regulator_map_voltage_linear(rdev,
+								min_uV, max_uV);
+			else
+				ret = regulator_map_voltage_iterate(rdev,
+								min_uV, max_uV);
+		}
 
 		if (ret >= 0) {
 			selector = ret;
@@ -2113,10 +2098,10 @@ static int _regulator_do_set_voltage(struct regulator_dev *rdev,
 	if (rdev->desc->ops->list_voltage)
 		best_val = rdev->desc->ops->list_voltage(rdev, selector);
 	else
-		best_val = -1;
+		best_val = _regulator_get_voltage(rdev);
 
 	/* Call set_voltage_time_sel if successfully obtained old_selector */
-	if (ret == 0 && old_selector >= 0 &&
+	if (ret == 0 && _regulator_is_enabled(rdev) && old_selector >= 0 &&
 	    rdev->desc->ops->set_voltage_time_sel) {
 
 		delay = rdev->desc->ops->set_voltage_time_sel(rdev,
@@ -2126,19 +2111,19 @@ static int _regulator_do_set_voltage(struct regulator_dev *rdev,
 				  delay);
 			delay = 0;
 		}
+
+		/* Insert any necessary delays */
+		if (delay >= 1000) {
+			mdelay(delay / 1000);
+			udelay(delay % 1000);
+		} else if (delay) {
+			udelay(delay);
+		}
 	}
 
-	/* Insert any necessary delays */
-	if (delay >= 1000) {
-		mdelay(delay / 1000);
-		udelay(delay % 1000);
-	} else if (delay) {
-		udelay(delay);
-	}
-
-	if (ret == 0)
+	if (ret == 0 && best_val >= 0)
 		_notifier_call_chain(rdev, REGULATOR_EVENT_VOLTAGE_CHANGE,
-				     NULL);
+				     (void *)best_val);
 
 	trace_regulator_set_voltage_complete(rdev_get_name(rdev), best_val);
 
@@ -2247,6 +2232,46 @@ int regulator_set_voltage_time(struct regulator *regulator,
 	return ops->set_voltage_time_sel(rdev, old_sel, new_sel);
 }
 EXPORT_SYMBOL_GPL(regulator_set_voltage_time);
+
+/**
+ *regulator_set_voltage_time_sel - get raise/fall time
+ * @regulator: regulator source
+ * @old_selector: selector for starting voltage
+ * @new_selector: selector for target voltage
+ *
+ * Provided with the starting and target voltage selectors, this function
+ * returns time in microseconds required to rise or fall to this new voltage
+ *
+ * Drivers providing ramp_delay in regulation_constraints can use this as their
+ * set_voltage_time_sel() operation.
+ */
+int regulator_set_voltage_time_sel(struct regulator_dev *rdev,
+				   unsigned int old_selector,
+				   unsigned int new_selector)
+{
+	unsigned int ramp_delay = 0;
+	int old_volt, new_volt;
+
+	if (rdev->constraints->ramp_delay)
+		ramp_delay = rdev->constraints->ramp_delay;
+	else if (rdev->desc->ramp_delay)
+		ramp_delay = rdev->desc->ramp_delay;
+
+	if (ramp_delay == 0) {
+		rdev_warn(rdev, "ramp_delay not set\n");
+		return 0;
+	}
+
+	/* sanity check */
+	if (!rdev->desc->ops->list_voltage)
+		return -EINVAL;
+
+	old_volt = rdev->desc->ops->list_voltage(rdev, old_selector);
+	new_volt = rdev->desc->ops->list_voltage(rdev, new_selector);
+
+	return DIV_ROUND_UP(abs(new_volt - old_volt), ramp_delay);
+}
+EXPORT_SYMBOL_GPL(regulator_set_voltage_time_sel);
 
 /**
  * regulator_sync_voltage - re-apply last regulator output voltage
@@ -2628,7 +2653,7 @@ static void _notifier_call_chain(struct regulator_dev *rdev,
 				  unsigned long event, void *data)
 {
 	/* call rdev chain first */
-	blocking_notifier_call_chain(&rdev->notifier, event, NULL);
+	blocking_notifier_call_chain(&rdev->notifier, event, data);
 }
 
 /**
@@ -3105,7 +3130,10 @@ regulator_register(const struct regulator_desc *regulator_desc,
 	rdev->reg_data = config->driver_data;
 	rdev->owner = regulator_desc->owner;
 	rdev->desc = regulator_desc;
-	rdev->regmap = config->regmap;
+	if (config->regmap)
+		rdev->regmap = config->regmap;
+	else
+		rdev->regmap = dev_get_regmap(dev, NULL);
 	INIT_LIST_HEAD(&rdev->consumer_list);
 	INIT_LIST_HEAD(&rdev->list);
 	BLOCKING_INIT_NOTIFIER_HEAD(&rdev->notifier);
