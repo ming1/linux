@@ -455,8 +455,8 @@ static int __devexit ab8500_rtc_remove(struct platform_device *pdev)
 }
 
 static const struct of_device_id ab8500_rtc_match[] = {
-        { .compatible = "stericsson,ab8500-rtc", },
-        {}
+	{ .compatible = "stericsson,ab8500-rtc", },
+	{}
 };
 
 static struct platform_driver ab8500_rtc_driver = {
