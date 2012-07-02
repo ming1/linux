@@ -263,6 +263,8 @@ void hfs_mdb_commit(struct super_block *sb)
 	if (sb->s_flags & MS_RDONLY)
 		return;
 
+	cancel_delayed_work(&HFS_SB(sb)->mdb_work);
+
 	lock_buffer(HFS_SB(sb)->mdb_bh);
 	if (test_and_clear_bit(HFS_FLG_MDB_DIRTY, &HFS_SB(sb)->flags)) {
 		/* These parameters may have been modified, so write them back */
