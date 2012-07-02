@@ -8,6 +8,9 @@ The next/* branches are kept in the order in which they get applied.
 dependencies:
 <none at this time>
 
+next/cleanup:
+at91/cleanup		git://github.com/at91linux/linux-at91.git tags/at91-for-next-cleanup
+
 next/soc:
 nomadik/drivercfg	git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-nomadik.git nomadik-for-arm-soc
 lpc32xx/devel		git://git.antcom.de/linux-2.6.git lpc32xx-next
