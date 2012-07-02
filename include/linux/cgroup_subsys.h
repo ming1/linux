@@ -73,7 +73,7 @@ SUBSYS(net_prio)
 
 /* */
 
-#ifdef CONFIG_MEMCG_HUGETLB
+#ifdef CONFIG_CGROUP_HUGETLB
 SUBSYS(hugetlb)
 #endif
 
