@@ -1,0 +1,32 @@
+This file lists all branches that are pulled into the for-next branch
+of git://git.kernel.org/pub/scm/linux/kernel/git/arm/arm-soc.git
+and their external dependencies.
+
+It also includes a couple of directly applied patches for build breaks with subject
+The next/* branches are kept in the order in which they get applied.
+
+dependencies:
+<none at this time>
+
+next/cleanup:
+at91/cleanup		git://github.com/at91linux/linux-at91.git tags/at91-for-next-cleanup
+
+next/irq:
+imx/sparse-irq		git://git.linaro.org/people/shawnguo/linux-2.6.git imx/sparse-irq
+
+next/soc:
+nomadik/drivercfg	git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-nomadik.git nomadik-for-arm-soc
+lpc32xx/devel		git://git.antcom.de/linux-2.6.git lpc32xx-next
+
+next/pinctrl:
+prima2/pinctrl		git://gitorious.org/sirfprima2-kernel/sirfprima2-kernel.git prima2/drivers
+
+next/pm:
+imx/cpuidle		git://git.pengutronix.de/git/imx/linux-2.6.git imx/cpuidle
+
+
+---
+next/drivers: (dropped for now)
+devel/led-driver	git://git.kernel.org/pub/scm/linux/kernel/git/cooloney/linux-leds.git for-arm-soc
+
+
