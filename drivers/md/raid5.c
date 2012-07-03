@@ -484,7 +484,8 @@ get_active_stripe(struct r5conf *conf, sector_t sector,
 		} else {
 			if (atomic_read(&sh->count)) {
 				BUG_ON(!list_empty(&sh->lru)
-				    && !test_bit(STRIPE_EXPANDING, &sh->state));
+				    && !test_bit(STRIPE_EXPANDING, &sh->state)
+				    && !test_bit(STRIPE_ON_UNPLUG_LIST, &sh->state));
 			} else {
 				if (!test_bit(STRIPE_HANDLE, &sh->state))
 					atomic_inc(&conf->active_stripes);
@@ -4008,6 +4009,57 @@ static struct stripe_head *__get_priority_stripe(struct r5conf *conf)
 	return sh;
 }
 
+struct raid5_plug_cb {
+	struct md_plug_cb	cb;
+	struct list_head	list;
+};
+
+static void raid5_unplug(struct md_plug_cb *mdcb)
+{
+	struct raid5_plug_cb *cb = container_of(
+		mdcb, struct raid5_plug_cb, cb);
+	struct stripe_head *sh;
+	struct r5conf *conf = mdcb->mddev->private;
+
+	if (cb->list.next == NULL || list_empty(&cb->list))
+		return;
+	spin_lock_irq(&conf->device_lock);
+	while (!list_empty(&cb->list)) {
+		sh = list_first_entry(&cb->list, struct stripe_head, lru);
+		list_del_init(&sh->lru);
+		/*
+		 * avoid race release_stripe_plug() sees STRIPE_ON_UNPLUG_LIST
+		 * clear but the stripe is still in our list
+		 */
+		smp_mb__before_clear_bit();
+		clear_bit(STRIPE_ON_UNPLUG_LIST, &sh->state);
+		__release_stripe(conf, sh);
+	}
+	spin_unlock_irq(&conf->device_lock);
+}
+
+static void release_stripe_plug(struct mddev *mddev,
+				struct stripe_head *sh)
+{
+	struct md_plug_cb *mdcb = mddev_check_plugged(mddev, raid5_unplug,
+						      sizeof(struct raid5_plug_cb));
+	struct raid5_plug_cb *cb;
+	if (!mdcb) {
+		release_stripe(sh);
+		return;
+	}
+
+	cb = container_of(mdcb, struct raid5_plug_cb, cb);
+
+	if (cb->list.next == NULL)
+		INIT_LIST_HEAD(&cb->list);
+
+	if (!test_and_set_bit(STRIPE_ON_UNPLUG_LIST, &sh->state))
+		list_add_tail(&sh->lru, &cb->list);
+	else
+		release_stripe(sh);
+}
+
 static void make_request(struct mddev *mddev, struct bio * bi)
 {
 	struct r5conf *conf = mddev->private;
@@ -4136,8 +4188,7 @@ static void make_request(struct mddev *mddev, struct bio * bi)
 			if ((bi->bi_rw & REQ_SYNC) &&
 			    !test_and_set_bit(STRIPE_PREREAD_ACTIVE, &sh->state))
 				atomic_inc(&conf->preread_active_stripes);
-			mddev_check_plugged(mddev, 0, 0);
-			release_stripe(sh);
+			release_stripe_plug(mddev, sh);
 		} else {
 			/* cannot get stripe for read-ahead, just give-up */
 			clear_bit(BIO_UPTODATE, &bi->bi_flags);
