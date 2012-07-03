@@ -727,6 +727,7 @@ struct request_sense {
 /*
  * feature profile
  */
+#define CDF_RM		0x0003	/* "Removeable Medium" */
 #define CDF_RWRT	0x0020	/* "Random Writable" */
 #define CDF_HWDM	0x0024	/* "Hardware Defect Management" */
 #define CDF_MRW 	0x0028
@@ -738,6 +739,48 @@ struct request_sense {
 #define CDM_MRW_BGFORMAT_INACTIVE	1
 #define CDM_MRW_BGFORMAT_ACTIVE		2
 #define CDM_MRW_BGFORMAT_COMPLETE	3
+
+/* Removable medium feature descriptor */
+struct rm_feature_desc {
+	__be16 feature_code;
+#if defined(__BIG_ENDIAN_BITFIELD)
+	__u8 reserved1		: 2;
+	__u8 feature_version	: 4;
+	__u8 persistent		: 1;
+	__u8 curr		: 1;
+#elif defined(__LITTLE_ENDIAN_BITFIELD)
+	__u8 curr		: 1;
+	__u8 persistent		: 1;
+	__u8 feature_version	: 4;
+	__u8 reserved1		: 2;
+#endif
+	__u8 add_len;
+#if defined(__BIG_ENDIAN_BITFIELD)
+	__u8 mech_type		: 3;
+	__u8 load		: 1;
+	__u8 eject		: 1;
+	__u8 pvnt_jmpr		: 1;
+	__u8 dbml		: 1;
+	__u8 lock		: 1;
+#elif defined(__LITTLE_ENDIAN_BITFIELD)
+	__u8 lock		: 1;
+	__u8 dbml		: 1;
+	__u8 pvnt_jmpr		: 1;
+	__u8 eject		: 1;
+	__u8 load		: 1;
+	__u8 mech_type		: 3;
+#endif
+	__u8 reserved2;
+	__u8 reserved3;
+	__u8 reserved4;
+};
+
+struct device_busy_event_desc {
+	__u8 device_busy_event	: 4;
+	__u8 reserved1		: 4;
+	__u8 device_busy_status;
+	__u8 time;
+};
 
 /*
  * mrw address spaces
