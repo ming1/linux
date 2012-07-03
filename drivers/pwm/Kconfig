@@ -1,0 +1,78 @@
+menuconfig PWM
+	bool "PWM Support"
+	depends on !HAVE_PWM
+	help
+	  This enables PWM support through the generic PWM framework.
+	  You only need to enable this, if you also want to enable
+	  one or more of the PWM drivers below.
+
+	  If unsure, say N.
+
+if PWM
+
+config PWM_BFIN
+	tristate "Blackfin PWM support"
+	depends on BFIN_GPTIMERS
+	help
+	  Generic PWM framework driver for Blackfin.
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called pwm-bfin.
+
+config PWM_IMX
+	tristate "i.MX pwm support"
+	depends on ARCH_MXC
+	help
+	  Generic PWM framework driver for i.MX.
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called pwm-imx.
+
+config PWM_MXS
+	tristate "Freescale MXS PWM support"
+	depends on ARCH_MXS && OF
+	select STMP_DEVICE
+	help
+	  Generic PWM framework driver for Freescale MXS.
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called pwm-mxs.
+
+config PWM_PXA
+	tristate "PXA PWM support"
+	depends on ARCH_PXA
+	help
+	  Generic PWM framework driver for PXA.
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called pwm-pxa.
+
+config PWM_SAMSUNG
+	tristate "Samsung pwm support"
+	depends on PLAT_SAMSUNG
+	help
+	  Generic PWM framework driver for Samsung.
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called pwm-samsung.
+
+config PWM_TEGRA
+	tristate "NVIDIA Tegra PWM support"
+	depends on ARCH_TEGRA
+	help
+	  Generic PWM framework driver for the PWFM controller found on NVIDIA
+	  Tegra SoCs.
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called pwm-tegra.
+
+config PWM_VT8500
+	tristate "vt8500 pwm support"
+	depends on ARCH_VT8500
+	help
+	  Generic PWM framework driver for vt8500.
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called pwm-vt8500.
+
+endif
