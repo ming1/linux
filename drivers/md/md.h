@@ -640,7 +640,7 @@ extern struct bio *bio_alloc_mddev(gfp_t gfp_mask, int nr_iovecs,
  * plugs so other code can see if a plug is active.
  */
 struct md_plug_cb;
-typedef void (*md_unplug_func_t)(struct md_plug_cb *mdcb);
+typedef void (*md_unplug_func_t)(struct md_plug_cb *mdcb, bool from_sched);
 struct md_plug_cb {
 	struct blk_plug_cb cb;
 	struct mddev *mddev;
