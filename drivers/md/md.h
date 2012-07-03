@@ -630,6 +630,24 @@ extern struct bio *bio_clone_mddev(struct bio *bio, gfp_t gfp_mask,
 				   struct mddev *mddev);
 extern struct bio *bio_alloc_mddev(gfp_t gfp_mask, int nr_iovecs,
 				   struct mddev *mddev);
-extern int mddev_check_plugged(struct mddev *mddev);
+
+/* Support for plugging.
+ * This mirrors the plugging support in request_queue, but does not
+ * require having a whole queue or request structures.
+ * We allocate an md_plug_cb for each md device and each thread it gets
+ * plugged on.  This links tot the private plug_handle structure in the
+ * personality data where we keep a count of the number of outstanding
+ * plugs so other code can see if a plug is active.
+ */
+struct md_plug_cb;
+typedef void (*md_unplug_func_t)(struct md_plug_cb *mdcb);
+struct md_plug_cb {
+	struct blk_plug_cb cb;
+	struct mddev *mddev;
+	md_unplug_func_t unplug;
+};
+
+extern struct md_plug_cb *mddev_check_plugged(
+	struct mddev *mddev, md_unplug_func_t unplug, size_t size);
 extern void md_trim_bio(struct bio *bio, int offset, int size);
 #endif /* _MD_MD_H */

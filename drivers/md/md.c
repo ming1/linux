@@ -498,22 +498,13 @@ void md_flush_request(struct mddev *mddev, struct bio *bio)
 }
 EXPORT_SYMBOL(md_flush_request);
 
-/* Support for plugging.
- * This mirrors the plugging support in request_queue, but does not
- * require having a whole queue or request structures.
- * We allocate an md_plug_cb for each md device and each thread it gets
- * plugged on.  This links tot the private plug_handle structure in the
- * personality data where we keep a count of the number of outstanding
- * plugs so other code can see if a plug is active.
- */
-struct md_plug_cb {
-	struct blk_plug_cb cb;
-	struct mddev *mddev;
-};
 
 static void plugger_unplug(struct blk_plug_cb *cb)
 {
 	struct md_plug_cb *mdcb = container_of(cb, struct md_plug_cb, cb);
+
+	if (mdcb->unplug)
+		mdcb->unplug(mdcb);
 	if (atomic_dec_and_test(&mdcb->mddev->plug_cnt))
 		md_wakeup_thread(mdcb->mddev->thread);
 	kfree(mdcb);
@@ -522,13 +513,14 @@ static void plugger_unplug(struct blk_plug_cb *cb)
 /* Check that an unplug wakeup will come shortly.
  * If not, wakeup the md thread immediately
  */
-int mddev_check_plugged(struct mddev *mddev)
+struct md_plug_cb *mddev_check_plugged(struct mddev *mddev,
+				       md_unplug_func_t unplug, size_t size)
 {
 	struct blk_plug *plug = current->plug;
 	struct md_plug_cb *mdcb;
 
 	if (!plug)
-		return 0;
+		return NULL;
 
 	list_for_each_entry(mdcb, &plug->cb_list, cb.list) {
 		if (mdcb->cb.callback == plugger_unplug &&
@@ -538,19 +530,22 @@ int mddev_check_plugged(struct mddev *mddev)
 						    struct md_plug_cb,
 						    cb.list))
 				list_move(&mdcb->cb.list, &plug->cb_list);
-			return 1;
+			return mdcb;
 		}
 	}
 	/* Not currently on the callback list */
-	mdcb = kmalloc(sizeof(*mdcb), GFP_ATOMIC);
+	if (size < sizeof(*mdcb))
+		size = sizeof(*mdcb);
+	mdcb = kzalloc(size, GFP_ATOMIC);
 	if (!mdcb)
-		return 0;
+		return NULL;
 
 	mdcb->mddev = mddev;
 	mdcb->cb.callback = plugger_unplug;
 	atomic_inc(&mddev->plug_cnt);
 	list_add(&mdcb->cb.list, &plug->cb_list);
-	return 1;
+	mdcb->unplug = unplug;
+	return mdcb;
 }
 EXPORT_SYMBOL_GPL(mddev_check_plugged);
 

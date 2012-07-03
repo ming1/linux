@@ -4136,7 +4136,7 @@ static void make_request(struct mddev *mddev, struct bio * bi)
 			if ((bi->bi_rw & REQ_SYNC) &&
 			    !test_and_set_bit(STRIPE_PREREAD_ACTIVE, &sh->state))
 				atomic_inc(&conf->preread_active_stripes);
-			mddev_check_plugged(mddev);
+			mddev_check_plugged(mddev, 0, 0);
 			release_stripe(sh);
 		} else {
 			/* cannot get stripe for read-ahead, just give-up */
