@@ -264,7 +264,7 @@ try_again:
 			}
 
 			if (err == ENOENT) {
-				ui__warning("The %s event is not supported.\n",
+				ui__error("The %s event is not supported.\n",
 					    event_name(pos));
 				exit(EXIT_FAILURE);
 			}
@@ -396,7 +396,7 @@ static void perf_record__mmap_read_all(struct perf_record *rec)
 			perf_record__mmap_read(rec, &rec->evlist->mmap[i]);
 	}
 
-	if (perf_header__has_feat(&rec->session->header, HEADER_TRACE_INFO))
+	if (perf_header__has_feat(&rec->session->header, HEADER_TRACING_DATA))
 		write_output(rec, &finished_round_event, sizeof(finished_round_event));
 }
 
@@ -478,7 +478,7 @@ static int __cmd_record(struct perf_record *rec, int argc, const char **argv)
 		perf_header__clear_feat(&session->header, HEADER_BUILD_ID);
 
 	if (!have_tracepoints(&evsel_list->entries))
-		perf_header__clear_feat(&session->header, HEADER_TRACE_INFO);
+		perf_header__clear_feat(&session->header, HEADER_TRACING_DATA);
 
 	if (!rec->opts.branch_stack)
 		perf_header__clear_feat(&session->header, HEADER_BRANCH_STACK);
@@ -753,7 +753,7 @@ static struct perf_record record = {
 		.mmap_pages	     = UINT_MAX,
 		.user_freq	     = UINT_MAX,
 		.user_interval	     = ULLONG_MAX,
-		.freq		     = 1000,
+		.freq		     = 4000,
 		.target		     = {
 			.uses_mmap   = true,
 		},
@@ -858,8 +858,8 @@ int cmd_record(int argc, const char **argv, const char *prefix __used)
 		usage_with_options(record_usage, record_options);
 
 	if (rec->force && rec->append_file) {
-		fprintf(stderr, "Can't overwrite and append at the same time."
-				" You need to choose between -f and -A");
+		ui__error("Can't overwrite and append at the same time."
+			  " You need to choose between -f and -A");
 		usage_with_options(record_usage, record_options);
 	} else if (rec->append_file) {
 		rec->write_mode = WRITE_APPEND;
@@ -868,8 +868,8 @@ int cmd_record(int argc, const char **argv, const char *prefix __used)
 	}
 
 	if (nr_cgroups && !rec->opts.target.system_wide) {
-		fprintf(stderr, "cgroup monitoring only available in"
-			" system-wide mode\n");
+		ui__error("cgroup monitoring only available in"
+			  " system-wide mode\n");
 		usage_with_options(record_usage, record_options);
 	}
 
@@ -905,7 +905,7 @@ int cmd_record(int argc, const char **argv, const char *prefix __used)
 		int saved_errno = errno;
 
 		perf_target__strerror(&rec->opts.target, err, errbuf, BUFSIZ);
-		ui__warning("%s", errbuf);
+		ui__error("%s", errbuf);
 
 		err = -saved_errno;
 		goto out_free_fd;
@@ -933,7 +933,7 @@ int cmd_record(int argc, const char **argv, const char *prefix __used)
 	else if (rec->opts.freq) {
 		rec->opts.default_interval = rec->opts.freq;
 	} else {
-		fprintf(stderr, "frequency and count are zero, aborting\n");
+		ui__error("frequency and count are zero, aborting\n");
 		err = -EINVAL;
 		goto out_free_fd;
 	}

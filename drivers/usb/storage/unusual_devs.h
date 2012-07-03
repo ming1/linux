@@ -110,7 +110,7 @@ UNUSUAL_DEV(  0x040d, 0x6205, 0x0003, 0x0003,
 		USB_SC_DEVICE, USB_PR_DEVICE, NULL,
 		US_FL_IGNORE_RESIDUE ),
 
-/* Deduced by Jonathan Woithe <jwoithe@physics.adelaide.edu.au>
+/* Deduced by Jonathan Woithe <jwoithe@just42.net>
  * Entry needed for flags: US_FL_FIX_INQUIRY because initial inquiry message
  * always fails and confuses drive.
  */
@@ -1106,6 +1106,13 @@ UNUSUAL_DEV( 0x090a, 0x1200, 0x0000, 0x9999,
 		"MP3 player",
 		USB_SC_RBC, USB_PR_BULK, NULL,
 		0 ),
+
+/* Feiya QDI U2 DISK, reported by Hans de Goede <hdegoede@redhat.com> */
+UNUSUAL_DEV( 0x090c, 0x1000, 0x0000, 0xffff,
+		"Feiya",
+		"QDI U2 DISK",
+		USB_SC_DEVICE, USB_PR_DEVICE, NULL,
+		US_FL_NO_READ_CAPACITY_16 ),
 
 /* aeb */
 UNUSUAL_DEV( 0x090c, 0x1132, 0x0000, 0xffff,

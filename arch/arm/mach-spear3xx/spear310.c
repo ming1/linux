@@ -4,7 +4,7 @@
  * SPEAr310 machine source file
  *
  * Copyright (C) 2009-2012 ST Microelectronics
- * Viresh Kumar <viresh.kumar@st.com>
+ * Viresh Kumar <viresh.linux@gmail.com>
  *
  * This file is licensed under the terms of the GNU General Public
  * License version 2. This program is licensed "as is" without any
@@ -478,7 +478,6 @@ static const char * const spear310_dt_board_compat[] = {
 static void __init spear310_map_io(void)
 {
 	spear3xx_map_io();
-	spear310_clk_init();
 }
 
 DT_MACHINE_START(SPEAR310_DT, "ST SPEAr310 SoC with Flattened Device Tree")

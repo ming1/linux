@@ -206,8 +206,10 @@ static void ieee80211_set_default_queues(struct ieee80211_sub_if_data *sdata)
 	for (i = 0; i < IEEE80211_NUM_ACS; i++) {
 		if (local->hw.flags & IEEE80211_HW_QUEUE_CONTROL)
 			sdata->vif.hw_queue[i] = IEEE80211_INVAL_HW_QUEUE;
-		else
+		else if (local->hw.queues >= IEEE80211_NUM_ACS)
 			sdata->vif.hw_queue[i] = i;
+		else
+			sdata->vif.hw_queue[i] = 0;
 	}
 	sdata->vif.cab_queue = IEEE80211_INVAL_HW_QUEUE;
 }
@@ -635,6 +637,18 @@ static void ieee80211_do_stop(struct ieee80211_sub_if_data *sdata,
 		ieee80211_configure_filter(local);
 		break;
 	default:
+		mutex_lock(&local->mtx);
+		if (local->hw_roc_dev == sdata->dev &&
+		    local->hw_roc_channel) {
+			/* ignore return value since this is racy */
+			drv_cancel_remain_on_channel(local);
+			ieee80211_queue_work(&local->hw, &local->hw_roc_done);
+		}
+		mutex_unlock(&local->mtx);
+
+		flush_work(&local->hw_roc_start);
+		flush_work(&local->hw_roc_done);
+
 		flush_work(&sdata->work);
 		/*
 		 * When we get here, the interface is marked down.
