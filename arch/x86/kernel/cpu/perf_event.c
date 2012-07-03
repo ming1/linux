@@ -35,17 +35,6 @@
 
 #include "perf_event.h"
 
-#if 0
-#undef wrmsrl
-#define wrmsrl(msr, val) 					\
-do {								\
-	trace_printk("wrmsrl(%lx, %lx)\n", (unsigned long)(msr),\
-			(unsigned long)(val));			\
-	native_write_msr((msr), (u32)((u64)(val)), 		\
-			(u32)((u64)(val) >> 32));		\
-} while (0)
-#endif
-
 struct x86_pmu x86_pmu __read_mostly;
 
 DEFINE_PER_CPU(struct cpu_hw_events, cpu_hw_events) = {
@@ -86,7 +75,7 @@ u64 x86_perf_event_update(struct perf_event *event)
 	 */
 again:
 	prev_raw_count = local64_read(&hwc->prev_count);
-	rdmsrl(hwc->event_base, new_raw_count);
+	rdpmcl(hwc->event_base_rdpmc, new_raw_count);
 
 	if (local64_cmpxchg(&hwc->prev_count, prev_raw_count,
 					new_raw_count) != prev_raw_count)
@@ -222,7 +211,7 @@ static bool check_hw_exists(void)
 	 * that don't trap on the MSR access and always return 0s.
 	 */
 	val = 0xabcdUL;
-	ret = checking_wrmsrl(x86_pmu_event_addr(0), val);
+	ret = wrmsrl_safe(x86_pmu_event_addr(0), val);
 	ret |= rdmsrl_safe(x86_pmu_event_addr(0), &val_new);
 	if (ret || val != val_new)
 		goto msr_fail;
@@ -637,7 +626,7 @@ static bool __perf_sched_find_counter(struct perf_sched *sched)
 	c = sched->constraints[sched->state.event];
 
 	/* Prefer fixed purpose counters */
-	if (x86_pmu.num_counters_fixed) {
+	if (c->idxmsk64 & (~0ULL << X86_PMC_IDX_FIXED)) {
 		idx = X86_PMC_IDX_FIXED;
 		for_each_set_bit_from(idx, c->idxmsk, X86_PMC_IDX_MAX) {
 			if (!__test_and_set_bit(idx, sched->state.used))
@@ -704,8 +693,8 @@ static bool perf_sched_next_event(struct perf_sched *sched)
 /*
  * Assign a counter for each event.
  */
-static int perf_assign_events(struct event_constraint **constraints, int n,
-			      int wmin, int wmax, int *assign)
+int perf_assign_events(struct event_constraint **constraints, int n,
+			int wmin, int wmax, int *assign)
 {
 	struct perf_sched sched;
 
@@ -830,9 +819,11 @@ static inline void x86_assign_hw_event(struct perf_event *event,
 	} else if (hwc->idx >= X86_PMC_IDX_FIXED) {
 		hwc->config_base = MSR_ARCH_PERFMON_FIXED_CTR_CTRL;
 		hwc->event_base = MSR_ARCH_PERFMON_FIXED_CTR0 + (hwc->idx - X86_PMC_IDX_FIXED);
+		hwc->event_base_rdpmc = (hwc->idx - X86_PMC_IDX_FIXED) | 1<<30;
 	} else {
 		hwc->config_base = x86_pmu_config_addr(hwc->idx);
 		hwc->event_base  = x86_pmu_event_addr(hwc->idx);
+		hwc->event_base_rdpmc = hwc->idx;
 	}
 }
 
@@ -1649,7 +1640,12 @@ static ssize_t set_attr_rdpmc(struct device *cdev,
 			      struct device_attribute *attr,
 			      const char *buf, size_t count)
 {
-	unsigned long val = simple_strtoul(buf, NULL, 0);
+	unsigned long val;
+	ssize_t ret;
+
+	ret = kstrtoul(buf, 0, &val);
+	if (ret)
+		return ret;
 
 	if (!!val != !!x86_pmu.attr_rdpmc) {
 		x86_pmu.attr_rdpmc = !!val;
