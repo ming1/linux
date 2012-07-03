@@ -517,8 +517,8 @@ static int read_balance(struct r1conf *conf, struct r1bio *r1_bio, int *max_sect
 		int bad_sectors;
 
 		int disk = start_disk + i;
-		if (disk >= conf->raid_disks)
-			disk -= conf->raid_disks;
+		if (disk >= conf->raid_disks * 2)
+			disk -= conf->raid_disks * 2;
 
 		rdev = rcu_dereference(conf->mirrors[disk].rdev);
 		if (r1_bio->bios[disk] == IO_BLOCKED
@@ -2621,7 +2621,7 @@ static struct r1conf *setup_conf(struct mddev *mddev)
 		goto abort;
 	}
 	err = -ENOMEM;
-	conf->thread = md_register_thread(raid1d, mddev, NULL);
+	conf->thread = md_register_thread(raid1d, mddev, "raid1");
 	if (!conf->thread) {
 		printk(KERN_ERR
 		       "md/raid1:%s: couldn't allocate thread\n",

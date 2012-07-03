@@ -2890,6 +2890,12 @@ static sector_t sync_request(struct mddev *mddev, sector_t sector_nr,
 			/* want to reconstruct this device */
 			rb2 = r10_bio;
 			sect = raid10_find_virt(conf, sector_nr, i);
+			if (sect >= mddev->resync_max_sectors) {
+				/* last stripe is not complete - don't
+				 * try to recover this sector.
+				 */
+				continue;
+			}
 			/* Unless we are doing a full sync, or a replacement
 			 * we only need to recover the block if it is set in
 			 * the bitmap
@@ -3421,7 +3427,7 @@ static struct r10conf *setup_conf(struct mddev *mddev)
 	spin_lock_init(&conf->resync_lock);
 	init_waitqueue_head(&conf->wait_barrier);
 
-	conf->thread = md_register_thread(raid10d, mddev, NULL);
+	conf->thread = md_register_thread(raid10d, mddev, "raid10");
 	if (!conf->thread)
 		goto out;
 
