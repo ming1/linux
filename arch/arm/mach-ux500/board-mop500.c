@@ -25,6 +25,7 @@
 #include <linux/mfd/tc3589x.h>
 #include <linux/mfd/tps6105x.h>
 #include <linux/mfd/abx500/ab8500-gpio.h>
+#include <linux/mfd/abx500/ab8500-codec.h>
 #include <linux/leds-lp5521.h>
 #include <linux/input.h>
 #include <linux/smsc911x.h>
@@ -95,6 +96,18 @@ static struct ab8500_gpio_platform_data ab8500_gpio_pdata = {
 	 */
 	.config_reg		= {0x00, 0x1E, 0x80, 0x01,
 					0x7A, 0x00, 0x00},
+};
+
+/* ab8500-codec */
+static struct ab8500_codec_platform_data ab8500_codec_pdata = {
+	.amics =  {
+		.mic1_type = AMIC_TYPE_DIFFERENTIAL,
+		.mic2_type = AMIC_TYPE_DIFFERENTIAL,
+		.mic1a_micbias = AMIC_MICBIAS_VAMIC1,
+		.mic1b_micbias = AMIC_MICBIAS_VAMIC1,
+		.mic2_micbias = AMIC_MICBIAS_VAMIC2
+	},
+	.ear_cmv = EAR_CMV_0_95V
 };
 
 static struct gpio_keys_button snowball_key_array[] = {
@@ -195,6 +208,7 @@ static struct ab8500_platform_data ab8500_platdata = {
 	.regulator	= ab8500_regulators,
 	.num_regulator	= ARRAY_SIZE(ab8500_regulators),
 	.gpio		= &ab8500_gpio_pdata,
+	.codec		= &ab8500_codec_pdata,
 };
 
 static struct resource ab8500_resources[] = {
@@ -580,43 +594,12 @@ static void ux500_uart0_reset(void)
 	udelay(1);
 }
 
-/* This needs to be referenced by callbacks */
-struct pinctrl *u0_p;
-struct pinctrl_state *u0_def;
-struct pinctrl_state *u0_sleep;
-
-static void ux500_uart0_init(void)
-{
-	int ret;
-
-	if (IS_ERR(u0_p) || IS_ERR(u0_def))
-		return;
-
-	ret = pinctrl_select_state(u0_p, u0_def);
-	if (ret)
-		pr_err("could not set UART0 defstate\n");
-}
-
-static void ux500_uart0_exit(void)
-{
-	int ret;
-
-	if (IS_ERR(u0_p) || IS_ERR(u0_sleep))
-		return;
-
-	ret = pinctrl_select_state(u0_p, u0_sleep);
-	if (ret)
-		pr_err("could not set UART0 idlestate\n");
-}
-
 static struct amba_pl011_data uart0_plat = {
 #ifdef CONFIG_STE_DMA40
 	.dma_filter = stedma40_filter,
 	.dma_rx_param = &uart0_dma_cfg_rx,
 	.dma_tx_param = &uart0_dma_cfg_tx,
 #endif
-	.init = ux500_uart0_init,
-	.exit = ux500_uart0_exit,
 	.reset = ux500_uart0_reset,
 };
 
@@ -638,28 +621,7 @@ static struct amba_pl011_data uart2_plat = {
 
 static void __init mop500_uart_init(struct device *parent)
 {
-	struct amba_device *uart0_device;
-
-	uart0_device = db8500_add_uart0(parent, &uart0_plat);
-	if (uart0_device) {
-		u0_p = pinctrl_get(&uart0_device->dev);
-		if (IS_ERR(u0_p))
-			dev_err(&uart0_device->dev,
-				"could not get UART0 pinctrl\n");
-		else {
-			u0_def = pinctrl_lookup_state(u0_p,
-						      PINCTRL_STATE_DEFAULT);
-			if (IS_ERR(u0_def)) {
-				dev_err(&uart0_device->dev,
-					"could not get UART0 defstate\n");
-			}
-			u0_sleep = pinctrl_lookup_state(u0_p,
-							PINCTRL_STATE_SLEEP);
-			if (IS_ERR(u0_sleep))
-				dev_err(&uart0_device->dev,
-					"could not get UART0 idlestate\n");
-		}
-	}
+	db8500_add_uart0(parent, &uart0_plat);
 	db8500_add_uart1(parent, &uart1_plat);
 	db8500_add_uart2(parent, &uart2_plat);
 }
