@@ -521,11 +521,25 @@ static int sd_set_current_limit(struct mmc_card *card, u8 *status)
 {
 	int current_limit = SD_SET_CURRENT_NO_CHANGE;
 	int err;
+	u32 voltage;
 
 	/*
 	 * Current limit switch is only defined for SDR50, SDR104, and DDR50
 	 * bus speed modes. For other bus speed modes, we do not change the
 	 * current limit.
+	 */
+	if ((card->sd_bus_speed != UHS_SDR50_BUS_SPEED) &&
+	    (card->sd_bus_speed != UHS_SDR104_BUS_SPEED) &&
+	    (card->sd_bus_speed != UHS_DDR50_BUS_SPEED))
+		return 0;
+
+	/*
+	 * Host has different current capabilities when operating at
+	 * different voltages, so find out the current voltage first.
+	 */
+	voltage = 1 << card->host->ios.vdd;
+
+	/*
 	 * We only check host's capability here, if we set a limit that is
 	 * higher than the card's maximum current, the card will be using its
 	 * maximum current, e.g. if the card's maximum current is 300ma, and
@@ -533,16 +547,32 @@ static int sd_set_current_limit(struct mmc_card *card, u8 *status)
 	 * when we set current limit to 400/600/800ma, the card will draw its
 	 * maximum 300ma from the host.
 	 */
-	if ((card->sd_bus_speed == UHS_SDR50_BUS_SPEED) ||
-	    (card->sd_bus_speed == UHS_SDR104_BUS_SPEED) ||
-	    (card->sd_bus_speed == UHS_DDR50_BUS_SPEED)) {
-		if (card->host->caps & MMC_CAP_MAX_CURRENT_800)
+	if (voltage == MMC_VDD_165_195) {
+		if (card->host->caps & MMC_CAP_MAX_CURRENT_800_180)
 			current_limit = SD_SET_CURRENT_LIMIT_800;
-		else if (card->host->caps & MMC_CAP_MAX_CURRENT_600)
+		else if (card->host->caps & MMC_CAP_MAX_CURRENT_600_180)
 			current_limit = SD_SET_CURRENT_LIMIT_600;
-		else if (card->host->caps & MMC_CAP_MAX_CURRENT_400)
+		else if (card->host->caps & MMC_CAP_MAX_CURRENT_400_180)
 			current_limit = SD_SET_CURRENT_LIMIT_400;
-		else if (card->host->caps & MMC_CAP_MAX_CURRENT_200)
+		else if (card->host->caps & MMC_CAP_MAX_CURRENT_200_180)
+			current_limit = SD_SET_CURRENT_LIMIT_200;
+	} else if (voltage & (MMC_VDD_29_30 | MMC_VDD_30_31)) {
+		if (card->host->caps & MMC_CAP_MAX_CURRENT_800_300)
+			current_limit = SD_SET_CURRENT_LIMIT_800;
+		else if (card->host->caps & MMC_CAP_MAX_CURRENT_600_300)
+			current_limit = SD_SET_CURRENT_LIMIT_600;
+		else if (card->host->caps & MMC_CAP_MAX_CURRENT_400_300)
+			current_limit = SD_SET_CURRENT_LIMIT_400;
+		else if (card->host->caps & MMC_CAP_MAX_CURRENT_200_300)
+			current_limit = SD_SET_CURRENT_LIMIT_200;
+	} else if (voltage & (MMC_VDD_32_33 | MMC_VDD_33_34)) {
+		if (card->host->caps & MMC_CAP_MAX_CURRENT_800_330)
+			current_limit = SD_SET_CURRENT_LIMIT_800;
+		else if (card->host->caps & MMC_CAP_MAX_CURRENT_600_330)
+			current_limit = SD_SET_CURRENT_LIMIT_600;
+		else if (card->host->caps & MMC_CAP_MAX_CURRENT_400_330)
+			current_limit = SD_SET_CURRENT_LIMIT_400;
+		else if (card->host->caps & MMC_CAP_MAX_CURRENT_200_330)
 			current_limit = SD_SET_CURRENT_LIMIT_200;
 	}
 
