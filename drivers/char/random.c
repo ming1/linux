@@ -250,6 +250,7 @@
 #endif
 
 #include <asm/processor.h>
+#include <asm/cmpxchg.h>
 #include <asm/uaccess.h>
 #include <asm/irq.h>
 #include <asm/io.h>
@@ -415,9 +416,9 @@ struct entropy_store {
 
 	/* read-write data: */
 	spinlock_t lock;
-	unsigned add_ptr;
+	atomic_t add_ptr;
+	atomic_t input_rotate;
 	int entropy_count;
-	int input_rotate;
 	unsigned int initialized:1;
 	__u8 last_data[EXTRACT_SIZE];
 };
@@ -431,7 +432,9 @@ static struct entropy_store input_pool = {
 	.name = "input",
 	.limit = 1,
 	.lock = __SPIN_LOCK_UNLOCKED(&input_pool.lock),
-	.pool = input_pool_data
+	.pool = input_pool_data,
+	.add_ptr = ATOMIC_INIT(0),
+	.input_rotate = ATOMIC_INIT(0),
 };
 
 static struct entropy_store blocking_pool = {
@@ -440,7 +443,9 @@ static struct entropy_store blocking_pool = {
 	.limit = 1,
 	.pull = &input_pool,
 	.lock = __SPIN_LOCK_UNLOCKED(&blocking_pool.lock),
-	.pool = blocking_pool_data
+	.pool = blocking_pool_data,
+	.add_ptr = ATOMIC_INIT(0),
+	.input_rotate = ATOMIC_INIT(0),
 };
 
 static struct entropy_store nonblocking_pool = {
@@ -448,7 +453,9 @@ static struct entropy_store nonblocking_pool = {
 	.name = "nonblocking",
 	.pull = &input_pool,
 	.lock = __SPIN_LOCK_UNLOCKED(&nonblocking_pool.lock),
-	.pool = nonblocking_pool_data
+	.pool = nonblocking_pool_data,
+	.add_ptr = ATOMIC_INIT(0),
+	.input_rotate = ATOMIC_INIT(0),
 };
 
 static __u32 const twist_table[8] = {
@@ -473,23 +480,23 @@ static void mix_pool_bytes_extract(struct entropy_store *r, const void *in,
 	int wordmask = r->poolinfo->poolwords - 1;
 	const char *bytes = in;
 	__u32 w;
-	unsigned long flags;
 
-	/* Taps are constant, so we can load them without holding r->lock.  */
 	tap1 = r->poolinfo->tap1;
 	tap2 = r->poolinfo->tap2;
 	tap3 = r->poolinfo->tap3;
 	tap4 = r->poolinfo->tap4;
 	tap5 = r->poolinfo->tap5;
 
-	spin_lock_irqsave(&r->lock, flags);
-	input_rotate = r->input_rotate;
-	i = r->add_ptr;
-
 	/* mix one byte at a time to simplify size handling and churn faster */
 	while (nbytes--) {
+		i = atomic_dec_return(&r->add_ptr) & wordmask;
+		/*
+		 * At the beginning of the pool, add an extra 7 bits
+		 * of rotation, so that successive passes spread the
+		 * input input bits across the pool evenly.
+		 */
+		input_rotate = atomic_add_return(i ? 7 : 14, &r->input_rotate);
 		w = rol32(*bytes++, input_rotate & 31);
-		i = (i - 1) & wordmask;
 
 		/* XOR in the various taps */
 		w ^= r->pool[i];
@@ -511,19 +518,16 @@ static void mix_pool_bytes_extract(struct entropy_store *r, const void *in,
 		input_rotate += i ? 7 : 14;
 	}
 
-	r->input_rotate = input_rotate;
-	r->add_ptr = i;
-
-	if (out)
+	if (out) {
+		i = atomic_read(&r->add_ptr);
 		for (j = 0; j < 16; j++)
 			((__u32 *)out)[j] = r->pool[(i - j) & wordmask];
-
-	spin_unlock_irqrestore(&r->lock, flags);
+	}
 }
 
 static void mix_pool_bytes(struct entropy_store *r, const void *in, int bytes)
 {
-       mix_pool_bytes_extract(r, in, bytes, NULL);
+	mix_pool_bytes_extract(r, in, bytes, NULL);
 }
 
 struct fast_pool {
@@ -560,32 +564,32 @@ static void fast_mix(struct fast_pool *f, const void *in, int nbytes)
  */
 static void credit_entropy_bits(struct entropy_store *r, int nbits)
 {
-	unsigned long flags;
-	int entropy_count;
+	int entropy_count, orig;
 
 	if (!nbits)
 		return;
 
-	spin_lock_irqsave(&r->lock, flags);
-
 	DEBUG_ENT("added %d entropy credits to %s\n", nbits, r->name);
-	entropy_count = r->entropy_count;
+retry:
+	entropy_count = orig = r->entropy_count;
 	entropy_count += nbits;
 	if (entropy_count < 0) {
 		DEBUG_ENT("negative entropy/overflow\n");
 		entropy_count = 0;
 	} else if (entropy_count > r->poolinfo->POOLBITS)
 		entropy_count = r->poolinfo->POOLBITS;
+	if (cmpxchg(&r->entropy_count, orig, entropy_count) != orig)
+		goto retry;
+
 	if (entropy_count > 128)
 		r->initialized = 1;
-	r->entropy_count = entropy_count;
+
 
 	/* should we wake readers? */
 	if (r == &input_pool && entropy_count >= random_read_wakeup_thresh) {
 		wake_up_interruptible(&random_read_wait);
 		kill_fasync(&fasync, SIGIO, POLL_IN);
 	}
-	spin_unlock_irqrestore(&r->lock, flags);
 }
 
 /*********************************************************************
@@ -819,32 +823,35 @@ static void xfer_secondary_pool(struct entropy_store *r, size_t nbytes)
  * Note: extract_entropy() assumes that .poolwords is a multiple of 16 words.
  */
 
-static size_t account(struct entropy_store *r, size_t nbytes, int min,
+static size_t account(struct entropy_store *r, size_t num_bytes, int min,
 		      int reserved)
 {
-	unsigned long flags;
+	size_t nbytes;
+	int entropy_count, orig;
 
-	/* Hold lock while accounting */
-	spin_lock_irqsave(&r->lock, flags);
-
-	BUG_ON(r->entropy_count > r->poolinfo->POOLBITS);
+retry:
+	entropy_count = orig = r->entropy_count;
+	nbytes = num_bytes;
+	BUG_ON(entropy_count > r->poolinfo->POOLBITS);
 	DEBUG_ENT("trying to extract %d bits from %s\n",
 		  nbytes * 8, r->name);
 
 	/* Can we pull enough? */
-	if (r->entropy_count / 8 < min + reserved) {
+	if (entropy_count / 8 < min + reserved) {
 		nbytes = 0;
 	} else {
 		/* If limited, never pull more than available */
-		if (r->limit && nbytes + reserved >= r->entropy_count / 8)
-			nbytes = r->entropy_count/8 - reserved;
+		if (r->limit && nbytes + reserved >= entropy_count / 8)
+			nbytes = entropy_count/8 - reserved;
 
-		if (r->entropy_count / 8 >= nbytes + reserved)
-			r->entropy_count -= nbytes*8;
+		if (entropy_count / 8 >= nbytes + reserved)
+			entropy_count -= nbytes*8;
 		else
-			r->entropy_count = reserved;
+			entropy_count = reserved;
+		if (cmpxchg(&r->entropy_count, orig, entropy_count))
+			goto retry;
 
-		if (r->entropy_count < random_write_wakeup_thresh) {
+		if (entropy_count < random_write_wakeup_thresh) {
 			wake_up_interruptible(&random_write_wait);
 			kill_fasync(&fasync, SIGIO, POLL_OUT);
 		}
@@ -852,8 +859,6 @@ static size_t account(struct entropy_store *r, size_t nbytes, int min,
 
 	DEBUG_ENT("debiting %d entropy credits from %s%s\n",
 		  nbytes * 8, r->name, r->limit ? "" : " (unlimited)");
-
-	spin_unlock_irqrestore(&r->lock, flags);
 
 	return nbytes;
 }
@@ -1010,9 +1015,7 @@ static void init_std_data(struct entropy_store *r)
 	ktime_t now;
 	unsigned long flags;
 
-	spin_lock_irqsave(&r->lock, flags);
 	r->entropy_count = 0;
-	spin_unlock_irqrestore(&r->lock, flags);
 
 	now = ktime_get_real();
 	mix_pool_bytes(r, &now, sizeof(now));
