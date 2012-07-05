@@ -147,7 +147,7 @@ struct nfs_client_initdata {
  * Since these are allocated/deallocated very rarely, we don't
  * bother putting them in a slab cache...
  */
-static struct nfs_client *nfs_alloc_client(const struct nfs_client_initdata *cl_init)
+struct nfs_client *nfs_alloc_client(const struct nfs_client_initdata *cl_init)
 {
 	struct nfs_client *clp;
 	struct rpc_cred *cred;
@@ -177,18 +177,6 @@ static struct nfs_client *nfs_alloc_client(const struct nfs_client_initdata *cl_
 	clp->cl_proto = cl_init->proto;
 	clp->cl_net = get_net(cl_init->net);
 
-#ifdef CONFIG_NFS_V4
-	err = nfs_get_cb_ident_idr(clp, cl_init->minorversion);
-	if (err)
-		goto error_cleanup;
-
-	spin_lock_init(&clp->cl_lock);
-	INIT_DELAYED_WORK(&clp->cl_renewd, nfs4_renew_state);
-	rpc_init_wait_queue(&clp->cl_rpcwaitq, "NFS client");
-	clp->cl_state = 1 << NFS4CLNT_LEASE_EXPIRED;
-	clp->cl_minorversion = cl_init->minorversion;
-	clp->cl_mvops = nfs_v4_minor_ops[cl_init->minorversion];
-#endif
 	cred = rpc_lookup_machine_cred("*");
 	if (!IS_ERR(cred))
 		clp->cl_machine_cred = cred;
@@ -218,6 +206,30 @@ static void nfs4_shutdown_session(struct nfs_client *clp)
 }
 #endif /* CONFIG_NFS_V4_1 */
 
+struct nfs_client *nfs4_alloc_client(const struct nfs_client_initdata *cl_init)
+{
+	int err;
+	struct nfs_client *clp = nfs_alloc_client(cl_init);
+	if (IS_ERR(clp))
+		return clp;
+
+	err = nfs_get_cb_ident_idr(clp, cl_init->minorversion);
+	if (err)
+		goto error;
+
+	spin_lock_init(&clp->cl_lock);
+	INIT_DELAYED_WORK(&clp->cl_renewd, nfs4_renew_state);
+	rpc_init_wait_queue(&clp->cl_rpcwaitq, "NFS client");
+	clp->cl_state = 1 << NFS4CLNT_LEASE_EXPIRED;
+	clp->cl_minorversion = cl_init->minorversion;
+	clp->cl_mvops = nfs_v4_minor_ops[cl_init->minorversion];
+	return clp;
+
+error:
+	kfree(clp);
+	return ERR_PTR(err);
+}
+
 /*
  * Destroy the NFS4 callback service
  */
@@ -240,6 +252,12 @@ static void nfs4_shutdown_client(struct nfs_client *clp)
 	kfree(clp->cl_serverowner);
 	kfree(clp->cl_serverscope);
 	kfree(clp->cl_implid);
+}
+
+void nfs4_free_client(struct nfs_client *clp)
+{
+	nfs4_shutdown_client(clp);
+	nfs_free_client(clp);
 }
 
 /* idr_remove_all is not needed as all id's are removed by nfs_put_client */
@@ -266,14 +284,12 @@ static void pnfs_init_server(struct nfs_server *server)
 
 static void nfs4_destroy_server(struct nfs_server *server)
 {
+	nfs_server_return_all_delegations(server);
+	unset_pnfs_layoutdriver(server);
 	nfs4_purge_state_owners(server);
 }
 
 #else
-static void nfs4_shutdown_client(struct nfs_client *clp)
-{
-}
-
 void nfs_cleanup_cb_ident_idr(struct net *net)
 {
 }
@@ -291,11 +307,9 @@ static void pnfs_init_server(struct nfs_server *server)
 /*
  * Destroy a shared client record
  */
-static void nfs_free_client(struct nfs_client *clp)
+void nfs_free_client(struct nfs_client *clp)
 {
 	dprintk("--> nfs_free_client(%u)\n", clp->rpc_ops->version);
-
-	nfs4_shutdown_client(clp);
 
 	nfs_fscache_release_client_cookie(clp);
 
@@ -333,7 +347,7 @@ void nfs_put_client(struct nfs_client *clp)
 
 		BUG_ON(!list_empty(&clp->cl_superblocks));
 
-		nfs_free_client(clp);
+		clp->rpc_ops->free_client(clp);
 	}
 }
 EXPORT_SYMBOL_GPL(nfs_put_client);
@@ -572,7 +586,7 @@ nfs_get_client(const struct nfs_client_initdata *cl_init,
 		if (clp) {
 			spin_unlock(&nn->nfs_client_lock);
 			if (new)
-				nfs_free_client(new);
+				new->rpc_ops->free_client(new);
 			return nfs_found_client(cl_init, clp);
 		}
 		if (new) {
@@ -586,7 +600,7 @@ nfs_get_client(const struct nfs_client_initdata *cl_init,
 
 		spin_unlock(&nn->nfs_client_lock);
 
-		new = nfs_alloc_client(cl_init);
+		new = cl_init->rpc_ops->alloc_client(cl_init);
 	} while (!IS_ERR(new));
 
 	dprintk("<-- nfs_get_client() Failed to find %s (%ld)\n",
@@ -975,7 +989,6 @@ static void nfs_server_set_fsinfo(struct nfs_server *server,
 		server->wsize = NFS_MAX_FILE_IO_SIZE;
 	server->wpages = (server->wsize + PAGE_CACHE_SIZE - 1) >> PAGE_CACHE_SHIFT;
 	server->pnfs_blksize = fsinfo->blksize;
-	set_pnfs_layoutdriver(server, mntfh, fsinfo->layouttype);
 
 	server->wtmult = nfs_block_bits(fsinfo->wtmult, NULL);
 
@@ -1138,7 +1151,6 @@ void nfs_free_server(struct nfs_server *server)
 	dprintk("--> nfs_free_server()\n");
 
 	nfs_server_remove_lists(server);
-	unset_pnfs_layoutdriver(server);
 
 	if (server->destroy != NULL)
 		server->destroy(server);
