@@ -57,6 +57,7 @@
 #include <linux/swapops.h>
 #include <linux/elf.h>
 #include <linux/gfp.h>
+#include <linux/mempolicy.h>	/* check_migrate_misplaced_page() */
 
 #include <asm/io.h>
 #include <asm/pgalloc.h>
@@ -206,6 +207,8 @@ void tlb_gather_mmu(struct mmu_gather *tlb, struct mm_struct *mm, bool fullmm)
 	tlb->mm = mm;
 
 	tlb->fullmm     = fullmm;
+	tlb->start	= -1UL;
+	tlb->end	= 0;
 	tlb->need_flush = 0;
 	tlb->fast_mode  = (num_possible_cpus() == 1);
 	tlb->local.next = NULL;
@@ -248,6 +251,8 @@ void tlb_finish_mmu(struct mmu_gather *tlb, unsigned long start, unsigned long e
 {
 	struct mmu_gather_batch *batch, *next;
 
+	tlb->start = start;
+	tlb->end   = end;
 	tlb_flush_mmu(tlb);
 
 	/* keep the page table cache within bounds */
@@ -1204,6 +1209,11 @@ again:
 	 */
 	if (force_flush) {
 		force_flush = 0;
+
+#ifdef HAVE_GENERIC_MMU_GATHER
+		tlb->start = addr;
+		tlb->end = end;
+#endif
 		tlb_flush_mmu(tlb);
 		if (addr != end)
 			goto again;
@@ -2976,6 +2986,22 @@ static int do_swap_page(struct mm_struct *mm, struct vm_area_struct *vma,
 	if (mem_cgroup_try_charge_swapin(mm, page, GFP_KERNEL, &ptr)) {
 		ret = VM_FAULT_OOM;
 		goto out_page;
+	}
+
+	/*
+	 * No sense in migrating a page that will be "COWed" as the new
+	 * new page will be allocated according to effective mempolicy.
+	 */
+	if ((flags & FAULT_FLAG_WRITE) && can_reuse_swap_page(page)) {
+		/*
+		 * check for misplacement and migrate, if necessary/possible,
+		 * here and now.  Note that if we're racing with another thread,
+		 * we may end up discarding the migrated page after locking
+		 * the page table and checking the pte below.  However, we
+		 * don't want to hold the page table locked over migration, so
+		 * we'll live with that [unlikely, one hopes] possibility.
+		 */
+		page = check_migrate_misplaced_page(page, vma, address);
 	}
 
 	/*
