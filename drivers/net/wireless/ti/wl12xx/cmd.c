@@ -65,6 +65,7 @@ int wl1271_cmd_general_parms(struct wl1271 *wl)
 	struct wl1271_general_parms_cmd *gen_parms;
 	struct wl1271_ini_general_params *gp =
 		&((struct wl1271_nvs_file *)wl->nvs)->general_params;
+	struct wl12xx_priv *priv = wl->priv;
 	bool answer = false;
 	int ret;
 
@@ -88,7 +89,7 @@ int wl1271_cmd_general_parms(struct wl1271 *wl)
 		answer = true;
 
 	/* Override the REF CLK from the NVS with the one from platform data */
-	gen_parms->general_params.ref_clock = wl->ref_clock;
+	gen_parms->general_params.ref_clock = priv->ref_clock;
 
 	ret = wl1271_cmd_test(wl, gen_parms, sizeof(*gen_parms), answer);
 	if (ret < 0) {
@@ -118,6 +119,7 @@ int wl128x_cmd_general_parms(struct wl1271 *wl)
 	struct wl128x_general_parms_cmd *gen_parms;
 	struct wl128x_ini_general_params *gp =
 		&((struct wl128x_nvs_file *)wl->nvs)->general_params;
+	struct wl12xx_priv *priv = wl->priv;
 	bool answer = false;
 	int ret;
 
@@ -141,8 +143,8 @@ int wl128x_cmd_general_parms(struct wl1271 *wl)
 		answer = true;
 
 	/* Replace REF and TCXO CLKs with the ones from platform data */
-	gen_parms->general_params.ref_clock = wl->ref_clock;
-	gen_parms->general_params.tcxo_ref_clock = wl->tcxo_clock;
+	gen_parms->general_params.ref_clock = priv->ref_clock;
+	gen_parms->general_params.tcxo_ref_clock = priv->tcxo_clock;
 
 	ret = wl1271_cmd_test(wl, gen_parms, sizeof(*gen_parms), answer);
 	if (ret < 0) {
@@ -172,7 +174,7 @@ int wl1271_cmd_radio_parms(struct wl1271 *wl)
 	struct wl1271_nvs_file *nvs = (struct wl1271_nvs_file *)wl->nvs;
 	struct wl1271_radio_parms_cmd *radio_parms;
 	struct wl1271_ini_general_params *gp = &nvs->general_params;
-	int ret;
+	int ret, fem_idx;
 
 	if (!wl->nvs)
 		return -ENODEV;
@@ -183,11 +185,13 @@ int wl1271_cmd_radio_parms(struct wl1271 *wl)
 
 	radio_parms->test.id = TEST_CMD_INI_FILE_RADIO_PARAM;
 
+	fem_idx = WL12XX_FEM_TO_NVS_ENTRY(gp->tx_bip_fem_manufacturer);
+
 	/* 2.4GHz parameters */
 	memcpy(&radio_parms->static_params_2, &nvs->stat_radio_params_2,
 	       sizeof(struct wl1271_ini_band_params_2));
 	memcpy(&radio_parms->dyn_params_2,
-	       &nvs->dyn_radio_params_2[gp->tx_bip_fem_manufacturer].params,
+	       &nvs->dyn_radio_params_2[fem_idx].params,
 	       sizeof(struct wl1271_ini_fem_params_2));
 
 	/* 5GHz parameters */
@@ -195,7 +199,7 @@ int wl1271_cmd_radio_parms(struct wl1271 *wl)
 	       &nvs->stat_radio_params_5,
 	       sizeof(struct wl1271_ini_band_params_5));
 	memcpy(&radio_parms->dyn_params_5,
-	       &nvs->dyn_radio_params_5[gp->tx_bip_fem_manufacturer].params,
+	       &nvs->dyn_radio_params_5[fem_idx].params,
 	       sizeof(struct wl1271_ini_fem_params_5));
 
 	wl1271_dump(DEBUG_CMD, "TEST_CMD_INI_FILE_RADIO_PARAM: ",
@@ -214,7 +218,7 @@ int wl128x_cmd_radio_parms(struct wl1271 *wl)
 	struct wl128x_nvs_file *nvs = (struct wl128x_nvs_file *)wl->nvs;
 	struct wl128x_radio_parms_cmd *radio_parms;
 	struct wl128x_ini_general_params *gp = &nvs->general_params;
-	int ret;
+	int ret, fem_idx;
 
 	if (!wl->nvs)
 		return -ENODEV;
@@ -225,11 +229,13 @@ int wl128x_cmd_radio_parms(struct wl1271 *wl)
 
 	radio_parms->test.id = TEST_CMD_INI_FILE_RADIO_PARAM;
 
+	fem_idx = WL12XX_FEM_TO_NVS_ENTRY(gp->tx_bip_fem_manufacturer);
+
 	/* 2.4GHz parameters */
 	memcpy(&radio_parms->static_params_2, &nvs->stat_radio_params_2,
 	       sizeof(struct wl128x_ini_band_params_2));
 	memcpy(&radio_parms->dyn_params_2,
-	       &nvs->dyn_radio_params_2[gp->tx_bip_fem_manufacturer].params,
+	       &nvs->dyn_radio_params_2[fem_idx].params,
 	       sizeof(struct wl128x_ini_fem_params_2));
 
 	/* 5GHz parameters */
@@ -237,7 +243,7 @@ int wl128x_cmd_radio_parms(struct wl1271 *wl)
 	       &nvs->stat_radio_params_5,
 	       sizeof(struct wl128x_ini_band_params_5));
 	memcpy(&radio_parms->dyn_params_5,
-	       &nvs->dyn_radio_params_5[gp->tx_bip_fem_manufacturer].params,
+	       &nvs->dyn_radio_params_5[fem_idx].params,
 	       sizeof(struct wl128x_ini_fem_params_5));
 
 	radio_parms->fem_vendor_and_options = nvs->fem_vendor_and_options;

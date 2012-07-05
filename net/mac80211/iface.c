@@ -57,9 +57,6 @@ static int ieee80211_change_mtu(struct net_device *dev, int new_mtu)
 		return -EINVAL;
 	}
 
-#ifdef CONFIG_MAC80211_VERBOSE_DEBUG
-	printk(KERN_DEBUG "%s: setting MTU %d\n", dev->name, new_mtu);
-#endif /* CONFIG_MAC80211_VERBOSE_DEBUG */
 	dev->mtu = new_mtu;
 	return 0;
 }
@@ -100,15 +97,12 @@ static int ieee80211_check_concurrent_iface(struct ieee80211_sub_if_data *sdata,
 {
 	struct ieee80211_local *local = sdata->local;
 	struct ieee80211_sub_if_data *nsdata;
-	struct net_device *dev = sdata->dev;
 
 	ASSERT_RTNL();
 
 	/* we hold the RTNL here so can safely walk the list */
 	list_for_each_entry(nsdata, &local->interfaces, list) {
-		struct net_device *ndev = nsdata->dev;
-
-		if (ndev != dev && ieee80211_sdata_running(nsdata)) {
+		if (nsdata != sdata && ieee80211_sdata_running(nsdata)) {
 			/*
 			 * Allow only a single IBSS interface to be up at any
 			 * time. This is restricted because beacon distribution
@@ -127,7 +121,8 @@ static int ieee80211_check_concurrent_iface(struct ieee80211_sub_if_data *sdata,
 			 * The remaining checks are only performed for interfaces
 			 * with the same MAC address.
 			 */
-			if (!ether_addr_equal(dev->dev_addr, ndev->dev_addr))
+			if (!ether_addr_equal(sdata->vif.addr,
+					      nsdata->vif.addr))
 				continue;
 
 			/*
@@ -528,10 +523,7 @@ static void ieee80211_do_stop(struct ieee80211_sub_if_data *sdata,
 	 */
 	netif_tx_stop_all_queues(sdata->dev);
 
-	/*
-	 * Purge work for this interface.
-	 */
-	ieee80211_work_purge(sdata);
+	ieee80211_roc_purge(sdata);
 
 	/*
 	 * Remove all stations associated with this interface.
@@ -637,18 +629,6 @@ static void ieee80211_do_stop(struct ieee80211_sub_if_data *sdata,
 		ieee80211_configure_filter(local);
 		break;
 	default:
-		mutex_lock(&local->mtx);
-		if (local->hw_roc_dev == sdata->dev &&
-		    local->hw_roc_channel) {
-			/* ignore return value since this is racy */
-			drv_cancel_remain_on_channel(local);
-			ieee80211_queue_work(&local->hw, &local->hw_roc_done);
-		}
-		mutex_unlock(&local->mtx);
-
-		flush_work(&local->hw_roc_start);
-		flush_work(&local->hw_roc_done);
-
 		flush_work(&sdata->work);
 		/*
 		 * When we get here, the interface is marked down.
@@ -823,7 +803,7 @@ static u16 ieee80211_monitor_select_queue(struct net_device *dev,
 
 	hdr = (void *)((u8 *)skb->data + le16_to_cpu(rtap->it_len));
 
-	return ieee80211_select_queue_80211(local, skb, hdr);
+	return ieee80211_select_queue_80211(sdata, skb, hdr);
 }
 
 static const struct net_device_ops ieee80211_monitorif_ops = {
@@ -1238,7 +1218,7 @@ static void ieee80211_assign_perm_addr(struct ieee80211_local *local,
 
 		if (__ffs64(mask) + hweight64(mask) != fls64(mask)) {
 			/* not a contiguous mask ... not handled now! */
-			printk(KERN_DEBUG "not contiguous\n");
+			pr_info("not contiguous\n");
 			break;
 		}
 
@@ -1364,6 +1344,8 @@ int ieee80211_if_add(struct ieee80211_local *local, const char *name,
 			sdata->u.mgd.use_4addr = params->use_4addr;
 	}
 
+	ndev->features |= local->hw.netdev_features;
+
 	ret = register_netdevice(ndev);
 	if (ret)
 		goto fail;
@@ -1427,10 +1409,6 @@ static u32 ieee80211_idle_off(struct ieee80211_local *local,
 	if (!(local->hw.conf.flags & IEEE80211_CONF_IDLE))
 		return 0;
 
-#ifdef CONFIG_MAC80211_VERBOSE_DEBUG
-	wiphy_debug(local->hw.wiphy, "device no longer idle - %s\n", reason);
-#endif
-
 	local->hw.conf.flags &= ~IEEE80211_CONF_IDLE;
 	return IEEE80211_CONF_CHANGE_IDLE;
 }
@@ -1439,10 +1417,6 @@ static u32 ieee80211_idle_on(struct ieee80211_local *local)
 {
 	if (local->hw.conf.flags & IEEE80211_CONF_IDLE)
 		return 0;
-
-#ifdef CONFIG_MAC80211_VERBOSE_DEBUG
-	wiphy_debug(local->hw.wiphy, "device now idle\n");
-#endif
 
 	drv_flush(local, false);
 
@@ -1454,9 +1428,9 @@ u32 __ieee80211_recalc_idle(struct ieee80211_local *local)
 {
 	struct ieee80211_sub_if_data *sdata;
 	int count = 0;
-	bool working = false, scanning = false, hw_roc = false;
-	struct ieee80211_work *wk;
+	bool working = false, scanning = false;
 	unsigned int led_trig_start = 0, led_trig_stop = 0;
+	struct ieee80211_roc_work *roc;
 
 #ifdef CONFIG_PROVE_LOCKING
 	WARN_ON(debug_locks && !lockdep_rtnl_is_held() &&
@@ -1491,9 +1465,11 @@ u32 __ieee80211_recalc_idle(struct ieee80211_local *local)
 		count++;
 	}
 
-	list_for_each_entry(wk, &local->work_list, list) {
-		working = true;
-		wk->sdata->vif.bss_conf.idle = false;
+	if (!local->ops->remain_on_channel) {
+		list_for_each_entry(roc, &local->roc_list, list) {
+			working = true;
+			roc->sdata->vif.bss_conf.idle = false;
+		}
 	}
 
 	if (local->scan_sdata &&
@@ -1501,9 +1477,6 @@ u32 __ieee80211_recalc_idle(struct ieee80211_local *local)
 		scanning = true;
 		local->scan_sdata->vif.bss_conf.idle = false;
 	}
-
-	if (local->hw_roc_channel)
-		hw_roc = true;
 
 	list_for_each_entry(sdata, &local->interfaces, list) {
 		if (sdata->vif.type == NL80211_IFTYPE_MONITOR ||
@@ -1516,7 +1489,7 @@ u32 __ieee80211_recalc_idle(struct ieee80211_local *local)
 		ieee80211_bss_info_change_notify(sdata, BSS_CHANGED_IDLE);
 	}
 
-	if (working || scanning || hw_roc)
+	if (working || scanning)
 		led_trig_start |= IEEE80211_TPT_LEDTRIG_FL_WORK;
 	else
 		led_trig_stop |= IEEE80211_TPT_LEDTRIG_FL_WORK;
@@ -1528,8 +1501,6 @@ u32 __ieee80211_recalc_idle(struct ieee80211_local *local)
 
 	ieee80211_mod_tpt_led_trig(local, led_trig_start, led_trig_stop);
 
-	if (hw_roc)
-		return ieee80211_idle_off(local, "hw remain-on-channel");
 	if (working)
 		return ieee80211_idle_off(local, "working");
 	if (scanning)
