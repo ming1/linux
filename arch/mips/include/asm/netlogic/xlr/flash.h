@@ -1,11 +1,11 @@
 /*
- * Copyright 2003-2011 NetLogic Microsystems, Inc. (NetLogic). All rights
- * reserved.
+ * Copyright (c) 2003-2012 Broadcom Corporation
+ * All Rights Reserved
  *
  * This software is available to you under a choice of one of two
  * licenses.  You may choose to be licensed under the terms of the GNU
  * General Public License (GPL) Version 2, available from the file
- * COPYING in the main directory of this source tree, or the NetLogic
+ * COPYING in the main directory of this source tree, or the Broadcom
  * license below:
  *
  * Redistribution and use in source and binary forms, with or without
@@ -19,10 +19,10 @@
  *    the documentation and/or other materials provided with the
  *    distribution.
  *
- * THIS SOFTWARE IS PROVIDED BY NETLOGIC ``AS IS'' AND ANY EXPRESS OR
+ * THIS SOFTWARE IS PROVIDED BY BROADCOM ``AS IS'' AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
  * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL NETLOGIC OR CONTRIBUTORS BE LIABLE
+ * ARE DISCLAIMED. IN NO EVENT SHALL BROADCOM OR CONTRIBUTORS BE LIABLE
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
  * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
  * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
@@ -31,34 +31,25 @@
  * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#ifndef _ASM_NLM_FLASH_H_
+#define _ASM_NLM_FLASH_H_
 
-#ifndef _NLM_HAL_XLP_H
-#define _NLM_HAL_XLP_H
+#define FLASH_CSBASE_ADDR(cs)		(cs)
+#define FLASH_CSADDR_MASK(cs)		(0x10 + (cs))
+#define FLASH_CSDEV_PARM(cs)		(0x20 + (cs))
+#define FLASH_CSTIME_PARMA(cs)		(0x30 + (cs))
+#define FLASH_CSTIME_PARMB(cs)		(0x40 + (cs))
 
-#define PIC_UART_0_IRQ			17
-#define PIC_UART_1_IRQ			18
-#define PIC_PCIE_LINK_0_IRQ		19
-#define PIC_PCIE_LINK_1_IRQ		20
-#define PIC_PCIE_LINK_2_IRQ		21
-#define PIC_PCIE_LINK_3_IRQ		22
-#define PIC_EHCI_0_IRQ			23
-#define PIC_EHCI_1_IRQ			24
-#define PIC_OHCI_0_IRQ			25
-#define PIC_OHCI_1_IRQ			26
-#define PIC_OHCI_2_IRQ			27
-#define PIC_OHCI_3_IRQ			28
-#define PIC_MMC_IRQ			29
-#define PIC_I2C_0_IRQ			30
-#define PIC_I2C_1_IRQ			31
+#define FLASH_INT_MASK			0x50
+#define FLASH_INT_STATUS		0x60
+#define FLASH_ERROR_STATUS		0x70
+#define FLASH_ERROR_ADDR		0x80
 
-#ifndef __ASSEMBLY__
+#define FLASH_NAND_CLE(cs)		(0x90 + (cs))
+#define FLASH_NAND_ALE(cs)		(0xa0 + (cs))
 
-/* SMP support functions */
-void xlp_boot_core0_siblings(void);
-void xlp_wakeup_secondary_cpus(void);
+#define FLASH_NAND_CSDEV_PARAM		0x000041e6
+#define FLASH_NAND_CSTIME_PARAMA	0x4f400e22
+#define FLASH_NAND_CSTIME_PARAMB	0x000083cf
 
-void xlp_mmu_init(void);
-void nlm_hal_init(void);
-
-#endif /* !__ASSEMBLY__ */
-#endif /* _ASM_NLM_XLP_H */
+#endif
