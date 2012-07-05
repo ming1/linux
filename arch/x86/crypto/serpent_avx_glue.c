@@ -1,16 +1,11 @@
 /*
- * Glue Code for SSE2 assembler versions of Serpent Cipher
+ * Glue Code for AVX assembler versions of Serpent Cipher
  *
- * Copyright (c) 2011 Jussi Kivilinna <jussi.kivilinna@mbnet.fi>
+ * Copyright (C) 2012 Johannes Goetzfried
+ *     <Johannes.Goetzfried@informatik.stud.uni-erlangen.de>
  *
- * Glue code based on aesni-intel_glue.c by:
- *  Copyright (C) 2008, Intel Corp.
- *    Author: Huang Ying <ying.huang@intel.com>
- *
- * CBC & ECB parts based on code (crypto/cbc.c,ecb.c) by:
- *   Copyright (c) 2006 Herbert Xu <herbert@gondor.apana.org.au>
- * CTR part based on code (crypto/ctr.c) by:
- *   (C) Copyright IBM Corp. 2007 - Joy Latten <latten@us.ibm.com>
+ * Glue code based on serpent_sse2_glue.c by:
+ *  Copyright (C) 2011 Jussi Kivilinna <jussi.kivilinna@mbnet.fi>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -41,7 +36,9 @@
 #include <crypto/ctr.h>
 #include <crypto/lrw.h>
 #include <crypto/xts.h>
-#include <asm/crypto/serpent-sse2.h>
+#include <asm/xcr.h>
+#include <asm/xsave.h>
+#include <asm/crypto/serpent-avx.h>
 #include <asm/crypto/ablk_helper.h>
 #include <asm/crypto/glue_helper.h>
 
@@ -384,8 +381,8 @@ static int xts_decrypt(struct blkcipher_desc *desc, struct scatterlist *dst,
 }
 
 static struct crypto_alg serpent_algs[10] = { {
-	.cra_name		= "__ecb-serpent-sse2",
-	.cra_driver_name	= "__driver-ecb-serpent-sse2",
+	.cra_name		= "__ecb-serpent-avx",
+	.cra_driver_name	= "__driver-ecb-serpent-avx",
 	.cra_priority		= 0,
 	.cra_flags		= CRYPTO_ALG_TYPE_BLKCIPHER,
 	.cra_blocksize		= SERPENT_BLOCK_SIZE,
@@ -404,8 +401,8 @@ static struct crypto_alg serpent_algs[10] = { {
 		},
 	},
 }, {
-	.cra_name		= "__cbc-serpent-sse2",
-	.cra_driver_name	= "__driver-cbc-serpent-sse2",
+	.cra_name		= "__cbc-serpent-avx",
+	.cra_driver_name	= "__driver-cbc-serpent-avx",
 	.cra_priority		= 0,
 	.cra_flags		= CRYPTO_ALG_TYPE_BLKCIPHER,
 	.cra_blocksize		= SERPENT_BLOCK_SIZE,
@@ -424,8 +421,8 @@ static struct crypto_alg serpent_algs[10] = { {
 		},
 	},
 }, {
-	.cra_name		= "__ctr-serpent-sse2",
-	.cra_driver_name	= "__driver-ctr-serpent-sse2",
+	.cra_name		= "__ctr-serpent-avx",
+	.cra_driver_name	= "__driver-ctr-serpent-avx",
 	.cra_priority		= 0,
 	.cra_flags		= CRYPTO_ALG_TYPE_BLKCIPHER,
 	.cra_blocksize		= 1,
@@ -445,8 +442,8 @@ static struct crypto_alg serpent_algs[10] = { {
 		},
 	},
 }, {
-	.cra_name		= "__lrw-serpent-sse2",
-	.cra_driver_name	= "__driver-lrw-serpent-sse2",
+	.cra_name		= "__lrw-serpent-avx",
+	.cra_driver_name	= "__driver-lrw-serpent-avx",
 	.cra_priority		= 0,
 	.cra_flags		= CRYPTO_ALG_TYPE_BLKCIPHER,
 	.cra_blocksize		= SERPENT_BLOCK_SIZE,
@@ -469,8 +466,8 @@ static struct crypto_alg serpent_algs[10] = { {
 		},
 	},
 }, {
-	.cra_name		= "__xts-serpent-sse2",
-	.cra_driver_name	= "__driver-xts-serpent-sse2",
+	.cra_name		= "__xts-serpent-avx",
+	.cra_driver_name	= "__driver-xts-serpent-avx",
 	.cra_priority		= 0,
 	.cra_flags		= CRYPTO_ALG_TYPE_BLKCIPHER,
 	.cra_blocksize		= SERPENT_BLOCK_SIZE,
@@ -491,8 +488,8 @@ static struct crypto_alg serpent_algs[10] = { {
 	},
 }, {
 	.cra_name		= "ecb(serpent)",
-	.cra_driver_name	= "ecb-serpent-sse2",
-	.cra_priority		= 400,
+	.cra_driver_name	= "ecb-serpent-avx",
+	.cra_priority		= 500,
 	.cra_flags		= CRYPTO_ALG_TYPE_ABLKCIPHER | CRYPTO_ALG_ASYNC,
 	.cra_blocksize		= SERPENT_BLOCK_SIZE,
 	.cra_ctxsize		= sizeof(struct async_helper_ctx),
@@ -513,8 +510,8 @@ static struct crypto_alg serpent_algs[10] = { {
 	},
 }, {
 	.cra_name		= "cbc(serpent)",
-	.cra_driver_name	= "cbc-serpent-sse2",
-	.cra_priority		= 400,
+	.cra_driver_name	= "cbc-serpent-avx",
+	.cra_priority		= 500,
 	.cra_flags		= CRYPTO_ALG_TYPE_ABLKCIPHER | CRYPTO_ALG_ASYNC,
 	.cra_blocksize		= SERPENT_BLOCK_SIZE,
 	.cra_ctxsize		= sizeof(struct async_helper_ctx),
@@ -536,8 +533,8 @@ static struct crypto_alg serpent_algs[10] = { {
 	},
 }, {
 	.cra_name		= "ctr(serpent)",
-	.cra_driver_name	= "ctr-serpent-sse2",
-	.cra_priority		= 400,
+	.cra_driver_name	= "ctr-serpent-avx",
+	.cra_priority		= 500,
 	.cra_flags		= CRYPTO_ALG_TYPE_ABLKCIPHER | CRYPTO_ALG_ASYNC,
 	.cra_blocksize		= 1,
 	.cra_ctxsize		= sizeof(struct async_helper_ctx),
@@ -560,8 +557,8 @@ static struct crypto_alg serpent_algs[10] = { {
 	},
 }, {
 	.cra_name		= "lrw(serpent)",
-	.cra_driver_name	= "lrw-serpent-sse2",
-	.cra_priority		= 400,
+	.cra_driver_name	= "lrw-serpent-avx",
+	.cra_priority		= 500,
 	.cra_flags		= CRYPTO_ALG_TYPE_ABLKCIPHER | CRYPTO_ALG_ASYNC,
 	.cra_blocksize		= SERPENT_BLOCK_SIZE,
 	.cra_ctxsize		= sizeof(struct async_helper_ctx),
@@ -585,8 +582,8 @@ static struct crypto_alg serpent_algs[10] = { {
 	},
 }, {
 	.cra_name		= "xts(serpent)",
-	.cra_driver_name	= "xts-serpent-sse2",
-	.cra_priority		= 400,
+	.cra_driver_name	= "xts-serpent-avx",
+	.cra_priority		= 500,
 	.cra_flags		= CRYPTO_ALG_TYPE_ABLKCIPHER | CRYPTO_ALG_ASYNC,
 	.cra_blocksize		= SERPENT_BLOCK_SIZE,
 	.cra_ctxsize		= sizeof(struct async_helper_ctx),
@@ -608,24 +605,32 @@ static struct crypto_alg serpent_algs[10] = { {
 	},
 } };
 
-static int __init serpent_sse2_init(void)
+static int __init serpent_init(void)
 {
-	if (!cpu_has_xmm2) {
-		printk(KERN_INFO "SSE2 instructions are not detected.\n");
+	u64 xcr0;
+
+	if (!cpu_has_avx || !cpu_has_osxsave) {
+		printk(KERN_INFO "AVX instructions are not detected.\n");
+		return -ENODEV;
+	}
+
+	xcr0 = xgetbv(XCR_XFEATURE_ENABLED_MASK);
+	if ((xcr0 & (XSTATE_SSE | XSTATE_YMM)) != (XSTATE_SSE | XSTATE_YMM)) {
+		printk(KERN_INFO "AVX detected but unusable.\n");
 		return -ENODEV;
 	}
 
 	return crypto_register_algs(serpent_algs, ARRAY_SIZE(serpent_algs));
 }
 
-static void __exit serpent_sse2_exit(void)
+static void __exit serpent_exit(void)
 {
 	crypto_unregister_algs(serpent_algs, ARRAY_SIZE(serpent_algs));
 }
 
-module_init(serpent_sse2_init);
-module_exit(serpent_sse2_exit);
+module_init(serpent_init);
+module_exit(serpent_exit);
 
-MODULE_DESCRIPTION("Serpent Cipher Algorithm, SSE2 optimized");
+MODULE_DESCRIPTION("Serpent Cipher Algorithm, AVX optimized");
 MODULE_LICENSE("GPL");
 MODULE_ALIAS("serpent");
