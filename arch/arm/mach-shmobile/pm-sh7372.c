@@ -293,12 +293,6 @@ struct sh7372_pm_domain sh7372_a3sg = {
 #endif /* CONFIG_PM */
 
 #if defined(CONFIG_SUSPEND) || defined(CONFIG_CPU_IDLE)
-static int sh7372_do_idle_core_standby(unsigned long unused)
-{
-	cpu_do_idle(); /* WFI when SYSTBCR == 0x10 -> Core Standby */
-	return 0;
-}
-
 static void sh7372_set_reset_vector(unsigned long address)
 {
 	/* set reset vector, translate 4k */
@@ -306,21 +300,6 @@ static void sh7372_set_reset_vector(unsigned long address)
 	__raw_writel(0, APARMBAREA);
 }
 
-static void sh7372_enter_core_standby(void)
-{
-	sh7372_set_reset_vector(__pa(sh7372_resume_core_standby_sysc));
-
-	/* enter sleep mode with SYSTBCR to 0x10 */
-	__raw_writel(0x10, SYSTBCR);
-	cpu_suspend(0, sh7372_do_idle_core_standby);
-	__raw_writel(0, SYSTBCR);
-
-	 /* disable reset vector translation */
-	__raw_writel(0, SBAR);
-}
-#endif
-
-#ifdef CONFIG_SUSPEND
 static void sh7372_enter_sysc(int pllc0_on, unsigned long sleep_mode)
 {
 	if (pllc0_on)
@@ -460,22 +439,41 @@ static void sh7372_setup_sysc(unsigned long msk, unsigned long msk2)
 
 static void sh7372_enter_a3sm_common(int pllc0_on)
 {
+	/* use INTCA together with SYSC for wakeup */
+	sh7372_setup_sysc(1 << 0, 0);
 	sh7372_set_reset_vector(__pa(sh7372_resume_core_standby_sysc));
 	sh7372_enter_sysc(pllc0_on, 1 << 12);
 }
 
-static void sh7372_enter_a4s_common(int pllc0_on)
+#ifdef CONFIG_CPU_IDLE
+static int sh7372_do_idle_core_standby(unsigned long unused)
 {
-	sh7372_intca_suspend();
-	memcpy((void *)SMFRAM, sh7372_resume_core_standby_sysc, 0x100);
-	sh7372_set_reset_vector(SMFRAM);
-	sh7372_enter_sysc(pllc0_on, 1 << 10);
-	sh7372_intca_resume();
+	cpu_do_idle(); /* WFI when SYSTBCR == 0x10 -> Core Standby */
+	return 0;
 }
 
-#endif
+static void sh7372_enter_core_standby(void)
+{
+	sh7372_set_reset_vector(__pa(sh7372_resume_core_standby_sysc));
 
-#ifdef CONFIG_CPU_IDLE
+	/* enter sleep mode with SYSTBCR to 0x10 */
+	__raw_writel(0x10, SYSTBCR);
+	cpu_suspend(0, sh7372_do_idle_core_standby);
+	__raw_writel(0, SYSTBCR);
+
+	 /* disable reset vector translation */
+	__raw_writel(0, SBAR);
+}
+
+static void sh7372_enter_a3sm_pll_on(void)
+{
+	sh7372_enter_a3sm_common(1);
+}
+
+static void sh7372_enter_a3sm_pll_off(void)
+{
+	sh7372_enter_a3sm_common(0);
+}
 
 static void sh7372_cpuidle_setup(struct cpuidle_driver *drv)
 {
@@ -487,7 +485,24 @@ static void sh7372_cpuidle_setup(struct cpuidle_driver *drv)
 	state->target_residency = 20 + 10;
 	state->flags = CPUIDLE_FLAG_TIME_VALID;
 	shmobile_cpuidle_modes[drv->state_count] = sh7372_enter_core_standby;
+	drv->state_count++;
 
+	state = &drv->states[drv->state_count];
+	snprintf(state->name, CPUIDLE_NAME_LEN, "C3");
+	strncpy(state->desc, "A3SM PLL ON", CPUIDLE_DESC_LEN);
+	state->exit_latency = 20;
+	state->target_residency = 30 + 20;
+	state->flags = CPUIDLE_FLAG_TIME_VALID;
+	shmobile_cpuidle_modes[drv->state_count] = sh7372_enter_a3sm_pll_on;
+	drv->state_count++;
+
+	state = &drv->states[drv->state_count];
+	snprintf(state->name, CPUIDLE_NAME_LEN, "C4");
+	strncpy(state->desc, "A3SM PLL OFF", CPUIDLE_DESC_LEN);
+	state->exit_latency = 120;
+	state->target_residency = 30 + 120;
+	state->flags = CPUIDLE_FLAG_TIME_VALID;
+	shmobile_cpuidle_modes[drv->state_count] = sh7372_enter_a3sm_pll_off;
 	drv->state_count++;
 }
 
@@ -500,6 +515,14 @@ static void sh7372_cpuidle_init(void) {}
 #endif
 
 #ifdef CONFIG_SUSPEND
+static void sh7372_enter_a4s_common(int pllc0_on)
+{
+	sh7372_intca_suspend();
+	memcpy((void *)SMFRAM, sh7372_resume_core_standby_sysc, 0x100);
+	sh7372_set_reset_vector(SMFRAM);
+	sh7372_enter_sysc(pllc0_on, 1 << 10);
+	sh7372_intca_resume();
+}
 
 static int sh7372_enter_suspend(suspend_state_t suspend_state)
 {
@@ -507,24 +530,21 @@ static int sh7372_enter_suspend(suspend_state_t suspend_state)
 
 	/* check active clocks to determine potential wakeup sources */
 	if (sh7372_sysc_valid(&msk, &msk2)) {
-		/* convert INTC mask and sense to SYSC mask and sense */
-		sh7372_setup_sysc(msk, msk2);
-
 		if (!console_suspend_enabled &&
 		    sh7372_a4s.genpd.status == GPD_STATE_POWER_OFF) {
+			/* convert INTC mask/sense to SYSC mask/sense */
+			sh7372_setup_sysc(msk, msk2);
+
 			/* enter A4S sleep with PLLC0 off */
 			pr_debug("entering A4S\n");
 			sh7372_enter_a4s_common(0);
-		} else {
-			/* enter A3SM sleep with PLLC0 off */
-			pr_debug("entering A3SM\n");
-			sh7372_enter_a3sm_common(0);
+			return 0;
 		}
-	} else {
-		/* default to Core Standby that supports all wakeup sources */
-		pr_debug("entering Core Standby\n");
-		sh7372_enter_core_standby();
 	}
+
+	/* default to enter A3SM sleep with PLLC0 off */
+	pr_debug("entering A3SM\n");
+	sh7372_enter_a3sm_common(0);
 	return 0;
 }
 
@@ -563,6 +583,7 @@ static void sh7372_suspend_init(void)
 #else
 static void sh7372_suspend_init(void) {}
 #endif
+#endif /* CONFIG_SUSPEND || CONFIG_CPU_IDLE */
 
 void __init sh7372_pm_init(void)
 {
