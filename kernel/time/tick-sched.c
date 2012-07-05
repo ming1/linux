@@ -373,6 +373,7 @@ static ktime_t tick_nohz_stop_sched_tick(struct tick_sched *ts, ktime_t now, int
 		 */
 		if (!ts->tick_stopped) {
 			select_nohz_load_balancer(1);
+			calc_load_enter_idle();
 
 			ts->last_tick = hrtimer_get_expires(&ts->sched_timer);
 			ts->tick_stopped = 1;
@@ -630,6 +631,7 @@ void tick_nohz_idle_exit(void)
 		tick_nohz_account_idle_ticks(ts);
 	}
 
+	calc_load_exit_idle();
 	local_irq_enable();
 }
 
