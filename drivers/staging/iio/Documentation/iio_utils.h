@@ -7,14 +7,15 @@
  * the Free Software Foundation.
  */
 
-/* Made up value to limit allocation sizes */
 #include <string.h>
 #include <stdlib.h>
 #include <ctype.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <dirent.h>
+#include <errno.h>
 
+/* Made up value to limit allocation sizes */
 #define IIO_MAX_NAME_LENGTH 30
 
 #define FORMAT_SCAN_ELEMENTS_DIR "%s/scan_elements"
@@ -27,7 +28,7 @@ const char *iio_dir = "/sys/bus/iio/devices/";
  * @full_name: the full channel name
  * @generic_name: the output generic channel name
  **/
-static int iioutils_break_up_name(const char *full_name,
+inline int iioutils_break_up_name(const char *full_name,
 				  char **generic_name)
 {
 	char *current;
@@ -280,7 +281,7 @@ inline int build_channel_array(const char *device_dir,
 {
 	DIR *dp;
 	FILE *sysfsfp;
-	int count, temp, i;
+	int count, i;
 	struct iio_channel_info *current;
 	int ret;
 	const struct dirent *ent;
