@@ -1,0 +1,52 @@
+This file lists all branches that are pulled into the for-next branch
+of git://git.kernel.org/pub/scm/linux/kernel/git/arm/arm-soc.git
+and their external dependencies.
+
+It also includes a couple of directly applied patches for build breaks with subject
+The next/* branches are kept in the order in which they get applied.
+
+dependencies:
+<none at this time>
+
+next/fixes-non-critical:
+omap/fixes-non-critical	git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-fixes-non-critical-for-v3.6
+
+next/cleanup:
+at91/cleanup		git://github.com/at91linux/linux-at91.git tags/at91-for-next-cleanup
+omap/cleanup		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-cleanup-for-v3.6
+
+next/soc:
+nomadik/drivercfg	git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-nomadik.git nomadik-for-arm-soc
+lpc32xx/devel		git://git.antcom.de/linux-2.6.git lpc32xx-next
+lpc32xx/core		git://git.antcom.de/linux-2.6.git lpc32xx/core
+				depends on lpc32xx/devel
+omap/am33xx		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-devel-am33xx-for-v3.6
+
+next/dt:
+lpc32xx/dt		git://git.antcom.de/linux-2.6.git lpc32xx/dts
+				depends on lpc32xx/devel
+
+next/defconfig
+lpc32xx/defconfig	git://git.antcom.de/linux-2.6.git lpc32xx/defconfig
+				depends on lpc32xx/devel
+
+next/irq:
+imx/sparse-irq		git://git.linaro.org/people/shawnguo/linux-2.6.git imx/sparse-irq
+
+
+next/pinctrl:
+prima2/pinctrl		git://gitorious.org/sirfprima2-kernel/sirfprima2-kernel.git prima2/drivers
+
+next/pm:
+imx/cpuidle		git://git.pengutronix.de/git/imx/linux-2.6.git imx/cpuidle
+omap/driver		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-devel-driver-for-v3.6
+omap/pm			git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-devel-pm-for-v3.6
+
+next/timer
+omap/dmtimer		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-devel-dmtimer-for-v3.6
+
+---
+next/drivers: (dropped for now)
+devel/led-driver	git://git.kernel.org/pub/scm/linux/kernel/git/cooloney/linux-leds.git for-arm-soc
+
+
