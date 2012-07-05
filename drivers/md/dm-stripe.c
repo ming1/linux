@@ -95,7 +95,7 @@ static int stripe_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	struct stripe_c *sc;
 	sector_t width;
 	uint32_t stripes;
-	uint32_t chunk_size;
+	unsigned long chunk_size;
 	char *end;
 	int r;
 	unsigned int i;
@@ -112,7 +112,7 @@ static int stripe_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	}
 
 	chunk_size = simple_strtoul(argv[1], &end, 10);
-	if (*end || (chunk_size < (PAGE_SIZE >> SECTOR_SHIFT))) {
+	if (*end || !chunk_size || chunk_size != (uint32_t)chunk_size) {
 		ti->error = "Invalid chunk_size";
 		return -EINVAL;
 	}
