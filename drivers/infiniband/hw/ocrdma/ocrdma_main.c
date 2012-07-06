@@ -197,7 +197,7 @@ static int ocrdma_build_sgid_tbl(struct ocrdma_dev *dev)
 	return 0;
 }
 
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+#if IS_ENABLED(CONFIG_IPV6)
 
 static int ocrdma_inet6addr_event(struct notifier_block *notifier,
 				  unsigned long event, void *ptr)
@@ -544,7 +544,7 @@ static struct ocrdma_driver ocrdma_drv = {
 
 static void ocrdma_unregister_inet6addr_notifier(void)
 {
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+#if IS_ENABLED(CONFIG_IPV6)
 	unregister_inet6addr_notifier(&ocrdma_inet6addr_notifier);
 #endif
 }
@@ -553,7 +553,7 @@ static int __init ocrdma_init_module(void)
 {
 	int status;
 
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+#if IS_ENABLED(CONFIG_IPV6)
 	status = register_inet6addr_notifier(&ocrdma_inet6addr_notifier);
 	if (status)
 		return status;
