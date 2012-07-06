@@ -1,39 +1,30 @@
-#include <linux/types.h>
 #include <linux/delay.h> /* udelay */
-#include <linux/pci.h>
 #include <linux/vmalloc.h>
 
 #include "XGIfb.h"
-#include "vgatypes.h"
-
 #include "vb_def.h"
-#include "vb_struct.h"
 #include "vb_util.h"
 #include "vb_setmode.h"
 #include "vb_init.h"
+static const unsigned short XGINew_DDRDRAM_TYPE340[4][2] = {
+	{ 16, 0x45},
+	{  8, 0x35},
+	{  4, 0x31},
+	{  2, 0x21} };
 
-
-#include <linux/io.h>
-
-static const unsigned short XGINew_DDRDRAM_TYPE340[4][5] = {
-	{ 2, 13, 9, 64, 0x45},
-	{ 2, 12, 9, 32, 0x35},
-	{ 2, 12, 8, 16, 0x31},
-	{ 2, 11, 8,  8, 0x21} };
-
-static const unsigned short XGINew_DDRDRAM_TYPE20[12][5] = {
-	{ 2, 14, 11, 128, 0x5D},
-	{ 2, 14, 10, 64, 0x59},
-	{ 2, 13, 11, 64, 0x4D},
-	{ 2, 14,  9, 32, 0x55},
-	{ 2, 13, 10, 32, 0x49},
-	{ 2, 12, 11, 32, 0x3D},
-	{ 2, 14,  8, 16, 0x51},
-	{ 2, 13,  9, 16, 0x45},
-	{ 2, 12, 10, 16, 0x39},
-	{ 2, 13,  8,  8, 0x41},
-	{ 2, 12,  9,  8, 0x35},
-	{ 2, 12,  8,  4, 0x31} };
+static const unsigned short XGINew_DDRDRAM_TYPE20[12][2] = {
+	{ 128, 0x5D},
+	{ 64, 0x59},
+	{ 64, 0x4D},
+	{ 32, 0x55},
+	{ 32, 0x49},
+	{ 32, 0x3D},
+	{ 16, 0x51},
+	{ 16, 0x45},
+	{ 16, 0x39},
+	{  8, 0x41},
+	{  8, 0x35},
+	{  4, 0x31} };
 
 #define XGIFB_ROM_SIZE	65536
 
@@ -44,21 +35,12 @@ XGINew_GetXG20DRAMType(struct xgi_hw_device_info *HwDeviceExtension,
 	unsigned char data, temp;
 
 	if (HwDeviceExtension->jChipType < XG20) {
-		if (*pVBInfo->pSoftSetting & SoftDRAMType) {
-			data = *pVBInfo->pSoftSetting & 0x07;
-			return data;
-		} else {
-			data = xgifb_reg_get(pVBInfo->P3c4, 0x39) & 0x02;
-			if (data == 0)
-				data = (xgifb_reg_get(pVBInfo->P3c4, 0x3A) &
-				       0x02) >> 1;
-			return data;
-		}
+		data = xgifb_reg_get(pVBInfo->P3c4, 0x39) & 0x02;
+		if (data == 0)
+			data = (xgifb_reg_get(pVBInfo->P3c4, 0x3A) &
+				   0x02) >> 1;
+		return data;
 	} else if (HwDeviceExtension->jChipType == XG27) {
-		if (*pVBInfo->pSoftSetting & SoftDRAMType) {
-			data = *pVBInfo->pSoftSetting & 0x07;
-			return data;
-		}
 		temp = xgifb_reg_get(pVBInfo->P3c4, 0x3B);
 		/* SR3B[7][3]MAA15 MAA11 (Power on Trapping) */
 		if (((temp & 0x88) == 0x80) || ((temp & 0x88) == 0x08))
@@ -101,13 +83,11 @@ static void XGINew_DDR1x_MRS_340(unsigned long P3c4,
 	xgifb_reg_set(P3c4, 0x16, 0x00);
 	xgifb_reg_set(P3c4, 0x16, 0x80);
 
-	if (*pVBInfo->pXGINew_DRAMTypeDefinition != 0x0C) { /* Samsung F Die */
-		mdelay(3);
-		xgifb_reg_set(P3c4, 0x18, 0x00);
-		xgifb_reg_set(P3c4, 0x19, 0x20);
-		xgifb_reg_set(P3c4, 0x16, 0x00);
-		xgifb_reg_set(P3c4, 0x16, 0x80);
-	}
+	mdelay(3);
+	xgifb_reg_set(P3c4, 0x18, 0x00);
+	xgifb_reg_set(P3c4, 0x19, 0x20);
+	xgifb_reg_set(P3c4, 0x16, 0x00);
+	xgifb_reg_set(P3c4, 0x16, 0x80);
 
 	udelay(60);
 	xgifb_reg_set(P3c4,
@@ -181,7 +161,7 @@ static void XGINew_DDRII_Bootup_XG27(
 
 	/* Set Double Frequency */
 	/* xgifb_reg_set(P3d4, 0x97, 0x11); *//* CR97 */
-	xgifb_reg_set(P3d4, 0x97, *pVBInfo->pXGINew_CR97); /* CR97 */
+	xgifb_reg_set(P3d4, 0x97, pVBInfo->XGINew_CR97); /* CR97 */
 
 	udelay(200);
 
@@ -541,7 +521,7 @@ static void XGINew_SetDRAMDefaultRegister340(
 		      pVBInfo->CR40[0][pVBInfo->ram_type]); /* CR41 */
 
 	if (HwDeviceExtension->jChipType == XG27)
-		xgifb_reg_set(P3d4, 0x8F, *pVBInfo->pCR8F); /* CR8F */
+		xgifb_reg_set(P3d4, 0x8F, XG27_CR8F); /* CR8F */
 
 	for (j = 0; j <= 6; j++) /* CR90 - CR96 */
 		xgifb_reg_set(P3d4, (0x90 + j),
@@ -564,7 +544,7 @@ static void XGINew_SetDRAMDefaultRegister340(
 
 	xgifb_reg_set(P3d4, 0x83, 0x09); /* CR83 */
 	xgifb_reg_set(P3d4, 0x87, 0x00); /* CR87 */
-	xgifb_reg_set(P3d4, 0xCF, *pVBInfo->pCRCF); /* CRCF */
+	xgifb_reg_set(P3d4, 0xCF, XG40_CRCF); /* CRCF */
 	if (pVBInfo->ram_type) {
 		/* xgifb_reg_set(P3c4, 0x17, 0xC0); */ /* SR17 DDRII */
 		xgifb_reg_set(P3c4, 0x17, 0x80); /* SR17 DDRII */
@@ -588,71 +568,16 @@ static void XGINew_SetDRAMDefaultRegister340(
 		      pVBInfo->SR15[3][pVBInfo->ram_type]); /* SR1B */
 }
 
-static void XGINew_SetDRAMSizingType(int index,
-		const unsigned short DRAMTYPE_TABLE[][5],
-		struct vb_device_info *pVBInfo)
-{
-	unsigned short data;
 
-	data = DRAMTYPE_TABLE[index][4];
-	xgifb_reg_and_or(pVBInfo->P3c4, 0x13, 0x80, data);
-	udelay(15);
-	/* should delay 50 ns */
-}
-
-static unsigned short XGINew_SetDRAMSizeReg(int index,
-		const unsigned short DRAMTYPE_TABLE[][5],
+static unsigned short XGINew_SetDRAMSize20Reg(
+		unsigned short dram_size,
 		struct vb_device_info *pVBInfo)
 {
 	unsigned short data = 0, memsize = 0;
 	int RankSize;
 	unsigned char ChannelNo;
 
-	RankSize = DRAMTYPE_TABLE[index][3] * pVBInfo->ram_bus / 32;
-	data = xgifb_reg_get(pVBInfo->P3c4, 0x13);
-	data &= 0x80;
-
-	if (data == 0x80)
-		RankSize *= 2;
-
-	data = 0;
-
-	if (pVBInfo->ram_channel == 3)
-		ChannelNo = 4;
-	else
-		ChannelNo = pVBInfo->ram_channel;
-
-	if (ChannelNo * RankSize <= 256) {
-		while ((RankSize >>= 1) > 0)
-			data += 0x10;
-
-		memsize = data >> 4;
-
-		/* [2004/03/25] Vicent, Fix DRAM Sizing Error */
-		xgifb_reg_set(pVBInfo->P3c4,
-			      0x14,
-			      (xgifb_reg_get(pVBInfo->P3c4, 0x14) & 0x0F) |
-			       (data & 0xF0));
-
-		/* data |= pVBInfo->ram_channel << 2; */
-		/* data |= (pVBInfo->ram_bus / 64) << 1; */
-		/* xgifb_reg_set(pVBInfo->P3c4, 0x14, data); */
-
-		/* should delay */
-		/* XGINew_SetDRAMModeRegister340(pVBInfo); */
-	}
-	return memsize;
-}
-
-static unsigned short XGINew_SetDRAMSize20Reg(int index,
-		const unsigned short DRAMTYPE_TABLE[][5],
-		struct vb_device_info *pVBInfo)
-{
-	unsigned short data = 0, memsize = 0;
-	int RankSize;
-	unsigned char ChannelNo;
-
-	RankSize = DRAMTYPE_TABLE[index][3] * pVBInfo->ram_bus / 8;
+	RankSize = dram_size * pVBInfo->ram_bus / 8;
 	data = xgifb_reg_get(pVBInfo->P3c4, 0x13);
 	data &= 0x80;
 
@@ -946,52 +871,41 @@ static void XGINew_CheckChannel(struct xgi_hw_device_info *HwDeviceExtension,
 static int XGINew_DDRSizing340(struct xgi_hw_device_info *HwDeviceExtension,
 		struct vb_device_info *pVBInfo)
 {
-	int i;
-	unsigned short memsize, addr;
+	u8 i, size;
+	unsigned short memsize, start_addr;
+	const unsigned short (*dram_table)[2];
 
 	xgifb_reg_set(pVBInfo->P3c4, 0x15, 0x00); /* noninterleaving */
 	xgifb_reg_set(pVBInfo->P3c4, 0x1C, 0x00); /* nontiling */
 	XGINew_CheckChannel(HwDeviceExtension, pVBInfo);
 
 	if (HwDeviceExtension->jChipType >= XG20) {
-		for (i = 0; i < 12; i++) {
-			XGINew_SetDRAMSizingType(i,
-						 XGINew_DDRDRAM_TYPE20,
-						 pVBInfo);
-			memsize = XGINew_SetDRAMSize20Reg(i,
-							  XGINew_DDRDRAM_TYPE20,
-							  pVBInfo);
-			if (memsize == 0)
-				continue;
-
-			addr = memsize + (pVBInfo->ram_channel - 2) + 20;
-			if ((HwDeviceExtension->ulVideoMemorySize - 1) <
-			    (unsigned long) (1 << addr))
-				continue;
-
-			if (XGINew_ReadWriteRest(addr, 5, pVBInfo) == 1)
-				return 1;
-		}
+		dram_table = XGINew_DDRDRAM_TYPE20;
+		size = ARRAY_SIZE(XGINew_DDRDRAM_TYPE20);
+		start_addr = 5;
 	} else {
-		for (i = 0; i < 4; i++) {
-			XGINew_SetDRAMSizingType(i,
-						 XGINew_DDRDRAM_TYPE340,
-						 pVBInfo);
-			memsize = XGINew_SetDRAMSizeReg(i,
-							XGINew_DDRDRAM_TYPE340,
-							pVBInfo);
+		dram_table = XGINew_DDRDRAM_TYPE340;
+		size = ARRAY_SIZE(XGINew_DDRDRAM_TYPE340);
+		start_addr = 9;
+	}
 
-			if (memsize == 0)
-				continue;
+	for (i = 0; i < size; i++) {
+		/* SetDRAMSizingType */
+		xgifb_reg_and_or(pVBInfo->P3c4, 0x13, 0x80, dram_table[i][1]);
+		udelay(15); /* should delay 50 ns */
 
-			addr = memsize + (pVBInfo->ram_channel - 2) + 20;
-			if ((HwDeviceExtension->ulVideoMemorySize - 1) <
-			    (unsigned long) (1 << addr))
-				continue;
+		memsize = XGINew_SetDRAMSize20Reg(dram_table[i][0], pVBInfo);
 
-			if (XGINew_ReadWriteRest(addr, 9, pVBInfo) == 1)
-				return 1;
-		}
+		if (memsize == 0)
+			continue;
+
+		memsize += (pVBInfo->ram_channel - 2) + 20;
+		if ((HwDeviceExtension->ulVideoMemorySize - 1) <
+			(unsigned long) (1 << memsize))
+			continue;
+
+		if (XGINew_ReadWriteRest(memsize, start_addr, pVBInfo) == 1)
+			return 1;
 	}
 	return 0;
 }
@@ -1150,13 +1064,9 @@ static void XGINew_ChkSenseStatus(struct xgi_hw_device_info *HwDeviceExtension,
 		CR3CData = xgifb_reg_get(pVBInfo->P3d4, 0x3c);
 		if (!(CR3CData & DisplayDeviceFromCMOS)) {
 			tempcx = 0x1FF0;
-			if (*pVBInfo->pSoftSetting & ModeSoftSetting)
-				tempbx = 0x1FF0;
 		}
 	} else {
 		tempcx = 0x1FF0;
-		if (*pVBInfo->pSoftSetting & ModeSoftSetting)
-			tempbx = 0x1FF0;
 	}
 
 	tempbx &= tempcx;
@@ -1409,22 +1319,17 @@ unsigned char XGIInitNew(struct pci_dev *pdev)
 	/* Newdebugcode(0x99); */
 
 	if (pVBInfo->FBAddr == NULL) {
-		printk("\n pVBInfo->FBAddr == 0 ");
+		dev_dbg(&pdev->dev, "pVBInfo->FBAddr == 0\n");
 		return 0;
 	}
-	printk("1");
 	if (pVBInfo->BaseAddr == 0) {
-		printk("\npVBInfo->BaseAddr == 0 ");
+		dev_dbg(&pdev->dev, "pVBInfo->BaseAddr == 0\n");
 		return 0;
 	}
-	printk("2");
 
 	outb(0x67, (pVBInfo->BaseAddr + 0x12)); /* 3c2 <- 67 ,ynlai */
 
 	pVBInfo->ISXPDOS = 0;
-	printk("3");
-
-	printk("4");
 
 	/* VBIOSVersion[4] = 0x0; */
 
@@ -1447,7 +1352,6 @@ unsigned char XGIInitNew(struct pci_dev *pdev)
 	pVBInfo->Part3Port = pVBInfo->BaseAddr + SIS_CRT2_PORT_12;
 	pVBInfo->Part4Port = pVBInfo->BaseAddr + SIS_CRT2_PORT_14;
 	pVBInfo->Part5Port = pVBInfo->BaseAddr + SIS_CRT2_PORT_14 + 2;
-	printk("5");
 
 	if (HwDeviceExtension->jChipType < XG20) /* kuku 2004/06/25 */
 		/* Run XGI_GetVBType before InitTo330Pointer */
@@ -1459,7 +1363,6 @@ unsigned char XGIInitNew(struct pci_dev *pdev)
 
 	/* 1.Openkey */
 	xgifb_reg_set(pVBInfo->P3c4, 0x05, 0x86);
-	printk("6");
 
 	/* GetXG21Sense (GPIO) */
 	if (HwDeviceExtension->jChipType == XG21)
@@ -1467,8 +1370,6 @@ unsigned char XGIInitNew(struct pci_dev *pdev)
 
 	if (HwDeviceExtension->jChipType == XG27)
 		XGINew_GetXG27Sense(HwDeviceExtension, pVBInfo);
-
-	printk("7");
 
 	/* 2.Reset Extended register */
 
@@ -1481,11 +1382,8 @@ unsigned char XGIInitNew(struct pci_dev *pdev)
 	/* for(i = 0x06; i <= 0x27; i++) */
 	/* xgifb_reg_set(pVBInfo->P3c4, i, 0); */
 
-	printk("8");
-
 	for (i = 0x31; i <= 0x3B; i++)
 		xgifb_reg_set(pVBInfo->P3c4, i, 0);
-	printk("9");
 
 	/* [Hsuan] 2004/08/20 Auto over driver for XG42 */
 	if (HwDeviceExtension->jChipType == XG42)
@@ -1497,38 +1395,32 @@ unsigned char XGIInitNew(struct pci_dev *pdev)
 	for (i = 0x79; i <= 0x7C; i++)
 		xgifb_reg_set(pVBInfo->P3d4, i, 0); /* shampoo 0208 */
 
-	printk("10");
-
 	if (HwDeviceExtension->jChipType >= XG20)
-		xgifb_reg_set(pVBInfo->P3d4, 0x97, *pVBInfo->pXGINew_CR97);
+		xgifb_reg_set(pVBInfo->P3d4, 0x97, pVBInfo->XGINew_CR97);
 
 	/* 3.SetMemoryClock
 
 	pVBInfo->ram_type = XGINew_GetXG20DRAMType(HwDeviceExtension, pVBInfo);
 	*/
 
-	printk("11");
-
 	/* 4.SetDefExt1Regs begin */
-	xgifb_reg_set(pVBInfo->P3c4, 0x07, *pVBInfo->pSR07);
+	xgifb_reg_set(pVBInfo->P3c4, 0x07, XGI330_SR07);
 	if (HwDeviceExtension->jChipType == XG27) {
-		xgifb_reg_set(pVBInfo->P3c4, 0x40, *pVBInfo->pSR40);
-		xgifb_reg_set(pVBInfo->P3c4, 0x41, *pVBInfo->pSR41);
+		xgifb_reg_set(pVBInfo->P3c4, 0x40, XG27_SR40);
+		xgifb_reg_set(pVBInfo->P3c4, 0x41, XG27_SR41);
 	}
 	xgifb_reg_set(pVBInfo->P3c4, 0x11, 0x0F);
-	xgifb_reg_set(pVBInfo->P3c4, 0x1F, *pVBInfo->pSR1F);
+	xgifb_reg_set(pVBInfo->P3c4, 0x1F, XGI330_SR1F);
 	/* xgifb_reg_set(pVBInfo->P3c4, 0x20, 0x20); */
 	/* alan, 2001/6/26 Frame buffer can read/write SR20 */
 	xgifb_reg_set(pVBInfo->P3c4, 0x20, 0xA0);
 	/* Hsuan, 2006/01/01 H/W request for slow corner chip */
 	xgifb_reg_set(pVBInfo->P3c4, 0x36, 0x70);
 	if (HwDeviceExtension->jChipType == XG27) /* Alan 12/07/2006 */
-		xgifb_reg_set(pVBInfo->P3c4, 0x36, *pVBInfo->pSR36);
+		xgifb_reg_set(pVBInfo->P3c4, 0x36, XG27_SR36);
 
 	/* SR11 = 0x0F; */
 	/* xgifb_reg_set(pVBInfo->P3c4, 0x11, SR11); */
-
-	printk("12");
 
 	if (HwDeviceExtension->jChipType < XG20) { /* kuku 2004/06/25 */
 		u32 Temp;
@@ -1575,8 +1467,6 @@ unsigned char XGIInitNew(struct pci_dev *pdev)
 		}
 		*/
 
-		printk("13");
-
 		/* Set AGP customize registers (in SetDefAGPRegs) Start */
 		for (i = 0x47; i <= 0x4C; i++)
 			xgifb_reg_set(pVBInfo->P3d4,
@@ -1605,14 +1495,12 @@ unsigned char XGIInitNew(struct pci_dev *pdev)
 
 		if (Temp == 1)
 			xgifb_reg_set(pVBInfo->P3d4, 0x48, 0x20); /* CR48 */
-		printk("14");
 	} /* != XG20 */
 
 	/* Set PCI */
-	xgifb_reg_set(pVBInfo->P3c4, 0x23, *pVBInfo->pSR23);
-	xgifb_reg_set(pVBInfo->P3c4, 0x24, *pVBInfo->pSR24);
-	xgifb_reg_set(pVBInfo->P3c4, 0x25, pVBInfo->SR25[0]);
-	printk("15");
+	xgifb_reg_set(pVBInfo->P3c4, 0x23, XGI330_SR23);
+	xgifb_reg_set(pVBInfo->P3c4, 0x24, XGI330_SR24);
+	xgifb_reg_set(pVBInfo->P3c4, 0x25, XGI330_SR25);
 
 	if (HwDeviceExtension->jChipType < XG20) { /* kuku 2004/06/25 */
 		/* Set VB */
@@ -1625,10 +1513,7 @@ unsigned char XGIInitNew(struct pci_dev *pdev)
 		temp = (unsigned char) ((temp1 >> 4) & 0x0F);
 
 		xgifb_reg_set(pVBInfo->Part1Port,
-			      0x02,
-			      (*pVBInfo->pCRT2Data_1_2));
-
-		printk("16");
+			      0x02, XGI330_CRT2Data_1_2);
 
 		xgifb_reg_set(pVBInfo->Part1Port, 0x2E, 0x08); /* use VB */
 	} /* != XG20 */
@@ -1640,16 +1525,15 @@ unsigned char XGIInitNew(struct pci_dev *pdev)
 		/* Not DDR */
 		xgifb_reg_set(pVBInfo->P3c4,
 			      0x31,
-			      (*pVBInfo->pSR31 & 0x3F) | 0x40);
+			      (XGI330_SR31 & 0x3F) | 0x40);
 		xgifb_reg_set(pVBInfo->P3c4,
 			      0x32,
-			      (*pVBInfo->pSR32 & 0xFC) | 0x01);
+			      (XGI330_SR32 & 0xFC) | 0x01);
 	} else {
-		xgifb_reg_set(pVBInfo->P3c4, 0x31, *pVBInfo->pSR31);
-		xgifb_reg_set(pVBInfo->P3c4, 0x32, *pVBInfo->pSR32);
+		xgifb_reg_set(pVBInfo->P3c4, 0x31, XGI330_SR31);
+		xgifb_reg_set(pVBInfo->P3c4, 0x32, XGI330_SR32);
 	}
-	xgifb_reg_set(pVBInfo->P3c4, 0x33, *pVBInfo->pSR33);
-	printk("17");
+	xgifb_reg_set(pVBInfo->P3c4, 0x33, XGI330_SR33);
 
 	/*
 	 SetPowerConsume (HwDeviceExtension, pVBInfo->P3c4);	*/
@@ -1659,32 +1543,22 @@ unsigned char XGIInitNew(struct pci_dev *pdev)
 			if (pVBInfo->IF_DEF_LVDS == 0) {
 				xgifb_reg_set(pVBInfo->Part2Port, 0x00, 0x1C);
 				xgifb_reg_set(pVBInfo->Part4Port,
-					      0x0D,
-					      *pVBInfo->pCRT2Data_4_D);
+					      0x0D, XGI330_CRT2Data_4_D);
 				xgifb_reg_set(pVBInfo->Part4Port,
-					      0x0E,
-					      *pVBInfo->pCRT2Data_4_E);
+					      0x0E, XGI330_CRT2Data_4_E);
 				xgifb_reg_set(pVBInfo->Part4Port,
-					      0x10,
-					      *pVBInfo->pCRT2Data_4_10);
+					      0x10, XGI330_CRT2Data_4_10);
 				xgifb_reg_set(pVBInfo->Part4Port, 0x0F, 0x3F);
 			}
 
 			XGI_LockCRT2(HwDeviceExtension, pVBInfo);
 		}
 	} /* != XG20 */
-	printk("18");
-
-	printk("181");
-
-	printk("182");
 
 	XGI_SenseCRT1(pVBInfo);
 
-	printk("183");
 	/* XGINew_DetectMonitor(HwDeviceExtension); */
 	if (HwDeviceExtension->jChipType == XG21) {
-		printk("186");
 
 		xgifb_reg_and_or(pVBInfo->P3d4,
 				 0x32,
@@ -1692,7 +1566,6 @@ unsigned char XGIInitNew(struct pci_dev *pdev)
 				 Monitor1Sense); /* Z9 default has CRT */
 		temp = GetXG21FPBits(pVBInfo);
 		xgifb_reg_and_or(pVBInfo->P3d4, 0x37, ~0x01, temp);
-		printk("187");
 
 	}
 	if (HwDeviceExtension->jChipType == XG27) {
@@ -1703,7 +1576,6 @@ unsigned char XGIInitNew(struct pci_dev *pdev)
 		temp = GetXG27FPBits(pVBInfo);
 		xgifb_reg_and_or(pVBInfo->P3d4, 0x37, ~0x03, temp);
 	}
-	printk("19");
 
 	pVBInfo->ram_type = XGINew_GetXG20DRAMType(HwDeviceExtension, pVBInfo);
 
@@ -1711,11 +1583,7 @@ unsigned char XGIInitNew(struct pci_dev *pdev)
 					 pVBInfo->P3d4,
 					 pVBInfo);
 
-	printk("20");
 	XGINew_SetDRAMSize_340(xgifb_info, HwDeviceExtension, pVBInfo);
-	printk("21");
-
-	printk("22");
 
 	/* SetDefExt2Regs begin */
 	/*
@@ -1726,12 +1594,12 @@ unsigned char XGIInitNew(struct pci_dev *pdev)
 		AGP = 0;
 
 	if (AGP == 0)
-		*pVBInfo->pSR21 &= 0xEF;
+		pVBInfo->SR21 &= 0xEF;
 
-	xgifb_reg_set(pVBInfo->P3c4, 0x21, *pVBInfo->pSR21);
+	xgifb_reg_set(pVBInfo->P3c4, 0x21, pVBInfo->SR21);
 	if (AGP == 1)
-		*pVBInfo->pSR22 &= 0x20;
-	xgifb_reg_set(pVBInfo->P3c4, 0x22, *pVBInfo->pSR22);
+		pVBInfo->SR22 &= 0x20;
+	xgifb_reg_set(pVBInfo->P3c4, 0x22, pVBInfo->SR22);
 	*/
 	/* base = 0x80000000; */
 	/* OutPortLong(0xcf8, base); */
@@ -1739,23 +1607,18 @@ unsigned char XGIInitNew(struct pci_dev *pdev)
 	/* if (Temp == 0x1039) { */
 	xgifb_reg_set(pVBInfo->P3c4,
 		      0x22,
-		      (unsigned char) ((*pVBInfo->pSR22) & 0xFE));
+		      (unsigned char) ((pVBInfo->SR22) & 0xFE));
 	/* } else { */
-	/*	xgifb_reg_set(pVBInfo->P3c4, 0x22, *pVBInfo->pSR22); */
+	/*	xgifb_reg_set(pVBInfo->P3c4, 0x22, pVBInfo->SR22); */
 	/* } */
 
-	xgifb_reg_set(pVBInfo->P3c4, 0x21, *pVBInfo->pSR21);
-
-	printk("23");
+	xgifb_reg_set(pVBInfo->P3c4, 0x21, pVBInfo->SR21);
 
 	XGINew_ChkSenseStatus(HwDeviceExtension, pVBInfo);
 	XGINew_SetModeScratch(HwDeviceExtension, pVBInfo);
 
-	printk("24");
-
 	xgifb_reg_set(pVBInfo->P3d4, 0x8c, 0x87);
 	xgifb_reg_set(pVBInfo->P3c4, 0x14, 0x31);
-	printk("25");
 
 	return 1;
 } /* end of init */

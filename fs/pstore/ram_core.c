@@ -35,8 +35,6 @@ struct persistent_ram_buffer {
 
 #define PERSISTENT_RAM_SIG (0x43474244) /* DBGC */
 
-static __initdata LIST_HEAD(persistent_ram_list);
-
 static inline size_t buffer_size(struct persistent_ram_zone *prz)
 {
 	return atomic_read(&prz->buffer->size);
@@ -173,12 +171,12 @@ static void persistent_ram_ecc_old(struct persistent_ram_zone *prz)
 	}
 }
 
-static int persistent_ram_init_ecc(struct persistent_ram_zone *prz,
-	size_t buffer_size)
+static int persistent_ram_init_ecc(struct persistent_ram_zone *prz)
 {
 	int numerr;
 	struct persistent_ram_buffer *buffer = prz->buffer;
 	int ecc_blocks;
+	size_t ecc_total;
 
 	if (!prz->ecc)
 		return 0;
@@ -189,14 +187,14 @@ static int persistent_ram_init_ecc(struct persistent_ram_zone *prz,
 	prz->ecc_poly = 0x11d;
 
 	ecc_blocks = DIV_ROUND_UP(prz->buffer_size, prz->ecc_block_size);
-	prz->buffer_size -= (ecc_blocks + 1) * prz->ecc_size;
-
-	if (prz->buffer_size > buffer_size) {
-		pr_err("persistent_ram: invalid size %zu, non-ecc datasize %zu\n",
-		       buffer_size, prz->buffer_size);
+	ecc_total = (ecc_blocks + 1) * prz->ecc_size;
+	if (ecc_total >= prz->buffer_size) {
+		pr_err("%s: invalid ecc_size %u (total %zu, buffer size %zu)\n",
+		       __func__, prz->ecc_size, ecc_total, prz->buffer_size);
 		return -EINVAL;
 	}
 
+	prz->buffer_size -= ecc_total;
 	prz->par_buffer = buffer->data + prz->buffer_size;
 	prz->par_header = prz->par_buffer + ecc_blocks * prz->ecc_size;
 
@@ -392,13 +390,14 @@ static int persistent_ram_buffer_map(phys_addr_t start, phys_addr_t size,
 	return 0;
 }
 
-static int __init persistent_ram_post_init(struct persistent_ram_zone *prz, bool ecc)
+static int __devinit persistent_ram_post_init(struct persistent_ram_zone *prz,
+					      bool ecc)
 {
 	int ret;
 
 	prz->ecc = ecc;
 
-	ret = persistent_ram_init_ecc(prz, prz->buffer_size);
+	ret = persistent_ram_init_ecc(prz);
 	if (ret)
 		return ret;
 
@@ -409,14 +408,14 @@ static int __init persistent_ram_post_init(struct persistent_ram_zone *prz, bool
 				" size %zu, start %zu\n",
 			       buffer_size(prz), buffer_start(prz));
 		else {
-			pr_info("persistent_ram: found existing buffer,"
+			pr_debug("persistent_ram: found existing buffer,"
 				" size %zu, start %zu\n",
 			       buffer_size(prz), buffer_start(prz));
 			persistent_ram_save_old(prz);
 			return 0;
 		}
 	} else {
-		pr_info("persistent_ram: no valid data in buffer"
+		pr_debug("persistent_ram: no valid data in buffer"
 			" (sig = 0x%08x)\n", prz->buffer->sig);
 	}
 
@@ -428,19 +427,25 @@ static int __init persistent_ram_post_init(struct persistent_ram_zone *prz, bool
 
 void persistent_ram_free(struct persistent_ram_zone *prz)
 {
-	if (pfn_valid(prz->paddr >> PAGE_SHIFT)) {
-		vunmap(prz->vaddr);
-	} else {
-		iounmap(prz->vaddr);
-		release_mem_region(prz->paddr, prz->size);
+	if (!prz)
+		return;
+
+	if (prz->vaddr) {
+		if (pfn_valid(prz->paddr >> PAGE_SHIFT)) {
+			vunmap(prz->vaddr);
+		} else {
+			iounmap(prz->vaddr);
+			release_mem_region(prz->paddr, prz->size);
+		}
+		prz->vaddr = NULL;
 	}
 	persistent_ram_free_old(prz);
 	kfree(prz);
 }
 
-struct persistent_ram_zone * __init persistent_ram_new(phys_addr_t start,
-						       size_t size,
-						       bool ecc)
+struct persistent_ram_zone * __devinit persistent_ram_new(phys_addr_t start,
+							  size_t size,
+							  bool ecc)
 {
 	struct persistent_ram_zone *prz;
 	int ret = -ENOMEM;
@@ -455,85 +460,12 @@ struct persistent_ram_zone * __init persistent_ram_new(phys_addr_t start,
 	if (ret)
 		goto err;
 
-	persistent_ram_post_init(prz, ecc);
+	ret = persistent_ram_post_init(prz, ecc);
+	if (ret)
+		goto err;
 
 	return prz;
 err:
-	kfree(prz);
+	persistent_ram_free(prz);
 	return ERR_PTR(ret);
 }
-
-#ifndef MODULE
-static int __init persistent_ram_buffer_init(const char *name,
-		struct persistent_ram_zone *prz)
-{
-	int i;
-	struct persistent_ram *ram;
-	struct persistent_ram_descriptor *desc;
-	phys_addr_t start;
-
-	list_for_each_entry(ram, &persistent_ram_list, node) {
-		start = ram->start;
-		for (i = 0; i < ram->num_descs; i++) {
-			desc = &ram->descs[i];
-			if (!strcmp(desc->name, name))
-				return persistent_ram_buffer_map(start,
-						desc->size, prz);
-			start += desc->size;
-		}
-	}
-
-	return -EINVAL;
-}
-
-static  __init
-struct persistent_ram_zone *__persistent_ram_init(struct device *dev, bool ecc)
-{
-	struct persistent_ram_zone *prz;
-	int ret = -ENOMEM;
-
-	prz = kzalloc(sizeof(struct persistent_ram_zone), GFP_KERNEL);
-	if (!prz) {
-		pr_err("persistent_ram: failed to allocate persistent ram zone\n");
-		goto err;
-	}
-
-	ret = persistent_ram_buffer_init(dev_name(dev), prz);
-	if (ret) {
-		pr_err("persistent_ram: failed to initialize buffer\n");
-		goto err;
-	}
-
-	persistent_ram_post_init(prz, ecc);
-
-	return prz;
-err:
-	kfree(prz);
-	return ERR_PTR(ret);
-}
-
-struct persistent_ram_zone * __init
-persistent_ram_init_ringbuffer(struct device *dev, bool ecc)
-{
-	return __persistent_ram_init(dev, ecc);
-}
-
-int __init persistent_ram_early_init(struct persistent_ram *ram)
-{
-	int ret;
-
-	ret = memblock_reserve(ram->start, ram->size);
-	if (ret) {
-		pr_err("Failed to reserve persistent memory from %08lx-%08lx\n",
-			(long)ram->start, (long)(ram->start + ram->size - 1));
-		return ret;
-	}
-
-	list_add_tail(&ram->node, &persistent_ram_list);
-
-	pr_info("Initialized persistent memory from %08lx-%08lx\n",
-		(long)ram->start, (long)(ram->start + ram->size - 1));
-
-	return 0;
-}
-#endif

@@ -202,8 +202,9 @@ static int ni_670x_attach(struct comedi_device *dev,
 	dev->irq = mite_irq(devpriv->mite);
 	printk(KERN_INFO " %s", dev->board_name);
 
-	if (alloc_subdevices(dev, 2) < 0)
-		return -ENOMEM;
+	ret = comedi_alloc_subdevices(dev, 2);
+	if (ret)
+		return ret;
 
 	s = dev->subdevices + 0;
 	/* analog output subdevice */
@@ -305,9 +306,6 @@ static int ni_670x_dio_insn_bits(struct comedi_device *dev,
 				 struct comedi_subdevice *s,
 				 struct comedi_insn *insn, unsigned int *data)
 {
-	if (insn->n != 2)
-		return -EINVAL;
-
 	/* The insn data is a mask in data[0] and the new data
 	 * in data[1], each channel cooresponding to a bit. */
 	if (data[0]) {
@@ -321,7 +319,7 @@ static int ni_670x_dio_insn_bits(struct comedi_device *dev,
 	 * input lines. */
 	data[1] = readl(devpriv->mite->daq_io_addr + DIO_PORT0_DATA_OFFSET);
 
-	return 2;
+	return insn->n;
 }
 
 static int ni_670x_dio_insn_config(struct comedi_device *dev,
