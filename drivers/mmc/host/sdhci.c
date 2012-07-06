@@ -27,6 +27,7 @@
 
 #include <linux/mmc/mmc.h>
 #include <linux/mmc/host.h>
+#include <linux/mmc/card.h>
 
 #include "sdhci.h"
 
@@ -244,6 +245,18 @@ static void sdhci_init(struct sdhci_host *host, int soft)
 static void sdhci_reinit(struct sdhci_host *host)
 {
 	sdhci_init(host, 0);
+	/*
+	 * Retuning stuffs are affected by different cards inserted and only
+	 * applicable to UHS-I cards. So reset these fields to their initial
+	 * value when card is removed.
+	 */
+	if (host->version >= SDHCI_SPEC_300 && host->tuning_count &&
+			host->tuning_mode == SDHCI_TUNING_MODE_1) {
+		del_timer_sync(&host->tuning_timer);
+		host->flags &= ~SDHCI_NEEDS_RETUNING;
+		host->mmc->max_blk_count =
+			(host->quirks & SDHCI_QUIRK_NO_MULTIBLOCK) ? 1 : 65535;
+	}
 	sdhci_enable_card_detection(host);
 }
 
@@ -1245,6 +1258,7 @@ static void sdhci_request(struct mmc_host *mmc, struct mmc_request *mrq)
 	struct sdhci_host *host;
 	bool present;
 	unsigned long flags;
+	u32 tuning_opcode;
 
 	host = mmc_priv(mmc);
 
@@ -1292,8 +1306,12 @@ static void sdhci_request(struct mmc_host *mmc, struct mmc_request *mrq)
 		 */
 		if ((host->flags & SDHCI_NEEDS_RETUNING) &&
 		    !(present_state & (SDHCI_DOING_WRITE | SDHCI_DOING_READ))) {
+			/* eMMC uses cmd21 while sd and sdio use cmd19 */
+			tuning_opcode = mmc->card->type == MMC_TYPE_MMC ?
+				MMC_SEND_TUNING_BLOCK_HS200 :
+				MMC_SEND_TUNING_BLOCK;
 			spin_unlock_irqrestore(&host->lock, flags);
-			sdhci_execute_tuning(mmc, mrq->cmd->opcode);
+			sdhci_execute_tuning(mmc, tuning_opcode);
 			spin_lock_irqsave(&host->lock, flags);
 
 			/* Restore original mmc_request structure */
@@ -2584,7 +2602,7 @@ EXPORT_SYMBOL_GPL(sdhci_alloc_host);
 int sdhci_add_host(struct sdhci_host *host)
 {
 	struct mmc_host *mmc;
-	u32 caps[2];
+	u32 caps[2] = {0, 0};
 	u32 max_current_caps;
 	unsigned int ocr_avail;
 	int ret;
@@ -2614,8 +2632,10 @@ int sdhci_add_host(struct sdhci_host *host)
 	caps[0] = (host->quirks & SDHCI_QUIRK_MISSING_CAPS) ? host->caps :
 		sdhci_readl(host, SDHCI_CAPABILITIES);
 
-	caps[1] = (host->version >= SDHCI_SPEC_300) ?
-		sdhci_readl(host, SDHCI_CAPABILITIES_1) : 0;
+	if (host->version >= SDHCI_SPEC_300)
+		caps[1] = (host->quirks & SDHCI_QUIRK_MISSING_CAPS) ?
+			host->caps1 :
+			sdhci_readl(host, SDHCI_CAPABILITIES_1);
 
 	if (host->quirks & SDHCI_QUIRK_FORCE_DMA)
 		host->flags |= SDHCI_USE_SDMA;
@@ -2837,6 +2857,30 @@ int sdhci_add_host(struct sdhci_host *host)
 			     SDHCI_RETUNING_MODE_SHIFT;
 
 	ocr_avail = 0;
+
+	host->vmmc = regulator_get(mmc_dev(mmc), "vmmc");
+	if (IS_ERR(host->vmmc)) {
+		pr_info("%s: no vmmc regulator found\n", mmc_hostname(mmc));
+		host->vmmc = NULL;
+	}
+
+#ifdef CONFIG_REGULATOR
+	if (host->vmmc) {
+		ret = regulator_is_supported_voltage(host->vmmc, 3300000,
+			3300000);
+		if ((ret <= 0) || (!(caps[0] & SDHCI_CAN_VDD_330)))
+			caps[0] &= ~SDHCI_CAN_VDD_330;
+		ret = regulator_is_supported_voltage(host->vmmc, 3000000,
+			3000000);
+		if ((ret <= 0) || (!(caps[0] & SDHCI_CAN_VDD_300)))
+			caps[0] &= ~SDHCI_CAN_VDD_300;
+		ret = regulator_is_supported_voltage(host->vmmc, 1800000,
+			1800000);
+		if ((ret <= 0) || (!(caps[0] & SDHCI_CAN_VDD_180)))
+			caps[0] &= ~SDHCI_CAN_VDD_180;
+	}
+#endif /* CONFIG_REGULATOR */
+
 	/*
 	 * According to SD Host Controller spec v3.00, if the Host System
 	 * can afford more than 150mA, Host Driver should set XPC to 1. Also
@@ -2845,6 +2889,21 @@ int sdhci_add_host(struct sdhci_host *host)
 	 * value.
 	 */
 	max_current_caps = sdhci_readl(host, SDHCI_MAX_CURRENT);
+	if (!max_current_caps && host->vmmc) {
+		u32 curr = regulator_get_current_limit(host->vmmc);
+		if (curr > 0) {
+
+			/* convert to SDHCI_MAX_CURRENT format */
+			curr = curr/1000;  /* convert to mA */
+			curr = curr/SDHCI_MAX_CURRENT_MULTIPLIER;
+
+			curr = min_t(u32, curr, SDHCI_MAX_CURRENT_LIMIT);
+			max_current_caps =
+				(curr << SDHCI_MAX_CURRENT_330_SHIFT) |
+				(curr << SDHCI_MAX_CURRENT_300_SHIFT) |
+				(curr << SDHCI_MAX_CURRENT_180_SHIFT);
+		}
+	}
 
 	if (caps[0] & SDHCI_CAN_VDD_330) {
 		int max_current_330;
@@ -2892,7 +2951,7 @@ int sdhci_add_host(struct sdhci_host *host)
 			mmc->caps |= MMC_CAP_MAX_CURRENT_600;
 		else if (max_current_180 >= 400)
 			mmc->caps |= MMC_CAP_MAX_CURRENT_400;
-		else
+		else if (max_current_180 >= 200)
 			mmc->caps |= MMC_CAP_MAX_CURRENT_200;
 	}
 
@@ -2992,13 +3051,10 @@ int sdhci_add_host(struct sdhci_host *host)
 
 	ret = request_irq(host->irq, sdhci_irq, IRQF_SHARED,
 		mmc_hostname(mmc), host);
-	if (ret)
+	if (ret) {
+		pr_err("%s: Failed to request IRQ %d: %d\n",
+		       mmc_hostname(mmc), host->irq, ret);
 		goto untasklet;
-
-	host->vmmc = regulator_get(mmc_dev(mmc), "vmmc");
-	if (IS_ERR(host->vmmc)) {
-		pr_info("%s: no vmmc regulator found\n", mmc_hostname(mmc));
-		host->vmmc = NULL;
 	}
 
 	sdhci_init(host, 0);
@@ -3016,8 +3072,11 @@ int sdhci_add_host(struct sdhci_host *host)
 	host->led.brightness_set = sdhci_led_control;
 
 	ret = led_classdev_register(mmc_dev(mmc), &host->led);
-	if (ret)
+	if (ret) {
+		pr_err("%s: Failed to register LED device: %d\n",
+		       mmc_hostname(mmc), ret);
 		goto reset;
+	}
 #endif
 
 	mmiowb();
