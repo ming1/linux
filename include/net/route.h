@@ -65,11 +65,44 @@ struct rtable {
 	__be32			rt_gateway;
 
 	/* Miscellaneous cached information */
-	__be32			rt_spec_dst; /* RFC1122 specific destination */
 	u32			rt_peer_genid;
-	struct inet_peer	*peer; /* long-living peer info */
+	unsigned long		_peer; /* long-living peer info */
 	struct fib_info		*fi; /* for client ref to shared metrics */
 };
+
+static inline struct inet_peer *rt_peer_ptr(struct rtable *rt)
+{
+	return inetpeer_ptr(rt->_peer);
+}
+
+static inline bool rt_has_peer(struct rtable *rt)
+{
+	return inetpeer_ptr_is_peer(rt->_peer);
+}
+
+static inline void __rt_set_peer(struct rtable *rt, struct inet_peer *peer)
+{
+	__inetpeer_ptr_set_peer(&rt->_peer, peer);
+}
+
+static inline bool rt_set_peer(struct rtable *rt, struct inet_peer *peer)
+{
+	return inetpeer_ptr_set_peer(&rt->_peer, peer);
+}
+
+static inline void rt_init_peer(struct rtable *rt, struct inet_peer_base *base)
+{
+	inetpeer_init_ptr(&rt->_peer, base);
+}
+
+static inline void rt_transfer_peer(struct rtable *rt, struct rtable *ort)
+{
+	rt->_peer = ort->_peer;
+	if (rt_has_peer(ort)) {
+		struct inet_peer *peer = rt_peer_ptr(ort);
+		atomic_inc(&peer->refcnt);
+	}
+}
 
 static inline bool rt_is_input_route(const struct rtable *rt)
 {
@@ -181,9 +214,10 @@ static inline int ip_route_input_noref(struct sk_buff *skb, __be32 dst, __be32 s
 	return ip_route_input_common(skb, dst, src, tos, devin, true);
 }
 
-extern unsigned short	ip_rt_frag_needed(struct net *net, const struct iphdr *iph,
-					  unsigned short new_mtu, struct net_device *dev);
-extern void		ip_rt_send_redirect(struct sk_buff *skb);
+extern void ipv4_update_pmtu(struct sk_buff *skb, struct net *net, u32 mtu,
+			     int oif, u32 mark, u8 protocol, int flow_flags);
+extern void ipv4_sk_update_pmtu(struct sk_buff *skb, struct sock *sk, u32 mtu);
+extern void ip_rt_send_redirect(struct sk_buff *skb);
 
 extern unsigned int		inet_addr_type(struct net *net, __be32 addr);
 extern unsigned int		inet_dev_addr_type(struct net *net, const struct net_device *dev, __be32 addr);
@@ -296,13 +330,23 @@ static inline struct rtable *ip_route_newports(struct flowi4 *fl4, struct rtable
 
 extern void rt_bind_peer(struct rtable *rt, __be32 daddr, int create);
 
+static inline struct inet_peer *__rt_get_peer(struct rtable *rt, __be32 daddr, int create)
+{
+	if (rt_has_peer(rt))
+		return rt_peer_ptr(rt);
+
+	rt_bind_peer(rt, daddr, create);
+	return (rt_has_peer(rt) ? rt_peer_ptr(rt) : NULL);
+}
+
 static inline struct inet_peer *rt_get_peer(struct rtable *rt, __be32 daddr)
 {
-	if (rt->peer)
-		return rt->peer;
+	return __rt_get_peer(rt, daddr, 0);
+}
 
-	rt_bind_peer(rt, daddr, 0);
-	return rt->peer;
+static inline struct inet_peer *rt_get_peer_create(struct rtable *rt, __be32 daddr)
+{
+	return __rt_get_peer(rt, daddr, 1);
 }
 
 static inline int inet_iif(const struct sk_buff *skb)

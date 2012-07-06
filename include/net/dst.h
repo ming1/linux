@@ -42,16 +42,16 @@ struct dst_entry {
 		struct dst_entry        *from;
 	};
 	struct dst_entry	*path;
-	struct neighbour __rcu	*_neighbour;
+	void			*__pad0;
 #ifdef CONFIG_XFRM
 	struct xfrm_state	*xfrm;
 #else
 	void			*__pad1;
 #endif
-	int			(*input)(struct sk_buff*);
-	int			(*output)(struct sk_buff*);
+	int			(*input)(struct sk_buff *);
+	int			(*output)(struct sk_buff *);
 
-	int			flags;
+	unsigned short		flags;
 #define DST_HOST		0x0001
 #define DST_NOXFRM		0x0002
 #define DST_NOPOLICY		0x0004
@@ -61,6 +61,8 @@ struct dst_entry {
 #define DST_NOPEER		0x0040
 #define DST_FAKE_RTABLE		0x0080
 #define DST_XFRM_TUNNEL		0x0100
+
+	unsigned short		pending_confirm;
 
 	short			error;
 	short			obsolete;
@@ -93,21 +95,6 @@ struct dst_entry {
 		struct dn_route __rcu	*dn_next;
 	};
 };
-
-static inline struct neighbour *dst_get_neighbour_noref(struct dst_entry *dst)
-{
-	return rcu_dereference(dst->_neighbour);
-}
-
-static inline struct neighbour *dst_get_neighbour_noref_raw(struct dst_entry *dst)
-{
-	return rcu_dereference_raw(dst->_neighbour);
-}
-
-static inline void dst_set_neighbour(struct dst_entry *dst, struct neighbour *neigh)
-{
-	rcu_assign_pointer(dst->_neighbour, neigh);
-}
 
 extern u32 *dst_cow_metrics_generic(struct dst_entry *dst, unsigned long old);
 extern const u32 dst_default_metrics[RTAX_MAX];
@@ -241,7 +228,7 @@ dst_metric_locked(const struct dst_entry *dst, int metric)
 	return dst_metric(dst, RTAX_LOCK) & (1<<metric);
 }
 
-static inline void dst_hold(struct dst_entry * dst)
+static inline void dst_hold(struct dst_entry *dst)
 {
 	/*
 	 * If your kernel compilation stops here, please check
@@ -264,8 +251,7 @@ static inline void dst_use_noref(struct dst_entry *dst, unsigned long time)
 	dst->lastuse = time;
 }
 
-static inline
-struct dst_entry * dst_clone(struct dst_entry * dst)
+static inline struct dst_entry *dst_clone(struct dst_entry *dst)
 {
 	if (dst)
 		atomic_inc(&dst->__refcnt);
@@ -371,12 +357,13 @@ static inline struct dst_entry *skb_dst_pop(struct sk_buff *skb)
 }
 
 extern int dst_discard(struct sk_buff *skb);
-extern void *dst_alloc(struct dst_ops * ops, struct net_device *dev,
-		       int initial_ref, int initial_obsolete, int flags);
-extern void __dst_free(struct dst_entry * dst);
-extern struct dst_entry *dst_destroy(struct dst_entry * dst);
+extern void *dst_alloc(struct dst_ops *ops, struct net_device *dev,
+		       int initial_ref, int initial_obsolete,
+		       unsigned short flags);
+extern void __dst_free(struct dst_entry *dst);
+extern struct dst_entry *dst_destroy(struct dst_entry *dst);
 
-static inline void dst_free(struct dst_entry * dst)
+static inline void dst_free(struct dst_entry *dst)
 {
 	if (dst->obsolete > 1)
 		return;
@@ -396,19 +383,35 @@ static inline void dst_rcu_free(struct rcu_head *head)
 
 static inline void dst_confirm(struct dst_entry *dst)
 {
-	if (dst) {
-		struct neighbour *n;
+	dst->pending_confirm = 1;
+}
 
-		rcu_read_lock();
-		n = dst_get_neighbour_noref(dst);
-		neigh_confirm(n);
-		rcu_read_unlock();
+static inline int dst_neigh_output(struct dst_entry *dst, struct neighbour *n,
+				   struct sk_buff *skb)
+{
+	struct hh_cache *hh;
+
+	if (unlikely(dst->pending_confirm)) {
+		n->confirmed = jiffies;
+		dst->pending_confirm = 0;
 	}
+
+	hh = &n->hh;
+	if ((n->nud_state & NUD_CONNECTED) && hh->hh_len)
+		return neigh_hh_output(hh, skb);
+	else
+		return n->output(n, skb);
 }
 
 static inline struct neighbour *dst_neigh_lookup(const struct dst_entry *dst, const void *daddr)
 {
-	return dst->ops->neigh_lookup(dst, daddr);
+	return dst->ops->neigh_lookup(dst, NULL, daddr);
+}
+
+static inline struct neighbour *dst_neigh_lookup_skb(const struct dst_entry *dst,
+						     struct sk_buff *skb)
+{
+	return dst->ops->neigh_lookup(dst, skb, NULL);
 }
 
 static inline void dst_link_failure(struct sk_buff *skb)

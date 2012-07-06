@@ -83,24 +83,12 @@ int ip6_local_out(struct sk_buff *skb)
 }
 EXPORT_SYMBOL_GPL(ip6_local_out);
 
-/* dev_loopback_xmit for use with netfilter. */
-static int ip6_dev_loopback_xmit(struct sk_buff *newskb)
-{
-	skb_reset_mac_header(newskb);
-	__skb_pull(newskb, skb_network_offset(newskb));
-	newskb->pkt_type = PACKET_LOOPBACK;
-	newskb->ip_summed = CHECKSUM_UNNECESSARY;
-	WARN_ON(!skb_dst(newskb));
-
-	netif_rx_ni(newskb);
-	return 0;
-}
-
 static int ip6_finish_output2(struct sk_buff *skb)
 {
 	struct dst_entry *dst = skb_dst(skb);
 	struct net_device *dev = dst->dev;
 	struct neighbour *neigh;
+	struct rt6_info *rt;
 
 	skb->protocol = htons(ETH_P_IPV6);
 	skb->dev = dev;
@@ -121,7 +109,7 @@ static int ip6_finish_output2(struct sk_buff *skb)
 			if (newskb)
 				NF_HOOK(NFPROTO_IPV6, NF_INET_POST_ROUTING,
 					newskb, NULL, newskb->dev,
-					ip6_dev_loopback_xmit);
+					dev_loopback_xmit);
 
 			if (ipv6_hdr(skb)->hop_limit == 0) {
 				IP6_INC_STATS(dev_net(dev), idev,
@@ -136,9 +124,10 @@ static int ip6_finish_output2(struct sk_buff *skb)
 	}
 
 	rcu_read_lock();
-	neigh = dst_get_neighbour_noref(dst);
+	rt = (struct rt6_info *) dst;
+	neigh = rt->n;
 	if (neigh) {
-		int res = neigh_output(neigh, skb);
+		int res = dst_neigh_output(dst, neigh, skb);
 
 		rcu_read_unlock();
 		return res;
@@ -463,6 +452,7 @@ int ip6_forward(struct sk_buff *skb)
 	 */
 	if (skb->dev == dst->dev && opt->srcrt == 0 && !skb_sec_path(skb)) {
 		struct in6_addr *target = NULL;
+		struct inet_peer *peer;
 		struct rt6_info *rt;
 
 		/*
@@ -476,13 +466,12 @@ int ip6_forward(struct sk_buff *skb)
 		else
 			target = &hdr->daddr;
 
-		if (!rt->rt6i_peer)
-			rt6_bind_peer(rt, 1);
+		peer = rt6_get_peer_create(rt);
 
 		/* Limit redirects both by destination (here)
 		   and by source (inside ndisc_send_redirect)
 		 */
-		if (inet_peer_xrlim_allow(rt->rt6i_peer, 1*HZ))
+		if (inet_peer_xrlim_allow(peer, 1*HZ))
 			ndisc_send_redirect(skb, target);
 	} else {
 		int addrtype = ipv6_addr_type(&hdr->saddr);
@@ -603,11 +592,8 @@ void ipv6_select_ident(struct frag_hdr *fhdr, struct rt6_info *rt)
 	int old, new;
 
 	if (rt && !(rt->dst.flags & DST_NOPEER)) {
-		struct inet_peer *peer;
+		struct inet_peer *peer = rt6_get_peer_create(rt);
 
-		if (!rt->rt6i_peer)
-			rt6_bind_peer(rt, 1);
-		peer = rt->rt6i_peer;
 		if (peer) {
 			fhdr->identification = htonl(inet_getid(peer, 0));
 			return;
@@ -960,6 +946,7 @@ static int ip6_dst_lookup_tail(struct sock *sk,
 	struct net *net = sock_net(sk);
 #ifdef CONFIG_IPV6_OPTIMISTIC_DAD
 	struct neighbour *n;
+	struct rt6_info *rt;
 #endif
 	int err;
 
@@ -988,7 +975,8 @@ static int ip6_dst_lookup_tail(struct sock *sk,
 	 * dst entry of the nexthop router
 	 */
 	rcu_read_lock();
-	n = dst_get_neighbour_noref(*dst);
+	rt = (struct rt6_info *) dst;
+	n = rt->n;
 	if (n && !(n->nud_state & NUD_VALID)) {
 		struct inet6_ifaddr *ifp;
 		struct flowi6 fl_gw6;

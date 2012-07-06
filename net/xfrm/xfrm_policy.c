@@ -1500,9 +1500,6 @@ static struct dst_entry *xfrm_bundle_create(struct xfrm_policy *policy,
 	if (!dev)
 		goto free_dst;
 
-	/* Copy neighbour for reachability confirmation */
-	dst_set_neighbour(dst0, neigh_clone(dst_get_neighbour_noref(dst)));
-
 	xfrm_init_path((struct xfrm_dst *)dst0, dst, nfheader_len);
 	xfrm_init_pmtu(dst_prev);
 
@@ -2404,9 +2401,11 @@ static unsigned int xfrm_mtu(const struct dst_entry *dst)
 	return mtu ? : dst_mtu(dst->path);
 }
 
-static struct neighbour *xfrm_neigh_lookup(const struct dst_entry *dst, const void *daddr)
+static struct neighbour *xfrm_neigh_lookup(const struct dst_entry *dst,
+					   struct sk_buff *skb,
+					   const void *daddr)
 {
-	return dst_neigh_lookup(dst->path, daddr);
+	return dst->path->ops->neigh_lookup(dst, skb, daddr);
 }
 
 int xfrm_policy_register_afinfo(struct xfrm_policy_afinfo *afinfo)
