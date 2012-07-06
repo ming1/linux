@@ -4,17 +4,6 @@
 /* target_core_alua.c */
 extern struct t10_alua_lu_gp *default_lu_gp;
 
-/* target_core_cdb.c */
-int	target_emulate_inquiry(struct se_cmd *cmd);
-int	target_emulate_readcapacity(struct se_cmd *cmd);
-int	target_emulate_readcapacity_16(struct se_cmd *cmd);
-int	target_emulate_modesense(struct se_cmd *cmd);
-int	target_emulate_request_sense(struct se_cmd *cmd);
-int	target_emulate_unmap(struct se_cmd *cmd);
-int	target_emulate_write_same(struct se_cmd *cmd);
-int	target_emulate_synchronize_cache(struct se_cmd *cmd);
-int	target_emulate_noop(struct se_cmd *cmd);
-
 /* target_core_device.c */
 struct se_dev_entry *core_get_se_deve_from_rtpi(struct se_node_acl *, u16);
 int	core_free_device_list_for_node(struct se_node_acl *,
@@ -104,7 +93,6 @@ void	release_se_kmem_caches(void);
 u32	scsi_get_new_index(scsi_index_t);
 void	transport_subsystem_check_init(void);
 void	transport_cmd_finish_abort(struct se_cmd *, int);
-void	__target_remove_from_execute_list(struct se_cmd *);
 unsigned char *transport_dump_cmd_direction(struct se_cmd *);
 void	transport_dump_dev_state(struct se_device *, char *, int *);
 void	transport_dump_dev_info(struct se_device *, struct se_lun *,
@@ -116,6 +104,7 @@ int	transport_dump_vpd_ident(struct t10_vpd *, unsigned char *, int);
 bool	target_stop_cmd(struct se_cmd *cmd, unsigned long *flags);
 int	transport_clear_lun_from_sessions(struct se_lun *);
 void	transport_send_task_abort(struct se_cmd *);
+int	target_cmd_size_check(struct se_cmd *cmd, unsigned int size);
 
 /* target_core_stat.c */
 void	target_stat_setup_dev_default_groups(struct se_subsystem_dev *);
