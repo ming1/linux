@@ -25,6 +25,7 @@
 #define CLK_SET_RATE_PARENT	BIT(2) /* propagate rate change up one level */
 #define CLK_IGNORE_UNUSED	BIT(3) /* do not gate even if unused */
 #define CLK_IS_ROOT		BIT(4) /* root clk, has no parent */
+#define CLK_IS_BASIC		BIT(5) /* Basic clk, can't do a to_clk_foo() */
 
 struct clk_hw;
 
@@ -143,7 +144,7 @@ struct clk_init_data {
  */
 struct clk_hw {
 	struct clk *clk;
-	struct clk_init_data *init;
+	const struct clk_init_data *init;
 };
 
 /*
@@ -203,6 +204,11 @@ struct clk *clk_register_gate(struct device *dev, const char *name,
 		void __iomem *reg, u8 bit_idx,
 		u8 clk_gate_flags, spinlock_t *lock);
 
+struct clk_div_table {
+	unsigned int	val;
+	unsigned int	div;
+};
+
 /**
  * struct clk_divider - adjustable divider clock
  *
@@ -210,6 +216,7 @@ struct clk *clk_register_gate(struct device *dev, const char *name,
  * @reg:	register containing the divider
  * @shift:	shift to the divider bit field
  * @width:	width of the divider bit field
+ * @table:	array of value/divider pairs, last entry should have div = 0
  * @lock:	register lock
  *
  * Clock with an adjustable divider affecting its output frequency.  Implements
@@ -229,6 +236,7 @@ struct clk_divider {
 	u8		shift;
 	u8		width;
 	u8		flags;
+	const struct clk_div_table	*table;
 	spinlock_t	*lock;
 };
 
@@ -240,6 +248,11 @@ struct clk *clk_register_divider(struct device *dev, const char *name,
 		const char *parent_name, unsigned long flags,
 		void __iomem *reg, u8 shift, u8 width,
 		u8 clk_divider_flags, spinlock_t *lock);
+struct clk *clk_register_divider_table(struct device *dev, const char *name,
+		const char *parent_name, unsigned long flags,
+		void __iomem *reg, u8 shift, u8 width,
+		u8 clk_divider_flags, const struct clk_div_table *table,
+		spinlock_t *lock);
 
 /**
  * struct clk_mux - multiplexer clock
