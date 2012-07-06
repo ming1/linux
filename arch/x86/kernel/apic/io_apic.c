@@ -1113,7 +1113,6 @@ __assign_irq_vector(int irq, struct irq_cfg *cfg, const struct cpumask *mask)
 	 */
 	static int current_vector = FIRST_EXTERNAL_VECTOR + VECTOR_OFFSET_START;
 	static int current_offset = VECTOR_OFFSET_START % 16;
-	unsigned int old_vector;
 	int cpu, err;
 	cpumask_var_t tmp_mask;
 
@@ -1123,27 +1122,28 @@ __assign_irq_vector(int irq, struct irq_cfg *cfg, const struct cpumask *mask)
 	if (!alloc_cpumask_var(&tmp_mask, GFP_ATOMIC))
 		return -ENOMEM;
 
-	old_vector = cfg->vector;
-	if (old_vector) {
-		cpumask_and(tmp_mask, mask, cpu_online_mask);
-		if (cpumask_subset(tmp_mask, cfg->domain)) {
-			free_cpumask_var(tmp_mask);
-			return 0;
-		}
-	}
-
 	/* Only try and allocate irqs on cpus that are present */
 	err = -ENOSPC;
-	for_each_cpu_and(cpu, mask, cpu_online_mask) {
-		int new_cpu;
-		int vector, offset;
-		bool more_domains;
+	cpumask_clear(cfg->old_domain);
+	cpu = cpumask_first_and(mask, cpu_online_mask);
+	while (cpu < nr_cpu_ids) {
+		int new_cpu, vector, offset;
 
-		more_domains = apic->vector_allocation_domain(cpu, tmp_mask);
+		apic->vector_allocation_domain(cpu, tmp_mask, mask);
 
 		if (cpumask_subset(tmp_mask, cfg->domain)) {
-			free_cpumask_var(tmp_mask);
-			return 0;
+			err = 0;
+			if (cpumask_equal(tmp_mask, cfg->domain))
+				break;
+			/*
+			 * New cpumask using the vector is a proper subset of
+			 * the current in use mask. So cleanup the vector
+			 * allocation for the members that are not used anymore.
+			 */
+			cpumask_andnot(cfg->old_domain, cfg->domain, tmp_mask);
+			cfg->move_in_progress = 1;
+			cpumask_and(cfg->domain, cfg->domain, tmp_mask);
+			break;
 		}
 
 		vector = current_vector;
@@ -1156,10 +1156,10 @@ next:
 		}
 
 		if (unlikely(current_vector == vector)) {
-			if (more_domains)
-				continue;
-			else
-				break;
+			cpumask_or(cfg->old_domain, cfg->old_domain, tmp_mask);
+			cpumask_andnot(tmp_mask, mask, cfg->old_domain);
+			cpu = cpumask_first_and(tmp_mask, cpu_online_mask);
+			continue;
 		}
 
 		if (test_bit(vector, used_vectors))
@@ -1171,7 +1171,7 @@ next:
 		/* Found one! */
 		current_vector = vector;
 		current_offset = offset;
-		if (old_vector) {
+		if (cfg->vector) {
 			cfg->move_in_progress = 1;
 			cpumask_copy(cfg->old_domain, cfg->domain);
 		}
