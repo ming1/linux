@@ -430,7 +430,7 @@ nfs_setattr(struct dentry *dentry, struct iattr *attr)
 	 * Return any delegations if we're going to change ACLs
 	 */
 	if ((attr->ia_valid & (ATTR_MODE|ATTR_UID|ATTR_GID)) != 0)
-		nfs_inode_return_delegation(inode);
+		NFS_PROTO(inode)->return_delegation(inode);
 	error = NFS_PROTO(inode)->setattr(dentry, fattr, attr);
 	if (error == 0)
 		nfs_refresh_inode(inode, fattr);
@@ -1457,7 +1457,7 @@ static int nfs_update_inode(struct inode *inode, struct nfs_fattr *fattr)
 	if (!(S_ISREG(inode->i_mode) || S_ISDIR(inode->i_mode)
 				|| S_ISLNK(inode->i_mode)))
 		invalid &= ~NFS_INO_INVALID_DATA;
-	if (!nfs_have_delegation(inode, FMODE_READ) ||
+	if (!NFS_PROTO(inode)->have_delegation(inode, FMODE_READ) ||
 			(save_cache_validity & NFS_INO_REVAL_FORCED))
 		nfsi->cache_validity |= invalid;
 
