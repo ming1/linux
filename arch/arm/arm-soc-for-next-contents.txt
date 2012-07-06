@@ -30,6 +30,7 @@ lpc32xx/dt		git://git.antcom.de/linux-2.6.git lpc32xx/dts
 				depends on lpc32xx/devel
 imx6/dt			git://git.linaro.org/people/shawnguo/linux-2.6.git imx/dt-for-3.6
 mxs/dt			git://git.linaro.org/people/shawnguo/linux-2.6.git mxs/dt-for-3.6
+ux500/dt		git://git.linaro.org/people/ljones/linux-3.0-ux500.git for-arm-soc-next
 
 next/defconfig
 lpc32xx/defconfig	git://git.antcom.de/linux-2.6.git lpc32xx/defconfig

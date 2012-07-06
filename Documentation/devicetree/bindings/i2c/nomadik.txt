@@ -1,0 +1,33 @@
+I2C for Nomadik based systems
+
+Required (non-standard) properties:
+ - Nil
+
+Recommended (non-standard) properties:
+ - clock-frequency : Maximum bus clock frequency for the device
+ - stericsson,slsu : Data line delay
+ - stericsson,tft : Tx FIFO threshold
+ - stericsson,rft : Rx FIFO threshold
+ - stericsson,timeout : Slave response timeout(ms)
+ - stericsson,i2c_freq_mode_fast : I2C fast mode (omit for standard mode)
+
+Optional (non-standard) properties:
+ - Nil
+
+Example :
+
+i2c@80004000 {
+        compatible = "stericsson,db8500-i2c", "st,nomadik-i2c";
+        reg = <0x80004000 0x1000>;
+        interrupts = <0 21 0x4>;
+        #address-cells = <1>;
+        #size-cells = <0>;
+        v-i2c-supply = <&db8500_vape_reg>;
+
+        clock-frequency = <100000>;
+        stericsson,slsu = <0xe>;
+        stericsson,tft = <1>;
+        stericsson,rft = <8>;
+        stericsson,timeout = <200>;
+        stericsson,i2c_freq_mode_fast;
+};
