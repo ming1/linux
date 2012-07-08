@@ -255,13 +255,13 @@ config LOCKD_V4
 	default y
 
 config NFS_ACL_SUPPORT
-	tristate
+	def_tristate y
+	depends on (NFS_FS && NFS_V3_ACL) || (NFSD && (NFSD_V2_ACL || NFSD_V3_ACL))
 	select FS_POSIX_ACL
 
 config NFS_COMMON
-	bool
-	depends on NFSD || NFS_FS
-	default y
+	def_bool y
+	depends on NFS_ACL_SUPPORT
 
 source "net/sunrpc/Kconfig"
 source "fs/ceph/Kconfig"

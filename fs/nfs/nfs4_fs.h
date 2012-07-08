@@ -202,6 +202,9 @@ struct nfs4_state_maintenance_ops {
 extern const struct dentry_operations nfs4_dentry_operations;
 extern const struct inode_operations nfs4_dir_inode_operations;
 
+/* write.c */
+int nfs4_write_inode(struct inode *, struct writeback_control *);
+
 /* nfs4namespace.c */
 rpc_authflavor_t nfs_find_best_sec(struct nfs4_secinfo_flavors *);
 struct rpc_clnt *nfs4_create_sec_client(struct rpc_clnt *, struct inode *, struct qstr *);
@@ -300,6 +303,10 @@ extern const u32 nfs4_statfs_bitmap[2];
 extern const u32 nfs4_pathconf_bitmap[2];
 extern const u32 nfs4_fsinfo_bitmap[3];
 extern const u32 nfs4_fs_locations_bitmap[2];
+
+void nfs4_free_client(struct nfs_client *);
+
+struct nfs_client *nfs4_alloc_client(const struct nfs_client_initdata *);
 
 /* nfs4renewd.c */
 extern void nfs4_schedule_state_renewal(struct nfs_client *);
