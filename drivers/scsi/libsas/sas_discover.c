@@ -39,6 +39,7 @@ void sas_init_dev(struct domain_device *dev)
 {
 	switch (dev->dev_type) {
 	case SAS_END_DEV:
+		INIT_LIST_HEAD(&dev->ssp_dev.eh_list_node);
 		break;
 	case EDGE_DEV:
 	case FANOUT_DEV:
@@ -286,6 +287,8 @@ void sas_free_device(struct kref *kref)
 
 static void sas_unregister_common_dev(struct asd_sas_port *port, struct domain_device *dev)
 {
+	struct sas_ha_struct *ha = port->ha;
+
 	sas_notify_lldd_dev_gone(dev);
 	if (!dev->parent)
 		dev->port->port_dev = NULL;
@@ -294,7 +297,17 @@ static void sas_unregister_common_dev(struct asd_sas_port *port, struct domain_d
 
 	spin_lock_irq(&port->dev_list_lock);
 	list_del_init(&dev->dev_list_node);
+	if (dev_is_sata(dev))
+		sas_ata_end_eh(dev->sata_dev.ap);
 	spin_unlock_irq(&port->dev_list_lock);
+
+	spin_lock_irq(&ha->lock);
+	if (dev->dev_type == SAS_END_DEV &&
+	    !list_empty(&dev->ssp_dev.eh_list_node)) {
+		list_del_init(&dev->ssp_dev.eh_list_node);
+		ha->eh_active--;
+	}
+	spin_unlock_irq(&ha->lock);
 
 	sas_put_device(dev);
 }
@@ -488,9 +501,9 @@ static void sas_chain_event(int event, unsigned long *pending,
 	if (!test_and_set_bit(event, pending)) {
 		unsigned long flags;
 
-		spin_lock_irqsave(&ha->state_lock, flags);
+		spin_lock_irqsave(&ha->lock, flags);
 		sas_chain_work(ha, sw);
-		spin_unlock_irqrestore(&ha->state_lock, flags);
+		spin_unlock_irqrestore(&ha->lock, flags);
 	}
 }
 
