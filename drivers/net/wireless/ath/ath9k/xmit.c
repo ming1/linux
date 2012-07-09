@@ -105,19 +105,19 @@ static int ath_max_4ms_framelen[4][32] = {
 /* Aggregation logic */
 /*********************/
 
-static void ath_txq_lock(struct ath_softc *sc, struct ath_txq *txq)
+void ath_txq_lock(struct ath_softc *sc, struct ath_txq *txq)
 	__acquires(&txq->axq_lock)
 {
 	spin_lock_bh(&txq->axq_lock);
 }
 
-static void ath_txq_unlock(struct ath_softc *sc, struct ath_txq *txq)
+void ath_txq_unlock(struct ath_softc *sc, struct ath_txq *txq)
 	__releases(&txq->axq_lock)
 {
 	spin_unlock_bh(&txq->axq_lock);
 }
 
-static void ath_txq_unlock_complete(struct ath_softc *sc, struct ath_txq *txq)
+void ath_txq_unlock_complete(struct ath_softc *sc, struct ath_txq *txq)
 	__releases(&txq->axq_lock)
 {
 	struct sk_buff_head q;
@@ -1165,12 +1165,24 @@ int ath_tx_aggr_start(struct ath_softc *sc, struct ieee80211_sta *sta,
 {
 	struct ath_atx_tid *txtid;
 	struct ath_node *an;
+	u8 density;
 
 	an = (struct ath_node *)sta->drv_priv;
 	txtid = ATH_AN_2_TID(an, tid);
 
 	if (txtid->state & (AGGR_CLEANUP | AGGR_ADDBA_COMPLETE))
 		return -EAGAIN;
+
+	/* update ampdu factor/density, they may have changed. This may happen
+	 * in HT IBSS when a beacon with HT-info is received after the station
+	 * has already been added.
+	 */
+	if (sc->sc_ah->caps.hw_caps & ATH9K_HW_CAP_HT) {
+		an->maxampdu = 1 << (IEEE80211_HT_MAX_AMPDU_FACTOR +
+				     sta->ht_cap.ampdu_factor);
+		density = ath9k_parse_mpdudensity(sta->ht_cap.ampdu_density);
+		an->mpdudensity = density;
+	}
 
 	txtid->state |= AGGR_ADDBA_PROGRESS;
 	txtid->paused = true;
@@ -1526,7 +1538,7 @@ bool ath_drain_all_txq(struct ath_softc *sc, bool retry_tx)
 	int i;
 	u32 npend = 0;
 
-	if (sc->sc_flags & SC_OP_INVALID)
+	if (test_bit(SC_OP_INVALID, &sc->sc_flags))
 		return true;
 
 	ath9k_hw_abort_tx_dma(ah);
@@ -1999,6 +2011,7 @@ static void ath_tx_complete(struct ath_softc *sc, struct sk_buff *skb,
 	struct ath_common *common = ath9k_hw_common(sc->sc_ah);
 	struct ieee80211_hdr * hdr = (struct ieee80211_hdr *)skb->data;
 	int q, padpos, padsize;
+	unsigned long flags;
 
 	ath_dbg(common, XMIT, "TX complete: skb: %p\n", skb);
 
@@ -2017,6 +2030,7 @@ static void ath_tx_complete(struct ath_softc *sc, struct sk_buff *skb,
 		skb_pull(skb, padsize);
 	}
 
+	spin_lock_irqsave(&sc->sc_pm_lock, flags);
 	if ((sc->ps_flags & PS_WAIT_FOR_TX_ACK) && !txq->axq_depth) {
 		sc->ps_flags &= ~PS_WAIT_FOR_TX_ACK;
 		ath_dbg(common, PS,
@@ -2026,6 +2040,7 @@ static void ath_tx_complete(struct ath_softc *sc, struct sk_buff *skb,
 					PS_WAIT_FOR_PSPOLL_DATA |
 					PS_WAIT_FOR_TX_ACK));
 	}
+	spin_unlock_irqrestore(&sc->sc_pm_lock, flags);
 
 	q = skb_get_queue_mapping(skb);
 	if (txq == sc->tx.txq_map[q]) {
@@ -2235,46 +2250,6 @@ static void ath_tx_processq(struct ath_softc *sc, struct ath_txq *txq)
 	}
 	ath_txq_unlock_complete(sc, txq);
 }
-
-static void ath_tx_complete_poll_work(struct work_struct *work)
-{
-	struct ath_softc *sc = container_of(work, struct ath_softc,
-			tx_complete_work.work);
-	struct ath_txq *txq;
-	int i;
-	bool needreset = false;
-#ifdef CONFIG_ATH9K_DEBUGFS
-	sc->tx_complete_poll_work_seen++;
-#endif
-
-	for (i = 0; i < ATH9K_NUM_TX_QUEUES; i++)
-		if (ATH_TXQ_SETUP(sc, i)) {
-			txq = &sc->tx.txq[i];
-			ath_txq_lock(sc, txq);
-			if (txq->axq_depth) {
-				if (txq->axq_tx_inprogress) {
-					needreset = true;
-					ath_txq_unlock(sc, txq);
-					break;
-				} else {
-					txq->axq_tx_inprogress = true;
-				}
-			}
-			ath_txq_unlock_complete(sc, txq);
-		}
-
-	if (needreset) {
-		ath_dbg(ath9k_hw_common(sc->sc_ah), RESET,
-			"tx hung, resetting the chip\n");
-		RESET_STAT_INC(sc, RESET_TYPE_TX_HANG);
-		ieee80211_queue_work(sc->hw, &sc->hw_reset_work);
-	}
-
-	ieee80211_queue_delayed_work(sc->hw, &sc->tx_complete_work,
-			msecs_to_jiffies(ATH_TX_COMPLETE_POLL_INT));
-}
-
-
 
 void ath_tx_tasklet(struct ath_softc *sc)
 {

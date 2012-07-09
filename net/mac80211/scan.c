@@ -114,8 +114,7 @@ ieee80211_bss_info_update(struct ieee80211_local *local,
 
 	if (elems->tim && (!elems->parse_error ||
 			   !(bss->valid_data & IEEE80211_BSS_VALID_DTIM))) {
-		struct ieee80211_tim_ie *tim_ie =
-			(struct ieee80211_tim_ie *)elems->tim;
+		struct ieee80211_tim_ie *tim_ie = elems->tim;
 		bss->dtim_period = tim_ie->dtim_period;
 		if (!elems->parse_error)
 				bss->valid_data |= IEEE80211_BSS_VALID_DTIM;
@@ -323,7 +322,7 @@ static void __ieee80211_scan_completed(struct ieee80211_hw *hw, bool aborted,
 	ieee80211_mlme_notify_scan_completed(local);
 	ieee80211_ibss_notify_scan_completed(local);
 	ieee80211_mesh_notify_scan_completed(local);
-	ieee80211_queue_work(&local->hw, &local->work_work);
+	ieee80211_start_next_roc(local);
 }
 
 void ieee80211_scan_completed(struct ieee80211_hw *hw, bool aborted)
@@ -376,7 +375,7 @@ static int ieee80211_start_sw_scan(struct ieee80211_local *local)
 static bool ieee80211_can_scan(struct ieee80211_local *local,
 			       struct ieee80211_sub_if_data *sdata)
 {
-	if (!list_empty(&local->work_list))
+	if (!list_empty(&local->roc_list))
 		return false;
 
 	if (sdata->vif.type == NL80211_IFTYPE_STATION &&
