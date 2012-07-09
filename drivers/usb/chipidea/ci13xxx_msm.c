@@ -45,7 +45,7 @@ static void ci13xxx_msm_notify_event(struct ci13xxx *udc, unsigned event)
 	}
 }
 
-static struct ci13xxx_udc_driver ci13xxx_msm_udc_driver = {
+static struct ci13xxx_platform_data ci13xxx_msm_platdata = {
 	.name			= "ci13xxx_msm",
 	.flags			= CI13XXX_REGS_SHARED |
 				  CI13XXX_REQUIRE_TRANSCEIVER |
@@ -55,7 +55,7 @@ static struct ci13xxx_udc_driver ci13xxx_msm_udc_driver = {
 	.notify_event		= ci13xxx_msm_notify_event,
 };
 
-static int ci13xxx_msm_probe(struct platform_device *pdev)
+static int __devinit ci13xxx_msm_probe(struct platform_device *pdev)
 {
 	struct platform_device *plat_ci;
 	int ret;
@@ -75,14 +75,16 @@ static int ci13xxx_msm_probe(struct platform_device *pdev)
 		goto put_platform;
 	}
 
-	ret = platform_device_add_data(plat_ci, &ci13xxx_msm_udc_driver,
-				       sizeof(ci13xxx_msm_udc_driver));
+	ret = platform_device_add_data(plat_ci, &ci13xxx_msm_platdata,
+				       sizeof(ci13xxx_msm_platdata));
 	if (ret)
 		goto put_platform;
 
 	ret = platform_device_add(plat_ci);
 	if (ret)
 		goto put_platform;
+
+	platform_set_drvdata(pdev, plat_ci);
 
 	pm_runtime_no_callbacks(&pdev->dev);
 	pm_runtime_enable(&pdev->dev);
@@ -95,16 +97,23 @@ put_platform:
 	return ret;
 }
 
+static int __devexit ci13xxx_msm_remove(struct platform_device *pdev)
+{
+	struct platform_device *plat_ci = platform_get_drvdata(pdev);
+
+	pm_runtime_disable(&pdev->dev);
+	platform_device_unregister(plat_ci);
+
+	return 0;
+}
+
 static struct platform_driver ci13xxx_msm_driver = {
 	.probe = ci13xxx_msm_probe,
+	.remove = __devexit_p(ci13xxx_msm_remove),
 	.driver = { .name = "msm_hsusb", },
 };
+
+module_platform_driver(ci13xxx_msm_driver);
+
 MODULE_ALIAS("platform:msm_hsusb");
-
-static int __init ci13xxx_msm_init(void)
-{
-	return platform_driver_register(&ci13xxx_msm_driver);
-}
-module_init(ci13xxx_msm_init);
-
 MODULE_LICENSE("GPL v2");

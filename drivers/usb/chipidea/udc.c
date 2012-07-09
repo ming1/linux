@@ -14,6 +14,7 @@
 #include <linux/device.h>
 #include <linux/dmapool.h>
 #include <linux/dma-mapping.h>
+#include <linux/err.h>
 #include <linux/init.h>
 #include <linux/platform_device.h>
 #include <linux/module.h>
@@ -1362,7 +1363,7 @@ static int ci13xxx_vbus_session(struct usb_gadget *_gadget, int is_active)
 	unsigned long flags;
 	int gadget_ready = 0;
 
-	if (!(udc->udc_driver->flags & CI13XXX_PULLUP_ON_VBUS))
+	if (!(udc->platdata->flags & CI13XXX_PULLUP_ON_VBUS))
 		return -EOPNOTSUPP;
 
 	spin_lock_irqsave(&udc->lock, flags);
@@ -1378,8 +1379,8 @@ static int ci13xxx_vbus_session(struct usb_gadget *_gadget, int is_active)
 			hw_device_state(udc, udc->ep0out->qh.dma);
 		} else {
 			hw_device_state(udc, 0);
-			if (udc->udc_driver->notify_event)
-				udc->udc_driver->notify_event(udc,
+			if (udc->platdata->notify_event)
+				udc->platdata->notify_event(udc,
 				CI13XXX_CONTROLLER_STOPPED_EVENT);
 			_gadget_stop_activity(&udc->gadget);
 			pm_runtime_put_sync(&_gadget->dev);
@@ -1514,9 +1515,9 @@ static int ci13xxx_start(struct usb_gadget *gadget,
 
 	udc->driver = driver;
 	pm_runtime_get_sync(&udc->gadget.dev);
-	if (udc->udc_driver->flags & CI13XXX_PULLUP_ON_VBUS) {
+	if (udc->platdata->flags & CI13XXX_PULLUP_ON_VBUS) {
 		if (udc->vbus_active) {
-			if (udc->udc_driver->flags & CI13XXX_REGS_SHARED)
+			if (udc->platdata->flags & CI13XXX_REGS_SHARED)
 				hw_device_reset(udc, USBMODE_CM_DC);
 		} else {
 			pm_runtime_put_sync(&udc->gadget.dev);
@@ -1544,11 +1545,11 @@ static int ci13xxx_stop(struct usb_gadget *gadget,
 
 	spin_lock_irqsave(&udc->lock, flags);
 
-	if (!(udc->udc_driver->flags & CI13XXX_PULLUP_ON_VBUS) ||
+	if (!(udc->platdata->flags & CI13XXX_PULLUP_ON_VBUS) ||
 			udc->vbus_active) {
 		hw_device_state(udc, 0);
-		if (udc->udc_driver->notify_event)
-			udc->udc_driver->notify_event(udc,
+		if (udc->platdata->notify_event)
+			udc->platdata->notify_event(udc,
 			CI13XXX_CONTROLLER_STOPPED_EVENT);
 		udc->driver = NULL;
 		spin_unlock_irqrestore(&udc->lock, flags);
@@ -1581,7 +1582,7 @@ static irqreturn_t udc_irq(struct ci13xxx *udc)
 
 	spin_lock(&udc->lock);
 
-	if (udc->udc_driver->flags & CI13XXX_REGS_SHARED) {
+	if (udc->platdata->flags & CI13XXX_REGS_SHARED) {
 		if (hw_read(udc, OP_USBMODE, USBMODE_CM) !=
 				USBMODE_CM_DC) {
 			spin_unlock(&udc->lock);
@@ -1647,16 +1648,13 @@ static int udc_start(struct ci13xxx *udc)
 	struct device *dev = udc->dev;
 	int retval = 0;
 
-	if (!udc)
-		return -EINVAL;
-
 	spin_lock_init(&udc->lock);
 
 	udc->gadget.ops          = &usb_gadget_ops;
 	udc->gadget.speed        = USB_SPEED_UNKNOWN;
 	udc->gadget.max_speed    = USB_SPEED_HIGH;
 	udc->gadget.is_otg       = 0;
-	udc->gadget.name         = udc->udc_driver->name;
+	udc->gadget.name         = udc->platdata->name;
 
 	INIT_LIST_HEAD(&udc->gadget.ep_list);
 
@@ -1687,16 +1685,16 @@ static int udc_start(struct ci13xxx *udc)
 
 	udc->gadget.ep0 = &udc->ep0in->ep;
 
-	udc->transceiver = usb_get_transceiver();
+	udc->transceiver = usb_get_phy(USB_PHY_TYPE_USB2);
 
-	if (udc->udc_driver->flags & CI13XXX_REQUIRE_TRANSCEIVER) {
+	if (udc->platdata->flags & CI13XXX_REQUIRE_TRANSCEIVER) {
 		if (udc->transceiver == NULL) {
 			retval = -ENODEV;
 			goto free_pools;
 		}
 	}
 
-	if (!(udc->udc_driver->flags & CI13XXX_REGS_SHARED)) {
+	if (!(udc->platdata->flags & CI13XXX_REGS_SHARED)) {
 		retval = hw_device_reset(udc, USBMODE_CM_DC);
 		if (retval)
 			goto put_transceiver;
@@ -1712,7 +1710,7 @@ static int udc_start(struct ci13xxx *udc)
 	if (retval)
 		goto unreg_device;
 
-	if (udc->transceiver) {
+	if (!IS_ERR_OR_NULL(udc->transceiver)) {
 		retval = otg_set_peripheral(udc->transceiver->otg,
 						&udc->gadget);
 		if (retval)
@@ -1729,9 +1727,9 @@ static int udc_start(struct ci13xxx *udc)
 	return retval;
 
 remove_trans:
-	if (udc->transceiver) {
+	if (!IS_ERR_OR_NULL(udc->transceiver)) {
 		otg_set_peripheral(udc->transceiver->otg, &udc->gadget);
-		usb_put_transceiver(udc->transceiver);
+		usb_put_phy(udc->transceiver);
 	}
 
 	dev_err(dev, "error = %i\n", retval);
@@ -1740,8 +1738,8 @@ remove_dbg:
 unreg_device:
 	device_unregister(&udc->gadget.dev);
 put_transceiver:
-	if (udc->transceiver)
-		usb_put_transceiver(udc->transceiver);
+	if (!IS_ERR_OR_NULL(udc->transceiver))
+		usb_put_phy(udc->transceiver);
 free_pools:
 	dma_pool_destroy(udc->td_pool);
 free_qh_pool:
@@ -1772,9 +1770,9 @@ static void udc_stop(struct ci13xxx *udc)
 	dma_pool_destroy(udc->td_pool);
 	dma_pool_destroy(udc->qh_pool);
 
-	if (udc->transceiver) {
+	if (!IS_ERR_OR_NULL(udc->transceiver)) {
 		otg_set_peripheral(udc->transceiver->otg, NULL);
-		usb_put_transceiver(udc->transceiver);
+		usb_put_phy(udc->transceiver);
 	}
 	dbg_remove_files(&udc->gadget.dev);
 	device_unregister(&udc->gadget.dev);
