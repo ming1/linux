@@ -79,7 +79,8 @@ enum phy_event {
 	PHYE_OOB_DONE         = 1,
 	PHYE_OOB_ERROR        = 2,
 	PHYE_SPINUP_HOLD      = 3, /* hot plug SATA, no COMWAKE sent */
-	PHY_NUM_EVENTS        = 4,
+	PHYE_RESUME_TIMEOUT   = 4,
+	PHY_NUM_EVENTS        = 5,
 };
 
 enum discover_event {
@@ -87,8 +88,10 @@ enum discover_event {
 	DISCE_REVALIDATE_DOMAIN = 1,
 	DISCE_PORT_GONE         = 2,
 	DISCE_PROBE		= 3,
-	DISCE_DESTRUCT		= 4,
-	DISC_NUM_EVENTS		= 5,
+	DISCE_SUSPEND		= 4,
+	DISCE_RESUME		= 5,
+	DISCE_DESTRUCT		= 6,
+	DISC_NUM_EVENTS		= 7,
 };
 
 /* ---------- Expander Devices ---------- */
@@ -128,7 +131,7 @@ struct ex_phy {
 	u8   attached_sas_addr[SAS_ADDR_SIZE];
 	u8   attached_phy_id;
 
-	u8   phy_change_count;
+	int phy_change_count;
 	enum routing_attribute routing_attr;
 	u8   virtual:1;
 
@@ -141,7 +144,7 @@ struct ex_phy {
 struct expander_device {
 	struct list_head children;
 
-	u16    ex_change_count;
+	int    ex_change_count;
 	u16    max_route_indexes;
 	u8     num_phys;
 
@@ -169,7 +172,7 @@ struct sata_device {
         enum   ata_command_set command_set;
         struct smp_resp        rps_resp; /* report_phy_sata_resp */
         u8     port_no;        /* port number, if this is a PM (Port) */
-        struct list_head children; /* PM Ports if this is a PM */
+	int    pm_result;
 
 	struct ata_port *ap;
 	struct ata_host ata_host;
@@ -183,6 +186,7 @@ struct ssp_device {
 
 enum {
 	SAS_DEV_GONE,
+	SAS_DEV_FOUND, /* device notified to lldd */
 	SAS_DEV_DESTROY,
 	SAS_DEV_EH_PENDING,
 	SAS_DEV_LU_RESET,
@@ -274,6 +278,7 @@ struct asd_sas_port {
 	enum   sas_linkrate linkrate;
 
 	struct sas_work work;
+	int suspended;
 
 /* public: */
 	int id;
@@ -322,6 +327,7 @@ struct asd_sas_phy {
 	unsigned long phy_events_pending;
 
 	int error;
+	int suspended;
 
 	struct sas_phy *phy;
 
@@ -614,10 +620,6 @@ struct sas_task {
 
 	enum   sas_protocol      task_proto;
 
-	/* Used by the discovery code. */
-	struct timer_list     timer;
-	struct completion     completion;
-
 	union {
 		struct sas_ata_task ata_task;
 		struct sas_smp_task smp_task;
@@ -634,8 +636,15 @@ struct sas_task {
 
 	void   *lldd_task;	  /* for use by LLDDs */
 	void   *uldd_task;
+	struct sas_task_slow *slow_task;
+};
 
-	struct work_struct abort_work;
+struct sas_task_slow {
+	/* standard/extra infrastructure for slow path commands (SMP and
+	 * internal lldd commands
+	 */
+	struct timer_list     timer;
+	struct completion     completion;
 };
 
 #define SAS_TASK_STATE_PENDING      1
@@ -645,6 +654,7 @@ struct sas_task {
 #define SAS_TASK_AT_INITIATOR       16
 
 extern struct sas_task *sas_alloc_task(gfp_t flags);
+extern struct sas_task *sas_alloc_slow_task(gfp_t flags);
 extern void sas_free_task(struct sas_task *task);
 
 struct sas_domain_function_template {
@@ -684,6 +694,9 @@ struct sas_domain_function_template {
 
 extern int sas_register_ha(struct sas_ha_struct *);
 extern int sas_unregister_ha(struct sas_ha_struct *);
+extern void sas_prep_resume_ha(struct sas_ha_struct *sas_ha);
+extern void sas_resume_ha(struct sas_ha_struct *sas_ha);
+extern void sas_suspend_ha(struct sas_ha_struct *sas_ha);
 
 int sas_set_phy_speed(struct sas_phy *phy,
 		      struct sas_phy_linkrates *rates);
