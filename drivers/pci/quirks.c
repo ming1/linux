@@ -253,7 +253,7 @@ DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_VIA,	PCI_DEVICE_ID_VIA_82C576,	quirk_vsfx)
  *	workaround applied too
  *	[Info kindly provided by ALi]
  */	
-static void __init quirk_alimagik(struct pci_dev *dev)
+static void __devinit quirk_alimagik(struct pci_dev *dev)
 {
 	if ((pci_pci_problems&PCIPCI_ALIMAGIK)==0) {
 		dev_info(&dev->dev, "Limiting direct PCI/PCI transfers\n");
@@ -789,7 +789,7 @@ static void __devinit quirk_amd_ioapic(struct pci_dev *dev)
 }
 DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_AMD,	PCI_DEVICE_ID_AMD_VIPER_7410,	quirk_amd_ioapic);
 
-static void __init quirk_ioapic_rmw(struct pci_dev *dev)
+static void __devinit quirk_ioapic_rmw(struct pci_dev *dev)
 {
 	if (dev->devfn == 0 && dev->bus->number == 0)
 		sis_apic_bug = 1;
@@ -801,7 +801,7 @@ DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_SI,	PCI_ANY_ID,			quirk_ioapic_rmw);
  * Some settings of MMRBC can lead to data corruption so block changes.
  * See AMD 8131 HyperTransport PCI-X Tunnel Revision Guide
  */
-static void __init quirk_amd_8131_mmrbc(struct pci_dev *dev)
+static void __devinit quirk_amd_8131_mmrbc(struct pci_dev *dev)
 {
 	if (dev->subordinate && dev->revision <= 0x12) {
 		dev_info(&dev->dev, "AMD8131 rev %x detected; "
@@ -1082,7 +1082,7 @@ DECLARE_PCI_FIXUP_EARLY(PCI_VENDOR_ID_SERVERWORKS, PCI_DEVICE_ID_SERVERWORKS_CSB
 /*
  *	Intel 82801CAM ICH3-M datasheet says IDE modes must be the same
  */
-static void __init quirk_ide_samemode(struct pci_dev *pdev)
+static void __devinit quirk_ide_samemode(struct pci_dev *pdev)
 {
 	u8 prog;
 
@@ -1121,7 +1121,7 @@ DECLARE_PCI_FIXUP_CLASS_EARLY(PCI_VENDOR_ID_VIA, PCI_ANY_ID,
 /* This was originally an Alpha specific thing, but it really fits here.
  * The i82375 PCI/EISA bridge appears as non-classified. Fix that.
  */
-static void __init quirk_eisa_bridge(struct pci_dev *dev)
+static void __devinit quirk_eisa_bridge(struct pci_dev *dev)
 {
 	dev->class = PCI_CLASS_BRIDGE_EISA << 8;
 }
@@ -1155,7 +1155,7 @@ DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_INTEL,	PCI_DEVICE_ID_INTEL_82375,	quirk_e
  */
 static int asus_hides_smbus;
 
-static void __init asus_hides_smbus_hostbridge(struct pci_dev *dev)
+static void __devinit asus_hides_smbus_hostbridge(struct pci_dev *dev)
 {
 	if (unlikely(dev->subsystem_vendor == PCI_VENDOR_ID_ASUSTEK)) {
 		if (dev->device == PCI_DEVICE_ID_INTEL_82845_HB)
@@ -1538,7 +1538,7 @@ DECLARE_PCI_FIXUP_RESUME_EARLY(PCI_VENDOR_ID_JMICRON, PCI_DEVICE_ID_JMICRON_JMB3
 #endif
 
 #ifdef CONFIG_X86_IO_APIC
-static void __init quirk_alder_ioapic(struct pci_dev *pdev)
+static void __devinit quirk_alder_ioapic(struct pci_dev *pdev)
 {
 	int i;
 
@@ -1777,7 +1777,7 @@ DECLARE_PCI_FIXUP_RESUME(PCI_VENDOR_ID_AMD,   PCI_DEVICE_ID_AMD_8111_SMBUS, 	qui
  * but the PIO transfers won't work if BAR0 falls at the odd 8 bytes.
  * Re-allocate the region if needed...
  */
-static void __init quirk_tc86c001_ide(struct pci_dev *dev)
+static void __devinit quirk_tc86c001_ide(struct pci_dev *dev)
 {
 	struct resource *r = &dev->resource[0];
 
@@ -2169,7 +2169,7 @@ DECLARE_PCI_FIXUP_EARLY(PCI_VENDOR_ID_PLX, 0x8624, quirk_tile_plx_gen1);
  * aware of it.  Instead of setting the flag on all busses in the
  * machine, simply disable MSI globally.
  */
-static void __init quirk_disable_all_msi(struct pci_dev *dev)
+static void __devinit quirk_disable_all_msi(struct pci_dev *dev)
 {
 	pci_no_msi();
 	dev_warn(&dev->dev, "MSI quirk detected; MSI disabled\n");
@@ -2955,6 +2955,20 @@ static void __devinit asus_ehci_no_d3(struct pci_dev *dev)
 DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_INTEL, 0x1c26, asus_ehci_no_d3);
 DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_INTEL, 0x1c2d, asus_ehci_no_d3);
 
+/*
+ * Some devices may pass our check in pci_intx_mask_supported if
+ * PCI_COMMAND_INTX_DISABLE works though they actually do not properly
+ * support this feature.
+ */
+static void __devinit quirk_broken_intx_masking(struct pci_dev *dev)
+{
+	dev->broken_intx_masking = 1;
+}
+DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_CHELSIO, 0x0030,
+			 quirk_broken_intx_masking);
+DECLARE_PCI_FIXUP_HEADER(0x1814, 0x0601, /* Ralink RT2800 802.11n PCI */
+			 quirk_broken_intx_masking);
+
 static void pci_do_fixups(struct pci_dev *dev, struct pci_fixup *f,
 			  struct pci_fixup *end)
 {
@@ -3201,6 +3215,90 @@ int pci_dev_specific_reset(struct pci_dev *dev, int probe)
 		    (i->device == dev->device ||
 		     i->device == (u16)PCI_ANY_ID))
 			return i->reset(dev, probe);
+	}
+
+	return -ENOTTY;
+}
+
+static struct pci_dev *pci_func_0_dma_source(struct pci_dev *dev)
+{
+	if (!PCI_FUNC(dev->devfn))
+		return pci_dev_get(dev);
+
+	return pci_get_slot(dev->bus, PCI_DEVFN(PCI_SLOT(dev->devfn), 0));
+}
+
+static const struct pci_dev_dma_source {
+	u16 vendor;
+	u16 device;
+	struct pci_dev *(*dma_source)(struct pci_dev *dev);
+} pci_dev_dma_source[] = {
+	/*
+	 * https://bugzilla.redhat.com/show_bug.cgi?id=605888
+	 *
+	 * Some Ricoh devices use the function 0 source ID for DMA on
+	 * other functions of a multifunction device.  The DMA devices
+	 * is therefore function 0, which will have implications of the
+	 * iommu grouping of these devices.
+	 */
+	{ PCI_VENDOR_ID_RICOH, 0xe822, pci_func_0_dma_source },
+	{ PCI_VENDOR_ID_RICOH, 0xe230, pci_func_0_dma_source },
+	{ PCI_VENDOR_ID_RICOH, 0xe832, pci_func_0_dma_source },
+	{ PCI_VENDOR_ID_RICOH, 0xe476, pci_func_0_dma_source },
+	{ 0 }
+};
+
+/*
+ * IOMMUs with isolation capabilities need to be programmed with the
+ * correct source ID of a device.  In most cases, the source ID matches
+ * the device doing the DMA, but sometimes hardware is broken and will
+ * tag the DMA as being sourced from a different device.  This function
+ * allows that translation.  Note that the reference count of the
+ * returned device is incremented on all paths.
+ */
+struct pci_dev *pci_get_dma_source(struct pci_dev *dev)
+{
+	const struct pci_dev_dma_source *i;
+
+	for (i = pci_dev_dma_source; i->dma_source; i++) {
+		if ((i->vendor == dev->vendor ||
+		     i->vendor == (u16)PCI_ANY_ID) &&
+		    (i->device == dev->device ||
+		     i->device == (u16)PCI_ANY_ID))
+			return i->dma_source(dev);
+	}
+
+	return pci_dev_get(dev);
+}
+
+static const struct pci_dev_acs_enabled {
+	u16 vendor;
+	u16 device;
+	int (*acs_enabled)(struct pci_dev *dev, u16 acs_flags);
+} pci_dev_acs_enabled[] = {
+	{ 0 }
+};
+
+int pci_dev_specific_acs_enabled(struct pci_dev *dev, u16 acs_flags)
+{
+	const struct pci_dev_acs_enabled *i;
+	int ret;
+
+	/*
+	 * Allow devices that do not expose standard PCIe ACS capabilities
+	 * or control to indicate their support here.  Multi-function express
+	 * devices which do not allow internal peer-to-peer between functions,
+	 * but do not implement PCIe ACS may wish to return true here.
+	 */
+	for (i = pci_dev_acs_enabled; i->acs_enabled; i++) {
+		if ((i->vendor == dev->vendor ||
+		     i->vendor == (u16)PCI_ANY_ID) &&
+		    (i->device == dev->device ||
+		     i->device == (u16)PCI_ANY_ID)) {
+			ret = i->acs_enabled(dev, acs_flags);
+			if (ret >= 0)
+				return ret;
+		}
 	}
 
 	return -ENOTTY;
