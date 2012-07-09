@@ -643,6 +643,19 @@ int reuse_swap_page(struct page *page)
 	return count <= 1;
 }
 
+int can_reuse_swap_page(struct page *page)
+{
+	int count;
+
+	VM_BUG_ON(!PageLocked(page));
+	if (unlikely(PageKsm(page)))
+		return 0;
+	count = page_mapcount(page);
+	if (count <= 1 && PageSwapCache(page))
+		count += page_swapcount(page);
+	return count <= 1;
+}
+
 /*
  * If swap is getting full, or if there are no more mappings of this page,
  * then try_to_free_swap is called to free its swap space.
