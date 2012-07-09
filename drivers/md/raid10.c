@@ -1394,7 +1394,7 @@ retry_write:
 		bio_list_add(&conf->pending_bio_list, mbio);
 		conf->pending_count++;
 		spin_unlock_irqrestore(&conf->device_lock, flags);
-		if (!mddev_check_plugged(mddev))
+		if (!mddev_check_plugged(mddev, 0, 0))
 			md_wakeup_thread(mddev->thread);
 
 		if (!r10_bio->devs[i].repl_bio)
@@ -1423,7 +1423,7 @@ retry_write:
 		bio_list_add(&conf->pending_bio_list, mbio);
 		conf->pending_count++;
 		spin_unlock_irqrestore(&conf->device_lock, flags);
-		if (!mddev_check_plugged(mddev))
+		if (!mddev_check_plugged(mddev, 0, 0))
 			md_wakeup_thread(mddev->thread);
 	}
 
