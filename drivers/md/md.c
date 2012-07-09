@@ -498,13 +498,12 @@ void md_flush_request(struct mddev *mddev, struct bio *bio)
 }
 EXPORT_SYMBOL(md_flush_request);
 
-
-static void plugger_unplug(struct blk_plug_cb *cb)
+static void plugger_unplug(struct blk_plug_cb *cb, bool from_schedule)
 {
 	struct md_plug_cb *mdcb = container_of(cb, struct md_plug_cb, cb);
 
 	if (mdcb->unplug)
-		mdcb->unplug(mdcb);
+		mdcb->unplug(mdcb, from_schedule);
 	if (atomic_dec_and_test(&mdcb->mddev->plug_cnt))
 		md_wakeup_thread(mdcb->mddev->thread);
 	kfree(mdcb);

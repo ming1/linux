@@ -4007,7 +4007,7 @@ struct raid5_plug_cb {
 	struct list_head	list;
 };
 
-static void raid5_unplug(struct md_plug_cb *mdcb)
+static void raid5_unplug(struct md_plug_cb *mdcb, bool from_schedule)
 {
 	struct raid5_plug_cb *cb = container_of(
 		mdcb, struct raid5_plug_cb, cb);
