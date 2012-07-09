@@ -21,7 +21,7 @@
 #include <linux/of_gpio.h>
 #include <linux/slab.h>
 
-/* Private data structure for of_gpiochip_is_match */
+/* Private data structure for of_gpiochip_find_and_xlate */
 struct gg_data {
 	enum of_gpio_flags *flags;
 	struct of_phandle_args gpiospec;
@@ -73,7 +73,7 @@ int of_get_named_gpio_flags(struct device_node *np, const char *propname,
 					 &gg_data.gpiospec);
 	if (ret) {
 		pr_debug("%s: can't parse gpios property\n", __func__);
-		return -EINVAL;
+		return ret;
 	}
 
 	gpiochip_find(&gg_data, of_gpiochip_find_and_xlate);
