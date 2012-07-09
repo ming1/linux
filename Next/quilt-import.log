@@ -1,0 +1,17 @@
+Importing i2c based on 3.5-rc5
+Unchanged quilt series i2c
+Importing jdelvare-hwmon based on c4aed353b1b079eb4843e6a708fc68b4b28f72aa
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard c4aed353b1b079eb4843e6a708fc68b4b28f72aa
+HEAD is now at c4aed35 Merge tag 'fixes-for-linus' of git://git.kernel.org/pub/scm/linux/kernel/git/arm/arm-soc
+$ git am ../quilt/jdelvare-hwmon/hwmon-struct-x86_cpu_id-arrays-can-be-__initconst.patch
+Applying: hwmon: struct x86_cpu_id arrays can be __initconst
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/jdelvare-hwmon
+From ../quilt-tmp
+ + 3c1aae2...316a1a8 master     -> quilt/jdelvare-hwmon  (forced update)
+Importing rr based on v3.5-rc3-93-g02edf6a
+Unchanged quilt series rr
+Importing device-mapper based on v3.5-rc5
+Unchanged quilt series device-mapper
