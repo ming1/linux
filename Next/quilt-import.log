@@ -1,0 +1,35 @@
+Importing i2c based on 3.5-rc5
+Unchanged quilt series i2c
+Importing jdelvare-hwmon based on c4aed353b1b079eb4843e6a708fc68b4b28f72aa
+Unchanged quilt series jdelvare-hwmon
+Importing rr based on v3.5-rc3-93-g02edf6a
+Unchanged quilt series rr
+Importing device-mapper based on v3.5-rc6
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard bd0a521e88aa7a06ae7aabaed7ae196ed4ad867a
+HEAD is now at bd0a521 Linux 3.5-rc6
+$ git am ../quilt/device-mapper/dm-thin-clean-up-compiler-warning.patch
+Applying: Clean up "warning: dubious: !x & y".  Also make it clear that
+$ git am ../quilt/device-mapper/dm-thin-provide-specific-errors-for-two-table-load-failure-cases.patch
+Applying: Provide specific error message strings for two pool_ctr() failure cases
+$ git am ../quilt/device-mapper/dm-stripe-fix-size-test.patch
+Applying: dm-stripe is supposed to ensure that all the space allocated to the
+$ git am ../quilt/device-mapper/dm-stripe-remove-stripes_mask.patch
+Applying: The structure stripe_c contains a stripes_mask field. This field is
+$ git am ../quilt/device-mapper/dm-support-non-power-of-two-target-max_io_len.patch
+Applying: Remove the restriction that limits a target's specified maximum incoming
+$ git am ../quilt/device-mapper/dm-stripe-support-for-non-power-of-2-chunksize.patch
+Applying: Non power of 2 chunksize support is needed to properly align stripe IO
+$ git am ../quilt/device-mapper/dm-stripe-remove-minimum-stripe-size.patch
+Applying: There is no technical limitation in device mapper that would prevent the
+$ git am ../quilt/device-mapper/dm-stripe-optimize-chunk_size-calculations.patch
+Applying: dm-stripe is usually used with a chunk size that is a power of two.
+$ git am ../quilt/device-mapper/dm-thin-support-for-non-power-of-2-pool-blocksize.patch
+Applying: Non power of 2 blocksize support is needed to properly align thinp IO
+$ git am ../quilt/device-mapper/dm-thin-optimize-power-of-two-block-size.patch
+Applying: dm-thin will be most likely used with a block size that is a power of
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/device-mapper
+From ../quilt-tmp
+ + 05d9324...debfcaf7 master     -> quilt/device-mapper  (forced update)
