@@ -30,6 +30,10 @@ omap/am33xx		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tag
 tegra/soc		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git for-3.6/soc
 				depends on tegra/cleanup
 
+next/newsoc:
+mvebu/newsoc		git://github.com/Marvell-Semi/EBU_mainline_public.git mvebu_for-next-V9
+				rebased to v3.5-rc5
+
 next/dt:
 lpc32xx/dt		git://git.antcom.de/linux-2.6.git lpc32xx/dts
 				depends on lpc32xx/devel
