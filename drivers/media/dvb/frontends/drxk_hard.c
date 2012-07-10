@@ -28,6 +28,7 @@
 #include <linux/delay.h>
 #include <linux/firmware.h>
 #include <linux/i2c.h>
+#include <linux/hardirq.h>
 #include <asm/div64.h>
 
 #include "dvb_frontend.h"
@@ -308,16 +309,42 @@ static u32 Log10Times100(u32 x)
 /* I2C **********************************************************************/
 /****************************************************************************/
 
-static int i2c_read1(struct i2c_adapter *adapter, u8 adr, u8 *val)
+static int drxk_i2c_lock(struct drxk_state *state)
+{
+	i2c_lock_adapter(state->i2c);
+	state->drxk_i2c_exclusive_lock = true;
+
+	return 0;
+}
+
+static void drxk_i2c_unlock(struct drxk_state *state)
+{
+	if (!state->drxk_i2c_exclusive_lock)
+		return;
+
+	i2c_unlock_adapter(state->i2c);
+	state->drxk_i2c_exclusive_lock = false;
+}
+
+static int drxk_i2c_transfer(struct drxk_state *state, struct i2c_msg *msgs,
+			     unsigned len)
+{
+	if (state->drxk_i2c_exclusive_lock)
+		return __i2c_transfer(state->i2c, msgs, len);
+	else
+		return i2c_transfer(state->i2c, msgs, len);
+}
+
+static int i2c_read1(struct drxk_state *state, u8 adr, u8 *val)
 {
 	struct i2c_msg msgs[1] = { {.addr = adr, .flags = I2C_M_RD,
 				    .buf = val, .len = 1}
 	};
 
-	return i2c_transfer(adapter, msgs, 1);
+	return drxk_i2c_transfer(state, msgs, 1);
 }
 
-static int i2c_write(struct i2c_adapter *adap, u8 adr, u8 *data, int len)
+static int i2c_write(struct drxk_state *state, u8 adr, u8 *data, int len)
 {
 	int status;
 	struct i2c_msg msg = {
@@ -330,7 +357,7 @@ static int i2c_write(struct i2c_adapter *adap, u8 adr, u8 *data, int len)
 			printk(KERN_CONT " %02x", data[i]);
 		printk(KERN_CONT "\n");
 	}
-	status = i2c_transfer(adap, &msg, 1);
+	status = drxk_i2c_transfer(state, &msg, 1);
 	if (status >= 0 && status != 1)
 		status = -EIO;
 
@@ -340,7 +367,7 @@ static int i2c_write(struct i2c_adapter *adap, u8 adr, u8 *data, int len)
 	return status;
 }
 
-static int i2c_read(struct i2c_adapter *adap,
+static int i2c_read(struct drxk_state *state,
 		    u8 adr, u8 *msg, int len, u8 *answ, int alen)
 {
 	int status;
@@ -351,7 +378,7 @@ static int i2c_read(struct i2c_adapter *adap,
 		 .buf = answ, .len = alen}
 	};
 
-	status = i2c_transfer(adap, msgs, 2);
+	status = drxk_i2c_transfer(state, msgs, 2);
 	if (status != 2) {
 		if (debug > 2)
 			printk(KERN_CONT ": ERROR!\n");
@@ -394,7 +421,7 @@ static int read16_flags(struct drxk_state *state, u32 reg, u16 *data, u8 flags)
 		len = 2;
 	}
 	dprintk(2, "(0x%08x, 0x%02x)\n", reg, flags);
-	status = i2c_read(state->i2c, adr, mm1, len, mm2, 2);
+	status = i2c_read(state, adr, mm1, len, mm2, 2);
 	if (status < 0)
 		return status;
 	if (data)
@@ -428,7 +455,7 @@ static int read32_flags(struct drxk_state *state, u32 reg, u32 *data, u8 flags)
 		len = 2;
 	}
 	dprintk(2, "(0x%08x, 0x%02x)\n", reg, flags);
-	status = i2c_read(state->i2c, adr, mm1, len, mm2, 4);
+	status = i2c_read(state, adr, mm1, len, mm2, 4);
 	if (status < 0)
 		return status;
 	if (data)
@@ -464,7 +491,7 @@ static int write16_flags(struct drxk_state *state, u32 reg, u16 data, u8 flags)
 	mm[len + 1] = (data >> 8) & 0xff;
 
 	dprintk(2, "(0x%08x, 0x%04x, 0x%02x)\n", reg, data, flags);
-	return i2c_write(state->i2c, adr, mm, len + 2);
+	return i2c_write(state, adr, mm, len + 2);
 }
 
 static int write16(struct drxk_state *state, u32 reg, u16 data)
@@ -495,7 +522,7 @@ static int write32_flags(struct drxk_state *state, u32 reg, u32 data, u8 flags)
 	mm[len + 3] = (data >> 24) & 0xff;
 	dprintk(2, "(0x%08x, 0x%08x, 0x%02x)\n", reg, data, flags);
 
-	return i2c_write(state->i2c, adr, mm, len + 4);
+	return i2c_write(state, adr, mm, len + 4);
 }
 
 static int write32(struct drxk_state *state, u32 reg, u32 data)
@@ -542,7 +569,7 @@ static int write_block(struct drxk_state *state, u32 Address,
 					printk(KERN_CONT " %02x", pBlock[i]);
 			printk(KERN_CONT "\n");
 		}
-		status = i2c_write(state->i2c, state->demod_address,
+		status = i2c_write(state, state->demod_address,
 				   &state->Chunk[0], Chunk + AdrLength);
 		if (status < 0) {
 			printk(KERN_ERR "drxk: %s: i2c write error at addr 0x%02x\n",
@@ -568,17 +595,17 @@ int PowerUpDevice(struct drxk_state *state)
 
 	dprintk(1, "\n");
 
-	status = i2c_read1(state->i2c, state->demod_address, &data);
+	status = i2c_read1(state, state->demod_address, &data);
 	if (status < 0) {
 		do {
 			data = 0;
-			status = i2c_write(state->i2c, state->demod_address,
+			status = i2c_write(state, state->demod_address,
 					   &data, 1);
 			msleep(10);
 			retryCount++;
 			if (status < 0)
 				continue;
-			status = i2c_read1(state->i2c, state->demod_address,
+			status = i2c_read1(state, state->demod_address,
 					   &data);
 		} while (status < 0 &&
 			 (retryCount < DRXK_MAX_RETRIES_POWERUP));
@@ -2824,7 +2851,7 @@ static int ConfigureI2CBridge(struct drxk_state *state, bool bEnableBridge)
 	dprintk(1, "\n");
 
 	if (state->m_DrxkState == DRXK_UNINITIALIZED)
-		goto error;
+		return 0;
 	if (state->m_DrxkState == DRXK_POWERED_DOWN)
 		goto error;
 
@@ -5968,34 +5995,15 @@ error:
 	return status;
 }
 
-static int load_microcode(struct drxk_state *state, const char *mc_name)
-{
-	const struct firmware *fw = NULL;
-	int err = 0;
-
-	dprintk(1, "\n");
-
-	err = request_firmware(&fw, mc_name, state->i2c->dev.parent);
-	if (err < 0) {
-		printk(KERN_ERR
-		       "drxk: Could not load firmware file %s.\n", mc_name);
-		printk(KERN_INFO
-		       "drxk: Copy %s to your hotplug directory!\n", mc_name);
-		return err;
-	}
-	err = DownloadMicrocode(state, fw->data, fw->size);
-	release_firmware(fw);
-	return err;
-}
-
 static int init_drxk(struct drxk_state *state)
 {
-	int status = 0;
+	int status = 0, n = 0;
 	enum DRXPowerMode powerMode = DRXK_POWER_DOWN_OFDM;
 	u16 driverVersion;
 
 	dprintk(1, "\n");
 	if ((state->m_DrxkState == DRXK_UNINITIALIZED)) {
+		drxk_i2c_lock(state);
 		status = PowerUpDevice(state);
 		if (status < 0)
 			goto error;
@@ -6073,8 +6081,12 @@ static int init_drxk(struct drxk_state *state)
 		if (status < 0)
 			goto error;
 
-		if (state->microcode_name)
-			load_microcode(state, state->microcode_name);
+		if (state->fw) {
+			status = DownloadMicrocode(state, state->fw->data,
+						   state->fw->size);
+			if (status < 0)
+				goto error;
+		}
 
 		/* disable token-ring bus through OFDM block for possible ucode upload */
 		status = write16(state, SIO_OFDM_SH_OFDM_RING_ENABLE__A, SIO_OFDM_SH_OFDM_RING_ENABLE_OFF);
@@ -6167,12 +6179,61 @@ static int init_drxk(struct drxk_state *state)
 			state->m_DrxkState = DRXK_POWERED_DOWN;
 		} else
 			state->m_DrxkState = DRXK_STOPPED;
+
+		/* Initialize the supported delivery systems */
+		n = 0;
+		if (state->m_hasDVBC) {
+			state->frontend.ops.delsys[n++] = SYS_DVBC_ANNEX_A;
+			state->frontend.ops.delsys[n++] = SYS_DVBC_ANNEX_C;
+			strlcat(state->frontend.ops.info.name, " DVB-C",
+				sizeof(state->frontend.ops.info.name));
+		}
+		if (state->m_hasDVBT) {
+			state->frontend.ops.delsys[n++] = SYS_DVBT;
+			strlcat(state->frontend.ops.info.name, " DVB-T",
+				sizeof(state->frontend.ops.info.name));
+		}
+		drxk_i2c_unlock(state);
 	}
 error:
-	if (status < 0)
+	if (status < 0) {
+		state->m_DrxkState = DRXK_NO_DEV;
+		drxk_i2c_unlock(state);
 		printk(KERN_ERR "drxk: Error %d on %s\n", status, __func__);
+	}
 
 	return status;
+}
+
+static void load_firmware_cb(const struct firmware *fw,
+			     void *context)
+{
+	struct drxk_state *state = context;
+
+	dprintk(1, ": %s\n", fw ? "firmware loaded" : "firmware not loaded");
+	if (!fw) {
+		printk(KERN_ERR
+		       "drxk: Could not load firmware file %s.\n",
+			state->microcode_name);
+		printk(KERN_INFO
+		       "drxk: Copy %s to your hotplug directory!\n",
+			state->microcode_name);
+		state->microcode_name = NULL;
+
+		/*
+		 * As firmware is now load asynchronous, it is not possible
+		 * anymore to fail at frontend attach. We might silently
+		 * return here, and hope that the driver won't crash.
+		 * We might also change all DVB callbacks to return -ENODEV
+		 * if the device is not initialized.
+		 * As the DRX-K devices have their own internal firmware,
+		 * let's just hope that it will match a firmware revision
+		 * compatible with this driver and proceed.
+		 */
+	}
+	state->fw = fw;
+
+	init_drxk(state);
 }
 
 static void drxk_release(struct dvb_frontend *fe)
@@ -6180,6 +6241,9 @@ static void drxk_release(struct dvb_frontend *fe)
 	struct drxk_state *state = fe->demodulator_priv;
 
 	dprintk(1, "\n");
+	if (state->fw)
+		release_firmware(state->fw);
+
 	kfree(state);
 }
 
@@ -6188,6 +6252,12 @@ static int drxk_sleep(struct dvb_frontend *fe)
 	struct drxk_state *state = fe->demodulator_priv;
 
 	dprintk(1, "\n");
+
+	if (state->m_DrxkState == DRXK_NO_DEV)
+		return -ENODEV;
+	if (state->m_DrxkState == DRXK_UNINITIALIZED)
+		return 0;
+
 	ShutDown(state);
 	return 0;
 }
@@ -6197,6 +6267,10 @@ static int drxk_gate_ctrl(struct dvb_frontend *fe, int enable)
 	struct drxk_state *state = fe->demodulator_priv;
 
 	dprintk(1, "%s\n", enable ? "enable" : "disable");
+
+	if (state->m_DrxkState == DRXK_NO_DEV)
+		return -ENODEV;
+
 	return ConfigureI2CBridge(state, enable ? true : false);
 }
 
@@ -6208,6 +6282,12 @@ static int drxk_set_parameters(struct dvb_frontend *fe)
 	u32 IF;
 
 	dprintk(1, "\n");
+
+	if (state->m_DrxkState == DRXK_NO_DEV)
+		return -ENODEV;
+
+	if (state->m_DrxkState == DRXK_UNINITIALIZED)
+		return -EAGAIN;
 
 	if (!fe->ops.tuner_ops.get_if_frequency) {
 		printk(KERN_ERR
@@ -6262,6 +6342,12 @@ static int drxk_read_status(struct dvb_frontend *fe, fe_status_t *status)
 	u32 stat;
 
 	dprintk(1, "\n");
+
+	if (state->m_DrxkState == DRXK_NO_DEV)
+		return -ENODEV;
+	if (state->m_DrxkState == DRXK_UNINITIALIZED)
+		return -EAGAIN;
+
 	*status = 0;
 	GetLockStatus(state, &stat, 0);
 	if (stat == MPEG_LOCK)
@@ -6275,7 +6361,14 @@ static int drxk_read_status(struct dvb_frontend *fe, fe_status_t *status)
 
 static int drxk_read_ber(struct dvb_frontend *fe, u32 *ber)
 {
+	struct drxk_state *state = fe->demodulator_priv;
+
 	dprintk(1, "\n");
+
+	if (state->m_DrxkState == DRXK_NO_DEV)
+		return -ENODEV;
+	if (state->m_DrxkState == DRXK_UNINITIALIZED)
+		return -EAGAIN;
 
 	*ber = 0;
 	return 0;
@@ -6288,6 +6381,12 @@ static int drxk_read_signal_strength(struct dvb_frontend *fe,
 	u32 val = 0;
 
 	dprintk(1, "\n");
+
+	if (state->m_DrxkState == DRXK_NO_DEV)
+		return -ENODEV;
+	if (state->m_DrxkState == DRXK_UNINITIALIZED)
+		return -EAGAIN;
+
 	ReadIFAgc(state, &val);
 	*strength = val & 0xffff;
 	return 0;
@@ -6299,6 +6398,12 @@ static int drxk_read_snr(struct dvb_frontend *fe, u16 *snr)
 	s32 snr2;
 
 	dprintk(1, "\n");
+
+	if (state->m_DrxkState == DRXK_NO_DEV)
+		return -ENODEV;
+	if (state->m_DrxkState == DRXK_UNINITIALIZED)
+		return -EAGAIN;
+
 	GetSignalToNoise(state, &snr2);
 	*snr = snr2 & 0xffff;
 	return 0;
@@ -6310,6 +6415,12 @@ static int drxk_read_ucblocks(struct dvb_frontend *fe, u32 *ucblocks)
 	u16 err;
 
 	dprintk(1, "\n");
+
+	if (state->m_DrxkState == DRXK_NO_DEV)
+		return -ENODEV;
+	if (state->m_DrxkState == DRXK_UNINITIALIZED)
+		return -EAGAIN;
+
 	DVBTQAMGetAccPktErr(state, &err);
 	*ucblocks = (u32) err;
 	return 0;
@@ -6318,9 +6429,16 @@ static int drxk_read_ucblocks(struct dvb_frontend *fe, u32 *ucblocks)
 static int drxk_get_tune_settings(struct dvb_frontend *fe, struct dvb_frontend_tune_settings
 				    *sets)
 {
+	struct drxk_state *state = fe->demodulator_priv;
 	struct dtv_frontend_properties *p = &fe->dtv_property_cache;
 
 	dprintk(1, "\n");
+
+	if (state->m_DrxkState == DRXK_NO_DEV)
+		return -ENODEV;
+	if (state->m_DrxkState == DRXK_UNINITIALIZED)
+		return -EAGAIN;
+
 	switch (p->delivery_system) {
 	case SYS_DVBC_ANNEX_A:
 	case SYS_DVBC_ANNEX_C:
@@ -6371,10 +6489,9 @@ static struct dvb_frontend_ops drxk_ops = {
 struct dvb_frontend *drxk_attach(const struct drxk_config *config,
 				 struct i2c_adapter *i2c)
 {
-	int n;
-
 	struct drxk_state *state = NULL;
 	u8 adr = config->adr;
+	int status;
 
 	dprintk(1, "\n");
 	state = kzalloc(sizeof(struct drxk_state), GFP_KERNEL);
@@ -6425,22 +6542,21 @@ struct dvb_frontend *drxk_attach(const struct drxk_config *config,
 	state->frontend.demodulator_priv = state;
 
 	init_state(state);
-	if (init_drxk(state) < 0)
-		goto error;
 
-	/* Initialize the supported delivery systems */
-	n = 0;
-	if (state->m_hasDVBC) {
-		state->frontend.ops.delsys[n++] = SYS_DVBC_ANNEX_A;
-		state->frontend.ops.delsys[n++] = SYS_DVBC_ANNEX_C;
-		strlcat(state->frontend.ops.info.name, " DVB-C",
-			sizeof(state->frontend.ops.info.name));
-	}
-	if (state->m_hasDVBT) {
-		state->frontend.ops.delsys[n++] = SYS_DVBT;
-		strlcat(state->frontend.ops.info.name, " DVB-T",
-			sizeof(state->frontend.ops.info.name));
-	}
+	/* Load firmware and initialize DRX-K */
+	if (state->microcode_name) {
+		status = request_firmware_nowait(THIS_MODULE, 1,
+					      state->microcode_name,
+					      state->i2c->dev.parent,
+					      GFP_KERNEL,
+					      state, load_firmware_cb);
+		if (status < 0) {
+			printk(KERN_ERR
+			"drxk: failed to request a firmware\n");
+			return NULL;
+		}
+	} else if (init_drxk(state) < 0)
+		goto error;
 
 	printk(KERN_INFO "drxk: frontend initialized.\n");
 	return &state->frontend;
