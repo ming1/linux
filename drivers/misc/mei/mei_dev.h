@@ -167,7 +167,10 @@ struct mei_io_list {
 	struct mei_cl_cb mei_cb;
 };
 
-/* MEI private device struct */
+/**
+ * struct mei_deive -  MEI private device struct
+ * @hbuf_depth - depth of host(write) buffer
+ */
 struct mei_device {
 	struct pci_dev *pdev;	/* pointer to pci device struct */
 	/*
@@ -205,6 +208,7 @@ struct mei_device {
 	 */
 	u32 host_hw_state;
 	u32 me_hw_state;
+	u8  hbuf_depth;
 	/*
 	 * waiting queue for receive message from FW
 	 */
@@ -237,13 +241,13 @@ struct mei_device {
 	bool mei_host_buffer_is_empty;
 
 	struct mei_cl wd_cl;
+	bool wd_interface_reg;
 	bool wd_pending;
 	bool wd_stopped;
 	bool wd_bypass;	/* if false, don't refresh watchdog ME client */
 	u16 wd_timeout;	/* seconds ((wd_data[1] << 8) + wd_data[0]) */
 	u16 wd_due_counter;
 	unsigned char wd_data[MEI_START_WD_DATA_SIZE];
-
 
 
 	struct file *iamthif_file_object;
@@ -259,8 +263,6 @@ struct mei_device {
 	bool iamthif_flow_control_pending;
 	bool iamthif_ioctl;
 	bool iamthif_canceled;
-
-	bool wd_interface_reg;
 };
 
 
