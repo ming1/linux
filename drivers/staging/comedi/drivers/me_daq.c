@@ -54,8 +54,6 @@ from http://www.comedi.org
 #include <linux/sched.h>
 #include "../comedidev.h"
 
-#include "comedi_pci.h"
-
 /*#include "me2600_fw.h" */
 
 #define ME_DRIVER_NAME		"me_daq"
@@ -333,7 +331,7 @@ static int me_dio_insn_bits(struct comedi_device *dev,
 		data[1] |= readw(dev_private->me_regbase + ME_DIO_PORT_B) << 16;
 	}
 
-	return 2;
+	return insn->n;
 }
 
 /*
@@ -763,9 +761,8 @@ found:
 
 	me_reset(dev);
 
-	/* device driver capabilities */
-	error = alloc_subdevices(dev, 3);
-	if (error < 0)
+	error = comedi_alloc_subdevices(dev, 3);
+	if (error)
 		return error;
 
 	subdevice = dev->subdevices + 0;

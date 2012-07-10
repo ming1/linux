@@ -11,7 +11,6 @@
 #define _IIO_TYPES_H_
 
 enum iio_chan_type {
-	/* real channel types */
 	IIO_VOLTAGE,
 	IIO_CURRENT,
 	IIO_POWER,
@@ -45,6 +44,8 @@ enum iio_modifier {
 	IIO_MOD_X_OR_Y_OR_Z,
 	IIO_MOD_LIGHT_BOTH,
 	IIO_MOD_LIGHT_IR,
+	IIO_MOD_ROOT_SUM_SQUARED_X_Y,
+	IIO_MOD_SUM_SQUARED_X_Y_Z,
 };
 
 #define IIO_VAL_INT 1

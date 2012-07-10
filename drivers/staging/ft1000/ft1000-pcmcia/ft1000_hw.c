@@ -97,11 +97,10 @@ static inline u16 ft1000_read_fifo_len(struct net_device *dev)
 {
 	struct ft1000_info *info = netdev_priv(dev);
 
-	if (info->AsicID == ELECTRABUZZ_ID) {
+	if (info->AsicID == ELECTRABUZZ_ID)
 		return (ft1000_read_reg(dev, FT1000_REG_UFIFO_STAT) - 16);
-	} else {
+	else
 		return (ft1000_read_reg(dev, FT1000_REG_MAG_UFSR) - 16);
-	}
 }
 
 //---------------------------------------------------------------------------
@@ -116,7 +115,7 @@ static inline u16 ft1000_read_fifo_len(struct net_device *dev)
 //     value  - value of dpram
 //
 //---------------------------------------------------------------------------
-u16 ft1000_read_dpram(struct net_device * dev, int offset)
+u16 ft1000_read_dpram(struct net_device *dev, int offset)
 {
 	struct ft1000_info *info = netdev_priv(dev);
 	unsigned long flags;
@@ -1998,9 +1997,8 @@ static irqreturn_t ft1000_interrupt(int irq, void *dev_id)
 
     // Make sure we process all interrupt before leaving the ISR due to the edge trigger interrupt type
     while (inttype) {
-	if (inttype & ISR_DOORBELL_PEND) {
-		ft1000_parse_dpram_msg(dev);
-	}
+		if (inttype & ISR_DOORBELL_PEND)
+			ft1000_parse_dpram_msg(dev);
 
 	if (inttype & ISR_RCV) {
 		DEBUG(1, "Data in FIFO\n");
