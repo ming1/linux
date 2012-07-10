@@ -95,6 +95,7 @@
 #include <net/checksum.h>
 #include <net/xfrm.h>
 #include <net/inet_common.h>
+#include <net/ip_fib.h>
 
 /*
  *	Build xmit assembly blocks
@@ -253,9 +254,8 @@ static inline bool icmpv4_xrlim_allow(struct net *net, struct rtable *rt,
 
 	/* Limit if icmp type is enabled in ratemask. */
 	if ((1 << type) & net->ipv4.sysctl_icmp_ratemask) {
-		if (!rt->peer)
-			rt_bind_peer(rt, fl4->daddr, 1);
-		rc = inet_peer_xrlim_allow(rt->peer,
+		struct inet_peer *peer = rt_get_peer_create(rt, fl4->daddr);
+		rc = inet_peer_xrlim_allow(peer,
 					   net->ipv4.sysctl_icmp_ratelimit);
 	}
 out:
@@ -334,7 +334,7 @@ static void icmp_reply(struct icmp_bxm *icmp_param, struct sk_buff *skb)
 	struct flowi4 fl4;
 	struct sock *sk;
 	struct inet_sock *inet;
-	__be32 daddr;
+	__be32 daddr, saddr;
 
 	if (ip_options_echo(&icmp_param->replyopts.opt.opt, skb))
 		return;
@@ -348,6 +348,7 @@ static void icmp_reply(struct icmp_bxm *icmp_param, struct sk_buff *skb)
 
 	inet->tos = ip_hdr(skb)->tos;
 	daddr = ipc.addr = ip_hdr(skb)->saddr;
+	saddr = fib_compute_spec_dst(skb);
 	ipc.opt = NULL;
 	ipc.tx_flags = 0;
 	if (icmp_param->replyopts.opt.opt.optlen) {
@@ -357,7 +358,7 @@ static void icmp_reply(struct icmp_bxm *icmp_param, struct sk_buff *skb)
 	}
 	memset(&fl4, 0, sizeof(fl4));
 	fl4.daddr = daddr;
-	fl4.saddr = rt->rt_spec_dst;
+	fl4.saddr = saddr;
 	fl4.flowi4_tos = RT_TOS(ip_hdr(skb)->tos);
 	fl4.flowi4_proto = IPPROTO_ICMP;
 	security_skb_classify_flow(skb, flowi4_to_flowi(&fl4));
@@ -638,12 +639,12 @@ EXPORT_SYMBOL(icmp_send);
 
 static void icmp_unreach(struct sk_buff *skb)
 {
+	const struct net_protocol *ipprot;
 	const struct iphdr *iph;
 	struct icmphdr *icmph;
-	int hash, protocol;
-	const struct net_protocol *ipprot;
-	u32 info = 0;
 	struct net *net;
+	u32 info = 0;
+	int protocol;
 
 	net = dev_net(skb_dst(skb)->dev);
 
@@ -674,9 +675,7 @@ static void icmp_unreach(struct sk_buff *skb)
 				LIMIT_NETDEBUG(KERN_INFO pr_fmt("%pI4: fragmentation needed and DF set\n"),
 					       &iph->daddr);
 			} else {
-				info = ip_rt_frag_needed(net, iph,
-							 ntohs(icmph->un.frag.mtu),
-							 skb->dev);
+				info = ntohs(icmph->un.frag.mtu);
 				if (!info)
 					goto out;
 			}
@@ -734,9 +733,8 @@ static void icmp_unreach(struct sk_buff *skb)
 	 */
 	raw_icmp_error(skb, protocol, info);
 
-	hash = protocol & (MAX_INET_PROTOS - 1);
 	rcu_read_lock();
-	ipprot = rcu_dereference(inet_protos[hash]);
+	ipprot = rcu_dereference(inet_protos[protocol]);
 	if (ipprot && ipprot->err_handler)
 		ipprot->err_handler(skb, info);
 	rcu_read_unlock();

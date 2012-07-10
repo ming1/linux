@@ -740,12 +740,12 @@ void tcp_update_metrics(struct sock *sk)
 	if (sysctl_tcp_nometrics_save)
 		return;
 
-	dst_confirm(dst);
-
 	if (dst && (dst->flags & DST_HOST)) {
 		const struct inet_connection_sock *icsk = inet_csk(sk);
 		int m;
 		unsigned long rtt;
+
+		dst_confirm(dst);
 
 		if (icsk->icsk_backoff || !tp->srtt) {
 			/* This session failed to estimate rtt. Why?
@@ -3869,9 +3869,11 @@ static int tcp_ack(struct sock *sk, const struct sk_buff *skb, int flag)
 			tcp_cong_avoid(sk, ack, prior_in_flight);
 	}
 
-	if ((flag & FLAG_FORWARD_PROGRESS) || !(flag & FLAG_NOT_DUP))
-		dst_confirm(__sk_dst_get(sk));
-
+	if ((flag & FLAG_FORWARD_PROGRESS) || !(flag & FLAG_NOT_DUP)) {
+		struct dst_entry *dst = __sk_dst_get(sk);
+		if (dst)
+			dst_confirm(dst);
+	}
 	return 1;
 
 no_queue:
@@ -5518,6 +5520,18 @@ int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
 	struct tcp_sock *tp = tcp_sk(sk);
 	int res;
 
+	if (sk->sk_rx_dst) {
+		struct dst_entry *dst = sk->sk_rx_dst;
+		if (unlikely(dst->obsolete)) {
+			if (dst->ops->check(dst, 0) == NULL) {
+				dst_release(dst);
+				sk->sk_rx_dst = NULL;
+			}
+		}
+	}
+	if (unlikely(sk->sk_rx_dst == NULL))
+		sk->sk_rx_dst = dst_clone(skb_dst(skb));
+
 	/*
 	 *	Header prediction.
 	 *	The code loosely follows the one in the famous
@@ -5729,8 +5743,10 @@ void tcp_finish_connect(struct sock *sk, struct sk_buff *skb)
 
 	tcp_set_state(sk, TCP_ESTABLISHED);
 
-	if (skb != NULL)
+	if (skb != NULL) {
+		sk->sk_rx_dst = dst_clone(skb_dst(skb));
 		security_inet_conn_established(sk, skb);
+	}
 
 	/* Make sure socket is routed, for correct metrics.  */
 	icsk->icsk_af_ops->rebuild_header(sk);
@@ -6126,9 +6142,14 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 
 		case TCP_FIN_WAIT1:
 			if (tp->snd_una == tp->write_seq) {
+				struct dst_entry *dst;
+
 				tcp_set_state(sk, TCP_FIN_WAIT2);
 				sk->sk_shutdown |= SEND_SHUTDOWN;
-				dst_confirm(__sk_dst_get(sk));
+
+				dst = __sk_dst_get(sk);
+				if (dst)
+					dst_confirm(dst);
 
 				if (!sock_flag(sk, SOCK_DEAD))
 					/* Wake up lingering close() */
