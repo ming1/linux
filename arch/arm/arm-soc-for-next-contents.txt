@@ -17,6 +17,9 @@ at91/cleanup		git://github.com/at91linux/linux-at91.git tags/at91-for-next-clean
 omap/cleanup		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-cleanup-for-v3.6
 imx6/cleanup		git://git.linaro.org/people/shawnguo/linux-2.6.git imx/cleanup-for-3.6
 imx/cleanup		git://git.pengutronix.de/git/imx/linux-2.6.git tags/imx-cleanup
+tegra/cleanup		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git for-3.6/cleanup
+tegra/fixes		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git for-3.6/fixes
+samsung/cleanup		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/cleanup-samsung
 
 next/soc:
 nomadik/drivercfg	git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-nomadik.git nomadik-for-arm-soc
@@ -24,6 +27,8 @@ lpc32xx/devel		git://git.antcom.de/linux-2.6.git lpc32xx-next
 lpc32xx/core		git://git.antcom.de/linux-2.6.git lpc32xx/core
 				depends on lpc32xx/devel
 omap/am33xx		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-devel-am33xx-for-v3.6
+tegra/soc		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git for-3.6/soc
+				depends on tegra/cleanup
 
 next/dt:
 lpc32xx/dt		git://git.antcom.de/linux-2.6.git lpc32xx/dts
@@ -31,11 +36,20 @@ lpc32xx/dt		git://git.antcom.de/linux-2.6.git lpc32xx/dts
 imx6/dt			git://git.linaro.org/people/shawnguo/linux-2.6.git imx/dt-for-3.6
 mxs/dt			git://git.linaro.org/people/shawnguo/linux-2.6.git mxs/dt-for-3.6
 ux500/dt		git://git.linaro.org/people/ljones/linux-3.0-ux500.git for-arm-soc-next
+tegra/dt		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git for-3.6/dt
+				depends on tegra/cleanup
+at91/dt			git://github.com/at91linux/linux-at91 at91-for-next-dt
 
 next/defconfig
 lpc32xx/defconfig	git://git.antcom.de/linux-2.6.git lpc32xx/defconfig
 				depends on lpc32xx/devel
 mxs/defconfig		git://git.linaro.org/people/shawnguo/linux-2.6.git mxs/defconfig-for-3.6
+tegra/defconfig		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git for-3.6/defconfig
+
+next/boards:
+tegra/boards		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git for-3.6/boards
+				depends on tegra/cleanup
+samsung/board-samsung	git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung next/board-samsung
 
 next/irq:
 imx/sparse-irq		git://git.linaro.org/people/shawnguo/linux-2.6.git imx/sparse-irq
@@ -49,8 +63,14 @@ imx/cpuidle		git://git.pengutronix.de/git/imx/linux-2.6.git imx/cpuidle
 omap/driver		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-devel-driver-for-v3.6
 omap/pm			git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-devel-pm-for-v3.6
 
+next/clk:
+tegra/common-clk	git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git for-3.6/common-clk
+
 next/timer
 omap/dmtimer		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-devel-dmtimer-for-v3.6
+
+next/dma:
+samsung/dma		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/devel-dma-ops
 
 ---
 next/drivers: (dropped for now)
