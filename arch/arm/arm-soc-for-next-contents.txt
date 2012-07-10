@@ -43,6 +43,16 @@ ux500/dt		git://git.linaro.org/people/ljones/linux-3.0-ux500.git for-arm-soc-nex
 tegra/dt		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git for-3.6/dt
 				depends on tegra/cleanup
 at91/dt			git://github.com/at91linux/linux-at91 at91-for-next-dt
+omap/dt			git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-devel-dt-for-v3.6
+
+next/timer
+omap/dmtimer		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-devel-dmtimer-for-v3.6
+
+
+next/cleanup2:
+omap/cleanup2		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-cleanup-part2-for-v3.6
+				depends on omap/am33xx, omap/cleanup and omap/dmtimer
+
 
 next/defconfig
 lpc32xx/defconfig	git://git.antcom.de/linux-2.6.git lpc32xx/defconfig
@@ -54,6 +64,7 @@ next/boards:
 tegra/boards		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git for-3.6/boards
 				depends on tegra/cleanup
 samsung/board-samsung	git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung next/board-samsung
+omap/boards		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-devel-board-for-v3.6
 
 next/irq:
 imx/sparse-irq		git://git.linaro.org/people/shawnguo/linux-2.6.git imx/sparse-irq
@@ -69,9 +80,6 @@ omap/pm			git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/o
 
 next/clk:
 tegra/common-clk	git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git for-3.6/common-clk
-
-next/timer
-omap/dmtimer		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-devel-dmtimer-for-v3.6
 
 next/dma:
 samsung/dma		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/devel-dma-ops
