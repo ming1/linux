@@ -27,33 +27,31 @@
 #include <plat/keyboard.h>
 
 /* Keyboard Registers */
-#define MODE_REG	0x00	/* 16 bit reg */
-#define STATUS_REG	0x0C	/* 2 bit reg */
-#define DATA_REG	0x10	/* 8 bit reg */
+#define MODE_CTL_REG	0x00
+#define STATUS_REG	0x0C
+#define DATA_REG	0x10
 #define INTR_MASK	0x54
 
 /* Register Values */
-/*
- * pclk freq mask = (APB FEQ -1)= 82 MHZ.Programme bit 15-9 in mode
- * control register as 1010010(82MHZ)
- */
-#define PCLK_FREQ_MSK	0xA400	/* 82 MHz */
-#define START_SCAN	0x0100
-#define SCAN_RATE_10	0x0000
-#define SCAN_RATE_20	0x0004
-#define SCAN_RATE_40	0x0008
-#define SCAN_RATE_80	0x000C
-#define MODE_KEYBOARD	0x0002
-#define DATA_AVAIL	0x2
-
-#define KEY_MASK	0xFF000000
-#define KEY_VALUE	0x00FFFFFF
-#define ROW_MASK	0xF0
-#define COLUMN_MASK	0x0F
 #define NUM_ROWS	16
 #define NUM_COLS	16
+#define MODE_CTL_PCLK_FREQ_SHIFT	9
+#define MODE_CTL_PCLK_FREQ_MSK		0x7F
 
-#define KEY_MATRIX_SHIFT	6
+#define MODE_CTL_KEYBOARD	(0x2 << 0)
+#define MODE_CTL_SCAN_RATE_10	(0x0 << 2)
+#define MODE_CTL_SCAN_RATE_20	(0x1 << 2)
+#define MODE_CTL_SCAN_RATE_40	(0x2 << 2)
+#define MODE_CTL_SCAN_RATE_80	(0x3 << 2)
+#define MODE_CTL_KEYNUM_SHIFT	6
+#define MODE_CTL_START_SCAN	(0x1 << 8)
+
+#define STATUS_DATA_AVAIL	(0x1 << 1)
+
+#define DATA_ROW_MASK		0xF0
+#define DATA_COLUMN_MASK	0x0F
+
+#define ROW_SHIFT		4
 
 struct spear_kbd {
 	struct input_dev *input;
@@ -72,10 +70,10 @@ static irqreturn_t spear_kbd_interrupt(int irq, void *dev_id)
 	struct spear_kbd *kbd = dev_id;
 	struct input_dev *input = kbd->input;
 	unsigned int key;
-	u8 sts, val;
+	u32 sts, val;
 
-	sts = readb(kbd->io_base + STATUS_REG);
-	if (!(sts & DATA_AVAIL))
+	sts = readl_relaxed(kbd->io_base + STATUS_REG);
+	if (!(sts & STATUS_DATA_AVAIL))
 		return IRQ_NONE;
 
 	if (kbd->last_key != KEY_RESERVED) {
@@ -84,7 +82,8 @@ static irqreturn_t spear_kbd_interrupt(int irq, void *dev_id)
 	}
 
 	/* following reads active (row, col) pair */
-	val = readb(kbd->io_base + DATA_REG);
+	val = readl_relaxed(kbd->io_base + DATA_REG) &
+		(DATA_ROW_MASK | DATA_COLUMN_MASK);
 	key = kbd->keycodes[val];
 
 	input_event(input, EV_MSC, MSC_SCAN, val);
@@ -94,7 +93,7 @@ static irqreturn_t spear_kbd_interrupt(int irq, void *dev_id)
 	kbd->last_key = key;
 
 	/* clear interrupt */
-	writeb(0, kbd->io_base + STATUS_REG);
+	writel_relaxed(0, kbd->io_base + STATUS_REG);
 
 	return IRQ_HANDLED;
 }
@@ -103,7 +102,7 @@ static int spear_kbd_open(struct input_dev *dev)
 {
 	struct spear_kbd *kbd = input_get_drvdata(dev);
 	int error;
-	u16 val;
+	u32 val;
 
 	kbd->last_key = KEY_RESERVED;
 
@@ -111,16 +110,20 @@ static int spear_kbd_open(struct input_dev *dev)
 	if (error)
 		return error;
 
+	/* keyboard rate to be programmed is input clock (in MHz) - 1 */
+	val = clk_get_rate(kbd->clk) / 1000000 - 1;
+	val = (val & MODE_CTL_PCLK_FREQ_MSK) << MODE_CTL_PCLK_FREQ_SHIFT;
+
 	/* program keyboard */
-	val = SCAN_RATE_80 | MODE_KEYBOARD | PCLK_FREQ_MSK |
-		(kbd->mode << KEY_MATRIX_SHIFT);
-	writew(val, kbd->io_base + MODE_REG);
-	writeb(1, kbd->io_base + STATUS_REG);
+	val = MODE_CTL_SCAN_RATE_80 | MODE_CTL_KEYBOARD | val |
+		(kbd->mode << MODE_CTL_KEYNUM_SHIFT);
+	writel_relaxed(val, kbd->io_base + MODE_CTL_REG);
+	writel_relaxed(1, kbd->io_base + STATUS_REG);
 
 	/* start key scan */
-	val = readw(kbd->io_base + MODE_REG);
-	val |= START_SCAN;
-	writew(val, kbd->io_base + MODE_REG);
+	val = readl_relaxed(kbd->io_base + MODE_CTL_REG);
+	val |= MODE_CTL_START_SCAN;
+	writel_relaxed(val, kbd->io_base + MODE_CTL_REG);
 
 	return 0;
 }
@@ -128,12 +131,12 @@ static int spear_kbd_open(struct input_dev *dev)
 static void spear_kbd_close(struct input_dev *dev)
 {
 	struct spear_kbd *kbd = input_get_drvdata(dev);
-	u16 val;
+	u32 val;
 
 	/* stop key scan */
-	val = readw(kbd->io_base + MODE_REG);
-	val &= ~START_SCAN;
-	writew(val, kbd->io_base + MODE_REG);
+	val = readl_relaxed(kbd->io_base + MODE_CTL_REG);
+	val &= ~MODE_CTL_START_SCAN;
+	writel_relaxed(val, kbd->io_base + MODE_CTL_REG);
 
 	clk_disable(kbd->clk);
 
@@ -302,7 +305,7 @@ static int __devexit spear_kbd_remove(struct platform_device *pdev)
 	release_mem_region(kbd->res->start, resource_size(kbd->res));
 	kfree(kbd);
 
-	device_init_wakeup(&pdev->dev, 1);
+	device_init_wakeup(&pdev->dev, 0);
 	platform_set_drvdata(pdev, NULL);
 
 	return 0;
