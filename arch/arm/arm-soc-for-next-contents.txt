@@ -30,10 +30,6 @@ omap/am33xx		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tag
 tegra/soc		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git for-3.6/soc
 				depends on tegra/cleanup
 
-next/newsoc:
-mvebu/newsoc		git://github.com/Marvell-Semi/EBU_mainline_public.git mvebu_for-next-V9
-				rebased to v3.5-rc5
-
 next/dt:
 lpc32xx/dt		git://git.antcom.de/linux-2.6.git lpc32xx/dts
 				depends on lpc32xx/devel
@@ -53,6 +49,11 @@ next/cleanup2:
 omap/cleanup2		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-cleanup-part2-for-v3.6
 				depends on omap/am33xx, omap/cleanup and omap/dmtimer
 
+next/newsoc:
+mvebu/newsoc		git://github.com/Marvell-Semi/EBU_mainline_public.git mvebu_for-next-V9
+				rebased to v3.5-rc5
+omap/minimal-omap5	git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap devel-omap5
+				depends on omap/cleanup2
 
 next/defconfig
 lpc32xx/defconfig	git://git.antcom.de/linux-2.6.git lpc32xx/defconfig
@@ -80,6 +81,8 @@ omap/pm			git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/o
 
 next/clk:
 tegra/common-clk	git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git for-3.6/common-clk
+omap/am33xx-clk		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-devel-am33xx-data-for-v3.6
+				depends on omap/cleanup2
 
 next/dma:
 samsung/dma		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/devel-dma-ops
