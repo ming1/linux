@@ -913,7 +913,7 @@ struct blk_plug {
 
 struct blk_plug_cb {
 	struct list_head list;
-	void (*callback)(struct blk_plug_cb *);
+	void (*callback)(struct blk_plug_cb *, bool);
 };
 
 extern void blk_start_plug(struct blk_plug *);
