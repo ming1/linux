@@ -27,7 +27,7 @@ struct hugetlb_cgroup {
 };
 
 struct cgroup_subsys hugetlb_subsys __read_mostly;
-struct hugetlb_cgroup *root_h_cgroup __read_mostly;
+static struct hugetlb_cgroup *root_h_cgroup __read_mostly;
 
 static inline
 struct hugetlb_cgroup *hugetlb_cgroup_from_css(struct cgroup_subsys_state *s)
