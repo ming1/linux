@@ -1513,7 +1513,7 @@ asmlinkage int vprintk_emit(int facility, int level,
 			break;
 		}
 		text_len -= end_of_header - text;
-		text = end_of_header;
+		text = (char *)end_of_header;
 	}
 
 	if (level == -1)
