@@ -792,13 +792,15 @@ void __init reserve_region_with_split(struct resource *root,
 		const char *name)
 {
 	write_lock(&resource_lock);
-	if (start > root->end || end < root->start)
+	if (start > root->end || end < root->start) {
 		pr_err("Requested range (0x%llx-0x%llx) not in root range (0x%llx-0x%llx)\n",
 		       (unsigned long long)start, (unsigned long long)end,
 		       (unsigned long long)root->start,
 		       (unsigned long long)root->end);
-	else
+		dump_stack();
+	} else {
 		__reserve_region_with_split(root, start, end, name);
+	}
 	write_unlock(&resource_lock);
 }
 
