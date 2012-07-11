@@ -580,7 +580,7 @@ static int compact_finished(struct zone *zone,
 
 	/*
 	 * A full (order == -1) compaction run starts at the beginning and
-	 * end of a zone; it completes when the migrate and free scanner meet. 
+	 * end of a zone; it completes when the migrate and free scanner meet.
 	 * A partial (order > 0) compaction can start with the free scanner
 	 * at a random point in the zone, and may have to restart.
 	 */
