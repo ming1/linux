@@ -1140,6 +1140,35 @@ static int __devinit omap_gpio_probe(struct platform_device *pdev)
 	return ret;
 }
 
+/**
+ * omap_gpio_remove - cleanup a registered gpio device
+ * @pdev:       pointer to current gpio platform device
+ *
+ * Called by driver framework whenever a gpio device is unregistered.
+ * GPIO is deleted from the list and associated clock handle freed.
+ */
+static int __devexit omap_gpio_remove(struct platform_device *pdev)
+{
+	struct device *dev = &pdev->dev;
+	struct gpio_bank *bank;
+	unsigned long flags;
+	int ret = -EINVAL;
+
+	list_for_each_entry(bank, &omap_gpio_list, node) {
+		spin_lock_irqsave(&bank->lock, flags);
+		if (bank->dev == dev) {
+			list_del(&bank->node);
+			clk_put(bank->dbck);
+			irq_free_desc(bank->irq_base);
+			ret = 0;
+			spin_unlock_irqrestore(&bank->lock, flags);
+			break;
+		}
+		spin_unlock_irqrestore(&bank->lock, flags);
+	}
+	return ret;
+}
+
 #ifdef CONFIG_ARCH_OMAP2PLUS
 
 #if defined(CONFIG_PM_RUNTIME)
@@ -1466,6 +1495,7 @@ MODULE_DEVICE_TABLE(of, omap_gpio_match);
 
 static struct platform_driver omap_gpio_driver = {
 	.probe		= omap_gpio_probe,
+	.remove = __devexit_p(omap_gpio_remove),
 	.driver		= {
 		.name	= "omap_gpio",
 		.pm	= &gpio_pm_ops,
