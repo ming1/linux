@@ -980,7 +980,8 @@ drop:
 	rcu_read_unlock();
 	FC_LPORT_DBG(lport, "dropping unexpected frame type %x\n", fh->fh_type);
 	fc_frame_free(fp);
-	lport->tt.exch_done(sp);
+	if (sp)
+		lport->tt.exch_done(sp);
 }
 
 /**
@@ -1597,8 +1598,9 @@ static void fc_lport_timeout(struct work_struct *work)
 	case LPORT_ST_RPA:
 	case LPORT_ST_DHBA:
 	case LPORT_ST_DPRT:
-		fc_lport_enter_ms(lport, lport->state);
-		break;
+		FC_LPORT_DBG(lport, "Skipping lport state %s to SCR\n",
+			     fc_lport_state(lport));
+		/* fall thru */
 	case LPORT_ST_SCR:
 		fc_lport_enter_scr(lport);
 		break;
