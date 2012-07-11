@@ -71,7 +71,6 @@ struct irq_domain_ops {
  * @link: Element in global irq_domain list.
  * @revmap_type: Method used for reverse mapping hwirq numbers to linux irq. This
  *               will be one of the IRQ_DOMAIN_MAP_* values.
- * @revmap_data: Revmap method specific data.
  * @ops: pointer to irq_domain methods
  * @host_data: private data pointer for use by owner.  Not touched by irq_domain
  *             core code.
@@ -88,10 +87,9 @@ struct irq_domain {
 
 	/* type of reverse mapping_technique */
 	unsigned int revmap_type;
-	union {
+	struct {
 		struct {
 			unsigned int size;
-			unsigned int *revmap;
 		} linear;
 		struct {
 			unsigned int max_irq;
@@ -104,6 +102,9 @@ struct irq_domain {
 
 	/* Optional device node pointer */
 	struct device_node *of_node;
+
+	/* Linear reverse map */
+	unsigned int linear_revmap[];
 };
 
 #ifdef CONFIG_IRQ_DOMAIN
@@ -126,10 +127,6 @@ struct irq_domain *irq_domain_add_nomap(struct device_node *of_node,
 					 unsigned int max_irq,
 					 const struct irq_domain_ops *ops,
 					 void *host_data);
-struct irq_domain *irq_domain_add_tree(struct device_node *of_node,
-					 const struct irq_domain_ops *ops,
-					 void *host_data);
-
 extern struct irq_domain *irq_find_host(struct device_node *node);
 extern void irq_set_default_host(struct irq_domain *host);
 
@@ -140,6 +137,12 @@ static inline struct irq_domain *irq_domain_add_legacy_isa(
 {
 	return irq_domain_add_legacy(of_node, NUM_ISA_INTERRUPTS, 0, 0, ops,
 				     host_data);
+}
+static inline struct irq_domain *irq_domain_add_tree(struct device_node *of_node,
+					 const struct irq_domain_ops *ops,
+					 void *host_data)
+{
+	return irq_domain_add_linear(of_node, 0, ops, host_data);
 }
 
 extern void irq_domain_remove(struct irq_domain *host);
