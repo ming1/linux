@@ -103,9 +103,9 @@ SYSCALL_DEFINE(fadvise64_64)(int fd, loff_t offset, loff_t len, int advice)
 			nrpages = ~0UL;
 
 		/*
-		 * Ignore return value because fadvise() shall return 
+		 * Ignore return value because fadvise() shall return
 		 * success even if filesystem can't retrieve a hint,
-		 */		
+		 */
 		force_page_cache_readahead(mapping, file, start_index,
 					   nrpages);
 		break;
