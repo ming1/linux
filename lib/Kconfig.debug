@@ -1162,7 +1162,7 @@ config MEMORY_NOTIFIER_ERROR_INJECT
 	  bash: echo: write error: Cannot allocate memory
 
 	  To compile this code as a module, choose M here: the module will
-	  be called memory-notifier-error-inject.
+	  be called pSeries-reconfig-notifier-error-inject.
 
 	  If unsure, say N.
 
