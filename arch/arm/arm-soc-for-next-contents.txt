@@ -40,6 +40,7 @@ tegra/dt		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git 
 				depends on tegra/cleanup
 at91/dt			git://github.com/at91linux/linux-at91 at91-for-next-dt
 omap/dt			git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-devel-dt-for-v3.6
+imx/dt			git://git.pengutronix.de/git/imx/linux-2.6.git tags/imx-dt
 
 next/timer
 omap/dmtimer		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-devel-dmtimer-for-v3.6
