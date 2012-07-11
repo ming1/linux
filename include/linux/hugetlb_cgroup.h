@@ -19,7 +19,7 @@
 
 struct hugetlb_cgroup;
 
-#ifdef CONFIG_CGROUP_HUGETLB_RES_CTLR
+#ifdef CONFIG_MEMCG_HUGETLB
 static inline bool hugetlb_cgroup_disabled(void)
 {
 	if (hugetlb_subsys.disabled)
