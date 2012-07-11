@@ -29,6 +29,7 @@ lpc32xx/core		git://git.antcom.de/linux-2.6.git lpc32xx/core
 omap/am33xx		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-devel-am33xx-for-v3.6
 tegra/soc		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git for-3.6/soc
 				depends on tegra/cleanup
+imx/soc			git://git.pengutronix.de/git/imx/linux-2.6.git tags/imx-soc
 
 next/dt:
 lpc32xx/dt		git://git.antcom.de/linux-2.6.git lpc32xx/dts
