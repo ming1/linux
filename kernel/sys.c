@@ -2212,13 +2212,13 @@ int orderly_poweroff(bool force)
 
 	ret = call_usermodehelper_fns(argv[0], argv, envp, UMH_NO_WAIT,
 				      NULL, argv_cleanup, NULL);
-out:
 	if (likely(!ret))
 		return 0;
 
 	if (ret == -ENOMEM)
 		argv_free(argv);
 
+out:
 	if (force) {
 		printk(KERN_WARNING "Failed to start orderly shutdown: "
 		       "forcing the issue\n");
