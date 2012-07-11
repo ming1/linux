@@ -72,3 +72,9 @@ SUBSYS(net_prio)
 #endif
 
 /* */
+
+#ifdef CONFIG_CGROUP_HUGETLB_RES_CTLR
+SUBSYS(hugetlb)
+#endif
+
+/* */
