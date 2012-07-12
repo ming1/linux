@@ -824,7 +824,6 @@ struct ath_hw {
 	struct ar5416IniArray ini_japan2484;
 	struct ar5416IniArray iniModes_9271_ANI_reg;
 	struct ar5416IniArray ini_radio_post_sys2ant;
-	struct ar5416IniArray ini_BTCOEX_MAX_TXPWR;
 
 	struct ar5416IniArray iniMac[ATH_INI_NUM_SPLIT];
 	struct ar5416IniArray iniBB[ATH_INI_NUM_SPLIT];
@@ -1020,22 +1019,20 @@ void ar9002_hw_attach_ops(struct ath_hw *ah);
 void ar9003_hw_attach_ops(struct ath_hw *ah);
 
 void ar9002_hw_load_ani_reg(struct ath_hw *ah, struct ath9k_channel *chan);
-/*
- * ANI work can be shared between all families but a next
- * generation implementation of ANI will be used only for AR9003 only
- * for now as the other families still need to be tested with the same
- * next generation ANI. Feel free to start testing it though for the
- * older families (AR5008, AR9001, AR9002) by using modparam_force_new_ani.
- */
-extern int modparam_force_new_ani;
+
 void ath9k_ani_reset(struct ath_hw *ah, bool is_scanning);
-void ath9k_hw_proc_mib_event(struct ath_hw *ah);
 void ath9k_hw_ani_monitor(struct ath_hw *ah, struct ath9k_channel *chan);
 
 #ifdef CONFIG_ATH9K_BTCOEX_SUPPORT
 static inline bool ath9k_hw_btcoex_is_enabled(struct ath_hw *ah)
 {
 	return ah->btcoex_hw.enabled;
+}
+static inline bool ath9k_hw_mci_is_enabled(struct ath_hw *ah)
+{
+	return ah->common.btcoex_enabled &&
+	       (ah->caps.hw_caps & ATH9K_HW_CAP_MCI);
+
 }
 void ath9k_hw_btcoex_enable(struct ath_hw *ah);
 static inline enum ath_btcoex_scheme
@@ -1045,6 +1042,10 @@ ath9k_hw_get_btcoex_scheme(struct ath_hw *ah)
 }
 #else
 static inline bool ath9k_hw_btcoex_is_enabled(struct ath_hw *ah)
+{
+	return false;
+}
+static inline bool ath9k_hw_mci_is_enabled(struct ath_hw *ah)
 {
 	return false;
 }

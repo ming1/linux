@@ -54,7 +54,7 @@ struct tipc_sock {
 };
 
 #define tipc_sk(sk) ((struct tipc_sock *)(sk))
-#define tipc_sk_port(sk) ((struct tipc_port *)(tipc_sk(sk)->p))
+#define tipc_sk_port(sk) (tipc_sk(sk)->p)
 
 #define tipc_rx_ready(sock) (!skb_queue_empty(&sock->sk->sk_receive_queue) || \
 			(sock->state == SS_DISCONNECTING))
@@ -1699,9 +1699,8 @@ static int getsockopt(struct socket *sock,
 	return put_user(sizeof(value), ol);
 }
 
-/**
- * Protocol switches for the various types of TIPC sockets
- */
+/* Protocol switches for the various types of TIPC sockets */
+
 static const struct proto_ops msg_ops = {
 	.owner		= THIS_MODULE,
 	.family		= AF_TIPC,

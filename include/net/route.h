@@ -40,7 +40,6 @@
 #define RT_CONN_FLAGS(sk)   (RT_TOS(inet_sk(sk)->tos) | sock_flag(sk, SOCK_LOCALROUTE))
 
 struct fib_nh;
-struct inet_peer;
 struct fib_info;
 struct rtable {
 	struct dst_entry	dst;
@@ -65,9 +64,7 @@ struct rtable {
 	__be32			rt_gateway;
 
 	/* Miscellaneous cached information */
-	__be32			rt_spec_dst; /* RFC1122 specific destination */
-	u32			rt_peer_genid;
-	struct inet_peer	*peer; /* long-living peer info */
+	u32			rt_pmtu;
 	struct fib_info		*fi; /* for client ref to shared metrics */
 };
 
@@ -181,9 +178,10 @@ static inline int ip_route_input_noref(struct sk_buff *skb, __be32 dst, __be32 s
 	return ip_route_input_common(skb, dst, src, tos, devin, true);
 }
 
-extern unsigned short	ip_rt_frag_needed(struct net *net, const struct iphdr *iph,
-					  unsigned short new_mtu, struct net_device *dev);
-extern void		ip_rt_send_redirect(struct sk_buff *skb);
+extern void ipv4_update_pmtu(struct sk_buff *skb, struct net *net, u32 mtu,
+			     int oif, u32 mark, u8 protocol, int flow_flags);
+extern void ipv4_sk_update_pmtu(struct sk_buff *skb, struct sock *sk, u32 mtu);
+extern void ip_rt_send_redirect(struct sk_buff *skb);
 
 extern unsigned int		inet_addr_type(struct net *net, __be32 addr);
 extern unsigned int		inet_dev_addr_type(struct net *net, const struct net_device *dev, __be32 addr);
@@ -244,8 +242,6 @@ static inline void ip_route_connect_init(struct flowi4 *fl4, __be32 dst, __be32 
 
 	if (inet_sk(sk)->transparent)
 		flow_flags |= FLOWI_FLAG_ANYSRC;
-	if (protocol == IPPROTO_TCP)
-		flow_flags |= FLOWI_FLAG_PRECOW_METRICS;
 	if (can_sleep)
 		flow_flags |= FLOWI_FLAG_CAN_SLEEP;
 
@@ -292,17 +288,6 @@ static inline struct rtable *ip_route_newports(struct flowi4 *fl4, struct rtable
 		return ip_route_output_flow(sock_net(sk), fl4, sk);
 	}
 	return rt;
-}
-
-extern void rt_bind_peer(struct rtable *rt, __be32 daddr, int create);
-
-static inline struct inet_peer *rt_get_peer(struct rtable *rt, __be32 daddr)
-{
-	if (rt->peer)
-		return rt->peer;
-
-	rt_bind_peer(rt, daddr, 0);
-	return rt->peer;
 }
 
 static inline int inet_iif(const struct sk_buff *skb)

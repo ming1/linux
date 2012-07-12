@@ -3310,8 +3310,7 @@ EXPORT_SYMBOL(tcp_md5_hash_key);
 
 #endif
 
-/**
- * Each Responder maintains up to two secret values concurrently for
+/* Each Responder maintains up to two secret values concurrently for
  * efficient secret rollover.  Each secret value has 4 states:
  *
  * Generating.  (tcp_secret_generating != tcp_secret_primary)
@@ -3562,6 +3561,8 @@ void __init tcp_init(void)
 
 	pr_info("Hash tables configured (established %u bind %u)\n",
 		tcp_hashinfo.ehash_mask + 1, tcp_hashinfo.bhash_size);
+
+	tcp_metrics_init();
 
 	tcp_register_congestion_control(&tcp_reno);
 
