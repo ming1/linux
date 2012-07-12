@@ -140,7 +140,7 @@ cifs_create(struct inode *inode, struct dentry *direntry, umode_t mode,
 		struct nameidata *nd)
 {
 	int rc = -ENOENT;
-	int xid;
+	unsigned int xid;
 	int create_options = CREATE_NOT_DIR;
 	__u32 oplock = 0;
 	int oflags;
@@ -161,12 +161,12 @@ cifs_create(struct inode *inode, struct dentry *direntry, umode_t mode,
 	struct inode *newinode = NULL;
 	int disposition = FILE_OVERWRITE_IF;
 
-	xid = GetXid();
+	xid = get_xid();
 
 	cifs_sb = CIFS_SB(inode->i_sb);
 	tlink = cifs_sb_tlink(cifs_sb);
 	if (IS_ERR(tlink)) {
-		FreeXid(xid);
+		free_xid(xid);
 		return PTR_ERR(tlink);
 	}
 	tcon = tlink_tcon(tlink);
@@ -351,7 +351,7 @@ cifs_create_out:
 	kfree(buf);
 	kfree(full_path);
 	cifs_put_tlink(tlink);
-	FreeXid(xid);
+	free_xid(xid);
 	return rc;
 }
 
@@ -359,7 +359,7 @@ int cifs_mknod(struct inode *inode, struct dentry *direntry, umode_t mode,
 		dev_t device_number)
 {
 	int rc = -EPERM;
-	int xid;
+	unsigned int xid;
 	int create_options = CREATE_NOT_DIR | CREATE_OPTION_SPECIAL;
 	struct cifs_sb_info *cifs_sb;
 	struct tcon_link *tlink;
@@ -383,7 +383,7 @@ int cifs_mknod(struct inode *inode, struct dentry *direntry, umode_t mode,
 
 	pTcon = tlink_tcon(tlink);
 
-	xid = GetXid();
+	xid = get_xid();
 
 	full_path = build_path_from_dentry(direntry);
 	if (full_path == NULL) {
@@ -431,7 +431,7 @@ int cifs_mknod(struct inode *inode, struct dentry *direntry, umode_t mode,
 	if (buf == NULL) {
 		kfree(full_path);
 		rc = -ENOMEM;
-		FreeXid(xid);
+		free_xid(xid);
 		return rc;
 	}
 
@@ -481,7 +481,7 @@ int cifs_mknod(struct inode *inode, struct dentry *direntry, umode_t mode,
 mknod_out:
 	kfree(full_path);
 	kfree(buf);
-	FreeXid(xid);
+	free_xid(xid);
 	cifs_put_tlink(tlink);
 	return rc;
 }
@@ -490,7 +490,7 @@ struct dentry *
 cifs_lookup(struct inode *parent_dir_inode, struct dentry *direntry,
 	    struct nameidata *nd)
 {
-	int xid;
+	unsigned int xid;
 	int rc = 0; /* to get around spurious gcc warning, set to zero here */
 	__u32 oplock;
 	__u16 fileHandle = 0;
@@ -503,7 +503,7 @@ cifs_lookup(struct inode *parent_dir_inode, struct dentry *direntry,
 	char *full_path = NULL;
 	struct file *filp;
 
-	xid = GetXid();
+	xid = get_xid();
 
 	cFYI(1, "parent inode = 0x%p name is: %s and dentry = 0x%p",
 	      parent_dir_inode, direntry->d_name.name, direntry);
@@ -513,7 +513,7 @@ cifs_lookup(struct inode *parent_dir_inode, struct dentry *direntry,
 	cifs_sb = CIFS_SB(parent_dir_inode->i_sb);
 	tlink = cifs_sb_tlink(cifs_sb);
 	if (IS_ERR(tlink)) {
-		FreeXid(xid);
+		free_xid(xid);
 		return (struct dentry *)tlink;
 	}
 	pTcon = tlink_tcon(tlink);
@@ -653,7 +653,7 @@ cifs_lookup(struct inode *parent_dir_inode, struct dentry *direntry,
 lookup_out:
 	kfree(full_path);
 	cifs_put_tlink(tlink);
-	FreeXid(xid);
+	free_xid(xid);
 	return ERR_PTR(rc);
 }
 
