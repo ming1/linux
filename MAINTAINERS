@@ -3168,9 +3168,9 @@ F:	drivers/hwmon/
 F:	include/linux/hwmon*.h
 
 HARDWARE RANDOM NUMBER GENERATOR CORE
-M:	Matt Mackall <mpm@selenic.com>
+M:	Theodore Ts'o" <tytso@mit.edu>
 M:	Herbert Xu <herbert@gondor.apana.org.au>
-S:	Odd fixes
+S:	Maintained
 F:	Documentation/hw_random.txt
 F:	drivers/char/hw_random/
 F:	include/linux/hw_random.h
