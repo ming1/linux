@@ -59,7 +59,7 @@ mvebu/newsoc		git://github.com/Marvell-Semi/EBU_mainline_public.git mvebu_for-ne
 omap/minimal-omap5	git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap devel-omap5
 				depends on omap/cleanup2
 
-next/defconfig
+next/defconfig:
 lpc32xx/defconfig	git://git.antcom.de/linux-2.6.git lpc32xx/defconfig
 				depends on lpc32xx/devel
 mxs/defconfig		git://git.linaro.org/people/shawnguo/linux-2.6.git mxs/defconfig-for-3.6
