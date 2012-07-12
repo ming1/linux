@@ -348,13 +348,7 @@ void __init p1022_ds_pic_init(void)
  */
 static void __init disable_one_node(struct device_node *np, struct property *new)
 {
-	struct property *old;
-
-	old = of_find_property(np, new->name, NULL);
-	if (old)
-		prom_update_property(np, new, old);
-	else
-		prom_add_property(np, new);
+	prom_update_property(np, new);
 }
 
 /* TRUE if there is a "video=fslfb" command-line parameter. */
@@ -450,7 +444,7 @@ static void __init p1022_ds_setup_arch(void)
 	mpc85xx_smp_init();
 
 #ifdef CONFIG_SWIOTLB
-	if (memblock_end_of_DRAM() > max) {
+	if ((memblock_end_of_DRAM() - 1) > max) {
 		ppc_swiotlb_enable = 1;
 		set_pci_dma_ops(&swiotlb_dma_ops);
 		ppc_md.pci_dma_dev_setup = pci_dma_dev_setup_swiotlb;
