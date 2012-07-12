@@ -43,6 +43,7 @@ at91/dt			git://github.com/at91linux/linux-at91 at91-for-next-dt
 omap/dt			git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-devel-dt-for-v3.6
 imx/dt			git://git.pengutronix.de/git/imx/linux-2.6.git tags/imx-dt
 imx/dt2			git://git.linaro.org/people/shawnguo/linux-2.6.git imx/dt-for-3.6
+mxs/dt2			git://git.linaro.org/people/shawnguo/linux-2.6.git mxs/dt-for-3.6
 
 next/timer
 omap/dmtimer		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-devel-dmtimer-for-v3.6
@@ -64,6 +65,7 @@ lpc32xx/defconfig	git://git.antcom.de/linux-2.6.git lpc32xx/defconfig
 				depends on lpc32xx/devel
 mxs/defconfig		git://git.linaro.org/people/shawnguo/linux-2.6.git mxs/defconfig-for-3.6
 tegra/defconfig		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git for-3.6/defconfig
+imx/defconfig		git://git.pengutronix.de/git/imx/linux-2.6.git tags/imx-defconfig
 
 next/boards:
 tegra/boards		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git for-3.6/boards
