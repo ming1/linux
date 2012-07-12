@@ -1,0 +1,57 @@
+Importing i2c based on 2437fccfbfc83bcb868ccc7fdfe2b5310bf07835
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard 2437fccfbfc83bcb868ccc7fdfe2b5310bf07835
+HEAD is now at 2437fcc Merge tag 'regulator-3.5' of git://git.kernel.org/pub/scm/linux/kernel/git/broonie/regulator
+$ git am ../quilt/i2c/i2c-update-Guenter-Roeck-address.patch
+Applying: i2c: Update Guenter's Roeck e-mail address
+$ git am ../quilt/i2c/i2c-use-module_pci_driver.patch
+Applying: i2c/busses: Use module_pci_driver
+$ git am ../quilt/i2c/i2c-piix4-01-eliminate-piix4_smba-global-variable.patch
+Applying: i2c-piix4: Eliminate piix4_smba global variable
+$ git am ../quilt/i2c/i2c-piix4-02-separate-registration-and-probing-code.patch
+Applying: i2c-piix4: Separate registration and probing code
+$ git am ../quilt/i2c/i2c-piix4-03-support-amd-auxiliary-smbus-controller.patch
+Applying: i2c-piix4: Support AMD auxiliary SMBus controller
+$ git am ../quilt/i2c/i2c-writing-clients-mention-module_i2c_driver.patch
+Applying: i2c/writing-clients: Mention module_i2c_driver()
+$ git am ../quilt/i2c/i2c-smbus-use-module_i2c_driver.patch
+Applying: i2c-smbus: Use module_i2c_driver()
+$ git am ../quilt/i2c/i2c-i801-01-refactor-use-of-last_byte-in-i801_block_transaction_byte_by_byte.patch
+Applying: i2c-i801: Refactor use of LAST_BYTE in i801_block_transaction_byte_by_byte
+$ git am ../quilt/i2c/i2c-i801-02-clear-only-status-bits-in-hst_sts.patch
+Applying: i2c-i801: Clear only status bits in HST_STS
+$ git am ../quilt/i2c/i2c-i801-03-check-and-return-errors-during-byte-by-byte-transfers.patch
+Applying: i2c-i801: Check and return errors during byte-by-byte transfers
+$ git am ../quilt/i2c/i2c-i801-04-rename-some-smbhstcnt-bit-constants.patch
+Applying: i2c-i801: Rename some SMBHSTCNT bit constants
+$ git am ../quilt/i2c/i2c-i801-05-drop-enable_int9.patch
+Applying: i2c-i801: Drop ENABLE_INT9
+$ git am ../quilt/i2c/i2c-i801-06-consolidate-polling.patch
+Applying: i2c-i801: Consolidate polling
+$ git am ../quilt/i2c/i2c-i801-07-enable-irq-for-smbus-transactions.patch
+Applying: i2c-i801: Enable IRQ for SMBus transactions
+$ git am ../quilt/i2c/i2c-i801-08-enable-irq-on-ICH5-to-ICH10.patch
+Applying: i2c-i801: Enable interrupts on ICH5/7/8/9/10
+$ git am ../quilt/i2c/i2c-i801-09-enable-irq-for-byte_by_byte-transactions.patch
+Applying: i2c-i801: Enable IRQ for byte_by_byte transactions
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/i2c
+From ../quilt-tmp
+ + d0784b6...2c1cad4 master     -> quilt/i2c  (forced update)
+Importing jdelvare-hwmon based on 2437fccfbfc83bcb868ccc7fdfe2b5310bf07835
+$ cd ../quilt-tmp
+$ git reset --hard 2437fccfbfc83bcb868ccc7fdfe2b5310bf07835
+HEAD is now at 2437fcc Merge tag 'regulator-3.5' of git://git.kernel.org/pub/scm/linux/kernel/git/broonie/regulator
+$ git am ../quilt/jdelvare-hwmon/hwmon-it87-preserve-config-bits.patch
+Applying: hwmon: (it87) Preserve configuration register bits on init
+$ git am ../quilt/jdelvare-hwmon/hwmon-struct-x86_cpu_id-arrays-can-be-__initconst.patch
+Applying: hwmon: struct x86_cpu_id arrays can be __initconst
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/jdelvare-hwmon
+From ../quilt-tmp
+ + 316a1a8...b86a675 master     -> quilt/jdelvare-hwmon  (forced update)
+Importing rr based on v3.5-rc3-93-g02edf6a
+Unchanged quilt series rr
+Importing device-mapper based on v3.5-rc6
+Unchanged quilt series device-mapper
