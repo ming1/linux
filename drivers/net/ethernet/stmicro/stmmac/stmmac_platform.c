@@ -156,6 +156,8 @@ static int stmmac_pltfr_probe(struct platform_device *pdev)
 	if (priv->wol_irq == -ENXIO)
 		priv->wol_irq = priv->dev->irq;
 
+	priv->lpi_irq = platform_get_irq_byname(pdev, "eth_lpi");
+
 	platform_set_drvdata(pdev, priv->dev);
 
 	pr_debug("STMMAC platform driver registration completed");
@@ -190,7 +192,7 @@ static int stmmac_pltfr_remove(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, NULL);
 
-	iounmap((void *)priv->ioaddr);
+	iounmap((void __force __iomem *)priv->ioaddr);
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	release_mem_region(res->start, resource_size(res));
 

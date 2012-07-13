@@ -1134,7 +1134,7 @@ static void vxge_set_multicast(struct net_device *dev)
 		"%s:%d", __func__, __LINE__);
 
 	vdev = netdev_priv(dev);
-	hldev = (struct __vxge_hw_device  *)vdev->devh;
+	hldev = vdev->devh;
 
 	if (unlikely(!is_vxge_card_up(vdev)))
 		return;
@@ -3687,7 +3687,8 @@ static int __devinit vxge_config_vpaths(
 			return 0;
 
 		if (!driver_config->g_no_cpus)
-			driver_config->g_no_cpus = num_online_cpus();
+			driver_config->g_no_cpus =
+				netif_get_num_default_rss_queues();
 
 		driver_config->vpath_per_dev = driver_config->g_no_cpus >> 1;
 		if (!driver_config->vpath_per_dev)
@@ -3989,16 +3990,16 @@ static void __devinit vxge_print_parm(struct vxgedev *vdev, u64 vpath_mask)
 			continue;
 		vxge_debug_ll_config(VXGE_TRACE,
 			"%s: MTU size - %d", vdev->ndev->name,
-			((struct __vxge_hw_device  *)(vdev->devh))->
+			((vdev->devh))->
 				config.vp_config[i].mtu);
 		vxge_debug_init(VXGE_TRACE,
 			"%s: VLAN tag stripping %s", vdev->ndev->name,
-			((struct __vxge_hw_device  *)(vdev->devh))->
+			((vdev->devh))->
 				config.vp_config[i].rpa_strip_vlan_tag
 			? "Enabled" : "Disabled");
 		vxge_debug_ll_config(VXGE_TRACE,
 			"%s: Max frags : %d", vdev->ndev->name,
-			((struct __vxge_hw_device  *)(vdev->devh))->
+			((vdev->devh))->
 				config.vp_config[i].fifo.max_frags);
 		break;
 	}
@@ -4260,9 +4261,7 @@ static int vxge_probe_fw_update(struct vxgedev *vdev)
 	if (VXGE_FW_VER(VXGE_CERT_FW_VER_MAJOR, VXGE_CERT_FW_VER_MINOR, 0) >
 	    VXGE_FW_VER(maj, min, 0)) {
 		vxge_debug_init(VXGE_ERR, "%s: Firmware %d.%d.%d is too old to"
-				" be used with this driver.\n"
-				"Please get the latest version from "
-				"ftp://ftp.s2io.com/pub/X3100-Drivers/FIRMWARE",
+				" be used with this driver.",
 				VXGE_DRIVER_NAME, maj, min, bld);
 		return -EINVAL;
 	}

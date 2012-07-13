@@ -54,7 +54,7 @@ u32 fib_rules_tclass(const struct fib_result *res)
 }
 #endif
 
-int fib_lookup(struct net *net, struct flowi4 *flp, struct fib_result *res)
+int __fib_lookup(struct net *net, struct flowi4 *flp, struct fib_result *res)
 {
 	struct fib_lookup_arg arg = {
 		.result = res,
@@ -67,7 +67,7 @@ int fib_lookup(struct net *net, struct flowi4 *flp, struct fib_result *res)
 
 	return err;
 }
-EXPORT_SYMBOL_GPL(fib_lookup);
+EXPORT_SYMBOL_GPL(__fib_lookup);
 
 static int fib4_rule_action(struct fib_rule *rule, struct flowi *flp,
 			    int flags, struct fib_lookup_arg *arg)
@@ -169,8 +169,11 @@ static int fib4_rule_configure(struct fib_rule *rule, struct sk_buff *skb,
 		rule4->dst = nla_get_be32(tb[FRA_DST]);
 
 #ifdef CONFIG_IP_ROUTE_CLASSID
-	if (tb[FRA_FLOW])
+	if (tb[FRA_FLOW]) {
 		rule4->tclassid = nla_get_u32(tb[FRA_FLOW]);
+		if (rule4->tclassid)
+			net->ipv4.fib_num_tclassid_users++;
+	}
 #endif
 
 	rule4->src_len = frh->src_len;
@@ -179,9 +182,22 @@ static int fib4_rule_configure(struct fib_rule *rule, struct sk_buff *skb,
 	rule4->dstmask = inet_make_mask(rule4->dst_len);
 	rule4->tos = frh->tos;
 
+	net->ipv4.fib_has_custom_rules = true;
 	err = 0;
 errout:
 	return err;
+}
+
+static void fib4_rule_delete(struct fib_rule *rule)
+{
+	struct net *net = rule->fr_net;
+#ifdef CONFIG_IP_ROUTE_CLASSID
+	struct fib4_rule *rule4 = (struct fib4_rule *) rule;
+
+	if (rule4->tclassid)
+		net->ipv4.fib_num_tclassid_users--;
+#endif
+	net->ipv4.fib_has_custom_rules = true;
 }
 
 static int fib4_rule_compare(struct fib_rule *rule, struct fib_rule_hdr *frh,
@@ -256,6 +272,7 @@ static const struct fib_rules_ops __net_initdata fib4_rules_ops_template = {
 	.action		= fib4_rule_action,
 	.match		= fib4_rule_match,
 	.configure	= fib4_rule_configure,
+	.delete		= fib4_rule_delete,
 	.compare	= fib4_rule_compare,
 	.fill		= fib4_rule_fill,
 	.default_pref	= fib_default_rule_pref,
@@ -295,6 +312,7 @@ int __net_init fib4_rules_init(struct net *net)
 	if (err < 0)
 		goto fail;
 	net->ipv4.rules_ops = ops;
+	net->ipv4.fib_has_custom_rules = false;
 	return 0;
 
 fail:

@@ -551,6 +551,20 @@ tcp_thin_dupack - BOOLEAN
 	Documentation/networking/tcp-thin.txt
 	Default: 0
 
+tcp_limit_output_bytes - INTEGER
+	Controls TCP Small Queue limit per tcp socket.
+	TCP bulk sender tends to increase packets in flight until it
+	gets losses notifications. With SNDBUF autotuning, this can
+	result in a large amount of packets queued in qdisc/device
+	on the local machine, hurting latency of other flows, for
+	typical pfifo_fast qdiscs.
+	tcp_limit_output_bytes limits the number of bytes on qdisc
+	or device to reduce artificial RTT/cwnd and reduce bufferbloat.
+	Note: For GSO/TSO enabled flows, we try to have at least two
+	packets in flight. Reducing tcp_limit_output_bytes might also
+	reduce the size of individual GSO packet (64KB being the max)
+	Default: 131072
+
 UDP variables:
 
 udp_mem - vector of 3 INTEGERs: min, pressure, max
@@ -857,9 +871,19 @@ accept_source_route - BOOLEAN
 		FALSE (host)
 
 accept_local - BOOLEAN
-	Accept packets with local source addresses. In combination with
-	suitable routing, this can be used to direct packets between two
-	local interfaces over the wire and have them accepted properly.
+	Accept packets with local source addresses. In combination
+	with suitable routing, this can be used to direct packets
+	between two local interfaces over the wire and have them
+	accepted properly.
+
+	rp_filter must be set to a non-zero value in order for
+	accept_local to have an effect.
+
+	default FALSE
+
+route_localnet - BOOLEAN
+	Do not consider loopback addresses as martian source or destination
+	while routing. This enables the use of 127/8 for local routing purposes.
 	default FALSE
 
 rp_filter - INTEGER

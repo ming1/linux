@@ -339,6 +339,9 @@ struct tcp_sock {
 	u32	rcv_tstamp;	/* timestamp of last received ACK (for keepalives) */
 	u32	lsndtime;	/* timestamp of last sent data packet (for restart window) */
 
+	struct list_head tsq_node; /* anchor in tsq_tasklet.head list */
+	unsigned long	tsq_flags;
+
 	/* Data for direct copy to user */
 	struct {
 		struct sk_buff_head	prequeue;
@@ -494,6 +497,12 @@ struct tcp_sock {
 	struct tcp_cookie_values  *cookie_values;
 };
 
+enum tsq_flags {
+	TSQ_THROTTLED,
+	TSQ_QUEUED,
+	TSQ_OWNED, /* tcp_tasklet_func() found socket was locked */
+};
+
 static inline struct tcp_sock *tcp_sk(const struct sock *sk)
 {
 	return (struct tcp_sock *)sk;
@@ -507,7 +516,7 @@ struct tcp_timewait_sock {
 	u32			  tw_ts_recent;
 	long			  tw_ts_recent_stamp;
 #ifdef CONFIG_TCP_MD5SIG
-	struct tcp_md5sig_key	*tw_md5_key;
+	struct tcp_md5sig_key	  *tw_md5_key;
 #endif
 	/* Few sockets in timewait have cookies; in that case, then this
 	 * object holds a reference to them (tw_cookie_values->kref).
