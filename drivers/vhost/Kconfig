@@ -9,3 +9,9 @@ config VHOST_NET
 	  To compile this driver as a module, choose M here: the module will
 	  be called vhost_net.
 
+config TCM_VHOST
+	tristate "TCM_VHOST fabric module (EXPERIMENTAL)"
+	depends on TARGET_CORE && EVENTFD && EXPERIMENTAL && m
+	default n
+	---help---
+	Say M here to enable the TCM_VHOST fabric module for use with virtio-scsi guests
