@@ -294,8 +294,8 @@ static int nfs4_handle_exception(struct nfs_server *server, int errorcode, struc
 		case 0:
 			return 0;
 		case -NFS4ERR_OPENMODE:
-			if (inode && nfs_have_delegation(inode, FMODE_READ)) {
-				nfs_inode_return_delegation(inode);
+			if (inode && nfs4_have_delegation(inode, FMODE_READ)) {
+				nfs4_inode_return_delegation(inode);
 				exception->retry = 1;
 				return 0;
 			}
@@ -1065,7 +1065,7 @@ static void nfs4_return_incompatible_delegation(struct inode *inode, fmode_t fmo
 		return;
 	}
 	rcu_read_unlock();
-	nfs_inode_return_delegation(inode);
+	nfs4_inode_return_delegation(inode);
 }
 
 static struct nfs4_state *nfs4_try_open_cached(struct nfs4_opendata *opendata)
@@ -2766,9 +2766,7 @@ static int nfs4_proc_access(struct inode *inode, struct nfs_access_entry *entry)
  *
  * In the case of WRITE, we also want to put the GETATTR after
  * the operation -- in this case because we want to make sure
- * we get the post-operation mtime and size.  This means that
- * we can't use xdr_encode_pages() as written: we need a variant
- * of it which would leave room in the 'tail' iovec.
+ * we get the post-operation mtime and size.
  *
  * Both of these changes to the XDR layer would in fact be quite
  * minor, but I decided to leave them for a subsequent patch.
@@ -2827,6 +2825,7 @@ nfs4_proc_create(struct inode *dir, struct dentry *dentry, struct iattr *sattr,
 	struct dentry *de = dentry;
 	struct nfs4_state *state;
 	struct rpc_cred *cred = NULL;
+	struct nfs4_threshold **thp = NULL;
 	fmode_t fmode = 0;
 	int status = 0;
 
@@ -2834,9 +2833,10 @@ nfs4_proc_create(struct inode *dir, struct dentry *dentry, struct iattr *sattr,
 		cred = ctx->cred;
 		de = ctx->dentry;
 		fmode = ctx->mode;
+		thp = &ctx->mdsthreshold;
 	}
 	sattr->ia_mode &= ~current_umask();
-	state = nfs4_do_open(dir, de, fmode, flags, sattr, cred, NULL);
+	state = nfs4_do_open(dir, de, fmode, flags, sattr, cred, thp);
 	d_drop(dentry);
 	if (IS_ERR(state)) {
 		status = PTR_ERR(state);
@@ -3332,8 +3332,14 @@ static int nfs4_do_fsinfo(struct nfs_server *server, struct nfs_fh *fhandle, str
 
 static int nfs4_proc_fsinfo(struct nfs_server *server, struct nfs_fh *fhandle, struct nfs_fsinfo *fsinfo)
 {
+	int error;
+
 	nfs_fattr_init(fsinfo->fattr);
-	return nfs4_do_fsinfo(server, fhandle, fsinfo);
+	error = nfs4_do_fsinfo(server, fhandle, fsinfo);
+	if (error == 0)
+		set_pnfs_layoutdriver(server, fhandle, fsinfo->layouttype);
+
+	return error;
 }
 
 static int _nfs4_proc_pathconf(struct nfs_server *server, struct nfs_fh *fhandle,
@@ -3460,7 +3466,7 @@ bool nfs4_write_need_cache_consistency_data(const struct nfs_write_data *data)
 	/* Otherwise, request attributes if and only if we don't hold
 	 * a delegation
 	 */
-	return nfs_have_delegation(hdr->inode, FMODE_READ) == 0;
+	return nfs4_have_delegation(hdr->inode, FMODE_READ) == 0;
 }
 
 static void nfs4_proc_write_setup(struct nfs_write_data *data, struct rpc_message *msg)
@@ -3864,7 +3870,7 @@ static int __nfs4_proc_set_acl(struct inode *inode, const void *buf, size_t bufl
 	i = buf_to_pages_noslab(buf, buflen, arg.acl_pages, &arg.acl_pgbase);
 	if (i < 0)
 		return i;
-	nfs_inode_return_delegation(inode);
+	nfs4_inode_return_delegation(inode);
 	ret = nfs4_call_sync(server->client, server, &msg, &arg.seq_args, &res.seq_res, 1);
 
 	/*
@@ -6786,9 +6792,11 @@ const struct nfs_rpc_ops nfs_v4_clientops = {
 	.set_capabilities = nfs4_server_capabilities,
 	.decode_dirent	= nfs4_decode_dirent,
 	.read_setup	= nfs4_proc_read_setup,
+	.read_pageio_init = pnfs_pageio_init_read,
 	.read_rpc_prepare = nfs4_proc_read_rpc_prepare,
 	.read_done	= nfs4_read_done,
 	.write_setup	= nfs4_proc_write_setup,
+	.write_pageio_init = pnfs_pageio_init_write,
 	.write_rpc_prepare = nfs4_proc_write_rpc_prepare,
 	.write_done	= nfs4_write_done,
 	.commit_setup	= nfs4_proc_commit_setup,
@@ -6798,7 +6806,11 @@ const struct nfs_rpc_ops nfs_v4_clientops = {
 	.clear_acl_cache = nfs4_zap_acl_attr,
 	.close_context  = nfs4_close_context,
 	.open_context	= nfs4_atomic_open,
+	.have_delegation = nfs4_have_delegation,
+	.return_delegation = nfs4_inode_return_delegation,
+	.alloc_client	= nfs4_alloc_client,
 	.init_client	= nfs4_init_client,
+	.free_client	= nfs4_free_client,
 };
 
 static const struct xattr_handler nfs4_xattr_nfs4_acl_handler = {
