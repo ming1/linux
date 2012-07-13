@@ -541,6 +541,8 @@ static void ieee80211_send_assoc(struct ieee80211_sub_if_data *sdata)
 		memcpy(pos, assoc_data->ie + offset, noffset - offset);
 	}
 
+	drv_mgd_prepare_tx(local, sdata);
+
 	IEEE80211_SKB_CB(skb)->flags |= IEEE80211_TX_INTFL_DONT_ENCRYPT;
 	ieee80211_tx_skb(sdata, skb);
 }
@@ -580,6 +582,9 @@ static void ieee80211_send_deauth_disassoc(struct ieee80211_sub_if_data *sdata,
 		if (!(ifmgd->flags & IEEE80211_STA_MFP_ENABLED))
 			IEEE80211_SKB_CB(skb)->flags |=
 				IEEE80211_TX_INTFL_DONT_ENCRYPT;
+
+		drv_mgd_prepare_tx(local, sdata);
+
 		ieee80211_tx_skb(sdata, skb);
 	}
 }
@@ -902,9 +907,6 @@ static bool ieee80211_powersave_allowed(struct ieee80211_sub_if_data *sdata)
 	if (!mgd->associated)
 		return false;
 
-	if (!mgd->associated->beacon_ies)
-		return false;
-
 	if (mgd->flags & (IEEE80211_STA_BEACON_POLL |
 			  IEEE80211_STA_CONNECTION_POLL))
 		return false;
@@ -1106,7 +1108,7 @@ void ieee80211_dynamic_ps_timer(unsigned long data)
 }
 
 /* MLME */
-static void ieee80211_sta_wmm_params(struct ieee80211_local *local,
+static bool ieee80211_sta_wmm_params(struct ieee80211_local *local,
 				     struct ieee80211_sub_if_data *sdata,
 				     u8 *wmm_param, size_t wmm_param_len)
 {
@@ -1117,23 +1119,23 @@ static void ieee80211_sta_wmm_params(struct ieee80211_local *local,
 	u8 *pos, uapsd_queues = 0;
 
 	if (!local->ops->conf_tx)
-		return;
+		return false;
 
 	if (local->hw.queues < IEEE80211_NUM_ACS)
-		return;
+		return false;
 
 	if (!wmm_param)
-		return;
+		return false;
 
 	if (wmm_param_len < 8 || wmm_param[5] /* version */ != 1)
-		return;
+		return false;
 
 	if (ifmgd->flags & IEEE80211_STA_UAPSD_ENABLED)
 		uapsd_queues = ifmgd->uapsd_queues;
 
 	count = wmm_param[6] & 0x0f;
 	if (count == ifmgd->wmm_last_param_set)
-		return;
+		return false;
 	ifmgd->wmm_last_param_set = count;
 
 	pos = wmm_param + 8;
@@ -1200,6 +1202,7 @@ static void ieee80211_sta_wmm_params(struct ieee80211_local *local,
 
 	/* enable WMM or activate new settings */
 	sdata->vif.bss_conf.qos = true;
+	return true;
 }
 
 static void __ieee80211_stop_poll(struct ieee80211_sub_if_data *sdata)
@@ -1266,11 +1269,6 @@ static void ieee80211_set_associated(struct ieee80211_sub_if_data *sdata,
 	struct ieee80211_bss_conf *bss_conf = &sdata->vif.bss_conf;
 
 	bss_info_changed |= BSS_CHANGED_ASSOC;
-	/* set timing information */
-	bss_conf->beacon_int = cbss->beacon_interval;
-	bss_conf->last_tsf = cbss->tsf;
-
-	bss_info_changed |= BSS_CHANGED_BEACON_INT;
 	bss_info_changed |= ieee80211_handle_bss_capability(sdata,
 		bss_conf->assoc_capability, bss->has_erp_value, bss->erp_value);
 
@@ -1361,6 +1359,10 @@ static void ieee80211_set_disassoc(struct ieee80211_sub_if_data *sdata,
 		ieee80211_sta_tear_down_BA_sessions(sta, tx);
 	}
 	mutex_unlock(&local->sta_mtx);
+
+	/* flush out any pending frame (e.g. DELBA) before deauth/disassoc */
+	if (tx)
+		drv_flush(local, false);
 
 	/* deauthenticate/disassociate now */
 	if (tx || frame_buf)
@@ -1610,6 +1612,7 @@ struct sk_buff *ieee80211_ap_probereq_get(struct ieee80211_hw *hw,
 {
 	struct ieee80211_sub_if_data *sdata = vif_to_sdata(vif);
 	struct ieee80211_if_managed *ifmgd = &sdata->u.mgd;
+	struct cfg80211_bss *cbss;
 	struct sk_buff *skb;
 	const u8 *ssid;
 	int ssid_len;
@@ -1619,16 +1622,22 @@ struct sk_buff *ieee80211_ap_probereq_get(struct ieee80211_hw *hw,
 
 	ASSERT_MGD_MTX(ifmgd);
 
-	if (!ifmgd->associated)
+	if (ifmgd->associated)
+		cbss = ifmgd->associated;
+	else if (ifmgd->auth_data)
+		cbss = ifmgd->auth_data->bss;
+	else if (ifmgd->assoc_data)
+		cbss = ifmgd->assoc_data->bss;
+	else
 		return NULL;
 
-	ssid = ieee80211_bss_get_ie(ifmgd->associated, WLAN_EID_SSID);
+	ssid = ieee80211_bss_get_ie(cbss, WLAN_EID_SSID);
 	if (WARN_ON_ONCE(ssid == NULL))
 		ssid_len = 0;
 	else
 		ssid_len = ssid[1];
 
-	skb = ieee80211_build_probe_req(sdata, ifmgd->associated->bssid,
+	skb = ieee80211_build_probe_req(sdata, cbss->bssid,
 					(u32) -1, ssid + 2, ssid_len,
 					NULL, 0, true);
 
@@ -1747,6 +1756,7 @@ static void ieee80211_auth_challenge(struct ieee80211_sub_if_data *sdata,
 	if (!elems.challenge)
 		return;
 	auth_data->expected_transaction = 4;
+	drv_mgd_prepare_tx(sdata->local, sdata);
 	ieee80211_send_auth(sdata, 3, auth_data->algorithm,
 			    elems.challenge - 2, elems.challenge_len + 2,
 			    auth_data->bss->bssid, auth_data->bss->bssid,
@@ -2421,14 +2431,6 @@ static void ieee80211_rx_mgmt_beacon(struct ieee80211_sub_if_data *sdata,
 		directed_tim = ieee80211_check_tim(elems.tim, elems.tim_len,
 						   ifmgd->aid);
 
-	if (ncrc != ifmgd->beacon_crc || !ifmgd->beacon_crc_valid) {
-		ieee80211_rx_bss_info(sdata, mgmt, len, rx_status, &elems,
-				      true);
-
-		ieee80211_sta_wmm_params(local, sdata, elems.wmm_param,
-					 elems.wmm_param_len);
-	}
-
 	if (local->hw.flags & IEEE80211_HW_PS_NULLFUNC_STACK) {
 		if (directed_tim) {
 			if (local->hw.conf.dynamic_ps_timeout > 0) {
@@ -2458,6 +2460,13 @@ static void ieee80211_rx_mgmt_beacon(struct ieee80211_sub_if_data *sdata,
 		return;
 	ifmgd->beacon_crc = ncrc;
 	ifmgd->beacon_crc_valid = true;
+
+	ieee80211_rx_bss_info(sdata, mgmt, len, rx_status, &elems,
+			      true);
+
+	if (ieee80211_sta_wmm_params(local, sdata, elems.wmm_param,
+				     elems.wmm_param_len))
+		changed |= BSS_CHANGED_QOS;
 
 	if (elems.erp_info && elems.erp_info_len >= 1) {
 		erp_valid = true;
@@ -2629,6 +2638,8 @@ static int ieee80211_probe_auth(struct ieee80211_sub_if_data *sdata)
 
 		return -ETIMEDOUT;
 	}
+
+	drv_mgd_prepare_tx(local, sdata);
 
 	if (auth_data->bss->proberesp_ies) {
 		sdata_info(sdata, "send auth to %pM (try %d/%d)\n",
@@ -2958,7 +2969,7 @@ void ieee80211_sta_setup_sdata(struct ieee80211_sub_if_data *sdata)
 /* scan finished notification */
 void ieee80211_mlme_notify_scan_completed(struct ieee80211_local *local)
 {
-	struct ieee80211_sub_if_data *sdata = local->scan_sdata;
+	struct ieee80211_sub_if_data *sdata;
 
 	/* Restart STA timers */
 	rcu_read_lock();
@@ -3116,9 +3127,15 @@ static int ieee80211_prep_connection(struct ieee80211_sub_if_data *sdata,
 
 		memcpy(ifmgd->bssid, cbss->bssid, ETH_ALEN);
 
-		/* tell driver about BSSID and basic rates */
+		/* set timing information */
+		sdata->vif.bss_conf.beacon_int = cbss->beacon_interval;
+		sdata->vif.bss_conf.sync_tsf = cbss->tsf;
+		sdata->vif.bss_conf.sync_device_ts = bss->device_ts;
+
+		/* tell driver about BSSID, basic rates and timing */
 		ieee80211_bss_info_change_notify(sdata,
-			BSS_CHANGED_BSSID | BSS_CHANGED_BASIC_RATES);
+			BSS_CHANGED_BSSID | BSS_CHANGED_BASIC_RATES |
+			BSS_CHANGED_BEACON_INT);
 
 		if (assoc)
 			sta_info_pre_move_state(sta, IEEE80211_STA_AUTH);

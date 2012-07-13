@@ -322,7 +322,8 @@ static void ieee80211_restart_work(struct work_struct *work)
 
 	mutex_lock(&local->mtx);
 	WARN(test_bit(SCAN_HW_SCANNING, &local->scanning) ||
-	     local->sched_scanning,
+	     rcu_dereference_protected(local->sched_scan_sdata,
+				       lockdep_is_held(&local->mtx)),
 		"%s called with hardware scan in progress\n", __func__);
 	mutex_unlock(&local->mtx);
 
@@ -587,7 +588,7 @@ struct ieee80211_hw *ieee80211_alloc_hw(size_t priv_data_len,
 
 	local->hw.priv = (char *)local + ALIGN(sizeof(*local), NETDEV_ALIGN);
 
-	BUG_ON(!ops->tx && !ops->tx_frags);
+	BUG_ON(!ops->tx);
 	BUG_ON(!ops->start);
 	BUG_ON(!ops->stop);
 	BUG_ON(!ops->config);
@@ -688,7 +689,7 @@ int ieee80211_register_hw(struct ieee80211_hw *hw)
 	int result, i;
 	enum ieee80211_band band;
 	int channels, max_bitrates;
-	bool supp_ht;
+	bool supp_ht, supp_vht;
 	netdev_features_t feature_whitelist;
 	static const u32 cipher_suites[] = {
 		/* keep WEP first, it may be removed below */
@@ -706,12 +707,11 @@ int ieee80211_register_hw(struct ieee80211_hw *hw)
 	     local->hw.offchannel_tx_hw_queue >= local->hw.queues))
 		return -EINVAL;
 
-	if ((hw->wiphy->wowlan.flags || hw->wiphy->wowlan.n_patterns)
 #ifdef CONFIG_PM
-	    && (!local->ops->suspend || !local->ops->resume)
-#endif
-	    )
+	if ((hw->wiphy->wowlan.flags || hw->wiphy->wowlan.n_patterns) &&
+	    (!local->ops->suspend || !local->ops->resume))
 		return -EINVAL;
+#endif
 
 	if ((hw->flags & IEEE80211_HW_SCAN_WHILE_IDLE) && !local->ops->hw_scan)
 		return -EINVAL;
@@ -733,6 +733,7 @@ int ieee80211_register_hw(struct ieee80211_hw *hw)
 	channels = 0;
 	max_bitrates = 0;
 	supp_ht = false;
+	supp_vht = false;
 	for (band = 0; band < IEEE80211_NUM_BANDS; band++) {
 		struct ieee80211_supported_band *sband;
 
@@ -750,6 +751,7 @@ int ieee80211_register_hw(struct ieee80211_hw *hw)
 		if (max_bitrates < sband->n_bitrates)
 			max_bitrates = sband->n_bitrates;
 		supp_ht = supp_ht || sband->ht_cap.ht_supported;
+		supp_vht = supp_vht || sband->vht_cap.vht_supported;
 	}
 
 	local->int_scan_req = kzalloc(sizeof(*local->int_scan_req) +
@@ -824,6 +826,10 @@ int ieee80211_register_hw(struct ieee80211_hw *hw)
 		3 /* DS Params */;
 	if (supp_ht)
 		local->scan_ies_len += 2 + sizeof(struct ieee80211_ht_cap);
+
+	if (supp_vht)
+		local->scan_ies_len +=
+			2 + sizeof(struct ieee80211_vht_capabilities);
 
 	if (!local->ops->hw_scan) {
 		/* For hw_scan, driver needs to set these up. */

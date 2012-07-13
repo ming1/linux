@@ -1005,15 +1005,17 @@ int mwifiex_update_bss_desc_with_ie(struct mwifiex_adapter *adapter,
 int mwifiex_check_network_compatibility(struct mwifiex_private *priv,
 					struct mwifiex_bssdescriptor *bss_desc);
 
-struct net_device *mwifiex_add_virtual_intf(struct wiphy *wiphy,
-					char *name, enum nl80211_iftype type,
-					u32 *flags, struct vif_params *params);
-int mwifiex_del_virtual_intf(struct wiphy *wiphy, struct net_device *dev);
+struct wireless_dev *mwifiex_add_virtual_intf(struct wiphy *wiphy,
+					      char *name,
+					      enum nl80211_iftype type,
+					      u32 *flags,
+					      struct vif_params *params);
+int mwifiex_del_virtual_intf(struct wiphy *wiphy, struct wireless_dev *wdev);
 
 void mwifiex_set_sys_config_invalid_data(struct mwifiex_uap_bss_param *config);
 
 int mwifiex_set_mgmt_ies(struct mwifiex_private *priv,
-			 struct cfg80211_ap_settings *params);
+			 struct cfg80211_beacon_data *data);
 int mwifiex_del_mgmt_ies(struct mwifiex_private *priv);
 u8 *mwifiex_11d_code_2_region(u8 code);
 

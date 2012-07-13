@@ -20,31 +20,31 @@
 #include "rate.h"
 #include "mesh.h"
 
-static struct net_device *ieee80211_add_iface(struct wiphy *wiphy, char *name,
-					      enum nl80211_iftype type,
-					      u32 *flags,
-					      struct vif_params *params)
+static struct wireless_dev *ieee80211_add_iface(struct wiphy *wiphy, char *name,
+						enum nl80211_iftype type,
+						u32 *flags,
+						struct vif_params *params)
 {
 	struct ieee80211_local *local = wiphy_priv(wiphy);
-	struct net_device *dev;
+	struct wireless_dev *wdev;
 	struct ieee80211_sub_if_data *sdata;
 	int err;
 
-	err = ieee80211_if_add(local, name, &dev, type, params);
+	err = ieee80211_if_add(local, name, &wdev, type, params);
 	if (err)
 		return ERR_PTR(err);
 
 	if (type == NL80211_IFTYPE_MONITOR && flags) {
-		sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+		sdata = IEEE80211_WDEV_TO_SUB_IF(wdev);
 		sdata->u.mntr_flags = *flags;
 	}
 
-	return dev;
+	return wdev;
 }
 
-static int ieee80211_del_iface(struct wiphy *wiphy, struct net_device *dev)
+static int ieee80211_del_iface(struct wiphy *wiphy, struct wireless_dev *wdev)
 {
-	ieee80211_if_remove(IEEE80211_DEV_TO_SUB_IF(dev));
+	ieee80211_if_remove(IEEE80211_WDEV_TO_SUB_IF(wdev));
 
 	return 0;
 }
@@ -1741,6 +1741,8 @@ static int ieee80211_set_txq_params(struct wiphy *wiphy,
 		return -EINVAL;
 	}
 
+	ieee80211_bss_info_change_notify(sdata, BSS_CHANGED_QOS);
+
 	return 0;
 }
 
@@ -1761,10 +1763,11 @@ static int ieee80211_resume(struct wiphy *wiphy)
 #endif
 
 static int ieee80211_scan(struct wiphy *wiphy,
-			  struct net_device *dev,
 			  struct cfg80211_scan_request *req)
 {
-	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+	struct ieee80211_sub_if_data *sdata;
+
+	sdata = IEEE80211_WDEV_TO_SUB_IF(req->wdev);
 
 	switch (ieee80211_vif_type_p2p(&sdata->vif)) {
 	case NL80211_IFTYPE_STATION:
@@ -2297,13 +2300,13 @@ static int ieee80211_start_roc_work(struct ieee80211_local *local,
 }
 
 static int ieee80211_remain_on_channel(struct wiphy *wiphy,
-				       struct net_device *dev,
+				       struct wireless_dev *wdev,
 				       struct ieee80211_channel *chan,
 				       enum nl80211_channel_type channel_type,
 				       unsigned int duration,
 				       u64 *cookie)
 {
-	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+	struct ieee80211_sub_if_data *sdata = IEEE80211_WDEV_TO_SUB_IF(wdev);
 	struct ieee80211_local *local = sdata->local;
 	int ret;
 
@@ -2390,23 +2393,23 @@ static int ieee80211_cancel_roc(struct ieee80211_local *local,
 }
 
 static int ieee80211_cancel_remain_on_channel(struct wiphy *wiphy,
-					      struct net_device *dev,
+					      struct wireless_dev *wdev,
 					      u64 cookie)
 {
-	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+	struct ieee80211_sub_if_data *sdata = IEEE80211_WDEV_TO_SUB_IF(wdev);
 	struct ieee80211_local *local = sdata->local;
 
 	return ieee80211_cancel_roc(local, cookie, false);
 }
 
-static int ieee80211_mgmt_tx(struct wiphy *wiphy, struct net_device *dev,
+static int ieee80211_mgmt_tx(struct wiphy *wiphy, struct wireless_dev *wdev,
 			     struct ieee80211_channel *chan, bool offchan,
 			     enum nl80211_channel_type channel_type,
 			     bool channel_type_valid, unsigned int wait,
 			     const u8 *buf, size_t len, bool no_cck,
 			     bool dont_wait_for_ack, u64 *cookie)
 {
-	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+	struct ieee80211_sub_if_data *sdata = IEEE80211_WDEV_TO_SUB_IF(wdev);
 	struct ieee80211_local *local = sdata->local;
 	struct sk_buff *skb;
 	struct sta_info *sta;
@@ -2511,21 +2514,20 @@ static int ieee80211_mgmt_tx(struct wiphy *wiphy, struct net_device *dev,
 }
 
 static int ieee80211_mgmt_tx_cancel_wait(struct wiphy *wiphy,
-					 struct net_device *dev,
+					 struct wireless_dev *wdev,
 					 u64 cookie)
 {
-	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
-	struct ieee80211_local *local = sdata->local;
+	struct ieee80211_local *local = wiphy_priv(wiphy);
 
 	return ieee80211_cancel_roc(local, cookie, true);
 }
 
 static void ieee80211_mgmt_frame_register(struct wiphy *wiphy,
-					  struct net_device *dev,
+					  struct wireless_dev *wdev,
 					  u16 frame_type, bool reg)
 {
 	struct ieee80211_local *local = wiphy_priv(wiphy);
-	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+	struct ieee80211_sub_if_data *sdata = IEEE80211_WDEV_TO_SUB_IF(wdev);
 
 	switch (frame_type) {
 	case IEEE80211_FTYPE_MGMT | IEEE80211_STYPE_AUTH:
@@ -2668,8 +2670,8 @@ ieee80211_prep_tdls_encap_data(struct wiphy *wiphy, struct net_device *dev,
 		tf->u.setup_req.capability =
 			cpu_to_le16(ieee80211_get_tdls_sta_capab(sdata));
 
-		ieee80211_add_srates_ie(&sdata->vif, skb, false);
-		ieee80211_add_ext_srates_ie(&sdata->vif, skb, false);
+		ieee80211_add_srates_ie(sdata, skb, false);
+		ieee80211_add_ext_srates_ie(sdata, skb, false);
 		ieee80211_tdls_add_ext_capab(skb);
 		break;
 	case WLAN_TDLS_SETUP_RESPONSE:
@@ -2682,8 +2684,8 @@ ieee80211_prep_tdls_encap_data(struct wiphy *wiphy, struct net_device *dev,
 		tf->u.setup_resp.capability =
 			cpu_to_le16(ieee80211_get_tdls_sta_capab(sdata));
 
-		ieee80211_add_srates_ie(&sdata->vif, skb, false);
-		ieee80211_add_ext_srates_ie(&sdata->vif, skb, false);
+		ieee80211_add_srates_ie(sdata, skb, false);
+		ieee80211_add_ext_srates_ie(sdata, skb, false);
 		ieee80211_tdls_add_ext_capab(skb);
 		break;
 	case WLAN_TDLS_SETUP_CONFIRM:
@@ -2743,8 +2745,8 @@ ieee80211_prep_tdls_direct(struct wiphy *wiphy, struct net_device *dev,
 		mgmt->u.action.u.tdls_discover_resp.capability =
 			cpu_to_le16(ieee80211_get_tdls_sta_capab(sdata));
 
-		ieee80211_add_srates_ie(&sdata->vif, skb, false);
-		ieee80211_add_ext_srates_ie(&sdata->vif, skb, false);
+		ieee80211_add_srates_ie(sdata, skb, false);
+		ieee80211_add_ext_srates_ie(sdata, skb, false);
 		ieee80211_tdls_add_ext_capab(skb);
 		break;
 	default:
@@ -2980,14 +2982,14 @@ static int ieee80211_probe_client(struct wiphy *wiphy, struct net_device *dev,
 	return 0;
 }
 
-static struct ieee80211_channel *
-ieee80211_wiphy_get_channel(struct wiphy *wiphy,
-			    enum nl80211_channel_type *type)
+static void ieee80211_set_monitor_enabled(struct wiphy *wiphy, bool enabled)
 {
 	struct ieee80211_local *local = wiphy_priv(wiphy);
 
-	*type = local->_oper_channel_type;
-	return local->oper_channel;
+	if (enabled)
+		WARN_ON(ieee80211_add_virtual_monitor(local));
+	else
+		ieee80211_del_virtual_monitor(local);
 }
 
 #ifdef CONFIG_PM
@@ -3063,8 +3065,8 @@ struct cfg80211_ops mac80211_config_ops = {
 	.tdls_oper = ieee80211_tdls_oper,
 	.tdls_mgmt = ieee80211_tdls_mgmt,
 	.probe_client = ieee80211_probe_client,
-	.get_channel = ieee80211_wiphy_get_channel,
 	.set_noack_map = ieee80211_set_noack_map,
+	.set_monitor_enabled = ieee80211_set_monitor_enabled,
 #ifdef CONFIG_PM
 	.set_wakeup = ieee80211_set_wakeup,
 #endif

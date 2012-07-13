@@ -481,6 +481,7 @@ void ath9k_btcoex_timer_resume(struct ath_softc *sc);
 void ath9k_btcoex_timer_pause(struct ath_softc *sc);
 void ath9k_btcoex_handle_interrupt(struct ath_softc *sc, u32 status);
 u16 ath9k_btcoex_aggr_limit(struct ath_softc *sc, u32 max_4ms_framelen);
+void ath9k_btcoex_stop_gen_timer(struct ath_softc *sc);
 #else
 static inline int ath9k_init_btcoex(struct ath_softc *sc)
 {
@@ -504,7 +505,16 @@ static inline u16 ath9k_btcoex_aggr_limit(struct ath_softc *sc,
 {
 	return 0;
 }
+static inline void ath9k_btcoex_stop_gen_timer(struct ath_softc *sc)
+{
+}
 #endif /* CONFIG_ATH9K_BTCOEX_SUPPORT */
+
+struct ath9k_wow_pattern {
+	u8 pattern_bytes[MAX_PATTERN_SIZE];
+	u8 mask_bytes[MAX_PATTERN_SIZE];
+	u32 pattern_len;
+};
 
 /********************/
 /*   LED Control    */
@@ -707,6 +717,13 @@ struct ath_softc {
 	struct ath_ant_comb ant_comb;
 	u8 ant_tx, ant_rx;
 	struct dfs_pattern_detector *dfs_detector;
+	u32 wow_enabled;
+
+#ifdef CONFIG_PM_SLEEP
+	atomic_t wow_got_bmiss_intr;
+	atomic_t wow_sleep_proc_intr; /* in the middle of WoW sleep ? */
+	u32 wow_intr_before_sleep;
+#endif
 };
 
 void ath9k_tasklet(unsigned long data);

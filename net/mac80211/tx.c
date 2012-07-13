@@ -140,6 +140,8 @@ static __le16 ieee80211_duration(struct ieee80211_tx_data *tx,
 			if (r->flags & IEEE80211_RATE_MANDATORY_A)
 				mrate = r->bitrate;
 			break;
+		case IEEE80211_BAND_60GHZ:
+			/* TODO, for now fall through */
 		case IEEE80211_NUM_BANDS:
 			WARN_ON(1);
 			break;
@@ -521,7 +523,7 @@ ieee80211_tx_h_check_control_port_protocol(struct ieee80211_tx_data *tx)
 static ieee80211_tx_result debug_noinline
 ieee80211_tx_h_select_key(struct ieee80211_tx_data *tx)
 {
-	struct ieee80211_key *key = NULL;
+	struct ieee80211_key *key;
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(tx->skb);
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)tx->skb->data;
 
@@ -540,16 +542,23 @@ ieee80211_tx_h_select_key(struct ieee80211_tx_data *tx)
 	else if (!is_multicast_ether_addr(hdr->addr1) &&
 		 (key = rcu_dereference(tx->sdata->default_unicast_key)))
 		tx->key = key;
-	else if (tx->sdata->drop_unencrypted &&
-		 (tx->skb->protocol != tx->sdata->control_port_protocol) &&
-		 !(info->flags & IEEE80211_TX_CTL_INJECTED) &&
-		 (!ieee80211_is_robust_mgmt_frame(hdr) ||
-		  (ieee80211_is_action(hdr->frame_control) &&
-		   tx->sta && test_sta_flag(tx->sta, WLAN_STA_MFP)))) {
+	else if (info->flags & IEEE80211_TX_CTL_INJECTED)
+		tx->key = NULL;
+	else if (!tx->sdata->drop_unencrypted)
+		tx->key = NULL;
+	else if (tx->skb->protocol == tx->sdata->control_port_protocol)
+		tx->key = NULL;
+	else if (ieee80211_is_robust_mgmt_frame(hdr) &&
+		 !(ieee80211_is_action(hdr->frame_control) &&
+		   tx->sta && test_sta_flag(tx->sta, WLAN_STA_MFP)))
+		tx->key = NULL;
+	else if (ieee80211_is_mgmt(hdr->frame_control) &&
+		 !ieee80211_is_robust_mgmt_frame(hdr))
+		tx->key = NULL;
+	else {
 		I802_DEBUG_INC(tx->local->tx_handlers_drop_unencrypted);
 		return TX_DROP;
-	} else
-		tx->key = NULL;
+	}
 
 	if (tx->key) {
 		bool skip_hw = false;
@@ -957,8 +966,7 @@ ieee80211_tx_h_fragment(struct ieee80211_tx_data *tx)
 			info->control.rates[1].idx = -1;
 			info->control.rates[2].idx = -1;
 			info->control.rates[3].idx = -1;
-			info->control.rates[4].idx = -1;
-			BUILD_BUG_ON(IEEE80211_TX_MAX_RATES != 5);
+			BUILD_BUG_ON(IEEE80211_TX_MAX_RATES != 4);
 			info->flags &= ~IEEE80211_TX_CTL_RATE_CTRL_PROBE;
 		} else {
 			hdr->frame_control &= ~morefrags;
@@ -1293,11 +1301,8 @@ static bool __ieee80211_tx(struct ieee80211_local *local,
 		break;
 	}
 
-	if (local->ops->tx_frags)
-		drv_tx_frags(local, vif, pubsta, skbs);
-	else
-		result = ieee80211_tx_frags(local, vif, pubsta, skbs,
-					    txpending);
+	result = ieee80211_tx_frags(local, vif, pubsta, skbs,
+				    txpending);
 
 	ieee80211_tpt_led_trig_tx(local, fc, led_len);
 	ieee80211_led_tx(local, 1);
@@ -2423,9 +2428,9 @@ struct sk_buff *ieee80211_beacon_get_tim(struct ieee80211_hw *hw,
 		*pos++ = WLAN_EID_SSID;
 		*pos++ = 0x0;
 
-		if (ieee80211_add_srates_ie(&sdata->vif, skb, true) ||
+		if (ieee80211_add_srates_ie(sdata, skb, true) ||
 		    mesh_add_ds_params_ie(skb, sdata) ||
-		    ieee80211_add_ext_srates_ie(&sdata->vif, skb, true) ||
+		    ieee80211_add_ext_srates_ie(sdata, skb, true) ||
 		    mesh_add_rsn_ie(skb, sdata) ||
 		    mesh_add_ht_cap_ie(skb, sdata) ||
 		    mesh_add_ht_oper_ie(skb, sdata) ||
