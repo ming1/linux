@@ -799,6 +799,7 @@ struct tps65910_sleep_keepon_data {
 /**
  * struct tps65910_board
  * Board platform data may be used to initialize regulators.
+ * @input_supply: Name of input supply regulator.
  */
 
 struct tps65910_board {
@@ -812,6 +813,7 @@ struct tps65910_board {
 	struct tps65910_sleep_keepon_data *slp_keepon;
 	bool en_gpio_sleep[TPS6591X_MAX_NUM_GPIO];
 	unsigned long regulator_ext_sleep_control[TPS65910_NUM_REGS];
+	const char *input_supply[TPS65910_NUM_REGS];
 	struct regulator_init_data *tps65910_pmic_init_data[TPS65910_NUM_REGS];
 };
 
@@ -879,6 +881,12 @@ static inline int tps65910_reg_clear_bits(struct tps65910 *tps65910, u8 reg,
 		u8 mask)
 {
 	return regmap_update_bits(tps65910->regmap, reg, mask, 0);
+}
+
+static inline int tps65910_reg_update_bits(struct tps65910 *tps65910, u8 reg,
+					   u8 mask, u8 val)
+{
+	return regmap_update_bits(tps65910->regmap, reg, mask, val);
 }
 
 #endif /*  __LINUX_MFD_TPS65910_H */
