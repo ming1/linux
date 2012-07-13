@@ -48,9 +48,7 @@ Please report success/failure with other different cards to
 
 #include "../comedidev.h"
 
-#include "comedi_pci.h"
 #include "8255.h"
-
 
 /* PCI vendor number of ComputerBoards */
 #define PCI_VENDOR_ID_CB        0x1307
@@ -267,7 +265,7 @@ static int cb_pcidda_attach(struct comedi_device *dev,
 	struct comedi_subdevice *s;
 	struct pci_dev *pcidev = NULL;
 	int index;
-
+	int ret;
 
 /*
  * Allocate the private structure area.
@@ -296,21 +294,23 @@ static int cb_pcidda_attach(struct comedi_device *dev,
 		}
 	}
 	if (!pcidev) {
-		dev_err(dev->hw_dev, "Not a ComputerBoards/MeasurementComputing card on requested position\n");
+		dev_err(dev->class_dev,
+			"Not a ComputerBoards/MeasurementComputing card on requested position\n");
 		return -EIO;
 	}
 found:
 	devpriv->pci_dev = pcidev;
 	dev->board_ptr = cb_pcidda_boards + index;
 	/*  "thisboard" macro can be used from here. */
-	dev_dbg(dev->hw_dev, "Found %s at requested position\n",
+	dev_dbg(dev->class_dev, "Found %s at requested position\n",
 		thisboard->name);
 
 	/*
 	 * Enable PCI device and request regions.
 	 */
 	if (comedi_pci_enable(pcidev, thisboard->name)) {
-		dev_err(dev->hw_dev, "cb_pcidda: failed to enable PCI device and request regions\n");
+		dev_err(dev->class_dev,
+			"cb_pcidda: failed to enable PCI device and request regions\n");
 		return -EIO;
 	}
 
@@ -335,11 +335,9 @@ found:
  */
 	dev->board_name = thisboard->name;
 
-/*
- * Allocate the subdevice structures.
- */
-	if (alloc_subdevices(dev, 3) < 0)
-		return -ENOMEM;
+	ret = comedi_alloc_subdevices(dev, 3);
+	if (ret)
+		return ret;
 
 	s = dev->subdevices + 0;
 	/* analog output subdevice */
@@ -360,10 +358,10 @@ found:
 	s = dev->subdevices + 2;
 	subdev_8255_init(dev, s, NULL, devpriv->digitalio + PORT2A);
 
-	dev_dbg(dev->hw_dev, "eeprom:\n");
+	dev_dbg(dev->class_dev, "eeprom:\n");
 	for (index = 0; index < EEPROM_SIZE; index++) {
 		devpriv->eeprom_data[index] = cb_pcidda_read_eeprom(dev, index);
-		dev_dbg(dev->hw_dev, "%i:0x%x\n", index,
+		dev_dbg(dev->class_dev, "%i:0x%x\n", index,
 			devpriv->eeprom_data[index]);
 	}
 

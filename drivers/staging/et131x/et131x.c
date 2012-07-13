@@ -85,8 +85,7 @@
 MODULE_AUTHOR("Victor Soriano <vjsoriano@agere.com>");
 MODULE_AUTHOR("Mark Einon <mark.einon@gmail.com>");
 MODULE_LICENSE("Dual BSD/GPL");
-MODULE_DESCRIPTION("10/100/1000 Base-T Ethernet Driver "
-		   "for the ET1310 by Agere Systems");
+MODULE_DESCRIPTION("10/100/1000 Base-T Ethernet Driver for the ET1310 by Agere Systems");
 
 /* EEPROM defines */
 #define MAX_NUM_REGISTER_POLLS          1000
@@ -1767,8 +1766,8 @@ static void et131x_xcvr_init(struct et131x_adapter *adapter)
 	/* Set the link status interrupt only.  Bad behavior when link status
 	 * and auto neg are set, we run into a nested interrupt problem
 	 */
-	imr |= (ET_PHY_INT_MASK_AUTONEGSTAT &
-		ET_PHY_INT_MASK_LINKSTAT &
+	imr |= (ET_PHY_INT_MASK_AUTONEGSTAT |
+		ET_PHY_INT_MASK_LINKSTAT |
 		ET_PHY_INT_MASK_ENABLE);
 
 	et131x_mii_write(adapter, PHY_INTERRUPT_MASK, imr);
@@ -1784,7 +1783,7 @@ static void et131x_xcvr_init(struct et131x_adapter *adapter)
 	if ((adapter->eeprom_data[1] & 0x4) == 0) {
 		et131x_mii_read(adapter, PHY_LED_2, &lcr2);
 
-		lcr2 &= (ET_LED2_LED_100TX & ET_LED2_LED_1000T);
+		lcr2 &= (ET_LED2_LED_100TX | ET_LED2_LED_1000T);
 		lcr2 |= (LED_VAL_LINKON_ACTIVE << LED_LINK_SHIFT);
 
 		if ((adapter->eeprom_data[1] & 0x8) == 0)
@@ -2967,11 +2966,10 @@ static struct rfd *nic_rx_pkts(struct et131x_adapter *adapter)
 		(ring_index == 0 &&
 		buff_index > rx_local->fbr[1]->num_entries - 1) ||
 		(ring_index == 1 &&
-		buff_index > rx_local->fbr[0]->num_entries - 1))
+		buff_index > rx_local->fbr[0]->num_entries - 1)) {
 #else
-	if (ring_index != 1 || buff_index > rx_local->fbr[0]->num_entries - 1)
+	if (ring_index != 1 || buff_index > rx_local->fbr[0]->num_entries - 1) {
 #endif
-	{
 		/* Illegal buffer or ring index cannot be used by S/W*/
 		dev_err(&adapter->pdev->dev,
 			  "NICRxPkts PSR Entry %d indicates "
@@ -4326,8 +4324,7 @@ static int et131x_mii_probe(struct net_device *netdev)
 	phydev->advertising = phydev->supported;
 	adapter->phydev = phydev;
 
-	dev_info(&adapter->pdev->dev, "attached PHY driver [%s] "
-		 "(mii_bus:phy_addr=%s)\n",
+	dev_info(&adapter->pdev->dev, "attached PHY driver [%s] (mii_bus:phy_addr=%s)\n",
 		 phydev->drv->name, dev_name(&phydev->dev));
 
 	return 0;
@@ -5448,24 +5445,4 @@ static struct pci_driver et131x_driver = {
 	.driver.pm	= ET131X_PM_OPS,
 };
 
-/**
- * et131x_init_module - The "main" entry point called on driver initialization
- *
- * Returns 0 on success, errno on failure (as defined in errno.h)
- */
-static int __init et131x_init_module(void)
-{
-	return pci_register_driver(&et131x_driver);
-}
-
-/**
- * et131x_cleanup_module - The entry point called on driver cleanup
- */
-static void __exit et131x_cleanup_module(void)
-{
-	pci_unregister_driver(&et131x_driver);
-}
-
-module_init(et131x_init_module);
-module_exit(et131x_cleanup_module);
-
+module_pci_driver(et131x_driver);

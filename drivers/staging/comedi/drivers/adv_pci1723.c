@@ -50,8 +50,6 @@ TODO:
 
 #include "../comedidev.h"
 
-#include "comedi_pci.h"
-
 #define PCI_VENDOR_ID_ADVANTECH		0x13fe	/* Advantech PCI vendor ID */
 
 /* hardware types of the cards */
@@ -286,7 +284,7 @@ static int pci1723_dio_insn_bits(struct comedi_device *dev,
 		outw(s->state, dev->iobase + PCI1723_WRITE_DIGITAL_OUTPUT_CMD);
 	}
 	data[1] = inw(dev->iobase + PCI1723_READ_DIGITAL_INPUT_DATA);
-	return 2;
+	return insn->n;
 }
 
 static int pci1723_attach(struct comedi_device *dev,
@@ -367,11 +365,9 @@ static int pci1723_attach(struct comedi_device *dev,
 	if (this_board->n_diochan)
 		n_subdevices++;
 
-	ret = alloc_subdevices(dev, n_subdevices);
-	if (ret < 0) {
-		printk(" - Allocation failed!\n");
+	ret = comedi_alloc_subdevices(dev, n_subdevices);
+	if (ret)
 		return ret;
-	}
 
 	pci1723_reset(dev);
 	subdev = 0;
