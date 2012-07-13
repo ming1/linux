@@ -163,8 +163,9 @@ int page_referenced_one(struct page *, struct vm_area_struct *,
 
 enum ttu_flags {
 	TTU_UNMAP = 0,			/* unmap mode */
-	TTU_MIGRATION = 1,		/* migration mode */
-	TTU_MUNLOCK = 2,		/* munlock mode */
+	TTU_MIGRATE_DIRECT = 1,		/* direct migration mode */
+	TTU_MIGRATE_DEFERRED = 2,	/* deferred [lazy] migration mode */
+	TTU_MUNLOCK = 4,		/* munlock mode */
 	TTU_ACTION_MASK = 0xff,
 
 	TTU_IGNORE_MLOCK = (1 << 8),	/* ignore mlock */
