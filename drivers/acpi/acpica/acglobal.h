@@ -278,8 +278,7 @@ ACPI_EXTERN acpi_cache_t *acpi_gbl_operand_cache;
 
 /* Global handlers */
 
-ACPI_EXTERN struct acpi_object_notify_handler acpi_gbl_device_notify;
-ACPI_EXTERN struct acpi_object_notify_handler acpi_gbl_system_notify;
+ACPI_EXTERN struct acpi_global_notify_handler acpi_gbl_global_notify[2];
 ACPI_EXTERN acpi_exception_handler acpi_gbl_exception_handler;
 ACPI_EXTERN acpi_init_handler acpi_gbl_init_handler;
 ACPI_EXTERN acpi_tbl_handler acpi_gbl_table_handler;
@@ -462,5 +461,13 @@ ACPI_EXTERN u32 acpi_gbl_size_of_node_entries;
 ACPI_EXTERN u32 acpi_gbl_size_of_acpi_objects;
 
 #endif				/* ACPI_DEBUGGER */
+
+/*****************************************************************************
+ *
+ * Info/help support
+ *
+ ****************************************************************************/
+
+extern const struct ah_predefined_name asl_predefined_info[];
 
 #endif				/* __ACGLOBAL_H__ */
