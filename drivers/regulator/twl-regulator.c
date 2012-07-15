@@ -43,9 +43,6 @@ struct twlreg_info {
 	u8			table_len;
 	const u16		*table;
 
-	/* regulator specific turn-on delay */
-	u16			delay;
-
 	/* State REMAP default configuration */
 	u8			remap;
 
@@ -221,20 +218,6 @@ static int twl6030reg_enable(struct regulator_dev *rdev)
 			grp << TWL6030_CFG_STATE_GRP_SHIFT |
 			TWL6030_CFG_STATE_ON);
 	return ret;
-}
-
-static int twl4030reg_enable_time(struct regulator_dev *rdev)
-{
-	struct twlreg_info	*info = rdev_get_drvdata(rdev);
-
-	return info->delay;
-}
-
-static int twl6030reg_enable_time(struct regulator_dev *rdev)
-{
-	struct twlreg_info	*info = rdev_get_drvdata(rdev);
-
-	return info->delay;
 }
 
 static int twl4030reg_disable(struct regulator_dev *rdev)
@@ -508,7 +491,6 @@ static struct regulator_ops twl4030ldo_ops = {
 	.enable		= twl4030reg_enable,
 	.disable	= twl4030reg_disable,
 	.is_enabled	= twl4030reg_is_enabled,
-	.enable_time	= twl4030reg_enable_time,
 
 	.set_mode	= twl4030reg_set_mode,
 
@@ -577,59 +559,32 @@ static struct regulator_ops twl6030coresmps_ops = {
 	.get_voltage	= twl6030coresmps_get_voltage,
 };
 
-static int twl6030ldo_list_voltage(struct regulator_dev *rdev, unsigned index)
-{
-	struct twlreg_info	*info = rdev_get_drvdata(rdev);
-
-	return ((info->min_mV + (index * 100)) * 1000);
-}
-
 static int
-twl6030ldo_set_voltage(struct regulator_dev *rdev, int min_uV, int max_uV,
-		       unsigned *selector)
+twl6030ldo_set_voltage_sel(struct regulator_dev *rdev, unsigned selector)
 {
 	struct twlreg_info	*info = rdev_get_drvdata(rdev);
-	int			vsel;
 
-	if ((min_uV/1000 < info->min_mV) || (max_uV/1000 > info->max_mV))
-		return -EDOM;
-
-	/*
-	 * Use the below formula to calculate vsel
-	 * mV = 1000mv + 100mv * (vsel - 1)
-	 */
-	vsel = (min_uV/1000 - 1000)/100 + 1;
-	*selector = vsel;
-	return twlreg_write(info, TWL_MODULE_PM_RECEIVER, VREG_VOLTAGE, vsel);
-
+	return twlreg_write(info, TWL_MODULE_PM_RECEIVER, VREG_VOLTAGE,
+			    selector);
 }
 
-static int twl6030ldo_get_voltage(struct regulator_dev *rdev)
+static int twl6030ldo_get_voltage_sel(struct regulator_dev *rdev)
 {
 	struct twlreg_info	*info = rdev_get_drvdata(rdev);
-	int		vsel = twlreg_read(info, TWL_MODULE_PM_RECEIVER,
-								VREG_VOLTAGE);
+	int vsel = twlreg_read(info, TWL_MODULE_PM_RECEIVER, VREG_VOLTAGE);
 
-	if (vsel < 0)
-		return vsel;
-
-	/*
-	 * Use the below formula to calculate vsel
-	 * mV = 1000mv + 100mv * (vsel - 1)
-	 */
-	return (1000 + (100 * (vsel - 1))) * 1000;
+	return vsel;
 }
 
 static struct regulator_ops twl6030ldo_ops = {
-	.list_voltage	= twl6030ldo_list_voltage,
+	.list_voltage	= regulator_list_voltage_linear,
 
-	.set_voltage	= twl6030ldo_set_voltage,
-	.get_voltage	= twl6030ldo_get_voltage,
+	.set_voltage_sel = twl6030ldo_set_voltage_sel,
+	.get_voltage_sel = twl6030ldo_get_voltage_sel,
 
 	.enable		= twl6030reg_enable,
 	.disable	= twl6030reg_disable,
 	.is_enabled	= twl6030reg_is_enabled,
-	.enable_time	= twl6030reg_enable_time,
 
 	.set_mode	= twl6030reg_set_mode,
 
@@ -663,7 +618,6 @@ static struct regulator_ops twl4030fixed_ops = {
 	.enable		= twl4030reg_enable,
 	.disable	= twl4030reg_disable,
 	.is_enabled	= twl4030reg_is_enabled,
-	.enable_time	= twl4030reg_enable_time,
 
 	.set_mode	= twl4030reg_set_mode,
 
@@ -678,7 +632,6 @@ static struct regulator_ops twl6030fixed_ops = {
 	.enable		= twl6030reg_enable,
 	.disable	= twl6030reg_disable,
 	.is_enabled	= twl6030reg_is_enabled,
-	.enable_time	= twl6030reg_enable_time,
 
 	.set_mode	= twl6030reg_set_mode,
 
@@ -689,7 +642,6 @@ static struct regulator_ops twl6030_fixed_resource = {
 	.enable		= twl6030reg_enable,
 	.disable	= twl6030reg_disable,
 	.is_enabled	= twl6030reg_is_enabled,
-	.enable_time	= twl6030reg_enable_time,
 	.get_status	= twl6030reg_get_status,
 };
 
@@ -886,7 +838,6 @@ static struct regulator_ops twlsmps_ops = {
 	.enable			= twl6030reg_enable,
 	.disable		= twl6030reg_disable,
 	.is_enabled		= twl6030reg_is_enabled,
-	.enable_time		= twl6030reg_enable_time,
 
 	.set_mode		= twl6030reg_set_mode,
 
@@ -909,7 +860,6 @@ static struct twlreg_info TWL4030_INFO_##label = { \
 	.id = num, \
 	.table_len = ARRAY_SIZE(label##_VSEL_table), \
 	.table = label##_VSEL_table, \
-	.delay = turnon_delay, \
 	.remap = remap_conf, \
 	.desc = { \
 		.name = #label, \
@@ -918,6 +868,7 @@ static struct twlreg_info TWL4030_INFO_##label = { \
 		.ops = &twl4030ldo_ops, \
 		.type = REGULATOR_VOLTAGE, \
 		.owner = THIS_MODULE, \
+		.enable_time = turnon_delay, \
 		}, \
 	}
 
@@ -925,7 +876,6 @@ static struct twlreg_info TWL4030_INFO_##label = { \
 static struct twlreg_info TWL4030_INFO_##label = { \
 	.base = offset, \
 	.id = num, \
-	.delay = turnon_delay, \
 	.remap = remap_conf, \
 	.desc = { \
 		.name = #label, \
@@ -933,6 +883,7 @@ static struct twlreg_info TWL4030_INFO_##label = { \
 		.ops = &twl4030smps_ops, \
 		.type = REGULATOR_VOLTAGE, \
 		.owner = THIS_MODULE, \
+		.enable_time = turnon_delay, \
 		}, \
 	}
 
@@ -959,6 +910,8 @@ static struct twlreg_info TWL6030_INFO_##label = { \
 		.ops = &twl6030ldo_ops, \
 		.type = REGULATOR_VOLTAGE, \
 		.owner = THIS_MODULE, \
+		.min_uV = min_mVolts * 1000, \
+		.uV_step = 100 * 1000, \
 		}, \
 	}
 
@@ -974,6 +927,8 @@ static struct twlreg_info TWL6025_INFO_##label = { \
 		.ops = &twl6030ldo_ops, \
 		.type = REGULATOR_VOLTAGE, \
 		.owner = THIS_MODULE, \
+		.min_uV = min_mVolts * 1000, \
+		.uV_step = 100 * 1000, \
 		}, \
 	}
 
@@ -983,7 +938,6 @@ static struct twlreg_info TWLFIXED_INFO_##label = { \
 	.base = offset, \
 	.id = num, \
 	.min_mV = mVolts, \
-	.delay = turnon_delay, \
 	.remap = remap_conf, \
 	.desc = { \
 		.name = #label, \
@@ -992,19 +946,20 @@ static struct twlreg_info TWLFIXED_INFO_##label = { \
 		.ops = &operations, \
 		.type = REGULATOR_VOLTAGE, \
 		.owner = THIS_MODULE, \
+		.enable_time = turnon_delay, \
 		}, \
 	}
 
 #define TWL6030_FIXED_RESOURCE(label, offset, turnon_delay) \
 static struct twlreg_info TWLRES_INFO_##label = { \
 	.base = offset, \
-	.delay = turnon_delay, \
 	.desc = { \
 		.name = #label, \
 		.id = TWL6030_REG_##label, \
 		.ops = &twl6030_fixed_resource, \
 		.type = REGULATOR_VOLTAGE, \
 		.owner = THIS_MODULE, \
+		.enable_time = turnon_delay, \
 		}, \
 	}
 
@@ -1109,7 +1064,6 @@ static u8 twl_get_smps_mult(void)
 #define TWL6030_OF_MATCH(comp, label) TWL_OF_MATCH(comp, TWL6030, label)
 #define TWL6025_OF_MATCH(comp, label) TWL_OF_MATCH(comp, TWL6025, label)
 #define TWLFIXED_OF_MATCH(comp, label) TWL_OF_MATCH(comp, TWLFIXED, label)
-#define TWLRES_OF_MATCH(comp, label) TWL_OF_MATCH(comp, TWLRES, label)
 #define TWLSMPS_OF_MATCH(comp, label) TWL_OF_MATCH(comp, TWLSMPS, label)
 
 static const struct of_device_id twl_of_match[] __devinitconst = {
@@ -1157,7 +1111,6 @@ static const struct of_device_id twl_of_match[] __devinitconst = {
 	TWLFIXED_OF_MATCH("ti,twl6030-vusb", VUSB),
 	TWLFIXED_OF_MATCH("ti,twl6030-v1v8", V1V8),
 	TWLFIXED_OF_MATCH("ti,twl6030-v2v1", V2V1),
-	TWLRES_OF_MATCH("ti,twl6030-clk32kg", CLK32KG),
 	TWLSMPS_OF_MATCH("ti,twl6025-smps3", SMPS3),
 	TWLSMPS_OF_MATCH("ti,twl6025-smps4", SMPS4),
 	TWLSMPS_OF_MATCH("ti,twl6025-vio", VIO),
