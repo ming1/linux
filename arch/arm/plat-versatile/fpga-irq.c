@@ -111,7 +111,7 @@ static int fpga_irqdomain_map(struct irq_domain *d, unsigned int irq,
 
 	/* Skip invalid IRQs, only register handlers for the real ones */
 	if (!(f->valid & (1 << hwirq)))
-		return -ENOTSUPP;
+		return 0;
 	irq_set_chip_data(irq, f);
 	irq_set_chip_and_handler(irq, &f->chip,
 				handle_level_irq);

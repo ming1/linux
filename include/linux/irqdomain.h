@@ -71,7 +71,6 @@ struct irq_domain_ops {
  * @link: Element in global irq_domain list.
  * @revmap_type: Method used for reverse mapping hwirq numbers to linux irq. This
  *               will be one of the IRQ_DOMAIN_MAP_* values.
- * @revmap_data: Revmap method specific data.
  * @ops: pointer to irq_domain methods
  * @host_data: private data pointer for use by owner.  Not touched by irq_domain
  *             core code.
@@ -88,15 +87,9 @@ struct irq_domain {
 
 	/* type of reverse mapping_technique */
 	unsigned int revmap_type;
-	union {
+	struct {
 		struct {
 			unsigned int size;
-			unsigned int first_irq;
-			irq_hw_number_t first_hwirq;
-		} legacy;
-		struct {
-			unsigned int size;
-			unsigned int *revmap;
 		} linear;
 		struct {
 			unsigned int max_irq;
@@ -109,9 +102,17 @@ struct irq_domain {
 
 	/* Optional device node pointer */
 	struct device_node *of_node;
+
+	/* Linear reverse map */
+	unsigned int linear_revmap[];
 };
 
 #ifdef CONFIG_IRQ_DOMAIN
+struct irq_domain *irq_domain_add_simple(struct device_node *of_node,
+					 unsigned int size,
+					 unsigned int first_irq,
+					 const struct irq_domain_ops *ops,
+					 void *host_data);
 struct irq_domain *irq_domain_add_legacy(struct device_node *of_node,
 					 unsigned int size,
 					 unsigned int first_irq,
@@ -126,10 +127,6 @@ struct irq_domain *irq_domain_add_nomap(struct device_node *of_node,
 					 unsigned int max_irq,
 					 const struct irq_domain_ops *ops,
 					 void *host_data);
-struct irq_domain *irq_domain_add_tree(struct device_node *of_node,
-					 const struct irq_domain_ops *ops,
-					 void *host_data);
-
 extern struct irq_domain *irq_find_host(struct device_node *node);
 extern void irq_set_default_host(struct irq_domain *host);
 
@@ -141,8 +138,23 @@ static inline struct irq_domain *irq_domain_add_legacy_isa(
 	return irq_domain_add_legacy(of_node, NUM_ISA_INTERRUPTS, 0, 0, ops,
 				     host_data);
 }
+static inline struct irq_domain *irq_domain_add_tree(struct device_node *of_node,
+					 const struct irq_domain_ops *ops,
+					 void *host_data)
+{
+	return irq_domain_add_linear(of_node, 0, ops, host_data);
+}
 
 extern void irq_domain_remove(struct irq_domain *host);
+
+extern int irq_domain_associate_many(struct irq_domain *domain,
+				     unsigned int irq_base,
+				     irq_hw_number_t hwirq_base, int count);
+static inline int irq_domain_associate(struct irq_domain *domain, unsigned int irq,
+					irq_hw_number_t hwirq)
+{
+	return irq_domain_associate_many(domain, irq, hwirq, 1);
+}
 
 extern unsigned int irq_create_mapping(struct irq_domain *host,
 				       irq_hw_number_t hwirq);
@@ -150,10 +162,16 @@ extern void irq_dispose_mapping(unsigned int virq);
 extern unsigned int irq_find_mapping(struct irq_domain *host,
 				     irq_hw_number_t hwirq);
 extern unsigned int irq_create_direct_mapping(struct irq_domain *host);
-extern void irq_radix_revmap_insert(struct irq_domain *host, unsigned int virq,
-				    irq_hw_number_t hwirq);
-extern unsigned int irq_radix_revmap_lookup(struct irq_domain *host,
-					    irq_hw_number_t hwirq);
+extern int irq_create_strict_mappings(struct irq_domain *domain,
+				      unsigned int irq_base,
+				      irq_hw_number_t hwirq_base, int count);
+
+static inline int irq_create_identity_mapping(struct irq_domain *host,
+					      irq_hw_number_t hwirq)
+{
+	return irq_create_strict_mappings(host, hwirq, hwirq, 1);
+}
+
 extern unsigned int irq_linear_revmap(struct irq_domain *host,
 				      irq_hw_number_t hwirq);
 
