@@ -1331,6 +1331,7 @@ void warn_alloc_failed(gfp_t gfp_mask, int order, const char *fmt, ...);
 extern void setup_per_cpu_pageset(void);
 
 extern void zone_pcp_update(struct zone *zone);
+extern void zone_pcp_reset(struct zone *zone);
 
 /* nommu.c */
 extern atomic_long_t mmap_pages_allocated;
@@ -1528,6 +1529,7 @@ void vm_stat_account(struct mm_struct *, unsigned long, struct file *, long);
 static inline void vm_stat_account(struct mm_struct *mm,
 			unsigned long flags, struct file *file, long pages)
 {
+	mm->total_vm += pages;
 }
 #endif /* CONFIG_PROC_FS */
 
