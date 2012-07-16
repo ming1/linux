@@ -148,9 +148,11 @@ extern void nfs_umount(const struct nfs_mount_request *info);
 /* client.c */
 extern const struct rpc_program nfs_program;
 extern void nfs_clients_init(struct net *net);
+extern struct nfs_client *nfs_alloc_client(const struct nfs_client_initdata *);
 
 extern void nfs_cleanup_cb_ident_idr(struct net *);
 extern void nfs_put_client(struct nfs_client *);
+extern void nfs_free_client(struct nfs_client *);
 extern struct nfs_client *nfs4_find_client_ident(struct net *, int);
 extern struct nfs_client *
 nfs4_find_client_sessionid(struct net *, const struct sockaddr *,
@@ -304,7 +306,7 @@ extern int nfs_initiate_read(struct rpc_clnt *clnt,
 extern void nfs_read_prepare(struct rpc_task *task, void *calldata);
 extern int nfs_generic_pagein(struct nfs_pageio_descriptor *desc,
 			      struct nfs_pgio_header *hdr);
-extern void nfs_pageio_init_read_mds(struct nfs_pageio_descriptor *pgio,
+extern void nfs_pageio_init_read(struct nfs_pageio_descriptor *pgio,
 			struct inode *inode,
 			const struct nfs_pgio_completion_ops *compl_ops);
 extern void nfs_pageio_reset_read_mds(struct nfs_pageio_descriptor *pgio);
@@ -318,7 +320,7 @@ extern struct nfs_write_header *nfs_writehdr_alloc(void);
 extern void nfs_writehdr_free(struct nfs_pgio_header *hdr);
 extern int nfs_generic_flush(struct nfs_pageio_descriptor *desc,
 			     struct nfs_pgio_header *hdr);
-extern void nfs_pageio_init_write_mds(struct nfs_pageio_descriptor *pgio,
+extern void nfs_pageio_init_write(struct nfs_pageio_descriptor *pgio,
 			struct inode *inode, int ioflags,
 			const struct nfs_pgio_completion_ops *compl_ops);
 extern void nfs_pageio_reset_write_mds(struct nfs_pageio_descriptor *pgio);
