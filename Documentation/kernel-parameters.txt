@@ -1351,6 +1351,9 @@ bytes respectively. Such letter suffixes can also be entirely omitted.
 			* nohrst, nosrst, norst: suppress hard, soft
                           and both resets.
 
+			* rstonce: only attempt one reset during
+			  hot-unplug link recovery
+
 			* dump_id: dump IDENTIFY data.
 
 			If there are multiple matching configurations changing
@@ -2932,6 +2935,8 @@ bytes respectively. Such letter suffixes can also be entirely omitted.
 					initial READ(10) command);
 				o = CAPACITY_OK (accept the capacity
 					reported by the device);
+				p = WRITE_CACHE (the device cache is ON
+					by default);
 				r = IGNORE_RESIDUE (the device reports
 					bogus residue values);
 				s = SINGLE_LUN (the device has only one
