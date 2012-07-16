@@ -95,6 +95,7 @@
 #include <net/checksum.h>
 #include <net/xfrm.h>
 #include <net/inet_common.h>
+#include <net/ip_fib.h>
 
 /*
  *	Build xmit assembly blocks
@@ -253,10 +254,10 @@ static inline bool icmpv4_xrlim_allow(struct net *net, struct rtable *rt,
 
 	/* Limit if icmp type is enabled in ratemask. */
 	if ((1 << type) & net->ipv4.sysctl_icmp_ratemask) {
-		if (!rt->peer)
-			rt_bind_peer(rt, fl4->daddr, 1);
-		rc = inet_peer_xrlim_allow(rt->peer,
+		struct inet_peer *peer = inet_getpeer_v4(net->ipv4.peers, fl4->daddr, 1);
+		rc = inet_peer_xrlim_allow(peer,
 					   net->ipv4.sysctl_icmp_ratelimit);
+		inet_putpeer(peer);
 	}
 out:
 	return rc;
@@ -334,7 +335,7 @@ static void icmp_reply(struct icmp_bxm *icmp_param, struct sk_buff *skb)
 	struct flowi4 fl4;
 	struct sock *sk;
 	struct inet_sock *inet;
-	__be32 daddr;
+	__be32 daddr, saddr;
 
 	if (ip_options_echo(&icmp_param->replyopts.opt.opt, skb))
 		return;
@@ -348,6 +349,7 @@ static void icmp_reply(struct icmp_bxm *icmp_param, struct sk_buff *skb)
 
 	inet->tos = ip_hdr(skb)->tos;
 	daddr = ipc.addr = ip_hdr(skb)->saddr;
+	saddr = fib_compute_spec_dst(skb);
 	ipc.opt = NULL;
 	ipc.tx_flags = 0;
 	if (icmp_param->replyopts.opt.opt.optlen) {
@@ -357,7 +359,7 @@ static void icmp_reply(struct icmp_bxm *icmp_param, struct sk_buff *skb)
 	}
 	memset(&fl4, 0, sizeof(fl4));
 	fl4.daddr = daddr;
-	fl4.saddr = rt->rt_spec_dst;
+	fl4.saddr = saddr;
 	fl4.flowi4_tos = RT_TOS(ip_hdr(skb)->tos);
 	fl4.flowi4_proto = IPPROTO_ICMP;
 	security_skb_classify_flow(skb, flowi4_to_flowi(&fl4));
@@ -632,6 +634,27 @@ out:;
 EXPORT_SYMBOL(icmp_send);
 
 
+static void icmp_socket_deliver(struct sk_buff *skb, u32 info)
+{
+	const struct iphdr *iph = (const struct iphdr *) skb->data;
+	const struct net_protocol *ipprot;
+	int protocol = iph->protocol;
+
+	/* Checkin full IP header plus 8 bytes of protocol to
+	 * avoid additional coding at protocol handlers.
+	 */
+	if (!pskb_may_pull(skb, iph->ihl * 4 + 8))
+		return;
+
+	raw_icmp_error(skb, protocol, info);
+
+	rcu_read_lock();
+	ipprot = rcu_dereference(inet_protos[protocol]);
+	if (ipprot && ipprot->err_handler)
+		ipprot->err_handler(skb, info);
+	rcu_read_unlock();
+}
+
 /*
  *	Handle ICMP_DEST_UNREACH, ICMP_TIME_EXCEED, and ICMP_QUENCH.
  */
@@ -640,10 +663,8 @@ static void icmp_unreach(struct sk_buff *skb)
 {
 	const struct iphdr *iph;
 	struct icmphdr *icmph;
-	int hash, protocol;
-	const struct net_protocol *ipprot;
-	u32 info = 0;
 	struct net *net;
+	u32 info = 0;
 
 	net = dev_net(skb_dst(skb)->dev);
 
@@ -674,9 +695,7 @@ static void icmp_unreach(struct sk_buff *skb)
 				LIMIT_NETDEBUG(KERN_INFO pr_fmt("%pI4: fragmentation needed and DF set\n"),
 					       &iph->daddr);
 			} else {
-				info = ip_rt_frag_needed(net, iph,
-							 ntohs(icmph->un.frag.mtu),
-							 skb->dev);
+				info = ntohs(icmph->un.frag.mtu);
 				if (!info)
 					goto out;
 			}
@@ -720,26 +739,7 @@ static void icmp_unreach(struct sk_buff *skb)
 		goto out;
 	}
 
-	/* Checkin full IP header plus 8 bytes of protocol to
-	 * avoid additional coding at protocol handlers.
-	 */
-	if (!pskb_may_pull(skb, iph->ihl * 4 + 8))
-		goto out;
-
-	iph = (const struct iphdr *)skb->data;
-	protocol = iph->protocol;
-
-	/*
-	 *	Deliver ICMP message to raw sockets. Pretty useless feature?
-	 */
-	raw_icmp_error(skb, protocol, info);
-
-	hash = protocol & (MAX_INET_PROTOS - 1);
-	rcu_read_lock();
-	ipprot = rcu_dereference(inet_protos[hash]);
-	if (ipprot && ipprot->err_handler)
-		ipprot->err_handler(skb, info);
-	rcu_read_unlock();
+	icmp_socket_deliver(skb, info);
 
 out:
 	return;
@@ -755,46 +755,15 @@ out_err:
 
 static void icmp_redirect(struct sk_buff *skb)
 {
-	const struct iphdr *iph;
+	if (skb->len < sizeof(struct iphdr)) {
+		ICMP_INC_STATS_BH(dev_net(skb->dev), ICMP_MIB_INERRORS);
+		return;
+	}
 
-	if (skb->len < sizeof(struct iphdr))
-		goto out_err;
-
-	/*
-	 *	Get the copied header of the packet that caused the redirect
-	 */
 	if (!pskb_may_pull(skb, sizeof(struct iphdr)))
-		goto out;
+		return;
 
-	iph = (const struct iphdr *)skb->data;
-
-	switch (icmp_hdr(skb)->code & 7) {
-	case ICMP_REDIR_NET:
-	case ICMP_REDIR_NETTOS:
-		/*
-		 * As per RFC recommendations now handle it as a host redirect.
-		 */
-	case ICMP_REDIR_HOST:
-	case ICMP_REDIR_HOSTTOS:
-		ip_rt_redirect(ip_hdr(skb)->saddr, iph->daddr,
-			       icmp_hdr(skb)->un.gateway,
-			       iph->saddr, skb->dev);
-		break;
-	}
-
-	/* Ping wants to see redirects.
-         * Let's pretend they are errors of sorts... */
-	if (iph->protocol == IPPROTO_ICMP &&
-	    iph->ihl >= 5 &&
-	    pskb_may_pull(skb, (iph->ihl<<2)+8)) {
-		ping_err(skb, icmp_hdr(skb)->un.gateway);
-	}
-
-out:
-	return;
-out_err:
-	ICMP_INC_STATS_BH(dev_net(skb->dev), ICMP_MIB_INERRORS);
-	goto out;
+	icmp_socket_deliver(skb, icmp_hdr(skb)->un.gateway);
 }
 
 /*

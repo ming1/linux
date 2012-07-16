@@ -3218,7 +3218,7 @@ static void nv_force_linkspeed(struct net_device *dev, int speed, int duplex)
 }
 
 /**
- * nv_update_linkspeed: Setup the MAC according to the link partner
+ * nv_update_linkspeed - Setup the MAC according to the link partner
  * @dev: Network device to be configured
  *
  * The function queries the PHY and checks if there is a link partner.
@@ -3552,8 +3552,7 @@ static irqreturn_t nv_nic_irq(int foo, void *data)
 	return IRQ_HANDLED;
 }
 
-/**
- * All _optimized functions are used to help increase performance
+/* All _optimized functions are used to help increase performance
  * (reduce CPU and increase throughput). They use descripter version 3,
  * compiler directives, and reduce memory accesses.
  */

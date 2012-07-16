@@ -40,7 +40,7 @@ enum wl1271_tm_commands {
 	WL1271_TM_CMD_CONFIGURE,
 	WL1271_TM_CMD_NVS_PUSH,		/* Not in use. Keep to not break ABI */
 	WL1271_TM_CMD_SET_PLT_MODE,
-	WL1271_TM_CMD_RECOVER,
+	WL1271_TM_CMD_RECOVER,		/* Not in use. Keep to not break ABI */
 	WL1271_TM_CMD_GET_MAC,
 
 	__WL1271_TM_CMD_AFTER_LAST
@@ -108,6 +108,20 @@ static int wl1271_tm_cmd_test(struct wl1271 *wl, struct nlattr *tb[])
 	}
 
 	if (answer) {
+		/* If we got bip calibration answer print radio status */
+		struct wl1271_cmd_cal_p2g *params =
+			(struct wl1271_cmd_cal_p2g *) buf;
+
+		s16 radio_status = (s16) le16_to_cpu(params->radio_status);
+
+		if (params->test.id == TEST_CMD_P2G_CAL &&
+		    radio_status < 0)
+			wl1271_warning("testmode cmd: radio status=%d",
+					radio_status);
+		else
+			wl1271_info("testmode cmd: radio status=%d",
+					radio_status);
+
 		len = nla_total_size(buf_len);
 		skb = cfg80211_testmode_alloc_reply_skb(wl->hw->wiphy, len);
 		if (!skb) {
@@ -258,15 +272,6 @@ static int wl1271_tm_cmd_set_plt_mode(struct wl1271 *wl, struct nlattr *tb[])
 	return ret;
 }
 
-static int wl1271_tm_cmd_recover(struct wl1271 *wl, struct nlattr *tb[])
-{
-	wl1271_debug(DEBUG_TESTMODE, "testmode cmd recover");
-
-	wl12xx_queue_recovery_work(wl);
-
-	return 0;
-}
-
 static int wl12xx_tm_cmd_get_mac(struct wl1271 *wl, struct nlattr *tb[])
 {
 	struct sk_buff *skb;
@@ -336,8 +341,6 @@ int wl1271_tm_cmd(struct ieee80211_hw *hw, void *data, int len)
 		return wl1271_tm_cmd_configure(wl, tb);
 	case WL1271_TM_CMD_SET_PLT_MODE:
 		return wl1271_tm_cmd_set_plt_mode(wl, tb);
-	case WL1271_TM_CMD_RECOVER:
-		return wl1271_tm_cmd_recover(wl, tb);
 	case WL1271_TM_CMD_GET_MAC:
 		return wl12xx_tm_cmd_get_mac(wl, tb);
 	default:

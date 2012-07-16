@@ -28,6 +28,12 @@ static const struct bcma_device_id_name bcma_arm_device_names[] = {
 
 static const struct bcma_device_id_name bcma_bcm_device_names[] = {
 	{ BCMA_CORE_OOB_ROUTER, "OOB Router" },
+	{ BCMA_CORE_4706_CHIPCOMMON, "BCM4706 ChipCommon" },
+	{ BCMA_CORE_4706_SOC_RAM, "BCM4706 SOC RAM" },
+	{ BCMA_CORE_4706_MAC_GBIT, "BCM4706 GBit MAC" },
+	{ BCMA_CORE_AMEMC, "AMEMC (DDR)" },
+	{ BCMA_CORE_ALTA, "ALTA (I2S)" },
+	{ BCMA_CORE_4706_MAC_GBIT_COMMON, "BCM4706 GBit MAC Common" },
 	{ BCMA_CORE_INVALID, "Invalid" },
 	{ BCMA_CORE_CHIPCOMMON, "ChipCommon" },
 	{ BCMA_CORE_ILINE20, "ILine 20" },
@@ -334,7 +340,7 @@ static int bcma_get_next_core(struct bcma_bus *bus, u32 __iomem **eromptr,
 		if (tmp <= 0) {
 			return -EILSEQ;
 		} else {
-			pr_info("Bridge found\n");
+			bcma_info(bus, "Bridge found\n");
 			return -ENXIO;
 		}
 	}
@@ -421,8 +427,8 @@ void bcma_init_bus(struct bcma_bus *bus)
 	chipinfo->id = (tmp & BCMA_CC_ID_ID) >> BCMA_CC_ID_ID_SHIFT;
 	chipinfo->rev = (tmp & BCMA_CC_ID_REV) >> BCMA_CC_ID_REV_SHIFT;
 	chipinfo->pkg = (tmp & BCMA_CC_ID_PKG) >> BCMA_CC_ID_PKG_SHIFT;
-	pr_info("Found chip with id 0x%04X, rev 0x%02X and package 0x%02X\n",
-		chipinfo->id, chipinfo->rev, chipinfo->pkg);
+	bcma_info(bus, "Found chip with id 0x%04X, rev 0x%02X and package 0x%02X\n",
+		  chipinfo->id, chipinfo->rev, chipinfo->pkg);
 
 	bus->init_done = true;
 }
@@ -476,11 +482,10 @@ int bcma_bus_scan(struct bcma_bus *bus)
 		other_core = bcma_find_core_reverse(bus, core->id.id);
 		core->core_unit = (other_core == NULL) ? 0 : other_core->core_unit + 1;
 
-		pr_info("Core %d found: %s "
-			"(manuf 0x%03X, id 0x%03X, rev 0x%02X, class 0x%X)\n",
-			core->core_index, bcma_device_name(&core->id),
-			core->id.manuf, core->id.id, core->id.rev,
-			core->id.class);
+		bcma_info(bus, "Core %d found: %s (manuf 0x%03X, id 0x%03X, rev 0x%02X, class 0x%X)\n",
+			  core->core_index, bcma_device_name(&core->id),
+			  core->id.manuf, core->id.id, core->id.rev,
+			  core->id.class);
 
 		list_add(&core->list, &bus->cores);
 	}
@@ -532,11 +537,10 @@ int __init bcma_bus_scan_early(struct bcma_bus *bus,
 
 		core->core_index = core_num++;
 		bus->nr_cores++;
-		pr_info("Core %d found: %s "
-			"(manuf 0x%03X, id 0x%03X, rev 0x%02X, class 0x%X)\n",
-			core->core_index, bcma_device_name(&core->id),
-			core->id.manuf, core->id.id, core->id.rev,
-			core->id.class);
+		bcma_info(bus, "Core %d found: %s (manuf 0x%03X, id 0x%03X, rev 0x%02X, class 0x%X)\n",
+			  core->core_index, bcma_device_name(&core->id),
+			  core->id.manuf, core->id.id, core->id.rev,
+			  core->id.class);
 
 		list_add(&core->list, &bus->cores);
 		err = 0;

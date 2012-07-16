@@ -541,19 +541,6 @@ static const int rta_max[RTM_NR_FAMILIES] =
 	[RTM_FAM(RTM_NEWACTION)]    = TCAA_MAX,
 };
 
-void __rta_fill(struct sk_buff *skb, int attrtype, int attrlen, const void *data)
-{
-	struct rtattr *rta;
-	int size = RTA_LENGTH(attrlen);
-
-	rta = (struct rtattr *)skb_put(skb, RTA_ALIGN(size));
-	rta->rta_type = attrtype;
-	rta->rta_len = size;
-	memcpy(RTA_DATA(rta), data, attrlen);
-	memset(RTA_DATA(rta) + attrlen, 0, RTA_ALIGN(size) - size);
-}
-EXPORT_SYMBOL(__rta_fill);
-
 int rtnetlink_send(struct sk_buff *skb, struct net *net, u32 pid, unsigned int group, int echo)
 {
 	struct sock *rtnl = net->rtnl;
@@ -628,7 +615,7 @@ nla_put_failure:
 EXPORT_SYMBOL(rtnetlink_put_metrics);
 
 int rtnl_put_cacheinfo(struct sk_buff *skb, struct dst_entry *dst, u32 id,
-		       u32 ts, u32 tsage, long expires, u32 error)
+		       long expires, u32 error)
 {
 	struct rta_cacheinfo ci = {
 		.rta_lastuse = jiffies_to_clock_t(jiffies - dst->lastuse),
@@ -636,8 +623,6 @@ int rtnl_put_cacheinfo(struct sk_buff *skb, struct dst_entry *dst, u32 id,
 		.rta_clntref = atomic_read(&(dst->__refcnt)),
 		.rta_error = error,
 		.rta_id =  id,
-		.rta_ts = ts,
-		.rta_tsage = tsage,
 	};
 
 	if (expires)
@@ -2189,7 +2174,7 @@ skip:
 }
 
 /**
- * ndo_dflt_fdb_dump: default netdevice operation to dump an FDB table.
+ * ndo_dflt_fdb_dump - default netdevice operation to dump an FDB table.
  * @nlh: netlink message header
  * @dev: netdevice
  *
@@ -2366,8 +2351,13 @@ static struct notifier_block rtnetlink_dev_notifier = {
 static int __net_init rtnetlink_net_init(struct net *net)
 {
 	struct sock *sk;
-	sk = netlink_kernel_create(net, NETLINK_ROUTE, RTNLGRP_MAX,
-				   rtnetlink_rcv, &rtnl_mutex, THIS_MODULE);
+	struct netlink_kernel_cfg cfg = {
+		.groups		= RTNLGRP_MAX,
+		.input		= rtnetlink_rcv,
+		.cb_mutex	= &rtnl_mutex,
+	};
+
+	sk = netlink_kernel_create(net, NETLINK_ROUTE, THIS_MODULE, &cfg);
 	if (!sk)
 		return -ENOMEM;
 	net->rtnl = sk;

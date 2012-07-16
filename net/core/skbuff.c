@@ -160,8 +160,8 @@ static void skb_under_panic(struct sk_buff *skb, int sz, void *here)
  *	@node: numa node to allocate memory on
  *
  *	Allocate a new &sk_buff. The returned buffer has no headroom and a
- *	tail room of size bytes. The object has a reference count of one.
- *	The return is the buffer. On a failure the return is %NULL.
+ *	tail room of at least size bytes. The object has a reference count
+ *	of one. The return is the buffer. On a failure the return is %NULL.
  *
  *	Buffers may only be allocated from interrupts using a @gfp_mask of
  *	%GFP_ATOMIC.
@@ -296,8 +296,11 @@ EXPORT_SYMBOL(build_skb);
 struct netdev_alloc_cache {
 	struct page *page;
 	unsigned int offset;
+	unsigned int pagecnt_bias;
 };
 static DEFINE_PER_CPU(struct netdev_alloc_cache, netdev_alloc_cache);
+
+#define NETDEV_PAGECNT_BIAS (PAGE_SIZE / SMP_CACHE_BYTES)
 
 /**
  * netdev_alloc_frag - allocate a page fragment
@@ -317,17 +320,26 @@ void *netdev_alloc_frag(unsigned int fragsz)
 	if (unlikely(!nc->page)) {
 refill:
 		nc->page = alloc_page(GFP_ATOMIC | __GFP_COLD);
+		if (unlikely(!nc->page))
+			goto end;
+recycle:
+		atomic_set(&nc->page->_count, NETDEV_PAGECNT_BIAS);
+		nc->pagecnt_bias = NETDEV_PAGECNT_BIAS;
 		nc->offset = 0;
 	}
-	if (likely(nc->page)) {
-		if (nc->offset + fragsz > PAGE_SIZE) {
-			put_page(nc->page);
-			goto refill;
-		}
-		data = page_address(nc->page) + nc->offset;
-		nc->offset += fragsz;
-		get_page(nc->page);
+
+	if (nc->offset + fragsz > PAGE_SIZE) {
+		/* avoid unnecessary locked operations if possible */
+		if ((atomic_read(&nc->page->_count) == nc->pagecnt_bias) ||
+		    atomic_sub_and_test(nc->pagecnt_bias, &nc->page->_count))
+			goto recycle;
+		goto refill;
 	}
+
+	data = page_address(nc->page) + nc->offset;
+	nc->offset += fragsz;
+	nc->pagecnt_bias--;
+end:
 	local_irq_restore(flags);
 	return data;
 }
@@ -713,7 +725,8 @@ struct sk_buff *skb_morph(struct sk_buff *dst, struct sk_buff *src)
 }
 EXPORT_SYMBOL_GPL(skb_morph);
 
-/*	skb_copy_ubufs	-	copy userspace skb frags buffers to kernel
+/**
+ *	skb_copy_ubufs	-	copy userspace skb frags buffers to kernel
  *	@skb: the skb to modify
  *	@gfp_mask: allocation priority
  *
@@ -2614,7 +2627,7 @@ unsigned int skb_find_text(struct sk_buff *skb, unsigned int from,
 EXPORT_SYMBOL(skb_find_text);
 
 /**
- * skb_append_datato_frags: - append the user data to a skb
+ * skb_append_datato_frags - append the user data to a skb
  * @sk: sock  structure
  * @skb: skb structure to be appened with user data.
  * @getfrag: call back function to be used for getting the user data

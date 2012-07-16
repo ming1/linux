@@ -75,6 +75,7 @@
 #define STAMP_SHIFT		31
 #define STAMP_VAL		0x7fffffff
 #define STATS_DELAY		(HZ / 4)
+#define MAX_NUM_OF_FS_RULES	256
 
 /* Typical TSO descriptor with 16 gather entries is 352 bytes... */
 #define MAX_DESC_SIZE		512
@@ -404,6 +405,19 @@ struct mlx4_en_perf_stats {
 #define NUM_PERF_COUNTERS		6
 };
 
+enum mlx4_en_mclist_act {
+	MCLIST_NONE,
+	MCLIST_REM,
+	MCLIST_ADD,
+};
+
+struct mlx4_en_mc_list {
+	struct list_head	list;
+	enum mlx4_en_mclist_act	action;
+	u8			addr[ETH_ALEN];
+	u64			reg_id;
+};
+
 struct mlx4_en_frag_info {
 	u16 frag_size;
 	u16 frag_prefix_size;
@@ -422,6 +436,11 @@ struct mlx4_en_frag_info {
 
 #endif
 
+struct ethtool_flow_id {
+	struct ethtool_rx_flow_spec flow_spec;
+	u64 id;
+};
+
 struct mlx4_en_priv {
 	struct mlx4_en_dev *mdev;
 	struct mlx4_en_port_profile *prof;
@@ -431,6 +450,7 @@ struct mlx4_en_priv {
 	struct net_device_stats ret_stats;
 	struct mlx4_en_port_state port_state;
 	spinlock_t stats_lock;
+	struct ethtool_flow_id ethtool_rules[MAX_NUM_OF_FS_RULES];
 
 	unsigned long last_moder_packets[MAX_RX_RINGS];
 	unsigned long last_moder_tx_packets;
@@ -480,6 +500,7 @@ struct mlx4_en_priv {
 	struct mlx4_en_rx_ring rx_ring[MAX_RX_RINGS];
 	struct mlx4_en_cq *tx_cq;
 	struct mlx4_en_cq rx_cq[MAX_RX_RINGS];
+	struct mlx4_qp drop_qp;
 	struct work_struct mcast_task;
 	struct work_struct mac_task;
 	struct work_struct watchdog_task;
@@ -489,8 +510,9 @@ struct mlx4_en_priv {
 	struct mlx4_en_pkt_stats pkstats;
 	struct mlx4_en_port_stats port_stats;
 	u64 stats_bitmap;
-	char *mc_addrs;
-	int mc_addrs_cnt;
+	struct list_head mc_list;
+	struct list_head curr_list;
+	u64 broadcast_id;
 	struct mlx4_en_stat_out_mbox hw_stats;
 	int vids[128];
 	bool wol;
@@ -565,6 +587,8 @@ void mlx4_en_unmap_buffer(struct mlx4_buf *buf);
 void mlx4_en_calc_rx_buf(struct net_device *dev);
 int mlx4_en_config_rss_steer(struct mlx4_en_priv *priv);
 void mlx4_en_release_rss_steer(struct mlx4_en_priv *priv);
+int mlx4_en_create_drop_qp(struct mlx4_en_priv *priv);
+void mlx4_en_destroy_drop_qp(struct mlx4_en_priv *priv);
 int mlx4_en_free_tx_buf(struct net_device *dev, struct mlx4_en_tx_ring *ring);
 void mlx4_en_rx_irq(struct mlx4_cq *mcq);
 

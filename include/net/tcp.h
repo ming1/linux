@@ -253,6 +253,7 @@ extern int sysctl_tcp_cookie_size;
 extern int sysctl_tcp_thin_linear_timeouts;
 extern int sysctl_tcp_thin_dupack;
 extern int sysctl_tcp_early_retrans;
+extern int sysctl_tcp_limit_output_bytes;
 
 extern atomic_long_t tcp_memory_allocated;
 extern struct percpu_counter tcp_sockets_allocated;
@@ -321,19 +322,22 @@ extern struct proto tcp_prot;
 
 extern void tcp_init_mem(struct net *net);
 
+extern void tcp_tasklet_init(void);
+
 extern void tcp_v4_err(struct sk_buff *skb, u32);
 
 extern void tcp_shutdown (struct sock *sk, int how);
 
+extern void tcp_v4_early_demux(struct sk_buff *skb);
 extern int tcp_v4_rcv(struct sk_buff *skb);
 
-extern struct inet_peer *tcp_v4_get_peer(struct sock *sk, bool *release_it);
-extern void *tcp_v4_tw_get_peer(struct sock *sk);
+extern struct inet_peer *tcp_v4_get_peer(struct sock *sk);
 extern int tcp_v4_tw_remember_stamp(struct inet_timewait_sock *tw);
 extern int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 		       size_t size);
 extern int tcp_sendpage(struct sock *sk, struct page *page, int offset,
 			size_t size, int flags);
+extern void tcp_release_cb(struct sock *sk);
 extern int tcp_ioctl(struct sock *sk, int cmd, unsigned long arg);
 extern int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 				 const struct tcphdr *th, unsigned int len);
@@ -388,6 +392,13 @@ extern void tcp_enter_frto(struct sock *sk);
 extern void tcp_enter_loss(struct sock *sk, int how);
 extern void tcp_clear_retrans(struct tcp_sock *tp);
 extern void tcp_update_metrics(struct sock *sk);
+extern void tcp_init_metrics(struct sock *sk);
+extern void tcp_metrics_init(void);
+extern bool tcp_peer_is_proven(struct request_sock *req, struct dst_entry *dst, bool paws_check);
+extern bool tcp_remember_stamp(struct sock *sk);
+extern bool tcp_tw_remember_stamp(struct inet_timewait_sock *tw);
+extern void tcp_fetch_timewait_stamp(struct sock *sk, struct dst_entry *dst);
+extern void tcp_disable_fack(struct tcp_sock *tp);
 extern void tcp_close(struct sock *sk, long timeout);
 extern void tcp_init_sock(struct sock *sk);
 extern unsigned int tcp_poll(struct file * file, struct socket *sock,
@@ -555,6 +566,8 @@ static inline u32 __tcp_set_rto(const struct tcp_sock *tp)
 {
 	return (tp->srtt >> 3) + tp->rttvar;
 }
+
+extern void tcp_set_rto(struct sock *sk);
 
 static inline void __tcp_fast_path_on(struct tcp_sock *tp, u32 snd_wnd)
 {
