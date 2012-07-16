@@ -294,7 +294,7 @@ static int bot_send_write_request(struct usbg_cmd *cmd)
 		pr_err("%s(%d)\n", __func__, __LINE__);
 
 	wait_for_completion(&cmd->write_complete);
-	transport_generic_process_write(se_cmd);
+	target_execute_cmd(se_cmd);
 cleanup:
 	return ret;
 }
@@ -725,7 +725,7 @@ static int uasp_send_write_request(struct usbg_cmd *cmd)
 	}
 
 	wait_for_completion(&cmd->write_complete);
-	transport_generic_process_write(se_cmd);
+	target_execute_cmd(se_cmd);
 cleanup:
 	return ret;
 }
@@ -1400,19 +1400,6 @@ static u32 usbg_tpg_get_inst_index(struct se_portal_group *se_tpg)
 	return 1;
 }
 
-static int usbg_new_cmd(struct se_cmd *se_cmd)
-{
-	struct usbg_cmd *cmd = container_of(se_cmd, struct usbg_cmd,
-			se_cmd);
-	int ret;
-
-	ret = target_setup_cmd_from_cdb(se_cmd, cmd->cmd_buf);
-	if (ret)
-		return ret;
-
-	return transport_generic_map_mem_to_cmd(se_cmd, NULL, 0, NULL, 0);
-}
-
 static void usbg_cmd_release(struct kref *ref)
 {
 	struct usbg_cmd *cmd = container_of(ref, struct usbg_cmd,
@@ -1902,7 +1889,6 @@ static struct target_core_fabric_ops usbg_ops = {
 	.tpg_alloc_fabric_acl		= usbg_alloc_fabric_acl,
 	.tpg_release_fabric_acl		= usbg_release_fabric_acl,
 	.tpg_get_inst_index		= usbg_tpg_get_inst_index,
-	.new_cmd_map			= usbg_new_cmd,
 	.release_cmd			= usbg_release_cmd,
 	.shutdown_session		= usbg_shutdown_session,
 	.close_session			= usbg_close_session,
