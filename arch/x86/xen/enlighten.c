@@ -38,6 +38,7 @@
 #include <xen/interface/physdev.h>
 #include <xen/interface/vcpu.h>
 #include <xen/interface/memory.h>
+#include <xen/interface/xen-mca.h>
 #include <xen/features.h>
 #include <xen/page.h>
 #include <xen/hvm.h>
@@ -209,9 +210,6 @@ static void __init xen_banner(void)
 	       xen_feature(XENFEAT_mmu_pt_update_preserve_ad) ? " (preserve-AD)" : "");
 }
 
-#define CPUID_THERM_POWER_LEAF 6
-#define APERFMPERF_PRESENT 0
-
 static __read_mostly unsigned int cpuid_leaf1_edx_mask = ~0;
 static __read_mostly unsigned int cpuid_leaf1_ecx_mask = ~0;
 
@@ -244,11 +242,6 @@ static void xen_cpuid(unsigned int *ax, unsigned int *bx,
 		*cx = cpuid_leaf5_ecx_val;
 		*dx = cpuid_leaf5_edx_val;
 		return;
-
-	case CPUID_THERM_POWER_LEAF:
-		/* Disabling APERFMPERF for kernel usage */
-		maskecx = ~(1 << APERFMPERF_PRESENT);
-		break;
 
 	case 0xb:
 		/* Suppress extended topology stuff */
@@ -341,9 +334,7 @@ static void __init xen_init_cpuid_mask(void)
 	unsigned int xsave_mask;
 
 	cpuid_leaf1_edx_mask =
-		~((1 << X86_FEATURE_MCE)  |  /* disable MCE */
-		  (1 << X86_FEATURE_MCA)  |  /* disable MCA */
-		  (1 << X86_FEATURE_MTRR) |  /* disable MTRR */
+		~((1 << X86_FEATURE_MTRR) |  /* disable MTRR */
 		  (1 << X86_FEATURE_ACC));   /* thermal monitoring */
 
 	if (!xen_initial_domain())
@@ -627,8 +618,8 @@ static int cvt_gate_to_trap(int vector, const gate_desc *val,
 	/*
 	 * Look for known traps using IST, and substitute them
 	 * appropriately.  The debugger ones are the only ones we care
-	 * about.  Xen will handle faults like double_fault and
-	 * machine_check, so we should never see them.  Warn if
+	 * about.  Xen will handle faults like double_fault,
+	 * so we should never see them.  Warn if
 	 * there's an unexpected IST-using fault handler.
 	 */
 	if (addr == (unsigned long)debug)
@@ -643,7 +634,11 @@ static int cvt_gate_to_trap(int vector, const gate_desc *val,
 		return 0;
 #ifdef CONFIG_X86_MCE
 	} else if (addr == (unsigned long)machine_check) {
-		return 0;
+		/*
+		 * when xen hypervisor inject vMCE to guest,
+		 * use native mce handler to handle it
+		 */
+		;
 #endif
 	} else {
 		/* Some other trap using IST? */
