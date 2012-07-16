@@ -1491,13 +1491,9 @@ xfs_init_zones(void)
 	if (!xfs_da_state_zone)
 		goto out_destroy_btree_cur_zone;
 
-	xfs_dabuf_zone = kmem_zone_init(sizeof(xfs_dabuf_t), "xfs_dabuf");
-	if (!xfs_dabuf_zone)
-		goto out_destroy_da_state_zone;
-
 	xfs_ifork_zone = kmem_zone_init(sizeof(xfs_ifork_t), "xfs_ifork");
 	if (!xfs_ifork_zone)
-		goto out_destroy_dabuf_zone;
+		goto out_destroy_da_state_zone;
 
 	xfs_trans_zone = kmem_zone_init(sizeof(xfs_trans_t), "xfs_trans");
 	if (!xfs_trans_zone)
@@ -1514,9 +1510,8 @@ xfs_init_zones(void)
 	 * size possible under XFS.  This wastes a little bit of memory,
 	 * but it is much faster.
 	 */
-	xfs_buf_item_zone = kmem_zone_init((sizeof(xfs_buf_log_item_t) +
-				(((XFS_MAX_BLOCKSIZE / XFS_BLF_CHUNK) /
-				  NBWORD) * sizeof(int))), "xfs_buf_item");
+	xfs_buf_item_zone = kmem_zone_init(sizeof(struct xfs_buf_log_item),
+					   "xfs_buf_item");
 	if (!xfs_buf_item_zone)
 		goto out_destroy_log_item_desc_zone;
 
@@ -1561,8 +1556,6 @@ xfs_init_zones(void)
 	kmem_zone_destroy(xfs_trans_zone);
  out_destroy_ifork_zone:
 	kmem_zone_destroy(xfs_ifork_zone);
- out_destroy_dabuf_zone:
-	kmem_zone_destroy(xfs_dabuf_zone);
  out_destroy_da_state_zone:
 	kmem_zone_destroy(xfs_da_state_zone);
  out_destroy_btree_cur_zone:
@@ -1590,7 +1583,6 @@ xfs_destroy_zones(void)
 	kmem_zone_destroy(xfs_log_item_desc_zone);
 	kmem_zone_destroy(xfs_trans_zone);
 	kmem_zone_destroy(xfs_ifork_zone);
-	kmem_zone_destroy(xfs_dabuf_zone);
 	kmem_zone_destroy(xfs_da_state_zone);
 	kmem_zone_destroy(xfs_btree_cur_zone);
 	kmem_zone_destroy(xfs_bmap_free_item_zone);
