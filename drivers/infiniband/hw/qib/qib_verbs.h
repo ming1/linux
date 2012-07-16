@@ -41,6 +41,7 @@
 #include <linux/interrupt.h>
 #include <linux/kref.h>
 #include <linux/workqueue.h>
+#include <linux/completion.h>
 #include <rdma/ib_pack.h>
 #include <rdma/ib_user_verbs.h>
 
@@ -302,6 +303,9 @@ struct qib_mregion {
 	u32 max_segs;           /* number of qib_segs in all the arrays */
 	u32 mapsz;              /* size of the map array */
 	u8  page_shift;         /* 0 - non unform/non powerof2 sizes */
+	u8  lkey_published;     /* in global table */
+	struct completion comp; /* complete when refcount goes to zero */
+	struct rcu_head list;
 	atomic_t refcount;
 	struct qib_segarray *map[0];    /* the segments */
 };
@@ -646,7 +650,7 @@ struct qib_lkey_table {
 	u32 next;               /* next unused index (speeds search) */
 	u32 gen;                /* generation count */
 	u32 max;                /* size of the table */
-	struct qib_mregion **table;
+	struct qib_mregion __rcu **table;
 };
 
 struct qib_opcode_stats {
@@ -728,7 +732,7 @@ struct qib_ibdev {
 	struct list_head pending_mmaps;
 	spinlock_t mmap_offset_lock; /* protect mmap_offset */
 	u32 mmap_offset;
-	struct qib_mregion *dma_mr;
+	struct qib_mregion __rcu *dma_mr;
 
 	/* QP numbers are shared by all IB ports */
 	struct qib_qpn_table qpn_table;
@@ -944,9 +948,9 @@ int qib_post_ud_send(struct qib_qp *qp, struct ib_send_wr *wr);
 void qib_ud_rcv(struct qib_ibport *ibp, struct qib_ib_header *hdr,
 		int has_grh, void *data, u32 tlen, struct qib_qp *qp);
 
-int qib_alloc_lkey(struct qib_lkey_table *rkt, struct qib_mregion *mr);
+int qib_alloc_lkey(struct qib_mregion *mr, int dma_region);
 
-int qib_free_lkey(struct qib_ibdev *dev, struct qib_mregion *mr);
+void qib_free_lkey(struct qib_mregion *mr);
 
 int qib_lkey_ok(struct qib_lkey_table *rkt, struct qib_pd *pd,
 		struct qib_sge *isge, struct ib_sge *sge, int acc);
@@ -1013,6 +1017,29 @@ int qib_map_phys_fmr(struct ib_fmr *ibfmr, u64 *page_list,
 int qib_unmap_fmr(struct list_head *fmr_list);
 
 int qib_dealloc_fmr(struct ib_fmr *ibfmr);
+
+static inline void qib_get_mr(struct qib_mregion *mr)
+{
+	atomic_inc(&mr->refcount);
+}
+
+void mr_rcu_callback(struct rcu_head *list);
+
+static inline void qib_put_mr(struct qib_mregion *mr)
+{
+	if (unlikely(atomic_dec_and_test(&mr->refcount)))
+		call_rcu(&mr->list, mr_rcu_callback);
+}
+
+static inline void qib_put_ss(struct qib_sge_state *ss)
+{
+	while (ss->num_sge) {
+		qib_put_mr(ss->sge.mr);
+		if (--ss->num_sge)
+			ss->sge = *ss->sg_list++;
+	}
+}
+
 
 void qib_release_mmap_info(struct kref *ref);
 
