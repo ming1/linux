@@ -38,6 +38,7 @@
 #include <linux/namei.h>
 #include <linux/swap.h>
 #include <linux/pagemap.h>
+#include <linux/ratelimit.h>
 #include <linux/sunrpc/svcauth_gss.h>
 #include <linux/sunrpc/clnt.h>
 #include "xdr4.h"
@@ -862,6 +863,11 @@ static __be32 nfsd4_new_conn(struct svc_rqst *rqstp, struct nfsd4_session *ses, 
 	if (ret)
 		/* oops; xprt is already down: */
 		nfsd4_conn_lost(&conn->cn_xpt_user);
+	if (ses->se_client->cl_cb_state == NFSD4_CB_DOWN &&
+		dir & NFS4_CDFC4_BACK) {
+		/* callback channel may be back up */
+		nfsd4_probe_callback(ses->se_client);
+	}
 	return nfs_ok;
 }
 
@@ -3007,14 +3013,12 @@ nfsd4_process_open2(struct svc_rqst *rqstp, struct svc_fh *current_fh, struct nf
 		status = nfs4_get_vfs_file(rqstp, fp, current_fh, open);
 		if (status)
 			goto out;
+		status = nfsd4_truncate(rqstp, current_fh, open);
+		if (status)
+			goto out;
 		stp = open->op_stp;
 		open->op_stp = NULL;
 		init_open_stateid(stp, fp, open);
-		status = nfsd4_truncate(rqstp, current_fh, open);
-		if (status) {
-			release_open_stateid(stp);
-			goto out;
-		}
 	}
 	update_stateid(&stp->st_stid.sc_stateid);
 	memcpy(&open->op_stateid, &stp->st_stid.sc_stateid, sizeof(stateid_t));
@@ -3333,18 +3337,26 @@ static __be32 check_stateid_generation(stateid_t *in, stateid_t *ref, bool has_s
 	return nfserr_old_stateid;
 }
 
-__be32 nfs4_validate_stateid(struct nfs4_client *cl, stateid_t *stateid)
+static __be32 nfsd4_validate_stateid(struct nfs4_client *cl, stateid_t *stateid)
 {
 	struct nfs4_stid *s;
 	struct nfs4_ol_stateid *ols;
 	__be32 status;
 
-	if (STALE_STATEID(stateid))
-		return nfserr_stale_stateid;
-
+	if (ZERO_STATEID(stateid) || ONE_STATEID(stateid))
+		return nfserr_bad_stateid;
+	/* Client debugging aid. */
+	if (!same_clid(&stateid->si_opaque.so_clid, &cl->cl_clientid)) {
+		char addr_str[INET6_ADDRSTRLEN];
+		rpc_ntop((struct sockaddr *)&cl->cl_addr, addr_str,
+				 sizeof(addr_str));
+		pr_warn_ratelimited("NFSD: client %s testing state ID "
+					"with incorrect client ID\n", addr_str);
+		return nfserr_bad_stateid;
+	}
 	s = find_stateid(cl, stateid);
 	if (!s)
-		 return nfserr_stale_stateid;
+		return nfserr_bad_stateid;
 	status = check_stateid_generation(stateid, &s->sc_stateid, 1);
 	if (status)
 		return status;
@@ -3463,7 +3475,8 @@ nfsd4_test_stateid(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 
 	nfs4_lock_state();
 	list_for_each_entry(stateid, &test_stateid->ts_stateid_list, ts_id_list)
-		stateid->ts_id_status = nfs4_validate_stateid(cl, &stateid->ts_id_stateid);
+		stateid->ts_id_status =
+			nfsd4_validate_stateid(cl, &stateid->ts_id_stateid);
 	nfs4_unlock_state();
 
 	return nfs_ok;
@@ -3750,12 +3763,19 @@ nfsd4_close(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 	nfsd4_close_open_stateid(stp);
 	oo->oo_last_closed_stid = stp;
 
-	/* place unused nfs4_stateowners on so_close_lru list to be
-	 * released by the laundromat service after the lease period
-	 * to enable us to handle CLOSE replay
-	 */
-	if (list_empty(&oo->oo_owner.so_stateids))
-		move_to_close_lru(oo);
+	if (list_empty(&oo->oo_owner.so_stateids)) {
+		if (cstate->minorversion) {
+			release_openowner(oo);
+			cstate->replay_owner = NULL;
+		} else {
+			/*
+			 * In the 4.0 case we need to keep the owners around a
+			 * little while to handle CLOSE replay.
+			 */
+			if (list_empty(&oo->oo_owner.so_stateids))
+				move_to_close_lru(oo);
+		}
+	}
 out:
 	if (!cstate->replay_owner)
 		nfs4_unlock_state();
@@ -4044,11 +4064,6 @@ nfsd4_lock(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 	nfs4_lock_state();
 
 	if (lock->lk_is_new) {
-		/*
-		 * Client indicates that this is a new lockowner.
-		 * Use open owner and open stateid to create lock owner and
-		 * lock stateid.
-		 */
 		struct nfs4_ol_stateid *open_stp = NULL;
 
 		if (nfsd4_has_session(cstate))
@@ -4075,17 +4090,13 @@ nfsd4_lock(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 			goto out;
 		status = lookup_or_create_lock_state(cstate, open_stp, lock,
 							&lock_stp, &new_state);
-		if (status)
-			goto out;
-	} else {
-		/* lock (lock owner + lock stateid) already exists */
+	} else
 		status = nfs4_preprocess_seqid_op(cstate,
 				       lock->lk_old_lock_seqid,
 				       &lock->lk_old_lock_stateid,
 				       NFS4_LOCK_STID, &lock_stp);
-		if (status)
-			goto out;
-	}
+	if (status)
+		goto out;
 	lock_sop = lockowner(lock_stp->st_stateowner);
 
 	lkflg = setlkflg(lock->lk_type);
