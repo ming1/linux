@@ -78,10 +78,10 @@ struct pca953x_chip {
 
 #ifdef CONFIG_GPIO_PCA953X_IRQ
 	struct mutex irq_lock;
-	uint16_t irq_mask;
-	uint16_t irq_stat;
-	uint16_t irq_trig_raise;
-	uint16_t irq_trig_fall;
+	u32 irq_mask;
+	u32 irq_stat;
+	u32 irq_trig_raise;
+	u32 irq_trig_fall;
 	int	 irq_base;
 #endif
 
@@ -353,8 +353,8 @@ static void pca953x_irq_bus_lock(struct irq_data *d)
 static void pca953x_irq_bus_sync_unlock(struct irq_data *d)
 {
 	struct pca953x_chip *chip = irq_data_get_irq_chip_data(d);
-	uint16_t new_irqs;
-	uint16_t level;
+	u32 new_irqs;
+	u32 level;
 
 	/* Look for any newly setup interrupt */
 	new_irqs = chip->irq_trig_fall | chip->irq_trig_raise;
@@ -372,8 +372,8 @@ static void pca953x_irq_bus_sync_unlock(struct irq_data *d)
 static int pca953x_irq_set_type(struct irq_data *d, unsigned int type)
 {
 	struct pca953x_chip *chip = irq_data_get_irq_chip_data(d);
-	uint16_t level = d->irq - chip->irq_base;
-	uint16_t mask = 1 << level;
+	u32 level = d->irq - chip->irq_base;
+	u32 mask = 1 << level;
 
 	if (!(type & IRQ_TYPE_EDGE_BOTH)) {
 		dev_err(&chip->client->dev, "irq %d: unsupported type %d\n",
@@ -403,12 +403,12 @@ static struct irq_chip pca953x_irq_chip = {
 	.irq_set_type		= pca953x_irq_set_type,
 };
 
-static uint16_t pca953x_irq_pending(struct pca953x_chip *chip)
+static u32 pca953x_irq_pending(struct pca953x_chip *chip)
 {
 	u32 cur_stat;
-	uint16_t old_stat;
-	uint16_t pending;
-	uint16_t trigger;
+	u32 old_stat;
+	u32 pending;
+	u32 trigger;
 	int ret, offset = 0;
 
 	switch (chip->chip_type) {
@@ -444,8 +444,8 @@ static uint16_t pca953x_irq_pending(struct pca953x_chip *chip)
 static irqreturn_t pca953x_irq_handler(int irq, void *devid)
 {
 	struct pca953x_chip *chip = devid;
-	uint16_t pending;
-	uint16_t level;
+	u32 pending;
+	u32 level;
 
 	pending = pca953x_irq_pending(chip);
 
@@ -568,7 +568,7 @@ static void pca953x_irq_teardown(struct pca953x_chip *chip)
  * WARNING: This is DEPRECATED and will be removed eventually!
  */
 static void
-pca953x_get_alt_pdata(struct i2c_client *client, int *gpio_base, int *invert)
+pca953x_get_alt_pdata(struct i2c_client *client, int *gpio_base, u32 *invert)
 {
 	struct device_node *node;
 	const __be32 *val;
@@ -596,13 +596,13 @@ pca953x_get_alt_pdata(struct i2c_client *client, int *gpio_base, int *invert)
 }
 #else
 static void
-pca953x_get_alt_pdata(struct i2c_client *client, int *gpio_base, int *invert)
+pca953x_get_alt_pdata(struct i2c_client *client, int *gpio_base, u32 *invert)
 {
 	*gpio_base = -1;
 }
 #endif
 
-static int __devinit device_pca953x_init(struct pca953x_chip *chip, int invert)
+static int __devinit device_pca953x_init(struct pca953x_chip *chip, u32 invert)
 {
 	int ret;
 
@@ -621,7 +621,7 @@ out:
 	return ret;
 }
 
-static int __devinit device_pca957x_init(struct pca953x_chip *chip, int invert)
+static int __devinit device_pca957x_init(struct pca953x_chip *chip, u32 invert)
 {
 	int ret;
 	u32 val = 0;
@@ -657,8 +657,9 @@ static int __devinit pca953x_probe(struct i2c_client *client,
 {
 	struct pca953x_platform_data *pdata;
 	struct pca953x_chip *chip;
-	int irq_base=0, invert=0;
+	int irq_base = 0;
 	int ret;
+	u32 invert = 0;
 
 	chip = kzalloc(sizeof(struct pca953x_chip), GFP_KERNEL);
 	if (chip == NULL)
