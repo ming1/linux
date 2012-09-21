@@ -221,7 +221,9 @@ config METAG_DA
 	  of the DA will be detected automatically at boot, so it is safe to say
 	  Y to this option even when booting without a DA.
 
-	  This enables support for services provided by DA JTAG debug adapters.
+	  This enables support for services provided by DA JTAG debug adapters,
+	  such as:
+	  - communication over DA channels (such as the console driver).
 
 menu "Boot options"
 

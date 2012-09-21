@@ -61,6 +61,11 @@ extern char _heap_start[];
 extern u32 __dtb_start[];
 #endif
 
+#ifdef CONFIG_DA_CONSOLE
+/* Our early channel based console driver */
+extern struct console dash_console;
+#endif
+
 struct machine_desc *machine_desc __initdata;
 
 /*
@@ -182,6 +187,13 @@ void __init setup_arch(char **cmdline_p)
 	metag_cache_probe();
 
 	metag_da_probe();
+#ifdef CONFIG_DA_CONSOLE
+	if (metag_da_enabled()) {
+		/* An early channel based console driver */
+		register_console(&dash_console);
+		add_preferred_console("ttyDA", 1, NULL);
+	}
+#endif
 
 	/* try interpreting the argument as a device tree */
 	machine_desc = setup_machine_fdt(original_cmd_line);
