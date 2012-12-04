@@ -18,6 +18,7 @@ extern int shmobile_enter_wfi(struct cpuidle_device *dev,
 			      struct cpuidle_driver *drv, int index);
 extern void shmobile_cpuidle_set_driver(struct cpuidle_driver *drv);
 
+extern void sh7372_init_irq_of(void);
 extern void sh7372_init_irq(void);
 extern void sh7372_map_io(void);
 extern void sh7372_earlytimer_init(void);
