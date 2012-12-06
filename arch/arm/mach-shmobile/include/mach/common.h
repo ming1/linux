@@ -27,6 +27,7 @@ extern void sh7372_add_early_devices_dt(void);
 extern void sh7372_add_standard_devices_dt(void);
 extern void sh7372_clock_init(void);
 extern void sh7372_pinmux_init(void);
+extern void sh73a0_secondary_vector(void);
 extern void sh7372_pm_init(void);
 extern void sh7372_resume_core_standby_sysc(void);
 extern int sh7372_do_idle_sysc(unsigned long sleep_mode);
