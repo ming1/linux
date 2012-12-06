@@ -8,6 +8,7 @@ extern void shmobile_setup_delay(unsigned int max_cpu_core_mhz,
 struct twd_local_timer;
 extern void shmobile_setup_console(void);
 extern void shmobile_secondary_vector(void);
+extern void sh73a0_do_wfi(void);
 struct clk;
 extern int shmobile_clk_init(void);
 extern void shmobile_handle_irq_intc(struct pt_regs *);
