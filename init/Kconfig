@@ -851,6 +851,7 @@ config MEMCG_SWAP_ENABLED
 config MEMCG_KMEM
 	bool "Memory Resource Controller Kernel Memory accounting"
 	depends on MEMCG
+	depends on SLUB || SLAB
 	default n
 	help
 	  The Kernel Memory extension for Memory Resource Controller can limit
