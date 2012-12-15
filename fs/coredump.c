@@ -166,10 +166,10 @@ static int format_corename(struct core_name *cn, struct coredump_params *cprm)
 
 	if (ispipe && pat_ptr[1] == '|') {
 		/*
- 		 * We have 2 | tokens at the head of core_pattern which
- 		 * indicates we are a pipe and the reader should inherit the
- 		 * namespaces of the crashing process
- 		 */
+		 * We have 2 | tokens at the head of core_pattern which
+		 * indicates we are a pipe and the reader should inherit the
+		 * namespaces of the crashing process
+		 */
 		cprm->switch_ns = true;
 		pat_ptr++;
 	}
