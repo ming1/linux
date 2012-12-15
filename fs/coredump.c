@@ -164,6 +164,18 @@ static int format_corename(struct core_name *cn, struct coredump_params *cprm)
 	if (!cn->corename)
 		return -ENOMEM;
 
+	if (ispipe) {
+		/*
+ 		 * If we have 2 | tokens at the head of core_pattern, it
+ 		 * indicates we are a pipe and the reader should inherit the
+ 		 * namespaces of the crashing process
+ 		 */
+		cprm->switch_ns = (*(pat_ptr+1) == '|') ? true : false;
+		if (cprm->switch_ns)
+			/* Advance pat_ptr so as not to mess up corename */
+			pat_ptr++;
+	}
+
 	/* Repeat as long as we have more pattern to process and more output
 	   space */
 	while (*pat_ptr) {
@@ -443,6 +455,7 @@ static void wait_for_dump_helpers(struct file *file)
 static int umh_pipe_setup(struct subprocess_info *info, struct cred *new)
 {
 	struct file *files[2];
+	struct path root;
 	struct coredump_params *cp = (struct coredump_params *)info->data;
 	int err = create_pipe_files(files, 0);
 	if (err)
@@ -454,6 +467,14 @@ static int umh_pipe_setup(struct subprocess_info *info, struct cred *new)
 	fput(files[0]);
 	/* and disallow core files too */
 	current->signal->rlim[RLIMIT_CORE] = (struct rlimit){1, 1};
+
+
+	if (cp->switch_ns) {
+		get_fs_root(cp->cprocess->fs, &root);
+		set_fs_root(current->fs, &root);
+		switch_task_namespaces(current, cp->cprocess->nsproxy);
+	}
+
 
 	return err;
 }
@@ -476,6 +497,8 @@ void do_coredump(siginfo_t *siginfo)
 		.siginfo = siginfo,
 		.regs = signal_pt_regs(),
 		.limit = rlimit(RLIMIT_CORE),
+		.cprocess = current,
+		.switch_ns = false,
 		/*
 		 * We must use the same mm->flags while dumping core to avoid
 		 * inconsistency of bit flags, since this flag is not protected
