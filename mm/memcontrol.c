@@ -3194,6 +3194,9 @@ static struct kmem_cache *kmem_cache_dup(struct mem_cgroup *memcg,
 	if (new)
 		new->allocflags |= __GFP_KMEMCG;
 
+	if (new)
+		new->allocflags |= __GFP_KMEMCG;
+
 	kfree(name);
 	return new;
 }
