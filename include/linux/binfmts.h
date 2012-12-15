@@ -59,6 +59,8 @@ struct coredump_params {
 	siginfo_t *siginfo;
 	struct pt_regs *regs;
 	struct file *file;
+	struct task_struct *cprocess;
+	bool switch_ns;
 	unsigned long limit;
 	unsigned long mm_flags;
 };
