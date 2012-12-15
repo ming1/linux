@@ -191,7 +191,12 @@ core_pattern is used to specify a core dumpfile pattern name.
 	%<OTHER> both are dropped
 . If the first character of the pattern is a '|', the kernel will treat
   the rest of the pattern as a command to run.  The core dump will be
-  written to the standard input of that program instead of to a file.
+  written to the standard input of that program instead of to a file.  Note that
+  when using |, the core pipe reader that is executed will be run in the global
+  namespace and root filesystem.  If two | tokens (i.e. ||) are supplied as the
+  first two characters of the core_pattern sysctl, the kernel will preform the
+  same pipe operation, but the core pipe reader will be executed using the
+  namespace and root fs of the crashing process.
 
 ==============================================================
 
