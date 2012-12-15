@@ -111,7 +111,9 @@ hugetlb_cgroup_uncharge_cgroup(int idx, unsigned long nr_pages,
 	return;
 }
 
-static inline void __init hugetlb_cgroup_file_init() {}
+static inline void hugetlb_cgroup_file_init()
+{
+}
 
 static inline void hugetlb_cgroup_migrate(struct page *oldhpage,
 					  struct page *newhpage)
