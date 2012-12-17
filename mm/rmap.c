@@ -367,6 +367,9 @@ static void anon_vma_ctor(void *data)
 
 	mutex_init(&anon_vma->mutex);
 	atomic_set(&anon_vma->refcount, 0);
+#ifdef CONFIG_SWAP
+	atomic_set(&anon_vma->swapra_miss, 0);
+#endif
 	anon_vma->rb_root = RB_ROOT;
 }
 
