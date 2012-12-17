@@ -1194,12 +1194,11 @@ mv_xor_channel_add(struct mv_xor_device *xordev,
 			goto err_free_irq;
 	}
 
-	dev_info(&pdev->dev, "Marvell XOR: "
-	  "( %s%s%s%s)\n",
-	  dma_has_cap(DMA_XOR, dma_dev->cap_mask) ? "xor " : "",
-	  dma_has_cap(DMA_MEMSET, dma_dev->cap_mask)  ? "fill " : "",
-	  dma_has_cap(DMA_MEMCPY, dma_dev->cap_mask) ? "cpy " : "",
-	  dma_has_cap(DMA_INTERRUPT, dma_dev->cap_mask) ? "intr " : "");
+	dev_info(&pdev->dev, "Marvell XOR: ( %s%s%s%s)\n",
+		 dma_has_cap(DMA_XOR, dma_dev->cap_mask) ? "xor " : "",
+		 dma_has_cap(DMA_MEMSET, dma_dev->cap_mask)  ? "fill " : "",
+		 dma_has_cap(DMA_MEMCPY, dma_dev->cap_mask) ? "cpy " : "",
+		 dma_has_cap(DMA_INTERRUPT, dma_dev->cap_mask) ? "intr " : "");
 
 	dma_async_device_register(dma_dev);
 	return mv_chan;
@@ -1253,7 +1252,7 @@ static int mv_xor_probe(struct platform_device *pdev)
 	struct resource *res;
 	int i, ret;
 
-	dev_notice(&pdev->dev, "Marvell XOR driver\n");
+	dev_notice(&pdev->dev, "Marvell shared XOR driver\n");
 
 	xordev = devm_kzalloc(&pdev->dev, sizeof(*xordev), GFP_KERNEL);
 	if (!xordev)
