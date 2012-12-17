@@ -23,15 +23,6 @@
 /* Search max. number of dirty segments to select a victim segment */
 #define MAX_VICTIM_SEARCH	20
 
-enum {
-	GC_NONE = 0,
-	GC_ERROR,
-	GC_OK,
-	GC_NEXT,
-	GC_BLOCKED,
-	GC_DONE,
-};
-
 struct f2fs_gc_kthread {
 	struct task_struct *f2fs_gc_task;
 	wait_queue_head_t gc_wait_queue_head;

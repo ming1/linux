@@ -211,30 +211,20 @@ int f2fs_write_inode(struct inode *inode, struct writeback_control *wbc)
 {
 	struct f2fs_sb_info *sbi = F2FS_SB(inode->i_sb);
 	struct page *node_page;
-	bool need_lock = false;
 
 	if (inode->i_ino == F2FS_NODE_INO(sbi) ||
 			inode->i_ino == F2FS_META_INO(sbi))
 		return 0;
 
+	if (wbc)
+		f2fs_balance_fs(sbi);
+
 	node_page = get_node_page(sbi, inode->i_ino);
 	if (IS_ERR(node_page))
 		return PTR_ERR(node_page);
 
-	if (!PageDirty(node_page)) {
-		need_lock = true;
-		f2fs_put_page(node_page, 1);
-		mutex_lock(&sbi->write_inode);
-		node_page = get_node_page(sbi, inode->i_ino);
-		if (IS_ERR(node_page)) {
-			mutex_unlock(&sbi->write_inode);
-			return PTR_ERR(node_page);
-		}
-	}
 	update_inode(inode, node_page);
 	f2fs_put_page(node_page, 1);
-	if (need_lock)
-		mutex_unlock(&sbi->write_inode);
 	return 0;
 }
 

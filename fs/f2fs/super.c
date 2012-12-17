@@ -465,7 +465,6 @@ static int f2fs_fill_super(struct super_block *sb, void *data, int silent)
 	sbi->raw_super = raw_super;
 	sbi->raw_super_buf = raw_super_buf;
 	mutex_init(&sbi->gc_mutex);
-	mutex_init(&sbi->write_inode);
 	mutex_init(&sbi->writepages);
 	mutex_init(&sbi->cp_mutex);
 	for (i = 0; i < NR_LOCK_TYPE; i++)

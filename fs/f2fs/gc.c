@@ -78,7 +78,7 @@ static int gc_thread_func(void *data)
 
 		sbi->bg_gc++;
 
-		if (f2fs_gc(sbi, 1) == GC_NONE)
+		if (f2fs_gc(sbi) == 0)
 			wait_ms = GC_THREAD_NOGC_SLEEP_TIME;
 		else if (wait_ms == GC_THREAD_NOGC_SLEEP_TIME)
 			wait_ms = GC_THREAD_MAX_SLEEP_TIME;
@@ -300,31 +300,23 @@ static const struct victim_selection default_v_ops = {
 	.get_victim = get_victim_by_default,
 };
 
-static struct inode *find_gc_inode(nid_t ino, struct list_head *ilist)
+static struct inode *add_gc_inode(struct super_block *sb,
+				struct list_head *ilist, nid_t ino)
 {
 	struct list_head *this;
-	struct inode_entry *ie;
+	struct inode_entry *new_ie, *ie;
+	struct inode *inode;
 
 	list_for_each(this, ilist) {
 		ie = list_entry(this, struct inode_entry, list);
 		if (ie->inode->i_ino == ino)
 			return ie->inode;
 	}
-	return NULL;
-}
 
-static void add_gc_inode(struct inode *inode, struct list_head *ilist)
-{
-	struct list_head *this;
-	struct inode_entry *new_ie, *ie;
-
-	list_for_each(this, ilist) {
-		ie = list_entry(this, struct inode_entry, list);
-		if (ie->inode == inode) {
-			iput(inode);
-			return;
-		}
-	}
+	/* there is no inode in the list */
+	inode = f2fs_iget_nowait(sb, ino);
+	if (IS_ERR(inode))
+		return NULL;
 repeat:
 	new_ie = kmem_cache_alloc(winode_slab, GFP_NOFS);
 	if (!new_ie) {
@@ -333,6 +325,7 @@ repeat:
 	}
 	new_ie->inode = inode;
 	list_add_tail(&new_ie->list, ilist);
+	return inode;
 }
 
 static void put_gc_inode(struct list_head *ilist)
@@ -356,7 +349,7 @@ static int check_valid_map(struct f2fs_sb_info *sbi,
 	sentry = get_seg_entry(sbi, segno);
 	ret = f2fs_test_bit(offset, sentry->cur_valid_map);
 	mutex_unlock(&sit_i->sentry_lock);
-	return ret ? GC_OK : GC_NEXT;
+	return ret;
 }
 
 /*
@@ -364,8 +357,8 @@ static int check_valid_map(struct f2fs_sb_info *sbi,
  * On validity, copy that node with cold status, otherwise (invalid node)
  * ignore that.
  */
-static int gc_node_segment(struct f2fs_sb_info *sbi,
-		struct f2fs_summary *sum, unsigned int segno, int gc_type)
+static void gc_node_segment(struct f2fs_sb_info *sbi,
+		struct f2fs_summary *sum, unsigned int segno)
 {
 	bool initial = true;
 	struct f2fs_summary *entry;
@@ -376,23 +369,8 @@ next_step:
 	for (off = 0; off < sbi->blocks_per_seg; off++, entry++) {
 		nid_t nid = le32_to_cpu(entry->nid);
 		struct page *node_page;
-		int err;
 
-		/*
-		 * It makes sure that free segments are able to write
-		 * all the dirty node pages before CP after this CP.
-		 * So let's check the space of dirty node pages.
-		 */
-		if (should_do_checkpoint(sbi)) {
-			mutex_lock(&sbi->cp_mutex);
-			block_operations(sbi);
-			return GC_BLOCKED;
-		}
-
-		err = check_valid_map(sbi, segno, off);
-		if (err == GC_ERROR)
-			return err;
-		else if (err == GC_NEXT)
+		if (!check_valid_map(sbi, segno, off))
 			continue;
 
 		if (initial) {
@@ -413,16 +391,6 @@ next_step:
 		initial = false;
 		goto next_step;
 	}
-
-	if (gc_type == FG_GC) {
-		struct writeback_control wbc = {
-			.sync_mode = WB_SYNC_ALL,
-			.nr_to_write = LONG_MAX,
-			.for_reclaim = 0,
-		};
-		sync_node_pages(sbi, 0, &wbc);
-	}
-	return GC_DONE;
 }
 
 /*
@@ -467,13 +435,13 @@ static int check_dnode(struct f2fs_sb_info *sbi, struct f2fs_summary *sum,
 
 	node_page = get_node_page(sbi, nid);
 	if (IS_ERR(node_page))
-		return GC_NEXT;
+		return PTR_ERR(node_page);
 
 	get_node_info(sbi, nid, dni);
 
 	if (sum->version != dni->version) {
 		f2fs_put_page(node_page, 1);
-		return GC_NEXT;
+		return -EINVAL;
 	}
 
 	*nofs = ofs_of_node(node_page);
@@ -481,8 +449,8 @@ static int check_dnode(struct f2fs_sb_info *sbi, struct f2fs_summary *sum,
 	f2fs_put_page(node_page, 1);
 
 	if (source_blkaddr != blkaddr)
-		return GC_NEXT;
-	return GC_OK;
+		return -EINVAL;
+	return 0;
 }
 
 static void move_data_page(struct inode *inode, struct page *page, int gc_type)
@@ -501,7 +469,6 @@ static void move_data_page(struct inode *inode, struct page *page, int gc_type)
 		set_cold_data(page);
 	} else {
 		struct f2fs_sb_info *sbi = F2FS_SB(inode->i_sb);
-		mutex_lock_op(sbi, DATA_WRITE);
 		if (clear_page_dirty_for_io(page) &&
 			S_ISDIR(inode->i_mode)) {
 			dec_page_count(sbi, F2FS_DIRTY_DENTS);
@@ -509,7 +476,6 @@ static void move_data_page(struct inode *inode, struct page *page, int gc_type)
 		}
 		set_cold_data(page);
 		do_write_data_page(page);
-		mutex_unlock_op(sbi, DATA_WRITE);
 		clear_cold_data(page);
 	}
 out:
@@ -523,13 +489,12 @@ out:
  * If the parent node is not valid or the data block address is different,
  * the victim data block is ignored.
  */
-static int gc_data_segment(struct f2fs_sb_info *sbi, struct f2fs_summary *sum,
+static void gc_data_segment(struct f2fs_sb_info *sbi, struct f2fs_summary *sum,
 		struct list_head *ilist, unsigned int segno, int gc_type)
 {
-	struct super_block *sb = sbi->sb;
 	struct f2fs_summary *entry;
 	block_t start_addr;
-	int err, off;
+	int off;
 	int phase = 0;
 
 	start_addr = START_BLOCK(sbi, segno);
@@ -540,25 +505,11 @@ next_step:
 		struct page *data_page;
 		struct inode *inode;
 		struct node_info dni; /* dnode info for the data */
-		unsigned int ofs_in_node, nofs;
+		unsigned int ofs_in_node;
+		unsigned int nofs = -1;
 		block_t start_bidx;
 
-		/*
-		 * It makes sure that free segments are able to write
-		 * all the dirty node pages before CP after this CP.
-		 * So let's check the space of dirty node pages.
-		 */
-		if (should_do_checkpoint(sbi)) {
-			mutex_lock(&sbi->cp_mutex);
-			block_operations(sbi);
-			err = GC_BLOCKED;
-			goto stop;
-		}
-
-		err = check_valid_map(sbi, segno, off);
-		if (err == GC_ERROR)
-			goto stop;
-		else if (err == GC_NEXT)
+		if (!check_valid_map(sbi, segno, off))
 			continue;
 
 		if (phase == 0) {
@@ -567,10 +518,7 @@ next_step:
 		}
 
 		/* Get an inode by ino with checking validity */
-		err = check_dnode(sbi, entry, &dni, start_addr + off, &nofs);
-		if (err == GC_ERROR)
-			goto stop;
-		else if (err == GC_NEXT)
+		if (check_dnode(sbi, entry, &dni, start_addr + off, &nofs))
 			continue;
 
 		if (phase == 1) {
@@ -582,39 +530,25 @@ next_step:
 		ofs_in_node = le16_to_cpu(entry->ofs_in_node);
 
 		if (phase == 2) {
-			inode = f2fs_iget_nowait(sb, dni.ino);
-			if (IS_ERR(inode))
+			inode = add_gc_inode(sbi->sb, ilist, dni.ino);
+			if (!inode)
 				continue;
 
 			data_page = find_data_page(inode,
 					start_bidx + ofs_in_node);
 			if (IS_ERR(data_page))
-				goto next_iput;
+				continue;
 
-			f2fs_put_page(data_page, 0);
-			add_gc_inode(inode, ilist);
-		} else {
-			inode = find_gc_inode(dni.ino, ilist);
-			if (inode) {
-				data_page = get_lock_data_page(inode,
-						start_bidx + ofs_in_node);
-				if (IS_ERR(data_page))
-					continue;
+			if (trylock_page(data_page)) {
 				move_data_page(inode, data_page, gc_type);
 				stat_inc_data_blk_count(sbi, 1);
+			} else {
+				f2fs_put_page(data_page, 0);
 			}
 		}
-		continue;
-next_iput:
-		iput(inode);
 	}
-	if (++phase < 4)
+	if (++phase < 3)
 		goto next_step;
-	err = GC_DONE;
-stop:
-	if (gc_type == FG_GC)
-		f2fs_submit_bio(sbi, DATA, true);
-	return err;
 }
 
 static int __get_victim(struct f2fs_sb_info *sbi, unsigned int *victim,
@@ -633,12 +567,11 @@ static int do_garbage_collect(struct f2fs_sb_info *sbi, unsigned int segno,
 {
 	struct page *sum_page;
 	struct f2fs_summary_block *sum;
-	int ret = GC_DONE;
 
 	/* read segment summary of victim */
 	sum_page = get_sum_page(sbi, segno);
 	if (IS_ERR(sum_page))
-		return GC_ERROR;
+		return PTR_ERR(sum_page);
 
 	/*
 	 * CP needs to lock sum_page. In this time, we don't need
@@ -650,76 +583,67 @@ static int do_garbage_collect(struct f2fs_sb_info *sbi, unsigned int segno,
 
 	switch (GET_SUM_TYPE((&sum->footer))) {
 	case SUM_TYPE_NODE:
-		ret = gc_node_segment(sbi, sum->entries, segno, gc_type);
+		gc_node_segment(sbi, sum->entries, segno);
 		break;
 	case SUM_TYPE_DATA:
-		ret = gc_data_segment(sbi, sum->entries, ilist, segno, gc_type);
+		gc_data_segment(sbi, sum->entries, ilist, segno, gc_type);
 		break;
 	}
 	stat_inc_seg_count(sbi, GET_SUM_TYPE((&sum->footer)));
 	stat_inc_call_count(sbi->stat_info);
 
 	f2fs_put_page(sum_page, 0);
-	return ret;
+	return 0;
 }
 
-int f2fs_gc(struct f2fs_sb_info *sbi, int nGC)
+int f2fs_gc(struct f2fs_sb_info *sbi)
 {
-	unsigned int segno;
-	int old_free_secs, cur_free_secs;
-	int gc_status, nfree;
+	unsigned int i, segno;
 	struct list_head ilist;
-	int gc_type = BG_GC;
+	int nfree = 0, gc_type = BG_GC;
+
+	if (sbi->sb->s_flags & MS_RDONLY)
+		goto out;
 
 	INIT_LIST_HEAD(&ilist);
-gc_more:
-	nfree = 0;
-	gc_status = GC_NONE;
+do_more:
+	/* Phase 1: initialize conditions */
+	if (has_not_enough_free_secs(sbi)) {
+		gc_type = FG_GC;
 
-	if (has_not_enough_free_secs(sbi))
-		old_free_secs = reserved_sections(sbi);
-	else
-		old_free_secs = free_sections(sbi);
-
-	while (sbi->sb->s_flags & MS_ACTIVE) {
-		int i;
-		if (has_not_enough_free_secs(sbi))
-			gc_type = FG_GC;
-
-		cur_free_secs = free_sections(sbi) + nfree;
-
-		/* We got free space successfully. */
-		if (nGC < cur_free_secs - old_free_secs)
-			break;
-
-		if (!__get_victim(sbi, &segno, gc_type, NO_CHECK_TYPE))
-			break;
-
-		for (i = 0; i < sbi->segs_per_sec; i++) {
-			/*
-			 * do_garbage_collect will give us three gc_status:
-			 * GC_ERROR, GC_DONE, and GC_BLOCKED.
-			 * If GC is finished uncleanly, we have to return
-			 * the victim to dirty segment list.
-			 */
-			gc_status = do_garbage_collect(sbi, segno + i,
-					&ilist, gc_type);
-			if (gc_status != GC_DONE)
-				goto stop;
-			nfree++;
-		}
+		/*
+		 * It makes sure that free segments are able to write
+		 * all the dirty node pages before CP after this CP.
+		 * So let's check the space of dirty node pages.
+		 */
+		mutex_lock(&sbi->cp_mutex);
+		block_data_writes(sbi);
 	}
+
+	/* Phase 2: do GC */
+	if (!__get_victim(sbi, &segno, gc_type, NO_CHECK_TYPE))
+		goto stop;
+
+	for (i = 0; i < sbi->segs_per_sec; i++)
+		if (do_garbage_collect(sbi, segno + i, &ilist, gc_type))
+			goto stop;
+
+	if (gc_type == FG_GC)
+		block_node_writes(sbi);
+
+	nfree++;
 stop:
-	if (has_not_enough_free_secs(sbi) || gc_status == GC_BLOCKED) {
-		write_checkpoint(sbi, (gc_status == GC_BLOCKED), false);
-		if (nfree)
-			goto gc_more;
+	/* Phase 3: finalize GC */
+	if (gc_type == FG_GC) {
+		write_checkpoint(sbi, true, false);
+		if (has_not_enough_free_secs(sbi))
+			goto do_more;
 	}
-	mutex_unlock(&sbi->gc_mutex);
 
 	put_gc_inode(&ilist);
-	BUG_ON(!list_empty(&ilist));
-	return gc_status;
+out:
+	mutex_unlock(&sbi->gc_mutex);
+	return nfree;
 }
 
 void build_gc_manager(struct f2fs_sb_info *sbi)
