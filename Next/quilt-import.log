@@ -1,0 +1,23 @@
+Importing i2c based on 11520e5e7c1855fc3bf202bb3be35a39d9efa034
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard 11520e5e7c1855fc3bf202bb3be35a39d9efa034
+HEAD is now at 11520e5 Revert "x86-64/efi: Use EFI to deal with platform wall clock (again)"
+$ git am ../quilt/i2c/maintainers-fix-drivers-i2c-busses-i2c-stub.patch
+Applying: MAINTAINERS: Fix drivers/i2c/busses/i2c-stub.c
+$ git am ../quilt/i2c/i2c-i801-01-add-device-tree-support.patch
+Applying: i2c-i801: Add device tree support
+$ git am ../quilt/i2c/i2c-i801-02-enable-interrupts-for-all.patch
+Applying: i2c-i801: Enable interrupts for all post-ICH5 chips
+$ git am ../quilt/i2c/i2c-piix4-convert-dev_printk-kern_-level-to-dev_-level.patch
+Applying: i2c-piix4: Convert dev_printk(KERN_<LEVEL> to dev_<level>(
+$ git am ../quilt/i2c/i2c-mention-func-flags-in-smbus-documentation.patch
+Applying: i2c: Mention functionality flags in SMBus protocol documentation
+$ cd /home/sfr/kernels/next/next
+$ git fetch -f ../quilt-tmp master:i2c/master
+From ../quilt-tmp
+ + c1ec1ae...d69ec10 master     -> i2c/master  (forced update)
+Importing jdelvare-hwmon based on 2844a48706e54ddda4a04269dba4250b42f449de
+Unchanged quilt series jdelvare-hwmon
+Importing device-mapper based on v3.7-rc8
+Unchanged quilt series device-mapper
