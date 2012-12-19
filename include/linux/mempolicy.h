@@ -123,6 +123,7 @@ struct sp_node {
 
 struct shared_policy {
 	struct rb_root root;
+	spinlock_t lock;
 	struct mutex mutex;
 };
 

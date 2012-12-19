@@ -90,7 +90,8 @@ static int tosa_bl_probe(struct i2c_client *client,
 	if (!data)
 		return -ENOMEM;
 
-	data->comadj = sharpsl_param.comadj == -1 ? COMADJ_DEFAULT : sharpsl_param.comadj;
+	data->comadj = sharpsl_param.comadj == -1 ?
+			COMADJ_DEFAULT : sharpsl_param.comadj;
 
 	ret = devm_gpio_request_one(&client->dev, TOSA_GPIO_BL_C20MA,
 				GPIOF_OUT_INIT_LOW, "backlight");
