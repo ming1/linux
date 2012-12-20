@@ -16,6 +16,7 @@
 #include <linux/backing-dev.h>
 #include <linux/blkdev.h>
 #include <linux/bio.h>
+#include <linux/prefetch.h>
 
 #include "f2fs.h"
 #include "node.h"
@@ -589,33 +590,25 @@ static int f2fs_write_begin(struct file *file, struct address_space *mapping,
 
 	f2fs_balance_fs(sbi);
 
-	page = grab_cache_page_write_begin(mapping, index, flags);
-	if (!page)
-		return -ENOMEM;
-	*pagep = page;
-
 	mutex_lock_op(sbi, DATA_NEW);
 
 	set_new_dnode(&dn, inode, NULL, NULL, 0);
 	err = get_dnode_of_data(&dn, index, 0);
 	if (err) {
 		mutex_unlock_op(sbi, DATA_NEW);
-		f2fs_put_page(page, 1);
 		return err;
 	}
-
-	if (dn.data_blkaddr == NULL_ADDR) {
+	if (dn.data_blkaddr == NULL_ADDR)
 		err = reserve_new_block(&dn);
-		if (err) {
-			f2fs_put_dnode(&dn);
-			mutex_unlock_op(sbi, DATA_NEW);
-			f2fs_put_page(page, 1);
-			return err;
-		}
-	}
 	f2fs_put_dnode(&dn);
-
 	mutex_unlock_op(sbi, DATA_NEW);
+	if (err)
+		return err;
+
+	page = grab_cache_page_write_begin(mapping, index, flags);
+	if (!page)
+		return -ENOMEM;
+	*pagep = page;
 
 	if ((len == PAGE_CACHE_SIZE) || PageUptodate(page))
 		return 0;

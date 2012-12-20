@@ -148,8 +148,8 @@ static int f2fs_statfs(struct dentry *dentry, struct kstatfs *buf)
 	buf->f_bfree = buf->f_blocks - valid_user_blocks(sbi) - ovp_count;
 	buf->f_bavail = user_block_count - valid_user_blocks(sbi);
 
-	buf->f_files = valid_inode_count(sbi);
-	buf->f_ffree = sbi->total_node_count - valid_node_count(sbi);
+	buf->f_files = sbi->total_node_count;
+	buf->f_ffree = sbi->total_node_count - valid_inode_count(sbi);
 
 	buf->f_namelen = F2FS_MAX_NAME_LEN;
 	buf->f_fsid.val[0] = (u32)id;
@@ -465,7 +465,6 @@ static int f2fs_fill_super(struct super_block *sb, void *data, int silent)
 	sbi->raw_super = raw_super;
 	sbi->raw_super_buf = raw_super_buf;
 	mutex_init(&sbi->gc_mutex);
-	mutex_init(&sbi->write_inode);
 	mutex_init(&sbi->writepages);
 	mutex_init(&sbi->cp_mutex);
 	for (i = 0; i < NR_LOCK_TYPE; i++)
@@ -528,8 +527,7 @@ static int f2fs_fill_super(struct super_block *sb, void *data, int silent)
 
 	/* if there are nt orphan nodes free them */
 	err = -EINVAL;
-	if (!is_set_ckpt_flags(F2FS_CKPT(sbi), CP_UMOUNT_FLAG) &&
-				recover_orphan_inodes(sbi))
+	if (recover_orphan_inodes(sbi))
 		goto free_node_inode;
 
 	/* read root inode and dentry */
@@ -548,8 +546,7 @@ static int f2fs_fill_super(struct super_block *sb, void *data, int silent)
 	}
 
 	/* recover fsynced data */
-	if (!is_set_ckpt_flags(F2FS_CKPT(sbi), CP_UMOUNT_FLAG) &&
-				!test_opt(sbi, DISABLE_ROLL_FORWARD))
+	if (!test_opt(sbi, DISABLE_ROLL_FORWARD))
 		recover_fsync_data(sbi);
 
 	/* After POR, we can run background GC thread */

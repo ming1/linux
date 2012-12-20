@@ -546,14 +546,9 @@ retry:
 /*
  * Freeze all the FS-operations for checkpoint.
  */
-void block_operations(struct f2fs_sb_info *sbi)
+void block_data_writes(struct f2fs_sb_info *sbi)
 {
 	int t;
-	struct writeback_control wbc = {
-		.sync_mode = WB_SYNC_ALL,
-		.nr_to_write = LONG_MAX,
-		.for_reclaim = 0,
-	};
 
 	/* Stop renaming operation */
 	mutex_lock_op(sbi, RENAME);
@@ -572,8 +567,15 @@ retry_dents:
 	/* block all the operations */
 	for (t = DATA_NEW; t <= NODE_TRUNC; t++)
 		mutex_lock_op(sbi, t);
+}
 
-	mutex_lock(&sbi->write_inode);
+void block_node_writes(struct f2fs_sb_info *sbi)
+{
+	struct writeback_control wbc = {
+		.sync_mode = WB_SYNC_ALL,
+		.nr_to_write = LONG_MAX,
+		.for_reclaim = 0,
+	};
 
 	/*
 	 * POR: we should ensure that there is no dirty node pages
@@ -588,7 +590,12 @@ retry:
 		mutex_unlock_op(sbi, NODE_WRITE);
 		goto retry;
 	}
-	mutex_unlock(&sbi->write_inode);
+}
+
+void block_operations(struct f2fs_sb_info *sbi)
+{
+	block_data_writes(sbi);
+	block_node_writes(sbi);
 }
 
 static void unblock_operations(struct f2fs_sb_info *sbi)

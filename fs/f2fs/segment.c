@@ -12,6 +12,7 @@
 #include <linux/f2fs_fs.h>
 #include <linux/bio.h>
 #include <linux/blkdev.h>
+#include <linux/prefetch.h>
 #include <linux/vmalloc.h>
 
 #include "f2fs.h"
@@ -62,7 +63,7 @@ void f2fs_balance_fs(struct f2fs_sb_info *sbi)
 
 	if (has_not_enough_free_secs(sbi)) {
 		mutex_lock(&sbi->gc_mutex);
-		f2fs_gc(sbi, 1);
+		f2fs_gc(sbi);
 	}
 }
 
@@ -631,7 +632,6 @@ static void f2fs_end_io_write(struct bio *bio, int err)
 			if (page->mapping)
 				set_bit(AS_EIO, &page->mapping->flags);
 			set_ckpt_flags(p->sbi->ckpt, CP_ERROR_FLAG);
-			set_page_dirty(page);
 		}
 		end_page_writeback(page);
 		dec_page_count(p->sbi, F2FS_WRITEBACK);

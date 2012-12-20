@@ -11,6 +11,7 @@
 #include <linux/fs.h>
 #include <linux/f2fs_fs.h>
 #include "f2fs.h"
+#include "node.h"
 #include "acl.h"
 
 static unsigned long dir_blocks(struct inode *inode)
@@ -308,6 +309,7 @@ static int init_inode_metadata(struct inode *inode, struct dentry *dentry)
 		ipage = get_node_page(F2FS_SB(dir->i_sb), inode->i_ino);
 		if (IS_ERR(ipage))
 			return PTR_ERR(ipage);
+		set_cold_node(inode, ipage);
 		init_dent_inode(dentry, ipage);
 		f2fs_put_page(ipage, 1);
 	}
@@ -540,13 +542,13 @@ int f2fs_make_empty(struct inode *inode, struct inode *parent)
 
 	de = &dentry_blk->dentry[0];
 	de->name_len = cpu_to_le16(1);
-	de->hash_code = 0;
+	de->hash_code = f2fs_dentry_hash(".", 1);
 	de->ino = cpu_to_le32(inode->i_ino);
 	memcpy(dentry_blk->filename[0], ".", 1);
 	set_de_type(de, inode);
 
 	de = &dentry_blk->dentry[1];
-	de->hash_code = 0;
+	de->hash_code = f2fs_dentry_hash("..", 2);
 	de->name_len = cpu_to_le16(2);
 	de->ino = cpu_to_le32(parent->i_ino);
 	memcpy(dentry_blk->filename[1], "..", 2);
