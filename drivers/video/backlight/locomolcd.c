@@ -33,19 +33,25 @@ static unsigned long locomolcd_flags;
 
 static void locomolcd_on(int comadj)
 {
-	locomo_gpio_set_dir(locomolcd_dev->dev.parent, LOCOMO_GPIO_LCD_VSHA_ON, 0);
-	locomo_gpio_write(locomolcd_dev->dev.parent, LOCOMO_GPIO_LCD_VSHA_ON, 1);
+	locomo_gpio_set_dir(locomolcd_dev->dev.parent,
+			LOCOMO_GPIO_LCD_VSHA_ON, 0);
+	locomo_gpio_write(locomolcd_dev->dev.parent,
+			LOCOMO_GPIO_LCD_VSHA_ON, 1);
 	mdelay(2);
 
-	locomo_gpio_set_dir(locomolcd_dev->dev.parent, LOCOMO_GPIO_LCD_VSHD_ON, 0);
-	locomo_gpio_write(locomolcd_dev->dev.parent, LOCOMO_GPIO_LCD_VSHD_ON, 1);
+	locomo_gpio_set_dir(locomolcd_dev->dev.parent,
+			LOCOMO_GPIO_LCD_VSHD_ON, 0);
+	locomo_gpio_write(locomolcd_dev->dev.parent,
+			LOCOMO_GPIO_LCD_VSHD_ON, 1);
 	mdelay(2);
 
 	locomo_m62332_senddata(locomolcd_dev, comadj, 0);
 	mdelay(5);
 
-	locomo_gpio_set_dir(locomolcd_dev->dev.parent, LOCOMO_GPIO_LCD_VEE_ON, 0);
-	locomo_gpio_write(locomolcd_dev->dev.parent, LOCOMO_GPIO_LCD_VEE_ON, 1);
+	locomo_gpio_set_dir(locomolcd_dev->dev.parent,
+			LOCOMO_GPIO_LCD_VEE_ON, 0);
+	locomo_gpio_write(locomolcd_dev->dev.parent,
+			LOCOMO_GPIO_LCD_VEE_ON, 1);
 	mdelay(10);
 
 	/* TFTCRST | CPSOUT=0 | CPSEN */
@@ -68,16 +74,19 @@ static void locomolcd_off(int comadj)
 	locomo_writel(0x06, locomolcd_dev->mapbase + LOCOMO_TC);
 	mdelay(1);
 
-	locomo_gpio_write(locomolcd_dev->dev.parent, LOCOMO_GPIO_LCD_VSHA_ON, 0);
+	locomo_gpio_write(locomolcd_dev->dev.parent,
+			LOCOMO_GPIO_LCD_VSHA_ON, 0);
 	mdelay(110);
 
-	locomo_gpio_write(locomolcd_dev->dev.parent, LOCOMO_GPIO_LCD_VEE_ON, 0);
+	locomo_gpio_write(locomolcd_dev->dev.parent,
+			LOCOMO_GPIO_LCD_VEE_ON, 0);
 	mdelay(700);
 
 	/* TFTCRST=0 | CPSOUT=0 | CPSEN = 0 */
 	locomo_writel(0, locomolcd_dev->mapbase + LOCOMO_TC);
 	locomo_gpio_write(locomolcd_dev->dev.parent, LOCOMO_GPIO_LCD_MOD, 0);
-	locomo_gpio_write(locomolcd_dev->dev.parent, LOCOMO_GPIO_LCD_VSHD_ON, 0);
+	locomo_gpio_write(locomolcd_dev->dev.parent,
+			LOCOMO_GPIO_LCD_VSHD_ON, 0);
 }
 
 void locomolcd_power(int on)
