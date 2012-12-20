@@ -845,6 +845,7 @@ struct page *new_node_page(struct dnode_of_data *dn, unsigned int ofs)
 	return page;
 
 fail:
+	clear_node_page_dirty(page);
 	f2fs_put_page(page, 1);
 	return ERR_PTR(err);
 }
