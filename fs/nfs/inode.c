@@ -107,13 +107,19 @@ u64 nfs_compat_user_ino64(u64 fileid)
 	return ino;
 }
 
+int nfs_drop_inode(struct inode *inode)
+{
+	return NFS_STALE(inode) || generic_drop_inode(inode);
+}
+EXPORT_SYMBOL_GPL(nfs_drop_inode);
+
 void nfs_clear_inode(struct inode *inode)
 {
 	/*
 	 * The following should never happen...
 	 */
-	BUG_ON(nfs_have_writebacks(inode));
-	BUG_ON(!list_empty(&NFS_I(inode)->open_files));
+	WARN_ON_ONCE(nfs_have_writebacks(inode));
+	WARN_ON_ONCE(!list_empty(&NFS_I(inode)->open_files));
 	nfs_zap_acl_cache(inode);
 	nfs_access_zap_cache(inode);
 	nfs_fscache_release_inode_cookie(inode);
@@ -685,7 +691,10 @@ static void __put_nfs_open_context(struct nfs_open_context *ctx, int is_sync)
 	if (ctx->cred != NULL)
 		put_rpccred(ctx->cred);
 	dput(ctx->dentry);
-	nfs_sb_deactive(sb);
+	if (is_sync)
+		nfs_sb_deactive(sb);
+	else
+		nfs_sb_deactive_async(sb);
 	kfree(ctx->mdsthreshold);
 	kfree(ctx);
 }

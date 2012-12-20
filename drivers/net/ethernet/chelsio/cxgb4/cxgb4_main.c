@@ -2148,8 +2148,8 @@ static const struct file_operations mem_debugfs_fops = {
 	.llseek  = default_llseek,
 };
 
-static void __devinit add_debugfs_mem(struct adapter *adap, const char *name,
-				      unsigned int idx, unsigned int size_mb)
+static void add_debugfs_mem(struct adapter *adap, const char *name,
+			    unsigned int idx, unsigned int size_mb)
 {
 	struct dentry *de;
 
@@ -2159,7 +2159,7 @@ static void __devinit add_debugfs_mem(struct adapter *adap, const char *name,
 		de->d_inode->i_size = size_mb << 20;
 }
 
-static int __devinit setup_debugfs(struct adapter *adap)
+static int setup_debugfs(struct adapter *adap)
 {
 	int i;
 
@@ -3203,7 +3203,7 @@ static int adap_init1(struct adapter *adap, struct fw_caps_config_cmd *c)
 	memset(c, 0, sizeof(*c));
 	c->op_to_write = htonl(FW_CMD_OP(FW_CAPS_CONFIG_CMD) |
 			       FW_CMD_REQUEST | FW_CMD_READ);
-	c->retval_len16 = htonl(FW_LEN16(*c));
+	c->cfvalid_to_len16 = htonl(FW_LEN16(*c));
 	ret = t4_wr_mbox(adap, adap->fn, c, sizeof(*c), c);
 	if (ret < 0)
 		return ret;
@@ -3397,7 +3397,7 @@ static int adap_init0_config(struct adapter *adapter, int reset)
 		htonl(FW_CMD_OP(FW_CAPS_CONFIG_CMD) |
 		      FW_CMD_REQUEST |
 		      FW_CMD_READ);
-	caps_cmd.retval_len16 =
+	caps_cmd.cfvalid_to_len16 =
 		htonl(FW_CAPS_CONFIG_CMD_CFVALID |
 		      FW_CAPS_CONFIG_CMD_MEMTYPE_CF(mtype) |
 		      FW_CAPS_CONFIG_CMD_MEMADDR64K_CF(maddr >> 16) |
@@ -3416,23 +3416,13 @@ static int adap_init0_config(struct adapter *adapter, int reset)
 			 finicsum, cfcsum);
 
 	/*
-	 * If we're a pure NIC driver then disable all offloading facilities.
-	 * This will allow the firmware to optimize aspects of the hardware
-	 * configuration which will result in improved performance.
-	 */
-	caps_cmd.ofldcaps = 0;
-	caps_cmd.iscsicaps = 0;
-	caps_cmd.rdmacaps = 0;
-	caps_cmd.fcoecaps = 0;
-
-	/*
 	 * And now tell the firmware to use the configuration we just loaded.
 	 */
 	caps_cmd.op_to_write =
 		htonl(FW_CMD_OP(FW_CAPS_CONFIG_CMD) |
 		      FW_CMD_REQUEST |
 		      FW_CMD_WRITE);
-	caps_cmd.retval_len16 = htonl(FW_LEN16(caps_cmd));
+	caps_cmd.cfvalid_to_len16 = htonl(FW_LEN16(caps_cmd));
 	ret = t4_wr_mbox(adapter, adapter->mbox, &caps_cmd, sizeof(caps_cmd),
 			 NULL);
 	if (ret < 0)
@@ -3507,23 +3497,11 @@ static int adap_init0_no_config(struct adapter *adapter, int reset)
 	memset(&caps_cmd, 0, sizeof(caps_cmd));
 	caps_cmd.op_to_write = htonl(FW_CMD_OP(FW_CAPS_CONFIG_CMD) |
 				     FW_CMD_REQUEST | FW_CMD_READ);
-	caps_cmd.retval_len16 = htonl(FW_LEN16(caps_cmd));
+	caps_cmd.cfvalid_to_len16 = htonl(FW_LEN16(caps_cmd));
 	ret = t4_wr_mbox(adapter, adapter->mbox, &caps_cmd, sizeof(caps_cmd),
 			 &caps_cmd);
 	if (ret < 0)
 		goto bye;
-
-#ifndef CONFIG_CHELSIO_T4_OFFLOAD
-	/*
-	 * If we're a pure NIC driver then disable all offloading facilities.
-	 * This will allow the firmware to optimize aspects of the hardware
-	 * configuration which will result in improved performance.
-	 */
-	caps_cmd.ofldcaps = 0;
-	caps_cmd.iscsicaps = 0;
-	caps_cmd.rdmacaps = 0;
-	caps_cmd.fcoecaps = 0;
-#endif
 
 	if (caps_cmd.niccaps & htons(FW_CAPS_CONFIG_NIC_VM)) {
 		if (!vf_acls)
@@ -3745,6 +3723,7 @@ static int adap_init0(struct adapter *adap)
 	u32 v, port_vec;
 	enum dev_state state;
 	u32 params[7], val[7];
+	struct fw_caps_config_cmd caps_cmd;
 	int reset = 1, j;
 
 	/*
@@ -3898,6 +3877,9 @@ static int adap_init0(struct adapter *adap)
 			goto bye;
 	}
 
+	if (is_bypass_device(adap->pdev->device))
+		adap->params.bypass = 1;
+
 	/*
 	 * Grab some of our basic fundamental operating parameters.
 	 */
@@ -3940,15 +3922,14 @@ static int adap_init0(struct adapter *adap)
 		adap->tids.aftid_end = val[1];
 	}
 
-#ifdef CONFIG_CHELSIO_T4_OFFLOAD
 	/*
 	 * Get device capabilities so we can determine what resources we need
 	 * to manage.
 	 */
 	memset(&caps_cmd, 0, sizeof(caps_cmd));
-	caps_cmd.op_to_write = htonl(V_FW_CMD_OP(FW_CAPS_CONFIG_CMD) |
+	caps_cmd.op_to_write = htonl(FW_CMD_OP(FW_CAPS_CONFIG_CMD) |
 				     FW_CMD_REQUEST | FW_CMD_READ);
-	caps_cmd.retval_len16 = htonl(FW_LEN16(caps_cmd));
+	caps_cmd.cfvalid_to_len16 = htonl(FW_LEN16(caps_cmd));
 	ret = t4_wr_mbox(adap, adap->mbox, &caps_cmd, sizeof(caps_cmd),
 			 &caps_cmd);
 	if (ret < 0)
@@ -3990,15 +3971,6 @@ static int adap_init0(struct adapter *adap)
 		adap->vres.ddp.start = val[3];
 		adap->vres.ddp.size = val[4] - val[3] + 1;
 		adap->params.ofldq_wr_cred = val[5];
-
-		params[0] = FW_PARAM_PFVF(ETHOFLD_START);
-		params[1] = FW_PARAM_PFVF(ETHOFLD_END);
-		ret = t4_query_params(adap, adap->mbox, adap->fn, 0, 2,
-				      params, val);
-		if ((val[0] != val[1]) && (ret >= 0)) {
-			adap->tids.uotid_base = val[0];
-			adap->tids.nuotids = val[1] - val[0] + 1;
-		}
 
 		adap->params.offload = 1;
 	}
@@ -4048,7 +4020,6 @@ static int adap_init0(struct adapter *adap)
 	}
 #undef FW_PARAM_PFVF
 #undef FW_PARAM_DEV
-#endif /* CONFIG_CHELSIO_T4_OFFLOAD */
 
 	/*
 	 * These are finalized by FW initialization, load their values now.
@@ -4202,7 +4173,7 @@ static inline void init_rspq(struct sge_rspq *q, u8 timer_idx, u8 pkt_cnt_idx,
  * of ports we found and the number of available CPUs.  Most settings can be
  * modified by the admin prior to actual use.
  */
-static void __devinit cfg_queues(struct adapter *adap)
+static void cfg_queues(struct adapter *adap)
 {
 	struct sge *s = &adap->sge;
 	int i, q10g = 0, n10g = 0, qidx = 0;
@@ -4286,7 +4257,7 @@ static void __devinit cfg_queues(struct adapter *adap)
  * Reduce the number of Ethernet queues across all ports to at most n.
  * n provides at least one queue per port.
  */
-static void __devinit reduce_ethqs(struct adapter *adap, int n)
+static void reduce_ethqs(struct adapter *adap, int n)
 {
 	int i;
 	struct port_info *pi;
@@ -4313,7 +4284,7 @@ static void __devinit reduce_ethqs(struct adapter *adap, int n)
 /* 2 MSI-X vectors needed for the FW queue and non-data interrupts */
 #define EXTRA_VECS 2
 
-static int __devinit enable_msix(struct adapter *adap)
+static int enable_msix(struct adapter *adap)
 {
 	int ofld_need = 0;
 	int i, err, want, need;
@@ -4362,7 +4333,7 @@ static int __devinit enable_msix(struct adapter *adap)
 
 #undef EXTRA_VECS
 
-static int __devinit init_rss(struct adapter *adap)
+static int init_rss(struct adapter *adap)
 {
 	unsigned int i, j;
 
@@ -4378,7 +4349,7 @@ static int __devinit init_rss(struct adapter *adap)
 	return 0;
 }
 
-static void __devinit print_port_info(const struct net_device *dev)
+static void print_port_info(const struct net_device *dev)
 {
 	static const char *base[] = {
 		"R XFI", "R XAUI", "T SGMII", "T XFI", "T XAUI", "KX4", "CX4",
@@ -4415,7 +4386,7 @@ static void __devinit print_port_info(const struct net_device *dev)
 		    adap->params.vpd.sn, adap->params.vpd.ec);
 }
 
-static void __devinit enable_pcie_relaxed_ordering(struct pci_dev *dev)
+static void enable_pcie_relaxed_ordering(struct pci_dev *dev)
 {
 	pcie_capability_set_word(dev, PCI_EXP_DEVCTL, PCI_EXP_DEVCTL_RELAX_EN);
 }
@@ -4448,8 +4419,7 @@ static void free_some_resources(struct adapter *adapter)
 #define VLAN_FEAT (NETIF_F_SG | NETIF_F_IP_CSUM | TSO_FLAGS | \
 		   NETIF_F_IPV6_CSUM | NETIF_F_HIGHDMA)
 
-static int __devinit init_one(struct pci_dev *pdev,
-			      const struct pci_device_id *ent)
+static int init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
 {
 	int func, i, err;
 	struct port_info *pi;
@@ -4669,7 +4639,7 @@ sriov:
 	return err;
 }
 
-static void __devexit remove_one(struct pci_dev *pdev)
+static void remove_one(struct pci_dev *pdev)
 {
 	struct adapter *adapter = pci_get_drvdata(pdev);
 
@@ -4709,7 +4679,7 @@ static struct pci_driver cxgb4_driver = {
 	.name     = KBUILD_MODNAME,
 	.id_table = cxgb4_pci_tbl,
 	.probe    = init_one,
-	.remove   = __devexit_p(remove_one),
+	.remove   = remove_one,
 	.err_handler = &cxgb4_eeh,
 };
 

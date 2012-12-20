@@ -17,6 +17,7 @@
 #include <asm/ioctls.h>
 
 #include "../../mount.h"
+#include "../fdinfo.h"
 
 #define FANOTIFY_DEFAULT_MAX_EVENTS	16384
 #define FANOTIFY_DEFAULT_MAX_MARKS	8192
@@ -258,7 +259,8 @@ static ssize_t copy_event_to_user(struct fsnotify_group *group,
 	if (ret)
 		goto out_close_fd;
 
-	fd_install(fd, f);
+	if (fd != FAN_NOFD)
+		fd_install(fd, f);
 	return fanotify_event_metadata.event_len;
 
 out_close_fd:
@@ -427,6 +429,7 @@ static long fanotify_ioctl(struct file *file, unsigned int cmd, unsigned long ar
 }
 
 static const struct file_operations fanotify_fops = {
+	.show_fdinfo	= fanotify_show_fdinfo,
 	.poll		= fanotify_poll,
 	.read		= fanotify_read,
 	.write		= fanotify_write,
