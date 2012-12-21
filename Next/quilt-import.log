@@ -1,0 +1,93 @@
+Importing jdelvare-hwmon based on 752451f01c4567b506bf4343082682dbb8fb30dd
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard 752451f01c4567b506bf4343082682dbb8fb30dd
+HEAD is now at 752451f Merge branch 'i2c-embedded/for-next' of git://git.pengutronix.de/git/wsa/linux
+$ git am ../quilt/jdelvare-hwmon/hwmon-fix-PCI-device-reference-leak.patch
+Applying: hwmon: Fix PCI device reference leak in quirk
+$ git am ../quilt/jdelvare-hwmon/hwmon-w83627hf-restore-limits-on-resume.patch
+Applying: hwmon: (w83627hf) Add support for suspend
+$ git am ../quilt/jdelvare-hwmon/hwmon-w83627ehf-restore-limits-on-resume.patch
+Applying: hwmon: (w83627ehf) Add support for suspend
+$ git am ../quilt/jdelvare-hwmon/hwmon-w83627hf-dont-touch-nonexistent-I2C-address-registers.patch
+Applying: hwmon: (w83627hf) Don't touch nonexistent I2C address registers
+$ git am ../quilt/jdelvare-hwmon/hwmon-w83627ehf-fix-smatch-warnings.patch
+Applying: hwmon: (w83627ehf) Get rid of smatch warnings
+$ git am ../quilt/jdelvare-hwmon/hwmon-it87-01-save-temperature-registers-in-2-dimensional-array.patch
+Applying: hwmon: (it87) Save temperature registers in 2-dimensional array
+$ git am ../quilt/jdelvare-hwmon/hwmon-it87-02-save-voltage-register-values-in-2-dimensional-array.patch
+Applying: hwmon: (it87) Save voltage register values in 2-dimensional array
+$ git am ../quilt/jdelvare-hwmon/hwmon-it87-03-replace-macro-defining-tempx_type-sensors-with-direct-definitions.patch
+Applying: hwmon: (it87) Replace macro defining tempX_type sensors with direct definitions
+$ git am ../quilt/jdelvare-hwmon/hwmon-it87-04-introduce-support-for-tempx_offset-sysfs-attribute.patch
+Applying: hwmon: (it87) Introduce support for tempX_offset sysfs attribute
+$ git am ../quilt/jdelvare-hwmon/hwmon-it87-05-save-fan-registers-in-2-dimensional-array.patch
+Applying: hwmon: (it87) Save fan registers in 2-dimensional array
+$ git am ../quilt/jdelvare-hwmon/hwmon-it87-06-avoid-quoted-string-splits-across-lines.patch
+Applying: hwmon: (it87) Avoid quoted string splits across lines
+$ git am ../quilt/jdelvare-hwmon/hwmon-it87-07-replace-pwm-group-macro-with-direct-attribute-definitions.patch
+Applying: hwmon: (it87) Replace pwm group macro with direct attribute definitions
+$ git am ../quilt/jdelvare-hwmon/hwmon-it87-08-manage-device-specific-features-with-table.patch
+Applying: hwmon: (it87) Manage device specific features with table
+$ git am ../quilt/jdelvare-hwmon/hwmon-it87-09-report-thermal-sensor-type-as-intel-peci-if-appropriate.patch
+Applying: hwmon: (it87) Report thermal sensor type as Intel PECI if appropriate
+$ git am ../quilt/jdelvare-hwmon/hwmon-it87-10-support-peci-for-additional-chips.patch
+Applying: hwmon: (it87) Support PECI for additional chips
+$ git am ../quilt/jdelvare-hwmon/hwmon-vid-add-AMD-family-11h.patch
+Applying: hwmon-vid: Add support for AMD family 11h to 15h processors
+$ git am ../quilt/jdelvare-hwmon/hwmon-emc6w201-fix-div_round_closest-problem-with-unsigned-divisors.patch
+Applying: hwmon: (emc6w201) Fix DIV_ROUND_CLOSEST problem with unsigned divisors
+$ cd /home/sfr/kernels/next/next
+$ git fetch -f ../quilt-tmp master:jdelvare-hwmon/master
+From ../quilt-tmp
+ + d699e68...c24c39b master     -> jdelvare-hwmon/master  (forced update)
+Importing device-mapper based on v3.7
+$ cd ../quilt-tmp
+$ git reset --hard 29594404d7fe73cd80eaa4ee8c43dcc53970c60e
+HEAD is now at 2959440 Linux 3.7
+$ git am ../quilt/device-mapper/dm-persistent-data-rename-node-to-btree_node.patch
+Applying: This patch fixes a compilation failure on sparc32 by renaming struct node.
+$ git am ../quilt/device-mapper/dm-ioctl-prevent-unsafe-change-to-dm_ioctl-data_size.patch
+Applying: Abort dm ioctl processing if userspace changes the data_size parameter
+$ git am ../quilt/device-mapper/dm-crypt-do-not-support-WRITE_SAME.patch
+Applying: A ciphertext device is incompatible with WRITE SAME bios so we must
+$ git am ../quilt/device-mapper/dm-thin-replace-dm_cell_release_singleton-with-cell_defer_except.patch
+Applying: Change existing users of the function dm_cell_release_singleton to share
+$ git am ../quilt/device-mapper/dm-thin-fix-race-between-simultaneous-io-and-discards-to-same-block.patch
+Applying: There is a race when discard bios and non-discard bios are issued
+$ git am ../quilt/device-mapper/dm-thin-wake-worker-when-discard-is-prepared.patch
+Applying: When discards are prepared it is best to directly wake the worker that
+$ git am ../quilt/device-mapper/dm-persistent-data-fix-nested-btree-deletion.patch
+Applying: When deleting nested btrees, the code forgets to delete the innermost
+$ git am ../quilt/device-mapper/dm-thin-emit-ignore_discard-in-status-when-discards-disabled.patch
+Applying: If "ignore_discard" is specified when creating the thin pool device then
+$ git am ../quilt/device-mapper/dm-raid1-remove-impossible-mempool_alloc-error-test.patch
+Applying: mempool_alloc can't fail if __GFP_WAIT is specified, so the condition
+$ git am ../quilt/device-mapper/dm-raid-use-DM_ENDIO_INCOMPLETE.patch
+Applying: Use a defined macro DM_ENDIO_INCOMPLETE instead of a numeric constant.
+$ git am ../quilt/device-mapper/dm-snap-optimize-track_chunk.patch
+Applying: track_chunk is always called with interrupts enabled. Consequently, we
+$ git am ../quilt/device-mapper/dm-thin-rename-cell_defer_except-to-cell_defer_no_holder.patch
+Applying: Rename cell_defer_except() to cell_defer_no_holder() which describes
+$ git am ../quilt/device-mapper/dm-thin-cleanup-dead-code.patch
+Applying: Remove unused @data_block parameter from cell_defer.
+$ git am ../quilt/device-mapper/dm-raid-round-region_size-to-power-of-two.patch
+Applying: If the user does not supply a bitmap region_size to the dm raid target,
+$ git am ../quilt/device-mapper/dm-kcopyd-add-WRITE-SAME-support-to-dm_kcopyd_zero.patch
+Applying: Add WRITE SAME support to dm-io and make it accessible to
+$ git am ../quilt/device-mapper/dm-block-manager-reinstate-message-when-validator-fails.patch
+Applying: Reinstate a useful error message when the block manager buffer validator fails.
+$ git am ../quilt/device-mapper/dm-persistent-data-use-DMERR_LIMIT-for-errors.patch
+Applying: Nearly all of persistent-data is in the IO path so throttle error
+$ git am ../quilt/device-mapper/dm-thin-use-DMERR_LIMIT-for-errors.patch
+Applying: Throttle all errors logged from the IO path by dm thin.
+$ git am ../quilt/device-mapper/dm-persistent-data-improve-improve-space-map-block-alloc-failure-message.patch
+Applying: Improve space map error message when unable to allocate a new
+$ git am ../quilt/device-mapper/dm-ioctl-remove-PF_MEMALLOC.patch
+Applying: When allocating memory for the userspace ioctl data, set some
+$ git am ../quilt/device-mapper/dm-ioctl-use-kmalloc-if-possible.patch
+Applying: If the parameter buffer is small enough, try to allocate it with kmalloc()
+$ cd /home/sfr/kernels/next/next
+$ git fetch -f ../quilt-tmp master:device-mapper/master
+From ../quilt-tmp
+ + 5cf9de0...ab31b3f master     -> device-mapper/master  (forced update)
