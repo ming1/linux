@@ -495,9 +495,8 @@ static const struct i2c_algorithm mv64xxx_i2c_algo = {
  *
  *****************************************************************************
  */
-static int __devinit
-mv64xxx_i2c_map_regs(struct platform_device *pd,
-	struct mv64xxx_i2c_data *drv_data)
+static int mv64xxx_i2c_map_regs(struct platform_device *pd,
+				struct mv64xxx_i2c_data *drv_data)
 {
 	int size;
 	struct resource	*r = platform_get_resource(pd, IORESOURCE_MEM, 0);
@@ -530,15 +529,13 @@ mv64xxx_i2c_unmap_regs(struct mv64xxx_i2c_data *drv_data)
 }
 
 #ifdef CONFIG_OF
-static int __devinit
-mv64xxx_calc_freq(const int tclk, const int n, const int m)
+static int mv64xxx_calc_freq(const int tclk, const int n, const int m)
 {
 	return tclk / (10 * (m + 1) * (2 << n));
 }
 
-static bool __devinit
-mv64xxx_find_baud_factors(const u32 req_freq, const u32 tclk, u32 *best_n,
-			  u32 *best_m)
+static bool mv64xxx_find_baud_factors(const u32 req_freq, const u32 tclk,
+				      u32 *best_n, u32 *best_m)
 {
 	int freq, delta, best_delta = INT_MAX;
 	int m, n;
@@ -560,9 +557,8 @@ mv64xxx_find_baud_factors(const u32 req_freq, const u32 tclk, u32 *best_n,
 	return true;
 }
 
-static int __devinit
-mv64xxx_of_config(struct mv64xxx_i2c_data *drv_data,
-		  struct device_node *np)
+static int mv64xxx_of_config(struct mv64xxx_i2c_data *drv_data,
+			     struct device_node *np)
 {
 	u32 bus_freq, tclk;
 	int rc = 0;
@@ -597,16 +593,14 @@ out:
 #endif
 }
 #else /* CONFIG_OF */
-static int __devinit
-mv64xxx_of_config(struct mv64xxx_i2c_data *drv_data,
-		  struct device_node *np)
+static int mv64xxx_of_config(struct mv64xxx_i2c_data *drv_data,
+			     struct device_node *np)
 {
 	return -ENODEV;
 }
 #endif /* CONFIG_OF */
 
-static int __devinit
-mv64xxx_i2c_probe(struct platform_device *pd)
+static int mv64xxx_i2c_probe(struct platform_device *pd)
 {
 	struct mv64xxx_i2c_data		*drv_data;
 	struct mv64xxx_i2c_pdata	*pdata = pd->dev.platform_data;
@@ -697,8 +691,7 @@ mv64xxx_i2c_probe(struct platform_device *pd)
 	return rc;
 }
 
-static int __devexit
-mv64xxx_i2c_remove(struct platform_device *dev)
+static int mv64xxx_i2c_remove(struct platform_device *dev)
 {
 	struct mv64xxx_i2c_data		*drv_data = platform_get_drvdata(dev);
 	int	rc;
@@ -718,7 +711,7 @@ mv64xxx_i2c_remove(struct platform_device *dev)
 	return rc;
 }
 
-static const struct of_device_id mv64xxx_i2c_of_match_table[] __devinitdata = {
+static const struct of_device_id mv64xxx_i2c_of_match_table[] = {
 	{ .compatible = "marvell,mv64xxx-i2c", },
 	{}
 };
@@ -726,7 +719,7 @@ MODULE_DEVICE_TABLE(of, mv64xxx_i2c_of_match_table);
 
 static struct platform_driver mv64xxx_i2c_driver = {
 	.probe	= mv64xxx_i2c_probe,
-	.remove	= __devexit_p(mv64xxx_i2c_remove),
+	.remove	= mv64xxx_i2c_remove,
 	.driver	= {
 		.owner	= THIS_MODULE,
 		.name	= MV64XXX_I2C_CTLR_NAME,

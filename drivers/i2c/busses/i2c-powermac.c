@@ -210,7 +210,7 @@ static const struct i2c_algorithm i2c_powermac_algorithm = {
 };
 
 
-static int __devexit i2c_powermac_remove(struct platform_device *dev)
+static int i2c_powermac_remove(struct platform_device *dev)
 {
 	struct i2c_adapter	*adapter = platform_get_drvdata(dev);
 	int			rc;
@@ -227,9 +227,9 @@ static int __devexit i2c_powermac_remove(struct platform_device *dev)
 	return 0;
 }
 
-static u32 __devinit i2c_powermac_get_addr(struct i2c_adapter *adap,
-					   struct pmac_i2c_bus *bus,
-					   struct device_node *node)
+static u32 i2c_powermac_get_addr(struct i2c_adapter *adap,
+				 struct pmac_i2c_bus *bus,
+				 struct device_node *node)
 {
 	const __be32 *prop;
 	int len;
@@ -255,9 +255,8 @@ static u32 __devinit i2c_powermac_get_addr(struct i2c_adapter *adap,
 	return 0xffffffff;
 }
 
-static void __devinit i2c_powermac_create_one(struct i2c_adapter *adap,
-					      const char *type,
-					      u32 addr)
+static void i2c_powermac_create_one(struct i2c_adapter *adap, const char *type,
+				    u32 addr)
 {
 	struct i2c_board_info info = {};
 	struct i2c_client *newdev;
@@ -271,9 +270,8 @@ static void __devinit i2c_powermac_create_one(struct i2c_adapter *adap,
 			type);
 }
 
-static void __devinit i2c_powermac_add_missing(struct i2c_adapter *adap,
-					       struct pmac_i2c_bus *bus,
-					       bool found_onyx)
+static void i2c_powermac_add_missing(struct i2c_adapter *adap,
+				     struct pmac_i2c_bus *bus, bool found_onyx)
 {
 	struct device_node *busnode = pmac_i2c_get_bus_node(bus);
 	int rc;
@@ -297,9 +295,9 @@ static void __devinit i2c_powermac_add_missing(struct i2c_adapter *adap,
 	}
 }
 
-static bool __devinit i2c_powermac_get_type(struct i2c_adapter *adap,
-					    struct device_node *node,
-					    u32 addr, char *type, int type_size)
+static bool i2c_powermac_get_type(struct i2c_adapter *adap,
+				  struct device_node *node, u32 addr,
+				  char *type, int type_size)
 {
 	char tmp[16];
 
@@ -336,8 +334,8 @@ static bool __devinit i2c_powermac_get_type(struct i2c_adapter *adap,
 	return false;
 }
 
-static void __devinit i2c_powermac_register_devices(struct i2c_adapter *adap,
-						    struct pmac_i2c_bus *bus)
+static void i2c_powermac_register_devices(struct i2c_adapter *adap,
+					  struct pmac_i2c_bus *bus)
 {
 	struct i2c_client *newdev;
 	struct device_node *node;
@@ -403,7 +401,7 @@ static void __devinit i2c_powermac_register_devices(struct i2c_adapter *adap,
 	i2c_powermac_add_missing(adap, bus, found_onyx);
 }
 
-static int __devinit i2c_powermac_probe(struct platform_device *dev)
+static int i2c_powermac_probe(struct platform_device *dev)
 {
 	struct pmac_i2c_bus *bus = dev->dev.platform_data;
 	struct device_node *parent = NULL;
@@ -467,7 +465,7 @@ static int __devinit i2c_powermac_probe(struct platform_device *dev)
 
 static struct platform_driver i2c_powermac_driver = {
 	.probe = i2c_powermac_probe,
-	.remove = __devexit_p(i2c_powermac_remove),
+	.remove = i2c_powermac_remove,
 	.driver = {
 		.name = "i2c-powermac",
 		.bus = &platform_bus_type,
