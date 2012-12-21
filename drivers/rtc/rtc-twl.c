@@ -597,7 +597,7 @@ MODULE_ALIAS("platform:twl_rtc");
 
 static struct platform_driver twl4030rtc_driver = {
 	.probe		= twl_rtc_probe,
-	.remove		= twl_rtc_remove
+	.remove		= twl_rtc_remove,
 	.shutdown	= twl_rtc_shutdown,
 	.suspend	= twl_rtc_suspend,
 	.resume		= twl_rtc_resume,
