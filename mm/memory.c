@@ -240,6 +240,7 @@ void tlb_flush_mmu(struct mmu_gather *tlb)
 	for (batch = &tlb->local; batch; batch = batch->next) {
 		free_pages_and_swap_cache(batch->pages, batch->nr);
 		batch->nr = 0;
+		cond_resched();
 	}
 	tlb->active = &tlb->local;
 }
