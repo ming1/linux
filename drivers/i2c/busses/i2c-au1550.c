@@ -371,7 +371,7 @@ out:
 	return ret;
 }
 
-static int (struct platform_device *pdev)
+static int i2c_au1550_remove(struct platform_device *pdev)
 {
 	struct i2c_au1550_data *priv = platform_get_drvdata(pdev);
 
