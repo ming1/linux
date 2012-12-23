@@ -758,8 +758,7 @@ static void pch_i2c_disbl_int(struct i2c_algo_pch_data *adap)
 	iowrite32(BUFFER_MODE_INTR_DISBL, p + PCH_I2CBUFMSK);
 }
 
-static int pch_i2c_probe(struct pci_dev *pdev,
-				   const struct pci_device_id *id)
+static int pch_i2c_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 {
 	void __iomem *base_addr;
 	int ret;
