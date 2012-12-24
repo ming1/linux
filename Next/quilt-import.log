@@ -1,0 +1,84 @@
+Importing jdelvare-hwmon based on 54e37b8dbe9a398f74cef313404bd2f1deca7853
+	quilt series is empty
+$ git branch -f jdelvare-hwmon/master 54e37b8dbe9a398f74cef313404bd2f1deca7853
+Importing device-mapper based on v3.7
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard 29594404d7fe73cd80eaa4ee8c43dcc53970c60e
+HEAD is now at 2959440 Linux 3.7
+$ git am ../quilt/device-mapper/dm-persistent-data-rename-node-to-btree_node.patch
+Applying: This patch fixes a compilation failure on sparc32 by renaming struct node.
+$ git am ../quilt/device-mapper/dm-ioctl-prevent-unsafe-change-to-dm_ioctl-data_size.patch
+Applying: Abort dm ioctl processing if userspace changes the data_size parameter
+$ git am ../quilt/device-mapper/dm-disable-WRITE_SAME.patch
+Applying: WRITE_SAME bios are not yet handled correctly by device-mapper so
+$ git am ../quilt/device-mapper/dm-thin-replace-dm_cell_release_singleton-with-cell_defer_except.patch
+Applying: Change existing users of the function dm_cell_release_singleton to share
+$ git am ../quilt/device-mapper/dm-thin-fix-race-between-simultaneous-io-and-discards-to-same-block.patch
+Applying: There is a race when discard bios and non-discard bios are issued
+$ git am ../quilt/device-mapper/dm-thin-wake-worker-when-discard-is-prepared.patch
+Applying: When discards are prepared it is best to directly wake the worker that
+$ git am ../quilt/device-mapper/dm-persistent-data-fix-nested-btree-deletion.patch
+Applying: When deleting nested btrees, the code forgets to delete the innermost
+$ git am ../quilt/device-mapper/dm-thin-emit-ignore_discard-in-status-when-discards-disabled.patch
+Applying: If "ignore_discard" is specified when creating the thin pool device then
+$ git am ../quilt/device-mapper/dm-raid1-remove-impossible-mempool_alloc-error-test.patch
+Applying: mempool_alloc can't fail if __GFP_WAIT is specified, so the condition
+$ git am ../quilt/device-mapper/dm-raid-use-DM_ENDIO_INCOMPLETE.patch
+Applying: Use a defined macro DM_ENDIO_INCOMPLETE instead of a numeric constant.
+$ git am ../quilt/device-mapper/dm-snap-optimize-track_chunk.patch
+Applying: track_chunk is always called with interrupts enabled. Consequently, we
+$ git am ../quilt/device-mapper/dm-thin-rename-cell_defer_except-to-cell_defer_no_holder.patch
+Applying: Rename cell_defer_except() to cell_defer_no_holder() which describes
+$ git am ../quilt/device-mapper/dm-thin-cleanup-dead-code.patch
+Applying: Remove unused @data_block parameter from cell_defer.
+$ git am ../quilt/device-mapper/dm-raid-round-region_size-to-power-of-two.patch
+Applying: If the user does not supply a bitmap region_size to the dm raid target,
+$ git am ../quilt/device-mapper/dm-block-manager-reinstate-message-when-validator-fails.patch
+Applying: Reinstate a useful error message when the block manager buffer validator fails.
+$ git am ../quilt/device-mapper/dm-persistent-data-use-DMERR_LIMIT-for-errors.patch
+Applying: Nearly all of persistent-data is in the IO path so throttle error
+$ git am ../quilt/device-mapper/dm-thin-use-DMERR_LIMIT-for-errors.patch
+Applying: Throttle all errors logged from the IO path by dm thin.
+$ git am ../quilt/device-mapper/dm-persistent-data-improve-improve-space-map-block-alloc-failure-message.patch
+Applying: Improve space map error message when unable to allocate a new
+$ git am ../quilt/device-mapper/dm-ioctl-remove-PF_MEMALLOC.patch
+Applying: When allocating memory for the userspace ioctl data, set some
+$ git am ../quilt/device-mapper/dm-ioctl-use-kmalloc-if-possible.patch
+Applying: If the parameter buffer is small enough, try to allocate it with kmalloc()
+$ git am ../quilt/device-mapper/dm-prepare-to-support-WRITE_SAME.patch
+Applying: Allow targets to opt into WRITE_SAME support by setting
+$ git am ../quilt/device-mapper/dm-add-WRITE-SAME-support.patch
+Applying: WRITE SAME bios have a payload that contain a single page.  When
+$ git am ../quilt/device-mapper/dm-linear-add-WRITE-SAME-support.patch
+Applying: The linear target can already support WRITE_SAME requests so signal
+$ git am ../quilt/device-mapper/dm-kcopyd-add-WRITE-SAME-support-to-dm_kcopyd_zero.patch
+Applying: Add WRITE SAME support to dm-io and make it accessible to
+$ git am ../quilt/device-mapper/dm-introduce-per-bio-data.patch
+Applying: Introduce a field per_bio_data_size in struct dm_target.
+$ git am ../quilt/device-mapper/dm-raid1-use-per_bio_data.patch
+Applying: Replace read_record_pool with per_bio_data in dm-raid1.
+$ git am ../quilt/device-mapper/dm-verity-use-per_bio_data.patch
+Applying: Replace io_mempool with per_bio_data in dm-verity.
+$ git am ../quilt/device-mapper/dm-snap-use-per_bio_data.patch
+Applying: Replace tracked_chunk_pool with per_bio_data in dm-snap.
+$ git am ../quilt/device-mapper/dm-move-target-request-nr-to-dm_target_io.patch
+Applying: This patch moves target_request_nr from map_info to dm_target_io and
+$ git am ../quilt/device-mapper/dm-raid1-rename-read_record-to-bio_record.patch
+Applying: Rename struct read_record to bio_record in dm-raid1.
+$ git am ../quilt/device-mapper/dm-flakey-dont-use-map_context.patch
+Applying: Replace map_info with a per-bio structure "struct per_bio_data" in dm-flakey.
+$ git am ../quilt/device-mapper/dm-raid1-dont-use-map_context.patch
+Applying: Don't use map_info any more in dm-raid1.
+$ git am ../quilt/device-mapper/dm-thin-dont-use-map_context.patch
+Applying: This patch removes endio_hook_pool from dm-thin and uses per-bio data instead.
+$ git am ../quilt/device-mapper/dm-snap-dont-use-map_context.patch
+Applying: Eliminate struct map_info from dm-snap.
+$ git am ../quilt/device-mapper/dm-remove-map_info.patch
+Applying: This patch removes map_info from bio-based device mapper targets.
+$ git am ../quilt/device-mapper/dm-stripe-add-WRITE-SAME-support.patch
+Applying: Rename stripe_map_discard to stripe_map_range and reuse it for WRITE
+$ cd /home/sfr/kernels/next/next
+$ git fetch -f ../quilt-tmp master:device-mapper/master
+From ../quilt-tmp
+ + ab31b3f...4b76b25 master     -> device-mapper/master  (forced update)
