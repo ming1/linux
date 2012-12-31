@@ -76,6 +76,14 @@ config MACH_MACKEREL
 	select SND_SOC_AK4642 if SND_SIMPLE_CARD
 	select USE_OF
 
+config MACH_MACKEREL_REFERENCE
+	bool "mackerel board - Reference Device Tree Implementation"
+	depends on ARCH_SH7372
+	select ARCH_REQUIRE_GPIOLIB
+	select REGULATOR_FIXED_VOLTAGE if REGULATOR
+	select SND_SOC_AK4642 if SND_SIMPLE_CARD
+	select USE_OF
+
 config MACH_KOTA2
 	bool "KOTA2 board"
 	depends on ARCH_SH73A0
