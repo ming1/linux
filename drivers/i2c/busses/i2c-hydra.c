@@ -112,8 +112,7 @@ static DEFINE_PCI_DEVICE_TABLE(hydra_ids) = {
 
 MODULE_DEVICE_TABLE (pci, hydra_ids);
 
-static int hydra_probe(struct pci_dev *dev,
-				 const struct pci_device_id *id)
+static int hydra_probe(struct pci_dev *dev, const struct pci_device_id *id)
 {
 	unsigned long base = pci_resource_start(dev, 0);
 	int res;

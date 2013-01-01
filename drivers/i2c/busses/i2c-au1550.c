@@ -313,8 +313,7 @@ static void i2c_au1550_disable(struct i2c_au1550_data *priv)
  * Prior to calling us, the 50MHz clock frequency and routing
  * must have been set up for the PSC indicated by the adapter.
  */
-static int
-i2c_au1550_probe(struct platform_device *pdev)
+static int i2c_au1550_probe(struct platform_device *pdev)
 {
 	struct i2c_au1550_data *priv;
 	struct resource *r;

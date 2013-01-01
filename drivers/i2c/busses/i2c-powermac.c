@@ -228,8 +228,8 @@ static int i2c_powermac_remove(struct platform_device *dev)
 }
 
 static u32 i2c_powermac_get_addr(struct i2c_adapter *adap,
-					   struct pmac_i2c_bus *bus,
-					   struct device_node *node)
+				 struct pmac_i2c_bus *bus,
+				 struct device_node *node)
 {
 	const __be32 *prop;
 	int len;
@@ -255,9 +255,8 @@ static u32 i2c_powermac_get_addr(struct i2c_adapter *adap,
 	return 0xffffffff;
 }
 
-static void i2c_powermac_create_one(struct i2c_adapter *adap,
-					      const char *type,
-					      u32 addr)
+static void i2c_powermac_create_one(struct i2c_adapter *adap, const char *type,
+				    u32 addr)
 {
 	struct i2c_board_info info = {};
 	struct i2c_client *newdev;
@@ -272,8 +271,7 @@ static void i2c_powermac_create_one(struct i2c_adapter *adap,
 }
 
 static void i2c_powermac_add_missing(struct i2c_adapter *adap,
-					       struct pmac_i2c_bus *bus,
-					       bool found_onyx)
+				     struct pmac_i2c_bus *bus, bool found_onyx)
 {
 	struct device_node *busnode = pmac_i2c_get_bus_node(bus);
 	int rc;
@@ -298,8 +296,8 @@ static void i2c_powermac_add_missing(struct i2c_adapter *adap,
 }
 
 static bool i2c_powermac_get_type(struct i2c_adapter *adap,
-					    struct device_node *node,
-					    u32 addr, char *type, int type_size)
+				  struct device_node *node, u32 addr,
+				  char *type, int type_size)
 {
 	char tmp[16];
 
@@ -337,7 +335,7 @@ static bool i2c_powermac_get_type(struct i2c_adapter *adap,
 }
 
 static void i2c_powermac_register_devices(struct i2c_adapter *adap,
-						    struct pmac_i2c_bus *bus)
+					  struct pmac_i2c_bus *bus)
 {
 	struct i2c_client *newdev;
 	struct device_node *node;
