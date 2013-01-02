@@ -95,7 +95,7 @@ out:
 }
 
 static int ce4100_i2c_probe(struct pci_dev *dev,
-		const struct pci_device_id *ent)
+			    const struct pci_device_id *ent)
 {
 	int ret;
 	int i;

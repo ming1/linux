@@ -661,7 +661,7 @@ static inline u8 iic_clckdiv(unsigned int opb)
 }
 
 static int iic_request_irq(struct platform_device *ofdev,
-				     struct ibm_iic_private *dev)
+			   struct ibm_iic_private *dev)
 {
 	struct device_node *np = ofdev->dev.of_node;
 	int irq;

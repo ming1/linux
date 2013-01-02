@@ -340,8 +340,7 @@ static const struct i2c_algorithm smbus_algorithm = {
 	.functionality	= pasemi_smb_func,
 };
 
-static int pasemi_smb_probe(struct pci_dev *dev,
-				      const struct pci_device_id *id)
+static int pasemi_smb_probe(struct pci_dev *dev, const struct pci_device_id *id)
 {
 	struct pasemi_smbus *smbus;
 	int error;

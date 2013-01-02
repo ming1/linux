@@ -252,8 +252,7 @@ static DEFINE_PCI_DEVICE_TABLE(sis96x_ids) = {
 
 MODULE_DEVICE_TABLE (pci, sis96x_ids);
 
-static int sis96x_probe(struct pci_dev *dev,
-				const struct pci_device_id *id)
+static int sis96x_probe(struct pci_dev *dev, const struct pci_device_id *id)
 {
 	u16 ww = 0;
 	int retval;
