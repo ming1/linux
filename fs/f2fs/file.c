@@ -160,15 +160,17 @@ int f2fs_sync_file(struct file *file, loff_t start, loff_t end, int datasync)
 	if (need_to_sync_dir(sbi, inode))
 		need_cp = true;
 
-	f2fs_write_inode(inode, NULL);
-
 	if (need_cp) {
 		/* all the dirty node pages should be flushed for POR */
 		ret = f2fs_sync_fs(inode->i_sb, 1);
 		clear_inode_flag(F2FS_I(inode), FI_NEED_CP);
 	} else {
-		while (sync_node_pages(sbi, inode->i_ino, &wbc) == 0)
-			f2fs_write_inode(inode, NULL);
+		/* if there is no written node page, write its inode page */
+		while (!sync_node_pages(sbi, inode->i_ino, &wbc)) {
+			ret = f2fs_write_inode(inode, NULL);
+			if (ret)
+				goto out;
+		}
 		filemap_fdatawait_range(sbi->node_inode->i_mapping,
 							0, LONG_MAX);
 	}
@@ -542,6 +544,11 @@ static long f2fs_fallocate(struct file *file, int mode,
 		ret = punch_hole(inode, offset, len, mode);
 	else
 		ret = expand_inode_data(inode, offset, len, mode);
+
+	if (!ret) {
+		inode->i_mtime = inode->i_ctime = CURRENT_TIME;
+		mark_inode_dirty(inode);
+	}
 
 	f2fs_balance_fs(sbi);
 	return ret;
