@@ -908,6 +908,8 @@ static int soc_camera_s_crop(struct file *file, void *fh,
 	dev_dbg(icd->pdev, "S_CROP(%ux%u@%u:%u)\n",
 		rect->width, rect->height, rect->left, rect->top);
 
+	current_crop.type = a->type;
+
 	/* If get_crop fails, we'll let host and / or client drivers decide */
 	ret = ici->ops->get_crop(icd, &current_crop);
 
@@ -1137,8 +1139,8 @@ static int soc_camera_probe(struct soc_camera_device *icd)
 	if (ret < 0)
 		return ret;
 
-	ret = regulator_bulk_get(icd->pdev, icl->num_regulators,
-				 icl->regulators);
+	ret = devm_regulator_bulk_get(icd->pdev, icl->num_regulators,
+				      icl->regulators);
 	if (ret < 0)
 		goto ereg;
 
@@ -1242,7 +1244,6 @@ eadddev:
 evdc:
 	ici->ops->remove(icd);
 eadd:
-	regulator_bulk_free(icl->num_regulators, icl->regulators);
 ereg:
 	v4l2_ctrl_handler_free(&icd->ctrl_handler);
 	return ret;
@@ -1275,8 +1276,6 @@ static int soc_camera_remove(struct soc_camera_device *icd)
 		}
 	}
 	soc_camera_free_user_formats(icd);
-
-	regulator_bulk_free(icl->num_regulators, icl->regulators);
 
 	return 0;
 }
