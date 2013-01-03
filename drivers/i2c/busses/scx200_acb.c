@@ -425,7 +425,8 @@ static int scx200_acb_probe(struct scx200_acb_iface *iface)
 }
 
 static struct scx200_acb_iface *scx200_create_iface(const char *text,
-		struct device *dev, int index)
+						    struct device *dev,
+						    int index)
 {
 	struct scx200_acb_iface *iface;
 	struct i2c_adapter *adapter;
@@ -481,7 +482,8 @@ static int scx200_acb_create(struct scx200_acb_iface *iface)
 }
 
 static struct scx200_acb_iface *scx200_create_dev(const char *text,
-		unsigned long base, int index, struct device *dev)
+						  unsigned long base,
+						  int index, struct device *dev)
 {
 	struct scx200_acb_iface *iface;
 	int rc;

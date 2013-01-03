@@ -61,7 +61,7 @@ static int match_gpio_chip_by_label(struct gpio_chip *chip,
 
 #ifdef CONFIG_OF
 static int i2c_mux_gpio_probe_dt(struct gpiomux *mux,
-					struct platform_device *pdev)
+				 struct platform_device *pdev)
 {
 	struct device_node *np = pdev->dev.of_node;
 	struct device_node *adapter_np, *child;
@@ -126,7 +126,7 @@ static int i2c_mux_gpio_probe_dt(struct gpiomux *mux,
 }
 #else
 static int i2c_mux_gpio_probe_dt(struct gpiomux *mux,
-					struct platform_device *pdev)
+				 struct platform_device *pdev)
 {
 	return 0;
 }

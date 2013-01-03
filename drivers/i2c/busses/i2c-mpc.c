@@ -197,7 +197,7 @@ static const struct mpc_i2c_divider mpc_i2c_dividers_52xx[] = {
 };
 
 static int mpc_i2c_get_fdr_52xx(struct device_node *node, u32 clock,
-					  int prescaler, u32 *real_clk)
+				int prescaler, u32 *real_clk)
 {
 	const struct mpc_i2c_divider *div = NULL;
 	unsigned int pvr = mfspr(SPRN_PVR);
@@ -230,9 +230,8 @@ static int mpc_i2c_get_fdr_52xx(struct device_node *node, u32 clock,
 	return (int)div->fdr;
 }
 
-static void mpc_i2c_setup_52xx(struct device_node *node,
-					 struct mpc_i2c *i2c,
-					 u32 clock, u32 prescaler)
+static void mpc_i2c_setup_52xx(struct device_node *node, struct mpc_i2c *i2c,
+			       u32 clock, u32 prescaler)
 {
 	int ret, fdr;
 
@@ -252,17 +251,15 @@ static void mpc_i2c_setup_52xx(struct device_node *node,
 			 fdr);
 }
 #else /* !(CONFIG_PPC_MPC52xx || CONFIG_PPC_MPC512x) */
-static void mpc_i2c_setup_52xx(struct device_node *node,
-					 struct mpc_i2c *i2c,
-					 u32 clock, u32 prescaler)
+static void mpc_i2c_setup_52xx(struct device_node *node, struct mpc_i2c *i2c,
+			       u32 clock, u32 prescaler)
 {
 }
 #endif /* CONFIG_PPC_MPC52xx || CONFIG_PPC_MPC512x */
 
 #ifdef CONFIG_PPC_MPC512x
-static void mpc_i2c_setup_512x(struct device_node *node,
-					 struct mpc_i2c *i2c,
-					 u32 clock, u32 prescaler)
+static void mpc_i2c_setup_512x(struct device_node *node, struct mpc_i2c *i2c,
+			       u32 clock, u32 prescaler)
 {
 	struct device_node *node_ctrl;
 	void __iomem *ctrl;
@@ -288,9 +285,8 @@ static void mpc_i2c_setup_512x(struct device_node *node,
 	mpc_i2c_setup_52xx(node, i2c, clock, prescaler);
 }
 #else /* CONFIG_PPC_MPC512x */
-static void mpc_i2c_setup_512x(struct device_node *node,
-					 struct mpc_i2c *i2c,
-					 u32 clock, u32 prescaler)
+static void mpc_i2c_setup_512x(struct device_node *node, struct mpc_i2c *i2c,
+			       u32 clock, u32 prescaler)
 {
 }
 #endif /* CONFIG_PPC_MPC512x */
@@ -346,7 +342,7 @@ static u32 mpc_i2c_get_sec_cfg_8xxx(void)
 }
 
 static int mpc_i2c_get_fdr_8xxx(struct device_node *node, u32 clock,
-					  u32 prescaler, u32 *real_clk)
+				u32 prescaler, u32 *real_clk)
 {
 	const struct mpc_i2c_divider *div = NULL;
 	u32 divider;
@@ -383,9 +379,8 @@ static int mpc_i2c_get_fdr_8xxx(struct device_node *node, u32 clock,
 	return div ? (int)div->fdr : -EINVAL;
 }
 
-static void mpc_i2c_setup_8xxx(struct device_node *node,
-					 struct mpc_i2c *i2c,
-					 u32 clock, u32 prescaler)
+static void mpc_i2c_setup_8xxx(struct device_node *node, struct mpc_i2c *i2c,
+			       u32 clock, u32 prescaler)
 {
 	int ret, fdr;
 
@@ -408,9 +403,8 @@ static void mpc_i2c_setup_8xxx(struct device_node *node,
 }
 
 #else /* !CONFIG_FSL_SOC */
-static void mpc_i2c_setup_8xxx(struct device_node *node,
-					 struct mpc_i2c *i2c,
-					 u32 clock, u32 prescaler)
+static void mpc_i2c_setup_8xxx(struct device_node *node, struct mpc_i2c *i2c,
+			       u32 clock, u32 prescaler)
 {
 }
 #endif /* CONFIG_FSL_SOC */

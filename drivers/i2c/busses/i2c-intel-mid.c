@@ -948,7 +948,7 @@ static const struct dev_pm_ops intel_mid_i2c_pm_ops = {
  * 6. Register I2C adapter in i2c-core
  */
 static int intel_mid_i2c_probe(struct pci_dev *dev,
-				    const struct pci_device_id *id)
+			       const struct pci_device_id *id)
 {
 	struct intel_mid_i2c_private *mrst;
 	unsigned long start, len;
