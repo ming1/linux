@@ -117,7 +117,7 @@ struct nforce2_smbus {
 #define MAX_TIMEOUT	100
 
 /* We disable the second SMBus channel on these boards */
-static struct dmi_system_id nforce2_dmi_blacklist2[] = {
+static const struct dmi_system_id nforce2_dmi_blacklist2[] = {
 	{
 		.ident = "DFI Lanparty NF4 Expert",
 		.matches = {

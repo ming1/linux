@@ -841,7 +841,7 @@ struct dmi_onboard_device_info {
 	const char *i2c_type;
 };
 
-static struct dmi_onboard_device_info dmi_devices[] = {
+static const struct dmi_onboard_device_info dmi_devices[] = {
 	{ "Syleus", DMI_DEV_TYPE_OTHER, 0x73, "fscsyl" },
 	{ "Hermes", DMI_DEV_TYPE_OTHER, 0x73, "fscher" },
 	{ "Hades",  DMI_DEV_TYPE_OTHER, 0x73, "fschds" },
@@ -943,7 +943,7 @@ static struct i801_mux_config i801_mux_config_asus_z8_d18 = {
 	.n_gpios = 2,
 };
 
-static struct dmi_system_id mux_dmi_table[] = {
+static const struct dmi_system_id mux_dmi_table[] = {
 	{
 		.matches = {
 			DMI_MATCH(DMI_BOARD_VENDOR, "ASUSTeK Computer INC."),

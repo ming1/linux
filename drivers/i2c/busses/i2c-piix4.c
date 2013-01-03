@@ -99,7 +99,7 @@ MODULE_PARM_DESC(force_addr,
 static int srvrworks_csb5_delay;
 static struct pci_driver piix4_driver;
 
-static struct dmi_system_id piix4_dmi_blacklist[] = {
+static const struct dmi_system_id piix4_dmi_blacklist[] = {
 	{
 		.ident = "Sapphire AM2RD790",
 		.matches = {
@@ -119,7 +119,7 @@ static struct dmi_system_id piix4_dmi_blacklist[] = {
 
 /* The IBM entry is in a separate table because we only check it
    on Intel-based systems */
-static struct dmi_system_id piix4_dmi_ibm[] = {
+static const struct dmi_system_id piix4_dmi_ibm[] = {
 	{
 		.ident = "IBM",
 		.matches = { DMI_MATCH(DMI_SYS_VENDOR, "IBM"), },
@@ -132,7 +132,7 @@ struct i2c_piix4_adapdata {
 };
 
 static int piix4_setup(struct pci_dev *PIIX4_dev,
-				const struct pci_device_id *id)
+		       const struct pci_device_id *id)
 {
 	unsigned char temp;
 	unsigned short piix4_smba;

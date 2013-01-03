@@ -326,7 +326,7 @@ static u32 ali1563_func(struct i2c_adapter * a)
 }
 
 
-static int ali1563_setup(struct pci_dev * dev)
+static int ali1563_setup(struct pci_dev *dev)
 {
 	u16 ctrl;
 

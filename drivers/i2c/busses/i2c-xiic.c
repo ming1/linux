@@ -774,7 +774,7 @@ resource_missing:
 	return -ENOENT;
 }
 
-static int xiic_i2c_remove(struct platform_device* pdev)
+static int xiic_i2c_remove(struct platform_device *pdev)
 {
 	struct xiic_i2c *i2c = platform_get_drvdata(pdev);
 	struct resource *res;
