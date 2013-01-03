@@ -21,12 +21,25 @@
 	 */
 
 	.macro addruart, rp, rv, tmp
-		mrc	p15, 0, \tmp, c0, c0, 0
-		and	\tmp, \tmp, #0xf0
-		teq	\tmp, #0xf0		@@ A15
-		ldreq	\rp, =EXYNOS5_PA_UART
-		movne	\rp, #EXYNOS4_PA_UART	@@ EXYNOS4
-		ldr	\rv, =S3C_VA_UART
+		mov	\rp, #0x10000000
+		ldr	\rp, [\rp, #0]
+		and	\rp, \rp, #0x0ff00000
+		teq	\rp, #0x03200000	@ EXYNOS4210, EXYNOS4212
+		beq	4f
+		teq	\rp, #0x04400000	@ EXYNOS4412
+		beq	4f
+		teq	\rp, #0x03500000	@ EXYNOS5250
+		beq	5f
+		b	54f
+
+4:		mov	\rp, #EXYNOS4_PA_UART
+		b	99f
+5:		mov	\rp, #EXYNOS5_PA_UART
+		b	99f
+54:		mov	\rp, #EXYNOS5440_PA_UART
+		b	99f
+99:		ldr	\rv, =S3C_VA_UART
+
 #if CONFIG_DEBUG_S3C_UART != 0
 		add	\rp, \rp, #(0x10000 * CONFIG_DEBUG_S3C_UART)
 		add	\rv, \rv, #(0x10000 * CONFIG_DEBUG_S3C_UART)
