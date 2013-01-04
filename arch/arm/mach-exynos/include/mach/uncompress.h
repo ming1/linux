@@ -31,16 +31,22 @@ static void arch_detect_cpu(void)
 
 	/*
 	 * product_id is bits 31:12
-	 *    bits 23:20 describe the exynosX family
-	 *
+	 *    bits 27:20 describe the exynosX family
 	 */
 	chip_id >>= 20;
-	chip_id &= 0xf;
+	chip_id &= 0xff;
 
-	if (chip_id == 0x5)
-		uart_base = (volatile u8 *)EXYNOS5_PA_UART + (S3C_UART_OFFSET * CONFIG_S3C_LOWLEVEL_UART_PORT);
+	if (chip_id == 0x32 || chip_id == 0x44)
+		/* EXYNOS4210, EXYNOS4212 and EXYNOS4412 */
+		uart_base = (volatile u8 *)EXYNOS4_PA_UART;
+	else if (chip_id == 0x35)
+		/* EXYNOS5250 */
+		uart_base = (volatile u8 *)EXYNOS5_PA_UART;
 	else
-		uart_base = (volatile u8 *)EXYNOS4_PA_UART + (S3C_UART_OFFSET * CONFIG_S3C_LOWLEVEL_UART_PORT);
+		/* EXYNOS5440 */
+		uart_base = (volatile u8 *)EXYNOS5440_PA_UART;
+
+	uart_base += S3C_UART_OFFSET * CONFIG_S3C_LOWLEVEL_UART_PORT;
 
 	/*
 	 * For preventing FIFO overrun or infinite loop of UART console,
