@@ -508,3 +508,15 @@ dev_specific_attrs:
 		sysfs_create_group(&dev->kobj, cfg->dev_attr_group) : 0;
 }
 EXPORT_SYMBOL_GPL(lp55xx_register_sysfs);
+
+void lp55xx_unregister_sysfs(struct lp55xx_chip *chip)
+{
+	struct device *dev = &chip->cl->dev;
+	struct lp55xx_device_config *cfg = chip->cfg;
+
+	if (cfg->dev_attr_group)
+		sysfs_remove_group(&dev->kobj, cfg->dev_attr_group);
+
+	sysfs_remove_group(&dev->kobj, &lp55xx_engine_attr_group);
+}
+EXPORT_SYMBOL_GPL(lp55xx_unregister_sysfs);
