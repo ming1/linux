@@ -482,13 +482,6 @@ static const struct attribute_group lp5523_group = {
 	.attrs = lp5523_attributes,
 };
 
-static void lp5523_unregister_sysfs(struct i2c_client *client)
-{
-	struct device *dev = &client->dev;
-
-	sysfs_remove_group(&dev->kobj, &lp5523_group);
-}
-
 /* Chip specific configurations */
 static struct lp55xx_device_config lp5523_cfg = {
 	.reset = {
@@ -569,11 +562,8 @@ static int lp5523_remove(struct i2c_client *client)
 	struct lp55xx_led *led = i2c_get_clientdata(client);
 	struct lp55xx_chip *chip = led->chip;
 
-	/* Disable engine mode */
-	lp5523_write(client, LP5523_REG_OP_MODE, LP5523_CMD_DISABLED);
-
-	lp5523_unregister_sysfs(client);
-
+	lp5523_stop_engine(chip);
+	lp55xx_unregister_sysfs(chip);
 	lp55xx_unregister_leds(led, chip);
 	lp55xx_deinit_device(chip);
 

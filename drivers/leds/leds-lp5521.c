@@ -510,13 +510,6 @@ static const struct attribute_group lp5521_group = {
 	.attrs = lp5521_attributes,
 };
 
-static void lp5521_unregister_sysfs(struct i2c_client *client)
-{
-	struct device *dev = &client->dev;
-
-	sysfs_remove_group(&dev->kobj, &lp5521_group);
-}
-
 /* Chip specific configurations */
 static struct lp55xx_device_config lp5521_cfg = {
 	.reset = {
@@ -594,13 +587,11 @@ err_init:
 
 static int lp5521_remove(struct i2c_client *client)
 {
-	struct lp5521_chip *old_chip = i2c_get_clientdata(client);
 	struct lp55xx_led *led = i2c_get_clientdata(client);
 	struct lp55xx_chip *chip = led->chip;
 
-	lp5521_run_led_pattern(PATTERN_OFF, old_chip);
-	lp5521_unregister_sysfs(client);
-
+	lp5521_stop_engine(chip);
+	lp55xx_unregister_sysfs(chip);
 	lp55xx_unregister_leds(led, chip);
 	lp55xx_deinit_device(chip);
 
