@@ -659,15 +659,9 @@ static int lp5523_register_sysfs(struct i2c_client *client)
 
 static void lp5523_unregister_sysfs(struct i2c_client *client)
 {
-	struct lp5523_chip *chip = i2c_get_clientdata(client);
 	struct device *dev = &client->dev;
-	int i;
 
 	sysfs_remove_group(&dev->kobj, &lp5523_group);
-
-	for (i = 0; i < chip->num_leds; i++)
-		sysfs_remove_group(&chip->leds[i].cdev.dev->kobj,
-				&lp5523_led_attribute_group);
 }
 
 /*--------------------------------------------------------------*/
@@ -700,16 +694,6 @@ static void lp5523_set_mode(struct lp5523_engine *engine, u8 mode)
 /*--------------------------------------------------------------*/
 /*			Probe, Attach, Remove			*/
 /*--------------------------------------------------------------*/
-static void lp5523_unregister_leds(struct lp5523_chip *chip)
-{
-	int i;
-
-	for (i = 0; i < chip->num_leds; i++) {
-		led_classdev_unregister(&chip->leds[i].cdev);
-		flush_work(&chip->leds[i].brightness_work);
-	}
-}
-
 /* Chip specific configurations */
 static struct lp55xx_device_config lp5523_cfg = {
 	.reset = {
@@ -774,7 +758,7 @@ static int lp5523_probe(struct i2c_client *client,
 	}
 	return ret;
 fail2:
-	lp5523_unregister_leds(old_chip);
+	lp55xx_unregister_leds(led, chip);
 err_register_leds:
 	lp55xx_deinit_device(chip);
 err_init:
@@ -783,7 +767,6 @@ err_init:
 
 static int lp5523_remove(struct i2c_client *client)
 {
-	struct lp5523_chip *old_chip = i2c_get_clientdata(client);
 	struct lp55xx_led *led = i2c_get_clientdata(client);
 	struct lp55xx_chip *chip = led->chip;
 
@@ -792,7 +775,7 @@ static int lp5523_remove(struct i2c_client *client)
 
 	lp5523_unregister_sysfs(client);
 
-	lp5523_unregister_leds(old_chip);
+	lp55xx_unregister_leds(led, chip);
 	lp55xx_deinit_device(chip);
 
 	return 0;
