@@ -142,25 +142,6 @@ enum lp5523_chip_id {
 	LP55231,
 };
 
-struct lp5523_led {
-	int			id;
-	u8			chan_nr;
-	u8			led_current;
-	u8			max_current;
-	struct led_classdev     cdev;
-	struct work_struct	brightness_work;
-	u8			brightness;
-};
-
-struct lp5523_chip {
-	struct mutex		lock; /* Serialize control */
-	struct i2c_client	*client;
-	struct lp5523_led	leds[LP5523_MAX_LEDS];
-	struct lp5523_platform_data *pdata;
-	u8			num_channels;
-	u8			num_leds;
-};
-
 static inline void lp5523_wait_opmode_done(void)
 {
 	usleep_range(1000, 2000);
@@ -171,22 +152,6 @@ static void lp5523_set_led_current(struct lp55xx_led *led, u8 led_current)
 	led->led_current = led_current;
 	lp55xx_write(led->chip, LP5523_REG_LED_CURRENT_BASE + led->chan_nr,
 		led_current);
-}
-
-static int lp5523_write(struct i2c_client *client, u8 reg, u8 value)
-{
-	return i2c_smbus_write_byte_data(client, reg, value);
-}
-
-static int lp5523_read(struct i2c_client *client, u8 reg, u8 *buf)
-{
-	s32 ret = i2c_smbus_read_byte_data(client, reg);
-
-	if (ret < 0)
-		return ret;
-
-	*buf = ret;
-	return 0;
 }
 
 static int lp5523_post_init_device(struct lp55xx_chip *chip)
