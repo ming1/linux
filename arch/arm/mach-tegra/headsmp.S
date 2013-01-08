@@ -4,6 +4,7 @@
 #include <asm/cache.h>
 #include <asm/asm-offsets.h>
 #include <asm/hardware/cache-l2x0.h>
+#include <asm/hardware/coresight.h>
 
 #include "flowctrl.h"
 #include "iomap.h"
@@ -65,7 +66,7 @@ ENDPROC(v7_invalidate_l1)
 ENTRY(tegra_secondary_startup)
         bl      v7_invalidate_l1
 	/* Enable coresight */
-	mov32	r0, 0xC5ACCE55
+	mov32	r0, CS_LAR_KEY
 	mcr	p14, 0, r0, c7, c12, 6
         b       secondary_startup
 ENDPROC(tegra_secondary_startup)
