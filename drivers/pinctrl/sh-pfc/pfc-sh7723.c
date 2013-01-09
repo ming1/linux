@@ -923,7 +923,7 @@ static pinmux_enum_t pinmux_data[] = {
 	PINMUX_DATA(SIUBISLD_MARK, PSD1_PSD0_FN2, PTZ0_FN),
 };
 
-static struct pinmux_pin pinmux_pins[] = {
+static struct sh_pfc_pin pinmux_pins[] = {
 	/* PTA */
 	_GPIO_PORT(PTA7),
 	_GPIO_PORT(PTA6),
