@@ -341,7 +341,7 @@ typedef u32 acpi_physical_address;
 
 /* PM Timer ticks per second (HZ) */
 
-#define PM_TIMER_FREQUENCY              3579545
+#define ACPI_PM_TIMER_FREQUENCY         3579545
 
 /*******************************************************************************
  *
@@ -372,6 +372,21 @@ typedef u32 acpi_status;	/* All ACPI Exceptions */
 typedef u32 acpi_name;		/* 4-byte ACPI name */
 typedef char *acpi_string;	/* Null terminated ASCII string */
 typedef void *acpi_handle;	/* Actually a ptr to a NS Node */
+
+/* Time constants for timer calculations */
+
+#define ACPI_MSEC_PER_SEC               1000L
+
+#define ACPI_USEC_PER_MSEC              1000L
+#define ACPI_USEC_PER_SEC               1000000L
+
+#define ACPI_100NSEC_PER_USEC           10L
+#define ACPI_100NSEC_PER_MSEC           10000L
+#define ACPI_100NSEC_PER_SEC            10000000L
+
+#define ACPI_NSEC_PER_USEC              1000L
+#define ACPI_NSEC_PER_MSEC              1000000L
+#define ACPI_NSEC_PER_SEC               1000000000L
 
 /* Owner IDs are used to track namespace nodes for selective deletion */
 
@@ -880,6 +895,10 @@ struct acpi_buffer {
 	acpi_size length;	/* Length in bytes of the buffer */
 	void *pointer;		/* pointer to buffer */
 };
+
+/* Free a buffer created in an struct acpi_buffer via ACPI_ALLOCATE_LOCAL_BUFFER */
+
+#define ACPI_FREE_BUFFER(b)         ACPI_FREE(b.pointer)
 
 /*
  * name_type for acpi_get_name
