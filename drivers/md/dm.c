@@ -1033,23 +1033,48 @@ struct clone_info {
 	unsigned short idx;
 };
 
+static void bio_setup_sector(struct bio *bio, sector_t sector, sector_t len)
+{
+	bio->bi_sector = sector;
+	bio->bi_size = to_bytes(len);
+}
+
+static void bio_setup_bv(struct bio *bio, unsigned short idx, unsigned short bv_count)
+{
+	bio->bi_idx = idx;
+	bio->bi_vcnt = idx + bv_count;
+	bio->bi_flags &= ~(1 << BIO_SEG_VALID);
+}
+
+static void clone_bio_integrity(struct bio *bio, struct bio *clone,
+				unsigned short idx, unsigned len)
+{
+	if (bio_integrity(bio)) {
+		bio_integrity_clone(clone, bio, GFP_NOIO);
+
+		if (idx != bio->bi_idx || clone->bi_size < bio->bi_size)
+			bio_integrity_trim(clone,
+					   bio_sector_offset(bio, idx, 0), len);
+	}
+}
+
 /*
  * Creates a little bio that just does part of a bvec.
  */
 static void split_bvec(struct dm_target_io *tio, struct bio *bio,
 		       sector_t sector, unsigned short idx, unsigned int offset,
-		       unsigned int len, struct bio_set *bs)
+		       unsigned int len)
 {
 	struct bio *clone = &tio->clone;
 	struct bio_vec *bv = bio->bi_io_vec + idx;
 
 	*clone->bi_io_vec = *bv;
 
-	clone->bi_sector = sector;
+	bio_setup_sector(clone, sector, len);
+
 	clone->bi_bdev = bio->bi_bdev;
 	clone->bi_rw = bio->bi_rw;
 	clone->bi_vcnt = 1;
-	clone->bi_size = to_bytes(len);
 	clone->bi_io_vec->bv_offset = offset;
 	clone->bi_io_vec->bv_len = clone->bi_size;
 	clone->bi_flags |= 1 << BIO_CLONED;
@@ -1066,25 +1091,14 @@ static void split_bvec(struct dm_target_io *tio, struct bio *bio,
  */
 static void clone_bio(struct dm_target_io *tio, struct bio *bio,
 		      sector_t sector, unsigned short idx,
-		      unsigned short bv_count, unsigned int len,
-		      struct bio_set *bs)
+		      unsigned short bv_count, unsigned int len)
 {
 	struct bio *clone = &tio->clone;
 
 	__bio_clone(clone, bio);
-	clone->bi_sector = sector;
-	clone->bi_idx = idx;
-	clone->bi_vcnt = idx + bv_count;
-	clone->bi_size = to_bytes(len);
-	clone->bi_flags &= ~(1 << BIO_SEG_VALID);
-
-	if (bio_integrity(bio)) {
-		bio_integrity_clone(clone, bio, GFP_NOIO);
-
-		if (idx != bio->bi_idx || clone->bi_size < bio->bi_size)
-			bio_integrity_trim(clone,
-					   bio_sector_offset(bio, idx, 0), len);
-	}
+	bio_setup_sector(clone, sector, len);
+	bio_setup_bv(clone, idx, bv_count);
+	clone_bio_integrity(bio, clone, idx, len);
 }
 
 static struct dm_target_io *alloc_tio(struct clone_info *ci,
@@ -1117,12 +1131,9 @@ static void __issue_target_request(struct clone_info *ci, struct dm_target *ti,
 	 * ci->bio->bi_max_vecs is BIO_INLINE_VECS anyway, for both flush
 	 * and discard, so no need for concern about wasted bvec allocations.
 	 */
-
 	 __bio_clone(clone, ci->bio);
-	if (len) {
-		clone->bi_sector = ci->sector;
-		clone->bi_size = to_bytes(len);
-	}
+	if (len)
+		bio_setup_sector(clone, ci->sector, len);
 
 	__map_bio(ti, tio);
 }
@@ -1158,7 +1169,7 @@ static void __clone_and_map_simple(struct clone_info *ci, struct dm_target *ti)
 
 	tio = alloc_tio(ci, ti, bio->bi_max_vecs);
 	clone_bio(tio, bio, ci->sector, ci->idx, bio->bi_vcnt - ci->idx,
-		  ci->sector_count, ci->md->bs);
+		  ci->sector_count);
 	__map_bio(ti, tio);
 	ci->sector_count = 0;
 }
@@ -1274,8 +1285,7 @@ static int __clone_and_map(struct clone_info *ci)
 		}
 
 		tio = alloc_tio(ci, ti, bio->bi_max_vecs);
-		clone_bio(tio, bio, ci->sector, ci->idx, i - ci->idx, len,
-			  ci->md->bs);
+		clone_bio(tio, bio, ci->sector, ci->idx, i - ci->idx, len);
 		__map_bio(ti, tio);
 
 		ci->sector += len;
@@ -1303,7 +1313,7 @@ static int __clone_and_map(struct clone_info *ci)
 
 			tio = alloc_tio(ci, ti, 1);
 			split_bvec(tio, bio, ci->sector, ci->idx,
-				   bv->bv_offset + offset, len, ci->md->bs);
+				   bv->bv_offset + offset, len);
 
 			__map_bio(ti, tio);
 
