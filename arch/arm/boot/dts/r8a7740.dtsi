@@ -18,4 +18,12 @@
 			compatible = "arm,cortex-a9";
 		};
 	};
+
+	gpio: pfc@e6050000 {
+		compatible = "renesas,pfc-r8a7740";
+		reg = <0xe6050000 0x8000>,
+		      <0xe605800c 0x20>;
+		gpio-controller;
+		#gpio-cells = <2>;
+	};
 };
