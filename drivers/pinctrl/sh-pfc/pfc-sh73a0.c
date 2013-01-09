@@ -18,11 +18,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  */
-#include <linux/bug.h>
-#include <linux/init.h>
-#include <linux/ioport.h>
 #include <linux/kernel.h>
-#include <linux/platform_device.h>
 #include <linux/sh_pfc.h>
 #include <mach/sh73a0.h>
 #include <mach/irqs.h>
@@ -2775,7 +2771,7 @@ static struct pinmux_irq pinmux_irqs[] = {
 	PINMUX_IRQ(EXT_IRQ16L(9), PORT308_FN0),
 };
 
-static struct pinmux_info sh73a0_pinmux_info = {
+struct sh_pfc_soc_info sh73a0_pinmux_info = {
 	.name = "sh73a0_pfc",
 	.reserved_id = PINMUX_RESERVED,
 	.data = { PINMUX_DATA_BEGIN, PINMUX_DATA_END },
@@ -2799,31 +2795,3 @@ static struct pinmux_info sh73a0_pinmux_info = {
 	.gpio_irq = pinmux_irqs,
 	.gpio_irq_size = ARRAY_SIZE(pinmux_irqs),
 };
-
-static struct resource sh73a0_pfc_resources[] = {
-	[0] = {
-		.start	= 0xe6050000,
-		.end	= 0xe6057fff,
-		.flags	= IORESOURCE_MEM,
-	},
-	[1] = {
-		.start	= 0xe605801c,
-		.end	= 0xe6058027,
-		.flags	= IORESOURCE_MEM,
-	}
-};
-
-static struct platform_device sh73a0_pfc_device = {
-	.name		= "sh-pfc",
-	.id		= -1,
-	.resource	= sh73a0_pfc_resources,
-	.num_resources	= ARRAY_SIZE(sh73a0_pfc_resources),
-	.dev = {
-		.platform_data = &sh73a0_pinmux_info,
-	},
-};
-
-void sh73a0_pinmux_init(void)
-{
-	platform_device_register(&sh73a0_pfc_device);
-}

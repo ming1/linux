@@ -8,10 +8,9 @@
  * for more details.
  */
 
-#include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/gpio.h>
-#include <cpu/pfc.h>
+#include <linux/sh_pfc.h>
 #include <cpu/sh7720.h>
 
 enum {
@@ -1214,7 +1213,7 @@ static struct pinmux_data_reg pinmux_data_regs[] = {
 	{ },
 };
 
-static struct pinmux_info sh7720_pinmux_info = {
+struct sh_pfc_soc_info sh7720_pinmux_info = {
 	.name = "sh7720_pfc",
 	.reserved_id = PINMUX_RESERVED,
 	.data = { PINMUX_DATA_BEGIN, PINMUX_DATA_END },
@@ -1234,10 +1233,3 @@ static struct pinmux_info sh7720_pinmux_info = {
 	.gpio_data = pinmux_data,
 	.gpio_data_size = ARRAY_SIZE(pinmux_data),
 };
-
-static int __init plat_pinmux_setup(void)
-{
-	return sh_pfc_register_info(NULL, NULL, 0, &sh7720_pinmux_info);
-}
-
-arch_initcall(plat_pinmux_setup);

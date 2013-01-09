@@ -9,8 +9,7 @@
  */
 #include <linux/init.h>
 #include <linux/kernel.h>
-#include <linux/gpio.h>
-#include <cpu/pfc.h>
+#include <linux/sh_pfc.h>
 #include <cpu/shx3.h>
 
 enum {
@@ -562,7 +561,7 @@ static struct pinmux_data_reg shx3_pinmux_data_regs[] = {
 	{ },
 };
 
-static struct pinmux_info shx3_pinmux_info = {
+struct sh_pfc_soc_info shx3_pinmux_info = {
 	.name		= "shx3_pfc",
 	.reserved_id	= PINMUX_RESERVED,
 	.data		= { PINMUX_DATA_BEGIN,	   PINMUX_DATA_END },
@@ -580,9 +579,3 @@ static struct pinmux_info shx3_pinmux_info = {
 	.cfg_regs	= shx3_pinmux_config_regs,
 	.data_regs	= shx3_pinmux_data_regs,
 };
-
-static int __init shx3_pinmux_setup(void)
-{
-	return sh_pfc_register_info(NULL, NULL, 0, &shx3_pinmux_info);
-}
-arch_initcall(shx3_pinmux_setup);

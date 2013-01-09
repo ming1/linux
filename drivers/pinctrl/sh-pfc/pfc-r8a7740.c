@@ -18,11 +18,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  */
-#include <linux/bug.h>
-#include <linux/init.h>
-#include <linux/ioport.h>
 #include <linux/kernel.h>
-#include <linux/platform_device.h>
 #include <linux/sh_pfc.h>
 #include <mach/r8a7740.h>
 #include <mach/irqs.h>
@@ -2582,7 +2578,7 @@ static struct pinmux_irq pinmux_irqs[] = {
 	PINMUX_IRQ(evt2irq(0x33E0), PORT41_FN0,	 PORT167_FN0),	/* IRQ31A */
 };
 
-static struct pinmux_info r8a7740_pinmux_info = {
+struct sh_pfc_soc_info r8a7740_pinmux_info = {
 	.name		= "r8a7740_pfc",
 	.reserved_id	= PINMUX_RESERVED,
 	.data		= { PINMUX_DATA_BEGIN,
@@ -2613,31 +2609,3 @@ static struct pinmux_info r8a7740_pinmux_info = {
 	.gpio_irq	= pinmux_irqs,
 	.gpio_irq_size	= ARRAY_SIZE(pinmux_irqs),
 };
-
-static struct resource r8a7740_pfc_resources[] = {
-	[0] = {
-		.start	= 0xe6050000,
-		.end	= 0xe6057fff,
-		.flags	= IORESOURCE_MEM,
-	},
-	[1] = {
-		.start	= 0xe605800c,
-		.end	= 0xe605802b,
-		.flags	= IORESOURCE_MEM,
-	}
-};
-
-static struct platform_device r8a7740_pfc_device = {
-	.name		= "sh-pfc",
-	.id		= -1,
-	.resource	= r8a7740_pfc_resources,
-	.num_resources	= ARRAY_SIZE(r8a7740_pfc_resources),
-	.dev = {
-		.platform_data = &r8a7740_pinmux_info,
-	},
-};
-
-void r8a7740_pinmux_init(void)
-{
-	platform_device_register(&r8a7740_pfc_device);
-}

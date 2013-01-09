@@ -15,8 +15,7 @@
 
 #include <linux/init.h>
 #include <linux/kernel.h>
-#include <linux/gpio.h>
-#include <cpu/pfc.h>
+#include <linux/sh_pfc.h>
 #include <cpu/sh7757.h>
 
 enum {
@@ -1720,7 +1719,7 @@ static struct pinmux_gpio pinmux_gpios[] = {
 	PINMUX_GPIO(GPIO_FN_ON_DQ2, ON_DQ2_MARK),
 	PINMUX_GPIO(GPIO_FN_ON_DQ1, ON_DQ1_MARK),
 	PINMUX_GPIO(GPIO_FN_ON_DQ0, ON_DQ0_MARK),
- };
+};
 
 static struct pinmux_cfg_reg pinmux_config_regs[] = {
 	{ PINMUX_CFG_REG("PACR", 0xffec0000, 16, 2) {
@@ -2260,7 +2259,7 @@ static struct pinmux_data_reg pinmux_data_regs[] = {
 	{ },
 };
 
-static struct pinmux_info sh7757_pinmux_info = {
+struct sh_pfc_soc_info sh7757_pinmux_info = {
 	.name = "sh7757_pfc",
 	.reserved_id = PINMUX_RESERVED,
 	.data = { PINMUX_DATA_BEGIN, PINMUX_DATA_END },
@@ -2280,9 +2279,3 @@ static struct pinmux_info sh7757_pinmux_info = {
 	.gpio_data = pinmux_data,
 	.gpio_data_size = ARRAY_SIZE(pinmux_data),
 };
-
-static int __init plat_pinmux_setup(void)
-{
-	return sh_pfc_register_info(NULL, NULL, 0, &sh7757_pinmux_info);
-}
-arch_initcall(plat_pinmux_setup);
