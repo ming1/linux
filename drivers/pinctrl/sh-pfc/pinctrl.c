@@ -344,7 +344,6 @@ static void sh_pfc_map_one_gpio(struct sh_pfc *pfc, struct sh_pfc_pinctrl *pmx,
 /* pinmux ranges -> pinctrl pin descs */
 static int sh_pfc_map_gpios(struct sh_pfc *pfc, struct sh_pfc_pinctrl *pmx)
 {
-	unsigned long flags;
 	int i;
 
 	pmx->nr_pads = pfc->info->last_gpio - pfc->info->first_gpio + 1;
@@ -355,8 +354,6 @@ static int sh_pfc_map_gpios(struct sh_pfc *pfc, struct sh_pfc_pinctrl *pmx)
 		pmx->nr_pads = 0;
 		return -ENOMEM;
 	}
-
-	spin_lock_irqsave(&pfc->lock, flags);
 
 	/*
 	 * We don't necessarily have a 1:1 mapping between pin and linux
@@ -377,8 +374,6 @@ static int sh_pfc_map_gpios(struct sh_pfc *pfc, struct sh_pfc_pinctrl *pmx)
 
 		sh_pfc_map_one_gpio(pfc, pmx, gpio, i);
 	}
-
-	spin_unlock_irqrestore(&pfc->lock, flags);
 
 	sh_pfc_pinctrl_desc.pins = pmx->pads;
 	sh_pfc_pinctrl_desc.npins = pmx->nr_pads;
