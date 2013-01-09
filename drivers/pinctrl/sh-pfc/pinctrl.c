@@ -34,8 +34,6 @@ struct sh_pfc_pinctrl {
 
 	struct pinctrl_pin_desc *pads;
 	unsigned int nr_pads;
-
-	spinlock_t lock;
 };
 
 static int sh_pfc_get_groups_count(struct pinctrl_dev *pctldev)
@@ -331,7 +329,6 @@ static void sh_pfc_map_one_gpio(struct sh_pfc *pfc, struct sh_pfc_pinctrl *pmx,
 				struct pinmux_gpio *gpio, unsigned offset)
 {
 	struct pinmux_data_reg *dummy;
-	unsigned long flags;
 	int bit;
 
 	gpio->flags &= ~PINMUX_FLAG_TYPE;
@@ -340,10 +337,7 @@ static void sh_pfc_map_one_gpio(struct sh_pfc *pfc, struct sh_pfc_pinctrl *pmx,
 		gpio->flags |= PINMUX_TYPE_GPIO;
 	else {
 		gpio->flags |= PINMUX_TYPE_FUNCTION;
-
-		spin_lock_irqsave(&pmx->lock, flags);
 		pmx->nr_functions++;
-		spin_unlock_irqrestore(&pmx->lock, flags);
 	}
 }
 
@@ -394,7 +388,6 @@ static int sh_pfc_map_gpios(struct sh_pfc *pfc, struct sh_pfc_pinctrl *pmx)
 
 static int sh_pfc_map_functions(struct sh_pfc *pfc, struct sh_pfc_pinctrl *pmx)
 {
-	unsigned long flags;
 	int i, fn;
 
 	pmx->functions = devm_kzalloc(pfc->dev, pmx->nr_functions *
@@ -402,16 +395,12 @@ static int sh_pfc_map_functions(struct sh_pfc *pfc, struct sh_pfc_pinctrl *pmx)
 	if (unlikely(!pmx->functions))
 		return -ENOMEM;
 
-	spin_lock_irqsave(&pmx->lock, flags);
-
 	for (i = fn = 0; i < pmx->nr_pads; i++) {
 		struct pinmux_gpio *gpio = pfc->info->gpios + i;
 
 		if ((gpio->flags & PINMUX_FLAG_TYPE) == PINMUX_TYPE_FUNCTION)
 			pmx->functions[fn++] = gpio;
 	}
-
-	spin_unlock_irqrestore(&pmx->lock, flags);
 
 	return 0;
 }
@@ -424,8 +413,6 @@ int sh_pfc_register_pinctrl(struct sh_pfc *pfc)
 	pmx = devm_kzalloc(pfc->dev, sizeof(*pmx), GFP_KERNEL);
 	if (unlikely(!pmx))
 		return -ENOMEM;
-
-	spin_lock_init(&pmx->lock);
 
 	pmx->pfc = pfc;
 	pfc->pinctrl = pmx;
