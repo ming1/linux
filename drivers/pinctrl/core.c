@@ -609,13 +609,16 @@ static int add_setting(struct pinctrl *p, struct pinctrl_map const *map)
 
 	setting->pctldev = get_pinctrl_dev_from_devname(map->ctrl_dev_name);
 	if (setting->pctldev == NULL) {
-		dev_info(p->dev, "unknown pinctrl device %s in map entry, deferring probe",
-			map->ctrl_dev_name);
 		kfree(setting);
+		/* Do not defer probing of hogs (circular loop) */
+		if (!strcmp(map->ctrl_dev_name, map->dev_name))
+			return -ENODEV;
 		/*
 		 * OK let us guess that the driver is not there yet, and
 		 * let's defer obtaining this pinctrl handle to later...
 		 */
+		dev_info(p->dev, "unknown pinctrl device %s in map entry, deferring probe",
+			map->ctrl_dev_name);
 		return -EPROBE_DEFER;
 	}
 
@@ -694,13 +697,31 @@ static struct pinctrl *create_pinctrl(struct device *dev)
 			continue;
 
 		ret = add_setting(p, map);
-		if (ret < 0) {
+		/*
+		 * At this point the adding of a setting may:
+		 *
+		 * - Defer, if the pinctrl device is not yet available
+		 * - Fail, if the pinctrl device is not yet available,
+		 *   AND the setting is a hog. We cannot defer that, since
+		 *   the hog will kick in immediately after the device
+		 *   is registered.
+		 *
+		 * If the error returned was not -EPROBE_DEFER then we
+		 * accumulate the errors to see if we end up with
+		 * an -EPROBE_DEFER later, as that is the worst case.
+		 */
+		if (ret == -EPROBE_DEFER) {
 			pinctrl_put_locked(p, false);
 			return ERR_PTR(ret);
 		}
 	}
+	if (ret < 0) {
+		/* If some other error than deferral occured, return here */
+		pinctrl_put_locked(p, false);
+		return ERR_PTR(ret);
+	}
 
-	/* Add the pinmux to the global list */
+	/* Add the pinctrl handle to the global list */
 	list_add_tail(&p->node, &pinctrl_list);
 
 	return p;
@@ -713,9 +734,16 @@ static struct pinctrl *pinctrl_get_locked(struct device *dev)
 	if (WARN_ON(!dev))
 		return ERR_PTR(-EINVAL);
 
+	/*
+	 * See if somebody else (such as the device core) has already
+	 * obtained a handle to the pinctrl for this device. In that case,
+	 * return another pointer to it.
+	 */
 	p = find_pinctrl(dev);
-	if (p != NULL)
-		return ERR_PTR(-EBUSY);
+	if (p != NULL) {
+		dev_dbg(dev, "obtain a copy of previously claimed pinctrl\n");
+		return p;
+	}
 
 	return create_pinctrl(dev);
 }

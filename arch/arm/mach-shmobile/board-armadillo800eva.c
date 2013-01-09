@@ -25,9 +25,11 @@
 #include <linux/kernel.h>
 #include <linux/input.h>
 #include <linux/irq.h>
+#include <linux/of_platform.h>
 #include <linux/platform_device.h>
 #include <linux/gpio.h>
 #include <linux/gpio_keys.h>
+#include <linux/pinctrl/machine.h>
 #include <linux/regulator/fixed.h>
 #include <linux/regulator/machine.h>
 #include <linux/sh_eth.h>
@@ -124,6 +126,14 @@
  * this command is required when playback.
  *
  * # amixer set "Headphone" 50
+ *
+ * this command is required when capture.
+ *
+ * # amixer set "Input PGA" 15
+ * # amixer set "Left Input Mixer MicP" on
+ * # amixer set "Left Input Mixer MicN" on
+ * # amixer set "Right Input Mixer MicN" on
+ * # amixer set "Right Input Mixer MicP" on
  */
 
 /*
@@ -906,6 +916,15 @@ static struct platform_device *eva_devices[] __initdata = {
 	&i2c_gpio_device,
 };
 
+static const struct pinctrl_map eva_pinctrl_map[] = {
+	PIN_MAP_MUX_GROUP_DEFAULT("sh_mobile_lcdc_fb.0", "e6050000.pfc",
+				  "lcd0_data24_0", "lcd0"),
+	PIN_MAP_MUX_GROUP_DEFAULT("sh_mobile_lcdc_fb.0", "e6050000.pfc",
+				  "lcd0_lclk_1", "lcd0"),
+	PIN_MAP_MUX_GROUP_DEFAULT("sh_mobile_lcdc_fb.0", "e6050000.pfc",
+				  "lcd0_sync", "lcd0"),
+};
+
 static void __init eva_clock_init(void)
 {
 	struct clk *system	= clk_get(NULL, "system_clk");
@@ -953,7 +972,10 @@ static void __init eva_init(void)
 	regulator_register_always_on(0, "fixed-3.3V", fixed3v3_power_consumers,
 				     ARRAY_SIZE(fixed3v3_power_consumers), 3300000);
 
-	r8a7740_pinmux_init();
+	pinctrl_register_mappings(eva_pinctrl_map, ARRAY_SIZE(eva_pinctrl_map));
+
+	of_platform_populate(NULL, of_default_bus_match_table, NULL, NULL);
+
 	r8a7740_meram_workaround();
 
 	/* SCIFA1 */
@@ -962,35 +984,6 @@ static void __init eva_init(void)
 
 	/* LCDC0 */
 	gpio_request(GPIO_FN_LCDC0_SELECT,	NULL);
-	gpio_request(GPIO_FN_LCD0_D0,		NULL);
-	gpio_request(GPIO_FN_LCD0_D1,		NULL);
-	gpio_request(GPIO_FN_LCD0_D2,		NULL);
-	gpio_request(GPIO_FN_LCD0_D3,		NULL);
-	gpio_request(GPIO_FN_LCD0_D4,		NULL);
-	gpio_request(GPIO_FN_LCD0_D5,		NULL);
-	gpio_request(GPIO_FN_LCD0_D6,		NULL);
-	gpio_request(GPIO_FN_LCD0_D7,		NULL);
-	gpio_request(GPIO_FN_LCD0_D8,		NULL);
-	gpio_request(GPIO_FN_LCD0_D9,		NULL);
-	gpio_request(GPIO_FN_LCD0_D10,		NULL);
-	gpio_request(GPIO_FN_LCD0_D11,		NULL);
-	gpio_request(GPIO_FN_LCD0_D12,		NULL);
-	gpio_request(GPIO_FN_LCD0_D13,		NULL);
-	gpio_request(GPIO_FN_LCD0_D14,		NULL);
-	gpio_request(GPIO_FN_LCD0_D15,		NULL);
-	gpio_request(GPIO_FN_LCD0_D16,		NULL);
-	gpio_request(GPIO_FN_LCD0_D17,		NULL);
-	gpio_request(GPIO_FN_LCD0_D18_PORT40,	NULL);
-	gpio_request(GPIO_FN_LCD0_D19_PORT4,	NULL);
-	gpio_request(GPIO_FN_LCD0_D20_PORT3,	NULL);
-	gpio_request(GPIO_FN_LCD0_D21_PORT2,	NULL);
-	gpio_request(GPIO_FN_LCD0_D22_PORT0,	NULL);
-	gpio_request(GPIO_FN_LCD0_D23_PORT1,	NULL);
-	gpio_request(GPIO_FN_LCD0_DCK,		NULL);
-	gpio_request(GPIO_FN_LCD0_VSYN,		NULL);
-	gpio_request(GPIO_FN_LCD0_HSYN,		NULL);
-	gpio_request(GPIO_FN_LCD0_DISP,		NULL);
-	gpio_request(GPIO_FN_LCD0_LCLK_PORT165,	NULL);
 
 	gpio_request(GPIO_PORT61, NULL); /* LCDDON */
 	gpio_direction_output(GPIO_PORT61, 1);
@@ -1181,6 +1174,8 @@ static void __init eva_init(void)
 	rmobile_add_device_to_domain("A4LC", &hdmi_lcdc_device);
 	if (usb)
 		rmobile_add_device_to_domain("A3SP", usb);
+
+	r8a7740_pm_init();
 }
 
 static void __init eva_earlytimer_init(void)

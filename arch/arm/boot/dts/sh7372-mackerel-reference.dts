@@ -1,0 +1,131 @@
+/*
+ * Device Tree Source for the mackerel board
+ *
+ * Copyright (C) 2012 Renesas Solutions Corp.
+ *
+ * This file is licensed under the terms of the GNU General Public License
+ * version 2.  This program is licensed "as is" without any warranty of any
+ * kind, whether express or implied.
+ */
+
+/dts-v1/;
+/include/ "sh7372.dtsi"
+
+/ {
+	model = "Mackerel (AP4 EVM 2nd)";
+	compatible = "renesas,mackerel-reference";
+
+	memory {
+		device_type = "memory";
+		reg = <0x40000000 0x10000000>;
+	};
+
+	reg_1p8v: regulator@0 {
+		compatible = "regulator-fixed";
+		regulator-name = "1P8V";
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+		regulator-boot-on;
+		regulator-always-on;
+	};
+
+	reg_3p3v: regulator@1 {
+		compatible = "regulator-fixed";
+		regulator-name = "3P3V";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		regulator-boot-on;
+		regulator-always-on;
+	};
+
+	lan9220@14000000 {
+		compatible = "smsc,lan9220", "smsc,lan9115";
+		reg = <0x14000000 0x2000000>;
+		phy-mode = "mii";
+		interrupt-parent = <&intca_irq_pins_lo>;
+		interrupts = <0x2c0>;
+		reg-io-width = <4>;
+		smsc,irq-push-pull;
+		smsc,save-mac-address;
+		vddvario-supply = <&reg_1p8v>;
+		vdd33a-supply = <&reg_3p3v>;
+	};
+
+	i2c1: i2c@e6c20000 {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		compatible = "renesas,rmobile-iic";
+		reg = <0xe6c20000 0x1000>;
+		interrupt-parent = <&intca>;
+		interrupts = <0x780 0x7a0 0x7c0 0x7e0>;
+
+		clock-frequency = <100000>;
+
+		accelerometer@53 {
+			compatible = "analog-devices,adxl34x";
+			reg = <0x53>;
+			interrupt-parent = <&intca_irq_pins_hi>;
+			interrupts = <0x32a0>;
+		};
+	};
+
+	mmcif0: mmcif@0xe6bd0000 {
+		compatible = "renesas,sh-mmcif", "renesas,sh7372-mmcif";
+		reg = <0xe6bd0000 0x100>;
+		interrupt-parent = <&intca>;
+		interrupts = <0x1ac0 0x1ae0>;
+		vmmc-supply = <&reg_1p8v>;
+	};
+
+	sdhi0: sdhi@0xe6850000 {
+		compatible = "renesas,shmobile-sdhi";
+		reg = <0xe6850000 0x100>;
+		interrupt-parent = <&intca>;
+		interrupts = <0x0e00 0x0e20 0x0e40>;
+		vmmc-supply = <&reg_3p3v>;
+	};
+
+	sdhi1: sdhi@0xe6860000 {
+		compatible = "renesas,shmobile-sdhi";
+		reg = <0xe6860000 0x100>;
+		interrupt-parent = <&intca>;
+		interrupts = <0x0e80 0x0ea0 0x0ec0>;
+		vmmc-supply = <&reg_1p8v>;
+	};
+
+	sdhi2: sdhi@0xe6870000 {
+		compatible = "renesas,shmobile-sdhi";
+		reg = <0xe6870000 0x100>;
+		interrupt-parent = <&intca>;
+		interrupts = <0x1200 0x1220 0x1240>;
+		vmmc-supply = <&reg_3p3v>;
+	};
+
+	flash@2000000 {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		compatible = "cfi-flash";
+		reg = <0x20000000 0x8000000>;
+		bank-width = <2>;
+		partition@0 {
+			label = "loader";
+			reg = <0 0x80000>;
+		};
+		partition@1 {
+			label = "bootenv";
+			reg = <0x80000 0x80000>;
+		};
+		partition@2 {
+			label = "kernel_ro";
+			reg = <0x100000 0x800000>;
+		};
+		partition@3 {
+			label = "kernel";
+			reg = <0x900000 0x800000>;
+		};
+		partition@4 {
+			label = "data";
+			reg = <0x1100000 0x6f00000>;
+		};
+	};
+};
