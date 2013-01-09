@@ -787,7 +787,7 @@ static pinmux_enum_t pinmux_data[] = {
 	PINMUX_DATA(KEYOUT5_IN5_MARK, HIZA14_KEYSC, KEYOUT5_IN5),
 };
 
-static struct pinmux_pin pinmux_pins[] = {
+static struct sh_pfc_pin pinmux_pins[] = {
 	/* PTA */
 	_GPIO_PORT(PTA7),
 	_GPIO_PORT(PTA6),
