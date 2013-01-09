@@ -306,7 +306,7 @@ static pinmux_enum_t shx3_pinmux_data[] = {
 	PINMUX_DATA(IRQOUT_MARK,	PH0_FN),
 };
 
-static struct pinmux_gpio shx3_pinmux_gpios[] = {
+static struct pinmux_pin shx3_pinmux_pins[] = {
 	/* PA */
 	_GPIO_PORT(PA7),
 	_GPIO_PORT(PA6),
@@ -384,7 +384,11 @@ static struct pinmux_gpio shx3_pinmux_gpios[] = {
 	_GPIO_PORT(PH2),
 	_GPIO_PORT(PH1),
 	_GPIO_PORT(PH0),
+};
 
+#define PINMUX_FN_BASE	ARRAY_SIZE(shx3_pinmux_pins)
+
+static struct pinmux_func shx3_pinmux_func_gpios[] = {
 	/* FN */
 	GPIO_FN(D31),
 	GPIO_FN(D30),
@@ -569,9 +573,10 @@ struct sh_pfc_soc_info shx3_pinmux_info = {
 			    PINMUX_INPUT_PULLUP_END },
 	.output		= { PINMUX_OUTPUT_BEGIN,   PINMUX_OUTPUT_END },
 	.function	= { PINMUX_FUNCTION_BEGIN, PINMUX_FUNCTION_END },
-	.gpios		= shx3_pinmux_gpios,
-	.nr_pins	= GPIO_PH0 + 1,
-	.nr_gpios	= ARRAY_SIZE(shx3_pinmux_gpios),
+	.pins		= shx3_pinmux_pins,
+	.nr_pins	= ARRAY_SIZE(shx3_pinmux_pins),
+	.func_gpios	= shx3_pinmux_func_gpios,
+	.nr_func_gpios	= ARRAY_SIZE(shx3_pinmux_func_gpios),
 	.gpio_data	= shx3_pinmux_data,
 	.gpio_data_size	= ARRAY_SIZE(shx3_pinmux_data),
 	.cfg_regs	= shx3_pinmux_config_regs,

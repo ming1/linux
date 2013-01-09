@@ -1192,7 +1192,7 @@ static pinmux_enum_t pinmux_data[] = {
 	PINMUX_DATA(SCIF3_I_TXD_MARK,	PSB14_1, PTZ3_FN),
 };
 
-static struct pinmux_gpio pinmux_gpios[] = {
+static struct pinmux_pin pinmux_pins[] = {
 	/* PTA */
 	_GPIO_PORT(PTA7),
 	_GPIO_PORT(PTA6),
@@ -1418,7 +1418,11 @@ static struct pinmux_gpio pinmux_gpios[] = {
 	_GPIO_PORT(PTZ2),
 	_GPIO_PORT(PTZ1),
 	_GPIO_PORT(PTZ0),
+};
 
+#define PINMUX_FN_BASE	ARRAY_SIZE(pinmux_pins)
+
+static struct pinmux_func pinmux_func_gpios[] = {
 	/* BSC */
 	GPIO_FN(D31),
 	GPIO_FN(D30),
@@ -2210,9 +2214,10 @@ struct sh_pfc_soc_info sh7724_pinmux_info = {
 	.output = { PINMUX_OUTPUT_BEGIN, PINMUX_OUTPUT_END },
 	.function = { PINMUX_FUNCTION_BEGIN, PINMUX_FUNCTION_END },
 
-	.gpios = pinmux_gpios,
-	.nr_pins = GPIO_PTZ0 + 1,
-	.nr_gpios = ARRAY_SIZE(pinmux_gpios),
+	.pins = pinmux_pins,
+	.nr_pins = ARRAY_SIZE(pinmux_pins),
+	.func_gpios = pinmux_func_gpios,
+	.nr_func_gpios = ARRAY_SIZE(pinmux_func_gpios),
 
 	.cfg_regs = pinmux_config_regs,
 	.data_regs = pinmux_data_regs,
