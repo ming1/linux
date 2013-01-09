@@ -113,21 +113,6 @@ static void sh_pfc_noop_disable(struct pinctrl_dev *pctldev, unsigned func,
 {
 }
 
-static int sh_pfc_config_function(struct sh_pfc *pfc, unsigned offset)
-{
-	if (sh_pfc_config_gpio(pfc, offset,
-			       PINMUX_TYPE_FUNCTION,
-			       GPIO_CFG_DRYRUN) != 0)
-		return -EINVAL;
-
-	if (sh_pfc_config_gpio(pfc, offset,
-			       PINMUX_TYPE_FUNCTION,
-			       GPIO_CFG_REQ) != 0)
-		return -EINVAL;
-
-	return 0;
-}
-
 static int sh_pfc_reconfig_pin(struct sh_pfc *pfc, unsigned offset,
 			       int new_type)
 {
@@ -195,19 +180,11 @@ static int sh_pfc_gpio_request_enable(struct pinctrl_dev *pctldev,
 	pinmux_type = pfc->info->gpios[offset].flags & PINMUX_FLAG_TYPE;
 
 	switch (pinmux_type) {
-	case PINMUX_TYPE_FUNCTION:
-		pr_notice_once("Use of GPIO API for function requests is "
-			       "deprecated, convert to pinctrl\n");
-		/* handle for now */
-		ret = sh_pfc_config_function(pfc, offset);
-		if (unlikely(ret < 0))
-			goto err;
-
-		break;
 	case PINMUX_TYPE_GPIO:
 	case PINMUX_TYPE_INPUT:
 	case PINMUX_TYPE_OUTPUT:
 		break;
+	case PINMUX_TYPE_FUNCTION:
 	default:
 		pr_err("Unsupported mux type (%d), bailing...\n", pinmux_type);
 		ret = -ENOTSUPP;
@@ -403,7 +380,7 @@ int sh_pfc_register_pinctrl(struct sh_pfc *pfc)
 	if (IS_ERR(pmx->pctl))
 		return PTR_ERR(pmx->pctl);
 
-	sh_pfc_gpio_range.npins = pfc->info->nr_gpios;
+	sh_pfc_gpio_range.npins = pfc->info->nr_pins;
 	sh_pfc_gpio_range.base = 0;
 	sh_pfc_gpio_range.pin_base = 0;
 
