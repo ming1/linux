@@ -15,7 +15,9 @@
 #include <linux/err.h>
 #include <linux/init.h>
 #include <linux/module.h>
+#include <linux/of.h>
 #include <linux/pinctrl/consumer.h>
+#include <linux/pinctrl/machine.h>
 #include <linux/pinctrl/pinconf.h>
 #include <linux/pinctrl/pinconf-generic.h>
 #include <linux/pinctrl/pinctrl.h>
@@ -65,11 +67,63 @@ static void sh_pfc_pin_dbg_show(struct pinctrl_dev *pctldev, struct seq_file *s,
 	seq_printf(s, "%s", DRV_NAME);
 }
 
+static int sh_pfc_dt_node_to_map(struct pinctrl_dev *pctldev,
+				 struct device_node *np,
+				 struct pinctrl_map **map, unsigned *num_maps)
+{
+	struct sh_pfc_pinctrl *pmx = pinctrl_dev_get_drvdata(pctldev);
+	struct pinctrl_map *maps;
+	struct property *prop;
+	unsigned int index = 0;
+	const char *function;
+	const char *group;
+	int ret;
+
+	ret = of_property_read_string(np, "renesas,function", &function);
+	if (ret < 0) {
+		dev_err(pmx->pfc->dev, "No function provided in DT\n");
+		return ret;
+	}
+
+	ret = of_property_count_strings(np, "renesas,pins");
+	if (ret < 0)
+		return ret;
+
+	if (!ret) {
+		dev_err(pmx->pfc->dev, "No pin(group) provided in DT node\n");
+		return -ENODEV;
+	}
+
+	maps = kzalloc(sizeof(*maps) * ret, GFP_KERNEL);
+	if (maps == NULL)
+		return -ENOMEM;
+
+	of_property_for_each_string(np, "renesas,pins", prop, group) {
+		maps[index].type = PIN_MAP_TYPE_MUX_GROUP;
+		maps[index].data.mux.group = group;
+		maps[index].data.mux.function = function;
+		index++;
+	}
+
+	*map = maps;
+	*num_maps = index;
+
+	return 0;
+}
+
+static void sh_pfc_dt_free_map(struct pinctrl_dev *pctldev,
+			       struct pinctrl_map *map, unsigned num_maps)
+{
+	kfree(map);
+}
+
 static struct pinctrl_ops sh_pfc_pinctrl_ops = {
 	.get_groups_count	= sh_pfc_get_groups_count,
 	.get_group_name		= sh_pfc_get_group_name,
 	.get_group_pins		= sh_pfc_get_group_pins,
 	.pin_dbg_show		= sh_pfc_pin_dbg_show,
+	.dt_node_to_map		= sh_pfc_dt_node_to_map,
+	.dt_free_map		= sh_pfc_dt_free_map,
 };
 
 static int sh_pfc_get_functions_count(struct pinctrl_dev *pctldev)
