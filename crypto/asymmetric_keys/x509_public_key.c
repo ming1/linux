@@ -176,6 +176,16 @@ static int x509_key_preparse(struct key_preparsed_payload *prep)
 		goto error_free_cert;
 	}
 
+	if (cert->pub->pkey_algo > PKEY_ALGO__LAST ||
+	    cert->sig.pkey_algo > PKEY_ALGO__LAST ||
+	    cert->sig.pkey_hash_algo > PKEY_HASH__LAST ||
+	    !pkey_algo[cert->pub->pkey_algo] ||
+	    !pkey_algo[cert->sig.pkey_algo] ||
+	    !pkey_hash_algo_name[cert->sig.pkey_hash_algo]) {
+		ret = -ENOPKG;
+		goto error_free_cert;
+	}
+
 	cert->pub->algo = pkey_algo[cert->pub->pkey_algo];
 	cert->pub->id_type = PKEY_ID_X509;
 
