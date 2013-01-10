@@ -43,7 +43,7 @@
 #define OpCL               9ull  /* CL register (for shifts) */
 #define OpImmByte         10ull  /* 8-bit sign extended immediate */
 #define OpOne             11ull  /* Implied 1 */
-#define OpImm             12ull  /* Sign extended immediate */
+#define OpImm             12ull  /* Sign extended up to 32-bit immediate */
 #define OpMem16           13ull  /* Memory operand (16-bit). */
 #define OpMem32           14ull  /* Memory operand (32-bit). */
 #define OpImmU            15ull  /* Immediate operand, zero extended */
@@ -58,6 +58,7 @@
 #define OpFS              24ull  /* FS */
 #define OpGS              25ull  /* GS */
 #define OpMem8            26ull  /* 8-bit zero extended memory operand */
+#define OpImm64           27ull  /* Sign extended 16/32/64-bit immediate */
 
 #define OpBits             5  /* Width of operand field */
 #define OpMask             ((1ull << OpBits) - 1)
@@ -101,6 +102,7 @@
 #define SrcMemFAddr (OpMemFAddr << SrcShift)
 #define SrcAcc      (OpAcc << SrcShift)
 #define SrcImmU16   (OpImmU16 << SrcShift)
+#define SrcImm64    (OpImm64 << SrcShift)
 #define SrcDX       (OpDX << SrcShift)
 #define SrcMem8     (OpMem8 << SrcShift)
 #define SrcMask     (OpMask << SrcShift)
@@ -113,6 +115,7 @@
 #define GroupDual   (2<<15)     /* Alternate decoding of mod == 3 */
 #define Prefix      (3<<15)     /* Instruction varies with 66/f2/f3 prefix */
 #define RMExt       (4<<15)     /* Opcode extension in ModRM r/m if mod == 3 */
+#define Escape      (5<<15)     /* Escape to coprocessor instruction */
 #define Sse         (1<<18)     /* SSE Vector instruction */
 /* Generic ModRM decode. */
 #define ModRM       (1<<19)
@@ -164,6 +167,7 @@ struct opcode {
 		const struct opcode *group;
 		const struct group_dual *gdual;
 		const struct gprefix *gprefix;
+		const struct escape *esc;
 	} u;
 	int (*check_perm)(struct x86_emulate_ctxt *ctxt);
 };
@@ -178,6 +182,11 @@ struct gprefix {
 	struct opcode pfx_66;
 	struct opcode pfx_f2;
 	struct opcode pfx_f3;
+};
+
+struct escape {
+	struct opcode op[8];
+	struct opcode high[64];
 };
 
 /* EFLAGS bit definitions. */
@@ -663,7 +672,7 @@ static int __linearize(struct x86_emulate_ctxt *ctxt,
 	ulong la;
 	u32 lim;
 	u16 sel;
-	unsigned cpl, rpl;
+	unsigned cpl;
 
 	la = seg_base(ctxt, addr.seg) + addr.ea;
 	switch (ctxt->mode) {
@@ -697,11 +706,6 @@ static int __linearize(struct x86_emulate_ctxt *ctxt,
 				goto bad;
 		}
 		cpl = ctxt->ops->cpl(ctxt);
-		if (ctxt->mode == X86EMUL_MODE_REAL)
-			rpl = 0;
-		else
-			rpl = sel & 3;
-		cpl = max(cpl, rpl);
 		if (!(desc.type & 8)) {
 			/* data segment */
 			if (cpl > desc.dpl)
@@ -992,6 +996,53 @@ static void write_mmx_reg(struct x86_emulate_ctxt *ctxt, u64 *data, int reg)
 	default: BUG();
 	}
 	ctxt->ops->put_fpu(ctxt);
+}
+
+static int em_fninit(struct x86_emulate_ctxt *ctxt)
+{
+	if (ctxt->ops->get_cr(ctxt, 0) & (X86_CR0_TS | X86_CR0_EM))
+		return emulate_nm(ctxt);
+
+	ctxt->ops->get_fpu(ctxt);
+	asm volatile("fninit");
+	ctxt->ops->put_fpu(ctxt);
+	return X86EMUL_CONTINUE;
+}
+
+static int em_fnstcw(struct x86_emulate_ctxt *ctxt)
+{
+	u16 fcw;
+
+	if (ctxt->ops->get_cr(ctxt, 0) & (X86_CR0_TS | X86_CR0_EM))
+		return emulate_nm(ctxt);
+
+	ctxt->ops->get_fpu(ctxt);
+	asm volatile("fnstcw %0": "+m"(fcw));
+	ctxt->ops->put_fpu(ctxt);
+
+	/* force 2 byte destination */
+	ctxt->dst.bytes = 2;
+	ctxt->dst.val = fcw;
+
+	return X86EMUL_CONTINUE;
+}
+
+static int em_fnstsw(struct x86_emulate_ctxt *ctxt)
+{
+	u16 fsw;
+
+	if (ctxt->ops->get_cr(ctxt, 0) & (X86_CR0_TS | X86_CR0_EM))
+		return emulate_nm(ctxt);
+
+	ctxt->ops->get_fpu(ctxt);
+	asm volatile("fnstsw %0": "+m"(fsw));
+	ctxt->ops->put_fpu(ctxt);
+
+	/* force 2 byte destination */
+	ctxt->dst.bytes = 2;
+	ctxt->dst.val = fsw;
+
+	return X86EMUL_CONTINUE;
 }
 
 static void decode_register_operand(struct x86_emulate_ctxt *ctxt,
@@ -2852,6 +2903,27 @@ static int em_das(struct x86_emulate_ctxt *ctxt)
 	return X86EMUL_CONTINUE;
 }
 
+static int em_aad(struct x86_emulate_ctxt *ctxt)
+{
+	u8 al = ctxt->dst.val & 0xff;
+	u8 ah = (ctxt->dst.val >> 8) & 0xff;
+
+	al = (al + (ah * ctxt->src.val)) & 0xff;
+
+	ctxt->dst.val = (ctxt->dst.val & 0xffff0000) | al;
+
+	ctxt->eflags &= ~(X86_EFLAGS_PF | X86_EFLAGS_SF | X86_EFLAGS_ZF);
+
+	if (!al)
+		ctxt->eflags |= X86_EFLAGS_ZF;
+	if (!(al & 1))
+		ctxt->eflags |= X86_EFLAGS_PF;
+	if (al & 0x80)
+		ctxt->eflags |= X86_EFLAGS_SF;
+
+	return X86EMUL_CONTINUE;
+}
+
 static int em_call(struct x86_emulate_ctxt *ctxt)
 {
 	long rel = ctxt->src.val;
@@ -3572,6 +3644,7 @@ static int check_perm_out(struct x86_emulate_ctxt *ctxt)
 #define EXT(_f, _e) { .flags = ((_f) | RMExt), .u.group = (_e) }
 #define G(_f, _g) { .flags = ((_f) | Group | ModRM), .u.group = (_g) }
 #define GD(_f, _g) { .flags = ((_f) | GroupDual | ModRM), .u.gdual = (_g) }
+#define E(_f, _e) { .flags = ((_f) | Escape | ModRM), .u.esc = (_e) }
 #define I(_f, _e) { .flags = (_f), .u.execute = (_e) }
 #define II(_f, _e, _i) \
 	{ .flags = (_f), .u.execute = (_e), .intercept = x86_intercept_##_i }
@@ -3707,6 +3780,69 @@ static const struct gprefix pfx_vmovntpx = {
 	I(0, em_mov), N, N, N,
 };
 
+static const struct escape escape_d9 = { {
+	N, N, N, N, N, N, N, I(DstMem, em_fnstcw),
+}, {
+	/* 0xC0 - 0xC7 */
+	N, N, N, N, N, N, N, N,
+	/* 0xC8 - 0xCF */
+	N, N, N, N, N, N, N, N,
+	/* 0xD0 - 0xC7 */
+	N, N, N, N, N, N, N, N,
+	/* 0xD8 - 0xDF */
+	N, N, N, N, N, N, N, N,
+	/* 0xE0 - 0xE7 */
+	N, N, N, N, N, N, N, N,
+	/* 0xE8 - 0xEF */
+	N, N, N, N, N, N, N, N,
+	/* 0xF0 - 0xF7 */
+	N, N, N, N, N, N, N, N,
+	/* 0xF8 - 0xFF */
+	N, N, N, N, N, N, N, N,
+} };
+
+static const struct escape escape_db = { {
+	N, N, N, N, N, N, N, N,
+}, {
+	/* 0xC0 - 0xC7 */
+	N, N, N, N, N, N, N, N,
+	/* 0xC8 - 0xCF */
+	N, N, N, N, N, N, N, N,
+	/* 0xD0 - 0xC7 */
+	N, N, N, N, N, N, N, N,
+	/* 0xD8 - 0xDF */
+	N, N, N, N, N, N, N, N,
+	/* 0xE0 - 0xE7 */
+	N, N, N, I(ImplicitOps, em_fninit), N, N, N, N,
+	/* 0xE8 - 0xEF */
+	N, N, N, N, N, N, N, N,
+	/* 0xF0 - 0xF7 */
+	N, N, N, N, N, N, N, N,
+	/* 0xF8 - 0xFF */
+	N, N, N, N, N, N, N, N,
+} };
+
+static const struct escape escape_dd = { {
+	N, N, N, N, N, N, N, I(DstMem, em_fnstsw),
+}, {
+	/* 0xC0 - 0xC7 */
+	N, N, N, N, N, N, N, N,
+	/* 0xC8 - 0xCF */
+	N, N, N, N, N, N, N, N,
+	/* 0xD0 - 0xC7 */
+	N, N, N, N, N, N, N, N,
+	/* 0xD8 - 0xDF */
+	N, N, N, N, N, N, N, N,
+	/* 0xE0 - 0xE7 */
+	N, N, N, N, N, N, N, N,
+	/* 0xE8 - 0xEF */
+	N, N, N, N, N, N, N, N,
+	/* 0xF0 - 0xF7 */
+	N, N, N, N, N, N, N, N,
+	/* 0xF8 - 0xFF */
+	N, N, N, N, N, N, N, N,
+} };
+
 static const struct opcode opcode_table[256] = {
 	/* 0x00 - 0x07 */
 	I6ALU(Lock, em_add),
@@ -3786,7 +3922,7 @@ static const struct opcode opcode_table[256] = {
 	/* 0xB0 - 0xB7 */
 	X8(I(ByteOp | DstReg | SrcImm | Mov, em_mov)),
 	/* 0xB8 - 0xBF */
-	X8(I(DstReg | SrcImm | Mov, em_mov)),
+	X8(I(DstReg | SrcImm64 | Mov, em_mov)),
 	/* 0xC0 - 0xC7 */
 	D2bv(DstMem | SrcImmByte | ModRM),
 	I(ImplicitOps | Stack | SrcImmU16, em_ret_near_imm),
@@ -3801,9 +3937,9 @@ static const struct opcode opcode_table[256] = {
 	D(ImplicitOps | No64), II(ImplicitOps, em_iret, iret),
 	/* 0xD0 - 0xD7 */
 	D2bv(DstMem | SrcOne | ModRM), D2bv(DstMem | ModRM),
-	N, N, N, N,
+	N, I(DstAcc | SrcImmByte | No64, em_aad), N, N,
 	/* 0xD8 - 0xDF */
-	N, N, N, N, N, N, N, N,
+	N, E(0, &escape_d9), N, E(0, &escape_db), N, E(0, &escape_dd), N, N,
 	/* 0xE0 - 0xE7 */
 	X3(I(SrcImmByte, em_loop)),
 	I(SrcImmByte, em_jcxz),
@@ -3950,6 +4086,9 @@ static int decode_imm(struct x86_emulate_ctxt *ctxt, struct operand *op,
 	case 4:
 		op->val = insn_fetch(s32, ctxt);
 		break;
+	case 8:
+		op->val = insn_fetch(s64, ctxt);
+		break;
 	}
 	if (!sign_extension) {
 		switch (op->bytes) {
@@ -4027,6 +4166,9 @@ static int decode_operand(struct x86_emulate_ctxt *ctxt, struct operand *op,
 		break;
 	case OpImm:
 		rc = decode_imm(ctxt, op, imm_size(ctxt), true);
+		break;
+	case OpImm64:
+		rc = decode_imm(ctxt, op, ctxt->op_bytes, true);
 		break;
 	case OpMem8:
 		ctxt->memop.bytes = 1;
@@ -4221,6 +4363,12 @@ done_prefixes:
 			case 0xf2: opcode = opcode.u.gprefix->pfx_f2; break;
 			case 0xf3: opcode = opcode.u.gprefix->pfx_f3; break;
 			}
+			break;
+		case Escape:
+			if (ctxt->modrm > 0xbf)
+				opcode = opcode.u.esc->high[ctxt->modrm - 0xc0];
+			else
+				opcode = opcode.u.esc->op[(ctxt->modrm >> 3) & 7];
 			break;
 		default:
 			return EMULATION_FAILED;

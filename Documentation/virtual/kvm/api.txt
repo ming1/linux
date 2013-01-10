@@ -913,7 +913,7 @@ documentation when it pops into existence).
 4.37 KVM_ENABLE_CAP
 
 Capability: KVM_CAP_ENABLE_CAP
-Architectures: ppc
+Architectures: ppc, s390
 Type: vcpu ioctl
 Parameters: struct kvm_enable_cap (in)
 Returns: 0 on success; -1 on error
@@ -2069,6 +2069,14 @@ KVM_S390_INT_VIRTIO (vm) - virtio external interrupt; external interrupt
 KVM_S390_INT_SERVICE (vm) - sclp external interrupt; sclp parameter in parm
 KVM_S390_INT_EMERGENCY (vcpu) - sigp emergency; source cpu in parm
 KVM_S390_INT_EXTERNAL_CALL (vcpu) - sigp external call; source cpu in parm
+KVM_S390_INT_IO(ai,cssid,ssid,schid) (vm) - compound value to indicate an
+    I/O interrupt (ai - adapter interrupt; cssid,ssid,schid - subchannel);
+    I/O interruption parameters in parm (subchannel) and parm64 (intparm,
+    interruption subclass)
+KVM_S390_MCHK (vm, vcpu) - machine check interrupt; cr 14 bits in parm,
+                           machine check interrupt code in parm64 (note that
+                           machine checks needing further payload are not
+                           supported by this ioctl)
 
 Note that the vcpu ioctl is asynchronous to vcpu execution.
 
@@ -2342,6 +2350,22 @@ The possible hypercalls are defined in the Power Architecture Platform
 Requirements (PAPR) document available from www.power.org (free
 developer registration required to access it).
 
+		/* KVM_EXIT_S390_TSCH */
+		struct {
+			__u16 subchannel_id;
+			__u16 subchannel_nr;
+			__u32 io_int_parm;
+			__u32 io_int_word;
+			__u32 ipb;
+			__u8 dequeued;
+		} s390_tsch;
+
+s390 specific. This exit occurs when KVM_CAP_S390_CSS_SUPPORT has been enabled
+and TEST SUBCHANNEL was intercepted. If dequeued is set, a pending I/O
+interrupt for the target subchannel has been dequeued and subchannel_id,
+subchannel_nr, io_int_parm and io_int_word contain the parameters for that
+interrupt. ipb is needed for instruction parameter decoding.
+
 		/* Fix the size of the union. */
 		char padding[256];
 	};
@@ -2463,3 +2487,17 @@ For mmu types KVM_MMU_FSL_BOOKE_NOHV and KVM_MMU_FSL_BOOKE_HV:
    where "num_sets" is the tlb_sizes[] value divided by the tlb_ways[] value.
  - The tsize field of mas1 shall be set to 4K on TLB0, even though the
    hardware ignores this value for TLB0.
+
+6.4 KVM_CAP_S390_CSS_SUPPORT
+
+Architectures: s390
+Parameters: none
+Returns: 0 on success; -1 on error
+
+This capability enables support for handling of channel I/O instructions.
+
+TEST PENDING INTERRUPTION and the interrupt portion of TEST SUBCHANNEL are
+handled in-kernel, while the other I/O instructions are passed to userspace.
+
+When this capability is enabled, KVM_EXIT_S390_TSCH will occur on TEST
+SUBCHANNEL intercepts.
