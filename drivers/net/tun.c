@@ -491,6 +491,8 @@ static int tun_attach(struct tun_struct *tun, struct file *file)
 	err = -EINVAL;
 	if (rcu_dereference_protected(tfile->tun, lockdep_rtnl_is_held()))
 		goto out;
+	if (tfile->detached && tun != tfile->detached)
+		goto out;
 
 	err = -EBUSY;
 	if (!(tun->flags & TUN_TAP_MQ) && tun->numqueues == 1)
@@ -1789,8 +1791,6 @@ static int tun_set_queue(struct file *file, struct ifreq *ifr)
 		tun = tfile->detached;
 		if (!tun)
 			ret = -EINVAL;
-		else if (tun_not_capable(tun))
-			ret = -EPERM;
 		else
 			ret = tun_attach(tun, file);
 	} else if (ifr->ifr_flags & IFF_DETACH_QUEUE) {
