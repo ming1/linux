@@ -50,6 +50,7 @@
 #include <plat/devs.h>
 #include <plat/cpu.h>
 #include <mach/regs-gpio.h>
+#include <plat/samsung-time.h>
 
 #include "common.h"
 #include "regs-modem.h"
@@ -209,6 +210,7 @@ static void __init anw6410_map_io(void)
 	s3c64xx_init_io(anw6410_iodesc, ARRAY_SIZE(anw6410_iodesc));
 	s3c24xx_init_clocks(12000000);
 	s3c24xx_init_uarts(anw6410_uartcfgs, ARRAY_SIZE(anw6410_uartcfgs));
+	samsung_set_timer_source(SAMSUNG_PWM3, SAMSUNG_PWM4);
 
 	anw6410_lcd_mode_set();
 }
@@ -234,6 +236,6 @@ MACHINE_START(ANW6410, "A&W6410")
 	.map_io		= anw6410_map_io,
 	.init_machine	= anw6410_machine_init,
 	.init_late	= s3c64xx_init_late,
-	.timer		= &s3c24xx_timer,
+	.timer		= &samsung_timer,
 	.restart	= s3c64xx_restart,
 MACHINE_END
