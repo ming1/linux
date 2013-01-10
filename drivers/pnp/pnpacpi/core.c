@@ -84,7 +84,8 @@ static int pnpacpi_set_resources(struct pnp_dev *dev)
 {
 	struct acpi_device *acpi_dev;
 	acpi_handle handle;
-	struct acpi_buffer buffer;
+	struct acpi_buffer buffer = {ACPI_ALLOCATE_BUFFER, NULL};
+	acpi_status status;
 	int ret;
 
 	pnp_dbg(&dev->dev, "set resources\n");
@@ -98,9 +99,10 @@ static int pnpacpi_set_resources(struct pnp_dev *dev)
 	if (WARN_ON_ONCE(acpi_dev != dev->data))
 		dev->data = acpi_dev;
 
-	ret = pnpacpi_build_resource_template(dev, &buffer);
-	if (ret)
-		return ret;
+	status = acpi_evaluate_object(handle, METHOD_NAME__CRS, NULL, &buffer);
+	if (ACPI_FAILURE(status))
+		return -EINVAL;
+
 	ret = pnpacpi_encode_resources(dev, &buffer);
 	if (ret) {
 		kfree(buffer.pointer);
