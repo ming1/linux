@@ -13,9 +13,6 @@
 #include <linux/kernel.h>
 #include <linux/sizes.h>
 
-#define DEBUG			0
-#define DEBUG_FDT_DUMP_FILE	"/tmp/kvmtool.dtb"
-
 static char kern_cmdline[COMMAND_LINE_SIZE];
 
 bool kvm__load_firmware(struct kvm *kvm, const char *firmware_filename)
@@ -28,25 +25,21 @@ int kvm__arch_setup_firmware(struct kvm *kvm)
 	return 0;
 }
 
-#if DEBUG
-static void dump_fdt(void *fdt)
+static void dump_fdt(const char *dtb_file, void *fdt)
 {
 	int count, fd;
 
-	fd = open(DEBUG_FDT_DUMP_FILE, O_CREAT | O_TRUNC | O_RDWR, 0666);
+	fd = open(dtb_file, O_CREAT | O_TRUNC | O_RDWR, 0666);
 	if (fd < 0)
-		die("Failed to write dtb to %s", DEBUG_FDT_DUMP_FILE);
+		die("Failed to write dtb to %s", dtb_file);
 
 	count = write(fd, fdt, FDT_MAX_SIZE);
 	if (count < 0)
 		die_perror("Failed to dump dtb");
 
-	pr_info("Wrote %d bytes to dtb %s\n", count, DEBUG_FDT_DUMP_FILE);
+	pr_info("Wrote %d bytes to dtb %s\n", count, dtb_file);
 	close(fd);
 }
-#else
-static void dump_fdt(void *fdt) { }
-#endif
 
 #define DEVICE_NAME_MAX_LEN 32
 static void generate_virtio_mmio_node(void *fdt, struct virtio_mmio *vmmio)
@@ -89,10 +82,6 @@ static int setup_fdt(struct kvm *kvm)
 
 	/* Create new tree without a reserve map */
 	_FDT(fdt_create(fdt, FDT_MAX_SIZE));
-	if (kvm->nrcpus > 1)
-		_FDT(fdt_add_reservemap_entry(fdt,
-					      kvm->arch.smp_pen_guest_start,
-					      ARM_SMP_PEN_SIZE));
 	_FDT(fdt_finish_reservemap(fdt));
 
 	/* Header */
@@ -136,6 +125,16 @@ static int setup_fdt(struct kvm *kvm)
 		dev_hdr = device__next_dev(dev_hdr);
 	}
 
+	/* PSCI firmware */
+	_FDT(fdt_begin_node(fdt, "psci"));
+	_FDT(fdt_property_string(fdt, "compatible", "arm,psci"));
+	_FDT(fdt_property_string(fdt, "method", "hvc"));
+	_FDT(fdt_property_cell(fdt, "cpu_suspend", KVM_PSCI_FN_CPU_SUSPEND));
+	_FDT(fdt_property_cell(fdt, "cpu_off", KVM_PSCI_FN_CPU_OFF));
+	_FDT(fdt_property_cell(fdt, "cpu_on", KVM_PSCI_FN_CPU_ON));
+	_FDT(fdt_property_cell(fdt, "migrate", KVM_PSCI_FN_MIGRATE));
+	_FDT(fdt_end_node(fdt));
+
 	/* Finalise. */
 	_FDT(fdt_end_node(fdt));
 	_FDT(fdt_finish(fdt));
@@ -143,7 +142,8 @@ static int setup_fdt(struct kvm *kvm)
 	_FDT(fdt_open_into(fdt, fdt_dest, FDT_MAX_SIZE));
 	_FDT(fdt_pack(fdt_dest));
 
-	dump_fdt(fdt_dest);
+	if (kvm->cfg.arch.dump_dtb_filename)
+		dump_fdt(kvm->cfg.arch.dump_dtb_filename, fdt_dest);
 	return 0;
 }
 late_init(setup_fdt);
@@ -163,7 +163,6 @@ static int read_image(int fd, void **pos, void *limit)
 
 #define FDT_ALIGN	SZ_2M
 #define INITRD_ALIGN	4
-#define SMP_PEN_ALIGN	PAGE_SIZE
 int load_flat_binary(struct kvm *kvm, int fd_kernel, int fd_initrd,
 		     const char *kernel_cmdline)
 {
@@ -174,12 +173,12 @@ int load_flat_binary(struct kvm *kvm, int fd_kernel, int fd_initrd,
 		die_perror("lseek");
 
 	/*
-	 * Linux requires the initrd, pen and dtb to be mapped inside
-	 * lowmem, so we can't just place them at the top of memory.
+	 * Linux requires the initrd and dtb to be mapped inside lowmem,
+	 * so we can't just place them at the top of memory.
 	 */
 	limit = kvm->ram_start + min(kvm->ram_size, (u64)SZ_256M) - 1;
 
-	pos = kvm->ram_start + ARM_KERN_OFFSET;
+	pos = kvm->ram_start + ARM_KERN_OFFSET(kvm);
 	kvm->arch.kern_guest_start = host_to_guest_flat(kvm, pos);
 	if (read_image(fd_kernel, &pos, limit) == -ENOMEM)
 		die("kernel image too big to contain in guest memory.");
@@ -192,24 +191,9 @@ int load_flat_binary(struct kvm *kvm, int fd_kernel, int fd_initrd,
 	/*
 	 * Now load backwards from the end of memory so the kernel
 	 * decompressor has plenty of space to work with. First up is
-	 * the SMP pen if we have more than one virtual CPU...
+	 * the device tree blob...
 	 */
 	pos = limit;
-	if (kvm->cfg.nrcpus > 1) {
-		pos -= (ARM_SMP_PEN_SIZE + SMP_PEN_ALIGN);
-		guest_addr = ALIGN(host_to_guest_flat(kvm, pos), SMP_PEN_ALIGN);
-		pos = guest_flat_to_host(kvm, guest_addr);
-		if (pos < kernel_end)
-			die("SMP pen overlaps with kernel image.");
-
-		kvm->arch.smp_pen_guest_start = guest_addr;
-		pr_info("Placing SMP pen at 0x%llx - 0x%llx",
-			kvm->arch.smp_pen_guest_start,
-			host_to_guest_flat(kvm, limit));
-		limit = pos;
-	}
-
-	/* ...now the device tree blob... */
 	pos -= (FDT_MAX_SIZE + FDT_ALIGN);
 	guest_addr = ALIGN(host_to_guest_flat(kvm, pos), FDT_ALIGN);
 	pos = guest_flat_to_host(kvm, guest_addr);
