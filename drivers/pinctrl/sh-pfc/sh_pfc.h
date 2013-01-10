@@ -15,7 +15,8 @@
 #include <asm-generic/gpio.h>
 
 typedef unsigned short pinmux_enum_t;
-typedef unsigned short pinmux_flag_t;
+
+#define SH_PFC_MARK_INVALID	((pinmux_enum_t)-1)
 
 enum {
 	PINMUX_TYPE_NONE,
@@ -35,14 +36,56 @@ enum {
 #define PINMUX_FLAG_DREG_SHIFT      10
 #define PINMUX_FLAG_DREG            (0x3f << PINMUX_FLAG_DREG_SHIFT)
 
-struct pinmux_gpio {
-	pinmux_enum_t enum_id;
-	pinmux_flag_t flags;
+struct sh_pfc_pin {
+	const pinmux_enum_t enum_id;
+	unsigned short flags;
 	const char *name;
 };
 
-#define PINMUX_GPIO(gpio, data_or_mark) \
-	[gpio] = { .name = __stringify(gpio), .enum_id = data_or_mark, .flags = PINMUX_TYPE_NONE }
+#define SH_PFC_PIN_GROUP(n)				\
+	{						\
+		.name = #n,				\
+		.pins = n##_pins,			\
+		.mux = n##_mux,				\
+		.nr_pins = ARRAY_SIZE(n##_pins),	\
+	}
+
+struct sh_pfc_pin_group {
+	const char *name;
+	const unsigned int *pins;
+	const unsigned int *mux;
+	unsigned int nr_pins;
+};
+
+#define SH_PFC_FUNCTION(n)				\
+	{						\
+		.name = #n,				\
+		.groups = n##_groups,			\
+		.nr_groups = ARRAY_SIZE(n##_groups),	\
+	}
+
+struct sh_pfc_function {
+	const char *name;
+	const char * const *groups;
+	unsigned int nr_groups;
+};
+
+struct pinmux_func {
+	const pinmux_enum_t enum_id;
+	const char *name;
+};
+
+#define PINMUX_GPIO(gpio, data_or_mark)			\
+	[gpio] = {					\
+		.name = __stringify(gpio),		\
+		.enum_id = data_or_mark,		\
+		.flags = PINMUX_TYPE_GPIO		\
+	}
+#define PINMUX_GPIO_FN(gpio, base, data_or_mark)	\
+	[gpio - (base)] = {				\
+		.name = __stringify(gpio),		\
+		.enum_id = data_or_mark,		\
+	}
 
 #define PINMUX_DATA(data_or_mark, ids...) data_or_mark, ids, 0
 
@@ -76,11 +119,11 @@ struct pinmux_data_reg {
 
 struct pinmux_irq {
 	int irq;
-	pinmux_enum_t *enum_ids;
+	unsigned short *gpios;
 };
 
 #define PINMUX_IRQ(irq_nr, ids...)			   \
-	{ .irq = irq_nr, .enum_ids = (pinmux_enum_t []) { ids, 0 } }	\
+	{ .irq = irq_nr, .gpios = (unsigned short []) { ids, 0 } }	\
 
 struct pinmux_range {
 	pinmux_enum_t begin;
@@ -88,26 +131,24 @@ struct pinmux_range {
 	pinmux_enum_t force;
 };
 
-struct pfc_window {
-	phys_addr_t phys;
-	void __iomem *virt;
-	unsigned long size;
-};
-
-struct sh_pfc {
+struct sh_pfc_soc_info {
 	char *name;
-	pinmux_enum_t reserved_id;
-	struct pinmux_range data;
 	struct pinmux_range input;
 	struct pinmux_range input_pd;
 	struct pinmux_range input_pu;
 	struct pinmux_range output;
-	struct pinmux_range mark;
 	struct pinmux_range function;
 
-	unsigned first_gpio, last_gpio;
+	struct sh_pfc_pin *pins;
+	unsigned int nr_pins;
+	const struct sh_pfc_pin_group *groups;
+	unsigned int nr_groups;
+	const struct sh_pfc_function *functions;
+	unsigned int nr_functions;
 
-	struct pinmux_gpio *gpios;
+	struct pinmux_func *func_gpios;
+	unsigned int nr_func_gpios;
+
 	struct pinmux_cfg_reg *cfg_regs;
 	struct pinmux_data_reg *data_regs;
 
@@ -117,43 +158,8 @@ struct sh_pfc {
 	struct pinmux_irq *gpio_irq;
 	unsigned int gpio_irq_size;
 
-	spinlock_t lock;
-
-	struct resource *resource;
-	unsigned int num_resources;
-	struct pfc_window *window;
-
 	unsigned long unlock_reg;
 };
-
-/* XXX compat for now */
-#define pinmux_info sh_pfc
-
-/* drivers/sh/pfc/gpio.c */
-int sh_pfc_register_gpiochip(struct sh_pfc *pfc);
-
-/* drivers/sh/pfc/pinctrl.c */
-int sh_pfc_register_pinctrl(struct sh_pfc *pfc);
-
-/* drivers/sh/pfc/core.c */
-int register_sh_pfc(struct sh_pfc *pfc);
-
-int sh_pfc_read_bit(struct pinmux_data_reg *dr, unsigned long in_pos);
-void sh_pfc_write_bit(struct pinmux_data_reg *dr, unsigned long in_pos,
-		      unsigned long value);
-int sh_pfc_get_data_reg(struct sh_pfc *pfc, unsigned gpio,
-			struct pinmux_data_reg **drp, int *bitp);
-int sh_pfc_gpio_to_enum(struct sh_pfc *pfc, unsigned gpio, int pos,
-			pinmux_enum_t *enum_idp);
-int sh_pfc_config_gpio(struct sh_pfc *pfc, unsigned gpio, int pinmux_type,
-		       int cfg_mode);
-
-/* xxx */
-static inline int register_pinmux(struct pinmux_info *pip)
-{
-	struct sh_pfc *pfc = pip;
-	return register_sh_pfc(pfc);
-}
 
 enum { GPIO_CFG_DRYRUN, GPIO_CFG_REQ, GPIO_CFG_FREE };
 
@@ -178,7 +184,7 @@ enum { GPIO_CFG_DRYRUN, GPIO_CFG_REQ, GPIO_CFG_FREE };
 #define _GPIO_PORT(pfx, sfx) PINMUX_GPIO(GPIO_PORT##pfx, PORT##pfx##_DATA)
 #define PORT_ALL(str)	CPU_ALL_PORT(_PORT_ALL, PORT, str)
 #define GPIO_PORT_ALL()	CPU_ALL_PORT(_GPIO_PORT, , unused)
-#define GPIO_FN(str) PINMUX_GPIO(GPIO_FN_##str, str##_MARK)
+#define GPIO_FN(str) PINMUX_GPIO_FN(GPIO_FN_##str, PINMUX_FN_BASE, str##_MARK)
 
 /* helper macro for pinmux_enum_t */
 #define PORT_DATA_I(nr)	\
