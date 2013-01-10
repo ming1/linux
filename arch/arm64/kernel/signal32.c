@@ -396,30 +396,41 @@ asmlinkage int compat_sys_rt_sigaction(int sig,
 {
 	struct k_sigaction new_ka, old_ka;
 	int ret;
+	compat_uptr_t handler, restorer;
 
 	/* XXX: Don't preclude handling different sized sigset_t's.  */
 	if (sigsetsize != sizeof(compat_sigset_t))
 		return -EINVAL;
 
 	if (act) {
-		compat_uptr_t handler, restorer;
+		if (!access_ok(VERIFY_READ, act, sizeof(*act)) ||
+		    __get_user(handler, &act->sa_handler) ||
+		    __get_user(restorer, &act->sa_restorer) ||
+		    __get_user(new_ka.sa.sa_flags, &act->sa_flags))
+			return -EFAULT;
 
-		ret = get_user(handler, &act->sa_handler);
 		new_ka.sa.sa_handler = compat_ptr(handler);
-		ret |= get_user(restorer, &act->sa_restorer);
 		new_ka.sa.sa_restorer = compat_ptr(restorer);
-		ret |= get_sigset_t(&new_ka.sa.sa_mask, &act->sa_mask);
-		ret |= __get_user(new_ka.sa.sa_flags, &act->sa_flags);
-		if (ret)
+
+		if (get_sigset_t(&new_ka.sa.sa_mask, &act->sa_mask))
 			return -EFAULT;
 	}
 
 	ret = do_sigaction(sig, act ? &new_ka : NULL, oact ? &old_ka : NULL);
+
 	if (!ret && oact) {
-		ret = put_user(ptr_to_compat(old_ka.sa.sa_handler), &oact->sa_handler);
-		ret |= put_sigset_t(&oact->sa_mask, &old_ka.sa.sa_mask);
-		ret |= __put_user(old_ka.sa.sa_flags, &oact->sa_flags);
+		if (!access_ok(VERIFY_WRITE, oact, sizeof(*oact)) ||
+		    __put_user(ptr_to_compat(old_ka.sa.sa_handler),
+			       &oact->sa_handler) ||
+		    __put_user(ptr_to_compat(old_ka.sa.sa_restorer),
+			       &oact->sa_restorer) ||
+		    __put_user(old_ka.sa.sa_flags, &oact->sa_flags))
+			return -EFAULT;
+
+		if (put_sigset_t(&oact->sa_mask, &old_ka.sa.sa_mask))
+			return -EFAULT;
 	}
+
 	return ret;
 }
 
@@ -435,10 +446,12 @@ int compat_do_sigaltstack(compat_uptr_t compat_uss, compat_uptr_t compat_uoss,
 
 	/* Marshall the compat new stack into a stack_t */
 	if (newstack) {
-		if (get_user(ss_sp, &newstack->ss_sp) ||
+		if (!access_ok(VERIFY_READ, newstack, sizeof(*newstack)) ||
+		    __get_user(ss_sp, &newstack->ss_sp) ||
 		    __get_user(uss.ss_flags, &newstack->ss_flags) ||
 		    __get_user(uss.ss_size, &newstack->ss_size))
 			return -EFAULT;
+
 		uss.ss_sp = compat_ptr(ss_sp);
 	}
 
@@ -452,11 +465,14 @@ int compat_do_sigaltstack(compat_uptr_t compat_uss, compat_uptr_t compat_uoss,
 	set_fs(old_fs);
 
 	/* Convert the old stack_t into a compat stack. */
-	if (!ret && oldstack &&
-		(put_user(ptr_to_compat(uoss.ss_sp), &oldstack->ss_sp) ||
-		 __put_user(uoss.ss_flags, &oldstack->ss_flags) ||
-		 __put_user(uoss.ss_size, &oldstack->ss_size)))
-		return -EFAULT;
+	if (!ret && oldstack) {
+		if (!access_ok(VERIFY_WRITE, oldstack, sizeof(*oldstack)) ||
+		    __put_user(ptr_to_compat(uoss.ss_sp), &oldstack->ss_sp) ||
+		    __put_user(uoss.ss_flags, &oldstack->ss_flags) ||
+		    __put_user(uoss.ss_size, &oldstack->ss_size))
+			return -EFAULT;
+	}
+
 	return ret;
 }
 
