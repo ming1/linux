@@ -18,11 +18,11 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  */
-#include <linux/init.h>
 #include <linux/kernel.h>
-#include <linux/sh_pfc.h>
 #include <mach/r8a7740.h>
 #include <mach/irqs.h>
+
+#include "sh_pfc.h"
 
 #define CPU_ALL_PORT(fn, pfx, sfx)					\
 	PORT_10(fn, pfx, sfx),		PORT_90(fn, pfx, sfx),		\
@@ -1654,11 +1654,283 @@ static pinmux_enum_t pinmux_data[] = {
 	PINMUX_DATA(TRACEAUD_FROM_MEMC_MARK,			MSEL5CR_30_1,	MSEL5CR_29_0),
 };
 
-static struct pinmux_gpio pinmux_gpios[] = {
-
-	/* PORT */
+static struct sh_pfc_pin pinmux_pins[] = {
 	GPIO_PORT_ALL(),
+};
 
+static const unsigned int lcd0_data8_pins[] = {
+	/* D[0:7] */
+	58, 57, 56, 55, 54, 53, 52, 51,
+};
+static const unsigned int lcd0_data8_mux[] = {
+	LCD0_D0_MARK, LCD0_D1_MARK, LCD0_D2_MARK, LCD0_D3_MARK,
+	LCD0_D4_MARK, LCD0_D5_MARK, LCD0_D6_MARK, LCD0_D7_MARK,
+};
+static const unsigned int lcd0_data9_pins[] = {
+	/* D[0:8] */
+	58, 57, 56, 55, 54, 53, 52, 51,
+	50,
+};
+static const unsigned int lcd0_data9_mux[] = {
+	LCD0_D0_MARK, LCD0_D1_MARK, LCD0_D2_MARK, LCD0_D3_MARK,
+	LCD0_D4_MARK, LCD0_D5_MARK, LCD0_D6_MARK, LCD0_D7_MARK,
+	LCD0_D8_MARK,
+};
+static const unsigned int lcd0_data12_pins[] = {
+	/* D[0:11] */
+	58, 57, 56, 55, 54, 53, 52, 51,
+	50, 49, 48, 47,
+};
+static const unsigned int lcd0_data12_mux[] = {
+	LCD0_D0_MARK, LCD0_D1_MARK, LCD0_D2_MARK, LCD0_D3_MARK,
+	LCD0_D4_MARK, LCD0_D5_MARK, LCD0_D6_MARK, LCD0_D7_MARK,
+	LCD0_D8_MARK, LCD0_D9_MARK, LCD0_D10_MARK, LCD0_D11_MARK,
+};
+static const unsigned int lcd0_data16_pins[] = {
+	/* D[0:15] */
+	58, 57, 56, 55, 54, 53, 52, 51,
+	50, 49, 48, 47, 46, 45, 44, 43,
+};
+static const unsigned int lcd0_data16_mux[] = {
+	LCD0_D0_MARK, LCD0_D1_MARK, LCD0_D2_MARK, LCD0_D3_MARK,
+	LCD0_D4_MARK, LCD0_D5_MARK, LCD0_D6_MARK, LCD0_D7_MARK,
+	LCD0_D8_MARK, LCD0_D9_MARK, LCD0_D10_MARK, LCD0_D11_MARK,
+	LCD0_D12_MARK, LCD0_D13_MARK, LCD0_D14_MARK, LCD0_D15_MARK,
+};
+static const unsigned int lcd0_data18_pins[] = {
+	/* D[0:17] */
+	58, 57, 56, 55, 54, 53, 52, 51,
+	50, 49, 48, 47, 46, 45, 44, 43,
+	42, 41,
+};
+static const unsigned int lcd0_data18_mux[] = {
+	LCD0_D0_MARK, LCD0_D1_MARK, LCD0_D2_MARK, LCD0_D3_MARK,
+	LCD0_D4_MARK, LCD0_D5_MARK, LCD0_D6_MARK, LCD0_D7_MARK,
+	LCD0_D8_MARK, LCD0_D9_MARK, LCD0_D10_MARK, LCD0_D11_MARK,
+	LCD0_D12_MARK, LCD0_D13_MARK, LCD0_D14_MARK, LCD0_D15_MARK,
+	LCD0_D16_MARK, LCD0_D17_MARK,
+};
+static const unsigned int lcd0_data24_0_pins[] = {
+	/* D[0:23] */
+	58, 57, 56, 55, 54, 53, 52, 51,
+	50, 49, 48, 47, 46, 45, 44, 43,
+	42, 41, 40, 4, 3, 2, 0, 1,
+};
+static const unsigned int lcd0_data24_0_mux[] = {
+	LCD0_D0_MARK, LCD0_D1_MARK, LCD0_D2_MARK, LCD0_D3_MARK,
+	LCD0_D4_MARK, LCD0_D5_MARK, LCD0_D6_MARK, LCD0_D7_MARK,
+	LCD0_D8_MARK, LCD0_D9_MARK, LCD0_D10_MARK, LCD0_D11_MARK,
+	LCD0_D12_MARK, LCD0_D13_MARK, LCD0_D14_MARK, LCD0_D15_MARK,
+	LCD0_D16_MARK, LCD0_D17_MARK, LCD0_D18_PORT40_MARK, LCD0_D19_PORT4_MARK,
+	LCD0_D20_PORT3_MARK, LCD0_D21_PORT2_MARK, LCD0_D22_PORT0_MARK,
+	LCD0_D23_PORT1_MARK,
+};
+static const unsigned int lcd0_data24_1_pins[] = {
+	/* D[0:23] */
+	58, 57, 56, 55, 54, 53, 52, 51,
+	50, 49, 48, 47, 46, 45, 44, 43,
+	42, 41, 163, 162, 161, 158, 160, 159,
+};
+static const unsigned int lcd0_data24_1_mux[] = {
+	LCD0_D0_MARK, LCD0_D1_MARK, LCD0_D2_MARK, LCD0_D3_MARK,
+	LCD0_D4_MARK, LCD0_D5_MARK, LCD0_D6_MARK, LCD0_D7_MARK,
+	LCD0_D8_MARK, LCD0_D9_MARK, LCD0_D10_MARK, LCD0_D11_MARK,
+	LCD0_D16_MARK, LCD0_D17_MARK, LCD0_D18_PORT163_MARK,
+	LCD0_D19_PORT162_MARK, LCD0_D20_PORT161_MARK, LCD0_D21_PORT158_MARK,
+	LCD0_D22_PORT160_MARK, LCD0_D23_PORT159_MARK,
+};
+static const unsigned int lcd0_display_pins[] = {
+	/* DON, VCPWC, VEPWC */
+	61, 59, 60,
+};
+static const unsigned int lcd0_display_mux[] = {
+	LCD0_DON_MARK, LCD0_VCPWC_MARK, LCD0_VEPWC_MARK,
+};
+static const unsigned int lcd0_lclk_0_pins[] = {
+	/* LCLK */
+	102,
+};
+static const unsigned int lcd0_lclk_0_mux[] = {
+	LCD0_LCLK_PORT102_MARK,
+};
+static const unsigned int lcd0_lclk_1_pins[] = {
+	/* LCLK */
+	165,
+};
+static const unsigned int lcd0_lclk_1_mux[] = {
+	LCD0_LCLK_PORT165_MARK,
+};
+static const unsigned int lcd0_sync_pins[] = {
+	/* VSYN, HSYN, DCK, DISP */
+	63, 64, 62, 65,
+};
+static const unsigned int lcd0_sync_mux[] = {
+	LCD0_VSYN_MARK, LCD0_HSYN_MARK, LCD0_DCK_MARK, LCD0_DISP_MARK,
+};
+static const unsigned int lcd0_sys_pins[] = {
+	/* CS, WR, RD, RS */
+	64, 62, 164, 65,
+};
+static const unsigned int lcd0_sys_mux[] = {
+	LCD0_CS_MARK, LCD0_WR_MARK, LCD0_RD_MARK, LCD0_RS_MARK,
+};
+
+static const unsigned int lcd1_data8_pins[] = {
+	/* D[0:7] */
+	4, 3, 2, 1, 0, 91, 92, 23,
+};
+static const unsigned int lcd1_data8_mux[] = {
+	LCD1_D0_MARK, LCD1_D1_MARK, LCD1_D2_MARK, LCD1_D3_MARK,
+	LCD1_D4_MARK, LCD1_D5_MARK, LCD1_D6_MARK, LCD1_D7_MARK,
+};
+static const unsigned int lcd1_data9_pins[] = {
+	/* D[0:8] */
+	4, 3, 2, 1, 0, 91, 92, 23,
+	93,
+};
+static const unsigned int lcd1_data9_mux[] = {
+	LCD1_D0_MARK, LCD1_D1_MARK, LCD1_D2_MARK, LCD1_D3_MARK,
+	LCD1_D4_MARK, LCD1_D5_MARK, LCD1_D6_MARK, LCD1_D7_MARK,
+	LCD1_D8_MARK,
+};
+static const unsigned int lcd1_data12_pins[] = {
+	/* D[0:12] */
+	4, 3, 2, 1, 0, 91, 92, 23,
+	93, 94, 21, 201,
+};
+static const unsigned int lcd1_data12_mux[] = {
+	LCD1_D0_MARK, LCD1_D1_MARK, LCD1_D2_MARK, LCD1_D3_MARK,
+	LCD1_D4_MARK, LCD1_D5_MARK, LCD1_D6_MARK, LCD1_D7_MARK,
+	LCD1_D8_MARK, LCD1_D9_MARK, LCD1_D10_MARK, LCD1_D11_MARK,
+};
+static const unsigned int lcd1_data16_pins[] = {
+	/* D[0:15] */
+	4, 3, 2, 1, 0, 91, 92, 23,
+	93, 94, 21, 201, 200, 199, 196, 195,
+};
+static const unsigned int lcd1_data16_mux[] = {
+	LCD1_D0_MARK, LCD1_D1_MARK, LCD1_D2_MARK, LCD1_D3_MARK,
+	LCD1_D4_MARK, LCD1_D5_MARK, LCD1_D6_MARK, LCD1_D7_MARK,
+	LCD1_D8_MARK, LCD1_D9_MARK, LCD1_D10_MARK, LCD1_D11_MARK,
+	LCD1_D12_MARK, LCD1_D13_MARK, LCD1_D14_MARK, LCD1_D15_MARK,
+};
+static const unsigned int lcd1_data18_pins[] = {
+	/* D[0:17] */
+	4, 3, 2, 1, 0, 91, 92, 23,
+	93, 94, 21, 201, 200, 199, 196, 195,
+	194, 193,
+};
+static const unsigned int lcd1_data18_mux[] = {
+	LCD1_D0_MARK, LCD1_D1_MARK, LCD1_D2_MARK, LCD1_D3_MARK,
+	LCD1_D4_MARK, LCD1_D5_MARK, LCD1_D6_MARK, LCD1_D7_MARK,
+	LCD1_D8_MARK, LCD1_D9_MARK, LCD1_D10_MARK, LCD1_D11_MARK,
+	LCD1_D12_MARK, LCD1_D13_MARK, LCD1_D14_MARK, LCD1_D15_MARK,
+	LCD1_D16_MARK, LCD1_D17_MARK,
+};
+static const unsigned int lcd1_data24_pins[] = {
+	/* D[0:23] */
+	4, 3, 2, 1, 0, 91, 92, 23,
+	93, 94, 21, 201, 200, 199, 196, 195,
+	194, 193, 198, 197, 75, 74, 15, 14,
+};
+static const unsigned int lcd1_data24_mux[] = {
+	LCD1_D0_MARK, LCD1_D1_MARK, LCD1_D2_MARK, LCD1_D3_MARK,
+	LCD1_D4_MARK, LCD1_D5_MARK, LCD1_D6_MARK, LCD1_D7_MARK,
+	LCD1_D8_MARK, LCD1_D9_MARK, LCD1_D10_MARK, LCD1_D11_MARK,
+	LCD1_D12_MARK, LCD1_D13_MARK, LCD1_D14_MARK, LCD1_D15_MARK,
+	LCD1_D16_MARK, LCD1_D17_MARK, LCD1_D18_MARK, LCD1_D19_MARK,
+	LCD1_D20_MARK, LCD1_D21_MARK, LCD1_D22_MARK, LCD1_D23_MARK,
+};
+static const unsigned int lcd1_display_pins[] = {
+	/* DON, VCPWC, VEPWC */
+	100, 5, 6,
+};
+static const unsigned int lcd1_display_mux[] = {
+	LCD1_DON_MARK, LCD1_VCPWC_MARK, LCD1_VEPWC_MARK,
+};
+static const unsigned int lcd1_lclk_pins[] = {
+	/* LCLK */
+	40,
+};
+static const unsigned int lcd1_lclk_mux[] = {
+	LCD1_LCLK_MARK,
+};
+static const unsigned int lcd1_sync_pins[] = {
+	/* VSYN, HSYN, DCK, DISP */
+	98, 97, 99, 12,
+};
+static const unsigned int lcd1_sync_mux[] = {
+	LCD1_VSYN_MARK, LCD1_HSYN_MARK, LCD1_DCK_MARK, LCD1_DISP_MARK,
+};
+static const unsigned int lcd1_sys_pins[] = {
+	/* CS, WR, RD, RS */
+	97, 99, 13, 12,
+};
+static const unsigned int lcd1_sys_mux[] = {
+	LCD1_CS_MARK, LCD1_WR_MARK, LCD1_RD_MARK, LCD1_RS_MARK,
+};
+
+static const struct sh_pfc_pin_group pinmux_groups[] = {
+	SH_PFC_PIN_GROUP(lcd0_data8),
+	SH_PFC_PIN_GROUP(lcd0_data9),
+	SH_PFC_PIN_GROUP(lcd0_data12),
+	SH_PFC_PIN_GROUP(lcd0_data16),
+	SH_PFC_PIN_GROUP(lcd0_data18),
+	SH_PFC_PIN_GROUP(lcd0_data24_0),
+	SH_PFC_PIN_GROUP(lcd0_data24_1),
+	SH_PFC_PIN_GROUP(lcd0_display),
+	SH_PFC_PIN_GROUP(lcd0_lclk_0),
+	SH_PFC_PIN_GROUP(lcd0_lclk_1),
+	SH_PFC_PIN_GROUP(lcd0_sync),
+	SH_PFC_PIN_GROUP(lcd0_sys),
+	SH_PFC_PIN_GROUP(lcd1_data8),
+	SH_PFC_PIN_GROUP(lcd1_data9),
+	SH_PFC_PIN_GROUP(lcd1_data12),
+	SH_PFC_PIN_GROUP(lcd1_data16),
+	SH_PFC_PIN_GROUP(lcd1_data18),
+	SH_PFC_PIN_GROUP(lcd1_data24),
+	SH_PFC_PIN_GROUP(lcd1_display),
+	SH_PFC_PIN_GROUP(lcd1_lclk),
+	SH_PFC_PIN_GROUP(lcd1_sync),
+	SH_PFC_PIN_GROUP(lcd1_sys),
+};
+
+static const char * const lcd0_groups[] = {
+	"lcd0_data8",
+	"lcd0_data9",
+	"lcd0_data12",
+	"lcd0_data16",
+	"lcd0_data18",
+	"lcd0_data24_0",
+	"lcd0_data24_1",
+	"lcd0_display",
+	"lcd0_lclk_0",
+	"lcd0_lclk_1",
+	"lcd0_sync",
+	"lcd0_sys",
+};
+
+static const char * const lcd1_groups[] = {
+	"lcd1_data8",
+	"lcd1_data9",
+	"lcd1_data12",
+	"lcd1_data16",
+	"lcd1_data18",
+	"lcd1_data24",
+	"lcd1_display",
+	"lcd1_lclk",
+	"lcd1_sync",
+	"lcd1_sys",
+};
+
+static const struct sh_pfc_function pinmux_functions[] = {
+	SH_PFC_FUNCTION(lcd0),
+	SH_PFC_FUNCTION(lcd1),
+};
+
+#define PINMUX_FN_BASE	ARRAY_SIZE(pinmux_pins)
+
+static struct pinmux_func pinmux_func_gpios[] = {
 	/* IRQ */
 	GPIO_FN(IRQ0_PORT2),	GPIO_FN(IRQ0_PORT13),
 	GPIO_FN(IRQ1),
@@ -1791,43 +2063,6 @@ static struct pinmux_gpio pinmux_gpios[] = {
 	GPIO_FN(SCIFB_TXD_PORT4),
 	GPIO_FN(SCIFB_RTS_PORT172),
 	GPIO_FN(SCIFB_CTS_PORT173),
-
-	/* LCD0 */
-	GPIO_FN(LCD0_D0),	GPIO_FN(LCD0_D1),	GPIO_FN(LCD0_D2),
-	GPIO_FN(LCD0_D3),	GPIO_FN(LCD0_D4),	GPIO_FN(LCD0_D5),
-	GPIO_FN(LCD0_D6),	GPIO_FN(LCD0_D7),	GPIO_FN(LCD0_D8),
-	GPIO_FN(LCD0_D9),	GPIO_FN(LCD0_D10),	GPIO_FN(LCD0_D11),
-	GPIO_FN(LCD0_D12),	GPIO_FN(LCD0_D13),	GPIO_FN(LCD0_D14),
-	GPIO_FN(LCD0_D15),	GPIO_FN(LCD0_D16),	GPIO_FN(LCD0_D17),
-	GPIO_FN(LCD0_DON),	GPIO_FN(LCD0_VCPWC),	GPIO_FN(LCD0_VEPWC),
-	GPIO_FN(LCD0_DCK),	GPIO_FN(LCD0_VSYN),
-	GPIO_FN(LCD0_HSYN),	GPIO_FN(LCD0_DISP),
-	GPIO_FN(LCD0_WR),	GPIO_FN(LCD0_RD),
-	GPIO_FN(LCD0_CS),	GPIO_FN(LCD0_RS),
-
-	GPIO_FN(LCD0_D18_PORT163),	GPIO_FN(LCD0_D19_PORT162),
-	GPIO_FN(LCD0_D20_PORT161),	GPIO_FN(LCD0_D21_PORT158),
-	GPIO_FN(LCD0_D22_PORT160),	GPIO_FN(LCD0_D23_PORT159),
-	GPIO_FN(LCD0_LCLK_PORT165),	/* MSEL5CR_6_1 */
-
-	GPIO_FN(LCD0_D18_PORT40),	GPIO_FN(LCD0_D19_PORT4),
-	GPIO_FN(LCD0_D20_PORT3),	GPIO_FN(LCD0_D21_PORT2),
-	GPIO_FN(LCD0_D22_PORT0),	GPIO_FN(LCD0_D23_PORT1),
-	GPIO_FN(LCD0_LCLK_PORT102),	/* MSEL5CR_6_0 */
-
-	/* LCD1 */
-	GPIO_FN(LCD1_D0),	GPIO_FN(LCD1_D1),	GPIO_FN(LCD1_D2),
-	GPIO_FN(LCD1_D3),	GPIO_FN(LCD1_D4),	GPIO_FN(LCD1_D5),
-	GPIO_FN(LCD1_D6),	GPIO_FN(LCD1_D7),	GPIO_FN(LCD1_D8),
-	GPIO_FN(LCD1_D9),	GPIO_FN(LCD1_D10),	GPIO_FN(LCD1_D11),
-	GPIO_FN(LCD1_D12),	GPIO_FN(LCD1_D13),	GPIO_FN(LCD1_D14),
-	GPIO_FN(LCD1_D15),	GPIO_FN(LCD1_D16),	GPIO_FN(LCD1_D17),
-	GPIO_FN(LCD1_D18),	GPIO_FN(LCD1_D19),	GPIO_FN(LCD1_D20),
-	GPIO_FN(LCD1_D21),	GPIO_FN(LCD1_D22),	GPIO_FN(LCD1_D23),
-	GPIO_FN(LCD1_RS),	GPIO_FN(LCD1_RD),	GPIO_FN(LCD1_CS),
-	GPIO_FN(LCD1_WR),	GPIO_FN(LCD1_DCK),	GPIO_FN(LCD1_DON),
-	GPIO_FN(LCD1_VCPWC),	GPIO_FN(LCD1_LCLK),	GPIO_FN(LCD1_HSYN),
-	GPIO_FN(LCD1_VSYN),	GPIO_FN(LCD1_VEPWC),	GPIO_FN(LCD1_DISP),
 
 	/* RSPI */
 	GPIO_FN(RSPI_SSL0_A),	GPIO_FN(RSPI_SSL1_A),	GPIO_FN(RSPI_SSL2_A),
@@ -2545,45 +2780,42 @@ static struct pinmux_data_reg pinmux_data_regs[] = {
 };
 
 static struct pinmux_irq pinmux_irqs[] = {
-	PINMUX_IRQ(evt2irq(0x0200), PORT2_FN0,	 PORT13_FN0),	/* IRQ0A */
-	PINMUX_IRQ(evt2irq(0x0220), PORT20_FN0),		/* IRQ1A */
-	PINMUX_IRQ(evt2irq(0x0240), PORT11_FN0,	 PORT12_FN0),	/* IRQ2A */
-	PINMUX_IRQ(evt2irq(0x0260), PORT10_FN0,	 PORT14_FN0),	/* IRQ3A */
-	PINMUX_IRQ(evt2irq(0x0280), PORT15_FN0,	 PORT172_FN0),	/* IRQ4A */
-	PINMUX_IRQ(evt2irq(0x02A0), PORT0_FN0,	 PORT1_FN0),	/* IRQ5A */
-	PINMUX_IRQ(evt2irq(0x02C0), PORT121_FN0, PORT173_FN0),	/* IRQ6A */
-	PINMUX_IRQ(evt2irq(0x02E0), PORT120_FN0, PORT209_FN0),	/* IRQ7A */
-	PINMUX_IRQ(evt2irq(0x0300), PORT119_FN0),		/* IRQ8A */
-	PINMUX_IRQ(evt2irq(0x0320), PORT118_FN0, PORT210_FN0),	/* IRQ9A */
-	PINMUX_IRQ(evt2irq(0x0340), PORT19_FN0),		/* IRQ10A */
-	PINMUX_IRQ(evt2irq(0x0360), PORT104_FN0),		/* IRQ11A */
-	PINMUX_IRQ(evt2irq(0x0380), PORT42_FN0,	 PORT97_FN0),	/* IRQ12A */
-	PINMUX_IRQ(evt2irq(0x03A0), PORT64_FN0,	 PORT98_FN0),	/* IRQ13A */
-	PINMUX_IRQ(evt2irq(0x03C0), PORT63_FN0,	 PORT99_FN0),	/* IRQ14A */
-	PINMUX_IRQ(evt2irq(0x03E0), PORT62_FN0,	 PORT100_FN0),	/* IRQ15A */
-	PINMUX_IRQ(evt2irq(0x3200), PORT68_FN0,	 PORT211_FN0),	/* IRQ16A */
-	PINMUX_IRQ(evt2irq(0x3220), PORT69_FN0),		/* IRQ17A */
-	PINMUX_IRQ(evt2irq(0x3240), PORT70_FN0),		/* IRQ18A */
-	PINMUX_IRQ(evt2irq(0x3260), PORT71_FN0),		/* IRQ19A */
-	PINMUX_IRQ(evt2irq(0x3280), PORT67_FN0),		/* IRQ20A */
-	PINMUX_IRQ(evt2irq(0x32A0), PORT202_FN0),		/* IRQ21A */
-	PINMUX_IRQ(evt2irq(0x32C0), PORT95_FN0),		/* IRQ22A */
-	PINMUX_IRQ(evt2irq(0x32E0), PORT96_FN0),		/* IRQ23A */
-	PINMUX_IRQ(evt2irq(0x3300), PORT180_FN0),		/* IRQ24A */
-	PINMUX_IRQ(evt2irq(0x3320), PORT38_FN0),		/* IRQ25A */
-	PINMUX_IRQ(evt2irq(0x3340), PORT58_FN0,	 PORT81_FN0),	/* IRQ26A */
-	PINMUX_IRQ(evt2irq(0x3360), PORT57_FN0,	 PORT168_FN0),	/* IRQ27A */
-	PINMUX_IRQ(evt2irq(0x3380), PORT56_FN0,	 PORT169_FN0),	/* IRQ28A */
-	PINMUX_IRQ(evt2irq(0x33A0), PORT50_FN0,	 PORT170_FN0),	/* IRQ29A */
-	PINMUX_IRQ(evt2irq(0x33C0), PORT49_FN0,	 PORT171_FN0),	/* IRQ30A */
-	PINMUX_IRQ(evt2irq(0x33E0), PORT41_FN0,	 PORT167_FN0),	/* IRQ31A */
+	PINMUX_IRQ(evt2irq(0x0200), GPIO_PORT2,   GPIO_PORT13),	/* IRQ0A */
+	PINMUX_IRQ(evt2irq(0x0220), GPIO_PORT20),		/* IRQ1A */
+	PINMUX_IRQ(evt2irq(0x0240), GPIO_PORT11,  GPIO_PORT12),	/* IRQ2A */
+	PINMUX_IRQ(evt2irq(0x0260), GPIO_PORT10,  GPIO_PORT14),	/* IRQ3A */
+	PINMUX_IRQ(evt2irq(0x0280), GPIO_PORT15,  GPIO_PORT172),/* IRQ4A */
+	PINMUX_IRQ(evt2irq(0x02A0), GPIO_PORT0,   GPIO_PORT1),	/* IRQ5A */
+	PINMUX_IRQ(evt2irq(0x02C0), GPIO_PORT121, GPIO_PORT173),/* IRQ6A */
+	PINMUX_IRQ(evt2irq(0x02E0), GPIO_PORT120, GPIO_PORT209),/* IRQ7A */
+	PINMUX_IRQ(evt2irq(0x0300), GPIO_PORT119),		/* IRQ8A */
+	PINMUX_IRQ(evt2irq(0x0320), GPIO_PORT118, GPIO_PORT210),/* IRQ9A */
+	PINMUX_IRQ(evt2irq(0x0340), GPIO_PORT19),		/* IRQ10A */
+	PINMUX_IRQ(evt2irq(0x0360), GPIO_PORT104),		/* IRQ11A */
+	PINMUX_IRQ(evt2irq(0x0380), GPIO_PORT42,  GPIO_PORT97),	/* IRQ12A */
+	PINMUX_IRQ(evt2irq(0x03A0), GPIO_PORT64,  GPIO_PORT98),	/* IRQ13A */
+	PINMUX_IRQ(evt2irq(0x03C0), GPIO_PORT63,  GPIO_PORT99),	/* IRQ14A */
+	PINMUX_IRQ(evt2irq(0x03E0), GPIO_PORT62,  GPIO_PORT100),/* IRQ15A */
+	PINMUX_IRQ(evt2irq(0x3200), GPIO_PORT68,  GPIO_PORT211),/* IRQ16A */
+	PINMUX_IRQ(evt2irq(0x3220), GPIO_PORT69),		/* IRQ17A */
+	PINMUX_IRQ(evt2irq(0x3240), GPIO_PORT70),		/* IRQ18A */
+	PINMUX_IRQ(evt2irq(0x3260), GPIO_PORT71),		/* IRQ19A */
+	PINMUX_IRQ(evt2irq(0x3280), GPIO_PORT67),		/* IRQ20A */
+	PINMUX_IRQ(evt2irq(0x32A0), GPIO_PORT202),		/* IRQ21A */
+	PINMUX_IRQ(evt2irq(0x32C0), GPIO_PORT95),		/* IRQ22A */
+	PINMUX_IRQ(evt2irq(0x32E0), GPIO_PORT96),		/* IRQ23A */
+	PINMUX_IRQ(evt2irq(0x3300), GPIO_PORT180),		/* IRQ24A */
+	PINMUX_IRQ(evt2irq(0x3320), GPIO_PORT38),		/* IRQ25A */
+	PINMUX_IRQ(evt2irq(0x3340), GPIO_PORT58,  GPIO_PORT81),	/* IRQ26A */
+	PINMUX_IRQ(evt2irq(0x3360), GPIO_PORT57,  GPIO_PORT168),/* IRQ27A */
+	PINMUX_IRQ(evt2irq(0x3380), GPIO_PORT56,  GPIO_PORT169),/* IRQ28A */
+	PINMUX_IRQ(evt2irq(0x33A0), GPIO_PORT50,  GPIO_PORT170),/* IRQ29A */
+	PINMUX_IRQ(evt2irq(0x33C0), GPIO_PORT49,  GPIO_PORT171),/* IRQ30A */
+	PINMUX_IRQ(evt2irq(0x33E0), GPIO_PORT41,  GPIO_PORT167),/* IRQ31A */
 };
 
-static struct pinmux_info r8a7740_pinmux_info = {
+struct sh_pfc_soc_info r8a7740_pinmux_info = {
 	.name		= "r8a7740_pfc",
-	.reserved_id	= PINMUX_RESERVED,
-	.data		= { PINMUX_DATA_BEGIN,
-			    PINMUX_DATA_END },
 	.input		= { PINMUX_INPUT_BEGIN,
 			    PINMUX_INPUT_END },
 	.input_pu	= { PINMUX_INPUT_PULLUP_BEGIN,
@@ -2592,15 +2824,19 @@ static struct pinmux_info r8a7740_pinmux_info = {
 			    PINMUX_INPUT_PULLDOWN_END },
 	.output		= { PINMUX_OUTPUT_BEGIN,
 			    PINMUX_OUTPUT_END },
-	.mark		= { PINMUX_MARK_BEGIN,
-			    PINMUX_MARK_END },
 	.function	= { PINMUX_FUNCTION_BEGIN,
 			    PINMUX_FUNCTION_END },
 
-	.first_gpio	= GPIO_PORT0,
-	.last_gpio	= GPIO_FN_TRACEAUD_FROM_MEMC,
+	.pins		= pinmux_pins,
+	.nr_pins	= ARRAY_SIZE(pinmux_pins),
+	.groups		= pinmux_groups,
+	.nr_groups	= ARRAY_SIZE(pinmux_groups),
+	.functions	= pinmux_functions,
+	.nr_functions	= ARRAY_SIZE(pinmux_functions),
 
-	.gpios		= pinmux_gpios,
+	.func_gpios	= pinmux_func_gpios,
+	.nr_func_gpios	= ARRAY_SIZE(pinmux_func_gpios),
+
 	.cfg_regs	= pinmux_config_regs,
 	.data_regs	= pinmux_data_regs,
 
@@ -2610,8 +2846,3 @@ static struct pinmux_info r8a7740_pinmux_info = {
 	.gpio_irq	= pinmux_irqs,
 	.gpio_irq_size	= ARRAY_SIZE(pinmux_irqs),
 };
-
-void r8a7740_pinmux_init(void)
-{
-	register_pinmux(&r8a7740_pinmux_info);
-}
