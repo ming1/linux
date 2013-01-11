@@ -9,7 +9,7 @@
  */
 
 /dts-v1/;
-/include/ "skeleton.dtsi"
+/include/ "sh73a0.dtsi"
 
 / {
 	model = "KZM-A9-GT";
@@ -22,5 +22,21 @@
 	memory {
 		device_type = "memory";
 		reg = <0x41000000 0x1e800000>;
+	};
+
+	leds {
+		compatible = "gpio-leds";
+		led1 {
+			gpios = <&gpio 20 1>; /* Active low */
+		};
+		led2 {
+			gpios = <&gpio 21 1>; /* Active low */
+		};
+		led3 {
+			gpios = <&gpio 22 1>; /* Active low */
+		};
+		led4 {
+			gpios = <&gpio 23 1>; /* Active low */
+		};
 	};
 };
