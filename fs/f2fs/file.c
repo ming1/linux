@@ -137,6 +137,9 @@ int f2fs_sync_file(struct file *file, loff_t start, loff_t end, int datasync)
 	if (ret)
 		return ret;
 
+	/* guarantee free sections for fsync */
+	f2fs_balance_fs(sbi);
+
 	mutex_lock(&inode->i_mutex);
 
 	if (datasync && !(inode->i_state & I_DIRTY_DATASYNC))
@@ -544,6 +547,11 @@ static long f2fs_fallocate(struct file *file, int mode,
 		ret = punch_hole(inode, offset, len, mode);
 	else
 		ret = expand_inode_data(inode, offset, len, mode);
+
+	if (!ret) {
+		inode->i_mtime = inode->i_ctime = CURRENT_TIME;
+		mark_inode_dirty(inode);
+	}
 
 	f2fs_balance_fs(sbi);
 	return ret;
