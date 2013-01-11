@@ -20,7 +20,7 @@ static void generate_cpu_nodes(void *fdt, struct kvm *kvm)
 	for (cpu = 0; cpu < kvm->nrcpus; ++cpu) {
 		char cpu_name[CPU_NAME_MAX_LEN];
 
-		if (kvm->cpus[cpu]->cpu_type != KVM_ARM_TARGET_CORTEX_A15) {
+		if (kvm->cpus[cpu]->cpu_type != KVM_ARM_TARGET_CORTEX_A57) {
 			pr_warning("Ignoring unknown type for CPU %d\n", cpu);
 			continue;
 		}
@@ -29,7 +29,7 @@ static void generate_cpu_nodes(void *fdt, struct kvm *kvm)
 
 		_FDT(fdt_begin_node(fdt, cpu_name));
 		_FDT(fdt_property_string(fdt, "device_type", "cpu"));
-		_FDT(fdt_property_string(fdt, "compatible", "arm,cortex-a15"));
+		_FDT(fdt_property_string(fdt, "compatible", "arm,cortex-a57"));
 
 		if (kvm->nrcpus > 1)
 			_FDT(fdt_property_string(fdt, "enable-method", "psci"));
@@ -64,7 +64,7 @@ static void generate_timer_nodes(void *fdt, struct kvm *kvm)
 	};
 
 	_FDT(fdt_begin_node(fdt, "timer"));
-	_FDT(fdt_property_string(fdt, "compatible", "arm,armv7-timer"));
+	_FDT(fdt_property_string(fdt, "compatible", "arm,armv8-timer"));
 	_FDT(fdt_property(fdt, "interrupts", irq_prop, sizeof(irq_prop)));
 	_FDT(fdt_end_node(fdt));
 }
@@ -76,19 +76,20 @@ static void generate_fdt_nodes(void *fdt, struct kvm *kvm, u32 gic_phandle)
 	generate_timer_nodes(fdt, kvm);
 }
 
-static int cortex_a15__vcpu_init(struct kvm_cpu *vcpu)
+
+static int cortex_a57__vcpu_init(struct kvm_cpu *vcpu)
 {
 	vcpu->generate_fdt_nodes = generate_fdt_nodes;
 	return 0;
 }
 
-static struct kvm_arm_target target_cortex_a15 = {
-	.id	= KVM_ARM_TARGET_CORTEX_A15,
-	.init	= cortex_a15__vcpu_init,
+static struct kvm_arm_target target_cortex_a57 = {
+	.id	= KVM_ARM_TARGET_CORTEX_A57,
+	.init	= cortex_a57__vcpu_init,
 };
 
-static int cortex_a15__core_init(struct kvm *kvm)
+static int cortex_a57__core_init(struct kvm *kvm)
 {
-	return kvm_cpu__register_kvm_arm_target(&target_cortex_a15);
+	return kvm_cpu__register_kvm_arm_target(&target_cortex_a57);
 }
-core_init(cortex_a15__core_init);
+core_init(cortex_a57__core_init);
