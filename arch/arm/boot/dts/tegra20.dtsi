@@ -364,6 +364,7 @@
 		phy_type = "utmi";
 		nvidia,has-legacy-mode;
 		status = "disabled";
+		nvidia,needs-double-reset;
 	};
 
 	usb@c5004000 {
