@@ -2231,6 +2231,16 @@ void __meminit vmemmap_populate_print_last(void)
 		node_start = 0;
 	}
 }
+
+void vmemmap_free(struct page *memmap, unsigned long nr_pages)
+{
+}
+
+void register_page_bootmem_memmap(unsigned long section_nr,
+				  struct page *start_page, unsigned long size)
+{
+	/* TODO */
+}
 #endif /* CONFIG_SPARSEMEM_VMEMMAP */
 
 static void prot_init_common(unsigned long page_none,
