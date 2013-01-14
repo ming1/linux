@@ -1,0 +1,30 @@
+for-next contents for 3.9:
+
+Format is a little different from before in an attempt to make it easier to read:
+
+<next/* branch>
+	<topic branch>
+		<contents>
+		<...>
+	<...>
+
+next/cleanup
+	timer/cleanup
+		pull	git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git swarren-for-3.9-arm-timer-rework
+		patch	1357666417-8803-1-git-send-email-swarren@wwwdotorg.org
+
+next/drivers
+	ux500/cpufreq
+		pull	git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git tags/ux500-cpufreq-for-arm-soc
+
+
+next/multiplatform
+	omap/multiplatform
+		pull	git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.9/multiplatform-enable-signed-v2
+	vt8500/multiplatform
+		pull	git://server.prisktech.co.nz/git/linuxwmt.git tags/vt8500-multiplatform-3.9
+
+next/soc
+	vt8500/wm8x50
+		depends	vt8500/multiplatform
+		pull	git://server.prisktech.co.nz/git/linuxwmt.git tags/armsoc-3.9
