@@ -98,7 +98,7 @@ struct acpi_rsdump_info acpi_rs_dump_irq[7] = {
 	 acpi_gbl_he_decode},
 	{ACPI_RSD_1BITFLAG, ACPI_RSD_OFFSET(irq.polarity), "Polarity",
 	 acpi_gbl_ll_decode},
-	{ACPI_RSD_1BITFLAG, ACPI_RSD_OFFSET(irq.sharable), "Sharing",
+	{ACPI_RSD_2BITFLAG, ACPI_RSD_OFFSET(irq.sharable), "Sharing",
 	 acpi_gbl_shr_decode},
 	{ACPI_RSD_UINT8, ACPI_RSD_OFFSET(irq.interrupt_count),
 	 "Interrupt Count", NULL},
@@ -287,7 +287,7 @@ struct acpi_rsdump_info acpi_rs_dump_ext_irq[8] = {
 	 "Triggering", acpi_gbl_he_decode},
 	{ACPI_RSD_1BITFLAG, ACPI_RSD_OFFSET(extended_irq.polarity), "Polarity",
 	 acpi_gbl_ll_decode},
-	{ACPI_RSD_1BITFLAG, ACPI_RSD_OFFSET(extended_irq.sharable), "Sharing",
+	{ACPI_RSD_2BITFLAG, ACPI_RSD_OFFSET(extended_irq.sharable), "Sharing",
 	 acpi_gbl_shr_decode},
 	{ACPI_RSD_SOURCE, ACPI_RSD_OFFSET(extended_irq.resource_source), NULL,
 	 NULL},
@@ -320,7 +320,7 @@ struct acpi_rsdump_info acpi_rs_dump_gpio[16] = {
 	 "ProducerConsumer", acpi_gbl_consume_decode},
 	{ACPI_RSD_UINT8, ACPI_RSD_OFFSET(gpio.pin_config), "PinConfig",
 	 acpi_gbl_ppc_decode},
-	{ACPI_RSD_2BITFLAG, ACPI_RSD_OFFSET(gpio.sharable), "Sharable",
+	{ACPI_RSD_2BITFLAG, ACPI_RSD_OFFSET(gpio.sharable), "Sharing",
 	 acpi_gbl_shr_decode},
 	{ACPI_RSD_2BITFLAG, ACPI_RSD_OFFSET(gpio.io_restriction),
 	 "IoRestriction", acpi_gbl_ior_decode},
@@ -654,7 +654,8 @@ acpi_rs_dump_descriptor(void *resource, struct acpi_rsdump_info *table)
 			/*
 			 * Optional resource_source for Address resources
 			 */
-			acpi_rs_dump_resource_source(ACPI_CAST_PTR(struct
+			acpi_rs_dump_resource_source(ACPI_CAST_PTR
+						     (struct
 								   acpi_resource_source,
 								   target));
 			break;
@@ -765,8 +766,9 @@ void acpi_rs_dump_resource_list(struct acpi_resource *resource_list)
 
 	ACPI_FUNCTION_ENTRY();
 
-	if (!(acpi_dbg_level & ACPI_LV_RESOURCES)
-	    || !(_COMPONENT & acpi_dbg_layer)) {
+	/* Check if debug output enabled */
+
+	if (!ACPI_IS_DEBUG_ENABLED(ACPI_LV_RESOURCES, _COMPONENT)) {
 		return;
 	}
 
@@ -827,8 +829,9 @@ void acpi_rs_dump_irq_list(u8 * route_table)
 
 	ACPI_FUNCTION_ENTRY();
 
-	if (!(acpi_dbg_level & ACPI_LV_RESOURCES)
-	    || !(_COMPONENT & acpi_dbg_layer)) {
+	/* Check if debug output enabled */
+
+	if (!ACPI_IS_DEBUG_ENABLED(ACPI_LV_RESOURCES, _COMPONENT)) {
 		return;
 	}
 
