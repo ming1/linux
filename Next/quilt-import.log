@@ -1,0 +1,27 @@
+Importing jdelvare-hwmon based on 54e37b8dbe9a398f74cef313404bd2f1deca7853
+Unchanged quilt series jdelvare-hwmon
+Importing device-mapper based on v3.8-rc1
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard a49f0d1ea3ec94fc7cf33a7c36a16343b74bd565
+HEAD is now at a49f0d1 Linux 3.8-rc1
+$ git am ../quilt/device-mapper/dm-fix-write-same-requests-counting.patch
+Applying: When processing write same requests, fix dm to send the configured
+$ git am ../quilt/device-mapper/dm-thin-support-a-non-power-of-2-discard_granularity.patch
+Applying: Support a non-power-of-2 discard granularity in dm-thin, now that the block
+$ git am ../quilt/device-mapper/dm-table-remove-superfluous-variable-reset.patch
+Applying: If allocation fails, the local var *t is not used any more after kfree.
+$ git am ../quilt/device-mapper/dm-bufio-use-WRITE_FLUSH-instead-of-REQ_FLUSH.patch
+Applying: Use WRITE_FLUSH instead of REQ_FLUSH for submitted requests to make it
+$ git am ../quilt/device-mapper/dm-thin-use-block_size_is_power_of_two.patch
+Applying: Use block_size_is_power_of_two() rather than checking
+$ git am ../quilt/device-mapper/dm-clean-up-clone_bio.patch
+Applying: Remove the no-longer-used struct bio_set argument from clone_bio and split_bvec.
+$ git am ../quilt/device-mapper/dm-rename-request-variables-to-bios.patch
+Applying: Use 'bio' in the name of variables and functions that deal with
+$ git am ../quilt/device-mapper/dm-rename-bio-cloning-functions.patch
+Applying: Rename functions involved in splitting and cloning bios.
+$ cd /home/sfr/kernels/next/next
+$ git fetch -f ../quilt-tmp master:device-mapper/master
+From ../quilt-tmp
+ + 9479f1a...b537798 master     -> device-mapper/master  (forced update)
