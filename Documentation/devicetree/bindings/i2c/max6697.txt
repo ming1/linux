@@ -1,0 +1,45 @@
+max6697 properties
+
+Required properties:
+- compatible:
+	Should be one of
+		maxim,max6581
+		maxim,max6602
+		maxim,max6622
+		maxim,max6636
+		maxim,max6689
+		maxim,max6693
+		maxim,max6694
+		maxim,max6697
+		maxim,max6698
+		maxim,max6699
+- reg: I2C address
+
+Optional properties:
+- smbus-timeout-disable
+	Set to enable SMBus timeout
+- extended-range-enable
+	Only valid for MAX6581. Set to enable extended temperature range.
+- alert-mask
+	Alert bit mask. Alert disabled for bits set.
+- over-temperature-mask
+	Over temperature bit mask. Over temperature reporting disabled for
+	bits set.
+- resistance-cancellation
+	Boolean for all chips other than MAX6581. Enabled if set.
+	For MAX6581, resistance cancellation enabled for all channels if
+	specified as boolean, otherwise as per bit mask specified.
+- transistor-ideality
+	For MAX6581 only. Two values; first is bit mask, second is ideality
+	select value as per MAX6581 data sheet.
+
+Example:
+
+temp-sensor@1a {
+	compatible = "maxim,max6697";
+	reg = <0x1a>;
+	smbus-timeout-disable;
+	resistance-cancellation;
+	alert-mask = <0xff>;
+	over-temperature-mask = <0xff>;
+};
