@@ -755,9 +755,6 @@ static void r6040_mac_address(struct net_device *dev)
 	iowrite16(adrp[0], ioaddr + MID_0L);
 	iowrite16(adrp[1], ioaddr + MID_0M);
 	iowrite16(adrp[2], ioaddr + MID_0H);
-
-	/* Store MAC Address in perm_addr */
-	memcpy(dev->perm_addr, dev->dev_addr, ETH_ALEN);
 }
 
 static int r6040_open(struct net_device *dev)
@@ -957,9 +954,9 @@ static void netdev_get_drvinfo(struct net_device *dev,
 {
 	struct r6040_private *rp = netdev_priv(dev);
 
-	strcpy(info->driver, DRV_NAME);
-	strcpy(info->version, DRV_VERSION);
-	strcpy(info->bus_info, pci_name(rp->pdev));
+	strlcpy(info->driver, DRV_NAME, sizeof(info->driver));
+	strlcpy(info->version, DRV_VERSION, sizeof(info->version));
+	strlcpy(info->bus_info, pci_name(rp->pdev), sizeof(info->bus_info));
 }
 
 static int netdev_get_settings(struct net_device *dev, struct ethtool_cmd *cmd)
@@ -1045,7 +1042,7 @@ static int r6040_mii_probe(struct net_device *dev)
 	}
 
 	phydev = phy_connect(dev, dev_name(&phydev->dev), &r6040_adjust_link,
-				0, PHY_INTERFACE_MODE_MII);
+			     PHY_INTERFACE_MODE_MII);
 
 	if (IS_ERR(phydev)) {
 		dev_err(&lp->pdev->dev, "could not attach to PHY\n");

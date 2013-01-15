@@ -592,7 +592,7 @@ static void cpsw_slave_open(struct cpsw_slave *slave, struct cpsw_priv *priv)
 			   1 << slave_port, 0, ALE_MCAST_FWD_2);
 
 	slave->phy = phy_connect(priv->ndev, slave->data->phy_id,
-				 &cpsw_adjust_link, 0, slave->data->phy_if);
+				 &cpsw_adjust_link, slave->data->phy_if);
 	if (IS_ERR(slave->phy)) {
 		dev_err(priv->dev, "phy %s not found on slave %d\n",
 			slave->data->phy_id, slave->slave_num);
@@ -944,9 +944,10 @@ static void cpsw_get_drvinfo(struct net_device *ndev,
 			     struct ethtool_drvinfo *info)
 {
 	struct cpsw_priv *priv = netdev_priv(ndev);
-	strcpy(info->driver, "TI CPSW Driver v1.0");
-	strcpy(info->version, "1.0");
-	strcpy(info->bus_info, priv->pdev->name);
+
+	strlcpy(info->driver, "TI CPSW Driver v1.0", sizeof(info->driver));
+	strlcpy(info->version, "1.0", sizeof(info->version));
+	strlcpy(info->bus_info, priv->pdev->name, sizeof(info->bus_info));
 }
 
 static u32 cpsw_get_msglevel(struct net_device *ndev)
