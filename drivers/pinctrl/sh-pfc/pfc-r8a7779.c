@@ -17,11 +17,11 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  */
-#include <linux/init.h>
+
 #include <linux/kernel.h>
-#include <linux/sh_pfc.h>
-#include <linux/ioport.h>
 #include <mach/r8a7779.h>
+
+#include "sh_pfc.h"
 
 #define CPU_32_PORT(fn, pfx, sfx)				\
 	PORT_10(fn, pfx, sfx), PORT_10(fn, pfx##1, sfx),	\
@@ -1450,8 +1450,13 @@ static pinmux_enum_t pinmux_data[] = {
 	PINMUX_IPSR_MODSEL_DATA(IP12_17_15, SCK4_B, SEL_SCIF4_1),
 };
 
-static struct pinmux_gpio pinmux_gpios[] = {
+static struct sh_pfc_pin pinmux_pins[] = {
 	PINMUX_GPIO_GP_ALL(),
+};
+
+#define PINMUX_FN_BASE	ARRAY_SIZE(pinmux_pins)
+
+static struct pinmux_func pinmux_func_gpios[] = {
 	GPIO_FN(AVS1), GPIO_FN(AVS2), GPIO_FN(A17), GPIO_FN(A18),
 	GPIO_FN(A19),
 
@@ -2600,46 +2605,23 @@ static struct pinmux_data_reg pinmux_data_regs[] = {
 	{ },
 };
 
-static struct resource r8a7779_pfc_resources[] = {
-	[0] = {
-		.start	= 0xfffc0000,
-		.end	= 0xfffc023b,
-		.flags	= IORESOURCE_MEM,
-	},
-	[1] = {
-		.start	= 0xffc40000,
-		.end	= 0xffc46fff,
-		.flags	= IORESOURCE_MEM,
-	}
-};
-
-static struct pinmux_info r8a7779_pinmux_info = {
+struct sh_pfc_soc_info r8a7779_pinmux_info = {
 	.name = "r8a7779_pfc",
-
-	.resource = r8a7779_pfc_resources,
-	.num_resources = ARRAY_SIZE(r8a7779_pfc_resources),
 
 	.unlock_reg = 0xfffc0000, /* PMMR */
 
-	.reserved_id = PINMUX_RESERVED,
-	.data = { PINMUX_DATA_BEGIN, PINMUX_DATA_END },
 	.input = { PINMUX_INPUT_BEGIN, PINMUX_INPUT_END },
 	.output = { PINMUX_OUTPUT_BEGIN, PINMUX_OUTPUT_END },
-	.mark = { PINMUX_MARK_BEGIN, PINMUX_MARK_END },
 	.function = { PINMUX_FUNCTION_BEGIN, PINMUX_FUNCTION_END },
 
-	.first_gpio = GPIO_GP_0_0,
-	.last_gpio = GPIO_FN_SCK4_B,
+	.pins = pinmux_pins,
+	.nr_pins = ARRAY_SIZE(pinmux_pins),
+	.func_gpios = pinmux_func_gpios,
+	.nr_func_gpios = ARRAY_SIZE(pinmux_func_gpios),
 
-	.gpios = pinmux_gpios,
 	.cfg_regs = pinmux_config_regs,
 	.data_regs = pinmux_data_regs,
 
 	.gpio_data = pinmux_data,
 	.gpio_data_size = ARRAY_SIZE(pinmux_data),
 };
-
-void r8a7779_pinmux_init(void)
-{
-	register_pinmux(&r8a7779_pinmux_info);
-}
