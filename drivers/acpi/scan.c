@@ -178,6 +178,43 @@ err_out:
 }
 EXPORT_SYMBOL(acpi_bus_hot_remove_device);
 
+#ifdef CONFIG_PM
+static ssize_t power_state_show(struct device *dev,
+				struct device_attribute *attr, char *buf)
+{
+	struct acpi_device *adev = to_acpi_device(dev);
+	int state;
+	int ret;
+
+	ret = acpi_device_get_power(adev, &state);
+	return ret ? ret : sprintf(buf, "%s\n", acpi_power_state_string(state));
+}
+
+static DEVICE_ATTR(power_state, 0444, power_state_show, NULL);
+
+static struct attribute *acpi_dev_pm_attrs[] = {
+	&dev_attr_power_state.attr,
+	NULL,
+};
+static struct attribute_group acpi_dev_pm_attr_group = {
+	.name	= power_group_name,
+	.attrs	= acpi_dev_pm_attrs,
+};
+
+static void acpi_dev_pm_sysfs_add(struct device *dev)
+{
+	sysfs_merge_group(&dev->kobj, &acpi_dev_pm_attr_group);
+}
+
+static void acpi_dev_pm_sysfs_remove(struct device *dev)
+{
+	sysfs_unmerge_group(&dev->kobj, &acpi_dev_pm_attr_group);
+}
+#else /* !CONFIG_PM */
+static inline void acpi_dev_pm_sysfs_add(struct device *dev) {}
+static inline void acpi_dev_pm_sysfs_remove(struct device *dev) {}
+#endif /* !CONFIG_PM */
+
 static ssize_t
 acpi_eject_store(struct device *d, struct device_attribute *attr,
 		const char *buf, size_t count)
@@ -371,6 +408,9 @@ static int acpi_device_setup_files(struct acpi_device *dev)
 	status = acpi_get_handle(dev->handle, "_EJ0", &temp);
 	if (ACPI_SUCCESS(status))
 		result = device_create_file(&dev->dev, &dev_attr_eject);
+
+	acpi_dev_pm_sysfs_add(&dev->dev);
+
 end:
 	return result;
 }
@@ -380,6 +420,7 @@ static void acpi_device_remove_files(struct acpi_device *dev)
 	acpi_status status;
 	acpi_handle temp;
 
+	acpi_dev_pm_sysfs_remove(&dev->dev);
 	/*
 	 * If device has _STR, remove 'description' file
 	 */
