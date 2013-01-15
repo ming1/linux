@@ -822,4 +822,14 @@ int __meminit vmemmap_populate(struct page *start_page,
 {
 	return vmemmap_populate_basepages(start_page, size, node);
 }
+
+void vmemmap_free(struct page *memmap, unsigned long nr_pages)
+{
+}
+
+void register_page_bootmem_memmap(unsigned long section_nr,
+				  struct page *start_page, unsigned long size)
+{
+	/* TODO */
+}
 #endif
