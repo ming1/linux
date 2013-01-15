@@ -474,7 +474,7 @@ static int max6697_init_chip(struct i2c_client *client)
 		return 0;
 
 	if (!pdata || client->dev.of_node) {
-		memset(&p, 0, sizeof(data));
+		memset(&p, 0, sizeof(p));
 		max6697_get_config_of(client->dev.of_node, &p);
 		pdata = &p;
 	}
