@@ -10,6 +10,7 @@
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/gpio.h>
+#include <cpu/pfc.h>
 #include <cpu/shx3.h>
 
 enum {
@@ -572,7 +573,7 @@ static struct pinmux_info shx3_pinmux_info = {
 	.mark		= { PINMUX_MARK_BEGIN,     PINMUX_MARK_END },
 	.function	= { PINMUX_FUNCTION_BEGIN, PINMUX_FUNCTION_END },
 	.first_gpio	= GPIO_PA7,
-	.last_gpio	= GPIO_FN_IRQOUT,
+	.last_gpio	= GPIO_FN_STATUS0,
 	.gpios		= shx3_pinmux_gpios,
 	.gpio_data	= shx3_pinmux_data,
 	.gpio_data_size	= ARRAY_SIZE(shx3_pinmux_data),
@@ -582,6 +583,6 @@ static struct pinmux_info shx3_pinmux_info = {
 
 static int __init shx3_pinmux_setup(void)
 {
-	return register_pinmux(&shx3_pinmux_info);
+	return sh_pfc_register_info(NULL, NULL, 0, &shx3_pinmux_info);
 }
 arch_initcall(shx3_pinmux_setup);

@@ -16,6 +16,7 @@
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/gpio.h>
+#include <cpu/pfc.h>
 #include <cpu/sh7757.h>
 
 enum {
@@ -1376,9 +1377,9 @@ static struct pinmux_gpio pinmux_gpios[] = {
 	PINMUX_GPIO(GPIO_FN_WE1, WE1_MARK),
 	PINMUX_GPIO(GPIO_FN_RDY, RDY_MARK),
 	PINMUX_GPIO(GPIO_FN_ET0_MDC, ET0_MDC_MARK),
-	PINMUX_GPIO(GPIO_FN_ET0_MDIO, ET0_MDC_MARK),
+	PINMUX_GPIO(GPIO_FN_ET0_MDIO, ET0_MDIO_MARK),
 	PINMUX_GPIO(GPIO_FN_ET1_MDC, ET1_MDC_MARK),
-	PINMUX_GPIO(GPIO_FN_ET1_MDIO, ET1_MDC_MARK),
+	PINMUX_GPIO(GPIO_FN_ET1_MDIO, ET1_MDIO_MARK),
 
 	/* PTB (mobule: INTC, ONFI, TMU) */
 	PINMUX_GPIO(GPIO_FN_IRQ15, IRQ15_MARK),
@@ -2282,6 +2283,6 @@ static struct pinmux_info sh7757_pinmux_info = {
 
 static int __init plat_pinmux_setup(void)
 {
-	return register_pinmux(&sh7757_pinmux_info);
+	return sh_pfc_register_info(NULL, NULL, 0, &sh7757_pinmux_info);
 }
 arch_initcall(plat_pinmux_setup);

@@ -11,6 +11,7 @@
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/gpio.h>
+#include <cpu/pfc.h>
 #include <cpu/sh7723.h>
 
 enum {
@@ -1317,7 +1318,7 @@ static struct pinmux_gpio pinmux_gpios[] = {
 	PINMUX_GPIO(GPIO_FN_SIUAOSLD, SIUAOSLD_MARK),
 	PINMUX_GPIO(GPIO_FN_SIUAMCK, SIUAMCK_MARK),
 	PINMUX_GPIO(GPIO_FN_SIUAISPD, SIUAISPD_MARK),
-	PINMUX_GPIO(GPIO_FN_SIUOSPD, SIUAOSPD_MARK),
+	PINMUX_GPIO(GPIO_FN_SIUAOSPD, SIUAOSPD_MARK),
 
 	/* SIUB */
 	PINMUX_GPIO(GPIO_FN_SIUBFCK, SIUBFCK_MARK),
@@ -1903,7 +1904,7 @@ static struct pinmux_info sh7723_pinmux_info = {
 
 static int __init plat_pinmux_setup(void)
 {
-	return register_pinmux(&sh7723_pinmux_info);
+	return sh_pfc_register_info(NULL, NULL, 0, &sh7723_pinmux_info);
 }
 
 arch_initcall(plat_pinmux_setup);
