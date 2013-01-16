@@ -480,8 +480,8 @@ static void emac_dump_regs(struct emac_priv *priv)
 static void emac_get_drvinfo(struct net_device *ndev,
 			     struct ethtool_drvinfo *info)
 {
-	strcpy(info->driver, emac_version_string);
-	strcpy(info->version, EMAC_MODULE_VERSION);
+	strlcpy(info->driver, emac_version_string, sizeof(info->driver));
+	strlcpy(info->version, EMAC_MODULE_VERSION, sizeof(info->version));
 }
 
 /**
@@ -1264,7 +1264,6 @@ static int emac_dev_setmac_addr(struct net_device *ndev, void *addr)
 	/* Store mac addr in priv and rx channel and set it in EMAC hw */
 	memcpy(priv->mac_addr, sa->sa_data, ndev->addr_len);
 	memcpy(ndev->dev_addr, sa->sa_data, ndev->addr_len);
-	ndev->addr_assign_type &= ~NET_ADDR_RANDOM;
 
 	/* MAC address is configured only after the interface is enabled. */
 	if (netif_running(ndev)) {
@@ -1600,7 +1599,7 @@ static int emac_dev_open(struct net_device *ndev)
 
 	if (priv->phy_id && *priv->phy_id) {
 		priv->phydev = phy_connect(ndev, priv->phy_id,
-					   &emac_adjust_link, 0,
+					   &emac_adjust_link,
 					   PHY_INTERFACE_MODE_MII);
 
 		if (IS_ERR(priv->phydev)) {
