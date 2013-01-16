@@ -468,8 +468,8 @@ static struct pinmux_gpio pinmux_gpios[] = {
 	PINMUX_GPIO(GPIO_PD0, PD0_DATA),
 
 	/* PE */
-	PINMUX_GPIO(GPIO_PE5, PE7_DATA),
-	PINMUX_GPIO(GPIO_PE4, PE6_DATA),
+	PINMUX_GPIO(GPIO_PE7, PE7_DATA),
+	PINMUX_GPIO(GPIO_PE6, PE6_DATA),
 
 	/* PF */
 	PINMUX_GPIO(GPIO_PF7, PF7_DATA),
@@ -825,7 +825,7 @@ static struct pinmux_info sh7786_pinmux_info = {
 	.function = { PINMUX_FUNCTION_BEGIN, PINMUX_FUNCTION_END },
 
 	.first_gpio = GPIO_PA7,
-	.last_gpio = GPIO_FN_FSE,
+	.last_gpio = GPIO_FN_IRL4,
 
 	.gpios = pinmux_gpios,
 	.cfg_regs = pinmux_config_regs,
