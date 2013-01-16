@@ -134,7 +134,7 @@ static struct of_device_id vt8500_timer_ids[] = {
 	{ }
 };
 
-void __init vt8500_timer_init(void)
+static void __init vt8500_timer_init(void)
 {
 	struct device_node *np;
 	int timer_irq;
@@ -168,17 +168,13 @@ void __init vt8500_timer_init(void)
 		pr_err("%s: vt8500_timer_init: clocksource_register failed for %s\n",
 					__func__, clocksource.name);
 
-	clockevents_calc_mult_shift(&clockevent, VT8500_TIMER_HZ, 4);
-
-	/* copy-pasted from mach-msm; no idea */
-	clockevent.max_delta_ns =
-		clockevent_delta2ns(0xf0000000, &clockevent);
-	clockevent.min_delta_ns = clockevent_delta2ns(4, &clockevent);
 	clockevent.cpumask = cpumask_of(0);
 
 	if (setup_irq(timer_irq, &irq))
 		pr_err("%s: setup_irq failed for %s\n", __func__,
 							clockevent.name);
-	clockevents_register_device(&clockevent);
+	clockevents_config_and_register(&clockevent, VT8500_TIMER_HZ,
+					4, 0xf0000000);
 }
 
+CLOCKSOURCE_OF_DECLARE(vt8500, "via,vt8500-timer", vt8500_timer_init)
