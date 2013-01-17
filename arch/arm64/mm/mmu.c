@@ -392,4 +392,7 @@ int __meminit vmemmap_populate(struct page *start_page,
 	return 0;
 }
 #endif	/* CONFIG_ARM64_64K_PAGES */
+void vmemmap_free(struct page *memmap, unsigned long nr_pages)
+{
+}
 #endif	/* CONFIG_SPARSEMEM_VMEMMAP */
