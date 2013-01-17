@@ -9,6 +9,7 @@
  * published by the Free Software Foundation.
  */
 
+#include <linux/dmaengine.h>
 #include <linux/dw_dmac.h>
 
 #define DW_DMA_MAX_NR_CHANNELS	8
@@ -184,12 +185,13 @@ enum dw_dmac_flags {
 };
 
 struct dw_dma_chan {
-	struct dma_chan		chan;
-	void __iomem		*ch_regs;
-	u8			mask;
-	u8			priority;
-	bool			paused;
-	bool			initialized;
+	struct dma_chan			chan;
+	void __iomem			*ch_regs;
+	u8				mask;
+	u8				priority;
+	enum dma_transfer_direction	direction;
+	bool				paused;
+	bool				initialized;
 
 	/* software emulation of the LLP transfers */
 	struct list_head	*tx_list;
@@ -212,9 +214,6 @@ struct dw_dma_chan {
 
 	/* configuration passed via DMA_SLAVE_CONFIG */
 	struct dma_slave_config dma_sconfig;
-
-	/* backlink to dw_dma */
-	struct dw_dma		*dw;
 };
 
 static inline struct dw_dma_chan_regs __iomem *
@@ -238,6 +237,10 @@ struct dw_dma {
 	void __iomem		*regs;
 	struct tasklet_struct	tasklet;
 	struct clk		*clk;
+
+	/* slave information */
+	struct dw_dma_slave	*sd;
+	unsigned int		sd_count;
 
 	u8			all_chan_mask;
 
@@ -294,6 +297,8 @@ struct dw_desc {
 	struct dma_async_tx_descriptor	txd;
 	size_t				len;
 };
+
+#define to_dw_desc(h)	list_entry(h, struct dw_desc, desc_node)
 
 static inline struct dw_desc *
 txd_to_dw_desc(struct dma_async_tx_descriptor *txd)
