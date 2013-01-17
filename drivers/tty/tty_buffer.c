@@ -235,7 +235,7 @@ static int __tty_buffer_request_room(struct tty_port *port, size_t size)
 
 /**
  *	tty_buffer_request_room		-	grow tty buffer if needed
- *	@tty: tty structure
+ *	@port: tty port structure
  *	@size: size desired
  *
  *	Make at least size bytes of linear space available for the tty
@@ -243,9 +243,8 @@ static int __tty_buffer_request_room(struct tty_port *port, size_t size)
  *
  *	Locking: Takes port->buf.lock
  */
-int tty_buffer_request_room(struct tty_struct *tty, size_t size)
+int tty_buffer_request_room(struct tty_port *port, size_t size)
 {
-	struct tty_port *port = tty->port;
 	unsigned long flags;
 	int length;
 
@@ -258,7 +257,7 @@ EXPORT_SYMBOL_GPL(tty_buffer_request_room);
 
 /**
  *	tty_insert_flip_string_fixed_flag - Add characters to the tty buffer
- *	@tty: tty structure
+ *	@port: tty port
  *	@chars: characters
  *	@flag: flag value for each character
  *	@size: size
@@ -269,10 +268,10 @@ EXPORT_SYMBOL_GPL(tty_buffer_request_room);
  *	Locking: Called functions may take port->buf.lock
  */
 
-int tty_insert_flip_string_fixed_flag(struct tty_struct *tty,
+int tty_insert_flip_string_fixed_flag(struct tty_port *port,
 		const unsigned char *chars, char flag, size_t size)
 {
-	struct tty_bufhead *buf = &tty->port->buf;
+	struct tty_bufhead *buf = &port->buf;
 	int copied = 0;
 	do {
 		int goal = min_t(size_t, size - copied, TTY_BUFFER_PAGE);
@@ -281,7 +280,7 @@ int tty_insert_flip_string_fixed_flag(struct tty_struct *tty,
 		struct tty_buffer *tb;
 
 		spin_lock_irqsave(&buf->lock, flags);
-		space = __tty_buffer_request_room(tty->port, goal);
+		space = __tty_buffer_request_room(port, goal);
 		tb = buf->tail;
 		/* If there is no space then tb may be NULL */
 		if (unlikely(space == 0)) {
@@ -303,7 +302,7 @@ EXPORT_SYMBOL(tty_insert_flip_string_fixed_flag);
 
 /**
  *	tty_insert_flip_string_flags	-	Add characters to the tty buffer
- *	@tty: tty structure
+ *	@port: tty port
  *	@chars: characters
  *	@flags: flag bytes
  *	@size: size
@@ -315,10 +314,10 @@ EXPORT_SYMBOL(tty_insert_flip_string_fixed_flag);
  *	Locking: Called functions may take port->buf.lock
  */
 
-int tty_insert_flip_string_flags(struct tty_struct *tty,
+int tty_insert_flip_string_flags(struct tty_port *port,
 		const unsigned char *chars, const char *flags, size_t size)
 {
-	struct tty_bufhead *buf = &tty->port->buf;
+	struct tty_bufhead *buf = &port->buf;
 	int copied = 0;
 	do {
 		int goal = min_t(size_t, size - copied, TTY_BUFFER_PAGE);
@@ -327,7 +326,7 @@ int tty_insert_flip_string_flags(struct tty_struct *tty,
 		struct tty_buffer *tb;
 
 		spin_lock_irqsave(&buf->lock, __flags);
-		space = __tty_buffer_request_room(tty->port, goal);
+		space = __tty_buffer_request_room(port, goal);
 		tb = buf->tail;
 		/* If there is no space then tb may be NULL */
 		if (unlikely(space == 0)) {
@@ -350,7 +349,7 @@ EXPORT_SYMBOL(tty_insert_flip_string_flags);
 
 /**
  *	tty_schedule_flip	-	push characters to ldisc
- *	@tty: tty to push from
+ *	@port: tty port to push from
  *
  *	Takes any pending buffers and transfers their ownership to the
  *	ldisc side of the queue. It then schedules those characters for
@@ -361,11 +360,11 @@ EXPORT_SYMBOL(tty_insert_flip_string_flags);
  *	Locking: Takes port->buf.lock
  */
 
-void tty_schedule_flip(struct tty_struct *tty)
+void tty_schedule_flip(struct tty_port *port)
 {
-	struct tty_bufhead *buf = &tty->port->buf;
+	struct tty_bufhead *buf = &port->buf;
 	unsigned long flags;
-	WARN_ON(tty->low_latency);
+	WARN_ON(port->low_latency);
 
 	spin_lock_irqsave(&buf->lock, flags);
 	if (buf->tail != NULL)
@@ -377,7 +376,7 @@ EXPORT_SYMBOL(tty_schedule_flip);
 
 /**
  *	tty_prepare_flip_string		-	make room for characters
- *	@tty: tty
+ *	@port: tty port
  *	@chars: return pointer for character write area
  *	@size: desired size
  *
@@ -390,16 +389,16 @@ EXPORT_SYMBOL(tty_schedule_flip);
  *	Locking: May call functions taking port->buf.lock
  */
 
-int tty_prepare_flip_string(struct tty_struct *tty, unsigned char **chars,
+int tty_prepare_flip_string(struct tty_port *port, unsigned char **chars,
 		size_t size)
 {
-	struct tty_bufhead *buf = &tty->port->buf;
+	struct tty_bufhead *buf = &port->buf;
 	int space;
 	unsigned long flags;
 	struct tty_buffer *tb;
 
 	spin_lock_irqsave(&buf->lock, flags);
-	space = __tty_buffer_request_room(tty->port, size);
+	space = __tty_buffer_request_room(port, size);
 
 	tb = buf->tail;
 	if (likely(space)) {
@@ -414,7 +413,7 @@ EXPORT_SYMBOL_GPL(tty_prepare_flip_string);
 
 /**
  *	tty_prepare_flip_string_flags	-	make room for characters
- *	@tty: tty
+ *	@port: tty port
  *	@chars: return pointer for character write area
  *	@flags: return pointer for status flag write area
  *	@size: desired size
@@ -428,16 +427,16 @@ EXPORT_SYMBOL_GPL(tty_prepare_flip_string);
  *	Locking: May call functions taking port->buf.lock
  */
 
-int tty_prepare_flip_string_flags(struct tty_struct *tty,
+int tty_prepare_flip_string_flags(struct tty_port *port,
 			unsigned char **chars, char **flags, size_t size)
 {
-	struct tty_bufhead *buf = &tty->port->buf;
+	struct tty_bufhead *buf = &port->buf;
 	int space;
 	unsigned long __flags;
 	struct tty_buffer *tb;
 
 	spin_lock_irqsave(&buf->lock, __flags);
-	space = __tty_buffer_request_room(tty->port, size);
+	space = __tty_buffer_request_room(port, size);
 
 	tb = buf->tail;
 	if (likely(space)) {
@@ -539,16 +538,17 @@ static void flush_to_ldisc(struct work_struct *work)
  */
 void tty_flush_to_ldisc(struct tty_struct *tty)
 {
-	if (!tty->low_latency)
+	if (!tty->port->low_latency)
 		flush_work(&tty->port->buf.work);
 }
 
 /**
  *	tty_flip_buffer_push	-	terminal
- *	@tty: tty to push
+ *	@port: tty port to push
  *
  *	Queue a push of the terminal flip buffers to the line discipline. This
- *	function must not be called from IRQ context if tty->low_latency is set.
+ *	function must not be called from IRQ context if port->low_latency is
+ *	set.
  *
  *	In the event of the queue being busy for flipping the work will be
  *	held off and retried later.
@@ -556,9 +556,9 @@ void tty_flush_to_ldisc(struct tty_struct *tty)
  *	Locking: tty buffer lock. Driver locks in low latency mode.
  */
 
-void tty_flip_buffer_push(struct tty_struct *tty)
+void tty_flip_buffer_push(struct tty_port *port)
 {
-	struct tty_bufhead *buf = &tty->port->buf;
+	struct tty_bufhead *buf = &port->buf;
 	unsigned long flags;
 
 	spin_lock_irqsave(&buf->lock, flags);
@@ -566,7 +566,7 @@ void tty_flip_buffer_push(struct tty_struct *tty)
 		buf->tail->commit = buf->tail->used;
 	spin_unlock_irqrestore(&buf->lock, flags);
 
-	if (tty->low_latency)
+	if (port->low_latency)
 		flush_to_ldisc(&buf->work);
 	else
 		schedule_work(&buf->work);
