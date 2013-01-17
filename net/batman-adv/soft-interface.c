@@ -124,7 +124,6 @@ static int batadv_interface_set_mac_addr(struct net_device *dev, void *p)
 		batadv_tt_local_add(dev, addr->sa_data, BATADV_NULL_IFINDEX);
 	}
 
-	dev->addr_assign_type &= ~NET_ADDR_RANDOM;
 	return 0;
 }
 
@@ -181,7 +180,8 @@ static int batadv_interface_tx(struct sk_buff *skb,
 		goto dropped;
 
 	/* Register the client MAC in the transtable */
-	batadv_tt_local_add(soft_iface, ethhdr->h_source, skb->skb_iif);
+	if (!is_multicast_ether_addr(ethhdr->h_source))
+		batadv_tt_local_add(soft_iface, ethhdr->h_source, skb->skb_iif);
 
 	/* don't accept stp packets. STP does not help in meshes.
 	 * better use the bridge loop avoidance ...
@@ -480,7 +480,9 @@ struct net_device *batadv_softif_create(const char *name)
 
 	atomic_set(&bat_priv->aggregated_ogms, 1);
 	atomic_set(&bat_priv->bonding, 0);
+#ifdef CONFIG_BATMAN_ADV_BLA
 	atomic_set(&bat_priv->bridge_loop_avoidance, 0);
+#endif
 #ifdef CONFIG_BATMAN_ADV_DAT
 	atomic_set(&bat_priv->distributed_arp_table, 1);
 #endif
@@ -491,7 +493,9 @@ struct net_device *batadv_softif_create(const char *name)
 	atomic_set(&bat_priv->gw_bandwidth, 41);
 	atomic_set(&bat_priv->orig_interval, 1000);
 	atomic_set(&bat_priv->hop_penalty, 30);
+#ifdef CONFIG_BATMAN_ADV_DEBUG
 	atomic_set(&bat_priv->log_level, 0);
+#endif
 	atomic_set(&bat_priv->fragmentation, 1);
 	atomic_set(&bat_priv->bcast_queue_left, BATADV_BCAST_QUEUE_LEN);
 	atomic_set(&bat_priv->batman_queue_left, BATADV_BATMAN_QUEUE_LEN);
@@ -581,10 +585,10 @@ static int batadv_get_settings(struct net_device *dev, struct ethtool_cmd *cmd)
 static void batadv_get_drvinfo(struct net_device *dev,
 			       struct ethtool_drvinfo *info)
 {
-	strcpy(info->driver, "B.A.T.M.A.N. advanced");
-	strcpy(info->version, BATADV_SOURCE_VERSION);
-	strcpy(info->fw_version, "N/A");
-	strcpy(info->bus_info, "batman");
+	strlcpy(info->driver, "B.A.T.M.A.N. advanced", sizeof(info->driver));
+	strlcpy(info->version, BATADV_SOURCE_VERSION, sizeof(info->version));
+	strlcpy(info->fw_version, "N/A", sizeof(info->fw_version));
+	strlcpy(info->bus_info, "batman", sizeof(info->bus_info));
 }
 
 static u32 batadv_get_msglevel(struct net_device *dev)
