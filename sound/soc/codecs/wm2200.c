@@ -1019,8 +1019,6 @@ static const char *wm2200_mixer_texts[] = {
 	"EQR",
 	"LHPF1",
 	"LHPF2",
-	"LHPF3",
-	"LHPF4",
 	"DSP1.1",
 	"DSP1.2",
 	"DSP1.3",
@@ -1053,7 +1051,6 @@ static int wm2200_mixer_values[] = {
 	0x25,
 	0x50,   /* EQ */
 	0x51,
-	0x52,
 	0x60,   /* LHPF1 */
 	0x61,   /* LHPF2 */
 	0x68,   /* DSP1 */
@@ -2217,6 +2214,9 @@ static int wm2200_i2c_probe(struct i2c_client *i2c,
 	wm2200->dsp[1].base = WM2200_DSP2_CONTROL_1;
 	wm2200->dsp[1].mem = wm2200_dsp2_regions;
 	wm2200->dsp[1].num_mems = ARRAY_SIZE(wm2200_dsp2_regions);
+
+	for (i = 0; i < ARRAY_SIZE(wm2200->dsp); i++)
+		wm_adsp1_init(&wm2200->dsp[i]);
 
 	if (pdata)
 		wm2200->pdata = *pdata;
