@@ -223,7 +223,7 @@ static void s3c2416_irq_unmask_second(struct irq_data *data)
 	__raw_writel(mask, S3C2416_INTMSK2);
 }
 
-struct irq_chip s3c2416_irq_second = {
+static struct irq_chip s3c2416_irq_second = {
 	.irq_ack	= s3c2416_irq_ack_second,
 	.irq_mask	= s3c2416_irq_mask_second,
 	.irq_unmask	= s3c2416_irq_unmask_second,
@@ -329,14 +329,14 @@ static struct sleep_save irq_save[] = {
 	SAVE_ITEM(S3C2416_INTMSK2),
 };
 
-int s3c2416_irq_suspend(void)
+static int s3c2416_irq_suspend(void)
 {
 	s3c_pm_do_save(irq_save, ARRAY_SIZE(irq_save));
 
 	return 0;
 }
 
-void s3c2416_irq_resume(void)
+static void s3c2416_irq_resume(void)
 {
 	s3c_pm_do_restore(irq_save, ARRAY_SIZE(irq_save));
 }
