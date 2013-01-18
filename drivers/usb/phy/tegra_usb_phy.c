@@ -740,7 +740,7 @@ struct tegra_usb_phy *tegra_usb_phy_open(struct device *dev, int instance,
 	int i;
 	int err;
 
-	phy = kmalloc(sizeof(struct tegra_usb_phy), GFP_KERNEL);
+	phy = kzalloc(sizeof(struct tegra_usb_phy), GFP_KERNEL);
 	if (!phy)
 		return ERR_PTR(-ENOMEM);
 
@@ -825,16 +825,3 @@ void tegra_ehci_phy_restore_end(struct tegra_usb_phy *phy)
 }
 EXPORT_SYMBOL_GPL(tegra_ehci_phy_restore_end);
 
-void tegra_usb_phy_clk_disable(struct tegra_usb_phy *phy)
-{
-	if (!phy_is_ulpi(phy))
-		utmi_phy_clk_disable(phy);
-}
-EXPORT_SYMBOL_GPL(tegra_usb_phy_clk_disable);
-
-void tegra_usb_phy_clk_enable(struct tegra_usb_phy *phy)
-{
-	if (!phy_is_ulpi(phy))
-		utmi_phy_clk_enable(phy);
-}
-EXPORT_SYMBOL_GPL(tegra_usb_phy_clk_enable);
