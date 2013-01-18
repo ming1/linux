@@ -235,3 +235,16 @@ Description:
 
 		This attribute has no effect on system-wide suspend/resume and
 		hibernation.
+
+What:		/sys/devices/.../power/power_state
+Date:		December 2012
+Contact:	Rafael J. Wysocki <rafael.j.wysocki@intel.com>
+Description:
+		The /sys/devices/.../power/power_state attribute is only present
+		for ACPI device nodes (i.e. objects of type struct acpi_device).
+
+		If present, it contains the string representation of the current
+		ACPI power state of the device represented by the given ACPI
+		device node.
+
+		This attribute is read-only.
