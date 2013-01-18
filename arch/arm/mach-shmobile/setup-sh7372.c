@@ -60,6 +60,32 @@ void __init sh7372_map_io(void)
 	iotable_init(sh7372_io_desc, ARRAY_SIZE(sh7372_io_desc));
 }
 
+/* PFC */
+static struct resource sh7372_pfc_resources[] = {
+	[0] = {
+		.start	= 0xe6050000,
+		.end	= 0xe6057fff,
+		.flags	= IORESOURCE_MEM,
+	},
+	[1] = {
+		.start	= 0xe605800c,
+		.end	= 0xe6058027,
+		.flags	= IORESOURCE_MEM,
+	}
+};
+
+static struct platform_device sh7372_pfc_device = {
+	.name		= "pfc-sh7372",
+	.id		= -1,
+	.resource	= sh7372_pfc_resources,
+	.num_resources	= ARRAY_SIZE(sh7372_pfc_resources),
+};
+
+void __init sh7372_pinmux_init(void)
+{
+	platform_device_register(&sh7372_pfc_device);
+}
+
 /* SCIFA0 */
 static struct plat_sci_port scif0_platform_data = {
 	.mapbase	= 0xe6c40000,
@@ -982,7 +1008,7 @@ static struct platform_device spu1_device = {
 	.num_resources	= ARRAY_SIZE(spu1_resources),
 };
 
-static struct platform_device *sh7372_early_devices[] __initdata = {
+static struct platform_device *sh7372_early_devices_dt[] __initdata = {
 	&scif0_device,
 	&scif1_device,
 	&scif2_device,
@@ -991,6 +1017,9 @@ static struct platform_device *sh7372_early_devices[] __initdata = {
 	&scif5_device,
 	&scif6_device,
 	&cmt2_device,
+};
+
+static struct platform_device *sh7372_early_devices[] __initdata = {
 	&tmu00_device,
 	&tmu01_device,
 };
@@ -1044,6 +1073,8 @@ void __init sh7372_add_standard_devices(void)
 
 	sh7372_init_pm_domains();
 
+	platform_add_devices(sh7372_early_devices_dt,
+			    ARRAY_SIZE(sh7372_early_devices_dt));
 	platform_add_devices(sh7372_early_devices,
 			    ARRAY_SIZE(sh7372_early_devices));
 
@@ -1062,6 +1093,8 @@ void __init sh7372_earlytimer_init(void)
 
 void __init sh7372_add_early_devices(void)
 {
+	early_platform_add_devices(sh7372_early_devices_dt,
+				   ARRAY_SIZE(sh7372_early_devices_dt));
 	early_platform_add_devices(sh7372_early_devices,
 				   ARRAY_SIZE(sh7372_early_devices));
 
@@ -1075,8 +1108,8 @@ void __init sh7372_add_early_devices_dt(void)
 {
 	shmobile_setup_delay(800, 1, 3); /* Cortex-A8 @ 800MHz */
 
-	early_platform_add_devices(sh7372_early_devices,
-				   ARRAY_SIZE(sh7372_early_devices));
+	early_platform_add_devices(sh7372_early_devices_dt,
+				   ARRAY_SIZE(sh7372_early_devices_dt));
 
 	/* setup early console here as well */
 	shmobile_setup_console();
@@ -1091,8 +1124,8 @@ void __init sh7372_add_standard_devices_dt(void)
 	/* clocks are setup late during boot in the case of DT */
 	sh7372_clock_init();
 
-	platform_add_devices(sh7372_early_devices,
-			    ARRAY_SIZE(sh7372_early_devices));
+	platform_add_devices(sh7372_early_devices_dt,
+			    ARRAY_SIZE(sh7372_early_devices_dt));
 
 	of_platform_populate(NULL, of_default_bus_match_table,
 			     sh7372_auxdata_lookup, NULL);
@@ -1107,7 +1140,7 @@ DT_MACHINE_START(SH7372_DT, "Generic SH7372 (Flattened Device Tree)")
 	.map_io		= sh7372_map_io,
 	.init_early	= sh7372_add_early_devices_dt,
 	.nr_irqs	= NR_IRQS_LEGACY,
-	.init_irq	= sh7372_init_irq,
+	.init_irq	= sh7372_init_irq_of,
 	.handle_irq	= shmobile_handle_irq_intc,
 	.init_machine	= sh7372_add_standard_devices_dt,
 	.init_time	= shmobile_timer_init,
