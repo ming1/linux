@@ -34,12 +34,14 @@ enum {
 	POD_SYSEX_DUMPMEM   = 0x73,
 	POD_SYSEX_DUMP      = 0x74,
 	POD_SYSEX_DUMPREQ   = 0x75
-	/* POD_SYSEX_DUMPMEM2  = 0x76 */   /* dumps entire internal memory of PODxt Pro */
+
+	/* dumps entire internal memory of PODxt Pro */
+	/* POD_SYSEX_DUMPMEM2  = 0x76 */
 };
 
 enum {
-	POD_monitor_level  = 0x04,
-	POD_system_invalid = 0x10000
+	POD_MONITOR_LEVEL  = 0x04,
+	POD_SYSTEM_INVALID = 0x10000
 };
 
 /* *INDENT-ON* */
@@ -156,7 +158,8 @@ void line6_pod_process_message(struct usb_line6_pod *pod)
 
 	case LINE6_SYSEX_BEGIN | LINE6_CHANNEL_DEVICE:
 	case LINE6_SYSEX_BEGIN | LINE6_CHANNEL_UNKNOWN:
-		if (memcmp(buf + 1, line6_midi_id, sizeof(line6_midi_id)) == 0) {
+		if (memcmp(buf + 1, line6_midi_id,
+			   sizeof(line6_midi_id)) == 0) {
 			switch (buf[5]) {
 			case POD_SYSEX_DUMP:
 				break;
@@ -167,7 +170,7 @@ void line6_pod_process_message(struct usb_line6_pod *pod)
 								   << 8) |
 					    ((int)buf[9] << 4) | (int)buf[10];
 
-					if (buf[6] == POD_monitor_level)
+					if (buf[6] == POD_MONITOR_LEVEL)
 						pod->monitor_level = value;
 					break;
 				}
@@ -369,7 +372,7 @@ static int snd_pod_control_monitor_put(struct snd_kcontrol *kcontrol,
 
 	pod->monitor_level = ucontrol->value.integer.value[0];
 	pod_set_system_param_int(pod, ucontrol->value.integer.value[0],
-				 POD_monitor_level);
+				 POD_MONITOR_LEVEL);
 	return 1;
 }
 
@@ -460,7 +463,7 @@ static int pod_try_init(struct usb_interface *interface,
 	 */
 
 	if (pod->line6.properties->capabilities & LINE6_BIT_CONTROL) {
-		pod->monitor_level = POD_system_invalid;
+		pod->monitor_level = POD_SYSTEM_INVALID;
 
 		/* initiate startup procedure: */
 		pod_startup1(pod);
