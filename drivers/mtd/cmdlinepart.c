@@ -22,11 +22,22 @@
  *
  * mtdparts=<mtddef>[;<mtddef]
  * <mtddef>  := <mtd-id>:<partdef>[,<partdef>]
- *              where <mtd-id> is the name from the "cat /proc/mtd" command
- * <partdef> := <size>[@offset][<name>][ro][lk]
+ * <partdef> := <size>[@<offset>][<name>][ro][lk]
  * <mtd-id>  := unique name used in mapping driver/device (mtd->name)
  * <size>    := standard linux memsize OR "-" to denote all remaining space
+ *              size is automatically truncated at end of device
+ *              if specified or trucated size is 0 the part is skipped
+ * <offset>  := standard linux memsize
+ *              if omitted the part will immediately follow the previous part
+ *              or 0 if the first part
  * <name>    := '(' NAME ')'
+ *              NAME will appear in /proc/mtd
+ *
+ * <size> and <offset> can be specified such that the parts are out of order
+ * in physical memory and may even overlap.
+ *
+ * The parts are assigned MTD numbers in the order they are specified in the
+ * command line regardless of their order in physical memory.
  *
  * Examples:
  *
@@ -330,16 +341,6 @@ static int parse_cmdline_partitions(struct mtd_info *master,
 		if (part->parts[i].size == SIZE_REMAINING)
 			part->parts[i].size = master->size - offset;
 
-		if (part->parts[i].size == 0) {
-			printk(KERN_WARNING ERRP
-			       "%s: skipping zero sized partition\n",
-			       part->mtd_id);
-			part->num_parts--;
-			memmove(&part->parts[i], &part->parts[i + 1],
-				sizeof(*part->parts) * (part->num_parts - i));
-			continue;
-		}
-
 		if (offset + part->parts[i].size > master->size) {
 			printk(KERN_WARNING ERRP
 			       "%s: partitioning exceeds flash size, truncating\n",
@@ -347,6 +348,16 @@ static int parse_cmdline_partitions(struct mtd_info *master,
 			part->parts[i].size = master->size - offset;
 		}
 		offset += part->parts[i].size;
+
+		if (part->parts[i].size == 0) {
+			printk(KERN_WARNING ERRP
+			       "%s: skipping zero sized partition\n",
+			       part->mtd_id);
+			part->num_parts--;
+			memmove(&part->parts[i], &part->parts[i + 1],
+				sizeof(*part->parts) * (part->num_parts - i));
+			i--;
+		}
 	}
 
 	*pparts = kmemdup(part->parts, sizeof(*part->parts) * part->num_parts,
