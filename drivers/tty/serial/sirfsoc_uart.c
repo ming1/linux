@@ -75,6 +75,20 @@ static struct sirfsoc_uart_port sirfsoc_uart_ports[SIRFSOC_UART_NR] = {
 			.line		= 2,
 		},
 	},
+	[3] = {
+		.port = {
+			.iotype		= UPIO_MEM,
+			.flags		= UPF_BOOT_AUTOCONF,
+			.line		= 3,
+		},
+	},
+	[4] = {
+		.port = {
+			.iotype		= UPIO_MEM,
+			.flags		= UPF_BOOT_AUTOCONF,
+			.line		= 4,
+		},
+	},
 };
 
 static inline struct sirfsoc_uart_port *to_sirfport(struct uart_port *port)
@@ -192,11 +206,6 @@ static unsigned int
 sirfsoc_uart_pio_rx_chars(struct uart_port *port, unsigned int max_rx_count)
 {
 	unsigned int ch, rx_count = 0;
-	struct tty_struct *tty;
-
-	tty = tty_port_tty_get(&port->state->port);
-	if (!tty)
-		return -ENODEV;
 
 	while (!(rd_regl(port, SIRFUART_RX_FIFO_STATUS) &
 					SIRFUART_FIFOEMPTY_MASK(port))) {
@@ -210,8 +219,7 @@ sirfsoc_uart_pio_rx_chars(struct uart_port *port, unsigned int max_rx_count)
 	}
 
 	port->icount.rx += rx_count;
-	tty_flip_buffer_push(tty);
-	tty_kref_put(tty);
+	tty_flip_buffer_push(&port->state->port);
 
 	return rx_count;
 }
@@ -245,6 +253,7 @@ static irqreturn_t sirfsoc_uart_isr(int irq, void *dev_id)
 	struct uart_port *port = &sirfport->port;
 	struct uart_state *state = port->state;
 	struct circ_buf *xmit = &port->state->xmit;
+	spin_lock(&port->lock);
 	intr_status = rd_regl(port, SIRFUART_INT_STATUS);
 	wr_regl(port, SIRFUART_INT_STATUS, intr_status);
 	intr_status &= rd_regl(port, SIRFUART_INT_EN);
@@ -254,6 +263,7 @@ static irqreturn_t sirfsoc_uart_isr(int irq, void *dev_id)
 				goto recv_char;
 			uart_insert_char(port, intr_status,
 					SIRFUART_RX_OFLOW, 0, TTY_BREAK);
+			spin_unlock(&port->lock);
 			return IRQ_HANDLED;
 		}
 		if (intr_status & SIRFUART_RX_OFLOW)
@@ -286,6 +296,7 @@ recv_char:
 		sirfsoc_uart_pio_rx_chars(port, SIRFSOC_UART_IO_RX_MAX_CNT);
 	if (intr_status & SIRFUART_TX_INT_EN) {
 		if (uart_circ_empty(xmit) || uart_tx_stopped(port)) {
+			spin_unlock(&port->lock);
 			return IRQ_HANDLED;
 		} else {
 			sirfsoc_uart_pio_tx_chars(sirfport,
@@ -296,6 +307,7 @@ recv_char:
 				sirfsoc_uart_stop_tx(port);
 		}
 	}
+	spin_unlock(&port->lock);
 	return IRQ_HANDLED;
 }
 
@@ -729,6 +741,7 @@ static int sirfsoc_uart_resume(struct platform_device *pdev)
 
 static struct of_device_id sirfsoc_uart_ids[] = {
 	{ .compatible = "sirf,prima2-uart", },
+	{ .compatible = "sirf,marco-uart", },
 	{}
 };
 MODULE_DEVICE_TABLE(of, sirfsoc_serial_of_match);
