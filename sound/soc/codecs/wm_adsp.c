@@ -103,6 +103,13 @@
 #define ADSP1_START_SHIFT                      0  /* DSP1_START */
 #define ADSP1_START_WIDTH                      1  /* DSP1_START */
 
+/*
+ * ADSP1 Control 31
+ */
+#define ADSP1_CLK_SEL_MASK                0x0007  /* CLK_SEL_ENA */
+#define ADSP1_CLK_SEL_SHIFT                    0  /* CLK_SEL_ENA */
+#define ADSP1_CLK_SEL_WIDTH                    3  /* CLK_SEL_ENA */
+
 #define ADSP2_CONTROL  0
 #define ADSP2_CLOCKING 1
 #define ADSP2_STATUS1  4
@@ -557,7 +564,7 @@ static int wm_adsp_setup_algs(struct wm_adsp *dsp)
 		adsp_warn(dsp, "Algorithm list end %x 0x%x != 0xbeadead\n",
 			  term, be32_to_cpu(val));
 
-	alg = kzalloc((term - pos) * 2, GFP_KERNEL);
+	alg = kzalloc((term - pos) * 2, GFP_KERNEL | GFP_DMA);
 	if (!alg)
 		return -ENOMEM;
 
@@ -773,7 +780,8 @@ static int wm_adsp_load_coeff(struct wm_adsp *dsp)
 			break;
 
 		default:
-			adsp_err(dsp, "Unknown region type %x\n", type);
+			adsp_err(dsp, "%s.%d: Unknown region type %x at %d\n",
+				 file, blocks, type, pos);
 			break;
 		}
 
@@ -827,11 +835,37 @@ int wm_adsp1_event(struct snd_soc_dapm_widget *w,
 	struct wm_adsp *dsps = snd_soc_codec_get_drvdata(codec);
 	struct wm_adsp *dsp = &dsps[w->shift];
 	int ret;
+	int val;
 
 	switch (event) {
 	case SND_SOC_DAPM_POST_PMU:
 		regmap_update_bits(dsp->regmap, dsp->base + ADSP1_CONTROL_30,
 				   ADSP1_SYS_ENA, ADSP1_SYS_ENA);
+
+		/*
+		 * For simplicity set the DSP clock rate to be the
+		 * SYSCLK rate rather than making it configurable.
+		 */
+		if(dsp->sysclk_reg) {
+			ret = regmap_read(dsp->regmap, dsp->sysclk_reg, &val);
+			if (ret != 0) {
+				adsp_err(dsp, "Failed to read SYSCLK state: %d\n",
+				ret);
+				return ret;
+			}
+
+			val = (val & dsp->sysclk_mask)
+				>> dsp->sysclk_shift;
+
+			ret = regmap_update_bits(dsp->regmap,
+						 dsp->base + ADSP1_CONTROL_31,
+						 ADSP1_CLK_SEL_MASK, val);
+			if (ret != 0) {
+				adsp_err(dsp, "Failed to set clock rate: %d\n",
+					 ret);
+				return ret;
+			}
+		}
 
 		ret = wm_adsp_load(dsp);
 		if (ret != 0)
