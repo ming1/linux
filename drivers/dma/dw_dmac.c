@@ -1,6 +1,5 @@
 /*
- * Driver for the Synopsys DesignWare DMA Controller (aka DMACA on
- * AVR32 systems.)
+ * Core driver for the Synopsys DesignWare DMA Controller
  *
  * Copyright (C) 2007-2008 Atmel Corporation
  * Copyright (C) 2010-2011 ST Microelectronics
@@ -9,6 +8,7 @@
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
  */
+
 #include <linux/bitops.h>
 #include <linux/clk.h>
 #include <linux/delay.h>
@@ -50,11 +50,12 @@ static inline unsigned int dwc_get_sms(struct dw_dma_slave *slave)
 		struct dw_dma_slave *__slave = (_chan->private);	\
 		struct dw_dma_chan *_dwc = to_dw_dma_chan(_chan);	\
 		struct dma_slave_config	*_sconfig = &_dwc->dma_sconfig;	\
+		bool _is_slave = is_slave_direction(_dwc->direction);	\
 		int _dms = dwc_get_dms(__slave);		\
 		int _sms = dwc_get_sms(__slave);		\
-		u8 _smsize = __slave ? _sconfig->src_maxburst :	\
+		u8 _smsize = _is_slave ? _sconfig->src_maxburst :	\
 			DW_DMA_MSIZE_16;			\
-		u8 _dmsize = __slave ? _sconfig->dst_maxburst :	\
+		u8 _dmsize = _is_slave ? _sconfig->dst_maxburst :	\
 			DW_DMA_MSIZE_16;			\
 								\
 		(DWC_CTLL_DST_MSIZE(_dmsize)			\
@@ -71,6 +72,22 @@ static inline unsigned int dwc_get_sms(struct dw_dma_slave *slave)
  * ones using slave transfers) should be able to give us a hint.
  */
 #define NR_DESCS_PER_CHANNEL	64
+
+#define SRC_MASTER	0
+#define DST_MASTER	1
+
+static inline unsigned int dwc_get_data_width(struct dma_chan *chan, int master)
+{
+	struct dw_dma *dw = to_dw_dma(chan->device);
+	struct dw_dma_slave *dws = chan->private;
+
+	if (master == SRC_MASTER)
+		return dw->data_width[dwc_get_sms(dws)];
+	else if (master == DST_MASTER)
+		return dw->data_width[dwc_get_dms(dws)];
+
+	return 0;
+}
 
 /*----------------------------------------------------------------------*/
 
@@ -93,7 +110,7 @@ static struct device *chan2parent(struct dma_chan *chan)
 
 static struct dw_desc *dwc_first_active(struct dw_dma_chan *dwc)
 {
-	return list_entry(dwc->active_list.next, struct dw_desc, desc_node);
+	return to_dw_desc(dwc->active_list.next);
 }
 
 static struct dw_desc *dwc_desc_get(struct dw_dma_chan *dwc)
@@ -178,9 +195,9 @@ static void dwc_initialize(struct dw_dma_chan *dwc)
 		cfghi = dws->cfg_hi;
 		cfglo |= dws->cfg_lo & ~DWC_CFGL_CH_PRIOR_MASK;
 	} else {
-		if (dwc->dma_sconfig.direction == DMA_MEM_TO_DEV)
+		if (dwc->direction == DMA_MEM_TO_DEV)
 			cfghi = DWC_CFGH_DST_PER(dwc->dma_sconfig.slave_id);
-		else if (dwc->dma_sconfig.direction == DMA_DEV_TO_MEM)
+		else if (dwc->direction == DMA_DEV_TO_MEM)
 			cfghi = DWC_CFGH_SRC_PER(dwc->dma_sconfig.slave_id);
 	}
 
@@ -222,7 +239,6 @@ static inline void dwc_dump_chan_regs(struct dw_dma_chan *dwc)
 		channel_readl(dwc, CTL_LO));
 }
 
-
 static inline void dwc_chan_disable(struct dw_dma *dw, struct dw_dma_chan *dwc)
 {
 	channel_clear_bit(dw, CH_EN, dwc->mask);
@@ -248,6 +264,9 @@ static inline void dwc_do_single_block(struct dw_dma_chan *dwc,
 	channel_writel(dwc, CTL_LO, ctllo);
 	channel_writel(dwc, CTL_HI, desc->lli.ctlhi);
 	channel_set_bit(dw, CH_EN, dwc->mask);
+
+	/* Move pointer to next descriptor */
+	dwc->tx_node_active = dwc->tx_node_active->next;
 }
 
 /* Called with dwc->lock held and bh disabled */
@@ -279,7 +298,7 @@ static void dwc_dostart(struct dw_dma_chan *dwc, struct dw_desc *first)
 		dwc_initialize(dwc);
 
 		dwc->tx_list = &first->tx_list;
-		dwc->tx_node_active = first->tx_list.next;
+		dwc->tx_node_active = &first->tx_list;
 
 		dwc_do_single_block(dwc, first);
 
@@ -326,7 +345,7 @@ dwc_descriptor_complete(struct dw_dma_chan *dwc, struct dw_desc *desc,
 	list_splice_init(&desc->tx_list, &dwc->free_list);
 	list_move(&desc->desc_node, &dwc->free_list);
 
-	if (!dwc->chan.private) {
+	if (!is_slave_direction(dwc->direction)) {
 		struct device *parent = chan2parent(&dwc->chan);
 		if (!(txd->flags & DMA_COMPL_SKIP_DEST_UNMAP)) {
 			if (txd->flags & DMA_COMPL_DEST_UNMAP_SINGLE)
@@ -348,7 +367,7 @@ dwc_descriptor_complete(struct dw_dma_chan *dwc, struct dw_desc *desc,
 
 	spin_unlock_irqrestore(&dwc->lock, flags);
 
-	if (callback_required && callback)
+	if (callback)
 		callback(param);
 }
 
@@ -457,9 +476,8 @@ static void dwc_scan_descriptors(struct dw_dma *dw, struct dw_dma_chan *dwc)
 
 static inline void dwc_dump_lli(struct dw_dma_chan *dwc, struct dw_lli *lli)
 {
-	dev_printk(KERN_CRIT, chan2dev(&dwc->chan),
-			"  desc: s0x%x d0x%x l0x%x c0x%x:%x\n",
-			lli->sar, lli->dar, lli->llp, lli->ctlhi, lli->ctllo);
+	dev_crit(chan2dev(&dwc->chan), "  desc: s0x%x d0x%x l0x%x c0x%x:%x\n",
+		 lli->sar, lli->dar, lli->llp, lli->ctlhi, lli->ctllo);
 }
 
 static void dwc_handle_error(struct dw_dma *dw, struct dw_dma_chan *dwc)
@@ -487,16 +505,14 @@ static void dwc_handle_error(struct dw_dma *dw, struct dw_dma_chan *dwc)
 		dwc_dostart(dwc, dwc_first_active(dwc));
 
 	/*
-	 * KERN_CRITICAL may seem harsh, but since this only happens
+	 * WARN may seem harsh, but since this only happens
 	 * when someone submits a bad physical address in a
 	 * descriptor, we should consider ourselves lucky that the
 	 * controller flagged an error instead of scribbling over
 	 * random memory locations.
 	 */
-	dev_printk(KERN_CRIT, chan2dev(&dwc->chan),
-			"Bad descriptor submitted for DMA!\n");
-	dev_printk(KERN_CRIT, chan2dev(&dwc->chan),
-			"  cookie: %d\n", bad_desc->txd.cookie);
+	dev_WARN(chan2dev(&dwc->chan), "Bad descriptor submitted for DMA!\n"
+				       "  cookie: %d\n", bad_desc->txd.cookie);
 	dwc_dump_lli(dwc, &bad_desc->lli);
 	list_for_each_entry(child, &bad_desc->tx_list, desc_node)
 		dwc_dump_lli(dwc, &child->lli);
@@ -604,24 +620,17 @@ static void dw_dma_tasklet(unsigned long data)
 			if (test_bit(DW_DMA_IS_SOFT_LLP, &dwc->flags)) {
 				if (dwc->tx_node_active != dwc->tx_list) {
 					struct dw_desc *desc =
-						list_entry(dwc->tx_node_active,
-							   struct dw_desc,
-							   desc_node);
+						to_dw_desc(dwc->tx_node_active);
 
 					dma_writel(dw, CLEAR.XFER, dwc->mask);
-
-					/* move pointer to next descriptor */
-					dwc->tx_node_active =
-						dwc->tx_node_active->next;
 
 					dwc_do_single_block(dwc, desc);
 
 					spin_unlock_irqrestore(&dwc->lock, flags);
 					continue;
-				} else {
-					/* we are done here */
-					clear_bit(DW_DMA_IS_SOFT_LLP, &dwc->flags);
 				}
+				/* we are done here */
+				clear_bit(DW_DMA_IS_SOFT_LLP, &dwc->flags);
 			}
 			spin_unlock_irqrestore(&dwc->lock, flags);
 
@@ -708,7 +717,6 @@ dwc_prep_dma_memcpy(struct dma_chan *chan, dma_addr_t dest, dma_addr_t src,
 		size_t len, unsigned long flags)
 {
 	struct dw_dma_chan	*dwc = to_dw_dma_chan(chan);
-	struct dw_dma_slave	*dws = chan->private;
 	struct dw_desc		*desc;
 	struct dw_desc		*first;
 	struct dw_desc		*prev;
@@ -729,8 +737,10 @@ dwc_prep_dma_memcpy(struct dma_chan *chan, dma_addr_t dest, dma_addr_t src,
 		return NULL;
 	}
 
-	data_width = min_t(unsigned int, dwc->dw->data_width[dwc_get_sms(dws)],
-					 dwc->dw->data_width[dwc_get_dms(dws)]);
+	dwc->direction = DMA_MEM_TO_MEM;
+
+	data_width = min_t(unsigned int, dwc_get_data_width(chan, SRC_MASTER),
+			   dwc_get_data_width(chan, DST_MASTER));
 
 	src_width = dst_width = min_t(unsigned int, data_width,
 				      dwc_fast_fls(src | dest | len));
@@ -795,7 +805,6 @@ dwc_prep_slave_sg(struct dma_chan *chan, struct scatterlist *sgl,
 		unsigned long flags, void *context)
 {
 	struct dw_dma_chan	*dwc = to_dw_dma_chan(chan);
-	struct dw_dma_slave	*dws = chan->private;
 	struct dma_slave_config	*sconfig = &dwc->dma_sconfig;
 	struct dw_desc		*prev;
 	struct dw_desc		*first;
@@ -810,8 +819,10 @@ dwc_prep_slave_sg(struct dma_chan *chan, struct scatterlist *sgl,
 
 	dev_vdbg(chan2dev(chan), "%s\n", __func__);
 
-	if (unlikely(!dws || !sg_len))
+	if (unlikely(!is_slave_direction(direction) || !sg_len))
 		return NULL;
+
+	dwc->direction = direction;
 
 	prev = first = NULL;
 
@@ -827,7 +838,7 @@ dwc_prep_slave_sg(struct dma_chan *chan, struct scatterlist *sgl,
 		ctllo |= sconfig->device_fc ? DWC_CTLL_FC(DW_DMA_FC_P_M2P) :
 			DWC_CTLL_FC(DW_DMA_FC_D_M2P);
 
-		data_width = dwc->dw->data_width[dwc_get_sms(dws)];
+		data_width = dwc_get_data_width(chan, SRC_MASTER);
 
 		for_each_sg(sgl, sg, sg_len, i) {
 			struct dw_desc	*desc;
@@ -890,7 +901,7 @@ slave_sg_todev_fill_desc:
 		ctllo |= sconfig->device_fc ? DWC_CTLL_FC(DW_DMA_FC_P_P2M) :
 			DWC_CTLL_FC(DW_DMA_FC_D_P2M);
 
-		data_width = dwc->dw->data_width[dwc_get_dms(dws)];
+		data_width = dwc_get_data_width(chan, DST_MASTER);
 
 		for_each_sg(sgl, sg, sg_len, i) {
 			struct dw_desc	*desc;
@@ -984,16 +995,37 @@ set_runtime_config(struct dma_chan *chan, struct dma_slave_config *sconfig)
 {
 	struct dw_dma_chan *dwc = to_dw_dma_chan(chan);
 
-	/* Check if it is chan is configured for slave transfers */
-	if (!chan->private)
+	/* Check if chan will be configured for slave transfers */
+	if (!is_slave_direction(sconfig->direction))
 		return -EINVAL;
 
 	memcpy(&dwc->dma_sconfig, sconfig, sizeof(*sconfig));
+	dwc->direction = sconfig->direction;
 
 	convert_burst(&dwc->dma_sconfig.src_maxburst);
 	convert_burst(&dwc->dma_sconfig.dst_maxburst);
 
 	return 0;
+}
+
+static inline void dwc_chan_pause(struct dw_dma_chan *dwc)
+{
+	u32 cfglo = channel_readl(dwc, CFG_LO);
+
+	channel_writel(dwc, CFG_LO, cfglo | DWC_CFGL_CH_SUSP);
+	while (!(channel_readl(dwc, CFG_LO) & DWC_CFGL_FIFO_EMPTY))
+		cpu_relax();
+
+	dwc->paused = true;
+}
+
+static inline void dwc_chan_resume(struct dw_dma_chan *dwc)
+{
+	u32 cfglo = channel_readl(dwc, CFG_LO);
+
+	channel_writel(dwc, CFG_LO, cfglo & ~DWC_CFGL_CH_SUSP);
+
+	dwc->paused = false;
 }
 
 static int dwc_control(struct dma_chan *chan, enum dma_ctrl_cmd cmd,
@@ -1003,18 +1035,13 @@ static int dwc_control(struct dma_chan *chan, enum dma_ctrl_cmd cmd,
 	struct dw_dma		*dw = to_dw_dma(chan->device);
 	struct dw_desc		*desc, *_desc;
 	unsigned long		flags;
-	u32			cfglo;
 	LIST_HEAD(list);
 
 	if (cmd == DMA_PAUSE) {
 		spin_lock_irqsave(&dwc->lock, flags);
 
-		cfglo = channel_readl(dwc, CFG_LO);
-		channel_writel(dwc, CFG_LO, cfglo | DWC_CFGL_CH_SUSP);
-		while (!(channel_readl(dwc, CFG_LO) & DWC_CFGL_FIFO_EMPTY))
-			cpu_relax();
+		dwc_chan_pause(dwc);
 
-		dwc->paused = true;
 		spin_unlock_irqrestore(&dwc->lock, flags);
 	} else if (cmd == DMA_RESUME) {
 		if (!dwc->paused)
@@ -1022,9 +1049,7 @@ static int dwc_control(struct dma_chan *chan, enum dma_ctrl_cmd cmd,
 
 		spin_lock_irqsave(&dwc->lock, flags);
 
-		cfglo = channel_readl(dwc, CFG_LO);
-		channel_writel(dwc, CFG_LO, cfglo & ~DWC_CFGL_CH_SUSP);
-		dwc->paused = false;
+		dwc_chan_resume(dwc);
 
 		spin_unlock_irqrestore(&dwc->lock, flags);
 	} else if (cmd == DMA_TERMINATE_ALL) {
@@ -1034,7 +1059,7 @@ static int dwc_control(struct dma_chan *chan, enum dma_ctrl_cmd cmd,
 
 		dwc_chan_disable(dw, dwc);
 
-		dwc->paused = false;
+		dwc_chan_resume(dwc);
 
 		/* active_list entries will end up before queued entries */
 		list_splice_init(&dwc->queue, &list);
@@ -1093,6 +1118,7 @@ static int dwc_alloc_chan_resources(struct dma_chan *chan)
 	struct dw_desc		*desc;
 	int			i;
 	unsigned long		flags;
+	int			ret;
 
 	dev_vdbg(chan2dev(chan), "%s\n", __func__);
 
@@ -1116,12 +1142,8 @@ static int dwc_alloc_chan_resources(struct dma_chan *chan)
 		spin_unlock_irqrestore(&dwc->lock, flags);
 
 		desc = kzalloc(sizeof(struct dw_desc), GFP_KERNEL);
-		if (!desc) {
-			dev_info(chan2dev(chan),
-				"only allocated %d descriptors\n", i);
-			spin_lock_irqsave(&dwc->lock, flags);
-			break;
-		}
+		if (!desc)
+			goto err_desc_alloc;
 
 		INIT_LIST_HEAD(&desc->tx_list);
 		dma_async_tx_descriptor_init(&desc->txd, chan);
@@ -1129,6 +1151,10 @@ static int dwc_alloc_chan_resources(struct dma_chan *chan)
 		desc->txd.flags = DMA_CTRL_ACK;
 		desc->txd.phys = dma_map_single(chan2parent(chan), &desc->lli,
 				sizeof(desc->lli), DMA_TO_DEVICE);
+		ret = dma_mapping_error(chan2parent(chan), desc->txd.phys);
+		if (ret)
+			goto err_desc_alloc;
+
 		dwc_desc_put(dwc, desc);
 
 		spin_lock_irqsave(&dwc->lock, flags);
@@ -1138,6 +1164,13 @@ static int dwc_alloc_chan_resources(struct dma_chan *chan)
 	spin_unlock_irqrestore(&dwc->lock, flags);
 
 	dev_dbg(chan2dev(chan), "%s: allocated %d descriptors\n", __func__, i);
+
+	return i;
+
+err_desc_alloc:
+	kfree(desc);
+
+	dev_info(chan2dev(chan), "only allocated %d descriptors\n", i);
 
 	return i;
 }
@@ -1178,6 +1211,50 @@ static void dwc_free_chan_resources(struct dma_chan *chan)
 
 	dev_vdbg(chan2dev(chan), "%s: done\n", __func__);
 }
+
+bool dw_dma_generic_filter(struct dma_chan *chan, void *param)
+{
+	struct dw_dma *dw = to_dw_dma(chan->device);
+	static struct dw_dma *last_dw;
+	static char *last_bus_id;
+	int i = -1;
+
+	/*
+	 * dmaengine framework calls this routine for all channels of all dma
+	 * controller, until true is returned. If 'param' bus_id is not
+	 * registered with a dma controller (dw), then there is no need of
+	 * running below function for all channels of dw.
+	 *
+	 * This block of code does this by saving the parameters of last
+	 * failure. If dw and param are same, i.e. trying on same dw with
+	 * different channel, return false.
+	 */
+	if ((last_dw == dw) && (last_bus_id == param))
+		return false;
+	/*
+	 * Return true:
+	 * - If dw_dma's platform data is not filled with slave info, then all
+	 *   dma controllers are fine for transfer.
+	 * - Or if param is NULL
+	 */
+	if (!dw->sd || !param)
+		return true;
+
+	while (++i < dw->sd_count) {
+		if (!strcmp(dw->sd[i].bus_id, param)) {
+			chan->private = &dw->sd[i];
+			last_dw = NULL;
+			last_bus_id = NULL;
+
+			return true;
+		}
+	}
+
+	last_dw = dw;
+	last_bus_id = param;
+	return false;
+}
+EXPORT_SYMBOL(dw_dma_generic_filter);
 
 /* --------------------- Cyclic DMA API extensions -------------------- */
 
@@ -1298,6 +1375,11 @@ struct dw_cyclic_desc *dw_dma_cyclic_prep(struct dma_chan *chan,
 
 	retval = ERR_PTR(-EINVAL);
 
+	if (unlikely(!is_slave_direction(direction)))
+		goto out_err;
+
+	dwc->direction = direction;
+
 	if (direction == DMA_MEM_TO_DEV)
 		reg_width = __ffs(sconfig->dst_addr_width);
 	else
@@ -1311,8 +1393,6 @@ struct dw_cyclic_desc *dw_dma_cyclic_prep(struct dma_chan *chan,
 	if (unlikely(period_len & ((1 << reg_width) - 1)))
 		goto out_err;
 	if (unlikely(buf_addr & ((1 << reg_width) - 1)))
-		goto out_err;
-	if (unlikely(!(direction & (DMA_MEM_TO_DEV | DMA_DEV_TO_MEM))))
 		goto out_err;
 
 	retval = ERR_PTR(-ENOMEM);
@@ -1462,6 +1542,91 @@ static void dw_dma_off(struct dw_dma *dw)
 		dw->chan[i].initialized = false;
 }
 
+#ifdef CONFIG_OF
+static struct dw_dma_platform_data *
+dw_dma_parse_dt(struct platform_device *pdev)
+{
+	struct device_node *sn, *cn, *np = pdev->dev.of_node;
+	struct dw_dma_platform_data *pdata;
+	struct dw_dma_slave *sd;
+	u32 tmp, arr[4];
+
+	if (!np) {
+		dev_err(&pdev->dev, "Missing DT data\n");
+		return NULL;
+	}
+
+	pdata = devm_kzalloc(&pdev->dev, sizeof(*pdata), GFP_KERNEL);
+	if (!pdata)
+		return NULL;
+
+	if (of_property_read_u32(np, "nr_channels", &pdata->nr_channels))
+		return NULL;
+
+	if (of_property_read_bool(np, "is_private"))
+		pdata->is_private = true;
+
+	if (!of_property_read_u32(np, "chan_allocation_order", &tmp))
+		pdata->chan_allocation_order = (unsigned char)tmp;
+
+	if (!of_property_read_u32(np, "chan_priority", &tmp))
+		pdata->chan_priority = tmp;
+
+	if (!of_property_read_u32(np, "block_size", &tmp))
+		pdata->block_size = tmp;
+
+	if (!of_property_read_u32(np, "nr_masters", &tmp)) {
+		if (tmp > 4)
+			return NULL;
+
+		pdata->nr_masters = tmp;
+	}
+
+	if (!of_property_read_u32_array(np, "data_width", arr,
+				pdata->nr_masters))
+		for (tmp = 0; tmp < pdata->nr_masters; tmp++)
+			pdata->data_width[tmp] = arr[tmp];
+
+	/* parse slave data */
+	sn = of_find_node_by_name(np, "slave_info");
+	if (!sn)
+		return pdata;
+
+	/* calculate number of slaves */
+	tmp = of_get_child_count(sn);
+	if (!tmp)
+		return NULL;
+
+	sd = devm_kzalloc(&pdev->dev, sizeof(*sd) * tmp, GFP_KERNEL);
+	if (!sd)
+		return NULL;
+
+	pdata->sd = sd;
+	pdata->sd_count = tmp;
+
+	for_each_child_of_node(sn, cn) {
+		sd->dma_dev = &pdev->dev;
+		of_property_read_string(cn, "bus_id", &sd->bus_id);
+		of_property_read_u32(cn, "cfg_hi", &sd->cfg_hi);
+		of_property_read_u32(cn, "cfg_lo", &sd->cfg_lo);
+		if (!of_property_read_u32(cn, "src_master", &tmp))
+			sd->src_master = tmp;
+
+		if (!of_property_read_u32(cn, "dst_master", &tmp))
+			sd->dst_master = tmp;
+		sd++;
+	}
+
+	return pdata;
+}
+#else
+static inline struct dw_dma_platform_data *
+dw_dma_parse_dt(struct platform_device *pdev)
+{
+	return NULL;
+}
+#endif
+
 static int dw_probe(struct platform_device *pdev)
 {
 	struct dw_dma_platform_data *pdata;
@@ -1477,10 +1642,6 @@ static int dw_probe(struct platform_device *pdev)
 	int			err;
 	int			i;
 
-	pdata = dev_get_platdata(&pdev->dev);
-	if (!pdata || pdata->nr_channels > DW_DMA_MAX_NR_CHANNELS)
-		return -EINVAL;
-
 	io = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!io)
 		return -EINVAL;
@@ -1495,6 +1656,22 @@ static int dw_probe(struct platform_device *pdev)
 
 	dw_params = dma_read_byaddr(regs, DW_PARAMS);
 	autocfg = dw_params >> DW_PARAMS_EN & 0x1;
+
+	pdata = dev_get_platdata(&pdev->dev);
+	if (!pdata)
+		pdata = dw_dma_parse_dt(pdev);
+
+	if (!pdata && autocfg) {
+		pdata = devm_kzalloc(&pdev->dev, sizeof(*pdata), GFP_KERNEL);
+		if (!pdata)
+			return -ENOMEM;
+
+		/* Fill platform data with the default values */
+		pdata->is_private = true;
+		pdata->chan_allocation_order = CHAN_ALLOCATION_ASCENDING;
+		pdata->chan_priority = CHAN_PRIORITY_ASCENDING;
+	} else if (!pdata || pdata->nr_channels > DW_DMA_MAX_NR_CHANNELS)
+		return -EINVAL;
 
 	if (autocfg)
 		nr_channels = (dw_params >> DW_PARAMS_NR_CHAN & 0x7) + 1;
@@ -1512,6 +1689,8 @@ static int dw_probe(struct platform_device *pdev)
 	clk_prepare_enable(dw->clk);
 
 	dw->regs = regs;
+	dw->sd = pdata->sd;
+	dw->sd_count = pdata->sd_count;
 
 	/* get hardware configuration parameters */
 	if (autocfg) {
@@ -1574,7 +1753,7 @@ static int dw_probe(struct platform_device *pdev)
 
 		channel_clear_bit(dw, CH_EN, dwc->mask);
 
-		dwc->dw = dw;
+		dwc->direction = DMA_TRANS_NONE;
 
 		/* hardware configuration */
 		if (autocfg) {
@@ -1626,8 +1805,8 @@ static int dw_probe(struct platform_device *pdev)
 
 	dma_writel(dw, CFG, DW_CFG_DMA_EN);
 
-	printk(KERN_INFO "%s: DesignWare DMA Controller, %d channels\n",
-			dev_name(&pdev->dev), nr_channels);
+	dev_info(&pdev->dev, "DesignWare DMA Controller, %d channels\n",
+		 nr_channels);
 
 	dma_async_device_register(&dw->dma);
 
@@ -1657,7 +1836,7 @@ static void dw_shutdown(struct platform_device *pdev)
 {
 	struct dw_dma	*dw = platform_get_drvdata(pdev);
 
-	dw_dma_off(platform_get_drvdata(pdev));
+	dw_dma_off(dw);
 	clk_disable_unprepare(dw->clk);
 }
 
@@ -1666,7 +1845,7 @@ static int dw_suspend_noirq(struct device *dev)
 	struct platform_device *pdev = to_platform_device(dev);
 	struct dw_dma	*dw = platform_get_drvdata(pdev);
 
-	dw_dma_off(platform_get_drvdata(pdev));
+	dw_dma_off(dw);
 	clk_disable_unprepare(dw->clk);
 
 	return 0;
@@ -1679,6 +1858,7 @@ static int dw_resume_noirq(struct device *dev)
 
 	clk_prepare_enable(dw->clk);
 	dma_writel(dw, CFG, DW_CFG_DMA_EN);
+
 	return 0;
 }
 
@@ -1700,6 +1880,7 @@ MODULE_DEVICE_TABLE(of, dw_dma_id_table);
 #endif
 
 static struct platform_driver dw_driver = {
+	.probe		= dw_probe,
 	.remove		= dw_remove,
 	.shutdown	= dw_shutdown,
 	.driver = {
@@ -1711,7 +1892,7 @@ static struct platform_driver dw_driver = {
 
 static int __init dw_init(void)
 {
-	return platform_driver_probe(&dw_driver, dw_probe);
+	return platform_driver_register(&dw_driver);
 }
 subsys_initcall(dw_init);
 
