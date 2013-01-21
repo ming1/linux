@@ -124,6 +124,14 @@
  * this command is required when playback.
  *
  * # amixer set "Headphone" 50
+ *
+ * this command is required when capture.
+ *
+ * # amixer set "Input PGA" 15
+ * # amixer set "Left Input Mixer MicP" on
+ * # amixer set "Left Input Mixer MicN" on
+ * # amixer set "Right Input Mixer MicN" on
+ * # amixer set "Right Input Mixer MicP" on
  */
 
 /*
@@ -1181,6 +1189,8 @@ static void __init eva_init(void)
 	rmobile_add_device_to_domain("A4LC", &hdmi_lcdc_device);
 	if (usb)
 		rmobile_add_device_to_domain("A3SP", usb);
+
+	r8a7740_pm_init();
 }
 
 static void __init eva_earlytimer_init(void)
@@ -1192,9 +1202,6 @@ static void __init eva_earlytimer_init(void)
 static void __init eva_add_early_devices(void)
 {
 	r8a7740_add_early_devices();
-
-	/* override timer setup with board-specific code */
-	shmobile_timer.init = eva_earlytimer_init;
 }
 
 #define RESCNT2 IOMEM(0xe6188020)
@@ -1216,7 +1223,7 @@ DT_MACHINE_START(ARMADILLO800EVA_DT, "armadillo800eva")
 	.handle_irq	= shmobile_handle_irq_intc,
 	.init_machine	= eva_init,
 	.init_late	= shmobile_init_late,
-	.timer		= &shmobile_timer,
+	.init_time	= eva_earlytimer_init,
 	.dt_compat	= eva_boards_compat_dt,
 	.restart	= eva_restart,
 MACHINE_END
