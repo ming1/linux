@@ -395,7 +395,7 @@ static struct sk_buff *ndisc_build_skb(struct net_device *dev,
 		len += ndisc_opt_addr_space(dev);
 
 	skb = sock_alloc_send_skb(sk,
-				  (MAX_HEADER + sizeof(struct ipv6hdr) +
+				  (sizeof(struct ipv6hdr) +
 				   len + hlen + tlen),
 				  1, &err);
 	if (!skb) {
@@ -432,7 +432,6 @@ static struct sk_buff *ndisc_build_skb(struct net_device *dev,
 }
 
 static void ndisc_send_skb(struct sk_buff *skb, struct net_device *dev,
-			   struct neighbour *neigh,
 			   const struct in6_addr *daddr,
 			   const struct in6_addr *saddr,
 			   struct icmp6hdr *icmp6h)
@@ -448,7 +447,7 @@ static void ndisc_send_skb(struct sk_buff *skb, struct net_device *dev,
 	type = icmp6h->icmp6_type;
 
 	icmpv6_flow_init(sk, &fl6, type, saddr, daddr, dev->ifindex);
-	dst = icmp6_dst_alloc(dev, neigh, &fl6);
+	dst = icmp6_dst_alloc(dev, &fl6);
 	if (IS_ERR(dst)) {
 		kfree_skb(skb);
 		return;
@@ -474,7 +473,6 @@ static void ndisc_send_skb(struct sk_buff *skb, struct net_device *dev,
  *	Send a Neighbour Discover packet
  */
 static void __ndisc_send(struct net_device *dev,
-			 struct neighbour *neigh,
 			 const struct in6_addr *daddr,
 			 const struct in6_addr *saddr,
 			 struct icmp6hdr *icmp6h, const struct in6_addr *target,
@@ -486,7 +484,7 @@ static void __ndisc_send(struct net_device *dev,
 	if (!skb)
 		return;
 
-	ndisc_send_skb(skb, dev, neigh, daddr, saddr, icmp6h);
+	ndisc_send_skb(skb, dev, daddr, saddr, icmp6h);
 }
 
 static void ndisc_send_na(struct net_device *dev, struct neighbour *neigh,
@@ -521,8 +519,7 @@ static void ndisc_send_na(struct net_device *dev, struct neighbour *neigh,
 	icmp6h.icmp6_solicited = solicited;
 	icmp6h.icmp6_override = override;
 
-	__ndisc_send(dev, neigh, daddr, src_addr,
-		     &icmp6h, solicited_addr,
+	__ndisc_send(dev, daddr, src_addr, &icmp6h, solicited_addr,
 		     inc_opt ? ND_OPT_TARGET_LL_ADDR : 0);
 }
 
@@ -563,8 +560,7 @@ void ndisc_send_ns(struct net_device *dev, struct neighbour *neigh,
 		saddr = &addr_buf;
 	}
 
-	__ndisc_send(dev, neigh, daddr, saddr,
-		     &icmp6h, solicit,
+	__ndisc_send(dev, daddr, saddr, &icmp6h, solicit,
 		     !ipv6_addr_any(saddr) ? ND_OPT_SOURCE_LL_ADDR : 0);
 }
 
@@ -598,8 +594,7 @@ void ndisc_send_rs(struct net_device *dev, const struct in6_addr *saddr,
 		}
 	}
 #endif
-	__ndisc_send(dev, NULL, daddr, saddr,
-		     &icmp6h, NULL,
+	__ndisc_send(dev, daddr, saddr, &icmp6h, NULL,
 		     send_sllao ? ND_OPT_SOURCE_LL_ADDR : 0);
 }
 
@@ -675,6 +670,11 @@ static void ndisc_recv_ns(struct sk_buff *skb)
 	int dad = ipv6_addr_any(saddr);
 	bool inc;
 	int is_router = -1;
+
+	if (skb->len < sizeof(struct nd_msg)) {
+		ND_PRINTK(2, warn, "NS: packet too short\n");
+		return;
+	}
 
 	if (ipv6_addr_is_multicast(&msg->target)) {
 		ND_PRINTK(2, warn, "NS: multicast target address\n");
@@ -1355,12 +1355,11 @@ void ndisc_send_redirect(struct sk_buff *skb, const struct in6_addr *target)
 	struct net_device *dev = skb->dev;
 	struct net *net = dev_net(dev);
 	struct sock *sk = net->ipv6.ndisc_sk;
-	int len = sizeof(struct icmp6hdr) + 2 * sizeof(struct in6_addr);
+	int len = sizeof(struct rd_msg);
 	struct inet_peer *peer;
 	struct sk_buff *buff;
-	struct icmp6hdr *icmph;
+	struct rd_msg *msg;
 	struct in6_addr saddr_buf;
-	struct in6_addr *addrp;
 	struct rt6_info *rt;
 	struct dst_entry *dst;
 	struct inet6_dev *idev;
@@ -1439,7 +1438,7 @@ void ndisc_send_redirect(struct sk_buff *skb, const struct in6_addr *target)
 	hlen = LL_RESERVED_SPACE(dev);
 	tlen = dev->needed_tailroom;
 	buff = sock_alloc_send_skb(sk,
-				   (MAX_HEADER + sizeof(struct ipv6hdr) +
+				   (sizeof(struct ipv6hdr) +
 				    len + hlen + tlen),
 				   1, &err);
 	if (buff == NULL) {
@@ -1455,21 +1454,19 @@ void ndisc_send_redirect(struct sk_buff *skb, const struct in6_addr *target)
 
 	skb_set_transport_header(buff, skb_tail_pointer(buff) - buff->data);
 	skb_put(buff, len);
-	icmph = icmp6_hdr(buff);
+	msg = (struct rd_msg *)icmp6_hdr(buff);
 
-	memset(icmph, 0, sizeof(struct icmp6hdr));
-	icmph->icmp6_type = NDISC_REDIRECT;
+	memset(&msg->icmph, 0, sizeof(struct icmp6hdr));
+	msg->icmph.icmp6_type = NDISC_REDIRECT;
 
 	/*
 	 *	copy target and destination addresses
 	 */
 
-	addrp = (struct in6_addr *)(icmph + 1);
-	*addrp = *target;
-	addrp++;
-	*addrp = ipv6_hdr(skb)->daddr;
+	msg->target = *target;
+	msg->dest = ipv6_hdr(skb)->daddr;
 
-	opt = (u8*) (addrp + 1);
+	opt = msg->opt;
 
 	/*
 	 *	include target_address option
@@ -1490,9 +1487,9 @@ void ndisc_send_redirect(struct sk_buff *skb, const struct in6_addr *target)
 
 	memcpy(opt, ipv6_hdr(skb), rd_len - 8);
 
-	icmph->icmp6_cksum = csum_ipv6_magic(&saddr_buf, &ipv6_hdr(skb)->saddr,
-					     len, IPPROTO_ICMPV6,
-					     csum_partial(icmph, len, 0));
+	msg->icmph.icmp6_cksum = csum_ipv6_magic(&saddr_buf, &ipv6_hdr(skb)->saddr,
+						 len, IPPROTO_ICMPV6,
+						 csum_partial(msg, len, 0));
 
 	skb_dst_set(buff, dst);
 	rcu_read_lock();

@@ -88,7 +88,8 @@ static int ip6_finish_output2(struct sk_buff *skb)
 	struct dst_entry *dst = skb_dst(skb);
 	struct net_device *dev = dst->dev;
 	struct neighbour *neigh;
-	struct rt6_info *rt;
+	struct in6_addr *nexthop;
+	int ret;
 
 	skb->protocol = htons(ETH_P_IPV6);
 	skb->dev = dev;
@@ -123,10 +124,17 @@ static int ip6_finish_output2(struct sk_buff *skb)
 				skb->len);
 	}
 
-	rt = (struct rt6_info *) dst;
-	neigh = rt->n;
-	if (neigh)
-		return dst_neigh_output(dst, neigh, skb);
+	rcu_read_lock_bh();
+	nexthop = rt6_nexthop((struct rt6_info *)dst, &ipv6_hdr(skb)->daddr);
+	neigh = __ipv6_neigh_lookup_noref(dst->dev, nexthop);
+	if (unlikely(!neigh))
+		neigh = __neigh_create(&nd_tbl, nexthop, dst->dev, false);
+	if (!IS_ERR(neigh)) {
+		ret = dst_neigh_output(dst, neigh, skb);
+		rcu_read_unlock_bh();
+		return ret;
+	}
+	rcu_read_unlock_bh();
 
 	IP6_INC_STATS_BH(dev_net(dst->dev),
 			 ip6_dst_idev(dst), IPSTATS_MIB_OUTNOROUTES);
@@ -216,7 +224,7 @@ int ip6_xmit(struct sock *sk, struct sk_buff *skb, struct flowi6 *fl6,
 	if (hlimit < 0)
 		hlimit = ip6_dst_hoplimit(dst);
 
-	*(__be32 *)hdr = htonl(0x60000000 | (tclass << 20)) | fl6->flowlabel;
+	ip6_flow_hdr(hdr, tclass, fl6->flowlabel);
 
 	hdr->payload_len = htons(seg_len);
 	hdr->nexthdr = proto;
@@ -267,7 +275,7 @@ int ip6_nd_hdr(struct sock *sk, struct sk_buff *skb, struct net_device *dev,
 	skb_put(skb, sizeof(struct ipv6hdr));
 	hdr = ipv6_hdr(skb);
 
-	*(__be32*)hdr = htonl(0x60000000);
+	ip6_flow_hdr(hdr, 0, 0);
 
 	hdr->payload_len = htons(len);
 	hdr->nexthdr = proto;
@@ -913,8 +921,12 @@ static int ip6_dst_lookup_tail(struct sock *sk,
 	 * dst entry of the nexthop router
 	 */
 	rt = (struct rt6_info *) *dst;
-	n = rt->n;
-	if (n && !(n->nud_state & NUD_VALID)) {
+	rcu_read_lock_bh();
+	n = __ipv6_neigh_lookup_noref(rt->dst.dev, rt6_nexthop(rt, &fl6->daddr));
+	err = n && !(n->nud_state & NUD_VALID) ? -EINVAL : 0;
+	rcu_read_unlock_bh();
+
+	if (err) {
 		struct inet6_ifaddr *ifp;
 		struct flowi6 fl_gw6;
 		int redirect;
@@ -1548,9 +1560,7 @@ int ip6_push_pending_frames(struct sock *sk)
 	skb_reset_network_header(skb);
 	hdr = ipv6_hdr(skb);
 
-	*(__be32*)hdr = fl6->flowlabel |
-		     htonl(0x60000000 | ((int)np->cork.tclass << 20));
-
+	ip6_flow_hdr(hdr, np->cork.tclass, fl6->flowlabel);
 	hdr->hop_limit = np->cork.hop_limit;
 	hdr->nexthdr = proto;
 	hdr->saddr = fl6->saddr;
