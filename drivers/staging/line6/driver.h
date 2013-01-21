@@ -53,7 +53,7 @@
 #define LINE6_CHANNEL_MASK 0x0f
 
 #define MISSING_CASE	\
-	printk(KERN_ERR "line6usb driver bug: missing case in %s:%d\n", \
+	pr_err("line6usb driver bug: missing case in %s:%d\n", \
 		__FILE__, __LINE__)
 
 #define CHECK_RETURN(x)		\
@@ -208,8 +208,6 @@ extern int line6_send_raw_message_async(struct usb_line6 *line6,
 					const char *buffer, int size);
 extern int line6_send_sysex_message(struct usb_line6 *line6,
 				    const char *buffer, int size);
-extern int line6_send_sysex_message_async(struct usb_line6 *line6,
-					  const char *buffer, int size);
 extern ssize_t line6_set_raw(struct device *dev, struct device_attribute *attr,
 			     const char *buf, size_t count);
 extern void line6_start_timer(struct timer_list *timer, unsigned int msecs,

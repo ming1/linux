@@ -307,13 +307,12 @@ int line6_version_request_async(struct usb_line6 *line6)
 	char *buffer;
 	int retval;
 
-	buffer = kmalloc(sizeof(line6_request_version), GFP_ATOMIC);
+	buffer = kmemdup(line6_request_version,
+			sizeof(line6_request_version), GFP_ATOMIC);
 	if (buffer == NULL) {
 		dev_err(line6->ifcdev, "Out of memory");
 		return -ENOMEM;
 	}
-
-	memcpy(buffer, line6_request_version, sizeof(line6_request_version));
 
 	retval = line6_send_raw_message_async(line6, buffer,
 					      sizeof(line6_request_version));
@@ -329,17 +328,6 @@ int line6_send_sysex_message(struct usb_line6 *line6, const char *buffer,
 {
 	return line6_send_raw_message(line6, buffer,
 				      size + SYSEX_EXTRA_SIZE) -
-	    SYSEX_EXTRA_SIZE;
-}
-
-/*
-	Send sysex message in pieces of wMaxPacketSize bytes.
-*/
-int line6_send_sysex_message_async(struct usb_line6 *line6, const char *buffer,
-				   int size)
-{
-	return line6_send_raw_message_async(line6, buffer,
-					    size + SYSEX_EXTRA_SIZE) -
 	    SYSEX_EXTRA_SIZE;
 }
 
@@ -372,7 +360,7 @@ char *line6_alloc_sysex_buffer(struct usb_line6 *line6, int code1, int code2,
 static void line6_data_received(struct urb *urb)
 {
 	struct usb_line6 *line6 = (struct usb_line6 *)urb->context;
-	struct MidiBuffer *mb = &line6->line6midi->midibuf_in;
+	struct midi_buffer *mb = &line6->line6midi->midibuf_in;
 	int done;
 
 	if (urb->status == -ESHUTDOWN)
@@ -532,7 +520,7 @@ int line6_read_data(struct usb_line6 *line6, int address, void *data,
 		return ret;
 	}
 
-	/* Wait for data length. We'll get a couple of 0xff until length arrives. */
+	/* Wait for data length. We'll get 0xff until length arrives. */
 	do {
 		ret = usb_control_msg(usbdev, usb_rcvctrlpipe(usbdev, 0), 0x67,
 				      USB_TYPE_VENDOR | USB_RECIP_DEVICE |
