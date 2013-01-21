@@ -97,8 +97,7 @@ void __cpuinit numa_set_node(int cpu, int node)
 #endif
 	per_cpu(x86_cpu_to_node_map, cpu) = node;
 
-	if (node != NUMA_NO_NODE)
-		set_cpu_numa_node(cpu, node);
+	set_cpu_numa_node(cpu, node);
 }
 
 void __cpuinit numa_clear_node(int cpu)
@@ -222,10 +221,9 @@ static void __init setup_node_data(int nid, u64 start, u64 end)
 		nd_pa = __pa(nd);
 		remapped = true;
 	} else {
-		nd_pa = memblock_alloc_nid(nd_size, SMP_CACHE_BYTES, nid);
+		nd_pa = memblock_alloc_try_nid(nd_size, SMP_CACHE_BYTES, nid);
 		if (!nd_pa) {
-			pr_err("Cannot find %zu bytes in node %d\n",
-			       nd_size, nid);
+			pr_err("Cannot find %zu bytes in any node\n", nd_size);
 			return;
 		}
 		nd = __va(nd_pa);
