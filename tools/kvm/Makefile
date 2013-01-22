@@ -103,7 +103,7 @@ OBJS	+= virtio/mmio.o
 
 # Translate uname -m into ARCH string
 ARCH ?= $(shell uname -m | sed -e s/i.86/i386/ -e s/ppc.*/powerpc/ \
-	  -e s/armv7.*/arm/)
+	  -e s/armv7.*/arm/ -e s/aarch64.*/arm64/)
 
 ifeq ($(ARCH),i386)
 	ARCH         := x86
@@ -160,19 +160,28 @@ endif
 
 # ARM
 OBJS_ARM_COMMON		:= arm/fdt.o arm/gic.o arm/ioport.o arm/irq.o \
-			   arm/kvm.o arm/kvm-cpu.o arm/smp.o
+			   arm/kvm.o arm/kvm-cpu.o
 HDRS_ARM_COMMON		:= arm/include
 ifeq ($(ARCH), arm)
 	DEFINES		+= -DCONFIG_ARM
 	OBJS		+= $(OBJS_ARM_COMMON)
 	OBJS		+= arm/aarch32/cortex-a15.o
 	OBJS		+= arm/aarch32/kvm-cpu.o
-	OBJS       	+= arm/aarch32/smp-pen.o
 	ARCH_INCLUDE	:= $(HDRS_ARM_COMMON)
 	ARCH_INCLUDE	+= -Iarm/aarch32/include
-	ASFLAGS		+= -D__ASSEMBLY__
-	ASFLAGS		+= -I$(ARCH_INCLUDE)
 	CFLAGS		+= -march=armv7-a
+	CFLAGS		+= -I../../scripts/dtc/libfdt
+	OTHEROBJS	+= $(LIBFDT_OBJS)
+endif
+
+# ARM64
+ifeq ($(ARCH), arm64)
+	DEFINES		+= -DCONFIG_ARM64
+	OBJS		+= $(OBJS_ARM_COMMON)
+	OBJS		+= arm/aarch64/cortex-a57.o
+	OBJS		+= arm/aarch64/kvm-cpu.o
+	ARCH_INCLUDE	:= $(HDRS_ARM_COMMON)
+	ARCH_INCLUDE	+= -Iarm/aarch64/include
 	CFLAGS		+= -I../../scripts/dtc/libfdt
 	OTHEROBJS	+= $(LIBFDT_OBJS)
 endif
