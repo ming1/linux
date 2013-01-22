@@ -164,6 +164,10 @@ config PINCTRL_TEGRA30
 	bool
 	select PINCTRL_TEGRA
 
+config PINCTRL_TEGRA114
+	bool
+	select PINCTRL_TEGRA
+
 config PINCTRL_U300
 	bool "U300 pin controller driver"
 	depends on ARCH_U300
@@ -181,12 +185,11 @@ config PINCTRL_COH901
 
 config PINCTRL_SAMSUNG
 	bool
-	depends on OF && GPIOLIB
 	select PINMUX
 	select PINCONF
 
-config PINCTRL_EXYNOS4
-	bool "Pinctrl driver data for Exynos4 SoC"
+config PINCTRL_EXYNOS
+	bool "Pinctrl driver data for Samsung EXYNOS SoCs"
 	depends on OF && GPIOLIB
 	select PINCTRL_SAMSUNG
 
