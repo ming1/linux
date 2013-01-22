@@ -1,7 +1,6 @@
 config COMEDI
 	tristate "Data acquisition support (comedi)"
 	depends on m
-	depends on BROKEN || FRV || M32R || MN10300 || SUPERH || TILE || X86
 	---help---
 	  Enable support a wide range of data acquisition devices
 	  for Linux.
@@ -567,6 +566,13 @@ config COMEDI_8255_PCI
 	  To compile this driver as a module, choose M here: the module will
 	  be called 8255_pci.
 
+config COMEDI_ADDI_WATCHDOG
+	tristate
+	---help---
+	  Provides support for the watchdog subdevice found on many ADDI-DATA
+	  boards. This module will be automatically selected when needed. The
+	  module will be called addi_watchdog.
+
 config COMEDI_ADDI_APCI_035
 	tristate "ADDI-DATA APCI_035 support"
 	---help---
@@ -619,6 +625,7 @@ config COMEDI_ADDI_APCI_16XX
 
 config COMEDI_ADDI_APCI_2032
 	tristate "ADDI-DATA APCI_2032 support"
+	select COMEDI_ADDI_WATCHDOG
 	---help---
 	  Enable support for ADDI-DATA APCI_2032 cards
 

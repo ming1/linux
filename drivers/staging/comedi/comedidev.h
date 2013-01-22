@@ -77,6 +77,7 @@
 
 struct comedi_subdevice {
 	struct comedi_device *device;
+	int index;
 	int type;
 	int n_chan;
 	int subdev_flags;
@@ -250,13 +251,6 @@ static inline const void *comedi_board(const struct comedi_device *dev)
 	return dev->board_ptr;
 }
 
-struct comedi_device_file_info {
-	struct comedi_device *device;
-	struct comedi_subdevice *read_subdevice;
-	struct comedi_subdevice *write_subdevice;
-	struct device *hardware_device;
-};
-
 #ifdef CONFIG_COMEDI_DEBUG
 extern int comedi_debug;
 #else
@@ -280,27 +274,7 @@ enum comedi_minor_bits {
 static const unsigned COMEDI_SUBDEVICE_MINOR_SHIFT = 4;
 static const unsigned COMEDI_SUBDEVICE_MINOR_OFFSET = 1;
 
-struct comedi_device_file_info *comedi_get_device_file_info(unsigned minor);
-
-static inline struct comedi_subdevice *comedi_get_read_subdevice(
-	const struct comedi_device_file_info *info)
-{
-	if (info->read_subdevice)
-		return info->read_subdevice;
-	if (info->device == NULL)
-		return NULL;
-	return info->device->read_subdev;
-}
-
-static inline struct comedi_subdevice *comedi_get_write_subdevice(
-	const struct comedi_device_file_info *info)
-{
-	if (info->write_subdevice)
-		return info->write_subdevice;
-	if (info->device == NULL)
-		return NULL;
-	return info->device->write_subdev;
-}
+struct comedi_device *comedi_dev_from_minor(unsigned minor);
 
 int comedi_alloc_subdevices(struct comedi_device *, int);
 
@@ -341,6 +315,27 @@ void comedi_pci_driver_unregister(struct comedi_driver *, struct pci_driver *);
 #define module_comedi_pci_driver(__comedi_driver, __pci_driver) \
 	module_driver(__comedi_driver, comedi_pci_driver_register, \
 			comedi_pci_driver_unregister, &(__pci_driver))
+
+struct pcmcia_driver;
+
+int comedi_pcmcia_driver_register(struct comedi_driver *,
+					struct pcmcia_driver *);
+void comedi_pcmcia_driver_unregister(struct comedi_driver *,
+					struct pcmcia_driver *);
+
+/**
+ * module_comedi_pcmcia_driver() - Helper macro for registering a comedi PCMCIA driver
+ * @__comedi_driver: comedi_driver struct
+ * @__pcmcia_driver: pcmcia_driver struct
+ *
+ * Helper macro for comedi PCMCIA drivers which do not do anything special
+ * in module init/exit. This eliminates a lot of boilerplate. Each
+ * module may only use this macro once, and calling it replaces
+ * module_init() and module_exit()
+ */
+#define module_comedi_pcmcia_driver(__comedi_driver, __pcmcia_driver) \
+	module_driver(__comedi_driver, comedi_pcmcia_driver_register, \
+			comedi_pcmcia_driver_unregister, &(__pcmcia_driver))
 
 struct usb_driver;
 
@@ -389,10 +384,11 @@ enum subdevice_runflags {
 	SRF_RUNNING = 0x08000000
 };
 
+bool comedi_is_subdevice_running(struct comedi_subdevice *s);
+
 int comedi_check_chanlist(struct comedi_subdevice *s,
 			  int n,
 			  unsigned int *chanlist);
-unsigned comedi_get_subdevice_runflags(struct comedi_subdevice *s);
 
 /* range stuff */
 
@@ -460,56 +456,20 @@ comedi_to_usb_interface(struct comedi_device *dev)
 	return dev->hw_dev ? to_usb_interface(dev->hw_dev) : NULL;
 }
 
-int comedi_buf_put(struct comedi_async *async, short x);
-int comedi_buf_get(struct comedi_async *async, short *x);
+unsigned int comedi_buf_write_alloc(struct comedi_async *, unsigned int);
+unsigned int comedi_buf_write_free(struct comedi_async *, unsigned int);
 
-unsigned int comedi_buf_write_n_available(struct comedi_async *async);
-unsigned int comedi_buf_write_alloc(struct comedi_async *async,
-				    unsigned int nbytes);
-unsigned int comedi_buf_write_alloc_strict(struct comedi_async *async,
-					   unsigned int nbytes);
-unsigned comedi_buf_write_free(struct comedi_async *async, unsigned int nbytes);
-unsigned comedi_buf_read_alloc(struct comedi_async *async, unsigned nbytes);
-unsigned comedi_buf_read_free(struct comedi_async *async, unsigned int nbytes);
-unsigned int comedi_buf_read_n_available(struct comedi_async *async);
+unsigned int comedi_buf_read_n_available(struct comedi_async *);
+unsigned int comedi_buf_read_alloc(struct comedi_async *, unsigned int);
+unsigned int comedi_buf_read_free(struct comedi_async *, unsigned int);
+
+int comedi_buf_put(struct comedi_async *, short);
+int comedi_buf_get(struct comedi_async *, short *);
+
 void comedi_buf_memcpy_to(struct comedi_async *async, unsigned int offset,
 			  const void *source, unsigned int num_bytes);
 void comedi_buf_memcpy_from(struct comedi_async *async, unsigned int offset,
 			    void *destination, unsigned int num_bytes);
-static inline unsigned comedi_buf_write_n_allocated(struct comedi_async *async)
-{
-	return async->buf_write_alloc_count - async->buf_write_count;
-}
-
-static inline unsigned comedi_buf_read_n_allocated(struct comedi_async *async)
-{
-	return async->buf_read_alloc_count - async->buf_read_count;
-}
-
-static inline void *comedi_aux_data(int options[], int n)
-{
-	unsigned long address;
-	unsigned long addressLow;
-	int bit_shift;
-	if (sizeof(int) >= sizeof(void *))
-		address = options[COMEDI_DEVCONF_AUX_DATA_LO];
-	else {
-		address = options[COMEDI_DEVCONF_AUX_DATA_HI];
-		bit_shift = sizeof(int) * 8;
-		address <<= bit_shift;
-		addressLow = options[COMEDI_DEVCONF_AUX_DATA_LO];
-		addressLow &= (1UL << bit_shift) - 1;
-		address |= addressLow;
-	}
-	if (n >= 1)
-		address += options[COMEDI_DEVCONF_AUX_DATA0_LENGTH];
-	if (n >= 2)
-		address += options[COMEDI_DEVCONF_AUX_DATA1_LENGTH];
-	if (n >= 3)
-		address += options[COMEDI_DEVCONF_AUX_DATA2_LENGTH];
-	BUG_ON(n > 3);
-	return (void *)address;
-}
 
 int comedi_alloc_subdevice_minor(struct comedi_device *dev,
 				 struct comedi_subdevice *s);
