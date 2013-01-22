@@ -15,6 +15,12 @@
 /* Flags for signalfd4.  */
 #define SFD_CLOEXEC O_CLOEXEC
 #define SFD_NONBLOCK O_NONBLOCK
+#define SFD_RAW O_DIRECT
+
+/* Read signals from a shared (process wide) queue */
+#define SFD_SHARED_QUEUE_OFFSET (1LL << 62)
+/* Read signals from a per-thread queue */
+#define SFD_PER_THREAD_QUEUE_OFFSET 1
 
 struct signalfd_siginfo {
 	__u32 ssi_signo;
