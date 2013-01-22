@@ -115,7 +115,7 @@ const char *acpi_power_state_string(int state)
 	case ACPI_STATE_D3_HOT:
 		return "D3hot";
 	case ACPI_STATE_D3_COLD:
-		return "D3";
+		return "D3cold";
 	default:
 		return "(unknown)";
 	}
@@ -186,6 +186,19 @@ int acpi_device_get_power(struct acpi_device *device, int *state)
 	return 0;
 }
 
+static int acpi_dev_pm_explicit_set(struct acpi_device *adev, int state)
+{
+	if (adev->power.states[state].flags.explicit_set) {
+		char method[5] = { '_', 'P', 'S', '0' + state, '\0' };
+		acpi_status status;
+
+		status = acpi_evaluate_object(adev->handle, method, NULL, NULL);
+		if (ACPI_FAILURE(status))
+			return -ENODEV;
+	}
+	return 0;
+}
+
 /**
  * acpi_device_set_power - Set power state of an ACPI device.
  * @device: Device to set the power state of.
@@ -197,8 +210,6 @@ int acpi_device_get_power(struct acpi_device *device, int *state)
 int acpi_device_set_power(struct acpi_device *device, int state)
 {
 	int result = 0;
-	acpi_status status = AE_OK;
-	char object_name[5] = { '_', 'P', 'S', '0' + state, '\0' };
 	bool cut_power = false;
 
 	if (!device || (state < ACPI_STATE_D0) || (state > ACPI_STATE_D3_COLD))
@@ -228,63 +239,44 @@ int acpi_device_set_power(struct acpi_device *device, int state)
 	if (state == ACPI_STATE_D3_COLD
 	    && device->power.states[ACPI_STATE_D3_COLD].flags.os_accessible) {
 		state = ACPI_STATE_D3_HOT;
-		object_name[3] = '3';
 		cut_power = true;
+	}
+
+	if (state < device->power.state && state != ACPI_STATE_D0
+	    && device->power.state >= ACPI_STATE_D3_HOT) {
+		printk(KERN_WARNING PREFIX
+			"Cannot transition to non-D0 state from D3\n");
+		return -ENODEV;
 	}
 
 	/*
 	 * Transition Power
 	 * ----------------
-	 * On transitions to a high-powered state we first apply power (via
-	 * power resources) then evalute _PSx.  Conversly for transitions to
-	 * a lower-powered state.
+	 * In accordance with the ACPI specification first apply power (via
+	 * power resources) and then evalute _PSx.
 	 */
-	if (state < device->power.state) {
-		if (device->power.state >= ACPI_STATE_D3_HOT &&
-		    state != ACPI_STATE_D0) {
-			printk(KERN_WARNING PREFIX
-			      "Cannot transition to non-D0 state from D3\n");
-			return -ENODEV;
-		}
-		if (device->power.flags.power_resources) {
-			result = acpi_power_transition(device, state);
-			if (result)
-				goto end;
-		}
-		if (device->power.states[state].flags.explicit_set) {
-			status = acpi_evaluate_object(device->handle,
-						      object_name, NULL, NULL);
-			if (ACPI_FAILURE(status)) {
-				result = -ENODEV;
-				goto end;
-			}
-		}
-	} else {
-		if (device->power.states[state].flags.explicit_set) {
-			status = acpi_evaluate_object(device->handle,
-						      object_name, NULL, NULL);
-			if (ACPI_FAILURE(status)) {
-				result = -ENODEV;
-				goto end;
-			}
-		}
-		if (device->power.flags.power_resources) {
-			result = acpi_power_transition(device, state);
-			if (result)
-				goto end;
-		}
+	if (device->power.flags.power_resources) {
+		result = acpi_power_transition(device, state);
+		if (result)
+			goto end;
+	}
+	result = acpi_dev_pm_explicit_set(device, state);
+	if (result)
+		goto end;
+
+	if (cut_power) {
+		device->power.state = state;
+		state = ACPI_STATE_D3_COLD;
+		result = acpi_power_transition(device, state);
 	}
 
-	if (cut_power)
-		result = acpi_power_transition(device, ACPI_STATE_D3_COLD);
-
-      end:
-	if (result)
+ end:
+	if (result) {
 		printk(KERN_WARNING PREFIX
 			      "Device [%s] failed to transition to %s\n",
 			      device->pnp.bus_id,
 			      acpi_power_state_string(state));
-	else {
+	} else {
 		device->power.state = state;
 		ACPI_DEBUG_PRINT((ACPI_DB_INFO,
 				  "Device [%s] transitioned to %s\n",
@@ -330,13 +322,17 @@ int acpi_bus_init_power(struct acpi_device *device)
 	if (result)
 		return result;
 
-	if (device->power.flags.power_resources)
+	if (state < ACPI_STATE_D3_COLD && device->power.flags.power_resources) {
 		result = acpi_power_on_resources(device, state);
+		if (result)
+			return result;
 
-	if (!result)
-		device->power.state = state;
-
-	return result;
+		result = acpi_dev_pm_explicit_set(device, state);
+		if (result)
+			return result;
+	}
+	device->power.state = state;
+	return 0;
 }
 
 int acpi_bus_update_power(acpi_handle handle, int *state_p)
