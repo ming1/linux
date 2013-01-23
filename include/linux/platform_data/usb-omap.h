@@ -39,6 +39,7 @@ enum usbhs_omap_port_mode {
 };
 
 struct usbhs_omap_platform_data {
+	int				nports;
 	enum usbhs_omap_port_mode	port_mode[OMAP3_HS_USB_PORTS];
 	int				reset_gpio_port[OMAP3_HS_USB_PORTS];
 	struct regulator		*regulator[OMAP3_HS_USB_PORTS];
