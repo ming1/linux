@@ -279,7 +279,7 @@ static void lp5523_firmware_loaded(struct lp55xx_chip *chip)
 	const struct firmware *fw = chip->fw;
 
 	if (fw->size > LP5523_PROGRAM_LENGTH) {
-		dev_err(&chip->cl->dev, "firmware data size overflow: %d\n",
+		dev_err(&chip->cl->dev, "firmware data size overflow: %zu\n",
 			fw->size);
 		return;
 	}
