@@ -25,6 +25,7 @@
 #include <linux/dma-mapping.h>
 #include <linux/platform_data/omap_drm.h>
 
+#include "soc.h"
 #include "omap_device.h"
 #include "omap_hwmod.h"
 
@@ -56,12 +57,12 @@ static int __init omap_init_drm(void)
 			oh->name);
 	}
 
-	platform_data.omaprev = GET_OMAP_REVISION();
+	platform_data.omaprev = GET_OMAP_TYPE;
 
 	return platform_device_register(&omap_drm_device);
 
 }
 
-arch_initcall(omap_init_drm);
+omap_arch_initcall(omap_init_drm);
 
 #endif
