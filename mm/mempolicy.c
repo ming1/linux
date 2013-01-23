@@ -168,7 +168,7 @@ static int is_valid_nodemask(const nodemask_t *nodemask)
 
 		for (k = 0; k <= policy_zone; k++) {
 			z = &NODE_DATA(nd)->node_zones[k];
-			if (z->present_pages > 0)
+			if (z->managed_pages > 0)
 				return 1;
 		}
 	}
