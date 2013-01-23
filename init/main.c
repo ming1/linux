@@ -815,7 +815,7 @@ static int run_init_process(const char *init_filename)
 		(const char __user *const __user *)envp_init);
 }
 
-static void __init kernel_init_freeable(void);
+static noinline void __init kernel_init_freeable(void);
 
 static int __ref kernel_init(void *unused)
 {
@@ -858,7 +858,7 @@ static int __ref kernel_init(void *unused)
 	      "See Linux Documentation/init.txt for guidance.");
 }
 
-static void __init kernel_init_freeable(void)
+static noinline void __init kernel_init_freeable(void)
 {
 	/*
 	 * Wait until kthreadd is all set-up.
