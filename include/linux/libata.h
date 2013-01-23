@@ -546,6 +546,7 @@ struct ata_host {
 	void			*private_data;
 	struct ata_port_operations *ops;
 	unsigned long		flags;
+	unsigned int            host_id; /* user visible host ID */
 
 	struct mutex		eh_mutex;
 	struct task_struct	*eh_owner;
@@ -619,6 +620,9 @@ struct ata_device {
 #ifdef CONFIG_ATA_ACPI
 	union acpi_object	*gtf_cache;
 	unsigned int		gtf_filter;
+#endif
+#ifdef CONFIG_SATA_ZPODD
+	void			*zpodd;
 #endif
 	struct device		tdev;
 	/* n_sector is CLEAR_BEGIN, read comment above CLEAR_BEGIN */
