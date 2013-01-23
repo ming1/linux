@@ -99,6 +99,7 @@ static void ata_dev_xfermask(struct ata_device *dev);
 static unsigned long ata_dev_blacklisted(const struct ata_device *dev);
 
 atomic_t ata_print_id = ATOMIC_INIT(0);
+atomic_t host_print_id = ATOMIC_INIT(0);
 
 struct ata_force_param {
 	const char	*name;
@@ -2400,8 +2401,10 @@ int ata_dev_configure(struct ata_device *dev)
 			dma_dir_string = ", DMADIR";
 		}
 
-		if (ata_id_has_da(dev->id))
+		if (ata_id_has_da(dev->id)) {
 			dev->flags |= ATA_DFLAG_DA;
+			zpodd_init(dev);
+		}
 
 		/* print device info to dmesg */
 		if (ata_msg_drv(ap) && print_info)
@@ -5410,8 +5413,27 @@ static int ata_port_resume(struct device *dev)
 	return rc;
 }
 
+/*
+ * For ODDs, the upper layer will poll for media change every few seconds,
+ * which will make it enter and leave suspend state every few seconds. And
+ * as each suspend will cause a hard/soft reset, the gain of runtime suspend
+ * is very little and the ODD may malfunction after constantly being reset.
+ * So the idle callback here will not proceed to suspend if a non-ZPODD capable
+ * ODD is attached to the port.
+ */
 static int ata_port_runtime_idle(struct device *dev)
 {
+	struct ata_port *ap = to_ata_port(dev);
+	struct ata_link *link;
+	struct ata_device *adev;
+
+	ata_for_each_link(link, ap, HOST_FIRST) {
+		ata_for_each_dev(adev, link, ENABLED)
+			if (adev->class == ATA_DEV_ATAPI &&
+			    !zpodd_dev_enabled(adev))
+				return -EBUSY;
+	}
+
 	return pm_runtime_suspend(dev);
 }
 
@@ -6096,6 +6118,9 @@ int ata_host_register(struct ata_host *host, struct scsi_host_template *sht)
 	 */
 	for (i = host->n_ports; host->ports[i]; i++)
 		kfree(host->ports[i]);
+
+	/* track host controller */
+	host->host_id = atomic_inc_return(&host_print_id);
 
 	/* give ports names and add SCSI hosts */
 	for (i = 0; i < host->n_ports; i++)
