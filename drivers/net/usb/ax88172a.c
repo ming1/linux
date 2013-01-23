@@ -35,6 +35,7 @@ struct ax88172a_private {
 	u16 phy_addr;
 	u16 oldmode;
 	int use_embdphy;
+	struct asix_rx_fixup_info rx_fixup_info;
 };
 
 /* MDIO read and write wrappers for phylib */
@@ -377,7 +378,7 @@ static int ax88172a_reset(struct usbnet *dev)
 
 	priv->phydev = phy_connect(dev->net, priv->phy_name,
 				   &ax88172a_adjust_link,
-				   0, PHY_INTERFACE_MODE_MII);
+				   PHY_INTERFACE_MODE_MII);
 	if (IS_ERR(priv->phydev)) {
 		netdev_err(dev->net, "Could not connect to PHY device %s\n",
 			   priv->phy_name);
@@ -400,6 +401,14 @@ out:
 
 }
 
+static int ax88172a_rx_fixup(struct usbnet *dev, struct sk_buff *skb)
+{
+	struct ax88172a_private *dp = dev->driver_priv;
+	struct asix_rx_fixup_info *rx = &dp->rx_fixup_info;
+
+	return asix_rx_fixup_internal(dev, skb, rx);
+}
+
 const struct driver_info ax88172a_info = {
 	.description = "ASIX AX88172A USB 2.0 Ethernet",
 	.bind = ax88172a_bind,
@@ -409,6 +418,6 @@ const struct driver_info ax88172a_info = {
 	.status = ax88172a_status,
 	.flags = FLAG_ETHER | FLAG_FRAMING_AX | FLAG_LINK_INTR |
 		 FLAG_MULTI_PACKET,
-	.rx_fixup = asix_rx_fixup,
+	.rx_fixup = ax88172a_rx_fixup,
 	.tx_fixup = asix_tx_fixup,
 };
