@@ -51,6 +51,44 @@ struct signalfd_ctx {
 	sigset_t sigmask;
 };
 
+static ssize_t signalfd_peek(struct signalfd_ctx *ctx,
+				siginfo_t *info, loff_t *ppos)
+{
+	struct sigpending *pending;
+	struct sigqueue *q;
+	loff_t seq;
+	int ret = 0;
+
+	if (*ppos >= SFD_SHARED_QUEUE_OFFSET) {
+		pending = &current->signal->shared_pending;
+		seq = *ppos - SFD_SHARED_QUEUE_OFFSET;
+	} else if (*ppos >= SFD_PER_THREAD_QUEUE_OFFSET) {
+		pending = &current->pending;
+		seq = *ppos - SFD_PER_THREAD_QUEUE_OFFSET;
+	} else
+		return -EINVAL;
+
+	spin_lock_irq(&current->sighand->siglock);
+
+	list_for_each_entry(q, &pending->list, list) {
+		if (sigismember(&ctx->sigmask, q->info.si_signo))
+			continue;
+
+		if (seq-- == 0) {
+			copy_siginfo(info, &q->info);
+			ret = info->si_signo;
+			break;
+		}
+	}
+
+	spin_unlock_irq(&current->sighand->siglock);
+
+	if (ret)
+		(*ppos)++;
+
+	return ret;
+}
+
 static int signalfd_release(struct inode *inode, struct file *file)
 {
 	kfree(file->private_data);
@@ -249,7 +287,11 @@ static ssize_t signalfd_read(struct file *file, char __user *buf, size_t count,
 
 	siginfo = (struct signalfd_siginfo __user *) buf;
 	do {
-		ret = signalfd_dequeue(ctx, &info, nonblock);
+		if (*ppos == 0)
+			ret = signalfd_dequeue(ctx, &info, nonblock);
+		else
+			ret = signalfd_peek(ctx, &info, ppos);
+
 		if (unlikely(ret <= 0))
 			break;
 
@@ -339,6 +381,7 @@ SYSCALL_DEFINE4(signalfd4, int, ufd, sigset_t __user *, user_mask,
 		}
 
 		file->f_flags |= flags & SFD_RAW;
+		file->f_mode |= FMODE_PREAD;
 
 		fd_install(ufd, file);
 	} else {
