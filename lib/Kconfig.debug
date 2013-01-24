@@ -243,7 +243,7 @@ config BOOTPARAM_SOFTLOCKUP_PANIC_VALUE
 	default 1 if BOOTPARAM_SOFTLOCKUP_PANIC
 
 config PANIC_ON_OOPS
-	bool "Panic on Oops" if EXPERT
+	bool "Panic on Oops" if DEBUG_KERNEL
 	default n
 	help
 	  Say Y here to enable the kernel to panic when it oopses. This
