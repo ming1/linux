@@ -178,6 +178,32 @@ err_out:
 }
 EXPORT_SYMBOL(acpi_bus_hot_remove_device);
 
+static ssize_t real_power_state_show(struct device *dev,
+				     struct device_attribute *attr, char *buf)
+{
+	struct acpi_device *adev = to_acpi_device(dev);
+	int state;
+	int ret;
+
+	ret = acpi_device_get_power(adev, &state);
+	if (ret)
+		return ret;
+
+	return sprintf(buf, "%s\n", acpi_power_state_string(state));
+}
+
+static DEVICE_ATTR(real_power_state, 0444, real_power_state_show, NULL);
+
+static ssize_t power_state_show(struct device *dev,
+				struct device_attribute *attr, char *buf)
+{
+	struct acpi_device *adev = to_acpi_device(dev);
+
+	return sprintf(buf, "%s\n", acpi_power_state_string(adev->power.state));
+}
+
+static DEVICE_ATTR(power_state, 0444, power_state_show, NULL);
+
 static ssize_t
 acpi_eject_store(struct device *d, struct device_attribute *attr,
 		const char *buf, size_t count)
@@ -369,8 +395,22 @@ static int acpi_device_setup_files(struct acpi_device *dev)
          * hot-removal function from userland.
          */
 	status = acpi_get_handle(dev->handle, "_EJ0", &temp);
-	if (ACPI_SUCCESS(status))
+	if (ACPI_SUCCESS(status)) {
 		result = device_create_file(&dev->dev, &dev_attr_eject);
+		if (result)
+			return result;
+	}
+
+	if (dev->flags.power_manageable) {
+		result = device_create_file(&dev->dev, &dev_attr_power_state);
+		if (result)
+			return result;
+
+		if (dev->power.flags.power_resources)
+			result = device_create_file(&dev->dev,
+						    &dev_attr_real_power_state);
+	}
+
 end:
 	return result;
 }
@@ -379,6 +419,13 @@ static void acpi_device_remove_files(struct acpi_device *dev)
 {
 	acpi_status status;
 	acpi_handle temp;
+
+	if (dev->flags.power_manageable) {
+		device_remove_file(&dev->dev, &dev_attr_power_state);
+		if (dev->power.flags.power_resources)
+			device_remove_file(&dev->dev,
+					   &dev_attr_real_power_state);
+	}
 
 	/*
 	 * If device has _STR, remove 'description' file
@@ -633,8 +680,8 @@ struct bus_type acpi_bus_type = {
 	.uevent		= acpi_device_uevent,
 };
 
-int acpi_device_register(struct acpi_device *device,
-			 void (*release)(struct device *))
+int acpi_device_add(struct acpi_device *device,
+		    void (*release)(struct device *))
 {
 	int result;
 	struct acpi_device_bus_id *acpi_device_bus_id, *new_bus_id;
@@ -704,7 +751,7 @@ int acpi_device_register(struct acpi_device *device,
 		device->dev.parent = &device->parent->dev;
 	device->dev.bus = &acpi_bus_type;
 	device->dev.release = release;
-	result = device_register(&device->dev);
+	result = device_add(&device->dev);
 	if (result) {
 		dev_err(&device->dev, "Error registering device\n");
 		goto err;
@@ -743,12 +790,16 @@ static void acpi_device_unregister(struct acpi_device *device)
 
 	acpi_power_add_remove_device(device, false);
 	acpi_device_remove_files(device);
-	device_unregister(&device->dev);
+	if (device->remove)
+		device->remove(device);
+
+	device_del(&device->dev);
 	/*
 	 * Drop the reference counts of all power resources the device depends
 	 * on and turn off the ones that have no more references.
 	 */
 	acpi_power_transition(device, ACPI_STATE_D3_COLD);
+	put_device(&device->dev);
 }
 
 /* --------------------------------------------------------------------------
@@ -1390,6 +1441,14 @@ void acpi_init_device_object(struct acpi_device *device, acpi_handle handle,
 	acpi_device_get_busid(device);
 	acpi_device_set_id(device);
 	acpi_bus_get_flags(device);
+	device_initialize(&device->dev);
+	dev_set_uevent_suppress(&device->dev, true);
+}
+
+void acpi_device_add_finalize(struct acpi_device *device)
+{
+	dev_set_uevent_suppress(&device->dev, false);
+	kobject_uevent(&device->dev.kobj, KOBJ_ADD);
 }
 
 static int acpi_add_single_object(struct acpi_device **child,
@@ -1411,13 +1470,14 @@ static int acpi_add_single_object(struct acpi_device **child,
 	acpi_bus_get_wakeup_device_flags(device);
 
 	device->flags.match_driver = match_driver;
-	result = acpi_device_register(device, acpi_device_release);
+	result = acpi_device_add(device, acpi_device_release);
 	if (result) {
 		acpi_device_release(&device->dev);
 		return result;
 	}
 
 	acpi_power_add_remove_device(device, true);
+	acpi_device_add_finalize(device);
 	acpi_get_name(handle, ACPI_FULL_PATHNAME, &buffer);
 	ACPI_DEBUG_PRINT((ACPI_DB_INFO, "Added %s [%s] parent %s\n",
 		dev_name(&device->dev), (char *) buffer.pointer,
