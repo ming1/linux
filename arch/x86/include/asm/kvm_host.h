@@ -33,10 +33,10 @@
 
 #define KVM_MAX_VCPUS 254
 #define KVM_SOFT_MAX_VCPUS 160
-#define KVM_MEMORY_SLOTS 32
-/* memory slots that does not exposed to userspace */
-#define KVM_PRIVATE_MEM_SLOTS 4
-#define KVM_MEM_SLOTS_NUM (KVM_MEMORY_SLOTS + KVM_PRIVATE_MEM_SLOTS)
+#define KVM_USER_MEM_SLOTS 125
+/* memory slots that are not exposed to userspace */
+#define KVM_PRIVATE_MEM_SLOTS 3
+#define KVM_MEM_SLOTS_NUM (KVM_USER_MEM_SLOTS + KVM_PRIVATE_MEM_SLOTS)
 
 #define KVM_MMIO_SIZE 16
 
@@ -219,11 +219,6 @@ struct kvm_mmu_page {
 	u64 *spt;
 	/* hold the gfn of each spte inside spt */
 	gfn_t *gfns;
-	/*
-	 * One bit set per slot which has memory
-	 * in this shadow page.
-	 */
-	DECLARE_BITMAP(slot_bitmap, KVM_MEM_SLOTS_NUM);
 	bool unsync;
 	int root_count;          /* Currently serving as active root */
 	unsigned int unsync_children;
