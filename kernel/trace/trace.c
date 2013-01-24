@@ -922,6 +922,9 @@ void tracing_reset(struct trace_array *tr, int cpu)
 {
 	struct ring_buffer *buffer = tr->buffer;
 
+	if (!buffer)
+		return;
+
 	ring_buffer_record_disable(buffer);
 
 	/* Make sure all commits have finished */
@@ -935,6 +938,9 @@ void tracing_reset_online_cpus(struct trace_array *tr)
 {
 	struct ring_buffer *buffer = tr->buffer;
 	int cpu;
+
+	if (!buffer)
+		return;
 
 	ring_buffer_record_disable(buffer);
 
@@ -1167,7 +1173,6 @@ tracing_generic_entry_update(struct trace_entry *entry, unsigned long flags,
 
 	entry->preempt_count		= pc & 0xff;
 	entry->pid			= (tsk) ? tsk->pid : 0;
-	entry->padding			= 0;
 	entry->flags =
 #ifdef CONFIG_TRACE_IRQFLAGS_SUPPORT
 		(irqs_disabled_flags(flags) ? TRACE_FLAG_IRQS_OFF : 0) |
@@ -1517,7 +1522,6 @@ static struct trace_buffer_struct *trace_percpu_nmi_buffer;
 static char *get_trace_buf(void)
 {
 	struct trace_buffer_struct *percpu_buffer;
-	struct trace_buffer_struct *buffer;
 
 	/*
 	 * If we have allocated per cpu buffers, then we do not
@@ -1535,9 +1539,7 @@ static char *get_trace_buf(void)
 	if (!percpu_buffer)
 		return NULL;
 
-	buffer = per_cpu_ptr(percpu_buffer, smp_processor_id());
-
-	return buffer->buffer;
+	return this_cpu_ptr(&percpu_buffer->buffer[0]);
 }
 
 static int alloc_percpu_trace_buffer(void)
@@ -4037,8 +4039,7 @@ static ssize_t tracing_clock_write(struct file *filp, const char __user *ubuf,
 	 * Reset the buffer so that it doesn't have incomparable timestamps.
 	 */
 	tracing_reset_online_cpus(&global_trace);
-	if (max_tr.buffer)
-		tracing_reset_online_cpus(&max_tr);
+	tracing_reset_online_cpus(&max_tr);
 
 	mutex_unlock(&trace_types_lock);
 
