@@ -143,6 +143,10 @@
  *
  * SW41	:  ON : SH-Mobile AP4 Audio Mode
  *	: OFF : Bluetooth Audio Mode
+ *
+ * it needs amixer settings for playing
+ *
+ * amixer set "Headphone Enable" on
  */
 
 /*
@@ -1350,5 +1354,5 @@ MACHINE_START(AP4EVB, "ap4evb")
 	.handle_irq	= shmobile_handle_irq_intc,
 	.init_machine	= ap4evb_init,
 	.init_late	= sh7372_pm_init_late,
-	.timer		= &shmobile_timer,
+	.init_time	= sh7372_earlytimer_init,
 MACHINE_END
