@@ -1503,7 +1503,7 @@ static int __init init_hw_perf_events(void)
 		filter_events(x86_pmu_events_group.attrs);
 
 	if (x86_pmu.cpu_events) {
-		struct attribute *tmp;
+		struct attribute **tmp;
 
 		tmp = merge_attr(x86_pmu_events_group.attrs, x86_pmu.cpu_events);
 		if (!WARN_ON(!tmp))
