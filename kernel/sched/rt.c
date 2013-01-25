@@ -566,7 +566,7 @@ static inline struct rt_bandwidth *sched_rt_bandwidth(struct rt_rq *rt_rq)
 static int do_balance_runtime(struct rt_rq *rt_rq)
 {
 	struct rt_bandwidth *rt_b = sched_rt_bandwidth(rt_rq);
-	struct root_domain *rd = cpu_rq(smp_processor_id())->rd;
+	struct root_domain *rd = rq_of_rt_rq(rt_rq)->rd;
 	int i, weight, more = 0;
 	u64 rt_period;
 
@@ -1889,8 +1889,11 @@ static void switched_from_rt(struct rq *rq, struct task_struct *p)
 	 * we may need to handle the pulling of RT tasks
 	 * now.
 	 */
-	if (p->on_rq && !rq->rt.rt_nr_running)
-		pull_rt_task(rq);
+	if (!p->on_rq || rq->rt.rt_nr_running)
+		return;
+
+	if (pull_rt_task(rq))
+		resched_task(rq->curr);
 }
 
 void init_sched_rt_class(void)
