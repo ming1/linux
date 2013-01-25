@@ -25,8 +25,11 @@
 #include <linux/tick.h>
 #include <linux/types.h>
 #include <linux/workqueue.h>
+#include <linux/cpu.h>
 
 #include "cpufreq_governor.h"
+
+static DEFINE_PER_CPU(struct dbs_data *, cpu_cur_dbs);
 
 static inline u64 get_cpu_idle_time_jiffy(unsigned int cpu, u64 *wall)
 {
@@ -161,19 +164,69 @@ void dbs_check_cpu(struct dbs_data *dbs_data, int cpu)
 }
 EXPORT_SYMBOL_GPL(dbs_check_cpu);
 
+bool dbs_sw_coordinated_cpus(struct cpu_dbs_common_info *cdbs)
+{
+	struct cpufreq_policy *policy = cdbs->cur_policy;
+
+	return cpumask_weight(policy->cpus) > 1;
+}
+EXPORT_SYMBOL_GPL(dbs_sw_coordinated_cpus);
+
 static inline void dbs_timer_init(struct dbs_data *dbs_data,
-		struct cpu_dbs_common_info *cdbs, unsigned int sampling_rate)
+				  struct cpu_dbs_common_info *cdbs,
+				  unsigned int sampling_rate,
+				  int cpu)
 {
 	int delay = delay_for_sampling_rate(sampling_rate);
+	struct cpu_dbs_common_info *cdbs_local = dbs_data->get_cpu_cdbs(cpu);
 
-	INIT_DEFERRABLE_WORK(&cdbs->work, dbs_data->gov_dbs_timer);
-	schedule_delayed_work_on(cdbs->cpu, &cdbs->work, delay);
+	schedule_delayed_work_on(cpu, &cdbs_local->work, delay);
 }
 
 static inline void dbs_timer_exit(struct cpu_dbs_common_info *cdbs)
 {
 	cancel_delayed_work_sync(&cdbs->work);
 }
+
+static int __cpuinit cpu_callback(struct notifier_block *nfb,
+		unsigned long action, void *hcpu)
+{
+	unsigned int cpu = (unsigned long)hcpu;
+	struct device *cpu_dev = get_cpu_device(cpu);
+	struct dbs_data *dbs_data = per_cpu(cpu_cur_dbs, cpu);
+	struct cpu_dbs_common_info *cpu_cdbs = dbs_data->get_cpu_cdbs(cpu);
+	unsigned int sampling_rate;
+
+	if (dbs_data->governor == GOV_CONSERVATIVE) {
+		struct cs_dbs_tuners *cs_tuners = dbs_data->tuners;
+		sampling_rate = cs_tuners->sampling_rate;
+	} else {
+		struct od_dbs_tuners *od_tuners = dbs_data->tuners;
+		sampling_rate = od_tuners->sampling_rate;
+	}
+
+	if (cpu_dev) {
+		switch (action) {
+		case CPU_ONLINE:
+		case CPU_ONLINE_FROZEN:
+		case CPU_DOWN_FAILED:
+		case CPU_DOWN_FAILED_FROZEN:
+			dbs_timer_init(dbs_data, cpu_cdbs,
+					sampling_rate, cpu);
+			break;
+		case CPU_DOWN_PREPARE:
+		case CPU_DOWN_PREPARE_FROZEN:
+			dbs_timer_exit(cpu_cdbs);
+			break;
+		}
+	}
+
+	return NOTIFY_OK;
+}
+
+static struct notifier_block __refdata ondemand_cpu_notifier = {
+	.notifier_call = cpu_callback,
+};
 
 int cpufreq_governor_dbs(struct dbs_data *dbs_data,
 		struct cpufreq_policy *policy, unsigned int event)
@@ -217,6 +270,10 @@ int cpufreq_governor_dbs(struct dbs_data *dbs_data,
 			if (ignore_nice)
 				j_cdbs->prev_cpu_nice =
 					kcpustat_cpu(j).cpustat[CPUTIME_NICE];
+
+			mutex_init(&j_cdbs->timer_mutex);
+			INIT_DEFERRABLE_WORK(&j_cdbs->work,
+					     dbs_data->gov_dbs_timer);
 		}
 
 		/*
@@ -275,15 +332,44 @@ second_time:
 		}
 		mutex_unlock(&dbs_data->mutex);
 
-		mutex_init(&cpu_cdbs->timer_mutex);
-		dbs_timer_init(dbs_data, cpu_cdbs, *sampling_rate);
+		if (dbs_sw_coordinated_cpus(cpu_cdbs)) {
+			/* Initiate timer time stamp */
+			cpu_cdbs->time_stamp = ktime_get();
+
+			for_each_cpu(j, policy->cpus) {
+				struct cpu_dbs_common_info *j_cdbs;
+
+				j_cdbs = dbs_data->get_cpu_cdbs(j);
+				dbs_timer_init(dbs_data, j_cdbs,
+					       *sampling_rate, j);
+
+				per_cpu(cpu_cur_dbs, j) = dbs_data;
+			}
+
+			register_hotcpu_notifier(&ondemand_cpu_notifier);
+		} else {
+			dbs_timer_init(dbs_data, cpu_cdbs, *sampling_rate, cpu);
+		}
 		break;
 
 	case CPUFREQ_GOV_STOP:
 		if (dbs_data->governor == GOV_CONSERVATIVE)
 			cs_dbs_info->enable = 0;
 
-		dbs_timer_exit(cpu_cdbs);
+		if (dbs_sw_coordinated_cpus(cpu_cdbs)) {
+			unregister_hotcpu_notifier(&ondemand_cpu_notifier);
+
+			for_each_cpu(j, policy->cpus) {
+				struct cpu_dbs_common_info *j_cdbs;
+
+				j_cdbs = dbs_data->get_cpu_cdbs(j);
+				dbs_timer_exit(j_cdbs);
+
+				per_cpu(cpu_cur_dbs, j) = NULL;
+			}
+		} else {
+			dbs_timer_exit(cpu_cdbs);
+		}
 
 		mutex_lock(&dbs_data->mutex);
 		mutex_destroy(&cpu_cdbs->timer_mutex);

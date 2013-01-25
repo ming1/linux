@@ -81,7 +81,7 @@ MODULE_DESCRIPTION("ACPI Processor Driver");
 MODULE_LICENSE("GPL");
 
 static int acpi_processor_add(struct acpi_device *device);
-static int acpi_processor_remove(struct acpi_device *device, int type);
+static int acpi_processor_remove(struct acpi_device *device);
 static void acpi_processor_notify(struct acpi_device *device, u32 event);
 static acpi_status acpi_processor_hotadd_init(struct acpi_processor *pr);
 static int acpi_processor_handle_eject(struct acpi_processor *pr);
@@ -610,7 +610,7 @@ err_free_pr:
 	return result;
 }
 
-static int acpi_processor_remove(struct acpi_device *device, int type)
+static int acpi_processor_remove(struct acpi_device *device)
 {
 	struct acpi_processor *pr = NULL;
 
@@ -623,7 +623,7 @@ static int acpi_processor_remove(struct acpi_device *device, int type)
 	if (pr->id >= nr_cpu_ids)
 		goto free;
 
-	if (type == ACPI_BUS_REMOVAL_EJECT) {
+	if (device->removal_type == ACPI_BUS_REMOVAL_EJECT) {
 		if (acpi_processor_handle_eject(pr))
 			return -EINVAL;
 	}
@@ -699,7 +699,7 @@ static void acpi_processor_hotplug_notify(acpi_handle handle,
 		if (!acpi_bus_get_device(handle, &device))
 			break;
 
-		result = acpi_bus_add(handle);
+		result = acpi_bus_scan(handle);
 		if (result) {
 			acpi_handle_err(handle, "Unable to add the device\n");
 			break;
@@ -733,7 +733,7 @@ static void acpi_processor_hotplug_notify(acpi_handle handle,
 			break;
 		}
 
-		ej_event->handle = handle;
+		ej_event->device = device;
 		ej_event->event = ACPI_NOTIFY_EJECT_REQUEST;
 		acpi_os_hotplug_execute(acpi_bus_hot_remove_device,
 					(void *)ej_event);

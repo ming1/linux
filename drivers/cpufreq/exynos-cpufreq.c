@@ -238,6 +238,7 @@ static int exynos_cpufreq_cpu_init(struct cpufreq_policy *policy)
 		cpumask_copy(policy->cpus, cpu_online_mask);
 	} else {
 		policy->shared_type = CPUFREQ_SHARED_TYPE_ANY;
+		cpumask_setall(policy->related_cpus);
 		cpumask_setall(policy->cpus);
 	}
 
