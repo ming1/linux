@@ -101,6 +101,15 @@ config EXYNOS_THERMAL
 	  If you say yes here you get support for TMU (Thermal Management
 	  Unit) on SAMSUNG EXYNOS series of SoC.
 
+config EXYNOS_THERMAL_EMUL
+	bool "EXYNOS TMU emulation mode support"
+	depends on EXYNOS_THERMAL
+	help
+	  Exynos 4412 and 4414 and 5 series has emulation mode on TMU.
+	  Enable this option will be make sysfs node in exynos thermal platform
+	  device directory to support emulation mode. With emulation mode sysfs
+	  node, you can manually input temperature to TMU for simulation purpose.
+
 config DB8500_THERMAL
 	bool "DB8500 thermal management"
 	depends on ARCH_U8500
@@ -121,5 +130,15 @@ config DB8500_CPUFREQ_COOLING
 	  bound to thermal zone trip points. When a trip point reached, the
 	  bound cpufreq cooling device turns active to set CPU frequency low to
 	  cool down the CPU.
+
+config INTEL_POWERCLAMP
+	tristate "Intel PowerClamp idle injection driver"
+	depends on THERMAL
+	depends on X86
+	depends on CPU_SUP_INTEL
+	help
+	  Enable this to enable Intel PowerClamp idle injection driver. This
+	  enforce idle time which results in more package C-state residency. The
+	  user interface is exposed via generic thermal framework.
 
 endif
