@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2012, Intel Corp.
+ * Copyright (C) 2000 - 2013, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -525,7 +525,7 @@ acpi_ds_build_internal_package_obj(struct acpi_walk_state *walk_state,
 		}
 
 		ACPI_INFO((AE_INFO,
-			   "Actual Package length (%u) is larger than NumElements field (%u), truncated\n",
+			   "Actual Package length (%u) is larger than NumElements field (%u), truncated",
 			   i, element_count));
 	} else if (i < element_count) {
 		/*
