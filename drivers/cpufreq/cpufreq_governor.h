@@ -82,6 +82,7 @@ struct cpu_dbs_common_info {
 	 * the governor or limits.
 	 */
 	struct mutex timer_mutex;
+	ktime_t time_stamp;
 };
 
 struct od_cpu_dbs_info_s {
@@ -171,6 +172,7 @@ static inline int delay_for_sampling_rate(unsigned int sampling_rate)
 
 u64 get_cpu_idle_time(unsigned int cpu, u64 *wall);
 void dbs_check_cpu(struct dbs_data *dbs_data, int cpu);
+bool dbs_sw_coordinated_cpus(struct cpu_dbs_common_info *cdbs);
 int cpufreq_governor_dbs(struct dbs_data *dbs_data,
 		struct cpufreq_policy *policy, unsigned int event);
 #endif /* _CPUFREQ_GOVERNER_H */
