@@ -344,6 +344,23 @@ static const struct ethtool_ops cdc_ncm_ethtool_ops = {
 	.nway_reset = usbnet_nway_reset,
 };
 
+/* return first slave interface if an IAD matches the given master */
+static struct usb_interface *get_iad_slave(struct usb_device *udev,
+					   struct usb_interface *master) {
+	int i;
+	struct usb_interface_assoc_descriptor *iad;
+	u8 mnum = master->cur_altsetting->desc.bInterfaceNumber;
+
+	for (i = 0; i < USB_MAXIADS; i++) {
+		iad = udev->actconfig->intf_assoc[i];
+		if (!iad)
+			break;
+		if (iad->bFirstInterface == mnum && iad->bInterfaceCount == 2)
+			return usb_ifnum_to_if(udev, mnum + 1);
+	}
+	return NULL;
+}
+
 int cdc_ncm_bind_common(struct usbnet *dev, struct usb_interface *intf, u8 data_altsetting)
 {
 	struct cdc_ncm_ctx *ctx;
@@ -435,6 +452,16 @@ advance:
 		len -= temp;
 	}
 
+	/* some buggy devices have an IAD but no CDC Union */
+	if (!ctx->union_desc) {
+		dev_dbg(&intf->dev, "missing CDC Union descriptor\n");
+		ctx->data = get_iad_slave(dev->udev, intf);
+		if (ctx->data) {
+			ctx->control = intf;
+			dev_dbg(&intf->dev, "got slave from IAD\n");
+		}
+	}
+
 	/* check if we got everything */
 	if ((ctx->control == NULL) || (ctx->data == NULL) ||
 	    ((!ctx->mbim_desc) && ((ctx->ether_desc == NULL) || (ctx->control != intf))))
@@ -497,7 +524,8 @@ advance:
 error2:
 	usb_set_intfdata(ctx->control, NULL);
 	usb_set_intfdata(ctx->data, NULL);
-	usb_driver_release_interface(driver, ctx->data);
+	if (ctx->data != ctx->control)
+		usb_driver_release_interface(driver, ctx->data);
 error:
 	cdc_ncm_free((struct cdc_ncm_ctx *)dev->data[0]);
 	dev->data[0] = 0;
@@ -1155,6 +1183,20 @@ static const struct driver_info wwan_info = {
 	.tx_fixup = cdc_ncm_tx_fixup,
 };
 
+/* Same as wwan_info, but with FLAG_NOARP  */
+static const struct driver_info wwan_noarp_info = {
+	.description = "Mobile Broadband Network Device (NO ARP)",
+	.flags = FLAG_POINTTOPOINT | FLAG_NO_SETINT | FLAG_MULTI_PACKET
+			| FLAG_WWAN | FLAG_NOARP,
+	.bind = cdc_ncm_bind,
+	.unbind = cdc_ncm_unbind,
+	.check_connect = cdc_ncm_check_connect,
+	.manage_power = usbnet_manage_power,
+	.status = cdc_ncm_status,
+	.rx_fixup = cdc_ncm_rx_fixup,
+	.tx_fixup = cdc_ncm_tx_fixup,
+};
+
 static const struct usb_device_id cdc_devs[] = {
 	/* Ericsson MBM devices like F5521gw */
 	{ .match_flags = USB_DEVICE_ID_MATCH_INT_INFO
@@ -1192,6 +1234,13 @@ static const struct usb_device_id cdc_devs[] = {
 	},
 	{ USB_VENDOR_AND_INTERFACE_INFO(0x12d1, 0xff, 0x02, 0x46),
 	  .driver_info = (unsigned long)&wwan_info,
+	},
+
+	/* Infineon(now Intel) HSPA Modem platform */
+	{ USB_DEVICE_AND_INTERFACE_INFO(0x1519, 0x0443,
+		USB_CLASS_COMM,
+		USB_CDC_SUBCLASS_NCM, USB_CDC_PROTO_NONE),
+	  .driver_info = (unsigned long)&wwan_noarp_info,
 	},
 
 	/* Generic CDC-NCM devices */
