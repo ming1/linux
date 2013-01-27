@@ -1337,6 +1337,7 @@ static int set_qf_name(struct super_block *sb, int qtype, substring_t *args)
 {
 	struct ext4_sb_info *sbi = EXT4_SB(sb);
 	char *qname;
+	int ret = -1;
 
 	if (sb_any_quota_loaded(sb) &&
 		!sbi->s_qf_names[qtype]) {
@@ -1351,23 +1352,26 @@ static int set_qf_name(struct super_block *sb, int qtype, substring_t *args)
 			"Not enough memory for storing quotafile name");
 		return -1;
 	}
-	if (sbi->s_qf_names[qtype] &&
-		strcmp(sbi->s_qf_names[qtype], qname)) {
-		ext4_msg(sb, KERN_ERR,
-			"%s quota file already specified", QTYPE2NAME(qtype));
-		kfree(qname);
-		return -1;
+	if (sbi->s_qf_names[qtype]) {
+		if (strcmp(sbi->s_qf_names[qtype], qname) == 0)
+			ret = 1;
+		else
+			ext4_msg(sb, KERN_ERR,
+				 "%s quota file already specified",
+				 QTYPE2NAME(qtype));
+		goto errout;
 	}
-	sbi->s_qf_names[qtype] = qname;
-	if (strchr(sbi->s_qf_names[qtype], '/')) {
+	if (strchr(qname, '/')) {
 		ext4_msg(sb, KERN_ERR,
 			"quotafile must be on filesystem root");
-		kfree(sbi->s_qf_names[qtype]);
-		sbi->s_qf_names[qtype] = NULL;
-		return -1;
+		goto errout;
 	}
+	sbi->s_qf_names[qtype] = qname;
 	set_opt(sb, QUOTA);
 	return 1;
+errout:
+	kfree(qname);
+	return ret;
 }
 
 static int clear_qf_name(struct super_block *sb, int qtype)
@@ -1381,10 +1385,7 @@ static int clear_qf_name(struct super_block *sb, int qtype)
 			" when quota turned on");
 		return -1;
 	}
-	/*
-	 * The space will be released later when all options are confirmed
-	 * to be correct
-	 */
+	kfree(sbi->s_qf_names[qtype]);
 	sbi->s_qf_names[qtype] = NULL;
 	return 1;
 }
@@ -2776,7 +2777,7 @@ static int ext4_run_li_request(struct ext4_li_request *elr)
 			break;
 	}
 
-	if (group == ngroups)
+	if (group >= ngroups)
 		ret = 1;
 
 	if (!ret) {
@@ -3016,33 +3017,34 @@ static struct ext4_li_request *ext4_li_request_new(struct super_block *sb,
 	return elr;
 }
 
-static int ext4_register_li_request(struct super_block *sb,
-				    ext4_group_t first_not_zeroed)
+int ext4_register_li_request(struct super_block *sb,
+			     ext4_group_t first_not_zeroed)
 {
 	struct ext4_sb_info *sbi = EXT4_SB(sb);
-	struct ext4_li_request *elr;
+	struct ext4_li_request *elr = NULL;
 	ext4_group_t ngroups = EXT4_SB(sb)->s_groups_count;
 	int ret = 0;
 
+	mutex_lock(&ext4_li_mtx);
 	if (sbi->s_li_request != NULL) {
 		/*
 		 * Reset timeout so it can be computed again, because
 		 * s_li_wait_mult might have changed.
 		 */
 		sbi->s_li_request->lr_timeout = 0;
-		return 0;
+		goto out;
 	}
 
 	if (first_not_zeroed == ngroups ||
 	    (sb->s_flags & MS_RDONLY) ||
 	    !test_opt(sb, INIT_INODE_TABLE))
-		return 0;
+		goto out;
 
 	elr = ext4_li_request_new(sb, first_not_zeroed);
-	if (!elr)
-		return -ENOMEM;
-
-	mutex_lock(&ext4_li_mtx);
+	if (!elr) {
+		ret = -ENOMEM;
+		goto out;
+	}
 
 	if (NULL == ext4_li_info) {
 		ret = ext4_li_info_new();
@@ -4008,7 +4010,7 @@ no_journal:
 	    !(sb->s_flags & MS_RDONLY)) {
 		err = ext4_enable_quotas(sb);
 		if (err)
-			goto failed_mount7;
+			goto failed_mount8;
 	}
 #endif  /* CONFIG_QUOTA */
 
@@ -4035,6 +4037,8 @@ cantfind_ext4:
 		ext4_msg(sb, KERN_ERR, "VFS: Can't find ext4 filesystem");
 	goto failed_mount;
 
+failed_mount8:
+	kobject_del(&sbi->s_kobj);
 failed_mount7:
 	ext4_unregister_li_request(sb);
 failed_mount6:
@@ -4588,7 +4592,7 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
 	unsigned int journal_ioprio = DEFAULT_JOURNAL_IOPRIO;
 	int err = 0;
 #ifdef CONFIG_QUOTA
-	int i;
+	int i, j;
 #endif
 	char *orig_data = kstrdup(data, GFP_KERNEL);
 
@@ -4604,7 +4608,16 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
 #ifdef CONFIG_QUOTA
 	old_opts.s_jquota_fmt = sbi->s_jquota_fmt;
 	for (i = 0; i < MAXQUOTAS; i++)
-		old_opts.s_qf_names[i] = sbi->s_qf_names[i];
+		if (sbi->s_qf_names[i]) {
+			old_opts.s_qf_names[i] = kstrdup(sbi->s_qf_names[i],
+							 GFP_KERNEL);
+			if (!old_opts.s_qf_names[i]) {
+				for (j = 0; j < i; j++)
+					kfree(old_opts.s_qf_names[j]);
+				return -ENOMEM;
+			}
+		} else
+			old_opts.s_qf_names[i] = NULL;
 #endif
 	if (sbi->s_journal && sbi->s_journal->j_task->io_context)
 		journal_ioprio = sbi->s_journal->j_task->io_context->ioprio;
@@ -4737,9 +4750,7 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
 #ifdef CONFIG_QUOTA
 	/* Release old quota file names */
 	for (i = 0; i < MAXQUOTAS; i++)
-		if (old_opts.s_qf_names[i] &&
-		    old_opts.s_qf_names[i] != sbi->s_qf_names[i])
-			kfree(old_opts.s_qf_names[i]);
+		kfree(old_opts.s_qf_names[i]);
 	if (enable_quota) {
 		if (sb_any_quota_suspended(sb))
 			dquot_resume(sb, -1);
@@ -4768,9 +4779,7 @@ restore_opts:
 #ifdef CONFIG_QUOTA
 	sbi->s_jquota_fmt = old_opts.s_jquota_fmt;
 	for (i = 0; i < MAXQUOTAS; i++) {
-		if (sbi->s_qf_names[i] &&
-		    old_opts.s_qf_names[i] != sbi->s_qf_names[i])
-			kfree(sbi->s_qf_names[i]);
+		kfree(sbi->s_qf_names[i]);
 		sbi->s_qf_names[i] = old_opts.s_qf_names[i];
 	}
 #endif
@@ -5005,9 +5014,9 @@ static int ext4_enable_quotas(struct super_block *sb)
 						DQUOT_USAGE_ENABLED);
 			if (err) {
 				ext4_warning(sb,
-					"Failed to enable quota (type=%d) "
-					"tracking. Please run e2fsck to fix.",
-					type);
+					"Failed to enable quota tracking "
+					"(type=%d, err=%d). Please run "
+					"e2fsck to fix.", type, err);
 				return err;
 			}
 		}

@@ -713,8 +713,8 @@ struct buffer_head *ext4_getblk(handle_t *handle, struct inode *inode,
 		return NULL;
 
 	bh = sb_getblk(inode->i_sb, map.m_pblk);
-	if (!bh) {
-		*errp = -EIO;
+	if (unlikely(!bh)) {
+		*errp = -ENOMEM;
 		return NULL;
 	}
 	if (map.m_flags & EXT4_MAP_NEW) {
@@ -3557,15 +3557,15 @@ int ext4_punch_hole(struct file *file, loff_t offset, loff_t length)
 	if (!S_ISREG(inode->i_mode))
 		return -EOPNOTSUPP;
 
-	if (!ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS)) {
-		/* TODO: Add support for non extent hole punching */
-		return -EOPNOTSUPP;
-	}
+	if (!ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS))
+		return ext4_ind_punch_hole(file, offset, length);
 
 	if (EXT4_SB(inode->i_sb)->s_cluster_ratio > 1) {
 		/* TODO: Add support for bigalloc file systems */
 		return -EOPNOTSUPP;
 	}
+
+	trace_ext4_punch_hole(inode, offset, length);
 
 	return ext4_ext_punch_hole(file, offset, length);
 }
@@ -3660,11 +3660,8 @@ static int __ext4_get_inode_loc(struct inode *inode,
 	iloc->offset = (inode_offset % inodes_per_block) * EXT4_INODE_SIZE(sb);
 
 	bh = sb_getblk(sb, block);
-	if (!bh) {
-		EXT4_ERROR_INODE_BLOCK(inode, block,
-				       "unable to read itable block");
-		return -EIO;
-	}
+	if (unlikely(!bh))
+		return -ENOMEM;
 	if (!buffer_uptodate(bh)) {
 		lock_buffer(bh);
 
@@ -3696,7 +3693,7 @@ static int __ext4_get_inode_loc(struct inode *inode,
 
 			/* Is the inode bitmap in cache? */
 			bitmap_bh = sb_getblk(sb, ext4_inode_bitmap(sb, gdp));
-			if (!bitmap_bh)
+			if (unlikely(!bitmap_bh))
 				goto make_io;
 
 			/*

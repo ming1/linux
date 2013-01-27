@@ -2103,6 +2103,7 @@ extern ssize_t ext4_ind_direct_IO(int rw, struct kiocb *iocb,
 extern int ext4_ind_calc_metadata_amount(struct inode *inode, sector_t lblock);
 extern int ext4_ind_trans_blocks(struct inode *inode, int nrblocks, int chunk);
 extern void ext4_ind_truncate(struct inode *inode);
+extern int ext4_ind_punch_hole(struct file *file, loff_t offset, loff_t length);
 
 /* ioctl.c */
 extern long ext4_ioctl(struct file *, unsigned int, unsigned long);
@@ -2227,6 +2228,8 @@ extern int ext4_group_desc_csum_verify(struct super_block *sb, __u32 group,
 				       struct ext4_group_desc *gdp);
 extern void ext4_group_desc_csum_set(struct super_block *sb, __u32 group,
 				     struct ext4_group_desc *gdp);
+extern int ext4_register_li_request(struct super_block *sb,
+				    ext4_group_t first_not_zeroed);
 
 static inline int ext4_has_group_desc_csum(struct super_block *sb)
 {
