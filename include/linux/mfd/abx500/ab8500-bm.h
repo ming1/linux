@@ -23,6 +23,7 @@
  * Bank : 0x5
  */
 #define AB8500_USB_LINE_STAT_REG	0x80
+#define AB8500_USB_LINK1_STAT_REG	0x94
 
 /*
  * Charger / status register offfsets
@@ -355,6 +356,7 @@ struct ab8500_bm_charger_parameters {
  * @bkup_bat_v		voltage which we charge the backup battery with
  * @bkup_bat_i		current which we charge the backup battery with
  * @no_maintenance	indicates that maintenance charging is disabled
+ * @capacity_scaling    indicates whether capacity scaling is to be used
  * @adc_therm		placement of thermistor, batctrl or battemp adc
  * @chg_unknown_bat	flag to enable charging of unknown batteries
  * @enable_overshoot	flag to enable VBAT overshoot control
@@ -383,6 +385,7 @@ struct ab8500_bm_data {
 	int bkup_bat_v;
 	int bkup_bat_i;
 	bool no_maintenance;
+	bool capacity_scaling;
 	bool chg_unknown_bat;
 	bool enable_overshoot;
 	enum abx500_adc_therm adc_therm;
@@ -431,11 +434,18 @@ struct ab8500_fg *ab8500_fg_get(void);
 int ab8500_fg_inst_curr_blocking(struct ab8500_fg *dev);
 int ab8500_fg_inst_curr_start(struct ab8500_fg *di);
 int ab8500_fg_inst_curr_finalize(struct ab8500_fg *di, int *res);
+int ab8500_fg_inst_curr_started(struct ab8500_fg *di);
 int ab8500_fg_inst_curr_done(struct ab8500_fg *di);
 
 #else
+int ab8500_fg_inst_curr_started(struct ab8500_fg *di)
+{
+	return 0;
+}
+
 int ab8500_fg_inst_curr_done(struct ab8500_fg *di)
 {
+	return 0;
 }
 static void ab8500_fg_reinit(void)
 {
