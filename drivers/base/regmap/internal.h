@@ -74,6 +74,9 @@ struct regmap {
 	const struct regmap_access_table *volatile_table;
 	const struct regmap_access_table *precious_table;
 
+	int (*reg_read)(void *context, unsigned int reg, unsigned int *val);
+	int (*reg_write)(void *context, unsigned int reg, unsigned int val);
+
 	u8 read_flag_mask;
 	u8 write_flag_mask;
 
@@ -177,5 +180,6 @@ int regcache_lookup_reg(struct regmap *map, unsigned int reg);
 
 extern struct regcache_ops regcache_rbtree_ops;
 extern struct regcache_ops regcache_lzo_ops;
+extern struct regcache_ops regcache_flat_ops;
 
 #endif
