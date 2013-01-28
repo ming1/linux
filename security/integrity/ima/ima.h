@@ -119,6 +119,7 @@ void ima_audit_measurement(struct integrity_iint_cache *iint,
 int ima_store_template(struct ima_template_entry *entry, int violation,
 		       struct inode *inode);
 void ima_template_show(struct seq_file *m, void *e, enum ima_show_type show);
+const char *ima_d_path(struct path *path, char **pathbuf);
 
 /* rbtree tree calls to lookup, insert, delete
  * integrity data associated with an inode.
@@ -127,7 +128,7 @@ struct integrity_iint_cache *integrity_iint_insert(struct inode *inode);
 struct integrity_iint_cache *integrity_iint_find(struct inode *inode);
 
 /* IMA policy related functions */
-enum ima_hooks { FILE_CHECK = 1, FILE_MMAP, BPRM_CHECK, MODULE_CHECK, POST_SETATTR };
+enum ima_hooks { FILE_CHECK = 1, MMAP_CHECK, BPRM_CHECK, MODULE_CHECK, POST_SETATTR };
 
 int ima_match_policy(struct inode *inode, enum ima_hooks func, int mask,
 		     int flags);
