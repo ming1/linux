@@ -35,6 +35,16 @@ struct bench_suite {
 /* sentinel: easy for help */
 #define suite_all { "all", "Test all benchmark suites", NULL }
 
+static struct bench_suite numa_suites[] = {
+	{ "mem",
+	  "Benchmark for NUMA workloads",
+	  bench_numa },
+	suite_all,
+	{ NULL,
+	  NULL,
+	  NULL                  }
+};
+
 static struct bench_suite sched_suites[] = {
 	{ "messaging",
 	  "Benchmark for scheduler and IPC mechanisms",
@@ -68,6 +78,9 @@ struct bench_subsys {
 };
 
 static struct bench_subsys subsystems[] = {
+	{ "numa",
+	  "NUMA scheduling and MM behavior",
+	  numa_suites },
 	{ "sched",
 	  "scheduler and IPC mechanism",
 	  sched_suites },
@@ -159,6 +172,7 @@ static void all_suite(struct bench_subsys *subsys)	  /* FROM HERE */
 		printf("# Running %s/%s benchmark...\n",
 		       subsys->name,
 		       suites[i].name);
+		fflush(stdout);
 
 		argv[1] = suites[i].name;
 		suites[i].fn(1, argv, NULL);
@@ -225,6 +239,7 @@ int cmd_bench(int argc, const char **argv, const char *prefix __maybe_unused)
 				printf("# Running %s/%s benchmark...\n",
 				       subsystems[i].name,
 				       subsystems[i].suites[j].name);
+			fflush(stdout);
 			status = subsystems[i].suites[j].fn(argc - 1,
 							    argv + 1, prefix);
 			goto end;
