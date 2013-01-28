@@ -2520,7 +2520,7 @@ int kvm_dev_ioctl_check_extension(long ext)
 		r = KVM_MAX_VCPUS;
 		break;
 	case KVM_CAP_NR_MEMSLOTS:
-		r = KVM_MEMORY_SLOTS;
+		r = KVM_USER_MEM_SLOTS;
 		break;
 	case KVM_CAP_PV_MMU:	/* obsolete */
 		r = 0;
@@ -3272,12 +3272,10 @@ static int kvm_vm_ioctl_set_nr_mmu_pages(struct kvm *kvm,
 		return -EINVAL;
 
 	mutex_lock(&kvm->slots_lock);
-	spin_lock(&kvm->mmu_lock);
 
 	kvm_mmu_change_mmu_pages(kvm, kvm_nr_mmu_pages);
 	kvm->arch.n_requested_mmu_pages = kvm_nr_mmu_pages;
 
-	spin_unlock(&kvm->mmu_lock);
 	mutex_unlock(&kvm->slots_lock);
 	return 0;
 }
@@ -3437,7 +3435,7 @@ int kvm_vm_ioctl_get_dirty_log(struct kvm *kvm, struct kvm_dirty_log *log)
 	mutex_lock(&kvm->slots_lock);
 
 	r = -EINVAL;
-	if (log->slot >= KVM_MEMORY_SLOTS)
+	if (log->slot >= KVM_USER_MEM_SLOTS)
 		goto out;
 
 	memslot = id_to_memslot(kvm->memslots, log->slot);
@@ -4493,8 +4491,10 @@ static bool emulator_get_segment(struct x86_emulate_ctxt *ctxt, u16 *selector,
 	kvm_get_segment(emul_to_vcpu(ctxt), &var, seg);
 	*selector = var.selector;
 
-	if (var.unusable)
+	if (var.unusable) {
+		memset(desc, 0, sizeof(*desc));
 		return false;
+	}
 
 	if (var.g)
 		var.limit >>= 12;
@@ -4755,26 +4755,26 @@ static int handle_emulation_failure(struct kvm_vcpu *vcpu)
 	return r;
 }
 
-static bool reexecute_instruction(struct kvm_vcpu *vcpu, gva_t gva)
+static bool reexecute_instruction(struct kvm_vcpu *vcpu, gva_t cr2,
+				  bool write_fault_to_shadow_pgtable)
 {
-	gpa_t gpa;
+	gpa_t gpa = cr2;
 	pfn_t pfn;
 
-	if (tdp_enabled)
-		return false;
+	if (!vcpu->arch.mmu.direct_map) {
+		/*
+		 * Write permission should be allowed since only
+		 * write access need to be emulated.
+		 */
+		gpa = kvm_mmu_gva_to_gpa_write(vcpu, cr2, NULL);
 
-	/*
-	 * if emulation was due to access to shadowed page table
-	 * and it failed try to unshadow page and re-enter the
-	 * guest to let CPU execute the instruction.
-	 */
-	if (kvm_mmu_unprotect_page_virt(vcpu, gva))
-		return true;
-
-	gpa = kvm_mmu_gva_to_gpa_system(vcpu, gva, NULL);
-
-	if (gpa == UNMAPPED_GVA)
-		return true; /* let cpu generate fault */
+		/*
+		 * If the mapping is invalid in guest, let cpu retry
+		 * it to generate fault.
+		 */
+		if (gpa == UNMAPPED_GVA)
+			return true;
+	}
 
 	/*
 	 * Do not retry the unhandleable instruction if it faults on the
@@ -4783,12 +4783,43 @@ static bool reexecute_instruction(struct kvm_vcpu *vcpu, gva_t gva)
 	 * instruction -> ...
 	 */
 	pfn = gfn_to_pfn(vcpu->kvm, gpa_to_gfn(gpa));
-	if (!is_error_noslot_pfn(pfn)) {
-		kvm_release_pfn_clean(pfn);
+
+	/*
+	 * If the instruction failed on the error pfn, it can not be fixed,
+	 * report the error to userspace.
+	 */
+	if (is_error_noslot_pfn(pfn))
+		return false;
+
+	kvm_release_pfn_clean(pfn);
+
+	/* The instructions are well-emulated on direct mmu. */
+	if (vcpu->arch.mmu.direct_map) {
+		unsigned int indirect_shadow_pages;
+
+		spin_lock(&vcpu->kvm->mmu_lock);
+		indirect_shadow_pages = vcpu->kvm->arch.indirect_shadow_pages;
+		spin_unlock(&vcpu->kvm->mmu_lock);
+
+		if (indirect_shadow_pages)
+			kvm_mmu_unprotect_page(vcpu->kvm, gpa_to_gfn(gpa));
+
 		return true;
 	}
 
-	return false;
+	/*
+	 * if emulation was due to access to shadowed page table
+	 * and it failed try to unshadow page and re-enter the
+	 * guest to let CPU execute the instruction.
+	 */
+	kvm_mmu_unprotect_page(vcpu->kvm, gpa_to_gfn(gpa));
+
+	/*
+	 * If the access faults on its page table, it can not
+	 * be fixed by unprotecting shadow page and it should
+	 * be reported to userspace.
+	 */
+	return !write_fault_to_shadow_pgtable;
 }
 
 static bool retry_instruction(struct x86_emulate_ctxt *ctxt,
@@ -4830,7 +4861,7 @@ static bool retry_instruction(struct x86_emulate_ctxt *ctxt,
 	if (!vcpu->arch.mmu.direct_map)
 		gpa = kvm_mmu_gva_to_gpa_write(vcpu, cr2, NULL);
 
-	kvm_mmu_unprotect_page(vcpu->kvm, gpa >> PAGE_SHIFT);
+	kvm_mmu_unprotect_page(vcpu->kvm, gpa_to_gfn(gpa));
 
 	return true;
 }
@@ -4847,7 +4878,13 @@ int x86_emulate_instruction(struct kvm_vcpu *vcpu,
 	int r;
 	struct x86_emulate_ctxt *ctxt = &vcpu->arch.emulate_ctxt;
 	bool writeback = true;
+	bool write_fault_to_spt = vcpu->arch.write_fault_to_shadow_pgtable;
 
+	/*
+	 * Clear write_fault_to_shadow_pgtable here to ensure it is
+	 * never reused.
+	 */
+	vcpu->arch.write_fault_to_shadow_pgtable = false;
 	kvm_clear_exception_queue(vcpu);
 
 	if (!(emulation_type & EMULTYPE_NO_DECODE)) {
@@ -4866,7 +4903,8 @@ int x86_emulate_instruction(struct kvm_vcpu *vcpu,
 		if (r != EMULATION_OK)  {
 			if (emulation_type & EMULTYPE_TRAP_UD)
 				return EMULATE_FAIL;
-			if (reexecute_instruction(vcpu, cr2))
+			if (reexecute_instruction(vcpu, cr2,
+						  write_fault_to_spt))
 				return EMULATE_DONE;
 			if (emulation_type & EMULTYPE_SKIP)
 				return EMULATE_FAIL;
@@ -4896,7 +4934,7 @@ restart:
 		return EMULATE_DONE;
 
 	if (r == EMULATION_FAILED) {
-		if (reexecute_instruction(vcpu, cr2))
+		if (reexecute_instruction(vcpu, cr2, write_fault_to_spt))
 			return EMULATE_DONE;
 
 		return handle_emulation_failure(vcpu);
@@ -6851,13 +6889,13 @@ int kvm_arch_prepare_memory_region(struct kvm *kvm,
 				struct kvm_memory_slot *memslot,
 				struct kvm_memory_slot old,
 				struct kvm_userspace_memory_region *mem,
-				int user_alloc)
+				bool user_alloc)
 {
 	int npages = memslot->npages;
 	int map_flags = MAP_PRIVATE | MAP_ANONYMOUS;
 
 	/* Prevent internal slot pages from being moved by fork()/COW. */
-	if (memslot->id >= KVM_MEMORY_SLOTS)
+	if (memslot->id >= KVM_USER_MEM_SLOTS)
 		map_flags = MAP_SHARED | MAP_ANONYMOUS;
 
 	/*To keep backward compatibility with older userspace,
@@ -6887,7 +6925,7 @@ int kvm_arch_prepare_memory_region(struct kvm *kvm,
 void kvm_arch_commit_memory_region(struct kvm *kvm,
 				struct kvm_userspace_memory_region *mem,
 				struct kvm_memory_slot old,
-				int user_alloc)
+				bool user_alloc)
 {
 
 	int nr_mmu_pages = 0, npages = mem->memory_size >> PAGE_SHIFT;
@@ -6906,11 +6944,15 @@ void kvm_arch_commit_memory_region(struct kvm *kvm,
 	if (!kvm->arch.n_requested_mmu_pages)
 		nr_mmu_pages = kvm_mmu_calculate_mmu_pages(kvm);
 
-	spin_lock(&kvm->mmu_lock);
 	if (nr_mmu_pages)
 		kvm_mmu_change_mmu_pages(kvm, nr_mmu_pages);
-	kvm_mmu_slot_remove_write_access(kvm, mem->slot);
-	spin_unlock(&kvm->mmu_lock);
+	/*
+	 * Write protect all pages for dirty logging.
+	 * Existing largepage mappings are destroyed here and new ones will
+	 * not be created until the end of the logging.
+	 */
+	if (npages && (mem->flags & KVM_MEM_LOG_DIRTY_PAGES))
+		kvm_mmu_slot_remove_write_access(kvm, mem->slot);
 	/*
 	 * If memory slot is created, or moved, we need to clear all
 	 * mmio sptes.
