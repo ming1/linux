@@ -37,9 +37,11 @@
 #include <linux/interrupt.h>
 #include <linux/miscdevice.h>
 
-#include "mei_dev.h"
 #include <linux/mei.h>
-#include "interface.h"
+
+#include "mei_dev.h"
+#include "hw-me.h"
+#include "client.h"
 
 /* AMT device is a singleton on the platform */
 static struct pci_dev *mei_pdev;
@@ -90,28 +92,6 @@ static DEFINE_MUTEX(mei_mutex);
 
 
 /**
- * find_read_list_entry - find read list entry
- *
- * @dev: device structure
- * @file: pointer to file structure
- *
- * returns cb on success, NULL on error
- */
-static struct mei_cl_cb *find_read_list_entry(
-		struct mei_device *dev,
-		struct mei_cl *cl)
-{
-	struct mei_cl_cb *pos = NULL;
-	struct mei_cl_cb *next = NULL;
-
-	dev_dbg(&dev->pdev->dev, "remove read_list CB\n");
-	list_for_each_entry_safe(pos, next, &dev->read_list.list, list)
-		if (mei_cl_cmp_id(cl, pos->cl))
-			return pos;
-	return NULL;
-}
-
-/**
  * mei_open - the open function
  *
  * @inode: pointer to inode structure
@@ -123,7 +103,6 @@ static int mei_open(struct inode *inode, struct file *file)
 {
 	struct mei_cl *cl;
 	struct mei_device *dev;
-	unsigned long cl_id;
 	int err;
 
 	err = -ENODEV;
@@ -153,24 +132,9 @@ static int mei_open(struct inode *inode, struct file *file)
 		goto out_unlock;
 	}
 
-	cl_id = find_first_zero_bit(dev->host_clients_map, MEI_CLIENTS_MAX);
-	if (cl_id >= MEI_CLIENTS_MAX) {
-		dev_err(&dev->pdev->dev, "client_id exceded %d",
-				MEI_CLIENTS_MAX) ;
+	err = mei_cl_link(cl, MEI_HOST_CLIENT_ID_ANY);
+	if (err)
 		goto out_unlock;
-	}
-
-	cl->host_client_id  = cl_id;
-
-	dev_dbg(&dev->pdev->dev, "client_id = %d\n", cl->host_client_id);
-
-	dev->open_handle_count++;
-
-	list_add_tail(&cl->link, &dev->file_list);
-
-	set_bit(cl->host_client_id, dev->host_clients_map);
-	cl->state = MEI_FILE_INITIALIZING;
-	cl->sm_state = 0;
 
 	file->private_data = cl;
 	mutex_unlock(&dev->device_lock);
@@ -216,7 +180,7 @@ static int mei_release(struct inode *inode, struct file *file)
 		    "ME client = %d\n",
 		    cl->host_client_id,
 		    cl->me_client_id);
-		rets = mei_disconnect_host_client(dev, cl);
+		rets = mei_cl_disconnect(cl);
 	}
 	mei_cl_flush_queues(cl);
 	dev_dbg(&dev->pdev->dev, "remove client host client = %d, ME client = %d\n",
@@ -227,12 +191,13 @@ static int mei_release(struct inode *inode, struct file *file)
 		clear_bit(cl->host_client_id, dev->host_clients_map);
 		dev->open_handle_count--;
 	}
-	mei_me_cl_unlink(dev, cl);
+	mei_cl_unlink(cl);
+
 
 	/* free read cb */
 	cb = NULL;
 	if (cl->read_cb) {
-		cb = find_read_list_entry(dev, cl);
+		cb = mei_cl_find_read_cb(cl);
 		/* Remove entry from read list */
 		if (cb)
 			list_del(&cb->list);
@@ -322,7 +287,7 @@ static ssize_t mei_read(struct file *file, char __user *ubuf,
 		goto out;
 	}
 
-	err = mei_start_read(dev, cl);
+	err = mei_cl_read_start(cl);
 	if (err && err != -EBUSY) {
 		dev_dbg(&dev->pdev->dev,
 			"mei start read failure with status = %d\n", err);
@@ -393,14 +358,13 @@ copy_buffer:
 		goto out;
 
 free:
-	cb_pos = find_read_list_entry(dev, cl);
+	cb_pos = mei_cl_find_read_cb(cl);
 	/* Remove entry from read list */
 	if (cb_pos)
 		list_del(&cb_pos->list);
 	mei_io_cb_free(cb);
 	cl->reading_state = MEI_IDLE;
 	cl->read_cb = NULL;
-	cl->read_pending = 0;
 out:
 	dev_dbg(&dev->pdev->dev, "end mei read rets= %d\n", rets);
 	mutex_unlock(&dev->device_lock);
@@ -475,16 +439,15 @@ static ssize_t mei_write(struct file *file, const char __user *ubuf,
 	/* free entry used in read */
 	if (cl->reading_state == MEI_READ_COMPLETE) {
 		*offset = 0;
-		write_cb = find_read_list_entry(dev, cl);
+		write_cb = mei_cl_find_read_cb(cl);
 		if (write_cb) {
 			list_del(&write_cb->list);
 			mei_io_cb_free(write_cb);
 			write_cb = NULL;
 			cl->reading_state = MEI_IDLE;
 			cl->read_cb = NULL;
-			cl->read_pending = 0;
 		}
-	} else if (cl->reading_state == MEI_IDLE && !cl->read_pending)
+	} else if (cl->reading_state == MEI_IDLE)
 		*offset = 0;
 
 
@@ -519,7 +482,7 @@ static ssize_t mei_write(struct file *file, const char __user *ubuf,
 
 		if (rets) {
 			dev_err(&dev->pdev->dev,
-				"amthi write failed with status = %d\n", rets);
+				"amthif write failed with status = %d\n", rets);
 			goto err;
 		}
 		mutex_unlock(&dev->device_lock);
@@ -530,7 +493,7 @@ static ssize_t mei_write(struct file *file, const char __user *ubuf,
 
 	dev_dbg(&dev->pdev->dev, "host client = %d, ME client = %d\n",
 	    cl->host_client_id, cl->me_client_id);
-	rets = mei_flow_ctrl_creds(dev, cl);
+	rets = mei_cl_flow_ctrl_creds(cl);
 	if (rets < 0)
 		goto err;
 
@@ -552,10 +515,10 @@ static ssize_t mei_write(struct file *file, const char __user *ubuf,
 	mei_hdr.host_addr = cl->host_client_id;
 	mei_hdr.me_addr = cl->me_client_id;
 	mei_hdr.reserved = 0;
-	dev_dbg(&dev->pdev->dev, "call mei_write_message header=%08x.\n",
-	    *((u32 *) &mei_hdr));
-	if (mei_write_message(dev, &mei_hdr,
-		write_cb->request_buffer.data, mei_hdr.length)) {
+
+	dev_dbg(&dev->pdev->dev, "write " MEI_HDR_FMT "\n",
+		MEI_HDR_PRM(&mei_hdr));
+	if (mei_write_message(dev, &mei_hdr, write_cb->request_buffer.data)) {
 		rets = -ENODEV;
 		goto err;
 	}
@@ -564,7 +527,7 @@ static ssize_t mei_write(struct file *file, const char __user *ubuf,
 
 out:
 	if (mei_hdr.msg_complete) {
-		if (mei_flow_ctrl_reduce(dev, cl)) {
+		if (mei_cl_flow_ctrl_reduce(cl)) {
 			rets = -ENODEV;
 			goto err;
 		}
@@ -579,6 +542,103 @@ out:
 err:
 	mutex_unlock(&dev->device_lock);
 	mei_io_cb_free(write_cb);
+	return rets;
+}
+
+/**
+ * mei_ioctl_connect_client - the connect to fw client IOCTL function
+ *
+ * @dev: the device structure
+ * @data: IOCTL connect data, input and output parameters
+ * @file: private data of the file object
+ *
+ * Locking: called under "dev->device_lock" lock
+ *
+ * returns 0 on success, <0 on failure.
+ */
+static int mei_ioctl_connect_client(struct file *file,
+			struct mei_connect_client_data *data)
+{
+	struct mei_device *dev;
+	struct mei_client *client;
+	struct mei_cl *cl;
+	int i;
+	int rets;
+
+	cl = file->private_data;
+	if (WARN_ON(!cl || !cl->dev))
+		return -ENODEV;
+
+	dev = cl->dev;
+
+	if (dev->dev_state != MEI_DEV_ENABLED) {
+		rets = -ENODEV;
+		goto end;
+	}
+
+	if (cl->state != MEI_FILE_INITIALIZING &&
+	    cl->state != MEI_FILE_DISCONNECTED) {
+		rets = -EBUSY;
+		goto end;
+	}
+
+	/* find ME client we're trying to connect to */
+	i = mei_me_cl_by_uuid(dev, &data->in_client_uuid);
+	if (i >= 0 && !dev->me_clients[i].props.fixed_address) {
+		cl->me_client_id = dev->me_clients[i].client_id;
+		cl->state = MEI_FILE_CONNECTING;
+	}
+
+	dev_dbg(&dev->pdev->dev, "Connect to FW Client ID = %d\n",
+			cl->me_client_id);
+	dev_dbg(&dev->pdev->dev, "FW Client - Protocol Version = %d\n",
+			dev->me_clients[i].props.protocol_version);
+	dev_dbg(&dev->pdev->dev, "FW Client - Max Msg Len = %d\n",
+			dev->me_clients[i].props.max_msg_length);
+
+	/* if we're connecting to amthif client then we will use the
+	 * existing connection
+	 */
+	if (uuid_le_cmp(data->in_client_uuid, mei_amthif_guid) == 0) {
+		dev_dbg(&dev->pdev->dev, "FW Client is amthi\n");
+		if (dev->iamthif_cl.state != MEI_FILE_CONNECTED) {
+			rets = -ENODEV;
+			goto end;
+		}
+		clear_bit(cl->host_client_id, dev->host_clients_map);
+		mei_cl_unlink(cl);
+
+		kfree(cl);
+		cl = NULL;
+		file->private_data = &dev->iamthif_cl;
+
+		client = &data->out_client_properties;
+		client->max_msg_length =
+			dev->me_clients[i].props.max_msg_length;
+		client->protocol_version =
+			dev->me_clients[i].props.protocol_version;
+		rets = dev->iamthif_cl.status;
+
+		goto end;
+	}
+
+	if (cl->state != MEI_FILE_CONNECTING) {
+		rets = -ENODEV;
+		goto end;
+	}
+
+
+	/* prepare the output buffer */
+	client = &data->out_client_properties;
+	client->max_msg_length = dev->me_clients[i].props.max_msg_length;
+	client->protocol_version = dev->me_clients[i].props.protocol_version;
+	dev_dbg(&dev->pdev->dev, "Can connect?\n");
+
+
+	rets = mei_cl_connect(cl, file);
+
+end:
+	dev_dbg(&dev->pdev->dev, "free connect cb memory.");
 	return rets;
 }
 
@@ -630,6 +690,7 @@ static long mei_ioctl(struct file *file, unsigned int cmd, unsigned long data)
 		rets = -EFAULT;
 		goto out;
 	}
+
 	rets = mei_ioctl_connect_client(file, connect_data);
 
 	/* if all is ok, copying the data back to user. */
@@ -828,8 +889,6 @@ static int mei_probe(struct pci_dev *pdev,
 		       pdev->irq);
 		goto disable_msi;
 	}
-	INIT_DELAYED_WORK(&dev->timer_work, mei_timer);
-	INIT_WORK(&dev->init_work, mei_host_client_init);
 
 	if (mei_hw_init(dev)) {
 		dev_err(&pdev->dev, "init hw failure.\n");
@@ -854,8 +913,6 @@ static int mei_probe(struct pci_dev *pdev,
 	return 0;
 
 release_irq:
-	/* disable interrupts */
-	dev->host_hw_state = mei_hcsr_read(dev);
 	mei_disable_interrupts(dev);
 	flush_scheduled_work();
 	free_irq(pdev->irq, dev);
@@ -903,11 +960,11 @@ static void mei_remove(struct pci_dev *pdev)
 
 	if (dev->iamthif_cl.state == MEI_FILE_CONNECTED) {
 		dev->iamthif_cl.state = MEI_FILE_DISCONNECTING;
-		mei_disconnect_host_client(dev, &dev->iamthif_cl);
+		mei_cl_disconnect(&dev->iamthif_cl);
 	}
 	if (dev->wd_cl.state == MEI_FILE_CONNECTED) {
 		dev->wd_cl.state = MEI_FILE_DISCONNECTING;
-		mei_disconnect_host_client(dev, &dev->wd_cl);
+		mei_cl_disconnect(&dev->wd_cl);
 	}
 
 	/* Unregistering watchdog device */
@@ -915,8 +972,14 @@ static void mei_remove(struct pci_dev *pdev)
 
 	/* remove entry if already in list */
 	dev_dbg(&pdev->dev, "list del iamthif and wd file list.\n");
-	mei_me_cl_unlink(dev, &dev->wd_cl);
-	mei_me_cl_unlink(dev, &dev->iamthif_cl);
+
+	if (dev->open_handle_count > 0)
+		dev->open_handle_count--;
+	mei_cl_unlink(&dev->wd_cl);
+
+	if (dev->open_handle_count > 0)
+		dev->open_handle_count--;
+	mei_cl_unlink(&dev->iamthif_cl);
 
 	dev->iamthif_current_cb = NULL;
 	dev->me_clients_num = 0;
