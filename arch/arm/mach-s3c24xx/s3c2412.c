@@ -52,6 +52,8 @@
 #define S3C2412_SWRST			(S3C24XX_VA_CLKPWR + 0x30)
 #define S3C2412_SWRST_RESET		(0x533C2412)
 
+#include "common.h"
+
 #ifndef CONFIG_CPU_S3C2412_ONLY
 void __iomem *s3c24xx_va_gpio2 = S3C24XX_VA_GPIO;
 
@@ -245,8 +247,8 @@ int __init s3c2412_init(void)
 
 #ifdef CONFIG_PM
 	register_syscore_ops(&s3c2412_pm_syscore_ops);
-#endif
 	register_syscore_ops(&s3c24xx_irq_syscore_ops);
+#endif
 
 	return device_register(&s3c2412_dev);
 }
