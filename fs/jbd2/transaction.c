@@ -224,7 +224,8 @@ repeat:
 	 * If the current transaction is locked down for commit, wait for the
 	 * lock to be released.
 	 */
-	if (transaction->t_state == T_LOCKED) {
+	if ((transaction->t_state == T_LOCKED) ||
+	    (transaction->t_state == T_REQUESTED)) {
 		DEFINE_WAIT(wait);
 
 		prepare_to_wait(&journal->j_wait_transaction_locked,
@@ -2179,7 +2180,8 @@ void __jbd2_journal_refile_buffer(struct journal_head *jh)
 	else
 		jlist = BJ_Reserved;
 	__jbd2_journal_file_buffer(jh, jh->b_transaction, jlist);
-	J_ASSERT_JH(jh, jh->b_transaction->t_state == T_RUNNING);
+	J_ASSERT_JH(jh, (jh->b_transaction->t_state == T_RUNNING ||
+			 jh->b_transaction->t_state == T_REQUESTED));
 
 	if (was_dirty)
 		set_buffer_jbddirty(bh);

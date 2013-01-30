@@ -493,6 +493,7 @@ struct transaction_s
 	 */
 	enum {
 		T_RUNNING,
+		T_REQUESTED,
 		T_LOCKED,
 		T_FLUSH,
 		T_COMMIT,
