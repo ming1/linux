@@ -2,6 +2,10 @@
 #define __SH_INTC_H
 
 #include <linux/ioport.h>
+#include <linux/of.h>
+#include <linux/of_irq.h>
+#include <linux/of_platform.h>
+#include <linux/of_address.h>
 
 #ifdef CONFIG_SUPERH
 #define INTC_NR_IRQS	512
@@ -114,6 +118,7 @@ struct intc_desc {
 	intc_enum force_disable;
 	bool skip_syscore_suspend;
 	struct intc_hw_desc hw;
+	struct device_node *of_node;
 };
 
 #define DECLARE_INTC_DESC(symbol, chipname, vectors, groups,		\
@@ -145,5 +150,56 @@ static inline int register_intc_userimask(unsigned long addr)
 	return 0;
 }
 #endif
+
+/*
+ * of_sh_initc_get_intc() - Get INTC table.
+ * @np:     device node to get INTC from
+ * @d:      a pointer of intc table
+ *
+ * Return: one of the errno value on the error condition
+ */
+int of_sh_intc_get_intc(struct device_node *np, struct intc_desc *d);
+
+/*
+ * of_sh_intc_get_force_enable - Get and set force_enable vector in
+ *                               struct intc_desc.
+ * @np:  device node to get INTC from
+ * @d:   a pointer of struct intc_desc
+ *
+ * Return: none
+ */
+void of_sh_intc_get_force_enable(struct device_node *np,
+				struct intc_desc *d);
+
+/*
+ * of_sh_intc_get_force_disable - Get and set force_disable vector in
+ *                                struct intc_desc.
+ * @np:  device node to get INTC from
+ * @d:   a pointer of struct intc_desc
+ *
+ * Return: none
+ */
+void of_sh_intc_get_force_disable(struct device_node *np,
+				struct intc_desc *d);
+
+/*
+ * of_sh_intc_get_skip_syscore_suspend - Get and set skip_syscore_suspend
+ *                                       flag in struct intc_desc.
+ * @np:  device node to get INTC from
+ * @d:   a pointer of struct intc_desc
+ *
+ * Return: none
+ */
+void of_sh_intc_get_skip_syscore_suspend(struct device_node *np,
+				struct intc_desc *d);
+
+/*
+ * of_sh_intc_get_intevtsa_vect  - Get using vector by intevtsa
+ * @np:  device node to get INTC from
+ * @vect:a pointer of value for vector
+ *
+ * Return: one of the errno value on the error condition
+ */
+int of_sh_intc_get_intevtsa_vect(struct device_node *np, unsigned short *vect);
 
 #endif /* __SH_INTC_H */
