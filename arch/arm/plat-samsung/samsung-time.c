@@ -274,15 +274,8 @@ static void __init samsung_clockevent_init(void)
 	clock_rate = clk_get_rate(tin_event);
 	clock_count_per_tick = clock_rate / HZ;
 
-	clockevents_calc_mult_shift(&time_event_device,
-				    clock_rate, SAMSUNG_TIMER_MIN_RANGE);
-	time_event_device.max_delta_ns =
-		clockevent_delta2ns(-1, &time_event_device);
-	time_event_device.min_delta_ns =
-		clockevent_delta2ns(1, &time_event_device);
-
 	time_event_device.cpumask = cpumask_of(0);
-	clockevents_register_device(&time_event_device);
+	clockevents_config_and_register(&time_event_device, clock_rate, 1, -1);
 
 	irq_number = timer_source.event_id + IRQ_TIMER0;
 	setup_irq(irq_number, &samsung_clock_event_irq);
