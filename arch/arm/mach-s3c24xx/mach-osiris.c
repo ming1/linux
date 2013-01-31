@@ -427,6 +427,6 @@ MACHINE_START(OSIRIS, "Simtec-OSIRIS")
 	.map_io		= osiris_map_io,
 	.init_irq	= s3c24xx_init_irq,
 	.init_machine	= osiris_init,
-	.timer		= &samsung_timer,
+	.init_time	= samsung_timer_init,
 	.restart	= s3c244x_restart,
 MACHINE_END

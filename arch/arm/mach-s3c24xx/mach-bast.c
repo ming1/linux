@@ -608,6 +608,6 @@ MACHINE_START(BAST, "Simtec-BAST")
 	.map_io		= bast_map_io,
 	.init_irq	= s3c24xx_init_irq,
 	.init_machine	= bast_init,
-	.timer		= &samsung_timer,
+	.init_time	= samsung_timer_init,
 	.restart	= s3c2410_restart,
 MACHINE_END

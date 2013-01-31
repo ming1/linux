@@ -47,5 +47,5 @@ struct samsung_timer_source {
 
 extern void __init samsung_set_timer_source(enum samsung_timer_mode event,
 					enum samsung_timer_mode source);
-extern	struct sys_timer samsung_timer;
+extern	void samsung_timer_init(void);
 #endif /* __ASM_PLAT_SAMSUNG_TIME_H */

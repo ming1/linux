@@ -132,6 +132,6 @@ MACHINE_START(TORBRECK, "TORBRECK")
 	.handle_irq	= vic_handle_irq,
 	.map_io		= torbreck_map_io,
 	.init_machine	= torbreck_machine_init,
-	.timer		= &samsung_timer,
+	.init_time	= samsung_timer_init,
 	.restart	= s5pv210_restart,
 MACHINE_END

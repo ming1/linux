@@ -155,7 +155,7 @@ MACHINE_START(SMDKC110, "SMDKC110")
 	.handle_irq	= vic_handle_irq,
 	.map_io		= smdkc110_map_io,
 	.init_machine	= smdkc110_machine_init,
-	.timer		= &samsung_timer,
+	.init_time	= samsung_timer_init,
 	.restart	= s5pv210_restart,
 	.reserve	= &smdkc110_reserve,
 MACHINE_END

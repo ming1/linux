@@ -275,6 +275,6 @@ MACHINE_START(SMDK6440, "SMDK6440")
 	.handle_irq	= vic_handle_irq,
 	.map_io		= smdk6440_map_io,
 	.init_machine	= smdk6440_machine_init,
-	.timer		= &samsung_timer,
+	.init_time	= samsung_timer_init,
 	.restart	= s5p64x0_restart,
 MACHINE_END

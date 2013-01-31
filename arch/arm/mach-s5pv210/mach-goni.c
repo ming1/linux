@@ -975,7 +975,7 @@ MACHINE_START(GONI, "GONI")
 	.handle_irq	= vic_handle_irq,
 	.map_io		= goni_map_io,
 	.init_machine	= goni_machine_init,
-	.timer		= &samsung_timer,
+	.init_time	= samsung_timer_init,
 	.reserve	= &goni_reserve,
 	.restart	= s5pv210_restart,
 MACHINE_END

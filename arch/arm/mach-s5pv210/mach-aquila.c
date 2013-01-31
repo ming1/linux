@@ -688,6 +688,6 @@ MACHINE_START(AQUILA, "Aquila")
 	.handle_irq	= vic_handle_irq,
 	.map_io		= aquila_map_io,
 	.init_machine	= aquila_machine_init,
-	.timer		= &samsung_timer,
+	.init_time	= samsung_timer_init,
 	.restart	= s5pv210_restart,
 MACHINE_END

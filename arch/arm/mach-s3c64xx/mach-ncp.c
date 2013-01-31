@@ -107,6 +107,6 @@ MACHINE_START(NCP, "NCP")
 	.map_io		= ncp_map_io,
 	.init_machine	= ncp_machine_init,
 	.init_late	= s3c64xx_init_late,
-	.timer		= &samsung_timer,
+	.init_time	= samsung_timer_init,
 	.restart	= s3c64xx_restart,
 MACHINE_END

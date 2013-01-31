@@ -1154,7 +1154,7 @@ MACHINE_START(UNIVERSAL_C210, "UNIVERSAL_C210")
 	.handle_irq	= gic_handle_irq,
 	.init_machine	= universal_machine_init,
 	.init_late	= exynos_init_late,
-	.timer		= &samsung_timer,
+	.init_time	= samsung_timer_init,
 	.reserve        = &universal_reserve,
 	.restart	= exynos4_restart,
 MACHINE_END

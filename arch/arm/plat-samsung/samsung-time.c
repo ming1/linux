@@ -393,13 +393,9 @@ static void __init samsung_timer_resources(void)
 	clk_enable(tin_source);
 }
 
-static void __init samsung_timer_init(void)
+void __init samsung_timer_init(void)
 {
 	samsung_timer_resources();
 	samsung_clockevent_init();
 	samsung_clocksource_init();
 }
-
-struct sys_timer samsung_timer = {
-	.init		= samsung_timer_init,
-};
