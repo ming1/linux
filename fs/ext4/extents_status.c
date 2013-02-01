@@ -179,7 +179,8 @@ static void ext4_es_print_tree(struct inode *inode)
 	while (node) {
 		struct extent_status *es;
 		es = rb_entry(node, struct extent_status, rb_node);
-		printk(KERN_DEBUG " [%u/%u)", es->es_lblk, es->es_len);
+		printk(KERN_DEBUG " [%u/%u) %llu %u",
+		       es->es_lblk, es->es_len, es->es_pblk, es->es_status);
 		node = rb_next(node);
 	}
 	printk(KERN_DEBUG "\n");
@@ -234,7 +235,7 @@ static struct extent_status *__es_tree_search(struct rb_root *root,
  * @es: delayed extent that we found
  *
  * Returns the first block of the next extent after es, otherwise
- * EXT_MAX_BLOCKS if no delay extent is found.
+ * EXT_MAX_BLOCKS if no extent is found.
  * Delayed extent is returned via @es.
  */
 ext4_lblk_t ext4_es_find_extent(struct inode *inode, struct extent_status *es)
@@ -249,12 +250,14 @@ ext4_lblk_t ext4_es_find_extent(struct inode *inode, struct extent_status *es)
 	read_lock(&EXT4_I(inode)->i_es_lock);
 	tree = &EXT4_I(inode)->i_es_tree;
 
-	/* find delay extent in cache firstly */
+	/* find extent in cache firstly */
 	if (tree->cache_es) {
 		es1 = tree->cache_es;
 		if (in_range(es->es_lblk, es1->es_lblk, es1->es_len)) {
-			es_debug("%u cached by [%u/%u)\n",
-				 es->es_lblk, es1->es_lblk, es1->es_len);
+			es_debug("%u cached by [%u/%u) %llu %u\n",
+				 es->es_lblk, es1->es_lblk, es1->es_len,
+				 (unsigned long long)es1->es_pblk,
+				 es1->es_status);
 			goto out;
 		}
 	}
@@ -267,6 +270,8 @@ out:
 		tree->cache_es = es1;
 		es->es_lblk = es1->es_lblk;
 		es->es_len = es1->es_len;
+		es->es_pblk = es1->es_pblk;
+		es->es_status = es1->es_status;
 		node = rb_next(&es1->rb_node);
 		if (node) {
 			es1 = rb_entry(node, struct extent_status, rb_node);
@@ -281,7 +286,8 @@ out:
 }
 
 static struct extent_status *
-ext4_es_alloc_extent(ext4_lblk_t lblk, ext4_lblk_t len)
+ext4_es_alloc_extent(ext4_lblk_t lblk, ext4_lblk_t len,
+		     ext4_fsblk_t pblk, int status)
 {
 	struct extent_status *es;
 	es = kmem_cache_alloc(ext4_es_cachep, GFP_ATOMIC);
@@ -289,6 +295,8 @@ ext4_es_alloc_extent(ext4_lblk_t lblk, ext4_lblk_t len)
 		return NULL;
 	es->es_lblk = lblk;
 	es->es_len = len;
+	es->es_pblk = pblk;
+	es->es_status = status;
 	return es;
 }
 
@@ -301,11 +309,20 @@ static void ext4_es_free_extent(struct extent_status *es)
  * Check whether or not two extents can be merged
  * Condition:
  *  - logical block number is contiguous
+ *  - physical block number is contiguous
+ *  - status is equal
  */
 static int ext4_es_can_be_merged(struct extent_status *es1,
 				 struct extent_status *es2)
 {
 	if (es1->es_lblk + es1->es_len != es2->es_lblk)
+		return 0;
+
+	if (es1->es_status != es2->es_status)
+		return 0;
+
+	if (!ext4_es_is_delayed(es1) &&
+	    (es1->es_pblk + es1->es_len != es2->es_pblk))
 		return 0;
 
 	return 1;
@@ -367,6 +384,8 @@ static int __es_insert_extent(struct ext4_es_tree *tree,
 			if (ext4_es_can_be_merged(newes, es)) {
 				es->es_lblk = newes->es_lblk;
 				es->es_len += newes->es_len;
+				es->es_pblk = ext4_es_get_pblock(es,
+							newes->es_pblk);
 				es = ext4_es_try_to_merge_left(tree, es);
 				goto out;
 			}
@@ -384,7 +403,8 @@ static int __es_insert_extent(struct ext4_es_tree *tree,
 		}
 	}
 
-	es = ext4_es_alloc_extent(newes->es_lblk, newes->es_len);
+	es = ext4_es_alloc_extent(newes->es_lblk, newes->es_len,
+				  newes->es_pblk, newes->es_status);
 	if (!es)
 		return -ENOMEM;
 	rb_link_node(&es->rb_node, parent, p);
@@ -404,21 +424,23 @@ out:
  * Return 0 on success, error code on failure.
  */
 int ext4_es_insert_extent(struct inode *inode, ext4_lblk_t lblk,
-			  ext4_lblk_t len)
+			  ext4_lblk_t len, ext4_fsblk_t pblk, int status)
 {
 	struct ext4_es_tree *tree;
 	struct extent_status newes;
 	ext4_lblk_t end = lblk + len - 1;
 	int err = 0;
 
-	trace_ext4_es_insert_extent(inode, lblk, len);
-	es_debug("add [%u/%u) to extent status tree of inode %lu\n",
-		 lblk, len, inode->i_ino);
+	es_debug("add [%u/%u) %llu %d to extent status tree of inode %lu\n",
+		 lblk, len, pblk, status, inode->i_ino);
 
 	BUG_ON(end < lblk);
 
 	newes.es_lblk = lblk;
 	newes.es_len = len;
+	newes.es_pblk = pblk;
+	newes.es_status = status;
+	trace_ext4_es_insert_extent(inode, &newes);
 
 	write_lock(&EXT4_I(inode)->i_es_lock);
 	tree = &EXT4_I(inode)->i_es_tree;
@@ -455,6 +477,9 @@ static int __es_remove_extent(struct ext4_es_tree *tree, ext4_lblk_t lblk,
 
 	orig_es.es_lblk = es->es_lblk;
 	orig_es.es_len = es->es_len;
+	orig_es.es_pblk = es->es_pblk;
+	orig_es.es_status = es->es_status;
+
 	len1 = lblk > es->es_lblk ? lblk - es->es_lblk : 0;
 	len2 = ext4_es_end(es) > end ? ext4_es_end(es) - end : 0;
 	if (len1 > 0)
@@ -465,6 +490,9 @@ static int __es_remove_extent(struct ext4_es_tree *tree, ext4_lblk_t lblk,
 
 			newes.es_lblk = end + 1;
 			newes.es_len = len2;
+			newes.es_pblk = ext4_es_get_pblock(&orig_es,
+				orig_es.es_pblk + orig_es.es_len - len2);
+			newes.es_status = orig_es.es_status;
 			err = __es_insert_extent(tree, &newes);
 			if (err) {
 				es->es_lblk = orig_es.es_lblk;
@@ -474,6 +502,8 @@ static int __es_remove_extent(struct ext4_es_tree *tree, ext4_lblk_t lblk,
 		} else {
 			es->es_lblk = end + 1;
 			es->es_len = len2;
+			es->es_pblk = ext4_es_get_pblock(es,
+				orig_es.es_pblk + orig_es.es_len - len2);
 		}
 		goto out;
 	}
@@ -498,9 +528,13 @@ static int __es_remove_extent(struct ext4_es_tree *tree, ext4_lblk_t lblk,
 	}
 
 	if (es && es->es_lblk < end + 1) {
+		ext4_lblk_t orig_len = es->es_len;
+
 		len1 = ext4_es_end(es) - end;
 		es->es_lblk = end + 1;
 		es->es_len = len1;
+		es->es_pblk = ext4_es_get_pblock(es,
+						 es->es_pblk + orig_len - len1);
 	}
 
 out:

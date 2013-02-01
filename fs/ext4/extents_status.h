@@ -48,10 +48,32 @@ extern void ext4_exit_es(void);
 extern void ext4_es_init_tree(struct ext4_es_tree *tree);
 
 extern int ext4_es_insert_extent(struct inode *inode, ext4_lblk_t lblk,
-				 ext4_lblk_t len);
+				 ext4_lblk_t len, ext4_fsblk_t pblk,
+				 int status);
 extern int ext4_es_remove_extent(struct inode *inode, ext4_lblk_t lblk,
 				 ext4_lblk_t len);
 extern ext4_lblk_t ext4_es_find_extent(struct inode *inode,
 				struct extent_status *es);
+
+static inline int ext4_es_is_written(struct extent_status *es)
+{
+	return (es->es_status == EXTENT_STATUS_WRITTEN);
+}
+
+static inline int ext4_es_is_unwritten(struct extent_status *es)
+{
+	return (es->es_status == EXTENT_STATUS_UNWRITTEN);
+}
+
+static inline int ext4_es_is_delayed(struct extent_status *es)
+{
+	return (es->es_status == EXTENT_STATUS_DELAYED);
+}
+
+static inline ext4_fsblk_t ext4_es_get_pblock(struct extent_status *es,
+					      ext4_fsblk_t pb)
+{
+	return (ext4_es_is_delayed(es) ? ~0 : pb);
+}
 
 #endif /* _EXT4_EXTENTS_STATUS_H */
