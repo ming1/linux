@@ -77,4 +77,9 @@ static inline ext4_fsblk_t ext4_es_get_pblock(struct extent_status *es,
 	return (ext4_es_is_delayed(es) ? ~0 : pb);
 }
 
+extern void ext4_es_register_shrinker(struct super_block *sb);
+extern void ext4_es_unregister_shrinker(struct super_block *sb);
+extern void ext4_es_lru_add(struct inode *inode);
+extern void ext4_es_lru_del(struct inode *inode);
+
 #endif /* _EXT4_EXTENTS_STATUS_H */
