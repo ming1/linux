@@ -504,12 +504,33 @@ static pgoff_t ext4_num_dirty_pages(struct inode *inode, pgoff_t idx,
 int ext4_map_blocks(handle_t *handle, struct inode *inode,
 		    struct ext4_map_blocks *map, int flags)
 {
+	struct extent_status es;
 	int retval;
 
 	map->m_flags = 0;
 	ext_debug("ext4_map_blocks(): inode %lu, flag %d, max_blocks %u,"
 		  "logical block %lu\n", inode->i_ino, flags, map->m_len,
 		  (unsigned long) map->m_lblk);
+
+	/* Lookup extent status tree firstly */
+	es.es_lblk = map->m_lblk;
+	if (ext4_es_lookup_extent(inode, &es)) {
+		if (ext4_es_is_written(&es) || ext4_es_is_unwritten(&es)) {
+			map->m_pblk = es.es_pblk + map->m_lblk - es.es_lblk;
+			map->m_flags |= ext4_es_is_written(&es) ?
+					EXT4_MAP_MAPPED : EXT4_MAP_UNWRITTEN;
+			retval = es.es_len - (map->m_lblk - es.es_lblk);
+			if (retval > map->m_len)
+				retval = map->m_len;
+			map->m_len = retval;
+		} else if (ext4_es_is_delayed(&es)) {
+			retval = 0;
+		} else {
+			BUG_ON(1);
+		}
+		goto found;
+	}
+
 	/*
 	 * Try to see if we can get the block without requesting a new
 	 * file system block.
@@ -535,6 +556,7 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
 	if (!(flags & EXT4_GET_BLOCKS_NO_LOCK))
 		up_read((&EXT4_I(inode)->i_data_sem));
 
+found:
 	if (retval > 0 && map->m_flags & EXT4_MAP_MAPPED) {
 		int ret = check_block_validity(inode, map);
 		if (ret != 0)
@@ -1731,6 +1753,7 @@ static int ext4_da_map_blocks(struct inode *inode, sector_t iblock,
 			      struct ext4_map_blocks *map,
 			      struct buffer_head *bh)
 {
+	struct extent_status es;
 	int retval;
 	sector_t invalid_block = ~((sector_t) 0xffff);
 
@@ -1741,6 +1764,32 @@ static int ext4_da_map_blocks(struct inode *inode, sector_t iblock,
 	ext_debug("ext4_da_map_blocks(): inode %lu, max_blocks %u,"
 		  "logical block %lu\n", inode->i_ino, map->m_len,
 		  (unsigned long) map->m_lblk);
+
+	/* Lookup extent status tree firstly */
+	es.es_lblk = iblock;
+	if (ext4_es_lookup_extent(inode, &es)) {
+		map->m_pblk = es.es_pblk + iblock - es.es_lblk;
+		retval = es.es_len - (iblock - es.es_lblk);
+		if (retval > map->m_len)
+			retval = map->m_len;
+		map->m_len = retval;
+		if (ext4_es_is_written(&es)) {
+			map->m_flags |= EXT4_MAP_MAPPED;
+		} else if (ext4_es_is_unwritten(&es)) {
+			map->m_flags |= EXT4_MAP_UNWRITTEN;
+		} else if (ext4_es_is_delayed(&es)) {
+			map_bh(bh, inode->i_sb, invalid_block);
+			set_buffer_new(bh);
+			set_buffer_delay(bh);
+
+			return 0;
+		} else {
+			BUG_ON(1);
+		}
+
+		return retval;
+	}
+
 	/*
 	 * Try to see if we can get the block without requesting a new
 	 * file system block.

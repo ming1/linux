@@ -457,6 +457,65 @@ error:
 	return err;
 }
 
+/*
+ * ext4_es_lookup_extent() looks up an extent in extent status tree.
+ *
+ * ext4_es_lookup_extent is called by ext4_map_blocks/ext4_da_map_blocks.
+ *
+ * Return: 1 on found, 0 on not
+ */
+int ext4_es_lookup_extent(struct inode *inode, struct extent_status *es)
+{
+	struct ext4_es_tree *tree;
+	struct extent_status *es1;
+	struct rb_node *node;
+	int found = 0;
+
+	trace_ext4_es_lookup_extent_enter(inode, es->es_lblk);
+	es_debug("lookup extent in block %u\n", es->es_lblk);
+
+	tree = &EXT4_I(inode)->i_es_tree;
+	read_lock(&EXT4_I(inode)->i_es_lock);
+
+	/* find extent in cache firstly */
+	if (tree->cache_es) {
+		es1 = tree->cache_es;
+		if (in_range(es->es_lblk, es1->es_lblk, es1->es_len)) {
+			es_debug("%u cached by [%u/%u)\n",
+				 es->es_lblk, es1->es_lblk, es1->es_len);
+			found = 1;
+			goto out;
+		}
+	}
+
+	es->es_len = 0;
+	node = tree->root.rb_node;
+	while (node) {
+		es1 = rb_entry(node, struct extent_status, rb_node);
+		if (es->es_lblk < es1->es_lblk)
+			node = node->rb_left;
+		else if (es->es_lblk > ext4_es_end(es1))
+			node = node->rb_right;
+		else {
+			found = 1;
+			break;
+		}
+	}
+
+out:
+	if (found) {
+		es->es_lblk = es1->es_lblk;
+		es->es_len = es1->es_len;
+		es->es_pblk = es1->es_pblk;
+		es->es_status = es1->es_status;
+	}
+
+	read_unlock(&EXT4_I(inode)->i_es_lock);
+
+	trace_ext4_es_lookup_extent_exit(inode, es, found);
+	return found;
+}
+
 static int __es_remove_extent(struct ext4_es_tree *tree, ext4_lblk_t lblk,
 				 ext4_lblk_t end)
 {
