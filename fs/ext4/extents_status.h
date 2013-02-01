@@ -20,10 +20,22 @@
 #define es_debug(fmt, ...)	no_printk(fmt, ##__VA_ARGS__)
 #endif
 
+enum {
+	EXTENT_STATUS_WRITTEN = 0,	/* written extent */
+	EXTENT_STATUS_UNWRITTEN = 1,	/* unwritten extent */
+	EXTENT_STATUS_DELAYED = 2,	/* delayed extent */
+};
+
+/*
+ * Here for save memory es_status is stashed into es_pblk because we only have
+ * 48 bits physical block and es_status only needs 2 bits.
+ */
 struct extent_status {
 	struct rb_node rb_node;
-	ext4_lblk_t es_lblk;	/* first logical block extent covers */
-	ext4_lblk_t es_len;	/* length of extent in block */
+	ext4_lblk_t es_lblk;		/* first logical block extent covers */
+	ext4_lblk_t es_len;		/* length of extent in block */
+	ext4_fsblk_t es_pblk : 62;	/* first physical block */
+	ext4_fsblk_t es_status : 2;	/* record the status of extent */
 };
 
 struct ext4_es_tree {
