@@ -1745,9 +1745,6 @@ static int ext4_da_map_blocks(struct inode *inode, sector_t iblock,
 		 * of mapping from cluster so that the reserved space
 		 * is calculated properly.
 		 */
-		if ((EXT4_SB(inode->i_sb)->s_cluster_ratio > 1) &&
-		    ext4_find_delalloc_cluster(inode, map->m_lblk))
-			map->m_flags |= EXT4_MAP_FROM_CLUSTER;
 		retval = 0;
 	} else if (ext4_test_inode_flag(inode, EXT4_INODE_EXTENTS))
 		retval = ext4_ext_map_blocks(NULL, inode, map, 0);
@@ -1761,7 +1758,8 @@ static int ext4_da_map_blocks(struct inode *inode, sector_t iblock,
 		 */
 		/* If the block was allocated from previously allocated cluster,
 		 * then we dont need to reserve it again. */
-		if (!(map->m_flags & EXT4_MAP_FROM_CLUSTER)) {
+		if ((EXT4_SB(inode->i_sb)->s_cluster_ratio == 1) ||
+		    !ext4_find_delalloc_cluster(inode, map->m_lblk)) {
 			retval = ext4_da_reserve_space(inode, iblock);
 			if (retval)
 				/* not enough space to reserve */
@@ -1771,11 +1769,6 @@ static int ext4_da_map_blocks(struct inode *inode, sector_t iblock,
 		retval = ext4_es_insert_extent(inode, map->m_lblk, map->m_len);
 		if (retval)
 			goto out_unlock;
-
-		/* Clear EXT4_MAP_FROM_CLUSTER flag since its purpose is served
-		 * and it should not appear on the bh->b_state.
-		 */
-		map->m_flags &= ~EXT4_MAP_FROM_CLUSTER;
 
 		map_bh(bh, inode->i_sb, invalid_block);
 		set_buffer_new(bh);
