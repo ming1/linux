@@ -523,20 +523,20 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
 		retval = ext4_ind_map_blocks(handle, inode, map, flags &
 					     EXT4_GET_BLOCKS_KEEP_SIZE);
 	}
+	if (retval > 0) {
+		int ret, status;
+		status = map->m_flags & EXT4_MAP_UNWRITTEN ?
+				EXTENT_STATUS_UNWRITTEN : EXTENT_STATUS_WRITTEN;
+		ret = ext4_es_insert_extent(inode, map->m_lblk,
+					    map->m_len, map->m_pblk, status);
+		if (ret < 0)
+			retval = ret;
+	}
 	if (!(flags & EXT4_GET_BLOCKS_NO_LOCK))
 		up_read((&EXT4_I(inode)->i_data_sem));
 
 	if (retval > 0 && map->m_flags & EXT4_MAP_MAPPED) {
-		int ret;
-		if (flags & EXT4_GET_BLOCKS_DELALLOC_RESERVE) {
-			/* delayed alloc may be allocated by fallocate and
-			 * coverted to initialized by directIO.
-			 * we need to handle delayed extent here.
-			 */
-			down_write((&EXT4_I(inode)->i_data_sem));
-			goto delayed_mapped;
-		}
-		ret = check_block_validity(inode, map);
+		int ret = check_block_validity(inode, map);
 		if (ret != 0)
 			return ret;
 	}
@@ -611,18 +611,27 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
 			(flags & EXT4_GET_BLOCKS_DELALLOC_RESERVE))
 			ext4_da_update_reserve_space(inode, retval, 1);
 	}
-	if (flags & EXT4_GET_BLOCKS_DELALLOC_RESERVE) {
+	if (flags & EXT4_GET_BLOCKS_DELALLOC_RESERVE)
 		ext4_clear_inode_state(inode, EXT4_STATE_DELALLOC_RESERVED);
 
-		if (retval > 0 && map->m_flags & EXT4_MAP_MAPPED) {
-			int ret;
-delayed_mapped:
-			/* delayed allocation blocks has been allocated */
-			ret = ext4_es_remove_extent(inode, map->m_lblk,
-						    map->m_len);
-			if (ret < 0)
-				retval = ret;
-		}
+	if (retval > 0) {
+		int ret, status;
+
+		if (flags & EXT4_GET_BLOCKS_PRE_IO)
+			status = EXTENT_STATUS_UNWRITTEN;
+		else if (flags & EXT4_GET_BLOCKS_CONVERT)
+			status = EXTENT_STATUS_WRITTEN;
+		else if (flags & EXT4_GET_BLOCKS_UNINIT_EXT)
+			status = EXTENT_STATUS_UNWRITTEN;
+		else if (flags & EXT4_GET_BLOCKS_CREATE)
+			status = EXTENT_STATUS_WRITTEN;
+		else
+			BUG_ON(1);
+
+		ret = ext4_es_insert_extent(inode, map->m_lblk, map->m_len,
+					    map->m_pblk, status);
+		if (ret < 0)
+			retval = ret;
 	}
 
 	up_write((&EXT4_I(inode)->i_data_sem));
@@ -1752,6 +1761,7 @@ static int ext4_da_map_blocks(struct inode *inode, sector_t iblock,
 		retval = ext4_ind_map_blocks(NULL, inode, map, 0);
 
 	if (retval == 0) {
+		int ret;
 		/*
 		 * XXX: __block_prepare_write() unmaps passed block,
 		 * is it OK?
@@ -1760,20 +1770,33 @@ static int ext4_da_map_blocks(struct inode *inode, sector_t iblock,
 		 * then we dont need to reserve it again. */
 		if ((EXT4_SB(inode->i_sb)->s_cluster_ratio == 1) ||
 		    !ext4_find_delalloc_cluster(inode, map->m_lblk)) {
-			retval = ext4_da_reserve_space(inode, iblock);
-			if (retval)
+			ret = ext4_da_reserve_space(inode, iblock);
+			if (ret) {
 				/* not enough space to reserve */
+				retval = ret;
 				goto out_unlock;
+			}
 		}
 
-		retval = ext4_es_insert_extent(inode, map->m_lblk, map->m_len,
-					       ~0, EXTENT_STATUS_DELAYED);
-		if (retval)
+		ret = ext4_es_insert_extent(inode, map->m_lblk, map->m_len,
+					    ~0, EXTENT_STATUS_DELAYED);
+		if (ret) {
+			retval = ret;
 			goto out_unlock;
+		}
 
 		map_bh(bh, inode->i_sb, invalid_block);
 		set_buffer_new(bh);
 		set_buffer_delay(bh);
+	} else if (retval > 0) {
+		int ret, status;
+
+		status = map->m_flags & EXT4_MAP_UNWRITTEN ?
+				EXTENT_STATUS_UNWRITTEN : EXTENT_STATUS_WRITTEN;
+		ret = ext4_es_insert_extent(inode, map->m_lblk, map->m_len,
+					    map->m_pblk, status);
+		if (ret != 0)
+			retval = ret;
 	}
 
 out_unlock:

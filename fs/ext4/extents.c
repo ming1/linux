@@ -2071,7 +2071,7 @@ static int ext4_fill_fiemap_extents(struct inode *inode,
 		}
 
 		/* This is possible iff next == next_del == EXT_MAX_BLOCKS */
-		if (next == next_del) {
+		if (next == next_del && next_del == EXT_MAX_BLOCKS) {
 			flags |= FIEMAP_EXTENT_LAST;
 			if (unlikely(next_del != EXT_MAX_BLOCKS ||
 				     next != EXT_MAX_BLOCKS)) {
@@ -4553,6 +4553,9 @@ static int ext4_find_delayed_extent(struct inode *inode,
 		 */
 		if (es.es_len == 0)
 			/* A hole found. */
+			return 0;
+
+		if (!ext4_es_is_delayed(&es))
 			return 0;
 
 		if (es.es_lblk > newex->ec_block) {
