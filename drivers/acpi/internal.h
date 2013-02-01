@@ -25,6 +25,9 @@
 
 int init_acpi_device_notify(void);
 int acpi_scan_init(void);
+void acpi_pci_root_init(void);
+void acpi_pci_link_init(void);
+void acpi_platform_init(void);
 int acpi_sysfs_init(void);
 void acpi_csrt_init(void);
 
@@ -86,7 +89,6 @@ struct acpi_ec {
 
 extern struct acpi_ec *first_ec;
 
-int acpi_pci_root_init(void);
 int acpi_ec_init(void);
 int acpi_ec_ecdt_probe(void);
 int acpi_boot_ec_enable(void);
@@ -117,11 +119,5 @@ static inline void suspend_nvs_restore(void) {}
 				Platform bus support
   -------------------------------------------------------------------------- */
 struct platform_device;
-
-/* Flags for acpi_create_platform_device */
-#define ACPI_PLATFORM_CLK	BIT(0)
-
-struct platform_device *acpi_create_platform_device(struct acpi_device *adev,
-						    unsigned long flags);
 
 #endif /* _ACPI_INTERNAL_H_ */
