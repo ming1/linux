@@ -50,6 +50,7 @@ extern unsigned int processor_id;
 		    : "cc");						\
 		__val;							\
 	})
+
 #define read_cpuid_ext(ext_reg)						\
 	({								\
 		unsigned int __val;					\
@@ -59,10 +60,8 @@ extern unsigned int processor_id;
 		    : "cc");						\
 		__val;							\
 	})
-#else
-#define read_cpuid(reg) (processor_id)
-#define read_cpuid_ext(reg) 0
-#endif
+
+#else /* ifdef CONFIG_CPU_CP15 */
 
 #define ARM_CPU_IMP_ARM			0x41
 #define ARM_CPU_IMP_INTEL		0x69
@@ -83,6 +82,21 @@ extern unsigned int processor_id;
 #define ARM_CPU_XSCALE_ARCH_V3		0x6000
 
 /*
+ * read_cpuid and read_cpuid_ext should only ever be called on machines that
+ * have cp15 so warn on other usages.
+ */
+#define read_cpuid(reg)							\
+	({								\
+		WARN_ON_ONCE(1);					\
+		0;							\
+	})
+
+#define read_cpuid_ext(reg) read_cpuid(reg)
+
+#endif /* ifdef CONFIG_CPU_CP15 / else */
+
+#ifdef CONFIG_CPU_CP15
+/*
  * The CPU ID never changes at run time, so we might as well tell the
  * compiler that it's constant.  Use this function to read the CPU ID
  * rather than directly reading processor_id or read_cpuid() directly.
@@ -91,6 +105,15 @@ static inline unsigned int __attribute_const__ read_cpuid_id(void)
 {
 	return read_cpuid(CPUID_ID);
 }
+
+#else /* ifdef CONFIG_CPU_CP15 */
+
+static inline unsigned int __attribute_const__ read_cpuid_id(void)
+{
+	return processor_id;
+}
+
+#endif /* ifdef CONFIG_CPU_CP15 / else */
 
 static inline unsigned int __attribute_const__ read_cpuid_implementor(void)
 {
