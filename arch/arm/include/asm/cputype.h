@@ -63,6 +63,20 @@ extern unsigned int processor_id;
 
 #else /* ifdef CONFIG_CPU_CP15 */
 
+/*
+ * read_cpuid and read_cpuid_ext should only ever be called on machines that
+ * have cp15 so warn on other usages.
+ */
+#define read_cpuid(reg)							\
+	({								\
+		WARN_ON_ONCE(1);					\
+		0;							\
+	})
+
+#define read_cpuid_ext(reg) read_cpuid(reg)
+
+#endif /* ifdef CONFIG_CPU_CP15 / else */
+
 #define ARM_CPU_IMP_ARM			0x41
 #define ARM_CPU_IMP_INTEL		0x69
 
@@ -80,20 +94,6 @@ extern unsigned int processor_id;
 #define ARM_CPU_XSCALE_ARCH_V1		0x2000
 #define ARM_CPU_XSCALE_ARCH_V2		0x4000
 #define ARM_CPU_XSCALE_ARCH_V3		0x6000
-
-/*
- * read_cpuid and read_cpuid_ext should only ever be called on machines that
- * have cp15 so warn on other usages.
- */
-#define read_cpuid(reg)							\
-	({								\
-		WARN_ON_ONCE(1);					\
-		0;							\
-	})
-
-#define read_cpuid_ext(reg) read_cpuid(reg)
-
-#endif /* ifdef CONFIG_CPU_CP15 / else */
 
 #ifdef CONFIG_CPU_CP15
 /*
