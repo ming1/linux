@@ -799,7 +799,7 @@ static int bcm_enet_open(struct net_device *dev)
 		snprintf(phy_id, sizeof(phy_id), PHY_ID_FMT,
 			 priv->mii_bus->id, priv->phy_id);
 
-		phydev = phy_connect(dev, phy_id, bcm_enet_adjust_phy_link, 0,
+		phydev = phy_connect(dev, phy_id, bcm_enet_adjust_phy_link,
 				     PHY_INTERFACE_MODE_MII);
 
 		if (IS_ERR(phydev)) {
@@ -1227,10 +1227,11 @@ static const u32 unused_mib_regs[] = {
 static void bcm_enet_get_drvinfo(struct net_device *netdev,
 				 struct ethtool_drvinfo *drvinfo)
 {
-	strncpy(drvinfo->driver, bcm_enet_driver_name, 32);
-	strncpy(drvinfo->version, bcm_enet_driver_version, 32);
-	strncpy(drvinfo->fw_version, "N/A", 32);
-	strncpy(drvinfo->bus_info, "bcm63xx", 32);
+	strlcpy(drvinfo->driver, bcm_enet_driver_name, sizeof(drvinfo->driver));
+	strlcpy(drvinfo->version, bcm_enet_driver_version,
+		sizeof(drvinfo->version));
+	strlcpy(drvinfo->fw_version, "N/A", sizeof(drvinfo->fw_version));
+	strlcpy(drvinfo->bus_info, "bcm63xx", sizeof(drvinfo->bus_info));
 	drvinfo->n_stats = BCM_ENET_STATS_LEN;
 }
 

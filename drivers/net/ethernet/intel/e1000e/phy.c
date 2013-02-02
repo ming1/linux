@@ -1,7 +1,7 @@
 /*******************************************************************************
 
   Intel PRO/1000 Linux driver
-  Copyright(c) 1999 - 2012 Intel Corporation.
+  Copyright(c) 1999 - 2013 Intel Corporation.
 
   This program is free software; you can redistribute it and/or modify it
   under the terms and conditions of the GNU General Public License,
@@ -28,16 +28,12 @@
 
 #include "e1000.h"
 
-static s32 e1000_get_phy_cfg_done(struct e1000_hw *hw);
-static s32 e1000_phy_force_speed_duplex(struct e1000_hw *hw);
-static s32 e1000_set_d0_lplu_state(struct e1000_hw *hw, bool active);
 static s32 e1000_wait_autoneg(struct e1000_hw *hw);
-static u32 e1000_get_phy_addr_for_bm_page(u32 page, u32 reg);
 static s32 e1000_access_phy_wakeup_reg_bm(struct e1000_hw *hw, u32 offset,
 					  u16 *data, bool read, bool page_set);
 static u32 e1000_get_phy_addr_for_hv_page(u32 page);
 static s32 e1000_access_phy_debug_regs_hv(struct e1000_hw *hw, u32 offset,
-                                          u16 *data, bool read);
+					  u16 *data, bool read);
 
 /* Cable length tables */
 static const u16 e1000_m88_cable_length_table[] = {
@@ -792,7 +788,7 @@ s32 e1000e_copper_link_setup_m88(struct e1000_hw *hw)
 			if (ret_val)
 				return ret_val;
 			/* Commit the changes. */
-			ret_val = e1000e_commit_phy(hw);
+			ret_val = phy->ops.commit(hw);
 			if (ret_val) {
 				e_dbg("Error committing the PHY changes\n");
 				return ret_val;
@@ -848,10 +844,12 @@ s32 e1000e_copper_link_setup_m88(struct e1000_hw *hw)
 	}
 
 	/* Commit the changes. */
-	ret_val = e1000e_commit_phy(hw);
-	if (ret_val) {
-		e_dbg("Error committing the PHY changes\n");
-		return ret_val;
+	if (phy->ops.commit) {
+		ret_val = phy->ops.commit(hw);
+		if (ret_val) {
+			e_dbg("Error committing the PHY changes\n");
+			return ret_val;
+		}
 	}
 
 	if (phy->type == e1000_phy_82578) {
@@ -895,10 +893,12 @@ s32 e1000e_copper_link_setup_igp(struct e1000_hw *hw)
 	msleep(100);
 
 	/* disable lplu d0 during driver init */
-	ret_val = e1000_set_d0_lplu_state(hw, false);
-	if (ret_val) {
-		e_dbg("Error Disabling LPLU D0\n");
-		return ret_val;
+	if (hw->phy.ops.set_d0_lplu_state) {
+		ret_val = hw->phy.ops.set_d0_lplu_state(hw, false);
+		if (ret_val) {
+			e_dbg("Error Disabling LPLU D0\n");
+			return ret_val;
+		}
 	}
 	/* Configure mdi-mdix settings */
 	ret_val = e1e_rphy(hw, IGP01E1000_PHY_PORT_CTRL, &data);
@@ -1196,7 +1196,7 @@ s32 e1000e_setup_copper_link(struct e1000_hw *hw)
 		 * depending on user settings.
 		 */
 		e_dbg("Forcing Speed and Duplex\n");
-		ret_val = e1000_phy_force_speed_duplex(hw);
+		ret_val = hw->phy.ops.force_speed_duplex(hw);
 		if (ret_val) {
 			e_dbg("Error Forcing Speed and Duplex\n");
 			return ret_val;
@@ -1326,9 +1326,11 @@ s32 e1000e_phy_force_speed_duplex_m88(struct e1000_hw *hw)
 		return ret_val;
 
 	/* Reset the phy to commit changes. */
-	ret_val = e1000e_commit_phy(hw);
-	if (ret_val)
-		return ret_val;
+	if (hw->phy.ops.commit) {
+		ret_val = hw->phy.ops.commit(hw);
+		if (ret_val)
+			return ret_val;
+	}
 
 	if (phy->autoneg_wait_to_complete) {
 		e_dbg("Waiting for forced speed/duplex link on M88 phy.\n");
@@ -1962,7 +1964,7 @@ s32 e1000e_get_phy_info_m88(struct e1000_hw *hw)
 	phy->is_mdix = !!(phy_data & M88E1000_PSSR_MDIX);
 
 	if ((phy_data & M88E1000_PSSR_SPEED) == M88E1000_PSSR_1000MBS) {
-		ret_val = e1000_get_cable_length(hw);
+		ret_val = hw->phy.ops.get_cable_length(hw);
 		if (ret_val)
 			return ret_val;
 
@@ -2026,7 +2028,7 @@ s32 e1000e_get_phy_info_igp(struct e1000_hw *hw)
 
 	if ((data & IGP01E1000_PSSR_SPEED_MASK) ==
 	    IGP01E1000_PSSR_SPEED_1000MBPS) {
-		ret_val = e1000_get_cable_length(hw);
+		ret_val = phy->ops.get_cable_length(hw);
 		if (ret_val)
 			return ret_val;
 
@@ -2166,17 +2168,17 @@ s32 e1000e_phy_hw_reset_generic(struct e1000_hw *hw)
 
 	phy->ops.release(hw);
 
-	return e1000_get_phy_cfg_done(hw);
+	return phy->ops.get_cfg_done(hw);
 }
 
 /**
- *  e1000e_get_cfg_done - Generic configuration done
+ *  e1000e_get_cfg_done_generic - Generic configuration done
  *  @hw: pointer to the HW structure
  *
  *  Generic function to wait 10 milli-seconds for configuration to complete
  *  and return success.
  **/
-s32 e1000e_get_cfg_done(struct e1000_hw *hw)
+s32 e1000e_get_cfg_done_generic(struct e1000_hw *hw)
 {
 	mdelay(10);
 
@@ -2262,38 +2264,6 @@ s32 e1000e_phy_init_script_igp3(struct e1000_hw *hw)
 	e1e_wphy(hw, 0x0014, 0x0045);
 	/* Restart AN, Speed selection is 1000 */
 	e1e_wphy(hw, 0x0000, 0x1340);
-
-	return 0;
-}
-
-/* Internal function pointers */
-
-/**
- *  e1000_get_phy_cfg_done - Generic PHY configuration done
- *  @hw: pointer to the HW structure
- *
- *  Return success if silicon family did not implement a family specific
- *  get_cfg_done function.
- **/
-static s32 e1000_get_phy_cfg_done(struct e1000_hw *hw)
-{
-	if (hw->phy.ops.get_cfg_done)
-		return hw->phy.ops.get_cfg_done(hw);
-
-	return 0;
-}
-
-/**
- *  e1000_phy_force_speed_duplex - Generic force PHY speed/duplex
- *  @hw: pointer to the HW structure
- *
- *  When the silicon family has not implemented a forced speed/duplex
- *  function for the PHY, simply return 0.
- **/
-static s32 e1000_phy_force_speed_duplex(struct e1000_hw *hw)
-{
-	if (hw->phy.ops.force_speed_duplex)
-		return hw->phy.ops.force_speed_duplex(hw);
 
 	return 0;
 }
@@ -2672,7 +2642,7 @@ s32 e1000_enable_phy_wakeup_reg_access_bm(struct e1000_hw *hw, u16 *phy_reg)
  **/
 s32 e1000_disable_phy_wakeup_reg_access_bm(struct e1000_hw *hw, u16 *phy_reg)
 {
-	s32 ret_val = 0;
+	s32 ret_val;
 
 	/* Select Port Control Registers page */
 	ret_val = e1000_set_page_igp(hw, (BM_PORT_CTRL_PAGE << IGP_PAGE_SHIFT));
@@ -2803,43 +2773,6 @@ void e1000_power_down_phy_copper(struct e1000_hw *hw)
 	mii_reg |= MII_CR_POWER_DOWN;
 	e1e_wphy(hw, PHY_CONTROL, mii_reg);
 	usleep_range(1000, 2000);
-}
-
-/**
- *  e1000e_commit_phy - Soft PHY reset
- *  @hw: pointer to the HW structure
- *
- *  Performs a soft PHY reset on those that apply. This is a function pointer
- *  entry point called by drivers.
- **/
-s32 e1000e_commit_phy(struct e1000_hw *hw)
-{
-	if (hw->phy.ops.commit)
-		return hw->phy.ops.commit(hw);
-
-	return 0;
-}
-
-/**
- *  e1000_set_d0_lplu_state - Sets low power link up state for D0
- *  @hw: pointer to the HW structure
- *  @active: boolean used to enable/disable lplu
- *
- *  Success returns 0, Failure returns 1
- *
- *  The low power link up (lplu) state is set to the power management level D0
- *  and SmartSpeed is disabled when active is true, else clear lplu for D0
- *  and enable Smartspeed.  LPLU and Smartspeed are mutually exclusive.  LPLU
- *  is used during Dx states where the power conservation is most important.
- *  During driver activity, SmartSpeed should be enabled so performance is
- *  maintained.  This is a function pointer entry point called by drivers.
- **/
-static s32 e1000_set_d0_lplu_state(struct e1000_hw *hw, bool active)
-{
-	if (hw->phy.ops.set_d0_lplu_state)
-		return hw->phy.ops.set_d0_lplu_state(hw, active);
-
-	return 0;
 }
 
 /**
@@ -3104,8 +3037,8 @@ static s32 e1000_access_phy_debug_regs_hv(struct e1000_hw *hw, u32 offset,
                                           u16 *data, bool read)
 {
 	s32 ret_val;
-	u32 addr_reg = 0;
-	u32 data_reg = 0;
+	u32 addr_reg;
+	u32 data_reg;
 
 	/* This takes care of the difference with desktop vs mobile phy */
 	addr_reg = (hw->phy.type == e1000_phy_82578) ?
@@ -3333,7 +3266,7 @@ s32 e1000_get_cable_length_82577(struct e1000_hw *hw)
 	         I82577_DSTATUS_CABLE_LENGTH_SHIFT;
 
 	if (length == E1000_CABLE_LENGTH_UNDEFINED)
-		ret_val = -E1000_ERR_PHY;
+		return -E1000_ERR_PHY;
 
 	phy->cable_length = length;
 

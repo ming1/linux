@@ -1,7 +1,7 @@
 /*******************************************************************************
 
   Intel PRO/1000 Linux driver
-  Copyright(c) 1999 - 2012 Intel Corporation.
+  Copyright(c) 1999 - 2013 Intel Corporation.
 
   This program is free software; you can redistribute it and/or modify it
   under the terms and conditions of the GNU General Public License,
@@ -107,6 +107,7 @@
 #define E1000_RXD_ERR_RXE       0x80    /* Rx Data Error */
 #define E1000_RXD_SPC_VLAN_MASK 0x0FFF  /* VLAN ID is in lower 12 bits */
 
+#define E1000_RXDEXT_STATERR_TST   0x00000100	/* Time Stamp taken */
 #define E1000_RXDEXT_STATERR_CE    0x01000000
 #define E1000_RXDEXT_STATERR_SE    0x02000000
 #define E1000_RXDEXT_STATERR_SEQ   0x04000000
@@ -242,9 +243,9 @@
 #define E1000_CTRL_VME      0x40000000  /* IEEE VLAN mode enable */
 #define E1000_CTRL_PHY_RST  0x80000000  /* PHY Reset */
 
-/* Bit definitions for the Management Data IO (MDIO) and Management Data
- * Clock (MDC) pins in the Device Control Register.
- */
+#define E1000_PCS_LCTL_FORCE_FCTRL	0x80
+
+#define E1000_PCS_LSTS_AN_COMPLETE	0x10000
 
 /* Device Status */
 #define E1000_STATUS_FD         0x00000001      /* Full duplex.0=half,1=full */
@@ -259,8 +260,6 @@
 #define E1000_STATUS_LAN_INIT_DONE 0x00000200   /* Lan Init Completion by NVM */
 #define E1000_STATUS_PHYRA      0x00000400      /* PHY Reset Asserted */
 #define E1000_STATUS_GIO_MASTER_ENABLE 0x00080000 /* Status of Master requests. */
-
-/* Constants used to interpret the masked PCI-X bus speed. */
 
 #define HALF_DUPLEX 1
 #define FULL_DUPLEX 2
@@ -319,6 +318,7 @@
 #define E1000_TXD_CMD_IP     0x02000000 /* IP packet */
 #define E1000_TXD_CMD_TSE    0x04000000 /* TCP Seg enable */
 #define E1000_TXD_STAT_TC    0x00000004 /* Tx Underrun */
+#define E1000_TXD_EXTCMD_TSTAMP	0x00000010 /* IEEE1588 Timestamp packet */
 
 /* Transmit Control */
 #define E1000_TCTL_EN     0x00000002    /* enable Tx */
@@ -327,8 +327,6 @@
 #define E1000_TCTL_COLD   0x003ff000    /* collision distance */
 #define E1000_TCTL_RTLC   0x01000000    /* Re-transmit on late collision */
 #define E1000_TCTL_MULR   0x10000000    /* Multiple request support */
-
-/* Transmit Arbitration Count */
 
 /* SerDes Control */
 #define E1000_SCTL_DISABLE_SERDES_LOOPBACK 0x0400
@@ -384,9 +382,14 @@
 
 #define E1000_KABGTXD_BGSQLBIAS           0x00050000
 
+/* Low Power IDLE Control */
+#define E1000_LPIC_LPIET_SHIFT		24	/* Low Power Idle Entry Time */
+
 /* PBA constants */
 #define E1000_PBA_8K  0x0008    /* 8KB */
 #define E1000_PBA_16K 0x0010    /* 16KB */
+
+#define E1000_PBA_RXA_MASK	0xFFFF
 
 #define E1000_PBS_16K E1000_PBA_16K
 
@@ -542,6 +545,29 @@
 #define E1000_RXCW_C          0x20000000        /* Receive config */
 #define E1000_RXCW_SYNCH      0x40000000        /* Receive config synch */
 
+#define E1000_TSYNCTXCTL_VALID		0x00000001 /* Tx timestamp valid */
+#define E1000_TSYNCRXCTL_TYPE_ALL	0x08
+#define E1000_TSYNCTXCTL_ENABLED	0x00000010 /* enable Tx timestamping */
+
+#define E1000_TSYNCRXCTL_VALID		0x00000001 /* Rx timestamp valid */
+#define E1000_TSYNCRXCTL_TYPE_MASK	0x0000000E /* Rx type mask */
+#define E1000_TSYNCRXCTL_TYPE_L2_V2	0x00
+#define E1000_TSYNCRXCTL_TYPE_L4_V1	0x02
+#define E1000_TSYNCRXCTL_TYPE_L2_L4_V2	0x04
+#define E1000_TSYNCRXCTL_TYPE_ALL	0x08
+#define E1000_TSYNCRXCTL_TYPE_EVENT_V2	0x0A
+#define E1000_TSYNCRXCTL_ENABLED	0x00000010 /* enable Rx timestamping */
+#define E1000_TSYNCRXCTL_SYSCFI		0x00000020 /* Sys clock frequency */
+
+#define E1000_RXMTRL_PTP_V1_SYNC_MESSAGE	0x00000000
+#define E1000_RXMTRL_PTP_V1_DELAY_REQ_MESSAGE	0x00010000
+
+#define E1000_RXMTRL_PTP_V2_SYNC_MESSAGE	0x00000000
+#define E1000_RXMTRL_PTP_V2_DELAY_REQ_MESSAGE	0x01000000
+
+#define E1000_TIMINCA_INCPERIOD_SHIFT	24
+#define E1000_TIMINCA_INCVALUE_MASK	0x00FFFFFF
+
 /* PCI Express Control */
 #define E1000_GCR_RXD_NO_SNOOP          0x00000001
 #define E1000_GCR_RXDSCW_NO_SNOOP       0x00000002
@@ -648,6 +674,10 @@
 /* NVM Word Offsets */
 #define NVM_COMPAT                 0x0003
 #define NVM_ID_LED_SETTINGS        0x0004
+#define NVM_FUTURE_INIT_WORD1      0x0019
+#define NVM_COMPAT_VALID_CSUM      0x0001
+#define NVM_FUTURE_INIT_WORD1_VALID_CSUM	0x0040
+
 #define NVM_INIT_CONTROL2_REG      0x000F
 #define NVM_INIT_CONTROL3_PORT_B   0x0014
 #define NVM_INIT_3GIO_3            0x001A
@@ -766,9 +796,6 @@
 #define M88E1000_PSCR_AUTO_X_1000T     0x0040
 /* Auto crossover enabled all speeds */
 #define M88E1000_PSCR_AUTO_X_MODE      0x0060
-/* 1=Enable Extended 10BASE-T distance (Lower 10BASE-T Rx Threshold)
- * 0=Normal 10BASE-T Rx Threshold
- */
 #define M88E1000_PSCR_ASSERT_CRS_ON_TX 0x0800 /* 1=Assert CRS on Transmit */
 
 /* M88E1000 PHY Specific Status Register */
@@ -804,6 +831,33 @@
 /* BME1000 PHY Specific Control Register */
 #define BME1000_PSCR_ENABLE_DOWNSHIFT   0x0800 /* 1 = enable downshift */
 
+/* PHY Low Power Idle Control */
+#define I82579_LPI_CTRL				PHY_REG(772, 20)
+#define I82579_LPI_CTRL_100_ENABLE		0x2000
+#define I82579_LPI_CTRL_1000_ENABLE		0x4000
+#define I82579_LPI_CTRL_ENABLE_MASK		0x6000
+#define I82579_LPI_CTRL_FORCE_PLL_LOCK_COUNT	0x80
+
+/* Extended Management Interface (EMI) Registers */
+#define I82579_EMI_ADDR		0x10
+#define I82579_EMI_DATA		0x11
+#define I82579_LPI_UPDATE_TIMER	0x4805	/* in 40ns units + 40 ns base value */
+#define I82579_MSE_THRESHOLD	0x084F	/* 82579 Mean Square Error Threshold */
+#define I82577_MSE_THRESHOLD	0x0887	/* 82577 Mean Square Error Threshold */
+#define I82579_MSE_LINK_DOWN	0x2411	/* MSE count before dropping link */
+#define I82579_EEE_PCS_STATUS	0x182D	/* IEEE MMD Register 3.1 >> 8 */
+#define I82579_EEE_CAPABILITY	0x0410	/* IEEE MMD Register 3.20 */
+#define I82579_EEE_ADVERTISEMENT	0x040E	/* IEEE MMD Register 7.60 */
+#define I82579_EEE_LP_ABILITY		0x040F	/* IEEE MMD Register 7.61 */
+#define I82579_EEE_100_SUPPORTED	(1 << 1) /* 100BaseTx EEE supported */
+#define I82579_EEE_1000_SUPPORTED	(1 << 2) /* 1000BaseTx EEE supported */
+#define I217_EEE_PCS_STATUS	0x9401	/* IEEE MMD Register 3.1 */
+#define I217_EEE_CAPABILITY	0x8000	/* IEEE MMD Register 3.20 */
+#define I217_EEE_ADVERTISEMENT	0x8001	/* IEEE MMD Register 7.60 */
+#define I217_EEE_LP_ABILITY	0x8002	/* IEEE MMD Register 7.61 */
+
+#define E1000_EEE_RX_LPI_RCVD	0x0400	/* Tx LP idle received */
+#define E1000_EEE_TX_LPI_RCVD	0x0800	/* Rx LP idle received */
 
 #define PHY_PAGE_SHIFT 5
 #define PHY_REG(page, reg) (((page) << PHY_PAGE_SHIFT) | \

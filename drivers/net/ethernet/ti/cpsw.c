@@ -374,6 +374,9 @@ void cpsw_tx_handler(void *token, int len, int status)
 	struct net_device	*ndev = skb->dev;
 	struct cpsw_priv	*priv = netdev_priv(ndev);
 
+	/* Check whether the queue is stopped due to stalled tx dma, if the
+	 * queue is stopped then start the queue as we have free desc for tx
+	 */
 	if (unlikely(netif_queue_stopped(ndev)))
 		netif_start_queue(ndev);
 	cpts_tx_timestamp(&priv->cpts, skb);
@@ -592,7 +595,7 @@ static void cpsw_slave_open(struct cpsw_slave *slave, struct cpsw_priv *priv)
 			   1 << slave_port, 0, ALE_MCAST_FWD_2);
 
 	slave->phy = phy_connect(priv->ndev, slave->data->phy_id,
-				 &cpsw_adjust_link, 0, slave->data->phy_if);
+				 &cpsw_adjust_link, slave->data->phy_if);
 	if (IS_ERR(slave->phy)) {
 		dev_err(priv->dev, "phy %s not found on slave %d\n",
 			slave->data->phy_id, slave->slave_num);
@@ -735,6 +738,12 @@ static netdev_tx_t cpsw_ndo_start_xmit(struct sk_buff *skb,
 		cpsw_err(priv, tx_err, "desc submit failed\n");
 		goto fail;
 	}
+
+	/* If there is no more tx desc left free then we need to
+	 * tell the kernel to stop sending us tx frames.
+	 */
+	if (unlikely(cpdma_check_free_tx_desc(priv->txch)))
+		netif_stop_queue(ndev);
 
 	return NETDEV_TX_OK;
 fail:
@@ -944,9 +953,10 @@ static void cpsw_get_drvinfo(struct net_device *ndev,
 			     struct ethtool_drvinfo *info)
 {
 	struct cpsw_priv *priv = netdev_priv(ndev);
-	strcpy(info->driver, "TI CPSW Driver v1.0");
-	strcpy(info->version, "1.0");
-	strcpy(info->bus_info, priv->pdev->name);
+
+	strlcpy(info->driver, "TI CPSW Driver v1.0", sizeof(info->driver));
+	strlcpy(info->version, "1.0", sizeof(info->version));
+	strlcpy(info->bus_info, priv->pdev->name, sizeof(info->bus_info));
 }
 
 static u32 cpsw_get_msglevel(struct net_device *ndev)
