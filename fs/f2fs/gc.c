@@ -103,6 +103,7 @@ int start_gc_thread(struct f2fs_sb_info *sbi)
 				"f2fs_gc-%s", dev_name(sbi->sb->s_bdi->dev));
 	if (IS_ERR(gc_th->f2fs_gc_task)) {
 		kfree(gc_th);
+		sbi->gc_thread = NULL;
 		return -ENOMEM;
 	}
 	return 0;
