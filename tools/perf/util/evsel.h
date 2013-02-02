@@ -118,6 +118,19 @@ void perf_evsel__free_fd(struct perf_evsel *evsel);
 void perf_evsel__free_id(struct perf_evsel *evsel);
 void perf_evsel__close_fd(struct perf_evsel *evsel, int ncpus, int nthreads);
 
+void __perf_evsel__set_sample_bit(struct perf_evsel *evsel,
+				  enum perf_event_sample_format bit);
+void __perf_evsel__reset_sample_bit(struct perf_evsel *evsel,
+				    enum perf_event_sample_format bit);
+
+#define perf_evsel__set_sample_bit(evsel, bit) \
+	__perf_evsel__set_sample_bit(evsel, PERF_SAMPLE_##bit)
+
+#define perf_evsel__reset_sample_bit(evsel, bit) \
+	__perf_evsel__reset_sample_bit(evsel, PERF_SAMPLE_##bit)
+
+void perf_evsel__set_sample_id(struct perf_evsel *evsel);
+
 int perf_evsel__set_filter(struct perf_evsel *evsel, int ncpus, int nthreads,
 			   const char *filter);
 
@@ -226,8 +239,22 @@ static inline struct perf_evsel *perf_evsel__next(struct perf_evsel *evsel)
 	return list_entry(evsel->node.next, struct perf_evsel, node);
 }
 
-static inline bool perf_evsel__is_group_member(const struct perf_evsel *evsel)
+static inline bool perf_evsel__is_group_leader(const struct perf_evsel *evsel)
 {
-	return evsel->leader != NULL;
+	return evsel->leader == evsel;
 }
+
+struct perf_attr_details {
+	bool freq;
+	bool verbose;
+};
+
+int perf_evsel__fprintf(struct perf_evsel *evsel,
+			struct perf_attr_details *details, FILE *fp);
+
+bool perf_evsel__fallback(struct perf_evsel *evsel, int err,
+			  char *msg, size_t msgsize);
+int perf_evsel__open_strerror(struct perf_evsel *evsel,
+			      struct perf_target *target,
+			      int err, char *msg, size_t size);
 #endif /* __PERF_EVSEL_H */
