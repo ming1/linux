@@ -100,7 +100,7 @@ int start_gc_thread(struct f2fs_sb_info *sbi)
 	sbi->gc_thread = gc_th;
 	init_waitqueue_head(&sbi->gc_thread->gc_wait_queue_head);
 	sbi->gc_thread->f2fs_gc_task = kthread_run(gc_thread_func, sbi,
-				GC_THREAD_NAME);
+				"f2fs_gc-%s", dev_name(sbi->sb->s_bdi->dev));
 	if (IS_ERR(gc_th->f2fs_gc_task)) {
 		kfree(gc_th);
 		return -ENOMEM;
