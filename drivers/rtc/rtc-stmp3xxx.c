@@ -28,6 +28,7 @@
 #include <linux/of_device.h>
 #include <linux/stmp_device.h>
 #include <linux/stmp3xxx_rtc_wdt.h>
+#include <linux/of.h>
 
 #include <mach/common.h>
 
@@ -344,7 +345,7 @@ static struct platform_driver stmp3xxx_rtcdrv = {
 	.driver		= {
 		.name	= "stmp3xxx-rtc",
 		.owner	= THIS_MODULE,
-		.of_match_table = rtc_dt_ids,
+		.of_match_table = of_match_ptr(rtc_dt_ids),
 	},
 };
 
