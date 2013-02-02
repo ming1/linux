@@ -143,6 +143,22 @@ int f2fs_sync_fs(struct super_block *sb, int sync)
 	return 0;
 }
 
+static int f2fs_freeze(struct super_block *sb)
+{
+	int err;
+
+	if (sb->s_flags & MS_RDONLY)
+		return 0;
+
+	err = f2fs_sync_fs(sb, 1);
+	return err;
+}
+
+static int f2fs_unfreeze(struct super_block *sb)
+{
+	return 0;
+}
+
 static int f2fs_statfs(struct dentry *dentry, struct kstatfs *buf)
 {
 	struct super_block *sb = dentry->d_sb;
@@ -198,7 +214,7 @@ static int f2fs_show_options(struct seq_file *seq, struct dentry *root)
 		seq_puts(seq, ",noacl");
 #endif
 	if (test_opt(sbi, DISABLE_EXT_IDENTIFY))
-		seq_puts(seq, ",disable_ext_indentify");
+		seq_puts(seq, ",disable_ext_identify");
 
 	seq_printf(seq, ",active_logs=%u", sbi->active_logs);
 
@@ -213,6 +229,8 @@ static struct super_operations f2fs_sops = {
 	.evict_inode	= f2fs_evict_inode,
 	.put_super	= f2fs_put_super,
 	.sync_fs	= f2fs_sync_fs,
+	.freeze_fs	= f2fs_freeze,
+	.unfreeze_fs	= f2fs_unfreeze,
 	.statfs		= f2fs_statfs,
 };
 
@@ -387,10 +405,11 @@ static int sanity_check_raw_super(struct super_block *sb,
 	return 0;
 }
 
-static int sanity_check_ckpt(struct f2fs_super_block *raw_super,
-				struct f2fs_checkpoint *ckpt)
+static int sanity_check_ckpt(struct f2fs_sb_info *sbi)
 {
 	unsigned int total, fsmeta;
+	struct f2fs_super_block *raw_super = F2FS_RAW_SUPER(sbi);
+	struct f2fs_checkpoint *ckpt = F2FS_CKPT(sbi);
 
 	total = le32_to_cpu(raw_super->segment_count);
 	fsmeta = le32_to_cpu(raw_super->segment_count_ckpt);
@@ -401,6 +420,11 @@ static int sanity_check_ckpt(struct f2fs_super_block *raw_super,
 
 	if (fsmeta >= total)
 		return 1;
+
+	if (is_set_ckpt_flags(ckpt, CP_ERROR_FLAG)) {
+		f2fs_msg(sbi->sb, KERN_ERR, "A bug case: need to run fsck");
+		return 1;
+	}
 	return 0;
 }
 
@@ -525,7 +549,7 @@ static int f2fs_fill_super(struct super_block *sb, void *data, int silent)
 
 	/* sanity checking of checkpoint */
 	err = -EINVAL;
-	if (sanity_check_ckpt(raw_super, sbi->ckpt)) {
+	if (sanity_check_ckpt(sbi)) {
 		f2fs_msg(sb, KERN_ERR, "Invalid F2FS checkpoint");
 		goto free_cp;
 	}
