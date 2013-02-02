@@ -1,5 +1,4 @@
-/* linux/arch/arm/mach-s3c2440/mach-rx1950.c
- *
+/*
  * Copyright (c) 2006-2009 Victor Chukhantsev, Denis Grigoriev,
  * Copyright (c) 2007-2010 Vasily Khoruzhick
  *
@@ -37,31 +36,32 @@
 
 #include <linux/mmc/host.h>
 
+#include <asm/mach-types.h>
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
-#include <asm/mach-types.h>
 
-#include <mach/regs-gpio.h>
-#include <mach/regs-lcd.h>
-#include <mach/h1940.h>
-#include <mach/fb.h>
-
-#include <plat/clock.h>
-#include <plat/regs-serial.h>
-#include <plat/regs-iic.h>
-#include <linux/platform_data/mmc-s3cmci.h>
-#include <linux/platform_data/usb-s3c2410_udc.h>
-#include <linux/platform_data/mtd-nand-s3c2410.h>
 #include <linux/platform_data/i2c-s3c2410.h>
-#include <plat/devs.h>
-#include <plat/cpu.h>
-#include <plat/pm.h>
-#include <plat/irq.h>
+#include <linux/platform_data/mmc-s3cmci.h>
+#include <linux/platform_data/mtd-nand-s3c2410.h>
 #include <linux/platform_data/touchscreen-s3c2410.h>
+#include <linux/platform_data/usb-s3c2410_udc.h>
 
 #include <sound/uda1380.h>
 
+#include <mach/fb.h>
+#include <mach/regs-gpio.h>
+#include <mach/regs-lcd.h>
+
+#include <plat/clock.h>
+#include <plat/cpu.h>
+#include <plat/devs.h>
+#include <plat/pm.h>
+#include <plat/regs-iic.h>
+#include <plat/regs-serial.h>
+#include <plat/samsung-time.h>
+
 #include "common.h"
+#include "h1940.h"
 
 #define LCD_PWM_PERIOD 192960
 #define LCD_PWM_DUTY 127353
@@ -742,6 +742,7 @@ static void __init rx1950_map_io(void)
 	s3c24xx_init_io(rx1950_iodesc, ARRAY_SIZE(rx1950_iodesc));
 	s3c24xx_init_clocks(16934000);
 	s3c24xx_init_uarts(rx1950_uartcfgs, ARRAY_SIZE(rx1950_uartcfgs));
+	samsung_set_timer_source(SAMSUNG_PWM3, SAMSUNG_PWM4);
 
 	/* setup PM */
 
@@ -814,6 +815,6 @@ MACHINE_START(RX1950, "HP iPAQ RX1950")
 	.reserve	= rx1950_reserve,
 	.init_irq = s3c24xx_init_irq,
 	.init_machine = rx1950_init_machine,
-	.init_time	= s3c24xx_timer_init,
+	.init_time	= samsung_timer_init,
 	.restart	= s3c244x_restart,
 MACHINE_END
