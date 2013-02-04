@@ -1,7 +1,7 @@
 /*******************************************************************************
 
   Intel PRO/1000 Linux driver
-  Copyright(c) 1999 - 2012 Intel Corporation.
+  Copyright(c) 1999 - 2013 Intel Corporation.
 
   This program is free software; you can redistribute it and/or modify it
   under the terms and conditions of the GNU General Public License,
@@ -41,7 +41,11 @@
 #include <linux/pci-aspm.h>
 #include <linux/crc32.h>
 #include <linux/if_vlan.h>
-
+#include <linux/clocksource.h>
+#include <linux/net_tstamp.h>
+#include <linux/ptp_clock_kernel.h>
+#include <linux/ptp_classify.h>
+#include <linux/mii.h>
 #include "hw.h"
 
 struct e1000_info;
@@ -74,9 +78,6 @@ struct e1000_info;
 
 #define E1000_MIN_ITR_USECS		10 /* 100000 irq/sec */
 #define E1000_MAX_ITR_USECS		10000 /* 100    irq/sec */
-
-/* Early Receive defines */
-#define E1000_ERT_2048			0x100
 
 #define E1000_FC_PAUSE_TIME		0x0680 /* 858 usec */
 
@@ -355,6 +356,7 @@ struct e1000_adapter {
 	u64 gorc_old;
 	u32 alloc_rx_buff_failed;
 	u32 rx_dma_failed;
+	u32 rx_hwtstamp_cleared;
 
 	unsigned int rx_ps_pages;
 	u16 rx_ps_bsize0;
@@ -368,7 +370,7 @@ struct e1000_adapter {
 	/* structs defined in e1000_hw.h */
 	struct e1000_hw hw;
 
-	spinlock_t stats64_lock;
+	spinlock_t stats64_lock;	/* protects statistics counters */
 	struct e1000_hw_stats stats;
 	struct e1000_phy_info phy_info;
 	struct e1000_phy_stats phy_stats;
@@ -404,6 +406,16 @@ struct e1000_adapter {
 
 	u16 tx_ring_count;
 	u16 rx_ring_count;
+
+	struct hwtstamp_config hwtstamp_config;
+	struct delayed_work systim_overflow_work;
+	struct sk_buff *tx_hwtstamp_skb;
+	struct work_struct tx_hwtstamp_work;
+	spinlock_t systim_lock;	/* protects SYSTIML/H regsters */
+	struct cyclecounter cc;
+	struct timecounter tc;
+	struct ptp_clock *ptp_clock;
+	struct ptp_clock_info ptp_clock_info;
 };
 
 struct e1000_info {
@@ -417,6 +429,40 @@ struct e1000_info {
 	const struct e1000_phy_operations *phy_ops;
 	const struct e1000_nvm_operations *nvm_ops;
 };
+
+s32 e1000e_get_base_timinca(struct e1000_adapter *adapter, u32 *timinca);
+
+/* The system time is maintained by a 64-bit counter comprised of the 32-bit
+ * SYSTIMH and SYSTIML registers.  How the counter increments (and therefore
+ * its resolution) is based on the contents of the TIMINCA register - it
+ * increments every incperiod (bits 31:24) clock ticks by incvalue (bits 23:0).
+ * For the best accuracy, the incperiod should be as small as possible.  The
+ * incvalue is scaled by a factor as large as possible (while still fitting
+ * in bits 23:0) so that relatively small clock corrections can be made.
+ *
+ * As a result, a shift of INCVALUE_SHIFT_n is used to fit a value of
+ * INCVALUE_n into the TIMINCA register allowing 32+8+(24-INCVALUE_SHIFT_n)
+ * bits to count nanoseconds leaving the rest for fractional nonseconds.
+ */
+#define INCVALUE_96MHz		125
+#define INCVALUE_SHIFT_96MHz	17
+#define INCPERIOD_SHIFT_96MHz	2
+#define INCPERIOD_96MHz		(12 >> INCPERIOD_SHIFT_96MHz)
+
+#define INCVALUE_25MHz		40
+#define INCVALUE_SHIFT_25MHz	18
+#define INCPERIOD_25MHz		1
+
+/* Another drawback of scaling the incvalue by a large factor is the
+ * 64-bit SYSTIM register overflows more quickly.  This is dealt with
+ * by simply reading the clock before it overflows.
+ *
+ * Clock	ns bits	Overflows after
+ * ~~~~~~	~~~~~~~	~~~~~~~~~~~~~~~
+ * 96MHz	47-bit	2^(47-INCPERIOD_SHIFT_96MHz) / 10^9 / 3600 = 9.77 hrs
+ * 25MHz	46-bit	2^46 / 10^9 / 3600 = 19.55 hours
+ */
+#define E1000_SYSTIM_OVERFLOW_PERIOD	(HZ * 60 * 60 * 4)
 
 /* hardware capability, feature, and workaround flags */
 #define FLAG_HAS_AMT                      (1 << 0)
@@ -433,7 +479,7 @@ struct e1000_info {
 #define FLAG_HAS_SMART_POWER_DOWN         (1 << 11)
 #define FLAG_IS_QUAD_PORT_A               (1 << 12)
 #define FLAG_IS_QUAD_PORT                 (1 << 13)
-/* reserved bit14 */
+#define FLAG_HAS_HW_TIMESTAMP             (1 << 14)
 #define FLAG_APME_IN_WUC                  (1 << 15)
 #define FLAG_APME_IN_CTRL3                (1 << 16)
 #define FLAG_APME_CHECK_PORT_B            (1 << 17)
@@ -449,7 +495,7 @@ struct e1000_info {
 #define FLAG_MSI_ENABLED                  (1 << 27)
 /* reserved (1 << 28) */
 #define FLAG_TSO_FORCE                    (1 << 29)
-#define FLAG_RX_RESTART_NOW               (1 << 30)
+#define FLAG_RESTART_NOW                  (1 << 30)
 #define FLAG_MSI_TEST_FAILED              (1 << 31)
 
 #define FLAG2_CRC_STRIPPING               (1 << 0)
@@ -465,6 +511,7 @@ struct e1000_info {
 #define FLAG2_NO_DISABLE_RX               (1 << 10)
 #define FLAG2_PCIM2PCI_ARBITER_WA         (1 << 11)
 #define FLAG2_DFLT_CRC_STRIPPING          (1 << 12)
+#define FLAG2_CHECK_RX_HWTSTAMP           (1 << 13)
 
 #define E1000_RX_DESC_PS(R, i)	    \
 	(&(((union e1000_rx_desc_packet_split *)((R).desc))[i]))
@@ -514,8 +561,6 @@ extern void e1000e_write_itr(struct e1000_adapter *adapter, u32 itr);
 
 extern unsigned int copybreak;
 
-extern char *e1000e_get_hw_dev_name(struct e1000_hw *hw);
-
 extern const struct e1000_info e1000_82571_info;
 extern const struct e1000_info e1000_82572_info;
 extern const struct e1000_info e1000_82573_info;
@@ -531,8 +576,6 @@ extern const struct e1000_info e1000_es2_info;
 
 extern s32 e1000_read_pba_string_generic(struct e1000_hw *hw, u8 *pba_num,
 					 u32 pba_num_size);
-
-extern s32  e1000e_commit_phy(struct e1000_hw *hw);
 
 extern bool e1000e_enable_mng_pass_thru(struct e1000_hw *hw);
 
@@ -607,7 +650,7 @@ extern s32 e1000e_write_phy_reg_igp_locked(struct e1000_hw *hw, u32 offset,
                                            u16 data);
 extern s32 e1000e_phy_sw_reset(struct e1000_hw *hw);
 extern s32 e1000e_phy_force_speed_duplex_m88(struct e1000_hw *hw);
-extern s32 e1000e_get_cfg_done(struct e1000_hw *hw);
+extern s32 e1000e_get_cfg_done_generic(struct e1000_hw *hw);
 extern s32 e1000e_get_cable_length_m88(struct e1000_hw *hw);
 extern s32 e1000e_get_phy_info_m88(struct e1000_hw *hw);
 extern s32 e1000e_read_phy_reg_m88(struct e1000_hw *hw, u32 offset, u16 *data);
@@ -661,6 +704,9 @@ extern s32 e1000_check_polarity_ife(struct e1000_hw *hw);
 extern s32 e1000_phy_force_speed_duplex_ife(struct e1000_hw *hw);
 extern s32 e1000_check_polarity_igp(struct e1000_hw *hw);
 extern bool e1000_check_phy_82574(struct e1000_hw *hw);
+extern s32 e1000_read_emi_reg_locked(struct e1000_hw *hw, u16 addr, u16 *data);
+extern void e1000e_ptp_init(struct e1000_adapter *adapter);
+extern void e1000e_ptp_remove(struct e1000_adapter *adapter);
 
 static inline s32 e1000_phy_hw_reset(struct e1000_hw *hw)
 {
@@ -685,11 +731,6 @@ static inline s32 e1e_wphy(struct e1000_hw *hw, u32 offset, u16 data)
 static inline s32 e1e_wphy_locked(struct e1000_hw *hw, u32 offset, u16 data)
 {
 	return hw->phy.ops.write_reg_locked(hw, offset, data);
-}
-
-static inline s32 e1000_get_cable_length(struct e1000_hw *hw)
-{
-	return hw->phy.ops.get_cable_length(hw);
 }
 
 extern s32 e1000e_acquire_nvm(struct e1000_hw *hw);

@@ -1,7 +1,7 @@
 /*******************************************************************************
 
   Intel PRO/1000 Linux driver
-  Copyright(c) 1999 - 2012 Intel Corporation.
+  Copyright(c) 1999 - 2013 Intel Corporation.
 
   This program is free software; you can redistribute it and/or modify it
   under the terms and conditions of the GNU General Public License,
@@ -29,12 +29,9 @@
 #ifndef _E1000_HW_H_
 #define _E1000_HW_H_
 
-#include <linux/types.h>
+#include "defines.h"
 
 struct e1000_hw;
-struct e1000_adapter;
-
-#include "defines.h"
 
 enum e1e_registers {
 	E1000_CTRL     = 0x00000, /* Device Control - RW */
@@ -60,8 +57,10 @@ enum e1e_registers {
 	E1000_EIAC_82574 = 0x000DC, /* Ext. Interrupt Auto Clear - RW */
 	E1000_IAM      = 0x000E0, /* Interrupt Acknowledge Auto Mask */
 	E1000_IVAR     = 0x000E4, /* Interrupt Vector Allocation - RW */
+	E1000_FEXTNVM7  = 0x000E4, /* Future Extended NVM 7 - RW */
 	E1000_EITR_82574_BASE = 0x000E8, /* Interrupt Throttling - RW */
 #define E1000_EITR_82574(_n) (E1000_EITR_82574_BASE + (_n << 2))
+	E1000_LPIC     = 0x000FC, /* Low Power Idle Control - RW */
 	E1000_RCTL     = 0x00100, /* Rx Control - RW */
 	E1000_FCTTV    = 0x00170, /* Flow Control Transmit Timer Value - RW */
 	E1000_TXCW     = 0x00178, /* Tx Configuration Word - RW */
@@ -192,6 +191,10 @@ enum e1e_registers {
 	E1000_ICTXQMTC = 0x0411C, /* Irq Cause Tx Queue MinThreshold Count */
 	E1000_ICRXDMTC = 0x04120, /* Irq Cause Rx Desc MinThreshold Count */
 	E1000_ICRXOC   = 0x04124, /* Irq Cause Receiver Overrun Count */
+	E1000_PCS_LCTL = 0x04208, /* PCS Link Control - RW */
+	E1000_PCS_LSTAT = 0x0420C, /* PCS Link Status - RO */
+	E1000_PCS_ANADV = 0x04218, /* AN advertisement - RW */
+	E1000_PCS_LPAB = 0x0421C, /* Link Partner Ability - RW */
 	E1000_RXCSUM   = 0x05000, /* Rx Checksum Control - RW */
 	E1000_RFCTL    = 0x05008, /* Receive Filter Control */
 	E1000_MTA      = 0x05200, /* Multicast Table Array - RW Array */
@@ -237,6 +240,17 @@ enum e1e_registers {
 #define E1000_PCH_RAICC(_n)	(E1000_PCH_RAICC_BASE + ((_n) * 4))
 #define E1000_CRC_OFFSET	E1000_PCH_RAICC_BASE
 	E1000_HICR      = 0x08F00, /* Host Interface Control */
+	E1000_SYSTIML   = 0x0B600, /* System time register Low - RO */
+	E1000_SYSTIMH   = 0x0B604, /* System time register High - RO */
+	E1000_TIMINCA   = 0x0B608, /* Increment attributes register - RW */
+	E1000_TSYNCTXCTL = 0x0B614, /* Tx Time Sync Control register - RW */
+	E1000_TXSTMPL   = 0x0B618, /* Tx timestamp value Low - RO */
+	E1000_TXSTMPH   = 0x0B61C, /* Tx timestamp value High - RO */
+	E1000_TSYNCRXCTL = 0x0B620, /* Rx Time Sync Control register - RW */
+	E1000_RXSTMPL   = 0x0B624, /* Rx timestamp Low - RO */
+	E1000_RXSTMPH   = 0x0B628, /* Rx timestamp High - RO */
+	E1000_RXMTRL    = 0x0B634, /* Timesync Rx EtherType and Msg Type - RW */
+	E1000_RXUDP     = 0x0B638, /* Timesync Rx UDP Port - RW */
 };
 
 #define E1000_MAX_PHY_ADDR		4
@@ -374,13 +388,11 @@ enum e1e_registers {
 #define E1000_DEV_ID_82573L			0x109A
 #define E1000_DEV_ID_82574L			0x10D3
 #define E1000_DEV_ID_82574LA			0x10F6
-#define E1000_DEV_ID_82583V                     0x150C
-
+#define E1000_DEV_ID_82583V			0x150C
 #define E1000_DEV_ID_80003ES2LAN_COPPER_DPT	0x1096
 #define E1000_DEV_ID_80003ES2LAN_SERDES_DPT	0x1098
 #define E1000_DEV_ID_80003ES2LAN_COPPER_SPT	0x10BA
 #define E1000_DEV_ID_80003ES2LAN_SERDES_SPT	0x10BB
-
 #define E1000_DEV_ID_ICH8_82567V_3		0x1501
 #define E1000_DEV_ID_ICH8_IGP_M_AMT		0x1049
 #define E1000_DEV_ID_ICH8_IGP_AMT		0x104A
@@ -415,12 +427,12 @@ enum e1e_registers {
 #define E1000_DEV_ID_PCH_LPTLP_I218_LM		0x155A
 #define E1000_DEV_ID_PCH_LPTLP_I218_V		0x1559
 
-#define E1000_REVISION_4 4
+#define E1000_REVISION_4	4
 
-#define E1000_FUNC_1 1
+#define E1000_FUNC_1		1
 
-#define E1000_ALT_MAC_ADDRESS_OFFSET_LAN0   0
-#define E1000_ALT_MAC_ADDRESS_OFFSET_LAN1   3
+#define E1000_ALT_MAC_ADDRESS_OFFSET_LAN0	0
+#define E1000_ALT_MAC_ADDRESS_OFFSET_LAN1	3
 
 enum e1000_mac_type {
 	e1000_82571,
@@ -523,16 +535,6 @@ enum e1000_serdes_link_state {
 	e1000_serdes_link_autoneg_progress,
 	e1000_serdes_link_autoneg_complete,
 	e1000_serdes_link_forced_up
-};
-
-/* Receive Descriptor */
-struct e1000_rx_desc {
-	__le64 buffer_addr; /* Address of the descriptor's data buffer */
-	__le16 length;      /* Length of data DMAed into data buffer */
-	__le16 csum;	/* Packet checksum */
-	u8  status;      /* Descriptor status */
-	u8  errors;      /* Descriptor Errors */
-	__le16 special;
 };
 
 /* Receive Descriptor - Extended */
@@ -657,7 +659,7 @@ struct e1000_data_desc {
 		struct {
 			u8 status;     /* Descriptor status */
 			u8 popts;      /* Packet Options */
-			__le16 special;   /* */
+			__le16 special;
 		} fields;
 	} upper;
 };
@@ -753,7 +755,7 @@ struct e1000_host_command_header {
 	u8 checksum;
 };
 
-#define E1000_HI_MAX_DATA_LENGTH     252
+#define E1000_HI_MAX_DATA_LENGTH	252
 struct e1000_host_command_info {
 	struct e1000_host_command_header command_header;
 	u8 command_data[E1000_HI_MAX_DATA_LENGTH];
@@ -768,13 +770,13 @@ struct e1000_host_mng_command_header {
 	u16 command_length;
 };
 
-#define E1000_HI_MAX_MNG_DATA_LENGTH 0x6F8
+#define E1000_HI_MAX_MNG_DATA_LENGTH	0x6F8
 struct e1000_host_mng_command_info {
 	struct e1000_host_mng_command_header command_header;
 	u8 command_data[E1000_HI_MAX_MNG_DATA_LENGTH];
 };
 
-/* Function pointers and static data for the MAC. */
+/* Function pointers for the MAC. */
 struct e1000_mac_operations {
 	s32  (*id_led_init)(struct e1000_hw *);
 	s32  (*blink_led)(struct e1000_hw *);
