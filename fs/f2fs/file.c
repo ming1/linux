@@ -157,11 +157,11 @@ int f2fs_sync_file(struct file *file, loff_t start, loff_t end, int datasync)
 
 	if (!S_ISREG(inode->i_mode) || inode->i_nlink != 1)
 		need_cp = true;
-	if (is_inode_flag_set(F2FS_I(inode), FI_NEED_CP))
+	else if (is_inode_flag_set(F2FS_I(inode), FI_NEED_CP))
 		need_cp = true;
-	if (!space_for_roll_forward(sbi))
+	else if (!space_for_roll_forward(sbi))
 		need_cp = true;
-	if (need_to_sync_dir(sbi, inode))
+	else if (need_to_sync_dir(sbi, inode))
 		need_cp = true;
 
 	if (need_cp) {
@@ -298,8 +298,6 @@ void f2fs_truncate(struct inode *inode)
 		inode->i_mtime = inode->i_ctime = CURRENT_TIME;
 		mark_inode_dirty(inode);
 	}
-
-	f2fs_balance_fs(F2FS_SB(inode->i_sb));
 }
 
 static int f2fs_getattr(struct vfsmount *mnt,
@@ -356,6 +354,7 @@ int f2fs_setattr(struct dentry *dentry, struct iattr *attr)
 			attr->ia_size != i_size_read(inode)) {
 		truncate_setsize(inode, attr->ia_size);
 		f2fs_truncate(inode);
+		f2fs_balance_fs(F2FS_SB(inode->i_sb));
 	}
 
 	__setattr_copy(inode, attr);
@@ -387,12 +386,17 @@ const struct inode_operations f2fs_file_inode_operations = {
 static void fill_zero(struct inode *inode, pgoff_t index,
 					loff_t start, loff_t len)
 {
+	struct f2fs_sb_info *sbi = F2FS_SB(inode->i_sb);
 	struct page *page;
 
 	if (!len)
 		return;
 
+	f2fs_balance_fs(sbi);
+
+	mutex_lock_op(sbi, DATA_NEW);
 	page = get_new_data_page(inode, index, false);
+	mutex_unlock_op(sbi, DATA_NEW);
 
 	if (!IS_ERR(page)) {
 		wait_on_page_writeback(page);
