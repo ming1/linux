@@ -45,7 +45,7 @@ struct snd_compr_stream;
  * sending or receiving PCM data in a frame. This can be used to save power.
  */
 #define SND_SOC_DAIFMT_CONT		(1 << 4) /* continuous clock */
-#define SND_SOC_DAIFMT_GATED		(2 << 4) /* clock is gated */
+#define SND_SOC_DAIFMT_GATED		(0 << 4) /* clock is gated */
 
 /*
  * DAI hardware signal inversions.
@@ -53,7 +53,7 @@ struct snd_compr_stream;
  * Specifies whether the DAI can also support inverted clocks for the specified
  * format.
  */
-#define SND_SOC_DAIFMT_NB_NF		(1 << 8) /* normal bit clock + frame */
+#define SND_SOC_DAIFMT_NB_NF		(0 << 8) /* normal bit clock + frame */
 #define SND_SOC_DAIFMT_NB_IF		(2 << 8) /* normal BCLK + inv FRM */
 #define SND_SOC_DAIFMT_IB_NF		(3 << 8) /* invert BCLK + nor FRM */
 #define SND_SOC_DAIFMT_IB_IF		(4 << 8) /* invert BCLK + FRM */
