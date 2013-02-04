@@ -908,8 +908,7 @@ void print_verbose_header(void)
 
 	get_msr(0, MSR_NHM_PLATFORM_INFO, &msr);
 
-	if (verbose)
-		fprintf(stderr, "cpu0: MSR_NHM_PLATFORM_INFO: 0x%08llx\n", msr);
+	fprintf(stderr, "cpu0: MSR_NHM_PLATFORM_INFO: 0x%08llx\n", msr);
 
 	ratio = (msr >> 40) & 0xFF;
 	fprintf(stderr, "%d * %.0f = %.0f MHz max efficiency\n",
@@ -919,13 +918,16 @@ void print_verbose_header(void)
 	fprintf(stderr, "%d * %.0f = %.0f MHz TSC frequency\n",
 		ratio, bclk, ratio * bclk);
 
+	get_msr(0, MSR_IA32_POWER_CTL, &msr);
+	fprintf(stderr, "cpu0: MSR_IA32_POWER_CTL: 0x%08llx (C1E: %sabled)\n",
+		msr, msr & 0x2 ? "EN" : "DIS");
+
 	if (!do_ivt_turbo_ratio_limit)
 		goto print_nhm_turbo_ratio_limits;
 
 	get_msr(0, MSR_IVT_TURBO_RATIO_LIMIT, &msr);
 
-	if (verbose)
-		fprintf(stderr, "cpu0: MSR_IVT_TURBO_RATIO_LIMIT: 0x%08llx\n", msr);
+	fprintf(stderr, "cpu0: MSR_IVT_TURBO_RATIO_LIMIT: 0x%08llx\n", msr);
 
 	ratio = (msr >> 56) & 0xFF;
 	if (ratio)
@@ -1016,8 +1018,7 @@ print_nhm_turbo_ratio_limits:
 
 	get_msr(0, MSR_NHM_TURBO_RATIO_LIMIT, &msr);
 
-	if (verbose)
-		fprintf(stderr, "cpu0: MSR_NHM_TURBO_RATIO_LIMIT: 0x%08llx\n", msr);
+	fprintf(stderr, "cpu0: MSR_NHM_TURBO_RATIO_LIMIT: 0x%08llx\n", msr);
 
 	ratio = (msr >> 56) & 0xFF;
 	if (ratio)
@@ -1397,6 +1398,9 @@ int has_nehalem_turbo_ratio_limit(unsigned int family, unsigned int model)
 	case 0x2D:	/* SNB Xeon */
 	case 0x3A:	/* IVB */
 	case 0x3E:	/* IVB Xeon */
+	case 0x3C:	/* HSW */
+	case 0x3F:	/* HSW */
+	case 0x45:	/* HSW */
 		return 1;
 	case 0x2E:	/* Nehalem-EX Xeon - Beckton */
 	case 0x2F:	/* Westmere-EX Xeon - Eagleton */
@@ -1488,6 +1492,9 @@ void rapl_probe(unsigned int family, unsigned int model)
 	switch (model) {
 	case 0x2A:
 	case 0x3A:
+	case 0x3C:	/* HSW */
+	case 0x3F:	/* HSW */
+	case 0x45:	/* HSW */
 		do_rapl = RAPL_PKG | RAPL_CORES | RAPL_GFX;
 		break;
 	case 0x2D:
@@ -1724,6 +1731,9 @@ int is_snb(unsigned int family, unsigned int model)
 	case 0x2D:
 	case 0x3A:	/* IVB */
 	case 0x3E:	/* IVB Xeon */
+	case 0x3C:	/* HSW */
+	case 0x3F:	/* HSW */
+	case 0x45:	/* HSW */
 		return 1;
 	}
 	return 0;
@@ -2248,7 +2258,7 @@ int main(int argc, char **argv)
 	cmdline(argc, argv);
 
 	if (verbose)
-		fprintf(stderr, "turbostat v3.0 November 23, 2012"
+		fprintf(stderr, "turbostat v3.1 January 8, 2013"
 			" - Len Brown <lenb@kernel.org>\n");
 
 	turbostat_init();
