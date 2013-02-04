@@ -680,13 +680,12 @@ static void psc_calc_rate(struct clk *clk, int pscnum, struct device_node *np)
 static void psc_clks_init(void)
 {
 	struct device_node *np;
-	const u32 *cell_index;
 	struct platform_device *ofdev;
+	u32 reg;
 
 	for_each_compatible_node(np, NULL, "fsl,mpc5121-psc") {
-		cell_index = of_get_property(np, "cell-index", NULL);
-		if (cell_index) {
-			int pscnum = *cell_index;
+		if (!of_property_read_u32(np, "reg", &reg)) {
+			int pscnum = (reg & 0xf00) >> 8;
 			struct clk *clk = psc_dev_clk(pscnum);
 
 			clk->flags = CLK_HAS_RATE | CLK_HAS_CTRL;
@@ -696,7 +695,7 @@ static void psc_clks_init(void)
 			 * AC97 is special rate clock does
 			 * not go through normal path
 			 */
-			if (strcmp("ac97", np->name) == 0)
+			if (of_device_is_compatible(np, "fsl,mpc5121-psc-ac97"))
 				clk->rate = ac97_clk.rate;
 			else
 				psc_calc_rate(clk, pscnum, np);
