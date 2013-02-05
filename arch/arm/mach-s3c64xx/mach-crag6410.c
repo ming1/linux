@@ -49,12 +49,7 @@
 #include <mach/hardware.h>
 #include <mach/map.h>
 
-#include <mach/regs-sys.h>
 #include <mach/regs-gpio.h>
-#include <mach/regs-modem.h>
-#include <mach/crag6410.h>
-
-#include <mach/regs-gpio-memport.h>
 
 #include <plat/regs-serial.h>
 #include <plat/fb.h>
@@ -69,8 +64,13 @@
 #include <plat/adc.h>
 #include <linux/platform_data/i2c-s3c2410.h>
 #include <plat/pm.h>
+#include <plat/samsung-time.h>
 
 #include "common.h"
+#include "crag6410.h"
+#include "regs-gpio-memport.h"
+#include "regs-modem.h"
+#include "regs-sys.h"
 
 /* serial port setup */
 
@@ -745,6 +745,7 @@ static void __init crag6410_map_io(void)
 	s3c64xx_init_io(NULL, 0);
 	s3c24xx_init_clocks(12000000);
 	s3c24xx_init_uarts(crag6410_uartcfgs, ARRAY_SIZE(crag6410_uartcfgs));
+	samsung_set_timer_source(SAMSUNG_PWM3, SAMSUNG_PWM4);
 
 	/* LCD type and Bypass set by bootloader */
 }
@@ -869,6 +870,6 @@ MACHINE_START(WLF_CRAGG_6410, "Wolfson Cragganmore 6410")
 	.map_io		= crag6410_map_io,
 	.init_machine	= crag6410_machine_init,
 	.init_late	= s3c64xx_init_late,
-	.init_time	= s3c24xx_timer_init,
+	.init_time	= samsung_timer_init,
 	.restart	= s3c64xx_restart,
 MACHINE_END
