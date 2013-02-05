@@ -195,5 +195,6 @@ void regmap_async_complete_cb(struct regmap_async *async, int ret);
 
 extern struct regcache_ops regcache_rbtree_ops;
 extern struct regcache_ops regcache_lzo_ops;
+extern struct regcache_ops regcache_flat_ops;
 
 #endif
