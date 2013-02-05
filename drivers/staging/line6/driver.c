@@ -135,47 +135,6 @@ static void line6_stop_listen(struct usb_line6 *line6)
 	usb_kill_urb(line6->urb_listen);
 }
 
-#ifdef CONFIG_LINE6_USB_DUMP_ANY
-/*
-	Write hexdump to syslog.
-*/
-void line6_write_hexdump(struct usb_line6 *line6, char dir,
-			 const unsigned char *buffer, int size)
-{
-	static const int BYTES_PER_LINE = 8;
-	char hexdump[100];
-	char asc[BYTES_PER_LINE + 1];
-	int i, j;
-
-	for (i = 0; i < size; i += BYTES_PER_LINE) {
-		int hexdumpsize = sizeof(hexdump);
-		char *p = hexdump;
-		int n = min(size - i, BYTES_PER_LINE);
-		asc[n] = 0;
-
-		for (j = 0; j < BYTES_PER_LINE; ++j) {
-			int bytes;
-
-			if (j < n) {
-				unsigned char val = buffer[i + j];
-				bytes = snprintf(p, hexdumpsize, " %02X", val);
-				asc[j] = ((val >= 0x20)
-					  && (val < 0x7f)) ? val : '.';
-			} else
-				bytes = snprintf(p, hexdumpsize, "   ");
-
-			if (bytes > hexdumpsize)
-				break;	/* buffer overflow */
-
-			p += bytes;
-			hexdumpsize -= bytes;
-		}
-
-		dev_info(line6->ifcdev, "%c%04X:%s %s\n", dir, i, hexdump, asc);
-	}
-}
-#endif
-
 /*
 	Send raw message in pieces of wMaxPacketSize bytes.
 */
@@ -307,13 +266,12 @@ int line6_version_request_async(struct usb_line6 *line6)
 	char *buffer;
 	int retval;
 
-	buffer = kmalloc(sizeof(line6_request_version), GFP_ATOMIC);
+	buffer = kmemdup(line6_request_version,
+			sizeof(line6_request_version), GFP_ATOMIC);
 	if (buffer == NULL) {
 		dev_err(line6->ifcdev, "Out of memory");
 		return -ENOMEM;
 	}
-
-	memcpy(buffer, line6_request_version, sizeof(line6_request_version));
 
 	retval = line6_send_raw_message_async(line6, buffer,
 					      sizeof(line6_request_version));
@@ -329,17 +287,6 @@ int line6_send_sysex_message(struct usb_line6 *line6, const char *buffer,
 {
 	return line6_send_raw_message(line6, buffer,
 				      size + SYSEX_EXTRA_SIZE) -
-	    SYSEX_EXTRA_SIZE;
-}
-
-/*
-	Send sysex message in pieces of wMaxPacketSize bytes.
-*/
-int line6_send_sysex_message_async(struct usb_line6 *line6, const char *buffer,
-				   int size)
-{
-	return line6_send_raw_message_async(line6, buffer,
-					    size + SYSEX_EXTRA_SIZE) -
 	    SYSEX_EXTRA_SIZE;
 }
 
@@ -372,7 +319,7 @@ char *line6_alloc_sysex_buffer(struct usb_line6 *line6, int code1, int code2,
 static void line6_data_received(struct urb *urb)
 {
 	struct usb_line6 *line6 = (struct usb_line6 *)urb->context;
-	struct MidiBuffer *mb = &line6->line6midi->midibuf_in;
+	struct midi_buffer *mb = &line6->line6midi->midibuf_in;
 	int done;
 
 	if (urb->status == -ESHUTDOWN)
@@ -532,7 +479,7 @@ int line6_read_data(struct usb_line6 *line6, int address, void *data,
 		return ret;
 	}
 
-	/* Wait for data length. We'll get a couple of 0xff until length arrives. */
+	/* Wait for data length. We'll get 0xff until length arrives. */
 	do {
 		ret = usb_control_msg(usbdev, usb_rcvctrlpipe(usbdev, 0), 0x67,
 				      USB_TYPE_VENDOR | USB_RECIP_DEVICE |

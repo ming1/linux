@@ -47,8 +47,6 @@ Status: works
 Devices: [Quatech] DAQP-208 (daqp), DAQP-308
 */
 
-#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
-
 #include "../comedidev.h"
 #include <linux/semaphore.h>
 
@@ -165,65 +163,20 @@ static struct local_info_t *dev_table[MAX_DEV] = { NULL, /* ... */  };
 #define DAQP_AUX_FIFO_NEARFULL		0x02
 #define DAQP_AUX_FIFO_EMPTY		0x01
 
-/* These range structures tell COMEDI how the sample values map to
- * voltages.  The A/D converter has four	.ranges = +/- 10V through
- * +/- 1.25V, and the D/A converter has only	.one = +/- 5V.
- */
-
-static const struct comedi_lrange range_daqp_ai = { 4, {
-							BIP_RANGE(10),
-							BIP_RANGE(5),
-							BIP_RANGE(2.5),
-							BIP_RANGE(1.25)
-							}
-};
-
-static const struct comedi_lrange range_daqp_ao = { 1, {BIP_RANGE(5)} };
-
-/*====================================================================*/
-
-/* comedi interface code */
-
-static int daqp_attach(struct comedi_device *dev, struct comedi_devconfig *it);
-static void daqp_detach(struct comedi_device *dev);
-static struct comedi_driver driver_daqp = {
-	.driver_name = "quatech_daqp_cs",
-	.module = THIS_MODULE,
-	.attach = daqp_attach,
-	.detach = daqp_detach,
-};
-
-#ifdef DAQP_DEBUG
-
-static void daqp_dump(struct comedi_device *dev)
-{
-	dev_info(dev->class_dev, "status %02x; aux status %02x\n",
-		 inb(dev->iobase + DAQP_STATUS), inb(dev->iobase + DAQP_AUX));
-}
-
-static void hex_dump(char *str, void *ptr, int len)
-{
-	unsigned char *cptr = ptr;
-	int i;
-
-	printk(str);
-
-	for (i = 0; i < len; i++) {
-		if (i % 16 == 0)
-			printk("\n%p:", cptr);
-
-		printk(" %02x", *(cptr++));
+static const struct comedi_lrange range_daqp_ai = {
+	4, {
+		BIP_RANGE(10),
+		BIP_RANGE(5),
+		BIP_RANGE(2.5),
+		BIP_RANGE(1.25)
 	}
-	printk("\n");
-}
-
-#endif
+};
 
 /* Cancel a running acquisition */
 
 static int daqp_ai_cancel(struct comedi_device *dev, struct comedi_subdevice *s)
 {
-	struct local_info_t *local = (struct local_info_t *)s->private;
+	struct local_info_t *local = s->private;
 
 	if (local->stop)
 		return -EIO;
@@ -250,38 +203,14 @@ static int daqp_ai_cancel(struct comedi_device *dev, struct comedi_subdevice *s)
  */
 static enum irqreturn daqp_interrupt(int irq, void *dev_id)
 {
-	struct local_info_t *local = (struct local_info_t *)dev_id;
-	struct comedi_device *dev;
-	struct comedi_subdevice *s;
+	struct local_info_t *local = dev_id;
+	struct comedi_device *dev = local ? local->dev : NULL;
+	struct comedi_subdevice *s = local ? local->s : NULL;
 	int loop_limit = 10000;
 	int status;
 
-	if (local == NULL) {
-		pr_warn("irq %d for unknown device.\n", irq);
+	if (!dev || !dev->attached || !s || s->private != local)
 		return IRQ_NONE;
-	}
-
-	dev = local->dev;
-	if (dev == NULL) {
-		pr_warn("NULL comedi_device.\n");
-		return IRQ_NONE;
-	}
-
-	if (!dev->attached) {
-		pr_warn("struct comedi_device not yet attached.\n");
-		return IRQ_NONE;
-	}
-
-	s = local->s;
-	if (s == NULL) {
-		pr_warn("NULL comedi_subdevice.\n");
-		return IRQ_NONE;
-	}
-
-	if ((struct local_info_t *)s->private != local) {
-		pr_warn("invalid comedi_subdevice.\n");
-		return IRQ_NONE;
-	}
 
 	switch (local->interrupt_mode) {
 
@@ -348,7 +277,7 @@ static int daqp_ai_insn_read(struct comedi_device *dev,
 			     struct comedi_subdevice *s,
 			     struct comedi_insn *insn, unsigned int *data)
 {
-	struct local_info_t *local = (struct local_info_t *)s->private;
+	struct local_info_t *local = s->private;
 	int i;
 	int v;
 	int counter = 10000;
@@ -541,7 +470,7 @@ static int daqp_ai_cmdtest(struct comedi_device *dev,
 
 static int daqp_ai_cmd(struct comedi_device *dev, struct comedi_subdevice *s)
 {
-	struct local_info_t *local = (struct local_info_t *)s->private;
+	struct local_info_t *local = s->private;
 	struct comedi_cmd *cmd = &s->async->cmd;
 	int counter;
 	int scanlist_start_on_every_entry;
@@ -743,7 +672,7 @@ static int daqp_ao_insn_write(struct comedi_device *dev,
 			      struct comedi_subdevice *s,
 			      struct comedi_insn *insn, unsigned int *data)
 {
-	struct local_info_t *local = (struct local_info_t *)s->private;
+	struct local_info_t *local = s->private;
 	int d;
 	unsigned int chan;
 
@@ -770,7 +699,7 @@ static int daqp_di_insn_read(struct comedi_device *dev,
 			     struct comedi_subdevice *s,
 			     struct comedi_insn *insn, unsigned int *data)
 {
-	struct local_info_t *local = (struct local_info_t *)s->private;
+	struct local_info_t *local = s->private;
 
 	if (local->stop)
 		return -EIO;
@@ -786,7 +715,7 @@ static int daqp_do_insn_write(struct comedi_device *dev,
 			      struct comedi_subdevice *s,
 			      struct comedi_insn *insn, unsigned int *data)
 {
-	struct local_info_t *local = (struct local_info_t *)s->private;
+	struct local_info_t *local = s->private;
 
 	if (local->stop)
 		return -EIO;
@@ -804,15 +733,16 @@ static int daqp_do_insn_write(struct comedi_device *dev,
 
 static int daqp_attach(struct comedi_device *dev, struct comedi_devconfig *it)
 {
-	int ret;
-	struct local_info_t *local = dev_table[it->options[0]];
+	struct local_info_t *local;
 	struct comedi_subdevice *s;
+	int ret;
 
-	if (it->options[0] < 0 || it->options[0] >= MAX_DEV || !local) {
-		dev_err(dev->class_dev, "No such daqp device %d\n",
-			it->options[0]);
-		return -EIO;
-	}
+	if (it->options[0] < 0 || it->options[0] >= MAX_DEV)
+		return -ENODEV;
+
+	local = dev_table[it->options[0]];
+	if (!local)
+		return -ENODEV;
 
 	/* Typically brittle code that I don't completely understand,
 	 * but "it works on my card".  The intent is to pull the model
@@ -837,57 +767,59 @@ static int daqp_attach(struct comedi_device *dev, struct comedi_devconfig *it)
 	if (ret)
 		return ret;
 
-	dev_info(dev->class_dev, "attaching daqp%d (io 0x%04lx)\n",
-		 it->options[0], dev->iobase);
-
 	s = &dev->subdevices[0];
 	dev->read_subdev = s;
-	s->private = local;
-	s->type = COMEDI_SUBD_AI;
-	s->subdev_flags = SDF_READABLE | SDF_GROUND | SDF_DIFF | SDF_CMD_READ;
-	s->n_chan = 8;
-	s->len_chanlist = 2048;
-	s->maxdata = 0xffff;
-	s->range_table = &range_daqp_ai;
-	s->insn_read = daqp_ai_insn_read;
-	s->do_cmdtest = daqp_ai_cmdtest;
-	s->do_cmd = daqp_ai_cmd;
-	s->cancel = daqp_ai_cancel;
+	s->private	= local;
+	s->type		= COMEDI_SUBD_AI;
+	s->subdev_flags	= SDF_READABLE | SDF_GROUND | SDF_DIFF | SDF_CMD_READ;
+	s->n_chan	= 8;
+	s->len_chanlist	= 2048;
+	s->maxdata	= 0xffff;
+	s->range_table	= &range_daqp_ai;
+	s->insn_read	= daqp_ai_insn_read;
+	s->do_cmdtest	= daqp_ai_cmdtest;
+	s->do_cmd	= daqp_ai_cmd;
+	s->cancel	= daqp_ai_cancel;
 
 	s = &dev->subdevices[1];
 	dev->write_subdev = s;
-	s->private = local;
-	s->type = COMEDI_SUBD_AO;
-	s->subdev_flags = SDF_WRITEABLE;
-	s->n_chan = 2;
-	s->len_chanlist = 1;
-	s->maxdata = 0x0fff;
-	s->range_table = &range_daqp_ao;
-	s->insn_write = daqp_ao_insn_write;
+	s->private	= local;
+	s->type		= COMEDI_SUBD_AO;
+	s->subdev_flags	= SDF_WRITEABLE;
+	s->n_chan	= 2;
+	s->maxdata	= 0x0fff;
+	s->range_table	= &range_bipolar5;
+	s->insn_write	= daqp_ao_insn_write;
 
 	s = &dev->subdevices[2];
-	s->private = local;
-	s->type = COMEDI_SUBD_DI;
-	s->subdev_flags = SDF_READABLE;
-	s->n_chan = 1;
-	s->len_chanlist = 1;
-	s->insn_read = daqp_di_insn_read;
+	s->private	= local;
+	s->type		= COMEDI_SUBD_DI;
+	s->subdev_flags	= SDF_READABLE;
+	s->n_chan	= 1;
+	s->insn_read	= daqp_di_insn_read;
 
 	s = &dev->subdevices[3];
-	s->private = local;
-	s->type = COMEDI_SUBD_DO;
-	s->subdev_flags = SDF_WRITEABLE;
-	s->n_chan = 1;
-	s->len_chanlist = 1;
-	s->insn_write = daqp_do_insn_write;
+	s->private	= local;
+	s->type		= COMEDI_SUBD_DO;
+	s->subdev_flags	= SDF_WRITEABLE;
+	s->n_chan	= 1;
+	s->len_chanlist	= 1;
+	s->insn_write	= daqp_do_insn_write;
 
-	return 1;
+	return 0;
 }
 
 static void daqp_detach(struct comedi_device *dev)
 {
 	/* Nothing to cleanup */
 }
+
+static struct comedi_driver driver_daqp = {
+	.driver_name	= "quatech_daqp_cs",
+	.module		= THIS_MODULE,
+	.attach		= daqp_attach,
+	.detach		= daqp_detach,
+};
 
 /*====================================================================
 
@@ -924,101 +856,6 @@ static void daqp_detach(struct comedi_device *dev)
 
 ======================================================================*/
 
-static void daqp_cs_config(struct pcmcia_device *link);
-static void daqp_cs_release(struct pcmcia_device *link);
-static int daqp_cs_suspend(struct pcmcia_device *p_dev);
-static int daqp_cs_resume(struct pcmcia_device *p_dev);
-
-static int daqp_cs_attach(struct pcmcia_device *);
-static void daqp_cs_detach(struct pcmcia_device *);
-
-static int daqp_cs_attach(struct pcmcia_device *link)
-{
-	struct local_info_t *local;
-	int i;
-
-	dev_dbg(&link->dev, "daqp_cs_attach()\n");
-
-	for (i = 0; i < MAX_DEV; i++)
-		if (dev_table[i] == NULL)
-			break;
-	if (i == MAX_DEV) {
-		dev_notice(&link->dev, "no devices available\n");
-		return -ENODEV;
-	}
-
-	/* Allocate space for private device-specific data */
-	local = kzalloc(sizeof(struct local_info_t), GFP_KERNEL);
-	if (!local)
-		return -ENOMEM;
-
-	local->table_index = i;
-	dev_table[i] = local;
-	local->link = link;
-	link->priv = local;
-
-	daqp_cs_config(link);
-
-	return 0;
-}				/* daqp_cs_attach */
-
-static void daqp_cs_detach(struct pcmcia_device *link)
-{
-	struct local_info_t *dev = link->priv;
-
-	dev->stop = 1;
-	daqp_cs_release(link);
-
-	/* Unlink device structure, and free it */
-	dev_table[dev->table_index] = NULL;
-	kfree(dev);
-
-}
-
-static int daqp_pcmcia_config_loop(struct pcmcia_device *p_dev, void *priv_data)
-{
-	if (p_dev->config_index == 0)
-		return -EINVAL;
-
-	return pcmcia_request_io(p_dev);
-}
-
-static void daqp_cs_config(struct pcmcia_device *link)
-{
-	int ret;
-
-	dev_dbg(&link->dev, "daqp_cs_config\n");
-
-	link->config_flags |= CONF_ENABLE_IRQ | CONF_AUTO_SET_IO;
-
-	ret = pcmcia_loop_config(link, daqp_pcmcia_config_loop, NULL);
-	if (ret) {
-		dev_warn(&link->dev, "no configuration found\n");
-		goto failed;
-	}
-
-	ret = pcmcia_request_irq(link, daqp_interrupt);
-	if (ret)
-		goto failed;
-
-	ret = pcmcia_enable_device(link);
-	if (ret)
-		goto failed;
-
-	return;
-
-failed:
-	daqp_cs_release(link);
-
-}				/* daqp_cs_config */
-
-static void daqp_cs_release(struct pcmcia_device *link)
-{
-	dev_dbg(&link->dev, "daqp_cs_release\n");
-
-	pcmcia_disable_device(link);
-}				/* daqp_cs_release */
-
 static int daqp_cs_suspend(struct pcmcia_device *link)
 {
 	struct local_info_t *local = link->priv;
@@ -1037,41 +874,91 @@ static int daqp_cs_resume(struct pcmcia_device *link)
 	return 0;
 }
 
+static int daqp_pcmcia_config_loop(struct pcmcia_device *p_dev, void *priv_data)
+{
+	if (p_dev->config_index == 0)
+		return -EINVAL;
+
+	return pcmcia_request_io(p_dev);
+}
+
+static int daqp_cs_attach(struct pcmcia_device *link)
+{
+	struct local_info_t *local;
+	int ret;
+	int i;
+
+	for (i = 0; i < MAX_DEV; i++)
+		if (dev_table[i] == NULL)
+			break;
+	if (i == MAX_DEV) {
+		dev_notice(&link->dev, "no devices available\n");
+		return -ENODEV;
+	}
+
+	/* Allocate space for private device-specific data */
+	local = kzalloc(sizeof(*local), GFP_KERNEL);
+	if (!local)
+		return -ENOMEM;
+
+	local->table_index = i;
+	dev_table[i] = local;
+	local->link = link;
+	link->priv = local;
+
+	link->config_flags |= CONF_ENABLE_IRQ | CONF_AUTO_SET_IO;
+
+	ret = pcmcia_loop_config(link, daqp_pcmcia_config_loop, NULL);
+	if (ret) {
+		dev_warn(&link->dev, "no configuration found\n");
+		goto failed;
+	}
+
+	ret = pcmcia_request_irq(link, daqp_interrupt);
+	if (ret)
+		goto failed;
+
+	ret = pcmcia_enable_device(link);
+	if (ret)
+		goto failed;
+
+	return 0;
+
+failed:
+	pcmcia_disable_device(link);
+	return ret;
+}
+
+static void daqp_cs_detach(struct pcmcia_device *link)
+{
+	struct local_info_t *dev = link->priv;
+
+	dev->stop = 1;
+	pcmcia_disable_device(link);
+
+	/* Unlink device structure, and free it */
+	dev_table[dev->table_index] = NULL;
+	kfree(dev);
+}
+
 /*====================================================================*/
-
-#ifdef MODULE
-
 static const struct pcmcia_device_id daqp_cs_id_table[] = {
 	PCMCIA_DEVICE_MANF_CARD(0x0137, 0x0027),
 	PCMCIA_DEVICE_NULL
 };
-
 MODULE_DEVICE_TABLE(pcmcia, daqp_cs_id_table);
-MODULE_AUTHOR("Brent Baccala <baccala@freesoft.org>");
-MODULE_DESCRIPTION("Comedi driver for Quatech DAQP PCMCIA data capture cards");
-MODULE_LICENSE("GPL");
 
 static struct pcmcia_driver daqp_cs_driver = {
-	.probe = daqp_cs_attach,
-	.remove = daqp_cs_detach,
-	.suspend = daqp_cs_suspend,
-	.resume = daqp_cs_resume,
-	.id_table = daqp_cs_id_table,
-	.owner = THIS_MODULE,
-	.name = "quatech_daqp_cs",
+	.name		= "quatech_daqp_cs",
+	.owner		= THIS_MODULE,
+	.id_table	= daqp_cs_id_table,
+	.probe		= daqp_cs_attach,
+	.remove		= daqp_cs_detach,
+	.suspend	= daqp_cs_suspend,
+	.resume		= daqp_cs_resume,
 };
+module_comedi_pcmcia_driver(driver_daqp, daqp_cs_driver);
 
-int __init init_module(void)
-{
-	pcmcia_register_driver(&daqp_cs_driver);
-	comedi_driver_register(&driver_daqp);
-	return 0;
-}
-
-void __exit cleanup_module(void)
-{
-	comedi_driver_unregister(&driver_daqp);
-	pcmcia_unregister_driver(&daqp_cs_driver);
-}
-
-#endif
+MODULE_DESCRIPTION("Comedi driver for Quatech DAQP PCMCIA data capture cards");
+MODULE_AUTHOR("Brent Baccala <baccala@freesoft.org>");
+MODULE_LICENSE("GPL");
