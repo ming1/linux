@@ -141,7 +141,7 @@ struct f2fs_inode_info {
 
 	/* Use below internally in f2fs*/
 	unsigned long flags;		/* use to pass per-file flags */
-	unsigned long long data_version;/* lastes version of data for fsync */
+	unsigned long long data_version;/* latest version of data for fsync */
 	atomic_t dirty_dents;		/* # of dirty dentry pages */
 	f2fs_hash_t chash;		/* hash value of given file name */
 	unsigned int clevel;		/* maximum level of given file name */
@@ -847,7 +847,6 @@ long f2fs_ioctl(struct file *, unsigned int, unsigned long);
  * inode.c
  */
 void f2fs_set_inode_flags(struct inode *);
-struct inode *f2fs_iget_nowait(struct super_block *, unsigned long);
 struct inode *f2fs_iget(struct super_block *, unsigned long);
 void update_inode(struct inode *, struct page *);
 int f2fs_write_inode(struct inode *, struct writeback_control *);
@@ -929,8 +928,7 @@ void allocate_new_segments(struct f2fs_sb_info *);
 struct page *get_sum_page(struct f2fs_sb_info *, unsigned int);
 struct bio *f2fs_bio_alloc(struct block_device *, int);
 void f2fs_submit_bio(struct f2fs_sb_info *, enum page_type, bool sync);
-int write_meta_page(struct f2fs_sb_info *, struct page *,
-					struct writeback_control *);
+void write_meta_page(struct f2fs_sb_info *, struct page *);
 void write_node_page(struct f2fs_sb_info *, struct page *, unsigned int,
 					block_t, block_t *);
 void write_data_page(struct inode *, struct page *, struct dnode_of_data*,

@@ -44,6 +44,11 @@ static int gc_thread_func(void *data)
 		if (kthread_should_stop())
 			break;
 
+		if (sbi->sb->s_writers.frozen >= SB_FREEZE_WRITE) {
+			wait_ms = GC_THREAD_MAX_SLEEP_TIME;
+			continue;
+		}
+
 		f2fs_balance_fs(sbi);
 
 		if (!test_opt(sbi, BG_GC))
@@ -574,7 +579,7 @@ next_step:
 		ofs_in_node = le16_to_cpu(entry->ofs_in_node);
 
 		if (phase == 2) {
-			inode = f2fs_iget_nowait(sb, dni.ino);
+			inode = f2fs_iget(sb, dni.ino);
 			if (IS_ERR(inode))
 				continue;
 
@@ -667,7 +672,7 @@ gc_more:
 	if (!(sbi->sb->s_flags & MS_ACTIVE))
 		goto stop;
 
-	if (has_not_enough_free_secs(sbi))
+	if (gc_type == BG_GC && has_not_enough_free_secs(sbi))
 		gc_type = FG_GC;
 
 	if (!__get_victim(sbi, &segno, gc_type, NO_CHECK_TYPE))
