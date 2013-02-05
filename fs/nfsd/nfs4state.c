@@ -905,7 +905,7 @@ static struct nfsd4_session *alloc_session(struct nfsd4_channel_attrs *fchan,
 
 	new = __alloc_session(slotsize, numslots);
 	if (!new) {
-		nfsd4_put_drc_mem(slotsize, fchan->maxreqs);
+		nfsd4_put_drc_mem(slotsize, numslots);
 		return NULL;
 	}
 	init_forechannel_attrs(&new->se_fchannel, fchan, numslots, slotsize, nn);
@@ -1048,7 +1048,7 @@ static struct nfs4_client *alloc_client(struct xdr_netobj name)
 static inline void
 free_client(struct nfs4_client *clp)
 {
-	struct nfsd_net *nn = net_generic(clp->net, nfsd_net_id);
+	struct nfsd_net __maybe_unused *nn = net_generic(clp->net, nfsd_net_id);
 
 	lockdep_assert_held(&nn->client_lock);
 	while (!list_empty(&clp->cl_sessions)) {
@@ -1844,11 +1844,12 @@ nfsd4_create_session(struct svc_rqst *rqstp,
 
 	/* cache solo and embedded create sessions under the state lock */
 	nfsd4_cache_create_session(cr_ses, cs_slot, status);
-out:
 	nfs4_unlock_state();
+out:
 	dprintk("%s returns %d\n", __func__, ntohl(status));
 	return status;
 out_free_conn:
+	nfs4_unlock_state();
 	free_conn(conn);
 out_free_session:
 	__free_session(new);

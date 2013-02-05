@@ -9,6 +9,7 @@
  */
 
 #include <linux/slab.h>
+#include <linux/sunrpc/clnt.h>
 
 #include "nfsd.h"
 #include "cache.h"
@@ -25,6 +26,7 @@
 static struct hlist_head *	cache_hash;
 static struct list_head 	lru_head;
 static int			cache_disabled = 1;
+static struct kmem_cache	*drc_slab;
 
 /*
  * Calculate the hash index from an XID.
@@ -45,21 +47,47 @@ static int	nfsd_cache_append(struct svc_rqst *rqstp, struct kvec *vec);
  */
 static DEFINE_SPINLOCK(cache_lock);
 
-int nfsd_reply_cache_init(void)
+static struct svc_cacherep *
+nfsd_reply_cache_alloc(void)
 {
 	struct svc_cacherep	*rp;
+
+	rp = kmem_cache_alloc(drc_slab, GFP_KERNEL);
+	if (rp) {
+		rp->c_state = RC_UNUSED;
+		rp->c_type = RC_NOCACHE;
+		INIT_LIST_HEAD(&rp->c_lru);
+		INIT_HLIST_NODE(&rp->c_hash);
+	}
+	return rp;
+}
+
+static void
+nfsd_reply_cache_free_locked(struct svc_cacherep *rp)
+{
+	if (rp->c_type == RC_REPLBUFF)
+		kfree(rp->c_replvec.iov_base);
+	list_del(&rp->c_lru);
+	kmem_cache_free(drc_slab, rp);
+}
+
+int nfsd_reply_cache_init(void)
+{
 	int			i;
+	struct svc_cacherep	*rp;
+
+	drc_slab = kmem_cache_create("nfsd_drc", sizeof(struct svc_cacherep),
+					0, 0, NULL);
+	if (!drc_slab)
+		goto out_nomem;
 
 	INIT_LIST_HEAD(&lru_head);
 	i = CACHESIZE;
 	while (i) {
-		rp = kmalloc(sizeof(*rp), GFP_KERNEL);
+		rp = nfsd_reply_cache_alloc();
 		if (!rp)
 			goto out_nomem;
 		list_add(&rp->c_lru, &lru_head);
-		rp->c_state = RC_UNUSED;
-		rp->c_type = RC_NOCACHE;
-		INIT_HLIST_NODE(&rp->c_hash);
 		i--;
 	}
 
@@ -81,16 +109,18 @@ void nfsd_reply_cache_shutdown(void)
 
 	while (!list_empty(&lru_head)) {
 		rp = list_entry(lru_head.next, struct svc_cacherep, c_lru);
-		if (rp->c_state == RC_DONE && rp->c_type == RC_REPLBUFF)
-			kfree(rp->c_replvec.iov_base);
-		list_del(&rp->c_lru);
-		kfree(rp);
+		nfsd_reply_cache_free_locked(rp);
 	}
 
 	cache_disabled = 1;
 
 	kfree (cache_hash);
 	cache_hash = NULL;
+
+	if (drc_slab) {
+		kmem_cache_destroy(drc_slab);
+		drc_slab = NULL;
+	}
 }
 
 /*
@@ -112,6 +142,42 @@ hash_refile(struct svc_cacherep *rp)
 	hlist_add_head(&rp->c_hash, cache_hash + request_hash(rp->c_xid));
 }
 
+static inline bool
+nfsd_cache_entry_expired(struct svc_cacherep *rp)
+{
+	return rp->c_state != RC_INPROG &&
+	       time_after(jiffies, rp->c_timestamp + RC_EXPIRE);
+}
+
+/*
+ * Search the request hash for an entry that matches the given rqstp.
+ * Must be called with cache_lock held. Returns the found entry or
+ * NULL on failure.
+ */
+static struct svc_cacherep *
+nfsd_cache_search(struct svc_rqst *rqstp)
+{
+	struct svc_cacherep	*rp;
+	struct hlist_node	*hn;
+	struct hlist_head 	*rh;
+	__be32			xid = rqstp->rq_xid;
+	u32			proto =  rqstp->rq_prot,
+				vers = rqstp->rq_vers,
+				proc = rqstp->rq_proc;
+
+	rh = &cache_hash[request_hash(xid)];
+	hlist_for_each_entry(rp, hn, rh, c_hash) {
+		if (rp->c_state != RC_UNUSED &&
+		    xid == rp->c_xid && proc == rp->c_proc &&
+		    proto == rp->c_prot && vers == rp->c_vers &&
+		    !nfsd_cache_entry_expired(rp) &&
+		    rpc_cmp_addr(svc_addr(rqstp), (struct sockaddr *)&rp->c_addr) &&
+		    rpc_get_port(svc_addr(rqstp)) == rpc_get_port((struct sockaddr *)&rp->c_addr))
+			return rp;
+	}
+	return NULL;
+}
+
 /*
  * Try to find an entry matching the current call in the cache. When none
  * is found, we grab the oldest unlocked entry off the LRU list.
@@ -120,8 +186,6 @@ hash_refile(struct svc_cacherep *rp)
 int
 nfsd_cache_lookup(struct svc_rqst *rqstp)
 {
-	struct hlist_node	*hn;
-	struct hlist_head 	*rh;
 	struct svc_cacherep	*rp;
 	__be32			xid = rqstp->rq_xid;
 	u32			proto =  rqstp->rq_prot,
@@ -140,16 +204,10 @@ nfsd_cache_lookup(struct svc_rqst *rqstp)
 	spin_lock(&cache_lock);
 	rtn = RC_DOIT;
 
-	rh = &cache_hash[request_hash(xid)];
-	hlist_for_each_entry(rp, hn, rh, c_hash) {
-		if (rp->c_state != RC_UNUSED &&
-		    xid == rp->c_xid && proc == rp->c_proc &&
-		    proto == rp->c_prot && vers == rp->c_vers &&
-		    time_before(jiffies, rp->c_timestamp + 120*HZ) &&
-		    memcmp((char*)&rqstp->rq_addr, (char*)&rp->c_addr, sizeof(rp->c_addr))==0) {
-			nfsdstats.rchits++;
-			goto found_entry;
-		}
+	rp = nfsd_cache_search(rqstp);
+	if (rp) {
+		nfsdstats.rchits++;
+		goto found_entry;
 	}
 	nfsdstats.rcmisses++;
 
@@ -183,7 +241,8 @@ nfsd_cache_lookup(struct svc_rqst *rqstp)
 	rp->c_state = RC_INPROG;
 	rp->c_xid = xid;
 	rp->c_proc = proc;
-	memcpy(&rp->c_addr, svc_addr_in(rqstp), sizeof(rp->c_addr));
+	rpc_copy_addr((struct sockaddr *)&rp->c_addr, svc_addr(rqstp));
+	rpc_set_port((struct sockaddr *)&rp->c_addr, rpc_get_port(svc_addr(rqstp)));
 	rp->c_prot = proto;
 	rp->c_vers = vers;
 	rp->c_timestamp = jiffies;
@@ -283,9 +342,7 @@ nfsd_cache_update(struct svc_rqst *rqstp, int cachetype, __be32 *statp)
 		cachv = &rp->c_replvec;
 		cachv->iov_base = kmalloc(len << 2, GFP_KERNEL);
 		if (!cachv->iov_base) {
-			spin_lock(&cache_lock);
 			rp->c_state = RC_UNUSED;
-			spin_unlock(&cache_lock);
 			return;
 		}
 		cachv->iov_len = len << 2;
