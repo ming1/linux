@@ -486,6 +486,7 @@ static struct vb2_ops fimc_capture_qops = {
 int fimc_capture_ctrls_create(struct fimc_dev *fimc)
 {
 	struct fimc_vid_cap *vid_cap = &fimc->vid_cap;
+	struct v4l2_subdev *sensor = fimc->pipeline.subdevs[IDX_SENSOR];
 	int ret;
 
 	if (WARN_ON(vid_cap->ctx == NULL))
@@ -494,11 +495,13 @@ int fimc_capture_ctrls_create(struct fimc_dev *fimc)
 		return 0;
 
 	ret = fimc_ctrls_create(vid_cap->ctx);
-	if (ret || vid_cap->user_subdev_api || !vid_cap->ctx->ctrls.ready)
+
+	if (ret || vid_cap->user_subdev_api || !sensor ||
+	    !vid_cap->ctx->ctrls.ready)
 		return ret;
 
 	return v4l2_ctrl_add_handler(&vid_cap->ctx->ctrls.handler,
-		    fimc->pipeline.subdevs[IDX_SENSOR]->ctrl_handler, NULL);
+				     sensor->ctrl_handler, NULL);
 }
 
 static int fimc_capture_set_default_format(struct fimc_dev *fimc);
@@ -950,9 +953,9 @@ static int fimc_cap_g_fmt_mplane(struct file *file, void *fh,
 				 struct v4l2_format *f)
 {
 	struct fimc_dev *fimc = video_drvdata(file);
-	struct fimc_ctx *ctx = fimc->vid_cap.ctx;
 
-	return fimc_fill_format(&ctx->d_frame, f);
+	__fimc_get_format(&fimc->vid_cap.ctx->d_frame, f);
+	return 0;
 }
 
 static int fimc_cap_try_fmt_mplane(struct file *file, void *fh,
@@ -1074,8 +1077,10 @@ static int __fimc_capture_set_format(struct fimc_dev *fimc,
 			return ret;
 	}
 
-	for (i = 0; i < ff->fmt->memplanes; i++)
+	for (i = 0; i < ff->fmt->memplanes; i++) {
+		ff->bytesperline[i] = pix->plane_fmt[i].bytesperline;
 		ff->payload[i] = pix->plane_fmt[i].sizeimage;
+	}
 
 	set_frame_bounds(ff, pix->width, pix->height);
 	/* Reset the composition rectangle if not yet configured */
@@ -1683,16 +1688,6 @@ static int fimc_subdev_set_selection(struct v4l2_subdev *sd,
 	fimc_capture_try_selection(ctx, r, V4L2_SEL_TGT_CROP);
 
 	switch (sel->target) {
-	case V4L2_SEL_TGT_COMPOSE_BOUNDS:
-		f = &ctx->d_frame;
-	case V4L2_SEL_TGT_CROP_BOUNDS:
-		r->width = f->o_width;
-		r->height = f->o_height;
-		r->left = 0;
-		r->top = 0;
-		mutex_unlock(&fimc->lock);
-		return 0;
-
 	case V4L2_SEL_TGT_CROP:
 		try_sel = v4l2_subdev_get_try_crop(fh, sel->pad);
 		break;
@@ -1711,9 +1706,9 @@ static int fimc_subdev_set_selection(struct v4l2_subdev *sd,
 		spin_lock_irqsave(&fimc->slock, flags);
 		set_frame_crop(f, r->left, r->top, r->width, r->height);
 		set_bit(ST_CAPT_APPLY_CFG, &fimc->state);
-		spin_unlock_irqrestore(&fimc->slock, flags);
 		if (sel->target == V4L2_SEL_TGT_COMPOSE)
 			ctx->state |= FIMC_COMPOSE;
+		spin_unlock_irqrestore(&fimc->slock, flags);
 	}
 
 	dbg("target %#x: (%d,%d)/%dx%d", sel->target, r->left, r->top,

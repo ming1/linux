@@ -260,7 +260,7 @@ static irqreturn_t flite_irq_handler(int irq, void *priv)
 		wake_up(&fimc->irq_queue);
 	}
 
-	if (fimc->out_path != FIMC_IO_DMA)
+	if (atomic_read(&fimc->out_path) != FIMC_IO_DMA)
 		goto done;
 
 	if ((intsrc & FLITE_REG_CISTATUS_IRQ_SRC_FRMSTART) &&
@@ -465,7 +465,7 @@ static int fimc_lite_open(struct file *file)
 	mutex_lock(&me->parent->graph_mutex);
 
 	mutex_lock(&fimc->lock);
-	if (fimc->out_path != FIMC_IO_DMA) {
+	if (atomic_read(&fimc->out_path) != FIMC_IO_DMA) {
 		ret = -EBUSY;
 		goto done;
 	}
@@ -479,7 +479,8 @@ static int fimc_lite_open(struct file *file)
 	if (ret < 0)
 		goto done;
 
-	if (++fimc->ref_count == 1 && fimc->out_path == FIMC_IO_DMA) {
+	if (++fimc->ref_count == 1 &&
+	    atomic_read(&fimc->out_path) == FIMC_IO_DMA) {
 		ret = fimc_pipeline_call(fimc, open, &fimc->pipeline,
 					 &fimc->vfd.entity, true);
 		if (ret < 0) {
@@ -504,7 +505,8 @@ static int fimc_lite_close(struct file *file)
 
 	mutex_lock(&fimc->lock);
 
-	if (--fimc->ref_count == 0 && fimc->out_path == FIMC_IO_DMA) {
+	if (--fimc->ref_count == 0 &&
+	    atomic_read(&fimc->out_path) == FIMC_IO_DMA) {
 		clear_bit(ST_FLITE_IN_USE, &fimc->state);
 		fimc_lite_stop_capture(fimc, false);
 		fimc_pipeline_call(fimc, close, &fimc->pipeline);
@@ -609,7 +611,7 @@ static void fimc_lite_try_crop(struct fimc_lite *fimc, struct v4l2_rect *r)
 	r->left = round_down(r->left, fimc->variant->win_hor_offs_align);
 	r->top  = clamp_t(u32, r->top, 0, frame->f_height - r->height);
 
-	v4l2_dbg(1, debug, &fimc->subdev, "(%d,%d)/%dx%d, sink fmt: %dx%d",
+	v4l2_dbg(1, debug, &fimc->subdev, "(%d,%d)/%dx%d, sink fmt: %dx%d\n",
 		 r->left, r->top, r->width, r->height,
 		 frame->f_width, frame->f_height);
 }
@@ -629,7 +631,7 @@ static void fimc_lite_try_compose(struct fimc_lite *fimc, struct v4l2_rect *r)
 	r->left = round_down(r->left, fimc->variant->out_hor_offs_align);
 	r->top  = clamp_t(u32, r->top, 0, fimc->out_frame.f_height - r->height);
 
-	v4l2_dbg(1, debug, &fimc->subdev, "(%d,%d)/%dx%d, source fmt: %dx%d",
+	v4l2_dbg(1, debug, &fimc->subdev, "(%d,%d)/%dx%d, source fmt: %dx%d\n",
 		 r->left, r->top, r->width, r->height,
 		 frame->f_width, frame->f_height);
 }
@@ -1009,7 +1011,7 @@ static int fimc_lite_link_setup(struct media_entity *entity,
 	if (WARN_ON(fimc == NULL))
 		return 0;
 
-	v4l2_dbg(1, debug, sd, "%s: %s --> %s, flags: 0x%x. source_id: 0x%x",
+	v4l2_dbg(1, debug, sd, "%s: %s --> %s, flags: 0x%x. source_id: 0x%x\n",
 		 __func__, remote->entity->name, local->entity->name,
 		 flags, fimc->source_subdev_grp_id);
 
@@ -1034,18 +1036,18 @@ static int fimc_lite_link_setup(struct media_entity *entity,
 
 	case FLITE_SD_PAD_SOURCE_DMA:
 		if (!(flags & MEDIA_LNK_FL_ENABLED))
-			fimc->out_path = FIMC_IO_NONE;
+			atomic_set(&fimc->out_path, FIMC_IO_NONE);
 		else if (remote_ent_type == MEDIA_ENT_T_DEVNODE)
-			fimc->out_path = FIMC_IO_DMA;
+			atomic_set(&fimc->out_path, FIMC_IO_DMA);
 		else
 			ret = -EINVAL;
 		break;
 
 	case FLITE_SD_PAD_SOURCE_ISP:
 		if (!(flags & MEDIA_LNK_FL_ENABLED))
-			fimc->out_path = FIMC_IO_NONE;
+			atomic_set(&fimc->out_path, FIMC_IO_NONE);
 		else if (remote_ent_type == MEDIA_ENT_T_V4L2_SUBDEV)
-			fimc->out_path = FIMC_IO_ISP;
+			atomic_set(&fimc->out_path, FIMC_IO_ISP);
 		else
 			ret = -EINVAL;
 		break;
@@ -1054,6 +1056,7 @@ static int fimc_lite_link_setup(struct media_entity *entity,
 		v4l2_err(sd, "Invalid pad index\n");
 		ret = -EINVAL;
 	}
+	mb();
 
 	mutex_unlock(&fimc->lock);
 	return ret;
@@ -1117,14 +1120,16 @@ static int fimc_lite_subdev_set_fmt(struct v4l2_subdev *sd,
 	struct flite_frame *source = &fimc->out_frame;
 	const struct fimc_fmt *ffmt;
 
-	v4l2_dbg(1, debug, sd, "pad%d: code: 0x%x, %dx%d",
+	v4l2_dbg(1, debug, sd, "pad%d: code: 0x%x, %dx%d\n",
 		 fmt->pad, mf->code, mf->width, mf->height);
 
 	mf->colorspace = V4L2_COLORSPACE_JPEG;
 	mutex_lock(&fimc->lock);
 
-	if ((fimc->out_path == FIMC_IO_ISP && sd->entity.stream_count > 0) ||
-	    (fimc->out_path == FIMC_IO_DMA && vb2_is_busy(&fimc->vb_queue))) {
+	if ((atomic_read(&fimc->out_path) == FIMC_IO_ISP &&
+	    sd->entity.stream_count > 0) ||
+	    (atomic_read(&fimc->out_path) == FIMC_IO_DMA &&
+	    vb2_is_busy(&fimc->vb_queue))) {
 		mutex_unlock(&fimc->lock);
 		return -EBUSY;
 	}
@@ -1191,7 +1196,7 @@ static int fimc_lite_subdev_get_selection(struct v4l2_subdev *sd,
 	}
 	mutex_unlock(&fimc->lock);
 
-	v4l2_dbg(1, debug, sd, "%s: (%d,%d) %dx%d, f_w: %d, f_h: %d",
+	v4l2_dbg(1, debug, sd, "%s: (%d,%d) %dx%d, f_w: %d, f_h: %d\n",
 		 __func__, f->rect.left, f->rect.top, f->rect.width,
 		 f->rect.height, f->f_width, f->f_height);
 
@@ -1225,7 +1230,7 @@ static int fimc_lite_subdev_set_selection(struct v4l2_subdev *sd,
 	}
 	mutex_unlock(&fimc->lock);
 
-	v4l2_dbg(1, debug, sd, "%s: (%d,%d) %dx%d, f_w: %d, f_h: %d",
+	v4l2_dbg(1, debug, sd, "%s: (%d,%d) %dx%d, f_w: %d, f_h: %d\n",
 		 __func__, f->rect.left, f->rect.top, f->rect.width,
 		 f->rect.height, f->f_width, f->f_height);
 
@@ -1247,12 +1252,10 @@ static int fimc_lite_subdev_s_stream(struct v4l2_subdev *sd, int on)
 	 */
 	fimc->sensor = __find_remote_sensor(&sd->entity);
 
-	mutex_lock(&fimc->lock);
-	if (fimc->out_path != FIMC_IO_ISP) {
-		mutex_unlock(&fimc->lock);
+	if (atomic_read(&fimc->out_path) != FIMC_IO_ISP)
 		return -ENOIOCTLCMD;
-	}
 
+	mutex_lock(&fimc->lock);
 	if (on) {
 		flite_hw_reset(fimc);
 		ret = fimc_lite_hw_init(fimc, true);
@@ -1280,18 +1283,6 @@ static int fimc_lite_subdev_s_stream(struct v4l2_subdev *sd, int on)
 	return ret;
 }
 
-static int fimc_lite_subdev_s_power(struct v4l2_subdev *sd, int on)
-{
-	struct fimc_lite *fimc = v4l2_get_subdevdata(sd);
-
-	if (fimc->out_path == FIMC_IO_DMA)
-		return -ENOIOCTLCMD;
-
-	/* TODO: */
-
-	return 0;
-}
-
 static int fimc_lite_log_status(struct v4l2_subdev *sd)
 {
 	struct fimc_lite *fimc = v4l2_get_subdevdata(sd);
@@ -1310,7 +1301,7 @@ static int fimc_lite_subdev_registered(struct v4l2_subdev *sd)
 	memset(vfd, 0, sizeof(*vfd));
 
 	fimc->fmt = &fimc_lite_formats[0];
-	fimc->out_path = FIMC_IO_DMA;
+	atomic_set(&fimc->out_path, FIMC_IO_DMA);
 
 	snprintf(vfd->name, sizeof(vfd->name), "fimc-lite.%d.capture",
 		 fimc->index);
@@ -1391,7 +1382,6 @@ static const struct v4l2_subdev_video_ops fimc_lite_subdev_video_ops = {
 };
 
 static const struct v4l2_subdev_core_ops fimc_lite_core_ops = {
-	.s_power = fimc_lite_subdev_s_power,
 	.log_status = fimc_lite_log_status,
 };
 
@@ -1602,7 +1592,7 @@ static int fimc_lite_resume(struct device *dev)
 	INIT_LIST_HEAD(&fimc->active_buf_q);
 	fimc_pipeline_call(fimc, open, &fimc->pipeline,
 			   &fimc->vfd.entity, false);
-	fimc_lite_hw_init(fimc, fimc->out_path == FIMC_IO_ISP);
+	fimc_lite_hw_init(fimc, atomic_read(&fimc->out_path) == FIMC_IO_ISP);
 	clear_bit(ST_FLITE_SUSPENDED, &fimc->state);
 
 	for (i = 0; i < fimc->reqbufs_count; i++) {

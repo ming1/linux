@@ -352,11 +352,11 @@ static void s5pcsis_clk_put(struct csis_state *state)
 	int i;
 
 	for (i = 0; i < NUM_CSIS_CLOCKS; i++) {
-		if (IS_ERR_OR_NULL(state->clock[i]))
+		if (IS_ERR(state->clock[i]))
 			continue;
 		clk_unprepare(state->clock[i]);
 		clk_put(state->clock[i]);
-		state->clock[i] = NULL;
+		state->clock[i] = ERR_PTR(-EINVAL);
 	}
 }
 
@@ -365,14 +365,19 @@ static int s5pcsis_clk_get(struct csis_state *state)
 	struct device *dev = &state->pdev->dev;
 	int i, ret;
 
+	for (i = 0; i < NUM_CSIS_CLOCKS; i++)
+		state->clock[i] = ERR_PTR(-EINVAL);
+
 	for (i = 0; i < NUM_CSIS_CLOCKS; i++) {
 		state->clock[i] = clk_get(dev, csi_clock_name[i]);
-		if (IS_ERR(state->clock[i]))
+		if (IS_ERR(state->clock[i])) {
+			ret = PTR_ERR(state->clock[i]);
 			goto err;
+		}
 		ret = clk_prepare(state->clock[i]);
 		if (ret < 0) {
 			clk_put(state->clock[i]);
-			state->clock[i] = NULL;
+			state->clock[i] = ERR_PTR(-EINVAL);
 			goto err;
 		}
 	}
@@ -380,7 +385,7 @@ static int s5pcsis_clk_get(struct csis_state *state)
 err:
 	s5pcsis_clk_put(state);
 	dev_err(dev, "failed to get clock: %s\n", csi_clock_name[i]);
-	return -ENXIO;
+	return ret;
 }
 
 static void dump_regs(struct csis_state *state, const char *label)
@@ -743,26 +748,32 @@ static int s5pcsis_probe(struct platform_device *pdev)
 	for (i = 0; i < CSIS_NUM_SUPPLIES; i++)
 		state->supplies[i].supply = csis_supply_name[i];
 
-	ret = regulator_bulk_get(&pdev->dev, CSIS_NUM_SUPPLIES,
+	ret = devm_regulator_bulk_get(&pdev->dev, CSIS_NUM_SUPPLIES,
 				 state->supplies);
 	if (ret)
 		return ret;
 
 	ret = s5pcsis_clk_get(state);
-	if (ret)
-		goto e_clkput;
+	if (ret < 0)
+		return ret;
 
-	clk_enable(state->clock[CSIS_CLK_MUX]);
 	if (pdata->clk_rate)
-		clk_set_rate(state->clock[CSIS_CLK_MUX], pdata->clk_rate);
+		ret = clk_set_rate(state->clock[CSIS_CLK_MUX],
+				   pdata->clk_rate);
 	else
 		dev_WARN(&pdev->dev, "No clock frequency specified!\n");
+	if (ret < 0)
+		goto e_clkput;
+
+	ret = clk_enable(state->clock[CSIS_CLK_MUX]);
+	if (ret < 0)
+		goto e_clkput;
 
 	ret = devm_request_irq(&pdev->dev, state->irq, s5pcsis_irq_handler,
 			       0, dev_name(&pdev->dev), state);
 	if (ret) {
 		dev_err(&pdev->dev, "Interrupt request failed\n");
-		goto e_regput;
+		goto e_clkput;
 	}
 
 	v4l2_subdev_init(&state->sd, &s5pcsis_subdev_ops);
@@ -793,8 +804,6 @@ static int s5pcsis_probe(struct platform_device *pdev)
 	pm_runtime_enable(&pdev->dev);
 	return 0;
 
-e_regput:
-	regulator_bulk_free(CSIS_NUM_SUPPLIES, state->supplies);
 e_clkput:
 	clk_disable(state->clock[CSIS_CLK_MUX]);
 	s5pcsis_clk_put(state);
@@ -903,7 +912,6 @@ static int s5pcsis_remove(struct platform_device *pdev)
 	clk_disable(state->clock[CSIS_CLK_MUX]);
 	pm_runtime_set_suspended(&pdev->dev);
 	s5pcsis_clk_put(state);
-	regulator_bulk_free(CSIS_NUM_SUPPLIES, state->supplies);
 
 	media_entity_cleanup(&state->sd.entity);
 
