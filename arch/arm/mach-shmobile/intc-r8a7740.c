@@ -1,8 +1,9 @@
 /*
  * R8A7740 processor support
  *
- * Copyright (C) 2011  Renesas Solutions Corp.
+ * Copyright (C) 2011, 2012  Renesas Solutions Corp.
  * Copyright (C) 2011  Kuninori Morimoto <kuninori.morimoto.gx@renesas.com>
+ * Copyright (C) 2012  Nobuhiro Iwamatsu <nobuhiro.iwamatsu@renesas.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,6 +18,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  */
+#define pr_fmt(fmt) "intc: " fmt
 
 #include <linux/kernel.h>
 #include <linux/init.h>
@@ -623,15 +625,71 @@ static void intcs_demux(unsigned int irq, struct irq_desc *desc)
 	generic_handle_irq(intcs_evt2irq(evtcodeas));
 }
 
+static void __init r8a7740_init_intc(resource_size_t intcs0_start,
+					unsigned short vect)
+{
+	void __iomem *intevtsa;
+
+	/* demux using INTEVTSA */
+	intevtsa = ioremap_nocache(intcs0_start + 0x100, PAGE_SIZE);
+	irq_set_handler_data(evt2irq(vect), (void *)intevtsa);
+	irq_set_chained_handler(evt2irq(vect), intcs_demux);
+}
+
+#ifdef CONFIG_OF
+static unsigned short intevtsa_vect;
+
+#define INTC_RES_MAX 2
+static struct {
+	struct intc_desc intc_desc;
+	struct resource intc_res[INTC_RES_MAX];
+} intc_data __initdata;
+
+static int __init intc_of_init(struct device_node *np,
+	struct device_node *parent)
+{
+	int ret, i;
+
+	memset(&intc_data, 0, sizeof(intc_data));
+
+	for (i = 0; i < INTC_RES_MAX; i++) {
+		ret = of_address_to_resource(np, i, &intc_data.intc_res[i]);
+		if (ret < 0)
+			break;
+	}
+
+	intc_data.intc_desc.name = (char *)of_node_full_name(np);
+	intc_data.intc_desc.resource = intc_data.intc_res;
+	intc_data.intc_desc.num_resources = i;
+
+	ret = of_sh_intc_get_intc(np, &intc_data.intc_desc);
+	if (ret)
+		return ret;
+
+	of_sh_intc_get_intevtsa_vect(np, &intevtsa_vect);
+
+	register_intc_controller(&intc_data.intc_desc);
+	return 0;
+}
+
+static const struct of_device_id irq_of_match[] __initconst = {
+	{ .compatible = "renesas,sh-intc", .data = intc_of_init },
+	{ /*sentinel*/ }
+};
+
+void __init r8a7740_init_irq_of(void)
+{
+	of_irq_init(irq_of_match);
+
+	register_intc_controller(&intcs_desc);
+}
+#endif /* CONFIG_OF */
+
 void __init r8a7740_init_irq(void)
 {
-	void __iomem *intevtsa = ioremap_nocache(0xffd20100, PAGE_SIZE);
-
 	register_intc_controller(&intca_desc);
 	register_intc_controller(&intca_irq_pins_desc);
 	register_intc_controller(&intcs_desc);
 
-	/* demux using INTEVTSA */
-	irq_set_handler_data(evt2irq(0xf80), (void *)intevtsa);
-	irq_set_chained_handler(evt2irq(0xf80), intcs_demux);
+	r8a7740_init_intc(0xffd20000, 0xf80);
 }
