@@ -258,6 +258,7 @@
  * order they appear in the channel list.
  */
 
+#include <linux/pci.h>
 #include <linux/interrupt.h>
 #include <linux/slab.h>
 
@@ -1977,8 +1978,7 @@ static int dio200_auto_attach(struct comedi_device *dev,
 		devpriv->io.u.iobase = (unsigned long)base;
 		devpriv->io.regtype = io_regtype;
 	}
-	switch (thisboard->model)
-	{
+	switch (thisboard->model) {
 	case pcie215_model:
 	case pcie236_model:
 	case pcie296_model:
@@ -2079,16 +2079,11 @@ static int amplc_dio200_pci_probe(struct pci_dev *dev,
 	return comedi_pci_auto_config(dev, &amplc_dio200_driver);
 }
 
-static void amplc_dio200_pci_remove(struct pci_dev *dev)
-{
-	comedi_pci_auto_unconfig(dev);
-}
-
 static struct pci_driver amplc_dio200_pci_driver = {
 	.name = DIO200_DRIVER_NAME,
 	.id_table = dio200_pci_table,
 	.probe = &amplc_dio200_pci_probe,
-	.remove = &amplc_dio200_pci_remove
+	.remove		= comedi_pci_auto_unconfig,
 };
 module_comedi_pci_driver(amplc_dio200_driver, amplc_dio200_pci_driver);
 #else
