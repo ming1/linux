@@ -29,7 +29,6 @@
 #include <linux/memory_hotplug.h>
 #include <linux/memory.h>
 #include <linux/notifier.h>
-#include <linux/mman.h>
 #include <linux/percpu_counter.h>
 
 #include <linux/hyperv.h>
@@ -530,15 +529,21 @@ static void process_info(struct hv_dynmem_device *dm, struct dm_info_msg *msg)
 static void post_status(struct hv_dynmem_device *dm)
 {
 	struct dm_status status;
+	struct sysinfo val;
 
-
+	si_meminfo(&val);
 	memset(&status, 0, sizeof(struct dm_status));
 	status.hdr.type = DM_STATUS_REPORT;
 	status.hdr.size = sizeof(struct dm_status);
 	status.hdr.trans_id = atomic_inc_return(&trans_id);
 
-
-	status.num_committed = vm_memory_committed();
+	/*
+	 * The host expects the guest to report free memory.
+	 * Further, the host expects the pressure information to
+	 * include the ballooned out pages.
+	 */
+	status.num_avail = val.freeram;
+	status.num_committed = vm_memory_committed() + dm->num_pages_ballooned;
 
 	vmbus_sendpacket(dm->dev->channel, &status,
 				sizeof(struct dm_status),
@@ -1013,9 +1018,7 @@ static int balloon_remove(struct hv_device *dev)
 static const struct hv_vmbus_device_id id_table[] = {
 	/* Dynamic Memory Class ID */
 	/* 525074DC-8985-46e2-8057-A307DC18A502 */
-	{ VMBUS_DEVICE(0xdc, 0x74, 0x50, 0X52, 0x85, 0x89, 0xe2, 0x46,
-		       0x80, 0x57, 0xa3, 0x07, 0xdc, 0x18, 0xa5, 0x02)
-	},
+	{ HV_DM_GUID, },
 	{ },
 };
 
