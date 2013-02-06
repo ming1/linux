@@ -1,3 +1,14 @@
+config TTY
+	bool "Enable TTY" if EXPERT
+	default y
+	---help---
+	  Allows you to remove TTY support which can save space, and
+	  blocks features that require TTY from inclusion in the kernel.
+	  TTY is required for any text terminals or serial port
+	  communication. Most users should leave this enabled.
+
+if TTY
+
 config VT
 	bool "Virtual terminal" if EXPERT
 	depends on !S390 && !UML
@@ -401,3 +412,11 @@ config DA_CONSOLE
 	depends on DA_TTY
 	help
 	  This enables a console on a Dash channel.
+
+config GOLDFISH_TTY
+	tristate "Goldfish TTY Driver"
+	depends on GOLDFISH
+	help
+	  Console and system TTY driver for the Goldfish virtual platform.
+
+endif # TTY
