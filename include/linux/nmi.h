@@ -67,7 +67,7 @@ static inline u64 max_interrupt_disabled_duration(void)
 static inline u64 max_interrupt_disabled_duration(void)
 {
 	/* About the value we'd get with the default watchdog setting */
-	return 5 * NSEC_PER_SEC;
+	return 5ULL * NSEC_PER_SEC;
 }
 #endif
 
