@@ -13,6 +13,7 @@
 #include <asm/dma.h>
 #include <asm/pgalloc.h>
 #include <asm/pgtable.h>
+#include <linux/memory_hotplug.h>
 
 /*
  * Permanent SPARSEMEM data:
