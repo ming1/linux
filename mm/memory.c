@@ -1678,14 +1678,14 @@ static inline int stack_guard_page(struct vm_area_struct *vma, unsigned long add
  * you need some special @gup_flags.
  */
 long __get_user_pages(struct task_struct *tsk, struct mm_struct *mm,
-		unsigned long start, long nr_pages, unsigned int gup_flags,
-		struct page **pages, struct vm_area_struct **vmas,
-		int *nonblocking)
+		unsigned long start, unsigned long nr_pages,
+		unsigned int gup_flags, struct page **pages,
+		struct vm_area_struct **vmas, int *nonblocking)
 {
 	long i;
 	unsigned long vm_flags;
 
-	if (nr_pages <= 0)
+	if (!nr_pages)
 		return 0;
 
 	VM_BUG_ON(!!pages != !!(gup_flags & FOLL_GET));
@@ -1982,8 +1982,8 @@ int fixup_user_fault(struct task_struct *tsk, struct mm_struct *mm,
  * See also get_user_pages_fast, for performance critical applications.
  */
 long get_user_pages(struct task_struct *tsk, struct mm_struct *mm,
-		unsigned long start, long nr_pages, int write, int force,
-		struct page **pages, struct vm_area_struct **vmas)
+		unsigned long start, unsigned long nr_pages, int write,
+		int force, struct page **pages, struct vm_area_struct **vmas)
 {
 	int flags = FOLL_TOUCH;
 
