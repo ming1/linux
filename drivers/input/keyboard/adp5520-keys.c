@@ -10,6 +10,7 @@
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/platform_device.h>
+#include <linux/notifier.h>
 #include <linux/input.h>
 #include <linux/mfd/adp5520.h>
 #include <linux/slab.h>

@@ -433,20 +433,7 @@ void idr_remove(struct idr *idp, int id)
 }
 EXPORT_SYMBOL(idr_remove);
 
-/**
- * idr_remove_all - remove all ids from the given idr tree
- * @idp: idr handle
- *
- * idr_destroy() only frees up unused, cached idp_layers, but this
- * function will remove all id mappings and leave all idp_layers
- * unused.
- *
- * A typical clean-up sequence for objects stored in an idr tree will
- * use idr_for_each() to free all objects, if necessay, then
- * idr_remove_all() to remove all ids, and idr_destroy() to free
- * up the cached idr_layers.
- */
-void idr_remove_all(struct idr *idp)
+void __idr_remove_all(struct idr *idp)
 {
 	int n, id, max;
 	int bt_mask;
@@ -479,14 +466,25 @@ void idr_remove_all(struct idr *idp)
 	}
 	idp->layers = 0;
 }
-EXPORT_SYMBOL(idr_remove_all);
+EXPORT_SYMBOL(__idr_remove_all);
 
 /**
  * idr_destroy - release all cached layers within an idr tree
  * @idp: idr handle
+ *
+ * Free all id mappings and all idp_layers.  After this function, @idp is
+ * completely unused and can be freed / recycled.  The caller is
+ * responsible for ensuring that no one else accesses @idp during or after
+ * idr_destroy().
+ *
+ * A typical clean-up sequence for objects stored in an idr tree will use
+ * idr_for_each() to free all objects, if necessay, then idr_destroy() to
+ * free up the id mappings and cached idr_layers.
  */
 void idr_destroy(struct idr *idp)
 {
+	__idr_remove_all(idp);
+
 	while (idp->id_free_cnt) {
 		struct idr_layer *p = get_from_free_list(idp);
 		kmem_cache_free(idr_layer_cache, p);

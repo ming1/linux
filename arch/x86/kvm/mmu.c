@@ -1658,13 +1658,13 @@ static int kvm_mmu_prepare_zap_page(struct kvm *kvm, struct kvm_mmu_page *sp,
 static void kvm_mmu_commit_zap_page(struct kvm *kvm,
 				    struct list_head *invalid_list);
 
-#define for_each_gfn_sp(kvm, sp, gfn, pos)				\
-  hlist_for_each_entry(sp, pos,						\
+#define for_each_gfn_sp(kvm, sp, gfn)					\
+  hlist_for_each_entry(sp,						\
    &(kvm)->arch.mmu_page_hash[kvm_page_table_hashfn(gfn)], hash_link)	\
 	if ((sp)->gfn != (gfn)) {} else
 
-#define for_each_gfn_indirect_valid_sp(kvm, sp, gfn, pos)		\
-  hlist_for_each_entry(sp, pos,						\
+#define for_each_gfn_indirect_valid_sp(kvm, sp, gfn)			\
+  hlist_for_each_entry(sp,						\
    &(kvm)->arch.mmu_page_hash[kvm_page_table_hashfn(gfn)], hash_link)	\
 		if ((sp)->gfn != (gfn) || (sp)->role.direct ||		\
 			(sp)->role.invalid) {} else
@@ -1720,23 +1720,20 @@ static int kvm_sync_page(struct kvm_vcpu *vcpu, struct kvm_mmu_page *sp,
 static void kvm_sync_pages(struct kvm_vcpu *vcpu,  gfn_t gfn)
 {
 	struct kvm_mmu_page *s;
-	struct hlist_node *node;
 	LIST_HEAD(invalid_list);
 	bool flush = false;
 
-	for_each_gfn_indirect_valid_sp(vcpu->kvm, s, gfn, node) {
+	for_each_gfn_indirect_valid_sp (vcpu->kvm, s, gfn) {
 		if (!s->unsync)
 			continue;
-
-		WARN_ON(s->role.level != PT_PAGE_TABLE_LEVEL);
-		kvm_unlink_unsync_page(vcpu->kvm, s);
-		if ((s->role.cr4_pae != !!is_pae(vcpu)) ||
-			(vcpu->arch.mmu.sync_page(vcpu, s))) {
-			kvm_mmu_prepare_zap_page(vcpu->kvm, s, &invalid_list);
-			continue;
+			WARN_ON(s->role.level != PT_PAGE_TABLE_LEVEL);
+			kvm_unlink_unsync_page(vcpu->kvm, s);
+			if ((s->role.cr4_pae != !!is_pae(vcpu)) || (vcpu->arch.mmu.sync_page(vcpu, s))) {
+				kvm_mmu_prepare_zap_page(vcpu->kvm, s, &invalid_list);
+				continue;
+			}
+			flush = true;
 		}
-		flush = true;
-	}
 
 	kvm_mmu_commit_zap_page(vcpu->kvm, &invalid_list);
 	if (flush)
@@ -1862,7 +1859,6 @@ static struct kvm_mmu_page *kvm_mmu_get_page(struct kvm_vcpu *vcpu,
 	union kvm_mmu_page_role role;
 	unsigned quadrant;
 	struct kvm_mmu_page *sp;
-	struct hlist_node *node;
 	bool need_sync = false;
 
 	role = vcpu->arch.mmu.base_role;
@@ -1877,27 +1873,24 @@ static struct kvm_mmu_page *kvm_mmu_get_page(struct kvm_vcpu *vcpu,
 		quadrant &= (1 << ((PT32_PT_BITS - PT64_PT_BITS) * level)) - 1;
 		role.quadrant = quadrant;
 	}
-	for_each_gfn_sp(vcpu->kvm, sp, gfn, node) {
+	for_each_gfn_sp (vcpu->kvm, sp, gfn) {
 		if (!need_sync && sp->unsync)
 			need_sync = true;
-
-		if (sp->role.word != role.word)
-			continue;
-
-		if (sp->unsync && kvm_sync_page_transient(vcpu, sp))
-			break;
-
-		mmu_page_add_parent_pte(vcpu, sp, parent_pte);
-		if (sp->unsync_children) {
-			kvm_make_request(KVM_REQ_MMU_SYNC, vcpu);
-			kvm_mmu_mark_parents_unsync(sp);
-		} else if (sp->unsync)
-			kvm_mmu_mark_parents_unsync(sp);
-
-		__clear_sp_write_flooding_count(sp);
-		trace_kvm_mmu_get_page(sp, false);
-		return sp;
-	}
+			if (sp->role.word != role.word)
+				continue;
+				if (sp->unsync && kvm_sync_page_transient(vcpu, sp))
+					break;
+					mmu_page_add_parent_pte(vcpu, sp, parent_pte);
+					if (sp->unsync_children) {
+						kvm_make_request(KVM_REQ_MMU_SYNC, vcpu);
+						kvm_mmu_mark_parents_unsync(sp);
+					}else
+						if (sp->unsync)
+							kvm_mmu_mark_parents_unsync(sp);
+							__clear_sp_write_flooding_count(sp);
+							trace_kvm_mmu_get_page(sp, false);
+							return sp;
+						}
 	++vcpu->kvm->stat.mmu_cache_miss;
 	sp = kvm_mmu_alloc_page(vcpu, parent_pte, direct);
 	if (!sp)
@@ -2166,16 +2159,14 @@ void kvm_mmu_change_mmu_pages(struct kvm *kvm, unsigned int goal_nr_mmu_pages)
 int kvm_mmu_unprotect_page(struct kvm *kvm, gfn_t gfn)
 {
 	struct kvm_mmu_page *sp;
-	struct hlist_node *node;
 	LIST_HEAD(invalid_list);
 	int r;
 
 	pgprintk("%s: looking for gfn %llx\n", __func__, gfn);
 	r = 0;
 	spin_lock(&kvm->mmu_lock);
-	for_each_gfn_indirect_valid_sp(kvm, sp, gfn, node) {
-		pgprintk("%s: gfn %llx role %x\n", __func__, gfn,
-			 sp->role.word);
+	for_each_gfn_indirect_valid_sp (kvm, sp, gfn) {
+		pgprintk("%s: gfn %llx role %x\n", __func__, gfn, sp->role.word);
 		r = 1;
 		kvm_mmu_prepare_zap_page(kvm, sp, &invalid_list);
 	}
@@ -2303,34 +2294,30 @@ static void __kvm_unsync_page(struct kvm_vcpu *vcpu, struct kvm_mmu_page *sp)
 static void kvm_unsync_pages(struct kvm_vcpu *vcpu,  gfn_t gfn)
 {
 	struct kvm_mmu_page *s;
-	struct hlist_node *node;
 
-	for_each_gfn_indirect_valid_sp(vcpu->kvm, s, gfn, node) {
+	for_each_gfn_indirect_valid_sp (vcpu->kvm, s, gfn) {
 		if (s->unsync)
 			continue;
-		WARN_ON(s->role.level != PT_PAGE_TABLE_LEVEL);
-		__kvm_unsync_page(vcpu, s);
-	}
+			WARN_ON(s->role.level != PT_PAGE_TABLE_LEVEL);
+			__kvm_unsync_page(vcpu, s);
+		}
 }
 
 static int mmu_need_write_protect(struct kvm_vcpu *vcpu, gfn_t gfn,
 				  bool can_unsync)
 {
 	struct kvm_mmu_page *s;
-	struct hlist_node *node;
 	bool need_unsync = false;
 
-	for_each_gfn_indirect_valid_sp(vcpu->kvm, s, gfn, node) {
+	for_each_gfn_indirect_valid_sp (vcpu->kvm, s, gfn) {
 		if (!can_unsync)
 			return 1;
-
-		if (s->role.level != PT_PAGE_TABLE_LEVEL)
-			return 1;
-
-		if (!need_unsync && !s->unsync) {
-			need_unsync = true;
-		}
-	}
+			if (s->role.level != PT_PAGE_TABLE_LEVEL)
+				return 1;
+				if (!need_unsync && !s->unsync) {
+					need_unsync = true;
+				}
+			}
 	if (need_unsync)
 		kvm_unsync_pages(vcpu, gfn);
 	return 0;
@@ -3955,7 +3942,6 @@ void kvm_mmu_pte_write(struct kvm_vcpu *vcpu, gpa_t gpa,
 	gfn_t gfn = gpa >> PAGE_SHIFT;
 	union kvm_mmu_page_role mask = { .word = 0 };
 	struct kvm_mmu_page *sp;
-	struct hlist_node *node;
 	LIST_HEAD(invalid_list);
 	u64 entry, gentry, *spte;
 	int npte;
@@ -3986,32 +3972,26 @@ void kvm_mmu_pte_write(struct kvm_vcpu *vcpu, gpa_t gpa,
 	kvm_mmu_audit(vcpu, AUDIT_PRE_PTE_WRITE);
 
 	mask.cr0_wp = mask.cr4_pae = mask.nxe = 1;
-	for_each_gfn_indirect_valid_sp(vcpu->kvm, sp, gfn, node) {
-		if (detect_write_misaligned(sp, gpa, bytes) ||
-		      detect_write_flooding(sp)) {
-			zap_page |= !!kvm_mmu_prepare_zap_page(vcpu->kvm, sp,
-						     &invalid_list);
+	for_each_gfn_indirect_valid_sp (vcpu->kvm, sp, gfn) {
+		if (detect_write_misaligned(sp, gpa, bytes) || detect_write_flooding(sp)) {
+			zap_page |= !!kvm_mmu_prepare_zap_page(vcpu->kvm, sp, &invalid_list);
 			++vcpu->kvm->stat.mmu_flooded;
 			continue;
 		}
-
 		spte = get_written_sptes(sp, gpa, &npte);
 		if (!spte)
 			continue;
-
-		local_flush = true;
-		while (npte--) {
-			entry = *spte;
-			mmu_page_zap_pte(vcpu->kvm, sp, spte);
-			if (gentry &&
-			      !((sp->role.word ^ vcpu->arch.mmu.base_role.word)
-			      & mask.word) && rmap_can_add(vcpu))
-				mmu_pte_write_new_pte(vcpu, sp, spte, &gentry);
-			if (!remote_flush && need_remote_flush(entry, *spte))
-				remote_flush = true;
-			++spte;
-		}
-	}
+			local_flush = true;
+			while (npte--) {
+				entry = *spte;
+				mmu_page_zap_pte(vcpu->kvm, sp, spte);
+				if (gentry && !((sp->role.word ^ vcpu->arch.mmu.base_role.word) & mask.word) && rmap_can_add(vcpu))
+					mmu_pte_write_new_pte(vcpu, sp, spte, &gentry);
+					if (!remote_flush && need_remote_flush(entry, *spte))
+						remote_flush = true;
+						++spte;
+					}
+				}
 	mmu_pte_write_flush_tlb(vcpu, zap_page, remote_flush, local_flush);
 	kvm_mmu_commit_zap_page(vcpu->kvm, &invalid_list);
 	kvm_mmu_audit(vcpu, AUDIT_POST_PTE_WRITE);

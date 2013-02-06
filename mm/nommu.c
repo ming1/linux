@@ -1249,7 +1249,8 @@ unsigned long do_mmap_pgoff(struct file *file,
 			    unsigned long len,
 			    unsigned long prot,
 			    unsigned long flags,
-			    unsigned long pgoff)
+			    unsigned long pgoff,
+			    unsigned long *populate)
 {
 	struct vm_area_struct *vma;
 	struct vm_region *region;
@@ -1258,6 +1259,8 @@ unsigned long do_mmap_pgoff(struct file *file,
 	int ret;
 
 	kenter(",%lx,%lx,%lx,%lx,%lx", addr, len, prot, flags, pgoff);
+
+	*populate = 0;
 
 	/* decide whether we should attempt the mapping, and if so what sort of
 	 * mapping */
@@ -1814,9 +1817,11 @@ SYSCALL_DEFINE5(mremap, unsigned long, addr, unsigned long, old_len,
 	return ret;
 }
 
-struct page *follow_page(struct vm_area_struct *vma, unsigned long address,
-			unsigned int foll_flags)
+struct page *follow_page_mask(struct vm_area_struct *vma,
+			      unsigned long address, unsigned int flags,
+			      unsigned int *page_mask)
 {
+	*page_mask = 0;
 	return NULL;
 }
 
@@ -1850,10 +1855,6 @@ unsigned long arch_get_unmapped_area(struct file *file, unsigned long addr,
 	unsigned long len, unsigned long pgoff, unsigned long flags)
 {
 	return -ENOMEM;
-}
-
-void arch_unmap_area(struct mm_struct *mm, unsigned long addr)
-{
 }
 
 void unmap_mapping_range(struct address_space *mapping,
@@ -1903,7 +1904,7 @@ int __vm_enough_memory(struct mm_struct *mm, long pages, int cap_sys_admin)
 		 */
 		free -= global_page_state(NR_SHMEM);
 
-		free += nr_swap_pages;
+		free += get_nr_swap_pages();
 
 		/*
 		 * Any slabs which are created with the
