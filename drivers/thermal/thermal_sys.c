@@ -32,7 +32,6 @@
 #include <linux/kdev_t.h>
 #include <linux/idr.h>
 #include <linux/thermal.h>
-#include <linux/spinlock.h>
 #include <linux/reboot.h>
 #include <net/netlink.h>
 #include <net/genetlink.h>
@@ -355,8 +354,9 @@ static void handle_critical_trips(struct thermal_zone_device *tz,
 		tz->ops->notify(tz, trip, trip_type);
 
 	if (trip_type == THERMAL_TRIP_CRITICAL) {
-		pr_emerg("Critical temperature reached(%d C),shutting down\n",
-			 tz->temperature / 1000);
+		dev_emerg(&tz->device,
+			  "critical temperature reached(%d C),shutting down\n",
+			  tz->temperature / 1000);
 		orderly_poweroff(true);
 	}
 }
@@ -387,7 +387,8 @@ static void update_temperature(struct thermal_zone_device *tz)
 
 	ret = tz->ops->get_temp(tz, &temp);
 	if (ret) {
-		pr_warn("failed to read out thermal zone %d\n", tz->id);
+		dev_warn(&tz->device, "failed to read out thermal zone %d\n",
+			 tz->id);
 		goto exit;
 	}
 
@@ -1529,6 +1530,9 @@ struct thermal_zone_device *thermal_zone_device_register(const char *type,
 	if (!ops || !ops->get_temp)
 		return ERR_PTR(-EINVAL);
 
+	if (trips > 0 && !ops->get_trip_type)
+		return ERR_PTR(-EINVAL);
+
 	tz = kzalloc(sizeof(struct thermal_zone_device), GFP_KERNEL);
 	if (!tz)
 		return ERR_PTR(-ENOMEM);
@@ -1711,7 +1715,8 @@ static struct genl_multicast_group thermal_event_mcgrp = {
 	.name = THERMAL_GENL_MCAST_GROUP_NAME,
 };
 
-int thermal_generate_netlink_event(u32 orig, enum events event)
+int thermal_generate_netlink_event(struct thermal_zone_device *tz,
+					enum events event)
 {
 	struct sk_buff *skb;
 	struct nlattr *attr;
@@ -1720,6 +1725,9 @@ int thermal_generate_netlink_event(u32 orig, enum events event)
 	int size;
 	int result;
 	static unsigned int thermal_event_seqnum;
+
+	if (!tz)
+		return -EINVAL;
 
 	/* allocate memory */
 	size = nla_total_size(sizeof(struct thermal_genl_event)) +
@@ -1755,7 +1763,7 @@ int thermal_generate_netlink_event(u32 orig, enum events event)
 
 	memset(thermal_event, 0, sizeof(struct thermal_genl_event));
 
-	thermal_event->orig = orig;
+	thermal_event->orig = tz->id;
 	thermal_event->event = event;
 
 	/* send multicast genetlink message */
@@ -1767,7 +1775,7 @@ int thermal_generate_netlink_event(u32 orig, enum events event)
 
 	result = genlmsg_multicast(skb, 0, thermal_event_mcgrp.id, GFP_ATOMIC);
 	if (result)
-		pr_info("failed to send netlink event:%d\n", result);
+		dev_err(&tz->device, "Failed to send netlink event:%d", result);
 
 	return result;
 }
