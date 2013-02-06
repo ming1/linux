@@ -241,6 +241,10 @@ static enum log_flags console_prev;
 static u64 clear_seq;
 static u32 clear_idx;
 
+/* Worker to print accumulated data to console when there's too much of it */
+static void printk_worker(struct work_struct *work);
+static DECLARE_WORK(printk_work, printk_worker);
+
 #define PREFIX_MAX		32
 #define LOG_LINE_MAX		1024 - PREFIX_MAX
 
@@ -2023,28 +2027,39 @@ out:
  * Releases the console_lock which the caller holds on the console system
  * and the console driver list.
  *
- * While the console_lock was held, console output may have been buffered
- * by printk().  If this is the case, console_unlock(); emits
- * the output prior to releasing the lock.
+ * While the console_lock was held, console output may have been buffered by
+ * printk(). If this is the case, console_unlock() emits the output prior to
+ * releasing the lock. However we need not write all the data in the buffer if
+ * we would hog the CPU for too long. Function returns true, if there's more
+ * data that needs printing in the buffer.
  *
  * If there is output waiting, we wake /dev/kmsg and syslog() users.
  *
- * console_unlock(); may be called from any context.
+ * __console_unlock() may be called from any context.
  */
-void console_unlock(void)
+static bool __console_unlock(void)
 {
 	static char text[LOG_LINE_MAX + PREFIX_MAX];
 	static u64 seen_seq;
 	unsigned long flags;
 	bool wake_klogd = false;
 	bool retry;
+	u64 end_time, now;
+	int cur_cpu;
 
 	if (console_suspended) {
 		up(&console_sem);
-		return;
+		return false;
 	}
 
 	console_may_schedule = 0;
+	cur_cpu = smp_processor_id();
+	/*
+	 * We give us some headroom because we check the time only after
+	 * printing the whole message
+	 */
+	end_time = sched_clock_cpu(cur_cpu) +
+				max_interrupt_disabled_duration() / 2;
 
 	/* flush buffered message fragment immediately to console */
 	console_cont_flush(text, sizeof(text));
@@ -2067,7 +2082,9 @@ again:
 			console_prev = 0;
 		}
 skip:
-		if (console_seq == log_next_seq)
+		now = sched_clock_cpu(cur_cpu);
+		if (console_seq == log_next_seq ||
+		    (now > end_time && !oops_in_progress && keventd_up()))
 			break;
 
 		msg = log_from_idx(console_idx);
@@ -2121,13 +2138,39 @@ skip:
 	retry = console_seq != log_next_seq;
 	raw_spin_unlock_irqrestore(&logbuf_lock, flags);
 
-	if (retry && console_trylock())
+	if (retry &&
+	    (now <= end_time || oops_in_progress || !keventd_up()) &&
+	    console_trylock())
 		goto again;
 
 	if (wake_klogd)
 		wake_up_klogd();
+	return retry;
+}
+
+void console_unlock(void)
+{
+	if (__console_unlock()) {
+		/* Let worker do the rest of printing */
+		schedule_work(&printk_work);
+	}
 }
 EXPORT_SYMBOL(console_unlock);
+
+/*
+ * This is a worker function to print data from printk buffer when
+ * console_unlock() didn't write it all. The advantage of this function is that
+ * it does the printing in a well known context where we can reschedule to
+ * avoid locking up one CPU with printing.
+ */
+static void printk_worker(struct work_struct *work)
+{
+	console_lock();
+	while (__console_unlock()) {
+		cond_resched();
+		console_lock();
+	}
+}
 
 /**
  * console_conditional_schedule - yield the CPU if required
