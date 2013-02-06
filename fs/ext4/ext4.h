@@ -155,17 +155,9 @@ struct ext4_allocation_request {
 #define EXT4_MAP_UNWRITTEN	(1 << BH_Unwritten)
 #define EXT4_MAP_BOUNDARY	(1 << BH_Boundary)
 #define EXT4_MAP_UNINIT		(1 << BH_Uninit)
-/* Sometimes (in the bigalloc case, from ext4_da_get_block_prep) the caller of
- * ext4_map_blocks wants to know whether or not the underlying cluster has
- * already been accounted for. EXT4_MAP_FROM_CLUSTER conveys to the caller that
- * the requested mapping was from previously mapped (or delayed allocated)
- * cluster. We use BH_AllocFromCluster only for this flag. BH_AllocFromCluster
- * should never appear on buffer_head's state flags.
- */
-#define EXT4_MAP_FROM_CLUSTER	(1 << BH_AllocFromCluster)
 #define EXT4_MAP_FLAGS		(EXT4_MAP_NEW | EXT4_MAP_MAPPED |\
 				 EXT4_MAP_UNWRITTEN | EXT4_MAP_BOUNDARY |\
-				 EXT4_MAP_UNINIT | EXT4_MAP_FROM_CLUSTER)
+				 EXT4_MAP_UNINIT)
 
 struct ext4_map_blocks {
 	ext4_fsblk_t m_pblk;
@@ -194,8 +186,7 @@ struct mpage_da_data {
  */
 #define	EXT4_IO_END_UNWRITTEN	0x0001
 #define EXT4_IO_END_ERROR	0x0002
-#define EXT4_IO_END_QUEUED	0x0004
-#define EXT4_IO_END_DIRECT	0x0008
+#define EXT4_IO_END_DIRECT	0x0004
 
 struct ext4_io_page {
 	struct page	*p_page;
@@ -215,10 +206,8 @@ typedef struct ext4_io_end {
 	struct list_head	list;		/* per-file finished IO list */
 	struct inode		*inode;		/* file being written to */
 	unsigned int		flag;		/* unwritten or not */
-	struct page		*page;		/* for writepage() path */
 	loff_t			offset;		/* offset in the file */
 	ssize_t			size;		/* size of the extent */
-	struct work_struct	work;		/* data work queue */
 	struct kiocb		*iocb;		/* iocb struct for AIO */
 	int			result;		/* error value for AIO */
 	int			num_io_pages;   /* for writepages() */
@@ -810,17 +799,6 @@ do {									       \
 
 #endif /* defined(__KERNEL__) || defined(__linux__) */
 
-/*
- * storage for cached extent
- * If ec_len == 0, then the cache is invalid.
- * If ec_start == 0, then the cache represents a gap (null mapping)
- */
-struct ext4_ext_cache {
-	ext4_fsblk_t	ec_start;
-	ext4_lblk_t	ec_block;
-	__u32		ec_len; /* must be 32bit to return holes */
-};
-
 #include "extents_status.h"
 
 /*
@@ -887,7 +865,6 @@ struct ext4_inode_info {
 	struct inode vfs_inode;
 	struct jbd2_inode *jinode;
 
-	struct ext4_ext_cache i_cached_extent;
 	/*
 	 * File creation time. Its function is same as that of
 	 * struct timespec i_{a,c,m}time in the generic inode.
@@ -901,6 +878,8 @@ struct ext4_inode_info {
 	/* extents status tree */
 	struct ext4_es_tree i_es_tree;
 	rwlock_t i_es_lock;
+	struct list_head i_es_lru;
+	unsigned int i_es_lru_nr;	/* protected by i_es_lock */
 
 	/* ialloc */
 	ext4_group_t	i_last_alloc_group;
@@ -930,6 +909,7 @@ struct ext4_inode_info {
 	spinlock_t i_completed_io_lock;
 	atomic_t i_ioend_count;	/* Number of outstanding io_end structs */
 	atomic_t i_unwritten; /* Nr. of inflight conversions pending */
+	struct work_struct i_unwritten_work;	/* deferred extent conversion */
 
 	spinlock_t i_block_reservation_lock;
 
@@ -985,7 +965,6 @@ struct ext4_inode_info {
 #define EXT4_MOUNT_DIOREAD_NOLOCK	0x400000 /* Enable support for dio read nolocking */
 #define EXT4_MOUNT_JOURNAL_CHECKSUM	0x800000 /* Journal checksums */
 #define EXT4_MOUNT_JOURNAL_ASYNC_COMMIT	0x1000000 /* Journal Async Commit */
-#define EXT4_MOUNT_MBLK_IO_SUBMIT	0x4000000 /* multi-block io submits */
 #define EXT4_MOUNT_DELALLOC		0x8000000 /* Delalloc support */
 #define EXT4_MOUNT_DATA_ERR_ABORT	0x10000000 /* Abort on file data write */
 #define EXT4_MOUNT_BLOCK_VALIDITY	0x20000000 /* Block validity checking */
@@ -1316,6 +1295,11 @@ struct ext4_sb_info {
 
 	/* Precomputed FS UUID checksum for seeding other checksums */
 	__u32 s_csum_seed;
+
+	/* Reclaim extents from extent status tree */
+	struct shrinker s_es_shrinker;
+	struct list_head s_es_lru;
+	spinlock_t s_es_lru_lock ____cacheline_aligned_in_smp;
 };
 
 static inline struct ext4_sb_info *EXT4_SB(struct super_block *sb)
@@ -2103,6 +2087,7 @@ extern ssize_t ext4_ind_direct_IO(int rw, struct kiocb *iocb,
 extern int ext4_ind_calc_metadata_amount(struct inode *inode, sector_t lblock);
 extern int ext4_ind_trans_blocks(struct inode *inode, int nrblocks, int chunk);
 extern void ext4_ind_truncate(struct inode *inode);
+extern int ext4_ind_punch_hole(struct file *file, loff_t offset, loff_t length);
 
 /* ioctl.c */
 extern long ext4_ioctl(struct file *, unsigned int, unsigned long);
@@ -2227,6 +2212,8 @@ extern int ext4_group_desc_csum_verify(struct super_block *sb, __u32 group,
 				       struct ext4_group_desc *gdp);
 extern void ext4_group_desc_csum_set(struct super_block *sb, __u32 group,
 				     struct ext4_group_desc *gdp);
+extern int ext4_register_li_request(struct super_block *sb,
+				    ext4_group_t first_not_zeroed);
 
 static inline int ext4_has_group_desc_csum(struct super_block *sb)
 {
@@ -2537,6 +2524,7 @@ extern void ext4_exit_pageio(void);
 extern void ext4_ioend_wait(struct inode *);
 extern void ext4_free_io_end(ext4_io_end_t *io);
 extern ext4_io_end_t *ext4_init_io_end(struct inode *inode, gfp_t flags);
+extern void ext4_end_io_work(struct work_struct *work);
 extern void ext4_io_submit(struct ext4_io_submit *io);
 extern int ext4_bio_write_page(struct ext4_io_submit *io,
 			       struct page *page,
@@ -2553,11 +2541,6 @@ extern int ext4_mmp_csum_verify(struct super_block *sb,
 enum ext4_state_bits {
 	BH_Uninit	/* blocks are allocated but uninitialized on disk */
 	  = BH_JBDPrivateStart,
-	BH_AllocFromCluster,	/* allocated blocks were part of already
-				 * allocated cluster. Note that this flag will
-				 * never, ever appear in a buffer_head's state
-				 * flag. See EXT4_MAP_FROM_CLUSTER to see where
-				 * this is used. */
 };
 
 BUFFER_FNS(Uninit, uninit)
