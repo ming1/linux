@@ -6,7 +6,6 @@
  */
 
 #include <linux/mm.h>
-#include <linux/memory_hotplug.h>
 #include <linux/nmi.h>
 #include <linux/quicklist.h>
 

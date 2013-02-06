@@ -16,7 +16,6 @@
 #include <linux/kmemleak.h>
 #include <linux/range.h>
 #include <linux/memblock.h>
-#include <linux/memory_hotplug.h>
 
 #include <asm/bug.h>
 #include <asm/io.h>

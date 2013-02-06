@@ -19,7 +19,6 @@
 #include <linux/mutex.h>
 #include <linux/gfp.h>
 #include <linux/suspend.h>
-#include <linux/memory_hotplug.h>
 
 #include "smpboot.h"
 
