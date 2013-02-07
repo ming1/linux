@@ -35,9 +35,7 @@
 #include <linux/platform_data/mtd-nand-s3c2410.h>
 #include <linux/platform_data/i2c-s3c2410.h>
 
-#include <mach/regs-power.h>
 #include <mach/regs-gpio.h>
-#include <mach/regs-mem.h>
 #include <mach/regs-lcd.h>
 #include <mach/fb.h>
 
@@ -55,6 +53,9 @@
 #include <plat/cpu.h>
 #include <plat/pm.h>
 #include <linux/platform_data/usb-s3c2410_udc.h>
+#include <plat/samsung-time.h>
+
+#include "s3c2412-power.h"
 
 static struct map_desc jive_iodesc[] __initdata = {
 };
@@ -506,6 +507,7 @@ static void __init jive_map_io(void)
 	s3c24xx_init_io(jive_iodesc, ARRAY_SIZE(jive_iodesc));
 	s3c24xx_init_clocks(12000000);
 	s3c24xx_init_uarts(jive_uartcfgs, ARRAY_SIZE(jive_uartcfgs));
+	samsung_set_timer_source(SAMSUNG_PWM3, SAMSUNG_PWM4);
 }
 
 static void jive_power_off(void)
@@ -661,6 +663,6 @@ MACHINE_START(JIVE, "JIVE")
 	.init_irq	= s3c24xx_init_irq,
 	.map_io		= jive_map_io,
 	.init_machine	= jive_machine_init,
-	.init_time	= s3c24xx_timer_init,
+	.init_time	= samsung_timer_init,
 	.restart	= s3c2412_restart,
 MACHINE_END
