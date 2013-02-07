@@ -100,12 +100,12 @@ err_out:
  * ima_get_action - appraise & measure decision based on policy.
  * @inode: pointer to inode to measure
  * @mask: contains the permission mask (MAY_READ, MAY_WRITE, MAY_EXECUTE)
- * @function: calling function (FILE_CHECK, BPRM_CHECK, FILE_MMAP, MODULE_CHECK)
+ * @function: calling function (FILE_CHECK, BPRM_CHECK, MMAP_CHECK, MODULE_CHECK)
  *
  * The policy is defined in terms of keypairs:
  * 		subj=, obj=, type=, func=, mask=, fsmagic=
  *	subj,obj, and type: are LSM specific.
- * 	func: FILE_CHECK | BPRM_CHECK | FILE_MMAP | MODULE_CHECK
+ * 	func: FILE_CHECK | BPRM_CHECK | MMAP_CHECK | MODULE_CHECK
  * 	mask: contains the permission mask
  *	fsmagic: hex value
  *
@@ -236,4 +236,21 @@ void ima_audit_measurement(struct integrity_iint_cache *iint,
 	audit_log_end(ab);
 
 	iint->flags |= IMA_AUDITED;
+}
+
+const char *ima_d_path(struct path *path, char **pathbuf)
+{
+	char *pathname = NULL;
+
+	/* We will allow 11 spaces for ' (deleted)' to be appended */
+	*pathbuf = kmalloc(PATH_MAX + 11, GFP_KERNEL);
+	if (*pathbuf) {
+		pathname = d_path(path, *pathbuf, PATH_MAX + 11);
+		if (IS_ERR(pathname)) {
+			kfree(*pathbuf);
+			*pathbuf = NULL;
+			pathname = NULL;
+		}
+	}
+	return pathname;
 }
