@@ -320,6 +320,7 @@ static struct abx500_ops ab8500_ops = {
 	.mask_and_set_register = ab8500_mask_and_set_register,
 	.event_registers_startup_state_get = NULL,
 	.startup_irq_enabled = NULL,
+	.dump_all_banks = ab8500_dump_all_banks,
 };
 
 static void ab8500_irq_lock(struct irq_data *data)
@@ -521,6 +522,7 @@ static irqreturn_t ab8500_irq(int irq, void *dev)
 			int virq = ab8500_irq_get_virq(ab8500, line);
 
 			handle_nested_irq(virq);
+			ab8500_debug_register_interrupt(line);
 			value &= ~(1 << bit);
 
 		} while (value);
@@ -923,7 +925,7 @@ static struct resource ab8505_iddet_resources[] = {
 
 static struct resource ab8500_temp_resources[] = {
 	{
-		.name  = "AB8500_TEMP_WARM",
+		.name  = "ABX500_TEMP_WARM",
 		.start = AB8500_INT_TEMP_WARM,
 		.end   = AB8500_INT_TEMP_WARM,
 		.flags = IORESOURCE_IRQ,
@@ -999,8 +1001,8 @@ static struct mfd_cell abx500_common_devs[] = {
 		.of_compatible = "stericsson,ab8500-denc",
 	},
 	{
-		.name = "ab8500-temp",
-		.of_compatible = "stericsson,ab8500-temp",
+		.name = "abx500-temp",
+		.of_compatible = "stericsson,abx500-temp",
 		.num_resources = ARRAY_SIZE(ab8500_temp_resources),
 		.resources = ab8500_temp_resources,
 	},
