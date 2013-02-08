@@ -767,9 +767,9 @@ static void mlx4_en_do_set_multicast(struct work_struct *work)
 
 		/* Update multicast list - we cache all addresses so they won't
 		 * change while HW is updated holding the command semaphor */
-		netif_tx_lock_bh(dev);
+		netif_addr_lock_bh(dev);
 		mlx4_en_cache_mclist(dev);
-		netif_tx_unlock_bh(dev);
+		netif_addr_unlock_bh(dev);
 		list_for_each_entry(mclist, &priv->mc_list, list) {
 			mcast_addr = mlx4_en_mac_to_u64(mclist->addr);
 			mlx4_SET_MCAST_FLTR(mdev->dev, priv->port,
@@ -977,12 +977,12 @@ static void mlx4_en_do_get_stats(struct work_struct *work)
 	struct mlx4_en_dev *mdev = priv->mdev;
 	int err;
 
-	err = mlx4_en_DUMP_ETH_STATS(mdev, priv->port, 0);
-	if (err)
-		en_dbg(HW, priv, "Could not update stats\n");
-
 	mutex_lock(&mdev->state_lock);
 	if (mdev->device_up) {
+		err = mlx4_en_DUMP_ETH_STATS(mdev, priv->port, 0);
+		if (err)
+			en_dbg(HW, priv, "Could not update stats\n");
+
 		if (priv->port_up)
 			mlx4_en_auto_moderation(priv);
 
@@ -1039,6 +1039,9 @@ int mlx4_en_start_port(struct net_device *dev)
 
 	INIT_LIST_HEAD(&priv->mc_list);
 	INIT_LIST_HEAD(&priv->curr_list);
+	INIT_LIST_HEAD(&priv->ethtool_list);
+	memset(&priv->ethtool_rules[0], 0,
+	       sizeof(struct ethtool_flow_id) * MAX_NUM_OF_FS_RULES);
 
 	/* Calculate Rx buf size */
 	dev->mtu = min(dev->mtu, priv->max_mtu);
@@ -1167,15 +1170,6 @@ int mlx4_en_start_port(struct net_device *dev)
 
 	/* Must redo promiscuous mode setup. */
 	priv->flags &= ~(MLX4_EN_FLAG_PROMISC | MLX4_EN_FLAG_MC_PROMISC);
-	if (mdev->dev->caps.steering_mode ==
-	    MLX4_STEERING_MODE_DEVICE_MANAGED) {
-		mlx4_flow_steer_promisc_remove(mdev->dev,
-					       priv->port,
-					       MLX4_FS_PROMISC_UPLINK);
-		mlx4_flow_steer_promisc_remove(mdev->dev,
-					       priv->port,
-					       MLX4_FS_PROMISC_ALL_MULTI);
-	}
 
 	/* Schedule multicast task to populate multicast list */
 	queue_work(mdev->workqueue, &priv->mcast_task);
@@ -1184,6 +1178,8 @@ int mlx4_en_start_port(struct net_device *dev)
 
 	priv->port_up = true;
 	netif_tx_start_all_queues(dev);
+	netif_device_attach(dev);
+
 	return 0;
 
 tx_err:
@@ -1206,11 +1202,12 @@ cq_err:
 }
 
 
-void mlx4_en_stop_port(struct net_device *dev)
+void mlx4_en_stop_port(struct net_device *dev, int detach)
 {
 	struct mlx4_en_priv *priv = netdev_priv(dev);
 	struct mlx4_en_dev *mdev = priv->mdev;
 	struct mlx4_en_mc_list *mclist, *tmp;
+	struct ethtool_flow_id *flow, *tmp_flow;
 	int i;
 	u8 mc_list[16] = {0};
 
@@ -1221,11 +1218,41 @@ void mlx4_en_stop_port(struct net_device *dev)
 
 	/* Synchronize with tx routine */
 	netif_tx_lock_bh(dev);
+	if (detach)
+		netif_device_detach(dev);
 	netif_tx_stop_all_queues(dev);
 	netif_tx_unlock_bh(dev);
 
+	netif_tx_disable(dev);
+
 	/* Set port as not active */
 	priv->port_up = false;
+
+	/* Promsicuous mode */
+	if (mdev->dev->caps.steering_mode ==
+	    MLX4_STEERING_MODE_DEVICE_MANAGED) {
+		priv->flags &= ~(MLX4_EN_FLAG_PROMISC |
+				 MLX4_EN_FLAG_MC_PROMISC);
+		mlx4_flow_steer_promisc_remove(mdev->dev,
+					       priv->port,
+					       MLX4_FS_PROMISC_UPLINK);
+		mlx4_flow_steer_promisc_remove(mdev->dev,
+					       priv->port,
+					       MLX4_FS_PROMISC_ALL_MULTI);
+	} else if (priv->flags & MLX4_EN_FLAG_PROMISC) {
+		priv->flags &= ~MLX4_EN_FLAG_PROMISC;
+
+		/* Disable promiscouos mode */
+		mlx4_unicast_promisc_remove(mdev->dev, priv->base_qpn,
+					    priv->port);
+
+		/* Disable Multicast promisc */
+		if (priv->flags & MLX4_EN_FLAG_MC_PROMISC) {
+			mlx4_multicast_promisc_remove(mdev->dev, priv->base_qpn,
+						      priv->port);
+			priv->flags &= ~MLX4_EN_FLAG_MC_PROMISC;
+		}
+	}
 
 	/* Detach All multicasts */
 	memset(&mc_list[10], 0xff, ETH_ALEN);
@@ -1264,7 +1291,19 @@ void mlx4_en_stop_port(struct net_device *dev)
 
 	/* Unregister Mac address for the port */
 	mlx4_put_eth_qp(mdev->dev, priv->port, priv->mac, priv->base_qpn);
-	mdev->mac_removed[priv->port] = 1;
+	if (!(mdev->dev->caps.flags2 & MLX4_DEV_CAP_FLAGS2_REASSIGN_MAC_EN))
+		mdev->mac_removed[priv->port] = 1;
+
+	/* Remove flow steering rules for the port*/
+	if (mdev->dev->caps.steering_mode ==
+	    MLX4_STEERING_MODE_DEVICE_MANAGED) {
+		ASSERT_RTNL();
+		list_for_each_entry_safe(flow, tmp_flow,
+					 &priv->ethtool_list, list) {
+			mlx4_flow_detach(mdev->dev, flow->id);
+			list_del(&flow->list);
+		}
+	}
 
 	/* Free RX Rings */
 	for (i = 0; i < priv->rx_ring_num; i++) {
@@ -1290,7 +1329,7 @@ static void mlx4_en_restart(struct work_struct *work)
 
 	mutex_lock(&mdev->state_lock);
 	if (priv->port_up) {
-		mlx4_en_stop_port(dev);
+		mlx4_en_stop_port(dev, 1);
 		for (i = 0; i < priv->tx_ring_num; i++)
 			netdev_tx_reset_queue(priv->tx_ring[i].tx_queue);
 		if (mlx4_en_start_port(dev))
@@ -1362,7 +1401,7 @@ static int mlx4_en_close(struct net_device *dev)
 
 	mutex_lock(&mdev->state_lock);
 
-	mlx4_en_stop_port(dev);
+	mlx4_en_stop_port(dev, 0);
 	netif_carrier_off(dev);
 
 	mutex_unlock(&mdev->state_lock);
@@ -1437,9 +1476,6 @@ int mlx4_en_alloc_resources(struct mlx4_en_priv *priv)
 	priv->dev->rx_cpu_rmap = alloc_irq_cpu_rmap(priv->rx_ring_num);
 	if (!priv->dev->rx_cpu_rmap)
 		goto err;
-
-	INIT_LIST_HEAD(&priv->filters);
-	spin_lock_init(&priv->filters_lock);
 #endif
 
 	return 0;
@@ -1503,7 +1539,7 @@ static int mlx4_en_change_mtu(struct net_device *dev, int new_mtu)
 			 * the port */
 			en_dbg(DRV, priv, "Change MTU called with card down!?\n");
 		} else {
-			mlx4_en_stop_port(dev);
+			mlx4_en_stop_port(dev, 1);
 			err = mlx4_en_start_port(dev);
 			if (err) {
 				en_err(priv, "Failed restarting port:%d\n",
@@ -1634,6 +1670,11 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
 	if (err)
 		goto out;
 
+#ifdef CONFIG_RFS_ACCEL
+	INIT_LIST_HEAD(&priv->filters);
+	spin_lock_init(&priv->filters_lock);
+#endif
+
 	/* Allocate page for receive rings */
 	err = mlx4_alloc_hwq_res(mdev->dev, &priv->res,
 				MLX4_EN_PAGE_SIZE, MLX4_EN_PAGE_SIZE);
@@ -1655,10 +1696,8 @@ int mlx4_en_init_netdev(struct mlx4_en_dev *mdev, int port,
 
 	/* Set defualt MAC */
 	dev->addr_len = ETH_ALEN;
-	for (i = 0; i < ETH_ALEN; i++) {
+	for (i = 0; i < ETH_ALEN; i++)
 		dev->dev_addr[ETH_ALEN - 1 - i] = (u8) (priv->mac >> (8 * i));
-		dev->perm_addr[ETH_ALEN - 1 - i] = (u8) (priv->mac >> (8 * i));
-	}
 
 	/*
 	 * Set driver features
