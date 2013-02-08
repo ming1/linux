@@ -64,6 +64,9 @@ struct hdmi_spec_per_cvt {
 	unsigned int maxbps;
 };
 
+/* max. connections to a widget */
+#define HDA_MAX_CONNECTIONS	32
+
 struct hdmi_spec_per_pin {
 	hda_nid_t pin_nid;
 	int num_mux_nids;
@@ -1103,8 +1106,12 @@ static int hdmi_pcm_open(struct hda_pcm_stream *hinfo,
 	if (!static_hdmi_pcm && eld->eld_valid) {
 		snd_hdmi_eld_update_pcm_info(eld, hinfo);
 		if (hinfo->channels_min > hinfo->channels_max ||
-		    !hinfo->rates || !hinfo->formats)
+		    !hinfo->rates || !hinfo->formats) {
+			per_cvt->assigned = 0;
+			hinfo->nid = 0;
+			snd_hda_spdif_ctls_unassign(codec, pin_idx);
 			return -ENODEV;
+		}
 	}
 
 	/* Store the updated parameters */
