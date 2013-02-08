@@ -35,6 +35,11 @@ void acpi_pci_slot_init(void);
 #else
 static inline void acpi_pci_slot_init(void) { }
 #endif
+#ifdef CONFIG_ACPI_CONTAINER
+void acpi_container_init(void);
+#else
+static inline void acpi_container_init(void) {}
+#endif
 
 #ifdef CONFIG_DEBUG_FS
 extern struct dentry *acpi_debugfs_dir;
