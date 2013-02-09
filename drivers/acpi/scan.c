@@ -202,12 +202,10 @@ acpi_eject_store(struct device *d, struct device_attribute *attr,
 	if ((!count) || (buf[0] != '1')) {
 		return -EINVAL;
 	}
-#ifndef FORCE_EJECT
 	if (!acpi_device->driver && !acpi_device->handler) {
 		ret = -ENODEV;
 		goto err;
 	}
-#endif
 	status = acpi_get_type(acpi_device->handle, &type);
 	if (ACPI_FAILURE(status) || (!acpi_device->flags.ejectable)) {
 		ret = -ENODEV;
@@ -627,6 +625,8 @@ static int acpi_device_probe(struct device * dev)
 			if (ret) {
 				if (acpi_drv->ops.remove)
 					acpi_drv->ops.remove(acpi_dev);
+				acpi_dev->driver = NULL;
+				acpi_dev->driver_data = NULL;
 				return ret;
 			}
 		}
@@ -1762,6 +1762,7 @@ int __init acpi_scan_init(void)
 	acpi_pci_slot_init();
 	acpi_platform_init();
 	acpi_csrt_init();
+	acpi_container_init();
 
 	/*
 	 * Enumerate devices in the ACPI namespace.
