@@ -72,13 +72,10 @@ static unsigned long i915_stolen_to_physical(struct drm_device *dev)
 	} else if (INTEL_INFO(dev)->gen > 3 || IS_G33(dev)) {
 		/* Read Graphics Base of Stolen Memory directly */
 		pci_read_config_dword(pdev, 0xA4, &base);
-#if 0
 	} else if (IS_GEN3(dev)) {
-		u8 val;
-		/* Stolen is immediately below Top of Low Usable DRAM */
-		pci_read_config_byte(pdev, 0x9c, &val);
-		base = val >> 3 << 27;
-		base -= dev_priv->mm.gtt->stolen_size;
+		/* Read D2:F0 Base of Stolen Memory directly */
+		pci_read_config_dword(dev->pdev, 0x5c, &base);
+#if 0
 	} else {
 		/* Stolen is immediately above Top of Memory */
 		base = max_low_pfn_mapped << PAGE_SHIFT;
