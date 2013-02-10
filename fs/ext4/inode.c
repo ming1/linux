@@ -2965,6 +2965,7 @@ out:
 		io_end->result = ret;
 	}
 
+	ext4_es_convert_unwritten_extents(inode, offset, size);
 	ext4_add_complete_io(io_end);
 }
 
@@ -3089,6 +3090,9 @@ static ssize_t ext4_ext_direct_IO(int rw, struct kiocb *iocb,
 	} else if (ret > 0 && !overwrite && ext4_test_inode_state(inode,
 						EXT4_STATE_DIO_UNWRITTEN)) {
 		int err;
+		err = ext4_es_convert_unwritten_extents(inode, offset, ret);
+		if (err)
+			ret = err;
 		/*
 		 * for non AIO case, since the IO is already
 		 * completed, we could do the conversion right here

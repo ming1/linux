@@ -242,6 +242,13 @@ static void ext4_end_bio(struct bio *bio, int error)
 		error = 0;
 	bio_put(bio);
 
+	/*
+	 * We need to convert unwrittne extents in extent status tree before
+	 * end_page_writeback() is called.  Otherwise, when dioread_nolock is
+	 * enabled, we will be likely to read stale data.
+	 */
+	inode = io_end->inode;
+	ext4_es_convert_unwritten_extents(inode, io_end->offset, io_end->size);
 	for (i = 0; i < io_end->num_io_pages; i++) {
 		struct page *page = io_end->pages[i]->p_page;
 		struct buffer_head *bh, *head;
@@ -271,7 +278,6 @@ static void ext4_end_bio(struct bio *bio, int error)
 		put_io_page(io_end->pages[i]);
 	}
 	io_end->num_io_pages = 0;
-	inode = io_end->inode;
 
 	if (error) {
 		io_end->flag |= EXT4_IO_END_ERROR;

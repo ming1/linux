@@ -248,10 +248,11 @@ ext4_lblk_t ext4_es_find_delayed_extent(struct inode *inode,
 	struct extent_status *es1 = NULL;
 	struct rb_node *node;
 	ext4_lblk_t ret = EXT_MAX_BLOCKS;
+	unsigned long flags;
 
 	trace_ext4_es_find_delayed_extent_enter(inode, es->es_lblk);
 
-	read_lock(&EXT4_I(inode)->i_es_lock);
+	read_lock_irqsave(&EXT4_I(inode)->i_es_lock, flags);
 	tree = &EXT4_I(inode)->i_es_tree;
 
 	/* find extent in cache firstly */
@@ -291,7 +292,7 @@ out:
 		}
 	}
 
-	read_unlock(&EXT4_I(inode)->i_es_lock);
+	read_unlock_irqrestore(&EXT4_I(inode)->i_es_lock, flags);
 
 	ext4_es_lru_add(inode);
 	trace_ext4_es_find_delayed_extent_exit(inode, es, ret);
@@ -458,6 +459,7 @@ int ext4_es_insert_extent(struct inode *inode, ext4_lblk_t lblk,
 {
 	struct extent_status newes;
 	ext4_lblk_t end = lblk + len - 1;
+	unsigned long flags;
 	int err = 0;
 
 	es_debug("add [%u/%u) %llu %llx to extent status tree of inode %lu\n",
@@ -471,14 +473,14 @@ int ext4_es_insert_extent(struct inode *inode, ext4_lblk_t lblk,
 	ext4_es_store_status(&newes, status);
 	trace_ext4_es_insert_extent(inode, &newes);
 
-	write_lock(&EXT4_I(inode)->i_es_lock);
+	write_lock_irqsave(&EXT4_I(inode)->i_es_lock, flags);
 	err = __es_remove_extent(inode, lblk, end);
 	if (err != 0)
 		goto error;
 	err = __es_insert_extent(inode, &newes);
 
 error:
-	write_unlock(&EXT4_I(inode)->i_es_lock);
+	write_unlock_irqrestore(&EXT4_I(inode)->i_es_lock, flags);
 
 	ext4_es_lru_add(inode);
 	ext4_es_print_tree(inode);
@@ -498,13 +500,14 @@ int ext4_es_lookup_extent(struct inode *inode, struct extent_status *es)
 	struct ext4_es_tree *tree;
 	struct extent_status *es1 = NULL;
 	struct rb_node *node;
+	unsigned long flags;
 	int found = 0;
 
 	trace_ext4_es_lookup_extent_enter(inode, es->es_lblk);
 	es_debug("lookup extent in block %u\n", es->es_lblk);
 
 	tree = &EXT4_I(inode)->i_es_tree;
-	read_lock(&EXT4_I(inode)->i_es_lock);
+	read_lock_irqsave(&EXT4_I(inode)->i_es_lock, flags);
 
 	/* find extent in cache firstly */
 	es->es_len = es->es_pblk = 0;
@@ -539,7 +542,7 @@ out:
 		es->es_pblk = es1->es_pblk;
 	}
 
-	read_unlock(&EXT4_I(inode)->i_es_lock);
+	read_unlock_irqrestore(&EXT4_I(inode)->i_es_lock, flags);
 
 	ext4_es_lru_add(inode);
 	trace_ext4_es_lookup_extent_exit(inode, es, found);
@@ -649,6 +652,7 @@ int ext4_es_remove_extent(struct inode *inode, ext4_lblk_t lblk,
 			  ext4_lblk_t len)
 {
 	ext4_lblk_t end;
+	unsigned long flags;
 	int err = 0;
 
 	trace_ext4_es_remove_extent(inode, lblk, len);
@@ -658,9 +662,9 @@ int ext4_es_remove_extent(struct inode *inode, ext4_lblk_t lblk,
 	end = lblk + len - 1;
 	BUG_ON(end < lblk);
 
-	write_lock(&EXT4_I(inode)->i_es_lock);
+	write_lock_irqsave(&EXT4_I(inode)->i_es_lock, flags);
 	err = __es_remove_extent(inode, lblk, end);
-	write_unlock(&EXT4_I(inode)->i_es_lock);
+	write_unlock_irqrestore(&EXT4_I(inode)->i_es_lock, flags);
 	ext4_es_print_tree(inode);
 	return err;
 }
@@ -671,6 +675,7 @@ static int ext4_es_shrink(struct shrinker *shrink, struct shrink_control *sc)
 					struct ext4_sb_info, s_es_shrinker);
 	struct ext4_inode_info *ei;
 	struct list_head *cur, *tmp, scanned;
+	unsigned long flags;
 	int nr_to_scan = sc->nr_to_scan;
 	int ret, nr_shrunk = 0;
 
@@ -687,16 +692,16 @@ static int ext4_es_shrink(struct shrinker *shrink, struct shrink_control *sc)
 
 		ei = list_entry(cur, struct ext4_inode_info, i_es_lru);
 
-		read_lock(&ei->i_es_lock);
+		read_lock_irqsave(&ei->i_es_lock, flags);
 		if (ei->i_es_lru_nr == 0) {
-			read_unlock(&ei->i_es_lock);
+			read_unlock_irqrestore(&ei->i_es_lock, flags);
 			continue;
 		}
-		read_unlock(&ei->i_es_lock);
+		read_unlock_irqrestore(&ei->i_es_lock, flags);
 
-		write_lock(&ei->i_es_lock);
+		write_lock_irqsave(&ei->i_es_lock, flags);
 		ret = __es_try_to_reclaim_extents(ei, nr_to_scan);
-		write_unlock(&ei->i_es_lock);
+		write_unlock_irqrestore(&ei->i_es_lock, flags);
 
 		nr_shrunk += ret;
 		nr_to_scan -= ret;
@@ -756,14 +761,15 @@ static int ext4_es_reclaim_extents_count(struct super_block *sb)
 	struct ext4_sb_info *sbi = EXT4_SB(sb);
 	struct ext4_inode_info *ei;
 	struct list_head *cur;
+	unsigned long flags;
 	int nr_cached = 0;
 
 	spin_lock(&sbi->s_es_lru_lock);
 	list_for_each(cur, &sbi->s_es_lru) {
 		ei = list_entry(cur, struct ext4_inode_info, i_es_lru);
-		read_lock(&ei->i_es_lock);
+		read_lock_irqsave(&ei->i_es_lock, flags);
 		nr_cached += ei->i_es_lru_nr;
-		read_unlock(&ei->i_es_lock);
+		read_unlock_irqrestore(&ei->i_es_lock, flags);
 	}
 	spin_unlock(&sbi->s_es_lru_lock);
 	trace_ext4_es_reclaim_extents_count(sb, nr_cached);
@@ -800,4 +806,148 @@ static int __es_try_to_reclaim_extents(struct ext4_inode_info *ei,
 	}
 	tree->cache_es = NULL;
 	return nr_shrunk;
+}
+
+int ext4_es_convert_unwritten_extents(struct inode *inode, loff_t offset,
+				      size_t size)
+{
+	struct ext4_es_tree *tree;
+	struct rb_node *node;
+	struct extent_status *es, orig_es, conv_es;
+	ext4_lblk_t end, len1, len2;
+	ext4_lblk_t lblk = 0, len = 0;
+	ext4_fsblk_t block;
+	unsigned long flags;
+	unsigned int blkbits;
+	int err = 0;
+
+	trace_ext4_es_convert_unwritten_extents(inode, offset, size);
+	blkbits = inode->i_blkbits;
+	lblk = offset >> blkbits;
+	len = (EXT4_BLOCK_ALIGN(offset + size, blkbits) >> blkbits) - lblk;
+
+	end = lblk + len - 1;
+	BUG_ON(end < lblk);
+
+	tree = &EXT4_I(inode)->i_es_tree;
+
+	write_lock_irqsave(&EXT4_I(inode)->i_es_lock, flags);
+	es = __es_tree_search(&tree->root, lblk);
+	if (!es)
+		goto out;
+	if (es->es_lblk > end)
+		goto out;
+
+	tree->cache_es = NULL;
+
+	orig_es.es_lblk = es->es_lblk;
+	orig_es.es_len = es->es_len;
+	orig_es.es_pblk = es->es_pblk;
+
+	len1 = lblk > es->es_lblk ? lblk - es->es_lblk : 0;
+	len2 = ext4_es_end(es) > end ?
+	       ext4_es_end(es) - end : 0;
+	if (len1 > 0)
+		es->es_len = len1;
+	if (len2 > 0) {
+		if (len1 > 0) {
+			struct extent_status newes;
+
+			newes.es_lblk = end + 1;
+			newes.es_len = len2;
+			block = ext4_es_pblock(&orig_es) +
+				orig_es.es_len - len2;
+			ext4_es_store_pblock(&newes, block);
+			ext4_es_store_status(&newes, ext4_es_status(&orig_es));
+			err = __es_insert_extent(inode, &newes);
+			if (err) {
+				es->es_lblk = orig_es.es_lblk;
+				es->es_len = orig_es.es_len;
+				es->es_pblk = orig_es.es_pblk;
+				goto out;
+			}
+
+			conv_es.es_lblk = orig_es.es_lblk + len1;
+			conv_es.es_len = orig_es.es_len - len1 - len2;
+			block = ext4_es_pblock(&orig_es) + len1;
+			ext4_es_store_pblock(&conv_es, block);
+			ext4_es_store_status(&conv_es, EXTENT_STATUS_WRITTEN);
+			err = __es_insert_extent(inode, &conv_es);
+			if (err) {
+				int err2 = __es_remove_extent(inode,
+							conv_es.es_lblk,
+							ext4_es_end(&newes));
+				if (err2)
+					goto out;
+				es->es_lblk = orig_es.es_lblk;
+				es->es_len = orig_es.es_len;
+				es->es_pblk = orig_es.es_pblk;
+				goto out;
+			}
+		} else {
+			es->es_lblk = end + 1;
+			es->es_len = len2;
+			block = ext4_es_pblock(&orig_es) +
+				orig_es.es_len - len2;
+			ext4_es_store_pblock(es, block);
+
+			conv_es.es_lblk = orig_es.es_lblk;
+			conv_es.es_len = orig_es.es_len - len2;
+			ext4_es_store_pblock(&conv_es,
+					     ext4_es_pblock(&orig_es));
+			ext4_es_store_status(&conv_es, EXTENT_STATUS_WRITTEN);
+			err = __es_insert_extent(inode, &conv_es);
+			if (err) {
+				es->es_lblk = orig_es.es_lblk;
+				es->es_len = orig_es.es_len;
+				es->es_pblk = orig_es.es_pblk;
+			}
+		}
+		goto out;
+	}
+
+	if (len1 > 0) {
+		node = rb_next(&es->rb_node);
+		if (node)
+			es = rb_entry(node, struct extent_status, rb_node);
+		else
+			es = NULL;
+	}
+
+	while (es && ext4_es_end(es) <= end) {
+		node = rb_next(&es->rb_node);
+		ext4_es_store_status(es, EXTENT_STATUS_WRITTEN);
+		if (!inode) {
+			es = NULL;
+			break;
+		}
+		es = rb_entry(node, struct extent_status, rb_node);
+	}
+
+	if (es && es->es_lblk < end + 1) {
+		ext4_lblk_t orig_len = es->es_len;
+
+		/*
+		 * Here we first set conv_es just because of avoiding copy the
+		 * value of es to a temporary variable.
+		 */
+		len1 = ext4_es_end(es) - end;
+		conv_es.es_lblk = es->es_lblk;
+		conv_es.es_len = es->es_len - len1;
+		ext4_es_store_pblock(&conv_es, ext4_es_pblock(es));
+		ext4_es_store_status(&conv_es, EXTENT_STATUS_WRITTEN);
+
+		es->es_lblk = end + 1;
+		es->es_len = len1;
+		block = ext4_es_pblock(es) + orig_len - len1;
+		ext4_es_store_pblock(es, block);
+
+		err = __es_insert_extent(inode, &conv_es);
+		if (err)
+			goto out;
+	}
+
+out:
+	write_unlock_irqrestore(&EXT4_I(inode)->i_es_lock, flags);
+	return err;
 }
