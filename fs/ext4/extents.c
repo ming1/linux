@@ -4447,8 +4447,10 @@ int ext4_convert_unwritten_extents(struct inode *inode, loff_t offset,
 			ret = PTR_ERR(handle);
 			break;
 		}
-		ret = ext4_map_blocks(handle, inode, &map,
-				      EXT4_GET_BLOCKS_IO_CONVERT_EXT);
+		down_write(&EXT4_I(inode)->i_data_sem);
+		ret = ext4_ext_map_blocks(handle, inode, &map,
+					  EXT4_GET_BLOCKS_IO_CONVERT_EXT);
+		up_write(&EXT4_I(inode)->i_data_sem);
 		if (ret <= 0)
 			ext4_warning(inode->i_sb,
 				     "inode #%lu: block %u: len %u: "

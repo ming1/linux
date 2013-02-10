@@ -54,6 +54,8 @@ extern int ext4_es_remove_extent(struct inode *inode, ext4_lblk_t lblk,
 extern ext4_lblk_t ext4_es_find_delayed_extent(struct inode *inode,
 					       struct extent_status *es);
 extern int ext4_es_lookup_extent(struct inode *inode, struct extent_status *es);
+extern int ext4_es_convert_unwritten_extents(struct inode *inode, loff_t offset,
+					     size_t size);
 
 static inline int ext4_es_is_written(struct extent_status *es)
 {

@@ -2258,6 +2258,31 @@ TRACE_EVENT(ext4_es_lookup_extent_exit,
 		  __entry->found ? __entry->status : 0)
 );
 
+TRACE_EVENT(ext4_es_convert_unwritten_extents,
+	TP_PROTO(struct inode *inode, loff_t offset, loff_t size),
+
+	TP_ARGS(inode, offset, size),
+
+	TP_STRUCT__entry(
+		__field(	dev_t,	dev			)
+		__field(	ino_t,	ino			)
+		__field(	loff_t,	offset			)
+		__field(	loff_t, size			)
+	),
+
+	TP_fast_assign(
+		__entry->dev	= inode->i_sb->s_dev;
+		__entry->ino	= inode->i_ino;
+		__entry->offset	= offset;
+		__entry->size	= size;
+	),
+
+	TP_printk("dev %d,%d ino %lu convert unwritten extents [%llu/%llu",
+		  MAJOR(__entry->dev), MINOR(__entry->dev),
+		  (unsigned long) __entry->ino,
+		  __entry->offset, __entry->size)
+);
+
 TRACE_EVENT(ext4_es_reclaim_extents_count,
 	TP_PROTO(struct super_block *sb, int nr_cached),
 
