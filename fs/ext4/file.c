@@ -465,7 +465,7 @@ static loff_t ext4_seek_data(struct file *file, loff_t offset, loff_t maxsize)
 		 * it will be as a data.
 		 */
 		es.es_lblk = last;
-		(void)ext4_es_find_extent(inode, &es);
+		(void)ext4_es_find_delayed_extent(inode, &es);
 		if (last >= es.es_lblk && last < es.es_lblk + es.es_len) {
 			if (last != start)
 				dataoff = last << blkbits;
@@ -549,7 +549,7 @@ static loff_t ext4_seek_hole(struct file *file, loff_t offset, loff_t maxsize)
 		 * we will skip this extent.
 		 */
 		es.es_lblk = last;
-		(void)ext4_es_find_extent(inode, &es);
+		(void)ext4_es_find_delayed_extent(inode, &es);
 		if (last >= es.es_lblk && last < es.es_lblk + es.es_len) {
 			last = es.es_lblk + es.es_len;
 			holeoff = last << blkbits;

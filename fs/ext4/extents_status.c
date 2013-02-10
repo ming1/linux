@@ -229,7 +229,7 @@ static struct extent_status *__es_tree_search(struct rb_root *root,
 }
 
 /*
- * ext4_es_find_extent: find the 1st delayed extent covering @es->lblk
+ * ext4_es_find_delayed_extent: find the 1st delayed extent covering @es->lblk
  * if it exists, otherwise, the next extent after @es->lblk.
  *
  * @inode: the inode which owns delayed extents
@@ -239,14 +239,15 @@ static struct extent_status *__es_tree_search(struct rb_root *root,
  * EXT_MAX_BLOCKS if no extent is found.
  * Delayed extent is returned via @es.
  */
-ext4_lblk_t ext4_es_find_extent(struct inode *inode, struct extent_status *es)
+ext4_lblk_t ext4_es_find_delayed_extent(struct inode *inode,
+					struct extent_status *es)
 {
 	struct ext4_es_tree *tree = NULL;
 	struct extent_status *es1 = NULL;
 	struct rb_node *node;
 	ext4_lblk_t ret = EXT_MAX_BLOCKS;
 
-	trace_ext4_es_find_extent_enter(inode, es->es_lblk);
+	trace_ext4_es_find_delayed_extent_enter(inode, es->es_lblk);
 
 	read_lock(&EXT4_I(inode)->i_es_lock);
 	tree = &EXT4_I(inode)->i_es_tree;
@@ -266,21 +267,31 @@ ext4_lblk_t ext4_es_find_extent(struct inode *inode, struct extent_status *es)
 	es1 = __es_tree_search(&tree->root, es->es_lblk);
 
 out:
-	if (es1) {
+	if (es1 && !ext4_es_is_delayed(es1)) {
+		while ((node = rb_next(&es1->rb_node)) != NULL) {
+			es1 = rb_entry(node, struct extent_status, rb_node);
+			if (ext4_es_is_delayed(es1))
+				break;
+		}
+	}
+
+	if (es1 && ext4_es_is_delayed(es1)) {
 		tree->cache_es = es1;
 		es->es_lblk = es1->es_lblk;
 		es->es_len = es1->es_len;
 		es->es_pblk = es1->es_pblk;
-		node = rb_next(&es1->rb_node);
-		if (node) {
+		while ((node = rb_next(&es1->rb_node)) != NULL) {
 			es1 = rb_entry(node, struct extent_status, rb_node);
-			ret = es1->es_lblk;
+			if (ext4_es_is_delayed(es1)) {
+				ret = es1->es_lblk;
+				break;
+			}
 		}
 	}
 
 	read_unlock(&EXT4_I(inode)->i_es_lock);
 
-	trace_ext4_es_find_extent_exit(inode, es, ret);
+	trace_ext4_es_find_delayed_extent_exit(inode, es, ret);
 	return ret;
 }
 

@@ -3529,7 +3529,7 @@ static int ext4_find_delalloc_range(struct inode *inode,
 	struct extent_status es;
 
 	es.es_lblk = lblk_start;
-	(void)ext4_es_find_extent(inode, &es);
+	(void)ext4_es_find_delayed_extent(inode, &es);
 	if (es.es_len == 0)
 		return 0; /* there is no delay extent in this tree */
 	else if (es.es_lblk <= lblk_start &&
@@ -4575,7 +4575,7 @@ static int ext4_find_delayed_extent(struct inode *inode,
 	ext4_lblk_t next_del;
 
 	es.es_lblk = newex->ec_block;
-	next_del = ext4_es_find_extent(inode, &es);
+	next_del = ext4_es_find_delayed_extent(inode, &es);
 
 	if (newex->ec_start == 0) {
 		/*

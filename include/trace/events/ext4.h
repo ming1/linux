@@ -2147,7 +2147,7 @@ TRACE_EVENT(ext4_es_remove_extent,
 		  __entry->lblk, __entry->len)
 );
 
-TRACE_EVENT(ext4_es_find_extent_enter,
+TRACE_EVENT(ext4_es_find_delayed_extent_enter,
 	TP_PROTO(struct inode *inode, ext4_lblk_t lblk),
 
 	TP_ARGS(inode, lblk),
@@ -2169,7 +2169,7 @@ TRACE_EVENT(ext4_es_find_extent_enter,
 		  (unsigned long) __entry->ino, __entry->lblk)
 );
 
-TRACE_EVENT(ext4_es_find_extent_exit,
+TRACE_EVENT(ext4_es_find_delayed_extent_exit,
 	TP_PROTO(struct inode *inode, struct extent_status *es,
 		 ext4_lblk_t ret),
 
