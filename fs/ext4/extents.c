@@ -2157,6 +2157,8 @@ ext4_ext_put_gap_in_cache(struct inode *inode, struct ext4_ext_path *path,
 				block,
 				le32_to_cpu(ex->ee_block),
 				 ext4_ext_get_actual_len(ex));
+		ext4_es_insert_extent(inode, lblock, len, ~0,
+				      EXTENT_STATUS_HOLE);
 	} else if (block >= le32_to_cpu(ex->ee_block)
 			+ ext4_ext_get_actual_len(ex)) {
 		ext4_lblk_t next;
@@ -2170,6 +2172,8 @@ ext4_ext_put_gap_in_cache(struct inode *inode, struct ext4_ext_path *path,
 				block);
 		BUG_ON(next == lblock);
 		len = next - lblock;
+		ext4_es_insert_extent(inode, lblock, len, ~0,
+				      EXTENT_STATUS_HOLE);
 	} else {
 		lblock = len = 0;
 		BUG();
@@ -4009,7 +4013,8 @@ int ext4_ext_map_blocks(handle_t *handle, struct inode *inode,
 		 * put just found gap into cache to speed up
 		 * subsequent requests
 		 */
-		ext4_ext_put_gap_in_cache(inode, path, map->m_lblk);
+		if ((flags & EXT4_GET_BLOCKS_NO_PUT_HOLE) == 0)
+			ext4_ext_put_gap_in_cache(inode, path, map->m_lblk);
 		goto out2;
 	}
 
