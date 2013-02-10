@@ -1084,6 +1084,27 @@ static inline void gpiochip_unexport(struct gpio_chip *chip)
 {
 }
 
+static inline int gpiod_export(struct gpio_desc *desc,
+			       bool direction_may_change)
+{
+	return -ENOSYS;
+}
+
+static inline int gpiod_export_link(struct device *dev, const char *name,
+				    struct gpio_desc *desc)
+{
+	return -ENOSYS;
+}
+
+static inline int gpiod_sysfs_set_active_low(struct gpio_desc *desc, int value)
+{
+	return -ENOSYS;
+}
+
+static inline void gpiod_unexport(struct gpio_desc *desc)
+{
+}
+
 #endif /* CONFIG_GPIO_SYSFS */
 
 /*
