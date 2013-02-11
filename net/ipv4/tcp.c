@@ -896,6 +896,8 @@ new_segment:
 			skb_fill_page_desc(skb, i, page, offset, copy);
 		}
 
+		skb_shinfo(skb)->gso_type |= SKB_GSO_SHARED_FRAG;
+
 		skb->len += copy;
 		skb->data_len += copy;
 		skb->truesize += copy;
@@ -2287,7 +2289,6 @@ int tcp_disconnect(struct sock *sk, int flags)
 	tp->packets_out = 0;
 	tp->snd_ssthresh = TCP_INFINITE_SSTHRESH;
 	tp->snd_cwnd_cnt = 0;
-	tp->bytes_acked = 0;
 	tp->window_clamp = 0;
 	tcp_set_ca_state(sk, TCP_CA_Open);
 	tcp_clear_retrans(tp);
@@ -3032,6 +3033,7 @@ struct sk_buff *tcp_tso_segment(struct sk_buff *skb,
 			       SKB_GSO_DODGY |
 			       SKB_GSO_TCP_ECN |
 			       SKB_GSO_TCPV6 |
+			       SKB_GSO_SHARED_FRAG |
 			       0) ||
 			     !(type & (SKB_GSO_TCPV4 | SKB_GSO_TCPV6))))
 			goto out;
@@ -3243,7 +3245,7 @@ __tcp_alloc_md5sig_pool(struct sock *sk)
 		struct crypto_hash *hash;
 
 		hash = crypto_alloc_hash("md5", 0, CRYPTO_ALG_ASYNC);
-		if (!hash || IS_ERR(hash))
+		if (IS_ERR_OR_NULL(hash))
 			goto out_free;
 
 		per_cpu_ptr(pool, cpu)->md5_desc.tfm = hash;
