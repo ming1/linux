@@ -297,7 +297,7 @@ EXPORT_SYMBOL(of_machine_is_compatible);
  *  Returns 1 if the status property is absent or set to "okay" or "ok",
  *  0 otherwise
  */
-int of_device_is_available(const struct device_node *device)
+static int __of_device_is_available(const struct device_node *device)
 {
 	const char *status;
 	int statlen;
@@ -312,6 +312,17 @@ int of_device_is_available(const struct device_node *device)
 	}
 
 	return 0;
+}
+
+int of_device_is_available(const struct device_node *device)
+{
+	unsigned long flags;
+	int rc;
+
+	raw_spin_lock_irqsave(&devtree_lock, flags);
+	rc = __of_device_is_available(device);
+	raw_spin_unlock_irqrestore(&devtree_lock, flags);
+	return rc;
 }
 EXPORT_SYMBOL(of_device_is_available);
 
@@ -404,7 +415,7 @@ struct device_node *of_get_next_available_child(const struct device_node *node,
 	raw_spin_lock(&devtree_lock);
 	next = prev ? prev->sibling : node->child;
 	for (; next; next = next->sibling) {
-		if (!of_device_is_available(next))
+		if (!__of_device_is_available(next))
 			continue;
 		if (of_node_get(next))
 			break;
