@@ -104,6 +104,20 @@ static inline int update_sits_in_cursum(struct f2fs_summary_block *rs, int i)
 }
 
 /*
+ * ioctl commands
+ */
+#define F2FS_IOC_GETFLAGS               FS_IOC_GETFLAGS
+#define F2FS_IOC_SETFLAGS               FS_IOC_SETFLAGS
+
+#if defined(__KERNEL__) && defined(CONFIG_COMPAT)
+/*
+ * ioctl commands in 32 bit emulation
+ */
+#define F2FS_IOC32_GETFLAGS             FS_IOC32_GETFLAGS
+#define F2FS_IOC32_SETFLAGS             FS_IOC32_SETFLAGS
+#endif
+
+/*
  * For INODE and NODE manager
  */
 #define XATTR_NODE_OFFSET	(-1)	/*
@@ -141,7 +155,7 @@ struct f2fs_inode_info {
 
 	/* Use below internally in f2fs*/
 	unsigned long flags;		/* use to pass per-file flags */
-	unsigned long long data_version;/* lastes version of data for fsync */
+	unsigned long long data_version;/* latest version of data for fsync */
 	atomic_t dirty_dents;		/* # of dirty dentry pages */
 	f2fs_hash_t chash;		/* hash value of given file name */
 	unsigned int clevel;		/* maximum level of given file name */
@@ -573,6 +587,14 @@ static inline int get_pages(struct f2fs_sb_info *sbi, int count_type)
 	return atomic_read(&sbi->nr_pages[count_type]);
 }
 
+static inline int get_blocktype_secs(struct f2fs_sb_info *sbi, int block_type)
+{
+	unsigned int pages_per_sec = sbi->segs_per_sec *
+					(1 << sbi->log_blocks_per_seg);
+	return ((get_pages(sbi, block_type) + pages_per_sec - 1)
+			>> sbi->log_blocks_per_seg) / sbi->segs_per_sec;
+}
+
 static inline block_t valid_user_blocks(struct f2fs_sb_info *sbi)
 {
 	block_t ret;
@@ -842,12 +864,12 @@ void f2fs_truncate(struct inode *);
 int f2fs_setattr(struct dentry *, struct iattr *);
 int truncate_hole(struct inode *, pgoff_t, pgoff_t);
 long f2fs_ioctl(struct file *, unsigned int, unsigned long);
+long f2fs_compat_ioctl(struct file *, unsigned int, unsigned long);
 
 /*
  * inode.c
  */
 void f2fs_set_inode_flags(struct inode *);
-struct inode *f2fs_iget_nowait(struct super_block *, unsigned long);
 struct inode *f2fs_iget(struct super_block *, unsigned long);
 void update_inode(struct inode *, struct page *);
 int f2fs_write_inode(struct inode *, struct writeback_control *);
@@ -929,8 +951,7 @@ void allocate_new_segments(struct f2fs_sb_info *);
 struct page *get_sum_page(struct f2fs_sb_info *, unsigned int);
 struct bio *f2fs_bio_alloc(struct block_device *, int);
 void f2fs_submit_bio(struct f2fs_sb_info *, enum page_type, bool sync);
-int write_meta_page(struct f2fs_sb_info *, struct page *,
-					struct writeback_control *);
+void write_meta_page(struct f2fs_sb_info *, struct page *);
 void write_node_page(struct f2fs_sb_info *, struct page *, unsigned int,
 					block_t, block_t *);
 void write_data_page(struct inode *, struct page *, struct dnode_of_data*,
@@ -963,8 +984,7 @@ int get_valid_checkpoint(struct f2fs_sb_info *);
 void set_dirty_dir_page(struct inode *, struct page *);
 void remove_dirty_dir_inode(struct inode *);
 void sync_dirty_dir_inodes(struct f2fs_sb_info *);
-void block_operations(struct f2fs_sb_info *);
-void write_checkpoint(struct f2fs_sb_info *, bool, bool);
+void write_checkpoint(struct f2fs_sb_info *, bool);
 void init_orphan_info(struct f2fs_sb_info *);
 int __init create_checkpoint_caches(void);
 void destroy_checkpoint_caches(void);
