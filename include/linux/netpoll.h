@@ -12,13 +12,22 @@
 #include <linux/rcupdate.h>
 #include <linux/list.h>
 
+union inet_addr {
+	__u32		all[4];
+	__be32		ip;
+	__be32		ip6[4];
+	struct in_addr	in;
+	struct in6_addr	in6;
+};
+
 struct netpoll {
 	struct net_device *dev;
 	char dev_name[IFNAMSIZ];
 	const char *name;
 	void (*rx_hook)(struct netpoll *, int, char *, int);
 
-	__be32 local_ip, remote_ip;
+	union inet_addr local_ip, remote_ip;
+	bool ipv6;
 	u16 local_port, remote_port;
 	u8 remote_mac[ETH_ALEN];
 
@@ -29,11 +38,12 @@ struct netpoll {
 struct netpoll_info {
 	atomic_t refcnt;
 
-	int rx_flags;
+	unsigned long rx_flags;
 	spinlock_t rx_lock;
+	struct mutex dev_lock;
 	struct list_head rx_np; /* netpolls that registered an rx_hook */
 
-	struct sk_buff_head arp_tx; /* list of arp requests to reply to */
+	struct sk_buff_head neigh_tx; /* list of neigh requests to reply to */
 	struct sk_buff_head txq;
 
 	struct delayed_work tx_work;
@@ -41,6 +51,14 @@ struct netpoll_info {
 	struct netpoll *netpoll;
 	struct rcu_head rcu;
 };
+
+#ifdef CONFIG_NETPOLL
+extern int netpoll_rx_disable(struct net_device *dev);
+extern void netpoll_rx_enable(struct net_device *dev);
+#else
+static inline int netpoll_rx_disable(struct net_device *dev) { return 0; }
+static inline void netpoll_rx_enable(struct net_device *dev) { return; }
+#endif
 
 void netpoll_send_udp(struct netpoll *np, const char *msg, int len);
 void netpoll_print_options(struct netpoll *np);
