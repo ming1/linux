@@ -92,7 +92,7 @@ static inline void of_node_put(struct device_node *node) { }
 extern struct device_node *of_allnodes;
 extern struct device_node *of_chosen;
 extern struct device_node *of_aliases;
-extern rwlock_t devtree_lock;
+extern raw_spinlock_t devtree_lock;
 
 static inline bool of_have_populated_dt(void)
 {
@@ -160,7 +160,7 @@ static inline unsigned long of_read_ulong(const __be32 *cell, int size)
 
 #define OF_BAD_ADDR	((u64)-1)
 
-static inline const char* of_node_full_name(struct device_node *np)
+static inline const char *of_node_full_name(const struct device_node *np)
 {
 	return np ? np->full_name : "<no-node>";
 }
