@@ -22,12 +22,13 @@
 #include <linux/of_irq.h>
 #include <linux/export.h>
 #include <linux/irqdomain.h>
+#include <linux/irqchip.h>
 #include <linux/of_address.h>
+#include <linux/irqchip/arm-gic.h>
 
 #include <asm/proc-fns.h>
 #include <asm/exception.h>
 #include <asm/hardware/cache-l2x0.h>
-#include <asm/hardware/gic.h>
 #include <asm/mach/map.h>
 #include <asm/mach/irq.h>
 #include <asm/cacheflush.h>
@@ -35,7 +36,6 @@
 #include <mach/regs-irq.h>
 #include <mach/regs-pmu.h>
 #include <mach/regs-gpio.h>
-#include <mach/pmu.h>
 
 #include <plat/cpu.h>
 #include <plat/clock.h>
@@ -299,6 +299,7 @@ void exynos4_restart(char mode, const char *cmd)
 
 void exynos5_restart(char mode, const char *cmd)
 {
+	struct device_node *np;
 	u32 val;
 	void __iomem *addr;
 
@@ -306,8 +307,9 @@ void exynos5_restart(char mode, const char *cmd)
 		val = 0x1;
 		addr = EXYNOS_SWRESET;
 	} else if (of_machine_is_compatible("samsung,exynos5440")) {
-		val = (0x10 << 20) | (0x1 << 16);
-		addr = EXYNOS5440_SWRESET;
+		np = of_find_compatible_node(NULL, NULL, "samsung,exynos5440-clock");
+		addr = of_iomap(np, 0) + 0xcc;
+		val = (0xfff << 20) | (0x1 << 16);
 	} else {
 		pr_err("%s: cannot support non-DT\n", __func__);
 		return;
@@ -644,8 +646,6 @@ static int __init combiner_of_init(struct device_node *np,
 }
 
 static const struct of_device_id exynos_dt_irq_match[] = {
-	{ .compatible = "arm,cortex-a9-gic", .data = gic_of_init, },
-	{ .compatible = "arm,cortex-a15-gic", .data = gic_of_init, },
 	{ .compatible = "samsung,exynos4210-combiner",
 			.data = combiner_of_init, },
 	{},
@@ -661,8 +661,10 @@ void __init exynos4_init_irq(void)
 	if (!of_have_populated_dt())
 		gic_init_bases(0, IRQ_PPI(0), S5P_VA_GIC_DIST, S5P_VA_GIC_CPU, gic_bank_offset, NULL);
 #ifdef CONFIG_OF
-	else
+	else {
+		irqchip_init();
 		of_irq_init(exynos_dt_irq_match);
+	}
 #endif
 
 	if (!of_have_populated_dt())
@@ -679,6 +681,7 @@ void __init exynos4_init_irq(void)
 void __init exynos5_init_irq(void)
 {
 #ifdef CONFIG_OF
+	irqchip_init();
 	of_irq_init(exynos_dt_irq_match);
 #endif
 	/*
@@ -1031,8 +1034,8 @@ static int __init exynos_init_irq_eint(void)
 	 * interrupt support code here can be completely removed.
 	 */
 	static const struct of_device_id exynos_pinctrl_ids[] = {
-		{ .compatible = "samsung,pinctrl-exynos4210", },
-		{ .compatible = "samsung,pinctrl-exynos4x12", },
+		{ .compatible = "samsung,exynos4210-pinctrl", },
+		{ .compatible = "samsung,exynos4x12-pinctrl", },
 	};
 	struct device_node *pctrl_np, *wkup_np;
 	const char *wkup_compat = "samsung,exynos4210-wakeup-eint";
