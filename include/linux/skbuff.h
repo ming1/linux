@@ -307,6 +307,13 @@ enum {
 	SKB_GSO_TCPV6 = 1 << 4,
 
 	SKB_GSO_FCOE = 1 << 5,
+
+	/* This indicates at least one fragment might be overwritten
+	 * (as in vmsplice(), sendfile() ...)
+	 * If we need to compute a TX checksum, we'll need to copy
+	 * all frags to avoid possible bad checksum
+	 */
+	SKB_GSO_SHARED_FRAG = 1 << 6,
 };
 
 #if BITS_PER_LONG > 32
@@ -1492,6 +1499,11 @@ static inline void skb_set_inner_network_header(struct sk_buff *skb,
 	skb->inner_network_header += offset;
 }
 
+static inline bool skb_transport_header_was_set(const struct sk_buff *skb)
+{
+	return skb->transport_header != ~0U;
+}
+
 static inline unsigned char *skb_transport_header(const struct sk_buff *skb)
 {
 	return skb->head + skb->transport_header;
@@ -1578,6 +1590,11 @@ static inline void skb_set_inner_network_header(struct sk_buff *skb,
 						const int offset)
 {
 	skb->inner_network_header = skb->data + offset;
+}
+
+static inline bool skb_transport_header_was_set(const struct sk_buff *skb)
+{
+	return skb->transport_header != NULL;
 }
 
 static inline unsigned char *skb_transport_header(const struct sk_buff *skb)
@@ -1814,6 +1831,10 @@ static inline void __skb_queue_purge(struct sk_buff_head *list)
 	while ((skb = __skb_dequeue(list)) != NULL)
 		kfree_skb(skb);
 }
+
+#define NETDEV_FRAG_PAGE_MAX_ORDER get_order(32768)
+#define NETDEV_FRAG_PAGE_MAX_SIZE  (PAGE_SIZE << NETDEV_FRAG_PAGE_MAX_ORDER)
+#define NETDEV_PAGECNT_MAX_BIAS	   NETDEV_FRAG_PAGE_MAX_SIZE
 
 extern void *netdev_alloc_frag(unsigned int fragsz);
 
@@ -2188,6 +2209,18 @@ static inline int __skb_linearize(struct sk_buff *skb)
 static inline int skb_linearize(struct sk_buff *skb)
 {
 	return skb_is_nonlinear(skb) ? __skb_linearize(skb) : 0;
+}
+
+/**
+ * skb_has_shared_frag - can any frag be overwritten
+ * @skb: buffer to test
+ *
+ * Return true if the skb has at least one frag that might be modified
+ * by an external entity (as in vmsplice()/sendfile())
+ */
+static inline bool skb_has_shared_frag(const struct sk_buff *skb)
+{
+	return skb_shinfo(skb)->gso_type & SKB_GSO_SHARED_FRAG;
 }
 
 /**
