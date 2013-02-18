@@ -39,7 +39,9 @@
 #include <linux/klist.h>
 #include <linux/mutex.h>
 #include <linux/virtio.h>
+#include <linux/vringh.h>
 #include <linux/completion.h>
+#include <linux/interrupt.h>
 #include <linux/idr.h>
 
 /**
@@ -444,6 +446,8 @@ struct rproc {
  * @notifyid: rproc-specific unique vring index
  * @rvdev: remote vdev
  * @vq: the virtqueue of this vring
+ * @vringh_cb: callback used when device has kicked
+ * @vringh: the reversed host-side vring
  */
 struct rproc_vring {
 	void *va;
@@ -454,6 +458,9 @@ struct rproc_vring {
 	int notifyid;
 	struct rproc_vdev *rvdev;
 	struct virtqueue *vq;
+	irqreturn_t (*vringh_cb)(struct virtio_device *vdev,
+				 struct vringh *vring);
+	struct vringh *vringh;
 };
 
 /**
@@ -484,6 +491,13 @@ int rproc_del(struct rproc *rproc);
 int rproc_boot(struct rproc *rproc);
 void rproc_shutdown(struct rproc *rproc);
 void rproc_report_crash(struct rproc *rproc, enum rproc_crash_type type);
+
+struct vringh *
+rproc_virtio_new_vringh(struct virtio_device *vdev, unsigned index,
+			irqreturn_t (*cb)(struct virtio_device *vdev,
+					  struct vringh *vring));
+void rproc_virtio_del_vringh(struct virtio_device *vdev, unsigned index);
+void rproc_virtio_kick_vringh(struct virtio_device *vdev, unsigned index);
 
 static inline struct rproc_vdev *vdev_to_rvdev(struct virtio_device *vdev)
 {
