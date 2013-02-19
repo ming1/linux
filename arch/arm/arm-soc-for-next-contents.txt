@@ -20,6 +20,9 @@ depends/rmk/psci
 	(psci branch from Will, merged through rmk and us for dependency reasons)
 	pull	git://git.kernel.org/pub/scm/linux/kernel/git/will/linux.git for-rmk/virt/psci
 
+depends/mmc
+	The mmc tree as of d2938758caae, needed for late/mvebu
+
 
 next/fixes-non-critical
 	pxa/fixes-for-3.9
@@ -228,6 +231,7 @@ next/virt
 	+patch	1360882071-4072668-2-git-send-email-arnd@arndb.de
 
 late/dt
+	depends on imx/cpuidle
 	imx/dt
 		pull	git://git.linaro.org/people/shawnguo/linux-2.6.git tags/imx-dt-3.9
 
@@ -243,3 +247,15 @@ late/omap
 	omap/late-pm-omap4
 		pull	git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.9/pm-omap4-signed
 	+patch 1360882071-4072668-4-git-send-email-arnd@arndb.de
+
+late/mvebu
+	depends on depends/mmc
+	mvebu/board
+		pull	git://git.infradead.org/users/jcooper/linux.git tags/boards_for_v3.9
+		pull	git://git.infradead.org/users/jcooper/linux.git tags/boards_for_v3.9_round2
+		pull	git://git.infradead.org/users/jcooper/linux.git tags/boards_for_v3.9_round3
+
+late/mvebu-dt
+	depends on mvebu/board
+		pull	git://git.infradead.org/users/jcooper/linux.git tags/dt_for_v3.9
+		pull	git://git.infradead.org/users/jcooper/linux.git tags/dt_for_v3.9_round2
