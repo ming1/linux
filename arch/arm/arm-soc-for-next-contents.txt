@@ -38,6 +38,8 @@ next/fixes-non-critical
 	samsung/fixes
 		pull	git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/fixes-samsung
 	patch	07186d8f30c387aa3f47be8c98d34678ca4b5ba9.1360123662.git.viresh.kumar@linaro.org
+	imx/fixes
+		pull	git://git.pengutronix.de/git/imx/linux-2.6.git tags/arm-imx-clk-fixes
 
 next/cleanup
 	timer/cleanup
