@@ -121,9 +121,7 @@ MODULE_PARM_DESC(i915_enable_ppgtt,
 unsigned int i915_preliminary_hw_support __read_mostly = 0;
 module_param_named(preliminary_hw_support, i915_preliminary_hw_support, int, 0600);
 MODULE_PARM_DESC(preliminary_hw_support,
-		"Enable preliminary hardware support. "
-		"Enable Haswell and ValleyView Support. "
-		"(default: false)");
+		"Enable preliminary hardware support. (default: false)");
 
 static struct drm_driver driver;
 extern int intel_agp_enabled;
@@ -470,6 +468,11 @@ static int i915_drm_freeze(struct drm_device *dev)
 {
 	struct drm_i915_private *dev_priv = dev->dev_private;
 
+	/* ignore lid events during suspend */
+	mutex_lock(&dev_priv->modeset_restore_lock);
+	dev_priv->modeset_restore = MODESET_SUSPENDED;
+	mutex_unlock(&dev_priv->modeset_restore_lock);
+
 	intel_set_power_well(dev, true);
 
 	drm_kms_helper_poll_disable(dev);
@@ -495,9 +498,6 @@ static int i915_drm_freeze(struct drm_device *dev)
 	i915_save_state(dev);
 
 	intel_opregion_fini(dev);
-
-	/* Modeset on resume, not lid events */
-	dev_priv->modeset_on_lid = 0;
 
 	console_lock();
 	intel_fbdev_set_suspend(dev, 1);
@@ -574,8 +574,6 @@ static int __i915_drm_thaw(struct drm_device *dev)
 
 	intel_opregion_init(dev);
 
-	dev_priv->modeset_on_lid = 0;
-
 	/*
 	 * The console lock can be pretty contented on resume due
 	 * to all the printk activity.  Try to keep it out of the hot
@@ -588,6 +586,9 @@ static int __i915_drm_thaw(struct drm_device *dev)
 		schedule_work(&dev_priv->console_resume_work);
 	}
 
+	mutex_lock(&dev_priv->modeset_restore_lock);
+	dev_priv->modeset_restore = MODESET_DONE;
+	mutex_unlock(&dev_priv->modeset_restore_lock);
 	return error;
 }
 
@@ -1128,6 +1129,27 @@ ilk_dummy_write(struct drm_i915_private *dev_priv)
 	I915_WRITE_NOTRACE(MI_MODE, 0);
 }
 
+static void
+hsw_unclaimed_reg_clear(struct drm_i915_private *dev_priv, u32 reg)
+{
+	if (IS_HASWELL(dev_priv->dev) &&
+	    (I915_READ_NOTRACE(FPGA_DBG) & FPGA_DBG_RM_NOCLAIM)) {
+		DRM_ERROR("Unknown unclaimed register before writing to %x\n",
+			  reg);
+		I915_WRITE_NOTRACE(FPGA_DBG, FPGA_DBG_RM_NOCLAIM);
+	}
+}
+
+static void
+hsw_unclaimed_reg_check(struct drm_i915_private *dev_priv, u32 reg)
+{
+	if (IS_HASWELL(dev_priv->dev) &&
+	    (I915_READ_NOTRACE(FPGA_DBG) & FPGA_DBG_RM_NOCLAIM)) {
+		DRM_ERROR("Unclaimed write to %x\n", reg);
+		I915_WRITE_NOTRACE(FPGA_DBG, FPGA_DBG_RM_NOCLAIM);
+	}
+}
+
 #define __i915_read(x, y) \
 u##x i915_read##x(struct drm_i915_private *dev_priv, u32 reg) { \
 	u##x val = 0; \
@@ -1164,18 +1186,12 @@ void i915_write##x(struct drm_i915_private *dev_priv, u32 reg, u##x val) { \
 	} \
 	if (IS_GEN5(dev_priv->dev)) \
 		ilk_dummy_write(dev_priv); \
-	if (IS_HASWELL(dev_priv->dev) && (I915_READ_NOTRACE(GEN7_ERR_INT) & ERR_INT_MMIO_UNCLAIMED)) { \
-		DRM_ERROR("Unknown unclaimed register before writing to %x\n", reg); \
-		I915_WRITE_NOTRACE(GEN7_ERR_INT, ERR_INT_MMIO_UNCLAIMED); \
-	} \
+	hsw_unclaimed_reg_clear(dev_priv, reg); \
 	write##y(val, dev_priv->regs + reg); \
 	if (unlikely(__fifo_ret)) { \
 		gen6_gt_check_fifodbg(dev_priv); \
 	} \
-	if (IS_HASWELL(dev_priv->dev) && (I915_READ_NOTRACE(GEN7_ERR_INT) & ERR_INT_MMIO_UNCLAIMED)) { \
-		DRM_ERROR("Unclaimed write to %x\n", reg); \
-		writel(ERR_INT_MMIO_UNCLAIMED, dev_priv->regs + GEN7_ERR_INT);	\
-	} \
+	hsw_unclaimed_reg_check(dev_priv, reg); \
 }
 __i915_write(8, b)
 __i915_write(16, w)

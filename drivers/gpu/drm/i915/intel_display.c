@@ -154,8 +154,8 @@ static const intel_limit_t intel_limits_i9xx_sdvo = {
 	.vco = { .min = 1400000, .max = 2800000 },
 	.n = { .min = 1, .max = 6 },
 	.m = { .min = 70, .max = 120 },
-	.m1 = { .min = 10, .max = 22 },
-	.m2 = { .min = 5, .max = 9 },
+	.m1 = { .min = 8, .max = 18 },
+	.m2 = { .min = 3, .max = 7 },
 	.p = { .min = 5, .max = 80 },
 	.p1 = { .min = 1, .max = 8 },
 	.p2 = { .dot_limit = 200000,
@@ -168,8 +168,8 @@ static const intel_limit_t intel_limits_i9xx_lvds = {
 	.vco = { .min = 1400000, .max = 2800000 },
 	.n = { .min = 1, .max = 6 },
 	.m = { .min = 70, .max = 120 },
-	.m1 = { .min = 10, .max = 22 },
-	.m2 = { .min = 5, .max = 9 },
+	.m1 = { .min = 8, .max = 18 },
+	.m2 = { .min = 3, .max = 7 },
 	.p = { .min = 7, .max = 98 },
 	.p1 = { .min = 1, .max = 8 },
 	.p2 = { .dot_limit = 112000,
@@ -2218,6 +2218,44 @@ intel_pipe_set_base_atomic(struct drm_crtc *crtc, struct drm_framebuffer *fb,
 	return dev_priv->display.update_plane(crtc, fb, x, y);
 }
 
+void intel_display_handle_reset(struct drm_device *dev)
+{
+	struct drm_i915_private *dev_priv = dev->dev_private;
+	struct drm_crtc *crtc;
+
+	/*
+	 * Flips in the rings have been nuked by the reset,
+	 * so complete all pending flips so that user space
+	 * will get its events and not get stuck.
+	 *
+	 * Also update the base address of all primary
+	 * planes to the the last fb to make sure we're
+	 * showing the correct fb after a reset.
+	 *
+	 * Need to make two loops over the crtcs so that we
+	 * don't try to grab a crtc mutex before the
+	 * pending_flip_queue really got woken up.
+	 */
+
+	list_for_each_entry(crtc, &dev->mode_config.crtc_list, head) {
+		struct intel_crtc *intel_crtc = to_intel_crtc(crtc);
+		enum plane plane = intel_crtc->plane;
+
+		intel_prepare_page_flip(dev, plane);
+		intel_finish_page_flip_plane(dev, plane);
+	}
+
+	list_for_each_entry(crtc, &dev->mode_config.crtc_list, head) {
+		struct intel_crtc *intel_crtc = to_intel_crtc(crtc);
+
+		mutex_lock(&crtc->mutex);
+		if (intel_crtc->active)
+			dev_priv->display.update_plane(crtc, crtc->fb,
+						       crtc->x, crtc->y);
+		mutex_unlock(&crtc->mutex);
+	}
+}
+
 static int
 intel_finish_fb(struct drm_framebuffer *old_fb)
 {
@@ -2225,12 +2263,6 @@ intel_finish_fb(struct drm_framebuffer *old_fb)
 	struct drm_i915_private *dev_priv = obj->base.dev->dev_private;
 	bool was_interruptible = dev_priv->mm.interruptible;
 	int ret;
-
-	WARN_ON(waitqueue_active(&dev_priv->pending_flip_queue));
-
-	wait_event(dev_priv->pending_flip_queue,
-		   i915_reset_in_progress(&dev_priv->gpu_error) ||
-		   atomic_read(&obj->pending_flip) == 0);
 
 	/* Big Hammer, we also need to ensure that any pending
 	 * MI_WAIT_FOR_EVENT inside a user batch buffer on the
@@ -2306,9 +2338,6 @@ intel_pipe_set_base(struct drm_crtc *crtc, int x, int y,
 		DRM_ERROR("pin & fence failed\n");
 		return ret;
 	}
-
-	if (crtc->fb)
-		intel_finish_fb(crtc->fb);
 
 	ret = dev_priv->display.update_plane(crtc, fb, x, y);
 	if (ret) {
@@ -2874,10 +2903,12 @@ static bool intel_crtc_has_pending_flip(struct drm_crtc *crtc)
 {
 	struct drm_device *dev = crtc->dev;
 	struct drm_i915_private *dev_priv = dev->dev_private;
+	struct intel_crtc *intel_crtc = to_intel_crtc(crtc);
 	unsigned long flags;
 	bool pending;
 
-	if (i915_reset_in_progress(&dev_priv->gpu_error))
+	if (i915_reset_in_progress(&dev_priv->gpu_error) ||
+	    intel_crtc->reset_counter != atomic_read(&dev_priv->gpu_error.reset_counter))
 		return false;
 
 	spin_lock_irqsave(&dev->event_lock, flags);
@@ -3615,6 +3646,11 @@ static void i9xx_crtc_enable(struct drm_crtc *crtc)
 	intel_update_watermarks(dev);
 
 	intel_enable_pll(dev_priv, pipe);
+
+	for_each_encoder_on_crtc(dev, crtc, encoder)
+		if (encoder->pre_enable)
+			encoder->pre_enable(encoder);
+
 	intel_enable_pipe(dev_priv, pipe, false);
 	intel_enable_plane(dev_priv, plane, pipe);
 
@@ -3637,6 +3673,7 @@ static void i9xx_crtc_disable(struct drm_crtc *crtc)
 	struct intel_encoder *encoder;
 	int pipe = intel_crtc->pipe;
 	int plane = intel_crtc->plane;
+	u32 pctl;
 
 
 	if (!intel_crtc->active)
@@ -3656,6 +3693,13 @@ static void i9xx_crtc_disable(struct drm_crtc *crtc)
 
 	intel_disable_plane(dev_priv, plane, pipe);
 	intel_disable_pipe(dev_priv, pipe);
+
+	/* Disable pannel fitter if it is on this pipe. */
+	pctl = I915_READ(PFIT_CONTROL);
+	if ((pctl & PFIT_ENABLE) &&
+	    ((pctl & PFIT_PIPE_MASK) >> PFIT_PIPE_SHIFT) == pipe)
+		I915_WRITE(PFIT_CONTROL, 0);
+
 	intel_disable_pll(dev_priv, pipe);
 
 	intel_crtc->active = false;
@@ -5109,6 +5153,71 @@ static void ironlake_set_pipeconf(struct drm_crtc *crtc,
 	POSTING_READ(PIPECONF(pipe));
 }
 
+/*
+ * Set up the pipe CSC unit.
+ *
+ * Currently only full range RGB to limited range RGB conversion
+ * is supported, but eventually this should handle various
+ * RGB<->YCbCr scenarios as well.
+ */
+static void intel_set_pipe_csc(struct drm_crtc *crtc,
+			       const struct drm_display_mode *adjusted_mode)
+{
+	struct drm_device *dev = crtc->dev;
+	struct drm_i915_private *dev_priv = dev->dev_private;
+	struct intel_crtc *intel_crtc = to_intel_crtc(crtc);
+	int pipe = intel_crtc->pipe;
+	uint16_t coeff = 0x7800; /* 1.0 */
+
+	/*
+	 * TODO: Check what kind of values actually come out of the pipe
+	 * with these coeff/postoff values and adjust to get the best
+	 * accuracy. Perhaps we even need to take the bpc value into
+	 * consideration.
+	 */
+
+	if (adjusted_mode->private_flags & INTEL_MODE_LIMITED_COLOR_RANGE)
+		coeff = ((235 - 16) * (1 << 12) / 255) & 0xff8; /* 0.xxx... */
+
+	/*
+	 * GY/GU and RY/RU should be the other way around according
+	 * to BSpec, but reality doesn't agree. Just set them up in
+	 * a way that results in the correct picture.
+	 */
+	I915_WRITE(PIPE_CSC_COEFF_RY_GY(pipe), coeff << 16);
+	I915_WRITE(PIPE_CSC_COEFF_BY(pipe), 0);
+
+	I915_WRITE(PIPE_CSC_COEFF_RU_GU(pipe), coeff);
+	I915_WRITE(PIPE_CSC_COEFF_BU(pipe), 0);
+
+	I915_WRITE(PIPE_CSC_COEFF_RV_GV(pipe), 0);
+	I915_WRITE(PIPE_CSC_COEFF_BV(pipe), coeff << 16);
+
+	I915_WRITE(PIPE_CSC_PREOFF_HI(pipe), 0);
+	I915_WRITE(PIPE_CSC_PREOFF_ME(pipe), 0);
+	I915_WRITE(PIPE_CSC_PREOFF_LO(pipe), 0);
+
+	if (INTEL_INFO(dev)->gen > 6) {
+		uint16_t postoff = 0;
+
+		if (adjusted_mode->private_flags & INTEL_MODE_LIMITED_COLOR_RANGE)
+			postoff = (16 * (1 << 13) / 255) & 0x1fff;
+
+		I915_WRITE(PIPE_CSC_POSTOFF_HI(pipe), postoff);
+		I915_WRITE(PIPE_CSC_POSTOFF_ME(pipe), postoff);
+		I915_WRITE(PIPE_CSC_POSTOFF_LO(pipe), postoff);
+
+		I915_WRITE(PIPE_CSC_MODE(pipe), 0);
+	} else {
+		uint32_t mode = CSC_MODE_YUV_TO_RGB;
+
+		if (adjusted_mode->private_flags & INTEL_MODE_LIMITED_COLOR_RANGE)
+			mode |= CSC_BLACK_SCREEN_OFFSET;
+
+		I915_WRITE(PIPE_CSC_MODE(pipe), mode);
+	}
+}
+
 static void haswell_set_pipeconf(struct drm_crtc *crtc,
 				 struct drm_display_mode *adjusted_mode,
 				 bool dither)
@@ -5697,8 +5806,10 @@ static int haswell_crtc_mode_set(struct drm_crtc *crtc,
 
 	haswell_set_pipeconf(crtc, adjusted_mode, dither);
 
+	intel_set_pipe_csc(crtc, adjusted_mode);
+
 	/* Set up the display plane register */
-	I915_WRITE(DSPCNTR(plane), DISPPLANE_GAMMA_ENABLE);
+	I915_WRITE(DSPCNTR(plane), DISPPLANE_GAMMA_ENABLE | DISPPLANE_PIPE_CSC_ENABLE);
 	POSTING_READ(DSPCNTR(plane));
 
 	ret = intel_pipe_set_base(crtc, x, y, fb);
@@ -6103,6 +6214,8 @@ static void ivb_update_cursor(struct drm_crtc *crtc, u32 base)
 			cntl &= ~(CURSOR_MODE | MCURSOR_GAMMA_ENABLE);
 			cntl |= CURSOR_MODE_DISABLE;
 		}
+		if (IS_HASWELL(dev))
+			cntl |= CURSOR_PIPE_CSC_ENABLE;
 		I915_WRITE(CURCNTR_IVB(pipe), cntl);
 
 		intel_crtc->cursor_visible = visible;
@@ -6839,7 +6952,6 @@ static void do_intel_finish_page_flip(struct drm_device *dev,
 	drm_i915_private_t *dev_priv = dev->dev_private;
 	struct intel_crtc *intel_crtc = to_intel_crtc(crtc);
 	struct intel_unpin_work *work;
-	struct drm_i915_gem_object *obj;
 	unsigned long flags;
 
 	/* Ignore early vblank irqs */
@@ -6868,8 +6980,6 @@ static void do_intel_finish_page_flip(struct drm_device *dev,
 	drm_vblank_put(dev, intel_crtc->pipe);
 
 	spin_unlock_irqrestore(&dev->event_lock, flags);
-
-	obj = work->old_fb_obj;
 
 	wake_up_all(&dev_priv->pending_flip_queue);
 
@@ -7235,6 +7345,7 @@ static int intel_crtc_page_flip(struct drm_crtc *crtc,
 	work->enable_stall_check = true;
 
 	atomic_inc(&intel_crtc->unpin_work_count);
+	intel_crtc->reset_counter = atomic_read(&dev_priv->gpu_error.reset_counter);
 
 	ret = dev_priv->display.queue_flip(dev, crtc, fb, obj);
 	if (ret)
@@ -7876,7 +7987,7 @@ intel_modeset_stage_output_state(struct drm_device *dev,
 	struct intel_encoder *encoder;
 	int count, ro;
 
-	/* The upper layers ensure that we either disabl a crtc or have a list
+	/* The upper layers ensure that we either disable a crtc or have a list
 	 * of connectors. For paranoia, double-check this. */
 	WARN_ON(!set->fb && (set->num_connectors != 0));
 	WARN_ON(set->fb && (set->num_connectors == 0));
@@ -8032,6 +8143,8 @@ static int intel_crtc_set_config(struct drm_mode_set *set)
 			goto fail;
 		}
 	} else if (config->fb_changed) {
+		intel_crtc_wait_for_pending_flips(set->crtc);
+
 		ret = intel_pipe_set_base(set->crtc,
 					  set->x, set->y, set->fb);
 	}
@@ -8655,6 +8768,9 @@ static struct intel_quirk intel_quirks[] = {
 
 	/* Acer/Packard Bell NCL20 */
 	{ 0x2a42, 0x1025, 0x034b, quirk_invert_brightness },
+
+	/* Acer Aspire 4736Z */
+	{ 0x2a42, 0x1025, 0x0260, quirk_invert_brightness },
 };
 
 static void intel_init_quirks(struct drm_device *dev)
