@@ -1130,11 +1130,11 @@ int memory_failure(unsigned long pfn, int trapno, int flags)
 	lock_page(hpage);
 
 	/*
-	 * We use page flags to determine what action should be taken,
-	 * but it can be modified by the error containment action.
-	 * One example is mlocked page, where PG_mlocked is cleared by
-	 * page_remove_rmap() in try_to_unmap_one(). So to determine page
-	 * status correctly, we store the page flags at this timing.
+	 * We use page flags to determine what action should be taken, but
+	 * the flags can be modified by the error containment action.  One
+	 * example is an mlocked page, where PG_mlocked is cleared by
+	 * page_remove_rmap() in try_to_unmap_one(). So to determine page status
+	 * correctly, we save a copy of the page flags at this time.
 	 */
 	page_flags = p->flags;
 
@@ -1197,8 +1197,8 @@ int memory_failure(unsigned long pfn, int trapno, int flags)
 
 	res = -EBUSY;
 	/*
-	 * The first check uses the current page flag which might not have any
-	 * relevant information. The second check with stored page flags are
+	 * The first check uses the current page flags which may not have any
+	 * relevant information. The second check with the saved page flagss is
 	 * carried out only if the first check can't determine the page status.
 	 */
 	for (ps = error_states;; ps++)
