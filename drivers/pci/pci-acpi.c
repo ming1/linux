@@ -308,7 +308,6 @@ static void pci_acpi_setup(struct device *dev)
 	acpi_handle handle = ACPI_HANDLE(dev);
 	struct acpi_device *adev;
 
-	acpi_power_resource_register_device(dev, handle);
 	if (acpi_bus_get_device(handle, &adev) || !adev->wakeup.flags.valid)
 		return;
 
@@ -330,7 +329,6 @@ static void pci_acpi_cleanup(struct device *dev)
 		device_set_run_wake(dev, false);
 		pci_acpi_remove_pm_notifier(adev);
 	}
-	acpi_power_resource_unregister_device(dev, handle);
 }
 
 static struct acpi_bus_type acpi_pci_bus = {
