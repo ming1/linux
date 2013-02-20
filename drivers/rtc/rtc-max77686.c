@@ -133,7 +133,7 @@ static int max77686_rtc_update(struct max77686_rtc_info *info,
 	enum MAX77686_RTC_OP op)
 {
 	int ret;
-	unsigned int data;
+	unsigned int data = 0;
 
 	switch (op) {
 	case MAX77686_RTC_WRITE:
