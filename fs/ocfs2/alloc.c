@@ -6134,7 +6134,7 @@ bail:
 		iput(tl_inode);
 	brelse(tl_bh);
 
-	if (status < 0) {
+	if (status < 0 && (*tl_copy)) {
 		kfree(*tl_copy);
 		*tl_copy = NULL;
 		mlog_errno(status);
