@@ -96,10 +96,8 @@ static int hx8357_spi_write_then_read(struct lcd_device *lcdev,
 
 		local_txbuf = kcalloc(txlen, sizeof(*local_txbuf), GFP_KERNEL);
 
-		if (!local_txbuf) {
-			dev_err(&lcdev->dev, "Couldn't allocate data buffer.\n");
+		if (!local_txbuf)
 			return -ENOMEM;
-		}
 
 		for (i = 0; i < txlen; i++) {
 			local_txbuf[i] = txbuf[i];
