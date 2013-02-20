@@ -79,8 +79,8 @@ struct hx8357_data {
 };
 
 static int hx8357_spi_write_then_read(struct lcd_device *lcdev,
-				void *txbuf, u16 txlen,
-				void *rxbuf, u16 rxlen)
+				u8 *txbuf, u16 txlen,
+				u8 *rxbuf, u16 rxlen)
 {
 	struct hx8357_data *lcd = lcd_get_data(lcdev);
 	struct spi_message msg;
@@ -102,7 +102,7 @@ static int hx8357_spi_write_then_read(struct lcd_device *lcdev,
 		}
 
 		for (i = 0; i < txlen; i++) {
-			local_txbuf[i] = ((u8 *)txbuf)[i];
+			local_txbuf[i] = txbuf[i];
 			if (i > 0)
 				local_txbuf[i] |= 1 << 8;
 		}
