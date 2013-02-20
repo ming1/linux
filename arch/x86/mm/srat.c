@@ -164,6 +164,12 @@ handle_movablemem(int node, u64 start, u64 end, u32 hotpluggable)
 	 */
 	if (hotpluggable && movablemem_map.acpi) {
 		insert_movablemem_map(start_pfn, end_pfn);
+
+		/*
+		 * numa_nodes_hotplug nodemask represents which nodes are put
+		 * into movablemem_map.map[].
+		 */
+		node_set(node, movablemem_map.numa_nodes_hotplug);
 		goto out;
 	}
 
