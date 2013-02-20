@@ -244,11 +244,12 @@ static int goldfish_fb_probe(struct platform_device *pdev)
 	fb->fb.var.blue.length = 5;
 
 	framesize = width * height * 2 * 2;
-	fb->fb.screen_base = dma_alloc_coherent(&pdev->dev, framesize,
+	fb->fb.screen_base = (char __force __iomem *)dma_alloc_coherent(
+						&pdev->dev, framesize,
 						&fbpaddr, GFP_KERNEL);
 	pr_debug("allocating frame buffer %d * %d, got %p\n",
 					width, height, fb->fb.screen_base);
-	if (fb->fb.screen_base == 0) {
+	if (fb->fb.screen_base == NULL) {
 		ret = -ENOMEM;
 		goto err_alloc_screen_base_failed;
 	}
@@ -277,7 +278,8 @@ err_register_framebuffer_failed:
 err_request_irq_failed:
 err_fb_set_var_failed:
 	dma_free_coherent(&pdev->dev, framesize,
-				fb->fb.screen_base, fb->fb.fix.smem_start);
+				(void *)fb->fb.screen_base,
+				fb->fb.fix.smem_start);
 err_alloc_screen_base_failed:
 err_no_irq:
 	iounmap(fb->reg_base);
@@ -296,7 +298,7 @@ static int goldfish_fb_remove(struct platform_device *pdev)
 	unregister_framebuffer(&fb->fb);
 	free_irq(fb->irq, fb);
 
-	dma_free_coherent(&pdev->dev, framesize, fb->fb.screen_base,
+	dma_free_coherent(&pdev->dev, framesize, (void *)fb->fb.screen_base,
 						fb->fb.fix.smem_start);
 	iounmap(fb->reg_base);
 	return 0;
