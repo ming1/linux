@@ -133,16 +133,12 @@ static int max77686_rtc_update(struct max77686_rtc_info *info,
 	enum MAX77686_RTC_OP op)
 {
 	int ret;
-	unsigned int data = 0;
+	unsigned int data;
 
-	switch (op) {
-	case MAX77686_RTC_WRITE:
+	if (op == MAX77686_RTC_WRITE)
 		data = 1 << RTC_UDR_SHIFT;
-		break;
-	case MAX77686_RTC_READ:
+	else
 		data = 1 << RTC_RBUDR_SHIFT;
-		break;
-	}
 
 	ret = regmap_update_bits(info->max77686->rtc_regmap,
 				 MAX77686_RTC_UPDATE0, data, data);
