@@ -120,7 +120,7 @@ static int hx8357_spi_write_then_read(struct lcd_device *lcdev,
 
 	ret = spi_sync(lcd->spi, &msg);
 	if (ret < 0)
-		dev_err(&lcdev->dev, "Couldn't send SPI data.\n");
+		dev_err(&lcdev->dev, "Couldn't send SPI data\n");
 
 	if (txlen)
 		kfree(local_txbuf);
