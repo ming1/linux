@@ -310,7 +310,7 @@ static struct platform_device *omap3_touchbook_devices[] __initdata = {
 	&keys_gpio,
 };
 
-static const struct usbhs_omap_board_data usbhs_bdata __initconst = {
+static struct usbhs_omap_platform_data usbhs_bdata __initdata = {
 
 	.port_mode[0] = OMAP_EHCI_PORT_MODE_PHY,
 	.port_mode[1] = OMAP_EHCI_PORT_MODE_PHY,
@@ -388,6 +388,6 @@ MACHINE_START(TOUCHBOOK, "OMAP3 touchbook Board")
 	.handle_irq	= omap3_intc_handle_irq,
 	.init_machine	= omap3_touchbook_init,
 	.init_late	= omap3430_init_late,
-	.timer		= &omap3_secure_timer,
+	.init_time	= omap3_secure_sync32k_timer_init,
 	.restart	= omap3xxx_restart,
 MACHINE_END
