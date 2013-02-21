@@ -295,7 +295,7 @@ void __update_tlb(struct vm_area_struct * vma, unsigned long address, pte_t pte)
 	pudp = pud_offset(pgdp, address);
 	pmdp = pmd_offset(pudp, address);
 	idx = read_c0_index();
-#ifdef CONFIG_MIPS_HUGE_TLB_SUPPORT
+
 	/* this could be a huge page  */
 	if (pmd_huge(*pmdp)) {
 		unsigned long lo;
@@ -312,9 +312,7 @@ void __update_tlb(struct vm_area_struct * vma, unsigned long address, pte_t pte)
 			tlb_write_indexed();
 		tlbw_use_hazard();
 		write_c0_pagemask(PM_DEFAULT_MASK);
-	} else
-#endif
-	{
+	} else {
 		ptep = pte_offset_map(pmdp, address);
 
 #if defined(CONFIG_64BIT_PHYS_ADDR) && defined(CONFIG_CPU_MIPS32)
@@ -424,7 +422,7 @@ void __cpuinit tlb_init(void)
 		write_c0_pagegrain(pg);
 	}
 
-        /* From this point on the ARC firmware is dead.  */
+	/* From this point on the ARC firmware is dead.	 */
 	local_flush_tlb_all();
 
 	/* Did I tell you that ARC SUCKS?  */
