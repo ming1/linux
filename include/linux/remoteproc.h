@@ -43,6 +43,7 @@
 #include <linux/completion.h>
 #include <linux/interrupt.h>
 #include <linux/idr.h>
+#include <asm/checksum.h>
 
 /**
  * struct resource_table - firmware resource table header
@@ -431,6 +432,8 @@ struct rproc {
 	struct completion crash_comp;
 	bool recovery_disabled;
 	int max_notifyid;
+	struct resource_table *rsc;
+	__sum16 rsc_csum;
 };
 
 /* we currently support only two vrings per rvdev */
@@ -471,14 +474,14 @@ struct rproc_vring {
  * @vring: the vrings for this vdev
  * @dfeatures: virtio device features
  * @gfeatures: virtio guest features
+ * @rsc: vdev resource entry
  */
 struct rproc_vdev {
 	struct list_head node;
 	struct rproc *rproc;
 	struct virtio_device vdev;
 	struct rproc_vring vring[RVDEV_NUM_VRINGS];
-	unsigned long dfeatures;
-	unsigned long gfeatures;
+	struct fw_rsc_vdev *rsc;
 };
 
 struct rproc *rproc_alloc(struct device *dev, const char *name,
