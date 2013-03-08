@@ -1794,7 +1794,10 @@ int regulator_is_enabled_regmap(struct regulator_dev *rdev)
 	if (ret != 0)
 		return ret;
 
-	return (val & rdev->desc->enable_mask) != 0;
+	if (rdev->desc->enable_is_inverted)
+		return (val & rdev->desc->enable_mask) == 0;
+	else
+		return (val & rdev->desc->enable_mask) != 0;
 }
 EXPORT_SYMBOL_GPL(regulator_is_enabled_regmap);
 
@@ -1809,9 +1812,15 @@ EXPORT_SYMBOL_GPL(regulator_is_enabled_regmap);
  */
 int regulator_enable_regmap(struct regulator_dev *rdev)
 {
+	unsigned int val;
+
+	if (rdev->desc->enable_is_inverted)
+		val = 0;
+	else
+		val = rdev->desc->enable_mask;
+
 	return regmap_update_bits(rdev->regmap, rdev->desc->enable_reg,
-				  rdev->desc->enable_mask,
-				  rdev->desc->enable_mask);
+				  rdev->desc->enable_mask, val);
 }
 EXPORT_SYMBOL_GPL(regulator_enable_regmap);
 
@@ -1826,8 +1835,15 @@ EXPORT_SYMBOL_GPL(regulator_enable_regmap);
  */
 int regulator_disable_regmap(struct regulator_dev *rdev)
 {
+	unsigned int val;
+
+	if (rdev->desc->enable_is_inverted)
+		val = rdev->desc->enable_mask;
+	else
+		val = 0;
+
 	return regmap_update_bits(rdev->regmap, rdev->desc->enable_reg,
-				  rdev->desc->enable_mask, 0);
+				  rdev->desc->enable_mask, val);
 }
 EXPORT_SYMBOL_GPL(regulator_disable_regmap);
 
@@ -2830,7 +2846,7 @@ EXPORT_SYMBOL_GPL(regulator_get_bypass_regmap);
  * regulator_allow_bypass - allow the regulator to go into bypass mode
  *
  * @regulator: Regulator to configure
- * @allow: enable or disable bypass mode
+ * @enable: enable or disable bypass mode
  *
  * Allow the regulator to go into bypass mode if all other consumers
  * for the regulator also enable bypass mode and the machine
