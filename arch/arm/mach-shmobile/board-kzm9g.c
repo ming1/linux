@@ -25,6 +25,7 @@
 #include <linux/i2c.h>
 #include <linux/i2c/pcf857x.h>
 #include <linux/input.h>
+#include <linux/irqchip/arm-gic.h>
 #include <linux/mmc/host.h>
 #include <linux/mmc/sh_mmcif.h>
 #include <linux/mmc/sh_mobile_sdhi.h>
@@ -42,7 +43,6 @@
 #include <mach/sh73a0.h>
 #include <mach/common.h>
 #include <asm/hardware/cache-l2x0.h>
-#include <asm/hardware/gic.h>
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
 #include <video/sh_mobile_lcdc.h>
@@ -61,8 +61,8 @@
 
 /* Dummy supplies, where voltage doesn't matter */
 static struct regulator_consumer_supply dummy_supplies[] = {
-	REGULATOR_SUPPLY("vddvario", "smsc911x"),
-	REGULATOR_SUPPLY("vdd33a", "smsc911x"),
+	REGULATOR_SUPPLY("vddvario", "smsc911x.0"),
+	REGULATOR_SUPPLY("vdd33a", "smsc911x.0"),
 };
 
 /*
@@ -81,7 +81,7 @@ static struct resource smsc9221_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	[1] = {
-		.start	= intcs_evt2irq(0x260), /* IRQ3 */
+		.start	= irq_pin(3), /* IRQ3 */
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -115,7 +115,7 @@ static struct resource usb_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	[1] = {
-		.start	= intcs_evt2irq(0x220), /* IRQ1 */
+		.start	= irq_pin(1), /* IRQ1 */
 		.flags	= IORESOURCE_IRQ,
 	},
 };
@@ -138,7 +138,7 @@ struct usbhs_private {
 	struct renesas_usbhs_platform_info info;
 };
 
-#define IRQ15			intcs_evt2irq(0x03e0)
+#define IRQ15			irq_pin(15)
 #define USB_PHY_MODE		(1 << 4)
 #define USB_PHY_INT_EN		((1 << 3) | (1 << 2))
 #define USB_PHY_ON		(1 << 1)
@@ -563,25 +563,25 @@ static struct i2c_board_info i2c0_devices[] = {
 	},
 	{
 		I2C_BOARD_INFO("ak8975", 0x0c),
-		.irq = intcs_evt2irq(0x3380), /* IRQ28 */
+		.irq = irq_pin(28), /* IRQ28 */
 	},
 	{
 		I2C_BOARD_INFO("adxl34x", 0x1d),
-		.irq = intcs_evt2irq(0x3340), /* IRQ26 */
+		.irq = irq_pin(26), /* IRQ26 */
 	},
 };
 
 static struct i2c_board_info i2c1_devices[] = {
 	{
 		I2C_BOARD_INFO("st1232-ts", 0x55),
-		.irq = intcs_evt2irq(0x300), /* IRQ8 */
+		.irq = irq_pin(8), /* IRQ8 */
 	},
 };
 
 static struct i2c_board_info i2c3_devices[] = {
 	{
 		I2C_BOARD_INFO("pcf8575", 0x20),
-		.irq		= intcs_evt2irq(0x3260), /* IRQ19 */
+		.irq = irq_pin(19), /* IRQ19 */
 		.platform_data = &pcf8575_pdata,
 	},
 };
@@ -623,7 +623,7 @@ static int __init as3711_enable_lcdc_backlight(void)
 		0x45, 0xf0,
 	};
 
-	if (!machine_is_kzm9g())
+	if (!of_machine_is_compatible("renesas,kzm9g"))
 		return 0;
 
 	if (!a)
@@ -672,8 +672,7 @@ static void __init kzm_init(void)
 	gpio_request(GPIO_FN_CS4_, NULL); /* CS4 */
 
 	/* SMSC */
-	gpio_request(GPIO_PORT224, NULL); /* IRQ3 */
-	gpio_direction_input(GPIO_PORT224);
+	gpio_request_one(GPIO_PORT224, GPIOF_IN, NULL); /* IRQ3 */
 
 	/* LCDC */
 	gpio_request(GPIO_FN_LCDD23,	NULL);
@@ -703,14 +702,11 @@ static void __init kzm_init(void)
 	gpio_request(GPIO_FN_LCDDISP,	NULL);
 	gpio_request(GPIO_FN_LCDDCK,	NULL);
 
-	gpio_request(GPIO_PORT222,	NULL); /* LCDCDON */
-	gpio_request(GPIO_PORT226,	NULL); /* SC */
-	gpio_direction_output(GPIO_PORT222, 1);
-	gpio_direction_output(GPIO_PORT226, 1);
+	gpio_request_one(GPIO_PORT222, GPIOF_OUT_INIT_HIGH, NULL); /* LCDCDON */
+	gpio_request_one(GPIO_PORT226, GPIOF_OUT_INIT_HIGH, NULL); /* SC */
 
 	/* Touchscreen */
-	gpio_request(GPIO_PORT223, NULL); /* IRQ8 */
-	gpio_direction_input(GPIO_PORT223);
+	gpio_request_one(GPIO_PORT223, GPIOF_IN, NULL); /* IRQ8 */
 
 	/* enable MMCIF */
 	gpio_request(GPIO_FN_MMCCLK0,		NULL);
@@ -734,8 +730,7 @@ static void __init kzm_init(void)
 	gpio_request(GPIO_FN_SDHID0_1,		NULL);
 	gpio_request(GPIO_FN_SDHID0_0,		NULL);
 	gpio_request(GPIO_FN_SDHI0_VCCQ_MC0_ON,	NULL);
-	gpio_request(GPIO_PORT15, NULL);
-	gpio_direction_output(GPIO_PORT15, 1); /* power */
+	gpio_request_one(GPIO_PORT15, GPIOF_OUT_INIT_HIGH, NULL); /* power */
 
 	/* enable Micro SD */
 	gpio_request(GPIO_FN_SDHID2_0,		NULL);
@@ -744,8 +739,7 @@ static void __init kzm_init(void)
 	gpio_request(GPIO_FN_SDHID2_3,		NULL);
 	gpio_request(GPIO_FN_SDHICMD2,		NULL);
 	gpio_request(GPIO_FN_SDHICLK2,		NULL);
-	gpio_request(GPIO_PORT14, NULL);
-	gpio_direction_output(GPIO_PORT14, 1); /* power */
+	gpio_request_one(GPIO_PORT14, GPIOF_OUT_INIT_HIGH, NULL); /* power */
 
 	/* I2C 3 */
 	gpio_request(GPIO_FN_PORT27_I2C_SCL3, NULL);
@@ -772,6 +766,8 @@ static void __init kzm_init(void)
 
 	sh73a0_add_standard_devices();
 	platform_add_devices(kzm_devices, ARRAY_SIZE(kzm_devices));
+
+	sh73a0_pm_init();
 }
 
 static void kzm9g_restart(char mode, const char *cmd)
@@ -792,10 +788,9 @@ DT_MACHINE_START(KZM9G_DT, "kzm9g")
 	.init_early	= sh73a0_add_early_devices,
 	.nr_irqs	= NR_IRQS_LEGACY,
 	.init_irq	= sh73a0_init_irq,
-	.handle_irq	= gic_handle_irq,
 	.init_machine	= kzm_init,
 	.init_late	= shmobile_init_late,
-	.timer		= &shmobile_timer,
+	.init_time	= sh73a0_earlytimer_init,
 	.restart	= kzm9g_restart,
 	.dt_compat	= kzm9g_boards_compat_dt,
 MACHINE_END
