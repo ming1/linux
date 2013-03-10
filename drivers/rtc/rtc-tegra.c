@@ -348,8 +348,8 @@ static int __init tegra_rtc_probe(struct platform_device *pdev)
 
 	device_init_wakeup(&pdev->dev, 1);
 
-	info->rtc_dev = rtc_device_register(
-		pdev->name, &pdev->dev, &tegra_rtc_ops, THIS_MODULE);
+	info->rtc_dev = devm_rtc_device_register(
+		&pdev->dev, pdev->name, &tegra_rtc_ops, THIS_MODULE);
 	if (IS_ERR(info->rtc_dev)) {
 		ret = PTR_ERR(info->rtc_dev);
 		info->rtc_dev = NULL;
@@ -374,17 +374,11 @@ static int __init tegra_rtc_probe(struct platform_device *pdev)
 	return 0;
 
 err_dev_unreg:
-	rtc_device_unregister(info->rtc_dev);
-
 	return ret;
 }
 
 static int __exit tegra_rtc_remove(struct platform_device *pdev)
 {
-	struct tegra_rtc_info *info = platform_get_drvdata(pdev);
-
-	rtc_device_unregister(info->rtc_dev);
-
 	platform_set_drvdata(pdev, NULL);
 
 	return 0;
