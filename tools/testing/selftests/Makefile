@@ -6,6 +6,7 @@ TARGETS += vm
 TARGETS += cpu-hotplug
 TARGETS += memory-hotplug
 TARGETS += efivarfs
+TARGETS += ptrace
 
 all:
 	for TARGET in $(TARGETS); do \
