@@ -320,15 +320,14 @@ static int get_node_path(long block, int offset[4], unsigned int noffset[4])
 	noffset[0] = 0;
 
 	if (block < direct_index) {
-		offset[n++] = block;
-		level = 0;
+		offset[n] = block;
 		goto got;
 	}
 	block -= direct_index;
 	if (block < direct_blks) {
 		offset[n++] = NODE_DIR1_BLOCK;
 		noffset[n] = 1;
-		offset[n++] = block;
+		offset[n] = block;
 		level = 1;
 		goto got;
 	}
@@ -336,7 +335,7 @@ static int get_node_path(long block, int offset[4], unsigned int noffset[4])
 	if (block < direct_blks) {
 		offset[n++] = NODE_DIR2_BLOCK;
 		noffset[n] = 2;
-		offset[n++] = block;
+		offset[n] = block;
 		level = 1;
 		goto got;
 	}
@@ -346,7 +345,7 @@ static int get_node_path(long block, int offset[4], unsigned int noffset[4])
 		noffset[n] = 3;
 		offset[n++] = block / direct_blks;
 		noffset[n] = 4 + offset[n - 1];
-		offset[n++] = block % direct_blks;
+		offset[n] = block % direct_blks;
 		level = 2;
 		goto got;
 	}
@@ -356,7 +355,7 @@ static int get_node_path(long block, int offset[4], unsigned int noffset[4])
 		noffset[n] = 4 + dptrs_per_blk;
 		offset[n++] = block / direct_blks;
 		noffset[n] = 5 + dptrs_per_blk + offset[n - 1];
-		offset[n++] = block % direct_blks;
+		offset[n] = block % direct_blks;
 		level = 2;
 		goto got;
 	}
@@ -371,7 +370,7 @@ static int get_node_path(long block, int offset[4], unsigned int noffset[4])
 		noffset[n] = 7 + (dptrs_per_blk * 2) +
 			      offset[n - 2] * (dptrs_per_blk + 1) +
 			      offset[n - 1];
-		offset[n++] = block % direct_blks;
+		offset[n] = block % direct_blks;
 		level = 3;
 		goto got;
 	} else {
@@ -384,7 +383,7 @@ got:
 /*
  * Caller should call f2fs_put_dnode(dn).
  */
-int get_dnode_of_data(struct dnode_of_data *dn, pgoff_t index, int ro)
+int get_dnode_of_data(struct dnode_of_data *dn, pgoff_t index, int mode)
 {
 	struct f2fs_sb_info *sbi = F2FS_SB(dn->inode->i_sb);
 	struct page *npage[4];
@@ -403,7 +402,8 @@ int get_dnode_of_data(struct dnode_of_data *dn, pgoff_t index, int ro)
 		return PTR_ERR(npage[0]);
 
 	parent = npage[0];
-	nids[1] = get_nid(parent, offset[0], true);
+	if (level != 0)
+		nids[1] = get_nid(parent, offset[0], true);
 	dn->inode_page = npage[0];
 	dn->inode_page_locked = true;
 
@@ -411,7 +411,7 @@ int get_dnode_of_data(struct dnode_of_data *dn, pgoff_t index, int ro)
 	for (i = 1; i <= level; i++) {
 		bool done = false;
 
-		if (!nids[i] && !ro) {
+		if (!nids[i] && mode == ALLOC_NODE) {
 			mutex_lock_op(sbi, NODE_NEW);
 
 			/* alloc new node */
@@ -434,7 +434,7 @@ int get_dnode_of_data(struct dnode_of_data *dn, pgoff_t index, int ro)
 			alloc_nid_done(sbi, nids[i]);
 			mutex_unlock_op(sbi, NODE_NEW);
 			done = true;
-		} else if (ro && i == level && level > 1) {
+		} else if (mode == LOOKUP_NODE_RA && i == level && level > 1) {
 			npage[i] = get_node_page_ra(parent, offset[i - 1]);
 			if (IS_ERR(npage[i])) {
 				err = PTR_ERR(npage[i]);
@@ -920,19 +920,17 @@ struct page *get_node_page_ra(struct page *parent, int start)
 	if (!nid)
 		return ERR_PTR(-ENOENT);
 
-	page = find_get_page(mapping, nid);
-	if (page && PageUptodate(page))
-		goto page_hit;
-	f2fs_put_page(page, 0);
-
 repeat:
 	page = grab_cache_page(mapping, nid);
 	if (!page)
 		return ERR_PTR(-ENOMEM);
+	else if (PageUptodate(page))
+		goto page_hit;
 
-	err = read_node_page(page, READA);
+	err = read_node_page(page, READ_SYNC);
+	unlock_page(page);
 	if (err) {
-		f2fs_put_page(page, 1);
+		f2fs_put_page(page, 0);
 		return ERR_PTR(err);
 	}
 
@@ -946,8 +944,9 @@ repeat:
 		ra_node_page(sbi, nid);
 	}
 
-page_hit:
 	lock_page(page);
+
+page_hit:
 	if (PageError(page)) {
 		f2fs_put_page(page, 1);
 		return ERR_PTR(-EIO);
@@ -1195,14 +1194,13 @@ const struct address_space_operations f2fs_node_aops = {
 static struct free_nid *__lookup_free_nid_list(nid_t n, struct list_head *head)
 {
 	struct list_head *this;
-	struct free_nid *i = NULL;
+	struct free_nid *i;
 	list_for_each(this, head) {
 		i = list_entry(this, struct free_nid, list);
 		if (i->nid == n)
-			break;
-		i = NULL;
+			return i;
 	}
-	return i;
+	return NULL;
 }
 
 static void __del_from_free_nid_list(struct free_nid *i)
