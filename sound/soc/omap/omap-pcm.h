@@ -29,6 +29,7 @@ struct snd_pcm_substream;
 
 struct omap_pcm_dma_data {
 	char		*name;		/* stream identifier */
+	char		*dma_name;	/* DMA request name */
 	int		dma_req;	/* DMA request line */
 	unsigned long	port_addr;	/* transmit/receive register */
 	void (*set_threshold)(struct snd_pcm_substream *substream);

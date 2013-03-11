@@ -71,9 +71,11 @@ struct omap_mcpdm {
 static struct omap_pcm_dma_data omap_mcpdm_dai_dma_params[] = {
 	{
 		.name = "Audio playback",
+		.dma_name = "dn_link",
 	},
 	{
 		.name = "Audio capture",
+		.dma_name = "up_link",
 	},
 };
 
@@ -448,17 +450,21 @@ static int asoc_mcpdm_probe(struct platform_device *pdev)
 	omap_mcpdm_dai_dma_params[0].port_addr = res->start + MCPDM_REG_DN_DATA;
 	omap_mcpdm_dai_dma_params[1].port_addr = res->start + MCPDM_REG_UP_DATA;
 
-	res = platform_get_resource_byname(pdev, IORESOURCE_DMA, "dn_link");
-	if (!res)
-		return -ENODEV;
+	if (!pdev->dev.of_node) {
+		res = platform_get_resource_byname(pdev, IORESOURCE_DMA,
+						   "dn_link");
+		if (!res)
+			return -ENODEV;
 
-	omap_mcpdm_dai_dma_params[0].dma_req = res->start;
+		omap_mcpdm_dai_dma_params[0].dma_req = res->start;
 
-	res = platform_get_resource_byname(pdev, IORESOURCE_DMA, "up_link");
-	if (!res)
-		return -ENODEV;
+		res = platform_get_resource_byname(pdev, IORESOURCE_DMA,
+						   "up_link");
+		if (!res)
+			return -ENODEV;
 
-	omap_mcpdm_dai_dma_params[1].dma_req = res->start;
+		omap_mcpdm_dai_dma_params[1].dma_req = res->start;
+	}
 
 	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "mpu");
 	if (res == NULL)

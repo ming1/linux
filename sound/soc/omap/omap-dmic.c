@@ -62,6 +62,7 @@ struct omap_dmic {
  */
 static struct omap_pcm_dma_data omap_dmic_dai_dma_params = {
 	.name		= "DMIC capture",
+	.dma_name	= "up_link",
 };
 
 static inline void omap_dmic_write(struct omap_dmic *dmic, u16 reg, u32 val)
@@ -478,13 +479,15 @@ static int asoc_dmic_probe(struct platform_device *pdev)
 	}
 	omap_dmic_dai_dma_params.port_addr = res->start + OMAP_DMIC_DATA_REG;
 
-	res = platform_get_resource(pdev, IORESOURCE_DMA, 0);
-	if (!res) {
-		dev_err(dmic->dev, "invalid dma resource\n");
-		ret = -ENODEV;
-		goto err_put_clk;
+	if (!pdev->dev.of_node) {
+		res = platform_get_resource(pdev, IORESOURCE_DMA, 0);
+		if (!res) {
+			dev_err(dmic->dev, "invalid dma resource\n");
+			ret = -ENODEV;
+			goto err_put_clk;
+		}
+		omap_dmic_dai_dma_params.dma_req = res->start;
 	}
-	omap_dmic_dai_dma_params.dma_req = res->start;
 
 	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "mpu");
 	if (!res) {
