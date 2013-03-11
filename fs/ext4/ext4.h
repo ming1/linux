@@ -581,6 +581,7 @@ enum {
 #define EXT4_GET_BLOCKS_NO_LOCK			0x0100
 	/* Do not put hole in extent cache */
 #define EXT4_GET_BLOCKS_NO_PUT_HOLE		0x0200
+#define EXT4_GET_BLOCKS_METADATA_RESERVED	0x0400
 
 /*
  * Flags used by ext4_free_blocks
