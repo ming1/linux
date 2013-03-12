@@ -176,13 +176,21 @@ static int omap_pcm_open(struct snd_pcm_substream *substream)
 {
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
 	struct omap_pcm_dma_data *dma_data;
+	int ret;
 
 	snd_soc_set_runtime_hwparams(substream, &omap_pcm_hardware);
 
 	dma_data = snd_soc_dai_get_dma_data(rtd->cpu_dai, substream);
 
-	return snd_dmaengine_pcm_open(substream, omap_dma_filter_fn,
-				      &dma_data->dma_req);
+	if (rtd->cpu_dai->dev->of_node)
+		ret = snd_dmaengine_generic_pcm_open(substream,
+						     rtd->cpu_dai->dev,
+						     dma_data->dma_name);
+	else
+		ret = snd_dmaengine_pcm_open(substream, omap_dma_filter_fn,
+					     &dma_data->dma_req);
+
+	return ret;
 }
 
 static int omap_pcm_close(struct snd_pcm_substream *substream)
