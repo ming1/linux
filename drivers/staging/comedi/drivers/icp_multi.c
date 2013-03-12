@@ -120,7 +120,7 @@ struct icp_multi_private {
 	unsigned int DacCmdStatus;	/*  DAC Command/Status register */
 	unsigned int IntEnable;	/*  Interrupt Enable register */
 	unsigned int IntStatus;	/*  Interrupt Status register */
-	unsigned int act_chanlist[32];	/*  list of scaned channel */
+	unsigned int act_chanlist[32];	/*  list of scanned channel */
 	unsigned char act_chanlist_len;	/*  len of scanlist */
 	unsigned char act_chanlist_pos;	/*  actual position in MUX list */
 	unsigned int *ai_chanlist;	/*  actaul chanlist */
@@ -618,9 +618,9 @@ static struct comedi_driver icp_multi_driver = {
 };
 
 static int icp_multi_pci_probe(struct pci_dev *dev,
-					   const struct pci_device_id *ent)
+			       const struct pci_device_id *id)
 {
-	return comedi_pci_auto_config(dev, &icp_multi_driver);
+	return comedi_pci_auto_config(dev, &icp_multi_driver, id->driver_data);
 }
 
 static DEFINE_PCI_DEVICE_TABLE(icp_multi_pci_table) = {

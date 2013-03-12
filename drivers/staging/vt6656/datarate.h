@@ -77,22 +77,22 @@ void RATEvParseMaxRate(struct vnt_private *, PWLAN_IE_SUPP_RATES pItemRates,
 void RATEvTxRateFallBack(struct vnt_private *pDevice,
 	PKnownNodeDB psNodeDBTable);
 
-BYTE
+u8
 RATEuSetIE(
      PWLAN_IE_SUPP_RATES pSrcRates,
      PWLAN_IE_SUPP_RATES pDstRates,
      unsigned int                uRateLen
     );
 
-WORD
+u16
 RATEwGetRateIdx(
-     BYTE byRate
+     u8 byRate
     );
 
 
-BYTE
+u8
 DATARATEbyGetRateIdx(
-     BYTE byRate
+     u8 byRate
     );
 
 #endif /* __DATARATE_H__ */
