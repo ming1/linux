@@ -2,8 +2,9 @@
  *  HID driver for multitouch panels
  *
  *  Copyright (c) 2010-2012 Stephane Chatty <chatty@enac.fr>
- *  Copyright (c) 2010-2012 Benjamin Tissoires <benjamin.tissoires@gmail.com>
+ *  Copyright (c) 2010-2013 Benjamin Tissoires <benjamin.tissoires@gmail.com>
  *  Copyright (c) 2010-2012 Ecole Nationale de l'Aviation Civile, France
+ *  Copyright (c) 2012-2013 Red Hat, Inc
  *
  *  This code is partly based on hid-egalax.c:
  *
@@ -26,13 +27,23 @@
  * any later version.
  */
 
+/*
+ * This driver is regularly tested thanks to the tool hid-test[1].
+ * This tool relies on hid-replay[2] and a database of hid devices[3].
+ * Please run these regression tests before patching this module so that
+ * your patch won't break existing known devices.
+ *
+ * [1] https://github.com/bentiss/hid-test
+ * [2] https://github.com/bentiss/hid-replay
+ * [3] https://github.com/bentiss/hid-devices
+ */
+
 #include <linux/device.h>
 #include <linux/hid.h>
 #include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/usb.h>
 #include <linux/input/mt.h>
-#include "usbhid/usbhid.h"
 
 
 MODULE_AUTHOR("Stephane Chatty <chatty@enac.fr>");
@@ -86,7 +97,6 @@ struct mt_device {
 					   multitouch fields */
 	int cc_index;	/* contact count field index in the report */
 	int cc_value_index;	/* contact count value index in the field */
-	unsigned last_field_index;	/* last field index of the report */
 	unsigned last_slot_field;	/* the last field of a slot */
 	unsigned mt_report_id;	/* the report ID of the multitouch device */
 	__s8 inputmode;		/* InputMode HID feature, -1 if non-existent */
@@ -405,7 +415,6 @@ static int mt_input_mapping(struct hid_device *hdev, struct hid_input *hi,
 			}
 
 			mt_store_field(usage, td, hi);
-			td->last_field_index = field->index;
 			return 1;
 		case HID_GD_Y:
 			if (prev_usage && (prev_usage->hid == usage->hid)) {
@@ -421,7 +430,6 @@ static int mt_input_mapping(struct hid_device *hdev, struct hid_input *hi,
 			}
 
 			mt_store_field(usage, td, hi);
-			td->last_field_index = field->index;
 			return 1;
 		}
 		return 0;
@@ -436,21 +444,17 @@ static int mt_input_mapping(struct hid_device *hdev, struct hid_input *hi,
 					ABS_MT_DISTANCE, 0, 1, 0, 0);
 			}
 			mt_store_field(usage, td, hi);
-			td->last_field_index = field->index;
 			return 1;
 		case HID_DG_CONFIDENCE:
 			mt_store_field(usage, td, hi);
-			td->last_field_index = field->index;
 			return 1;
 		case HID_DG_TIPSWITCH:
 			hid_map_usage(hi, usage, bit, max, EV_KEY, BTN_TOUCH);
 			input_set_capability(hi->input, EV_KEY, BTN_TOUCH);
 			mt_store_field(usage, td, hi);
-			td->last_field_index = field->index;
 			return 1;
 		case HID_DG_CONTACTID:
 			mt_store_field(usage, td, hi);
-			td->last_field_index = field->index;
 			td->touches_by_report++;
 			td->mt_report_id = field->report->id;
 			return 1;
@@ -461,7 +465,6 @@ static int mt_input_mapping(struct hid_device *hdev, struct hid_input *hi,
 				set_abs(hi->input, ABS_MT_TOUCH_MAJOR, field,
 					cls->sn_width);
 			mt_store_field(usage, td, hi);
-			td->last_field_index = field->index;
 			return 1;
 		case HID_DG_HEIGHT:
 			hid_map_usage(hi, usage, bit, max,
@@ -473,7 +476,6 @@ static int mt_input_mapping(struct hid_device *hdev, struct hid_input *hi,
 					ABS_MT_ORIENTATION, 0, 1, 0, 0);
 			}
 			mt_store_field(usage, td, hi);
-			td->last_field_index = field->index;
 			return 1;
 		case HID_DG_TIPPRESSURE:
 			hid_map_usage(hi, usage, bit, max,
@@ -481,17 +483,14 @@ static int mt_input_mapping(struct hid_device *hdev, struct hid_input *hi,
 			set_abs(hi->input, ABS_MT_PRESSURE, field,
 				cls->sn_pressure);
 			mt_store_field(usage, td, hi);
-			td->last_field_index = field->index;
 			return 1;
 		case HID_DG_CONTACTCOUNT:
 			td->cc_index = field->index;
 			td->cc_value_index = usage->usage_index;
-			td->last_field_index = field->index;
 			return 1;
 		case HID_DG_CONTACTMAX:
 			/* we don't set td->last_slot_field as contactcount and
 			 * contact max are global to the report */
-			td->last_field_index = field->index;
 			return -1;
 		case HID_DG_TOUCH:
 			/* Legacy devices use TIPSWITCH and not TOUCH.
@@ -677,10 +676,6 @@ static void mt_process_mt_event(struct hid_device *hid, struct hid_field *field,
 			/* we only take into account the last report. */
 			if (usage->hid == td->last_slot_field)
 				mt_complete_slot(td, field->hidinput->input);
-
-			if (field->index == td->last_field_index
-				&& td->num_received >= td->num_expected)
-				mt_sync_frame(td, field->hidinput->input);
 		}
 
 	}
@@ -721,6 +716,9 @@ static void mt_report(struct hid_device *hid, struct hid_report *report)
 			mt_process_mt_event(hid, field, &field->usage[n],
 					field->value[n]);
 	}
+
+	if (td->num_received >= td->num_expected)
+		mt_sync_frame(td, report->field[0]->hidinput->input);
 }
 
 static void mt_set_input_mode(struct hid_device *hdev)
@@ -736,7 +734,7 @@ static void mt_set_input_mode(struct hid_device *hdev)
 	r = re->report_id_hash[td->inputmode];
 	if (r) {
 		r->field[0]->value[td->inputmode_index] = 0x02;
-		usbhid_submit_report(hdev, r, USB_DIR_OUT);
+		hid_hw_request(hdev, r, HID_REQ_SET_REPORT);
 	}
 }
 
@@ -761,7 +759,7 @@ static void mt_set_maxcontacts(struct hid_device *hdev)
 		max = min(fieldmax, max);
 		if (r->field[0]->value[0] != max) {
 			r->field[0]->value[0] = max;
-			usbhid_submit_report(hdev, r, USB_DIR_OUT);
+			hid_hw_request(hdev, r, HID_REQ_SET_REPORT);
 		}
 	}
 }
@@ -898,26 +896,11 @@ static int mt_reset_resume(struct hid_device *hdev)
 
 static int mt_resume(struct hid_device *hdev)
 {
-	struct usb_interface *intf;
-	struct usb_host_interface *interface;
-	struct usb_device *dev;
-
-	if (hdev->bus != BUS_USB)
-		return 0;
-
-	intf = to_usb_interface(hdev->dev.parent);
-	interface = intf->cur_altsetting;
-	dev = hid_to_usb_dev(hdev);
-
 	/* Some Elan legacy devices require SET_IDLE to be set on resume.
 	 * It should be safe to send it to other devices too.
 	 * Tested on 3M, Stantum, Cypress, Zytronic, eGalax, and Elan panels. */
 
-	usb_control_msg(dev, usb_sndctrlpipe(dev, 0),
-			HID_REQ_SET_IDLE,
-			USB_TYPE_CLASS | USB_RECIP_INTERFACE,
-			0, interface->desc.bInterfaceNumber,
-			NULL, 0, USB_CTRL_SET_TIMEOUT);
+	hid_hw_idle(hdev, 0, 0, HID_REQ_SET_IDLE);
 
 	return 0;
 }
