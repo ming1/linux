@@ -9,11 +9,8 @@
  */
 
 #include <linux/sched.h>
-#include <linux/cpumask.h>
-#include <linux/nodemask.h>
 #include <linux/rcupdate.h>
 #include <linux/rculist.h>
-#include <linux/cgroupstats.h>
 #include <linux/prio_heap.h>
 #include <linux/rwsem.h>
 #include <linux/idr.h>
@@ -22,6 +19,7 @@
 
 #ifdef CONFIG_CGROUPS
 
+struct cgroupstats;
 struct cgroupfs_root;
 struct cgroup_subsys;
 struct inode;
