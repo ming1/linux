@@ -1105,7 +1105,6 @@ struct soc_enum {
 	unsigned int mask;
 	const char * const *texts;
 	const unsigned int *values;
-	void *dapm;
 };
 
 /* codec IO */
