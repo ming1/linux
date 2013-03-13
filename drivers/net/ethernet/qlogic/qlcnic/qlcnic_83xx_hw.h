@@ -94,8 +94,23 @@ struct qlcnic_intrpt_config {
 };
 
 struct qlcnic_macvlan_mbx {
-	u8	mac[ETH_ALEN];
+#if defined(__LITTLE_ENDIAN)
+	u8	mac_addr0;
+	u8	mac_addr1;
+	u8	mac_addr2;
+	u8	mac_addr3;
+	u8	mac_addr4;
+	u8	mac_addr5;
 	u16	vlan;
+#elif defined(__BIG_ENDIAN)
+	u8	mac_addr3;
+	u8	mac_addr2;
+	u8	mac_addr1;
+	u8	mac_addr0;
+	u16	vlan;
+	u8	mac_addr5;
+	u8	mac_addr4;
+#endif
 };
 
 struct qlc_83xx_fw_info {
@@ -434,5 +449,6 @@ int qlcnic_83xx_get_regs_len(struct qlcnic_adapter *);
 int qlcnic_83xx_get_registers(struct qlcnic_adapter *, u32 *);
 int qlcnic_83xx_loopback_test(struct net_device *, u8);
 int qlcnic_83xx_interrupt_test(struct net_device *);
+int qlcnic_83xx_set_led(struct net_device *, enum ethtool_phys_id_state);
 int qlcnic_83xx_flash_test(struct qlcnic_adapter *);
 #endif
