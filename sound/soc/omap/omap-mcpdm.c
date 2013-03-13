@@ -71,9 +71,11 @@ struct omap_mcpdm {
 static struct omap_pcm_dma_data omap_mcpdm_dai_dma_params[] = {
 	{
 		.name = "Audio playback",
+		.dma_name = "dn_link",
 	},
 	{
 		.name = "Audio capture",
+		.dma_name = "up_link",
 	},
 };
 
@@ -369,7 +371,7 @@ static int omap_mcpdm_probe(struct snd_soc_dai *dai)
 	pm_runtime_get_sync(mcpdm->dev);
 	omap_mcpdm_write(mcpdm, MCPDM_REG_CTRL, 0x00);
 
-	ret = request_irq(mcpdm->irq, omap_mcpdm_irq_handler,
+	ret = devm_request_irq(mcpdm->dev, mcpdm->irq, omap_mcpdm_irq_handler,
 				0, "McPDM", (void *)mcpdm);
 
 	pm_runtime_put_sync(mcpdm->dev);
@@ -389,7 +391,6 @@ static int omap_mcpdm_remove(struct snd_soc_dai *dai)
 {
 	struct omap_mcpdm *mcpdm = snd_soc_dai_get_drvdata(dai);
 
-	free_irq(mcpdm->irq, (void *)mcpdm);
 	pm_runtime_disable(mcpdm->dev);
 
 	return 0;
@@ -449,30 +450,29 @@ static int asoc_mcpdm_probe(struct platform_device *pdev)
 	omap_mcpdm_dai_dma_params[0].port_addr = res->start + MCPDM_REG_DN_DATA;
 	omap_mcpdm_dai_dma_params[1].port_addr = res->start + MCPDM_REG_UP_DATA;
 
-	res = platform_get_resource_byname(pdev, IORESOURCE_DMA, "dn_link");
-	if (!res)
-		return -ENODEV;
+	if (!pdev->dev.of_node) {
+		res = platform_get_resource_byname(pdev, IORESOURCE_DMA,
+						   "dn_link");
+		if (!res)
+			return -ENODEV;
 
-	omap_mcpdm_dai_dma_params[0].dma_req = res->start;
+		omap_mcpdm_dai_dma_params[0].dma_req = res->start;
 
-	res = platform_get_resource_byname(pdev, IORESOURCE_DMA, "up_link");
-	if (!res)
-		return -ENODEV;
+		res = platform_get_resource_byname(pdev, IORESOURCE_DMA,
+						   "up_link");
+		if (!res)
+			return -ENODEV;
 
-	omap_mcpdm_dai_dma_params[1].dma_req = res->start;
+		omap_mcpdm_dai_dma_params[1].dma_req = res->start;
+	}
 
 	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "mpu");
 	if (res == NULL)
 		return -ENOMEM;
 
-	if (!devm_request_mem_region(&pdev->dev, res->start,
-				     resource_size(res), "McPDM"))
-		return -EBUSY;
-
-	mcpdm->io_base = devm_ioremap(&pdev->dev, res->start,
-				      resource_size(res));
-	if (!mcpdm->io_base)
-		return -ENOMEM;
+	mcpdm->io_base = devm_ioremap_resource(&pdev->dev, res);
+	if (IS_ERR(mcpdm->io_base))
+		return PTR_ERR(mcpdm->io_base);
 
 	mcpdm->irq = platform_get_irq(pdev, 0);
 	if (mcpdm->irq < 0)
