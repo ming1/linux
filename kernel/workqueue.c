@@ -457,15 +457,15 @@ static int worker_pool_assign_id(struct worker_pool *pool)
 	int ret;
 
 	do {
-		if (!idr_pre_get(&worker_pool_idr, GFP_KERNEL))
-			return -ENOMEM;
-
+		idr_preload(GFP_KERNEL);
 		spin_lock_irq(&workqueue_lock);
-		ret = idr_get_new(&worker_pool_idr, pool, &pool->id);
+		ret = idr_alloc(&worker_pool_idr, pool, 0, 0, GFP_NOWAIT);
+		if (ret >= 0)
+			pool->id = ret;
 		spin_unlock_irq(&workqueue_lock);
 	} while (ret == -EAGAIN);
 
-	return ret;
+	return ret < 0 ? ret : 0;
 }
 
 /**
