@@ -46,7 +46,6 @@
 static const struct das08_board_struct das08_pci_boards[] = {
 	{
 		.name		= "pci-das08",
-		.id		= PCI_DEVICE_ID_PCIDAS08,
 		.ai_nbits	= 12,
 		.ai_pg		= das08_bipolar5,
 		.ai_encoding	= das08_encode12,
@@ -97,9 +96,10 @@ static struct comedi_driver das08_pci_comedi_driver = {
 };
 
 static int das08_pci_probe(struct pci_dev *dev,
-			   const struct pci_device_id *ent)
+			   const struct pci_device_id *id)
 {
-	return comedi_pci_auto_config(dev, &das08_pci_comedi_driver);
+	return comedi_pci_auto_config(dev, &das08_pci_comedi_driver,
+				      id->driver_data);
 }
 
 static DEFINE_PCI_DEVICE_TABLE(das08_pci_table) = {
