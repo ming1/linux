@@ -1,0 +1,23 @@
+Importing jdelvare-hwmon based on 3.9-rc2
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard f6161aa153581da4a3867a2d1a7caf4be19b6ec9
+HEAD is now at f6161aa Linux 3.9-rc2
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm75-01-update-header-inclusion.patch
+Applying: hwmon: (lm75.h) Update header inclusion
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm75-02-fix-tcn75-prefix.patch
+Applying: hwmon: (lm75) Fix tcn75 prefix
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm75-03-per-chip-initialization.patch
+Applying: hwmon: (lm75) Per-chip configuration register initialization
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm75-04-tweak-per-chip-part-1.patch
+Applying: hwmon: (lm75) Prepare to support per-chip resolution and sample time
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm75-05-tweak-per-chip-part-2.patch
+Applying: hwmon: (lm75) Tune resolution and sample time per chip
+$ git am ../quilt/jdelvare-hwmon/hwmon-lm75-06-add-DS7505.patch
+Applying: hwmon: (lm75) Add support for the Dallas/Maxim DS7505
+$ cd /home/sfr/kernels/next/next
+$ git fetch -f ../quilt-tmp master:jdelvare-hwmon/master
+From ../quilt-tmp
+   2a7d2b9..badd072  master     -> jdelvare-hwmon/master
+Importing device-mapper based on v3.9-rc1
+Unchanged quilt series device-mapper
