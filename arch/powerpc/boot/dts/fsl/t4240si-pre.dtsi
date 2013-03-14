@@ -1,5 +1,5 @@
 /*
- * e5500 Power ISA Device Tree Source (include)
+ * T4240 Silicon/SoC Device Tree Source (pre include)
  *
  * Copyright 2012 Freescale Semiconductor Inc.
  *
@@ -20,7 +20,7 @@
  * Foundation, either version 2 of that License or (at your option) any
  * later version.
  *
- * THIS SOFTWARE IS PROVIDED BY Freescale Semiconductor "AS IS" AND ANY
+ * THIS SOFTWARE IS PROVIDED BY Freescale Semiconductor ``AS IS'' AND ANY
  * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
  * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
  * DISCLAIMED. IN NO EVENT SHALL Freescale Semiconductor BE LIABLE FOR ANY
@@ -32,29 +32,96 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+/dts-v1/;
+
+/include/ "e6500_power_isa.dtsi"
+
 / {
+	compatible = "fsl,T4240";
+	#address-cells = <2>;
+	#size-cells = <2>;
+	interrupt-parent = <&mpic>;
+
+	aliases {
+		ccsr = &soc;
+
+		serial0 = &serial0;
+		serial1 = &serial1;
+		serial2 = &serial2;
+		serial3 = &serial3;
+		crypto = &crypto;
+		pci0 = &pci0;
+		pci1 = &pci1;
+		pci2 = &pci2;
+		pci3 = &pci3;
+		dma0 = &dma0;
+		dma1 = &dma1;
+		sdhc = &sdhc;
+	};
+
 	cpus {
-		power-isa-version = "2.06";
-		power-isa-b;		// Base
-		power-isa-e;		// Embedded
-		power-isa-atb;		// Alternate Time Base
-		power-isa-cs;		// Cache Specification
-		power-isa-ds;		// Decorated Storage
-		power-isa-e.ed;		// Embedded.Enhanced Debug
-		power-isa-e.pd;		// Embedded.External PID
-		power-isa-e.hv;		// Embedded.Hypervisor
-		power-isa-e.le;		// Embedded.Little-Endian
-		power-isa-e.pm;		// Embedded.Performance Monitor
-		power-isa-e.pc;		// Embedded.Processor Control
-		power-isa-ecl;		// Embedded Cache Locking
-		power-isa-exp;		// External Proxy
-		power-isa-fp;		// Floating Point
-		power-isa-fp.r;		// Floating Point.Record
-		power-isa-mmc;		// Memory Coherence
-		power-isa-scpm;		// Store Conditional Page Mobility
-		power-isa-wt;		// Wait
-		power-isa-64;		// 64-bit
-		fsl,eref-deo;		// Data Cache Extended Operations
-		mmu-type = "power-embedded";
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		PowerPC,e6500@0 {
+			device_type = "cpu";
+			reg = <0 1>;
+			next-level-cache = <&L2_1>;
+		};
+		PowerPC,e6500@1 {
+			device_type = "cpu";
+			reg = <2 3>;
+			next-level-cache = <&L2_1>;
+		};
+		PowerPC,e6500@2 {
+			device_type = "cpu";
+			reg = <4 5>;
+			next-level-cache = <&L2_1>;
+		};
+		PowerPC,e6500@3 {
+			device_type = "cpu";
+			reg = <6 7>;
+			next-level-cache = <&L2_1>;
+		};
+		PowerPC,e6500@4 {
+			device_type = "cpu";
+			reg = <8 9>;
+			next-level-cache = <&L2_2>;
+		};
+		PowerPC,e6500@5 {
+			device_type = "cpu";
+			reg = <10 11>;
+			next-level-cache = <&L2_2>;
+		};
+		PowerPC,e6500@6 {
+			device_type = "cpu";
+			reg = <12 13>;
+			next-level-cache = <&L2_2>;
+		};
+		PowerPC,e6500@7 {
+			device_type = "cpu";
+			reg = <14 15>;
+			next-level-cache = <&L2_2>;
+		};
+		PowerPC,e6500@8 {
+			device_type = "cpu";
+			reg = <16 17>;
+			next-level-cache = <&L2_3>;
+		};
+		PowerPC,e6500@9 {
+			device_type = "cpu";
+			reg = <18 19>;
+			next-level-cache = <&L2_3>;
+		};
+		PowerPC,e6500@10 {
+			device_type = "cpu";
+			reg = <20 21>;
+			next-level-cache = <&L2_3>;
+		};
+		PowerPC,e6500@11 {
+			device_type = "cpu";
+			reg = <22 23>;
+			next-level-cache = <&L2_3>;
+		};
 	};
 };
