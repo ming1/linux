@@ -88,11 +88,30 @@ struct acpi_device;
  * -----------------
  */
 
+enum acpi_hotplug_mode {
+	AHM_GENERIC = 0,
+	AHM_CONTAINER,
+	AHM_COUNT
+};
+
+struct acpi_hotplug_profile {
+	struct kobject kobj;
+	bool enabled:1;
+	enum acpi_hotplug_mode mode;
+};
+
+static inline struct acpi_hotplug_profile *to_acpi_hotplug_profile(
+						struct kobject *kobj)
+{
+	return container_of(kobj, struct acpi_hotplug_profile, kobj);
+}
+
 struct acpi_scan_handler {
 	const struct acpi_device_id *ids;
 	struct list_head list_node;
 	int (*attach)(struct acpi_device *dev, const struct acpi_device_id *id);
 	void (*detach)(struct acpi_device *dev);
+	struct acpi_hotplug_profile hotplug;
 };
 
 /*
