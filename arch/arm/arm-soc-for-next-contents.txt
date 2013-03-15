@@ -21,6 +21,9 @@ next/cleanup
 	at91/cleanup
 		  git://github.com/at91linux/linux-at91.git tags/at91-soc
 
+next/spring-cleaning
+		patches <1363299178-8241-1-git-send-email-arnd@arndb.de>
+
 next/multiplatform
 	nomadik/multiplatform
 		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-nomadik.git tags/nomadik-multiplatform
