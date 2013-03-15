@@ -1950,12 +1950,11 @@ static int dio200_auto_attach(struct comedi_device *dev,
 		return -EINVAL;
 	}
 	thisboard = comedi_board(dev);
-	ret = comedi_pci_enable(pci_dev, DIO200_DRIVER_NAME);
-	if (ret < 0) {
-		dev_err(dev->class_dev,
-			"error! cannot enable PCI device and request regions!\n");
+
+	ret = comedi_pci_enable(dev);
+	if (ret)
 		return ret;
-	}
+
 	bar = thisboard->mainbar;
 	base = pci_resource_start(pci_dev, bar);
 	len = pci_resource_len(pci_dev, bar);
@@ -2029,14 +2028,9 @@ static void dio200_detach(struct comedi_device *dev)
 			release_region(devpriv->io.u.iobase,
 				       thisboard->mainsize);
 	} else if (is_pci_board(thisboard)) {
-		struct pci_dev *pcidev = comedi_to_pci_dev(dev);
-		if (pcidev) {
-			if (devpriv->io.regtype != no_regtype) {
-				if (devpriv->io.regtype == mmio_regtype)
-					iounmap(devpriv->io.u.membase);
-				comedi_pci_disable(pcidev);
-			}
-		}
+		if (devpriv->io.regtype == mmio_regtype)
+			iounmap(devpriv->io.u.membase);
+		comedi_pci_disable(dev);
 	}
 }
 
@@ -2070,10 +2064,10 @@ static DEFINE_PCI_DEVICE_TABLE(dio200_pci_table) = {
 MODULE_DEVICE_TABLE(pci, dio200_pci_table);
 
 static int amplc_dio200_pci_probe(struct pci_dev *dev,
-						   const struct pci_device_id
-						   *ent)
+				  const struct pci_device_id *id)
 {
-	return comedi_pci_auto_config(dev, &amplc_dio200_driver);
+	return comedi_pci_auto_config(dev, &amplc_dio200_driver,
+				      id->driver_data);
 }
 
 static struct pci_driver amplc_dio200_pci_driver = {

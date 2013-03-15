@@ -75,12 +75,44 @@ static int omap_bandgap_power(struct omap_bandgap *bg_ptr, bool on)
 	return 0;
 }
 
+static u32 omap_bandgap_read_temp(struct omap_bandgap *bg_ptr, int id)
+{
+	struct temp_sensor_registers *tsr;
+	u32 temp, ctrl, reg;
+
+	tsr = bg_ptr->conf->sensors[id].registers;
+	reg = tsr->temp_sensor_ctrl;
+
+	if (OMAP_BANDGAP_HAS(bg_ptr, FREEZE_BIT)) {
+		ctrl = omap_bandgap_readl(bg_ptr, tsr->bgap_mask_ctrl);
+		ctrl |= tsr->mask_freeze_mask;
+		omap_bandgap_writel(bg_ptr, ctrl, tsr->bgap_mask_ctrl);
+		/*
+		 * In case we cannot read from cur_dtemp / dtemp_0,
+		 * then we read from the last valid temp read
+		 */
+		reg = tsr->ctrl_dtemp_1;
+	}
+
+	/* read temperature */
+	temp = omap_bandgap_readl(bg_ptr, reg);
+	temp &= tsr->bgap_dtemp_mask;
+
+	if (OMAP_BANDGAP_HAS(bg_ptr, FREEZE_BIT)) {
+		ctrl = omap_bandgap_readl(bg_ptr, tsr->bgap_mask_ctrl);
+		ctrl &= ~tsr->mask_freeze_mask;
+		omap_bandgap_writel(bg_ptr, ctrl, tsr->bgap_mask_ctrl);
+	}
+
+	return temp;
+}
+
 /* This is the Talert handler. Call it only if HAS(TALERT) is set */
 static irqreturn_t talert_irq_handler(int irq, void *data)
 {
 	struct omap_bandgap *bg_ptr = data;
 	struct temp_sensor_registers *tsr;
-	u32 t_hot = 0, t_cold = 0, temp, ctrl;
+	u32 t_hot = 0, t_cold = 0, ctrl;
 	int i;
 
 	bg_ptr = data;
@@ -118,10 +150,6 @@ static irqreturn_t talert_irq_handler(int irq, void *data)
 			__func__, bg_ptr->conf->sensors[i].domain,
 			t_hot, t_cold);
 
-		/* read temperature */
-		temp = omap_bandgap_readl(bg_ptr, tsr->temp_sensor_ctrl);
-		temp &= tsr->bgap_dtemp_mask;
-
 		/* report temperature to whom may concern */
 		if (bg_ptr->conf->report_temperature)
 			bg_ptr->conf->report_temperature(bg_ptr, i);
@@ -133,6 +161,9 @@ static irqreturn_t talert_irq_handler(int irq, void *data)
 /* This is the Tshut handler. Call it only if HAS(TSHUT) is set */
 static irqreturn_t omap_bandgap_tshut_irq_handler(int irq, void *data)
 {
+	pr_emerg("%s: TSHUT temperature reached. Needs shut down...\n",
+		 __func__);
+
 	orderly_poweroff(true);
 
 	return IRQ_HANDLED;
@@ -148,7 +179,7 @@ int adc_to_temp_conversion(struct omap_bandgap *bg_ptr, int id, int adc_val,
 	if (adc_val < ts_data->adc_start_val || adc_val > ts_data->adc_end_val)
 		return -ERANGE;
 
-	*t = bg_ptr->conv_table[adc_val - ts_data->adc_start_val];
+	*t = bg_ptr->conf->conv_table[adc_val - ts_data->adc_start_val];
 
 	return 0;
 }
@@ -157,17 +188,18 @@ static int temp_to_adc_conversion(long temp, struct omap_bandgap *bg_ptr, int i,
 				  int *adc)
 {
 	struct temp_sensor_data *ts_data = bg_ptr->conf->sensors[i].ts_data;
+	const int *conv_table = bg_ptr->conf->conv_table;
 	int high, low, mid;
 
 	low = 0;
 	high = ts_data->adc_end_val - ts_data->adc_start_val;
 	mid = (high + low) / 2;
 
-	if (temp < bg_ptr->conv_table[low] || temp > bg_ptr->conv_table[high])
+	if (temp < conv_table[low] || temp > conv_table[high])
 		return -EINVAL;
 
 	while (low < high) {
-		if (temp < bg_ptr->conv_table[mid])
+		if (temp < conv_table[mid])
 			high = mid - 1;
 		else
 			low = mid + 1;
@@ -187,11 +219,11 @@ static int temp_sensor_unmask_interrupts(struct omap_bandgap *bg_ptr, int id,
 	u32 temp, reg_val;
 
 	/* Read the current on die temperature */
-	tsr = bg_ptr->conf->sensors[id].registers;
-	temp = omap_bandgap_readl(bg_ptr, tsr->temp_sensor_ctrl);
-	temp &= tsr->bgap_dtemp_mask;
+	temp = omap_bandgap_read_temp(bg_ptr, id);
 
+	tsr = bg_ptr->conf->sensors[id].registers;
 	reg_val = omap_bandgap_readl(bg_ptr, tsr->bgap_mask_ctrl);
+
 	if (temp < t_hot)
 		reg_val |= tsr->mask_hot_mask;
 	else
@@ -622,8 +654,9 @@ int omap_bandgap_read_temperature(struct omap_bandgap *bg_ptr, int id,
 		return ret;
 
 	tsr = bg_ptr->conf->sensors[id].registers;
-	temp = omap_bandgap_readl(bg_ptr, tsr->temp_sensor_ctrl);
-	temp &= tsr->bgap_dtemp_mask;
+	mutex_lock(&bg_ptr->bg_mutex);
+	temp = omap_bandgap_read_temp(bg_ptr, id);
+	mutex_unlock(&bg_ptr->bg_mutex);
 
 	ret |= adc_to_temp_conversion(bg_ptr, id, temp, &temp);
 	if (ret)
@@ -691,12 +724,11 @@ omap_bandgap_force_single_read(struct omap_bandgap *bg_ptr, int id)
 	temp |= 1 << __ffs(tsr->bgap_soc_mask);
 	omap_bandgap_writel(bg_ptr, temp, tsr->temp_sensor_ctrl);
 	/* Wait until DTEMP is updated */
-	temp = omap_bandgap_readl(bg_ptr, tsr->temp_sensor_ctrl);
-	temp &= (tsr->bgap_dtemp_mask);
-	while ((temp == 0) && --counter) {
-		temp = omap_bandgap_readl(bg_ptr, tsr->temp_sensor_ctrl);
-		temp &= (tsr->bgap_dtemp_mask);
-	}
+	temp = omap_bandgap_read_temp(bg_ptr, id);
+
+	while ((temp == 0) && --counter)
+		temp = omap_bandgap_read_temp(bg_ptr, id);
+
 	/* Start of Conversion = 0 */
 	temp = omap_bandgap_readl(bg_ptr, tsr->temp_sensor_ctrl);
 	temp &= ~(1 << __ffs(tsr->bgap_soc_mask));
@@ -880,7 +912,6 @@ int omap_bandgap_probe(struct platform_device *pdev)
 		goto free_irqs;
 	}
 
-	bg_ptr->conv_table = bg_ptr->conf->conv_table;
 	for (i = 0; i < bg_ptr->conf->sensor_count; i++) {
 		struct temp_sensor_registers *tsr;
 		u32 val;
@@ -911,7 +942,9 @@ int omap_bandgap_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "Cannot re-set clock rate. Continuing\n");
 
 	bg_ptr->clk_rate = clk_rate;
-	clk_enable(bg_ptr->fclock);
+	if (OMAP_BANDGAP_HAS(bg_ptr, CLK_CTRL))
+		clk_prepare_enable(bg_ptr->fclock);
+
 
 	mutex_init(&bg_ptr->bg_mutex);
 	bg_ptr->dev = &pdev->dev;
@@ -979,7 +1012,8 @@ int omap_bandgap_probe(struct platform_device *pdev)
 	return 0;
 
 disable_clk:
-	clk_disable(bg_ptr->fclock);
+	if (OMAP_BANDGAP_HAS(bg_ptr, CLK_CTRL))
+		clk_disable_unprepare(bg_ptr->fclock);
 put_clks:
 	clk_put(bg_ptr->fclock);
 	clk_put(bg_ptr->div_clk);
@@ -1009,7 +1043,8 @@ int omap_bandgap_remove(struct platform_device *pdev)
 
 	omap_bandgap_power(bg_ptr, false);
 
-	clk_disable(bg_ptr->fclock);
+	if (OMAP_BANDGAP_HAS(bg_ptr, CLK_CTRL))
+		clk_disable_unprepare(bg_ptr->fclock);
 	clk_put(bg_ptr->fclock);
 	clk_put(bg_ptr->div_clk);
 
@@ -1106,7 +1141,9 @@ static int omap_bandgap_suspend(struct device *dev)
 
 	err = omap_bandgap_save_ctxt(bg_ptr);
 	omap_bandgap_power(bg_ptr, false);
-	clk_disable(bg_ptr->fclock);
+
+	if (OMAP_BANDGAP_HAS(bg_ptr, CLK_CTRL))
+		clk_disable_unprepare(bg_ptr->fclock);
 
 	return err;
 }
@@ -1115,7 +1152,9 @@ static int omap_bandgap_resume(struct device *dev)
 {
 	struct omap_bandgap *bg_ptr = dev_get_drvdata(dev);
 
-	clk_enable(bg_ptr->fclock);
+	if (OMAP_BANDGAP_HAS(bg_ptr, CLK_CTRL))
+		clk_prepare_enable(bg_ptr->fclock);
+
 	omap_bandgap_power(bg_ptr, true);
 
 	return omap_bandgap_restore_ctxt(bg_ptr);

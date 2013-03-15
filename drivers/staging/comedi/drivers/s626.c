@@ -2673,7 +2673,7 @@ static int s626_auto_attach(struct comedi_device *dev,
 		return -ENOMEM;
 	dev->private = devpriv;
 
-	ret = comedi_pci_enable(pcidev, dev->board_name);
+	ret = comedi_pci_enable(dev);
 	if (ret)
 		return ret;
 	dev->iobase = 1;	/* detach needs this */
@@ -2790,7 +2790,6 @@ static int s626_auto_attach(struct comedi_device *dev,
 
 static void s626_detach(struct comedi_device *dev)
 {
-	struct pci_dev *pcidev = comedi_to_pci_dev(dev);
 	struct s626_private *devpriv = dev->private;
 
 	if (devpriv) {
@@ -2818,10 +2817,7 @@ static void s626_detach(struct comedi_device *dev)
 		if (devpriv->base_addr)
 			iounmap(devpriv->base_addr);
 	}
-	if (pcidev) {
-		if (dev->iobase)
-			comedi_pci_disable(pcidev);
-	}
+	comedi_pci_disable(dev);
 }
 
 static struct comedi_driver s626_driver = {
@@ -2832,9 +2828,9 @@ static struct comedi_driver s626_driver = {
 };
 
 static int s626_pci_probe(struct pci_dev *dev,
-				    const struct pci_device_id *ent)
+			  const struct pci_device_id *id)
 {
-	return comedi_pci_auto_config(dev, &s626_driver);
+	return comedi_pci_auto_config(dev, &s626_driver, id->driver_data);
 }
 
 /*

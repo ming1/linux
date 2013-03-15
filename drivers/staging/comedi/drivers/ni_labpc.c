@@ -708,6 +708,11 @@ static int labpc_auto_attach(struct comedi_device *dev,
 	if (!IS_ENABLED(CONFIG_COMEDI_PCI_DRIVERS))
 		return -ENODEV;
 
+	ret = comedi_pci_enable(dev);
+	if (ret)
+		return ret;
+	dev->iobase = 1;
+
 	devpriv = kzalloc(sizeof(*devpriv), GFP_KERNEL);
 	if (!devpriv)
 		return -ENOMEM;
@@ -800,6 +805,7 @@ void labpc_common_detach(struct comedi_device *dev)
 		mite_unsetup(devpriv->mite);
 		mite_free(devpriv->mite);
 	}
+	comedi_pci_disable(dev);
 #endif
 };
 EXPORT_SYMBOL_GPL(labpc_common_detach);
@@ -2113,9 +2119,9 @@ static DEFINE_PCI_DEVICE_TABLE(labpc_pci_table) = {
 MODULE_DEVICE_TABLE(pci, labpc_pci_table);
 
 static int labpc_pci_probe(struct pci_dev *dev,
-				     const struct pci_device_id *ent)
+			   const struct pci_device_id *id)
 {
-	return comedi_pci_auto_config(dev, &labpc_driver);
+	return comedi_pci_auto_config(dev, &labpc_driver, id->driver_data);
 }
 
 static struct pci_driver labpc_pci_driver = {

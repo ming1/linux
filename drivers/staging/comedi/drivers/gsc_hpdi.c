@@ -499,11 +499,9 @@ static int hpdi_auto_attach(struct comedi_device *dev,
 		return -ENOMEM;
 	dev->private = devpriv;
 
-	if (comedi_pci_enable(pcidev, dev->board_name)) {
-		dev_warn(dev->class_dev,
-			 "failed enable PCI device and request regions\n");
-		return -EIO;
-	}
+	retval = comedi_pci_enable(dev);
+	if (retval)
+		return retval;
 	dev->iobase = 1;	/* the "detach" needs this */
 	pci_set_master(pcidev);
 
@@ -596,9 +594,8 @@ static void hpdi_detach(struct comedi_device *dev)
 					    NUM_DMA_DESCRIPTORS,
 					    devpriv->dma_desc,
 					    devpriv->dma_desc_phys_addr);
-		if (dev->iobase)
-			comedi_pci_disable(pcidev);
 	}
+	comedi_pci_disable(dev);
 }
 
 static int dio_config_block_size(struct comedi_device *dev, unsigned int *data)
@@ -943,9 +940,9 @@ static struct comedi_driver gsc_hpdi_driver = {
 };
 
 static int gsc_hpdi_pci_probe(struct pci_dev *dev,
-					const struct pci_device_id *ent)
+			      const struct pci_device_id *id)
 {
-	return comedi_pci_auto_config(dev, &gsc_hpdi_driver);
+	return comedi_pci_auto_config(dev, &gsc_hpdi_driver, id->driver_data);
 }
 
 static DEFINE_PCI_DEVICE_TABLE(gsc_hpdi_pci_table) = {
