@@ -1183,9 +1183,8 @@ static int __init init_mtd(void)
 	if (ret)
 		goto err_bdi3;
 
-#ifdef CONFIG_PROC_FS
 	proc_mtd = proc_create("mtd", 0, NULL, &mtd_proc_ops);
-#endif /* CONFIG_PROC_FS */
+
 	return 0;
 
 err_bdi3:
@@ -1201,10 +1200,8 @@ err_reg:
 
 static void __exit cleanup_mtd(void)
 {
-#ifdef CONFIG_PROC_FS
 	if (proc_mtd)
-		remove_proc_entry( "mtd", NULL);
-#endif /* CONFIG_PROC_FS */
+		remove_proc_entry("mtd", NULL);
 	class_unregister(&mtd_class);
 	bdi_destroy(&mtd_bdi_unmappable);
 	bdi_destroy(&mtd_bdi_ro_mappable);
