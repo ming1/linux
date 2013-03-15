@@ -7,15 +7,27 @@
  *
  * If you feel the need to add #include <linux/foo.h> to this file
  * then you are doing something wrong and should go away silently.
+ *
+ * If you think the above arrogance just encourages more people to add
+ * random crap to this file, you're not alone.
  */
 
 /* Some toolchains use a `_' prefix for all user symbols. */
-#ifdef CONFIG_SYMBOL_PREFIX
-#define MODULE_SYMBOL_PREFIX CONFIG_SYMBOL_PREFIX
+#ifdef CONFIG_HAVE_UNDERSCORE_SYMBOL_PREFIX
+#define __VMLINUX_SYMBOL(x) _##x
+#define __VMLINUX_SYMBOL_STR(x) "_" #x
+#define VMLINUX_SYMBOL_PREFIX_STR "_"
 #else
-#define MODULE_SYMBOL_PREFIX ""
+#define __VMLINUX_SYMBOL(x) x
+#define __VMLINUX_SYMBOL_STR(x) #x
+#define VMLINUX_SYMBOL_PREFIX_STR ""
 #endif
 
+/* Indirect, so macros are expanded before pasting. */
+#define VMLINUX_SYMBOL(x) __VMLINUX_SYMBOL(x)
+#define VMLINUX_SYMBOL_STR(x) __VMLINUX_SYMBOL_STR(x)
+
+#ifndef __ASSEMBLY__
 struct kernel_symbol
 {
 	unsigned long value;
@@ -51,7 +63,7 @@ extern struct module __this_module;
 	__CRC_SYMBOL(sym, sec)					\
 	static const char __kstrtab_##sym[]			\
 	__attribute__((section("__ksymtab_strings"), aligned(1))) \
-	= MODULE_SYMBOL_PREFIX #sym;				\
+	= VMLINUX_SYMBOL_STR(sym);				\
 	static const struct kernel_symbol __ksymtab_##sym	\
 	__used							\
 	__attribute__((section("___ksymtab" sec "+" #sym), unused))	\
@@ -85,5 +97,6 @@ extern struct module __this_module;
 #define EXPORT_UNUSED_SYMBOL_GPL(sym)
 
 #endif /* CONFIG_MODULES */
+#endif /* !__ASSEMBLY__ */
 
 #endif /* _LINUX_EXPORT_H */
