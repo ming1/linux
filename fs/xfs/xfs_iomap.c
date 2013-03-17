@@ -325,7 +325,7 @@ xfs_iomap_eof_want_preallocate(
  * rather than falling short due to things like stripe unit/width alignment of
  * real extents.
  */
-STATIC int
+STATIC xfs_fsblock_t
 xfs_iomap_eof_prealloc_initial_size(
 	struct xfs_mount	*mp,
 	struct xfs_inode	*ip,
@@ -362,7 +362,7 @@ xfs_iomap_eof_prealloc_initial_size(
 	if (imap[0].br_startblock == HOLESTARTBLOCK)
 		return 0;
 	if (imap[0].br_blockcount <= (MAXEXTLEN >> 1))
-		return imap[0].br_blockcount;
+		return imap[0].br_blockcount << 1;
 	return XFS_B_TO_FSB(mp, offset);
 }
 
@@ -413,7 +413,7 @@ xfs_iomap_prealloc_size(
 		 * have a large file on a small filesystem and the above
 		 * lowspace thresholds are smaller than MAXEXTLEN.
 		 */
-		while (alloc_blocks >= freesp)
+		while (alloc_blocks && alloc_blocks >= freesp)
 			alloc_blocks >>= 4;
 	}
 
