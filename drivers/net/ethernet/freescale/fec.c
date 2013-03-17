@@ -29,7 +29,6 @@
 #include <linux/ioport.h>
 #include <linux/slab.h>
 #include <linux/interrupt.h>
-#include <linux/pci.h>
 #include <linux/init.h>
 #include <linux/delay.h>
 #include <linux/netdevice.h>
@@ -743,8 +742,6 @@ fec_enet_rx(struct net_device *ndev, int budget)
 		skb = netdev_alloc_skb(ndev, pkt_len - 4 + NET_IP_ALIGN);
 
 		if (unlikely(!skb)) {
-			printk("%s: Memory squeeze, dropping packet.\n",
-					ndev->name);
 			ndev->stats.rx_dropped++;
 		} else {
 			skb_reserve(skb, NET_IP_ALIGN);
@@ -1602,11 +1599,9 @@ static int fec_enet_init(struct net_device *ndev)
 
 	/* Allocate memory for buffer descriptors. */
 	cbd_base = dma_alloc_coherent(NULL, PAGE_SIZE, &fep->bd_dma,
-			GFP_KERNEL);
-	if (!cbd_base) {
-		printk("FEC: allocate descriptor memory failed?\n");
+				      GFP_KERNEL);
+	if (!cbd_base)
 		return -ENOMEM;
-	}
 
 	spin_lock_init(&fep->hw_lock);
 
@@ -1739,16 +1734,10 @@ fec_probe(struct platform_device *pdev)
 	if (!r)
 		return -ENXIO;
 
-	r = request_mem_region(r->start, resource_size(r), pdev->name);
-	if (!r)
-		return -EBUSY;
-
 	/* Init network device */
 	ndev = alloc_etherdev(sizeof(struct fec_enet_private));
-	if (!ndev) {
-		ret = -ENOMEM;
-		goto failed_alloc_etherdev;
-	}
+	if (!ndev)
+		return -ENOMEM;
 
 	SET_NETDEV_DEV(ndev, &pdev->dev);
 
@@ -1760,7 +1749,7 @@ fec_probe(struct platform_device *pdev)
 	    (pdev->id_entry->driver_data & FEC_QUIRK_HAS_GBIT))
 		fep->pause_flag |= FEC_PAUSE_FLAG_AUTONEG;
 
-	fep->hwp = ioremap(r->start, resource_size(r));
+	fep->hwp = devm_request_and_ioremap(&pdev->dev, r);
 	fep->pdev = pdev;
 	fep->dev_id = dev_id++;
 
@@ -1882,11 +1871,8 @@ failed_regulator:
 		clk_disable_unprepare(fep->clk_ptp);
 failed_pin:
 failed_clk:
-	iounmap(fep->hwp);
 failed_ioremap:
 	free_netdev(ndev);
-failed_alloc_etherdev:
-	release_mem_region(r->start, resource_size(r));
 
 	return ret;
 }
@@ -1896,7 +1882,6 @@ fec_drv_remove(struct platform_device *pdev)
 {
 	struct net_device *ndev = platform_get_drvdata(pdev);
 	struct fec_enet_private *fep = netdev_priv(ndev);
-	struct resource *r;
 	int i;
 
 	unregister_netdev(ndev);
@@ -1912,12 +1897,7 @@ fec_drv_remove(struct platform_device *pdev)
 		if (irq > 0)
 			free_irq(irq, ndev);
 	}
-	iounmap(fep->hwp);
 	free_netdev(ndev);
-
-	r = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	BUG_ON(!r);
-	release_mem_region(r->start, resource_size(r));
 
 	platform_set_drvdata(pdev, NULL);
 

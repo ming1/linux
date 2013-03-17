@@ -98,7 +98,7 @@ int sysctl_tcp_frto_response __read_mostly;
 int sysctl_tcp_thin_dupack __read_mostly;
 
 int sysctl_tcp_moderate_rcvbuf __read_mostly = 1;
-int sysctl_tcp_early_retrans __read_mostly = 2;
+int sysctl_tcp_early_retrans __read_mostly = 3;
 
 #define FLAG_DATA		0x01 /* Incoming frame contained data.		*/
 #define FLAG_WIN_UPDATE		0x02 /* Incoming ACK was a window update.	*/
@@ -2150,15 +2150,16 @@ static bool tcp_pause_early_retransmit(struct sock *sk, int flag)
 	 * max(RTT/4, 2msec) unless ack has ECE mark, no RTT samples
 	 * available, or RTO is scheduled to fire first.
 	 */
-	if (sysctl_tcp_early_retrans < 2 || (flag & FLAG_ECE) || !tp->srtt)
+	if (sysctl_tcp_early_retrans < 2 || sysctl_tcp_early_retrans > 3 ||
+	    (flag & FLAG_ECE) || !tp->srtt)
 		return false;
 
 	delay = max_t(unsigned long, (tp->srtt >> 5), msecs_to_jiffies(2));
 	if (!time_after(inet_csk(sk)->icsk_timeout, (jiffies + delay)))
 		return false;
 
-	inet_csk_reset_xmit_timer(sk, ICSK_TIME_RETRANS, delay, TCP_RTO_MAX);
-	tp->early_retrans_delayed = 1;
+	inet_csk_reset_xmit_timer(sk, ICSK_TIME_EARLY_RETRANS, delay,
+				  TCP_RTO_MAX);
 	return true;
 }
 
@@ -2321,7 +2322,7 @@ static bool tcp_time_to_recover(struct sock *sk, int flag)
 	 * interval if appropriate.
 	 */
 	if (tp->do_early_retrans && !tp->retrans_out && tp->sacked_out &&
-	    (tp->packets_out == (tp->sacked_out + 1) && tp->packets_out < 4) &&
+	    (tp->packets_out >= (tp->sacked_out + 1) && tp->packets_out < 4) &&
 	    !tcp_may_send_now(sk))
 		return !tcp_pause_early_retransmit(sk, flag);
 
@@ -2681,6 +2682,7 @@ static void tcp_init_cwnd_reduction(struct sock *sk, const bool set_ssthresh)
 	struct tcp_sock *tp = tcp_sk(sk);
 
 	tp->high_seq = tp->snd_nxt;
+	tp->tlp_high_seq = 0;
 	tp->snd_cwnd_cnt = 0;
 	tp->prior_cwnd = tp->snd_cwnd;
 	tp->prr_delivered = 0;
@@ -3081,6 +3083,7 @@ static void tcp_cong_avoid(struct sock *sk, u32 ack, u32 in_flight)
  */
 void tcp_rearm_rto(struct sock *sk)
 {
+	const struct inet_connection_sock *icsk = inet_csk(sk);
 	struct tcp_sock *tp = tcp_sk(sk);
 
 	/* If the retrans timer is currently being used by Fast Open
@@ -3094,12 +3097,13 @@ void tcp_rearm_rto(struct sock *sk)
 	} else {
 		u32 rto = inet_csk(sk)->icsk_rto;
 		/* Offset the time elapsed after installing regular RTO */
-		if (tp->early_retrans_delayed) {
+		if (icsk->icsk_pending == ICSK_TIME_EARLY_RETRANS ||
+		    icsk->icsk_pending == ICSK_TIME_LOSS_PROBE) {
 			struct sk_buff *skb = tcp_write_queue_head(sk);
 			const u32 rto_time_stamp = TCP_SKB_CB(skb)->when + rto;
 			s32 delta = (s32)(rto_time_stamp - tcp_time_stamp);
 			/* delta may not be positive if the socket is locked
-			 * when the delayed ER timer fires and is rescheduled.
+			 * when the retrans timer fires and is rescheduled.
 			 */
 			if (delta > 0)
 				rto = delta;
@@ -3107,7 +3111,6 @@ void tcp_rearm_rto(struct sock *sk)
 		inet_csk_reset_xmit_timer(sk, ICSK_TIME_RETRANS, rto,
 					  TCP_RTO_MAX);
 	}
-	tp->early_retrans_delayed = 0;
 }
 
 /* This function is called when the delayed ER timer fires. TCP enters
@@ -3567,6 +3570,38 @@ static void tcp_send_challenge_ack(struct sock *sk)
 	}
 }
 
+/* This routine deals with acks during a TLP episode.
+ * Ref: loss detection algorithm in draft-dukkipati-tcpm-tcp-loss-probe.
+ */
+static void tcp_process_tlp_ack(struct sock *sk, u32 ack, int flag)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+	bool is_tlp_dupack = (ack == tp->tlp_high_seq) &&
+			     !(flag & (FLAG_SND_UNA_ADVANCED |
+				       FLAG_NOT_DUP | FLAG_DATA_SACKED));
+
+	/* Mark the end of TLP episode on receiving TLP dupack or when
+	 * ack is after tlp_high_seq.
+	 */
+	if (is_tlp_dupack) {
+		tp->tlp_high_seq = 0;
+		return;
+	}
+
+	if (after(ack, tp->tlp_high_seq)) {
+		tp->tlp_high_seq = 0;
+		/* Don't reduce cwnd if DSACK arrives for TLP retrans. */
+		if (!(flag & FLAG_DSACKING_ACK)) {
+			tcp_init_cwnd_reduction(sk, true);
+			tcp_set_ca_state(sk, TCP_CA_CWR);
+			tcp_end_cwnd_reduction(sk);
+			tcp_set_ca_state(sk, TCP_CA_Open);
+			NET_INC_STATS_BH(sock_net(sk),
+					 LINUX_MIB_TCPLOSSPROBERECOVERY);
+		}
+	}
+}
+
 /* This routine deals with incoming acks, but not outgoing ones. */
 static int tcp_ack(struct sock *sk, const struct sk_buff *skb, int flag)
 {
@@ -3601,7 +3636,8 @@ static int tcp_ack(struct sock *sk, const struct sk_buff *skb, int flag)
 	if (after(ack, tp->snd_nxt))
 		goto invalid_ack;
 
-	if (tp->early_retrans_delayed)
+	if (icsk->icsk_pending == ICSK_TIME_EARLY_RETRANS ||
+	    icsk->icsk_pending == ICSK_TIME_LOSS_PROBE)
 		tcp_rearm_rto(sk);
 
 	if (after(ack, prior_snd_una))
@@ -3673,11 +3709,17 @@ static int tcp_ack(struct sock *sk, const struct sk_buff *skb, int flag)
 			tcp_cong_avoid(sk, ack, prior_in_flight);
 	}
 
+	if (tp->tlp_high_seq)
+		tcp_process_tlp_ack(sk, ack, flag);
+
 	if ((flag & FLAG_FORWARD_PROGRESS) || !(flag & FLAG_NOT_DUP)) {
 		struct dst_entry *dst = __sk_dst_get(sk);
 		if (dst)
 			dst_confirm(dst);
 	}
+
+	if (icsk->icsk_pending == ICSK_TIME_RETRANS)
+		tcp_schedule_loss_probe(sk);
 	return 1;
 
 no_queue:
@@ -3691,6 +3733,9 @@ no_queue:
 	 */
 	if (tcp_send_head(sk))
 		tcp_ack_probe(sk);
+
+	if (tp->tlp_high_seq)
+		tcp_process_tlp_ack(sk, ack, flag);
 	return 1;
 
 invalid_ack:
@@ -3715,8 +3760,8 @@ old_ack:
  * But, this can also be called on packets in the established flow when
  * the fast version below fails.
  */
-void tcp_parse_options(const struct sk_buff *skb, struct tcp_options_received *opt_rx,
-		       const u8 **hvpp, int estab,
+void tcp_parse_options(const struct sk_buff *skb,
+		       struct tcp_options_received *opt_rx, int estab,
 		       struct tcp_fastopen_cookie *foc)
 {
 	const unsigned char *ptr;
@@ -3800,31 +3845,6 @@ void tcp_parse_options(const struct sk_buff *skb, struct tcp_options_received *o
 				 */
 				break;
 #endif
-			case TCPOPT_COOKIE:
-				/* This option is variable length.
-				 */
-				switch (opsize) {
-				case TCPOLEN_COOKIE_BASE:
-					/* not yet implemented */
-					break;
-				case TCPOLEN_COOKIE_PAIR:
-					/* not yet implemented */
-					break;
-				case TCPOLEN_COOKIE_MIN+0:
-				case TCPOLEN_COOKIE_MIN+2:
-				case TCPOLEN_COOKIE_MIN+4:
-				case TCPOLEN_COOKIE_MIN+6:
-				case TCPOLEN_COOKIE_MAX:
-					/* 16-bit multiple */
-					opt_rx->cookie_plus = opsize;
-					*hvpp = ptr;
-					break;
-				default:
-					/* ignore option */
-					break;
-				}
-				break;
-
 			case TCPOPT_EXP:
 				/* Fast Open option shares code 254 using a
 				 * 16 bits magic number. It's valid only in
@@ -3870,8 +3890,7 @@ static bool tcp_parse_aligned_timestamp(struct tcp_sock *tp, const struct tcphdr
  * If it is wrong it falls back on tcp_parse_options().
  */
 static bool tcp_fast_parse_options(const struct sk_buff *skb,
-				   const struct tcphdr *th,
-				   struct tcp_sock *tp, const u8 **hvpp)
+				   const struct tcphdr *th, struct tcp_sock *tp)
 {
 	/* In the spirit of fast parsing, compare doff directly to constant
 	 * values.  Because equality is used, short doff can be ignored here.
@@ -3885,7 +3904,7 @@ static bool tcp_fast_parse_options(const struct sk_buff *skb,
 			return true;
 	}
 
-	tcp_parse_options(skb, &tp->rx_opt, hvpp, 1, NULL);
+	tcp_parse_options(skb, &tp->rx_opt, 1, NULL);
 	if (tp->rx_opt.saw_tstamp)
 		tp->rx_opt.rcv_tsecr -= tp->tsoffset;
 
@@ -5266,12 +5285,10 @@ out:
 static bool tcp_validate_incoming(struct sock *sk, struct sk_buff *skb,
 				  const struct tcphdr *th, int syn_inerr)
 {
-	const u8 *hash_location;
 	struct tcp_sock *tp = tcp_sk(sk);
 
 	/* RFC1323: H1. Apply PAWS check first. */
-	if (tcp_fast_parse_options(skb, th, tp, &hash_location) &&
-	    tp->rx_opt.saw_tstamp &&
+	if (tcp_fast_parse_options(skb, th, tp) && tp->rx_opt.saw_tstamp &&
 	    tcp_paws_discard(sk, skb)) {
 		if (!th->rst) {
 			NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_PAWSESTABREJECTED);
@@ -5625,12 +5642,11 @@ static bool tcp_rcv_fastopen_synack(struct sock *sk, struct sk_buff *synack,
 
 	if (mss == tp->rx_opt.user_mss) {
 		struct tcp_options_received opt;
-		const u8 *hash_location;
 
 		/* Get original SYNACK MSS value if user MSS sets mss_clamp */
 		tcp_clear_options(&opt);
 		opt.user_mss = opt.mss_clamp = 0;
-		tcp_parse_options(synack, &opt, &hash_location, 0, NULL);
+		tcp_parse_options(synack, &opt, 0, NULL);
 		mss = opt.mss_clamp;
 	}
 
@@ -5661,14 +5677,12 @@ static bool tcp_rcv_fastopen_synack(struct sock *sk, struct sk_buff *synack,
 static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 					 const struct tcphdr *th, unsigned int len)
 {
-	const u8 *hash_location;
 	struct inet_connection_sock *icsk = inet_csk(sk);
 	struct tcp_sock *tp = tcp_sk(sk);
-	struct tcp_cookie_values *cvp = tp->cookie_values;
 	struct tcp_fastopen_cookie foc = { .len = -1 };
 	int saved_clamp = tp->rx_opt.mss_clamp;
 
-	tcp_parse_options(skb, &tp->rx_opt, &hash_location, 0, &foc);
+	tcp_parse_options(skb, &tp->rx_opt, 0, &foc);
 	if (tp->rx_opt.saw_tstamp)
 		tp->rx_opt.rcv_tsecr -= tp->tsoffset;
 
@@ -5764,30 +5778,6 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 		 * Change state from SYN-SENT only after copied_seq
 		 * is initialized. */
 		tp->copied_seq = tp->rcv_nxt;
-
-		if (cvp != NULL &&
-		    cvp->cookie_pair_size > 0 &&
-		    tp->rx_opt.cookie_plus > 0) {
-			int cookie_size = tp->rx_opt.cookie_plus
-					- TCPOLEN_COOKIE_BASE;
-			int cookie_pair_size = cookie_size
-					     + cvp->cookie_desired;
-
-			/* A cookie extension option was sent and returned.
-			 * Note that each incoming SYNACK replaces the
-			 * Responder cookie.  The initial exchange is most
-			 * fragile, as protection against spoofing relies
-			 * entirely upon the sequence and timestamp (above).
-			 * This replacement strategy allows the correct pair to
-			 * pass through, while any others will be filtered via
-			 * Responder verification later.
-			 */
-			if (sizeof(cvp->cookie_pair) >= cookie_pair_size) {
-				memcpy(&cvp->cookie_pair[cvp->cookie_desired],
-				       hash_location, cookie_size);
-				cvp->cookie_pair_size = cookie_pair_size;
-			}
-		}
 
 		smp_mb();
 

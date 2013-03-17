@@ -50,13 +50,13 @@ extern int int_mode;
 		} \
 	} while (0)
 
-#define BNX2X_PCI_ALLOC(x, y, size) \
-	do { \
-		x = dma_alloc_coherent(&bp->pdev->dev, size, y, GFP_KERNEL); \
-		if (x == NULL) \
-			goto alloc_mem_err; \
-		memset((void *)x, 0, size); \
-	} while (0)
+#define BNX2X_PCI_ALLOC(x, y, size)				\
+do {								\
+	x = dma_alloc_coherent(&bp->pdev->dev, size, y,		\
+			       GFP_KERNEL | __GFP_ZERO);	\
+	if (x == NULL)						\
+		goto alloc_mem_err;				\
+} while (0)
 
 #define BNX2X_ALLOC(x, size) \
 	do { \
@@ -496,7 +496,10 @@ netdev_tx_t bnx2x_start_xmit(struct sk_buff *skb, struct net_device *dev);
 /* setup_tc callback */
 int bnx2x_setup_tc(struct net_device *dev, u8 num_tc);
 
+int bnx2x_get_vf_config(struct net_device *dev, int vf,
+			struct ifla_vf_info *ivi);
 int bnx2x_set_vf_mac(struct net_device *dev, int queue, u8 *mac);
+int bnx2x_set_vf_vlan(struct net_device *netdev, int vf, u16 vlan, u8 qos);
 
 /* select_queue callback */
 u16 bnx2x_select_queue(struct net_device *dev, struct sk_buff *skb);
@@ -834,7 +837,7 @@ static inline void bnx2x_add_all_napi_cnic(struct bnx2x *bp)
 	/* Add NAPI objects */
 	for_each_rx_queue_cnic(bp, i)
 		netif_napi_add(bp->dev, &bnx2x_fp(bp, i, napi),
-			       bnx2x_poll, BNX2X_NAPI_WEIGHT);
+			       bnx2x_poll, NAPI_POLL_WEIGHT);
 }
 
 static inline void bnx2x_add_all_napi(struct bnx2x *bp)
@@ -844,7 +847,7 @@ static inline void bnx2x_add_all_napi(struct bnx2x *bp)
 	/* Add NAPI objects */
 	for_each_eth_queue(bp, i)
 		netif_napi_add(bp->dev, &bnx2x_fp(bp, i, napi),
-			       bnx2x_poll, BNX2X_NAPI_WEIGHT);
+			       bnx2x_poll, NAPI_POLL_WEIGHT);
 }
 
 static inline void bnx2x_del_all_napi_cnic(struct bnx2x *bp)
