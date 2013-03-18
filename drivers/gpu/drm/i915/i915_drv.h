@@ -243,7 +243,7 @@ struct drm_i915_error_state {
 			int page_count;
 			u32 gtt_offset;
 			u32 *pages[0];
-		} *ringbuffer, *batchbuffer;
+		} *ringbuffer, *batchbuffer, *ctx;
 		struct drm_i915_error_request {
 			long jiffies;
 			u32 seqno;
@@ -905,7 +905,6 @@ typedef struct drm_i915_private {
 	struct mutex dpio_lock;
 
 	/** Cached value of IMR to avoid reads in updating the bitfield */
-	u32 pipestat[2];
 	u32 irq_mask;
 	u32 gt_irq_mask;
 
@@ -1340,6 +1339,7 @@ struct drm_i915_file_private {
 #define HAS_PIPE_CONTROL(dev) (INTEL_INFO(dev)->gen >= 5)
 
 #define HAS_DDI(dev)		(IS_HASWELL(dev))
+#define HAS_POWER_WELL(dev)	(IS_HASWELL(dev))
 
 #define INTEL_PCH_DEVICE_ID_MASK		0xff00
 #define INTEL_PCH_IBX_DEVICE_ID_TYPE		0x3b00
@@ -1898,6 +1898,11 @@ static inline uint32_t i915_vgacntrl_reg(struct drm_device *dev)
 		return VLV_VGACNTRL;
 	else
 		return VGACNTRL;
+}
+
+static inline void __user *to_user_ptr(u64 address)
+{
+	return (void __user *)(uintptr_t)address;
 }
 
 #endif
