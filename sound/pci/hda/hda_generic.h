@@ -145,7 +145,10 @@ struct hda_gen_spec {
 	hda_nid_t private_dac_nids[AUTO_CFG_MAX_OUTS];
 	hda_nid_t imux_pins[HDA_MAX_NUM_INPUTS];
 	unsigned int dyn_adc_idx[HDA_MAX_NUM_INPUTS];
+	/* shared hp/mic */
 	hda_nid_t shared_mic_vref_pin;
+	hda_nid_t hp_mic_pin;
+	int hp_mic_mux_idx;
 
 	/* DAC/ADC lists */
 	int num_all_dacs;
@@ -200,7 +203,8 @@ struct hda_gen_spec {
 
 	/* other parse behavior flags */
 	unsigned int need_dac_fix:1; /* need to limit DACs for multi channels */
-	unsigned int shared_mic_hp:1; /* HP/Mic-in sharing */
+	unsigned int hp_mic:1; /* Allow HP as a mic-in */
+	unsigned int suppress_hp_mic_detect:1; /* Don't detect HP/mic */
 	unsigned int no_primary_hp:1; /* Don't prefer HP pins to speaker pins */
 	unsigned int multi_cap_vol:1; /* allow multiple capture xxx volumes */
 	unsigned int inv_dmic_split:1; /* inverted dmic w/a for conexant */
@@ -209,8 +213,7 @@ struct hda_gen_spec {
 	unsigned int indep_hp:1; /* independent HP supported */
 	unsigned int prefer_hp_amp:1; /* enable HP amp for speaker if any */
 	unsigned int add_stereo_mix_input:1; /* add aamix as a capture src */
-	unsigned int add_out_jack_modes:1; /* add output jack mode enum ctls */
-	unsigned int add_in_jack_modes:1; /* add input jack mode enum ctls */
+	unsigned int add_jack_modes:1; /* add i/o jack mode enum ctls */
 	unsigned int power_down_unused:1; /* power down unused widgets */
 
 	/* other internal flags */
@@ -218,6 +221,7 @@ struct hda_gen_spec {
 	unsigned int dyn_adc_switch:1; /* switch ADCs (for ALC275) */
 	unsigned int indep_hp_enabled:1; /* independent HP enabled */
 	unsigned int have_aamix_ctl:1;
+	unsigned int hp_mic_jack_modes:1;
 
 	/* loopback mixing mode */
 	bool aamix_mode;
