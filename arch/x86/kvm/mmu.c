@@ -1644,16 +1644,14 @@ static int kvm_mmu_prepare_zap_page(struct kvm *kvm, struct kvm_mmu_page *sp,
 static void kvm_mmu_commit_zap_page(struct kvm *kvm,
 				    struct list_head *invalid_list);
 
-#define for_each_gfn_sp(kvm, sp, gfn)					\
-  hlist_for_each_entry(sp,						\
-   &(kvm)->arch.mmu_page_hash[kvm_page_table_hashfn(gfn)], hash_link)	\
-	if ((sp)->gfn != (gfn)) {} else
+#define for_each_gfn_sp(_kvm, _sp, _gfn)				\
+	hlist_for_each_entry(_sp,					\
+	  &(_kvm)->arch.mmu_page_hash[kvm_page_table_hashfn(_gfn)], hash_link) \
+		if ((_sp)->gfn != (_gfn)) {} else
 
-#define for_each_gfn_indirect_valid_sp(kvm, sp, gfn)			\
-  hlist_for_each_entry(sp,						\
-   &(kvm)->arch.mmu_page_hash[kvm_page_table_hashfn(gfn)], hash_link)	\
-		if ((sp)->gfn != (gfn) || (sp)->role.direct ||		\
-			(sp)->role.invalid) {} else
+#define for_each_gfn_indirect_valid_sp(_kvm, _sp, _gfn)			\
+	for_each_gfn_sp(_kvm, _sp, _gfn)				\
+		if ((_sp)->role.direct || (_sp)->role.invalid) {} else
 
 /* @sp->gfn should be write-protected at the call site */
 static int __kvm_sync_page(struct kvm_vcpu *vcpu, struct kvm_mmu_page *sp,
@@ -2089,7 +2087,7 @@ static int kvm_mmu_prepare_zap_page(struct kvm *kvm, struct kvm_mmu_page *sp,
 static void kvm_mmu_commit_zap_page(struct kvm *kvm,
 				    struct list_head *invalid_list)
 {
-	struct kvm_mmu_page *sp;
+	struct kvm_mmu_page *sp, *nsp;
 
 	if (list_empty(invalid_list))
 		return;
@@ -2106,11 +2104,25 @@ static void kvm_mmu_commit_zap_page(struct kvm *kvm,
 	 */
 	kvm_flush_remote_tlbs(kvm);
 
-	do {
-		sp = list_first_entry(invalid_list, struct kvm_mmu_page, link);
+	list_for_each_entry_safe(sp, nsp, invalid_list, link) {
 		WARN_ON(!sp->role.invalid || sp->root_count);
 		kvm_mmu_free_page(sp);
-	} while (!list_empty(invalid_list));
+	}
+}
+
+static bool prepare_zap_oldest_mmu_page(struct kvm *kvm,
+					struct list_head *invalid_list)
+{
+	struct kvm_mmu_page *sp;
+
+	if (list_empty(&kvm->arch.active_mmu_pages))
+		return false;
+
+	sp = list_entry(kvm->arch.active_mmu_pages.prev,
+			struct kvm_mmu_page, link);
+	kvm_mmu_prepare_zap_page(kvm, sp, invalid_list);
+
+	return true;
 }
 
 /*
@@ -2120,23 +2132,15 @@ static void kvm_mmu_commit_zap_page(struct kvm *kvm,
 void kvm_mmu_change_mmu_pages(struct kvm *kvm, unsigned int goal_nr_mmu_pages)
 {
 	LIST_HEAD(invalid_list);
-	/*
-	 * If we set the number of mmu pages to be smaller be than the
-	 * number of actived pages , we must to free some mmu pages before we
-	 * change the value
-	 */
 
 	spin_lock(&kvm->mmu_lock);
 
 	if (kvm->arch.n_used_mmu_pages > goal_nr_mmu_pages) {
-		while (kvm->arch.n_used_mmu_pages > goal_nr_mmu_pages &&
-			!list_empty(&kvm->arch.active_mmu_pages)) {
-			struct kvm_mmu_page *page;
+		/* Need to free some mmu pages to achieve the goal. */
+		while (kvm->arch.n_used_mmu_pages > goal_nr_mmu_pages)
+			if (!prepare_zap_oldest_mmu_page(kvm, &invalid_list))
+				break;
 
-			page = container_of(kvm->arch.active_mmu_pages.prev,
-					    struct kvm_mmu_page, link);
-			kvm_mmu_prepare_zap_page(kvm, page, &invalid_list);
-		}
 		kvm_mmu_commit_zap_page(kvm, &invalid_list);
 		goal_nr_mmu_pages = kvm->arch.n_used_mmu_pages;
 	}
@@ -4010,13 +4014,10 @@ void __kvm_mmu_free_some_pages(struct kvm_vcpu *vcpu)
 {
 	LIST_HEAD(invalid_list);
 
-	while (kvm_mmu_available_pages(vcpu->kvm) < KVM_REFILL_PAGES &&
-	       !list_empty(&vcpu->kvm->arch.active_mmu_pages)) {
-		struct kvm_mmu_page *sp;
+	while (kvm_mmu_available_pages(vcpu->kvm) < KVM_REFILL_PAGES) {
+		if (!prepare_zap_oldest_mmu_page(vcpu->kvm, &invalid_list))
+			break;
 
-		sp = container_of(vcpu->kvm->arch.active_mmu_pages.prev,
-				  struct kvm_mmu_page, link);
-		kvm_mmu_prepare_zap_page(vcpu->kvm, sp, &invalid_list);
 		++vcpu->kvm->stat.mmu_recycled;
 	}
 	kvm_mmu_commit_zap_page(vcpu->kvm, &invalid_list);
@@ -4185,19 +4186,6 @@ restart:
 	spin_unlock(&kvm->mmu_lock);
 }
 
-static void kvm_mmu_remove_some_alloc_mmu_pages(struct kvm *kvm,
-						struct list_head *invalid_list)
-{
-	struct kvm_mmu_page *page;
-
-	if (list_empty(&kvm->arch.active_mmu_pages))
-		return;
-
-	page = container_of(kvm->arch.active_mmu_pages.prev,
-			    struct kvm_mmu_page, link);
-	kvm_mmu_prepare_zap_page(kvm, page, invalid_list);
-}
-
 static int mmu_shrink(struct shrinker *shrink, struct shrink_control *sc)
 {
 	struct kvm *kvm;
@@ -4232,7 +4220,7 @@ static int mmu_shrink(struct shrinker *shrink, struct shrink_control *sc)
 		idx = srcu_read_lock(&kvm->srcu);
 		spin_lock(&kvm->mmu_lock);
 
-		kvm_mmu_remove_some_alloc_mmu_pages(kvm, &invalid_list);
+		prepare_zap_oldest_mmu_page(kvm, &invalid_list);
 		kvm_mmu_commit_zap_page(kvm, &invalid_list);
 
 		spin_unlock(&kvm->mmu_lock);
