@@ -154,7 +154,8 @@ int perf_output_begin(struct perf_output_handle *handle,
 	if (head - local_read(&rb->wakeup) > rb->watermark)
 		local_add(rb->watermark, &rb->wakeup);
 
-	handle->page = offset >> (PAGE_SHIFT + page_order(rb));
+	/* page is allways 0 for CONFIG_PERF_USE_VMALLOC option */
+	handle->page = offset >> PAGE_SHIFT;
 	handle->page &= rb->nr_pages - 1;
 	handle->size = offset & ((PAGE_SIZE << page_order(rb)) - 1);
 	handle->addr = rb->data_pages[handle->page];
@@ -312,11 +313,21 @@ void rb_free(struct ring_buffer *rb)
 }
 
 #else
+/*
+ * Returns the total number of pages allocated
+ * by ring buffer including the user page.
+ */
+static int page_nr(struct ring_buffer *rb)
+{
+	return page_order(rb) == -1 ?
+		1 :                        /* no data, just user page */
+		1 + (1 << page_order(rb)); /* user page + data pages */
+}
 
 struct page *
 perf_mmap_to_page(struct ring_buffer *rb, unsigned long pgoff)
 {
-	if (pgoff > (1UL << page_order(rb)))
+	if (pgoff > page_nr(rb))
 		return NULL;
 
 	return vmalloc_to_page((void *)rb->user_page + pgoff * PAGE_SIZE);
@@ -336,10 +347,10 @@ static void rb_free_work(struct work_struct *work)
 	int i, nr;
 
 	rb = container_of(work, struct ring_buffer, work);
-	nr = 1 << page_order(rb);
+	nr = page_nr(rb);
 
 	base = rb->user_page;
-	for (i = 0; i < nr + 1; i++)
+	for (i = 0; i < nr; i++)
 		perf_mmap_unmark_page(base + (i * PAGE_SIZE));
 
 	vfree(base);
@@ -371,9 +382,24 @@ struct ring_buffer *rb_alloc(int nr_pages, long watermark, int cpu, int flags)
 		goto fail_all_buf;
 
 	rb->user_page = all_buf;
-	rb->data_pages[0] = all_buf + PAGE_SIZE;
-	rb->page_order = ilog2(nr_pages);
-	rb->nr_pages = 1;
+
+	/*
+	 * For special case nr_pages == 0 we have
+	 * only the user page mmaped plus:
+	 *
+	 *   rb->data_pages[0] = NULL
+	 *   rb->nr_pages      = 0
+	 *   rb->page_order    = -1
+	 *
+	 * The perf_output_begin function is guarded
+	 * by (rb->nr_pages > 0) condition, so no
+	 * output code touches above setup if we
+	 * have only user page allocated.
+	 */
+
+	rb->data_pages[0] = nr_pages ? all_buf + PAGE_SIZE : NULL;
+	rb->nr_pages      = nr_pages ? 1 : 0;
+	rb->page_order    = ilog2(nr_pages);
 
 	ring_buffer_init(rb, watermark, flags);
 
