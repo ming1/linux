@@ -1,0 +1,33 @@
+Importing jdelvare-hwmon based on 3.9-rc2
+Unchanged quilt series jdelvare-hwmon
+Importing device-mapper based on v3.9-rc2
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard f6161aa153581da4a3867a2d1a7caf4be19b6ec9
+HEAD is now at f6161aa Linux 3.9-rc2
+$ git am ../quilt/device-mapper/dm-thin-fix-discard-corruption.patch
+Applying: Fix a bug in dm_btree_remove that could leave leaf values with incorrect
+$ git am ../quilt/device-mapper/dm-thin-fix-non-power-of-two-discard-granularity-calc.patch
+Applying: Fix a discard granularity calculation to work for non power of 2 block sizes.
+$ git am ../quilt/device-mapper/dm-verity-avoid-deadlock.patch
+Applying: A deadlock was found in the prefetch code in the dm verity map
+$ git am ../quilt/device-mapper/dm-cache-avoid-64-bit-division-on-32-bit.patch
+Applying: Introduce block_div to squash various 32bit link errors.
+$ git am ../quilt/device-mapper/dm-cache-detect-cache_create-failure.patch
+Applying: Return error if cache_create() fails.
+$ git am ../quilt/device-mapper/dm-cache-avoid-calling-policy-destructor-twice-on-error.patch
+Applying: If the cache policy's config values are not able to be set we must
+$ git am ../quilt/device-mapper/dm-cache-metadata-clear-dirty-bits-on-clean-shutdown.patch
+Applying: When writing the dirty bitset to the metadata device on a clean
+$ git am ../quilt/device-mapper/dm-cache-fix-race-in-writethrough-implementation.patch
+Applying: We have found a race in the optimisation used in the dm cache
+$ git am ../quilt/device-mapper/dm-cache-policy-change-version-from-string-to-integer-set.patch
+Applying: Separate dm cache policy version string into 3 unsigned numbers
+$ git am ../quilt/device-mapper/dm-cache-policy-ignore-hints-if-generated-by-different-version.patch
+Applying: When reading the dm cache metadata from disk, ignore the policy hints
+$ git am ../quilt/device-mapper/dm-cache-policy-fix-description-of-lookup-fn.patch
+Applying: Correct the documented requirement on the return code from dm cache policy
+$ cd /home/sfr/kernels/next/next
+$ git fetch -f ../quilt-tmp master:device-mapper/master
+From ../quilt-tmp
+ + ced68e7...aa5e785 master     -> device-mapper/master  (forced update)
