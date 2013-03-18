@@ -30,7 +30,6 @@
 #ifndef __KEY_H__
 #define __KEY_H__
 
-#include "ttype.h"
 #include "tether.h"
 #include "80211mgr.h"
 
@@ -59,27 +58,27 @@ typedef struct tagSKeyItem
 {
     bool        bKeyValid;
 	u32 uKeyLength;
-    BYTE        abyKey[MAX_KEY_LEN];
+    u8        abyKey[MAX_KEY_LEN];
 	u64 KeyRSC;
-    DWORD       dwTSC47_16;
-    WORD        wTSC15_0;
-    BYTE        byCipherSuite;
-    BYTE        byReserved0;
-    DWORD       dwKeyIndex;
+    u32       dwTSC47_16;
+    u16        wTSC15_0;
+    u8        byCipherSuite;
+    u8        byReserved0;
+    u32       dwKeyIndex;
     void *pvKeyTable;
 } SKeyItem, *PSKeyItem; //64
 
 typedef struct tagSKeyTable
 {
-    BYTE        abyBSSID[ETH_ALEN];  /* 6 */
-    BYTE        byReserved0[2];              //8
+    u8        abyBSSID[ETH_ALEN];  /* 6 */
+    u8        byReserved0[2];              //8
     SKeyItem    PairwiseKey;
     SKeyItem    GroupKey[MAX_GROUP_KEY]; //64*5 = 320, 320+8=328
-    DWORD       dwGTKeyIndex;            // GroupTransmitKey Index
+    u32       dwGTKeyIndex;            // GroupTransmitKey Index
     bool        bInUse;
-    WORD        wKeyCtl;
+    u16        wKeyCtl;
     bool        bSoftWEP;
-    BYTE        byReserved1[6];
+    u8        byReserved1[6];
 } SKeyTable, *PSKeyTable; //352
 
 typedef struct tagSKeyManagement

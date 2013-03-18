@@ -18,6 +18,7 @@
 
 #include "omap-thermal.h"
 #include "omap-bandgap.h"
+#include "omap4xxx-bandgap.h"
 
 /*
  * OMAP4430 has one instance of thermal sensor for MPU
@@ -44,8 +45,6 @@ static struct temp_sensor_data omap4430_mpu_temp_sensor_data = {
 	.max_temp = OMAP4430_MAX_TEMP,
 	.min_temp = OMAP4430_MIN_TEMP,
 	.hyst_val = OMAP4430_HYST_VAL,
-	.adc_start_val = OMAP4430_ADC_START_VALUE,
-	.adc_end_val = OMAP4430_ADC_END_VALUE,
 };
 
 /*
@@ -69,10 +68,13 @@ omap4430_adc_to_temp[OMAP4430_ADC_END_VALUE - OMAP4430_ADC_START_VALUE + 1] = {
 /* OMAP4430 data */
 const struct omap_bandgap_data omap4430_data = {
 	.features = OMAP_BANDGAP_FEATURE_MODE_CONFIG |
+			OMAP_BANDGAP_FEATURE_CLK_CTRL |
 			OMAP_BANDGAP_FEATURE_POWER_SWITCH,
 	.fclock_name = "bandgap_fclk",
 	.div_ck_name = "bandgap_fclk",
 	.conv_table = omap4430_adc_to_temp,
+	.adc_start_val = OMAP4430_ADC_START_VALUE,
+	.adc_end_val = OMAP4430_ADC_END_VALUE,
 	.expose_sensor = omap_thermal_expose_sensor,
 	.remove_sensor = omap_thermal_remove_sensor,
 	.sensors = {
@@ -140,8 +142,6 @@ static struct temp_sensor_data omap4460_mpu_temp_sensor_data = {
 	.max_temp = OMAP4460_MAX_TEMP,
 	.min_temp = OMAP4460_MIN_TEMP,
 	.hyst_val = OMAP4460_HYST_VAL,
-	.adc_start_val = OMAP4460_ADC_START_VALUE,
-	.adc_end_val = OMAP4460_ADC_END_VALUE,
 	.update_int1 = 1000,
 	.update_int2 = 2000,
 };
@@ -207,10 +207,13 @@ const struct omap_bandgap_data omap4460_data = {
 			OMAP_BANDGAP_FEATURE_TALERT |
 			OMAP_BANDGAP_FEATURE_MODE_CONFIG |
 			OMAP_BANDGAP_FEATURE_POWER_SWITCH |
+			OMAP_BANDGAP_FEATURE_CLK_CTRL |
 			OMAP_BANDGAP_FEATURE_COUNTER,
 	.fclock_name = "bandgap_ts_fclk",
 	.div_ck_name = "div_ts_ck",
 	.conv_table = omap4460_adc_to_temp,
+	.adc_start_val = OMAP4460_ADC_START_VALUE,
+	.adc_end_val = OMAP4460_ADC_END_VALUE,
 	.expose_sensor = omap_thermal_expose_sensor,
 	.remove_sensor = omap_thermal_remove_sensor,
 	.sensors = {
@@ -236,10 +239,13 @@ const struct omap_bandgap_data omap4470_data = {
 			OMAP_BANDGAP_FEATURE_TALERT |
 			OMAP_BANDGAP_FEATURE_MODE_CONFIG |
 			OMAP_BANDGAP_FEATURE_POWER_SWITCH |
+			OMAP_BANDGAP_FEATURE_CLK_CTRL |
 			OMAP_BANDGAP_FEATURE_COUNTER,
 	.fclock_name = "bandgap_ts_fclk",
 	.div_ck_name = "div_ts_ck",
 	.conv_table = omap4460_adc_to_temp,
+	.adc_start_val = OMAP4460_ADC_START_VALUE,
+	.adc_end_val = OMAP4460_ADC_END_VALUE,
 	.expose_sensor = omap_thermal_expose_sensor,
 	.remove_sensor = omap_thermal_remove_sensor,
 	.sensors = {

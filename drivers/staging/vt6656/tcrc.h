@@ -29,7 +29,7 @@
 #ifndef __TCRC_H__
 #define __TCRC_H__
 
-#include "ttype.h"
+#include <linux/types.h>
 
 /*---------------------  Export Definitions -------------------------*/
 
@@ -43,8 +43,8 @@
 
 /*---------------------  Export Functions  --------------------------*/
 
-DWORD CRCdwCrc32(PBYTE pbyData, unsigned int cbByte, DWORD dwCrcSeed);
-DWORD CRCdwGetCrc32(PBYTE pbyData, unsigned int cbByte);
-DWORD CRCdwGetCrc32Ex(PBYTE pbyData, unsigned int cbByte, DWORD dwPreCRC);
+u32 CRCdwCrc32(u8 * pbyData, unsigned int cbByte, u32 dwCrcSeed);
+u32 CRCdwGetCrc32(u8 * pbyData, unsigned int cbByte);
+u32 CRCdwGetCrc32Ex(u8 * pbyData, unsigned int cbByte, u32 dwPreCRC);
 
 #endif /* __TCRC_H__ */

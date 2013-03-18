@@ -31,7 +31,6 @@
 #ifndef __WPA_H__
 #define __WPA_H__
 
-#include "ttype.h"
 #include "80211hdr.h"
 
 /*---------------------  Export Definitions -------------------------*/
@@ -71,8 +70,8 @@ WPA_ParseRSN(
 
 bool
 WPA_SearchRSN(
-    BYTE                byCmd,
-    BYTE                byEncrypt,
+    u8                byCmd,
+    u8                byEncrypt,
      PKnownBSS        pBSSList
     );
 

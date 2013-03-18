@@ -28,7 +28,7 @@
 
 #ifndef __WCMD_H__
 #define __WCMD_H__
-#include "ttype.h"
+
 #include "80211hdr.h"
 #include "80211mgr.h"
 
@@ -73,11 +73,11 @@ typedef enum tagCMD_STATUS {
 
 typedef struct tagCMD_ITEM {
     CMD_CODE eCmd;
-    BYTE     abyCmdDesireSSID[WLAN_IEHDR_LEN + WLAN_SSID_MAXLEN + 1];
+    u8     abyCmdDesireSSID[WLAN_IEHDR_LEN + WLAN_SSID_MAXLEN + 1];
     bool     bNeedRadioOFF;
     bool     bRadioCmd;
     bool     bForceSCAN;
-    WORD     wDeAuthenReason;
+    u16     wDeAuthenReason;
 } CMD_ITEM, *PCMD_ITEM;
 
 // Command state

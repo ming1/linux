@@ -708,6 +708,10 @@ static int labpc_auto_attach(struct comedi_device *dev,
 	if (!IS_ENABLED(CONFIG_COMEDI_PCI_DRIVERS))
 		return -ENODEV;
 
+	ret = comedi_pci_enable(dev);
+	if (ret)
+		return ret;
+
 	devpriv = kzalloc(sizeof(*devpriv), GFP_KERNEL);
 	if (!devpriv)
 		return -ENOMEM;
@@ -800,6 +804,8 @@ void labpc_common_detach(struct comedi_device *dev)
 		mite_unsetup(devpriv->mite);
 		mite_free(devpriv->mite);
 	}
+	if (thisboard->bustype == pci_bustype)
+		comedi_pci_disable(dev);
 #endif
 };
 EXPORT_SYMBOL_GPL(labpc_common_detach);
@@ -1361,7 +1367,7 @@ static irqreturn_t labpc_interrupt(int irq, void *d)
 	struct comedi_async *async;
 	struct comedi_cmd *cmd;
 
-	if (dev->attached == 0) {
+	if (!dev->attached) {
 		comedi_error(dev, "premature interrupt");
 		return IRQ_HANDLED;
 	}
@@ -2113,9 +2119,9 @@ static DEFINE_PCI_DEVICE_TABLE(labpc_pci_table) = {
 MODULE_DEVICE_TABLE(pci, labpc_pci_table);
 
 static int labpc_pci_probe(struct pci_dev *dev,
-				     const struct pci_device_id *ent)
+			   const struct pci_device_id *id)
 {
-	return comedi_pci_auto_config(dev, &labpc_driver);
+	return comedi_pci_auto_config(dev, &labpc_driver, id->driver_data);
 }
 
 static struct pci_driver labpc_pci_driver = {
