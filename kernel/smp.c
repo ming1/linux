@@ -146,7 +146,7 @@ static int generic_exec_single(int cpu, struct call_single_data *csd,
 	if (!csd) {
 		csd = &csd_stack;
 		if (!wait)
-			csd = &__get_cpu_var(csd_data);
+			csd = this_cpu_ptr(&csd_data);
 	}
 
 	csd_lock(csd);
@@ -191,7 +191,7 @@ void generic_smp_call_function_single_interrupt(void)
 	 */
 	WARN_ON_ONCE(!cpu_online(smp_processor_id()));
 
-	entry = llist_del_all(&__get_cpu_var(call_single_queue));
+	entry = llist_del_all(this_cpu_ptr(&call_single_queue));
 	entry = llist_reverse_order(entry);
 
 	llist_for_each_entry_safe(csd, csd_next, entry, llist) {
@@ -357,7 +357,7 @@ void smp_call_function_many(const struct cpumask *mask,
 		return;
 	}
 
-	cfd = &__get_cpu_var(cfd_data);
+	cfd = this_cpu_ptr(&cfd_data);
 
 	cpumask_and(cfd->cpumask, mask, cpu_online_mask);
 	cpumask_clear_cpu(this_cpu, cfd->cpumask);

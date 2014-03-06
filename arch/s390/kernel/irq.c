@@ -252,7 +252,7 @@ static irqreturn_t do_ext_interrupt(int irq, void *dummy)
 
 	ext_code = *(struct ext_code *) &regs->int_code;
 	if (ext_code.code != 0x1004)
-		__get_cpu_var(s390_idle).nohz_delay = 1;
+		__this_cpu_write(s390_idle.nohz_delay, 1);
 
 	index = ext_hash(ext_code.code);
 	rcu_read_lock();
