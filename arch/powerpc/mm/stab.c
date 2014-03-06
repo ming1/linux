@@ -133,12 +133,12 @@ static int __ste_allocate(unsigned long ea, struct mm_struct *mm)
 	stab_entry = make_ste(get_paca()->stab_addr, GET_ESID(ea), vsid);
 
 	if (!is_kernel_addr(ea)) {
-		offset = __this_cpu_read(stab_cache_ptr);
+		offset = __get_cpu_var(stab_cache_ptr);
 		if (offset < NR_STAB_CACHE_ENTRIES)
-			__this_cpu_read(stab_cache[offset++]) = stab_entry;
+			__get_cpu_var(stab_cache[offset++]) = stab_entry;
 		else
 			offset = NR_STAB_CACHE_ENTRIES+1;
-		__this_cpu_write(stab_cache_ptr, offset);
+		__get_cpu_var(stab_cache_ptr) = offset;
 
 		/* Order update */
 		asm volatile("sync":::"memory");
@@ -177,12 +177,12 @@ void switch_stab(struct task_struct *tsk, struct mm_struct *mm)
 	 */
 	hard_irq_disable();
 
-	offset = __this_cpu_read(stab_cache_ptr);
+	offset = __get_cpu_var(stab_cache_ptr);
 	if (offset <= NR_STAB_CACHE_ENTRIES) {
 		int i;
 
 		for (i = 0; i < offset; i++) {
-			ste = stab + __this_cpu_read(stab_cache[i]);
+			ste = stab + __get_cpu_var(stab_cache[i]);
 			ste->esid_data = 0; /* invalidate entry */
 		}
 	} else {
@@ -206,7 +206,7 @@ void switch_stab(struct task_struct *tsk, struct mm_struct *mm)
 
 	asm volatile("sync; slbia; sync":::"memory");
 
-	__this_cpu_write(stab_cache_ptr, 0);
+	__get_cpu_var(stab_cache_ptr) = 0;
 
 	/* Now preload some entries for the new task */
 	if (test_tsk_thread_flag(tsk, TIF_32BIT))
