@@ -33,7 +33,7 @@ static inline int tlb1_next(void)
 
 	ncams = mfspr(SPRN_TLB1CFG) & TLBnCFG_N_ENTRY;
 
-	index = __get_cpu_var(next_tlbcam_idx);
+	index = this_cpu_read(next_tlbcam_idx);
 
 	/* Just round-robin the entries and wrap when we hit the end */
 	if (unlikely(index == ncams - 1))
