@@ -36,6 +36,7 @@
 #include <linux/sched/sysctl.h>
 #include <linux/notifier.h>
 #include <linux/memory.h>
+#include <linux/vmacache.h>
 
 #include <asm/uaccess.h>
 #include <asm/cacheflush.h>

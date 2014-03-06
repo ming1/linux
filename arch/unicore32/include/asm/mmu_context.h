@@ -15,6 +15,7 @@
 #include <linux/compiler.h>
 #include <linux/sched.h>
 #include <linux/io.h>
+#include <linux/vmacache.h>
 
 #include <asm/cacheflush.h>
 #include <asm/cpu-single.h>

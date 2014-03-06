@@ -2,10 +2,8 @@
 #define __LINUX_VMACACHE_H
 
 #include <linux/mm.h>
+#include <linux/vmacachedefs.h>
 
-#define VMACACHE_BITS 2
-#define VMACACHE_SIZE (1U << VMACACHE_BITS)
-#define VMACACHE_MASK (VMACACHE_SIZE - 1)
 /*
  * Hash based on the page number. Provides a good hit rate for
  * workloads with good locality and those with random accesses as well.

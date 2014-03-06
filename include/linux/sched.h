@@ -25,7 +25,7 @@ struct sched_param {
 #include <linux/errno.h>
 #include <linux/nodemask.h>
 #include <linux/mm_types.h>
-#include <linux/vmacache.h>
+#include <linux/vmacachedefs.h>
 #include <linux/preempt_mask.h>
 
 #include <asm/page.h>
