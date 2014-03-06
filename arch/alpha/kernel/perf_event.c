@@ -814,7 +814,7 @@ static void alpha_perf_event_irq_handler(unsigned long la_ptr,
 	struct hw_perf_event *hwc;
 	int idx, j;
 
-	__get_cpu_var(irq_pmi_count)++;
+	__this_cpu_inc(irq_pmi_count);
 	cpuc = &__get_cpu_var(cpu_hw_events);
 
 	/* Completely counting through the PMC's period to trigger a new PMC
