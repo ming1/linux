@@ -294,11 +294,14 @@ static void gen7_enable_fbc(struct drm_crtc *crtc)
 
 	if (IS_IVYBRIDGE(dev)) {
 		/* WaFbcAsynchFlipDisableFbcQueue:ivb */
-		I915_WRITE(ILK_DISPLAY_CHICKEN1, ILK_FBCQ_DIS);
+		I915_WRITE(ILK_DISPLAY_CHICKEN1,
+			   I915_READ(ILK_DISPLAY_CHICKEN1) |
+			   ILK_FBCQ_DIS);
 	} else {
-		/* WaFbcAsynchFlipDisableFbcQueue:hsw */
-		I915_WRITE(HSW_PIPE_SLICE_CHICKEN_1(intel_crtc->pipe),
-			   HSW_BYPASS_FBC_QUEUE);
+		/* WaFbcAsynchFlipDisableFbcQueue:hsw,bdw */
+		I915_WRITE(CHICKEN_PIPESL_1(intel_crtc->pipe),
+			   I915_READ(CHICKEN_PIPESL_1(intel_crtc->pipe)) |
+			   HSW_FBCQ_DIS);
 	}
 
 	I915_WRITE(SNB_DPFC_CTL_SA,
@@ -540,7 +543,7 @@ void intel_update_fbc(struct drm_device *dev)
 			DRM_DEBUG_KMS("mode too large for compression, disabling\n");
 		goto out_disable;
 	}
-	if ((INTEL_INFO(dev)->gen < 4 || IS_HASWELL(dev)) &&
+	if ((INTEL_INFO(dev)->gen < 4 || HAS_DDI(dev)) &&
 	    intel_crtc->plane != PLANE_A) {
 		if (set_no_fbc_reason(dev_priv, FBC_BAD_PLANE))
 			DRM_DEBUG_KMS("plane not A, disabling compression\n");
@@ -4663,6 +4666,17 @@ static void gen6_init_clock_gating(struct drm_device *dev)
 		I915_WRITE(GEN6_GT_MODE,
 			   _MASKED_BIT_ENABLE(GEN6_TD_FOUR_ROW_DISPATCH_DISABLE));
 
+	/*
+	 * BSpec recoomends 8x4 when MSAA is used,
+	 * however in practice 16x4 seems fastest.
+	 *
+	 * Note that PS/WM thread counts depend on the WIZ hashing
+	 * disable bit, which we don't touch here, but it's good
+	 * to keep in mind (see 3DSTATE_PS and 3DSTATE_WM).
+	 */
+	I915_WRITE(GEN6_GT_MODE,
+		   GEN6_WIZ_HASHING_MASK | GEN6_WIZ_HASHING_16x4);
+
 	ilk_init_lp_watermarks(dev);
 
 	I915_WRITE(CACHE_MODE_0,
@@ -4690,9 +4704,9 @@ static void gen6_init_clock_gating(struct drm_device *dev)
 		   GEN6_RCPBUNIT_CLOCK_GATE_DISABLE |
 		   GEN6_RCCUNIT_CLOCK_GATE_DISABLE);
 
-	/* Bspec says we need to always set all mask bits. */
-	I915_WRITE(_3D_CHICKEN3, (0xFFFF << 16) |
-		   _3D_CHICKEN3_SF_DISABLE_FASTCLIP_CULL);
+	/* WaStripsFansDisableFastClipPerformanceFix:snb */
+	I915_WRITE(_3D_CHICKEN3,
+		   _MASKED_BIT_ENABLE(_3D_CHICKEN3_SF_DISABLE_FASTCLIP_CULL));
 
 	/*
 	 * Bspec says:
@@ -4725,11 +4739,6 @@ static void gen6_init_clock_gating(struct drm_device *dev)
 		   ILK_DPFDUNIT_CLOCK_GATE_ENABLE);
 
 	g4x_disable_trickle_feed(dev);
-
-	/* The default value should be 0x200 according to docs, but the two
-	 * platforms I checked have a 0 for this. (Maybe BIOS overrides?) */
-	I915_WRITE(GEN6_GT_MODE, _MASKED_BIT_DISABLE(0xffff));
-	I915_WRITE(GEN6_GT_MODE, _MASKED_BIT_ENABLE(GEN6_GT_MODE_HI));
 
 	cpt_init_clock_gating(dev);
 
@@ -4788,7 +4797,7 @@ static void lpt_suspend_hw(struct drm_device *dev)
 static void gen8_init_clock_gating(struct drm_device *dev)
 {
 	struct drm_i915_private *dev_priv = dev->dev_private;
-	enum pipe i;
+	enum pipe pipe;
 
 	I915_WRITE(WM3_LP_ILK, 0);
 	I915_WRITE(WM2_LP_ILK, 0);
@@ -4796,6 +4805,15 @@ static void gen8_init_clock_gating(struct drm_device *dev)
 
 	/* FIXME(BDW): Check all the w/a, some might only apply to
 	 * pre-production hw. */
+
+	/* WaDisablePartialInstShootdown:bdw */
+	I915_WRITE(GEN8_ROW_CHICKEN,
+		   _MASKED_BIT_ENABLE(PARTIAL_INSTRUCTION_SHOOTDOWN_DISABLE));
+
+	/* WaDisableThreadStallDopClockGating:bdw */
+	/* FIXME: Unclear whether we really need this on production bdw. */
+	I915_WRITE(GEN8_ROW_CHICKEN,
+		   _MASKED_BIT_ENABLE(STALL_DOP_GATING_DISABLE));
 
 	/*
 	 * This GEN8_CENTROID_PIXEL_OPT_DIS W/A is only needed for
@@ -4824,10 +4842,10 @@ static void gen8_init_clock_gating(struct drm_device *dev)
 		   I915_READ(CHICKEN_PAR1_1) | DPA_MASK_VBLANK_SRD);
 
 	/* WaPsrDPRSUnmaskVBlankInSRD:bdw */
-	for_each_pipe(i) {
-		I915_WRITE(CHICKEN_PIPESL_1(i),
-			   I915_READ(CHICKEN_PIPESL_1(i) |
-				     DPRS_MASK_VBLANK_SRD));
+	for_each_pipe(pipe) {
+		I915_WRITE(CHICKEN_PIPESL_1(pipe),
+			   I915_READ(CHICKEN_PIPESL_1(pipe)) |
+			   BDW_DPRS_MASK_VBLANK_SRD);
 	}
 
 	/* Use Force Non-Coherent whenever executing a 3D context. This is a
@@ -4843,6 +4861,24 @@ static void gen8_init_clock_gating(struct drm_device *dev)
 	I915_WRITE(GEN7_FF_THREAD_MODE,
 		   I915_READ(GEN7_FF_THREAD_MODE) &
 		   ~(GEN8_FF_DS_REF_CNT_FFME | GEN7_FF_VS_REF_CNT_FFME));
+
+	/*
+	 * BSpec recommends 8x4 when MSAA is used,
+	 * however in practice 16x4 seems fastest.
+	 *
+	 * Note that PS/WM thread counts depend on the WIZ hashing
+	 * disable bit, which we don't touch here, but it's good
+	 * to keep in mind (see 3DSTATE_PS and 3DSTATE_WM).
+	 */
+	I915_WRITE(GEN7_GT_MODE,
+		   GEN6_WIZ_HASHING_MASK | GEN6_WIZ_HASHING_16x4);
+
+	I915_WRITE(GEN6_RC_SLEEP_PSMI_CONTROL,
+		   _MASKED_BIT_ENABLE(GEN8_RC_SEMA_IDLE_MSG_DISABLE));
+
+	/* WaDisableSDEUnitClockGating:bdw */
+	I915_WRITE(GEN8_UCGCTL6, I915_READ(GEN8_UCGCTL6) |
+		   GEN8_SDEUNIT_CLOCK_GATE_DISABLE);
 }
 
 static void haswell_init_clock_gating(struct drm_device *dev)
@@ -4872,6 +4908,17 @@ static void haswell_init_clock_gating(struct drm_device *dev)
 	/* WaDisable4x2SubspanOptimization:hsw */
 	I915_WRITE(CACHE_MODE_1,
 		   _MASKED_BIT_ENABLE(PIXEL_SUBSPAN_COLLECT_OPT_DISABLE));
+
+	/*
+	 * BSpec recommends 8x4 when MSAA is used,
+	 * however in practice 16x4 seems fastest.
+	 *
+	 * Note that PS/WM thread counts depend on the WIZ hashing
+	 * disable bit, which we don't touch here, but it's good
+	 * to keep in mind (see 3DSTATE_PS and 3DSTATE_WM).
+	 */
+	I915_WRITE(GEN7_GT_MODE,
+		   GEN6_WIZ_HASHING_MASK | GEN6_WIZ_HASHING_16x4);
 
 	/* WaSwitchSolVfFArbitrationPriority:hsw */
 	I915_WRITE(GAM_ECOCHK, I915_READ(GAM_ECOCHK) | HSW_ECOCHK_ARB_PRIO_SOL);
@@ -4946,13 +4993,26 @@ static void ivybridge_init_clock_gating(struct drm_device *dev)
 
 	gen7_setup_fixed_func_scheduler(dev_priv);
 
-	/* enable HiZ Raw Stall Optimization */
-	I915_WRITE(CACHE_MODE_0_GEN7,
-		   _MASKED_BIT_DISABLE(HIZ_RAW_STALL_OPT_DISABLE));
+	if (0) { /* causes HiZ corruption on ivb:gt1 */
+		/* enable HiZ Raw Stall Optimization */
+		I915_WRITE(CACHE_MODE_0_GEN7,
+			   _MASKED_BIT_DISABLE(HIZ_RAW_STALL_OPT_DISABLE));
+	}
 
 	/* WaDisable4x2SubspanOptimization:ivb */
 	I915_WRITE(CACHE_MODE_1,
 		   _MASKED_BIT_ENABLE(PIXEL_SUBSPAN_COLLECT_OPT_DISABLE));
+
+	/*
+	 * BSpec recommends 8x4 when MSAA is used,
+	 * however in practice 16x4 seems fastest.
+	 *
+	 * Note that PS/WM thread counts depend on the WIZ hashing
+	 * disable bit, which we don't touch here, but it's good
+	 * to keep in mind (see 3DSTATE_PS and 3DSTATE_WM).
+	 */
+	I915_WRITE(GEN7_GT_MODE,
+		   GEN6_WIZ_HASHING_MASK | GEN6_WIZ_HASHING_16x4);
 
 	snpcr = I915_READ(GEN6_MBCUNIT_SNPCR);
 	snpcr &= ~GEN6_MBC_SNPCR_MASK;
@@ -5005,9 +5065,6 @@ static void valleyview_init_clock_gating(struct drm_device *dev)
 	I915_WRITE(GEN7_HALF_SLICE_CHICKEN1,
 		   _MASKED_BIT_ENABLE(GEN7_MAX_PS_THREAD_DEP |
 				      GEN7_PSD_SINGLE_PORT_DISPATCH_ENABLE));
-
-	/* WaDisableL3CacheAging:vlv */
-	I915_WRITE(GEN7_L3CNTLREG1, I915_READ(GEN7_L3CNTLREG1) | GEN7_L3AGDIS);
 
 	/* WaForceL3Serialization:vlv */
 	I915_WRITE(GEN7_L3SQCREG4, I915_READ(GEN7_L3SQCREG4) &
@@ -5169,19 +5226,16 @@ void intel_suspend_hw(struct drm_device *dev)
  * enable it, so check if it's enabled and also check if we've requested it to
  * be enabled.
  */
-static bool hsw_power_well_enabled(struct drm_device *dev,
+static bool hsw_power_well_enabled(struct drm_i915_private *dev_priv,
 				   struct i915_power_well *power_well)
 {
-	struct drm_i915_private *dev_priv = dev->dev_private;
-
 	return I915_READ(HSW_PWR_WELL_DRIVER) ==
 		     (HSW_PWR_WELL_ENABLE_REQUEST | HSW_PWR_WELL_STATE_ENABLED);
 }
 
-bool intel_display_power_enabled_sw(struct drm_device *dev,
+bool intel_display_power_enabled_sw(struct drm_i915_private *dev_priv,
 				    enum intel_display_power_domain domain)
 {
-	struct drm_i915_private *dev_priv = dev->dev_private;
 	struct i915_power_domains *power_domains;
 
 	power_domains = &dev_priv->power_domains;
@@ -5189,10 +5243,9 @@ bool intel_display_power_enabled_sw(struct drm_device *dev,
 	return power_domains->domain_use_count[domain];
 }
 
-bool intel_display_power_enabled(struct drm_device *dev,
+bool intel_display_power_enabled(struct drm_i915_private *dev_priv,
 				 enum intel_display_power_domain domain)
 {
-	struct drm_i915_private *dev_priv = dev->dev_private;
 	struct i915_power_domains *power_domains;
 	struct i915_power_well *power_well;
 	bool is_enabled;
@@ -5207,7 +5260,7 @@ bool intel_display_power_enabled(struct drm_device *dev,
 		if (power_well->always_on)
 			continue;
 
-		if (!power_well->is_enabled(dev, power_well)) {
+		if (!power_well->is_enabled(dev_priv, power_well)) {
 			is_enabled = false;
 			break;
 		}
@@ -5217,6 +5270,12 @@ bool intel_display_power_enabled(struct drm_device *dev,
 	return is_enabled;
 }
 
+/*
+ * Starting with Haswell, we have a "Power Down Well" that can be turned off
+ * when not needed anymore. We have 4 registers that can request the power well
+ * to be enabled, and it will only be disabled if none of the registers is
+ * requesting it to be enabled.
+ */
 static void hsw_power_well_post_enable(struct drm_i915_private *dev_priv)
 {
 	struct drm_device *dev = dev_priv->dev;
@@ -5256,7 +5315,7 @@ static void hsw_power_well_post_enable(struct drm_i915_private *dev_priv)
 static void hsw_power_well_post_disable(struct drm_i915_private *dev_priv)
 {
 	struct drm_device *dev = dev_priv->dev;
-	enum pipe p;
+	enum pipe pipe;
 	unsigned long irqflags;
 
 	/*
@@ -5267,16 +5326,15 @@ static void hsw_power_well_post_disable(struct drm_i915_private *dev_priv)
 	 * FIXME: Should we do this in general in drm_vblank_post_modeset?
 	 */
 	spin_lock_irqsave(&dev->vbl_lock, irqflags);
-	for_each_pipe(p)
-		if (p != PIPE_A)
-			dev->vblank[p].last = 0;
+	for_each_pipe(pipe)
+		if (pipe != PIPE_A)
+			dev->vblank[pipe].last = 0;
 	spin_unlock_irqrestore(&dev->vbl_lock, irqflags);
 }
 
-static void hsw_set_power_well(struct drm_device *dev,
+static void hsw_set_power_well(struct drm_i915_private *dev_priv,
 			       struct i915_power_well *power_well, bool enable)
 {
-	struct drm_i915_private *dev_priv = dev->dev_private;
 	bool is_enabled, enable_requested;
 	uint32_t tmp;
 
@@ -5310,35 +5368,30 @@ static void hsw_set_power_well(struct drm_device *dev,
 	}
 }
 
-static void __intel_power_well_get(struct drm_device *dev,
+static void __intel_power_well_get(struct drm_i915_private *dev_priv,
 				   struct i915_power_well *power_well)
 {
-	struct drm_i915_private *dev_priv = dev->dev_private;
-
 	if (!power_well->count++ && power_well->set) {
 		hsw_disable_package_c8(dev_priv);
-		power_well->set(dev, power_well, true);
+		power_well->set(dev_priv, power_well, true);
 	}
 }
 
-static void __intel_power_well_put(struct drm_device *dev,
+static void __intel_power_well_put(struct drm_i915_private *dev_priv,
 				   struct i915_power_well *power_well)
 {
-	struct drm_i915_private *dev_priv = dev->dev_private;
-
 	WARN_ON(!power_well->count);
 
 	if (!--power_well->count && power_well->set &&
 	    i915.disable_power_well) {
-		power_well->set(dev, power_well, false);
+		power_well->set(dev_priv, power_well, false);
 		hsw_enable_package_c8(dev_priv);
 	}
 }
 
-void intel_display_power_get(struct drm_device *dev,
+void intel_display_power_get(struct drm_i915_private *dev_priv,
 			     enum intel_display_power_domain domain)
 {
-	struct drm_i915_private *dev_priv = dev->dev_private;
 	struct i915_power_domains *power_domains;
 	struct i915_power_well *power_well;
 	int i;
@@ -5348,17 +5401,16 @@ void intel_display_power_get(struct drm_device *dev,
 	mutex_lock(&power_domains->lock);
 
 	for_each_power_well(i, power_well, BIT(domain), power_domains)
-		__intel_power_well_get(dev, power_well);
+		__intel_power_well_get(dev_priv, power_well);
 
 	power_domains->domain_use_count[domain]++;
 
 	mutex_unlock(&power_domains->lock);
 }
 
-void intel_display_power_put(struct drm_device *dev,
+void intel_display_power_put(struct drm_i915_private *dev_priv,
 			     enum intel_display_power_domain domain)
 {
-	struct drm_i915_private *dev_priv = dev->dev_private;
 	struct i915_power_domains *power_domains;
 	struct i915_power_well *power_well;
 	int i;
@@ -5371,7 +5423,7 @@ void intel_display_power_put(struct drm_device *dev,
 	power_domains->domain_use_count[domain]--;
 
 	for_each_power_well_rev(i, power_well, BIT(domain), power_domains)
-		__intel_power_well_put(dev, power_well);
+		__intel_power_well_put(dev_priv, power_well);
 
 	mutex_unlock(&power_domains->lock);
 }
@@ -5388,7 +5440,7 @@ void i915_request_power_well(void)
 
 	dev_priv = container_of(hsw_pwr, struct drm_i915_private,
 				power_domains);
-	intel_display_power_get(dev_priv->dev, POWER_DOMAIN_AUDIO);
+	intel_display_power_get(dev_priv, POWER_DOMAIN_AUDIO);
 }
 EXPORT_SYMBOL_GPL(i915_request_power_well);
 
@@ -5402,7 +5454,7 @@ void i915_release_power_well(void)
 
 	dev_priv = container_of(hsw_pwr, struct drm_i915_private,
 				power_domains);
-	intel_display_power_put(dev_priv->dev, POWER_DOMAIN_AUDIO);
+	intel_display_power_put(dev_priv, POWER_DOMAIN_AUDIO);
 }
 EXPORT_SYMBOL_GPL(i915_release_power_well);
 
@@ -5447,9 +5499,8 @@ static struct i915_power_well bdw_power_wells[] = {
 	(power_domains)->power_well_count = ARRAY_SIZE(__power_wells);	\
 })
 
-int intel_power_domains_init(struct drm_device *dev)
+int intel_power_domains_init(struct drm_i915_private *dev_priv)
 {
-	struct drm_i915_private *dev_priv = dev->dev_private;
 	struct i915_power_domains *power_domains = &dev_priv->power_domains;
 
 	mutex_init(&power_domains->lock);
@@ -5458,10 +5509,10 @@ int intel_power_domains_init(struct drm_device *dev)
 	 * The enabling order will be from lower to higher indexed wells,
 	 * the disabling order is reversed.
 	 */
-	if (IS_HASWELL(dev)) {
+	if (IS_HASWELL(dev_priv->dev)) {
 		set_power_wells(power_domains, hsw_power_wells);
 		hsw_pwr = power_domains;
-	} else if (IS_BROADWELL(dev)) {
+	} else if (IS_BROADWELL(dev_priv->dev)) {
 		set_power_wells(power_domains, bdw_power_wells);
 		hsw_pwr = power_domains;
 	} else {
@@ -5471,14 +5522,13 @@ int intel_power_domains_init(struct drm_device *dev)
 	return 0;
 }
 
-void intel_power_domains_remove(struct drm_device *dev)
+void intel_power_domains_remove(struct drm_i915_private *dev_priv)
 {
 	hsw_pwr = NULL;
 }
 
-static void intel_power_domains_resume(struct drm_device *dev)
+static void intel_power_domains_resume(struct drm_i915_private *dev_priv)
 {
-	struct drm_i915_private *dev_priv = dev->dev_private;
 	struct i915_power_domains *power_domains = &dev_priv->power_domains;
 	struct i915_power_well *power_well;
 	int i;
@@ -5486,26 +5536,18 @@ static void intel_power_domains_resume(struct drm_device *dev)
 	mutex_lock(&power_domains->lock);
 	for_each_power_well(i, power_well, POWER_DOMAIN_MASK, power_domains) {
 		if (power_well->set)
-			power_well->set(dev, power_well, power_well->count > 0);
+			power_well->set(dev_priv, power_well, power_well->count > 0);
 	}
 	mutex_unlock(&power_domains->lock);
 }
 
-/*
- * Starting with Haswell, we have a "Power Down Well" that can be turned off
- * when not needed anymore. We have 4 registers that can request the power well
- * to be enabled, and it will only be disabled if none of the registers is
- * requesting it to be enabled.
- */
-void intel_power_domains_init_hw(struct drm_device *dev)
+void intel_power_domains_init_hw(struct drm_i915_private *dev_priv)
 {
-	struct drm_i915_private *dev_priv = dev->dev_private;
-
 	/* For now, we need the power well to be always enabled. */
-	intel_display_set_init_power(dev, true);
-	intel_power_domains_resume(dev);
+	intel_display_set_init_power(dev_priv, true);
+	intel_power_domains_resume(dev_priv);
 
-	if (!(IS_HASWELL(dev) || IS_BROADWELL(dev)))
+	if (!(IS_HASWELL(dev_priv->dev) || IS_BROADWELL(dev_priv->dev)))
 		return;
 
 	/* We're taking over the BIOS, so clear any requests made by it since
@@ -5788,10 +5830,9 @@ void intel_pm_setup(struct drm_device *dev)
 
 	mutex_init(&dev_priv->pc8.lock);
 	dev_priv->pc8.requirements_met = false;
-	dev_priv->pc8.gpu_idle = false;
 	dev_priv->pc8.irqs_disabled = false;
 	dev_priv->pc8.enabled = false;
-	dev_priv->pc8.disable_count = 2; /* requirements_met + gpu_idle */
+	dev_priv->pc8.disable_count = 1; /* requirements_met */
 	INIT_DELAYED_WORK(&dev_priv->pc8.enable_work, hsw_enable_pc8_work);
 	INIT_DELAYED_WORK(&dev_priv->rps.delayed_resume_work,
 			  intel_gen6_powersave_work);
