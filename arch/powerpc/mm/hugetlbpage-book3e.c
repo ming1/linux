@@ -37,9 +37,9 @@ static inline int tlb1_next(void)
 
 	/* Just round-robin the entries and wrap when we hit the end */
 	if (unlikely(index == ncams - 1))
-		__get_cpu_var(next_tlbcam_idx) = tlbcam_index;
+		__this_cpu_write(next_tlbcam_idx, tlbcam_index);
 	else
-		__get_cpu_var(next_tlbcam_idx)++;
+		__this_cpu_inc(next_tlbcam_idx);
 
 	return index;
 }

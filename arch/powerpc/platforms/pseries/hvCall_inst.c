@@ -109,7 +109,7 @@ static void probe_hcall_entry(void *ignored, unsigned long opcode, unsigned long
 	if (opcode > MAX_HCALL_OPCODE)
 		return;
 
-	h = &__get_cpu_var(hcall_stats)[opcode / 4];
+	h = this_cpu_ptr(&hcall_stats[opcode / 4]);
 	h->tb_start = mftb();
 	h->purr_start = mfspr(SPRN_PURR);
 }
@@ -122,7 +122,7 @@ static void probe_hcall_exit(void *ignored, unsigned long opcode, unsigned long 
 	if (opcode > MAX_HCALL_OPCODE)
 		return;
 
-	h = &__get_cpu_var(hcall_stats)[opcode / 4];
+	h = this_cpu_ptr(&hcall_stats[opcode / 4]);
 	h->num_calls++;
 	h->tb_total += mftb() - h->tb_start;
 	h->purr_total += mfspr(SPRN_PURR) - h->purr_start;
