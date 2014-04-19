@@ -409,6 +409,8 @@ struct rt_rq {
 	int overloaded;
 	struct plist_head pushable_tasks;
 #endif
+	int rt_queued;
+
 	int rt_throttled;
 	u64 rt_time;
 	u64 rt_runtime;
@@ -422,18 +424,6 @@ struct rt_rq {
 	struct task_group *tg;
 #endif
 };
-
-#ifdef CONFIG_RT_GROUP_SCHED
-static inline int rt_rq_throttled(struct rt_rq *rt_rq)
-{
-	return rt_rq->rt_throttled && !rt_rq->rt_nr_boosted;
-}
-#else
-static inline int rt_rq_throttled(struct rt_rq *rt_rq)
-{
-	return rt_rq->rt_throttled;
-}
-#endif
 
 /* Deadline class' related fields in a runqueue */
 struct dl_rq {
@@ -1382,6 +1372,15 @@ static inline void double_lock(spinlock_t *l1, spinlock_t *l2)
 		swap(l1, l2);
 
 	spin_lock(l1);
+	spin_lock_nested(l2, SINGLE_DEPTH_NESTING);
+}
+
+static inline void double_lock_irq(spinlock_t *l1, spinlock_t *l2)
+{
+	if (l1 > l2)
+		swap(l1, l2);
+
+	spin_lock_irq(l1);
 	spin_lock_nested(l2, SINGLE_DEPTH_NESTING);
 }
 
