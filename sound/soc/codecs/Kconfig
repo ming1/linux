@@ -71,6 +71,7 @@ config SND_SOC_ALL_CODECS
 	select SND_SOC_PCM512x_SPI if SPI_MASTER
 	select SND_SOC_RT5631 if I2C
 	select SND_SOC_RT5640 if I2C
+	select SND_SOC_RT5651 if I2C
 	select SND_SOC_SGTL5000 if I2C
 	select SND_SOC_SI476X if MFD_SI476X_CORE
 	select SND_SOC_SIRF_AUDIO_CODEC
@@ -80,6 +81,7 @@ config SND_SOC_ALL_CODECS
 	select SND_SOC_SSM2602_SPI if SPI_MASTER
 	select SND_SOC_SSM2602_I2C if I2C
 	select SND_SOC_STA32X if I2C
+	select SND_SOC_STA350 if I2C
 	select SND_SOC_STA529 if I2C
 	select SND_SOC_STAC9766 if SND_SOC_AC97_BUS
 	select SND_SOC_TAS5086 if I2C
@@ -400,6 +402,9 @@ config SND_SOC_RT5631
 config SND_SOC_RT5640
 	tristate
 
+config SND_SOC_RT5651
+	tristate
+
 #Freescale sgtl5000 codec
 config SND_SOC_SGTL5000
 	tristate "Freescale SGTL5000 CODEC"
@@ -438,6 +443,10 @@ config SND_SOC_SSM2602_I2C
 
 config SND_SOC_STA32X
 	tristate
+
+config SND_SOC_STA350
+	tristate "STA350 speaker amplifier"
+	depends on I2C
 
 config SND_SOC_STA529
 	tristate
