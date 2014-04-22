@@ -254,7 +254,6 @@ static int dapm_kcontrol_data_alloc(struct snd_soc_dapm_widget *widget,
 static void dapm_kcontrol_free(struct snd_kcontrol *kctl)
 {
 	struct dapm_kcontrol_data *data = snd_kcontrol_chip(kctl);
-	kfree(data->widget);
 	kfree(data->wlist);
 	kfree(data);
 }
@@ -426,7 +425,7 @@ static void soc_dapm_async_complete(struct snd_soc_dapm_context *dapm)
 }
 
 static int soc_widget_update_bits_locked(struct snd_soc_dapm_widget *w,
-	unsigned short reg, unsigned int mask, unsigned int value)
+	int reg, unsigned int mask, unsigned int value)
 {
 	bool change;
 	unsigned int old, new;
