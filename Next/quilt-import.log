@@ -1,0 +1,19 @@
+Importing jdelvare-hwmon based on 3.15-rc1
+Unchanged quilt series jdelvare-hwmon
+Importing rd-docs based on 3.15-rc2
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard a798c10faf62a505d24e5f6213fbaf904a39623f
+HEAD is now at a798c10faf62 Linux 3.15-rc2
+$ git am ../quilt/rd-docs/docbook-drm-tmpl-typos.patch
+Patch format detection failed.
+$ git am ../quilt/rd-docs/Doc-email-update-tbird-settings.patch
+Applying: Added setting to email-clients that is easier to read
+$ git am ../quilt/rd-docs/Docum-java-txt-add-java7-support.patch
+Patch format detection failed.
+$ git am ../quilt/rd-docs/docum-proc-stat-intr-line.patch
+Applying: The sum at the beginning of line "intr" includes also unnumbered interrupts.
+$ cd /home/sfr/kernels/next/next
+$ git fetch -f ../quilt-tmp master:rd-docs/master
+From ../quilt-tmp
+ + 596d80c7ceb6...c9e7f4124daa master     -> rd-docs/master  (forced update)
