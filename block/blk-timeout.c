@@ -96,11 +96,7 @@ static void blk_rq_timed_out(struct request *req)
 			__blk_complete_request(req);
 		break;
 	case BLK_EH_RESET_TIMER:
-		if (q->mq_ops)
-			blk_mq_add_timer(req);
-		else
-			blk_add_timer(req);
-
+		blk_add_timer(req);
 		blk_clear_rq_complete(req);
 		break;
 	case BLK_EH_NOT_HANDLED:
@@ -170,7 +166,8 @@ void blk_abort_request(struct request *req)
 }
 EXPORT_SYMBOL_GPL(blk_abort_request);
 
-void __blk_add_timer(struct request *req, struct list_head *timeout_list)
+static void __blk_add_timer(struct request *req,
+			    struct list_head *timeout_list)
 {
 	struct request_queue *q = req->q;
 	unsigned long expiry;
@@ -199,8 +196,19 @@ void __blk_add_timer(struct request *req, struct list_head *timeout_list)
 	expiry = round_jiffies_up(req->deadline);
 
 	if (!timer_pending(&q->timeout) ||
-	    time_before(expiry, q->timeout.expires))
-		mod_timer(&q->timeout, expiry);
+	    time_before(expiry, q->timeout.expires)) {
+		unsigned long diff = q->timeout.expires - expiry;
+
+		/*
+		 * Due to added timer slack to group timers, the timer
+		 * will often be a little in front of what we asked for.
+		 * So apply some tolerance here too, otherwise we keep
+		 * modifying the timer because expires for value X
+		 * will be X + something.
+		 */
+		if (diff >= HZ / 2)
+			mod_timer(&q->timeout, expiry);
+	}
 
 }
 
@@ -214,6 +222,11 @@ void __blk_add_timer(struct request *req, struct list_head *timeout_list)
  */
 void blk_add_timer(struct request *req)
 {
-	__blk_add_timer(req, &req->q->timeout_list);
+	struct request_queue *q = req->q;
+
+	if (q->mq_ops)
+		__blk_add_timer(req, NULL);
+	else
+		__blk_add_timer(req, &req->q->timeout_list);
 }
 
