@@ -325,7 +325,6 @@ struct drm_i915_error_state {
 	u32 gab_ctl;
 	u32 gfx_mode;
 	u32 extra_instdone[I915_NUM_INSTDONE_REG];
-	u32 pipestat[I915_MAX_PIPES];
 	u64 fence[I915_MAX_NUM_FENCES];
 	struct intel_overlay_error_state *overlay;
 	struct intel_display_error_state *display;
@@ -929,6 +928,7 @@ struct i915_power_domains {
 	 * time are on. They are kept on until after the first modeset.
 	 */
 	bool init_power_on;
+	bool initializing;
 	int power_well_count;
 
 	struct mutex lock;
@@ -1473,6 +1473,8 @@ struct drm_i915_private {
 	struct i915_dri1_state dri1;
 	/* Old ums support infrastructure, same warning applies. */
 	struct i915_ums_state ums;
+	/* the indicator for dispatch video commands on two BSD rings */
+	int ring_index;
 };
 
 static inline struct drm_i915_private *to_i915(const struct drm_device *dev)
@@ -1680,6 +1682,7 @@ struct drm_i915_file_private {
 
 	struct i915_hw_context *private_default_ctx;
 	atomic_t rps_wait_boost;
+	struct  intel_ring_buffer *bsd_ring;
 };
 
 /*
@@ -1837,17 +1840,21 @@ struct drm_i915_cmd_table {
 #define BSD_RING		(1<<VCS)
 #define BLT_RING		(1<<BCS)
 #define VEBOX_RING		(1<<VECS)
-#define HAS_BSD(dev)            (INTEL_INFO(dev)->ring_mask & BSD_RING)
-#define HAS_BLT(dev)            (INTEL_INFO(dev)->ring_mask & BLT_RING)
-#define HAS_VEBOX(dev)            (INTEL_INFO(dev)->ring_mask & VEBOX_RING)
-#define HAS_LLC(dev)            (INTEL_INFO(dev)->has_llc)
-#define HAS_WT(dev)            (IS_HASWELL(dev) && to_i915(dev)->ellc_size)
+#define BSD2_RING		(1<<VCS2)
+#define HAS_BSD(dev)		(INTEL_INFO(dev)->ring_mask & BSD_RING)
+#define HAS_BSD2(dev)		(INTEL_INFO(dev)->ring_mask & BSD2_RING)
+#define HAS_BLT(dev)		(INTEL_INFO(dev)->ring_mask & BLT_RING)
+#define HAS_VEBOX(dev)		(INTEL_INFO(dev)->ring_mask & VEBOX_RING)
+#define HAS_LLC(dev)		(INTEL_INFO(dev)->has_llc)
+#define HAS_WT(dev)		((IS_HASWELL(dev) || IS_BROADWELL(dev)) && \
+				 to_i915(dev)->ellc_size)
 #define I915_NEED_GFX_HWS(dev)	(INTEL_INFO(dev)->need_gfx_hws)
 
 #define HAS_HW_CONTEXTS(dev)	(INTEL_INFO(dev)->gen >= 6)
-#define HAS_ALIASING_PPGTT(dev)	(INTEL_INFO(dev)->gen >= 6 && !IS_VALLEYVIEW(dev))
-#define HAS_PPGTT(dev)		(INTEL_INFO(dev)->gen >= 7 && !IS_VALLEYVIEW(dev) \
-				 && !IS_BROADWELL(dev))
+#define HAS_ALIASING_PPGTT(dev)	(INTEL_INFO(dev)->gen >= 6 && \
+				 (!IS_VALLEYVIEW(dev) || IS_CHERRYVIEW(dev)))
+#define HAS_PPGTT(dev)		(INTEL_INFO(dev)->gen >= 7 \
+				 && !IS_GEN8(dev))
 #define USES_PPGTT(dev)		intel_enable_ppgtt(dev, false)
 #define USES_FULL_PPGTT(dev)	intel_enable_ppgtt(dev, true)
 
@@ -1972,6 +1979,7 @@ extern unsigned long i915_chipset_val(struct drm_i915_private *dev_priv);
 extern unsigned long i915_mch_val(struct drm_i915_private *dev_priv);
 extern unsigned long i915_gfx_val(struct drm_i915_private *dev_priv);
 extern void i915_update_gfx_val(struct drm_i915_private *dev_priv);
+int vlv_force_gfx_clock(struct drm_i915_private *dev_priv, bool on);
 
 extern void intel_console_resume(struct work_struct *work);
 
