@@ -234,7 +234,7 @@ static const char *sdebug_version_date = "20180128";
 #define F_INV_OP		0x200
 #define F_FAKE_RW		0x400
 #define F_M_ACCESS		0x800	/* media access */
-#define F_LONG_DELAY		0x1000
+#define F_LONG_DELAY		0x1000  /* IMMED bit on commands with this */
 
 #define FF_RESPOND (F_RL_WLUN_OK | F_SKIP_UA | F_DELAY_OVERR)
 #define FF_MEDIA_IO (F_M_ACCESS | F_FAKE_RW)
@@ -294,6 +294,7 @@ struct sdebug_queued_cmd {
 	unsigned int inj_dix:1;
 	unsigned int inj_short:1;
 	unsigned int inj_host_busy:1;
+	bool immed_shortens_delay;
 };
 
 struct sdebug_queue {
@@ -398,14 +399,6 @@ static const unsigned char opcode_ind_arr[256] = {
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 };
-
-/*
- * The following "response" functions return the SCSI mid-level's 4 byte
- * tuple-in-an-int. To handle commands with an IMMED bit, for a faster
- * command completion, they can mask their return value with
- * SDEG_RES_IMMED_MASK .
- */
-#define SDEG_RES_IMMED_MASK 0x40000000
 
 static int resp_inquiry(struct scsi_cmnd *, struct sdebug_dev_info *);
 static int resp_report_luns(struct scsi_cmnd *, struct sdebug_dev_info *);
@@ -1607,6 +1600,8 @@ static int resp_start_stop(struct scsi_cmnd *scp,
 {
 	unsigned char *cmd = scp->cmnd;
 	int power_cond, stop;
+	struct sdebug_queued_cmd *sqcp =
+		(struct sdebug_queued_cmd *)scp->host_scribble;
 
 	power_cond = (cmd[4] & 0xf0) >> 4;
 	if (power_cond) {
@@ -1615,7 +1610,8 @@ static int resp_start_stop(struct scsi_cmnd *scp,
 	}
 	stop = !(cmd[4] & 1);
 	atomic_xchg(&devip->stopped, stop);
-	return (cmd[1] & 0x1) ? SDEG_RES_IMMED_MASK : 0; /* check IMMED bit */
+	sqcp->immed_shortens_delay = !!(cmd[1] & 0x1);
+	return 0;
 }
 
 static sector_t get_sdebug_capacity(void)
@@ -3586,6 +3582,8 @@ static int resp_sync_cache(struct scsi_cmnd *scp,
 	u64 lba;
 	u32 num_blocks;
 	u8 *cmd = scp->cmnd;
+	struct sdebug_queued_cmd *sqcp =
+		(struct sdebug_queued_cmd *)scp->host_scribble;
 
 	if (cmd[0] == SYNCHRONIZE_CACHE) {	/* 10 byte cdb */
 		lba = get_unaligned_be32(cmd + 2);
@@ -3598,7 +3596,8 @@ static int resp_sync_cache(struct scsi_cmnd *scp,
 		mk_sense_buffer(scp, ILLEGAL_REQUEST, LBA_OUT_OF_RANGE, 0);
 		return check_condition_result;
 	}
-	return (cmd[1] & 0x2) ? SDEG_RES_IMMED_MASK : 0; /* check IMMED bit */
+	sqcp->immed_shortens_delay = !!(cmd[1] & 0x2);
+	return 0;
 }
 
 #define RL_BUCKET_ELEMS 8
@@ -4399,12 +4398,12 @@ static int schedule_resp(struct scsi_cmnd *cmnd, struct sdebug_dev_info *devip,
 	}
 
 	cmnd->result = pfp != NULL ? pfp(cmnd, devip) : 0;
-	if (cmnd->result & SDEG_RES_IMMED_MASK) {
+	if (sqcp->immed_shortens_delay) {
 		/*
-		 * This is the F_DELAY_OVERR case. No delay.
+		 * IMMED bit set overrides F_LONG_DELAY.
 		 */
-		cmnd->result &= ~SDEG_RES_IMMED_MASK;
-		delta_jiff = ndelay = 0;
+		delta_jiff = 0;
+		ndelay = 0;
 	}
 	if (cmnd->result == 0 && scsi_result != 0)
 		cmnd->result = scsi_result;
@@ -4456,7 +4455,6 @@ static int schedule_resp(struct scsi_cmnd *cmnd, struct sdebug_dev_info *devip,
 
 respond_in_thread:	/* call back to mid-layer using invocation thread */
 	cmnd->result = pfp != NULL ? pfp(cmnd, devip) : 0;
-	cmnd->result &= ~SDEG_RES_IMMED_MASK;
 	if (cmnd->result == 0 && scsi_result != 0)
 		cmnd->result = scsi_result;
 	cmnd->scsi_done(cmnd);
