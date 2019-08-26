@@ -933,6 +933,9 @@ again:
 	    irqd_irq_masked(&desc->irq_data))
 		unmask_threaded_irq(desc);
 
+	if (action->flags & IRQF_RESCUE_THREAD)
+		desc->istate &= ~IRQS_ONESHOT;
+
 out_unlock:
 	raw_spin_unlock_irq(&desc->lock);
 	chip_bus_sync_unlock(desc);
@@ -1081,6 +1084,8 @@ static int irq_thread(void *data)
 
 	if (force_irqthreads && test_bit(IRQTF_FORCED_THREAD,
 					&action->thread_flags))
+		handler_fn = irq_forced_thread_fn;
+	else if (action->flags & IRQF_RESCUE_THREAD)
 		handler_fn = irq_forced_thread_fn;
 	else
 		handler_fn = irq_thread_fn;
@@ -1543,7 +1548,8 @@ __setup_irq(unsigned int irq, struct irq_desc *desc, struct irqaction *new)
 			irq_settings_set_per_cpu(desc);
 		}
 
-		if (new->flags & IRQF_ONESHOT)
+		if ((new->flags & IRQF_ONESHOT) && !(new->flags &
+					IRQF_RESCUE_THREAD))
 			desc->istate |= IRQS_ONESHOT;
 
 		/* Exclude IRQ from balancing if requested */
@@ -2009,6 +2015,18 @@ int request_threaded_irq(unsigned int irq, irq_handler_t handler,
 		if (!thread_fn)
 			return -EINVAL;
 		handler = irq_default_primary_handler;
+	}
+
+	if (irqflags & IRQF_RESCUE_THREAD) {
+		if (irqflags & IRQF_NO_THREAD)
+			return -EINVAL;
+		if (thread_fn)
+			return -EINVAL;
+		if (handler == irq_default_primary_handler)
+			return -EINVAL;
+
+		thread_fn = handler;
+		irqflags |= IRQF_ONESHOT;
 	}
 
 	action = kzalloc(sizeof(struct irqaction), GFP_KERNEL);

@@ -146,7 +146,17 @@ irqreturn_t __handle_irq_event_percpu(struct irq_desc *desc, unsigned int *flags
 		irqreturn_t res;
 
 		trace_irq_handler_entry(irq, action);
-		res = action->handler(irq, action->dev_id);
+		if ((action->flags & IRQF_RESCUE_THREAD) &&
+				irq_flood_detected()) {
+
+			raw_spin_lock(&desc->lock);
+			desc->istate |= IRQS_ONESHOT;
+			mask_irq(desc);
+			raw_spin_unlock(&desc->lock);
+
+			res = IRQ_WAKE_THREAD;
+		} else
+			res = action->handler(irq, action->dev_id);
 		trace_irq_handler_exit(irq, action, res);
 
 		if (WARN_ONCE(!irqs_disabled(),"irq %u handler %pS enabled interrupts\n",
