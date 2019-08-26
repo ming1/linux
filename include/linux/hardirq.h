@@ -8,6 +8,8 @@
 #include <linux/vtime.h>
 #include <asm/hardirq.h>
 
+extern u64 irq_get_avg_interval(int cpu);
+extern bool irq_flood_detected(void);
 
 extern void synchronize_irq(unsigned int irq);
 extern bool synchronize_hardirq(unsigned int irq);

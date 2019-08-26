@@ -25,6 +25,7 @@
 #include <linux/smpboot.h>
 #include <linux/tick.h>
 #include <linux/irq.h>
+#include <linux/sched/clock.h>
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/irq.h>
@@ -51,6 +52,12 @@
 DEFINE_PER_CPU_ALIGNED(irq_cpustat_t, irq_stat);
 EXPORT_PER_CPU_SYMBOL(irq_stat);
 #endif
+
+struct irq_interval {
+	u64                     last_irq_end;
+	u64                     avg;
+};
+DEFINE_PER_CPU(struct irq_interval, avg_irq_interval);
 
 static struct softirq_action softirq_vec[NR_SOFTIRQS] __cacheline_aligned_in_smp;
 
@@ -340,6 +347,41 @@ asmlinkage __visible void do_softirq(void)
 }
 
 /*
+ * Update average irq interval with the Exponential Weighted Moving
+ * Average(EWMA)
+ */
+static void irq_update_interval(void)
+{
+#define IRQ_INTERVAL_EWMA_WEIGHT	128
+#define IRQ_INTERVAL_EWMA_PREV_FACTOR	127
+#define IRQ_INTERVAL_EWMA_CURR_FACTOR	(IRQ_INTERVAL_EWMA_WEIGHT - \
+		IRQ_INTERVAL_EWMA_PREV_FACTOR)
+
+	int cpu = raw_smp_processor_id();
+	struct irq_interval *inter = per_cpu_ptr(&avg_irq_interval, cpu);
+	u64 delta = sched_clock_cpu(cpu) - inter->last_irq_end;
+
+	inter->avg = (inter->avg * IRQ_INTERVAL_EWMA_PREV_FACTOR +
+		delta * IRQ_INTERVAL_EWMA_CURR_FACTOR) /
+		IRQ_INTERVAL_EWMA_WEIGHT;
+}
+
+u64 irq_get_avg_interval(int cpu)
+{
+	return per_cpu_ptr(&avg_irq_interval, cpu)->avg;
+}
+
+/*
+ * If the average CPU irq interval is less than 8us, we think interrupt
+ * flood is detected on this CPU
+ */
+bool irq_flood_detected(void)
+{
+#define  IRQ_FLOOD_THRESHOLD_NS	2000
+	return raw_cpu_ptr(&avg_irq_interval)->avg <= IRQ_FLOOD_THRESHOLD_NS;
+}
+
+/*
  * Enter an interrupt context.
  */
 void irq_enter(void)
@@ -356,6 +398,7 @@ void irq_enter(void)
 	}
 
 	__irq_enter();
+	irq_update_interval();
 }
 
 static inline void invoke_softirq(void)
@@ -402,12 +445,16 @@ static inline void tick_irq_exit(void)
  */
 void irq_exit(void)
 {
+	struct irq_interval *inter = raw_cpu_ptr(&avg_irq_interval);
+
 #ifndef __ARCH_IRQ_EXIT_IRQS_DISABLED
 	local_irq_disable();
 #else
 	lockdep_assert_irqs_disabled();
 #endif
 	account_irq_exit_time(current);
+	inter->last_irq_end = sched_clock_cpu(smp_processor_id());
+
 	preempt_count_sub(HARDIRQ_OFFSET);
 	if (!in_interrupt() && local_softirq_pending())
 		invoke_softirq();
