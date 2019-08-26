@@ -25,6 +25,8 @@
 #include <linux/smpboot.h>
 #include <linux/tick.h>
 #include <linux/irq.h>
+#include <linux/sched.h>
+#include <linux/sched/clock.h>
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/irq.h>
@@ -51,6 +53,26 @@
 DEFINE_PER_CPU_ALIGNED(irq_cpustat_t, irq_stat);
 EXPORT_PER_CPU_SYMBOL(irq_stat);
 #endif
+
+#define IRQ_INTERVAL_STAGE1_WEIGHT_BITS		ilog2(512)
+#define IRQ_INTERVAL_STAGE2_WEIGHT_BITS		ilog2(128)
+
+#define IRQ_INTERVAL_THRESHOLD_UNIT_NS	1000
+
+#define IRQ_INTERVAL_MIN_THRESHOLD_NS	IRQ_INTERVAL_THRESHOLD_UNIT_NS
+#define IRQ_INTERVAL_MAX_MIN_THRESHOLD_TIME_NS  4000000000
+
+struct irq_interval {
+	u64                     clock;
+	int			avg;
+	unsigned		std_threshold:30;
+	unsigned		stage:2;
+
+	u64			stage_start_clock;
+	unsigned		stage1_time;
+	unsigned		stage2_time;
+};
+DEFINE_PER_CPU(struct irq_interval, avg_irq_interval);
 
 static struct softirq_action softirq_vec[NR_SOFTIRQS] __cacheline_aligned_in_smp;
 
@@ -339,6 +361,140 @@ asmlinkage __visible void do_softirq(void)
 	local_irq_restore(flags);
 }
 
+static inline void irq_interval_update_avg(struct irq_interval *inter,
+		u64 now, int weight_bits)
+{
+	inter->avg = inter->avg - ((inter->avg) >> weight_bits) +
+		((now - inter->clock) >> weight_bits);
+	if (unlikely(inter->avg < 0))
+		inter->avg = 0;
+}
+
+/*
+ * Keep the ratio of stage2 time to stage1 time between 1/2 and 1/8. If
+ * it is out of the range, adjust .std_threshold for maintaining the ratio.
+ */
+static inline void irq_interval_update_threshold(struct irq_interval *inter)
+{
+	if (inter->stage2_time * 2 > inter->stage1_time)
+		inter->std_threshold -= IRQ_INTERVAL_THRESHOLD_UNIT_NS;
+	if (inter->stage2_time * 8 < inter->stage1_time)
+		inter->std_threshold += IRQ_INTERVAL_THRESHOLD_UNIT_NS;
+
+	if (inter->std_threshold <= 0)
+		inter->std_threshold = IRQ_INTERVAL_THRESHOLD_UNIT_NS;
+
+	if (inter->std_threshold >= 32 * IRQ_INTERVAL_THRESHOLD_UNIT_NS)
+		inter->std_threshold = 32 * IRQ_INTERVAL_THRESHOLD_UNIT_NS;
+}
+
+/*
+ * If we stay at stage1 for too long with minimized threshold and low enough
+ * interrupt average interval, there may have risk to lock up CPU.
+ */
+static bool irq_interval_cpu_lockup_risk(struct irq_interval *inter, u64 now)
+{
+	if (inter->avg > inter->std_threshold)
+		return false;
+
+	if (inter->std_threshold != IRQ_INTERVAL_MIN_THRESHOLD_NS)
+		return false;
+
+	if (now - inter->stage_start_clock <=
+			IRQ_INTERVAL_MAX_MIN_THRESHOLD_TIME_NS)
+		return false;
+	return true;
+}
+
+/*
+ * Update average interrupt interval with the Exponential Weighted Moving
+ * Average(EWMA), and implement two-stage interrupt flood detection.
+ *
+ * Use scheduler's runqueue software clock at default for figuring
+ * interrupt interval for saving cost. When the interval becomes zero,
+ * it is reasonable to conclude scheduler's activity on this CPU has been
+ * stopped because of interrupt flood. Then switch to the 2nd stage
+ * detection in which clock is read from hardware, and the detection
+ * result can be more reliable.
+ */
+static void irq_interval_update(void)
+{
+	struct irq_interval *inter = raw_cpu_ptr(&avg_irq_interval);
+	u64 now;
+
+	if (likely(!inter->stage)) {
+		now = sched_local_rq_clock();
+		irq_interval_update_avg(inter, now,
+				IRQ_INTERVAL_STAGE1_WEIGHT_BITS);
+
+		if (unlikely(inter->avg < inter->std_threshold / 2 ||
+				irq_interval_cpu_lockup_risk(inter, now))) {
+			inter->stage = 1;
+			now = sched_clock_cpu(smp_processor_id());
+			inter->stage1_time = now - inter->stage_start_clock;
+			inter->stage_start_clock = now;
+
+			/*
+			 * reset as the mean of the min and the max value of
+			 * stage2's threshold
+			 */
+			inter->avg = inter->std_threshold +
+				(inter->std_threshold >> 2);
+		}
+	} else {
+		now = sched_clock_cpu(smp_processor_id());
+
+		irq_interval_update_avg(inter, now,
+				IRQ_INTERVAL_STAGE2_WEIGHT_BITS);
+
+		if (inter->avg > inter->std_threshold * 2) {
+			inter->stage = 0;
+			inter->stage2_time = now - inter->stage_start_clock;
+			inter->stage_start_clock = now;
+
+			irq_interval_update_threshold(inter);
+		}
+	}
+}
+
+static void irq_interval_update_clock(void)
+{
+	struct irq_interval *inter = raw_cpu_ptr(&avg_irq_interval);
+
+	if (likely(!inter->stage))
+		inter->clock = sched_local_rq_clock();
+	else
+		inter->clock = sched_clock_cpu(smp_processor_id());
+}
+
+u64 irq_get_avg_interval(int cpu)
+{
+	struct irq_interval *inter = per_cpu_ptr(&avg_irq_interval, cpu);
+
+	WARN_ON_ONCE(inter->stage > 1);
+	return (inter->avg << 1) | inter->stage;
+}
+EXPORT_SYMBOL_GPL(irq_get_avg_interval);
+
+bool irq_is_flood(void)
+{
+	struct irq_interval *inter = raw_cpu_ptr(&avg_irq_interval);
+
+	return inter->stage && inter->avg < inter->std_threshold;
+}
+EXPORT_SYMBOL_GPL(irq_is_flood);
+
+static void irq_interval_init(void)
+{
+	int i;
+
+	for_each_possible_cpu(i) {
+		struct irq_interval *inter = &per_cpu(avg_irq_interval, i);
+
+		inter->std_threshold = IRQ_INTERVAL_THRESHOLD_UNIT_NS * 2;
+	}
+}
+
 /*
  * Enter an interrupt context.
  */
@@ -356,6 +512,7 @@ void irq_enter(void)
 	}
 
 	__irq_enter();
+	irq_interval_update();
 }
 
 static inline void invoke_softirq(void)
@@ -408,6 +565,8 @@ void irq_exit(void)
 	lockdep_assert_irqs_disabled();
 #endif
 	account_irq_exit_time(current);
+	irq_interval_update_clock();
+
 	preempt_count_sub(HARDIRQ_OFFSET);
 	if (!in_interrupt() && local_softirq_pending())
 		invoke_softirq();
@@ -682,6 +841,8 @@ static __init int spawn_ksoftirqd(void)
 	cpuhp_setup_state_nocalls(CPUHP_SOFTIRQ_DEAD, "softirq:dead", NULL,
 				  takeover_tasklets);
 	BUG_ON(smpboot_register_percpu_thread(&softirq_threads));
+
+	irq_interval_init();
 
 	return 0;
 }

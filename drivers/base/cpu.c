@@ -20,6 +20,7 @@
 #include <linux/tick.h>
 #include <linux/pm_qos.h>
 #include <linux/sched/isolation.h>
+#include <linux/hardirq.h>
 
 #include "base.h"
 
@@ -183,10 +184,31 @@ static struct attribute_group crash_note_cpu_attr_group = {
 };
 #endif
 
+static ssize_t show_irq_interval(struct device *dev,
+				 struct device_attribute *attr, char *buf)
+{
+	struct cpu *cpu = container_of(dev, struct cpu, dev);
+	ssize_t rc;
+	u64 avg = irq_get_avg_interval(cpu->dev.id);
+
+	rc = sprintf(buf, "%d: %d\n",  (int)(avg & 1), (int)(avg >> 1));
+	return rc;
+}
+
+static DEVICE_ATTR(irq_interval, 0400, show_irq_interval, NULL);
+static struct attribute *irq_interval_cpu_attrs[] = {
+	&dev_attr_irq_interval.attr,
+	NULL
+};
+static struct attribute_group irq_interval_cpu_attr_group = {
+	.attrs = irq_interval_cpu_attrs,
+};
+
 static const struct attribute_group *common_cpu_attr_groups[] = {
 #ifdef CONFIG_KEXEC
 	&crash_note_cpu_attr_group,
 #endif
+	&irq_interval_cpu_attr_group,
 	NULL
 };
 
@@ -194,6 +216,7 @@ static const struct attribute_group *hotplugable_cpu_attr_groups[] = {
 #ifdef CONFIG_KEXEC
 	&crash_note_cpu_attr_group,
 #endif
+	&irq_interval_cpu_attr_group,
 	NULL
 };
 
