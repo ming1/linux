@@ -1501,21 +1501,8 @@ static int queue_request_irq(struct nvme_queue *nvmeq)
 		return pci_request_irq(pdev, nvmeq->cq_vector, nvme_irq_check,
 				nvme_irq, nvmeq, "nvme%dq%d", nr, nvmeq->qid);
 	} else {
-		char *devname;
-		const struct cpumask *mask;
-		unsigned long irqflags = IRQF_SHARED;
-		int vector = pci_irq_vector(pdev, nvmeq->cq_vector);
-
-		devname = kasprintf(GFP_KERNEL, "nvme%dq%d", nr, nvmeq->qid);
-		if (!devname)
-			return -ENOMEM;
-
-		mask = pci_irq_get_affinity(pdev, nvmeq->cq_vector);
-		if (mask && cpumask_weight(mask) > 1)
-			irqflags |= IRQF_RESCUE_THREAD;
-
-		return request_threaded_irq(vector, nvme_irq, NULL, irqflags,
-				devname, nvmeq);
+		return pci_request_irq(pdev, nvmeq->cq_vector, nvme_irq,
+				NULL, nvmeq, "nvme%dq%d", nr, nvmeq->qid);
 	}
 }
 
