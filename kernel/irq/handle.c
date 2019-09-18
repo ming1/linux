@@ -139,6 +139,8 @@ irqreturn_t __handle_irq_event_percpu(struct irq_desc *desc, unsigned int *flags
 	irqreturn_t retval = IRQ_NONE;
 	unsigned int irq = desc->irq_data.irq;
 	struct irqaction *action;
+	const unsigned cpu = smp_processor_id();
+	unsigned long start_ns = sched_clock_cpu(cpu);
 
 	record_irq_time(desc);
 
@@ -177,6 +179,9 @@ irqreturn_t __handle_irq_event_percpu(struct irq_desc *desc, unsigned int *flags
 
 		retval |= res;
 	}
+
+	desc->time_ns += sched_clock_cpu(cpu) - start_ns;
+	desc->cnt++;
 
 	return retval;
 }
