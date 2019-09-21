@@ -24,6 +24,7 @@
 #include <linux/io-64-nonatomic-lo-hi.h>
 #include <linux/sed-opal.h>
 #include <linux/pci-p2pdma.h>
+#include <linux/irq_poll.h>
 
 #include "trace.h"
 #include "nvme.h"
@@ -32,6 +33,8 @@
 #define CQ_SIZE(depth)		(depth * sizeof(struct nvme_completion))
 
 #define SGES_PER_PAGE	(PAGE_SIZE / sizeof(struct nvme_sgl_desc))
+
+#define NVME_POLL_BUDGET_IRQ   256
 
 /*
  * These can be higher, but we need to ensure that any command doesn't
@@ -187,6 +190,7 @@ struct nvme_queue {
 	u32 *dbbuf_cq_db;
 	u32 *dbbuf_sq_ei;
 	u32 *dbbuf_cq_ei;
+	struct irq_poll iop;
 	struct completion delete_done;
 };
 
@@ -1012,11 +1016,29 @@ static inline int nvme_process_cq(struct nvme_queue *nvmeq, u16 *start,
 	return found;
 }
 
+static int nvme_irqpoll_handler(struct irq_poll *iop, int budget)
+{
+       struct nvme_queue *nvmeq = container_of(iop, struct nvme_queue, iop);
+       struct pci_dev *pdev = to_pci_dev(nvmeq->dev->dev);
+       u16 start, end;
+       int completed;
+
+       completed = nvme_process_cq(nvmeq, &start, &end, budget);
+       nvme_complete_cqes(nvmeq, start, end);
+       if (completed < budget) {
+               irq_poll_complete(&nvmeq->iop);
+               enable_irq(pci_irq_vector(pdev, nvmeq->cq_vector));
+       }
+
+       return completed;
+}
+
 static irqreturn_t nvme_irq(int irq, void *data)
 {
 	struct nvme_queue *nvmeq = data;
 	irqreturn_t ret = IRQ_NONE;
 	u16 start, end;
+	int budget = nvmeq->q_depth;
 
 	/*
 	 * The rmb/wmb pair ensures we see all updates from a previous run of
@@ -1025,13 +1047,23 @@ static irqreturn_t nvme_irq(int irq, void *data)
 	rmb();
 	if (nvmeq->cq_head != nvmeq->last_cq_head)
 		ret = IRQ_HANDLED;
-	nvme_process_cq(nvmeq, &start, &end, -1);
+
+       /* reap here up to a budget of the size the queue depth */
+       do {
+               budget -= nvme_process_cq(nvmeq, &start, &end, budget);
+               if (start != end) {
+                       nvme_complete_cqes(nvmeq, start, end);
+                       ret = IRQ_HANDLED;
+               }
+       } while (start != end && budget > 0);
+
 	nvmeq->last_cq_head = nvmeq->cq_head;
 	wmb();
 
-	if (start != end) {
-		nvme_complete_cqes(nvmeq, start, end);
-		return IRQ_HANDLED;
+       /* if we still have cqes to reap, schedule irqpoll */
+       if (start != end && nvme_cqe_pending(nvmeq)) {
+               disable_irq_nosync(irq);
+               irq_poll_sched(&nvmeq->iop);
 	}
 
 	return ret;
@@ -1344,6 +1376,7 @@ static enum blk_eh_timer_return nvme_timeout(struct request *req, bool reserved)
 
 static void nvme_free_queue(struct nvme_queue *nvmeq)
 {
+       irq_poll_disable(&nvmeq->iop);
 	dma_free_coherent(nvmeq->dev->dev, CQ_SIZE(nvmeq->q_depth),
 				(void *)nvmeq->cqes, nvmeq->cq_dma_addr);
 	if (!nvmeq->sq_cmds)
@@ -1476,6 +1509,7 @@ static int nvme_alloc_queue(struct nvme_dev *dev, int qid, int depth)
 	nvmeq->dev = dev;
 	spin_lock_init(&nvmeq->sq_lock);
 	spin_lock_init(&nvmeq->cq_poll_lock);
+	irq_poll_init(&nvmeq->iop, NVME_POLL_BUDGET_IRQ, nvme_irqpoll_handler);
 	nvmeq->cq_head = 0;
 	nvmeq->cq_phase = 1;
 	nvmeq->q_db = &dev->dbs[qid * 2 * dev->db_stride];

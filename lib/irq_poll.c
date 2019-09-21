@@ -12,8 +12,6 @@
 #include <linux/irq_poll.h>
 #include <linux/delay.h>
 
-static unsigned int irq_poll_budget __read_mostly = 256;
-
 static DEFINE_PER_CPU(struct list_head, blk_cpu_iopoll);
 
 /**
@@ -77,41 +75,28 @@ EXPORT_SYMBOL(irq_poll_complete);
 
 static void __latent_entropy irq_poll_softirq(struct softirq_action *h)
 {
-	struct list_head *list = this_cpu_ptr(&blk_cpu_iopoll);
-	int rearm = 0, budget = irq_poll_budget;
-	unsigned long start_time = jiffies;
+	struct list_head *irqpoll_list = this_cpu_ptr(&blk_cpu_iopoll);
+	LIST_HEAD(list);
 
 	local_irq_disable();
+	list_splice_init(irqpoll_list, &list);
+	local_irq_enable();
 
-	while (!list_empty(list)) {
+	while (!list_empty(&list)) {
 		struct irq_poll *iop;
 		int work, weight;
-
-		/*
-		 * If softirq window is exhausted then punt.
-		 */
-		if (budget <= 0 || time_after(jiffies, start_time)) {
-			rearm = 1;
-			break;
-		}
-
-		local_irq_enable();
 
 		/* Even though interrupts have been re-enabled, this
 		 * access is safe because interrupts can only add new
 		 * entries to the tail of this list, and only ->poll()
 		 * calls can remove this head entry from the list.
 		 */
-		iop = list_entry(list->next, struct irq_poll, list);
+		iop = list_first_entry(&list, struct irq_poll, list);
 
 		weight = iop->weight;
 		work = 0;
 		if (test_bit(IRQ_POLL_F_SCHED, &iop->state))
 			work = iop->poll(iop, weight);
-
-		budget -= work;
-
-		local_irq_disable();
 
 		/*
 		 * Drivers must not modify the iopoll state, if they
@@ -125,11 +110,21 @@ static void __latent_entropy irq_poll_softirq(struct softirq_action *h)
 			if (test_bit(IRQ_POLL_F_DISABLE, &iop->state))
 				__irq_poll_complete(iop);
 			else
-				list_move_tail(&iop->list, list);
+                               list_move_tail(&iop->list, &list);
 		}
+
+               /*
+                * If softirq window is exhausted then punt.
+                */
+               if (need_resched())
+                       break;
 	}
 
-	if (rearm)
+       local_irq_disable();
+
+       list_splice_tail_init(irqpoll_list, &list);
+       list_splice(&list, irqpoll_list);
+       if (!list_empty(irqpoll_list))
 		__raise_softirq_irqoff(IRQ_POLL_SOFTIRQ);
 
 	local_irq_enable();
