@@ -168,7 +168,6 @@ static int irq_debug_show(struct seq_file *m, void *p)
 	seq_printf(m, "node:     %d\n", irq_data_get_node(data));
 	irq_debug_show_masks(m, desc);
 	irq_debug_show_data(m, data, 0);
-	seq_printf(m, "account:   %lu %lu\n", desc->time_ns, desc->cnt);
 	raw_spin_unlock_irq(&desc->lock);
 	return 0;
 }
