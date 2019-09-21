@@ -116,7 +116,7 @@ static void __latent_entropy irq_poll_softirq(struct softirq_action *h)
                /*
                 * If softirq window is exhausted then punt.
                 */
-               if (need_resched())
+               if (local_softirq_pending())
                        break;
 	}
 
