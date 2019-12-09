@@ -1036,12 +1036,30 @@ static irqreturn_t nvme_irq(int irq, void *data)
 	return ret;
 }
 
+static irqreturn_t nvme_irq_thread(int irq, void *data)
+{
+	struct nvme_queue *nvmeq = data;
+	irqreturn_t ret = nvme_irq(irq, data);
+
+	if (!to_pci_dev(nvmeq->dev->dev)->msix_enabled)
+		writel(1 << nvmeq->cq_vector, nvmeq->dev->bar + NVME_REG_INTMC);
+
+	enable_irq(irq);
+	return ret;
+}
+
 static irqreturn_t nvme_irq_check(int irq, void *data)
 {
 	struct nvme_queue *nvmeq = data;
-	if (nvme_cqe_pending(nvmeq))
-		return IRQ_WAKE_THREAD;
-	return IRQ_NONE;
+
+	if (!nvme_cqe_pending(nvmeq))
+		return IRQ_NONE;
+
+	if (!to_pci_dev(nvmeq->dev->dev)->msix_enabled)
+		writel(1 << nvmeq->cq_vector, nvmeq->dev->bar + NVME_REG_INTMS);
+
+	disable_irq_nosync(irq);
+	return IRQ_WAKE_THREAD;
 }
 
 /*
@@ -1499,7 +1517,7 @@ static int queue_request_irq(struct nvme_queue *nvmeq)
 
 	if (use_threaded_interrupts) {
 		return pci_request_irq(pdev, nvmeq->cq_vector, nvme_irq_check,
-				nvme_irq, nvmeq, "nvme%dq%d", nr, nvmeq->qid);
+			nvme_irq_thread, nvmeq, "nvme%dq%d", nr, nvmeq->qid);
 	} else {
 		return pci_request_irq(pdev, nvmeq->cq_vector, nvme_irq,
 				NULL, nvmeq, "nvme%dq%d", nr, nvmeq->qid);
