@@ -1055,6 +1055,10 @@ static irqreturn_t nvme_irq_check(int irq, void *data)
 	if (!nvme_cqe_pending(nvmeq))
 		return IRQ_NONE;
 
+	nvme_irq(irq, data);
+	if (!nvme_cqe_pending(nvmeq))
+		return IRQ_HANDLED;
+
 	if (!to_pci_dev(nvmeq->dev->dev)->msix_enabled)
 		writel(1 << nvmeq->cq_vector, nvmeq->dev->bar + NVME_REG_INTMS);
 
