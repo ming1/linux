@@ -1011,38 +1011,40 @@ static inline int nvme_process_cq(struct nvme_queue *nvmeq, u16 *start,
 	return found;
 }
 
-static irqreturn_t nvme_irq(int irq, void *data)
+static int nvme_irq(int irq, void *data)
 {
 	struct nvme_queue *nvmeq = data;
-	irqreturn_t ret = IRQ_NONE;
 	u16 start, end;
+	int found;
 
 	/*
 	 * The rmb/wmb pair ensures we see all updates from a previous run of
 	 * the irq handler, even if that was on another CPU.
 	 */
 	rmb();
-	nvme_process_cq(nvmeq, &start, &end, -1);
+	found = nvme_process_cq(nvmeq, &start, &end, -1);
 	wmb();
 
-	if (start != end) {
+	if (start != end)
 		nvme_complete_cqes(nvmeq, start, end);
-		return IRQ_HANDLED;
-	}
 
-	return ret;
+	return found;
 }
 
 static irqreturn_t nvme_irq_thread(int irq, void *data)
 {
 	struct nvme_queue *nvmeq = data;
-	irqreturn_t ret = nvme_irq(irq, data);
+	int found, total = 0;
+
+	do {
+		found = nvme_irq(irq, data);
+		total += found;
+	} while (found && total < nvmeq->q_depth * 2);
 
 	if (!to_pci_dev(nvmeq->dev->dev)->msix_enabled)
 		writel(1 << nvmeq->cq_vector, nvmeq->dev->bar + NVME_REG_INTMC);
-
 	enable_irq(irq);
-	return ret;
+	return IRQ_HANDLED;
 }
 
 static irqreturn_t nvme_irq_check(int irq, void *data)
