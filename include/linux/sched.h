@@ -2011,4 +2011,6 @@ int sched_trace_rq_cpu(struct rq *rq);
 
 const struct cpumask *sched_trace_rd_span(struct root_domain *rd);
 
+u64 sched_local_rq_clock(void);
+
 #endif
