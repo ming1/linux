@@ -219,6 +219,11 @@ void update_rq_clock(struct rq *rq)
 	update_rq_clock_task(rq, delta);
 }
 
+u64 sched_local_rq_clock(void)
+{
+	return this_rq()->clock;
+}
+EXPORT_SYMBOL_GPL(sched_local_rq_clock);
 
 #ifdef CONFIG_SCHED_HRTICK
 /*
