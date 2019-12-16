@@ -40,6 +40,14 @@
 #include "blk-mq-sched.h"
 #include "blk-rq-qos.h"
 
+struct blk_mq_comp_rescuer {
+	struct list_head head;
+	bool running;
+	struct work_struct work;
+};
+
+static DEFINE_PER_CPU(struct blk_mq_comp_rescuer, blk_mq_comp_rescuer);
+
 static void blk_mq_poll_stats_start(struct request_queue *q);
 static void blk_mq_poll_stats_fn(struct blk_stat_callback *cb);
 
@@ -624,6 +632,50 @@ static void hctx_lock(struct blk_mq_hw_ctx *hctx, int *srcu_idx)
 		*srcu_idx = srcu_read_lock(hctx->srcu);
 }
 
+static void blk_mq_complete_rq_in_rescuer(struct request *rq)
+{
+	struct blk_mq_comp_rescuer *rescuer;
+	unsigned long flags;
+
+	WARN_ON(!in_interrupt());
+
+	local_irq_save(flags);
+	rescuer = this_cpu_ptr(&blk_mq_comp_rescuer);
+	list_add_tail(&rq->queuelist, &rescuer->head);
+	if (!rescuer->running) {
+		rescuer->running = true;
+		kblockd_schedule_work(&rescuer->work);
+	}
+	local_irq_restore(flags);
+
+}
+
+static void blk_mq_complete_rescue_work(struct work_struct *work)
+{
+	struct blk_mq_comp_rescuer *rescuer =
+		container_of(work, struct blk_mq_comp_rescuer, work);
+	struct list_head local_list;
+
+	local_irq_disable();
+ run_again:
+	list_replace_init(&rescuer->head, &local_list);
+	local_irq_enable();
+
+	while (!list_empty(&local_list)) {
+		struct request *rq = list_entry(local_list.next,
+				struct request, queuelist);
+		list_del_init(&rq->queuelist);
+		__blk_mq_complete_request(rq);
+		cond_resched();
+	}
+
+	local_irq_disable();
+	if (!list_empty(&rescuer->head))
+		goto run_again;
+	rescuer->running = false;
+	local_irq_enable();
+}
+
 /**
  * blk_mq_complete_request - end I/O on a request
  * @rq:		the request being processed
@@ -636,7 +688,11 @@ bool blk_mq_complete_request(struct request *rq)
 {
 	if (unlikely(blk_should_fake_timeout(rq->q)))
 		return false;
-	__blk_mq_complete_request(rq);
+
+	if (likely(!irq_is_flood() || !in_interrupt()))
+		__blk_mq_complete_request(rq);
+	else
+		blk_mq_complete_rq_in_rescuer(rq);
 	return true;
 }
 EXPORT_SYMBOL(blk_mq_complete_request);
@@ -3525,6 +3581,16 @@ EXPORT_SYMBOL(blk_mq_rq_cpu);
 
 static int __init blk_mq_init(void)
 {
+	int i;
+
+	for_each_possible_cpu(i) {
+		struct blk_mq_comp_rescuer *rescuer =
+			&per_cpu(blk_mq_comp_rescuer, i);
+
+		INIT_LIST_HEAD(&rescuer->head);
+		INIT_WORK(&rescuer->work, blk_mq_complete_rescue_work);
+	}
+
 	cpuhp_setup_state_multi(CPUHP_BLK_MQ_DEAD, "block/mq:dead", NULL,
 				blk_mq_hctx_notify_dead);
 	return 0;
