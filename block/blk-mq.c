@@ -655,6 +655,7 @@ static void blk_mq_complete_rescue_work(struct work_struct *work)
 	struct blk_mq_comp_rescuer *rescuer =
 		container_of(work, struct blk_mq_comp_rescuer, work);
 	struct list_head local_list;
+	int cnt = 0;
 
 	local_irq_disable();
  run_again:
@@ -667,6 +668,7 @@ static void blk_mq_complete_rescue_work(struct work_struct *work)
 		list_del_init(&rq->queuelist);
 		__blk_mq_complete_request(rq);
 		cond_resched();
+		cnt++;
 	}
 
 	local_irq_disable();
@@ -674,6 +676,8 @@ static void blk_mq_complete_rescue_work(struct work_struct *work)
 		goto run_again;
 	rescuer->running = false;
 	local_irq_enable();
+
+	trace_printk("rescue %d\n", cnt);
 }
 
 /**

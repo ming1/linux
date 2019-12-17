@@ -374,7 +374,7 @@ static inline void irq_interval_update_avg(struct irq_interval *inter,
  * Keep the ratio of stage2 time to stage1 time between 1/2 and 1/8. If
  * it is out of the range, adjust .std_threshold for maintaining the ratio.
  */
-static inline void irq_interval_update_threshold(struct irq_interval *inter)
+void irq_interval_update_threshold(struct irq_interval *inter)
 {
 	if (inter->stage2_time * 2 > inter->stage1_time)
 		inter->std_threshold -= IRQ_INTERVAL_THRESHOLD_UNIT_NS;
@@ -386,6 +386,10 @@ static inline void irq_interval_update_threshold(struct irq_interval *inter)
 
 	if (inter->std_threshold >= 32 * IRQ_INTERVAL_THRESHOLD_UNIT_NS)
 		inter->std_threshold = 32 * IRQ_INTERVAL_THRESHOLD_UNIT_NS;
+
+	trace_printk("stage1 %u stage2 %u new threshold %d\n",
+			inter->stage1_time, inter->stage2_time,
+			inter->std_threshold);
 }
 
 /*
@@ -430,6 +434,9 @@ static void irq_interval_update(void)
 		if (unlikely(inter->avg < inter->std_threshold / 2 ||
 				irq_interval_cpu_lockup_risk(inter, now))) {
 			inter->stage = 1;
+			trace_printk("switch to stage %d, avg is %d, threshold %d\n",
+					inter->stage, inter->avg,
+					inter->std_threshold);
 			now = sched_clock_cpu(smp_processor_id());
 			inter->stage1_time = now - inter->stage_start_clock;
 			inter->stage_start_clock = now;
@@ -451,6 +458,9 @@ static void irq_interval_update(void)
 			inter->stage = 0;
 			inter->stage2_time = now - inter->stage_start_clock;
 			inter->stage_start_clock = now;
+			trace_printk("switch to stage %d, avg is %d, threshold %d\n",
+					inter->stage, inter->avg,
+					inter->std_threshold);
 
 			irq_interval_update_threshold(inter);
 		}
