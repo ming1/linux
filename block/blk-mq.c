@@ -2371,7 +2371,7 @@ void blk_mq_insert_requests(struct blk_mq_hw_ctx *hctx, struct blk_mq_ctx *ctx,
 static void blk_mq_commit_rqs(struct blk_mq_hw_ctx *hctx, int *queued,
 			      bool from_schedule)
 {
-	if (hctx->queue->mq_ops->commit_rqs) {
+	if (hctx->queue->mq_ops->commit_rqs && *queued) {
 		trace_block_unplug(hctx->queue, *queued, !from_schedule);
 		hctx->queue->mq_ops->commit_rqs(hctx);
 	}
