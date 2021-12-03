@@ -1064,9 +1064,9 @@ void blk_mq_complete_request(struct request *rq)
 EXPORT_SYMBOL(blk_mq_complete_request);
 
 /* run the code block in @dispatch_ops with rcu/srcu read lock held */
-#define blk_mq_run_dispatch_ops(hctx, dispatch_ops)		\
+#define blk_mq_run_dispatch_ops(q, dispatch_ops)		\
 do {								\
-	if (!(hctx->flags & BLK_MQ_F_BLOCKING)) {		\
+	if (!blk_queue_has_srcu(q)) {				\
 		rcu_read_lock();				\
 		(dispatch_ops);					\
 		rcu_read_unlock();				\
@@ -1074,9 +1074,9 @@ do {								\
 		int srcu_idx;					\
 								\
 		might_sleep();					\
-		srcu_idx = srcu_read_lock(hctx->queue->srcu);	\
+		srcu_idx = srcu_read_lock(q->srcu);		\
 		(dispatch_ops);					\
-		srcu_read_unlock(hctx->queue->srcu, srcu_idx);	\
+		srcu_read_unlock(q->srcu, srcu_idx);		\
 	}							\
 } while (0)
 
@@ -1942,7 +1942,8 @@ static void __blk_mq_run_hw_queue(struct blk_mq_hw_ctx *hctx)
 	 */
 	WARN_ON_ONCE(in_interrupt());
 
-	blk_mq_run_dispatch_ops(hctx, blk_mq_sched_dispatch_requests(hctx));
+	blk_mq_run_dispatch_ops(hctx->queue,
+			blk_mq_sched_dispatch_requests(hctx));
 }
 
 static inline int blk_mq_first_mapped_cpu(struct blk_mq_hw_ctx *hctx)
@@ -2064,7 +2065,7 @@ void blk_mq_run_hw_queue(struct blk_mq_hw_ctx *hctx, bool async)
 	 * And queue will be rerun in blk_mq_unquiesce_queue() if it is
 	 * quiesced.
 	 */
-	blk_mq_run_dispatch_ops(hctx,
+	blk_mq_run_dispatch_ops(hctx->queue,
 		need_run = !blk_queue_quiesced(hctx->queue) &&
 		blk_mq_hctx_has_pending(hctx));
 
@@ -2483,7 +2484,7 @@ static blk_status_t blk_mq_request_issue_directly(struct request *rq, bool last)
 	blk_status_t ret;
 	struct blk_mq_hw_ctx *hctx = rq->mq_hctx;
 
-	blk_mq_run_dispatch_ops(hctx,
+	blk_mq_run_dispatch_ops(rq->q,
 		ret = __blk_mq_try_issue_directly(hctx, rq, true, last));
 	return ret;
 }
@@ -2797,7 +2798,7 @@ void blk_mq_submit_bio(struct bio *bio)
 		  (q->nr_hw_queues == 1 || !is_sync)))
 		blk_mq_sched_insert_request(rq, false, true, true);
 	else
-		blk_mq_run_dispatch_ops(rq->mq_hctx,
+		blk_mq_run_dispatch_ops(rq->q,
 				blk_mq_try_issue_directly(rq->mq_hctx, rq));
 }
 
