@@ -752,10 +752,9 @@ static void end_cmd(struct nullb_cmd *cmd)
 	case NULL_Q_BIO:
 		cmd->bio->bi_status = cmd->error;
 		bio_endio(cmd->bio);
+		free_cmd(cmd);
 		break;
 	}
-
-	free_cmd(cmd);
 }
 
 static enum hrtimer_restart null_cmd_timer_expired(struct hrtimer *timer)
