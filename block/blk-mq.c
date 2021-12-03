@@ -1063,23 +1063,6 @@ void blk_mq_complete_request(struct request *rq)
 }
 EXPORT_SYMBOL(blk_mq_complete_request);
 
-/* run the code block in @dispatch_ops with rcu/srcu read lock held */
-#define blk_mq_run_dispatch_ops(q, dispatch_ops)		\
-do {								\
-	if (!blk_queue_has_srcu(q)) {				\
-		rcu_read_lock();				\
-		(dispatch_ops);					\
-		rcu_read_unlock();				\
-	} else {						\
-		int srcu_idx;					\
-								\
-		might_sleep();					\
-		srcu_idx = srcu_read_lock(q->srcu);		\
-		(dispatch_ops);					\
-		srcu_read_unlock(q->srcu, srcu_idx);		\
-	}							\
-} while (0)
-
 /**
  * blk_mq_start_request - Start processing a request
  * @rq: Pointer to request to be started
@@ -2481,12 +2464,7 @@ static void blk_mq_try_issue_directly(struct blk_mq_hw_ctx *hctx,
 
 static blk_status_t blk_mq_request_issue_directly(struct request *rq, bool last)
 {
-	blk_status_t ret;
-	struct blk_mq_hw_ctx *hctx = rq->mq_hctx;
-
-	blk_mq_run_dispatch_ops(rq->q,
-		ret = __blk_mq_try_issue_directly(hctx, rq, true, last));
-	return ret;
+	return __blk_mq_try_issue_directly(rq->mq_hctx, rq, true, last);
 }
 
 static void blk_mq_plug_issue_direct(struct blk_plug *plug, bool from_schedule)
@@ -2543,7 +2521,8 @@ void blk_mq_flush_plug_list(struct blk_plug *plug, bool from_schedule)
 	plug->rq_count = 0;
 
 	if (!plug->multiple_queues && !plug->has_elevator && !from_schedule) {
-		blk_mq_plug_issue_direct(plug, false);
+		blk_mq_run_dispatch_ops(plug->mq_list->q,
+				blk_mq_plug_issue_direct(plug, false));
 		if (rq_list_empty(plug->mq_list))
 			return;
 	}
@@ -2884,7 +2863,9 @@ blk_status_t blk_insert_cloned_request(struct request_queue *q, struct request *
 	 * bypass a potential scheduler on the bottom device for
 	 * insert.
 	 */
-	return blk_mq_request_issue_directly(rq, true);
+	blk_mq_run_dispatch_ops(rq->q,
+			ret = blk_mq_request_issue_directly(rq, true));
+	return ret;
 }
 EXPORT_SYMBOL_GPL(blk_insert_cloned_request);
 
