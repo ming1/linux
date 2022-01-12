@@ -1816,16 +1816,11 @@ static void throtl_upgrade_check(struct throtl_grp *tg)
 		throtl_upgrade_state(tg->td);
 }
 
-static void throtl_upgrade_state(struct throtl_data *td)
+static void __throtl_cancel_bios(struct throtl_data *td)
 {
 	struct cgroup_subsys_state *pos_css;
 	struct blkcg_gq *blkg;
 
-	throtl_log(&td->service_queue, "upgrade to max");
-	td->limit_index = LIMIT_MAX;
-	td->low_upgrade_time = jiffies;
-	td->scale = 0;
-	rcu_read_lock();
 	blkg_for_each_descendant_post(blkg, pos_css, td->queue->root_blkg) {
 		struct throtl_grp *tg = blkg_to_tg(blkg);
 		struct throtl_service_queue *sq = &tg->service_queue;
@@ -1834,10 +1829,39 @@ static void throtl_upgrade_state(struct throtl_data *td)
 		throtl_select_dispatch(sq);
 		throtl_schedule_next_dispatch(sq, true);
 	}
-	rcu_read_unlock();
 	throtl_select_dispatch(&td->service_queue);
 	throtl_schedule_next_dispatch(&td->service_queue, true);
 	queue_work(kthrotld_workqueue, &td->dispatch_work);
+}
+
+void blk_throtl_cancel_bios(struct request_queue *q)
+{
+	struct cgroup_subsys_state *pos_css;
+	struct blkcg_gq *blkg;
+
+	rcu_read_lock();
+	spin_lock_irq(&q->queue_lock);
+	__throtl_cancel_bios(q->td);
+	spin_unlock_irq(&q->queue_lock);
+	rcu_read_unlock();
+
+	blkg_for_each_descendant_post(blkg, pos_css, q->root_blkg)
+		del_timer_sync(&blkg_to_tg(blkg)->service_queue.pending_timer);
+	del_timer_sync(&q->td->service_queue.pending_timer);
+
+	throtl_shutdown_wq(q);
+}
+
+static void throtl_upgrade_state(struct throtl_data *td)
+{
+	throtl_log(&td->service_queue, "upgrade to max");
+	td->limit_index = LIMIT_MAX;
+	td->low_upgrade_time = jiffies;
+	td->scale = 0;
+
+	rcu_read_lock();
+	__throtl_cancel_bios(td);
+	rcu_read_unlock();
 }
 
 static void throtl_downgrade_state(struct throtl_data *td)

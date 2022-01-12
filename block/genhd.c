@@ -30,6 +30,7 @@
 #include "blk.h"
 #include "blk-mq-sched.h"
 #include "blk-rq-qos.h"
+#include "blk-throttle.h"
 
 static struct kobject *block_depr;
 
@@ -621,6 +622,8 @@ void del_gendisk(struct gendisk *disk)
 	device_del(disk_to_dev(disk));
 
 	blk_mq_freeze_queue_wait(q);
+
+	blk_throtl_cancel_bios(q);
 
 	rq_qos_exit(q);
 	blk_sync_queue(q);
