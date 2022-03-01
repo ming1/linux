@@ -2,6 +2,8 @@
 #ifndef INT_BLK_MQ_DEBUGFS_H
 #define INT_BLK_MQ_DEBUGFS_H
 
+struct blk_mq_hw_ctx;
+
 #ifdef CONFIG_BLK_DEBUG_FS
 
 #include <linux/seq_file.h>
