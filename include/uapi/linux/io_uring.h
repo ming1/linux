@@ -22,10 +22,12 @@ struct io_uring_sqe {
 	union {
 		__u64	off;	/* offset into file */
 		__u64	addr2;
+		__u32   cmd_op;
 	};
 	union {
 		__u64	addr;	/* pointer to buffer or iovecs */
 		__u64	splice_off_in;
+		__u16   cmd_len;
 	};
 	__u32	len;		/* buffer size or number of iovecs */
 	union {
@@ -60,8 +62,10 @@ struct io_uring_sqe {
 		__s32	splice_fd_in;
 		__u32	file_index;
 	};
-	__u64	__pad2[2];
-
+	union {
+		__u64	__pad2[2];
+		__u64  cmd;
+	};
 	/*
 	 * If the ring is initializefd with IORING_SETUP_SQE128, then this field
 	 * contains 64-bytes of padding, doubling the size of the SQE.
@@ -150,6 +154,7 @@ enum {
 	IORING_OP_MKDIRAT,
 	IORING_OP_SYMLINKAT,
 	IORING_OP_LINKAT,
+	IORING_OP_URING_CMD,
 
 	/* this goes last, obviously */
 	IORING_OP_LAST,
