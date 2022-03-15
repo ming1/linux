@@ -392,6 +392,12 @@ config BLK_DEV_RBD
 
 	  If unsure, say N.
 
+config BLK_UBD
+	tristate "Userspace block driver"
+	select IO_URING
+	help
+          io uring based userspace block driver.  Say Y or M.
+
 source "drivers/block/rnbd/Kconfig"
 
 endif # BLK_DEV
