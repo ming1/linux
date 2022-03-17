@@ -107,16 +107,21 @@ static const struct blk_mq_ops ubd_mq_ops = {
 
 static int ubd_ch_open(struct inode *inode, struct file *filp)
 {
+	filp->private_data = container_of(inode->i_cdev,
+			struct ubd_device, cdev);
 	return 0;
 }
 
 static int ubd_ch_release(struct inode *inode, struct file *filp)
 {
+	filp->private_data = NULL;
 	return 0;
 }
 
-static int ubd_ch_async_cmd(struct io_uring_cmd *ucmd)
+static int ubd_ch_async_cmd(struct io_uring_cmd *cmd)
 {
+	struct ubd_device *ub = cmd->file->private_data;
+
 	return 0;
 }
 
