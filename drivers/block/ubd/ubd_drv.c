@@ -44,6 +44,8 @@
 #include <linux/io_uring.h>
 #include <linux/blk-mq.h>
 
+#include "ubd_cmd.h"
+
 #define UBD_MINORS		(1U << MINORBITS)
 
 #define UBD_QUEUE_DEPTH		128
@@ -60,6 +62,8 @@ struct ubd_device {
 	struct blk_mq_tag_set	tag_set;
 
 	struct cdev		cdev;
+
+	struct ubdsrv_dev_info	dev_info;
 };
 
 static dev_t ubd_chr_devt;
@@ -126,46 +130,22 @@ static int ubd_add_chdev(struct ubd_device *ub)
 	return cdev_add(&ub->cdev, MKDEV(ubd_chr_devt, ub->ub_number), 1);
 }
 
-static int ubd_add(int i)
+/* add disk & cdev */
+static int ubd_add_dev(struct ubd_device *ub)
 {
-	struct ubd_device *ub;
 	struct gendisk *disk;
-	int err;
-
-	err = -ENOMEM;
-	ub = kzalloc(sizeof(*ub), GFP_KERNEL);
-	if (!ub)
-		goto out;
-
-	err = mutex_lock_killable(&ubd_ctl_mutex);
-	if (err)
-		goto out_free_dev;
-
-	/* allocate id, if @id >= 0, we're requesting that specific id */
-	if (i >= 0) {
-		err = idr_alloc(&ubd_index_idr, ub, i, i + 1, GFP_KERNEL);
-		if (err == -ENOSPC)
-			err = -EEXIST;
-	} else {
-		err = idr_alloc(&ubd_index_idr, ub, 0, 0, GFP_KERNEL);
-	}
-	mutex_unlock(&ubd_ctl_mutex);
-	if (err < 0)
-		goto out_free_dev;
-
-	i = err;
-	ub->ub_number		= i;
+	int err = -ENOMEM;
+	int bsize;
 
 	if (ubd_add_chdev(ub))
-		goto out_free_idr;
+		return err;
 
 	ub->tag_set.ops = &ubd_mq_ops;
-	ub->tag_set.nr_hw_queues = 1;
-	ub->tag_set.queue_depth = 128;
+	ub->tag_set.nr_hw_queues = ub->dev_info.nr_hw_queues;
+	ub->tag_set.queue_depth = ub->dev_info.queue_depth;
 	ub->tag_set.numa_node = NUMA_NO_NODE;
 	ub->tag_set.cmd_size = sizeof(struct ubd_cmd);
-	ub->tag_set.flags = BLK_MQ_F_SHOULD_MERGE | BLK_MQ_F_STACKING |
-		BLK_MQ_F_NO_SCHED_BY_DEFAULT;
+	ub->tag_set.flags = BLK_MQ_F_SHOULD_MERGE;
 	ub->tag_set.driver_data = ub;
 
 	err = blk_mq_alloc_tag_set(&ub->tag_set);
@@ -179,39 +159,33 @@ static int ubd_add(int i)
 	}
 	ub->ub_queue = ub->ub_disk->queue;
 
-	blk_queue_max_hw_sectors(ub->ub_queue, UBD_MAX_SECTORS);
+	bsize = ub->dev_info.block_size;
+	blk_queue_logical_block_size(ub->ub_queue, bsize);
+	blk_queue_physical_block_size(ub->ub_queue, bsize);
+	blk_queue_io_min(ub->ub_queue, bsize);
+	blk_queue_max_hw_sectors(ub->ub_queue, ub->dev_info.rq_max_blocks);
 
 	disk->fops		= &ub_fops;
 	disk->private_data	= ub;
 	disk->queue		= ub->ub_queue;
-	sprintf(disk->disk_name, "ubdb%d", i);
-	/* Make this loop device reachable from pathname. */
-	err = add_disk(disk);
-	if (err)
-		goto out_cleanup_disk;
+	sprintf(disk->disk_name, "ubdb%d", ub->ub_number);
 
-	return i;
+	/* don't expose disk now until we got start command from cdev */
 
-out_cleanup_disk:
-	blk_cleanup_disk(disk);
+	return 0;
+
 out_cleanup_tags:
 	blk_mq_free_tag_set(&ub->tag_set);
 out_free_cdev:
 	cdev_del(&ub->cdev);
-out_free_idr:
-	mutex_lock(&ubd_ctl_mutex);
-	idr_remove(&ubd_index_idr, i);
-	mutex_unlock(&ubd_ctl_mutex);
-out_free_dev:
-	kfree(ub);
-out:
 	return err;
 }
 
 static void ubd_remove(struct ubd_device *ub)
 {
-	/* Make this loop device unreachable from pathname. */
-	del_gendisk(ub->ub_disk);
+	/* we may not start disk yet*/
+	if (disk_live(ub->ub_disk))
+		del_gendisk(ub->ub_disk);
 	blk_cleanup_disk(ub->ub_disk);
 	cdev_del(&ub->cdev);
 	blk_mq_free_tag_set(&ub->tag_set);
@@ -221,34 +195,128 @@ static void ubd_remove(struct ubd_device *ub)
 	kfree(ub);
 }
 
-static int ubd_control_remove(int idx)
+static struct ubd_device *ubd_find_device(int idx)
 {
-	struct ubd_device *ub;
-	int ret;
+	struct ubd_device *ub = NULL;
 
 	if (idx < 0) {
 		pr_warn_once("deleting an unspecified ubd device is not supported.\n");
-		return -EINVAL;
+		return NULL;
 	}
 
-	/* Hide this loop device for serialization. */
-	ret = mutex_lock_killable(&ubd_ctl_mutex);
-	if (ret)
-		return ret;
+	if (mutex_lock_killable(&ubd_ctl_mutex))
+		return NULL;
 	ub = idr_find(&ubd_index_idr, idx);
-	if (!ub)
-		ret = -ENODEV;
 	mutex_unlock(&ubd_ctl_mutex);
-	if (ret)
-		return ret;
 
-	ubd_remove(ub);
-	return 0;
+	return ub;
+}
+
+static int __ubd_alloc_dev_number(struct ubd_device *ub, int idx)
+{
+	int i = idx;
+	int err;
+
+	/* allocate id, if @id >= 0, we're requesting that specific id */
+	if (i >= 0) {
+		err = idr_alloc(&ubd_index_idr, ub, i, i + 1, GFP_KERNEL);
+		if (err == -ENOSPC)
+			err = -EEXIST;
+	} else {
+		err = idr_alloc(&ubd_index_idr, ub, 0, 0, GFP_KERNEL);
+	}
+
+	if (err >= 0)
+		ub->ub_number = err;
+
+	return err;
+}
+
+static struct ubd_device *ubd_find_or_create_dev(int idx)
+{
+	struct ubd_device *ub = NULL;
+	struct ubd_device *ub_new;
+	int ret;
+
+	ub_new = kzalloc(sizeof(*ub), GFP_KERNEL);
+
+	ret = mutex_lock_killable(&ubd_ctl_mutex);
+	if (ret) {
+		kfree(ub_new);
+		return NULL;
+	}
+
+	if (idx >= 0)
+		ub = idr_find(&ubd_index_idr, idx);
+
+	if (ub) {
+		kfree(ub_new);
+		goto out;
+	}
+
+	if (!ub_new)
+		goto out;
+
+	ub = ub_new;
+	ret = __ubd_alloc_dev_number(ub, idx);
+	if (ret < 0) {
+		kfree(ub_new);
+		ub = NULL;
+	}
+ out:
+	mutex_unlock(&ubd_ctl_mutex);
+	return ub;
 }
 
 static int ubd_ctrl_async_cmd(struct io_uring_cmd *cmd)
 {
-	io_uring_cmd_done(cmd, 0x05);
+	struct ubdsrv_queue_info *info;
+	unsigned ret = UBD_CMD_RES_OK;
+	u32 cmd_op = cmd->cmd_op;
+	struct ubd_device *ub;
+
+	switch (cmd_op) {
+	case UBD_CMD_START_DEV:
+		io_uring_cmd_done(cmd, UBD_CMD_RES_FAILED);
+		break;
+	case UBD_CMD_STOP_DEV:
+		io_uring_cmd_done(cmd, UBD_CMD_RES_FAILED);
+		break;
+	case UBD_CMD_GET_DEV_INFO:
+		io_uring_cmd_done(cmd, UBD_CMD_RES_FAILED);
+		break;
+	case UBD_CMD_SETUP_QUEUE:
+		io_uring_cmd_done(cmd, UBD_CMD_RES_FAILED);
+		break;
+	case UBD_CMD_ADD_DEV:
+		info = (struct ubdsrv_queue_info *)cmd->cmd;
+		ub = ubd_find_or_create_dev(info->dev_id);
+		if (ub) {
+			memcpy(&ub->dev_info, info, sizeof(*info));
+
+			/* update device id */
+			ub->dev_info.dev_id = ub->ub_number;
+
+			if (ubd_add_dev(ub)) {
+				ubd_remove(ub);
+				ret = UBD_CMD_RES_FAILED;
+			}
+			io_uring_cmd_done(cmd, ret);
+		}
+		break;
+	case UBD_CMD_DEL_DEV:
+		info = (struct ubdsrv_queue_info *)cmd->cmd;
+		ub = ubd_find_device(info->dev_id);
+		if (!ub)
+			ret = UBD_CMD_RES_FAILED;
+		else
+			ubd_remove(ub);
+		io_uring_cmd_done(cmd, ret);
+		break;
+	default:
+		io_uring_cmd_done(cmd, UBD_CMD_RES_FAILED);
+		break;
+	};
 
 	return -EIOCBQUEUED;
 }
