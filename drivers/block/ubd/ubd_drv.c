@@ -62,13 +62,18 @@ struct ubd_device {
 	struct blk_mq_tag_set	tag_set;
 
 	struct cdev		cdev;
+	struct device		cdev_dev;
 
 	struct ubdsrv_dev_info	dev_info;
 };
 
 static dev_t ubd_chr_devt;
+static struct class *ubd_chr_class;
+
 static DEFINE_IDR(ubd_index_idr);
 static DEFINE_MUTEX(ubd_ctl_mutex);
+
+static struct miscdevice ubd_misc;
 
 static int ubd_open(struct block_device *bdev, fmode_t mode)
 {
@@ -123,11 +128,41 @@ static const struct file_operations ubd_ch_fops = {
 	.async_cmd = ubd_ch_async_cmd,
 };
 
+static void ubd_cdev_rel(struct device *dev)
+{
+	struct ubd_device *ub = container_of(dev, struct ubd_device, cdev_dev);
+
+	blk_mq_free_tag_set(&ub->tag_set);
+	mutex_lock(&ubd_ctl_mutex);
+	idr_remove(&ubd_index_idr, ub->ub_number);
+	mutex_unlock(&ubd_ctl_mutex);
+
+	kfree(ub);
+}
+
 static int ubd_add_chdev(struct ubd_device *ub)
 {
-	cdev_init(&ub->cdev, &ubd_ch_fops);
+	struct device *dev = &ub->cdev_dev;
+	int minor = ub->ub_number;
+	int ret;
 
-	return cdev_add(&ub->cdev, MKDEV(MAJOR(ubd_chr_devt), ub->ub_number), 1);
+	dev->parent = ubd_misc.this_device;
+	ret = dev_set_name(dev, "ubdc%d", minor);
+	if (ret)
+		return ret;
+
+	dev->devt = MKDEV(MAJOR(ubd_chr_devt), minor);
+	dev->class = ubd_chr_class;
+	dev->release = ubd_cdev_rel;
+	device_initialize(dev);
+
+	cdev_init(&ub->cdev, &ubd_ch_fops);
+	ret = cdev_device_add(&ub->cdev, dev);
+	if (ret) {
+		put_device(dev);
+		return -1;
+	}
+	return 0;
 }
 
 /* add disk & cdev */
@@ -195,12 +230,8 @@ static void ubd_remove(struct ubd_device *ub)
 	if (disk_live(ub->ub_disk))
 		del_gendisk(ub->ub_disk);
 	blk_cleanup_disk(ub->ub_disk);
-	cdev_del(&ub->cdev);
-	blk_mq_free_tag_set(&ub->tag_set);
-	mutex_lock(&ubd_ctl_mutex);
-	idr_remove(&ubd_index_idr, ub->ub_number);
-	mutex_unlock(&ubd_ctl_mutex);
-	kfree(ub);
+	cdev_device_del(&ub->cdev, &ub->cdev_dev);
+	put_device(&ub->cdev_dev);
 }
 
 static struct ubd_device *ubd_find_device(int idx)
@@ -303,6 +334,16 @@ static int ubd_ctrl_async_cmd(struct io_uring_cmd *cmd)
 	case UBD_CMD_STOP_DEV:
 		break;
 	case UBD_CMD_GET_DEV_INFO:
+		ub = ubd_find_device(info->dev_id);
+		if (ub) {
+			if (info->len < sizeof(*info))
+				goto out;
+
+			if (!copy_to_user((void __user *)info->addr,
+						(void *)&ub->dev_info,
+						sizeof(*info)))
+				ret = UBD_CMD_RES_OK;
+		}
 		break;
 	case UBD_CMD_SETUP_QUEUE:
 		break;
@@ -330,7 +371,7 @@ static int ubd_ctrl_async_cmd(struct io_uring_cmd *cmd)
 	default:
 		break;
 	};
-
+ out:
 	io_uring_cmd_done(cmd, ret);
 	return -EIOCBQUEUED;
 }
@@ -356,7 +397,21 @@ static int __init ubd_init(void)
 	if (ret)
 		return ret;
 
-	ret = alloc_chrdev_region(&ubd_chr_devt, 0, UBD_MINORS, "ubdc");
+	ret = alloc_chrdev_region(&ubd_chr_devt, 0, UBD_MINORS, "ubd-char");
+	if (ret)
+		goto unregister_mis;
+
+	ubd_chr_class = class_create(THIS_MODULE, "ubd-char");
+	if (IS_ERR(ubd_chr_class)) {
+		ret = PTR_ERR(ubd_chr_class);
+		goto free_chrdev_region;
+	}
+	return 0;
+
+free_chrdev_region:
+	unregister_chrdev_region(ubd_chr_devt, UBD_MINORS);
+unregister_mis:
+	misc_deregister(&ubd_misc);
 	return ret;
 }
 
@@ -364,6 +419,8 @@ static void __exit ubd_exit(void)
 {
 	struct ubd_device *ub;
 	int id;
+
+	class_destroy(ubd_chr_class);
 
 	misc_deregister(&ubd_misc);
 
