@@ -127,7 +127,7 @@ static int ubd_add_chdev(struct ubd_device *ub)
 {
 	cdev_init(&ub->cdev, &ubd_ch_fops);
 
-	return cdev_add(&ub->cdev, MKDEV(ubd_chr_devt, ub->ub_number), 1);
+	return cdev_add(&ub->cdev, MKDEV(MAJOR(ubd_chr_devt), ub->ub_number), 1);
 }
 
 /* add disk & cdev */
@@ -137,9 +137,11 @@ static int ubd_add_dev(struct ubd_device *ub)
 	int err = -ENOMEM;
 	int bsize;
 
-	if (ubd_add_chdev(ub))
-		return err;
+	err = ubd_add_chdev(ub);
+	if (err)
+		goto out;
 
+	err = -ENOMEM;
 	ub->tag_set.ops = &ubd_mq_ops;
 	ub->tag_set.nr_hw_queues = ub->dev_info.nr_hw_queues;
 	ub->tag_set.queue_depth = ub->dev_info.queue_depth;
@@ -183,6 +185,7 @@ out_cleanup_tags:
 	blk_mq_free_tag_set(&ub->tag_set);
 out_free_cdev:
 	cdev_del(&ub->cdev);
+out:
 	return err;
 }
 
@@ -273,6 +276,18 @@ static struct ubd_device *ubd_find_or_create_dev(int idx)
 	return ub;
 }
 
+static void ubd_dump(struct io_uring_cmd *cmd)
+{
+	struct ubdsrv_dev_info *info = (struct ubdsrv_dev_info *)cmd->cmd;
+
+	printk("%s: cmd_op %x cmd_len %d, dev id %d\n",
+			__func__, cmd->cmd_op, cmd->cmd_len, info->dev_id);
+
+	printk("\t nr_hw_queues %d queue_depth %d block size %d dev_capacity %lld\n",
+			info->nr_hw_queues, info->queue_depth,
+			info->block_size, info->dev_blocks);
+}
+
 static int ubd_ctrl_async_cmd(struct io_uring_cmd *cmd)
 {
 	struct ubdsrv_dev_info *info = (struct ubdsrv_dev_info *)cmd->cmd;
@@ -280,8 +295,8 @@ static int ubd_ctrl_async_cmd(struct io_uring_cmd *cmd)
 	u32 cmd_op = cmd->cmd_op;
 	struct ubd_device *ub;
 
-	printk("%s: cmd_op %x cmd_len %d, dev id %d\n",
-			__func__, cmd_op, cmd->cmd_len, info->dev_id);
+	ubd_dump(cmd);
+
 	switch (cmd_op) {
 	case UBD_CMD_START_DEV:
 		break;
@@ -299,10 +314,10 @@ static int ubd_ctrl_async_cmd(struct io_uring_cmd *cmd)
 			/* update device id */
 			ub->dev_info.dev_id = ub->ub_number;
 
-			if (ubd_add_dev(ub)) {
+			if (ubd_add_dev(ub))
 				ubd_remove(ub);
-				ret = UBD_CMD_RES_FAILED;
-			}
+			else
+				ret = UBD_CMD_RES_OK;
 		}
 		break;
 	case UBD_CMD_DEL_DEV:
@@ -342,8 +357,6 @@ static int __init ubd_init(void)
 		return ret;
 
 	ret = alloc_chrdev_region(&ubd_chr_devt, 0, UBD_MINORS, "ubdc");
-	if (ret)
-		return ret;
 	return ret;
 }
 
