@@ -50,7 +50,18 @@ struct ubdsrv_dev_info {
 
 	__u64   dev_blocks;
 	__u64	flags;
-	__u64	reserved[4];
+
+	/*
+	 * Only valid for READ kind of ctrl command, and driver can
+	 * get the userspace buffer adddress here, then write data
+	 * into this buffer.
+	 *
+	 * And the buffer has to be inside one single page.
+	 */
+	__u64	addr;
+	__u32	len;
+	__u32	reserved0;
+	__u64	reserved1[2];
 };
 
 /* for setup each queue */
@@ -59,8 +70,9 @@ struct ubdsrv_queue_info {
 	__u16	q_id;
 	__u16	rsv0;
 
-	__u32	queue_buf_sz;
-	__u32	queue_buf_idx;	//has to point to fixed buffer
+	__u32   queue_buf_sz;
+	__u32	reserved0;
+	__u32   queue_buf;  //in case of fixed buffers not supported
 };
 
 struct ubdsrv_io_description {
