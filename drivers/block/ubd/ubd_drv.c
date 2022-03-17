@@ -275,26 +275,23 @@ static struct ubd_device *ubd_find_or_create_dev(int idx)
 
 static int ubd_ctrl_async_cmd(struct io_uring_cmd *cmd)
 {
-	struct ubdsrv_queue_info *info;
-	unsigned ret = UBD_CMD_RES_OK;
+	struct ubdsrv_queue_info *info = (struct ubdsrv_queue_info *)cmd->cmd;
+	unsigned ret = UBD_CMD_RES_FAILED;
 	u32 cmd_op = cmd->cmd_op;
 	struct ubd_device *ub;
 
+	printk("%s: cmd_op %x cmd_len %d, dev id %d\n",
+			__func__, cmd_op, cmd->cmd_len, info->dev_id);
 	switch (cmd_op) {
 	case UBD_CMD_START_DEV:
-		io_uring_cmd_done(cmd, UBD_CMD_RES_FAILED);
 		break;
 	case UBD_CMD_STOP_DEV:
-		io_uring_cmd_done(cmd, UBD_CMD_RES_FAILED);
 		break;
 	case UBD_CMD_GET_DEV_INFO:
-		io_uring_cmd_done(cmd, UBD_CMD_RES_FAILED);
 		break;
 	case UBD_CMD_SETUP_QUEUE:
-		io_uring_cmd_done(cmd, UBD_CMD_RES_FAILED);
 		break;
 	case UBD_CMD_ADD_DEV:
-		info = (struct ubdsrv_queue_info *)cmd->cmd;
 		ub = ubd_find_or_create_dev(info->dev_id);
 		if (ub) {
 			memcpy(&ub->dev_info, info, sizeof(*info));
@@ -306,23 +303,20 @@ static int ubd_ctrl_async_cmd(struct io_uring_cmd *cmd)
 				ubd_remove(ub);
 				ret = UBD_CMD_RES_FAILED;
 			}
-			io_uring_cmd_done(cmd, ret);
 		}
 		break;
 	case UBD_CMD_DEL_DEV:
-		info = (struct ubdsrv_queue_info *)cmd->cmd;
 		ub = ubd_find_device(info->dev_id);
-		if (!ub)
-			ret = UBD_CMD_RES_FAILED;
-		else
+		if (ub) {
 			ubd_remove(ub);
-		io_uring_cmd_done(cmd, ret);
+			ret = UBD_CMD_RES_OK;
+		}
 		break;
 	default:
-		io_uring_cmd_done(cmd, UBD_CMD_RES_FAILED);
 		break;
 	};
 
+	io_uring_cmd_done(cmd, ret);
 	return -EIOCBQUEUED;
 }
 
