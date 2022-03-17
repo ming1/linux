@@ -10,6 +10,7 @@
 /*
  * Admin commands, issued by ubd server, and handled by ubd driver.
  */
+#define	UBD_CMD_SET_DEV_INFO	0x01
 #define	UBD_CMD_GET_DEV_INFO	0x02
 #define	UBD_CMD_SETUP_QUEUE	0x03
 #define	UBD_CMD_ADD_DEV		0x04

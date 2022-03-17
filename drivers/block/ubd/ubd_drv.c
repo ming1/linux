@@ -163,7 +163,12 @@ static int ubd_add_dev(struct ubd_device *ub)
 	blk_queue_logical_block_size(ub->ub_queue, bsize);
 	blk_queue_physical_block_size(ub->ub_queue, bsize);
 	blk_queue_io_min(ub->ub_queue, bsize);
+
 	blk_queue_max_hw_sectors(ub->ub_queue, ub->dev_info.rq_max_blocks);
+	set_capacity(ub->ub_disk, ub->dev_info.dev_blocks);
+
+	ub->ub_queue->limits.discard_granularity = 0;
+
 
 	disk->fops		= &ub_fops;
 	disk->private_data	= ub;
