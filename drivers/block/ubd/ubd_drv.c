@@ -275,7 +275,7 @@ static struct ubd_device *ubd_find_or_create_dev(int idx)
 
 static int ubd_ctrl_async_cmd(struct io_uring_cmd *cmd)
 {
-	struct ubdsrv_queue_info *info = (struct ubdsrv_queue_info *)cmd->cmd;
+	struct ubdsrv_dev_info *info = (struct ubdsrv_dev_info *)cmd->cmd;
 	unsigned ret = UBD_CMD_RES_FAILED;
 	u32 cmd_op = cmd->cmd_op;
 	struct ubd_device *ub;
