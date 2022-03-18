@@ -2510,6 +2510,188 @@ int vm_iomap_memory(struct vm_area_struct *vma, phys_addr_t start, unsigned long
 }
 EXPORT_SYMBOL(vm_iomap_memory);
 
+#ifdef CONFIG_ARCH_HAS_PTE_SPECIAL
+static int insert_page_into_pte_locked_mkspecial(struct mm_struct *mm, pte_t *pte,
+					unsigned long addr, struct page *page, pgprot_t prot)
+{
+	/*
+	 * The page to be inserted should be either anonymous page or file page.
+	 * The anonymous page used in dio should be pinned, while the file page
+	 * used in buffer IO is either locked (read) or writeback (sync).
+	 */
+	if (PageAnon(page)) {
+		int extra = 0;
+
+		if (PageSwapCache(page))
+			extra += 1 + page_has_private(page);
+
+		if ((page_count(page) - extra) <= page_mapcount(page))
+			return -EINVAL;
+	} else if (page_is_file_lru(page)) {
+		if (!PageLocked(page) && !PageWriteback(page))
+			return -EINVAL;
+	} else
+		return -EINVAL;
+
+	flush_dcache_page(page);
+
+	if (!pte_none(*pte))
+		return -EBUSY;
+	set_pte_at(mm, addr, pte, pte_mkspecial(mk_pte(page, prot)));
+	return 0;
+}
+
+static int insert_page_mkspecial(struct vm_area_struct *vma, unsigned long addr,
+				 struct page *page, pgprot_t prot)
+{
+	struct mm_struct *mm = vma->vm_mm;
+	int retval;
+	pte_t *pte;
+	spinlock_t *ptl;
+
+	retval = -ENOMEM;
+	pte = get_locked_pte(mm, addr, &ptl);
+	if (!pte)
+		goto out;
+	retval = insert_page_into_pte_locked_mkspecial(mm, pte, addr, page, prot);
+	pte_unmap_unlock(pte, ptl);
+out:
+	return retval;
+}
+
+/*
+ * vm_insert_page_mkspecial - variant of vm_insert_page, where pte is inserted
+ * with special bit set.
+ *
+ * Different from vm_insert_page(), @page in vm_insert_page_mkspecial() can
+ * either be anonymous page or file page, used for direct IO or buffer IO,
+ * respectively.
+ */
+int vm_insert_page_mkspecial(struct vm_area_struct *vma, unsigned long addr, struct page *page)
+{
+	if (addr < vma->vm_start || addr >= vma->vm_end)
+		return -EFAULT;
+	if (!(vma->vm_flags & VM_MIXEDMAP)) {
+		BUG_ON(mmap_read_trylock(vma->vm_mm));
+		BUG_ON(vma->vm_flags & VM_PFNMAP);
+		vma->vm_flags |= VM_MIXEDMAP;
+	}
+	return insert_page_mkspecial(vma, addr, page, vma->vm_page_prot);
+}
+
+#ifdef pte_index
+/*
+ * insert_pages_mkspecial() amortizes the cost of spinlock operations
+ * when inserting pages in a loop. Arch *must* define pte_index.
+ */
+static int insert_pages_mkspecial(struct vm_area_struct *vma, unsigned long addr,
+				  struct page **pages, unsigned long *num, pgprot_t prot)
+{
+	pmd_t *pmd = NULL;
+	pte_t *start_pte, *pte;
+	spinlock_t *pte_lock;
+	struct mm_struct *const mm = vma->vm_mm;
+	unsigned long curr_page_idx = 0;
+	unsigned long remaining_pages_total = *num;
+	unsigned long pages_to_write_in_pmd;
+	int ret;
+more:
+	ret = -EFAULT;
+	pmd = walk_to_pmd(mm, addr);
+	if (!pmd)
+		goto out;
+
+	pages_to_write_in_pmd = min_t(unsigned long,
+		remaining_pages_total, PTRS_PER_PTE - pte_index(addr));
+
+	/* Allocate the PTE if necessary; takes PMD lock once only. */
+	ret = -ENOMEM;
+	if (pte_alloc(mm, pmd))
+		goto out;
+
+	while (pages_to_write_in_pmd) {
+		int pte_idx = 0;
+		const int batch_size = min_t(int, pages_to_write_in_pmd, 8);
+
+		start_pte = pte_offset_map_lock(mm, pmd, addr, &pte_lock);
+		for (pte = start_pte; pte_idx < batch_size; ++pte, ++pte_idx) {
+			int err = insert_page_into_pte_locked_mkspecial(mm, pte,
+						addr, pages[curr_page_idx], prot);
+			if (unlikely(err)) {
+				pte_unmap_unlock(start_pte, pte_lock);
+				ret = err;
+				remaining_pages_total -= pte_idx;
+				goto out;
+			}
+			addr += PAGE_SIZE;
+			++curr_page_idx;
+		}
+		pte_unmap_unlock(start_pte, pte_lock);
+		pages_to_write_in_pmd -= batch_size;
+		remaining_pages_total -= batch_size;
+	}
+	if (remaining_pages_total)
+		goto more;
+	ret = 0;
+out:
+	*num = remaining_pages_total;
+	return ret;
+}
+#endif  /* pte_index */
+
+/*
+ * vm_insert_pages_mkspecial - variant of vm_insert_pages, where pte is inserted
+ * with special bit set.
+ *
+ * Different from vm_insert_pages(), @pages in vm_insert_pages_mkspecial() can
+ * either be anonymous page or file page, used for direct IO or buffer IO,
+ * respectively.
+ *
+ * The main purpose of vm_insert_pages_mkspecial is to combine the advantages of
+ * vm_insert_pages (batching the pmd lock) and remap_pfn_range_notrack (skipping
+ * track_pfn_insert).
+ */
+int vm_insert_pages_mkspecial(struct vm_area_struct *vma, unsigned long addr,
+			      struct page **pages, unsigned long *num)
+{
+#ifdef pte_index
+	const unsigned long end_addr = addr + (*num * PAGE_SIZE) - 1;
+
+	if (addr < vma->vm_start || end_addr >= vma->vm_end)
+		return -EFAULT;
+	if (!(vma->vm_flags & VM_MIXEDMAP)) {
+		BUG_ON(mmap_read_trylock(vma->vm_mm));
+		BUG_ON(vma->vm_flags & VM_PFNMAP);
+		vma->vm_flags |= VM_MIXEDMAP;
+	}
+	return insert_pages_mkspecial(vma, addr, pages, num, vma->vm_page_prot);
+#else
+	unsigned long idx = 0, pgcount = *num;
+	int err = -EINVAL;
+
+	for (; idx < pgcount; ++idx) {
+		err = vm_insert_page_mkspecial(vma, addr + (PAGE_SIZE * idx), pages[idx]);
+		if (err)
+			break;
+	}
+	*num = pgcount - idx;
+	return err;
+#endif	/* pte_index */
+}
+#else
+int vm_insert_page_mkspecial(struct vm_area_struct *vma, unsigned long addr, struct page *page)
+{
+	return -EINVAL;
+}
+int vm_insert_pages_mkspecial(struct vm_area_struct *vma, unsigned long addr,
+			      struct page **pages, unsigned long *num)
+{
+	return -EINVAL;
+}
+#endif	/* CONFIG_ARCH_HAS_PTE_SPECIAL */
+EXPORT_SYMBOL(vm_insert_page_mkspecial);
+EXPORT_SYMBOL(vm_insert_pages_mkspecial);
+
 static int apply_to_pte_range(struct mm_struct *mm, pmd_t *pmd,
 				     unsigned long addr, unsigned long end,
 				     pte_fn_t fn, void *data, bool create,
