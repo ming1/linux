@@ -64,7 +64,7 @@ struct ubd_device {
 	struct cdev		cdev;
 	struct device		cdev_dev;
 
-	struct ubdsrv_dev_info	dev_info;
+	struct ubdsrv_ctrl_dev_info	dev_info;
 };
 
 static dev_t ubd_chr_devt;
@@ -314,7 +314,7 @@ static struct ubd_device *ubd_find_or_create_dev(int idx)
 
 static void ubd_dump(struct io_uring_cmd *cmd)
 {
-	struct ubdsrv_dev_info *info = (struct ubdsrv_dev_info *)cmd->cmd;
+	struct ubdsrv_ctrl_dev_info *info = (struct ubdsrv_ctrl_dev_info *)cmd->cmd;
 
 	printk("%s: cmd_op %x cmd_len %d, dev id %d\n",
 			__func__, cmd->cmd_op, cmd->cmd_len, info->dev_id);
@@ -326,8 +326,8 @@ static void ubd_dump(struct io_uring_cmd *cmd)
 
 static int ubd_ctrl_async_cmd(struct io_uring_cmd *cmd)
 {
-	struct ubdsrv_dev_info *info = (struct ubdsrv_dev_info *)cmd->cmd;
-	unsigned ret = UBD_CMD_RES_FAILED;
+	struct ubdsrv_ctrl_dev_info *info = (struct ubdsrv_ctrl_dev_info *)cmd->cmd;
+	unsigned ret = UBD_CTRL_CMD_RES_FAILED;
 	u32 cmd_op = cmd->cmd_op;
 	struct ubd_device *ub;
 
@@ -347,10 +347,8 @@ static int ubd_ctrl_async_cmd(struct io_uring_cmd *cmd)
 			if (!copy_to_user((void __user *)info->addr,
 						(void *)&ub->dev_info,
 						sizeof(*info)))
-				ret = UBD_CMD_RES_OK;
+				ret = UBD_CTRL_CMD_RES_OK;
 		}
-		break;
-	case UBD_CMD_SETUP_QUEUE:
 		break;
 	case UBD_CMD_ADD_DEV:
 		ub = ubd_find_or_create_dev(info->dev_id);
@@ -363,14 +361,14 @@ static int ubd_ctrl_async_cmd(struct io_uring_cmd *cmd)
 			if (ubd_add_dev(ub))
 				ubd_remove(ub);
 			else
-				ret = UBD_CMD_RES_OK;
+				ret = UBD_CTRL_CMD_RES_OK;
 		}
 		break;
 	case UBD_CMD_DEL_DEV:
 		ub = ubd_find_device(info->dev_id);
 		if (ub) {
 			ubd_remove(ub);
-			ret = UBD_CMD_RES_OK;
+			ret = UBD_CTRL_CMD_RES_OK;
 		}
 		break;
 	default:

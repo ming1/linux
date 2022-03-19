@@ -4,15 +4,14 @@
 /* ubd server command definition */
 
 /* CMD result code */
-#define UBD_CMD_RES_OK		0
-#define UBD_CMD_RES_FAILED     -1
+#define UBD_CTRL_CMD_RES_OK		0
+#define UBD_CTRL_CMD_RES_FAILED		-1
 
 /*
  * Admin commands, issued by ubd server, and handled by ubd driver.
  */
 #define	UBD_CMD_SET_DEV_INFO	0x01
 #define	UBD_CMD_GET_DEV_INFO	0x02
-#define	UBD_CMD_SETUP_QUEUE	0x03
 #define	UBD_CMD_ADD_DEV		0x04
 #define	UBD_CMD_DEL_DEV		0x05
 #define	UBD_CMD_START_DEV	0x06
@@ -39,7 +38,9 @@
 #define UBD_DEV_STATE_STARTED		0x01
 #define UBD_DEV_STATE_QUEUE_SETUP	0x02
 
-struct ubdsrv_dev_info {
+#define UBDSRV_CMD_BUF_OFFSET  0
+
+struct ubdsrv_ctrl_dev_info {
 	__u16	nr_hw_queues;
 	__u16	queue_depth;
 	__u16	block_size;
@@ -64,46 +65,67 @@ struct ubdsrv_dev_info {
 	__u64	reserved1[2];
 };
 
-/* for setup each queue */
-struct ubdsrv_queue_info {
-	__u32	dev_id;
-	__u16	q_id;
-	__u16	rsv0;
+struct ubdsrv_io_desc {
+	/* op: bit 0-7, flags: bit 8-31 */
+	__u32		op_flags;
 
-	__u32   queue_buf_sz;
-	__u32	reserved0;
-	__u32   queue_buf;  //in case of fixed buffers not supported
-};
+	/*
+	 * tag: bit 0 - 11, max: 4096
+	 *
+	 * blocks: bit 12 ~ 31, max: 1M blocks
+	 */
+	__u32		tag_blocks;
 
-struct ubdsrv_io_description {
-	__u16		cmd_op;
-	__u16		rsv0;
-	__u16		q_id;
-	__u16		tag;
-	__u32		flags;
-	__u32		blocks;
+	/* start block for this io */
 	__u64		start_block;
+
+	/* buffer address in ubdsrv daemon vm space */
+	__u64		addr;
 };
 
+/* issued to ubd driver for fetching io request from /dev/ubdbN */
 struct ubdsrv_io_cmd_fetch_req {
-	__u32	dev_id;
+	/*
+	 * how to support MQ ?
+	 *
+	 * Each hw queue is served by dedicated daemon? Or pthread
+	 * of this daemon?
+	 */
 	__u16	q_id;
-	__u16	tag;		//for fetching from request with this tag
-	__u32	buf_idx;
+
+	/* for fetch request with this tag */
+	__u16	tag;
 	__u32	rsv0;
 };
 
-struct ubdsrv_io_cmd_commit_req {
-	struct ubdsrv_io_description iod;
+/*
+ * issued to ubd driver for committing io result and fetching io request
+ * again
+ */
+struct ubdsrv_io_cmd_commit_and_fetch_req {
+	/* iod of the completed request */
+	struct ubdsrv_io_desc iod;
 
-	/* which buffer holds the data READ from ubd server */
-	__u32	buf_idx;
+	/* result of the completed request */
+	__u32	result;
+	__u32	rsv0;
+
+	/*
+	 * Piggyback with committing cmd, the same sqe covers both fetch
+	 * and commit, since the tag can't be reused before completion.
+	 *
+	 * Tag needs to be matched with iod's tag field.
+	 *
+	 * Fetching request needs to be done before completing request for
+	 * /dev/ubdbN, since the block request can be reused immediately.
+	 */
+	struct ubdsrv_io_cmd_fetch_req rq;
 };
 
 struct ubdsrv_io_cmd {
 	union {
-		struct ubdsrv_io_cmd_fetch_req	fetch_cmd;
-		struct ubdsrv_io_cmd_commit_req	commit_cmd;
+		struct ubdsrv_io_cmd_fetch_req			fetch;
+		struct ubdsrv_io_cmd_commit_and_fetch_req	commit;
 	};
 };
 
