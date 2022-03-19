@@ -59,12 +59,22 @@ struct ubd_device {
 	struct gendisk		*ub_disk;
 	struct request_queue	*ub_queue;
 	int			ub_number;
+
+	/*
+	 * kmalloc() is used for allocate cmd buffer, and we need to
+	 * make it aligned with PAGE_SIZE, then map it to ubdserv
+	 * daemon.
+	 */
+	void			*cmd_buf_alloc_addr;
+
 	struct blk_mq_tag_set	tag_set;
 
 	struct cdev		cdev;
 	struct device		cdev_dev;
 
 	struct ubdsrv_ctrl_dev_info	dev_info;
+
+	atomic_t		ch_open_cnt;
 };
 
 static dev_t ubd_chr_devt;
@@ -107,14 +117,30 @@ static const struct blk_mq_ops ubd_mq_ops = {
 
 static int ubd_ch_open(struct inode *inode, struct file *filp)
 {
-	filp->private_data = container_of(inode->i_cdev,
+	struct ubd_device *ub = container_of(inode->i_cdev,
 			struct ubd_device, cdev);
-	return 0;
+
+	if (atomic_cmpxchg(&ub->ch_open_cnt, 0, 1) == 0) {
+		filp->private_data = ub;
+		return 0;
+	}
+
+	return -EBUSY;
 }
 
 static int ubd_ch_release(struct inode *inode, struct file *filp)
 {
+	struct ubd_device *ub = filp->private_data;
+
+	while (atomic_cmpxchg(&ub->ch_open_cnt, 1, 0) != 1) {
+		cpu_relax();
+	}
 	filp->private_data = NULL;
+	return 0;
+}
+
+static int ubd_ch_mmap(struct file *file, struct vm_area_struct *vma)
+{
 	return 0;
 }
 
@@ -141,6 +167,8 @@ static void ubd_cdev_rel(struct device *dev)
 	mutex_lock(&ubd_ctl_mutex);
 	idr_remove(&ubd_index_idr, ub->ub_number);
 	mutex_unlock(&ubd_ctl_mutex);
+
+	kfree(ub->cmd_buf_alloc_addr);
 
 	kfree(ub);
 }
@@ -170,16 +198,27 @@ static int ubd_add_chdev(struct ubd_device *ub)
 	return 0;
 }
 
+static int ubd_alloc_cmd_buf(struct ubd_device *ub)
+{
+	int size = ub->dev_info.nr_hw_queues * ub->dev_info.queue_depth;
+	void *ptr;
+
+	size *= sizeof(struct ubdsrv_io_desc);
+
+	ptr = kmalloc(size + PAGE_SIZE - 1, GFP_KERNEL);
+	if (!ptr)
+		return -ENOMEM;
+
+	ub->cmd_buf_alloc_addr = ptr;
+	return 0;
+}
+
 /* add disk & cdev */
 static int ubd_add_dev(struct ubd_device *ub)
 {
 	struct gendisk *disk;
 	int err = -ENOMEM;
 	int bsize;
-
-	err = ubd_add_chdev(ub);
-	if (err)
-		goto out;
 
 	err = -ENOMEM;
 	ub->tag_set.ops = &ubd_mq_ops;
@@ -217,10 +256,22 @@ static int ubd_add_dev(struct ubd_device *ub)
 	disk->queue		= ub->ub_queue;
 	sprintf(disk->disk_name, "ubdb%d", ub->ub_number);
 
+	if (ubd_alloc_cmd_buf(ub))
+		goto out_cleanup_disk;
+
+	/* add char dev so that ubdsrv daemon can be setup */
+	err = ubd_add_chdev(ub);
+	if (err)
+		goto out_free_cmd_buf;
+
 	/* don't expose disk now until we got start command from cdev */
 
 	return 0;
 
+out_free_cmd_buf:
+	kfree(ub->cmd_buf_alloc_addr);
+out_cleanup_disk:
+	blk_cleanup_disk(ub->ub_disk);
 out_cleanup_tags:
 	blk_mq_free_tag_set(&ub->tag_set);
 out_free_cdev:
@@ -324,6 +375,12 @@ static void ubd_dump(struct io_uring_cmd *cmd)
 			info->block_size, info->dev_blocks);
 }
 
+static bool ubd_ctrl_cmd_validate(struct io_uring_cmd *cmd)
+{
+	/* Fix me: validate all ctrl commands */
+	return  true;
+}
+
 static int ubd_ctrl_async_cmd(struct io_uring_cmd *cmd)
 {
 	struct ubdsrv_ctrl_dev_info *info = (struct ubdsrv_ctrl_dev_info *)cmd->cmd;
@@ -332,6 +389,9 @@ static int ubd_ctrl_async_cmd(struct io_uring_cmd *cmd)
 	struct ubd_device *ub;
 
 	ubd_dump(cmd);
+
+	if (ubd_ctrl_cmd_validate(cmd))
+		goto out;
 
 	switch (cmd_op) {
 	case UBD_CMD_START_DEV:
