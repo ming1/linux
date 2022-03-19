@@ -88,8 +88,7 @@ static struct miscdevice ubd_misc;
 /* kmalloc buffer is often not aligned with PAGE_SIZE */
 static inline char *ubd_get_cmd_buf(struct ubd_device *ub)
 {
-	return (void *)(((unsigned long)ub->cmd_buf_alloc_addr +
-				PAGE_SIZE - 1) & PAGE_MASK);
+	return ub->cmd_buf_alloc_addr;
 }
 
 static int ubd_cmd_buf_size(struct ubd_device *ub)
@@ -185,6 +184,26 @@ static const struct file_operations ubd_ch_fops = {
 	.mmap = ubd_ch_mmap,
 };
 
+static int ubd_alloc_cmd_buf(struct ubd_device *ub)
+{
+	gfp_t gfp_flags = GFP_KERNEL | __GFP_ZERO;
+	int size = ubd_cmd_buf_size(ub);
+	void *ptr = (void *) __get_free_pages(gfp_flags, get_order(size));
+
+	if (!ptr)
+		return -ENOMEM;
+
+	ub->cmd_buf_alloc_addr = ptr;
+	return 0;
+}
+
+static void ubd_free_cmd_buf(struct ubd_device *ub)
+{
+	int size = ubd_cmd_buf_size(ub);
+
+	free_pages((unsigned long)ub->cmd_buf_alloc_addr, get_order(size));
+}
+
 static void ubd_cdev_rel(struct device *dev)
 {
 	struct ubd_device *ub = container_of(dev, struct ubd_device, cdev_dev);
@@ -194,7 +213,7 @@ static void ubd_cdev_rel(struct device *dev)
 	idr_remove(&ubd_index_idr, ub->ub_number);
 	mutex_unlock(&ubd_ctl_mutex);
 
-	kfree(ub->cmd_buf_alloc_addr);
+	ubd_free_cmd_buf(ub);
 
 	kfree(ub);
 }
@@ -221,20 +240,6 @@ static int ubd_add_chdev(struct ubd_device *ub)
 		put_device(dev);
 		return -1;
 	}
-	return 0;
-}
-
-static int ubd_alloc_cmd_buf(struct ubd_device *ub)
-{
-	int len = ubd_cmd_buf_size(ub);
-	void *ptr;
-
-	/* we need PAGE aligned buffer, so allocate more */
-	ptr = kmalloc(len + PAGE_SIZE - 1, GFP_KERNEL);
-	if (!ptr)
-		return -ENOMEM;
-	printk("%s: len %d, buf %p\n", __func__, len, ptr);
-	ub->cmd_buf_alloc_addr = ptr;
 	return 0;
 }
 
@@ -293,7 +298,7 @@ static int ubd_add_dev(struct ubd_device *ub)
 	return 0;
 
 out_free_cmd_buf:
-	kfree(ub->cmd_buf_alloc_addr);
+	ubd_free_cmd_buf(ub);
 out_cleanup_disk:
 	blk_cleanup_disk(ub->ub_disk);
 out_cleanup_tags:
