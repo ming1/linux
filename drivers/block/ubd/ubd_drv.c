@@ -233,7 +233,7 @@ static int ubd_alloc_cmd_buf(struct ubd_device *ub)
 	ptr = kmalloc(len + PAGE_SIZE - 1, GFP_KERNEL);
 	if (!ptr)
 		return -ENOMEM;
-
+	printk("%s: len %d, buf %p\n", __func__, len, ptr);
 	ub->cmd_buf_alloc_addr = ptr;
 	return 0;
 }
@@ -245,7 +245,6 @@ static int ubd_add_dev(struct ubd_device *ub)
 	int err = -ENOMEM;
 	int bsize;
 
-	err = -ENOMEM;
 	ub->tag_set.ops = &ubd_mq_ops;
 	ub->tag_set.nr_hw_queues = ub->dev_info.nr_hw_queues;
 	ub->tag_set.queue_depth = ub->dev_info.queue_depth;
@@ -414,7 +413,7 @@ static int ubd_ctrl_async_cmd(struct io_uring_cmd *cmd)
 
 	ubd_dump(cmd);
 
-	if (ubd_ctrl_cmd_validate(cmd))
+	if (!ubd_ctrl_cmd_validate(cmd))
 		goto out;
 
 	switch (cmd_op) {
