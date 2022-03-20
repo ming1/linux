@@ -193,6 +193,11 @@ static int ubd_alloc_cmd_buf(struct ubd_device *ub)
 	if (!ptr)
 		return -ENOMEM;
 
+	/*
+	 * check in ubdsrv side, so we can make sure that cmd buf is setup
+	 * successfully
+	 */
+	strcpy(ptr, "UBD");
 	ub->cmd_buf_alloc_addr = ptr;
 	return 0;
 }
