@@ -38,7 +38,10 @@
 #define UBD_DEV_STATE_STARTED		0x01
 #define UBD_DEV_STATE_QUEUE_SETUP	0x02
 
-#define UBDSRV_CMD_BUF_OFFSET  0
+#define UBDSRV_CMD_BUF_OFFSET	0
+
+/* tag bit is 12bit, so at most 4096 IOs for each queue */
+#define UBD_MAX_QUEUE_DEPTH	4096
 
 struct ubdsrv_ctrl_dev_info {
 	__u16	nr_hw_queues;

@@ -55,17 +55,19 @@ struct ubd_cmd {
 	unsigned char data[16];
 };
 
+struct ubd_queue {
+	int q_id;
+	int q_depth;
+
+	char *io_cmd_buf;
+	char *io_bufs[0];
+};
+
 struct ubd_device {
 	struct gendisk		*ub_disk;
 	struct request_queue	*ub_queue;
-	int			ub_number;
 
-	/*
-	 * kmalloc() is used for allocate cmd buffer, and we need to
-	 * make it aligned with PAGE_SIZE, then map it to ubdserv
-	 * daemon.
-	 */
-	void			*cmd_buf_alloc_addr;
+	struct ubd_queue	*queues;
 
 	struct blk_mq_tag_set	tag_set;
 
@@ -75,6 +77,7 @@ struct ubd_device {
 	struct ubdsrv_ctrl_dev_info	dev_info;
 
 	atomic_t		ch_open_cnt;
+	int			ub_number;
 };
 
 static dev_t ubd_chr_devt;
@@ -85,17 +88,16 @@ static DEFINE_MUTEX(ubd_ctl_mutex);
 
 static struct miscdevice ubd_misc;
 
-/* kmalloc buffer is often not aligned with PAGE_SIZE */
-static inline char *ubd_get_cmd_buf(struct ubd_device *ub)
+static inline char *ubd_queue_cmd_buf(struct ubd_device *ub, int q_id)
 {
-	return ub->cmd_buf_alloc_addr;
+	return ub->queues[q_id].io_cmd_buf;
 }
 
-static int ubd_cmd_buf_size(struct ubd_device *ub)
+static inline int ubd_queue_cmd_buf_size(struct ubd_device *ub, int q_id)
 {
-	int len = ub->dev_info.nr_hw_queues * ub->dev_info.queue_depth;
+	struct ubd_queue *ubq = &ub->queues[q_id];
 
-	return round_up(len * sizeof(struct ubdsrv_io_desc), PAGE_SIZE);
+	return round_up(ubq->q_depth * sizeof(struct ubdsrv_io_desc), PAGE_SIZE);
 }
 
 static int ubd_open(struct block_device *bdev, fmode_t mode)
@@ -156,15 +158,17 @@ static int ubd_ch_mmap(struct file *filp, struct vm_area_struct *vma)
 {
 	struct ubd_device *ub = filp->private_data;
 	size_t sz = vma->vm_end - vma->vm_start;
+	unsigned max_sz = UBD_MAX_QUEUE_DEPTH * sizeof(struct ubdsrv_io_desc);
 	unsigned long pfn;
+	int q_id = vma->vm_pgoff / max_sz;
 
-	if (vma->vm_pgoff != UBDSRV_CMD_BUF_OFFSET)
+	if (vma->vm_pgoff != UBDSRV_CMD_BUF_OFFSET + q_id * max_sz)
 		return -EINVAL;
 
-	if (sz != ubd_cmd_buf_size(ub))
+	if (sz != ubd_queue_cmd_buf_size(ub, q_id))
 		return -EINVAL;
 
-	pfn = virt_to_phys(ubd_get_cmd_buf(ub)) >> PAGE_SHIFT;
+	pfn = virt_to_phys(ubd_queue_cmd_buf(ub, q_id)) >> PAGE_SHIFT;
 	return remap_pfn_range(vma, vma->vm_start, pfn, sz, vma->vm_page_prot);
 }
 
@@ -184,12 +188,27 @@ static const struct file_operations ubd_ch_fops = {
 	.mmap = ubd_ch_mmap,
 };
 
-static int ubd_alloc_cmd_buf(struct ubd_device *ub)
+static void ubd_deinit_queue(struct ubd_device *ub, int q_id)
 {
-	gfp_t gfp_flags = GFP_KERNEL | __GFP_ZERO;
-	int size = ubd_cmd_buf_size(ub);
-	void *ptr = (void *) __get_free_pages(gfp_flags, get_order(size));
+	int size = ubd_queue_cmd_buf_size(ub, q_id);
+	struct ubd_queue *ubq = &ub->queues[q_id];
 
+	if (ubq->io_cmd_buf)
+		free_pages((unsigned long)ubq->io_cmd_buf, get_order(size));
+}
+
+static int ubd_init_queue(struct ubd_device *ub, int q_id)
+{
+	struct ubd_queue *ubq = &ub->queues[q_id];
+	gfp_t gfp_flags = GFP_KERNEL | __GFP_ZERO;
+	void *ptr;
+	int size;
+
+	ubq->q_id = q_id;
+	ubq->q_depth = ub->dev_info.queue_depth;
+	size = ubd_queue_cmd_buf_size(ub, q_id);
+
+	ptr = (void *) __get_free_pages(gfp_flags, get_order(size));
 	if (!ptr)
 		return -ENOMEM;
 
@@ -198,15 +217,43 @@ static int ubd_alloc_cmd_buf(struct ubd_device *ub)
 	 * successfully
 	 */
 	strcpy(ptr, "UBD");
-	ub->cmd_buf_alloc_addr = ptr;
+	ubq->io_cmd_buf = ptr;
 	return 0;
 }
 
-static void ubd_free_cmd_buf(struct ubd_device *ub)
+static void ubd_deinit_queues(struct ubd_device *ub)
 {
-	int size = ubd_cmd_buf_size(ub);
+	int nr_queues = ub->dev_info.nr_hw_queues;
+	int i;
 
-	free_pages((unsigned long)ub->cmd_buf_alloc_addr, get_order(size));
+	if (!ub->queues)
+		return;
+
+	for (i = 0; i < nr_queues; i++)
+		ubd_deinit_queue(ub, i);
+	kfree(ub->queues);
+}
+
+static int ubd_init_queues(struct ubd_device *ub)
+{
+	int nr_queues = ub->dev_info.nr_hw_queues;
+	int depth = ub->dev_info.queue_depth;
+	int ubq_size = sizeof(struct ubd_queue) + depth * sizeof(char *);
+	int i, ret = -ENOMEM;
+
+	ub->queues = kcalloc(nr_queues, ubq_size, GFP_KERNEL);
+	if (!ub->queues)
+		return ret;
+
+	for (i = 0; i < nr_queues; i++) {
+		if (ubd_init_queue(ub, i))
+			goto fail;
+	}
+	return 0;
+
+ fail:
+	ubd_deinit_queues(ub);
+	return ret;
 }
 
 static void ubd_cdev_rel(struct device *dev)
@@ -218,7 +265,7 @@ static void ubd_cdev_rel(struct device *dev)
 	idr_remove(&ubd_index_idr, ub->ub_number);
 	mutex_unlock(&ubd_ctl_mutex);
 
-	ubd_free_cmd_buf(ub);
+	ubd_deinit_queues(ub);
 
 	kfree(ub);
 }
@@ -290,20 +337,20 @@ static int ubd_add_dev(struct ubd_device *ub)
 	disk->queue		= ub->ub_queue;
 	sprintf(disk->disk_name, "ubdb%d", ub->ub_number);
 
-	if (ubd_alloc_cmd_buf(ub))
+	if (ubd_init_queues(ub))
 		goto out_cleanup_disk;
 
 	/* add char dev so that ubdsrv daemon can be setup */
 	err = ubd_add_chdev(ub);
 	if (err)
-		goto out_free_cmd_buf;
+		goto out_deinit_queues;
 
 	/* don't expose disk now until we got start command from cdev */
 
 	return 0;
 
-out_free_cmd_buf:
-	ubd_free_cmd_buf(ub);
+out_deinit_queues:
+	ubd_deinit_queues(ub);
 out_cleanup_disk:
 	blk_cleanup_disk(ub->ub_disk);
 out_cleanup_tags:
