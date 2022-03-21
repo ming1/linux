@@ -49,6 +49,14 @@
 #define UBD_IO_RESULT_NO_FETCH	0x0
 #define UBD_IO_RESULT_FETCH	0x1
 
+#define UBD_IO_RES_INVALID_SQE		0xff
+#define UBD_IO_RES_INVALID_TAG		0xfe
+#define UBD_IO_RES_INVALID_QUEUE	0xfd
+#define UBD_IO_RES_BUSY			0xfc
+#define UBD_IO_RES_DUP_FETCH		0xfb
+#define UBD_IO_RES_UNEXPECTED_CMD	0xfa
+#define UBD_IO_RES_ABORT		0xf9
+
 #define UBDSRV_CMD_BUF_OFFSET	0
 
 /* tag bit is 12bit, so at most 4096 IOs for each queue */
@@ -75,7 +83,7 @@ struct ubdsrv_ctrl_dev_info {
 	 */
 	__u64	addr;
 	__u32	len;
-	__u32	ubdsrv_pid;
+	__s32	ubdsrv_pid;
 	__u64	reserved0[2];
 };
 

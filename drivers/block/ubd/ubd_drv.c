@@ -43,6 +43,7 @@
 #include <linux/cdev.h>
 #include <linux/io_uring.h>
 #include <linux/blk-mq.h>
+#include <linux/delay.h>
 
 #include "ubd_cmd.h"
 
@@ -51,8 +52,37 @@
 #define UBD_QUEUE_DEPTH		128
 #define UBD_MAX_SECTORS		(128 * 1024 / 512)
 
+#define UBD_RES_VAL(code, fetch)	((code << 8) || (fetch))
+
 struct ubd_cmd {
 	unsigned char data[16];
+};
+
+/* io cmd is active: sqe cmd is received, cqe not returned */
+#define UBD_IO_FLAG_ACTIVE	0x01
+
+/*
+ * FETCH io cmd is completed via cqe, and the io is being
+ * handled by ubdsrv
+ */
+#define UBD_IO_FLAG_OWNED_BY_SRV 0x02
+
+/* need to fetch, so the seq cmd will be pending until one io rq comes */
+#define UBD_IO_FLAG_NEED_FETCH	 0x03
+
+/*
+ * need to commit io result, the sqe cmd includes io result, and the
+ * io rq need to be completed with this result
+ */
+#define UBD_IO_FLAG_NEED_COMMIT	0x04
+
+struct ubd_io {
+	/* userspace buffer address from io cmd */
+	__u64	addr;
+	unsigned int flags;
+	unsigned int res;
+
+	struct io_uring_cmd *cmd;
 };
 
 struct ubd_queue {
@@ -60,7 +90,7 @@ struct ubd_queue {
 	int q_depth;
 
 	char *io_cmd_buf;
-	char *io_bufs[0];
+	struct ubd_io ios[0];
 };
 
 struct ubd_device {
@@ -78,6 +108,8 @@ struct ubd_device {
 
 	atomic_t		ch_open_cnt;
 	int			ub_number;
+
+	struct mutex		mutex;
 };
 
 static dev_t ubd_chr_devt;
@@ -118,7 +150,7 @@ static const struct block_device_operations ub_fops = {
 static blk_status_t ubd_queue_rq(struct blk_mq_hw_ctx *hctx,
 		const struct blk_mq_queue_data *bd)
 {
-	return BLK_STS_OK;
+	return BLK_STS_IOERR;
 }
 
 static void ubd_complete_rq(struct request *rq)
@@ -172,11 +204,90 @@ static int ubd_ch_mmap(struct file *filp, struct vm_area_struct *vma)
 	return remap_pfn_range(vma, vma->vm_start, pfn, sz, vma->vm_page_prot);
 }
 
+static bool ubd_io_cmd_validate(struct io_uring_cmd *cmd)
+{
+	return  true;
+}
+
+static void ubd_commit_completion(struct ubd_device *ub,
+		struct ubdsrv_io_cmd *ub_cmd)
+{
+	struct ubd_queue *ubq = &ub->queues[ub_cmd->q_id];
+	int res = ub_cmd->result;
+
+	/* find the io request and complete */
+}
+
 static int ubd_ch_async_cmd(struct io_uring_cmd *cmd)
 {
+	struct ubdsrv_io_cmd *ub_cmd = (struct ubdsrv_io_cmd *)cmd->cmd;
 	struct ubd_device *ub = cmd->file->private_data;
+	struct ubd_queue *ubq;
+	struct ubd_io *io;
+	u32 cmd_op = cmd->cmd_op;
+	unsigned tag = ub_cmd->tag;
+	int ret;
 
-	return 0;
+	ret = UBD_RES_VAL(UBD_IO_RES_INVALID_SQE, UBD_IO_RESULT_NO_FETCH);
+	/* so far, only SQ is supported */
+	if (WARN_ON_ONCE(ub_cmd->q_id != 0))
+		goto out;
+
+	ubq = &ub->queues[ub_cmd->q_id];
+	if (WARN_ON_ONCE(tag >= ubq->q_depth))
+		goto out;
+
+	if (!ubd_io_cmd_validate(cmd))
+		goto out;
+
+	io = &ubq->ios[tag];
+
+	/* there is pending io cmd, something must be wrong */
+	if (io->flags & UBD_IO_FLAG_ACTIVE) {
+		ret = UBD_RES_VAL(UBD_IO_RES_BUSY, UBD_IO_RESULT_NO_FETCH);
+		goto out;
+	}
+
+	switch (cmd_op) {
+	case UBD_IO_FETCH_REQ:
+		/*
+		 * The io is being handled by server, so COMMIT_RQ is expected
+		 * instead of FETCH_REQ
+		 */
+		if (io->flags & UBD_IO_FLAG_OWNED_BY_SRV) {
+			ret = UBD_RES_VAL(UBD_IO_RES_DUP_FETCH,
+					UBD_IO_RESULT_NO_FETCH);
+			goto out;
+		}
+		/* so far we only support pre-allocate fixed buffer */
+		io->addr = ub_cmd->addr;
+		break;
+	case UBD_IO_COMMIT_AND_FETCH_REQ:
+	case UBD_IO_COMMIT_REQ:
+		if (!(io->flags & UBD_IO_FLAG_OWNED_BY_SRV)) {
+			ret = UBD_RES_VAL(UBD_IO_RES_UNEXPECTED_CMD,
+					UBD_IO_RESULT_NO_FETCH);
+			goto out;
+		}
+		ubd_commit_completion(ub, ub_cmd);
+		if (cmd_op == UBD_IO_COMMIT_REQ) {
+			ret = UBD_RES_VAL(0, UBD_IO_RESULT_NO_FETCH);
+			goto out;
+		}
+		break;
+	default:
+		ret = UBD_RES_VAL(UBD_IO_RES_UNEXPECTED_CMD,
+				UBD_IO_RESULT_NO_FETCH);
+		goto out;
+	}
+
+	io->cmd = cmd;
+	io->flags |= UBD_IO_FLAG_ACTIVE;
+	return -EIOCBQUEUED;
+
+ out:
+	io_uring_cmd_done(cmd, ret);
+	return -EIOCBQUEUED;
 }
 
 static const struct file_operations ubd_ch_fops = {
@@ -238,7 +349,7 @@ static int ubd_init_queues(struct ubd_device *ub)
 {
 	int nr_queues = ub->dev_info.nr_hw_queues;
 	int depth = ub->dev_info.queue_depth;
-	int ubq_size = sizeof(struct ubd_queue) + depth * sizeof(char *);
+	int ubq_size = sizeof(struct ubd_queue) + depth * sizeof(struct ubd_io);
 	int i, ret = -ENOMEM;
 
 	ub->queues = kcalloc(nr_queues, ubq_size, GFP_KERNEL);
@@ -339,6 +450,8 @@ static int ubd_add_dev(struct ubd_device *ub)
 
 	if (ubd_init_queues(ub))
 		goto out_cleanup_disk;
+
+	mutex_init(&ub->mutex);
 
 	/* add char dev so that ubdsrv daemon can be setup */
 	err = ubd_add_chdev(ub);
@@ -443,6 +556,91 @@ static struct ubd_device *ubd_find_or_create_dev(int idx)
 	return ub;
 }
 
+/* has to be called disk is dead or frozen */
+static int ubd_abort_queue(struct ubd_device *ub, int qid)
+{
+	int ret = UBD_RES_VAL(UBD_IO_RES_ABORT, UBD_IO_RESULT_NO_FETCH);
+	struct ubd_queue *q = &ub->queues[qid];
+	int i;
+
+	for (i = 0; i < q->q_depth; i++) {
+		struct ubd_io *io = &q->ios[i];
+
+		if (io->flags & UBD_IO_FLAG_ACTIVE) {
+			io_uring_cmd_done(io->cmd, ret);
+			io->flags &= ~UBD_IO_FLAG_ACTIVE;
+		}
+	}
+	return 0;
+}
+
+/* has to be called disk is dead or frozen */
+static int ubd_active_io_cmd_cnt(struct ubd_device *ub, int qid)
+{
+	struct ubd_queue *q = &ub->queues[qid];
+	int i, cnt = 0;
+
+	for (i = 0; i < q->q_depth; i++) {
+		struct ubd_io *io = &q->ios[i];
+
+		if (io->flags & UBD_IO_FLAG_ACTIVE)
+			cnt++;
+	}
+
+	return 0;
+}
+
+static bool ubd_queue_ready(struct ubd_device *ub, int qid)
+{
+	return ubd_active_io_cmd_cnt(ub, qid) == ub->dev_info.queue_depth;
+}
+
+static int ubd_ctrl_stop_dev(struct ubd_device *ub, struct io_uring_cmd *cmd)
+{
+	int ret = -EINVAL;
+
+	mutex_lock(&ub->mutex);
+	if (!disk_live(ub->ub_disk))
+		goto unlock;
+
+	del_gendisk(ub->ub_disk);
+	ret = ubd_abort_queue(ub, 0);
+ unlock:
+	mutex_unlock(&ub->mutex);
+	return ret;
+}
+
+static int ubd_ctrl_start_dev(struct ubd_device *ub, struct io_uring_cmd *cmd)
+{
+	struct ubdsrv_ctrl_dev_info *info = (struct ubdsrv_ctrl_dev_info *)cmd->cmd;
+	int ret = -EINVAL;
+	int end = jiffies + 3 * HZ;
+
+	if (info->ubdsrv_pid <= 0)
+		return -1;
+
+	mutex_lock(&ub->mutex);
+
+	ub->dev_info.ubdsrv_pid = info->ubdsrv_pid;
+	if (disk_live(ub->ub_disk))
+		goto unlock;
+	while (jiffies < end) {
+		/* only SQ is supported now */
+		if (ubd_queue_ready(ub, 0)) {
+			ret = 0;
+			break;
+		}
+		msleep(100);
+	}
+ unlock:
+	mutex_unlock(&ub->mutex);
+
+	if (ret == 0)
+		ret = add_disk(ub->ub_disk);
+
+	return ret;
+}
+
 static void ubd_dump(struct io_uring_cmd *cmd)
 {
 	struct ubdsrv_ctrl_dev_info *info = (struct ubdsrv_ctrl_dev_info *)cmd->cmd;
@@ -475,8 +673,18 @@ static int ubd_ctrl_async_cmd(struct io_uring_cmd *cmd)
 
 	switch (cmd_op) {
 	case UBD_CMD_START_DEV:
+		ub = ubd_find_device(info->dev_id);
+		if (!ub)
+			goto out;
+		if (!ubd_ctrl_start_dev(ub, cmd))
+			ret = UBD_CTRL_CMD_RES_OK;
 		break;
 	case UBD_CMD_STOP_DEV:
+		ub = ubd_find_device(info->dev_id);
+		if (!ub)
+			goto out;
+		if (!ubd_ctrl_stop_dev(ub, cmd))
+			ret = UBD_CTRL_CMD_RES_OK;
 		break;
 	case UBD_CMD_GET_DEV_INFO:
 		ub = ubd_find_device(info->dev_id);
