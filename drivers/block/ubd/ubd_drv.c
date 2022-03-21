@@ -547,6 +547,18 @@ static struct ubd_device *ubd_find_or_create_dev(int idx)
 	return ub;
 }
 
+#if 0
+static void ubd_task_cb(struct io_uring_cmd *cmd)
+{
+	struct ubdsrv_io_cmd *ub_cmd = (struct ubdsrv_io_cmd *)cmd->cmd;
+	struct ubd_device *ub = cmd->file->private_data;
+	struct ubd_queue *ubq = &ub->queues[ub_cmd->q_id];
+	struct ubd_io *io = &ubq->ios[ub_cmd->tag];
+
+	io_uring_cmd_done(cmd, io->res);
+}
+#endif
+
 /* has to be called disk is dead or frozen */
 static int ubd_abort_queue(struct ubd_device *ub, int qid)
 {
@@ -559,7 +571,13 @@ static int ubd_abort_queue(struct ubd_device *ub, int qid)
 
 		if (io->flags & UBD_IO_FLAG_ACTIVE) {
 			io->flags &= ~UBD_IO_FLAG_ACTIVE;
+#if 0
+			io->res = ret;
+			io_uring_cmd_complete_in_task(io->cmd, ubd_task_cb);
+#else
+			printk("%s: complete tag %d ret %d\n", __func__, i, ret);
 			io_uring_cmd_done(io->cmd, ret);
+#endif
 		}
 	}
 	return 0;
@@ -578,7 +596,7 @@ static int ubd_active_io_cmd_cnt(struct ubd_device *ub, int qid)
 			cnt++;
 	}
 
-	return 0;
+	return cnt;
 }
 
 static bool ubd_queue_ready(struct ubd_device *ub, int qid)
@@ -598,6 +616,10 @@ static int ubd_ctrl_stop_dev(struct ubd_device *ub, struct io_uring_cmd *cmd)
 	ret = ubd_abort_queue(ub, 0);
  unlock:
 	mutex_unlock(&ub->mutex);
+	printk("%s: active cmds %d, ret %d\n", __func__,
+			ubd_active_io_cmd_cnt(ub, 0), ret);
+	if (ret == 0)
+		ub->dev_info.ubdsrv_pid = -1;
 	return ret;
 }
 
@@ -605,7 +627,7 @@ static int ubd_ctrl_start_dev(struct ubd_device *ub, struct io_uring_cmd *cmd)
 {
 	struct ubdsrv_ctrl_dev_info *info = (struct ubdsrv_ctrl_dev_info *)cmd->cmd;
 	int ret = -EINVAL;
-	int end = jiffies + 3 * HZ;
+	unsigned long end = jiffies + 3 * HZ;
 
 	if (info->ubdsrv_pid <= 0)
 		return -1;
@@ -625,6 +647,8 @@ static int ubd_ctrl_start_dev(struct ubd_device *ub, struct io_uring_cmd *cmd)
 	}
  unlock:
 	mutex_unlock(&ub->mutex);
+
+	printk("%s: active cmds %d\n", __func__, ubd_active_io_cmd_cnt(ub, 0));
 
 	if (ret == 0)
 		ret = add_disk(ub->ub_disk);
