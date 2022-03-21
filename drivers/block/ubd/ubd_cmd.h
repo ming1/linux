@@ -20,23 +20,34 @@
 /*
  * IO commands, issued by ubd server, and handled by ubd driver.
  *
- * FETCH_REQ: issued via sqe(URING_CMD_FIXED) beforehand for fetching IO
- * 	request from ubd driver. Once returnd, cqe->res stores the rq->tag,
- * 	-1 means the command fails. For WRITE IO, kernel request's data is
- * 	written to fixed buffer; For READ IO, the fixed buffer will be used
- * 	to fill data by ubd server's read handling.
+ * FETCH_REQ: issued via sqe(URING_CMD) beforehand for fetching IO request
+ *      from ubd driver, should be issued only when starting device. After
+ *      the associated cqe is returned, request's tag can be retrieved via
+ *      cqe->userdata.
  *
- * COMMIT_REQ: issued via sqe(URING_CMD_FIXED) after ubdserver handed the
- * 	requested IO. For READ IO, fixed buffer has been filled with request
- * 	IO data. After this request is commited to dirver, the command
- * 	also implied FETCH_REQ. So it won't be returned until new req with
- * 	same tag comes.
+ * COMMIT_AND_FETCH_REQ: issued via sqe(URING_CMD) after ubdserver handled
+ *      this IO request, request's handling result is committed to ubd
+ *      driver, meantime FETCH_REQ is piggyback, and FETCH_REQ has to be
+ *      handled before completing io request.
+ *
+ * COMMIT_REQ: issued via sqe(URING_CMD) after ubdserver handled this IO
+ *      request, request's handling result is committed to ubd driver.
  */
-#define	UBD_IO_FETCH_REQ	0x20
-#define	UBD_IO_COMMIT_REQ	0x21
+#define	UBD_IO_FETCH_REQ		0x20
+#define	UBD_IO_COMMIT_AND_FETCH_REQ	0x21
+#define	UBD_IO_COMMIT_REQ		0x22
 
-#define UBD_DEV_STATE_STARTED		0x01
-#define UBD_DEV_STATE_QUEUE_SETUP	0x02
+/*
+ * When got RESULT_FETCH, after this io command is completed by ubdsrv,
+ * its result will be committed via UBD_IO_COMMIT_AND_FETCH_REQ.
+ *
+ * When got RESULT_NO_FETCH, after this io command is completed by
+ * ubdsrv, its result will be committed via UBD_IO_COMMIT_REQ.
+ * Typically, after ubd driver gets STOP DEV ctrl command, it will
+ * complete io command with this status via cqe->res.
+ */
+#define UBD_IO_RESULT_NO_FETCH	0x0
+#define UBD_IO_RESULT_FETCH	0x1
 
 #define UBDSRV_CMD_BUF_OFFSET	0
 
@@ -64,8 +75,8 @@ struct ubdsrv_ctrl_dev_info {
 	 */
 	__u64	addr;
 	__u32	len;
-	__u32	reserved0;
-	__u64	reserved1[2];
+	__u32	ubdsrv_pid;
+	__u64	reserved0[2];
 };
 
 struct ubdsrv_io_desc {
@@ -82,54 +93,33 @@ struct ubdsrv_io_desc {
 	/* start block for this io */
 	__u64		start_block;
 
-	/* buffer address in ubdsrv daemon vm space */
+	/* buffer address in ubdsrv daemon vm space, from ubd driver */
 	__u64		addr;
 };
 
-/* issued to ubd driver for fetching io request from /dev/ubdbN */
-struct ubdsrv_io_cmd_fetch_req {
+/* issued to ubd driver via /dev/ubdcN */
+struct ubdsrv_io_cmd {
 	/*
 	 * how to support MQ ?
 	 *
 	 * Each hw queue is served by dedicated daemon? Or pthread
 	 * of this daemon?
+	 *
+	 * Served as reserved field.
 	 */
 	__u16	q_id;
 
-	/* for fetch request with this tag */
+	/* for fetch/commit which result */
 	__u16	tag;
-	__u32	rsv0;
-};
 
-/*
- * issued to ubd driver for committing io result and fetching io request
- * again
- */
-struct ubdsrv_io_cmd_commit_and_fetch_req {
-	/* iod of the completed request */
-	struct ubdsrv_io_desc iod;
-
-	/* result of the completed request */
+	/* io result, it is valid for COMMIT* command only */
 	__u32	result;
-	__u32	rsv0;
 
 	/*
-	 * Piggyback with committing cmd, the same sqe covers both fetch
-	 * and commit, since the tag can't be reused before completion.
-	 *
-	 * Tag needs to be matched with iod's tag field.
-	 *
-	 * Fetching request needs to be done before completing request for
-	 * /dev/ubdbN, since the block request can be reused immediately.
+	 * userspace buffer address in ubdsrv daemon process, valid for
+	 * FETCH* command only
 	 */
-	struct ubdsrv_io_cmd_fetch_req rq;
-};
-
-struct ubdsrv_io_cmd {
-	union {
-		struct ubdsrv_io_cmd_fetch_req			fetch;
-		struct ubdsrv_io_cmd_commit_and_fetch_req	commit;
-	};
+	__u64	addr;
 };
 
 #endif
