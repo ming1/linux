@@ -49,7 +49,7 @@
 
 #define UBD_MINORS		(1U << MINORBITS)
 
-#define UBD_RES_VAL(code, fetch)	((code << 8) || (fetch))
+#define UBD_RES_VAL(code, fetch)	((code << 8) | (fetch))
 
 struct ubd_cmd {
 	unsigned char data[16];
