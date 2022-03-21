@@ -49,32 +49,20 @@
 
 #define UBD_MINORS		(1U << MINORBITS)
 
-#define UBD_QUEUE_DEPTH		128
-#define UBD_MAX_SECTORS		(128 * 1024 / 512)
-
 #define UBD_RES_VAL(code, fetch)	((code << 8) || (fetch))
 
 struct ubd_cmd {
 	unsigned char data[16];
 };
 
-/* io cmd is active: sqe cmd is received, cqe not returned */
+/* io cmd is active: sqe cmd is received, and its cqe isn't done */
 #define UBD_IO_FLAG_ACTIVE	0x01
 
 /*
- * FETCH io cmd is completed via cqe, and the io is being
- * handled by ubdsrv
+ * FETCH io cmd is completed via cqe, and the io cmd is being handled by
+ * ubdsrv, and not committed yet
  */
 #define UBD_IO_FLAG_OWNED_BY_SRV 0x02
-
-/* need to fetch, so the seq cmd will be pending until one io rq comes */
-#define UBD_IO_FLAG_NEED_FETCH	 0x03
-
-/*
- * need to commit io result, the sqe cmd includes io result, and the
- * io rq need to be completed with this result
- */
-#define UBD_IO_FLAG_NEED_COMMIT	0x04
 
 struct ubd_io {
 	/* userspace buffer address from io cmd */
@@ -259,11 +247,16 @@ static int ubd_ch_async_cmd(struct io_uring_cmd *cmd)
 					UBD_IO_RESULT_NO_FETCH);
 			goto out;
 		}
+		io->cmd = cmd;
+		io->flags |= UBD_IO_FLAG_ACTIVE;
 		/* so far we only support pre-allocate fixed buffer */
 		io->addr = ub_cmd->addr;
 		break;
 	case UBD_IO_COMMIT_AND_FETCH_REQ:
+		io->flags |= UBD_IO_FLAG_ACTIVE;
+		fallthrough;
 	case UBD_IO_COMMIT_REQ:
+		io->cmd = cmd;
 		if (!(io->flags & UBD_IO_FLAG_OWNED_BY_SRV)) {
 			ret = UBD_RES_VAL(UBD_IO_RES_UNEXPECTED_CMD,
 					UBD_IO_RESULT_NO_FETCH);
@@ -280,12 +273,10 @@ static int ubd_ch_async_cmd(struct io_uring_cmd *cmd)
 				UBD_IO_RESULT_NO_FETCH);
 		goto out;
 	}
-
-	io->cmd = cmd;
-	io->flags |= UBD_IO_FLAG_ACTIVE;
 	return -EIOCBQUEUED;
 
  out:
+	io->flags &= ~UBD_IO_FLAG_ACTIVE;
 	io_uring_cmd_done(cmd, ret);
 	return -EIOCBQUEUED;
 }
@@ -567,8 +558,8 @@ static int ubd_abort_queue(struct ubd_device *ub, int qid)
 		struct ubd_io *io = &q->ios[i];
 
 		if (io->flags & UBD_IO_FLAG_ACTIVE) {
-			io_uring_cmd_done(io->cmd, ret);
 			io->flags &= ~UBD_IO_FLAG_ACTIVE;
+			io_uring_cmd_done(io->cmd, ret);
 		}
 	}
 	return 0;
