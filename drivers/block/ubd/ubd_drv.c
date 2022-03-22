@@ -185,6 +185,9 @@ static blk_status_t ubd_queue_rq(struct blk_mq_hw_ctx *hctx,
 	struct ubd_io *io = &ubq->ios[rq->tag];
 	blk_status_t res;
 
+	//trace_printk("ubq %p(%d) rq %p(%d) io %p",
+	//		ubq, hctx->queue_num, rq, rq->tag, io);
+
 	/* this io cmd slot isn't active, so have to fail this io */
 	if (WARN_ON_ONCE(!(io->flags & UBD_IO_FLAG_ACTIVE)))
 		return BLK_STS_IOERR;
@@ -519,6 +522,9 @@ static int ubd_add_dev(struct ubd_device *ub)
 	int err = -ENOMEM;
 	int bsize;
 
+	if (ubd_init_queues(ub))
+		return err;
+
 	ub->tag_set.ops = &ubd_mq_ops;
 	ub->tag_set.nr_hw_queues = ub->dev_info.nr_hw_queues;
 	ub->tag_set.queue_depth = ub->dev_info.queue_depth;
@@ -529,7 +535,7 @@ static int ubd_add_dev(struct ubd_device *ub)
 
 	err = blk_mq_alloc_tag_set(&ub->tag_set);
 	if (err)
-		goto out_free_cdev;
+		goto out_deinit_queues;
 
 	disk = ub->ub_disk = blk_mq_alloc_disk(&ub->tag_set, ub);
 	if (IS_ERR(disk)) {
@@ -556,28 +562,23 @@ static int ubd_add_dev(struct ubd_device *ub)
 	disk->queue		= ub->ub_queue;
 	sprintf(disk->disk_name, "ubdb%d", ub->ub_number);
 
-	if (ubd_init_queues(ub))
-		goto out_cleanup_disk;
-
 	mutex_init(&ub->mutex);
 
 	/* add char dev so that ubdsrv daemon can be setup */
 	err = ubd_add_chdev(ub);
 	if (err)
-		goto out_deinit_queues;
+		goto out_cleanup_disk;
 
 	/* don't expose disk now until we got start command from cdev */
 
 	return 0;
 
-out_deinit_queues:
-	ubd_deinit_queues(ub);
 out_cleanup_disk:
 	blk_cleanup_disk(ub->ub_disk);
 out_cleanup_tags:
 	blk_mq_free_tag_set(&ub->tag_set);
-out_free_cdev:
-	cdev_del(&ub->cdev);
+out_deinit_queues:
+	ubd_deinit_queues(ub);
 	return err;
 }
 
