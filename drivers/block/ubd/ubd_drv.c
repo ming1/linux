@@ -218,7 +218,10 @@ static blk_status_t ubd_queue_rq(struct blk_mq_hw_ctx *hctx,
 	 *    return the mapped address to ubdsrv via iod->addr, then it is
 	 *    totally zero copy, but 4k block size has to be applied.
 	 */
-
+#ifdef DEBUG
+	printk("%s: complete: cmd op %d, tag %d ret %x io_flags %x\n", __func__,
+			io->cmd->cmd_op, rq->tag, ret, io->flags);
+#endif
 	/* tell ubdsrv one io request is coming */
 	io_uring_cmd_done(io->cmd, ret);
 
@@ -348,6 +351,10 @@ static int ubd_ch_async_cmd(struct io_uring_cmd *cmd)
 
 	io = &ubq->ios[tag];
 
+#ifdef DEBUG
+	printk("%s: receieved: cmd op %d, tag %d ret %x io_flags %x\n", __func__,
+			cmd->cmd_op, tag, ret, io->flags);
+#endif
 	/* there is pending io cmd, something must be wrong */
 	if (io->flags & UBD_IO_FLAG_ACTIVE) {
 		ret = UBD_RES_VAL(UBD_IO_RES_BUSY, UBD_IO_RESULT_NO_FETCH);
@@ -396,6 +403,10 @@ static int ubd_ch_async_cmd(struct io_uring_cmd *cmd)
  out:
 	io->flags &= ~UBD_IO_FLAG_ACTIVE;
 	io_uring_cmd_done(cmd, ret);
+#ifdef DEBUG
+	printk("%s: complete: cmd op %d, tag %d ret %x io_flags %x\n", __func__,
+			cmd_op, tag, ret, io->flags);
+#endif
 	return -EIOCBQUEUED;
 }
 
