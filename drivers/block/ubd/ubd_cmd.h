@@ -114,6 +114,13 @@ struct ubdsrv_ctrl_dev_info {
 #define		UBD_IO_F_DRV			25
 #define		UBD_IO_F_SWAP			26
 
+/*
+ * io cmd is described by this structure, and stored in share memory, indexed
+ * by request tag.
+ *
+ * The data is stored by ubd driver, and read by ubdsrv after one fetch command
+ * returns.
+ */
 struct ubdsrv_io_desc {
 	/* op: bit 0-7, flags: bit 8-31 */
 	__u32		op_flags;

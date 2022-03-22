@@ -210,6 +210,10 @@ static blk_status_t ubd_queue_rq(struct blk_mq_hw_ctx *hctx,
 	 * todo:
 	 *    1) memory ordering between operating io->flags & io_uring done?
 	 *    2) batching completion
+	 *    3) for write request, writing data to iod->addr which is passed
+	 *    from ubdsrv; or here we remap rq pages to ubsrv vm space, and
+	 *    return the mapped address to ubdsrv via iod->addr, then it is
+	 *    totally zero copy, but 4k block size has to be applied.
 	 */
 
 	/* tell ubdsrv one io request is coming */
@@ -222,6 +226,14 @@ static void ubd_complete_rq(struct request *req)
 {
 	struct ubd_queue *ubq = req->mq_hctx->driver_data;
 	struct ubd_io *io = &ubq->ios[req->tag];
+
+	/*
+	 * for READ request, writing data in iod->addr to rq buffers; or
+	 * we can remap rq pages to ubsrv vm space in ubd_queue_rq(), and
+	 * return the mapped address to ubdsrv via iod->addr before
+	 * returning fetch command, then it is totally zero copy, but 4k
+	 * block size has to be applied.
+	 */
 
 	blk_mq_end_request(req, io->res);
 }
@@ -266,6 +278,7 @@ static int ubd_ch_release(struct inode *inode, struct file *filp)
 	return 0;
 }
 
+/* map pre-allocated per-queue cmd buffer to ubdsrv daemon */
 static int ubd_ch_mmap(struct file *filp, struct vm_area_struct *vma)
 {
 	struct ubd_device *ub = filp->private_data;
