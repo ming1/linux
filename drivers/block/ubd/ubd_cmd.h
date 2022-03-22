@@ -87,6 +87,33 @@ struct ubdsrv_ctrl_dev_info {
 	__u64	reserved0[2];
 };
 
+#define		UBD_IO_OP_READ		0
+#define		UBD_IO_OP_WRITE		1
+#define		UBD_IO_OP_FLUSH		2
+#define		UBD_IO_OP_DISCARD	3
+#define		UBD_IO_OP_WRITE_SAME	4
+#define		UBD_IO_OP_WRITE_ZEROES	5
+
+#define		UBD_IO_F_FAILFAST_DEV		8
+#define		UBD_IO_F_FAILFAST_TRANS		9
+#define		UBD_IO_F_FAILFAST_DRV		10
+#define		UBD_IO_F_SYC			11
+#define		UBD_IO_F_META			12
+#define		UBD_IO_F_PRIO			13
+#define		UBD_IO_F_NOMERGE		14
+#define		UBD_IO_F_IDLE			15
+#define		UBD_IO_F_INTEGRITY		16
+#define		UBD_IO_F_FUA			17
+#define		UBD_IO_F_PREFLUSH		18
+#define		UBD_IO_F_RAHEAD			19
+#define		UBD_IO_F_BACKGROUND		20
+#define		UBD_IO_F_NOWAIT			21
+#define		UBD_IO_F_CG_PUNT		22
+#define		UBD_IO_F_NOUNMAP		23
+#define		UBD_IO_F_POLLED			24
+#define		UBD_IO_F_DRV			25
+#define		UBD_IO_F_SWAP			26
+
 struct ubdsrv_io_desc {
 	/* op: bit 0-7, flags: bit 8-31 */
 	__u32		op_flags;

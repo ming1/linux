@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
- * Userspace block device - block device which IO is implemented from userspace
+ * Userspace block device - block device which IO is handled from userspace
  *
  * Take full use of io_uring passthrough command for communicating with
- * userspace for handling basic IO request.
+ * ubd userspace daemon(ubdsrvd) for handling basic IO request.
  *
  * Copyright 2022 Ming Lei <ming.lei@redhat.com>
  *
@@ -135,19 +135,111 @@ static const struct block_device_operations ub_fops = {
 	.release =	ubd_release,
 };
 
+static int ubd_setup_iod(struct ubd_queue *ubq, struct request *req)
+{
+	struct ubdsrv_io_desc *iod = (struct ubdsrv_io_desc *)
+		&(ubq->io_cmd_buf[req->tag * sizeof(struct ubdsrv_io_desc)]);
+	struct ubd_io *io = &ubq->ios[req->tag];
+	u32 op = req->cmd_flags & REQ_OP_MASK;
+	u32 flags = req->cmd_flags & ~REQ_OP_MASK;
+	u32 ubd_op;
+
+	switch (op) {
+	case REQ_OP_READ:
+		ubd_op = UBD_IO_OP_READ;
+		break;
+	case REQ_OP_WRITE:
+		ubd_op = UBD_IO_OP_WRITE;
+		break;
+	case REQ_OP_FLUSH:
+		ubd_op = UBD_IO_OP_FLUSH;
+		break;
+	case REQ_OP_DISCARD:
+		ubd_op = UBD_IO_OP_DISCARD;
+		break;
+	case REQ_OP_WRITE_SAME:
+		ubd_op = UBD_IO_OP_WRITE_SAME;
+		break;
+	case REQ_OP_WRITE_ZEROES:
+		ubd_op = UBD_IO_OP_WRITE_ZEROES;
+		break;
+	default:
+		return BLK_STS_IOERR;
+	}
+
+	/* need to translate since kernel may change */
+	iod->op_flags = ubd_op | flags;
+	iod->tag_blocks = req->tag | (blk_rq_sectors(req) >> 12);
+	iod->start_block = blk_rq_pos(req);
+	iod->addr = io->addr;
+
+	return BLK_STS_OK;
+}
+
 static blk_status_t ubd_queue_rq(struct blk_mq_hw_ctx *hctx,
 		const struct blk_mq_queue_data *bd)
 {
-	return BLK_STS_IOERR;
+	int ret = UBD_RES_VAL(0, UBD_IO_RESULT_FETCH);
+	struct ubd_queue *ubq = hctx->driver_data;
+	struct request *rq = bd->rq;
+	struct ubd_io *io = &ubq->ios[rq->tag];
+	blk_status_t res;
+
+	/* this io cmd slot isn't active, so have to fail this io */
+	if (WARN_ON_ONCE(!(io->flags & UBD_IO_FLAG_ACTIVE)))
+		return BLK_STS_IOERR;
+
+	/* fill iod to slot in io cmd buffer */
+	res = ubd_setup_iod(ubq, rq);
+	if (res != BLK_STS_OK)
+		return BLK_STS_IOERR;
+
+	blk_mq_start_request(bd->rq);
+
+	/* mark this cmd owned by ubdsrv */
+	io->flags |= UBD_IO_FLAG_OWNED_BY_SRV;
+
+	/*
+	 * clear ACTIVE since we are done with this sqe/cmd slot
+	 *
+	 * We can only accept io cmd in case of being not active.
+	 */
+	io->flags &= ~UBD_IO_FLAG_ACTIVE;
+
+	/*
+	 * todo:
+	 *    1) memory ordering between operating io->flags & io_uring done?
+	 *    2) batching completion
+	 */
+
+	/* tell ubdsrv one io request is coming */
+	io_uring_cmd_done(io->cmd, ret);
+
+	return BLK_STS_OK;
 }
 
-static void ubd_complete_rq(struct request *rq)
+static void ubd_complete_rq(struct request *req)
 {
+	struct ubd_queue *ubq = req->mq_hctx->driver_data;
+	struct ubd_io *io = &ubq->ios[req->tag];
+
+	blk_mq_end_request(req, io->res);
+}
+
+static int ubd_init_hctx(struct blk_mq_hw_ctx *hctx, void *driver_data,
+		unsigned int hctx_idx)
+{
+	struct ubd_device *ub = hctx->queue->queuedata;
+	struct ubd_queue *ubq = &ub->queues[hctx->queue_num];
+
+	hctx->driver_data = ubq;
+	return 0;
 }
 
 static const struct blk_mq_ops ubd_mq_ops = {
 	.queue_rq       = ubd_queue_rq,
 	.complete	= ubd_complete_rq,
+	.init_hctx	= ubd_init_hctx,
 };
 
 static int ubd_ch_open(struct inode *inode, struct file *filp)
@@ -200,10 +292,20 @@ static bool ubd_io_cmd_validate(struct io_uring_cmd *cmd)
 static void ubd_commit_completion(struct ubd_device *ub,
 		struct ubdsrv_io_cmd *ub_cmd)
 {
-	struct ubd_queue *ubq = &ub->queues[ub_cmd->q_id];
-	int res = ub_cmd->result;
+	u32 qid = ub_cmd->q_id, tag = ub_cmd->tag;
+	struct ubd_queue *ubq = &ub->queues[qid];
+	struct ubd_io *io = &ubq->ios[tag];
+	struct request *req;
+
+	/* now this cmd slot is owned by nbd driver */
+	io->flags &= ~UBD_IO_FLAG_OWNED_BY_SRV;
+	io->res = ub_cmd->result;
 
 	/* find the io request and complete */
+	req = blk_mq_tag_to_rq(ub->tag_set.tags[qid], ub_cmd->tag);
+
+	if (req && likely(!blk_should_fake_timeout(req->q)))
+		blk_mq_complete_request(req);
 }
 
 static int ubd_ch_async_cmd(struct io_uring_cmd *cmd)
@@ -422,6 +524,8 @@ static int ubd_add_dev(struct ubd_device *ub)
 		goto out_cleanup_tags;
 	}
 	ub->ub_queue = ub->ub_disk->queue;
+
+	ub->ub_queue->queuedata = ub;
 
 	bsize = ub->dev_info.block_size;
 	blk_queue_logical_block_size(ub->ub_queue, bsize);
