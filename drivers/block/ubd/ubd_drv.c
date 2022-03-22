@@ -767,6 +767,7 @@ static int ubd_ctrl_start_dev(struct ubd_device *ub, struct io_uring_cmd *cmd)
 
 static void ubd_dump(struct io_uring_cmd *cmd)
 {
+#ifdef DEBUG
 	struct ubdsrv_ctrl_dev_info *info = (struct ubdsrv_ctrl_dev_info *)cmd->cmd;
 
 	printk("%s: cmd_op %x cmd_len %d, dev id %d\n",
@@ -775,6 +776,7 @@ static void ubd_dump(struct io_uring_cmd *cmd)
 	printk("\t nr_hw_queues %d queue_depth %d block size %d dev_capacity %lld\n",
 			info->nr_hw_queues, info->queue_depth,
 			info->block_size, info->dev_blocks);
+#endif
 }
 
 static bool ubd_ctrl_cmd_validate(struct io_uring_cmd *cmd)
