@@ -58,9 +58,16 @@
 #define UBD_IO_RES_ABORT		0xf9
 
 #define UBDSRV_CMD_BUF_OFFSET	0
+#define UBDSRV_IO_BUF_OFFSET	0x80000000
 
 /* tag bit is 12bit, so at most 4096 IOs for each queue */
 #define UBD_MAX_QUEUE_DEPTH	4096
+
+/*
+ * zero copy requires 4k block size, and can remap ubd driver's io
+ * request into ubdsrv's vm space
+ */
+#define UBD_F_SUPPORT_ZERO_COPY	0
 
 struct ubdsrv_ctrl_dev_info {
 	__u16	nr_hw_queues;

@@ -44,6 +44,7 @@
 #include <linux/io_uring.h>
 #include <linux/blk-mq.h>
 #include <linux/delay.h>
+#include <linux/mm.h>
 
 #include "ubd_cmd.h"
 
@@ -78,6 +79,9 @@ struct ubd_queue {
 	int q_depth;
 
 	char *io_cmd_buf;
+
+	unsigned long io_addr;	/* mapped vm address */
+	unsigned max_io_sz;
 	struct ubd_io ios[0];
 };
 
@@ -85,7 +89,13 @@ struct ubd_device {
 	struct gendisk		*ub_disk;
 	struct request_queue	*ub_queue;
 
+	/* for map block request into ubdsrv daemon vm */
+	struct mm_struct	*io_buf_mm;
+	struct vm_area_struct	*io_buf_vma;
+
 	struct ubd_queue	*queues;
+
+	struct task_struct	*ub_daemon;
 
 	struct blk_mq_tag_set	tag_set;
 
@@ -108,6 +118,12 @@ static DEFINE_MUTEX(ubd_ctl_mutex);
 
 static struct miscdevice ubd_misc;
 
+static inline struct ubdsrv_io_desc *ubd_get_iod(struct ubd_queue *ubq, int tag)
+{
+	return (struct ubdsrv_io_desc *)
+		&(ubq->io_cmd_buf[tag * sizeof(struct ubdsrv_io_desc)]);
+}
+
 static inline char *ubd_queue_cmd_buf(struct ubd_device *ub, int q_id)
 {
 	return ub->queues[q_id].io_cmd_buf;
@@ -118,6 +134,28 @@ static inline int ubd_queue_cmd_buf_size(struct ubd_device *ub, int q_id)
 	struct ubd_queue *ubq = &ub->queues[q_id];
 
 	return round_up(ubq->q_depth * sizeof(struct ubdsrv_io_desc), PAGE_SIZE);
+}
+
+/* used for allocating zero copy vma space */
+static inline int ubd_queue_single_io_buf_size(struct ubd_device *ub)
+{
+	unsigned max_io_sz = ub->dev_info.block_size *
+		ub->dev_info.rq_max_blocks;
+
+	return round_up(max_io_sz, PAGE_SIZE);
+}
+static inline int ubd_queue_io_buf_size(struct ubd_device *ub)
+{
+	unsigned depth = ub->dev_info.queue_depth;
+
+	return ubd_queue_single_io_buf_size(ub) * depth;
+}
+
+static inline int ubd_io_buf_size(struct ubd_device *ub)
+{
+	unsigned nr_queues = ub->dev_info.nr_hw_queues;
+
+	return ubd_queue_io_buf_size(ub) * nr_queues;
 }
 
 static int ubd_open(struct block_device *bdev, fmode_t mode)
@@ -135,10 +173,82 @@ static const struct block_device_operations ub_fops = {
 	.release =	ubd_release,
 };
 
+#define UBD_REMAP_BATCH	32
+static int ubd_map_io(struct request *req)
+{
+	struct blk_mq_hw_ctx *hctx = req->mq_hctx;
+	struct ubd_device *ub = req->q->queuedata;
+	struct ubd_queue *ubq = hctx->driver_data;
+	struct req_iterator req_iter;
+	struct bio_vec bv;
+	unsigned long start = ubq->io_addr + req->tag * ubq->max_io_sz;
+	unsigned long addr = start;
+	struct page *pages[UBD_REMAP_BATCH];
+	unsigned int idx = 0, mapped = 0;
+	unsigned long remaining;
+	int ret = -EINVAL;
+	struct ubdsrv_io_desc *iod = ubd_get_iod(ubq, req->tag);
+
+	if (!ub->io_buf_vma)
+		return ret;
+
+	mmap_read_lock(ub->io_buf_mm);
+	rq_for_each_segment(bv, req, req_iter) {
+		if (bv.bv_offset || bv.bv_len != PAGE_SIZE)
+			goto fail;
+		pages[idx++] = bv.bv_page;
+		if (idx == UBD_REMAP_BATCH) {
+			remaining = idx;
+			ret = vm_insert_pages_mkspecial(ub->io_buf_vma, addr,
+					pages, &remaining);
+			if (ret)
+				goto fail;
+			addr += idx * PAGE_SIZE;
+			mapped += idx * PAGE_SIZE;
+			idx = 0;
+		}
+	}
+	if (idx) {
+		remaining = idx;
+		ret = vm_insert_pages_mkspecial(ub->io_buf_vma, addr, pages,
+				&remaining);
+		if (!ret)
+			mapped += idx * PAGE_SIZE;
+	}
+
+	if (mapped == req->__data_len)
+		ret = 0;
+ fail:
+	if (ret && mapped)
+		zap_page_range(ub->io_buf_vma, start, mapped);
+	mmap_read_unlock(ub->io_buf_mm);
+
+	WRITE_ONCE(iod->addr, start);
+	return ret;
+}
+
+static void ubd_unmap_io(struct request *req)
+{
+	struct blk_mq_hw_ctx *hctx = req->mq_hctx;
+	struct ubd_device *ub = req->q->queuedata;
+	struct ubd_queue *ubq = hctx->driver_data;
+	unsigned long start = ubq->io_addr + req->tag * ubq->max_io_sz;
+
+	if (!ub->io_buf_vma)
+		return;
+
+	/*
+	 * we are run from ubdsrv context via io_uring command, it is fine
+	 * to sleep
+	 */
+	mmap_read_lock(ub->io_buf_mm);
+	zap_page_range(ub->io_buf_vma, start, req->__data_len);
+	mmap_read_unlock(ub->io_buf_mm);
+}
+
 static int ubd_setup_iod(struct ubd_queue *ubq, struct request *req)
 {
-	struct ubdsrv_io_desc *iod = (struct ubdsrv_io_desc *)
-		&(ubq->io_cmd_buf[req->tag * sizeof(struct ubdsrv_io_desc)]);
+	struct ubdsrv_io_desc *iod = ubd_get_iod(ubq, req->tag);
 	struct ubd_io *io = &ubq->ios[req->tag];
 	u32 op = req->cmd_flags & REQ_OP_MASK;
 	u32 flags = req->cmd_flags & ~REQ_OP_MASK;
@@ -197,6 +307,10 @@ static blk_status_t ubd_queue_rq(struct blk_mq_hw_ctx *hctx,
 	if (res != BLK_STS_OK)
 		return BLK_STS_IOERR;
 
+	/* todo: fallback to copy_[to|from]_user */
+	if (ubd_map_io(bd->rq))
+		return BLK_STS_IOERR;
+
 	blk_mq_start_request(bd->rq);
 
 	/* mark this cmd owned by ubdsrv */
@@ -233,6 +347,8 @@ static void ubd_complete_rq(struct request *req)
 	struct ubd_queue *ubq = req->mq_hctx->driver_data;
 	struct ubd_io *io = &ubq->ios[req->tag];
 
+	ubd_unmap_io(req);
+
 	/*
 	 * for READ request, writing data in iod->addr to rq buffers; or
 	 * we can remap rq pages to ubsrv vm space in ubd_queue_rq(), and
@@ -250,6 +366,9 @@ static int ubd_init_hctx(struct blk_mq_hw_ctx *hctx, void *driver_data,
 	struct ubd_device *ub = hctx->queue->queuedata;
 	struct ubd_queue *ubq = &ub->queues[hctx->queue_num];
 
+	ubq->io_addr = ub->io_buf_vma->vm_start + ubq->q_id *
+		ubd_queue_io_buf_size(ub);
+	ubq->max_io_sz = ubd_queue_single_io_buf_size(ub);
 	hctx->driver_data = ubq;
 	return 0;
 }
@@ -266,10 +385,10 @@ static int ubd_ch_open(struct inode *inode, struct file *filp)
 			struct ubd_device, cdev);
 
 	if (atomic_cmpxchg(&ub->ch_open_cnt, 0, 1) == 0) {
+		ub->ub_daemon = current;
 		filp->private_data = ub;
 		return 0;
 	}
-
 	return -EBUSY;
 }
 
@@ -280,9 +399,39 @@ static int ubd_ch_release(struct inode *inode, struct file *filp)
 	while (atomic_cmpxchg(&ub->ch_open_cnt, 1, 0) != 1) {
 		cpu_relax();
 	}
+	ub->ub_daemon = NULL;
 	filp->private_data = NULL;
 	return 0;
 }
+
+static void ubd_vma_open(struct vm_area_struct *vma)
+{
+	struct ubd_device *ub = vma->vm_private_data;
+
+	pr_debug("vma_open\n");
+
+	get_device(&ub->cdev_dev);
+	ub->io_buf_mm = vma->vm_mm;
+	ub->io_buf_vma = vma;
+	mmgrab(ub->io_buf_mm);
+}
+
+static void ubd_vma_close(struct vm_area_struct *vma)
+{
+	struct ubd_device *ub = vma->vm_private_data;
+
+	pr_debug("vma_close\n");
+
+	mmdrop(ub->io_buf_mm);
+	ub->io_buf_mm = NULL;
+	ub->io_buf_vma = NULL;
+	put_device(&ub->cdev_dev);
+}
+
+static const struct vm_operations_struct ubd_vm_ops = {
+	.open = ubd_vma_open,
+	.close = ubd_vma_close,
+};
 
 /* map pre-allocated per-queue cmd buffer to ubdsrv daemon */
 static int ubd_ch_mmap(struct file *filp, struct vm_area_struct *vma)
@@ -292,6 +441,14 @@ static int ubd_ch_mmap(struct file *filp, struct vm_area_struct *vma)
 	unsigned max_sz = UBD_MAX_QUEUE_DEPTH * sizeof(struct ubdsrv_io_desc);
 	unsigned long pfn;
 	int q_id = vma->vm_pgoff / max_sz;
+
+	if (vma->vm_pgoff == UBDSRV_IO_BUF_OFFSET &&
+			sz == ubd_io_buf_size(ub)) {
+		vma->vm_flags |= VM_DONTEXPAND | VM_DONTDUMP | VM_MIXEDMAP;
+		vma->vm_ops = &ubd_vm_ops;
+		vma->vm_private_data = ub;
+		return 0;
+	}
 
 	if (vma->vm_pgoff != UBDSRV_CMD_BUF_OFFSET + q_id * max_sz)
 		return -EINVAL;
@@ -532,6 +689,10 @@ static int ubd_add_dev(struct ubd_device *ub)
 	struct gendisk *disk;
 	int err = -ENOMEM;
 	int bsize;
+	bool zero_copy = ub->dev_info.flags & UBD_F_SUPPORT_ZERO_COPY;
+
+	if (zero_copy && ub->dev_info.block_size != PAGE_SIZE)
+		return -EINVAL;
 
 	if (ubd_init_queues(ub))
 		return err;
@@ -543,6 +704,13 @@ static int ubd_add_dev(struct ubd_device *ub)
 	ub->tag_set.cmd_size = sizeof(struct ubd_cmd);
 	ub->tag_set.flags = BLK_MQ_F_SHOULD_MERGE;
 	ub->tag_set.driver_data = ub;
+
+	/*
+	 * zero copy need to map request into ubdsrv's vm space, so may
+	 * sleep when mapping request
+	 */
+	if (zero_copy)
+		ub->tag_set.flags |= BLK_MQ_F_BLOCKING;
 
 	err = blk_mq_alloc_tag_set(&ub->tag_set);
 	if (err)
