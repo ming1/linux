@@ -677,7 +677,7 @@ static int ubd_add_dev(struct ubd_device *ub)
 	struct gendisk *disk;
 	int err = -ENOMEM;
 	int bsize;
-	bool zero_copy = ub->dev_info.flags & UBD_F_SUPPORT_ZERO_COPY;
+	bool zero_copy = ub->dev_info.flags & (1ULL << UBD_F_SUPPORT_ZERO_COPY);
 
 	if (zero_copy && ub->dev_info.block_size != PAGE_SIZE)
 		return -EINVAL;
@@ -926,8 +926,9 @@ static void ubd_dump(struct io_uring_cmd *cmd)
 #ifdef DEBUG
 	struct ubdsrv_ctrl_dev_info *info = (struct ubdsrv_ctrl_dev_info *)cmd->cmd;
 
-	printk("%s: cmd_op %x cmd_len %d, dev id %d\n",
-			__func__, cmd->cmd_op, cmd->cmd_len, info->dev_id);
+	printk("%s: cmd_op %x cmd_len %d, dev id %d flags %x\n",
+			__func__, cmd->cmd_op, cmd->cmd_len,
+			info->dev_id, info->flags);
 
 	printk("\t nr_hw_queues %d queue_depth %d block size %d dev_capacity %lld\n",
 			info->nr_hw_queues, info->queue_depth,
