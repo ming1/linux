@@ -381,7 +381,6 @@ static int ubd_init_hctx(struct blk_mq_hw_ctx *hctx, void *driver_data,
 
 static const struct blk_mq_ops ubd_mq_ops = {
 	.queue_rq       = ubd_queue_rq,
-	.complete	= ubd_complete_rq,
 	.init_hctx	= ubd_init_hctx,
 };
 
@@ -468,8 +467,9 @@ static void ubd_commit_completion(struct ubd_device *ub,
 	/* find the io request and complete */
 	req = blk_mq_tag_to_rq(ub->tag_set.tags[qid], ub_cmd->tag);
 
-	if (req && likely(!blk_should_fake_timeout(req->q)))
-		blk_mq_complete_request(req);
+	if (req && likely(!blk_should_fake_timeout(req->q))) {
+		ubd_complete_rq(req);
+	}
 }
 
 static int ubd_ch_async_cmd(struct io_uring_cmd *cmd)
