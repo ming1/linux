@@ -173,6 +173,15 @@ static const struct block_device_operations ub_fops = {
 	.release =	ubd_release,
 };
 
+static unsigned long ubd_rq_mappped_addr(struct ubd_device *ub,
+		struct ubd_queue *ubq, int tag)
+{
+	unsigned long start = ub->io_buf_vma->vm_start + ubq->q_id *
+		ubd_queue_io_buf_size(ub);
+
+	return start + tag * ubd_queue_single_io_buf_size(ub);
+}
+
 #define UBD_REMAP_BATCH	32
 static int ubd_map_io(struct request *req)
 {
@@ -181,7 +190,7 @@ static int ubd_map_io(struct request *req)
 	struct ubd_queue *ubq = hctx->driver_data;
 	struct req_iterator req_iter;
 	struct bio_vec bv;
-	unsigned long start = ubq->io_addr + req->tag * ubq->max_io_sz;
+	unsigned long start = ubd_rq_mappped_addr(ub, ubq, req->tag);
 	unsigned long addr = start;
 	struct page *pages[UBD_REMAP_BATCH];
 	unsigned int idx = 0, mapped = 0;
@@ -232,7 +241,7 @@ static void ubd_unmap_io(struct request *req)
 	struct blk_mq_hw_ctx *hctx = req->mq_hctx;
 	struct ubd_device *ub = req->q->queuedata;
 	struct ubd_queue *ubq = hctx->driver_data;
-	unsigned long start = ubq->io_addr + req->tag * ubq->max_io_sz;
+	unsigned long start = ubd_rq_mappped_addr(ub, ubq, req->tag);
 
 	if (!ub->io_buf_vma)
 		return;
@@ -366,9 +375,6 @@ static int ubd_init_hctx(struct blk_mq_hw_ctx *hctx, void *driver_data,
 	struct ubd_device *ub = hctx->queue->queuedata;
 	struct ubd_queue *ubq = &ub->queues[hctx->queue_num];
 
-	ubq->io_addr = ub->io_buf_vma->vm_start + ubq->q_id *
-		ubd_queue_io_buf_size(ub);
-	ubq->max_io_sz = ubd_queue_single_io_buf_size(ub);
 	hctx->driver_data = ubq;
 	return 0;
 }
@@ -404,33 +410,13 @@ static int ubd_ch_release(struct inode *inode, struct file *filp)
 	return 0;
 }
 
-static void ubd_vma_open(struct vm_area_struct *vma)
+static vm_fault_t ubd_vma_fault(struct vm_fault *vmf)
 {
-	struct ubd_device *ub = vma->vm_private_data;
-
-	pr_debug("vma_open\n");
-
-	get_device(&ub->cdev_dev);
-	ub->io_buf_mm = vma->vm_mm;
-	ub->io_buf_vma = vma;
-	mmgrab(ub->io_buf_mm);
-}
-
-static void ubd_vma_close(struct vm_area_struct *vma)
-{
-	struct ubd_device *ub = vma->vm_private_data;
-
-	pr_debug("vma_close\n");
-
-	mmdrop(ub->io_buf_mm);
-	ub->io_buf_mm = NULL;
-	ub->io_buf_vma = NULL;
-	put_device(&ub->cdev_dev);
+	return VM_FAULT_SIGBUS;
 }
 
 static const struct vm_operations_struct ubd_vm_ops = {
-	.open = ubd_vma_open,
-	.close = ubd_vma_close,
+	.fault = ubd_vma_fault,
 };
 
 /* map pre-allocated per-queue cmd buffer to ubdsrv daemon */
@@ -442,9 +428,11 @@ static int ubd_ch_mmap(struct file *filp, struct vm_area_struct *vma)
 	unsigned long pfn;
 	int q_id = vma->vm_pgoff / max_sz;
 
-	if (vma->vm_pgoff == UBDSRV_IO_BUF_OFFSET &&
+	if (vma->vm_pgoff == (UBDSRV_IO_BUF_OFFSET >> PAGE_SHIFT) &&
 			sz == ubd_io_buf_size(ub)) {
 		vma->vm_flags |= VM_DONTEXPAND | VM_DONTDUMP | VM_MIXEDMAP;
+		ub->io_buf_mm = vma->vm_mm;
+		ub->io_buf_vma = vma;
 		vma->vm_ops = &ubd_vm_ops;
 		vma->vm_private_data = ub;
 		return 0;
