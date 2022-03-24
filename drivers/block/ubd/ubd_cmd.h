@@ -137,6 +137,21 @@ struct ubdsrv_io_desc {
 	__u64		addr;
 };
 
+static inline __u8 ubdsrv_get_op(const struct ubdsrv_io_desc *iod)
+{
+	return iod->op_flags & 0xff;
+}
+
+static inline __u32 ubdsrv_get_flags(const struct ubdsrv_io_desc *iod)
+{
+	return iod->op_flags >> 8;
+}
+
+static inline __u32 ubdsrv_get_blocks(const struct ubdsrv_io_desc *iod)
+{
+	return iod->tag_blocks >> 12;
+}
+
 /* issued to ubd driver via /dev/ubdcN */
 struct ubdsrv_io_cmd {
 	/*
