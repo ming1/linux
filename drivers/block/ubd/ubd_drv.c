@@ -118,6 +118,16 @@ static DEFINE_MUTEX(ubd_ctl_mutex);
 
 static struct miscdevice ubd_misc;
 
+static inline bool ubd_support_zero_copy(struct ubd_device *ub)
+{
+	return ub->dev_info.flags & (1ULL << UBD_F_SUPPORT_ZERO_COPY);
+}
+
+static inline bool ubd_has_zero_copy(struct ubd_device *ub)
+{
+	return !!ub->io_buf_vma;
+}
+
 static inline struct ubdsrv_io_desc *ubd_get_iod(struct ubd_queue *ubq, int tag)
 {
 	return (struct ubdsrv_io_desc *)
@@ -198,8 +208,9 @@ static int ubd_map_io(struct request *req)
 	int ret = -EINVAL;
 	struct ubdsrv_io_desc *iod = ubd_get_iod(ubq, req->tag);
 
-	if (!ub->io_buf_vma)
-		return ret;
+	/* no zero copy, just copy request data to user buffer for WRITE */
+	if (!ubd_has_zero_copy(ub))
+		return 0;
 
 	mmap_read_lock(ub->io_buf_mm);
 	rq_for_each_segment(bv, req, req_iter) {
@@ -236,15 +247,16 @@ static int ubd_map_io(struct request *req)
 	return ret;
 }
 
-static void ubd_unmap_io(struct request *req)
+static int ubd_unmap_io(struct request *req)
 {
 	struct blk_mq_hw_ctx *hctx = req->mq_hctx;
 	struct ubd_device *ub = req->q->queuedata;
 	struct ubd_queue *ubq = hctx->driver_data;
 	unsigned long start = ubd_rq_mappped_addr(ub, ubq, req->tag);
 
-	if (!ub->io_buf_vma)
-		return;
+	/* no zero copy, just copy user buffer to request pages for READ */
+	if (!ubd_has_zero_copy(ub))
+		return 0;
 
 	/*
 	 * we are run from ubdsrv context via io_uring command, it is fine
@@ -253,6 +265,8 @@ static void ubd_unmap_io(struct request *req)
 	mmap_read_lock(ub->io_buf_mm);
 	zap_page_range(ub->io_buf_vma, start, req->__data_len);
 	mmap_read_unlock(ub->io_buf_mm);
+
+	return 0;
 }
 
 static int ubd_setup_iod(struct ubd_queue *ubq, struct request *req)
@@ -429,6 +443,8 @@ static int ubd_ch_mmap(struct file *filp, struct vm_area_struct *vma)
 
 	if (vma->vm_pgoff == (UBDSRV_IO_BUF_OFFSET >> PAGE_SHIFT) &&
 			sz == ubd_io_buf_size(ub)) {
+		if (!ubd_support_zero_copy(ub))
+			return -EINVAL;
 		vma->vm_flags |= VM_DONTEXPAND | VM_DONTDUMP | VM_MIXEDMAP;
 		ub->io_buf_mm = vma->vm_mm;
 		ub->io_buf_vma = vma;
@@ -697,8 +713,7 @@ static int ubd_add_dev(struct ubd_device *ub)
 	 * zero copy need to map request into ubdsrv's vm space, so may
 	 * sleep when mapping request
 	 */
-	if (zero_copy)
-		ub->tag_set.flags |= BLK_MQ_F_BLOCKING;
+	ub->tag_set.flags |= BLK_MQ_F_BLOCKING;
 
 	err = blk_mq_alloc_tag_set(&ub->tag_set);
 	if (err)
