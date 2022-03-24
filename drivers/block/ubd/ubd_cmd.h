@@ -37,25 +37,16 @@
 #define	UBD_IO_COMMIT_AND_FETCH_REQ	0x21
 #define	UBD_IO_COMMIT_REQ		0x22
 
-/*
- * When got RESULT_FETCH, after this io command is completed by ubdsrv,
- * its result will be committed via UBD_IO_COMMIT_AND_FETCH_REQ.
- *
- * When got RESULT_NO_FETCH, after this io command is completed by
- * ubdsrv, its result will be committed via UBD_IO_COMMIT_REQ.
- * Typically, after ubd driver gets STOP DEV ctrl command, it will
- * complete io command with this status via cqe->res.
- */
-#define UBD_IO_RESULT_NO_FETCH	0x0
-#define UBD_IO_RESULT_FETCH	0x1
+#define UBD_IO_RES_OK			0x01
+#define UBD_IO_RES_INVALID_SQE		0x5f
+#define UBD_IO_RES_INVALID_TAG		0x5e
+#define UBD_IO_RES_INVALID_QUEUE	0x5d
+#define UBD_IO_RES_BUSY			0x5c
+#define UBD_IO_RES_DUP_FETCH		0x5b
+#define UBD_IO_RES_UNEXPECTED_CMD	0x5a
 
-#define UBD_IO_RES_INVALID_SQE		0xff
-#define UBD_IO_RES_INVALID_TAG		0xfe
-#define UBD_IO_RES_INVALID_QUEUE	0xfd
-#define UBD_IO_RES_BUSY			0xfc
-#define UBD_IO_RES_DUP_FETCH		0xfb
-#define UBD_IO_RES_UNEXPECTED_CMD	0xfa
-#define UBD_IO_RES_ABORT		0xf9
+/* only ABORT means that no re-fetch */
+#define UBD_IO_RES_ABORT		0x59
 
 #define UBDSRV_CMD_BUF_OFFSET	0
 #define UBDSRV_IO_BUF_OFFSET	0x80000000

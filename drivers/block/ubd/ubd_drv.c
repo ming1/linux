@@ -50,8 +50,6 @@
 
 #define UBD_MINORS		(1U << MINORBITS)
 
-#define UBD_RES_VAL(code, fetch)	((code << 8) | (fetch))
-
 struct ubd_cmd {
 	unsigned char data[16];
 };
@@ -312,7 +310,7 @@ static int ubd_setup_iod(struct ubd_queue *ubq, struct request *req)
 static blk_status_t ubd_queue_rq(struct blk_mq_hw_ctx *hctx,
 		const struct blk_mq_queue_data *bd)
 {
-	int ret = UBD_RES_VAL(0, UBD_IO_RESULT_FETCH);
+	int ret = UBD_IO_RES_OK;
 	struct ubd_queue *ubq = hctx->driver_data;
 	struct request *rq = bd->rq;
 	struct ubd_io *io = &ubq->ios[rq->tag];
@@ -498,7 +496,7 @@ static int ubd_ch_async_cmd(struct io_uring_cmd *cmd)
 	unsigned tag = ub_cmd->tag;
 	int ret;
 
-	ret = UBD_RES_VAL(UBD_IO_RES_INVALID_SQE, UBD_IO_RESULT_NO_FETCH);
+	ret = UBD_IO_RES_INVALID_SQE;
 	/* so far, only SQ is supported */
 	if (WARN_ON_ONCE(ub_cmd->q_id != 0))
 		goto out;
@@ -518,7 +516,7 @@ static int ubd_ch_async_cmd(struct io_uring_cmd *cmd)
 #endif
 	/* there is pending io cmd, something must be wrong */
 	if (io->flags & UBD_IO_FLAG_ACTIVE) {
-		ret = UBD_RES_VAL(UBD_IO_RES_BUSY, UBD_IO_RESULT_NO_FETCH);
+		ret = UBD_IO_RES_BUSY;
 		goto out;
 	}
 
@@ -529,8 +527,7 @@ static int ubd_ch_async_cmd(struct io_uring_cmd *cmd)
 		 * instead of FETCH_REQ
 		 */
 		if (io->flags & UBD_IO_FLAG_OWNED_BY_SRV) {
-			ret = UBD_RES_VAL(UBD_IO_RES_DUP_FETCH,
-					UBD_IO_RESULT_NO_FETCH);
+			ret = UBD_IO_RES_DUP_FETCH;
 			goto out;
 		}
 		io->cmd = cmd;
@@ -544,19 +541,17 @@ static int ubd_ch_async_cmd(struct io_uring_cmd *cmd)
 	case UBD_IO_COMMIT_REQ:
 		io->cmd = cmd;
 		if (!(io->flags & UBD_IO_FLAG_OWNED_BY_SRV)) {
-			ret = UBD_RES_VAL(UBD_IO_RES_UNEXPECTED_CMD,
-					UBD_IO_RESULT_NO_FETCH);
+			ret = UBD_IO_RES_UNEXPECTED_CMD;
 			goto out;
 		}
 		ubd_commit_completion(ub, ub_cmd);
 		if (cmd_op == UBD_IO_COMMIT_REQ) {
-			ret = UBD_RES_VAL(0, UBD_IO_RESULT_NO_FETCH);
+			ret = UBD_IO_RES_OK;
 			goto out;
 		}
 		break;
 	default:
-		ret = UBD_RES_VAL(UBD_IO_RES_UNEXPECTED_CMD,
-				UBD_IO_RESULT_NO_FETCH);
+		ret = UBD_IO_RES_UNEXPECTED_CMD;
 		goto out;
 	}
 	return -EIOCBQUEUED;
@@ -850,7 +845,7 @@ static struct ubd_device *ubd_find_or_create_dev(int idx)
 /* has to be called disk is dead or frozen */
 static int ubd_abort_queue(struct ubd_device *ub, int qid)
 {
-	int ret = UBD_RES_VAL(UBD_IO_RES_ABORT, UBD_IO_RESULT_NO_FETCH);
+	int ret = UBD_IO_RES_ABORT;
 	struct ubd_queue *q = &ub->queues[qid];
 	int i;
 
