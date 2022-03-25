@@ -93,7 +93,7 @@ struct ubd_device {
 
 	struct ubd_queue	*queues;
 
-	unsigned  bs_shift;
+	unsigned  bs_shift, max_io_buf_sz;
 	struct ubdsrv_ctrl_dev_info	dev_info;
 
 	struct task_struct	*ub_daemon;
@@ -116,6 +116,11 @@ static DEFINE_IDR(ubd_index_idr);
 static DEFINE_MUTEX(ubd_ctl_mutex);
 
 static struct miscdevice ubd_misc;
+
+static inline bool ubd_rq_need_copy(struct request *rq)
+{
+	return rq->bio && bio_has_data(rq->bio);
+}
 
 static inline bool ubd_support_zero_copy(struct ubd_device *ub)
 {
@@ -190,6 +195,130 @@ static unsigned long ubd_rq_mappped_addr(struct ubd_device *ub,
 	return start + tag * ubd_queue_single_io_buf_size(ub);
 }
 
+
+#define UBD_MAX_PIN_PAGES	32
+
+static void ubd_release_pages(struct ubd_device *ub, struct page **pages,
+		int nr_pages)
+{
+	int i;
+
+	for (i = 0; i < nr_pages; i++)
+		put_page(pages[i]);
+}
+
+static int ubd_pin_user_pages(struct ubd_device *ub, u64 start_vm,
+		struct page **pages, unsigned nr_pages)
+{
+	struct mm_struct *mm = ub->ub_daemon->mm;
+	unsigned ret, locked = 1;
+
+	mmap_read_lock(mm);
+	ret = get_user_pages_remote(mm, start_vm, nr_pages,
+			FOLL_WRITE, pages, NULL, &locked);
+	if (locked)
+		mmap_read_unlock(mm);
+	return ret;
+}
+
+/* todo: need flush cache */
+static inline unsigned ubd_copy_bv(struct bio_vec *bv, void **bv_addr,
+		void *pg_addr, unsigned *pg_off,
+		unsigned *pg_len, bool to_bv)
+{
+	unsigned len = min_t(unsigned, bv->bv_len, *pg_len);
+
+	if (*bv_addr == NULL)
+		*bv_addr = kmap_local_page(bv->bv_page);
+
+	if (to_bv)
+		memcpy(*bv_addr + bv->bv_offset, pg_addr + *pg_off, len);
+	else
+		memcpy(pg_addr + *pg_off, *bv_addr + bv->bv_offset, len);
+
+	bv->bv_offset += len;
+	bv->bv_len -= len;
+	*pg_off += len;
+	*pg_len -= len;
+
+	if (!bv->bv_len) {
+		kunmap_local(*bv_addr);
+		*bv_addr = NULL;
+	}
+
+	return len;
+}
+
+/* copy rq pages to ubdsrv vm addresss pointed by io->addr, for WRITE */
+static int ubd_copy_pages(struct ubd_device *ub, struct request *rq)
+{
+	struct ubd_queue *ubq = rq->mq_hctx->driver_data;
+	struct ubd_io *io = &ubq->ios[rq->tag];
+	struct page *pgs[UBD_MAX_PIN_PAGES];
+	const bool to_rq = !op_is_write(rq->cmd_flags);
+	struct req_iterator req_iter;
+	struct bio_vec bv;
+	unsigned long start = io->addr, left = rq->__data_len;
+	unsigned int idx = 0, pg_len = 0, pg_off = 0;
+	int nr_pin = 0;
+	void *pg_addr = NULL;
+
+	rq_for_each_segment(bv, rq, req_iter) {
+		unsigned len, bv_off = bv.bv_offset, bv_len = bv.bv_len;
+		void *bv_addr = NULL;
+
+refill:
+		if (pg_len == 0) {
+			unsigned int off = 0;
+			if (pg_addr) {
+				kunmap_local(pg_addr);
+				pg_addr = NULL;
+			}
+			/* refill pages */
+			if (idx >= nr_pin) {
+				unsigned int max_pages;
+
+				ubd_release_pages(ub, pgs, nr_pin);
+
+				off = start & (PAGE_SIZE - 1);
+				max_pages = round_up(off + left, PAGE_SIZE);
+				nr_pin = min_t(unsigned, UBD_MAX_PIN_PAGES, max_pages);
+				nr_pin = ubd_pin_user_pages(ub, start, pgs, nr_pin);
+				if (nr_pin <= 0)
+					return -EINVAL;
+				idx = 0;
+			}
+			pg_off = off;
+			pg_len = PAGE_SIZE - off;
+			off = 0;
+			pg_addr = kmap_local_page(pgs[idx]);
+			if (!to_rq)
+				set_page_dirty_lock(pgs[idx]);
+			idx++;
+		}
+
+		len = ubd_copy_bv(&bv, &bv_addr, pg_addr, &pg_off, &pg_len,
+				to_rq);
+
+		/* either one of the two has been consumed */
+		WARN_ON_ONCE(bv.bv_len && pg_len);
+		start += len;
+		left -= len;
+		if (bv.bv_len)
+			goto refill;
+		bv.bv_len = bv_len;
+		bv.bv_offset = bv_off;
+
+		if (to_rq)
+			flush_dcache_page(bv.bv_page);
+	}
+	if (pg_addr)
+		kunmap_local(pg_addr);
+	ubd_release_pages(ub, pgs, nr_pin);
+
+	return 0;
+}
+
 #define UBD_REMAP_BATCH	32
 static int ubd_map_io(struct request *req)
 {
@@ -198,8 +327,7 @@ static int ubd_map_io(struct request *req)
 	struct ubd_queue *ubq = hctx->driver_data;
 	struct req_iterator req_iter;
 	struct bio_vec bv;
-	unsigned long start = ubd_rq_mappped_addr(ub, ubq, req->tag);
-	unsigned long addr = start;
+	unsigned long start, addr;
 	struct page *pages[UBD_REMAP_BATCH];
 	unsigned int idx = 0, mapped = 0;
 	unsigned long remaining;
@@ -207,8 +335,14 @@ static int ubd_map_io(struct request *req)
 	struct ubdsrv_io_desc *iod = ubd_get_iod(ubq, req->tag);
 
 	/* no zero copy, just copy request data to user buffer for WRITE */
-	if (!ubd_has_zero_copy(ub))
+	if (!ubd_has_zero_copy(ub)) {
+		if (op_is_write(req->cmd_flags) && ubd_rq_need_copy(req))
+			return ubd_copy_pages(ub, req);
 		return 0;
+	}
+
+	start = ubd_rq_mappped_addr(ub, ubq, req->tag);
+	addr = start;
 
 	mmap_read_lock(ub->io_buf_mm);
 	rq_for_each_segment(bv, req, req_iter) {
@@ -250,12 +384,16 @@ static int ubd_unmap_io(struct request *req)
 	struct blk_mq_hw_ctx *hctx = req->mq_hctx;
 	struct ubd_device *ub = req->q->queuedata;
 	struct ubd_queue *ubq = hctx->driver_data;
-	unsigned long start = ubd_rq_mappped_addr(ub, ubq, req->tag);
+	unsigned long start;
 
 	/* no zero copy, just copy user buffer to request pages for READ */
-	if (!ubd_has_zero_copy(ub))
+	if (!ubd_has_zero_copy(ub)) {
+		if (!op_is_write(req->cmd_flags) && ubd_rq_need_copy(req))
+			return ubd_copy_pages(ub, req);
 		return 0;
+	}
 
+	start = ubd_rq_mappped_addr(ub, ubq, req->tag);
 	/*
 	 * we are run from ubdsrv context via io_uring command, it is fine
 	 * to sleep
@@ -700,6 +838,7 @@ static int ubd_add_dev(struct ubd_device *ub)
 
 	bsize = ub->dev_info.block_size;
 	ub->bs_shift = ilog2(bsize);
+	ub->max_io_buf_sz = ub->dev_info.rq_max_blocks << ub->bs_shift;
 
 	if (ubd_init_queues(ub))
 		return err;
