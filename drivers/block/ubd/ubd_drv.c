@@ -212,14 +212,21 @@ static void ubd_release_pages(struct ubd_device *ub, struct page **pages,
 }
 
 static int ubd_pin_user_pages(struct ubd_device *ub, u64 start_vm,
-		struct page **pages, unsigned nr_pages)
+		struct page **pages, unsigned nr_pages, bool read)
 {
 	struct mm_struct *mm = ub->ub_daemon->mm;
 	unsigned ret, locked = 1;
+	unsigned int gup_flags = read ? FOLL_WRITE : 0;
+
+	/* read is done in the current ubdsrv context */
+	if (read) {
+		ret = get_user_pages_fast(start_vm, nr_pages, gup_flags, pages);
+		return ret;
+	}
 
 	mmap_read_lock(mm);
 	ret = get_user_pages_remote(mm, start_vm, nr_pages,
-			FOLL_WRITE, pages, NULL, &locked);
+			gup_flags, pages, NULL, &locked);
 	if (locked)
 		mmap_read_unlock(mm);
 	return ret;
@@ -287,7 +294,8 @@ refill:
 				off = start & (PAGE_SIZE - 1);
 				max_pages = round_up(off + left, PAGE_SIZE);
 				nr_pin = min_t(unsigned, UBD_MAX_PIN_PAGES, max_pages);
-				nr_pin = ubd_pin_user_pages(ub, start, pgs, nr_pin);
+				nr_pin = ubd_pin_user_pages(ub, start, pgs,
+						nr_pin, to_rq);
 				if (nr_pin <= 0)
 					return -EINVAL;
 				idx = 0;
