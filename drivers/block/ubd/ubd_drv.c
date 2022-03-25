@@ -354,8 +354,9 @@ static blk_status_t ubd_queue_rq(struct blk_mq_hw_ctx *hctx,
 	 *    totally zero copy, but 4k block size has to be applied.
 	 */
 #ifdef DEBUG
-	printk("%s: complete: cmd op %d, tag %d ret %x io_flags %x\n", __func__,
-			io->cmd->cmd_op, rq->tag, ret, io->flags);
+	printk("%s: complete: cmd op %d, tag %d ret %x io_flags %x, addr %lx\n",
+			__func__, io->cmd->cmd_op, rq->tag, ret, io->flags,
+			ubd_get_iod(ubq, rq->tag)->addr);
 #endif
 	/* tell ubdsrv one io request is coming */
 	io_uring_cmd_done(io->cmd, ret);
@@ -448,6 +449,10 @@ static int ubd_ch_mmap(struct file *filp, struct vm_area_struct *vma)
 		ub->io_buf_vma = vma;
 		vma->vm_ops = &ubd_vm_ops;
 		vma->vm_private_data = ub;
+#ifdef DEBUG
+	printk("%s: mmaped buf vm addr %lx-%lx\n",
+			__func__, vma->vm_start, vma->vm_end);
+#endif
 		return 0;
 	}
 
