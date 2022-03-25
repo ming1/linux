@@ -93,14 +93,15 @@ struct ubd_device {
 
 	struct ubd_queue	*queues;
 
+	unsigned  bs_shift;
+	struct ubdsrv_ctrl_dev_info	dev_info;
+
 	struct task_struct	*ub_daemon;
 
 	struct blk_mq_tag_set	tag_set;
 
 	struct cdev		cdev;
 	struct device		cdev_dev;
-
-	struct ubdsrv_ctrl_dev_info	dev_info;
 
 	atomic_t		ch_open_cnt;
 	int			ub_number;
@@ -147,8 +148,7 @@ static inline int ubd_queue_cmd_buf_size(struct ubd_device *ub, int q_id)
 /* used for allocating zero copy vma space */
 static inline int ubd_queue_single_io_buf_size(struct ubd_device *ub)
 {
-	unsigned max_io_sz = ub->dev_info.block_size *
-		ub->dev_info.rq_max_blocks;
+	unsigned max_io_sz = ub->dev_info.rq_max_blocks << ub->bs_shift;
 
 	return round_up(max_io_sz, PAGE_SIZE);
 }
@@ -241,7 +241,7 @@ static int ubd_map_io(struct request *req)
 		zap_page_range(ub->io_buf_vma, start, mapped);
 	mmap_read_unlock(ub->io_buf_mm);
 
-	WRITE_ONCE(iod->addr, start);
+	iod->addr = start;
 	return ret;
 }
 
@@ -300,7 +300,7 @@ static int ubd_setup_iod(struct ubd_queue *ubq, struct request *req)
 
 	/* need to translate since kernel may change */
 	iod->op_flags = ubd_op | flags;
-	iod->tag_blocks = req->tag | (blk_rq_sectors(req) >> 12);
+	iod->tag_blocks = req->tag | (blk_rq_sectors(req) << 12);
 	iod->start_block = blk_rq_pos(req);
 	iod->addr = io->addr;
 
@@ -693,6 +693,9 @@ static int ubd_add_dev(struct ubd_device *ub)
 	if (zero_copy && ub->dev_info.block_size != PAGE_SIZE)
 		return -EINVAL;
 
+	bsize = ub->dev_info.block_size;
+	ub->bs_shift = ilog2(bsize);
+
 	if (ubd_init_queues(ub))
 		return err;
 
@@ -723,13 +726,13 @@ static int ubd_add_dev(struct ubd_device *ub)
 
 	ub->ub_queue->queuedata = ub;
 
-	bsize = ub->dev_info.block_size;
 	blk_queue_logical_block_size(ub->ub_queue, bsize);
 	blk_queue_physical_block_size(ub->ub_queue, bsize);
 	blk_queue_io_min(ub->ub_queue, bsize);
 
-	blk_queue_max_hw_sectors(ub->ub_queue, ub->dev_info.rq_max_blocks);
-	set_capacity(ub->ub_disk, ub->dev_info.dev_blocks);
+	blk_queue_max_hw_sectors(ub->ub_queue, ub->dev_info.rq_max_blocks <<
+			(ub->bs_shift - 9));
+	set_capacity(ub->ub_disk, ub->dev_info.dev_blocks << (ub->bs_shift - 9));
 
 	ub->ub_queue->limits.discard_granularity = 0;
 
