@@ -45,6 +45,7 @@
 #include <linux/blk-mq.h>
 #include <linux/delay.h>
 #include <linux/mm.h>
+#include <asm/page.h>
 
 #include "ubd_cmd.h"
 
@@ -92,6 +93,9 @@ struct ubd_device {
 	struct vm_area_struct	*io_buf_vma;
 
 	struct ubd_queue	*queues;
+
+	void			*zero_page;
+	unsigned		zero_page_size;
 
 	unsigned  bs_shift, max_io_buf_sz;
 	struct ubdsrv_ctrl_dev_info	dev_info;
@@ -328,9 +332,6 @@ static int ubd_map_io(struct request *req)
 	struct req_iterator req_iter;
 	struct bio_vec bv;
 	unsigned long start, addr;
-	struct page *pages[UBD_REMAP_BATCH];
-	unsigned int idx = 0, mapped = 0;
-	unsigned long remaining;
 	int ret = -EINVAL;
 	struct ubdsrv_io_desc *iod = ubd_get_iod(ubq, req->tag);
 
@@ -345,37 +346,20 @@ static int ubd_map_io(struct request *req)
 	addr = start;
 
 	mmap_read_lock(ub->io_buf_mm);
-	rq_for_each_segment(bv, req, req_iter) {
-		if (bv.bv_offset || bv.bv_len != PAGE_SIZE)
+	rq_for_each_bvec(bv, req, req_iter) {
+		if (bv.bv_offset || !PAGE_ALIGNED(bv.bv_len))
 			goto fail;
-		pages[idx++] = bv.bv_page;
-		if (idx == UBD_REMAP_BATCH) {
-			remaining = idx;
-			ret = vm_insert_pages_mkspecial(ub->io_buf_vma, addr,
-					pages, &remaining);
-			if (ret)
-				goto fail;
-			addr += idx * PAGE_SIZE;
-			mapped += idx * PAGE_SIZE;
-			idx = 0;
-		}
+		ret = remap_pfn_range(ub->io_buf_vma, addr,
+				page_to_pfn(bv.bv_page), bv.bv_len,
+				ub->io_buf_vma->vm_page_prot);
+		if (ret)
+			break;
+		addr += bv.bv_len;
 	}
-	if (idx) {
-		remaining = idx;
-		ret = vm_insert_pages_mkspecial(ub->io_buf_vma, addr, pages,
-				&remaining);
-		if (!ret)
-			mapped += idx * PAGE_SIZE;
-	}
-
-	if (mapped == req->__data_len)
-		ret = 0;
- fail:
-	if (ret && mapped)
-		zap_page_range(ub->io_buf_vma, start, mapped);
 	mmap_read_unlock(ub->io_buf_mm);
-
-	iod->addr = start;
+	if (!ret)
+		iod->addr = start;
+ fail:
 	return ret;
 }
 
@@ -394,10 +378,7 @@ static int ubd_unmap_io(struct request *req)
 	}
 
 	start = ubd_rq_mappped_addr(ub, ubq, req->tag);
-	/*
-	 * we are run from ubdsrv context via io_uring command, it is fine
-	 * to sleep
-	 */
+
 	mmap_read_lock(ub->io_buf_mm);
 	zap_page_range(ub->io_buf_vma, start, req->__data_len);
 	mmap_read_unlock(ub->io_buf_mm);
@@ -797,6 +778,8 @@ static void ubd_cdev_rel(struct device *dev)
 
 	ubd_deinit_queues(ub);
 
+	free_pages((unsigned long)ub->zero_page,
+			get_order(ub->zero_page_size));
 	kfree(ub);
 }
 
@@ -835,6 +818,14 @@ static int ubd_add_dev(struct ubd_device *ub)
 
 	if (zero_copy && ub->dev_info.block_size != PAGE_SIZE)
 		return -EINVAL;
+
+	if (zero_copy) {
+		ub->zero_page_size = PAGE_SIZE;
+		ub->zero_page = (void *) __get_free_pages(GFP_KERNEL,
+				get_order(ub->zero_page_size));
+		if (!ub->zero_page)
+			return -ENOMEM;
+	}
 
 	bsize = ub->dev_info.block_size;
 	ub->bs_shift = ilog2(bsize);
