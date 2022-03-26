@@ -285,8 +285,10 @@ refill:
 
 			if (pg_addr) {
 				kunmap_local(pg_addr);
-				if (!to_rq)
+				if (!to_rq) {
 					set_page_dirty_lock(curr);
+					flush_dcache_page(curr);
+				}
 				pg_addr = NULL;
 			}
 
@@ -309,16 +311,18 @@ refill:
 			pg_len = min(PAGE_SIZE - off, left);
 			off = 0;
 			curr = pgs[idx++];
+			if (to_rq)
+				flush_dcache_page(curr);
 			pg_addr = kmap_local_page(curr);
 		}
 
 		len = ubd_copy_bv(&bv, &bv_addr, pg_addr, &pg_off, &pg_len,
 				to_rq);
-
 		/* either one of the two has been consumed */
 		WARN_ON_ONCE(bv.bv_len && pg_len);
 		start += len;
 		left -= len;
+
 		/* overflow */
 		WARN_ON_ONCE(left > rq->__data_len);
 		WARN_ON_ONCE(bv.bv_len > bv_len);
@@ -327,11 +331,14 @@ refill:
 
 		bv.bv_len = bv_len;
 		bv.bv_offset = bv_off;
-		if (to_rq)
-			flush_dcache_page(bv.bv_page);
 	}
-	if (pg_addr)
+	if (pg_addr) {
 		kunmap_local(pg_addr);
+		if (!to_rq) {
+			set_page_dirty_lock(curr);
+			flush_dcache_page(curr);
+		}
+	}
 	ubd_release_pages(ub, pgs, nr_pin);
 
 	WARN_ON_ONCE(left != 0);
@@ -479,6 +486,9 @@ static blk_status_t ubd_queue_rq(struct blk_mq_hw_ctx *hctx,
 	/* this io cmd slot isn't active, so have to fail this io */
 	if (WARN_ON_ONCE(!(io->flags & UBD_IO_FLAG_ACTIVE)))
 		return BLK_STS_IOERR;
+
+	WARN_ON_ONCE(bd->rq->__data_len >
+			ubd_queue_single_io_buf_size(rq->q->queuedata));
 
 	/* fill iod to slot in io cmd buffer */
 	res = ubd_setup_iod(ubq, rq);
