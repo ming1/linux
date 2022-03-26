@@ -273,6 +273,7 @@ static int ubd_copy_pages(struct ubd_device *ub, struct request *rq)
 	unsigned int idx = 0, pg_len = 0, pg_off = 0;
 	int nr_pin = 0;
 	void *pg_addr = NULL;
+	struct page *curr = NULL;
 
 	rq_for_each_segment(bv, rq, req_iter) {
 		unsigned len, bv_off = bv.bv_offset, bv_len = bv.bv_len;
@@ -281,10 +282,14 @@ static int ubd_copy_pages(struct ubd_device *ub, struct request *rq)
 refill:
 		if (pg_len == 0) {
 			unsigned int off = 0;
+
 			if (pg_addr) {
 				kunmap_local(pg_addr);
+				if (!to_rq)
+					set_page_dirty_lock(curr);
 				pg_addr = NULL;
 			}
+
 			/* refill pages */
 			if (idx >= nr_pin) {
 				unsigned int max_pages;
@@ -301,12 +306,10 @@ refill:
 				idx = 0;
 			}
 			pg_off = off;
-			pg_len = PAGE_SIZE - off;
+			pg_len = min(PAGE_SIZE - off, left);
 			off = 0;
-			pg_addr = kmap_local_page(pgs[idx]);
-			if (!to_rq)
-				set_page_dirty_lock(pgs[idx]);
-			idx++;
+			curr = pgs[idx++];
+			pg_addr = kmap_local_page(curr);
 		}
 
 		len = ubd_copy_bv(&bv, &bv_addr, pg_addr, &pg_off, &pg_len,
@@ -316,17 +319,22 @@ refill:
 		WARN_ON_ONCE(bv.bv_len && pg_len);
 		start += len;
 		left -= len;
+		/* overflow */
+		WARN_ON_ONCE(left > rq->__data_len);
+		WARN_ON_ONCE(bv.bv_len > bv_len);
 		if (bv.bv_len)
 			goto refill;
+
 		bv.bv_len = bv_len;
 		bv.bv_offset = bv_off;
-
 		if (to_rq)
 			flush_dcache_page(bv.bv_page);
 	}
 	if (pg_addr)
 		kunmap_local(pg_addr);
 	ubd_release_pages(ub, pgs, nr_pin);
+
+	WARN_ON_ONCE(left != 0);
 
 	return 0;
 }
