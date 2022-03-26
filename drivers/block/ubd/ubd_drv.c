@@ -214,22 +214,19 @@ static void ubd_release_pages(struct ubd_device *ub, struct page **pages,
 static int ubd_pin_user_pages(struct ubd_device *ub, u64 start_vm,
 		struct page **pages, unsigned nr_pages, bool read)
 {
-	struct mm_struct *mm = ub->ub_daemon->mm;
-	unsigned ret, locked = 1;
 	unsigned int gup_flags = read ? FOLL_WRITE : 0;
 
-	/* read is done in the current ubdsrv context */
-	if (read) {
-		ret = get_user_pages_fast(start_vm, nr_pages, gup_flags, pages);
-		return ret;
-	}
-
+	return get_user_pages_fast(start_vm, nr_pages, gup_flags, pages);
+#if 0
+	struct mm_struct *mm = ub->ub_daemon->mm;
+	unsigned ret, locked = 1;
 	mmap_read_lock(mm);
 	ret = get_user_pages_remote(mm, start_vm, nr_pages,
 			gup_flags, pages, NULL, &locked);
 	if (locked)
 		mmap_read_unlock(mm);
 	return ret;
+#endif
 }
 
 /* todo: need flush cache */
@@ -407,14 +404,15 @@ static int ubd_map_io(struct request *req)
 {
 	struct ubd_device *ub = req->q->queuedata;
 
-	/* no zero copy, just copy request data to user buffer for WRITE */
-	if (!ubd_has_zero_copy(ub)) {
-		if (op_is_write(req->cmd_flags) && ubd_rq_need_copy(req))
-			return ubd_copy_pages(ub, req);
-		return 0;
-	} else {
+	if (ubd_has_zero_copy(ub))
 		return ubd_map_io_zero_copy(req);
-	}
+
+	/*
+	 * no zero copy, we will delay copy WRITE request data to user buffer
+	 * via by coming GET_DATA command
+	 */
+
+	return 0;
 }
 
 static int ubd_unmap_io(struct request *req)
@@ -658,6 +656,25 @@ static void ubd_commit_completion(struct ubd_device *ub,
 	}
 }
 
+static int ubd_ch_handle_get_data(struct ubd_device *ub,
+		struct ubdsrv_io_cmd *ub_cmd)
+{
+	struct request *req;
+
+	if (ubd_has_zero_copy(ub))
+		return 0;
+
+	req = blk_mq_tag_to_rq(ub->tag_set.tags[ub_cmd->q_id], ub_cmd->tag);
+	if (!req)
+		return -1;
+
+	if (!op_is_write(req->cmd_flags) || !ubd_rq_need_copy(req))
+		return 0;
+
+	/* convert to data copy in current context */
+	return ubd_copy_pages(ub, req);
+}
+
 static int ubd_ch_async_cmd(struct io_uring_cmd *cmd)
 {
 	struct ubdsrv_io_cmd *ub_cmd = (struct ubdsrv_io_cmd *)cmd->cmd;
@@ -707,6 +724,13 @@ static int ubd_ch_async_cmd(struct io_uring_cmd *cmd)
 		/* so far we only support pre-allocate fixed buffer */
 		io->addr = ub_cmd->addr;
 		break;
+	case UBD_IO_GET_DATA:
+		/* GET_DATA is basically stateless */
+		if (!(io->flags & UBD_IO_FLAG_OWNED_BY_SRV))
+			goto out;
+		if (!ubd_ch_handle_get_data(ub, ub_cmd))
+			ret = UBD_IO_RES_OK;
+		goto out;
 	case UBD_IO_COMMIT_AND_FETCH_REQ:
 		io->flags |= UBD_IO_FLAG_ACTIVE;
 		fallthrough;

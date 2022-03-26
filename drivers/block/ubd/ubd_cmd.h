@@ -32,10 +32,15 @@
  *
  * COMMIT_REQ: issued via sqe(URING_CMD) after ubdserver handled this IO
  *      request, request's handling result is committed to ubd driver.
+ *
+ * GET_DATA: issued via sqe(URING_CMD) after ubdserver gets one WRITE IO
+ *      cmd, for reading data from io request in ubdsrv context, this way
+ *      is not only more reliable but also efficient
  */
 #define	UBD_IO_FETCH_REQ		0x20
 #define	UBD_IO_COMMIT_AND_FETCH_REQ	0x21
 #define	UBD_IO_COMMIT_REQ		0x22
+#define	UBD_IO_GET_DATA			0x23
 
 #define UBD_IO_RES_OK			0x01
 #define UBD_IO_RES_INVALID_SQE		0x5f
