@@ -332,7 +332,8 @@ refill:
 }
 
 #define UBD_REMAP_BATCH	32
-static int ubd_map_io(struct request *req)
+#if 0
+static int ubd_map_io_zero_copy(struct request *req)
 {
 	struct blk_mq_hw_ctx *hctx = req->mq_hctx;
 	struct ubd_device *ub = req->q->queuedata;
@@ -342,13 +343,6 @@ static int ubd_map_io(struct request *req)
 	unsigned long start, addr;
 	int ret = -EINVAL;
 	struct ubdsrv_io_desc *iod = ubd_get_iod(ubq, req->tag);
-
-	/* no zero copy, just copy request data to user buffer for WRITE */
-	if (!ubd_has_zero_copy(ub)) {
-		if (op_is_write(req->cmd_flags) && ubd_rq_need_copy(req))
-			return ubd_copy_pages(ub, req);
-		return 0;
-	}
 
 	start = ubd_rq_mappped_addr(ub, ubq, req->tag);
 	addr = start;
@@ -370,28 +364,56 @@ static int ubd_map_io(struct request *req)
  fail:
 	return ret;
 }
-
-static int ubd_unmap_io(struct request *req)
+static int ubd_unmap_io_zero_copy(struct request *req)
 {
 	struct blk_mq_hw_ctx *hctx = req->mq_hctx;
 	struct ubd_device *ub = req->q->queuedata;
 	struct ubd_queue *ubq = hctx->driver_data;
 	unsigned long start;
 
-	/* no zero copy, just copy user buffer to request pages for READ */
-	if (!ubd_has_zero_copy(ub)) {
-		if (!op_is_write(req->cmd_flags) && ubd_rq_need_copy(req))
-			return ubd_copy_pages(ub, req);
-		return 0;
-	}
-
 	start = ubd_rq_mappped_addr(ub, ubq, req->tag);
 
 	mmap_read_lock(ub->io_buf_mm);
 	zap_page_range(ub->io_buf_vma, start, req->__data_len);
 	mmap_read_unlock(ub->io_buf_mm);
-
+}
+#else
+static inline int ubd_map_io_zero_copy(struct request *req)
+{
 	return 0;
+}
+static inline int ubd_unmap_io_zero_copy(struct request *req)
+{
+	return 0;
+}
+#endif
+
+static int ubd_map_io(struct request *req)
+{
+	struct ubd_device *ub = req->q->queuedata;
+
+	/* no zero copy, just copy request data to user buffer for WRITE */
+	if (!ubd_has_zero_copy(ub)) {
+		if (op_is_write(req->cmd_flags) && ubd_rq_need_copy(req))
+			return ubd_copy_pages(ub, req);
+		return 0;
+	} else {
+		return ubd_map_io_zero_copy(req);
+	}
+}
+
+static int ubd_unmap_io(struct request *req)
+{
+	struct ubd_device *ub = req->q->queuedata;
+
+	/* no zero copy, just copy user buffer to request pages for READ */
+	if (!ubd_has_zero_copy(ub)) {
+		if (!op_is_write(req->cmd_flags) && ubd_rq_need_copy(req))
+			return ubd_copy_pages(ub, req);
+		return 0;
+	} else {
+		return ubd_unmap_io_zero_copy(req);
+	}
 }
 
 static int ubd_setup_iod(struct ubd_queue *ubq, struct request *req)
