@@ -214,7 +214,7 @@ static void ubd_release_pages(struct ubd_device *ub, struct page **pages,
 static int ubd_pin_user_pages(struct ubd_device *ub, u64 start_vm,
 		struct page **pages, unsigned nr_pages, bool read)
 {
-	unsigned int gup_flags = read ? FOLL_WRITE : 0;
+	unsigned int gup_flags = read ? : FOLL_WRITE;
 
 	return get_user_pages_fast(start_vm, nr_pages, gup_flags, pages);
 #if 0
