@@ -282,10 +282,8 @@ refill:
 
 			if (pg_addr) {
 				kunmap_local(pg_addr);
-				if (!to_rq) {
+				if (!to_rq)
 					set_page_dirty_lock(curr);
-					flush_dcache_page(curr);
-				}
 				pg_addr = NULL;
 			}
 
@@ -308,8 +306,6 @@ refill:
 			pg_len = min(PAGE_SIZE - off, left);
 			off = 0;
 			curr = pgs[idx++];
-			if (to_rq)
-				flush_dcache_page(curr);
 			pg_addr = kmap_local_page(curr);
 		}
 
@@ -331,10 +327,8 @@ refill:
 	}
 	if (pg_addr) {
 		kunmap_local(pg_addr);
-		if (!to_rq) {
+		if (!to_rq)
 			set_page_dirty_lock(curr);
-			flush_dcache_page(curr);
-		}
 	}
 	ubd_release_pages(ub, pgs, nr_pin);
 
