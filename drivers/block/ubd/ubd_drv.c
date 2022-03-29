@@ -901,39 +901,32 @@ static int __ubd_alloc_dev_number(struct ubd_device *ub, int idx)
 	return err;
 }
 
-static struct ubd_device *ubd_find_or_create_dev(int idx)
+static struct ubd_device *ubd_create_dev(int idx)
 {
 	struct ubd_device *ub = NULL;
-	struct ubd_device *ub_new;
 	int ret;
 
-	ub_new = kzalloc(sizeof(*ub), GFP_KERNEL);
+	ub = kzalloc(sizeof(*ub), GFP_KERNEL);
+	if (!ub)
+		return ERR_PTR(-ENOMEM);
 
 	ret = mutex_lock_killable(&ubd_ctl_mutex);
-	if (ret) {
-		kfree(ub_new);
-		return NULL;
+	if (ret)
+		goto free_mem;
+
+	if (idx >= 0 && idr_find(&ubd_index_idr, idx)) {
+		ret = -EEXIST;
+		goto unlock;
 	}
 
-	if (idx >= 0)
-		ub = idr_find(&ubd_index_idr, idx);
-
-	if (ub) {
-		kfree(ub_new);
-		goto out;
-	}
-
-	if (!ub_new)
-		goto out;
-
-	ub = ub_new;
 	ret = __ubd_alloc_dev_number(ub, idx);
-	if (ret < 0) {
-		kfree(ub_new);
-		ub = NULL;
-	}
- out:
+unlock:
 	mutex_unlock(&ubd_ctl_mutex);
+free_mem:
+	if (ret < 0) {
+		kfree(ub);
+		return ERR_PTR(ret);
+	}
 	return ub;
 }
 
@@ -1089,8 +1082,8 @@ static int ubd_ctrl_async_cmd(struct io_uring_cmd *cmd)
 		}
 		break;
 	case UBD_CMD_ADD_DEV:
-		ub = ubd_find_or_create_dev(info->dev_id);
-		if (ub) {
+		ub = ubd_create_dev(info->dev_id);
+		if (!IS_ERR_OR_NULL(ub)) {
 			memcpy(&ub->dev_info, info, sizeof(*info));
 
 			/* update device id */
