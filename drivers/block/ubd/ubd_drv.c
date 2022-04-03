@@ -46,13 +46,14 @@
 #include <linux/delay.h>
 #include <linux/mm.h>
 #include <asm/page.h>
+#include <linux/task_work.h>
 
 #include "ubd_cmd.h"
 
 #define UBD_MINORS		(1U << MINORBITS)
 
-struct ubd_cmd {
-	unsigned char data[16];
+struct ubd_rq_data {
+	struct callback_head work;
 };
 
 /* io cmd is active: sqe cmd is received, and its cqe isn't done */
@@ -129,6 +130,11 @@ static inline bool ubd_rq_need_copy(struct request *rq)
 static inline bool ubd_support_zero_copy(struct ubd_device *ub)
 {
 	return ub->dev_info.flags & (1ULL << UBD_F_SUPPORT_ZERO_COPY);
+}
+
+static inline bool ubd_need_get_data(struct ubd_device *ub)
+{
+	return ub->dev_info.flags & (1ULL << UBD_F_NEED_GET_DATA);
 }
 
 static inline bool ubd_has_zero_copy(struct ubd_device *ub)
@@ -466,10 +472,11 @@ static int ubd_setup_iod(struct ubd_queue *ubq, struct request *req)
 static blk_status_t ubd_queue_rq(struct blk_mq_hw_ctx *hctx,
 		const struct blk_mq_queue_data *bd)
 {
-	int ret = UBD_IO_RES_OK;
 	struct ubd_queue *ubq = hctx->driver_data;
 	struct request *rq = bd->rq;
 	struct ubd_io *io = &ubq->ios[rq->tag];
+	struct ubd_device *ub = rq->q->queuedata;
+	struct ubd_rq_data *data = blk_mq_rq_to_pdu(rq);
 	blk_status_t res;
 
 	//trace_printk("ubq %p(%d) rq %p(%d) io %p",
@@ -512,13 +519,23 @@ static blk_status_t ubd_queue_rq(struct blk_mq_hw_ctx *hctx,
 	 *    return the mapped address to ubdsrv via iod->addr, then it is
 	 *    totally zero copy, but 4k block size has to be applied.
 	 */
+
+	/*
+	 * run data copy in task work context for WRITE, and complete io_uring
+	 * cmd there too.
+	 *
+	 * This way should improve batching, meantime avoid one extra GET_DATA
+	 * command.
+	 */
+	if (ubd_need_get_data(ub)) {
 #ifdef DEBUG
 	printk("%s: complete: cmd op %d, tag %d ret %x io_flags %x, addr %lx\n",
-			__func__, io->cmd->cmd_op, rq->tag, ret, io->flags,
+			__func__, io->cmd->cmd_op, rq->tag, UBD_IO_RES_OK, io->flags,
 			ubd_get_iod(ubq, rq->tag)->addr);
 #endif
-	/* tell ubdsrv one io request is coming */
-	io_uring_cmd_done(io->cmd, ret);
+		io_uring_cmd_done(io->cmd, UBD_IO_RES_OK);
+	} else if (IS_BUILTIN(CONFIG_BLK_UBD))
+		task_work_add(ub->ub_daemon, &data->work, TWA_SIGNAL);
 
 	return BLK_STS_OK;
 }
@@ -541,6 +558,40 @@ static void ubd_complete_rq(struct request *req)
 	blk_mq_end_request(req, io->res);
 }
 
+static int __ubd_ch_handle_get_data(struct ubd_device *ub, struct request *req)
+{
+	if (ubd_has_zero_copy(ub))
+		return 0;
+
+	if (!op_is_write(req->cmd_flags) || !ubd_rq_need_copy(req))
+		return 0;
+
+	/* convert to data copy in current context */
+	return ubd_copy_pages(ub, req);
+}
+
+static void ubd_rq_task_work_fn(struct callback_head *work)
+{
+	struct ubd_rq_data *data = container_of(work,
+			struct ubd_rq_data, work);
+	struct request *req = blk_mq_rq_from_pdu(data);
+	struct ubd_queue *ubq = req->mq_hctx->driver_data;
+	struct ubd_io *io = &ubq->ios[req->tag];
+	struct ubd_device *ub = req->q->queuedata;
+	int ret = UBD_IO_RES_OK;
+
+	if (__ubd_ch_handle_get_data(ub, req))
+		ret = UBD_IO_RES_DATA_BAD;
+
+#ifdef DEBUG
+	printk("%s: complete: cmd op %d, tag %d ret %x io_flags %x, addr %lx\n",
+			__func__, io->cmd->cmd_op, req->tag, ret, io->flags,
+			ubd_get_iod(ubq, req->tag)->addr);
+#endif
+	/* tell ubdsrv one io request is coming */
+	io_uring_cmd_done(io->cmd, ret);
+}
+
 static int ubd_init_hctx(struct blk_mq_hw_ctx *hctx, void *driver_data,
 		unsigned int hctx_idx)
 {
@@ -551,9 +602,20 @@ static int ubd_init_hctx(struct blk_mq_hw_ctx *hctx, void *driver_data,
 	return 0;
 }
 
+static int ubd_init_rq(struct blk_mq_tag_set *set, struct request *req,
+		unsigned int hctx_idx, unsigned int numa_node)
+{
+	struct ubd_rq_data *data = blk_mq_rq_to_pdu(req);
+
+	init_task_work(&data->work, ubd_rq_task_work_fn);
+
+	return 0;
+}
+
 static const struct blk_mq_ops ubd_mq_ops = {
 	.queue_rq       = ubd_queue_rq,
 	.init_hctx	= ubd_init_hctx,
+	.init_request	= ubd_init_rq,
 };
 
 static int ubd_ch_open(struct inode *inode, struct file *filp)
@@ -653,20 +715,13 @@ static void ubd_commit_completion(struct ubd_device *ub,
 static int ubd_ch_handle_get_data(struct ubd_device *ub,
 		struct ubdsrv_io_cmd *ub_cmd)
 {
-	struct request *req;
 
-	if (ubd_has_zero_copy(ub))
-		return 0;
+	struct request *req = blk_mq_tag_to_rq(ub->tag_set.tags[ub_cmd->q_id],
+			ub_cmd->tag);
 
-	req = blk_mq_tag_to_rq(ub->tag_set.tags[ub_cmd->q_id], ub_cmd->tag);
 	if (!req)
 		return -1;
-
-	if (!op_is_write(req->cmd_flags) || !ubd_rq_need_copy(req))
-		return 0;
-
-	/* convert to data copy in current context */
-	return ubd_copy_pages(ub, req);
+	return __ubd_ch_handle_get_data(ub, req);
 }
 
 static int ubd_ch_async_cmd(struct io_uring_cmd *cmd)
@@ -904,7 +959,7 @@ static int ubd_add_dev(struct ubd_device *ub)
 	ub->tag_set.nr_hw_queues = ub->dev_info.nr_hw_queues;
 	ub->tag_set.queue_depth = ub->dev_info.queue_depth;
 	ub->tag_set.numa_node = NUMA_NO_NODE;
-	ub->tag_set.cmd_size = sizeof(struct ubd_cmd);
+	ub->tag_set.cmd_size = sizeof(struct ubd_rq_data);
 	ub->tag_set.flags = BLK_MQ_F_SHOULD_MERGE;
 	ub->tag_set.driver_data = ub;
 
@@ -1199,6 +1254,16 @@ static int ubd_ctrl_async_cmd(struct io_uring_cmd *cmd)
 		ub = ubd_find_or_create_dev(info->dev_id);
 		if (ub) {
 			memcpy(&ub->dev_info, info, sizeof(*info));
+
+			/*
+			 * If we are built-in, task_work_add() can be used
+			 * and we will get better performance
+			 */
+			if (!ubd_need_get_data(ub)) {
+				if (IS_MODULE(CONFIG_BLK_UBD))
+					ub->dev_info.flags |=
+						(1ULL << UBD_F_NEED_GET_DATA);
+			}
 
 			/* update device id */
 			ub->dev_info.dev_id = ub->ub_number;
