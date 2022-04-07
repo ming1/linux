@@ -345,11 +345,10 @@ static int ubd_setup_iod(struct ubd_queue *ubq, struct request *req)
 {
 	struct ubdsrv_io_desc *iod = ubd_get_iod(ubq, req->tag);
 	struct ubd_io *io = &ubq->ios[req->tag];
-	u32 op = req->cmd_flags & REQ_OP_MASK;
 	u32 flags = req->cmd_flags & ~REQ_OP_MASK;
 	u32 ubd_op;
 
-	switch (op) {
+	switch (req_op(req)) {
 	case REQ_OP_READ:
 		ubd_op = UBD_IO_OP_READ;
 		break;
