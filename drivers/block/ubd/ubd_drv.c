@@ -132,11 +132,6 @@ static inline bool ubd_support_zero_copy(struct ubd_device *ub)
 	return ub->dev_info.flags & (1ULL << UBD_F_SUPPORT_ZERO_COPY);
 }
 
-static inline bool ubd_need_get_data(struct ubd_device *ub)
-{
-	return ub->dev_info.flags & (1ULL << UBD_F_NEED_GET_DATA);
-}
-
 static inline bool ubd_has_zero_copy(struct ubd_device *ub)
 {
 	return !!ub->io_buf_vma;
@@ -527,15 +522,7 @@ static blk_status_t ubd_queue_rq(struct blk_mq_hw_ctx *hctx,
 	 * This way should improve batching, meantime avoid one extra GET_DATA
 	 * command.
 	 */
-	if (ubd_need_get_data(ub)) {
-#ifdef DEBUG
-	printk("%s: complete: cmd op %d, tag %d ret %x io_flags %x, addr %lx\n",
-			__func__, io->cmd->cmd_op, rq->tag, UBD_IO_RES_OK, io->flags,
-			ubd_get_iod(ubq, rq->tag)->addr);
-#endif
-		io_uring_cmd_done(io->cmd, UBD_IO_RES_OK);
-	} else if (IS_BUILTIN(CONFIG_BLK_UBD))
-		task_work_add(ub->ub_daemon, &data->work, TWA_SIGNAL);
+	task_work_add(ub->ub_daemon, &data->work, TWA_SIGNAL);
 
 	return BLK_STS_OK;
 }
@@ -773,13 +760,6 @@ static int ubd_ch_async_cmd(struct io_uring_cmd *cmd)
 		/* so far we only support pre-allocate fixed buffer */
 		io->addr = ub_cmd->addr;
 		break;
-	case UBD_IO_GET_DATA:
-		/* GET_DATA is basically stateless */
-		if (!(io->flags & UBD_IO_FLAG_OWNED_BY_SRV))
-			goto out;
-		if (!ubd_ch_handle_get_data(ub, ub_cmd))
-			ret = UBD_IO_RES_OK;
-		goto out;
 	case UBD_IO_COMMIT_AND_FETCH_REQ:
 		io->flags |= UBD_IO_FLAG_ACTIVE;
 		fallthrough;
@@ -1254,16 +1234,6 @@ static int ubd_ctrl_async_cmd(struct io_uring_cmd *cmd)
 		ub = ubd_find_or_create_dev(info->dev_id);
 		if (ub) {
 			memcpy(&ub->dev_info, info, sizeof(*info));
-
-			/*
-			 * If we are built-in, task_work_add() can be used
-			 * and we will get better performance
-			 */
-			if (!ubd_need_get_data(ub)) {
-				if (IS_MODULE(CONFIG_BLK_UBD))
-					ub->dev_info.flags |=
-						(1ULL << UBD_F_NEED_GET_DATA);
-			}
 
 			/* update device id */
 			ub->dev_info.dev_id = ub->ub_number;
