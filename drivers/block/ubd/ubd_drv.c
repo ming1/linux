@@ -798,12 +798,6 @@ static int ubd_add_dev(struct ubd_device *ub)
 	ub->tag_set.flags = BLK_MQ_F_SHOULD_MERGE;
 	ub->tag_set.driver_data = ub;
 
-	/*
-	 * zero copy need to map request into ubdsrv's vm space, so may
-	 * sleep when mapping request
-	 */
-	ub->tag_set.flags |= BLK_MQ_F_BLOCKING;
-
 	err = blk_mq_alloc_tag_set(&ub->tag_set);
 	if (err)
 		goto out_deinit_queues;
