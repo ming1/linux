@@ -391,9 +391,6 @@ static blk_status_t ubd_queue_rq(struct blk_mq_hw_ctx *hctx,
 	struct ubd_rq_data *data = blk_mq_rq_to_pdu(rq);
 	blk_status_t res;
 
-	//trace_printk("ubq %p(%d) rq %p(%d) io %p",
-	//		ubq, hctx->queue_num, rq, rq->tag, io);
-
 	/* this io cmd slot isn't active, so have to fail this io */
 	if (WARN_ON_ONCE(!(io->flags & UBD_IO_FLAG_ACTIVE)))
 		return BLK_STS_IOERR;
@@ -471,11 +468,9 @@ static void ubd_rq_task_work_fn(struct callback_head *work)
 	if (ubd_map_io(ub, req))
 		ret = UBD_IO_RES_DATA_BAD;
 
-#ifdef DEBUG
-	printk("%s: complete: cmd op %d, tag %d ret %x io_flags %x, addr %lx\n",
+	pr_devel("%s: complete: cmd op %d, tag %d ret %x io_flags %x, addr %llx\n",
 			__func__, io->cmd->cmd_op, req->tag, ret, io->flags,
 			ubd_get_iod(ubq, req->tag)->addr);
-#endif
 	/* tell ubdsrv one io request is coming */
 	io_uring_cmd_done(io->cmd, ret);
 }
@@ -545,10 +540,9 @@ static int ubd_ch_mmap(struct file *filp, struct vm_area_struct *vma)
 		if (!ubd_support_zero_copy(ub))
 			return -EINVAL;
 		vma->vm_flags |= VM_DONTEXPAND | VM_DONTDUMP | VM_MIXEDMAP;
-#ifdef DEBUG
-	printk("%s: mmaped buf vm addr %lx-%lx\n",
-			__func__, vma->vm_start, vma->vm_end);
-#endif
+
+		pr_devel("%s: mmaped buf vm addr %lx-%lx\n",
+				__func__, vma->vm_start, vma->vm_end);
 		return 0;
 	}
 
@@ -611,10 +605,9 @@ static int ubd_ch_async_cmd(struct io_uring_cmd *cmd)
 
 	io = &ubq->ios[tag];
 
-#ifdef DEBUG
-	printk("%s: receieved: cmd op %d, tag %d ret %x io_flags %x\n", __func__,
-			cmd->cmd_op, tag, ret, io->flags);
-#endif
+	pr_devel("%s: receieved: cmd op %d, tag %d ret %x io_flags %x\n",
+			__func__, cmd->cmd_op, tag, ret, io->flags);
+
 	/* there is pending io cmd, something must be wrong */
 	if (io->flags & UBD_IO_FLAG_ACTIVE) {
 		ret = UBD_IO_RES_BUSY;
@@ -660,10 +653,8 @@ static int ubd_ch_async_cmd(struct io_uring_cmd *cmd)
  out:
 	io->flags &= ~UBD_IO_FLAG_ACTIVE;
 	io_uring_cmd_done(cmd, ret);
-#ifdef DEBUG
-	printk("%s: complete: cmd op %d, tag %d ret %x io_flags %x\n", __func__,
-			cmd_op, tag, ret, io->flags);
-#endif
+	pr_devel("%s: complete: cmd op %d, tag %d ret %x io_flags %x\n",
+			__func__, cmd_op, tag, ret, io->flags);
 	return -EIOCBQUEUED;
 }
 
@@ -997,7 +988,8 @@ static int ubd_ctrl_stop_dev(struct ubd_device *ub, struct io_uring_cmd *cmd)
 	ret = ubd_abort_queue(ub, 0);
  unlock:
 	mutex_unlock(&ub->mutex);
-	//printk("%s: active cmds %d, ret %d\n", __func__, ubd_active_io_cmd_cnt(ub, 0), ret);
+	pr_devel("%s: active cmds %d, ret %d\n", __func__,
+			ubd_active_io_cmd_cnt(ub, 0), ret);
 	if (ret == 0)
 		ub->dev_info.ubdsrv_pid = -1;
 	return ret;
@@ -1027,7 +1019,8 @@ static int ubd_ctrl_start_dev(struct ubd_device *ub, struct io_uring_cmd *cmd)
 	}
  unlock:
 	mutex_unlock(&ub->mutex);
-	//printk("%s: active cmds %d\n", __func__, ubd_active_io_cmd_cnt(ub, 0));
+	pr_devel("%s: active cmds %d\n", __func__,
+			ubd_active_io_cmd_cnt(ub, 0));
 
 	if (ret == 0)
 		ret = add_disk(ub->ub_disk);
@@ -1035,7 +1028,7 @@ static int ubd_ctrl_start_dev(struct ubd_device *ub, struct io_uring_cmd *cmd)
 	return ret;
 }
 
-static void ubd_dump(struct io_uring_cmd *cmd)
+static inline void ubd_dump(struct io_uring_cmd *cmd)
 {
 #ifdef DEBUG
 	struct ubdsrv_ctrl_dev_info *info = (struct ubdsrv_ctrl_dev_info *)cmd->cmd;
