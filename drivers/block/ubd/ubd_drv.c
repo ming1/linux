@@ -685,11 +685,6 @@ static int ubd_init_queue(struct ubd_device *ub, int q_id)
 	if (!ptr)
 		return -ENOMEM;
 
-	/*
-	 * check in ubdsrv side, so we can make sure that cmd buf is setup
-	 * successfully
-	 */
-	strcpy(ptr, "UBD");
 	ubq->io_cmd_buf = ptr;
 	return 0;
 }
