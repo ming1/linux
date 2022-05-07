@@ -80,6 +80,7 @@ struct ubd_queue {
 	int q_id;
 	int q_depth;
 
+	struct task_struct	*ubq_daemon;
 	char *io_cmd_buf;
 
 	unsigned long io_addr;	/* mapped vm address */
@@ -97,8 +98,6 @@ struct ubd_device {
 	unsigned int  bs_shift;
 	unsigned int nr_aborted_queues;
 	struct ubdsrv_ctrl_dev_info	dev_info;
-
-	struct task_struct	*ub_daemon;
 
 	struct blk_mq_tag_set	tag_set;
 
@@ -350,7 +349,6 @@ static blk_status_t ubd_queue_rq(struct blk_mq_hw_ctx *hctx,
 	struct ubd_queue *ubq = hctx->driver_data;
 	struct request *rq = bd->rq;
 	struct ubd_io *io = &ubq->ios[rq->tag];
-	struct ubd_device *ub = rq->q->queuedata;
 	struct ubd_rq_data *data = blk_mq_rq_to_pdu(rq);
 	blk_status_t res;
 
@@ -385,7 +383,7 @@ static blk_status_t ubd_queue_rq(struct blk_mq_hw_ctx *hctx,
 	 * This way should improve batching, meantime pinning pages in current
 	 * context is pretty fast.
 	 */
-	task_work_add(ub->ub_daemon, &data->work, TWA_SIGNAL);
+	task_work_add(ubq->ubq_daemon, &data->work, TWA_SIGNAL);
 
 	return BLK_STS_OK;
 }
@@ -453,7 +451,6 @@ static int ubd_ch_open(struct inode *inode, struct file *filp)
 			struct ubd_device, cdev);
 
 	if (atomic_cmpxchg(&ub->ch_open_cnt, 0, 1) == 0) {
-		ub->ub_daemon = current;
 		filp->private_data = ub;
 		return 0;
 	}
@@ -467,7 +464,6 @@ static int ubd_ch_release(struct inode *inode, struct file *filp)
 	while (atomic_cmpxchg(&ub->ch_open_cnt, 1, 0) != 1)
 		cpu_relax();
 
-	ub->ub_daemon = NULL;
 	filp->private_data = NULL;
 	return 0;
 }
@@ -478,11 +474,14 @@ static int ubd_ch_mmap(struct file *filp, struct vm_area_struct *vma)
 	struct ubd_device *ub = filp->private_data;
 	size_t sz = vma->vm_end - vma->vm_start;
 	unsigned max_sz = UBD_MAX_QUEUE_DEPTH * sizeof(struct ubdsrv_io_desc);
-	unsigned long pfn;
-	int q_id = vma->vm_pgoff / max_sz;
+	unsigned long pfn, end;
+	int q_id;
 
-	if (vma->vm_pgoff != UBDSRV_CMD_BUF_OFFSET + q_id * max_sz)
+	end = UBDSRV_CMD_BUF_OFFSET + ub->dev_info.nr_hw_queues * max_sz;
+	if (vma->vm_pgoff < UBDSRV_CMD_BUF_OFFSET || vma->vm_pgoff >= end)
 		return -EINVAL;
+
+	q_id = (vma->vm_pgoff - UBDSRV_CMD_BUF_OFFSET) / max_sz;
 
 	if (sz != ubd_queue_cmd_buf_size(ub, q_id))
 		return -EINVAL;
@@ -525,6 +524,7 @@ static int ubd_abort_queue(struct ubd_device *ub, int qid)
 			io_uring_cmd_done(io->cmd, ret, 0);
 		}
 	}
+	q->ubq_daemon = NULL;
 	return 0;
 }
 
@@ -600,6 +600,11 @@ static int ubd_ch_uring_cmd(struct io_uring_cmd *cmd, unsigned int issue_flags)
 
 	switch (cmd_op) {
 	case UBD_IO_FETCH_REQ:
+		/* FETCH_REQ is only issued when starting device */
+		mutex_lock(&ub->mutex);
+		if (!ubq->ubq_daemon)
+			ubq->ubq_daemon = current;
+		mutex_unlock(&ub->mutex);
 		/*
 		 * The io is being handled by server, so COMMIT_RQ is expected
 		 * instead of FETCH_REQ
@@ -928,9 +933,21 @@ static bool ubd_queue_ready(struct ubd_device *ub, int qid)
 	return ubd_active_io_cmd_cnt(ub, qid) == ub->dev_info.queue_depth;
 }
 
+static bool ubd_io_ready(struct ubd_device *ub)
+{
+	struct ubdsrv_ctrl_dev_info *info = &ub->dev_info;
+	int cnt = 0;
+	int i;
+
+	for (i = 0; i < info->nr_hw_queues; i++)
+		cnt += ubd_queue_ready(ub, i);
+
+	return cnt == info->nr_hw_queues;
+}
+
 static int ubd_ctrl_stop_dev(struct ubd_device *ub, struct io_uring_cmd *cmd)
 {
-	int ret = -EINVAL;
+	int ret = 0;
 	int i;
 
 	mutex_lock(&ub->mutex);
@@ -962,8 +979,7 @@ static int ubd_ctrl_start_dev(struct ubd_device *ub, struct io_uring_cmd *cmd)
 	if (disk_live(ub->ub_disk))
 		goto unlock;
 	while (time_before(jiffies, end)) {
-		/* only SQ is supported now */
-		if (ubd_queue_ready(ub, 0)) {
+		if (ubd_io_ready(ub)) {
 			ret = 0;
 			break;
 		}
@@ -971,8 +987,7 @@ static int ubd_ctrl_start_dev(struct ubd_device *ub, struct io_uring_cmd *cmd)
 	}
  unlock:
 	mutex_unlock(&ub->mutex);
-	pr_devel("%s: active cmds %d\n", __func__,
-			ubd_active_io_cmd_cnt(ub, 0));
+	pr_devel("%s: device io ready %d\n", __func__, !ret);
 
 	if (ret == 0)
 		ret = add_disk(ub->ub_disk);
