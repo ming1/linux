@@ -1,4 +1,0 @@
-# SPDX-License-Identifier: GPL-2.0
-ubd-y			:= ubd_drv.o
-
-obj-$(CONFIG_BLK_DEV_USER_BLK_DRV)	+= ubd.o
