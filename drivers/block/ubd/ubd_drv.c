@@ -311,11 +311,44 @@ static int ubd_unmap_io(struct request *req)
 	return 0;
 }
 
+static inline unsigned int ubd_req_build_flags(struct request *req)
+{
+	unsigned flags = 0;
+
+	if (req->cmd_flags & REQ_FAILFAST_DEV)
+		flags |= UBD_IO_F_FAILFAST_DEV;
+
+	if (req->cmd_flags & REQ_FAILFAST_TRANSPORT)
+		flags |= UBD_IO_F_FAILFAST_TRANSPORT;
+
+	if (req->cmd_flags & REQ_FAILFAST_DRIVER)
+		flags |= UBD_IO_F_FAILFAST_DRIVER;
+
+	if (req->cmd_flags & REQ_META)
+		flags |= UBD_IO_F_META;
+
+	if (req->cmd_flags & REQ_INTEGRITY)
+		flags |= UBD_IO_F_INTEGRITY;
+
+	if (req->cmd_flags & REQ_FUA)
+		flags |= UBD_IO_F_FUA;
+
+	if (req->cmd_flags & REQ_PREFLUSH)
+		flags |= UBD_IO_F_PREFLUSH;
+
+	if (req->cmd_flags & REQ_NOUNMAP)
+		flags |= UBD_IO_F_NOUNMAP;
+
+	if (req->cmd_flags & REQ_SWAP)
+		flags |= UBD_IO_F_SWAP;
+
+	return flags;
+}
+
 static int ubd_setup_iod(struct ubd_queue *ubq, struct request *req)
 {
 	struct ubdsrv_io_desc *iod = ubd_get_iod(ubq, req->tag);
 	struct ubd_io *io = &ubq->ios[req->tag];
-	u32 flags = req->cmd_flags & ~REQ_OP_MASK;
 	u32 ubd_op;
 
 	switch (req_op(req)) {
@@ -339,7 +372,7 @@ static int ubd_setup_iod(struct ubd_queue *ubq, struct request *req)
 	}
 
 	/* need to translate since kernel may change */
-	iod->op_flags = ubd_op | flags;
+	iod->op_flags = ubd_op | ubd_req_build_flags(req);
 	iod->tag_blocks = req->tag | (blk_rq_sectors(req) << 12);
 	iod->start_block = blk_rq_pos(req);
 	iod->addr = io->addr;
