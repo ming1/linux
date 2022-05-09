@@ -810,6 +810,9 @@ static int ubd_add_dev(struct ubd_device *ub)
 	bsize = ub->dev_info.block_size;
 	ub->bs_shift = ilog2(bsize);
 
+	ub->dev_info.nr_hw_queues = min_t(unsigned int,
+			ub->dev_info.nr_hw_queues, nr_cpu_ids);
+
 	if (ubd_init_queues(ub))
 		return err;
 
@@ -1094,6 +1097,8 @@ static int ubd_ctrl_uring_cmd(struct io_uring_cmd *cmd,
 		}
 		break;
 	case UBD_CMD_ADD_DEV:
+		if (info->len < sizeof(*info) || !info->addr)
+			goto out;
 		ub = ubd_create_dev(info->dev_id);
 		if (!IS_ERR_OR_NULL(ub)) {
 			memcpy(&ub->dev_info, info, sizeof(*info));
@@ -1105,11 +1110,6 @@ static int ubd_ctrl_uring_cmd(struct io_uring_cmd *cmd,
 				ubd_remove(ub);
 			else {
 				ret = UBD_CTRL_CMD_RES_OK;
-				if (info->len < sizeof(*info))
-					goto out;
-				if (!info->addr)
-					goto out;
-
 				WARN_ON_ONCE(copy_to_user((void __user *)info->addr,
 						(void *)&ub->dev_info,
 						sizeof(*info)));
