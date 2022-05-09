@@ -800,6 +800,7 @@ static int ubd_add_chdev(struct ubd_device *ub)
 /* add disk & cdev */
 static int ubd_add_dev(struct ubd_device *ub)
 {
+	unsigned int max_rq_bytes;
 	struct gendisk *disk;
 	int err = -ENOMEM;
 	int bsize;
@@ -812,6 +813,11 @@ static int ubd_add_dev(struct ubd_device *ub)
 
 	ub->dev_info.nr_hw_queues = min_t(unsigned int,
 			ub->dev_info.nr_hw_queues, nr_cpu_ids);
+
+	/* make max request buffer size aligned with PAGE_SIZE */
+	max_rq_bytes = round_down(ub->dev_info.rq_max_blocks <<
+			ub->bs_shift, PAGE_SIZE);
+	ub->dev_info.rq_max_blocks = max_rq_bytes >> ub->bs_shift;
 
 	if (ubd_init_queues(ub))
 		return err;
