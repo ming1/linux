@@ -655,6 +655,7 @@ static int ubd_ch_uring_cmd(struct io_uring_cmd *cmd, unsigned int issue_flags)
 		io->addr = ub_cmd->addr;
 		break;
 	case UBD_IO_COMMIT_AND_FETCH_REQ:
+		io->addr = ub_cmd->addr;
 		io->flags |= UBD_IO_FLAG_ACTIVE;
 		fallthrough;
 	case UBD_IO_COMMIT_REQ:
