@@ -387,6 +387,8 @@ static blk_status_t ubd_queue_rq(struct blk_mq_hw_ctx *hctx,
 	struct request *rq = bd->rq;
 	struct ubd_io *io = &ubq->ios[rq->tag];
 	struct ubd_rq_data *data = blk_mq_rq_to_pdu(rq);
+	enum task_work_notify_mode notify_mode = bd->last ?
+		TWA_SIGNAL_NO_IPI : TWA_NONE;
 	blk_status_t res;
 
 	if (ubq->aborted)
@@ -420,9 +422,16 @@ static blk_status_t ubd_queue_rq(struct blk_mq_hw_ctx *hctx,
 	 * This way should improve batching, meantime pinning pages in current
 	 * context is pretty fast.
 	 */
-	task_work_add(ubq->ubq_daemon, &data->work, TWA_SIGNAL);
+	task_work_add(ubq->ubq_daemon, &data->work, notify_mode);
 
 	return BLK_STS_OK;
+}
+
+static void ubd_commit_rqs(struct blk_mq_hw_ctx *hctx)
+{
+	struct ubd_queue *ubq = hctx->driver_data;
+
+	__set_notify_signal(ubq->ubq_daemon);
 }
 
 static void ubd_complete_rq(struct request *req)
@@ -478,6 +487,7 @@ static int ubd_init_rq(struct blk_mq_tag_set *set, struct request *req,
 
 static const struct blk_mq_ops ubd_mq_ops = {
 	.queue_rq       = ubd_queue_rq,
+	.commit_rqs     = ubd_commit_rqs,
 	.init_hctx	= ubd_init_hctx,
 	.init_request	= ubd_init_rq,
 };
