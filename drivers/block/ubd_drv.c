@@ -1049,6 +1049,18 @@ static int ubd_ctrl_start_dev(struct ubd_device *ub, struct io_uring_cmd *cmd)
 	return ret;
 }
 
+static struct blk_mq_hw_ctx *ubd_get_hw_queue(struct ubd_device *ub,
+		unsigned int index)
+{
+	struct blk_mq_hw_ctx *hctx;
+	unsigned long i;
+
+	queue_for_each_hw_ctx(ub->ub_queue, hctx, i)
+		if (hctx->queue_num == index)
+			return hctx;
+	return NULL;
+}
+
 static inline void ubd_dump_dev_info(struct ubdsrv_ctrl_dev_info *info)
 {
 	pr_devel("%s: dev id %d flags %llx\n", __func__,
@@ -1062,9 +1074,9 @@ static inline void ubd_ctrl_cmd_dump(struct io_uring_cmd *cmd)
 {
 	struct ubdsrv_ctrl_cmd *header = (struct ubdsrv_ctrl_cmd *)cmd->cmd;
 
-	pr_devel("%s: cmd_op %x, dev id %d qid %d buf %llx len %u\n", __func__,
-			cmd->cmd_op, header->dev_id, header->queue_id,
-			header->addr, header->len);
+	pr_devel("%s: cmd_op %x, dev id %d qid %d data %llx buf %llx len %u\n",
+			__func__, cmd->cmd_op, header->dev_id, header->queue_id,
+			header->data[0], header->addr, header->len);
 }
 
 static bool ubd_ctrl_cmd_validate(struct io_uring_cmd *cmd,
@@ -1098,6 +1110,13 @@ static bool ubd_ctrl_cmd_validate(struct io_uring_cmd *cmd,
 			return false;
 		}
 		break;
+	case UBD_CMD_GET_QUEUE_AFFINITY:
+		if ((header->len * BITS_PER_BYTE) < nr_cpu_ids)
+			return false;
+		if (header->len & (sizeof(unsigned long)-1))
+			return false;
+		if (!header->addr)
+			return false;
 	};
 	return  true;
 }
@@ -1108,8 +1127,11 @@ static int ubd_ctrl_uring_cmd(struct io_uring_cmd *cmd,
 	struct ubdsrv_ctrl_cmd *header = (struct ubdsrv_ctrl_cmd *)cmd->cmd;
 	unsigned int ret = UBD_CTRL_CMD_RES_FAILED;
 	struct ubdsrv_ctrl_dev_info info;
+	struct blk_mq_hw_ctx *hctx;
 	u32 cmd_op = cmd->cmd_op;
 	struct ubd_device *ub;
+	unsigned long queue;
+	unsigned int retlen;
 
 	ubd_ctrl_cmd_dump(cmd);
 
@@ -1167,6 +1189,29 @@ static int ubd_ctrl_uring_cmd(struct io_uring_cmd *cmd,
 			ubd_remove(ub);
 			ret = UBD_CTRL_CMD_RES_OK;
 		}
+		break;
+	case UBD_CMD_GET_QUEUE_AFFINITY:
+		ub = ubd_find_device(header->dev_id);
+		if (!ub)
+			goto out;
+
+		queue = header->data[0];
+		if (queue >= ub->dev_info.nr_hw_queues)
+			goto out;
+		hctx = ubd_get_hw_queue(ub, queue);
+		if (!hctx)
+			goto out;
+
+		retlen = min_t(unsigned short, header->len, cpumask_size());
+		if (copy_to_user((unsigned long __user *)header->addr,
+					hctx->cpumask, retlen))
+			goto out;
+		if (retlen != header->len) {
+			if (clear_user((void __user *)(header->addr + retlen),
+					header->len - retlen))
+				goto out;
+		}
+		ret = UBD_CTRL_CMD_RES_OK;
 		break;
 	default:
 		break;
