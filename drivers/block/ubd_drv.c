@@ -247,8 +247,8 @@ refill:
 				nr_pin = min_t(unsigned, UBD_MAX_PIN_PAGES, max_pages);
 				nr_pin = ubd_pin_user_pages(ub, start, pgs,
 						nr_pin, to_rq);
-				if (nr_pin <= 0)
-					return -EINVAL;
+				if (nr_pin < 0)
+					return nr_pin;
 				idx = 0;
 			}
 			pg_off = off;
@@ -453,12 +453,9 @@ static void ubd_rq_task_work_fn(struct callback_head *work)
 	struct ubd_queue *ubq = req->mq_hctx->driver_data;
 	struct ubd_io *io = &ubq->ios[req->tag];
 	struct ubd_device *ub = req->q->queuedata;
-	int ret = UBD_IO_RES_OK;
+	int ret = ubd_map_io(ub, req);
 
-	if (ubd_map_io(ub, req))
-		ret = UBD_IO_RES_DATA_BAD;
-
-	pr_devel("%s: complete: cmd op %d, tag %d ret %x io_flags %x, addr %llx\n",
+	pr_devel("%s: complete: cmd op %d, tag %d ret %d io_flags %x, addr %llx\n",
 			__func__, io->cmd->cmd_op, req->tag, ret, io->flags,
 			ubd_get_iod(ubq, req->tag)->addr);
 	/* tell ubdsrv one io request is coming */
@@ -610,7 +607,7 @@ static int ubd_ch_uring_cmd(struct io_uring_cmd *cmd, unsigned int issue_flags)
 	struct ubd_io *io;
 	u32 cmd_op = cmd->cmd_op;
 	unsigned tag = ub_cmd->tag;
-	int ret = UBD_IO_RES_INVALID_SQE;
+	int ret = -EINVAL;
 
 	pr_devel("%s: receieved: cmd op %d, tag %d, queue %d\n",
 			__func__, cmd->cmd_op, tag, ub_cmd->q_id);
@@ -641,7 +638,7 @@ static int ubd_ch_uring_cmd(struct io_uring_cmd *cmd, unsigned int issue_flags)
 
 	/* there is pending io cmd, something must be wrong */
 	if (io->flags & UBD_IO_FLAG_ACTIVE) {
-		ret = UBD_IO_RES_BUSY;
+		ret = -EBUSY;
 		goto out;
 	}
 
@@ -656,10 +653,8 @@ static int ubd_ch_uring_cmd(struct io_uring_cmd *cmd, unsigned int issue_flags)
 		 * The io is being handled by server, so COMMIT_RQ is expected
 		 * instead of FETCH_REQ
 		 */
-		if (io->flags & UBD_IO_FLAG_OWNED_BY_SRV) {
-			ret = UBD_IO_RES_DUP_FETCH;
+		if (io->flags & UBD_IO_FLAG_OWNED_BY_SRV)
 			goto out;
-		}
 		io->cmd = cmd;
 		io->flags |= UBD_IO_FLAG_ACTIVE;
 		io->addr = ub_cmd->addr;
@@ -670,10 +665,8 @@ static int ubd_ch_uring_cmd(struct io_uring_cmd *cmd, unsigned int issue_flags)
 		fallthrough;
 	case UBD_IO_COMMIT_REQ:
 		io->cmd = cmd;
-		if (!(io->flags & UBD_IO_FLAG_OWNED_BY_SRV)) {
-			ret = UBD_IO_RES_UNEXPECTED_CMD;
+		if (!(io->flags & UBD_IO_FLAG_OWNED_BY_SRV))
 			goto out;
-		}
 		ubd_commit_completion(ub, ub_cmd);
 		if (cmd_op == UBD_IO_COMMIT_REQ) {
 			ret = UBD_IO_RES_OK;
@@ -681,7 +674,6 @@ static int ubd_ch_uring_cmd(struct io_uring_cmd *cmd, unsigned int issue_flags)
 		}
 		break;
 	default:
-		ret = UBD_IO_RES_UNEXPECTED_CMD;
 		goto out;
 	}
 	return -EIOCBQUEUED;
@@ -1079,7 +1071,7 @@ static inline void ubd_ctrl_cmd_dump(struct io_uring_cmd *cmd)
 			header->data[0], header->addr, header->len);
 }
 
-static bool ubd_ctrl_cmd_validate(struct io_uring_cmd *cmd,
+static int ubd_ctrl_cmd_validate(struct io_uring_cmd *cmd,
 		struct ubdsrv_ctrl_dev_info *info)
 {
 	struct ubdsrv_ctrl_cmd *header = (struct ubdsrv_ctrl_cmd *)cmd->cmd;
@@ -1088,44 +1080,45 @@ static bool ubd_ctrl_cmd_validate(struct io_uring_cmd *cmd,
 	switch (cmd_op) {
 	case UBD_CMD_GET_DEV_INFO:
 		if (header->len < sizeof(*info) || !header->addr)
-			return false;
+			return -EINVAL;
 		break;
 	case UBD_CMD_ADD_DEV:
 		if (header->len < sizeof(*info) || !header->addr)
-			return false;
+			return -EINVAL;
 		if (copy_from_user((void *)info,
 					(void __user *)header->addr,
 					sizeof(*info)) != 0)
-			return false;
+			return -EFAULT;
 		ubd_dump_dev_info(info);
 		if (header->dev_id != info->dev_id) {
 			printk(KERN_WARNING "%s: cmd %x, dev id not match %u %u\n",
 					__func__, cmd_op, header->dev_id,
 					info->dev_id);
-			return false;
+			return -EINVAL;
 		}
 		if (header->queue_id != (u16)-1) {
 			printk(KERN_WARNING "%s: cmd %x queue_id is wrong %x\n",
 					__func__, cmd_op, header->queue_id);
-			return false;
+			return -EINVAL;
 		}
 		break;
 	case UBD_CMD_GET_QUEUE_AFFINITY:
 		if ((header->len * BITS_PER_BYTE) < nr_cpu_ids)
-			return false;
+			return -EINVAL;
 		if (header->len & (sizeof(unsigned long)-1))
-			return false;
+			return -EINVAL;
 		if (!header->addr)
-			return false;
+			return -EINVAL;
 	};
-	return  true;
+
+	return 0;
 }
 
 static int ubd_ctrl_uring_cmd(struct io_uring_cmd *cmd,
 		unsigned int issue_flags)
 {
 	struct ubdsrv_ctrl_cmd *header = (struct ubdsrv_ctrl_cmd *)cmd->cmd;
-	unsigned int ret = UBD_CTRL_CMD_RES_FAILED;
+	int ret = -EINVAL;
 	struct ubdsrv_ctrl_dev_info info;
 	struct blk_mq_hw_ctx *hctx;
 	u32 cmd_op = cmd->cmd_op;
@@ -1138,31 +1131,35 @@ static int ubd_ctrl_uring_cmd(struct io_uring_cmd *cmd,
 	if (!(issue_flags & IO_URING_F_SQE128))
 		goto out;
 
-	if (!ubd_ctrl_cmd_validate(cmd, &info))
+	ret = ubd_ctrl_cmd_validate(cmd, &info);
+	if (ret)
 		goto out;
 
+	ret = -ENODEV;
 	switch (cmd_op) {
 	case UBD_CMD_START_DEV:
 		ub = ubd_find_device(header->dev_id);
 		if (!ub)
 			goto out;
 		if (!ubd_ctrl_start_dev(ub, cmd))
-			ret = UBD_CTRL_CMD_RES_OK;
+			ret = 0;
 		break;
 	case UBD_CMD_STOP_DEV:
 		ub = ubd_find_device(header->dev_id);
 		if (!ub)
 			goto out;
 		if (!ubd_ctrl_stop_dev(ub, cmd))
-			ret = UBD_CTRL_CMD_RES_OK;
+			ret = 0;
 		break;
 	case UBD_CMD_GET_DEV_INFO:
 		ub = ubd_find_device(header->dev_id);
 		if (ub) {
-			if (!copy_to_user((void __user *)header->addr,
+			if (copy_to_user((void __user *)header->addr,
 						(void *)&ub->dev_info,
 						sizeof(info)))
-				ret = UBD_CTRL_CMD_RES_OK;
+				ret = -EFAULT;
+			else
+				ret = 0;
 		}
 		break;
 	case UBD_CMD_ADD_DEV:
@@ -1179,7 +1176,7 @@ static int ubd_ctrl_uring_cmd(struct io_uring_cmd *cmd,
 						sizeof(info)))
 				ubd_remove(ub);
 			else {
-				ret = UBD_CTRL_CMD_RES_OK;
+				ret = 0;
 			}
 		}
 		break;
@@ -1187,7 +1184,7 @@ static int ubd_ctrl_uring_cmd(struct io_uring_cmd *cmd,
 		ub = ubd_find_device(header->dev_id);
 		if (ub) {
 			ubd_remove(ub);
-			ret = UBD_CTRL_CMD_RES_OK;
+			ret = 0;
 		}
 		break;
 	case UBD_CMD_GET_QUEUE_AFFINITY:
@@ -1195,6 +1192,7 @@ static int ubd_ctrl_uring_cmd(struct io_uring_cmd *cmd,
 		if (!ub)
 			goto out;
 
+		ret = -EINVAL;
 		queue = header->data[0];
 		if (queue >= ub->dev_info.nr_hw_queues)
 			goto out;
@@ -1204,14 +1202,18 @@ static int ubd_ctrl_uring_cmd(struct io_uring_cmd *cmd,
 
 		retlen = min_t(unsigned short, header->len, cpumask_size());
 		if (copy_to_user((unsigned long __user *)header->addr,
-					hctx->cpumask, retlen))
+					hctx->cpumask, retlen)) {
+			ret = -EFAULT;
 			goto out;
+		}
 		if (retlen != header->len) {
 			if (clear_user((void __user *)(header->addr + retlen),
-					header->len - retlen))
+					header->len - retlen)) {
+				ret = -EFAULT;
 				goto out;
+			}
 		}
-		ret = UBD_CTRL_CMD_RES_OK;
+		ret = 0;
 		break;
 	default:
 		break;
