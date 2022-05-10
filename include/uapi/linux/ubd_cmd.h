@@ -1,6 +1,8 @@
 #ifndef USER_BLK_DRV_CMD_INC_H
 #define USER_BLK_DRV_CMD_INC_H
 
+#include <linux/types.h>
+
 /* ubd server command definition */
 
 /* CMD result code */
