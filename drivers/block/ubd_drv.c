@@ -816,7 +816,7 @@ static int ubd_add_dev(struct ubd_device *ub)
 	int bsize;
 
 	/* We are not ready to support zero copy */
-	ub->dev_info.flags &= ~(1ULL << UBD_F_SUPPORT_ZERO_COPY);
+	ub->dev_info.flags[0] &= ~(1ULL << UBD_F_SUPPORT_ZERO_COPY);
 
 	bsize = ub->dev_info.block_size;
 	ub->bs_shift = ilog2(bsize);
@@ -1019,16 +1019,17 @@ static int ubd_ctrl_stop_dev(struct ubd_device *ub, struct io_uring_cmd *cmd)
 
 static int ubd_ctrl_start_dev(struct ubd_device *ub, struct io_uring_cmd *cmd)
 {
-	struct ubdsrv_ctrl_dev_info *info = (struct ubdsrv_ctrl_dev_info *)cmd->cmd;
-	int ret = -EINVAL;
+	struct ubdsrv_ctrl_cmd *header = (struct ubdsrv_ctrl_cmd *)cmd->cmd;
 	unsigned long end = jiffies + 3 * HZ;
+	int ret = -EINVAL;
+	int ubdsrv_pid = (int)header->data[0];
 
-	if (info->ubdsrv_pid <= 0)
+	if (ubdsrv_pid <= 0)
 		return -1;
 
 	mutex_lock(&ub->mutex);
 
-	ub->dev_info.ubdsrv_pid = info->ubdsrv_pid;
+	ub->dev_info.ubdsrv_pid = ubdsrv_pid;
 	if (disk_live(ub->ub_disk))
 		goto unlock;
 	while (time_before(jiffies, end)) {
@@ -1048,92 +1049,120 @@ static int ubd_ctrl_start_dev(struct ubd_device *ub, struct io_uring_cmd *cmd)
 	return ret;
 }
 
-static inline void ubd_dump(struct io_uring_cmd *cmd)
+static inline void ubd_dump_dev_info(struct ubdsrv_ctrl_dev_info *info)
 {
-#ifdef DEBUG
-	struct ubdsrv_ctrl_dev_info *info =
-		(struct ubdsrv_ctrl_dev_info *)cmd->cmd;
-
-	printk("%s: cmd_op %x, dev id %d flags %llx\n", __func__,
-			cmd->cmd_op, info->dev_id, info->flags);
-
-	printk("\t nr_hw_queues %d queue_depth %d block size %d dev_capacity %lld\n",
+	pr_devel("%s: dev id %d flags %llx\n", __func__,
+			info->dev_id, info->flags[0]);
+	pr_devel("\t nr_hw_queues %d queue_depth %d block size %d dev_capacity %lld\n",
 			info->nr_hw_queues, info->queue_depth,
 			info->block_size, info->dev_blocks);
-#endif
 }
 
-static bool ubd_ctrl_cmd_validate(struct io_uring_cmd *cmd)
+static inline void ubd_ctrl_cmd_dump(struct io_uring_cmd *cmd)
 {
-	/* Fix me: validate all ctrl commands */
+	struct ubdsrv_ctrl_cmd *header = (struct ubdsrv_ctrl_cmd *)cmd->cmd;
+
+	pr_devel("%s: cmd_op %x, dev id %d qid %d buf %llx len %u\n", __func__,
+			cmd->cmd_op, header->dev_id, header->queue_id,
+			header->addr, header->len);
+}
+
+static bool ubd_ctrl_cmd_validate(struct io_uring_cmd *cmd,
+		struct ubdsrv_ctrl_dev_info *info)
+{
+	struct ubdsrv_ctrl_cmd *header = (struct ubdsrv_ctrl_cmd *)cmd->cmd;
+	u32 cmd_op = cmd->cmd_op;
+
+	switch (cmd_op) {
+	case UBD_CMD_GET_DEV_INFO:
+		if (header->len < sizeof(*info) || !header->addr)
+			return false;
+		break;
+	case UBD_CMD_ADD_DEV:
+		if (header->len < sizeof(*info) || !header->addr)
+			return false;
+		if (copy_from_user((void *)info,
+					(void __user *)header->addr,
+					sizeof(*info)) != 0)
+			return false;
+		ubd_dump_dev_info(info);
+		if (header->dev_id != info->dev_id) {
+			printk(KERN_WARNING "%s: cmd %x, dev id not match %u %u\n",
+					__func__, cmd_op, header->dev_id,
+					info->dev_id);
+			return false;
+		}
+		if (header->queue_id != (u16)-1) {
+			printk(KERN_WARNING "%s: cmd %x queue_id is wrong %x\n",
+					__func__, cmd_op, header->queue_id);
+			return false;
+		}
+		break;
+	};
 	return  true;
 }
 
 static int ubd_ctrl_uring_cmd(struct io_uring_cmd *cmd,
 		unsigned int issue_flags)
 {
-	struct ubdsrv_ctrl_dev_info *info = (struct ubdsrv_ctrl_dev_info *)cmd->cmd;
+	struct ubdsrv_ctrl_cmd *header = (struct ubdsrv_ctrl_cmd *)cmd->cmd;
 	unsigned int ret = UBD_CTRL_CMD_RES_FAILED;
+	struct ubdsrv_ctrl_dev_info info;
 	u32 cmd_op = cmd->cmd_op;
 	struct ubd_device *ub;
 
-	ubd_dump(cmd);
+	ubd_ctrl_cmd_dump(cmd);
 
 	if (!(issue_flags & IO_URING_F_SQE128))
 		goto out;
 
-	if (!ubd_ctrl_cmd_validate(cmd))
+	if (!ubd_ctrl_cmd_validate(cmd, &info))
 		goto out;
 
 	switch (cmd_op) {
 	case UBD_CMD_START_DEV:
-		ub = ubd_find_device(info->dev_id);
+		ub = ubd_find_device(header->dev_id);
 		if (!ub)
 			goto out;
 		if (!ubd_ctrl_start_dev(ub, cmd))
 			ret = UBD_CTRL_CMD_RES_OK;
 		break;
 	case UBD_CMD_STOP_DEV:
-		ub = ubd_find_device(info->dev_id);
+		ub = ubd_find_device(header->dev_id);
 		if (!ub)
 			goto out;
 		if (!ubd_ctrl_stop_dev(ub, cmd))
 			ret = UBD_CTRL_CMD_RES_OK;
 		break;
 	case UBD_CMD_GET_DEV_INFO:
-		ub = ubd_find_device(info->dev_id);
+		ub = ubd_find_device(header->dev_id);
 		if (ub) {
-			if (info->len < sizeof(*info))
-				goto out;
-
-			if (!copy_to_user((void __user *)info->addr,
+			if (!copy_to_user((void __user *)header->addr,
 						(void *)&ub->dev_info,
-						sizeof(*info)))
+						sizeof(info)))
 				ret = UBD_CTRL_CMD_RES_OK;
 		}
 		break;
 	case UBD_CMD_ADD_DEV:
-		if (info->len < sizeof(*info) || !info->addr)
-			goto out;
-		ub = ubd_create_dev(info->dev_id);
+		ub = ubd_create_dev(header->dev_id);
 		if (!IS_ERR_OR_NULL(ub)) {
-			memcpy(&ub->dev_info, info, sizeof(*info));
+			memcpy(&ub->dev_info, &info, sizeof(info));
 
 			/* update device id */
 			ub->dev_info.dev_id = ub->ub_number;
 
-			if (ubd_add_dev(ub))
+			if (ubd_add_dev(ub) || copy_to_user(
+						(void __user *)header->addr,
+						(void *)&ub->dev_info,
+						sizeof(info)))
 				ubd_remove(ub);
 			else {
 				ret = UBD_CTRL_CMD_RES_OK;
-				WARN_ON_ONCE(copy_to_user((void __user *)info->addr,
-						(void *)&ub->dev_info,
-						sizeof(*info)));
 			}
 		}
 		break;
 	case UBD_CMD_DEL_DEV:
-		ub = ubd_find_device(info->dev_id);
+		ub = ubd_find_device(header->dev_id);
 		if (ub) {
 			ubd_remove(ub);
 			ret = UBD_CTRL_CMD_RES_OK;
