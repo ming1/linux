@@ -109,8 +109,6 @@ struct ubd_device {
 	struct completion	all_queues_ready;
 	unsigned int		nr_queues_ready;
 
-	struct work_struct	abort_work;
-
 	/*
 	 * Our ubq->daemon may be killed without any notification, so
 	 * monitor each queue's daemon periodically
@@ -634,23 +632,6 @@ static void ubd_stop_dev(struct ubd_device *ub)
 	ub->dev_info.ubdsrv_pid = -1;
 }
 
-static void ubd_abort_work_fn(struct work_struct *work)
-{
-	struct ubd_device *ub =
-		container_of(work, struct ubd_device, abort_work);
-
-	ubd_stop_dev(ub);
-}
-
-/*
- * Aborting is always unusual, so if any queue needs to be aborted,
- * we shutdown the whole device
- */
-static void ubd_schedule_abort(struct ubd_device *ub)
-{
-	schedule_work(&ub->abort_work);
-}
-
 static inline bool ubd_queue_ready(struct ubd_queue *ubq)
 {
 	return ubq->nr_io_ready == ubq->q_depth;
@@ -690,13 +671,6 @@ static int ubd_ch_uring_cmd(struct io_uring_cmd *cmd, unsigned int issue_flags)
 	ubq = ubd_get_queue(ub, ub_cmd->q_id);
 	if (!ubq || ub_cmd->q_id != ubq->q_id)
 		goto out;
-
-	if (cmd_op == UBD_IO_ABORT_QUEUE) {
-		/* Schedule abort work for making forward progress */
-		ubd_schedule_abort(ub);
-		ret = UBD_IO_RES_OK;
-		goto out_done;
-	}
 
 	if (WARN_ON_ONCE(tag >= ubq->q_depth))
 		goto out;
@@ -755,7 +729,6 @@ static int ubd_ch_uring_cmd(struct io_uring_cmd *cmd, unsigned int issue_flags)
 
  out:
 	io->flags &= ~UBD_IO_FLAG_ACTIVE;
- out_done:
 	io_uring_cmd_done(cmd, ret, 0);
 	pr_devel("%s: complete: cmd op %d, tag %d ret %x io_flags %x\n",
 			__func__, cmd_op, tag, ret, io->flags);
@@ -830,7 +803,6 @@ static int ubd_init_queues(struct ubd_device *ub)
 			goto fail;
 	}
 
-	INIT_WORK(&ub->abort_work, ubd_abort_work_fn);
 	init_completion(&ub->all_queues_ready);
 	return 0;
 
@@ -1163,7 +1135,6 @@ static int ubd_ctrl_cmd_validate(struct io_uring_cmd *cmd,
 
 static int ubd_ctrl_stop_dev(struct ubd_device *ub)
 {
-	cancel_work_sync(&ub->abort_work);
 	cancel_delayed_work_sync(&ub->monitor_work);
 	ubd_stop_dev(ub);
 
