@@ -79,8 +79,11 @@ struct ubd_queue {
 	unsigned int max_io_sz;
 	bool aborted;
 	unsigned short nr_io_ready;	/* how many ios setup */
+	struct callback_head abort_work;
 	struct ubd_io ios[0];
 };
+
+#define UBD_DAEMON_MONITOR_PERIOD	(5 * HZ)
 
 struct ubd_device {
 	struct gendisk		*ub_disk;
@@ -107,6 +110,12 @@ struct ubd_device {
 	unsigned int		nr_queues_ready;
 
 	struct work_struct	abort_work;
+
+	/*
+	 * Our ubq->daemon may be killed without any notification, so
+	 * monitor each queue's daemon periodically
+	 */
+	struct delayed_work	monitor_work;
 };
 
 static dev_t ubd_chr_devt;
@@ -411,8 +420,16 @@ static blk_status_t ubd_queue_rq(struct blk_mq_hw_ctx *hctx,
 	 *
 	 * This way should improve batching, meantime pinning pages in current
 	 * context is pretty fast.
+	 *
+	 * If we can't add the task work, something must be wrong, schedule
+	 * monitor work immediately.
 	 */
-	task_work_add(ubq->ubq_daemon, &data->work, notify_mode);
+	if (task_work_add(ubq->ubq_daemon, &data->work, notify_mode)) {
+		struct ubd_device *ub = rq->q->queuedata;
+
+		mod_delayed_work(system_wq, &ub->monitor_work, 0);
+		return BLK_STS_IOERR;
+	}
 
 	return BLK_STS_OK;
 }
@@ -554,44 +571,67 @@ static void ubd_commit_completion(struct ubd_device *ub,
 		ubd_complete_rq(req);
 }
 
-/* has to be called disk is dead or frozen */
-static int ubd_abort_queue(struct ubd_device *ub, int qid)
+static void __ubd_abort_queue(struct ubd_device *ub, struct ubd_queue *ubq,
+		bool from_task_work)
 {
-	int ret = UBD_IO_RES_ABORT;
-	struct ubd_queue *q = ubd_get_queue(ub, qid);
 	int i;
 
-	for (i = 0; i < q->q_depth; i++) {
-		struct ubd_io *io = &q->ios[i];
+	ubq->aborted = true;
+
+	for (i = 0; i < ubq->q_depth; i++) {
+		struct ubd_io *io = &ubq->ios[i];
+		int ret = UBD_IO_RES_ABORT;
 
 		if (io->flags & UBD_IO_FLAG_ACTIVE) {
 			io->flags &= ~UBD_IO_FLAG_ACTIVE;
 			io_uring_cmd_done(io->cmd, ret, 0);
+		} else if (!from_task_work) {
+			struct request *rq;
+
+			/*
+			 * ->ubq_daemon must have been dead, so end all
+			 *  inflight request.
+			 */
+			rq = blk_mq_tag_to_rq(ub->tag_set.tags[ubq->q_id], i);
+			if (rq && rq->state != MQ_RQ_IDLE)
+				blk_mq_end_request(rq, BLK_STS_IOERR);
 		}
 	}
-	put_task_struct(q->ubq_daemon);
-	q->ubq_daemon = NULL;
-	q->aborted = true;
-	return 0;
+	put_task_struct(ubq->ubq_daemon);
+	ubq->ubq_daemon = NULL;
 }
 
-static int ubd_stop_dev(struct ubd_device *ub)
+static void ubd_queue_task_work_fn(struct callback_head *work)
 {
-	int ret = 0;
+	struct ubd_queue *ubq = container_of(work, struct ubd_queue,
+			abort_work);
+
+	__ubd_abort_queue(NULL, ubq, true);
+}
+
+/* has to be called disk is dead or frozen */
+static void ubd_abort_queue(struct ubd_device *ub, int qid)
+{
+	struct ubd_queue *ubq = ubd_get_queue(ub, qid);
+
+	if (task_work_add(ubq->ubq_daemon, &ubq->abort_work, TWA_SIGNAL))
+		__ubd_abort_queue(ub, ubq, false);
+}
+
+static void ubd_stop_dev(struct ubd_device *ub)
+{
 	int i;
 
 	mutex_lock(&ub->mutex);
 	if (!disk_live(ub->ub_disk))
 		goto unlock;
 
-	del_gendisk(ub->ub_disk);
 	for (i = 0; i < ub->dev_info.nr_hw_queues; i++)
-		ret += ubd_abort_queue(ub, i);
+		ubd_abort_queue(ub, i);
+	del_gendisk(ub->ub_disk);
  unlock:
 	mutex_unlock(&ub->mutex);
-	if (ret == 0)
-		ub->dev_info.ubdsrv_pid = -1;
-	return ret;
+	ub->dev_info.ubdsrv_pid = -1;
 }
 
 static void ubd_abort_work_fn(struct work_struct *work)
@@ -755,6 +795,7 @@ static int ubd_init_queue(struct ubd_device *ub, int q_id)
 	if (!ptr)
 		return -ENOMEM;
 
+	init_task_work(&ubq->abort_work, ubd_queue_task_work_fn);
 	ubq->io_cmd_buf = ptr;
 	return 0;
 }
@@ -995,6 +1036,32 @@ free_mem:
 	return ub;
 }
 
+static void ubd_daemon_monitor_work(struct work_struct *work)
+{
+	struct ubd_device *ub =
+		container_of(work, struct ubd_device, monitor_work.work);
+	int i;
+
+	for (i = 0; i < ub->dev_info.nr_hw_queues; i++) {
+		struct ubd_queue *q = ubd_get_queue(ub, i);
+		struct task_struct *t = q->ubq_daemon;
+
+		pr_devel("%s: pid %d, exit_state %x exit_code %x exit_signal %d\n",
+			__func__, t->pid, t->exit_state, t->exit_code,
+			t->exit_signal);
+
+		if (t->exit_state == EXIT_DEAD ||
+				t->exit_state == EXIT_ZOMBIE) {
+			ubd_stop_dev(ub);
+			return;
+		}
+	}
+
+	if (disk_live(ub->ub_disk))
+		schedule_delayed_work(&ub->monitor_work,
+				UBD_DAEMON_MONITOR_PERIOD);
+}
+
 static int ubd_ctrl_start_dev(struct ubd_device *ub, struct io_uring_cmd *cmd)
 {
 	struct ubdsrv_ctrl_cmd *header = (struct ubdsrv_ctrl_cmd *)cmd->cmd;
@@ -1005,6 +1072,9 @@ static int ubd_ctrl_start_dev(struct ubd_device *ub, struct io_uring_cmd *cmd)
 		return ret;
 
 	wait_for_completion_interruptible(&ub->all_queues_ready);
+
+	INIT_DELAYED_WORK(&ub->monitor_work, ubd_daemon_monitor_work);
+	schedule_delayed_work(&ub->monitor_work, UBD_DAEMON_MONITOR_PERIOD);
 
 	mutex_lock(&ub->mutex);
 	if (!disk_live(ub->ub_disk)) {
@@ -1094,7 +1164,10 @@ static int ubd_ctrl_cmd_validate(struct io_uring_cmd *cmd,
 static int ubd_ctrl_stop_dev(struct ubd_device *ub)
 {
 	cancel_work_sync(&ub->abort_work);
-	return ubd_stop_dev(ub);
+	cancel_delayed_work_sync(&ub->monitor_work);
+	ubd_stop_dev(ub);
+
+	return 0;
 }
 
 static int ubd_ctrl_uring_cmd(struct io_uring_cmd *cmd,
