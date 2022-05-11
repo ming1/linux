@@ -603,6 +603,21 @@ static void ubd_abort_work_fn(struct work_struct *work)
 	kfree(abort_work);
 }
 
+static void ubd_schedule_abort_queue(struct ubd_device *ub,
+		unsigned int q_id)
+{
+	struct ubd_abort_work *work = kzalloc(sizeof(*work),
+			GFP_KERNEL);
+	if (!work)
+		return;
+
+	INIT_WORK(&work->work, ubd_abort_work_fn);
+	work->ub = ub;
+	work->q_id = q_id;
+
+	schedule_work(&work->work);
+}
+
 static inline bool ubd_queue_ready(struct ubd_queue *ubq)
 {
 	return ubq->nr_io_ready == ubq->q_depth;
@@ -643,16 +658,7 @@ static int ubd_ch_uring_cmd(struct io_uring_cmd *cmd, unsigned int issue_flags)
 		goto out;
 
 	if (cmd_op == UBD_IO_ABORT_QUEUE) {
-		struct ubd_abort_work *work = kzalloc(sizeof(*work),
-				GFP_KERNEL);
-		if (!work)
-			goto out;
-
-		INIT_WORK(&work->work, ubd_abort_work_fn);
-		work->ub = ub;
-		work->q_id = ub_cmd->q_id;
-
-		schedule_work(&work->work);
+		ubd_schedule_abort_queue(ub, ub_cmd->q_id);
 		ret = UBD_IO_RES_OK;
 		goto out_done;
 	}
