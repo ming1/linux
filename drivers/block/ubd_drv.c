@@ -405,16 +405,6 @@ static blk_status_t ubd_queue_rq(struct blk_mq_hw_ctx *hctx,
 
 	blk_mq_start_request(bd->rq);
 
-	/* mark this cmd owned by ubdsrv */
-	io->flags |= UBD_IO_FLAG_OWNED_BY_SRV;
-
-	/*
-	 * clear ACTIVE since we are done with this sqe/cmd slot
-	 *
-	 * We can only accept io cmd in case of being not active.
-	 */
-	io->flags &= ~UBD_IO_FLAG_ACTIVE;
-
 	/*
 	 * run data copy in task work context for WRITE, and complete io_uring
 	 * cmd there too.
@@ -458,6 +448,17 @@ static void ubd_rq_task_work_fn(struct callback_head *work)
 	pr_devel("%s: complete: cmd op %d, tag %d ret %d io_flags %x, addr %llx\n",
 			__func__, io->cmd->cmd_op, req->tag, ret, io->flags,
 			ubd_get_iod(ubq, req->tag)->addr);
+
+	/* mark this cmd owned by ubdsrv */
+	io->flags |= UBD_IO_FLAG_OWNED_BY_SRV;
+
+	/*
+	 * clear ACTIVE since we are done with this sqe/cmd slot
+	 *
+	 * We can only accept io cmd in case of being not active.
+	 */
+	io->flags &= ~UBD_IO_FLAG_ACTIVE;
+
 	/* tell ubdsrv one io request is coming */
 	io_uring_cmd_done(io->cmd, ret, 0);
 }
