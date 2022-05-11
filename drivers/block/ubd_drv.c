@@ -568,6 +568,7 @@ static int ubd_abort_queue(struct ubd_device *ub, int qid)
 			io_uring_cmd_done(io->cmd, ret, 0);
 		}
 	}
+	put_task_struct(q->ubq_daemon);
 	q->ubq_daemon = NULL;
 	q->aborted = true;
 	return 0;
@@ -621,6 +622,7 @@ static void ubd_mark_io_ready(struct ubd_device *ub, struct ubd_queue *ubq)
 	ubq->nr_io_ready++;
 	if (ubd_queue_ready(ubq)) {
 		ubq->ubq_daemon = current;
+		get_task_struct(ubq->ubq_daemon);
 		ub->nr_queues_ready++;
 	}
 	if (ub->nr_queues_ready == ub->dev_info.nr_hw_queues)
