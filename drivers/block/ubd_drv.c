@@ -615,6 +615,10 @@ static int ubd_ch_uring_cmd(struct io_uring_cmd *cmd, unsigned int issue_flags)
 	if (!(issue_flags & IO_URING_F_SQE128))
 		goto out;
 
+	ubq = ubd_get_queue(ub, ub_cmd->q_id);
+	if (!ubq || ub_cmd->q_id != ubq->q_id)
+		goto out;
+
 	if (cmd_op == UBD_IO_ABORT_QUEUE) {
 		struct ubd_abort_work *work = kzalloc(sizeof(*work),
 				GFP_KERNEL);
@@ -630,7 +634,6 @@ static int ubd_ch_uring_cmd(struct io_uring_cmd *cmd, unsigned int issue_flags)
 		goto out_done;
 	}
 
-	ubq = ubd_get_queue(ub, ub_cmd->q_id);
 	if (WARN_ON_ONCE(tag >= ubq->q_depth))
 		goto out;
 
@@ -655,11 +658,17 @@ static int ubd_ch_uring_cmd(struct io_uring_cmd *cmd, unsigned int issue_flags)
 		 */
 		if (io->flags & UBD_IO_FLAG_OWNED_BY_SRV)
 			goto out;
+		/* FETCH_RQ has to provide IO buffer */
+		if (!ub_cmd->addr)
+			goto out;
 		io->cmd = cmd;
 		io->flags |= UBD_IO_FLAG_ACTIVE;
 		io->addr = ub_cmd->addr;
 		break;
 	case UBD_IO_COMMIT_AND_FETCH_REQ:
+		/* FETCH_RQ has to provide IO buffer */
+		if (!ub_cmd->addr)
+			goto out;
 		io->addr = ub_cmd->addr;
 		io->flags |= UBD_IO_FLAG_ACTIVE;
 		fallthrough;
