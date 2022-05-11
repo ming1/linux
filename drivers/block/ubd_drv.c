@@ -46,12 +46,6 @@
 
 #define UBD_MINORS		(1U << MINORBITS)
 
-struct ubd_abort_work {
-	struct ubd_device *ub;
-	unsigned int q_id;
-	struct work_struct work;
-};
-
 struct ubd_rq_data {
 	struct callback_head work;
 };
@@ -111,6 +105,8 @@ struct ubd_device {
 
 	struct completion	all_queues_ready;
 	unsigned int		nr_queues_ready;
+
+	struct work_struct	abort_work;
 };
 
 static dev_t ubd_chr_devt;
@@ -573,49 +569,44 @@ static int ubd_abort_queue(struct ubd_device *ub, int qid)
 		}
 	}
 	q->ubq_daemon = NULL;
+	q->aborted = true;
 	return 0;
+}
+
+static int ubd_stop_dev(struct ubd_device *ub)
+{
+	int ret = 0;
+	int i;
+
+	mutex_lock(&ub->mutex);
+	if (!disk_live(ub->ub_disk))
+		goto unlock;
+
+	del_gendisk(ub->ub_disk);
+	for (i = 0; i < ub->dev_info.nr_hw_queues; i++)
+		ret += ubd_abort_queue(ub, i);
+ unlock:
+	mutex_unlock(&ub->mutex);
+	if (ret == 0)
+		ub->dev_info.ubdsrv_pid = -1;
+	return ret;
 }
 
 static void ubd_abort_work_fn(struct work_struct *work)
 {
-	struct ubd_abort_work *abort_work =
-		container_of(work, struct ubd_abort_work, work);
-	struct ubd_device *ub = abort_work->ub;
-	struct ubd_queue *ubq = ubd_get_queue(ub, abort_work->q_id);
+	struct ubd_device *ub =
+		container_of(work, struct ubd_device, abort_work);
 
-	blk_mq_freeze_queue(ub->ub_queue);
-	mutex_lock(&ub->mutex);
-	if (!ubq->aborted) {
-		ubq->aborted = true;
-		ubd_abort_queue(ub, abort_work->q_id);
-		ub->nr_aborted_queues++;
-	}
-	mutex_unlock(&ub->mutex);
-	blk_mq_unfreeze_queue(ub->ub_queue);
-
-	mutex_lock(&ub->mutex);
-	if (ub->nr_aborted_queues == ub->dev_info.nr_hw_queues) {
-		if (disk_live(ub->ub_disk))
-			del_gendisk(ub->ub_disk);
-	}
-	mutex_unlock(&ub->mutex);
-
-	kfree(abort_work);
+	ubd_stop_dev(ub);
 }
 
-static void ubd_schedule_abort_queue(struct ubd_device *ub,
-		unsigned int q_id)
+/*
+ * Aborting is always unusual, so if any queue needs to be aborted,
+ * we shutdown the whole device
+ */
+static void ubd_schedule_abort(struct ubd_device *ub)
 {
-	struct ubd_abort_work *work = kzalloc(sizeof(*work),
-			GFP_KERNEL);
-	if (!work)
-		return;
-
-	INIT_WORK(&work->work, ubd_abort_work_fn);
-	work->ub = ub;
-	work->q_id = q_id;
-
-	schedule_work(&work->work);
+	schedule_work(&ub->abort_work);
 }
 
 static inline bool ubd_queue_ready(struct ubd_queue *ubq)
@@ -658,7 +649,8 @@ static int ubd_ch_uring_cmd(struct io_uring_cmd *cmd, unsigned int issue_flags)
 		goto out;
 
 	if (cmd_op == UBD_IO_ABORT_QUEUE) {
-		ubd_schedule_abort_queue(ub, ub_cmd->q_id);
+		/* Schedule abort work for making forward progress */
+		ubd_schedule_abort(ub);
 		ret = UBD_IO_RES_OK;
 		goto out_done;
 	}
@@ -794,6 +786,7 @@ static int ubd_init_queues(struct ubd_device *ub)
 			goto fail;
 	}
 
+	INIT_WORK(&ub->abort_work, ubd_abort_work_fn);
 	init_completion(&ub->all_queues_ready);
 	return 0;
 
@@ -999,25 +992,6 @@ free_mem:
 	return ub;
 }
 
-static int ubd_ctrl_stop_dev(struct ubd_device *ub, struct io_uring_cmd *cmd)
-{
-	int ret = 0;
-	int i;
-
-	mutex_lock(&ub->mutex);
-	if (!disk_live(ub->ub_disk))
-		goto unlock;
-
-	del_gendisk(ub->ub_disk);
-	for (i = 0; i < ub->dev_info.nr_hw_queues; i++)
-		ret += ubd_abort_queue(ub, i);
- unlock:
-	mutex_unlock(&ub->mutex);
-	if (ret == 0)
-		ub->dev_info.ubdsrv_pid = -1;
-	return ret;
-}
-
 static int ubd_ctrl_start_dev(struct ubd_device *ub, struct io_uring_cmd *cmd)
 {
 	struct ubdsrv_ctrl_cmd *header = (struct ubdsrv_ctrl_cmd *)cmd->cmd;
@@ -1114,6 +1088,12 @@ static int ubd_ctrl_cmd_validate(struct io_uring_cmd *cmd,
 	return 0;
 }
 
+static int ubd_ctrl_stop_dev(struct ubd_device *ub)
+{
+	cancel_work_sync(&ub->abort_work);
+	return ubd_stop_dev(ub);
+}
+
 static int ubd_ctrl_uring_cmd(struct io_uring_cmd *cmd,
 		unsigned int issue_flags)
 {
@@ -1148,7 +1128,7 @@ static int ubd_ctrl_uring_cmd(struct io_uring_cmd *cmd,
 		ub = ubd_find_device(header->dev_id);
 		if (!ub)
 			goto out;
-		if (!ubd_ctrl_stop_dev(ub, cmd))
+		if (!ubd_ctrl_stop_dev(ub))
 			ret = 0;
 		break;
 	case UBD_CMD_GET_DEV_INFO:
