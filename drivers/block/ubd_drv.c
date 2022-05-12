@@ -904,8 +904,12 @@ static int ubd_add_dev(struct ubd_device *ub)
 			(ub->bs_shift - 9));
 	set_capacity(ub->ub_disk, ub->dev_info.dev_blocks << (ub->bs_shift - 9));
 
-	ub->ub_queue->limits.discard_granularity = 0;
+	ub->ub_queue->limits.discard_granularity = PAGE_SIZE;
 
+	/* ubdsrv_io_desc->tag_blocks reserve 12 bit for tag, at most 1M sectors */
+	blk_queue_max_discard_sectors(ub->ub_queue, UINT_MAX >> (9 + 12));
+	blk_queue_max_write_zeroes_sectors(ub->ub_queue, UINT_MAX >> (9 + 12));
+	blk_queue_flag_set(QUEUE_FLAG_DISCARD, ub->ub_queue);
 
 	disk->fops		= &ub_fops;
 	disk->private_data	= ub;
