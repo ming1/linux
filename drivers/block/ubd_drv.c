@@ -63,7 +63,7 @@ struct ubd_io {
 	/* userspace buffer address from io cmd */
 	__u64	addr;
 	unsigned int flags;
-	unsigned int res;
+	int res;
 
 	struct io_uring_cmd *cmd;
 };
@@ -439,6 +439,7 @@ static void ubd_commit_rqs(struct blk_mq_hw_ctx *hctx)
 	__set_notify_signal(ubq->ubq_daemon);
 }
 
+/* todo: handle partial completion */
 static void ubd_complete_rq(struct request *req)
 {
 	struct ubd_queue *ubq = req->mq_hctx->driver_data;
@@ -447,7 +448,7 @@ static void ubd_complete_rq(struct request *req)
 	/* for READ request, writing data in iod->addr to rq buffers */
 	ubd_unmap_io(req);
 
-	blk_mq_end_request(req, io->res);
+	blk_mq_end_request(req, io->res >= 0 ? BLK_STS_OK : BLK_STS_IOERR);
 }
 
 static void ubd_rq_task_work_fn(struct callback_head *work)
@@ -662,8 +663,9 @@ static int ubd_ch_uring_cmd(struct io_uring_cmd *cmd, unsigned int issue_flags)
 	unsigned tag = ub_cmd->tag;
 	int ret = -EINVAL;
 
-	pr_devel("%s: receieved: cmd op %d, tag %d, queue %d\n",
-			__func__, cmd->cmd_op, tag, ub_cmd->q_id);
+	pr_devel("%s: receieved: cmd op %d queue %d tag %d result %d\n",
+			__func__, cmd->cmd_op, ub_cmd->q_id, tag,
+			ub_cmd->result);
 
 	if (!(issue_flags & IO_URING_F_SQE128))
 		goto out;
