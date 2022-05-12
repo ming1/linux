@@ -411,7 +411,6 @@ config BLK_DEV_RBD
 config BLK_DEV_USER_BLK_DRV
 	bool "Userspace block driver"
 	select IO_URING
-	default y
 	help
           io uring based userspace block driver.
 
