@@ -380,8 +380,8 @@ static int ubd_setup_iod(struct ubd_queue *ubq, struct request *req)
 
 	/* need to translate since kernel may change */
 	iod->op_flags = ubd_op | ubd_req_build_flags(req);
-	iod->tag_blocks = req->tag | (blk_rq_sectors(req) << 12);
-	iod->start_block = blk_rq_pos(req);
+	iod->nr_sectors = blk_rq_sectors(req);
+	iod->start_sector = blk_rq_pos(req);
 	iod->addr = io->addr;
 
 	return BLK_STS_OK;
@@ -908,9 +908,8 @@ static int ubd_add_dev(struct ubd_device *ub)
 
 	ub->ub_queue->limits.discard_granularity = PAGE_SIZE;
 
-	/* ubdsrv_io_desc->tag_blocks reserve 12 bit for tag, at most 1M sectors */
-	blk_queue_max_discard_sectors(ub->ub_queue, UINT_MAX >> (9 + 12));
-	blk_queue_max_write_zeroes_sectors(ub->ub_queue, UINT_MAX >> (9 + 12));
+	blk_queue_max_discard_sectors(ub->ub_queue, UINT_MAX >> 9);
+	blk_queue_max_write_zeroes_sectors(ub->ub_queue, UINT_MAX >> 9);
 	blk_queue_flag_set(QUEUE_FLAG_DISCARD, ub->ub_queue);
 
 	disk->fops		= &ub_fops;
