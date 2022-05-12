@@ -1100,6 +1100,7 @@ static int ubd_ctrl_cmd_validate(struct io_uring_cmd *cmd,
 {
 	struct ubdsrv_ctrl_cmd *header = (struct ubdsrv_ctrl_cmd *)cmd->cmd;
 	u32 cmd_op = cmd->cmd_op;
+	void __user *argp = (void __user *)(unsigned long)header->addr;
 
 	switch (cmd_op) {
 	case UBD_CMD_GET_DEV_INFO:
@@ -1109,9 +1110,7 @@ static int ubd_ctrl_cmd_validate(struct io_uring_cmd *cmd,
 	case UBD_CMD_ADD_DEV:
 		if (header->len < sizeof(*info) || !header->addr)
 			return -EINVAL;
-		if (copy_from_user((void *)info,
-					(void __user *)header->addr,
-					sizeof(*info)) != 0)
+		if (copy_from_user(info, argp, sizeof(*info)) != 0)
 			return -EFAULT;
 		ubd_dump_dev_info(info);
 		if (header->dev_id != info->dev_id) {
@@ -1150,13 +1149,14 @@ static int ubd_ctrl_uring_cmd(struct io_uring_cmd *cmd,
 		unsigned int issue_flags)
 {
 	struct ubdsrv_ctrl_cmd *header = (struct ubdsrv_ctrl_cmd *)cmd->cmd;
-	int ret = -EINVAL;
+	void __user *argp = (void __user *)(unsigned long)header->addr;
 	struct ubdsrv_ctrl_dev_info info;
 	struct blk_mq_hw_ctx *hctx;
 	u32 cmd_op = cmd->cmd_op;
 	struct ubd_device *ub;
 	unsigned long queue;
 	unsigned int retlen;
+	int ret = -EINVAL;
 
 	ubd_ctrl_cmd_dump(cmd);
 
@@ -1186,9 +1186,7 @@ static int ubd_ctrl_uring_cmd(struct io_uring_cmd *cmd,
 	case UBD_CMD_GET_DEV_INFO:
 		ub = ubd_find_device(header->dev_id);
 		if (ub) {
-			if (copy_to_user((void __user *)header->addr,
-						(void *)&ub->dev_info,
-						sizeof(info)))
+			if (copy_to_user(argp, &ub->dev_info, sizeof(info)))
 				ret = -EFAULT;
 			else
 				ret = 0;
@@ -1202,10 +1200,8 @@ static int ubd_ctrl_uring_cmd(struct io_uring_cmd *cmd,
 			/* update device id */
 			ub->dev_info.dev_id = ub->ub_number;
 
-			if (ubd_add_dev(ub) || copy_to_user(
-						(void __user *)header->addr,
-						(void *)&ub->dev_info,
-						sizeof(info)))
+			if (ubd_add_dev(ub) || copy_to_user(argp,
+						&ub->dev_info, sizeof(info)))
 				ubd_remove(ub);
 			else {
 				ret = 0;
@@ -1233,14 +1229,12 @@ static int ubd_ctrl_uring_cmd(struct io_uring_cmd *cmd,
 			goto out;
 
 		retlen = min_t(unsigned short, header->len, cpumask_size());
-		if (copy_to_user((unsigned long __user *)header->addr,
-					hctx->cpumask, retlen)) {
+		if (copy_to_user(argp, hctx->cpumask, retlen)) {
 			ret = -EFAULT;
 			goto out;
 		}
 		if (retlen != header->len) {
-			if (clear_user((void __user *)(header->addr + retlen),
-					header->len - retlen)) {
+			if (clear_user(argp + retlen, header->len - retlen)) {
 				ret = -EFAULT;
 				goto out;
 			}
