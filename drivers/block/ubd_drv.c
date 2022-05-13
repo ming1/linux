@@ -432,11 +432,22 @@ static blk_status_t ubd_queue_rq(struct blk_mq_hw_ctx *hctx,
 	return BLK_STS_OK;
 }
 
+static bool ubd_queue_is_dead(struct ubd_queue *ubq)
+{
+	return	ubq->ubq_daemon->exit_state == EXIT_DEAD ||
+			ubq->ubq_daemon->exit_state == EXIT_ZOMBIE;
+}
+
 static void ubd_commit_rqs(struct blk_mq_hw_ctx *hctx)
 {
 	struct ubd_queue *ubq = hctx->driver_data;
 
 	__set_notify_signal(ubq->ubq_daemon);
+	if (ubd_queue_is_dead(ubq)) {
+		struct ubd_device *ub = hctx->queue->queuedata;
+
+		mod_delayed_work(system_wq, &ub->monitor_work, 0);
+	}
 }
 
 /* todo: handle partial completion */
@@ -1037,15 +1048,14 @@ static void ubd_daemon_monitor_work(struct work_struct *work)
 	int i;
 
 	for (i = 0; i < ub->dev_info.nr_hw_queues; i++) {
-		struct ubd_queue *q = ubd_get_queue(ub, i);
-		struct task_struct *t = q->ubq_daemon;
+		struct ubd_queue *ubq = ubd_get_queue(ub, i);
+		struct task_struct *t = ubq->ubq_daemon;
 
 		pr_devel("%s: pid %d, exit_state %x exit_code %x exit_signal %d\n",
 			__func__, t->pid, t->exit_state, t->exit_code,
 			t->exit_signal);
 
-		if (t->exit_state == EXIT_DEAD ||
-				t->exit_state == EXIT_ZOMBIE) {
+		if (ubd_queue_is_dead(ubq)) {
 			ubd_stop_dev(ub);
 			return;
 		}
