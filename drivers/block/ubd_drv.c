@@ -596,8 +596,6 @@ static void __ubd_abort_queue(struct ubd_device *ub, struct ubd_queue *ubq,
 				blk_mq_end_request(rq, BLK_STS_IOERR);
 		}
 	}
-	put_task_struct(ubq->ubq_daemon);
-	ubq->ubq_daemon = NULL;
 }
 
 static void ubd_queue_task_work_fn(struct callback_head *work)
@@ -615,6 +613,18 @@ static void ubd_abort_queue(struct ubd_device *ub, int qid)
 
 	if (task_work_add(ubq->ubq_daemon, &ubq->abort_work, TWA_SIGNAL))
 		__ubd_abort_queue(ub, ubq, false);
+}
+
+static void ubd_release_queues(struct ubd_device *ub)
+{
+	int i;
+
+	for (i = 0; i < ub->dev_info.nr_hw_queues; i++) {
+		struct ubd_queue *ubq = ubd_get_queue(ub, i);
+
+		put_task_struct(ubq->ubq_daemon);
+		ubq->ubq_daemon = NULL;
+	}
 }
 
 static void ubd_stop_dev(struct ubd_device *ub)
@@ -946,7 +956,10 @@ static void ubd_remove(struct ubd_device *ub)
 	/* we may not start disk yet*/
 	if (disk_live(ub->ub_disk))
 		del_gendisk(ub->ub_disk);
-	blk_cleanup_disk(ub->ub_disk);
+	blk_cleanup_queue(ub->ub_queue);
+	ubd_release_queues(ub);
+	put_disk(ub->ub_disk);
+
 	cdev_device_del(&ub->cdev, &ub->cdev_dev);
 	put_device(&ub->cdev_dev);
 }
