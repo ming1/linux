@@ -719,8 +719,12 @@ static int ubd_ch_uring_cmd(struct io_uring_cmd *cmd, unsigned int issue_flags)
 		if (!(io->flags & UBD_IO_FLAG_OWNED_BY_SRV))
 			goto out;
 		ubd_commit_completion(ub, ub_cmd);
+		if (unlikely(ubq->aborted)) {
+			ret = UBD_IO_RES_ABORT;
+			goto out;
+		}
 		if (cmd_op == UBD_IO_COMMIT_REQ) {
-			ret = UBD_IO_RES_OK;
+			ret = ubq->aborted;
 			goto out;
 		}
 		break;
