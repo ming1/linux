@@ -558,14 +558,17 @@ static int ubd_ch_mmap(struct file *filp, struct vm_area_struct *vma)
 	struct ubd_device *ub = filp->private_data;
 	size_t sz = vma->vm_end - vma->vm_start;
 	unsigned max_sz = UBD_MAX_QUEUE_DEPTH * sizeof(struct ubdsrv_io_desc);
-	unsigned long pfn, end;
+	unsigned long pfn, end, phys_off = vma->vm_pgoff << PAGE_SHIFT;
 	int q_id;
 
 	end = UBDSRV_CMD_BUF_OFFSET + ub->dev_info.nr_hw_queues * max_sz;
-	if (vma->vm_pgoff < UBDSRV_CMD_BUF_OFFSET || vma->vm_pgoff >= end)
+	if (phys_off < UBDSRV_CMD_BUF_OFFSET || phys_off >= end)
 		return -EINVAL;
 
-	q_id = (vma->vm_pgoff - UBDSRV_CMD_BUF_OFFSET) / max_sz;
+	q_id = (phys_off - UBDSRV_CMD_BUF_OFFSET) / max_sz;
+	pr_devel("%s: qid %d, pid %d, addr %lx pg_off %lx sz %lu\n",
+			__func__, q_id, current->pid, vma->vm_start,
+			phys_off, sz);
 
 	if (sz != ubd_queue_cmd_buf_size(ub, q_id))
 		return -EINVAL;
