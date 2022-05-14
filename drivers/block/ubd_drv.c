@@ -769,7 +769,7 @@ static int ubd_ch_uring_cmd(struct io_uring_cmd *cmd, unsigned int issue_flags)
 			goto out;
 		}
 		if (cmd_op == UBD_IO_COMMIT_REQ) {
-			ret = ubq->aborted;
+			ret = UBD_IO_RES_ABORT;
 			goto out;
 		}
 		break;
