@@ -79,6 +79,7 @@ struct ubd_queue {
 	unsigned int max_io_sz;
 	bool aborted;
 	unsigned short nr_io_ready;	/* how many ios setup */
+	struct ubd_device *dev;
 	struct callback_head abort_work;
 	struct ubd_io ios[0];
 };
@@ -93,7 +94,6 @@ struct ubd_device {
 
 	unsigned short  queue_size;
 	unsigned short  bs_shift;
-	unsigned int nr_aborted_queues;
 	struct ubdsrv_ctrl_dev_info	dev_info;
 
 	struct blk_mq_tag_set	tag_set;
@@ -106,8 +106,9 @@ struct ubd_device {
 
 	struct mutex		mutex;
 
-	struct completion	all_queues_ready;
+	struct completion	completion;
 	unsigned int		nr_queues_ready;
+	atomic_t		nr_aborted_queues;
 
 	/*
 	 * Our ubq->daemon may be killed without any notification, so
@@ -607,6 +608,10 @@ static void __ubd_abort_queue(struct ubd_device *ub, struct ubd_queue *ubq,
 				blk_mq_end_request(rq, BLK_STS_IOERR);
 		}
 	}
+
+	if (atomic_inc_return(&ub->nr_aborted_queues) ==
+			ub->dev_info.nr_hw_queues)
+		complete_all(&ub->completion);
 }
 
 static void ubd_queue_task_work_fn(struct callback_head *work)
@@ -614,7 +619,7 @@ static void ubd_queue_task_work_fn(struct callback_head *work)
 	struct ubd_queue *ubq = container_of(work, struct ubd_queue,
 			abort_work);
 
-	__ubd_abort_queue(NULL, ubq, true);
+	__ubd_abort_queue(ubq->dev, ubq, true);
 }
 
 /* has to be called disk is dead or frozen */
@@ -646,11 +651,19 @@ static void ubd_stop_dev(struct ubd_device *ub)
 	if (!disk_live(ub->ub_disk))
 		goto unlock;
 
+	/* init the completion for aborting */
+	reinit_completion(&ub->completion);
+
 	for (i = 0; i < ub->dev_info.nr_hw_queues; i++)
 		ubd_abort_queue(ub, i);
+
 	del_gendisk(ub->ub_disk);
  unlock:
 	mutex_unlock(&ub->mutex);
+
+	/* wait until abort is done */
+	wait_for_completion_interruptible(&ub->completion);
+
 	ub->dev_info.ubdsrv_pid = -1;
 }
 
@@ -670,7 +683,7 @@ static void ubd_mark_io_ready(struct ubd_device *ub, struct ubd_queue *ubq)
 		ub->nr_queues_ready++;
 	}
 	if (ub->nr_queues_ready == ub->dev_info.nr_hw_queues)
-		complete_all(&ub->all_queues_ready);
+		complete_all(&ub->completion);
 	mutex_unlock(&ub->mutex);
 }
 
@@ -797,6 +810,7 @@ static int ubd_init_queue(struct ubd_device *ub, int q_id)
 
 	init_task_work(&ubq->abort_work, ubd_queue_task_work_fn);
 	ubq->io_cmd_buf = ptr;
+	ubq->dev = ub;
 	return 0;
 }
 
@@ -830,7 +844,7 @@ static int ubd_init_queues(struct ubd_device *ub)
 			goto fail;
 	}
 
-	init_completion(&ub->all_queues_ready);
+	init_completion(&ub->completion);
 	return 0;
 
  fail:
@@ -1075,7 +1089,7 @@ static int ubd_ctrl_start_dev(struct ubd_device *ub, struct io_uring_cmd *cmd)
 	if (ubdsrv_pid <= 0)
 		return ret;
 
-	wait_for_completion_interruptible(&ub->all_queues_ready);
+	wait_for_completion_interruptible(&ub->completion);
 
 	INIT_DELAYED_WORK(&ub->monitor_work, ubd_daemon_monitor_work);
 	schedule_delayed_work(&ub->monitor_work, UBD_DAEMON_MONITOR_PERIOD);
