@@ -303,19 +303,29 @@ static int ubd_map_io(struct ubd_device *ub, struct request *req)
 	 * context via task_work_add and the big benefit is that pinning
 	 * pages in current context is pretty fast, see ubd_pin_user_pages
 	 */
-	if (!op_is_write(req->cmd_flags) || !ubd_rq_need_copy(req))
+	if (req_op(req) != REQ_OP_WRITE && req_op(req) != REQ_OP_FLUSH)
+		return 0;
+
+	if (!ubd_rq_need_copy(req))
 		return 0;
 
 	/* convert to data copy in current context */
 	return ubd_copy_pages(ub, req);
 }
 
-static int ubd_unmap_io(struct request *req)
+static int ubd_unmap_io(struct request *req, struct ubd_io *io)
 {
 	struct ubd_device *ub = req->q->queuedata;
 
-	if (!op_is_write(req->cmd_flags) && ubd_rq_need_copy(req))
+	if (req_op(req) == REQ_OP_READ && ubd_rq_need_copy(req)) {
+		WARN_ON_ONCE(io->res > req->__data_len);
+
+		if (io->res > 0 && io->res < req->__data_len)
+			pr_err_once("%s: short read, expected %u, got %d\n",
+					__func__, req->__data_len, io->res);
+
 		return ubd_copy_pages(ub, req);
+	}
 	return 0;
 }
 
@@ -458,9 +468,10 @@ static void ubd_complete_rq(struct request *req)
 	struct ubd_io *io = &ubq->ios[req->tag];
 
 	/* for READ request, writing data in iod->addr to rq buffers */
-	ubd_unmap_io(req);
+	ubd_unmap_io(req, io);
 
-	blk_mq_end_request(req, io->res >= 0 ? BLK_STS_OK : BLK_STS_IOERR);
+	blk_mq_end_request(req, io->res >= 0 ? BLK_STS_OK :
+			errno_to_blk_status(io->res));
 }
 
 static void ubd_rq_task_work_fn(struct callback_head *work)
@@ -576,7 +587,7 @@ static void ubd_commit_completion(struct ubd_device *ub,
 	io->res = ub_cmd->result;
 
 	/* find the io request and complete */
-	req = blk_mq_tag_to_rq(ub->tag_set.tags[qid], ub_cmd->tag);
+	req = blk_mq_tag_to_rq(ub->tag_set.tags[qid], tag);
 
 	if (req && likely(!blk_should_fake_timeout(req->q)))
 		ubd_complete_rq(req);
