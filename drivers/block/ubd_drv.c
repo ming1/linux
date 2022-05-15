@@ -671,13 +671,21 @@ static void ubd_stop_dev(struct ubd_device *ub)
 		ubd_abort_queue(ub, i);
 
 	del_gendisk(ub->ub_disk);
+	ub->dev_info.state = UBD_S_DEV_DEAD;
+	ub->dev_info.ubdsrv_pid = -1;
  unlock:
 	mutex_unlock(&ub->mutex);
 
 	/* wait until abort is done */
 	wait_for_completion_interruptible(&ub->completion);
+}
 
-	ub->dev_info.ubdsrv_pid = -1;
+static int ubd_ctrl_stop_dev(struct ubd_device *ub)
+{
+	cancel_delayed_work_sync(&ub->monitor_work);
+	ubd_stop_dev(ub);
+
+	return 0;
 }
 
 static inline bool ubd_queue_ready(struct ubd_queue *ubq)
@@ -991,9 +999,8 @@ out_deinit_queues:
 
 static void ubd_remove(struct ubd_device *ub)
 {
-	/* we may not start disk yet*/
-	if (disk_live(ub->ub_disk))
-		del_gendisk(ub->ub_disk);
+	ubd_ctrl_stop_dev(ub);
+
 	blk_cleanup_queue(ub->ub_queue);
 	ubd_release_queues(ub);
 	put_disk(ub->ub_disk);
@@ -1111,6 +1118,8 @@ static int ubd_ctrl_start_dev(struct ubd_device *ub, struct io_uring_cmd *cmd)
 	if (!disk_live(ub->ub_disk)) {
 		ub->dev_info.ubdsrv_pid = ubdsrv_pid;
 		ret = add_disk(ub->ub_disk);
+		if (!ret)
+			ub->dev_info.state = UBD_S_DEV_LIVE;
 	} else {
 		ret = -EEXIST;
 	}
@@ -1187,14 +1196,6 @@ static int ubd_ctrl_cmd_validate(struct io_uring_cmd *cmd,
 		if (!header->addr)
 			return -EINVAL;
 	};
-
-	return 0;
-}
-
-static int ubd_ctrl_stop_dev(struct ubd_device *ub)
-{
-	cancel_delayed_work_sync(&ub->monitor_work);
-	ubd_stop_dev(ub);
 
 	return 0;
 }
