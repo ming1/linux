@@ -403,18 +403,10 @@ static blk_status_t ubd_queue_rq(struct blk_mq_hw_ctx *hctx,
 {
 	struct ubd_queue *ubq = hctx->driver_data;
 	struct request *rq = bd->rq;
-	struct ubd_io *io = &ubq->ios[rq->tag];
 	struct ubd_rq_data *data = blk_mq_rq_to_pdu(rq);
 	enum task_work_notify_mode notify_mode = bd->last ?
 		TWA_SIGNAL_NO_IPI : TWA_NONE;
 	blk_status_t res;
-
-	if (ubq->aborted)
-		return BLK_STS_IOERR;
-
-	/* this io cmd slot isn't active, so have to fail this io */
-	if (WARN_ON_ONCE(!(io->flags & UBD_IO_FLAG_ACTIVE)))
-		return BLK_STS_IOERR;
 
 	/* fill iod to slot in io cmd buffer */
 	res = ubd_setup_iod(ubq, rq);
@@ -484,9 +476,16 @@ static void ubd_rq_task_work_fn(struct callback_head *work)
 	struct ubd_device *ub = req->q->queuedata;
 	int ret = ubd_map_io(ub, req);
 
-	pr_devel("%s: complete: cmd op %d, tag %d ret %d io_flags %x, addr %llx\n",
+	pr_devel("%s: complete: op %d, tag %d ret %d io_flags %x addr %llx abort %d\n",
 			__func__, io->cmd->cmd_op, req->tag, ret, io->flags,
-			ubd_get_iod(ubq, req->tag)->addr);
+			ubd_get_iod(ubq, req->tag)->addr, ubq->aborted);
+
+	if (unlikely(ubq->aborted || WARN_ON_ONCE(
+					!(io->flags & UBD_IO_FLAG_ACTIVE)))) {
+		/* command is aborted, so block request has to be ended */
+		blk_mq_end_request(req, BLK_STS_IOERR);
+		return;
+	}
 
 	/* mark this cmd owned by ubdsrv */
 	io->flags |= UBD_IO_FLAG_OWNED_BY_SRV;
