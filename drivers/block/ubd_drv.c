@@ -83,7 +83,7 @@ struct ubd_queue {
 
 	unsigned long io_addr;	/* mapped vm address */
 	unsigned int max_io_sz;
-	bool aborted;
+	bool abort_work_pending;
 	unsigned short nr_io_ready;	/* how many ios setup */
 	struct ubd_device *dev;
 	spinlock_t	abort_lock;
@@ -122,6 +122,7 @@ struct ubd_device {
 	 * monitor each queue's daemon periodically
 	 */
 	struct delayed_work	monitor_work;
+	struct work_struct	stop_work;
 };
 
 static dev_t ubd_chr_devt;
@@ -500,9 +501,9 @@ static void ubd_rq_task_work_fn(struct callback_head *work)
 	struct ubd_device *ub = req->q->queuedata;
 	int ret;
 
-	pr_devel("%s: complete: op %d, qid %d tag %d ret %d io_flags %x addr %llx abort %d\n",
+	pr_devel("%s: complete: op %d, qid %d tag %d ret %d io_flags %x addr %llx\n",
 			__func__, io->cmd->cmd_op, ubq->q_id,  req->tag, ret, io->flags,
-			ubd_get_iod(ubq, req->tag)->addr, ubq->aborted);
+			ubd_get_iod(ubq, req->tag)->addr);
 
 	/*
 	 * If task is exiting, we may be run from exit_task_work() in
@@ -517,42 +518,35 @@ static void ubd_rq_task_work_fn(struct callback_head *work)
 	}
 
 	/*
-	 * We are always serialized by either task_work or abort_lock.
-	 *
-	 * After aborted, this slot has been handled by ubd_abort_queue,
-	 * so can't and needn't to call io_uring_cmd_done() any more.
-	 *
-	 * Or abort isn't started, but the request is re-issued after
-	 * being failed, we still fail it immediately.
-	 */
-	if (unlikely(ubq->aborted || (io->flags & UBD_IO_FLAG_REQ_FAILED))) {
+	 * Or abort isn't started, but the request is re-issued after being
+	 * failed, we still need to fail it one more time.
+         */
+	if (unlikely(io->flags & UBD_IO_FLAG_REQ_FAILED)) {
+		blk_mq_end_request(req, BLK_STS_IOERR);
 		if (task_exiting)
 			spin_unlock(&ubq->abort_lock);
-
-		/* command is aborted, so block request has to be ended */
-		blk_mq_end_request(req, BLK_STS_IOERR);
 		return;
 	}
 
-	/* Not aborted yet */
-	if (io->flags & UBD_IO_FLAG_ACTIVE) {
-		/* mark this cmd owned by ubdsrv */
-		io->flags |= UBD_IO_FLAG_OWNED_BY_SRV;
+	/* mark this cmd owned by ubdsrv */
+	io->flags |= UBD_IO_FLAG_OWNED_BY_SRV;
 
-		/*
-		 * clear ACTIVE since we are done with this sqe/cmd slot
-		 * We can only accept io cmd in case of being not active.
-		 */
-		io->flags &= ~UBD_IO_FLAG_ACTIVE;
+	/*
+	 * clear ACTIVE since we are done with this sqe/cmd slot
+	 * We can only accept io cmd in case of being not active.
+	 */
+	io->flags &= ~UBD_IO_FLAG_ACTIVE;
 
-		/* tell ubdsrv one io request is coming */
-		io_uring_cmd_done(io->cmd, ret, 0);
-	}
+	/* tell ubdsrv one io request is coming */
+	io_uring_cmd_done(io->cmd, ret, 0);
 
-	/* in case task is exiting, our partner has gone, so fail req */
+	/*
+	 * in case task is exiting, our partner has gone, so schedule monitor
+	 * work immediately for aborting queue
+	 */
 	if (task_exiting) {
-		__ubd_fail_req(io, req);
 		spin_unlock(&ubq->abort_lock);
+		mod_delayed_work(system_wq, &ub->monitor_work, 0);
 	}
 }
 
@@ -650,34 +644,18 @@ static void ubd_commit_completion(struct ubd_device *ub,
 		ubd_complete_rq(req);
 }
 
-static void __ubd_abort_queue(struct ubd_device *ub, struct ubd_queue *ubq,
-		bool from_task_work)
+/*
+ * Focus on aborting any in-flight request scheduled to run via task work
+ */
+static void __ubd_abort_queue(struct ubd_device *ub, struct ubd_queue *ubq)
 {
+	bool task_exiting = !!(ubq->ubq_daemon->flags & PF_EXITING);
 	int i;
-
-	/*
-	 * Lock is only required in case of !from_task_work, but harmless
-	 * to grab it for running from task work too
-	 *
-	 * We are serialized with ubd_rq_task_work_fn() strictly.
-	 */
-	spin_lock(&ubq->abort_lock);
-
-	/*
-	 * Mark queue as aborted, so new io will be failed in
-	 * ubd_rq_task_work_fn before checking io flags
-	 */
-	ubq->aborted = true;
 
 	for (i = 0; i < ubq->q_depth; i++) {
 		struct ubd_io *io = &ubq->ios[i];
-		int ret = UBD_IO_RES_ABORT;
-		bool task_exiting = !!(ubq->ubq_daemon->flags & PF_EXITING);
 
-		if (io->flags & UBD_IO_FLAG_ACTIVE) {
-			io->flags &= ~UBD_IO_FLAG_ACTIVE;
-			io_uring_cmd_done(io->cmd, ret, 0);
-		} else if (task_exiting) {
+		if (!(io->flags & UBD_IO_FLAG_ACTIVE) && task_exiting) {
 			struct request *rq;
 
 			/*
@@ -689,11 +667,8 @@ static void __ubd_abort_queue(struct ubd_device *ub, struct ubd_queue *ubq,
 				__ubd_fail_req(io, rq);
 		}
 	}
-	spin_unlock(&ubq->abort_lock);
-
-	if (atomic_inc_return(&ub->nr_aborted_queues) ==
-			ub->dev_info.nr_hw_queues)
-		complete_all(&ub->completion);
+	ubq->abort_work_pending = false;
+	blk_put_queue(ub->ub_queue);
 }
 
 static void ubd_queue_task_work_fn(struct callback_head *work)
@@ -701,16 +676,32 @@ static void ubd_queue_task_work_fn(struct callback_head *work)
 	struct ubd_queue *ubq = container_of(work, struct ubd_queue,
 			abort_work);
 
-	__ubd_abort_queue(ubq->dev, ubq, true);
+	/*
+	 * Lock is only required in case of exiting ubq_daemon, but harmless
+	 * to grab it for running from task work too
+	 *
+	 * We are serialized with ubd_rq_task_work_fn() strictly.
+	 */
+	spin_lock(&ubq->abort_lock);
+	__ubd_abort_queue(ubq->dev, ubq);
+	spin_unlock(&ubq->abort_lock);
 }
 
-/* has to be called disk is dead or frozen */
-static void ubd_abort_queue(struct ubd_device *ub, int qid)
-{
-	struct ubd_queue *ubq = ubd_get_queue(ub, qid);
 
-	if (task_work_add(ubq->ubq_daemon, &ubq->abort_work, TWA_SIGNAL))
-		__ubd_abort_queue(ub, ubq, false);
+static void ubd_abort_queue(struct ubd_device *ub, struct ubd_queue *ubq)
+{
+	if (!blk_get_queue(ub->ub_queue))
+		return;
+
+	spin_lock(&ubq->abort_lock);
+	if (!ubq->abort_work_pending) {
+		if (task_work_add(ubq->ubq_daemon, &ubq->abort_work,
+					TWA_SIGNAL))
+			__ubd_abort_queue(ub, ubq);
+		else
+			ubq->abort_work_pending = true;
+	}
+	spin_unlock(&ubq->abort_lock);
 }
 
 static void ubd_release_queues(struct ubd_device *ub)
@@ -725,35 +716,47 @@ static void ubd_release_queues(struct ubd_device *ub)
 	}
 }
 
-static void ubd_stop_dev(struct ubd_device *ub)
+static void ubd_cancel_queue(struct ubd_queue *ubq)
 {
 	int i;
 
+	for (i = 0; i < ubq->q_depth; i++) {
+		struct ubd_io *io = &ubq->ios[i];
+
+		if (io->flags & UBD_IO_FLAG_ACTIVE) {
+			io->flags &= ~UBD_IO_FLAG_ACTIVE;
+			io_uring_cmd_done(io->cmd, UBD_IO_RES_ABORT, 0);
+		}
+	}
+}
+
+/* Cancel all pending commands, must be called after del_gendisk() returns */
+static void ubd_cancel_dev(struct ubd_device *ub)
+{
+	int i;
+
+	for (i = 0; i < ub->dev_info.nr_hw_queues; i++)
+		ubd_cancel_queue(ubd_get_queue(ub, i));
+}
+
+static void ubd_stop_dev(struct ubd_device *ub)
+{
 	mutex_lock(&ub->mutex);
 	if (!disk_live(ub->ub_disk))
 		goto unlock;
 
-	/* init the completion for aborting */
-	reinit_completion(&ub->completion);
-
-	for (i = 0; i < ub->dev_info.nr_hw_queues; i++)
-		ubd_abort_queue(ub, i);
-
 	del_gendisk(ub->ub_disk);
 	ub->dev_info.state = UBD_S_DEV_DEAD;
 	ub->dev_info.ubdsrv_pid = -1;
+	ubd_cancel_dev(ub);
  unlock:
 	mutex_unlock(&ub->mutex);
-
-	/* wait until abort is done */
-	wait_for_completion_interruptible(&ub->completion);
+	cancel_delayed_work_sync(&ub->monitor_work);
 }
 
 static int ubd_ctrl_stop_dev(struct ubd_device *ub)
 {
-	cancel_delayed_work_sync(&ub->monitor_work);
 	ubd_stop_dev(ub);
-
 	return 0;
 }
 
@@ -843,12 +846,10 @@ static int ubd_ch_uring_cmd(struct io_uring_cmd *cmd, unsigned int issue_flags)
 		if (!(io->flags & UBD_IO_FLAG_OWNED_BY_SRV))
 			goto out;
 		ubd_commit_completion(ub, ub_cmd);
-		if (unlikely(ubq->aborted)) {
-			ret = UBD_IO_RES_ABORT;
-			goto out;
-		}
+
+		/* COMMIT_REQ is supposed to not fetch req */
 		if (cmd_op == UBD_IO_COMMIT_REQ) {
-			ret = UBD_IO_RES_ABORT;
+			ret = UBD_IO_RES_OK;
 			goto out;
 		}
 		break;
@@ -1145,6 +1146,14 @@ free_mem:
 	return ub;
 }
 
+static void ubd_stop_work_fn(struct work_struct *work)
+{
+	struct ubd_device *ub =
+		container_of(work, struct ubd_device, stop_work);
+
+	ubd_stop_dev(ub);
+}
+
 static void ubd_daemon_monitor_work(struct work_struct *work)
 {
 	struct ubd_device *ub =
@@ -1155,14 +1164,14 @@ static void ubd_daemon_monitor_work(struct work_struct *work)
 		struct ubd_queue *ubq = ubd_get_queue(ub, i);
 
 		if (ubq_daemon_is_dying(ubq)) {
-			ubd_stop_dev(ub);
-			return;
+			schedule_work(&ub->stop_work);
+
+			/* abort queue is for making forward progress */
+			ubd_abort_queue(ub, ubq);
 		}
 	}
 
-	if (disk_live(ub->ub_disk))
-		schedule_delayed_work(&ub->monitor_work,
-				UBD_DAEMON_MONITOR_PERIOD);
+	schedule_delayed_work(&ub->monitor_work, UBD_DAEMON_MONITOR_PERIOD);
 }
 
 static int ubd_ctrl_start_dev(struct ubd_device *ub, struct io_uring_cmd *cmd)
@@ -1176,6 +1185,7 @@ static int ubd_ctrl_start_dev(struct ubd_device *ub, struct io_uring_cmd *cmd)
 
 	wait_for_completion_interruptible(&ub->completion);
 
+	INIT_WORK(&ub->stop_work, ubd_stop_work_fn);
 	INIT_DELAYED_WORK(&ub->monitor_work, ubd_daemon_monitor_work);
 	schedule_delayed_work(&ub->monitor_work, UBD_DAEMON_MONITOR_PERIOD);
 
