@@ -59,6 +59,12 @@ struct ubd_rq_data {
  */
 #define UBD_IO_FLAG_OWNED_BY_SRV 0x02
 
+/*
+ * request has been failed, only used in handling aborting, and after
+ * this flag is observed, this request will be failed immediately
+ */
+#define UBD_IO_FLAG_REQ_FAILED 0x04
+
 struct ubd_io {
 	/* userspace buffer address from io cmd */
 	__u64	addr;
@@ -80,6 +86,7 @@ struct ubd_queue {
 	bool aborted;
 	unsigned short nr_io_ready;	/* how many ios setup */
 	struct ubd_device *dev;
+	spinlock_t	abort_lock;
 	struct callback_head abort_work;
 	struct ubd_io ios[0];
 };
@@ -435,10 +442,9 @@ static blk_status_t ubd_queue_rq(struct blk_mq_hw_ctx *hctx,
 	return BLK_STS_OK;
 }
 
-static bool ubd_queue_is_dead(struct ubd_queue *ubq)
+static bool ubq_daemon_is_dying(struct ubd_queue *ubq)
 {
-	return	ubq->ubq_daemon->exit_state == EXIT_DEAD ||
-			ubq->ubq_daemon->exit_state == EXIT_ZOMBIE;
+	return ubq->ubq_daemon->flags & PF_EXITING;
 }
 
 static void ubd_commit_rqs(struct blk_mq_hw_ctx *hctx)
@@ -446,7 +452,7 @@ static void ubd_commit_rqs(struct blk_mq_hw_ctx *hctx)
 	struct ubd_queue *ubq = hctx->driver_data;
 
 	__set_notify_signal(ubq->ubq_daemon);
-	if (ubd_queue_is_dead(ubq)) {
+	if (ubq_daemon_is_dying(ubq)) {
 		struct ubd_device *ub = hctx->queue->queuedata;
 
 		mod_delayed_work(system_wq, &ub->monitor_work, 0);
@@ -466,39 +472,88 @@ static void ubd_complete_rq(struct request *req)
 			errno_to_blk_status(io->res));
 }
 
+/*
+ * __ubd_fail_req() may be called from abort context or ->ubq_daemon
+ * context during exiting, so lock is required.
+ *
+ * Also aborting may not be started yet, keep in mind that one failed
+ * request may be issued by block layer again.
+ */
+static void __ubd_fail_req(struct ubd_io *io, struct request *req)
+{
+	WARN_ON_ONCE(io->flags & UBD_IO_FLAG_ACTIVE);
+
+	if (!(io->flags & UBD_IO_FLAG_REQ_FAILED)) {
+		io->flags |= UBD_IO_FLAG_REQ_FAILED;
+		blk_mq_end_request(req, BLK_STS_IOERR);
+	}
+}
+
 static void ubd_rq_task_work_fn(struct callback_head *work)
 {
+	bool task_exiting = !!(current->flags & PF_EXITING);
 	struct ubd_rq_data *data = container_of(work,
 			struct ubd_rq_data, work);
 	struct request *req = blk_mq_rq_from_pdu(data);
 	struct ubd_queue *ubq = req->mq_hctx->driver_data;
 	struct ubd_io *io = &ubq->ios[req->tag];
 	struct ubd_device *ub = req->q->queuedata;
-	int ret = ubd_map_io(ub, req);
+	int ret;
 
-	pr_devel("%s: complete: op %d, tag %d ret %d io_flags %x addr %llx abort %d\n",
-			__func__, io->cmd->cmd_op, req->tag, ret, io->flags,
+	pr_devel("%s: complete: op %d, qid %d tag %d ret %d io_flags %x addr %llx abort %d\n",
+			__func__, io->cmd->cmd_op, ubq->q_id,  req->tag, ret, io->flags,
 			ubd_get_iod(ubq, req->tag)->addr, ubq->aborted);
 
-	if (unlikely(ubq->aborted || WARN_ON_ONCE(
-					!(io->flags & UBD_IO_FLAG_ACTIVE)))) {
+	/*
+	 * If task is exiting, we may be run from exit_task_work() in
+	 * do_exit(), and may race with ubd_abort_queue(), so lock is
+	 * needed.
+	 */
+	if (unlikely(task_exiting)) {
+		ret = -ESRCH;
+		spin_lock(&ubq->abort_lock);
+	} else {
+		ret = ubd_map_io(ub, req);
+	}
+
+	/*
+	 * We are always serialized by either task_work or abort_lock.
+	 *
+	 * After aborted, this slot has been handled by ubd_abort_queue,
+	 * so can't and needn't to call io_uring_cmd_done() any more.
+	 *
+	 * Or abort isn't started, but the request is re-issued after
+	 * being failed, we still fail it immediately.
+	 */
+	if (unlikely(ubq->aborted || (io->flags & UBD_IO_FLAG_REQ_FAILED))) {
+		if (task_exiting)
+			spin_unlock(&ubq->abort_lock);
+
 		/* command is aborted, so block request has to be ended */
 		blk_mq_end_request(req, BLK_STS_IOERR);
 		return;
 	}
 
-	/* mark this cmd owned by ubdsrv */
-	io->flags |= UBD_IO_FLAG_OWNED_BY_SRV;
+	/* Not aborted yet */
+	if (io->flags & UBD_IO_FLAG_ACTIVE) {
+		/* mark this cmd owned by ubdsrv */
+		io->flags |= UBD_IO_FLAG_OWNED_BY_SRV;
 
-	/*
-	 * clear ACTIVE since we are done with this sqe/cmd slot
-	 *
-	 * We can only accept io cmd in case of being not active.
-	 */
-	io->flags &= ~UBD_IO_FLAG_ACTIVE;
+		/*
+		 * clear ACTIVE since we are done with this sqe/cmd slot
+		 * We can only accept io cmd in case of being not active.
+		 */
+		io->flags &= ~UBD_IO_FLAG_ACTIVE;
 
-	/* tell ubdsrv one io request is coming */
-	io_uring_cmd_done(io->cmd, ret, 0);
+		/* tell ubdsrv one io request is coming */
+		io_uring_cmd_done(io->cmd, ret, 0);
+	}
+
+	/* in case task is exiting, our partner has gone, so fail req */
+	if (task_exiting) {
+		__ubd_fail_req(io, req);
+		spin_unlock(&ubq->abort_lock);
+	}
 }
 
 static int ubd_init_hctx(struct blk_mq_hw_ctx *hctx, void *driver_data,
@@ -600,27 +655,41 @@ static void __ubd_abort_queue(struct ubd_device *ub, struct ubd_queue *ubq,
 {
 	int i;
 
+	/*
+	 * Lock is only required in case of !from_task_work, but harmless
+	 * to grab it for running from task work too
+	 *
+	 * We are serialized with ubd_rq_task_work_fn() strictly.
+	 */
+	spin_lock(&ubq->abort_lock);
+
+	/*
+	 * Mark queue as aborted, so new io will be failed in
+	 * ubd_rq_task_work_fn before checking io flags
+	 */
 	ubq->aborted = true;
 
 	for (i = 0; i < ubq->q_depth; i++) {
 		struct ubd_io *io = &ubq->ios[i];
 		int ret = UBD_IO_RES_ABORT;
+		bool task_exiting = !!(ubq->ubq_daemon->flags & PF_EXITING);
 
 		if (io->flags & UBD_IO_FLAG_ACTIVE) {
 			io->flags &= ~UBD_IO_FLAG_ACTIVE;
 			io_uring_cmd_done(io->cmd, ret, 0);
-		} else if (!from_task_work) {
+		} else if (task_exiting) {
 			struct request *rq;
 
 			/*
-			 * ->ubq_daemon must have been dead, so end all
-			 *  inflight request.
+			 * Either we fail the request or ubd_rq_task_work_fn
+			 * will do it
 			 */
 			rq = blk_mq_tag_to_rq(ub->tag_set.tags[ubq->q_id], i);
-			if (rq && rq->state != MQ_RQ_IDLE)
-				blk_mq_end_request(rq, BLK_STS_IOERR);
+			if (rq)
+				__ubd_fail_req(io, rq);
 		}
 	}
+	spin_unlock(&ubq->abort_lock);
 
 	if (atomic_inc_return(&ub->nr_aborted_queues) ==
 			ub->dev_info.nr_hw_queues)
@@ -832,6 +901,7 @@ static int ubd_init_queue(struct ubd_device *ub, int q_id)
 	init_task_work(&ubq->abort_work, ubd_queue_task_work_fn);
 	ubq->io_cmd_buf = ptr;
 	ubq->dev = ub;
+	spin_lock_init(&ubq->abort_lock);
 	return 0;
 }
 
@@ -1083,13 +1153,8 @@ static void ubd_daemon_monitor_work(struct work_struct *work)
 
 	for (i = 0; i < ub->dev_info.nr_hw_queues; i++) {
 		struct ubd_queue *ubq = ubd_get_queue(ub, i);
-		struct task_struct *t = ubq->ubq_daemon;
 
-		pr_devel("%s: pid %d, exit_state %x exit_code %x exit_signal %d\n",
-			__func__, t->pid, t->exit_state, t->exit_code,
-			t->exit_signal);
-
-		if (ubd_queue_is_dead(ubq)) {
+		if (ubq_daemon_is_dying(ubq)) {
 			ubd_stop_dev(ub);
 			return;
 		}
