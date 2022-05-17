@@ -616,7 +616,7 @@ static int ubd_ch_mmap(struct file *filp, struct vm_area_struct *vma)
 	q_id = (phys_off - UBDSRV_CMD_BUF_OFFSET) / max_sz;
 	pr_devel("%s: qid %d, pid %d, addr %lx pg_off %lx sz %lu\n",
 			__func__, q_id, current->pid, vma->vm_start,
-			phys_off, sz);
+			phys_off, (unsigned long)sz);
 
 	if (sz != ubd_queue_cmd_buf_size(ub, q_id))
 		return -EINVAL;
