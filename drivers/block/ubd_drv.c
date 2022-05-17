@@ -1240,6 +1240,9 @@ static int ubd_ctrl_cmd_validate(struct io_uring_cmd *cmd,
 	u32 cmd_op = cmd->cmd_op;
 	void __user *argp = (void __user *)(unsigned long)header->addr;
 
+	if (!capable(CAP_SYS_ADMIN))
+		return -EPERM;
+
 	switch (cmd_op) {
 	case UBD_CMD_GET_DEV_INFO:
 		if (header->len < sizeof(*info) || !header->addr)
