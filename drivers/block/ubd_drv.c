@@ -178,7 +178,7 @@ static const struct block_device_operations ub_fops = {
 
 #define UBD_MAX_PIN_PAGES	32
 
-static inline void ubd_release_pages(struct ubd_device *ub, struct page **pages,
+static inline void ubd_release_pages(struct ubd_queue *ubq, struct page **pages,
 		int nr_pages)
 {
 	int i;
@@ -187,7 +187,7 @@ static inline void ubd_release_pages(struct ubd_device *ub, struct page **pages,
 		put_page(pages[i]);
 }
 
-static inline int ubd_pin_user_pages(struct ubd_device *ub, u64 start_vm,
+static inline int ubd_pin_user_pages(struct ubd_queue *ubq, u64 start_vm,
 		unsigned int nr_pages, unsigned int gup_flags,
 		struct page **pages)
 {
@@ -222,10 +222,9 @@ static inline unsigned ubd_copy_bv(struct bio_vec *bv, void **bv_addr,
 }
 
 /* copy rq pages to ubdsrv vm address pointed by io->addr */
-static int ubd_copy_pages(struct ubd_device *ub, struct request *rq, bool to_rq)
+static int ubd_copy_pages(struct ubd_queue *ubq, struct request *rq, bool to_rq)
 {
 	unsigned int gup_flags = to_rq ? 0 : FOLL_WRITE;
-	struct ubd_queue *ubq = rq->mq_hctx->driver_data;
 	struct ubd_io *io = &ubq->ios[rq->tag];
 	struct page *pgs[UBD_MAX_PIN_PAGES];
 	struct req_iterator req_iter;
@@ -255,13 +254,13 @@ refill:
 			if (idx >= nr_pin) {
 				unsigned int max_pages;
 
-				ubd_release_pages(ub, pgs, nr_pin);
+				ubd_release_pages(ubq, pgs, nr_pin);
 
 				off = start & (PAGE_SIZE - 1);
 				max_pages = min_t(unsigned, (off + left +
 						PAGE_SIZE - 1) >> PAGE_SHIFT,
 						UBD_MAX_PIN_PAGES);
-				nr_pin = ubd_pin_user_pages(ub, start,
+				nr_pin = ubd_pin_user_pages(ubq, start,
 						max_pages, gup_flags, pgs);
 				if (nr_pin < 0)
 					return nr_pin;
@@ -295,7 +294,7 @@ refill:
 		if (!to_rq)
 			set_page_dirty_lock(curr);
 	}
-	ubd_release_pages(ub, pgs, nr_pin);
+	ubd_release_pages(ubq, pgs, nr_pin);
 
 	WARN_ON_ONCE(left != 0);
 
@@ -304,7 +303,7 @@ refill:
 
 #define UBD_REMAP_BATCH	32
 
-static int ubd_map_io(struct ubd_device *ub, struct request *req)
+static int ubd_map_io(struct ubd_queue *ubq, struct request *req)
 {
 	/*
 	 * no zero copy, we delay copy WRITE request data into ubdsrv
@@ -318,13 +317,12 @@ static int ubd_map_io(struct ubd_device *ub, struct request *req)
 		return 0;
 
 	/* convert to data copy in current context */
-	return ubd_copy_pages(ub, req, false);
+	return ubd_copy_pages(ubq, req, false);
 }
 
-static int ubd_unmap_io(struct request *req, struct ubd_io *io)
+static int ubd_unmap_io(struct ubd_queue *ubq, struct request *req,
+		struct ubd_io *io)
 {
-	struct ubd_device *ub = req->q->queuedata;
-
 	if (req_op(req) == REQ_OP_READ && ubd_rq_need_copy(req)) {
 		WARN_ON_ONCE(io->res > req->__data_len);
 
@@ -332,7 +330,7 @@ static int ubd_unmap_io(struct request *req, struct ubd_io *io)
 			pr_err_once("%s: short read, expected %u, got %d\n",
 					__func__, req->__data_len, io->res);
 
-		return ubd_copy_pages(ub, req, true);
+		return ubd_copy_pages(ubq, req, true);
 	}
 	return 0;
 }
@@ -467,7 +465,7 @@ static void ubd_complete_rq(struct request *req)
 	struct ubd_io *io = &ubq->ios[req->tag];
 
 	/* for READ request, writing data in iod->addr to rq buffers */
-	ubd_unmap_io(req, io);
+	ubd_unmap_io(ubq, req, io);
 
 	blk_mq_end_request(req, io->res >= 0 ? BLK_STS_OK :
 			errno_to_blk_status(io->res));
@@ -514,7 +512,7 @@ static void ubd_rq_task_work_fn(struct callback_head *work)
 		ret = -ESRCH;
 		spin_lock(&ubq->abort_lock);
 	} else {
-		ret = ubd_map_io(ub, req);
+		ret = ubd_map_io(ubq, req);
 	}
 
 	/*
