@@ -178,7 +178,7 @@ static const struct block_device_operations ub_fops = {
 
 #define UBD_MAX_PIN_PAGES	32
 
-static void ubd_release_pages(struct ubd_device *ub, struct page **pages,
+static inline void ubd_release_pages(struct ubd_device *ub, struct page **pages,
 		int nr_pages)
 {
 	int i;
@@ -187,11 +187,10 @@ static void ubd_release_pages(struct ubd_device *ub, struct page **pages,
 		put_page(pages[i]);
 }
 
-static int ubd_pin_user_pages(struct ubd_device *ub, u64 start_vm,
-		struct page **pages, unsigned int nr_pages, bool to_rq)
+static inline int ubd_pin_user_pages(struct ubd_device *ub, u64 start_vm,
+		unsigned int nr_pages, unsigned int gup_flags,
+		struct page **pages)
 {
-	unsigned int gup_flags = to_rq ? 0 : FOLL_WRITE;
-
 	return get_user_pages_fast(start_vm, nr_pages, gup_flags, pages);
 }
 
@@ -225,6 +224,7 @@ static inline unsigned ubd_copy_bv(struct bio_vec *bv, void **bv_addr,
 /* copy rq pages to ubdsrv vm address pointed by io->addr */
 static int ubd_copy_pages(struct ubd_device *ub, struct request *rq, bool to_rq)
 {
+	unsigned int gup_flags = to_rq ? 0 : FOLL_WRITE;
 	struct ubd_queue *ubq = rq->mq_hctx->driver_data;
 	struct ubd_io *io = &ubq->ios[rq->tag];
 	struct page *pgs[UBD_MAX_PIN_PAGES];
@@ -258,11 +258,11 @@ refill:
 				ubd_release_pages(ub, pgs, nr_pin);
 
 				off = start & (PAGE_SIZE - 1);
-				max_pages = (off + left + PAGE_SIZE - 1) >>
-					PAGE_SHIFT;
-				nr_pin = min_t(unsigned, UBD_MAX_PIN_PAGES, max_pages);
-				nr_pin = ubd_pin_user_pages(ub, start, pgs,
-						nr_pin, to_rq);
+				max_pages = min_t(unsigned, (off + left +
+						PAGE_SIZE - 1) >> PAGE_SHIFT,
+						UBD_MAX_PIN_PAGES);
+				nr_pin = ubd_pin_user_pages(ub, start,
+						max_pages, gup_flags, pgs);
 				if (nr_pin < 0)
 					return nr_pin;
 				idx = 0;
