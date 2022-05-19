@@ -223,12 +223,11 @@ static inline unsigned ubd_copy_bv(struct bio_vec *bv, void **bv_addr,
 }
 
 /* copy rq pages to ubdsrv vm address pointed by io->addr */
-static int ubd_copy_pages(struct ubd_device *ub, struct request *rq)
+static int ubd_copy_pages(struct ubd_device *ub, struct request *rq, bool to_rq)
 {
 	struct ubd_queue *ubq = rq->mq_hctx->driver_data;
 	struct ubd_io *io = &ubq->ios[rq->tag];
 	struct page *pgs[UBD_MAX_PIN_PAGES];
-	const bool to_rq = !op_is_write(rq->cmd_flags);
 	struct req_iterator req_iter;
 	struct bio_vec bv;
 	unsigned long start = io->addr, left = rq->__data_len;
@@ -319,7 +318,7 @@ static int ubd_map_io(struct ubd_device *ub, struct request *req)
 		return 0;
 
 	/* convert to data copy in current context */
-	return ubd_copy_pages(ub, req);
+	return ubd_copy_pages(ub, req, false);
 }
 
 static int ubd_unmap_io(struct request *req, struct ubd_io *io)
@@ -333,7 +332,7 @@ static int ubd_unmap_io(struct request *req, struct ubd_io *io)
 			pr_err_once("%s: short read, expected %u, got %d\n",
 					__func__, req->__data_len, io->res);
 
-		return ubd_copy_pages(ub, req);
+		return ubd_copy_pages(ub, req, true);
 	}
 	return 0;
 }
