@@ -259,7 +259,8 @@ refill:
 				ubd_release_pages(ub, pgs, nr_pin);
 
 				off = start & (PAGE_SIZE - 1);
-				max_pages = round_up(off + left, PAGE_SIZE);
+				max_pages = (off + left + PAGE_SIZE - 1) >>
+					PAGE_SHIFT;
 				nr_pin = min_t(unsigned, UBD_MAX_PIN_PAGES, max_pages);
 				nr_pin = ubd_pin_user_pages(ub, start, pgs,
 						nr_pin, to_rq);
