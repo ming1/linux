@@ -985,6 +985,34 @@ static int ubd_add_chdev(struct ubd_device *ub)
 	return 0;
 }
 
+static void ubd_stop_work_fn(struct work_struct *work)
+{
+	struct ubd_device *ub =
+		container_of(work, struct ubd_device, stop_work);
+
+	ubd_stop_dev(ub);
+}
+
+static void ubd_daemon_monitor_work(struct work_struct *work)
+{
+	struct ubd_device *ub =
+		container_of(work, struct ubd_device, monitor_work.work);
+	int i;
+
+	for (i = 0; i < ub->dev_info.nr_hw_queues; i++) {
+		struct ubd_queue *ubq = ubd_get_queue(ub, i);
+
+		if (ubq_daemon_is_dying(ubq)) {
+			schedule_work(&ub->stop_work);
+
+			/* abort queue is for making forward progress */
+			ubd_abort_queue(ub, ubq);
+		}
+	}
+
+	schedule_delayed_work(&ub->monitor_work, UBD_DAEMON_MONITOR_PERIOD);
+}
+
 /* add disk & cdev */
 static int ubd_add_dev(struct ubd_device *ub)
 {
@@ -1006,6 +1034,9 @@ static int ubd_add_dev(struct ubd_device *ub)
 	max_rq_bytes = round_down(ub->dev_info.rq_max_blocks <<
 			ub->bs_shift, PAGE_SIZE);
 	ub->dev_info.rq_max_blocks = max_rq_bytes >> ub->bs_shift;
+
+	INIT_WORK(&ub->stop_work, ubd_stop_work_fn);
+	INIT_DELAYED_WORK(&ub->monitor_work, ubd_daemon_monitor_work);
 
 	if (ubd_init_queues(ub))
 		return err;
@@ -1148,34 +1179,6 @@ free_mem:
 	return ub;
 }
 
-static void ubd_stop_work_fn(struct work_struct *work)
-{
-	struct ubd_device *ub =
-		container_of(work, struct ubd_device, stop_work);
-
-	ubd_stop_dev(ub);
-}
-
-static void ubd_daemon_monitor_work(struct work_struct *work)
-{
-	struct ubd_device *ub =
-		container_of(work, struct ubd_device, monitor_work.work);
-	int i;
-
-	for (i = 0; i < ub->dev_info.nr_hw_queues; i++) {
-		struct ubd_queue *ubq = ubd_get_queue(ub, i);
-
-		if (ubq_daemon_is_dying(ubq)) {
-			schedule_work(&ub->stop_work);
-
-			/* abort queue is for making forward progress */
-			ubd_abort_queue(ub, ubq);
-		}
-	}
-
-	schedule_delayed_work(&ub->monitor_work, UBD_DAEMON_MONITOR_PERIOD);
-}
-
 static int ubd_ctrl_start_dev(struct ubd_device *ub, struct io_uring_cmd *cmd)
 {
 	struct ubdsrv_ctrl_cmd *header = (struct ubdsrv_ctrl_cmd *)cmd->cmd;
@@ -1187,8 +1190,6 @@ static int ubd_ctrl_start_dev(struct ubd_device *ub, struct io_uring_cmd *cmd)
 
 	wait_for_completion_interruptible(&ub->completion);
 
-	INIT_WORK(&ub->stop_work, ubd_stop_work_fn);
-	INIT_DELAYED_WORK(&ub->monitor_work, ubd_daemon_monitor_work);
 	schedule_delayed_work(&ub->monitor_work, UBD_DAEMON_MONITOR_PERIOD);
 
 	mutex_lock(&ub->mutex);
