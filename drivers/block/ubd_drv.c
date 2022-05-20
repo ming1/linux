@@ -758,6 +758,7 @@ static void ubd_stop_dev(struct ubd_device *ub)
 static int ubd_ctrl_stop_dev(struct ubd_device *ub)
 {
 	ubd_stop_dev(ub);
+	cancel_work_sync(&ub->stop_work);
 	return 0;
 }
 
