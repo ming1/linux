@@ -607,6 +607,9 @@ static int ubd_ch_mmap(struct file *filp, struct vm_area_struct *vma)
 	unsigned long pfn, end, phys_off = vma->vm_pgoff << PAGE_SHIFT;
 	int q_id;
 
+	if (vma->vm_flags & VM_WRITE)
+		return -EPERM;
+
 	end = UBDSRV_CMD_BUF_OFFSET + ub->dev_info.nr_hw_queues * max_sz;
 	if (phys_off < UBDSRV_CMD_BUF_OFFSET || phys_off >= end)
 		return -EINVAL;
