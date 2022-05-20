@@ -712,7 +712,8 @@ static void ubd_release_queues(struct ubd_device *ub)
 	for (i = 0; i < ub->dev_info.nr_hw_queues; i++) {
 		struct ubd_queue *ubq = ubd_get_queue(ub, i);
 
-		put_task_struct(ubq->ubq_daemon);
+		if (ubq->ubq_daemon)
+			put_task_struct(ubq->ubq_daemon);
 		ubq->ubq_daemon = NULL;
 	}
 }
