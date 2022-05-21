@@ -1152,7 +1152,7 @@ static int __ubd_alloc_dev_number(struct ubd_device *ub, int idx)
 	return err;
 }
 
-static struct ubd_device *ubd_create_dev(int idx)
+static struct ubd_device *__ubd_create_dev(int idx)
 {
 	struct ubd_device *ub = NULL;
 	int ret;
@@ -1161,12 +1161,7 @@ static struct ubd_device *ubd_create_dev(int idx)
 	if (!ub)
 		return ERR_PTR(-ENOMEM);
 
-	ret = mutex_lock_killable(&ubd_ctl_mutex);
-	if (!ret) {
-		ret = __ubd_alloc_dev_number(ub, idx);
-		mutex_unlock(&ubd_ctl_mutex);
-	}
-
+	ret = __ubd_alloc_dev_number(ub, idx);
 	if (ret < 0) {
 		kfree(ub);
 		return ERR_PTR(ret);
@@ -1219,7 +1214,11 @@ static int ubd_ctrl_add_dev(const struct ubdsrv_ctrl_dev_info *info,
 	struct ubd_device *ub;
 	int ret;
 
-	ub = ubd_create_dev(idx);
+	ret = mutex_lock_killable(&ubd_ctl_mutex);
+	if (ret)
+		return ret;
+
+	ub = __ubd_create_dev(idx);
 	if (!IS_ERR_OR_NULL(ub)) {
 		memcpy(&ub->dev_info, info, sizeof(*info));
 
@@ -1241,6 +1240,28 @@ static int ubd_ctrl_add_dev(const struct ubdsrv_ctrl_dev_info *info,
 		else
 			ret = -ENOMEM;
 	}
+	mutex_unlock(&ubd_ctl_mutex);
+
+	return ret;
+}
+
+static int ubd_ctrl_del_dev(int idx)
+{
+	struct ubd_device *ub;
+	int ret;
+
+	ret = mutex_lock_killable(&ubd_ctl_mutex);
+	if (ret)
+		return ret;
+
+	ub = ubd_find_device(idx);
+	if (ub) {
+		ubd_remove(ub);
+		ret = 0;
+	} else {
+		ret = -ENODEV;
+	}
+	mutex_unlock(&ubd_ctl_mutex);
 
 	return ret;
 }
@@ -1360,11 +1381,7 @@ static int ubd_ctrl_uring_cmd(struct io_uring_cmd *cmd,
 		ret = ubd_ctrl_add_dev(&info, argp, header->dev_id);
 		break;
 	case UBD_CMD_DEL_DEV:
-		ub = ubd_find_device(header->dev_id);
-		if (ub) {
-			ubd_remove(ub);
-			ret = 0;
-		}
+		ret = ubd_ctrl_del_dev(header->dev_id);
 		break;
 	case UBD_CMD_GET_QUEUE_AFFINITY:
 		ub = ubd_find_device(header->dev_id);
