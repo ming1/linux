@@ -654,10 +654,13 @@ static void __ubd_abort_queue(struct ubd_device *ub, struct ubd_queue *ubq)
 	bool task_exiting = !!(ubq->ubq_daemon->flags & PF_EXITING);
 	int i;
 
+	if (!task_exiting)
+		goto out;
+
 	for (i = 0; i < ubq->q_depth; i++) {
 		struct ubd_io *io = &ubq->ios[i];
 
-		if (!(io->flags & UBD_IO_FLAG_ACTIVE) && task_exiting) {
+		if (!(io->flags & UBD_IO_FLAG_ACTIVE)) {
 			struct request *rq;
 
 			/*
@@ -669,6 +672,7 @@ static void __ubd_abort_queue(struct ubd_device *ub, struct ubd_queue *ubq)
 				__ubd_fail_req(io, rq);
 		}
 	}
+ out:
 	ubq->abort_work_pending = false;
 	blk_put_queue(ub->ub_queue);
 }
