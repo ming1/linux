@@ -1116,7 +1116,7 @@ static void ubd_remove(struct ubd_device *ub)
 	put_device(&ub->cdev_dev);
 }
 
-static struct ubd_device *ubd_find_device(int idx)
+static struct ubd_device *ubd_get_device(int idx)
 {
 	struct ubd_device *ub = NULL;
 
@@ -1125,9 +1125,16 @@ static struct ubd_device *ubd_find_device(int idx)
 
 	spin_lock(&ubd_idr_lock);
 	ub = idr_find(&ubd_index_idr, idx);
+	if (ub)
+		get_device(&ub->cdev_dev);
 	spin_unlock(&ubd_idr_lock);
 
 	return ub;
+}
+
+static void ubd_put_device(struct ubd_device *ub)
+{
+	put_device(&ub->cdev_dev);
 }
 
 static int __ubd_alloc_dev_number(struct ubd_device *ub, int idx)
@@ -1254,9 +1261,10 @@ static int ubd_ctrl_del_dev(int idx)
 	if (ret)
 		return ret;
 
-	ub = ubd_find_device(idx);
+	ub = ubd_get_device(idx);
 	if (ub) {
 		ubd_remove(ub);
+		ubd_put_device(ub);
 		ret = 0;
 	} else {
 		ret = -ENODEV;
@@ -1330,17 +1338,54 @@ static int ubd_ctrl_cmd_validate(struct io_uring_cmd *cmd,
 	return 0;
 }
 
+static int ubd_ctrl_get_queue_affinity(struct io_uring_cmd *cmd)
+{
+	struct ubdsrv_ctrl_cmd *header = (struct ubdsrv_ctrl_cmd *)cmd->cmd;
+	void __user *argp = (void __user *)(unsigned long)header->addr;
+	struct blk_mq_hw_ctx *hctx;
+	struct ubd_device *ub;
+	unsigned long queue;
+	unsigned int retlen;
+	int ret;
+
+	ub = ubd_get_device(header->dev_id);
+	if (!ub)
+		goto out;
+
+	ret = -EINVAL;
+	queue = header->data[0];
+	if (queue >= ub->dev_info.nr_hw_queues)
+		goto out;
+	hctx = ubd_get_hw_queue(ub, queue);
+	if (!hctx)
+		goto out;
+
+	retlen = min_t(unsigned short, header->len, cpumask_size());
+	if (copy_to_user(argp, hctx->cpumask, retlen)) {
+		ret = -EFAULT;
+		goto out;
+	}
+	if (retlen != header->len) {
+		if (clear_user(argp + retlen, header->len - retlen)) {
+			ret = -EFAULT;
+			goto out;
+		}
+	}
+	ret = 0;
+ out:
+	if (ub)
+		ubd_put_device(ub);
+	return ret;
+}
+
 static int ubd_ctrl_uring_cmd(struct io_uring_cmd *cmd,
 		unsigned int issue_flags)
 {
 	struct ubdsrv_ctrl_cmd *header = (struct ubdsrv_ctrl_cmd *)cmd->cmd;
 	void __user *argp = (void __user *)(unsigned long)header->addr;
 	struct ubdsrv_ctrl_dev_info info;
-	struct blk_mq_hw_ctx *hctx;
 	u32 cmd_op = cmd->cmd_op;
 	struct ubd_device *ub;
-	unsigned long queue;
-	unsigned int retlen;
 	int ret = -EINVAL;
 
 	ubd_ctrl_cmd_dump(cmd);
@@ -1355,26 +1400,27 @@ static int ubd_ctrl_uring_cmd(struct io_uring_cmd *cmd,
 	ret = -ENODEV;
 	switch (cmd_op) {
 	case UBD_CMD_START_DEV:
-		ub = ubd_find_device(header->dev_id);
-		if (!ub)
-			goto out;
-		if (!ubd_ctrl_start_dev(ub, cmd))
-			ret = 0;
+		ub = ubd_get_device(header->dev_id);
+		if (ub) {
+			ret = ubd_ctrl_start_dev(ub, cmd);
+			ubd_put_device(ub);
+		}
 		break;
 	case UBD_CMD_STOP_DEV:
-		ub = ubd_find_device(header->dev_id);
-		if (!ub)
-			goto out;
-		if (!ubd_ctrl_stop_dev(ub))
-			ret = 0;
+		ub = ubd_get_device(header->dev_id);
+		if (ub) {
+			ret = ubd_ctrl_stop_dev(ub);
+			ubd_put_device(ub);
+		}
 		break;
 	case UBD_CMD_GET_DEV_INFO:
-		ub = ubd_find_device(header->dev_id);
+		ub = ubd_get_device(header->dev_id);
 		if (ub) {
 			if (copy_to_user(argp, &ub->dev_info, sizeof(info)))
 				ret = -EFAULT;
 			else
 				ret = 0;
+			ubd_put_device(ub);
 		}
 		break;
 	case UBD_CMD_ADD_DEV:
@@ -1384,30 +1430,7 @@ static int ubd_ctrl_uring_cmd(struct io_uring_cmd *cmd,
 		ret = ubd_ctrl_del_dev(header->dev_id);
 		break;
 	case UBD_CMD_GET_QUEUE_AFFINITY:
-		ub = ubd_find_device(header->dev_id);
-		if (!ub)
-			goto out;
-
-		ret = -EINVAL;
-		queue = header->data[0];
-		if (queue >= ub->dev_info.nr_hw_queues)
-			goto out;
-		hctx = ubd_get_hw_queue(ub, queue);
-		if (!hctx)
-			goto out;
-
-		retlen = min_t(unsigned short, header->len, cpumask_size());
-		if (copy_to_user(argp, hctx->cpumask, retlen)) {
-			ret = -EFAULT;
-			goto out;
-		}
-		if (retlen != header->len) {
-			if (clear_user(argp + retlen, header->len - retlen)) {
-				ret = -EFAULT;
-				goto out;
-			}
-		}
-		ret = 0;
+		ret = ubd_ctrl_get_queue_affinity(cmd);
 		break;
 	default:
 		break;
