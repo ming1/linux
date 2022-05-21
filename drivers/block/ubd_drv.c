@@ -1055,7 +1055,15 @@ static void ubd_daemon_monitor_work(struct work_struct *work)
 		}
 	}
 
-	schedule_delayed_work(&ub->monitor_work, UBD_DAEMON_MONITOR_PERIOD);
+	/*
+	 * We can't schedule monitor work after ubd_remove() is started.
+	 *
+	 * No need ub->mutex, monitor work are canceled after state is marked
+	 * as DEAD, so DEAD state is observed reliably.
+	 */
+	if (ub->dev_info.state != UBD_S_DEV_DEAD)
+		schedule_delayed_work(&ub->monitor_work,
+				UBD_DAEMON_MONITOR_PERIOD);
 }
 
 /* add disk & cdev, cleanup everything in case of failure */
