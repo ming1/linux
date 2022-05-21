@@ -1214,6 +1214,46 @@ static struct blk_mq_hw_ctx *ubd_get_hw_queue(struct ubd_device *ub,
 	return NULL;
 }
 
+static int ubd_ctrl_get_queue_affinity(struct io_uring_cmd *cmd)
+{
+	struct ubdsrv_ctrl_cmd *header = (struct ubdsrv_ctrl_cmd *)cmd->cmd;
+	void __user *argp = (void __user *)(unsigned long)header->addr;
+	struct blk_mq_hw_ctx *hctx;
+	struct ubd_device *ub;
+	unsigned long queue;
+	unsigned int retlen;
+	int ret;
+
+	ub = ubd_get_device_from_id(header->dev_id);
+	if (!ub)
+		goto out;
+
+	ret = -EINVAL;
+	queue = header->data[0];
+	if (queue >= ub->dev_info.nr_hw_queues)
+		goto out;
+	hctx = ubd_get_hw_queue(ub, queue);
+	if (!hctx)
+		goto out;
+
+	retlen = min_t(unsigned short, header->len, cpumask_size());
+	if (copy_to_user(argp, hctx->cpumask, retlen)) {
+		ret = -EFAULT;
+		goto out;
+	}
+	if (retlen != header->len) {
+		if (clear_user(argp + retlen, header->len - retlen)) {
+			ret = -EFAULT;
+			goto out;
+		}
+	}
+	ret = 0;
+ out:
+	if (ub)
+		ubd_put_device(ub);
+	return ret;
+}
+
 static int ubd_ctrl_add_dev(const struct ubdsrv_ctrl_dev_info *info,
 		void __user *argp, int idx)
 {
@@ -1333,46 +1373,6 @@ static int ubd_ctrl_cmd_validate(struct io_uring_cmd *cmd,
 	};
 
 	return 0;
-}
-
-static int ubd_ctrl_get_queue_affinity(struct io_uring_cmd *cmd)
-{
-	struct ubdsrv_ctrl_cmd *header = (struct ubdsrv_ctrl_cmd *)cmd->cmd;
-	void __user *argp = (void __user *)(unsigned long)header->addr;
-	struct blk_mq_hw_ctx *hctx;
-	struct ubd_device *ub;
-	unsigned long queue;
-	unsigned int retlen;
-	int ret;
-
-	ub = ubd_get_device_from_id(header->dev_id);
-	if (!ub)
-		goto out;
-
-	ret = -EINVAL;
-	queue = header->data[0];
-	if (queue >= ub->dev_info.nr_hw_queues)
-		goto out;
-	hctx = ubd_get_hw_queue(ub, queue);
-	if (!hctx)
-		goto out;
-
-	retlen = min_t(unsigned short, header->len, cpumask_size());
-	if (copy_to_user(argp, hctx->cpumask, retlen)) {
-		ret = -EFAULT;
-		goto out;
-	}
-	if (retlen != header->len) {
-		if (clear_user(argp + retlen, header->len - retlen)) {
-			ret = -EFAULT;
-			goto out;
-		}
-	}
-	ret = 0;
- out:
-	if (ub)
-		ubd_put_device(ub);
-	return ret;
 }
 
 static int ubd_ctrl_uring_cmd(struct io_uring_cmd *cmd,
