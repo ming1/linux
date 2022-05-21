@@ -1154,7 +1154,7 @@ static void ubd_remove(struct ubd_device *ub)
 	put_device(&ub->cdev_dev);
 }
 
-static struct ubd_device *ubd_get_device(int idx)
+static struct ubd_device *ubd_get_device_from_id(int idx)
 {
 	struct ubd_device *ub = NULL;
 
@@ -1258,7 +1258,7 @@ static int ubd_ctrl_del_dev(int idx)
 	if (ret)
 		return ret;
 
-	ub = ubd_get_device(idx);
+	ub = ubd_get_device_from_id(idx);
 	if (ub) {
 		ubd_remove(ub);
 		ubd_put_device(ub);
@@ -1345,7 +1345,7 @@ static int ubd_ctrl_get_queue_affinity(struct io_uring_cmd *cmd)
 	unsigned int retlen;
 	int ret;
 
-	ub = ubd_get_device(header->dev_id);
+	ub = ubd_get_device_from_id(header->dev_id);
 	if (!ub)
 		goto out;
 
@@ -1397,21 +1397,21 @@ static int ubd_ctrl_uring_cmd(struct io_uring_cmd *cmd,
 	ret = -ENODEV;
 	switch (cmd_op) {
 	case UBD_CMD_START_DEV:
-		ub = ubd_get_device(header->dev_id);
+		ub = ubd_get_device_from_id(header->dev_id);
 		if (ub) {
 			ret = ubd_ctrl_start_dev(ub, cmd);
 			ubd_put_device(ub);
 		}
 		break;
 	case UBD_CMD_STOP_DEV:
-		ub = ubd_get_device(header->dev_id);
+		ub = ubd_get_device_from_id(header->dev_id);
 		if (ub) {
 			ret = ubd_ctrl_stop_dev(ub);
 			ubd_put_device(ub);
 		}
 		break;
 	case UBD_CMD_GET_DEV_INFO:
-		ub = ubd_get_device(header->dev_id);
+		ub = ubd_get_device_from_id(header->dev_id);
 		if (ub) {
 			if (copy_to_user(argp, &ub->dev_info, sizeof(info)))
 				ret = -EFAULT;
