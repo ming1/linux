@@ -129,6 +129,7 @@ static dev_t ubd_chr_devt;
 static struct class *ubd_chr_class;
 
 static DEFINE_IDR(ubd_index_idr);
+static DEFINE_SPINLOCK(ubd_idr_lock);
 static DEFINE_MUTEX(ubd_ctl_mutex);
 
 static struct miscdevice ubd_misc;
@@ -952,9 +953,10 @@ static void ubd_cdev_rel(struct device *dev)
 	struct ubd_device *ub = container_of(dev, struct ubd_device, cdev_dev);
 
 	blk_mq_free_tag_set(&ub->tag_set);
-	mutex_lock(&ubd_ctl_mutex);
+
+	spin_lock(&ubd_idr_lock);
 	idr_remove(&ubd_index_idr, ub->ub_number);
-	mutex_unlock(&ubd_ctl_mutex);
+	spin_unlock(&ubd_idr_lock);
 
 	ubd_deinit_queues(ub);
 
@@ -1118,15 +1120,12 @@ static struct ubd_device *ubd_find_device(int idx)
 {
 	struct ubd_device *ub = NULL;
 
-	if (idx < 0) {
-		pr_warn_once("deleting an unspecified ubd device is not supported.\n");
+	if (idx < 0)
 		return NULL;
-	}
 
-	if (mutex_lock_killable(&ubd_ctl_mutex))
-		return NULL;
+	spin_lock(&ubd_idr_lock);
 	ub = idr_find(&ubd_index_idr, idx);
-	mutex_unlock(&ubd_ctl_mutex);
+	spin_unlock(&ubd_idr_lock);
 
 	return ub;
 }
@@ -1136,14 +1135,16 @@ static int __ubd_alloc_dev_number(struct ubd_device *ub, int idx)
 	int i = idx;
 	int err;
 
+	spin_lock(&ubd_idr_lock);
 	/* allocate id, if @id >= 0, we're requesting that specific id */
 	if (i >= 0) {
-		err = idr_alloc(&ubd_index_idr, ub, i, i + 1, GFP_KERNEL);
+		err = idr_alloc(&ubd_index_idr, ub, i, i + 1, GFP_NOWAIT);
 		if (err == -ENOSPC)
 			err = -EEXIST;
 	} else {
-		err = idr_alloc(&ubd_index_idr, ub, 0, 0, GFP_KERNEL);
+		err = idr_alloc(&ubd_index_idr, ub, 0, 0, GFP_NOWAIT);
 	}
+	spin_unlock(&ubd_idr_lock);
 
 	if (err >= 0)
 		ub->ub_number = err;
