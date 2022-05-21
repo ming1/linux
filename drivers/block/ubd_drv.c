@@ -982,6 +982,8 @@ static void __ubd_destroy_dev(struct ubd_device *ub)
 	idr_remove(&ubd_index_idr, ub->ub_number);
 	spin_unlock(&ubd_idr_lock);
 
+	mutex_destroy(&ub->mutex);
+
 	kfree(ub);
 }
 
