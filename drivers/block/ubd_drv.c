@@ -1161,18 +1161,11 @@ static struct ubd_device *ubd_create_dev(int idx)
 		return ERR_PTR(-ENOMEM);
 
 	ret = mutex_lock_killable(&ubd_ctl_mutex);
-	if (ret)
-		goto free_mem;
-
-	if (idx >= 0 && idr_find(&ubd_index_idr, idx)) {
-		ret = -EEXIST;
-		goto unlock;
+	if (!ret) {
+		ret = __ubd_alloc_dev_number(ub, idx);
+		mutex_unlock(&ubd_ctl_mutex);
 	}
 
-	ret = __ubd_alloc_dev_number(ub, idx);
-unlock:
-	mutex_unlock(&ubd_ctl_mutex);
-free_mem:
 	if (ret < 0) {
 		kfree(ub);
 		return ERR_PTR(ret);
