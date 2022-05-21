@@ -937,6 +937,54 @@ static int ubd_init_queues(struct ubd_device *ub)
 	return ret;
 }
 
+static int __ubd_alloc_dev_number(struct ubd_device *ub, int idx)
+{
+	int i = idx;
+	int err;
+
+	spin_lock(&ubd_idr_lock);
+	/* allocate id, if @id >= 0, we're requesting that specific id */
+	if (i >= 0) {
+		err = idr_alloc(&ubd_index_idr, ub, i, i + 1, GFP_NOWAIT);
+		if (err == -ENOSPC)
+			err = -EEXIST;
+	} else {
+		err = idr_alloc(&ubd_index_idr, ub, 0, 0, GFP_NOWAIT);
+	}
+	spin_unlock(&ubd_idr_lock);
+
+	if (err >= 0)
+		ub->ub_number = err;
+
+	return err;
+}
+
+static struct ubd_device *__ubd_create_dev(int idx)
+{
+	struct ubd_device *ub = NULL;
+	int ret;
+
+	ub = kzalloc(sizeof(*ub), GFP_KERNEL);
+	if (!ub)
+		return ERR_PTR(-ENOMEM);
+
+	ret = __ubd_alloc_dev_number(ub, idx);
+	if (ret < 0) {
+		kfree(ub);
+		return ERR_PTR(ret);
+	}
+	return ub;
+}
+
+static void __ubd_destroy_dev(struct ubd_device *ub)
+{
+	spin_lock(&ubd_idr_lock);
+	idr_remove(&ubd_index_idr, ub->ub_number);
+	spin_unlock(&ubd_idr_lock);
+
+	kfree(ub);
+}
+
 static void ubd_cdev_rel(struct device *dev)
 {
 	struct ubd_device *ub = container_of(dev, struct ubd_device, cdev_dev);
@@ -945,13 +993,9 @@ static void ubd_cdev_rel(struct device *dev)
 
 	blk_mq_free_tag_set(&ub->tag_set);
 
-	spin_lock(&ubd_idr_lock);
-	idr_remove(&ubd_index_idr, ub->ub_number);
-	spin_unlock(&ubd_idr_lock);
-
 	ubd_deinit_queues(ub);
 
-	kfree(ub);
+	__ubd_destroy_dev(ub);
 }
 
 static int ubd_add_chdev(struct ubd_device *ub)
@@ -961,22 +1005,23 @@ static int ubd_add_chdev(struct ubd_device *ub)
 	int ret;
 
 	dev->parent = ubd_misc.this_device;
-	ret = dev_set_name(dev, "ubdc%d", minor);
-	if (ret)
-		return ret;
-
 	dev->devt = MKDEV(MAJOR(ubd_chr_devt), minor);
 	dev->class = ubd_chr_class;
 	dev->release = ubd_cdev_rel;
 	device_initialize(dev);
 
+	ret = dev_set_name(dev, "ubdc%d", minor);
+	if (ret)
+		goto fail;
+
 	cdev_init(&ub->cdev, &ubd_ch_fops);
 	ret = cdev_device_add(&ub->cdev, dev);
-	if (ret) {
-		put_device(dev);
-		return -1;
-	}
+	if (ret)
+		goto fail;
 	return 0;
+ fail:
+	put_device(dev);
+	return ret;
 }
 
 static void ubd_stop_work_fn(struct work_struct *work)
@@ -1007,7 +1052,7 @@ static void ubd_daemon_monitor_work(struct work_struct *work)
 	schedule_delayed_work(&ub->monitor_work, UBD_DAEMON_MONITOR_PERIOD);
 }
 
-/* add disk & cdev */
+/* add disk & cdev, cleanup everything in case of failure */
 static int ubd_add_dev(struct ubd_device *ub)
 {
 	unsigned int max_rq_bytes;
@@ -1033,7 +1078,7 @@ static int ubd_add_dev(struct ubd_device *ub)
 	INIT_DELAYED_WORK(&ub->monitor_work, ubd_daemon_monitor_work);
 
 	if (ubd_init_queues(ub))
-		return err;
+		goto out_destroy_dev;
 
 	ub->tag_set.ops = &ubd_mq_ops;
 	ub->tag_set.nr_hw_queues = ub->dev_info.nr_hw_queues;
@@ -1080,18 +1125,18 @@ static int ubd_add_dev(struct ubd_device *ub)
 	/* add char dev so that ubdsrv daemon can be setup */
 	err = ubd_add_chdev(ub);
 	if (err)
-		goto out_cleanup_disk;
+		return err;
 
 	/* don't expose disk now until we got start command from cdev */
 
 	return 0;
 
-out_cleanup_disk:
-	blk_cleanup_disk(ub->ub_disk);
 out_cleanup_tags:
 	blk_mq_free_tag_set(&ub->tag_set);
 out_deinit_queues:
 	ubd_deinit_queues(ub);
+out_destroy_dev:
+	__ubd_destroy_dev(ub);
 	return err;
 }
 
@@ -1122,45 +1167,6 @@ static struct ubd_device *ubd_get_device(int idx)
 static void ubd_put_device(struct ubd_device *ub)
 {
 	put_device(&ub->cdev_dev);
-}
-
-static int __ubd_alloc_dev_number(struct ubd_device *ub, int idx)
-{
-	int i = idx;
-	int err;
-
-	spin_lock(&ubd_idr_lock);
-	/* allocate id, if @id >= 0, we're requesting that specific id */
-	if (i >= 0) {
-		err = idr_alloc(&ubd_index_idr, ub, i, i + 1, GFP_NOWAIT);
-		if (err == -ENOSPC)
-			err = -EEXIST;
-	} else {
-		err = idr_alloc(&ubd_index_idr, ub, 0, 0, GFP_NOWAIT);
-	}
-	spin_unlock(&ubd_idr_lock);
-
-	if (err >= 0)
-		ub->ub_number = err;
-
-	return err;
-}
-
-static struct ubd_device *__ubd_create_dev(int idx)
-{
-	struct ubd_device *ub = NULL;
-	int ret;
-
-	ub = kzalloc(sizeof(*ub), GFP_KERNEL);
-	if (!ub)
-		return ERR_PTR(-ENOMEM);
-
-	ret = __ubd_alloc_dev_number(ub, idx);
-	if (ret < 0) {
-		kfree(ub);
-		return ERR_PTR(ret);
-	}
-	return ub;
 }
 
 static int ubd_ctrl_start_dev(struct ubd_device *ub, struct io_uring_cmd *cmd)
@@ -1220,9 +1226,7 @@ static int ubd_ctrl_add_dev(const struct ubdsrv_ctrl_dev_info *info,
 		ub->dev_info.dev_id = ub->ub_number;
 
 		ret = ubd_add_dev(ub);
-		if (ret) {
-			ubd_remove(ub);
-		} else {
+		if (!ret) {
 			if (copy_to_user(argp, &ub->dev_info, sizeof(*info))) {
 				ubd_remove(ub);
 				ret = -EFAULT;
