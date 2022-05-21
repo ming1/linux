@@ -1219,6 +1219,39 @@ static struct blk_mq_hw_ctx *ubd_get_hw_queue(struct ubd_device *ub,
 	return NULL;
 }
 
+static int ubd_ctrl_add_dev(const struct ubdsrv_ctrl_dev_info *info,
+		void __user *argp, int idx)
+{
+	struct ubd_device *ub;
+	int ret;
+
+	ub = ubd_create_dev(idx);
+	if (!IS_ERR_OR_NULL(ub)) {
+		memcpy(&ub->dev_info, info, sizeof(*info));
+
+		/* update device id */
+		ub->dev_info.dev_id = ub->ub_number;
+
+		ret = ubd_add_dev(ub);
+		if (ret) {
+			ubd_remove(ub);
+		} else {
+			if (copy_to_user(argp, &ub->dev_info, sizeof(*info))) {
+				ubd_remove(ub);
+				ret = -EFAULT;
+			}
+		}
+	} else {
+		if (IS_ERR(ub))
+			ret = PTR_ERR(ub);
+		else
+			ret = -ENOMEM;
+	}
+
+	return ret;
+}
+
+
 static inline void ubd_dump_dev_info(struct ubdsrv_ctrl_dev_info *info)
 {
 	pr_devel("%s: dev id %d flags %llx\n", __func__,
@@ -1330,20 +1363,7 @@ static int ubd_ctrl_uring_cmd(struct io_uring_cmd *cmd,
 		}
 		break;
 	case UBD_CMD_ADD_DEV:
-		ub = ubd_create_dev(header->dev_id);
-		if (!IS_ERR_OR_NULL(ub)) {
-			memcpy(&ub->dev_info, &info, sizeof(info));
-
-			/* update device id */
-			ub->dev_info.dev_id = ub->ub_number;
-
-			if (ubd_add_dev(ub) || copy_to_user(argp,
-						&ub->dev_info, sizeof(info)))
-				ubd_remove(ub);
-			else {
-				ret = 0;
-			}
-		}
+		ret = ubd_ctrl_add_dev(&info, argp, header->dev_id);
 		break;
 	case UBD_CMD_DEL_DEV:
 		ub = ubd_find_device(header->dev_id);
