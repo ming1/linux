@@ -941,6 +941,8 @@ static void ubd_cdev_rel(struct device *dev)
 {
 	struct ubd_device *ub = container_of(dev, struct ubd_device, cdev_dev);
 
+	blk_cleanup_disk(ub->ub_disk);
+
 	blk_mq_free_tag_set(&ub->tag_set);
 
 	spin_lock(&ubd_idr_lock);
@@ -1096,9 +1098,6 @@ out_deinit_queues:
 static void ubd_remove(struct ubd_device *ub)
 {
 	ubd_ctrl_stop_dev(ub);
-
-	blk_cleanup_queue(ub->ub_queue);
-	put_disk(ub->ub_disk);
 
 	cdev_device_del(&ub->cdev, &ub->cdev_dev);
 	put_device(&ub->cdev_dev);
