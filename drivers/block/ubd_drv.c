@@ -706,19 +706,6 @@ static void ubd_abort_queue(struct ubd_device *ub, struct ubd_queue *ubq)
 	spin_unlock(&ubq->abort_lock);
 }
 
-static void ubd_release_queues(struct ubd_device *ub)
-{
-	int i;
-
-	for (i = 0; i < ub->dev_info.nr_hw_queues; i++) {
-		struct ubd_queue *ubq = ubd_get_queue(ub, i);
-
-		if (ubq->ubq_daemon)
-			put_task_struct(ubq->ubq_daemon);
-		ubq->ubq_daemon = NULL;
-	}
-}
-
 static void ubd_cancel_queue(struct ubd_queue *ubq)
 {
 	int i;
@@ -884,6 +871,8 @@ static void ubd_deinit_queue(struct ubd_device *ub, int q_id)
 	int size = ubd_queue_cmd_buf_size(ub, q_id);
 	struct ubd_queue *ubq = ubd_get_queue(ub, q_id);
 
+	if (ubq->ubq_daemon)
+		put_task_struct(ubq->ubq_daemon);
 	if (ubq->io_cmd_buf)
 		free_pages((unsigned long)ubq->io_cmd_buf, get_order(size));
 }
@@ -1109,7 +1098,6 @@ static void ubd_remove(struct ubd_device *ub)
 	ubd_ctrl_stop_dev(ub);
 
 	blk_cleanup_queue(ub->ub_queue);
-	ubd_release_queues(ub);
 	put_disk(ub->ub_disk);
 
 	cdev_device_del(&ub->cdev, &ub->cdev_dev);
