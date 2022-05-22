@@ -136,6 +136,18 @@ static DEFINE_MUTEX(ubd_ctl_mutex);
 
 static struct miscdevice ubd_misc;
 
+static struct ubd_device *ubd_get_device(struct ubd_device *ub)
+{
+	if (kobject_get_unless_zero(&ub->cdev_dev.kobj))
+		return ub;
+	return NULL;
+}
+
+static void ubd_put_device(struct ubd_device *ub)
+{
+	put_device(&ub->cdev_dev);
+}
+
 static inline struct ubd_queue *ubd_get_queue(struct ubd_device *dev, int qid)
 {
        return (struct ubd_queue *)&(dev->__queues[qid * dev->queue_size]);
@@ -676,7 +688,7 @@ static void __ubd_abort_queue(struct ubd_device *ub, struct ubd_queue *ubq)
 	}
  out:
 	ubq->abort_work_pending = false;
-	blk_put_queue(ub->ub_queue);
+	ubd_put_device(ub);
 }
 
 static void ubd_queue_task_work_fn(struct callback_head *work)
@@ -698,20 +710,30 @@ static void ubd_queue_task_work_fn(struct callback_head *work)
 
 static void ubd_abort_queue(struct ubd_device *ub, struct ubd_queue *ubq)
 {
-	if (!blk_get_queue(ub->ub_queue))
+	bool put_dev;
+
+	if (!ubd_get_device(ub))
 		return;
 
 	spin_lock(&ubq->abort_lock);
 	if (!ubq->abort_work_pending) {
+		ubq->abort_work_pending = true;
+		put_dev = false;
 		if (task_work_add(ubq->ubq_daemon, &ubq->abort_work,
-					TWA_SIGNAL))
+					TWA_SIGNAL)) {
 			__ubd_abort_queue(ub, ubq);
-		else
-			ubq->abort_work_pending = true;
+		}
 	} else {
-		blk_put_queue(ub->ub_queue);
+		put_dev = true;
 	}
 	spin_unlock(&ubq->abort_lock);
+
+	/*
+	 * can't put device with ->abort_lock held, otherwise UAF
+	 * is triggered
+	 */
+	if (put_dev)
+		ubd_put_device(ub);
 }
 
 static void ubd_cancel_queue(struct ubd_queue *ubq)
@@ -1177,15 +1199,10 @@ static struct ubd_device *ubd_get_device_from_id(int idx)
 	spin_lock(&ubd_idr_lock);
 	ub = idr_find(&ubd_index_idr, idx);
 	if (ub)
-		get_device(&ub->cdev_dev);
+		ub = ubd_get_device(ub);
 	spin_unlock(&ubd_idr_lock);
 
 	return ub;
-}
-
-static void ubd_put_device(struct ubd_device *ub)
-{
-	put_device(&ub->cdev_dev);
 }
 
 static int ubd_ctrl_start_dev(struct ubd_device *ub, struct io_uring_cmd *cmd)
