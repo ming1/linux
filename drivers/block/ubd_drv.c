@@ -708,6 +708,8 @@ static void ubd_abort_queue(struct ubd_device *ub, struct ubd_queue *ubq)
 			__ubd_abort_queue(ub, ubq);
 		else
 			ubq->abort_work_pending = true;
+	} else {
+		blk_put_queue(ub->ub_queue);
 	}
 	spin_unlock(&ubq->abort_lock);
 }
