@@ -130,6 +130,8 @@ static struct class *ubd_chr_class;
 
 static DEFINE_IDR(ubd_index_idr);
 static DEFINE_SPINLOCK(ubd_idr_lock);
+static wait_queue_head_t ubd_idr_wq;	/* wait until one idr is freed */
+
 static DEFINE_MUTEX(ubd_ctl_mutex);
 
 static struct miscdevice ubd_misc;
@@ -984,6 +986,7 @@ static void __ubd_destroy_dev(struct ubd_device *ub)
 {
 	spin_lock(&ubd_idr_lock);
 	idr_remove(&ubd_index_idr, ub->ub_number);
+	wake_up_all(&ubd_idr_wq);
 	spin_unlock(&ubd_idr_lock);
 
 	mutex_destroy(&ub->mutex);
@@ -1297,6 +1300,17 @@ static int ubd_ctrl_add_dev(const struct ubdsrv_ctrl_dev_info *info,
 	return ret;
 }
 
+static inline bool ubd_idr_freed(int id)
+{
+	void *ptr;
+
+	spin_lock(&ubd_idr_lock);
+	ptr = idr_find(&ubd_index_idr, id);
+	spin_unlock(&ubd_idr_lock);
+
+	return ptr == NULL;
+}
+
 static int ubd_ctrl_del_dev(int idx)
 {
 	struct ubd_device *ub;
@@ -1314,6 +1328,13 @@ static int ubd_ctrl_del_dev(int idx)
 	} else {
 		ret = -ENODEV;
 	}
+
+	/*
+	 * Wait until the idr is removed, then it can be reused after
+	 * DEL_DEV command is returned.
+	 */
+	if (!ret)
+		wait_event(ubd_idr_wq, ubd_idr_freed(idx));
 	mutex_unlock(&ubd_ctl_mutex);
 
 	return ret;
@@ -1461,6 +1482,8 @@ static struct miscdevice ubd_misc = {
 static int __init ubd_init(void)
 {
 	int ret;
+
+	init_waitqueue_head(&ubd_idr_wq);
 
 	ret = misc_register(&ubd_misc);
 	if (ret)
