@@ -1482,6 +1482,8 @@ static int ubd_ctrl_uring_cmd(struct io_uring_cmd *cmd,
 	};
  out:
 	io_uring_cmd_done(cmd, ret, 0);
+	pr_devel("%s: cmd done ret %d cmd_op %x, dev id %d qid %d\n",
+			__func__, ret, cmd->cmd_op, header->dev_id, header->queue_id);
 	return -EIOCBQUEUED;
 }
 
