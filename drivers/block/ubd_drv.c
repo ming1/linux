@@ -485,8 +485,24 @@ static void ubd_complete_rq(struct request *req)
 	/* for READ request, writing data in iod->addr to rq buffers */
 	ubd_unmap_io(ubq, req, io);
 
-	blk_mq_end_request(req, io->res >= 0 ? BLK_STS_OK :
-			errno_to_blk_status(io->res));
+	if (io->res < 0) {
+		blk_mq_end_request(req, errno_to_blk_status(io->res));
+		return;
+	}
+
+	/*
+	 * FLUSH or DISCARD usually won't return bytes returned, so end them
+	 * directly.
+	 */
+	if (req_op(req) != REQ_OP_READ && req_op(req) != REQ_OP_WRITE) {
+		blk_mq_end_request(req, BLK_STS_OK);
+		return;
+	}
+
+	if (blk_update_request(req, BLK_STS_OK, io->res))
+		blk_mq_requeue_request(req, true);
+	else
+		__blk_mq_end_request(req, BLK_STS_OK);
 }
 
 /*
@@ -505,6 +521,8 @@ static void __ubd_fail_req(struct ubd_io *io, struct request *req)
 		blk_mq_end_request(req, BLK_STS_IOERR);
 	}
 }
+
+#define UBD_REQUEUE_DELAY_MS	3
 
 static void ubd_rq_task_work_fn(struct callback_head *work)
 {
@@ -532,7 +550,24 @@ static void ubd_rq_task_work_fn(struct callback_head *work)
 	} else {
 		unsigned int mapped_bytes = ubd_map_io(ubq, req);
 
-		WARN_ON_ONCE(mapped_bytes != blk_rq_bytes(req));
+		/*
+		 * Nothing mapped, retry until we succeed.
+		 *
+		 * We may never succeed in mapping any bytes here because of
+		 * OOM. TODO: reserve one buffer with single page pinned for
+		 * providing forward progress guarantee.
+		 */
+		if (unlikely(!mapped_bytes)) {
+			blk_mq_requeue_request(req, false);
+			blk_mq_delay_kick_requeue_list(req->q,
+					UBD_REQUEUE_DELAY_MS);
+			return;
+		}
+
+		/* partially mapped, update io descriptor */
+		if (unlikely(mapped_bytes != blk_rq_bytes(req)))
+			ubd_get_iod(ubq, req->tag)->nr_sectors =
+				mapped_bytes >> 9;
 		ret = 0;
 	}
 
