@@ -279,7 +279,7 @@ refill:
 				nr_pin = ubd_pin_user_pages(ubq, start,
 						max_pages, gup_flags, pgs);
 				if (nr_pin < 0)
-					return nr_pin;
+					goto exit;
 				idx = 0;
 			}
 			pg_off = off;
@@ -312,25 +312,25 @@ refill:
 	}
 	ubd_release_pages(ubq, pgs, nr_pin);
 
-	WARN_ON_ONCE(left != 0);
-
-	return 0;
+exit:
+	return rq_bytes - left;
 }
 
 #define UBD_REMAP_BATCH	32
 
 static int ubd_map_io(struct ubd_queue *ubq, struct request *req)
 {
+	const unsigned int rq_bytes = blk_rq_bytes(req);
 	/*
 	 * no zero copy, we delay copy WRITE request data into ubdsrv
 	 * context via task_work_add and the big benefit is that pinning
 	 * pages in current context is pretty fast, see ubd_pin_user_pages
 	 */
 	if (req_op(req) != REQ_OP_WRITE && req_op(req) != REQ_OP_FLUSH)
-		return 0;
+		return rq_bytes;
 
 	if (!ubd_rq_need_copy(req))
-		return 0;
+		return rq_bytes;
 
 	/* convert to data copy in current context */
 	return ubd_copy_pages(ubq, req, false);
@@ -350,7 +350,7 @@ static int ubd_unmap_io(struct ubd_queue *ubq, struct request *req,
 
 		return ubd_copy_pages(ubq, req, true);
 	}
-	return 0;
+	return rq_bytes;
 }
 
 static inline unsigned int ubd_req_build_flags(struct request *req)
@@ -530,7 +530,10 @@ static void ubd_rq_task_work_fn(struct callback_head *work)
 		ret = -ESRCH;
 		spin_lock(&ubq->abort_lock);
 	} else {
-		ret = ubd_map_io(ubq, req);
+		unsigned int mapped_bytes = ubd_map_io(ubq, req);
+
+		WARN_ON_ONCE(mapped_bytes != blk_rq_bytes(req));
+		ret = 0;
 	}
 
 	/*
