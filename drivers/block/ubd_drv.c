@@ -244,7 +244,8 @@ static int ubd_copy_pages(struct ubd_queue *ubq, struct request *rq, bool to_rq)
 	struct page *pgs[UBD_MAX_PIN_PAGES];
 	struct req_iterator req_iter;
 	struct bio_vec bv;
-	unsigned long start = io->addr, left = rq->__data_len;
+	const unsigned int rq_bytes = blk_rq_bytes(rq);
+	unsigned long start = io->addr, left = rq_bytes;
 	unsigned int idx = 0, pg_len = 0, pg_off = 0;
 	int nr_pin = 0;
 	void *pg_addr = NULL;
@@ -296,7 +297,7 @@ refill:
 		left -= len;
 
 		/* overflow */
-		WARN_ON_ONCE(left > rq->__data_len);
+		WARN_ON_ONCE(left > rq_bytes);
 		WARN_ON_ONCE(bv.bv_len > bv_len);
 		if (bv.bv_len)
 			goto refill;
@@ -338,12 +339,14 @@ static int ubd_map_io(struct ubd_queue *ubq, struct request *req)
 static int ubd_unmap_io(struct ubd_queue *ubq, struct request *req,
 		struct ubd_io *io)
 {
-	if (req_op(req) == REQ_OP_READ && ubd_rq_need_copy(req)) {
-		WARN_ON_ONCE(io->res > req->__data_len);
+	const unsigned int rq_bytes = blk_rq_bytes(req);
 
-		if (io->res > 0 && io->res < req->__data_len)
+	if (req_op(req) == REQ_OP_READ && ubd_rq_need_copy(req)) {
+		WARN_ON_ONCE(io->res > rq_bytes);
+
+		if (io->res > 0 && io->res < rq_bytes)
 			pr_err_once("%s: short read, expected %u, got %d\n",
-					__func__, req->__data_len, io->res);
+					__func__, rq_bytes, io->res);
 
 		return ubd_copy_pages(ubq, req, true);
 	}
