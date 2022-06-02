@@ -237,14 +237,15 @@ static inline unsigned ubd_copy_bv(struct bio_vec *bv, void **bv_addr,
 }
 
 /* copy rq pages to ubdsrv vm address pointed by io->addr */
-static int ubd_copy_pages(struct ubd_queue *ubq, struct request *rq, bool to_rq)
+static int ubd_copy_pages(struct ubd_queue *ubq, struct request *rq, bool to_rq,
+		unsigned int max_bytes)
 {
 	unsigned int gup_flags = to_rq ? 0 : FOLL_WRITE;
 	struct ubd_io *io = &ubq->ios[rq->tag];
 	struct page *pgs[UBD_MAX_PIN_PAGES];
 	struct req_iterator req_iter;
 	struct bio_vec bv;
-	const unsigned int rq_bytes = blk_rq_bytes(rq);
+	const unsigned int rq_bytes = min(blk_rq_bytes(rq), max_bytes);
 	unsigned long start = io->addr, left = rq_bytes;
 	unsigned int idx = 0, pg_len = 0, pg_off = 0;
 	int nr_pin = 0;
@@ -333,7 +334,7 @@ static int ubd_map_io(struct ubd_queue *ubq, struct request *req)
 		return rq_bytes;
 
 	/* convert to data copy in current context */
-	return ubd_copy_pages(ubq, req, false);
+	return ubd_copy_pages(ubq, req, false, UINT_MAX);
 }
 
 static int ubd_unmap_io(struct ubd_queue *ubq, struct request *req,
@@ -344,11 +345,7 @@ static int ubd_unmap_io(struct ubd_queue *ubq, struct request *req,
 	if (req_op(req) == REQ_OP_READ && ubd_rq_need_copy(req)) {
 		WARN_ON_ONCE(io->res > rq_bytes);
 
-		if (io->res > 0 && io->res < rq_bytes)
-			pr_err_once("%s: short read, expected %u, got %d\n",
-					__func__, rq_bytes, io->res);
-
-		return ubd_copy_pages(ubq, req, true);
+		return ubd_copy_pages(ubq, req, true, io->res);
 	}
 	return rq_bytes;
 }
@@ -481,9 +478,11 @@ static void ubd_complete_rq(struct request *req)
 {
 	struct ubd_queue *ubq = req->mq_hctx->driver_data;
 	struct ubd_io *io = &ubq->ios[req->tag];
+	unsigned int unmapped_bytes;
 
-	/* for READ request, writing data in iod->addr to rq buffers */
-	ubd_unmap_io(ubq, req, io);
+	/* failed read IO if nothing is read */
+	if (!io->res && req_op(req) == REQ_OP_READ)
+		io->res = -EIO;
 
 	if (io->res < 0) {
 		blk_mq_end_request(req, errno_to_blk_status(io->res));
@@ -493,11 +492,24 @@ static void ubd_complete_rq(struct request *req)
 	/*
 	 * FLUSH or DISCARD usually won't return bytes returned, so end them
 	 * directly.
+	 *
+	 * Both the two needn't unmap.
 	 */
 	if (req_op(req) != REQ_OP_READ && req_op(req) != REQ_OP_WRITE) {
 		blk_mq_end_request(req, BLK_STS_OK);
 		return;
 	}
+
+	/* for READ request, writing data in iod->addr to rq buffers */
+	unmapped_bytes = ubd_unmap_io(ubq, req, io);
+
+	/*
+	 * Extremely impossible since we got data filled in just before
+	 *
+	 * Re-read simply for this unlikely case.
+	 */
+	if (unlikely(unmapped_bytes < io->res))
+		io->res = unmapped_bytes;
 
 	if (blk_update_request(req, BLK_STS_OK, io->res))
 		blk_mq_requeue_request(req, true);
