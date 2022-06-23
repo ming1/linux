@@ -883,20 +883,39 @@ static int __noflush_suspending(struct mapped_device *md)
 	return test_bit(DMF_NOFLUSH_SUSPENDING, &md->flags);
 }
 
-static void dm_handle_requeue(struct dm_io *io)
+/* Return true if the original bio is requeued */
+static bool dm_handle_requeue(struct dm_io *io)
 {
-	if (io->status == BLK_STS_DM_REQUEUE) {
-		struct mapped_device *md = io->md;
-		struct bio *bio = io->orig_bio;
+	struct mapped_device *md = io->md;
+	struct bio *bio = io->orig_bio;
+	bool need_requeue = (io->status == BLK_STS_DM_REQUEUE);
+	bool handle_eagain = (io->status == BLK_STS_AGAIN) &&
+		(bio->bi_opf & REQ_POLLED);
+	bool requeued = false;
+
+	if (need_requeue || handle_eagain) {
 		unsigned long flags;
+
+		if (bio->bi_opf & REQ_POLLED) {
+			/*
+			 * Upper layer won't help us poll split bio
+			 * (io->orig_bio may only reflect a subset of the
+			 * pre-split original) so clear REQ_POLLED in case
+			 * of requeue.
+			 */
+			bio_clear_polled(bio);
+		}
+
 		/*
 		 * Target requested pushing back the I/O.
 		 */
 		spin_lock_irqsave(&md->deferred_lock, flags);
-		if (__noflush_suspending(md) &&
-		    !WARN_ON_ONCE(dm_is_zone_write(md, bio))) {
+		if ((__noflush_suspending(md) &&
+		    !WARN_ON_ONCE(dm_is_zone_write(md, bio))) ||
+				handle_eagain) {
 			/* NOTE early return due to BLK_STS_DM_REQUEUE below */
 			bio_list_add_head(&md->deferred, bio);
+			requeued = true;
 		} else {
 			/*
 			 * noflush suspend was interrupted or this is
@@ -906,6 +925,10 @@ static void dm_handle_requeue(struct dm_io *io)
 		}
 		spin_unlock_irqrestore(&md->deferred_lock, flags);
 	}
+
+	if (requeued)
+		queue_work(md->wq, &md->work);
+	return requeued;
 }
 
 static void dm_io_complete(struct dm_io *io)
@@ -913,8 +936,9 @@ static void dm_io_complete(struct dm_io *io)
 	blk_status_t io_error;
 	struct mapped_device *md = io->md;
 	struct bio *bio = io->orig_bio;
+	bool requeued;
 
-	dm_handle_requeue(io);
+	requeued = dm_handle_requeue(io);
 
 	io_error = io->status;
 	if (dm_io_flagged(io, DM_IO_ACCOUNTED))
@@ -935,23 +959,9 @@ static void dm_io_complete(struct dm_io *io)
 	if (unlikely(wq_has_sleeper(&md->wait)))
 		wake_up(&md->wait);
 
-	if (io_error == BLK_STS_DM_REQUEUE || io_error == BLK_STS_AGAIN) {
-		if (bio->bi_opf & REQ_POLLED) {
-			/*
-			 * Upper layer won't help us poll split bio (io->orig_bio
-			 * may only reflect a subset of the pre-split original)
-			 * so clear REQ_POLLED in case of requeue.
-			 */
-			bio_clear_polled(bio);
-			if (io_error == BLK_STS_AGAIN) {
-				/* io_uring doesn't handle BLK_STS_AGAIN (yet) */
-				queue_io(md, bio);
-				return;
-			}
-		}
-		if (io_error == BLK_STS_DM_REQUEUE)
-			return;
-	}
+	/* We have requeued, so return now */
+	if (requeued)
+		return;
 
 	if (bio_is_flush_with_data(bio)) {
 		/*
