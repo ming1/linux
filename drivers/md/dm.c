@@ -883,8 +883,30 @@ static int __noflush_suspending(struct mapped_device *md)
 	return test_bit(DMF_NOFLUSH_SUSPENDING, &md->flags);
 }
 
+static void dm_requeue_add_io(struct dm_io *io, bool first_stage)
+{
+	struct mapped_device *md = io->md;
+
+	if (first_stage) {
+		struct dm_io *next = md->requeue_list;
+
+		md->requeue_list = io;
+		io->next = next;
+	} else {
+		bio_list_add_head(&md->deferred, io->orig_bio);
+	}
+}
+
+static void dm_requeue_schedule(struct mapped_device *md, bool first_stage)
+{
+	if (first_stage)
+		queue_work(md->wq, &md->requeue_work);
+	else
+		queue_work(md->wq, &md->work);
+}
+
 /* Return true if the original bio is requeued */
-static bool dm_handle_requeue(struct dm_io *io)
+static bool dm_handle_requeue(struct dm_io *io, bool first_stage)
 {
 	struct mapped_device *md = io->md;
 	struct bio *bio = io->orig_bio;
@@ -914,7 +936,7 @@ static bool dm_handle_requeue(struct dm_io *io)
 		    !WARN_ON_ONCE(dm_is_zone_write(md, bio))) ||
 				handle_eagain) {
 			/* NOTE early return due to BLK_STS_DM_REQUEUE below */
-			bio_list_add_head(&md->deferred, bio);
+			dm_requeue_add_io(io, first_stage);
 			requeued = true;
 		} else {
 			/*
@@ -927,18 +949,20 @@ static bool dm_handle_requeue(struct dm_io *io)
 	}
 
 	if (requeued)
-		queue_work(md->wq, &md->work);
+		dm_requeue_schedule(md, first_stage);
 	return requeued;
 }
 
-static void dm_io_complete(struct dm_io *io)
+static void __dm_io_complete(struct dm_io *io, bool first_stage)
 {
 	blk_status_t io_error;
 	struct mapped_device *md = io->md;
 	struct bio *bio = io->orig_bio;
 	bool requeued;
 
-	requeued = dm_handle_requeue(io);
+	requeued = dm_handle_requeue(io, first_stage);
+	if (requeued && first_stage)
+		return;
 
 	io_error = io->status;
 	if (dm_io_flagged(io, DM_IO_ACCOUNTED))
@@ -976,6 +1000,60 @@ static void dm_io_complete(struct dm_io *io)
 			bio->bi_status = io_error;
 		bio_endio(bio);
 	}
+}
+
+static void dm_wq_requeue_work(struct work_struct *work)
+{
+	struct mapped_device *md = container_of(work, struct mapped_device,
+			requeue_work);
+	unsigned long flags;
+	struct dm_io *list, *io;
+
+	spin_lock_irqsave(&md->requeue_lock, flags);
+	list = md->requeue_list;
+	md->requeue_list = NULL;
+	spin_unlock_irqrestore(&md->requeue_lock, flags);
+
+	while (!(io = list)) {
+		struct bio *orig = io->orig_bio;
+		struct bio *new_orig = bio_alloc_clone(orig->bi_bdev,
+				orig, GFP_NOIO, &md->queue->bio_split);
+
+		/* use the part mapped to us */
+		new_orig->bi_iter.bi_sector = bio_end_sector(orig) -
+			io->sector_offset;
+		new_orig->bi_iter.bi_size = io->sectors << 9;
+
+		bio_chain(new_orig, orig);
+		io->orig_bio = new_orig;
+
+		list = io->next;
+		io->next = NULL;
+		__dm_io_complete(io, false);
+	}
+}
+
+/*
+ * Two stages requeue:
+ *
+ * 1) io->orig_bio points to the real original bio, and we should requeue
+ * the part mapped to this io, instead of other parts of the original bio
+ */
+static void dm_io_complete(struct dm_io *io)
+{
+	bool first_stage;
+
+	/*
+	 * only split io needs two stage requeue, otherwise we may run
+	 * into bio clone chain in long suspend, and OOM could be triggered,
+	 * pointed by Mike.
+	 */
+	if (dm_io_flagged(io, DM_IO_WAS_SPLIT))
+		first_stage = true;
+	else
+		first_stage = false;
+
+	__dm_io_complete(io, first_stage);
 }
 
 /*
@@ -1968,6 +2046,7 @@ static struct mapped_device *alloc_dev(int minor)
 	mutex_init(&md->type_lock);
 	mutex_init(&md->table_devices_lock);
 	spin_lock_init(&md->deferred_lock);
+	spin_lock_init(&md->requeue_lock);
 	atomic_set(&md->holders, 1);
 	atomic_set(&md->open_count, 0);
 	atomic_set(&md->event_nr, 0);
@@ -1988,9 +2067,11 @@ static struct mapped_device *alloc_dev(int minor)
 
 	init_waitqueue_head(&md->wait);
 	INIT_WORK(&md->work, dm_wq_work);
+	INIT_WORK(&md->requeue_work, dm_wq_requeue_work);
 	init_waitqueue_head(&md->eventq);
 	init_completion(&md->kobj_holder.completion);
 
+	md->requeue_list = NULL;
 	md->swap_bios = get_swap_bios();
 	sema_init(&md->swap_bios_semaphore, md->swap_bios);
 	mutex_init(&md->swap_bios_lock);

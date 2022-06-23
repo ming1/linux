@@ -22,6 +22,8 @@
 
 #define DM_RESERVED_MAX_IOS		1024
 
+struct dm_io;
+
 struct dm_kobject_holder {
 	struct kobject kobj;
 	struct completion completion;
@@ -90,6 +92,15 @@ struct mapped_device {
 	struct work_struct work;
 	spinlock_t deferred_lock;
 	struct bio_list deferred;
+
+	/*
+	 * requeue work context is nedded for cloning one new bio
+	 * for representing the dm_io to be requeued since each
+	 * dm_io may point to the original bio from FS.
+	 */
+	struct work_struct requeue_work;
+	spinlock_t requeue_lock;
+	struct dm_io *requeue_list;
 
 	void *interface_ptr;
 
