@@ -883,13 +883,11 @@ static int __noflush_suspending(struct mapped_device *md)
 	return test_bit(DMF_NOFLUSH_SUSPENDING, &md->flags);
 }
 
-static void dm_io_complete(struct dm_io *io)
+static void dm_handle_requeue(struct dm_io *io)
 {
-	blk_status_t io_error;
-	struct mapped_device *md = io->md;
-	struct bio *bio = io->orig_bio;
-
 	if (io->status == BLK_STS_DM_REQUEUE) {
+		struct mapped_device *md = io->md;
+		struct bio *bio = io->orig_bio;
 		unsigned long flags;
 		/*
 		 * Target requested pushing back the I/O.
@@ -908,6 +906,15 @@ static void dm_io_complete(struct dm_io *io)
 		}
 		spin_unlock_irqrestore(&md->deferred_lock, flags);
 	}
+}
+
+static void dm_io_complete(struct dm_io *io)
+{
+	blk_status_t io_error;
+	struct mapped_device *md = io->md;
+	struct bio *bio = io->orig_bio;
+
+	dm_handle_requeue(io);
 
 	io_error = io->status;
 	if (dm_io_flagged(io, DM_IO_ACCOUNTED))
