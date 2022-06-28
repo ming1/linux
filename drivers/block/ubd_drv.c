@@ -3,7 +3,7 @@
  * Userspace block device - block device which IO is handled from userspace
  *
  * Take full use of io_uring passthrough command for communicating with
- * ubd userspace daemon(ubdsrvd) for handling basic IO request.
+ * ublk userspace daemon(ublksrvd) for handling basic IO request.
  *
  * Copyright 2022 Ming Lei <ming.lei@redhat.com>
  *
@@ -44,28 +44,28 @@
 #include <linux/task_work.h>
 #include <uapi/linux/ubd_cmd.h>
 
-#define UBD_MINORS		(1U << MINORBITS)
+#define UBLK_MINORS		(1U << MINORBITS)
 
-struct ubd_rq_data {
+struct ublk_rq_data {
 	struct callback_head work;
 };
 
 /* io cmd is active: sqe cmd is received, and its cqe isn't done */
-#define UBD_IO_FLAG_ACTIVE	0x01
+#define UBLK_IO_FLAG_ACTIVE	0x01
 
 /*
  * FETCH io cmd is completed via cqe, and the io cmd is being handled by
- * ubdsrv, and not committed yet
+ * ublksrv, and not committed yet
  */
-#define UBD_IO_FLAG_OWNED_BY_SRV 0x02
+#define UBLK_IO_FLAG_OWNED_BY_SRV 0x02
 
 /*
  * request has been failed, only used in handling aborting, and after
  * this flag is observed, this request will be failed immediately
  */
-#define UBD_IO_FLAG_REQ_FAILED 0x04
+#define UBLK_IO_FLAG_REQ_FAILED 0x04
 
-struct ubd_io {
+struct ublk_io {
 	/* userspace buffer address from io cmd */
 	__u64	addr;
 	unsigned int flags;
@@ -74,7 +74,7 @@ struct ubd_io {
 	struct io_uring_cmd *cmd;
 };
 
-struct ubd_queue {
+struct ublk_queue {
 	int q_id;
 	int q_depth;
 
@@ -85,15 +85,15 @@ struct ubd_queue {
 	unsigned int max_io_sz;
 	bool abort_work_pending;
 	unsigned short nr_io_ready;	/* how many ios setup */
-	struct ubd_device *dev;
+	struct ublk_device *dev;
 	spinlock_t	abort_lock;
 	struct callback_head abort_work;
-	struct ubd_io ios[0];
+	struct ublk_io ios[0];
 };
 
-#define UBD_DAEMON_MONITOR_PERIOD	(5 * HZ)
+#define UBLK_DAEMON_MONITOR_PERIOD	(5 * HZ)
 
-struct ubd_device {
+struct ublk_device {
 	struct gendisk		*ub_disk;
 	struct request_queue	*ub_queue;
 
@@ -101,7 +101,7 @@ struct ubd_device {
 
 	unsigned short  queue_size;
 	unsigned short  bs_shift;
-	struct ubdsrv_ctrl_dev_info	dev_info;
+	struct ublksrv_ctrl_dev_info	dev_info;
 
 	struct blk_mq_tag_set	tag_set;
 
@@ -125,75 +125,75 @@ struct ubd_device {
 	struct work_struct	stop_work;
 };
 
-static dev_t ubd_chr_devt;
-static struct class *ubd_chr_class;
+static dev_t ublk_chr_devt;
+static struct class *ublk_chr_class;
 
-static DEFINE_IDR(ubd_index_idr);
-static DEFINE_SPINLOCK(ubd_idr_lock);
-static wait_queue_head_t ubd_idr_wq;	/* wait until one idr is freed */
+static DEFINE_IDR(ublk_index_idr);
+static DEFINE_SPINLOCK(ublk_idr_lock);
+static wait_queue_head_t ublk_idr_wq;	/* wait until one idr is freed */
 
-static DEFINE_MUTEX(ubd_ctl_mutex);
+static DEFINE_MUTEX(ublk_ctl_mutex);
 
-static struct miscdevice ubd_misc;
+static struct miscdevice ublk_misc;
 
-static struct ubd_device *ubd_get_device(struct ubd_device *ub)
+static struct ublk_device *ublk_get_device(struct ublk_device *ub)
 {
 	if (kobject_get_unless_zero(&ub->cdev_dev.kobj))
 		return ub;
 	return NULL;
 }
 
-static void ubd_put_device(struct ubd_device *ub)
+static void ublk_put_device(struct ublk_device *ub)
 {
 	put_device(&ub->cdev_dev);
 }
 
-static inline struct ubd_queue *ubd_get_queue(struct ubd_device *dev, int qid)
+static inline struct ublk_queue *ublk_get_queue(struct ublk_device *dev, int qid)
 {
-       return (struct ubd_queue *)&(dev->__queues[qid * dev->queue_size]);
+       return (struct ublk_queue *)&(dev->__queues[qid * dev->queue_size]);
 }
 
-static inline bool ubd_rq_need_copy(struct request *rq)
+static inline bool ublk_rq_need_copy(struct request *rq)
 {
 	return rq->bio && bio_has_data(rq->bio);
 }
 
-static inline struct ubdsrv_io_desc *ubd_get_iod(struct ubd_queue *ubq, int tag)
+static inline struct ublksrv_io_desc *ublk_get_iod(struct ublk_queue *ubq, int tag)
 {
-	return (struct ubdsrv_io_desc *)
-		&(ubq->io_cmd_buf[tag * sizeof(struct ubdsrv_io_desc)]);
+	return (struct ublksrv_io_desc *)
+		&(ubq->io_cmd_buf[tag * sizeof(struct ublksrv_io_desc)]);
 }
 
-static inline char *ubd_queue_cmd_buf(struct ubd_device *ub, int q_id)
+static inline char *ublk_queue_cmd_buf(struct ublk_device *ub, int q_id)
 {
-	return ubd_get_queue(ub, q_id)->io_cmd_buf;
+	return ublk_get_queue(ub, q_id)->io_cmd_buf;
 }
 
-static inline int ubd_queue_cmd_buf_size(struct ubd_device *ub, int q_id)
+static inline int ublk_queue_cmd_buf_size(struct ublk_device *ub, int q_id)
 {
-	struct ubd_queue *ubq = ubd_get_queue(ub, q_id);
+	struct ublk_queue *ubq = ublk_get_queue(ub, q_id);
 
-	return round_up(ubq->q_depth * sizeof(struct ubdsrv_io_desc), PAGE_SIZE);
+	return round_up(ubq->q_depth * sizeof(struct ublksrv_io_desc), PAGE_SIZE);
 }
 
-static int ubd_open(struct block_device *bdev, fmode_t mode)
+static int ublk_open(struct block_device *bdev, fmode_t mode)
 {
 	return 0;
 }
 
-static void ubd_release(struct gendisk *disk, fmode_t mode)
+static void ublk_release(struct gendisk *disk, fmode_t mode)
 {
 }
 
 static const struct block_device_operations ub_fops = {
 	.owner =	THIS_MODULE,
-	.open =		ubd_open,
-	.release =	ubd_release,
+	.open =		ublk_open,
+	.release =	ublk_release,
 };
 
-#define UBD_MAX_PIN_PAGES	32
+#define UBLK_MAX_PIN_PAGES	32
 
-static inline void ubd_release_pages(struct ubd_queue *ubq, struct page **pages,
+static inline void ublk_release_pages(struct ublk_queue *ubq, struct page **pages,
 		int nr_pages)
 {
 	int i;
@@ -202,14 +202,14 @@ static inline void ubd_release_pages(struct ubd_queue *ubq, struct page **pages,
 		put_page(pages[i]);
 }
 
-static inline int ubd_pin_user_pages(struct ubd_queue *ubq, u64 start_vm,
+static inline int ublk_pin_user_pages(struct ublk_queue *ubq, u64 start_vm,
 		unsigned int nr_pages, unsigned int gup_flags,
 		struct page **pages)
 {
 	return get_user_pages_fast(start_vm, nr_pages, gup_flags, pages);
 }
 
-static inline unsigned ubd_copy_bv(struct bio_vec *bv, void **bv_addr,
+static inline unsigned ublk_copy_bv(struct bio_vec *bv, void **bv_addr,
 		void *pg_addr, unsigned int *pg_off,
 		unsigned int *pg_len, bool to_bv)
 {
@@ -236,13 +236,13 @@ static inline unsigned ubd_copy_bv(struct bio_vec *bv, void **bv_addr,
 	return len;
 }
 
-/* copy rq pages to ubdsrv vm address pointed by io->addr */
-static int ubd_copy_pages(struct ubd_queue *ubq, struct request *rq, bool to_rq,
+/* copy rq pages to ublksrv vm address pointed by io->addr */
+static int ublk_copy_pages(struct ublk_queue *ubq, struct request *rq, bool to_rq,
 		unsigned int max_bytes)
 {
 	unsigned int gup_flags = to_rq ? 0 : FOLL_WRITE;
-	struct ubd_io *io = &ubq->ios[rq->tag];
-	struct page *pgs[UBD_MAX_PIN_PAGES];
+	struct ublk_io *io = &ubq->ios[rq->tag];
+	struct page *pgs[UBLK_MAX_PIN_PAGES];
 	struct req_iterator req_iter;
 	struct bio_vec bv;
 	const unsigned int rq_bytes = min(blk_rq_bytes(rq), max_bytes);
@@ -271,13 +271,13 @@ refill:
 			if (idx >= nr_pin) {
 				unsigned int max_pages;
 
-				ubd_release_pages(ubq, pgs, nr_pin);
+				ublk_release_pages(ubq, pgs, nr_pin);
 
 				off = start & (PAGE_SIZE - 1);
 				max_pages = min_t(unsigned, (off + left +
 						PAGE_SIZE - 1) >> PAGE_SHIFT,
-						UBD_MAX_PIN_PAGES);
-				nr_pin = ubd_pin_user_pages(ubq, start,
+						UBLK_MAX_PIN_PAGES);
+				nr_pin = ublk_pin_user_pages(ubq, start,
 						max_pages, gup_flags, pgs);
 				if (nr_pin < 0)
 					goto exit;
@@ -290,7 +290,7 @@ refill:
 			pg_addr = kmap_local_page(curr);
 		}
 
-		len = ubd_copy_bv(&bv, &bv_addr, pg_addr, &pg_off, &pg_len,
+		len = ublk_copy_bv(&bv, &bv_addr, pg_addr, &pg_off, &pg_len,
 				to_rq);
 		/* either one of the two has been consumed */
 		WARN_ON_ONCE(bv.bv_len && pg_len);
@@ -311,107 +311,107 @@ refill:
 		if (!to_rq)
 			set_page_dirty_lock(curr);
 	}
-	ubd_release_pages(ubq, pgs, nr_pin);
+	ublk_release_pages(ubq, pgs, nr_pin);
 
 exit:
 	return rq_bytes - left;
 }
 
-#define UBD_REMAP_BATCH	32
+#define UBLK_REMAP_BATCH	32
 
-static int ubd_map_io(struct ubd_queue *ubq, struct request *req)
+static int ublk_map_io(struct ublk_queue *ubq, struct request *req)
 {
 	const unsigned int rq_bytes = blk_rq_bytes(req);
 	/*
-	 * no zero copy, we delay copy WRITE request data into ubdsrv
+	 * no zero copy, we delay copy WRITE request data into ublksrv
 	 * context via task_work_add and the big benefit is that pinning
-	 * pages in current context is pretty fast, see ubd_pin_user_pages
+	 * pages in current context is pretty fast, see ublk_pin_user_pages
 	 */
 	if (req_op(req) != REQ_OP_WRITE && req_op(req) != REQ_OP_FLUSH)
 		return rq_bytes;
 
-	if (!ubd_rq_need_copy(req))
+	if (!ublk_rq_need_copy(req))
 		return rq_bytes;
 
 	/* convert to data copy in current context */
-	return ubd_copy_pages(ubq, req, false, UINT_MAX);
+	return ublk_copy_pages(ubq, req, false, UINT_MAX);
 }
 
-static int ubd_unmap_io(struct ubd_queue *ubq, struct request *req,
-		struct ubd_io *io)
+static int ublk_unmap_io(struct ublk_queue *ubq, struct request *req,
+		struct ublk_io *io)
 {
 	const unsigned int rq_bytes = blk_rq_bytes(req);
 
-	if (req_op(req) == REQ_OP_READ && ubd_rq_need_copy(req)) {
+	if (req_op(req) == REQ_OP_READ && ublk_rq_need_copy(req)) {
 		WARN_ON_ONCE(io->res > rq_bytes);
 
-		return ubd_copy_pages(ubq, req, true, io->res);
+		return ublk_copy_pages(ubq, req, true, io->res);
 	}
 	return rq_bytes;
 }
 
-static inline unsigned int ubd_req_build_flags(struct request *req)
+static inline unsigned int ublk_req_build_flags(struct request *req)
 {
 	unsigned flags = 0;
 
 	if (req->cmd_flags & REQ_FAILFAST_DEV)
-		flags |= UBD_IO_F_FAILFAST_DEV;
+		flags |= UBLK_IO_F_FAILFAST_DEV;
 
 	if (req->cmd_flags & REQ_FAILFAST_TRANSPORT)
-		flags |= UBD_IO_F_FAILFAST_TRANSPORT;
+		flags |= UBLK_IO_F_FAILFAST_TRANSPORT;
 
 	if (req->cmd_flags & REQ_FAILFAST_DRIVER)
-		flags |= UBD_IO_F_FAILFAST_DRIVER;
+		flags |= UBLK_IO_F_FAILFAST_DRIVER;
 
 	if (req->cmd_flags & REQ_META)
-		flags |= UBD_IO_F_META;
+		flags |= UBLK_IO_F_META;
 
 	if (req->cmd_flags & REQ_INTEGRITY)
-		flags |= UBD_IO_F_INTEGRITY;
+		flags |= UBLK_IO_F_INTEGRITY;
 
 	if (req->cmd_flags & REQ_FUA)
-		flags |= UBD_IO_F_FUA;
+		flags |= UBLK_IO_F_FUA;
 
 	if (req->cmd_flags & REQ_PREFLUSH)
-		flags |= UBD_IO_F_PREFLUSH;
+		flags |= UBLK_IO_F_PREFLUSH;
 
 	if (req->cmd_flags & REQ_NOUNMAP)
-		flags |= UBD_IO_F_NOUNMAP;
+		flags |= UBLK_IO_F_NOUNMAP;
 
 	if (req->cmd_flags & REQ_SWAP)
-		flags |= UBD_IO_F_SWAP;
+		flags |= UBLK_IO_F_SWAP;
 
 	return flags;
 }
 
-static int ubd_setup_iod(struct ubd_queue *ubq, struct request *req)
+static int ublk_setup_iod(struct ublk_queue *ubq, struct request *req)
 {
-	struct ubdsrv_io_desc *iod = ubd_get_iod(ubq, req->tag);
-	struct ubd_io *io = &ubq->ios[req->tag];
-	u32 ubd_op;
+	struct ublksrv_io_desc *iod = ublk_get_iod(ubq, req->tag);
+	struct ublk_io *io = &ubq->ios[req->tag];
+	u32 ublk_op;
 
 	switch (req_op(req)) {
 	case REQ_OP_READ:
-		ubd_op = UBD_IO_OP_READ;
+		ublk_op = UBLK_IO_OP_READ;
 		break;
 	case REQ_OP_WRITE:
-		ubd_op = UBD_IO_OP_WRITE;
+		ublk_op = UBLK_IO_OP_WRITE;
 		break;
 	case REQ_OP_FLUSH:
-		ubd_op = UBD_IO_OP_FLUSH;
+		ublk_op = UBLK_IO_OP_FLUSH;
 		break;
 	case REQ_OP_DISCARD:
-		ubd_op = UBD_IO_OP_DISCARD;
+		ublk_op = UBLK_IO_OP_DISCARD;
 		break;
 	case REQ_OP_WRITE_ZEROES:
-		ubd_op = UBD_IO_OP_WRITE_ZEROES;
+		ublk_op = UBLK_IO_OP_WRITE_ZEROES;
 		break;
 	default:
 		return BLK_STS_IOERR;
 	}
 
 	/* need to translate since kernel may change */
-	iod->op_flags = ubd_op | ubd_req_build_flags(req);
+	iod->op_flags = ublk_op | ublk_req_build_flags(req);
 	iod->nr_sectors = blk_rq_sectors(req);
 	iod->start_sector = blk_rq_pos(req);
 	iod->addr = io->addr;
@@ -419,18 +419,18 @@ static int ubd_setup_iod(struct ubd_queue *ubq, struct request *req)
 	return BLK_STS_OK;
 }
 
-static blk_status_t ubd_queue_rq(struct blk_mq_hw_ctx *hctx,
+static blk_status_t ublk_queue_rq(struct blk_mq_hw_ctx *hctx,
 		const struct blk_mq_queue_data *bd)
 {
-	struct ubd_queue *ubq = hctx->driver_data;
+	struct ublk_queue *ubq = hctx->driver_data;
 	struct request *rq = bd->rq;
-	struct ubd_rq_data *data = blk_mq_rq_to_pdu(rq);
+	struct ublk_rq_data *data = blk_mq_rq_to_pdu(rq);
 	enum task_work_notify_mode notify_mode = bd->last ?
 		TWA_SIGNAL_NO_IPI : TWA_NONE;
 	blk_status_t res;
 
 	/* fill iod to slot in io cmd buffer */
-	res = ubd_setup_iod(ubq, rq);
+	res = ublk_setup_iod(ubq, rq);
 	if (res != BLK_STS_OK)
 		return BLK_STS_IOERR;
 
@@ -447,7 +447,7 @@ static blk_status_t ubd_queue_rq(struct blk_mq_hw_ctx *hctx,
 	 * monitor work immediately.
 	 */
 	if (task_work_add(ubq->ubq_daemon, &data->work, notify_mode)) {
-		struct ubd_device *ub = rq->q->queuedata;
+		struct ublk_device *ub = rq->q->queuedata;
 
 		mod_delayed_work(system_wq, &ub->monitor_work, 0);
 		return BLK_STS_IOERR;
@@ -456,28 +456,28 @@ static blk_status_t ubd_queue_rq(struct blk_mq_hw_ctx *hctx,
 	return BLK_STS_OK;
 }
 
-static bool ubq_daemon_is_dying(struct ubd_queue *ubq)
+static bool ubq_daemon_is_dying(struct ublk_queue *ubq)
 {
 	return ubq->ubq_daemon->flags & PF_EXITING;
 }
 
-static void ubd_commit_rqs(struct blk_mq_hw_ctx *hctx)
+static void ublk_commit_rqs(struct blk_mq_hw_ctx *hctx)
 {
-	struct ubd_queue *ubq = hctx->driver_data;
+	struct ublk_queue *ubq = hctx->driver_data;
 
 	__set_notify_signal(ubq->ubq_daemon);
 	if (ubq_daemon_is_dying(ubq)) {
-		struct ubd_device *ub = hctx->queue->queuedata;
+		struct ublk_device *ub = hctx->queue->queuedata;
 
 		mod_delayed_work(system_wq, &ub->monitor_work, 0);
 	}
 }
 
 /* todo: handle partial completion */
-static void ubd_complete_rq(struct request *req)
+static void ublk_complete_rq(struct request *req)
 {
-	struct ubd_queue *ubq = req->mq_hctx->driver_data;
-	struct ubd_io *io = &ubq->ios[req->tag];
+	struct ublk_queue *ubq = req->mq_hctx->driver_data;
+	struct ublk_io *io = &ubq->ios[req->tag];
 	unsigned int unmapped_bytes;
 
 	/* failed read IO if nothing is read */
@@ -501,7 +501,7 @@ static void ubd_complete_rq(struct request *req)
 	}
 
 	/* for READ request, writing data in iod->addr to rq buffers */
-	unmapped_bytes = ubd_unmap_io(ubq, req, io);
+	unmapped_bytes = ublk_unmap_io(ubq, req, io);
 
 	/*
 	 * Extremely impossible since we got data filled in just before
@@ -518,49 +518,49 @@ static void ubd_complete_rq(struct request *req)
 }
 
 /*
- * __ubd_fail_req() may be called from abort context or ->ubq_daemon
+ * __ublk_fail_req() may be called from abort context or ->ubq_daemon
  * context during exiting, so lock is required.
  *
  * Also aborting may not be started yet, keep in mind that one failed
  * request may be issued by block layer again.
  */
-static void __ubd_fail_req(struct ubd_io *io, struct request *req)
+static void __ublk_fail_req(struct ublk_io *io, struct request *req)
 {
-	WARN_ON_ONCE(io->flags & UBD_IO_FLAG_ACTIVE);
+	WARN_ON_ONCE(io->flags & UBLK_IO_FLAG_ACTIVE);
 
-	if (!(io->flags & UBD_IO_FLAG_REQ_FAILED)) {
-		io->flags |= UBD_IO_FLAG_REQ_FAILED;
+	if (!(io->flags & UBLK_IO_FLAG_REQ_FAILED)) {
+		io->flags |= UBLK_IO_FLAG_REQ_FAILED;
 		blk_mq_end_request(req, BLK_STS_IOERR);
 	}
 }
 
-#define UBD_REQUEUE_DELAY_MS	3
+#define UBLK_REQUEUE_DELAY_MS	3
 
-static void ubd_rq_task_work_fn(struct callback_head *work)
+static void ublk_rq_task_work_fn(struct callback_head *work)
 {
 	bool task_exiting = !!(current->flags & PF_EXITING);
-	struct ubd_rq_data *data = container_of(work,
-			struct ubd_rq_data, work);
+	struct ublk_rq_data *data = container_of(work,
+			struct ublk_rq_data, work);
 	struct request *req = blk_mq_rq_from_pdu(data);
-	struct ubd_queue *ubq = req->mq_hctx->driver_data;
-	struct ubd_io *io = &ubq->ios[req->tag];
-	struct ubd_device *ub = req->q->queuedata;
+	struct ublk_queue *ubq = req->mq_hctx->driver_data;
+	struct ublk_io *io = &ubq->ios[req->tag];
+	struct ublk_device *ub = req->q->queuedata;
 	int ret;
 
 	pr_devel("%s: complete: op %d, qid %d tag %d ret %d io_flags %x addr %llx\n",
 			__func__, io->cmd->cmd_op, ubq->q_id,  req->tag, ret, io->flags,
-			ubd_get_iod(ubq, req->tag)->addr);
+			ublk_get_iod(ubq, req->tag)->addr);
 
 	/*
 	 * If task is exiting, we may be run from exit_task_work() in
-	 * do_exit(), and may race with ubd_abort_queue(), so lock is
+	 * do_exit(), and may race with ublk_abort_queue(), so lock is
 	 * needed.
 	 */
 	if (unlikely(task_exiting)) {
 		ret = -ESRCH;
 		spin_lock(&ubq->abort_lock);
 	} else {
-		unsigned int mapped_bytes = ubd_map_io(ubq, req);
+		unsigned int mapped_bytes = ublk_map_io(ubq, req);
 
 		/*
 		 * Nothing mapped, retry until we succeed.
@@ -572,13 +572,13 @@ static void ubd_rq_task_work_fn(struct callback_head *work)
 		if (unlikely(!mapped_bytes)) {
 			blk_mq_requeue_request(req, false);
 			blk_mq_delay_kick_requeue_list(req->q,
-					UBD_REQUEUE_DELAY_MS);
+					UBLK_REQUEUE_DELAY_MS);
 			return;
 		}
 
 		/* partially mapped, update io descriptor */
 		if (unlikely(mapped_bytes != blk_rq_bytes(req)))
-			ubd_get_iod(ubq, req->tag)->nr_sectors =
+			ublk_get_iod(ubq, req->tag)->nr_sectors =
 				mapped_bytes >> 9;
 		ret = 0;
 	}
@@ -587,23 +587,23 @@ static void ubd_rq_task_work_fn(struct callback_head *work)
 	 * Or abort isn't started, but the request is re-issued after being
 	 * failed, we still need to fail it one more time.
          */
-	if (unlikely(io->flags & UBD_IO_FLAG_REQ_FAILED)) {
+	if (unlikely(io->flags & UBLK_IO_FLAG_REQ_FAILED)) {
 		blk_mq_end_request(req, BLK_STS_IOERR);
 		if (task_exiting)
 			spin_unlock(&ubq->abort_lock);
 		return;
 	}
 
-	/* mark this cmd owned by ubdsrv */
-	io->flags |= UBD_IO_FLAG_OWNED_BY_SRV;
+	/* mark this cmd owned by ublksrv */
+	io->flags |= UBLK_IO_FLAG_OWNED_BY_SRV;
 
 	/*
 	 * clear ACTIVE since we are done with this sqe/cmd slot
 	 * We can only accept io cmd in case of being not active.
 	 */
-	io->flags &= ~UBD_IO_FLAG_ACTIVE;
+	io->flags &= ~UBLK_IO_FLAG_ACTIVE;
 
-	/* tell ubdsrv one io request is coming */
+	/* tell ublksrv one io request is coming */
 	io_uring_cmd_done(io->cmd, ret, 0);
 
 	/*
@@ -616,37 +616,37 @@ static void ubd_rq_task_work_fn(struct callback_head *work)
 	}
 }
 
-static int ubd_init_hctx(struct blk_mq_hw_ctx *hctx, void *driver_data,
+static int ublk_init_hctx(struct blk_mq_hw_ctx *hctx, void *driver_data,
 		unsigned int hctx_idx)
 {
-	struct ubd_device *ub = hctx->queue->queuedata;
-	struct ubd_queue *ubq = ubd_get_queue(ub, hctx->queue_num);
+	struct ublk_device *ub = hctx->queue->queuedata;
+	struct ublk_queue *ubq = ublk_get_queue(ub, hctx->queue_num);
 
 	hctx->driver_data = ubq;
 	return 0;
 }
 
-static int ubd_init_rq(struct blk_mq_tag_set *set, struct request *req,
+static int ublk_init_rq(struct blk_mq_tag_set *set, struct request *req,
 		unsigned int hctx_idx, unsigned int numa_node)
 {
-	struct ubd_rq_data *data = blk_mq_rq_to_pdu(req);
+	struct ublk_rq_data *data = blk_mq_rq_to_pdu(req);
 
-	init_task_work(&data->work, ubd_rq_task_work_fn);
+	init_task_work(&data->work, ublk_rq_task_work_fn);
 
 	return 0;
 }
 
-static const struct blk_mq_ops ubd_mq_ops = {
-	.queue_rq       = ubd_queue_rq,
-	.commit_rqs     = ubd_commit_rqs,
-	.init_hctx	= ubd_init_hctx,
-	.init_request	= ubd_init_rq,
+static const struct blk_mq_ops ublk_mq_ops = {
+	.queue_rq       = ublk_queue_rq,
+	.commit_rqs     = ublk_commit_rqs,
+	.init_hctx	= ublk_init_hctx,
+	.init_request	= ublk_init_rq,
 };
 
-static int ubd_ch_open(struct inode *inode, struct file *filp)
+static int ublk_ch_open(struct inode *inode, struct file *filp)
 {
-	struct ubd_device *ub = container_of(inode->i_cdev,
-			struct ubd_device, cdev);
+	struct ublk_device *ub = container_of(inode->i_cdev,
+			struct ublk_device, cdev);
 
 	if (atomic_cmpxchg(&ub->ch_open_cnt, 0, 1) == 0) {
 		filp->private_data = ub;
@@ -655,9 +655,9 @@ static int ubd_ch_open(struct inode *inode, struct file *filp)
 	return -EBUSY;
 }
 
-static int ubd_ch_release(struct inode *inode, struct file *filp)
+static int ublk_ch_release(struct inode *inode, struct file *filp)
 {
-	struct ubd_device *ub = filp->private_data;
+	struct ublk_device *ub = filp->private_data;
 
 	while (atomic_cmpxchg(&ub->ch_open_cnt, 1, 0) != 1)
 		cpu_relax();
@@ -666,57 +666,57 @@ static int ubd_ch_release(struct inode *inode, struct file *filp)
 	return 0;
 }
 
-/* map pre-allocated per-queue cmd buffer to ubdsrv daemon */
-static int ubd_ch_mmap(struct file *filp, struct vm_area_struct *vma)
+/* map pre-allocated per-queue cmd buffer to ublksrv daemon */
+static int ublk_ch_mmap(struct file *filp, struct vm_area_struct *vma)
 {
-	struct ubd_device *ub = filp->private_data;
+	struct ublk_device *ub = filp->private_data;
 	size_t sz = vma->vm_end - vma->vm_start;
-	unsigned max_sz = UBD_MAX_QUEUE_DEPTH * sizeof(struct ubdsrv_io_desc);
+	unsigned max_sz = UBLK_MAX_QUEUE_DEPTH * sizeof(struct ublksrv_io_desc);
 	unsigned long pfn, end, phys_off = vma->vm_pgoff << PAGE_SHIFT;
 	int q_id;
 
 	if (vma->vm_flags & VM_WRITE)
 		return -EPERM;
 
-	end = UBDSRV_CMD_BUF_OFFSET + ub->dev_info.nr_hw_queues * max_sz;
-	if (phys_off < UBDSRV_CMD_BUF_OFFSET || phys_off >= end)
+	end = UBLKSRV_CMD_BUF_OFFSET + ub->dev_info.nr_hw_queues * max_sz;
+	if (phys_off < UBLKSRV_CMD_BUF_OFFSET || phys_off >= end)
 		return -EINVAL;
 
-	q_id = (phys_off - UBDSRV_CMD_BUF_OFFSET) / max_sz;
+	q_id = (phys_off - UBLKSRV_CMD_BUF_OFFSET) / max_sz;
 	pr_devel("%s: qid %d, pid %d, addr %lx pg_off %lx sz %lu\n",
 			__func__, q_id, current->pid, vma->vm_start,
 			phys_off, (unsigned long)sz);
 
-	if (sz != ubd_queue_cmd_buf_size(ub, q_id))
+	if (sz != ublk_queue_cmd_buf_size(ub, q_id))
 		return -EINVAL;
 
-	pfn = virt_to_phys(ubd_queue_cmd_buf(ub, q_id)) >> PAGE_SHIFT;
+	pfn = virt_to_phys(ublk_queue_cmd_buf(ub, q_id)) >> PAGE_SHIFT;
 	return remap_pfn_range(vma, vma->vm_start, pfn, sz, vma->vm_page_prot);
 }
 
-static void ubd_commit_completion(struct ubd_device *ub,
-		struct ubdsrv_io_cmd *ub_cmd)
+static void ublk_commit_completion(struct ublk_device *ub,
+		struct ublksrv_io_cmd *ub_cmd)
 {
 	u32 qid = ub_cmd->q_id, tag = ub_cmd->tag;
-	struct ubd_queue *ubq = ubd_get_queue(ub, qid);
-	struct ubd_io *io = &ubq->ios[tag];
+	struct ublk_queue *ubq = ublk_get_queue(ub, qid);
+	struct ublk_io *io = &ubq->ios[tag];
 	struct request *req;
 
 	/* now this cmd slot is owned by nbd driver */
-	io->flags &= ~UBD_IO_FLAG_OWNED_BY_SRV;
+	io->flags &= ~UBLK_IO_FLAG_OWNED_BY_SRV;
 	io->res = ub_cmd->result;
 
 	/* find the io request and complete */
 	req = blk_mq_tag_to_rq(ub->tag_set.tags[qid], tag);
 
 	if (req && likely(!blk_should_fake_timeout(req->q)))
-		ubd_complete_rq(req);
+		ublk_complete_rq(req);
 }
 
 /*
  * Focus on aborting any in-flight request scheduled to run via task work
  */
-static void __ubd_abort_queue(struct ubd_device *ub, struct ubd_queue *ubq)
+static void __ublk_abort_queue(struct ublk_device *ub, struct ublk_queue *ubq)
 {
 	bool task_exiting = !!(ubq->ubq_daemon->flags & PF_EXITING);
 	int i;
@@ -725,47 +725,47 @@ static void __ubd_abort_queue(struct ubd_device *ub, struct ubd_queue *ubq)
 		goto out;
 
 	for (i = 0; i < ubq->q_depth; i++) {
-		struct ubd_io *io = &ubq->ios[i];
+		struct ublk_io *io = &ubq->ios[i];
 
-		if (!(io->flags & UBD_IO_FLAG_ACTIVE)) {
+		if (!(io->flags & UBLK_IO_FLAG_ACTIVE)) {
 			struct request *rq;
 
 			/*
-			 * Either we fail the request or ubd_rq_task_work_fn
+			 * Either we fail the request or ublk_rq_task_work_fn
 			 * will do it
 			 */
 			rq = blk_mq_tag_to_rq(ub->tag_set.tags[ubq->q_id], i);
 			if (rq)
-				__ubd_fail_req(io, rq);
+				__ublk_fail_req(io, rq);
 		}
 	}
  out:
 	ubq->abort_work_pending = false;
-	ubd_put_device(ub);
+	ublk_put_device(ub);
 }
 
-static void ubd_queue_task_work_fn(struct callback_head *work)
+static void ublk_queue_task_work_fn(struct callback_head *work)
 {
-	struct ubd_queue *ubq = container_of(work, struct ubd_queue,
+	struct ublk_queue *ubq = container_of(work, struct ublk_queue,
 			abort_work);
 
 	/*
 	 * Lock is only required in case of exiting ubq_daemon, but harmless
 	 * to grab it for running from task work too
 	 *
-	 * We are serialized with ubd_rq_task_work_fn() strictly.
+	 * We are serialized with ublk_rq_task_work_fn() strictly.
 	 */
 	spin_lock(&ubq->abort_lock);
-	__ubd_abort_queue(ubq->dev, ubq);
+	__ublk_abort_queue(ubq->dev, ubq);
 	spin_unlock(&ubq->abort_lock);
 }
 
 
-static void ubd_abort_queue(struct ubd_device *ub, struct ubd_queue *ubq)
+static void ublk_abort_queue(struct ublk_device *ub, struct ublk_queue *ubq)
 {
 	bool put_dev;
 
-	if (!ubd_get_device(ub))
+	if (!ublk_get_device(ub))
 		return;
 
 	spin_lock(&ubq->abort_lock);
@@ -774,7 +774,7 @@ static void ubd_abort_queue(struct ubd_device *ub, struct ubd_queue *ubq)
 		put_dev = false;
 		if (task_work_add(ubq->ubq_daemon, &ubq->abort_work,
 					TWA_SIGNAL)) {
-			__ubd_abort_queue(ub, ubq);
+			__ublk_abort_queue(ub, ubq);
 		}
 	} else {
 		put_dev = true;
@@ -786,65 +786,65 @@ static void ubd_abort_queue(struct ubd_device *ub, struct ubd_queue *ubq)
 	 * is triggered
 	 */
 	if (put_dev)
-		ubd_put_device(ub);
+		ublk_put_device(ub);
 }
 
-static void ubd_cancel_queue(struct ubd_queue *ubq)
+static void ublk_cancel_queue(struct ublk_queue *ubq)
 {
 	int i;
 
 	for (i = 0; i < ubq->q_depth; i++) {
-		struct ubd_io *io = &ubq->ios[i];
+		struct ublk_io *io = &ubq->ios[i];
 
-		if (io->flags & UBD_IO_FLAG_ACTIVE) {
-			io->flags &= ~UBD_IO_FLAG_ACTIVE;
-			io_uring_cmd_done(io->cmd, UBD_IO_RES_ABORT, 0);
+		if (io->flags & UBLK_IO_FLAG_ACTIVE) {
+			io->flags &= ~UBLK_IO_FLAG_ACTIVE;
+			io_uring_cmd_done(io->cmd, UBLK_IO_RES_ABORT, 0);
 		}
 	}
 }
 
 /* Cancel all pending commands, must be called after del_gendisk() returns */
-static void ubd_cancel_dev(struct ubd_device *ub)
+static void ublk_cancel_dev(struct ublk_device *ub)
 {
 	int i;
 
 	for (i = 0; i < ub->dev_info.nr_hw_queues; i++)
-		ubd_cancel_queue(ubd_get_queue(ub, i));
+		ublk_cancel_queue(ublk_get_queue(ub, i));
 }
 
-static void ubd_stop_dev(struct ubd_device *ub)
+static void ublk_stop_dev(struct ublk_device *ub)
 {
 	mutex_lock(&ub->mutex);
 	if (!disk_live(ub->ub_disk))
 		goto unlock;
 
 	del_gendisk(ub->ub_disk);
-	ub->dev_info.state = UBD_S_DEV_DEAD;
-	ub->dev_info.ubdsrv_pid = -1;
-	ubd_cancel_dev(ub);
+	ub->dev_info.state = UBLK_S_DEV_DEAD;
+	ub->dev_info.ublksrv_pid = -1;
+	ublk_cancel_dev(ub);
  unlock:
 	mutex_unlock(&ub->mutex);
 	cancel_delayed_work_sync(&ub->monitor_work);
 }
 
-static int ubd_ctrl_stop_dev(struct ubd_device *ub)
+static int ublk_ctrl_stop_dev(struct ublk_device *ub)
 {
-	ubd_stop_dev(ub);
+	ublk_stop_dev(ub);
 	cancel_work_sync(&ub->stop_work);
 	return 0;
 }
 
-static inline bool ubd_queue_ready(struct ubd_queue *ubq)
+static inline bool ublk_queue_ready(struct ublk_queue *ubq)
 {
 	return ubq->nr_io_ready == ubq->q_depth;
 }
 
 /* device can only be started after all IOs are ready */
-static void ubd_mark_io_ready(struct ubd_device *ub, struct ubd_queue *ubq)
+static void ublk_mark_io_ready(struct ublk_device *ub, struct ublk_queue *ubq)
 {
 	mutex_lock(&ub->mutex);
 	ubq->nr_io_ready++;
-	if (ubd_queue_ready(ubq)) {
+	if (ublk_queue_ready(ubq)) {
 		ubq->ubq_daemon = current;
 		get_task_struct(ubq->ubq_daemon);
 		ub->nr_queues_ready++;
@@ -854,12 +854,12 @@ static void ubd_mark_io_ready(struct ubd_device *ub, struct ubd_queue *ubq)
 	mutex_unlock(&ub->mutex);
 }
 
-static int ubd_ch_uring_cmd(struct io_uring_cmd *cmd, unsigned int issue_flags)
+static int ublk_ch_uring_cmd(struct io_uring_cmd *cmd, unsigned int issue_flags)
 {
-	struct ubdsrv_io_cmd *ub_cmd = (struct ubdsrv_io_cmd *)cmd->cmd;
-	struct ubd_device *ub = cmd->file->private_data;
-	struct ubd_queue *ubq;
-	struct ubd_io *io;
+	struct ublksrv_io_cmd *ub_cmd = (struct ublksrv_io_cmd *)cmd->cmd;
+	struct ublk_device *ub = cmd->file->private_data;
+	struct ublk_queue *ubq;
+	struct ublk_io *io;
 	u32 cmd_op = cmd->cmd_op;
 	unsigned tag = ub_cmd->tag;
 	int ret = -EINVAL;
@@ -871,7 +871,7 @@ static int ubd_ch_uring_cmd(struct io_uring_cmd *cmd, unsigned int issue_flags)
 	if (!(issue_flags & IO_URING_F_SQE128))
 		goto out;
 
-	ubq = ubd_get_queue(ub, ub_cmd->q_id);
+	ubq = ublk_get_queue(ub, ub_cmd->q_id);
 	if (!ubq || ub_cmd->q_id != ubq->q_id)
 		goto out;
 
@@ -881,15 +881,15 @@ static int ubd_ch_uring_cmd(struct io_uring_cmd *cmd, unsigned int issue_flags)
 	io = &ubq->ios[tag];
 
 	/* there is pending io cmd, something must be wrong */
-	if (io->flags & UBD_IO_FLAG_ACTIVE) {
+	if (io->flags & UBLK_IO_FLAG_ACTIVE) {
 		ret = -EBUSY;
 		goto out;
 	}
 
 	switch (cmd_op) {
-	case UBD_IO_FETCH_REQ:
-		/* UBD_IO_FETCH_REQ is only allowed before queue is setup */
-		if (WARN_ON_ONCE(ubd_queue_ready(ubq))) {
+	case UBLK_IO_FETCH_REQ:
+		/* UBLK_IO_FETCH_REQ is only allowed before queue is setup */
+		if (WARN_ON_ONCE(ublk_queue_ready(ubq))) {
 			ret = -EBUSY;
 			goto out;
 		}
@@ -897,33 +897,33 @@ static int ubd_ch_uring_cmd(struct io_uring_cmd *cmd, unsigned int issue_flags)
 		 * The io is being handled by server, so COMMIT_RQ is expected
 		 * instead of FETCH_REQ
 		 */
-		if (io->flags & UBD_IO_FLAG_OWNED_BY_SRV)
+		if (io->flags & UBLK_IO_FLAG_OWNED_BY_SRV)
 			goto out;
 		/* FETCH_RQ has to provide IO buffer */
 		if (!ub_cmd->addr)
 			goto out;
 		io->cmd = cmd;
-		io->flags |= UBD_IO_FLAG_ACTIVE;
+		io->flags |= UBLK_IO_FLAG_ACTIVE;
 		io->addr = ub_cmd->addr;
 
-		ubd_mark_io_ready(ub, ubq);
+		ublk_mark_io_ready(ub, ubq);
 		break;
-	case UBD_IO_COMMIT_AND_FETCH_REQ:
+	case UBLK_IO_COMMIT_AND_FETCH_REQ:
 		/* FETCH_RQ has to provide IO buffer */
 		if (!ub_cmd->addr)
 			goto out;
 		io->addr = ub_cmd->addr;
-		io->flags |= UBD_IO_FLAG_ACTIVE;
+		io->flags |= UBLK_IO_FLAG_ACTIVE;
 		fallthrough;
-	case UBD_IO_COMMIT_REQ:
+	case UBLK_IO_COMMIT_REQ:
 		io->cmd = cmd;
-		if (!(io->flags & UBD_IO_FLAG_OWNED_BY_SRV))
+		if (!(io->flags & UBLK_IO_FLAG_OWNED_BY_SRV))
 			goto out;
-		ubd_commit_completion(ub, ub_cmd);
+		ublk_commit_completion(ub, ub_cmd);
 
 		/* COMMIT_REQ is supposed to not fetch req */
-		if (cmd_op == UBD_IO_COMMIT_REQ) {
-			ret = UBD_IO_RES_OK;
+		if (cmd_op == UBLK_IO_COMMIT_REQ) {
+			ret = UBLK_IO_RES_OK;
 			goto out;
 		}
 		break;
@@ -933,26 +933,26 @@ static int ubd_ch_uring_cmd(struct io_uring_cmd *cmd, unsigned int issue_flags)
 	return -EIOCBQUEUED;
 
  out:
-	io->flags &= ~UBD_IO_FLAG_ACTIVE;
+	io->flags &= ~UBLK_IO_FLAG_ACTIVE;
 	io_uring_cmd_done(cmd, ret, 0);
 	pr_devel("%s: complete: cmd op %d, tag %d ret %x io_flags %x\n",
 			__func__, cmd_op, tag, ret, io->flags);
 	return -EIOCBQUEUED;
 }
 
-static const struct file_operations ubd_ch_fops = {
+static const struct file_operations ublk_ch_fops = {
 	.owner = THIS_MODULE,
-	.open = ubd_ch_open,
-	.release = ubd_ch_release,
+	.open = ublk_ch_open,
+	.release = ublk_ch_release,
 	.llseek = no_llseek,
-	.uring_cmd = ubd_ch_uring_cmd,
-	.mmap = ubd_ch_mmap,
+	.uring_cmd = ublk_ch_uring_cmd,
+	.mmap = ublk_ch_mmap,
 };
 
-static void ubd_deinit_queue(struct ubd_device *ub, int q_id)
+static void ublk_deinit_queue(struct ublk_device *ub, int q_id)
 {
-	int size = ubd_queue_cmd_buf_size(ub, q_id);
-	struct ubd_queue *ubq = ubd_get_queue(ub, q_id);
+	int size = ublk_queue_cmd_buf_size(ub, q_id);
+	struct ublk_queue *ubq = ublk_get_queue(ub, q_id);
 
 	if (ubq->ubq_daemon)
 		put_task_struct(ubq->ubq_daemon);
@@ -960,29 +960,29 @@ static void ubd_deinit_queue(struct ubd_device *ub, int q_id)
 		free_pages((unsigned long)ubq->io_cmd_buf, get_order(size));
 }
 
-static int ubd_init_queue(struct ubd_device *ub, int q_id)
+static int ublk_init_queue(struct ublk_device *ub, int q_id)
 {
-	struct ubd_queue *ubq = ubd_get_queue(ub, q_id);
+	struct ublk_queue *ubq = ublk_get_queue(ub, q_id);
 	gfp_t gfp_flags = GFP_KERNEL | __GFP_ZERO;
 	void *ptr;
 	int size;
 
 	ubq->q_id = q_id;
 	ubq->q_depth = ub->dev_info.queue_depth;
-	size = ubd_queue_cmd_buf_size(ub, q_id);
+	size = ublk_queue_cmd_buf_size(ub, q_id);
 
 	ptr = (void *) __get_free_pages(gfp_flags, get_order(size));
 	if (!ptr)
 		return -ENOMEM;
 
-	init_task_work(&ubq->abort_work, ubd_queue_task_work_fn);
+	init_task_work(&ubq->abort_work, ublk_queue_task_work_fn);
 	ubq->io_cmd_buf = ptr;
 	ubq->dev = ub;
 	spin_lock_init(&ubq->abort_lock);
 	return 0;
 }
 
-static void ubd_deinit_queues(struct ubd_device *ub)
+static void ublk_deinit_queues(struct ublk_device *ub)
 {
 	int nr_queues = ub->dev_info.nr_hw_queues;
 	int i;
@@ -991,15 +991,15 @@ static void ubd_deinit_queues(struct ubd_device *ub)
 		return;
 
 	for (i = 0; i < nr_queues; i++)
-		ubd_deinit_queue(ub, i);
+		ublk_deinit_queue(ub, i);
 	kfree(ub->__queues);
 }
 
-static int ubd_init_queues(struct ubd_device *ub)
+static int ublk_init_queues(struct ublk_device *ub)
 {
 	int nr_queues = ub->dev_info.nr_hw_queues;
 	int depth = ub->dev_info.queue_depth;
-	int ubq_size = sizeof(struct ubd_queue) + depth * sizeof(struct ubd_io);
+	int ubq_size = sizeof(struct ublk_queue) + depth * sizeof(struct ublk_io);
 	int i, ret = -ENOMEM;
 
 	ub->queue_size = ubq_size;
@@ -1008,7 +1008,7 @@ static int ubd_init_queues(struct ubd_device *ub)
 		return ret;
 
 	for (i = 0; i < nr_queues; i++) {
-		if (ubd_init_queue(ub, i))
+		if (ublk_init_queue(ub, i))
 			goto fail;
 	}
 
@@ -1016,25 +1016,25 @@ static int ubd_init_queues(struct ubd_device *ub)
 	return 0;
 
  fail:
-	ubd_deinit_queues(ub);
+	ublk_deinit_queues(ub);
 	return ret;
 }
 
-static int __ubd_alloc_dev_number(struct ubd_device *ub, int idx)
+static int __ublk_alloc_dev_number(struct ublk_device *ub, int idx)
 {
 	int i = idx;
 	int err;
 
-	spin_lock(&ubd_idr_lock);
+	spin_lock(&ublk_idr_lock);
 	/* allocate id, if @id >= 0, we're requesting that specific id */
 	if (i >= 0) {
-		err = idr_alloc(&ubd_index_idr, ub, i, i + 1, GFP_NOWAIT);
+		err = idr_alloc(&ublk_index_idr, ub, i, i + 1, GFP_NOWAIT);
 		if (err == -ENOSPC)
 			err = -EEXIST;
 	} else {
-		err = idr_alloc(&ubd_index_idr, ub, 0, 0, GFP_NOWAIT);
+		err = idr_alloc(&ublk_index_idr, ub, 0, 0, GFP_NOWAIT);
 	}
-	spin_unlock(&ubd_idr_lock);
+	spin_unlock(&ublk_idr_lock);
 
 	if (err >= 0)
 		ub->ub_number = err;
@@ -1042,16 +1042,16 @@ static int __ubd_alloc_dev_number(struct ubd_device *ub, int idx)
 	return err;
 }
 
-static struct ubd_device *__ubd_create_dev(int idx)
+static struct ublk_device *__ublk_create_dev(int idx)
 {
-	struct ubd_device *ub = NULL;
+	struct ublk_device *ub = NULL;
 	int ret;
 
 	ub = kzalloc(sizeof(*ub), GFP_KERNEL);
 	if (!ub)
 		return ERR_PTR(-ENOMEM);
 
-	ret = __ubd_alloc_dev_number(ub, idx);
+	ret = __ublk_alloc_dev_number(ub, idx);
 	if (ret < 0) {
 		kfree(ub);
 		return ERR_PTR(ret);
@@ -1059,48 +1059,48 @@ static struct ubd_device *__ubd_create_dev(int idx)
 	return ub;
 }
 
-static void __ubd_destroy_dev(struct ubd_device *ub)
+static void __ublk_destroy_dev(struct ublk_device *ub)
 {
-	spin_lock(&ubd_idr_lock);
-	idr_remove(&ubd_index_idr, ub->ub_number);
-	wake_up_all(&ubd_idr_wq);
-	spin_unlock(&ubd_idr_lock);
+	spin_lock(&ublk_idr_lock);
+	idr_remove(&ublk_index_idr, ub->ub_number);
+	wake_up_all(&ublk_idr_wq);
+	spin_unlock(&ublk_idr_lock);
 
 	mutex_destroy(&ub->mutex);
 
 	kfree(ub);
 }
 
-static void ubd_cdev_rel(struct device *dev)
+static void ublk_cdev_rel(struct device *dev)
 {
-	struct ubd_device *ub = container_of(dev, struct ubd_device, cdev_dev);
+	struct ublk_device *ub = container_of(dev, struct ublk_device, cdev_dev);
 
 	blk_cleanup_disk(ub->ub_disk);
 
 	blk_mq_free_tag_set(&ub->tag_set);
 
-	ubd_deinit_queues(ub);
+	ublk_deinit_queues(ub);
 
-	__ubd_destroy_dev(ub);
+	__ublk_destroy_dev(ub);
 }
 
-static int ubd_add_chdev(struct ubd_device *ub)
+static int ublk_add_chdev(struct ublk_device *ub)
 {
 	struct device *dev = &ub->cdev_dev;
 	int minor = ub->ub_number;
 	int ret;
 
-	dev->parent = ubd_misc.this_device;
-	dev->devt = MKDEV(MAJOR(ubd_chr_devt), minor);
-	dev->class = ubd_chr_class;
-	dev->release = ubd_cdev_rel;
+	dev->parent = ublk_misc.this_device;
+	dev->devt = MKDEV(MAJOR(ublk_chr_devt), minor);
+	dev->class = ublk_chr_class;
+	dev->release = ublk_cdev_rel;
 	device_initialize(dev);
 
-	ret = dev_set_name(dev, "ubdc%d", minor);
+	ret = dev_set_name(dev, "ublkc%d", minor);
 	if (ret)
 		goto fail;
 
-	cdev_init(&ub->cdev, &ubd_ch_fops);
+	cdev_init(&ub->cdev, &ublk_ch_fops);
 	ret = cdev_device_add(&ub->cdev, dev);
 	if (ret)
 		goto fail;
@@ -1110,44 +1110,44 @@ static int ubd_add_chdev(struct ubd_device *ub)
 	return ret;
 }
 
-static void ubd_stop_work_fn(struct work_struct *work)
+static void ublk_stop_work_fn(struct work_struct *work)
 {
-	struct ubd_device *ub =
-		container_of(work, struct ubd_device, stop_work);
+	struct ublk_device *ub =
+		container_of(work, struct ublk_device, stop_work);
 
-	ubd_stop_dev(ub);
+	ublk_stop_dev(ub);
 }
 
-static void ubd_daemon_monitor_work(struct work_struct *work)
+static void ublk_daemon_monitor_work(struct work_struct *work)
 {
-	struct ubd_device *ub =
-		container_of(work, struct ubd_device, monitor_work.work);
+	struct ublk_device *ub =
+		container_of(work, struct ublk_device, monitor_work.work);
 	int i;
 
 	for (i = 0; i < ub->dev_info.nr_hw_queues; i++) {
-		struct ubd_queue *ubq = ubd_get_queue(ub, i);
+		struct ublk_queue *ubq = ublk_get_queue(ub, i);
 
 		if (ubq_daemon_is_dying(ubq)) {
 			schedule_work(&ub->stop_work);
 
 			/* abort queue is for making forward progress */
-			ubd_abort_queue(ub, ubq);
+			ublk_abort_queue(ub, ubq);
 		}
 	}
 
 	/*
-	 * We can't schedule monitor work after ubd_remove() is started.
+	 * We can't schedule monitor work after ublk_remove() is started.
 	 *
 	 * No need ub->mutex, monitor work are canceled after state is marked
 	 * as DEAD, so DEAD state is observed reliably.
 	 */
-	if (ub->dev_info.state != UBD_S_DEV_DEAD)
+	if (ub->dev_info.state != UBLK_S_DEV_DEAD)
 		schedule_delayed_work(&ub->monitor_work,
-				UBD_DAEMON_MONITOR_PERIOD);
+				UBLK_DAEMON_MONITOR_PERIOD);
 }
 
 /* add disk & cdev, cleanup everything in case of failure */
-static int ubd_add_dev(struct ubd_device *ub)
+static int ublk_add_dev(struct ublk_device *ub)
 {
 	unsigned int max_rq_bytes;
 	struct gendisk *disk;
@@ -1155,7 +1155,7 @@ static int ubd_add_dev(struct ubd_device *ub)
 	int bsize;
 
 	/* We are not ready to support zero copy */
-	ub->dev_info.flags[0] &= ~(1ULL << UBD_F_SUPPORT_ZERO_COPY);
+	ub->dev_info.flags[0] &= ~(1ULL << UBLK_F_SUPPORT_ZERO_COPY);
 
 	bsize = ub->dev_info.block_size;
 	ub->bs_shift = ilog2(bsize);
@@ -1168,17 +1168,17 @@ static int ubd_add_dev(struct ubd_device *ub)
 			ub->bs_shift, PAGE_SIZE);
 	ub->dev_info.rq_max_blocks = max_rq_bytes >> ub->bs_shift;
 
-	INIT_WORK(&ub->stop_work, ubd_stop_work_fn);
-	INIT_DELAYED_WORK(&ub->monitor_work, ubd_daemon_monitor_work);
+	INIT_WORK(&ub->stop_work, ublk_stop_work_fn);
+	INIT_DELAYED_WORK(&ub->monitor_work, ublk_daemon_monitor_work);
 
-	if (ubd_init_queues(ub))
+	if (ublk_init_queues(ub))
 		goto out_destroy_dev;
 
-	ub->tag_set.ops = &ubd_mq_ops;
+	ub->tag_set.ops = &ublk_mq_ops;
 	ub->tag_set.nr_hw_queues = ub->dev_info.nr_hw_queues;
 	ub->tag_set.queue_depth = ub->dev_info.queue_depth;
 	ub->tag_set.numa_node = NUMA_NO_NODE;
-	ub->tag_set.cmd_size = sizeof(struct ubd_rq_data);
+	ub->tag_set.cmd_size = sizeof(struct ublk_rq_data);
 	ub->tag_set.flags = BLK_MQ_F_SHOULD_MERGE;
 	ub->tag_set.driver_data = ub;
 
@@ -1211,12 +1211,12 @@ static int ubd_add_dev(struct ubd_device *ub)
 	disk->fops		= &ub_fops;
 	disk->private_data	= ub;
 	disk->queue		= ub->ub_queue;
-	sprintf(disk->disk_name, "ubdb%d", ub->ub_number);
+	sprintf(disk->disk_name, "ublkb%d", ub->ub_number);
 
 	mutex_init(&ub->mutex);
 
-	/* add char dev so that ubdsrv daemon can be setup */
-	err = ubd_add_chdev(ub);
+	/* add char dev so that ublksrv daemon can be setup */
+	err = ublk_add_chdev(ub);
 	if (err)
 		return err;
 
@@ -1227,55 +1227,55 @@ static int ubd_add_dev(struct ubd_device *ub)
 out_cleanup_tags:
 	blk_mq_free_tag_set(&ub->tag_set);
 out_deinit_queues:
-	ubd_deinit_queues(ub);
+	ublk_deinit_queues(ub);
 out_destroy_dev:
-	__ubd_destroy_dev(ub);
+	__ublk_destroy_dev(ub);
 	return err;
 }
 
-static void ubd_remove(struct ubd_device *ub)
+static void ublk_remove(struct ublk_device *ub)
 {
-	ubd_ctrl_stop_dev(ub);
+	ublk_ctrl_stop_dev(ub);
 
 	cdev_device_del(&ub->cdev, &ub->cdev_dev);
 	put_device(&ub->cdev_dev);
 }
 
-static struct ubd_device *ubd_get_device_from_id(int idx)
+static struct ublk_device *ublk_get_device_from_id(int idx)
 {
-	struct ubd_device *ub = NULL;
+	struct ublk_device *ub = NULL;
 
 	if (idx < 0)
 		return NULL;
 
-	spin_lock(&ubd_idr_lock);
-	ub = idr_find(&ubd_index_idr, idx);
+	spin_lock(&ublk_idr_lock);
+	ub = idr_find(&ublk_index_idr, idx);
 	if (ub)
-		ub = ubd_get_device(ub);
-	spin_unlock(&ubd_idr_lock);
+		ub = ublk_get_device(ub);
+	spin_unlock(&ublk_idr_lock);
 
 	return ub;
 }
 
-static int ubd_ctrl_start_dev(struct ubd_device *ub, struct io_uring_cmd *cmd)
+static int ublk_ctrl_start_dev(struct ublk_device *ub, struct io_uring_cmd *cmd)
 {
-	struct ubdsrv_ctrl_cmd *header = (struct ubdsrv_ctrl_cmd *)cmd->cmd;
+	struct ublksrv_ctrl_cmd *header = (struct ublksrv_ctrl_cmd *)cmd->cmd;
 	int ret = -EINVAL;
-	int ubdsrv_pid = (int)header->data[0];
+	int ublksrv_pid = (int)header->data[0];
 
-	if (ubdsrv_pid <= 0)
+	if (ublksrv_pid <= 0)
 		return ret;
 
 	wait_for_completion_interruptible(&ub->completion);
 
-	schedule_delayed_work(&ub->monitor_work, UBD_DAEMON_MONITOR_PERIOD);
+	schedule_delayed_work(&ub->monitor_work, UBLK_DAEMON_MONITOR_PERIOD);
 
 	mutex_lock(&ub->mutex);
 	if (!disk_live(ub->ub_disk)) {
-		ub->dev_info.ubdsrv_pid = ubdsrv_pid;
+		ub->dev_info.ublksrv_pid = ublksrv_pid;
 		ret = add_disk(ub->ub_disk);
 		if (!ret)
-			ub->dev_info.state = UBD_S_DEV_LIVE;
+			ub->dev_info.state = UBLK_S_DEV_LIVE;
 	} else {
 		ret = -EEXIST;
 	}
@@ -1284,7 +1284,7 @@ static int ubd_ctrl_start_dev(struct ubd_device *ub, struct io_uring_cmd *cmd)
 	return ret;
 }
 
-static struct blk_mq_hw_ctx *ubd_get_hw_queue(struct ubd_device *ub,
+static struct blk_mq_hw_ctx *ublk_get_hw_queue(struct ublk_device *ub,
 		unsigned int index)
 {
 	struct blk_mq_hw_ctx *hctx;
@@ -1296,17 +1296,17 @@ static struct blk_mq_hw_ctx *ubd_get_hw_queue(struct ubd_device *ub,
 	return NULL;
 }
 
-static int ubd_ctrl_get_queue_affinity(struct io_uring_cmd *cmd)
+static int ublk_ctrl_get_queue_affinity(struct io_uring_cmd *cmd)
 {
-	struct ubdsrv_ctrl_cmd *header = (struct ubdsrv_ctrl_cmd *)cmd->cmd;
+	struct ublksrv_ctrl_cmd *header = (struct ublksrv_ctrl_cmd *)cmd->cmd;
 	void __user *argp = (void __user *)(unsigned long)header->addr;
 	struct blk_mq_hw_ctx *hctx;
-	struct ubd_device *ub;
+	struct ublk_device *ub;
 	unsigned long queue;
 	unsigned int retlen;
 	int ret;
 
-	ub = ubd_get_device_from_id(header->dev_id);
+	ub = ublk_get_device_from_id(header->dev_id);
 	if (!ub)
 		goto out;
 
@@ -1314,7 +1314,7 @@ static int ubd_ctrl_get_queue_affinity(struct io_uring_cmd *cmd)
 	queue = header->data[0];
 	if (queue >= ub->dev_info.nr_hw_queues)
 		goto out;
-	hctx = ubd_get_hw_queue(ub, queue);
+	hctx = ublk_get_hw_queue(ub, queue);
 	if (!hctx)
 		goto out;
 
@@ -1332,31 +1332,31 @@ static int ubd_ctrl_get_queue_affinity(struct io_uring_cmd *cmd)
 	ret = 0;
  out:
 	if (ub)
-		ubd_put_device(ub);
+		ublk_put_device(ub);
 	return ret;
 }
 
-static int ubd_ctrl_add_dev(const struct ubdsrv_ctrl_dev_info *info,
+static int ublk_ctrl_add_dev(const struct ublksrv_ctrl_dev_info *info,
 		void __user *argp, int idx)
 {
-	struct ubd_device *ub;
+	struct ublk_device *ub;
 	int ret;
 
-	ret = mutex_lock_killable(&ubd_ctl_mutex);
+	ret = mutex_lock_killable(&ublk_ctl_mutex);
 	if (ret)
 		return ret;
 
-	ub = __ubd_create_dev(idx);
+	ub = __ublk_create_dev(idx);
 	if (!IS_ERR_OR_NULL(ub)) {
 		memcpy(&ub->dev_info, info, sizeof(*info));
 
 		/* update device id */
 		ub->dev_info.dev_id = ub->ub_number;
 
-		ret = ubd_add_dev(ub);
+		ret = ublk_add_dev(ub);
 		if (!ret) {
 			if (copy_to_user(argp, &ub->dev_info, sizeof(*info))) {
-				ubd_remove(ub);
+				ublk_remove(ub);
 				ret = -EFAULT;
 			}
 		}
@@ -1366,35 +1366,35 @@ static int ubd_ctrl_add_dev(const struct ubdsrv_ctrl_dev_info *info,
 		else
 			ret = -ENOMEM;
 	}
-	mutex_unlock(&ubd_ctl_mutex);
+	mutex_unlock(&ublk_ctl_mutex);
 
 	return ret;
 }
 
-static inline bool ubd_idr_freed(int id)
+static inline bool ublk_idr_freed(int id)
 {
 	void *ptr;
 
-	spin_lock(&ubd_idr_lock);
-	ptr = idr_find(&ubd_index_idr, id);
-	spin_unlock(&ubd_idr_lock);
+	spin_lock(&ublk_idr_lock);
+	ptr = idr_find(&ublk_index_idr, id);
+	spin_unlock(&ublk_idr_lock);
 
 	return ptr == NULL;
 }
 
-static int ubd_ctrl_del_dev(int idx)
+static int ublk_ctrl_del_dev(int idx)
 {
-	struct ubd_device *ub;
+	struct ublk_device *ub;
 	int ret;
 
-	ret = mutex_lock_killable(&ubd_ctl_mutex);
+	ret = mutex_lock_killable(&ublk_ctl_mutex);
 	if (ret)
 		return ret;
 
-	ub = ubd_get_device_from_id(idx);
+	ub = ublk_get_device_from_id(idx);
 	if (ub) {
-		ubd_remove(ub);
-		ubd_put_device(ub);
+		ublk_remove(ub);
+		ublk_put_device(ub);
 		ret = 0;
 	} else {
 		ret = -ENODEV;
@@ -1405,14 +1405,14 @@ static int ubd_ctrl_del_dev(int idx)
 	 * DEL_DEV command is returned.
 	 */
 	if (!ret)
-		wait_event(ubd_idr_wq, ubd_idr_freed(idx));
-	mutex_unlock(&ubd_ctl_mutex);
+		wait_event(ublk_idr_wq, ublk_idr_freed(idx));
+	mutex_unlock(&ublk_ctl_mutex);
 
 	return ret;
 }
 
 
-static inline void ubd_dump_dev_info(struct ubdsrv_ctrl_dev_info *info)
+static inline void ublk_dump_dev_info(struct ublksrv_ctrl_dev_info *info)
 {
 	pr_devel("%s: dev id %d flags %llx\n", __func__,
 			info->dev_id, info->flags[0]);
@@ -1421,19 +1421,19 @@ static inline void ubd_dump_dev_info(struct ubdsrv_ctrl_dev_info *info)
 			info->block_size, info->dev_blocks);
 }
 
-static inline void ubd_ctrl_cmd_dump(struct io_uring_cmd *cmd)
+static inline void ublk_ctrl_cmd_dump(struct io_uring_cmd *cmd)
 {
-	struct ubdsrv_ctrl_cmd *header = (struct ubdsrv_ctrl_cmd *)cmd->cmd;
+	struct ublksrv_ctrl_cmd *header = (struct ublksrv_ctrl_cmd *)cmd->cmd;
 
 	pr_devel("%s: cmd_op %x, dev id %d qid %d data %llx buf %llx len %u\n",
 			__func__, cmd->cmd_op, header->dev_id, header->queue_id,
 			header->data[0], header->addr, header->len);
 }
 
-static int ubd_ctrl_cmd_validate(struct io_uring_cmd *cmd,
-		struct ubdsrv_ctrl_dev_info *info)
+static int ublk_ctrl_cmd_validate(struct io_uring_cmd *cmd,
+		struct ublksrv_ctrl_dev_info *info)
 {
-	struct ubdsrv_ctrl_cmd *header = (struct ubdsrv_ctrl_cmd *)cmd->cmd;
+	struct ublksrv_ctrl_cmd *header = (struct ublksrv_ctrl_cmd *)cmd->cmd;
 	u32 cmd_op = cmd->cmd_op;
 	void __user *argp = (void __user *)(unsigned long)header->addr;
 
@@ -1441,16 +1441,16 @@ static int ubd_ctrl_cmd_validate(struct io_uring_cmd *cmd,
 		return -EPERM;
 
 	switch (cmd_op) {
-	case UBD_CMD_GET_DEV_INFO:
+	case UBLK_CMD_GET_DEV_INFO:
 		if (header->len < sizeof(*info) || !header->addr)
 			return -EINVAL;
 		break;
-	case UBD_CMD_ADD_DEV:
+	case UBLK_CMD_ADD_DEV:
 		if (header->len < sizeof(*info) || !header->addr)
 			return -EINVAL;
 		if (copy_from_user(info, argp, sizeof(*info)) != 0)
 			return -EFAULT;
-		ubd_dump_dev_info(info);
+		ublk_dump_dev_info(info);
 		if (header->dev_id != info->dev_id) {
 			printk(KERN_WARNING "%s: cmd %x, dev id not match %u %u\n",
 					__func__, cmd_op, header->dev_id,
@@ -1463,7 +1463,7 @@ static int ubd_ctrl_cmd_validate(struct io_uring_cmd *cmd,
 			return -EINVAL;
 		}
 		break;
-	case UBD_CMD_GET_QUEUE_AFFINITY:
+	case UBLK_CMD_GET_QUEUE_AFFINITY:
 		if ((header->len * BITS_PER_BYTE) < nr_cpu_ids)
 			return -EINVAL;
 		if (header->len & (sizeof(unsigned long)-1))
@@ -1475,59 +1475,59 @@ static int ubd_ctrl_cmd_validate(struct io_uring_cmd *cmd,
 	return 0;
 }
 
-static int ubd_ctrl_uring_cmd(struct io_uring_cmd *cmd,
+static int ublk_ctrl_uring_cmd(struct io_uring_cmd *cmd,
 		unsigned int issue_flags)
 {
-	struct ubdsrv_ctrl_cmd *header = (struct ubdsrv_ctrl_cmd *)cmd->cmd;
+	struct ublksrv_ctrl_cmd *header = (struct ublksrv_ctrl_cmd *)cmd->cmd;
 	void __user *argp = (void __user *)(unsigned long)header->addr;
-	struct ubdsrv_ctrl_dev_info info;
+	struct ublksrv_ctrl_dev_info info;
 	u32 cmd_op = cmd->cmd_op;
-	struct ubd_device *ub;
+	struct ublk_device *ub;
 	int ret = -EINVAL;
 
-	ubd_ctrl_cmd_dump(cmd);
+	ublk_ctrl_cmd_dump(cmd);
 
 	if (!(issue_flags & IO_URING_F_SQE128))
 		goto out;
 
-	ret = ubd_ctrl_cmd_validate(cmd, &info);
+	ret = ublk_ctrl_cmd_validate(cmd, &info);
 	if (ret)
 		goto out;
 
 	ret = -ENODEV;
 	switch (cmd_op) {
-	case UBD_CMD_START_DEV:
-		ub = ubd_get_device_from_id(header->dev_id);
+	case UBLK_CMD_START_DEV:
+		ub = ublk_get_device_from_id(header->dev_id);
 		if (ub) {
-			ret = ubd_ctrl_start_dev(ub, cmd);
-			ubd_put_device(ub);
+			ret = ublk_ctrl_start_dev(ub, cmd);
+			ublk_put_device(ub);
 		}
 		break;
-	case UBD_CMD_STOP_DEV:
-		ub = ubd_get_device_from_id(header->dev_id);
+	case UBLK_CMD_STOP_DEV:
+		ub = ublk_get_device_from_id(header->dev_id);
 		if (ub) {
-			ret = ubd_ctrl_stop_dev(ub);
-			ubd_put_device(ub);
+			ret = ublk_ctrl_stop_dev(ub);
+			ublk_put_device(ub);
 		}
 		break;
-	case UBD_CMD_GET_DEV_INFO:
-		ub = ubd_get_device_from_id(header->dev_id);
+	case UBLK_CMD_GET_DEV_INFO:
+		ub = ublk_get_device_from_id(header->dev_id);
 		if (ub) {
 			if (copy_to_user(argp, &ub->dev_info, sizeof(info)))
 				ret = -EFAULT;
 			else
 				ret = 0;
-			ubd_put_device(ub);
+			ublk_put_device(ub);
 		}
 		break;
-	case UBD_CMD_ADD_DEV:
-		ret = ubd_ctrl_add_dev(&info, argp, header->dev_id);
+	case UBLK_CMD_ADD_DEV:
+		ret = ublk_ctrl_add_dev(&info, argp, header->dev_id);
 		break;
-	case UBD_CMD_DEL_DEV:
-		ret = ubd_ctrl_del_dev(header->dev_id);
+	case UBLK_CMD_DEL_DEV:
+		ret = ublk_ctrl_del_dev(header->dev_id);
 		break;
-	case UBD_CMD_GET_QUEUE_AFFINITY:
-		ret = ubd_ctrl_get_queue_affinity(cmd);
+	case UBLK_CMD_GET_QUEUE_AFFINITY:
+		ret = ublk_ctrl_get_queue_affinity(cmd);
 		break;
 	default:
 		break;
@@ -1539,65 +1539,65 @@ static int ubd_ctrl_uring_cmd(struct io_uring_cmd *cmd,
 	return -EIOCBQUEUED;
 }
 
-static const struct file_operations ubd_ctl_fops = {
+static const struct file_operations ublk_ctl_fops = {
 	.open		= nonseekable_open,
-	.uring_cmd      = ubd_ctrl_uring_cmd,
+	.uring_cmd      = ublk_ctrl_uring_cmd,
 	.owner		= THIS_MODULE,
 	.llseek		= noop_llseek,
 };
 
-static struct miscdevice ubd_misc = {
+static struct miscdevice ublk_misc = {
 	.minor		= MISC_DYNAMIC_MINOR,
-	.name		= "ubd-control",
-	.fops		= &ubd_ctl_fops,
+	.name		= "ublk-control",
+	.fops		= &ublk_ctl_fops,
 };
 
-static int __init ubd_init(void)
+static int __init ublk_init(void)
 {
 	int ret;
 
-	init_waitqueue_head(&ubd_idr_wq);
+	init_waitqueue_head(&ublk_idr_wq);
 
-	ret = misc_register(&ubd_misc);
+	ret = misc_register(&ublk_misc);
 	if (ret)
 		return ret;
 
-	ret = alloc_chrdev_region(&ubd_chr_devt, 0, UBD_MINORS, "ubd-char");
+	ret = alloc_chrdev_region(&ublk_chr_devt, 0, UBLK_MINORS, "ublk-char");
 	if (ret)
 		goto unregister_mis;
 
-	ubd_chr_class = class_create(THIS_MODULE, "ubd-char");
-	if (IS_ERR(ubd_chr_class)) {
-		ret = PTR_ERR(ubd_chr_class);
+	ublk_chr_class = class_create(THIS_MODULE, "ublk-char");
+	if (IS_ERR(ublk_chr_class)) {
+		ret = PTR_ERR(ublk_chr_class);
 		goto free_chrdev_region;
 	}
 	return 0;
 
 free_chrdev_region:
-	unregister_chrdev_region(ubd_chr_devt, UBD_MINORS);
+	unregister_chrdev_region(ublk_chr_devt, UBLK_MINORS);
 unregister_mis:
-	misc_deregister(&ubd_misc);
+	misc_deregister(&ublk_misc);
 	return ret;
 }
 
-static void __exit ubd_exit(void)
+static void __exit ublk_exit(void)
 {
-	struct ubd_device *ub;
+	struct ublk_device *ub;
 	int id;
 
-	class_destroy(ubd_chr_class);
+	class_destroy(ublk_chr_class);
 
-	misc_deregister(&ubd_misc);
+	misc_deregister(&ublk_misc);
 
-	idr_for_each_entry(&ubd_index_idr, ub, id)
-		ubd_remove(ub);
+	idr_for_each_entry(&ublk_index_idr, ub, id)
+		ublk_remove(ub);
 
-	idr_destroy(&ubd_index_idr);
-	unregister_chrdev_region(ubd_chr_devt, UBD_MINORS);
+	idr_destroy(&ublk_index_idr);
+	unregister_chrdev_region(ublk_chr_devt, UBLK_MINORS);
 }
 
-module_init(ubd_init);
-module_exit(ubd_exit);
+module_init(ublk_init);
+module_exit(ublk_exit);
 
 MODULE_AUTHOR("Ming Lei <ming.lei@redhat.com>");
 MODULE_LICENSE("GPL");
