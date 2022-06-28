@@ -1075,7 +1075,7 @@ static void ublk_cdev_rel(struct device *dev)
 {
 	struct ublk_device *ub = container_of(dev, struct ublk_device, cdev_dev);
 
-	blk_cleanup_disk(ub->ub_disk);
+	put_disk(ub->ub_disk);
 
 	blk_mq_free_tag_set(&ub->tag_set);
 
