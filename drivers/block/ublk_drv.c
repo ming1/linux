@@ -42,7 +42,7 @@
 #include <linux/mm.h>
 #include <asm/page.h>
 #include <linux/task_work.h>
-#include <uapi/linux/ubd_cmd.h>
+#include <uapi/linux/ublk_cmd.h>
 
 #define UBLK_MINORS		(1U << MINORBITS)
 
