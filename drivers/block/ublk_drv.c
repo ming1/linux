@@ -1146,10 +1146,21 @@ static void ublk_daemon_monitor_work(struct work_struct *work)
 				UBLK_DAEMON_MONITOR_PERIOD);
 }
 
+static void ublk_update_capacity(struct ublk_device *ub)
+{
+	unsigned int max_rq_bytes;
+
+	/* make max request buffer size aligned with PAGE_SIZE */
+	max_rq_bytes = round_down(ub->dev_info.rq_max_blocks <<
+			ub->bs_shift, PAGE_SIZE);
+	ub->dev_info.rq_max_blocks = max_rq_bytes >> ub->bs_shift;
+
+	set_capacity(ub->ub_disk, ub->dev_info.dev_blocks << (ub->bs_shift - 9));
+}
+
 /* add disk & cdev, cleanup everything in case of failure */
 static int ublk_add_dev(struct ublk_device *ub)
 {
-	unsigned int max_rq_bytes;
 	struct gendisk *disk;
 	int err = -ENOMEM;
 	int bsize;
@@ -1162,11 +1173,6 @@ static int ublk_add_dev(struct ublk_device *ub)
 
 	ub->dev_info.nr_hw_queues = min_t(unsigned int,
 			ub->dev_info.nr_hw_queues, nr_cpu_ids);
-
-	/* make max request buffer size aligned with PAGE_SIZE */
-	max_rq_bytes = round_down(ub->dev_info.rq_max_blocks <<
-			ub->bs_shift, PAGE_SIZE);
-	ub->dev_info.rq_max_blocks = max_rq_bytes >> ub->bs_shift;
 
 	INIT_WORK(&ub->stop_work, ublk_stop_work_fn);
 	INIT_DELAYED_WORK(&ub->monitor_work, ublk_daemon_monitor_work);
@@ -1201,12 +1207,13 @@ static int ublk_add_dev(struct ublk_device *ub)
 
 	blk_queue_max_hw_sectors(ub->ub_queue, ub->dev_info.rq_max_blocks <<
 			(ub->bs_shift - 9));
-	set_capacity(ub->ub_disk, ub->dev_info.dev_blocks << (ub->bs_shift - 9));
 
 	ub->ub_queue->limits.discard_granularity = PAGE_SIZE;
 
 	blk_queue_max_discard_sectors(ub->ub_queue, UINT_MAX >> 9);
 	blk_queue_max_write_zeroes_sectors(ub->ub_queue, UINT_MAX >> 9);
+
+	ublk_update_capacity(ub);
 
 	disk->fops		= &ub_fops;
 	disk->private_data	= ub;
@@ -1262,6 +1269,7 @@ static int ublk_ctrl_start_dev(struct ublk_device *ub, struct io_uring_cmd *cmd)
 	struct ublksrv_ctrl_cmd *header = (struct ublksrv_ctrl_cmd *)cmd->cmd;
 	int ret = -EINVAL;
 	int ublksrv_pid = (int)header->data[0];
+	unsigned long dev_blocks = header->data[1];
 
 	if (ublksrv_pid <= 0)
 		return ret;
@@ -1272,6 +1280,11 @@ static int ublk_ctrl_start_dev(struct ublk_device *ub, struct io_uring_cmd *cmd)
 
 	mutex_lock(&ub->mutex);
 	if (!disk_live(ub->ub_disk)) {
+		/* We may get disk size updated */
+		if (dev_blocks) {
+			ub->dev_info.dev_blocks = dev_blocks;
+			ublk_update_capacity(ub);
+		}
 		ub->dev_info.ublksrv_pid = ublksrv_pid;
 		ret = add_disk(ub->ub_disk);
 		if (!ret)
