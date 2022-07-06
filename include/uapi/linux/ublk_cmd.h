@@ -28,13 +28,9 @@
  *      this IO request, request's handling result is committed to ublk
  *      driver, meantime FETCH_REQ is piggyback, and FETCH_REQ has to be
  *      handled before completing io request.
- *
- * COMMIT_REQ: issued via sqe(URING_CMD) after ublkserver handled this IO
- *      request, request's handling result is committed to ublk driver.
  */
 #define	UBLK_IO_FETCH_REQ		0x20
 #define	UBLK_IO_COMMIT_AND_FETCH_REQ	0x21
-#define	UBLK_IO_COMMIT_REQ		0x22
 
 /* only ABORT means that no re-fetch */
 #define UBLK_IO_RES_OK			0
@@ -51,6 +47,19 @@
  * request into ublksrv's vm space
  */
 #define UBLK_F_SUPPORT_ZERO_COPY	0
+
+/*
+ * HAS_IO_DAEMON means io handler has its own daemon context which isn't
+ * same with control command context, so shared memory communication is
+ * required between control task and io daemon
+ */
+#define UBLK_F_HAS_IO_DAEMON		1
+
+/*
+ * target may not use io_uring for handling io, so eventfd is required
+ * for wakeup io command io_uring context
+ */
+#define UBLK_F_NEED_EVENTFD		2
 
 /* device state */
 #define UBLK_S_DEV_DEAD	0

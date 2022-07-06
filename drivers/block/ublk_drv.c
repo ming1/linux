@@ -914,18 +914,10 @@ static int ublk_ch_uring_cmd(struct io_uring_cmd *cmd, unsigned int issue_flags)
 			goto out;
 		io->addr = ub_cmd->addr;
 		io->flags |= UBLK_IO_FLAG_ACTIVE;
-		fallthrough;
-	case UBLK_IO_COMMIT_REQ:
 		io->cmd = cmd;
 		if (!(io->flags & UBLK_IO_FLAG_OWNED_BY_SRV))
 			goto out;
 		ublk_commit_completion(ub, ub_cmd);
-
-		/* COMMIT_REQ is supposed to not fetch req */
-		if (cmd_op == UBLK_IO_COMMIT_REQ) {
-			ret = UBLK_IO_RES_OK;
-			goto out;
-		}
 		break;
 	default:
 		goto out;
