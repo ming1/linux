@@ -127,6 +127,8 @@ struct ublk_device {
 
 	struct mutex		mutex;
 
+	struct mm_struct	*mm;
+
 	struct completion	completion;
 	unsigned int		nr_queues_ready;
 	atomic_t		nr_aborted_queues;
@@ -687,7 +689,17 @@ static int ublk_ch_mmap(struct file *filp, struct vm_area_struct *vma)
 	size_t sz = vma->vm_end - vma->vm_start;
 	unsigned max_sz = UBLK_MAX_QUEUE_DEPTH * sizeof(struct ublksrv_io_desc);
 	unsigned long pfn, end, phys_off = vma->vm_pgoff << PAGE_SHIFT;
-	int q_id;
+	int q_id, ret = 0;
+
+	mutex_lock(&ub->mutex);
+	if (!ub->mm)
+		ub->mm = current->mm;
+	if (current->mm != ub->mm)
+		ret = -EINVAL;
+	mutex_unlock(&ub->mutex);
+
+	if (ret)
+		return ret;
 
 	if (vma->vm_flags & VM_WRITE)
 		return -EPERM;
