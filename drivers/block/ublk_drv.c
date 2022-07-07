@@ -164,17 +164,19 @@ static void ublk_put_device(struct ublk_device *ub)
 	put_device(&ub->cdev_dev);
 }
 
-static inline struct ublk_queue *ublk_get_queue(struct ublk_device *dev, int qid)
+static inline struct ublk_queue *ublk_get_queue(struct ublk_device *dev,
+		int qid)
 {
        return (struct ublk_queue *)&(dev->__queues[qid * dev->queue_size]);
 }
 
-static inline bool ublk_rq_need_copy(struct request *rq)
+static inline bool ublk_rq_has_data(const struct request *rq)
 {
 	return rq->bio && bio_has_data(rq->bio);
 }
 
-static inline struct ublksrv_io_desc *ublk_get_iod(struct ublk_queue *ubq, int tag)
+static inline struct ublksrv_io_desc *ublk_get_iod(struct ublk_queue *ubq,
+		int tag)
 {
 	return (struct ublksrv_io_desc *)
 		&(ubq->io_cmd_buf[tag * sizeof(struct ublksrv_io_desc)]);
@@ -189,7 +191,8 @@ static inline int ublk_queue_cmd_buf_size(struct ublk_device *ub, int q_id)
 {
 	struct ublk_queue *ubq = ublk_get_queue(ub, q_id);
 
-	return round_up(ubq->q_depth * sizeof(struct ublksrv_io_desc), PAGE_SIZE);
+	return round_up(ubq->q_depth * sizeof(struct ublksrv_io_desc),
+			PAGE_SIZE);
 }
 
 static int ublk_open(struct block_device *bdev, fmode_t mode)
@@ -207,135 +210,108 @@ static const struct block_device_operations ub_fops = {
 	.release =	ublk_release,
 };
 
+struct ublk_map_data {
+	const struct ublk_queue *ubq;
+	const struct request *rq;
+	const struct ublk_io *io;
+	unsigned max_bytes;
+};
+
 #define UBLK_MAX_PIN_PAGES	32
 
-static inline void ublk_release_pages(struct ublk_queue *ubq, struct page **pages,
-		int nr_pages)
+static inline unsigned ublk_copy_io_pages(struct page **pages,
+		unsigned pg_off, int nr_pages,
+		struct bio **bio, struct bvec_iter *iter,
+		unsigned max_bytes, bool to_vm)
 {
-	int i;
+	const unsigned total = min_t(unsigned, max_bytes,
+			PAGE_SIZE - pg_off + ((nr_pages - 1) << PAGE_SHIFT));
+	unsigned done = 0;
+	unsigned pg_idx = 0;
 
-	for (i = 0; i < nr_pages; i++)
-		put_page(pages[i]);
-}
+	while (done < total) {
+		struct bio_vec bv = bio_iter_iovec(*bio, *iter);
+		const unsigned int bytes = min3(bv.bv_len, total - done,
+				(unsigned)(PAGE_SIZE - pg_off));
+		void *bv_buf = bvec_kmap_local(&bv);
+                void *pg_buf = kmap_local_page(pages[pg_idx]);
 
-static inline int ublk_pin_user_pages(struct ublk_queue *ubq, u64 start_vm,
-		unsigned int nr_pages, unsigned int gup_flags,
-		struct page **pages)
-{
-	return get_user_pages_fast(start_vm, nr_pages, gup_flags, pages);
-}
 
-static inline unsigned ublk_copy_bv(struct bio_vec *bv, void **bv_addr,
-		void *pg_addr, unsigned int *pg_off,
-		unsigned int *pg_len, bool to_bv)
-{
-	unsigned len = min_t(unsigned, bv->bv_len, *pg_len);
+		if (to_vm)
+			memcpy(pg_buf + pg_off, bv_buf, bytes);
+		else
+			memcpy(bv_buf, pg_buf + pg_off, bytes);
 
-	if (*bv_addr == NULL)
-		*bv_addr = kmap_local_page(bv->bv_page);
+		kunmap_local(pg_buf);
+		kunmap_local(bv_buf);
 
-	if (to_bv)
-		memcpy(*bv_addr + bv->bv_offset, pg_addr + *pg_off, len);
-	else
-		memcpy(pg_addr + *pg_off, *bv_addr + bv->bv_offset, len);
-
-	bv->bv_offset += len;
-	bv->bv_len -= len;
-	*pg_off += len;
-	*pg_len -= len;
-
-	if (!bv->bv_len) {
-		kunmap_local(*bv_addr);
-		*bv_addr = NULL;
-	}
-
-	return len;
-}
-
-/* copy rq pages to ublksrv vm address pointed by io->addr */
-static int ublk_copy_pages(struct ublk_queue *ubq, struct request *rq, bool to_rq,
-		unsigned int max_bytes)
-{
-	unsigned int gup_flags = to_rq ? 0 : FOLL_WRITE;
-	struct ublk_io *io = &ubq->ios[rq->tag];
-	struct page *pgs[UBLK_MAX_PIN_PAGES];
-	struct req_iterator req_iter;
-	struct bio_vec bv;
-	const unsigned int rq_bytes = min(blk_rq_bytes(rq), max_bytes);
-	unsigned long start = io->addr, left = rq_bytes;
-	unsigned int idx = 0, pg_len = 0, pg_off = 0;
-	int nr_pin = 0;
-	void *pg_addr = NULL;
-	struct page *curr = NULL;
-
-	rq_for_each_segment(bv, rq, req_iter) {
-		unsigned len, bv_off = bv.bv_offset, bv_len = bv.bv_len;
-		void *bv_addr = NULL;
-
-refill:
-		if (pg_len == 0) {
-			unsigned int off = 0;
-
-			if (pg_addr) {
-				kunmap_local(pg_addr);
-				if (!to_rq)
-					set_page_dirty_lock(curr);
-				pg_addr = NULL;
-			}
-
-			/* refill pages */
-			if (idx >= nr_pin) {
-				unsigned int max_pages;
-
-				ublk_release_pages(ubq, pgs, nr_pin);
-
-				off = start & (PAGE_SIZE - 1);
-				max_pages = min_t(unsigned, (off + left +
-						PAGE_SIZE - 1) >> PAGE_SHIFT,
-						UBLK_MAX_PIN_PAGES);
-				nr_pin = ublk_pin_user_pages(ubq, start,
-						max_pages, gup_flags, pgs);
-				if (nr_pin < 0)
-					goto exit;
-				idx = 0;
-			}
-			pg_off = off;
-			pg_len = min(PAGE_SIZE - off, left);
-			off = 0;
-			curr = pgs[idx++];
-			pg_addr = kmap_local_page(curr);
+		/* advance page array */
+		pg_off += bytes;
+		if (pg_off == PAGE_SIZE) {
+			pg_idx += 1;
+			pg_off = 0;
 		}
 
-		len = ublk_copy_bv(&bv, &bv_addr, pg_addr, &pg_off, &pg_len,
-				to_rq);
-		/* either one of the two has been consumed */
-		WARN_ON_ONCE(bv.bv_len && pg_len);
-		start += len;
-		left -= len;
+		done += bytes;
 
-		/* overflow */
-		WARN_ON_ONCE(left > rq_bytes);
-		WARN_ON_ONCE(bv.bv_len > bv_len);
-		if (bv.bv_len)
-			goto refill;
-
-		bv.bv_len = bv_len;
-		bv.bv_offset = bv_off;
+		/* advance bio */
+		bio_advance_iter_single(*bio, iter, bytes);
+		if (!iter->bi_size) {
+			*bio = (*bio)->bi_next;
+			if (*bio == NULL)
+				break;
+			*iter = (*bio)->bi_iter;
+		}
 	}
-	if (pg_addr) {
-		kunmap_local(pg_addr);
-		if (!to_rq)
-			set_page_dirty_lock(curr);
-	}
-	ublk_release_pages(ubq, pgs, nr_pin);
 
-exit:
-	return rq_bytes - left;
+	return done;
 }
 
-#define UBLK_REMAP_BATCH	32
+static inline int ublk_copy_user_pages(struct ublk_map_data *data,
+		bool to_vm)
+{
+	const unsigned int gup_flags = to_vm ? FOLL_WRITE : 0;
+	const unsigned long start_vm = data->io->addr;
+	unsigned int pg_off = start_vm & (PAGE_SIZE - 1);
+	const unsigned int nr_pages = round_up(data->max_bytes + pg_off,
+			PAGE_SIZE) >> PAGE_SHIFT;
+	unsigned int done = 0;
+	struct bio *bio = data->rq->bio;
+	struct bvec_iter iter = bio->bi_iter;
 
-static int ublk_map_io(struct ublk_queue *ubq, struct request *req)
+	if (!bio || !bio_has_data(bio))
+		return 0;
+
+	while (done < nr_pages) {
+		struct page *pgs[UBLK_MAX_PIN_PAGES];
+		const unsigned to_pin = min_t(unsigned, UBLK_MAX_PIN_PAGES,
+				nr_pages - done);
+		int pinned, i;
+		unsigned len;
+
+		pinned = get_user_pages_fast(start_vm + (done << PAGE_SHIFT),
+				to_pin, gup_flags, pgs);
+		if (pinned <= 0)
+			return done == 0 ? pinned : done;
+
+		len = ublk_copy_io_pages(pgs, pg_off, pinned,
+					&bio, &iter, data->max_bytes, to_vm);
+		data->max_bytes -= len;
+		pg_off = 0;
+
+		for (i = 0; i < pinned; i++) {
+			if (to_vm)
+				set_page_dirty(pgs[i]);
+			put_page(pgs[i]);
+		}
+		done += pinned;
+	}
+
+	return done;
+}
+
+static int ublk_map_io(const struct ublk_queue *ubq, const struct request *req,
+		struct ublk_io *io)
 {
 	const unsigned int rq_bytes = blk_rq_bytes(req);
 	/*
@@ -346,22 +322,40 @@ static int ublk_map_io(struct ublk_queue *ubq, struct request *req)
 	if (req_op(req) != REQ_OP_WRITE && req_op(req) != REQ_OP_FLUSH)
 		return rq_bytes;
 
-	if (!ublk_rq_need_copy(req))
-		return rq_bytes;
+	if (ublk_rq_has_data(req)) {
+		struct ublk_map_data data = {
+			.ubq	=	ubq,
+			.rq	=	req,
+			.io	=	io,
+			.max_bytes =	rq_bytes,
+		};
 
-	/* convert to data copy in current context */
-	return ublk_copy_pages(ubq, req, false, UINT_MAX);
+		ublk_copy_user_pages(&data, true);
+
+		return rq_bytes - data.max_bytes;
+	}
+	return rq_bytes;
 }
 
-static int ublk_unmap_io(struct ublk_queue *ubq, struct request *req,
+static int ublk_unmap_io(const struct ublk_queue *ubq,
+		const struct request *req,
 		struct ublk_io *io)
 {
 	const unsigned int rq_bytes = blk_rq_bytes(req);
 
-	if (req_op(req) == REQ_OP_READ && ublk_rq_need_copy(req)) {
+	if (req_op(req) == REQ_OP_READ && ublk_rq_has_data(req)) {
+		struct ublk_map_data data = {
+			.ubq	=	ubq,
+			.rq	=	req,
+			.io	=	io,
+			.max_bytes =	io->res,
+		};
+
 		WARN_ON_ONCE(io->res > rq_bytes);
 
-		return ublk_copy_pages(ubq, req, true, io->res);
+		ublk_copy_user_pages(&data, false);
+
+		return io->res - data.max_bytes;
 	}
 	return rq_bytes;
 }
@@ -576,7 +570,7 @@ static void ublk_rq_task_work_fn(struct callback_head *work)
 		ret = -ESRCH;
 		spin_lock(&ubq->abort_lock);
 	} else {
-		unsigned int mapped_bytes = ublk_map_io(ubq, req);
+		unsigned int mapped_bytes = ublk_map_io(ubq, req, io);
 
 		/*
 		 * Nothing mapped, retry until we succeed.
