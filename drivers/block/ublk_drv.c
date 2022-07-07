@@ -864,7 +864,7 @@ static int ublk_ch_uring_cmd(struct io_uring_cmd *cmd, unsigned int issue_flags)
 	unsigned tag = ub_cmd->tag;
 	int ret = -EINVAL;
 
-	pr_devel("%s: receieved: cmd op %d queue %d tag %d result %d\n",
+	pr_devel("%s: received: cmd op %d queue %d tag %d result %d\n",
 			__func__, cmd->cmd_op, ub_cmd->q_id, tag,
 			ub_cmd->result);
 
@@ -875,7 +875,7 @@ static int ublk_ch_uring_cmd(struct io_uring_cmd *cmd, unsigned int issue_flags)
 	if (!ubq || ub_cmd->q_id != ubq->q_id)
 		goto out;
 
-	if (WARN_ON_ONCE(tag >= ubq->q_depth))
+	if (tag >= ubq->q_depth)
 		goto out;
 
 	io = &ubq->ios[tag];
@@ -889,7 +889,7 @@ static int ublk_ch_uring_cmd(struct io_uring_cmd *cmd, unsigned int issue_flags)
 	switch (cmd_op) {
 	case UBLK_IO_FETCH_REQ:
 		/* UBLK_IO_FETCH_REQ is only allowed before queue is setup */
-		if (WARN_ON_ONCE(ublk_queue_ready(ubq))) {
+		if (ublk_queue_ready(ubq)) {
 			ret = -EBUSY;
 			goto out;
 		}
