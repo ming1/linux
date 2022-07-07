@@ -50,20 +50,34 @@ struct ublk_rq_data {
 	struct callback_head work;
 };
 
-/* io cmd is active: sqe cmd is received, and its cqe isn't done */
+/*
+ * io command is active: sqe cmd is received, and its cqe isn't done
+ *
+ * If the flag is set, the io command is owned by ublk driver, and waited
+ * for incoming blk-mq request from the ublk block device.
+ *
+ * If the flag is cleared, the io command will be completed, and owned by
+ * ublk server.
+ */
 #define UBLK_IO_FLAG_ACTIVE	0x01
 
 /*
- * FETCH io cmd is completed via cqe, and the io cmd is being handled by
- * ublksrv, and not committed yet
+ * IO command is completed via cqe, and it is being handled by ublksrv, and
+ * not committed yet
+ *
+ * Basically exclusively with UBLK_IO_FLAG_ACTIVE, so can be served for
+ * cross verification
  */
 #define UBLK_IO_FLAG_OWNED_BY_SRV 0x02
 
 /*
- * request has been failed, only used in handling aborting, and after
- * this flag is observed, this request will be failed immediately
+ * IO command is aborted, so this flag is set in case of
+ * !UBLK_IO_FLAG_ACTIVE.
+ *
+ * After this flag is observed, any pending or new incoming request
+ * associated with this io command will be failed immediately
  */
-#define UBLK_IO_FLAG_REQ_FAILED 0x04
+#define UBLK_IO_FLAG_ABORTED 0x04
 
 struct ublk_io {
 	/* userspace buffer address from io cmd */
@@ -528,8 +542,8 @@ static void __ublk_fail_req(struct ublk_io *io, struct request *req)
 {
 	WARN_ON_ONCE(io->flags & UBLK_IO_FLAG_ACTIVE);
 
-	if (!(io->flags & UBLK_IO_FLAG_REQ_FAILED)) {
-		io->flags |= UBLK_IO_FLAG_REQ_FAILED;
+	if (!(io->flags & UBLK_IO_FLAG_ABORTED)) {
+		io->flags |= UBLK_IO_FLAG_ABORTED;
 		blk_mq_end_request(req, BLK_STS_IOERR);
 	}
 }
@@ -584,10 +598,10 @@ static void ublk_rq_task_work_fn(struct callback_head *work)
 	}
 
 	/*
-	 * Or abort isn't started, but the request is re-issued after being
-	 * failed, we still need to fail it one more time.
+	 * Request is re-issued after this io command is aborted, we still
+	 * need to fail it immediately
          */
-	if (unlikely(io->flags & UBLK_IO_FLAG_REQ_FAILED)) {
+	if (unlikely(io->flags & UBLK_IO_FLAG_ABORTED)) {
 		blk_mq_end_request(req, BLK_STS_IOERR);
 		if (task_exiting)
 			spin_unlock(&ubq->abort_lock);
@@ -912,11 +926,11 @@ static int ublk_ch_uring_cmd(struct io_uring_cmd *cmd, unsigned int issue_flags)
 		/* FETCH_RQ has to provide IO buffer */
 		if (!ub_cmd->addr)
 			goto out;
+		if (!(io->flags & UBLK_IO_FLAG_OWNED_BY_SRV))
+			goto out;
 		io->addr = ub_cmd->addr;
 		io->flags |= UBLK_IO_FLAG_ACTIVE;
 		io->cmd = cmd;
-		if (!(io->flags & UBLK_IO_FLAG_OWNED_BY_SRV))
-			goto out;
 		ublk_commit_completion(ub, ub_cmd);
 		break;
 	default:
