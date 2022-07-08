@@ -210,6 +210,8 @@ static const struct block_device_operations ub_fops = {
 	.release =	ublk_release,
 };
 
+#define UBLK_MAX_PIN_PAGES	32
+
 struct ublk_map_data {
 	const struct ublk_queue *ubq;
 	const struct request *rq;
@@ -217,50 +219,54 @@ struct ublk_map_data {
 	unsigned max_bytes;
 };
 
-#define UBLK_MAX_PIN_PAGES	32
+struct ublk_io_iter {
+	struct page *pages[UBLK_MAX_PIN_PAGES];
+	unsigned pg_off;	/* offset in the 1st page in pages */
+	int nr_pages;		/* how many page pointers in pages */
+	struct bio *bio;
+	struct bvec_iter iter;
+};
 
-static inline unsigned ublk_copy_io_pages(struct page **pages,
-		unsigned pg_off, int nr_pages,
-		struct bio **bio, struct bvec_iter *iter,
+static inline unsigned ublk_copy_io_pages(struct ublk_io_iter *data,
 		unsigned max_bytes, bool to_vm)
 {
 	const unsigned total = min_t(unsigned, max_bytes,
-			PAGE_SIZE - pg_off + ((nr_pages - 1) << PAGE_SHIFT));
+			PAGE_SIZE - data->pg_off +
+			((data->nr_pages - 1) << PAGE_SHIFT));
 	unsigned done = 0;
 	unsigned pg_idx = 0;
 
 	while (done < total) {
-		struct bio_vec bv = bio_iter_iovec(*bio, *iter);
+		struct bio_vec bv = bio_iter_iovec(data->bio, data->iter);
 		const unsigned int bytes = min3(bv.bv_len, total - done,
-				(unsigned)(PAGE_SIZE - pg_off));
+				(unsigned)(PAGE_SIZE - data->pg_off));
 		void *bv_buf = bvec_kmap_local(&bv);
-                void *pg_buf = kmap_local_page(pages[pg_idx]);
-
+		void *pg_buf = kmap_local_page(data->pages[pg_idx]);
 
 		if (to_vm)
-			memcpy(pg_buf + pg_off, bv_buf, bytes);
+			memcpy(pg_buf + data->pg_off, bv_buf, bytes);
 		else
-			memcpy(bv_buf, pg_buf + pg_off, bytes);
+			memcpy(bv_buf, pg_buf + data->pg_off, bytes);
 
 		kunmap_local(pg_buf);
 		kunmap_local(bv_buf);
 
 		/* advance page array */
-		pg_off += bytes;
-		if (pg_off == PAGE_SIZE) {
+		data->pg_off += bytes;
+		if (data->pg_off == PAGE_SIZE) {
 			pg_idx += 1;
-			pg_off = 0;
+			data->pg_off = 0;
 		}
 
 		done += bytes;
 
 		/* advance bio */
-		bio_advance_iter_single(*bio, iter, bytes);
-		if (!iter->bi_size) {
-			*bio = (*bio)->bi_next;
-			if (*bio == NULL)
+		bio_advance_iter_single(data->bio, &data->iter, bytes);
+		if (!data->iter.bi_size) {
+			data->bio = data->bio->bi_next;
+			if (data->bio == NULL)
 				break;
-			*iter = (*bio)->bi_iter;
+			data->iter = data->bio->bi_iter;
 		}
 	}
 
@@ -272,39 +278,33 @@ static inline int ublk_copy_user_pages(struct ublk_map_data *data,
 {
 	const unsigned int gup_flags = to_vm ? FOLL_WRITE : 0;
 	const unsigned long start_vm = data->io->addr;
-	unsigned int pg_off = start_vm & (PAGE_SIZE - 1);
-	const unsigned int nr_pages = round_up(data->max_bytes + pg_off,
-			PAGE_SIZE) >> PAGE_SHIFT;
 	unsigned int done = 0;
-	struct bio *bio = data->rq->bio;
-	struct bvec_iter iter = bio->bi_iter;
-
-	if (!bio || !bio_has_data(bio))
-		return 0;
+	struct ublk_io_iter iter = {
+		.pg_off	= start_vm & (PAGE_SIZE - 1),
+		.bio	= data->rq->bio,
+		.iter	= data->rq->bio->bi_iter,
+	};
+	const unsigned int nr_pages = round_up(data->max_bytes +
+			(start_vm & (PAGE_SIZE - 1)), PAGE_SIZE) >> PAGE_SHIFT;
 
 	while (done < nr_pages) {
-		struct page *pgs[UBLK_MAX_PIN_PAGES];
 		const unsigned to_pin = min_t(unsigned, UBLK_MAX_PIN_PAGES,
 				nr_pages - done);
-		int pinned, i;
-		unsigned len;
+		unsigned i, len;
 
-		pinned = get_user_pages_fast(start_vm + (done << PAGE_SHIFT),
-				to_pin, gup_flags, pgs);
-		if (pinned <= 0)
-			return done == 0 ? pinned : done;
-
-		len = ublk_copy_io_pages(pgs, pg_off, pinned,
-					&bio, &iter, data->max_bytes, to_vm);
-		data->max_bytes -= len;
-		pg_off = 0;
-
-		for (i = 0; i < pinned; i++) {
+		iter.nr_pages = get_user_pages_fast(start_vm +
+				(done << PAGE_SHIFT), to_pin, gup_flags,
+				iter.pages);
+		if (iter.nr_pages <= 0)
+			return done == 0 ? iter.nr_pages : done;
+		len = ublk_copy_io_pages(&iter, data->max_bytes, to_vm);
+		for (i = 0; i < iter.nr_pages; i++) {
 			if (to_vm)
-				set_page_dirty(pgs[i]);
-			put_page(pgs[i]);
+				set_page_dirty(iter.pages[i]);
+			put_page(iter.pages[i]);
 		}
-		done += pinned;
+		data->max_bytes -= len;
+		done += iter.nr_pages;
 	}
 
 	return done;
