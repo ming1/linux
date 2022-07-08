@@ -940,6 +940,14 @@ static int ublk_ch_uring_cmd(struct io_uring_cmd *cmd, unsigned int issue_flags)
 			goto out;
 		if (!(io->flags & UBLK_IO_FLAG_OWNED_BY_SRV))
 			goto out;
+
+		/*
+		 * If we pin pages when the userspace is handling io,
+		 * io buffer isn't allowed to change.
+		 */
+		if ((ub_cmd->addr != io->addr) &&
+		    (ubq->flags & UBLK_F_PIN_PAGES_FOR_IO))
+			goto out;
 		io->addr = ub_cmd->addr;
 		io->flags |= UBLK_IO_FLAG_ACTIVE;
 		io->cmd = cmd;
