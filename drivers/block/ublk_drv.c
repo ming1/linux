@@ -238,6 +238,7 @@ struct ublk_io_iter {
 	int nr_pages;		/* how many page pointers in pages */
 	struct bio *bio;
 	struct bvec_iter iter;
+	unsigned done_pages;	/* how many pages are handled */
 };
 
 static inline unsigned ublk_copy_pages_worker(struct ublk_io_iter *iter,
@@ -293,7 +294,6 @@ static inline int ublk_pin_user_pages(struct ublk_map_data *data,
 {
 	const unsigned int gup_flags = to_vm ? FOLL_WRITE : 0;
 	const unsigned long start_vm = data->io->addr;
-	unsigned int done = 0;
 	struct ublk_io_iter iter = {
 		.pg_off	= start_vm & (PAGE_SIZE - 1),
 		.bio	= data->rq->bio,
@@ -302,24 +302,25 @@ static inline int ublk_pin_user_pages(struct ublk_map_data *data,
 	const unsigned int nr_pages = round_up(data->max_bytes +
 			(start_vm & (PAGE_SIZE - 1)), PAGE_SIZE) >> PAGE_SHIFT;
 
-	while (done < nr_pages) {
+	while (iter.done_pages < nr_pages) {
 		const unsigned to_pin = min_t(unsigned, UBLK_MAX_PIN_PAGES,
-				nr_pages - done);
+				nr_pages - iter.done_pages);
 		unsigned len;
 
 		iter.nr_pages = get_user_pages_fast(start_vm +
-				(done << PAGE_SHIFT), to_pin, gup_flags,
+				(iter.done_pages << PAGE_SHIFT), to_pin, gup_flags,
 				iter.pages);
 		if (iter.nr_pages <= 0)
-			return done == 0 ? iter.nr_pages : done;
+			return iter.done_pages == 0 ? iter.nr_pages :
+				iter.done_pages;
 
 		len = handle_pages(&iter, data, to_vm);
 
 		data->max_bytes -= len;
-		done += iter.nr_pages;
+		iter.done_pages += iter.nr_pages;
 	}
 
-	return done;
+	return iter.done_pages;
 }
 
 static int ublk_copy_pages(struct ublk_io_iter *iter,
