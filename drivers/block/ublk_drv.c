@@ -302,7 +302,7 @@ static inline int ublk_get_user_pages(struct ublk_io_iter *iter,
 			nr_pages, gup_flags, iter->pages);
 }
 
-static inline int ublk_pin_user_pages(struct ublk_map_data *data,
+static inline int ublk_iterate_user_pages(struct ublk_map_data *data,
 		int (*get_pages)(struct ublk_io_iter *iter,
 			const struct ublk_map_data *data,
 			unsigned nr_pages),
@@ -359,7 +359,7 @@ static int ublk_map_io(const struct ublk_queue *ubq, const struct request *req,
 	/*
 	 * no zero copy, we delay copy WRITE request data into ublksrv
 	 * context via task_work_add and the big benefit is that pinning
-	 * pages in current context is pretty fast, see ublk_pin_user_pages
+	 * pages in current context is pretty fast, see ublk_iterate_user_pages
 	 */
 	if (req_op(req) != REQ_OP_WRITE && req_op(req) != REQ_OP_FLUSH)
 		return rq_bytes;
@@ -373,7 +373,7 @@ static int ublk_map_io(const struct ublk_queue *ubq, const struct request *req,
 			.flags	=	UBLK_MAP_COPY_TO_VM,
 		};
 
-		ublk_pin_user_pages(&data, ublk_get_user_pages,
+		ublk_iterate_user_pages(&data, ublk_get_user_pages,
 				ublk_copy_pages);
 
 		return rq_bytes - data.max_bytes;
@@ -397,7 +397,7 @@ static int ublk_unmap_io(const struct ublk_queue *ubq,
 
 		WARN_ON_ONCE(io->res > rq_bytes);
 
-		ublk_pin_user_pages(&data, ublk_get_user_pages,
+		ublk_iterate_user_pages(&data, ublk_get_user_pages,
 				ublk_copy_pages);
 
 		return io->res - data.max_bytes;
