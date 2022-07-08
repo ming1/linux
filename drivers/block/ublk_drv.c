@@ -97,10 +97,12 @@ struct ublk_queue {
 	int q_depth;
 
 	unsigned long flags;
+	struct xarray	pages;
 	struct task_struct	*ubq_daemon;
 	char *io_cmd_buf;
 
 	unsigned long io_addr;	/* mapped vm address */
+	unsigned rq_pages_shift;
 	unsigned int max_io_sz;
 	bool abort_work_pending;
 	unsigned short nr_io_ready;	/* how many ios setup */
@@ -226,9 +228,13 @@ static const struct block_device_operations ub_fops = {
 #define UBLK_MAX_PIN_PAGES	32
 
 #define  UBLK_MAP_COPY_TO_VM	1
+#define  UBLK_MAP_IO_PIN_PAGES	2
+#define  UBLK_MAP_FOR_MAP_IO	4
+#define  UBLK_MAP_NEED_COPY	8
+#define  UBLK_MAP_IO_UNPIN_PAGES	16
 
 struct ublk_map_data {
-	const struct ublk_queue *ubq;
+	struct ublk_queue *ubq;
 	const struct request *rq;
 	const struct ublk_io *io;
 	unsigned max_bytes;
@@ -249,12 +255,22 @@ static inline bool ublk_io_to_vm(const struct ublk_map_data *data)
 	return data->flags & UBLK_MAP_COPY_TO_VM;
 }
 
+static inline bool ublk_io_pin_pages(const struct ublk_map_data *data)
+{
+	return data->flags & UBLK_MAP_IO_PIN_PAGES;
+}
+
+static inline unsigned long ublk_xa_page_key(unsigned int tag, unsigned pg_idx,
+		unsigned int shift)
+{
+	return ((unsigned long)(tag << shift)) | pg_idx;
+}
+
 static inline unsigned ublk_copy_pages_worker(struct ublk_io_iter *iter,
 		const struct ublk_map_data *data)
 {
 	const unsigned total = min_t(unsigned, data->max_bytes,
-			PAGE_SIZE - iter->pg_off +
-			((iter->nr_pages - 1) << PAGE_SHIFT));
+			(iter->nr_pages << PAGE_SHIFT) - iter->pg_off);
 	unsigned done = 0;
 	unsigned pg_idx = 0;
 
@@ -340,72 +356,203 @@ static inline int ublk_iterate_user_pages(struct ublk_map_data *data,
 	return iter.done_pages;
 }
 
-static int ublk_copy_pages(struct ublk_io_iter *iter,
+static void ublk_release_pages(struct ublk_io_iter *iter,
 		const struct ublk_map_data *data)
 {
-	int len = ublk_copy_pages_worker(iter, data);
 	int i;
 
+	WARN_ON_ONCE(ublk_io_pin_pages(data));
 	for (i = 0; i < iter->nr_pages; i++) {
 		if (ublk_io_to_vm(data))
 			set_page_dirty(iter->pages[i]);
 		put_page(iter->pages[i]);
 	}
+}
+
+static void ublk_store_pages(struct ublk_io_iter *iter,
+		const struct ublk_map_data *data)
+{
+	int i;
+
+	WARN_ON_ONCE(!ublk_io_pin_pages(data));
+
+	for (i = 0; i < iter->nr_pages; i++) {
+		unsigned long key = ublk_xa_page_key(data->rq->tag,
+				iter->done_pages + i,
+				data->ubq->rq_pages_shift);
+
+		WARN_ON_ONCE(__xa_insert(&data->ubq->pages, key,
+					iter->pages[i], GFP_KERNEL) < 0);
+	}
+}
+
+static void ublk_unpin_pages(struct ublk_io_iter *iter,
+		const struct ublk_map_data *data)
+{
+	int i;
+
+	WARN_ON_ONCE(!(data->flags & UBLK_MAP_IO_UNPIN_PAGES));
+
+	for (i = 0; i < iter->nr_pages; i++) {
+		unsigned long key = ublk_xa_page_key(data->rq->tag,
+				iter->done_pages + i,
+				data->ubq->rq_pages_shift);
+		struct page *ptr;
+
+		ptr = __xa_erase(&data->ubq->pages, key);
+		WARN_ON_ONCE(ptr != iter->pages[i]);
+		put_page(iter->pages[i]);
+	}
+}
+
+static int ublk_copy_and_store_pages(struct ublk_io_iter *iter,
+		const struct ublk_map_data *data)
+{
+	int len;
+
+	WARN_ON_ONCE(!(data->flags & UBLK_MAP_FOR_MAP_IO));
+
+	if (data->flags & UBLK_MAP_NEED_COPY)
+		len = ublk_copy_pages_worker(iter, data);
+	else {
+		WARN_ON_ONCE(!ublk_io_pin_pages(data));
+		len = min_t(unsigned, ((iter->nr_pages << PAGE_SHIFT) -
+				iter->pg_off), data->max_bytes);
+		iter->pg_off = (iter->pg_off + len) & (PAGE_SIZE - 1);
+	}
+
+	if (ublk_io_pin_pages(data))
+		ublk_store_pages(iter, data);
+	else
+		ublk_release_pages(iter, data);
 
 	return len;
 }
 
-static int ublk_map_io(const struct ublk_queue *ubq, const struct request *req,
+static int ublk_copy_and_unpin_pages(struct ublk_io_iter *iter,
+		const struct ublk_map_data *data)
+{
+	int len;
+
+	WARN_ON_ONCE(data->flags & UBLK_MAP_FOR_MAP_IO);
+
+	if (data->flags & UBLK_MAP_NEED_COPY)
+		len = ublk_copy_pages_worker(iter, data);
+	else {
+		WARN_ON_ONCE(!(data->flags & UBLK_MAP_IO_UNPIN_PAGES));
+		len = min_t(unsigned, (iter->nr_pages << PAGE_SHIFT) -
+				iter->pg_off, data->max_bytes);
+		iter->pg_off = (iter->pg_off + len) & (PAGE_SIZE - 1);
+	}
+
+	if (data->flags & UBLK_MAP_IO_UNPIN_PAGES)
+		ublk_unpin_pages(iter, data);
+	else
+		ublk_release_pages(iter, data);
+
+	return len;
+}
+
+static int ublk_map_io(struct ublk_queue *ubq, const struct request *req,
 		struct ublk_io *io)
 {
 	const unsigned int rq_bytes = blk_rq_bytes(req);
-	/*
-	 * no zero copy, we delay copy WRITE request data into ublksrv
-	 * context and the big benefit is that pinning pages in current
-	 * context is pretty fast
-	 */
-	if (req_op(req) != REQ_OP_WRITE && req_op(req) != REQ_OP_FLUSH)
+	struct ublk_map_data data = {
+		.ubq	=	ubq,
+		.rq	=	req,
+		.io	=	io,
+		.max_bytes =	rq_bytes,
+		.flags	=	UBLK_MAP_COPY_TO_VM | UBLK_MAP_FOR_MAP_IO,
+	};
+
+	if (!ublk_rq_has_data(req))
 		return rq_bytes;
 
-	if (ublk_rq_has_data(req)) {
-		struct ublk_map_data data = {
-			.ubq	=	ubq,
-			.rq	=	req,
-			.io	=	io,
-			.max_bytes =	rq_bytes,
-			.flags	=	UBLK_MAP_COPY_TO_VM,
-		};
+	if (req_op(req) != REQ_OP_READ)
+		data.flags |= UBLK_MAP_NEED_COPY;
 
-		ublk_iterate_user_pages(&data, ublk_get_user_pages,
-				ublk_copy_pages);
-
-		return rq_bytes - data.max_bytes;
+	if (ubq->flags & UBLK_F_PIN_PAGES_FOR_IO) {
+		data.flags |= UBLK_MAP_IO_PIN_PAGES;
+	} else {
+		if (req_op(req) == REQ_OP_READ)
+			return rq_bytes;
 	}
-	return rq_bytes;
+	ublk_iterate_user_pages(&data, ublk_get_user_pages,
+			ublk_copy_and_store_pages);
+	return rq_bytes - data.max_bytes;
 }
 
-static int ublk_unmap_io(const struct ublk_queue *ubq,
+static int ublk_get_pinned_user_pages(struct ublk_io_iter *iter,
+		const struct ublk_map_data *data, unsigned nr_pages)
+{
+	int i, j = 0;
+
+	for (i = iter->done_pages; i < (1 << data->ubq->rq_pages_shift); i++) {
+		unsigned long key = ublk_xa_page_key(data->rq->tag, i,
+				data->ubq->rq_pages_shift);
+		struct page *page = xa_load(&data->ubq->pages, key);
+
+		if (!page)
+			break;
+		iter->pages[j++] = page;
+		if (j >= nr_pages)
+			break;
+	}
+
+	return j;
+}
+
+static int ublk_unmap_io(struct ublk_queue *ubq,
 		const struct request *req,
 		struct ublk_io *io)
 {
 	const unsigned int rq_bytes = blk_rq_bytes(req);
+	struct ublk_map_data data = {
+		.ubq	=	ubq,
+		.rq	=	req,
+		.io	=	io,
+		.max_bytes =	io->res,
+	};
+	unsigned done;
 
-	if (req_op(req) == REQ_OP_READ && ublk_rq_has_data(req)) {
-		struct ublk_map_data data = {
-			.ubq	=	ubq,
-			.rq	=	req,
-			.io	=	io,
-			.max_bytes =	io->res,
-		};
 
+	if (!ublk_rq_has_data(req))
+		return rq_bytes;
+
+	if (req_op(req) == REQ_OP_READ) {
+		data.flags |= UBLK_MAP_NEED_COPY;
 		WARN_ON_ONCE(io->res > rq_bytes);
-
-		ublk_iterate_user_pages(&data, ublk_get_user_pages,
-				ublk_copy_pages);
-
-		return io->res - data.max_bytes;
 	}
-	return rq_bytes;
+
+	if (ubq->flags & UBLK_F_PIN_PAGES_FOR_IO) {
+		data.flags |= UBLK_MAP_IO_UNPIN_PAGES;
+		done = ublk_iterate_user_pages(&data,
+				ublk_get_pinned_user_pages,
+				ublk_copy_and_unpin_pages);
+	} else {
+		if (req_op(req) != REQ_OP_READ)
+			return rq_bytes;
+		done = ublk_iterate_user_pages(&data,
+				ublk_get_user_pages,
+				ublk_copy_and_unpin_pages);
+	}
+
+	/* in case of short IO, handle other pages */
+	if (data.max_bytes && (data.flags & UBLK_MAP_IO_UNPIN_PAGES)) {
+		int i = done;
+
+		while (i < (1 << data.ubq->rq_pages_shift)) {
+			unsigned long key = ublk_xa_page_key(data.rq->tag,
+					i, data.ubq->rq_pages_shift);
+			struct page *page = __xa_erase(&data.ubq->pages, key);
+
+			if (page == NULL)
+				break;
+			put_page(page);
+			i++;
+		}
+	}
+	return rq_bytes - data.max_bytes;
 }
 
 static inline unsigned int ublk_req_build_flags(struct request *req)
@@ -1000,11 +1147,20 @@ static void ublk_deinit_queue(struct ublk_device *ub, int q_id)
 {
 	int size = ublk_queue_cmd_buf_size(ub, q_id);
 	struct ublk_queue *ubq = ublk_get_queue(ub, q_id);
+	unsigned long idx;
+	struct page *page;
 
 	if (ubq->ubq_daemon)
 		put_task_struct(ubq->ubq_daemon);
 	if (ubq->io_cmd_buf)
 		free_pages((unsigned long)ubq->io_cmd_buf, get_order(size));
+
+	xa_for_each(&ubq->pages, idx, page) {
+		put_page(page);
+		__xa_erase(&ubq->pages, idx);
+	}
+
+	xa_destroy(&ubq->pages);
 }
 
 static int ublk_init_queue(struct ublk_device *ub, int q_id)
@@ -1023,6 +1179,11 @@ static int ublk_init_queue(struct ublk_device *ub, int q_id)
 	if (!ptr)
 		return -ENOMEM;
 
+	xa_init(&ubq->pages);
+
+	/* double page index space since user buffer may not be aligned */
+	ubq->rq_pages_shift = ilog2(ub->dev_info.rq_max_blocks << ub->bs_shift)
+		- PAGE_SHIFT + 1;
 	ubq->io_cmd_buf = ptr;
 	ubq->dev = ub;
 	return 0;
