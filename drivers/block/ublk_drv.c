@@ -557,8 +557,8 @@ static void ublk_rq_task_work_fn(struct callback_head *work)
 	struct ublk_device *ub = req->q->queuedata;
 	int ret;
 
-	pr_devel("%s: complete: op %d, qid %d tag %d ret %d io_flags %x addr %llx\n",
-			__func__, io->cmd->cmd_op, ubq->q_id,  req->tag, ret, io->flags,
+	pr_devel("%s: complete: op %d, qid %d tag %d io_flags %x addr %llx\n",
+			__func__, io->cmd->cmd_op, ubq->q_id, req->tag, io->flags,
 			ublk_get_iod(ubq, req->tag)->addr);
 
 	/*
