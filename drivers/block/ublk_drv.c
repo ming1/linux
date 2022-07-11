@@ -1182,7 +1182,7 @@ static int ublk_add_dev(struct ublk_device *ub)
 	int bsize;
 
 	/* We are not ready to support zero copy */
-	ub->dev_info.flags[0] &= ~(1ULL << UBLK_F_SUPPORT_ZERO_COPY);
+	ub->dev_info.flags[0] &= ~UBLK_F_SUPPORT_ZERO_COPY;
 
 	bsize = ub->dev_info.block_size;
 	ub->bs_shift = ilog2(bsize);

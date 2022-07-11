@@ -46,7 +46,7 @@
  * zero copy requires 4k block size, and can remap ublk driver's io
  * request into ublksrv's vm space
  */
-#define UBLK_F_SUPPORT_ZERO_COPY	0
+#define UBLK_F_SUPPORT_ZERO_COPY	(1UL << 0)
 
 /* device state */
 #define UBLK_S_DEV_DEAD	0
