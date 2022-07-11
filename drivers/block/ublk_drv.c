@@ -816,10 +816,8 @@ static void ublk_cancel_queue(struct ublk_queue *ubq)
 	for (i = 0; i < ubq->q_depth; i++) {
 		struct ublk_io *io = &ubq->ios[i];
 
-		if (io->flags & UBLK_IO_FLAG_ACTIVE) {
-			io->flags &= ~UBLK_IO_FLAG_ACTIVE;
+		if (io->flags & UBLK_IO_FLAG_ACTIVE)
 			io_uring_cmd_done(io->cmd, UBLK_IO_RES_ABORT, 0);
-		}
 	}
 }
 
