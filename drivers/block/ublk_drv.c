@@ -92,7 +92,6 @@ struct ublk_queue {
 	int q_id;
 	int q_depth;
 
-	unsigned long flags;
 	struct task_struct	*ubq_daemon;
 	char *io_cmd_buf;
 
@@ -141,15 +140,6 @@ struct ublk_device {
 	struct delayed_work	monitor_work;
 	struct work_struct	stop_work;
 };
-
-#define ublk_use_task_work(ubq)						\
-({                                                                      \
-	bool ret = false;						\
-	if (IS_BUILTIN(CONFIG_BLK_DEV_UBLK) &&                          \
-			!((ubq)->flags & UBLK_F_NEED_REFETCH))		\
-		ret = true;						\
-	ret;								\
-})
 
 static dev_t ublk_chr_devt;
 static struct class *ublk_chr_class;
@@ -439,26 +429,6 @@ static int ublk_setup_iod(struct ublk_queue *ubq, struct request *req)
 	return BLK_STS_OK;
 }
 
-static bool ubq_daemon_is_dying(struct ublk_queue *ubq)
-{
-	return ubq->ubq_daemon->flags & PF_EXITING;
-}
-
-static void ubq_complete_io_cmd(struct ublk_io *io, int res)
-{
-	/* mark this cmd owned by ublksrv */
-	io->flags |= UBLK_IO_FLAG_OWNED_BY_SRV;
-
-	/*
-	 * clear ACTIVE since we are done with this sqe/cmd slot
-	 * We can only accept io cmd in case of being not active.
-	 */
-	io->flags &= ~UBLK_IO_FLAG_ACTIVE;
-
-	/* tell ublksrv one io request is coming */
-	io_uring_cmd_done(io->cmd, res, 0);
-}
-
 static blk_status_t ublk_queue_rq(struct blk_mq_hw_ctx *hctx,
 		const struct blk_mq_queue_data *bd)
 {
@@ -486,38 +456,30 @@ static blk_status_t ublk_queue_rq(struct blk_mq_hw_ctx *hctx,
 	 * If we can't add the task work, something must be wrong, schedule
 	 * monitor work immediately.
 	 */
-	if (ublk_use_task_work(ubq)) {
-		if (task_work_add(ubq->ubq_daemon, &data->work, notify_mode)) {
-			struct ublk_device *ub = rq->q->queuedata;
+	if (task_work_add(ubq->ubq_daemon, &data->work, notify_mode)) {
+		struct ublk_device *ub = rq->q->queuedata;
 
-			mod_delayed_work(system_wq, &ub->monitor_work, 0);
-			return BLK_STS_IOERR;
-		}
-	} else {
-		if (ubq_daemon_is_dying(ubq)) {
-			struct ublk_device *ub = rq->q->queuedata;
-
-			mod_delayed_work(system_wq, &ub->monitor_work, 0);
-			return BLK_STS_IOERR;
-		}
-
-		ubq_complete_io_cmd(&ubq->ios[rq->tag], UBLK_IO_RES_REFETCH);
+		mod_delayed_work(system_wq, &ub->monitor_work, 0);
+		return BLK_STS_IOERR;
 	}
 
 	return BLK_STS_OK;
+}
+
+static bool ubq_daemon_is_dying(struct ublk_queue *ubq)
+{
+	return ubq->ubq_daemon->flags & PF_EXITING;
 }
 
 static void ublk_commit_rqs(struct blk_mq_hw_ctx *hctx)
 {
 	struct ublk_queue *ubq = hctx->driver_data;
 
-	if (ublk_use_task_work(ubq)) {
-		__set_notify_signal(ubq->ubq_daemon);
-		if (ubq_daemon_is_dying(ubq)) {
-			struct ublk_device *ub = hctx->queue->queuedata;
+	__set_notify_signal(ubq->ubq_daemon);
+	if (ubq_daemon_is_dying(ubq)) {
+		struct ublk_device *ub = hctx->queue->queuedata;
 
-			mod_delayed_work(system_wq, &ub->monitor_work, 0);
-		}
+		mod_delayed_work(system_wq, &ub->monitor_work, 0);
 	}
 }
 
@@ -642,7 +604,17 @@ static void ublk_rq_task_work_fn(struct callback_head *work)
 		return;
 	}
 
-	ubq_complete_io_cmd(io, ret);
+	/* mark this cmd owned by ublksrv */
+	io->flags |= UBLK_IO_FLAG_OWNED_BY_SRV;
+
+	/*
+	 * clear ACTIVE since we are done with this sqe/cmd slot
+	 * We can only accept io cmd in case of being not active.
+	 */
+	io->flags &= ~UBLK_IO_FLAG_ACTIVE;
+
+	/* tell ublksrv one io request is coming */
+	io_uring_cmd_done(io->cmd, ret, 0);
 
 	/*
 	 * in case task is exiting, our partner has gone, so schedule monitor
@@ -765,25 +737,12 @@ static void ublk_commit_completion(struct ublk_device *ub,
  * Focus on aborting any in-flight request scheduled to run via task work
  */
 static void __ublk_abort_queue(struct ublk_device *ub, struct ublk_queue *ubq)
-	__releases(&ubq->abort_lock)
 {
 	bool task_exiting = !!(ubq->ubq_daemon->flags & PF_EXITING);
 	int i;
-	bool quiesced = false;
 
 	if (!task_exiting)
 		goto out;
-
-	/*
-	 * quiesce queue so that we can avoid to race with ublk_queue_rq()
-	 * wrt. dealing with io flags
-	 */
-	if (ubq->flags & UBLK_F_NEED_REFETCH) {
-		spin_unlock(&ubq->abort_lock);
-		blk_mq_quiesce_queue(ub->ub_queue);
-		spin_lock(&ubq->abort_lock);
-		quiesced = true;
-	}
 
 	for (i = 0; i < ubq->q_depth; i++) {
 		struct ublk_io *io = &ubq->ios[i];
@@ -800,8 +759,6 @@ static void __ublk_abort_queue(struct ublk_device *ub, struct ublk_queue *ubq)
 				__ublk_fail_req(io, rq);
 		}
 	}
-	if (quiesced)
-		blk_mq_unquiesce_queue(ub->ub_queue);
  out:
 	ubq->abort_work_pending = false;
 	ublk_put_device(ub);
@@ -835,12 +792,8 @@ static void ublk_abort_queue(struct ublk_device *ub, struct ublk_queue *ubq)
 	if (!ubq->abort_work_pending) {
 		ubq->abort_work_pending = true;
 		put_dev = false;
-		if (ublk_use_task_work(ubq)) {
-			if (task_work_add(ubq->ubq_daemon,
-					  &ubq->abort_work, TWA_SIGNAL)) {
-				__ublk_abort_queue(ub, ubq);
-			}
-		} else {
+		if (task_work_add(ubq->ubq_daemon, &ubq->abort_work,
+					TWA_SIGNAL)) {
 			__ublk_abort_queue(ub, ubq);
 		}
 	} else {
@@ -919,16 +872,6 @@ static void ublk_mark_io_ready(struct ublk_device *ub, struct ublk_queue *ubq)
 	mutex_unlock(&ub->mutex);
 }
 
-static void ublk_handle_refetch(struct ublk_device *ub,
-		struct ublk_queue *ubq, int tag)
-{
-	struct request *req = blk_mq_tag_to_rq(ub->tag_set.tags[ubq->q_id],
-			tag);
-	struct ublk_rq_data *data = blk_mq_rq_to_pdu(req);
-
-	ublk_rq_task_work_fn(&data->work);
-}
-
 static int ublk_ch_uring_cmd(struct io_uring_cmd *cmd, unsigned int issue_flags)
 {
 	struct ublksrv_io_cmd *ub_cmd = (struct ublksrv_io_cmd *)cmd->cmd;
@@ -1000,15 +943,6 @@ static int ublk_ch_uring_cmd(struct io_uring_cmd *cmd, unsigned int issue_flags)
 		io->cmd = cmd;
 		ublk_commit_completion(ub, ub_cmd);
 		break;
-	case UBLK_IO_REFETCH_REQ:
-		if (!(io->flags & UBLK_IO_FLAG_OWNED_BY_SRV))
-			goto out;
-		io->addr = ub_cmd->addr;
-		io->cmd = cmd;
-		io->flags |= UBLK_IO_FLAG_ACTIVE;
-		io->flags &= ~UBLK_IO_FLAG_OWNED_BY_SRV;
-		ublk_handle_refetch(ub, ubq, tag);
-		break;
 	default:
 		goto out;
 	}
@@ -1049,7 +983,6 @@ static int ublk_init_queue(struct ublk_device *ub, int q_id)
 	void *ptr;
 	int size;
 
-	ubq->flags = ub->dev_info.flags[0];
 	ubq->q_id = q_id;
 	ubq->q_depth = ub->dev_info.queue_depth;
 	size = ublk_queue_cmd_buf_size(ub, q_id);
@@ -1448,8 +1381,6 @@ static int ublk_ctrl_add_dev(const struct ublksrv_ctrl_dev_info *info,
 
 		/* update device id */
 		ub->dev_info.dev_id = ub->ub_number;
-		if (IS_MODULE(CONFIG_BLK_DEV_UBLK))
-			ub->dev_info.flags[0] |= UBLK_F_NEED_REFETCH;
 
 		ret = ublk_add_dev(ub);
 		if (!ret) {
