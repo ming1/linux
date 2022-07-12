@@ -41,13 +41,12 @@
 #include <linux/delay.h>
 #include <linux/mm.h>
 #include <asm/page.h>
-#include <linux/task_work.h>
 #include <uapi/linux/ublk_cmd.h>
 
 #define UBLK_MINORS		(1U << MINORBITS)
 
-struct ublk_rq_data {
-	struct callback_head work;
+struct ublk_uring_cmd_pdu {
+	struct request *req;
 };
 
 /*
@@ -100,8 +99,6 @@ struct ublk_queue {
 	bool abort_work_pending;
 	unsigned short nr_io_ready;	/* how many ios setup */
 	struct ublk_device *dev;
-	spinlock_t	abort_lock;
-	struct callback_head abort_work;
 	struct ublk_io ios[0];
 };
 
@@ -316,8 +313,8 @@ static int ublk_map_io(const struct ublk_queue *ubq, const struct request *req,
 	const unsigned int rq_bytes = blk_rq_bytes(req);
 	/*
 	 * no zero copy, we delay copy WRITE request data into ublksrv
-	 * context via task_work_add and the big benefit is that pinning
-	 * pages in current context is pretty fast, see ublk_pin_user_pages
+	 * context and the big benefit is that pinning pages in current
+	 * context is pretty fast, see ublk_pin_user_pages
 	 */
 	if (req_op(req) != REQ_OP_WRITE && req_op(req) != REQ_OP_FLUSH)
 		return rq_bytes;
@@ -429,58 +426,15 @@ static int ublk_setup_iod(struct ublk_queue *ubq, struct request *req)
 	return BLK_STS_OK;
 }
 
-static blk_status_t ublk_queue_rq(struct blk_mq_hw_ctx *hctx,
-		const struct blk_mq_queue_data *bd)
+static inline struct ublk_uring_cmd_pdu *ublk_get_uring_cmd_pdu(
+		struct io_uring_cmd *ioucmd)
 {
-	struct ublk_queue *ubq = hctx->driver_data;
-	struct request *rq = bd->rq;
-	struct ublk_rq_data *data = blk_mq_rq_to_pdu(rq);
-	enum task_work_notify_mode notify_mode = bd->last ?
-		TWA_SIGNAL_NO_IPI : TWA_NONE;
-	blk_status_t res;
-
-	/* fill iod to slot in io cmd buffer */
-	res = ublk_setup_iod(ubq, rq);
-	if (res != BLK_STS_OK)
-		return BLK_STS_IOERR;
-
-	blk_mq_start_request(bd->rq);
-
-	/*
-	 * run data copy in task work context for WRITE, and complete io_uring
-	 * cmd there too.
-	 *
-	 * This way should improve batching, meantime pinning pages in current
-	 * context is pretty fast.
-	 *
-	 * If we can't add the task work, something must be wrong, schedule
-	 * monitor work immediately.
-	 */
-	if (task_work_add(ubq->ubq_daemon, &data->work, notify_mode)) {
-		struct ublk_device *ub = rq->q->queuedata;
-
-		mod_delayed_work(system_wq, &ub->monitor_work, 0);
-		return BLK_STS_IOERR;
-	}
-
-	return BLK_STS_OK;
+	return (struct ublk_uring_cmd_pdu *)&ioucmd->pdu;
 }
 
 static bool ubq_daemon_is_dying(struct ublk_queue *ubq)
 {
 	return ubq->ubq_daemon->flags & PF_EXITING;
-}
-
-static void ublk_commit_rqs(struct blk_mq_hw_ctx *hctx)
-{
-	struct ublk_queue *ubq = hctx->driver_data;
-
-	__set_notify_signal(ubq->ubq_daemon);
-	if (ubq_daemon_is_dying(ubq)) {
-		struct ublk_device *ub = hctx->queue->queuedata;
-
-		mod_delayed_work(system_wq, &ub->monitor_work, 0);
-	}
 }
 
 /* todo: handle partial completion */
@@ -546,38 +500,38 @@ static void __ublk_fail_req(struct ublk_io *io, struct request *req)
 
 #define UBLK_REQUEUE_DELAY_MS	3
 
-static void ublk_rq_task_work_fn(struct callback_head *work)
+static void ublk_rq_task_work_cb(struct io_uring_cmd *cmd)
 {
-	bool task_exiting = !!(current->flags & PF_EXITING);
-	struct ublk_rq_data *data = container_of(work,
-			struct ublk_rq_data, work);
-	struct request *req = blk_mq_rq_from_pdu(data);
+	struct ublk_uring_cmd_pdu *pdu = ublk_get_uring_cmd_pdu(cmd);
+	struct ublk_device *ub = cmd->file->private_data;
+	struct request *req = pdu->req;
 	struct ublk_queue *ubq = req->mq_hctx->driver_data;
-	struct ublk_io *io = &ubq->ios[req->tag];
-	struct ublk_device *ub = req->q->queuedata;
-	int ret;
+	int tag = req->tag;
+	struct ublk_io *io = &ubq->ios[tag];
+	bool task_exiting = current != ubq->ubq_daemon ||
+		(current->flags & PF_EXITING);
+	unsigned int mapped_bytes;
 
 	pr_devel("%s: complete: op %d, qid %d tag %d io_flags %x addr %llx\n",
 			__func__, io->cmd->cmd_op, ubq->q_id, req->tag, io->flags,
 			ublk_get_iod(ubq, req->tag)->addr);
 
-	/*
-	 * If task is exiting, we may be run from exit_task_work() in
-	 * do_exit(), and may race with ublk_abort_queue(), so lock is
-	 * needed.
-	 */
 	if (unlikely(task_exiting)) {
-		ret = -ESRCH;
-		spin_lock(&ubq->abort_lock);
-	} else {
-		unsigned int mapped_bytes = ublk_map_io(ubq, req, io);
+		blk_mq_end_request(req, BLK_STS_IOERR);
+		mod_delayed_work(system_wq, &ub->monitor_work, 0);
+		return;
+	}
 
+	mapped_bytes = ublk_map_io(ubq, req, io);
+
+	/* partially mapped, update io descriptor */
+	if (unlikely(mapped_bytes != blk_rq_bytes(req))) {
 		/*
 		 * Nothing mapped, retry until we succeed.
 		 *
-		 * We may never succeed in mapping any bytes here because of
-		 * OOM. TODO: reserve one buffer with single page pinned for
-		 * providing forward progress guarantee.
+		 * We may never succeed in mapping any bytes here because
+		 * of OOM. TODO: reserve one buffer with single page pinned
+		 * for providing forward progress guarantee.
 		 */
 		if (unlikely(!mapped_bytes)) {
 			blk_mq_requeue_request(req, false);
@@ -586,22 +540,8 @@ static void ublk_rq_task_work_fn(struct callback_head *work)
 			return;
 		}
 
-		/* partially mapped, update io descriptor */
-		if (unlikely(mapped_bytes != blk_rq_bytes(req)))
-			ublk_get_iod(ubq, req->tag)->nr_sectors =
-				mapped_bytes >> 9;
-		ret = 0;
-	}
-
-	/*
-	 * Request is re-issued after this io command is aborted, we still
-	 * need to fail it immediately
-         */
-	if (unlikely(io->flags & UBLK_IO_FLAG_ABORTED)) {
-		blk_mq_end_request(req, BLK_STS_IOERR);
-		if (task_exiting)
-			spin_unlock(&ubq->abort_lock);
-		return;
+		ublk_get_iod(ubq, req->tag)->nr_sectors =
+			mapped_bytes >> 9;
 	}
 
 	/* mark this cmd owned by ublksrv */
@@ -614,17 +554,36 @@ static void ublk_rq_task_work_fn(struct callback_head *work)
 	io->flags &= ~UBLK_IO_FLAG_ACTIVE;
 
 	/* tell ublksrv one io request is coming */
-	io_uring_cmd_done(io->cmd, ret, 0);
-
-	/*
-	 * in case task is exiting, our partner has gone, so schedule monitor
-	 * work immediately for aborting queue
-	 */
-	if (task_exiting) {
-		spin_unlock(&ubq->abort_lock);
-		mod_delayed_work(system_wq, &ub->monitor_work, 0);
-	}
+	io_uring_cmd_done(io->cmd, UBLK_IO_RES_OK, 0);
 }
+
+static blk_status_t ublk_queue_rq(struct blk_mq_hw_ctx *hctx,
+		const struct blk_mq_queue_data *bd)
+{
+	struct ublk_queue *ubq = hctx->driver_data;
+	struct request *rq = bd->rq;
+	struct io_uring_cmd *cmd = ubq->ios[rq->tag].cmd;
+	struct ublk_uring_cmd_pdu *pdu = ublk_get_uring_cmd_pdu(cmd);
+	blk_status_t res;
+
+	/* fill iod to slot in io cmd buffer */
+	res = ublk_setup_iod(ubq, rq);
+	if (unlikely(res != BLK_STS_OK))
+		return BLK_STS_IOERR;
+
+	blk_mq_start_request(bd->rq);
+
+	if (unlikely(ubq_daemon_is_dying(ubq))) {
+		mod_delayed_work(system_wq, &ubq->dev->monitor_work, 0);
+		return BLK_STS_IOERR;
+	}
+
+	pdu->req = rq;
+	io_uring_cmd_complete_in_task(cmd, ublk_rq_task_work_cb);
+
+	return BLK_STS_OK;
+}
+
 
 static int ublk_init_hctx(struct blk_mq_hw_ctx *hctx, void *driver_data,
 		unsigned int hctx_idx)
@@ -636,21 +595,9 @@ static int ublk_init_hctx(struct blk_mq_hw_ctx *hctx, void *driver_data,
 	return 0;
 }
 
-static int ublk_init_rq(struct blk_mq_tag_set *set, struct request *req,
-		unsigned int hctx_idx, unsigned int numa_node)
-{
-	struct ublk_rq_data *data = blk_mq_rq_to_pdu(req);
-
-	init_task_work(&data->work, ublk_rq_task_work_fn);
-
-	return 0;
-}
-
 static const struct blk_mq_ops ublk_mq_ops = {
 	.queue_rq       = ublk_queue_rq,
-	.commit_rqs     = ublk_commit_rqs,
 	.init_hctx	= ublk_init_hctx,
-	.init_request	= ublk_init_rq,
 };
 
 static int ublk_ch_open(struct inode *inode, struct file *filp)
@@ -734,15 +681,16 @@ static void ublk_commit_completion(struct ublk_device *ub,
 }
 
 /*
- * Focus on aborting any in-flight request scheduled to run via task work
+ * When ->ubq_daemon is exiting, either new request is ended immediately,
+ * or any queued io command is drained, so it is safe to abort queue
+ * lockless
  */
-static void __ublk_abort_queue(struct ublk_device *ub, struct ublk_queue *ubq)
+static void ublk_abort_queue(struct ublk_device *ub, struct ublk_queue *ubq)
 {
-	bool task_exiting = !!(ubq->ubq_daemon->flags & PF_EXITING);
 	int i;
 
-	if (!task_exiting)
-		goto out;
+	if (!ublk_get_device(ub))
+		return;
 
 	for (i = 0; i < ubq->q_depth; i++) {
 		struct ublk_io *io = &ubq->ios[i];
@@ -759,54 +707,35 @@ static void __ublk_abort_queue(struct ublk_device *ub, struct ublk_queue *ubq)
 				__ublk_fail_req(io, rq);
 		}
 	}
- out:
-	ubq->abort_work_pending = false;
 	ublk_put_device(ub);
 }
 
-static void ublk_queue_task_work_fn(struct callback_head *work)
+static void ublk_daemon_monitor_work(struct work_struct *work)
 {
-	struct ublk_queue *ubq = container_of(work, struct ublk_queue,
-			abort_work);
+	struct ublk_device *ub =
+		container_of(work, struct ublk_device, monitor_work.work);
+	int i;
 
-	/*
-	 * Lock is only required in case of exiting ubq_daemon, but harmless
-	 * to grab it for running from task work too
-	 *
-	 * We are serialized with ublk_rq_task_work_fn() strictly.
-	 */
-	spin_lock(&ubq->abort_lock);
-	__ublk_abort_queue(ubq->dev, ubq);
-	spin_unlock(&ubq->abort_lock);
-}
+	for (i = 0; i < ub->dev_info.nr_hw_queues; i++) {
+		struct ublk_queue *ubq = ublk_get_queue(ub, i);
 
+		if (ubq_daemon_is_dying(ubq)) {
+			schedule_work(&ub->stop_work);
 
-static void ublk_abort_queue(struct ublk_device *ub, struct ublk_queue *ubq)
-{
-	bool put_dev;
-
-	if (!ublk_get_device(ub))
-		return;
-
-	spin_lock(&ubq->abort_lock);
-	if (!ubq->abort_work_pending) {
-		ubq->abort_work_pending = true;
-		put_dev = false;
-		if (task_work_add(ubq->ubq_daemon, &ubq->abort_work,
-					TWA_SIGNAL)) {
-			__ublk_abort_queue(ub, ubq);
+			/* abort queue is for making forward progress */
+			ublk_abort_queue(ub, ubq);
 		}
-	} else {
-		put_dev = true;
 	}
-	spin_unlock(&ubq->abort_lock);
 
 	/*
-	 * can't put device with ->abort_lock held, otherwise UAF
-	 * is triggered
+	 * We can't schedule monitor work after ublk_remove() is started.
+	 *
+	 * No need ub->mutex, monitor work are canceled after state is marked
+	 * as DEAD, so DEAD state is observed reliably.
 	 */
-	if (put_dev)
-		ublk_put_device(ub);
+	if (ub->dev_info.state != UBLK_S_DEV_DEAD)
+		schedule_delayed_work(&ub->monitor_work,
+				UBLK_DAEMON_MONITOR_PERIOD);
 }
 
 static void ublk_cancel_queue(struct ublk_queue *ubq)
@@ -991,10 +920,8 @@ static int ublk_init_queue(struct ublk_device *ub, int q_id)
 	if (!ptr)
 		return -ENOMEM;
 
-	init_task_work(&ubq->abort_work, ublk_queue_task_work_fn);
 	ubq->io_cmd_buf = ptr;
 	ubq->dev = ub;
-	spin_lock_init(&ubq->abort_lock);
 	return 0;
 }
 
@@ -1134,34 +1061,6 @@ static void ublk_stop_work_fn(struct work_struct *work)
 	ublk_stop_dev(ub);
 }
 
-static void ublk_daemon_monitor_work(struct work_struct *work)
-{
-	struct ublk_device *ub =
-		container_of(work, struct ublk_device, monitor_work.work);
-	int i;
-
-	for (i = 0; i < ub->dev_info.nr_hw_queues; i++) {
-		struct ublk_queue *ubq = ublk_get_queue(ub, i);
-
-		if (ubq_daemon_is_dying(ubq)) {
-			schedule_work(&ub->stop_work);
-
-			/* abort queue is for making forward progress */
-			ublk_abort_queue(ub, ubq);
-		}
-	}
-
-	/*
-	 * We can't schedule monitor work after ublk_remove() is started.
-	 *
-	 * No need ub->mutex, monitor work are canceled after state is marked
-	 * as DEAD, so DEAD state is observed reliably.
-	 */
-	if (ub->dev_info.state != UBLK_S_DEV_DEAD)
-		schedule_delayed_work(&ub->monitor_work,
-				UBLK_DAEMON_MONITOR_PERIOD);
-}
-
 static void ublk_update_capacity(struct ublk_device *ub)
 {
 	unsigned int max_rq_bytes;
@@ -1200,7 +1099,6 @@ static int ublk_add_dev(struct ublk_device *ub)
 	ub->tag_set.nr_hw_queues = ub->dev_info.nr_hw_queues;
 	ub->tag_set.queue_depth = ub->dev_info.queue_depth;
 	ub->tag_set.numa_node = NUMA_NO_NODE;
-	ub->tag_set.cmd_size = sizeof(struct ublk_rq_data);
 	ub->tag_set.flags = BLK_MQ_F_SHOULD_MERGE;
 	ub->tag_set.driver_data = ub;
 
