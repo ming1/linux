@@ -1347,6 +1347,8 @@ static int ublk_ctrl_add_dev(const struct ublksrv_ctrl_dev_info *info,
 
 		/* update device id */
 		ub->dev_info.dev_id = ub->ub_number;
+		if (IS_MODULE(CONFIG_BLK_DEV_UBLK))
+			ub->dev_info.flags[0] |= UBLK_F_URING_CMD_COMP_IN_TASK;
 
 		ret = ublk_add_dev(ub);
 		if (!ret) {
