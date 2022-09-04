@@ -1346,6 +1346,10 @@ static int ublk_ctrl_start_dev(struct io_uring_cmd *cmd)
 	if (!ub)
 		return -EINVAL;
 
+	/* io command buffer needs to be mapped */
+	if (!ub->mm)
+		return -EINVAL;
+
 	wait_for_completion_interruptible(&ub->completion);
 
 	schedule_delayed_work(&ub->monitor_work, UBLK_DAEMON_MONITOR_PERIOD);
