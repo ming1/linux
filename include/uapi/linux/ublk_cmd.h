@@ -208,6 +208,27 @@ struct ublk_param_discard {
 	__u16	reserved0;
 };
 
+/*
+ * ublk driver will pin pages for the passed vm space in device lifetime,
+ * and fallback to allocate from them when get_user_pages_fast() can't
+ * allocate pages for handling writing request.
+ *
+ * Both backing_vm_start and backing_vm_len needs to be PAGE_SIZE aligned.
+ *
+ * This reserved vm and pinned pages are shared by all queues, and driver
+ * has to handle the concurrent allocation correctly.
+ *
+ * If backing vm & reserved pages is used, ->addr of ublksrv_io_desc will
+ * be set as 'backing_vm_start'.
+ */
+struct ublk_param_backing_vm {
+/* 64K at least can cover 64k page size */
+#define UBLK_MAX_BACKING_VM_LENGTH	(64U << 10)
+	__u64   backing_vm_start;
+	__u32   backing_vm_len;
+	__u32   pad;
+};
+
 struct ublk_params {
 	/*
 	 * Total length of parameters, userspace has to set 'len' for both
@@ -218,10 +239,12 @@ struct ublk_params {
 	__u32	len;
 #define UBLK_PARAM_TYPE_BASIC           (1 << 0)
 #define UBLK_PARAM_TYPE_DISCARD         (1 << 1)
+#define UBLK_PARAM_TYPE_BACKING_VM      (1 << 2)
 	__u32	types;			/* types of parameter included */
 
 	struct ublk_param_basic		basic;
 	struct ublk_param_discard	discard;
+	struct ublk_param_backing_vm	backing_vm;
 };
 
 #endif

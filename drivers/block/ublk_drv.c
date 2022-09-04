@@ -52,7 +52,8 @@
 		| UBLK_F_NEED_GET_DATA)
 
 /* All UBLK_PARAM_TYPE_* should be included here */
-#define UBLK_PARAM_TYPE_ALL (UBLK_PARAM_TYPE_BASIC | UBLK_PARAM_TYPE_DISCARD)
+#define UBLK_PARAM_TYPE_ALL (UBLK_PARAM_TYPE_BASIC | \
+		UBLK_PARAM_TYPE_DISCARD | UBLK_PARAM_TYPE_BACKING_VM)
 
 struct ublk_rq_data {
 	struct callback_head work;
@@ -91,6 +92,8 @@ struct ublk_uring_cmd_pdu {
  */
 #define UBLK_IO_FLAG_ABORTED 0x04
 
+#define UBLK_IO_FLAG_ALLOC_FROM_BACKING  0x08
+
 /*
  * UBLK_IO_FLAG_NEED_GET_DATA is set because IO command requires
  * get data buffer address from ublksrv.
@@ -125,6 +128,14 @@ struct ublk_queue {
 	struct ublk_io ios[0];
 };
 
+struct ublk_backing_vm {
+	struct mutex	mutex;
+	bool		allocated;
+	unsigned short	nr_pages;
+	unsigned long	orig_vm_addr;
+	struct page	*pages[UBLK_MAX_BACKING_VM_LENGTH >> PAGE_SHIFT];
+};
+
 #define UBLK_DAEMON_MONITOR_PERIOD	(5 * HZ)
 
 struct ublk_device {
@@ -151,6 +162,8 @@ struct ublk_device {
 	struct mm_struct	*mm;
 
 	struct ublk_params	params;
+
+	struct ublk_backing_vm  *backing_vm;
 
 	struct completion	completion;
 	unsigned int		nr_queues_ready;
@@ -221,6 +234,91 @@ static void ublk_dev_param_discard_apply(struct ublk_device *ub)
 	blk_queue_max_discard_segments(q, p->max_discard_segments);
 }
 
+static void ublk_dev_param_backing_vm_release(struct ublk_device *ub)
+{
+	struct ublk_backing_vm *vm = ub->backing_vm;
+	int i;
+
+	if (!vm)
+		return;
+
+	for (i = 0; i < vm->nr_pages; i++)
+		put_page(vm->pages[i]);
+	kfree(vm);
+	ub->backing_vm = NULL;
+}
+
+static void ublk_dev_param_backing_vm_apply(struct ublk_device *ub)
+{
+	const struct ublk_param_backing_vm *p = &ub->params.backing_vm;
+	struct ublk_backing_vm *vm = kzalloc(sizeof(*vm), GFP_KERNEL);
+	int locked = 1;
+	long ret;
+
+	if (!vm)
+		return;
+
+	mutex_init(&vm->mutex);
+
+	mmap_read_lock(ub->mm);
+	ret = get_user_pages_remote(ub->mm, p->backing_vm_start,
+				p->backing_vm_len >> PAGE_SHIFT,
+				FOLL_WRITE, vm->pages, NULL, &locked);
+	if (locked)
+		mmap_read_unlock(ub->mm);
+
+	if (ret <= 0) {
+		kfree(vm);
+	} else {
+		vm->nr_pages = ret;
+		ub->backing_vm = vm;
+		pr_devel("%s: backing vm, nr_pages %ld vm %llx\n",
+			__func__, ret, p->backing_vm_start);
+	}
+}
+
+static int ublk_alloc_from_backing_vm(struct ublk_device *ub,
+		__u64 orig_vm_addr)
+{
+	struct ublk_backing_vm *vm = ub->backing_vm;
+	int ret = 0;
+
+	if (!vm)
+		return 0;
+
+	mutex_lock(&vm->mutex);
+	if (vm->allocated)
+		goto unlock;
+	vm->allocated = 1;
+	vm->orig_vm_addr = orig_vm_addr;
+	ret = vm->nr_pages;
+	pr_devel("%s: alloc backing vm, nr_pages %d orig vm %lx\n",
+			__func__, vm->nr_pages, vm->orig_vm_addr);
+ unlock:
+	mutex_unlock(&vm->mutex);
+
+	return ret;
+}
+
+static void ublk_free_from_backing_vm(struct ublk_device *ub,
+		__u64 *orig_vm_addr)
+{
+	struct ublk_backing_vm *vm = ub->backing_vm;
+
+	if (!vm)
+		return;
+
+	mutex_lock(&vm->mutex);
+	WARN_ON_ONCE(!vm->allocated);
+	if (vm->allocated) {
+		vm->allocated = 0;
+		*orig_vm_addr = vm->orig_vm_addr;
+		pr_devel("%s: free backing vm, orig vm %lx\n", __func__,
+				vm->orig_vm_addr);
+	}
+	mutex_unlock(&vm->mutex);
+}
+
 static int ublk_validate_params(const struct ublk_device *ub)
 {
 	/* basic param is the only one which must be set */
@@ -249,6 +347,18 @@ static int ublk_validate_params(const struct ublk_device *ub)
 			return -EINVAL;
 	}
 
+	if (ub->params.types & UBLK_PARAM_TYPE_BACKING_VM) {
+		const struct ublk_param_backing_vm *p = &ub->params.backing_vm;
+
+		if (p->backing_vm_start & (PAGE_SIZE - 1))
+			return -EINVAL;
+		if (p->backing_vm_len & (PAGE_SIZE - 1))
+			return -EINVAL;
+		if (p->backing_vm_len > UBLK_MAX_BACKING_VM_LENGTH ||
+				!p->backing_vm_len)
+			return -EINVAL;
+	}
+
 	return 0;
 }
 
@@ -261,6 +371,9 @@ static int ublk_apply_params(struct ublk_device *ub)
 
 	if (ub->params.types & UBLK_PARAM_TYPE_DISCARD)
 		ublk_dev_param_discard_apply(ub);
+
+	if (ub->params.types & UBLK_PARAM_TYPE_BACKING_VM)
+		ublk_dev_param_backing_vm_apply(ub);
 
 	return 0;
 }
@@ -303,7 +416,7 @@ static inline bool ublk_rq_has_data(const struct request *rq)
 	return rq->bio && bio_has_data(rq->bio);
 }
 
-static inline struct ublksrv_io_desc *ublk_get_iod(struct ublk_queue *ubq,
+static inline struct ublksrv_io_desc *ublk_get_iod(const struct ublk_queue *ubq,
 		int tag)
 {
 	return (struct ublksrv_io_desc *)
@@ -343,6 +456,7 @@ struct ublk_map_data {
 	const struct request *rq;
 	const struct ublk_io *io;
 	unsigned max_bytes;
+	bool alloc_from_backing_vm;
 };
 
 struct ublk_io_iter {
@@ -421,6 +535,17 @@ static inline int ublk_copy_user_pages(struct ublk_map_data *data,
 		iter.nr_pages = get_user_pages_fast(start_vm +
 				(done << PAGE_SHIFT), to_pin, gup_flags,
 				iter.pages);
+		/* fallback to backing vm if nothing is allocated for write */
+		if (!done && iter.nr_pages <= 0 && to_vm) {
+			iter.nr_pages = ublk_alloc_from_backing_vm(
+					data->ubq->dev, start_vm);
+			if (iter.nr_pages) {
+				if (iter.nr_pages > nr_pages)
+					iter.nr_pages = nr_pages;
+				data->alloc_from_backing_vm = true;
+			}
+		}
+
 		if (iter.nr_pages <= 0)
 			return done == 0 ? iter.nr_pages : done;
 		len = ublk_copy_io_pages(&iter, data->max_bytes, to_vm);
@@ -431,6 +556,9 @@ static inline int ublk_copy_user_pages(struct ublk_map_data *data,
 		}
 		data->max_bytes -= len;
 		done += iter.nr_pages;
+
+		if (data->alloc_from_backing_vm)
+			break;
 	}
 
 	return done;
@@ -458,6 +586,12 @@ static int ublk_map_io(const struct ublk_queue *ubq, const struct request *req,
 
 		ublk_copy_user_pages(&data, true);
 
+		if (data.alloc_from_backing_vm) {
+			ublk_get_iod(ubq, req->tag)->addr =
+				ubq->dev->params.backing_vm.backing_vm_start;
+			io->flags |= UBLK_IO_FLAG_ALLOC_FROM_BACKING;
+		}
+
 		return rq_bytes - data.max_bytes;
 	}
 	return rq_bytes;
@@ -483,6 +617,12 @@ static int ublk_unmap_io(const struct ublk_queue *ubq,
 
 		return io->res - data.max_bytes;
 	}
+
+	if (io->flags & UBLK_IO_FLAG_ALLOC_FROM_BACKING) {
+		ublk_free_from_backing_vm(ubq->dev, &io->addr);
+		io->flags &= ~UBLK_IO_FLAG_ALLOC_FROM_BACKING;
+	}
+
 	return rq_bytes;
 }
 
@@ -1249,6 +1389,7 @@ static void ublk_cdev_rel(struct device *dev)
 	ublk_deinit_queues(ub);
 	ublk_free_dev_number(ub);
 	mutex_destroy(&ub->mutex);
+	ublk_dev_param_backing_vm_release(ub);
 	kfree(ub);
 }
 
