@@ -43,6 +43,8 @@
 #include <asm/page.h>
 #include <linux/task_work.h>
 #include <linux/namei.h>
+#include <linux/pipe_fs_i.h>
+#include <linux/splice.h>
 #include <uapi/linux/ublk_cmd.h>
 
 #define UBLK_MINORS		(1U << MINORBITS)
@@ -153,6 +155,8 @@ struct ublk_device {
 #define UB_STATE_DELETED	2
 	unsigned long		state;
 	int			ub_number;
+
+	struct srcu_struct	srcu;
 
 	struct mutex		mutex;
 
@@ -537,6 +541,9 @@ static int ublk_map_io(const struct ublk_queue *ubq, const struct request *req,
 	if (req_op(req) != REQ_OP_WRITE && req_op(req) != REQ_OP_FLUSH)
 		return rq_bytes;
 
+	if (ubq->flags & UBLK_F_SUPPORT_ZERO_COPY)
+		return rq_bytes;
+
 	if (ublk_rq_has_data(req)) {
 		struct ublk_map_data data = {
 			.ubq	=	ubq,
@@ -557,6 +564,9 @@ static int ublk_unmap_io(const struct ublk_queue *ubq,
 		struct ublk_io *io)
 {
 	const unsigned int rq_bytes = blk_rq_bytes(req);
+
+	if (ubq->flags & UBLK_F_SUPPORT_ZERO_COPY)
+		return rq_bytes;
 
 	if (req_op(req) == REQ_OP_READ && ublk_rq_has_data(req)) {
 		struct ublk_map_data data = {
@@ -1221,6 +1231,7 @@ static void ublk_stop_dev(struct ublk_device *ub)
 	del_gendisk(ub->ub_disk);
 	ub->dev_info.state = UBLK_S_DEV_DEAD;
 	ub->dev_info.ublksrv_pid = -1;
+	synchronize_srcu(&ub->srcu);
 	put_disk(ub->ub_disk);
 	ub->ub_disk = NULL;
  unlock:
@@ -1355,13 +1366,141 @@ static int ublk_ch_uring_cmd(struct io_uring_cmd *cmd, unsigned int issue_flags)
 	return -EIOCBQUEUED;
 }
 
+static void ublk_pipe_buf_release(struct pipe_inode_info *pipe,
+			      struct pipe_buffer *buf)
+{
+}
+
+static const struct pipe_buf_operations ublk_pipe_buf_ops = {
+        .release        = ublk_pipe_buf_release,
+};
+
+static ssize_t ublk_splice_read(struct file *in, loff_t *ppos,
+		struct pipe_inode_info *pipe,
+		size_t len, unsigned int flags)
+{
+	struct ublk_device *ub = in->private_data;
+	struct req_iterator rq_iter;
+	struct bio_vec bv;
+	struct request *req;
+	struct ublk_queue *ubq;
+	u16 tag, q_id;
+	unsigned int done;
+	int ret, buf_offset, srcu_idx;
+
+	if (!ub)
+		return -EPERM;
+
+	ret = -EINVAL;
+
+	/* protect request queue & disk removed */
+	srcu_idx = srcu_read_lock(&ub->srcu);
+
+	if (ub->dev_info.state == UBLK_S_DEV_DEAD)
+		goto exit;
+
+	tag = ublk_pos_to_tag(*ppos);
+	q_id = ublk_pos_to_hwq(*ppos);
+	buf_offset = ublk_pos_to_buf_offset(*ppos);
+
+	if (q_id >= ub->dev_info.nr_hw_queues)
+		goto exit;
+
+	ubq = ublk_get_queue(ub, q_id);
+	if (!ubq)
+		goto exit;
+
+	if (!(ubq->flags & UBLK_F_SUPPORT_ZERO_COPY))
+		goto exit;
+
+	/*
+	 * So far just support splice read buffer from ubq daemon context
+	 * because request may be gone in ->splice_read() if the splice
+	 * is called from other context.
+	 *
+	 * TODO: add request protection and relax the following limit.
+	 */
+	if (ubq->ubq_daemon != current)
+		goto exit;
+
+	if (tag >= ubq->q_depth)
+		goto exit;
+
+	req = blk_mq_tag_to_rq(ub->tag_set.tags[q_id], tag);
+	if (!req || !blk_mq_request_started(req))
+		goto exit;
+
+	pr_devel("%s: qid %d tag %u offset %x, request bytes %u, len %llu\n",
+			__func__, tag, q_id, buf_offset, blk_rq_bytes(req),
+			(unsigned long long)len);
+
+	if (req_op(req) == REQ_OP_READ) {
+		if (!(flags & SPLICE_F_KERN_FOR_READ))
+			goto exit;
+	} else if (req_op(req) == REQ_OP_WRITE) {
+		if (!(flags & SPLICE_F_KERN_FOR_WRITE))
+			goto exit;
+	} else {
+		goto exit;
+	}
+
+	if (!ublk_rq_has_data(req) || !len)
+		goto exit;
+
+	if (buf_offset + len > blk_rq_bytes(req))
+		goto exit;
+
+	done = ret = 0;
+	rq_for_each_bvec(bv, req, rq_iter) {
+		struct pipe_buffer buf = {
+			.ops = &ublk_pipe_buf_ops,
+			.flags = 0,
+			.page = bv.bv_page,
+			.offset = bv.bv_offset,
+			.len = bv.bv_len,
+		};
+
+		if (buf_offset > 0) {
+			if (buf_offset >= bv.bv_len) {
+				buf_offset -= bv.bv_len;
+				continue;
+			} else {
+				buf.offset += buf_offset;
+				buf.len -= buf_offset;
+				buf_offset = 0;
+			}
+		}
+
+		if (done + buf.len > len)
+			buf.len = len - done;
+		done += buf.len;
+
+		ret = add_to_pipe(pipe, &buf);
+		if (unlikely(ret < 0)) {
+			done -= buf.len;
+			break;
+		}
+		if (done >= len)
+			break;
+	}
+
+	if (done) {
+		*ppos += done;
+		ret = done;
+	}
+exit:
+	srcu_read_unlock(&ub->srcu, srcu_idx);
+	return ret;
+}
+
 static const struct file_operations ublk_ch_fops = {
 	.owner = THIS_MODULE,
 	.open = ublk_ch_open,
 	.release = ublk_ch_release,
-	.llseek = no_llseek,
+	.llseek = noop_llseek,
 	.uring_cmd = ublk_ch_uring_cmd,
 	.mmap = ublk_ch_mmap,
+	.splice_read = ublk_splice_read,
 };
 
 static void ublk_deinit_queue(struct ublk_device *ub, int q_id)
@@ -1472,6 +1611,7 @@ static void ublk_cdev_rel(struct device *dev)
 	ublk_deinit_queues(ub);
 	ublk_free_dev_number(ub);
 	mutex_destroy(&ub->mutex);
+	cleanup_srcu_struct(&ub->srcu);
 	kfree(ub);
 }
 
@@ -1600,17 +1740,18 @@ static int ublk_ctrl_start_dev(struct ublk_device *ub, struct io_uring_cmd *cmd)
 		set_bit(GD_SUPPRESS_PART_SCAN, &disk->state);
 
 	get_device(&ub->cdev_dev);
+	ub->dev_info.state = UBLK_S_DEV_LIVE;
 	ret = add_disk(disk);
 	if (ret) {
 		/*
 		 * Has to drop the reference since ->free_disk won't be
 		 * called in case of add_disk failure.
 		 */
+		ub->dev_info.state = UBLK_S_DEV_DEAD;
 		ublk_put_device(ub);
 		goto out_put_disk;
 	}
 	set_bit(UB_STATE_USED, &ub->state);
-	ub->dev_info.state = UBLK_S_DEV_LIVE;
 out_put_disk:
 	if (ret)
 		put_disk(disk);
@@ -1718,6 +1859,9 @@ static int ublk_ctrl_add_dev(struct io_uring_cmd *cmd)
 	ub = kzalloc(sizeof(*ub), GFP_KERNEL);
 	if (!ub)
 		goto out_unlock;
+	ret = init_srcu_struct(&ub->srcu);
+	if (ret)
+		goto out_free_ub;
 	mutex_init(&ub->mutex);
 	spin_lock_init(&ub->mm_lock);
 	INIT_WORK(&ub->quiesce_work, ublk_quiesce_work_fn);
@@ -1726,7 +1870,7 @@ static int ublk_ctrl_add_dev(struct io_uring_cmd *cmd)
 
 	ret = ublk_alloc_dev_number(ub, header->dev_id);
 	if (ret < 0)
-		goto out_free_ub;
+		goto out_clean_srcu;
 
 	memcpy(&ub->dev_info, &info, sizeof(info));
 
@@ -1743,9 +1887,6 @@ static int ublk_ctrl_add_dev(struct io_uring_cmd *cmd)
 
 	if (!IS_BUILTIN(CONFIG_BLK_DEV_UBLK))
 		ub->dev_info.flags |= UBLK_F_URING_CMD_COMP_IN_TASK;
-
-	/* We are not ready to support zero copy */
-	ub->dev_info.flags &= ~UBLK_F_SUPPORT_ZERO_COPY;
 
 	ub->dev_info.nr_hw_queues = min_t(unsigned int,
 			ub->dev_info.nr_hw_queues, nr_cpu_ids);
@@ -1776,6 +1917,8 @@ out_deinit_queues:
 	ublk_deinit_queues(ub);
 out_free_dev_number:
 	ublk_free_dev_number(ub);
+out_clean_srcu:
+	cleanup_srcu_struct(&ub->srcu);
 out_free_ub:
 	mutex_destroy(&ub->mutex);
 	kfree(ub);
