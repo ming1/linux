@@ -427,6 +427,31 @@ const struct io_issue_def io_issue_defs[] = {
 		.prep			= io_eopnotsupp_prep,
 #endif
 	},
+	[IORING_OP_READ_SPLICE_BUF] = {
+		.needs_file		= 1,
+		.unbound_nonreg_file	= 1,
+		.pollin			= 1,
+		.plug			= 1,
+		.audit_skip		= 1,
+		.ioprio			= 1,
+		.iopoll			= 1,
+		.iopoll_queue		= 1,
+		.prep			= io_prep_rw,
+		.issue			= io_read,
+	},
+	[IORING_OP_WRITE_SPLICE_BUF] = {
+		.needs_file		= 1,
+		.hash_reg_file		= 1,
+		.unbound_nonreg_file	= 1,
+		.pollout		= 1,
+		.plug			= 1,
+		.audit_skip		= 1,
+		.ioprio			= 1,
+		.iopoll			= 1,
+		.iopoll_queue		= 1,
+		.prep			= io_prep_rw,
+		.issue			= io_write,
+	},
 };
 
 
@@ -646,6 +671,18 @@ const struct io_cold_def io_cold_defs[] = {
 		.cleanup		= io_send_zc_cleanup,
 		.fail			= io_sendrecv_fail,
 #endif
+	},
+	[IORING_OP_READ_SPLICE_BUF] = {
+		.async_size		= sizeof(struct io_async_rw),
+		.name			= "READ_TO_SPLICE_BUF",
+		.cleanup		= io_read_write_cleanup,
+		.fail			= io_rw_fail,
+	},
+	[IORING_OP_WRITE_SPLICE_BUF] = {
+		.async_size		= sizeof(struct io_async_rw),
+		.name			= "WRITE_FROM_SPICE_BUF",
+		.cleanup		= io_read_write_cleanup,
+		.fail			= io_rw_fail,
 	},
 };
 

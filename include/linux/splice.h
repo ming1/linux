@@ -23,6 +23,11 @@
 
 #define SPLICE_F_ALL (SPLICE_F_MOVE|SPLICE_F_NONBLOCK|SPLICE_F_MORE|SPLICE_F_GIFT)
 
+/* kernel internal splice, used in ->read_splice, pipe buffer for READ */
+#define SPLICE_F_KERN_FOR_READ	(0x10)
+/* kernel internal splice, used in ->read_splice, pipe buffer for WRITE */
+#define SPLICE_F_KERN_FOR_WRITE	(0x20)
+
 /*
  * Passed to the actors
  */

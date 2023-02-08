@@ -73,6 +73,175 @@ static int io_iov_buffer_select_prep(struct io_kiocb *req)
 	return 0;
 }
 
+struct io_rw_splice_buf_data {
+	unsigned long total;
+	unsigned int  max_bvecs;
+	struct io_mapped_ubuf **imu;
+};
+
+/* the max size of whole 'io_mapped_ubuf' allocation is one page */
+static inline unsigned int io_rw_max_splice_buf_bvecs(void)
+{
+	return (PAGE_SIZE - sizeof(struct io_mapped_ubuf)) /
+			sizeof(struct bio_vec);
+}
+
+static inline unsigned int io_rw_splice_buf_nr_bvecs(unsigned long len)
+{
+	return min_t(unsigned int, (len + PAGE_SIZE - 1) >> PAGE_SHIFT,
+			io_rw_max_splice_buf_bvecs());
+}
+
+static inline bool io_rw_splice_buf(struct io_kiocb *req)
+{
+	return req->opcode == IORING_OP_READ_SPLICE_BUF ||
+		req->opcode == IORING_OP_WRITE_SPLICE_BUF;
+}
+
+static void io_rw_cleanup_splice_buf(struct io_kiocb *req)
+{
+	struct io_mapped_ubuf *imu = req->imu;
+	int i;
+
+	if (!imu)
+		return;
+
+	for (i = 0; i < imu->nr_bvecs; i++)
+		put_page(imu->bvec[i].bv_page);
+
+	req->imu = NULL;
+	kfree(imu);
+}
+
+static int io_splice_buf_actor(struct pipe_inode_info *pipe,
+			       struct pipe_buffer *buf,
+			       struct splice_desc *sd)
+{
+	struct io_rw_splice_buf_data *data = sd->u.data;
+	struct io_mapped_ubuf *imu = *data->imu;
+	struct bio_vec *bvec;
+
+	if (imu->nr_bvecs >= data->max_bvecs) {
+		/*
+		 * Double bvec allocation given we don't know
+		 * how many remains
+		 */
+		unsigned nr_bvecs = min(data->max_bvecs * 2,
+				io_rw_max_splice_buf_bvecs());
+		struct io_mapped_ubuf *new_imu;
+
+		/* can't grow, given up */
+		if (nr_bvecs <= data->max_bvecs)
+			return 0;
+
+		new_imu = krealloc(imu, struct_size(imu, bvec, nr_bvecs),
+				GFP_KERNEL);
+		if (!new_imu)
+			return -ENOMEM;
+		imu = new_imu;
+		data->max_bvecs = nr_bvecs;
+		*data->imu = imu;
+	}
+
+	if (!try_get_page(buf->page))
+		return -EINVAL;
+
+	bvec = &imu->bvec[imu->nr_bvecs];
+	bvec->bv_page = buf->page;
+	bvec->bv_offset = buf->offset;
+	bvec->bv_len = buf->len;
+	imu->nr_bvecs++;
+	data->total += buf->len;
+
+	return buf->len;
+}
+
+static int io_splice_buf_direct_actor(struct pipe_inode_info *pipe,
+			       struct splice_desc *sd)
+{
+	return __splice_from_pipe(pipe, sd, io_splice_buf_actor);
+}
+
+static int __io_prep_rw_splice_buf(struct io_kiocb *req,
+				   struct io_rw_splice_buf_data *data,
+				   struct file *splice_f,
+				   size_t len,
+				   loff_t splice_off)
+{
+	unsigned flags = req->opcode == IORING_OP_READ_SPLICE_BUF ?
+			SPLICE_F_KERN_FOR_READ : SPLICE_F_KERN_FOR_WRITE;
+	struct splice_desc sd = {
+		.total_len = len,
+		.flags = flags | SPLICE_F_NONBLOCK,
+		.pos = splice_off,
+		.u.data = data,
+		.ignore_sig = true,
+	};
+
+	return splice_direct_to_actor(splice_f, &sd,
+			io_splice_buf_direct_actor);
+}
+
+static int io_prep_rw_splice_buf(struct io_kiocb *req,
+				 const struct io_uring_sqe *sqe)
+{
+	struct io_rw *rw = io_kiocb_to_cmd(req, struct io_rw);
+	unsigned nr_pages = io_rw_splice_buf_nr_bvecs(rw->len);
+	loff_t splice_off = READ_ONCE(sqe->splice_off_in);
+	struct io_rw_splice_buf_data data;
+	struct io_mapped_ubuf *imu;
+	struct fd splice_fd;
+	int ret;
+
+	splice_fd = fdget(READ_ONCE(sqe->splice_fd_in));
+	if (!splice_fd.file)
+		return -EBADF;
+
+	ret = -EBADF;
+	if (!(splice_fd.file->f_mode & FMODE_READ))
+		goto out_put_fd;
+
+	ret = -ENOMEM;
+	imu = kmalloc(struct_size(imu, bvec, nr_pages), GFP_KERNEL);
+	if (!imu)
+		goto out_put_fd;
+
+	/* splice buffer actually hasn't virtual address */
+	imu->nr_bvecs = 0;
+
+	data.max_bvecs = nr_pages;
+	data.total = 0;
+	data.imu = &imu;
+
+	rw->addr = 0;
+	req->flags |= REQ_F_NEED_CLEANUP;
+
+	ret = __io_prep_rw_splice_buf(req, &data, splice_fd.file, rw->len,
+			splice_off);
+	imu = *data.imu;
+	imu->acct_pages = 0;
+	imu->ubuf = 0;
+	imu->ubuf_end = data.total;
+	rw->len = data.total;
+	req->imu = imu;
+	if (!data.total) {
+		io_rw_cleanup_splice_buf(req);
+	} else  {
+		ret = 0;
+	}
+out_put_fd:
+	if (splice_fd.file)
+		fdput(splice_fd);
+
+	return ret;
+}
+
+void io_read_write_cleanup(struct io_kiocb *req)
+{
+	if (io_rw_splice_buf(req))
+		io_rw_cleanup_splice_buf(req);
+}
+
 int io_prep_rw(struct io_kiocb *req, const struct io_uring_sqe *sqe)
 {
 	struct io_rw *rw = io_kiocb_to_cmd(req, struct io_rw);
@@ -117,6 +286,8 @@ int io_prep_rw(struct io_kiocb *req, const struct io_uring_sqe *sqe)
 		ret = io_iov_buffer_select_prep(req);
 		if (ret)
 			return ret;
+	} else if (io_rw_splice_buf(req)) {
+		return io_prep_rw_splice_buf(req, sqe);
 	}
 
 	return 0;
@@ -371,7 +542,8 @@ static struct iovec *__io_import_iovec(int ddir, struct io_kiocb *req,
 	size_t sqe_len;
 	ssize_t ret;
 
-	if (opcode == IORING_OP_READ_FIXED || opcode == IORING_OP_WRITE_FIXED) {
+	if (opcode == IORING_OP_READ_FIXED || opcode == IORING_OP_WRITE_FIXED ||
+			io_rw_splice_buf(req)) {
 		ret = io_import_fixed(ddir, iter, req->imu, rw->addr, rw->len);
 		if (ret)
 			return ERR_PTR(ret);
