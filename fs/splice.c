@@ -471,7 +471,7 @@ static int splice_from_pipe_next(struct pipe_inode_info *pipe, struct splice_des
 	 * Check for signal early to make process killable when there are
 	 * always buffers available
 	 */
-	if (signal_pending(current))
+	if (signal_pending(current) && !sd->ignore_sig)
 		return -ERESTARTSYS;
 
 repeat:
@@ -485,7 +485,7 @@ repeat:
 		if (sd->flags & SPLICE_F_NONBLOCK)
 			return -EAGAIN;
 
-		if (signal_pending(current))
+		if (signal_pending(current) && !sd->ignore_sig)
 			return -ERESTARTSYS;
 
 		if (sd->need_wakeup) {
