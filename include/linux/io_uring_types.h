@@ -402,6 +402,7 @@ enum {
 	/* keep async read/write and isreg together and in order */
 	REQ_F_SUPPORT_NOWAIT_BIT,
 	REQ_F_ISREG_BIT,
+	REQ_F_FUSED_SLAVE_BIT,
 
 	/* not a real bit, just to check we're not overflowing the space */
 	__REQ_F_LAST_BIT,
@@ -471,6 +472,8 @@ enum {
 	REQ_F_CLEAR_POLLIN	= BIT_ULL(REQ_F_CLEAR_POLLIN_BIT),
 	/* hashed into ->cancel_hash_locked, protected by ->uring_lock */
 	REQ_F_HASH_LOCKED	= BIT_ULL(REQ_F_HASH_LOCKED_BIT),
+	/* slave request in fused cmd, won't be one uring cmd */
+	REQ_F_FUSED_SLAVE	= BIT_ULL(REQ_F_FUSED_SLAVE_BIT),
 };
 
 typedef void (*io_req_tw_func_t)(struct io_kiocb *req, bool *locked);
@@ -553,6 +556,18 @@ struct io_kiocb {
 		 * REQ_F_BUFFER_RING is set.
 		 */
 		struct io_buffer_list	*buf_list;
+
+		/*
+		 * store kernel (sub)buffer of fused master request which OP
+		 * is IORING_OP_FUSED_CMD
+		 */
+		const struct io_uring_bvec_buf *fused_cmd_kbuf;
+
+		/*
+		 * store fused command master request for fuse slave request,
+		 * which uses fuse master's io buffer for handling slave OP
+		 */
+		struct io_kiocb *fused_master_req;
 	};
 
 	union {

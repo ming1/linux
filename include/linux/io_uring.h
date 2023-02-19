@@ -4,6 +4,7 @@
 
 #include <linux/sched.h>
 #include <linux/xarray.h>
+#include <linux/bvec.h>
 #include <uapi/linux/io_uring.h>
 
 enum io_uring_cmd_flags {
@@ -20,6 +21,26 @@ enum io_uring_cmd_flags {
 	IO_URING_F_SQE128		= (1 << 8),
 	IO_URING_F_CQE32		= (1 << 9),
 	IO_URING_F_IOPOLL		= (1 << 10),
+
+	/* for FUSED_CMD only */
+	IO_URING_F_FUSED_BUF_DEST		= (1 << 11), /* slave writes to buffer */
+	IO_URING_F_FUSED_BUF_SRC		= (1 << 12), /* slave reads from buffer */
+	/* driver incapable of FUSED_CMD should fail cmd when seeing F_FUSED */
+	IO_URING_F_FUSED		= IO_URING_F_FUSED_BUF_DEST |
+		IO_URING_F_FUSED_BUF_SRC,
+};
+
+union io_uring_fused_cmd_data {
+	/*
+	 * In case of slave request IOSQE_CQE_SKIP_SUCCESS, return slave
+	 * result via master command; otherwise we simply return success
+	 * if buffer is provided, and slave request will return its result
+	 * via its CQE
+	 */
+	s32 slave_res;
+
+	/* fused cmd private, driver do not touch it */
+	struct io_kiocb *__slave;
 };
 
 struct io_uring_cmd {
@@ -33,10 +54,31 @@ struct io_uring_cmd {
 	};
 	u32		cmd_op;
 	u32		flags;
-	u8		pdu[32]; /* available inline for free use */
+
+	/* for fused command, the available pdu is a bit less */
+	union {
+		struct {
+			union io_uring_fused_cmd_data data;
+			u8	pdu[24]; /* available inline for free use */
+		} fused;
+		u8		pdu[32]; /* available inline for free use */
+	};
+};
+
+struct io_uring_bvec_buf {
+	unsigned long	len;
+	unsigned int	nr_bvecs;
+
+	/* offset in the 1st bvec */
+	unsigned int	offset;
+	const struct bio_vec	*bvec;
+	struct bio_vec	__bvec[];
 };
 
 #if defined(CONFIG_IO_URING)
+void io_fused_cmd_start_slave_req(struct io_uring_cmd *ioucmd, bool locked,
+		const struct io_uring_bvec_buf *imu,
+		void (*complete_tw_cb)(struct io_uring_cmd *));
 int io_uring_cmd_import_fixed(u64 ubuf, unsigned long len, int rw,
 			      struct iov_iter *iter, void *ioucmd);
 void io_uring_cmd_done(struct io_uring_cmd *cmd, ssize_t ret, ssize_t res2);
@@ -66,6 +108,11 @@ static inline void io_uring_free(struct task_struct *tsk)
 		__io_uring_free(tsk);
 }
 #else
+static inline void io_fused_cmd_start_slave_req(struct io_uring_cmd *ioucmd,
+		bool locked, const struct io_uring_bvec_buf *fused_cmd_kbuf,
+		unsigned int len, void (*complete_tw_cb)(struct io_uring_cmd *))
+{
+}
 static inline int io_uring_cmd_import_fixed(u64 ubuf, unsigned long len, int rw,
 			      struct iov_iter *iter, void *ioucmd)
 {

@@ -29,6 +29,13 @@ struct io_issue_def {
 	unsigned		iopoll_queue : 1;
 	/* opcode specific path will handle ->async_data allocation if needed */
 	unsigned		manual_alloc : 1;
+	/* can be slave op of fused command */
+	unsigned		fused_slave : 1;
+	/*
+	 * buffer direction, 0 : read from buffer, 1: write to buffer, used
+	 * for fused_slave only
+	*/
+	unsigned		buf_dir : 1;
 
 	int (*issue)(struct io_kiocb *, unsigned int);
 	int (*prep)(struct io_kiocb *, const struct io_uring_sqe *);
