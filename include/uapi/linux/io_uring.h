@@ -245,8 +245,14 @@ enum io_uring_op {
  * sqe->uring_cmd_flags
  * IORING_URING_CMD_FIXED	use registered buffer; pass this flag
  *				along with setting sqe->buf_index.
+ *
+ * IORING_FUSED_CMD_BUF		fused primary command provides buffer
+ *				for secondary requests which can retrieve
+ *				any sub-buffer with offset(sqe->addr) and
+ *				len(sqe->len)
  */
-#define IORING_URING_CMD_FIXED	(1U << 0)
+#define IORING_URING_CMD_FIXED		(1U << 0)
+#define IORING_FUSED_CMD_BUF		(1U << 1)
 
 
 /*

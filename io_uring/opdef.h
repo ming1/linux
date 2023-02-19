@@ -31,6 +31,11 @@ struct io_issue_def {
 	unsigned		manual_alloc : 1;
 	/* can be secondary op of fused command */
 	unsigned		fused_secondary : 1;
+	/*
+	 * buffer direction, 0 : read from buffer, 1: write to buffer, used
+	 * for fused_secondary only
+	 */
+	unsigned		buf_dir : 1;
 
 	int (*issue)(struct io_kiocb *, unsigned int);
 	int (*prep)(struct io_kiocb *, const struct io_uring_sqe *);

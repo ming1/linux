@@ -562,6 +562,11 @@ struct io_kiocb {
 		 */
 		struct io_buffer_list	*buf_list;
 
+		/*
+		 * store kernel buffer provided by fused primary request
+		 */
+		const struct io_uring_bvec_buf *fused_cmd_kbuf;
+
 		/* store fused command's primary request for the secondary */
 		struct io_kiocb *fused_primary_req;
 	};
