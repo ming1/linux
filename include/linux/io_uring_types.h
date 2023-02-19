@@ -530,7 +530,8 @@ struct io_kiocb {
 	 * and after selection it points to the buffer ID itself.
 	 */
 	u16				buf_index;
-	unsigned int			flags;
+	u32				__pad;
+	u64				flags;
 
 	struct io_cqe			cqe;
 
