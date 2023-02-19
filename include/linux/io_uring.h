@@ -22,6 +22,11 @@ enum io_uring_cmd_flags {
 	IO_URING_F_IOPOLL		= (1 << 10),
 };
 
+union io_uring_fused_cmd_data {
+	/* secondary list, fused cmd private, driver do not touch it */
+	struct io_kiocb *__secondary;
+};
+
 struct io_uring_cmd {
 	struct file	*file;
 	const void	*cmd;
@@ -33,7 +38,15 @@ struct io_uring_cmd {
 	};
 	u32		cmd_op;
 	u32		flags;
-	u8		pdu[32]; /* available inline for free use */
+
+	/* for fused command, the available pdu is a bit less */
+	union {
+		struct {
+			union io_uring_fused_cmd_data data;
+			u8	pdu[24]; /* available inline for free use */
+		} fused;
+		u8		pdu[32]; /* available inline for free use */
+	};
 };
 
 #if defined(CONFIG_IO_URING)

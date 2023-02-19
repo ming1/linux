@@ -73,6 +73,8 @@ struct io_uring_sqe {
 		__u16	buf_index;
 		/* for grouped buffer selection */
 		__u16	buf_group;
+		/* how many secondary normal SQEs following this fused SQE */
+		__u16	nr_secondary;
 	} __attribute__((packed));
 	/* personality to use, if used */
 	__u16	personality;
@@ -173,6 +175,16 @@ enum {
  */
 #define IORING_SETUP_DEFER_TASKRUN	(1U << 13)
 
+/*
+ * Multiple requests submitted as one whole request logically, and the 1st
+ * one is primary request, and the others are secondary requests, which number
+ * can be retrieved from primary SQE.
+ *
+ * Primary request is responsible for submitting secondary requests, and it
+ * won't be completed until all secondary requests are done.
+ */
+#define IORING_SETUP_FUSED_REQ		(1U << 14)
+
 enum io_uring_op {
 	IORING_OP_NOP,
 	IORING_OP_READV,
@@ -223,6 +235,7 @@ enum io_uring_op {
 	IORING_OP_URING_CMD,
 	IORING_OP_SEND_ZC,
 	IORING_OP_SENDMSG_ZC,
+	IORING_OP_FUSED_CMD,
 
 	/* this goes last, obviously */
 	IORING_OP_LAST,
@@ -476,6 +489,7 @@ struct io_uring_params {
 #define IORING_FEAT_CQE_SKIP		(1U << 11)
 #define IORING_FEAT_LINKED_FILE		(1U << 12)
 #define IORING_FEAT_REG_REG_RING	(1U << 13)
+#define IORING_FEAT_FUSED_REQ		(1U << 14)
 
 /*
  * io_uring_register(2) opcodes and arguments
