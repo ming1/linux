@@ -30,6 +30,19 @@ enum io_uring_cmd_flags {
 		IO_URING_F_FUSED_READ,
 };
 
+union io_uring_fused_cmd_data {
+	/*
+	 * In case of slave request IOSQE_CQE_SKIP_SUCCESS, return slave
+	 * result via master command; otherwise we simply return success
+	 * if buffer is provided, and slave request will return its result
+	 * via its CQE
+	 */
+	s32 slave_res;
+
+	/* fused cmd private, driver do not touch it */
+	struct io_kiocb *__slave;
+};
+
 struct io_uring_cmd {
 	struct file	*file;
 	const void	*cmd;
@@ -41,11 +54,27 @@ struct io_uring_cmd {
 	};
 	u32		cmd_op;
 	u32		flags;
-	u8		pdu[32]; /* available inline for free use */
+
+	/* for fused command, the available pdu is a bit less */
+	union {
+		u8		pdu[32]; /* available inline for free use */
+		struct {
+			u8	pdu[24]; /* available inline for free use */
+			union io_uring_fused_cmd_data data;
+		} fused;
+	};
 };
 
 /* The mapper buffer is supposed to be immutable */
 struct io_mapped_buf {
+	/*
+	 * For kernel buffer without virtual address, buf is set as zero,
+	 * which is just fine given both buf/buf_end are just for
+	 * calculating iov iter offset/len and validating buffer.
+	 *
+	 * So slave OP has to fail request in case that the OP doesn't
+	 * support iov iter.
+	 */
 	u64		buf;
 	u64		buf_end;
 	unsigned int	nr_bvecs;
@@ -63,6 +92,9 @@ struct io_mapped_buf {
 };
 
 #if defined(CONFIG_IO_URING)
+void io_fused_cmd_provide_kbuf(struct io_uring_cmd *ioucmd, bool locked,
+		const struct io_mapped_buf *imu,
+		void (*complete_tw_cb)(struct io_uring_cmd *));
 int io_uring_cmd_import_fixed(u64 ubuf, unsigned long len, int rw,
 			      struct iov_iter *iter, void *ioucmd);
 void io_uring_cmd_done(struct io_uring_cmd *cmd, ssize_t ret, ssize_t res2);
@@ -92,6 +124,11 @@ static inline void io_uring_free(struct task_struct *tsk)
 		__io_uring_free(tsk);
 }
 #else
+static inline void io_fused_cmd_provide_kbuf(struct io_uring_cmd *ioucmd,
+		bool locked, const struct io_mapped_buf *fused_cmd_kbuf,
+		unsigned int len, void (*complete_tw_cb)(struct io_uring_cmd *))
+{
+}
 static inline int io_uring_cmd_import_fixed(u64 ubuf, unsigned long len, int rw,
 			      struct iov_iter *iter, void *ioucmd)
 {
