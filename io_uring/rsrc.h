@@ -50,7 +50,8 @@ struct io_mapped_ubuf {
 	u64		ubuf_end;
 	unsigned int	nr_bvecs;
 	unsigned int	acct_pages;
-	struct bio_vec	bvec[];
+	struct bio_vec	*bvec;
+	struct bio_vec	__bvec[];
 };
 
 void io_rsrc_put_tw(struct callback_head *cb);
