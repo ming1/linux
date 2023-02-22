@@ -24,7 +24,7 @@ struct io_rsrc_update {
 };
 
 static int io_sqe_buffer_register(struct io_ring_ctx *ctx, struct iovec *iov,
-				  struct io_mapped_ubuf **pimu,
+				  struct io_mapped_buf **pimu,
 				  struct page **last_hpage);
 
 #define IO_RSRC_REF_BATCH	100
@@ -136,9 +136,9 @@ static int io_buffer_validate(struct iovec *iov)
 	return 0;
 }
 
-static void io_buffer_unmap(struct io_ring_ctx *ctx, struct io_mapped_ubuf **slot)
+static void io_buffer_unmap(struct io_ring_ctx *ctx, struct io_mapped_buf **slot)
 {
-	struct io_mapped_ubuf *imu = *slot;
+	struct io_mapped_buf *imu = *slot;
 	unsigned int i;
 
 	if (imu != ctx->dummy_ubuf) {
@@ -542,7 +542,7 @@ static int __io_sqe_buffers_update(struct io_ring_ctx *ctx,
 		return -EINVAL;
 
 	for (done = 0; done < nr_args; done++) {
-		struct io_mapped_ubuf *imu;
+		struct io_mapped_buf *imu;
 		int offset = up->offset + done;
 		u64 tag = 0;
 
@@ -1092,7 +1092,7 @@ static bool headpage_already_acct(struct io_ring_ctx *ctx, struct page **pages,
 
 	/* check previously registered pages */
 	for (i = 0; i < ctx->nr_user_bufs; i++) {
-		struct io_mapped_ubuf *imu = ctx->user_bufs[i];
+		struct io_mapped_buf *imu = ctx->user_bufs[i];
 
 		for (j = 0; j < imu->nr_bvecs; j++) {
 			if (!PageCompound(imu->bvec[j].bv_page))
@@ -1106,7 +1106,7 @@ static bool headpage_already_acct(struct io_ring_ctx *ctx, struct page **pages,
 }
 
 static int io_buffer_account_pin(struct io_ring_ctx *ctx, struct page **pages,
-				 int nr_pages, struct io_mapped_ubuf *imu,
+				 int nr_pages, struct io_mapped_buf *imu,
 				 struct page **last_hpage)
 {
 	int i, ret;
@@ -1199,10 +1199,10 @@ done:
 }
 
 static int io_sqe_buffer_register(struct io_ring_ctx *ctx, struct iovec *iov,
-				  struct io_mapped_ubuf **pimu,
+				  struct io_mapped_buf **pimu,
 				  struct page **last_hpage)
 {
-	struct io_mapped_ubuf *imu = NULL;
+	struct io_mapped_buf *imu = NULL;
 	struct page **pages = NULL;
 	unsigned long off;
 	size_t size;
@@ -1242,8 +1242,8 @@ static int io_sqe_buffer_register(struct io_ring_ctx *ctx, struct iovec *iov,
 		size -= vec_len;
 	}
 	/* store original address for later verification */
-	imu->ubuf = (unsigned long) iov->iov_base;
-	imu->ubuf_end = imu->ubuf + iov->iov_len;
+	imu->buf = (unsigned long) iov->iov_base;
+	imu->buf_end = imu->buf + iov->iov_len;
 	imu->nr_bvecs = nr_pages;
 	imu->bvec = imu->__bvec;
 	*pimu = imu;
@@ -1321,7 +1321,7 @@ int io_sqe_buffers_register(struct io_ring_ctx *ctx, void __user *arg,
 }
 
 int io_import_fixed(int ddir, struct iov_iter *iter,
-			   struct io_mapped_ubuf *imu,
+			   struct io_mapped_buf *imu,
 			   u64 buf_addr, size_t len)
 {
 	u64 buf_end;
@@ -1332,14 +1332,14 @@ int io_import_fixed(int ddir, struct iov_iter *iter,
 	if (unlikely(check_add_overflow(buf_addr, (u64)len, &buf_end)))
 		return -EFAULT;
 	/* not inside the mapped region */
-	if (unlikely(buf_addr < imu->ubuf || buf_end > imu->ubuf_end))
+	if (unlikely(buf_addr < imu->buf || buf_end > imu->buf_end))
 		return -EFAULT;
 
 	/*
 	 * May not be a start of buffer, set size appropriately
 	 * and advance us to the beginning.
 	 */
-	offset = buf_addr - imu->ubuf;
+	offset = buf_addr - imu->buf;
 	iov_iter_bvec(iter, ddir, imu->bvec, imu->nr_bvecs, offset + len);
 
 	if (offset) {

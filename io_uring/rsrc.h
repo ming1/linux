@@ -19,7 +19,7 @@ struct io_rsrc_put {
 	union {
 		void *rsrc;
 		struct file *file;
-		struct io_mapped_ubuf *buf;
+		struct io_mapped_buf *buf;
 	};
 };
 
@@ -45,9 +45,9 @@ struct io_rsrc_node {
 	bool				done;
 };
 
-struct io_mapped_ubuf {
-	u64		ubuf;
-	u64		ubuf_end;
+struct io_mapped_buf {
+	u64		buf;
+	u64		buf_end;
 	unsigned int	nr_bvecs;
 	unsigned int	acct_pages;
 	struct bio_vec	*bvec;
@@ -67,7 +67,7 @@ void io_rsrc_node_switch(struct io_ring_ctx *ctx,
 			 struct io_rsrc_data *data_to_kill);
 
 int io_import_fixed(int ddir, struct iov_iter *iter,
-			   struct io_mapped_ubuf *imu,
+			   struct io_mapped_buf *imu,
 			   u64 buf_addr, size_t len);
 
 void __io_sqe_buffers_unregister(struct io_ring_ctx *ctx);

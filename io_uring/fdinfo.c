@@ -157,10 +157,10 @@ static __cold void __io_uring_show_fdinfo(struct io_ring_ctx *ctx,
 	}
 	seq_printf(m, "UserBufs:\t%u\n", ctx->nr_user_bufs);
 	for (i = 0; has_lock && i < ctx->nr_user_bufs; i++) {
-		struct io_mapped_ubuf *buf = ctx->user_bufs[i];
-		unsigned int len = buf->ubuf_end - buf->ubuf;
+		struct io_mapped_buf *buf = ctx->user_bufs[i];
+		unsigned int len = buf->buf_end - buf->buf;
 
-		seq_printf(m, "%5u: 0x%llx/%u\n", i, buf->ubuf, len);
+		seq_printf(m, "%5u: 0x%llx/%u\n", i, buf->buf, len);
 	}
 	if (has_lock && !xa_empty(&ctx->personalities)) {
 		unsigned long index;
