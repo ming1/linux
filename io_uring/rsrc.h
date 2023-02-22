@@ -49,7 +49,7 @@ struct io_mapped_ubuf {
 	u64		ubuf;
 	u64		ubuf_end;
 	unsigned int	nr_bvecs;
-	unsigned long	acct_pages;
+	unsigned int	acct_pages;
 	struct bio_vec	bvec[];
 };
 
