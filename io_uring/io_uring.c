@@ -298,7 +298,7 @@ static __cold struct io_ring_ctx *io_ring_ctx_alloc(struct io_uring_params *p)
 	if (!ctx->dummy_ubuf)
 		goto err;
 	/* set invalid range, so io_import_fixed() fails meeting it */
-	ctx->dummy_ubuf->ubuf = -1UL;
+	ctx->dummy_ubuf->buf = -1UL;
 
 	if (percpu_ref_init(&ctx->refs, io_ring_ctx_ref_free,
 			    0, GFP_KERNEL))

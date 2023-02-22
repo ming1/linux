@@ -244,7 +244,7 @@ struct io_ring_ctx {
 		struct io_file_table	file_table;
 		unsigned		nr_user_files;
 		unsigned		nr_user_bufs;
-		struct io_mapped_ubuf	**user_bufs;
+		struct io_mapped_buf	**user_bufs;
 
 		struct io_submit_state	submit_state;
 
@@ -326,7 +326,7 @@ struct io_ring_ctx {
 
 	/* slow path rsrc auxilary data, used by update/register */
 	struct io_rsrc_node		*rsrc_backup_node;
-	struct io_mapped_ubuf		*dummy_ubuf;
+	struct io_mapped_buf		*dummy_ubuf;
 	struct io_rsrc_data		*file_data;
 	struct io_rsrc_data		*buf_data;
 
@@ -541,7 +541,7 @@ struct io_kiocb {
 
 	union {
 		/* store used ubuf, so we can prevent reloading */
-		struct io_mapped_ubuf	*imu;
+		struct io_mapped_buf	*imu;
 
 		/* stores selected buf, valid IFF REQ_F_BUFFER_SELECTED is set */
 		struct io_buffer	*kbuf;
