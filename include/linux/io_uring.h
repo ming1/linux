@@ -4,6 +4,7 @@
 
 #include <linux/sched.h>
 #include <linux/xarray.h>
+#include <linux/bvec.h>
 #include <uapi/linux/io_uring.h>
 
 enum io_uring_cmd_flags {
@@ -34,6 +35,24 @@ struct io_uring_cmd {
 	u32		cmd_op;
 	u32		flags;
 	u8		pdu[32]; /* available inline for free use */
+};
+
+/* The mapper buffer is supposed to be immutable */
+struct io_mapped_buf {
+	u64		buf;
+	u64		buf_end;
+	unsigned int	nr_bvecs;
+	union {
+		unsigned int	acct_pages;
+
+		/*
+		 * offset into the bvecs, use for external user; with
+		 * 'offset', immutable bvecs can be provided for io_uring
+		 */
+		unsigned int	offset;
+	};
+	struct bio_vec	*bvec;
+	struct bio_vec	__bvec[];
 };
 
 #if defined(CONFIG_IO_URING)
