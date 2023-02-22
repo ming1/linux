@@ -45,15 +45,6 @@ struct io_rsrc_node {
 	bool				done;
 };
 
-struct io_mapped_buf {
-	u64		buf;
-	u64		buf_end;
-	unsigned int	nr_bvecs;
-	unsigned int	acct_pages;
-	struct bio_vec	*bvec;
-	struct bio_vec	__bvec[];
-};
-
 void io_rsrc_put_tw(struct callback_head *cb);
 void io_rsrc_put_work(struct work_struct *work);
 void io_rsrc_refs_refill(struct io_ring_ctx *ctx);
