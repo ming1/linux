@@ -1221,7 +1221,7 @@ static int io_sqe_buffer_register(struct io_ring_ctx *ctx, struct iovec *iov,
 		goto done;
 	}
 
-	imu = kvmalloc(struct_size(imu, bvec, nr_pages), GFP_KERNEL);
+	imu = kvmalloc(struct_size(imu, __bvec, nr_pages), GFP_KERNEL);
 	if (!imu)
 		goto done;
 
@@ -1237,7 +1237,7 @@ static int io_sqe_buffer_register(struct io_ring_ctx *ctx, struct iovec *iov,
 		size_t vec_len;
 
 		vec_len = min_t(size_t, size, PAGE_SIZE - off);
-		bvec_set_page(&imu->bvec[i], pages[i], vec_len, off);
+		bvec_set_page(&imu->__bvec[i], pages[i], vec_len, off);
 		off = 0;
 		size -= vec_len;
 	}
@@ -1245,6 +1245,7 @@ static int io_sqe_buffer_register(struct io_ring_ctx *ctx, struct iovec *iov,
 	imu->ubuf = (unsigned long) iov->iov_base;
 	imu->ubuf_end = imu->ubuf + iov->iov_len;
 	imu->nr_bvecs = nr_pages;
+	imu->bvec = imu->__bvec;
 	*pimu = imu;
 	ret = 0;
 done:
