@@ -1271,6 +1271,9 @@ static int ublk_ch_uring_cmd(struct io_uring_cmd *cmd, unsigned int issue_flags)
 			__func__, cmd->cmd_op, ub_cmd->q_id, tag,
 			ub_cmd->result);
 
+	if (issue_flags & IO_URING_F_FUSED)
+		return -EOPNOTSUPP;
+
 	if (ub_cmd->q_id >= ub->dev_info.nr_hw_queues)
 		goto out;
 
@@ -2168,6 +2171,9 @@ static int ublk_ctrl_uring_cmd(struct io_uring_cmd *cmd,
 	struct ublksrv_ctrl_cmd *header = (struct ublksrv_ctrl_cmd *)cmd->cmd;
 	struct ublk_device *ub = NULL;
 	int ret = -EINVAL;
+
+	if (issue_flags & IO_URING_F_FUSED)
+		return -EOPNOTSUPP;
 
 	if (issue_flags & IO_URING_F_NONBLOCK)
 		return -EAGAIN;

@@ -30,6 +30,7 @@
 #include <linux/uio.h>
 #include <linux/uaccess.h>
 #include <linux/security.h>
+#include <linux/io_uring.h>
 
 #ifdef CONFIG_IA64
 # include <linux/efi.h>
@@ -482,6 +483,9 @@ static ssize_t splice_write_null(struct pipe_inode_info *pipe, struct file *out,
 
 static int uring_cmd_null(struct io_uring_cmd *ioucmd, unsigned int issue_flags)
 {
+	if (issue_flags & IO_URING_F_FUSED)
+		return -EOPNOTSUPP;
+
 	return 0;
 }
 

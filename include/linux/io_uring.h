@@ -21,6 +21,13 @@ enum io_uring_cmd_flags {
 	IO_URING_F_SQE128		= (1 << 8),
 	IO_URING_F_CQE32		= (1 << 9),
 	IO_URING_F_IOPOLL		= (1 << 10),
+
+	/* for FUSED_CMD only */
+	IO_URING_F_FUSED_WRITE		= (1 << 11), /* slave writes to buffer */
+	IO_URING_F_FUSED_READ		= (1 << 12), /* slave reads from buffer */
+	/* driver incapable of FUSED_CMD should fail cmd when seeing F_FUSED */
+	IO_URING_F_FUSED		= IO_URING_F_FUSED_WRITE |
+		IO_URING_F_FUSED_READ,
 };
 
 struct io_uring_cmd {
