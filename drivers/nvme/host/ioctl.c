@@ -773,6 +773,9 @@ int nvme_ns_chr_uring_cmd(struct io_uring_cmd *ioucmd, unsigned int issue_flags)
 	struct nvme_ns *ns = container_of(file_inode(ioucmd->file)->i_cdev,
 			struct nvme_ns, cdev);
 
+	if (issue_flags & IO_URING_F_FUSED)
+		return -EOPNOTSUPP;
+
 	return nvme_ns_uring_cmd(ns, ioucmd, issue_flags);
 }
 
@@ -878,6 +881,9 @@ int nvme_ns_head_chr_uring_cmd(struct io_uring_cmd *ioucmd,
 	struct nvme_ns *ns = nvme_find_path(head);
 	int ret = -EINVAL;
 
+	if (issue_flags & IO_URING_F_FUSED)
+		return -EOPNOTSUPP;
+
 	if (ns)
 		ret = nvme_ns_uring_cmd(ns, ioucmd, issue_flags);
 	srcu_read_unlock(&head->srcu, srcu_idx);
@@ -914,6 +920,9 @@ int nvme_dev_uring_cmd(struct io_uring_cmd *ioucmd, unsigned int issue_flags)
 {
 	struct nvme_ctrl *ctrl = ioucmd->file->private_data;
 	int ret;
+
+	if (issue_flags & IO_URING_F_FUSED)
+		return -EOPNOTSUPP;
 
 	/* IOPOLL not supported yet */
 	if (issue_flags & IO_URING_F_IOPOLL)
