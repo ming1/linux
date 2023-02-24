@@ -297,17 +297,111 @@ with specified IO tag in the command data:
   ``UBLK_IO_COMMIT_AND_FETCH_REQ`` to the server, ublkdrv needs to copy
   the server buffer (pages) read to the IO request pages.
 
-Future development
-==================
+- ``UBLK_IO_XPIPE_ADD_BUF``
+
+  Used for implementing zero copy feature.
+
+  It has to be sent via IORING_OP_XPIPE_ADD_BUF, and this command provides
+  buffer to xpipe, so io_uring OPs can use this buffer. From ublk viewpoint,
+  the provides buffer is read-only if the IO request isn't completed.
 
 Zero copy
----------
+=========
 
-Zero copy is a generic requirement for nbd, fuse or similar drivers. A
-problem [#xiaoguang]_ Xiaoguang mentioned is that pages mapped to userspace
-can't be remapped any more in kernel with existing mm interfaces. This can
-occurs when destining direct IO to ``/dev/ublkb*``. Also, he reported that
-big requests (IO size >= 256 KB) may benefit a lot from zero copy.
+What is zero copy?
+------------------
+
+When application submits IO to ``/dev/ublkb*``, userspace buffer(direct io)
+or page cache buffer(buffered io) or kernel buffer(meta io often) is used
+for submitting data to ublk driver, and all kinds of these buffers are
+represented by bio/bvecs(ublk request buffer) finally. Before supporting
+zero copy, data in these buffers has to be copied to ublk server userspace
+buffer before handling WRITE IO, or after handing READ IO, so that ublk
+server can handle IO for ``/dev/ublkb*`` with the copied data.
+
+The extra copy between ublk request buffer and ublk server userspace buffer
+not only increases CPU utilization(such as pinning pages, copy data), but
+also consumes memory bandwidth, and the cost could be very big when IO size
+is big. It is observed that ublk-null IOPS may be increased to ~5X if the
+extra copy can be avoided.
+
+So zero copy is very important for supporting high performance block device
+in userspace.
+
+Technical requirements
+----------------------
+
+- ublk request buffer use
+
+ublk request buffer is represented by bio/bvec, which is immutable, so do
+not try to change bvec via buffer reference; data can be read from or
+written to the buffer according to buffer direction, but bvec can't be
+changed
+
+- buffer lifetime
+
+Ublk server borrows ublk request buffer for handling ublk IO, ublk request
+buffer reference is used. Reference can't outlive the referent buffer. That
+means all request buffer references have to be released by ublk server
+before ublk driver completes this request, when request buffer ownership
+is transferred to upper layer(FS, application, ...).
+
+Also after ublk request is completed, any page belonging to this ublk
+request can not be written or read any more from ublk server since it is
+one block device from kernel viewpoint.
+
+- buffer direction
+
+For ublk WRITE request, ublk request buffer should only be accessed as data
+source, and the buffer can't be written by ublk server
+
+For ublk READ request, ublk request buffer should only be accessed as data
+destination, and the buffer can't be read by ublk server, otherwise kernel
+data is leaked to ublk server, which can be unprivileged application.
+
+- arbitrary size sub-buffer needs to be retrieved from ublk server
+
+ublk is one generic framework for implementing block device in userspace,
+and typical requirements include logical volume manager(mirror, stripped, ...),
+distributed network storage, compressed target, ...
+
+ublk server needs to retrieve arbitrary size sub-buffer of ublk request, and
+ublk server needs to submit IOs with these sub-buffer(s). That also means
+arbitrary size sub-buffer(s) can be used to submit IO multiple times.
+
+Any sub-buffer is actually one reference of ublk request buffer, which
+ownership can't be transferred to upper layer if any reference is held
+by ublk server.
+
+Why splice isn't good for ublk zero copy
+---------------------------------------
+
+- spliced page from ->splice_read() can't be written
+
+ublk READ request can't be handled because spliced page can't be written to, and
+extending splice for ublk zero copy isn't one good solution [#splice_extend]_
+
+- it is very hard to meet above requirements  wrt. request buffer lifetime
+
+splice/pipe focuses on page reference lifetime, but ublk zero copy pays more
+attention to ublk request buffer lifetime. If is very inefficient to respect
+request buffer lifetime by using all pipe buffer's ->release() which requires
+all pipe buffers and pipe to be kept when ublk server handles IO. That means
+one single dedicated ``pipe_inode_info`` has to be allocated runtime for each
+provided buffer, and the pipe needs to be populated with pages in ublk request
+buffer.
+
+
+io_uring xpipe based zero copy
+------------------------------
+
+Add new io command to produce IO request buffer for io_uring OPs, and same buffer
+can only be added to xpipe once because the key is same.
+
+io_uring OPs consume the buffer.
+
+After no one use the buffer, either it is removed from xpipe by another uring
+command, or use IORING_URING_CMD_XPIPE_AUTO option to remove it automatically.
 
 
 References
@@ -323,4 +417,4 @@ References
 
 .. [#stefan] https://lore.kernel.org/linux-block/YoOr6jBfgVm8GvWg@stefanha-x1.localdomain/
 
-.. [#xiaoguang] https://lore.kernel.org/linux-block/YoOr6jBfgVm8GvWg@stefanha-x1.localdomain/
+.. [#splice_extend] https://lore.kernel.org/linux-block/CAHk-=wgJsi7t7YYpuo6ewXGnHz2nmj67iWR6KPGoz5TBu34mWQ@mail.gmail.com/

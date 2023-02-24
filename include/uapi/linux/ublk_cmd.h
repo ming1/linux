@@ -44,6 +44,7 @@
 #define	UBLK_IO_FETCH_REQ		0x20
 #define	UBLK_IO_COMMIT_AND_FETCH_REQ	0x21
 #define	UBLK_IO_NEED_GET_DATA	0x22
+#define	UBLK_IO_XPIPE_ADD_BUF	0x23
 
 /* only ABORT means that no re-fetch */
 #define UBLK_IO_RES_OK			0
@@ -85,10 +86,7 @@ static inline __u64 ublk_pos(__u16 q_id, __u16 tag, __u32 offset)
 		((((__u64)tag) << UBLK_BUF_SIZE_BITS) + offset);
 }
 
-/*
- * zero copy requires 4k block size, and can remap ublk driver's io
- * request into ublksrv's vm space
- */
+/* io_uring fused command based zero copy */
 #define UBLK_F_SUPPORT_ZERO_COPY	(1ULL << 0)
 
 /*
