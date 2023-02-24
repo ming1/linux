@@ -60,6 +60,9 @@
 #define UBLK_PARAM_TYPE_ALL (UBLK_PARAM_TYPE_BASIC | \
 		UBLK_PARAM_TYPE_DISCARD | UBLK_PARAM_TYPE_DEVT)
 
+#define UBLK_XBUF_FLAGS (IO_URING_XBUF_SOURCE | IO_URING_XBUF_DEST | \
+		IO_URING_XBUF_FREE_BVEC)
+
 struct ublk_rq_data {
 	struct llist_node node;
 	struct callback_head work;
@@ -74,6 +77,8 @@ struct ublk_rq_data {
 	 *   successfully
 	 */
 	struct kref ref;
+
+	struct io_uring_xpipe_buf xbuf[0];
 };
 
 struct ublk_uring_cmd_pdu {
@@ -565,6 +570,76 @@ static size_t ublk_copy_user_pages(const struct request *req,
 	return done;
 }
 
+/*
+ * The built command buffer is immutable, so it is fine to feed it to
+ * concurrent io_uring fused commands
+ */
+static int ublk_init_zero_copy_buffer(struct request *rq)
+{
+	struct ublk_rq_data *data = blk_mq_rq_to_pdu(rq);
+	struct io_uring_bvec_buf *imu = &data->xbuf->__buf;
+	struct req_iterator rq_iter;
+	unsigned int nr_bvecs = 0;
+	struct bio_vec *bvec;
+	unsigned int offset;
+	struct bio_vec bv;
+	unsigned flags = 0;
+
+	if (!ublk_rq_has_data(rq))
+		goto exit;
+
+	rq_for_each_bvec(bv, rq, rq_iter)
+		nr_bvecs++;
+
+	if (!nr_bvecs)
+		goto exit;
+
+	if (rq->bio != rq->biotail) {
+		int idx = 0;
+
+		bvec = kvmalloc_array(nr_bvecs, sizeof(struct bio_vec),
+				GFP_NOIO);
+		if (!bvec)
+			return -ENOMEM;
+
+		offset = 0;
+		rq_for_each_bvec(bv, rq, rq_iter)
+			bvec[idx++] = bv;
+		flags |= IO_URING_XBUF_FREE_BVEC;
+	} else {
+		struct bio *bio = rq->bio;
+
+		offset = bio->bi_iter.bi_bvec_done;
+		bvec = __bvec_iter_bvec(bio->bi_io_vec, bio->bi_iter);
+	}
+	imu->bvec = bvec;
+	imu->nr_bvecs = nr_bvecs;
+	imu->offset = offset;
+	imu->len = blk_rq_bytes(rq);
+
+	if (req_op(rq) == REQ_OP_READ)
+		flags |= IO_URING_XBUF_DEST;
+	else if (req_op(rq) == REQ_OP_WRITE)
+		flags |= IO_URING_XBUF_SOURCE;
+	data->xbuf->flags = flags;
+
+	return 0;
+exit:
+	imu->bvec = NULL;
+	return 0;
+}
+
+static void ublk_deinit_zero_copy_buffer(struct request *rq)
+{
+	struct ublk_rq_data *data = blk_mq_rq_to_pdu(rq);
+	struct io_uring_bvec_buf *imu = &data->xbuf->__buf;
+
+	if (data->xbuf->flags & IO_URING_XBUF_FREE_BVEC) {
+		kvfree(imu->bvec);
+		data->xbuf->flags = 0;
+	}
+}
+
 static inline bool ublk_need_map_req(const struct request *req)
 {
 	return ublk_rq_has_data(req) && req_op(req) == REQ_OP_WRITE;
@@ -575,10 +650,22 @@ static inline bool ublk_need_unmap_req(const struct request *req)
 	return ublk_rq_has_data(req) && req_op(req) == REQ_OP_READ;
 }
 
-static int ublk_map_io(const struct ublk_queue *ubq, const struct request *req,
+static int ublk_map_io(const struct ublk_queue *ubq, struct request *req,
 		struct ublk_io *io)
 {
 	const unsigned int rq_bytes = blk_rq_bytes(req);
+
+	if (ublk_support_zc(ubq)) {
+		int ret = ublk_init_zero_copy_buffer(req);
+
+		/*
+		 * The only failure is -ENOMEM for allocating fused cmd
+		 * buffer, return zero so that we can requeue this req.
+		 */
+		if (unlikely(ret))
+			return 0;
+		return rq_bytes;
+	}
 
 	/*
 	 * no zero copy, we delay copy WRITE request data into ublksrv
@@ -599,10 +686,16 @@ static int ublk_map_io(const struct ublk_queue *ubq, const struct request *req,
 }
 
 static int ublk_unmap_io(const struct ublk_queue *ubq,
-		const struct request *req,
+		struct request *req,
 		struct ublk_io *io)
 {
 	const unsigned int rq_bytes = blk_rq_bytes(req);
+
+	if (ublk_support_zc(ubq)) {
+		ublk_deinit_zero_copy_buffer(req);
+
+		return rq_bytes;
+	}
 
 	if (ublk_need_unmap_req(req)) {
 		struct iov_iter iter;
@@ -742,6 +835,7 @@ static inline void __ublk_complete_rq(struct request *req)
 
 	return;
 exit:
+	ublk_deinit_zero_copy_buffer(req);
 	blk_mq_end_request(req, res);
 }
 
@@ -1007,10 +1101,25 @@ static int ublk_init_hctx(struct blk_mq_hw_ctx *hctx, void *driver_data,
 	return 0;
 }
 
+static void xpipe_release_cb(struct io_uring_xpipe_buf *xbuf)
+{
+	struct ublk_rq_data *data = container_of(xbuf,
+			struct ublk_rq_data, xbuf[0]);
+	struct request *req = blk_mq_rq_from_pdu(data);
+	struct ublk_queue *ubq = req->mq_hctx->driver_data;
+
+	ublk_put_req_ref(ubq, req);
+}
+
 static int ublk_init_rq(struct blk_mq_tag_set *set, struct request *req,
 		unsigned int hctx_idx, unsigned int numa_node)
 {
 	struct ublk_rq_data *data = blk_mq_rq_to_pdu(req);
+
+	if (set->cmd_size == struct_size(data, xbuf, 1)) {
+		data->xbuf->buf_release_fn = xpipe_release_cb;
+		data->xbuf->flags = 0;
+	}
 
 	init_task_work(&data->work, ublk_rq_task_work_fn);
 	return 0;
@@ -1352,6 +1461,51 @@ fail_put:
 	return NULL;
 }
 
+static int ublk_xpipe_add_buf(struct io_uring_cmd *cmd,
+		struct ublk_queue *ubq, int tag, unsigned int issue_flags)
+{
+	struct ublk_device *ub = cmd->file->private_data;
+	struct ublk_rq_data *data;
+	struct request *req;
+	int ret = -EINVAL;
+	bool was_present = 0;
+	u32 key = (u32)ubq->q_id << 16 | tag;
+
+	if (!ub)
+		return -EPERM;
+
+	if (key != cmd->xbuf_key) {
+		printk("%s: wrong xbuf key %x\n", __func__, cmd->xbuf_key);
+		return -EINVAL;
+	}
+
+	if (!(cmd->flags & IORING_URING_CMD_XPIPE))
+		return -EINVAL;
+
+	req = __ublk_check_and_get_req(ub, ubq, tag, 0);
+	if (!req)
+		goto exit;
+
+	pr_devel("%s: qid %d tag %u request bytes %u, issue flags %x\n",
+			__func__, tag, ubq->q_id, blk_rq_bytes(req),
+			issue_flags);
+
+	data = blk_mq_rq_to_pdu(req);
+	ret = io_uring_produce_xbuf(cmd, data->xbuf,
+			data->xbuf->flags & UBLK_XBUF_FLAGS, issue_flags,
+			&was_present);
+	/* drop io reference if the buf was added to xpipe */
+	if (ret || was_present)
+		goto exit_put_ref;
+
+	return 0;
+
+exit_put_ref:
+	ublk_put_req_ref(ubq, req);
+exit:
+	return ret;
+}
+
 static int ublk_ch_uring_cmd(struct io_uring_cmd *cmd, unsigned int issue_flags)
 {
 	struct ublksrv_io_cmd *ub_cmd = (struct ublksrv_io_cmd *)cmd->cmd;
@@ -1367,6 +1521,10 @@ static int ublk_ch_uring_cmd(struct io_uring_cmd *cmd, unsigned int issue_flags)
 			__func__, cmd->cmd_op, ub_cmd->q_id, tag,
 			ub_cmd->result);
 
+	if ((cmd->flags & IORING_URING_CMD_XPIPE) &&
+			cmd_op != UBLK_IO_XPIPE_ADD_BUF)
+		return -EOPNOTSUPP;
+
 	if (ub_cmd->q_id >= ub->dev_info.nr_hw_queues)
 		goto out;
 
@@ -1374,7 +1532,13 @@ static int ublk_ch_uring_cmd(struct io_uring_cmd *cmd, unsigned int issue_flags)
 	if (!ubq || ub_cmd->q_id != ubq->q_id)
 		goto out;
 
-	if (ubq->ubq_daemon && ubq->ubq_daemon != current)
+	/*
+	 * XPIPE_ADD_BUF reads the io buffer data structure only, so it
+	 * is fine to be issued from other context, and it is actually
+	 * not io command.
+	 */
+	if ((ubq->ubq_daemon && ubq->ubq_daemon != current) &&
+			(cmd_op != UBLK_IO_XPIPE_ADD_BUF))
 		goto out;
 
 	if (tag >= ubq->q_depth)
@@ -1397,6 +1561,10 @@ static int ublk_ch_uring_cmd(struct io_uring_cmd *cmd, unsigned int issue_flags)
 		goto out;
 
 	switch (cmd_op) {
+	case UBLK_IO_XPIPE_ADD_BUF:
+		ret = ublk_xpipe_add_buf(cmd, ubq, tag, issue_flags);
+		goto out;
+
 	case UBLK_IO_FETCH_REQ:
 		/* UBLK_IO_FETCH_REQ is only allowed before queue is setup */
 		if (ublk_queue_ready(ubq)) {
@@ -1726,11 +1894,14 @@ static void ublk_align_max_io_size(struct ublk_device *ub)
 
 static int ublk_add_tag_set(struct ublk_device *ub)
 {
+	int zc = !!(ub->dev_info.flags & UBLK_F_SUPPORT_ZERO_COPY);
+	struct ublk_rq_data *data;
+
 	ub->tag_set.ops = &ublk_mq_ops;
 	ub->tag_set.nr_hw_queues = ub->dev_info.nr_hw_queues;
 	ub->tag_set.queue_depth = ub->dev_info.queue_depth;
 	ub->tag_set.numa_node = NUMA_NO_NODE;
-	ub->tag_set.cmd_size = sizeof(struct ublk_rq_data);
+	ub->tag_set.cmd_size = struct_size(data, xbuf, zc);
 	ub->tag_set.flags = BLK_MQ_F_SHOULD_MERGE;
 	ub->tag_set.driver_data = ub;
 	return blk_mq_alloc_tag_set(&ub->tag_set);
@@ -1783,7 +1954,7 @@ static int ublk_ctrl_start_dev(struct ublk_device *ub, struct io_uring_cmd *cmd)
 		goto out_unlock;
 	}
 
-	disk = blk_mq_alloc_disk(&ub->tag_set, NULL);
+	disk = blk_mq_alloc_disk(&ub->tag_set, ub);
 	if (IS_ERR(disk)) {
 		ret = PTR_ERR(disk);
 		goto out_unlock;
@@ -1946,11 +2117,17 @@ static int ublk_ctrl_add_dev(struct io_uring_cmd *cmd)
 	 */
 	ub->dev_info.flags &= UBLK_F_ALL;
 
+	/*
+	 * NEED_GET_DATA doesn't make sense any more in case that
+	 * ZERO_COPY is requested. Another reason is that userspace
+	 * can read/write io request buffer by pread()/pwrite() with
+	 * each io buffer's position.
+	 */
+	if (ub->dev_info.flags & UBLK_F_SUPPORT_ZERO_COPY)
+		ub->dev_info.flags &= ~UBLK_F_NEED_GET_DATA;
+
 	if (!IS_BUILTIN(CONFIG_BLK_DEV_UBLK))
 		ub->dev_info.flags |= UBLK_F_URING_CMD_COMP_IN_TASK;
-
-	/* We are not ready to support zero copy */
-	ub->dev_info.flags &= ~UBLK_F_SUPPORT_ZERO_COPY;
 
 	ub->dev_info.nr_hw_queues = min_t(unsigned int,
 			ub->dev_info.nr_hw_queues, nr_cpu_ids);
