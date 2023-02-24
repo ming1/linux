@@ -371,6 +371,15 @@ static struct iovec *__io_import_iovec(int ddir, struct io_kiocb *req,
 	size_t sqe_len;
 	ssize_t ret;
 
+	if (req->flags & REQ_F_XPIPE_BUF) {
+		ret = io_xpipe_import_buf(req, rw->addr, rw->len, ddir, iter,
+				issue_flags);
+		if (ret)
+			return ERR_PTR(ret);
+		rw->addr = xbuf_addr_to_off(rw->addr);
+		return NULL;
+	}
+
 	if (opcode == IORING_OP_READ_FIXED || opcode == IORING_OP_WRITE_FIXED) {
 		ret = io_import_fixed(ddir, iter, req->imu, rw->addr, rw->len);
 		if (ret)
@@ -428,10 +437,17 @@ static inline loff_t *io_kiocb_ppos(struct kiocb *kiocb)
  */
 static ssize_t loop_rw_iter(int ddir, struct io_rw *rw, struct iov_iter *iter)
 {
+	struct io_kiocb *req = cmd_to_io_kiocb(rw);
 	struct kiocb *kiocb = &rw->kiocb;
 	struct file *file = kiocb->ki_filp;
 	ssize_t ret = 0;
 	loff_t *ppos;
+
+	/*
+	 * xbuf hasn't user mapping, so ->read/->write can't be supported
+	 */
+	if (req->flags & REQ_F_XPIPE_BUF)
+		return -EOPNOTSUPP;
 
 	/*
 	 * Don't support polled IO through this interface, and we can't
