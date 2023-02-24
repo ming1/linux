@@ -19,6 +19,7 @@
 #include "kbuf.h"
 #include "rsrc.h"
 #include "rw.h"
+#include "fused_cmd.h"
 
 struct io_rw {
 	/* NOTE: kiocb has the file as the first member, so don't do it here */
@@ -371,6 +372,18 @@ static struct iovec *__io_import_iovec(int ddir, struct io_kiocb *req,
 	size_t sqe_len;
 	ssize_t ret;
 
+	/*
+	 * fused_secondary OP passes buffer offset from sqe->addr actually, since
+	 * the fused cmd buf's mapped start address is zero.
+	 */
+	if (io_req_use_fused_buf(req)) {
+		ret = io_import_buf_from_fused(rw->addr, rw->len, ddir,
+				iter, req);
+		if (ret)
+			return ERR_PTR(ret);
+		return NULL;
+	}
+
 	if (opcode == IORING_OP_READ_FIXED || opcode == IORING_OP_WRITE_FIXED) {
 		ret = io_import_fixed(ddir, iter, req->imu, rw->addr, rw->len);
 		if (ret)
@@ -443,10 +456,18 @@ static inline loff_t *io_kiocb_ppos(struct kiocb *kiocb)
  */
 static ssize_t loop_rw_iter(int ddir, struct io_rw *rw, struct iov_iter *iter)
 {
+	struct io_kiocb *req = cmd_to_io_kiocb(rw);
 	struct kiocb *kiocb = &rw->kiocb;
 	struct file *file = kiocb->ki_filp;
 	ssize_t ret = 0;
 	loff_t *ppos;
+
+	/*
+	 * Fused secondary req hasn't user buffer, so ->read/->write can't
+	 * be supported
+	 */
+	if (io_req_use_fused_buf(req))
+		return -EOPNOTSUPP;
 
 	/*
 	 * Don't support polled IO through this interface, and we can't
