@@ -69,6 +69,13 @@ struct io_sr_msg {
 	struct io_kiocb 		*notif;
 };
 
+#define user_ptr_to_u64(x) (		\
+{					\
+	typecheck(void __user *, (x));		\
+	(u64)(unsigned long)(x);	\
+}					\
+)
+
 static inline bool io_check_multishot(struct io_kiocb *req,
 				      unsigned int issue_flags)
 {
@@ -379,7 +386,16 @@ int io_send(struct io_kiocb *req, unsigned int issue_flags)
 	if (unlikely(!sock))
 		return -ENOTSOCK;
 
-	ret = import_ubuf(ITER_SOURCE, sr->buf, sr->len, &msg.msg_iter);
+	if (!(req->flags & REQ_F_XPIPE_BUF))
+		ret = import_ubuf(ITER_SOURCE, sr->buf, sr->len, &msg.msg_iter);
+	else {
+		u64 addr = user_ptr_to_u64(sr->buf);
+
+		ret = io_xpipe_import_buf(req, addr, sr->len, ITER_SOURCE,
+				&msg.msg_iter, issue_flags);
+		if (!ret)
+			sr->buf = u64_to_user_ptr(xbuf_addr_to_off(addr));
+	}
 	if (unlikely(ret))
 		return ret;
 
@@ -870,7 +886,16 @@ retry_multishot:
 		sr->buf = buf;
 	}
 
-	ret = import_ubuf(ITER_DEST, sr->buf, len, &msg.msg_iter);
+	if (!(req->flags & REQ_F_XPIPE_BUF))
+		ret = import_ubuf(ITER_DEST, sr->buf, len, &msg.msg_iter);
+	else {
+		u64 addr = user_ptr_to_u64(sr->buf);
+
+		ret = io_xpipe_import_buf(req, addr, sr->len, ITER_DEST,
+				&msg.msg_iter, issue_flags);
+		if (!ret)
+			sr->buf = u64_to_user_ptr(xbuf_addr_to_off(addr));
+	}
 	if (unlikely(ret))
 		goto out_free;
 
@@ -981,6 +1006,9 @@ int io_send_zc_prep(struct io_kiocb *req, const struct io_uring_sqe *sqe)
 
 	if (zc->flags & IORING_RECVSEND_FIXED_BUF) {
 		unsigned idx = READ_ONCE(sqe->buf_index);
+
+		if (req->flags & REQ_F_XPIPE_BUF)
+			return -EINVAL;
 
 		if (unlikely(idx >= ctx->nr_user_bufs))
 			return -EFAULT;
@@ -1118,8 +1146,18 @@ int io_send_zc(struct io_kiocb *req, unsigned int issue_flags)
 		if (unlikely(ret))
 			return ret;
 		msg.sg_from_iter = io_sg_from_iter;
+	} else if (req->flags & REQ_F_XPIPE_BUF) {
+		u64 addr = user_ptr_to_u64(zc->buf);
+
+		ret = io_xpipe_import_buf(req, addr, zc->len, ITER_SOURCE,
+				&msg.msg_iter, issue_flags);
+		if (unlikely(ret))
+			return ret;
+		zc->buf = u64_to_user_ptr(xbuf_addr_to_off(addr));
+		msg.sg_from_iter = io_sg_from_iter;
 	} else {
 		io_notif_set_extended(zc->notif);
+
 		ret = import_ubuf(ITER_SOURCE, zc->buf, zc->len, &msg.msg_iter);
 		if (unlikely(ret))
 			return ret;
