@@ -78,6 +78,7 @@ bool __io_alloc_req_refill(struct io_ring_ctx *ctx);
 bool io_match_task_safe(struct io_kiocb *head, struct task_struct *task,
 			bool cancel_all);
 
+bool io_get_slave_sqe(struct io_ring_ctx *ctx, const struct io_uring_sqe **sqe);
 int io_init_slave_req(struct io_ring_ctx *ctx, struct io_kiocb *req,
 		const struct io_uring_sqe *sqe);
 

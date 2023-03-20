@@ -43,24 +43,45 @@ static inline void io_fused_cmd_update_link_flags(struct io_kiocb *req,
 		req->flags |= REQ_F_LINK;
 }
 
+static const struct io_uring_sqe *fused_cmd_get_slave_sqe(
+		struct io_ring_ctx *ctx, const struct io_uring_sqe *master,
+		bool split_sqe)
+{
+	if (unlikely(!(ctx->flags & IORING_SETUP_SQE128) && !split_sqe))
+		return NULL;
+
+	if (split_sqe) {
+		const struct io_uring_sqe *sqe;
+
+		if (unlikely(!io_get_slave_sqe(ctx, &sqe)))
+			return NULL;
+		return sqe;
+	}
+
+	return master + 1;
+}
+
 int io_fused_cmd_prep(struct io_kiocb *req, const struct io_uring_sqe *sqe)
 	__must_hold(&req->ctx->uring_lock)
 {
 	struct io_uring_cmd *ioucmd = io_kiocb_to_cmd(req, struct io_uring_cmd);
-	const struct io_uring_sqe *slave_sqe = sqe + 1;
+	const struct io_uring_sqe *slave_sqe;
 	struct io_ring_ctx *ctx = req->ctx;
 	struct io_kiocb *slave;
 	u8 slave_op;
 	int ret;
-
-	if (unlikely(!(ctx->flags & IORING_SETUP_SQE128)))
-		return -EINVAL;
+	bool split_sqe;
 
 	if (unlikely(sqe->__pad1))
 		return -EINVAL;
 
 	ioucmd->flags = READ_ONCE(sqe->uring_cmd_flags);
-	if (unlikely(ioucmd->flags))
+	if (unlikely(ioucmd->flags & ~IORING_URING_CMD_FUSED_SPLIT_SQE))
+		return -EINVAL;
+
+	split_sqe = ioucmd->flags & IORING_URING_CMD_FUSED_SPLIT_SQE;
+	slave_sqe = fused_cmd_get_slave_sqe(ctx, sqe, split_sqe);
+	if (unlikely(!slave_sqe))
 		return -EINVAL;
 
 	slave_op = READ_ONCE(slave_sqe->opcode);
@@ -71,8 +92,12 @@ int io_fused_cmd_prep(struct io_kiocb *req, const struct io_uring_sqe *sqe)
 	ioucmd->cmd_op = READ_ONCE(sqe->cmd_op);
 	req->fused_cmd_kbuf = NULL;
 
-	/* take one extra reference for the slave request */
-	io_get_task_refs(1);
+	/*
+	 * Take one extra reference for the slave request built from
+	 * builtin SQE since io_uring core code doesn't grab it for us
+	 */
+	if (!split_sqe)
+		io_get_task_refs(1);
 
 	ret = -ENOMEM;
 	if (unlikely(!io_alloc_req(ctx, &slave)))
@@ -96,7 +121,8 @@ int io_fused_cmd_prep(struct io_kiocb *req, const struct io_uring_sqe *sqe)
 fail_free_req:
 	io_free_req(slave);
 fail:
-	current->io_uring->cached_refs += 1;
+	if (!split_sqe)
+		current->io_uring->cached_refs += 1;
 	return ret;
 }
 

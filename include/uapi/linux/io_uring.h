@@ -233,9 +233,15 @@ enum io_uring_op {
  * sqe->uring_cmd_flags
  * IORING_URING_CMD_FIXED	use registered buffer; pass this flag
  *				along with setting sqe->buf_index.
+ *
+ * IORING_URING_CMD_FUSED_SPLIT_SQE fused command only, slave sqe is
+ * 				    provided from another new sqe; without
+ * 				    setting the flag, slave sqe is from
+ * 				    2nd 64byte of this sqe, so SQE128 has
+ * 				    to be enabled
  */
 #define IORING_URING_CMD_FIXED	(1U << 0)
-
+#define IORING_URING_CMD_FUSED_SPLIT_SQE	(1U << 1)
 
 /*
  * sqe->fsync_flags
