@@ -2429,15 +2429,16 @@ int io_submit_sqes(struct io_ring_ctx *ctx, unsigned int nr)
 	__must_hold(&ctx->uring_lock)
 {
 	unsigned int entries = io_sqring_entries(ctx);
-	unsigned int left;
+	unsigned old_head = ctx->cached_sq_head;
+	unsigned int left = 0;
 	int ret;
 
 	if (unlikely(!entries))
 		return 0;
 	/* make sure SQ entry isn't read before tail */
-	ret = left = min3(nr, ctx->sq_entries, entries);
-	io_get_task_refs(left);
-	io_submit_state_start(&ctx->submit_state, left);
+	ret = min3(nr, ctx->sq_entries, entries);
+	io_get_task_refs(ret);
+	io_submit_state_start(&ctx->submit_state, ret);
 
 	do {
 		const struct io_uring_sqe *sqe;
@@ -2456,11 +2457,12 @@ int io_submit_sqes(struct io_ring_ctx *ctx, unsigned int nr)
 		 */
 		if (unlikely(io_submit_sqe(ctx, req, sqe)) &&
 		    !(ctx->flags & IORING_SETUP_SUBMIT_ALL)) {
-			left--;
+			left = 1;
 			break;
 		}
-	} while (--left);
+	} while ((ctx->cached_sq_head - old_head) < ret);
 
+	left = ret - (ctx->cached_sq_head - old_head) - left;
 	if (unlikely(left)) {
 		ret -= left;
 		/* try again if it submitted nothing and can't allocate a req */
