@@ -89,6 +89,12 @@ struct io_uring_sqe {
 			__u64	addr3;
 			__u64	__pad2[1];
 		};
+
+		struct {
+			__u16	ext_flags;		/* IOSQE_EXT* flags */
+			__u16	__pad4[7];
+		};
+
 		/*
 		 * If the ring is initialized with IORING_SETUP_SQE128, then
 		 * this field is used for 80 bytes of arbitrary command data
@@ -114,6 +120,7 @@ enum {
 	IOSQE_ASYNC_BIT,
 	IOSQE_BUFFER_SELECT_BIT,
 	IOSQE_CQE_SKIP_SUCCESS_BIT,
+	IOSQE_EXT_FLAGS_BIT,
 };
 
 /*
@@ -133,6 +140,8 @@ enum {
 #define IOSQE_BUFFER_SELECT	(1U << IOSQE_BUFFER_SELECT_BIT)
 /* don't post CQE if request succeeded */
 #define IOSQE_CQE_SKIP_SUCCESS	(1U << IOSQE_CQE_SKIP_SUCCESS_BIT)
+/* 1st 16bit of ->addr3 is used as sqe ext flags, not all OPs can do it */
+#define IOSQE_EXT_FLAGS		(1U << IOSQE_EXT_FLAGS_BIT)
 
 /*
  * io_uring_setup() flags

@@ -362,25 +362,30 @@ const struct io_issue_def io_issue_defs[] = {
 	},
 	[IORING_OP_MSG_RING] = {
 		.needs_file		= 1,
+		.no_ext_flags		= 1,
 		.iopoll			= 1,
 		.prep			= io_msg_ring_prep,
 		.issue			= io_msg_ring,
 	},
 	[IORING_OP_FSETXATTR] = {
 		.needs_file = 1,
+		.no_ext_flags = 1,
 		.prep			= io_fsetxattr_prep,
 		.issue			= io_fsetxattr,
 	},
 	[IORING_OP_SETXATTR] = {
+		.no_ext_flags = 1,
 		.prep			= io_setxattr_prep,
 		.issue			= io_setxattr,
 	},
 	[IORING_OP_FGETXATTR] = {
 		.needs_file = 1,
+		.no_ext_flags = 1,
 		.prep			= io_fgetxattr_prep,
 		.issue			= io_fgetxattr,
 	},
 	[IORING_OP_GETXATTR] = {
+		.no_ext_flags = 1,
 		.prep			= io_getxattr_prep,
 		.issue			= io_getxattr,
 	},
@@ -395,6 +400,7 @@ const struct io_issue_def io_issue_defs[] = {
 	},
 	[IORING_OP_URING_CMD] = {
 		.needs_file		= 1,
+		.no_ext_flags		= 1,
 		.plug			= 1,
 		.iopoll			= 1,
 		.iopoll_queue		= 1,

@@ -107,7 +107,9 @@
 			  IOSQE_IO_HARDLINK | IOSQE_ASYNC)
 
 #define SQE_VALID_FLAGS	(SQE_COMMON_FLAGS | IOSQE_BUFFER_SELECT | \
-			IOSQE_IO_DRAIN | IOSQE_CQE_SKIP_SUCCESS)
+			IOSQE_IO_DRAIN | IOSQE_CQE_SKIP_SUCCESS | \
+			IOSQE_EXT_FLAGS)
+#define SQE_EXT_VALID_FLAGS	0
 
 #define IO_REQ_CLEAN_FLAGS (REQ_F_BUFFER_SELECTED | REQ_F_NEED_CLEANUP | \
 				REQ_F_POLLED | REQ_F_INFLIGHT | REQ_F_CREDS | \
@@ -2206,6 +2208,15 @@ static int io_init_req(struct io_ring_ctx *ctx, struct io_kiocb *req,
 		/* enforce forwards compatibility on users */
 		if (sqe_flags & ~SQE_VALID_FLAGS)
 			return -EINVAL;
+		if ((sqe_flags & IOSQE_EXT_FLAGS)) {
+			unsigned int ext_flags = READ_ONCE(sqe->ext_flags);
+
+			if (def->no_ext_flags)
+				return -EOPNOTSUPP;
+			if (ext_flags & ~SQE_EXT_VALID_FLAGS)
+				return -EINVAL;
+			req->flags |= (u64)ext_flags << REQ_F_SQE_EXT_START_BIT;
+		}
 		if (sqe_flags & IOSQE_BUFFER_SELECT) {
 			if (!def->buffer_select)
 				return -EOPNOTSUPP;
@@ -4485,6 +4496,7 @@ static int __init io_uring_init(void)
 	BUILD_BUG_SQE_ELEM(44, __u16,  addr_len);
 	BUILD_BUG_SQE_ELEM(46, __u16,  __pad3[0]);
 	BUILD_BUG_SQE_ELEM(48, __u64,  addr3);
+	BUILD_BUG_SQE_ELEM(48, __u16,  ext_flags);
 	BUILD_BUG_SQE_ELEM_SIZE(48, 0, cmd);
 	BUILD_BUG_SQE_ELEM(56, __u64,  __pad2);
 

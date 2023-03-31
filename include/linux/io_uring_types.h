@@ -406,6 +406,9 @@ enum {
 	REQ_F_SUPPORT_NOWAIT_BIT,
 	REQ_F_ISREG_BIT,
 
+	REQ_F_SQE_EXT_START_BIT	= sizeof(unsigned int),
+	REQ_F_SQE_EXT_LAST_BIT	= sizeof(unsigned int) + 16,
+
 	/* not a real bit, just to check we're not overflowing the space */
 	__REQ_F_LAST_BIT,
 };
