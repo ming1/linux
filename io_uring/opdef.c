@@ -434,8 +434,21 @@ const struct io_issue_def io_issue_defs[] = {
 		.prep			= io_eopnotsupp_prep,
 #endif
 	},
+	[IORING_OP_XPIPE_ADD_BUF] = {
+		.needs_file		= 1,
+		.no_ext_flags		= 1,
+		.iopoll			= 1,
+		.prep			= io_xpipe_add_buf_prep,
+		.issue			= io_xpipe_add_buf,
+	},
+	[IORING_OP_XPIPE_DEL_BUF] = {
+		.needs_file		= 1,
+		.no_ext_flags		= 1,
+		.iopoll			= 1,
+		.prep			= io_xpipe_del_buf_prep,
+		.issue			= io_xpipe_del_buf,
+	},
 };
-
 
 const struct io_cold_def io_cold_defs[] = {
 	[IORING_OP_NOP] = {
@@ -653,6 +666,16 @@ const struct io_cold_def io_cold_defs[] = {
 		.cleanup		= io_send_zc_cleanup,
 		.fail			= io_sendrecv_fail,
 #endif
+	},
+	[IORING_OP_XPIPE_ADD_BUF] = {
+		.name			= "XPIPE_ADD_BUF",
+		.async_size		= uring_cmd_pdu_size(1),
+		.prep_async		= io_uring_cmd_prep_async,
+	},
+	[IORING_OP_XPIPE_DEL_BUF] = {
+		.name			= "XPIPE_DEL_BUF",
+		.async_size		= uring_cmd_pdu_size(1),
+		.prep_async		= io_uring_cmd_prep_async,
 	},
 };
 

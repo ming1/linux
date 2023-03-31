@@ -277,6 +277,8 @@ struct io_ring_ctx {
 	struct xarray		personalities;
 	u32			pers_next;
 
+	struct xarray		xpipe;
+
 	struct {
 		/*
 		 * We cache a range of free CQEs we can use, once exhausted it
@@ -407,6 +409,7 @@ enum {
 	REQ_F_ISREG_BIT,
 
 	REQ_F_SQE_EXT_START_BIT	= sizeof(unsigned int),
+	REQ_F_XPIPE_BUF_BIT	= REQ_F_SQE_EXT_START_BIT + IOSQE_EXT_XPIPE_BUF_BIT,
 	REQ_F_SQE_EXT_LAST_BIT	= sizeof(unsigned int) + 16,
 
 	/* not a real bit, just to check we're not overflowing the space */
@@ -477,6 +480,7 @@ enum {
 	REQ_F_CLEAR_POLLIN	= BIT_ULL(REQ_F_CLEAR_POLLIN_BIT),
 	/* hashed into ->cancel_hash_locked, protected by ->uring_lock */
 	REQ_F_HASH_LOCKED	= BIT_ULL(REQ_F_HASH_LOCKED_BIT),
+	REQ_F_XPIPE_BUF		= BIT_ULL(REQ_F_XPIPE_BUF_BIT),
 };
 
 typedef void (*io_req_tw_func_t)(struct io_kiocb *req, struct io_tw_state *ts);
@@ -536,7 +540,10 @@ struct io_kiocb {
 	 * For the latter, before issue it points to the buffer group ID,
 	 * and after selection it points to the buffer ID itself.
 	 */
-	u16				buf_index;
+	union {
+		u16				buf_index;
+		u16				xpipe_id;
+	};
 	u32				__pad;
 	u64				flags;
 
@@ -559,6 +566,8 @@ struct io_kiocb {
 		 * REQ_F_BUFFER_RING is set.
 		 */
 		struct io_buffer_list	*buf_list;
+
+		struct io_uring_xpipe_buf *xbuf;
 	};
 
 	union {

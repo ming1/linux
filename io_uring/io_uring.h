@@ -10,6 +10,7 @@
 #include "io-wq.h"
 #include "slist.h"
 #include "filetable.h"
+#include "xpipe.h"
 
 #ifndef CREATE_TRACE_POINTS
 #include <trace/events/io_uring.h>
@@ -320,6 +321,9 @@ static inline void io_req_complete_defer(struct io_kiocb *req)
 	struct io_submit_state *state = &req->ctx->submit_state;
 
 	lockdep_assert_held(&req->ctx->uring_lock);
+
+	if (req->flags & REQ_F_XPIPE_BUF)
+		io_xpipe_put_buf(req, 0);
 
 	wq_list_add_tail(&req->comp_list, &state->compl_reqs);
 }

@@ -3,6 +3,7 @@
 #define IOU_KBUF_H
 
 #include <uapi/linux/io_uring.h>
+#include "xpipe.h"
 
 struct io_buffer_list {
 	/*
