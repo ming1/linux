@@ -267,9 +267,17 @@ enum io_uring_op {
  *				IORING_URING_CMD_FIXED, along with setting
  *				sqe->buf_index, xpipe_id and xbuf_key
  *				are needed
+ *
+ *
+ * IORING_URING_CMD_XPIPE_AUTO	provide buffer for xpipe, exclusive with
+ *				IORING_URING_CMD_FIXED, along with setting
+ *				sqe->buf_index; buffer removed automatically
+ *				after specified consumers are done, and number
+ *				is from xpipe_buf_off
  */
 #define IORING_URING_CMD_FIXED	(1U << 0)
 #define IORING_URING_CMD_XPIPE	(1U << 1)
+#define IORING_URING_CMD_XPIPE_AUTO	(1U << 2)
 
 
 /*

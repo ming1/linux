@@ -29,6 +29,7 @@ static void io_xpipe_remove_buf(struct io_ring_ctx *ctx,
 {
 	unsigned long key = io_xbuf_key(xbuf->xpipe_id, xbuf->xbuf_key);
 
+	atomic_set(&xbuf->ref, 0);
 	xbuf->flags |= IO_URING_XBUF_KILLED;
 	xa_erase(&ctx->xpipe, key);
 	xbuf->buf_release_fn(xbuf);
@@ -52,9 +53,12 @@ int io_xpipe_put_buf(struct io_kiocb *req)
 		return -EINVAL;
 
 	++xbuf->comp_cnt;
-	if (xbuf->flags & IO_URING_XBUF_KILLED) {
-		if (xbuf->comp_cnt == xbuf->submit_cnt)
+	if (xbuf->comp_cnt == xbuf->submit_cnt) {
+		if (xbuf->flags & IO_URING_XBUF_KILLED)
 			xbuf->buf_release_fn(xbuf);
+		else if ((xbuf->flags & IO_URING_XBUF_AUTO) &&
+				xbuf->comp_cnt == xbuf->nr_consumer)
+			io_xpipe_remove_buf(req->ctx, xbuf);
 	}
 	req->xbuf = NULL;
 	req->flags &= ~REQ_F_XPIPE_BUF;
@@ -79,6 +83,21 @@ static int io_xpipe_kill_buf(struct io_kiocb *req, u16 xpipe_id, u32 xbuf_key)
 			xbuf->buf_release_fn(xbuf);
 	}
 	return 0;
+}
+
+/* the xbuf has been present */
+static void add_present_xbuf(struct io_uring_cmd *ioucmd,
+		struct io_uring_xpipe_buf *xbuf)
+{
+	if ((ioucmd->flags & IORING_URING_CMD_XPIPE_AUTO) &&
+			(xbuf->flags & IO_URING_XBUF_AUTO)) {
+		/* both are auto, sum both nr_consumer */
+		xbuf->nr_consumer += ioucmd->nr_consumer;
+	} else if (xbuf->flags & IO_URING_XBUF_AUTO) {
+		/* let me handle remove */
+		xbuf->flags &= ~IO_URING_XBUF_AUTO;
+		atomic_dec(&xbuf->ref);
+	}
 }
 
 /*
@@ -125,6 +144,10 @@ int io_uring_produce_xbuf(struct io_uring_cmd *ioucmd,
 	*was_present = 0;
 	xbuf_flags &= ~IO_URING_XBUF_KILLED;
 	xbuf->flags = xbuf_flags | IO_URING_XBUF_ACTIVE;
+	if (ioucmd->flags & IORING_URING_CMD_XPIPE_AUTO) {
+		xbuf->flags |= IO_URING_XBUF_AUTO;
+		xbuf->nr_consumer = ioucmd->nr_consumer;
+	}
 	xbuf->submit_cnt = xbuf->comp_cnt = 0;
 	xbuf->xpipe_id = ioucmd->xpipe_id;
 	xbuf->xbuf_key = ioucmd->xbuf_key;
@@ -136,6 +159,7 @@ unlock:
 	 */
 	if (ret == -EBUSY) {
 		ret = 0;
+		add_present_xbuf(ioucmd, xbuf);
 		*was_present = 1;
 	}
 
@@ -201,10 +225,12 @@ int io_xpipe_add_buf_prep(struct io_kiocb *req, const struct io_uring_sqe *sqe)
 	__must_hold(&req->ctx->uring_lock)
 {
 	struct io_uring_cmd *ioucmd = io_kiocb_to_cmd(req, struct io_uring_cmd);
+	unsigned nr_consumer;
 	int ret;
 
 	ioucmd->flags = READ_ONCE(sqe->uring_cmd_flags);
-	ret = io_xpipe_req_valid(ioucmd, IORING_URING_CMD_XPIPE);
+	ret = io_xpipe_req_valid(ioucmd, IORING_URING_CMD_XPIPE |
+			IORING_URING_CMD_XPIPE_AUTO);
 	if (ret)
 		return ret;
 
@@ -214,6 +240,11 @@ int io_xpipe_add_buf_prep(struct io_kiocb *req, const struct io_uring_sqe *sqe)
 	/* The two can only be referred in ->uring_cmd() */
 	ioucmd->xpipe_id = READ_ONCE(sqe->xpipe_id);
 	ioucmd->xbuf_key = READ_ONCE(sqe->xbuf_key);
+
+	nr_consumer = READ_ONCE(sqe->xbuf_off);
+	ioucmd->nr_consumer = (u16)nr_consumer;
+	if (ioucmd->nr_consumer != nr_consumer)
+		return -EINVAL;
 
 	return 0;
 }
