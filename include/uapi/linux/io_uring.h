@@ -41,7 +41,13 @@ struct io_uring_sqe {
 		};
 	};
 	union {
-		__u64	addr;	/* pointer to buffer or iovecs */
+		union {
+			__u64	addr;	/* pointer to buffer or iovecs */
+			struct {
+				__u32 xbuf_key; /* locate xbuf with xpipe_id */
+				__u32 xbuf_off; /* offset inside xbuf */
+			};
+		};
 		__u64	splice_off_in;
 	};
 	__u32	len;		/* buffer size or number of iovecs */
@@ -73,6 +79,8 @@ struct io_uring_sqe {
 		__u16	buf_index;
 		/* for grouped buffer selection */
 		__u16	buf_group;
+		/* virtual xpipe id which is often bound with producer file */
+		__u16	xpipe_id;
 	} __attribute__((packed));
 	/* personality to use, if used */
 	__u16	personality;
@@ -123,6 +131,10 @@ enum {
 	IOSQE_EXT_FLAGS_BIT,
 };
 
+enum {
+	IOSQE_EXT_XPIPE_BUF_BIT,
+};
+
 /*
  * sqe->flags
  */
@@ -142,6 +154,9 @@ enum {
 #define IOSQE_CQE_SKIP_SUCCESS	(1U << IOSQE_CQE_SKIP_SUCCESS_BIT)
 /* 1st 16bit of ->addr3 is used as sqe ext flags, not all OPs can do it */
 #define IOSQE_EXT_FLAGS		(1U << IOSQE_EXT_FLAGS_BIT)
+
+/* select buffer from xpipe */
+#define IOSQE_EXT_XPIPE_BUF	(1U << IOSQE_EXT_XPIPE_BUF_BIT)
 
 /*
  * io_uring_setup() flags
@@ -181,6 +196,9 @@ enum {
  * try to do it just before it is needed.
  */
 #define IORING_SETUP_DEFER_TASKRUN	(1U << 13)
+
+/* xarray based pipe for sharing buffer among OPs */
+#define IORING_SETUP_XPIPE		(1U << 14)
 
 enum io_uring_op {
 	IORING_OP_NOP,
@@ -232,6 +250,8 @@ enum io_uring_op {
 	IORING_OP_URING_CMD,
 	IORING_OP_SEND_ZC,
 	IORING_OP_SENDMSG_ZC,
+	IORING_OP_XPIPE_ADD_BUF,
+	IORING_OP_XPIPE_DEL_BUF,
 
 	/* this goes last, obviously */
 	IORING_OP_LAST,
@@ -241,8 +261,15 @@ enum io_uring_op {
  * sqe->uring_cmd_flags
  * IORING_URING_CMD_FIXED	use registered buffer; pass this flag
  *				along with setting sqe->buf_index.
+ *
+ *
+ * IORING_URING_CMD_XPIPE	provide buffer for xpipe, exclusive with
+ *				IORING_URING_CMD_FIXED, along with setting
+ *				sqe->buf_index, xpipe_id and xbuf_key
+ *				are needed
  */
 #define IORING_URING_CMD_FIXED	(1U << 0)
+#define IORING_URING_CMD_XPIPE	(1U << 1)
 
 
 /*
@@ -485,6 +512,7 @@ struct io_uring_params {
 #define IORING_FEAT_CQE_SKIP		(1U << 11)
 #define IORING_FEAT_LINKED_FILE		(1U << 12)
 #define IORING_FEAT_REG_REG_RING	(1U << 13)
+#define IORING_FEAT_XPIPE		(1U << 14)
 
 /*
  * io_uring_register(2) opcodes and arguments

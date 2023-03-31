@@ -3,6 +3,7 @@
 #define IOU_KBUF_H
 
 #include <uapi/linux/io_uring.h>
+#include "xpipe.h"
 
 struct io_buffer_list {
 	/*
@@ -122,6 +123,9 @@ static inline unsigned int __io_put_kbuf_list(struct io_kiocb *req,
 static inline unsigned int io_put_kbuf_comp(struct io_kiocb *req)
 {
 	lockdep_assert_held(&req->ctx->completion_lock);
+
+	if (req->flags & REQ_F_XPIPE_BUF)
+		return io_xpipe_put_buf(req);
 
 	if (!(req->flags & (REQ_F_BUFFER_SELECTED|REQ_F_BUFFER_RING)))
 		return 0;

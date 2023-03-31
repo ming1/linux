@@ -109,11 +109,11 @@
 #define SQE_VALID_FLAGS	(SQE_COMMON_FLAGS | IOSQE_BUFFER_SELECT | \
 			IOSQE_IO_DRAIN | IOSQE_CQE_SKIP_SUCCESS | \
 			IOSQE_EXT_FLAGS)
-#define SQE_EXT_VALID_FLAGS	0
+#define SQE_EXT_VALID_FLAGS	(IOSQE_EXT_XPIPE_BUF)
 
 #define IO_REQ_CLEAN_FLAGS (REQ_F_BUFFER_SELECTED | REQ_F_NEED_CLEANUP | \
 				REQ_F_POLLED | REQ_F_INFLIGHT | REQ_F_CREDS | \
-				REQ_F_ASYNC_DATA)
+				REQ_F_ASYNC_DATA | REQ_F_XPIPE_BUF)
 
 #define IO_REQ_CLEAN_SLOW_FLAGS (REQ_F_REFCOUNT | REQ_F_LINK | REQ_F_HARDLINK |\
 				 IO_REQ_CLEAN_FLAGS)
@@ -1853,7 +1853,7 @@ queue:
 
 static void io_clean_op(struct io_kiocb *req)
 {
-	if (req->flags & REQ_F_BUFFER_SELECTED) {
+	if (req->flags & (REQ_F_BUFFER_SELECTED | REQ_F_XPIPE_BUF)) {
 		spin_lock(&req->ctx->completion_lock);
 		io_put_kbuf_comp(req);
 		spin_unlock(&req->ctx->completion_lock);
@@ -2199,7 +2199,16 @@ static int io_init_req(struct io_ring_ctx *ctx, struct io_kiocb *req,
 				return -EOPNOTSUPP;
 			if (ext_flags & ~SQE_EXT_VALID_FLAGS)
 				return -EINVAL;
+
 			req->flags |= (u64)ext_flags << REQ_F_SQE_EXT_START_BIT;
+			if (ext_flags & IOSQE_EXT_XPIPE_BUF) {
+				if (!def->xpipe_buf)
+					return -EOPNOTSUPP;
+				if (sqe_flags & IOSQE_BUFFER_SELECT)
+					return -EINVAL;
+				req->xpipe_id = READ_ONCE(sqe->xpipe_id);
+				req->xbuf = NULL;
+			}
 		}
 		if (sqe_flags & IOSQE_BUFFER_SELECT) {
 			if (!def->buffer_select)
@@ -3863,7 +3872,8 @@ static __cold int io_uring_create(unsigned entries, struct io_uring_params *p,
 			IORING_FEAT_POLL_32BITS | IORING_FEAT_SQPOLL_NONFIXED |
 			IORING_FEAT_EXT_ARG | IORING_FEAT_NATIVE_WORKERS |
 			IORING_FEAT_RSRC_TAGS | IORING_FEAT_CQE_SKIP |
-			IORING_FEAT_LINKED_FILE | IORING_FEAT_REG_REG_RING;
+			IORING_FEAT_LINKED_FILE | IORING_FEAT_REG_REG_RING |
+			IORING_FEAT_XPIPE;
 
 	if (copy_to_user(params, p, sizeof(*p))) {
 		ret = -EFAULT;
@@ -3890,6 +3900,8 @@ static __cold int io_uring_create(unsigned entries, struct io_uring_params *p,
 		fput(file);
 		return ret;
 	}
+
+	xa_init(&ctx->xpipe);
 
 	trace_io_uring_create(ret, ctx, p->sq_entries, p->cq_entries, p->flags);
 	return ret;
@@ -3921,8 +3933,15 @@ static long io_uring_setup(u32 entries, struct io_uring_params __user *params)
 			IORING_SETUP_R_DISABLED | IORING_SETUP_SUBMIT_ALL |
 			IORING_SETUP_COOP_TASKRUN | IORING_SETUP_TASKRUN_FLAG |
 			IORING_SETUP_SQE128 | IORING_SETUP_CQE32 |
-			IORING_SETUP_SINGLE_ISSUER | IORING_SETUP_DEFER_TASKRUN))
+			IORING_SETUP_SINGLE_ISSUER | IORING_SETUP_DEFER_TASKRUN |
+			IORING_SETUP_XPIPE))
 		return -EINVAL;
+
+#if BITS_PER_LONG != 64
+	/* 32 bits can't hold 48bit xpipe index */
+	if (p.flags & IORING_SETUP_XPIPE)
+		return -EINVAL;
+#endif
 
 	return io_uring_create(entries, &p, params);
 }

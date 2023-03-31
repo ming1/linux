@@ -282,6 +282,8 @@ void io_destroy_buffers(struct io_ring_ctx *ctx)
 		list_del_init(&page->lru);
 		__free_page(page);
 	}
+
+	io_xpipe_destroy(ctx);
 }
 
 int io_remove_buffers_prep(struct io_kiocb *req, const struct io_uring_sqe *sqe)

@@ -31,6 +31,8 @@ struct io_issue_def {
 	unsigned		manual_alloc : 1;
 	/* can't use ->addr3 as sqe ext flags */
 	unsigned		no_ext_flags : 1;
+	/* support xpipe buffer */
+	unsigned		xpipe_buf : 1;
 
 	int (*issue)(struct io_kiocb *, unsigned int);
 	int (*prep)(struct io_kiocb *, const struct io_uring_sqe *);
