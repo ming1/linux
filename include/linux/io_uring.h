@@ -42,7 +42,7 @@ struct io_uring_cmd {
 			/* 24bytes pdu for IORING_URING_CMD_XPIPE */
 			struct {
 				u8  pad[32 - 8];
-				u16 pad1;
+				u16 nr_consumer;
 				u16 xpipe_id;
 				u32 xbuf_key;
 			};
@@ -66,11 +66,13 @@ struct io_uring_bvec_buf {
 #define IO_URING_XBUF_SOURCE	(1 << 2) /* can read from buf */
 #define IO_URING_XBUF_DEST	(1 << 3) /* can write to buf */
 #define IO_URING_XBUF_FREE_BVEC	(1 << 4) /* need free bvec, for producer */
+#define IO_URING_XBUF_AUTO	(1 << 5) /* auto removed */
 struct io_uring_xpipe_buf {
 	/* SQE can only provide 48bit key via xpipe_id & xbuf_key */
 	u32	xbuf_key;
 	u16	xpipe_id;
-	u16	pad;
+	/* atuo-removed after consumed by @nr_consumer OPs */
+	u16	nr_consumer;
 
 	u32	flags;
 	u16	submit_cnt, comp_cnt;
