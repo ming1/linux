@@ -130,8 +130,10 @@ struct ublk_queue {
 	unsigned long io_addr;	/* mapped vm address */
 	unsigned int max_io_sz;
 	bool force_abort;
+	bool aborted;
 	unsigned short nr_io_ready;	/* how many ios setup */
 	struct ublk_device *dev;
+	struct notifier_block	notif;
 	struct ublk_io ios[];
 };
 
@@ -167,11 +169,6 @@ struct ublk_device {
 	unsigned int		nr_queues_ready;
 	unsigned int		nr_privileged_daemon;
 
-	/*
-	 * Our ubq->daemon may be killed without any notification, so
-	 * monitor each queue's daemon periodically
-	 */
-	struct delayed_work	monitor_work;
 	struct work_struct	quiesce_work;
 	struct work_struct	stop_work;
 };
@@ -734,8 +731,6 @@ static inline void __ublk_abort_rq(struct ublk_queue *ubq,
 		blk_mq_requeue_request(rq, false);
 	else
 		blk_mq_end_request(rq, BLK_STS_IOERR);
-
-	mod_delayed_work(system_wq, &ubq->dev->monitor_work, 0);
 }
 
 static inline void __ublk_rq_task_work(struct request *req,
@@ -855,12 +850,12 @@ static void ublk_queue_cmd(struct ublk_queue *ubq, struct request *rq)
 	io = &ubq->ios[rq->tag];
 	/*
 	 * If the check pass, we know that this is a re-issued request aborted
-	 * previously in monitor_work because the ubq_daemon(cmd's task) is
+	 * previously in ublk_notifier_cb() because the ubq_daemon(cmd's task) is
 	 * PF_EXITING. We cannot call io_uring_cmd_complete_in_task() anymore
 	 * because this ioucmd's io_uring context may be freed now if no inflight
 	 * ioucmd exists. Otherwise we may cause null-deref in ctx->fallback_work.
 	 *
-	 * Note: monitor_work sets UBLK_IO_FLAG_ABORTED and ends this request(releasing
+	 * Note: ublk_notifier_cb sets UBLK_IO_FLAG_ABORTED and ends this request(releasing
 	 * the tag). Then the request is re-started(allocating the tag) and we are here.
 	 * Since releasing/allocating a tag implies smp_mb(), finding UBLK_IO_FLAG_ABORTED
 	 * guarantees that here is a re-issued request aborted previously.
@@ -1008,16 +1003,22 @@ static void ublk_commit_completion(struct ublk_device *ub,
  * or any queued io command is drained, so it is safe to abort queue
  * lockless
  */
-static void ublk_abort_queue(struct ublk_device *ub, struct ublk_queue *ubq)
+static bool ublk_abort_queue(struct ublk_device *ub, struct ublk_queue *ubq,
+		const struct task_struct *task)
 {
+	unsigned int nr_aborted = 0;
 	int i;
 
-	if (!ublk_get_device(ub))
-		return;
+	if (ubq->aborted)
+		return false;
 
 	for (i = 0; i < ubq->q_depth; i++) {
 		struct ublk_io *io = &ubq->ios[i];
 
+		if (task && io->task != task)
+			continue;
+
+		nr_aborted += 1;
 		if (!(io->flags & UBLK_IO_FLAG_ACTIVE)) {
 			struct request *rq;
 
@@ -1028,41 +1029,44 @@ static void ublk_abort_queue(struct ublk_device *ub, struct ublk_queue *ubq)
 			rq = blk_mq_tag_to_rq(ub->tag_set.tags[ubq->q_id], i);
 			if (rq)
 				__ublk_fail_req(ubq, io, rq);
+		} else {
+			io_uring_cmd_done(io->cmd, UBLK_IO_RES_ABORT, 0,
+						IO_URING_F_UNLOCKED);
 		}
 	}
-	ublk_put_device(ub);
+
+	if (nr_aborted) {
+		ubq->aborted = true;
+		return true;
+	}
+
+	return false;
 }
 
-static void ublk_daemon_monitor_work(struct work_struct *work)
+static int ublk_queue_notifier_cb(struct notifier_block *nb,
+		unsigned long event, void *val)
 {
-	struct ublk_device *ub =
-		container_of(work, struct ublk_device, monitor_work.work);
-	int i;
+	struct ublk_queue *ubq = container_of(nb, struct ublk_queue, notif);
+	struct io_uring_notifier_data *data = val;
+	struct ublk_device *ub = ubq->dev;
 
-	for (i = 0; i < ub->dev_info.nr_hw_queues; i++) {
-		struct ublk_queue *ubq = ublk_get_queue(ub, i);
+	pr_devel("%s: event %lu ctx_id %u task %p\n", __func__, event,
+			data->ctx_id, data->task);
 
-		if (ubq_daemon_is_dying(ubq)) {
+	if (data->ctx_id != ubq->ctx_id)
+		return 0;
+
+	if (ublk_get_device(ub)) {
+		if (ublk_abort_queue(ub, ubq, data->task)) {
 			if (ublk_queue_can_use_recovery(ubq))
 				schedule_work(&ub->quiesce_work);
 			else
 				schedule_work(&ub->stop_work);
-
-			/* abort queue is for making forward progress */
-			ublk_abort_queue(ub, ubq);
 		}
+		ublk_put_device(ub);
 	}
 
-	/*
-	 * We can't schedule monitor work after ub's state is not UBLK_S_DEV_LIVE.
-	 * after ublk_remove() or __ublk_quiesce_dev() is started.
-	 *
-	 * No need ub->mutex, monitor work are canceled after state is marked
-	 * as not LIVE, so new state is observed reliably.
-	 */
-	if (ub->dev_info.state == UBLK_S_DEV_LIVE)
-		schedule_delayed_work(&ub->monitor_work,
-				UBLK_DAEMON_MONITOR_PERIOD);
+	return 0;
 }
 
 static inline bool ublk_ctx_id_is_valid(unsigned int ctx_id)
@@ -1077,18 +1081,13 @@ static inline bool ublk_queue_ready(struct ublk_queue *ubq)
 
 static void ublk_cancel_queue(struct ublk_queue *ubq)
 {
-	int i;
-
-	if (!ublk_queue_ready(ubq))
-		return;
-
-	for (i = 0; i < ubq->q_depth; i++) {
-		struct ublk_io *io = &ubq->ios[i];
-
-		if (io->flags & UBLK_IO_FLAG_ACTIVE)
-			io_uring_cmd_done(io->cmd, UBLK_IO_RES_ABORT, 0,
-						IO_URING_F_UNLOCKED);
+	if (ublk_ctx_id_is_valid(ubq->ctx_id)) {
+		io_uring_cmd_unregister_notifier(&ubq->notif);
+		ubq->ctx_id = IO_URING_INVALID_CTX_ID;
 	}
+
+	/* tear down in-flight io commands */
+	ublk_abort_queue(ubq->dev, ubq, NULL);
 
 	/* all io commands are canceled */
 	ubq->nr_io_ready = 0;
@@ -1139,15 +1138,6 @@ static void __ublk_quiesce_dev(struct ublk_device *ub)
 	ublk_wait_tagset_rqs_idle(ub);
 	ub->dev_info.state = UBLK_S_DEV_QUIESCED;
 	ublk_cancel_dev(ub);
-	/* we are going to release task_struct of ubq_daemon and resets
-	 * ->ubq_daemon to NULL. So in monitor_work, check on ubq_daemon causes UAF.
-	 * Besides, monitor_work is not necessary in QUIESCED state since we have
-	 * already scheduled quiesce_work and quiesced all ubqs.
-	 *
-	 * Do not let monitor_work schedule itself if state it QUIESCED. And we cancel
-	 * it here and re-schedule it in END_USER_RECOVERY to avoid UAF.
-	 */
-	cancel_delayed_work_sync(&ub->monitor_work);
 }
 
 static void ublk_quiesce_work_fn(struct work_struct *work)
@@ -1202,7 +1192,6 @@ static void ublk_stop_dev(struct ublk_device *ub)
  unlock:
 	ublk_cancel_dev(ub);
 	mutex_unlock(&ub->mutex);
-	cancel_delayed_work_sync(&ub->monitor_work);
 }
 
 /* device can only be started after all IOs are ready */
@@ -1212,7 +1201,10 @@ static void ublk_mark_io_ready(struct ublk_device *ub, struct ublk_queue *ubq,
 	mutex_lock(&ub->mutex);
 	ubq->nr_io_ready++;
 	if (ublk_queue_ready(ubq)) {
-		ubq->ctx_id = ctx_id;
+		ubq->notif.notifier_call = ublk_queue_notifier_cb;
+		if (!io_uring_cmd_register_notifier(&ubq->notif))
+			ubq->ctx_id = ctx_id;
+
 		ubq->ubq_daemon = current;
 		get_task_struct(ubq->ubq_daemon);
 		ub->nr_queues_ready++;
@@ -1280,6 +1272,7 @@ static inline int __ublk_ch_uring_cmd(struct io_uring_cmd *cmd,
 	if (!ubq || ub_cmd->q_id != ubq->q_id)
 		goto out;
 
+	/* todo: allow cmd to be submitted from different contexts */
 	if (ubq->ubq_daemon && ubq->ubq_daemon != current)
 		goto out;
 
@@ -1596,8 +1589,6 @@ static int ublk_ctrl_start_dev(struct ublk_device *ub, struct io_uring_cmd *cmd)
 
 	wait_for_completion_interruptible(&ub->completion);
 
-	schedule_delayed_work(&ub->monitor_work, UBLK_DAEMON_MONITOR_PERIOD);
-
 	mutex_lock(&ub->mutex);
 	if (ub->dev_info.state == UBLK_S_DEV_LIVE ||
 	    test_bit(UB_STATE_USED, &ub->state)) {
@@ -1749,7 +1740,6 @@ static int ublk_ctrl_add_dev(struct io_uring_cmd *cmd)
 	spin_lock_init(&ub->mm_lock);
 	INIT_WORK(&ub->quiesce_work, ublk_quiesce_work_fn);
 	INIT_WORK(&ub->stop_work, ublk_stop_work_fn);
-	INIT_DELAYED_WORK(&ub->monitor_work, ublk_daemon_monitor_work);
 
 	ret = ublk_alloc_dev_number(ub, header->dev_id);
 	if (ret < 0)
@@ -1992,6 +1982,9 @@ static void ublk_queue_reinit(struct ublk_device *ub, struct ublk_queue *ubq)
 
 	ubq->ctx_id = IO_URING_INVALID_CTX_ID;
 
+	WARN_ON_ONCE(!ubq->aborted);
+	ubq->aborted = false;
+
 	for (i = 0; i < ubq->q_depth; i++) {
 		struct ublk_io *io = &ubq->ios[i];
 
@@ -2075,7 +2068,6 @@ static int ublk_ctrl_end_recovery(struct ublk_device *ub,
 			__func__, header->dev_id);
 	blk_mq_kick_requeue_list(ub->ub_disk->queue);
 	ub->dev_info.state = UBLK_S_DEV_LIVE;
-	schedule_delayed_work(&ub->monitor_work, UBLK_DAEMON_MONITOR_PERIOD);
 	ret = 0;
  out_unlock:
 	mutex_unlock(&ub->mutex);
