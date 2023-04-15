@@ -43,7 +43,19 @@ struct io_uring_cmd_data {
 	const struct task_struct *task;
 };
 
+enum io_uring_notifier {
+	IO_URING_NOTIFIER_CTX_DEAD,
+	IO_URING_NOTIFIER_IO_TASK_DEAD,
+};
+
+struct io_uring_notifier_data {
+	unsigned int ctx_id;
+	const struct task_struct *task;
+};
+
 #if defined(CONFIG_IO_URING)
+int io_uring_cmd_register_notifier(struct notifier_block *nb);
+void io_uring_cmd_unregister_notifier(struct notifier_block *nb);
 int io_uring_cmd_get_data(struct io_uring_cmd *ioucmd,
 		struct io_uring_cmd_data *data);
 int io_uring_cmd_import_fixed(u64 ubuf, unsigned long len, int rw,
@@ -76,6 +88,13 @@ static inline void io_uring_free(struct task_struct *tsk)
 		__io_uring_free(tsk);
 }
 #else
+static inline int io_uring_cmd_register_notifier(struct notifier_block *nb)
+{
+	return 0;
+}
+static inline void io_uring_cmd_unregister_notifier(struct notifier_block *nb)
+{
+}
 static inline int io_uring_cmd_get_data(struct io_uring_cmd *ioucmd,
 		struct io_uring_cmd_data *data)
 {

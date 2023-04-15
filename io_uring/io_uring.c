@@ -73,6 +73,7 @@
 #include <linux/audit.h>
 #include <linux/security.h>
 #include <asm/shmparam.h>
+#include <linux/notifier.h>
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/io_uring.h>
@@ -157,6 +158,22 @@ struct kmem_cache *req_cachep;
 /* mapping between io_ring_ctx instance and its ctx_id */
 static DEFINE_XARRAY_FLAGS(ctx_ids, XA_FLAGS_ALLOC);
 
+/*
+ * Uring_cmd driver can register to be notified when ctx/io_uring_task
+ * is going away for canceling inflight commands.
+ */
+static struct srcu_notifier_head notifier_chain;
+
+int io_uring_register_notifier(struct notifier_block *nb)
+{
+	return srcu_notifier_chain_register(&notifier_chain, nb);
+}
+
+void io_uring_unregister_notifier(struct notifier_block *nb)
+{
+	srcu_notifier_chain_unregister(&notifier_chain, nb);
+}
+
 struct sock *io_uring_get_socket(struct file *file)
 {
 #if defined(CONFIG_UNIX)
@@ -169,6 +186,11 @@ struct sock *io_uring_get_socket(struct file *file)
 	return NULL;
 }
 EXPORT_SYMBOL(io_uring_get_socket);
+
+struct io_ring_ctx *io_uring_id_to_ctx(unsigned int id)
+{
+	return (struct io_ring_ctx *)xa_load(&ctx_ids, id);
+}
 
 static inline void io_submit_flush_completions(struct io_ring_ctx *ctx)
 {
@@ -3200,6 +3222,28 @@ static __cold bool io_uring_try_cancel_iowq(struct io_ring_ctx *ctx)
 	return ret;
 }
 
+static __cold void io_uring_cancel_notify(struct io_ring_ctx *ctx,
+					  struct task_struct *task,
+					  bool cancel_all)
+{
+	struct io_uring_notifier_data notifier_data = {
+		.ctx_id = ctx->id,
+		.task	= task,
+	};
+	enum io_uring_notifier notifier;
+
+	/* notify driver when ctx is releasing or io_task is exiting */
+	if (task && cancel_all)
+		return;
+
+	if (!task)
+		notifier = IO_URING_NOTIFIER_CTX_DEAD;
+	else
+		notifier = IO_URING_NOTIFIER_IO_TASK_DEAD;
+
+	srcu_notifier_call_chain(&notifier_chain, notifier, &notifier_data);
+}
+
 static __cold bool io_uring_try_cancel_requests(struct io_ring_ctx *ctx,
 						struct task_struct *task,
 						bool cancel_all)
@@ -3208,6 +3252,8 @@ static __cold bool io_uring_try_cancel_requests(struct io_ring_ctx *ctx,
 	struct io_uring_task *tctx = task ? task->io_uring : NULL;
 	enum io_wq_cancel cret;
 	bool ret = false;
+
+	io_uring_cancel_notify(ctx, task, cancel_all);
 
 	/* set it so io_req_local_work_add() would wake us up */
 	if (ctx->flags & IORING_SETUP_DEFER_TASKRUN) {
@@ -4561,6 +4607,9 @@ static int __init io_uring_init(void)
 
 	req_cachep = KMEM_CACHE(io_kiocb, SLAB_HWCACHE_ALIGN | SLAB_PANIC |
 				SLAB_ACCOUNT | SLAB_TYPESAFE_BY_RCU);
+
+	srcu_init_notifier_head(&notifier_chain);
+
 	return 0;
 };
 __initcall(io_uring_init);
