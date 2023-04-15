@@ -211,6 +211,10 @@ struct io_ring_ctx {
 		unsigned int		compat: 1;
 
 		enum task_work_notify_mode	notify_method;
+
+		/* for uring cmd driver to retrieve context  */
+		unsigned int		id;
+
 		struct io_rings			*rings;
 		struct task_struct		*submitter_task;
 		struct percpu_ref		refs;

@@ -154,6 +154,9 @@ static __cold void io_fallback_tw(struct io_uring_task *tctx);
 
 struct kmem_cache *req_cachep;
 
+/* mapping between io_ring_ctx instance and its ctx_id */
+static DEFINE_XARRAY_FLAGS(ctx_ids, XA_FLAGS_ALLOC);
+
 struct sock *io_uring_get_socket(struct file *file)
 {
 #if defined(CONFIG_UNIX)
@@ -283,6 +286,10 @@ static __cold struct io_ring_ctx *io_ring_ctx_alloc(struct io_uring_params *p)
 
 	xa_init(&ctx->io_bl_xa);
 
+	ctx->id = IO_URING_INVALID_CTX_ID;
+	if (xa_alloc(&ctx_ids, &ctx->id, ctx, xa_limit_31b, GFP_KERNEL))
+		goto err;
+
 	/*
 	 * Use 5 bits less than the max cq entries, that should give us around
 	 * 32 entries per hash list if totally full and uniformly spread, but
@@ -344,6 +351,7 @@ err:
 	kfree(ctx->cancel_table_locked.hbs);
 	kfree(ctx->io_bl);
 	xa_destroy(&ctx->io_bl_xa);
+	xa_erase(&ctx_ids, ctx->id);
 	kfree(ctx);
 	return NULL;
 }
@@ -2882,6 +2890,7 @@ static __cold void io_ring_ctx_free(struct io_ring_ctx *ctx)
 	kfree(ctx->dummy_ubuf);
 	kfree(ctx->io_bl);
 	xa_destroy(&ctx->io_bl_xa);
+	xa_erase(&ctx_ids, ctx->id);
 	kfree(ctx);
 }
 
