@@ -38,7 +38,14 @@ struct io_uring_cmd {
 
 #define IO_URING_INVALID_CTX_ID  UINT_MAX
 
+struct io_uring_cmd_data {
+	unsigned int ctx_id;
+	const struct task_struct *task;
+};
+
 #if defined(CONFIG_IO_URING)
+int io_uring_cmd_get_data(struct io_uring_cmd *ioucmd,
+		struct io_uring_cmd_data *data);
 int io_uring_cmd_import_fixed(u64 ubuf, unsigned long len, int rw,
 			      struct iov_iter *iter, void *ioucmd);
 void io_uring_cmd_done(struct io_uring_cmd *cmd, ssize_t ret, ssize_t res2,
@@ -69,6 +76,11 @@ static inline void io_uring_free(struct task_struct *tsk)
 		__io_uring_free(tsk);
 }
 #else
+static inline int io_uring_cmd_get_data(struct io_uring_cmd *ioucmd,
+		struct io_uring_cmd_data *data)
+{
+	return -EINVAL;
+}
 static inline int io_uring_cmd_import_fixed(u64 ubuf, unsigned long len, int rw,
 			      struct iov_iter *iter, void *ioucmd)
 {

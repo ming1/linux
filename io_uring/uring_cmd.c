@@ -162,3 +162,18 @@ int io_uring_cmd_import_fixed(u64 ubuf, unsigned long len, int rw,
 	return io_import_fixed(rw, iter, req->imu, ubuf, len);
 }
 EXPORT_SYMBOL_GPL(io_uring_cmd_import_fixed);
+
+int io_uring_cmd_get_data(struct io_uring_cmd *ioucmd,
+		struct io_uring_cmd_data *data)
+{
+	struct io_kiocb *req = cmd_to_io_kiocb(ioucmd);
+
+	if (ioucmd) {
+		req = cmd_to_io_kiocb(ioucmd);
+		data->ctx_id = req->ctx->id;
+		data->task = req->task;
+		return 0;
+	}
+	return -EINVAL;
+}
+EXPORT_SYMBOL_GPL(io_uring_cmd_get_data);
