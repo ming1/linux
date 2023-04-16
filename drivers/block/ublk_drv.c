@@ -113,6 +113,7 @@ struct ublk_io {
 	int res;
 
 	struct io_uring_cmd *cmd;
+	const struct task_struct *task;
 };
 
 struct ublk_queue {
@@ -752,13 +753,13 @@ static inline void __ublk_rq_task_work(struct request *req,
 	/*
 	 * Task is exiting if either:
 	 *
-	 * (1) current != ubq_daemon.
+	 * (1) current != uring cmd submitter task
 	 * io_uring_cmd_complete_in_task() tries to run task_work
 	 * in a workqueue if ubq_daemon(cmd's task) is PF_EXITING.
 	 *
 	 * (2) current->flags & PF_EXITING.
 	 */
-	if (unlikely(current != ubq->ubq_daemon || current->flags & PF_EXITING)) {
+	if (unlikely(current != io->task || current->flags & PF_EXITING)) {
 		__ublk_abort_rq(ubq, req);
 		return;
 	}
@@ -1247,11 +1248,12 @@ static inline int ublk_check_cmd_op(u32 cmd_op)
 }
 
 static inline void ublk_fill_io(struct ublk_io *io, struct io_uring_cmd *cmd,
-		unsigned long buf_addr)
+		unsigned long buf_addr, const struct task_struct *task)
 {
 	io->cmd = cmd;
 	io->flags |= UBLK_IO_FLAG_ACTIVE;
 	io->addr = buf_addr;
+	io->task = task;
 }
 
 static inline int __ublk_ch_uring_cmd(struct io_uring_cmd *cmd,
@@ -1327,7 +1329,7 @@ static inline int __ublk_ch_uring_cmd(struct io_uring_cmd *cmd,
 		if (!ub_cmd->addr && !ublk_need_get_data(ubq))
 			goto out;
 
-		ublk_fill_io(io, cmd, ub_cmd->addr);
+		ublk_fill_io(io, cmd, ub_cmd->addr, data.task);
 		ublk_mark_io_ready(ub, ubq, data.ctx_id);
 		break;
 	case UBLK_IO_COMMIT_AND_FETCH_REQ:
@@ -1340,13 +1342,13 @@ static inline int __ublk_ch_uring_cmd(struct io_uring_cmd *cmd,
 			goto out;
 		if (!(io->flags & UBLK_IO_FLAG_OWNED_BY_SRV))
 			goto out;
-		ublk_fill_io(io, cmd, ub_cmd->addr);
+		ublk_fill_io(io, cmd, ub_cmd->addr, data.task);
 		ublk_commit_completion(ub, ub_cmd);
 		break;
 	case UBLK_IO_NEED_GET_DATA:
 		if (!(io->flags & UBLK_IO_FLAG_OWNED_BY_SRV))
 			goto out;
-		ublk_fill_io(io, cmd, ub_cmd->addr);
+		ublk_fill_io(io, cmd, ub_cmd->addr, data.task);
 		ublk_handle_need_get_data(ub, ub_cmd->q_id, ub_cmd->tag);
 		break;
 	default:
@@ -1997,6 +1999,7 @@ static void ublk_queue_reinit(struct ublk_device *ub, struct ublk_queue *ubq)
 		io->flags = 0;
 		io->cmd = NULL;
 		io->addr = 0;
+		io->task = NULL;
 	}
 }
 
