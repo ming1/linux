@@ -1246,7 +1246,8 @@ static inline void ublk_fill_io(struct ublk_io *io, struct io_uring_cmd *cmd,
 	io->addr = buf_addr;
 }
 
-static int ublk_ch_uring_cmd(struct io_uring_cmd *cmd, unsigned int issue_flags)
+static inline int __ublk_ch_uring_cmd(struct io_uring_cmd *cmd,
+		unsigned int issue_flags)
 {
 	struct ublksrv_io_cmd *ub_cmd = (struct ublksrv_io_cmd *)cmd->cmd;
 	struct ublk_device *ub = cmd->file->private_data;
@@ -1344,6 +1345,23 @@ static int ublk_ch_uring_cmd(struct io_uring_cmd *cmd, unsigned int issue_flags)
 	pr_devel("%s: complete: cmd op %d, tag %d ret %x io_flags %x\n",
 			__func__, cmd_op, tag, ret, io->flags);
 	return -EIOCBQUEUED;
+}
+
+static void ublk_ch_uring_cmd_cb(struct io_uring_cmd *cmd,
+		unsigned int issue_flags)
+{
+	__ublk_ch_uring_cmd(cmd, issue_flags);
+}
+
+static int ublk_ch_uring_cmd(struct io_uring_cmd *cmd, unsigned int issue_flags)
+{
+	/* well-implemented server won't run into unlocked */
+	if (unlikely(issue_flags & IO_URING_F_UNLOCKED)) {
+		io_uring_cmd_complete_in_task(cmd, ublk_ch_uring_cmd_cb);
+		return -EIOCBQUEUED;
+	}
+
+	return __ublk_ch_uring_cmd(cmd, issue_flags);
 }
 
 static const struct file_operations ublk_ch_fops = {
