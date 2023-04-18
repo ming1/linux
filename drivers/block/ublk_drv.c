@@ -741,6 +741,7 @@ static inline void __ublk_rq_task_work(struct request *req,
 	struct ublk_io *io = &ubq->ios[tag];
 	unsigned int mapped_bytes;
 
+	WARN_ON_ONCE(issue_flags & IO_URING_F_UNLOCKED);
 	pr_devel("%s: complete: op %d, qid %d tag %d io_flags %x addr %llx\n",
 			__func__, io->cmd->cmd_op, ubq->q_id, req->tag, io->flags,
 			ublk_get_iod(ubq, req->tag)->addr);
@@ -1260,6 +1261,8 @@ static inline int __ublk_ch_uring_cmd(struct io_uring_cmd *cmd,
 	int ret = -EINVAL;
 	struct request *req;
 	struct io_uring_cmd_data data;
+
+	WARN_ON_ONCE(issue_flags & IO_URING_F_UNLOCKED);
 
 	pr_devel("%s: received: cmd op %d queue %d tag %d result %d\n",
 			__func__, cmd->cmd_op, ub_cmd->q_id, tag,

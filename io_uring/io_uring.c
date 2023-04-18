@@ -1001,7 +1001,8 @@ bool io_aux_cqe(struct io_ring_ctx *ctx, bool defer, u64 user_data, s32 res, u32
 static void __io_req_complete_post(struct io_kiocb *req, unsigned issue_flags)
 {
 	struct io_ring_ctx *ctx = req->ctx;
-	struct io_rsrc_node *rsrc_node = NULL;
+
+	io_ring_submit_lock(ctx, issue_flags);
 
 	io_cq_lock(ctx);
 	if (!(req->flags & REQ_F_CQE_SKIP))
@@ -1022,7 +1023,7 @@ static void __io_req_complete_post(struct io_kiocb *req, unsigned issue_flags)
 		}
 		io_put_kbuf_comp(req);
 		io_dismantle_req(req);
-		rsrc_node = req->rsrc_node;
+		io_req_put_rsrc_locked(req, ctx);
 		/*
 		 * Selected buffer deallocation in io_clean_op() assumes that
 		 * we don't hold ->completion_lock. Clean them here to avoid
@@ -1034,11 +1035,7 @@ static void __io_req_complete_post(struct io_kiocb *req, unsigned issue_flags)
 	}
 	io_cq_unlock_post(ctx);
 
-	if (rsrc_node) {
-		io_ring_submit_lock(ctx, issue_flags);
-		io_put_rsrc_node(ctx, rsrc_node);
-		io_ring_submit_unlock(ctx, issue_flags);
-	}
+	io_ring_submit_unlock(ctx, issue_flags);
 }
 
 void io_req_complete_post(struct io_kiocb *req, unsigned issue_flags)
@@ -1155,10 +1152,9 @@ static __cold void io_free_req_tw(struct io_kiocb *req, struct io_tw_state *ts)
 {
 	struct io_ring_ctx *ctx = req->ctx;
 
-	if (req->rsrc_node) {
-		io_tw_lock(ctx, ts);
-		io_put_rsrc_node(ctx, req->rsrc_node);
-	}
+	io_tw_lock(ctx, ts);
+	io_req_put_rsrc_locked(req, ctx);
+
 	io_dismantle_req(req);
 	io_put_task_remote(req->task, 1);
 
@@ -3241,7 +3237,9 @@ static __cold void io_uring_cancel_notify(struct io_ring_ctx *ctx,
 	else
 		notifier = IO_URING_NOTIFIER_IO_TASK_DEAD;
 
+	mutex_lock(&ctx->uring_lock);
 	srcu_notifier_call_chain(&notifier_chain, notifier, &notifier_data);
+	mutex_unlock(&ctx->uring_lock);
 }
 
 static __cold bool io_uring_try_cancel_requests(struct io_ring_ctx *ctx,
