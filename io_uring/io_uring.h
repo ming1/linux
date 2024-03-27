@@ -104,6 +104,7 @@ bool __io_alloc_req_refill(struct io_ring_ctx *ctx);
 
 bool io_match_task_safe(struct io_kiocb *head, struct task_struct *task,
 			bool cancel_all);
+void io_complete_group_lead(struct io_kiocb *req, unsigned int issue_flags);
 
 enum {
 	IO_EVENTFD_OP_SIGNAL_BIT,
@@ -112,6 +113,16 @@ enum {
 
 void io_eventfd_ops(struct rcu_head *rcu);
 void io_activate_pollwq(struct io_ring_ctx *ctx);
+
+static inline bool req_is_group_lead(struct io_kiocb *req)
+{
+	return req->flags & REQ_F_SQE_GROUP_LEAD;
+}
+
+static inline bool req_is_group_member(struct io_kiocb *req)
+{
+	return !req_is_group_lead(req) && (req->flags & REQ_F_SQE_GROUP);
+}
 
 static inline void io_lockdep_assert_cq_locked(struct io_ring_ctx *ctx)
 {
@@ -355,7 +366,11 @@ static inline void io_req_complete_defer(struct io_kiocb *req)
 
 	lockdep_assert_held(&req->ctx->uring_lock);
 
-	wq_list_add_tail(&req->comp_list, &state->compl_reqs);
+	if (unlikely(req_is_group_lead(req)))
+		io_complete_group_lead(req, IO_URING_F_COMPLETE_DEFER |
+				IO_URING_F_NONBLOCK);
+	else
+		wq_list_add_tail(&req->comp_list, &state->compl_reqs);
 }
 
 static inline void io_commit_cqring_flush(struct io_ring_ctx *ctx)

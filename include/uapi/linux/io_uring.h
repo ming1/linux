@@ -128,6 +128,8 @@ enum io_uring_sqe_flags_bit {
 	IOSQE_BUFFER_SELECT_BIT,
 	IOSQE_CQE_SKIP_SUCCESS_BIT,
 	IOSQE_HAS_EXT_FLAGS_BIT,
+
+	IOSQE_EXT_SQE_GROUP_BIT = 0,
 };
 
 /*
@@ -152,6 +154,8 @@ enum io_uring_sqe_flags_bit {
  * sqe->uring_cmd_flags for IORING_URING_CMD.
  */
 #define IOSQE_HAS_EXT_FLAGS	(1U << IOSQE_HAS_EXT_FLAGS_BIT)
+/* defines sqe group */
+#define IOSQE_EXT_SQE_GROUP	(1U << IOSQE_EXT_SQE_GROUP_BIT)
 
 /*
  * io_uring_setup() flags

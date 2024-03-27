@@ -448,6 +448,7 @@ enum {
 	REQ_F_BUFFER_SELECT_BIT	= IOSQE_BUFFER_SELECT_BIT,
 	REQ_F_CQE_SKIP_BIT	= IOSQE_CQE_SKIP_SUCCESS_BIT,
 	REQ_F_SQE_EXT_FLAGS_BIT	= IOSQE_HAS_EXT_FLAGS_BIT,
+	REQ_F_SQE_GROUP_BIT	= 8 + IOSQE_EXT_SQE_GROUP_BIT,
 
 	/* first 2 bytes are taken by user flags, shift it to not overlap */
 	REQ_F_FAIL_BIT		= 16,
@@ -478,6 +479,7 @@ enum {
 	REQ_F_CAN_POLL_BIT,
 	REQ_F_BL_EMPTY_BIT,
 	REQ_F_BL_NO_RECYCLE_BIT,
+	REQ_F_SQE_GROUP_LEAD_BIT,
 
 	/* not a real bit, just to check we're not overflowing the space */
 	__REQ_F_LAST_BIT,
@@ -501,6 +503,7 @@ enum {
 	REQ_F_BUFFER_SELECT	= IO_REQ_FLAG(REQ_F_BUFFER_SELECT_BIT),
 	/* IOSQE_CQE_SKIP_SUCCESS */
 	REQ_F_CQE_SKIP		= IO_REQ_FLAG(REQ_F_CQE_SKIP_BIT),
+	REQ_F_SQE_GROUP		= IO_REQ_FLAG(REQ_F_SQE_GROUP_BIT),
 
 	/* fail rest of links */
 	REQ_F_FAIL		= IO_REQ_FLAG(REQ_F_FAIL_BIT),
@@ -556,6 +559,7 @@ enum {
 	REQ_F_BL_EMPTY		= IO_REQ_FLAG(REQ_F_BL_EMPTY_BIT),
 	/* don't recycle provided buffers for this request */
 	REQ_F_BL_NO_RECYCLE	= IO_REQ_FLAG(REQ_F_BL_NO_RECYCLE_BIT),
+	REQ_F_SQE_GROUP_LEAD	= IO_REQ_FLAG(REQ_F_SQE_GROUP_LEAD_BIT),
 };
 
 typedef void (*io_req_tw_func_t)(struct io_kiocb *req, struct io_tw_state *ts);
@@ -669,6 +673,10 @@ struct io_kiocb {
 		u64			extra1;
 		u64			extra2;
 	} big_cqe;
+
+	/* all SQE group members linked here for group lead */
+	struct io_kiocb			*grp_link;
+	atomic_t			grp_refs;
 };
 
 struct io_overflow_cqe {

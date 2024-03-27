@@ -147,6 +147,10 @@ static bool io_uring_try_cancel_requests(struct io_ring_ctx *ctx,
 					 bool cancel_all);
 
 static void io_queue_sqe(struct io_kiocb *req);
+static bool io_get_sqe(struct io_ring_ctx *ctx,
+		const struct io_uring_sqe **sqe);
+static int io_init_req(struct io_ring_ctx *ctx, struct io_kiocb *req,
+		       const struct io_uring_sqe *sqe);
 
 struct kmem_cache *req_cachep;
 
@@ -925,9 +929,188 @@ bool io_req_post_cqe(struct io_kiocb *req, s32 res, u32 cflags)
 	return posted;
 }
 
+static void __io_req_failed(struct io_kiocb *req, s32 res, bool skip_cqe)
+{
+	const struct io_cold_def *def = &io_cold_defs[req->opcode];
+
+	lockdep_assert_held(&req->ctx->uring_lock);
+
+	if (skip_cqe)
+		req->flags |= REQ_F_FAIL | REQ_F_CQE_SKIP;
+	else
+		req_set_fail(req);
+	io_req_set_res(req, res, io_put_kbuf(req, IO_URING_F_UNLOCKED));
+	if (def->fail)
+		def->fail(req);
+}
+
+void io_req_defer_failed(struct io_kiocb *req, s32 res)
+	__must_hold(&ctx->uring_lock)
+{
+	__io_req_failed(req, res, false);
+	io_req_complete_defer(req);
+}
+
+static void io_req_defer_failed_sliently(struct io_kiocb *req, s32 res)
+	__must_hold(&ctx->uring_lock)
+{
+	__io_req_failed(req, res, true);
+	io_req_complete_defer(req);
+}
+
+/*
+ * Called after member req is completed, and return the lead request for
+ * caller to fill cqe & free it really
+ */
+static inline struct io_kiocb *io_complete_group_member(struct io_kiocb *req)
+{
+	struct io_kiocb *lead = req->grp_link;
+
+	req->grp_link = NULL;
+	if (lead && atomic_dec_and_test(&lead->grp_refs)) {
+		req->grp_link = NULL;
+		lead->flags &= ~REQ_F_SQE_GROUP_LEAD;
+		return lead;
+	}
+
+	return NULL;
+}
+
+/*
+ * Called after lead req is completed and before posting cqe and freeing,
+ * for issuing member requests
+ */
+void io_complete_group_lead(struct io_kiocb *req, unsigned issue_flags)
+{
+	struct io_kiocb *member = req->grp_link;
+
+	if (!member)
+		return;
+
+	while (member) {
+		struct io_kiocb *next = member->grp_link;
+
+		member->grp_link = req;
+		if (unlikely(req->flags & REQ_F_FAIL)) {
+			/*
+			 * Now group lead is failed, so simply fail members
+			 * with -EIO, and the application can figure out
+			 * the reason from lead's cqe->res
+			 */
+			__io_req_failed(member, -EIO, false);
+
+			if (issue_flags & IO_URING_F_COMPLETE_DEFER)
+				io_req_complete_defer(member);
+			else {
+				member->io_task_work.func = io_req_task_complete;
+				io_req_task_work_add(member);
+			}
+		} else {
+			trace_io_uring_submit_req(member);
+			if ((issue_flags & IO_URING_F_COMPLETE_DEFER) &&
+					!(member->flags & REQ_F_FORCE_ASYNC))
+				io_queue_sqe(member);
+			else
+				io_req_task_queue(member);
+		}
+		member = next;
+	}
+	req->grp_link = NULL;
+}
+
+static bool sqe_is_group_member(const struct io_uring_sqe *sqe)
+{
+	return (READ_ONCE(sqe->flags) & IOSQE_HAS_EXT_FLAGS) &&
+		(READ_ONCE(sqe->ext_flags) & IOSQE_EXT_SQE_GROUP);
+}
+
+/*
+ * Initialize the whole SQE group.
+ *
+ * Walk every member in this group even though failure happens. If the lead
+ * request is failed, CQE is only posted for lead, otherwise, CQE is posted
+ * for every member request. Member requests aren't issued until the lead
+ * is completed, and the lead request won't be freed until all member
+ * requests are completed.
+ *
+ * The whole group shares the link flag in group lead, and other members
+ * aren't allowed to set any LINK flag. And only the lead request may
+ * appear in the submission link list.
+ */
+static int io_init_req_group(struct io_ring_ctx *ctx, struct io_kiocb *lead,
+		int *nr, int lead_ret)
+	__must_hold(&ctx->uring_lock)
+{
+	bool more = true;
+	int cnt = 0;
+
+	lead->grp_link = NULL;
+	do {
+		const struct io_uring_sqe *sqe;
+		struct io_kiocb *req = NULL;
+		int ret = -ENOMEM;
+
+		io_alloc_req(ctx, &req);
+
+		if (unlikely(!io_get_sqe(ctx, &sqe))) {
+			if (req)
+				io_req_add_to_cache(req, ctx);
+			break;
+		}
+
+		/* one group ends with !IOSQE_EXT_SQE_GROUP */
+		if (!sqe_is_group_member(sqe))
+			more = false;
+
+		if (req) {
+			ret = io_init_req(ctx, req, sqe);
+			/*
+			 * Both IO_LINK and IO_DRAIN aren't allowed for
+			 * group member, and the boundary has to be in
+			 * the lead sqe, so the whole group shares
+			 * same IO_LINK and IO_DRAIN.
+			 */
+			if (!ret && (req->flags & (IO_REQ_LINK_FLAGS |
+							REQ_F_IO_DRAIN)))
+				ret = -EINVAL;
+			if (!more)
+				req->flags |= REQ_F_SQE_GROUP;
+			if (unlikely(ret)) {
+				/*
+				 * The lead will be failed, so don't post
+				 * CQE for any member
+				 */
+				io_req_defer_failed_sliently(req, ret);
+			} else {
+				req->grp_link = lead->grp_link;
+				lead->grp_link = req;
+			}
+		}
+		cnt += 1;
+		if (ret)
+			lead_ret = ret;
+	} while (more);
+
+	/* Mark lead if we get members, otherwise degrade it to normal req */
+	if (cnt > 0) {
+		lead->flags |= REQ_F_SQE_GROUP_LEAD;
+		atomic_set(&lead->grp_refs, cnt);
+		*nr += cnt;
+	} else {
+		lead->flags &= ~REQ_F_SQE_GROUP;
+	}
+
+	return lead_ret;
+}
+
 static void io_req_complete_post(struct io_kiocb *req, unsigned issue_flags)
 {
 	struct io_ring_ctx *ctx = req->ctx;
+
+	if (req_is_group_lead(req)) {
+		io_complete_group_lead(req, issue_flags);
+		return;
+	}
 
 	/*
 	 * Called from io-wq code path only, and the other completions fall
@@ -955,20 +1138,6 @@ static void io_req_complete_post(struct io_kiocb *req, unsigned issue_flags)
 
 	/* called from io-wq submit work only, the ref won't drop to zero */
 	req_ref_put(req);
-}
-
-void io_req_defer_failed(struct io_kiocb *req, s32 res)
-	__must_hold(&ctx->uring_lock)
-{
-	const struct io_cold_def *def = &io_cold_defs[req->opcode];
-
-	lockdep_assert_held(&req->ctx->uring_lock);
-
-	req_set_fail(req);
-	io_req_set_res(req, res, io_put_kbuf(req, IO_URING_F_UNLOCKED));
-	if (def->fail)
-		def->fail(req);
-	io_req_complete_defer(req);
 }
 
 /*
@@ -1477,7 +1646,8 @@ static void io_free_batch_list(struct io_ring_ctx *ctx,
 }
 
 static inline void io_fill_cqe_lists(struct io_ring_ctx *ctx,
-				     struct io_wq_work_list *list)
+				     struct io_wq_work_list *list,
+				     struct io_wq_work_list *grp)
 {
 	struct io_wq_work_node *node;
 
@@ -1495,6 +1665,13 @@ static inline void io_fill_cqe_lists(struct io_ring_ctx *ctx,
 				io_req_cqe_overflow(req);
 			}
 		}
+
+		if (grp && req_is_group_member(req)) {
+			struct io_kiocb *lead = io_complete_group_member(req);
+
+			if (lead)
+				wq_list_add_head(&lead->comp_list, grp);
+		}
 	}
 }
 
@@ -1502,14 +1679,19 @@ void __io_submit_flush_completions(struct io_ring_ctx *ctx)
 	__must_hold(&ctx->uring_lock)
 {
 	struct io_submit_state *state = &ctx->submit_state;
+	struct io_wq_work_list list = {NULL, NULL};
 
 	__io_cq_lock(ctx);
-	io_fill_cqe_lists(ctx, &state->compl_reqs);
+	io_fill_cqe_lists(ctx, &state->compl_reqs, &list);
+	if (!wq_list_empty(&list))
+		io_fill_cqe_lists(ctx, &list, NULL);
 	__io_cq_unlock_post(ctx);
 
-	if (!wq_list_empty(&ctx->submit_state.compl_reqs)) {
+	if (!wq_list_empty(&state->compl_reqs)) {
 		io_free_batch_list(ctx, state->compl_reqs.first);
 		INIT_WQ_LIST(&state->compl_reqs);
+		if (!wq_list_empty(&list))
+			io_free_batch_list(ctx, list.first);
 	}
 	ctx->submit_state.cq_flush = false;
 }
@@ -2230,6 +2412,8 @@ static inline int io_submit_sqe(struct io_ring_ctx *ctx, struct io_kiocb *req,
 
 	*nr = 1;
 	ret = io_init_req(ctx, req, sqe);
+	if (req->flags & REQ_F_SQE_GROUP)
+		ret = io_init_req_group(ctx, req, nr, ret);
 	if (unlikely(ret))
 		return io_submit_fail_init(sqe, req, ret);
 
