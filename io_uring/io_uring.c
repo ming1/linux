@@ -109,7 +109,8 @@
 			  IOSQE_IO_HARDLINK | IOSQE_ASYNC)
 
 #define SQE_VALID_FLAGS	(SQE_COMMON_FLAGS | IOSQE_BUFFER_SELECT | \
-			IOSQE_IO_DRAIN | IOSQE_CQE_SKIP_SUCCESS)
+			IOSQE_IO_DRAIN | IOSQE_CQE_SKIP_SUCCESS | \
+			IOSQE_HAS_EXT_FLAGS)
 
 #define IO_REQ_CLEAN_FLAGS (REQ_F_BUFFER_SELECTED | REQ_F_NEED_CLEANUP | \
 				REQ_F_POLLED | REQ_F_INFLIGHT | REQ_F_CREDS | \
@@ -2098,6 +2099,17 @@ static int io_init_req(struct io_ring_ctx *ctx, struct io_kiocb *req,
 		/* enforce forwards compatibility on users */
 		if (sqe_flags & ~SQE_VALID_FLAGS)
 			return io_init_fail_req(req, -EINVAL);
+		if (sqe_flags & IOSQE_HAS_EXT_FLAGS) {
+			u32 sqe_ext_flags;
+
+			if (opcode != IORING_OP_URING_CMD)
+				sqe_ext_flags = READ_ONCE(sqe->ext_flags);
+			else
+				sqe_ext_flags = (READ_ONCE(sqe->uring_cmd_flags)
+					& IORING_URING_CMD_EXT_MASK) >> 16;
+			req->flags |= sqe_ext_flags << 8;
+		}
+
 		if (sqe_flags & IOSQE_BUFFER_SELECT) {
 			if (!def->buffer_select)
 				return io_init_fail_req(req, -EOPNOTSUPP);

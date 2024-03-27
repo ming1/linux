@@ -98,6 +98,10 @@ struct io_uring_sqe {
 			__u64	__pad2[1];
 		};
 		__u64	optval;
+		struct {
+			__u8	__pad4[15];
+			__u8	ext_flags;
+		};
 		/*
 		 * If the ring is initialized with IORING_SETUP_SQE128, then
 		 * this field is used for 80 bytes of arbitrary command data
@@ -123,6 +127,7 @@ enum io_uring_sqe_flags_bit {
 	IOSQE_ASYNC_BIT,
 	IOSQE_BUFFER_SELECT_BIT,
 	IOSQE_CQE_SKIP_SUCCESS_BIT,
+	IOSQE_HAS_EXT_FLAGS_BIT,
 };
 
 /*
@@ -142,6 +147,11 @@ enum io_uring_sqe_flags_bit {
 #define IOSQE_BUFFER_SELECT	(1U << IOSQE_BUFFER_SELECT_BIT)
 /* don't post CQE if request succeeded */
 #define IOSQE_CQE_SKIP_SUCCESS	(1U << IOSQE_CQE_SKIP_SUCCESS_BIT)
+/*
+ * sqe ext flags carried in the last byte, or bit23~bit16 of
+ * sqe->uring_cmd_flags for IORING_URING_CMD.
+ */
+#define IOSQE_HAS_EXT_FLAGS	(1U << IOSQE_HAS_EXT_FLAGS_BIT)
 
 /*
  * io_uring_setup() flags
@@ -263,11 +273,14 @@ enum io_uring_op {
 
 /*
  * sqe->uring_cmd_flags		top 8bits aren't available for userspace
+ * bit31 ~ bit24		kernel internal usage
+ * bit23 ~ bit16		sqe ext flags
  * IORING_URING_CMD_FIXED	use registered buffer; pass this flag
  *				along with setting sqe->buf_index.
  */
 #define IORING_URING_CMD_FIXED	(1U << 0)
 #define IORING_URING_CMD_MASK	IORING_URING_CMD_FIXED
+#define IORING_URING_CMD_EXT_MASK	0x00ff0000
 
 
 /*

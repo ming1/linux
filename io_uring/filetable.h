@@ -43,7 +43,7 @@ io_fixed_file_slot(struct io_file_table *table, unsigned i)
 #define FFS_ISREG		0x2UL
 #define FFS_MASK		~(FFS_NOWAIT|FFS_ISREG)
 
-static inline unsigned int io_slot_flags(struct io_fixed_file *slot)
+static inline unsigned long io_slot_flags(struct io_fixed_file *slot)
 {
 	return (slot->file_ptr & ~FFS_MASK) << REQ_F_SUPPORT_NOWAIT_BIT;
 }

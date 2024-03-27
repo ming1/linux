@@ -439,6 +439,7 @@ struct io_tw_state {
 };
 
 enum {
+	/* 1st byte is from sqe->flags, and 2nd is from sqe ext_flags */
 	REQ_F_FIXED_FILE_BIT	= IOSQE_FIXED_FILE_BIT,
 	REQ_F_IO_DRAIN_BIT	= IOSQE_IO_DRAIN_BIT,
 	REQ_F_LINK_BIT		= IOSQE_IO_LINK_BIT,
@@ -446,9 +447,10 @@ enum {
 	REQ_F_FORCE_ASYNC_BIT	= IOSQE_ASYNC_BIT,
 	REQ_F_BUFFER_SELECT_BIT	= IOSQE_BUFFER_SELECT_BIT,
 	REQ_F_CQE_SKIP_BIT	= IOSQE_CQE_SKIP_SUCCESS_BIT,
+	REQ_F_SQE_EXT_FLAGS_BIT	= IOSQE_HAS_EXT_FLAGS_BIT,
 
-	/* first byte is taken by user flags, shift it to not overlap */
-	REQ_F_FAIL_BIT		= 8,
+	/* first 2 bytes are taken by user flags, shift it to not overlap */
+	REQ_F_FAIL_BIT		= 16,
 	REQ_F_INFLIGHT_BIT,
 	REQ_F_CUR_POS_BIT,
 	REQ_F_NOWAIT_BIT,
