@@ -1476,16 +1476,14 @@ static void io_free_batch_list(struct io_ring_ctx *ctx,
 	} while (node);
 }
 
-void __io_submit_flush_completions(struct io_ring_ctx *ctx)
-	__must_hold(&ctx->uring_lock)
+static inline void io_fill_cqe_lists(struct io_ring_ctx *ctx,
+				     struct io_wq_work_list *list)
 {
-	struct io_submit_state *state = &ctx->submit_state;
 	struct io_wq_work_node *node;
 
-	__io_cq_lock(ctx);
-	__wq_list_for_each(node, &state->compl_reqs) {
+	__wq_list_for_each(node, list) {
 		struct io_kiocb *req = container_of(node, struct io_kiocb,
-					    comp_list);
+						    comp_list);
 
 		if (!(req->flags & REQ_F_CQE_SKIP) &&
 		    unlikely(!io_fill_cqe_req(ctx, req))) {
@@ -1498,6 +1496,15 @@ void __io_submit_flush_completions(struct io_ring_ctx *ctx)
 			}
 		}
 	}
+}
+
+void __io_submit_flush_completions(struct io_ring_ctx *ctx)
+	__must_hold(&ctx->uring_lock)
+{
+	struct io_submit_state *state = &ctx->submit_state;
+
+	__io_cq_lock(ctx);
+	io_fill_cqe_lists(ctx, &state->compl_reqs);
 	__io_cq_unlock_post(ctx);
 
 	if (!wq_list_empty(&ctx->submit_state.compl_reqs)) {
