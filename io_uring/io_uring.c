@@ -114,7 +114,7 @@
 
 #define IO_REQ_CLEAN_FLAGS (REQ_F_BUFFER_SELECTED | REQ_F_NEED_CLEANUP | \
 				REQ_F_POLLED | REQ_F_INFLIGHT | REQ_F_CREDS | \
-				REQ_F_ASYNC_DATA)
+				REQ_F_ASYNC_DATA | REQ_F_GROUP_KBUF)
 
 #define IO_REQ_CLEAN_SLOW_FLAGS (REQ_F_REFCOUNT | REQ_F_LINK | REQ_F_HARDLINK |\
 				 IO_REQ_CLEAN_FLAGS)
@@ -384,6 +384,9 @@ static bool req_need_defer(struct io_kiocb *req, u32 seq)
 
 static void io_clean_op(struct io_kiocb *req)
 {
+	if (req->flags & REQ_F_GROUP_KBUF)
+		io_group_kbuf_drop(req);
+
 	if (req->flags & REQ_F_BUFFER_SELECTED) {
 		spin_lock(&req->ctx->completion_lock);
 		io_kbuf_drop(req);
@@ -991,6 +994,10 @@ void io_complete_group_lead(struct io_kiocb *req, unsigned issue_flags)
 		struct io_kiocb *next = member->grp_link;
 
 		member->grp_link = req;
+		if (req->flags & REQ_F_GROUP_KBUF) {
+			member->flags |= REQ_F_GROUP_KBUF;
+			member->grp_kbuf_ack = NULL;
+		}
 		if (unlikely(req->flags & REQ_F_FAIL)) {
 			/*
 			 * Now group lead is failed, so simply fail members

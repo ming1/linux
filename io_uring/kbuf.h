@@ -64,6 +64,12 @@ struct io_buffer_list *io_pbuf_get_bl(struct io_ring_ctx *ctx,
 				      unsigned long bgid);
 int io_pbuf_mmap(struct file *file, struct vm_area_struct *vma);
 
+int io_provide_group_kbuf(struct io_kiocb *req,
+		const struct io_uring_kernel_buf *grp_kbuf,
+		io_uring_buf_giveback_t grp_kbuf_ack);
+int io_import_group_kbuf(struct io_kiocb *req, unsigned long buf_off,
+		unsigned int len, int dir, struct iov_iter *iter);
+
 static inline bool io_kbuf_recycle_ring(struct io_kiocb *req)
 {
 	/*
@@ -144,5 +150,11 @@ static inline unsigned int io_put_kbuf(struct io_kiocb *req,
 	else
 		__io_put_kbuf(req, issue_flags);
 	return ret;
+}
+
+static inline void io_group_kbuf_drop(struct io_kiocb *req)
+{
+	if (req->grp_kbuf_ack)
+		req->grp_kbuf_ack(req->grp_kbuf);
 }
 #endif

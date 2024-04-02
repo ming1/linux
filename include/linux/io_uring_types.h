@@ -6,6 +6,7 @@
 #include <linux/task_work.h>
 #include <linux/bitmap.h>
 #include <linux/llist.h>
+#include <linux/bvec.h>
 #include <uapi/linux/io_uring.h>
 
 enum {
@@ -38,6 +39,22 @@ enum io_uring_cmd_flags {
 	IO_URING_F_CANCEL		= (1 << 11),
 	IO_URING_F_COMPAT		= (1 << 12),
 };
+
+/* buffer provided from kernel */
+struct io_uring_kernel_buf {
+	unsigned long	len;
+	unsigned short	nr_bvecs;
+	unsigned short	dir;	/* ITER_SOURCE or ITER_DEST */
+
+	/* offset in the 1st bvec */
+	unsigned int		offset;
+	const struct bio_vec	*bvec;
+
+	/* private field, user don't touch it */
+	struct bio_vec		__bvec[];
+};
+
+typedef void (io_uring_buf_giveback_t) (const struct io_uring_kernel_buf *);
 
 struct io_wq_work_node {
 	struct io_wq_work_node *next;
@@ -480,6 +497,7 @@ enum {
 	REQ_F_BL_EMPTY_BIT,
 	REQ_F_BL_NO_RECYCLE_BIT,
 	REQ_F_SQE_GROUP_LEAD_BIT,
+	REQ_F_GROUP_KBUF_BIT,
 
 	/* not a real bit, just to check we're not overflowing the space */
 	__REQ_F_LAST_BIT,
@@ -560,6 +578,7 @@ enum {
 	/* don't recycle provided buffers for this request */
 	REQ_F_BL_NO_RECYCLE	= IO_REQ_FLAG(REQ_F_BL_NO_RECYCLE_BIT),
 	REQ_F_SQE_GROUP_LEAD	= IO_REQ_FLAG(REQ_F_SQE_GROUP_LEAD_BIT),
+	REQ_F_GROUP_KBUF	= IO_REQ_FLAG(REQ_F_GROUP_KBUF_BIT),
 };
 
 typedef void (*io_req_tw_func_t)(struct io_kiocb *req, struct io_tw_state *ts);
@@ -643,6 +662,15 @@ struct io_kiocb {
 		 * REQ_F_BUFFER_RING is set.
 		 */
 		struct io_buffer_list	*buf_list;
+
+		/*
+		 * store kernel buffer provided by sqe group lead, valid
+		 * IFF REQ_F_GROUP_BUFFER
+		 *
+		 * The buffer meta is immutable since it is shared by
+		 * all member requests
+		 */
+		const struct io_uring_kernel_buf *grp_kbuf;
 	};
 
 	union {
@@ -677,6 +705,7 @@ struct io_kiocb {
 	/* all SQE group members linked here for group lead */
 	struct io_kiocb			*grp_link;
 	atomic_t			grp_refs;
+	io_uring_buf_giveback_t		*grp_kbuf_ack;
 };
 
 struct io_overflow_cqe {
