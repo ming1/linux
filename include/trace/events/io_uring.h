@@ -401,6 +401,99 @@ TRACE_EVENT(io_uring_submit_req,
 		  __entry->sq_thread)
 );
 
+/**
+ * io_uring_queue_grp_member - called before queuing group member requests
+ *
+ * @req:		pointer to a submitted request
+ *
+ * Allows to track group request submission
+ */
+TRACE_EVENT(io_uring_queue_grp_member,
+
+	TP_PROTO(struct io_kiocb *req),
+
+	TP_ARGS(req),
+
+	TP_STRUCT__entry (
+		__field(  void *,		ctx		)
+		__field(  void *,		req		)
+		__field(  unsigned long long,	user_data	)
+		__field(  u8,			opcode		)
+		__field(  unsigned long long,	flags		)
+		__field(  unsigned int,		grp_ref		)
+		__field(  void *,		grp_link	)
+
+		__string( op_str, io_uring_get_opcode(req->opcode) )
+	),
+
+	TP_fast_assign(
+		__entry->ctx		= req->ctx;
+		__entry->req		= req;
+		__entry->user_data	= req->cqe.user_data;
+		__entry->opcode		= req->opcode;
+		__entry->flags		= (__force unsigned long long) req->flags;
+		__entry->grp_ref	= req->grp_refs;
+		__entry->grp_link	= req->grp_link;
+
+		__assign_str(op_str, io_uring_get_opcode(req->opcode));
+	),
+
+	TP_printk("ring %p, req %p, user_data 0x%llx, opcode %s, flags 0x%llx, "
+		  "grp_ref %d grp_link %p", __entry->ctx, __entry->req,
+		  __entry->user_data, __get_str(op_str), __entry->flags,
+		  __entry->grp_ref, __entry->grp_link)
+);
+
+/**
+ * io_uring_complete_group_req - called before completing any group request
+ *
+ * @req:		pointer to a completed group request
+ * @lead:		pointer to group leader request
+ *
+ * Allows to track group request completion
+ */
+TRACE_EVENT(io_uring_complete_group_req,
+
+	TP_PROTO(struct io_kiocb *req, struct io_kiocb *lead),
+
+	TP_ARGS(req, lead),
+
+	TP_STRUCT__entry (
+		__field(  void *,		ctx		)
+		__field(  void *,		req		)
+		__field(  unsigned long long,	user_data	)
+		__field(  u8,			opcode		)
+		__field(  void *,		lead		)
+		__field(  unsigned long long,	lead_user_data	)
+		__field(  int,	grp_ref	)
+		__field(  unsigned long long,	flags		)
+		__field(  unsigned long long,	lead_flags	)
+
+		__string( op_str, io_uring_get_opcode(req->opcode) )
+	),
+
+	TP_fast_assign(
+		__entry->ctx		= req->ctx;
+		__entry->req		= req;
+		__entry->user_data	= req->cqe.user_data;
+		__entry->lead_user_data	= lead->cqe.user_data;
+		__entry->opcode		= req->opcode;
+		__entry->lead		= lead;
+		__entry->grp_ref	= lead->grp_refs;
+		__entry->flags		= req->flags;
+		__entry->lead_flags	= lead->flags;
+
+		__assign_str(op_str, io_uring_get_opcode(req->opcode));
+	),
+
+	TP_printk("ring %p, request %p, user_data 0x%llx, opcode %s, flags 0x%llx, "
+		"grp leader %p user_data 0x%llx, flags 0x%llx, grp_ref %d",
+		__entry->ctx, __entry->req, __entry->user_data,
+		__get_str(op_str), __entry->flags,
+		__entry->lead, __entry->lead_user_data,
+		__entry->lead_flags, __entry->grp_ref)
+);
+
 /*
  * io_uring_poll_arm - called after arming a poll wait if successful
  *

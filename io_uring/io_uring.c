@@ -986,6 +986,8 @@ void io_queue_group_members(struct io_kiocb *req, bool async)
 	if (!member)
 		return;
 
+	trace_io_uring_queue_grp_member(req);
+
 	while (member) {
 		const struct io_issue_def *def = &io_issue_defs[member->opcode];
 		struct io_kiocb *next = member->grp_link;
@@ -1034,6 +1036,8 @@ static inline void io_complete_group_req(struct io_kiocb *req,
 		struct io_wq_work_list *grp_list)
 {
 	struct io_kiocb *lead = get_group_leader(req);
+
+	trace_io_uring_complete_group_req(req, lead);
 
 	if (__io_complete_group_req(req, lead)) {
 		req->flags &= ~REQ_F_SQE_GROUP;
