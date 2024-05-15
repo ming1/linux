@@ -117,7 +117,7 @@
 				REQ_F_ASYNC_DATA | REQ_F_GROUP_KBUF)
 
 #define IO_REQ_CLEAN_SLOW_FLAGS (REQ_F_REFCOUNT | REQ_F_LINK | REQ_F_HARDLINK |\
-				 IO_REQ_CLEAN_FLAGS)
+				 REQ_F_SQE_GROUP | IO_REQ_CLEAN_FLAGS)
 
 #define IO_TCTX_REFS_CACHE_NR	(1U << 10)
 
@@ -2154,8 +2154,7 @@ static inline void io_queue_sqe(struct io_kiocb *req)
 	 */
 	if (unlikely(ret))
 		io_queue_async(req, ret);
-
-	if (need_queue_group_members(req))
+	else if (need_queue_group_members(req))
 		io_queue_group_members(req, false);
 }
 
