@@ -3,6 +3,7 @@
 #define UBLK_INT_BPF_HEADER
 
 #include "bpf_reg.h"
+#include "bpf_aio.h"
 
 typedef unsigned long ublk_bpf_return_t;
 typedef ublk_bpf_return_t (*queue_io_cmd_t)(struct ublk_bpf_io *io, unsigned int);

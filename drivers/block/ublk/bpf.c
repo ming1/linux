@@ -155,7 +155,22 @@ BTF_ID_FLAGS(func, ublk_bpf_get_iod, KF_TRUSTED_ARGS | KF_RET_NULL)
 BTF_ID_FLAGS(func, ublk_bpf_get_io_tag, KF_TRUSTED_ARGS)
 BTF_ID_FLAGS(func, ublk_bpf_get_queue_id, KF_TRUSTED_ARGS)
 BTF_ID_FLAGS(func, ublk_bpf_get_dev_id, KF_TRUSTED_ARGS)
+
+/* bpf aio kfunc */
+BTF_ID_FLAGS(func, bpf_aio_alloc, KF_RET_NULL)
+BTF_ID_FLAGS(func, bpf_aio_alloc_sleepable, KF_RET_NULL)
+BTF_ID_FLAGS(func, bpf_aio_release)
+BTF_ID_FLAGS(func, bpf_aio_submit)
 BTF_KFUNCS_END(ublk_bpf_kfunc_ids)
+
+__bpf_kfunc void bpf_aio_release_dtor(void *aio)
+{
+	bpf_aio_release(aio);
+}
+CFI_NOSEAL(bpf_aio_release_dtor);
+BTF_ID_LIST(bpf_aio_dtor_ids)
+BTF_ID(struct, bpf_aio)
+BTF_ID(func, bpf_aio_release_dtor)
 
 static const struct btf_kfunc_id_set ublk_bpf_kfunc_set = {
 	.owner = THIS_MODULE,
@@ -164,6 +179,12 @@ static const struct btf_kfunc_id_set ublk_bpf_kfunc_set = {
 
 int __init ublk_bpf_init(void)
 {
+	const struct btf_id_dtor_kfunc aio_dtors[] = {
+		{
+			.btf_id	      = bpf_aio_dtor_ids[0],
+			.kfunc_btf_id = bpf_aio_dtor_ids[1]
+		},
+	};
 	int err;
 
 	err = register_btf_kfunc_id_set(BPF_PROG_TYPE_STRUCT_OPS,
@@ -172,5 +193,22 @@ int __init ublk_bpf_init(void)
 		pr_warn("error while setting UBLK BPF tracing kfuncs: %d", err);
 		return err;
 	}
-	return ublk_bpf_struct_ops_init();
+
+	err = ublk_bpf_struct_ops_init();
+	if (err) {
+		pr_warn("error while initializing ublk bpf struct_ops: %d", err);
+		return err;
+	}
+
+	err = register_btf_id_dtor_kfuncs(aio_dtors, ARRAY_SIZE(aio_dtors),
+			THIS_MODULE);
+	if (err) {
+		pr_warn("error while registering aio destructor: %d", err);
+		return err;
+	}
+
+	err = bpf_aio_init();
+	if (err)
+		pr_warn("error while initializing bpf aio kfunc: %d", err);
+	return err;
 }
