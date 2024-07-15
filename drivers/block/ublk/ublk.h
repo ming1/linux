@@ -154,4 +154,15 @@ struct ublk_params_header {
 };
 
 
+static inline struct ublksrv_io_desc *ublk_get_iod(struct ublk_queue *ubq,
+		int tag)
+{
+	return (struct ublksrv_io_desc *)
+		&(ubq->io_cmd_buf[tag * sizeof(struct ublksrv_io_desc)]);
+}
+
+struct ublk_device *ublk_get_device_from_id(int idx);
+void ublk_put_device(struct ublk_device *ub);
+void __ublk_complete_rq(struct request *req);
+
 #endif

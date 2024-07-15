@@ -47,8 +47,6 @@
 static bool ublk_abort_requests(struct ublk_device *ub, struct ublk_queue *ubq);
 
 static inline unsigned int ublk_req_build_flags(struct request *req);
-static inline struct ublksrv_io_desc *ublk_get_iod(struct ublk_queue *ubq,
-						   int tag);
 static inline bool ublk_dev_is_user_copy(const struct ublk_device *ub)
 {
 	return ub->dev_info.flags & UBLK_F_USER_COPY;
@@ -325,7 +323,6 @@ static blk_status_t ublk_setup_iod_zoned(struct ublk_queue *ubq,
 
 #endif
 
-static inline void __ublk_complete_rq(struct request *req);
 static void ublk_complete_rq(struct kref *ref);
 
 static dev_t ublk_chr_devt;
@@ -496,7 +493,7 @@ static noinline struct ublk_device *ublk_get_device(struct ublk_device *ub)
 }
 
 /* Called in slow path only, keep it noinline for trace purpose */
-static noinline void ublk_put_device(struct ublk_device *ub)
+void ublk_put_device(struct ublk_device *ub)
 {
 	put_device(&ub->cdev_dev);
 }
@@ -510,13 +507,6 @@ static inline struct ublk_queue *ublk_get_queue(struct ublk_device *dev,
 static inline bool ublk_rq_has_data(const struct request *rq)
 {
 	return bio_has_data(rq->bio);
-}
-
-static inline struct ublksrv_io_desc *ublk_get_iod(struct ublk_queue *ubq,
-		int tag)
-{
-	return (struct ublksrv_io_desc *)
-		&(ubq->io_cmd_buf[tag * sizeof(struct ublksrv_io_desc)]);
 }
 
 static inline char *ublk_queue_cmd_buf(struct ublk_device *ub, int q_id)
@@ -887,7 +877,7 @@ static inline bool ubq_daemon_is_dying(struct ublk_queue *ubq)
 }
 
 /* todo: handle partial completion */
-static inline void __ublk_complete_rq(struct request *req)
+void __ublk_complete_rq(struct request *req)
 {
 	struct ublk_queue *ubq = req->mq_hctx->driver_data;
 	struct ublk_io *io = &ubq->ios[req->tag];
@@ -2082,7 +2072,7 @@ static void ublk_remove(struct ublk_device *ub)
 	ublks_added--;
 }
 
-static struct ublk_device *ublk_get_device_from_id(int idx)
+struct ublk_device *ublk_get_device_from_id(int idx)
 {
 	struct ublk_device *ub = NULL;
 
