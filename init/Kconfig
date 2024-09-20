@@ -1711,6 +1711,13 @@ config IO_URING
 	  applications to submit and complete IO through submission and
 	  completion rings that are shared between the kernel and application.
 
+config IO_URING_BPF
+	bool "Enable IO uring bpf extension (Experimental)" if EXPERT
+	depends on BPF
+	help
+	  This option enables bpf extension for the io_uring interface, so
+	  application can define its own io_uring operation by bpf program.
+
 config GCOV_PROFILE_URING
 	bool "Enable GCOV profiling on the io_uring subsystem"
 	depends on GCOV_KERNEL
