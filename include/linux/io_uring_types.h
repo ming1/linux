@@ -425,6 +425,11 @@ struct io_ring_ctx {
 	unsigned short			n_sqe_pages;
 	struct page			**ring_pages;
 	struct page			**sqe_pages;
+
+#ifdef CONFIG_IO_URING_BPF
+	/* added to uring_bpf_ctx_list */
+	struct list_head		bpf_node;
+#endif
 };
 
 struct io_tw_state {

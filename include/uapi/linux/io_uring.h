@@ -200,6 +200,11 @@ enum io_uring_sqe_flags_bit {
  */
 #define IORING_SETUP_NO_SQARRAY		(1U << 16)
 
+/*
+ * Allow to submit bpf IO
+ */
+#define IORING_SETUP_BPF		(1U << 17)
+
 enum io_uring_op {
 	IORING_OP_NOP,
 	IORING_OP_READV,
