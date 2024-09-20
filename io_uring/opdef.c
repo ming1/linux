@@ -38,6 +38,7 @@
 #include "futex.h"
 #include "truncate.h"
 #include "zcrx.h"
+#include "bpf_op.h"
 
 static int io_no_issue(struct io_kiocb *req, unsigned int issue_flags)
 {
@@ -593,6 +594,14 @@ const struct io_issue_def io_issue_defs[] = {
 		.prep			= io_uring_cmd_prep,
 		.issue			= io_uring_cmd,
 	},
+	[IORING_OP_BPF] = {
+#if defined(CONFIG_IO_URING_BPF_OP)
+		.prep			= io_uring_bpf_prep,
+		.issue			= io_uring_bpf_issue,
+#else
+		.prep			= io_eopnotsupp_prep,
+#endif
+	},
 };
 
 const struct io_cold_def io_cold_defs[] = {
@@ -850,6 +859,13 @@ const struct io_cold_def io_cold_defs[] = {
 		.name			= "URING_CMD128",
 		.sqe_copy		= io_uring_cmd_sqe_copy,
 		.cleanup		= io_uring_cmd_cleanup,
+	},
+	[IORING_OP_BPF] = {
+		.name			= "BPF",
+#if defined(CONFIG_IO_URING_BPF_OP)
+		.cleanup		= io_uring_bpf_cleanup,
+		.fail			= io_uring_bpf_fail,
+#endif
 	},
 };
 
