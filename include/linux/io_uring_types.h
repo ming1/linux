@@ -8,6 +8,8 @@
 #include <linux/llist.h>
 #include <uapi/linux/io_uring.h>
 
+struct uring_bpf_ops_kern;
+
 enum {
 	/*
 	 * A hint to not wake right away but delay until there are enough of
@@ -276,6 +278,7 @@ struct io_ring_ctx {
 		struct io_rings		*rings;
 		struct percpu_ref	refs;
 
+		struct uring_bpf_ops_kern	*bpf_ops;
 		clockid_t		clockid;
 		enum tk_offsets		clock_offset;
 
