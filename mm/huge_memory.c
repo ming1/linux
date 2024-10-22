@@ -1165,6 +1165,11 @@ static struct folio *vma_alloc_anon_folio_pmd(struct vm_area_struct *vma,
 	}
 	folio_throttle_swaprate(folio, gfp);
 
+       /*
+	* When a folio is not zeroed during allocation (__GFP_ZERO not used),
+	* folio_zero_user() is used to make sure that the page corresponding
+	* to the faulting address will be hot in the cache after zeroing.
+	*/
 	if (!alloc_zeroed())
 		folio_zero_user(folio, addr);
 	/*
