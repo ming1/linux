@@ -1607,6 +1607,7 @@ static int __sched rt_mutex_slowlock_block(struct rt_mutex_base *lock,
 					   unsigned int state,
 					   struct hrtimer_sleeper *timeout,
 					   struct rt_mutex_waiter *waiter)
+	__releases(&lock->wait_lock) __acquires(&lock->wait_lock)
 {
 	struct rt_mutex *rtm = container_of(lock, struct rt_mutex, rtmutex);
 	struct task_struct *owner;
@@ -1818,6 +1819,7 @@ static __always_inline int __rt_mutex_lock(struct rt_mutex_base *lock,
  * @lock:	The underlying RT mutex
  * @wake_q:	The wake_q to wake tasks after we release the wait_lock
  */
+	__releases(&lock->wait_lock) __acquires(&lock->wait_lock)
 static void __sched rtlock_slowlock_locked(struct rt_mutex_base *lock,
 					   struct wake_q_head *wake_q)
 {
