@@ -377,7 +377,7 @@ static char *get_comm(char *buf)
 	if (errno != 0) {
 		if (debug_on)
 			fprintf(stderr, "wrong comm in follow buf:\n%s\n", buf);
-		free (comm_str);
+		free(comm_str);
 		return NULL;
 	}
 
