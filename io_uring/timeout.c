@@ -149,6 +149,8 @@ static void io_req_tw_fail_links(struct io_kiocb *link, struct io_tw_state *ts)
 			res = link->cqe.res;
 		link->link = NULL;
 		io_req_set_res(link, res, 0);
+		if (req_is_group_leader(link))
+			io_fail_group_members(link);
 		io_req_task_complete(link, ts);
 		link = nxt;
 	}
@@ -542,6 +544,10 @@ static int __io_timeout_prep(struct io_kiocb *req,
 
 	if (is_timeout_link) {
 		struct io_submit_link *link = &req->ctx->submit_state.link;
+
+		/* so far disallow IO group link timeout */
+		if (req->ctx->submit_state.group.head)
+			return -EINVAL;
 
 		if (!link->head)
 			return -EINVAL;
