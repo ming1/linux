@@ -2281,10 +2281,9 @@ static int __mmap_prepare(struct mmap_state *map, struct list_head *uf)
 
 
 static int __mmap_new_file_vma(struct mmap_state *map,
-			       struct vm_area_struct **vmap)
+			       struct vm_area_struct *vma)
 {
 	struct vma_iterator *vmi = map->vmi;
-	struct vm_area_struct *vma = *vmap;
 	int error;
 
 	vma->vm_file = get_file(map->file);
@@ -2352,7 +2351,7 @@ static int __mmap_new_vma(struct mmap_state *map, struct vm_area_struct **vmap)
 	}
 
 	if (map->file)
-		error = __mmap_new_file_vma(map, &vma);
+		error = __mmap_new_file_vma(map, vma);
 	else if (map->flags & VM_SHARED)
 		error = shmem_zero_setup(vma);
 	else
