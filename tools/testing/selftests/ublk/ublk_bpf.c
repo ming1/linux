@@ -64,6 +64,7 @@ struct dev_ctx {
 	int nr_files;
 	char *files[MAX_BACK_FILES];
 	int bpf_prog_id;
+	int bpf_aio_prog_id;
 	unsigned int	logging:1;
 	unsigned int	all:1;
 };
@@ -107,7 +108,10 @@ struct ublk_tgt {
 	unsigned int  cq_depth;
 	const struct ublk_tgt_ops *ops;
 	struct ublk_params params;
-	char backing_file[1024 - 8 - sizeof(struct ublk_params)];
+
+	int nr_backing_files;
+	unsigned long backing_file_size[MAX_BACK_FILES];
+	char backing_file[MAX_BACK_FILES][PATH_MAX];
 };
 
 struct ublk_queue {
@@ -133,12 +137,13 @@ struct ublk_dev {
 	struct ublksrv_ctrl_dev_info  dev_info;
 	struct ublk_queue q[UBLK_MAX_QUEUES];
 
-	int fds[2];	/* fds[0] points to /dev/ublkcN */
+	int fds[MAX_BACK_FILES + 1];	/* fds[0] points to /dev/ublkcN */
 	int nr_fds;
 	int ctrl_fd;
 	struct io_uring ring;
 
 	int bpf_prog_id;
+	int bpf_aio_prog_id;
 };
 
 #ifndef offsetof
@@ -983,7 +988,7 @@ static int cmd_dev_add(struct dev_ctx *ctx)
 	struct ublk_dev *dev;
 	int dev_id = ctx->dev_id;
 	char ublkb[64];
-	int ret;
+	int ret, i;
 
 	ops = ublk_find_tgt(tgt_type);
 	if (!ops) {
@@ -1022,6 +1027,13 @@ static int cmd_dev_add(struct dev_ctx *ctx)
 	dev->tgt.sq_depth = depth;
 	dev->tgt.cq_depth = depth;
 	dev->bpf_prog_id = ctx->bpf_prog_id;
+	dev->bpf_aio_prog_id = ctx->bpf_aio_prog_id;
+	for (i = 0; i < MAX_BACK_FILES; i++) {
+		if (ctx->files[i]) {
+			strcpy(dev->tgt.backing_file[i], ctx->files[i]);
+			dev->tgt.nr_backing_files++;
+		}
+	}
 
 	ret = ublk_ctrl_add_dev(dev);
 	if (ret < 0) {
@@ -1271,14 +1283,14 @@ static int cmd_dev_reg_bpf(struct dev_ctx *ctx)
 
 static int cmd_dev_help(char *exe)
 {
-	printf("%s add -t [null] [-q nr_queues] [-d depth] [-n dev_id] [--bpf_prog ublk_prog_id] [backfile1] [backfile2] ...\n", exe);
+	printf("%s add -t [null|loop] [-q nr_queues] [-d depth] [-n dev_id] [--bpf_prog ublk_prog_id] [--bpf_aio_prog ublk_aio_prog_id] [backfile1] [backfile2] ...\n", exe);
 	printf("\t default: nr_queues=2(max 4), depth=128(max 128), dev_id=-1(auto allocation)\n");
 	printf("%s del [-n dev_id] -a \n", exe);
 	printf("\t -a delete all devices -n delete specified device\n");
 	printf("%s list [-n dev_id] -a \n", exe);
 	printf("\t -a list all devices, -n list specified device, default -a \n");
-	printf("%s reg -t [null] bpf_prog_obj_path \n", exe);
-	printf("%s unreg -t [null]\n", exe);
+	printf("%s reg -t [null|loop] bpf_prog_obj_path \n", exe);
+	printf("%s unreg -t [null|loop]\n", exe);
 	return 0;
 }
 
@@ -1356,11 +1368,124 @@ exit:
 	return 0;
 }
 
+static void backing_file_tgt_deinit(struct ublk_dev *dev)
+{
+	int i;
+
+	for (i = 1; i < dev->nr_fds; i++) {
+		fsync(dev->fds[i]);
+		close(dev->fds[i]);
+	}
+}
+
+static int backing_file_tgt_init(struct ublk_dev *dev)
+{
+	int fd, i;
+
+	assert(dev->nr_fds == 1);
+
+	for (i = 0; i < dev->tgt.nr_backing_files; i++) {
+		char *file = dev->tgt.backing_file[i];
+		unsigned long bytes;
+		struct stat st;
+
+		ublk_dbg(UBLK_DBG_DEV, "%s: file %d: %s\n", __func__, i, file);
+
+		fd = open(file, O_RDWR | O_DIRECT);
+		if (fd < 0) {
+			ublk_err("%s: backing file %s can't be opened: %s\n",
+					__func__, file, strerror(errno));
+			return -EBADF;
+		}
+
+		if (fstat(fd, &st) < 0) {
+			close(fd);
+			return -EBADF;
+		}
+
+		if (S_ISREG(st.st_mode))
+			bytes = st.st_size;
+		else if (S_ISBLK(st.st_mode)) {
+			if (ioctl(fd, BLKGETSIZE64, &bytes) != 0)
+				return -1;
+		} else {
+			return -EINVAL;
+		}
+
+		dev->tgt.backing_file_size[i] = bytes;
+		dev->fds[dev->nr_fds] = fd;
+		dev->nr_fds += 1;
+	}
+
+	return 0;
+}
+
+static int loop_bpf_setup_fd(unsigned dev_id, int fd)
+{
+	int map_fd;
+	int err;
+
+	map_fd = bpf_obj_get("/sys/fs/bpf/ublk/loop/fd_map");
+	if (map_fd < 0) {
+		ublk_err("Error getting map file descriptor from pinned map\n");
+		return -EINVAL;
+	}
+
+	err = bpf_map_update_elem(map_fd, &dev_id, &fd, BPF_ANY);
+	if (err) {
+		ublk_err("Error updating map element: %d\n", errno);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int ublk_loop_tgt_init(struct ublk_dev *dev)
+{
+	unsigned long long bytes;
+	int ret;
+	struct ublk_params p = {
+		.types = UBLK_PARAM_TYPE_BASIC | UBLK_PARAM_TYPE_BPF,
+		.basic = {
+			.logical_bs_shift	= 9,
+			.physical_bs_shift	= 12,
+			.io_opt_shift	= 12,
+			.io_min_shift	= 9,
+			.max_sectors = dev->dev_info.max_io_buf_bytes >> 9,
+		},
+		.bpf = {
+			.flags = UBLK_BPF_HAS_OPS_ID | UBLK_BPF_HAS_AIO_OPS_ID,
+			.ops_id = dev->bpf_prog_id,
+			.aio_ops_id = dev->bpf_aio_prog_id,
+		},
+	};
+
+	assert(dev->tgt.nr_backing_files == 1);
+	ret = backing_file_tgt_init(dev);
+	if (ret)
+		return ret;
+
+	assert(loop_bpf_setup_fd(dev->dev_info.dev_id, dev->fds[1]) == 0);
+
+	bytes = dev->tgt.backing_file_size[0];
+	dev->tgt.dev_size = bytes;
+	p.basic.dev_sectors = bytes >> 9;
+	dev->tgt.params = p;
+
+	return 0;
+}
+
+
 static const struct ublk_tgt_ops tgt_ops_list[] = {
 	{
 		.name = "null",
 		.init_tgt = ublk_null_tgt_init,
 		.queue_io = ublk_null_queue_io,
+	},
+	{
+		.name = "loop",
+		.init_tgt = ublk_loop_tgt_init,
+		.deinit_tgt = backing_file_tgt_deinit,
 	},
 };
 
@@ -1389,6 +1514,7 @@ int main(int argc, char *argv[])
 		{ "debug_mask",		1,	NULL,  0  },
 		{ "quiet",		0,	NULL,  0  },
 		{ "bpf_prog",		1,	NULL,  0  },
+		{ "bpf_aio_prog",	1,	NULL,  0  },
 		{ 0, 0, 0, 0 }
 	};
 	int option_idx, opt;
@@ -1398,6 +1524,7 @@ int main(int argc, char *argv[])
 		.nr_hw_queues	=	2,
 		.dev_id		=	-1,
 		.bpf_prog_id	=	-1,
+		.bpf_aio_prog_id	=	-1,
 	};
 	int ret = -EINVAL, i;
 
@@ -1433,6 +1560,8 @@ int main(int argc, char *argv[])
 				ctx.bpf_prog_id = strtol(optarg, NULL, 10);
 				ctx.flags |= UBLK_F_BPF;
 			}
+			if (!strcmp(longopts[option_idx].name, "bpf_aio_prog"))
+				ctx.bpf_aio_prog_id = strtol(optarg, NULL, 10);
 			break;
 		}
 	}
