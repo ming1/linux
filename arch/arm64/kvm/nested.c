@@ -632,9 +632,9 @@ static struct kvm_s2_mmu *get_s2_mmu_nested(struct kvm_vcpu *vcpu)
 	/* Set the scene for the next search */
 	kvm->arch.nested_mmus_next = (i + 1) % kvm->arch.nested_mmus_size;
 
-	/* Clear the old state */
+	/* Make sure we don't forget to do the laundry */
 	if (kvm_s2_mmu_valid(s2_mmu))
-		kvm_stage2_unmap_range(s2_mmu, 0, kvm_phys_size(s2_mmu));
+		s2_mmu->pending_unmap = true;
 
 	/*
 	 * The virtual VMID (modulo CnP) will be used as a key when matching
@@ -650,6 +650,16 @@ static struct kvm_s2_mmu *get_s2_mmu_nested(struct kvm_vcpu *vcpu)
 
 out:
 	atomic_inc(&s2_mmu->refcnt);
+
+	/*
+	 * Set the vCPU request to perform an unmap, even if the pending unmap
+	 * originates from another vCPU. This guarantees that the MMU has been
+	 * completely unmapped before any vCPU actually uses it, and allows
+	 * multiple vCPUs to lend a hand with completing the unmap.
+	 */
+	if (s2_mmu->pending_unmap)
+		kvm_make_request(KVM_REQ_NESTED_S2_UNMAP, vcpu);
+
 	return s2_mmu;
 }
 
@@ -663,6 +673,13 @@ void kvm_init_nested_s2_mmu(struct kvm_s2_mmu *mmu)
 
 void kvm_vcpu_load_hw_mmu(struct kvm_vcpu *vcpu)
 {
+	/*
+	 * The vCPU kept its reference on the MMU after the last put, keep
+	 * rolling with it.
+	 */
+	if (vcpu->arch.hw_mmu)
+		return;
+
 	if (is_hyp_ctxt(vcpu)) {
 		vcpu->arch.hw_mmu = &vcpu->kvm->arch.mmu;
 	} else {
@@ -674,10 +691,18 @@ void kvm_vcpu_load_hw_mmu(struct kvm_vcpu *vcpu)
 
 void kvm_vcpu_put_hw_mmu(struct kvm_vcpu *vcpu)
 {
-	if (kvm_is_nested_s2_mmu(vcpu->kvm, vcpu->arch.hw_mmu)) {
+	/*
+	 * Keep a reference on the associated stage-2 MMU if the vCPU is
+	 * scheduling out and not in WFI emulation, suggesting it is likely to
+	 * reuse the MMU sometime soon.
+	 */
+	if (vcpu->scheduled_out && !vcpu_get_flag(vcpu, IN_WFI))
+		return;
+
+	if (kvm_is_nested_s2_mmu(vcpu->kvm, vcpu->arch.hw_mmu))
 		atomic_dec(&vcpu->arch.hw_mmu->refcnt);
-		vcpu->arch.hw_mmu = NULL;
-	}
+
+	vcpu->arch.hw_mmu = NULL;
 }
 
 /*
@@ -730,7 +755,7 @@ void kvm_nested_s2_wp(struct kvm *kvm)
 	}
 }
 
-void kvm_nested_s2_unmap(struct kvm *kvm)
+void kvm_nested_s2_unmap(struct kvm *kvm, bool may_block)
 {
 	int i;
 
@@ -740,7 +765,7 @@ void kvm_nested_s2_unmap(struct kvm *kvm)
 		struct kvm_s2_mmu *mmu = &kvm->arch.nested_mmus[i];
 
 		if (kvm_s2_mmu_valid(mmu))
-			kvm_stage2_unmap_range(mmu, 0, kvm_phys_size(mmu));
+			kvm_stage2_unmap_range(mmu, 0, kvm_phys_size(mmu), may_block);
 	}
 }
 
@@ -908,15 +933,15 @@ static void limit_nv_id_regs(struct kvm *kvm)
 	kvm_set_vm_id_reg(kvm, SYS_ID_AA64DFR0_EL1, val);
 }
 
-u64 kvm_vcpu_sanitise_vncr_reg(const struct kvm_vcpu *vcpu, enum vcpu_sysreg sr)
+u64 kvm_vcpu_apply_reg_masks(const struct kvm_vcpu *vcpu,
+			     enum vcpu_sysreg sr, u64 v)
 {
-	u64 v = ctxt_sys_reg(&vcpu->arch.ctxt, sr);
 	struct kvm_sysreg_masks *masks;
 
 	masks = vcpu->kvm->arch.sysreg_masks;
 
 	if (masks) {
-		sr -= __VNCR_START__;
+		sr -= __SANITISED_REG_START__;
 
 		v &= ~masks->mask[sr].res0;
 		v |= masks->mask[sr].res1;
@@ -927,7 +952,11 @@ u64 kvm_vcpu_sanitise_vncr_reg(const struct kvm_vcpu *vcpu, enum vcpu_sysreg sr)
 
 static void set_sysreg_masks(struct kvm *kvm, int sr, u64 res0, u64 res1)
 {
-	int i = sr - __VNCR_START__;
+	int i = sr - __SANITISED_REG_START__;
+
+	BUILD_BUG_ON(!__builtin_constant_p(sr));
+	BUILD_BUG_ON(sr < __SANITISED_REG_START__);
+	BUILD_BUG_ON(sr >= NR_SYS_REGS);
 
 	kvm->arch.sysreg_masks->mask[i].res0 = res0;
 	kvm->arch.sysreg_masks->mask[i].res1 = res1;
@@ -1025,7 +1054,7 @@ int kvm_init_nv_sysregs(struct kvm *kvm)
 		res0 |= HCRX_EL2_PTTWI;
 	if (!kvm_has_feat(kvm, ID_AA64MMFR3_EL1, SCTLRX, IMP))
 		res0 |= HCRX_EL2_SCTLR2En;
-	if (!kvm_has_feat(kvm, ID_AA64MMFR3_EL1, TCRX, IMP))
+	if (!kvm_has_tcr2(kvm))
 		res0 |= HCRX_EL2_TCR2En;
 	if (!kvm_has_feat(kvm, ID_AA64ISAR2_EL1, MOPS, IMP))
 		res0 |= (HCRX_EL2_MSCEn | HCRX_EL2_MCE2);
@@ -1076,9 +1105,9 @@ int kvm_init_nv_sysregs(struct kvm *kvm)
 		res0 |= (HFGxTR_EL2_nSMPRI_EL1 | HFGxTR_EL2_nTPIDR2_EL0);
 	if (!kvm_has_feat(kvm, ID_AA64PFR1_EL1, THE, IMP))
 		res0 |= HFGxTR_EL2_nRCWMASK_EL1;
-	if (!kvm_has_feat(kvm, ID_AA64MMFR3_EL1, S1PIE, IMP))
+	if (!kvm_has_s1pie(kvm))
 		res0 |= (HFGxTR_EL2_nPIRE0_EL1 | HFGxTR_EL2_nPIR_EL1);
-	if (!kvm_has_feat(kvm, ID_AA64MMFR3_EL1, S1POE, IMP))
+	if (!kvm_has_s1poe(kvm))
 		res0 |= (HFGxTR_EL2_nPOR_EL0 | HFGxTR_EL2_nPOR_EL1);
 	if (!kvm_has_feat(kvm, ID_AA64MMFR3_EL1, S2POE, IMP))
 		res0 |= HFGxTR_EL2_nS2POR_EL1;
@@ -1175,6 +1204,28 @@ int kvm_init_nv_sysregs(struct kvm *kvm)
 		res0 |= ~(res0 | res1);
 	set_sysreg_masks(kvm, HAFGRTR_EL2, res0, res1);
 
+	/* TCR2_EL2 */
+	res0 = TCR2_EL2_RES0;
+	res1 = TCR2_EL2_RES1;
+	if (!kvm_has_feat(kvm, ID_AA64MMFR3_EL1, D128, IMP))
+		res0 |= (TCR2_EL2_DisCH0 | TCR2_EL2_DisCH1 | TCR2_EL2_D128);
+	if (!kvm_has_feat(kvm, ID_AA64MMFR3_EL1, MEC, IMP))
+		res0 |= TCR2_EL2_AMEC1 | TCR2_EL2_AMEC0;
+	if (!kvm_has_feat(kvm, ID_AA64MMFR1_EL1, HAFDBS, HAFT))
+		res0 |= TCR2_EL2_HAFT;
+	if (!kvm_has_feat(kvm, ID_AA64PFR1_EL1, THE, IMP))
+		res0 |= TCR2_EL2_PTTWI | TCR2_EL2_PnCH;
+	if (!kvm_has_feat(kvm, ID_AA64MMFR3_EL1, AIE, IMP))
+		res0 |= TCR2_EL2_AIE;
+	if (!kvm_has_s1poe(kvm))
+		res0 |= TCR2_EL2_POE | TCR2_EL2_E0POE;
+	if (!kvm_has_s1pie(kvm))
+		res0 |= TCR2_EL2_PIE;
+	if (!kvm_has_feat(kvm, ID_AA64MMFR1_EL1, VH, IMP))
+		res0 |= (TCR2_EL2_E0POE | TCR2_EL2_D128 |
+			 TCR2_EL2_AMEC1 | TCR2_EL2_DisCH0 | TCR2_EL2_DisCH1);
+	set_sysreg_masks(kvm, TCR2_EL2, res0, res1);
+
 	/* SCTLR_EL1 */
 	res0 = SCTLR_EL1_RES0;
 	res1 = SCTLR_EL1_RES1;
@@ -1183,4 +1234,18 @@ int kvm_init_nv_sysregs(struct kvm *kvm)
 	set_sysreg_masks(kvm, SCTLR_EL1, res0, res1);
 
 	return 0;
+}
+
+void check_nested_vcpu_requests(struct kvm_vcpu *vcpu)
+{
+	if (kvm_check_request(KVM_REQ_NESTED_S2_UNMAP, vcpu)) {
+		struct kvm_s2_mmu *mmu = vcpu->arch.hw_mmu;
+
+		write_lock(&vcpu->kvm->mmu_lock);
+		if (mmu->pending_unmap) {
+			kvm_stage2_unmap_range(mmu, 0, kvm_phys_size(mmu), true);
+			mmu->pending_unmap = false;
+		}
+		write_unlock(&vcpu->kvm->mmu_lock);
+	}
 }
