@@ -615,6 +615,7 @@ void validate_mm(struct mm_struct *mm)
 			anon_vma_unlock_read(anon_vma);
 		}
 #endif
+		/* Check for a infinite loop */
 		if (++i > mm->map_count + 10) {
 			i = -1;
 			break;
