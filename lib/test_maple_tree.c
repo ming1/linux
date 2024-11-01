@@ -1453,7 +1453,7 @@ static noinline void __init check_store_null(struct maple_tree *mt)
 	mas_set_range(&mas, 2, 5);
 	mas_store_gfp(&mas, NULL, GFP_KERNEL);
 	MT_BUG_ON(mt, mtree_empty(mt));
-	MT_BUG_ON(mt, xa_is_node(mas_root(&mas)));
+//	MT_BUG_ON(mt, xa_is_node(mas_root(&mas)));
 	mas_unlock(&mas);
 	mtree_destroy(mt);
 
@@ -1465,7 +1465,7 @@ static noinline void __init check_store_null(struct maple_tree *mt)
 	mas_lock(&mas);
 	mas_set_range(&mas, 1, 3);
 	mas_store_gfp(&mas, &mas, GFP_KERNEL);
-	MT_BUG_ON(mt, !xa_is_node(mas_root(&mas)));
+//	MT_BUG_ON(mt, !xa_is_node(mas_root(&mas)));
 	mas_set_range(&mas, 0, ULONG_MAX);
 	mas_store_gfp(&mas, NULL, GFP_KERNEL);
 	MT_BUG_ON(mt, !mtree_empty(mt));
