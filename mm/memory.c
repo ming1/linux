@@ -3081,13 +3081,18 @@ static inline int __wp_page_copy_user(struct page *dst, struct page *src,
 			update_mmu_cache_range(vmf, vma, addr, vmf->pte, 1);
 	}
 
+	/* If the mm is a remote mm, copy in the page using access_remote_vm() */
+	if (current->mm != mm) {
+		if (access_remote_vm(mm, (unsigned long)uaddr, kaddr, PAGE_SIZE, 0) != PAGE_SIZE)
+			goto warn;
+	}
 	/*
 	 * This really shouldn't fail, because the page is there
 	 * in the page tables. But it might just be unreadable,
 	 * in which case we just give up and fill the result with
 	 * zeroes.
 	 */
-	if (__copy_from_user_inatomic(kaddr, uaddr, PAGE_SIZE)) {
+	else if (__copy_from_user_inatomic(kaddr, uaddr, PAGE_SIZE)) {
 		if (vmf->pte)
 			goto warn;
 
