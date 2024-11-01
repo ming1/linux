@@ -3332,12 +3332,11 @@ static ssize_t shmem_file_splice_read(struct file *in, loff_t *ppos,
 		 * Fallback to PAGE_SIZE splice if the large folio has hwpoisoned
 		 * pages.
 		 */
-		if (likely(!fallback_page_splice)) {
-			size = len;
-		} else {
+		size = len;
+		if (unlikely(fallback_page_splice)) {
 			size_t offset = *ppos & ~PAGE_MASK;
 
-			size = min_t(loff_t, PAGE_SIZE - offset, len);
+			size = umin(size, PAGE_SIZE - offset);
 		}
 		part = min_t(loff_t, isize - *ppos, size);
 
