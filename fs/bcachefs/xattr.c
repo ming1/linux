@@ -565,13 +565,6 @@ static int bch2_xattr_bcachefs_set(const struct xattr_handler *handler,
 	ret = bch2_write_inode(c, inode, inode_opt_set_fn, &s, 0);
 err:
 	mutex_unlock(&inode->ei_update_lock);
-
-	if (value &&
-	    (opt_id == Opt_background_target ||
-	     opt_id == Opt_background_compression ||
-	     (opt_id == Opt_compression && !inode_opt_get(c, &inode->ei_inode, background_compression))))
-		bch2_set_rebalance_needs_scan(c, inode->ei_inode.bi_inum);
-
 err_class_exit:
 	return bch2_err_class(ret);
 }
@@ -609,7 +602,7 @@ static const struct xattr_handler bch_xattr_bcachefs_effective_handler = {
 
 #endif /* NO_BCACHEFS_FS */
 
-const struct xattr_handler *bch2_xattr_handlers[] = {
+const struct xattr_handler * const bch2_xattr_handlers[] = {
 	&bch_xattr_user_handler,
 	&bch_xattr_trusted_handler,
 	&bch_xattr_security_handler,

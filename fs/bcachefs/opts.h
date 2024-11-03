@@ -473,6 +473,18 @@ enum fsck_err_opts {
 	  BCH2_NO_SB_OPT,			true,			\
 	  NULL,		"Enable nocow mode: enables runtime locking in\n"\
 			"data move path needed if nocow will ever be in use\n")\
+	x(copygc_enabled,		u8,				\
+	  OPT_FS|OPT_MOUNT,						\
+	  OPT_BOOL(),							\
+	  BCH2_NO_SB_OPT,			true,			\
+	  NULL,		"Enable copygc: disable for debugging, or to\n"\
+			"quiet the system when doing performance testing\n")\
+	x(rebalance_enabled,		u8,				\
+	  OPT_FS|OPT_MOUNT,						\
+	  OPT_BOOL(),							\
+	  BCH2_NO_SB_OPT,			true,			\
+	  NULL,		"Enable rebalance: disable for debugging, or to\n"\
+			"quiet the system when doing performance testing\n")\
 	x(no_data_io,			u8,				\
 	  OPT_MOUNT,							\
 	  OPT_BOOL(),							\
@@ -624,14 +636,39 @@ struct bch_io_opts {
 #define x(_name, _bits)	u##_bits _name;
 	BCH_INODE_OPTS()
 #undef x
+#define x(_name, _bits)	u64 _name##_from_inode:1;
+	BCH_INODE_OPTS()
+#undef x
 };
 
-static inline unsigned background_compression(struct bch_io_opts opts)
+static inline void bch2_io_opts_fixups(struct bch_io_opts *opts)
 {
-	return opts.background_compression ?: opts.compression;
+	if (!opts->background_target)
+		opts->background_target = opts->foreground_target;
+	if (!opts->background_compression)
+		opts->background_compression = opts->compression;
+	if (opts->nocow) {
+		opts->compression = opts->background_compression = 0;
+		opts->data_checksum = 0;
+		opts->erasure_code = 0;
+	}
 }
 
 struct bch_io_opts bch2_opts_to_inode_opts(struct bch_opts);
 bool bch2_opt_is_inode_opt(enum bch_opt_id);
+
+/* rebalance opts: */
+
+static inline struct bch_extent_rebalance io_opts_to_rebalance_opts(struct bch_io_opts *opts)
+{
+	return (struct bch_extent_rebalance) {
+		.type = BIT(BCH_EXTENT_ENTRY_rebalance),
+#define x(_name)							\
+		._name = opts->_name,					\
+		._name##_from_inode = opts->_name##_from_inode,
+		BCH_REBALANCE_OPTS()
+#undef x
+	};
+};
 
 #endif /* _BCACHEFS_OPTS_H */
