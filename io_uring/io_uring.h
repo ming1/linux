@@ -196,8 +196,9 @@ static __always_inline bool io_fill_cqe_req(struct io_ring_ctx *ctx,
 	if (unlikely(!io_get_cqe(ctx, &cqe)))
 		return false;
 
-
-	memcpy(cqe, &req->cqe, sizeof(*cqe));
+	cqe->user_data = req->cqe.user_data;
+	cqe->res = req->cqe.res;
+	cqe->flags = req->cqe.flags;
 	if (ctx->flags & IORING_SETUP_CQE32) {
 		memcpy(cqe->big_cqe, &req->big_cqe, sizeof(*cqe));
 		memset(&req->big_cqe, 0, sizeof(req->big_cqe));
