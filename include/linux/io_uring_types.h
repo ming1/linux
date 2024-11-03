@@ -479,6 +479,7 @@ enum {
 	REQ_F_BL_NO_RECYCLE_BIT,
 	REQ_F_BUFFERS_COMMIT_BIT,
 	REQ_F_GROUP_LEADER_BIT,
+	REQ_F_BUF_NODE_BIT,
 
 	/* not a real bit, just to check we're not overflowing the space */
 	__REQ_F_LAST_BIT,
@@ -561,6 +562,8 @@ enum {
 	REQ_F_BUFFERS_COMMIT	= IO_REQ_FLAG(REQ_F_BUFFERS_COMMIT_BIT),
 	/* sqe group lead */
 	REQ_F_GROUP_LEADER	= IO_REQ_FLAG(REQ_F_GROUP_LEADER_BIT),
+	/* buf node is valid */
+	REQ_F_BUF_NODE		= IO_REQ_FLAG(REQ_F_BUF_NODE_BIT),
 };
 
 typedef void (*io_req_tw_func_t)(struct io_kiocb *req, struct io_tw_state *ts);
@@ -641,6 +644,8 @@ struct io_kiocb {
 		 * REQ_F_BUFFER_RING is set.
 		 */
 		struct io_buffer_list	*buf_list;
+
+		struct io_rsrc_node	*buf_node;
 	};
 
 	union {
@@ -650,7 +655,7 @@ struct io_kiocb {
 		__poll_t apoll_events;
 	};
 
-	struct io_rsrc_node		*rsrc_nodes[2];
+	struct io_rsrc_node		*file_node;
 
 	atomic_t			refs;
 	bool				cancel_seq_set;
