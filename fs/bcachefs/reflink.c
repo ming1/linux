@@ -27,6 +27,19 @@ static inline unsigned bkey_type_to_indirect(const struct bkey *k)
 	}
 }
 
+int bch2_indirect_extent_error(struct btree_trans *trans, struct bkey_s_c_reflink_p k)
+{
+	bch_err_inum_offset_ratelimited(trans->c,
+		k.k->p.inode,
+		k.k->p.offset << 9,
+		"%llu len %u points to nonexistent indirect extent %llu",
+		k.k->p.offset,
+		k.k->size,
+		le64_to_cpu(k.v->idx));
+	bch2_inconsistent_error(trans->c);
+	return -BCH_ERR_missing_indirect_extent;
+}
+
 /* reflink pointers */
 
 int bch2_reflink_p_validate(struct bch_fs *c, struct bkey_s_c k,
@@ -547,7 +560,7 @@ s64 bch2_remap_range(struct bch_fs *c,
 				min(src_k.k->p.offset - src_want.offset,
 				    dst_end.offset - dst_iter.pos.offset));
 
-		ret =   bch2_bkey_set_needs_rebalance(c, new_dst.k, &opts) ?:
+		ret =   bch2_bkey_set_needs_rebalance(c, &opts, new_dst.k) ?:
 			bch2_extent_update(trans, dst_inum, &dst_iter,
 					new_dst.k, &disk_res,
 					new_i_size, i_sectors_delta,
