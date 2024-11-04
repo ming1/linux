@@ -224,7 +224,7 @@ static int bme680_read_calib(struct bme680_data *data,
 	calib->res_heat_val = data->bme680_cal_buf_3[RES_HEAT_VAL];
 
 	calib->res_heat_range = FIELD_GET(BME680_RHRANGE_MASK,
-					data->bme680_cal_buf_3[RES_HEAT_RANGE]);
+					  data->bme680_cal_buf_3[RES_HEAT_RANGE]);
 
 	calib->range_sw_err = FIELD_GET(BME680_RSERROR_MASK,
 					data->bme680_cal_buf_3[RANGE_SW_ERR]);
@@ -438,19 +438,19 @@ static u32 bme680_compensate_gas(struct bme680_data *data, u16 gas_res_adc,
 	u32 calc_gas_res;
 
 	/* Look up table for the possible gas range values */
-	static const u32 lookupTable[16] = {2147483647u, 2147483647u,
-				2147483647u, 2147483647u, 2147483647u,
-				2126008810u, 2147483647u, 2130303777u,
-				2147483647u, 2147483647u, 2143188679u,
-				2136746228u, 2147483647u, 2126008810u,
-				2147483647u, 2147483647u};
+	static const u32 lookup_table[16] = {
+		2147483647u, 2147483647u, 2147483647u, 2147483647u,
+		2147483647u, 2126008810u, 2147483647u, 2130303777u,
+		2147483647u, 2147483647u, 2143188679u, 2136746228u,
+		2147483647u, 2126008810u, 2147483647u, 2147483647u
+	};
 
-	var1 = ((1340 + (5 * (s64) calib->range_sw_err)) *
-			((s64) lookupTable[gas_range])) >> 16;
+	var1 = ((1340LL + (5 * calib->range_sw_err)) *
+			(lookup_table[gas_range])) >> 16;
 	var2 = ((gas_res_adc << 15) - 16777216) + var1;
 	var3 = ((125000 << (15 - gas_range)) * var1) >> 9;
 	var3 += (var2 >> 1);
-	calc_gas_res = div64_s64(var3, (s64) var2);
+	calc_gas_res = div64_s64(var3, (s64)var2);
 
 	return calc_gas_res;
 }
@@ -468,7 +468,7 @@ static u8 bme680_calc_heater_res(struct bme680_data *data, u16 temp)
 	if (temp > 400) /* Cap temperature */
 		temp = 400;
 
-	var1 = (((s32) BME680_AMB_TEMP * calib->par_gh3) / 1000) * 256;
+	var1 = (((s32)BME680_AMB_TEMP * calib->par_gh3) / 1000) * 256;
 	var2 = (calib->par_gh1 + 784) * (((((calib->par_gh2 + 154009) *
 						temp * 5) / 100)
 						+ 3276800) / 10);
@@ -546,7 +546,7 @@ static int bme680_wait_for_eoc(struct bme680_data *data)
 			   data->oversampling_humid) * 1936) + (477 * 4) +
 			   (477 * 5) + 1000 + (data->heater_dur * 1000);
 
-	usleep_range(wait_eoc_us, wait_eoc_us + 100);
+	fsleep(wait_eoc_us);
 
 	ret = regmap_read(data->regmap, BME680_REG_MEAS_STAT_0, &data->check);
 	if (ret) {
@@ -571,9 +571,8 @@ static int bme680_chip_config(struct bme680_data *data)
 	int ret;
 	u8 osrs;
 
-	osrs = FIELD_PREP(
-		BME680_OSRS_HUMIDITY_MASK,
-		bme680_oversampling_to_reg(data->oversampling_humid));
+	osrs = FIELD_PREP(BME680_OSRS_HUMIDITY_MASK,
+			  bme680_oversampling_to_reg(data->oversampling_humid));
 	/*
 	 * Highly recommended to set oversampling of humidity before
 	 * temperature/pressure oversampling.
@@ -587,8 +586,7 @@ static int bme680_chip_config(struct bme680_data *data)
 
 	/* IIR filter settings */
 	ret = regmap_update_bits(data->regmap, BME680_REG_CONFIG,
-				 BME680_FILTER_MASK,
-				 BME680_FILTER_COEFF_VAL);
+				 BME680_FILTER_MASK, BME680_FILTER_COEFF_VAL);
 	if (ret < 0) {
 		dev_err(dev, "failed to write config register\n");
 		return ret;
@@ -649,23 +647,20 @@ static int bme680_gas_config(struct bme680_data *data)
 	return ret;
 }
 
-static int bme680_read_temp(struct bme680_data *data, int *val)
+static int bme680_read_temp(struct bme680_data *data, s16 *comp_temp)
 {
 	int ret;
 	u32 adc_temp;
-	s16 comp_temp;
 
 	ret = bme680_read_temp_adc(data, &adc_temp);
 	if (ret)
 		return ret;
 
-	comp_temp = bme680_compensate_temp(data, adc_temp);
-	*val = comp_temp * 10; /* Centidegrees to millidegrees */
-	return IIO_VAL_INT;
+	*comp_temp = bme680_compensate_temp(data, adc_temp);
+	return 0;
 }
 
-static int bme680_read_press(struct bme680_data *data,
-			     int *val, int *val2)
+static int bme680_read_press(struct bme680_data *data, u32 *comp_press)
 {
 	int ret;
 	u32 adc_press;
@@ -679,16 +674,14 @@ static int bme680_read_press(struct bme680_data *data,
 	if (ret)
 		return ret;
 
-	*val = bme680_compensate_press(data, adc_press, t_fine);
-	*val2 = 1000;
-	return IIO_VAL_FRACTIONAL;
+	*comp_press = bme680_compensate_press(data, adc_press, t_fine);
+	return 0;
 }
 
-static int bme680_read_humid(struct bme680_data *data,
-			     int *val, int *val2)
+static int bme680_read_humid(struct bme680_data *data, u32 *comp_humidity)
 {
 	int ret;
-	u32 adc_humidity, comp_humidity;
+	u32 adc_humidity;
 	s32 t_fine;
 
 	ret = bme680_get_t_fine(data, &t_fine);
@@ -699,15 +692,11 @@ static int bme680_read_humid(struct bme680_data *data,
 	if (ret)
 		return ret;
 
-	comp_humidity = bme680_compensate_humid(data, adc_humidity, t_fine);
-
-	*val = comp_humidity;
-	*val2 = 1000;
-	return IIO_VAL_FRACTIONAL;
+	*comp_humidity = bme680_compensate_humid(data, adc_humidity, t_fine);
+	return 0;
 }
 
-static int bme680_read_gas(struct bme680_data *data,
-			   int *val)
+static int bme680_read_gas(struct bme680_data *data, int *comp_gas_res)
 {
 	struct device *dev = regmap_get_device(data->regmap);
 	int ret;
@@ -742,9 +731,8 @@ static int bme680_read_gas(struct bme680_data *data,
 	}
 
 	gas_range = FIELD_GET(BME680_GAS_RANGE_MASK, gas_regs_val);
-
-	*val = bme680_compensate_gas(data, adc_gas_res, gas_range);
-	return IIO_VAL_INT;
+	*comp_gas_res = bme680_compensate_gas(data, adc_gas_res, gas_range);
+	return 0;
 }
 
 static int bme680_read_raw(struct iio_dev *indio_dev,
@@ -752,7 +740,8 @@ static int bme680_read_raw(struct iio_dev *indio_dev,
 			   int *val, int *val2, long mask)
 {
 	struct bme680_data *data = iio_priv(indio_dev);
-	int ret;
+	int chan_val, ret;
+	s16 temp_chan_val;
 
 	guard(mutex)(&data->lock);
 
@@ -769,13 +758,35 @@ static int bme680_read_raw(struct iio_dev *indio_dev,
 	case IIO_CHAN_INFO_PROCESSED:
 		switch (chan->type) {
 		case IIO_TEMP:
-			return bme680_read_temp(data, val);
+			ret = bme680_read_temp(data, &temp_chan_val);
+			if (ret)
+				return ret;
+
+			*val = temp_chan_val * 10;
+			return IIO_VAL_INT;
 		case IIO_PRESSURE:
-			return bme680_read_press(data, val, val2);
+			ret = bme680_read_press(data, &chan_val);
+			if (ret)
+				return ret;
+
+			*val = chan_val;
+			*val2 = 1000;
+			return IIO_VAL_FRACTIONAL;
 		case IIO_HUMIDITYRELATIVE:
-			return bme680_read_humid(data, val, val2);
+			ret = bme680_read_humid(data, &chan_val);
+			if (ret)
+				return ret;
+
+			*val = chan_val;
+			*val2 = 1000;
+			return IIO_VAL_FRACTIONAL;
 		case IIO_RESISTANCE:
-			return bme680_read_gas(data, val);
+			ret = bme680_read_gas(data, &chan_val);
+			if (ret)
+				return ret;
+
+			*val = chan_val;
+			return IIO_VAL_INT;
 		default:
 			return -EINVAL;
 		}
@@ -889,12 +900,11 @@ int bme680_core_probe(struct device *dev, struct regmap *regmap,
 	data->heater_temp = 320; /* degree Celsius */
 	data->heater_dur = 150;  /* milliseconds */
 
-	ret = regmap_write(regmap, BME680_REG_SOFT_RESET,
-			   BME680_CMD_SOFTRESET);
+	ret = regmap_write(regmap, BME680_REG_SOFT_RESET, BME680_CMD_SOFTRESET);
 	if (ret < 0)
 		return dev_err_probe(dev, ret, "Failed to reset chip\n");
 
-	usleep_range(BME680_STARTUP_TIME_US, BME680_STARTUP_TIME_US + 1000);
+	fsleep(BME680_STARTUP_TIME_US);
 
 	ret = regmap_read(regmap, BME680_REG_CHIP_ID, &data->check);
 	if (ret < 0)
