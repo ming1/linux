@@ -463,7 +463,7 @@ static ssize_t export_store(const struct class *class,
 	desc = gpio_to_desc(gpio);
 	/* reject invalid GPIOs */
 	if (!desc) {
-		pr_warn("%s: invalid GPIO %ld\n", __func__, gpio);
+		pr_debug_ratelimited("%s: invalid GPIO %ld\n", __func__, gpio);
 		return -EINVAL;
 	}
 
@@ -473,7 +473,7 @@ static ssize_t export_store(const struct class *class,
 
 	offset = gpio_chip_hwgpio(desc);
 	if (!gpiochip_line_is_valid(guard.gc, offset)) {
-		pr_warn("%s: GPIO %ld masked\n", __func__, gpio);
+		pr_debug_ratelimited("%s: GPIO %ld masked\n", __func__, gpio);
 		return -EINVAL;
 	}
 
@@ -520,7 +520,7 @@ static ssize_t unexport_store(const struct class *class,
 	desc = gpio_to_desc(gpio);
 	/* reject bogus commands (gpiod_unexport() ignores them) */
 	if (!desc) {
-		pr_warn("%s: invalid GPIO %ld\n", __func__, gpio);
+		pr_debug_ratelimited("%s: invalid GPIO %ld\n", __func__, gpio);
 		return -EINVAL;
 	}
 
@@ -549,11 +549,10 @@ static struct attribute *gpio_class_attrs[] = {
 };
 ATTRIBUTE_GROUPS(gpio_class);
 
-static struct class gpio_class = {
+static const struct class gpio_class = {
 	.name =		"gpio",
-	.class_groups = gpio_class_groups,
+	.class_groups =	gpio_class_groups,
 };
-
 
 /**
  * gpiod_export - export a GPIO through sysfs
@@ -573,11 +572,10 @@ static struct class gpio_class = {
  */
 int gpiod_export(struct gpio_desc *desc, bool direction_may_change)
 {
-	const char *ioname = NULL;
 	struct gpio_device *gdev;
 	struct gpiod_data *data;
 	struct device *dev;
-	int status, offset;
+	int status;
 
 	/* can't export until sysfs is available ... */
 	if (!class_is_registered(&gpio_class)) {
@@ -626,14 +624,9 @@ int gpiod_export(struct gpio_desc *desc, bool direction_may_change)
 	else
 		data->direction_can_change = false;
 
-	offset = gpio_chip_hwgpio(desc);
-	if (guard.gc->names && guard.gc->names[offset])
-		ioname = guard.gc->names[offset];
-
 	dev = device_create_with_groups(&gpio_class, &gdev->dev,
 					MKDEV(0, 0), data, gpio_groups,
-					ioname ? ioname : "gpio%u",
-					desc_to_gpio(desc));
+					"gpio%u", desc_to_gpio(desc));
 	if (IS_ERR(dev)) {
 		status = PTR_ERR(dev);
 		goto err_free_data;
