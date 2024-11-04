@@ -47,7 +47,7 @@ static void io_req_uring_cleanup(struct io_kiocb *req, unsigned int issue_flags)
 }
 
 bool io_uring_try_cancel_uring_cmd(struct io_ring_ctx *ctx,
-				   struct task_struct *task, bool cancel_all)
+				   struct io_uring_task *tctx, bool cancel_all)
 {
 	struct hlist_node *tmp;
 	struct io_kiocb *req;
@@ -61,7 +61,7 @@ bool io_uring_try_cancel_uring_cmd(struct io_ring_ctx *ctx,
 				struct io_uring_cmd);
 		struct file *file = req->file;
 
-		if (!cancel_all && req->task != task)
+		if (!cancel_all && req->tctx != tctx)
 			continue;
 
 		if (cmd->flags & IORING_URING_CMD_CANCELABLE) {
@@ -209,14 +209,17 @@ int io_uring_cmd_prep(struct io_kiocb *req, const struct io_uring_sqe *sqe)
 
 	if (ioucmd->flags & IORING_URING_CMD_FIXED) {
 		struct io_ring_ctx *ctx = req->ctx;
-		u16 index;
+		struct io_rsrc_node *node;
 
-		req->buf_index = READ_ONCE(sqe->buf_index);
-		if (unlikely(req->buf_index >= ctx->nr_user_bufs))
+		node = io_rsrc_node_lookup(&ctx->buf_table, req->buf_index);
+		if (unlikely(!node))
 			return -EFAULT;
-		index = array_index_nospec(req->buf_index, ctx->nr_user_bufs);
-		req->imu = ctx->user_bufs[index];
-		io_req_set_rsrc_node(req, ctx, 0);
+		/*
+		 * Pi node upfront, prior to io_uring_cmd_import_fixed()
+		 * being called. This prevents destruction of the mapped buffer
+		 * we'll need at actual import time.
+		 */
+		io_req_assign_rsrc_node(&req->buf_node, node);
 	}
 	ioucmd->cmd_op = READ_ONCE(sqe->cmd_op);
 
@@ -272,8 +275,13 @@ int io_uring_cmd_import_fixed(u64 ubuf, unsigned long len, int rw,
 			      struct iov_iter *iter, void *ioucmd)
 {
 	struct io_kiocb *req = cmd_to_io_kiocb(ioucmd);
+	struct io_rsrc_node *node = req->buf_node;
 
-	return io_import_fixed(rw, iter, req->imu, ubuf, len);
+	/* Must have had rsrc_node assigned at prep time */
+	if (node)
+		return io_import_fixed(rw, iter, node->buf, ubuf, len);
+
+	return -EFAULT;
 }
 EXPORT_SYMBOL_GPL(io_uring_cmd_import_fixed);
 
