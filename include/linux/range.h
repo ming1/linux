@@ -13,7 +13,8 @@ static inline u64 range_len(const struct range *range)
 	return range->end - range->start + 1;
 }
 
-static inline bool range_contains(struct range *r1, struct range *r2)
+static inline bool range_contains(const struct range *r1,
+				  const struct range *r2)
 {
 	return r1->start <= r2->start && r1->end >= r2->end;
 }
@@ -30,5 +31,11 @@ void subtract_range(struct range *range, int az, u64 start, u64 end);
 int clean_sort_range(struct range *range, int az);
 
 void sort_range(struct range *range, int nr_range);
+
+#define DEFINE_RANGE(_start, _end)		\
+(struct range) {				\
+		.start = (_start),		\
+		.end = (_end),			\
+	}
 
 #endif
