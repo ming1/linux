@@ -5491,6 +5491,22 @@ static u32 btf_ld_kptr_type(struct bpf_verifier_env *env, struct btf_field *kptr
 	return ret;
 }
 
+static int mark_uptr_ld_reg(struct bpf_verifier_env *env, u32 regno,
+			    struct btf_field *field)
+{
+	struct bpf_reg_state *reg;
+	const struct btf_type *t;
+
+	t = btf_type_by_id(field->kptr.btf, field->kptr.btf_id);
+	mark_reg_known_zero(env, cur_regs(env), regno);
+	reg = reg_state(env, regno);
+	reg->type = PTR_TO_MEM | PTR_MAYBE_NULL;
+	reg->mem_size = t->size;
+	reg->id = ++env->id_gen;
+
+	return 0;
+}
+
 static int check_map_kptr_access(struct bpf_verifier_env *env, u32 regno,
 				 int value_regno, int insn_idx,
 				 struct btf_field *kptr_field)
@@ -5519,9 +5535,15 @@ static int check_map_kptr_access(struct bpf_verifier_env *env, u32 regno,
 		verbose(env, "store to referenced kptr disallowed\n");
 		return -EACCES;
 	}
+	if (class != BPF_LDX && kptr_field->type == BPF_UPTR) {
+		verbose(env, "store to uptr disallowed\n");
+		return -EACCES;
+	}
 
 	if (class == BPF_LDX) {
-		val_reg = reg_state(env, value_regno);
+		if (kptr_field->type == BPF_UPTR)
+			return mark_uptr_ld_reg(env, value_regno, kptr_field);
+
 		/* We can simply mark the value_regno receiving the pointer
 		 * value from map as PTR_TO_BTF_ID, with the correct type.
 		 */
@@ -5579,21 +5601,26 @@ static int check_map_access(struct bpf_verifier_env *env, u32 regno,
 			case BPF_KPTR_UNREF:
 			case BPF_KPTR_REF:
 			case BPF_KPTR_PERCPU:
+			case BPF_UPTR:
 				if (src != ACCESS_DIRECT) {
-					verbose(env, "kptr cannot be accessed indirectly by helper\n");
+					verbose(env, "%s cannot be accessed indirectly by helper\n",
+						btf_field_type_name(field->type));
 					return -EACCES;
 				}
 				if (!tnum_is_const(reg->var_off)) {
-					verbose(env, "kptr access cannot have variable offset\n");
+					verbose(env, "%s access cannot have variable offset\n",
+						btf_field_type_name(field->type));
 					return -EACCES;
 				}
 				if (p != off + reg->var_off.value) {
-					verbose(env, "kptr access misaligned expected=%u off=%llu\n",
+					verbose(env, "%s access misaligned expected=%u off=%llu\n",
+						btf_field_type_name(field->type),
 						p, off + reg->var_off.value);
 					return -EACCES;
 				}
 				if (size != bpf_size_to_bytes(BPF_DW)) {
-					verbose(env, "kptr access size must be BPF_DW\n");
+					verbose(env, "%s access size must be BPF_DW\n",
+						btf_field_type_name(field->type));
 					return -EACCES;
 				}
 				break;
@@ -6949,7 +6976,7 @@ static int check_mem_access(struct bpf_verifier_env *env, int insn_idx, u32 regn
 			return err;
 		if (tnum_is_const(reg->var_off))
 			kptr_field = btf_record_find(reg->map_ptr->record,
-						     off + reg->var_off.value, BPF_KPTR);
+						     off + reg->var_off.value, BPF_KPTR | BPF_UPTR);
 		if (kptr_field) {
 			err = check_map_kptr_access(env, regno, value_regno, insn_idx, kptr_field);
 		} else if (t == BPF_READ && value_regno >= 0) {
@@ -9910,7 +9937,7 @@ static int set_loop_callback_state(struct bpf_verifier_env *env,
 {
 	/* bpf_loop(u32 nr_loops, void *callback_fn, void *callback_ctx,
 	 *	    u64 flags);
-	 * callback_fn(u32 index, void *callback_ctx);
+	 * callback_fn(u64 index, void *callback_ctx);
 	 */
 	callee->regs[BPF_REG_1].type = SCALAR_VALUE;
 	callee->regs[BPF_REG_2] = caller->regs[BPF_REG_3];
@@ -11252,6 +11279,7 @@ enum special_kfunc_type {
 	KF_bpf_preempt_enable,
 	KF_bpf_iter_css_task_new,
 	KF_bpf_session_cookie,
+	KF_bpf_get_kmem_cache,
 };
 
 BTF_SET_START(special_kfunc_set)
@@ -11317,6 +11345,7 @@ BTF_ID(func, bpf_session_cookie)
 #else
 BTF_ID_UNUSED
 #endif
+BTF_ID(func, bpf_get_kmem_cache)
 
 static bool is_kfunc_ret_null(struct bpf_kfunc_call_arg_meta *meta)
 {
@@ -12826,6 +12855,9 @@ static int check_kfunc_call(struct bpf_verifier_env *env, struct bpf_insn *insn,
 			regs[BPF_REG_0].btf = desc_btf;
 			regs[BPF_REG_0].type = PTR_TO_BTF_ID;
 			regs[BPF_REG_0].btf_id = ptr_type_id;
+
+			if (meta.func_id == special_kfunc_list[KF_bpf_get_kmem_cache])
+				regs[BPF_REG_0].type |= PTR_UNTRUSTED;
 
 			if (is_iter_next_kfunc(&meta)) {
 				struct bpf_reg_state *cur_iter;
@@ -16175,10 +16207,7 @@ static u32 kfunc_fastcall_clobber_mask(struct bpf_kfunc_call_arg_meta *meta)
 /* Same as verifier_inlines_helper_call() but for kfuncs, see comment above */
 static bool is_fastcall_kfunc_call(struct bpf_kfunc_call_arg_meta *meta)
 {
-	if (meta->btf == btf_vmlinux)
-		return meta->func_id == special_kfunc_list[KF_bpf_cast_to_kern_ctx] ||
-		       meta->func_id == special_kfunc_list[KF_bpf_rdonly_cast];
-	return false;
+	return meta->kfunc_flags & KF_FASTCALL;
 }
 
 /* LLVM define a bpf_fastcall function attribute.
