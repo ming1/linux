@@ -55,6 +55,7 @@
 #define DC_LOGGER \
 	clk_mgr->base.base.ctx->logger
 
+
 #define regCLK1_CLK_PLL_REQ			0x0237
 #define regCLK1_CLK_PLL_REQ_BASE_IDX		0
 
@@ -977,11 +978,8 @@ static void dcn35_exit_low_power_state(struct clk_mgr *clk_mgr_base)
 static bool dcn35_is_ips_supported(struct clk_mgr *clk_mgr_base)
 {
 	struct clk_mgr_internal *clk_mgr = TO_CLK_MGR_INTERNAL(clk_mgr_base);
-	bool ips_supported = true;
 
-	ips_supported = dcn35_smu_get_ips_supported(clk_mgr) ? true : false;
-
-	return ips_supported;
+	return dcn35_smu_get_ips_supported(clk_mgr) ? true : false;
 }
 
 static void dcn35_init_clocks_fpga(struct clk_mgr *clk_mgr)

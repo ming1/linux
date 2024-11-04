@@ -55,7 +55,7 @@ struct aux_payload;
 struct set_config_cmd_payload;
 struct dmub_notification;
 
-#define DC_VER "3.2.306"
+#define DC_VER "3.2.307"
 
 #define MAX_SURFACES 3
 #define MAX_PLANES 6
@@ -1067,6 +1067,7 @@ struct dc_debug_options {
 	unsigned int sharpen_policy;
 	unsigned int scale_to_sharpness_policy;
 	bool skip_full_updated_if_possible;
+	unsigned int enable_oled_edp_power_up_opt;
 };
 
 

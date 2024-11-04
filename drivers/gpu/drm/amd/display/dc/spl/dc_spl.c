@@ -882,8 +882,13 @@ static bool spl_get_optimal_number_of_taps(
 
 	if (spl_scratch->scl_data.viewport.width > spl_scratch->scl_data.h_active &&
 		max_downscale_src_width != 0 &&
-		spl_scratch->scl_data.viewport.width > max_downscale_src_width)
+		spl_scratch->scl_data.viewport.width > max_downscale_src_width) {
+		memcpy(&spl_scratch->scl_data.taps, in_taps, sizeof(struct spl_taps));
+		*enable_easf_v = false;
+		*enable_easf_h = false;
+		*enable_isharp = false;
 		return false;
+	}
 
 	/* Disable adaptive scaler and sharpener when integer scaling is enabled */
 	if (spl_in->scaling_quality.integer_scaling) {
@@ -1602,7 +1607,8 @@ static void spl_set_isharp_data(struct dscl_prog_data *dscl_prog_data,
 
 	spl_build_isharp_1dlut_from_reference_curve(ratio, setup, adp_sharpness,
 		scale_to_sharpness_policy);
-	dscl_prog_data->isharp_delta = spl_get_pregen_filter_isharp_1D_lut(setup);
+	memcpy(dscl_prog_data->isharp_delta, spl_get_pregen_filter_isharp_1D_lut(setup),
+		sizeof(uint32_t) * ISHARP_LUT_TABLE_SIZE);
 	dscl_prog_data->sharpness_level = adp_sharpness.sharpness_level;
 
 	dscl_prog_data->isharp_en = 1;	// ISHARP_EN
@@ -1765,11 +1771,11 @@ bool spl_calculate_scaler_params(struct spl_in *spl_in, struct spl_out *spl_out)
 	// Clamp
 	spl_clamp_viewport(&spl_scratch.scl_data.viewport);
 
-	if (!res)
-		return res;
-
 	// Save all calculated parameters in dscl_prog_data structure to program hw registers
 	spl_set_dscl_prog_data(spl_in, &spl_scratch, spl_out, enable_easf_v, enable_easf_h, enable_isharp);
+
+	if (!res)
+		return res;
 
 	if (spl_in->lls_pref == LLS_PREF_YES) {
 		if (spl_in->is_hdr_on)
