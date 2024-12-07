@@ -43,6 +43,7 @@
 #include <linux/kref.h>
 
 #include "ublk.h"
+#include "bpf.h"
 
 static bool ublk_abort_requests(struct ublk_device *ub, struct ublk_queue *ubq);
 
@@ -1061,6 +1062,10 @@ static inline void __ublk_rq_task_work(struct request *req,
 			mapped_bytes >> 9;
 	}
 
+	if (ublk_support_bpf(ubq) && ublk_run_bpf_prog(ubq, req,
+				ublk_get_bpf_io_cb_daemon(ubq), true))
+		return;
+
 	ublk_init_req_ref(ubq, req);
 	ubq_complete_io_cmd(io, UBLK_IO_RES_OK, issue_flags);
 }
@@ -1087,6 +1092,10 @@ static void ublk_rq_task_work_cb(struct io_uring_cmd *cmd, unsigned issue_flags)
 static void ublk_queue_cmd(struct ublk_queue *ubq, struct request *rq)
 {
 	struct ublk_rq_data *data = blk_mq_rq_to_pdu(rq);
+
+	if (ublk_support_bpf(ubq) && ublk_run_bpf_prog(ubq, rq,
+				ublk_get_bpf_io_cb(ubq), false))
+		return;
 
 	if (llist_add(&data->node, &ubq->io_cmds)) {
 		struct ublk_io *io = &ubq->ios[rq->tag];
@@ -1265,8 +1274,24 @@ static void ublk_commit_completion(struct ublk_device *ub,
 	if (req_op(req) == REQ_OP_ZONE_APPEND)
 		req->__sector = ub_cmd->zone_append_lba;
 
-	if (likely(!blk_should_fake_timeout(req->q)))
-		ublk_put_req_ref(ubq, req);
+	if (likely(!blk_should_fake_timeout(req->q))) {
+		/*
+		 * userspace may have setup everything, but still let bpf
+		 * prog to handle io by returning -EAGAIN, this way provides
+		 * single bpf io handle fast path, and should simplify things
+		 * a lot.
+		 */
+		if (ublk_support_bpf(ubq) && io->res == -EAGAIN) {
+			if(!ublk_run_bpf_prog(ubq, req,
+					ublk_get_bpf_any_io_cb(ubq), true)) {
+				/* give up now */
+				io->res = -EIO;
+				ublk_put_req_ref(ubq, req);
+			}
+		} else {
+			ublk_put_req_ref(ubq, req);
+		}
+	}
 }
 
 /*

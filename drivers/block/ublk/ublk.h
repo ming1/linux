@@ -33,10 +33,26 @@
 	(UBLK_PARAM_TYPE_BASIC | UBLK_PARAM_TYPE_DISCARD | \
 	 UBLK_PARAM_TYPE_DEVT | UBLK_PARAM_TYPE_ZONED)
 
+enum {
+	UBLK_BPF_IO_PREP	= 0,
+	UBLK_BPF_IO_COMPLETED   = 1,
+};
+
+struct ublk_bpf_io {
+	const struct ublksrv_io_desc	*iod;
+	unsigned long			flags;
+	refcount_t                      ref;
+	int				res;
+};
+
 struct ublk_rq_data {
 	struct llist_node node;
 
 	struct kref ref;
+
+#ifdef CONFIG_UBLK_BPF
+	struct ublk_bpf_io	bpf_data;
+#endif
 };
 
 struct ublk_uring_cmd_pdu {
@@ -104,6 +120,10 @@ struct ublk_queue {
 
 	struct llist_head	io_cmds;
 
+#ifdef CONFIG_UBLK_BPF
+	struct ublk_bpf_ops     *bpf_ops;
+#endif
+
 	unsigned short force_abort:1;
 	unsigned short timeout:1;
 	unsigned short canceling:1;
@@ -161,8 +181,21 @@ static inline struct ublksrv_io_desc *ublk_get_iod(struct ublk_queue *ubq,
 		&(ubq->io_cmd_buf[tag * sizeof(struct ublksrv_io_desc)]);
 }
 
+static inline bool ublk_support_bpf(const struct ublk_queue *ubq)
+{
+	return false;
+}
+
 struct ublk_device *ublk_get_device_from_id(int idx);
 void ublk_put_device(struct ublk_device *ub);
 void __ublk_complete_rq(struct request *req);
 
+static inline void __ublk_complete_rq_with_res(struct request *req, int res)
+{
+	struct ublk_queue *ubq = req->mq_hctx->driver_data;
+	struct ublk_io *io = &ubq->ios[req->tag];
+
+	io->res = res;
+	__ublk_complete_rq(req);
+}
 #endif

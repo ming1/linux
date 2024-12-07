@@ -34,3 +34,19 @@ config BLKDEV_UBLK_LEGACY_OPCODES
 	  Say N if you don't want to support legacy command opcode. It is
 	  suggested to enable N if your application(ublk server) switches to
 	  ioctl command encoding.
+
+config UBLK_BPF
+	bool "UBLK-BPF support"
+	depends on BPF
+	depends on BLK_DEV_UBLK
+	help
+	This option allows to support eBPF programs on the UBLK subsystem.
+	eBPF programs can handle fast IO code path directly in kernel space,
+	and avoid to switch to ublk daemon userspace conext, meantime zero
+	copy can be supported directly.
+
+	Usually target code need to partition into two parts: fast io code path
+	which is run as eBPF prog in kernel context, and slow & complicated
+	meta/admin code path which is run in ublk daemon userspace context.
+	And use efficient bpf map for communication between user mode and
+	kernel bpf prog.
