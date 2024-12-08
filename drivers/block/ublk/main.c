@@ -416,6 +416,19 @@ static int ublk_validate_params(const struct ublk_device *ub)
 	else if (ublk_dev_is_zoned(ub))
 		return -EINVAL;
 
+	if (ub->params.types & UBLK_PARAM_TYPE_BPF) {
+		const struct ublk_param_bpf *p = &ub->params.bpf;
+
+		if (!ublk_dev_support_bpf(ub))
+			return -EINVAL;
+
+		if (!(p->flags & UBLK_BPF_HAS_OPS_ID))
+			return -EINVAL;
+	} else {
+		if (ublk_dev_support_bpf(ub))
+			return -EINVAL;
+	}
+
 	return 0;
 }
 
@@ -434,7 +447,7 @@ static inline bool ublk_support_user_copy(const struct ublk_queue *ubq)
 
 static inline bool ublk_need_map_io(const struct ublk_queue *ubq)
 {
-	return !ublk_support_user_copy(ubq);
+	return !(ublk_support_user_copy(ubq) || ublk_support_bpf(ubq));
 }
 
 static inline bool ublk_need_req_ref(const struct ublk_queue *ubq)

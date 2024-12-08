@@ -24,7 +24,8 @@
 		| UBLK_F_CMD_IOCTL_ENCODE \
 		| UBLK_F_USER_COPY \
 		| UBLK_F_ZONED \
-		| UBLK_F_USER_RECOVERY_FAIL_IO)
+		| UBLK_F_USER_RECOVERY_FAIL_IO \
+		| UBLK_F_BPF)
 
 #define UBLK_F_ALL_RECOVERY_FLAGS (UBLK_F_USER_RECOVERY \
 		| UBLK_F_USER_RECOVERY_REISSUE \
@@ -33,7 +34,8 @@
 /* All UBLK_PARAM_TYPE_* should be included here */
 #define UBLK_PARAM_TYPE_ALL                                \
 	(UBLK_PARAM_TYPE_BASIC | UBLK_PARAM_TYPE_DISCARD | \
-	 UBLK_PARAM_TYPE_DEVT | UBLK_PARAM_TYPE_ZONED)
+	 UBLK_PARAM_TYPE_DEVT | UBLK_PARAM_TYPE_ZONED | \
+	 UBLK_PARAM_TYPE_BPF)
 
 enum {
 	UBLK_BPF_IO_PREP	= 0,
@@ -193,12 +195,12 @@ static inline struct ublksrv_io_desc *ublk_get_iod(struct ublk_queue *ubq,
 
 static inline bool ublk_support_bpf(const struct ublk_queue *ubq)
 {
-	return false;
+	return ubq->flags & UBLK_F_BPF;
 }
 
 static inline bool ublk_dev_support_bpf(const struct ublk_device *ub)
 {
-	return false;
+	return ub->dev_info.flags & UBLK_F_BPF;
 }
 
 struct ublk_device *ublk_get_device(struct ublk_device *ub);

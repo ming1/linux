@@ -207,6 +207,9 @@
  */
 #define UBLK_F_USER_RECOVERY_FAIL_IO (1ULL << 9)
 
+/* ublk IO is handled by bpf prog */
+#define UBLK_F_BPF		(1ULL << 10)
+
 /* device state */
 #define UBLK_S_DEV_DEAD	0
 #define UBLK_S_DEV_LIVE	1
@@ -401,6 +404,13 @@ struct ublk_param_zoned {
 	__u8	reserved[20];
 };
 
+struct ublk_param_bpf {
+#define UBLK_BPF_HAS_OPS_ID            (1 << 0)
+	__u8	flags;
+	__u8	ops_id;
+	__u8	reserved[6];
+};
+
 struct ublk_params {
 	/*
 	 * Total length of parameters, userspace has to set 'len' for both
@@ -413,12 +423,14 @@ struct ublk_params {
 #define UBLK_PARAM_TYPE_DISCARD         (1 << 1)
 #define UBLK_PARAM_TYPE_DEVT            (1 << 2)
 #define UBLK_PARAM_TYPE_ZONED           (1 << 3)
+#define UBLK_PARAM_TYPE_BPF             (1 << 4)
 	__u32	types;			/* types of parameter included */
 
 	struct ublk_param_basic		basic;
 	struct ublk_param_discard	discard;
 	struct ublk_param_devt		devt;
-	struct ublk_param_zoned	zoned;
+	struct ublk_param_zoned		zoned;
+	struct ublk_param_bpf		bpf;
 };
 
 #endif

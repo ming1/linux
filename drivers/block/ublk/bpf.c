@@ -79,8 +79,7 @@ int ublk_bpf_attach(struct ublk_device *ub)
 	if (!ublk_dev_support_bpf(ub))
 		return 0;
 
-	/* todo: ublk device need to provide struct_ops prog id */
-	ub->prog.prog_id = 0;
+	ub->prog.prog_id = ub->params.bpf.ops_id;
 	ub->prog.ops = &ublk_prog_consumer_ops;
 
 	return ublk_bpf_prog_attach(&ub->prog);
