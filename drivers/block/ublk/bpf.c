@@ -93,7 +93,85 @@ void ublk_bpf_detach(struct ublk_device *ub)
 	ublk_bpf_prog_detach(&ub->prog);
 }
 
+
+__bpf_kfunc_start_defs();
+__bpf_kfunc const struct ublksrv_io_desc *
+ublk_bpf_get_iod(const struct ublk_bpf_io *io)
+{
+	if (io)
+		return io->iod;
+	return NULL;
+}
+
+__bpf_kfunc unsigned int
+ublk_bpf_get_io_tag(const struct ublk_bpf_io *io)
+{
+	if (io) {
+		const struct request *req = ublk_bpf_get_req(io);
+
+		return req->tag;
+	}
+	return -1;
+}
+
+__bpf_kfunc unsigned int
+ublk_bpf_get_queue_id(const struct ublk_bpf_io *io)
+{
+	if (io) {
+		const struct request *req = ublk_bpf_get_req(io);
+
+		if (req->mq_hctx) {
+			const struct ublk_queue *ubq = req->mq_hctx->driver_data;
+
+			return ubq->q_id;
+		}
+	}
+	return -1;
+}
+
+__bpf_kfunc unsigned int
+ublk_bpf_get_dev_id(const struct ublk_bpf_io *io)
+{
+	if (io) {
+		const struct request *req = ublk_bpf_get_req(io);
+
+		if (req->mq_hctx) {
+			const struct ublk_queue *ubq = req->mq_hctx->driver_data;
+
+			return ubq->dev->dev_info.dev_id;
+		}
+	}
+	return -1;
+}
+
+__bpf_kfunc void
+ublk_bpf_complete_io(struct ublk_bpf_io *io, int res)
+{
+	ublk_bpf_complete_io_cmd(io, res);
+}
+
+BTF_KFUNCS_START(ublk_bpf_kfunc_ids)
+BTF_ID_FLAGS(func, ublk_bpf_complete_io, KF_TRUSTED_ARGS)
+BTF_ID_FLAGS(func, ublk_bpf_get_iod, KF_TRUSTED_ARGS | KF_RET_NULL)
+BTF_ID_FLAGS(func, ublk_bpf_get_io_tag, KF_TRUSTED_ARGS)
+BTF_ID_FLAGS(func, ublk_bpf_get_queue_id, KF_TRUSTED_ARGS)
+BTF_ID_FLAGS(func, ublk_bpf_get_dev_id, KF_TRUSTED_ARGS)
+BTF_KFUNCS_END(ublk_bpf_kfunc_ids)
+
+static const struct btf_kfunc_id_set ublk_bpf_kfunc_set = {
+	.owner = THIS_MODULE,
+	.set   = &ublk_bpf_kfunc_ids,
+};
+
 int __init ublk_bpf_init(void)
 {
+	int err;
+
+	err = register_btf_kfunc_id_set(BPF_PROG_TYPE_STRUCT_OPS,
+					&ublk_bpf_kfunc_set);
+	if (err) {
+		pr_warn("error while setting UBLK BPF tracing kfuncs: %d", err);
+		return err;
+	}
 	return ublk_bpf_struct_ops_init();
 }
