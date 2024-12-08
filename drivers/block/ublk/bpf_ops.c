@@ -133,6 +133,29 @@ static void ublk_bpf_unreg(void *kdata, struct bpf_link *link)
 	kfree(curr);
 }
 
+int ublk_bpf_prog_attach(struct bpf_prog_consumer *consumer)
+{
+	unsigned id = consumer->prog_id;
+	struct ublk_bpf_ops *ops;
+	int ret = -EINVAL;
+
+	mutex_lock(&ublk_bpf_ops_lock);
+	ops = xa_load(&ublk_ops, id);
+	if (ops && ops->id == id)
+		ret = bpf_prog_consumer_attach(consumer, &ops->provider);
+	mutex_unlock(&ublk_bpf_ops_lock);
+
+	return ret;
+}
+
+void ublk_bpf_prog_detach(struct bpf_prog_consumer *consumer)
+{
+	mutex_lock(&ublk_bpf_ops_lock);
+	bpf_prog_consumer_detach(consumer, false);
+	mutex_unlock(&ublk_bpf_ops_lock);
+}
+
+
 static void ublk_bpf_prep_io(struct ublk_bpf_io *io,
 		const struct ublksrv_io_desc *iod)
 {
@@ -231,10 +254,21 @@ static void ublk_bpf_release_io_cmd(struct ublk_bpf_io *io)
 {
 }
 
+static int ublk_bpf_attach_dev(int dev_id)
+{
+	return 0;
+}
+
+static void ublk_bpf_detach_dev(int dev_id)
+{
+}
+
 static struct ublk_bpf_ops __bpf_ublk_bpf_ops = {
 	.queue_io_cmd = ublk_bpf_queue_io_cmd,
 	.queue_io_cmd_daemon = ublk_bpf_run_io_task,
 	.release_io_cmd = ublk_bpf_release_io_cmd,
+	.attach_dev	= ublk_bpf_attach_dev,
+	.detach_dev	= ublk_bpf_detach_dev,
 };
 
 static struct bpf_struct_ops bpf_ublk_bpf_ops = {

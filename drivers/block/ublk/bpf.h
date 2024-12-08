@@ -7,6 +7,8 @@
 typedef unsigned long ublk_bpf_return_t;
 typedef ublk_bpf_return_t (*queue_io_cmd_t)(struct ublk_bpf_io *io, unsigned int);
 typedef void (*release_io_cmd_t)(struct ublk_bpf_io *io);
+typedef int (*attach_dev_t)(int dev_id);
+typedef void (*detach_dev_t)(int dev_id);
 
 #ifdef CONFIG_UBLK_BPF
 #include <linux/filter.h>
@@ -46,6 +48,12 @@ struct ublk_bpf_ops {
 
 	/* called when the io command reference drops to zero, can't be sleepable */
 	release_io_cmd_t	release_io_cmd;
+
+	/* called when attaching bpf prog to this ublk dev */
+	attach_dev_t		attach_dev;
+
+	/* called when detaching bpf prog from this ublk dev */
+	detach_dev_t		detach_dev;
 
 	/* private: don't show in doc, must be the last field */
 	struct bpf_prog_provider	provider;
@@ -149,7 +157,12 @@ static inline queue_io_cmd_t ublk_get_bpf_any_io_cb(struct ublk_queue *ubq)
 	return ublk_get_bpf_io_cb_daemon(ubq);
 }
 
+int ublk_bpf_init(void);
 int ublk_bpf_struct_ops_init(void);
+int ublk_bpf_prog_attach(struct bpf_prog_consumer *consumer);
+void ublk_bpf_prog_detach(struct bpf_prog_consumer *consumer);
+int ublk_bpf_attach(struct ublk_device *ub);
+void ublk_bpf_detach(struct ublk_device *ub);
 
 #else
 
@@ -176,9 +189,29 @@ static inline queue_io_cmd_t ublk_get_bpf_any_io_cb(struct ublk_queue *ubq)
 	return NULL;
 }
 
+static inline int ublk_bpf_init(void)
+{
+	return 0;
+}
+
 static inline int ublk_bpf_struct_ops_init(void)
 {
 	return 0;
+}
+
+static inline int ublk_bpf_prog_attach(struct bpf_prog_consumer *consumer)
+{
+	return 0;
+}
+static inline void ublk_bpf_prog_detach(struct bpf_prog_consumer *consumer)
+{
+}
+static inline int ublk_bpf_attach(struct ublk_device *ub)
+{
+	return 0;
+}
+static inline void ublk_bpf_detach(struct ublk_device *ub)
+{
 }
 #endif
 #endif

@@ -7,6 +7,8 @@
 #include <linux/cdev.h>
 #include <uapi/linux/ublk_cmd.h>
 
+#include "bpf_reg.h"
+
 #define UBLK_MINORS		(1U << MINORBITS)
 
 /* private ioctl command mirror */
@@ -153,6 +155,9 @@ struct ublk_device {
 	unsigned long		state;
 	int			ub_number;
 
+#ifdef CONFIG_UBLK_BPF
+	struct bpf_prog_consumer prog;
+#endif
 	struct mutex		mutex;
 
 	spinlock_t		lock;
@@ -173,6 +178,11 @@ struct ublk_params_header {
 	__u32	types;
 };
 
+static inline struct ublk_queue *ublk_get_queue(struct ublk_device *dev,
+		int qid)
+{
+       return (struct ublk_queue *)&(dev->__queues[qid * dev->queue_size]);
+}
 
 static inline struct ublksrv_io_desc *ublk_get_iod(struct ublk_queue *ubq,
 		int tag)
@@ -186,6 +196,12 @@ static inline bool ublk_support_bpf(const struct ublk_queue *ubq)
 	return false;
 }
 
+static inline bool ublk_dev_support_bpf(const struct ublk_device *ub)
+{
+	return false;
+}
+
+struct ublk_device *ublk_get_device(struct ublk_device *ub);
 struct ublk_device *ublk_get_device_from_id(int idx);
 void ublk_put_device(struct ublk_device *ub);
 void __ublk_complete_rq(struct request *req);

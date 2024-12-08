@@ -486,7 +486,7 @@ static inline bool ublk_need_get_data(const struct ublk_queue *ubq)
 }
 
 /* Called in slow path only, keep it noinline for trace purpose */
-static noinline struct ublk_device *ublk_get_device(struct ublk_device *ub)
+struct ublk_device *ublk_get_device(struct ublk_device *ub)
 {
 	if (kobject_get_unless_zero(&ub->cdev_dev.kobj))
 		return ub;
@@ -497,12 +497,6 @@ static noinline struct ublk_device *ublk_get_device(struct ublk_device *ub)
 void ublk_put_device(struct ublk_device *ub)
 {
 	put_device(&ub->cdev_dev);
-}
-
-static inline struct ublk_queue *ublk_get_queue(struct ublk_device *dev,
-		int qid)
-{
-       return (struct ublk_queue *)&(dev->__queues[qid * dev->queue_size]);
 }
 
 static inline bool ublk_rq_has_data(const struct request *rq)
@@ -1492,6 +1486,8 @@ static struct gendisk *ublk_detach_disk(struct ublk_device *ub)
 {
 	struct gendisk *disk;
 
+	ublk_bpf_detach(ub);
+
 	/* Sync with ublk_abort_queue() by holding the lock */
 	spin_lock(&ub->lock);
 	disk = ub->ub_disk;
@@ -2206,12 +2202,19 @@ static int ublk_ctrl_start_dev(struct ublk_device *ub, struct io_uring_cmd *cmd)
 			goto out_put_cdev;
 	}
 
-	ret = add_disk(disk);
+	ret = ublk_bpf_attach(ub);
 	if (ret)
 		goto out_put_cdev;
 
+	ret = add_disk(disk);
+	if (ret)
+		goto out_put_bpf;
+
 	set_bit(UB_STATE_USED, &ub->state);
 
+out_put_bpf:
+	if (ret)
+		ublk_bpf_detach(ub);
 out_put_cdev:
 	if (ret) {
 		ublk_detach_disk(ub);
@@ -2967,8 +2970,14 @@ static int __init ublk_init(void)
 	if (ret)
 		goto free_chrdev_region;
 
+	ret = ublk_bpf_init();
+	if (ret)
+		goto unregister_class;
+
 	return 0;
 
+unregister_class:
+	class_unregister(&ublk_chr_class);
 free_chrdev_region:
 	unregister_chrdev_region(ublk_chr_devt, UBLK_MINORS);
 unregister_mis:
