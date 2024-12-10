@@ -243,9 +243,16 @@ __bpf_kfunc int bpf_aio_submit(struct bpf_aio *aio, int fd, loff_t pos,
 
 int __init bpf_aio_init(void)
 {
+	int err;
+
 	bpf_aio_cachep = KMEM_CACHE(bpf_aio, SLAB_PANIC);
 	bpf_aio_work_cachep = KMEM_CACHE(bpf_aio_work, SLAB_PANIC);
 	bpf_aio_wq = alloc_workqueue("bpf_aio", WQ_MEM_RECLAIM | WQ_HIGHPRI, 0);
 
+	err = bpf_aio_struct_ops_init();
+	if (err) {
+		pr_warn("error while initializing bpf aio struct_ops: %d", err);
+		return err;
+	}
 	return 0;
 }

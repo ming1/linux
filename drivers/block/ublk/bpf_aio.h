@@ -3,6 +3,8 @@
 #ifndef UBLK_BPF_AIO_HEADER
 #define UBLK_BPF_AIO_HEADER
 
+#include "bpf_reg.h"
+
 #define	BPF_AIO_OP_BITS		8
 #define	BPF_AIO_OP_MASK		((1 << BPF_AIO_OP_BITS) - 1)
 
@@ -47,9 +49,18 @@ struct bpf_aio {
 
 typedef void (*bpf_aio_complete_t)(struct bpf_aio *io, long ret);
 
+/**
+ * struct bpf_aio_complete_ops - A BPF struct_ops of callbacks allowing to
+ * 	complete `bpf_aio` submitted by `bpf_aio_submit()`
+ * @id: id used by bpf aio consumer, defined by globally
+ * @bpf_aio_complete_cb: callback for completing submitted `bpf_aio`
+ * @provider: holding all consumers of this struct_ops prog, used by
+ * 	kernel only
+ */
 struct bpf_aio_complete_ops {
 	unsigned int		id;
 	bpf_aio_complete_t	bpf_aio_complete_cb;
+	struct bpf_prog_provider provider;
 };
 
 static inline unsigned int bpf_aio_get_op(const struct bpf_aio *aio)
@@ -58,6 +69,7 @@ static inline unsigned int bpf_aio_get_op(const struct bpf_aio *aio)
 }
 
 int bpf_aio_init(void);
+int bpf_aio_struct_ops_init(void);
 struct bpf_aio *bpf_aio_alloc(unsigned int op, enum bpf_aio_flag aio_flags);
 struct bpf_aio *bpf_aio_alloc_sleepable(unsigned int op, enum bpf_aio_flag aio_flags);
 void bpf_aio_release(struct bpf_aio *aio);
