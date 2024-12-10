@@ -155,6 +155,49 @@ void ublk_bpf_prog_detach(struct bpf_prog_consumer *consumer)
 	mutex_unlock(&ublk_bpf_ops_lock);
 }
 
+static int ublk_bpf_aio_prep_io_buf(const struct request *req)
+{
+	struct ublk_rq_data *data = blk_mq_rq_to_pdu((struct request *)req);
+	struct ublk_bpf_io *io = &data->bpf_data;
+	struct req_iterator rq_iter;
+	struct bio_vec *bvec;
+	struct bio_vec bv;
+	unsigned offset;
+
+	io->buf.bvec = NULL;
+	io->buf.nr_bvec = 0;
+
+	if (!ublk_rq_has_data(req))
+		return 0;
+
+	rq_for_each_bvec(bv, req, rq_iter)
+		io->buf.nr_bvec++;
+
+	if (!io->buf.nr_bvec)
+		return 0;
+
+	if (req->bio != req->biotail) {
+		int idx = 0;
+
+		bvec = kvmalloc_array(io->buf.nr_bvec, sizeof(struct bio_vec),
+				GFP_NOIO);
+		if (!bvec)
+			return -ENOMEM;
+
+		offset = 0;
+		rq_for_each_bvec(bv, req, rq_iter)
+			bvec[idx++] = bv;
+		__set_bit(UBLK_BPF_BVEC_ALLOCATED, &io->flags);
+	} else {
+		struct bio *bio = req->bio;
+
+		offset = bio->bi_iter.bi_bvec_done;
+		bvec = __bvec_iter_bvec(bio->bi_io_vec, bio->bi_iter);
+	}
+	io->buf.bvec = bvec;
+	io->buf.bvec_off = offset;
+	return 0;
+}
 
 static void ublk_bpf_prep_io(struct ublk_bpf_io *io,
 		const struct ublksrv_io_desc *iod)
@@ -180,8 +223,14 @@ bool ublk_run_bpf_handler(struct ublk_queue *ubq, struct request *req,
 	bool res = true;
 	int err;
 
-	if (!test_bit(UBLK_BPF_IO_PREP, &bpf_io->flags))
+	if (!test_bit(UBLK_BPF_IO_PREP, &bpf_io->flags)) {
 		ublk_bpf_prep_io(bpf_io, iod);
+		if (ublk_support_bpf_aio(ubq)) {
+			err = ublk_bpf_aio_prep_io_buf(req);
+			if (err)
+				goto fail;
+		}
+	}
 
 	do {
 		enum ublk_bpf_disposition rc;

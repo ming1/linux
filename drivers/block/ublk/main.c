@@ -512,11 +512,6 @@ void ublk_put_device(struct ublk_device *ub)
 	put_device(&ub->cdev_dev);
 }
 
-static inline bool ublk_rq_has_data(const struct request *rq)
-{
-	return bio_has_data(rq->bio);
-}
-
 static inline char *ublk_queue_cmd_buf(struct ublk_device *ub, int q_id)
 {
 	return ublk_get_queue(ub, q_id)->io_cmd_buf;

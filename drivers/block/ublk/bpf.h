@@ -99,6 +99,9 @@ static inline void ublk_bpf_io_dec_ref(struct ublk_bpf_io *io)
 				ubq->bpf_ops->release_io_cmd(io);
 		}
 
+		if (test_bit(UBLK_BPF_BVEC_ALLOCATED, &io->flags))
+			kvfree(io->buf.bvec);
+
 		if (test_bit(UBLK_BPF_IO_COMPLETED, &io->flags)) {
 			smp_rmb();
 			__clear_bit(UBLK_BPF_IO_PREP, &io->flags);
@@ -158,6 +161,11 @@ static inline queue_io_cmd_t ublk_get_bpf_any_io_cb(struct ublk_queue *ubq)
 	return ublk_get_bpf_io_cb_daemon(ubq);
 }
 
+static inline bool ublk_support_bpf_aio(const struct ublk_queue *ubq)
+{
+	return ublk_support_bpf(ubq) && ubq->bpf_aio_ops;
+}
+
 int ublk_bpf_init(void);
 int ublk_bpf_struct_ops_init(void);
 int ublk_bpf_prog_attach(struct bpf_prog_consumer *consumer);
@@ -188,6 +196,11 @@ static inline queue_io_cmd_t ublk_get_bpf_io_cb_daemon(struct ublk_queue *ubq)
 static inline queue_io_cmd_t ublk_get_bpf_any_io_cb(struct ublk_queue *ubq)
 {
 	return NULL;
+}
+
+static inline bool ublk_support_bpf_aio(const struct ublk_queue *ubq)
+{
+	return false;
 }
 
 static inline int ublk_bpf_init(void)

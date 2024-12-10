@@ -41,6 +41,7 @@
 enum {
 	UBLK_BPF_IO_PREP	= 0,
 	UBLK_BPF_IO_COMPLETED   = 1,
+	UBLK_BPF_BVEC_ALLOCATED	= 2,
 };
 
 struct ublk_bpf_io {
@@ -213,6 +214,11 @@ static inline bool ublk_dev_support_bpf_aio(const struct ublk_device *ub)
 		return false;
 
 	return ub->params.bpf.flags & UBLK_BPF_HAS_AIO_OPS_ID;
+}
+
+static inline bool ublk_rq_has_data(const struct request *rq)
+{
+	return bio_has_data(rq->bio);
 }
 
 struct ublk_device *ublk_get_device(struct ublk_device *ub);
