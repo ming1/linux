@@ -126,6 +126,7 @@ struct ublk_queue {
 
 #ifdef CONFIG_UBLK_BPF
 	struct ublk_bpf_ops     *bpf_ops;
+	struct bpf_aio_complete_ops     *bpf_aio_ops;
 #endif
 
 	unsigned short force_abort:1;
@@ -159,6 +160,7 @@ struct ublk_device {
 
 #ifdef CONFIG_UBLK_BPF
 	struct bpf_prog_consumer prog;
+	struct bpf_prog_consumer aio_prog;
 #endif
 	struct mutex		mutex;
 
@@ -201,6 +203,14 @@ static inline bool ublk_support_bpf(const struct ublk_queue *ubq)
 static inline bool ublk_dev_support_bpf(const struct ublk_device *ub)
 {
 	return ub->dev_info.flags & UBLK_F_BPF;
+}
+
+static inline bool ublk_dev_support_bpf_aio(const struct ublk_device *ub)
+{
+	if (!ublk_dev_support_bpf(ub))
+		return false;
+
+	return ub->params.bpf.flags & UBLK_BPF_HAS_AIO_OPS_ID;
 }
 
 struct ublk_device *ublk_get_device(struct ublk_device *ub);

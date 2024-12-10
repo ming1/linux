@@ -406,9 +406,11 @@ struct ublk_param_zoned {
 
 struct ublk_param_bpf {
 #define UBLK_BPF_HAS_OPS_ID            (1 << 0)
+#define UBLK_BPF_HAS_AIO_OPS_ID        (1 << 1)
 	__u8	flags;
 	__u8	ops_id;
-	__u8	reserved[6];
+	__u16	aio_ops_id;
+	__u8	reserved[4];
 };
 
 struct ublk_params {

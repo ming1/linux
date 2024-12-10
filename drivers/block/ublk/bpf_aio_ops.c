@@ -120,6 +120,28 @@ static void bpf_aio_unreg(void *kdata, struct bpf_link *link)
 	kfree(curr);
 }
 
+int bpf_aio_prog_attach(struct bpf_prog_consumer *consumer)
+{
+	unsigned id = consumer->prog_id;
+	struct bpf_aio_complete_ops *ops;
+	int ret = -EINVAL;
+
+	mutex_lock(&bpf_aio_ops_lock);
+	ops = xa_load(&bpf_aio_all_ops, id);
+	if (ops && ops->id == id)
+		ret = bpf_prog_consumer_attach(consumer, &ops->provider);
+	mutex_unlock(&bpf_aio_ops_lock);
+
+	return ret;
+}
+
+void bpf_aio_prog_detach(struct bpf_prog_consumer *consumer)
+{
+	mutex_lock(&bpf_aio_ops_lock);
+	bpf_prog_consumer_detach(consumer, false);
+	mutex_unlock(&bpf_aio_ops_lock);
+}
+
 static void bpf_aio_cb(struct bpf_aio *io, long ret)
 {
 }

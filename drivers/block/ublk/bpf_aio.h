@@ -75,4 +75,8 @@ struct bpf_aio *bpf_aio_alloc_sleepable(unsigned int op, enum bpf_aio_flag aio_f
 void bpf_aio_release(struct bpf_aio *aio);
 int bpf_aio_submit(struct bpf_aio *aio, int fd, loff_t pos, unsigned bytes,
 		unsigned io_flags);
+
+int bpf_aio_prog_attach(struct bpf_prog_consumer *consumer);
+void bpf_aio_prog_detach(struct bpf_prog_consumer *consumer);
+
 #endif

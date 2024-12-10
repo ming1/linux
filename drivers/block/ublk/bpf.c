@@ -19,6 +19,79 @@ static int ublk_set_bpf_ops(struct ublk_device *ub,
 	return 0;
 }
 
+static int ublk_set_bpf_aio_op(struct ublk_device *ub,
+		struct bpf_aio_complete_ops *ops)
+{
+	int i;
+
+	for (i = 0; i < ub->dev_info.nr_hw_queues; i++) {
+		if (ops && ublk_get_queue(ub, i)->bpf_aio_ops) {
+			ublk_set_bpf_aio_op(ub, NULL);
+			return -EBUSY;
+		}
+		ublk_get_queue(ub, i)->bpf_aio_ops = ops;
+	}
+	return 0;
+}
+
+static int ublk_bpf_aio_prog_attach_cb(struct bpf_prog_consumer *consumer,
+				       struct bpf_prog_provider *provider)
+{
+	struct ublk_device *ub = container_of(consumer, struct ublk_device,
+					      aio_prog);
+	struct bpf_aio_complete_ops *ops = container_of(provider,
+			struct bpf_aio_complete_ops, provider);
+	int ret = -ENODEV;
+
+	if (ublk_get_device(ub)) {
+		ret = ublk_set_bpf_aio_op(ub, ops);
+		if (ret)
+			ublk_put_device(ub);
+	}
+
+	return ret;
+}
+
+static void ublk_bpf_aio_prog_detach_cb(struct bpf_prog_consumer *consumer,
+					bool unreg)
+{
+	struct ublk_device *ub = container_of(consumer, struct ublk_device,
+					      aio_prog);
+
+	if (unreg) {
+		blk_mq_freeze_queue(ub->ub_disk->queue);
+		ublk_set_bpf_aio_op(ub, NULL);
+		blk_mq_unfreeze_queue(ub->ub_disk->queue);
+	} else {
+		ublk_set_bpf_aio_op(ub, NULL);
+	}
+	ublk_put_device(ub);
+}
+
+static const struct bpf_prog_consumer_ops ublk_aio_prog_consumer_ops = {
+	.attach_fn	= ublk_bpf_aio_prog_attach_cb,
+	.detach_fn	= ublk_bpf_aio_prog_detach_cb,
+};
+
+static int ublk_bpf_aio_attach(struct ublk_device *ub)
+{
+	if (!ublk_dev_support_bpf_aio(ub))
+		return 0;
+
+	ub->aio_prog.prog_id = ub->params.bpf.aio_ops_id;
+	ub->aio_prog.ops = &ublk_aio_prog_consumer_ops;
+
+	return bpf_aio_prog_attach(&ub->aio_prog);
+}
+
+static void ublk_bpf_aio_detach(struct ublk_device *ub)
+{
+	if (!ublk_dev_support_bpf_aio(ub))
+		return;
+	bpf_aio_prog_detach(&ub->aio_prog);
+}
+
+
 static int ublk_bpf_prog_attach_cb(struct bpf_prog_consumer *consumer,
 				   struct bpf_prog_provider *provider)
 {
@@ -76,19 +149,25 @@ static const struct bpf_prog_consumer_ops ublk_prog_consumer_ops = {
 
 int ublk_bpf_attach(struct ublk_device *ub)
 {
+	int ret;
+
 	if (!ublk_dev_support_bpf(ub))
 		return 0;
 
 	ub->prog.prog_id = ub->params.bpf.ops_id;
 	ub->prog.ops = &ublk_prog_consumer_ops;
 
-	return ublk_bpf_prog_attach(&ub->prog);
+	ret = ublk_bpf_prog_attach(&ub->prog);
+	if (ret)
+		return ret;
+	return ublk_bpf_aio_attach(ub);
 }
 
 void ublk_bpf_detach(struct ublk_device *ub)
 {
 	if (!ublk_dev_support_bpf(ub))
 		return;
+	ublk_bpf_aio_detach(ub);
 	ublk_bpf_prog_detach(&ub->prog);
 }
 

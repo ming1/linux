@@ -213,6 +213,10 @@ __bpf_kfunc int bpf_aio_submit(struct bpf_aio *aio, int fd, loff_t pos,
 {
 	struct file *file;
 
+	/*
+	 * ->ops has to assigned by kfunc of consumer subsystem because
+	 * bpf prog lifetime is aligned with the consumer subsystem
+	 */
 	if (!aio->ops)
 		return -EINVAL;
 
