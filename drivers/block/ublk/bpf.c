@@ -228,6 +228,77 @@ ublk_bpf_complete_io(struct ublk_bpf_io *io, int res)
 	ublk_bpf_complete_io_cmd(io, res);
 }
 
+/*
+ * Called before submitting one bpf aio in prog, and this ublk IO's
+ * reference is increased.
+ *
+ * Grab reference of `io` for this `aio`, and the reference will be dropped
+ * by ublk_bpf_dettach_and_complete_aio()
+ */
+__bpf_kfunc int
+ublk_bpf_attach_and_prep_aio(const struct ublk_bpf_io *_io, unsigned off,
+		unsigned bytes, struct bpf_aio *aio)
+{
+	struct ublk_bpf_io *io = (struct ublk_bpf_io *)_io;
+	const struct request *req;
+	const struct ublk_rq_data *data;
+	const struct ublk_bpf_io *bpf_io;
+
+	if (!io || !aio)
+		return -EINVAL;
+
+	req = ublk_bpf_get_req(io);
+	if (!req)
+		return -EINVAL;
+
+	if (off + bytes > blk_rq_bytes(req))
+		return -EINVAL;
+
+	if (req->mq_hctx) {
+		const struct ublk_queue *ubq = req->mq_hctx->driver_data;
+
+		bpf_aio_assign_cb(aio, ubq->bpf_aio_ops);
+	}
+
+	data = blk_mq_rq_to_pdu((struct request *)req);
+	bpf_io = &data->bpf_data;
+	bpf_aio_assign_buf(aio, &bpf_io->buf, off, bytes);
+
+	refcount_inc(&io->ref);
+	aio->private_data = (void *)io;
+
+	return 0;
+}
+
+/*
+ * Called after this attached aio is completed, and the associated ublk IO's
+ * reference is decreased, and if the reference is dropped to zero, complete
+ * this ublk IO.
+ *
+ * Return -EIOCBQUEUED if this `io` is being handled, and 0 is returned
+ * if it can be completed now.
+ */
+__bpf_kfunc void
+ublk_bpf_dettach_and_complete_aio(struct bpf_aio *aio)
+{
+	struct ublk_bpf_io *io = aio->private_data;
+
+	if (io) {
+		ublk_bpf_io_dec_ref(io);
+		aio->private_data = NULL;
+	}
+}
+
+__bpf_kfunc struct ublk_bpf_io *ublk_bpf_acquire_io_from_aio(struct bpf_aio *aio)
+{
+	return aio->private_data;
+}
+
+__bpf_kfunc void ublk_bpf_release_io_from_aio(struct ublk_bpf_io *io)
+{
+}
+
+
 BTF_KFUNCS_START(ublk_bpf_kfunc_ids)
 BTF_ID_FLAGS(func, ublk_bpf_complete_io, KF_TRUSTED_ARGS)
 BTF_ID_FLAGS(func, ublk_bpf_get_iod, KF_TRUSTED_ARGS | KF_RET_NULL)
@@ -240,6 +311,12 @@ BTF_ID_FLAGS(func, bpf_aio_alloc, KF_RET_NULL)
 BTF_ID_FLAGS(func, bpf_aio_alloc_sleepable, KF_RET_NULL)
 BTF_ID_FLAGS(func, bpf_aio_release)
 BTF_ID_FLAGS(func, bpf_aio_submit)
+
+/* ublk bpf aio kfuncs */
+BTF_ID_FLAGS(func, ublk_bpf_attach_and_prep_aio)
+BTF_ID_FLAGS(func, ublk_bpf_dettach_and_complete_aio)
+BTF_ID_FLAGS(func, ublk_bpf_acquire_io_from_aio, KF_ACQUIRE)
+BTF_ID_FLAGS(func, ublk_bpf_release_io_from_aio, KF_RELEASE)
 BTF_KFUNCS_END(ublk_bpf_kfunc_ids)
 
 __bpf_kfunc void bpf_aio_release_dtor(void *aio)

@@ -8,6 +8,7 @@
 #include <uapi/linux/ublk_cmd.h>
 
 #include "bpf_reg.h"
+#include "bpf_aio.h"
 
 #define UBLK_MINORS		(1U << MINORBITS)
 
@@ -47,6 +48,7 @@ struct ublk_bpf_io {
 	unsigned long			flags;
 	refcount_t                      ref;
 	int				res;
+	struct bpf_aio_buf		buf;
 };
 
 struct ublk_rq_data {

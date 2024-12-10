@@ -211,6 +211,7 @@ __bpf_kfunc void bpf_aio_release(struct bpf_aio *aio)
 __bpf_kfunc int bpf_aio_submit(struct bpf_aio *aio, int fd, loff_t pos,
 		unsigned bytes, unsigned io_flags)
 {
+	unsigned op = bpf_aio_get_op(aio);
 	struct file *file;
 
 	/*
@@ -218,6 +219,9 @@ __bpf_kfunc int bpf_aio_submit(struct bpf_aio *aio, int fd, loff_t pos,
 	 * bpf prog lifetime is aligned with the consumer subsystem
 	 */
 	if (!aio->ops)
+		return -EINVAL;
+
+	if (unlikely((bytes > aio->buf_size) && bpf_aio_is_rw(op)))
 		return -EINVAL;
 
 	file = fget(fd);
@@ -232,7 +236,7 @@ __bpf_kfunc int bpf_aio_submit(struct bpf_aio *aio, int fd, loff_t pos,
 	aio->iocb.ki_filp = file;
 	aio->iocb.ki_flags = io_flags;
 	aio->bytes = bytes;
-	if (bpf_aio_is_rw(bpf_aio_get_op(aio))) {
+	if (bpf_aio_is_rw(op)) {
 		if (file->f_flags & O_DIRECT)
 			aio->iocb.ki_flags |= IOCB_DIRECT;
 		else

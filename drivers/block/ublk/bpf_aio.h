@@ -40,11 +40,15 @@ struct bpf_aio_buf {
 
 struct bpf_aio {
 	unsigned int opf;
-	unsigned int bytes;
+	union {
+		unsigned int bytes;
+		unsigned int buf_size;
+	};
 	struct bpf_aio_buf	buf;
 	struct bpf_aio_work	*work;
 	const struct bpf_aio_complete_ops *ops;
 	struct kiocb iocb;
+	void	*private_data;
 };
 
 typedef void (*bpf_aio_complete_t)(struct bpf_aio *io, long ret);
@@ -67,6 +71,38 @@ static inline unsigned int bpf_aio_get_op(const struct bpf_aio *aio)
 {
 	return aio->opf & BPF_AIO_OP_MASK;
 }
+
+/* Must be called from kfunc defined in consumer subsystem */
+static inline void bpf_aio_assign_cb(struct bpf_aio *aio,
+		const struct bpf_aio_complete_ops *ops)
+{
+	aio->ops = ops;
+}
+
+/*
+ * Skip `skip` bytes and assign the advanced source buffer for `aio`, so
+ * we can cover this part of source buffer by this `aio`
+ */
+static inline void bpf_aio_assign_buf(struct bpf_aio *aio,
+		const struct bpf_aio_buf *src, unsigned skip,
+		unsigned bytes)
+{
+	const struct bio_vec *bvec, *end;
+	struct bpf_aio_buf *abuf = &aio->buf;
+
+	skip += src->bvec_off;
+	for (bvec = src->bvec, end = bvec + src->nr_bvec; bvec < end; bvec++) {
+		if (likely(skip < bvec->bv_len))
+			break;
+		skip -= bvec->bv_len;
+	}
+
+	aio->buf_size = bytes;
+	abuf->bvec_off = skip;
+	abuf->nr_bvec = src->nr_bvec - (bvec - src->bvec);
+	abuf->bvec = bvec;
+}
+
 
 int bpf_aio_init(void);
 int bpf_aio_struct_ops_init(void);
