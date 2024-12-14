@@ -143,10 +143,10 @@ struct ublk_queue {
 
 	struct llist_head	io_cmds;
 
-	bool force_abort;
-	bool timeout;
-	bool canceling;
-	bool fail_io; /* copy of dev->state == UBLK_S_DEV_FAIL_IO */
+	unsigned short force_abort:1;
+	unsigned short timeout:1;
+	unsigned short canceling:1;
+	unsigned short fail_io:1; /* copy of dev->state == UBLK_S_DEV_FAIL_IO */
 	unsigned short nr_io_ready;	/* how many ios setup */
 	spinlock_t		cancel_lock;
 	struct ublk_device *dev;
@@ -1257,7 +1257,7 @@ static enum blk_eh_timer_return ublk_timeout(struct request *rq)
 	if (ubq->flags & UBLK_F_UNPRIVILEGED_DEV) {
 		if (!ubq->timeout) {
 			send_sig(SIGKILL, ubq->ubq_daemon, 0);
-			ubq->timeout = true;
+			ubq->timeout = 1;
 		}
 
 		return BLK_EH_DONE;
@@ -1459,7 +1459,7 @@ static bool ublk_abort_requests(struct ublk_device *ub, struct ublk_queue *ubq)
 		spin_unlock(&ubq->cancel_lock);
 		return false;
 	}
-	ubq->canceling = true;
+	ubq->canceling = 1;
 	spin_unlock(&ubq->cancel_lock);
 
 	spin_lock(&ub->lock);
@@ -1609,7 +1609,7 @@ static void ublk_unquiesce_dev(struct ublk_device *ub)
 	 * can move on.
 	 */
 	for (i = 0; i < ub->dev_info.nr_hw_queues; i++)
-		ublk_get_queue(ub, i)->force_abort = true;
+		ublk_get_queue(ub, i)->force_abort = 1;
 
 	blk_mq_unquiesce_queue(ub->ub_disk->queue);
 	/* We may have requeued some rqs in ublk_quiesce_queue() */
@@ -1672,7 +1672,7 @@ static void ublk_nosrv_work(struct work_struct *work)
 		blk_mq_quiesce_queue(ub->ub_disk->queue);
 		ub->dev_info.state = UBLK_S_DEV_FAIL_IO;
 		for (i = 0; i < ub->dev_info.nr_hw_queues; i++) {
-			ublk_get_queue(ub, i)->fail_io = true;
+			ublk_get_queue(ub, i)->fail_io = 1;
 		}
 		blk_mq_unquiesce_queue(ub->ub_disk->queue);
 	}
@@ -2744,8 +2744,8 @@ static void ublk_queue_reinit(struct ublk_device *ub, struct ublk_queue *ubq)
 	put_task_struct(ubq->ubq_daemon);
 	/* We have to reset it to NULL, otherwise ub won't accept new FETCH_REQ */
 	ubq->ubq_daemon = NULL;
-	ubq->timeout = false;
-	ubq->canceling = false;
+	ubq->timeout = 0;
+	ubq->canceling = 0;
 
 	for (i = 0; i < ubq->q_depth; i++) {
 		struct ublk_io *io = &ubq->ios[i];
@@ -2844,7 +2844,7 @@ static int ublk_ctrl_end_recovery(struct ublk_device *ub,
 		blk_mq_quiesce_queue(ub->ub_disk->queue);
 		ub->dev_info.state = UBLK_S_DEV_LIVE;
 		for (i = 0; i < ub->dev_info.nr_hw_queues; i++) {
-			ublk_get_queue(ub, i)->fail_io = false;
+			ublk_get_queue(ub, i)->fail_io = 0;
 		}
 		blk_mq_unquiesce_queue(ub->ub_disk->queue);
 	}
