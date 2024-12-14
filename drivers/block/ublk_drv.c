@@ -143,8 +143,6 @@ struct ublk_queue {
 
 	struct llist_head	io_cmds;
 
-	unsigned long io_addr;	/* mapped vm address */
-	unsigned int max_io_sz;
 	bool force_abort;
 	bool timeout;
 	bool canceling;
