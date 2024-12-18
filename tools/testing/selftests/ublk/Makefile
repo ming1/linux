@@ -21,6 +21,7 @@ endif
 
 TEST_PROGS := test_null_01.sh
 TEST_PROGS += test_null_02.sh
+TEST_PROGS += test_null_03.sh
 
 # Order correspond to 'make run_tests' order
 TEST_GEN_PROGS_EXTENDED = ublk_bpf
