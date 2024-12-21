@@ -1283,14 +1283,14 @@ static int cmd_dev_reg_bpf(struct dev_ctx *ctx)
 
 static int cmd_dev_help(char *exe)
 {
-	printf("%s add -t [null|loop] [-q nr_queues] [-d depth] [-n dev_id] [--bpf_prog ublk_prog_id] [--bpf_aio_prog ublk_aio_prog_id] [backfile1] [backfile2] ...\n", exe);
+	printf("%s add -t [null|loop|stripe] [-q nr_queues] [-d depth] [-n dev_id] [--bpf_prog ublk_prog_id] [--bpf_aio_prog ublk_aio_prog_id] [backfile1] [backfile2] ...\n", exe);
 	printf("\t default: nr_queues=2(max 4), depth=128(max 128), dev_id=-1(auto allocation)\n");
 	printf("%s del [-n dev_id] -a \n", exe);
 	printf("\t -a delete all devices -n delete specified device\n");
 	printf("%s list [-n dev_id] -a \n", exe);
 	printf("\t -a list all devices, -n list specified device, default -a \n");
-	printf("%s reg -t [null|loop] bpf_prog_obj_path \n", exe);
-	printf("%s unreg -t [null|loop]\n", exe);
+	printf("%s reg -t [null|loop|stripe] bpf_prog_obj_path \n", exe);
+	printf("%s unreg -t [null|loop|stripe]\n", exe);
 	return 0;
 }
 
@@ -1475,6 +1475,83 @@ static int ublk_loop_tgt_init(struct ublk_dev *dev)
 	return 0;
 }
 
+struct ublk_stripe_params {
+	unsigned char chunk_shift;
+	unsigned char nr_backfiles;
+	int fds[MAX_BACK_FILES];
+};
+
+static int stripe_bpf_setup_parameters(struct ublk_dev *dev, unsigned int chunk_shift)
+{
+	int dev_id = dev->dev_info.dev_id;
+	struct ublk_stripe_params stripe = {
+		.chunk_shift	=	chunk_shift,
+		.nr_backfiles	=	dev->nr_fds - 1,
+	};
+	int map_fd;
+	int err, i;
+
+	for (i = 0; i < stripe.nr_backfiles; i++)
+		stripe.fds[i] = dev->fds[i + 1];
+
+	map_fd = bpf_obj_get("/sys/fs/bpf/ublk/stripe/stripe_map");
+	if (map_fd < 0) {
+		ublk_err("Error getting map file descriptor\n");
+		return -EINVAL;
+	}
+
+	err = bpf_map_update_elem(map_fd, &dev_id, &stripe, BPF_ANY);
+	if (err) {
+		ublk_err("Error updating map element: %d\n", errno);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int ublk_stripe_tgt_init(struct ublk_dev *dev)
+{
+	unsigned long long bytes = 0;
+	unsigned chunk_shift = 12;
+	int ret, i;
+	struct ublk_params p = {
+		.types = UBLK_PARAM_TYPE_BASIC | UBLK_PARAM_TYPE_BPF,
+		.basic = {
+			.logical_bs_shift	= 9,
+			.physical_bs_shift	= 12,
+			.io_opt_shift	= 12,
+			.io_min_shift	= 9,
+			.max_sectors = dev->dev_info.max_io_buf_bytes >> 9,
+		},
+		.bpf = {
+			.flags = UBLK_BPF_HAS_OPS_ID | UBLK_BPF_HAS_AIO_OPS_ID,
+			.ops_id = dev->bpf_prog_id,
+			.aio_ops_id = dev->bpf_aio_prog_id,
+		},
+	};
+
+	ret = backing_file_tgt_init(dev);
+	if (ret)
+		return ret;
+
+	assert(stripe_bpf_setup_parameters(dev, chunk_shift) == 0);
+
+	for (i = 0; i < dev->nr_fds - 1; i++) {
+		unsigned long size = dev->tgt.backing_file_size[i];
+
+		if (size != dev->tgt.backing_file_size[0])
+			return -EINVAL;
+		if (size & ((1 << chunk_shift) - 1))
+			return -EINVAL;
+		bytes += size;
+	}
+
+	dev->tgt.dev_size = bytes;
+	p.basic.dev_sectors = bytes >> 9;
+	dev->tgt.params = p;
+
+	return 0;
+}
 
 static const struct ublk_tgt_ops tgt_ops_list[] = {
 	{
@@ -1485,6 +1562,11 @@ static const struct ublk_tgt_ops tgt_ops_list[] = {
 	{
 		.name = "loop",
 		.init_tgt = ublk_loop_tgt_init,
+		.deinit_tgt = backing_file_tgt_deinit,
+	},
+	{
+		.name = "stripe",
+		.init_tgt = ublk_stripe_tgt_init,
 		.deinit_tgt = backing_file_tgt_deinit,
 	},
 };

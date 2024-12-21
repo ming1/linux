@@ -27,6 +27,9 @@ TEST_PROGS += test_null_04.sh
 TEST_PROGS += test_loop_01.sh
 TEST_PROGS += test_loop_02.sh
 
+TEST_PROGS += test_stripe_01.sh
+TEST_PROGS += test_stripe_02.sh
+
 # Order correspond to 'make run_tests' order
 TEST_GEN_PROGS_EXTENDED = ublk_bpf
 
