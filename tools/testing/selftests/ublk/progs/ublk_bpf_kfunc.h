@@ -20,4 +20,14 @@ extern void ublk_bpf_complete_io(const struct ublk_bpf_io *io, int res) __ksym;
 extern int ublk_bpf_get_dev_id(const struct ublk_bpf_io *io) __ksym;
 extern int ublk_bpf_get_queue_id(const struct ublk_bpf_io *io) __ksym;
 extern int ublk_bpf_get_io_tag(const struct ublk_bpf_io *io) __ksym;
+
+static inline unsigned long long build_io_key(const struct ublk_bpf_io *io)
+{
+	unsigned long long dev_id = (unsigned short)ublk_bpf_get_dev_id(io);
+	unsigned long long q_id = (unsigned short)ublk_bpf_get_queue_id(io);
+	unsigned long long tag = ublk_bpf_get_io_tag(io);
+
+	return (dev_id << 32) | (q_id << 16) | tag;
+}
+
 #endif

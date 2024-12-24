@@ -1283,6 +1283,16 @@ static int cmd_dev_help(char *exe)
 }
 
 /****************** part 2: target implementation ********************/
+//extern int bpf_map_update_elem(int fd, const void *key, const void *value,
+//                                   __u64 flags);
+
+static inline unsigned long long build_io_key(struct ublk_queue *q, int tag)
+{
+       unsigned long long dev_id = (unsigned short)q->dev->dev_info.dev_id;
+       unsigned long long q_id = (unsigned short)q->q_id;
+
+       return (dev_id << 32) | (q_id << 16) | tag;
+}
 
 static int ublk_null_tgt_init(struct ublk_dev *dev)
 {
@@ -1314,12 +1324,35 @@ static int ublk_null_tgt_init(struct ublk_dev *dev)
 static int ublk_null_queue_io(struct ublk_queue *q, int tag)
 {
 	const struct ublksrv_io_desc *iod = ublk_get_iod(q, tag);
+	bool bpf = q->dev->dev_info.flags & UBLK_F_BPF;
 
-	/* won't be called for UBLK_F_BPF */
-	assert(!(q->dev->dev_info.flags & UBLK_F_BPF));
+	/* either !UBLK_F_BPF or UBLK_F_BPF with redirect */
+	assert(!bpf || (bpf && !(tag & 0x1)));
 
+	if (bpf && (tag % 4)) {
+		unsigned long long key = build_io_key(q, tag);
+		int map_fd;
+		int err;
+		int val = 1;
+
+		map_fd = bpf_obj_get("/sys/fs/bpf/ublk/null/io_map");
+		if (map_fd < 0) {
+			ublk_err("Error finding BPF map fd from pinned path\n");
+			goto exit;
+		}
+
+		/* make this io ready for bpf prog to handle */
+		err = bpf_map_update_elem(map_fd, &key, &val, BPF_ANY);
+		if (err) {
+			ublk_err("Error updating map element: %d\n", errno);
+			goto exit;
+		}
+		ublk_complete_io(q, tag, -EAGAIN);
+		return 0;
+	}
+
+exit:
 	ublk_complete_io(q, tag, iod->nr_sectors << 9);
-
 	return 0;
 }
 
