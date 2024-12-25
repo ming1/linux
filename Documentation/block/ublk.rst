@@ -309,6 +309,176 @@ with specified IO tag in the command data:
   ``UBLK_IO_COMMIT_AND_FETCH_REQ`` to the server, ublkdrv needs to copy
   the server buffer (pages) read to the IO request pages.
 
+
+UBLK-BPF support
+================
+
+Motivation
+----------
+
+- support stacking ublk
+
+  There are many 3rd party volume manager, ublk may be built over ublk device
+  for simplifying implementation, however, multiple userspace-kernel context
+  switchs for handling one single IO can't be accepted from performance view
+  of point
+
+  ublk-bpf can avoid user-kernel context switch in most fast io path, so ublk
+  over ublk becomes possible
+
+- complicated virtual block device
+
+  Many complicated virtual block devices have admin&meta code path and normal
+  IO fast path; meta & admin IO handling is usually complicated, so it can be
+  moved to ublk server for relieving development burden; meantime IO fast path
+  can be kept in kernel space for the sake of high performance.
+
+  Bpf provides rich maps, which helps a lot for communication between
+  userspace and prog or between prog and prog.
+
+  One typical example is qcow2, which meta IO handling can be kept in
+  ublk server, and fast IO path is moved to bpf prog. Efficient bpf map can be
+  looked up first and see if this virtual LBA & host LBA mapping is hit in
+  the map. If yes, handle the IO with ublk-bpf directly, otherwise forward to
+  ublk server to populate the mapping first.
+
+- some simple high performance virtual devices
+
+  Such as null & loop, the whole implementation can be moved to bpf prog
+  completely.
+
+- provides chance to get similar performance with kernel driver
+
+  One round of kernel/user context switch is avoided, and one extra IO data
+  copy is saved
+
+bpf aio
+-------
+
+bpf aio exports kfuncs for bpf prog to submit & complete IO in async way.
+IO completion handler is provided by the bpf aio user, which is still
+defined in bpf prog(such as ublk bpf prog) as `struct bpf_aio_complete_ops`
+of bpf struct_ops.
+
+bpf aio is designed as generic interface, which can be used for any bpf prog
+in theory, and it may be move to `/lib/` in future if the interface becomes
+mature and stable enough.
+
+- bpf_aio_alloc()
+
+  Allocate one bpf aio instance of `struct bpf_aio`
+
+- bpf_aio_release()
+
+  Free one bpf aio instance of `struct bpf_aio`
+
+- bpf_aio_submit()
+
+  Submit one bpf aio instance of `struct bpf_aio` in async way.
+
+- `struct bpf_aio_complete_ops`
+
+  Define bpf aio completion callback implemented as bpf struct_ops, and
+  it is called when the submitted bpf aio is completed.
+
+
+ublk bpf implementation
+-----------------------
+
+Export `struct ublk_bpf_ops` as bpf struct_ops, so that ublk IO command
+can be queued or handled in the callback defined in the ublk bpf struct_ops,
+see the whole logic in `ublk_run_bpf_handler`:
+
+- `UBLK_BPF_IO_QUEUED`
+
+  If ->queue_io_cmd() or ->queue_io_cmd_daemon() returns `UBLK_BPF_IO_QUEUED`,
+  this IO command has been queued by bpf prog, so it won't be forwarded to
+  ublk server
+
+- `UBLK_BPF_IO_REDIRECT`
+
+  If ->queue_io_cmd() or ->queue_io_cmd_daemon() returns `UBLK_BPF_IO_REDIRECT`,
+  this IO command will be forwarded to ublk server
+
+- `UBLK_BPF_IO_CONTINUE`
+
+  If ->queue_io_cmd() or ->queue_io_cmd_daemon() returns `UBLK_BPF_IO_CONTINUE`,
+  part of this io command is queued, and `ublk_bpf_return_t` carries how many
+  bytes queued, so ublk driver will continue to call the callback to queue
+  remained bytes of this io command further, this way is helpful for
+  implementing stacking devices by allowing IO command split.
+
+ublk bpf provides kfuncs for ublk bpf prog to queue and handle ublk IO command:
+
+- ublk_bpf_complete_io()
+
+  Complete this ublk IO command
+
+- ublk_bpf_get_io_tag()
+
+  Get tag of this ublk IO command
+
+- ublk_bpf_get_queue_id()
+
+  Get queue id of this ublk IO command
+
+- ublk_bpf_get_dev_id()
+
+  Get device id of this ublk IO command
+
+- ublk_bpf_attach_and_prep_aio()
+
+  Attach & prepare bpf aio to this ublk IO command, bpf aio buffer is
+  prepared, and aio's complete callback is setup, so the user prog can
+  get notified when the bpf aio is completed
+
+- ublk_bpf_dettach_and_complete_aio()
+
+  Detach bpf aio from this IO command, and it is usually called from bpf
+  aio's completion callback.
+
+- ublk_bpf_acquire_io_from_aio()
+
+  Acquire ublk IO command from the aio, one typical use is for calling
+  ublk_bpf_complete_io() to complete ublk IO command
+
+- ublk_bpf_release_io_from_aio()
+
+  Release ublk IO command which is acquired from `ublk_bpf_acquire_io_from_aio`
+
+
+Test
+----
+
+- Build kernel & install kernel headers & reboot & test
+
+  enable CONFIG_BLK_DEV_UBLK & CONFIG_UBLK_BPF
+
+  make
+
+  make headers_install INSTALL_HDR_PATH=/usr
+
+  reboot
+
+  make -C tools/testing/selftests TARGETS=ublk run_test
+
+ublk selftests implements null, loop and stripe targets for covering all
+bpf features:
+
+- complete bpf IO handling
+
+- complete ublk server IO handling
+
+- mixed bpf prog and ublk server IO handling
+
+- bpf aio for loop & stripe
+
+- IO split via `UBLK_BPF_IO_CONTINUE` for implementing ublk-stripe
+
+Write & read verify, and mkfs.ext4 & mount & umount are run in the
+selftest.
+
+
 Future development
 ==================
 
