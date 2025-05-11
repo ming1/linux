@@ -1346,17 +1346,24 @@ static void ublk_queue_cmd_list(struct ublk_queue *ubq, struct rq_list *l)
 static enum blk_eh_timer_return ublk_timeout(struct request *rq)
 {
 	struct ublk_queue *ubq = rq->mq_hctx->driver_data;
+	struct task_struct *p;
+	struct pid *pid;
 
-	if (ubq->flags & UBLK_F_UNPRIVILEGED_DEV) {
-		if (!ubq->timeout) {
-			send_sig(SIGKILL, ubq->ubq_daemon, 0);
-			ubq->timeout = true;
-		}
+	if (!(ubq->flags & UBLK_F_UNPRIVILEGED_DEV))
+		return BLK_EH_RESET_TIMER;
 
-		return BLK_EH_DONE;
-	}
+	if (ubq->timeout)
+		goto exit;
 
-	return BLK_EH_RESET_TIMER;
+	rcu_read_lock();
+	pid = find_vpid(ubq->dev->dev_info.ublksrv_pid);
+	p = pid_task(pid, PIDTYPE_PID);
+	if (p)
+		send_sig(SIGKILL, p, 0);
+	ubq->timeout = true;
+	rcu_read_unlock();
+exit:
+	return BLK_EH_DONE;
 }
 
 static blk_status_t ublk_prep_req(struct ublk_queue *ubq, struct request *rq,
