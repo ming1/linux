@@ -1144,8 +1144,9 @@ exit:
 	blk_mq_end_request(req, res);
 }
 
-static void ublk_complete_io_cmd(struct ublk_io *io, struct request *req,
-				 int res, unsigned issue_flags)
+static inline struct io_uring_cmd *
+ublk_prep_compl_uring_cmd(const struct ublk_queue *ubq, struct ublk_io *io,
+			  struct request *req, bool get_data)
 {
 	/* read cmd first because req will overwrite it */
 	struct io_uring_cmd *cmd = io->cmd;
@@ -1153,7 +1154,7 @@ static void ublk_complete_io_cmd(struct ublk_io *io, struct request *req,
 	/* mark this cmd owned by ublksrv */
 	io->flags |= UBLK_IO_FLAG_OWNED_BY_SRV;
 
-	if (res == UBLK_IO_RES_NEED_GET_DATA)
+	if (get_data)
 		io->flags |= UBLK_IO_FLAG_NEED_GET_DATA;
 
 	/*
@@ -1164,8 +1165,7 @@ static void ublk_complete_io_cmd(struct ublk_io *io, struct request *req,
 
 	io->req = req;
 
-	/* tell ublksrv one io request is coming */
-	io_uring_cmd_done(cmd, res, 0, issue_flags);
+	return cmd;
 }
 
 #define UBLK_REQUEUE_DELAY_MS	3
@@ -1189,7 +1189,9 @@ static void ublk_auto_buf_reg_fallback(struct request *req, struct ublk_io *io,
 
 	iod->op_flags |= UBLK_IO_F_NEED_REG_BUF;
 	refcount_set(&data->ref, 1);
-	ublk_complete_io_cmd(io, req, UBLK_IO_RES_OK, issue_flags);
+
+	io_uring_cmd_done(ublk_prep_compl_uring_cmd(ubq, io, req, false),
+			  UBLK_IO_RES_OK, 0, issue_flags);
 }
 
 static bool ublk_auto_buf_reg(struct request *req, struct ublk_io *io,
@@ -1288,8 +1290,8 @@ static void ublk_dispatch_req(struct ublk_queue *ubq,
 		 */
 		pr_devel("%s: need get data. qid %d tag %d io_flags %x\n",
 				__func__, ubq->q_id, req->tag, io->flags);
-		ublk_complete_io_cmd(io, req, UBLK_IO_RES_NEED_GET_DATA,
-				     issue_flags);
+		io_uring_cmd_done(ublk_prep_compl_uring_cmd(ubq, io, req, true),
+				  UBLK_IO_RES_NEED_GET_DATA, 0, issue_flags);
 		return;
 	}
 
@@ -1297,7 +1299,8 @@ static void ublk_dispatch_req(struct ublk_queue *ubq,
 		return;
 
 	if (ublk_prep_auto_buf_reg(ubq, req, io, issue_flags))
-		ublk_complete_io_cmd(io, req, UBLK_IO_RES_OK, issue_flags);
+		io_uring_cmd_done(ublk_prep_compl_uring_cmd(ubq, io, req, false),
+				  UBLK_IO_RES_OK, 0, issue_flags);
 }
 
 static void ublk_cmd_tw_cb(struct io_uring_cmd *cmd,
