@@ -67,7 +67,8 @@
 		| UBLK_F_ZONED \
 		| UBLK_F_USER_RECOVERY_FAIL_IO \
 		| UBLK_F_UPDATE_SIZE \
-		| UBLK_F_AUTO_BUF_REG)
+		| UBLK_F_AUTO_BUF_REG \
+		| UBLK_F_TASK_NEUTRAL)
 
 #define UBLK_F_ALL_RECOVERY_FLAGS (UBLK_F_USER_RECOVERY \
 		| UBLK_F_USER_RECOVERY_REISSUE \
@@ -164,7 +165,10 @@ struct ublk_io {
 		struct request *req;
 	};
 
-	struct task_struct *task;
+	union {
+		struct task_struct *task; /* !for UBLK_F_TASK_NEUTRAL */
+		spinlock_t lock; /* for UBLK_F_TASK_NEUTRAL */
+       };
 };
 
 struct ublk_queue {
@@ -628,6 +632,11 @@ static void ublk_apply_params(struct ublk_device *ub)
 
 	if (ub->params.types & UBLK_PARAM_TYPE_ZONED)
 		ublk_dev_param_zoned_apply(ub);
+}
+
+static inline bool ublk_support_task_neutral(const struct ublk_queue *ubq)
+{
+       return ubq->flags & UBLK_F_TASK_NEUTRAL;
 }
 
 static inline bool ublk_support_zero_copy(const struct ublk_queue *ubq)
@@ -1144,9 +1153,9 @@ exit:
 	blk_mq_end_request(req, res);
 }
 
-static inline struct io_uring_cmd *
-ublk_prep_compl_uring_cmd(const struct ublk_queue *ubq, struct ublk_io *io,
-			  struct request *req, bool get_data)
+static struct io_uring_cmd *
+__ublk_prep_compl_uring_cmd(struct ublk_io *io, struct request *req,
+			    bool get_data)
 {
 	/* read cmd first because req will overwrite it */
 	struct io_uring_cmd *cmd = io->cmd;
@@ -1164,6 +1173,22 @@ ublk_prep_compl_uring_cmd(const struct ublk_queue *ubq, struct ublk_io *io,
 	io->flags &= ~UBLK_IO_FLAG_ACTIVE;
 
 	io->req = req;
+
+	return cmd;
+}
+
+static inline struct io_uring_cmd *
+ublk_prep_compl_uring_cmd(const struct ublk_queue *ubq, struct ublk_io *io,
+			  struct request *req, bool get_data)
+{
+	struct io_uring_cmd *cmd;
+
+	if (!ublk_support_task_neutral(ubq))
+		return __ublk_prep_compl_uring_cmd(io, req, get_data);
+
+	spin_lock(&io->lock);
+	cmd = __ublk_prep_compl_uring_cmd(io, req, get_data);
+	spin_unlock(&io->lock);
 
 	return cmd;
 }
@@ -1271,13 +1296,14 @@ static void ublk_dispatch_req(struct ublk_queue *ubq,
 	/*
 	 * Task is exiting if either:
 	 *
-	 * (1) current != io->task.
-	 * io_uring_cmd_complete_in_task() tries to run task_work
+	 * (1) current != io->task in case of not supporting multi queue
+	 * tasks, io_uring_cmd_complete_in_task() tries to run task_work
 	 * in a workqueue if cmd's task is PF_EXITING.
 	 *
 	 * (2) current->flags & PF_EXITING.
 	 */
-	if (unlikely(current != io->task || current->flags & PF_EXITING)) {
+	if (unlikely((!ublk_support_task_neutral(ubq) && current != io->task) ||
+				current->flags & PF_EXITING)) {
 		__ublk_abort_rq(ubq, req);
 		return;
 	}
@@ -1490,9 +1516,11 @@ static void ublk_queue_reinit(struct ublk_device *ub, struct ublk_queue *ubq)
 		 * It could be NULL in case of closing one quiesced
 		 * device.
 		 */
-		if (io->task) {
-			put_task_struct(io->task);
-			io->task = NULL;
+		if (!ublk_support_task_neutral(ubq)) {
+			if (io->task) {
+				put_task_struct(io->task);
+				io->task = NULL;
+			}
 		}
 	}
 }
@@ -1767,7 +1795,15 @@ static void ublk_cancel_cmd(struct ublk_queue *ubq, unsigned tag,
 {
 	struct io_uring_cmd *cmd;
 
-	cmd = __ublk_cancel_cmd(ubq, tag, issue_flags);
+	if (!ublk_support_task_neutral(ubq)) {
+		cmd = __ublk_cancel_cmd(ubq, tag, issue_flags);
+	} else {
+		struct ublk_io *io = &ubq->ios[tag];
+
+		spin_lock(&io->lock);
+		cmd = __ublk_cancel_cmd(ubq, tag, issue_flags);
+		spin_unlock(&io->lock);
+       }
 	if (cmd)
 		io_uring_cmd_done(cmd, UBLK_IO_RES_ABORT, 0, issue_flags);
 }
@@ -1792,7 +1828,6 @@ static void ublk_uring_cmd_cancel_fn(struct io_uring_cmd *cmd,
 {
 	struct ublk_uring_cmd_pdu *pdu = ublk_get_uring_cmd_pdu(cmd);
 	struct ublk_queue *ubq = pdu->ubq;
-	struct task_struct *task;
 
 	if (WARN_ON_ONCE(!ubq))
 		return;
@@ -1800,9 +1835,13 @@ static void ublk_uring_cmd_cancel_fn(struct io_uring_cmd *cmd,
 	if (WARN_ON_ONCE(pdu->tag >= ubq->q_depth))
 		return;
 
-	task = io_uring_cmd_get_task(cmd);
-	if (WARN_ON_ONCE(task && task != ubq->ios[pdu->tag].task))
-		return;
+	if (!ublk_support_task_neutral(ubq)) {
+		struct task_struct *task = io_uring_cmd_get_task(cmd);
+
+		task = io_uring_cmd_get_task(cmd);
+		if (WARN_ON_ONCE(task && task != ubq->ios[pdu->tag].task))
+			return;
+	}
 
 	if (!ubq->canceling)
 		ublk_start_cancel(ubq);
@@ -2069,7 +2108,10 @@ static int __ublk_fetch(struct io_uring_cmd *cmd, struct ublk_queue *ubq,
 	}
 
 	ublk_fill_io_cmd(io, cmd, buf_addr);
-	WRITE_ONCE(io->task, get_task_struct(current));
+	if (ublk_support_task_neutral(ubq))
+		spin_lock_init(&io->lock);
+	else
+		WRITE_ONCE(io->task, get_task_struct(current));
 	ret = 0;
 out:
 	return ret;
@@ -2144,7 +2186,19 @@ static int ublk_commit_and_fetch(const struct ublk_queue *ubq,
 	bool unreg_buf = false;
 	struct request *req;
 
-	req = __ublk_commit_and_fetch(ubq, io, cmd, ub_cmd, &unreg_buf);
+	if (!ublk_support_task_neutral(ubq)) {
+		req = __ublk_commit_and_fetch(ubq, io, cmd, ub_cmd, &unreg_buf);
+	} else {
+		spin_lock(&io->lock);
+		/* double check with lock grabbed */
+		if (!(io->flags & UBLK_IO_FLAG_ACTIVE) &&
+		    (io->flags & UBLK_IO_FLAG_OWNED_BY_SRV))
+			req = __ublk_commit_and_fetch(ubq, io, cmd, ub_cmd,
+					&unreg_buf);
+		else
+			req = ERR_PTR(-EINVAL);
+		spin_unlock(&io->lock);
+	}
 	if (IS_ERR(req))
 		return PTR_ERR(req);
 
@@ -2184,7 +2238,18 @@ static int ublk_get_data(const struct ublk_queue *ubq, struct ublk_io *io,
 {
 	struct request *req;
 
-	req = __ublk_get_data(io, buf_addr);
+	if (!ublk_support_task_neutral(ubq)) {
+		req = __ublk_get_data(io, buf_addr);
+	} else {
+		spin_lock(&io->lock);
+		if (!(io->flags & UBLK_IO_FLAG_ACTIVE) &&
+		    (io->flags & UBLK_IO_FLAG_OWNED_BY_SRV) &&
+		    (io->flags & UBLK_IO_FLAG_NEED_GET_DATA))
+			req = __ublk_get_data(io, buf_addr);
+		else
+			req = ERR_PTR(-EINVAL);
+		spin_unlock(&io->lock);
+	}
 	if (IS_ERR(req))
 		return PTR_ERR(req);
 
@@ -2876,6 +2941,13 @@ static int ublk_ctrl_add_dev(const struct ublksrv_ctrl_cmd *header)
 		info.flags &= ~UBLK_F_UNPRIVILEGED_DEV;
 	else if (!(info.flags & UBLK_F_UNPRIVILEGED_DEV))
 		return -EPERM;
+
+	if ((info.flags & UBLK_F_TASK_NEUTRAL) &&
+			(info.flags & UBLK_F_AUTO_BUF_REG)) {
+		pr_warn("%s: F_TASK_NEUTRAL can't co-exist with F_AUTO_BUF_REG\n",
+			__func__);
+		return -EINVAL;
+	}
 
 	/* forbid nonsense combinations of recovery flags */
 	switch (info.flags & UBLK_F_ALL_RECOVERY_FLAGS) {

@@ -242,6 +242,16 @@
  */
 #define UBLK_F_AUTO_BUF_REG 	(1ULL << 11)
 
+/*
+ * Support to issue uring_cmd from different task contexts
+ *
+ * ublk driver doesn't track uring_cmd task context any more. ublk server
+ * implementation can become more flexible to issue ublk uring_cmd from
+ * different task contexts, per-IO lock is added in ublk driver for
+ * supporting this feature.
+ */
+#define UBLK_F_TASK_NEUTRAL       (1ULL << 12)
+
 /* device state */
 #define UBLK_S_DEV_DEAD	0
 #define UBLK_S_DEV_LIVE	1
