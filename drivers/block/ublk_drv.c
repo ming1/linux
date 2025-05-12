@@ -2092,20 +2092,11 @@ static int ublk_fetch(struct io_uring_cmd *cmd, struct ublk_queue *ubq,
 	return ret;
 }
 
-static void ublk_auto_buf_unreg(struct ublk_io *io, struct request *req,
-				unsigned int issue_flags)
-{
-	struct ublk_rq_data *data = blk_mq_rq_to_pdu(req);
-
-	WARN_ON_ONCE(io_buffer_unregister_bvec(io->cmd, data->buf_index,
-				issue_flags));
-	io->flags &= ~UBLK_IO_FLAG_AUTO_BUF_REG;
-}
-
-static int ublk_commit_and_fetch(const struct ublk_queue *ubq,
-				 struct ublk_io *io, struct io_uring_cmd *cmd,
-				 const struct ublksrv_io_cmd *ub_cmd,
-				 unsigned int issue_flags)
+static struct request *
+__ublk_commit_and_fetch(const struct ublk_queue *ubq, struct ublk_io *io,
+			struct io_uring_cmd *cmd,
+			const struct ublksrv_io_cmd *ub_cmd,
+			bool *need_unreg_buf)
 {
 	struct request *req = io->req;
 
@@ -2116,13 +2107,13 @@ static int ublk_commit_and_fetch(const struct ublk_queue *ubq,
 		 */
 		if (!ub_cmd->addr && (!ublk_need_get_data(ubq) ||
 					req_op(req) == REQ_OP_READ))
-			return -EINVAL;
+			goto fail;
 	} else if (req_op(req) != REQ_OP_ZONE_APPEND && ub_cmd->addr) {
 		/*
 		 * User copy requires addr to be unset when command is
 		 * not zone append
 		 */
-		return -EINVAL;
+		goto fail;
 	}
 
 	ublk_fill_io_cmd(io, cmd, ub_cmd->addr);
@@ -2131,11 +2122,36 @@ static int ublk_commit_and_fetch(const struct ublk_queue *ubq,
 	io->flags &= ~UBLK_IO_FLAG_OWNED_BY_SRV;
 	io->res = ub_cmd->result;
 
+	if (io->flags & UBLK_IO_FLAG_AUTO_BUF_REG) {
+		io->flags &= ~UBLK_IO_FLAG_AUTO_BUF_REG;
+		*need_unreg_buf = true;
+	}
+	return req;
+fail:
+	return ERR_PTR(-EINVAL);
+}
+
+static int ublk_commit_and_fetch(const struct ublk_queue *ubq,
+				 struct ublk_io *io, struct io_uring_cmd *cmd,
+				 const struct ublksrv_io_cmd *ub_cmd,
+				 unsigned int issue_flags)
+{
+	bool unreg_buf = false;
+	struct request *req;
+
+	req = __ublk_commit_and_fetch(ubq, io, cmd, ub_cmd, &unreg_buf);
+	if (IS_ERR(req))
+		return PTR_ERR(req);
+
 	if (req_op(req) == REQ_OP_ZONE_APPEND)
 		req->__sector = ub_cmd->zone_append_lba;
 
-	if (io->flags & UBLK_IO_FLAG_AUTO_BUF_REG)
-		ublk_auto_buf_unreg(io, req, issue_flags);
+	if (unreg_buf) {
+		struct ublk_rq_data *data = blk_mq_rq_to_pdu(req);
+
+		WARN_ON_ONCE(io_buffer_unregister_bvec(cmd, data->buf_index,
+					issue_flags));
+	}
 
 	if (likely(!blk_should_fake_timeout(req->q)))
 		ublk_put_req_ref(ubq, req);
