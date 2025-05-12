@@ -388,6 +388,9 @@ static void ublk_queue_deinit(struct ublk_queue *q)
 	int i;
 	int nr_ios = q->q_depth;
 
+	if (q->tgt_ops->deinit_queue && (q->state & UBLKSRV_QUEUE_INITED))
+		q->tgt_ops->deinit_queue(q);
+
 	io_uring_unregister_buffers(&q->ring);
 
 	io_uring_unregister_ring_fd(&q->ring);
@@ -485,6 +488,13 @@ static int ublk_queue_init(struct ublk_queue *q,
 				q->dev->dev_info.dev_id, q->q_id, ret);
 		goto fail;
 	}
+
+	if (q->tgt_ops->init_queue) {
+		ret = q->tgt_ops->init_queue(q);
+		if (ret)
+			goto fail;
+	}
+	q->state |= UBLKSRV_QUEUE_INITED;
 
 	return 0;
  fail:
@@ -736,6 +746,8 @@ static int ublk_process_io(struct ublk_queue *q)
 
 	ret = io_uring_submit_and_wait(&q->ring, 1);
 	reapped = ublk_reap_events_uring(&q->ring);
+	if (q->tgt_ops->handle_io_bg)
+                  q->tgt_ops->handle_io_bg(q);
 
 	ublk_dbg(UBLK_DBG_QUEUE, "submit result %d, reapped %d stop %d idle %d\n",
 			ret, reapped, (q->state & UBLKSRV_QUEUE_STOPPING),

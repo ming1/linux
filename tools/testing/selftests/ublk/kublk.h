@@ -145,6 +145,13 @@ struct ublk_tgt_ops {
 
 	/* return buffer index for UBLK_F_AUTO_BUF_REG */
 	unsigned short (*buf_index)(const struct ublk_queue *, int tag);
+
+	int (*init_queue)(struct ublk_queue *);
+
+	void (*deinit_queue)(struct ublk_queue *);
+
+	/* called after one batch IOs are handled */
+	void (*handle_io_bg)(struct ublk_queue *);
 };
 
 struct ublk_tgt {
@@ -167,6 +174,7 @@ struct ublk_queue {
 	struct ublk_dev *dev;
 	const struct ublk_tgt_ops *tgt_ops;
 	struct ublksrv_io_desc *io_cmd_buf;
+	void *private_data;
 	struct io_uring ring;
 	struct ublk_io ios[UBLK_QUEUE_DEPTH];
 #define UBLKSRV_QUEUE_STOPPING	(1U << 0)
@@ -175,6 +183,7 @@ struct ublk_queue {
 #define UBLKSRV_ZC		(1U << 3)
 #define UBLKSRV_AUTO_BUF_REG		(1U << 4)
 #define UBLKSRV_AUTO_BUF_REG_FALLBACK	(1U << 5)
+#define UBLKSRV_QUEUE_INITED	(1U << 6)
 	unsigned state;
 	pid_t tid;
 	pthread_t thread;
@@ -210,6 +219,15 @@ struct ublk_dev {
 extern unsigned int ublk_dbg_mask;
 extern int ublk_queue_io_cmd(struct ublk_queue *q, struct ublk_io *io, unsigned tag);
 
+static inline void *ublk_get_queue_priv_data(struct ublk_queue *q)
+{
+	return q->private_data;
+}
+
+static inline void ublk_set_queue_priv_data(struct ublk_queue *q, void *data)
+{
+	q->private_data = data;
+}
 
 static inline int ublk_io_auto_zc_fallback(const struct ublksrv_io_desc *iod)
 {
