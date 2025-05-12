@@ -2167,10 +2167,12 @@ static int ublk_commit_and_fetch(const struct ublk_queue *ubq,
 	return 0;
 }
 
-static bool ublk_get_data(const struct ublk_queue *ubq, struct ublk_io *io)
+static bool ublk_get_data(const struct ublk_queue *ubq, struct ublk_io *io,
+			  __u64 buf_addr)
 {
 	struct request *req = io->req;
 
+	io->addr = buf_addr;
 	/*
 	 * We have handled UBLK_IO_NEED_GET_DATA command,
 	 * so clear UBLK_IO_FLAG_NEED_GET_DATA now and just
@@ -2268,8 +2270,7 @@ static int __ublk_ch_uring_cmd(struct io_uring_cmd *cmd,
 			goto out;
 		break;
 	case UBLK_IO_NEED_GET_DATA:
-		io->addr = ub_cmd->addr;
-		if (!ublk_get_data(ubq, io))
+		if (!ublk_get_data(ubq, io, ub_cmd->addr))
 			return -EIOCBQUEUED;
 
 		return UBLK_IO_RES_OK;
