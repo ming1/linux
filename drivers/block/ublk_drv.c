@@ -1153,6 +1153,9 @@ static void ublk_complete_io_cmd(struct ublk_io *io, struct request *req,
 	/* mark this cmd owned by ublksrv */
 	io->flags |= UBLK_IO_FLAG_OWNED_BY_SRV;
 
+	if (res == UBLK_IO_RES_NEED_GET_DATA)
+		io->flags |= UBLK_IO_FLAG_NEED_GET_DATA;
+
 	/*
 	 * clear ACTIVE since we are done with this sqe/cmd slot
 	 * We can only accept io cmd in case of being not active.
@@ -1283,7 +1286,6 @@ static void ublk_dispatch_req(struct ublk_queue *ubq,
 		 * so immediately pass UBLK_IO_RES_NEED_GET_DATA to ublksrv
 		 * and notify it.
 		 */
-		io->flags |= UBLK_IO_FLAG_NEED_GET_DATA;
 		pr_devel("%s: need get data. qid %d tag %d io_flags %x\n",
 				__func__, ubq->q_id, req->tag, io->flags);
 		ublk_complete_io_cmd(io, req, UBLK_IO_RES_NEED_GET_DATA,
