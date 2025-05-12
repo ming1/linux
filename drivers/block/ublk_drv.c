@@ -2041,29 +2041,14 @@ static int ublk_unregister_io_buf(struct io_uring_cmd *cmd,
 	return io_buffer_unregister_bvec(cmd, index, issue_flags);
 }
 
-static int ublk_fetch(struct io_uring_cmd *cmd, struct ublk_queue *ubq,
-		      struct ublk_io *io, __u64 buf_addr)
+static int __ublk_fetch(struct io_uring_cmd *cmd, struct ublk_queue *ubq,
+			struct ublk_io *io, __u64 buf_addr)
 {
-	struct ublk_device *ub = ubq->dev;
-	int ret = 0;
-
-	/*
-	 * When handling FETCH command for setting up ublk uring queue,
-	 * ub->mutex is the innermost lock, and we won't block for handling
-	 * FETCH, so it is fine even for IO_URING_F_NONBLOCK.
-	 */
-	mutex_lock(&ub->mutex);
-	/* UBLK_IO_FETCH_REQ is only allowed before queue is setup */
-	if (ublk_queue_ready(ubq)) {
-		ret = -EBUSY;
-		goto out;
-	}
+	int ret = -EINVAL;
 
 	/* allow each command to be FETCHed at most once */
-	if (io->flags & UBLK_IO_FLAG_ACTIVE) {
-		ret = -EINVAL;
+	if (io->flags & UBLK_IO_FLAG_ACTIVE)
 		goto out;
-	}
 
 	WARN_ON_ONCE(io->flags & UBLK_IO_FLAG_OWNED_BY_SRV);
 
@@ -2075,15 +2060,34 @@ static int ublk_fetch(struct io_uring_cmd *cmd, struct ublk_queue *ubq,
 		if (!buf_addr && !ublk_need_get_data(ubq))
 			goto out;
 	} else if (buf_addr) {
-		/* User copy requires addr to be unset */
-		ret = -EINVAL;
 		goto out;
 	}
 
 	ublk_fill_io_cmd(io, cmd, buf_addr);
 	WRITE_ONCE(io->task, get_task_struct(current));
-	ublk_mark_io_ready(ub, ubq);
+	ret = 0;
 out:
+	return ret;
+}
+
+static int ublk_fetch(struct io_uring_cmd *cmd, struct ublk_queue *ubq,
+		      struct ublk_io *io, __u64 buf_addr)
+{
+	struct ublk_device *ub = ubq->dev;
+	int ret = -EBUSY;
+
+	/*
+	 * When handling FETCH command for setting up ublk uring queue,
+	 * ub->mutex is the innermost lock, and we won't block for handling
+	 * FETCH, so it is fine even for IO_URING_F_NONBLOCK.
+	 */
+	mutex_lock(&ub->mutex);
+	/* UBLK_IO_FETCH_REQ is only allowed before queue is setup */
+	if (!ublk_queue_ready(ubq)) {
+		ret = __ublk_fetch(cmd, ubq, io, buf_addr);
+		if (!ret)
+			ublk_mark_io_ready(ub, ubq);
+	}
 	mutex_unlock(&ub->mutex);
 	return ret;
 }
