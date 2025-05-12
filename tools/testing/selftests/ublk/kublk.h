@@ -217,7 +217,12 @@ struct ublk_dev {
 
 
 extern unsigned int ublk_dbg_mask;
-extern int ublk_queue_io_cmd(struct ublk_queue *q, struct ublk_io *io, unsigned tag);
+extern int __ublk_queue_io_cmd(struct ublk_queue *q, struct io_uring *r, struct ublk_io *io, unsigned tag);
+
+static inline int ublk_queue_io_cmd(struct ublk_queue *q, struct ublk_io *io, unsigned tag)
+{
+	return __ublk_queue_io_cmd(q, &q->ring, io, tag);
+}
 
 static inline void *ublk_get_queue_priv_data(struct ublk_queue *q)
 {
@@ -295,22 +300,28 @@ static inline void ublk_dbg(int level, const char *fmt, ...)
 	}
 }
 
-static inline int ublk_queue_alloc_sqes(struct ublk_queue *q,
+static inline int io_uring_alloc_sqes(struct io_uring *r,
 		struct io_uring_sqe *sqes[], int nr_sqes)
 {
-	unsigned left = io_uring_sq_space_left(&q->ring);
+	unsigned left = io_uring_sq_space_left(r);
 	int i;
 
 	if (left < nr_sqes)
-		io_uring_submit(&q->ring);
+		io_uring_submit(r);
 
 	for (i = 0; i < nr_sqes; i++) {
-		sqes[i] = io_uring_get_sqe(&q->ring);
+		sqes[i] = io_uring_get_sqe(r);
 		if (!sqes[i])
 			return i;
 	}
 
 	return nr_sqes;
+}
+
+static inline int ublk_queue_alloc_sqes(struct ublk_queue *q,
+		struct io_uring_sqe *sqes[], int nr_sqes)
+{
+	return io_uring_alloc_sqes(&q->ring, sqes, nr_sqes);
 }
 
 static inline void io_uring_prep_buf_register(struct io_uring_sqe *sqe,
@@ -382,13 +393,20 @@ static inline struct ublk_io *ublk_get_io(struct ublk_queue *q, unsigned tag)
 	return &q->ios[tag];
 }
 
-static inline int ublk_complete_io(struct ublk_queue *q, unsigned tag, int res)
+static inline int __ublk_complete_io(struct ublk_queue *q,
+				     struct io_uring *r,
+				     unsigned tag, int res)
 {
 	struct ublk_io *io = &q->ios[tag];
 
 	ublk_mark_io_done(io, res);
 
-	return ublk_queue_io_cmd(q, io, tag);
+	return __ublk_queue_io_cmd(q, r, io, tag);
+}
+
+static inline int ublk_complete_io(struct ublk_queue *q, unsigned tag, int res)
+{
+	return __ublk_complete_io(q, &q->ring, tag, res);
 }
 
 static inline void ublk_queued_tgt_io(struct ublk_queue *q, unsigned tag, int queued)

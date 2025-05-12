@@ -559,7 +559,8 @@ static void ublk_set_auto_buf_reg(const struct ublk_queue *q,
 	sqe->addr = ublk_auto_buf_reg_to_sqe_addr(&buf);
 }
 
-int ublk_queue_io_cmd(struct ublk_queue *q, struct ublk_io *io, unsigned tag)
+int __ublk_queue_io_cmd(struct ublk_queue *q, struct io_uring *r,
+			struct ublk_io *io, unsigned tag)
 {
 	struct ublksrv_io_cmd *cmd;
 	struct io_uring_sqe *sqe[1];
@@ -585,10 +586,7 @@ int ublk_queue_io_cmd(struct ublk_queue *q, struct ublk_io *io, unsigned tag)
 	else if (io->flags & UBLKSRV_NEED_FETCH_RQ)
 		cmd_op = UBLK_U_IO_FETCH_REQ;
 
-	if (io_uring_sq_space_left(&q->ring) < 1)
-		io_uring_submit(&q->ring);
-
-	ublk_queue_alloc_sqes(q, sqe, 1);
+	io_uring_alloc_sqes(r, sqe, 1);
 	if (!sqe[0]) {
 		ublk_err("%s: run out of sqe %d, tag %d\n",
 				__func__, q->q_id, tag);
