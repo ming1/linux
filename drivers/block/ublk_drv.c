@@ -2178,8 +2178,8 @@ static void ublk_commit_and_fetch(const struct ublk_queue *ubq,
 		ublk_put_req_ref(ubq, req);
 }
 
-static bool ublk_get_data(const struct ublk_queue *ubq, struct ublk_io *io,
-			  const struct ublk_cmd_data *data)
+static struct request *
+__ublk_get_data(struct ublk_io *io, const struct ublk_cmd_data *data)
 {
 	struct request *req = io->req;
 
@@ -2190,13 +2190,28 @@ static bool ublk_get_data(const struct ublk_queue *ubq, struct ublk_io *io,
 	 * do the copy work.
 	 */
 	io->flags &= ~UBLK_IO_FLAG_NEED_GET_DATA;
+
+	return req;
+}
+
+static int ublk_get_data(const struct ublk_queue *ubq, struct ublk_io *io,
+			 const struct ublk_cmd_data *data)
+{
+	struct request *req;
+
+	req = __ublk_get_data(io, data);
+	if (IS_ERR(req))
+		return PTR_ERR(req);
+
 	/* update iod->addr because ublksrv may have passed a new io buffer */
 	ublk_get_iod(ubq, req->tag)->addr = io->addr;
 	pr_devel("%s: update iod->addr: qid %d tag %d io_flags %x addr %llx\n",
 			__func__, ubq->q_id, req->tag, io->flags,
 			ublk_get_iod(ubq, req->tag)->addr);
 
-	return ublk_start_io(ubq, req, io);
+	if (!ublk_start_io(ubq, req, io))
+		return -EIOCBQUEUED;
+	return UBLK_IO_RES_OK;
 }
 
 static int __ublk_ch_uring_cmd(struct io_uring_cmd *cmd,
@@ -2289,10 +2304,7 @@ static int __ublk_ch_uring_cmd(struct io_uring_cmd *cmd,
 		ublk_commit_and_fetch(ubq, cmd, req, issue_flags, &data);
 		break;
 	case UBLK_IO_NEED_GET_DATA:
-		if (!ublk_get_data(ubq, io, &data))
-			return -EIOCBQUEUED;
-
-		return UBLK_IO_RES_OK;
+		return ublk_get_data(ubq, io, &data);
 	default:
 		goto out;
 	}
