@@ -1721,16 +1721,17 @@ static void ublk_start_cancel(struct ublk_queue *ubq)
 	ublk_put_disk(disk);
 }
 
-static void ublk_cancel_cmd(struct ublk_queue *ubq, unsigned tag,
-		unsigned int issue_flags)
+static struct io_uring_cmd *
+__ublk_cancel_cmd(struct ublk_queue *ubq, unsigned tag,
+		  unsigned int issue_flags)
 {
 	struct ublk_io *io = &ubq->ios[tag];
 	struct ublk_device *ub = ubq->dev;
+	struct io_uring_cmd *cmd = NULL;
 	struct request *req;
-	bool done;
 
 	if (!(io->flags & UBLK_IO_FLAG_ACTIVE))
-		return;
+		goto exit;
 
 	/*
 	 * Don't try to cancel this command if the request is started for
@@ -1744,16 +1745,26 @@ static void ublk_cancel_cmd(struct ublk_queue *ubq, unsigned tag,
 	 */
 	req = blk_mq_tag_to_rq(ub->tag_set.tags[ubq->q_id], tag);
 	if (req && blk_mq_request_started(req))
-		return;
+		goto exit;
 
 	spin_lock(&ubq->cancel_lock);
-	done = !!(io->flags & UBLK_IO_FLAG_CANCELED);
-	if (!done)
+	if (!(io->flags & UBLK_IO_FLAG_CANCELED)) {
 		io->flags |= UBLK_IO_FLAG_CANCELED;
+		cmd = io->cmd;
+	}
 	spin_unlock(&ubq->cancel_lock);
+exit:
+	return cmd;
+}
 
-	if (!done)
-		io_uring_cmd_done(io->cmd, UBLK_IO_RES_ABORT, 0, issue_flags);
+static void ublk_cancel_cmd(struct ublk_queue *ubq, unsigned tag,
+			    unsigned int issue_flags)
+{
+	struct io_uring_cmd *cmd;
+
+	cmd = __ublk_cancel_cmd(ubq, tag, issue_flags);
+	if (cmd)
+		io_uring_cmd_done(cmd, UBLK_IO_RES_ABORT, 0, issue_flags);
 }
 
 /*
