@@ -297,10 +297,17 @@ enum io_uring_op {
 /*
  * sqe->uring_cmd_flags		top 8bits aren't available for userspace
  * IORING_URING_CMD_FIXED	use registered buffer; pass this flag
+ *				along with setting sqe->buf_index,
+ *				IORING_URING_CMD_MULTISHOT can't be set
+ *				at the same time
+ * IORING_URING_CMD_MULTISHOT	use buffer select; pass this flag
  *				along with setting sqe->buf_index.
+ *				IORING_URING_CMD_FIXED can't be set
+ *				at the same time
  */
 #define IORING_URING_CMD_FIXED	(1U << 0)
-#define IORING_URING_CMD_MASK	IORING_URING_CMD_FIXED
+#define IORING_URING_CMD_MULTISHOT	(1U << 1)
+#define IORING_URING_CMD_MASK	(IORING_URING_CMD_FIXED | IORING_URING_CMD_MULTISHOT)
 
 
 /*
