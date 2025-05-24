@@ -72,6 +72,22 @@ void io_uring_cmd_mark_cancelable(struct io_uring_cmd *cmd,
 /* Execute the request from a blocking context */
 void io_uring_cmd_issue_blocking(struct io_uring_cmd *ioucmd);
 
+/*
+ * Select a buffer from the provided buffer group for multishot uring_cmd.
+ * Returns the selected buffer address and size.
+ */
+int io_uring_cmd_select_buffer(struct io_uring_cmd *ioucmd,
+			       unsigned buf_group,
+			       void **buf, size_t *len,
+			       unsigned int issue_flags);
+
+/*
+ * Complete a multishot uring_cmd event. This will post a CQE to the completion
+ * queue and update the provided buffer.
+ */
+bool io_uring_mshot_cmd_post_cqe(struct io_uring_cmd *ioucmd,
+				 ssize_t ret, unsigned int issue_flags);
+
 #else
 static inline int
 io_uring_cmd_import_fixed(u64 ubuf, unsigned long len, int rw,
@@ -102,6 +118,17 @@ static inline void io_uring_cmd_mark_cancelable(struct io_uring_cmd *cmd,
 {
 }
 static inline void io_uring_cmd_issue_blocking(struct io_uring_cmd *ioucmd)
+{
+}
+static inline int io_uring_cmd_select_buffer(struct io_uring_cmd *ioucmd,
+				unsigned buf_group,
+				void **buf, size_t *len,
+				unsigned int issue_flags)
+{
+	return -EOPNOTSUPP;
+}
+static inline void io_uring_mshot_cmd_post_cqe(struct io_uring_cmd *ioucmd,
+				ssize_t ret, unsigned int issue_flags)
 {
 }
 #endif
