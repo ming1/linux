@@ -1958,7 +1958,7 @@ static inline int ublk_check_cmd_op(u32 cmd_op)
 /* Once we return, `io->req` can't be used any more */
 static inline struct request *
 ublk_fill_io_cmd(struct ublk_io *io, struct io_uring_cmd *cmd,
-		 unsigned long buf_addr, int result)
+		 unsigned long buf_addr, int result, bool *auto_buf_unreg)
 {
 	struct request *req = io->req;
 
@@ -1969,6 +1969,11 @@ ublk_fill_io_cmd(struct ublk_io *io, struct io_uring_cmd *cmd,
 
 	/* now this cmd slot is owned by ublk driver */
 	io->flags &= ~UBLK_IO_FLAG_OWNED_BY_SRV;
+
+	if (io->flags & UBLK_IO_FLAG_AUTO_BUF_REG) {
+		io->flags &= ~UBLK_IO_FLAG_AUTO_BUF_REG;
+		*auto_buf_unreg = true;
+	}
 
 	return req;
 }
@@ -2050,6 +2055,7 @@ static int ublk_fetch(struct io_uring_cmd *cmd, struct ublk_queue *ubq,
 {
 	struct ublk_device *ub = ubq->dev;
 	int ret = 0;
+	bool __maybe_unused unreg;
 
 	/*
 	 * When handling FETCH command for setting up ublk uring queue,
@@ -2090,7 +2096,7 @@ static int ublk_fetch(struct io_uring_cmd *cmd, struct ublk_queue *ubq,
 			goto out;
 	}
 
-	ublk_fill_io_cmd(io, cmd, buf_addr, 0);
+	ublk_fill_io_cmd(io, cmd, buf_addr, 0, &unreg);
 	WRITE_ONCE(io->task, get_task_struct(current));
 	ublk_mark_io_ready(ub, ubq);
 out:
@@ -2118,14 +2124,13 @@ static int ublk_check_commmit_and_fetch(const struct ublk_queue *ubq,
 		 */
 		return -EINVAL;
 	}
-
 	return 0;
 }
 
 static int ublk_commit_and_fetch(const struct ublk_queue *ubq,
-				 struct ublk_io *io, struct io_uring_cmd *cmd,
-				 struct request *req, unsigned int issue_flags,
-				 __u64 zone_append_lba)
+				 struct io_uring_cmd *cmd, struct request *req,
+				 unsigned int issue_flags, __u64 zone_append_lba,
+				 bool auto_buf_unreg)
 {
 	if (ublk_support_auto_buf_reg(ubq)) {
 		int ret;
@@ -2140,13 +2145,12 @@ static int ublk_commit_and_fetch(const struct ublk_queue *ubq,
 		 * responsibility for unregistering the buffer, otherwise
 		 * this ublk request gets stuck.
 		 */
-		if (io->flags & UBLK_IO_FLAG_AUTO_BUF_REG) {
+		if (auto_buf_unreg) {
 			struct ublk_rq_data *data = blk_mq_rq_to_pdu(req);
 
 			if (data->buf_ctx_handle == io_uring_cmd_ctx_handle(cmd))
 				io_buffer_unregister_bvec(cmd, data->buf_index,
 						issue_flags);
-			io->flags &= ~UBLK_IO_FLAG_AUTO_BUF_REG;
 		}
 
 		ret = ublk_set_auto_buf_reg(cmd);
@@ -2194,6 +2198,7 @@ static int __ublk_ch_uring_cmd(struct io_uring_cmd *cmd,
 	u32 cmd_op = cmd->cmd_op;
 	unsigned tag = ub_cmd->tag;
 	int ret = -EINVAL;
+	bool auto_buf_unreg = false;
 
 	pr_devel("%s: received: cmd op %d queue %d tag %d result %d\n",
 			__func__, cmd->cmd_op, ub_cmd->q_id, tag,
@@ -2250,13 +2255,15 @@ static int __ublk_ch_uring_cmd(struct io_uring_cmd *cmd,
 		ret = ublk_check_commmit_and_fetch(ubq, io, ub_cmd->addr);
 		if (ret)
 			goto out;
-		req = ublk_fill_io_cmd(io, cmd, ub_cmd->addr, ub_cmd->result);
+		req = ublk_fill_io_cmd(io, cmd, ub_cmd->addr, ub_cmd->result,
+				       &auto_buf_unreg);
 		if (!req) {
 			ret = -EINVAL;
 			goto out;
 		}
-		ret = ublk_commit_and_fetch(ubq, io, cmd, req, issue_flags,
-					    ub_cmd->zone_append_lba);
+		ret = ublk_commit_and_fetch(ubq, cmd, req, issue_flags,
+					    ub_cmd->zone_append_lba,
+					    auto_buf_unreg);
 		if (ret)
 			goto out;
 		break;
