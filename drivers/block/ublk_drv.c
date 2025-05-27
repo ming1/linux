@@ -1159,8 +1159,9 @@ exit:
 	blk_mq_end_request(req, res);
 }
 
-static void ublk_complete_io_cmd(struct ublk_io *io, struct request *req,
-				 int res, unsigned issue_flags)
+static inline struct io_uring_cmd *
+ublk_prep_compl_io_cmd(struct ublk_io *io, struct request *req,
+		       int res)
 {
 	/* read cmd first because req will overwrite it */
 	struct io_uring_cmd *cmd = io->cmd;
@@ -1178,6 +1179,14 @@ static void ublk_complete_io_cmd(struct ublk_io *io, struct request *req,
 	io->flags &= ~UBLK_IO_FLAG_ACTIVE;
 
 	io->req = req;
+
+	return cmd;
+}
+
+static void ublk_complete_io_cmd(struct ublk_io *io, struct request *req,
+				 int res, unsigned issue_flags)
+{
+	struct io_uring_cmd *cmd = ublk_prep_compl_io_cmd(io, req, res);
 
 	/* tell ublksrv one io request is coming */
 	io_uring_cmd_done(cmd, res, 0, issue_flags);
