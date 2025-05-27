@@ -82,6 +82,11 @@
 	 UBLK_PARAM_TYPE_DEVT | UBLK_PARAM_TYPE_ZONED |    \
 	 UBLK_PARAM_TYPE_DMA_ALIGN | UBLK_PARAM_TYPE_SEGMENT)
 
+#define UBLK_BATCH_F_ALL  \
+	(UBLK_BATCH_F_HAS_ZONE_LBA | \
+	 UBLK_BATCH_F_HAS_BUF_ADDR | UBLK_BATCH_F_HAS_BUF_INDEX | \
+	 UBLK_BATCH_F_AUTO_BUF_REG_FALLBACK)
+
 struct ublk_rq_data {
 	refcount_t ref;
 
@@ -111,6 +116,11 @@ struct ublk_uring_cmd_pdu {
 	struct ublk_queue *ubq;
 
 	u16 tag;
+};
+
+struct ublk_batch_io_data {
+	struct ublk_device *dev;
+	struct io_uring_cmd *cmd;
 };
 
 /*
@@ -263,7 +273,7 @@ static inline bool ublk_dev_is_zoned(const struct ublk_device *ub)
 	return ub->dev_info.flags & UBLK_F_ZONED;
 }
 
-static inline bool ublk_queue_is_zoned(struct ublk_queue *ubq)
+static inline bool ublk_queue_is_zoned(const struct ublk_queue *ubq)
 {
 	return ubq->flags & UBLK_F_ZONED;
 }
@@ -670,10 +680,16 @@ static inline bool ublk_support_user_copy(const struct ublk_queue *ubq)
 	return ubq->flags & UBLK_F_USER_COPY;
 }
 
+static inline bool __ublk_need_map_io(unsigned flags)
+{
+	return !(flags & UBLK_F_SUPPORT_ZERO_COPY) &&
+		!(flags & UBLK_F_AUTO_BUF_REG) &&
+		!(flags & UBLK_F_USER_COPY);
+}
+
 static inline bool ublk_need_map_io(const struct ublk_queue *ubq)
 {
-	return !ublk_support_user_copy(ubq) && !ublk_support_zero_copy(ubq) &&
-		!ublk_support_auto_buf_reg(ubq);
+	return __ublk_need_map_io(ubq->flags);
 }
 
 static inline bool ublk_need_req_ref(const struct ublk_queue *ubq)
@@ -2432,10 +2448,99 @@ static int ublk_ch_uring_cmd(struct io_uring_cmd *cmd, unsigned int issue_flags)
 	return ublk_ch_uring_cmd_local(cmd, issue_flags);
 }
 
+static int ublk_check_batch_cmd_flags(const struct ublk_batch_io *uc)
+{
+	const unsigned short bf_mask = UBLK_BATCH_F_HAS_BUF_ADDR |
+		UBLK_BATCH_F_HAS_BUF_INDEX;
+	const unsigned short mask = bf_mask | UBLK_BATCH_F_HAS_ZONE_LBA;
+
+	if (uc->flags & ~UBLK_BATCH_F_ALL)
+		return -EINVAL;
+
+	/* Two buffer flags can't be set at the same time */
+	if ((uc->flags & bf_mask) == bf_mask)
+		return -EINVAL;
+
+	/* UBLK_BATCH_F_AUTO_BUF_REG_FALLBACK requires buffer index */
+	if ((uc->flags & UBLK_BATCH_F_AUTO_BUF_REG_FALLBACK) &&
+			!(uc->flags & UBLK_BATCH_F_HAS_BUF_INDEX))
+		return -EINVAL;
+
+	switch (uc->flags & mask) {
+	case 0:
+		if (uc->elem_bytes != 8)
+			return -EINVAL;
+		break;
+	case UBLK_BATCH_F_HAS_ZONE_LBA:
+	case UBLK_BATCH_F_HAS_BUF_ADDR:
+	case UBLK_BATCH_F_HAS_BUF_INDEX:
+		if (uc->elem_bytes != 8 + 8)
+			return -EINVAL;
+		break;
+	case UBLK_BATCH_F_HAS_ZONE_LBA | UBLK_BATCH_F_HAS_BUF_ADDR:
+	case UBLK_BATCH_F_HAS_ZONE_LBA | UBLK_BATCH_F_HAS_BUF_INDEX:
+		if (uc->elem_bytes != 8 + 8 + 8)
+			return -EINVAL;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int ublk_check_batch_cmd(const struct ublk_batch_io_data *data)
+{
+	const struct ublk_batch_io *uc = io_uring_sqe_cmd(data->cmd->sqe);
+	const unsigned short auto_buf_mask = UBLK_BATCH_F_HAS_BUF_INDEX |
+		UBLK_BATCH_F_AUTO_BUF_REG_FALLBACK;
+	const unsigned ub_flags = data->dev->dev_info.flags;
+
+	if (!(data->cmd->flags & IORING_URING_CMD_FIXED))
+		return -EINVAL;
+
+	if (uc->nr_elem * uc->elem_bytes > data->cmd->sqe->len)
+		return -E2BIG;
+
+	if ((uc->flags & UBLK_BATCH_F_HAS_ZONE_LBA) &&
+			!(ub_flags & UBLK_F_ZONED))
+		return -EINVAL;
+
+	if ((uc->flags & UBLK_BATCH_F_HAS_BUF_ADDR) &&
+			!__ublk_need_map_io(ub_flags))
+		return -EINVAL;
+
+	if ((uc->flags & auto_buf_mask) &&
+			!(ub_flags & UBLK_F_AUTO_BUF_REG))
+		return -EINVAL;
+
+	return ublk_check_batch_cmd_flags(uc);
+}
+
 static int ublk_ch_batch_io_uring_cmd(struct io_uring_cmd *cmd,
 				       unsigned int issue_flags)
 {
-	return -EOPNOTSUPP;
+	struct ublk_device *ub = cmd->file->private_data;
+	struct ublk_batch_io_data data = {
+		.cmd = cmd,
+		.dev = ub,
+	};
+	u32 cmd_op = cmd->cmd_op;
+	int ret = -EINVAL;
+
+	switch (cmd_op) {
+	case UBLK_U_IO_PREP_IO_CMDS:
+	case UBLK_U_IO_COMMIT_IO_CMDS:
+		ret = ublk_check_batch_cmd(&data);
+		if (ret)
+			goto out;
+		ret = -EOPNOTSUPP;
+		break;
+	default:
+		ret = -EOPNOTSUPP;
+	}
+out:
+	return ret;
 }
 
 static inline bool ublk_check_ubuf_dir(const struct request *req,

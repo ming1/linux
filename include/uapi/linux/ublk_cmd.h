@@ -102,6 +102,10 @@
 	_IOWR('u', 0x23, struct ublksrv_io_cmd)
 #define	UBLK_U_IO_UNREGISTER_IO_BUF	\
 	_IOWR('u', 0x24, struct ublksrv_io_cmd)
+#define	UBLK_U_IO_PREP_IO_CMDS	\
+	_IOWR('u', 0x25, struct ublk_batch_io)
+#define	UBLK_U_IO_COMMIT_IO_CMDS	\
+	_IOWR('u', 0x26, struct ublk_batch_io)
 
 /* only ABORT means that no re-fetch */
 #define UBLK_IO_RES_OK			0
@@ -493,6 +497,54 @@ struct ublksrv_io_cmd {
 		__u64	addr;
 		__u64	zone_append_lba;
 	};
+};
+
+struct ublk_elem_header {
+	__u16 q_id;	/* ublk queue id */
+	__u16 tag;	/* IO tag */
+	__u32 result;	/* I/O completion result (commit only) */
+};
+
+/*
+ * uring_cmd buffer structure
+ *
+ * buffer includes multiple elements, which number is specified by
+ * `nr_elem`. Each element buffer is organized in the following order:
+ *
+ * struct ublk_elem_buffer {
+ * 	// Mandatory fields (8 bytes)
+ * 	struct ublk_elem_header header;
+ *
+ * 	// Optional fields (8 bytes each, included based on flags)
+ *
+ * 	// returned Zone append LBA (if UBLK_BATCH_F_HAS_ZONE_LBA)
+ * 	__u64 zone_lba;
+ *
+ * 	// Buffer setting for fetching next command for this IO
+ * 	// Either buffer address is provided for copy data between
+ * 	// ublk request and ublk server buffer, or buffer index
+ * 	// is provided for zero copy(UBLK_F_SUPPORT_ZERO_COPY or
+ * 	// UBLK_F_AUTO_BUF_REG)
+ * 	union {
+ * 		// Buffer address (if UBLK_BATCH_F_HAS_BUF_ADDR)
+ * 		__u64 buf_addr;
+ * 		// Buffer index (if UBLK_BATCH_F_HAS_BUF_INDEX)
+ * 		__u16 buf_index;
+ * 	};
+ * }
+ *
+ * Used for `UBLK_U_IO_PREP_IO_CMDS` and `UBLK_U_IO_COMMIT_IO_CMDS`
+ */
+struct ublk_batch_io {
+#define UBLK_BATCH_F_HAS_ZONE_LBA	(1 << 0)
+#define UBLK_BATCH_F_HAS_BUF_ADDR 	(1 << 1)
+#define UBLK_BATCH_F_HAS_BUF_INDEX 	(1 << 2)
+#define UBLK_BATCH_F_AUTO_BUF_REG_FALLBACK	(1 << 3)
+	__u16	flags;
+	__u16	nr_elem;
+	__u8	elem_bytes;
+	__u8	reserved[3];
+	__u64   reserved2;
 };
 
 struct ublk_param_basic {
