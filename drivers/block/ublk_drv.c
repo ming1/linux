@@ -82,6 +82,10 @@
 	 UBLK_PARAM_TYPE_DEVT | UBLK_PARAM_TYPE_ZONED |    \
 	 UBLK_PARAM_TYPE_DMA_ALIGN | UBLK_PARAM_TYPE_SEGMENT)
 
+#define UBLK_BATCH_F_ALL  \
+	(UBLK_BATCH_F_HAS_BUF_ADDR | UBLK_BATCH_F_HAS_ZONE_LBA | \
+	 UBLK_BATCH_F_AUTO_BUF_REG_FALLBACK)
+
 struct ublk_rq_data {
 	refcount_t ref;
 
@@ -111,6 +115,11 @@ struct ublk_uring_cmd_pdu {
 	struct ublk_queue *ubq;
 
 	u16 tag;
+};
+
+struct ublk_batch_io_data {
+	struct ublk_queue *ubq;
+	struct io_uring_cmd *cmd;
 };
 
 /*
@@ -263,7 +272,7 @@ static inline bool ublk_dev_is_zoned(const struct ublk_device *ub)
 	return ub->dev_info.flags & UBLK_F_ZONED;
 }
 
-static inline bool ublk_queue_is_zoned(struct ublk_queue *ubq)
+static inline bool ublk_queue_is_zoned(const struct ublk_queue *ubq)
 {
 	return ubq->flags & UBLK_F_ZONED;
 }
@@ -2432,10 +2441,84 @@ static int ublk_ch_uring_cmd(struct io_uring_cmd *cmd, unsigned int issue_flags)
 	return ublk_ch_uring_cmd_local(cmd, issue_flags);
 }
 
+static int ublk_check_batch_cmd_flags(const struct ublk_batch_io *uc)
+{
+	if (uc->flags & ~UBLK_BATCH_F_ALL)
+		return -EINVAL;
+
+	switch (uc->flags & (UBLK_BATCH_F_HAS_ZONE_LBA | UBLK_BATCH_F_HAS_BUF_ADDR)) {
+	case 0:
+		if (uc->elem_bytes != 8)
+			return -EINVAL;
+		break;
+	case UBLK_BATCH_F_HAS_ZONE_LBA:
+	case UBLK_BATCH_F_HAS_BUF_ADDR:
+		if (uc->elem_bytes != 8 + 8)
+			return -EINVAL;
+		break;
+	case UBLK_BATCH_F_HAS_BUF_ADDR | UBLK_BATCH_F_HAS_ZONE_LBA:
+		if (uc->elem_bytes != 8 + 8 + 8)
+			return -EINVAL;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int ublk_check_batch_cmd(const struct ublk_batch_io_data *data)
+{
+	const struct ublk_batch_io *uc = io_uring_sqe_cmd(data->cmd->sqe);
+
+	if (!(data->cmd->flags & IORING_URING_CMD_FIXED))
+		return -EINVAL;
+
+	if (uc->nr_elem * uc->elem_bytes > data->cmd->sqe->len)
+		return -E2BIG;
+
+	if (uc->nr_elem > data->ubq->q_depth)
+		return -E2BIG;
+
+	if ((uc->flags & UBLK_BATCH_F_HAS_ZONE_LBA) &&
+			!ublk_queue_is_zoned(data->ubq))
+		return -EINVAL;
+
+	if ((uc->flags & UBLK_BATCH_F_HAS_BUF_ADDR) &&
+			!ublk_need_map_io(data->ubq))
+		return -EINVAL;
+
+	return ublk_check_batch_cmd_flags(uc);
+}
+
 static int ublk_ch_batch_io_uring_cmd(struct io_uring_cmd *cmd,
 				       unsigned int issue_flags)
 {
-	return -EOPNOTSUPP;
+	const struct ublk_batch_io *ub_cmd = io_uring_sqe_cmd(cmd->sqe);
+	struct ublk_batch_io_data data = {
+		.cmd = cmd,
+	};
+	struct ublk_device *ub = cmd->file->private_data;
+	u32 cmd_op = cmd->cmd_op;
+	int ret = -EINVAL;
+
+	if (ub_cmd->q_id >= ub->dev_info.nr_hw_queues)
+		goto out;
+
+	data.ubq = ublk_get_queue(ub, ub_cmd->q_id);
+	switch (cmd_op) {
+	case UBLK_U_IO_PREP_IO_CMDS:
+	case UBLK_U_IO_COMMIT_IO_CMDS:
+		ret = ublk_check_batch_cmd(&data);
+		if (ret)
+			goto out;
+		ret = -EOPNOTSUPP;
+		break;
+	default:
+		ret = -EOPNOTSUPP;
+	}
+out:
+	return ret;
 }
 
 static inline bool ublk_check_ubuf_dir(const struct request *req,

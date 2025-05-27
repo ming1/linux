@@ -102,6 +102,10 @@
 	_IOWR('u', 0x23, struct ublksrv_io_cmd)
 #define	UBLK_U_IO_UNREGISTER_IO_BUF	\
 	_IOWR('u', 0x24, struct ublksrv_io_cmd)
+#define	UBLK_U_IO_PREP_IO_CMDS	\
+	_IOWR('u', 0x25, struct ublk_batch_io)
+#define	UBLK_U_IO_COMMIT_IO_CMDS	\
+	_IOWR('u', 0x26, struct ublk_batch_io)
 
 /* only ABORT means that no re-fetch */
 #define UBLK_IO_RES_OK			0
@@ -493,6 +497,42 @@ struct ublksrv_io_cmd {
 		__u64	addr;
 		__u64	zone_append_lba;
 	};
+};
+
+/*
+ * uring_cmd buffer is defined from sqe->addr & sqe->len
+ *
+ * buffer includes multiple elements, which number is specified by
+ * `nr_elem`. The following fields may be included for each element
+ * in the following order, and `tag` and `buf_idx` are mandatory,
+ * others are optional, and each one has one flag for marking if
+ * it is included:
+ *
+ * - tag:      1st 16 bits
+ * - buf_idx:  2nd 16 bits, used for `UBLK_F_AUTO_BUF_REG`, otherwise
+ *   it should be zeroed
+ * - result:   32 bits, for committing command, used for command
+ *   `UBLK_U_IO_COMMIT_IO_CMDS`, ignored for command
+ *   `UBLK_U_IO_PREP_IO_CMDS`
+ * - buf_addr: 64 bits, required in case that `UBLK_F_AUTO_BUF_REG`,
+ *   `UBLK_F_SUPPORT_ZERO_COPY` and `UBLK_F_USER_COPY` are not enabled,
+ *   included if `UBLK_CB_F_HAS_BUF_ADDR` is set
+ * - zone_lba: 64 bits, required for `UBLK_F_ZONED` for returning back
+ *   	append_lba, used with 'result' together, included if
+ *   	`UBLK_CB_F_HAS_ZONE_LBA` is set
+ *
+ * Used for `UBLK_U_IO_PREP_IO_CMDS` and `UBLK_U_IO_COMMIT_IO_CMDS`
+ */
+struct ublk_batch_io {
+	__u16	q_id;
+#define UBLK_BATCH_F_HAS_BUF_ADDR 	(1 << 0)
+#define UBLK_BATCH_F_HAS_ZONE_LBA	(1 << 1)
+#define UBLK_BATCH_F_AUTO_BUF_REG_FALLBACK	(1 << 2)
+	__u16	flags;
+	__u8	reserved;
+	__u8	elem_bytes;
+	__u16	nr_elem;
+	__u64   reserved2;
 };
 
 struct ublk_param_basic {
