@@ -2462,6 +2462,19 @@ static inline __u16 ublk_batch_buf_idx(const char *elem_buf)
 	return *(__u16 *)&elem_buf[2];
 }
 
+static inline __u64 ublk_batch_zone_lba(const struct ublk_batch_io *uc,
+					const char *elem_buf)
+{
+	if (uc->flags & UBLK_BATCH_F_HAS_ZONE_LBA)
+		return *(__u64 *)&elem_buf[8 + 8 * !!(uc->flags & UBLK_BATCH_F_HAS_BUF_ADDR)];
+	return 0;
+}
+
+static inline __s32 ublk_batch_result(const char *elem_buf)
+{
+	return *(__s32 *)&elem_buf[4];
+}
+
 static struct ublk_auto_buf_reg
 ublk_batch_auto_buf_reg(const struct ublk_batch_io *uc,
 			const char *elem_buf)
@@ -2616,6 +2629,90 @@ static int ublk_handle_batch_prep_cmd(struct ublk_batch_io_data *data)
 	return ret;
 }
 
+static int ublk_batch_commit_io_check(const struct ublk_queue *ubq,
+				      struct ublk_io *io,
+				      const struct ublk_cmd_data *data)
+{
+	struct request *req = io->req;
+
+	if (!req)
+		return -EINVAL;
+
+	if (io->flags & UBLK_IO_FLAG_ACTIVE)
+		return -EBUSY;
+
+	if (!(io->flags & UBLK_IO_FLAG_OWNED_BY_SRV))
+		return -EINVAL;
+
+	if (ublk_need_map_io(ubq)) {
+		/*
+		 * COMMIT_AND_FETCH_REQ has to provide IO buffer if
+		 * NEED GET DATA is not enabled or it is Read IO.
+		 */
+		if (!data->addr && (!ublk_need_get_data(ubq) ||
+					req_op(req) == REQ_OP_READ))
+			return -EINVAL;
+	}
+	return 0;
+}
+
+static int ublk_batch_commit_io(struct ublk_io *io,
+				const struct ublk_batch_io_data *data)
+{
+	const struct ublk_batch_io *uc = io_uring_sqe_cmd(data->cmd->sqe);
+	struct ublk_queue *ubq = data->ubq;
+	struct ublk_cmd_data cd = {
+		.result = ublk_batch_result(data->elem_buf),
+		.zone_append_lba = ublk_batch_zone_lba(uc, data->elem_buf),
+	};
+	struct request *req;
+	int ret;
+
+	if (ublk_support_auto_buf_reg(data->ubq))
+		cd.auto_buf = ublk_batch_auto_buf_reg(uc, data->elem_buf);
+	else
+		cd.addr = ublk_batch_buf_addr(uc, data->elem_buf);
+
+	spin_lock(&io->lock);
+	ret = ublk_batch_commit_io_check(ubq, io, &cd);
+	if (ret)
+		goto unlock;
+	req = ublk_fill_io_cmd(io, data->cmd, &cd);
+	if (!req)
+		ret = -EINVAL;
+unlock:
+	spin_unlock(&io->lock);
+	if (likely(!ret))
+		ublk_commit_and_fetch(ubq, data->cmd, req,
+				data->issue_flags, &cd);
+	else
+		pr_warn("%s: dev %u queue %u io %ld: commit failure %d\n",
+			__func__, ubq->dev->dev_info.dev_id, ubq->q_id,
+			io - ubq->ios, ret);
+
+	return ret;
+}
+
+static int ublk_handle_batch_commit_cmd(struct ublk_batch_io_data *data)
+{
+	struct io_uring_cmd *cmd = data->cmd;
+	const struct ublk_batch_io *uc = io_uring_sqe_cmd(cmd->sqe);
+	struct ublk_batch_io_iter iter = {
+		.total = uc->nr_elem * uc->elem_bytes,
+		.elem_bytes = uc->elem_bytes,
+	};
+	int ret;
+
+	ret = io_uring_cmd_import_fixed(cmd->sqe->addr, cmd->sqe->len,
+			WRITE, &iter.iter, cmd, data->issue_flags);
+	if (ret)
+		return ret;
+
+	ret = ublk_walk_cmd_buf(&iter, data, ublk_batch_commit_io);
+
+	return iter.done == 0 ? ret : iter.done;
+}
+
 static int ublk_check_batch_cmd_flags(const struct ublk_batch_io *uc)
 {
 	if (uc->flags & ~UBLK_BATCH_F_ALL)
@@ -2693,7 +2790,7 @@ static int ublk_ch_batch_io_uring_cmd(struct io_uring_cmd *cmd,
 		ret = ublk_check_batch_cmd(&data);
 		if (ret)
 			goto out;
-		ret = -EOPNOTSUPP;
+		ret = ublk_handle_batch_commit_cmd(&data);
 		break;
 	default:
 		ret = -EOPNOTSUPP;
