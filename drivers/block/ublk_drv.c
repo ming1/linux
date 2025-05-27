@@ -2099,18 +2099,12 @@ static int ublk_check_fetch_buf(const struct ublk_queue *ubq, __u64 buf_addr)
 	return 0;
 }
 
-static int ublk_fetch(struct io_uring_cmd *cmd, struct ublk_queue *ubq,
-		      struct ublk_io *io, struct ublk_cmd_data *data)
+static int __ublk_fetch(struct io_uring_cmd *cmd, struct ublk_queue *ubq,
+			struct ublk_io *io, struct ublk_cmd_data *data)
 {
 	struct ublk_device *ub = ubq->dev;
 	int ret = 0;
 
-	/*
-	 * When handling FETCH command for setting up ublk uring queue,
-	 * ub->mutex is the innermost lock, and we won't block for handling
-	 * FETCH, so it is fine even for IO_URING_F_NONBLOCK.
-	 */
-	mutex_lock(&ub->mutex);
 	/* UBLK_IO_FETCH_REQ is only allowed before queue is setup */
 	if (ublk_queue_ready(ubq)) {
 		ret = -EBUSY;
@@ -2129,7 +2123,24 @@ static int ublk_fetch(struct io_uring_cmd *cmd, struct ublk_queue *ubq,
 	WRITE_ONCE(io->task, get_task_struct(current));
 	ublk_mark_io_ready(ub, ubq);
 out:
+	return ret;
+}
+
+static int ublk_fetch(struct io_uring_cmd *cmd, struct ublk_queue *ubq,
+		      struct ublk_io *io, struct ublk_cmd_data *data)
+{
+	struct ublk_device *ub = ubq->dev;
+	int ret;
+
+	/*
+	 * When handling FETCH command for setting up ublk uring queue,
+	 * ub->mutex is the innermost lock, and we won't block for handling
+	 * FETCH, so it is fine even for IO_URING_F_NONBLOCK.
+	 */
+	mutex_lock(&ub->mutex);
+	ret = __ublk_fetch(cmd, ubq, io, data);
 	mutex_unlock(&ub->mutex);
+
 	return ret;
 }
 
