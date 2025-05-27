@@ -225,6 +225,16 @@ struct ublk_params_header {
 	__u32	types;
 };
 
+struct ublk_cmd_data {
+	int result;
+	bool unreg;
+	union {
+		__u64 addr;
+		struct ublk_auto_buf_reg auto_buf;
+	};
+	__u64 zone_append_lba;
+};
+
 static void ublk_io_release(void *priv);
 static void ublk_stop_dev_unlocked(struct ublk_device *ub);
 static void ublk_abort_queue(struct ublk_device *ub, struct ublk_queue *ubq);
@@ -1958,21 +1968,21 @@ static inline int ublk_check_cmd_op(u32 cmd_op)
 /* Once we return, `io->req` can't be used any more */
 static inline struct request *
 ublk_fill_io_cmd(struct ublk_io *io, struct io_uring_cmd *cmd,
-		 unsigned long buf_addr, int result, bool *auto_buf_unreg)
+		 struct ublk_cmd_data *data)
 {
 	struct request *req = io->req;
 
 	io->cmd = cmd;
 	io->flags |= UBLK_IO_FLAG_ACTIVE;
-	io->addr = buf_addr;
-	io->res = result;
+	io->addr = data->addr,
+	io->res = data->result;
 
 	/* now this cmd slot is owned by ublk driver */
 	io->flags &= ~UBLK_IO_FLAG_OWNED_BY_SRV;
 
 	if (io->flags & UBLK_IO_FLAG_AUTO_BUF_REG) {
 		io->flags &= ~UBLK_IO_FLAG_AUTO_BUF_REG;
-		*auto_buf_unreg = true;
+		data->unreg = true;
 	}
 
 	return req;
@@ -2024,9 +2034,11 @@ static void ublk_io_release(void *priv)
 
 static int ublk_register_io_buf(struct io_uring_cmd *cmd,
 				const struct ublk_queue *ubq, unsigned int tag,
-				unsigned int index, unsigned int issue_flags)
+				unsigned int issue_flags,
+				const struct ublk_cmd_data *data)
 {
 	struct ublk_device *ub = cmd->file->private_data;
+	unsigned int index = data->addr;
 	struct request *req;
 	int ret;
 
@@ -2049,8 +2061,11 @@ static int ublk_register_io_buf(struct io_uring_cmd *cmd,
 
 static int ublk_unregister_io_buf(struct io_uring_cmd *cmd,
 				  const struct ublk_queue *ubq,
-				  unsigned int index, unsigned int issue_flags)
+				  unsigned int issue_flags,
+				  const struct ublk_cmd_data *data)
 {
+	unsigned int index = data->addr;
+
 	if (!ublk_support_zero_copy(ubq))
 		return -EINVAL;
 
@@ -2074,11 +2089,10 @@ static int ublk_check_fetch_buf(const struct ublk_queue *ubq, __u64 buf_addr)
 }
 
 static int ublk_fetch(struct io_uring_cmd *cmd, struct ublk_queue *ubq,
-		      struct ublk_io *io, __u64 buf_addr)
+		      struct ublk_io *io, struct ublk_cmd_data *data)
 {
 	struct ublk_device *ub = ubq->dev;
 	int ret = 0;
-	bool __maybe_unused unreg;
 
 	/*
 	 * When handling FETCH command for setting up ublk uring queue,
@@ -2100,10 +2114,7 @@ static int ublk_fetch(struct io_uring_cmd *cmd, struct ublk_queue *ubq,
 
 	WARN_ON_ONCE(io->flags & UBLK_IO_FLAG_OWNED_BY_SRV);
 
-	ublk_fill_io_cmd(io, cmd, buf_addr, 0, &unreg);
-	ret = ublk_init_auto_buf_reg(ubq, cmd, &io->buf);
-	if (ret)
-		goto out;
+	ublk_fill_io_cmd(io, cmd, data);
 	WRITE_ONCE(io->task, get_task_struct(current));
 	ublk_mark_io_ready(ub, ubq);
 out:
@@ -2136,8 +2147,8 @@ static int ublk_check_commmit_and_fetch(const struct ublk_queue *ubq,
 
 static void ublk_commit_and_fetch(const struct ublk_queue *ubq,
 				  struct io_uring_cmd *cmd, struct request *req,
-				  unsigned int issue_flags, __u64 zone_append_lba,
-				  bool auto_buf_unreg)
+				  unsigned int issue_flags,
+				  const struct ublk_cmd_data *cmd_data)
 {
 	if (ublk_support_auto_buf_reg(ubq)) {
 
@@ -2151,7 +2162,7 @@ static void ublk_commit_and_fetch(const struct ublk_queue *ubq,
 		 * responsibility for unregistering the buffer, otherwise
 		 * this ublk request gets stuck.
 		 */
-		if (auto_buf_unreg) {
+		if (cmd_data->unreg) {
 			struct ublk_rq_data *data = blk_mq_rq_to_pdu(req);
 
 			if (data->buf_ctx_handle == io_uring_cmd_ctx_handle(cmd))
@@ -2161,18 +2172,18 @@ static void ublk_commit_and_fetch(const struct ublk_queue *ubq,
 	}
 
 	if (req_op(req) == REQ_OP_ZONE_APPEND)
-		req->__sector = zone_append_lba;
+		req->__sector = cmd_data->zone_append_lba;
 
 	if (likely(!blk_should_fake_timeout(req->q)))
 		ublk_put_req_ref(ubq, req);
 }
 
 static bool ublk_get_data(const struct ublk_queue *ubq, struct ublk_io *io,
-			  __u64 buf_addr)
+			  const struct ublk_cmd_data *data)
 {
 	struct request *req = io->req;
 
-	io->addr = buf_addr;
+	io->addr = data->addr;
 	/*
 	 * We have handled UBLK_IO_NEED_GET_DATA command,
 	 * so clear UBLK_IO_FLAG_NEED_GET_DATA now and just
@@ -2200,7 +2211,11 @@ static int __ublk_ch_uring_cmd(struct io_uring_cmd *cmd,
 	u32 cmd_op = cmd->cmd_op;
 	unsigned tag = ub_cmd->tag;
 	int ret = -EINVAL;
-	bool auto_buf_unreg = false;
+	struct ublk_cmd_data data = {
+		.result = ub_cmd->result,
+		.addr = ub_cmd->addr,
+		.zone_append_lba = ub_cmd->zone_append_lba,
+	};
 
 	pr_devel("%s: received: cmd op %d queue %d tag %d result %d\n",
 			__func__, cmd->cmd_op, ub_cmd->q_id, tag,
@@ -2245,14 +2260,17 @@ static int __ublk_ch_uring_cmd(struct io_uring_cmd *cmd,
 	ret = -EINVAL;
 	switch (_IOC_NR(cmd_op)) {
 	case UBLK_IO_REGISTER_IO_BUF:
-		return ublk_register_io_buf(cmd, ubq, tag, ub_cmd->addr, issue_flags);
+		return ublk_register_io_buf(cmd, ubq, tag, issue_flags, &data);
 	case UBLK_IO_UNREGISTER_IO_BUF:
-		return ublk_unregister_io_buf(cmd, ubq, ub_cmd->addr, issue_flags);
+		return ublk_unregister_io_buf(cmd, ubq, issue_flags, &data);
 	case UBLK_IO_FETCH_REQ:
 		ret = ublk_check_fetch_buf(ubq, ub_cmd->addr);
 		if (ret)
 			goto out;
-		ret = ublk_fetch(cmd, ubq, io, ub_cmd->addr);
+		ret = ublk_init_auto_buf_reg(ubq, cmd, &data.auto_buf);
+		if (ret)
+			goto out;
+		ret = ublk_fetch(cmd, ubq, io, &data);
 		if (ret)
 			goto out;
 		break;
@@ -2260,20 +2278,18 @@ static int __ublk_ch_uring_cmd(struct io_uring_cmd *cmd,
 		ret = ublk_check_commmit_and_fetch(ubq, io, ub_cmd->addr);
 		if (ret)
 			goto out;
-		req = ublk_fill_io_cmd(io, cmd, ub_cmd->addr, ub_cmd->result,
-				       &auto_buf_unreg);
+		ret = ublk_init_auto_buf_reg(ubq, cmd, &data.auto_buf);
+		if (ret)
+			goto out;
+		req = ublk_fill_io_cmd(io, cmd, &data);
 		if (!req) {
 			ret = -EINVAL;
 			goto out;
 		}
-		ret = ublk_init_auto_buf_reg(ubq, cmd, &io->buf);
-		if (ret)
-			goto out;
-		ublk_commit_and_fetch(ubq, cmd, req, issue_flags,
-				ub_cmd->zone_append_lba, auto_buf_unreg);
+		ublk_commit_and_fetch(ubq, cmd, req, issue_flags, &data);
 		break;
 	case UBLK_IO_NEED_GET_DATA:
-		if (!ublk_get_data(ubq, io, ub_cmd->addr))
+		if (!ublk_get_data(ubq, io, &data))
 			return -EIOCBQUEUED;
 
 		return UBLK_IO_RES_OK;
