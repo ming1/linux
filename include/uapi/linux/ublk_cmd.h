@@ -118,6 +118,13 @@
 #define	UBLK_U_IO_COMMIT_IO_CMDS	\
 	_IOWR('u', 0x26, struct ublk_batch_io)
 
+/*
+ * Fetch io commands to provided buffer in multishot style,
+ * `IORING_URING_CMD_MULTISHOT` is required for this command.
+ */
+#define	UBLK_U_IO_FETCH_IO_CMDS 	\
+	_IOWR('u', 0x27, struct ublk_batch_io)
+
 /* only ABORT means that no re-fetch */
 #define UBLK_IO_RES_OK			0
 #define UBLK_IO_RES_NEED_GET_DATA	1
@@ -560,7 +567,14 @@ struct ublk_batch_io {
 	__u16	flags;
 	__u16	nr_elem;
 	__u8	elem_bytes;
-	__u8	reserved[3];
+
+	/*
+	 * Only used for UBLK_U_IO_FETCH_IO_CMDS.
+	 *
+	 * Ignored for UBLK_U_IO_PREP_IO_CMDS and UBLK_U_IO_COMMIT_IO_CMDS
+	 */
+	__u16   q_id;
+	__u8	reserved;
 	__u64   reserved2;
 };
 
