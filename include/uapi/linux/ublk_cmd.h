@@ -511,6 +511,12 @@ struct ublksrv_io_cmd {
 };
 
 /*
+ * If this tag value is observed from buffer of `UBLK_U_IO_FETCH_IO_CMDS`
+ * ublk server can simply ignore it
+ */
+#define UBLK_BATCH_IO_UNUSED_TAG 	(__u16)(-1)
+
+/*
  * uring_cmd buffer is defined from sqe->addr & sqe->len
  *
  * buffer includes multiple elements, which number is specified by
