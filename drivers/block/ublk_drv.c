@@ -91,6 +91,15 @@
 	 UBLK_BATCH_F_HAS_BUF_ADDR | \
 	 UBLK_BATCH_F_AUTO_BUF_REG_FALLBACK)
 
+/* ublk batch fetch uring_cmd */
+struct ublk_batch_fcmd {
+	struct io_uring_cmd *cmd;
+	void __user* buf;
+	size_t len;
+	unsigned int offset;
+	unsigned short buf_group;
+};
+
 struct ublk_uring_cmd_pdu {
 	/*
 	 * Store requests in same batch temporarily for queuing them to
@@ -622,6 +631,51 @@ static wait_queue_head_t ublk_idr_wq;	/* wait until one idr is freed */
 
 static DEFINE_MUTEX(ublk_ctl_mutex);
 
+static int ublk_batch_select_buf(struct ublk_batch_fcmd *fcmd,
+				 unsigned int issue_flags)
+{
+	void __user *buf;
+	size_t len;
+	int ret;
+
+	ret = io_uring_cmd_select_buffer(fcmd->cmd, fcmd->buf_group, &buf,
+					 &len, issue_flags);
+	if (!ret) {
+		fcmd->offset = 0;
+		fcmd->len = len;
+		fcmd->buf = buf;
+	}
+	return ret;
+}
+
+static void ublk_batch_deinit_fetch_buf(struct ublk_batch_io_data *data,
+					struct ublk_batch_fcmd *fcmd,
+					int res)
+{
+	io_uring_cmd_done(fcmd->cmd, res, 0, data->issue_flags);
+	fcmd->cmd = NULL;
+}
+
+static int ublk_batch_fetch_post_cqe(struct ublk_batch_fcmd *fcmd,
+				     unsigned int bytes,
+				     unsigned int issue_flags)
+{
+	if (io_uring_mshot_cmd_post_cqe(fcmd->cmd, bytes,
+				issue_flags))
+		return -ENOBUFS;
+	return 0;
+}
+
+static int ublk_batch_copy_io_tags(struct ublk_batch_fcmd *fcmd,
+				   const u16 *tag_buf, unsigned int len)
+{
+	len *= 2;
+	if (copy_to_user(fcmd->buf + fcmd->offset, tag_buf, len))
+		return -EFAULT;
+
+	fcmd->offset += len;
+	return 0;
+}
 
 #define UBLK_MAX_UBLKS UBLK_MINORS
 
@@ -1421,6 +1475,101 @@ static void ublk_dispatch_req(struct ublk_queue *ubq,
 		ublk_init_req_ref(ubq, io);
 		ublk_complete_io_cmd(io, req, UBLK_IO_RES_OK, issue_flags);
 	}
+}
+
+static bool __ublk_batch_prep_dispatch(struct ublk_batch_io_data *data,
+				       unsigned short tag)
+{
+	struct ublk_queue *ubq = data->ubq;
+	struct ublk_device *ub = ubq->dev;
+	struct ublk_io *io = &ubq->ios[tag];
+	struct request *req = blk_mq_tag_to_rq(ub->tag_set.tags[ubq->q_id], tag);
+	enum auto_buf_reg_res res = AUTO_BUF_REG_FALLBACK;
+	struct io_uring_cmd *cmd = data->cmd;
+
+	if (!ublk_start_io(ubq, req, io))
+		return false;
+
+	if (ublk_support_auto_buf_reg(ubq) && ublk_rq_has_data(req))
+		res = __ublk_do_auto_buf_reg(ubq, req, io, cmd,
+				data->issue_flags);
+
+	ublk_io_lock(io);
+	ublk_prep_auto_buf_reg_io(ubq, req, io, cmd, res == AUTO_BUF_REG_OK);
+	ublk_io_unlock(io);
+
+	return res != AUTO_BUF_REG_FAIL;
+}
+
+static void ublk_batch_prep_dispatch(struct ublk_batch_io_data *data,
+				     unsigned short *tag_buf,
+				     unsigned int len)
+{
+	int i;
+
+	for (i = 0; i < len; i += 1) {
+		unsigned short tag = tag_buf[i];
+
+		if (!__ublk_batch_prep_dispatch(data, tag))
+			tag_buf[i] = UBLK_BATCH_IO_UNUSED_TAG;
+	}
+}
+
+#define MAX_NR_TAG 128
+static int __ublk_batch_dispatch(struct ublk_batch_io_data *data,
+				 struct ublk_batch_fcmd *fcmd)
+{
+	unsigned short tag_buf[MAX_NR_TAG];
+	unsigned int len;
+	int ret;
+
+	if (fcmd->offset == fcmd->len) {
+		ret = ublk_batch_select_buf(fcmd, data->issue_flags);
+		if (ret)
+			return ret;
+	}
+
+	/* single reader needn't lock */
+	len = min((fcmd->len - fcmd->offset), sizeof(tag_buf)) / 2;
+	len = kfifo_out(&data->ubq->fifo, tag_buf, len);
+
+	ublk_batch_prep_dispatch(data, tag_buf, len);
+
+	ret = ublk_batch_copy_io_tags(fcmd, tag_buf, len);
+	if (!ret) {
+		ret = ublk_batch_fetch_post_cqe(fcmd, len * 2,
+				data->issue_flags);
+		if (ret)
+			fcmd->offset -= len * 2;
+	}
+
+	if (ret < 0) {
+		int res = kfifo_in_spinlocked_noirqsave(&data->ubq->fifo,
+			tag_buf, len, &data->ubq->lock);
+
+		pr_warn("%s: copy tags or post CQE failure, move back "
+				"tags(%d %u) ret %d\n", __func__, res, len,
+				ret);
+	}
+	return ret;
+}
+
+static __maybe_unused int
+ublk_batch_dispatch(struct ublk_batch_io_data *data,
+		    struct ublk_batch_fcmd *fcmd)
+{
+	int ret = 0;
+
+	while (!ublk_io_evts_empty(data->ubq)) {
+		ret = __ublk_batch_dispatch(data, fcmd);
+		if (ret <= 0)
+			break;
+	}
+
+	if (ret < 0)
+		ublk_batch_deinit_fetch_buf(data, fcmd, ret);
+
+	return ret;
 }
 
 static void ublk_cmd_tw_cb(struct io_uring_cmd *cmd,
