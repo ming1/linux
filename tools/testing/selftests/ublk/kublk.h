@@ -45,9 +45,6 @@
 #define UBLK_CTRL_RING_DEPTH            32
 #define ERROR_EVTFD_DEVID 	-2
 
-/* queue idle timeout */
-#define UBLKSRV_IO_IDLE_SECS		20
-
 #define UBLK_IO_MAX_BYTES               (1 << 20)
 #define UBLK_MAX_QUEUES_SHIFT		5
 #define UBLK_MAX_QUEUES                 (1 << UBLK_MAX_QUEUES_SHIFT)
@@ -121,11 +118,11 @@ struct ublk_ctrl_cmd_data {
 struct ublk_io {
 	char *buf_addr;
 
-#define UBLKSRV_NEED_FETCH_RQ		(1UL << 0)
-#define UBLKSRV_NEED_COMMIT_RQ_COMP	(1UL << 1)
-#define UBLKSRV_IO_FREE			(1UL << 2)
-#define UBLKSRV_NEED_GET_DATA           (1UL << 3)
-#define UBLKSRV_NEED_REG_BUF            (1UL << 4)
+#define UBLKS_IO_NEED_FETCH_RQ		(1UL << 0)
+#define UBLKS_IO_NEED_COMMIT_RQ_COMP	(1UL << 1)
+#define UBLKS_IO_FREE			(1UL << 2)
+#define UBLKS_IO_NEED_GET_DATA           (1UL << 3)
+#define UBLKS_IO_NEED_REG_BUF            (1UL << 4)
 	unsigned short flags;
 	unsigned short refs;		/* used by target code only */
 
@@ -179,10 +176,10 @@ struct ublk_queue {
 	struct ublksrv_io_desc *io_cmd_buf;
 
 	struct ublk_io ios[UBLK_QUEUE_DEPTH];
-#define UBLKSRV_NO_BUF		(1U << 2)
-#define UBLKSRV_ZC		(1U << 3)
-#define UBLKSRV_AUTO_BUF_REG		(1U << 4)
-#define UBLKSRV_AUTO_BUF_REG_FALLBACK	(1U << 5)
+#define UBLKS_Q_NO_BUF		(1U << 2)
+#define UBLKS_Q_ZC		(1U << 3)
+#define UBLKS_Q_AUTO_BUF_REG		(1U << 4)
+#define UBLKS_Q_AUTO_BUF_REG_FALLBACK	(1U << 5)
 	unsigned state;
 };
 
@@ -195,8 +192,8 @@ struct ublk_thread {
 	pthread_t thread;
 	unsigned idx;
 
-#define UBLKSRV_THREAD_STOPPING	(1U << 0)
-#define UBLKSRV_THREAD_IDLE	(1U << 1)
+#define UBLKS_T_STOPPING	(1U << 0)
+#define UBLKS_T_IDLE	(1U << 1)
 	unsigned state;
 };
 
@@ -379,7 +376,7 @@ static inline int ublk_get_io_res(const struct ublk_queue *q, unsigned tag)
 
 static inline void ublk_mark_io_done(struct ublk_io *io, int res)
 {
-	io->flags |= (UBLKSRV_NEED_COMMIT_RQ_COMP | UBLKSRV_IO_FREE);
+	io->flags |= (UBLKS_IO_NEED_COMMIT_RQ_COMP | UBLKS_IO_FREE);
 	io->result = res;
 }
 
@@ -437,12 +434,12 @@ static inline int ublk_completed_tgt_io(struct ublk_thread *t,
 
 static inline int ublk_queue_use_zc(const struct ublk_queue *q)
 {
-	return q->state & UBLKSRV_ZC;
+	return q->state & UBLKS_Q_ZC;
 }
 
 static inline int ublk_queue_use_auto_zc(const struct ublk_queue *q)
 {
-	return q->state & UBLKSRV_AUTO_BUF_REG;
+	return q->state & UBLKS_Q_AUTO_BUF_REG;
 }
 
 extern const struct ublk_tgt_ops null_tgt_ops;
