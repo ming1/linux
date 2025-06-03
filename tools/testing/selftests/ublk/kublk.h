@@ -180,7 +180,15 @@ struct ublk_queue {
 #define UBLKS_Q_ZC		(1U << 3)
 #define UBLKS_Q_AUTO_BUF_REG		(1U << 4)
 #define UBLKS_Q_AUTO_BUF_REG_FALLBACK	(1U << 5)
+#define UBLKS_Q_BATCH_IO	(1U << 6)
 	unsigned state;
+};
+
+struct ublk_batch_elem {
+	__u16 tag;
+	__u16 buf_index;
+	__s32 result;
+	__u64 buf_addr;
 };
 
 struct ublk_thread {
@@ -195,6 +203,15 @@ struct ublk_thread {
 #define UBLKS_T_STOPPING	(1U << 0)
 #define UBLKS_T_IDLE	(1U << 1)
 	unsigned state;
+
+	unsigned short nr_bufs;
+	unsigned short commit_buf_start;
+	unsigned char  commit_buf_elem_size;
+	unsigned int   commit_buf_size;
+#define UBLKS_T_COMMIT_BUF_NR  4
+#define UBLKS_T_COMMIT_BUF_INV_IDX  -1
+	unsigned char commit_buf_busy[UBLKS_T_COMMIT_BUF_NR];
+	void *commit_buf;
 };
 
 struct ublk_dev {
@@ -230,6 +247,12 @@ struct ublk_dev {
 extern unsigned int ublk_dbg_mask;
 extern int ublk_queue_io_cmd(struct ublk_thread *t, struct ublk_io *io);
 
+int ublk_batch_queue_prep_io_cmds(struct ublk_thread *t, struct ublk_queue *q);
+void ublk_batch_compl_cmd(struct ublk_thread *t, struct ublk_queue *q,
+			  const struct io_uring_cqe *cqe);
+void ublk_batch_prep_alloc_buf(struct ublk_thread *t);
+int ublk_batch_alloc_buf(struct ublk_thread *t);
+void ublk_batch_free_buf(struct ublk_thread *t);
 
 static inline int ublk_io_auto_zc_fallback(const struct ublksrv_io_desc *iod)
 {

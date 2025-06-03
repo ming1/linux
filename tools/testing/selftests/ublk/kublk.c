@@ -423,6 +423,8 @@ static void ublk_thread_deinit(struct ublk_thread *t)
 {
 	io_uring_unregister_buffers(&t->ring);
 
+	ublk_batch_free_buf(t);
+
 	io_uring_unregister_ring_fd(&t->ring);
 
 	if (t->ring.ring_fd > 0) {
@@ -451,6 +453,9 @@ static int ublk_queue_init(struct ublk_queue *q, unsigned extra_flags)
 		if (dev->dev_info.flags & UBLK_F_AUTO_BUF_REG)
 			q->state |= UBLKS_Q_AUTO_BUF_REG;
 	}
+	if (dev->dev_info.flags & UBLK_F_BATCH_IO)
+		q->state |= UBLKS_Q_BATCH_IO;
+
 	q->state |= extra_flags;
 
 	cmd_buf_size = ublk_queue_cmd_buf_sz(q);
@@ -468,6 +473,9 @@ static int ublk_queue_init(struct ublk_queue *q, unsigned extra_flags)
 		q->ios[i].buf_addr = NULL;
 		q->ios[i].flags = UBLKS_IO_NEED_FETCH_RQ | UBLKS_IO_FREE;
 		q->ios[i].tag = i;
+
+		/* set default buf index, used for F_BATCH_IO */
+		q->ios[i].buf_index = i;
 
 		if (q->state & UBLKS_Q_NO_BUF)
 			continue;
@@ -508,11 +516,29 @@ static int ublk_thread_init(struct ublk_thread *t)
 		unsigned nr_ios = dev->dev_info.queue_depth * dev->dev_info.nr_hw_queues;
 		unsigned max_nr_ios_per_thread = nr_ios / dev->nthreads;
 		max_nr_ios_per_thread += !!(nr_ios % dev->nthreads);
-		ret = io_uring_register_buffers_sparse(
-			&t->ring, max_nr_ios_per_thread);
+
+		t->nr_bufs = max_nr_ios_per_thread;
+	} else {
+		t->nr_bufs = 0;
+	}
+
+	if (dev->dev_info.flags & UBLK_F_BATCH_IO)
+		 ublk_batch_prep_alloc_buf(t);
+
+	if (t->nr_bufs) {
+		ret = io_uring_register_buffers_sparse(&t->ring, t->nr_bufs);
 		if (ret) {
 			ublk_err("ublk dev %d thread %d register spare buffers failed %d",
 					dev->dev_info.dev_id, t->idx, ret);
+			goto fail;
+		}
+	}
+
+	if (dev->dev_info.flags & UBLK_F_BATCH_IO) {
+		ret = ublk_batch_alloc_buf(t);
+		if (ret) {
+			ublk_err("ublk dev %d thread %d alloc batch buf failed %d",
+				dev->dev_info.dev_id, t->idx, ret);
 			goto fail;
 		}
 	}
@@ -771,9 +797,11 @@ static void ublk_handle_cqe(struct ublk_thread *t,
 		ublk_err("%s: res %d userdata %llx queue state %x\n", __func__,
 				cqe->res, cqe->user_data, q->state);
 
-	ublk_dbg(UBLK_DBG_IO_CMD, "%s: res %d (qid %d tag %u cmd_op %u target %d/%d) stopping %d\n",
-			__func__, cqe->res, q->q_id, user_data_to_tag(cqe->user_data),
-			cmd_op, is_target_io(cqe->user_data),
+	ublk_dbg(UBLK_DBG_IO_CMD, "%s: res %d (thread %d qid %d tag %u cmd_op %x "
+			"data %lx target %d/%d) stopping %d\n",
+			__func__, cqe->res, t->idx, q->q_id,
+			user_data_to_tag(cqe->user_data),
+			cmd_op, cqe->user_data, is_target_io(cqe->user_data),
 			user_data_to_tgt_data(cqe->user_data),
 			(t->state & UBLKS_T_STOPPING));
 
@@ -785,7 +813,10 @@ static void ublk_handle_cqe(struct ublk_thread *t,
 
 	t->cmd_inflight--;
 
-	ublk_handle_uring_cmd(t, q, cqe);
+	if (q->state & UBLKS_Q_BATCH_IO)
+		ublk_batch_compl_cmd(t, q, cqe);
+	else
+		ublk_handle_uring_cmd(t, q, cqe);
 }
 
 static int ublk_reap_events_uring(struct ublk_thread *t)
@@ -865,8 +896,24 @@ static void *ublk_io_handler_fn(void *data)
 	ublk_dbg(UBLK_DBG_THREAD, "tid %d: ublk dev %d thread %u started\n",
 			gettid(), dev_id, t->idx);
 
-	/* submit all io commands to ublk driver */
-	ublk_submit_fetch_commands(t);
+	/* prepare all io commands in the 1st thread context */
+	if (!(t->dev->dev_info.flags & UBLK_F_BATCH_IO)) {
+		/* submit all io commands to ublk driver */
+		ublk_submit_fetch_commands(t);
+	} else if (!t->idx) {
+		int i;
+
+		/* setup all queues in the 1st thread */
+		for (i = 0; i < t->dev->dev_info.nr_hw_queues; i++) {
+			struct ublk_queue *q = &t->dev->q[i];
+			int ret;
+
+			ret = ublk_batch_queue_prep_io_cmds(t, q);
+			assert(ret == 0);
+			ret = ublk_process_io(t);
+			assert(ret >= 0);
+		}
+	}
 	do {
 		if (ublk_process_io(t) < 0)
 			break;
