@@ -188,6 +188,13 @@ struct batch_fetch_buf {
 	unsigned int fetch_buf_off;
 };
 
+struct batch_commit_buf {
+	unsigned short buf_idx;
+	void *elem;
+	unsigned short done;
+	unsigned short count;
+};
+
 struct ublk_thread {
 	struct ublk_dev *dev;
 	struct io_uring ring;
@@ -218,6 +225,8 @@ struct ublk_thread {
 	/* commit & prep are sync command, double buffer is enough */
 	unsigned char commit_buf_busy[UBLKS_T_COMMIT_BUF_NR];
 
+	struct batch_commit_buf commit;
+
 	/* FETCH_IO_CMDS buffer */
 #define UBLKS_T_NR_FETCH_BUF 	2
 	struct batch_fetch_buf fetch[UBLKS_T_NR_FETCH_BUF];
@@ -240,6 +249,11 @@ struct ublk_dev {
 };
 
 extern int ublk_queue_io_cmd(struct ublk_thread *t, struct ublk_io *io);
+static inline int ublk_queue_batch_io(const struct ublk_queue *q);
+static inline void ublk_batch_complete_io(struct ublk_thread *t,
+					  struct ublk_queue *q,
+					  struct ublk_io *io,
+					  unsigned tag, int res);
 
 static inline int ublk_io_auto_zc_fallback(const struct ublksrv_io_desc *iod)
 {
@@ -385,9 +399,13 @@ static inline int ublk_complete_io(struct ublk_thread *t, struct ublk_queue *q,
 {
 	struct ublk_io *io = &q->ios[tag];
 
-	ublk_mark_io_done(io, res);
-
-	return ublk_queue_io_cmd(t, io);
+	if (ublk_queue_batch_io(q)) {
+		ublk_batch_complete_io(t, q, io, tag, res);
+		return 0;
+	} else {
+		ublk_mark_io_done(io, res);
+		return ublk_queue_io_cmd(t, io);
+	}
 }
 
 static inline void ublk_queued_tgt_io(struct ublk_thread *t, struct ublk_queue *q,
@@ -463,7 +481,32 @@ void ublk_batch_compl_cmd(struct ublk_thread *t,
 void ublk_batch_prepare(struct ublk_thread *t);
 int ublk_batch_alloc_buf(struct ublk_thread *t);
 void ublk_batch_free_buf(struct ublk_thread *t);
+void ublk_batch_prep_commit(struct ublk_thread *t);
+void ublk_batch_commit_io_cmds(struct ublk_thread *t);
 
+static inline int ublk_queue_no_buf(const struct ublk_queue *q);
+static inline int ublk_queue_batch_io(const struct ublk_queue *q);
+
+static inline void ublk_batch_complete_io(struct ublk_thread *t,
+					  struct ublk_queue *q,
+					  struct ublk_io *io,
+					  unsigned tag, int res)
+{
+	struct batch_commit_buf *cb = &t->commit;
+	struct ublk_batch_elem *elem = (struct ublk_batch_elem *)(cb->elem +
+			cb->done * t->commit_buf_elem_size);
+
+	elem->q_id = q->q_id;
+	elem->tag = tag;
+	elem->buf_index = q->ios[tag].buf_index;
+	elem->result = res;
+
+	if (!ublk_queue_no_buf(q))
+		elem->buf_addr	= (__u64) (uintptr_t) io->buf_addr;
+
+	cb->done += 1;
+	ublk_assert(cb->done <= cb->count);
+}
 
 extern const struct ublk_tgt_ops null_tgt_ops;
 extern const struct ublk_tgt_ops loop_tgt_ops;
