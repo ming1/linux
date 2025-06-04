@@ -840,6 +840,8 @@ static int ublk_reap_events_uring(struct ublk_thread *t)
 
 static int ublk_process_io(struct ublk_thread *t)
 {
+	struct ublk_queue *q = &t->dev->q[t->idx];
+	int batch_io = (q->state & UBLKS_Q_BATCH_IO);
 	int ret, reapped;
 
 	ublk_dbg(UBLK_DBG_THREAD, "dev%d-t%u: to_submit %d inflight cmd %u stopping %d\n",
@@ -852,7 +854,19 @@ static int ublk_process_io(struct ublk_thread *t)
 		return -ENODEV;
 
 	ret = io_uring_submit_and_wait(&t->ring, 1);
-	reapped = ublk_reap_events_uring(t);
+	if (batch_io) {
+		/*
+		 * Workaround for F_BATCH_IO
+		 *
+		 * TODO: make one dynamic per-queue buffer allocation
+		 * for committing result.
+		 */
+		ublk_batch_prep_commit(t, q);
+		reapped = ublk_reap_events_uring(t);
+		ublk_batch_commit_io_cmds(t, q);
+	} else {
+		reapped = ublk_reap_events_uring(t);
+	}
 
 	ublk_dbg(UBLK_DBG_THREAD, "submit result %d, reapped %d stop %d idle %d\n",
 			ret, reapped, (t->state & UBLKS_T_STOPPING),

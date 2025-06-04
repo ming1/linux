@@ -198,6 +198,13 @@ struct batch_fetch_buf {
 	unsigned int fetch_buf_off;
 };
 
+struct batch_commit_buf {
+	unsigned short buf_idx;
+	void *elem;
+	unsigned short done;
+	unsigned short count;
+};
+
 struct ublk_thread {
 	struct ublk_dev *dev;
 	struct io_uring ring;
@@ -219,6 +226,8 @@ struct ublk_thread {
 #define UBLKS_T_COMMIT_BUF_INV_IDX  -1
 	unsigned char commit_buf_busy[UBLKS_T_COMMIT_BUF_NR];
 	void *commit_buf;
+
+	struct batch_commit_buf commit;
 
 	/* FETCH_IO_CMDS buffer */
 #define UBLKS_T_NR_FETCH_BUF 	2
@@ -261,11 +270,34 @@ extern int ublk_queue_io_cmd(struct ublk_thread *t, struct ublk_io *io);
 int ublk_batch_queue_prep_io_cmds(struct ublk_thread *t, struct ublk_queue *q);
 void ublk_batch_start_fetch(struct ublk_thread *t,
 			    struct ublk_queue *q);
+void ublk_batch_prep_commit(struct ublk_thread *t,
+			    struct ublk_queue *q);
+void ublk_batch_commit_io_cmds(struct ublk_thread *t, struct ublk_queue *q);
 void ublk_batch_compl_cmd(struct ublk_thread *t, struct ublk_queue *q,
 			  const struct io_uring_cqe *cqe);
 void ublk_batch_prep_alloc_buf(struct ublk_thread *t);
 int ublk_batch_alloc_buf(struct ublk_thread *t);
 void ublk_batch_free_buf(struct ublk_thread *t);
+
+static inline void ublk_batch_complete_io(struct ublk_thread *t,
+					  struct ublk_queue *q,
+					  struct ublk_io *io,
+					  unsigned tag, int res)
+{
+	struct batch_commit_buf *cb = &t->commit;
+	struct ublk_batch_elem *elem = (struct ublk_batch_elem *)(cb->elem +
+			cb->done * t->commit_buf_elem_size);
+
+	elem->tag = tag;
+	elem->buf_index = q->ios[tag].buf_index;
+	elem->result = res;
+
+	if (!(q->state & UBLKS_Q_NO_BUF))
+		elem->buf_addr	= (__u64) (uintptr_t) io->buf_addr;
+
+	cb->done += 1;
+	assert(cb->done <= cb->count);
+}
 
 static inline int ublk_io_auto_zc_fallback(const struct ublksrv_io_desc *iod)
 {
@@ -439,9 +471,13 @@ static inline int ublk_complete_io(struct ublk_thread *t, struct ublk_queue *q,
 {
 	struct ublk_io *io = &q->ios[tag];
 
-	ublk_mark_io_done(io, res);
-
-	return ublk_queue_io_cmd(t, io);
+	if (q->state & UBLKS_Q_BATCH_IO) {
+		ublk_batch_complete_io(t, q, io, tag, res);
+		return 0;
+	} else {
+		ublk_mark_io_done(io, res);
+		return ublk_queue_io_cmd(t, io);
+	}
 }
 
 static inline void ublk_queued_tgt_io(struct ublk_thread *t, struct ublk_queue *q,
