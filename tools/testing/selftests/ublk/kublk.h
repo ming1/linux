@@ -181,6 +181,13 @@ struct ublk_batch_elem {
 	};
 };
 
+struct batch_fetch_buf {
+	struct io_uring_buf_ring *br;
+	void *fetch_buf;
+	unsigned int fetch_buf_size;
+	unsigned int fetch_buf_off;
+};
+
 struct ublk_thread {
 	struct ublk_dev *dev;
 	struct io_uring ring;
@@ -210,6 +217,10 @@ struct ublk_thread {
 #define UBLKS_T_COMMIT_BUF_INV_IDX  -1
 	/* commit & prep are sync command, double buffer is enough */
 	unsigned char commit_buf_busy[UBLKS_T_COMMIT_BUF_NR];
+
+	/* FETCH_IO_CMDS buffer */
+#define UBLKS_T_NR_FETCH_BUF 	2
+	struct batch_fetch_buf fetch[UBLKS_T_NR_FETCH_BUF];
 };
 
 struct ublk_dev {
@@ -445,6 +456,8 @@ static inline int ublk_thread_batch_io(const struct ublk_thread *t)
 }
 
 int ublk_batch_queue_prep_io_cmds(struct ublk_thread *t, struct ublk_queue *q);
+void ublk_batch_start_fetch(struct ublk_thread *t,
+			    struct ublk_queue *q);
 void ublk_batch_compl_cmd(struct ublk_thread *t,
 			  const struct io_uring_cqe *cqe);
 void ublk_batch_prepare(struct ublk_thread *t);
