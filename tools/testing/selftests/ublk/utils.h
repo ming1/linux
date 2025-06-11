@@ -2,6 +2,8 @@
 #ifndef KUBLK_UTILS_H
 #define KUBLK_UTILS_H
 
+#include <syslog.h>
+
 #define __maybe_unused __attribute__((unused))
 
 #ifndef min
@@ -66,5 +68,20 @@ static inline void ublk_dbg(int level, const char *fmt, ...)
 		vfprintf(stdout, fmt, ap);
 	}
 }
+
+static inline void ublk_syslog(const char *fmt, ...)
+{
+	va_list ap;
+
+	va_start(ap, fmt);
+	vsyslog(LOG_ERR, fmt, ap);
+}
+
+#define ublk_assert(x)  do { \
+	if (!(x)) {     \
+		ublk_syslog("%s %d: assert!\n", __func__, __LINE__); \
+		assert(x);      \
+	}       \
+} while (0)
 
 #endif
