@@ -577,6 +577,9 @@ static int ublk_dev_prep(const struct dev_ctx *ctx, struct ublk_dev *dev)
 		return -1;
 	}
 
+	if (ublk_dev_batch_io(dev))
+		ublk_batch_setup_map(dev);
+
 	dev->fds[0] = fd;
 	if (dev->tgt.ops->init_tgt)
 		ret = dev->tgt.ops->init_tgt(ctx, dev);
@@ -915,12 +918,10 @@ static void *ublk_io_handler_fn(void *data)
 		/* submit all io commands to ublk driver */
 		ublk_submit_fetch_commands(t);
 	} else {
-		struct ublk_queue *q = &t->dev->q[t->idx];
-
 		/* prepare all io commands in the 1st thread context */
 		if (!t->idx)
 			ublk_batch_setup_queues(t);
-		ublk_batch_start_fetch(t, q);
+		ublk_batch_start_fetch(t);
 	}
 
 	do {
@@ -1201,7 +1202,8 @@ static int __cmd_dev_add(const struct dev_ctx *ctx)
 		goto fail;
 	}
 
-	if (nthreads != nr_queues && !ctx->per_io_tasks) {
+	if (nthreads != nr_queues && (!ctx->per_io_tasks &&
+				!(ctx->flags & UBLK_F_BATCH_IO))) {
 		ublk_err("%s: threads %u must be same as queues %u if "
 			"not using per_io_tasks\n",
 			__func__, nthreads, nr_queues);

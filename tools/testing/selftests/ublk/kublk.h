@@ -228,8 +228,7 @@ struct ublk_thread {
 	struct batch_commit_buf commit;
 
 	/* FETCH_IO_CMDS buffer */
-#define UBLKS_T_NR_FETCH_BUF 	2
-	struct batch_fetch_buf fetch[UBLKS_T_NR_FETCH_BUF];
+	struct batch_fetch_buf fetch[UBLK_MAX_QUEUES];
 };
 
 struct ublk_dev {
@@ -239,6 +238,7 @@ struct ublk_dev {
 	struct ublk_thread threads[UBLK_MAX_THREADS];
 	unsigned nthreads;
 	unsigned per_io_tasks;
+	unsigned char q_thread_map[UBLK_MAX_THREADS][UBLK_MAX_QUEUES];
 
 	int fds[MAX_BACK_FILES + 1];	/* fds[0] points to /dev/ublkcN */
 	int nr_fds;
@@ -474,8 +474,7 @@ static inline int ublk_thread_batch_io(const struct ublk_thread *t)
 }
 
 int ublk_batch_queue_prep_io_cmds(struct ublk_thread *t, struct ublk_queue *q);
-void ublk_batch_start_fetch(struct ublk_thread *t,
-			    struct ublk_queue *q);
+void ublk_batch_start_fetch(struct ublk_thread *t);
 void ublk_batch_compl_cmd(struct ublk_thread *t,
 			  const struct io_uring_cqe *cqe);
 void ublk_batch_prepare(struct ublk_thread *t);
@@ -483,6 +482,8 @@ int ublk_batch_alloc_buf(struct ublk_thread *t);
 void ublk_batch_free_buf(struct ublk_thread *t);
 void ublk_batch_prep_commit(struct ublk_thread *t);
 void ublk_batch_commit_io_cmds(struct ublk_thread *t);
+void ublk_batch_setup_map(struct ublk_dev *dev);
+unsigned int ublk_thread_nr_queues(const struct ublk_thread *t);
 
 static inline int ublk_queue_no_buf(const struct ublk_queue *q);
 static inline int ublk_queue_batch_io(const struct ublk_queue *q);

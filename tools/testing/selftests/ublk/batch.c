@@ -64,7 +64,8 @@ static unsigned ublk_commit_buf_size(struct ublk_thread *t)
 
 static int alloc_batch_commit_buf(struct ublk_thread *t)
 {
-	unsigned buf_size = ublk_commit_buf_size(t);
+	unsigned nr_queues = ublk_thread_nr_queues(t);
+	unsigned buf_size = ublk_commit_buf_size(t) * nr_queues;
 	unsigned int total = buf_size * UBLKS_T_COMMIT_BUF_NR;
 	struct iovec iov[UBLKS_T_COMMIT_BUF_NR];
 	unsigned int page_sz = getpagesize();
@@ -178,13 +179,18 @@ static void ublk_batch_queue_fetch(struct ublk_thread *t,
 	t->fetch[buf_idx].fetch_buf_off = 0;
 }
 
-void ublk_batch_start_fetch(struct ublk_thread *t,
-			    struct ublk_queue *q)
+void ublk_batch_start_fetch(struct ublk_thread *t)
 {
 	int i;
+	int j = 0;
 
-	for (i = 0; i < UBLKS_T_NR_FETCH_BUF; i++)
-		ublk_batch_queue_fetch(t, q, i);
+	for (i = 0; i < t->dev->dev_info.nr_hw_queues; i++) {
+		if (t->dev->q_thread_map[t->idx][i]) {
+			struct ublk_queue *q = &t->dev->q[i];
+
+			ublk_batch_queue_fetch(t, q, j++);
+		}
+	}
 }
 
 static unsigned short ublk_compl_batch_fetch(struct ublk_thread *t,
@@ -372,9 +378,10 @@ void ublk_batch_prepare(struct ublk_thread *t)
 	 * This way looks not elegant, but it works so far.
 	 */
 	struct ublk_queue *q = &t->dev->q[0];
+	unsigned nr_queues = ublk_thread_nr_queues(t);
 
 	t->commit_buf_elem_size = ublk_commit_elem_buf_size(t->dev);
-	t->commit_buf_size = ublk_commit_buf_size(t);
+	t->commit_buf_size = ublk_commit_buf_size(t) * nr_queues;
 	t->commit_buf_start = t->nr_bufs;
 	t->nr_bufs += UBLKS_T_COMMIT_BUF_NR;
 
@@ -391,9 +398,10 @@ void ublk_batch_prepare(struct ublk_thread *t)
 
 static void free_batch_fetch_buf(struct ublk_thread *t)
 {
+	unsigned nr_bufs = ublk_thread_nr_queues(t);
 	int i;
 
-	for (i = 0; i < UBLKS_T_NR_FETCH_BUF; i++) {
+	for (i = 0; i < nr_bufs; i++) {
 		io_uring_free_buf_ring(&t->ring, t->fetch[i].br, 1, i);
 		munlock(t->fetch[i].fetch_buf, t->fetch[i].fetch_buf_size);
 		free(t->fetch[i].fetch_buf);
@@ -405,10 +413,12 @@ static int alloc_batch_fetch_buf(struct ublk_thread *t)
 	/* page aligned fetch buffer, and it is mlocked for speedup delivery */
 	unsigned pg_sz = getpagesize();
 	unsigned buf_size = round_up(t->dev->dev_info.queue_depth * 2, pg_sz);
+	unsigned nr_bufs = ublk_thread_nr_queues(t);
 	int ret;
 	int i = 0;
 
-	for (i = 0; i < UBLKS_T_NR_FETCH_BUF; i++) {
+	/* allocate one buffer for each queue */
+	for (i = 0; i < nr_bufs; i++) {
 		t->fetch[i].fetch_buf_size = buf_size;
 
 		if (posix_memalign((void **)&t->fetch[i].fetch_buf, pg_sz,
@@ -444,4 +454,36 @@ void ublk_batch_free_buf(struct ublk_thread *t)
 {
 	free(t->commit_buf);
 	free_batch_fetch_buf(t);
+}
+
+unsigned int ublk_thread_nr_queues(const struct ublk_thread *t)
+{
+	int i;
+	int ret = 0;
+
+	for (i = 0; i < t->dev->dev_info.nr_hw_queues; i++)
+		ret += !!t->dev->q_thread_map[t->idx][i];
+
+	return ret;
+}
+
+void ublk_batch_setup_map(struct ublk_dev *dev)
+{
+	int i, j;
+	int nthreads = dev->nthreads;
+	int queues = dev->dev_info.nr_hw_queues;
+
+	for (i = 0, j = 0; i < queues || j < nthreads; i++, j++) {
+		dev->q_thread_map[j % nthreads][i % queues] = 1;
+	}
+#if 0
+	for (j = 0; j < dev->nthreads; j++) {
+		printf("thread %0d: ", j);
+		for (i = 0; i < dev->dev_info.nr_hw_queues; i++) {
+			if (dev->q_thread_map[j][i])
+				printf("%03u ", i);
+		}
+		printf("\n");
+	}
+#endif
 }
