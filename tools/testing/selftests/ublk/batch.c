@@ -61,6 +61,7 @@ static void free_batch_commit_buf(struct ublk_thread *t)
 {
 	free(t->commit_buf);
 	allocator_deinit(&t->commit_buf_alloc);
+	free(t->commit);
 }
 
 static int alloc_batch_commit_buf(struct ublk_thread *t)
@@ -70,7 +71,13 @@ static int alloc_batch_commit_buf(struct ublk_thread *t)
 	struct iovec iov[t->nr_commit_buf];
 	unsigned int page_sz = getpagesize();
 	void *buf = NULL;
-	int i;
+	int i, j = 0;
+
+	t->commit = calloc(t->nr_queues, sizeof(*t->commit));
+	for (i = 0; i < t->dev->dev_info.nr_hw_queues; i++) {
+		if (t->dev->q_thread_map[t->idx][i])
+			t->commit[j++].q_id = i;
+	}
 
 	allocator_init(&t->commit_buf_alloc, t->nr_commit_buf);
 
@@ -169,13 +176,20 @@ static void ublk_batch_queue_fetch(struct ublk_thread *t,
 	t->fetch[buf_idx].fetch_buf_off = 0;
 }
 
-void ublk_batch_start_fetch(struct ublk_thread *t,
-			    struct ublk_queue *q)
+void ublk_batch_start_fetch(struct ublk_thread *t)
 {
 	int i;
+	int j = 0;
 
-	for (i = 0; i < UBLKS_T_NR_FETCH_BUF; i++)
-		ublk_batch_queue_fetch(t, q, i);
+	for (i = 0; i < t->dev->dev_info.nr_hw_queues; i++) {
+		if (t->dev->q_thread_map[t->idx][i]) {
+			struct ublk_queue *q = &t->dev->q[i];
+
+			/* submit two fetch commands for each queue */
+			ublk_batch_queue_fetch(t, q, j++);
+			ublk_batch_queue_fetch(t, q, j++);
+		}
+	}
 }
 
 static unsigned short ublk_compl_batch_fetch(struct ublk_thread *t,
@@ -223,7 +237,7 @@ static unsigned short ublk_compl_batch_fetch(struct ublk_thread *t,
 	return buf_idx;
 }
 
-int ublk_batch_queue_prep_io_cmds(struct ublk_thread *t, struct ublk_queue *q)
+static int __ublk_batch_queue_prep_io_cmds(struct ublk_thread *t, struct ublk_queue *q)
 {
 	unsigned short nr_elem = q->q_depth;
 	unsigned short buf_idx = ublk_alloc_commit_buf(t);
@@ -262,6 +276,22 @@ int ublk_batch_queue_prep_io_cmds(struct ublk_thread *t, struct ublk_queue *q)
 			t->commit_buf_elem_size, nr_elem, buf_idx);
 	ublk_setup_commit_sqe(t, sqe, buf_idx);
 	return 0;
+}
+
+int ublk_batch_queue_prep_io_cmds(struct ublk_thread *t, struct ublk_queue *q)
+{
+	int ret = 0;
+
+	pthread_spin_lock(&q->lock);
+	if (q->flags & UBLKS_Q_PREPARED)
+		goto unlock;
+	ret = __ublk_batch_queue_prep_io_cmds(t, q);
+	if (!ret)
+		q->flags |= UBLKS_Q_PREPARED;
+unlock:
+	pthread_spin_unlock(&q->lock);
+
+	return ret;
 }
 
 static void ublk_batch_compl_commit_cmd(struct ublk_thread *t,
@@ -308,59 +338,100 @@ void ublk_batch_compl_cmd(struct ublk_thread *t,
 	}
 }
 
-void ublk_batch_commit_io_cmds(struct ublk_thread *t)
+static void __ublk_batch_commit_io_cmds(struct ublk_thread *t,
+					struct batch_commit_buf *cb)
 {
 	struct io_uring_sqe *sqe;
 	unsigned short buf_idx;
-	unsigned short nr_elem = t->commit.done;
+	unsigned short nr_elem = cb->done;
 
 	/* nothing to commit */
 	if (!nr_elem) {
-		ublk_free_commit_buf(t, t->commit.buf_idx);
+		ublk_free_commit_buf(t, cb->buf_idx);
 		return;
 	}
 
 	ublk_io_alloc_sqes(t, &sqe, 1);
-	buf_idx = t->commit.buf_idx;
-	sqe->addr = (__u64)t->commit.elem;
+	buf_idx = cb->buf_idx;
+	sqe->addr = (__u64)cb->elem;
 	sqe->len = nr_elem * t->commit_buf_elem_size;
 
 	/* commit isn't per-queue command */
-	ublk_init_batch_cmd(t, t->commit.q_id, sqe, UBLK_U_IO_COMMIT_IO_CMDS,
+	ublk_init_batch_cmd(t, cb->q_id, sqe, UBLK_U_IO_COMMIT_IO_CMDS,
 			t->commit_buf_elem_size, nr_elem, buf_idx);
 	ublk_setup_commit_sqe(t, sqe, buf_idx);
 }
 
-static void ublk_batch_init_commit(struct ublk_thread *t,
-				   unsigned short buf_idx)
+void ublk_batch_commit_io_cmds(struct ublk_thread *t)
+{
+	int i;
+
+	for (i = 0; i < t->nr_queues; i++) {
+		struct batch_commit_buf *cb = &t->commit[i];
+
+		if (cb->buf_idx != UBLKS_T_COMMIT_BUF_INV_IDX)
+			__ublk_batch_commit_io_cmds(t, cb);
+	}
+
+}
+
+static void __ublk_batch_init_commit(struct ublk_thread *t,
+				     struct batch_commit_buf *cb,
+				     unsigned short buf_idx)
 {
 	/* so far only support 1:1 queue/thread mapping */
-	t->commit.q_id = t->idx;
-	t->commit.buf_idx = buf_idx;
-	t->commit.elem = ublk_get_commit_buf(t, buf_idx);
-	t->commit.done = 0;
-	t->commit.count = t->commit_buf_size /
+	cb->buf_idx = buf_idx;
+	cb->elem = ublk_get_commit_buf(t, buf_idx);
+	cb->done = 0;
+	cb->count = t->commit_buf_size /
 		t->commit_buf_elem_size;
 }
 
-void ublk_batch_prep_commit(struct ublk_thread *t)
+/* COMMIT_IO_CMDS is per-queue command, so use its own commit buffer */
+static void ublk_batch_init_commit(struct ublk_thread *t,
+				   struct batch_commit_buf *cb)
 {
 	unsigned short buf_idx = ublk_alloc_commit_buf(t);
 
 	ublk_assert(buf_idx != UBLKS_T_COMMIT_BUF_INV_IDX);
-	ublk_batch_init_commit(t, buf_idx);
+	ublk_assert(!ublk_batch_commit_prepared(cb));
+
+	__ublk_batch_init_commit(t, cb, buf_idx);
+}
+
+void ublk_batch_prep_commit(struct ublk_thread *t)
+{
+	int i;
+
+	for (i = 0; i < t->nr_queues; i++)
+		t->commit[i].buf_idx = UBLKS_T_COMMIT_BUF_INV_IDX;
+}
+
+static unsigned int ublk_thread_nr_queues(const struct ublk_thread *t)
+{
+	int i;
+	int ret = 0;
+
+	for (i = 0; i < t->dev->dev_info.nr_hw_queues; i++)
+		ret += !!t->dev->q_thread_map[t->idx][i];
+
+	return ret;
 }
 
 void ublk_batch_complete_io(struct ublk_thread *t, struct ublk_queue *q,
 			    unsigned tag, int res)
 {
-	struct batch_commit_buf *cb = &t->commit;
-	struct ublk_batch_elem *elem = (struct ublk_batch_elem *)(cb->elem +
-			cb->done * t->commit_buf_elem_size);
+	unsigned q_t_idx = ublk_queue_idx_in_thread(t, q);
+	struct batch_commit_buf *cb = &t->commit[q_t_idx];
+	struct ublk_batch_elem *elem;
 	struct ublk_io *io = &q->ios[tag];
 
-	ublk_assert(q->q_id == t->commit.q_id);
+	if (!ublk_batch_commit_prepared(cb))
+		ublk_batch_init_commit(t, cb);
 
+	ublk_assert(q->q_id == cb->q_id);
+
+	elem = (struct ublk_batch_elem *)(cb->elem + cb->done * t->commit_buf_elem_size);
 	elem->tag = tag;
 	elem->buf_index = ublk_batch_io_buf_idx(t, q, tag);
 	elem->result = res;
@@ -384,10 +455,13 @@ void ublk_batch_prepare(struct ublk_thread *t)
 	 */
 	struct ublk_queue *q = &t->dev->q[0];
 
+	/* cache nr_queues because we don't support dynamic load-balance yet */
+	t->nr_queues = ublk_thread_nr_queues(t);
+
 	t->commit_buf_elem_size = ublk_commit_elem_buf_size(t->dev);
 	t->commit_buf_size = ublk_commit_buf_size(t);
 	t->commit_buf_start = t->nr_bufs;
-	t->nr_commit_buf = 2;
+	t->nr_commit_buf = 2 * t->nr_queues;
 	t->nr_bufs += t->nr_commit_buf;
 
 	t->cmd_flags = 0;
@@ -404,11 +478,12 @@ static void free_batch_fetch_buf(struct ublk_thread *t)
 {
 	int i;
 
-	for (i = 0; i < UBLKS_T_NR_FETCH_BUF; i++) {
+	for (i = 0; i < t->nr_fetch_bufs; i++) {
 		io_uring_free_buf_ring(&t->ring, t->fetch[i].br, 1, i);
 		munlock(t->fetch[i].fetch_buf, t->fetch[i].fetch_buf_size);
 		free(t->fetch[i].fetch_buf);
 	}
+	free(t->fetch);
 }
 
 static int alloc_batch_fetch_buf(struct ublk_thread *t)
@@ -419,7 +494,12 @@ static int alloc_batch_fetch_buf(struct ublk_thread *t)
 	int ret;
 	int i = 0;
 
-	for (i = 0; i < UBLKS_T_NR_FETCH_BUF; i++) {
+	/* double fetch buffer for each queue */
+	t->nr_fetch_bufs = t->nr_queues * 2;
+	t->fetch = calloc(t->nr_fetch_bufs, sizeof(*t->fetch));
+
+	/* allocate one buffer for each queue */
+	for (i = 0; i < t->nr_fetch_bufs; i++) {
 		t->fetch[i].fetch_buf_size = buf_size;
 
 		if (posix_memalign((void **)&t->fetch[i].fetch_buf, pg_sz,
@@ -455,4 +535,43 @@ void ublk_batch_free_buf(struct ublk_thread *t)
 {
 	free_batch_commit_buf(t);
 	free_batch_fetch_buf(t);
+}
+
+void ublk_batch_setup_map(struct ublk_dev *dev)
+{
+	int i, j;
+	int nthreads = dev->nthreads;
+	int queues = dev->dev_info.nr_hw_queues;
+
+	for (i = 0, j = 0; i < queues || j < nthreads; i++, j++) {
+		dev->q_thread_map[j % nthreads][i % queues] = 1;
+	}
+
+	/* store each queue's index in thread */
+	for (j = 0; j < nthreads; j++) {
+		unsigned char seq = 1;
+
+		for (i = 0; i < queues; i++) {
+			if (dev->q_thread_map[j][i])
+				dev->q_thread_map[j][i] = seq++;
+		}
+	}
+
+#if 0
+	for (j = 0; j < dev->nthreads; j++) {
+		printf("thread %0d: ", j);
+		for (i = 0; i < dev->dev_info.nr_hw_queues; i++) {
+			if (dev->q_thread_map[j][i])
+				printf("%03u ", i);
+		}
+		printf("\n");
+	}
+	printf("\n");
+	for (j = 0; j < dev->nthreads; j++) {
+		for (i = 0; i < dev->dev_info.nr_hw_queues; i++) {
+			printf("%03u ", dev->q_thread_map[j][i]);
+		}
+		printf("\n");
+	}
+#endif
 }
