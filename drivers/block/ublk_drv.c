@@ -80,7 +80,8 @@
 		| UBLK_F_BUF_REG_OFF_DAEMON \
 		| (IS_ENABLED(CONFIG_BLK_DEV_INTEGRITY) ? UBLK_F_INTEGRITY : 0) \
 		| UBLK_F_SAFE_STOP_DEV \
-		| UBLK_F_BATCH_IO)
+		| UBLK_F_BATCH_IO \
+		| UBLK_F_IOPOLL)
 
 #define UBLK_F_ALL_RECOVERY_FLAGS (UBLK_F_USER_RECOVERY \
 		| UBLK_F_USER_RECOVERY_REISSUE \
@@ -283,6 +284,8 @@ struct ublk_queue {
 
 		/* Currently active fetch command (NULL = none active) */
 		struct ublk_batch_fetch_cmd  *active_fcmd;
+
+		wait_queue_head_t   iopoll_wq;
 	}____cacheline_aligned_in_smp;
 
 	struct ublk_io ios[] __counted_by(q_depth);
@@ -349,6 +352,17 @@ static inline bool ublk_dev_support_batch_io(const struct ublk_device *ub)
 static inline bool ublk_support_batch_io(const struct ublk_queue *ubq)
 {
 	return ubq->flags & UBLK_F_BATCH_IO;
+}
+
+static inline bool ublk_support_iopoll(const struct ublk_queue *ubq)
+{
+	return ubq->flags & UBLK_F_IOPOLL;
+}
+
+static inline void ublk_wake_iopoll_wq(struct ublk_queue *ubq)
+{
+	if (wq_has_sleeper(&ubq->iopoll_wq))
+		wake_up_all(&ubq->iopoll_wq);
 }
 
 static inline void ublk_io_lock(struct ublk_io *io)
@@ -739,8 +753,10 @@ static void ublk_batch_deinit_fetch_buf(struct ublk_queue *ubq,
 {
 	spin_lock(&ubq->evts_lock);
 	list_del(&fcmd->node);
-	WARN_ON_ONCE(fcmd != ubq->active_fcmd);
-	__ublk_release_fcmd(ubq);
+	if (!ublk_support_iopoll(ubq)) {
+		WARN_ON_ONCE(fcmd != ubq->active_fcmd);
+		__ublk_release_fcmd(ubq);
+	}
 	spin_unlock(&ubq->evts_lock);
 
 	io_uring_cmd_done(fcmd->cmd, res, data->issue_flags);
@@ -1881,14 +1897,17 @@ static void ublk_batch_queue_cmd(struct ublk_queue *ubq, struct request *rq, boo
 {
 	unsigned short tag = rq->tag;
 	struct ublk_batch_fetch_cmd *fcmd = NULL;
+	bool iopoll = ublk_support_iopoll(ubq);
 
 	spin_lock(&ubq->evts_lock);
 	kfifo_put(&ubq->evts_fifo, tag);
-	if (last)
+	if (last && !iopoll)
 		fcmd = __ublk_acquire_fcmd(ubq);
 	spin_unlock(&ubq->evts_lock);
 
-	if (fcmd)
+	if (iopoll)
+		ublk_wake_iopoll_wq(ubq);
+	else if (fcmd)
 		io_uring_cmd_complete_in_task(fcmd->cmd, ublk_batch_tw_cb);
 }
 
@@ -2058,6 +2077,11 @@ static void ublk_commit_rqs(struct blk_mq_hw_ctx *hctx)
 	struct ublk_queue *ubq = hctx->driver_data;
 	struct ublk_batch_fetch_cmd *fcmd;
 
+	if (ublk_support_iopoll(ubq)) {
+		ublk_wake_iopoll_wq(ubq);
+		return;
+	}
+
 	spin_lock(&ubq->evts_lock);
 	fcmd = __ublk_acquire_fcmd(ubq);
 	spin_unlock(&ubq->evts_lock);
@@ -2096,8 +2120,9 @@ static void ublk_queue_rqs(struct rq_list *rqlist)
 
 static void ublk_batch_queue_cmd_list(struct ublk_queue *ubq, struct rq_list *l)
 {
+	bool iopoll = ublk_support_iopoll(ubq);
 	unsigned short tags[MAX_NR_TAG];
-	struct ublk_batch_fetch_cmd *fcmd;
+	struct ublk_batch_fetch_cmd *fcmd = NULL;
 	struct request *rq;
 	unsigned cnt = 0;
 
@@ -2111,11 +2136,14 @@ static void ublk_batch_queue_cmd_list(struct ublk_queue *ubq, struct rq_list *l)
 	}
 	if (cnt)
 		kfifo_in(&ubq->evts_fifo, tags, cnt);
-	fcmd = __ublk_acquire_fcmd(ubq);
+	if (!iopoll)
+		fcmd = __ublk_acquire_fcmd(ubq);
 	spin_unlock(&ubq->evts_lock);
 
 	rq_list_init(l);
-	if (fcmd)
+	if (iopoll)
+		ublk_wake_iopoll_wq(ubq);
+	else if (fcmd)
 		io_uring_cmd_complete_in_task(fcmd->cmd, ublk_batch_tw_cb);
 }
 
@@ -2621,6 +2649,9 @@ static void ublk_batch_cancel_queue(struct ublk_queue *ubq)
 	if (fcmd)
 		list_move(&fcmd->node, &ubq->fcmd_head);
 	spin_unlock(&ubq->evts_lock);
+
+	if (ublk_support_iopoll(ubq))
+		ublk_wake_iopoll_wq(ubq);
 
 	while (!list_empty(&fcmd_list)) {
 		fcmd = list_first_entry(&fcmd_list,
@@ -3648,26 +3679,32 @@ static int ublk_batch_attach(struct ublk_queue *ubq,
 			     struct ublk_batch_fetch_cmd *fcmd)
 {
 	struct ublk_batch_fetch_cmd *new_fcmd = NULL;
-	bool free = false;
 	struct ublk_uring_cmd_pdu *pdu = ublk_get_uring_cmd_pdu(data->cmd);
+	int ret = 0;
 
 	spin_lock(&ubq->evts_lock);
 	if (unlikely(ubq->force_abort || ubq->canceling)) {
-		free = true;
+		ret = -ENODEV;
 	} else {
-		list_add_tail(&fcmd->node, &ubq->fcmd_head);
-		new_fcmd = __ublk_acquire_fcmd(ubq);
+		if (!ublk_support_iopoll(ubq) ||
+				list_empty(&ubq->fcmd_head)) {
+			list_add_tail(&fcmd->node, &ubq->fcmd_head);
+			new_fcmd = __ublk_acquire_fcmd(ubq);
+		} else {
+			ret = -EBUSY;
+		}
 	}
 	spin_unlock(&ubq->evts_lock);
 
-	if (unlikely(free)) {
+	if (unlikely(ret)) {
 		ublk_batch_free_fcmd(fcmd);
-		return -ENODEV;
+		return ret;
 	}
 
 	pdu->ubq = ubq;
 	pdu->fcmd = fcmd;
-	io_uring_cmd_mark_cancelable(fcmd->cmd, data->issue_flags);
+	if (!ublk_support_iopoll(ubq))
+		io_uring_cmd_mark_cancelable(fcmd->cmd, data->issue_flags);
 
 	if (!new_fcmd)
 		goto out;
@@ -3799,6 +3836,51 @@ out:
 	return ret;
 }
 
+static int ublk_ch_uring_cmd_iopoll(struct io_uring_cmd *cmd,
+				    struct io_comp_batch *iob,
+				    unsigned int poll_flags)
+{
+	struct ublk_uring_cmd_pdu *pdu = ublk_get_uring_cmd_pdu(cmd);
+	struct ublk_queue *ubq = pdu->ubq;
+	struct ublk_batch_fetch_cmd *fcmd = pdu->fcmd;
+	struct ublk_device *ub = cmd->file->private_data;
+	unsigned int q_id = ubq->q_id;
+	struct ublk_batch_io_data data = {
+		.ub  = ub,
+		.cmd = cmd,
+		.header = (struct ublk_batch_io) {
+			.q_id = q_id,
+		},
+	};
+	int ret = 0;
+
+	if (cmd->cmd_op != UBLK_U_IO_FETCH_IO_CMDS)
+		return 1;
+
+	if (!ublk_support_iopoll(ubq))
+		return -EINVAL;
+
+	if (ublk_io_evts_empty(ubq)) {
+		if (poll_flags & BLK_POLL_ONESHOT)
+			return 0;
+		wait_event_interruptible(ubq->iopoll_wq,
+				!ublk_io_evts_empty(ubq) ||
+				ubq->canceling || ubq->fail_io ||
+				ubq->force_abort);
+	}
+
+	while (!ublk_io_evts_empty(ubq)) {
+		ret = __ublk_batch_dispatch(ubq, &data, fcmd);
+		if (ret <= 0)
+			break;
+	}
+	if (ret < 0)
+		ublk_batch_deinit_fetch_buf(ubq, &data, fcmd, ret);
+	return 1;
+}
+
+
+
 static inline bool ublk_check_ubuf_dir(const struct request *req,
 		int ubuf_dir)
 {
@@ -3925,6 +4007,7 @@ static const struct file_operations ublk_ch_batch_io_fops = {
 	.read_iter = ublk_ch_read_iter,
 	.write_iter = ublk_ch_write_iter,
 	.uring_cmd = ublk_ch_batch_io_uring_cmd,
+	.uring_cmd_iopoll = ublk_ch_uring_cmd_iopoll,
 	.mmap = ublk_ch_mmap,
 };
 
@@ -4015,6 +4098,7 @@ static int ublk_init_queue(struct ublk_device *ub, int q_id)
 		if (ret)
 			goto fail;
 		INIT_LIST_HEAD(&ubq->fcmd_head);
+		init_waitqueue_head(&ubq->iopoll_wq);
 	}
 	ub->queues[q_id] = ubq;
 	ubq->dev = ub;
@@ -4420,6 +4504,10 @@ static int ublk_ctrl_add_dev(const struct ublksrv_ctrl_cmd *header)
 		info.flags &= ~UBLK_F_UNPRIVILEGED_DEV;
 	else if (!(info.flags & UBLK_F_UNPRIVILEGED_DEV))
 		return -EPERM;
+
+	/* F_IOPOLL relies on  UBLK_F_BATCH_IO */
+	if ((info.flags & UBLK_F_IOPOLL) && !(info.flags & UBLK_F_BATCH_IO))
+		return -EINVAL;
 
 	/* forbid nonsense combinations of recovery flags */
 	switch (info.flags & UBLK_F_ALL_RECOVERY_FLAGS) {

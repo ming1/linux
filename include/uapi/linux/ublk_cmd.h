@@ -367,6 +367,12 @@
  */
 #define UBLK_F_SAFE_STOP_DEV	(1ULL << 17)
 
+/*
+ * Only allowed for UBLK_F_BATCH_IO, and UBLK_U_IO_FETCH_IO_CMDS command
+ * can be polled.
+ */
+#define UBLK_F_IOPOLL		(1ULL << 18)
+
 /* device state */
 #define UBLK_S_DEV_DEAD	0
 #define UBLK_S_DEV_LIVE	1
