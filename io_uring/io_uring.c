@@ -1213,8 +1213,10 @@ static int io_iopoll_check(struct io_ring_ctx *ctx, unsigned int min_events)
 	 * If we do, we can potentially be spinning for commands that
 	 * already triggered a CQE (eg in error).
 	 */
-	if (io_cqring_events(ctx))
+	if (io_cqring_events(ctx)) {
+		io_submit_flush_completions(ctx);
 		return 0;
+	}
 
 	do {
 		int ret = 0;
@@ -1252,6 +1254,10 @@ static int io_iopoll_check(struct io_ring_ctx *ctx, unsigned int min_events)
 		if (need_resched())
 			break;
 
+		if (__io_cqring_events(ctx) >= min_events) {
+			io_submit_flush_completions(ctx);
+			break;
+		}
 		nr_events += ret;
 	} while (nr_events < min_events);
 

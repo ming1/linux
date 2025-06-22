@@ -1382,7 +1382,11 @@ int io_do_iopoll(struct io_ring_ctx *ctx, bool force_nonspin)
 		if (req->opcode != IORING_OP_URING_CMD)
 			io_req_rw_cleanup(req, 0);
 	}
-	if (nr_events)
+
+	if (list_is_singular(&ctx->iopoll_list))
+		ctx->poll_multi_queue = false;
+
+	if (nr_events || ctx->submit_state.cq_flush)
 		__io_submit_flush_completions(ctx);
 	return nr_events;
 }
