@@ -263,6 +263,16 @@ struct ublk_dev {
 
 extern int ublk_queue_io_cmd(struct ublk_thread *t, struct ublk_io *io);
 
+static inline int __ublk_use_iopoll(__u64 flags)
+{
+	return flags & UBLK_F_IOPOLL;
+}
+
+static inline int ublk_dev_iopoll(const struct ublk_dev *dev)
+{
+	return __ublk_use_iopoll(dev->dev_info.flags);
+}
+
 static inline int __ublk_use_batch_io(__u64 flags)
 {
 	return flags & UBLK_F_BATCH_IO;

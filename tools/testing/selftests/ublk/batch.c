@@ -182,7 +182,7 @@ static int alloc_batch_fetch_buf(struct ublk_thread *t)
 	int i = 0;
 
 	/* double fetch buffer for each queue */
-	t->nr_fetch_bufs = t->nr_queues * 2;
+	t->nr_fetch_bufs = t->nr_queues * (1 + !ublk_dev_iopoll(t->dev));
 	t->fetch = calloc(t->nr_fetch_bufs, sizeof(*t->fetch));
 
 	/* allocate one buffer for each queue */
@@ -309,7 +309,8 @@ void ublk_batch_start_fetch(struct ublk_thread *t)
 
 			/* submit two fetch commands for each queue */
 			ublk_batch_queue_fetch(t, q, j++);
-			ublk_batch_queue_fetch(t, q, j++);
+			if (!ublk_dev_iopoll(t->dev))
+				ublk_batch_queue_fetch(t, q, j++);
 		}
 	}
 }

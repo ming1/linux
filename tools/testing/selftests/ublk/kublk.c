@@ -519,15 +519,18 @@ static int ublk_thread_init(struct ublk_thread *t, unsigned long long extra_flag
 	unsigned long long flags = dev->dev_info.flags | extra_flags;
 	int ring_depth = dev->tgt.sq_depth, cq_depth = dev->tgt.cq_depth;
 	int ret;
+	unsigned ring_flags = IORING_SETUP_COOP_TASKRUN |
+			IORING_SETUP_SINGLE_ISSUER |
+			IORING_SETUP_DEFER_TASKRUN;
+
+	if (ublk_dev_iopoll(dev))
+		ring_flags |= IORING_SETUP_IOPOLL;
 
 	/* FETCH_IO_CMDS is multishot, so increase cq depth for BATCH_IO */
 	if (ublk_dev_batch_io(dev))
 		cq_depth += dev->dev_info.queue_depth * 2;
 
-	ret = ublk_setup_ring(&t->ring, ring_depth, cq_depth,
-			IORING_SETUP_COOP_TASKRUN |
-			IORING_SETUP_SINGLE_ISSUER |
-			IORING_SETUP_DEFER_TASKRUN);
+	ret = ublk_setup_ring(&t->ring, ring_depth, cq_depth, ring_flags);
 	if (ret < 0) {
 		ublk_err("ublk dev %d thread %d setup io_uring failed %d\n",
 				dev->dev_info.dev_id, t->idx, ret);
@@ -925,6 +928,8 @@ static int ublk_reap_events_uring(struct ublk_thread *t)
 static int ublk_process_io(struct ublk_thread *t)
 {
 	int ret, reapped;
+	unsigned poll = ublk_dev_iopoll(t->dev);
+	unsigned nr_wait = 1;
 
 	ublk_dbg(UBLK_DBG_THREAD, "dev%d-t%u: to_submit %d inflight cmd %u stopping %d\n",
 				t->dev->dev_info.dev_id,
@@ -935,7 +940,10 @@ static int ublk_process_io(struct ublk_thread *t)
 	if (ublk_thread_is_done(t))
 		return -ENODEV;
 
-	ret = io_uring_submit_and_wait(&t->ring, 1);
+	if (poll && t->io_inflight)
+		nr_wait = 0;
+
+	ret = io_uring_submit_and_wait(&t->ring, nr_wait);
 	if (ublk_thread_batch_io(t)) {
 		ublk_batch_prep_commit(t);
 		reapped = ublk_reap_events_uring(t);
@@ -1617,6 +1625,7 @@ static int cmd_dev_get_features(void)
 		FEAT_NAME(UBLK_F_INTEGRITY),
 		FEAT_NAME(UBLK_F_SAFE_STOP_DEV),
 		FEAT_NAME(UBLK_F_BATCH_IO),
+		FEAT_NAME(UBLK_F_IOPOLL),
 	};
 	struct ublk_dev *dev;
 	__u64 features = 0;
@@ -1811,7 +1820,7 @@ int main(int argc, char *argv[])
 
 	opterr = 0;
 	optind = 2;
-	while ((opt = getopt_long(argc, argv, "t:n:d:q:r:e:i:s:gazub",
+	while ((opt = getopt_long(argc, argv, "t:n:d:q:r:e:i:s:gazubp",
 				  longopts, &option_idx)) != -1) {
 		switch (opt) {
 		case 'a':
@@ -1826,6 +1835,9 @@ int main(int argc, char *argv[])
 		case 't':
 			if (strlen(optarg) < sizeof(ctx.tgt_type))
 				strcpy(ctx.tgt_type, optarg);
+			break;
+		case 'p':
+			ctx.flags |= UBLK_F_IOPOLL;
 			break;
 		case 'q':
 			ctx.nr_hw_queues = strtol(optarg, NULL, 10);
