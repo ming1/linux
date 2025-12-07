@@ -14,6 +14,7 @@ static const struct ublk_tgt_ops *tgt_ops_list[] = {
 	&loop_tgt_ops,
 	&stripe_tgt_ops,
 	&fault_inject_tgt_ops,
+	&nvme_user_tgt_ops,
 };
 
 static const struct ublk_tgt_ops *ublk_find_tgt(const char *name)
@@ -525,6 +526,10 @@ static int ublk_thread_init(struct ublk_thread *t, unsigned long long extra_flag
 
 	if (ublk_dev_iopoll(dev))
 		ring_flags |= IORING_SETUP_IOPOLL;
+
+	/* NVMe uring_cmd requires SQE128 and CQE32 */
+	if (dev->tgt.ops == &nvme_user_tgt_ops)
+		ring_flags |= IORING_SETUP_SQE128 | IORING_SETUP_CQE32;
 
 	/* FETCH_IO_CMDS is multishot, so increase cq depth for BATCH_IO */
 	if (ublk_dev_batch_io(dev))
