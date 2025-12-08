@@ -55,6 +55,10 @@ enum {
 	NVME_DSMGMT_AD		= 1 << 2,
 };
 
+enum {
+	NVME_CTRL_ONCS_DSM	= 1 << 2,
+};
+
 struct nvme_dsm_range {
 	__le32			cattr;
 	__le32			nlb;
@@ -219,17 +223,115 @@ struct nvme_seg_limits {
 	__u64 virt_boundary_mask;
 };
 
+struct nvme_discard_limits {
+	__u64 discard_max_bytes;
+};
+
+struct nvme_id_ctrl_nvm {
+	__u8	vsl;
+	__u8	wzsl;
+	__u8	wusl;
+	__u8	dmrl;
+	__le32	dmrsl;
+	__le64	dmsl;
+	__u8	rsvd16[4080];
+};
+
+/*
+ * Convert NVMe char device path to block device name
+ * /dev/ng0n1 -> nvme0n1
+ */
+static int nvme_char_to_block_name(const char *char_dev, char *block_name, size_t len)
+{
+	const char *name = strrchr(char_dev, '/');
+
+	if (!name)
+		name = char_dev;
+	else
+		name++;
+
+	/* Check if it starts with "ng" and convert to "nvme" */
+	if (strncmp(name, "ng", 2) != 0)
+		return -EINVAL;
+
+	snprintf(block_name, len, "nvme%s", name + 2);
+	return 0;
+}
+
+/*
+ * Read queue limits from sysfs of the corresponding NVMe block device.
+ * These limits depend on platform-specific factors (DMA limits, CAP register,
+ * driver limits) that cannot be determined from NVMe ioctl alone.
+ */
+static int nvme_read_queue_limits_sysfs(const char *char_dev,
+					__u32 *max_sectors_kb,
+					struct nvme_seg_limits *seg)
+{
+	char block_name[64];
+	char path[256];
+	FILE *fp;
+	int ret;
+
+	ret = nvme_char_to_block_name(char_dev, block_name, sizeof(block_name));
+	if (ret)
+		return ret;
+
+	/* Read max_sectors_kb */
+	snprintf(path, sizeof(path), "/sys/block/%s/queue/max_sectors_kb", block_name);
+	fp = fopen(path, "r");
+	if (!fp)
+		return -errno;
+	ret = fscanf(fp, "%u", max_sectors_kb);
+	fclose(fp);
+	if (ret != 1)
+		return -EIO;
+
+	/* Read max_segments */
+	snprintf(path, sizeof(path), "/sys/block/%s/queue/max_segments", block_name);
+	fp = fopen(path, "r");
+	if (!fp)
+		return -errno;
+	ret = fscanf(fp, "%hu", &seg->max_segments);
+	fclose(fp);
+	if (ret != 1)
+		return -EIO;
+
+	/* Read max_segment_size */
+	snprintf(path, sizeof(path), "/sys/block/%s/queue/max_segment_size", block_name);
+	fp = fopen(path, "r");
+	if (!fp)
+		return -errno;
+	ret = fscanf(fp, "%u", &seg->max_segment_size);
+	fclose(fp);
+	if (ret != 1)
+		return -EIO;
+
+	/* Read virt_boundary_mask */
+	snprintf(path, sizeof(path), "/sys/block/%s/queue/virt_boundary_mask", block_name);
+	fp = fopen(path, "r");
+	if (!fp)
+		return -errno;
+	ret = fscanf(fp, "%llu", &seg->virt_boundary_mask);
+	fclose(fp);
+	if (ret != 1)
+		return -EIO;
+
+	return 0;
+}
+
 static int nvme_get_info(const char *file, __u32 *nsid, __u32 *lba_shift,
 			 __u64 *dev_size, __u32 *max_sectors_kb, bool *has_vwc,
-			 struct nvme_seg_limits *seg, __u32 *chunk_sectors)
+			 struct nvme_seg_limits *seg, __u32 *chunk_sectors,
+			 struct nvme_discard_limits *discard)
 {
 	struct nvme_passthru_cmd cmd = {};
 	struct nvme_id_ns ns;
 	struct nvme_id_ctrl ctrl;
+	struct nvme_id_ctrl_nvm ctrl_nvm;
 	int fd, ret;
-	__u32 lba_size, max_hw_sectors, max_segments;
-	__u32 sgls;
-	__u8 mdts;
+	__u32 lba_size;
+	__u16 oncs;
+	__u32 dmrsl;
 
 	fd = open(file, O_RDONLY);
 	if (fd < 0)
@@ -279,31 +381,18 @@ static int nvme_get_info(const char *file, __u32 *nsid, __u32 *lba_shift,
 	*has_vwc = (ctrl.vwc & NVME_CTRL_VWC_PRESENT) &&
 		   !(ns.nsattr & NVME_NS_VWC_NOT_PRESENT);
 
-	/* Calculate segment limits from controller identify data */
-	mdts = ctrl.mdts;
-	sgls = le32toh(ctrl.sgls);
+	/* Get ONCS for discard support check */
+	oncs = le16toh(ctrl.oncs);
 
-	/* Calculate max_hw_sectors from MDTS */
-	if (mdts)
-		max_hw_sectors = min((1U << mdts) * (NVME_CTRL_PAGE_SIZE >> 9), 0xffffU);
-	else
-		max_hw_sectors = 0xffff; /* No limit */
-
-	/* Calculate max_segments: min(NVME_MAX_SEGS, max_hw_sectors / 8 + 1) */
-	max_segments = max_hw_sectors / (NVME_CTRL_PAGE_SIZE >> 9) + 1;
-	seg->max_segments = min(max_segments, (__u32)NVME_MAX_SEGS);
-
-	/* Set virt_boundary_mask based on SGL support */
-	if (sgls & (NVME_CTRL_SGLS_BYTE_ALIGNED | NVME_CTRL_SGLS_DWORD_ALIGNED))
-		seg->virt_boundary_mask = 0;
-	else
-		seg->virt_boundary_mask = NVME_CTRL_PAGE_SIZE - 1;
-
-	/* max_segment_size is always UINT_MAX */
-	seg->max_segment_size = 0xffffffff;
-
-	/* Convert max_hw_sectors (in 512-byte sectors) to KB */
-	*max_sectors_kb = max_hw_sectors / 2;
+	/*
+	 * Read queue limits from sysfs since they depend on platform-specific
+	 * factors (DMA limits, CAP.MPSMIN, driver limits) not available via ioctl
+	 */
+	ret = nvme_read_queue_limits_sysfs(file, max_sectors_kb, seg);
+	if (ret) {
+		close(fd);
+		return ret;
+	}
 
 	/* Get chunk_sectors from namespace optimal I/O boundary (noiob) */
 	*chunk_sectors = 0;
@@ -312,6 +401,48 @@ static int nvme_get_info(const char *file, __u32 *nsid, __u32 *lba_shift,
 		/* Only set if it's a power of 2 */
 		if (iob && (iob & (iob - 1)) == 0)
 			*chunk_sectors = iob;
+	}
+
+	/*
+	 * Read NVM Command Set Specific Controller Identify (CNS=06h)
+	 * to get DMRSL and DMRL for discard limits
+	 */
+	memset(&cmd, 0, sizeof(cmd));
+	memset(&ctrl_nvm, 0, sizeof(ctrl_nvm));
+	cmd.opcode = 0x06; // nvme_admin_identify
+	cmd.nsid = 0;
+	cmd.cdw10 = 0x06; // NVME_ID_CNS_CS_CTRL
+	cmd.cdw11 = 0x00; // NVME_CSI_NVM
+	cmd.addr = (__u64)(uintptr_t)&ctrl_nvm;
+	cmd.data_len = sizeof(ctrl_nvm);
+
+	ret = ioctl(fd, NVME_IOCTL_ADMIN_CMD, &cmd);
+	if (ret == 0) {
+		dmrsl = le32toh(ctrl_nvm.dmrsl);
+		/* dmrl (max discard ranges) is available but not used yet */
+	} else {
+		/* Older devices may not support CNS=06h */
+		dmrsl = 0;
+	}
+
+	/*
+	 * Calculate max_discard_bytes following kernel logic:
+	 * - If DMRSL is set and valid, use it
+	 * - Else if DSM (discard) is supported via ONCS, use UINT_MAX
+	 * - Else discard is not supported (0)
+	 */
+	if (dmrsl) {
+		/* Convert DMRSL (in LBAs) to bytes, capped at UINT_MAX sectors */
+		__u64 dmrsl_sectors = ((__u64)dmrsl) << (*lba_shift - 9);
+		if (dmrsl_sectors > UINT_MAX)
+			dmrsl_sectors = UINT_MAX;
+		discard->discard_max_bytes = dmrsl_sectors << 9;
+	} else if (oncs & NVME_CTRL_ONCS_DSM) {
+		/* DSM supported, no DMRSL limit */
+		discard->discard_max_bytes = (__u64)UINT_MAX << 9;
+	} else {
+		/* Discard not supported */
+		discard->discard_max_bytes = 0;
 	}
 
 	close(fd);
@@ -620,6 +751,7 @@ static int nvme_user_tgt_init(const struct dev_ctx *ctx, struct ublk_dev *dev)
 	__u32 max_sectors;
 	bool has_vwc;
 	struct nvme_seg_limits seg;
+	struct nvme_discard_limits discard;
 	struct ublk_params p = {
 		.types = UBLK_PARAM_TYPE_BASIC | UBLK_PARAM_TYPE_DMA_ALIGN |
 			 UBLK_PARAM_TYPE_SEGMENT | UBLK_PARAM_TYPE_DISCARD,
@@ -654,7 +786,8 @@ static int nvme_user_tgt_init(const struct dev_ctx *ctx, struct ublk_dev *dev)
 	}
 
 	/* Query NVMe namespace information */
-	ret = nvme_get_info(dev->tgt.backing_file[0], &nsid, &lba_shift, &dev_size, &max_sectors_kb, &has_vwc, &seg, &chunk_sectors);
+	ret = nvme_get_info(dev->tgt.backing_file[0], &nsid, &lba_shift, &dev_size,
+			    &max_sectors_kb, &has_vwc, &seg, &chunk_sectors, &discard);
 	if (ret) {
 		ublk_err("%s: failed to get nvme info %d\n", __func__, ret);
 		return ret;
@@ -677,12 +810,14 @@ static int nvme_user_tgt_init(const struct dev_ctx *ctx, struct ublk_dev *dev)
 	/* seg_boundary_mask + 1 must be power of 2 and >= 4096 */
 	p.seg.seg_boundary_mask = 4095;
 
-	/* Set discard and write zeroes limits
-	 * Discard doesn't transfer data, so not limited by buffer size
-	 * Use 0x3fffff sectors (2GB - 512 bytes) to match NVMe limit */
+	/*
+	 * Set discard and write zeroes limits.
+	 * discard_max_bytes comes from NVMe controller's DMRSL or ONCS.DSM.
+	 * Discard doesn't transfer data through buffers, so not limited by max_io_buf_bytes.
+	 */
 	p.discard.discard_alignment = 0;
 	p.discard.discard_granularity = 1 << lba_shift;
-	p.discard.max_discard_sectors = 0x3fffff;  /* 2147483136 bytes */
+	p.discard.max_discard_sectors = discard.discard_max_bytes >> 9;
 	p.discard.max_write_zeroes_sectors = max_sectors;
 	p.discard.max_discard_segments = 1;  /* Single segment support */
 
