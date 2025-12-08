@@ -40,10 +40,25 @@ enum nvme_io_opcode {
 	nvme_cmd_flush		= 0x00,
 	nvme_cmd_write		= 0x01,
 	nvme_cmd_read		= 0x02,
+	nvme_cmd_write_zeroes	= 0x08,
+	nvme_cmd_dsm		= 0x09,
 };
 
 enum {
 	NVME_RW_FUA		= 1 << 14,
+	NVME_WZ_DEAC		= 1 << 9,
+};
+
+enum {
+	NVME_DSMGMT_IDR		= 1 << 0,
+	NVME_DSMGMT_IDW		= 1 << 1,
+	NVME_DSMGMT_AD		= 1 << 2,
+};
+
+struct nvme_dsm_range {
+	__le32			cattr;
+	__le32			nlb;
+	__le64			slba;
 };
 
 struct nvme_lbaf {
@@ -332,6 +347,95 @@ static int nvme_user_queue_flush_io(struct ublk_thread *t, struct ublk_queue *q,
 	return 1;
 }
 
+static int nvme_user_queue_write_zeroes_io(struct ublk_thread *t, struct ublk_queue *q,
+					   const struct ublksrv_io_desc *iod, int tag)
+{
+	struct ublk_dev *dev = q->dev;
+	struct nvme_user_tgt_data *data = dev->private_data;
+	unsigned ublk_op = ublksrv_get_op(iod);
+	struct io_uring_sqe *sqe[1];
+	struct nvme_uring_cmd *cmd;
+	__u64 slba;
+	__u32 nlb;
+
+	/* Convert ublk 512-byte sectors to NVMe LBAs */
+	slba = iod->start_sector >> (data->lba_shift - 9);
+	nlb = (iod->nr_sectors >> (data->lba_shift - 9)) - 1;
+
+	ublk_io_alloc_sqes(t, sqe, 1);
+	if (!sqe[0])
+		return -ENOMEM;
+
+	sqe[0]->opcode = IORING_OP_URING_CMD;
+	sqe[0]->fd = ublk_get_registered_fd(q, 1);
+	sqe[0]->cmd_op = NVME_URING_CMD_IO;
+	sqe[0]->flags = IOSQE_FIXED_FILE;
+
+	cmd = (struct nvme_uring_cmd *)&sqe[0]->cmd;
+	memset(cmd, 0, sizeof(*cmd));
+	cmd->nsid = data->nsid;
+	cmd->opcode = nvme_cmd_write_zeroes;
+	cmd->cdw10 = htole32(slba & 0xffffffff);
+	cmd->cdw11 = htole32(slba >> 32);
+	cmd->cdw12 = htole32(nlb & 0xffff);
+
+	sqe[0]->user_data = build_user_data(tag, ublk_op, 0, q->q_id, 1);
+
+	return 1;
+}
+
+static int nvme_user_queue_discard_io(struct ublk_thread *t, struct ublk_queue *q,
+				      const struct ublksrv_io_desc *iod, int tag)
+{
+	struct ublk_dev *dev = q->dev;
+	struct nvme_user_tgt_data *data = dev->private_data;
+	unsigned ublk_op = ublksrv_get_op(iod);
+	struct io_uring_sqe *sqe[1];
+	struct nvme_uring_cmd *cmd;
+	struct nvme_dsm_range *range;
+	struct ublk_io *io = ublk_get_io(q, tag);
+	__u64 slba;
+	__u32 nlb;
+
+	/* Convert ublk 512-byte sectors to NVMe LBAs */
+	slba = iod->start_sector >> (data->lba_shift - 9);
+	nlb = iod->nr_sectors >> (data->lba_shift - 9);
+
+	ublk_io_alloc_sqes(t, sqe, 1);
+	if (!sqe[0])
+		return -ENOMEM;
+
+	/* Allocate DSM range (single segment) and store in io->private_data */
+	range = (struct nvme_dsm_range *)malloc(sizeof(*range));
+	if (!range)
+		return -ENOMEM;
+
+	range->cattr = 0;
+	range->nlb = htole32(nlb);
+	range->slba = htole64(slba);
+
+	/* Store range pointer to free it in completion handler */
+	io->private_data = range;
+
+	sqe[0]->opcode = IORING_OP_URING_CMD;
+	sqe[0]->fd = ublk_get_registered_fd(q, 1);
+	sqe[0]->cmd_op = NVME_URING_CMD_IO;
+	sqe[0]->flags = IOSQE_FIXED_FILE;
+
+	cmd = (struct nvme_uring_cmd *)&sqe[0]->cmd;
+	memset(cmd, 0, sizeof(*cmd));
+	cmd->nsid = data->nsid;
+	cmd->opcode = nvme_cmd_dsm;
+	cmd->addr = (__u64)(uintptr_t)range;
+	cmd->data_len = sizeof(*range);
+	cmd->cdw10 = 0;  /* nr = 0 (1 range) */
+	cmd->cdw11 = htole32(NVME_DSMGMT_AD);  /* attributes = deallocate */
+
+	sqe[0]->user_data = build_user_data(tag, ublk_op, 0, q->q_id, 1);
+
+	return 1;
+}
+
 static int nvme_user_queue_rw_io(struct ublk_thread *t, struct ublk_queue *q,
 				 const struct ublksrv_io_desc *iod, int tag)
 {
@@ -438,8 +542,10 @@ static int nvme_user_queue_tgt_io(struct ublk_thread *t, struct ublk_queue *q, i
 		ret = nvme_user_queue_flush_io(t, q, iod, tag);
 		break;
 	case UBLK_IO_OP_WRITE_ZEROES:
+		ret = nvme_user_queue_write_zeroes_io(t, q, iod, tag);
+		break;
 	case UBLK_IO_OP_DISCARD:
-		ret = -ENOTSUP;
+		ret = nvme_user_queue_discard_io(t, q, iod, tag);
 		break;
 	case UBLK_IO_OP_READ:
 	case UBLK_IO_OP_WRITE:
@@ -475,11 +581,11 @@ static void nvme_user_io_done(struct ublk_thread *t, struct ublk_queue *q,
 	if (cqe->res < 0 || op != ublk_cmd_op_nr(UBLK_U_IO_UNREGISTER_IO_BUF)) {
 		if (!io->result) {
 			if (cqe->res == 0) {
-				/* NVMe success - convert to bytes for READ/WRITE, keep 0 for FLUSH */
+				/* NVMe success - convert to bytes for READ/WRITE, keep 0 for others */
 				if (op == UBLK_IO_OP_READ || op == UBLK_IO_OP_WRITE)
 					io->result = iod->nr_sectors << 9;
 				else
-					io->result = 0;  /* FLUSH returns 0 on success */
+					io->result = 0;  /* FLUSH/WRITE_ZEROES/DISCARD return 0 on success */
 			} else {
 				/* Error code */
 				io->result = cqe->res;
@@ -488,6 +594,12 @@ static void nvme_user_io_done(struct ublk_thread *t, struct ublk_queue *q,
 		if (cqe->res < 0)
 			ublk_err("%s: io failed op %x user_data %lx res %d\n",
 				 __func__, op, cqe->user_data, cqe->res);
+	}
+
+	/* Free DSM range buffer if this was a discard operation */
+	if (op == UBLK_IO_OP_DISCARD && io->private_data) {
+		free(io->private_data);
+		io->private_data = NULL;
 	}
 
 	/* buffer register op is IOSQE_CQE_SKIP_SUCCESS */
@@ -509,7 +621,8 @@ static int nvme_user_tgt_init(const struct dev_ctx *ctx, struct ublk_dev *dev)
 	bool has_vwc;
 	struct nvme_seg_limits seg;
 	struct ublk_params p = {
-		.types = UBLK_PARAM_TYPE_BASIC | UBLK_PARAM_TYPE_DMA_ALIGN | UBLK_PARAM_TYPE_SEGMENT,
+		.types = UBLK_PARAM_TYPE_BASIC | UBLK_PARAM_TYPE_DMA_ALIGN |
+			 UBLK_PARAM_TYPE_SEGMENT | UBLK_PARAM_TYPE_DISCARD,
 		.basic = {
 			.attrs = 0,
 			.io_opt_shift	= 12,
@@ -563,6 +676,15 @@ static int nvme_user_tgt_init(const struct dev_ctx *ctx, struct ublk_dev *dev)
 	p.seg.max_segments = seg.max_segments;
 	/* seg_boundary_mask + 1 must be power of 2 and >= 4096 */
 	p.seg.seg_boundary_mask = 4095;
+
+	/* Set discard and write zeroes limits
+	 * Discard doesn't transfer data, so not limited by buffer size
+	 * Use 0x3fffff sectors (2GB - 512 bytes) to match NVMe limit */
+	p.discard.discard_alignment = 0;
+	p.discard.discard_granularity = 1 << lba_shift;
+	p.discard.max_discard_sectors = 0x3fffff;  /* 2147483136 bytes */
+	p.discard.max_write_zeroes_sectors = max_sectors;
+	p.discard.max_discard_segments = 1;  /* Single segment support */
 
 	/* Set volatile write cache and FUA attributes based on NVMe device */
 	if (has_vwc) {

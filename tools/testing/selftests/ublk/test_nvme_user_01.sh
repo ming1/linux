@@ -125,6 +125,16 @@ if ! _compare_queue_limit "$NVME_BLOCK_DEV" "$UBLK_BLOCK_DEV" "chunk_sectors"; t
 	FAIL_COUNT=$((FAIL_COUNT + 1))
 fi
 
+# discard_granularity - Discard granularity
+if ! _compare_queue_limit "$NVME_BLOCK_DEV" "$UBLK_BLOCK_DEV" "discard_granularity"; then
+	FAIL_COUNT=$((FAIL_COUNT + 1))
+fi
+
+# discard_max_bytes - Maximum discard size
+if ! _compare_queue_limit "$NVME_BLOCK_DEV" "$UBLK_BLOCK_DEV" "discard_max_bytes"; then
+	FAIL_COUNT=$((FAIL_COUNT + 1))
+fi
+
 if [ "$FAIL_COUNT" -gt 0 ]; then
 	ERR_CODE=1
 	echo "$FAIL_COUNT queue limit(s) did not match" >&2
