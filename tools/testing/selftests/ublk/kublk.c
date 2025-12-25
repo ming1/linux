@@ -915,7 +915,40 @@ static void ublk_handle_cqe(struct ublk_thread *t,
 		ublk_handle_uring_cmd(t, &dev->q[q_id], cqe);
 }
 
-static int ublk_reap_events_uring(struct ublk_thread *t)
+/*
+ * Poll target-specific completion queues for all queues mapped to this thread.
+ * Called when t->io_inflight > 0 to actively poll for completions that don't
+ * come through io_uring (e.g., NVMe CQ polling for nvme_vfio).
+ */
+static void ublk_poll_target_queues(struct ublk_thread *t)
+{
+	struct ublk_dev *dev = t->dev;
+	const struct ublk_tgt_ops *ops = dev->tgt.ops;
+	int i;
+
+	ublk_dbg(UBLK_DBG_IO, "%s: thread %u ops=%p poll_queue=%p nr_queues=%u\n",
+			__func__, t->idx, ops, ops ? ops->poll_queue : NULL,
+			t->nr_queues);
+
+	/* Only poll if target has a poll_queue callback */
+	if (!ops || !ops->poll_queue) {
+		ublk_dbg(UBLK_DBG_IO, "%s: returning early - no ops or poll_queue\n",
+				__func__);
+		return;
+	}
+
+	/* Poll all queues mapped to this thread */
+	for (i = 0; i < t->nr_queues; i++) {
+		unsigned q_id = t->q_poll_map[i];
+		struct ublk_queue *q = &dev->q[q_id];
+
+		ublk_dbg(UBLK_DBG_IO, "%s: polling queue %u (mapped index %d)\n",
+				__func__, q_id, i);
+		ops->poll_queue(t, q);
+	}
+}
+
+static int ublk_reap_events_uring(struct ublk_thread *t, const struct ublk_tgt_ops *ops)
 {
 	struct io_uring_cqe *cqe;
 	unsigned head;
@@ -927,13 +960,16 @@ static int ublk_reap_events_uring(struct ublk_thread *t)
 	}
 	io_uring_cq_advance(&t->ring, count);
 
+	if (ops && ops->poll_queue && t->io_inflight > 0)
+		ublk_poll_target_queues(t);
+
 	return count;
 }
 
-static int ublk_process_io(struct ublk_thread *t)
+static int ublk_process_io(struct ublk_thread *t, const struct ublk_tgt_ops *ops)
 {
 	int ret, reapped;
-	unsigned poll = ublk_dev_iopoll(t->dev);
+	unsigned poll = ublk_dev_iopoll(t->dev) || (ops && ops->poll_queue);
 	unsigned nr_wait = 1;
 
 	ublk_dbg(UBLK_DBG_THREAD, "dev%d-t%u: to_submit %d inflight cmd %u stopping %d\n",
@@ -951,10 +987,10 @@ static int ublk_process_io(struct ublk_thread *t)
 	ret = io_uring_submit_and_wait(&t->ring, nr_wait);
 	if (ublk_thread_batch_io(t)) {
 		ublk_batch_prep_commit(t);
-		reapped = ublk_reap_events_uring(t);
+		reapped = ublk_reap_events_uring(t, ops);
 		ublk_batch_commit_io_cmds(t);
 	} else {
-		reapped = ublk_reap_events_uring(t);
+		reapped = ublk_reap_events_uring(t, ops);
 	}
 
 	ublk_dbg(UBLK_DBG_THREAD, "submit result %d, reapped %d stop %d idle %d\n",
@@ -1008,11 +1044,40 @@ static __attribute__((noinline)) int __ublk_io_handler_fn(struct ublk_thread_inf
 		.idx = info->idx,
 	};
 	int dev_id = info->dev->dev_info.dev_id;
+	const struct ublk_tgt_ops *ops = t.dev->tgt.ops;
 	int ret;
 
-	/* Copy per-thread queue mapping into thread-local variable */
-	if (info->q_thread_map)
+	/* Set up per-thread queue mapping */
+	if (info->q_thread_map) {
+		/* Batch mode: use provided queue-to-thread mapping */
+		int i;
+
 		memcpy(t.q_map, info->q_thread_map[info->idx], sizeof(t.q_map));
+
+		/* Count and compact: q_thread_map stores thread_idx+1 for mapped queues */
+		t.nr_queues = 0;
+		for (i = 0; i < info->dev->dev_info.nr_hw_queues; i++) {
+			if (t.q_map[i] != 0) {
+				/* Build compacted poll map for sequential iteration */
+				t.q_poll_map[t.nr_queues] = i;
+				t.nr_queues++;
+			}
+		}
+	} else if (info->dev->per_io_tasks) {
+		/* Per-IO-tasks mode: this thread handles all queues */
+		int i;
+
+		for (i = 0; i < info->dev->dev_info.nr_hw_queues; i++) {
+			t.q_map[i] = i;
+			t.q_poll_map[i] = i;
+		}
+		t.nr_queues = info->dev->dev_info.nr_hw_queues;
+	} else {
+		/* 1:1 thread-to-queue mapping: thread i handles queue i */
+		t.q_map[0] = info->idx;
+		t.q_poll_map[0] = info->idx;
+		t.nr_queues = 1;
+	}
 
 	ret = ublk_thread_init(&t, info->extra_flags);
 	if (ret) {
@@ -1034,7 +1099,7 @@ static __attribute__((noinline)) int __ublk_io_handler_fn(struct ublk_thread_inf
 	}
 
 	do {
-		if (ublk_process_io(&t) < 0)
+		if (ublk_process_io(&t, ops) < 0)
 			break;
 	} while (1);
 

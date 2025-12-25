@@ -141,6 +141,9 @@ struct ublk_tgt_ops {
 	void (*tgt_io_done)(struct ublk_thread *, struct ublk_queue *,
 			    const struct io_uring_cqe *);
 
+	/* Poll target-specific completion queue (e.g., NVMe CQ for nvme_vfio) */
+	void (*poll_queue)(struct ublk_thread *, struct ublk_queue *);
+
 	/*
 	 * Target specific command line handling
 	 *
@@ -212,6 +215,8 @@ struct batch_fetch_buf {
 struct ublk_thread {
 	/* Thread-local copy of queue-to-thread mapping for this thread */
 	unsigned char q_map[UBLK_MAX_QUEUES];
+	/* Compacted queue indices for polling (q_poll_map[0..nr_queues-1]) */
+	unsigned char q_poll_map[UBLK_MAX_QUEUES];
 
 	struct ublk_dev *dev;
 	unsigned short idx;
