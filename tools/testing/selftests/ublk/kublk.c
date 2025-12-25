@@ -15,6 +15,7 @@ static const struct ublk_tgt_ops *tgt_ops_list[] = {
 	&stripe_tgt_ops,
 	&fault_inject_tgt_ops,
 	&nvme_user_tgt_ops,
+	&nvme_vfio_tgt_ops,
 };
 
 static const struct ublk_tgt_ops *ublk_find_tgt(const char *name)
