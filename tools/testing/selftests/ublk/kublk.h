@@ -62,6 +62,11 @@ struct fault_inject_ctx {
 	unsigned long   delay_us;
 };
 
+struct nvme_vfio_ctx {
+	/* nvme_vfio */
+	unsigned int force_noiommu:1;
+};
+
 struct dev_ctx {
 	char tgt_type[16];
 	unsigned long flags;
@@ -97,6 +102,7 @@ struct dev_ctx {
 	union {
 		struct stripe_ctx 	stripe;
 		struct fault_inject_ctx fault_inject;
+		struct nvme_vfio_ctx	nvme_vfio;
 	};
 };
 

@@ -8,12 +8,33 @@
  * analysis.
  *
  * Usage:
- *   sudo ./kublk add -t nvme_vfio-q 1 -d 128 0000:01:00.0
-
+ *   Standard mode (with IOMMU):
+ *     sudo ./kublk add -t nvme_vfio -q 1 -d 1 280000:01:00.0
+ *
+ *   NoIOMMU mode (for VM testing, uses virtual addresses as IOVAs):
+ *     sudo ./kublk add -t nvme_vfio --noiommu 1 -q 1 -d 128 0000:01:00.0
  * Prerequisites:
- *   - IOMMU enabled (intel_iommu=on or amd_iommu=on)
- *   - vfio-pci module loaded
- *   - Device will be automatically bound to vfio-pci
+ *   Standard mode:
+ *     - IOMMU enabled (intel_iommu=on or amd_iommu=on)
+ *     - vfio-pci module loaded
+ *
+ *   NoIOMMU mode:
+ *     - vfio-pci module loaded
+ *     - echo Y > /sys/module/vfio/parameters/enable_unsafe_noiommu_mode
+ *
+ *   Both modes:
+ *     - Device will be automatically bound to vfio-pci
+ *
+ * NoIOMMU Mode Details:
+ *   Uses guest physical addresses from /proc/self/pagemap as IOVAs (matching
+ *   SPDK's RTE_IOVA_PA mode in noiommu). This requires:
+ *   - Real NVMe hardware with PCI passthrough, OR
+ *   - Bare metal system with direct hardware access
+ *
+ *   IMPORTANT: vfio-noiommu does NOT work with emulated devices (e.g., QEMU
+ *   NVMe emulation) because the emulated device cannot access guest memory
+ *   when VFIO DMA mapping is unavailable. For VM testing with emulated devices,
+ *   use regular VFIO with a virtual IOMMU device configured in QEMU.
  */
 
 #include "kublk.h"
@@ -322,6 +343,9 @@ struct nvme_vfio_tgt_data {
 	int iommu_group;
 	int use_noiommu;
 
+	/* NoIOMMU mode flag */
+	int force_noiommu;	/* --noiommu flag: use virtual addresses as IOVAs */
+
 	/* MMIO mapping */
 	volatile void *bar0;
 	size_t bar0_size;
@@ -352,6 +376,11 @@ struct nvme_vfio_tgt_data {
 
 	/* Queue buffer allocation state (bump allocator) */
 	size_t queue_alloc_off;
+
+	/* Pagemap cache for noiommu mode */
+	uint64_t *pagemap_cache;		/* Pre-read pagemap entries */
+	__u64 pagemap_base_vaddr;		/* Base virtual address of cached region */
+	size_t pagemap_nr_pages;		/* Number of pages in cache */
 
 	/* Back-pointer to ublk device for I/O buffer info */
 	struct ublk_dev *dev;
@@ -420,6 +449,205 @@ static int get_iommu_group(const char *pci_addr, int *use_noiommu)
 	}
 
 	return group_num;
+}
+
+/*
+ * Pre-read pagemap entries for the dmabuf region into a cache.
+ * This avoids repeated open/read/close syscalls in nvme_virt_to_phys().
+ */
+static int nvme_read_pagemap(struct nvme_vfio_tgt_data *data)
+{
+	size_t nr_pages = data->dmabuf_size / PAGE_SIZE;
+	__u64 base_vaddr = (__u64)data->dmabuf_base;
+	off_t offset;
+	ssize_t ret;
+	int pagemap_fd;
+
+	data->pagemap_cache = malloc(nr_pages * sizeof(uint64_t));
+	if (!data->pagemap_cache) {
+		fprintf(stderr, "Failed to allocate pagemap cache\n");
+		return -ENOMEM;
+	}
+
+	pagemap_fd = open("/proc/self/pagemap", O_RDONLY);
+	if (pagemap_fd < 0) {
+		fprintf(stderr, "Failed to open /proc/self/pagemap: %s\n",
+			strerror(errno));
+		free(data->pagemap_cache);
+		data->pagemap_cache = NULL;
+		return -errno;
+	}
+
+	offset = (base_vaddr / PAGE_SIZE) * sizeof(uint64_t);
+	ret = pread(pagemap_fd, data->pagemap_cache,
+		    nr_pages * sizeof(uint64_t), offset);
+	close(pagemap_fd);
+
+	if (ret != (ssize_t)(nr_pages * sizeof(uint64_t))) {
+		fprintf(stderr, "pread pagemap failed: expected %zu, got %zd\n",
+			nr_pages * sizeof(uint64_t), ret);
+		free(data->pagemap_cache);
+		data->pagemap_cache = NULL;
+		return -EIO;
+	}
+
+	data->pagemap_base_vaddr = base_vaddr;
+	data->pagemap_nr_pages = nr_pages;
+
+	return 0;
+}
+
+/*
+ * Query physical address from pre-read pagemap cache
+ * Returns: physical address or 0 on error
+ */
+static __u64 nvme_virt_to_phys(struct nvme_vfio_tgt_data *data, __u64 vaddr)
+{
+	uint64_t entry;
+	unsigned long pfn;
+	size_t page_idx;
+
+	if (!data->pagemap_cache) {
+		fprintf(stderr, "pagemap cache not initialized\n");
+		return 0;
+	}
+
+	/* Check if vaddr is within cached region */
+	if (vaddr < data->pagemap_base_vaddr ||
+	    vaddr >= data->pagemap_base_vaddr + data->pagemap_nr_pages * PAGE_SIZE) {
+		fprintf(stderr, "vaddr 0x%llx outside cached region [0x%llx, 0x%llx)\n",
+			vaddr, data->pagemap_base_vaddr,
+			data->pagemap_base_vaddr + data->pagemap_nr_pages * PAGE_SIZE);
+		return 0;
+	}
+
+	page_idx = (vaddr - data->pagemap_base_vaddr) / PAGE_SIZE;
+	entry = data->pagemap_cache[page_idx];
+
+	/* Check page present bit */
+	if (!(entry & (1ULL << 63))) {
+		fprintf(stderr, "Page not present for vaddr 0x%llx\n", vaddr);
+		return 0;
+	}
+
+	/* Extract PFN (bits 0-54) */
+	pfn = entry & 0x007fffffffffffffULL;
+
+	__u64 paddr = (pfn * PAGE_SIZE) + (vaddr & (PAGE_SIZE - 1));
+	nvme_dbg(UBLK_DBG_IO, "  PFN=0x%lx -> paddr=0x%llx\n", pfn, paddr);
+
+	return paddr;
+}
+
+static inline bool nvme_use_iommu(struct nvme_vfio_tgt_data *data)
+{
+	return !data->use_noiommu && !data->force_noiommu;
+}
+
+/*
+ * Get IOVA for buffer based on current mode
+ * - NoIOMMU mode: use guest physical address (from /proc/self/pagemap)
+ * - IOMMU mode: allocate from IOVA space
+ */
+static __u64 nvme_get_iova(struct nvme_vfio_tgt_data *data, void *vaddr, size_t size)
+{
+	__u64 iova;
+
+	/* NoIOMMU mode: use physical address from /proc/self/pagemap */
+	if (!nvme_use_iommu(data)) {
+		__u64 paddr = nvme_virt_to_phys(data, (__u64)vaddr);
+		nvme_dbg(UBLK_DBG_IO, "DEBUG: vaddr=0x%llx -> paddr=0x%llx (size=%zu)\n",
+			(__u64)vaddr, paddr, size);
+		return paddr;
+	}
+
+	/* Standard IOMMU mode: allocate sequential IOVA (with spinlock) */
+	pthread_spin_lock(&data->iova_lock);
+	iova = data->next_iova;
+	data->next_iova += (size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+	pthread_spin_unlock(&data->iova_lock);
+	return iova;
+}
+
+/*
+ * Build PRP list with individual page addresses
+ * - NoIOMMU mode: query guest physical address for each page
+ * - IOMMU mode: increment IOVA sequentially from first page
+ */
+static int nvme_build_prp_list(struct nvme_vfio_tgt_data *data,
+			       void *vaddr, size_t len, __u64 first_iova,
+			       __le64 *prp_list, int max_entries)
+{
+	__u64 vaddr_page = (__u64)vaddr;
+	__u64 iova;
+	size_t offset = 0;
+	size_t remaining = len;
+	int prp_index = 0;
+
+	/* Skip first page (already in PRP1) */
+	offset = PAGE_SIZE - (vaddr_page & (PAGE_SIZE - 1));
+	vaddr_page = ((__u64)vaddr + offset) & ~(PAGE_SIZE - 1);
+	remaining = (len > offset) ? (len - offset) : 0;
+
+	while (remaining > 0) {
+		if (prp_index >= max_entries) {
+			fprintf(stderr, "PRP list overflow\n");
+			return -1;
+		}
+
+		/* Get IOVA for this page */
+		if (!nvme_use_iommu(data)) {
+			/* NoIOMMU mode: query physical address for each page */
+			iova = nvme_virt_to_phys(data, vaddr_page);
+			if (!iova) {
+				fprintf(stderr, "Failed to get physical address for page at vaddr 0x%llx\n",
+					vaddr_page);
+				return -1;
+			}
+		} else {
+			/* Standard IOMMU: increment from first IOVA */
+			iova = first_iova + offset;
+		}
+
+		prp_list[prp_index++] = htole64(iova);
+
+		vaddr_page += PAGE_SIZE;
+		offset += PAGE_SIZE;
+		remaining = (remaining > PAGE_SIZE) ? (remaining - PAGE_SIZE) : 0;
+	}
+
+	return prp_index;
+}
+
+/*
+ * Perform VFIO DMA mapping if needed
+ * - vfio-noiommu mode: skip mapping (no IOMMU hardware, ioctl not supported)
+ * - Regular VFIO with IOMMU: perform mapping
+ */
+static int nvme_do_vfio_map(struct nvme_vfio_tgt_data *data,
+			    void *vaddr, __u64 iova, size_t size)
+{
+	struct vfio_iommu_type1_dma_map dma_map = { .argsz = sizeof(dma_map) };
+
+	/*
+	 * Skip VFIO ioctl in any noiommu mode (doesn't support VFIO_IOMMU_MAP_DMA).
+	 * In noiommu, devices use virtual addresses directly without IOMMU translation.
+	 */
+	if (!nvme_use_iommu(data))
+		return 0;
+
+	/* Perform VFIO DMA mapping for regular IOMMU mode */
+	dma_map.vaddr = (__u64)vaddr;
+	dma_map.size = (size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+	dma_map.iova = iova;
+	dma_map.flags = VFIO_DMA_MAP_FLAG_READ | VFIO_DMA_MAP_FLAG_WRITE;
+
+	if (ioctl(data->container_fd, VFIO_IOMMU_MAP_DMA, &dma_map) < 0) {
+		perror("VFIO_IOMMU_MAP_DMA");
+		return -1;
+	}
+
+	return 0;
 }
 
 /* Unbind device from current driver */
@@ -766,6 +994,10 @@ static int nvme_dmabuf_pool_init(struct nvme_vfio_tgt_data *data)
 
 static void nvme_dmabuf_pool_deinit(struct nvme_vfio_tgt_data *data)
 {
+	if (data->pagemap_cache) {
+		free(data->pagemap_cache);
+		data->pagemap_cache = NULL;
+	}
 	if (data->dmabuf_base && data->dmabuf_base != MAP_FAILED) {
 		munmap(data->dmabuf_base, data->dmabuf_size);
 		data->dmabuf_base = NULL;
@@ -826,37 +1058,19 @@ static __u64 nvme_map_dma(struct nvme_vfio_tgt_data *data,
 			  void *vaddr, size_t size,
 			  struct nvme_dma_mapping *mapping)
 {
-	struct vfio_iommu_type1_dma_map dma_map = { .argsz = sizeof(dma_map) };
 	__u64 iova;
 
 	if (!mapping)
 		return 0;
 
-	/* In no-IOMMU mode, just use virtual address as IOVA */
-	if (data->use_noiommu) {
-		iova = (__u64)vaddr;
-		mapping->vaddr = (__u64)vaddr;
-		mapping->iova = iova;
-		mapping->size = size;
-		return iova;
-	}
-
-	/* Allocate IOVA */
-	pthread_spin_lock(&data->iova_lock);
-	iova = data->next_iova;
-	data->next_iova += (size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
-	pthread_spin_unlock(&data->iova_lock);
-
-	/* Setup mapping - size must be page-aligned for VFIO */
-	dma_map.vaddr = (__u64)vaddr;
-	dma_map.size = (size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
-	dma_map.iova = iova;
-	dma_map.flags = VFIO_DMA_MAP_FLAG_READ | VFIO_DMA_MAP_FLAG_WRITE;
-
-	if (ioctl(data->container_fd, VFIO_IOMMU_MAP_DMA, &dma_map) < 0) {
-		perror("VFIO_IOMMU_MAP_DMA");
+	/* Get IOVA based on current mode (helper handles all cases) */
+	iova = nvme_get_iova(data, vaddr, size);
+	if (!iova)
 		return 0;
-	}
+
+	/* Perform VFIO mapping if needed (helper handles all cases) */
+	if (nvme_do_vfio_map(data, vaddr, iova, size) < 0)
+		return 0;
 
 	/* Store mapping info */
 	mapping->vaddr = (__u64)vaddr;
@@ -876,7 +1090,7 @@ static void nvme_unmap_dma(struct nvme_vfio_tgt_data *data,
 		return;
 
 	/* Skip ioctl in no-IOMMU mode */
-	if (!data->use_noiommu) {
+	if (nvme_use_iommu(data)) {
 		dma_unmap.iova = mapping->iova;
 		dma_unmap.size = mapping->size;
 		ioctl(data->container_fd, VFIO_IOMMU_UNMAP_DMA, &dma_unmap);
@@ -1097,6 +1311,9 @@ static int nvme_init_controller(struct nvme_vfio_tgt_data *data)
 
 	if (timeout <= 0) {
 		fprintf(stderr, "Controller failed to become ready\n");
+		fprintf(stderr, "  Final CSTS=0x%08x CC=0x%08x\n",
+			nvme_readl(bar, NVME_REG_CSTS),
+			nvme_readl(bar, NVME_REG_CC));
 		return -1;
 	}
 
@@ -1441,7 +1658,6 @@ static int nvme_queue_rw_io(struct ublk_thread *t, struct ublk_queue *q,
 	__u32 nlb;
 	size_t len, remaining;
 	unsigned int op;
-	int prp_index;
 
 	/* Convert sectors to LBAs */
 	slba = iod->start_sector >> (data->lba_shift - 9);
@@ -1470,18 +1686,23 @@ static int nvme_queue_rw_io(struct ublk_thread *t, struct ublk_queue *q,
 
 	/* Get SQ entry */
 	cmd = (struct nvme_rw_command *)nvmeq->sq_buffer + nvmeq->sq_tail;
-	memset(cmd, 0, 64);
 
-	/* Fill command */
+	/* Fill command - no memset, explicitly initialize all fields */
 	op = ublksrv_get_op(iod);
 	cmd->opcode = (op == UBLK_IO_OP_WRITE) ? NVME_CMD_WRITE : NVME_CMD_READ;
+	cmd->flags = 0;
 	cmd->cid = tag;
 	cmd->nsid = data->nsid;
+	cmd->rsvd2 = 0;
+	cmd->metadata = 0;
+	/* prp1/prp2 set below */
 	cmd->slba = htole64(slba);
 	cmd->length = htole16(nlb);
-
-	if (ublksrv_get_flags(iod) & UBLK_IO_F_FUA)
-		cmd->control = htole16(NVME_RW_FUA);
+	cmd->control = (ublksrv_get_flags(iod) & UBLK_IO_F_FUA) ? htole16(NVME_RW_FUA) : 0;
+	cmd->dsmgmt = 0;
+	cmd->reftag = 0;
+	cmd->apptag = 0;
+	cmd->appmask = 0;
 
 	/*
 	 * Setup PRP entries:
@@ -1491,7 +1712,6 @@ static int nvme_queue_rw_io(struct ublk_thread *t, struct ublk_queue *q,
 	 */
 	cmd->prp1 = htole64(iova);
 	remaining = len;
-	prp_index = 0;
 
 	/* Skip first page */
 	__u64 first_page_len = PAGE_SIZE - (iova & (PAGE_SIZE - 1));
@@ -1505,22 +1725,29 @@ static int nvme_queue_rw_io(struct ublk_thread *t, struct ublk_queue *q,
 		cmd->prp2 = 0;
 	} else if (remaining <= PAGE_SIZE) {
 		/* Two pages - PRP2 points directly to second page */
-		cmd->prp2 = htole64(iova);
+		if (!nvme_use_iommu(data)) {
+			/* NoIOMMU: look up physical address of second page */
+			__u64 vaddr_page2 = ((__u64)iod->addr + first_page_len) & ~(PAGE_SIZE - 1);
+			__u64 paddr2 = nvme_virt_to_phys(data, vaddr_page2);
+			if (!paddr2) {
+				fprintf(stderr, "Failed to get paddr for 2nd page\n");
+				return -EINVAL;
+			}
+			cmd->prp2 = htole64(paddr2);
+		} else {
+			/* IOMMU mode: addresses are contiguous */
+			cmd->prp2 = htole64(iova);
+		}
 	} else {
 		/* Multiple pages - PRP2 points to PRP list */
 		cmd->prp2 = htole64(priv->prp_mapping.iova);
 
-		/* Build PRP list for remaining pages */
-		while (remaining > 0) {
-			if (prp_index >= PAGE_SIZE / sizeof(__le64)) {
-				fprintf(stderr, "PRP list overflow for tag %d len %zu\n",
-					tag, len);
-				return -EINVAL;
-			}
-			priv->prp_list[prp_index++] = htole64(iova);
-			__u64 page_len = (remaining > PAGE_SIZE) ? PAGE_SIZE : remaining;
-			remaining -= page_len;
-			iova += page_len;
+		/* Build PRP list for remaining pages using helper */
+		if (nvme_build_prp_list(data, (void *)iod->addr, len,
+					priv->data_mapping.iova,
+					priv->prp_list,
+					PAGE_SIZE / sizeof(__le64)) < 0) {
+			return -EINVAL;
 		}
 	}
 
@@ -1543,12 +1770,23 @@ static int nvme_queue_flush_io(struct ublk_thread *t, struct ublk_queue *q,
 
 	/* Get SQ entry */
 	cmd = (struct nvme_common_command *)nvmeq->sq_buffer + nvmeq->sq_tail;
-	memset(cmd, 0, 64);
 
-	/* Fill command */
+	/* Fill command - no memset, explicitly initialize all fields */
 	cmd->opcode = NVME_CMD_FLUSH;
+	cmd->flags = 0;
 	cmd->cid = tag;
 	cmd->nsid = data->nsid;
+	cmd->cdw2[0] = 0;
+	cmd->cdw2[1] = 0;
+	cmd->metadata = 0;
+	cmd->prp1 = 0;
+	cmd->prp2 = 0;
+	cmd->cdw10 = 0;
+	cmd->cdw11 = 0;
+	cmd->cdw12 = 0;
+	cmd->cdw13 = 0;
+	cmd->cdw14 = 0;
+	cmd->cdw15 = 0;
 
 	/* Submit command: advance sq_tail and write doorbell if needed */
 	nvme_sq_submit_cmd(nvmeq);
@@ -1879,6 +2117,7 @@ static int nvme_vfio_tgt_init(const struct dev_ctx *ctx, struct ublk_dev *dev)
 	}
 
 	dev->private_data = data;
+	data->force_noiommu = ctx->nvme_vfio.force_noiommu;
 	data->container_fd = -1;
 	data->group_fd = -1;
 	data->device_fd = -1;
@@ -2001,6 +2240,14 @@ static int nvme_vfio_tgt_init(const struct dev_ctx *ctx, struct ublk_dev *dev)
 		goto err;
 	}
 
+	/* Pre-read pagemap for noiommu mode (avoids syscalls in I/O path) */
+	if (!nvme_use_iommu(data)) {
+		if (nvme_read_pagemap(data) < 0) {
+			fprintf(stderr, "Failed to read pagemap\n");
+			goto err;
+		}
+	}
+
 	/* Initialize controller */
 	if (nvme_init_controller(data) < 0)
 		goto err;
@@ -2035,6 +2282,37 @@ static void nvme_vfio_free_io_buf(struct ublk_queue *q, int tag)
 	/* Pool memory freed when pool is destroyed */
 }
 
+/* Command-line parsing for nvme_vfio target */
+static void nvme_vfio_parse_cmd_line(struct dev_ctx *ctx, int argc, char *argv[])
+{
+	static const struct option longopts[] = {
+		{ "noiommu",  0,  NULL,  0  },
+		{ NULL,       0,  NULL,  0  }
+	};
+	int option_idx, opt;
+
+	ctx->nvme_vfio.force_noiommu = 0;
+
+	while ((opt = getopt_long(argc, argv, "",
+				  longopts, &option_idx)) != -1) {
+		switch (opt) {
+		case 0:
+			if (!strcmp(longopts[option_idx].name, "noiommu")) {
+				ctx->nvme_vfio.force_noiommu = 1;
+				fprintf(stderr, "nvme_vfio: forcing noiommu mode (using virtual addresses as IOVAs)\n");
+			}
+			break;
+		}
+	}
+}
+
+static void nvme_vfio_usage(const struct ublk_tgt_ops *ops)
+{
+	printf("\tnvme_vfio: [--noiommu]\n");
+	printf("\t  --noiommu: Force noiommu mode (use virtual addresses as IOVAs)\n");
+	printf("\t             Suitable for VM environments without IOMMU\n");
+}
+
 /* Target operations structure */
 const struct ublk_tgt_ops nvme_vfio_tgt_ops = {
 	.name = "nvme_vfio",
@@ -2044,4 +2322,6 @@ const struct ublk_tgt_ops nvme_vfio_tgt_ops = {
 	.poll_queue = nvme_vfio_poll_queue,
 	.alloc_io_buf = nvme_vfio_alloc_io_buf,
 	.free_io_buf = nvme_vfio_free_io_buf,
+	.parse_cmd_line = nvme_vfio_parse_cmd_line,
+	.usage = nvme_vfio_usage,
 };
