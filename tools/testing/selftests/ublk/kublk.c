@@ -427,8 +427,13 @@ static void ublk_queue_deinit(struct ublk_queue *q)
 		munmap(q->io_cmd_buf, ublk_queue_cmd_buf_sz(q));
 
 	for (i = 0; i < nr_ios; i++) {
-		free(q->ios[i].buf_addr);
 		free(q->ios[i].integrity_buf);
+		if (!q->ios[i].buf_addr)
+			continue;
+		if (q->dev->tgt.ops->free_io_buf)
+			q->dev->tgt.ops->free_io_buf(q, i);
+		else
+			free(q->ios[i].buf_addr);
 	}
 }
 
@@ -498,9 +503,15 @@ static int ublk_queue_init(struct ublk_queue *q, unsigned long long extra_flags,
 		if (ublk_queue_no_buf(q))
 			continue;
 
-		if (posix_memalign((void **)&q->ios[i].buf_addr,
-					getpagesize(), io_buf_size)) {
-			ublk_err("ublk dev %d queue %d io %d posix_memalign failed %m\n",
+		if (dev->tgt.ops->alloc_io_buf) {
+			q->ios[i].buf_addr = dev->tgt.ops->alloc_io_buf(q, i);
+		} else {
+			if (posix_memalign((void **)&q->ios[i].buf_addr,
+						getpagesize(), io_buf_size))
+				q->ios[i].buf_addr = NULL;
+		}
+		if (!q->ios[i].buf_addr) {
+			ublk_err("ublk dev %d queue %d io %d alloc buf failed\n",
 					dev->dev_info.dev_id, q->q_id, i);
 			goto fail;
 		}

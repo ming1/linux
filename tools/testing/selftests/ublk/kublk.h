@@ -155,6 +155,13 @@ struct ublk_tgt_ops {
 	/* return buffer index for UBLK_F_AUTO_BUF_REG */
 	unsigned short (*buf_index)(const struct ublk_thread *t,
 			const struct ublk_queue *, int tag);
+
+	/*
+	 * Custom I/O buffer allocation (optional)
+	 * If defined, ublk_queue_init() uses these instead of posix_memalign/free
+	 */
+	void *(*alloc_io_buf)(struct ublk_queue *q, int tag);
+	void (*free_io_buf)(struct ublk_queue *q, int tag);
 };
 
 struct ublk_tgt {
