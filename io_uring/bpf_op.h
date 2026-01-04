@@ -13,10 +13,11 @@ struct uring_bpf_data {
 	void				*req_data;  /* not for bpf prog */
 	const struct uring_bpf_ops	*ops;
 	u32				opf;
+	u32				issue_flags; /* io_uring issue flags */
 
 	/* writeable for bpf prog */
 	u8              pdu[64 - sizeof(void *) -
-		sizeof(struct uring_bpf_ops *) - sizeof(u32)];
+		sizeof(struct uring_bpf_ops *) - 2 * sizeof(u32)];
 };
 
 typedef int (*uring_bpf_prep_t)(struct uring_bpf_data *data,
