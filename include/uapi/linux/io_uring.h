@@ -434,6 +434,33 @@ enum io_uring_op {
 #define IORING_BPF_OP_SHIFT	24
 
 /*
+ * BPF buffer descriptor types.
+ *
+ * Registered buffers (FIXED, KFIXED, REG_VEC) refer to buffers pre-registered
+ * with io_uring. These can be either userspace or kernel buffers depending on
+ * how they were registered.
+ *
+ * For KFIXED, addr is an offset from the registered buffer start.
+ * For REG_VEC with kernel buffers, each iov.iov_base is offset-based.
+ */
+enum io_bpf_buf_type {
+	IO_BPF_BUF_USER		= 0,	/* plain userspace buffer */
+	IO_BPF_BUF_FIXED	= 1,	/* registered buffer (absolute address) */
+	IO_BPF_BUF_VEC		= 2,	/* vectored buffer (iovec array) */
+	IO_BPF_BUF_KFIXED	= 3,	/* registered buffer (offset-based) */
+	IO_BPF_BUF_REG_VEC	= 4,	/* registered vectored buffer */
+};
+
+/* BPF buffer descriptor for IORING_OP_BPF */
+struct io_bpf_buf_desc {
+	__u8  type;		/* IO_BPF_BUF_* */
+	__u8  reserved;
+	__u16 buf_index;	/* registered buffer index (FIXED/KFIXED/REG_VEC) */
+	__u32 len;		/* length (non-vec) or nr_vecs (vec types) */
+	__u64 addr;		/* userspace address, iovec ptr, or offset (KFIXED) */
+};
+
+/*
  * cqe.res for IORING_CQE_F_NOTIF if
  * IORING_SEND_ZC_REPORT_USAGE was requested
  *
