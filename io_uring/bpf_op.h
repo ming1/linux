@@ -27,14 +27,17 @@ typedef void (*uring_bpf_cleanup_t)(struct uring_bpf_data *data);
 
 struct uring_bpf_ops {
 	unsigned short		id;
+	int			ring_fd;
 	uring_bpf_prep_t	prep_fn;
 	uring_bpf_issue_t	issue_fn;
 	uring_bpf_fail_t	fail_fn;
 	uring_bpf_cleanup_t	cleanup_fn;
 };
 
+/* TODO: manage it via `io_rsrc_node` */
 struct uring_bpf_ops_kern {
 	const struct uring_bpf_ops *ops;
+	int refcount;
 };
 
 #ifdef CONFIG_IO_URING_BPF_OP

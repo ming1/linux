@@ -12,6 +12,7 @@
 #include <linux/filter.h>
 #include <uapi/linux/io_uring.h>
 #include "io_uring.h"
+#include "register.h"
 #include "bpf_op.h"
 
 static inline unsigned char uring_bpf_get_op(u32 op_flags)
@@ -29,7 +30,9 @@ int io_uring_bpf_prep(struct io_kiocb *req, const struct io_uring_sqe *sqe)
 	struct uring_bpf_data *data = io_kiocb_to_cmd(req, struct uring_bpf_data);
 	u32 opf = READ_ONCE(sqe->bpf_op_flags);
 	unsigned char bpf_op = uring_bpf_get_op(opf);
+	struct uring_bpf_ops_kern *ops_kern;
 	const struct uring_bpf_ops *ops;
+	int ret;
 
 	if (unlikely(!(req->ctx->flags & IORING_SETUP_BPF_OP)))
 		goto fail;
@@ -37,11 +40,20 @@ int io_uring_bpf_prep(struct io_kiocb *req, const struct io_uring_sqe *sqe)
 	if (bpf_op >= IO_RING_MAX_BPF_OPS)
 		return -EINVAL;
 
-	ops = req->ctx->bpf_ops[bpf_op].ops;
+	ops_kern = &req->ctx->bpf_ops[bpf_op];
+	ops = ops_kern->ops;
+	if (!ops || !ops->prep_fn || !ops_kern->refcount)
+		goto fail;
+
 	data->opf = opf;
 	data->ops = ops;
-	if (ops && ops->prep_fn)
-		return ops->prep_fn(data, sqe);
+	ret = ops->prep_fn(data, sqe);
+	if (!ret) {
+		/* Only increment refcount on success (uring_lock already held) */
+		req->flags |= REQ_F_NEED_CLEANUP;
+		ops_kern->refcount++;
+	}
+	return ret;
 fail:
 	return -EOPNOTSUPP;
 }
@@ -78,9 +90,18 @@ void io_uring_bpf_cleanup(struct io_kiocb *req)
 {
 	struct uring_bpf_data *data = io_kiocb_to_cmd(req, struct uring_bpf_data);
 	const struct uring_bpf_ops *ops = data->ops;
+	struct uring_bpf_ops_kern *ops_kern;
+	unsigned char bpf_op;
 
 	if (ops && ops->cleanup_fn)
 		ops->cleanup_fn(data);
+
+	bpf_op = uring_bpf_get_op(data->opf);
+	ops_kern = &req->ctx->bpf_ops[bpf_op];
+
+	/* Decrement refcount after cleanup (uring_lock already held) */
+	if (--ops_kern->refcount == 0)
+		wake_up(&req->ctx->bpf_wq);
 }
 
 static const struct btf_type *uring_bpf_data_type;
@@ -157,8 +178,80 @@ static int uring_bpf_ops_init_member(const struct btf_type *t,
 		 */
 		kuring_bpf_ops->id = uuring_bpf_ops->id;
 		return 1;
+	case offsetof(struct uring_bpf_ops, ring_fd):
+		kuring_bpf_ops->ring_fd = uuring_bpf_ops->ring_fd;
+		return 1;
 	}
 	return 0;
+}
+
+static int io_bpf_reg_unreg(struct uring_bpf_ops *ops, bool reg)
+{
+	struct uring_bpf_ops_kern *ops_kern;
+	struct io_ring_ctx *ctx;
+	struct file *file;
+	int ret = -EINVAL;
+
+	if (ops->id >= IO_RING_MAX_BPF_OPS)
+		return -EINVAL;
+
+	file = io_uring_register_get_file(ops->ring_fd, false);
+	if (IS_ERR(file))
+		return PTR_ERR(file);
+
+	ctx = file->private_data;
+	if (!(ctx->flags & IORING_SETUP_BPF_OP))
+		goto out;
+
+	ops_kern = &ctx->bpf_ops[ops->id];
+
+	mutex_lock(&ctx->uring_lock);
+	if (reg) {
+		/* Registration: set refcount to 1 and store ops */
+		if (ops_kern->ops) {
+			ret = -EBUSY;
+		} else {
+			ops_kern->ops = ops;
+			ops_kern->refcount = 1;
+			ret = 0;
+		}
+	} else {
+		/* Unregistration */
+		if (!ops_kern->ops) {
+			ret = -EINVAL;
+		} else {
+			ops_kern->refcount--;
+retry:
+			if (ops_kern->refcount == 0) {
+				ops_kern->ops = NULL;
+				ret = 0;
+			} else {
+				mutex_unlock(&ctx->uring_lock);
+				wait_event(ctx->bpf_wq, ops_kern->refcount == 0);
+				mutex_lock(&ctx->uring_lock);
+				goto retry;
+			}
+		}
+	}
+	mutex_unlock(&ctx->uring_lock);
+
+out:
+	fput(file);
+	return ret;
+}
+
+static int io_bpf_reg(void *kdata, struct bpf_link *link)
+{
+	struct uring_bpf_ops *ops = kdata;
+
+	return io_bpf_reg_unreg(ops, true);
+}
+
+static void io_bpf_unreg(void *kdata, struct bpf_link *link)
+{
+	struct uring_bpf_ops *ops = kdata;
+
+	io_bpf_reg_unreg(ops, false);
 }
 
 static int io_bpf_prep_io(struct uring_bpf_data *data, const struct io_uring_sqe *sqe)
@@ -191,6 +284,8 @@ static struct bpf_struct_ops bpf_uring_bpf_ops = {
 	.init = uring_bpf_ops_init,
 	.check_member = uring_bpf_ops_check_member,
 	.init_member = uring_bpf_ops_init_member,
+	.reg = io_bpf_reg,
+	.unreg = io_bpf_unreg,
 	.name = "uring_bpf_ops",
 	.cfi_stubs = &__bpf_uring_bpf_ops,
 	.owner = THIS_MODULE,
@@ -218,6 +313,8 @@ static const struct btf_kfunc_id_set uring_kfunc_set = {
 
 int io_bpf_alloc(struct io_ring_ctx *ctx)
 {
+	init_waitqueue_head(&ctx->bpf_wq);
+
 	if (!(ctx->flags & IORING_SETUP_BPF_OP))
 		return 0;
 
@@ -225,6 +322,7 @@ int io_bpf_alloc(struct io_ring_ctx *ctx)
 			sizeof(struct uring_bpf_ops_kern), GFP_KERNEL);
 	if (!ctx->bpf_ops)
 		return -ENOMEM;
+
 	return 0;
 }
 
