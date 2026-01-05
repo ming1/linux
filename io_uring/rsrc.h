@@ -4,6 +4,7 @@
 
 #include <linux/io_uring_types.h>
 #include <linux/lockdep.h>
+#include "io_uring.h"
 
 #define IO_VEC_CACHE_SOFT_CAP		256
 
@@ -79,8 +80,24 @@ static inline int io_import_reg_buf(struct io_kiocb *req, struct iov_iter *iter,
 int io_import_reg_vec(int ddir, struct iov_iter *iter,
 			struct io_kiocb *req, struct iou_vec *vec,
 			unsigned nr_iovs, unsigned issue_flags);
-int io_prep_reg_iovec(struct io_kiocb *req, struct iou_vec *iv,
-			const struct iovec __user *uvec, size_t uvec_segs);
+int __io_prep_reg_iovec(struct iou_vec *iv, const struct iovec __user *uvec,
+			size_t uvec_segs, bool compat, bool *need_clean);
+
+static inline int io_prep_reg_iovec(struct io_kiocb *req, struct iou_vec *iv,
+				    const struct iovec __user *uvec,
+				    size_t uvec_segs)
+{
+	bool need_clean = false;
+	int ret;
+
+	ret = __io_prep_reg_iovec(iv, uvec, uvec_segs,
+				  io_is_compat(req->ctx), &need_clean);
+	if (need_clean)
+		req->flags |= REQ_F_NEED_CLEANUP;
+	if (ret >= 0)
+		req->flags |= REQ_F_IMPORT_BUFFER;
+	return ret;
+}
 
 int io_register_clone_buffers(struct io_ring_ctx *ctx, void __user *arg);
 int io_sqe_buffers_unregister(struct io_ring_ctx *ctx);
