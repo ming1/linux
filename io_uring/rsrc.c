@@ -1069,9 +1069,9 @@ static int io_import_kbuf(int ddir, struct iov_iter *iter,
 	return 0;
 }
 
-static int io_import_fixed(int ddir, struct iov_iter *iter,
-			   struct io_mapped_ubuf *imu,
-			   u64 buf_addr, size_t len)
+int io_import_fixed(int ddir, struct iov_iter *iter,
+		    struct io_mapped_ubuf *imu,
+		    u64 buf_addr, size_t len)
 {
 	const struct bio_vec *bvec;
 	size_t folio_mask;
@@ -1140,17 +1140,6 @@ inline struct io_rsrc_node *io_find_buf_node(struct io_kiocb *req,
 	return NULL;
 }
 
-int io_import_reg_buf(struct io_kiocb *req, struct iov_iter *iter,
-			u64 buf_addr, size_t len, int ddir,
-			unsigned issue_flags)
-{
-	struct io_rsrc_node *node;
-
-	node = io_find_buf_node(req, issue_flags);
-	if (!node)
-		return -EFAULT;
-	return io_import_fixed(ddir, iter, node->buf, buf_addr, len);
-}
 
 /* Lock two rings at once. The rings must be different! */
 static void lock_two_rings(struct io_ring_ctx *ctx1, struct io_ring_ctx *ctx2)
