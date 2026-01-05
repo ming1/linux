@@ -1476,22 +1476,13 @@ static int io_kern_bvec_size(struct iovec *iov, unsigned nr_iovs,
 	return 0;
 }
 
-int io_import_reg_vec(int ddir, struct iov_iter *iter,
-			struct io_kiocb *req, struct iou_vec *vec,
-			unsigned nr_iovs, unsigned issue_flags)
+int __io_import_reg_vec(int ddir, struct iov_iter *iter,
+			struct io_mapped_ubuf *imu, struct iou_vec *vec,
+			unsigned nr_iovs, bool *need_clean)
 {
-	struct io_rsrc_node *node;
-	struct io_mapped_ubuf *imu;
 	unsigned iovec_off;
 	struct iovec *iov;
 	unsigned nr_segs;
-
-	node = io_find_buf_node(req, issue_flags);
-	if (!node)
-		return -EFAULT;
-	imu = node->buf;
-	if (!(imu->dir & (1 << ddir)))
-		return -EFAULT;
 
 	iovec_off = vec->nr - nr_iovs;
 	iov = vec->iovec + iovec_off;
@@ -1531,7 +1522,8 @@ int io_import_reg_vec(int ddir, struct iov_iter *iter,
 
 		*vec = tmp_vec;
 		iov = vec->iovec + iovec_off;
-		req->flags |= REQ_F_NEED_CLEANUP;
+		if (need_clean)
+			*need_clean = true;
 	}
 
 	if (imu->is_kbuf)

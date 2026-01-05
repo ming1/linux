@@ -77,9 +77,32 @@ static inline int io_import_reg_buf(struct io_kiocb *req, struct iov_iter *iter,
 		return -EFAULT;
 	return io_import_fixed(ddir, iter, node->buf, buf_addr, len);
 }
-int io_import_reg_vec(int ddir, struct iov_iter *iter,
-			struct io_kiocb *req, struct iou_vec *vec,
-			unsigned nr_iovs, unsigned issue_flags);
+int __io_import_reg_vec(int ddir, struct iov_iter *iter,
+			struct io_mapped_ubuf *imu, struct iou_vec *vec,
+			unsigned nr_iovs, bool *need_clean);
+
+static inline int io_import_reg_vec(int ddir, struct iov_iter *iter,
+				    struct io_kiocb *req, struct iou_vec *vec,
+				    unsigned nr_iovs, unsigned issue_flags)
+{
+	struct io_rsrc_node *node;
+	struct io_mapped_ubuf *imu;
+	bool need_clean = false;
+	int ret;
+
+	node = io_find_buf_node(req, issue_flags);
+	if (!node)
+		return -EFAULT;
+	imu = node->buf;
+	if (!(imu->dir & (1 << ddir)))
+		return -EFAULT;
+
+	ret = __io_import_reg_vec(ddir, iter, imu, vec, nr_iovs, &need_clean);
+	if (need_clean)
+		req->flags |= REQ_F_NEED_CLEANUP;
+	return ret;
+}
+
 int __io_prep_reg_iovec(struct iou_vec *iv, const struct iovec __user *uvec,
 			size_t uvec_segs, bool compat, bool *need_clean);
 
