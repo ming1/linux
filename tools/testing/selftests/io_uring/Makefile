@@ -150,6 +150,7 @@ all_test_bpfprogs := $(foreach prog,$(wildcard *.bpf.c),$(INCLUDE_DIR)/$(patsubs
 
 auto-test-targets :=			\
 	basic_bpf_ops			\
+	bpf_memcpy			\
 
 testcase-targets := $(addsuffix .o,$(addprefix $(IOUOBJ_DIR)/,$(auto-test-targets)))
 
