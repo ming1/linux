@@ -130,6 +130,7 @@ static int allocate_buf(char **buf, size_t size, __u8 buf_type,
 		*buf = p;
 		return 0;
 	case IO_BPF_BUF_VEC:
+	case IO_BPF_BUF_REG_VEC:
 		if (nr_vec <= 0 || nr_vec > MAX_VECS)
 			return -EINVAL;
 		p = aligned_alloc(4096, size);
@@ -156,11 +157,17 @@ static void free_buf(char *buf, __u8 buf_type)
 	case IO_BPF_BUF_USER:
 	case IO_BPF_BUF_VEC:
 	case IO_BPF_BUF_FIXED:
+	case IO_BPF_BUF_REG_VEC:
 		free(buf);
 		break;
 	default:
 		break;
 	}
+}
+
+static inline bool is_registered_buf(__u8 type)
+{
+	return type == IO_BPF_BUF_FIXED || type == IO_BPF_BUF_REG_VEC;
 }
 
 static enum iou_test_status register_fixed_bufs(struct test_ctx *ctx)
@@ -169,14 +176,14 @@ static enum iou_test_status register_fixed_bufs(struct test_ctx *ctx)
 	int nr_iovecs = 0;
 	int ret;
 
-	if (ctx->src_type == IO_BPF_BUF_FIXED) {
+	if (is_registered_buf(ctx->src_type)) {
 		ctx->src_buf_index = nr_iovecs;
 		iovecs[nr_iovecs].iov_base = ctx->src_buf;
 		iovecs[nr_iovecs].iov_len = ctx->src_buf_size;
 		nr_iovecs++;
 	}
 
-	if (ctx->dst_type == IO_BPF_BUF_FIXED) {
+	if (is_registered_buf(ctx->dst_type)) {
 		ctx->dst_buf_index = nr_iovecs;
 		iovecs[nr_iovecs].iov_base = ctx->dst_buf;
 		iovecs[nr_iovecs].iov_len = ctx->dst_buf_size;
@@ -197,8 +204,8 @@ static enum iou_test_status register_fixed_bufs(struct test_ctx *ctx)
 
 static void unregister_fixed_bufs(struct test_ctx *ctx)
 {
-	if (ctx->src_type == IO_BPF_BUF_FIXED ||
-	    ctx->dst_type == IO_BPF_BUF_FIXED)
+	if (is_registered_buf(ctx->src_type) ||
+	    is_registered_buf(ctx->dst_type))
 		io_uring_unregister_buffers(&ctx->ring);
 }
 
@@ -249,6 +256,10 @@ static enum iou_test_status allocate_bufs(struct test_ctx *ctx)
 		ctx->descs[0].addr = (__u64)(uintptr_t)ctx->src_buf;
 		ctx->descs[0].len = ctx->src_buf_size;
 		ctx->descs[0].buf_index = ctx->src_buf_index;
+	} else if (ctx->src_type == IO_BPF_BUF_REG_VEC) {
+		ctx->descs[0].addr = (__u64)(uintptr_t)ctx->src_vec;
+		ctx->descs[0].len = ctx->src_nr_vec;
+		ctx->descs[0].buf_index = ctx->src_buf_index;
 	} else {
 		ctx->descs[0].addr = (__u64)(uintptr_t)ctx->src_buf;
 		ctx->descs[0].len = ctx->src_buf_size;
@@ -260,6 +271,10 @@ static enum iou_test_status allocate_bufs(struct test_ctx *ctx)
 	} else if (ctx->dst_type == IO_BPF_BUF_FIXED) {
 		ctx->descs[1].addr = (__u64)(uintptr_t)ctx->dst_buf;
 		ctx->descs[1].len = ctx->dst_buf_size;
+		ctx->descs[1].buf_index = ctx->dst_buf_index;
+	} else if (ctx->dst_type == IO_BPF_BUF_REG_VEC) {
+		ctx->descs[1].addr = (__u64)(uintptr_t)ctx->dst_vec;
+		ctx->descs[1].len = ctx->dst_nr_vec;
 		ctx->descs[1].buf_index = ctx->dst_buf_index;
 	} else {
 		ctx->descs[1].addr = (__u64)(uintptr_t)ctx->dst_buf;
@@ -420,6 +435,30 @@ static enum iou_test_status copy_fixed_to_user(struct test_ctx *ctx)
 	return test_copy(ctx);
 }
 
+static enum iou_test_status copy_user_to_reg_vec(struct test_ctx *ctx)
+{
+	ctx->src_type = IO_BPF_BUF_USER;
+	ctx->dst_type = IO_BPF_BUF_REG_VEC;
+	ctx->src_buf_size = TEST_BUF_SIZE;
+	ctx->dst_buf_size = TEST_BUF_SIZE;
+	ctx->dst_nr_vec = 4;
+	ctx->desc = "USER -> REG_VEC";
+
+	return test_copy(ctx);
+}
+
+static enum iou_test_status copy_reg_vec_to_user(struct test_ctx *ctx)
+{
+	ctx->src_type = IO_BPF_BUF_REG_VEC;
+	ctx->dst_type = IO_BPF_BUF_USER;
+	ctx->src_buf_size = TEST_BUF_SIZE;
+	ctx->dst_buf_size = TEST_BUF_SIZE;
+	ctx->src_nr_vec = 4;
+	ctx->desc = "REG_VEC -> USER";
+
+	return test_copy(ctx);
+}
+
 static enum iou_test_status run(void *ctx_ptr)
 {
 	struct test_ctx *ctx = ctx_ptr;
@@ -445,6 +484,14 @@ static enum iou_test_status run(void *ctx_ptr)
 	if (status != IOU_TEST_PASS)
 		return status;
 
+	status = copy_user_to_reg_vec(ctx);
+	if (status != IOU_TEST_PASS)
+		return status;
+
+	status = copy_reg_vec_to_user(ctx);
+	if (status != IOU_TEST_PASS)
+		return status;
+
 	return IOU_TEST_PASS;
 }
 
@@ -462,7 +509,7 @@ static void cleanup(void *ctx_ptr)
 
 struct iou_test bpf_memcpy_test = {
 	.name = "bpf_memcpy",
-	.description = "Test uring_bpf_memcpy() kfunc with USER, VEC, FIXED buffer types",
+	.description = "Test uring_bpf_memcpy() kfunc with USER, VEC, FIXED, REG_VEC buffer types",
 	.setup = setup,
 	.run = run,
 	.cleanup = cleanup,
