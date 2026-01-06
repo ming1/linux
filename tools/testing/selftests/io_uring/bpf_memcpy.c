@@ -37,6 +37,10 @@ struct test_ctx {
 	struct iovec dst_vec[MAX_VECS];
 	int src_nr_vec;
 	int dst_nr_vec;
+
+	/* Fixed buffer support */
+	__u16 src_buf_index;
+	__u16 dst_buf_index;
 };
 
 static enum iou_test_status bpf_setup(struct test_ctx *ctx)
@@ -119,6 +123,7 @@ static int allocate_buf(char **buf, size_t size, __u8 buf_type,
 
 	switch (buf_type) {
 	case IO_BPF_BUF_USER:
+	case IO_BPF_BUF_FIXED:
 		p = aligned_alloc(4096, size);
 		if (!p)
 			return -ENOMEM;
@@ -150,6 +155,7 @@ static void free_buf(char *buf, __u8 buf_type)
 	switch (buf_type) {
 	case IO_BPF_BUF_USER:
 	case IO_BPF_BUF_VEC:
+	case IO_BPF_BUF_FIXED:
 		free(buf);
 		break;
 	default:
@@ -157,8 +163,48 @@ static void free_buf(char *buf, __u8 buf_type)
 	}
 }
 
+static enum iou_test_status register_fixed_bufs(struct test_ctx *ctx)
+{
+	struct iovec iovecs[2];
+	int nr_iovecs = 0;
+	int ret;
+
+	if (ctx->src_type == IO_BPF_BUF_FIXED) {
+		ctx->src_buf_index = nr_iovecs;
+		iovecs[nr_iovecs].iov_base = ctx->src_buf;
+		iovecs[nr_iovecs].iov_len = ctx->src_buf_size;
+		nr_iovecs++;
+	}
+
+	if (ctx->dst_type == IO_BPF_BUF_FIXED) {
+		ctx->dst_buf_index = nr_iovecs;
+		iovecs[nr_iovecs].iov_base = ctx->dst_buf;
+		iovecs[nr_iovecs].iov_len = ctx->dst_buf_size;
+		nr_iovecs++;
+	}
+
+	if (nr_iovecs == 0)
+		return IOU_TEST_PASS;
+
+	ret = io_uring_register_buffers(&ctx->ring, iovecs, nr_iovecs);
+	if (ret) {
+		IOU_ERR("Failed to register buffers: %d", ret);
+		return IOU_TEST_FAIL;
+	}
+
+	return IOU_TEST_PASS;
+}
+
+static void unregister_fixed_bufs(struct test_ctx *ctx)
+{
+	if (ctx->src_type == IO_BPF_BUF_FIXED ||
+	    ctx->dst_type == IO_BPF_BUF_FIXED)
+		io_uring_unregister_buffers(&ctx->ring);
+}
+
 static enum iou_test_status allocate_bufs(struct test_ctx *ctx)
 {
+	enum iou_test_status status;
 	int ret;
 
 	ret = allocate_buf(&ctx->src_buf, ctx->src_buf_size, ctx->src_type,
@@ -181,6 +227,16 @@ static enum iou_test_status allocate_bufs(struct test_ctx *ctx)
 	memset(ctx->src_buf, TEST_PATTERN, ctx->src_buf_size);
 	memset(ctx->dst_buf, 0, ctx->dst_buf_size);
 
+	/* Register fixed buffers if needed */
+	status = register_fixed_bufs(ctx);
+	if (status != IOU_TEST_PASS) {
+		free_buf(ctx->dst_buf, ctx->dst_type);
+		ctx->dst_buf = NULL;
+		free_buf(ctx->src_buf, ctx->src_type);
+		ctx->src_buf = NULL;
+		return status;
+	}
+
 	/* Build buffer descriptors */
 	memset(ctx->descs, 0, sizeof(ctx->descs));
 	ctx->descs[0].type = ctx->src_type;
@@ -189,6 +245,10 @@ static enum iou_test_status allocate_bufs(struct test_ctx *ctx)
 	if (ctx->src_type == IO_BPF_BUF_VEC) {
 		ctx->descs[0].addr = (__u64)(uintptr_t)ctx->src_vec;
 		ctx->descs[0].len = ctx->src_nr_vec;
+	} else if (ctx->src_type == IO_BPF_BUF_FIXED) {
+		ctx->descs[0].addr = (__u64)(uintptr_t)ctx->src_buf;
+		ctx->descs[0].len = ctx->src_buf_size;
+		ctx->descs[0].buf_index = ctx->src_buf_index;
 	} else {
 		ctx->descs[0].addr = (__u64)(uintptr_t)ctx->src_buf;
 		ctx->descs[0].len = ctx->src_buf_size;
@@ -197,6 +257,10 @@ static enum iou_test_status allocate_bufs(struct test_ctx *ctx)
 	if (ctx->dst_type == IO_BPF_BUF_VEC) {
 		ctx->descs[1].addr = (__u64)(uintptr_t)ctx->dst_vec;
 		ctx->descs[1].len = ctx->dst_nr_vec;
+	} else if (ctx->dst_type == IO_BPF_BUF_FIXED) {
+		ctx->descs[1].addr = (__u64)(uintptr_t)ctx->dst_buf;
+		ctx->descs[1].len = ctx->dst_buf_size;
+		ctx->descs[1].buf_index = ctx->dst_buf_index;
 	} else {
 		ctx->descs[1].addr = (__u64)(uintptr_t)ctx->dst_buf;
 		ctx->descs[1].len = ctx->dst_buf_size;
@@ -207,6 +271,8 @@ static enum iou_test_status allocate_bufs(struct test_ctx *ctx)
 
 static void free_bufs(struct test_ctx *ctx)
 {
+	unregister_fixed_bufs(ctx);
+
 	if (ctx->src_buf) {
 		free_buf(ctx->src_buf, ctx->src_type);
 		ctx->src_buf = NULL;
@@ -332,6 +398,28 @@ static enum iou_test_status copy_user_to_vec(struct test_ctx *ctx)
 	return test_copy(ctx);
 }
 
+static enum iou_test_status copy_user_to_fixed(struct test_ctx *ctx)
+{
+	ctx->src_type = IO_BPF_BUF_USER;
+	ctx->dst_type = IO_BPF_BUF_FIXED;
+	ctx->src_buf_size = TEST_BUF_SIZE;
+	ctx->dst_buf_size = TEST_BUF_SIZE;
+	ctx->desc = "USER -> FIXED";
+
+	return test_copy(ctx);
+}
+
+static enum iou_test_status copy_fixed_to_user(struct test_ctx *ctx)
+{
+	ctx->src_type = IO_BPF_BUF_FIXED;
+	ctx->dst_type = IO_BPF_BUF_USER;
+	ctx->src_buf_size = TEST_BUF_SIZE;
+	ctx->dst_buf_size = TEST_BUF_SIZE;
+	ctx->desc = "FIXED -> USER";
+
+	return test_copy(ctx);
+}
+
 static enum iou_test_status run(void *ctx_ptr)
 {
 	struct test_ctx *ctx = ctx_ptr;
@@ -346,6 +434,14 @@ static enum iou_test_status run(void *ctx_ptr)
 		return status;
 
 	status = copy_user_to_vec(ctx);
+	if (status != IOU_TEST_PASS)
+		return status;
+
+	status = copy_user_to_fixed(ctx);
+	if (status != IOU_TEST_PASS)
+		return status;
+
+	status = copy_fixed_to_user(ctx);
 	if (status != IOU_TEST_PASS)
 		return status;
 
@@ -366,7 +462,7 @@ static void cleanup(void *ctx_ptr)
 
 struct iou_test bpf_memcpy_test = {
 	.name = "bpf_memcpy",
-	.description = "Test uring_bpf_memcpy() kfunc with USER, VEC, and mixed buffer types",
+	.description = "Test uring_bpf_memcpy() kfunc with USER, VEC, FIXED buffer types",
 	.setup = setup,
 	.run = run,
 	.cleanup = cleanup,
