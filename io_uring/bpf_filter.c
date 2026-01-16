@@ -29,6 +29,16 @@ static void io_uring_populate_bpf_ctx(struct io_uring_bpf_ctx *bctx,
 	bctx->user_data = req->cqe.user_data;
 	/* clear residual */
 	memset(bctx->pad, 0, sizeof(bctx->pad) + sizeof(bctx->resv));
+
+	/*
+	 * Opcodes can provide a handler fo populating more data into bctx,
+	 * for filters to use.
+	 */
+	switch (req->opcode) {
+	case IORING_OP_SOCKET:
+		io_socket_bpf_populate(bctx, req);
+		break;
+	}
 }
 
 /*
