@@ -59,7 +59,7 @@
  *   0.  cpu_hotplug_lock
  *   1.  slab_mutex (Global Mutex)
  *   2a. kmem_cache->cpu_sheaves->lock (Local trylock)
- *   2b. node->barn->lock (Spinlock)
+ *   2b. barn->lock (Spinlock)
  *   2c. node->list_lock (Spinlock)
  *   3.  slab_lock(slab) (Only on some arches)
  *   4.  object_map_lock (Only for debugging)
@@ -136,7 +136,7 @@
  *   or spare sheaf can handle the allocation or free, there is no other
  *   overhead.
  *
- *   node->barn->lock (spinlock)
+ *   barn->lock (spinlock)
  *
  *   This lock protects the operations on per-NUMA-node barn. It can quickly
  *   serve an empty or full sheaf if available, and avoid more expensive refill
@@ -436,26 +436,24 @@ struct kmem_cache_node {
 	atomic_long_t total_objects;
 	struct list_head full;
 #endif
-	struct node_barn *barn;
 };
 
 static inline struct kmem_cache_node *get_node(struct kmem_cache *s, int node)
 {
-	return s->node[node];
+	return s->per_node[node].node;
+}
+
+static inline struct node_barn *get_barn_node(struct kmem_cache *s, int node)
+{
+	return s->per_node[node].barn;
 }
 
 /*
- * Get the barn of the current cpu's closest memory node. It may not exist on
- * systems with memoryless nodes but without CONFIG_HAVE_MEMORYLESS_NODES
+ * Get the barn of the current cpu's memory node. It may be a memoryless node.
  */
 static inline struct node_barn *get_barn(struct kmem_cache *s)
 {
-	struct kmem_cache_node *n = get_node(s, numa_mem_id());
-
-	if (!n)
-		return NULL;
-
-	return n->barn;
+	return get_barn_node(s, numa_node_id());
 }
 
 /*
@@ -473,6 +471,12 @@ static inline struct node_barn *get_barn(struct kmem_cache *s)
  * Protected by slab_mutex.
  */
 static nodemask_t slab_nodes;
+
+/*
+ * Similar to slab_nodes but for where we have node_barn allocated.
+ * Corresponds to N_ONLINE nodes.
+ */
+static nodemask_t slab_barn_nodes;
 
 /*
  * Workqueue used for flushing cpu and kfree_rcu sheaves.
@@ -5788,7 +5792,6 @@ bool free_to_pcs(struct kmem_cache *s, void *object, bool allow_spin)
 
 static void rcu_free_sheaf(struct rcu_head *head)
 {
-	struct kmem_cache_node *n;
 	struct slab_sheaf *sheaf;
 	struct node_barn *barn = NULL;
 	struct kmem_cache *s;
@@ -5811,11 +5814,9 @@ static void rcu_free_sheaf(struct rcu_head *head)
 	if (__rcu_free_sheaf_prepare(s, sheaf))
 		goto flush;
 
-	n = get_node(s, sheaf->node);
-	if (!n)
+	barn = get_barn_node(s, sheaf->node);
+	if (!barn)
 		goto flush;
-
-	barn = n->barn;
 
 	/* due to slab_free_hook() */
 	if (unlikely(sheaf->size == 0))
@@ -5938,7 +5939,7 @@ do_free:
 		rcu_sheaf = NULL;
 	} else {
 		pcs->rcu_free = NULL;
-		rcu_sheaf->node = numa_mem_id();
+		rcu_sheaf->node = numa_node_id();
 	}
 
 	/*
@@ -6165,7 +6166,8 @@ void slab_free(struct kmem_cache *s, struct slab *slab, void *object,
 	if (unlikely(!slab_free_hook(s, object, slab_want_init_on_free(s), false)))
 		return;
 
-	if (likely(!IS_ENABLED(CONFIG_NUMA) || slab_nid(slab) == numa_mem_id())
+	if (likely(!IS_ENABLED(CONFIG_NUMA) || (slab_nid(slab) == numa_mem_id())
+			|| !node_isset(slab_nid(slab), slab_nodes))
 	    && likely(!slab_test_pfmemalloc(slab))) {
 		if (likely(free_to_pcs(s, object, true)))
 			return;
@@ -7427,7 +7429,7 @@ static inline int calculate_order(unsigned int size)
 }
 
 static void
-init_kmem_cache_node(struct kmem_cache_node *n, struct node_barn *barn)
+init_kmem_cache_node(struct kmem_cache_node *n)
 {
 	n->nr_partial = 0;
 	spin_lock_init(&n->list_lock);
@@ -7437,9 +7439,6 @@ init_kmem_cache_node(struct kmem_cache_node *n, struct node_barn *barn)
 	atomic_long_set(&n->total_objects, 0);
 	INIT_LIST_HEAD(&n->full);
 #endif
-	n->barn = barn;
-	if (barn)
-		barn_init(barn);
 }
 
 #ifdef CONFIG_SLUB_STATS
@@ -7534,8 +7533,8 @@ static void early_kmem_cache_node_alloc(int node)
 	n = kasan_slab_alloc(kmem_cache_node, n, GFP_KERNEL, false);
 	slab->freelist = get_freepointer(kmem_cache_node, n);
 	slab->inuse = 1;
-	kmem_cache_node->node[node] = n;
-	init_kmem_cache_node(n, NULL);
+	kmem_cache_node->per_node[node].node = n;
+	init_kmem_cache_node(n);
 	inc_slabs_node(kmem_cache_node, node, slab->objects);
 
 	/*
@@ -7550,15 +7549,20 @@ static void free_kmem_cache_nodes(struct kmem_cache *s)
 	int node;
 	struct kmem_cache_node *n;
 
-	for_each_kmem_cache_node(s, node, n) {
-		if (n->barn) {
-			WARN_ON(n->barn->nr_full);
-			WARN_ON(n->barn->nr_empty);
-			kfree(n->barn);
-			n->barn = NULL;
-		}
+	for_each_node(node) {
+		struct node_barn *barn = get_barn_node(s, node);
 
-		s->node[node] = NULL;
+		if (!barn)
+			continue;
+
+		WARN_ON(barn->nr_full);
+		WARN_ON(barn->nr_empty);
+		kfree(barn);
+		s->per_node[node].barn = NULL;
+	}
+
+	for_each_kmem_cache_node(s, node, n) {
+		s->per_node[node].node = NULL;
 		kmem_cache_free(kmem_cache_node, n);
 	}
 }
@@ -7579,31 +7583,36 @@ static int init_kmem_cache_nodes(struct kmem_cache *s)
 
 	for_each_node_mask(node, slab_nodes) {
 		struct kmem_cache_node *n;
-		struct node_barn *barn = NULL;
 
 		if (slab_state == DOWN) {
 			early_kmem_cache_node_alloc(node);
 			continue;
 		}
 
-		if (cache_has_sheaves(s)) {
-			barn = kmalloc_node(sizeof(*barn), GFP_KERNEL, node);
-
-			if (!barn)
-				return 0;
-		}
-
 		n = kmem_cache_alloc_node(kmem_cache_node,
 						GFP_KERNEL, node);
-		if (!n) {
-			kfree(barn);
+		if (!n)
 			return 0;
-		}
 
-		init_kmem_cache_node(n, barn);
-
-		s->node[node] = n;
+		init_kmem_cache_node(n);
+		s->per_node[node].node = n;
 	}
+
+	if (slab_state == DOWN || !cache_has_sheaves(s))
+		return 1;
+
+	for_each_node_mask(node, slab_barn_nodes) {
+		struct node_barn *barn;
+
+		barn = kmalloc_node(sizeof(*barn), GFP_KERNEL, node);
+
+		if (!barn)
+			return 0;
+
+		barn_init(barn);
+		s->per_node[node].barn = barn;
+	}
+
 	return 1;
 }
 
@@ -7892,10 +7901,15 @@ int __kmem_cache_shutdown(struct kmem_cache *s)
 	if (cache_has_sheaves(s))
 		rcu_barrier();
 
+	for_each_node(node) {
+		struct node_barn *barn = get_barn_node(s, node);
+
+		if (barn)
+			barn_shrink(s, barn);
+	}
+
 	/* Attempt to free all objects */
 	for_each_kmem_cache_node(s, node, n) {
-		if (n->barn)
-			barn_shrink(s, n->barn);
 		free_partial(s, n);
 		if (n->nr_partial || node_nr_slabs(n))
 			return 1;
@@ -8105,13 +8119,17 @@ static int __kmem_cache_do_shrink(struct kmem_cache *s)
 	unsigned long flags;
 	int ret = 0;
 
+	for_each_node(node) {
+		struct node_barn *barn = get_barn_node(s, node);
+
+		if (barn)
+			barn_shrink(s, barn);
+	}
+
 	for_each_kmem_cache_node(s, node, n) {
 		INIT_LIST_HEAD(&discard);
 		for (i = 0; i < SHRINK_PROMOTE_MAX; i++)
 			INIT_LIST_HEAD(promote + i);
-
-		if (n->barn)
-			barn_shrink(s, n->barn);
 
 		spin_lock_irqsave(&n->list_lock, flags);
 
@@ -8201,7 +8219,11 @@ static int slab_mem_going_online_callback(int nid)
 		if (get_node(s, nid))
 			continue;
 
-		if (cache_has_sheaves(s)) {
+		/*
+		 * barn might already exist if the node was online but
+		 * memoryless
+		 */
+		if (cache_has_sheaves(s) && !node_isset(nid, slab_barn_nodes)) {
 			barn = kmalloc_node(sizeof(*barn), GFP_KERNEL, nid);
 
 			if (!barn) {
@@ -8222,15 +8244,20 @@ static int slab_mem_going_online_callback(int nid)
 			goto out;
 		}
 
-		init_kmem_cache_node(n, barn);
+		init_kmem_cache_node(n);
+		s->per_node[nid].node = n;
 
-		s->node[nid] = n;
+		if (barn) {
+			barn_init(barn);
+			s->per_node[nid].barn = barn;
+		}
 	}
 	/*
 	 * Any cache created after this point will also have kmem_cache_node
 	 * initialized for the new node.
 	 */
 	node_set(nid, slab_nodes);
+	node_set(nid, slab_barn_nodes);
 out:
 	mutex_unlock(&slab_mutex);
 	return ret;
@@ -8309,7 +8336,7 @@ static void __init bootstrap_cache_sheaves(struct kmem_cache *s)
 	if (!capacity)
 		return;
 
-	for_each_node_mask(node, slab_nodes) {
+	for_each_node_mask(node, slab_barn_nodes) {
 		struct node_barn *barn;
 
 		barn = kmalloc_node(sizeof(*barn), GFP_KERNEL, node);
@@ -8320,7 +8347,7 @@ static void __init bootstrap_cache_sheaves(struct kmem_cache *s)
 		}
 
 		barn_init(barn);
-		get_node(s, node)->barn = barn;
+		s->per_node[node].barn = barn;
 	}
 
 	for_each_possible_cpu(cpu) {
@@ -8381,6 +8408,9 @@ void __init kmem_cache_init(void)
 	for_each_node_state(node, N_MEMORY)
 		node_set(node, slab_nodes);
 
+	for_each_online_node(node)
+		node_set(node, slab_barn_nodes);
+
 	create_boot_cache(kmem_cache_node, "kmem_cache_node",
 			sizeof(struct kmem_cache_node),
 			SLAB_HWCACHE_ALIGN | SLAB_NO_OBJ_EXT, 0, 0);
@@ -8391,8 +8421,8 @@ void __init kmem_cache_init(void)
 	slab_state = PARTIAL;
 
 	create_boot_cache(kmem_cache, "kmem_cache",
-			offsetof(struct kmem_cache, node) +
-				nr_node_ids * sizeof(struct kmem_cache_node *),
+			offsetof(struct kmem_cache, per_node) +
+				nr_node_ids * sizeof(struct kmem_cache_per_node_ptrs),
 			SLAB_HWCACHE_ALIGN | SLAB_NO_OBJ_EXT, 0, 0);
 
 	kmem_cache = bootstrap(&boot_kmem_cache);
