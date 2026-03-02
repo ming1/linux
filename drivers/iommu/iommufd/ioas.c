@@ -661,3 +661,89 @@ int iommufd_ioas_option(struct iommufd_ucmd *ucmd)
 	iommufd_put_object(ucmd->ictx, &ioas->obj);
 	return rc;
 }
+
+/**
+ * iommufd_ioas_from_id() - Look up an IOAS by ID for in-kernel use
+ * @ictx: iommufd context
+ * @ioas_id: IOAS object ID
+ *
+ * Returns a referenced IOAS pointer. Caller must release it with
+ * iommufd_ioas_put() when done.
+ */
+struct iommufd_ioas *iommufd_ioas_from_id(struct iommufd_ctx *ictx,
+					   u32 ioas_id)
+{
+	return iommufd_get_ioas(ictx, ioas_id);
+}
+EXPORT_SYMBOL_NS_GPL(iommufd_ioas_from_id, "IOMMUFD");
+
+/**
+ * iommufd_ioas_put() - Release an IOAS reference from iommufd_ioas_from_id()
+ * @ictx: iommufd context
+ * @ioas: IOAS to release
+ */
+void iommufd_ioas_put(struct iommufd_ctx *ictx, struct iommufd_ioas *ioas)
+{
+	iommufd_put_object(ictx, &ioas->obj);
+}
+EXPORT_SYMBOL_NS_GPL(iommufd_ioas_put, "IOMMUFD");
+
+/**
+ * iommufd_ioas_first_domain() - Get the first iommu_domain from an IOAS
+ * @ioas: IOAS to query
+ *
+ * Returns the first iommu_domain attached to this IOAS, or NULL if none.
+ * The returned domain is valid as long as the caller holds the IOAS reference
+ * (from iommufd_ioas_from_id()) and the device remains attached to the IOAS.
+ *
+ * This is intended for callers that cache the domain for high-frequency
+ * per-IO iommu_map_sg()/iommu_unmap() calls without per-IO locking overhead.
+ */
+struct iommu_domain *iommufd_ioas_first_domain(struct iommufd_ioas *ioas)
+{
+	struct io_pagetable *iopt = &ioas->iopt;
+	struct iommu_domain *domain;
+	unsigned long index;
+
+	down_read(&iopt->domains_rwsem);
+	domain = xa_find(&iopt->domains, &index, ULONG_MAX, XA_PRESENT);
+	up_read(&iopt->domains_rwsem);
+	return domain;
+}
+EXPORT_SYMBOL_NS_GPL(iommufd_ioas_first_domain, "IOMMUFD");
+
+/**
+ * iommufd_ioas_reserve_range() - Reserve an IOVA range in an IOAS
+ * @ioas: IOAS to reserve in
+ * @start: start of IOVA range (inclusive)
+ * @last: end of IOVA range (inclusive)
+ * @owner: opaque owner pointer (used for unreserve matching)
+ *
+ * Prevents userspace from allocating IOVAs in this range. Returns 0 on
+ * success, -EADDRINUSE if the range overlaps existing mappings.
+ */
+int iommufd_ioas_reserve_range(struct iommufd_ioas *ioas,
+				unsigned long start, unsigned long last,
+				void *owner)
+{
+	int rc;
+
+	down_write(&ioas->iopt.iova_rwsem);
+	rc = iopt_reserve_iova(&ioas->iopt, start, last, owner);
+	up_write(&ioas->iopt.iova_rwsem);
+	return rc;
+}
+EXPORT_SYMBOL_NS_GPL(iommufd_ioas_reserve_range, "IOMMUFD");
+
+/**
+ * iommufd_ioas_unreserve_range() - Release a reserved IOVA range
+ * @ioas: IOAS to unreserve from
+ * @owner: owner pointer passed to iommufd_ioas_reserve_range()
+ *
+ * Releases all IOVA reservations matching the given owner.
+ */
+void iommufd_ioas_unreserve_range(struct iommufd_ioas *ioas, void *owner)
+{
+	iopt_remove_reserved_iova(&ioas->iopt, owner);
+}
+EXPORT_SYMBOL_NS_GPL(iommufd_ioas_unreserve_range, "IOMMUFD");

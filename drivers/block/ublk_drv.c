@@ -46,6 +46,8 @@
 #include <linux/kref.h>
 #include <linux/kfifo.h>
 #include <linux/blk-integrity.h>
+#include <linux/iommufd.h>
+#include <linux/scatterlist.h>
 #include <uapi/linux/fs.h>
 #include <uapi/linux/ublk_cmd.h>
 
@@ -81,7 +83,8 @@
 		| (IS_ENABLED(CONFIG_BLK_DEV_INTEGRITY) ? UBLK_F_INTEGRITY : 0) \
 		| UBLK_F_SAFE_STOP_DEV \
 		| UBLK_F_BATCH_IO \
-		| UBLK_F_NO_AUTO_PART_SCAN)
+		| UBLK_F_NO_AUTO_PART_SCAN \
+		| (IS_ENABLED(CONFIG_IOMMUFD) ? UBLK_F_DMA_ZC : 0))
 
 #define UBLK_F_ALL_RECOVERY_FLAGS (UBLK_F_USER_RECOVERY \
 		| UBLK_F_USER_RECOVERY_REISSUE \
@@ -92,7 +95,7 @@
 	(UBLK_PARAM_TYPE_BASIC | UBLK_PARAM_TYPE_DISCARD | \
 	 UBLK_PARAM_TYPE_DEVT | UBLK_PARAM_TYPE_ZONED |    \
 	 UBLK_PARAM_TYPE_DMA_ALIGN | UBLK_PARAM_TYPE_SEGMENT | \
-	 UBLK_PARAM_TYPE_INTEGRITY)
+	 UBLK_PARAM_TYPE_INTEGRITY | UBLK_PARAM_TYPE_DMA_DEV)
 
 #define UBLK_BATCH_F_ALL  \
 	(UBLK_BATCH_F_HAS_ZONE_LBA | \
@@ -226,6 +229,7 @@ struct ublk_io {
 
 	void *buf_ctx_handle;
 	spinlock_t lock;
+	unsigned int dma_mapped_bytes; /* page-aligned size for iommu unmap */
 } ____cacheline_aligned_in_smp;
 
 struct ublk_queue {
@@ -234,6 +238,12 @@ struct ublk_queue {
 
 	unsigned long flags;
 	struct ublksrv_io_desc *io_cmd_buf;
+
+	/* DMA zero-copy via iommufd (UBLK_F_DMA_ZC) */
+	struct iommu_domain *iommu_domain; /* cached from IOAS for fast path */
+	struct iommu_iotlb_gather iotlb_gather; /* batched IOTLB invalidation */
+	u64 base_iova;		/* per-queue IOVA base */
+	u32 max_io_bytes;	/* max IO size for IOVA slot calculation */
 
 	bool force_abort;
 	bool canceling;
@@ -322,6 +332,10 @@ struct ublk_device {
 	struct work_struct	partition_scan_work;
 
 	bool			block_open; /* protected by open_mutex */
+
+	/* DMA zero-copy: iommufd context and IOAS (UBLK_F_DMA_ZC) */
+	struct iommufd_ctx	*iommufd_ctx;
+	struct iommufd_ioas	*ioas;
 
 	struct ublk_queue       *queues[];
 };
@@ -915,6 +929,29 @@ static int ublk_validate_params(const struct ublk_device *ub)
 			return -EINVAL;
 	}
 
+	if (ub->params.types & UBLK_PARAM_TYPE_DMA_DEV) {
+		const struct ublk_param_dma_dev *p = &ub->params.dma_dev;
+		u64 total;
+
+		if (!(ub->dev_info.flags & UBLK_F_DMA_ZC))
+			return -EINVAL;
+
+		/* base_iova must be page-aligned */
+		if (p->base_iova & (PAGE_SIZE - 1))
+			return -EINVAL;
+
+		/* iommufd FD must be non-negative */
+		if (p->iommufd < 0)
+			return -EINVAL;
+
+		/* check IOVA range doesn't overflow */
+		total = (u64)ub->dev_info.nr_hw_queues *
+			ub->dev_info.queue_depth *
+			ub->dev_info.max_io_buf_bytes;
+		if (p->base_iova + total < p->base_iova)
+			return -EOVERFLOW;
+	}
+
 	if (ub->params.types & UBLK_PARAM_TYPE_INTEGRITY) {
 		const struct ublk_param_integrity *p = &ub->params.integrity;
 		int pi_tuple_size = ublk_integrity_pi_tuple_size(p->csum_type);
@@ -1479,12 +1516,52 @@ static void ublk_end_request(struct request *req, blk_status_t error)
 }
 
 /* todo: handle partial completion */
+/*
+ * Unmap IOMMU mapping created by ublk_fill_dma_addrs() for this tag.
+ * Must be called before the request completes and bio pages are freed.
+ */
+static void ublk_unmap_dma_addrs(struct ublk_queue *ubq,
+				 struct request *req)
+{
+	struct ublksrv_io_desc *iod;
+	struct ublk_io *io;
+	u64 iova;
+
+	if (!ubq->iommu_domain)
+		return;
+
+	iod = ublk_get_iod(ubq, req->tag);
+	if (!iod->addr)
+		return;
+
+	io = &ubq->ios[req->tag];
+	/* Unmap from the page-aligned per-tag slot base */
+	iova = ubq->base_iova + (u64)req->tag * ubq->max_io_bytes;
+
+	/*
+	 * Use iommu_unmap_fast() to defer IOTLB invalidation.
+	 * The gather accumulates unmapped ranges; the actual IOTLB flush
+	 * happens in ublk_fill_dma_addrs() before the next map, batching
+	 * multiple unmaps into a single hardware flush.
+	 */
+	iommu_unmap_fast(ubq->iommu_domain, iova, io->dma_mapped_bytes,
+			  &ubq->iotlb_gather);
+	iod->addr = 0;
+}
+
 static inline void __ublk_complete_rq(struct request *req, struct ublk_io *io,
 				      bool need_map, struct io_comp_batch *iob)
 {
 	unsigned int unmapped_bytes;
 	blk_status_t res = BLK_STS_OK;
 	bool requeue;
+
+	/* Unmap iommufd DMA mapping before completing the request */
+	{
+		struct ublk_queue *ubq = req->mq_hctx->driver_data;
+		if (ubq && ubq->iommu_domain)
+			ublk_unmap_dma_addrs(ubq, req);
+	}
 
 	/* failed read IO if nothing is read */
 	if (!io->res && req_op(req) == REQ_OP_READ)
@@ -1660,6 +1737,110 @@ static void ublk_auto_buf_dispatch(const struct ublk_queue *ubq,
 	}
 }
 
+/*
+ * Map bio pages via IOMMU and write the contiguous IOVA to iod->addr.
+ * Called during request dispatch when UBLK_F_DMA_ZC is enabled.
+ *
+ * Uses a per-tag fixed IOVA slot to avoid dynamic IOVA allocation.
+ * ubq->base_iova already incorporates the per-queue offset (set during
+ * start_dev), so the final IOVA is:
+ *   base_iova + tag * max_io_bytes
+ * which expands globally to:
+ *   param.base_iova + (qid * depth + tag) * max_io_bytes
+ */
+static int ublk_fill_dma_addrs(struct ublk_queue *ubq,
+				struct request *req)
+{
+	struct scatterlist *sgl, *s;
+	phys_addr_t paddr;
+	u64 iova;
+	size_t iova_len = 0;
+	unsigned int first_offset = 0;
+	int nr_segs, prot, i;
+	ssize_t ret;
+
+	nr_segs = blk_rq_nr_phys_segments(req);
+
+	if (nr_segs == 1) {
+		/*
+		 * Fast path: skip sg_init_table + blk_rq_map_sg + for_each_sg.
+		 * Use req_bvec() for starting phys address (following
+		 * nvme_pci_setup_data_simple pattern), blk_rq_payload_bytes()
+		 * for total length since single segment may span multiple
+		 * contiguous bvecs.
+		 */
+		struct bio_vec bv = req_bvec(req);
+
+		paddr = bvec_phys(&bv);
+		first_offset = offset_in_page(paddr);
+		paddr -= first_offset;
+		iova_len = PAGE_ALIGN(blk_rq_payload_bytes(req) + first_offset);
+	} else {
+		sgl = kmalloc_array(nr_segs, sizeof(*sgl), GFP_NOIO);
+		if (!sgl)
+			return -ENOMEM;
+
+		sg_init_table(sgl, nr_segs);
+		nr_segs = blk_rq_map_sg(req, sgl);
+
+		/*
+		 * Page-align SG entries for IOMMU. iommu_map_sg() requires
+		 * page-aligned PA and size, but the block layer may produce
+		 * sub-page segments. Align each entry as iommu_dma_map_sg()
+		 * does: round offset down, extend length up.
+		 */
+		for_each_sg(sgl, s, nr_segs, i) {
+			unsigned int s_off = offset_in_page(s->offset);
+
+			if (i == 0)
+				first_offset = s_off;
+
+			s->offset -= s_off;
+			s->length = PAGE_ALIGN(s->length + s_off);
+			iova_len += s->length;
+		}
+	}
+
+	/* Per-tag fixed IOVA slot */
+	iova = ubq->base_iova + (u64)req->tag * ubq->max_io_bytes;
+
+	/*
+	 * Flush any accumulated IOTLB invalidations from prior unmaps.
+	 * This batches multiple iommu_unmap_fast() calls into a single
+	 * hardware IOTLB flush, matching the kernel DMA API's lazy flush
+	 * approach (see iommu-dma.c flush queue mechanism).
+	 */
+	if (ubq->iotlb_gather.start != ULONG_MAX)
+		iommu_iotlb_sync(ubq->iommu_domain, &ubq->iotlb_gather);
+
+	prot = IOMMU_CACHE | IOMMU_READ | IOMMU_WRITE;
+
+	if (nr_segs == 1) {
+		ret = iommu_map(ubq->iommu_domain, iova, paddr,
+				iova_len, prot, GFP_NOIO);
+		if (ret)
+			return ret;
+	} else {
+		ret = iommu_map_sg(ubq->iommu_domain, iova, sgl, nr_segs,
+				    prot, GFP_NOIO);
+		kfree(sgl);
+
+		if (ret < 0)
+			return ret;
+
+		if ((size_t)ret != iova_len) {
+			iommu_unmap(ubq->iommu_domain, iova, (size_t)ret);
+			return -EIO;
+		}
+	}
+
+	ubq->ios[req->tag].dma_mapped_bytes = iova_len;
+
+	/* Report IOVA with offset so device accesses correct data */
+	ublk_get_iod(ubq, req->tag)->addr = iova + first_offset;
+	return 0;
+}
+
 static bool ublk_start_io(const struct ublk_queue *ubq, struct request *req,
 			  struct ublk_io *io)
 {
@@ -1683,6 +1864,17 @@ static bool ublk_start_io(const struct ublk_queue *ubq, struct request *req,
 
 		ublk_get_iod(ubq, req->tag)->nr_sectors =
 			mapped_bytes >> 9;
+	}
+
+	/* Map bio pages via iommufd, write IOVA to iod->addr */
+	if (ubq->iommu_domain && ublk_rq_has_data(req)) {
+		int ret = ublk_fill_dma_addrs((struct ublk_queue *)ubq, req);
+
+		if (ret < 0) {
+			io->res = ret;
+			__ublk_complete_rq(req, io, false, NULL);
+			return false;
+		}
 	}
 
 	return true;
@@ -2567,7 +2759,6 @@ static int ublk_ch_mmap(struct file *filp, struct vm_area_struct *vma)
 
 	if (vma->vm_flags & VM_WRITE)
 		return -EPERM;
-
 	end = UBLKSRV_CMD_BUF_OFFSET + ub->dev_info.nr_hw_queues * max_sz;
 	if (phys_off < UBLKSRV_CMD_BUF_OFFSET || phys_off >= end)
 		return -EINVAL;
@@ -2905,6 +3096,25 @@ static void ublk_stop_dev_unlocked(struct ublk_device *ub)
 	del_gendisk(ub->ub_disk);
 	disk = ublk_detach_disk(ub);
 	put_disk(disk);
+
+	if (ub->ioas) {
+		int i;
+
+		/* Flush any pending IOTLB invalidations */
+		for (i = 0; i < ub->dev_info.nr_hw_queues; i++) {
+			struct ublk_queue *ubq = ublk_get_queue(ub, i);
+
+			if (ubq->iommu_domain &&
+			    ubq->iotlb_gather.start != ULONG_MAX)
+				iommu_iotlb_sync(ubq->iommu_domain,
+						  &ubq->iotlb_gather);
+		}
+		iommufd_ioas_unreserve_range(ub->ioas, ub);
+		iommufd_ioas_put(ub->iommufd_ctx, ub->ioas);
+		ub->ioas = NULL;
+		iommufd_ctx_put(ub->iommufd_ctx);
+		ub->iommufd_ctx = NULL;
+	}
 }
 
 static void ublk_stop_dev(struct ublk_device *ub)
@@ -4388,11 +4598,68 @@ static int ublk_ctrl_start_dev(struct ublk_device *ub,
 		};
 	}
 
-	if (wait_for_completion_interruptible(&ub->completion) != 0)
-		return -EINTR;
+	/* Setup iommufd IOAS for GET_BUF_ADDRS (params are now available) */
+	if ((ub->dev_info.flags & UBLK_F_DMA_ZC) &&
+	    (ub->params.types & UBLK_PARAM_TYPE_DMA_DEV)) {
+		const struct ublk_param_dma_dev *dp = &ub->params.dma_dev;
+		struct iommufd_ctx *ictx;
+		struct iommufd_ioas *ioas;
+		unsigned long total_bytes;
+		int i;
 
-	if (!ublk_validate_user_pid(ub, ublksrv_pid))
-		return -EINVAL;
+		if (!IS_ENABLED(CONFIG_IOMMUFD))
+			return -EOPNOTSUPP;
+
+		ictx = iommufd_ctx_from_fd(dp->iommufd);
+		if (IS_ERR(ictx)) {
+			pr_err("ublk: invalid iommufd fd %d\n", dp->iommufd);
+			return PTR_ERR(ictx);
+		}
+
+		ioas = iommufd_ioas_from_id(ictx, dp->ioas_id);
+		if (IS_ERR(ioas)) {
+			pr_err("ublk: invalid IOAS id %u\n", dp->ioas_id);
+			iommufd_ctx_put(ictx);
+			return PTR_ERR(ioas);
+		}
+
+		/* Reserve the IOVA range to prevent userspace conflicts */
+		total_bytes = (u64)ub->dev_info.nr_hw_queues *
+			      ub->dev_info.queue_depth *
+			      ub->dev_info.max_io_buf_bytes;
+		ret = iommufd_ioas_reserve_range(ioas, dp->base_iova,
+				dp->base_iova + total_bytes - 1, ub);
+		if (ret) {
+			pr_err("ublk: failed to reserve IOVA range\n");
+			iommufd_ioas_put(ictx, ioas);
+			iommufd_ctx_put(ictx);
+			return ret;
+		}
+
+		ub->iommufd_ctx = ictx;
+		ub->ioas = ioas;
+
+		for (i = 0; i < ub->dev_info.nr_hw_queues; i++) {
+			struct ublk_queue *ubq = ublk_get_queue(ub, i);
+
+			ubq->iommu_domain =
+				iommufd_ioas_first_domain(ioas);
+			iommu_iotlb_gather_init(&ubq->iotlb_gather);
+			ubq->max_io_bytes = ub->dev_info.max_io_buf_bytes;
+			ubq->base_iova = dp->base_iova +
+				(u64)i * ubq->q_depth * ubq->max_io_bytes;
+		}
+	}
+
+	if (wait_for_completion_interruptible(&ub->completion) != 0) {
+		ret = -EINTR;
+		goto out_clear_iommu;
+	}
+
+	if (!ublk_validate_user_pid(ub, ublksrv_pid)) {
+		ret = -EINVAL;
+		goto out_clear_iommu;
+	}
 
 	mutex_lock(&ub->mutex);
 	/* device may become not ready in case of F_BATCH */
@@ -4467,6 +4734,21 @@ out_put_cdev:
 		put_disk(disk);
 out_unlock:
 	mutex_unlock(&ub->mutex);
+	if (ret)
+		goto out_clear_iommu;
+	return ret;
+out_clear_iommu:
+	if (ub->ioas) {
+		int i;
+
+		for (i = 0; i < ub->dev_info.nr_hw_queues; i++)
+			ublk_get_queue(ub, i)->iommu_domain = NULL;
+		iommufd_ioas_unreserve_range(ub->ioas, ub);
+		iommufd_ioas_put(ub->iommufd_ctx, ub->ioas);
+		ub->ioas = NULL;
+		iommufd_ctx_put(ub->iommufd_ctx);
+		ub->iommufd_ctx = NULL;
+	}
 	return ret;
 }
 
@@ -4593,6 +4875,17 @@ static int ublk_ctrl_add_dev(const struct ublksrv_ctrl_cmd *header)
 	/* User copy is required to access integrity buffer */
 	if (info.flags & UBLK_F_INTEGRITY && !(info.flags & UBLK_F_USER_COPY))
 		return -EINVAL;
+
+	/*
+	 * DMA_ZC requires USER_COPY (since the target manages its own data
+	 * path) and cannot be used with unprivileged devices (exposes IOVAs).
+	 */
+	if (info.flags & UBLK_F_DMA_ZC) {
+		if (!(info.flags & UBLK_F_USER_COPY))
+			return -EINVAL;
+		if (info.flags & UBLK_F_UNPRIVILEGED_DEV)
+			return -EINVAL;
+	}
 
 	/* the created device is always owned by current user */
 	ublk_store_owner_uid_gid(&info.owner_uid, &info.owner_gid);
@@ -5464,3 +5757,6 @@ MODULE_PARM_DESC(ublks_max, "max number of unprivileged ublk devices allowed to 
 MODULE_AUTHOR("Ming Lei <ming.lei@redhat.com>");
 MODULE_DESCRIPTION("Userspace block device");
 MODULE_LICENSE("GPL");
+#if IS_ENABLED(CONFIG_IOMMUFD)
+MODULE_IMPORT_NS("IOMMUFD");
+#endif

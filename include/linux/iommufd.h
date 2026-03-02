@@ -22,6 +22,7 @@ struct iommu_user_data_array;
 struct iommufd_access;
 struct iommufd_ctx;
 struct iommufd_device;
+struct iommufd_ioas;
 struct iommufd_viommu_ops;
 struct page;
 
@@ -213,6 +214,15 @@ int iommufd_access_rw(struct iommufd_access *access, unsigned long iova,
 int iommufd_vfio_compat_ioas_get_id(struct iommufd_ctx *ictx, u32 *out_ioas_id);
 int iommufd_vfio_compat_ioas_create(struct iommufd_ctx *ictx);
 int iommufd_vfio_compat_set_no_iommu(struct iommufd_ctx *ictx);
+
+struct iommufd_ioas *iommufd_ioas_from_id(struct iommufd_ctx *ictx,
+					   u32 ioas_id);
+void iommufd_ioas_put(struct iommufd_ctx *ictx, struct iommufd_ioas *ioas);
+struct iommu_domain *iommufd_ioas_first_domain(struct iommufd_ioas *ioas);
+int iommufd_ioas_reserve_range(struct iommufd_ioas *ioas,
+				unsigned long start, unsigned long last,
+				void *owner);
+void iommufd_ioas_unreserve_range(struct iommufd_ioas *ioas, void *owner);
 #else /* !CONFIG_IOMMUFD */
 static inline struct iommufd_ctx *iommufd_ctx_from_file(struct file *file)
 {
@@ -253,6 +263,36 @@ static inline int iommufd_vfio_compat_ioas_create(struct iommufd_ctx *ictx)
 static inline int iommufd_vfio_compat_set_no_iommu(struct iommufd_ctx *ictx)
 {
 	return -EOPNOTSUPP;
+}
+
+static inline struct iommufd_ioas *
+iommufd_ioas_from_id(struct iommufd_ctx *ictx, u32 ioas_id)
+{
+	return ERR_PTR(-EOPNOTSUPP);
+}
+
+static inline void iommufd_ioas_put(struct iommufd_ctx *ictx,
+				     struct iommufd_ioas *ioas)
+{
+}
+
+static inline struct iommu_domain *
+iommufd_ioas_first_domain(struct iommufd_ioas *ioas)
+{
+	return NULL;
+}
+
+static inline int
+iommufd_ioas_reserve_range(struct iommufd_ioas *ioas,
+			    unsigned long start, unsigned long last,
+			    void *owner)
+{
+	return -EOPNOTSUPP;
+}
+
+static inline void iommufd_ioas_unreserve_range(struct iommufd_ioas *ioas,
+						 void *owner)
+{
 }
 #endif /* CONFIG_IOMMUFD */
 
