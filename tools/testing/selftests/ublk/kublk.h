@@ -80,7 +80,9 @@ struct dev_ctx {
 	unsigned int	no_ublk_fixed_fd:1;
 	unsigned int	safe_stop:1;
 	unsigned int	no_auto_part_scan:1;
-	unsigned int	bpf:1;
+	char		*bpf_type;	/* BPF struct_ops type (NULL=off) */
+	char		*pci_addr;	/* PCI BDF for VFIO/DMA_ZC/BPF */
+	struct vfio_pci_ctx *vfio;	/* VFIO context (when --pci) */
 	__u32 integrity_flags;
 	__u8 metadata_size;
 	__u8 pi_offset;
@@ -611,5 +613,17 @@ int backing_file_tgt_init(struct ublk_dev *dev, unsigned int nr_direct);
 /* BPF struct_ops support */
 int ublk_bpf_load(const char *type);
 void ublk_bpf_unload(void);
+
+/* VFIO PCI + iommufd setup for DMA ZC + BPF tests */
+struct vfio_pci_ctx {
+	char pci_addr[32];
+	int iommufd;
+	int device_fd;
+	__u32 ioas_id;
+	__u32 dev_id;
+};
+
+int vfio_pci_setup(struct vfio_pci_ctx *ctx, const char *pci_addr);
+void vfio_pci_cleanup(struct vfio_pci_ctx *ctx);
 
 #endif

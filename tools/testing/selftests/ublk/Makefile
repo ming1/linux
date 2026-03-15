@@ -66,6 +66,7 @@ TEST_PROGS += test_stress_08.sh
 TEST_PROGS += test_stress_09.sh
 
 TEST_PROGS += test_bpf_01.sh
+TEST_PROGS += test_bpf_02.sh
 
 TEST_FILES := settings
 
@@ -187,7 +188,8 @@ $(INCLUDE_DIR)/%.bpf.skel.h: $(OBJ_DIR)/ublk/%.bpf.o $(BPFTOOL) | $(INCLUDE_DIR)
 	$(Q)$(BPFTOOL) gen object $(<:.o=.linked3.o) $(<:.o=.linked2.o)
 	$(Q)$(BPFTOOL) gen skeleton $(<:.o=.linked3.o) name $(subst .bpf.skel.h,,$(notdir $@)) > $@
 
-BPF_SKELS := $(INCLUDE_DIR)/ublk_null.bpf.skel.h
+BPF_SKELS := $(INCLUDE_DIR)/ublk_null.bpf.skel.h \
+	     $(INCLUDE_DIR)/ublk_dma_zc.bpf.skel.h
 
 # kublk with BPF support
 CFLAGS += -DHAVE_BPF -I$(INCLUDE_DIR) -I$(BUILD_DIR)/include

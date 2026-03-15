@@ -1049,9 +1049,19 @@ static void *ublk_io_handler_fn(void *data)
 	return NULL;
 }
 
-static void ublk_set_parameters(struct ublk_dev *dev)
+static void ublk_set_parameters(const struct dev_ctx *ctx,
+			        struct ublk_dev *dev)
 {
 	int ret;
+
+	/* Inject DMA_DEV params when VFIO/PCI is configured */
+	if (ctx->vfio) {
+		dev->tgt.params.types |= UBLK_PARAM_TYPE_DMA_DEV;
+		dev->tgt.params.dma_dev.base_iova = 0x200000000ULL;
+		dev->tgt.params.dma_dev.iommufd = ctx->vfio->iommufd;
+		dev->tgt.params.dma_dev.ioas_id = ctx->vfio->ioas_id;
+		dev->tgt.params.dma_dev.vfio_dev_fd = ctx->vfio->device_fd;
+	}
 
 	ret = ublk_ctrl_set_params(dev, &dev->tgt.params);
 	if (ret)
@@ -1170,7 +1180,7 @@ static int ublk_start_daemon(const struct dev_ctx *ctx, struct ublk_dev *dev)
 	if (ctx->recovery)
 		ret = ublk_ctrl_end_user_recovery(dev, getpid());
 	else {
-		ublk_set_parameters(dev);
+		ublk_set_parameters(ctx, dev);
 		ret = ublk_ctrl_start_dev(dev, getpid());
 	}
 	if (ret < 0) {
@@ -1296,7 +1306,7 @@ wait:
 	return ret;
 }
 
-static int __cmd_dev_add(const struct dev_ctx *ctx)
+static int __cmd_dev_add(struct dev_ctx *ctx)
 {
 	unsigned nthreads = ctx->nthreads;
 	unsigned nr_queues = ctx->nr_hw_queues;
@@ -1365,11 +1375,31 @@ static int __cmd_dev_add(const struct dev_ctx *ctx)
 	}
 
 	/* Load BPF struct_ops before creating the device */
-	if (ctx->bpf) {
-		ret = ublk_bpf_load(tgt_type);
+	if (ctx->bpf_type) {
+		const char *btype = ctx->bpf_type[0] ? ctx->bpf_type :
+							tgt_type;
+
+		ret = ublk_bpf_load(btype);
 		if (ret < 0) {
 			ublk_err("%s: failed to load BPF for %s: %d\n",
-				 __func__, tgt_type, ret);
+				 __func__, btype, ret);
+			goto fail;
+		}
+	}
+
+	/* Setup VFIO for PCI device (DMA_ZC + BPF) */
+	if (ctx->pci_addr) {
+		ctx->vfio = calloc(1, sizeof(*ctx->vfio));
+		if (!ctx->vfio) {
+			ret = -ENOMEM;
+			goto fail;
+		}
+		ret = vfio_pci_setup(ctx->vfio, ctx->pci_addr);
+		if (ret < 0) {
+			ublk_err("%s: VFIO setup failed for %s\n",
+				 __func__, ctx->pci_addr);
+			free(ctx->vfio);
+			ctx->vfio = NULL;
 			goto fail;
 		}
 	}
@@ -1379,8 +1409,10 @@ static int __cmd_dev_add(const struct dev_ctx *ctx)
 	info->nr_hw_queues = nr_queues;
 	info->queue_depth = depth;
 	info->flags = ctx->flags;
-	if (ctx->bpf)
+	if (ctx->bpf_type)
 		info->flags |= UBLK_F_BPF | UBLK_F_USER_COPY;
+	if (ctx->pci_addr)
+		info->flags |= UBLK_F_DMA_ZC | UBLK_F_USER_COPY;
 	if ((features & UBLK_F_QUIESCE) &&
 			(info->flags & UBLK_F_USER_RECOVERY))
 		info->flags |= UBLK_F_QUIESCE;
@@ -1413,8 +1445,13 @@ static int __cmd_dev_add(const struct dev_ctx *ctx)
 		ublk_ctrl_del_dev(dev);
 
 fail:
-	if (ctx->bpf)
+	if (ctx->bpf_type)
 		ublk_bpf_unload();
+	if (ctx->vfio) {
+		vfio_pci_cleanup(ctx->vfio);
+		free(ctx->vfio);
+		ctx->vfio = NULL;
+	}
 	if (ret < 0)
 		ublk_send_dev_event(ctx, dev, -1);
 	if (dev)
@@ -1806,7 +1843,8 @@ int main(int argc, char *argv[])
 		{ "safe",		0,	NULL,  0 },
 		{ "batch",              0,      NULL, 'b'},
 		{ "no_auto_part_scan",	0,	NULL,  0 },
-		{ "bpf",		0,	NULL,  0 },
+		{ "bpf",		2,	NULL,  0 },
+		{ "pci",		1,	NULL,  0 },
 		{ 0, 0, 0, 0 }
 	};
 	const struct ublk_tgt_ops *ops = NULL;
@@ -1923,7 +1961,10 @@ int main(int argc, char *argv[])
 			if (!strcmp(longopts[option_idx].name, "no_auto_part_scan"))
 				ctx.flags |= UBLK_F_NO_AUTO_PART_SCAN;
 			if (!strcmp(longopts[option_idx].name, "bpf"))
-				ctx.bpf = 1;
+				ctx.bpf_type = optarg ? strdup(optarg) :
+						strdup("");
+			if (!strcmp(longopts[option_idx].name, "pci"))
+				ctx.pci_addr = strdup(optarg);
 			break;
 		case '?':
 			/*
