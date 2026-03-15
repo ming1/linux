@@ -101,7 +101,11 @@ HOST_DESTDIR := $(BUILD_DIR)/host/
 DEFAULT_BPFTOOL := $(BUILD_DIR)/host/sbin/bpftool
 BPFTOOL ?= $(DEFAULT_BPFTOOL)
 
-VMLINUX_BTF_PATHS ?= $(if $(O),$(O)/vmlinux)				\
+# Prefer module BTF (/sys/kernel/btf/ublk_drv) so BPF struct_ops types
+# are available even when CONFIG_BLK_DEV_UBLK=m. The module must be
+# loaded when building the selftests for vmlinux.h generation.
+VMLINUX_BTF_PATHS ?= /sys/kernel/btf/ublk_drv				\
+		     $(if $(O),$(O)/vmlinux)				\
 		     $(if $(KBUILD_OUTPUT),$(KBUILD_OUTPUT)/vmlinux)	\
 		     ../../../../vmlinux				\
 		     /sys/kernel/btf/vmlinux				\

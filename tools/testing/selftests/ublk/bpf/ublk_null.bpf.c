@@ -6,6 +6,47 @@
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
 
+/*
+ * When building against vmlinux BTF (CONFIG_BLK_DEV_UBLK=y), these types
+ * come from vmlinux.h. When building against module BTF
+ * (/sys/kernel/btf/ublk_drv), they also come from vmlinux.h.
+ *
+ * For cross-compilation without module BTF, define them locally.
+ * The ___local suffix avoids redefinition when types exist in vmlinux.h;
+ * libbpf CO-RE matches by removing the ___local suffix at runtime.
+ */
+#ifndef bpf_ublk_has_vmlinux_types
+struct ublk_bpf_ctx___local {
+	void *ub;
+	void *bar0;
+	unsigned long bar0_size;
+} __attribute__((preserve_access_index));
+
+struct ublk_bpf_ops___local {
+	int (*init_queue)(struct ublk_bpf_ctx___local *ctx, int qid, int depth);
+	void (*deinit_queue)(struct ublk_bpf_ctx___local *ctx, int qid);
+	int (*queue_io_cmd)(struct ublk_bpf_ctx___local *ctx,
+			    struct request *req, bool last);
+	void (*commit_io_cmd)(struct ublk_bpf_ctx___local *ctx, int ubq_id);
+	void (*complete_io_cmd)(struct ublk_bpf_ctx___local *ctx,
+				struct request *req);
+};
+
+struct ublksrv_io_desc___local {
+	__u32 op_flags;
+	union {
+		__u32 nr_sectors;
+		__u32 nr_zones;
+	};
+	__u64 start_sector;
+	__u64 addr;
+} __attribute__((preserve_access_index));
+
+#define ublk_bpf_ctx ublk_bpf_ctx___local
+#define ublk_bpf_ops ublk_bpf_ops___local
+#define ublksrv_io_desc ublksrv_io_desc___local
+#endif
+
 /* kfunc declarations */
 extern struct ublksrv_io_desc *ublk_bpf_get_iod(struct request *req) __ksym;
 extern void ublk_bpf_complete_io(struct request *req, int res) __ksym;
