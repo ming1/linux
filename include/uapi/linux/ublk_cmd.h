@@ -767,6 +767,8 @@ struct ublk_param_dma_dev {
 	__u64	base_iova;	/* base IOVA for kernel DMA mappings */
 	__s32	iommufd;	/* iommufd file descriptor */
 	__u32	ioas_id;	/* IOAS to map into */
+	__s32	vfio_dev_fd;	/* VFIO device fd for BAR access (BPF mode) */
+	__u32	reserved;
 };
 
 struct ublk_params {

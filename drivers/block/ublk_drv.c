@@ -53,6 +53,8 @@
 #include <linux/btf.h>
 #include <linux/btf_ids.h>
 #include <linux/ublk_bpf.h>
+#include <linux/vfio.h>
+#include <linux/vfio_pci_core.h>
 #include <uapi/linux/fs.h>
 #include <uapi/linux/ublk_cmd.h>
 
@@ -4720,6 +4722,47 @@ static int ublk_ctrl_start_dev(struct ublk_device *ub,
 			ubq->base_iova = dp->base_iova +
 				(u64)i * ubq->q_depth * ubq->max_io_bytes;
 		}
+
+#ifdef CONFIG_BPF
+		/* Ioremap BAR0 for BPF MMIO access (doorbell writes) */
+		if ((ub->dev_info.flags & UBLK_F_BPF) &&
+		    dp->vfio_dev_fd >= 0) {
+			struct file *vfio_file;
+			struct vfio_device *vdev;
+			struct vfio_pci_core_device *vpdev;
+
+			vfio_file = fget(dp->vfio_dev_fd);
+			if (!vfio_file) {
+				pr_err("ublk: invalid vfio_dev_fd %d\n",
+				       dp->vfio_dev_fd);
+				ret = -EBADF;
+				goto out_clear_iommu;
+			}
+
+			vdev = vfio_device_from_file(vfio_file);
+			if (!vdev) {
+				fput(vfio_file);
+				pr_err("ublk: not a VFIO device fd\n");
+				ret = -EINVAL;
+				goto out_clear_iommu;
+			}
+
+			vpdev = container_of(vdev,
+					struct vfio_pci_core_device, vdev);
+			ret = vfio_pci_core_setup_barmap(vpdev, 0);
+			if (ret) {
+				fput(vfio_file);
+				pr_err("ublk: failed to ioremap BAR0\n");
+				goto out_clear_iommu;
+			}
+
+			ub->bpf_ctx.ub = ub;
+			ub->bpf_ctx.bar0 = vpdev->barmap[0];
+			ub->bpf_ctx.bar0_size =
+				pci_resource_len(vpdev->pdev, 0);
+			fput(vfio_file);
+		}
+#endif
 	}
 
 	if (wait_for_completion_interruptible(&ub->completion) != 0) {
@@ -5807,6 +5850,30 @@ __bpf_kfunc void ublk_bpf_unmap_dma(struct request *req)
 		ublk_unmap_dma_addrs(ubq, req);
 }
 
+/*
+ * Write a 32-bit value to a device BAR0 MMIO register.
+ * Used for NVMe doorbell writes from BPF queue_io_cmd/commit_io_cmd.
+ * BAR0 must have been ioremapped during device setup (vfio_dev_fd param).
+ */
+__bpf_kfunc void ublk_bpf_mmio_writel(struct ublk_bpf_ctx *ctx,
+				       __u32 offset, __u32 value)
+{
+	if (ctx->bar0 && offset < ctx->bar0_size)
+		writel(value, ctx->bar0 + offset);
+}
+
+/*
+ * Read a 32-bit value from a device BAR0 MMIO register.
+ * Used for reading NVMe controller registers from BPF.
+ */
+__bpf_kfunc __u32 ublk_bpf_mmio_readl(struct ublk_bpf_ctx *ctx,
+					__u32 offset)
+{
+	if (ctx->bar0 && offset < ctx->bar0_size)
+		return readl(ctx->bar0 + offset);
+	return ~(__u32)0;
+}
+
 __bpf_kfunc_end_defs();
 
 BTF_KFUNCS_START(ublk_bpf_kfunc_ids)
@@ -5814,6 +5881,8 @@ BTF_ID_FLAGS(func, ublk_bpf_get_iod)
 BTF_ID_FLAGS(func, ublk_bpf_complete_io)
 BTF_ID_FLAGS(func, ublk_bpf_map_dma)
 BTF_ID_FLAGS(func, ublk_bpf_unmap_dma)
+BTF_ID_FLAGS(func, ublk_bpf_mmio_writel)
+BTF_ID_FLAGS(func, ublk_bpf_mmio_readl)
 BTF_KFUNCS_END(ublk_bpf_kfunc_ids)
 
 static const struct btf_kfunc_id_set ublk_bpf_kfunc_set = {
