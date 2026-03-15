@@ -5780,11 +5780,40 @@ __bpf_kfunc void ublk_bpf_complete_io(struct request *req, int res)
 	__ublk_complete_rq(req, io, false, NULL);
 }
 
+/*
+ * IOMMU-map request bio pages for DMA zero-copy.
+ * After mapping, the IOVA is written to iod->addr.
+ */
+__bpf_kfunc int ublk_bpf_map_dma(struct request *req)
+{
+	struct ublk_queue *ubq = req->mq_hctx->driver_data;
+
+	if (!ubq->iommu_domain)
+		return -EINVAL;
+	if (!ublk_rq_has_data(req))
+		return 0;
+	return ublk_fill_dma_addrs(ubq, req);
+}
+
+/*
+ * IOMMU-unmap a request's DMA mapping.
+ * Must be called before the request completes and bio pages are freed.
+ */
+__bpf_kfunc void ublk_bpf_unmap_dma(struct request *req)
+{
+	struct ublk_queue *ubq = req->mq_hctx->driver_data;
+
+	if (ubq->iommu_domain)
+		ublk_unmap_dma_addrs(ubq, req);
+}
+
 __bpf_kfunc_end_defs();
 
 BTF_KFUNCS_START(ublk_bpf_kfunc_ids)
 BTF_ID_FLAGS(func, ublk_bpf_get_iod)
 BTF_ID_FLAGS(func, ublk_bpf_complete_io)
+BTF_ID_FLAGS(func, ublk_bpf_map_dma)
+BTF_ID_FLAGS(func, ublk_bpf_unmap_dma)
 BTF_KFUNCS_END(ublk_bpf_kfunc_ids)
 
 static const struct btf_kfunc_id_set ublk_bpf_kfunc_set = {
