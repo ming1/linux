@@ -393,6 +393,7 @@ struct ublk_params_header {
 
 static void ublk_io_release(void *priv);
 static void ublk_stop_dev_unlocked(struct ublk_device *ub);
+static inline bool ublk_has_bpf_ops(const struct ublk_queue *ubq);
 static void ublk_abort_queue(struct ublk_device *ub, struct ublk_queue *ubq);
 static inline struct request *__ublk_check_and_get_req(struct ublk_device *ub,
 		u16 q_id, u16 tag, struct ublk_io *io);
@@ -1601,9 +1602,15 @@ static inline void __ublk_complete_rq(struct request *req, struct ublk_io *io,
 	blk_status_t res = BLK_STS_OK;
 	bool requeue;
 
-	/* Unmap iommufd DMA mapping before completing the request */
+	/* Call BPF complete callback and/or unmap IOMMU DMA mapping */
 	{
 		struct ublk_queue *ubq = req->mq_hctx->driver_data;
+
+#ifdef CONFIG_BPF
+		if (ublk_has_bpf_ops(ubq))
+			ubq->dev->bpf_ops->complete_io_cmd(
+					&ubq->dev->bpf_ctx, req);
+#endif
 		if (ubq && ubq->iommu_domain)
 			ublk_unmap_dma_addrs(ubq, req);
 	}
@@ -2359,6 +2366,30 @@ static inline blk_status_t __ublk_queue_rq_common(struct ublk_queue *ubq,
 	return BLK_STS_OK;
 }
 
+static inline bool ublk_has_bpf_ops(const struct ublk_queue *ubq)
+{
+#ifdef CONFIG_BPF
+	return !!(ubq->dev->dev_info.flags & UBLK_F_BPF) && ubq->dev->bpf_ops;
+#else
+	return false;
+#endif
+}
+
+#ifdef CONFIG_BPF
+static inline void ublk_bpf_queue_io(struct ublk_queue *ubq,
+				     struct request *rq, bool last)
+{
+	struct ublk_device *ub = ubq->dev;
+	int ret;
+
+	ret = ub->bpf_ops->queue_io_cmd(&ub->bpf_ctx, rq, last);
+	if (ret < 0) {
+		ubq->ios[rq->tag].res = ret;
+		__ublk_complete_rq(rq, &ubq->ios[rq->tag], false, NULL);
+	}
+}
+#endif
+
 static blk_status_t ublk_queue_rq(struct blk_mq_hw_ctx *hctx,
 		const struct blk_mq_queue_data *bd)
 {
@@ -2370,6 +2401,11 @@ static blk_status_t ublk_queue_rq(struct blk_mq_hw_ctx *hctx,
 	res = __ublk_queue_rq_common(ubq, rq, &should_queue);
 	if (!should_queue)
 		return res;
+
+	if (ublk_has_bpf_ops(ubq)) {
+		ublk_bpf_queue_io(ubq, rq, bd->last);
+		return BLK_STS_OK;
+	}
 
 	ublk_queue_cmd(ubq, rq);
 	return BLK_STS_OK;
@@ -2386,6 +2422,11 @@ static blk_status_t ublk_batch_queue_rq(struct blk_mq_hw_ctx *hctx,
 	res = __ublk_queue_rq_common(ubq, rq, &should_queue);
 	if (!should_queue)
 		return res;
+
+	if (ublk_has_bpf_ops(ubq)) {
+		ublk_bpf_queue_io(ubq, rq, bd->last);
+		return BLK_STS_OK;
+	}
 
 	ublk_batch_queue_cmd(ubq, rq, bd->last);
 	return BLK_STS_OK;
@@ -2404,6 +2445,12 @@ static void ublk_commit_rqs(struct blk_mq_hw_ctx *hctx)
 	struct ublk_queue *ubq = hctx->driver_data;
 	struct ublk_batch_fetch_cmd *fcmd;
 
+	if (ublk_has_bpf_ops(ubq)) {
+		ubq->dev->bpf_ops->commit_io_cmd(&ubq->dev->bpf_ctx,
+						  ubq->q_id);
+		return;
+	}
+
 	spin_lock(&ubq->evts_lock);
 	fcmd = __ublk_acquire_fcmd(ubq);
 	spin_unlock(&ubq->evts_lock);
@@ -2418,6 +2465,7 @@ static void ublk_queue_rqs(struct rq_list *rqlist)
 	struct rq_list submit_list = { };
 	struct ublk_io *io = NULL;
 	struct request *req;
+	bool bpf_mode = false;
 
 	while ((req = rq_list_pop(rqlist))) {
 		struct ublk_queue *this_q = req->mq_hctx->driver_data;
@@ -2425,6 +2473,12 @@ static void ublk_queue_rqs(struct rq_list *rqlist)
 
 		if (ublk_prep_req(this_q, req, true) != BLK_STS_OK) {
 			rq_list_add_tail(&requeue_list, req);
+			continue;
+		}
+
+		bpf_mode = ublk_has_bpf_ops(this_q);
+		if (bpf_mode) {
+			ublk_bpf_queue_io(this_q, req, false);
 			continue;
 		}
 
@@ -2480,6 +2534,11 @@ static void ublk_batch_queue_rqs(struct rq_list *rqlist)
 			continue;
 		}
 
+		if (ublk_has_bpf_ops(this_q)) {
+			ublk_bpf_queue_io(this_q, req, false);
+			continue;
+		}
+
 		if (ubq && this_q != ubq && !rq_list_empty(&submit_list))
 			ublk_batch_queue_cmd_list(ubq, &submit_list);
 		ubq = this_q;
@@ -2502,6 +2561,7 @@ static int ublk_init_hctx(struct blk_mq_hw_ctx *hctx, void *driver_data,
 }
 
 static const struct blk_mq_ops ublk_mq_ops = {
+	.commit_rqs	= ublk_commit_rqs,
 	.queue_rq       = ublk_queue_rq,
 	.queue_rqs      = ublk_queue_rqs,
 	.init_hctx	= ublk_init_hctx,
@@ -5727,6 +5787,7 @@ static struct miscdevice ublk_misc = {
 /*
  * BPF kfuncs for ublk struct_ops programs.
  */
+__bpf_kfunc_start_defs();
 
 /*
  * Get the I/O descriptor for a request.
@@ -5752,6 +5813,8 @@ __bpf_kfunc void ublk_bpf_complete_io(struct request *req, int res)
 	io->res = res;
 	__ublk_complete_rq(req, io, false, NULL);
 }
+
+__bpf_kfunc_end_defs();
 
 BTF_KFUNCS_START(ublk_bpf_kfunc_ids)
 BTF_ID_FLAGS(func, ublk_bpf_get_iod)
