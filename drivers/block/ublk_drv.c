@@ -48,6 +48,9 @@
 #include <linux/blk-integrity.h>
 #include <linux/iommufd.h>
 #include <linux/scatterlist.h>
+#include <linux/bpf.h>
+#include <linux/btf.h>
+#include <linux/btf_ids.h>
 #include <uapi/linux/fs.h>
 #include <uapi/linux/ublk_cmd.h>
 
@@ -300,6 +303,42 @@ struct ublk_queue {
 	struct ublk_io ios[] __counted_by(q_depth);
 };
 
+#ifdef CONFIG_BPF
+/*
+ * Opaque context passed to all BPF struct_ops callbacks and kfuncs.
+ * Provides access to the ublk device's IOMMU domain, ioremapped BARs,
+ * and queue state without exposing kernel internals to BPF.
+ */
+struct ublk_bpf_ctx {
+	struct ublk_device *ub;
+	void __iomem *bar0;
+	unsigned long bar0_size;
+};
+
+/*
+ * BPF struct_ops for ublk I/O command handling.
+ *
+ * When attached, these callbacks are invoked directly from blk-mq
+ * dispatch paths, bypassing userspace notification for I/O handling.
+ * init_queue/deinit_queue run in sleepable context during device setup.
+ * queue_io_cmd/commit_io_cmd/complete_io_cmd run from blk-mq context.
+ */
+struct ublk_bpf_ops {
+	/* Per-queue lifecycle (sleepable context) */
+	int (*init_queue)(struct ublk_bpf_ctx *ctx, int qid, int depth);
+	void (*deinit_queue)(struct ublk_bpf_ctx *ctx, int qid);
+
+	/* I/O hot path (non-sleepable, called from queue_rq) */
+	int (*queue_io_cmd)(struct ublk_bpf_ctx *ctx,
+			    struct request *req, bool last);
+	void (*commit_io_cmd)(struct ublk_bpf_ctx *ctx, int ubq_id);
+
+	/* Completion (called when request finishes) */
+	void (*complete_io_cmd)(struct ublk_bpf_ctx *ctx,
+				struct request *req);
+};
+#endif /* CONFIG_BPF */
+
 struct ublk_device {
 	struct gendisk		*ub_disk;
 
@@ -337,6 +376,11 @@ struct ublk_device {
 	/* DMA zero-copy: iommufd context and IOAS (UBLK_F_DMA_ZC) */
 	struct iommufd_ctx	*iommufd_ctx;
 	struct iommufd_ioas	*ioas;
+
+#ifdef CONFIG_BPF
+	struct ublk_bpf_ops	*bpf_ops;
+	struct ublk_bpf_ctx	bpf_ctx;
+#endif
 
 	struct ublk_queue       *queues[];
 };
@@ -5679,6 +5723,72 @@ static struct miscdevice ublk_misc = {
 	.fops		= &ublk_ctl_fops,
 };
 
+#ifdef CONFIG_BPF
+/* CFI stubs for ublk_bpf_ops */
+static int bpf_ublk_init_queue_stub(struct ublk_bpf_ctx *ctx,
+				    int qid, int depth)
+{
+	return 0;
+}
+
+static void bpf_ublk_deinit_queue_stub(struct ublk_bpf_ctx *ctx, int qid)
+{
+}
+
+static int bpf_ublk_queue_io_cmd_stub(struct ublk_bpf_ctx *ctx,
+				      struct request *req, bool last)
+{
+	return -EOPNOTSUPP;
+}
+
+static void bpf_ublk_commit_io_cmd_stub(struct ublk_bpf_ctx *ctx,
+					 int ubq_id)
+{
+}
+
+static void bpf_ublk_complete_io_cmd_stub(struct ublk_bpf_ctx *ctx,
+					   struct request *req)
+{
+}
+
+static struct ublk_bpf_ops __bpf_ops_ublk_bpf_ops = {
+	.init_queue = bpf_ublk_init_queue_stub,
+	.deinit_queue = bpf_ublk_deinit_queue_stub,
+	.queue_io_cmd = bpf_ublk_queue_io_cmd_stub,
+	.commit_io_cmd = bpf_ublk_commit_io_cmd_stub,
+	.complete_io_cmd = bpf_ublk_complete_io_cmd_stub,
+};
+
+static int ublk_bpf_reg(void *kdata, struct bpf_link *link)
+{
+	return 0;
+}
+
+static void ublk_bpf_unreg(void *kdata, struct bpf_link *link)
+{
+}
+
+static int ublk_bpf_init_member(const struct btf_type *t,
+				const struct btf_member *member,
+				void *kdata, const void *udata)
+{
+	return 0;
+}
+
+static const struct bpf_verifier_ops ublk_bpf_verifier_ops = {
+};
+
+static struct bpf_struct_ops bpf_ublk_bpf_ops = {
+	.verifier_ops = &ublk_bpf_verifier_ops,
+	.reg = ublk_bpf_reg,
+	.unreg = ublk_bpf_unreg,
+	.init_member = ublk_bpf_init_member,
+	.name = "ublk_bpf_ops",
+	.cfi_stubs = &__bpf_ops_ublk_bpf_ops,
+	.owner = THIS_MODULE,
+};
+#endif /* CONFIG_BPF */
+
 static int __init ublk_init(void)
 {
 	int ret;
@@ -5707,8 +5817,18 @@ static int __init ublk_init(void)
 	if (ret)
 		goto free_chrdev_region;
 
+#ifdef CONFIG_BPF
+	ret = register_bpf_struct_ops(&bpf_ublk_bpf_ops, ublk_bpf_ops);
+	if (ret)
+		goto unregister_class;
+#endif
+
 	return 0;
 
+#ifdef CONFIG_BPF
+unregister_class:
+	class_unregister(&ublk_chr_class);
+#endif
 free_chrdev_region:
 	unregister_chrdev_region(ublk_chr_devt, UBLK_MINORS);
 unregister_mis:
