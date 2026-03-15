@@ -385,6 +385,18 @@
  */
 #define UBLK_F_DMA_ZC (1ULL << 20)
 
+/*
+ * Enable BPF struct_ops for I/O command handling.
+ *
+ * When set, a BPF program attached via struct_ops handles I/O dispatch
+ * directly from blk-mq queue_rq, bypassing task_work + io_uring to
+ * userspace. The BPF program can map DMA, build device commands, and
+ * write MMIO doorbells via kfuncs -- all in queue_rq context.
+ *
+ * Requires UBLK_F_USER_COPY.
+ */
+#define UBLK_F_BPF (1ULL << 21)
+
 /* device state */
 #define UBLK_S_DEV_DEAD	0
 #define UBLK_S_DEV_LIVE	1
