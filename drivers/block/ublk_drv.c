@@ -5724,6 +5724,45 @@ static struct miscdevice ublk_misc = {
 };
 
 #ifdef CONFIG_BPF
+/*
+ * BPF kfuncs for ublk struct_ops programs.
+ */
+
+/*
+ * Get the I/O descriptor for a request.
+ * Contains operation type, sector offset, size, and (after DMA mapping)
+ * the IOVA address in iod->addr.
+ */
+__bpf_kfunc struct ublksrv_io_desc *ublk_bpf_get_iod(struct request *req)
+{
+	struct ublk_queue *ubq = req->mq_hctx->driver_data;
+
+	return ublk_get_iod(ubq, req->tag);
+}
+
+/*
+ * Complete an I/O request from BPF context.
+ * @res: positive bytes transferred on success, negative errno on failure.
+ */
+__bpf_kfunc void ublk_bpf_complete_io(struct request *req, int res)
+{
+	struct ublk_queue *ubq = req->mq_hctx->driver_data;
+	struct ublk_io *io = &ubq->ios[req->tag];
+
+	io->res = res;
+	__ublk_complete_rq(req, io, false, NULL);
+}
+
+BTF_KFUNCS_START(ublk_bpf_kfunc_ids)
+BTF_ID_FLAGS(func, ublk_bpf_get_iod)
+BTF_ID_FLAGS(func, ublk_bpf_complete_io)
+BTF_KFUNCS_END(ublk_bpf_kfunc_ids)
+
+static const struct btf_kfunc_id_set ublk_bpf_kfunc_set = {
+	.owner = THIS_MODULE,
+	.set   = &ublk_bpf_kfunc_ids,
+};
+
 /* CFI stubs for ublk_bpf_ops */
 static int bpf_ublk_init_queue_stub(struct ublk_bpf_ctx *ctx,
 				    int qid, int depth)
@@ -5818,6 +5857,11 @@ static int __init ublk_init(void)
 		goto free_chrdev_region;
 
 #ifdef CONFIG_BPF
+	ret = register_btf_kfunc_id_set(BPF_PROG_TYPE_STRUCT_OPS,
+					&ublk_bpf_kfunc_set);
+	if (ret)
+		goto unregister_class;
+
 	ret = register_bpf_struct_ops(&bpf_ublk_bpf_ops, ublk_bpf_ops);
 	if (ret)
 		goto unregister_class;
