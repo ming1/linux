@@ -5851,6 +5851,80 @@ __bpf_kfunc void ublk_bpf_unmap_dma(struct request *req)
 }
 
 /*
+ * IOMMU-map BPF arena pages so a device can DMA from them.
+ * Used by BPF init_queue to set up NVMe SQ/CQ buffers in arena memory.
+ *
+ * @ctx: ublk BPF context (provides IOMMU domain)
+ * @arena_ptr: pointer into arena memory (from bpf_arena_alloc_pages)
+ * @size: size in bytes to map (must be page-aligned)
+ * @iova: device IOVA to map at (chosen by BPF program)
+ *
+ * Returns 0 on success, negative errno on failure.
+ * The arena pages are mapped into a contiguous IOVA range even if
+ * physically scattered — the IOMMU provides the contiguity.
+ */
+__bpf_kfunc int ublk_bpf_iommu_map_arena(struct ublk_bpf_ctx *ctx,
+					   void *arena_ptr, __u32 size,
+					   __u64 iova)
+{
+	struct ublk_device *ub = ctx->ub;
+	struct iommu_domain *domain;
+	unsigned long offset;
+	int ret;
+
+	if (!ub || !ub->ioas)
+		return -EINVAL;
+
+	domain = iommufd_ioas_first_domain(ub->ioas);
+	if (!domain)
+		return -EINVAL;
+
+	size = PAGE_ALIGN(size);
+
+	for (offset = 0; offset < size; offset += PAGE_SIZE) {
+		struct page *page;
+		phys_addr_t paddr;
+
+		page = vmalloc_to_page((void *)arena_ptr + offset);
+		if (!page)
+			goto err_unmap;
+
+		paddr = page_to_phys(page);
+		ret = iommu_map(domain, iova + offset, paddr,
+				PAGE_SIZE, IOMMU_READ | IOMMU_WRITE,
+				GFP_KERNEL);
+		if (ret)
+			goto err_unmap;
+	}
+
+	return 0;
+
+err_unmap:
+	if (offset > 0)
+		iommu_unmap(domain, iova, offset);
+	return ret ? ret : -ENOMEM;
+}
+
+/*
+ * IOMMU-unmap arena pages previously mapped by ublk_bpf_iommu_map_arena.
+ */
+__bpf_kfunc void ublk_bpf_iommu_unmap_arena(struct ublk_bpf_ctx *ctx,
+					      __u64 iova, __u32 size)
+{
+	struct ublk_device *ub = ctx->ub;
+	struct iommu_domain *domain;
+
+	if (!ub || !ub->ioas)
+		return;
+
+	domain = iommufd_ioas_first_domain(ub->ioas);
+	if (!domain)
+		return;
+
+	iommu_unmap(domain, iova, PAGE_ALIGN(size));
+}
+
+/*
  * Write a 32-bit value to a device BAR0 MMIO register.
  * Used for NVMe doorbell writes from BPF queue_io_cmd/commit_io_cmd.
  * BAR0 must have been ioremapped during device setup (vfio_dev_fd param).
@@ -5883,6 +5957,8 @@ BTF_ID_FLAGS(func, ublk_bpf_map_dma)
 BTF_ID_FLAGS(func, ublk_bpf_unmap_dma)
 BTF_ID_FLAGS(func, ublk_bpf_mmio_writel)
 BTF_ID_FLAGS(func, ublk_bpf_mmio_readl)
+BTF_ID_FLAGS(func, ublk_bpf_iommu_map_arena)
+BTF_ID_FLAGS(func, ublk_bpf_iommu_unmap_arena)
 BTF_KFUNCS_END(ublk_bpf_kfunc_ids)
 
 static const struct btf_kfunc_id_set ublk_bpf_kfunc_set = {
