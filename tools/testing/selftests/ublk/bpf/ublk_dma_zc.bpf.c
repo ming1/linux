@@ -81,7 +81,7 @@ int BPF_PROG(dma_zc_queue_io_cmd, void *bctx,
 	 * NVMe SQ entry. For testing, just complete immediately.
 	 */
 	ublk_bpf_complete_io(req, iod->nr_sectors << 9);
-	return 0;
+	return 1; /* I/O completed, do NOT forward to userspace */
 }
 
 SEC("struct_ops/commit_io_cmd")

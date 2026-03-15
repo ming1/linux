@@ -73,7 +73,7 @@ int BPF_PROG(ublk_null_queue_io_cmd, void *bctx,
 		return -22; /* -EINVAL */
 
 	ublk_bpf_complete_io(req, iod->nr_sectors << 9);
-	return 0;
+	return 1; /* I/O completed, do NOT forward to userspace */
 }
 
 SEC("struct_ops/commit_io_cmd")

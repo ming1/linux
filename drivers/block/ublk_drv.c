@@ -2344,17 +2344,37 @@ static inline bool ublk_has_bpf_ops(const struct ublk_queue *ubq)
 }
 
 #ifdef CONFIG_BPF
-static inline void ublk_bpf_queue_io(struct ublk_queue *ubq,
+/*
+ * Call BPF queue_io_cmd and handle the return value:
+ *
+ *   ret > 0: BPF completed the I/O (called ublk_bpf_complete_io).
+ *            Request is done, do NOT forward to userspace.
+ *
+ *   ret == 0: BPF processed the request (e.g., DMA mapped,
+ *             submitted to NVMe HW) but did not complete it.
+ *             Forward to userspace for CQ polling + completion.
+ *
+ *   ret < 0: Error. Complete request with error immediately.
+ *
+ * Returns true if the caller should forward to userspace
+ * (schedule task_work / batch dispatch for notification).
+ */
+static inline bool ublk_bpf_queue_io(struct ublk_queue *ubq,
 				     struct request *rq, bool last)
 {
 	struct ublk_device *ub = ubq->dev;
 	int ret;
 
 	ret = ub->bpf_ops->queue_io_cmd(&ub->bpf_ctx, rq, last);
+	if (ret > 0)
+		return false;	/* BPF completed the I/O */
 	if (ret < 0) {
 		ubq->ios[rq->tag].res = ret;
 		__ublk_complete_rq(rq, &ubq->ios[rq->tag], false, NULL);
+		return false;
 	}
+	/* ret == 0: forward to userspace for completion */
+	return true;
 }
 #endif
 
@@ -2371,8 +2391,9 @@ static blk_status_t ublk_queue_rq(struct blk_mq_hw_ctx *hctx,
 		return res;
 
 	if (ublk_has_bpf_ops(ubq)) {
-		ublk_bpf_queue_io(ubq, rq, bd->last);
-		return BLK_STS_OK;
+		if (!ublk_bpf_queue_io(ubq, rq, bd->last))
+			return BLK_STS_OK;
+		/* BPF wants userspace notification, fall through */
 	}
 
 	ublk_queue_cmd(ubq, rq);
@@ -2392,8 +2413,9 @@ static blk_status_t ublk_batch_queue_rq(struct blk_mq_hw_ctx *hctx,
 		return res;
 
 	if (ublk_has_bpf_ops(ubq)) {
-		ublk_bpf_queue_io(ubq, rq, bd->last);
-		return BLK_STS_OK;
+		if (!ublk_bpf_queue_io(ubq, rq, bd->last))
+			return BLK_STS_OK;
+		/* BPF wants userspace notification, fall through */
 	}
 
 	ublk_batch_queue_cmd(ubq, rq, bd->last);
@@ -2444,10 +2466,10 @@ static void ublk_queue_rqs(struct rq_list *rqlist)
 			continue;
 		}
 
-		bpf_mode = ublk_has_bpf_ops(this_q);
-		if (bpf_mode) {
-			ublk_bpf_queue_io(this_q, req, false);
-			continue;
+		if (ublk_has_bpf_ops(this_q)) {
+			if (!ublk_bpf_queue_io(this_q, req, false))
+				continue;
+			/* BPF wants forwarding, fall through to submit_list */
 		}
 
 		if (io && !ublk_belong_to_same_batch(io, this_io) &&
@@ -2503,8 +2525,9 @@ static void ublk_batch_queue_rqs(struct rq_list *rqlist)
 		}
 
 		if (ublk_has_bpf_ops(this_q)) {
-			ublk_bpf_queue_io(this_q, req, false);
-			continue;
+			if (!ublk_bpf_queue_io(this_q, req, false))
+				continue;
+			/* BPF wants forwarding, fall through */
 		}
 
 		if (ubq && this_q != ubq && !rq_list_empty(&submit_list))
