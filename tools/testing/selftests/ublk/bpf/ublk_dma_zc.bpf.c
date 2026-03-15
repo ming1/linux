@@ -19,8 +19,6 @@ struct ublk_bpf_ctx___local {
 } __attribute__((preserve_access_index));
 
 struct ublk_bpf_ops___local {
-	int (*init_queue)(struct ublk_bpf_ctx___local *ctx, int qid, int depth);
-	void (*deinit_queue)(struct ublk_bpf_ctx___local *ctx, int qid);
 	int (*queue_io_cmd)(struct ublk_bpf_ctx___local *ctx,
 			    struct request *req, bool last);
 	void (*commit_io_cmd)(struct ublk_bpf_ctx___local *ctx, int ubq_id);
@@ -48,17 +46,6 @@ extern struct ublksrv_io_desc *ublk_bpf_get_iod(struct request *req) __ksym;
 extern void ublk_bpf_complete_io(struct request *req, int res) __ksym;
 extern int ublk_bpf_map_dma(struct request *req) __ksym;
 extern void ublk_bpf_unmap_dma(struct request *req) __ksym;
-
-SEC("struct_ops.s/init_queue")
-int BPF_PROG(dma_zc_init_queue, void *bctx, int qid, int depth)
-{
-	return 0;
-}
-
-SEC("struct_ops/deinit_queue")
-void BPF_PROG(dma_zc_deinit_queue, void *bctx, int qid)
-{
-}
 
 SEC("struct_ops/queue_io_cmd")
 int BPF_PROG(dma_zc_queue_io_cmd, void *bctx,
@@ -99,8 +86,6 @@ void BPF_PROG(dma_zc_complete_io_cmd, void *bctx,
 
 SEC(".struct_ops.link")
 struct ublk_bpf_ops ublk_dma_zc_bpf_ops = {
-	.init_queue = (void *)dma_zc_init_queue,
-	.deinit_queue = (void *)dma_zc_deinit_queue,
 	.queue_io_cmd = (void *)dma_zc_queue_io_cmd,
 	.commit_io_cmd = (void *)dma_zc_commit_io_cmd,
 	.complete_io_cmd = (void *)dma_zc_complete_io_cmd,

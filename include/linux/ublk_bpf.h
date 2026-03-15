@@ -20,14 +20,12 @@ struct ublk_bpf_ctx {
  *
  * When attached, these callbacks are invoked directly from blk-mq
  * dispatch paths, bypassing userspace notification for I/O handling.
- * init_queue/deinit_queue run in sleepable context during device setup.
  * queue_io_cmd/commit_io_cmd/complete_io_cmd run from blk-mq context.
+ *
+ * Per-queue resources are handled via BPF arena globals allocated at
+ * program load time, with IOMMU mapping done by userspace via VFIO.
  */
 struct ublk_bpf_ops {
-	/* Per-queue lifecycle (sleepable context) */
-	int (*init_queue)(struct ublk_bpf_ctx *ctx, int qid, int depth);
-	void (*deinit_queue)(struct ublk_bpf_ctx *ctx, int qid);
-
 	/* I/O hot path (non-sleepable, called from queue_rq) */
 	int (*queue_io_cmd)(struct ublk_bpf_ctx *ctx,
 			    struct request *req, bool last);

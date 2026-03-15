@@ -253,15 +253,6 @@ struct ublk_queue {
 	u64 base_iova;		/* per-queue IOVA base */
 	u32 max_io_bytes;	/* max IO size for IOVA slot calculation */
 
-#ifdef CONFIG_BPF
-	/* BPF NVMe SQ buffer (kernel-allocated, IOMMU-mapped) */
-	void *bpf_sq_buf;	/* kernel VA for SQ entries */
-	u64 bpf_sq_dma;		/* DMA/IOVA address for NVMe HW */
-	u32 bpf_sq_size;	/* total size in bytes */
-	u16 bpf_sq_tail;	/* current SQ tail index */
-	u16 bpf_sq_qsize;	/* SQ size (depth + 1) */
-	u32 bpf_sq_db_off;	/* doorbell offset in BAR0 */
-#endif
 
 	bool force_abort;
 	bool canceling;
@@ -2361,8 +2352,8 @@ static inline bool ublk_has_bpf_ops(const struct ublk_queue *ubq)
  *            Request is done, do NOT forward to userspace.
  *
  *   ret == 0: BPF processed the request (e.g., DMA mapped,
- *             submitted to NVMe HW) but did not complete it.
- *             Forward to userspace for CQ polling + completion.
+ *             submitted to HW) but did not complete it.
+ *             Forward to userspace for completion polling.
  *
  *   ret < 0: Error. Complete request with error immediately.
  *
@@ -4757,7 +4748,7 @@ static int ublk_ctrl_start_dev(struct ublk_device *ub,
 		}
 
 #ifdef CONFIG_BPF
-		/* Ioremap BAR0 for BPF MMIO access (doorbell writes) */
+		/* Ioremap BAR0 for BPF MMIO access */
 		if ((ub->dev_info.flags & UBLK_F_BPF) &&
 		    dp->vfio_dev_fd >= 0) {
 			struct file *vfio_file;
@@ -5884,82 +5875,7 @@ __bpf_kfunc void ublk_bpf_unmap_dma(struct request *req)
 }
 
 /*
- * IOMMU-map BPF arena pages so a device can DMA from them.
- * Used by BPF init_queue to set up NVMe SQ/CQ buffers in arena memory.
- *
- * @ctx: ublk BPF context (provides IOMMU domain)
- * @arena_ptr: pointer into arena memory (from bpf_arena_alloc_pages)
- * @size: size in bytes to map (must be page-aligned)
- * @iova: device IOVA to map at (chosen by BPF program)
- *
- * Returns 0 on success, negative errno on failure.
- * The arena pages are mapped into a contiguous IOVA range even if
- * physically scattered — the IOMMU provides the contiguity.
- */
-__bpf_kfunc int ublk_bpf_iommu_map_arena(struct ublk_bpf_ctx *ctx,
-					   void *arena_ptr, __u32 size,
-					   __u64 iova)
-{
-	struct ublk_device *ub = ctx->ub;
-	struct iommu_domain *domain;
-	unsigned long offset;
-	int ret;
-
-	if (!ub || !ub->ioas)
-		return -EINVAL;
-
-	domain = iommufd_ioas_first_domain(ub->ioas);
-	if (!domain)
-		return -EINVAL;
-
-	size = PAGE_ALIGN(size);
-
-	for (offset = 0; offset < size; offset += PAGE_SIZE) {
-		struct page *page;
-		phys_addr_t paddr;
-
-		page = vmalloc_to_page((void *)arena_ptr + offset);
-		if (!page)
-			goto err_unmap;
-
-		paddr = page_to_phys(page);
-		ret = iommu_map(domain, iova + offset, paddr,
-				PAGE_SIZE, IOMMU_READ | IOMMU_WRITE,
-				GFP_KERNEL);
-		if (ret)
-			goto err_unmap;
-	}
-
-	return 0;
-
-err_unmap:
-	if (offset > 0)
-		iommu_unmap(domain, iova, offset);
-	return ret ? ret : -ENOMEM;
-}
-
-/*
- * IOMMU-unmap arena pages previously mapped by ublk_bpf_iommu_map_arena.
- */
-__bpf_kfunc void ublk_bpf_iommu_unmap_arena(struct ublk_bpf_ctx *ctx,
-					      __u64 iova, __u32 size)
-{
-	struct ublk_device *ub = ctx->ub;
-	struct iommu_domain *domain;
-
-	if (!ub || !ub->ioas)
-		return;
-
-	domain = iommufd_ioas_first_domain(ub->ioas);
-	if (!domain)
-		return;
-
-	iommu_unmap(domain, iova, PAGE_ALIGN(size));
-}
-
-/*
  * Write a 32-bit value to a device BAR0 MMIO register.
- * Used for NVMe doorbell writes from BPF queue_io_cmd/commit_io_cmd.
  * BAR0 must have been ioremapped during device setup (vfio_dev_fd param).
  */
 __bpf_kfunc void ublk_bpf_mmio_writel(struct ublk_bpf_ctx *ctx,
@@ -5971,7 +5887,6 @@ __bpf_kfunc void ublk_bpf_mmio_writel(struct ublk_bpf_ctx *ctx,
 
 /*
  * Read a 32-bit value from a device BAR0 MMIO register.
- * Used for reading NVMe controller registers from BPF.
  */
 __bpf_kfunc __u32 ublk_bpf_mmio_readl(struct ublk_bpf_ctx *ctx,
 					__u32 offset)
@@ -5979,174 +5894,6 @@ __bpf_kfunc __u32 ublk_bpf_mmio_readl(struct ublk_bpf_ctx *ctx,
 	if (ctx->bar0 && offset < ctx->bar0_size)
 		return readl(ctx->bar0 + offset);
 	return ~(__u32)0;
-}
-
-/*
- * Allocate a per-queue NVMe SQ buffer for BPF.
- * Allocates kernel pages and IOMMU-maps them into the device's IOAS.
- * Must be called from init_queue (sleepable context).
- *
- * @req is NULL in init_queue context, use ctx to find the device.
- * @qid: queue ID
- * @depth: queue depth (SQ size = depth + 1)
- * @db_stride: doorbell stride in bytes (from NVMe CAP register)
- *
- * Returns: DMA address of the SQ buffer (for Create I/O SQ command),
- *          or 0 on failure.
- */
-__bpf_kfunc __u64 ublk_bpf_alloc_sq(struct ublk_bpf_ctx *ctx,
-				     int qid, int depth, __u32 db_stride)
-{
-	struct ublk_device *ub = ctx->ub;
-	struct ublk_queue *ubq;
-	struct iommu_domain *domain;
-	u32 sq_entries = depth + 1;
-	u32 sq_size = sq_entries * 64; /* NVMe SQ entry = 64 bytes */
-	u32 nr_pages = (sq_size + PAGE_SIZE - 1) >> PAGE_SHIFT;
-	void *buf;
-	u64 iova;
-	u32 i;
-	int ret;
-
-	if (!ub || qid < 0 || qid >= ub->dev_info.nr_hw_queues)
-		return 0;
-
-	ubq = ublk_get_queue(ub, qid);
-	if (!ubq || !ubq->iommu_domain)
-		return 0;
-
-	domain = ubq->iommu_domain;
-
-	/* Allocate pages for SQ */
-	buf = alloc_pages_exact(nr_pages << PAGE_SHIFT,
-				GFP_KERNEL | __GFP_ZERO);
-	if (!buf)
-		return 0;
-
-	/*
-	 * IOMMU-map SQ pages. Use a dedicated IOVA range above the
-	 * per-IO mapping range. Each queue gets its own SQ IOVA at:
-	 *   base_iova - (qid + 1) * max_sq_size
-	 */
-	iova = ubq->base_iova - (u64)(qid + 1) * PAGE_ALIGN(sq_size);
-
-	for (i = 0; i < nr_pages; i++) {
-		phys_addr_t paddr = virt_to_phys(buf + i * PAGE_SIZE);
-
-		ret = iommu_map(domain, iova + i * PAGE_SIZE, paddr,
-				PAGE_SIZE, IOMMU_READ | IOMMU_WRITE,
-				GFP_KERNEL);
-		if (ret)
-			goto err_unmap;
-	}
-
-	ubq->bpf_sq_buf = buf;
-	ubq->bpf_sq_dma = iova;
-	ubq->bpf_sq_size = nr_pages << PAGE_SHIFT;
-	ubq->bpf_sq_tail = 0;
-	ubq->bpf_sq_qsize = sq_entries;
-	/* NVMe I/O SQ doorbell: base=0x1000, sqid=qid+1 */
-	ubq->bpf_sq_db_off = 0x1000 + (2 * (qid + 1)) * db_stride;
-
-	return iova;
-
-err_unmap:
-	if (i > 0)
-		iommu_unmap(domain, iova, i * PAGE_SIZE);
-	free_pages_exact(buf, nr_pages << PAGE_SHIFT);
-	return 0;
-}
-
-/*
- * Free a per-queue NVMe SQ buffer allocated by ublk_bpf_alloc_sq.
- */
-__bpf_kfunc void ublk_bpf_free_sq(struct ublk_bpf_ctx *ctx, int qid)
-{
-	struct ublk_device *ub = ctx->ub;
-	struct ublk_queue *ubq;
-
-	if (!ub || qid < 0 || qid >= ub->dev_info.nr_hw_queues)
-		return;
-
-	ubq = ublk_get_queue(ub, qid);
-	if (!ubq || !ubq->bpf_sq_buf)
-		return;
-
-	if (ubq->iommu_domain)
-		iommu_unmap(ubq->iommu_domain, ubq->bpf_sq_dma,
-			    ubq->bpf_sq_size);
-
-	free_pages_exact(ubq->bpf_sq_buf, ubq->bpf_sq_size);
-	ubq->bpf_sq_buf = NULL;
-	ubq->bpf_sq_dma = 0;
-}
-
-/*
- * Submit an NVMe command to the SQ buffer and advance the tail.
- * Copies @len bytes from @cmd to SQ[sq_tail], then increments sq_tail.
- *
- * @req: the block request (used to find the queue)
- * @cmd: pointer to 64-byte NVMe command built by BPF
- * @len: command length (must be 64)
- *
- * Returns the new sq_tail value, or negative on error.
- */
-__bpf_kfunc int ublk_bpf_submit_sq_cmd(struct request *req,
-					const void *cmd, __u32 len)
-{
-	struct ublk_queue *ubq = req->mq_hctx->driver_data;
-	void *dst;
-	__u16 *cid;
-
-	if (!ubq->bpf_sq_buf || len != 64)
-		return -EINVAL;
-
-	dst = ubq->bpf_sq_buf + (u32)ubq->bpf_sq_tail * 64;
-	memcpy(dst, cmd, 64);
-
-	/* Auto-set CID (command ID) = request tag, at offset 2 in SQ entry */
-	cid = dst + 2;
-	*cid = (__u16)req->tag;
-
-	if (++ubq->bpf_sq_tail >= ubq->bpf_sq_qsize)
-		ubq->bpf_sq_tail = 0;
-
-	return ubq->bpf_sq_tail;
-}
-
-/*
- * Write the SQ doorbell to flush pending submissions.
- * Called from commit_io_cmd or queue_io_cmd (when last=true).
- */
-__bpf_kfunc void ublk_bpf_flush_sq(struct ublk_bpf_ctx *ctx, int qid)
-{
-	struct ublk_device *ub = ctx->ub;
-	struct ublk_queue *ubq;
-
-	if (!ub || qid < 0 || qid >= ub->dev_info.nr_hw_queues)
-		return;
-
-	ubq = ublk_get_queue(ub, qid);
-	if (!ubq || !ctx->bar0)
-		return;
-
-	writel(ubq->bpf_sq_tail, ctx->bar0 + ubq->bpf_sq_db_off);
-}
-
-/*
- * Get the SQ DMA address for a queue (for Create I/O SQ command).
- * Called from userspace after init_queue to set up NVMe queues.
- */
-__bpf_kfunc __u64 ublk_bpf_get_sq_dma(struct ublk_bpf_ctx *ctx, int qid)
-{
-	struct ublk_device *ub = ctx->ub;
-	struct ublk_queue *ubq;
-
-	if (!ub || qid < 0 || qid >= ub->dev_info.nr_hw_queues)
-		return 0;
-
-	ubq = ublk_get_queue(ub, qid);
-	return ubq ? ubq->bpf_sq_dma : 0;
 }
 
 __bpf_kfunc_end_defs();
@@ -6158,13 +5905,6 @@ BTF_ID_FLAGS(func, ublk_bpf_map_dma)
 BTF_ID_FLAGS(func, ublk_bpf_unmap_dma)
 BTF_ID_FLAGS(func, ublk_bpf_mmio_writel)
 BTF_ID_FLAGS(func, ublk_bpf_mmio_readl)
-BTF_ID_FLAGS(func, ublk_bpf_iommu_map_arena)
-BTF_ID_FLAGS(func, ublk_bpf_iommu_unmap_arena)
-BTF_ID_FLAGS(func, ublk_bpf_alloc_sq)
-BTF_ID_FLAGS(func, ublk_bpf_free_sq)
-BTF_ID_FLAGS(func, ublk_bpf_submit_sq_cmd)
-BTF_ID_FLAGS(func, ublk_bpf_flush_sq)
-BTF_ID_FLAGS(func, ublk_bpf_get_sq_dma)
 BTF_KFUNCS_END(ublk_bpf_kfunc_ids)
 
 static const struct btf_kfunc_id_set ublk_bpf_kfunc_set = {
@@ -6173,16 +5913,6 @@ static const struct btf_kfunc_id_set ublk_bpf_kfunc_set = {
 };
 
 /* CFI stubs for ublk_bpf_ops */
-static int bpf_ublk_init_queue_stub(struct ublk_bpf_ctx *ctx,
-				    int qid, int depth)
-{
-	return 0;
-}
-
-static void bpf_ublk_deinit_queue_stub(struct ublk_bpf_ctx *ctx, int qid)
-{
-}
-
 static int bpf_ublk_queue_io_cmd_stub(struct ublk_bpf_ctx *ctx,
 				      struct request *req, bool last)
 {
@@ -6200,8 +5930,6 @@ static void bpf_ublk_complete_io_cmd_stub(struct ublk_bpf_ctx *ctx,
 }
 
 static struct ublk_bpf_ops __bpf_ops_ublk_bpf_ops = {
-	.init_queue = bpf_ublk_init_queue_stub,
-	.deinit_queue = bpf_ublk_deinit_queue_stub,
 	.queue_io_cmd = bpf_ublk_queue_io_cmd_stub,
 	.commit_io_cmd = bpf_ublk_commit_io_cmd_stub,
 	.complete_io_cmd = bpf_ublk_complete_io_cmd_stub,
