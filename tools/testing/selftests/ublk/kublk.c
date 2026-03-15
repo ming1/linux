@@ -1364,11 +1364,23 @@ static int __cmd_dev_add(const struct dev_ctx *ctx)
 		goto fail;
 	}
 
+	/* Load BPF struct_ops before creating the device */
+	if (ctx->bpf) {
+		ret = ublk_bpf_load(tgt_type);
+		if (ret < 0) {
+			ublk_err("%s: failed to load BPF for %s: %d\n",
+				 __func__, tgt_type, ret);
+			goto fail;
+		}
+	}
+
 	info = &dev->dev_info;
 	info->dev_id = ctx->dev_id;
 	info->nr_hw_queues = nr_queues;
 	info->queue_depth = depth;
 	info->flags = ctx->flags;
+	if (ctx->bpf)
+		info->flags |= UBLK_F_BPF | UBLK_F_USER_COPY;
 	if ((features & UBLK_F_QUIESCE) &&
 			(info->flags & UBLK_F_USER_RECOVERY))
 		info->flags |= UBLK_F_QUIESCE;
@@ -1401,6 +1413,8 @@ static int __cmd_dev_add(const struct dev_ctx *ctx)
 		ublk_ctrl_del_dev(dev);
 
 fail:
+	if (ctx->bpf)
+		ublk_bpf_unload();
 	if (ret < 0)
 		ublk_send_dev_event(ctx, dev, -1);
 	if (dev)
@@ -1618,6 +1632,8 @@ static int cmd_dev_get_features(void)
 		FEAT_NAME(UBLK_F_SAFE_STOP_DEV),
 		FEAT_NAME(UBLK_F_BATCH_IO),
 		FEAT_NAME(UBLK_F_NO_AUTO_PART_SCAN),
+		FEAT_NAME(UBLK_F_DMA_ZC),
+		FEAT_NAME(UBLK_F_BPF),
 	};
 	struct ublk_dev *dev;
 	__u64 features = 0;
@@ -1790,6 +1806,7 @@ int main(int argc, char *argv[])
 		{ "safe",		0,	NULL,  0 },
 		{ "batch",              0,      NULL, 'b'},
 		{ "no_auto_part_scan",	0,	NULL,  0 },
+		{ "bpf",		0,	NULL,  0 },
 		{ 0, 0, 0, 0 }
 	};
 	const struct ublk_tgt_ops *ops = NULL;
@@ -1905,6 +1922,8 @@ int main(int argc, char *argv[])
 				ctx.safe_stop = 1;
 			if (!strcmp(longopts[option_idx].name, "no_auto_part_scan"))
 				ctx.flags |= UBLK_F_NO_AUTO_PART_SCAN;
+			if (!strcmp(longopts[option_idx].name, "bpf"))
+				ctx.bpf = 1;
 			break;
 		case '?':
 			/*
