@@ -1888,8 +1888,10 @@ static bool ublk_start_io(const struct ublk_queue *ubq, struct request *req,
 			mapped_bytes >> 9;
 	}
 
-	/* Map bio pages via iommufd, write IOVA to iod->addr */
-	if (ubq->iommu_domain && ublk_rq_has_data(req)) {
+	/* Map bio pages via iommufd, write IOVA to iod->addr.
+	 * BPF mode: BPF queue_io_cmd handles DMA mapping via kfunc. */
+	if (ubq->iommu_domain && ublk_rq_has_data(req) &&
+	    !ublk_has_bpf_ops(ubq)) {
 		int ret = ublk_fill_dma_addrs((struct ublk_queue *)ubq, req);
 
 		if (ret < 0) {
