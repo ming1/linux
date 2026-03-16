@@ -363,6 +363,7 @@ struct ublk_params_header {
 static void ublk_io_release(void *priv);
 static void ublk_stop_dev_unlocked(struct ublk_device *ub);
 static inline bool ublk_has_bpf_ops(const struct ublk_queue *ubq);
+static struct ublk_bpf_ops *ublk_bpf_global_ops;
 static void ublk_abort_queue(struct ublk_device *ub, struct ublk_queue *ubq);
 static inline struct request *__ublk_check_and_get_req(struct ublk_device *ub,
 		u16 q_id, u16 tag, struct ublk_io *io);
@@ -4748,6 +4749,9 @@ static int ublk_ctrl_start_dev(struct ublk_device *ub,
 		}
 
 #ifdef CONFIG_BPF
+		if (ub->dev_info.flags & UBLK_F_BPF)
+			ub->bpf_ctx.ub = ub;
+
 		/* Ioremap BAR0 for BPF MMIO access */
 		if ((ub->dev_info.flags & UBLK_F_BPF) &&
 		    dp->vfio_dev_fd > 0) {
@@ -4780,11 +4784,19 @@ static int ublk_ctrl_start_dev(struct ublk_device *ub,
 				goto out_clear_iommu;
 			}
 
-			ub->bpf_ctx.ub = ub;
 			ub->bpf_ctx.bar0 = vpdev->barmap[0];
 			ub->bpf_ctx.bar0_size =
 				pci_resource_len(vpdev->pdev, 0);
 			fput(vfio_file);
+		}
+
+		if (ub->dev_info.flags & UBLK_F_BPF) {
+			if (!ublk_bpf_global_ops) {
+				pr_err("ublk: no BPF struct_ops attached\n");
+				ret = -EINVAL;
+				goto out_clear_iommu;
+			}
+			ub->bpf_ops = ublk_bpf_global_ops;
 		}
 #endif
 	}
@@ -5937,11 +5949,13 @@ static struct ublk_bpf_ops __bpf_ops_ublk_bpf_ops = {
 
 static int ublk_bpf_reg(void *kdata, struct bpf_link *link)
 {
+	ublk_bpf_global_ops = (struct ublk_bpf_ops *)kdata;
 	return 0;
 }
 
 static void ublk_bpf_unreg(void *kdata, struct bpf_link *link)
 {
+	ublk_bpf_global_ops = NULL;
 }
 
 static int ublk_bpf_init_member(const struct btf_type *t,
