@@ -4750,7 +4750,7 @@ static int ublk_ctrl_start_dev(struct ublk_device *ub,
 #ifdef CONFIG_BPF
 		/* Ioremap BAR0 for BPF MMIO access */
 		if ((ub->dev_info.flags & UBLK_F_BPF) &&
-		    dp->vfio_dev_fd >= 0) {
+		    dp->vfio_dev_fd > 0) {
 			struct file *vfio_file;
 			struct vfio_device *vdev;
 			struct vfio_pci_core_device *vpdev;
