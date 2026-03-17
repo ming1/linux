@@ -1539,6 +1539,7 @@ static void ublk_end_request(struct request *req, blk_status_t error)
 static void ublk_unmap_dma_addrs(struct ublk_queue *ubq,
 				 struct request *req)
 {
+	struct iommu_iotlb_gather iotlb_gather;
 	struct ublksrv_io_desc *iod;
 	struct ublk_io *io;
 	u64 iova;
@@ -1555,13 +1556,17 @@ static void ublk_unmap_dma_addrs(struct ublk_queue *ubq,
 	iova = ubq->base_iova + (u64)req->tag * ubq->max_io_bytes;
 
 	/*
-	 * Use iommu_unmap_fast() to defer IOTLB invalidation.
-	 * The gather accumulates unmapped ranges; the actual IOTLB flush
-	 * happens in ublk_fill_dma_addrs() before the next map, batching
-	 * multiple unmaps into a single hardware flush.
+	 * Use stack-local iotlb_gather and sync immediately, matching
+	 * the dma-iommu.c pattern (__iommu_dma_unmap). The previous
+	 * approach deferred sync to the next map via a shared per-queue
+	 * gather, but map (blk-mq dispatch) and unmap (io_uring
+	 * completion) can run concurrently on different CPUs, racing
+	 * on the shared gather structure.
 	 */
+	iommu_iotlb_gather_init(&iotlb_gather);
 	iommu_unmap_fast(ubq->iommu_domain, iova, io->dma_mapped_bytes,
-			  &ubq->iotlb_gather);
+			  &iotlb_gather);
+	iommu_iotlb_sync(ubq->iommu_domain, &iotlb_gather);
 	iod->addr = 0;
 }
 
@@ -1785,7 +1790,7 @@ static int ublk_fill_dma_addrs(struct ublk_queue *ubq,
 
 	if (nr_segs == 1) {
 		/*
-		 * Fast path: skip sg_init_table + blk_rq_map_sg + for_each_sg.
+		 * Fast path: single physical segment.
 		 * Use req_bvec() for starting phys address (following
 		 * nvme_pci_setup_data_simple pattern), blk_rq_payload_bytes()
 		 * for total length since single segment may span multiple
@@ -1825,15 +1830,6 @@ static int ublk_fill_dma_addrs(struct ublk_queue *ubq,
 
 	/* Per-tag fixed IOVA slot */
 	iova = ubq->base_iova + (u64)req->tag * ubq->max_io_bytes;
-
-	/*
-	 * Flush any accumulated IOTLB invalidations from prior unmaps.
-	 * This batches multiple iommu_unmap_fast() calls into a single
-	 * hardware IOTLB flush, matching the kernel DMA API's lazy flush
-	 * approach (see iommu-dma.c flush queue mechanism).
-	 */
-	if (ubq->iotlb_gather.start != ULONG_MAX)
-		iommu_iotlb_sync(ubq->iommu_domain, &ubq->iotlb_gather);
 
 	prot = IOMMU_CACHE | IOMMU_READ | IOMMU_WRITE;
 
@@ -2459,7 +2455,6 @@ static void ublk_queue_rqs(struct rq_list *rqlist)
 	struct rq_list submit_list = { };
 	struct ublk_io *io = NULL;
 	struct request *req;
-	bool bpf_mode = false;
 
 	while ((req = rq_list_pop(rqlist))) {
 		struct ublk_queue *this_q = req->mq_hctx->driver_data;
@@ -2471,7 +2466,11 @@ static void ublk_queue_rqs(struct rq_list *rqlist)
 		}
 
 		if (ublk_has_bpf_ops(this_q)) {
-			if (!ublk_bpf_queue_io(this_q, req, false))
+			struct request *next = rq_list_peek(rqlist);
+			bool last = !next ||
+				next->mq_hctx->driver_data != this_q;
+
+			if (!ublk_bpf_queue_io(this_q, req, last))
 				continue;
 			/* BPF wants forwarding, fall through to submit_list */
 		}
@@ -2529,7 +2528,11 @@ static void ublk_batch_queue_rqs(struct rq_list *rqlist)
 		}
 
 		if (ublk_has_bpf_ops(this_q)) {
-			if (!ublk_bpf_queue_io(this_q, req, false))
+			struct request *next = rq_list_peek(rqlist);
+			bool last = !next ||
+				next->mq_hctx->driver_data != this_q;
+
+			if (!ublk_bpf_queue_io(this_q, req, last))
 				continue;
 			/* BPF wants forwarding, fall through */
 		}
@@ -5895,8 +5898,19 @@ __bpf_kfunc void ublk_bpf_unmap_dma(struct request *req)
 __bpf_kfunc void ublk_bpf_mmio_writel(struct ublk_bpf_ctx *ctx,
 				       __u32 offset, __u32 value)
 {
-	if (ctx->bar0 && offset < ctx->bar0_size)
+	if (ctx->bar0 && offset < ctx->bar0_size) {
+		/*
+		 * Ensure all prior stores (BPF arena SQ entries) are
+		 * visible to the device before ringing the doorbell.
+		 * BPF arena stores go through addr_space_cast and may
+		 * not be ordered by writel()'s compiler barrier alone.
+		 */
+		wmb();
 		writel(value, ctx->bar0 + offset);
+	} else {
+		/* pr_warn("ublk_bpf_mmio_writel: SKIPPED bar0=%px offset=0x%x bar0_size=0x%lx\n",
+			ctx->bar0, offset, ctx->bar0_size); */
+	}
 }
 
 /*
