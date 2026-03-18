@@ -1577,18 +1577,16 @@ static inline void __ublk_complete_rq(struct request *req, struct ublk_io *io,
 	blk_status_t res = BLK_STS_OK;
 	bool requeue;
 
-	/* Call BPF complete callback and/or unmap IOMMU DMA mapping */
+	/* Call BPF complete callback */
+#ifdef CONFIG_BPF
 	{
 		struct ublk_queue *ubq = req->mq_hctx->driver_data;
 
-#ifdef CONFIG_BPF
 		if (ublk_has_bpf_ops(ubq))
 			ubq->dev->bpf_ops->complete_io_cmd(
 					&ubq->dev->bpf_ctx, req);
-#endif
-		if (ubq && ubq->iommu_domain)
-			ublk_unmap_dma_addrs(ubq, req);
 	}
+#endif
 
 	/* failed read IO if nothing is read */
 	if (!io->res && req_op(req) == REQ_OP_READ)
@@ -1882,19 +1880,6 @@ static bool ublk_start_io(const struct ublk_queue *ubq, struct request *req,
 
 		ublk_get_iod(ubq, req->tag)->nr_sectors =
 			mapped_bytes >> 9;
-	}
-
-	/* Map bio pages via iommufd, write IOVA to iod->addr.
-	 * BPF mode: BPF queue_io_cmd handles DMA mapping via kfunc. */
-	if (ubq->iommu_domain && ublk_rq_has_data(req) &&
-	    !ublk_has_bpf_ops(ubq)) {
-		int ret = ublk_fill_dma_addrs((struct ublk_queue *)ubq, req);
-
-		if (ret < 0) {
-			io->res = ret;
-			__ublk_complete_rq(req, io, false, NULL);
-			return false;
-		}
 	}
 
 	return true;
