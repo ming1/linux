@@ -62,6 +62,9 @@
 
 #define UBLK_INVALID_BUF_IDX 	((u16)-1)
 
+/* Number of IOVA round-robin slots per tag for lazy IOTLB flushing */
+#define UBLK_IOVA_ROUNDS	16
+
 /* private ioctl command mirror */
 #define UBLK_CMD_DEL_DEV_ASYNC	_IOC_NR(UBLK_U_CMD_DEL_DEV_ASYNC)
 #define UBLK_CMD_UPDATE_SIZE	_IOC_NR(UBLK_U_CMD_UPDATE_SIZE)
@@ -238,6 +241,7 @@ struct ublk_io {
 	void *buf_ctx_handle;
 	spinlock_t lock;
 	unsigned int dma_mapped_bytes; /* page-aligned size for iommu unmap */
+	unsigned int iova_round;      /* current round in per-tag IOVA pool */
 } ____cacheline_aligned_in_smp;
 
 struct ublk_queue {
@@ -249,9 +253,10 @@ struct ublk_queue {
 
 	/* DMA zero-copy via iommufd (UBLK_F_DMA_ZC) */
 	struct iommu_domain *iommu_domain; /* cached from IOAS for fast path */
-	struct iommu_iotlb_gather iotlb_gather; /* batched IOTLB invalidation */
 	u64 base_iova;		/* per-queue IOVA base */
 	u32 max_io_bytes;	/* max IO size for IOVA slot calculation */
+	u32 per_tag_iova_size;	/* IOVA pool size per tag (max_rounds * max_io_bytes) */
+	u16 max_rounds;		/* number of IOVA slots per tag before flush */
 
 
 	bool force_abort;
@@ -960,10 +965,10 @@ static int ublk_validate_params(const struct ublk_device *ub)
 		if (p->iommufd < 0)
 			return -EINVAL;
 
-		/* check IOVA range doesn't overflow */
+		/* check IOVA range doesn't overflow (round-robin slots) */
 		total = (u64)ub->dev_info.nr_hw_queues *
 			ub->dev_info.queue_depth *
-			ub->dev_info.max_io_buf_bytes;
+			ub->dev_info.max_io_buf_bytes * UBLK_IOVA_ROUNDS;
 		if (p->base_iova + total < p->base_iova)
 			return -EOVERFLOW;
 	}
@@ -1535,6 +1540,12 @@ static void ublk_end_request(struct request *req, blk_status_t error)
 /*
  * Unmap IOMMU mapping created by ublk_fill_dma_addrs() for this tag.
  * Must be called before the request completes and bio pages are freed.
+ *
+ * Uses per-tag IOVA round-robin to avoid per-IO IOTLB invalidation,
+ * matching the DMA API's lazy flush approach. Each tag has multiple
+ * IOVA slots (rounds); fresh slots don't need IOTLB flush since no
+ * stale TLB entry exists. Only when all slots are exhausted do we
+ * flush_iotlb_all() and wrap around.
  */
 static void ublk_unmap_dma_addrs(struct ublk_queue *ubq,
 				 struct request *req)
@@ -1552,21 +1563,31 @@ static void ublk_unmap_dma_addrs(struct ublk_queue *ubq,
 		return;
 
 	io = &ubq->ios[req->tag];
-	/* Unmap from the page-aligned per-tag slot base */
-	iova = ubq->base_iova + (u64)req->tag * ubq->max_io_bytes;
+	iova = ubq->base_iova +
+		(u64)req->tag * ubq->per_tag_iova_size +
+		(u64)io->iova_round * ubq->max_io_bytes;
 
-	/*
-	 * Use stack-local iotlb_gather and sync immediately, matching
-	 * the dma-iommu.c pattern (__iommu_dma_unmap). The previous
-	 * approach deferred sync to the next map via a shared per-queue
-	 * gather, but map (blk-mq dispatch) and unmap (io_uring
-	 * completion) can run concurrently on different CPUs, racing
-	 * on the shared gather structure.
-	 */
 	iommu_iotlb_gather_init(&iotlb_gather);
 	iommu_unmap_fast(ubq->iommu_domain, iova, io->dma_mapped_bytes,
 			  &iotlb_gather);
-	iommu_iotlb_sync(ubq->iommu_domain, &iotlb_gather);
+
+	/*
+	 * Advance to next IOVA slot. The next map on this tag uses a
+	 * fresh IOVA with no stale IOTLB entry, so no flush is needed.
+	 *
+	 * When all slots are exhausted, flush the entire domain's IOTLB
+	 * to cover all prior rounds' stale entries, then wrap around.
+	 * This batches IOTLB invalidation: one flush per UBLK_IOVA_ROUNDS
+	 * IOs instead of one per IO, matching the DMA API's lazy flush
+	 * approach. Page table pages are not freed during leaf-level
+	 * unmaps, so the gather's freelist is empty.
+	 */
+	io->iova_round++;
+	if (io->iova_round >= ubq->max_rounds) {
+		iommu_flush_iotlb_all(ubq->iommu_domain);
+		io->iova_round = 0;
+	}
+
 	iod->addr = 0;
 }
 
@@ -1826,8 +1847,10 @@ static int ublk_fill_dma_addrs(struct ublk_queue *ubq,
 		}
 	}
 
-	/* Per-tag fixed IOVA slot */
-	iova = ubq->base_iova + (u64)req->tag * ubq->max_io_bytes;
+	/* Per-tag IOVA slot with round-robin rotation */
+	iova = ubq->base_iova +
+		(u64)req->tag * ubq->per_tag_iova_size +
+		(u64)ubq->ios[req->tag].iova_round * ubq->max_io_bytes;
 
 	prot = IOMMU_CACHE | IOMMU_READ | IOMMU_WRITE;
 
@@ -3186,17 +3209,11 @@ static void ublk_stop_dev_unlocked(struct ublk_device *ub)
 	put_disk(disk);
 
 	if (ub->ioas) {
-		int i;
+		struct ublk_queue *ubq = ublk_get_queue(ub, 0);
 
-		/* Flush any pending IOTLB invalidations */
-		for (i = 0; i < ub->dev_info.nr_hw_queues; i++) {
-			struct ublk_queue *ubq = ublk_get_queue(ub, i);
-
-			if (ubq->iommu_domain &&
-			    ubq->iotlb_gather.start != ULONG_MAX)
-				iommu_iotlb_sync(ubq->iommu_domain,
-						  &ubq->iotlb_gather);
-		}
+		/* Flush any pending IOTLB invalidations from lazy unmap */
+		if (ubq->iommu_domain)
+			iommu_flush_iotlb_all(ubq->iommu_domain);
 		iommufd_ioas_unreserve_range(ub->ioas, ub);
 		iommufd_ioas_put(ub->iommufd_ctx, ub->ioas);
 		ub->ioas = NULL;
@@ -4711,10 +4728,15 @@ static int ublk_ctrl_start_dev(struct ublk_device *ub,
 			return PTR_ERR(ioas);
 		}
 
-		/* Reserve the IOVA range to prevent userspace conflicts */
+		/*
+		 * Reserve UBLK_IOVA_ROUNDS times the minimum IOVA space,
+		 * giving each tag that many round-robin slots. This enables
+		 * lazy IOTLB flushing: each IO uses a fresh IOVA slot,
+		 * and we only flush when all slots are exhausted.
+		 */
 		total_bytes = (u64)ub->dev_info.nr_hw_queues *
 			      ub->dev_info.queue_depth *
-			      ub->dev_info.max_io_buf_bytes;
+			      ub->dev_info.max_io_buf_bytes * UBLK_IOVA_ROUNDS;
 		ret = iommufd_ioas_reserve_range(ioas, dp->base_iova,
 				dp->base_iova + total_bytes - 1, ub);
 		if (ret) {
@@ -4732,10 +4754,13 @@ static int ublk_ctrl_start_dev(struct ublk_device *ub,
 
 			ubq->iommu_domain =
 				iommufd_ioas_first_domain(ioas);
-			iommu_iotlb_gather_init(&ubq->iotlb_gather);
 			ubq->max_io_bytes = ub->dev_info.max_io_buf_bytes;
+			ubq->per_tag_iova_size = ubq->max_io_bytes *
+				UBLK_IOVA_ROUNDS;
+			ubq->max_rounds = UBLK_IOVA_ROUNDS;
 			ubq->base_iova = dp->base_iova +
-				(u64)i * ubq->q_depth * ubq->max_io_bytes;
+				(u64)i * ubq->q_depth *
+				ubq->per_tag_iova_size;
 		}
 
 #ifdef CONFIG_BPF
