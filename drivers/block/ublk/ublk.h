@@ -312,6 +312,10 @@ struct ublk_params_header {
 	__u32	types;
 };
 
+void ublk_init_iod(struct ublk_queue *ubq, struct request *req,
+		   uint8_t ublk_op, uint32_t nr_sectors,
+		   uint64_t start_sector);
+
 #ifdef CONFIG_BLK_DEV_ZONED
 
 struct ublk_zoned_report_desc {
@@ -319,6 +323,39 @@ struct ublk_zoned_report_desc {
 	__u32 operation;
 	__u32 nr_zones;
 };
+
+int ublk_dev_param_zoned_validate(const struct ublk_device *ub);
+void ublk_dev_param_zoned_apply(struct ublk_device *ub);
+int ublk_revalidate_disk_zones(struct ublk_device *ub);
+blk_status_t ublk_setup_iod_zoned(struct ublk_queue *ubq,
+				   struct request *req);
+int ublk_report_zones(struct gendisk *disk, sector_t sector,
+		      unsigned int nr_zones,
+		      struct blk_report_zones_args *args);
+
+#else
+
+static inline int ublk_dev_param_zoned_validate(const struct ublk_device *ub)
+{
+	return -EOPNOTSUPP;
+}
+
+static inline void ublk_dev_param_zoned_apply(struct ublk_device *ub)
+{
+}
+
+static inline int ublk_revalidate_disk_zones(struct ublk_device *ub)
+{
+	return 0;
+}
+
+static inline blk_status_t ublk_setup_iod_zoned(struct ublk_queue *ubq,
+						 struct request *req)
+{
+	return BLK_STS_NOTSUPP;
+}
+
+#define ublk_report_zones	(NULL)
 
 #endif
 
