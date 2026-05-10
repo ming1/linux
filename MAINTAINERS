@@ -27610,7 +27610,7 @@ M:	Ming Lei <tom.leiming@gmail.com>
 L:	linux-block@vger.kernel.org
 S:	Maintained
 F:	Documentation/block/ublk.rst
-F:	drivers/block/ublk_drv.c
+F:	drivers/block/ublk/
 F:	include/uapi/linux/ublk_cmd.h
 F:	tools/testing/selftests/ublk/
 
