@@ -636,4 +636,116 @@ static inline unsigned ublk_pos_to_tag(loff_t pos)
 		UBLK_TAG_BITS_MASK;
 }
 
+/* Once we return, `io->req` can't be used any more */
+static inline struct request *
+ublk_fill_io_cmd(struct ublk_io *io, struct io_uring_cmd *cmd)
+{
+	struct request *req = io->req;
+
+	io->cmd = cmd;
+	io->flags |= UBLK_IO_FLAG_ACTIVE;
+	/* now this cmd slot is owned by ublk driver */
+	io->flags &= ~UBLK_IO_FLAG_OWNED_BY_SRV;
+
+	return req;
+}
+
+static inline void ublk_clear_auto_buf_reg(struct ublk_io *io,
+					   struct io_uring_cmd *cmd,
+					   u16 *buf_idx)
+{
+	if (io->flags & UBLK_IO_FLAG_AUTO_BUF_REG) {
+		io->flags &= ~UBLK_IO_FLAG_AUTO_BUF_REG;
+
+		/*
+		 * `UBLK_F_AUTO_BUF_REG` only works iff `UBLK_IO_FETCH_REQ`
+		 * and `UBLK_IO_COMMIT_AND_FETCH_REQ` are issued from same
+		 * `io_ring_ctx`.
+		 *
+		 * If this uring_cmd's io_ring_ctx isn't same with the
+		 * one for registering the buffer, it is ublk server's
+		 * responsibility for unregistering the buffer, otherwise
+		 * this ublk request gets stuck.
+		 */
+		if (io->buf_ctx_handle == io_uring_cmd_ctx_handle(cmd))
+			*buf_idx = io->buf.auto_reg.index;
+	}
+}
+
+static inline int ublk_check_fetch_buf(const struct ublk_device *ub,
+				       __u64 buf_addr)
+{
+	if (ublk_dev_need_map_io(ub)) {
+		/*
+		 * FETCH_RQ has to provide IO buffer if NEED GET
+		 * DATA is not enabled
+		 */
+		if (!buf_addr && !ublk_dev_need_get_data(ub))
+			return -EINVAL;
+	} else if (buf_addr) {
+		/* User copy requires addr to be unset */
+		return -EINVAL;
+	}
+	return 0;
+}
+
+static inline bool ublk_need_complete_req(const struct ublk_device *ub,
+					  struct ublk_io *io)
+{
+	if (ublk_dev_need_req_ref(ub))
+		return ublk_sub_req_ref(io);
+	return true;
+}
+
+enum auto_buf_reg_res {
+	AUTO_BUF_REG_FAIL,
+	AUTO_BUF_REG_FALLBACK,
+	AUTO_BUF_REG_OK,
+};
+
+/* ublk_main.c functions used by batch.c */
+int ublk_init_hctx(struct blk_mq_hw_ctx *hctx, void *driver_data,
+		   unsigned int hctx_idx);
+enum blk_eh_timer_return ublk_timeout(struct request *rq);
+int ublk_ch_open(struct inode *inode, struct file *filp);
+int ublk_ch_release(struct inode *inode, struct file *filp);
+ssize_t ublk_ch_read_iter(struct kiocb *iocb, struct iov_iter *to);
+ssize_t ublk_ch_write_iter(struct kiocb *iocb, struct iov_iter *from);
+int ublk_ch_mmap(struct file *filp, struct vm_area_struct *vma);
+bool ublk_start_io(const struct ublk_queue *ubq, struct request *req,
+		   struct ublk_io *io);
+enum auto_buf_reg_res
+ublk_auto_buf_register(const struct ublk_queue *ubq, struct request *req,
+		       struct ublk_io *io, struct io_uring_cmd *cmd,
+		       unsigned int issue_flags);
+void ublk_auto_buf_io_setup(const struct ublk_queue *ubq,
+			    struct request *req, struct ublk_io *io,
+			    struct io_uring_cmd *cmd,
+			    enum auto_buf_reg_res res);
+blk_status_t __ublk_queue_rq_common(struct ublk_queue *ubq,
+				    struct request *rq, bool *should_queue);
+blk_status_t ublk_prep_req(struct ublk_queue *ubq, struct request *rq,
+			   bool check_cancel);
+int __ublk_fetch(struct io_uring_cmd *cmd, struct ublk_device *ub,
+		 struct ublk_io *io, u16 q_id);
+void ublk_mark_io_ready(struct ublk_device *ub, u16 q_id,
+			struct ublk_io *io);
+void __ublk_complete_rq(struct request *req, struct ublk_io *io,
+			bool need_map, struct io_comp_batch *iob);
+void ublk_start_cancel(struct ublk_device *ub);
+void __ublk_fail_req(struct ublk_device *ub, struct ublk_io *io,
+		     struct request *req);
+int ublk_register_io_buf(struct io_uring_cmd *cmd, struct ublk_device *ub,
+			 u16 q_id, u16 tag, struct ublk_io *io,
+			 unsigned int index, unsigned int issue_flags);
+int ublk_unregister_io_buf(struct io_uring_cmd *cmd,
+			   const struct ublk_device *ub,
+			   unsigned int index, unsigned int issue_flags);
+
+/* batch.c exports */
+extern const struct blk_mq_ops ublk_batch_mq_ops;
+extern const struct file_operations ublk_ch_batch_io_fops;
+void ublk_abort_batch_queue(struct ublk_device *ub, struct ublk_queue *ubq);
+void ublk_batch_cancel_queue(struct ublk_queue *ubq);
+
 #endif
