@@ -197,6 +197,9 @@ struct ublk_io {
 	spinlock_t lock;
 } ____cacheline_aligned_in_smp;
 
+/* Defined in bpf.h (bpf.c only); used elsewhere as an opaque pointer. */
+struct ublk_bpf_ops;
+
 struct ublk_queue {
 	int q_id;
 	int q_depth;
@@ -210,6 +213,10 @@ struct ublk_queue {
 	spinlock_t		cancel_lock;
 	struct ublk_device *dev;
 	u32 nr_io_ready;
+#ifdef CONFIG_BPF
+	/* attached struct_ops, copied from the device at START_DEV */
+	struct ublk_bpf_ops	*bpf_ops;
+#endif
 
 	/*
 	 * For supporting UBLK_F_BATCH_IO only.
@@ -264,6 +271,16 @@ struct ublk_buf_range {
 	unsigned short flags;
 	unsigned int base_offset;	/* byte offset within buffer */
 };
+
+#ifdef CONFIG_BPF
+/* struct ublk_bpf_ctx and struct ublk_bpf_ops are defined in bpf.h (bpf.c). */
+int ublk_bpf_struct_ops_init(void);
+#else
+static inline int ublk_bpf_struct_ops_init(void)
+{
+	return 0;
+}
+#endif /* CONFIG_BPF */
 
 struct ublk_device {
 	struct gendisk		*ub_disk;

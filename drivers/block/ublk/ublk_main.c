@@ -3979,8 +3979,14 @@ static int __init ublk_init(void)
 	if (ret)
 		goto free_chrdev_region;
 
+	ret = ublk_bpf_struct_ops_init();
+	if (ret)
+		goto unregister_class;
+
 	return 0;
 
+unregister_class:
+	class_unregister(&ublk_chr_class);
 free_chrdev_region:
 	unregister_chrdev_region(ublk_chr_devt, UBLK_MINORS);
 unregister_mis:
