@@ -32,6 +32,7 @@ void ublk_bpf_queue_io_tw(struct ublk_queue *ubq, struct request *rq);
 void ublk_bpf_commit_io_cmds(struct ublk_queue *ubq);
 void ublk_bpf_complete_io_cmd(struct ublk_queue *ubq, struct request *req);
 int ublk_bpf_attach(struct ublk_device *ub);
+void ublk_bpf_detach(struct ublk_device *ub);
 #else
 static inline bool ublk_bpf_queue_io(struct ublk_queue *ubq,
 				     struct request *rq, bool last)
@@ -61,6 +62,10 @@ static inline void ublk_bpf_complete_io_cmd(struct ublk_queue *ubq,
 static inline int ublk_bpf_attach(struct ublk_device *ub)
 {
 	return 0;
+}
+
+static inline void ublk_bpf_detach(struct ublk_device *ub)
+{
 }
 #endif /* CONFIG_BPF */
 

@@ -1700,6 +1700,8 @@ static void ublk_stop_dev_unlocked(struct ublk_device *ub)
 	del_gendisk(ub->ub_disk);
 	disk = ublk_detach_disk(ub);
 	put_disk(disk);
+	/* no more I/O can reach the queues, drop the struct_ops reference */
+	ublk_bpf_detach(ub);
 }
 
 static void ublk_stop_dev(struct ublk_device *ub)
@@ -2673,6 +2675,10 @@ static int ublk_ctrl_start_dev(struct ublk_device *ub,
 		goto out_unlock;
 	}
 
+	ret = ublk_bpf_attach(ub);
+	if (ret)
+		goto out_unlock;
+
 	disk = blk_mq_alloc_disk(&ub->tag_set, &lim, NULL);
 	if (IS_ERR(disk)) {
 		ret = PTR_ERR(disk);
@@ -2733,6 +2739,8 @@ out_put_cdev:
 	if (ret)
 		put_disk(disk);
 out_unlock:
+	if (ret)
+		ublk_bpf_detach(ub);
 	mutex_unlock(&ub->mutex);
 	return ret;
 }

@@ -321,6 +321,11 @@ struct ublk_device {
 	struct maple_tree	buf_tree;
 	struct ida		buf_ida;
 
+#ifdef CONFIG_BPF
+	/* attached struct_ops; holds a bpf_struct_ops_get() reference */
+	struct ublk_bpf_ops	*bpf_ops;
+#endif
+
 	struct ublk_queue       *queues[];
 };
 

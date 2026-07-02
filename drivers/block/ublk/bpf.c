@@ -264,3 +264,62 @@ void ublk_bpf_complete_io_cmd(struct ublk_queue *ubq, struct request *req)
 			ops->complete_io_cmd(&ctx, req);
 	}
 }
+
+/*
+ * Attach the registered BPF struct_ops selected by UBLK_PARAM_TYPE_BPF
+ * (prog id 0 when the parameter is absent) to this device. Called from
+ * START_DEV; a UBLK_F_BPF device cannot start without an attached
+ * struct_ops. Pins the struct_ops map until ublk_bpf_detach().
+ */
+int ublk_bpf_attach(struct ublk_device *ub)
+{
+	struct ublk_bpf_ops *ops;
+	u32 id = 0;
+	int i;
+
+	if (!(ub->dev_info.flags & UBLK_F_BPF))
+		return 0;
+
+	if (ub->params.types & UBLK_PARAM_TYPE_BPF)
+		id = ub->params.bpf.prog_id;
+
+	mutex_lock(&ublk_bpf_prog_lock);
+	ops = id < UBLK_BPF_MAX_PROGS ? ublk_bpf_progs[id] : NULL;
+	if (ops && !bpf_struct_ops_get(ops))
+		ops = NULL;
+	mutex_unlock(&ublk_bpf_prog_lock);
+
+	if (!ops) {
+		pr_err("ublk: no BPF struct_ops registered with id %u\n", id);
+		return -EINVAL;
+	}
+	/* queue_io_cmd_tw is not wired into the UBLK_F_BATCH_IO daemon path yet */
+	if (ops->queue_io_cmd_tw &&
+	    (ub->dev_info.flags & UBLK_F_BATCH_IO)) {
+		pr_err("ublk: queue_io_cmd_tw unsupported with UBLK_F_BATCH_IO\n");
+		bpf_struct_ops_put(ops);
+		return -EINVAL;
+	}
+	ub->bpf_ops = ops;
+	for (i = 0; i < ub->dev_info.nr_hw_queues; i++)
+		ublk_get_queue(ub, i)->bpf_ops = ops;
+	return 0;
+}
+
+/*
+ * Drop the device's struct_ops reference. Called once I/O can no longer
+ * reach the queues (START_DEV failure, or after del_gendisk() in
+ * STOP_DEV/device removal); safe to call when nothing is attached.
+ */
+void ublk_bpf_detach(struct ublk_device *ub)
+{
+	int i;
+
+	if (!ub->bpf_ops)
+		return;
+
+	for (i = 0; i < ub->dev_info.nr_hw_queues; i++)
+		ublk_get_queue(ub, i)->bpf_ops = NULL;
+	bpf_struct_ops_put(ub->bpf_ops);
+	ub->bpf_ops = NULL;
+}
