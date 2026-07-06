@@ -844,6 +844,14 @@ int __ceph_caps_issued_other(struct ceph_inode_info *ci, struct ceph_cap *ocap)
 static void __touch_cap(struct ceph_cap *cap)
 {
 	struct ceph_mds_session *s = cap->session;
+	static u8 skip_counter;
+
+	if (data_race(++skip_counter))
+		/* skip this call most of the time to reduce lock
+		 * contention; the LRU list is still accurate enough
+		 * for ceph_trim_caps()
+		 */
+		return;
 
 	spin_lock(&s->s_cap_lock);
 	if (!s->s_cap_iterator) {
