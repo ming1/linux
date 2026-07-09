@@ -338,6 +338,12 @@ static blk_status_t ublk_batch_queue_rq(struct blk_mq_hw_ctx *hctx,
 	if (!should_queue)
 		return res;
 
+	if (ublk_has_bpf_ops(ubq)) {
+		if (!ublk_bpf_queue_io(ubq, rq, bd->last))
+			return BLK_STS_OK;
+		/* BPF wants userspace notification, fall through */
+	}
+
 	ublk_batch_queue_cmd(ubq, rq, bd->last);
 	return BLK_STS_OK;
 }
@@ -346,6 +352,11 @@ static void ublk_commit_rqs(struct blk_mq_hw_ctx *hctx)
 {
 	struct ublk_queue *ubq = hctx->driver_data;
 	struct ublk_batch_fetch_cmd *fcmd;
+
+	if (ublk_has_bpf_ops(ubq)) {
+		ublk_bpf_commit_io_cmds(ubq);
+		return;
+	}
 
 	spin_lock(&ubq->evts_lock);
 	fcmd = __ublk_acquire_fcmd(ubq);
@@ -393,6 +404,17 @@ static void ublk_batch_queue_rqs(struct rq_list *rqlist)
 		if (ublk_prep_req(this_q, req, true) != BLK_STS_OK) {
 			rq_list_add_tail(&requeue_list, req);
 			continue;
+		}
+
+		if (ublk_has_bpf_ops(this_q)) {
+			struct request *next = rq_list_peek(rqlist);
+			/* last for this queue: next request is a different one */
+			bool last = !next ||
+				    next->mq_hctx->driver_data != this_q;
+
+			if (!ublk_bpf_queue_io(this_q, req, last))
+				continue;	/* completed inline, not forwarded */
+			/* fall through to forward this request */
 		}
 
 		if (ubq && this_q != ubq && !rq_list_empty(&submit_list))

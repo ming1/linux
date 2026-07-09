@@ -651,6 +651,9 @@ void __ublk_complete_rq(struct request *req, struct ublk_io *io,
 	blk_status_t res = BLK_STS_OK;
 	bool requeue;
 
+	/* Let the attached BPF program clean up first */
+	ublk_bpf_complete_io_cmd(req->mq_hctx->driver_data, req);
+
 	/* failed read IO if nothing is read */
 	if (!io->res && req_op(req) == REQ_OP_READ)
 		io->res = -EIO;
@@ -942,7 +945,6 @@ static void ublk_queue_cmd_list(struct ublk_io *io, struct rq_list *l)
 {
 	struct io_uring_cmd *cmd = io->cmd;
 	struct ublk_uring_cmd_pdu *pdu = ublk_get_uring_cmd_pdu(cmd);
-
 	pdu->req_list = rq_list_peek(l);
 	rq_list_init(l);
 	io_uring_cmd_complete_in_task(cmd, ublk_cmd_list_tw_cb);
@@ -1046,6 +1048,12 @@ static blk_status_t ublk_queue_rq(struct blk_mq_hw_ctx *hctx,
 	if (!should_queue)
 		return res;
 
+	if (ublk_has_bpf_ops(ubq)) {
+		if (!ublk_bpf_queue_io(ubq, rq, bd->last))
+			return BLK_STS_OK;
+		/* BPF wants userspace notification, fall through */
+	}
+
 	ublk_queue_cmd(ubq, rq);
 	return BLK_STS_OK;
 }
@@ -1064,6 +1072,17 @@ static void ublk_queue_rqs(struct rq_list *rqlist)
 		if (ublk_prep_req(this_q, req, true) != BLK_STS_OK) {
 			rq_list_add_tail(&requeue_list, req);
 			continue;
+		}
+
+		if (ublk_has_bpf_ops(this_q)) {
+			struct request *next = rq_list_peek(rqlist);
+			/* last for this queue: next request is a different one */
+			bool last = !next ||
+				    next->mq_hctx->driver_data != this_q;
+
+			if (!ublk_bpf_queue_io(this_q, req, last))
+				continue;	/* completed inline, not forwarded */
+			/* fall through to forward this request */
 		}
 
 		if (io && (io_uring_cmd_ctx_handle(io->cmd) !=
@@ -1090,7 +1109,20 @@ int ublk_init_hctx(struct blk_mq_hw_ctx *hctx, void *driver_data,
 	return 0;
 }
 
+/*
+ * Only BPF mode uses ->commit_rqs() batching here; without BATCH_IO
+ * there is nothing to flush otherwise.
+ */
+static void ublk_commit_rqs(struct blk_mq_hw_ctx *hctx)
+{
+	struct ublk_queue *ubq = hctx->driver_data;
+
+	if (ublk_has_bpf_ops(ubq))
+		ublk_bpf_commit_io_cmds(ubq);
+}
+
 static const struct blk_mq_ops ublk_mq_ops = {
+	.commit_rqs	= ublk_commit_rqs,
 	.queue_rq       = ublk_queue_rq,
 	.queue_rqs      = ublk_queue_rqs,
 	.init_hctx	= ublk_init_hctx,

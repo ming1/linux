@@ -417,6 +417,20 @@ struct ublk_shmem_buf_reg {
  */
 #define UBLK_F_SHMEM_ZC	(1ULL << 19)
 
+/*
+ * Enable BPF struct_ops for I/O command handling.
+ *
+ * When set, a BPF program attached via struct_ops handles I/O dispatch
+ * directly from blk-mq queue_rq / queue_rqs context, bypassing
+ * task_work + io_uring notification to userspace. The BPF program may
+ * queue the request itself (e.g. to NVMe hardware via a pre-mapped
+ * UBLK_F_SHMEM_ZC IOVA, or into a buffer allocated from a BPF arena),
+ * or ask the driver to fall back to normal userspace forwarding.
+ *
+ * Requires UBLK_F_USER_COPY.
+ */
+#define UBLK_F_BPF (1ULL << 20)
+
 /* device state */
 #define UBLK_S_DEV_DEAD	0
 #define UBLK_S_DEV_LIVE	1

@@ -50,7 +50,8 @@
 		| UBLK_F_SAFE_STOP_DEV \
 		| UBLK_F_BATCH_IO \
 		| UBLK_F_NO_AUTO_PART_SCAN \
-		| UBLK_F_SHMEM_ZC)
+		| UBLK_F_SHMEM_ZC \
+		| (IS_ENABLED(CONFIG_BPF) ? UBLK_F_BPF : 0))
 
 #define UBLK_F_ALL_RECOVERY_FLAGS (UBLK_F_USER_RECOVERY \
 		| UBLK_F_USER_RECOVERY_REISSUE \
@@ -764,5 +765,8 @@ extern const struct blk_mq_ops ublk_batch_mq_ops;
 extern const struct file_operations ublk_ch_batch_io_fops;
 void ublk_abort_batch_queue(struct ublk_device *ub, struct ublk_queue *ubq);
 void ublk_batch_cancel_queue(struct ublk_queue *ubq);
+
+/* struct_ops dispatch helpers + BPF type definitions (bpf.c only) */
+#include "bpf.h"
 
 #endif

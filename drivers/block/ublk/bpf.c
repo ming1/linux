@@ -10,7 +10,6 @@
 /* expose the full struct ublk_bpf_ops / ublk_bpf_ctx definitions from bpf.h */
 #define __UBLK_BPF_INTERNAL
 #include "ublk.h"
-#include "bpf.h"
 
 /* CFI stubs for ublk_bpf_ops */
 static int bpf_ublk_queue_io_cmd_stub(struct ublk_bpf_ctx *ctx,
@@ -107,4 +106,83 @@ static struct bpf_struct_ops bpf_ublk_bpf_ops = {
 int ublk_bpf_struct_ops_init(void)
 {
 	return register_bpf_struct_ops(&bpf_ublk_bpf_ops, ublk_bpf_ops);
+}
+
+/*
+ * struct_ops dispatch helpers.
+ *
+ * These are the only places that dereference struct ublk_bpf_ops. Keeping
+ * them out of line here (rather than inline in ublk.h) confines the type's
+ * member accesses to this single translation unit, so the module BTF holds
+ * exactly one struct ublk_bpf_ops. A second, structurally identical copy
+ * from another TU would fail bpf_struct_ops_desc_init()'s value-type check
+ * ("second member ... should be ublk_bpf_ops") when ublk_drv is a module.
+ */
+
+/*
+ * Call BPF queue_io_cmd and complete the request based on its return
+ * value, applied here after the callback returns so the request stays
+ * valid for the whole callback and cannot be completed twice:
+ *
+ *   ret > 0: BPF completed the I/O with @ret bytes transferred.
+ *            Do NOT forward to userspace.
+ *
+ *   ret == 0: BPF processed the request (e.g. submitted it to
+ *             hardware through a pre-mapped UBLK_F_SHMEM_ZC IOVA)
+ *             but did not complete it. Forward to userspace for
+ *             CQ polling + completion.
+ *
+ *   ret < 0: Error. The negative errno is the result; complete immediately.
+ *
+ * The program signals completion and reports the result purely through the
+ * return value, so it never writes io state from this non-daemon, unlocked
+ * context.
+ *
+ * Returns true if the caller should forward to userspace
+ * (schedule task_work / batch dispatch for notification).
+ */
+bool ublk_bpf_queue_io(struct ublk_queue *ubq, struct request *rq, bool last)
+{
+	struct ublk_bpf_ops *ops = ubq->bpf_ops;
+	struct ublk_bpf_ctx ctx = { .ub = ubq->dev };
+	struct ublk_io *io = &ubq->ios[rq->tag];
+	int ret;
+
+	/*
+	 * We can only handle I/O whose buffer is a registered UBLK_F_SHMEM_ZC
+	 * buffer (index + offset encoded in iod->addr). Without
+	 * UBLK_IO_F_SHMEM_ZC we don't know the request buffer, so leave the I/O
+	 * to the ublk server by forwarding it to userspace.
+	 */
+	if (!ublk_iod_is_shmem_zc(ubq, rq->tag))
+		return true;
+
+	ret = ops->queue_io_cmd(&ctx, rq, last);
+	if (ret == 0)
+		return true;	/* forward to userspace for completion */
+
+	/* ret > 0: completed with @ret bytes; ret < 0: error result */
+	io->res = ret;
+	__ublk_complete_rq(rq, io, false, NULL);
+	return false;
+}
+
+void ublk_bpf_commit_io_cmds(struct ublk_queue *ubq)
+{
+	struct ublk_bpf_ops *ops = ubq->bpf_ops;
+	struct ublk_bpf_ctx ctx = { .ub = ubq->dev };
+
+	if (ops->commit_io_cmd)
+		ops->commit_io_cmd(&ctx, ubq->q_id);
+}
+
+void ublk_bpf_complete_io_cmd(struct ublk_queue *ubq, struct request *req)
+{
+	if (ublk_has_bpf_ops(ubq)) {
+		struct ublk_bpf_ops *ops = ubq->bpf_ops;
+		struct ublk_bpf_ctx ctx = { .ub = ubq->dev };
+
+		if (ops->complete_io_cmd)
+			ops->complete_io_cmd(&ctx, req);
+	}
 }

@@ -3,6 +3,56 @@
 #define __UBLK_BPF_H
 
 /*
+ * Included at the end of ublk.h, so struct ublk_queue / ublk_device / request
+ * are already defined here.
+ *
+ * BPF struct_ops dispatch helpers, no-op when UBLK_F_BPF is unset or no
+ * bpf_ops is attached to this queue.
+ */
+static inline bool ublk_has_bpf_ops(const struct ublk_queue *ubq)
+{
+#ifdef CONFIG_BPF
+	return (ubq->flags & UBLK_F_BPF) && ubq->bpf_ops;
+#else
+	return false;
+#endif
+}
+
+#ifdef CONFIG_BPF
+/*
+ * These helpers dereference struct ublk_bpf_ops (ubq->bpf_ops), so they are
+ * defined out of line in bpf.c. Keeping the type's only member accesses in a
+ * single translation unit means the module BTF carries just one copy of
+ * struct ublk_bpf_ops; a second copy (from a second TU) would fail the
+ * struct_ops value-type check on CONFIG_BLK_DEV_UBLK=m.
+ */
+bool ublk_bpf_queue_io(struct ublk_queue *ubq, struct request *rq, bool last);
+void ublk_bpf_commit_io_cmds(struct ublk_queue *ubq);
+void ublk_bpf_complete_io_cmd(struct ublk_queue *ubq, struct request *req);
+int ublk_bpf_attach(struct ublk_device *ub);
+#else
+static inline bool ublk_bpf_queue_io(struct ublk_queue *ubq,
+				     struct request *rq, bool last)
+{
+	return true;
+}
+
+static inline void ublk_bpf_commit_io_cmds(struct ublk_queue *ubq)
+{
+}
+
+static inline void ublk_bpf_complete_io_cmd(struct ublk_queue *ubq,
+					    struct request *req)
+{
+}
+
+static inline int ublk_bpf_attach(struct ublk_device *ub)
+{
+	return 0;
+}
+#endif /* CONFIG_BPF */
+
+/*
  * Full definitions of the BPF struct_ops types.
  *
  * Guarded so only bpf.c (which defines __UBLK_BPF_INTERNAL before including
