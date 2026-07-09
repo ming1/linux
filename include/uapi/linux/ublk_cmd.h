@@ -97,6 +97,23 @@ struct ublk_shmem_buf_reg {
 /* Pin pages without FOLL_WRITE; usable with write-sealed memfd */
 #define UBLK_SHMEM_BUF_READ_ONLY	(1U << 0)
 /*
+ * Register a device MMIO register window instead of shared memory.
+ *
+ * With this flag, ublk_shmem_buf_reg.addr is the caller's virtual address
+ * of a memory-mapped device register (e.g. an NVMe SQ doorbell inside a
+ * VFIO PCI BAR0 mapping) and len must be 4 (a single 32-bit register,
+ * 4-byte aligned). The kernel resolves the physical address behind the
+ * (VM_IO|VM_PFNMAP) mapping and ioremaps it; a UBLK_F_BPF struct_ops
+ * program writes the register via ublk_write_shmem_mmio().
+ *
+ * UBLK_U_CMD_REG_BUF returns an opaque buffer id (>= 0x10000, disjoint
+ * from shared-memory ids) to pass to the BPF program and to
+ * UBLK_U_CMD_UNREG_BUF. Reuses the shared-memory REG_BUF path, so it
+ * requires UBLK_F_SHMEM_ZC and UBLK_F_BPF; mutually exclusive with
+ * UBLK_SHMEM_BUF_READ_ONLY.
+ */
+#define UBLK_SHMEM_BUF_MMIO		(1U << 1)
+/*
  * 64bits are enough now, and it should be easy to extend in case of
  * running out of feature flags
  */

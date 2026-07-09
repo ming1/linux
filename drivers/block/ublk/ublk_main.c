@@ -37,6 +37,7 @@
 #include <linux/cdev.h>
 #include <linux/delay.h>
 #include <linux/mm.h>
+#include <linux/io.h>
 #include <asm/page.h>
 #include <linux/task_work.h>
 #include <linux/namei.h>
@@ -3541,6 +3542,140 @@ unwind:
 }
 
 /*
+ * Resolve the physical address behind a userspace VFIO BAR mapping and
+ * ioremap the requested register window. Mirrors generic_access_phys():
+ * the mapping is VM_IO|VM_PFNMAP with no struct page, so GUP cannot pin it;
+ * follow_pfnmap_start() reads the pfn + pgprot straight from the PTE and we
+ * ioremap_prot() with that pgprot so the kernel mapping's caching type
+ * matches VFIO's (pgprot_noncached) BAR mapping.
+ *
+ * VFIO installs BAR PTEs lazily via its fault handler, so the PTE may be
+ * absent on the first resolve; fault it in once with fixup_user_fault()
+ * and retry. fixup_user_fault() requires mmap_read_lock held, and with a
+ * NULL @unlocked it never drops the lock (unlike vfio_iommu_type1's
+ * follow_fault_pfn(), which passes &unlocked and restarts on -EAGAIN).
+ *
+ * A get_file() reference on the VMA's backing file is taken while the
+ * lock pins the VMA; for a VFIO device fd this keeps the BAR owner alive
+ * for the registration's lifetime. The caller must fput(buf->file) on
+ * teardown.
+ */
+static int ublk_mmio_map(struct mm_struct *mm, u64 uaddr, size_t len,
+			 struct ublk_mmio_buf *buf)
+{
+	struct follow_pfnmap_args args = { };
+	struct vm_area_struct *vma;
+	unsigned long offset = offset_in_page(uaddr);
+	phys_addr_t phys;
+	void __iomem *maddr;
+	pgprot_t prot;
+	bool faulted = false;
+	int ret;
+
+retry:
+	mmap_read_lock(mm);
+	vma = find_vma(mm, uaddr);
+	if (!vma || uaddr < vma->vm_start || uaddr + len > vma->vm_end) {
+		ret = -EINVAL;
+		goto unlock;
+	}
+	/* Must be genuine device MMIO, not RAM the caller happens to name. */
+	if (!(vma->vm_flags & (VM_IO | VM_PFNMAP)) || !vma->vm_file) {
+		ret = -EINVAL;
+		goto unlock;
+	}
+
+	args.vma = vma;
+	args.address = uaddr;
+	ret = follow_pfnmap_start(&args);
+	if (ret) {
+		if (!faulted &&
+		    !fixup_user_fault(mm, uaddr, FAULT_FLAG_WRITE, NULL)) {
+			faulted = true;
+			mmap_read_unlock(mm);
+			goto retry;
+		}
+		ret = -EFAULT;
+		goto unlock;
+	}
+	if (!args.writable) {
+		follow_pfnmap_end(&args);
+		ret = -EPERM;
+		goto unlock;
+	}
+
+	phys = ((phys_addr_t)args.pfn << PAGE_SHIFT) + offset;
+	prot = args.pgprot;
+	follow_pfnmap_end(&args);
+	buf->file = get_file(vma->vm_file);
+	mmap_read_unlock(mm);
+
+	maddr = ioremap_prot(phys - offset, PAGE_ALIGN(len + offset), prot);
+	if (!maddr) {
+		fput(buf->file);
+		buf->file = NULL;
+		return -ENOMEM;
+	}
+
+	buf->map_base = maddr;
+	buf->map_len = PAGE_ALIGN(len + offset);
+	buf->reg = maddr + offset;
+	buf->phys = phys;
+	buf->len = len;
+	return 0;
+
+unlock:
+	mmap_read_unlock(mm);
+	return ret;
+}
+
+static int ublk_ctrl_reg_mmio_buf(struct ublk_device *ub,
+				  struct ublk_shmem_buf_reg *buf_reg)
+{
+	struct ublk_mmio_buf *buf;
+	unsigned int memflags;
+	u32 id;
+	int ret;
+
+	if (!(ub->dev_info.flags & UBLK_F_BPF))
+		return -EOPNOTSUPP;
+	/* arbitrary MMIO registration is not for unprivileged devices */
+	if (ub->dev_info.flags & UBLK_F_UNPRIVILEGED_DEV)
+		return -EPERM;
+	/* v1: exactly one 32-bit register, 4-byte aligned. */
+	if (buf_reg->len != 4 || (buf_reg->addr & 0x3))
+		return -EINVAL;
+
+	buf = kzalloc_obj(*buf, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	ret = ublk_mmio_map(current->mm, buf_reg->addr, buf_reg->len, buf);
+	if (ret)
+		goto err_free;
+
+	memflags = ublk_lock_buf_tree(ub);
+	ret = xa_alloc(&ub->mmio_bufs, &id, buf,
+		       XA_LIMIT(UBLK_MMIO_BUF_ID_BASE,
+				UBLK_MMIO_BUF_ID_BASE + USHRT_MAX),
+		       GFP_KERNEL);
+	if (!ret)
+		buf->id = id;
+	ublk_unlock_buf_tree(ub, memflags);
+	if (ret)
+		goto err_unmap;
+
+	return id;
+
+err_unmap:
+	iounmap(buf->map_base);
+	fput(buf->file);
+err_free:
+	kfree(buf);
+	return ret;
+}
+
+/*
  * Register a shared memory buffer for zero-copy I/O.
  * Pins pages, builds PFN maple tree, freezes/unfreezes the queue
  * internally. Returns buffer index (>= 0) on success.
@@ -3558,19 +3693,29 @@ static int ublk_ctrl_reg_buf(struct ublk_device *ub,
 	int index;
 	int ret;
 
-	if (!ublk_dev_support_shmem_zc(ub))
-		return -EOPNOTSUPP;
-
 	memset(&buf_reg, 0, sizeof(buf_reg));
 	if (copy_from_user(&buf_reg, argp,
 			   min_t(size_t, header->len, sizeof(buf_reg))))
 		return -EFAULT;
 
-	if (buf_reg.flags & ~UBLK_SHMEM_BUF_READ_ONLY)
+	if (buf_reg.flags & ~(UBLK_SHMEM_BUF_READ_ONLY | UBLK_SHMEM_BUF_MMIO))
 		return -EINVAL;
-
 	if (buf_reg.reserved)
 		return -EINVAL;
+
+	if (!ublk_dev_support_shmem_zc(ub))
+		return -EOPNOTSUPP;
+
+	/*
+	 * MMIO register window: reuses the shmem-ZC REG_BUF path (hence the
+	 * gate above) and is additionally gated on UBLK_F_BPF, checked in
+	 * ublk_ctrl_reg_mmio_buf().
+	 */
+	if (buf_reg.flags & UBLK_SHMEM_BUF_MMIO) {
+		if (buf_reg.flags & UBLK_SHMEM_BUF_READ_ONLY)
+			return -EINVAL;
+		return ublk_ctrl_reg_mmio_buf(ub, &buf_reg);
+	}
 
 	if (!buf_reg.len || buf_reg.len > UBLK_SHMEM_BUF_SIZE_MAX ||
 	    !PAGE_ALIGNED(buf_reg.len) || !PAGE_ALIGNED(buf_reg.addr))
