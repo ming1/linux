@@ -3854,6 +3854,30 @@ static int ublk_shmem_remove_ranges(struct ublk_device *ub, int buf_index)
 	return ret;
 }
 
+static int ublk_ctrl_unreg_mmio_buf(struct ublk_device *ub, u32 id)
+{
+	struct ublk_mmio_buf *buf;
+	unsigned int memflags;
+
+	/*
+	 * The queue freeze in ublk_lock_buf_tree() drains all in-flight
+	 * dispatch, so once xa_erase() has removed the entry no
+	 * ublk_write_shmem_mmio() can still be holding it: in-flight lookups
+	 * were drained by the freeze, and later ones find nothing. iounmap()
+	 * may sleep, which is fine in this context.
+	 */
+	memflags = ublk_lock_buf_tree(ub);
+	buf = xa_erase(&ub->mmio_bufs, id);
+	ublk_unlock_buf_tree(ub, memflags);
+	if (!buf)
+		return -ENOENT;
+
+	iounmap(buf->map_base);
+	fput(buf->file);
+	kfree(buf);
+	return 0;
+}
+
 static int ublk_ctrl_unreg_buf(struct ublk_device *ub,
 			       struct ublksrv_ctrl_cmd *header)
 {
@@ -3863,6 +3887,10 @@ static int ublk_ctrl_unreg_buf(struct ublk_device *ub,
 
 	if (!ublk_dev_support_shmem_zc(ub))
 		return -EOPNOTSUPP;
+
+	/* MMIO ids are disjoint from shmem buffer ids */
+	if (index >= (int)UBLK_MMIO_BUF_ID_BASE)
+		return ublk_ctrl_unreg_mmio_buf(ub, index);
 
 	if (index < 0 || index > USHRT_MAX)
 		return -EINVAL;
