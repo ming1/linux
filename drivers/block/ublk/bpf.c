@@ -6,10 +6,80 @@
 #include <linux/bpf_verifier.h>
 #include <linux/btf.h>
 #include <linux/btf_ids.h>
+#include <linux/io.h>
+#include <linux/xarray.h>
 
 /* expose the full struct ublk_bpf_ops / ublk_bpf_ctx definitions from bpf.h */
 #define __UBLK_BPF_INTERNAL
 #include "ublk.h"
+
+/*
+ * BPF kfuncs for ublk struct_ops programs.
+ */
+__bpf_kfunc_start_defs();
+
+/*
+ * Get the I/O descriptor for a request.
+ * Contains operation type, sector offset, size, and the buffer address
+ * (a UBLK_F_SHMEM_ZC buffer index + offset when UBLK_IO_F_SHMEM_ZC is set).
+ */
+__bpf_kfunc struct ublksrv_io_desc *ublk_bpf_get_iod(struct request *req)
+{
+	struct ublk_queue *ubq = req->mq_hctx->driver_data;
+
+	return ublk_get_iod(ubq, req->tag);
+}
+
+
+/*
+ * Write a value into a registered shared buffer.
+ *
+ * v1 supports MMIO register windows (UBLK_SHMEM_BUF_MMIO): @buf_id is the id
+ * returned by UBLK_U_CMD_REG_BUF, @offset the byte offset within the window,
+ * @len must be 4, and the low 32 bits of @val are written to the register.
+ * The register mapping is looked up under RCU; a concurrent UBLK_CMD_UNREG_BUF
+ * that already erased it makes this return -ENOENT rather than touch freed
+ * iomem.
+ *
+ * writel() carries the wmb() an NVMe doorbell needs, so prior arena stores
+ * (e.g. the SQ entry) are ordered before the doorbell write.
+ */
+__bpf_kfunc int ublk_write_shmem_mmio(struct ublk_bpf_ctx *ctx, u32 buf_id,
+				      u64 offset, u64 val, u32 len)
+{
+	struct ublk_device *ub = ctx->ub;
+	struct ublk_mmio_buf *buf;
+	int ret = 0;
+
+	rcu_read_lock();
+	buf = xa_load(&ub->mmio_bufs, buf_id);
+	if (!buf) {
+		ret = -ENOENT;
+		goto out;
+	}
+	/* v1: single 32-bit, naturally aligned, in bounds. */
+	if (len != 4 || (offset & 0x3) ||
+	    offset > buf->len || len > buf->len - offset) {
+		ret = -EINVAL;
+		goto out;
+	}
+	writel(lower_32_bits(val), buf->reg + offset);
+out:
+	rcu_read_unlock();
+	return ret;
+}
+
+__bpf_kfunc_end_defs();
+
+BTF_KFUNCS_START(ublk_bpf_kfunc_ids)
+BTF_ID_FLAGS(func, ublk_bpf_get_iod)
+BTF_ID_FLAGS(func, ublk_write_shmem_mmio)
+BTF_KFUNCS_END(ublk_bpf_kfunc_ids)
+
+static const struct btf_kfunc_id_set ublk_bpf_kfunc_set = {
+	.owner = THIS_MODULE,
+	.set   = &ublk_bpf_kfunc_ids,
+};
 
 /* CFI stubs for ublk_bpf_ops */
 static int bpf_ublk_queue_io_cmd_stub(struct ublk_bpf_ctx *ctx,
@@ -160,6 +230,13 @@ static struct bpf_struct_ops bpf_ublk_bpf_ops = {
 
 int ublk_bpf_struct_ops_init(void)
 {
+	int ret;
+
+	ret = register_btf_kfunc_id_set(BPF_PROG_TYPE_STRUCT_OPS,
+					&ublk_bpf_kfunc_set);
+	if (ret)
+		return ret;
+
 	return register_bpf_struct_ops(&bpf_ublk_bpf_ops, ublk_bpf_ops);
 }
 
