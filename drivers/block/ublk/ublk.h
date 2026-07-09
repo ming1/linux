@@ -10,6 +10,7 @@
 #include <linux/kfifo.h>
 #include <linux/maple_tree.h>
 #include <linux/refcount.h>
+#include <linux/xarray.h>
 #include <uapi/linux/ublk_cmd.h>
 
 #define UBLK_MINORS		(1U << MINORBITS)
@@ -273,6 +274,32 @@ struct ublk_buf_range {
 	unsigned int base_offset;	/* byte offset within buffer */
 };
 
+/*
+ * Opaque id base for MMIO register buffers. Kept disjoint from
+ * shared-memory buffer ids (allocated via buf_ida in [0, USHRT_MAX]) so a
+ * single UBLK_U_CMD_UNREG_BUF can route by id range and ublk_write_shmem_mmio
+ * never confuses the two id spaces.
+ */
+#define UBLK_MMIO_BUF_ID_BASE	0x10000u
+
+/*
+ * A registered device MMIO register window (see UBLK_SHMEM_BUF_MMIO).
+ * Freed only once the datapath can no longer reach it (queue freeze or
+ * device teardown, plus an RCU grace period); iounmap() may sleep so it
+ * never runs from an RCU callback. @file pins the file backing the
+ * mapping; when that is a VFIO device fd it also keeps the device open
+ * and its BAR ownership alive for the registration's lifetime.
+ */
+struct ublk_mmio_buf {
+	void __iomem	*reg;		/* register VA (map_base + in-page offset) */
+	void __iomem	*map_base;	/* page-aligned ioremap base, for iounmap */
+	struct file	*file;		/* backing file reference, see above */
+	phys_addr_t	phys;		/* window physical address */
+	size_t		len;		/* window size in bytes (4 in v1) */
+	size_t		map_len;	/* PAGE_ALIGN(len + in-page offset) */
+	u32		id;		/* xarray key (>= UBLK_MMIO_BUF_ID_BASE) */
+};
+
 #ifdef CONFIG_BPF
 /* struct ublk_bpf_ctx and struct ublk_bpf_ops are defined in bpf.h (bpf.c). */
 int ublk_bpf_struct_ops_init(void);
@@ -320,6 +347,9 @@ struct ublk_device {
 	/* shared memory zero copy */
 	struct maple_tree	buf_tree;
 	struct ida		buf_ida;
+
+	/* MMIO register windows for UBLK_F_BPF (UBLK_SHMEM_BUF_MMIO) */
+	struct xarray		mmio_bufs;
 
 #ifdef CONFIG_BPF
 	/* attached struct_ops; holds a bpf_struct_ops_get() reference */

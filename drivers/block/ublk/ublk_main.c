@@ -2904,6 +2904,7 @@ static int ublk_ctrl_add_dev(const struct ublksrv_ctrl_cmd *header)
 	mutex_init(&ub->cancel_mutex);
 	mt_init(&ub->buf_tree);
 	ida_init(&ub->buf_ida);
+	xa_init_flags(&ub->mmio_bufs, XA_FLAGS_ALLOC);
 	INIT_WORK(&ub->partition_scan_work, ublk_partition_scan_work);
 
 	ret = ublk_alloc_dev_number(ub, header->dev_id);
@@ -3731,11 +3732,31 @@ static int ublk_ctrl_unreg_buf(struct ublk_device *ub,
 	return ret;
 }
 
+/*
+ * Free all MMIO register windows. Runs from device release
+ * (ublk_cdev_rel), on both normal stop and crash, after the datapath is
+ * already torn down, so no queue freeze or RCU drain is needed here.
+ */
+static void ublk_mmio_bufs_cleanup(struct ublk_device *ub)
+{
+	struct ublk_mmio_buf *buf;
+	unsigned long id;
+
+	xa_for_each(&ub->mmio_bufs, id, buf) {
+		xa_erase(&ub->mmio_bufs, id);
+		iounmap(buf->map_base);
+		fput(buf->file);
+		kfree(buf);
+	}
+	xa_destroy(&ub->mmio_bufs);
+}
+
 static void ublk_buf_cleanup(struct ublk_device *ub)
 {
 	ublk_shmem_remove_ranges(ub, -1);
 	mtree_destroy(&ub->buf_tree);
 	ida_destroy(&ub->buf_ida);
+	ublk_mmio_bufs_cleanup(ub);
 }
 
 /* Check if request pages match a registered shared memory buffer */
