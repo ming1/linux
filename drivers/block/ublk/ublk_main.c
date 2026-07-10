@@ -883,6 +883,13 @@ static void ublk_dispatch_req(struct ublk_queue *ubq, struct request *req)
 		return;
 	}
 
+	if (ublk_has_bpf_tw_ops(ubq))
+		/*
+		 * Run the submission callback here, in daemon task context,
+		 * then always forward the request to the ublk server below.
+		 */
+		ublk_bpf_queue_io_tw(ubq, req);
+
 	if (ublk_need_get_data(ubq) && ublk_need_map_req(req)) {
 		/*
 		 * We have not handled UBLK_IO_NEED_GET_DATA command yet,
@@ -1048,12 +1055,16 @@ static blk_status_t ublk_queue_rq(struct blk_mq_hw_ctx *hctx,
 	if (!should_queue)
 		return res;
 
-	if (ublk_has_bpf_ops(ubq)) {
+	if (ublk_has_bpf_ops(ubq) && !ublk_has_bpf_tw_ops(ubq)) {
 		if (!ublk_bpf_queue_io(ubq, rq, bd->last))
 			return BLK_STS_OK;
 		/* BPF wants userspace notification, fall through */
 	}
 
+	/*
+	 * queue_io_cmd_tw programs, and everything non-BPF, run their
+	 * submission handling from ublk_dispatch_req() in task-work context.
+	 */
 	ublk_queue_cmd(ubq, rq);
 	return BLK_STS_OK;
 }
@@ -1074,7 +1085,7 @@ static void ublk_queue_rqs(struct rq_list *rqlist)
 			continue;
 		}
 
-		if (ublk_has_bpf_ops(this_q)) {
+		if (ublk_has_bpf_ops(this_q) && !ublk_has_bpf_tw_ops(this_q)) {
 			struct request *next = rq_list_peek(rqlist);
 			/* last for this queue: next request is a different one */
 			bool last = !next ||

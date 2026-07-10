@@ -18,6 +18,11 @@ static int bpf_ublk_queue_io_cmd_stub(struct ublk_bpf_ctx *ctx,
 	return -EOPNOTSUPP;
 }
 
+static void bpf_ublk_queue_io_cmd_tw_stub(struct ublk_bpf_ctx *ctx,
+					  struct request *req)
+{
+}
+
 static void bpf_ublk_commit_io_cmd_stub(struct ublk_bpf_ctx *ctx,
 					int ubq_id)
 {
@@ -30,6 +35,7 @@ static void bpf_ublk_complete_io_cmd_stub(struct ublk_bpf_ctx *ctx,
 
 static struct ublk_bpf_ops __bpf_ops_ublk_bpf_ops = {
 	.queue_io_cmd = bpf_ublk_queue_io_cmd_stub,
+	.queue_io_cmd_tw = bpf_ublk_queue_io_cmd_tw_stub,
 	.commit_io_cmd = bpf_ublk_commit_io_cmd_stub,
 	.complete_io_cmd = bpf_ublk_complete_io_cmd_stub,
 };
@@ -41,8 +47,21 @@ static int ublk_bpf_reg(void *kdata, struct bpf_link *link)
 	struct ublk_bpf_ops *ops = kdata;
 
 	/* a prog that can never be asked to submit I/O is meaningless */
-	if (!ops->queue_io_cmd)
+	if (!ops->queue_io_cmd && !ops->queue_io_cmd_tw)
 		return -EINVAL;
+
+	/*
+	 * queue_io_cmd_tw runs the submission callback from ublk daemon
+	 * task-work context instead of queue_rq, so it replaces queue_io_cmd
+	 * and its commit_io_cmd batching, and needs complete_io_cmd to release
+	 * whatever per-I/O state it allocated.
+	 */
+	if (ops->queue_io_cmd_tw) {
+		if (ops->queue_io_cmd || ops->commit_io_cmd)
+			return -EINVAL;
+		if (!ops->complete_io_cmd)
+			return -EINVAL;
+	}
 
 	ublk_bpf_global_ops = kdata;
 	return 0;
@@ -165,6 +184,29 @@ bool ublk_bpf_queue_io(struct ublk_queue *ubq, struct request *rq, bool last)
 	io->res = ret;
 	__ublk_complete_rq(rq, io, false, NULL);
 	return false;
+}
+
+/* Does this queue's program dispatch submission from task-work context? */
+bool ublk_has_bpf_tw_ops(const struct ublk_queue *ubq)
+{
+	struct ublk_bpf_ops *ops = ubq->bpf_ops;
+
+	return (ubq->flags & UBLK_F_BPF) && ops && ops->queue_io_cmd_tw;
+}
+
+/*
+ * Task-work counterpart of ublk_bpf_queue_io(): invoked from the ublk daemon
+ * task context (ublk_dispatch_req). The callback returns void; the request is
+ * always forwarded to the ublk server for completion afterwards, so the
+ * program owns any success/failure bookkeeping through its own state and pairs
+ * with complete_io_cmd to release the per-I/O state when the request finishes.
+ */
+void ublk_bpf_queue_io_tw(struct ublk_queue *ubq, struct request *rq)
+{
+	struct ublk_bpf_ops *ops = ubq->bpf_ops;
+	struct ublk_bpf_ctx ctx = { .ub = ubq->dev };
+
+	ops->queue_io_cmd_tw(&ctx, rq);
 }
 
 void ublk_bpf_commit_io_cmds(struct ublk_queue *ubq)

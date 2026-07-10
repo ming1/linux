@@ -27,6 +27,8 @@ static inline bool ublk_has_bpf_ops(const struct ublk_queue *ubq)
  * struct_ops value-type check on CONFIG_BLK_DEV_UBLK=m.
  */
 bool ublk_bpf_queue_io(struct ublk_queue *ubq, struct request *rq, bool last);
+bool ublk_has_bpf_tw_ops(const struct ublk_queue *ubq);
+void ublk_bpf_queue_io_tw(struct ublk_queue *ubq, struct request *rq);
 void ublk_bpf_commit_io_cmds(struct ublk_queue *ubq);
 void ublk_bpf_complete_io_cmd(struct ublk_queue *ubq, struct request *req);
 int ublk_bpf_attach(struct ublk_device *ub);
@@ -35,6 +37,16 @@ static inline bool ublk_bpf_queue_io(struct ublk_queue *ubq,
 				     struct request *rq, bool last)
 {
 	return true;
+}
+
+static inline bool ublk_has_bpf_tw_ops(const struct ublk_queue *ubq)
+{
+	return false;
+}
+
+static inline void ublk_bpf_queue_io_tw(struct ublk_queue *ubq,
+					struct request *rq)
+{
 }
 
 static inline void ublk_bpf_commit_io_cmds(struct ublk_queue *ubq)
@@ -57,13 +69,11 @@ static inline int ublk_bpf_attach(struct ublk_device *ub)
  *
  * Guarded so only bpf.c (which defines __UBLK_BPF_INTERNAL before including
  * ublk.h) sees them, i.e. struct ublk_bpf_ops is materialized in a single
- * translation unit; every other TU needs no more than the forward declaration
- * in ublk.h that struct ublk_queue's bpf_ops pointer uses. A second,
+ * translation unit. Every other TU sees just the forward declaration in
+ * ublk.h that struct ublk_queue's bpf_ops pointer needs. A second,
  * structurally identical copy in another TU's DWARF would land in the module
  * BTF too and fail bpf_struct_ops_desc_init()'s value-type check ("second
  * member ... should be ublk_bpf_ops") when ublk_drv is a module.
- *
- * Must be included after ublk.h (struct ublk_device, struct request, bool).
  */
 #ifdef __UBLK_BPF_INTERNAL
 /*
@@ -89,6 +99,26 @@ struct ublk_bpf_ops {
 	/* I/O hot path (non-sleepable, called from queue_rq) */
 	int (*queue_io_cmd)(struct ublk_bpf_ctx *ctx,
 			    struct request *req, bool last);
+
+	/*
+	 * Task-work variant of queue_io_cmd, invoked from the ublk daemon
+	 * task context (ublk_dispatch_req) rather than the submitter's
+	 * queue_rq context. Use it when the program allocates per-I/O state
+	 * (e.g. a BPF arena buffer) that would race if built from an
+	 * arbitrary submitter context.
+	 *
+	 * Returns void: the request is always forwarded to the ublk server
+	 * for completion afterwards. There is no success/failure return
+	 * value, so the program is responsible for dealing with a potential
+	 * failure through its own state, and must pair with complete_io_cmd
+	 * to release the per-I/O state when the request finishes.
+	 *
+	 * Mutually exclusive with queue_io_cmd and commit_io_cmd, and
+	 * requires complete_io_cmd; both enforced at reg time. Batch/kick
+	 * ordering is the program's own responsibility, so no commit_io_cmd
+	 * hook is offered here.
+	 */
+	void (*queue_io_cmd_tw)(struct ublk_bpf_ctx *ctx, struct request *req);
 
 	void (*commit_io_cmd)(struct ublk_bpf_ctx *ctx, int ubq_id);
 
