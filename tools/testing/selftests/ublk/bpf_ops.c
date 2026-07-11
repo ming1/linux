@@ -10,18 +10,38 @@
 #ifdef HAVE_BPF
 #include <bpf/libbpf.h>
 #include <bpf/bpf.h>
+#include <pthread.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 #include "ublk_null.bpf.skel.h"
 #include "bpf/ublk_arena.h"
 #include "ublk_arena.bpf.skel.h"
 #include "ublk_fwd.bpf.skel.h"
+#include "ublk_mmio.bpf.skel.h"
 
 static struct ublk_null *null_skel;
 static struct ublk_arena *arena_skel;
 static struct ublk_fwd *fwd_skel;
+static struct ublk_mmio *mmio_skel;
 static struct bpf_link *ops_link;
 
 /* registration id of the loaded struct_ops prog, -1 when none */
 static int ublk_bpf_ops_id = -1;
+
+/* State for the MMIO-doorbell target (see ublk_mmio.bpf.c). */
+static struct {
+	void *bar_base;		/* mmap of the PCI BAR (resource0) */
+	size_t bar_len;
+	__u32 buf_id;		/* id returned by UBLK_U_CMD_REG_BUF, 0 = none */
+	int dev_id;
+	int unreg_after_ms;	/* >0: self-unregister mid-load (ENOENT test) */
+	const char *stat_path;	/* where the monitor writes live counters */
+	pthread_t monitor;
+	int monitor_started;
+	int stop;	/* re-read each loop across the usleep() call */
+	int did_unreg;
+} mmio;
 
 static int ublk_bpf_load_null(void)
 {
@@ -119,6 +139,175 @@ static int ublk_bpf_load_fwd(void)
 	return 0;
 }
 
+static int ublk_bpf_load_mmio(void)
+{
+	int err;
+
+	mmio_skel = ublk_mmio__open();
+	if (!mmio_skel) {
+		ublk_err("BPF: failed to open mmio skeleton\n");
+		return -ENOMEM;
+	}
+
+	err = ublk_mmio__load(mmio_skel);
+	if (err) {
+		ublk_err("BPF: failed to load mmio skeleton: %d\n", err);
+		goto destroy;
+	}
+
+	/*
+	 * Attach now; the datapath only rings once doorbell_buf_id is set
+	 * (in ublk_bpf_dev_ready, before I/O starts), so early I/O is inert.
+	 */
+	ops_link = bpf_map__attach_struct_ops(mmio_skel->maps.ublk_mmio_bpf_ops);
+	if (!ops_link) {
+		err = -errno;
+		ublk_err("BPF: failed to attach struct_ops: %d\n", err);
+		goto destroy;
+	}
+
+	ublk_bpf_ops_id = mmio_skel->struct_ops.ublk_mmio_bpf_ops->id;
+	ublk_dbg(UBLK_DBG_DEV, "BPF: mmio struct_ops attached\n");
+	return 0;
+
+destroy:
+	ublk_mmio__destroy(mmio_skel);
+	mmio_skel = NULL;
+	return err;
+}
+
+/* Snapshot the datapath counters into the stat file for the test to read. */
+static void ublk_mmio_write_stats(const char *phase)
+{
+	char buf[256];
+	int fd, n;
+
+	if (!mmio.stat_path)
+		return;
+	fd = open(mmio.stat_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	if (fd < 0)
+		return;
+	n = snprintf(buf, sizeof(buf),
+		     "phase=%s calls=%llu rings=%llu enoent=%llu other=%llu\n",
+		     phase,
+		     (unsigned long long)mmio_skel->bss->nr_calls,
+		     (unsigned long long)mmio_skel->bss->nr_rings,
+		     (unsigned long long)mmio_skel->bss->nr_enoent,
+		     (unsigned long long)mmio_skel->bss->nr_other_err);
+	if (n > 0)
+		(void)!write(fd, buf, n);
+	close(fd);
+}
+
+/*
+ * Monitor thread: publishes live datapath counters and, when configured,
+ * unregisters the MMIO window mid-load so the test can observe post-unreg
+ * rings returning -ENOENT (the RCU teardown fence) without a crash.
+ */
+static void *ublk_mmio_monitor(void *arg)
+{
+	int elapsed = 0;
+
+	while (!mmio.stop) {
+		const char *phase = mmio.did_unreg ? "post-unreg" : "armed";
+
+		if (mmio.unreg_after_ms > 0 && !mmio.did_unreg &&
+		    elapsed >= mmio.unreg_after_ms) {
+			int ret = ublk_ctrl_unreg_buf_by_id(mmio.dev_id,
+							    mmio.buf_id);
+			ublk_dbg(UBLK_DBG_DEV,
+				 "BPF: mmio self-unreg id %u ret %d\n",
+				 mmio.buf_id, ret);
+			mmio.did_unreg = 1;
+			phase = "post-unreg";
+		}
+
+		ublk_mmio_write_stats(phase);
+		usleep(100 * 1000);
+		elapsed += 100;
+	}
+	ublk_mmio_write_stats(mmio.did_unreg ? "post-unreg" : "armed");
+	return NULL;
+}
+
+/*
+ * Register the MMIO doorbell window once the char device exists. The BAR
+ * VA must live in this (daemon) process for the kernel to resolve its
+ * VM_PFNMAP PTE, so the mmap and the UBLK_U_CMD_REG_BUF are both done here.
+ *
+ * Config comes from the environment so no new kublk option is needed:
+ *   UBLK_MMIO_PCI       PCI address, e.g. 0000:00:0c.0 (required to arm)
+ *   UBLK_MMIO_BAR_OFF   byte offset of the register in BAR0 (default 0x1000,
+ *                       the NVMe SQ0 tail doorbell)
+ *   UBLK_MMIO_UNREG_MS  ms after which to self-unregister (0 = never)
+ *   UBLK_MMIO_STAT      path the monitor writes live counters to
+ */
+static int ublk_bpf_setup_mmio(struct ublk_dev *dev)
+{
+	const char *pci = getenv("UBLK_MMIO_PCI");
+	const char *off_s = getenv("UBLK_MMIO_BAR_OFF");
+	const char *ms_s = getenv("UBLK_MMIO_UNREG_MS");
+	unsigned long bar_off = off_s ? strtoul(off_s, NULL, 0) : 0x1000;
+	char path[256];
+	struct stat st;
+	void *base;
+	int fd, id;
+
+	mmio.buf_id = 0;
+	mmio.stat_path = getenv("UBLK_MMIO_STAT");
+	mmio.unreg_after_ms = ms_s ? atoi(ms_s) : 0;
+	mmio.dev_id = dev->dev_info.dev_id;
+
+	/* No device named: behave like the null target (leaves it disarmed). */
+	if (!pci || !*pci) {
+		ublk_dbg(UBLK_DBG_DEV, "BPF: mmio disarmed (no UBLK_MMIO_PCI)\n");
+		return 0;
+	}
+
+	snprintf(path, sizeof(path),
+		 "/sys/bus/pci/devices/%s/resource0", pci);
+	fd = open(path, O_RDWR | O_SYNC);
+	if (fd < 0) {
+		ublk_err("BPF: mmio open %s: %m\n", path);
+		return -errno;
+	}
+	if (fstat(fd, &st) < 0 || st.st_size <= (off_t)bar_off) {
+		ublk_err("BPF: mmio bad BAR size for %s\n", pci);
+		close(fd);
+		return -EINVAL;
+	}
+	base = mmap(NULL, st.st_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+	close(fd);
+	if (base == MAP_FAILED) {
+		ublk_err("BPF: mmio mmap %s: %m\n", path);
+		return -errno;
+	}
+	mmio.bar_base = base;
+	mmio.bar_len = st.st_size;
+
+	id = ublk_ctrl_reg_buf(dev, (char *)base + bar_off, 4,
+			       UBLK_SHMEM_BUF_MMIO);
+	if (id < 0) {
+		ublk_err("BPF: mmio REG_BUF failed: %d\n", id);
+		munmap(base, st.st_size);
+		mmio.bar_base = NULL;
+		return id;
+	}
+	mmio.buf_id = id;
+	mmio_skel->bss->doorbell_buf_id = id;
+	ublk_dbg(UBLK_DBG_DEV, "BPF: mmio armed id %d bar %s+0x%lx\n",
+		 id, pci, bar_off);
+
+	mmio.stop = 0;
+	mmio.did_unreg = 0;
+	if (pthread_create(&mmio.monitor, NULL, ublk_mmio_monitor, NULL) == 0)
+		mmio.monitor_started = 1;
+	else
+		ublk_mmio_write_stats("armed");
+
+	return 0;
+}
+
 /* registration id of the loaded struct_ops prog, -1 when none is loaded */
 int ublk_bpf_prog_id(void)
 {
@@ -127,6 +316,8 @@ int ublk_bpf_prog_id(void)
 
 int ublk_bpf_dev_ready(const struct dev_ctx *ctx, struct ublk_dev *dev)
 {
+	if (mmio_skel)
+		return ublk_bpf_setup_mmio(dev);
 	return 0;
 }
 
@@ -138,6 +329,8 @@ int ublk_bpf_load(const char *prog)
 		return ublk_bpf_load_arena();
 	if (!strcmp(prog, "fwd"))
 		return ublk_bpf_load_fwd();
+	if (!strcmp(prog, "mmio"))
+		return ublk_bpf_load_mmio();
 
 	ublk_err("BPF: unsupported prog '%s'\n", prog);
 	return -EINVAL;
@@ -169,6 +362,32 @@ void ublk_bpf_unload(void)
 			 (unsigned long long)arena_skel->arena->nr_ios);
 		ublk_arena__destroy(arena_skel);
 		arena_skel = NULL;
+	}
+	if (mmio_skel) {
+		/*
+		 * struct_ops is already detached above, so the datapath can no
+		 * longer ring. Stop the monitor, unregister the window if it is
+		 * still live, and drop our BAR mapping.
+		 */
+		if (mmio.monitor_started) {
+			mmio.stop = 1;
+			pthread_join(mmio.monitor, NULL);
+			mmio.monitor_started = 0;
+		}
+		if (mmio.buf_id && !mmio.did_unreg)
+			ublk_ctrl_unreg_buf_by_id(mmio.dev_id, mmio.buf_id);
+		if (mmio.bar_base) {
+			munmap(mmio.bar_base, mmio.bar_len);
+			mmio.bar_base = NULL;
+		}
+		fprintf(stderr,
+			"BPF: mmio calls %llu rings %llu enoent %llu other %llu\n",
+			(unsigned long long)mmio_skel->bss->nr_calls,
+			(unsigned long long)mmio_skel->bss->nr_rings,
+			(unsigned long long)mmio_skel->bss->nr_enoent,
+			(unsigned long long)mmio_skel->bss->nr_other_err);
+		ublk_mmio__destroy(mmio_skel);
+		mmio_skel = NULL;
 	}
 }
 

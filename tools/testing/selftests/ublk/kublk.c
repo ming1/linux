@@ -1229,8 +1229,8 @@ static void ublk_shmem_unregister_all(void)
 	shmem_count = 0;
 }
 
-static int ublk_ctrl_reg_buf(struct ublk_dev *dev, void *addr, size_t size,
-			     __u32 flags)
+int ublk_ctrl_reg_buf(struct ublk_dev *dev, void *addr, size_t size,
+		      __u32 flags)
 {
 	struct ublk_shmem_buf_reg buf_reg = {
 		.addr = (unsigned long)addr,
@@ -1245,6 +1245,36 @@ static int ublk_ctrl_reg_buf(struct ublk_dev *dev, void *addr, size_t size,
 	};
 
 	return __ublk_ctrl_cmd(dev, &data);
+}
+
+int ublk_ctrl_unreg_buf(struct ublk_dev *dev, int index)
+{
+	struct ublk_ctrl_cmd_data data = {
+		.cmd_op = UBLK_U_CMD_UNREG_BUF,
+		.flags = CTRL_CMD_HAS_DATA,
+		.data[0] = index,
+	};
+
+	return __ublk_ctrl_cmd(dev, &data);
+}
+
+/*
+ * Unregister a buffer from a device we don't already hold a control
+ * handle for (e.g. from a helper thread in the daemon). Opens a fresh
+ * control ring so it never races the daemon's own control ring.
+ */
+int ublk_ctrl_unreg_buf_by_id(int dev_id, int index)
+{
+	struct ublk_dev *dev;
+	int ret;
+
+	dev = ublk_ctrl_init();
+	if (!dev)
+		return -ENODEV;
+	dev->dev_info.dev_id = dev_id;
+	ret = ublk_ctrl_unreg_buf(dev, index);
+	ublk_ctrl_deinit(dev);
+	return ret;
 }
 
 /*

@@ -627,6 +627,11 @@ extern const struct ublk_tgt_ops fault_inject_tgt_ops;
 void backing_file_tgt_deinit(struct ublk_dev *dev);
 int backing_file_tgt_init(struct ublk_dev *dev, unsigned int nr_direct);
 
+/* shared-memory / MMIO buffer registration (used by BPF targets) */
+int ublk_ctrl_reg_buf(struct ublk_dev *dev, void *addr, size_t size,
+		      __u32 flags);
+int ublk_ctrl_unreg_buf(struct ublk_dev *dev, int index);
+int ublk_ctrl_unreg_buf_by_id(int dev_id, int index);
 
 /* BPF struct_ops support */
 int ublk_bpf_load(const char *type);
