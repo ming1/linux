@@ -76,6 +76,7 @@ TEST_PROGS += test_bpf_01.sh
 TEST_PROGS += test_bpf_02.sh
 TEST_PROGS += test_bpf_03.sh
 TEST_PROGS += test_bpf_04.sh
+TEST_PROGS += test_bpf_05.sh
 
 TEST_FILES := settings
 
@@ -207,7 +208,8 @@ $(INCLUDE_DIR)/%.bpf.skel.h: $(OBJ_DIR)/ublk/%.bpf.o $(BPFTOOL) | $(INCLUDE_DIR)
 BPF_SKELS := $(INCLUDE_DIR)/ublk_null.bpf.skel.h \
 	     $(INCLUDE_DIR)/ublk_arena.bpf.skel.h \
 	     $(INCLUDE_DIR)/ublk_fwd.bpf.skel.h \
-	     $(INCLUDE_DIR)/ublk_mmio.bpf.skel.h
+	     $(INCLUDE_DIR)/ublk_mmio.bpf.skel.h \
+	     $(INCLUDE_DIR)/ublk_tw.bpf.skel.h
 
 # kublk with BPF support
 CFLAGS += -DHAVE_BPF -I$(INCLUDE_DIR) -I$(BUILD_DIR)/include

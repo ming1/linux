@@ -61,6 +61,35 @@ static int loop_queue_shmem_zc_io(struct ublk_thread *t, struct ublk_queue *q,
 	return 1;
 }
 
+/*
+ * BPF task-work per-I/O buffer: when a queue_io_cmd_tw program allocated a
+ * buffer from its BPF arena for this tag, UBLK_F_USER_COPY has already moved
+ * the request data into that buffer (WRITE) or expects the read data there
+ * (READ). Use it as the I/O buffer for the backing file so the arena buffer
+ * really carries the I/O, just like loop_queue_shmem_zc_io() does for a
+ * registered shmem buffer.
+ */
+static int loop_queue_bpf_buf_io(struct ublk_thread *t, struct ublk_queue *q,
+				 const struct ublksrv_io_desc *iod, int tag,
+				 void *addr)
+{
+	unsigned ublk_op = ublksrv_get_op(iod);
+	enum io_uring_op op = ublk_to_uring_op(iod, 0);
+	__u64 file_offset = iod->start_sector << 9;
+	__u32 len = iod->nr_sectors << 9;
+	struct io_uring_sqe *sqe[1];
+
+	ublk_io_alloc_sqes(t, sqe, 1);
+	if (!sqe[0])
+		return -ENOMEM;
+
+	io_uring_prep_rw(op, sqe[0], ublk_get_registered_fd(q, 1),
+			 addr, len, file_offset);
+	io_uring_sqe_set_flags(sqe[0], IOSQE_FIXED_FILE);
+	sqe[0]->user_data = build_user_data(tag, ublk_op, 0, q->q_id, 1);
+	return 1;
+}
+
 static int loop_queue_tgt_rw_io(struct ublk_thread *t, struct ublk_queue *q,
 				const struct ublksrv_io_desc *iod, int tag)
 {
@@ -73,11 +102,16 @@ static int loop_queue_tgt_rw_io(struct ublk_thread *t, struct ublk_queue *q,
 	__u32 len = iod->nr_sectors << 9;
 	struct io_uring_sqe *sqe[3];
 	void *addr = io->buf_addr;
+	void *bpf_buf = ublk_bpf_tw_io_buf(tag, len);
 	unsigned short buf_index = ublk_io_buf_idx(t, q, tag);
 
 	/* shared memory zero-copy path */
 	if (iod->op_flags & UBLK_IO_F_SHMEM_ZC)
 		return loop_queue_shmem_zc_io(t, q, iod, tag);
+
+	/* BPF task-work per-I/O arena buffer path */
+	if (bpf_buf)
+		return loop_queue_bpf_buf_io(t, q, iod, tag, bpf_buf);
 
 	if (iod->op_flags & UBLK_IO_F_INTEGRITY) {
 		ublk_io_alloc_sqes(t, sqe, 1);

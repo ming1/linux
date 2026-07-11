@@ -6,6 +6,7 @@
 #include <linux/fs.h>
 #include <sys/un.h>
 #include "kublk.h"
+#include "bpf/ublk_tw.h"	/* IO_BUF_SIZE: tw arena buffer clamp */
 
 #define MAX_NR_TGT_ARG 	64
 
@@ -659,7 +660,8 @@ static void ublk_user_copy(const struct ublk_io *io, __u8 match_ublk_op)
 	__u64 off = ublk_user_copy_offset(q->q_id, io->tag);
 	__u8 ublk_op = ublksrv_get_op(iod);
 	__u32 len = iod->nr_sectors << 9;
-	void *addr = io->buf_addr;
+	void *tw = ublk_bpf_tw_io_buf(io->tag, len);
+	void *addr = tw ? tw : io->buf_addr;
 	ssize_t copied;
 
 	if (ublk_op != match_ublk_op)

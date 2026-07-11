@@ -637,6 +637,7 @@ int ublk_ctrl_unreg_buf_by_id(int dev_id, int index);
 int ublk_bpf_load(const char *type);
 void ublk_bpf_unload(void);
 int ublk_bpf_dev_ready(const struct dev_ctx *ctx, struct ublk_dev *dev);
+void *ublk_bpf_tw_io_buf(unsigned short tag, __u32 len);
 int ublk_bpf_prog_id(void);
 
 #endif

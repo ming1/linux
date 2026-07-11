@@ -16,18 +16,24 @@
 #include <fcntl.h>
 #include "ublk_null.bpf.skel.h"
 #include "bpf/ublk_arena.h"
+#include "bpf/ublk_tw.h"
 #include "ublk_arena.bpf.skel.h"
 #include "ublk_fwd.bpf.skel.h"
 #include "ublk_mmio.bpf.skel.h"
+#include "ublk_tw.bpf.skel.h"
 
 static struct ublk_null *null_skel;
 static struct ublk_arena *arena_skel;
 static struct ublk_fwd *fwd_skel;
 static struct ublk_mmio *mmio_skel;
+static struct ublk_tw *tw_skel;
 static struct bpf_link *ops_link;
 
 /* registration id of the loaded struct_ops prog, -1 when none */
 static int ublk_bpf_ops_id = -1;
+
+/* number of real I/O copies routed through a tw arena buffer */
+static __u64 nr_arena_copies;
 
 /* State for the MMIO-doorbell target (see ublk_mmio.bpf.c). */
 static struct {
@@ -308,10 +314,71 @@ static int ublk_bpf_setup_mmio(struct ublk_dev *dev)
 	return 0;
 }
 
+static int ublk_bpf_load_tw(void)
+{
+	int err;
+
+	tw_skel = ublk_tw__open();
+	if (!tw_skel) {
+		ublk_err("BPF: failed to open tw skeleton\n");
+		return -ENOMEM;
+	}
+
+	err = ublk_tw__load(tw_skel);
+	if (err) {
+		ublk_err("BPF: failed to load tw skeleton: %d\n", err);
+		ublk_tw__destroy(tw_skel);
+		tw_skel = NULL;
+		return err;
+	}
+
+	ops_link = bpf_map__attach_struct_ops(tw_skel->maps.ublk_tw_bpf_ops);
+	if (!ops_link) {
+		err = -errno;
+		ublk_err("BPF: failed to attach struct_ops: %d\n", err);
+		ublk_tw__destroy(tw_skel);
+		tw_skel = NULL;
+		return err;
+	}
+
+	ublk_bpf_ops_id = tw_skel->struct_ops.ublk_tw_bpf_ops->id;
+	ublk_dbg(UBLK_DBG_DEV, "BPF: tw struct_ops attached\n");
+	return 0;
+}
+
 /* registration id of the loaded struct_ops prog, -1 when none is loaded */
 int ublk_bpf_prog_id(void)
 {
 	return ublk_bpf_ops_id;
+}
+
+/*
+ * Return the mmapped arena buffer that the tw program allocated for @tag, or
+ * NULL when this device is not the tw target (or no buffer is mapped for the
+ * tag). Used by ublk_user_copy() to route the real I/O data through the arena
+ * buffer, proving it carries I/O rather than just being accounted.
+ *
+ * The arena buffers are IO_BUF_SIZE; a request larger than that (blk-mq can
+ * merge adjacent I/O far beyond the fio block size) must use the regular
+ * per-tag buffer instead, so pass the request length in @len and both the
+ * char-dev copy and the backing-file I/O consistently fall back.
+ */
+void *ublk_bpf_tw_io_buf(unsigned short tag, __u32 len)
+{
+	__u32 key = tag;
+	__u32 idx;
+
+	if (!tw_skel || len > IO_BUF_SIZE)
+		return NULL;
+
+	if (bpf_map__lookup_elem(tw_skel->maps.tag2buf, &key, sizeof(key),
+				 &idx, sizeof(idx), 0))
+		return NULL;
+	if (idx >= NR_BUFS)
+		return NULL;
+
+	__sync_fetch_and_add(&nr_arena_copies, 1);
+	return &tw_skel->arena->bufs[idx].data[0];
 }
 
 int ublk_bpf_dev_ready(const struct dev_ctx *ctx, struct ublk_dev *dev)
@@ -331,6 +398,8 @@ int ublk_bpf_load(const char *prog)
 		return ublk_bpf_load_fwd();
 	if (!strcmp(prog, "mmio"))
 		return ublk_bpf_load_mmio();
+	if (!strcmp(prog, "tw"))
+		return ublk_bpf_load_tw();
 
 	ublk_err("BPF: unsupported prog '%s'\n", prog);
 	return -EINVAL;
@@ -362,6 +431,35 @@ void ublk_bpf_unload(void)
 			 (unsigned long long)arena_skel->arena->nr_ios);
 		ublk_arena__destroy(arena_skel);
 		arena_skel = NULL;
+	}
+	if (tw_skel) {
+		/*
+		 * struct_ops is detached above, so no more task-work callbacks
+		 * run. Report the pool accounting for the test to assert on,
+		 * both to stderr and (if configured) to UBLK_TW_STAT.
+		 */
+		const char *stat = getenv("UBLK_TW_STAT");
+		char buf[160];
+		int n;
+
+		n = snprintf(buf, sizeof(buf),
+			     "alloc=%llu free=%llu busy=%llu badtag=%llu arena_copies=%llu\n",
+			     (unsigned long long)tw_skel->arena->nr_alloc,
+			     (unsigned long long)tw_skel->arena->nr_free,
+			     (unsigned long long)tw_skel->arena->nr_busy,
+			     (unsigned long long)tw_skel->arena->nr_badtag,
+			     (unsigned long long)nr_arena_copies);
+		fprintf(stderr, "BPF: tw %s", buf);
+		if (stat && n > 0) {
+			int fd = open(stat, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+
+			if (fd >= 0) {
+				(void)!write(fd, buf, n);
+				close(fd);
+			}
+		}
+		ublk_tw__destroy(tw_skel);
+		tw_skel = NULL;
 	}
 	if (mmio_skel) {
 		/*
@@ -408,7 +506,7 @@ int ublk_bpf_dev_ready(const struct dev_ctx *ctx, struct ublk_dev *dev)
 	return 0;
 }
 
-void *ublk_bpf_tw_io_buf(unsigned short tag)
+void *ublk_bpf_tw_io_buf(unsigned short tag, __u32 len)
 {
 	return NULL;
 }
