@@ -1061,6 +1061,16 @@ static void ublk_set_parameters(struct ublk_dev *dev)
 {
 	int ret;
 
+	/* select the struct_ops prog we loaded for this UBLK_F_BPF device */
+	if (dev->dev_info.flags & UBLK_F_BPF) {
+		int prog_id = ublk_bpf_prog_id();
+
+		if (prog_id >= 0) {
+			dev->tgt.params.types |= UBLK_PARAM_TYPE_BPF;
+			dev->tgt.params.bpf.prog_id = prog_id;
+		}
+	}
+
 	ret = ublk_ctrl_set_params(dev, &dev->tgt.params);
 	if (ret)
 		ublk_err("dev %d set basic parameter failed %d\n",
@@ -1704,11 +1714,23 @@ static int __cmd_dev_add(const struct dev_ctx *ctx)
 		goto fail;
 	}
 
+	/* Load BPF struct_ops before creating the device */
+	if (ctx->bpf) {
+		ret = ublk_bpf_load(ctx->bpf_prog ? ctx->bpf_prog : tgt_type);
+		if (ret < 0) {
+			ublk_err("%s: failed to load BPF for %s: %d\n",
+				 __func__, tgt_type, ret);
+			goto fail;
+		}
+	}
+
 	info = &dev->dev_info;
 	info->dev_id = ctx->dev_id;
 	info->nr_hw_queues = nr_queues;
 	info->queue_depth = depth;
 	info->flags = ctx->flags;
+	if (ctx->bpf)
+		info->flags |= UBLK_F_BPF | UBLK_F_USER_COPY;
 	if ((features & UBLK_F_QUIESCE) &&
 			(info->flags & UBLK_F_USER_RECOVERY))
 		info->flags |= UBLK_F_QUIESCE;
@@ -1746,12 +1768,28 @@ static int __cmd_dev_add(const struct dev_ctx *ctx)
 	if (!ctx->per_io_tasks && dev->nthreads > info->nr_hw_queues)
 		dev->nthreads = info->nr_hw_queues;
 
+	/*
+	 * With BPF loaded, give the program a chance to register per-device
+	 * resources (e.g. an MMIO doorbell window) now that the char device
+	 * exists but before I/O starts flowing.
+	 */
+	if (ctx->bpf) {
+		ret = ublk_bpf_dev_ready(ctx, dev);
+		if (ret < 0) {
+			ublk_err("%s: bpf dev_ready failed: %d\n", __func__, ret);
+			ublk_ctrl_del_dev(dev);
+			goto fail;
+		}
+	}
+
 	ret = ublk_start_daemon(ctx, dev);
 	ublk_dbg(UBLK_DBG_DEV, "%s: daemon exit %d\n", __func__, ret);
 	if (ret < 0)
 		ublk_ctrl_del_dev(dev);
 
 fail:
+	if (ctx->bpf)
+		ublk_bpf_unload();
 	if (ret < 0)
 		ublk_send_dev_event(ctx, dev, -1);
 	if (dev)
@@ -1970,6 +2008,7 @@ static int cmd_dev_get_features(void)
 		FEAT_NAME(UBLK_F_BATCH_IO),
 		FEAT_NAME(UBLK_F_NO_AUTO_PART_SCAN),
 		FEAT_NAME(UBLK_F_SHMEM_ZC),
+		FEAT_NAME(UBLK_F_BPF),
 	};
 	struct ublk_dev *dev;
 	__u64 features = 0;
@@ -2145,6 +2184,8 @@ int main(int argc, char *argv[])
 		{ "shmem_zc",		0,	NULL,  0  },
 		{ "htlb",		1,	NULL,  0  },
 		{ "rdonly_shmem_buf",	0,	NULL,  0  },
+		{ "bpf",		0,	NULL,  0 },
+		{ "bpf_prog",		1,	NULL,  0 },
 		{ 0, 0, 0, 0 }
 	};
 	const struct ublk_tgt_ops *ops = NULL;
@@ -2266,6 +2307,12 @@ int main(int argc, char *argv[])
 				ctx.htlb_path = strdup(optarg);
 			if (!strcmp(longopts[option_idx].name, "rdonly_shmem_buf"))
 				ctx.rdonly_shmem_buf = 1;
+			if (!strcmp(longopts[option_idx].name, "bpf"))
+				ctx.bpf = 1;
+			if (!strcmp(longopts[option_idx].name, "bpf_prog")) {
+				ctx.bpf = 1;
+				ctx.bpf_prog = strdup(optarg);
+			}
 			break;
 		case '?':
 			/*
