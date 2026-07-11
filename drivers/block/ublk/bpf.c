@@ -40,11 +40,21 @@ static struct ublk_bpf_ops __bpf_ops_ublk_bpf_ops = {
 	.complete_io_cmd = bpf_ublk_complete_io_cmd_stub,
 };
 
-struct ublk_bpf_ops *ublk_bpf_global_ops;
+/*
+ * Registered struct_ops progs, indexed by their user-chosen id. Multiple
+ * progs can be registered concurrently; a device selects one by id via
+ * UBLK_PARAM_TYPE_BPF at START_DEV.
+ */
+static struct ublk_bpf_ops *ublk_bpf_progs[UBLK_BPF_MAX_PROGS];
+static DEFINE_MUTEX(ublk_bpf_prog_lock);
 
 static int ublk_bpf_reg(void *kdata, struct bpf_link *link)
 {
 	struct ublk_bpf_ops *ops = kdata;
+	int ret = 0;
+
+	if (ops->id >= UBLK_BPF_MAX_PROGS)
+		return -EINVAL;
 
 	/* a prog that can never be asked to submit I/O is meaningless */
 	if (!ops->queue_io_cmd && !ops->queue_io_cmd_tw)
@@ -63,19 +73,45 @@ static int ublk_bpf_reg(void *kdata, struct bpf_link *link)
 			return -EINVAL;
 	}
 
-	ublk_bpf_global_ops = kdata;
-	return 0;
+	mutex_lock(&ublk_bpf_prog_lock);
+	if (ublk_bpf_progs[ops->id])
+		ret = -EBUSY;
+	else
+		ublk_bpf_progs[ops->id] = ops;
+	mutex_unlock(&ublk_bpf_prog_lock);
+	return ret;
 }
 
 static void ublk_bpf_unreg(void *kdata, struct bpf_link *link)
 {
-	ublk_bpf_global_ops = NULL;
+	struct ublk_bpf_ops *ops = kdata;
+
+	/*
+	 * Only hide the prog from new attachments: devices already attached
+	 * hold a bpf_struct_ops_get() reference, so the struct_ops map (and
+	 * its progs) stay alive until the last device detaches.
+	 */
+	mutex_lock(&ublk_bpf_prog_lock);
+	if (ublk_bpf_progs[ops->id] == ops)
+		ublk_bpf_progs[ops->id] = NULL;
+	mutex_unlock(&ublk_bpf_prog_lock);
 }
 
 static int ublk_bpf_init_member(const struct btf_type *t,
 				const struct btf_member *member,
 				void *kdata, const void *udata)
 {
+	const struct ublk_bpf_ops *uops = udata;
+	struct ublk_bpf_ops *ops = kdata;
+	u32 moff;
+
+	moff = __btf_member_bit_offset(t, member) / 8;
+	if (moff == offsetof(struct ublk_bpf_ops, id)) {
+		if (uops->id >= UBLK_BPF_MAX_PROGS)
+			return -EINVAL;
+		ops->id = uops->id;
+		return 1;
+	}
 	return 0;
 }
 

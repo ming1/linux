@@ -784,6 +784,19 @@ struct ublk_param_integrity {
 	__u8	pad[5];
 };
 
+/* At most this many BPF struct_ops progs can be registered concurrently */
+#define UBLK_BPF_MAX_PROGS	64
+
+/*
+ * Select which registered BPF struct_ops prog a UBLK_F_BPF device attaches
+ * at START_DEV: prog_id is the user-chosen id the prog set in its struct
+ * ublk_bpf_ops. Without UBLK_PARAM_TYPE_BPF the device attaches prog id 0.
+ */
+struct ublk_param_bpf {
+	__u32	prog_id;	/* < UBLK_BPF_MAX_PROGS */
+	__u32	reserved0;
+};
+
 struct ublk_params {
 	/*
 	 * Total length of parameters, userspace has to set 'len' for both
@@ -799,6 +812,7 @@ struct ublk_params {
 #define UBLK_PARAM_TYPE_DMA_ALIGN       (1 << 4)
 #define UBLK_PARAM_TYPE_SEGMENT         (1 << 5)
 #define UBLK_PARAM_TYPE_INTEGRITY       (1 << 6) /* requires UBLK_F_INTEGRITY */
+#define UBLK_PARAM_TYPE_BPF             (1 << 7) /* requires UBLK_F_BPF */
 	__u32	types;			/* types of parameter included */
 
 	struct ublk_param_basic		basic;
@@ -808,6 +822,7 @@ struct ublk_params {
 	struct ublk_param_dma_align	dma;
 	struct ublk_param_segment	seg;
 	struct ublk_param_integrity	integrity;
+	struct ublk_param_bpf		bpf;
 };
 
 /*

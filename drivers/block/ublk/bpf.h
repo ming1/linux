@@ -96,6 +96,13 @@ struct ublk_bpf_ctx {
  * needed.
  */
 struct ublk_bpf_ops {
+	/*
+	 * User-chosen registration id, < UBLK_BPF_MAX_PROGS. Set by the
+	 * BPF program in its struct_ops definition; a device selects the
+	 * prog to attach by this id via UBLK_PARAM_TYPE_BPF (default 0).
+	 */
+	u32 id;
+
 	/* I/O hot path (non-sleepable, called from queue_rq) */
 	int (*queue_io_cmd)(struct ublk_bpf_ctx *ctx,
 			    struct request *req, bool last);

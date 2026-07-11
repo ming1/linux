@@ -274,6 +274,13 @@ static int ublk_validate_params(const struct ublk_device *ub)
 			return -EINVAL;
 	}
 
+	if (ub->params.types & UBLK_PARAM_TYPE_BPF) {
+		if (!(ub->dev_info.flags & UBLK_F_BPF))
+			return -EINVAL;
+		if (ub->params.bpf.prog_id >= UBLK_BPF_MAX_PROGS)
+			return -EINVAL;
+	}
+
 	return 0;
 }
 
