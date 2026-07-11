@@ -13,9 +13,11 @@
 #include "ublk_null.bpf.skel.h"
 #include "bpf/ublk_arena.h"
 #include "ublk_arena.bpf.skel.h"
+#include "ublk_fwd.bpf.skel.h"
 
 static struct ublk_null *null_skel;
 static struct ublk_arena *arena_skel;
+static struct ublk_fwd *fwd_skel;
 static struct bpf_link *ops_link;
 
 /* registration id of the loaded struct_ops prog, -1 when none */
@@ -85,6 +87,38 @@ static int ublk_bpf_load_arena(void)
 	return 0;
 }
 
+static int ublk_bpf_load_fwd(void)
+{
+	int err;
+
+	fwd_skel = ublk_fwd__open();
+	if (!fwd_skel) {
+		ublk_err("BPF: failed to open fwd skeleton\n");
+		return -ENOMEM;
+	}
+
+	err = ublk_fwd__load(fwd_skel);
+	if (err) {
+		ublk_err("BPF: failed to load fwd skeleton: %d\n", err);
+		ublk_fwd__destroy(fwd_skel);
+		fwd_skel = NULL;
+		return err;
+	}
+
+	ops_link = bpf_map__attach_struct_ops(fwd_skel->maps.ublk_fwd_bpf_ops);
+	if (!ops_link) {
+		err = -errno;
+		ublk_err("BPF: failed to attach struct_ops: %d\n", err);
+		ublk_fwd__destroy(fwd_skel);
+		fwd_skel = NULL;
+		return err;
+	}
+
+	ublk_bpf_ops_id = fwd_skel->struct_ops.ublk_fwd_bpf_ops->id;
+	ublk_dbg(UBLK_DBG_DEV, "BPF: fwd struct_ops attached\n");
+	return 0;
+}
+
 /* registration id of the loaded struct_ops prog, -1 when none is loaded */
 int ublk_bpf_prog_id(void)
 {
@@ -102,6 +136,8 @@ int ublk_bpf_load(const char *prog)
 		return ublk_bpf_load_null();
 	if (!strcmp(prog, "arena"))
 		return ublk_bpf_load_arena();
+	if (!strcmp(prog, "fwd"))
+		return ublk_bpf_load_fwd();
 
 	ublk_err("BPF: unsupported prog '%s'\n", prog);
 	return -EINVAL;
@@ -116,6 +152,13 @@ void ublk_bpf_unload(void)
 	if (null_skel) {
 		ublk_null__destroy(null_skel);
 		null_skel = NULL;
+	}
+	if (fwd_skel) {
+		ublk_dbg(UBLK_DBG_DEV, "BPF: fwd saw %llu ios (%llu shmem_zc)\n",
+			 (unsigned long long)fwd_skel->bss->nr_ios,
+			 (unsigned long long)fwd_skel->bss->nr_shmem_zc_ios);
+		ublk_fwd__destroy(fwd_skel);
+		fwd_skel = NULL;
 	}
 	if (arena_skel) {
 		/*
