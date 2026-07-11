@@ -197,6 +197,10 @@ _cleanup_test() {
 
 _have_feature()
 {
+	# probing features needs /dev/ublk-control; load the driver first so
+	# tests that check features before _prep_test() don't skip spuriously
+	# when running in parallel with the module not yet loaded
+	modprobe ublk_drv > /dev/null 2>&1
 	if  $UBLK_PROG "features" | grep "$1" > /dev/null 2>&1; then
 		return 0
 	fi
