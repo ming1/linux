@@ -299,6 +299,11 @@ struct ceph_mds_session {
 
 	struct list_head  s_waiting;  /* waiting requests */
 	struct list_head  s_unsafe;   /* unsafe requests */
+	atomic_t          s_fill_inflight; /* reply fills offloaded from the mds worker */
+	wait_queue_head_t s_fill_wq;
+	bool s_fill_offload_enabled; /* readdir reply fills may be offloaded;
+				      * protected by mdsc->mutex
+				      */
 	struct xarray	  s_delegated_inos;
 };
 
@@ -380,6 +385,9 @@ struct ceph_mds_request {
  * __do_request() directly.
  */
 #define CEPH_MDS_R_RESEND		(11)
+#define CEPH_MDS_R_FILL_OFFLOADED	(12) /* reply fill runs on fill_wq;
+										  * the safe reply waits for it
+										  */
 	unsigned long	r_req_flags;
 
 	struct mutex r_fill_mutex;
@@ -417,6 +425,13 @@ struct ceph_mds_request {
 	struct ceph_mds_reply_info_parsed r_reply_info;
 	int r_err;
 	u32               r_readdir_offset;
+
+	/* readdir reply fill offloaded from the mds connection worker */
+	struct work_struct r_fill_work;
+	struct ceph_msg  *r_fill_msg;         /* owned by the fill work */
+	u64               r_fill_peer_features;
+	struct list_head  r_fill_chain_item;  /* link in i_fill_chain */
+	wait_queue_head_t r_fill_waitq;	  /* safe reply waits for the fill */
 
 	struct page *r_locked_page;
 	int r_dir_caps;
@@ -529,6 +544,7 @@ struct ceph_mds_client {
 	struct ceph_mds_session **sessions;    /* NULL for mds if no session */
 	atomic_t		num_sessions;
 	int                     max_sessions;  /* len of sessions array */
+	struct workqueue_struct *fill_wq;      /* offloaded reply fills */
 
 	spinlock_t              stopping_lock;  /* protect snap_empty */
 	int                     stopping;      /* the stage of shutting down */
