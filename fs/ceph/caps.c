@@ -3707,6 +3707,47 @@ static void handle_cap_grant(struct inode *inode,
 		}
 	}
 
+	/*
+	 * The counterpart on the grant arm: pages that survived a CACHE
+	 * revocation are only kept alive by LAZYIO, and they may have
+	 * gone stale while CACHE was away.  Once a later grant brings
+	 * CACHE back, ceph_pages_retained_for_lazyio() (addr.c) turns
+	 * false the moment CACHE shows up in the implemented set, and a
+	 * non-lazy opener would be served those folios as coherent
+	 * CACHE data.  Drop the cache here, before a non-lazy
+	 * read_iter/fault can use it.
+	 *
+	 * The aggregate check below still sees the pre-grant state:
+	 * cap->issued and cap->implemented are only updated further
+	 * down, so CACHE is absent from "implemented" here, exactly
+	 * as it was when the pages were retained.
+	 *
+	 * Dirty folios (this client's own lazy writes) are not
+	 * droppable -- ceph has no launder_folio() -- and are left in
+	 * place by the invalidate, which is fine: they hold current
+	 * local data.
+	 */
+	if (S_ISREG(inode->i_mode) &&
+	    ((newcaps & ~cap->issued) & CEPH_CAP_FILE_CACHE) &&
+	    inode->i_data.nrpages) {
+		int have, implemented;
+
+		have = __ceph_caps_issued(ci, &implemented);
+		implemented |= have;
+		if (!(implemented & CEPH_CAP_FILE_CACHE) &&
+		    (implemented & CEPH_CAP_FILE_LAZYIO) &&
+		    try_nonblocking_invalidate(inode)) {
+			/*
+			 * There were locked pages.. invalidate later in
+			 * a separate thread.
+			 */
+			if (ci->i_rdcache_revoking != ci->i_rdcache_gen) {
+				queue_invalidate = true;
+				ci->i_rdcache_revoking = ci->i_rdcache_gen;
+			}
+		}
+	}
+
 	if (was_stale)
 		cap->issued = cap->implemented = CEPH_CAP_PIN;
 
