@@ -379,6 +379,13 @@ struct ceph_inode_info {
 	struct ceph_vino i_vino;   /* ceph ino + snap */
 
 	spinlock_t i_ceph_lock;
+	/* offloaded readdir reply fills pending on this directory, in MDS
+	 * reply order; at most one runs at a time.  Protected by
+	 * i_ceph_lock.
+	 */
+	struct list_head i_fill_chain;
+	atomic_t i_fill_count;	/* number of fills on i_fill_chain */
+	wait_queue_head_t i_fill_wq;  /* woken when i_fill_count hits zero */
 
 	u64 i_version;
 	u64 i_inline_version;
