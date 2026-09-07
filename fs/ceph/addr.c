@@ -1411,8 +1411,6 @@ int ceph_process_folio_batch(struct address_space *mapping,
 		doutc(cl, "%llx.%llx will write folio %p idx %lu\n",
 		      ceph_vinop(inode), folio, folio->index);
 
-		fsc->write_congested = is_write_congestion_happened(fsc);
-
 		rc = move_dirty_folio_in_page_array(mapping, wbc, ceph_wbc,
 				folio);
 		if (rc) {
@@ -1425,6 +1423,8 @@ int ceph_process_folio_batch(struct address_space *mapping,
 			folio_unlock(folio);
 			break;
 		}
+
+		fsc->write_congested = is_write_congestion_happened(fsc);
 
 		ceph_wbc->fbatch.folios[i] = NULL;
 		ceph_wbc->len += folio_size(folio);
