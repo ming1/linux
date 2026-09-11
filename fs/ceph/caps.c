@@ -4726,15 +4726,12 @@ void ceph_handle_caps(struct ceph_mds_session *session,
 	case CEPH_CAP_OP_IMPORT:
 		realm = NULL;
 		if (snaptrace_len) {
-			down_write(&mdsc->snap_rwsem);
-			if (ceph_update_snap_trace(mdsc, snaptrace,
+			if (ceph_handle_snap_trace(mdsc, snaptrace,
 						   snaptrace + snaptrace_len,
 						   false, &realm)) {
-				up_write(&mdsc->snap_rwsem);
 				close_sessions = true;
 				goto done;
 			}
-			downgrade_write(&mdsc->snap_rwsem);
 		} else {
 			down_read(&mdsc->snap_rwsem);
 		}

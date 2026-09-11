@@ -4347,19 +4347,16 @@ static bool handle_reply_fill(struct ceph_mds_session *session,
 	/* snap trace */
 	realm = NULL;
 	if (rinfo->snapblob_len) {
-		down_write(&mdsc->snap_rwsem);
-		err = ceph_update_snap_trace(mdsc, rinfo->snapblob,
-				rinfo->snapblob + rinfo->snapblob_len,
-				le32_to_cpu(head->op) == CEPH_MDS_OP_RMSNAP,
-				&realm);
+		err = ceph_handle_snap_trace(mdsc, rinfo->snapblob,
+					     rinfo->snapblob + rinfo->snapblob_len,
+					     le32_to_cpu(head->op) == CEPH_MDS_OP_RMSNAP,
+					     &realm);
 		if (err) {
-			up_write(&mdsc->snap_rwsem);
 			close_sessions = true;
 			if (err == -EIO)
 				ceph_msg_dump(msg);
 			goto out_err;
 		}
-		downgrade_write(&mdsc->snap_rwsem);
 	} else {
 		down_read(&mdsc->snap_rwsem);
 	}
