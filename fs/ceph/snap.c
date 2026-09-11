@@ -932,6 +932,98 @@ fail:
 	return err;
 }
 
+/*
+ * Return a referenced first realm only if the entire snap trace can
+ * be consumed without changing the cached topology or snapshot
+ * contexts.
+ *
+ * Caller must lock snap_rwsem for reading.
+ */
+static struct ceph_snap_realm *get_snap_trace_if_unmodified(struct ceph_mds_client *mdsc,
+							    void *p, void *e)
+{
+	struct ceph_snap_realm *first = NULL, *realm;
+	struct ceph_mds_snap_realm *ri;
+	bool empty;
+	u64 num;
+
+	lockdep_assert_held_read(&mdsc->snap_rwsem);
+
+	do {
+		ceph_decode_need(&p, e, sizeof(*ri), call_update);
+		ri = p;
+		p += sizeof(*ri);
+		num = (u64)le32_to_cpu(ri->num_snaps) +
+		      le32_to_cpu(ri->num_prior_parent_snaps);
+		if (num > (e - p) / sizeof(u64))
+			goto call_update;
+		p += num * sizeof(u64);
+
+		realm = __lookup_snap_realm(mdsc, le64_to_cpu(ri->ino));
+		if (!realm || !realm->parent ||
+		    realm->parent->ino != le64_to_cpu(ri->parent) ||
+		    le64_to_cpu(ri->seq) > realm->seq ||
+		    !realm->cached_context)
+			goto call_update;
+		if (!first)
+			first = realm;
+	} while (p < e);
+
+	/* if there are empty realms, ceph_update_snap_trace() should
+	 * be called for its deferred realm cleanup
+	 */
+	spin_lock(&mdsc->snap_empty_lock);
+	empty = list_empty(&mdsc->snap_empty);
+	spin_unlock(&mdsc->snap_empty_lock);
+	if (!empty)
+		goto call_update;
+
+	/* the ceph_update_snap_trace() call can be omitted (and the
+	 * write lock on snap_rwsem is not necessary); acquire a
+	 * reference to the return value
+	 */
+	ceph_get_snap_realm(mdsc, first);
+	return first;
+
+call_update:
+	/* ceph_update_snap_trace() must be called */
+	return NULL;
+}
+
+/*
+ * Wrapper for ceph_update_snap_trace() which acquires snap_rwsem for
+ * writing only if the new snap trace has really changed.
+ *
+ * Caller must not lock snap_rwsem.  Upon successful return,
+ * snap_rwsem is left locked for reading, but is unlocked on error.
+ */
+int ceph_handle_snap_trace(struct ceph_mds_client *mdsc,
+			   void *p, void *e, bool deletion,
+			   struct ceph_snap_realm **realm_ret)
+{
+	int err;
+
+	lockdep_assert_not_held(&mdsc->snap_rwsem);
+
+	*realm_ret = NULL;
+	down_read(&mdsc->snap_rwsem);
+	if (!deletion) {
+		*realm_ret = get_snap_trace_if_unmodified(mdsc, p, e);
+		if (*realm_ret)
+			return 0;
+	}
+	up_read(&mdsc->snap_rwsem);
+
+	/* reparse from the beginning: the topology may change while unlocked */
+	down_write(&mdsc->snap_rwsem);
+	err = ceph_update_snap_trace(mdsc, p, e, deletion, realm_ret);
+	if (err)
+		up_write(&mdsc->snap_rwsem);
+	else
+		downgrade_write(&mdsc->snap_rwsem);
+	return err;
+}
+
 
 /*
  * Send any cap_snaps that are queued for flush.  Try to carry
