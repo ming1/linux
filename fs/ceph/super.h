@@ -1062,6 +1062,9 @@ extern void ceph_put_snap_realm(struct ceph_mds_client *mdsc,
 extern int ceph_update_snap_trace(struct ceph_mds_client *m,
 				  void *p, void *e, bool deletion,
 				  struct ceph_snap_realm **realm_ret);
+int ceph_handle_snap_trace(struct ceph_mds_client *mdsc,
+			   void *p, void *e, bool deletion,
+			   struct ceph_snap_realm **realm_ret);
 void ceph_change_snap_realm(struct inode *inode, struct ceph_snap_realm *realm);
 extern void ceph_handle_snap(struct ceph_mds_client *mdsc,
 			     struct ceph_mds_session *session,
