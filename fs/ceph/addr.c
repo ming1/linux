@@ -221,7 +221,7 @@ static void finish_netfs_read(struct ceph_osd_request *req)
 	bool sparse = (op->op == CEPH_OSD_OP_SPARSE_READ);
 
 	ceph_update_read_metrics(&fsc->mdsc->metric, req->r_start_latency,
-				 req->r_end_latency, osd_data->length, err);
+				 req->r_end_latency, op->extent.length, err);
 
 	doutc(cl, "result %d subreq->len=%zu i_size=%lld\n", req->r_result,
 	      subreq->len, i_size_read(req->r_inode));
