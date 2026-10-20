@@ -2047,13 +2047,23 @@ static int wake_up_session_cb(struct inode *inode, int mds, void *arg)
 		spin_unlock(&ci->i_ceph_lock);
 	} else if (ev == RENEWCAPS) {
 		struct ceph_cap *cap;
+		bool revoking = false;
 
 		spin_lock(&ci->i_ceph_lock);
 		cap = __get_cap_for_mds(ci, mds);
 		/* mds did not re-issue stale cap */
 		if (cap && cap->cap_gen < atomic_read(&cap->session->s_cap_gen))
 			cap->issued = cap->implemented = CEPH_CAP_PIN;
+		/*
+		 * A revocation that ceph_check_caps() put off while the cap
+		 * was stale (its cache was not invalidated then) is not
+		 * looked at again by anything else: check the caps now.
+		 */
+		if (cap && (cap->implemented & ~cap->issued))
+			revoking = true;
 		spin_unlock(&ci->i_ceph_lock);
+		if (revoking)
+			ceph_queue_check_caps(inode);
 	} else if (ev == FORCE_RO) {
 	}
 	wake_up_all(&ci->i_cap_wq);
@@ -6617,7 +6627,9 @@ int ceph_mdsc_init(struct ceph_fs_client *fsc)
 	err = ceph_metric_init(&mdsc->metric);
 	if (err)
 		goto err_mdsmap;
-	ceph_subvolume_metrics_init(&mdsc->subvol_metrics);
+	err = ceph_subvolume_metrics_init(&mdsc->subvol_metrics);
+	if (err)
+		goto err_metric;
 	mutex_init(&mdsc->subvol_metrics_last_mutex);
 	mdsc->subvol_metrics_last = NULL;
 	mdsc->subvol_metrics_last_nr = 0;
@@ -6649,6 +6661,8 @@ int ceph_mdsc_init(struct ceph_fs_client *fsc)
 	fsc->mdsc = mdsc;
 	return 0;
 
+err_metric:
+	ceph_metric_destroy(&mdsc->metric);
 err_mdsmap:
 	kfree(mdsc->mdsmap);
 err_mdsc:
@@ -7153,6 +7167,8 @@ void ceph_mdsc_destroy(struct ceph_fs_client *fsc)
 
 	/* flush out any connection work with references to us */
 	ceph_msgr_flush();
+	/* and the OSD request callbacks that update our metrics */
+	ceph_osdc_flush_completions(&fsc->client->osdc);
 
 	/*
 	 * Mark reset as failed and wake any blocked waiters before

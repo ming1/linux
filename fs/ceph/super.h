@@ -65,6 +65,7 @@
  * CEPH_MSG_MAX_DATA_LEN should be small enough. */
 #define CEPH_MAX_WRITE_SIZE		CEPH_MSG_MAX_DATA_LEN
 #define CEPH_RASIZE_DEFAULT             (8192*1024)    /* max readahead */
+#define CEPH_STRIDE_RA_MAX              64             /* records read ahead on a stride */
 #define CEPH_MAX_READDIR_DEFAULT        1024
 #define CEPH_MAX_READDIR_BYTES_DEFAULT  (512*1024)
 #define CEPH_SNAPDIRNAME_DEFAULT        ".snap"
@@ -526,6 +527,9 @@ struct ceph_netfs_request_data {
 
 	/* Set it if fadvise disables file readahead entirely */
 	bool file_ra_disabled;
+
+	/* Set it if the file is read in records at a fixed stride */
+	bool file_ra_strided;
 };
 
 static inline struct ceph_inode_info *
@@ -808,6 +812,9 @@ static inline bool __ceph_is_any_real_caps(struct ceph_inode_info *ci)
 }
 
 extern int __ceph_caps_issued(struct ceph_inode_info *ci, int *implemented);
+struct ceph_file_info;
+extern void ceph_stride_readahead(struct file *filp, struct ceph_file_info *fi,
+				  loff_t pos, size_t len);
 extern int __ceph_caps_issued_mask(struct ceph_inode_info *ci, int mask, int t);
 extern int __ceph_caps_issued_mask_metric(struct ceph_inode_info *ci, int mask,
 					  int t);
@@ -867,6 +874,7 @@ static inline bool __ceph_all_opens_lazy(struct ceph_inode_info *ci)
 }
 
 extern int __ceph_caps_file_wanted(struct ceph_inode_info *ci);
+extern bool __ceph_lazy_wants_lazyio(struct ceph_inode_info *ci, bool write);
 extern int __ceph_caps_wanted(struct ceph_inode_info *ci);
 
 /* what the mds thinks we want */
@@ -902,6 +910,14 @@ struct ceph_file_info {
 	struct list_head rw_contexts;
 
 	u32 filp_gen;
+
+	/* stride detection of buffered reads, see ceph_note_read_stride() */
+	loff_t ra_prev_pos;
+	loff_t ra_stride;
+	size_t ra_prev_len;
+	unsigned int ra_stride_hits;
+	bool ra_strided;
+	loff_t ra_stride_next;	/* next record to read ahead */
 };
 
 struct ceph_dir_file_info {
@@ -1114,7 +1130,7 @@ extern void ceph_fill_file_time(struct inode *inode, int issued,
 				u64 time_warp_seq, struct timespec64 *ctime,
 				struct timespec64 *mtime,
 				struct timespec64 *atime);
-extern int ceph_fill_inode(struct inode *inode, struct page *locked_page,
+int ceph_fill_inode(struct inode *inode, struct folio *locked_folio,
 		    struct ceph_mds_reply_info_in *iinfo,
 		    struct ceph_mds_reply_dirfrag *dirinfo,
 		    struct ceph_mds_session *session, int cap_fmode,
@@ -1155,8 +1171,8 @@ static inline void ceph_queue_flush_snaps(struct inode *inode)
 }
 
 extern int ceph_try_to_choose_auth_mds(struct inode *inode, int mask);
-extern int __ceph_do_getattr(struct inode *inode, struct page *locked_page,
-			     int mask, bool force);
+int __ceph_do_getattr(struct inode *inode, struct folio *locked_folio,
+		      int mask, bool force);
 static inline int ceph_do_getattr(struct inode *inode, int mask, bool force)
 {
 	return __ceph_do_getattr(inode, NULL, mask, force);
@@ -1380,7 +1396,7 @@ extern ssize_t __ceph_sync_read(struct inode *inode, loff_t *ki_pos,
 				struct iov_iter *to, int *retry_op,
 				u64 *last_objver);
 extern int ceph_release(struct inode *inode, struct file *filp);
-extern void ceph_fill_inline_data(struct inode *inode, struct page *locked_page,
+extern void ceph_fill_inline_data(struct inode *inode, struct folio *locked_folio,
 				  char *data, size_t len);
 
 /* dir.c */
