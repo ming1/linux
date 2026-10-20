@@ -452,6 +452,10 @@ int ceph_open(struct inode *inode, struct file *file)
 		int mds_wanted = __ceph_caps_mds_wanted(ci, true);
 		int issued = __ceph_caps_issued(ci, NULL);
 
+		if ((fmode & CEPH_FILE_MODE_LAZY) &&
+		    !__ceph_lazy_wants_lazyio(ci, fmode & CEPH_FILE_MODE_WR))
+			wanted &= ~CEPH_CAP_FILE_LAZYIO;
+
 		doutc(cl, "open %p fmode %d want %s issued %s using existing\n",
 		      inode, fmode, ceph_cap_string(wanted),
 		      ceph_cap_string(issued));
@@ -2124,6 +2128,33 @@ ceph_sync_write(struct kiocb *iocb, struct iov_iter *from, loff_t pos,
  *
  * Hmm, the sync read case isn't actually async... should it be?
  */
+/*
+ * Is this file read in records at a fixed stride?  Look at the read()
+ * calls themselves, not at the page cache misses: those depend on what
+ * readahead has already brought in.  A read of the same length as the
+ * previous one, starting as far after it as that one did after its
+ * predecessor, with at least a page left out in between, for the second
+ * time in a row.  Sequential reads leave no gap and random reads have no
+ * fixed stride, so neither matches.
+ */
+static void ceph_note_read_stride(struct ceph_file_info *fi, loff_t pos,
+				  size_t len)
+{
+	loff_t stride = pos - fi->ra_prev_pos;
+
+	if (fi->ra_prev_len && len == fi->ra_prev_len &&
+	    stride >= (loff_t)len + PAGE_SIZE && stride == fi->ra_stride) {
+		if (fi->ra_stride_hits < 2)
+			fi->ra_stride_hits++;
+	} else {
+		fi->ra_stride_hits = 0;
+	}
+	fi->ra_stride = stride;
+	fi->ra_prev_pos = pos;
+	fi->ra_prev_len = len;
+	WRITE_ONCE(fi->ra_strided, fi->ra_stride_hits >= 2);
+}
+
 static ssize_t ceph_read_iter(struct kiocb *iocb, struct iov_iter *to)
 {
 	struct file *filp = iocb->ki_filp;
@@ -2190,7 +2221,9 @@ again:
 		doutc(cl, "async %p %llx.%llx %llu~%u got cap refs on %s\n",
 		      inode, ceph_vinop(inode), iocb->ki_pos, (unsigned)len,
 		      ceph_cap_string(got));
+		ceph_note_read_stride(fi, iocb->ki_pos, len);
 		ceph_add_rw_context(fi, &rw_ctx);
+		ceph_stride_readahead(filp, fi, iocb->ki_pos, len);
 		ret = generic_file_read_iter(iocb, to);
 		ceph_del_rw_context(fi, &rw_ctx);
 	}
@@ -2206,21 +2239,21 @@ again:
 
 	if (retry_op > HAVE_RETRIED && ret >= 0) {
 		int statret;
-		struct page *page = NULL;
+		struct folio *folio = NULL;
 		loff_t i_size;
 		int mask = CEPH_STAT_CAP_SIZE;
 		if (retry_op == READ_INLINE) {
-			page = __page_cache_alloc(GFP_KERNEL);
-			if (!page)
+			folio = folio_alloc(GFP_KERNEL, 0);
+			if (!folio)
 				return -ENOMEM;
 
 			mask = CEPH_STAT_CAP_INLINE_DATA;
 		}
 
-		statret = __ceph_do_getattr(inode, page, mask, !!page);
+		statret = __ceph_do_getattr(inode, folio, mask, !!folio);
 		if (statret < 0) {
-			if (page)
-				__free_page(page);
+			if (folio)
+				folio_put(folio);
 			if (statret == -ENODATA) {
 				BUG_ON(retry_op != READ_INLINE);
 				goto again;
@@ -2237,8 +2270,8 @@ again:
 						   iocb->ki_pos + len);
 				end = min_t(loff_t, end, PAGE_SIZE);
 				if (statret < end)
-					zero_user_segment(page, statret, end);
-				ret = copy_page_to_iter(page,
+					folio_zero_segment(folio, statret, end);
+				ret = copy_folio_to_iter(folio,
 						iocb->ki_pos & ~PAGE_MASK,
 						end - iocb->ki_pos, to);
 				iocb->ki_pos += ret;
@@ -2251,7 +2284,7 @@ again:
 				iocb->ki_pos += ret;
 				read += ret;
 			}
-			__free_pages(page, 0);
+			folio_put(folio);
 			return read;
 		}
 
