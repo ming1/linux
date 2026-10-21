@@ -390,7 +390,7 @@ void ceph_stride_readahead(struct file *filp, struct ceph_file_info *fi,
 	if (next <= pos || next > end)
 		next = pos + stride;
 
-	filemap_invalidate_lock_shared(mapping);
+	/* page_cache_ra_unbounded() takes the invalidate_lock itself here */
 	for (; next <= end && next < isize; next += stride) {
 		pgoff_t first = next >> PAGE_SHIFT;
 		pgoff_t last = (min(next + (loff_t)len, isize) - 1) >> PAGE_SHIFT;
@@ -398,7 +398,6 @@ void ceph_stride_readahead(struct file *filp, struct ceph_file_info *fi,
 
 		page_cache_ra_unbounded(&ractl, last - first + 1, 0);
 	}
-	filemap_invalidate_unlock_shared(mapping);
 	fi->ra_stride_next = next;
 }
 
