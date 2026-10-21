@@ -123,6 +123,27 @@ static struct ceph_snap_context *ceph_folio_detach_snapc(struct folio *folio)
 	return snapc;
 }
 
+/*
+ * Every dirty byte of a lazy I/O folio lies beyond EOF now: there is
+ * nothing to write back, and the bytes in front of its dirty range are
+ * not this client's to send.  Drop the folio's dirty state, which the
+ * caller has already cleared, with the folio locked, and its count in
+ * the dirty folios that umount waits for.
+ */
+static void ceph_folio_drop_dirty(struct inode *inode, struct folio *folio)
+{
+	struct ceph_mds_client *mdsc = ceph_sb_to_mdsc(inode->i_sb);
+	struct ceph_snap_context *snapc = ceph_folio_detach_snapc(folio);
+
+	ceph_put_wrbuffer_cap_refs(ceph_inode(inode), 1, snapc);
+	ceph_put_snap_context(snapc);
+
+	if (atomic64_dec_return(&mdsc->dirty_folios) <= 0) {
+		wake_up_all(&mdsc->flush_end_wq);
+		WARN_ON(atomic64_read(&mdsc->dirty_folios) < 0);
+	}
+}
+
 /* The bytes of a dirty folio that writeback sends: [*start, *end) */
 static void ceph_folio_dirty_range(const struct folio *folio,
 				   size_t *start, size_t *end)
@@ -285,13 +306,16 @@ static void ceph_invalidate_folio(struct folio *folio, size_t offset,
 		/*
 		 * A truncate (or a hole punched up to the end of the folio)
 		 * drops the tail: keep the dirty range inside what is left,
-		 * or, if nothing of it is, the whole folio (up to EOF) goes
-		 * out.
+		 * or, if nothing of it is, the folio is no longer dirty.  It
+		 * must not go out whole: the bytes in front of the range may
+		 * be stale here.
 		 */
-		if (dr && offset + length == folio_size(folio)) {
+		if (dr && !READ_ONCE(dr->whole) &&
+		    offset + length == folio_size(folio)) {
 			dr->end = min_t(unsigned int, dr->end, offset);
-			if (dr->start >= dr->end)
-				ceph_folio_dirty_whole(folio);
+			if (dr->start >= dr->end &&
+			    folio_clear_dirty_for_io(folio))
+				ceph_folio_drop_dirty(inode, folio);
 		}
 		return;
 	}
@@ -379,25 +403,37 @@ void ceph_stride_readahead(struct file *filp, struct ceph_file_info *fi,
 	struct address_space *mapping = filp->f_mapping;
 	loff_t isize = i_size_read(mapping->host);
 	unsigned long window = (unsigned long)filp->f_ra.ra_pages << PAGE_SHIFT;
-	loff_t stride = fi->ra_stride, next, end;
+	/*
+	 * Reads sharing this file update the stride detection without a
+	 * lock, so the stride may not be the one that marked the file as
+	 * strided: check it here rather than rely on that.
+	 */
+	loff_t stride = READ_ONCE(fi->ra_stride), next, end;
 	unsigned int nr;
 
 	if (!fi->ra_strided || !window || (filp->f_mode & FMODE_RANDOM))
 		return;
+	if (!len || stride <= 0 || pos < 0)
+		return;
 	nr = clamp_t(unsigned long, window / len, 1, CEPH_STRIDE_RA_MAX);
-	end = pos + stride * nr;
+	if (check_mul_overflow(stride, (loff_t)nr, &end) ||
+	    check_add_overflow(pos, end, &end))
+		return;
 	/* continue after the records already read ahead */
-	next = fi->ra_stride_next;
+	next = READ_ONCE(fi->ra_stride_next);
 	if (next <= pos || next > end)
 		next = pos + stride;
 
 	filemap_invalidate_lock_shared(mapping);
-	for (; next <= end && next < isize; next += stride) {
+	while (next >= 0 && next <= end && next < isize) {
 		pgoff_t first = next >> PAGE_SHIFT;
-		pgoff_t last = (min(next + (loff_t)len, isize) - 1) >> PAGE_SHIFT;
+		pgoff_t last = (next + min_t(loff_t, len, isize - next) - 1) >>
+			       PAGE_SHIFT;
 		DEFINE_READAHEAD(ractl, filp, &filp->f_ra, mapping, first);
 
 		page_cache_ra_unbounded(&ractl, last - first + 1, 0);
+		if (check_add_overflow(next, stride, &next))
+			break;
 	}
 	filemap_invalidate_unlock_shared(mapping);
 	fi->ra_stride_next = next;
@@ -1003,12 +1039,14 @@ static int write_folio_nounlock(struct folio *folio,
 
 	/* only the dirty range of the folio goes out */
 	ceph_folio_dirty_range(folio, &start, &end);
-	if (page_off + start < ceph_wbc.i_size) {
-		page_off += start;
-		len = end - start;
-	} else {
-		start = 0;
+	if (page_off + start >= ceph_wbc.i_size) {
+		doutc(cl, "%llx.%llx folio at %lu dirty range beyond eof %llu\n",
+		      ceph_vinop(inode), folio->index, ceph_wbc.i_size);
+		ceph_folio_drop_dirty(inode, folio);
+		return 0;
 	}
+	page_off += start;
+	len = end - start;
 
 	if (ceph_wbc.i_size < page_off + len)
 		len = ceph_wbc.i_size - page_off;
@@ -1439,12 +1477,12 @@ int ceph_check_folio_before_write(struct address_space *mapping,
 
 	/*
 	 * A dirty range that a truncate moved EOF below (before the page
-	 * cache got truncated): write the folio up to EOF instead, as a
-	 * folio without a range would be.  The head's EOF is read now, not
-	 * when this pass began: writes that extended the file since then
-	 * (into this folio too, which is locked now) must not look like a
-	 * truncate, or the clean bytes in front of the range, which may be
-	 * zeros or stale data of another lazy I/O writer, go out.
+	 * cache got truncated): nothing of it is to be written, and the
+	 * clean bytes in front of it, which may be zeros or stale data of
+	 * another lazy I/O writer, must not go out either.  The head's EOF
+	 * is read now, not when this pass began: writes that extended the
+	 * file since then (into this folio too, which is locked now) must
+	 * not look like a truncate.
 	 */
 	{
 		loff_t isize = ceph_wbc->size_stable ? ceph_wbc->i_size :
@@ -1452,8 +1490,13 @@ int ceph_check_folio_before_write(struct address_space *mapping,
 		size_t start, end;
 
 		ceph_folio_dirty_range(folio, &start, &end);
-		if (folio_pos(folio) + start >= isize)
-			ceph_folio_dirty_whole(folio);
+		if (folio_pos(folio) + start >= isize) {
+			doutc(cl, "folio at %lu dirty range beyond eof %llu\n",
+			      folio->index, isize);
+			if (folio_clear_dirty_for_io(folio))
+				ceph_folio_drop_dirty(inode, folio);
+			return -ENODATA;
+		}
 	}
 
 	if (ceph_wbc->strip_unit_end &&
