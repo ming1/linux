@@ -402,25 +402,37 @@ void ceph_stride_readahead(struct file *filp, struct ceph_file_info *fi,
 	struct address_space *mapping = filp->f_mapping;
 	loff_t isize = i_size_read(mapping->host);
 	unsigned long window = (unsigned long)filp->f_ra.ra_pages << PAGE_SHIFT;
-	loff_t stride = fi->ra_stride, next, end;
+	/*
+	 * Reads sharing this file update the stride detection without a
+	 * lock, so the stride may not be the one that marked the file as
+	 * strided: check it here rather than rely on that.
+	 */
+	loff_t stride = READ_ONCE(fi->ra_stride), next, end;
 	unsigned int nr;
 
 	if (!fi->ra_strided || !window || (filp->f_mode & FMODE_RANDOM))
 		return;
+	if (!len || stride <= 0 || pos < 0)
+		return;
 	nr = clamp_t(unsigned long, window / len, 1, CEPH_STRIDE_RA_MAX);
-	end = pos + stride * nr;
+	if (check_mul_overflow(stride, (loff_t)nr, &end) ||
+	    check_add_overflow(pos, end, &end))
+		return;
 	/* continue after the records already read ahead */
-	next = fi->ra_stride_next;
+	next = READ_ONCE(fi->ra_stride_next);
 	if (next <= pos || next > end)
 		next = pos + stride;
 
 	/* page_cache_ra_unbounded() takes the invalidate_lock itself here */
-	for (; next <= end && next < isize; next += stride) {
+	while (next >= 0 && next <= end && next < isize) {
 		pgoff_t first = next >> PAGE_SHIFT;
-		pgoff_t last = (min(next + (loff_t)len, isize) - 1) >> PAGE_SHIFT;
+		pgoff_t last = (next + min_t(loff_t, len, isize - next) - 1) >>
+			       PAGE_SHIFT;
 		DEFINE_READAHEAD(ractl, filp, &filp->f_ra, mapping, first);
 
 		page_cache_ra_unbounded(&ractl, last - first + 1, 0);
+		if (check_add_overflow(next, stride, &next))
+			break;
 	}
 	fi->ra_stride_next = next;
 }
