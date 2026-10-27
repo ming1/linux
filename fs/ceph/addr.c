@@ -78,6 +78,8 @@ static int ceph_netfs_check_write_begin(struct file *file, loff_t pos, unsigned 
  * with CEPH_FOLIO_DIRTY_RANGE.  (Bit 0 is netfs's NETFS_FOLIO_INFO.)  A
  * folio without one is dirty as a whole.
  *
+ * A folio that may be pinned for writing (GUP) never starts a range.
+ *
  * The range is set up, changed and read with the folio locked, except
  * that a folio may be dirtied again without the lock (GUP), and the
  * writeback waiters peek at the snap context of folios under writeback:
@@ -208,6 +210,15 @@ static void ceph_folio_note_write(struct inode *inode, struct folio *folio,
 	if (WARN_ON_ONCE(dr || !folio->private))
 		return;
 	if (!start && end >= folio_size(folio))
+		return;
+	/*
+	 * A writable pin (GUP) on the folio may be older than its last
+	 * writeback, and may still write any byte of it without dirtying
+	 * it again: unpin_user_pages_dirty_lock() skips a folio this write
+	 * has dirtied.  A pin taken from now on write-faults first, in
+	 * ceph_page_mkwrite(), which makes the range whole.
+	 */
+	if (folio_maybe_dma_pinned(folio))
 		return;
 	dr = kmalloc_obj(*dr, GFP_NOFS);
 	if (!dr)
