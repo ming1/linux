@@ -175,7 +175,8 @@ static void ceph_folio_dirty_whole(struct folio *folio)
 /*
  * Note a write of @copied bytes at @pos into @folio, which it has just
  * dirtied; @was_dirty: the folio already was dirty before; @lazy: the
- * write came through a lazy I/O open.
+ * write came through a lazy I/O open; *@prealloc: a range to use instead
+ * of allocating one, taken (set to NULL) if used.
  *
  * Only a lazy I/O write starts a range: without lazy I/O this client
  * holds the buffer cap, the rest of the page is current, and it may go
@@ -186,7 +187,8 @@ static void ceph_folio_dirty_whole(struct folio *folio)
  */
 static void ceph_folio_note_write(struct inode *inode, struct folio *folio,
 				  bool was_dirty, loff_t pos,
-				  unsigned int copied, bool lazy)
+				  unsigned int copied, bool lazy,
+				  struct ceph_dirty_range **prealloc)
 {
 	struct ceph_dirty_range *dr = __ceph_dirty_range(folio->private);
 	unsigned int start = offset_in_folio(folio, pos);
@@ -219,7 +221,10 @@ static void ceph_folio_note_write(struct inode *inode, struct folio *folio,
 	 */
 	if (folio_maybe_dma_pinned(folio))
 		return;
-	dr = kmalloc_obj(*dr, GFP_NOFS);
+	dr = *prealloc;
+	*prealloc = NULL;
+	if (!dr)
+		dr = kmalloc_obj(*dr, GFP_NOFS);
 	if (!dr)
 		return;		/* then it all goes out */
 	dr->snapc = folio_get_private(folio);
@@ -1228,7 +1233,8 @@ static void writepages_finish(struct ceph_osd_request *req)
 				fscrypt_free_bounce_page(osd_data->pages[j]);
 				osd_data->pages[j] = &folio->page;
 			}
-			WARN_ON(!folio_test_uptodate(folio));
+			WARN_ON(!folio_test_uptodate(folio) &&
+				!__ceph_dirty_range(folio->private));
 
 			if (atomic_long_dec_return(&fsc->writeback_count) <
 			     CONGESTION_OFF_THRESH(
@@ -2219,8 +2225,12 @@ ceph_find_incompatible(struct folio *folio)
 	return NULL;
 }
 
-static int ceph_netfs_check_write_begin(struct file *file, loff_t pos, unsigned int len,
-					struct folio **foliop, void **_fsdata)
+/*
+ * Wait until the locked *@foliop may be dirtied in the current snap
+ * context.  If that means dropping it, *@foliop is cleared and 0 (or an
+ * error) returned: the caller grabs the folio again and rechecks it.
+ */
+static int __ceph_check_write_begin(struct file *file, struct folio **foliop)
 {
 	struct inode *inode = file_inode(file);
 	struct ceph_inode_info *ci = ceph_inode(inode);
@@ -2248,6 +2258,94 @@ static int ceph_netfs_check_write_begin(struct file *file, loff_t pos, unsigned 
 		return r;
 	}
 	return 0;
+}
+
+/*
+ * Unlock a dirty folio that is not uptodate, and write it back: only its
+ * dirty range is valid (see ceph_write_begin_noread()), so it has to go
+ * out before the folio is read.
+ */
+static int ceph_writeback_partial_folio(struct folio *folio)
+{
+	struct address_space *mapping = folio->mapping;
+	loff_t start = folio_pos(folio);
+	loff_t end = start + folio_size(folio) - 1;
+
+	folio_unlock(folio);
+	return filemap_write_and_wait_range(mapping, start, end);
+}
+
+static int ceph_netfs_check_write_begin(struct file *file, loff_t pos, unsigned int len,
+					struct folio **foliop, void **_fsdata)
+{
+	if (!folio_test_uptodate(*foliop) && folio_test_dirty(*foliop)) {
+		struct folio *folio = *foliop;
+		int r;
+
+		/* netfs_write_begin() would read it over the dirty range */
+		*foliop = NULL;
+		r = ceph_writeback_partial_folio(folio);
+		folio_put(folio);
+		return r;
+	}
+	return __ceph_check_write_begin(file, foliop);
+}
+
+/*
+ * A lazy I/O write into part of a folio that is not uptodate: grab the
+ * folio without reading it from the OSDs first.  Its other bytes may be
+ * another client's data here, so they would be stale anyway, and only
+ * the dirty range of the folio goes out on writeback.  The folio stays
+ * not uptodate, with only its dirty range valid, until it is written
+ * back or ceph_read_folio() writes it back to read it whole.
+ *
+ * *@drp is the dirty range for ceph_write_end(), allocated here.
+ * Returns 1 with *@foliop locked, 0 if the folio has to be read as
+ * usual, or an error.
+ */
+static int ceph_write_begin_noread(struct file *file,
+				   struct address_space *mapping, loff_t pos,
+				   unsigned int len, struct folio **foliop,
+				   struct ceph_dirty_range **drp)
+{
+	struct inode *inode = mapping->host;
+	struct folio *folio;
+	size_t offset;
+	int r;
+
+	if (IS_ENCRYPTED(inode) || ceph_is_cache_enabled(inode))
+		return 0;
+	if (!*drp) {
+		*drp = kmalloc_obj(**drp, GFP_NOFS);
+		if (!*drp)
+			return 0;
+	}
+	for (;;) {
+		folio = __filemap_get_folio(mapping, pos >> PAGE_SHIFT,
+					    FGP_WRITEBEGIN,
+					    mapping_gfp_mask(mapping));
+		if (IS_ERR(folio))
+			return PTR_ERR(folio);
+		offset = offset_in_folio(folio, pos);
+		if (folio_test_uptodate(folio) ||
+		    (!offset && len >= folio_size(folio))) {
+			folio_unlock(folio);
+			folio_put(folio);
+			return 0;
+		}
+		r = __ceph_check_write_begin(file, &folio);
+		if (r < 0) {
+			if (folio) {
+				folio_unlock(folio);
+				folio_put(folio);
+			}
+			return r;
+		}
+		if (folio)
+			break;
+	}
+	*foliop = folio;
+	return 1;
 }
 
 static bool ceph_file_is_lazy(const struct file *file)
@@ -2285,17 +2383,28 @@ static int ceph_write_begin(const struct kiocb *iocb,
 	struct file *file = iocb->ki_filp;
 	struct inode *inode = file_inode(file);
 	struct ceph_inode_info *ci = ceph_inode(inode);
-	bool lazy = ceph_file_is_lazy(file);
+	struct ceph_dirty_range *dr = NULL;
+	bool lazy = ceph_file_is_lazy(file), noread = false;
 	int r;
 
+	*fsdata = NULL;
 	for (;;) {
 		struct folio *folio;
 		loff_t fpos, fend;
 
-		r = netfs_write_begin(&ci->netfs, file, inode->i_mapping, pos,
-				      len, foliop, NULL);
-		if (r < 0)
+		r = 0;
+		if (lazy)
+			r = ceph_write_begin_noread(file, mapping, pos, len,
+						    foliop, &dr);
+		if (!r)
+			r = netfs_write_begin(&ci->netfs, file,
+					      inode->i_mapping, pos, len,
+					      foliop, NULL);
+		if (r < 0) {
+			kfree(dr);
 			return r;
+		}
+		noread = r > 0;
 		folio = *foliop;
 		if (!lazy || !ceph_folio_write_leaves_gap(folio, pos, len))
 			break;
@@ -2311,11 +2420,19 @@ static int ceph_write_begin(const struct kiocb *iocb,
 		folio_put(folio);
 		*foliop = NULL;
 		r = filemap_write_and_wait_range(mapping, fpos, fend);
-		if (r < 0)
+		if (r < 0) {
+			kfree(dr);
 			return r;
+		}
 	}
 
-	folio_wait_private_2(*foliop); /* [DEPRECATED] */
+	if (noread) {
+		/* not read: ceph_write_end() starts or widens the range */
+		*fsdata = dr;
+	} else {
+		kfree(dr);
+		folio_wait_private_2(*foliop); /* [DEPRECATED] */
+	}
 	WARN_ON_ONCE(!folio_test_locked(*foliop));
 	return 0;
 }
@@ -2332,6 +2449,7 @@ static int ceph_write_end(const struct kiocb *iocb,
 	struct file *file = iocb->ki_filp;
 	struct inode *inode = file_inode(file);
 	struct ceph_client *cl = ceph_inode_to_client(inode);
+	struct ceph_dirty_range *dr = fsdata;
 	bool check_cap = false, was_dirty, lazy = ceph_file_is_lazy(file);
 
 	doutc(cl, "%llx.%llx file %p folio %p %d~%d (%d)\n", ceph_vinop(inode),
@@ -2343,7 +2461,9 @@ static int ceph_write_end(const struct kiocb *iocb,
 			copied = 0;
 			goto out;
 		}
-		folio_mark_uptodate(folio);
+		/* not read by ceph_write_begin_noread(): only the range is valid */
+		if (!dr)
+			folio_mark_uptodate(folio);
 	}
 
 	/*
@@ -2378,9 +2498,12 @@ static int ceph_write_end(const struct kiocb *iocb,
 		folio_mark_dirty(folio);
 	if (was_dirty || lazy)
 		ceph_folio_note_write(inode, folio, was_dirty, pos, copied,
-				      lazy);
+				      lazy, &dr);
+	WARN_ON_ONCE(!folio_test_uptodate(folio) &&
+		     !__ceph_dirty_range(folio->private));
 
 out:
+	kfree(dr);
 	folio_unlock(folio);
 	folio_put(folio);
 
@@ -2390,8 +2513,24 @@ out:
 	return copied;
 }
 
+/*
+ * A dirty folio that is not uptodate has only its dirty range valid (see
+ * ceph_write_begin_noread()): write it back before reading it whole.
+ */
+static int ceph_read_folio(struct file *file, struct folio *folio)
+{
+	int r;
+
+	if (unlikely(folio_test_dirty(folio))) {
+		/* the caller looks the folio up again */
+		r = ceph_writeback_partial_folio(folio);
+		return r < 0 ? r : AOP_TRUNCATED_PAGE;
+	}
+	return netfs_read_folio(file, folio);
+}
+
 const struct address_space_operations ceph_aops = {
-	.read_folio = netfs_read_folio,
+	.read_folio = ceph_read_folio,
 	.readahead = netfs_readahead,
 	.writepages = ceph_writepages_start,
 	.write_begin = ceph_write_begin,
