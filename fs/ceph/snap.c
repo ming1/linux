@@ -960,8 +960,8 @@ static struct ceph_snap_realm *get_snap_trace_if_unmodified(struct ceph_mds_clie
 		p += num * sizeof(u64);
 
 		realm = __lookup_snap_realm(mdsc, le64_to_cpu(ri->ino));
-		if (!realm || !realm->parent ||
-		    realm->parent->ino != le64_to_cpu(ri->parent) ||
+		if (!realm ||
+		    realm->parent_ino != le64_to_cpu(ri->parent) ||
 		    le64_to_cpu(ri->seq) > realm->seq ||
 		    !realm->cached_context)
 			goto call_update;
