@@ -1079,11 +1079,18 @@ static inline int ceph_adjust_caps_used_for_lazyio(struct ceph_inode_info *ci,
 	 */
 	if ((issued & CEPH_CAP_FILE_LAZYIO) && !__ceph_all_opens_lazy(ci))
 		return used;
-	if (!(issued & CEPH_CAP_FILE_CACHE)) {
+	/*
+	 * Only a use that the issued caps no longer cover moves to LAZYIO.
+	 * Clean pages under an issued CACHE are not using LAZYIO, so a
+	 * revoke of LAZYIO that leaves CACHE issued must not count them;
+	 * otherwise it is never acked from handle_cap_grant() and waits
+	 * for the delayed cap check.
+	 */
+	if ((used & CEPH_CAP_FILE_CACHE) && !(issued & CEPH_CAP_FILE_CACHE)) {
 		used &= ~CEPH_CAP_FILE_CACHE;
 		used |= CEPH_CAP_FILE_LAZYIO;
 	}
-	if (!(issued & CEPH_CAP_FILE_BUFFER)) {
+	if ((used & CEPH_CAP_FILE_BUFFER) && !(issued & CEPH_CAP_FILE_BUFFER)) {
 		used &= ~CEPH_CAP_FILE_BUFFER;
 		used |= CEPH_CAP_FILE_LAZYIO;
 	}
@@ -2171,8 +2178,6 @@ void ceph_check_caps(struct ceph_inode_info *ci, int flags)
 		return;
 	}
 
-	if (ci->i_ceph_flags & CEPH_I_FLUSH)
-		flags |= CHECK_CAPS_FLUSH;
 retry:
 	/* Caps wanted by virtue of active open files. */
 	file_wanted = __ceph_caps_file_wanted(ci);
@@ -4937,10 +4942,20 @@ static unsigned long check_delayed_caps_list(struct ceph_mds_client *mdsc,
 
 		inode = igrab(&ci->netfs.inode);
 		if (inode) {
+			/*
+			 * Flush the dirty caps that ceph_write_inode()
+			 * queued here.  Only this work does it: other cap
+			 * checks leave them for it, so that a file under
+			 * writeback does not flush them after every write.
+			 */
+			int flags = test_bit(CEPH_I_FLUSH_BIT,
+					     &ci->i_ceph_flags) ?
+				    CHECK_CAPS_FLUSH : 0;
+
 			spin_unlock(&mdsc->cap_delay_lock);
 			doutc(cl, "on %p %llx.%llx\n", inode,
 			      ceph_vinop(inode));
-			ceph_check_caps(ci, 0);
+			ceph_check_caps(ci, flags);
 			iput(inode);
 			spin_lock(&mdsc->cap_delay_lock);
 		}
