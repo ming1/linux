@@ -218,8 +218,15 @@ static void ceph_folio_note_write(struct inode *inode, struct folio *folio,
 	 * it again: unpin_user_pages_dirty_lock() skips a folio this write
 	 * has dirtied.  A pin taken from now on write-faults first, in
 	 * ceph_page_mkwrite(), which makes the range whole.
+	 *
+	 * A folio that ceph_write_begin_noread() did not read in cannot be
+	 * pinned: it is not uptodate, so it was never mapped, and a fault
+	 * reads it first, under the folio lock held here.  It must get its
+	 * range whatever folio_maybe_dma_pinned() says (it guesses from the
+	 * refcount of a small folio), or its bytes that were never read
+	 * would go out.
 	 */
-	if (folio_maybe_dma_pinned(folio))
+	if (folio_test_uptodate(folio) && folio_maybe_dma_pinned(folio))
 		return;
 	dr = *prealloc;
 	*prealloc = NULL;
@@ -2451,19 +2458,26 @@ static int ceph_write_end(const struct kiocb *iocb,
 	struct ceph_client *cl = ceph_inode_to_client(inode);
 	struct ceph_dirty_range *dr = fsdata;
 	bool check_cap = false, was_dirty, lazy = ceph_file_is_lazy(file);
+	bool noread = dr;
 
 	doutc(cl, "%llx.%llx file %p folio %p %d~%d (%d)\n", ceph_vinop(inode),
 	      file, folio, (int)pos, (int)copied, (int)len);
 
-	if (!folio_test_uptodate(folio)) {
+	/*
+	 * A folio that ceph_write_begin_noread() did not read has only its
+	 * dirty range valid, and keeps it so: the bytes copied are valid
+	 * too, even on a short copy, and are accepted like on an uptodate
+	 * folio.  Refusing them would leave them in the dirty range anyway,
+	 * replacing bytes of an earlier write, and a writeback before the
+	 * retry would send them although the write reported none of them.
+	 */
+	if (!noread && !folio_test_uptodate(folio)) {
 		/* just return that nothing was copied on a short copy */
 		if (copied < len) {
 			copied = 0;
 			goto out;
 		}
-		/* not read by ceph_write_begin_noread(): only the range is valid */
-		if (!dr)
-			folio_mark_uptodate(folio);
+		folio_mark_uptodate(folio);
 	}
 
 	/*
